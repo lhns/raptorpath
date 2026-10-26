@@ -1,0 +1,71 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 6K of event 'cpu/cycles/P'
+# Event count (approx.): 12012304150
+#
+# Children      Self  Symbol                                                                                                                                                                                                                                                                                     
+# ........  ........  ...........................................................................................................................................................................................................................................................................................
+#
+    22.72%     0.02%  [.] entry_SYSCALL_64_after_hwframe
+    22.71%     0.24%  [.] do_syscall_64
+     9.05%     0.03%  [.] __x64_sys_futex
+     9.02%     0.07%  [.] do_futex
+     6.72%     6.47%  [.] raptorpath::net::receiver::run_receiver::{{closure}}
+     6.05%     0.06%  [.] schedule
+     5.98%     0.13%  [.] __schedule
+     5.26%     4.65%  [.] _int_malloc
+     4.70%     4.70%  [.] __memmove_avx_unaligned_erms
+     4.56%     0.07%  [k] futex_wake
+     4.49%     0.35%  [.] try_to_wake_up
+     4.39%     0.06%  [.] futex_wait
+     4.30%     0.08%  [.] __futex_wait
+     4.09%     4.09%  [.] _aesni_ctr32_ghash_6x
+     4.06%     0.19%  [.] asm_sysvec_apic_timer_interrupt
+     3.84%     0.05%  [.] wake_up_q
+     3.75%     0.00%  [.] __sys_sendmsg
+     3.71%     0.00%  [.] sysvec_apic_timer_interrupt
+     3.66%     0.08%  [.] futex_do_wait
+     3.64%     0.00%  [.] ___sys_sendmsg
+     3.58%     0.02%  [.] __x64_sys_epoll_wait
+     3.55%     0.06%  [.] ____sys_sendmsg
+     3.40%     0.04%  [k] do_epoll_wait
+     3.28%     0.05%  [.] ep_poll
+     3.27%     0.06%  [.] __x64_sys_recvmmsg
+     3.20%     0.07%  [.] do_recvmmsg
+     3.00%     0.04%  [.] udp_sendmsg
+     2.99%     0.06%  [.] ___sys_recvmsg
+     2.86%     1.77%  [.] _int_free_chunk
+     2.86%     1.67%  [.] __libc_malloc2
+     2.80%     2.80%  [k] __pv_queued_spin_lock_slowpath
+     2.76%     0.15%  [.] ____sys_recvmsg
+     2.71%     0.21%  [.] _raw_spin_lock
+     2.58%     0.18%  [.] __internal_syscall_cancel
+     2.54%     0.05%  [.] schedule_hrtimeout_range_clock
+     2.50%     0.00%  [.] raw_spin_rq_lock_nested
+     2.45%     0.03%  [.] __syscall_cancel
+     2.42%     0.03%  [.] inet_recvmsg
+     2.41%     0.02%  [.] __syscall_cancel_arch_end
+     2.39%     0.12%  [.] udp_recvmsg
+     2.20%     0.02%  [.] ___task_rq_lock
+     2.17%     0.02%  [.] handle_softirqs
+     2.10%     2.09%  [.] <raptorpath::fec::unified::UnifiedDecoder as raptorpath::fec::window_traits::WindowDecoder>::seq_probe
+     2.05%     2.01%  [.] malloc_consolidate
+     1.99%     0.00%  [k] __irq_exit_rcu
+     1.87%     0.00%  [.] sock_recvmsg
+     1.80%     0.08%  [.] try_to_block_task.constprop.0.isra.0
+     1.69%     0.06%  [.] dequeue_task_fair
+     1.69%     0.00%  [.] __sysvec_apic_timer_interrupt
+     1.67%     0.24%  [k] dequeue_entities
+     1.61%     0.00%  [.] hrtimer_interrupt
+     1.55%     0.15%  [.] syscall
+     1.53%     1.53%  [k] entry_SYSRETQ_unsafe_stack
+     1.53%     1.53%  [.] 0x00000000000008eb
+     1.53%     0.03%  [.] udp_send_skb
+
+
+#
+# (Tip: To compare hot regions in two workloads use perf record -b -o file ... ; perf diff --stream file1 file2)
+#

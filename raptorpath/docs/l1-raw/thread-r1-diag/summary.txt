@@ -1,0 +1,10 @@
+ROW c1s-400-FIX-s42-r1 mbps=482.581 class=recovered pipe=1 ibp_lines=1 rxsec_total_ns_pm=14542 book_ns_pm=1029 book_share=7.1 rdiag_busy_med=81 over=46 p0:n=338410 nowait=309229
+ROW c1s-400-FIX-s7-r2 mbps=599.222 class=recovered pipe=1 ibp_lines=1 rxsec_total_ns_pm=13062 book_ns_pm=998 book_share=7.6 rdiag_busy_med=86 over=58 p0:n=338408 nowait=306384
+ROW c1s-400-MAIN+d-s42-r1 mbps=164.307 class=collapsed pipe=1 ibp_lines=0 rxsec_total_ns_pm=- book_ns_pm=- book_share=- rdiag_busy_med=89 over=63 p0:n=338410 nowait=305384
+ROW c1s-400-MAIN+d-s7-r2 mbps=178.801 class=collapsed pipe=1 ibp_lines=0 rxsec_total_ns_pm=- book_ns_pm=- book_share=- rdiag_busy_med=100 over=73 p0:n=338412 nowait=299987
+ROW c1s-400-MAIN-s42-r1 mbps=578.249 class=recovered pipe=1 ibp_lines=0 rxsec_total_ns_pm=- book_ns_pm=- book_share=- rdiag_busy_med=88 over=73 p0:n=338411 nowait=307532
+ROW c1s-400-MAIN-s7-r2 mbps=601.842 class=recovered pipe=1 ibp_lines=0 rxsec_total_ns_pm=- book_ns_pm=- book_share=- rdiag_busy_med=79 over=29 p0:n=338410 nowait=311380
+ROW c1s-400-R1-d-s42-r1 mbps=559.32 class=recovered pipe=1 ibp_lines=1 rxsec_total_ns_pm=14705 book_ns_pm=1261 book_share=8.6 rdiag_busy_med=96 over=64 p0:n=338410 nowait=303515
+ROW c1s-400-R1-d-s7-r2 mbps=527.391 class=recovered pipe=1 ibp_lines=1 rxsec_total_ns_pm=14293 book_ns_pm=1274 book_share=8.9 rdiag_busy_med=79 over=46 p0:n=338412 nowait=308485
+ROW c1s-400-R1-s42-r1 mbps=177.126 class=collapsed pipe=1 ibp_lines=1 rxsec_total_ns_pm=51697 book_ns_pm=36203 book_share=70.0 rdiag_busy_med=100 over=65 p0:n=338411 nowait=301464
+ROW c1s-400-R1-s7-r2 mbps=177.811 class=collapsed pipe=1 ibp_lines=1 rxsec_total_ns_pm=51680 book_ns_pm=35142 book_share=68.0 rdiag_busy_med=100 over=110 p0:n=338409 nowait=301234

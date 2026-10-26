@@ -1,0 +1,44 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 5K of event 'cpu/cycles/P'
+# Event count (approx.): 9536782016
+#
+# Children      Self  Symbol                                                                                                                                                                                                                                                                                     
+# ........  ........  ...........................................................................................................................................................................................................................................................................................
+#
+    56.22%    56.03%  [.] raptorpath::net::receiver::run_receiver::{{closure}}
+    11.56%     0.01%  [.] entry_SYSCALL_64_after_hwframe
+    11.55%     0.07%  [.] do_syscall_64
+     3.89%     0.00%  [.] tokio::runtime::task::raw::poll
+     3.80%     0.08%  [.] __x64_sys_futex
+     3.72%     0.02%  [.] do_futex
+     3.52%     0.06%  [.] schedule
+     3.51%     2.27%  [.] _int_malloc
+     3.46%     0.19%  [.] __schedule
+     2.59%     0.15%  [.] asm_sysvec_apic_timer_interrupt
+     2.46%     0.05%  [.] __x64_sys_epoll_wait
+     2.38%     0.00%  [.] sysvec_apic_timer_interrupt
+     2.35%     0.00%  [.] do_epoll_wait
+     2.33%     0.73%  [.] __libc_malloc2
+     2.28%     0.01%  [.] __sys_sendmsg
+     2.26%     0.01%  [.] futex_wait
+     2.26%     0.07%  [.] ep_poll
+     2.25%     0.00%  [.] __futex_wait
+     2.23%     0.00%  [.] ___sys_sendmsg
+     2.19%     0.01%  [.] ____sys_sendmsg
+     2.04%     0.02%  [.] futex_do_wait
+     1.90%     1.87%  [.] __memmove_avx_unaligned_erms
+     1.77%     0.13%  [.] udp_sendmsg
+     1.73%     0.02%  [.] schedule_hrtimeout_range_clock
+     1.65%     0.01%  [.] __x64_sys_recvmmsg
+     1.64%     0.07%  [.] do_recvmmsg
+     1.63%     0.02%  [.] __sysvec_apic_timer_interrupt
+     1.56%     0.02%  [.] hrtimer_interrupt
+
+
+#
+# (Tip: Show user configuration overrides: perf config --user --list)
+#

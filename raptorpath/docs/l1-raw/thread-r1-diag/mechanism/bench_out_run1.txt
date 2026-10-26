@@ -1,0 +1,26 @@
+# run 1 (Windows host, rustc -O, quieter host; before the red-test check was added)
+impl  stray_every stray_back  ns_per_arrival  lost  miss
+MAIN       0      0        74.3      0 0  (rep 0)
+R1         0      0        21.0      0 0
+FIX        0      0        24.3      0 0
+MAIN       0      0        72.6      0 0  (rep 1)
+R1         0      0        21.1      0 0
+FIX        0      0        22.4      0 0
+MAIN    5600   1000        76.1     50 0  (rep 0)
+R1      5600   1000     17505.3     50 0
+FIX     5600   1000        42.7     53 0
+MAIN    5600   1000        94.7     50 0  (rep 1)
+R1      5600   1000     17668.5     50 0
+FIX     5600   1000        27.2     53 0
+MAIN    5600   8000        72.6     51 0  (rep 0)
+R1      5600   8000     53022.6     51 0
+FIX     5600   8000        27.9     52 0
+MAIN    5600   8000        74.0     51 0  (rep 1)
+R1      5600   8000     53788.6     51 0
+FIX     5600   8000        43.1     52 0
+MAIN   50000   1000       106.8      5 0  (rep 0)
+R1     50000   1000     11256.6      5 0
+FIX    50000   1000        30.8      6 0
+MAIN   50000   1000        83.9      5 0  (rep 1)
+R1     50000   1000     11608.3      5 0
+FIX    50000   1000        39.4      6 0

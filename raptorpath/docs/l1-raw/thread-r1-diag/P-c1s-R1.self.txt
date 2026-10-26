@@ -1,0 +1,42 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 5K of event 'cpu/cycles/P'
+# Event count (approx.): 9536782016
+#
+# Overhead  Symbol                                                                                                                                                                                                                                                                                     
+# ........  ...........................................................................................................................................................................................................................................................................................
+#
+    56.03%  [.] raptorpath::net::receiver::run_receiver::{{closure}}
+            |          
+             --3.71%--raptorpath::net::receiver::run_receiver::{{closure}}
+                       tokio::runtime::task::raw::poll
+
+     2.27%  [.] _int_malloc
+            |          
+             --0.93%--_int_malloc
+                       |          
+                        --0.65%--__libc_malloc2
+
+     1.87%  [.] __memmove_avx_unaligned_erms
+            |          
+             --0.63%--__memmove_avx_unaligned_erms
+
+     1.49%  [.] _aesni_ctr32_ghash_6x
+     0.89%  [.] <raptorpath::fec::unified::UnifiedDecoder as raptorpath::fec::window_traits::WindowDecoder>::seq_probe
+     0.87%  [.] malloc_consolidate
+     0.73%  [.] __libc_malloc2
+     0.71%  [.] malloc
+     0.67%  [k] entry_SYSRETQ_unsafe_stack
+     0.63%  [.] quinn::endpoint::RecvState::poll_socket
+     0.63%  [k] __pv_queued_spin_lock_slowpath
+     0.62%  [.] _int_free_chunk
+     0.58%  [.] std::collections::hash::set::HashSet<T,S,A>::insert
+     0.55%  [.] tokio::runtime::task::raw::poll
+
+
+#
+# (Tip: If you have debuginfo enabled, try: perf report -s sym,srcline)
+#

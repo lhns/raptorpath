@@ -5685,3 +5685,91 @@ launch precondition as §17 Amendment 2 (both locks free, loadavg < 2.0, no
 `cargo` / `rustc`). `pkill -x raptorpath` only; no `ens18`, firewall,
 `sshd` or non-`rp-*` namespace touched; exit state 0 `raptorpath`, 0 `rp-*`,
 locks released, VM dirs removed. Ledgers to `docs/l1-raw/thread-r1-diag/`.
+
+### 20. R1 c1s collapse — diagnosis — result
+
+**Outcome: `H1-CONFIRMED` + `FIX-VALIDATED`.** The collapse is R1's fix (d):
+the `[LAT]` pending store on `SeqRing` (`net/lat.rs` `Pending`). Session
+2026-10-26 10:33–11:08Z, one envelope (`tools/l1/r1diag_run.sh` at 6329b1d),
+both locks held throughout, launch load 1.76, 0 cargo / rustc at every row;
+exit state 0 `raptorpath`, 0 `rp-*`, locks released, the VM directory
+removed. All five arms built (340–508 s each), all 10 rows and all 3 profiles
+ran. Ledgers: `docs/l1-raw/thread-r1-diag/` (`era.txt`, `BINSHA.txt`,
+`summary.txt` from `tools/l1/r1diag_summary.sh`, `diag/` per-row logs,
+`P-c1s-*.self.txt` / `.children.txt`, `mechanism/`, `fix-lat-floor.patch`).
+MAIN's and R1's `sha256` equal §17's binaries.
+
+| arm | goodput s42 / s7 (Mbit/s) | class | server `[RXSEC]` per msg: total / book (share) | `[RDIAG]` busy med |
+|---|---|---|---|---|
+| `MAIN` | 578 / 602 | recovered ×2 | (no instrument) | 88 / 79 |
+| `R1` | 177 / 178 | collapsed ×2 | 51.7 / **36.2 µs (70 %)**; 51.7 / 35.1 µs (68 %) | 100 / 100 |
+| `R1-d` | 559 / 527 | recovered ×2 | 14.7 / 1.26 µs (8.6 %); 14.3 / 1.27 µs (8.9 %) | 96 / 79 |
+| `MAIN+d` | 164 / 179 | collapsed ×2 | (no instrument) | 89 / 100 |
+| `FIX` | 483 / 599 | recovered ×2 | 14.5 / 1.03 µs (7.1 %); 13.1 / 1.00 µs (7.6 %) | 81 / 86 |
+
+Every row carries `[PIPE] window/Rlc/bulk`; the tree witness is two-sided as
+registered (`ibp_hit=` on the a5ef8b2-based arms only). `[LAT] nowait / p0:n`
+≈ 0.89–0.92 on every arm (the same stream; only the store differs).
+
+**The evidence, by layer.**
+1. *Bisection.* Swapping one file decides it both ways: R1 with MAIN's
+   `lat.rs` recovers (527–559), MAIN with R1's `lat.rs` collapses (164–179).
+   The other four R1 changes (pool, in-place batch, `SeqBits`, lazy
+   `received_ids`) are neither necessary nor sufficient; H2/H3 are cleared.
+2. *Rule 1, in-process.* The receiver's `book` section (the brackets around
+   `note_arrival` and `note_delivery`) costs 35–36 µs per message on R1 and
+   1.0–1.3 µs on R1-d and FIX: 28–36× — the whole of R1's 51.7 vs 14.5 µs
+   per message (the other sections together: 15.5 vs 13.4 µs).
+3. *Profile (corroborating).* Server self time in
+   `run_receiver::{{closure}}` is 56.0 % on R1 against 6.5 % (MAIN) and 5.9 %
+   (R1-d); the store is inlined there, so the profile cannot name it by
+   symbol — the `[RXSEC]` split and the bisection are what attribute it.
+4. *Mechanism arm* (`mechanism/`, a5ef8b2's `SeqRing` verbatim, `rustc -O`
+   on the Windows host). In-order stream delivered at once, one duplicate
+   of an old seq every 5 600 arrivals: R1 17.5 µs per arrival (gap 1 000)
+   and 53 µs (gap 8 000) against MAIN's `HashMap` 0.08 µs and FIX 0.03–0.04
+   µs; with no duplicates R1 is the fastest (0.021 µs vs 0.074). The ring
+   slot span right after an in-order insert reaches 16 381 on R1 and stays
+   1 on FIX.
+
+**The cause (file and line).** a5ef8b2 `raptorpath/src/net/lat.rs`,
+`Pending::insert` / `Pending::take` over `net/seq_ring.rs`
+`SeqRing::insert` (the `for _ in end..seq { push_back(None) }` pad) and
+`SeqRing::remove` → `trim()` (the `while let Some(None) = slots.back()`
+pop). A duplicate source copy of a delivered seq (`dup_src`, ~80 per c1s
+run) is recorded by `note_arrival` and never taken, so it sits at the
+ring's front for its FIFO lifetime (16 384 insertions). On a stream whose
+arrivals are delivered at once (c1s: ~90 %), each delivery takes the ring's
+only live record, the back-trim walks down to the dead record and the next
+arrival pads back up — 2 × (head − dead seq) slot operations per message,
+growing to ~1.7 × 10⁴. The `HashMap` it replaced is O(1) whatever is dead.
+*Why c1s and not c2/c1d:* the cost needs both a dead front record and a
+live set that empties on most arrivals. c2's deliveries mostly wait in the
+reorder buffer (nowait ≈ 16 %), so a waiting record holds the ring's back
+and the trim stops there; c1d has cross-path waits (nowait ≈ 49 % on p0).
+That explanation is derived from §17's `[LAT]` counters; this session
+measured c1s only.
+
+**Proposed fix (validated here as the `FIX` arm; not shipped).**
+`fix-lat-floor.patch`: `Pending` keeps `floor` = one past the last
+in-order delivery; `note_delivery(d)` takes `d`'s record and prunes every
+record below the floor (`SeqRing::prune_below`), and `note_arrival`
+refuses a seq below it, both counted in `over=` as a FIFO eviction is. The
+ring then spans only the live reorder window. No law reads `[LAT]`; there
+is no threshold, hint or mode (NO-MODE-SWITCH untouched); in the OOO arm
+`note_delivery` is never called, so nothing changes there. `over=` counts
+the same records, sooner (the microbench: 52–53 vs MAIN's 50–51, the
+difference being dead records MAIN still held at the end).
+
+**Red test that would have caught it** (an absolute O(1) bound, not an
+ordinal one): in `net/lat.rs` tests, an in-order stream of N = 50 000
+arrive-then-deliver pairs with a duplicate of a seq delivered 1 000 earlier
+every 5 600 arrivals; after each in-order insert assert the ring's slot span
+`last_key − first + 1 ≤ 2`, and after each `note_delivery(d)` that no record
+below `d` is held. On the extraction it reads 16 381 on a5ef8b2 (red) and 1
+with the fix (green). §17's differential test missed it because it compared
+records held and lost (identical: the defect is cost, not content) and its
+random script had out-of-order deliveries that kept the ring populated.
+
+**Not done here.** Shipping R1 with the fix is a new pre-registration (the
+§17 battery on R1+FIX); the fix and the red test are in this ledger only.

@@ -1,0 +1,2 @@
+[ perf record: Woken up 317 times to write data ]
+[ perf record: Captured and wrote 80.424 MB /home/VMUSER/r1diag/run/P-c1s-R1.perf.data (5059 samples) ]
