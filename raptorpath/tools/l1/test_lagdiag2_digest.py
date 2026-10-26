@@ -148,22 +148,35 @@ class Witness(unittest.TestCase):
         self.assertIn("witness_fail=1", txt)
         self.assertIn("b19-s7-rt2: client [THR] os lines without run_delay_us=", txt)
 
-    def test_an_io_stalled_row_is_void(self):
-        # §26 amendment 1: full avg10 >= 20 at any sample voids the row.
+    def test_io_pressure_flags_an_outlier_and_never_voids(self):
+        # §26 amendment 3: full avg10 is a covariate; a high-pressure row is
+        # flagged only when its E_lag is a Tukey outlier, and stays live.
         d = make_dir(lambda i: 1000 + 100 * i, lambda i: 100 + 50 * i)
         pre = write_row(d, "b19-s7-rt2", 900, 100, polls=good_polls())
         with open(pre + "-stat.txt", "a", encoding="utf-8") as f:
             f.write("IO full avg10=3.00 avg60=1.00 avg300=0.50 total=1\n")
             f.write("IO full avg10=25.10 avg60=4.00 avg300=1.00 total=2\n")
         self.assertEqual(D2.io_full_avg10_max(pre + "-stat.txt"), 25.1)
+        self.assertIsNone(D2.load_row(pre)["witness"])
+        rows = [D2.load_row(p) for p in sorted(
+            os.path.join(d, f[: -len("-c.log")]) for f in os.listdir(d) if f.endswith("-c.log"))]
+        live2 = [r for r in rows if r["witness"] is None and r["rt"] == 2]
+        lines = D2.io_flags(live2)
+        self.assertTrue(lines[0].startswith("IO-COVARIATE live_rt2_rows_with_io_full_avg10>=20: 1;"), lines)
+        e = D2.e_lag(next(r for r in live2 if r["tag"] == "b19-s7-rt2"))
+        es = sorted(D2.e_lag(r) for r in live2)
+        q1, q3 = D2.L.q(es, 0.25), D2.L.q(es, 0.75)
+        is_out = e < q1 - 1.5 * (q3 - q1) or e > q3 + 1.5 * (q3 - q1)
+        self.assertEqual(any("IO-FLAG b19-s7-rt2" in ln for ln in lines), is_out, lines)
+        # A forced outlier under high pressure is flagged.
+        r = dict(next(r for r in live2 if r["tag"] == "b19-s7-rt2"))
+        r["tag"] = "fake-outlier"
+        r["client"] = dict(r["client"], lag=dict(r["client"]["lag"], E=10 ** 7))
+        lines = D2.io_flags(live2 + [r])
+        self.assertTrue(any(ln.startswith("IO-FLAG fake-outlier") for ln in lines), lines)
         txt = run_digest(d)
-        self.assertIn("live_rt2=18", txt)
-        self.assertIn("b19-s7-rt2: VOID-IOSTALL", txt)
-        # Below the bar the row stays live.
-        pre2 = write_row(d, "b20-s7-rt2", 900, 100, polls=good_polls())
-        with open(pre2 + "-stat.txt", "a", encoding="utf-8") as f:
-            f.write("IO full avg10=19.99 avg60=1.00 avg300=0.50 total=1\n")
-        self.assertIsNone(D2.load_row(pre2)["witness"])
+        self.assertIn("live_rt2=19", txt)
+        self.assertIn("IO-COVARIATE", txt)
 
 
 class OutcomeA(unittest.TestCase):

@@ -6706,3 +6706,20 @@ tmpfs:
 - The run dir is copied to disk (`<root>/run`) when the session exits.
 - The build and the full suites stay on disk, and the I/O precondition is
   kept.
+
+**§26 amendment 3 (pre-launch; agent rules, user-approved; supersedes
+amendment 1's load and io gates and its void).**
+
+1. **Launch precondition.** Both locks free, no `cargo`/`rustc`, and
+   `/proc/stat` `procs_running` ≤ 2 in each of 5 samples taken 2 s apart.
+   Loadavg is not used: it counts disk-blocked tasks.
+2. **Disk pressure is a covariate, not a gate.** The rows run in memory
+   (amendment 2). `full avg10` is recorded before and after every row (ROW
+   line) and at 10 Hz (stat file). A row that reached `full avg10` ≥ 20 is
+   **flagged**, never voided, when its client E_lag is a Tukey outlier
+   (outside Q1 − 1.5 IQR … Q3 + 1.5 IQR of the live RTOBS=2 rows).
+3. **On-disk rows are void.** A row whose binary or run dir is not on tmpfs
+   is `VOID-ONDISK`. The harness checks both with `stat -f` before the
+   locks and refuses (`ABORT-ONDISK`).
+4. **Builds and the full suites** have no load or io gate: locks and no
+   other `cargo`/`rustc` only. The io state is recorded per suite.

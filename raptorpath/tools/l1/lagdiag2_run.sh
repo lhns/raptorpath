@@ -37,15 +37,26 @@ sudo -n true 2>/dev/null || { era "ABORT-SUDO"; exit 3; }
 # /proc/pressure/io `full` field value (avg10 | avg60 | avg300), empty if unread.
 io_full() { awk -v k="$1" '/^full/{for(i=2;i<=NF;i++){split($i,a,"=");if(a[1]==k)print a[2]}}' /proc/pressure/io 2>/dev/null; }
 
-# Launch precondition, BEFORE the locks (as threadr2_run_all.sh).
-# Status §26 amendment 1: also /proc/pressure/io full avg60 < 5.0 (the VM had a
-# multi-hour storage stall at low loadavg).
-LOAD1=$(cut -d' ' -f1 /proc/loadavg)
-IOF60=$(io_full avg60)
-if ! awk -v l="$LOAD1" -v f="${IOF60:-999}" 'BEGIN{exit !(l < 2.0 && f < 5.0)}' || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
-  era "ABORT-PRECONDITION load1=$LOAD1 io_full_avg60=${IOF60:-unread} cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc); NOTHING WAS RUN."
+# Launch precondition, BEFORE the locks. Status §26 amendment 3 (agent rules,
+# user-approved; supersedes the loadavg and io clauses): no cargo/rustc and
+# /proc/stat procs_running <= 2 in each of 5 samples 2 s apart (loadavg counts
+# disk-blocked tasks; the run is in memory, so disk pressure is a covariate).
+PR_SAMPLES=""
+PR_OK=1
+for _i in 1 2 3 4 5; do
+  _p=$(awk '/^procs_running/{print $2}' /proc/stat)
+  PR_SAMPLES="$PR_SAMPLES${_p:-?},"
+  [ -n "$_p" ] && [ "$_p" -le 2 ] || PR_OK=0
+  [ "$_i" -lt 5 ] && sleep 2
+done
+if [ "$PR_OK" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
+  era "ABORT-PRECONDITION procs_running=[$PR_SAMPLES] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) io_full_avg10=$(io_full avg10); NOTHING WAS RUN."
   exit 3
 fi
+# VOID-ONDISK guard: the measured binary and the run dir must be on tmpfs.
+for _d in "$RUN" "$SHM/bin"; do
+  [ "$(stat -f -c %T "$_d" 2>/dev/null)" = "tmpfs" ] || { era "ABORT-ONDISK $_d is not tmpfs (rows would be VOID-ONDISK)"; exit 5; }
+done
 LB_TAG="lagdiag2_run:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
@@ -115,6 +126,7 @@ row() { # tag seed rtobs
   sha="$(sha256sum "$BIN" | cut -d' ' -f1)"
   [ "$sha" = "$BINSHA" ] || fail "ABORT-SHA $tag: $sha != $BINSHA"
   base="$RUN/diag/$tag"
+  local io_b; io_b=$(io_full avg10)
   rm -f /tmp/rwm-c.log /tmp/rwm-s.log "$SHM/lg2-drv.out"
   cb=$(cot_count)
   statmon "$base-stat.txt" &
@@ -132,7 +144,7 @@ row() { # tag seed rtobs
   cp /tmp/rwm-c.log "$base-c.log" 2>/dev/null
   cp /tmp/rwm-s.log "$base-s.log" 2>/dev/null
   mbps=$(grep -a -o '"mbps":[0-9.]*' "$base-c.log" 2>/dev/null | tail -1 | cut -d: -f2)
-  era "ROW $tag rc=$rc mbps=${mbps:-} cot_before=$cb cot_after=$ca load=$(cut -d' ' -f1-3 /proc/loadavg) io_full_avg10=$(io_full avg10) io_full_avg60=$(io_full avg60)"
+  era "ROW $tag rc=$rc mbps=${mbps:-} cot_before=$cb cot_after=$ca load=$(cut -d' ' -f1-3 /proc/loadavg) io_full_avg10_before=${io_b:-} io_full_avg10_after=$(io_full avg10)"
   return 0
 }
 

@@ -19,10 +19,10 @@ era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$ROOT/era.txt"; }
 io_full() { awk -v k="$1" '/^full/{for(i=2;i<=NF;i++){split($i,a,"=");if(a[1]==k)print a[2]}}' /proc/pressure/io 2>/dev/null; }
 iostate() { echo "io_full_avg10=$(io_full avg10) io_full_avg60=$(io_full avg60) load=$(cut -d' ' -f1-3 /proc/loadavg)"; }
 
-LOAD1=$(cut -d' ' -f1 /proc/loadavg)
-IOF60=$(io_full avg60)
-if ! awk -v l="$LOAD1" -v f="${IOF60:-999}" 'BEGIN{exit !(l < 2.0 && f < 5.0)}' || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
-  era "ABORT-PRECONDITION load1=$LOAD1 io_full_avg60=${IOF60:-unread} cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc); NOTHING WAS RUN."
+# §26 amendment 3 (agent rules): builds and suites have no load or io gate;
+# only the locks and no other cargo/rustc. The io state is recorded.
+if [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
+  era "ABORT-PRECONDITION cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) $(iostate); NOTHING WAS RUN."
   exit 3
 fi
 LB_TAG="suites_run:$$"

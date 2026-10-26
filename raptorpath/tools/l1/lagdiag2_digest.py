@@ -164,8 +164,9 @@ def load_row(prefix):
     return row
 
 
-# Status §26 amendment 1: a row whose `/proc/pressure/io` `full avg10` reached
-# IOSTALL_AVG10 at any 10 Hz sample is VOID-IOSTALL (excluded, counted).
+# Status §26 amendment 3 (supersedes amendment 1's void): `/proc/pressure/io`
+# `full avg10` is a covariate; a row that reached IOSTALL_AVG10 at any 10 Hz
+# sample is FLAGGED when its E_lag is an outlier (`io_flags`), never voided.
 IOSTALL_AVG10 = 20.0
 
 
@@ -191,9 +192,6 @@ def witness(row):
     """None when live, else the reason (WITNESS-FAIL). RTOBS=2 rows need the
     round-1 witnesses and every round-2 instrument; RTOBS=1 rows only the
     round-1 ones (they print none of the deep gauges)."""
-    io = row.get("io_avg10_max")
-    if io is not None and io >= IOSTALL_AVG10:
-        return f"VOID-IOSTALL io full avg10 max {io:.2f}"
     w = D.witness(row)
     if w or row["rt"] != 2:
         return w
@@ -415,7 +413,32 @@ def digest(d):
     print(f"WITNESS-FAIL rows excluded: {len(dead)}")
     for r in dead:
         print(f"  {r['tag']}: {r['witness']}")
+    for ln in io_flags(live2):
+        print(ln)
     return 0
+
+
+def io_flags(live2):
+    """§26 amendment 3: disk pressure is a covariate, not a void. Report every
+    live RTOBS=2 row's max io `full avg10`, and FLAG a row that ran under high
+    pressure (>= IOSTALL_AVG10) AND whose client E_lag is a Tukey outlier
+    (outside [Q1 - 1.5 IQR, Q3 + 1.5 IQR] of the live RTOBS=2 rows)."""
+    es = sorted(e_lag(r) for r in live2 if e_lag(r) is not None)
+    out = []
+    lo = hi = None
+    if len(es) >= 4:
+        q1, q3 = L.q(es, 0.25), L.q(es, 0.75)
+        lo, hi = q1 - 1.5 * (q3 - q1), q3 + 1.5 * (q3 - q1)
+    n_hi = 0
+    for r in live2:
+        io, e = r.get("io_avg10_max"), e_lag(r)
+        high = io is not None and io >= IOSTALL_AVG10
+        n_hi += high
+        outl = lo is not None and e is not None and (e < lo or e > hi)
+        if high and outl:
+            out.append(f"IO-FLAG {r['tag']} io_full_avg10_max={io:.2f} E_lag={e:.0f} outside [{lo:.0f},{hi:.0f}]")
+    out.insert(0, f"IO-COVARIATE live_rt2_rows_with_io_full_avg10>={IOSTALL_AVG10:g}: {n_hi}; flagged outliers: {len(out)}")
+    return out
 
 
 def main(argv):
