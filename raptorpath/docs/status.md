@@ -6564,3 +6564,115 @@ with no `raptorpath` running. Those rows' E median is 2700 µs against
 `[LAG]` clause (client and server) is scored on **E = p99 − `min_us`** of
 the window, not raw p99; `min_us` is printed at `RWM_RTOBS=1` (rebased
 `b2a5fcc`). Raw p99 stays reported.
+
+## 25. The c8 lag tail and the sender's long polls — the two deciding measurements — pre-registration
+
+§24 left two questions open, and its finding 3 named the measurement that
+decides each. **(a)** Two thirds of the late `[LAG]` ticks have no long poll
+over them. Is their per-rep tail made outside tokio (host or guest OS wake
+latency), or inside the runtime (the timer hand-off: the driver is serviced
+only by a parking worker)? **(b)** Which phase of `run_window_sender` runs
+the sender's polls of ≥ 1 ms (up to 112 ms CPU in one poll)? Does it break
+plan rule 3 ("per wake, a task's work is bounded by its own batch law (Law 0
+emit burst); after that it takes one natural yield")?
+
+This section is committed before any VM contact. It is a diagnostic
+session: one binary, measurement only, nothing ships from it. A fix follows
+only per the decision rule below, and goes through its own ship battery
+stopped at the gate. Ledgers go to `docs/l1-raw/lag-diag2/`.
+
+**The instrument** (measurement only; `RWM_RTOBS=0/1` do the same work in
+the same order; everything below is `RWM_RTOBS=2`):
+
+1. *(a) An OS reference clock.* `[OSLAG]` / `[OSLAGRAW]` come from one plain
+   OS thread (`rp-osref`). It sleeps to absolute 10 ms deadlines on
+   `CLOCK_MONOTONIC` (`clock_nanosleep`, `TIMER_ABSTIME`) and records its own
+   lateness over the same windows and on the same time base as `[LAG]`. It
+   has the same period as the probe, but no tokio driver, no ms rounding and
+   no worker hand-off. Its tail is what the OS alone does to a thread that
+   wants to wake on time. `[THR] os` also gains `run_delay_us=` per thread
+   (`/proc/<tid>/schedstat`: time runnable but waiting for a guest CPU).
+2. *(b) The sender loop's section split* (`[TXSEC]`). One loop iteration of
+   `run_window_sender` is partitioned contiguously into named sections at
+   code landmarks (input drain, SACK drain, pre-select refreshes, the flush
+   and `select!` awaits, the post-select body by wake arm: emission, input,
+   NACK, deficit, request, tail, packer, idle, and the end-of-loop work).
+   Per-iteration section times sum to the iteration time. Each section is
+   timed like `[RXSEC]`: a vDSO monotonic read, no thread-CPU syscall. Every
+   sender long poll in `[LPOLL]` carries `iters=` (the loop iterations it
+   ran without returning `Pending`) and `secs=` (its time per non-await
+   section, plus `other` = poll wall minus their sum). Await sections are
+   excluded from the per-poll split because their wall can include sleep.
+
+**The session.** The binary is this branch: 3982bd1 + §24's instrument + the
+above. The commit is named in the result. It is archived LF, built fresh in
+a fresh target on the benchmark VM, and its `sha256` is re-verified before
+every row. The in-session tests are the instrument's unit tests
+(`runtime_obs`, `task_obs`, `gates`, the `q2_` source pins) and the parser
+tests; a failure is `ABORT-TESTS`.
+
+- **Cell and env.** c8-100 only, with §24's env (the §21 battery env).
+- **Rows.** `RWM_RTOBS=2` on 24 rows: 12 blocks × seeds 42 and 7, with the
+  seed order swapped on even blocks. `RWM_RTOBS=1` on 4 rows, after blocks
+  3, 6, 9 and 12, as the overhead control.
+- **Harness.** `tools/l1/lagdiag2_run.sh`, the same envelope as §24, with
+  the 10 Hz per-vCPU `/proc/stat` and the 1-min loadavg recorded per row.
+- **Smoke.** One RTOBS=2 row, seed 42. It must show:
+  - client `[OSLAG]`/`[OSLAGRAW]` and `[TXSEC]` with `iters > 0`;
+  - sender `[LPOLL]` entries carrying `iters=`/`secs=`;
+  - `run_delay_us=` on `[THR] os`;
+  - §24's witnesses.
+
+  Nothing in the smoke is a result.
+- **Precondition and budget** as §24. Hard deadline is launch + 2 h; soft is
+  hard − 10 min.
+
+**Decision rule (a)** (fixed now; client, live RTOBS=2 rows; E_lag = `[LAG]`
+xfer p99 − `min_us`, E_os = `[OSLAG]` xfer p99 − `min_us`; terciles by
+E_lag). One outcome, in precedence order:
+
+0. `UNSETTLED-INSTRUMENT`: fewer than 18 live rows.
+1. **`OS-LEVEL`**: Spearman ρ(E_lag, E_os) ≥ 0.5 **and** the high tercile's
+   median E_os ≥ 1.5 × the low tercile's. The per-rep spread is made below
+   tokio (host or guest). It is not an engine defect, and no engine change
+   follows. `run_delay` then says guest (rises with E_lag) or host (flat).
+2. **`RUNTIME`**: ρ < 0.3 **and** the E_os tercile ratio < 1.2. The OS
+   thread wakes on time while the probe does not, so the spread is in the
+   runtime. Since (b)'s long polls do not covary with E (§24), the next step
+   is tokio's timer hand-off. That is designed and reported, not built here.
+3. **`MIXED`**: otherwise.
+
+**Decision rule (b)** (fixed now; client `task=sender` `[LPOLL]` entries of
+live RTOBS=2 rows; on the polls ≥ 10 ms, or on all ≥ 1 ms polls if fewer
+than 20 polls reach 10 ms, stated). One outcome, in precedence order:
+
+1. **`UNBOUNDED-PER-WAKE(<top section>)`**: the p90 of `iters` per poll is
+   ≥ 2. The sender runs several loop iterations per wake without yielding,
+   so its per-wake work is bounded by nothing of its own. That breaks plan
+   rule 3. **Next:** design the bound per rule 3: per wake, at most the work
+   of one Law-0 emit burst (`RWM_EMIT_BURST`, the shipped burst, no new
+   constant), then one natural yield. Then a red-first test, implementation
+   by Sonnet, and a pre-registered ship battery stopped at the gate:
+   - MAIN vs NEW, c1s-400 / c1d-400 / c2-100 / c8-100, n = 6;
+   - §21's pass rule, with the `[LAG]` clause scored on E = p99 − `min_us`;
+   - plus the sender's long-poll count and max poll reported.
+2. **`LONG-ITERATION(<section>)`**: the p90 of `iters` ≤ 1 and one section
+   holds ≥ 50 % of the long-poll wall. One phase does unbounded work inside
+   one iteration. **Next:** read that section. If its work per wake is a
+   drain or scan with no bound from its own batch law, the fix is that bound
+   per rule 3, with the same gate as above. Otherwise report it as bounded
+   work that is merely large, with no fix.
+3. **`UNATTRIBUTED`**: `other` holds ≥ 50 % of the wall. The partition
+   misses the heavy work; report it and stop.
+4. **`MIXED`**: otherwise. Report the shares and stop.
+
+**Reported, not gated:**
+- ρ(E_lag, run_delay/s) and ρ(E_os, run_delay/s);
+- the `[TXSEC]` pooled section table (share, count, max);
+- iters per poll for the ≥ 1 ms polls;
+- PERTURB (RTOBS=2 vs RTOBS=1 client E_lag medians);
+- §24's long-poll overlap F, re-read on this binary;
+- the server side;
+- loadavg per row.
+
+**Abort causes:** §24's table.
