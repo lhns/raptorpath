@@ -1,0 +1,12 @@
+TEST main rc=0 wall=1594s passed=1105 failed=0 ignored=50 binaries=95 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=6s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=134s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=101 wall=3243s passed=962 failed=2 ignored=49 binaries=86 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+test the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual ... FAILED
+---- the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual stdout ----
+test the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shipped_one ... FAILED
+---- the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shipped_one stdout ----
+FLAKE debug-witness the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual (passed on the immediate solo re-run)
+FLAKE debug-witness the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shipped_one (passed on the immediate solo re-run)
+TEST parsers rc=0 wall=1s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py]
+IDENTITY-PANICS 0

@@ -6014,3 +6014,57 @@ are free); detached envelope; earned sentinels (`DONE-ALL` only with
 only; no `ens18`, firewall, `sshd` or non-`rp-*` namespace is touched; exit
 state verified (0 `raptorpath`, 0 `rp-*` namespaces, both locks released).
 Ledgers are copied to `docs/l1-raw/thread-r2/`.
+
+### 21. Receiver per-datagram cost, R1 with the [LAT] floor fix (R2) — result
+
+**Outcome: `DELIVERED` (R2 passes at every cell: ships).** Scored strictly as
+pre-registered; no threshold, clause or prediction was changed after the data
+was read. Session 2026-10-26 13:38–15:24Z, one envelope, both locks held
+throughout (released 15:24Z). Launch precondition met: both locks free,
+loadavg 0.97 (< 2.0), 0 cargo / rustc. Exit state 0 `raptorpath`, 0 `rp-*`
+namespaces, VM dir removed. R2 = `73d868d` (engine `c33638c`) `sha256
+f3c74848…a1477f`, MAIN = 4e50504 `sha256 4b2b9534…57f230`, each built fresh
+(377 s, 298 s). Tests inside the locks: release **1 105 passed, 0 failed**
+(50 ignored, 95 binaries), doc rc 0, wasm 35 passed, parsers rc 0, debug 962
+passed + **2 failures, both `FLAKE`** (passed on the immediate solo re-run):
+`place_arms_reachability::the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual`
+(the same one as the dev run) and `the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shipped_one`
+(`tests/common/loopback.rs:431`), `IDENTITY-PANICS 0`; smoke passed (38 s);
+battery 446 s: **48 rows, all 48 LIVE**, no void, no witness failure, no abort
+token, no truncation, n = 6 per arm and cell. Ledgers:
+`docs/l1-raw/thread-r2/` (`all-era.txt`, `tr2.log`, `score.txt`,
+`TESTS.txt`, `BINSHA.txt`, `diag-tr2/`, `diag-smoke/`).
+
+| cell | verdict | clauses (R2 vs MAIN, median [min–max]) |
+|---|---|---|
+| c1s-400 | PASS | goodput WITHIN 720.8 [687–746] vs 717.3 [638–754] Mbit/s (+0.5 %); CPUCLI WITHIN (−0.7 %); CPUSRV TREND-BETTER (−3.0 %); `[LAG]` p99 and RTprop floor WITHIN; feed SAME |
+| c1d-400 | PASS | goodput TREND-BETTER 656.8 [611–686] vs 612.1 [592–647] (+7.3 %); CPUCLI WITHIN (−3.6 %); CPUSRV TREND-BETTER (−7.6 %); lag, RTprop WITHIN |
+| c2-100 | PASS | goodput WITHIN (+0.2 %); CPUCLI WITHIN; CPUSRV TREND-BETTER (−7.6 %); RTprop floor TREND-BETTER |
+| c8-100 | PASS | goodput WITHIN (−0.4 %); CPUCLI WITHIN; CPUSRV WITHIN (−9.9 %); lag, RTprop WITHIN |
+
+**The §17 collapse is gone.** c1s R2 reads 687–746 Mbit/s in all six rows
+(§17's R1: 185–192); the server receiver `[RDIAG]` busy median is 90 %
+(MAIN 94 %). The fix does what §20 said, and R1's allocation work no longer
+costs anything at N = 1.
+
+**Predictions (reported, not gating).** `c1s_goodput_within` **MET**;
+`c2_c8_within` **MET**; `c1d_goodput_better` **PARTIAL** (goodput
+TREND-BETTER, +7.3 %, ranges overlap; the server `[RDIAG]` busy median is
+99 % on R2 and 100 % on MAIN, not < 90 %: the c1d receiver is still
+saturated, as §17 said); `cpusrv_better` **PARTIAL** (TREND-BETTER at c1s
+and c1d, not BETTER).
+
+**Witness `c1s_lat_over`: OUTSIDE** (R2 `over=` 45, 48, 58, 80, 82, 99 against
+MAIN's 52, 54, 55, 56, 73, 84). Reported, not gating, as pre-registered.
+The medians are close (R2 69, MAIN 55) and the spread on MAIN alone was
+23–110 across sessions; one R2 run is above MAIN's maximum and one below its
+minimum. It says the fix counts a similar number of dead records, not a
+different order, and the throughput shows no O(gap) cost; it is not read as
+a defect.
+
+**What it does not show.** No claim is made that c1d moved beyond the §5
+MDE (TREND-BETTER only), nor that CPUSRV improved by more than the MDE at
+c1s and c1d. The receiver-bound c1d claim of §16 finding 4 stands. The
+`batch_path_id` dead binding from R1 (`net/receiver.rs:1188`) is to be
+deleted in the shipping merge. Nothing is merged or flipped here; shipping
+is the operator's.
