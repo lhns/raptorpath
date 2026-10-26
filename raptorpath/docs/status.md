@@ -4980,3 +4980,20 @@ rule above are unchanged.
    to start. The options, not chosen here: launch only when `/proc/loadavg` is
    quiet and both locks are free; or pre-register **hard = launch + 4 h**
    (inside the 5 h cap) by a one-line amendment before launch.
+
+**Amendment 2** (committed before launch; no scored result exists or was
+read; the operator said go). (i) **Hard deadline = launch + 4 h** (soft = hard
+- 10 min; inside the 5 h cap), replacing the 3 h of the Budget paragraph.
+(ii) **Launch precondition:** both VM locks free, `/proc/loadavg` 1-minute
+value < 2.0, and no `cargo` / `rustc` process (`pgrep -x`, never `-f`). The
+loadavg at launch is in the ledger (`all-era.txt`, `TR1-ALL start ... load=`).
+If the precondition does not hold within 1 h of the locks freeing, the run is
+reported, not launched. The other agent's locks are never broken or taken
+over; they are polled by lock-file checks only. (iii) The dev read's c1d
+goodput (525 Mbit/s) coincided with another agent's c1d reading 547 against
+its own earlier 678-755, both while building on the VM: it points at
+co-tenant load rather than R1; scoring is strictly as pre-registered, the
+interleaved MAIN arm absorbs it. (iv) `SeqBits::refused()` (inserts refused
+past the 16 M-seq span) is counted but **not printed** by any gauge in this
+tree, so the battery cannot report it; the span bound is covered by the
+`seq_bits` test only.
