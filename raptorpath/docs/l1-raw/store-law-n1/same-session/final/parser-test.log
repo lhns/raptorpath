@@ -1,0 +1,12 @@
+ok   saved realtime log: pipeline echo is window/realtime
+ok   saved realtime log: [DCAP] q=0.05 reached the seat
+ok   a named hint is not voided by the missing auto-selection line
+ok   saved realtime log is LIVE
+ok   named hint without [DCAP] q= stays WITNESS-FAIL
+ok   auto row unchanged (LIVE as scored in §18)
+ok   MAIN at c2 (single-path): eng=0/0
+ok   MAIN at c2: window cap never above 1024
+ok   MAIN at c2 is LIVE (not a pooled-law cell)
+ok   MAIN at c1s: constant 1024, LIVE
+ok   LAW at c2 (single-path): the pooled law engaged
+ALL OK

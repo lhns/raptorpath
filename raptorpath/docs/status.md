@@ -5016,3 +5016,107 @@ Consequences, stated without relabelling any scored result:
   measure the same four cells); only the cell-to-leg assignment and the
   witnesses above change. The harness commit that follows carries the
   witness change and its red-first test on the saved MAIN-at-c2 log.
+
+### 19. Same-session control for §18 — result
+
+Scored 2026-10-26 against the pre-registration and its amendment above,
+literally; no threshold was touched after the data was read. **Verdict:
+`SHIPS` — no `REFUTED-NOOP` at the N ≥ 2 no-op cells (c1d, c8), and neither
+single-path cell is `REFUTED`: `c1s-400` reads `PINNED`, `c2-100` reads
+`INERT-AS-DERIVED`.** §18's `CONTROL-MOVED` at `c1d-400` is attributed to the
+cross-session reference: with MAIN and LAW in one session both arms sit
+~24 % under §15 (LAW 541, MAIN 525 Mbit/s; §15 678–755) and within 3 % of
+each other. §18's recorded verdict is not relabelled. Nothing is flipped or
+merged; the ship/flip is the lead's separate, reviewed commit.
+
+*Binaries and session.* `MAIN` = `ce60079`, `sha256 c9630606…f8f8cf`; `LAW` =
+branch tree `83cc0b2` (engine identical to `6323db5`), `sha256
+17418fd8…a69ff4`; each built fresh in its own target (LAW 709 s, MAIN 458
+s), both checked before every invocation. Envelope
+`tools/l1/storelaw19_run_all.sh`; parser `storelaw_parse.py score19`. Locks
+held from 07:31:38Z (the first attempt waited 25 min and the second 0, both
+behind the other agent), smoke 07:52:15Z, battery 07:52:15–08:04:52Z (757 s,
+54 invocations), locks released 08:04:52Z, exit state 0 `raptorpath`, 0
+`rp-*`. The first launch aborted at its smoke (`ABORT-SMOKE`, see the
+amendment: the MAIN witness assumed c2 was an N ≥ 2 cell); its smoke logs are
+kept in `same-session/aborted-smoke/`. Ledgers:
+`docs/l1-raw/store-law-n1/same-session/final/` (`sl.log`, `score.txt`,
+`BINSHA.txt`, `smoke*`, `all-era.txt`, per-invocation logs).
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` / `ABORT-CRLF` / `ABORT-SHA` / `ABORT-SENTINEL-UNWRITABLE` / `ABORT-BUILD` / `ABORT-TESTS` | no (parser test ok: 11 checks) |
+| `ABORT-SMOKE` | once, in the first launch (amended away, above); no on the second (`SMOKE-PASS`, 5 rows) |
+| `ABORT-RC` | 1 of 54: `c2-100 LAW-realtime` rep 3 (rc 1 at the 150 s driver limit, no summary, never left the boot cap; row void, excluded) |
+| `ABORT-BRINGUP` / `VOID-COTENANT` | 0 / 0 |
+
+*Rows.* 54; LIVE 51, `WITNESS-FAIL` 2 (`c1s-400` LAW seed 42 rep 2 and seed
+7 rep 2: `law-win-constant`, the cap sat at the 2048 knee in every window),
+`VOID-RC` 1.
+
+| cell, arm | live / total |
+|---|---|
+| c1s-400 MAIN / LAW | 6/6 / 4/6 |
+| c2-100 MAIN / LAW | 6/6 / 6/6 |
+| c1d-400 MAIN / LAW | 6/6 / 6/6 |
+| c8-100 MAIN / LAW | 6/6 / 6/6 |
+| LAW Realtime c1s / c2 | 3/3 / 2/3 |
+
+*Single-path cells (LAW vs MAIN; means, σ_pooled, 2σ band).*
+
+| | c1s-400 (LAW n = 4, MAIN n = 6) | c2-100 (6 vs 6) |
+|---|---|---|
+| goodput Mbit/s | LAW 640.4 (606.5–721.6), MAIN 563.4 (327.8–683.3); diff +76.9, 2σ = 189.0 | LAW 88.7 (86.9–90.3), MAIN 89.2 (88.0–90.2); diff −0.4, 2σ = 2.35 |
+| `[SUMCAP]` | pin 0.588, floor 0; MAIN `eng=0/0`, `win=` 1024 | pin 0.038, floor 0, cap 993 mean; MAIN `eng=0/0`, `win=` ≤ 1024 |
+| `A_x` p50 | 15.4 vs 10.5 ms (diff +4.9, σ_pooled 4.9) | 81.6 vs 87.4 ms (diff −5.8, σ_pooled 24.1) |
+| rtt ms / paused % / occupancy | 24.0 vs 17.0 / 24 vs 33 / 0.92 vs 0.95 | 97.0 vs 102.4 / 66 vs 68 / 1.00 vs 1.00 |
+| anchor over-read | ×11.7 vs ×12.7 | ×8.2 vs ×10.8 |
+| outcome | **`PINNED`** (nothing else holds) | **`INERT-AS-DERIVED`** |
+
+c1s reads differently from §18's LAW-vs-`RWM_STORE_PATHS=0` contrast in two
+ways, both visible above: MAIN's own goodput this session is 563 (one rep at
+327.8 Mbit/s, rtt 35.6 ms, which is MAIN with the 1024 constant, not a LAW
+effect) against §18's CTL 671, and LAW's `A_x` p50 excess over MAIN is 4.9
+ms (not significant) against §18's +18.9 ms over CTL. The two LAW reps
+voided by `law-win-constant` (570.2 and 670.1 Mbit/s, pin 0.87 and 0.89)
+are the most-pinned; with all six LAW reps the mean is 633.7, so excluding
+them does not manufacture the sign. `c2-100` does not show the
+expected fall of the cap or of queueing: the LAW cap averages 993 against
+MAIN's window of at most 1024, it varies with the anchor from rep to rep, and
+`A_x` p50 and rtt do not move beyond the noise (σ_pooled 24 ms on `A_x`),
+so the cell is inert at this n.
+
+*N ≥ 2 no-op cells (LAW vs MAIN goodput; REFUTED-NOOP if |diff| > 2σ_pooled).*
+
+| cell | LAW | MAIN | diff | 2σ_pooled | result |
+|---|---|---|---|---|---|
+| `c1d-400` | 540.8 (519.5–559.7) | 526.5 (485.3–567.3) | +14.3 | 44.4 | no-op holds |
+| `c8-100` | 94.2 (80.4–102.0) | 93.1 (87.3–97.4) | +1.0 | 12.7 | no-op holds |
+
+Their `[SUMCAP]` caps agree (c1d 1826 vs 1828; c8 1936 vs 2022), both
+`INERT-AS-DERIVED`.
+
+*VM-drift reading (reported, not scored).* Goodput medians, LAW / MAIN:
+`c1d-400` 541 / 525 against §15 MAIN 678–755 and §16 688–729; `c2-100` 88.8 /
+89.4 against §15 90.08–90.32; `c8-100` 95.7 / 95.0 against §15 82.9–102.9.
+Both arms move together at c1d (≈ −24 % against the old sessions): a
+session-wide (VM or binary-era) shift, not a property of the change.
+§18's c1d `CONTROL-MOVED` is therefore attributed to the cross-session
+reference, as the pre-registration says.
+
+*δ rerun (LAW, Realtime, seed 42; unscored).* `[DCAP] q = 0.050` on all six
+rows; `c1s-400` 138.3, 133.1, 124.5 Mbit/s (pin 0, all LIVE: the named-hint
+witness fix works on live rows); `c2-100` 67.4 and 68.8 Mbit/s (pin 0.90 and
+0.31); the third c2 row is the `ABORT-RC` above. Realtime at one path runs a
+regime of its own (goodput ≈ 1/5 of Bulk at c1s); no MAIN was run there, so
+no contrast is claimed.
+
+*What this settles, and what it does not.* The change is a no-op at N ≥ 2
+as designed (c1d, c8) and §18's c1d shift was the session. At c1s the law
+engages and the knee binds in about half the windows (the c1 anchor
+over-read, ×12 here), with goodput not separable from MAIN and no
+significant latency cost at this n; at c2 it is inert. By §19's rule the
+law ships; `PINNED` is the recorded next defect item (the anchor), not a
+block. Open: n = 6 is small against MAIN's own c1s spread (327.8–683.3).
