@@ -4947,3 +4947,36 @@ no truncation); the operator reads `all-era.txt` at most once per ≈ 20 min
 non-`rp-*` namespace is touched; exit state verified (0 `raptorpath`, 0
 `rp-*` namespaces, both locks released). Ledgers are copied to
 `docs/l1-raw/thread-r1/`.
+
+**Amendment 1** (committed before launch; no scored result exists or was
+read). Three clarifications; the pass rule, the predictions and the outcome
+rule above are unchanged.
+
+1. **The dev read is not comparable with the scored arms, and the one MAIN
+   figure there is says it may not be good news.** §16 measured MAIN at c1d at
+   the same gauge level (`RWM_DIAG=1 RWM_RTOBS=2`, n = 3): 688–729 Mbit/s. The
+   R1 dev read above (the same gauges, plus `[RXSEC]` at ≈ 0.5 µs per message
+   and `RWM_RDIAG=1`) is **525 Mbit/s** with the server receiver still
+   saturated (`[RDIAG]` 100 %, `[TASK]` busy 0.962, 0.888 core). It is one
+   run, taken while the VM was co-tenanted (load average 5–10 over the
+   session), so it may be load and not R1 — but it is below §16's MAIN range,
+   and the `c1d_goodput_better` clause "receiver `[RDIAG]` busy median < 90 %"
+   looks unlikely from it. **The battery decides** (interleaved, same session,
+   n = 6): a c1d goodput WORSE is a c1d FAIL and the outcome `REFUTED-WITH-
+   RECORD`, exactly as pre-registered; nothing is tuned.
+2. **There is no MAIN `[RXSEC]` read** (ce60079 has no such instrument), so the
+   section split above (decode 35 %, other 26 %, book 16 %, ack 14 %, deliv
+   9 %) is a profile of R1, not a before/after. The drop from 36.9 µs to
+   16.7 µs per message between the first and the second dev read is the clock
+   fix (`df99301`), not R1.
+3. **Duration: two estimates, one decision for the operator.** The Budget
+   figure above (≈ 1 h 05 min – 1 h 30 min) is §14's, from a quiet VM. In this
+   phase's dev session, under co-tenant load, the same steps took: R1 build
+   2 132 s, release suite 2 158 s, debug suite 2 651 s — ≈ 1 h 56 min before
+   the MAIN build, the smoke and the battery. If the VM is as loaded at
+   launch, the session is ≈ 2 h 30 min – 3 h+, the 3 h hard backstop
+   (`soft = hard − 10 min`) can truncate the battery at a rep boundary
+   (`TRUNCATED-AT-REP-BOUNDARY`, scored at the n reached) or leave it no room
+   to start. The options, not chosen here: launch only when `/proc/loadavg` is
+   quiet and both locks are free; or pre-register **hard = launch + 4 h**
+   (inside the 5 h cap) by a one-line amendment before launch.
