@@ -6435,7 +6435,8 @@ MISSED with the numbers).
   the per-message handler cost down by ≥ ≈ 25 % at c1d; the design states
   its expected saving against that bar.
 
-**Session.** The tree (this section's HEAD) shipped with `git -c
+**Session.** The tree (this section's HEAD, `e4d078e`: main + the
+instrument, without the R3 change that follows it on the branch) shipped with `git -c
 core.autocrlf=false -c core.eol=lf archive`, built on the VM in a fresh
 target dir, run as `raptorpath`. Envelope `tools/l1/r3diag_run.sh`, both
 locks for the whole session, detached, launched only when the coordinator
