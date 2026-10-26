@@ -1,0 +1,8 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+R3D start hard=1793041091 soft=1793040491 commit=42b074c cargo=0 rustc=0 load=0.07 0.06 0.32 2026-10-26T15:58:11Z
+BUILD rc=0 wall=311s cargo=0 rustc=0 load=1.16 1.29 0.88 2026-10-26T16:03:22Z
+TESTS task_obs rc=101 wall=248s test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 566 filtered out; finished in 0.00s 2026-10-26T16:07:30Z
+ABORT-TESTS 2026-10-26T16:07:30Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
