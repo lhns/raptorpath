@@ -60,7 +60,7 @@
 //! Wire format: identical to `rlc_window`/`generation` (14-byte self-
 //! describing repair header, FILL_FLAG variant included).
 
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bytes::Bytes;
 
@@ -167,8 +167,17 @@ impl URow {
 /// Work item for the assimilation loop: a payload that became known, or a
 /// coded equation to (re-)insert.
 enum Item {
-    Known(u64, Vec<u8>),
+    /// `(seq, payload, arrived_as_source)`.
+    Known(u64, Bytes, bool),
     Eq(URow),
+}
+
+/// A known payload: the received buffer itself (no copy), plus whether a
+/// source symbol for this seq has arrived (the source dedup: a seq known
+/// only by decoding still counts its first source arrival once).
+struct Known {
+    data: Bytes,
+    src_seen: bool,
 }
 
 /// Unified global sparse-aware RLC decoder. Drop-in `WindowDecoder` for both
@@ -179,13 +188,25 @@ pub struct UnifiedDecoder {
     /// coefficient at any of these seqs (payload-only elimination at insert +
     /// back-elimination at every recovery), so entries below the advance
     /// frontier are freely prunable.
-    recovered: BTreeMap<u64, Vec<u8>>,
-    /// Seqs returned to the caller (once-only delivery).
-    delivered: BTreeSet<u64>,
+    /// Its key set is also the delivered set (a seq enters here exactly when
+    /// it is returned to the caller).
+    recovered: BTreeMap<u64, Known>,
     /// Global RREF: pivot seq → row.
     rows: BTreeMap<u64, URow>,
-    /// Wire dedup: (block_id, payload_id, is_repair).
-    seen: HashSet<(u64, u32, bool)>,
+    /// Repair dedup: (block_id, payload_id), pruned by range in `advance`.
+    repairs_seen: BTreeSet<(u64, u32)>,
+    /// Decode-inert floor (paper §5.2 "Retained state"): set by `advance`;
+    /// a source below it, or a repair whose span ends at or below it, is
+    /// refused (a duplicate of a delivered seq, or a late fill already given
+    /// up) and counted in `below_floor`.
+    floor: u64,
+    below_floor: u64,
+    /// Upper bound on the longest stored row (conservative: lowered only
+    /// when `rows` is empty). A row covering column s has its pivot in
+    /// `(s - max_row_len, s]`, which bounds the covering lookups.
+    max_row_len: usize,
+    /// Assimilation worklist, reused across calls (empty between calls).
+    work: VecDeque<Item>,
     total_fed: u64,
     repairs_fed: u64,
     repairs_useful: u64,
@@ -196,9 +217,12 @@ impl UnifiedDecoder {
         Self {
             symbol_size: symbol_size as usize,
             recovered: BTreeMap::new(),
-            delivered: BTreeSet::new(),
             rows: BTreeMap::new(),
-            seen: HashSet::new(),
+            repairs_seen: BTreeSet::new(),
+            floor: 0,
+            below_floor: 0,
+            max_row_len: 0,
+            work: VecDeque::new(),
             total_fed: 0,
             repairs_fed: 0,
             repairs_useful: 0,
@@ -210,21 +234,20 @@ impl UnifiedDecoder {
     /// first `Item::Eq` (the wire equation, when called from a repair)
     /// contributed a new independent DoF (the honest `repairs_useful`
     /// signal, same semantics as the generation machine).
-    fn assimilate(&mut self, initial: Vec<Item>) -> (bool, Vec<(u64, Bytes)>) {
+    fn assimilate(&mut self, first: Item) -> (bool, Vec<(u64, Bytes)>) {
         let mut out: Vec<(u64, Bytes)> = Vec::new();
-        let mut work: VecDeque<Item> = initial.into();
         let mut first_eq_rank: Option<bool> = None;
-        let mut is_first_eq_pending = matches!(work.front(), Some(Item::Eq(_)));
-        while let Some(item) = work.pop_front() {
+        let mut is_first_eq_pending = matches!(first, Item::Eq(_));
+        debug_assert!(self.work.is_empty());
+        self.work.push_back(first);
+        while let Some(item) = self.work.pop_front() {
             match item {
-                Item::Known(s, d) => {
+                Item::Known(s, d, src) => {
                     if self.recovered.contains_key(&s) {
                         continue;
                     }
-                    self.recovered.insert(s, d.clone());
-                    if self.delivered.insert(s) {
-                        out.push((s, Bytes::from(d.clone())));
-                    }
+                    self.recovered.insert(s, Known { data: d.clone(), src_seen: src });
+                    out.push((s, d.clone()));
                     // A row pivoting at s is displaced, not discarded: fold
                     // the now-known payload out of it and re-assimilate the
                     // remaining equation (it still carries one DoF over its
@@ -235,30 +258,32 @@ impl UnifiedDecoder {
                         row.zero_at(s);
                         gf256::mul_acc_slice(f, &d, &mut row.data);
                         if row.nnz_capped2() > 0 {
-                            work.push_back(Item::Eq(row));
+                            self.work.push_back(Item::Eq(row));
                         }
                     }
                     // Back-eliminate column s from every covering row,
                     // payload-only. Rows that become unit deliver in turn.
-                    let covering: Vec<u64> = self
-                        .rows
-                        .iter()
-                        .filter(|(_, r)| r.coeff_at(s) != 0)
-                        .map(|(&p, _)| p)
-                        .collect();
+                    let covering: Vec<u64> = if self.rows.is_empty() {
+                        Vec::new()
+                    } else {
+                        let lo = (s + 1).saturating_sub(self.max_row_len as u64);
+                        self.rows
+                            .range(lo..=s)
+                            .filter(|(_, r)| r.coeff_at(s) != 0)
+                            .map(|(&p, _)| p)
+                            .collect()
+                    };
                     for p in covering {
                         let row = self.rows.get_mut(&p).expect("collected above");
                         let f = row.coeff_at(s);
                         row.zero_at(s);
-                        // borrow: split the payload read from the row mutation
-                        let dref = d.clone();
-                        gf256::mul_acc_slice(f, &dref, &mut row.data);
+                        gf256::mul_acc_slice(f, &d, &mut row.data);
                         if row.nnz_capped2() == 1 {
                             let row = self.rows.remove(&p).expect("present");
                             let ls = row.lead().expect("unit");
                             // pivot column normalized to 1 ⇒ data IS payload
                             debug_assert_eq!(ls, p);
-                            work.push_back(Item::Known(ls, row.data));
+                            self.work.push_back(Item::Known(ls, Bytes::from(row.data), false));
                         }
                     }
                 }
@@ -276,8 +301,8 @@ impl UnifiedDecoder {
                     for s in known_in {
                         let f = row.coeff_at(s);
                         row.zero_at(s);
-                        let d = self.recovered.get(&s).expect("collected above");
-                        gf256::mul_acc_slice(f, d, &mut row.data);
+                        let k = self.recovered.get(&s).expect("collected above");
+                        gf256::mul_acc_slice(f, &k.data, &mut row.data);
                     }
                     // 2) forward-reduce against existing pivots, left→right.
                     //    A pivot row has zeros before its pivot column, so one
@@ -288,7 +313,7 @@ impl UnifiedDecoder {
                         if c != 0 {
                             if let Some(prow) = self.rows.remove(&s) {
                                 row.sub_scaled(c, &prow);
-                                self.rows.insert(s, prow);
+                                self.insert_row(s, prow);
                             }
                         }
                         s += 1;
@@ -307,26 +332,31 @@ impl UnifiedDecoder {
                     row.scale(gf256::inv(lead_c));
                     if row.nnz_capped2() == 1 {
                         // already a unit equation
-                        work.push_back(Item::Known(pcol, row.data));
+                        self.work.push_back(Item::Known(pcol, Bytes::from(row.data), false));
                         continue;
                     }
-                    // 4) Gauss–Jordan: clear pcol from every other stored row.
-                    let others: Vec<u64> = self
-                        .rows
-                        .iter()
-                        .filter(|(_, r)| r.coeff_at(pcol) != 0)
-                        .map(|(&p, _)| p)
-                        .collect();
+                    // 4) Gauss–Jordan: clear pcol from every other stored row
+                    //    (a covering row's pivot lies in `(pcol - max_row_len, pcol]`).
+                    let others: Vec<u64> = if self.rows.is_empty() {
+                        Vec::new()
+                    } else {
+                        let lo = (pcol + 1).saturating_sub(self.max_row_len as u64);
+                        self.rows
+                            .range(lo..=pcol)
+                            .filter(|(_, r)| r.coeff_at(pcol) != 0)
+                            .map(|(&p, _)| p)
+                            .collect()
+                    };
                     let mut touched: Vec<u64> = Vec::new();
                     for p in others {
                         let mut other = self.rows.remove(&p).expect("collected above");
                         let f = other.coeff_at(pcol);
                         other.sub_scaled(f, &row);
                         debug_assert_eq!(other.coeff_at(pcol), 0);
-                        self.rows.insert(p, other);
+                        self.insert_row(p, other);
                         touched.push(p);
                     }
-                    self.rows.insert(pcol, row);
+                    self.insert_row(pcol, row);
                     // 5) unit sweep over touched rows.
                     for p in touched {
                         let Some(r) = self.rows.get(&p) else { continue };
@@ -334,13 +364,22 @@ impl UnifiedDecoder {
                             let r = self.rows.remove(&p).expect("present");
                             let ls = r.lead().expect("unit");
                             debug_assert_eq!(ls, p);
-                            work.push_back(Item::Known(ls, r.data));
+                            self.work.push_back(Item::Known(ls, Bytes::from(r.data), false));
                         }
                     }
                 }
             }
         }
+        if self.rows.is_empty() {
+            self.max_row_len = 0;
+        }
         (first_eq_rank.unwrap_or(false), out)
+    }
+
+    /// Store a row, keeping `max_row_len` an upper bound.
+    fn insert_row(&mut self, pivot: u64, row: URow) {
+        self.max_row_len = self.max_row_len.max(row.coeffs.len());
+        self.rows.insert(pivot, row);
     }
 }
 
@@ -349,24 +388,41 @@ impl WindowDecoder for UnifiedDecoder {
         if symbol.backend != FecBackend::Rlc {
             return vec![];
         }
-        let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
-        if !self.seen.insert(key) {
-            return vec![];
-        }
-        self.total_fed += 1;
-
         if !symbol.is_repair {
             let seq = symbol.block_id;
-            if self.recovered.contains_key(&seq) {
+            if seq < self.floor {
+                self.total_fed += 1;
+                self.below_floor += 1;
                 return vec![];
             }
-            let mut data = vec![0u8; self.symbol_size];
-            let n = symbol.data.len().min(self.symbol_size);
-            data[..n].copy_from_slice(&symbol.data[..n]);
-            let (_, out) = self.assimilate(vec![Item::Known(seq, data)]);
+            if let Some(k) = self.recovered.get_mut(&seq) {
+                // Known already (received or decoded): the first source
+                // copy is counted once, any later copy not at all.
+                if !k.src_seen {
+                    k.src_seen = true;
+                    self.total_fed += 1;
+                }
+                return vec![];
+            }
+            self.total_fed += 1;
+            // The received buffer is the payload (zero copy); pad once only
+            // when it is not already a full symbol.
+            let data = if symbol.data.len() == self.symbol_size {
+                symbol.data.clone()
+            } else {
+                let mut d = vec![0u8; self.symbol_size];
+                let n = symbol.data.len().min(self.symbol_size);
+                d[..n].copy_from_slice(&symbol.data[..n]);
+                Bytes::from(d)
+            };
+            let (_, out) = self.assimilate(Item::Known(seq, data, true));
             return out;
         }
 
+        if !self.repairs_seen.insert((symbol.block_id, symbol.payload_id)) {
+            return vec![];
+        }
+        self.total_fed += 1;
         if symbol.data.len() < REPAIR_HEADER_SIZE {
             return vec![];
         }
@@ -376,6 +432,10 @@ impl WindowDecoder for UnifiedDecoder {
         let width = u16::from_le_bytes(symbol.data[8..10].try_into().unwrap()) as usize;
         let wire_index = u32::from_le_bytes(symbol.data[10..14].try_into().unwrap());
         if width == 0 {
+            return vec![];
+        }
+        if anchor.saturating_add(width as u64) <= self.floor {
+            self.below_floor += 1;
             return vec![];
         }
         // FILL_FLAG: sender summed only the prefix [anchor, anchor+cw); the
@@ -412,7 +472,7 @@ impl WindowDecoder for UnifiedDecoder {
                 d
             },
         };
-        let (added, out) = self.assimilate(vec![Item::Eq(row)]);
+        let (added, out) = self.assimilate(Item::Eq(row));
         if added {
             self.repairs_useful += 1;
         }
@@ -420,24 +480,19 @@ impl WindowDecoder for UnifiedDecoder {
     }
 
     fn advance(&mut self, oldest_seq: u64) {
-        // Rows pivoting below the frontier: the ack contract says everything
-        // below is received/recovered, so these rows are stale — mirror the
-        // sliding decoder and drop them.
-        let stale: Vec<u64> = self.rows.range(..oldest_seq).map(|(&p, _)| p).collect();
-        for p in stale {
-            self.rows.remove(&p);
+        // The floor only rises. Everything below it is pruned by range (no
+        // scan): rows pivoting there are stale (the ack contract says
+        // everything below is received/recovered), and stored rows never
+        // reference recovered columns, so the payload store is freely
+        // prunable too.
+        self.floor = self.floor.max(oldest_seq);
+        let f = self.floor;
+        self.rows = self.rows.split_off(&f);
+        self.recovered = self.recovered.split_off(&f);
+        self.repairs_seen = self.repairs_seen.split_off(&(f, 0));
+        if self.rows.is_empty() {
+            self.max_row_len = 0;
         }
-        // Stored rows never reference recovered columns (invariant), so the
-        // payload store below the frontier is freely prunable.
-        let old: Vec<u64> = self.recovered.range(..oldest_seq).map(|(&s, _)| s).collect();
-        for s in old {
-            self.recovered.remove(&s);
-        }
-        let old_d: Vec<u64> = self.delivered.range(..oldest_seq).copied().collect();
-        for s in old_d {
-            self.delivered.remove(&s);
-        }
-        self.seen.retain(|(block_id, _, _)| *block_id >= oldest_seq);
     }
 
     fn rank_in(&self, start: u64, count: u64) -> u64 {
@@ -461,9 +516,9 @@ impl WindowDecoder for UnifiedDecoder {
 
     fn seq_probe(&self, seq: u64) -> (bool, bool, bool) {
         (
-            self.seen.contains(&(seq, 0, false)),
+            self.recovered.get(&seq).is_some_and(|k| k.src_seen),
             self.recovered.contains_key(&seq),
-            self.delivered.contains(&seq),
+            self.recovered.contains_key(&seq),
         )
     }
 
@@ -488,12 +543,13 @@ impl WindowDecoder for UnifiedDecoder {
             coeff_bytes += r.coeffs.len();
         }
         Some(format!(
-            "rows={} max_span={} coeff_kb={} recovered={} seen={}",
+            "rows={} max_span={} coeff_kb={} recovered={} seen={} below_floor={}",
             rows,
             max_span,
             coeff_bytes / 1024,
             self.recovered.len(),
-            self.seen.len()
+            self.repairs_seen.len(),
+            self.below_floor
         ))
     }
 }
