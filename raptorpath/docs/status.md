@@ -6515,3 +6515,92 @@ Green suites: `fec::unified` and `fec::generation` differentials,
 `net::tests` and `net::seq_bits`, `reliable_delivery_hold`,
 `lock_order_loopback`, `ack_delivery`, `recv_alloc_bound`,
 `inbound_pool_reachability`.
+
+### 22. R3 ship battery — pre-registration
+
+The battery that decides whether R3 (the design above) ships. It runs
+**only if** §22's diagnostic verdict selects the in-place branch (H-alloc
+(a) MET); otherwise this subsection is void and says so in its result.
+Committed before any battery VM contact; no number below is a result.
+Nothing ships from it but by the operator's merge.
+
+**Arms.** `MAIN` = `github/main` at launch (named by its commit in the
+ledger; 3982bd1 when written), `R3` = this branch's HEAD (MAIN + the §22
+instrument + the R3 change + this text and the harness). Both bulk,
+`--window-reliable`, shipped defaults; every arm `env -u RWM_EST_CADENCE
+RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_RDIAG
+RWM_ACKDIAG RWM_IO_RT`, then `RWM_DIAG=1 RWM_RTOBS=1 RWM_RDIAG=1` (rule
+15d), `perf_rwm_c.sh` with `RWM_GEN=0 RWM_PERF_TIMEOUT_S=150 SEED=<seed>`,
+one run, a fresh topology per invocation.
+
+**Cells, n, order** (§21's, unchanged): `c1s-400`, `c1d-400`, `c2-100`,
+`c8-100`; seeds 42 and 7, n = 3 per seed (6 per arm and cell),
+interleaved, arm order within a cell rotated by the block index (rule 3);
+the budget rule cuts at a rep boundary only.
+
+**Witnesses per invocation** — §21's set (stage3 set, emission batching,
+`wake[`, the gates, in-transfer `[RDIAG]`, `[THR]`/`[LAG]`, `[IOWN]` both
+ends, the Q2 sender lane, R1's `ibp_hit=` now on **both** arms since MAIN
+contains R1, the row's `sha256`) plus **the R3 execution witness,
+two-sided** (rule 1): on every R3 row the server's in-transfer `[RDIAG]`
+lines carry `dec[` with `recovered=` ≤ 2·200 + 4 096 = 4 496 at every line
+(the decode-inert floor applied per drain; MAIN holds ~2 s of seqs); on
+every MAIN row no `dec[` token. A failing row is `WITNESS-FAIL`, excluded
+and counted.
+
+**Pass rule per cell** (§21's, R3 against MAIN, verbatim): a clause is
+WORSE iff R3's median is beyond MAIN's median·(1 ∓ rel) in the worse
+direction **and** the [min, max] ranges are disjoint in that direction
+(TREND-WORSE otherwise beyond the band; reported, not a fail):
+goodput (§5 MDE: c1s 4.9 %, c1d 5.6 %, c2 1.4 %, c8 4.0 %); client and
+server CPU per byte (2.4 / 6.5 / 6.3 / 11.6 %); RTprop floor per leg and
+`[LAG]` p99 per side (max(5 %, MAIN's half-range / median)); fed loss =
+`[TRUTH]` (per leg med(`plc`/`[TRUTH]`) within [1/1.3, 1.3] × MAIN's); DNF
+(excess > 0.20). Per-cell **FAIL** iff any clause WORSE, the feed moved or
+DNF; **UNSCOREABLE** iff < 3 live rows on an arm, ≥ 2 witness-failed rows,
+an unread feed ratio or an abort; **PASS** otherwise.
+
+**Outcomes** (precedence): `UNSCOREABLE` (abort); `DELIVERED` (R3 passes
+at every cell: ships, by the operator's merge); `REFUTED-WITH-RECORD
+(FAIL-AT-<cells>)` (nothing ships, no tuning in-battery);
+`UNSCOREABLE-AT (…)`.
+
+**Predictions** (reported, not gating; named `PREDICTION` lines):
+- `c1d_goodput_better` — c1d goodput **BETTER** (beyond 5.6 % with
+  disjoint ranges) **and** the server `[RDIAG]` busy median < 90 %.
+  Mechanism: decode's bookkeeping removed (≈ 3–4.5 µs of ≈ 14 µs per
+  message, design above) and the 2 s free burst gone; PARTIAL (goodput
+  TREND-BETTER or busy ≥ 90 %) is the reading if the saving lands low.
+- `cpusrv_better` — server CPU per byte BETTER at c1s and c1d.
+- `c2_c8_within` — c2 and c8 goodput and both CPUs WITHIN or better.
+- `c1d_backlog` (reported) — server `[RDIAG]` `q_avg` median lower on R3.
+
+**Tests first** (inside the locks, on the R3 tree, fresh target): the
+§21 set — release `cargo test -p raptorpath -p raptorpath-math --release
+--no-fail-fast -- --test-threads=2`, doc, `raptorpath-wasm`
+(`GOLDEN_CAPTURE` unset), debug `cargo test -p raptorpath --no-fail-fast
+-- --test-threads=2` (`IDENTITY-PANICS` 0), the parser tests — plus the R3
+red tests run on the MAIN+tests tree first to show them red (the
+`decoder_alloc_bound`, zero-copy, floor and per-drain routing tests),
+then green on R3. A failure that passes an immediate solo re-run is
+`FLAKE`; any other is `ABORT-TESTS`.
+
+**Abort causes, launch precondition, deadline, session rules** — §21's,
+verbatim: `ABORT-LOCK`, `-CRLF`, `-BUILD`, `-TESTS`, `-SHA`,
+`-SENTINEL-UNWRITABLE`, `-PRECONDITION` (both locks free by `test -e`,
+loadavg 1-min < 2.0, no `cargo`/`rustc`), `-SMOKE` (one invocation per arm
+at `c1s-400` and `c8-100`, seed 42; R3 rows must carry the `dec[`
+witness), `-BUDGET`, `-RC`, `-BRINGUP`; void `VOID-COTENANT`. Hard
+deadline launch + 4 h. Both locks for the whole session, detached
+envelope, earned sentinels, `pkill -x raptorpath` only, no `ens18`,
+firewall, `sshd` or non-`rp-*` namespace, exit 0 `raptorpath` / 0 `rp-*`,
+VM dirs removed.
+
+**Harness.** `tools/l1/threadr3_{run_all,battery}.sh`, `threadr3_parse.py`
+(+ `test_threadr3_parse.py`), derived from `threadr2_*` by renaming the arm
+and swapping R2's execution witness for R3's `dec[` witness. Ledgers to
+`docs/l1-raw/thread-r3/`.
+
+**Planned duration.** §21 measured: builds 300–380 s each, release +
+doc + wasm + debug suites ≈ 45 min quiet to ≈ 2 h loaded, smoke < 1 min,
+48-row battery ≈ 8 min. Expected session ≈ 1 h 30 quiet, ≈ 2 h 30 loaded.
