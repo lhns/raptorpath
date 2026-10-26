@@ -1,0 +1,106 @@
+LOOP-DIAG SCORE (diagnostic, nothing here ships)
+
+ROWS by (cell, arm): live / total / statuses
+  c1s-400 MAIN: live 3/3 {'LIVE': 3}
+  c1s-400 S192: live 3/3 {'LIVE': 3}
+  c1s-400 S256: live 3/3 {'LIVE': 3}
+  c1s-400 S384: live 3/3 {'LIVE': 3}
+  c1s-400 S512: live 3/3 {'LIVE': 3}
+  c1s-400 S768: live 3/3 {'LIVE': 3}
+  c1s-400 S1024: live 3/3 {'LIVE': 3}
+  c1s-400 S1536: live 3/3 {'LIVE': 3}
+  c1s-400 S2048: live 3/3 {'LIVE': 3}
+  c2-100 MAIN: live 3/3 {'LIVE': 3}
+  c2-100 S64: live 2/2 {'LIVE': 2}
+  c2-100 S96: live 2/2 {'LIVE': 2}
+  c2-100 S128: live 2/2 {'LIVE': 2}
+  c2-100 S192: live 2/2 {'LIVE': 2}
+  c2-100 S256: live 2/2 {'LIVE': 2}
+  c2-100 S384: live 2/2 {'LIVE': 2}
+  c2-100 S512: live 2/2 {'LIVE': 2}
+  c2-100 S1024: live 2/2 {'LIVE': 2}
+
+VOID TABLE (rows not LIVE)
+  none
+
+IO PRESSURE (covariate; flagged at full avg10 >= 20, never voided)
+  FLAG c1s-400 MAIN s42 r1: io_full10=37.69 goodput=636.972 status=LIVE
+  FLAG c1s-400 MAIN s42 r2: io_full10=56.81 goodput=660.451 status=LIVE
+  FLAG c1s-400 MAIN s7 r1: io_full10=43.26 goodput=436.603 status=LIVE
+  FLAG c1s-400 S1024 s7 r1: io_full10=27.77 goodput=700.764 status=LIVE
+  FLAG c1s-400 S1536 s7 r1: io_full10=29.67 goodput=757.373 status=LIVE
+  FLAG c1s-400 S192 s42 r1: io_full10=34.91 goodput=430.728 status=LIVE
+  FLAG c1s-400 S2048 s7 r1: io_full10=40.97 goodput=736.716 status=LIVE
+  FLAG c1s-400 S256 s42 r1: io_full10=24.52 goodput=475.239 status=LIVE
+  FLAG c1s-400 S384 s42 r1: io_full10=20.54 goodput=541.229 status=LIVE
+  FLAG c1s-400 S384 s7 r1: io_full10=22.69 goodput=547.036 status=LIVE
+  FLAG c1s-400 S512 s7 r1: io_full10=24.67 goodput=615.99 status=LIVE
+  FLAG c1s-400 S768 s7 r1: io_full10=27.81 goodput=667.087 status=LIVE
+  FLAG c2-100 MAIN s42 r1: io_full10=34.91 goodput=90.146 status=LIVE
+  FLAG c2-100 MAIN s42 r2: io_full10=40.5 goodput=89.53 status=LIVE
+  FLAG c2-100 MAIN s7 r1: io_full10=40.97 goodput=87.738 status=LIVE
+  FLAG c2-100 S1024 s42 r1: io_full10=46.65 goodput=87.734 status=LIVE
+  FLAG c2-100 S1024 s7 r1: io_full10=34.24 goodput=89.803 status=LIVE
+  FLAG c2-100 S128 s42 r1: io_full10=49.5 goodput=68.576 status=LIVE
+  FLAG c2-100 S128 s7 r1: io_full10=30.25 goodput=68.605 status=LIVE
+  FLAG c2-100 S192 s42 r1: io_full10=62.28 goodput=86.29 status=LIVE
+  FLAG c2-100 S192 s7 r1: io_full10=42.76 goodput=88.072 status=LIVE
+  FLAG c2-100 S256 s42 r1: io_full10=67.75 goodput=90.343 status=LIVE
+  FLAG c2-100 S256 s7 r1: io_full10=42.76 goodput=90.455 status=LIVE
+  FLAG c2-100 S384 s42 r1: io_full10=67.75 goodput=89.714 status=LIVE
+  FLAG c2-100 S384 s7 r1: io_full10=41.4 goodput=89.811 status=LIVE
+  FLAG c2-100 S512 s42 r1: io_full10=51.81 goodput=88.955 status=LIVE
+  FLAG c2-100 S512 s7 r1: io_full10=41.4 goodput=90.364 status=LIVE
+  FLAG c2-100 S64 s42 r1: io_full10=48.79 goodput=36.922 status=LIVE
+  FLAG c2-100 S64 s7 r1: io_full10=56.81 goodput=38.046 status=LIVE
+  FLAG c2-100 S96 s42 r1: io_full10=49.5 goodput=53.728 status=LIVE
+  FLAG c2-100 S96 s7 r1: io_full10=39.71 goodput=53.696 status=LIVE
+
+CELL c1s-400  (L=97700 sym/s, link 1.25e+08 B/s, W=1279 B/datagram, q=0.1)
+  n     live  goodput mean [min-max]   A_x p50   rtt ms  Tmin us  Tp10 us  Tp50 us  RTprop us  jit us       D sym/s    Q=quinn/link  q_cwnd B
+  192   3       402.2 [366.5-430.7]        939      3.6     2609     3122     3748       2356      14       44630         1.062     393050
+  256   3       475.4 [455.7-495.3]       1195      4.0     2729     3430     4211       2486       6       51739         1.205     441796
+  384   3       553.7 [541.2-572.8]       1877      5.2     3085     4163     5293       2644       4       60538         0.888     510132
+  512   3       588.5 [524.9-624.7]       2816      6.3     3467     4919     6661       2692       4       65729         1.096     443253
+  768   3       633.5 [615.6-667.1]       4608      9.3     4258     6540     9281       2791       4       71103         1.013     608359
+  1024  3       663.1 [608.2-700.8]       7168     11.8     5245     8104    11579       2679       2       74054         1.023     550310
+  1536  3       630.8 [382.3-757.4]      19456     25.7    15122    19534    26569       2551       9       66441         0.748     712099
+  2048  3       740.2 [736.7-746.7]      15701     20.3    11658    14890    20285       2473       3       81795         1.575    1039137
+  Gmax 740.2  n* = 2048 (smallest n with G >= 0.95 Gmax = 703.1); reproduction band [n*/1.5, 1.5 n*] = [1365.3, 3072.0]
+  O1: Tmin(n=192)=2609 us, Tmin(n=2048)=11658 us, R1 = 4.468; FLAT iff every Tmin <= 1.25 x 2609 = 3262 (max 15122); INFLATES iff R1 >= 1.5  -> INFLATES
+  C1(n) = 1.1 D(n) Tmin(n) symbols;  C1/n:  192:128.1/0.667  256:155.3/0.607  384:205.5/0.535  512:250.7/0.490  768:333.0/0.434  1024:427.3/0.417  1536:1105.2/0.720  2048:1049.0/0.512
+  n_fp1 = smallest grid n with C1(n) < n = 192
+  O3: Q(n) = 192:1.062 256:1.205 384:0.888 512:1.096 768:1.013 1024:1.023 1536:0.748 2048:1.575; median Q 1.043; Spearman(Q,n) -0.071; Q(n_min=192) 1.062; FLAT-AT-LINK iff all in [0.8,1.25]; OVER-READ iff median > 1.25; CIRCULAR iff Spearman >= 0.8 and Q(n_min) < 0.8  -> NEITHER
+  C3(n)  = 1.1 (Q linkB / W) RTprop : 192:269.0  256:322.0  384:252.5  512:317.3  768:303.8  1024:294.7  1536:205.2  2048:418.8
+  C3b(n) = 1.1 (Q linkB / W) Tmin   : 192:298.0  256:353.5  384:294.6  512:408.7  768:463.5  1024:576.9  1536:1216.6  2048:1974.5
+  CJ(n)  = 1.1 L (RTprop + jit)     : 192:254.7  256:267.8  384:284.6  512:289.7  768:300.3  1024:288.2  1536:275.1  2048:266.1  (report only)
+  medians over n: C3 299.3 (MISSES), C3b 436.1 (MISSES), CJ 279.8 (MISSES, report only); band [1365.3, 3072.0]
+  OPTION1 INFLATES MISSES n_fp1=192
+  OPTION3 NEITHER MISSES C3med=299.3 C3b_med=436.1
+  MAIN (live n=3) reference: goodput 578.0 Mbit/s, A_x p50 15019 us, SUMCAP cap 1708.7
+    LOOPDIAG medians: rtt_min_us=16662 rtt_p10_us=24248 rtt_p50_us=35264 rtprop_us=2391 jit_us=6 srtt_us=44328 dlv_rate=54990 q_pace_bps=907102013 q_cwnd=435091 q_srtt_us=2875
+
+CELL c2-100  (L=9770 sym/s, link 1.25e+07 B/s, W=1279 B/datagram, q=0.1)
+  n     live  goodput mean [min-max]   A_x p50   rtt ms  Tmin us  Tp10 us  Tp50 us  RTprop us  jit us       D sym/s    Q=quinn/link  q_cwnd B
+  64    2        37.5 [36.9-38.0]       5120     14.9     9546    12294    15026       7306      89        4044         3.104    2424179
+  96    2        53.7 [53.7-53.7]       5632     14.4    10195    13038    15558       8134      80        5833         4.663     443634
+  128   2        68.6 [68.6-68.6]       5376     15.2    11309    13921    16098       9326     106        7458         4.190     659204
+  192   2        87.2 [86.3-88.1]       7936     19.0    13705    16825    19174       9962      74        9486         7.514    1029144
+  256   2        90.4 [90.3-90.5]      13824     25.1    19692    22868    25424      11086      52        9628        20.299   28846598
+  384   2        89.8 [89.7-89.8]      25600     38.0    31998    35579    38230      10736      69        9616         7.772    1313590
+  512   2        89.7 [89.0-90.4]      36864     50.6    44548    48433    51095      12294      66        9624        12.580    8660253
+  1024  2        88.8 [87.7-89.8]      86016    103.1    95335    99526   102700      13020      66        9624         9.048    1501755
+  Gmax 90.4  n* = 192 (smallest n with G >= 0.95 Gmax = 85.9); reproduction band [n*/1.5, 1.5 n*] = [128.0, 288.0]
+  O1: Tmin(n=64)=9546 us, Tmin(n=1024)=95335 us, R1 = 9.987; FLAT iff every Tmin <= 1.25 x 9546 = 11932 (max 95335); INFLATES iff R1 >= 1.5  -> INFLATES
+  C1(n) = 1.1 D(n) Tmin(n) symbols;  C1/n:  64:42.5/0.663  96:65.4/0.681  128:92.8/0.725  192:143.0/0.745  256:208.5/0.815  384:338.4/0.881  512:471.6/0.921  1024:1009.2/0.986
+  n_fp1 = smallest grid n with C1(n) < n = 64
+  O3: Q(n) = 64:3.104 96:4.663 128:4.190 192:7.514 256:20.299 384:7.772 512:12.580 1024:9.048; median Q 7.643; Spearman(Q,n) 0.810; Q(n_min=64) 3.104; FLAT-AT-LINK iff all in [0.8,1.25]; OVER-READ iff median > 1.25; CIRCULAR iff Spearman >= 0.8 and Q(n_min) < 0.8  -> OVER-READ
+  C3(n)  = 1.1 (Q linkB / W) RTprop : 64:243.8  96:407.7  128:420.0  192:804.8  256:2419.4  384:897.1  512:1662.7  1024:1266.5
+  C3b(n) = 1.1 (Q linkB / W) Tmin   : 64:318.6  96:511.1  128:509.4  192:1107.1  256:4297.4  384:2673.6  512:6025.0  1024:9273.4
+  CJ(n)  = 1.1 L (RTprop + jit)     : 64:79.5  96:88.3  128:101.4  192:107.9  256:119.7  384:116.1  512:132.8  1024:140.6  (report only)
+  medians over n: C3 850.9 (MISSES), C3b 1890.4 (MISSES), CJ 112.0 (MISSES, report only); band [128.0, 288.0]
+  OPTION1 INFLATES MISSES n_fp1=64
+  OPTION3 OVER-READ MISSES C3med=850.9 C3b_med=1890.4
+  MAIN (live n=3) reference: goodput 89.1 Mbit/s, A_x p50 73728 us, SUMCAP cap 841.2
+    LOOPDIAG medians: rtt_min_us=79652 rtt_p10_us=83760 rtt_p50_us=87015 rtprop_us=11574 jit_us=104 srtt_us=87307 dlv_rate=9617 q_pace_bps=754379675 q_cwnd=1303242 q_srtt_us=81070
+

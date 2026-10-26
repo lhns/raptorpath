@@ -1,0 +1,31 @@
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/build.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ld24/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-10-26T18:41:30Z user=VMUSER dir=/home/VMUSER/ld24/run launch=2026-10-26T18:41:30Z
+LD-ALL start load=0.77 3.62 5.37 1/327 693115 2026-10-26T18:41:30Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.77 3.62 5.37 2026-10-26T18:41:31Z
+LD-ALL parser test ok 2026-10-26T18:41:31Z
+LD-ALL built wall=3037s 2026-10-26T19:32:08Z
+LD-ALL binary 10c0fa64b19d0672c44a8a6a7ba55b1734815da77ec14a9ea0bc6809a6d7ba68 2026-10-26T19:32:08Z
+SMOKE ('c1s-400', 'MAIN'): mbps=471.554 eng=1201 ld_n=24 ld_med={'dlv_rate': 44055.0, 'jit_us': 9.0, 'q_cwnd': 165183.5, 'q_pace_bps': 617125976.0, 'q_srtt_us': 2446.5, 'rtprop_us': 2904.0, 'rtt_min_us': 23957.5, 'rtt_p10_us': 35179.0, 'rtt_p50_us': 43504.0, 'srtt_us': 40115.5} win_den=1248..2048 status=LIVE
+SMOKE ('c2-100', 'S192'): mbps=88.084 eng=None ld_n=33 ld_med={'dlv_rate': 9518.0, 'jit_us': 75.0, 'q_cwnd': 849722.0, 'q_pace_bps': 551663264.0, 'q_srtt_us': 17426.0, 'rtprop_us': 9121.0, 'rtt_min_us': 13901.0, 'rtt_p10_us': 16825.0, 'rtt_p50_us': 19095.0, 'srtt_us': 18632.0} win_den=192..192 status=LIVE
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-10-26T19:32:30Z
+LD-ALL battery start load=1.03 3.76 6.25 2026-10-26T19:32:30Z
+LD-ALL battery rc=0 wall=537s 2026-10-26T19:41:27Z
+CHECK done=True rows=46/46
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=3.23 2.86 4.59 2026-10-26T19:41:27Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
