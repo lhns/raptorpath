@@ -6605,3 +6605,23 @@ and swapping R2's execution witness for R3's `dec[` witness. Ledgers to
 **Planned duration.** §21 measured: builds 300–380 s each, release +
 doc + wasm + debug suites ≈ 45 min quiet to ≈ 2 h loaded, smoke < 1 min,
 48-row battery ≈ 8 min. Expected session ≈ 1 h 30 quiet, ≈ 2 h 30 loaded.
+
+### 22. R3 ship battery — Amendment 1 (before any battery VM contact)
+
+1. **`[LAG]` is scored on E = p99 − `min_us`** of the window, client and
+   server (the operator's scoring decision recorded with the c8 lag
+   diagnosis), with the clause's rel unchanged (max(5 %, MAIN's half-range
+   / MAIN's median), computed on E). Raw p99 stays reported. `min_us` comes
+   from that work's `[LAG]` instrument (rebased `b2a5fcc`); the battery
+   launches only once `github/main` contains it, with this branch rebased
+   onto that main, so both arms print it. A row whose `[LAG]` window lacks
+   `min_us` reads the clause UNREAD (counted; ≥ 2 such rows at a cell make
+   the cell UNSCOREABLE). The parser gains the E column before launch.
+2. **The floor refusal is a ρ < 1 behaviour change**, declared: below the
+   decode-inert floor F the decoder now refuses a late fill of a hole the
+   frontier gave up more than 2·W_cap seqs ago (paper §5.2), where it was
+   accepted up to one report tick late before. On the battery's cells
+   (bulk, `--window-reliable`, ρ = 1) such a refusal can only be a
+   duplicate of a delivered seq. It is measured, not gated: the server's
+   `below_floor=` (last `[RDIAG]` `dec[` value) is reported per R3 row and
+   cell, median [min–max].
