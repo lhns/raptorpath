@@ -401,6 +401,35 @@ mod tests {
         }
     }
 
+    /// Cost, not content (status 20): on an in-order stream delivered at once,
+    /// a dead record (a duplicate copy of an already-delivered seq) must not
+    /// pin the ring's front. Absolute bounds, not a comparison with the map:
+    /// the ring spans one slot after each insert, and a delivery leaves no
+    /// record below it. A pinned front makes every pair pad and trim across
+    /// the whole gap, O(gap) per message.
+    #[test]
+    fn a_dead_duplicate_does_not_make_the_store_cost_o_gap() {
+        let mut g = LatGauge::default();
+        let span = |g: &LatGauge| match (g.pending.ring.first(), g.pending.ring.last_key()) {
+            (Some((lo, _)), Some(hi)) => hi - lo + 1,
+            _ => 0,
+        };
+        for s in 0..50_000u64 {
+            g.note_arrival(s, 0, s * 10, s * 10 + 500);
+            assert!(span(&g) <= 2, "seq {s}: ring slot span {} after an in-order insert", span(&g));
+            g.note_delivery(s, 0, None);
+            assert!(
+                g.pending.ring.first().map_or(true, |(lo, _)| lo >= s),
+                "seq {s}: a record below the delivered seq is held"
+            );
+            if s % 5_600 == 5_599 {
+                // A duplicate source copy of a seq delivered 1 000 earlier.
+                g.note_arrival(s - 1_000, 1, 0, 0);
+            }
+        }
+        assert_eq!(g.n_deliv(), 50_000);
+    }
+
     /// Past the span guard the ring refuses and counts; it never hands back a
     /// record for a seq it was not given, and the live window stays exact.
     #[test]
