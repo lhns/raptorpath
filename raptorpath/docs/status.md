@@ -4970,3 +4970,49 @@ launch) and `ABORT-BUILD` for either binary.
 **Duration.** 54 invocations at ≈ 11–12 s each (§18: 42 in 483 s) ≈ 11
 minutes of measurement; two builds ≈ 20 minutes; with lock waits well
 under the 5 h cap.
+
+### 19. Amendment (before any scored measurement): c2 is a single-path cell
+
+The §19 smoke aborted (`ABORT-SMOKE`, nothing scored, nothing in it is a
+result) on the first MAIN witness at `c2-100`, and the abort exposed a
+factual error in the §18 amendment and in §19 as first committed: **`c2-100`
+is a single-path cell** (`stage3_parse.CELL_SPEC`: `c2 / c2 / single`; the
+ADR-0072 consequences name it as an N = 1 cell, "c2/sc2"), not N = 2. The
+smoke rows (binaries `MAIN` `c9630606…f8f8cf` = `ce60079`, `LAW`
+`17418fd8…a69ff4`; `docs/l1-raw/store-law-n1/same-session/aborted-smoke/`):
+MAIN at c2 reads `[SUMCAP] eng=0/0` with `win=` 1024 and below (main's
+`clamp(2·bdp, 10, 1024)` chain), LAW at c2 `eng=1556/1556`, `win=` 1211
+median.
+
+Consequences, stated without relabelling any scored result:
+
+- The §18 result at `c2-100` is data of the N = 1 law, not of an N ≥ 2
+  no-op; the §18 `CONTROL-MOVED` clause applied to `c2-100` compared an
+  N = 1 cell, where the change applies, against §15's pre-change main. §18's
+  recorded verdict is unchanged (the lead's ruling stands); `c1d-400` is the
+  §18 cell whose CONTROL-MOVED bears on the N ≥ 2 no-op claim.
+- §19, as amended here (replacing the matching text above):
+  - **Single-path cells (`c1s-400`, `c2-100`): LAW vs MAIN** with §18's
+    outcome list and order at each cell (`REFUTED`, `PINNED`,
+    `LATENCY-COST`, `GOODPUT-UP`, `INERT-AS-DERIVED`). `REFUTED` at either
+    cell is c1s's `REFUTED` rule: goodput below MAIN by more than
+    2σ_pooled. This restores the original brief's c2 treatment (goodput a
+    guard at a cell with under 5 % headroom, rule 16; `A_x` p50 and
+    occupancy scored; expected: the cap falls from ≈ 989–1024 to ≈ 544–850,
+    so queueing falls or holds).
+  - **N ≥ 2 no-op cells: `c1d-400` and `c8-100` only**: `REFUTED-NOOP` if
+    |mean goodput(LAW) − mean goodput(MAIN)| > 2σ_pooled at either.
+  - **DECISION RULE: the law ships iff there is no `REFUTED-NOOP` (c1d, c8)
+    and neither `c1s-400` nor `c2-100` is `REFUTED`.** `PINNED` and
+    `LATENCY-COST` do not block.
+  - Witnesses: MAIN `[SUMCAP] eng=0/0` at both single-path cells with the
+    window cap never above 1024 (the constant 1024 at c1s; at c2 it
+    follows the anchor up to 1024); MAIN `eng>0` at c1d and c8; LAW as in
+    §18.
+  - The VM-drift reading (c1d, c8 medians against §15/§16) is unchanged and
+    unscored; c2 MAIN is reported beside §15's c2 range as a drift reading
+    too (§15's main is the same N = 1 chain).
+- Plan, sizes and invocation count are unchanged (the same 54 invocations
+  measure the same four cells); only the cell-to-leg assignment and the
+  witnesses above change. The harness commit that follows carries the
+  witness change and its red-first test on the saved MAIN-at-c2 log.
