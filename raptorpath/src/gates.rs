@@ -116,7 +116,7 @@ pub struct RuntimeGates {
     // ── Store / flow control (paper §6) ──
     /// `RWM_STORE_SACK_RELEASE` (on, shipped): SACK frees the slot, keeps the payload (ADR-0060).
     pub store_sack_release: bool,
-    /// `RWM_STORE_PATHS` (on, shipped): path-scaled outstanding pool at N ≥ 2 live paths.
+    /// `RWM_STORE_PATHS` (on, shipped): path-scaled outstanding pool at every N ≥ 1 live paths (ADR-0072; `=0` is the single-constant control).
     pub store_paths: bool,
     /// `RWM_STORE_PATH_POOL` (default 2048): per-live-path pool knee.
     pub store_path_pool: usize,

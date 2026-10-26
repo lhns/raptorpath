@@ -1535,9 +1535,9 @@ by default. The sum runs over all live paths (`net::channel_paths`, the
 channel's membership); before plan 2b it ran over `active_paths()`, the live
 paths with spare congestion window, and `RWM_STORE_CAP_UNIFIED` (retired)
 was the live-set arm. Under Copa-sole pass-through the anchor is Σ cwnd.
-**Engine status:** the code still returns before the law at N < 2 and runs
-the predecessor of Section 6.2 there; ADR-0072 removes that guard
-(Section 11.3).
+**Engine status:** the guard is removed (ADR-0072, code phase done): the law
+runs at every N ≥ 1, and `RWM_STORE_PATHS = 0` re-runs the predecessor of
+Section 6.2 at every N. The validation battery has not run (status §18).
 
 | symbol | value | provenance |
 |---|---|---|
@@ -1616,7 +1616,8 @@ cells on the predecessor below, so the law is unmeasured at one path.
 
 ### 6.2 The single-path predecessor (retired by ADR-0072)
 
-Behind the `n_live < 2` guard the engine still runs, at one live path,
+Behind the `n_live < 2` guard the engine ran, at one live path (and
+`RWM_STORE_PATHS = 0` still runs, at every N),
 
 ```text
    cap₁  =  clamp( gain · BtlBw·RTprop ,  10 ,  1024 ) ,     gain = RWM_STORE_GAIN = 2.0
@@ -2170,7 +2171,8 @@ from the contract's own cost ratio but which is measured knee-bound; the
 self-heal distribution F resolved inside the admissible domain at the dual
 cells; a measurement of H on the shipped stack, because H is the width of the
 whole domain and the store multiplier that sets it (1 + q(δ); the engine
-still runs gain = 2.0 at one path until ADR-0072 executes) interacts with SACK-clocked release in a way no
+ran gain = 2.0 at one path until ADR-0072's code phase, and still does under
+`RWM_STORE_PATHS = 0`) interacts with SACK-clocked release in a way no
 derivation yet covers; and a c8L audit. Until then the shipped constants
 (Section 11.2) stand as undefeated, which is not the same as derived.
 
@@ -2881,7 +2883,7 @@ decide it.
 | span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop |
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
-| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | `clamp(2.0·BDP, 10, 1024)` behind the `n_live < 2` guard until ADR-0072's code phase; the wasm model already scales its pool per path with no guard |
+| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | `clamp(2.0·BDP, 10, 1024)` behind the `n_live < 2` guard until ADR-0072's code phase (now `RWM_STORE_PATHS = 0` only); the wasm model already scales its pool per path with no guard |
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
 | store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | at N = 1 the engine still has `(gain − 1)·RTprop`; at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
@@ -3254,7 +3256,7 @@ engine.
 ```text
    cap (N ≥ 1)  =  clamp( (1 + q(δ))·Σ_{i∈live} bwᵢ·RTpropᵢ, 10, N·2048 )     pooled_store_cap (ADR-0072)
    q(δ)         =  0.05 + 0.05·(b(δ) − ½)/1.5  =  (b(δ) + 1)/30             codel_setpoint_q
-   (engine at N = 1 until ADR-0072 executes: clamp( 2.0·BtlBw·RTprop, 10, 1024 ), boot 128)
+   (RWM_STORE_PATHS=0, any N: clamp( 2.0·Σ bwᵢ·RTpropᵢ, 10, 1024 ), boot 128; the shipped engine at N = 1 before ADR-0072)
    store_len    =  retained − released                                      store_gate_released
    released     =  min(|S|, max(|M|, |S∩[0,F)| + (A − ((H+1−F) − |S∩[F,H]|))⁺))   (F, A) = newest (next_expected, received_above)
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s

@@ -1,6 +1,6 @@
 # ADR-0072: One store-cap law at every path count — the `n_live < 2` guard is removed
 
-## Status: Proposed (law and paper written; engine unchanged; awaits the battery under Validation)
+## Status: Proposed (law, paper and engine written; `RWM_STORE_PATHS=0` is the control; awaits the battery under Validation, status §18)
 
 Supersedes the N = 1 clauses of ADR-0058 ("N = 1 keeps the single-path law
 bit-exactly") and ADR-0070 (the guard and `RELIABLE_STORE_MAX` as the

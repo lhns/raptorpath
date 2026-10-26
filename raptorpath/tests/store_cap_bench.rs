@@ -134,7 +134,9 @@ fn slots(cell: &Cell, keep: &[bool], anchor_scale: Scale) -> Vec<Option<HonestCa
 /// The shipped default pooled law, exactly as the sender composes it:
 /// `path_scaled_store_cap(on, n_live, Σ_set anchor, …)` else `gain·Σ` else
 /// the boot cap. `n_live` is always the live count — that is the defect's
-/// whole shape: the ×N and the Σ range over different sets.
+/// whole shape: the ×N and the Σ range over different sets. The law engages
+/// at every N >= 1 (ADR-0072); the `STORE_MAX` branch is the cold-anchor
+/// remainder of the `RWM_STORE_PATHS=0` chain.
 fn shipped_pool_cap(bdp_over_set: f64, n_live: usize) -> usize {
     if let Some(c) = path_scaled_store_cap(true, n_live, bdp_over_set, GAIN, FLOOR, KNEE) {
         c
@@ -152,8 +154,7 @@ fn honest_pool_cap(terms: &[Option<f64>], n_live: usize) -> usize {
     if hsum <= 0.0 {
         return 0; // law disengages; the caller falls through
     }
-    let ceiling =
-        if n_live >= 2 { n_live.saturating_mul(KNEE).max(FLOOR) } else { STORE_MAX };
+    let ceiling = n_live.saturating_mul(KNEE).max(FLOOR);
     (hsum.ceil() as usize).clamp(FLOOR, ceiling)
 }
 
@@ -556,9 +557,10 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
 /// low across a knee, and it is the knee that the store-cap ratio arguments
 /// all assume away.
 ///
-/// At N = 1 the ceiling is `RELIABLE_STORE_MAX` instead, and the measured
-/// single-cell over-read (5.94) stays under it — so the error is confined to
-/// the dual cells, which is exactly where the `[SF]` question lives.
+/// At N = 1 the ceiling is `1·knee` (ADR-0072; it was `RELIABLE_STORE_MAX`),
+/// and the measured single-cell over-read (5.94) stays under it — so the error
+/// is confined to the dual cells, which is exactly where the `[SF]` question
+/// lives.
 #[test]
 fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
     let ceiling_n2 = (2 * KNEE) as f64; // 4096
@@ -622,14 +624,16 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
     }
 
     // N = 1 is unaffected: the single cell's measured over-read (5.94) leaves
-    // the cap below RELIABLE_STORE_MAX, so the error is a dual-cell error.
+    // the cap below the 1·knee ceiling, so the error is a dual-cell error.
     let s1 = sigma(sc2, Scale::Measured);
     let cap1 = shipped_pool_cap(s1, 1);
-    assert!(cap1 < STORE_MAX, "sc2 at the measured x5.94 already clamps: {cap1}");
+    assert!(cap1 < KNEE, "sc2 at the measured x5.94 already clamps: {cap1}");
     assert_eq!(cap1, (2.0 * s1).ceil() as usize, "N=1 must still be proportional");
-    // The measurement's own UPPER window at that cell (9.28) does clamp — so
-    // even at N = 1 the headroom is one window's excursion wide.
-    assert!(shipped_pool_cap(83.2 * 9.28, 1) >= STORE_MAX);
+    // The measurement's own UPPER window at that cell (9.28) is still interior
+    // at N = 1 (the ceiling is the knee, not the old 1024 constant); the
+    // ceiling is reached from a base 1.33x above it.
+    assert_eq!(shipped_pool_cap(83.2 * 9.28, 1), (2.0 * 83.2 * 9.28f64).ceil() as usize);
+    assert_eq!(shipped_pool_cap(83.2 * 9.28 * 1.33, 1), KNEE);
 }
 
 // ── The bootstrap floor, derived (paper §6.1) ────────────────────────────

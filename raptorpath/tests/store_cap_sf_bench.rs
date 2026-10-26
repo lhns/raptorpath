@@ -144,7 +144,9 @@ fn composed_brake_closed(sched: &Scheduler, arm: Arm) -> bool {
 }
 
 /// The shipped dyn-cap chain at the battery's arms, verbatim in structure:
-/// `path_scaled_store_cap` → legacy `gain·Σ` → the boot cap.
+/// `path_scaled_store_cap` → legacy `gain·Σ` → the boot cap. The first term
+/// engages at every N >= 1 (ADR-0072), so the `STORE_MAX` clamp is reached only
+/// by the cold-anchor remainder of the `RWM_STORE_PATHS=0` chain.
 fn shipped_chain(bdp: f64, n_live: usize) -> usize {
     if let Some(c) = path_scaled_store_cap(true, n_live, bdp, GAIN, FLOOR, KNEE) {
         c
@@ -167,7 +169,7 @@ fn cap_for(arm: Arm, bdp_over_set: f64, bdp_over_live: f64, n_live: usize, tt: O
             tt.unwrap_or_else(|| shipped_chain(bdp_over_live, n_live))
         }
         Arm::PooledUnified => {
-            if n_live >= 2 && bdp_over_live > 0.0 {
+            if bdp_over_live > 0.0 {
                 let ceiling = n_live.saturating_mul(KNEE).max(FLOOR);
                 ((GAIN * bdp_over_live).ceil() as usize).clamp(FLOOR, ceiling)
             } else {
@@ -947,6 +949,10 @@ impl WireBrake {
 /// The wire transcription: medians over reps (means for `wait_paused`, which
 /// is already a percentage per rep) from every L1 summary record carrying
 /// `occ_p50`.
+///
+/// The sc2 rows were measured on the engine that still had the `n_live < 2`
+/// store_max latch (cap = 1024); they are a record of that engine, not of the
+/// one-law cap (ADR-0072).
 const WIRE_BRAKE: &[WireBrake] = &[
     WireBrake {
         cell: "sc2", arm: "A", reps: 77,
@@ -5241,7 +5247,7 @@ fn empty_active_set_is_a_cliff_not_a_taper() {
     // N = 1 (c1/sc2): the same cliff.
     let single = shipped_chain(a_fast * 5.0, 1); // legacy anchor over-read ×5
     assert_eq!(single, 832);
-    assert!(single <= STORE_MAX, "the N = 1 law is bounded by RELIABLE_STORE_MAX");
+    assert!(single <= KNEE, "the N = 1 law is bounded by 1·knee (ADR-0072)");
     assert!(
         single as f64 / BOOT as f64 > 6.0,
         "the c1 cliff must be a ≥6× step, got {:.1}×",
@@ -5472,7 +5478,7 @@ const WIRE_CAPS: &[WireCap] = &[
 #[test]
 fn the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free() {
     assert_eq!(SIGMA_PIN, 1024.0);
-    for n in 2..=8usize {
+    for n in 1..=8usize {
         let ceiling = n * KNEE;
         // Just below: strictly interior, and the law is still degree-1.
         let below = shipped_chain(SIGMA_PIN * 0.99, n);
@@ -5880,9 +5886,9 @@ fn the_composed_law_does_not_starve_a_leg_of_the_quad() {
 ///     N = 2 under the derived floor of 10 (paper §6.1), far below the
 ///     smallest single-leg anchor the wire reported. The crossover is computed
 ///     from `FLOOR`, so this tracks the shipped constant.
-///   * the `store_max` (1024) latch is the `n_live < 2` law, so it cannot be
-///     seen with both legs up; it is what `sc2`/`c2r100` read (exactly 1024 in
-///     every session).
+///   * the `store_max` (1024) latch was the `n_live < 2` law (retired by
+///     ADR-0072), so it could not be seen with both legs up; it is what
+///     `sc2`/`c2r100` read (exactly 1024 in every pre-ADR-0072 session).
 #[test]
 fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
     // Boot: the empty set, at any live count.
@@ -5905,7 +5911,7 @@ fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
     // than an order of magnitude.
     let smallest = ACK_ALL
         .iter()
-        .skip(1) // c2r100 is the N = 1 cell, whose law is the store_max latch
+        .skip(1) // c2r100 is the N = 1 cell; the duals' legs are the floor's test
         .map(|s| s.anchor_sym())
         .fold(f64::INFINITY, f64::min);
     // 16 symbols under the legacy bare floor; 2.5 under the derived one.
@@ -5915,9 +5921,13 @@ fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
         "the floor clamp is within reach of a warm anchor: smallest leg {smallest:.0} \
          vs the floor's Sigma {floor_sigma:.0}"
     );
-    // N = 1 is the store_max latch, not the pooled ceiling — what the single
-    // cells measure (occcap_p50 = 1024 at both sc2 and c2r100).
-    assert_eq!(shipped_chain(ACK_C2R100_P0.anchor_sym(), 1), STORE_MAX);
+    // N = 1 runs the same law (ADR-0072): `gain·Σ` clamped to 1·knee. The wire
+    // transcription below (occcap_p50 = 1024 at sc2 and c2r100) was taken on the
+    // engine that still had the `n_live < 2` store_max latch.
+    assert_eq!(
+        shipped_chain(ACK_C2R100_P0.anchor_sym(), 1),
+        ((GAIN * ACK_C2R100_P0.anchor_sym()).ceil() as usize).clamp(FLOOR, KNEE)
+    );
 }
 
 /// The wire's own anchors pin the law with both legs and free it with one.
