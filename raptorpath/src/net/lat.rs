@@ -133,12 +133,21 @@ impl PathLat {
 struct Pending {
     ring: SeqRing<(u32, u64)>,
     order: VecDeque<u64>,
+    /// One past the last in-order delivery. Deliveries are in order, so a
+    /// record below it can never be taken: without this floor such a dead
+    /// record (a duplicate copy of a delivered seq) pins the ring's front for
+    /// its whole FIFO lifetime, and every arrival delivered at once then pads
+    /// and trims the ring across the whole gap — O(gap) per message (§20).
+    floor: u64,
 }
 
 impl Pending {
     /// Record `seq`; returns how many records were lost to a bound (the
     /// eviction FIFO, or the span guard), for the caller's `over=`.
     fn insert(&mut self, seq: u64, v: (u32, u64)) -> u64 {
+        if seq < self.floor {
+            return 1; // already delivered: dead on arrival, counted
+        }
         let mut lost = 0;
         if let (Some((lo, _)), Some(hi)) = (self.ring.first(), self.ring.last_key()) {
             if seq < lo {
@@ -173,6 +182,20 @@ impl Pending {
 
     fn take(&mut self, seq: u64) -> Option<(u32, u64)> {
         self.ring.remove(&seq)
+    }
+
+    /// The in-order delivery of `seq`: its record (if any), and the dead
+    /// records below it dropped (returned as lost, for `over=`).
+    fn deliver(&mut self, seq: u64) -> (Option<(u32, u64)>, u64) {
+        let got = self.take(seq);
+        let mut lost = 0;
+        if seq >= self.floor {
+            self.floor = seq + 1;
+            let before = self.ring.len();
+            self.ring.prune_below(self.floor);
+            lost = (before - self.ring.len()) as u64;
+        }
+        (got, lost)
     }
 }
 
@@ -225,7 +248,11 @@ impl LatGauge {
     /// cross-path share read low.
     pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release) {
         self.n_deliv += 1;
-        let Some((path_id, ax)) = self.pending.take(seq) else {
+        // The floor's premise: deliveries are in order and non-decreasing.
+        debug_assert!(seq >= self.pending.floor, "[LAT] delivery {seq} below the floor {}", self.pending.floor);
+        let (got, dead) = self.pending.deliver(seq);
+        self.over += dead;
+        let Some((path_id, ax)) = got else {
             // Delivered without an arrival record: a decoder reconstruction
             // (never rode a wire as itself) or an eviction. Counted, and not
             // given a fabricated path.
