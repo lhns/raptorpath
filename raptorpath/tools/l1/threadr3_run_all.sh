@@ -173,7 +173,8 @@ tst() { # name -- cmd...
 
 # ── 1b. RED PROOF on MAIN + R3's integration tests ──────────────────────
 # The copied test files are removed afterwards (the tree stays the archive of
-# the named commit); the MAIN release binary is built later in the same target.
+# the named commit). Its own target dir, removed afterwards, so the MAIN
+# release binary is still built in a fresh target.
 RED_TESTS="in_order_sources_cost_at_most_one_and_a_half_allocations_each the_decoder_prune_runs_at_the_wait_point_not_in_the_report_block rdiag_carries_the_decoder_state_witness"
 GREEN_TESTS="$RED_TESTS in_order_output_shares_the_input_buffer a_source_below_the_floor_is_refused_and_counted"
 red_proof() {
@@ -182,10 +183,11 @@ red_proof() {
   for f in decoder_alloc_bound receiver_prunes_per_drain; do
     cp "$SRC/raptorpath/tests/$f.rs" "$MSRC/raptorpath/tests/$f.rs" || fail_all "ABORT-BUILD red-proof copy $f"
   done
-  ( cd "$MSRC" && stage "$CARGO" test -p raptorpath --release --no-fail-fast \
+  ( cd "$MSRC" && export CARGO_TARGET_DIR="$ROOT/tgt-redproof" && stage "$CARGO" test -p raptorpath --release --no-fail-fast \
       --test decoder_alloc_bound --test receiver_prunes_per_drain -- --test-threads=2 ) > "$RUN/test-redproof.log" 2>&1
   local rc=$?
   for f in decoder_alloc_bound receiver_prunes_per_drain; do rm -f "$MSRC/raptorpath/tests/$f.rs"; done
+  rm -rf "$ROOT/tgt-redproof"
   local t
   for t in $RED_TESTS; do
     if grep -aq "^test $t ... FAILED" "$RUN/test-redproof.log"; then
