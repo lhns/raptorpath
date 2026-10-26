@@ -1,0 +1,81 @@
+STORE-LAW BATTERY SCORE (pre-registration: status.md §18, as amended)
+
+ROWS by (cell, arm): live / total / statuses
+  c1d-400 LAW: live 6/6 {'LIVE': 6}
+  c1s-400 CTL: live 6/6 {'LIVE': 6}
+  c1s-400 LAW: live 6/6 {'LIVE': 6}
+  c1s-400 LAW-auto: live 2/3 {'WITNESS-FAIL': 1, 'LIVE': 2}
+  c1s-400 LAW-realtime: live 0/3 {'WITNESS-FAIL': 3}
+  c2-100 LAW: live 6/6 {'LIVE': 6}
+  c2-100 LAW-auto: live 3/3 {'LIVE': 3}
+  c2-100 LAW-realtime: live 0/3 {'WITNESS-FAIL': 3}
+  c8-100 LAW: live 6/6 {'LIVE': 6}
+
+PER-ROW (seed rep: mbps pin floor cap win_cap_med occ paused rtt btlbw_overread ax_p50_us ax_p95_us status)
+  c1d-400 LAW s42 r1: mbps=493.8 pin=0.000 floor=0.000 cap=1706.8 ask=1706.5 win=1899 occ=0.96 paused=34 rtt=37.0 over=8.6 ax50=26624 ax95=49152 LIVE 
+  c1d-400 LAW s42 r2: mbps=524.7 pin=0.000 floor=0.000 cap=1852.1 ask=1851.6 win=1590 occ=0.99 paused=41 rtt=30.4 over=5.4 ax50=22528 ax95=57344 LIVE 
+  c1d-400 LAW s42 r3: mbps=583.7 pin=0.000 floor=0.000 cap=1633.1 ask=1632.5 win=1814 occ=0.96 paused=32 rtt=28.1 over=7.4 ax50=20480 ax95=28672 LIVE 
+  c1d-400 LAW s7 r1: mbps=524.5 pin=0.000 floor=0.000 cap=1193.6 ask=1193.0 win=1319 occ=0.97 paused=35 rtt=19.6 over=4.2 ax50=14336 ax95=32768 LIVE 
+  c1d-400 LAW s7 r2: mbps=601.3 pin=0.000 floor=0.000 cap=1217.8 ask=1217.4 win=1387 occ=0.97 paused=35 rtt=17.5 over=4.3 ax50=13312 ax95=22528 LIVE 
+  c1d-400 LAW s7 r3: mbps=570.4 pin=0.000 floor=0.000 cap=1743.9 ask=1743.4 win=2455 occ=0.98 paused=32 rtt=25.5 over=9.4 ax50=18432 ax95=45056 LIVE 
+  c1s-400 CTL s42 r1: mbps=620.5 pin=0.000 floor=0.000 cap=0.0 ask=0.0 win=1024 occ=1.00 paused=28 rtt=11.8 over=9.7 ax50=6656 ax95=16384 LIVE 
+  c1s-400 CTL s42 r2: mbps=647.7 pin=0.000 floor=0.000 cap=0.0 ask=0.0 win=1024 occ=0.91 paused=28 rtt=12.4 over=9.7 ax50=7680 ax95=14336 LIVE 
+  c1s-400 CTL s42 r3: mbps=658.0 pin=0.000 floor=0.000 cap=0.0 ask=0.0 win=1024 occ=0.92 paused=25 rtt=10.8 over=8.9 ax50=7168 ax95=12288 LIVE 
+  c1s-400 CTL s7 r1: mbps=716.2 pin=0.000 floor=0.000 cap=0.0 ask=0.0 win=1024 occ=0.92 paused=27 rtt=11.1 over=10.1 ax50=6144 ax95=13312 LIVE 
+  c1s-400 CTL s7 r2: mbps=743.1 pin=0.000 floor=0.000 cap=0.0 ask=0.0 win=1024 occ=0.98 paused=28 rtt=10.1 over=7.8 ax50=6656 ax95=11264 LIVE 
+  c1s-400 CTL s7 r3: mbps=643.1 pin=0.000 floor=0.000 cap=0.0 ask=0.0 win=1024 occ=0.97 paused=28 rtt=11.4 over=9.3 ax50=7168 ax95=13312 LIVE 
+  c1s-400 LAW s42 r1: mbps=696.0 pin=0.641 floor=0.000 cap=1637.0 ask=1934.0 win=2048 occ=1.00 paused=24 rtt=19.9 over=12.4 ax50=13312 ax95=24576 LIVE 
+  c1s-400 LAW s42 r2: mbps=254.7 pin=0.904 floor=0.000 cap=1959.5 ask=2889.3 win=2048 occ=1.00 paused=51 rtt=94.2 over=29.1 ax50=81920 ax95=114688 LIVE 
+  c1s-400 LAW s42 r3: mbps=690.1 pin=0.687 floor=0.000 cap=1687.1 ask=1906.0 win=2048 occ=0.95 paused=20 rtt=19.0 over=11.9 ax50=13312 ax95=24576 LIVE 
+  c1s-400 LAW s7 r1: mbps=669.6 pin=0.659 floor=0.000 cap=1887.2 ask=2302.9 win=2048 occ=0.95 paused=22 rtt=28.4 over=13.8 ax50=15360 ax95=26624 LIVE 
+  c1s-400 LAW s7 r2: mbps=682.5 pin=0.746 floor=0.000 cap=1698.2 ask=2028.9 win=2048 occ=0.92 paused=23 rtt=18.9 over=14.2 ax50=14336 ax95=22528 LIVE 
+  c1s-400 LAW s7 r3: mbps=618.4 pin=0.561 floor=0.000 cap=1831.4 ask=1947.5 win=2048 occ=1.00 paused=28 rtt=23.2 over=12.4 ax50=16384 ax95=73728 LIVE 
+  c1s-400 LAW-auto s42 r1: mbps=677.3 pin=0.783 floor=0.000 cap=1823.9 ask=2295.7 win=2048 occ=0.95 paused=22 rtt=18.8 over=15.3 ax50=15360 ax95=28672 WITNESS-FAIL law-win-constant
+  c1s-400 LAW-auto s42 r2: mbps=645.9 pin=0.749 floor=0.000 cap=1783.0 ask=2237.5 win=2048 occ=0.97 paused=27 rtt=26.1 over=14.5 ax50=15360 ax95=28672 LIVE 
+  c1s-400 LAW-auto s42 r3: mbps=621.8 pin=0.560 floor=0.000 cap=1674.3 ask=1871.6 win=2048 occ=0.94 paused=24 rtt=19.7 over=13.3 ax50=13312 ax95=32768 LIVE 
+  c1s-400 LAW-realtime s42 r1: mbps=148.6 pin=0.000 floor=0.000 cap=1074.0 ask=1073.6 win=1073 occ=0.11 paused=0 rtt=2.8 over=28.9 ax50=352 ax95=2816 WITNESS-FAIL window-line-missing-on-window
+  c1s-400 LAW-realtime s42 r2: mbps=87.5 pin=0.388 floor=0.000 cap=1390.4 ask=4851.2 win=1162 occ=0.99 paused=5 rtt=85.0 over=35.6 ax50=960 ax95=163840 WITNESS-FAIL window-line-missing-on-window
+  c1s-400 LAW-realtime s42 r3: mbps=151.4 pin=0.000 floor=0.000 cap=1027.9 ask=1027.6 win=1044 occ=0.12 paused=0 rtt=2.9 over=28.1 ax50=352 ax95=3072 WITNESS-FAIL window-line-missing-on-window
+  c2-100 LAW s42 r1: mbps=90.2 pin=0.000 floor=0.000 cap=554.7 ask=554.1 win=572 occ=1.00 paused=64 rtt=55.8 over=6.3 ax50=40960 ax95=106496 LIVE 
+  c2-100 LAW s42 r2: mbps=88.2 pin=0.000 floor=0.000 cap=1034.4 ask=1034.2 win=1056 occ=1.00 paused=69 rtt=105.6 over=7.6 ax50=90112 ax95=147456 LIVE 
+  c2-100 LAW s42 r3: mbps=89.3 pin=0.000 floor=0.000 cap=632.2 ask=631.9 win=495 occ=1.00 paused=66 rtt=49.8 over=5.7 ax50=36864 ax95=90112 LIVE 
+  c2-100 LAW s7 r1: mbps=89.8 pin=0.000 floor=0.000 cap=1406.7 ask=1406.0 win=1650 occ=1.00 paused=68 rtt=164.6 over=13.3 ax50=147456 ax95=147456 LIVE 
+  c2-100 LAW s7 r2: mbps=89.9 pin=0.000 floor=0.000 cap=1353.4 ask=1353.1 win=1703 occ=1.00 paused=68 rtt=165.6 over=13.4 ax50=147456 ax95=147456 LIVE 
+  c2-100 LAW s7 r3: mbps=89.7 pin=0.000 floor=0.000 cap=1186.8 ask=1186.7 win=1351 occ=1.00 paused=68 rtt=135.4 over=11.2 ax50=114688 ax95=122880 LIVE 
+  c2-100 LAW-auto s42 r1: mbps=77.1 pin=0.029 floor=0.000 cap=797.1 ask=842.1 win=744 occ=1.00 paused=60 rtt=94.8 over=8.1 ax50=73728 ax95=106496 LIVE 
+  c2-100 LAW-auto s42 r2: mbps=77.1 pin=0.028 floor=0.000 cap=730.0 ask=752.7 win=597 occ=1.00 paused=57 rtt=86.3 over=6.9 ax50=65536 ax95=106496 LIVE 
+  c2-100 LAW-auto s42 r3: mbps=76.9 pin=0.022 floor=0.000 cap=681.7 ask=690.6 win=622 occ=1.00 paused=57 rtt=78.2 over=6.4 ax50=65536 ax95=90112 LIVE 
+  c2-100 LAW-realtime s42 r1: mbps=69.5 pin=0.704 floor=0.000 cap=1979.2 ask=3428.9 win=2048 occ=0.99 paused=5 rtt=114.3 over=27.5 ax50=98304 ax95=106496 WITNESS-FAIL window-line-missing-on-window
+  c2-100 LAW-realtime s42 r2: mbps=68.9 pin=0.963 floor=0.000 cap=2007.6 ask=4193.5 win=2048 occ=1.00 paused=6 rtt=113.9 over=27.6 ax50=98304 ax95=114688 WITNESS-FAIL window-line-missing-on-window,law-win-constant
+  c2-100 LAW-realtime s42 r3: mbps=68.6 pin=0.828 floor=0.000 cap=1896.8 ask=4278.3 win=2048 occ=1.00 paused=5 rtt=115.7 over=40.2 ax50=98304 ax95=114688 WITNESS-FAIL window-line-missing-on-window
+  c8-100 LAW s42 r1: mbps=104.1 pin=0.000 floor=0.000 cap=1215.2 ask=1214.7 win=1516 occ=1.00 paused=76 rtt=191.5 over=9.7 ax50=73728 ax95=106496 LIVE 
+  c8-100 LAW s42 r2: mbps=90.1 pin=0.000 floor=0.000 cap=2323.5 ask=2323.0 win=2621 occ=0.99 paused=66 rtt=417.2 over=14.0 ax50=122880 ax95=147456 LIVE 
+  c8-100 LAW s42 r3: mbps=93.6 pin=0.000 floor=0.000 cap=2126.0 ask=2125.6 win=2248 occ=0.99 paused=71 rtt=350.0 over=12.3 ax50=106496 ax95=131072 LIVE 
+  c8-100 LAW s7 r1: mbps=96.2 pin=0.000 floor=0.000 cap=1779.4 ask=1778.8 win=1995 occ=1.00 paused=68 rtt=270.8 over=7.6 ax50=106496 ax95=122880 LIVE 
+  c8-100 LAW s7 r2: mbps=82.5 pin=0.000 floor=0.000 cap=2933.1 ask=2932.8 win=3667 occ=0.99 paused=64 rtt=426.2 over=21.4 ax50=106496 ax95=262144 LIVE 
+  c8-100 LAW s7 r3: mbps=94.9 pin=0.000 floor=0.000 cap=1966.6 ask=1965.9 win=2093 occ=1.00 paused=67 rtt=297.4 over=7.7 ax50=106496 ax95=122880 LIVE 
+
+SCORED c1s-400: LAW n=6 CTL n=6
+  goodput LAW 601.9 CTL 671.4 (means; ranges 254.7-696.0 / 620.5-743.1) diff -69.6 sigma_pooled 126.42 band 2s=252.85
+  A_x p50 us LAW 25771 CTL 6912 diff 18859 sigma_pooled 19473
+  LAW pin 0.700 floor 0.000; CTL win_cap_med 1024
+  btlbw over-read (anchor / delivered) LAW 15.6 CTL 9.2
+  rtt ms LAW 33.9 CTL 11.2; paused% LAW 28 CTL 27; occ LAW 0.97 CTL 0.95
+  c1s outcomes that hold: ['PINNED']
+  c1s verdict (first in order REFUTED, PINNED, LATENCY-COST, GOODPUT-UP, INERT-AS-DERIVED): PINNED
+
+CONTROL c1d-400: n=6 goodput median 547.5 [493.8-601.3] vs §15 MAIN [677.9-755.1] in_range=False; [SUMCAP] eng=N/N True; pin 0.000 floor 0.000 cap 1557.9 -> CONTROL-MOVED
+CONTROL c2-100: n=6 goodput median 89.7 [88.2-90.2] vs §15 MAIN [90.08-90.32] in_range=False; [SUMCAP] eng=N/N True; pin 0.000 floor 0.000 cap 1028.0 -> CONTROL-MOVED
+CONTROL c8-100: n=6 goodput median 94.3 [82.5-104.1] vs §15 MAIN [82.9-102.9] in_range=True; [SUMCAP] eng=N/N True; pin 0.000 floor 0.000 cap 2057.3 -> not moved
+
+DELTA LEG (LAW at other dial points; witness: [DCAP] q reaches the seat; [SUMCAP] ceil identity when interior)
+  c1s-400 auto s42 r2: dcap_q=0.066667 (want 0.0667) ok=True pin=0.749 cap-ask=-454.50 interior=False ceil_ok=False
+  c1s-400 auto s42 r3: dcap_q=0.066667 (want 0.0667) ok=True pin=0.560 cap-ask=-197.30 interior=False ceil_ok=False
+  c1s-400 realtime: no live rows
+  c2-100 auto s42 r1: dcap_q=0.066667 (want 0.0667) ok=True pin=0.029 cap-ask=-45.00 interior=False ceil_ok=False
+  c2-100 auto s42 r2: dcap_q=0.066667 (want 0.0667) ok=True pin=0.028 cap-ask=-22.70 interior=False ceil_ok=False
+  c2-100 auto s42 r3: dcap_q=0.066667 (want 0.0667) ok=True pin=0.022 cap-ask=-8.90 interior=False ceil_ok=False
+  c2-100 realtime: no live rows
+
+DECISION RULE: the law ships unless REFUTED. REFUTED = c1s goodput below CTL by more than 2 sigma_pooled, or CONTROL-MOVED at any N >= 2 cell.
+RESULT: REFUTED; c1s: ['PINNED']

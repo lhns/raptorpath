@@ -4766,3 +4766,121 @@ invocations, plus a 3-invocation smoke, at ≈ 10–20 s each (the §15 battery
 ran 60 invocations in 556 s): about 15 minutes of measurement, one to two
 hours of session wall with the build and lock waits, far inside the 5 h
 budget.
+
+### 18. One store law at every path count (ADR-0072) — result
+
+Scored 2026-10-26 against the pre-registration above and its amendment,
+literally; no threshold was touched after the data was read. **Verdict by
+the pre-registered rule: `REFUTED` — through `CONTROL-MOVED` at `c1d-400`
+and `c2-100`, not through the c1s contrast.** c1s itself reads **`PINNED`**
+(expected): goodput is within the noise band, the knee binds in 70 % of
+windows. The reading of the CONTROL-MOVED clauses is the open question and
+is in *What this does and does not show* below; nothing ships or flips from
+this section (the project lead decides).
+
+*Binary and session.* One binary, `sha256 17418fd8…a69ff4`, built fresh on
+the benchmark VM from tree `8a43cd2` (engine identical to `6323db5`; the
+commits after it are the status amendment, the q2 source-pin test and the
+harness). Envelope `tools/l1/storelaw_run_all.sh` (battery
+`storelaw_battery.sh`, parser `storelaw_parse.py`, derived from
+`threadd9_*`). The session waited 2 h 44 min for the VM locks held by
+another agent (`r1-r1c`), then held both from 06:06:55Z: build 570 s, smoke
+06:17:03Z, battery 06:17:03–06:25:06Z (483 s, 42 invocations, 11.5 s
+each), q2 test, locks released 06:29:58Z, exit state 0 `raptorpath`, 0
+`rp-*` namespaces. Ledgers: `docs/l1-raw/store-law-n1/` (`sl.log` with
+every `SLROW`, `score.txt`, `smoke.log`, `smoke-check.txt`, `BINSHA.txt`,
+`all-era.txt`, `all.out`, `build.log`, `q2test.log`, and the per-invocation
+driver and both-endpoint logs under `diag-sl/`, `diag-smoke/`).
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` / `ABORT-CRLF` / `ABORT-SHA` / `ABORT-SENTINEL-UNWRITABLE` / `ABORT-BUILD` | no |
+| `ABORT-SMOKE` | no: `SMOKE-PASS` (c1s LAW `eng=792/792` pin 0.72, `win=` 3 values; c1s CTL `eng=0/0`, `win=` constant; c2 LAW `eng=1551/1551` pin 0.00) |
+| `ABORT-TESTS` | no (no cargo suite in the session; the q2 test alone, below) |
+| `ABORT-RC` / `ABORT-BRINGUP` / `VOID-COTENANT` | 0 / 0 / 0 of 42 (no `RUN-RETRY`) |
+
+*Rows.* 42 rows. LIVE 35; `WITNESS-FAIL` 7, all in the δ leg: `c1s LAW-auto`
+r1 (`law-win-constant`: `win=` pinned at the 2048 knee in every
+post-warm-up window — a constant, but the knee, not CTL's 1024), and 6
+`LAW-realtime` rows (`window-line-missing-on-window`: the harness witness
+`auto-selecting RLC windowed backend` is not printed when the hint is
+named, so it is absent at Realtime; the `[PIPE]` echo reads
+`pipeline=window hint=realtime`, `[SUMCAP]` engaged and `[DCAP]` read
+`q=0.05` on all six). Per the void rule these rows are excluded and not
+re-scoped.
+
+*c1s-400 (scored; LAW n = 6, CTL n = 6; means).*
+
+| | LAW | CTL |
+|---|---|---|
+| goodput Mbit/s | 601.9 (254.7–696.0) | 671.4 (620.5–743.1) |
+| `[SUMCAP]` | `eng` 100 %, **pin 0.700** (0.56–0.90), floor 0 | `eng=0/0` |
+| `win=` cap | 2048 (the knee) | 1024 (the constant) |
+| `A_x` p50 µs (p95) | 25 771 (13–82 k) | 6 912 (11–16 k) |
+| rtt ms / paused % / occupancy | 33.9 / 28 / 0.97 | 11.2 / 27 / 0.95 |
+| btlbw anchor ÷ delivered | 15.6 | 9.2 |
+
+Goodput LAW − CTL = −69.6 Mbit/s against σ_pooled 126.4 (2σ = 252.9), so
+not `REFUTED` at c1s. `A_x` p50 +18.9 ms against σ_pooled 19.5 ms (2σ =
+38.9), so not `LATENCY-COST`; not `GOODPUT-UP`; `pin` ≥ 0.25, so not
+`INERT-AS-DERIVED`. Outcomes that hold: **`PINNED`** only. The pooled σ is
+inflated by one LAW rep (seed 42 rep 2: 254.7 Mbit/s, pin 0.90, rtt 94 ms,
+`A_x` p50 82 ms); the other five LAW reps average 671.3 against CTL 671.4,
+and the `A_x` p50 excluding that rep is 14.5 ms against 6.9 ms (every LAW rep
+above every CTL rep). That is an observation; the verdict above is the
+pre-registered one. The anchor over-reads ×12–29 on LAW and ×8–10 on CTL, so
+the law asks 1.9–2.9 k symbols and the knee answers (paper §6.1, "The c1
+input": the next defect item).
+
+*Control-moved leg (LAW only, n = 6 each; reference = the §15 MAIN
+goodput range).*
+
+| cell | goodput median [min–max] | §15 MAIN | `[SUMCAP]` | verdict |
+|---|---|---|---|---|
+| `c1d-400` | 547.5 [493.8–601.3] | 677.9–755.1 | `eng=N/N`, pin 0, cap 1194–1852 | **CONTROL-MOVED** |
+| `c2-100` | 89.7 [88.2–90.2] | 90.08–90.32 | `eng=N/N`, pin 0, cap 555–1407 | **CONTROL-MOVED** |
+| `c8-100` | 94.3 [82.5–104.1] | 82.9–102.9 | `eng=N/N`, pin 0, cap 1215–2933 | not moved |
+
+The interior ceil identity holds at every N ≥ 2 row and every Bulk c2 row:
+`[SUMCAP]` mean cap − mean ask ∈ [0.1, 0.7] with pin = floor = 0.
+
+*δ leg.* `[DCAP] q` reads 0.0667 on all 6 Auto rows (c1s, c2) and 0.050 on
+the 6 Realtime rows: the dial reaches the single path at all three hints
+(the Realtime rows are voided by the harness witness above, reported for
+information). The pre-registered "cap/anchor = 1 + q within one `ceil` in
+interior windows" cannot be shown for the Auto rows from the gauges kept:
+c1s Auto is pinned (pin 0.56–0.78) and c2 Auto is not interior (pin
+0.02–0.03), so the mean cap − mean ask carries the clamped windows; the
+Bulk rows, where it is interior, satisfy it (above). Realtime at c1s reads
+87–151 Mbit/s (an unscored regime of its own; no CTL was run there).
+
+*What this does and does not show.*
+
+1. **The c1s contrast is as the derivation predicts**: the law engages at
+   one path, the knee binds in 70 % of windows because the c1 anchor
+   over-reads, the store and the RTT grow (rtt 11 → 34 ms, `A_x` p50 ×3.7),
+   and goodput is not separated from CTL at this n. `PINNED` is a defect
+   finding about the anchor (rule 18), not about the law.
+2. **`CONTROL-MOVED` is applied literally and is not, on this evidence,
+   attributable to the change.** At N ≥ 2 the new code is the old code (the
+   sampled-grid no-op test, plus the same expression driving all three
+   cells). The reference is a *different session and binary* (§15, main at
+   `88476a4`, `RWM_RTOBS=1`): its c2 range is 0.24 Mbit/s wide, which a
+   0.4 % shortfall (89.7 against 90.08) leaves, and `c1d` here (547) is 20
+   % under §15 (728) and §16 (688–729) with an ask of 1.2–1.9 k against
+   §16's 2.7 k, i.e. a different anchor trajectory in the same code path.
+   Session and VM-era drift (the box ran at load 4–5 beside the previous
+   agent's work) is the first suspect, **[H]**; it is not shown. What
+   *would* decide it is a same-session main-binary control at `c1d-400`
+   and `c2-100` (n = 6, interleaved with LAW), which the pre-registration
+   did not include; it is recommended, not run, because the amendment
+   fixed the leg design before the data.
+3. **The decision rule as written fires `REFUTED`.** The lead decides
+   whether the ruling stands or the control leg is repeated with a
+   same-session reference.
+
+*Also in this session.* `q2_one_task_per_loop_no_multiplexer` (source-pin
+string updated for `task_obs::timed`, commit `fa0f915`) passes on the
+fresh build (`q2test.log`, rc 0).

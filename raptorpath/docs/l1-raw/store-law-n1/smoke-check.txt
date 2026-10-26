@@ -1,0 +1,4 @@
+SMOKE ('c1s-400', 'LAW'): mbps=686.275 eng=792/792 pin=0.7159 win_distinct=3 status=LIVE
+SMOKE ('c1s-400', 'CTL'): mbps=632.631 eng=0/0 pin=0.0 win_distinct=1 status=LIVE
+SMOKE ('c2-100', 'LAW'): mbps=89.745 eng=1551/1551 pin=0.0 win_distinct=4 status=LIVE
+SMOKE-PASS
