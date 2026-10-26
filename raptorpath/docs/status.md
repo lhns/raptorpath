@@ -6697,3 +6697,12 @@ Both stages are driven by a detached waiter on the VM (`lag26_waiter.sh`).
 It retries a stage every 5 min while that stage exits on the precondition
 or on a held lock. It never touches a lock path itself. Hard deadline for
 the diagnostic is launch + 4 h. Nothing else in §26 changes.
+
+**§26 amendment 2 (pre-launch, agent rules).** The measurement runs from
+tmpfs:
+
+- The measured binary and the run dir live under `/dev/shm/lag26`. The
+  driver logs were already in `/tmp`, which is tmpfs on this VM.
+- The run dir is copied to disk (`<root>/run`) when the session exits.
+- The build and the full suites stay on disk, and the I/O precondition is
+  kept.

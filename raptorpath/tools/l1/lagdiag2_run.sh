@@ -22,10 +22,15 @@ crlf_guard lib.sh lib_battery.sh perf_rwm_c.sh topo.sh topo_dual.sh lagdiag2_run
 ROOT="${LG2_ROOT:?LG2_ROOT}"
 : "${LG2_HARD_DEADLINE:?LG2_HARD_DEADLINE (epoch seconds)}"
 SOFT=$(( LG2_HARD_DEADLINE - 600 ))
-RUN="$ROOT/run"
+# §26 pre-launch amendment 2 (agent rules): the measurement runs from tmpfs --
+# the binary and the run dir live under /dev/shm; the build stays on disk;
+# the run dir is copied to disk ($ROOT/run) at exit.
+SHM="${LG2_SHM:-/dev/shm/lag26}"
+RUN="$SHM/run"
 SRC="$(cd "$HERE/../../.." && pwd)"
-BIN="$ROOT/bin/raptorpath"
-mkdir -p "$RUN/diag" "$ROOT/bin"
+BIN="$SHM/bin/raptorpath"
+mkdir -p "$RUN/diag" "$SHM/bin"
+persist() { mkdir -p "$ROOT/run" && cp -a "$RUN/." "$ROOT/run/" 2>/dev/null; }
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$RUN/era.txt"; }
 sudo -n true 2>/dev/null || { era "ABORT-SUDO"; exit 3; }
 
@@ -63,7 +68,7 @@ rm -f "$FIN"
   sudo -n pkill -x raptorpath 2>/dev/null || true
 ) &
 BACKSTOP_PID=$!
-finish() { touch "$FIN" 2>/dev/null; kill "$BACKSTOP_PID" 2>/dev/null; release_locks; }
+finish() { touch "$FIN" 2>/dev/null; sudo -n chown -R "$(id -un)" "$RUN" 2>/dev/null; persist; kill "$BACKSTOP_PID" 2>/dev/null; release_locks; }
 trap finish EXIT
 trap 'finish; exit 130' INT
 trap 'finish; exit 143' TERM
@@ -110,7 +115,7 @@ row() { # tag seed rtobs
   sha="$(sha256sum "$BIN" | cut -d' ' -f1)"
   [ "$sha" = "$BINSHA" ] || fail "ABORT-SHA $tag: $sha != $BINSHA"
   base="$RUN/diag/$tag"
-  rm -f /tmp/rwm-c.log /tmp/rwm-s.log /tmp/lg2-drv.out
+  rm -f /tmp/rwm-c.log /tmp/rwm-s.log "$SHM/lg2-drv.out"
   cb=$(cot_count)
   statmon "$base-stat.txt" &
   mon=$!
@@ -118,12 +123,12 @@ row() { # tag seed rtobs
       -u RWM_RTOBS -u RWM_RDIAG -u RWM_ACKDIAG -u RWM_IO_RT \
       RWM_RTOBS="$rtobs" RWM_RDIAG=1 SEED="$seed" RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 \
       RWM_C_PIPELINE=window RWM_BIN="$BIN" \
-    bash perf_rwm_c.sh c2 c3 bulk 100000000 1 dual > /tmp/lg2-drv.out 2>&1
+    bash perf_rwm_c.sh c2 c3 bulk 100000000 1 dual > "$SHM/lg2-drv.out" 2>&1
   rc=$?
   kill "$mon" 2>/dev/null
   wait "$mon" 2>/dev/null
   ca=$(cot_count)
-  cp /tmp/lg2-drv.out "$base-drv.out" 2>/dev/null
+  cp "$SHM/lg2-drv.out" "$base-drv.out" 2>/dev/null
   cp /tmp/rwm-c.log "$base-c.log" 2>/dev/null
   cp /tmp/rwm-s.log "$base-s.log" 2>/dev/null
   mbps=$(grep -a -o '"mbps":[0-9.]*' "$base-c.log" 2>/dev/null | tail -1 | cut -d: -f2)
