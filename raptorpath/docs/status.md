@@ -4881,6 +4881,10 @@ Bulk rows, where it is interior, satisfy it (above). Realtime at c1s reads
    whether the ruling stands or the control leg is repeated with a
    same-session reference.
 
+**Ruling (project lead).** §18 stands as scored, `REFUTED` by its own rule;
+it is not relabelled. The CONTROL-MOVED check used a cross-session
+reference, a weakness of the design (the lead's), and §19 tests it. No ship.
+
 *Also in this session.* `q2_one_task_per_loop_no_multiplexer` (source-pin
 string updated for `task_obs::timed`, commit `fa0f915`) passes on the
 fresh build (`q2test.log`, rc 0).
