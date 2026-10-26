@@ -1,5 +1,5 @@
 #!/bin/bash
-# Threading R3 step 0 (docs/status.md §26): the c1d receiver re-profile on
+# Threading R3 step 0 (docs/status.md §22): the c1d receiver re-profile on
 # current main plus the R3 instrument (three more [RXSEC] sections and the
 # decoder cost bench). Diagnostic only: ships nothing. Both locks for the
 # whole session.

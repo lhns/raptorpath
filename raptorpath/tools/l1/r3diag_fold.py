@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""§26 (docs/status.md): the receiver-rooted breakdown of a server
+"""§22 (docs/status.md): the receiver-rooted breakdown of a server
 `perf script -F tid,sym` (dwarf call graphs), read off the VM.
 
 For every sample whose stack contains the receiver task's poll

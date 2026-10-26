@@ -6329,160 +6329,134 @@ the rate the cap lets through. The next step is a design decision on the
 controller (an unloaded loop-time term, an explicit probe, or the
 substrate's rate), not a build; it is the coordinator's.
 
-## 23. The c1 anchor over-read and the store law's input — diagnosis — pre-registration
+## 22. Threading R3 step 0 — the c1d receiver re-profile — pre-registration
 
-§18/§19 left the next defect named: at one path the pooled law reads an
-anchor that over-reads the delivered rate ×8–29 (`[DIAG]` `btlbw` against
-goodput; ×8–10 at the 1024 constant, ×12–29 at the 2048 knee, ×8–11 at c2),
-so `c1s-400` pins at the knee in 56–90 % of windows and the cap is again a
-constant (rule 18). This is a **diagnostic session**: one binary, main
-(`0972c3c`, built fresh), nothing ships or flips from it. It answers three
-questions the fix depends on, before any law is written down.
+§16 finding 4 named the c1d ceiling: the server's one receiver task (busy
+0.95, 0.85 core, `[RDIAG]` 99–100 %); §21 (R2, DELIVERED) lowered its
+per-message cost but left it saturated at c1d (`[RDIAG]` median 99 %).
+Plan v2's Q3 allows a receiver-role split only for a separable role of
+≥ 0.3 core. This section measures what the receiver's time is made of on
+**current main** (3982bd1; its engine tree is 0972c3c's — §23 changed tools
+and docs only) so the R3 design is chosen by the data. It is a
+**diagnosis**: nothing ships, nothing is tuned. No number below the
+"Readings so far" paragraph is a result.
 
-**What is already known (not re-litigated).** The mechanism class is named
-in paper §2.7/§8.3 and in the code (`control_msg.rs`, `copa.rs`
-`record_delivery`): the default sampler is ack-interval
-`Δdelivered / Δt_ack` with a 1 ms floor, and its 10 s windowed max latches
-bunched acks. The send-interval sampler (`RWM_PLAIN_RS`, BBR's
-`max(send_elapsed, ack_elapsed)` with an interval ≥ RTprop) read 1.02× the
-link at sc2 (ledger at `ac1aed1`, "Anchor Hygiene"); fed to the old
-`2·BDP` store chain it cost sc2 −20 % ("the over-read is load-bearing"),
-which the `RWM_HONEST_CAP` re-derivation repaid with a 100 ms runway term
-(`HONEST_RECOVERY_ROUND_S`, an open constant). `RWM_FLOOR_BOUND` cost c1
-−14 % as a Copa cwnd-floor bound. Every one of these predates either
-SACK-clocked release (ADR-0060, 2026-07-21) or the δ-cap (1 + q), and none
-was read at c1s under the current law. Not tested here: the honest anchor
-as a cwnd-floor input (that is `RWM_FLOOR_BOUND`'s question, not this one).
+**Record of an invalid first attempt (stated before any result).** A first
+session of this design ran on 2026-10-26 15:58:11–16:07:30Z from an
+unmerged branch whose "pre-registration" commit (`42b074c`) did **not**
+contain this text: the agent's draft file in a scratch directory shared
+with another agent had been overwritten by that agent's §23 draft, and the
+commit appended a duplicate of §23 instead. That session therefore ran
+without a valid pre-registration. It ended `ABORT-TESTS` (the new
+`task_obs::tests::the_rxsec_line_splits_a_message_into_its_sections` caught
+runs of spaces in the instrument's format string — a real defect, fixed in
+its own commit); no row, bench or profile ran, both locks were released,
+0 `raptorpath`, 0 `rp-*`. Nothing from it is read. This text is the
+pre-registration; it is committed before the next VM contact.
 
-**Questions.**
-- **Q1 (rule 1: does the named mechanism produce the c1s/c2 anchor?)** The
-  samples that set the windowed max are ack-interval samples whose Δt sits at
-  the 1 ms floor, i.e. the max is a bunch of acks divided by the floor, not a
-  delivery rate.
-- **Q2 (the honest input under the current law).** With the send-interval
-  sampler feeding the shipped law (`RWM_PLAIN_RS=1 RWM_HONEST_CAP=0`, so the
-  pooled `(1 + q)·Σ bw·RTprop` law runs on it and the honest-cap arm does
-  not), what does the anchor read at each cell and path, what does the law
-  ask, and what happens to goodput, `A_x` and sender CPU?
-- **Q3 (the store the cell actually needs).** A static cap sweep
-  (`RWM_STORE=<n>`, which disables the dynamic cap and changes nothing else on
-  this path) maps goodput and `A_x` against the cap at the two single-path
-  cells. The knee of that curve is the ground truth any law must reach; Q2's
-  honest law value either reaches it or names the missing headroom.
+**Readings so far (not results).** The only `[RXSEC]` reads are on R1-era
+trees: §17's c1d dev read (R1, with the `[LAT]` O(gap) defect live) 16.7 µs
+per message — decode 34.8 %, deliv 9.0 %, ack 14.0 %, book 15.8 %, other
+26.4 %, backlog p50 256 / p99 1536; §20's c1s `FIX` rows (≈ R2) 13.1–14.5
+µs — decode 5.96 µs (41 %), other 4.72 µs (32 %), book 1.0 µs (7 %). One
+message = one symbol (msgs ≈ data ≈ 338 k per 400 MB). By arithmetic on
+0.85 core, decode ≈ 0.30–0.35 core sits **on** the 0.3 bar; book, ack,
+deliv and other are each below it.
 
-**Instruments** (all existing, observation only, no code change):
-`[DIAG]` (`btlbw`, `win=`, `rtt`, `rtp_us`), `[SUMCAP]`, `[LAT]` `A_x`,
-`[ACKDIAG]` (`RWM_ACKDIAG=1`: ack `gap_us`, `drecv` per ack, the per-sample
-over-read `x[p50 p90 p99]`, `xanchor`), and `[RSTRACE-LEGACY]` /
-`[RSTRACE]` (`RWM_RS_TRACE=<thr>`: every accepted sample at or above `thr`
-with its `delta` and `elapsed_ms`, resp. its send/ack interval). `thr` is
-2× the cell's link datagram rate: 195 000 sym/s at c1 (1 Gbit/s ÷ 1 279 B
-wire datagrams = 97 700/s), 19 500 at c2 and c8.
+**What decode is, read from the code** (`fec/unified.rs`). An in-order
+source symbol with no loss does no GF work but pays: a SipHash `HashSet`
+insert of a 3-tuple (`seen`), a `BTreeMap` probe, a zeroed
+`vec![0; symbol_size]` plus a copy, a `Vec` and a `VecDeque` for the
+worklist, a payload clone into `recovered` (`BTreeMap<u64, Vec<u8>>`), a
+`BTreeSet` insert (`delivered`), a second payload clone into the output
+`Bytes`, and a scan of every stored row (`covering`): three payload copies
+and about five allocations per symbol. A k = 0 repair walks
+`recovered.range(anchor..anchor+width)` (O(width) node visits). And
+`advance` — the only prune of `recovered`, `delivered` and `seen` — runs
+once per `REPORT_INTERVAL` = 2 s (`net/receiver.rs`, the periodic block),
+so the decoder holds ~2 s of payload copies (≈ 140 k × 1.2 kB ≈ 165 MB at
+c1d) and frees them in one burst; the burst sits outside every `[RXSEC]`
+section today (it reads as "other").
 
-**Design.** One binary, built fresh in a fresh target under both locks, its
-`sha256` checked per invocation. All rows: shipped defaults otherwise, Bulk,
-`--window-reliable`, `RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1
-RWM_RS_TRACE=<thr> RWM_PERF_TIMEOUT_S=150`, the same env withholding as §19
-plus the arm gates (`env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH
-RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS
-RWM_HONEST_CAP RWM_STORE` before the arm's env), `perf_rwm_c.sh`, one
-invocation per fresh topology. Arms:
+**The instrument** (`RWM_RTOBS=2` only, measurement only): three more
+`[RXSEC]` sections appended to the line — `arr` (the arrival stamp: RX
+jitter, `xdir` publication, revival nudge, and the per-path batch
+tracker's DashMap entry), `probe` (the per-source `[RFA]` `seq_probe` and
+the `RWM_DIAG` conversion duplicate test, before `add_symbol`), `prune`
+(the `received_seqs` prune and the decoder's `advance`), with `prune_n`
+and the run-cumulative `prune_max_us`; "other" becomes the remainder of
+all seven. A decoder bench
+(`fec::unified::tests::bench_in_order_add_symbol_against_the_prune_cadence`,
+`#[ignore]`): 300 k in-order loss-free 1 182-byte sources and one width-200
+repair per 20, `advance` to a lag of 400 either every 140 k symbols (the
+2 s cadence at c1d) or every 1 k; ns per source `add_symbol`, per repair,
+and the `advance` maximum. The bench and the `task_obs` unit tests run in
+the session (release), before the rows.
 
-| arm | env | cells | n (seeds) |
-|---|---|---|---|
-| `MAIN` | none | `c1s-400`, `c2-100`, `c1d-400`, `c8-100` | 3 (42, 7, 42) |
-| `PRS` | `RWM_PLAIN_RS=1 RWM_HONEST_CAP=0` | the same four | 3 (42, 7, 42) |
-| `S<n>` | `RWM_STORE=<n>` | `c1s-400`: n ∈ {192, 256, 384, 512, 768, 1024, 1536, 2048} | 3 (42, 7, 42) |
-| `S<n>` | `RWM_STORE=<n>` | `c2-100`: n ∈ {64, 96, 128, 192, 256, 384, 512, 1024} | 2 (42, 7) |
+**Hypotheses and predictions** (fixed now; read in the result as MET /
+MISSED with the numbers).
+- **H-alloc — decode is bookkeeping, not field arithmetic.** (a) In the
+  c1d profile, the samples under `UnifiedDecoder::add_symbol` (children)
+  that are in `gf256` (`mul_acc_slice`, `mul`) are ≤ 20 % of
+  `add_symbol`'s children; the allocator, `memmove`/`memset`, `BTreeMap` /
+  `BTreeSet` and `HashSet` frames are ≥ 50 %. (b) Bench: source
+  `add_symbol` at the 140 k cadence costs ≥ 1.5 × the 1 k cadence.
+- **H-burst — the 2 s prune is a stall.** `prune_max_us` ≥ 5 000 at c1d in
+  every row; bench `adv_max_us` ≥ 5 000 at the 140 k cadence.
+- **H-other — the remainder is per-message lookups.** At c1d `arr` +
+  `probe` + `prune` ≥ half of R1's "other" share (i.e. the new remainder
+  is ≤ 15 % of the handler total).
+- **Re-read of the split** on current main at c1d, reported per section
+  as ns per message and share; receiver `[TASK]` cores and busy;
+  `[RDIAG]` busy median; backlog p50 / p99.
 
-Order: per (rep, seed) block, the four cells × {MAIN, PRS} with the arm
-order rotated by the block index, then that block's sweep points (c1s every
-block, c2 in the first two), ascending on even blocks and descending on odd.
-24 (MAIN, PRS) + 24 (c1s sweep) + 16 (c2 sweep) = 64 invocations in three
-blocks ((42, 1), (7, 1), (42, 2)), preceded by a 3-invocation smoke
-(`c1s-400` MAIN and PRS, `c2-100` `S256`).
+**Decision rule** (fixed now; the R3 design follows from it).
+- Role core = section share × the receiver task's `[TASK]` cores (c1d
+  median). A role is *separable* only if its inputs and outputs can cross
+  a channel without breaking an invariant: decode needs the window-decoder
+  state and its probes (`seq_probe`, `frontier_probe`, `rank_in`,
+  `advance`); delivery needs decode's output in seq order; acks are built
+  after decode (wire v9 honesty: an ack reflects decoded state);
+  `[LAT]` / `[SUCC]` read the same per-symbol events.
+- **R3 = make the decoder cheaper in place** (no new task) if H-alloc (a)
+  holds: the decode share is then mostly removable bookkeeping, and a
+  decode task would move that waste to a second thread, add a channel hop
+  to the head of the ack critical path (the shape §13's `own` arm measured:
+  hops added, no goodput) and a second allocator-contending thread (§16
+  finding 4's [H]).
+- **R3 = a decode-stage task** (one task owning the decoder, batched
+  channels both ways, one structure at every N) only if H-alloc (a) is
+  refuted (GF > 20 %: the cost is irreducible arithmetic) **and** decode ≥
+  0.3 core.
+- If neither holds (no role ≥ 0.3 core and decode is not bookkeeping), no
+  split is built and the report names the largest section.
+- The ship prediction any R3 must meet (§21's c1d clause: goodput BETTER
+  beyond the 5.6 % MDE with the server `[RDIAG]` busy median < 90 %) needs
+  the per-message handler cost down by ≥ ≈ 25 % at c1d; the design states
+  its expected saving against that bar.
 
-*Witnesses* (a row without them is void, not null). Every row: the
-`[GATES]` echo carries the arm's gates (`RWM_PLAIN_RS`, effective
-`RWM_HONEST_CAP`, `RWM_STORE`), and at least one `[ACKDIAG]` line. `MAIN`:
-`[SUMCAP] eng>0`, no "send-interval SAMPLER ACTIVE" echo. `PRS`: the
-"plain-mode send-interval SAMPLER ACTIVE" echo, `[GATES]` effective
-`RWM_HONEST_CAP=0`, no "honest floor-clock store caps ACTIVE" echo,
-`[SUMCAP] eng>0`. `S<n>`: `[SUMCAP] eng=0` (or absent), and every
-post-warm-up `[DIAG]` `win=` denominator equals n.
-
-*Abort table* (tokens fixed now; the result opens with it, filled):
-
-| cause | token |
-|---|---|
-| a VM lock not held by the envelope | `ABORT-LOCK` |
-| CR bytes in the synced tree | `ABORT-CRLF` |
-| binary `sha256` differs from the recorded one | `ABORT-SHA` |
-| a sentinel path not write+unlink probed | `ABORT-SENTINEL-UNWRITABLE` |
-| the smoke fails a witness | `ABORT-SMOKE` |
-| the fresh build or the parser test fails | `ABORT-BUILD` / `ABORT-TESTS` |
-| a driver exits non-zero (row void, session goes on) | `ABORT-RC` |
-| no summary after the bring-up tries | `ABORT-BRINGUP` (row `NO_DATA`) |
-| a compile or build process ran on the VM during the row | `VOID-COTENANT` |
-
-**Readouts and outcomes (fixed now).** Means over live rows; the link
-datagram rate `L` is 97 700/s at c1 and 9 770/s at c2 (the c3 leg 1 955/s).
-- **Q1, per cell `c1s-400` and `c2-100` (MAIN rows).** `M` = the
-  `[RSTRACE-LEGACY]` samples at or above `thr`. `MECHANISM-CONFIRMED` if, in
-  every live MAIN row at the cell, (a) the row's median post-warm-up `btlbw`
-  is ≥ 3·L (the over-read is present) and (b) ≥ 90 % of `M` have
-  `elapsed_ms` < 2.0 (the sample's length is the floor plus at most one
-  sender loop, not a delivery interval). `MECHANISM-OPEN` otherwise, with the
-  `elapsed_ms` distribution of `M` reported. Reported beside it: `[ACKDIAG]`
-  `gap_us`, `drecv` and `x` quantiles, `xanchor`, and `rd[acc rej]`.
-- **Q2, per cell (PRS rows).** Per path, `o = btlbw / L_path` (median of
-  post-warm-up `[DIAG]` windows). `HONEST` at a cell if `o ≤ 1.2` on every
-  path of every live row; `OVER-READ` otherwise, with `o` reported (the
-  dual cells are the slow-path residual (iii) check). Reported, not scored:
-  PRS − MAIN goodput, `A_x` p50, `[SUMCAP]` cap and pin, rtt, and client CPU
-  per GB, each with the 2σ_pooled band (n = 3 per arm is a diagnostic, not a
-  battery; nothing here is a ship verdict).
-- **Q3, per cell (`S<n>` rows).** `G(n)` = mean goodput at cap n, `Gmax` =
-  max over the grid, knee `n*` = the smallest grid n with
-  `G(n) ≥ 0.95·Gmax`. `ask_h` = the honest law's ask
-  `(1 + 0.1)·bw_h·RTprop` with `bw_h` and `RTprop` the PRS rows' medians at
-  that cell. `LAW-SUFFICIENT` if `n* ≤ 1.5·ask_h` (one grid step: the honest
-  input alone reaches the knee); `HEADROOM-MISSING` if `n* > 1.5·ask_h`,
-  reported as `H = n* − ask_h` symbols and `H / bw_h` ms; `UNSCOREABLE` if
-  fewer than 2 live rows at more than two grid points. Reported beside it:
-  `A_x` p50/p95 and rtt against n, and `xanchor` against n (prediction,
-  reported only: `xanchor` rises with n at c1s, i.e. the over-read grows
-  with the store it sizes — the circularity).
-
-**Decision rule (what the design takes from this; ships nothing).**
-`MECHANISM-CONFIRMED` at c1s names the defect as the rate input, so the fix
-changes the input at the cap seat (not the law's shape). Then, per Q3:
-`LAW-SUFFICIENT` at both single-path cells → the fix is the send-interval
-rate as the pooled law's `bwᵢ` at the cap seat only, no new term;
-`HEADROOM-MISSING` at either → the missing headroom is a term the paper must
-derive and measure before a build (candidates named now: BBR's `extra_acked`
-ack-aggregation allowance, draft-ietf-ccwg-bbr; the hole residency of lost
-symbols under SACK-clocked release), and a second diagnostic is
-pre-registered for it. `MECHANISM-OPEN` → the input is not changed until the
-mechanism is shown. Anything else is `OUTSIDE THE PRE-REGISTERED SET`.
-
-**Predictions (written before any number exists, reported).** Q1 confirmed
-at both cells. Q2: `HONEST` at both single paths; PRS asks ≈ 300 symbols at
-c1s and ≈ 100 at c2, and goodput falls at c1s by more than 2σ (the law on an
-honest input under-funds the c1s loop, as `RWM_FLOOR_BOUND` did) with `A_x`
-p50 down. Q3: the c1s knee lies between 384 and 768 and the c2 knee between
-128 and 384, i.e. `HEADROOM-MISSING` at c1s and undecided at c2.
-
-**Duration.** Build ≈ 10 min; 67 invocations at ≈ 14 s (§19: 54 in 757 s)
-≈ 16 min; under one hour with the lock waits seen in §18/§19, well inside
-the 4 h launch deadline and the 5 h cap.
-
-**Session history (before any result).** A first session of this exact
-design (launched 2026-10-26 15:58:11Z from a branch where this text was
-numbered §22, never merged) ended `ABORT-TESTS` at 16:07:30Z: the new
-`task_obs::tests::the_rxsec_line_splits_a_message_into_its_sections` failed
-because the instrument's format string carried runs of spaces from a bad
-line join (the test caught a real token-stream defect). No row, bench or
-profile ran; both locks were released; 0 `raptorpath`, 0 `rp-*`. Fixed in
-its own commit (the string only); the relaunch is the same design on this
-section's HEAD.
+**Session.** The tree (this section's HEAD) shipped with `git -c
+core.autocrlf=false -c core.eol=lf archive`, built on the VM in a fresh
+target dir, run as `raptorpath`. Envelope `tools/l1/r3diag_run.sh`, both
+locks for the whole session, detached, launched only when the coordinator
+releases the VM (the storage stall of 2026-10-26 evening). Launch
+precondition as §21 (both locks free by `test -e`, loadavg 1-min < 2.0,
+no `cargo` / `rustc` by `pgrep -x`), checked before the locks
+(`ABORT-PRECONDITION`); hard deadline = launch + 3 h. Order: build;
+`cargo test -p raptorpath --release --lib -- task_obs::` (a failure is
+`ABORT-TESTS`); the bench; rows `c1d-400` and `c1s-400` alternated, seeds
+42, 7, 42 (n = 3 per cell), bulk, `--window-reliable`, shipped defaults,
+`perf_rwm_c.sh` with `RWM_GEN=0 RWM_DIAG=1 RWM_RDIAG=1 RWM_RTOBS=2
+RWM_PERF_TIMEOUT_S=150` (§20's env scrub); then one server `perf record -g
+--call-graph dwarf,16384 -F 999` for 3 s in the steady state of a 1 GB
+`c1d` transfer (`RWM_DIAG=1`, no `RWM_RTOBS`), reported as self and
+children tops, the callers of the allocator and `memmove` symbols, and the
+folded `perf script` (`tid,sym`) for a receiver-rooted breakdown done off
+the VM (`tools/l1/r3diag_fold.py`). A row needs a client summary and the
+server's `[PIPE] pipeline=window backend=Rlc hint=bulk`; the instrument
+witness is an `[RXSEC] phase=xfer side=server` line carrying `prune_n=`
+with `prune_n ≥ 1` (rule 1: the new sections execute). Single-seed-class
+diagnostic, not scored. `pkill -x raptorpath` only; no `ens18`, firewall,
+`sshd` or non-`rp-*` namespace touched; exit state 0 `raptorpath`, 0
+`rp-*`, locks released, VM dirs removed. Ledgers to
+`docs/l1-raw/thread-r3-diag/`.

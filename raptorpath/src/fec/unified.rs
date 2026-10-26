@@ -768,7 +768,7 @@ mod tests {
         assert_eq!(&b[1].1[..24], &vec![6u8; 24][..]);
     }
 
-    /// Threading R3 step 0 (status §26): the decoder's per-symbol cost on an
+    /// Threading R3 step 0 (status §22): the decoder's per-symbol cost on an
     /// in-order, loss-free stream at the c1d symbol size, against the prune
     /// cadence. The receiver calls `advance` once per `REPORT_INTERVAL`
     /// (2 s ≈ 140 k symbols at c1d), so `recovered` / `delivered` / `seen`
