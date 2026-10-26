@@ -7015,3 +7015,113 @@ the sender.
    is in the runtime (timer hand-off). The rule-3 bound should shorten the
    sender's polls (§28 predicts a lower c8 client E, reported). It is not
    expected to remove the rep-to-rep spread.
+## 27. The spread law's two premises — the L source and a cap-flat spread — diagnosis — pre-registration
+
+§24 found no input for the store law and left one candidate outside its set:
+
+```text
+   cap  =  (1 + q(δ)) · Σᵢ Lᵢ · ( RTpropᵢ + (Tp50ᵢ − Tminᵢ) )
+```
+
+with `Tp50 − Tmin` the spread of the per-window loop-time distribution
+(cap-flat at c2 across a 16× cap range in §24, while Tmin moved 10×). It
+rests on two premises, both untested: (1) some non-circular source reads the
+link rate Lᵢ under the store cap; (2) the spread stays flat across the cap at
+every cell, so the law has a stable interior fixed point. This
+instrument-only session tests both and the reproduction they imply. Nothing
+ships or flips; no law is built.
+
+**The L source.** The in-tree burst-robust BBR substrate controller
+(`src/transport/bbr_rs.rs`, ADR-0054/0061: quinn's BBR with its bandwidth
+estimator replaced by the interval-guarded per-flight sampler,
+max(send, ack) elapsed and ≥ RTprop intervals). It is switched on by the
+substrate CC selection `RWM_QUIC_CC=bbr_rs`, so it runs **only as a
+measurement arm (`BRS`)**: it changes the substrate controller, not the
+store law; the store cap is the static `RWM_STORE=<n>` of the sweep in both
+arms. Its rate is read as `[LOOPDIAG]` `q_pace_bps` (its
+`metrics().pacing_rate` = pacing_gain·max_bandwidth; the window median
+reads the gain-1 phase). Stated risks: it is app-limited by our store cap;
+and like upstream it never lowers the pacing rate before it declares full
+bandwidth, so a startup over-shoot can persist.
+
+**Instrument and binary.** The `[LOOPDIAG]` instrument (`f5c200d`, the §24
+tree re-applied onto main `de3e11a`) and nothing else; one binary, built
+fresh on disk, run from `/dev/shm`.
+
+**Design.** Arms `DEF<n>` (shipped substrate BBR, `RWM_STORE=<n>`) and
+`BRS<n>` (`RWM_QUIC_CC=bbr_rs RWM_STORE=<n>`). Everything else as §24
+(Bulk, `--window-reliable`, `RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1
+RWM_LOOPDIAG=1`, §24's withholding plus `RWM_QUIC_CC`). Grids:
+`c1s-400` {192 … 2048} and `c2-100` {64 … 1024} as §23/§24; `c1d-400`
+{384, 512, 768, 1024, 1536, 2048, 3072, 4096}; `c8-100` {128, 192, 256,
+384, 512, 768, 1024, 2048}. Two blocks (seed 42, then 7); per block the
+cells c2, c1s, c8, c1d, each DEF then BRS (BRS first on the odd block), each
+sweep ascending on the even block and descending on the odd one. 128 rows
+after a 2-row smoke (`c2-100` BRS192, `c8-100` DEF512). Harness
+`tools/l1/loopdiag_*` plan 27, waiter `loopdiag_launch27.sh`.
+
+*Rules (shared file):* precondition = both locks free (`test -e` only), no
+cargo/rustc (`pgrep -x`), `procs_running` ≤ 2 in each of 5 samples 2 s
+apart; run dir and binary on `/dev/shm`, build on disk; I/O `full avg10`
+before/after each row recorded and flagged at ≥ 20, never voided; a row off
+tmpfs is `VOID-ONDISK`.
+
+*Witnesses (row void otherwise):* `[GATES]`; ≥ 4 post-warm-up `[LOOPDIAG]`
+windows with samples for every path of the cell, and a numeric `q_pace_bps`
+on each; `[SUMCAP] eng` absent or 0 and every post-warm-up `win=`
+denominator equal to n; DEF: the stock-BBR echo and no `burst-robust BBR`
+echo; BRS: the `burst-robust BBR` echo.
+
+*Abort table:* as §23/§24 (`ABORT-LOCK`, `-CRLF`, `-SHA`,
+`-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUILD`, `-RC`, `-BRINGUP`,
+`VOID-COTENANT`, `VOID-ONDISK`), filled in the result.
+
+**Readouts and outcomes (fixed now).** Path links: c1 legs 125·10⁶ B/s,
+c2 12.5·10⁶, c3 (c8's p1) 2.5·10⁶; W = 1 279 B per datagram; Lₚ = link/W;
+q = 0.1. Per cell, arm, path and n: the mean over live rows of each row's
+median over post-warm-up windows. Knee per arm: n* = the smallest n with
+goodput ≥ 0.95·Gmax; band [n*/1.5, 1.5·n*].
+- **Q1, the L source (BRS rows).** Q(p, n) = bbr_rs rate ÷ link.
+  `FLAT-AT-LINK` iff every Q(p, n) ∈ [0.8, 1.25]; else `CIRCULAR` iff some
+  path has Spearman(Q, n) ≥ 0.8 and Q(n_min) < 0.8; else `OVER-READ` iff the
+  median over (p, n) > 1.25; else `APP-LIMITED` iff that median < 0.8; else
+  `NEITHER`. The same classification of stock BBR on DEF rows is printed as
+  a reference (§24 read it ×7.6 at c2).
+- **Q2, the spread (DEF rows).** S(p, n) = Tp50 − Tmin. A path is `FLAT`
+  iff max_n S / min_n S ≤ 1.5, `INFLATES` iff S(n_max)/S(n_min) ≥ 2.0,
+  `AMBIGUOUS` otherwise; a cell is `FLAT` iff every path is, `INFLATES` iff
+  any path does. Fixed point on the true link: ask(n) = 1.1·Σₚ Lₚ·(RTpropₚ(n)
+  + Sₚ(n)); `FLOOR` if ask(n_min) < n_min, `CEILING` if ask(n_max) ≥ n_max,
+  else n_fp by linear interpolation of ask − n across the first sign change
+  and the local map slope = Δask/Δn there: `FRAGILE` iff slope ≥ 0.9, else
+  `STABLE`.
+- **Q3, reproduction (BRS rows).** The same fixed point with Lₚ replaced
+  by bbr_rs's measured rate Q·link/W and S, RTprop from the BRS rows.
+  `REPRODUCES` iff the interior n_fp lies in the BRS knee band (`FLOOR` and
+  `CEILING` miss); the DEF band is reported.
+
+**Decision rule (ships nothing).** `PREMISES-HOLD` iff at all four cells
+Q1 = `FLAT-AT-LINK`, Q2 = `FLAT` and `STABLE`, and Q3 = `REPRODUCES`;
+then the law can be written in the paper and pre-registered as a build.
+Otherwise `PREMISES-FAIL`, naming the failed cells and clauses: a failed
+Q1 means the law has no rate input; a failed Q2 means its time term is not
+a property of the path; the report names what that leaves.
+
+**Predictions (before any number).** Q1: `APP-LIMITED` or `CIRCULAR` at
+c1s/c2 at the small caps (bbr_rs sees only what our cap lets through),
+`FLAT-AT-LINK` unlikely below the knee. Q2: `FLAT` at c2 (as §24) and c8's
+fast leg; `INFLATES` at c1s (§24: 1.1 → 11.4 ms) and c1d (receiver-bound).
+Q3: `MISSES` wherever Q1 fails. So `PREMISES-FAIL` is the expected verdict.
+
+**Suites in the same session** (the instrument tree, so it can merge):
+after the battery and its ledger are persisted, on the same on-disk tree
+with a fresh target: release `cargo test -p raptorpath -p raptorpath-math
+--release --no-fail-fast -- --test-threads=2`, `cargo test --doc -p
+raptorpath --release`, `cargo test -p raptorpath-wasm`, debug `cargo test
+-p raptorpath --no-fail-fast -- --test-threads=2` (with the identity-panic
+count), and the parser tests; a failing test is re-run solo (`FLAKE` if it
+passes). A suite failure is reported; it does not void the battery.
+
+**Duration.** Build ≈ 6–30 min; 130 invocations ≈ 25 min; suites ≈ 2 h
+(§21: release 34 min, debug 77 min); under the 5 h session cap, inside the
+4 h launch deadline for the battery.
