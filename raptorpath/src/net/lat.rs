@@ -392,6 +392,9 @@ mod tests {
                     let seq = head.saturating_sub((rng.next_u32() % 400) as u64);
                     assert_eq!(ring.take(seq), map.take(seq), "seed {seed} step {step} take {seq}");
                 }
+                // Absolute: the same set of records is held, so an evicted record
+                // left behind (which no probe near the head would find) fails here.
+                assert_eq!(ring.ring.len(), map.map.len(), "seed {seed} step {step}: records held");
             }
             assert_eq!(lost_ring, lost_map, "seed {seed}: records lost to the bound");
             assert!(lost_ring > 0, "seed {seed}: the eviction bound must have bound");
