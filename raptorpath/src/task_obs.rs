@@ -987,7 +987,7 @@ pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Rx
 
 
 // ───────────────────────────────────────────────────────────────────────────
-// Threading sender diagnosis (status §25) — the sender loop's per-section
+// Threading sender diagnosis (status §26) — the sender loop's per-section
 // time (`RWM_RTOBS=2` only)
 //
 // Same method as `[RXSEC]`: sections are read off the process-monotonic

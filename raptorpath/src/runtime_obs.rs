@@ -138,7 +138,7 @@ pub fn lag_line(phase: &str, side: &str, extra: &str, late_us: &[u64], dropped: 
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// The OS reference clock (`RWM_RTOBS=2`, status §25 (a))
+// The OS reference clock (`RWM_RTOBS=2`, status §26 (a))
 //
 // The `[LAG]` probe ticks on the tokio timer driver, so its lateness mixes
 // the runtime (timer-wheel rounding, a worker that is busy or parked) with

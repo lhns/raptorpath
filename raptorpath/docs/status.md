@@ -6329,7 +6329,7 @@ the rate the cap lets through. The next step is a design decision on the
 controller (an unloaded loop-time term, an explicit probe, or the
 substrate's rate), not a build; it is the coordinator's.
 
-## 24. The c8 client `[LAG]` spread — diagnosis — pre-registration
+## 25. The c8 client `[LAG]` spread — diagnosis — pre-registration
 
 §15 read the c8-100 client `[LAG]` p99 of one binary at 1248–3636 µs over
 12 reps (2.9×); §17 and §21 read c8 client lag TREND-BETTER for R1/R2,
@@ -6469,7 +6469,7 @@ proposed for future batteries; it changes no engine behaviour.
 the soft deadline: scored on what ran, `UNSETTLED-INSTRUMENT` below 18);
 void class `VOID-COTENANT` (a `cargo`/`rustc` before or after a row).
 
-### 24. The c8 client `[LAG]` spread — result
+### 25. The c8 client `[LAG]` spread — result
 
 Read 2026-10-26 against the pre-registration above, literally. **`UNSETTLED`**:
 long task polls cover only a third of the late ticks (F = 0.33 < 0.5), and
@@ -6565,9 +6565,9 @@ with no `raptorpath` running. Those rows' E median is 2700 µs against
 the window, not raw p99; `min_us` is printed at `RWM_RTOBS=1` (rebased
 `b2a5fcc`). Raw p99 stays reported.
 
-## 25. The c8 lag tail and the sender's long polls — the two deciding measurements — pre-registration
+## 26. The c8 lag tail and the sender's long polls — the two deciding measurements — pre-registration
 
-§24 left two questions open, and its finding 3 named the measurement that
+§25 left two questions open, and its finding 3 named the measurement that
 decides each. **(a)** Two thirds of the late `[LAG]` ticks have no long poll
 over them. Is their per-rep tail made outside tokio (host or guest OS wake
 latency), or inside the runtime (the timer hand-off: the driver is serviced
@@ -6604,27 +6604,27 @@ the same order; everything below is `RWM_RTOBS=2`):
    section, plus `other` = poll wall minus their sum). Await sections are
    excluded from the per-poll split because their wall can include sleep.
 
-**The session.** The binary is this branch: 3982bd1 + §24's instrument + the
+**The session.** The binary is this branch: 3982bd1 + §25's instrument + the
 above. The commit is named in the result. It is archived LF, built fresh in
 a fresh target on the benchmark VM, and its `sha256` is re-verified before
 every row. The in-session tests are the instrument's unit tests
 (`runtime_obs`, `task_obs`, `gates`, the `q2_` source pins) and the parser
 tests; a failure is `ABORT-TESTS`.
 
-- **Cell and env.** c8-100 only, with §24's env (the §21 battery env).
+- **Cell and env.** c8-100 only, with §25's env (the §21 battery env).
 - **Rows.** `RWM_RTOBS=2` on 24 rows: 12 blocks × seeds 42 and 7, with the
   seed order swapped on even blocks. `RWM_RTOBS=1` on 4 rows, after blocks
   3, 6, 9 and 12, as the overhead control.
-- **Harness.** `tools/l1/lagdiag2_run.sh`, the same envelope as §24, with
+- **Harness.** `tools/l1/lagdiag2_run.sh`, the same envelope as §25, with
   the 10 Hz per-vCPU `/proc/stat` and the 1-min loadavg recorded per row.
 - **Smoke.** One RTOBS=2 row, seed 42. It must show:
   - client `[OSLAG]`/`[OSLAGRAW]` and `[TXSEC]` with `iters > 0`;
   - sender `[LPOLL]` entries carrying `iters=`/`secs=`;
   - `run_delay_us=` on `[THR] os`;
-  - §24's witnesses.
+  - §25's witnesses.
 
   Nothing in the smoke is a result.
-- **Precondition and budget** as §24. Hard deadline is launch + 2 h; soft is
+- **Precondition and budget** as §25. Hard deadline is launch + 2 h; soft is
   hard − 10 min.
 
 **Decision rule (a)** (fixed now; client, live RTOBS=2 rows; E_lag = `[LAG]`
@@ -6638,7 +6638,7 @@ E_lag). One outcome, in precedence order:
    follows. `run_delay` then says guest (rises with E_lag) or host (flat).
 2. **`RUNTIME`**: ρ < 0.3 **and** the E_os tercile ratio < 1.2. The OS
    thread wakes on time while the probe does not, so the spread is in the
-   runtime. Since (b)'s long polls do not covary with E (§24), the next step
+   runtime. Since (b)'s long polls do not covary with E (§25), the next step
    is tokio's timer hand-off. That is designed and reported, not built here.
 3. **`MIXED`**: otherwise.
 
@@ -6671,8 +6671,8 @@ than 20 polls reach 10 ms, stated). One outcome, in precedence order:
 - the `[TXSEC]` pooled section table (share, count, max);
 - iters per poll for the ≥ 1 ms polls;
 - PERTURB (RTOBS=2 vs RTOBS=1 client E_lag medians);
-- §24's long-poll overlap F, re-read on this binary;
+- §25's long-poll overlap F, re-read on this binary;
 - the server side;
 - loadavg per row.
 
-**Abort causes:** §24's table.
+**Abort causes:** §25's table.

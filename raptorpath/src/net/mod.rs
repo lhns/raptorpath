@@ -2177,7 +2177,7 @@ async fn run_window_sender(
     let tail_sleep = tokio::time::sleep_until(tokio::time::Instant::now() + Duration::from_secs(86_400));
     tokio::pin!(tail_sleep);
     let mut tail_sleep_us: Option<u64> = None;
-    // `[TXSEC]` (RWM_RTOBS=2, status §25): the loop's sections, partitioned
+    // `[TXSEC]` (RWM_RTOBS=2, status §26): the loop's sections, partitioned
     // contiguously from loop top to loop top; every `txp.sec(..)` is one
     // monotonic-clock read that ends the open section and starts the next.
     // Measurement only: off, each call is one never-taken branch.
