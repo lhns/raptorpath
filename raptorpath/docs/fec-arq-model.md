@@ -1191,6 +1191,34 @@ At realtime operating points the unified decoder's matrix is empty at
 essentially every sample: trailing-span repairs arrive solvable or deliver
 immediately; per-arrival decode is 6–11 µs.
 
+**Retained state (threading R3, status §22; proposed, gated on that
+section's verdict and its ship battery).** The decoder needs a known
+payload only while a repair can still reference it. Repairs reference the
+sender's window, which sits at or above the receiver's cumulative point
+less the window cap, so every column below
+
+```text
+   F  =  (next_expected − 1) − 2·W_cap        (clamped ≤ next_expected − 1)
+```
+
+is decode-inert (`W_cap` = the receiver's retained window, `recv_win_cap`:
+200 on the bulk window, the generation pipeline's span under generation;
+the factor 2 and the clamp are the existing prune rule, unchanged). F is a
+law of the delivered frontier alone; what R3 changes is only *when* it is
+evaluated: at every receiver wait (each drained `recv_many` batch), not on
+the 2 s report tick. The retained set is then bounded by
+`2·W_cap + one drain` (≤ `MSG_CHANNEL_DEPTH` = 4 096 messages) instead of
+`rate × 2 s` (≈ 140 k payloads at c1d), with no new constant and no
+dependence on N, δ or ρ. Below F the decoder refuses a symbol (a source
+seq < F, a repair whose span ends ≤ F): such a copy is either a duplicate
+of a delivered seq, which accepting it after the prune would re-deliver,
+or (ρ < 1 only) a late fill of a hole the frontier gave up more than
+2·W_cap seqs ago, which a give-up already declared lost. Before R3 both
+were accepted up to one report tick (2 s) late, by accident of the prune
+cadence; R3 makes the cut the floor itself. Known payloads are held as the received `Bytes` (no copy;
+an output shares the buffer); the delivered set is the key set of the
+known payloads, so it is not kept twice.
+
 ### 5.3 The sender span law
 
 With one decoder, the difference between "realtime" and "bulk" is the
@@ -2511,6 +2539,16 @@ status §12 diagnosis addendum) govern it:
   `[LAG] io` / `[THR] io` lines. The owner's gain was not the connection
   mutex: what both placements shared (the sender no longer calling quinn,
   batched hops, batched acks) carried it.
+- **The receiver is one task, made cheaper rather than split** (threading
+  R3, status §22; proposed). At c1d the receiver task is the ceiling
+  (§16 finding 4). Its largest role, decode, is the head of every other
+  role's dependency chain (delivery needs decoded seqs in order; a wire-v9
+  ack reflects decoded state), so a decode task would put a channel hop at
+  the head of the ack path and a second allocator-contending thread
+  beside it, the shape §13's `own` arm measured as no gain. R3 instead
+  removes the decoder's per-symbol bookkeeping (§5.2: zero-copy known
+  payloads, the decode-inert floor applied at every drain). A role split
+  is reconsidered only if a role that is not bookkeeping stays ≥ 0.3 core.
 - **The P2a lesson:** five loops multiplexed into one task shared one coop
   budget, and charging that budget per message starved every resource in
   the task (tokio `chan.rs:295`); the redo never multiplexes and never

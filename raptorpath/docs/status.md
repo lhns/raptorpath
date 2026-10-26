@@ -6460,3 +6460,58 @@ diagnostic, not scored. `pkill -x raptorpath` only; no `ens18`, firewall,
 `sshd` or non-`rp-*` namespace touched; exit state 0 `raptorpath`, 0
 `rp-*`, locks released, VM dirs removed. Ledgers to
 `docs/l1-raw/thread-r3-diag/`.
+
+### 22. R3 design — written before the §22 data, gated on its verdict
+
+Written while the VM is stalled (no §22 row exists yet), so it is the
+design the decision rule's **in-place** branch would select; it is built
+now and tested only by `cargo check` on the host. It ships only if §22's
+rule selects it **and** its own ship battery (the next pre-registration)
+passes. If §22 refutes H-alloc (a), this build is shelved and the
+decode-stage design is written instead.
+
+**Change** (paper §5.2 "Retained state", §8.8; one structure at every N,
+no hint, δ, ρ or path-count branch, no new constant):
+1. `fec/unified.rs` — known payloads as the received `Bytes` (zero copy;
+   a payload shorter than `symbol_size` is padded once); the output shares
+   that buffer; `delivered` removed (it equals `recovered`'s key set);
+   source dedup by a per-entry source-seen flag on the known payload,
+   repair dedup by an ordered set of `(anchor, payload_id)` pruned by
+   range; covering-row lookup bounded to pivots in
+   `(s − max_row_len, s]` (no scan when no row is stored); the worklist
+   buffer reused; a decode-inert floor `F` set by `advance`: a source with
+   seq < F, or a repair whose span ends ≤ F, is refused and counted
+   (`below_floor` in `diag_stats`). `seq_probe`, `frontier_probe`,
+   `rank_in`, the counters and the delivered-set contract are unchanged.
+2. `net/receiver.rs` — the prune (`recv_above.sync`,
+   `received_seqs.prune_below`, `window_decoder.advance`) moves from the
+   `REPORT_INTERVAL` block to the loop's wait point (once per drained
+   `recv_many` batch), with the same `prune_before` expression. The
+   `[REASM]` probe and the FEC feedback stay on the 2 s tick.
+   Declared gauge effect: `[C8CONV-R]` `dup` counts duplicates only within
+   the retained span.
+
+**Expected saving** against the 25 % bar: decode's bookkeeping (§20 c1s
+FIX: 5.96 µs of 14.5) minus what remains (one BTreeMap insert, one output
+`Vec`, the k = 0 walk for repairs) ≈ 3–4.5 µs per message, 20–30 % of the
+handler, plus the 2 s burst. Borderline against the bar: the ship
+battery's c1d prediction is reported, not gating, and a PARTIAL there with
+CPUSRV BETTER is the expected reading if the saving lands at the low end.
+
+**Red-first tests (absolute)**, red on the current tree, green after:
+- `tests/decoder_alloc_bound.rs` — counting allocator, `UnifiedDecoder`
+  alone, in-order 1 182-byte sources with `advance` to lag 400 every
+  1 000: heap allocations per source ≤ 1.5 (today ≈ 5–6).
+- zero copy — the output payload of an in-order source shares the input
+  `Bytes` buffer (pointer equality).
+- the floor — after `advance(F)` a source seq < F (a duplicate of a
+  delivered seq) returns nothing and is counted; today it is re-delivered.
+- routing (rule 1) — the receiver prunes at every drain: a loopback run
+  where the decoder's retained known-payload count stays ≤ `2·W_cap +
+  MSG_CHANNEL_DEPTH` at every readout (today it grows to ~2 s of seqs).
+- a source-scan gate: no `REPORT_INTERVAL` guard around the prune.
+Green suites: `fec::unified` and `fec::generation` differentials,
+`unified_l0`, `unified_stream_l0`, the loss-truth and SACK tests in
+`net::tests` and `net::seq_bits`, `reliable_delivery_hold`,
+`lock_order_loopback`, `ack_delivery`, `recv_alloc_bound`,
+`inbound_pool_reachability`.
