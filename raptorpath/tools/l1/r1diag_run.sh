@@ -8,7 +8,8 @@
 #     setsid nohup bash r1diag_run.sh > $R1D_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Layout: $ROOT/src-main, $ROOT/src-r1 (git archives), this script's tools
-# tree, $ROOT/fix-lat-floor.patch. Started as `vibe`; `sudo -n` only to run.
+# tree, $ROOT/fix-lat.rs (a5ef8b2's lat.rs with fix-lat-floor.patch applied
+# on the host; the VM has no patch(1)). Started as `vibe`; `sudo -n` only to run.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || exit 3
@@ -38,7 +39,7 @@ mk_tree() { # arm base [swap-from-tree | patch]
   rm -rf "$t"; cp -a "$ROOT/$base" "$t"
   case "$how" in
     "") ;;
-    *.patch) (cd "$t" && patch -p1 --no-backup-if-mismatch < "$how") >> "$RUN/era.txt" 2>&1 || return 1 ;;
+    /*.rs) cp "$how" "$t/$LAT" ;;  # a prepared file (the VM has no patch(1))
     *) cp "$ROOT/$how/$LAT" "$t/$LAT" ;;
   esac
   era "TREE $arm base=$base swap=${how:-none} lat_sha=$(sha256sum "$t/$LAT" | cut -c1-16)"
@@ -65,7 +66,7 @@ mk_tree MAIN+d src-main src-r1 && build MAIN+d && ARMS="$ARMS MAIN+d"
 # FIX only if a build (prior: the slowest so far) plus the runs fit before soft.
 SLOW=$(grep -o 'wall=[0-9]*' "$RUN/era.txt" | cut -d= -f2 | sort -n | tail -1)
 if [ $(( $(date +%s) + ${SLOW:-1800} + 900 )) -lt "$SOFT" ]; then
-  mk_tree FIX src-r1 "$ROOT/fix-lat-floor.patch" && build FIX && ARMS="$ARMS FIX"
+  mk_tree FIX src-r1 "$ROOT/fix-lat.rs" && build FIX && ARMS="$ARMS FIX"
 else
   era "SKIP FIX (budget)"
 fi
