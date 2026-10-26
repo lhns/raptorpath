@@ -6650,3 +6650,17 @@ battery above):
    harness files `tools/l1/r3diag_run.sh` and `r3diag_wait.sh` come from
    this amendment's commit (harness only, no engine file differs; the
    swapped files' `sha256` are logged in the ledger).
+
+### 22. Amendment 2 (step-0 diagnostic and R3 ship battery, before either launch)
+
+Measurements run from tmpfs (the shared rule after the storage stall): the
+built binary is copied to `/dev/shm/<dir>/bin` and the run dir (ledger,
+per-row logs, io samples, perf output) lives under `/dev/shm/<dir>` from
+the first measured invocation to after the last; the ledgers are then
+copied to disk and the tmpfs dir removed. Builds and test suites stay on
+disk and are not measurements. A large target dir is deleted only while
+the session still holds both locks (so no other battery is running). The
+I/O precondition and `VOID-IOSTALL` of Amendment 1 stay. The step-0
+harness (`r3diag_run.sh`) carries this now; the R3 battery's harness
+(`threadr3_*`) gains the same, plus Amendment 1's io clause, before its
+launch.

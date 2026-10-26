@@ -63,6 +63,20 @@ era "TESTS task_obs rc=$rc wall=$(( $(date +%s) - t0 ))s $(grep -a 'test result'
     bench_in_order_add_symbol_against_the_prune_cadence) > "$RUN/bench.txt" 2>&1
 era "BENCH rc=$? $(grep -a -c DECBENCH "$RUN/bench.txt") lines"
 
+# ── measurements run from tmpfs (shared rule; §22 Amendment 2) ──────────
+# The binary and the whole run dir (era, rows, perf output) live under
+# /dev/shm while anything is measured; the ledgers go to disk after the
+# last measurement.
+DISK_RUN="$RUN"
+SHM="/dev/shm/r3diag-a2139"
+rm -rf "$SHM"; mkdir -p "$SHM/diag" "$SHM/bin"
+cp "$BIN" "$SHM/bin/raptorpath"
+BIN="$SHM/bin/raptorpath"
+cp "$RUN/era.txt" "$SHM/era.txt"
+RUN="$SHM"
+LB_LOG="$RUN/era.txt"
+era "TMPFS run=$RUN bin_sha=$(sha256sum "$BIN" | cut -c1-16)"
+
 # ── the diagnostic rows ──────────────────────────────────────────────────
 drv() { # cell seed bytes extra-env...
   local cell="$1" seed="$2" bytes="$3" mode
@@ -131,8 +145,16 @@ else
   era "SKIP PERF"
 fi
 sudo -n pkill -x raptorpath 2>/dev/null || true
-rm -rf "$CARGO_TARGET_DIR"
+# Ledgers to disk after the last measurement, then drop the tmpfs dir.
 sudo -n chown -R "$(id -un)" "$RUN" 2>/dev/null
+rm -rf "$RUN/bin"
+cp -a "$RUN/." "$DISK_RUN/"
+rm -rf "$SHM"
+RUN="$DISK_RUN"
+LB_LOG="$RUN/era.txt"
+# The target dir goes while this session still holds both locks (no other
+# battery can be running).
+rm -rf "$CARGO_TARGET_DIR"
 era "END raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
 release_locks
 touch "$RUN/DONE"
