@@ -1,0 +1,78 @@
+ok   synthetic dual: two paths, warm-up excluded
+ok   synthetic dual: per-path medians
+ok   synthetic dual: per-path rtp_us
+ok   real c1d log: two btlbw paths
+ok   real c1d log: base fields parse
+ok   real c1d log (no ACKDIAG): WITNESS-FAIL no-ackdiag
+ok   real c1s log: single path, base fields
+ok   real c1s log: WITNESS-FAIL names no-ackdiag
+ok   ackdiag fields
+ok   ackdiag uses lines, last per path
+ok   legacy summary
+ok   rstrace summary
+ok   [RSTRACE-LEGACY] is not counted as [RSTRACE]
+ok   ackdiag with '-' fields -> None
+ok   MAIN pass
+ok   MAIN fail: SUMCAP eng absent
+ok   MAIN fail: SAMPLER echo present
+ok   any arm fail: no [ACKDIAG]
+ok   PRS pass
+ok   PRS fail: SAMPLER echo missing
+ok   PRS fail: effective RWM_HONEST_CAP=1
+ok   PRS fail: honest-cap echo present
+ok   PRS fail: SUMCAP eng absent
+ok   S<n> pass (eng absent, every denominator == n)
+ok   S<n> pass with eng=0/0
+ok   S<n> fail: SUMCAP eng>0
+ok   S<n> fail: denominator != n
+ok   S<n> fail: gate RWM_STORE != n
+ok   S<n> fail: fewer than 2 windows
+ok   MAIN fail: wrong gate RWM_PLAIN_RS
+ok   void rows keep their status
+ok   Q1 MECHANISM-CONFIRMED
+ok   Q1 MECHANISM-OPEN when one row has < 90 % floor-length samples
+ok   Q1 MECHANISM-OPEN when one row's btlbw < 3 L
+ok   Q1 no RSTRACE-LEGACY samples is not CONFIRMED
+ok   Q1 boundary 3 L at c2 confirmed
+ok   Q1 no live rows is UNSCOREABLE, not a verdict
+ok   Q1 ignores non-live rows
+ok   Q2 HONEST (o <= 1.2 on both paths)
+ok   Q2 OVER-READ on the slow path (c3 leg L=1955)
+ok   Q2 boundary o = 1.2 is HONEST
+ok   Q2 missing path reading is UNSCOREABLE
+ok   Q2 one over-reading row makes the cell OVER-READ
+ok   Q2 compare: diff -100, 2s = 4
+ok   band: needs n>=2 in both arms for sigma
+ok   Q3 n* = 512 (G >= 0.95 Gmax = 688.75)
+ok   Q3 ask_h = 1.1 * 30000 * 0.01 = 330
+ok   Q3 HEADROOM-MISSING (512 > 495)
+ok   Q3 H = 182 symbols
+ok   Q3 H / bw_h in ms printed (6.07)
+ok   Q3 Spearman reported (xanchor rises with n -> 1.00)
+ok   Q3 LAW-SUFFICIENT (ask_h 396, 1.5x = 594 >= 512)
+ok   Q3 UNSCOREABLE: 3 grid points under 2 live rows
+ok   Q3 two thin grid points still scoreable
+ok   Q3 no PRS rows: UNSCOREABLE (no honest input)
+ok   Q3 knee: G == 0.95 Gmax qualifies
+ok   Q3 c2: n* = 192, ask_h = 220 -> LAW-SUFFICIENT
+ok   spearman: anti-monotone = -1
+ok   spearman: ties use average ranks
+ok   score: ROWS and VOID tables precede the readouts
+ok   score: void row listed with its problem
+ok   score: verdict lines present
+ok   score: empty ledger does not raise
+CHECK done=True rows=64/64
+ok   check: 64 rows + done line passes
+CHECK done=True rows=63/64
+ok   check: 63 rows fails
+SMOKE ('c1s-400', 'MAIN'): mbps=620.537 eng=100 btlbw={'0': 627430.0} win_den=1024..1024 legacy_n=3 rstrace_n=1 status=LIVE
+SMOKE ('c1s-400', 'PRS'): mbps=620.537 eng=100 btlbw={'0': 627430.0} win_den=1024..1024 legacy_n=3 rstrace_n=1 status=LIVE
+SMOKE ('c2-100', 'S256'): mbps=620.537 eng=None btlbw={'0': 627430.0} win_den=256..256 legacy_n=3 rstrace_n=1 status=LIVE
+SMOKE-PASS
+ok   smoke: three live rows pass
+SMOKE ('c1s-400', 'MAIN'): mbps=620.537 eng=100 btlbw={'0': 627430.0} win_den=1024..1024 legacy_n=3 rstrace_n=1 status=LIVE
+SMOKE ('c1s-400', 'PRS'): mbps=620.537 eng=100 btlbw={'0': 627430.0} win_den=1024..1024 legacy_n=3 rstrace_n=1 status=WITNESS-FAIL
+SMOKE ('c2-100', 'S256'): mbps=620.537 eng=None btlbw={'0': 627430.0} win_den=256..256 legacy_n=3 rstrace_n=1 status=LIVE
+SMOKE-FAIL ('c1s-400', 'PRS'): WITNESS-FAIL ['prs-sampler-echo-missing']
+ok   smoke: a witness-failed row fails
+ALL OK
