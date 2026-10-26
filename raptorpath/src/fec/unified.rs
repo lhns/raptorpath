@@ -767,4 +767,61 @@ mod tests {
         assert_eq!(sb, vec![2, 5], "unified: displaced row recovers seq 5 too");
         assert_eq!(&b[1].1[..24], &vec![6u8; 24][..]);
     }
+
+    /// Threading R3 step 0 (status §22): the decoder's per-symbol cost on an
+    /// in-order, loss-free stream at the c1d symbol size, against the prune
+    /// cadence. The receiver calls `advance` once per `REPORT_INTERVAL`
+    /// (2 s ≈ 140 k symbols at c1d), so `recovered` / `delivered` / `seen`
+    /// hold ~2 s of seqs; the second arm advances every 1 000 symbols to the
+    /// same lag (400 = 2 × the default window cap). One proactive repair of
+    /// width 200 per 20 sources (all on the k = 0 fast path: no loss). Timed:
+    /// `add_symbol` and `advance` only. A readout, not a gate.
+    #[test]
+    #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
+    fn bench_in_order_add_symbol_against_the_prune_cadence() {
+        use std::time::Instant;
+        let ss = 1182u16;
+        let n: u64 = 300_000;
+        for every in [140_000u64, 1_000] {
+            let mut enc = RlcWindowEncoder::new(ss);
+            let mut dec = UnifiedDecoder::new(ss);
+            let payload = vec![0x5au8; ss as usize];
+            let (mut src_ns, mut rep_ns, mut adv_ns, mut adv_max) = (0u128, 0u128, 0u128, 0u128);
+            let (mut n_rep, mut n_adv, mut out_n) = (0u64, 0u64, 0usize);
+            for i in 0..n {
+                let s = enc.add_source(&payload);
+                let t = Instant::now();
+                out_n += dec.add_symbol(&s).len();
+                src_ns += t.elapsed().as_nanos();
+                if i % 20 == 19 && i >= 200 {
+                    let r = enc.generate_repair_range(i - 199, 200).unwrap();
+                    let t = Instant::now();
+                    out_n += dec.add_symbol(&r).len();
+                    rep_ns += t.elapsed().as_nanos();
+                    n_rep += 1;
+                }
+                if i % 1_000 == 999 {
+                    enc.advance(i.saturating_sub(400));
+                }
+                if i % every == every - 1 {
+                    let t = Instant::now();
+                    dec.advance(i.saturating_sub(400));
+                    let d = t.elapsed().as_nanos();
+                    adv_ns += d;
+                    adv_max = adv_max.max(d);
+                    n_adv += 1;
+                }
+            }
+            assert_eq!(out_n as u64, n, "every source delivered exactly once");
+            println!(
+                "[DECBENCH] every={every} src_ns_per={:.0} rep_ns_per={:.0} adv_n={n_adv} adv_max_us={}                  adv_ns_per_src={:.0} total_ns_per_src={:.0} {}",
+                src_ns as f64 / n as f64,
+                rep_ns as f64 / n_rep.max(1) as f64,
+                adv_max / 1_000,
+                adv_ns as f64 / n as f64,
+                (src_ns + rep_ns + adv_ns) as f64 / n as f64,
+                dec.diag_stats().unwrap_or_default(),
+            );
+        }
+    }
 }

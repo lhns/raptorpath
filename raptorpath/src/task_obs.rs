@@ -675,13 +675,28 @@ pub enum RxSec {
     Ack = 2,
     /// The always-fed `[ETA]` / `[LAT]` / `[SUCC]` / `[LATE]` bookkeeping.
     Book = 3,
+    /// The arrival stamp (RX jitter, `xdir` publication, revival nudge) and
+    /// the per-path batch tracker (threading R3 step 0).
+    Arr = 4,
+    /// The per-source decoder probe (`[RFA]` `seq_probe`) and the
+    /// `RWM_DIAG` conversion duplicate test, before `add_symbol` (R3 step 0).
+    Probe = 5,
+    /// The periodic prune: `received_seqs` and the decoder's `advance`
+    /// (R3 step 0; runs once per `REPORT_INTERVAL`).
+    Prune = 6,
 }
+
+/// Named sections, then the whole message at this index.
+const RXSEC_N: usize = 7;
 
 /// One receiver task's section counters.
 pub struct RxSecCtr {
     pub serial: u64,
-    /// Handler ns per [`RxSec`], then the whole message (index 4).
-    ns: [AtomicU64; 5],
+    /// Handler ns per [`RxSec`], then the whole message (index `RXSEC_N`).
+    ns: [AtomicU64; RXSEC_N + 1],
+    /// Calls of [`RxSec::Prune`] and the longest one (ns).
+    prune_n: AtomicU64,
+    prune_max_ns: AtomicU64,
     msgs: AtomicU64,
     data: AtomicU64,
     backlog: DepthHist,
@@ -710,6 +725,8 @@ impl RxProbe {
             let c = Arc::new(RxSecCtr {
                 serial: SERIAL.fetch_add(1, Relaxed),
                 ns: Default::default(),
+                prune_n: AtomicU64::new(0),
+                prune_max_ns: AtomicU64::new(0),
                 msgs: AtomicU64::new(0),
                 data: AtomicU64::new(0),
                 backlog: DepthHist::default(),
@@ -740,6 +757,10 @@ impl RxProbe {
         if let Some(c) = &self.c {
             let d = mono_ns().saturating_sub(t0);
             c.ns[s as usize].fetch_add(d, Relaxed);
+            if matches!(s, RxSec::Prune) {
+                c.prune_n.fetch_add(1, Relaxed);
+                c.prune_max_ns.fetch_max(d, Relaxed);
+            }
         }
     }
 
@@ -748,7 +769,7 @@ impl RxProbe {
     pub fn end_msg(&self, t0: u64, is_data: bool) {
         if let Some(c) = &self.c {
             let d = mono_ns().saturating_sub(t0);
-            c.ns[4].fetch_add(d, Relaxed);
+            c.ns[RXSEC_N].fetch_add(d, Relaxed);
             c.msgs.fetch_add(1, Relaxed);
             c.data.fetch_add(is_data as u64, Relaxed);
         }
@@ -773,7 +794,10 @@ impl Default for RxProbe {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RxSecSample {
     pub serial: u64,
-    pub ns: [u64; 5],
+    pub ns: [u64; RXSEC_N + 1],
+    pub prune_n: u64,
+    /// Run-cumulative maximum.
+    pub prune_max_ns: u64,
     pub msgs: u64,
     pub data: u64,
     pub backlog: DepthSample,
@@ -786,6 +810,8 @@ pub fn rxsec_samples() -> Vec<RxSecSample> {
         .map(|c| RxSecSample {
             serial: c.serial,
             ns: std::array::from_fn(|i| c.ns[i].load(Relaxed)),
+            prune_n: c.prune_n.load(Relaxed),
+            prune_max_ns: c.prune_max_ns.load(Relaxed),
             msgs: c.msgs.load(Relaxed),
             data: c.data.load(Relaxed),
             backlog: c.backlog.sample(),
@@ -810,30 +836,35 @@ pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Rx
             if msgs == 0 {
                 return None;
             }
-            let named = d(0) + d(1) + d(2) + d(3);
-            let other = d(4).saturating_sub(named);
+            let named: u64 = (0..RXSEC_N).map(d).sum();
+            let other = d(RXSEC_N).saturating_sub(named);
             let pm = |ns: u64| ns as f64 / msgs as f64;
             let (bn, p50, p99, bmax) = t.backlog.minus(&b.backlog).tokens();
             Some(format!(
-                "[RXSEC] phase={phase} side={side}{extra} rx={} msgs={msgs} data={} total_us={} decode_us={} \
-                 deliv_us={} ack_us={} book_us={} other_us={} total_ns_pm={:.0} decode_ns_pm={:.0} \
-                 deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} busy={:.3} \
-                 bk_n={bn} bk_p50={p50} bk_p99={p99} bk_max={bmax} wall_s={wall_s:.3}",
+                "[RXSEC] phase={phase} side={side}{extra} rx={} msgs={msgs} data={} total_us={} decode_us={}                  deliv_us={} ack_us={} book_us={} other_us={} total_ns_pm={:.0} decode_ns_pm={:.0}                  deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} busy={:.3}                  bk_n={bn} bk_p50={p50} bk_p99={p99} bk_max={bmax} wall_s={wall_s:.3}                  arr_us={} probe_us={} prune_us={} arr_ns_pm={:.0} probe_ns_pm={:.0} prune_ns_pm={:.0}                  prune_n={} prune_max_us={}",
                 t.serial,
                 t.data.saturating_sub(b.data),
-                d(4) / 1_000,
+                d(RXSEC_N) / 1_000,
                 d(0) / 1_000,
                 d(1) / 1_000,
                 d(2) / 1_000,
                 d(3) / 1_000,
                 other / 1_000,
-                pm(d(4)),
+                pm(d(RXSEC_N)),
                 pm(d(0)),
                 pm(d(1)),
                 pm(d(2)),
                 pm(d(3)),
                 pm(other),
-                d(4) as f64 / 1e9 / wall_s,
+                d(RXSEC_N) as f64 / 1e9 / wall_s,
+                d(4) / 1_000,
+                d(5) / 1_000,
+                d(6) / 1_000,
+                pm(d(4)),
+                pm(d(5)),
+                pm(d(6)),
+                t.prune_n.saturating_sub(b.prune_n),
+                t.prune_max_ns / 1_000,
             ))
         })
         .collect()
@@ -923,7 +954,9 @@ mod tests {
     fn the_rxsec_line_splits_a_message_into_its_sections() {
         let to = vec![RxSecSample {
             serial: 2,
-            ns: [4_000_000, 1_000_000, 2_000_000, 1_000_000, 10_000_000],
+            ns: [4_000_000, 1_000_000, 2_000_000, 1_000_000, 300_000, 200_000, 500_000, 10_000_000],
+            prune_n: 2,
+            prune_max_ns: 400_000,
             msgs: 1000,
             data: 900,
             backlog: DepthSample::default(),
@@ -932,7 +965,13 @@ mod tests {
         assert_eq!(l.len(), 1);
         let s = &l[0];
         assert!(s.starts_with("[RXSEC] phase=xfer side=server rx=2 msgs=1000 data=900 total_us=10000 decode_us=4000 "), "{s}");
-        assert!(s.contains(" other_us=2000 total_ns_pm=10000 decode_ns_pm=4000 "), "{s}");
+        assert!(s.contains(" other_us=1000 total_ns_pm=10000 decode_ns_pm=4000 "), "{s}");
+        assert!(
+            s.ends_with(
+                " arr_us=300 probe_us=200 prune_us=500 arr_ns_pm=300 probe_ns_pm=200 prune_ns_pm=500                  prune_n=2 prune_max_us=400"
+            ),
+            "{s}"
+        );
         assert!(s.contains(" busy=0.010 bk_n=0 bk_p50=- bk_p99=- bk_max=- "), "{s}");
         assert!(rxsec_lines("xfer", "server", "", 1.0, &to, &to).is_empty(), "no messages in the window");
     }
@@ -948,8 +987,10 @@ mod tests {
         let on = RxProbe::with(true);
         on.backlog(7);
         on.end_msg(0, true);
+        on.end(RxSec::Prune, on.begin());
+        on.end(RxSec::Arr, on.begin());
         let serial = on.counters().unwrap().serial;
         let s = rxsec_samples().into_iter().find(|s| s.serial == serial).unwrap();
-        assert_eq!((s.msgs, s.data, s.backlog.n), (1, 1, 1));
+        assert_eq!((s.msgs, s.data, s.backlog.n, s.prune_n), (1, 1, 1, 1));
     }
 }

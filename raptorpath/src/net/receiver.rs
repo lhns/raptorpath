@@ -1255,6 +1255,7 @@ pub(crate) async fn run_receiver(
                 // published flag reads the path dead, it is nudged once so
                 // the revival does not wait for its next natural wake.
                 {
+                    let rxp_t_arr = rxp.begin();
                     let arrival_us = now_us();
                     // `[ETA]`'s reference lag: RTprop when this endpoint has
                     // one, its SRTT otherwise — the sender's published values
@@ -1290,6 +1291,7 @@ pub(crate) async fn run_receiver(
                         }
                     }
                     drop(ps);
+                    rxp.end(RxSec::Arr, rxp_t_arr);
                     let rxp_t = rxp.begin();
                     blk.eta.observe(
                         path_id,
@@ -1336,6 +1338,7 @@ pub(crate) async fn run_receiver(
                 // payload, the (expected, received) pair carried as running
                 // sums so the sender can diff them. Cumulative, not per-ack:
                 // a dropped control datagram then costs nothing.
+                let rxp_t_trk = rxp.begin();
                 let (expected, _received_total, cum_expected, cum_received) = {
                     let mut tracker = recv_path_tracking
                         .entry(path_id)
@@ -1346,6 +1349,7 @@ pub(crate) async fn run_receiver(
                     let (e, r) = tracker.record(&batch);
                     (e, r, tracker.total_expected, tracker.total_received)
                 };
+                rxp.end(RxSec::Arr, rxp_t_trk);
 
                 // The window receive path (the one pipeline, ADR-0069).
                 {
@@ -1400,6 +1404,7 @@ pub(crate) async fn run_receiver(
                         // Conversion DIAG: a source arrival for a seq already
                         // received = a displacement-only delivery on this path
                         // (its goodput was already banked by the other copy).
+                        let rxp_t = rxp.begin();
                         if c8r_on
                             && !symbol.is_repair
                             && received_seqs.contains(symbol.block_id)
@@ -1421,6 +1426,7 @@ pub(crate) async fn run_receiver(
                                 symbol.block_id < highest_seen_seq,
                             )
                         });
+                        rxp.end(RxSec::Probe, rxp_t);
                         let rxp_t = rxp.begin();
                         let recovered = if fdiag_on {
                             let t_dec = Instant::now();
@@ -2160,9 +2166,11 @@ pub(crate) async fn run_receiver(
                         // Sync the `received_above` counter first: the prune
                         // removes only seqs below the cumulative point, which
                         // a synced counter no longer counts.
+                        let rxp_t = rxp.begin();
                         recv_above.sync(&received_seqs, next_expected);
                         received_seqs.prune_below(prune_before);
                         window_decoder.advance(prune_before);
+                        rxp.end(RxSec::Prune, rxp_t);
                         // Occupancy probe: peak reassembly held behind the frontier.
                         if reasm_bdp_on {
                             let pending = reorder_buf
