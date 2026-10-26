@@ -1,0 +1,33 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+R1D start hard=1793021584 soft=1793020984 cargo=0 rustc=0 load=1.76 0.91 0.77 2026-10-26T10:33:10Z
+TREE MAIN base=src-main swap=none lat_sha=fcc4eb88e4855fa2 2026-10-26T10:33:16Z
+BUILD MAIN rc=0 wall=508s cargo=0 rustc=0 load=1.39 2.70 2.00 2026-10-26T10:41:45Z
+TREE R1 base=src-r1 swap=none lat_sha=bb1fd79e04120de0 2026-10-26T10:41:45Z
+BUILD R1 rc=0 wall=340s cargo=0 rustc=0 load=3.13 3.33 2.54 2026-10-26T10:47:25Z
+TREE R1-d base=src-r1 swap=src-main lat_sha=fcc4eb88e4855fa2 2026-10-26T10:47:26Z
+BUILD R1-d rc=0 wall=342s cargo=0 rustc=0 load=1.22 2.81 2.70 2026-10-26T10:53:08Z
+TREE MAIN+d base=src-main swap=src-r1 lat_sha=bb1fd79e04120de0 2026-10-26T10:53:08Z
+BUILD MAIN+d rc=0 wall=350s cargo=0 rustc=0 load=1.20 2.32 2.61 2026-10-26T10:58:58Z
+TREE FIX base=src-r1 swap=/home/VMUSER/r1diag/fix-lat.rs lat_sha=5b8283efca157f71 2026-10-26T10:58:59Z
+BUILD FIX rc=0 wall=350s cargo=0 rustc=0 load=1.30 2.22 2.58 2026-10-26T11:04:49Z
+ARMS MAIN R1 R1-d MAIN+d FIX 2026-10-26T11:04:49Z
+ROW c1s-400-MAIN-s42-r1 rc=0 sha=3f1d4190eef066ea "mbps":578.249 before[cargo=0 rustc=0 load=1.30 2.22 2.58] after[cargo=0 rustc=0 load=1.51 2.25 2.59] 2026-10-26T11:04:58Z
+ROW c1s-400-R1-s42-r1 rc=0 sha=03457fdb19393aaa "mbps":177.126 before[cargo=0 rustc=0 load=1.55 2.25 2.58] after[cargo=0 rustc=0 load=3.63 2.67 2.72] 2026-10-26T11:05:19Z
+ROW c1s-400-R1-d-s42-r1 rc=0 sha=0881a4282eaa1981 "mbps":559.32 before[cargo=0 rustc=0 load=3.63 2.67 2.72] after[cargo=0 rustc=0 load=4.14 2.79 2.76] 2026-10-26T11:05:27Z
+ROW c1s-400-MAIN+d-s42-r1 rc=0 sha=7ecadbf6b9efa9e6 "mbps":164.307 before[cargo=0 rustc=0 load=4.14 2.79 2.76] after[cargo=0 rustc=0 load=3.37 2.73 2.73] 2026-10-26T11:05:49Z
+ROW c1s-400-FIX-s42-r1 rc=0 sha=dc12d7a3a12214e2 "mbps":482.581 before[cargo=0 rustc=0 load=3.37 2.73 2.73] after[cargo=0 rustc=0 load=3.62 2.80 2.76] 2026-10-26T11:05:58Z
+ROW c1s-400-R1-s7-r2 rc=0 sha=03457fdb19393aaa "mbps":177.811 before[cargo=0 rustc=0 load=3.62 2.80 2.76] after[cargo=0 rustc=0 load=3.51 2.83 2.77] 2026-10-26T11:06:19Z
+ROW c1s-400-R1-d-s7-r2 rc=0 sha=0881a4282eaa1981 "mbps":527.391 before[cargo=0 rustc=0 load=3.51 2.83 2.77] after[cargo=0 rustc=0 load=3.71 2.89 2.79] 2026-10-26T11:06:27Z
+ROW c1s-400-MAIN+d-s7-r2 rc=0 sha=7ecadbf6b9efa9e6 "mbps":178.801 before[cargo=0 rustc=0 load=3.71 2.89 2.79] after[cargo=0 rustc=0 load=3.15 2.81 2.77] 2026-10-26T11:06:48Z
+ROW c1s-400-FIX-s7-r2 rc=0 sha=dc12d7a3a12214e2 "mbps":599.222 before[cargo=0 rustc=0 load=3.15 2.81 2.77] after[cargo=0 rustc=0 load=3.62 2.92 2.80] 2026-10-26T11:06:56Z
+ROW c1s-400-MAIN-s7-r2 rc=0 sha=3f1d4190eef066ea "mbps":601.842 before[cargo=0 rustc=0 load=3.62 2.92 2.80] after[cargo=0 rustc=0 load=3.62 2.94 2.81] 2026-10-26T11:07:04Z
+PERF P-c1s-R1 srv=474690 2026-10-26T11:07:09Z
+RUN P-c1s-R1 "mbps":180.166 2026-10-26T11:07:51Z
+PERF P-c1s-MAIN srv=475266 2026-10-26T11:07:59Z
+RUN P-c1s-MAIN "mbps":539.128 2026-10-26T11:08:12Z
+PERF P-c1s-R1-d srv=475846 2026-10-26T11:08:20Z
+RUN P-c1s-R1-d "mbps":605.211 2026-10-26T11:08:30Z
+END raptorpath=0 netns=0 2026-10-26T11:08:34Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

@@ -1,0 +1,94 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 6K of event 'cpu/cycles/P'
+# Event count (approx.): 12012304150
+#
+# Overhead  Symbol                                                                                                                                                                                                                                                                                     
+# ........  ...........................................................................................................................................................................................................................................................................................
+#
+     6.47%  [.] raptorpath::net::receiver::run_receiver::{{closure}}
+     4.70%  [.] __memmove_avx_unaligned_erms
+            |          
+             --0.89%--__memmove_avx_unaligned_erms
+
+     4.65%  [.] _int_malloc
+            |          
+             --0.88%--_int_malloc
+                       |          
+                        --0.70%--__libc_malloc2
+
+     4.09%  [.] _aesni_ctr32_ghash_6x
+     2.80%  [k] __pv_queued_spin_lock_slowpath
+            |          
+             --2.50%--_raw_spin_lock
+                       |          
+                        --2.41%--raw_spin_rq_lock_nested
+                                  |          
+                                   --2.18%--___task_rq_lock
+                                             try_to_wake_up
+                                             |          
+                                              --2.03%--wake_up_q
+                                                        futex_wake
+                                                        do_futex
+                                                        __x64_sys_futex
+                                                        do_syscall_64
+                                                        entry_SYSCALL_64_after_hwframe
+
+     2.09%  [.] <raptorpath::fec::unified::UnifiedDecoder as raptorpath::fec::window_traits::WindowDecoder>::seq_probe
+     2.01%  [.] malloc_consolidate
+     1.77%  [.] _int_free_chunk
+     1.67%  [.] __libc_malloc2
+     1.53%  [k] entry_SYSRETQ_unsafe_stack
+     1.53%  [.] 0x00000000000008eb
+     1.28%  [.] quinn::endpoint::RecvState::poll_socket
+     1.27%  [.] alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     1.20%  [k] rep_movs_alternative
+            |          
+             --1.02%--_copy_to_iter
+                       |          
+                        --1.01%--__skb_datagram_iter
+                                  skb_copy_datagram_iter
+                                  udp_recvmsg
+                                  inet_recvmsg
+                                  |          
+                                   --0.61%--sock_recvmsg
+                                             ____sys_recvmsg
+                                             ___sys_recvmsg
+                                             do_recvmmsg
+                                             __x64_sys_recvmmsg
+                                             do_syscall_64
+                                             entry_SYSCALL_64_after_hwframe
+
+     1.20%  [.] unlink_chunk.isra.0
+     1.09%  [.] std::collections::hash::set::HashSet<T,S,A>::insert
+     1.06%  [.] malloc
+     0.96%  [.] alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     0.95%  [.] raptorpath::fec::unified::UnifiedDecoder::assimilate
+     0.95%  [.] _int_free_create_chunk
+     0.89%  [.] cfree@GLIBC_2.2.5
+     0.87%  [.] <raptorpath::fec::unified::UnifiedDecoder as raptorpath::fec::window_traits::WindowDecoder>::add_symbol
+     0.84%  [.] alloc::collections::btree::map::BTreeMap<K,V,A>::range
+     0.81%  [.] ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks
+     0.81%  [.] raptorpath::transport::protocol::WireMessage::deserialize
+     0.75%  [.] core::hash::BuildHasher::hash_one
+     0.72%  [.] quinn_proto::connection::Connection::process_payload
+     0.72%  [.] quinn_proto::connection::Connection::handle_decode
+     0.72%  [.] raptorpath::transport::io_owner::serve::{{closure}}
+     0.71%  [k] syscall_return_via_sysret
+     0.70%  [.] hashbrown::map::HashMap<K,V,S,A>::insert
+     0.61%  [.] <core::hash::sip::Hasher<S> as core::hash::Hasher>::write
+     0.61%  [.] tokio::sync::mpsc::bounded::Sender<T>::try_send
+     0.60%  [k] native_write_msr
+     0.59%  [.] clock_gettime@@GLIBC_2.17
+     0.55%  [.] raptorpath::monitor::stats::SharedStats::live_path_ids
+     0.54%  [.] tokio::runtime::task::raw::poll
+     0.53%  [k] entry_SYSCALL_64
+     0.51%  [.] <std::sys::pal::unix::time::Timespec>::sub_timespec
+
+
+#
+# (Tip: To not accumulate CPU time of children symbols add --no-children)
+#
