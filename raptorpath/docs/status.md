@@ -4888,3 +4888,85 @@ reference, a weakness of the design (the lead's), and §19 tests it. No ship.
 *Also in this session.* `q2_one_task_per_loop_no_multiplexer` (source-pin
 string updated for `task_obs::timed`, commit `fa0f915`) passes on the
 fresh build (`q2test.log`, rc 0).
+
+## 19. Same-session control for §18 — pre-registration
+
+§18 scored `REFUTED` by its own rule, through `CONTROL-MOVED` at `c1d-400`
+and `c2-100` against the §15 MAIN ranges. That reference is a different
+session and a different binary (main at `88476a4`, `RWM_RTOBS=1`), so the
+check could not separate "the change moved N ≥ 2" from "the VM or the era
+moved". The project lead's ruling: §18 stands as scored; the weakness is the
+design's; this section tests it. Committed before any VM contact of this
+battery (the VM was used for the §18 session only; this section's
+harness and its witness fix are committed first, with the red-first test).
+
+**Question.** Does LAW (this branch HEAD) differ from main at N ≥ 2, where
+the change is a no-op by construction? And at c1s, repeat the §18 contrast
+with main itself as the reference (not `RWM_STORE_PATHS=0`).
+
+**Design.** Two binaries built fresh, each in its own fresh target, in the
+same session under both VM locks; both `sha256` values are recorded in
+`BINSHA.txt` and checked before every invocation:
+
+- `MAIN` = `ce60079` (git archive; the base of this branch's parent chain);
+- `LAW` = the branch HEAD at launch (engine identical to `6323db5`).
+
+| leg | cells | arms | n | hint |
+|---|---|---|---|---|
+| contrast | `c1s-400`, `c1d-400`, `c2-100`, `c8-100` | MAIN vs LAW, interleaved; arm order rotated per (rep, seed) block | 6 per arm (seeds 42, 7; 3 reps each) | Bulk |
+| δ rerun | `c1s-400`, `c2-100` | LAW | 3 per cell, seed 42 | Realtime |
+
+Invocations: 4 cells × 2 arms × 6 = 48, plus 6 = 54, preceded by a
+5-invocation smoke (c1s MAIN and LAW, c2 MAIN and LAW, c1s LAW Realtime).
+Harness: `storelaw19_run_all.sh` / `storelaw_battery.sh` (`SL_PLAN=19`) /
+`storelaw_parse.py score19`, derived from §18's. All arms: shipped defaults,
+`RWM_GEN=0 RWM_DIAG=1`, window pipeline, one invocation per fresh topology,
+the same env withholding as §18; no gate is set on either arm.
+
+**The Realtime witness fix** (its own commits, red-first against one saved
+§18 Realtime log, `tools/l1/test_storelaw_parse.py`): a named hint is
+accepted from `[PIPE] pipeline=window hint=<h>` plus `[DCAP] q=`; the
+"auto-selecting RLC windowed backend" line is still required for auto. A
+named-hint row without `[DCAP] q=` stays `WITNESS-FAIL`.
+
+**Witnesses** (as §18; a row without them is void, not null): the `[GATES]`
+echo and the `[PIPE]` echo; LAW `[SUMCAP] eng>0` and a non-constant `win=`;
+MAIN `[SUMCAP] eng=0/0` and `win=` the constant 1024 at `c1s-400`, and
+`eng>0` at every N ≥ 2 cell; the two binaries' `sha256` distinct and
+checked per invocation.
+
+**Rule** (σ_pooled, means, minimum 4 live rows per (cell, arm) and the
+outcome vocabulary as in §18; amended only as stated here).
+
+- **N ≥ 2 cells (`c1d-400`, `c2-100`, `c8-100`): `REFUTED-NOOP`** if, at any
+  of them, |mean goodput(LAW) − mean goodput(MAIN)| > 2σ_pooled, in either
+  direction. Otherwise §18's `CONTROL-MOVED` is attributed to the
+  cross-session reference. Fewer than 4 live rows in an arm at a cell:
+  `UNSCOREABLE` at that cell.
+- **`c1s-400`: LAW vs MAIN** with §18's outcome list and order, unchanged:
+  `REFUTED` (goodput below MAIN by more than 2σ_pooled), `PINNED` (LAW
+  `[SUMCAP]` pin ≥ 0.25), `LATENCY-COST` (goodput within 2σ_pooled and `A_x`
+  p50 up by more than 2σ_pooled), `GOODPUT-UP`, `INERT-AS-DERIVED`; the first
+  that holds in that order is the verdict, the others that hold are listed.
+- **DECISION RULE: the law ships iff there is no `REFUTED-NOOP` and c1s is
+  not `REFUTED`.** `PINNED` and `LATENCY-COST` do not block (the N = 1 step
+  is a no-mode-switch defect regardless; the c1 anchor over-read, ×7–9 in
+  §16 and ×12–29 on LAW in §18, is the next defect item).
+- Anything else is `OUTSIDE THE PRE-REGISTERED SET`, recorded with no
+  verdict.
+
+**Reported, not scored** (the VM-drift reading): the c1d LAW and MAIN
+goodput medians against §15 MAIN (677.9–755.1) and §16 (688–729), and the
+same for c2 and c8, so a session-wide shift shows as both arms moving
+together. Gauges per row as §18: `pin=`, `floor=`, per-window btlbw
+over-read, rtt, `[LAT]` `A_x` p50/p95, paused %, occupancy. The δ rerun is
+reported (LAW at Realtime: `[DCAP] q=0.05`, goodput, pin); it carries no
+verdict.
+
+**Abort table** (tokens fixed now; filled in the result): as §18's, plus
+`ABORT-TESTS` (the parser test, `test_storelaw_parse.py`, fails at
+launch) and `ABORT-BUILD` for either binary.
+
+**Duration.** 54 invocations at ≈ 11–12 s each (§18: 42 in 483 s) ≈ 11
+minutes of measurement; two builds ≈ 20 minutes; with lock waits well
+under the 5 h cap.
