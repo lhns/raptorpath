@@ -4634,3 +4634,126 @@ allocator discriminator, then the cheapest allocation and per-seq-structure
 fixes, and plan Q3's receiver-role split only if step 0 shows a separable
 role. The proposal, its red tests and its battery design are in the Q3
 report.
+
+## 18. One store law at every path count (ADR-0072) — pre-registration
+
+Status §16 finding 3 and paper §6.1 ("One path is not a case") name the
+defect: `pooled_store_cap` returned `None` below two live paths, so one path
+ran `clamp(2.0·BtlBw·RTprop, 10, 1024)`, a different law whose ceiling binds
+in every post-warm-up c1s window. That is a path-count step of the pattern
+CLAUDE.md forbids (per-path cap ×1.80 at the c1 anchor, ×0.55 at the sc2
+anchor across N = 1 → 2). The code phase is done and is the subject of this
+pre-registration; the battery has **not** run. Committed before any VM
+measurement of the new binary (the VM was used for build and unit-test
+suites only).
+
+**The change** (`net/store_cap.rs`, `net/sender_phases.rs`; no wire change,
+no engine crate outside `net`): `pooled_store_cap` applies
+`clamp((1 + q(δ))·Σ bwᵢ·RTpropᵢ, floor, N·knee)` at every N ≥ 1; the three
+default-off arms lose the same guard (`capw_store_cap`'s `terms.len() < 2`,
+the pool-anchor `n_live >= 2`, the honest arm's `N·knee if N ≥ 2 else
+store_max`); the Copa-sole seat shares the function. `RELIABLE_STORE_MAX` and
+the gain 2.0 remain only on `RWM_STORE_PATHS=0` (and the boot `min()`).
+`[SUMCAP] pin=` and `floor=` now report at N = 1. Red-first tests
+(`net::tests::one_store_law_at_n1`): absolute N = 1 values at the three
+presets, linearity from N = 1, δ continuity at N = 1, refresh routing,
+bind gauges, control exactness, no-op at N ≥ 2.
+
+**The design.** One binary. N = 1 control = `RWM_STORE_PATHS=0`, which runs
+main's `clamp(2·bdp, 10, 1024)` chain bit-for-bit (pinned by
+`control_arm_is_main_s_single_path_chain_exactly`); N ≥ 2 is a no-op by
+construction (pinned by `n_two_and_up_is_unchanged_on_a_sampled_grid`).
+All arms: shipped defaults otherwise, `RWM_GEN=0 RWM_DIAG=1`, window
+pipeline, one invocation per fresh topology, `perf_rwm_c.sh`, harness
+patterns of `threadd9_*`, both VM locks.
+
+| leg | cells | arms | n | hint |
+|---|---|---|---|---|
+| scored | `c1s-400`, `c2-100` | LAW vs CTL (`RWM_STORE_PATHS=0`), interleaved, arm order rotated per block | 6 per arm (seeds 42, 7; 3 reps each) | Bulk |
+| control-moved | `c1d-400`, `c8-100` | LAW only | 6 (seeds 42, 7) | Bulk |
+| δ | `c1s-400`, `c2-100` | LAW only | 3 per (cell, hint), seed 42 | Auto, Realtime |
+
+*Witnesses* (a row without them is void, not null): the `[GATES]` echo shows
+`RWM_STORE_PATHS` as set and the path-scaled-pool echo names every N ≥ 1;
+`[SUMCAP]` reads `eng>0` on LAW and `eng=0` on CTL at N = 1 (rule 1: the
+mechanism executes); the LAW arm's `[DIAG]` `win=` is not constant (it
+tracks the law; CTL's reads the constant 1024). Control-moved: at c1d and
+c8 the LAW arm is compared against the §16 rows, which were measured on the
+pre-change engine, as a check that nothing moved at N ≥ 2 (a move there
+would be a defect in the no-op claim).
+
+*Abort table* (measurement-discipline pre-registration protocol 3; tokens
+are fixed now so no abort is relabelled later; the result section opens with
+this table, filled):
+
+| cause | token |
+|---|---|
+| a VM lock not held by the envelope | `ABORT-LOCK` |
+| CR bytes in the synced tree | `ABORT-CRLF` |
+| binary `sha256` differs from the recorded one | `ABORT-SHA` |
+| a sentinel path not write+unlink probed | `ABORT-SENTINEL-UNWRITABLE` |
+| the smoke below fails | `ABORT-SMOKE` |
+| the fresh build or the lib/parser tests fail in the session | `ABORT-BUILD` / `ABORT-TESTS` |
+| a driver exits non-zero (row void, battery goes on) | `ABORT-RC` |
+| no summary after the bring-up tries | `ABORT-BRINGUP` (row `NO_DATA`) |
+| a compile or build process ran on the VM during the row | `VOID-COTENANT` |
+
+*Smoke* (protocol 4; same binary, both arms, nothing in it is a result):
+one `c1s-400` LAW and CTL invocation and one `c2-100` LAW and CTL
+invocation must witness the `[GATES]` echo with `RWM_STORE_PATHS` as set,
+`[SUMCAP] eng>0` on LAW and `eng=0` on CTL, and a non-constant `win=` on
+LAW; if any is missing, nothing else is launched.
+
+*Gauges* (reported for every row, scored where named): `[SUMCAP] pin=` and
+`floor=` (rule 18: the bind fraction of each clamp); per-window btlbw
+over-read against delivered; `rtt` and RTprop; `[LAT]` `A_x` p50/p95 and
+`q_p50`; paused %; store occupancy against the cap. The δ leg's witness:
+per-window cap / (Σ bw·RTprop) equals 1 + q within one `ceil` in windows
+where neither clamp binds (q = 0.050 Realtime, 0.0667 Auto).
+
+*Scoring.* σ_pooled is the pooled within-arm standard deviation of the two
+arms' reps in that cell; "2σ_pooled" is the half-width of the noise band.
+**c1s outcomes** (LAW vs CTL; the first that holds in the order REFUTED,
+PINNED, LATENCY-COST, GOODPUT-UP, INERT-AS-DERIVED is the verdict, and the
+others that also hold are listed):
+
+- **PINNED** (expected): LAW `[SUMCAP] pin` ≥ 0.25 — the knee binds because
+  the c1 anchor over-reads ×7–9 (paper §6.1, "The c1 input"; 7 of 15 windows
+  in the §16 r1 trajectory).
+- **LATENCY-COST** (expected): goodput within 2σ_pooled of CTL and `A_x` p50
+  up by more than 2σ_pooled — the store, and so the RTT, grows at the same
+  goodput.
+- **GOODPUT-UP**: goodput above CTL by more than 2σ_pooled.
+- **INERT-AS-DERIVED**: goodput and `A_x` p50 both within 2σ_pooled of CTL
+  and `pin` < 0.25.
+- **REFUTED**: goodput below CTL by more than 2σ_pooled at c1s **or** at c2.
+
+**Other outcomes** (the shared taxonomy, restated with this battery's
+numbers): `UNSCOREABLE` when fewer than 4 live rows remain at a scored
+(cell, arm), or 2 or more witness-failed rows void the arm at that cell;
+`GUARD-UNDERPOWERED` for the c2 goodput guard if its n cannot resolve a
+2σ_pooled band (reported, never scored); `CONTROL-MOVED` at c1d and c8 if
+the LAW arm's `[SUMCAP]` is not `eng=N/N` with `pin` as in §16 (c1d: cap
+≈ 2734, pin 0), or its goodput median falls outside the range of the §15
+MAIN rows (c1d `677.9–755.1`, c8 `82.9–102.9` Mbit/s; same cells, shipped
+default) — the no-op at N ≥ 2 is pinned by a test, so a move there is a
+finding against the claim and no other outcome is drawn from those cells;
+anything else is `OUTSIDE THE PRE-REGISTERED SET`, recorded with no verdict.
+
+**c2:** goodput is a guard, not a score (rule 16: the cell's headroom is
+under 5 %, so a goodput move there is noise or harm, never a gain);
+`A_x`/`q_p50` and store occupancy are scored (expected: the cap falls from
+≈ 989–1024 to ≈ 544–850, occupancy follows it, queueing falls or holds).
+
+**DECISION RULE (decided by the project lead): the law ships unless
+REFUTED. PINNED and LATENCY-COST do not block, because the N = 1 step is a
+no-mode-switch defect (CLAUDE.md) regardless; the c1 anchor over-read
+(×7–9, paper §6.1 "The c1 input") is recorded as the next defect item.**
+
+*Not decided here:* the anchor over-read itself, `RWM_STORE_PATH_POOL`
+(stale knee), any change to q(δ). No threshold in the battery is a tuning
+knob; none is changed after the data is read.
+
+*Duration.* 48 invocations at ≈ 10–20 s each (the §15 battery ran 60
+invocations in 556 s), plus the build and the smoke: about 20 minutes of
+measurement, one hour of session wall at most, far inside the 5 h budget.
