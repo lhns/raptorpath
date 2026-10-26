@@ -6676,3 +6676,24 @@ than 20 polls reach 10 ms, stated). One outcome, in precedence order:
 - loadavg per row.
 
 **Abort causes:** §25's table.
+
+**§26 amendment 1 (committed before any VM contact for this section).** The
+benchmark VM had a multi-hour storage stall at low loadavg (I/O pressure
+`full` 75–99 %). Three changes:
+
+1. **Launch precondition.** It gains `/proc/pressure/io` `full avg60` < 5.0
+   (`lagdiag2_run.sh`, `suites_run.sh`).
+2. **I/O pressure is recorded.** The `full` line goes into the 10 Hz stat
+   file of every row, and `full avg10` / `avg60` into every ROW line. A row
+   whose `full avg10` reaches 20 at any sample is **`VOID-IOSTALL`**:
+   excluded and counted (`lagdiag2_digest.py`, tested). The ≥ 18-live-rows
+   bar is unchanged.
+3. **Full suites first.** The full test suites run before the diagnostic, in
+   their own locked session on the same tree (`suites_run.sh`: release,
+   doc, wasm and debug cargo suites plus the parser tests, with §8's flake
+   rule). The diagnostic launches only after they are green.
+
+Both stages are driven by a detached waiter on the VM (`lag26_waiter.sh`).
+It retries a stage every 5 min while that stage exits on the precondition
+or on a held lock. It never touches a lock path itself. Hard deadline for
+the diagnostic is launch + 4 h. Nothing else in §26 changes.

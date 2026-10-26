@@ -159,14 +159,41 @@ def load_row(prefix):
         "txsec": parse_txsec(lines),
         "sender": parse_sender_polls(lines),
     }
+    row["io_avg10_max"] = io_full_avg10_max(prefix + "-stat.txt")
     row["witness"] = witness(row)
     return row
+
+
+# Status §26 amendment 1: a row whose `/proc/pressure/io` `full avg10` reached
+# IOSTALL_AVG10 at any 10 Hz sample is VOID-IOSTALL (excluded, counted).
+IOSTALL_AVG10 = 20.0
+
+
+def io_full_avg10_max(path):
+    """Max `full avg10` over the stat file's `IO full ...` lines; None if none."""
+    best = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for ln in f:
+                if not ln.startswith("IO "):
+                    continue
+                for tok in ln.split():
+                    if tok.startswith("avg10="):
+                        v = L.fnum(tok[6:])
+                        if v is not None and (best is None or v > best):
+                            best = v
+    except OSError:
+        return None
+    return best
 
 
 def witness(row):
     """None when live, else the reason (WITNESS-FAIL). RTOBS=2 rows need the
     round-1 witnesses and every round-2 instrument; RTOBS=1 rows only the
     round-1 ones (they print none of the deep gauges)."""
+    io = row.get("io_avg10_max")
+    if io is not None and io >= IOSTALL_AVG10:
+        return f"VOID-IOSTALL io full avg10 max {io:.2f}"
     w = D.witness(row)
     if w or row["rt"] != 2:
         return w

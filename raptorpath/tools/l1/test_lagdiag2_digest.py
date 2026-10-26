@@ -148,6 +148,23 @@ class Witness(unittest.TestCase):
         self.assertIn("witness_fail=1", txt)
         self.assertIn("b19-s7-rt2: client [THR] os lines without run_delay_us=", txt)
 
+    def test_an_io_stalled_row_is_void(self):
+        # §26 amendment 1: full avg10 >= 20 at any sample voids the row.
+        d = make_dir(lambda i: 1000 + 100 * i, lambda i: 100 + 50 * i)
+        pre = write_row(d, "b19-s7-rt2", 900, 100, polls=good_polls())
+        with open(pre + "-stat.txt", "a", encoding="utf-8") as f:
+            f.write("IO full avg10=3.00 avg60=1.00 avg300=0.50 total=1\n")
+            f.write("IO full avg10=25.10 avg60=4.00 avg300=1.00 total=2\n")
+        self.assertEqual(D2.io_full_avg10_max(pre + "-stat.txt"), 25.1)
+        txt = run_digest(d)
+        self.assertIn("live_rt2=18", txt)
+        self.assertIn("b19-s7-rt2: VOID-IOSTALL", txt)
+        # Below the bar the row stays live.
+        pre2 = write_row(d, "b20-s7-rt2", 900, 100, polls=good_polls())
+        with open(pre2 + "-stat.txt", "a", encoding="utf-8") as f:
+            f.write("IO full avg10=19.99 avg60=1.00 avg300=0.50 total=1\n")
+        self.assertIsNone(D2.load_row(pre2)["witness"])
+
 
 class OutcomeA(unittest.TestCase):
     def test_os_level(self):

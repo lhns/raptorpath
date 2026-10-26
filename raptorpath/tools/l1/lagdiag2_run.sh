@@ -29,10 +29,16 @@ mkdir -p "$RUN/diag" "$ROOT/bin"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$RUN/era.txt"; }
 sudo -n true 2>/dev/null || { era "ABORT-SUDO"; exit 3; }
 
+# /proc/pressure/io `full` field value (avg10 | avg60 | avg300), empty if unread.
+io_full() { awk -v k="$1" '/^full/{for(i=2;i<=NF;i++){split($i,a,"=");if(a[1]==k)print a[2]}}' /proc/pressure/io 2>/dev/null; }
+
 # Launch precondition, BEFORE the locks (as threadr2_run_all.sh).
+# Status §26 amendment 1: also /proc/pressure/io full avg60 < 5.0 (the VM had a
+# multi-hour storage stall at low loadavg).
 LOAD1=$(cut -d' ' -f1 /proc/loadavg)
-if ! awk -v l="$LOAD1" 'BEGIN{exit !(l < 2.0)}' || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
-  era "ABORT-PRECONDITION load1=$LOAD1 cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc); NOTHING WAS RUN."
+IOF60=$(io_full avg60)
+if ! awk -v l="$LOAD1" -v f="${IOF60:-999}" 'BEGIN{exit !(l < 2.0 && f < 5.0)}' || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
+  era "ABORT-PRECONDITION load1=$LOAD1 io_full_avg60=${IOF60:-unread} cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc); NOTHING WAS RUN."
   exit 3
 fi
 LB_TAG="lagdiag2_run:$$"
@@ -93,6 +99,7 @@ statmon() { # out: 10 Hz epoch + per-CPU jiffies
   while :; do
     echo "T $(date +%s.%N)"
     grep '^cpu' /proc/stat
+    echo "IO $(grep '^full' /proc/pressure/io 2>/dev/null)"
     sleep 0.1
   done > "$1"
 }
@@ -120,7 +127,7 @@ row() { # tag seed rtobs
   cp /tmp/rwm-c.log "$base-c.log" 2>/dev/null
   cp /tmp/rwm-s.log "$base-s.log" 2>/dev/null
   mbps=$(grep -a -o '"mbps":[0-9.]*' "$base-c.log" 2>/dev/null | tail -1 | cut -d: -f2)
-  era "ROW $tag rc=$rc mbps=${mbps:-} cot_before=$cb cot_after=$ca load=$(cut -d' ' -f1-3 /proc/loadavg)"
+  era "ROW $tag rc=$rc mbps=${mbps:-} cot_before=$cb cot_after=$ca load=$(cut -d' ' -f1-3 /proc/loadavg) io_full_avg10=$(io_full avg10) io_full_avg60=$(io_full avg60)"
   return 0
 }
 
