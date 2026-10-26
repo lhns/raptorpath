@@ -6664,3 +6664,18 @@ I/O precondition and `VOID-IOSTALL` of Amendment 1 stay. The step-0
 harness (`r3diag_run.sh`) carries this now; the R3 battery's harness
 (`threadr3_*`) gains the same, plus Amendment 1's io clause, before its
 launch.
+
+### 22. Amendment 3 (step-0 diagnostic and R3 ship battery, before either launch; supersedes Amendment 1's gates)
+
+The operator-approved shared rule replaces the launch precondition for
+both: **both locks free (`test -e`), no `cargo` / `rustc` (`pgrep -x`), and
+`procs_running` (`/proc/stat`) ≤ 2 in each of 5 samples 2 s apart**. The
+loadavg clause (§21) and Amendment 1's io gate are dropped: loadavg counts
+disk-blocked tasks, and the measurements run in memory on `/dev/shm`
+(Amendment 2). Io pressure is a **covariate**: `full avg10` is recorded
+before and after every row (and every 2 s during it, as `io_full10_max=`);
+a row with a reading ≥ 20 is marked `FLAG-IOSTALL` and, if it is an
+outlier, reported as such — it is **not** voided. A row whose binary or
+run dir is not on `/dev/shm` is `VOID-ONDISK`. Builds and test suites have
+no io gate. The waiter and envelope carry this (`r3diag_wait.sh`,
+`r3diag_run.sh`); the R3 battery's harness gains it before its launch.

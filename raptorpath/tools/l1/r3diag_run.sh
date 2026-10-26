@@ -23,17 +23,22 @@ RUN="$ROOT/run"
 BIN="$ROOT/bin/raptorpath"
 mkdir -p "$RUN/diag" "$ROOT/bin"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$RUN/era.txt"; }
-# io pressure `full` avg10 / avg60 (/proc/pressure/io; §22 Amendment 1).
+# io pressure `full` avg10 / avg60 (/proc/pressure/io): a covariate only
+# (§22 Amendment 3), never a gate.
 iofull() { awk '$1 == "full" { split($2, a, "="); split($3, b, "="); print a[2], b[2] }' /proc/pressure/io 2>/dev/null; }
-cotenants() { echo "cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg) io_full=$(iofull | tr ' ' /)"; }
+procs_running() { awk '$1 == "procs_running" { print $2 }' /proc/stat; }
+cotenants() { echo "cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg) procs_running=$(procs_running) io_full=$(iofull | tr ' ' /)"; }
 sudo -n true 2>/dev/null || { era "ABORT-SUDO"; exit 3; }
-# Launch precondition (§21 + §22 Amendment 1): load < 2.0, no cargo /
-# rustc, io pressure `full avg60` < 5.0, checked before the locks are taken.
-load1=$(cut -d' ' -f1 /proc/loadavg)
-io60=$(iofull | cut -d' ' -f2)
-if [ "$(pgrep -xc cargo)" != 0 ] || [ "$(pgrep -xc rustc)" != 0 ] \
-   || ! awk -v l="$load1" 'BEGIN { exit !(l < 2.0) }' \
-   || ! awk -v p="${io60:-100}" 'BEGIN { exit !(p < 5.0) }'; then
+# Launch precondition (§22 Amendment 3, the shared rule; supersedes the
+# loadavg and io clauses): no cargo / rustc, and `procs_running` ≤ 2 in each
+# of 5 samples 2 s apart, checked before the locks are taken (take_lock then
+# refuses a held lock).
+calm=1
+for _ in 1 2 3 4 5; do
+  [ "$(procs_running)" -le 2 ] || calm=0
+  sleep 2
+done
+if [ "$(pgrep -xc cargo)" != 0 ] || [ "$(pgrep -xc rustc)" != 0 ] || [ "$calm" = 0 ]; then
   era "ABORT-PRECONDITION $(cotenants)"
   exit 3
 fi
@@ -92,9 +97,11 @@ row() { # cell seed rep
   t="$cell-400-s$seed-r$rep"
   rm -f /tmp/rwm-c.log /tmp/rwm-s.log
   cb=$(cotenants)
-  # io pressure `full avg10` sampled every 2 s over the row; the row is
-  # VOID-IOSTALL if any sample (or the before/after reading) is >= 20.
-  local samp="$RUN/diag/$t-io.txt" sp
+  # io pressure `full avg10` before / every 2 s during / after the row: a
+  # covariate. FLAG-IOSTALL (reported, not void) if any reading is >= 20;
+  # VOID-ONDISK if the binary or the run dir is not on /dev/shm.
+  local samp="$RUN/diag/$t-io.txt" sp ondisk=""
+  case "$BIN:$RUN" in /dev/shm/*:/dev/shm/*) ;; *) ondisk=" VOID-ONDISK" ;; esac
   ( while :; do iofull | cut -d' ' -f1 >> "$samp"; sleep 2; done ) &
   sp=$!
   drv "$cell" "$seed" 400000000 RWM_RTOBS=2 RWM_RDIAG=1 > "$RUN/diag/$t-drv.out" 2>&1
@@ -104,9 +111,9 @@ row() { # cell seed rep
   ca=$(cotenants)
   io_max=$( { cat "$samp" 2>/dev/null; echo "$cb" | sed 's/.*io_full=\([0-9.]*\).*/\1/'; echo "$ca" | sed 's/.*io_full=\([0-9.]*\).*/\1/'; } \
     | awk 'BEGIN { m = 0 } $1 ~ /^[0-9.]+$/ { if ($1 + 0 > m) m = $1 + 0 } END { printf "%.2f", m }')
-  awk -v m="$io_max" 'BEGIN { exit !(m >= 20) }' && void=" VOID-IOSTALL"
+  awk -v m="$io_max" 'BEGIN { exit !(m >= 20) }' && void=" FLAG-IOSTALL"
   cp /tmp/rwm-c.log "$RUN/diag/$t-c.log" 2>/dev/null; cp /tmp/rwm-s.log "$RUN/diag/$t-s.log" 2>/dev/null
-  era "ROW $t rc=$rc $(grep -a -o '"mbps":[0-9.]*' "$RUN/diag/$t-c.log" | tail -1) io_full10_max=$io_max$void before[$cb] after[$ca]"
+  era "ROW $t rc=$rc $(grep -a -o '"mbps":[0-9.]*' "$RUN/diag/$t-c.log" | tail -1) io_full10_max=$io_max$void$ondisk before[$cb] after[$ca]"
 }
 rep=0
 for seed in 42 7 42; do
