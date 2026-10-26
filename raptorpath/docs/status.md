@@ -4669,9 +4669,17 @@ patterns of `threadd9_*`, both VM locks.
 
 | leg | cells | arms | n | hint |
 |---|---|---|---|---|
-| scored | `c1s-400`, `c2-100` | LAW vs CTL (`RWM_STORE_PATHS=0`), interleaved, arm order rotated per block | 6 per arm (seeds 42, 7; 3 reps each) | Bulk |
-| control-moved | `c1d-400`, `c8-100` | LAW only | 6 (seeds 42, 7) | Bulk |
+| scored | `c1s-400` | LAW vs CTL (`RWM_STORE_PATHS=0`), interleaved, arm order rotated per block | 6 per arm (seeds 42, 7; 3 reps each) | Bulk |
+| control-moved | `c1d-400`, `c2-100`, `c8-100` | LAW only | 6 (seeds 42, 7) | Bulk |
 | δ | `c1s-400`, `c2-100` | LAW only | 3 per (cell, hint), seed 42 | Auto, Realtime |
+
+**Amendment (committed before any battery VM contact; the first draft of
+this section was wrong in one place).** c2 is N = 2, where this change is a
+no-op by construction (pinned by test), so LAW at c2 is main. CTL
+(`RWM_STORE_PATHS=0`) at c2 is *not* main: it is the pre-ADR-0058 chain
+(`clamp(2·Σ, 10, 1024)`). A LAW-vs-CTL contrast at c2 would score something
+this change does not do. c2 therefore moves from the scored leg to the
+control-moved leg; the scored leg is `c1s-400` alone.
 
 *Witnesses* (a row without them is void, not null): the `[GATES]` echo shows
 `RWM_STORE_PATHS` as set and the path-scaled-pool echo names every N ≥ 1;
@@ -4699,10 +4707,10 @@ this table, filled):
 | a compile or build process ran on the VM during the row | `VOID-COTENANT` |
 
 *Smoke* (protocol 4; same binary, both arms, nothing in it is a result):
-one `c1s-400` LAW and CTL invocation and one `c2-100` LAW and CTL
+one `c1s-400` LAW and CTL invocation and one `c2-100` LAW
 invocation must witness the `[GATES]` echo with `RWM_STORE_PATHS` as set,
-`[SUMCAP] eng>0` on LAW and `eng=0` on CTL, and a non-constant `win=` on
-LAW; if any is missing, nothing else is launched.
+`[SUMCAP] eng>0` on LAW (both cells) and `eng=0` on the `c1s-400` CTL, and a
+non-constant `win=` on LAW; if any is missing, nothing else is launched.
 
 *Gauges* (reported for every row, scored where named): `[SUMCAP] pin=` and
 `floor=` (rule 18: the bind fraction of each clamp); per-window btlbw
@@ -4726,24 +4734,23 @@ others that also hold are listed):
 - **GOODPUT-UP**: goodput above CTL by more than 2σ_pooled.
 - **INERT-AS-DERIVED**: goodput and `A_x` p50 both within 2σ_pooled of CTL
   and `pin` < 0.25.
-- **REFUTED**: goodput below CTL by more than 2σ_pooled at c1s **or** at c2.
+- **REFUTED**: c1s goodput below CTL by more than 2σ_pooled, **or**
+  `CONTROL-MOVED` at any N ≥ 2 cell (c1d, c2, c8).
 
 **Other outcomes** (the shared taxonomy, restated with this battery's
 numbers): `UNSCOREABLE` when fewer than 4 live rows remain at a scored
 (cell, arm), or 2 or more witness-failed rows void the arm at that cell;
-`GUARD-UNDERPOWERED` for the c2 goodput guard if its n cannot resolve a
-2σ_pooled band (reported, never scored); `CONTROL-MOVED` at c1d and c8 if
-the LAW arm's `[SUMCAP]` is not `eng=N/N` with `pin` as in §16 (c1d: cap
-≈ 2734, pin 0), or its goodput median falls outside the range of the §15
-MAIN rows (c1d `677.9–755.1`, c8 `82.9–102.9` Mbit/s; same cells, shipped
-default) — the no-op at N ≥ 2 is pinned by a test, so a move there is a
-finding against the claim and no other outcome is drawn from those cells;
+`CONTROL-MOVED` at c1d, c2 and c8 if
+the LAW arm's `[SUMCAP]` is not `eng=N/N` (the cap tracking (1 + q)·Σ as on
+main; c1d: cap ≈ 2734, pin 0 per §16), or its goodput median falls outside
+the range of the §15 MAIN rows (c1d `677.9–755.1`, c2 `90.08–90.32`, c8
+`82.9–102.9` Mbit/s; same cells, shipped default) — the no-op at N ≥ 2 is
+pinned by a test, so a move there is a finding against the claim and no
+other outcome is drawn from those cells;
 anything else is `OUTSIDE THE PRE-REGISTERED SET`, recorded with no verdict.
 
-**c2:** goodput is a guard, not a score (rule 16: the cell's headroom is
-under 5 %, so a goodput move there is noise or harm, never a gain);
-`A_x`/`q_p50` and store occupancy are scored (expected: the cap falls from
-≈ 989–1024 to ≈ 544–850, occupancy follows it, queueing falls or holds).
+**c2** is a no-op cell: it carries no scored expectation (rule 16 also
+applies: its headroom is under 5 %, so no goodput target is set there).
 
 **DECISION RULE (decided by the project lead): the law ships unless
 REFUTED. PINNED and LATENCY-COST do not block, because the N = 1 step is a
@@ -4754,6 +4761,8 @@ no-mode-switch defect (CLAUDE.md) regardless; the c1 anchor over-read
 (stale knee), any change to q(δ). No threshold in the battery is a tuning
 knob; none is changed after the data is read.
 
-*Duration.* 48 invocations at ≈ 10–20 s each (the §15 battery ran 60
-invocations in 556 s), plus the build and the smoke: about 20 minutes of
-measurement, one hour of session wall at most, far inside the 5 h budget.
+*Duration.* 12 (c1s LAW/CTL) + 18 (c1d, c2, c8 LAW) + 12 (δ leg) = 42
+invocations, plus a 3-invocation smoke, at ≈ 10–20 s each (the §15 battery
+ran 60 invocations in 556 s): about 15 minutes of measurement, one to two
+hours of session wall with the build and lock waits, far inside the 5 h
+budget.
