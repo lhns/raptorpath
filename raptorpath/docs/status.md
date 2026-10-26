@@ -6625,3 +6625,28 @@ doc + wasm + debug suites ≈ 45 min quiet to ≈ 2 h loaded, smoke < 1 min,
    duplicate of a delivered seq. It is measured, not gated: the server's
    `below_floor=` (last `[RDIAG]` `dec[` value) is reported per R3 row and
    cell, median [min–max].
+
+### 22. Step-0 diagnostic — Amendment 1 (before its relaunch)
+
+The VM's storage stalled on 2026-10-26 evening (`/proc/pressure/io` `full`
+≈ 97 %, then 75–85 % at loadavg 1–2, which the loadavg clause does not
+see). For the step-0 diagnostic (and, by the same text, the R3 ship
+battery above):
+1. **Launch precondition** gains `/proc/pressure/io` `full avg60` < 5.0
+   (checked with the others before the locks).
+2. **Per row**, io pressure `full avg10` is recorded before, every 2 s
+   during, and after the invocation; the ledger's `ROW` line carries
+   `io_full10_max=`. **A row with any reading ≥ 20 is `VOID-IOSTALL`**:
+   excluded from every reading of the result and counted. The perf run
+   records the same before/after.
+3. **The waiter** (`tools/l1/r3diag_wait.sh`) runs detached on the VM:
+   it polls the precondition once a minute (locks by `test -e` only; it
+   never opens or breaks a lock) for up to 3 h, then runs the envelope,
+   which re-checks and takes both locks with `take_lock`; a run refused
+   before the locks (precondition, or a lock taken in between) is retried.
+   If the precondition never holds, the waiter logs `NOT-LAUNCHED` and
+   nothing runs.
+4. **Tree.** The engine tree stays `e4d078e` (main + the instrument); the
+   harness files `tools/l1/r3diag_run.sh` and `r3diag_wait.sh` come from
+   this amendment's commit (harness only, no engine file differs; the
+   swapped files' `sha256` are logged in the ledger).
