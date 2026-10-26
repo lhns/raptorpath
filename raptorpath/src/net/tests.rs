@@ -866,8 +866,8 @@ fn dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation() {
     }
     // The DH law chain over the sender's pool inputs, exactly as the
     // sender computes it (RWM_STORE_GAIN default 2.0; floor 64;
-    // RELIABLE_STORE_MAX latch at N = 1; store_boot_cap 128 — gates.rs
-    // defaults).
+    // N·knee ceiling (RWM_STORE_PATH_POOL 2048 per live path, every N >= 1
+    // since ADR-0072); store_boot_cap 128 — gates.rs defaults).
     let now = now_us();
     let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
@@ -875,21 +875,22 @@ fn dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation() {
         let (bdp, slots) = store_cap_pool_inputs(sched, true);
         let terms = honest_cap_terms(&mut ks, &slots, now, 2.0);
         let hsum: f64 = terms.iter().flatten().sum();
+        let ceiling = sched.live_paths().len().max(1) * 2048;
         if hsum > 0.0 {
-            (hsum.ceil() as usize).clamp(64, RELIABLE_STORE_MAX)
+            (hsum.ceil() as usize).clamp(64, ceiling)
         } else if bdp > 0.0 {
-            ((2.0 * bdp).ceil() as usize).clamp(64, RELIABLE_STORE_MAX)
+            ((2.0 * bdp).ceil() as usize).clamp(64, ceiling)
         } else {
             128 // store_boot_cap fallback — the (former) cliff
         }
     };
 
     // Unsaturated: the honest law computes its warm cap (runway term ≈
-    // rate·0.1 ⇒ the 1024 latch at c1 rates).
+    // rate·0.1 ⇒ the 1·knee ceiling at c1 rates).
     let warm_cap = cap_over(&sched);
     assert_eq!(
-        warm_cap, RELIABLE_STORE_MAX,
-        "c1-class honest cap latches the store max"
+        warm_cap, 2048,
+        "c1-class honest cap latches the one-path knee ceiling"
     );
 
     // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
@@ -2190,11 +2191,13 @@ fn a_delivered_seq_zero_alone_is_acked_and_pruned() {
 // ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
 
 #[test]
-fn path_scaled_store_cap_is_legacy_for_singles_and_off() {
-    // Flag off: always the single-path law, regardless of path count.
+fn path_scaled_store_cap_is_legacy_only_when_off_or_cold() {
+    // Flag off: always the `RWM_STORE_PATHS=0` chain, regardless of path count.
     assert_eq!(path_scaled_store_cap(false, 2, 1000.0, 2.0, 64, 2048), None);
-    // Flag on but a single live path: the single-path law bit-exactly.
-    assert_eq!(path_scaled_store_cap(true, 1, 1000.0, 2.0, 64, 2048), None);
+    assert_eq!(path_scaled_store_cap(false, 1, 1000.0, 2.0, 64, 2048), None);
+    // Flag on and a single live path: the same law (ADR-0072), ceiling 1·knee.
+    assert_eq!(path_scaled_store_cap(true, 1, 500.0, 2.0, 64, 2048), Some(1000));
+    assert_eq!(path_scaled_store_cap(true, 1, 1500.0, 2.0, 64, 2048), Some(2048));
     // No dynamic base yet (anchor cold): the boot cap decides.
     assert_eq!(path_scaled_store_cap(true, 2, 0.0, 2.0, 64, 2048), None);
 }
@@ -2520,11 +2523,12 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         assert!(a < c, "{hint:?}: the derived multiplier did not shrink the pool");
     }
 
-    // Bit-identical at N = 1, by construction.
+    // One path is not a case (ADR-0072): the law engages at N = 1 and reads
+    // (1+q)·Σ there too (absolute values in `one_store_law_at_n1`).
     assert_eq!(
         pooled_store_cap(true, true, true, 1.0, 1, 1_200.0, 2.0, 10, 2048),
-        None,
-        "the pooled law engaged at N = 1"
+        Some(((1.0 + codel_setpoint_q(1.0)) * 1_200.0).ceil() as usize),
+        "the pooled law did not engage at N = 1"
     );
 
     // The δ-cap is a CAP law, scoped to `plain_dyn_cap`: it must not arm
@@ -2626,11 +2630,11 @@ mod law_shape {
     fn path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect() {
         let cap = |n: usize| {
             path_scaled_store_cap(true, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
-                .expect("the law is engaged at N >= 2 with a positive base")
+                .expect("the law is engaged at N >= 1 with a positive base")
         };
 
         // (b) The closed form, over the whole synthetic axis. `200·N²`.
-        for n in 2..=8usize {
+        for n in 1..=8usize {
             let expected = (GAIN * A * (n * n) as f64) as usize;
             assert_eq!(cap(n), expected, "N={n}: the law is not gain·A·N²");
             // The clamp is provably inert here — otherwise this test would
@@ -2641,7 +2645,7 @@ mod law_shape {
 
         // (a/c) The ratio that names the exponent. A law linear in N would
         // read 2 at every doubling; the `=0` arm's law reads 4.
-        for n in [2usize, 3, 4] {
+        for n in [1usize, 2, 3, 4] {
             let r = cap(2 * n) as f64 / cap(n) as f64;
             assert!(
                 (r - 4.0).abs() < 1e-9,
@@ -2676,12 +2680,13 @@ mod law_shape {
         use crate::net::pooled_store_cap;
         let cap = |n: usize| {
             pooled_store_cap(true, true, false, 1.0, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
-                .expect("the law is engaged at N >= 2 with a positive base")
+                .expect("the law is engaged at N >= 1 with a positive base")
         };
 
         // (b) The closed form over the whole synthetic axis: `gain·A·N` =
-        // `200·N`, against the shipped arm's `200·N²`.
-        for n in 2..=8usize {
+        // `200·N`, against the `=0` arm's `200·N²`. N starts at 1: one path
+        // is not a case (ADR-0072).
+        for n in 1..=8usize {
             let expected = (GAIN * A * n as f64) as usize;
             assert_eq!(cap(n), expected, "N={n}: the corrected law is not gain·A·N");
             assert!(cap(n) < n * POOL_INERT, "N={n}: the ceiling bound");
@@ -2690,8 +2695,8 @@ mod law_shape {
 
         // (a/c) The ratio that names the exponent: the quadratic law reads 4
         // at a doubling and the linear law reads 2; at N ∈ {1, 2} alone the
-        // two are indistinguishable.
-        for n in [2usize, 3, 4] {
+        // two values are indistinguishable.
+        for n in [1usize, 2, 3, 4] {
             let r = cap(2 * n) as f64 / cap(n) as f64;
             assert!(
                 (r - 2.0).abs() < 1e-9,
@@ -2702,6 +2707,7 @@ mod law_shape {
 
         // The absolute numbers, spelled out beside the defect pin's, so the
         // two shapes are readable side by side in one place.
+        assert_eq!(cap(1), 200); // the one-path value, equal on both arms
         assert_eq!(cap(2), 400); // shipped: 800
         assert_eq!(cap(4), 800); // shipped: 3_200
         assert_eq!(cap(8), 1_600); // shipped: 12_800
@@ -2711,7 +2717,7 @@ mod law_shape {
         // exactly N, at every N, on the
         // unclamped value. If this ever fails the gate is doing something
         // other than deleting one multiplication.
-        for n in 2..=8usize {
+        for n in 1..=8usize {
             let shipped =
                 path_scaled_store_cap(true, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
                     .expect("engaged");
@@ -2722,15 +2728,14 @@ mod law_shape {
             );
         }
 
-        // N = 1 is not a case — the guard returns before the multiplier is
-        // read, so both arms are `None` and the caller keeps the
-        // single-path law bit-exactly. Asserted, because a by-construction
-        // claim rots silently.
+        // N = 1 is not a case (ADR-0072): both arms engage and agree, since
+        // the count multiplier is 1. The `n_live < 2` guard that returned
+        // `None` here is gone.
         for on in [false, true] {
             assert_eq!(
                 pooled_store_cap(true, on, false, 1.0, 1, A, GAIN, FLOOR_INERT, POOL_INERT),
-                None,
-                "sum_cap={on}: the N = 1 guard must fire before the multiplier"
+                Some(200),
+                "sum_cap={on}: the law must engage at N = 1 with value gain·A"
             );
         }
     }
@@ -2820,17 +2825,17 @@ mod law_shape {
             path_scaled_store_cap(true, n, n as f64 * 1.0e9, GAIN, FLOOR, KNEE)
                 .expect("engaged")
         };
-        for n in 2..=8usize {
+        for n in 1..=8usize {
             assert_eq!(cap(n), n * KNEE, "N={n}: the ceiling is not N·knee");
         }
         // Linear, so a doubling reads exactly 2 — and this is the only
         // ratio a measurement of a pinned cap can report, whatever the
         // value underneath is doing.
-        for n in [2usize, 3, 4] {
+        for n in [1usize, 2, 3, 4] {
             assert_eq!(cap(2 * n) as f64 / cap(n) as f64, 2.0);
         }
         // The floor is the other clamp, and it is a constant in N.
-        for n in 2..=8usize {
+        for n in 1..=8usize {
             assert_eq!(
                 path_scaled_store_cap(true, n, 1e-6, GAIN, FLOOR, KNEE),
                 Some(FLOOR),
@@ -2865,7 +2870,7 @@ mod law_shape {
         const KNEE: usize = 2048;
         const FLOOR: usize = 10; // the derived floor (paper §6.1); inert here
 
-        for n in 2..=8usize {
+        for n in 1..=8usize {
             let ceiling = n * KNEE;
             // The quadratic threshold: knee/gain, identical at every N.
             let shipped_pin = KNEE as f64 / GAIN;
@@ -2892,16 +2897,22 @@ mod law_shape {
 
             // The consequence: at the quadratic threshold — a Σ every
             // measured dual exceeds — the quadratic law is pinned while the
-            // linear law is still interior, for every path count above one.
+            // linear law is still interior, for every path count above one
+            // (at N = 1 the two laws are the same expression).
             assert_eq!(
                 path_scaled_store_cap(true, n, shipped_pin, GAIN, FLOOR, KNEE),
                 Some(ceiling)
             );
-            assert!(
-                pooled_store_cap(true, true, false, 1.0, n, shipped_pin, GAIN, FLOOR, KNEE).unwrap()
-                    < ceiling,
-                "N={n}: the correction does not free the law at the shipped pin threshold"
-            );
+            let linear =
+                pooled_store_cap(true, true, false, 1.0, n, shipped_pin, GAIN, FLOOR, KNEE).unwrap();
+            if n == 1 {
+                assert_eq!(linear, ceiling, "N=1: the two arms are one expression");
+            } else {
+                assert!(
+                    linear < ceiling,
+                    "N={n}: the correction does not free the law at the shipped pin threshold"
+                );
+            }
         }
     }
 
@@ -3361,15 +3372,16 @@ fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
 // ----- Capacity-weighted pool (RWM_STORE_CAPW) -----------------------------
 
 #[test]
-fn capw_store_cap_not_engaged_off_single_or_unwarm() {
+fn capw_store_cap_not_engaged_off_or_unwarm() {
     // Flag off: never engaged.
     assert_eq!(
         capw_store_cap(false, &[Some(1000.0), Some(400.0)], 64, 2048),
         None
     );
-    // N = 1: not engaged — the caller keeps the single-path law
-    // bit-exactly (the same singles contract as RWM_STORE_PATHS).
-    assert_eq!(capw_store_cap(true, &[Some(1000.0)], 64, 2048), None);
+    // N = 1 engages (ADR-0072): one term, clamped [floor, 1·knee]. The
+    // pooled arms have no path-count branch.
+    assert_eq!(capw_store_cap(true, &[Some(1000.0)], 64, 2048), Some(1000));
+    assert_eq!(capw_store_cap(true, &[Some(5000.0)], 64, 2048), Some(2048));
     // Anchors-not-warm fallback: any unwarm live path → None → the
     // caller keeps the configured pooled law (path-scaled / single-path)
     // until every anchor is live — a partial sum would under-provision
@@ -3464,9 +3476,12 @@ fn pool_anchor_honest_terms_bound_the_dual_pool_where_the_legacy_law_clamps() {
         Some(4096)
     );
     assert!(pool < 4096, "the honest pool removes the clamp headroom");
-    // N = 1 bit-exactness: one term never engages the pooled law — the
-    // caller's single-path law runs verbatim.
-    assert_eq!(capw_store_cap(true, &[Some(term)], 64, 2048), None);
+    // N = 1 is the same law with one term (ADR-0072): N = 2 symmetric is
+    // exactly twice it (inert clamps).
+    assert_eq!(
+        capw_store_cap(true, &[Some(term)], 64, 2048),
+        Some(term.ceil() as usize)
+    );
     // Warm-up: any unwarm live path defers to the configured fallback.
     assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
 }
@@ -5933,12 +5948,14 @@ fn q2_one_task_per_loop_no_multiplexer() {
         }
     }
     let m = p1_squashed_src("net/mod.rs");
+    // Each spawn goes through `task_obs::timed` (8311094, the Q3 poll-CPU
+    // gauge); the pin names the wrapper so it still counts one task per loop.
     for task in [
-        "letsender_handle=tokio::spawn(",
-        "letreceiver_handle=tokio::spawn(receiver::run_receiver(",
-        "letcmd_handle=tokio::spawn(tasks::run_path_cmd(",
-        "letreport_handle=tokio::spawn(tasks::run_report(",
-        "letctrl_handle=tokio::spawn(tasks::run_control_fastpath(",
+        "letsender_handle=tokio::spawn(crate::task_obs::timed(\"sender\",",
+        "letreceiver_handle=tokio::spawn(crate::task_obs::timed(\"receiver\",receiver::run_receiver(",
+        "letcmd_handle=tokio::spawn(crate::task_obs::timed(\"pathcmd\",tasks::run_path_cmd(",
+        "letreport_handle=tokio::spawn(crate::task_obs::timed(\"report\",tasks::run_report(",
+        "letctrl_handle=tokio::spawn(crate::task_obs::timed(\"ctrlfast\",tasks::run_control_fastpath(",
     ] {
         assert_eq!(m.matches(task).count(), 1, "each loop is its own task: {task}");
     }
@@ -6393,4 +6410,350 @@ fn t2_v8_global_numbering_is_the_artefact_the_scope_guarded_against() {
     let out = t2_feed(&order, false);
     assert_eq!((out[&0].0, out[&0].1), (128, 128));
     assert_eq!((out[&1].0, out[&1].1), (4, 4));
+}
+
+// ----- One store law at every path count (ADR-0072, paper §6.1) ------------
+
+/// One path is a case of the law, not an exception to it: `n_live < 2` used to
+/// return `None` and one path ran `clamp(2.0·bdp, 10, 1024)`. These tests pin
+/// the law's ABSOLUTE values at N = 1 (not "N = 1 more than before"), its
+/// linearity from N = 1, its continuity in δ at N = 1, the routing from the
+/// sender's refresh into that law, the bind gauges at N = 1, the control arm's
+/// exactness and the no-op at N >= 2 (CLAUDE.md testing discipline).
+mod one_store_law_at_n1 {
+    use super::*;
+    use crate::gates::RuntimeGates;
+    use crate::net::sender_phases::StoreCapState;
+    use crate::net::sender_policy::{SenderPolicy, STORE_CAP_FLOOR};
+
+    const GAIN: f64 = 2.0;
+    const KNEE: usize = 2048;
+    const FLOOR_INERT: usize = 1;
+    const POOL_INERT: usize = 1 << 20;
+
+    fn presets() -> [(ProtocolHint, f64); 3] {
+        // q at the named points, from the paper's table (§6.1): 1/20, 1/15,
+        // 1/10. Written as exact rationals, not read back from the engine.
+        [
+            (ProtocolHint::Realtime, 1.0 / 20.0),
+            (ProtocolHint::Auto, 1.0 / 15.0),
+            (ProtocolHint::Bulk, 1.0 / 10.0),
+        ]
+    }
+
+    /// Red-first 1: the absolute N = 1 values at the three presets, clamps
+    /// inert. Integer arithmetic on the right: ceil(a·(1+q)).
+    #[test]
+    fn n1_value_is_one_plus_q_times_the_single_term_at_each_preset() {
+        let cases = [
+            (ProtocolHint::Realtime, 999.0, 1049usize), // 999·21/20 = 1048.95
+            (ProtocolHint::Auto, 1234.0, 1317usize),    // 1234·16/15 = 1316.27
+            (ProtocolHint::Bulk, 999.0, 1099usize),     // 999·11/10  = 1098.9
+        ];
+        for (hint, a, want) in cases {
+            let b = delta_budget_b(hint);
+            let got = pooled_store_cap(true, true, true, b, 1, a, GAIN, FLOOR_INERT, POOL_INERT);
+            assert_eq!(got, Some(want), "{hint:?}: N = 1 is not ceil((1+q)·a)");
+            // The clamps are not answering.
+            assert!(want > FLOOR_INERT && want < POOL_INERT, "{hint:?}: a clamp bound");
+        }
+        // And the old N = 1 law is not what runs: at Bulk a = 1499 the law asks
+        // 1648.9 -> 1649, where `clamp(2·a, 10, 1024)` read 1024.
+        assert_eq!(
+            pooled_store_cap(true, true, true, delta_budget_b(ProtocolHint::Bulk), 1, 1499.0,
+                GAIN, STORE_CAP_FLOOR, KNEE),
+            Some(1649)
+        );
+    }
+
+    /// Red-first 2: linearity from N = 1 with inert clamps, `cap(N, N·a) ==
+    /// N·cap(1, a)`; this includes the 1 → 2 step the guard used to make. The
+    /// exact form uses `a` for which (1+q)·a is an integer (Bulk only at
+    /// power-of-two N, where the float product has the same mantissa as N = 1);
+    /// the general form bounds the ceil residue.
+    #[test]
+    fn value_is_linear_in_n_from_one_path() {
+        for (hint, a_exact) in [
+            (ProtocolHint::Realtime, 2000.0), // ×21/20 = 2100
+            (ProtocolHint::Bulk, 1000.0),     // ×11/10 = 1100
+        ] {
+            let b = delta_budget_b(hint);
+            let cap = |n: usize, s: f64| {
+                pooled_store_cap(true, true, true, b, n, s, GAIN, FLOOR_INERT, POOL_INERT)
+                    .expect("engaged at every N >= 1")
+            };
+            for n in 1..=8usize {
+                if hint == ProtocolHint::Bulk && !n.is_power_of_two() {
+                    continue;
+                }
+                assert_eq!(cap(n, n as f64 * a_exact), n * cap(1, a_exact), "{hint:?} N={n}");
+            }
+        }
+        for (hint, _) in presets() {
+            let b = delta_budget_b(hint);
+            let a = 733.3;
+            for n in 1..=8usize {
+                let unclamped =
+                    pooled_store_cap_unclamped(true, true, b, n, n as f64 * a, GAIN);
+                let one = pooled_store_cap_unclamped(true, true, b, 1, a, GAIN);
+                assert!((unclamped - n as f64 * one).abs() < 1e-9, "{hint:?} N={n}");
+                let cap = pooled_store_cap(true, true, true, b, n, n as f64 * a, GAIN,
+                    FLOOR_INERT, POOL_INERT).unwrap();
+                let one_cap = pooled_store_cap(true, true, true, b, 1, a, GAIN,
+                    FLOOR_INERT, POOL_INERT).unwrap();
+                assert!(cap <= n * one_cap && cap + n > n * one_cap, "{hint:?} N={n}");
+            }
+        }
+        // The ceiling is N·knee from N = 1.
+        for n in 1..=8usize {
+            assert_eq!(
+                pooled_store_cap(true, true, true, 2.0, n, 1.0e12, GAIN, STORE_CAP_FLOOR, KNEE),
+                Some(n * KNEE),
+                "N={n}"
+            );
+        }
+        // The per-path step across N = 1 → 2 that the guard made (×1.80 at the
+        // c1 anchor, ×0.55 at the sc2 anchor) is gone: per-path cap is equal.
+        for a in [494.0, 1680.0] {
+            let b = delta_budget_b(ProtocolHint::Bulk);
+            let c1 = pooled_store_cap(true, true, true, b, 1, a, GAIN, STORE_CAP_FLOOR, KNEE).unwrap();
+            let c2 = pooled_store_cap(true, true, true, b, 2, 2.0 * a, GAIN, STORE_CAP_FLOOR, KNEE)
+                .unwrap();
+            // ceil(2x) vs 2·ceil(x): equal or one symbol below.
+            assert!(c2 == 2 * c1 || c2 + 1 == 2 * c1,
+                "a={a}: per-path cap steps across N = 1 → 2 ({c1} vs {c2})");
+        }
+    }
+
+    /// Red-first 3: δ continuity and monotonicity at N = 1, ±2 % nudges through
+    /// every preset (CLAUDE.md). A mode switch would show as a step of tens of
+    /// symbols; the law moves by ~(Δq)·a ≈ 3.
+    #[test]
+    fn n1_is_continuous_and_monotone_in_delta_through_every_preset() {
+        let a = 1000.0;
+        let cap = |b: f64| {
+            pooled_store_cap(true, true, true, b, 1, a, GAIN, FLOOR_INERT, POOL_INERT)
+                .expect("engaged")
+        };
+        for (hint, _) in presets() {
+            let b = delta_budget_b(hint);
+            let (lo, mid, hi) = (cap(b * 0.98), cap(b), cap(b * 1.02));
+            assert!(lo <= mid && mid <= hi, "{hint:?}: not monotone through the preset");
+            assert!(mid - lo <= 5 && hi - mid <= 5, "{hint:?}: a step at the preset ({lo},{mid},{hi})");
+        }
+        let mut prev = cap(0.5);
+        for i in 1..=150 {
+            let b = 0.5 + 1.5 * (i as f64 / 150.0);
+            let c = cap(b);
+            assert!(c >= prev, "b={b}: not monotone");
+            assert!(c - prev <= 2, "b={b}: a step of {} symbols", c - prev);
+            prev = c;
+        }
+        // δ reaches the single path: the extremes differ by the band, 5 %.
+        assert_eq!(cap(delta_budget_b(ProtocolHint::Realtime)), 1050);
+        assert_eq!(cap(delta_budget_b(ProtocolHint::Bulk)), 1100);
+    }
+
+    /// The sender's own refresh path on a warm single-path scheduler.
+    fn warm_one_path() -> Scheduler {
+        let clock = Arc::new(crate::scheduler::MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+        let p = sched.path_mut(0).unwrap();
+        p.record_rtt_sample(Duration::from_millis(2));
+        let step = Duration::from_micros(41);
+        for seq in 0..4000u64 {
+            p.on_src_sent(seq, false);
+            if seq >= 72 {
+                p.on_src_delivered_seq(seq - 72);
+            }
+            clock.advance(step);
+        }
+        assert!(p.copa_bdp_anchor().is_some(), "anchor must be warm");
+        sched
+    }
+
+    fn policy(hint: ProtocolHint, store_paths: bool) -> SenderPolicy {
+        let mut g = RuntimeGates::resolve();
+        // Neutralise the ambient environment: this asserts routing, not the
+        // machine it runs on.
+        g.store_paths = store_paths;
+        g.sum_cap = true;
+        g.delta_cap = true;
+        g.three_term = false;
+        g.composed_cap = false;
+        g.pool_anchor = false;
+        g.honest_cap = false;
+        g.plain_rs = false;
+        g.copa_feed = false;
+        g.store_override = None;
+        g.store_env_set = false;
+        g.derived_sweep = false;
+        g.store_gain = GAIN;
+        SenderPolicy::resolve(&g, 1200, hint, true, false, false, false)
+    }
+
+    fn refresh(pol: &SenderPolicy, sched: &mut Scheduler) -> (usize, String, f64) {
+        let gates = RuntimeGates::resolve();
+        let mut scs = StoreCapState::new(pol);
+        let mut sumcap = SumCapGauge::new(
+            pol.sum_cap, pol.store_cap_floor, pol.store_path_pool, pol.delta_cap, pol.delta_b);
+        let mut dcap = DeltaCapGauge::new(
+            pol.delta_cap, pol.store_cap_floor, pol.store_path_pool, pol.sum_cap, pol.delta_b);
+        let mut ccap = SenderTeardownGauges::new(false, pol.store_cap_floor);
+        let (bdp, _) = store_cap_pool_inputs(sched, false);
+        let copa_feed: Option<Arc<CopaFeed>> = None;
+        crate::net::sender_phases::refresh_store_cap(
+            &mut scs,
+            crate::net::sender_phases::StoreCapCtx {
+                pol,
+                gates: &gates,
+                scheduler: sched,
+                copa_feed: &copa_feed,
+                sumcap: &mut sumcap,
+                dcap: &mut dcap,
+                ccap: &mut ccap,
+            },
+        );
+        (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)
+    }
+
+    /// Red-first 4: rule 1 — the mechanism under test executes. A one-path
+    /// refresh lands on `pooled_store_cap`'s value and `[SUMCAP]` engaged.
+    #[test]
+    fn one_path_refresh_routes_into_the_pooled_law_at_every_preset() {
+        for (hint, q) in presets() {
+            let pol = policy(hint, true);
+            assert!(pol.plain_dyn_cap && pol.store_paths_on && pol.sum_cap && pol.delta_cap);
+            let mut sched = warm_one_path();
+            let (cap, line, bdp) = refresh(&pol, &mut sched);
+            assert!(bdp > 0.0);
+            let want = pooled_store_cap(
+                pol.store_paths_on, pol.sum_cap, pol.delta_cap, pol.delta_b, 1, bdp,
+                pol.store_bdp_gain, pol.store_cap_floor, pol.store_path_pool,
+            )
+            .expect("the pooled law is engaged at one live path");
+            assert_eq!(cap, want, "{hint:?}: dyn_store_cap is not the pooled law at N = 1");
+            // Absolute: the paper's value, in the interior of both bounds.
+            assert!(want > pol.store_cap_floor && want < pol.store_path_pool, "{hint:?}: bound");
+            assert_eq!(cap, ((1.0 + q) * bdp).ceil() as usize, "{hint:?}: not ceil((1+q)·bdp)");
+            assert!(line.contains(" eng=1/1 "), "{hint:?}: [SUMCAP] did not engage: {line}");
+        }
+    }
+
+    /// Red-first 5: every clamp has a bind gauge, at N = 1 too. The knee binds
+    /// at anchor 1900, Bulk (1900·1.1 = 2090 > 2048); the floor binds at a
+    /// tiny anchor.
+    #[test]
+    fn bind_gauges_report_at_one_path() {
+        let b = delta_budget_b(ProtocolHint::Bulk);
+        let run = |a: f64| {
+            let mut g = SumCapGauge::new(true, STORE_CAP_FLOOR, KNEE, true, b);
+            let cap = pooled_store_cap(true, true, true, b, 1, a, GAIN, STORE_CAP_FLOOR, KNEE)
+                .unwrap();
+            g.record(true, 1, a, GAIN, cap);
+            (cap, g.sumcap_line())
+        };
+        let (cap, line) = run(1900.0);
+        assert_eq!(cap, KNEE);
+        assert!(line.contains("eng=1/1") && line.contains("pin=1.0000") && line.contains("floor=0.0000"),
+            "{line}");
+        assert!(line.contains("ask=2090.0"), "the gauge must carry the unclamped ask: {line}");
+        let (cap, line) = run(3.0);
+        assert_eq!(cap, STORE_CAP_FLOOR);
+        assert!(line.contains("pin=0.0000") && line.contains("floor=1.0000"), "{line}");
+        let (_, line) = run(1000.0);
+        assert!(line.contains("pin=0.0000") && line.contains("floor=0.0000"), "{line}");
+    }
+
+    /// Red-first 6: `RWM_STORE_PATHS=0` at N = 1 is main's chain exactly,
+    /// `clamp(2·bdp, 10, 1024)`, and `[SUMCAP]` reads `eng=0`. It passes on
+    /// the base commit too: it is the control the battery relies on.
+    #[test]
+    fn control_arm_is_main_s_single_path_chain_exactly() {
+        let main_chain = |bdp: f64| -> usize {
+            if bdp > 0.0 {
+                ((2.0 * bdp).ceil() as usize).clamp(10, 1024)
+            } else {
+                128.min(1024)
+            }
+        };
+        for bdp in [0.0, 0.5, 4.0, 5.0, 83.2, 250.0, 511.5, 512.0, 700.0, 1680.0, 1.0e6] {
+            // The pooled seat declines, whatever the base...
+            for (hint, _) in presets() {
+                assert_eq!(
+                    pooled_store_cap(false, true, true, delta_budget_b(hint), 1, bdp, 2.0, 10, 2048),
+                    None
+                );
+            }
+            // ...so the chain's fall-through arms are main's, on the same inputs.
+            let fallthrough = if bdp > 0.0 {
+                ((2.0 * bdp).ceil() as usize).clamp(10, RELIABLE_STORE_MAX)
+            } else {
+                128usize.min(RELIABLE_STORE_MAX)
+            };
+            assert_eq!(fallthrough, main_chain(bdp), "bdp={bdp}");
+        }
+        // And through the sender's refresh itself.
+        let pol = policy(ProtocolHint::Bulk, false);
+        assert!(!pol.store_paths_on);
+        assert_eq!(pol.store_max, 1024);
+        let mut sched = warm_one_path();
+        let (cap, line, bdp) = refresh(&pol, &mut sched);
+        assert_eq!(cap, main_chain(bdp), "the control arm is not main's chain");
+        assert!(line.contains(" eng=0/0 "), "[SUMCAP] must read eng=0 on the control: {line}");
+    }
+
+    /// The base commit's pooled seat, verbatim, as the oracle for the no-op
+    /// claim: `n_live < 2` returned `None`.
+    fn old_pooled(
+        on: bool, sum_cap: bool, delta_cap: bool, b: f64, n: usize, pipe: f64, gain: f64,
+        floor: usize, pool: usize,
+    ) -> Option<usize> {
+        if !on || n < 2 || pipe <= 0.0 {
+            return None;
+        }
+        let ceiling = n.saturating_mul(pool).max(floor);
+        let count = if sum_cap { 1.0 } else { n as f64 };
+        let value = if delta_cap { 1.0 + codel_setpoint_q(b) } else { gain };
+        Some(((value * count * pipe).ceil() as usize).clamp(floor, ceiling))
+    }
+
+    /// Red-first 7 (passes on the base by construction): at N >= 2 the change is
+    /// a no-op on every input of a sampled grid, so c1d and c8 run the law arm
+    /// only as a control-moved check.
+    #[test]
+    fn n_two_and_up_is_unchanged_on_a_sampled_grid() {
+        let pipes = [-1.0, 0.0, 1e-6, 3.0, 50.0, 83.2, 400.0, 999.5, 1900.0, 4096.0, 1e5, 1e12];
+        let bs = [0.25, 0.5, 1.0, 1.5, 2.0, 3.0];
+        let mut checked = 0usize;
+        for n in 2..=8usize {
+            for &pipe in &pipes {
+                for &b in &bs {
+                    for (on, sc, dc) in [(false, true, true), (true, false, false), (true, true, false),
+                        (true, false, true), (true, true, true)] {
+                        for (floor, pool) in [(10usize, 2048usize), (1, 1 << 20), (64, 100)] {
+                            assert_eq!(
+                                pooled_store_cap(on, sc, dc, b, n, pipe, 2.0, floor, pool),
+                                old_pooled(on, sc, dc, b, n, pipe, 2.0, floor, pool),
+                                "N={n} pipe={pipe} b={b} on={on} sc={sc} dc={dc}"
+                            );
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+            // The capacity-weighted arm is unchanged at N >= 2 too.
+            let terms: Vec<Option<f64>> = (0..n).map(|i| Some(100.0 + 37.0 * i as f64)).collect();
+            let sum: f64 = terms.iter().flatten().sum();
+            assert_eq!(
+                capw_store_cap(true, &terms, 10, 2048),
+                Some((sum.ceil() as usize).clamp(10, n * 2048))
+            );
+            let mut cold = terms.clone();
+            cold[0] = None;
+            assert_eq!(capw_store_cap(true, &cold, 10, 2048), None);
+        }
+        assert!(checked > 1000);
+    }
 }

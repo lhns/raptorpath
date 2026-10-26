@@ -205,13 +205,12 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 };
                 // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`):
                 // per-live-path honest caps on the send-interval anchor.
-                // Collected only at N ≥ 2 (the N = 1 code path, including the
-                // percap_k maps, is untouched); a cold send anchor or RTprop
+                // Collected at every N ≥ 1 (ADR-0072); a cold send anchor or RTprop
                 // yields a None term, so capw_store_cap's all-warm requirement
                 // falls back to the configured chain below. live_paths(), not
                 // active_paths(): the cwnd-saturation filter must not drop a
                 // saturated path's earned share.
-                let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on && n_live >= 2 {
+                let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on {
                     // Rate source: the send-interval anchor (the ratcheted
                     // send mean). Path set: live_paths().
                     let slots: Vec<Option<HonestCapPath>> = {
@@ -263,9 +262,10 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 } else if pol.honest_cap_on && hsum > 0.0 {
                     // Honest law: the Σ is already per-path-composed (each
                     // term carries its own K_i and runway), so no gain×
-                    // multiplier here. Ceilings: the store latch at N = 1,
-                    // the N×knee pool when the path-scaled pool is configured.
-                    let ceiling = if pol.store_paths_on && n_live >= 2 {
+                    // multiplier here. Ceiling: the N×knee pool when the
+                    // path-scaled pool is configured (every N ≥ 1), else the
+                    // store latch (the `RWM_STORE_PATHS=0` arm).
+                    let ceiling = if pol.store_paths_on {
                         n_live.saturating_mul(pol.store_path_pool).max(pol.store_cap_floor)
                     } else {
                         pol.store_max
@@ -277,7 +277,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_cap_floor,
                     pol.store_path_pool,
                 ) {
-                    // Pool-anchor law engaged (RWM_POOL_ANCHOR, N ≥ 2, all
+                    // Pool-anchor law engaged (RWM_POOL_ANCHOR, all
                     // send anchors warm): Σ honest per-path caps on the
                     // burst-immune send-interval rate, clamped [floor, N·knee].
                     // The explicit experiment arm (RWM_PLAIN_RS+RWM_HONEST_CAP)

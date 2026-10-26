@@ -377,9 +377,11 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
     const POOL_INERT: usize = 1 << 20;
 
     let mut cases: Vec<Vec<f64>> = vec![WIRE_C7.to_vec(), WIRE_C8.to_vec()];
-    for n in 2..=8usize {
+    // N starts at 1: one path is the same law with a one-term Σ (ADR-0072).
+    for n in 1..=8usize {
         cases.push(vec![137.0; n]);
     }
+    cases.push(vec![WIRE_C7[0]]);
     cases.push(vec![50.0, 900.0, 3_000.0]);
 
     for anchors in &cases {
@@ -397,7 +399,7 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
 
             // (ii) The realized value: the paper's expression, ceil'd.
             let engine = pooled_store_cap(true, sum_cap, false, 1.0, n, sigma, POOL_GAIN, POOL_FLOOR, POOL_INERT)
-                .expect("engaged at N >= 2 with a positive base");
+                .expect("engaged at N >= 1 with a positive base");
             let err = engine as f64 - paper;
             assert!(
                 (0.0..1.0).contains(&err),
@@ -415,12 +417,60 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
     }
 }
 
+/// Paper §6.1, the shipped law as published, for every N >= 1:
+/// `clamp( (1 + q(δ)) · Σᵢ bwᵢ·RTpropᵢ , floor , N·knee )`. Transcribed, not
+/// derived from the engine.
+fn published_shipped_cap(anchors: &[f64], b: f64, floor: usize, knee: usize) -> (f64, usize) {
+    let sigma: f64 = anchors.iter().sum();
+    let asked = (1.0 + published_codel_q(b)) * sigma;
+    (asked, published_pooled_ceiling(anchors.len(), knee, floor))
+}
+
+/// Law: the shipped store cap (`RWM_SUM_CAP` and `RWM_DELTA_CAP` both on) equals
+/// the published expression at EVERY N >= 1, at each named dial point. One path
+/// is a case of the law, not an exception to it (ADR-0072): N = 1 is in the
+/// grid, interior and at the knee, and the ceiling is 1·knee there.
+#[test]
+fn published_shipped_cap_equals_the_engine_from_one_path_at_every_dial_point() {
+    let mut cases: Vec<Vec<f64>> = vec![
+        vec![250.0],          // c1 at the delivered rate
+        vec![1_680.0],        // c1 at the over-read anchor (paper §6.1)
+        vec![494.0],          // the sc2 per-path anchor
+        vec![1_900.0],        // above knee/(1+q) at Bulk: the knee binds
+        vec![WIRE_C7[0]],
+        WIRE_C7.to_vec(),
+        WIRE_C8.to_vec(),
+        vec![50.0, 900.0, 3_000.0],
+    ];
+    for n in 1..=8usize {
+        cases.push(vec![137.0; n]);
+        cases.push(vec![1_900.0; n]);
+    }
+    for anchors in &cases {
+        let n = anchors.len();
+        let sigma: f64 = anchors.iter().sum();
+        for &b in &b_grid() {
+            let (asked, ceiling) = published_shipped_cap(anchors, b, POOL_FLOOR, KNEE);
+            let engine = pooled_store_cap(true, true, true, b, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
+                .expect("engaged at every N >= 1 with a positive base");
+            // The law, ceil'd, bounded by less than one symbol; or the
+            // ceiling, stated as such.
+            let want = (asked.ceil() as usize).clamp(POOL_FLOOR, ceiling);
+            assert_eq!(engine, want, "N={n} b={b}: engine vs paper (asked {asked})");
+            if asked > ceiling as f64 {
+                assert_eq!(engine, ceiling, "N={n} b={b}: not at the N·knee ceiling");
+            }
+            assert_eq!(ceiling, n * KNEE, "N={n}: ceiling is not N·knee");
+        }
+    }
+}
+
 /// The ceiling, agreed separately — `max(N·knee, floor)`, not bare `N·knee`,
 /// and the same expression on both arms. A law and its clamp are asserted
 /// apart, and the `max(·, floor)` half is the piece shorthand keeps dropping.
 #[test]
 fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
-    for n in 2..=8usize {
+    for n in 1..=8usize {
         // A base so large the value cannot be interior: what comes back is the
         // ceiling, which makes this an assertion about the bound.
         for sum_cap in [false, true] {
@@ -672,7 +722,7 @@ fn the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d() {
     // are independent, which makes the four combinations four laws.
     for &sum_cap in &[false, true] {
         for &delta in &[false, true] {
-            for n in 2..=6usize {
+            for n in 1..=6usize {
                 let got = pooled_store_cap_unclamped(sum_cap, delta, 1.0, n, n as f64 * 100.0, GAIN);
                 let cnt = if sum_cap { 1.0 } else { n as f64 };
                 let val = pool_value_multiplier(delta, 1.0, GAIN);

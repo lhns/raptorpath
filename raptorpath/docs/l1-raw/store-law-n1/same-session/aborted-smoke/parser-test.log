@@ -1,0 +1,7 @@
+ok   saved realtime log: pipeline echo is window/realtime
+ok   saved realtime log: [DCAP] q=0.05 reached the seat
+ok   a named hint is not voided by the missing auto-selection line
+ok   saved realtime log is LIVE
+ok   named hint without [DCAP] q= stays WITNESS-FAIL
+ok   auto row unchanged (LIVE as scored in §18)
+ALL OK

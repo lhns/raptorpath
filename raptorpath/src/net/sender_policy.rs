@@ -565,14 +565,15 @@ impl SenderPolicy {
         // Path-scaled outstanding pool (`RWM_STORE_PATHS`, default on; paper
         // §6.1). A per-transfer outstanding ceiling (RELIABLE_STORE_MAX) leaves a
         // multipath sender store-starved: the pool must fund Σ per-path
-        // (BDP + one recovery round), which grows with the path count. With
-        // N = live_paths ≥ 2 the dynamic-cap value scales with N and its ceiling
-        // becomes N × 2048 (`RWM_STORE_PATH_POOL`, the measured per-live-path
-        // knee); N = 1 keeps the single-path law bit-exactly.
+        // (BDP + one recovery round), which grows with the path count. At every
+        // N = live_paths ≥ 1 the dynamic-cap value is a sum over paths and its
+        // ceiling is N × 2048 (`RWM_STORE_PATH_POOL`, the measured per-live-path
+        // knee); there is no path-count branch (ADR-0072). `=0` is the
+        // `clamp(gain·Σ, floor, store_max)` control at every N.
         let store_paths_on = gates.store_paths;
         let store_path_pool: usize = gates.store_path_pool;
-        // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`). At N ≥ 2 live
-        // paths the pooled-store cap's rate input is the per-path send-interval
+        // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`). The
+        // pooled-store cap's rate input is the per-path send-interval
         // anchor (`SendRateAnchor` fed at `charge_in_flight` — burst-immune by
         // construction: Δt spans the send interval, so ack bursts cannot inflate
         // it; clock-gap buckets discarded) instead of the ack-interval
@@ -580,8 +581,8 @@ impl SenderPolicy {
         // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
         // the capw shape (one shared pool, borrowing free), engaged only with
         // all live send-anchors warm; until then the configured path-scaled law
-        // runs. The Copa cwnd feed and every N = 1 law are untouched. Default
-        // off, independent of `RWM_EST_CADENCE`.
+        // runs. The Copa cwnd feed is untouched. Default off, independent of
+        // `RWM_EST_CADENCE`.
         let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
         // The store-cap path set is not a dial: the dyn-cap phase's Σ-anchor
         // base and honest per-path cap sum range over the channel's
@@ -611,9 +612,8 @@ impl SenderPolicy {
         // of runway) = `Σᵢ(gain·anchorᵢ) = gain·Σ`, is already linear in the
         // path count because the Σ is; the `=0` arm multiplies it by N a second
         // time. Exactly one factor changes: gain, knee, floor, Σ-set and
-        // estimator are identical on both arms. Bit-identical at N = 1 by
-        // construction (`n_live < 2` returns None before the multiplier is
-        // read).
+        // estimator are identical on both arms. One expression at every N ≥ 1
+        // (ADR-0072; `RWM_STORE_PATHS=0` is the N = 1 control).
         // `RWM_SUM_CAP=0` re-runs the quadratic.
         let sum_cap = gates.sum_cap && plain_dyn_cap;
         // The δ-priced value multiplier (`RWM_DELTA_CAP`, default on; paper
@@ -626,7 +626,7 @@ impl SenderPolicy {
         // RFC 8289 §3.2 derives 5–10 % of RTT from Kleinrock power
         // maximisation. One factor changes: the Σ, its path set, the estimator,
         // the ceiling and the floor are identical on both arms. Independent of
-        // `sum_cap` (the count multiplier) — two axes of one law. Bit-identical at N = 1 by construction.
+        // `sum_cap` (the count multiplier) — two axes of one law.
         // `RWM_DELTA_CAP=0` re-runs `gain = 2.0`.
         let delta_cap = gates.delta_cap && plain_dyn_cap;
         // The late-stage brake alone (`RWM_LATE_BRAKE`, default off). The

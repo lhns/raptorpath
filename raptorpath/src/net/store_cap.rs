@@ -10,11 +10,10 @@ use super::*;
 /// round of runway); a per-transfer constant (`RELIABLE_STORE_MAX`) does not
 /// grow with the path count. The per-live-path knee is `pool`.
 ///
-/// Returns `Some(cap)` when the path-scaled law applies — flag on, N ≥ 2
-/// live paths, and a positive dynamic base (`pipe_sum` = Σ anchor-BDP, or
-/// Σ Copa cwnd under the feed): cap = clamp(gain·N·pipe_sum, floor,
-/// N·pool). Returns `None` when the caller must use the single-path law, so
-/// N = 1 is bit-exact with the flag on.
+/// Returns `Some(cap)` when the path-scaled law applies — flag on and a
+/// positive dynamic base (`pipe_sum` = Σ anchor-BDP, or Σ Copa cwnd under the
+/// feed): cap = clamp(gain·N·pipe_sum, floor, N·pool), at every N ≥ 1.
+/// Returns `None` when the caller must use the `RWM_STORE_PATHS=0` chain.
 ///
 /// This is the `RWM_SUM_CAP=0` arm, not the shipped law (paper §6.1): the
 /// `×N` multiplies an already-summed base, so the value is quadratic in N at
@@ -62,8 +61,10 @@ pub fn path_scaled_store_cap(
 /// agreement test (`tests/formula_agreement.rs`) drives this function against
 /// the paper's transcription.
 ///
-/// Bit-identical at N = 1 by construction: the `n_live < 2` guard returns
-/// `None` before the multiplier is read.
+/// One expression at every N ≥ 1 (ADR-0072): no path-count branch. `None`
+/// only when the gate is off (`RWM_STORE_PATHS=0`, the predecessor chain
+/// `clamp(gain·Σ, floor, store_max)`, the control arm at every N) or the base
+/// is not positive (warm-up).
 ///
 /// The clamp is not the law. The `=0` form pins at `Σ ≥ knee/gain` (the N
 /// cancels: a path-count-free 1024 symbols); the shipped form pins at
@@ -83,7 +84,7 @@ pub fn pooled_store_cap(
     floor: usize,
     pool: usize,
 ) -> Option<usize> {
-    if !on || n_live < 2 || pipe_sum <= 0.0 {
+    if !on || pipe_sum <= 0.0 {
         return None;
     }
     let ceiling = n_live.saturating_mul(pool).max(floor);
@@ -213,22 +214,22 @@ pub fn pooled_store_cap_unclamped(
 /// ```
 ///
 /// Degenerates (unit-tested): symmetric N-path → N × the single-path term;
-/// N = 1 → not engaged (`None`), the caller keeps the single-path law
-/// bit-exactly; over-read anchors → the terms clamp at the N·knee ceiling ≡
-/// the path-scaled law (so the law reads honestly only with the
-/// `RWM_PLAIN_RS` send-interval sampler).
+/// N = 1 → the one term, clamped [floor, 1·knee]; over-read anchors → the
+/// terms clamp at the N·knee ceiling ≡ the path-scaled law (so the law reads
+/// honestly only with the `RWM_PLAIN_RS` send-interval sampler).
 ///
 /// `terms` = the per-live-path honest cap (None until that path's anchor is
 /// warm). Returns `None` — the caller falls back to the configured pooled
-/// law — unless the gate is on, N ≥ 2, and every live path's anchor is warm
-/// (a partial sum would under-provision the unwarm path's share).
+/// law — unless the gate is on, there is at least one live path, and every
+/// live path's anchor is warm (a partial sum would under-provision the unwarm
+/// path's share).
 pub fn capw_store_cap(
     on: bool,
     terms: &[Option<f64>],
     floor: usize,
     pool: usize,
 ) -> Option<usize> {
-    if !on || terms.len() < 2 || terms.iter().any(|t| !matches!(t, Some(v) if *v > 0.0)) {
+    if !on || terms.is_empty() || terms.iter().any(|t| !matches!(t, Some(v) if *v > 0.0)) {
         return None;
     }
     let n = terms.len();
@@ -1034,8 +1035,8 @@ impl Drop for SumCapGauge {
 /// var was read.
 ///
 /// How a null reads: `eng=0/0` is never armed (the pooled seat was not
-/// reached — expected at N = 1, where the law short-circuits before any
-/// multiplier); `eng=N/N` with `chg_frac=0.0000` cannot happen while
+/// reached — warm-up never ended, or `RWM_STORE_PATHS=0` at any N);
+/// `eng=N/N` with `chg_frac=0.0000` cannot happen while
 /// `gain != 1+q` and is an instrument failure. A high `pin=` means the arm
 /// measured the `N·knee` ceiling, not the law (rule 18).
 pub fn dcap_report_line(

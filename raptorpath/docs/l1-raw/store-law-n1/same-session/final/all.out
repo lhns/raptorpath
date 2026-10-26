@@ -1,0 +1,36 @@
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/DONE-ALL (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/FAILED-ALL (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/all-era.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/SMOKE-PASS (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/ABORT-SMOKE (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/BINSHA.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/build-law.log (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/build-main.log (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/smoke.log (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/smoke-check.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/sl.log (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/score.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/n1/s19/run/parser-test.log (probed as vibe, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-10-26T07:31:38Z user=vibe dir=/home/vibe/n1/s19/run launch=2026-10-26T07:31:38Z
+SL19-ALL start load=6.69 4.74 4.55 1/335 330005 2026-10-26T07:31:38Z
+LOCK-TAKEN /tmp/rwm-vm.lock
+LOCK-TAKEN /home/vibe/rp.lock
+SL19-ALL locks held; cotenants cargo=0 rustc=0 load=6.69 4.74 4.55 2026-10-26T07:31:38Z
+SL19-ALL parser test ok 2026-10-26T07:31:38Z
+SL19-ALL law built wall=709s 2026-10-26T07:43:27Z
+SL19-ALL main built wall=458s 2026-10-26T07:51:05Z
+SL19-ALL binaries MAIN=c9630606df2c9544d00c91ea1768c97fd32f797a5025ca5e6ebebd3b77f8f8cf LAW=17418fd840bac3ab809fdadfa1d646aa7da33ad5e6a1187891daf5a435a69ff4 2026-10-26T07:51:05Z
+SMOKE ('c1s-400', 'MAIN'): mbps=678.481 eng=0/0 pin=0.0 win_med=1024.0 win_distinct=1 status=LIVE
+SMOKE ('c1s-400', 'LAW'): mbps=553.276 eng=926/926 pin=0.4633 win_med=2048.0 win_distinct=6 status=LIVE
+SMOKE ('c2-100', 'MAIN'): mbps=89.883 eng=0/0 pin=0.0 win_med=1024.0 win_distinct=4 status=LIVE
+SMOKE ('c2-100', 'LAW'): mbps=90.179 eng=1546/1546 pin=0.0 win_med=667.0 win_distinct=4 status=LIVE
+SMOKE ('c1s-400', 'LAW-realtime'): mbps=135.361 eng=4572/4572 pin=0.0 win_med=865.0 win_distinct=13 status=LIVE
+SMOKE-PASS
+SL19-ALL SMOKE-PASS 2026-10-26T07:52:15Z
+SL19-ALL battery start load=2.58 3.37 4.26 2026-10-26T07:52:15Z
+SL19-ALL battery rc=0 wall=757s 2026-10-26T08:04:52Z
+CHECK done=True rows=54
+SL19-ALL end bat_ok=1 raptorpath=0 netns=0 load=1.24 3.35 3.90 2026-10-26T08:04:52Z
+SL19-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock
