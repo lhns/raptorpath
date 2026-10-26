@@ -16,6 +16,14 @@
 #   descending on odd); then, blocks 0 and 1 only, the c2-100 sweep
 #   n in {64,96,128,192,256,384,512,1024} (same direction rule).
 #   3 x (2 + 8) + 2 x 8 = 46.
+# PLAN 27 (LD_PLAN=27, status section 27; plan 24 above is the default and unchanged):
+#   arms DEF<n> = shipped defaults + RWM_STORE=<n>; BRS<n> = RWM_QUIC_CC=bbr_rs
+#   (the in-tree burst-robust BBR, src/transport/bbr_rs.rs) + RWM_STORE=<n>.
+#   Two blocks (seed,rep) = (42,1) (7,1); per block, cells c2-100, c1s-400, c8-100,
+#   c1d-400 in that order; per cell the DEF sweep and the BRS sweep (DEF first on
+#   even blocks, BRS first on odd), each ascending on even blocks, descending on odd.
+#   grids: c1s 192..2048, c2 64..1024, c1d 384..4096, c8 128..2048 (8 each).
+#   2 x 4 x 2 x 8 = 128 invocations; the smoke is 2 (c2-100 BRS192, c8-100 DEF512).
 # Launched by loopdiag_run_all.sh (the envelope, which holds both VM locks).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
@@ -31,6 +39,8 @@ WANT="${LD_SHA:?LD_SHA}"
 OUTDIR="${LD_OUTDIR:?LD_OUTDIR}"
 TAG="${LD_TAG:-ld}"
 TRIES="${LD_BRINGUP_TRIES:-2}"
+PLAN="${LD_PLAN:-24}"
+case "$PLAN" in 24|27) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27)"; exit 3 ;; esac
 OUT="$OUTDIR/${TAG}.log"
 DDIR="$OUTDIR/diag-${TAG}"
 mkdir -p "$OUTDIR" "$DDIR"
@@ -40,6 +50,7 @@ LB_LOG="$OUT"
 
 # The instruments and gates the arms need must be in the binary.
 preflight_binary "$BIN" "ACKDIAG" "LOOPDIAG"
+[ "$PLAN" = "27" ] && preflight_binary "$BIN" "burst-robust BBR"
 GOT="$(sha256sum "$BIN" | cut -d' ' -f1)"
 [ "$GOT" = "$WANT" ] || { _lb_say "ABORT-SHA start: $GOT != $WANT"; exit 5; }
 if pgrep -x raptorpath >/dev/null 2>&1; then
@@ -50,6 +61,8 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
   case "$1" in
     c1s-400) echo "c1 c1 single 400000000" ;;
     c2-100)  echo "c2 c2 single 100000000" ;;
+    c1d-400) echo "c1 c1 dual 400000000" ;;
+    c8-100)  echo "c2 c3 dual 100000000" ;;
     *) echo "" ;;
   esac
 }
@@ -67,6 +80,8 @@ run_one() { # cell arm seed rep     (arm: MAIN|S<n>)
   case "$arm" in
     MAIN) ;;
     S[0-9]*) arm_env=(RWM_STORE="${arm#S}") ;;
+    DEF[0-9]*) arm_env=(RWM_STORE="${arm#DEF}") ;;
+    BRS[0-9]*) arm_env=(RWM_QUIC_CC=bbr_rs RWM_STORE="${arm#BRS}") ;;
     *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
   esac
   for attempt in $(seq 1 "$TRIES"); do
@@ -81,7 +96,7 @@ run_one() { # cell arm seed rep     (arm: MAIN|S<n>)
     t0=$(date +%s)
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
         -u RWM_RTOBS -u RWM_ACKDIAG -u RWM_LOOPDIAG -u RWM_IO_RT -u RWM_STORE_PATHS \
-        -u RWM_PLAIN_RS -u RWM_HONEST_CAP -u RWM_STORE \
+        -u RWM_PLAIN_RS -u RWM_HONEST_CAP -u RWM_STORE -u RWM_QUIC_CC \
         "${arm_env[@]}" \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_LOOPDIAG=1 \
         RWM_PERF_TIMEOUT_S=150 RWM_C_PIPELINE=window RWM_BIN="$BIN" \
@@ -121,8 +136,52 @@ run_one() { # cell arm seed rep     (arm: MAIN|S<n>)
 
 echo "=== LOOP-DIAG BATTERY tag=$TAG smoke=${LD_SMOKE:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $WANT" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_LOOPDIAG=1 RWM_PERF_TIMEOUT_S=150 bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_HONEST_CAP RWM_STORE; S<n> sets RWM_STORE=<n>" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_LOOPDIAG=1 RWM_PERF_TIMEOUT_S=150 bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_HONEST_CAP RWM_STORE RWM_QUIC_CC; plan=$PLAN; S<n>/DEF<n> set RWM_STORE=<n>, BRS<n> sets RWM_QUIC_CC=bbr_rs RWM_STORE=<n>" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
+
+# ── plan 27 ───────────────────────────────────────────────────────────────
+plan27() { # smoke -> the whole plan (0), or the two smoke rows (1)
+  local smoke="$1" b seed rep cell fam n i order first second spec
+  local -a grid
+  declare -A GRID27=([c1s-400]="192 256 384 512 768 1024 1536 2048" [c2-100]="64 96 128 192 256 384 512 1024"
+                     [c1d-400]="384 512 768 1024 1536 2048 3072 4096" [c8-100]="128 192 256 384 512 768 1024 2048")
+  if [ "$smoke" = "1" ]; then
+    run_one c2-100 BRS192 42 1
+    run_one c8-100 DEF512 42 1
+    return 0
+  fi
+  b=0
+  for spec in "42 1" "7 1"; do
+    read -r seed rep <<< "$spec"
+    for cell in c2-100 c1s-400 c8-100 c1d-400; do
+      read -r -a grid <<< "${GRID27[$cell]}"
+      if [ $(( b % 2 )) -eq 0 ]; then order=("${grid[@]}"); first=DEF; second=BRS
+      else
+        order=(); for (( i=${#grid[@]}-1; i>=0; i-- )); do order+=("${grid[$i]}"); done
+        first=BRS; second=DEF
+      fi
+      for fam in "$first" "$second"; do
+        for n in "${order[@]}"; do run_one "$cell" "$fam$n" "$seed" "$rep"; done
+      done
+    done
+    echo "BLOCK-COMPLETE rep=$rep seed=$seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+    b=$(( b + 1 ))
+  done
+  BLOCK=$b
+}
+
+if [ "$PLAN" = "27" ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan27 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan27 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^LDROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 
 if [ "${LD_SMOKE:-0}" = "1" ]; then
   run_one c1s-400 MAIN 42 1

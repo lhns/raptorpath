@@ -59,11 +59,11 @@ def set_den(lines, n):
     return [re.sub(r"\bwin=\d+/\d+", f"win={n}/{n}", ln) if "[DIAG] t=" in ln else ln for ln in lines]
 
 
-def mk(arm, cell="c1s-400", store=None, eng=True, ackdiag=True, n=None, den=None, ld_lines=None):
+def mk(arm, cell="c1s-400", store=None, eng=True, ackdiag=True, n=None, den=None, ld_lines=None, extra=None):
     cli = sub_gate(base_cli(), "RWM_STORE", store if store is not None else (str(n) if n else "unset"))
     if n is not None or den is not None:
         cli = set_den(cli, den if den is not None else n)
-    cli = [ln for ln in cli if "[SUMCAP]" not in ln]
+    cli = [ln for ln in cli if "[SUMCAP]" not in ln and "congestion controller" not in ln]   # the saved log carries the BBR echo
     if eng:
         cli.append(SUMCAP)
     if ackdiag:
@@ -71,6 +71,7 @@ def mk(arm, cell="c1s-400", store=None, eng=True, ackdiag=True, n=None, den=None
     if ld_lines is None:
         ld_lines = [LDL(0.5, mn="1"), LDL(1.0), LDL(1.5), LDL(2.0), LDL(2.5, mn="4200", p50="4500"), LDL(3.0)]
     cli += ld_lines
+    cli += extra or []
     return ld.make_row(cell, arm, "42", "1", 0, 10, lc.read(C1S + "drv.out"), cli, lc.read(C1S + "s.log"), 0, "x")
 
 
@@ -296,6 +297,260 @@ with tempfile.TemporaryDirectory() as td:
 
 # the plan: 3 blocks x (2 MAIN + 8) + 2 x 8 = 46
 check("plan arithmetic", 3 * (2 + len(ld.GRID_C1S)) + 2 * len(ld.GRID_C2) == ld.EXPECT_ROWS == 46)
+
+# ═══ plan 27 (status section 27) ═════════════════════════════════════════
+DEF_ECHO = "quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)"
+BRS_ECHO = "RWM_QUIC_CC=bbr_rs: burst-robust BBR (in-tree controller, interval-guarded per-flight rate sampler)"
+W = 1279.0
+
+
+def two_path(p1_kw=None, p0_kw=None):
+    out = []
+    for t in (1.0, 1.5, 2.0, 2.5, 3.0):
+        out.append(LDL(t, p=0, **(p0_kw or {})))
+        out.append(LDL(t, p=1, **{**{"mn": "9000", "p50": "9500", "rtp": "9000"}, **(p1_kw or {})}))
+    return out
+
+
+# ── per-row witnesses ────────────────────────────────────────────────────
+d1 = mk("DEF192", cell="c2-100", n=192, eng=False, extra=[DEF_ECHO])
+check("DEF<n> pass (echo BBR, eng absent, den == n, gate == n)", d1["status"] == "LIVE", (d1["status"], d1["problems"]))
+check("DEF row has per-path dict ld_p0 with the seven medians",
+      all(d1["ld_p0"].get(k) is not None for k in ("rtt_min_us", "rtt_p50_us", "rtprop_us", "jit_us", "dlv_rate", "q_pace_bps", "q_cwnd")),
+      d1.get("ld_p0"))
+check("DEF fail: no BBR echo", "def-no-bbr-echo" in mk("DEF192", cell="c2-100", n=192, eng=False)["problems"])
+check("DEF fail: burst-robust echo present", "def-has-brs-echo" in
+      mk("DEF192", cell="c2-100", n=192, eng=False, extra=[DEF_ECHO, BRS_ECHO])["problems"])
+b1 = mk("BRS192", cell="c2-100", n=192, eng=False, extra=[BRS_ECHO])
+check("BRS<n> pass (burst-robust echo)", b1["status"] == "LIVE", (b1["status"], b1["problems"]))
+b2 = mk("BRS192", cell="c2-100", n=192, eng=False, extra=[DEF_ECHO])
+check("BRS fail: no burst-robust echo", "brs-no-echo" in b2["problems"] and b2["status"] == "WITNESS-FAIL", b2["problems"])
+check("DEF/BRS fail: SUMCAP eng > 0", any(x.startswith("s-sumcap-eng") for x in
+      mk("BRS192", cell="c2-100", n=192, eng=True, extra=[BRS_ECHO])["problems"]))
+check("DEF/BRS fail: denominator != n", any(x.startswith("s-win-den-not-n") for x in
+      mk("DEF192", cell="c2-100", n=192, eng=False, den=1024, extra=[DEF_ECHO])["problems"]))
+check("DEF/BRS fail: gate RWM_STORE != n", "gate-store=512" in
+      mk("BRS192", cell="c2-100", store="512", den=192, eng=False, extra=[BRS_ECHO])["problems"])
+dd = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path(), extra=[DEF_ECHO])
+check("dual cell pass: both paths witnessed", dd["status"] == "LIVE", (dd["status"], dd["problems"]))
+check("dual cell: per-path medians kept apart (p0 4000, p1 9000), p0 compat field intact",
+      dd["ld_p0"]["rtt_min_us"] == 4000.0 and dd["ld_p1"]["rtt_min_us"] == 9000.0 and dd["ld_med"]["rtt_min_us"] == 4000.0
+      and dd["ld_pn"] == {"0": [5, 5], "1": [5, 5]}, (dd.get("ld_p0"), dd.get("ld_p1"), dd.get("ld_pn")))
+p0only = [ln for ln in two_path() if "] t=" in ln and " p0 " in ln]
+d2 = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=p0only, extra=[DEF_ECHO])
+check("dual cell fail: p1 has no windows and no numeric q_pace_bps",
+      "loopdiag-p1-windows=0" in d2["problems"] and "no-q-pace-bps-p1" in d2["problems"], d2["problems"])
+d3 = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path(p1_kw={"pace": "-"}), extra=[DEF_ECHO])
+check("dual cell fail: p1 q_pace_bps never numeric", d3["problems"] == ["no-q-pace-bps-p1"], d3["problems"])
+d4 = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path()[:6], extra=[DEF_ECHO])
+check("dual cell fail: 3 post-warm-up windows per path < 4 (both named)",
+      "loopdiag-p0-windows=3" in d4["problems"] and "loopdiag-p1-windows=3" in d4["problems"], d4["problems"])
+d5 = mk("DEF192", cell="c2-100", n=192, eng=False, ld_lines=two_path(), extra=[DEF_ECHO])
+check("single cell: a stray p1 is stored but not required", "ld_p1" in d5 and d5["status"] == "LIVE", d5["problems"])
+
+# ── Q1 (L source) ────────────────────────────────────────────────────────
+NS = [64, 96, 128, 192, 256, 384, 512, 1024]
+
+
+def qd(fn):
+    return {n: fn(n) for n in NS}
+
+
+check("Q1 FLAT-AT-LINK, both boundaries inclusive", ld.q1_class({0: qd(lambda n: 0.8 if n < 192 else 1.25)})[0] == "FLAT-AT-LINK")
+check("Q1 CIRCULAR (Spearman 1, Q(n_min) 0.2 < 0.8)", ld.q1_class({0: qd(lambda n: 0.2 + 0.0005 * n)})[0] == "CIRCULAR")
+c, med, rho = ld.q1_class({0: qd(lambda n: 1.0), 1: qd(lambda n: 0.2 + 0.0005 * n)})
+check("Q1 CIRCULAR if ANY path circulates (dual: p0 flat, p1 rises)", c == "CIRCULAR" and rho[1] == 1.0, (c, rho))
+check("Q1 CIRCULAR wins over OVER-READ (rises 0.64 -> 2.8)", ld.q1_class({0: qd(lambda n: 0.5 + n / 450.0)})[0] == "CIRCULAR")
+check("Q1 OVER-READ (Q = 2 flat)", ld.q1_class({0: qd(lambda n: 2.0)})[0] == "OVER-READ")
+check("Q1 OVER-READ (rises but starts above 0.8: no CIRCULAR)", ld.q1_class({0: qd(lambda n: 1.3 + 0.001 * n)})[0] == "OVER-READ")
+check("Q1 APP-LIMITED (Q = 0.5 flat)", ld.q1_class({0: qd(lambda n: 0.5)})[0] == "APP-LIMITED")
+check("Q1 NEITHER (median 1.0 in band, one dip, no rise)", ld.q1_class({0: qd(lambda n: 0.5 if n == 1024 else 1.0)})[0] == "NEITHER")
+check("Q1 no data -> `-`", ld.q1_class({0: qd(lambda n: None)})[0] == "-")
+check("Q1 FLAT-AT-LINK fails when one path leaves the band (dual p1 = 1.3)",
+      ld.q1_class({0: qd(lambda n: 1.0), 1: qd(lambda n: 1.3)})[0] != "FLAT-AT-LINK")
+
+# ── Q2 (spread) ──────────────────────────────────────────────────────────
+check("Q2 path FLAT at max/min = 1.5 exactly", ld.q2_path({1: 100.0, 2: 150.0, 3: 120.0})[0] == "FLAT")
+check("Q2 path INFLATES at S(nmax)/S(nmin) = 2.0 exactly", ld.q2_path({1: 100.0, 2: 150.0, 3: 200.0})[0] == "INFLATES")
+check("Q2 path AMBIGUOUS (end ratio 1.99, span 1.99)", ld.q2_path({1: 100.0, 2: 150.0, 3: 199.0})[0] == "AMBIGUOUS")
+check("Q2 path AMBIGUOUS (bump in the middle: span 3, end 1)", ld.q2_path({1: 100.0, 2: 300.0, 3: 100.0})[0] == "AMBIGUOUS")
+check("Q2 path: S(n_min) = 0, S(n_max) > 0 -> INFLATES", ld.q2_path({1: 0.0, 2: 50.0})[0] == "INFLATES")
+check("Q2 cell: all FLAT -> FLAT; any INFLATES -> INFLATES; else AMBIGUOUS; missing -> `-`",
+      ld.q2_cell(["FLAT", "FLAT"]) == "FLAT" and ld.q2_cell(["FLAT", "INFLATES"]) == "INFLATES"
+      and ld.q2_cell(["AMBIGUOUS", "INFLATES"]) == "INFLATES" and ld.q2_cell(["FLAT", "AMBIGUOUS"]) == "AMBIGUOUS"
+      and ld.q2_cell(["FLAT", "-"]) == "-")
+
+# fixed point arithmetic
+fp = ld.fixed_point27({n: 100.0 + 0.5 * n for n in NS})
+check("fixed point ask = 100 + 0.5 n: interior n_fp = 200 (pair 192..256), slope 0.5 -> STABLE",
+      fp["kind"] == "STABLE" and abs(fp["n_fp"] - 200.0) < 1e-9 and abs(fp["slope"] - 0.5) < 1e-12, fp)
+fp = ld.fixed_point27({n: 10.0 + 0.95 * n for n in NS})
+check("fixed point ask = 10 + 0.95 n: n_fp = 200, slope 0.95 -> FRAGILE", fp["kind"] == "FRAGILE"
+      and abs(fp["n_fp"] - 200.0) < 1e-9 and abs(fp["slope"] - 0.95) < 1e-12, fp)
+fp = ld.fixed_point27({n: 20.0 + 0.85 * n for n in NS})
+check("slope 0.85 < 0.9 -> STABLE (n_fp = 133.3)", fp["kind"] == "STABLE" and abs(fp["n_fp"] - 133.3333333) < 1e-4, fp)
+fp = ld.fixed_point27({n: 30.0 for n in NS})
+check("ask(n_min) = 30 < 64 -> FLOOR, no n_fp", fp["kind"] == "FLOOR" and fp["n_fp"] is None, fp)
+fp = ld.fixed_point27({n: 5000.0 for n in NS})
+check("ask(n_max) >= n_max -> CEILING", fp["kind"] == "CEILING" and fp["n_fp"] is None, fp)
+fp = ld.fixed_point27({n: 1024.0 for n in NS})
+check("ask(n_max) == n_max -> CEILING (>=)", fp["kind"] == "CEILING", fp)
+fp = ld.fixed_point27({n: (None if n == 128 else 215.0) for n in NS})
+check("a grid point without data is skipped: constant 215 -> n_fp between 192 and 256 = 215", fp["kind"] == "STABLE"
+      and abs(fp["n_fp"] - 215.0) < 1e-9 and fp["slope"] == 0.0, fp)
+check("fixed point with no data at all -> `-`", ld.fixed_point27({n: None for n in NS})["kind"] == "-")
+
+# ── whole cells: synthetic ledgers ───────────────────────────────────────
+TARGET = {"c2-100": 192, "c1s-400": 512, "c8-100": 256, "c1d-400": 1024}
+
+
+def sumL(cell):
+    return sum(b / W for b in ld.PATH_LINK27[cell])
+
+
+def cell_rows(cell, target=None, S=lambda fam, p, n: 100.0, Q=lambda fam, p, n: 1.0,
+              ask=None, scale=lambda fam: 1.0, per=2):
+    """Both arms. ask(fam, n) = the total ask in symbols (default 1.01 x target, flat in n); every path gets the same
+    RTprop + S = ask / (1.1 sum L), RTprop = that - S(n)."""
+    target = target or TARGET[cell]
+    ask = ask or (lambda fam, n: 1.01 * target * scale(fam))
+    rows = []
+    for fam in ld.FAMS27:
+        for n in ld.GRID27[cell]:
+            t_us = ask(fam, n) / (1.1 * sumL(cell)) * 1e6
+            for i in range(per):
+                r = R(cell, f"{fam}{n}", 100.0 if n >= target else 10.0, None, seed=42 + i)
+                del r["ld_med"]
+                for p, lb in enumerate(ld.PATH_LINK27[cell]):
+                    s = S(fam, p, n)
+                    r[f"ld_p{p}"] = {"rtt_min_us": 4000.0, "rtt_p50_us": 4000.0 + s, "rtprop_us": t_us - s, "jit_us": 50.0,
+                                     "dlv_rate": 1000.0, "q_pace_bps": Q(fam, p, n) * lb * 8.0, "q_cwnd": 9e5}
+                rows.append(r)
+    return rows
+
+
+def score27(rows):
+    buf = []
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "ld.log")
+        with open(path, "w") as fh:
+            for r in rows:
+                fh.write("LDROW " + json.dumps(r) + "\n")
+        res = ld.score27([path], buf.append)
+    return res, "\n".join(buf)
+
+
+def hold_rows(**kw):
+    rows = []
+    for c in ld.CELLS27:
+        rows += cell_rows(c, **kw)
+    return rows
+
+
+res, txt = score27(hold_rows())
+check("all four cells: PREMISES-HOLD", res["verdict"] == "PREMISES-HOLD" and txt.rstrip().endswith("PREMISES-HOLD"), txt[-600:])
+for c in ld.CELLS27:
+    r = res[c]
+    check(f"{c}: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target",
+          r["q1_BRS"] == "FLAT-AT-LINK" and r["q2_DEF"] == "FLAT" and r["fp_DEF"]["kind"] == "STABLE"
+          and r["q3"] == "REPRODUCES" and r["nstar"]["BRS"] == TARGET[c] == r["nstar"]["DEF"], r)
+check("verdict lines present per cell, in the pre-registered format",
+      len(re.findall(r"^  Q1 FLAT-AT-LINK$", txt, re.M)) == 4
+      and len(re.findall(r"^  Q2 FLAT STABLE n_fp=\d+\.\d slope=\S+$", txt, re.M)) == 4
+      and len(re.findall(r"^  Q3 REPRODUCES n_fp=\d+\.\d band=\[\S+, \S+\]$", txt, re.M)) == 4, txt)
+check("cells print in battery order c2, c1s, c8, c1d",
+      txt.index("CELL c2-100") < txt.index("CELL c1s-400") < txt.index("CELL c8-100") < txt.index("CELL c1d-400"))
+check("table columns present (goodput, A_x p50, Tmin, Tp50, S, RTprop, Q; ask/n)",
+      all(h in txt for h in ("goodput", "A_x p50", "Tmin us", "Tp50 us", "S us", "RTprop us", " Q", "ask/n", "n* =")), txt[:1500])
+check("c8-100 prints both paths (p0, p1) per n", txt.count("p1  ") >= 16)
+c2n = res["c2-100"]["fp_DEF"]["n_fp"]
+check("c2: constant ask 1.01 x 192 = 193.92 -> n_fp interpolated between 192 and 256 = 193.92",
+      abs(c2n - 193.92) < 1e-6, c2n)
+
+# the Q3 line uses the measured rate: Q = 0.8 on every path scales ask by 0.8 -> ask = 155.1 < 192 -> n_fp 155.1 in [128, 288]
+res, txt = score27(hold_rows(Q=lambda fam, p, n: 0.8 if fam == "BRS" else 1.0))
+check("Q3 uses Q x link: Q = 0.8 -> n_fp = 0.8 x 193.92 ~ 155.1 for c2; Q1 still FLAT-AT-LINK (0.8 inclusive)",
+      res["verdict"] == "PREMISES-HOLD" and abs(res["c2-100"]["fp3"]["n_fp"] - 155.136) < 0.1, (res["verdict"], res["c2-100"]["fp3"]))
+
+# each clause fails alone
+res, txt = score27(hold_rows(Q=lambda fam, p, n: 2.0 if (fam == "BRS" and p == 1) else 1.0))
+check("PREMISES-FAIL: Q1 OVER-READ on a dual cell's second path names the cells",
+      res["verdict"].startswith("PREMISES-FAIL") and "c8-100:Q1=OVER-READ" in res["verdict"] and "c1d-400:Q1=OVER-READ" in res["verdict"]
+      and "c2-100:Q1" not in res["verdict"] and "c1s-400:Q1" not in res["verdict"], res["verdict"])
+
+res, txt = score27(hold_rows(S=lambda fam, p, n: 100.0 + 2.0 * n if fam == "DEF" else 100.0))
+check("PREMISES-FAIL: DEF S inflates with n -> Q2 INFLATES (the BRS arm is only a reference)",
+      "c2-100:Q2=INFLATES/STABLE" in res["verdict"] and "Q1" not in res["verdict"] and "Q3" not in res["verdict"], res["verdict"])
+check("Q2 INFLATES printed as the verdict line", re.search(r"^  Q2 INFLATES STABLE n_fp=", txt, re.M), txt)
+
+res, txt = score27(hold_rows(scale=lambda fam: 0.05 if fam == "BRS" else 1.0))
+check("PREMISES-FAIL: BRS ask collapses -> FLOOR counts as MISSES (Q3), Q1/Q2 hold",
+      "c2-100:Q3=MISSES" in res["verdict"] and "Q1" not in res["verdict"] and "Q2" not in res["verdict"]
+      and re.search(r"^  Q3 MISSES n_fp=- band=", txt, re.M), res["verdict"])
+res, txt = score27(hold_rows(scale=lambda fam: 50.0 if fam == "BRS" else 1.0))
+check("PREMISES-FAIL: BRS ask above the grid -> CEILING counts as MISSES", "c1s-400:Q3=MISSES" in res["verdict"]
+      and "fixed point: CEILING" in txt, res["verdict"])
+res, txt = score27(hold_rows(ask=lambda fam, n: 0.95 * n + 10.0 if fam == "DEF" else 193.92, target=192, per=1))
+check("PREMISES-FAIL: DEF fixed point FRAGILE (slope 0.95) -> Q2 FLAT FRAGILE on the c2 cell",
+      "c2-100:Q2=FLAT/FRAGILE" in res["verdict"] and re.search(r"^  Q2 FLAT FRAGILE n_fp=\S+ slope=0.950$", txt, re.M), (res["verdict"], txt[-900:]))
+res, txt = score27(cell_rows("c2-100", ask=lambda fam, n: 0.5 * n + 100.0 if fam == "DEF" else 193.92, target=192))
+check("DEF slope 0.5: Q2 FLAT STABLE n_fp=200.0 slope=0.500", re.search(r"^  Q2 FLAT STABLE n_fp=200.0 slope=0.500$", txt, re.M), txt[-900:])
+res, txt = score27(cell_rows("c2-100", scale=lambda fam: 0.05 if fam == "DEF" else 1.0))
+check("DEF ask floor: `Q2 FLAT FLOOR n_fp=- slope=-`", re.search(r"^  Q2 FLAT FLOOR n_fp=- slope=-$", txt, re.M), txt[-900:])
+res, txt = score27(cell_rows("c2-100", scale=lambda fam: 50.0 if fam == "DEF" else 1.0))
+check("DEF ask ceiling: `Q2 FLAT CEILING n_fp=- slope=-`", re.search(r"^  Q2 FLAT CEILING n_fp=- slope=-$", txt, re.M), txt[-900:])
+
+# Q3 reproduction band: BRS n* moves, fp stays -> MISSES; DEF band reported separately
+rows = cell_rows("c2-100", target=192)
+for r in rows:
+    if r["arm"].startswith("BRS"):
+        r["mbps"] = 100.0 if int(r["arm"][3:]) >= 512 else 10.0       # BRS knee at 512: band [341.3, 768]
+res, txt = score27(rows)
+check("Q3 MISSES when n_fp (193.9) is outside the BRS band [341.3, 768.0]; DEF band reported (yes)",
+      res["c2-100"]["q3"] == "MISSES" and "band=[341.3, 768.0]" in txt and "in DEF band (report only): yes" in txt, txt[-900:])
+
+# non-live rows are ignored; sparse / empty ledgers do not raise and cannot HOLD
+rows = hold_rows()
+bad = dict(rows[0])
+bad.update(status="WITNESS-FAIL", mbps=9999.0)
+res, txt = score27(rows + [bad])
+check("non-live rows ignored in the means", "9999" not in txt and res["verdict"] == "PREMISES-HOLD")
+res, txt = score27([])
+check("empty ledger: PREMISES-FAIL, no exception", res["verdict"].startswith("PREMISES-FAIL") and "c2-100:Q1=-" in res["verdict"], res["verdict"])
+
+# the other arm is a reference: Q1 for DEF printed, Q2 for BRS printed
+res, txt = score27(hold_rows())
+check("reference classifications printed (Q1 DEF, Q2 BRS)", "Q1 [DEF, reference]" in txt and "Q2 [BRS, reference]" in txt
+      and "Q1 [BRS]" in txt and "Q2 [DEF]" in txt and "Q3 [BRS]" in txt)
+
+# smoke27 / check27
+with tempfile.TemporaryDirectory() as td:
+    path = os.path.join(td, "ld.log")
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 128 + "LD-BATTERY-DONE tag=ld blocks=2 x\n")
+    check("check27: 128 rows + done line passes", ld.check27(path) == 0)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 127 + "LD-BATTERY-DONE tag=ld blocks=2 x\n")
+    check("check27: 127 rows fails", ld.check27(path) == 1)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 128)
+    check("check27: no completion line fails", ld.check27(path) == 1)
+    p27 = os.path.join(td, "smoke27.log")
+    sm = [mk("BRS192", cell="c2-100", n=192, eng=False, extra=[BRS_ECHO]),
+          mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path(), extra=[DEF_ECHO])]
+    with open(p27, "w") as fh:
+        for r in sm:
+            fh.write("LDROW " + json.dumps(r, sort_keys=True) + "\n")
+    check("smoke27: BRS192 c2 + DEF512 c8 live -> pass", ld.smoke27(p27) == 0)
+    sm[1] = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=p0only, extra=[DEF_ECHO])
+    with open(p27, "w") as fh:
+        for r in sm:
+            fh.write("LDROW " + json.dumps(r, sort_keys=True) + "\n")
+    check("smoke27: a dual cell with only p0 windows fails", ld.smoke27(p27) == 1)
+check("plan 27 arithmetic: 2 blocks x 4 cells x 2 arms x 8 = 128",
+      2 * len(ld.CELLS27) * len(ld.FAMS27) * 8 == ld.EXPECT_ROWS27 == 128
+      and all(len(g) == 8 for g in ld.GRID27.values()))
+check("plan 24 constants untouched (46 rows)", ld.EXPECT_ROWS == 46)
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
