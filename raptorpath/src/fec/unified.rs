@@ -768,6 +768,39 @@ mod tests {
         assert_eq!(&b[1].1[..24], &vec![6u8; 24][..]);
     }
 
+    /// R3 zero copy: an in-order source's output shares the received buffer.
+    #[test]
+    fn in_order_output_shares_the_input_buffer() {
+        let ss = 64u16;
+        let mut enc = RlcWindowEncoder::new(ss);
+        let mut dec = UnifiedDecoder::new(ss);
+        let s = enc.add_source(&vec![7u8; ss as usize]);
+        let out = dec.add_symbol(&s);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].1.as_ptr(),
+            s.data.as_ptr(),
+            "the delivered Bytes must be the received buffer, not a copy"
+        );
+    }
+
+    /// R3 floor (paper §5.2): below `advance`'s frontier a copy is refused
+    /// and counted, not re-delivered.
+    #[test]
+    fn a_source_below_the_floor_is_refused_and_counted() {
+        let ss = 32u16;
+        let mut enc = RlcWindowEncoder::new(ss);
+        let mut dec = UnifiedDecoder::new(ss);
+        let syms: Vec<_> = (0..2000u64).map(|i| enc.add_source(&vec![i as u8; 24])).collect();
+        for s in &syms {
+            assert_eq!(dec.add_symbol(s).len(), 1);
+        }
+        dec.advance(1500);
+        assert!(dec.add_symbol(&syms[100]).is_empty(), "below the floor: refused");
+        let st = dec.diag_stats().unwrap();
+        assert!(st.contains("below_floor=1"), "{st}");
+    }
+
     /// Threading R3 step 0 (status §22): the decoder's per-symbol cost on an
     /// in-order, loss-free stream at the c1d symbol size, against the prune
     /// cadence. The receiver calls `advance` once per `REPORT_INTERVAL`
