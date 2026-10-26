@@ -53,8 +53,9 @@
 //!
 //! Nothing here branches, decides, or is reachable from a control law.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
+use super::seq_ring::SeqRing;
 use super::succ::{Hist, HoleOutcome, HoleRecord};
 
 /// How many arrivals may be pending delivery before the oldest record is
@@ -62,6 +63,14 @@ use super::succ::{Hist, HoleOutcome, HoleRecord};
 /// is never delivered (an abandoned hole under the EVICT policy) would
 /// otherwise sit here forever. Evictions are counted and printed (`over=`).
 const PENDING_MAX: usize = 16_384;
+
+/// The widest key span (highest − lowest pending seq) the ring store keeps.
+/// The seqs are dense (the sender numbers them 0, 1, 2, …), so a span past
+/// this is a stray (a copy of a long-delivered seq, or a jump): the ring would
+/// pad one slot per absent key, so the stray is refused instead and counted
+/// in `over=`, exactly as an evicted record is. 4 × the pending bound, i.e.
+/// at most ~1.5 MB of slots.
+const PENDING_SPAN_MAX: u64 = 4 * PENDING_MAX as u64;
 
 /// Which class of reorder wait one delivery paid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +124,58 @@ impl PathLat {
     }
 }
 
+/// The arrival records awaiting delivery: a ring over the (dense) seq space
+/// instead of a hash map — no hashing, no rehash growth, no per-record
+/// allocation on the receiver's per-symbol path (threading R1). Bounded to
+/// [`PENDING_MAX`] insertions by `order`, the eviction FIFO (it keeps the
+/// stale key of a delivered record; the key is skipped when it comes up).
+#[derive(Default)]
+struct Pending {
+    ring: SeqRing<(u32, u64)>,
+    order: VecDeque<u64>,
+}
+
+impl Pending {
+    /// Record `seq`; returns how many records were lost to a bound (the
+    /// eviction FIFO, or the span guard), for the caller's `over=`.
+    fn insert(&mut self, seq: u64, v: (u32, u64)) -> u64 {
+        let mut lost = 0;
+        if let (Some((lo, _)), Some(hi)) = (self.ring.first(), self.ring.last_key()) {
+            if seq < lo {
+                if hi - seq >= PENDING_SPAN_MAX {
+                    return 1; // a stray far below the live span
+                }
+            } else {
+                // A jump above: shed the oldest records until the span fits.
+                let mut lo = lo;
+                while seq.saturating_sub(lo) >= PENDING_SPAN_MAX {
+                    self.ring.remove(&lo);
+                    lost += 1;
+                    match self.ring.first() {
+                        Some((l, _)) => lo = l,
+                        None => break,
+                    }
+                }
+            }
+        }
+        if self.ring.insert(seq, v).is_none() {
+            self.order.push_back(seq);
+        }
+        while self.order.len() > PENDING_MAX {
+            if let Some(old) = self.order.pop_front() {
+                if self.ring.remove(&old).is_some() {
+                    lost += 1;
+                }
+            }
+        }
+        lost
+    }
+
+    fn take(&mut self, seq: u64) -> Option<(u32, u64)> {
+        self.ring.remove(&seq)
+    }
+}
+
 /// The delivered-latency decomposition gauge. Owned by the receiver task.
 /// No engine handle, no shared state, nothing `&mut`-reachable from a
 /// decision site.
@@ -122,9 +183,7 @@ impl PathLat {
 pub struct LatGauge {
     paths: BTreeMap<u32, PathLat>,
     /// `seq → (path, A_x µs)` recorded at arrival and consumed at delivery.
-    /// Bounded; `order` is the eviction FIFO.
-    pending: HashMap<u64, (u32, u64)>,
-    order: VecDeque<u64>,
+    pending: Pending,
     /// Records evicted by the bound, and deliveries whose arrival record was
     /// already gone. Both are printed; neither is silently dropped.
     over: u64,
@@ -152,16 +211,7 @@ impl LatGauge {
             }
         };
         let ax = (gap - floor).max(0) as u64;
-        if self.pending.insert(seq, (path_id, ax)).is_none() {
-            self.order.push_back(seq);
-        }
-        while self.order.len() > PENDING_MAX {
-            if let Some(old) = self.order.pop_front() {
-                if self.pending.remove(&old).is_some() {
-                    self.over += 1;
-                }
-            }
-        }
+        self.over += self.pending.insert(seq, (path_id, ax));
     }
 
     /// One in-order delivery. `wait_us` is `t_deliv − t_buffered` (0 for a
@@ -175,14 +225,13 @@ impl LatGauge {
     /// cross-path share read low.
     pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release) {
         self.n_deliv += 1;
-        let Some((path_id, ax)) = self.pending.remove(&seq) else {
+        let Some((path_id, ax)) = self.pending.take(seq) else {
             // Delivered without an arrival record: a decoder reconstruction
             // (never rode a wire as itself) or an eviction. Counted, and not
             // given a fabricated path.
             self.over += 1;
             return;
         };
-        // `order` keeps the stale key; it is skipped on eviction.
         let p = self.paths.entry(path_id).or_default();
         p.deliv += 1;
         p.ax.add(ax);
@@ -277,6 +326,100 @@ impl LatGauge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand_chacha::rand_core::{RngCore, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
+    use std::collections::HashMap;
+
+    /// The store this ring replaced (`HashMap` + eviction FIFO), kept as the
+    /// reference the ring is differenced against.
+    #[derive(Default)]
+    struct RefPending {
+        map: HashMap<u64, (u32, u64)>,
+        order: VecDeque<u64>,
+    }
+
+    impl RefPending {
+        fn insert(&mut self, seq: u64, v: (u32, u64)) -> u64 {
+            let mut lost = 0;
+            if self.map.insert(seq, v).is_none() {
+                self.order.push_back(seq);
+            }
+            while self.order.len() > PENDING_MAX {
+                if let Some(old) = self.order.pop_front() {
+                    if self.map.remove(&old).is_some() {
+                        lost += 1;
+                    }
+                }
+            }
+            lost
+        }
+
+        fn take(&mut self, seq: u64) -> Option<(u32, u64)> {
+            self.map.remove(&seq)
+        }
+    }
+
+    /// Within the span guard the ring is the map: the same record comes back
+    /// for every delivery and the same number of records is lost to the
+    /// bound, over random arrival orders with duplicates, holes (seqs that
+    /// are never delivered, so the FIFO bound binds) and out-of-order
+    /// deliveries.
+    #[test]
+    fn the_ring_store_matches_the_hash_map_it_replaced() {
+        for seed in 0..12u64 {
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            let (mut ring, mut map) = (Pending::default(), RefPending::default());
+            let mut head = 0u64;
+            let (mut lost_ring, mut lost_map) = (0u64, 0u64);
+            for step in 0..60_000u32 {
+                let r = rng.next_u32();
+                if r % 3 != 0 {
+                    // An arrival: usually the next seq, sometimes a repeat or
+                    // one a little behind (a cross-path duplicate).
+                    let seq = match r % 11 {
+                        0 => head.saturating_sub((rng.next_u32() % 64) as u64),
+                        _ => {
+                            head += 1 + (rng.next_u32() % 2) as u64;
+                            head
+                        }
+                    };
+                    let v = ((rng.next_u32() % 3) as u32, rng.next_u32() as u64);
+                    lost_ring += ring.insert(seq, v);
+                    lost_map += map.insert(seq, v);
+                } else {
+                    // A delivery near the head (in order or not), or of a
+                    // seq with no record.
+                    let seq = head.saturating_sub((rng.next_u32() % 400) as u64);
+                    assert_eq!(ring.take(seq), map.take(seq), "seed {seed} step {step} take {seq}");
+                }
+                // Absolute: the same set of records is held, so an evicted record
+                // left behind (which no probe near the head would find) fails here.
+                assert_eq!(ring.ring.len(), map.map.len(), "seed {seed} step {step}: records held");
+            }
+            assert_eq!(lost_ring, lost_map, "seed {seed}: records lost to the bound");
+            assert!(lost_ring > 0, "seed {seed}: the eviction bound must have bound");
+        }
+    }
+
+    /// Past the span guard the ring refuses and counts; it never hands back a
+    /// record for a seq it was not given, and the live window stays exact.
+    #[test]
+    fn a_stray_far_from_the_live_span_is_counted_not_padded() {
+        let mut p = Pending::default();
+        for s in 1_000_000..1_000_100u64 {
+            assert_eq!(p.insert(s, (1, s)), 0);
+        }
+        // A copy of a long-delivered seq: refused, counted, no allocation of
+        // a million empty slots.
+        assert_eq!(p.insert(10, (9, 9)), 1);
+        assert_eq!(p.take(10), None);
+        // A jump far above sheds the old records (counted), keeps the new.
+        let lost = p.insert(1_000_000 + 10 * PENDING_SPAN_MAX, (2, 7));
+        assert_eq!(lost, 100);
+        assert_eq!(p.take(1_000_050), None);
+        assert_eq!(p.take(1_000_000 + 10 * PENDING_SPAN_MAX), Some((2, 7)));
+        assert!(p.ring.iter().count() == 0);
+    }
 
     /// The accounting identity, and the three classes are disjoint.
     #[test]

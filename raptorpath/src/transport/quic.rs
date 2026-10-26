@@ -394,7 +394,7 @@ impl QuicTransport {
     }
 
     /// The path's published view.
-    fn view(&self, path_id: PathId) -> Option<Arc<PathView>> {
+    pub(crate) fn view(&self, path_id: PathId) -> Option<Arc<PathView>> {
         self.paths.get(&path_id).map(|p| p.value().view.clone())
     }
 

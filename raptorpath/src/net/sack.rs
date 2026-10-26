@@ -6,6 +6,7 @@
 //! window-ack emission.
 
 use super::*;
+use super::seq_bits::ReceivedSeqs;
 
 // ---------------------------------------------------------------------------
 // Gap computation and the SACK encoding (no WindowNack exists on this wire)
@@ -333,12 +334,12 @@ impl ReceivedAbove {
 
     /// Move to the current cumulative point and return the count, saturated
     /// to the wire's `u32`.
-    pub fn sync(&mut self, received: &BTreeSet<u64>, next_expected: u64) -> u32 {
+    pub fn sync<R: ReceivedSeqs + ?Sized>(&mut self, received: &R, next_expected: u64) -> u32 {
         if next_expected > self.frontier {
-            let passed = received.range(self.frontier..next_expected).count() as u64;
+            let passed = received.count_in(self.frontier, next_expected);
             self.count = self.count.saturating_sub(passed);
         } else if next_expected < self.frontier {
-            self.count += received.range(next_expected..self.frontier).count() as u64;
+            self.count += received.count_in(next_expected, self.frontier);
         }
         self.frontier = next_expected;
         self.count.min(u32::MAX as u64) as u32
@@ -429,8 +430,8 @@ pub const MAX_SACK_RANGES: usize = (SACK_DATAGRAM_BUDGET
 /// the sender would release those slots, Copa would count them delivered
 /// and nothing would ever NACK them (plan 2a). Below the cap the output is
 /// the full received-run list, unchanged.
-pub fn received_sack_ranges(
-    received: &BTreeSet<u64>,
+pub fn received_sack_ranges<R: ReceivedSeqs + ?Sized>(
+    received: &R,
     next_expected: u64,
     seen: u64,
 ) -> Vec<(u64, u64)> {
@@ -438,16 +439,12 @@ pub fn received_sack_ranges(
     if seen < next_expected {
         return sack_ranges;
     }
-    for &s in received.range(next_expected..=seen) {
-        match sack_ranges.last_mut() {
-            Some((_, e)) if *e + 1 == s => *e = s,
-            _ => {
-                if sack_ranges.len() >= MAX_SACK_RANGES {
-                    break;
-                }
-                sack_ranges.push((s, s));
-            }
+    received.each_run(next_expected, seen, &mut |start, end| {
+        if sack_ranges.len() >= MAX_SACK_RANGES {
+            return false;
         }
-    }
+        sack_ranges.push((start, end));
+        true
+    });
     sack_ranges
 }
