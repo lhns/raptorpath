@@ -6030,7 +6030,7 @@ fn q2_one_task_per_loop_no_multiplexer() {
     // Each spawn goes through `task_obs::timed` (8311094, the Q3 poll-CPU
     // gauge); the pin names the wrapper so it still counts one task per loop.
     for task in [
-        "letsender_handle=tokio::spawn(crate::task_obs::timed(\"sender\",",
+        "letsender_handle=tokio::spawn(crate::task_obs::timed_probe(\"sender\",&crate::task_obs::SENDER_PROBE,",
         "letreceiver_handle=tokio::spawn(crate::task_obs::timed(\"receiver\",receiver::run_receiver(",
         "letcmd_handle=tokio::spawn(crate::task_obs::timed(\"pathcmd\",tasks::run_path_cmd(",
         "letreport_handle=tokio::spawn(crate::task_obs::timed(\"report\",tasks::run_report(",

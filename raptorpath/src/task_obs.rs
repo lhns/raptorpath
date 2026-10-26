@@ -178,6 +178,9 @@ pub struct LongPoll {
     pub cpu_us: u64,
     pub vcsw: u64,
     pub ivcsw: u64,
+    /// Where the poll's wall went, for a task with a progress probe (the
+    /// sender); `None` on every other task.
+    pub attr: Option<PollAttr>,
 }
 
 #[derive(Default)]
@@ -215,8 +218,17 @@ pub fn lpoll_lines(side: &str, polls: &[LongPoll], dropped: u64, cap: usize) -> 
         .iter()
         .map(|p| {
             format!(
-                "[LPOLL] side={side} task={} end_unix_us={} wall_us={} cpu_us={} vcsw={} ivcsw={}",
-                p.task, p.end_unix_us, p.wall_us, p.cpu_us, p.vcsw, p.ivcsw
+                "[LPOLL] side={side} task={} end_unix_us={} wall_us={} cpu_us={} vcsw={} ivcsw={}{}",
+                p.task,
+                p.end_unix_us,
+                p.wall_us,
+                p.cpu_us,
+                p.vcsw,
+                p.ivcsw,
+                p.attr.as_ref().map_or_else(String::new, |a| {
+                    let secs: Vec<String> = a.secs.iter().map(|(n, ns)| format!("{n}:{}", ns / 1_000)).collect();
+                    format!(" iters={} secs={} other={}", a.iters, secs.join(","), a.other_ns / 1_000)
+                })
             )
         })
         .collect();
@@ -335,6 +347,8 @@ impl Drop for TaskCtr {
 pub struct Timed<F> {
     inner: Pin<Box<F>>,
     ctr: Option<Arc<TaskCtr>>,
+    /// The task's section probe, if it has one ([`timed_probe`]).
+    probe: Option<&'static TxSecCtr>,
 }
 
 /// Wrap a task's future (`name` labels its `[TASK]` line).
@@ -344,7 +358,19 @@ pub fn timed<F: Future>(name: impl Into<String>, f: F) -> Timed<F> {
 
 /// [`timed`] with an explicit switch (tests).
 pub fn timed_if<F: Future>(on: bool, name: impl Into<String>, f: F) -> Timed<F> {
-    Timed { inner: Box::pin(f), ctr: on.then(|| TaskCtr::new(name.into())) }
+    Timed { inner: Box::pin(f), ctr: on.then(|| TaskCtr::new(name.into())), probe: None }
+}
+
+/// [`timed`] for a task that publishes loop progress into `probe`: a long
+/// poll's `[LPOLL]` entry then also carries the iterations and sections it
+/// ran (see [`PollAttr`]).
+pub fn timed_probe<F: Future>(name: impl Into<String>, probe: &'static TxSecCtr, f: F) -> Timed<F> {
+    timed_probe_if(deep(), name, probe, f)
+}
+
+/// [`timed_probe`] with an explicit switch (tests).
+pub fn timed_probe_if<F: Future>(on: bool, name: impl Into<String>, probe: &'static TxSecCtr, f: F) -> Timed<F> {
+    Timed { probe: on.then_some(probe), ..timed_if(on, name, f) }
 }
 
 impl<F: Future> Future for Timed<F> {
@@ -355,6 +381,7 @@ impl<F: Future> Future for Timed<F> {
         match &this.ctr {
             None => this.inner.as_mut().poll(cx),
             Some(c) => {
+                let base = this.probe.map(TxSecCtr::sample);
                 let s = Span::begin();
                 let r = this.inner.as_mut().poll(cx);
                 let t = s.end(&c.polls);
@@ -370,6 +397,7 @@ impl<F: Future> Future for Timed<F> {
                             cpu_us: t.cpu_ns / 1_000,
                             vcsw: t.vcsw,
                             ivcsw: t.ivcsw,
+                            attr: this.probe.zip(base).map(|(p, b)| poll_attr(&b, &p.sample(), t.wall_ns)),
                         });
                     } else {
                         log.dropped += 1;
@@ -957,6 +985,317 @@ pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Rx
         .collect()
 }
 
+
+// ───────────────────────────────────────────────────────────────────────────
+// Threading sender diagnosis (status §25) — the sender loop's per-section
+// time (`RWM_RTOBS=2` only)
+//
+// Same method as `[RXSEC]`: sections are read off the process-monotonic
+// clock (a vDSO read), never the thread CPU clock. The sections PARTITION one
+// iteration of `run_window_sender`: every boundary reads the clock once, ends
+// the open section and starts the next, so per iteration the sections sum to
+// the iteration's wall by construction (`SecClock`). A `continue`, an early
+// `return`, or a section left open simply charges the open section; the loop
+// top always closes whatever is open.
+//
+// Await sections (`flush`, `select`) contain an `.await` that can return
+// Pending, so their wall can include sleeping; the rest are synchronous.
+
+/// The sender loop's sections, in loop order (the post-select arms last).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(usize)]
+pub enum TxSec {
+    /// Loop top: the command / input drains (`apply_cmds`, `apply_inputs`,
+    /// `publish_tx_view`, `sync_rx`).
+    In = 0,
+    /// The SACK drain (`while let Ok(report) = sack_rx.try_recv()`).
+    Sack,
+    /// Store gate, M* roll, brake, tx_paused, DIAG/ACKDIAG, up to the paced
+    /// coded emission.
+    Pre,
+    /// Paced coded emission (`emit_generation_coded`), PFRAC/SHEDH/DIAG
+    /// readouts and the GDIAG attribution.
+    Gen,
+    /// Source-pacing refill, tail-sweep deadline scan and `Sleep` reset, up
+    /// to the pre-`select!` flush.
+    Pace,
+    /// AWAIT: the pre-`select!` `transport.flush(..).await`.
+    Flush,
+    /// AWAIT: the `tokio::select!` from entry to its resolution.
+    Select,
+    /// Post-select residual of an arm that does its work elsewhere (the
+    /// wait-arm / walldiag charge, the NACK gap receive).
+    Res,
+    /// Post-select residual of a tx_paused / pacing / generation 1 ms poll
+    /// wake (arms 1-3): the wake itself, no handler work.
+    Idle,
+    /// The TUN-packet path: packer/emission and the `RWM_EMIT_BATCH` burst.
+    Emit,
+    /// Handler work of the inputs (8) and commands (9) arms.
+    ArmIn,
+    /// Handler work of the generation-deficit arm.
+    ArmDef,
+    /// Handler work of the tail-sweep timer arm.
+    ArmTail,
+    /// Handler work of the packer flush-timer arm (incl. its emission).
+    ArmPack,
+    /// The receiver-request arm's handler and the §7.6 serve block.
+    ArmReq,
+    /// The NACK repair-budget refresh (every iteration, cadence-gated).
+    Nbud,
+    /// `serve_gaps`: the NACK gap-report processing and repair emission.
+    ArmNack,
+    /// `on_ack_advance`: the encoder window / store release on the cumulative
+    /// ack.
+    AckAdv,
+    /// The window-cap eviction at the end of the loop body.
+    Post,
+}
+
+/// Number of [`TxSec`] variants.
+pub const TX_NSEC: usize = 19;
+
+impl TxSec {
+    pub const ALL: [TxSec; TX_NSEC] = [
+        TxSec::In,
+        TxSec::Sack,
+        TxSec::Pre,
+        TxSec::Gen,
+        TxSec::Pace,
+        TxSec::Flush,
+        TxSec::Select,
+        TxSec::Res,
+        TxSec::Idle,
+        TxSec::Emit,
+        TxSec::ArmIn,
+        TxSec::ArmDef,
+        TxSec::ArmTail,
+        TxSec::ArmPack,
+        TxSec::ArmReq,
+        TxSec::Nbud,
+        TxSec::ArmNack,
+        TxSec::AckAdv,
+        TxSec::Post,
+    ];
+
+    /// The token name (`[TXSEC]` / `[LPOLL] secs=`).
+    pub fn name(self) -> &'static str {
+        match self {
+            TxSec::In => "in",
+            TxSec::Sack => "sack",
+            TxSec::Pre => "pre",
+            TxSec::Gen => "gen",
+            TxSec::Pace => "pace",
+            TxSec::Flush => "flush",
+            TxSec::Select => "select",
+            TxSec::Res => "res",
+            TxSec::Idle => "idle",
+            TxSec::Emit => "emit",
+            TxSec::ArmIn => "arm_in",
+            TxSec::ArmDef => "arm_def",
+            TxSec::ArmTail => "arm_tail",
+            TxSec::ArmPack => "arm_pack",
+            TxSec::ArmReq => "arm_req",
+            TxSec::Nbud => "nbud",
+            TxSec::ArmNack => "arm_nack",
+            TxSec::AckAdv => "ackadv",
+            TxSec::Post => "post",
+        }
+    }
+
+    /// Whether the section contains an `.await` that can return Pending.
+    pub fn is_await(self) -> bool {
+        matches!(self, TxSec::Flush | TxSec::Select)
+    }
+}
+
+/// The partition arithmetic, pure: which section is open and since when.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SecClock {
+    open: Option<(TxSec, u64)>,
+}
+
+impl SecClock {
+    /// Close the open section at `now` and open `next`. Returns the closed
+    /// section and its ns (`None` at the first switch).
+    pub fn switch(&mut self, next: TxSec, now: u64) -> Option<(TxSec, u64)> {
+        let closed = self.open.map(|(s, t0)| (s, now.saturating_sub(t0)));
+        self.open = Some((next, now));
+        closed
+    }
+}
+
+/// The sender's section counters (monotone; read by [`TxSecCtr::sample`]).
+pub struct TxSecCtr {
+    iters: AtomicU64,
+    ns: [AtomicU64; TX_NSEC],
+    n: [AtomicU64; TX_NSEC],
+    max: [AtomicU64; TX_NSEC],
+}
+
+#[allow(clippy::declare_interior_mutable_const)]
+const Z64: AtomicU64 = AtomicU64::new(0);
+
+impl TxSecCtr {
+    pub const fn new() -> Self {
+        Self { iters: Z64, ns: [Z64; TX_NSEC], n: [Z64; TX_NSEC], max: [Z64; TX_NSEC] }
+    }
+
+    fn add(&self, s: TxSec, ns: u64) {
+        let i = s as usize;
+        self.ns[i].fetch_add(ns, Relaxed);
+        self.n[i].fetch_add(1, Relaxed);
+        self.max[i].fetch_max(ns, Relaxed);
+    }
+
+    pub fn sample(&self) -> TxSecSample {
+        TxSecSample {
+            iters: self.iters.load(Relaxed),
+            ns: std::array::from_fn(|i| self.ns[i].load(Relaxed)),
+            n: std::array::from_fn(|i| self.n[i].load(Relaxed)),
+            max: std::array::from_fn(|i| self.max[i].load(Relaxed)),
+        }
+    }
+}
+
+impl Default for TxSecCtr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The window sender's counters. One sender task per process (the VM
+/// batteries run client and server as separate processes).
+pub static SENDER_PROBE: TxSecCtr = TxSecCtr::new();
+
+/// The sender task's handle: a no-op unless the deep gauge is on.
+pub struct TxProbe {
+    c: Option<&'static TxSecCtr>,
+    clk: SecClock,
+}
+
+impl TxProbe {
+    pub fn new() -> Self {
+        Self::with(deep().then_some(&SENDER_PROBE))
+    }
+
+    /// [`Self::new`] on explicit counters (tests).
+    pub fn with(c: Option<&'static TxSecCtr>) -> Self {
+        Self { c, clk: SecClock::default() }
+    }
+
+    /// Loop top: count the iteration and start (or continue into) [`TxSec::In`].
+    #[inline]
+    pub fn iter(&mut self) {
+        if let Some(c) = self.c {
+            c.iters.fetch_add(1, Relaxed);
+            self.sec(TxSec::In);
+        }
+    }
+
+    /// A boundary: end the open section, start `s`.
+    #[inline]
+    pub fn sec(&mut self, s: TxSec) {
+        if let Some(c) = self.c {
+            if let Some((closed, ns)) = self.clk.switch(s, mono_ns()) {
+                c.add(closed, ns);
+            }
+        }
+    }
+}
+
+impl Default for TxProbe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A point-in-time copy of a [`TxSecCtr`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TxSecSample {
+    pub iters: u64,
+    pub ns: [u64; TX_NSEC],
+    pub n: [u64; TX_NSEC],
+    /// Longest single section (ns), run-cumulative.
+    pub max: [u64; TX_NSEC],
+}
+
+impl Default for TxSecSample {
+    fn default() -> Self {
+        Self { iters: 0, ns: [0; TX_NSEC], n: [0; TX_NSEC], max: [0; TX_NSEC] }
+    }
+}
+
+/// Where one long poll's wall went (the sender's `[LPOLL]` extension).
+///
+/// `secs` holds the per-section ns delta over the poll for the NON-await
+/// sections only: an await section that spans a Pending carries its sleep
+/// into the next poll's delta, so it cannot say what this poll computed.
+/// `other_ns` = poll wall − the sum of those sections (the awaits' synchronous
+/// part, the resume/poll overhead, clock granularity).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PollAttr {
+    /// Loop iterations started inside the poll.
+    pub iters: u64,
+    pub secs: Vec<(&'static str, u64)>,
+    pub other_ns: u64,
+}
+
+/// The attribution of a poll of `wall_ns` between two probe samples. Pure.
+pub fn poll_attr(base: &TxSecSample, now: &TxSecSample, wall_ns: u64) -> PollAttr {
+    let mut sum = 0u64;
+    let mut secs = Vec::with_capacity(TX_NSEC);
+    for s in TxSec::ALL {
+        if s.is_await() {
+            continue;
+        }
+        let d = now.ns[s as usize].saturating_sub(base.ns[s as usize]);
+        sum += d;
+        secs.push((s.name(), d));
+    }
+    PollAttr { iters: now.iters.saturating_sub(base.iters), secs, other_ns: wall_ns.saturating_sub(sum) }
+}
+
+pub fn txsec_samples() -> Vec<TxSecSample> {
+    vec![SENDER_PROBE.sample()]
+}
+
+/// Render the `[TXSEC]` line for the window `from → to`: per section
+/// `<name>=<ns_us>/<count>/<max_us>` (`max` is run-cumulative), then the
+/// AWAIT section names. Empty when no iteration ran in the window. Pure.
+pub fn txsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[TxSecSample], to: &[TxSecSample]) -> Vec<String> {
+    let wall_s = wall_s.max(1e-9);
+    to.iter()
+        .enumerate()
+        .filter_map(|(k, t)| {
+            let b = from.get(k).copied().unwrap_or_default();
+            let iters = t.iters.saturating_sub(b.iters);
+            if iters == 0 {
+                return None;
+            }
+            let secs: Vec<String> = TxSec::ALL
+                .iter()
+                .map(|&s| {
+                    let i = s as usize;
+                    format!(
+                        "{}={}/{}/{}",
+                        s.name(),
+                        t.ns[i].saturating_sub(b.ns[i]) / 1_000,
+                        t.n[i].saturating_sub(b.n[i]),
+                        t.max[i] / 1_000
+                    )
+                })
+                .collect();
+            let awaits: Vec<&str> = TxSec::ALL.iter().filter(|s| s.is_await()).map(|s| s.name()).collect();
+            Some(format!(
+                "[TXSEC] phase={phase} side={side}{extra} task=sender iters={iters} {} await={} wall_s={wall_s:.3}",
+                secs.join(" "),
+                awaits.join(","),
+            ))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -995,7 +1334,7 @@ mod tests {
 
     #[test]
     fn the_lpoll_lines_render_entries_then_a_summary_even_when_empty() {
-        let p = |t: &str, e| LongPoll { task: t.into(), end_unix_us: e, wall_us: 2500, cpu_us: 2400, vcsw: 1, ivcsw: 2 };
+        let p = |t: &str, e| LongPoll { task: t.into(), end_unix_us: e, wall_us: 2500, cpu_us: 2400, vcsw: 1, ivcsw: 2, attr: None };
         let l = lpoll_lines("client", &[p("sender", 1_700_000_000_000_123), p("report", 1_700_000_000_000_999)], 3, 5000);
         assert_eq!(
             l,
@@ -1103,6 +1442,153 @@ mod tests {
         assert!(s.contains(" other_us=2000 total_ns_pm=10000 decode_ns_pm=4000 "), "{s}");
         assert!(s.contains(" busy=0.010 bk_n=0 bk_p50=- bk_p99=- bk_max=- "), "{s}");
         assert!(rxsec_lines("xfer", "server", "", 1.0, &to, &to).is_empty(), "no messages in the window");
+    }
+
+    #[test]
+    fn the_section_clock_partitions_iterations_contiguously() {
+        let mut c = SecClock::default();
+        assert_eq!(c.switch(TxSec::In, 100), None, "nothing is open at the first boundary");
+        let seq = [
+            (TxSec::Sack, 130),
+            (TxSec::Pre, 150),
+            (TxSec::Flush, 400),
+            (TxSec::Select, 410),
+            (TxSec::Emit, 9_000),
+            (TxSec::In, 9_050),
+        ];
+        let (mut closed, mut total) = (vec![], 0);
+        for (s, t) in seq {
+            let (done, dt) = c.switch(s, t).expect("a section was open");
+            closed.push(done);
+            total += dt;
+        }
+        assert_eq!(closed, [TxSec::In, TxSec::Sack, TxSec::Pre, TxSec::Flush, TxSec::Select, TxSec::Emit]);
+        // The partition invariant: the sections sum to the span, no gap, no overlap.
+        assert_eq!(total, 9_050 - 100);
+        // A clock that steps back saturates to 0 and never wraps.
+        assert_eq!(c.switch(TxSec::Sack, 9_000), Some((TxSec::In, 0)));
+    }
+
+    #[test]
+    fn the_section_table_is_consistent_and_only_flush_and_select_await() {
+        for (i, s) in TxSec::ALL.iter().enumerate() {
+            assert_eq!(*s as usize, i, "{s:?} out of order");
+        }
+        let mut names: Vec<&str> = TxSec::ALL.iter().map(|s| s.name()).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), TX_NSEC, "section names are unique");
+        let aw: Vec<&str> = TxSec::ALL.iter().filter(|s| s.is_await()).map(|s| s.name()).collect();
+        assert_eq!(aw, ["flush", "select"]);
+    }
+
+    #[test]
+    fn a_txprobe_accumulates_iterations_and_sections_and_off_records_nothing() {
+        let off = TxProbe::with(None);
+        let mut off = off;
+        off.iter();
+        off.sec(TxSec::Pre);
+        let ctr: &'static TxSecCtr = Box::leak(Box::new(TxSecCtr::new()));
+        let mut p = TxProbe::with(Some(ctr));
+        p.iter();
+        p.sec(TxSec::Pre);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        p.sec(TxSec::Post);
+        p.iter(); // the loop top closes `post` and opens `in`
+        p.sec(TxSec::Pre);
+        let s = ctr.sample();
+        assert_eq!(s.iters, 2);
+        assert_eq!((s.n[TxSec::In as usize], s.n[TxSec::Pre as usize], s.n[TxSec::Post as usize]), (2, 1, 1));
+        assert!(s.ns[TxSec::Pre as usize] >= 2_000_000, "{s:?}");
+        assert!(s.max[TxSec::Pre as usize] >= 2_000_000 && s.max[TxSec::Pre as usize] <= s.ns[TxSec::Pre as usize]);
+    }
+
+    #[test]
+    fn a_poll_attribution_excludes_await_sections_and_derives_other() {
+        let mut base = TxSecSample::default();
+        base.ns[TxSec::Pre as usize] = 10_000_000;
+        base.iters = 7;
+        let mut now = base;
+        now.iters = 11;
+        now.ns[TxSec::Pre as usize] += 3_000_000;
+        now.ns[TxSec::Emit as usize] += 1_500_000;
+        // A Pending-spanning select carries sleep; it must not be attributed.
+        now.ns[TxSec::Select as usize] += 50_000_000;
+        now.ns[TxSec::Flush as usize] += 9_000_000;
+        let a = poll_attr(&base, &now, 5_000_000);
+        assert_eq!(a.iters, 4);
+        assert!(a.secs.iter().all(|(n, _)| *n != "select" && *n != "flush"), "{a:?}");
+        assert_eq!(a.secs.len(), TX_NSEC - 2);
+        assert_eq!(a.secs.iter().find(|(n, _)| *n == "pre"), Some(&("pre", 3_000_000)));
+        assert_eq!(a.secs.iter().find(|(n, _)| *n == "emit"), Some(&("emit", 1_500_000)));
+        assert_eq!(a.other_ns, 500_000);
+        // Sections that outrun the wall (clock skew) leave other at 0.
+        assert_eq!(poll_attr(&base, &now, 1_000_000).other_ns, 0);
+    }
+
+    #[test]
+    fn the_lpoll_line_appends_the_attribution_only_on_probed_tasks() {
+        let mut p = LongPoll { task: "sender".into(), end_unix_us: 5, wall_us: 5000, cpu_us: 4900, vcsw: 0, ivcsw: 1, attr: None };
+        let plain = lpoll_lines("client", &[p.clone()], 0, 10);
+        assert_eq!(plain[0], "[LPOLL] side=client task=sender end_unix_us=5 wall_us=5000 cpu_us=4900 vcsw=0 ivcsw=1");
+        p.attr = Some(PollAttr { iters: 4, secs: vec![("in", 100), ("pre", 3_000_000), ("emit", 1_500_000)], other_ns: 500_000 });
+        let l = lpoll_lines("client", &[p], 0, 10);
+        assert_eq!(
+            l[0],
+            "[LPOLL] side=client task=sender end_unix_us=5 wall_us=5000 cpu_us=4900 vcsw=0 ivcsw=1 \
+             iters=4 secs=in:0,pre:3000,emit:1500 other=500"
+        );
+    }
+
+    #[test]
+    fn a_probed_long_poll_carries_its_attribution() {
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let ctr: &'static TxSecCtr = Box::leak(Box::new(TxSecCtr::new()));
+        rt.block_on(timed_probe_if(true, "lp-probe-long", ctr, async move {
+            let mut p = TxProbe::with(Some(ctr));
+            p.iter();
+            p.sec(TxSec::Pre);
+            std::thread::sleep(std::time::Duration::from_millis(3));
+            p.sec(TxSec::Flush);
+            p.iter();
+            p.sec(TxSec::Pre);
+        }));
+        // A plain timed task never carries an attribution.
+        rt.block_on(timed_if(true, "lp-probe-plain", async {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }));
+        let (all, _) = long_polls();
+        let mine = all.iter().find(|p| p.task == "lp-probe-long").expect("logged");
+        let a = mine.attr.as_ref().expect("probed");
+        assert_eq!(a.iters, 2);
+        let pre = a.secs.iter().find(|(n, _)| *n == "pre").unwrap().1;
+        assert!(pre >= 3_000_000, "{a:?}");
+        assert!(a.secs.iter().all(|(n, _)| *n != "flush"));
+        assert!(all.iter().find(|p| p.task == "lp-probe-plain").unwrap().attr.is_none());
+    }
+
+    #[test]
+    fn the_txsec_line_renders_sections_counts_and_awaits() {
+        let mut to = TxSecSample::default();
+        to.iters = 1000;
+        to.ns[TxSec::In as usize] = 2_000_000;
+        to.n[TxSec::In as usize] = 1000;
+        to.max[TxSec::In as usize] = 900_000;
+        to.ns[TxSec::Select as usize] = 800_000_000;
+        to.n[TxSec::Select as usize] = 1000;
+        let l = txsec_lines("xfer", "client", " obj=1", 1.0, &[], &[to]);
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert!(l[0].starts_with("[TXSEC] phase=xfer side=client obj=1 task=sender iters=1000 in=2000/1000/900 sack=0/0/0 "), "{}", l[0]);
+        assert!(l[0].contains(" select=800000/1000/0 "), "{}", l[0]);
+        assert!(l[0].ends_with(" post=0/0/0 await=flush,select wall_s=1.000"), "{}", l[0]);
+        // Windowed: the difference of two samples; idle window prints nothing.
+        assert!(txsec_lines("xfer", "client", "", 1.0, &[to], &[to]).is_empty());
+        let mut later = to;
+        later.iters = 1500;
+        later.ns[TxSec::In as usize] += 1_000_000;
+        later.n[TxSec::In as usize] += 500;
+        let l = txsec_lines("xfer", "client", "", 1.0, &[to], &[later]);
+        assert!(l[0].contains(" iters=500 in=1000/500/900 "), "{}", l[0]);
     }
 
     #[test]

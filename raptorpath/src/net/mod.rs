@@ -1197,7 +1197,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // move into the sender task and are used there by plain `&mut` — no other
     // task can reach them.
     let sender_tx_diag = gates.diag;
-    let sender_handle = tokio::spawn(crate::task_obs::timed("sender", async move {
+    let sender_handle = tokio::spawn(crate::task_obs::timed_probe("sender", &crate::task_obs::SENDER_PROBE, async move {
         let mut txc = TxCore::new(scheduler, fec_controller, sender_tx_diag);
         run_window_sender(
             &mut tun,
@@ -2177,7 +2177,14 @@ async fn run_window_sender(
     let tail_sleep = tokio::time::sleep_until(tokio::time::Instant::now() + Duration::from_secs(86_400));
     tokio::pin!(tail_sleep);
     let mut tail_sleep_us: Option<u64> = None;
+    // `[TXSEC]` (RWM_RTOBS=2, status §25): the loop's sections, partitioned
+    // contiguously from loop top to loop top; every `txp.sec(..)` is one
+    // monotonic-clock read that ends the open section and starts the next.
+    // Measurement only: off, each call is one never-taken branch.
+    use crate::task_obs::TxSec;
+    let mut txp = crate::task_obs::TxProbe::new();
     loop {
+        txp.iter();
         // Scheduler reads in this loop are per phase, each under its own
         // acquisition, taken where the value is used. A loop-top snapshot
         // shared by the phases would not help:
@@ -2242,6 +2249,7 @@ async fn run_window_sender(
             scheduler.sync_rx(stats);
         }
 
+        txp.sec(TxSec::Sack);
         // SACK drain: consume the receiver's received-above-frontier ranges
         // non-blocking at the top of every iteration (never as a select! branch
         // — a frequently-ready channel there would race, and cancel, the
@@ -2293,6 +2301,7 @@ async fn run_window_sender(
             }
         }
 
+        txp.sec(TxSec::Pre);
         // Determine if packer has pending data for flush timer
         let packer_pending = pol.use_packing && packer.is_pending();
 
@@ -2556,6 +2565,7 @@ async fn run_window_sender(
             ackdiag::maybe_report(scheduler, stats, window_ack_seq);
         }
 
+        txp.sec(TxSec::Gen);
         // Generation coding: paced coded emission (see gen_tokens above). Runs
         // every iteration — including the tx_paused 1 ms wakeups — so coded
         // symbols for the in-flight generations keep flowing while TUN reads are
@@ -2712,6 +2722,7 @@ async fn run_window_sender(
             last_tx_paused = tx_paused;
         }
 
+        txp.sec(TxSec::Pace);
         // Refill the source-pacing token bucket at the measured link rate
         // (delivered-goodput EWMA × headroom, clamped to the same
         // [floor, ceiling] as the coded bucket). The small burst cap (≈ a few
@@ -2841,7 +2852,9 @@ async fn run_window_sender(
         // owners, one batch per path, before the loop waits. A full owner
         // channel back-pressures here (charged to `busy`, as the quinn
         // handoff it replaces was). Nothing is staged across a wait.
+        txp.sec(TxSec::Flush);
         transport.flush(&mut st.tx).await;
+        txp.sec(TxSec::Select);
         // Wait attribution: which `select!` arm woke this iteration. Every arm below writes its
         // bucket index; the charge happens once, after the await, and reads
         // the clock only under RWM_DIAG. The index is written unconditionally
@@ -2886,6 +2899,7 @@ async fn run_window_sender(
             // once, which P1's `AckWake` arm did.
             n = sender_in.recv_many(&mut in_buf, SENDER_IN_BATCHES), if !in_closed => {
                 wait_arm = 8;
+                txp.sec(TxSec::ArmIn);
                 if n == 0 {
                     in_closed = true;
                 } else {
@@ -2899,6 +2913,7 @@ async fn run_window_sender(
             // `recv_many` per wake.
             n = sender_cmds.recv_many(&mut cmd_buf, SENDER_CMD_DEPTH), if !cmds_closed => {
                 wait_arm = 9;
+                txp.sec(TxSec::ArmIn);
                 if n == 0 {
                     cmds_closed = true;
                 } else {
@@ -2937,6 +2952,7 @@ async fn run_window_sender(
             // rebuild.
             dv = deficit_rx.recv(), if generation => {
                 wait_arm = 5;
+                txp.sec(TxSec::ArmDef);
                 if let Some(dv) = dv {
                     gen_want.clear();
                     // Pure-proactive demonstrator: drain the channel but never
@@ -3013,6 +3029,7 @@ async fn run_window_sender(
             // its nine arms belong to the shipped `[DIAG]` line. The request
             // arm's own accounting is `[REQS]`'s business.
             rq = request_rx.recv(), if request_arm => {
+                txp.sec(TxSec::ArmReq);
                 if let Some((cause, spans)) = rq {
                     reqs_reports += 1;
                     reqs_cause = FireCause::from_u8(cause);
@@ -3039,6 +3056,7 @@ async fn run_window_sender(
             }
             _ = &mut tail_sleep, if tail_deadline.is_some() => {
                 wait_arm = 6;
+                txp.sec(TxSec::ArmTail);
                 last_tail_sweep_us = now_us();
                 if let Some((seq, _)) = st.retransmit_buffer.first() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
@@ -3082,6 +3100,7 @@ async fn run_window_sender(
             }
             _ = tokio::time::sleep(packer.time_until_flush()), if packer_pending => {
                 wait_arm = 7;
+                txp.sec(TxSec::ArmPack);
                 // Flush timeout expired — emit partial packed symbol
                 if let Some(packed) = packer.flush() {
                     emit_source(
@@ -3094,6 +3113,10 @@ async fn run_window_sender(
                 None
             }
         };
+        // The select resolved: a poll-wake (arms 1-3) has no handler work
+        // of its own (`idle`); the other arms' work was timed in their
+        // handlers or follows below.
+        txp.sec(if matches!(wait_arm, 1..=3) { TxSec::Idle } else { TxSec::Res });
         // Charge the elapsed wall time to the arm that woke us: the window
         // sender's wait-reason attribution, which says where idle sender time
         // (`sidle`) goes. Unlike `gd_us` it has no `generation` guard: the
@@ -3143,6 +3166,7 @@ async fn run_window_sender(
         }
 
         if let Some(packet) = packet {
+            txp.sec(TxSec::Emit);
             let pkt = match packet {
                 Some(p) => {
                     // `RWM_COMPLETION_EXPOSURE`: the admitted bytes drain the
@@ -3268,6 +3292,7 @@ async fn run_window_sender(
             }
         }
 
+        txp.sec(TxSec::Nbud);
         // Process gap reports → retransmit exact source symbols + repair margin.
         // Congestion backoff + ADR-0050 budget state is refreshed at
         // NACK_REPAIR_COOLDOWN_US cadence; processing itself is not gated on
@@ -3362,6 +3387,7 @@ async fn run_window_sender(
         // Disarmed ⇒ `req_want` is empty forever (nothing ever fills it) and
         // this block is one `is_empty()` test per iteration.
         if request_arm && !req_want.is_empty() {
+            txp.sec(TxSec::ArmReq);
             let mut served: u64 = 0;
             'serve: loop {
                 if served >= cached_max_repairs || cached_nack_budget == 0 {
@@ -3525,6 +3551,7 @@ async fn run_window_sender(
             }
         }
 
+        txp.sec(TxSec::ArmNack);
         serve_gaps(ServeGapsCtx {
             pol: &pol,
             reliable,
@@ -3550,6 +3577,7 @@ async fn run_window_sender(
             nack_repairs_this_period: &mut nack_repairs_this_period,
             mp_evid_max: &mut mp_evid_max,
         });
+        txp.sec(TxSec::AckAdv);
         // Advance encoder window based on receiver ACKs (v9: the peer's
         // `next_expected`, the count of its delivered prefix).
         let next_expected = window_ack_seq.load(Ordering::Relaxed);
@@ -3578,6 +3606,7 @@ async fn run_window_sender(
             c8c_last_ack_adv_us: &mut c8c_last_ack_adv_us,
             nack_repairs_this_period: &mut nack_repairs_this_period,
         });
+        txp.sec(TxSec::Post);
         // Cap window size — the coding window slides freely under both
         // policies (it is only the FEC horizon). Under retain this eviction
         // destroys no data: the sent-data store still holds the bytes, and

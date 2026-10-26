@@ -137,6 +137,179 @@ pub fn lag_line(phase: &str, side: &str, extra: &str, late_us: &[u64], dropped: 
     )
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// The OS reference clock (`RWM_RTOBS=2`, status §25 (a))
+//
+// The `[LAG]` probe ticks on the tokio timer driver, so its lateness mixes
+// the runtime (timer-wheel rounding, a worker that is busy or parked) with
+// the OS (CPU contention, hypervisor). One plain OS thread — outside the
+// runtime — sleeps on CLOCK_MONOTONIC to absolute 10 ms deadlines
+// (`clock_nanosleep(TIMER_ABSTIME)`, the kernel's own hrtimer, no rounding
+// to a millisecond) and logs how late each wake was. If the `[LAG]` tail is
+// the OS/VM, this clock sees it too; if it is the runtime, it does not.
+//
+// Time base. The deadlines and `late_us` are on CLOCK_MONOTONIC. `at_us` is
+// relative to the SAME `origin` the lag probe uses: at arm time
+// `origin = Instant::now()` (CLOCK_MONOTONIC on Linux) and, right next to
+// it, `origin_mono_ns` = `clock_gettime(CLOCK_MONOTONIC)`; then
+// `at_us = (mono_now − origin_mono_ns) / 1000`. The two origin reads are
+// ~100 ns apart, a constant offset far below the 1 ms timeline resolution.
+
+/// One OS-clock sample: when the wake was observed (µs since the probe's
+/// origin), how late it was (µs), and how many whole deadlines were skipped
+/// just before it (the thread overslept more than a tick).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct OsLagSample {
+    at_us: u64,
+    late_us: u64,
+    skipped: u64,
+}
+
+/// The OS reference clock's sample log (same capped-Vec pattern as [`LagLog`]).
+#[derive(Default)]
+pub struct OsLagLog {
+    samples: Mutex<Vec<OsLagSample>>,
+    dropped: AtomicUsize,
+}
+
+impl OsLagLog {
+    fn push(&self, s: OsLagSample) {
+        let mut v = self.samples.lock();
+        if v.len() < LAG_MAX_SAMPLES {
+            v.push(s);
+        } else {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn all(&self) -> Vec<OsLagSample> {
+        self.samples.lock().clone()
+    }
+
+    /// The lateness samples (µs) observed in `[from_us, to_us]` and the
+    /// deadlines skipped before them.
+    fn window(&self, from_us: u64, to_us: u64) -> (Vec<u64>, u64) {
+        let v = self.samples.lock();
+        let hit = v.iter().filter(|s| s.at_us >= from_us && s.at_us <= to_us);
+        let (mut late, mut skipped) = (Vec::new(), 0);
+        for s in hit {
+            late.push(s.late_us);
+            skipped += s.skipped;
+        }
+        (late, skipped)
+    }
+}
+
+/// The deadline after `deadline` (one tick on) given the clock reads `now`:
+/// if that is already in the past, whole ticks are skipped until it is not
+/// (`next >= now`). Returns `(next, skipped)`. Pure.
+fn advance_deadline(deadline_ns: u64, now_ns: u64, tick_ns: u64) -> (u64, u64) {
+    let next = deadline_ns + tick_ns;
+    if next >= now_ns {
+        return (next, 0);
+    }
+    let k = (now_ns - next - 1) / tick_ns + 1;
+    (next + k * tick_ns, k)
+}
+
+/// Render one `[OSLAG]` line from a window's lateness samples.
+pub fn os_lag_line(phase: &str, side: &str, extra: &str, late_us: &[u64], skipped: u64) -> String {
+    let f = |p: f64| quantile(late_us, p).map_or_else(|| "-".to_string(), |x| format!("{x:.0}"));
+    format!(
+        "[OSLAG] phase={phase} side={side}{extra} n={} p50_us={} p99_us={} max_us={} min_us={} skipped={skipped}",
+        late_us.len(),
+        f(0.5),
+        f(0.99),
+        late_us.iter().max().map_or_else(|| "-".to_string(), |m| m.to_string()),
+        late_us.iter().min().map_or_else(|| "-".to_string(), |m| m.to_string()),
+    )
+}
+
+/// Render the `[OSLAGRAW]` line (same format and cap as `[LAGRAW]`).
+fn os_lag_raw_line(side: &str, origin_unix_us: u64, xfer: Option<(u64, u64)>, samples: &[OsLagSample], cap: usize) -> String {
+    raw_line("OSLAGRAW", side, origin_unix_us, xfer, samples.iter().map(|s| (s.at_us, s.late_us)), cap)
+}
+
+/// `run_delay` (ns) from a `/proc/<pid>/task/<tid>/schedstat` record
+/// (`<cpu time ns> <run-queue wait ns> <timeslices>`): field 2, the time the
+/// thread spent runnable but not running.
+pub fn parse_schedstat(s: &str) -> Option<u64> {
+    s.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// The `[LAGRAW]` / `[OSLAGRAW]` line body: `n` samples of which the first
+/// `cap` are printed as `at_us:late_us`.
+fn raw_line(
+    tag: &str,
+    side: &str,
+    origin_unix_us: u64,
+    xfer: Option<(u64, u64)>,
+    samples: impl ExactSizeIterator<Item = (u64, u64)>,
+    cap: usize,
+) -> String {
+    let n = samples.len();
+    let shown: Vec<String> = samples.take(cap).map(|(a, l)| format!("{a}:{l}")).collect();
+    let xf = xfer.map_or_else(|| "-".to_string(), |(a, b)| format!("{a}-{b}"));
+    let s = if shown.is_empty() { "-".to_string() } else { shown.join(",") };
+    format!("[{tag}] side={side} origin_unix_us={origin_unix_us} xfer={xf} n={n} printed={} s={s}", shown.len())
+}
+
+/// CLOCK_MONOTONIC now (ns). `std::time::Instant` is this clock on Linux, so
+/// reading it right next to the lag probe's `origin` gives the OS thread a
+/// timeline on the same axis (see the module section above).
+#[cfg(target_os = "linux")]
+fn mono_clock_ns() -> u64 {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: a valid out-pointer; CLOCK_MONOTONIC has no other precondition.
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+}
+
+/// The reference thread's body: sleep to absolute `LAG_TICK` deadlines on
+/// the tick grid anchored at `origin_mono_ns` (the first boundary after the
+/// start), log each wake's lateness, until `stop`.
+#[cfg(target_os = "linux")]
+fn os_ref_loop(log: &OsLagLog, origin_mono_ns: u64, stop: &std::sync::atomic::AtomicBool) {
+    let tick = LAG_TICK.as_nanos() as u64;
+    let now = mono_clock_ns();
+    let mut deadline = origin_mono_ns + (now.saturating_sub(origin_mono_ns) / tick + 1) * tick;
+    let mut skipped = 0u64;
+    while !stop.load(Ordering::Relaxed) {
+        let ts = libc::timespec {
+            tv_sec: (deadline / 1_000_000_000) as _,
+            tv_nsec: (deadline % 1_000_000_000) as _,
+        };
+        // SAFETY: a valid timespec; the remaining-time pointer is unused with
+        // TIMER_ABSTIME. Returns the error number (EINTR on a signal), not -1.
+        let rc = unsafe { libc::clock_nanosleep(libc::CLOCK_MONOTONIC, libc::TIMER_ABSTIME, &ts, std::ptr::null_mut()) };
+        if rc == libc::EINTR {
+            continue; // same absolute deadline again
+        }
+        if rc != 0 {
+            return; // not a clock we can use: stay silent rather than spin
+        }
+        let now = mono_clock_ns();
+        log.push(OsLagSample {
+            at_us: now.saturating_sub(origin_mono_ns) / 1_000,
+            late_us: now.saturating_sub(deadline) / 1_000,
+            skipped,
+        });
+        (deadline, skipped) = advance_deadline(deadline, now, tick);
+    }
+}
+
+/// Start the `rp-osref` thread (a plain OS thread, outside the runtime).
+#[cfg(target_os = "linux")]
+fn spawn_os_ref(
+    log: Arc<OsLagLog>,
+    origin_mono_ns: u64,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name("rp-osref".into())
+        .spawn(move || os_ref_loop(&log, origin_mono_ns, &stop))
+}
+
 /// Cap on printed `[LAGRAW]` samples (20000 ticks of 10 ms = 200 s).
 const LAGRAW_PRINT_CAP: usize = 20_000;
 
@@ -146,18 +319,7 @@ const LAGRAW_PRINT_CAP: usize = 20_000;
 /// can be placed on the unix timeline next to the `[LPOLL]` long polls.
 /// Pure, so the token set is unit-tested.
 fn lag_raw_line(side: &str, origin_unix_us: u64, xfer: Option<(u64, u64)>, samples: &[LagSample], cap: usize) -> String {
-    let shown = &samples[..samples.len().min(cap)];
-    let xf = xfer.map_or_else(|| "-".to_string(), |(a, b)| format!("{a}-{b}"));
-    let s = if shown.is_empty() {
-        "-".to_string()
-    } else {
-        shown.iter().map(|x| format!("{}:{}", x.at_us, x.late_us)).collect::<Vec<_>>().join(",")
-    };
-    format!(
-        "[LAGRAW] side={side} origin_unix_us={origin_unix_us} xfer={xf} n={} printed={} s={s}",
-        samples.len(),
-        shown.len()
-    )
+    raw_line("LAGRAW", side, origin_unix_us, xfer, samples.iter().map(|s| (s.at_us, s.late_us)), cap)
 }
 
 /// The lag probe task body.
@@ -187,6 +349,10 @@ pub struct ThreadSample {
     pub tid: u32,
     pub comm: String,
     pub ticks: u64,
+    /// `run_delay` (ns, `/proc/.../schedstat` field 2) under `RWM_RTOBS=2`:
+    /// `None` = not collected (the `[THR] os` line is then unchanged),
+    /// `Some(None)` = collected but unreadable, `Some(Some(ns))` = read.
+    pub delay_ns: Option<Option<u64>>,
 }
 
 /// A point-in-time reading of every counter `[THR]` prints.
@@ -205,6 +371,9 @@ pub struct Snapshot {
     /// Threading R1 (`RWM_RTOBS=2`; empty otherwise): every receiver task's
     /// section CPU and backlog.
     rx: Vec<crate::task_obs::RxSecSample>,
+    /// Sender diagnosis (`RWM_RTOBS=2`; empty otherwise): the sender loop's
+    /// section counters.
+    tx: Vec<crate::task_obs::TxSecSample>,
 }
 
 /// Parse one `/proc/<pid>/task/<tid>/stat` record: `(comm, utime + stime)`.
@@ -226,7 +395,7 @@ pub fn parse_task_stat(stat: &str) -> Option<(String, u64)> {
 }
 
 #[cfg(target_os = "linux")]
-fn read_threads() -> Option<Vec<ThreadSample>> {
+fn read_threads(with_delay: bool) -> Option<Vec<ThreadSample>> {
     let mut out = Vec::new();
     for e in std::fs::read_dir("/proc/self/task").ok()?.flatten() {
         let Some(tid) = e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
@@ -237,7 +406,12 @@ fn read_threads() -> Option<Vec<ThreadSample>> {
             continue;
         };
         if let Some((comm, ticks)) = parse_task_stat(&stat) {
-            out.push(ThreadSample { tid, comm, ticks });
+            // The thread's `schedstat` (CONFIG_SCHED_INFO): one more small
+            // /proc read per thread, only under the deep gauge.
+            let delay_ns = with_delay.then(|| {
+                std::fs::read_to_string(e.path().join("schedstat")).ok().and_then(|s| parse_schedstat(&s))
+            });
+            out.push(ThreadSample { tid, comm, ticks, delay_ns });
         }
     }
     out.sort_by_key(|t| t.tid);
@@ -245,7 +419,7 @@ fn read_threads() -> Option<Vec<ThreadSample>> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn read_threads() -> Option<Vec<ThreadSample>> {
+fn read_threads(_with_delay: bool) -> Option<Vec<ThreadSample>> {
     None
 }
 
@@ -306,8 +480,21 @@ pub fn thr_lines(
                     .map_or(0, |b| b.ticks);
                 let cpu = t.ticks.saturating_sub(base) as f64 / hz;
                 cpu_sum += cpu;
+                // `run_delay_us` (RWM_RTOBS=2): the thread's time runnable
+                // but not running over the window; `-` if either end is
+                // unreadable. A thread born in the window counts from 0.
+                let delay = t.delay_ns.map_or_else(String::new, |now| {
+                    let base = match t_from.and_then(|f| f.iter().find(|b| b.tid == t.tid)) {
+                        None => Some(0),
+                        Some(b) => b.delay_ns.flatten(),
+                    };
+                    match (now, base) {
+                        (Some(n), Some(b)) => format!(" run_delay_us={}", n.saturating_sub(b) / 1_000),
+                        _ => " run_delay_us=-".to_string(),
+                    }
+                });
                 out.push(format!(
-                    "[THR] os phase={phase} side={side}{extra} tid={} comm={} cpu_s={cpu:.3} cores={:.3} wall_s={wall_s:.3}",
+                    "[THR] os phase={phase} side={side}{extra} tid={} comm={} cpu_s={cpu:.3} cores={:.3} wall_s={wall_s:.3}{delay}",
                     t.tid,
                     t.comm,
                     cpu / wall_s,
@@ -336,6 +523,8 @@ struct Obs {
     /// to it, so `[LAGRAW]` samples can be joined to `[LPOLL]` end times.
     origin_unix_us: u64,
     lag: Arc<LagLog>,
+    /// The OS reference clock's log (`RWM_RTOBS=2`, Linux; empty otherwise).
+    oslag: Arc<OsLagLog>,
     side: OnceLock<&'static str>,
     /// The last `emit_window`'s bounds (µs since `origin`), for `[LAGRAW]`.
     xfer: Mutex<Option<(u64, u64)>>,
@@ -541,6 +730,12 @@ pub fn arm() {
     arm_unconditionally();
 }
 
+/// Whether the OS reference clock runs (and prints) in this process: the deep
+/// gauge on Linux; nothing elsewhere.
+fn os_ref_active() -> bool {
+    cfg!(target_os = "linux") && crate::task_obs::deep()
+}
+
 /// Whether the observer is armed in this process.
 pub fn armed() -> bool {
     OBS.get().is_some()
@@ -550,20 +745,34 @@ pub fn armed() -> bool {
 fn arm_unconditionally() {
     let handle = tokio::runtime::Handle::current();
     let origin = Instant::now();
+    // Read next to `origin`: the OS reference thread's `at_us` axis.
+    #[cfg(target_os = "linux")]
+    let origin_mono_ns = mono_clock_ns();
     let origin_unix_us = crate::task_obs::unix_us();
     let lag = Arc::new(LagLog::default());
+    let oslag = Arc::new(OsLagLog::default());
     if OBS
         .set(Obs {
             handle: handle.clone(),
             origin,
             origin_unix_us,
             lag: lag.clone(),
+            oslag: oslag.clone(),
             side: OnceLock::new(),
             xfer: Mutex::new(None),
         })
         .is_ok()
     {
         handle.spawn(lag_probe(lag, origin));
+        // The OS reference clock runs for the life of the process (the stop
+        // flag is only for the unit test).
+        #[cfg(target_os = "linux")]
+        if crate::task_obs::deep() {
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            if let Err(e) = spawn_os_ref(oslag, origin_mono_ns, stop) {
+                tracing::warn!("rp-osref thread not started: {e}");
+            }
+        }
     }
 }
 
@@ -592,11 +801,12 @@ pub fn snapshot() -> Option<Snapshot> {
     Some(Snapshot {
         at: Instant::now(),
         workers,
-        threads: read_threads(),
+        threads: read_threads(crate::task_obs::deep()),
         owners: owner_samples(),
         tasks: crate::task_obs::task_samples(),
         socks: crate::task_obs::sock_samples(),
         rx: crate::task_obs::rxsec_samples(),
+        tx: if crate::task_obs::deep() { crate::task_obs::txsec_samples() } else { Vec::new() },
     })
 }
 
@@ -611,6 +821,8 @@ fn io_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: Option<&
     v.extend(crate::task_obs::sock_lines(phase, side, extra, wall.as_secs_f64(), sb, &to.socks));
     let rb: &[crate::task_obs::RxSecSample] = from.map_or(&[], |f| f.rx.as_slice());
     v.extend(crate::task_obs::rxsec_lines(phase, side, extra, wall.as_secs_f64(), rb, &to.rx));
+    let xb: &[crate::task_obs::TxSecSample] = from.map_or(&[], |f| f.tx.as_slice());
+    v.extend(crate::task_obs::txsec_lines(phase, side, extra, wall.as_secs_f64(), xb, &to.tx));
     v
 }
 
@@ -638,6 +850,10 @@ pub fn emit_window(from: &Snapshot, extra: &str) {
     *o.xfer.lock() = Some((a, b));
     let lat = o.lag.window(a, b);
     crate::readout!("{}", lag_line("xfer", side, extra, &lat, o.lag.dropped.load(Ordering::Relaxed)));
+    if os_ref_active() {
+        let (late, skipped) = o.oslag.window(a, b);
+        crate::readout!("{}", os_lag_line("xfer", side, extra, &late, skipped));
+    }
     for l in io_lines("xfer", side, extra, wall, Some(from), &to) {
         crate::readout!("{l}");
     }
@@ -667,6 +883,10 @@ pub fn emit_run_end() {
         "{} final=1",
         lag_line("run", side, "", &lat, o.lag.dropped.load(Ordering::Relaxed))
     );
+    if os_ref_active() {
+        let (late, skipped) = o.oslag.window(0, u64::MAX);
+        crate::readout!("{}", os_lag_line("run", side, "", &late, skipped));
+    }
     for l in io_lines("run", side, "", wall, None, &to) {
         crate::readout!("{l}");
     }
@@ -674,6 +894,9 @@ pub fn emit_run_end() {
     if crate::task_obs::deep() {
         let xfer = *o.xfer.lock();
         crate::readout!("{}", lag_raw_line(side, o.origin_unix_us, xfer, &o.lag.all(), LAGRAW_PRINT_CAP));
+        if os_ref_active() {
+            crate::readout!("{}", os_lag_raw_line(side, o.origin_unix_us, xfer, &o.oslag.all(), LAGRAW_PRINT_CAP));
+        }
         let (polls, dropped) = crate::task_obs::long_polls();
         for l in crate::task_obs::lpoll_lines(side, &polls, dropped, crate::task_obs::LPOLL_PRINT_CAP) {
             crate::readout!("{l}");
@@ -714,11 +937,11 @@ mod tests {
         let to_w = [
             WorkerSample { busy: Duration::from_millis(1100), park: 30, unpark: 25 },
         ];
-        let from_t = [ThreadSample { tid: 11, comm: "rp-w-0".into(), ticks: 50 }];
+        let from_t = [ThreadSample { tid: 11, comm: "rp-w-0".into(), ticks: 50, delay_ns: None }];
         let to_t = [
-            ThreadSample { tid: 11, comm: "rp-w-0".into(), ticks: 150 },
+            ThreadSample { tid: 11, comm: "rp-w-0".into(), ticks: 150, delay_ns: None },
             // A thread born inside the window counts from 0.
-            ThreadSample { tid: 12, comm: "raptorpath".into(), ticks: 40 },
+            ThreadSample { tid: 12, comm: "raptorpath".into(), ticks: 40, delay_ns: None },
         ];
         let l = thr_lines(
             "xfer",
@@ -820,6 +1043,108 @@ mod tests {
         );
         let l = lag_line("xfer", "server", " obj=1", &[100, 200, 300], 0);
         assert!(l.contains("n=3 p50_us=200 p99_us=298 max_us=300 min_us=100 dropped=0"), "{l}");
+    }
+
+    #[test]
+    fn the_oslag_line_mirrors_the_lag_line_and_counts_skips() {
+        assert_eq!(
+            os_lag_line("run", "client", "", &[], 0),
+            "[OSLAG] phase=run side=client n=0 p50_us=- p99_us=- max_us=- min_us=- skipped=0"
+        );
+        let l = os_lag_line("xfer", "server", " obj=1", &[100, 200, 300], 2);
+        assert_eq!(l, "[OSLAG] phase=xfer side=server obj=1 n=3 p50_us=200 p99_us=298 max_us=300 min_us=100 skipped=2");
+    }
+
+    #[test]
+    fn the_oslagraw_line_has_the_lagraw_shape() {
+        let s = |at_us, late_us| OsLagSample { at_us, late_us, skipped: 0 };
+        let v = [s(10_000, 60), s(20_000, 2_500)];
+        assert_eq!(
+            os_lag_raw_line("client", 1_700_000_000_000_000, Some((5_000, 25_000)), &v, 20_000),
+            "[OSLAGRAW] side=client origin_unix_us=1700000000000000 xfer=5000-25000 n=2 printed=2 s=10000:60,20000:2500"
+        );
+        assert_eq!(os_lag_raw_line("server", 7, None, &[], 20_000), "[OSLAGRAW] side=server origin_unix_us=7 xfer=- n=0 printed=0 s=-");
+        assert_eq!(
+            os_lag_raw_line("server", 7, None, &v, 1),
+            "[OSLAGRAW] side=server origin_unix_us=7 xfer=- n=2 printed=1 s=10000:60"
+        );
+    }
+
+    #[test]
+    fn the_oslag_window_filters_by_time_and_sums_skips() {
+        let log = OsLagLog::default();
+        log.push(OsLagSample { at_us: 10, late_us: 5, skipped: 1 });
+        log.push(OsLagSample { at_us: 20, late_us: 6, skipped: 2 });
+        log.push(OsLagSample { at_us: 30, late_us: 7, skipped: 4 });
+        assert_eq!(log.window(15, 30), (vec![6, 7], 6));
+        assert_eq!(log.window(0, u64::MAX), (vec![5, 6, 7], 7));
+        assert_eq!(log.all().len(), 3);
+    }
+
+    #[test]
+    fn a_missed_deadline_advances_past_now_and_counts_the_skips() {
+        // On time: the next tick, nothing skipped.
+        assert_eq!(advance_deadline(10, 12, 10), (20, 0));
+        // Woke exactly at the next deadline: it is not in the past.
+        assert_eq!(advance_deadline(10, 20, 10), (20, 0));
+        // 20 and 30 already passed at 35: skipped, next is 40.
+        assert_eq!(advance_deadline(10, 35, 10), (40, 2));
+        assert_eq!(advance_deadline(10, 31, 10), (40, 2));
+        assert_eq!(advance_deadline(10, 30, 10), (30, 1));
+    }
+
+    #[test]
+    fn schedstat_field_two_is_the_run_delay() {
+        assert_eq!(parse_schedstat("123456 789000 42\n"), Some(789_000));
+        assert_eq!(parse_schedstat("1"), None);
+        assert_eq!(parse_schedstat("1 x 3"), None);
+    }
+
+    #[test]
+    fn the_thr_os_line_appends_run_delay_only_when_collected() {
+        let w = [WorkerSample::default()];
+        let t = |ns: Option<Option<u64>>| ThreadSample { tid: 11, comm: "rp-w-0".into(), ticks: 100, delay_ns: ns };
+        let line = |from: Option<Vec<ThreadSample>>, to: Vec<ThreadSample>| {
+            let l = thr_lines(
+                "xfer",
+                "client",
+                "",
+                Duration::from_secs(2),
+                from.as_ref().map(|f| (&w[..], Some(&f[..]))),
+                (&w[..], Some(&to[..])),
+                100.0,
+            );
+            l.into_iter().find(|x| x.starts_with("[THR] os ")).unwrap()
+        };
+        // Not collected: the shipped line, byte for byte.
+        assert!(line(None, vec![t(None)]).ends_with(" cpu_s=1.000 cores=0.500 wall_s=2.000"));
+        // Windowed difference, ns to us.
+        let l = line(Some(vec![t(Some(Some(1_000_000)))]), vec![t(Some(Some(4_500_000)))]);
+        assert!(l.ends_with(" wall_s=2.000 run_delay_us=3500"), "{l}");
+        // A thread born in the window counts from 0.
+        assert!(line(Some(vec![]), vec![t(Some(Some(2_000_000)))]).ends_with(" run_delay_us=2000"));
+        // Unreadable on either end: `-`.
+        assert!(line(None, vec![t(Some(None))]).ends_with(" run_delay_us=-"));
+        assert!(line(Some(vec![t(Some(None))]), vec![t(Some(Some(5)))]).ends_with(" run_delay_us=-"));
+    }
+
+    /// Linux only (compiled out elsewhere, e.g. on the Windows dev host): the
+    /// reference thread produces the 10 ms cadence and stops on request.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_os_reference_thread_samples_at_the_tick() {
+        let log = Arc::new(OsLagLog::default());
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let origin_mono = mono_clock_ns();
+        let h = spawn_os_ref(log.clone(), origin_mono, stop.clone()).expect("spawn");
+        std::thread::sleep(Duration::from_millis(150));
+        stop.store(true, Ordering::Relaxed);
+        h.join().unwrap();
+        let (late, _) = log.window(0, u64::MAX);
+        assert!(late.len() >= 10, "{} samples in 150 ms", late.len());
+        let all = log.all();
+        assert!(all.windows(2).all(|w| w[1].at_us > w[0].at_us), "timeline is monotone");
+        assert!(all[0].at_us < 150_000 + 50_000);
     }
 
     #[test]
