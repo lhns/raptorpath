@@ -61,6 +61,7 @@ pub(crate) use tx_inputs::{
 };
 pub(crate) mod emit_burst;
 pub(crate) mod seq_ring;
+pub mod seq_bits;
 pub use sack::*;
 
 use diag::{DiagCtx, DiagInputs, DiagState, WAIT_BUCKETS};

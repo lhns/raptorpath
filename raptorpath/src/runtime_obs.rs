@@ -173,6 +173,9 @@ pub struct Snapshot {
     /// task's and every timed quinn socket's counters.
     tasks: Vec<crate::task_obs::TaskSample>,
     socks: Vec<crate::task_obs::SockSample>,
+    /// Threading R1 (`RWM_RTOBS=2`; empty otherwise): every receiver task's
+    /// section CPU and backlog.
+    rx: Vec<crate::task_obs::RxSecSample>,
 }
 
 /// Parse one `/proc/<pid>/task/<tid>/stat` record: `(comm, utime + stime)`.
@@ -343,6 +346,12 @@ pub struct OwnerSample {
     pub fl_sends: u64,
     pub fl_full: u64,
     pub fl_full_ns: u64,
+    /// Threading R1: the inbound-`Vec` pool's hits and misses (always
+    /// counted), and the owner command channel's depth at each drain
+    /// (`RWM_RTOBS=2` only).
+    pub ib_hit: u64,
+    pub ib_miss: u64,
+    pub cmdq: crate::task_obs::DepthSample,
 }
 
 fn owner_samples() -> Vec<OwnerSample> {
@@ -386,6 +395,9 @@ fn owner_samples() -> Vec<OwnerSample> {
                 fl_sends: c.fl_sends.load(Relaxed),
                 fl_full: c.fl_full.load(Relaxed),
                 fl_full_ns: c.fl_full_ns.load(Relaxed),
+                ib_hit: c.ib_hit.load(Relaxed),
+                ib_miss: c.ib_miss.load(Relaxed),
+                cmdq: c.cmdq.sample(),
             }
         })
         .collect()
@@ -406,6 +418,11 @@ fn owner_samples() -> Vec<OwnerSample> {
 /// sender's channel full, and the wall until forwarded); `fl_sends=`,
 /// `fl_full=`, `fl_full_us=` (producer batches handed to this owner, those
 /// that found its channel full, and the producers' wait).
+///
+/// Threading R1 appends `ibp_hit=`/`ibp_miss=` (the inbound-`Vec` pool; always
+/// counted) and `cmdq_n=`/`cmdq_p50=`/`cmdq_p99=`/`cmdq_max=` (the owner
+/// command channel's depth at each drain, `RWM_RTOBS=2`; `-` when empty;
+/// the max is run-cumulative).
 pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[OwnerSample], to: &[OwnerSample]) -> Vec<String> {
     let wall_s = wall.as_secs_f64().max(1e-9);
     to.iter()
@@ -413,6 +430,7 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
             let b = from.iter().find(|f| f.serial == t.serial).cloned().unwrap_or_default();
             let d = |x: u64, y: u64| x.saturating_sub(y);
             let q_wall_ns = d(t.q_wall_ns, b.q_wall_ns);
+            let (cq_n, cq_p50, cq_p99, cq_max) = t.cmdq.minus(&b.cmdq).tokens();
             let (asleep, frac) = if t.q_cpu_unavailable || t.q_secs == 0 {
                 ("-".to_string(), "-".to_string())
             } else {
@@ -428,7 +446,7 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
                  ack_batches={} ack_dg={} send_err={} too_large_staged={} orphaned={} qcalls={} q_secs={} q_wall_us={} q_asleep_us={asleep} \
                  asleep_frac={frac} drv_on={} drv_off={} wall_s={wall_s:.3} \
                  qk_snd={} qk_rd={} qk_pub={} rx_full={} rx_full_us={} ack_full={} ack_full_us={} \
-                 fl_sends={} fl_full={} fl_full_us={}",
+                 fl_sends={} fl_full={} fl_full_us={} ibp_hit={} ibp_miss={} cmdq_n={} cmdq_p50={} cmdq_p99={} cmdq_max={}",
                 t.path,
                 t.rt,
                 d(t.polls, b.polls),
@@ -460,6 +478,12 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
                 d(t.fl_sends, b.fl_sends),
                 d(t.fl_full, b.fl_full),
                 d(t.fl_full_ns, b.fl_full_ns) / 1_000,
+                d(t.ib_hit, b.ib_hit),
+                d(t.ib_miss, b.ib_miss),
+                cq_n,
+                cq_p50,
+                cq_p99,
+                cq_max,
             )
         })
         .collect()
@@ -535,6 +559,7 @@ pub fn snapshot() -> Option<Snapshot> {
         owners: owner_samples(),
         tasks: crate::task_obs::task_samples(),
         socks: crate::task_obs::sock_samples(),
+        rx: crate::task_obs::rxsec_samples(),
     })
 }
 
@@ -547,6 +572,8 @@ fn io_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: Option<&
     v.extend(crate::task_obs::task_lines(phase, side, extra, wall.as_secs_f64(), tb, &to.tasks));
     let sb: &[crate::task_obs::SockSample] = from.map_or(&[], |f| f.socks.as_slice());
     v.extend(crate::task_obs::sock_lines(phase, side, extra, wall.as_secs_f64(), sb, &to.socks));
+    let rb: &[crate::task_obs::RxSecSample] = from.map_or(&[], |f| f.rx.as_slice());
+    v.extend(crate::task_obs::rxsec_lines(phase, side, extra, wall.as_secs_f64(), rb, &to.rx));
     v
 }
 
@@ -710,7 +737,9 @@ mod tests {
         assert!(s.contains(" drv_on=7 drv_off=0 wall_s=2.000"), "{s}");
         // Threading Q3 step 1: the appended deep tokens (zeros when off).
         assert!(s.contains(" qk_snd=0/0/0/0/0/0/0/0 qk_rd=0/0/0/0/0/0/0/0 "), "{s}");
-        assert!(s.ends_with(" fl_sends=0 fl_full=0 fl_full_us=0"), "{s}");
+        assert!(s.contains(" fl_sends=0 fl_full=0 fl_full_us=0 "), "{s}");
+        // Threading R1: the appended pool / command-depth tokens.
+        assert!(s.ends_with(" ibp_hit=0 ibp_miss=0 cmdq_n=0 cmdq_p50=- cmdq_p99=- cmdq_max=-"), "{s}");
         let deep = [OwnerSample {
             serial: 4,
             k_read: crate::task_obs::SpanSample {

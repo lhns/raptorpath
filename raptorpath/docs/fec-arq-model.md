@@ -2398,7 +2398,9 @@ status §12 diagnosis addendum) govern it:
   32 processed messages, so an ack never waits behind more than one owner
   batch of processing — its WindowAcks in the control lane of the same
   channel, still computed after decode). The
-  owner forwards inbound datagrams as one batch per poll. Consumers drain
+  owner forwards inbound datagrams as one batch per poll, in a `Vec` the
+  receiver hands back to the path's owner once drained (a per-path pool,
+  threading R1). Consumers drain
   with `recv_many` — one coop-budget unit per call, never per message —
   and wake coalescing comes from the channel itself: a busy owner is not
   parked on it, so a producer's send wakes nothing.

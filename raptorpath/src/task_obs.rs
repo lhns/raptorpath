@@ -540,6 +540,290 @@ impl quinn::AsyncUdpSocket for TimedSocket {
     }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Threading R1 — the receiver task's per-section CPU and backlogs
+// (`RWM_RTOBS=2` only)
+
+const DEPTH_BUCKETS: usize = 96;
+
+/// Quarter-octave bucket of a depth: exact below 16, then four buckets per
+/// power of two (values above 2^21 share the last octave).
+fn depth_bucket(v: u64) -> usize {
+    if v < 16 {
+        return v as usize;
+    }
+    let v = v.min((1 << 21) - 1);
+    let e = 63 - v.leading_zeros() as usize;
+    let frac = ((v >> (e - 2)) & 3) as usize;
+    16 + (e - 4) * 4 + frac
+}
+
+/// The lower bound of bucket `i` (the value a quantile reads back).
+fn depth_lo(i: usize) -> u64 {
+    if i < 16 {
+        return i as u64;
+    }
+    let (e, frac) = (4 + (i - 16) / 4, ((i - 16) % 4) as u64);
+    (4 + frac) << (e - 2)
+}
+
+/// A queue-depth histogram: percentiles to within a quarter octave, and the
+/// exact maximum. Written by one task, read at report time.
+pub struct DepthHist {
+    b: Box<[AtomicU64]>,
+    n: AtomicU64,
+    max: AtomicU64,
+}
+
+impl Default for DepthHist {
+    fn default() -> Self {
+        Self {
+            b: (0..DEPTH_BUCKETS).map(|_| AtomicU64::new(0)).collect(),
+            n: AtomicU64::new(0),
+            max: AtomicU64::new(0),
+        }
+    }
+}
+
+impl DepthHist {
+    pub fn record(&self, v: u64) {
+        self.b[depth_bucket(v)].fetch_add(1, Relaxed);
+        self.n.fetch_add(1, Relaxed);
+        self.max.fetch_max(v, Relaxed);
+    }
+
+    pub fn sample(&self) -> DepthSample {
+        DepthSample {
+            b: self.b.iter().map(|x| x.load(Relaxed)).collect(),
+            n: self.n.load(Relaxed),
+            max: self.max.load(Relaxed),
+        }
+    }
+}
+
+/// A point-in-time copy of a [`DepthHist`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DepthSample {
+    b: Vec<u64>,
+    pub n: u64,
+    /// Run-cumulative: a maximum cannot be differenced, so a window's line
+    /// reads the maximum since the process started.
+    pub max: u64,
+}
+
+impl DepthSample {
+    pub fn minus(&self, base: &DepthSample) -> DepthSample {
+        DepthSample {
+            b: self
+                .b
+                .iter()
+                .enumerate()
+                .map(|(i, x)| x.saturating_sub(base.b.get(i).copied().unwrap_or(0)))
+                .collect(),
+            n: self.n.saturating_sub(base.n),
+            max: self.max,
+        }
+    }
+
+    /// The `p`-quantile (bucket lower bound), `None` when empty.
+    pub fn quantile(&self, p: f64) -> Option<u64> {
+        if self.n == 0 {
+            return None;
+        }
+        let want = ((p * self.n as f64).ceil() as u64).clamp(1, self.n);
+        let mut acc = 0;
+        for (i, c) in self.b.iter().enumerate() {
+            acc += c;
+            if acc >= want {
+                return Some(depth_lo(i));
+            }
+        }
+        None
+    }
+
+    /// `(n, p50, p99, max)` as token values; `-` when empty.
+    pub fn tokens(&self) -> (u64, String, String, String) {
+        let q = |p| self.quantile(p).map_or_else(|| "-".to_string(), |v| v.to_string());
+        let max = if self.n == 0 { "-".to_string() } else { self.max.to_string() };
+        (self.n, q(0.50), q(0.99), max)
+    }
+}
+
+/// The receiver loop's timed sections (the `[RXSEC]` split).
+#[derive(Clone, Copy, Debug)]
+pub enum RxSec {
+    /// `add_symbol`: the window decoder.
+    Decode = 0,
+    /// The reorder buffer and the hand-off to the consumer.
+    Deliv = 1,
+    /// The WindowAck / per-batch Ack build and staging, SACK ranges.
+    Ack = 2,
+    /// The always-fed `[ETA]` / `[LAT]` / `[SUCC]` / `[LATE]` bookkeeping.
+    Book = 3,
+}
+
+/// One receiver task's section counters.
+pub struct RxSecCtr {
+    pub serial: u64,
+    /// Thread CPU ns per [`RxSec`], then the whole message (index 4).
+    ns: [AtomicU64; 5],
+    msgs: AtomicU64,
+    data: AtomicU64,
+    backlog: DepthHist,
+}
+
+fn rxsec_registry() -> &'static parking_lot::Mutex<Vec<Arc<RxSecCtr>>> {
+    static R: OnceLock<parking_lot::Mutex<Vec<Arc<RxSecCtr>>>> = OnceLock::new();
+    R.get_or_init(|| parking_lot::Mutex::new(Vec::new()))
+}
+
+/// The receiver task's handle on its counters: a no-op unless the deep gauge
+/// is on, so the default path pays one predictable branch per call.
+pub struct RxProbe {
+    c: Option<Arc<RxSecCtr>>,
+}
+
+impl RxProbe {
+    pub fn new() -> Self {
+        Self::with(deep())
+    }
+
+    /// [`Self::new`] with an explicit switch (tests).
+    pub fn with(on: bool) -> Self {
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let c = on.then(|| {
+            let c = Arc::new(RxSecCtr {
+                serial: SERIAL.fetch_add(1, Relaxed),
+                ns: Default::default(),
+                msgs: AtomicU64::new(0),
+                data: AtomicU64::new(0),
+                backlog: DepthHist::default(),
+            });
+            rxsec_registry().lock().push(c.clone());
+            c
+        });
+        Self { c }
+    }
+
+    pub fn counters(&self) -> Option<&Arc<RxSecCtr>> {
+        self.c.as_ref()
+    }
+
+    /// Start a section: the thread's CPU clock now (0 when off).
+    #[inline]
+    pub fn begin(&self) -> u64 {
+        if self.c.is_some() {
+            thread_cpu_ns().unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
+    /// End a named section started at `t0`.
+    #[inline]
+    pub fn end(&self, s: RxSec, t0: u64) {
+        if let Some(c) = &self.c {
+            let d = thread_cpu_ns().unwrap_or(0).saturating_sub(t0);
+            c.ns[s as usize].fetch_add(d, Relaxed);
+        }
+    }
+
+    /// End a message started at `t0` (the total the named sections sit in).
+    #[inline]
+    pub fn end_msg(&self, t0: u64, is_data: bool) {
+        if let Some(c) = &self.c {
+            let d = thread_cpu_ns().unwrap_or(0).saturating_sub(t0);
+            c.ns[4].fetch_add(d, Relaxed);
+            c.msgs.fetch_add(1, Relaxed);
+            c.data.fetch_add(is_data as u64, Relaxed);
+        }
+    }
+
+    /// The backlog (messages queued) at one `recv_many` return.
+    #[inline]
+    pub fn backlog(&self, n: usize) {
+        if let Some(c) = &self.c {
+            c.backlog.record(n as u64);
+        }
+    }
+}
+
+impl Default for RxProbe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One receiver's counters at a snapshot.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RxSecSample {
+    pub serial: u64,
+    pub ns: [u64; 5],
+    pub msgs: u64,
+    pub data: u64,
+    pub backlog: DepthSample,
+}
+
+pub fn rxsec_samples() -> Vec<RxSecSample> {
+    rxsec_registry()
+        .lock()
+        .iter()
+        .map(|c| RxSecSample {
+            serial: c.serial,
+            ns: std::array::from_fn(|i| c.ns[i].load(Relaxed)),
+            msgs: c.msgs.load(Relaxed),
+            data: c.data.load(Relaxed),
+            backlog: c.backlog.sample(),
+        })
+        .collect()
+}
+
+/// Render the `[RXSEC]` lines for the window `from → to`: per-message thread
+/// CPU of each section (ns), `other` = the whole message minus the named
+/// sections, `cores` = the messages' CPU over the window wall, and the
+/// backlog (messages queued at each `recv_many` return) p50 / p99 / max
+/// (`bk_max` is run-cumulative). CPU outside the message handler (the loop
+/// head, `recv_many`) is the `[TASK] task=receiver` poll CPU minus
+/// `total_us`. Pure, so the token set is tested.
+pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[RxSecSample], to: &[RxSecSample]) -> Vec<String> {
+    let wall_s = wall_s.max(1e-9);
+    to.iter()
+        .filter_map(|t| {
+            let b = from.iter().find(|f| f.serial == t.serial).cloned().unwrap_or_default();
+            let d = |i: usize| t.ns[i].saturating_sub(b.ns[i]);
+            let msgs = t.msgs.saturating_sub(b.msgs);
+            if msgs == 0 {
+                return None;
+            }
+            let named = d(0) + d(1) + d(2) + d(3);
+            let other = d(4).saturating_sub(named);
+            let pm = |ns: u64| ns as f64 / msgs as f64;
+            let (bn, p50, p99, bmax) = t.backlog.minus(&b.backlog).tokens();
+            Some(format!(
+                "[RXSEC] phase={phase} side={side}{extra} rx={} msgs={msgs} data={} total_us={} decode_us={} \
+                 deliv_us={} ack_us={} book_us={} other_us={} total_ns_pm={:.0} decode_ns_pm={:.0} \
+                 deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} cores={:.3} \
+                 bk_n={bn} bk_p50={p50} bk_p99={p99} bk_max={bmax} wall_s={wall_s:.3}",
+                t.serial,
+                t.data.saturating_sub(b.data),
+                d(4) / 1_000,
+                d(0) / 1_000,
+                d(1) / 1_000,
+                d(2) / 1_000,
+                d(3) / 1_000,
+                other / 1_000,
+                pm(d(4)),
+                pm(d(0)),
+                pm(d(1)),
+                pm(d(2)),
+                pm(d(3)),
+                pm(other),
+                d(4) as f64 / 1e9 / wall_s,
+            ))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,5 +876,65 @@ mod tests {
         let to = vec![SockSample { serial: 1, label: "client-p0".into(), v: [100, 2_000_000, 900, 0, 50, 500_000, 1000] }];
         let l = sock_lines("xfer", "client", "", 1.0, &[], &to);
         assert!(l[0].contains(" sock=client-p0 send_calls=100 send_us=2000 send_dg=900 send_wb=0 gso=9.00 send_us_per_call=20.00 "), "{}", l[0]);
+    }
+
+    #[test]
+    fn the_depth_histogram_reads_back_quantiles_and_the_exact_max() {
+        let h = DepthHist::default();
+        assert_eq!(h.sample().tokens(), (0, "-".into(), "-".into(), "-".into()));
+        for v in 0..100u64 {
+            h.record(v);
+        }
+        h.record(5_000);
+        let s = h.sample();
+        assert_eq!(s.n, 101);
+        // Exact below 16; the bucket lower bound above it (<= 25 % low).
+        assert_eq!(s.quantile(0.10), Some(10));
+        let p50 = s.quantile(0.50).unwrap();
+        assert!((40..=50).contains(&p50), "{p50}");
+        assert_eq!(s.max, 5_000);
+        for v in [16u64, 17, 20, 31, 32, 1000, 2_000_000] {
+            let lo = depth_lo(depth_bucket(v));
+            assert!(lo <= v && v < lo + (lo / 4).max(1) * 2, "{v} -> {lo}");
+        }
+        // A window is the difference of two samples.
+        let a = h.sample();
+        h.record(3);
+        let w = h.sample().minus(&a);
+        assert_eq!((w.n, w.quantile(0.5)), (1, Some(3)));
+    }
+
+    #[test]
+    fn the_rxsec_line_splits_a_message_into_its_sections() {
+        let to = vec![RxSecSample {
+            serial: 2,
+            ns: [4_000_000, 1_000_000, 2_000_000, 1_000_000, 10_000_000],
+            msgs: 1000,
+            data: 900,
+            backlog: DepthSample::default(),
+        }];
+        let l = rxsec_lines("xfer", "server", "", 1.0, &[], &to);
+        assert_eq!(l.len(), 1);
+        let s = &l[0];
+        assert!(s.starts_with("[RXSEC] phase=xfer side=server rx=2 msgs=1000 data=900 total_us=10000 decode_us=4000 "), "{s}");
+        assert!(s.contains(" other_us=2000 total_ns_pm=10000 decode_ns_pm=4000 "), "{s}");
+        assert!(s.contains(" cores=0.010 bk_n=0 bk_p50=- bk_p99=- bk_max=- "), "{s}");
+        assert!(rxsec_lines("xfer", "server", "", 1.0, &to, &to).is_empty(), "no messages in the window");
+    }
+
+    #[test]
+    fn an_off_probe_records_nothing_and_an_on_probe_registers() {
+        let off = RxProbe::with(false);
+        assert_eq!(off.begin(), 0);
+        off.end(RxSec::Decode, 0);
+        off.end_msg(0, true);
+        off.backlog(5);
+        assert!(off.counters().is_none());
+        let on = RxProbe::with(true);
+        on.backlog(7);
+        on.end_msg(0, true);
+        let serial = on.counters().unwrap().serial;
+        let s = rxsec_samples().into_iter().find(|s| s.serial == serial).unwrap();
+        assert_eq!((s.msgs, s.data, s.backlog.n), (1, 1, 1));
     }
 }
