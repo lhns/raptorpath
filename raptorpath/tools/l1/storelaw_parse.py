@@ -9,7 +9,8 @@ delta leg (LAW at another dial point).
     storelaw_parse.py row   <cell> <arm> <seed> <rep> <rc> <wall_s> <drv> <cli> <srv> [cotenant] [sha]
     storelaw_parse.py smoke <ledger>
     storelaw_parse.py check <ledger>
-    storelaw_parse.py score <ledger>...
+    storelaw_parse.py score <ledger>...        (section 18)
+    storelaw_parse.py score19 <ledger>...      (section 19: MAIN = ce60079 vs LAW, same session)
 
 Scoring constants (one definition each, restated in the pre-registration):
 """
@@ -25,7 +26,7 @@ sys.path.insert(0, HERE)
 import l1common as lc  # noqa: E402
 import stage3_parse as sp  # noqa: E402
 
-for _a, _h in (("LAW", "bulk"), ("CTL", "bulk"), ("LAW-auto", "auto"), ("LAW-realtime", "realtime")):
+for _a, _h in (("LAW", "bulk"), ("CTL", "bulk"), ("MAIN", "bulk"), ("LAW-auto", "auto"), ("LAW-realtime", "realtime")):
     sp.ARM_SPEC[_a] = ("window", "Rlc", _h, "ACTIVE")
 
 PIN_MIN = 0.25            # PINNED: LAW [SUMCAP] pin >= this
@@ -111,6 +112,17 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     if arm == "CTL":
         if row["sumcap_eng"] not in (None, 0):
             p.append(f"ctl-sumcap-eng={row['sumcap_eng']}")
+    elif arm == "MAIN":
+        # §19: main's single-path chain at c1s (eng=0/0, win constant 1024); the
+        # same pooled law as LAW at every N >= 2 cell.
+        if cell == "c1s-400":
+            if row["sumcap_eng"] not in (None, 0):
+                p.append(f"main-sumcap-eng={row['sumcap_eng']}")
+            if row["win_cap_n"] < 4 or row["win_cap_distinct"] != 1 or row["win_cap_med"] != 1024:
+                p.append(f"main-win-not-1024={row['win_cap_med']}/{row['win_cap_distinct']}")
+        else:
+            if not row["sumcap_eng"]:
+                p.append("main-sumcap-eng-zero-at-N2")
     else:
         if not row["sumcap_eng"]:
             p.append("law-sumcap-eng-zero")
@@ -273,6 +285,113 @@ def score(paths, out=print):
     return 0
 
 
+def contrast(rows, cell, a, b, out):
+    """LAW (a) vs reference (b) at one cell: goodput, A_x, pin, outcome list."""
+    A, B = live(rows, cell, a), live(rows, cell, b)
+    res = {"cell": cell, "n": (len(A), len(B)), "unscoreable": len(A) < MIN_LIVE or len(B) < MIN_LIVE}
+    out(f"{cell}: {a} n={len(A)} {b} n={len(B)}")
+    if res["unscoreable"]:
+        out("  UNSCOREABLE (fewer than %d live rows in an arm)" % MIN_LIVE)
+        return res
+    ga, gb = col(A, "mbps"), col(B, "mbps")
+    sig = math.sqrt((sd(ga) ** 2 + sd(gb) ** 2) / 2)
+    d = mean(ga) - mean(gb)
+    xa, xb = col(A, "ax_p50_us"), col(B, "ax_p50_us")
+    xsig = math.sqrt((sd(xa) ** 2 + sd(xb) ** 2) / 2) if xa and xb else None
+    xd = (mean(xa) - mean(xb)) if xa and xb else None
+    pin = mean(col(A, "sumcap_pin"))
+    out(f"  goodput {a} {f(mean(ga))} [{f(min(ga))}-{f(max(ga))}] median {f(statistics.median(ga))}; "
+        f"{b} {f(mean(gb))} [{f(min(gb))}-{f(max(gb))}] median {f(statistics.median(gb))}; "
+        f"diff {f(d)} sigma_pooled {f(sig,2)} 2s={f(SIGMA_K*sig,2)}")
+    out(f"  A_x p50 us {a} {f(mean(xa),0)} {b} {f(mean(xb),0)} diff {f(xd,0)} sigma_pooled {f(xsig,0)}")
+    out(f"  {a} pin {f(pin,3)} floor {f(mean(col(A,'sumcap_floor')),3)} cap {f(mean(col(A,'sumcap_cap')),1)}; "
+        f"{b} pin {f(mean(col(B,'sumcap_pin')),3)} cap {f(mean(col(B,'sumcap_cap')),1)} win {f(mean(col(B,'win_cap_med')),0)}")
+    out(f"  rtt ms {a} {f(mean(col(A,'rtt_med')))} {b} {f(mean(col(B,'rtt_med')))}; paused% {f(mean(col(A,'paused_med')),0)}/{f(mean(col(B,'paused_med')),0)}; "
+        f"occ {f(mean(col(A,'occ_med')),2)}/{f(mean(col(B,'occ_med')),2)}; over-read {f(mean(col(A,'btlbw_overread')),1)}/{f(mean(col(B,'btlbw_overread')),1)}")
+    holds = []
+    if d < -SIGMA_K * sig:
+        holds.append("REFUTED")
+    if pin is not None and pin >= PIN_MIN:
+        holds.append("PINNED")
+    if abs(d) <= SIGMA_K * sig and xd is not None and xsig is not None and xd > SIGMA_K * xsig:
+        holds.append("LATENCY-COST")
+    if d > SIGMA_K * sig:
+        holds.append("GOODPUT-UP")
+    if abs(d) <= SIGMA_K * sig and xd is not None and xsig is not None and abs(xd) <= SIGMA_K * xsig \
+            and (pin is None or pin < PIN_MIN):
+        holds.append("INERT-AS-DERIVED")
+    first = next((h for h in ("REFUTED", "PINNED", "LATENCY-COST", "GOODPUT-UP", "INERT-AS-DERIVED") if h in holds),
+                 "OUTSIDE THE PRE-REGISTERED SET")
+    res.update({"d": d, "sig": sig, "holds": holds, "first": first, "noop_fail": abs(d) > SIGMA_K * sig})
+    out(f"  outcomes that hold: {holds or ['OUTSIDE THE PRE-REGISTERED SET']}; first in order: {first}")
+    return res
+
+
+def score19(paths, out=print):
+    rows = rows_of(paths)
+    out("SAME-SESSION CONTROL SCORE (pre-registration: status.md §19)")
+    out("")
+    keys = sorted({(r["cell"], r["arm"]) for r in rows})
+    out("ROWS by (cell, arm): live / total / statuses")
+    for c, a in keys:
+        rs = [r for r in rows if r["cell"] == c and r["arm"] == a]
+        st = {}
+        for r in rs:
+            st[r["status"]] = st.get(r["status"], 0) + 1
+        out(f"  {c} {a}: live {len([r for r in rs if r['status']=='LIVE'])}/{len(rs)} {st}")
+    out("")
+    out("PER-ROW (mbps pin floor cap ask win occ paused rtt over ax50 ax95 status)")
+    for r in sorted(rows, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: mbps={f(r.get('mbps'))} "
+            f"pin={f(r.get('sumcap_pin'),3)} floor={f(r.get('sumcap_floor'),3)} cap={f(r.get('sumcap_cap'),1)} "
+            f"ask={f(r.get('sumcap_ask'),1)} win={f(r.get('win_cap_med'),0)} occ={f(r.get('occ_med'),2)} "
+            f"paused={f(r.get('paused_med'),0)} rtt={f(r.get('rtt_med'))} over={f(r.get('btlbw_overread'),1)} "
+            f"ax50={r.get('ax_p50_us')} ax95={r.get('ax_p95_us')} {r['status']} {','.join(r['problems'])}")
+    out("")
+    out("== c1s-400: LAW vs MAIN (section 18's outcome list and order) ==")
+    c1s = contrast(rows, SCORED_CELL, "LAW", "MAIN", out)
+    out("")
+    out("== N >= 2 no-op cells: LAW vs MAIN goodput, REFUTED-NOOP if |mean diff| > 2 sigma_pooled ==")
+    noop_fail, unscoreable = [], []
+    for cell in NOOP_CELLS:
+        r = contrast(rows, cell, "LAW", "MAIN", out)
+        if r["unscoreable"]:
+            unscoreable.append(cell)
+        elif r["noop_fail"]:
+            noop_fail.append(cell)
+            out(f"  -> REFUTED-NOOP at {cell}")
+        else:
+            out(f"  -> no-op holds at {cell}")
+    out("")
+    out("== VM-drift reading (not scored): goodput medians against the cross-session references ==")
+    refs = {"c1d-400": "section 15 MAIN 677.9-755.1; section 16 688-729", "c2-100": "section 15 MAIN 90.08-90.32",
+            "c8-100": "section 15 MAIN 82.9-102.9", "c1s-400": "section 15 MAIN 721.9-831.4 (other binary era)"}
+    for cell in ["c1d-400", "c2-100", "c8-100", "c1s-400"]:
+        parts = []
+        for a in ("LAW", "MAIN"):
+            g = col(live(rows, cell, a), "mbps")
+            parts.append(f"{a} median {f(statistics.median(g)) if g else '-'}")
+        out(f"  {cell}: {'; '.join(parts)}  [{refs[cell]}]")
+    out("")
+    out("== delta leg: Realtime rows (LAW) ==")
+    for cell in (SCORED_CELL, "c2-100"):
+        for r in sorted([r for r in rows if r["cell"] == cell and r["arm"] == "LAW-realtime"], key=lambda r: r["rep"]):
+            out(f"  {cell} realtime r{r['rep']}: {r['status']} dcap_q={r.get('dcap_q')} (want 0.05) "
+                f"mbps={f(r.get('mbps'))} pin={f(r.get('sumcap_pin'),3)} {','.join(r['problems'])}")
+    out("")
+    c1s_refuted = (not c1s["unscoreable"]) and "REFUTED" in c1s.get("holds", [])
+    ships = (not noop_fail) and (not c1s_refuted) and not c1s["unscoreable"] and not unscoreable
+    out("DECISION RULE (section 19): ships iff no REFUTED-NOOP and c1s is not REFUTED; PINNED and LATENCY-COST do not block.")
+    if noop_fail:
+        out(f"RESULT: REFUTED-NOOP at {noop_fail}")
+    elif unscoreable or c1s["unscoreable"]:
+        out(f"RESULT: UNSCOREABLE at {unscoreable + (['c1s-400'] if c1s['unscoreable'] else [])}")
+    else:
+        out("N >= 2: the section 18 CONTROL-MOVED is attributed to the cross-session reference.")
+        out(f"RESULT: {'SHIPS (c1s: ' + c1s['first'] + ')' if ships else 'c1s REFUTED -> does not ship'}")
+    return 0
+
+
 def check(path):
     t = open(path, errors="replace").read()
     ok = "SL-BATTERY-DONE" in t
@@ -313,6 +432,44 @@ def smoke(path):
     return 0
 
 
+def smoke19(path):
+    """Section 19 smoke: both binaries witnessed, and the named-hint fix live."""
+    rows = rows_of([path])
+    got = {(r["cell"], r["arm"]): r for r in rows}
+    need = [("c1s-400", "MAIN"), ("c1s-400", "LAW"), ("c2-100", "MAIN"), ("c2-100", "LAW"),
+            ("c1s-400", "LAW-realtime")]
+    bad = []
+    for k in need:
+        r = got.get(k)
+        if r is None:
+            bad.append(f"{k}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{k}: {r['status']} {r['problems']}")
+        if not r.get("gates_cli"):
+            bad.append(f"{k}: no [GATES] echo")
+        if k[0] == "c1s-400" and k[1] == "MAIN" and r.get("sumcap_eng") not in (None, 0):
+            bad.append(f"{k}: [SUMCAP] eng>0 on MAIN at c1s")
+        if k[1] != "MAIN" and not r.get("sumcap_eng"):
+            bad.append(f"{k}: [SUMCAP] eng=0 on a LAW arm")
+        if k[1] == "LAW-realtime" and r.get("dcap_q") != 0.05:
+            bad.append(f"{k}: dcap_q={r.get('dcap_q')}")
+    for k in need:
+        r = got.get(k)
+        if r:
+            print(f"SMOKE {k}: mbps={r.get('mbps')} eng={r.get('sumcap_eng')}/{r.get('sumcap_refresh')} "
+                  f"pin={r.get('sumcap_pin')} win_med={r.get('win_cap_med')} win_distinct={r.get('win_cap_distinct')} "
+                  f"status={r['status']}")
+    shas = {r.get("bin_sha") for r in rows if r["arm"] == "MAIN"}, {r.get("bin_sha") for r in rows if r["arm"] != "MAIN"}
+    if not shas[0] or not shas[1] or shas[0] & shas[1]:
+        bad.append(f"binary shas not two distinct builds: {shas}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -327,10 +484,14 @@ def main(argv):
         return 0
     if cmd == "smoke":
         return smoke(argv[2])
+    if cmd == "smoke19":
+        return smoke19(argv[2])
     if cmd == "check":
         return check(argv[2])
     if cmd == "score":
         return score(argv[2:])
+    if cmd == "score19":
+        return score19(argv[2:])
     print(__doc__)
     return 2
 

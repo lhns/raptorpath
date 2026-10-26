@@ -7,6 +7,12 @@
 #   sudo env SL_BIN=<bin> SL_SHA=<sha256> SL_OUTDIR=<dir> SL_TAG=<tag> \
 #     [SL_SMOKE=1] bash storelaw_battery.sh
 #
+# SECTION 19 (same-session control): additionally SL_PLAN=19 SL_BIN_MAIN=<ce60079
+# binary> SL_SHA_MAIN=<its sha256>. Arm MAIN runs that binary with no gate env;
+# arm LAW runs SL_BIN. Plan: per (rep, seed) block, c1s-400 c1d-400 c2-100 c8-100,
+# each {MAIN, LAW} with the arm order rotated by the block index (48), then the
+# Realtime rerun: seed 42, reps 1..3, c1s-400 and c2-100, LAW (6) = 54.
+#
 # Launched by storelaw_run_all.sh (the envelope, which holds both VM locks).
 #
 # PLAN (the pre-registered 42 invocations; the smoke is 3):
@@ -35,9 +41,19 @@ mkdir -p "$OUTDIR" "$DDIR"
 LB_TAG=storelaw_battery
 LB_LOG="$OUT"
 
+PLAN="${SL_PLAN:-18}"
+BIN_MAIN="${SL_BIN_MAIN:-}"
+WANT_MAIN="${SL_SHA_MAIN:-}"
 preflight_binary "$BIN" "PIPE] pipeline=" "RWM_STORE_PATHS" "path-scaled outstanding pool ACTIVE"
 GOT="$(sha256sum "$BIN" | cut -d' ' -f1)"
 [ "$GOT" = "$WANT" ] || { _lb_say "ABORT-SHA start: $GOT != $WANT"; exit 5; }
+if [ "$PLAN" = "19" ]; then
+  [ -n "$BIN_MAIN" ] && [ -n "$WANT_MAIN" ] || { _lb_say "ABORT-SHA plan 19 needs SL_BIN_MAIN/SL_SHA_MAIN"; exit 5; }
+  preflight_binary "$BIN_MAIN" "PIPE] pipeline=" "RWM_STORE_PATHS" "path-scaled outstanding pool ACTIVE"
+  GOTM="$(sha256sum "$BIN_MAIN" | cut -d' ' -f1)"
+  [ "$GOTM" = "$WANT_MAIN" ] || { _lb_say "ABORT-SHA start: main $GOTM != $WANT_MAIN"; exit 5; }
+  [ "$GOTM" != "$GOT" ] || { _lb_say "ABORT-SHA main and law binaries are byte-identical"; exit 5; }
+fi
 if pgrep -x raptorpath >/dev/null 2>&1; then
   _lb_say "BUSY: raptorpath already running -- aborting"; exit 3
 fi
@@ -61,6 +77,8 @@ run_one() { # cell arm hint seed rep     (arm: LAW|CTL; the parser arm name carr
   local name="$cell-$parm"
   local store_env=()
   [ "$arm" = "CTL" ] && store_env=(RWM_STORE_PATHS=0)
+  local BIN="$BIN" WANT="$WANT"      # per-arm binary (MAIN is a different build in plan 19)
+  if [ "$arm" = "MAIN" ]; then BIN="$BIN_MAIN"; WANT="$WANT_MAIN"; fi
   for attempt in $(seq 1 "$TRIES"); do
     sha="$(sha256sum "$BIN" | cut -d' ' -f1)"
     if [ "$sha" != "$WANT" ]; then
@@ -104,10 +122,43 @@ run_one() { # cell arm hint seed rep     (arm: LAW|CTL; the parser arm name carr
 }
 
 echo "=== STORE-LAW BATTERY tag=$TAG smoke=${SL_SMOKE:-0} $(date -u +%FT%TZ)" >> "$OUT"
-echo "=== binary $BIN sha256 $WANT" >> "$OUT"
+echo "=== binary LAW $BIN sha256 $WANT" >> "$OUT"
+[ "$PLAN" = "19" ] && echo "=== binary MAIN $BIN_MAIN sha256 $WANT_MAIN" >> "$OUT"
 echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1 window; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_IO_RT RWM_STORE_PATHS (shipped default); CTL sets RWM_STORE_PATHS=0" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
 
+if [ "$PLAN" = "19" ] && [ "${SL_SMOKE:-0}" = "1" ]; then
+  run_one c1s-400 MAIN bulk 42 1
+  run_one c1s-400 LAW bulk 42 1
+  run_one c2-100 MAIN bulk 42 1
+  run_one c2-100 LAW bulk 42 1
+  run_one c1s-400 LAW realtime 42 1
+  echo "SL-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
+if [ "$PLAN" = "19" ]; then
+  BLOCK=0
+  for REP in 1 2 3; do
+    for SEED in 42 7; do
+      if [ $(( BLOCK % 2 )) -eq 0 ]; then FIRST=MAIN; SECOND=LAW; else FIRST=LAW; SECOND=MAIN; fi
+      for CELL in c1s-400 c1d-400 c2-100 c8-100; do
+        run_one "$CELL" "$FIRST" bulk "$SEED" "$REP"
+        run_one "$CELL" "$SECOND" bulk "$SEED" "$REP"
+      done
+      echo "BLOCK-COMPLETE rep=$REP seed=$SEED block=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+      BLOCK=$(( BLOCK + 1 ))
+    done
+  done
+  for REP in 1 2 3; do
+    run_one c1s-400 LAW realtime 42 "$REP"
+    run_one c2-100 LAW realtime 42 "$REP"
+  done
+  echo "DELTA-BLOCK-COMPLETE $(date -u +%FT%TZ)" >> "$OUT"
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^SLROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "SL-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 if [ "${SL_SMOKE:-0}" = "1" ]; then
   run_one c1s-400 LAW bulk 42 1
   run_one c1s-400 CTL bulk 42 1
