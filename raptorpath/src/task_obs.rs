@@ -541,8 +541,23 @@ impl quinn::AsyncUdpSocket for TimedSocket {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Threading R1 — the receiver task's per-section CPU and backlogs
+// Threading R1 — the receiver task's per-section time and backlogs
 // (`RWM_RTOBS=2` only)
+//
+// The sections are read off the monotonic clock (a vDSO read, ~25 ns), not
+// the thread CPU clock: `CLOCK_THREAD_CPUTIME_ID` is a real syscall (~0.7 µs
+// on the benchmark VM) and ~20 reads per message more than doubled the
+// receiver's per-message cost in the first c1d read (233 vs ~700 Mbit/s,
+// receiver 100 % busy). The handler stretch is synchronous (no `.await`
+// between a section's two reads), so on a core-bound task its wall time is
+// its CPU time; preemption inside it is `ivcsw` on the `[TASK]` line.
+
+/// Nanoseconds on the process-monotonic clock.
+#[inline]
+fn mono_ns() -> u64 {
+    static ANCHOR: OnceLock<Instant> = OnceLock::new();
+    ANCHOR.get_or_init(Instant::now).elapsed().as_nanos() as u64
+}
 
 const DEPTH_BUCKETS: usize = 96;
 
@@ -665,7 +680,7 @@ pub enum RxSec {
 /// One receiver task's section counters.
 pub struct RxSecCtr {
     pub serial: u64,
-    /// Thread CPU ns per [`RxSec`], then the whole message (index 4).
+    /// Handler ns per [`RxSec`], then the whole message (index 4).
     ns: [AtomicU64; 5],
     msgs: AtomicU64,
     data: AtomicU64,
@@ -709,11 +724,11 @@ impl RxProbe {
         self.c.as_ref()
     }
 
-    /// Start a section: the thread's CPU clock now (0 when off).
+    /// Start a section: the monotonic clock now (0 when off).
     #[inline]
     pub fn begin(&self) -> u64 {
         if self.c.is_some() {
-            thread_cpu_ns().unwrap_or(0)
+            mono_ns()
         } else {
             0
         }
@@ -723,7 +738,7 @@ impl RxProbe {
     #[inline]
     pub fn end(&self, s: RxSec, t0: u64) {
         if let Some(c) = &self.c {
-            let d = thread_cpu_ns().unwrap_or(0).saturating_sub(t0);
+            let d = mono_ns().saturating_sub(t0);
             c.ns[s as usize].fetch_add(d, Relaxed);
         }
     }
@@ -732,7 +747,7 @@ impl RxProbe {
     #[inline]
     pub fn end_msg(&self, t0: u64, is_data: bool) {
         if let Some(c) = &self.c {
-            let d = thread_cpu_ns().unwrap_or(0).saturating_sub(t0);
+            let d = mono_ns().saturating_sub(t0);
             c.ns[4].fetch_add(d, Relaxed);
             c.msgs.fetch_add(1, Relaxed);
             c.data.fetch_add(is_data as u64, Relaxed);
@@ -778,11 +793,11 @@ pub fn rxsec_samples() -> Vec<RxSecSample> {
         .collect()
 }
 
-/// Render the `[RXSEC]` lines for the window `from → to`: per-message thread
-/// CPU of each section (ns), `other` = the whole message minus the named
-/// sections, `cores` = the messages' CPU over the window wall, and the
-/// backlog (messages queued at each `recv_many` return) p50 / p99 / max
-/// (`bk_max` is run-cumulative). CPU outside the message handler (the loop
+/// Render the `[RXSEC]` lines for the window `from → to`: per-message handler
+/// time of each section (ns), `other` = the whole message minus the named
+/// sections, `busy` = the messages' handler time over the window wall, and
+/// the backlog (messages queued at each `recv_many` return) p50 / p99 / max
+/// (`bk_max` is run-cumulative). Time outside the message handler (the loop
 /// head, `recv_many`) is the `[TASK] task=receiver` poll CPU minus
 /// `total_us`. Pure, so the token set is tested.
 pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[RxSecSample], to: &[RxSecSample]) -> Vec<String> {
@@ -802,7 +817,7 @@ pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Rx
             Some(format!(
                 "[RXSEC] phase={phase} side={side}{extra} rx={} msgs={msgs} data={} total_us={} decode_us={} \
                  deliv_us={} ack_us={} book_us={} other_us={} total_ns_pm={:.0} decode_ns_pm={:.0} \
-                 deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} cores={:.3} \
+                 deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} busy={:.3} \
                  bk_n={bn} bk_p50={p50} bk_p99={p99} bk_max={bmax} wall_s={wall_s:.3}",
                 t.serial,
                 t.data.saturating_sub(b.data),
@@ -918,7 +933,7 @@ mod tests {
         let s = &l[0];
         assert!(s.starts_with("[RXSEC] phase=xfer side=server rx=2 msgs=1000 data=900 total_us=10000 decode_us=4000 "), "{s}");
         assert!(s.contains(" other_us=2000 total_ns_pm=10000 decode_ns_pm=4000 "), "{s}");
-        assert!(s.contains(" cores=0.010 bk_n=0 bk_p50=- bk_p99=- bk_max=- "), "{s}");
+        assert!(s.contains(" busy=0.010 bk_n=0 bk_p50=- bk_p99=- bk_max=- "), "{s}");
         assert!(rxsec_lines("xfer", "server", "", 1.0, &to, &to).is_empty(), "no messages in the window");
     }
 

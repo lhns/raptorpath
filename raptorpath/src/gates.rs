@@ -279,7 +279,7 @@ pub struct RuntimeGates {
     /// and socket timed through a delegating runtime (`[QSOCK]`), the
     /// owner's quinn sections split by kind and by context-switch class, and
     /// the producer/owner channel back-pressure witness; threading R1 adds
-    /// the receiver loop's per-section thread CPU (`[RXSEC]`) and the
+    /// the receiver loop's per-section time (`[RXSEC]`) and the
     /// backlog of the receiver (messages queued per `recv_many`) and of the
     /// owner command channel (per drain). Implies `rtobs`.
     /// Measurement only: every wrapper delegates, so behaviour is unchanged.
