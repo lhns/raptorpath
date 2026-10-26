@@ -1,0 +1,259 @@
+[2m2026-10-26T09:32:49.120066Z[0m [32m INFO[0m [2mraptorpath::control::estimator[0m[2m:[0m estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)
+[2m2026-10-26T09:32:49.120096Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): an unmeasured leg's SRTT_i in the §5.7 cost is the active set's fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed when OFF (shipped, bit-identical) [3mcold_place[0m[2m=[0mfalse
+[2m2026-10-26T09:32:49.120104Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m placement temperature (RWM_PLACE_T_DERIVED, paper §5.7): T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error dispersion when ON; the shipped place_temperature() when OFF [3mplace_t_derived[0m[2m=[0mfalse
+[2m2026-10-26T09:32:49.120108Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m placement frontier term (RWM_PLACE_HOL, paper §5.7): X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push against the sender's own F_hat, plus the (a2) wire-price ordering term at its derived W; ABSENT leaves the shipped cost untouched [3mplace_hol[0m[2m=[0mfalse
+[2m2026-10-26T09:32:49.120112Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper §5.7): fate*(p_BB - eps)+ * srtt/ref from the path's Gilbert-Elliott burst persistence when ON; the shipped w_div*fate when OFF [3mplace_wdiv_derived[0m[2m=[0mfalse
+[2m2026-10-26T09:32:49.120116Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m Copa wire-clocked signal (RWM_COPA_WIRE / RWM_QUIC_CC / RWM_COPA_FEED) [3mcopa_wire[0m[2m=[0mfalse [3mquic_cc[0m[2m=[0m"unset" [3mcopa_wire_env[0m[2m=[0m"unset"
+[2m2026-10-26T09:32:49.120121Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m Copa TCP-competitive mode (RWM_COPA_COMPETE, requires the wire signal) [3mcopa_compete[0m[2m=[0mfalse
+[2m2026-10-26T09:32:49.120174Z[0m [32m INFO[0m [2mraptorpath[0m[2m:[0m perf configuration [3mpeer_config[0m[2m=[0mPeerConfig { bind_addrs: [10.77.0.2:7000], peer_addrs: [], tun_name: "rpath0", tun_addr: "10.99.0.1/24", target_tail_loss: 1e-5, max_fec_overhead: 0.5, protocol_hint: Bulk, is_server: true, status_addr: None, routes: [], dns: None, pin_cert: None, fec_backend: Rlc, window_reliable: true, enable_pi_feedback: true, reorder_timeout_ms: 20, reorder_max_size: 500, inner_feedback_weight: 0.0, completion_feed: None, window_out_of_order: false, window_coded_only: false, window_generation_coding: false, window_systematic_repair: false }
+perf server ready (rp-native object mode)
+[2m2026-10-26T09:32:49.120362Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset RWM_COPA_DELTA=unset RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 RWM_DIAG=1 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=1 RWM_RTOBS=1 RWM_FDIAG=0 RWM_TRACE=0 RWM_PFRAC=0
+[2m2026-10-26T09:32:49.120384Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m reliable window mode (retain until acked): auto-selecting RLC windowed backend
+[2m2026-10-26T09:32:49.120394Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m [PIPE] pipeline=window backend=Rlc hint=bulk
+[2m2026-10-26T09:32:49.120397Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m window mode: clamping TUN MTU to fit one packet per symbol [3mmtu[0m[2m=[0m1196 [3msymbol_size[0m[2m=[0m1200
+[2m2026-10-26T09:32:49.120401Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m using injected TUN interface (no routes/DNS) [3mname[0m[2m=[0mmem
+[2m2026-10-26T09:32:49.120496Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)
+[2m2026-10-26T09:32:49.120789Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (ADR-0055) [3mfloor[0m[2m=[0m1350
+[2m2026-10-26T09:32:49.120796Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m compact DATA framing ACTIVE (RWM_WIRE_COMPACT v5: one-symbol datagrams ride the tag+varint frame, ~14-16 B vs 65-B legacy framing; receive support unconditional; datagrams SHRINK — no MTU-floor interaction)
+[2m2026-10-26T09:32:49.120810Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m server endpoint bound — use this fingerprint for --pin-cert [3maddr[0m[2m=[0m10.77.0.2:7000 [3mpath_id[0m[2m=[0m0 [3mfingerprint[0m[2m=[0me172f39db81743d911d29ea3201d7021ff489e9980c2d060524fd3a366082290
+[RCVBUF] p0 role=server bind=10.77.0.2:7000 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+[2m2026-10-26T09:32:50.168243Z[0m [32m INFO[0m [2mraptorpath::transport::io_owner[0m[2m:[0m handshake complete (server) [3mlocal_version[0m[2m=[0m9 [3mpeer_version[0m[2m=[0m9 [3mpeer_path_id[0m[2m=[0m0
+[2m2026-10-26T09:32:50.168310Z[0m [32m INFO[0m [2mraptorpath::transport::io_owner[0m[2m:[0m accepted with handshake [3mpath_id[0m[2m=[0m0 [3mremote[0m[2m=[0m10.77.0.1:43469
+[2m2026-10-26T09:32:50.168372Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m all paths connected
+[2m2026-10-26T09:32:50.168407Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m sliding-window FEC mode [3msymbol_size[0m[2m=[0m1200 [3mbackend[0m[2m=[0mRlc
+[2m2026-10-26T09:32:50.168442Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m O(1) windowed-max rate filter ACTIVE (RWM_HONEST_ANCHOR: max_bw read off a monotonic max-deque maintained beside bw_samples — the VALUE-IDENTICAL statistic, same [1s,10s] window, same evictions, amortized O(1) per accepted sample instead of the O(window) full-window fold that costs +61-64% sender CPU/byte at c1 under RWM_PLAIN_RS; zero constants; RWM_HONEST_ANCHOR=0 = legacy fold control, value-identical by unit-pinned equivalence)
+[2m2026-10-26T09:32:50.168458Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m ack-merge ACTIVE (RWM_ACK_MERGE: WINDOW mode sends ONE control datagram per data message instead of two — the legacy per-batch Ack is suppressed, the SACK WindowAck goes unconditional at that cadence and carries the Ack's payload in the v6 cumulative cum_expected/cum_received counters, every Ack-arm consumer re-homed onto the counter diff; BLOCK mode bit-exact; the delivery statistic/cadence/counts unchanged) [3mcopa_feed[0m[2m=[0mfalse
+[2m2026-10-26T09:32:50.168553Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m RWM_UNIFIED: receive path on the unified global decoder (one machine, both wires) [3mgeneration[0m[2m=[0mfalse
+[2m2026-10-26T09:32:50.168561Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m M* peer-report RTT-feed suppression ACTIVE (RWM_MSTAR_ANCHOR plain-live subset: local-echo-only RTT feed + estimator seed-from-sample)
+[2m2026-10-26T09:32:50.168602Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy) [3mpool_per_path[0m[2m=[0m2048 [3mgain[0m[2m=[0m2.0
+[2m2026-10-26T09:32:50.168620Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs uncounted from the outstanding gate, payload + ARQ maps retained until the cumulative frontier — slot release, never recoverability)
+[2m2026-10-26T09:32:50.168627Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m budget-conserving taper emission ACTIVE (RWM_TAPER_R: plain-mode proactive repair budgeted at r x source per coding window; legacy = r per ack cycle)
+[2m2026-10-26T09:32:50.168633Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m unified span law ACTIVE (RWM_UNIFIED: plain-mode proactive repair over the trailing solvable span [end-A*, end-Δ), A* from δ) [3mhint[0m[2m=[0mBulk
+[2m2026-10-26T09:32:50.168640Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m A* send-rate anchor ACTIVE (RWM_ASTAR_ANCHOR: windowed-max send rate over ~8 SRTT, clock-gap sample discard)
+[2m2026-10-26T09:32:50.168653Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m clock-gap estimator hygiene ACTIVE (RWM_CLOCK_GAP: process-clock stall witness, post-stall sample discard at the ack feed sites)
+[2m2026-10-26T09:32:50.168686Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m multipath recovery suppression ACTIVE (RWM_RECOV_MP: per-flight RFC9002-style time-threshold hole law on the flight path's smoothed clocks; N=1 live path keeps legacy gates bit-exactly) [3mlaw[0m[2m=[0mtrue
+[2m2026-10-26T09:32:50.168694Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN intake + per-burst taper/span refresh; flow-control and pacing contracts enforced at symbol granularity) [3mburst[0m[2m=[0m64
+[2m2026-10-26T09:32:50.168712Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m0 [3mlive_sum[0m[2m=[0m0 [3mactive_sum[0m[2m=[0m0 [3mshort_ticks[0m[2m=[0m0 [3mzero_ticks[0m[2m=[0m0
+[SHEDH] evals=0 dial=0 legacy=0 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=0 floor_frac=0.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=- floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[WIDLE] idle=0ms/0/mx0ms arr=1
+{"assemble_s":0.000466,"bytes":64,"chunks":1,"obj_id":0,"server":true}
+[THR] rt phase=xfer side=server obj=0 worker=0 busy_s=0.000 busy_frac=0.001 park=2 unpark=5 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=1 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=2 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=3 busy_s=0.000 busy_frac=0.103 park=1 unpark=3 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=4 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=5 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437593 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437601 comm=rp-w-0 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437602 comm=rp-w-1 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437603 comm=rp-w-2 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437604 comm=rp-w-3 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437605 comm=rp-w-4 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=437606 comm=rp-w-5 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] sum phase=xfer side=server obj=0 workers=6 busy_s=0.000 threads=7 cpu_s=0.000 cores=0.000 wall_s=0.000
+[LAG] phase=xfer side=server obj=0 tick_ms=10 n=0 p50_us=- p99_us=- max_us=- dropped=0
+[IOWN] phase=xfer side=server obj=0 path=0 rt=main polls=1 drains=0 tx_batches=0 tx_dg=0 ctrl_batches=0 ctrl_dg=0 rx_batches=1 rx_dg=1 rx_capped=0 ack_batches=0 ack_dg=0 send_err=0 too_large_staged=0 orphaned=0 qcalls=2 q_secs=1 q_wall_us=6 q_asleep_us=0 asleep_frac=0.0017 drv_on=1 drv_off=0 wall_s=0.000 qk_snd=0/0/0/0/0/0/0/0 qk_rd=0/0/0/0/0/0/0/0 qk_pub=0/0/0/0/0/0/0/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=0 fl_full=0 fl_full_us=0
+[RDIAG] busy=55% msgs=40673/s q_avg=0 q_max=1 cap=128
+[RFA] gen=0 fires=71 false=2 false_frac=0.0282 fill_coded=0 fill_src=69 dup_src=2 preempt_src=0 src_n=58723 rep_n=9 nu_recv=0.00121 fa_class=0.0625 rep_redundant=0 late_after_aban=0
+[QCLK] site=receiver evals=23 kept=23 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[C8CONV-R] p0:fst=58723 dup=2 lead=78 unb=13/117ms
+[SUCC] gen=0 det=69 res=69 orig_n=69 orig_p50_us=16384 orig_p90_us=32768 orig_p99_us=32768 orig_mx_us=35567 orig_mean_us=20664 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=69 xp_n=0 xp_frac=0.0000 sp_p50_us=16384 sp_p90_us=32768 xp_p50_us=- xp_p90_us=- rtx_n=69
+[ETA] site=receiver n=58734 p0:n=58654 bind=0.0014 tau_us=2669 srtt_src=echo l_p50=65536 l_p90=73728 l_p95=73728 l_p99=81920 l_mx=88086 sig_us=1217/n234 minrst=113
+[LAT] site=receiver n=58723 over=2 p0:n=58723 nowait=53321 minrst=2 ax_n=58723 ax_p50=7168 ax_p90=11264 ax_p95=14336 ax_p99=18432 ax_sum=450898810 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=5402 rwsp_p50=15360 rwsp_p95=32768 rwsp_sum=78700324 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=7168 tot_p95=18432 tot_p99=36864 sh_ax=0.8514 sh_rwxp=0.0000 sh_rwsp=0.1486 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=69 lo_p50=16384 lo_p90=32768 lo_p99=32768 hi_p50=16384 hi_p90=32768 hi_p99=32768 orig=69 rep=0 aban=0 xp_n=0 sp_n=69 xp_frac=0.0000 d_us=20664 d_n=69 knee_us=8192 knee_n=3 rho_heal0=0.0000 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=1.0000 reports=1 rtx=69
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=1 reports=1
+[CTLD] p0 tx=58585 rx=59037 dgrx0[fr=59037 rd=59118 ev=0] rxdrop0=0
+[WIDLE] idle=105ms/19/mx9ms arr=59104
+[RDIAG] busy=91% msgs=77467/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=93% msgs=79888/s q_avg=0 q_max=2 cap=128
+[RFA] gen=0 fires=149 false=5 false_frac=0.0336 fill_coded=0 fill_src=144 dup_src=5 preempt_src=0 src_n=125601 rep_n=20 nu_recv=0.00119 fa_class=0.0625 rep_redundant=9 late_after_aban=0
+[QCLK] site=receiver evals=56 kept=56 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[C8CONV-R] p0:fst=125597 dup=5 lead=72 unb=23/206ms
+[SUCC] gen=0 det=144 res=144 orig_n=144 orig_p50_us=16384 orig_p90_us=26624 orig_p99_us=32768 orig_mx_us=35567 orig_mean_us=18892 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=144 xp_n=0 xp_frac=0.0000 sp_p50_us=16384 sp_p90_us=26624 xp_p50_us=- xp_p90_us=- rtx_n=144
+[ETA] site=receiver n=125622 p0:n=125453 bind=0.0013 tau_us=2669 srtt_src=echo l_p50=65536 l_p90=73728 l_p95=73728 l_p99=81920 l_mx=94871 sig_us=1234/n248 minrst=113
+[LAT] site=receiver n=125597 over=4 p0:n=125597 nowait=114680 minrst=2 ax_n=125597 ax_p50=7168 ax_p90=14336 ax_p95=16384 ax_p99=30720 ax_sum=1079251403 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=10917 rwsp_p50=12288 rwsp_p95=28672 rwsp_sum=140620352 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=7680 tot_p95=24576 tot_p99=36864 sh_ax=0.8847 sh_rwxp=0.0000 sh_rwsp=0.1153 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=144 lo_p50=16384 lo_p90=26624 lo_p99=32768 hi_p50=16384 hi_p90=26624 hi_p99=32768 orig=144 rep=0 aban=0 xp_n=0 sp_n=144 xp_frac=0.0000 d_us=18892 d_n=144 knee_us=3072 knee_n=4 rho_heal0=0.0000 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=1.0000 reports=2 rtx=144
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=2 reports=2
+[CTLD] p0 tx=125610 rx=125620 dgrx0[fr=125620 rd=125650 ev=0] rxdrop0=0
+[2m2026-10-26T09:32:52.168901Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m2 [3mlive_sum[0m[2m=[0m2 [3mactive_sum[0m[2m=[0m2 [3mshort_ticks[0m[2m=[0m0 [3mzero_ticks[0m[2m=[0m0
+[DIAG] t=2.0s win=0/128 paused=0% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=0sym/s cum=1/0/1 sidle=0ms/0/mx0ms cwnd=10 infl=0 np=1 np_act=1 rtt=2.7ms bdp100=28sym sweeps=0 retx=0 gapdrop=0 nbud=10 xattr=0/0 mpr[rep=0 seqs=0 fired=0 y=0 r=0 fast=0 coal=0 supp=0/0/0 stale=0 plost=0 taper=0 age=0ms pf=0/0/0 fp/on] wnd2=0/0 relgap=1993ms/mx1993ms srel=0/0 gate=0 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=0% cmd=100% n=5 us=2000204 busy=0% busy_us=176] wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=2 cmd=2 timer_acked=0] dgq0[hand=125620 tx=125610 full=0 err=0 sp=4193656] p0:infl=0/sinfl=0/bdp0(cap0) sout=0 khr=1.00/kraw=- btlbw=0 sr=0/g0d0 est=n pl=0.0000 cmp=- rtt=3/wrtt=2/rtp3ms rtp_us=2669 sig_us=-/n1 rvar_us=0/n1 qsp_us=0/n1 msd_us=-/n0 tlag_us=-/n0 gapd=0/0 qcwnd=9912691 qce=0 qlp=0/15326 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1 plu=0.7209 plc=0.0000 rce=1/c1/w0/p0/a0/us1 dgev0=10 eb_bursts=1 eb_syms=1 eb_depth=1.00 eb_end=cap:0/store:0/tokens:0/drained:1 eb_maxrun=0:1/1.00
+[ETA] site=sender fhat_us=1793007170197730 n=1 zero=0.0000 place_n=1 cold_r=0.0000 cold_ge=1.0000 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=1/1 drop=0 tau_us=2669 e_p50=22528 e_p90=22528 e_p99=22528 e_mx=23665 late=0.0000 sig_us=-/n0
+[C8CONV-S] p0:sp=1 ro=0 st=0ms/0
+[SHEDH] evals=125622 dial=0 legacy=125622 dial_frac=0.0000 floor_n=125621 cap_n=0 interior_n=1 floor_frac=1.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=60001 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[WIDLE] idle=240ms/29/mx74ms arr=125623
+[RDIAG] busy=86% msgs=47783/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=30% msgs=27682/s q_avg=0 q_max=0 cap=128
+[C8CONV-R] p0:fst=152710 dup=6 lead=59 unb=26/292ms
+[RFA] gen=0 fires=150 false=6 false_frac=0.0400 fill_coded=0 fill_src=144 dup_src=6 preempt_src=0 src_n=152716 rep_n=21 nu_recv=0.00098 fa_class=0.0625 rep_redundant=20 late_after_aban=0
+[QCLK] site=receiver evals=56 kept=56 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[SUCC] gen=0 det=144 res=144 orig_n=144 orig_p50_us=16384 orig_p90_us=26624 orig_p99_us=32768 orig_mx_us=35567 orig_mean_us=18892 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=144 xp_n=0 xp_frac=0.0000 sp_p50_us=16384 sp_p90_us=26624 xp_p50_us=- xp_p90_us=- rtx_n=144
+[ETA] site=receiver n=152737 p0:n=152566 bind=0.0011 tau_us=2669 srtt_src=echo l_p50=65536 l_p90=98304 l_p95=106496 l_p99=122880 l_mx=138239 sig_us=1286/n251 minrst=155
+[LAT] site=receiver n=152710 over=6 p0:n=152710 nowait=140571 minrst=2 ax_n=152710 ax_p50=8192 ax_p90=32768 ax_p95=36864 ax_p99=40960 ax_sum=2014015898 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=12139 rwsp_p50=9216 rwsp_p95=26624 rwsp_sum=140622328 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=8192 tot_p95=36864 tot_p99=40960 sh_ax=0.9347 sh_rwxp=0.0000 sh_rwsp=0.0653 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=144 lo_p50=16384 lo_p90=26624 lo_p99=32768 hi_p50=16384 hi_p90=26624 hi_p99=32768 orig=144 rep=0 aban=0 xp_n=0 sp_n=144 xp_frac=0.0000 d_us=18892 d_n=144 knee_us=3072 knee_n=4 rho_heal0=0.0000 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.6667 reports=3 rtx=144
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=3 reports=3
+[CTLD] p0 tx=152740 rx=152750 dgrx0[fr=152750 rd=152760 ev=0] rxdrop0=0
+[WIDLE] idle=259ms/32/mx74ms arr=154826
+[RDIAG] busy=32% msgs=28700/s q_avg=0 q_max=0 cap=128
+[RDIAG] busy=30% msgs=25796/s q_avg=0 q_max=1 cap=128
+[C8CONV-R] p0:fst=179253 dup=7 lead=54 unb=27/333ms
+[RFA] gen=0 fires=161 false=7 false_frac=0.0435 fill_coded=0 fill_src=154 dup_src=7 preempt_src=0 src_n=179260 rep_n=23 nu_recv=0.00090 fa_class=0.0625 rep_redundant=21 late_after_aban=0
+[QCLK] site=receiver evals=148 kept=148 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[SUCC] gen=0 det=154 res=154 orig_n=154 orig_p50_us=18432 orig_p90_us=32768 orig_p99_us=40960 orig_mx_us=41481 orig_mean_us=20356 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=154 xp_n=0 xp_frac=0.0000 sp_p50_us=18432 sp_p90_us=32768 xp_p50_us=- xp_p90_us=- rtx_n=154
+[ETA] site=receiver n=179283 p0:n=179099 bind=0.0010 tau_us=2669 srtt_src=echo l_p50=73728 l_p90=98304 l_p95=106496 l_p99=114688 l_mx=138239 sig_us=833/n249 minrst=155
+[LAT] site=receiver n=179253 over=6 p0:n=179253 nowait=164841 minrst=2 ax_n=179253 ax_p50=9216 ax_p90=36864 ax_p95=36864 ax_p99=45056 ax_sum=2956588168 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=14412 rwsp_p50=9216 rwsp_p95=30720 rwsp_sum=161806969 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=9216 tot_p95=36864 tot_p99=49152 sh_ax=0.9481 sh_rwxp=0.0000 sh_rwsp=0.0519 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=154 lo_p50=18432 lo_p90=32768 lo_p99=40960 hi_p50=18432 hi_p90=32768 hi_p99=40960 orig=154 rep=0 aban=0 xp_n=0 sp_n=154 xp_frac=0.0000 d_us=20356 d_n=154 knee_us=3072 knee_n=4 rho_heal0=0.0000 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.7500 reports=4 rtx=154
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=4 reports=4
+[CTLD] p0 tx=179276 rx=179314 dgrx0[fr=179314 rd=179314 ev=0] rxdrop0=0
+[2m2026-10-26T09:32:54.209463Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m3 [3mlive_sum[0m[2m=[0m3 [3mactive_sum[0m[2m=[0m3 [3mshort_ticks[0m[2m=[0m0 [3mzero_ticks[0m[2m=[0m0
+[DIAG] t=4.0s win=0/128 paused=0% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=0sym/s cum=1/0/1 sidle=0ms/0/mx0ms cwnd=10 infl=0 np=1 np_act=1 rtt=2.7ms bdp100=28sym sweeps=0 retx=0 gapdrop=0 nbud=10 xattr=0/0 mpr[rep=0 seqs=0 fired=0 y=0 r=0 fast=0 coal=0 supp=0/0/0 stale=0 plost=0 taper=0 age=0ms pf=0/0/0 fp/on] wnd2=0/0 relgap=4034ms/mx4034ms srel=0/0 gate=0 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=100% cmd=0% n=4 us=2040547 busy=0% busy_us=151] wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=5 cmd=3 timer_acked=0] dgq0[hand=179276 tx=179276 full=0 err=0 sp=4192936] p0:infl=0/sinfl=0/bdp0(cap0) sout=0 khr=1.00/kraw=- btlbw=0 sr=0/g0d0 est=n pl=0.0000 cmp=- rtt=3/wrtt=2/rtp3ms rtp_us=2669 sig_us=-/n1 rvar_us=0/n1 qsp_us=0/n1 msd_us=-/n0 tlag_us=-/n0 gapd=0/0 qcwnd=14076075 qce=0 qlp=0/24595 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1 plu=0.7209 plc=0.0000 rce=1/c1/w0/p0/a0/us1 dgev0=0 eb_bursts=1 eb_syms=1 eb_depth=1.00 eb_end=cap:0/store:0/tokens:0/drained:1 eb_maxrun=0:1/1.00
+[ETA] site=sender fhat_us=1793007170197730 n=1 zero=0.0000 place_n=1 cold_r=0.0000 cold_ge=1.0000 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=1/1 drop=0 tau_us=2669 e_p50=22528 e_p90=22528 e_p99=22528 e_mx=23665 late=0.0000 sig_us=-/n0
+[C8CONV-S] p0:sp=1 ro=0 st=0ms/0
+[SHEDH] evals=179292 dial=0 legacy=179292 dial_frac=0.0000 floor_n=179291 cap_n=0 interior_n=1 floor_frac=1.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=60000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[WIDLE] idle=313ms/36/mx74ms arr=181375
+[RDIAG] busy=41% msgs=27341/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=30% msgs=30407/s q_avg=0 q_max=1 cap=128
+[C8CONV-R] p0:fst=211556 dup=12 lead=48 unb=29/404ms
+[RFA] gen=0 fires=214 false=12 false_frac=0.0561 fill_coded=0 fill_src=202 dup_src=12 preempt_src=0 src_n=211568 rep_n=30 nu_recv=0.00101 fa_class=0.0625 rep_redundant=23 late_after_aban=0
+[QCLK] site=receiver evals=217 kept=217 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[SUCC] gen=0 det=202 res=202 orig_n=202 orig_p50_us=16384 orig_p90_us=32768 orig_p99_us=40960 orig_mx_us=41481 orig_mean_us=18405 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=202 xp_n=0 xp_frac=0.0000 sp_p50_us=16384 sp_p90_us=32768 xp_p50_us=- xp_p90_us=- rtx_n=172
+[ETA] site=receiver n=211598 p0:n=211384 bind=0.0010 tau_us=2669 srtt_src=echo l_p50=73728 l_p90=106496 l_p95=106496 l_p99=122880 l_mx=140710 sig_us=1232/n251 minrst=155
+[LAT] site=receiver n=211556 over=8 p0:n=211556 nowait=194872 minrst=2 ax_n=211556 ax_p50=11264 ax_p90=36864 ax_p95=36864 ax_p99=49152 ax_sum=3863447684 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=16684 rwsp_p50=8192 rwsp_p95=30720 rwsp_sum=183100764 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=14336 tot_p95=36864 tot_p99=61440 sh_ax=0.9548 sh_rwxp=0.0000 sh_rwsp=0.0452 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=202 lo_p50=16384 lo_p90=32768 lo_p99=40960 hi_p50=16384 hi_p90=32768 hi_p99=40960 orig=202 rep=0 aban=0 xp_n=0 sp_n=202 xp_frac=0.0000 d_us=18405 d_n=202 knee_us=3072 knee_n=4 rho_heal0=0.1485 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.8000 reports=5 rtx=172
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=5 reports=5
+[CTLD] p0 tx=211574 rx=211602 dgrx0[fr=211602 rd=211611 ev=0] rxdrop0=0
+[WIDLE] idle=331ms/41/mx74ms arr=214083
+[RDIAG] busy=42% msgs=34959/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=39% msgs=32006/s q_avg=0 q_max=1 cap=128
+[C8CONV-R] p0:fst=243213 dup=13 lead=45 unb=30/447ms
+[DIAG] t=6.0s win=0/128 paused=0% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=0sym/s cum=1/0/1 sidle=0ms/0/mx0ms cwnd=10 infl=0 np=1 np_act=1 rtt=2.7ms bdp100=28sym sweeps=0 retx=0 gapdrop=0 nbud=10 xattr=0/0 mpr[rep=0 seqs=0 fired=0 y=0 r=0 fast=0 coal=0 supp=0/0/0 stale=0 plost=0 taper=0 age=0ms pf=0/0/0 fp/on] wnd2=0/0 relgap=5994ms/mx5994ms srel=0/0 gate=0 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=0% cmd=100% n=1 us=1960375 busy=0% busy_us=773] wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=5 cmd=4 timer_acked=0] dgq0[hand=243262 tx=243262 full=0 err=0 sp=4193656] p0:infl=0/sinfl=0/bdp0(cap0) sout=0 khr=1.00/kraw=- btlbw=0 sr=0/g0d0 est=n pl=0.0000 cmp=- rtt=3/wrtt=2/rtp3ms rtp_us=2669 sig_us=-/n1 rvar_us=0/n1 qsp_us=0/n1 msd_us=-/n0 tlag_us=-/n0 gapd=0/0 qcwnd=19006952 qce=0 qlp=1/34223 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1 plu=0.7209 plc=0.0000 rce=1/c1/w0/p0/a0/us1 dgev0=0 eb_bursts=1 eb_syms=1 eb_depth=1.00 eb_end=cap:0/store:0/tokens:0/drained:1 eb_maxrun=0:1/1.00
+[ETA] site=sender fhat_us=1793007170197730 n=1 zero=0.0000 place_n=1 cold_r=0.0000 cold_ge=1.0000 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=1/1 drop=0 tau_us=2669 e_p50=22528 e_p90=22528 e_p99=22528 e_mx=23665 late=0.0000 sig_us=-/n0
+[RFA] gen=0 fires=226 false=13 false_frac=0.0575 fill_coded=0 fill_src=213 dup_src=13 preempt_src=0 src_n=243226 rep_n=32 nu_recv=0.00093 fa_class=0.0625 rep_redundant=30 late_after_aban=0
+[QCLK] site=receiver evals=345 kept=345 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[C8CONV-S] p0:sp=1 ro=0 st=0ms/0
+[SHEDH] evals=243258 dial=0 legacy=243258 dial_frac=0.0000 floor_n=243257 cap_n=0 interior_n=1 floor_frac=1.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=60000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[SUCC] gen=0 det=223 res=213 orig_n=213 orig_p50_us=18432 orig_p90_us=32768 orig_p99_us=40960 orig_mx_us=43374 orig_mean_us=19488 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=10 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=213 xp_n=0 xp_frac=0.0000 sp_p50_us=18432 sp_p90_us=32768 xp_p50_us=- xp_p90_us=- rtx_n=182
+[ETA] site=receiver n=243258 p0:n=243031 bind=0.0009 tau_us=2669 srtt_src=echo l_p50=73728 l_p90=106496 l_p95=106496 l_p99=122880 l_mx=140710 sig_us=1023/n248 minrst=155
+[LAT] site=receiver n=242765 over=12 p0:n=242765 nowait=223824 minrst=2 ax_n=242765 ax_p50=16384 ax_p90=36864 ax_p95=36864 ax_p99=45056 ax_sum=4760496690 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=18941 rwsp_p50=7680 rwsp_p95=30720 rwsp_sum=206390191 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=18432 tot_p95=36864 tot_p99=61440 sh_ax=0.9584 sh_rwxp=0.0000 sh_rwsp=0.0416 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=213 lo_p50=18432 lo_p90=32768 lo_p99=40960 hi_p50=18432 hi_p90=32768 hi_p99=40960 orig=213 rep=0 aban=0 xp_n=0 sp_n=213 xp_frac=0.0000 d_us=19488 d_n=213 knee_us=3072 knee_n=4 rho_heal0=0.1455 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.8333 reports=6 rtx=182
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=10 pivots=0 deficit=10 tail_overcount=10 max_deficit=10 empty=5 reports=6
+[CTLD] p0 tx=243262 rx=243272 dgrx0[fr=243272 rd=243292 ev=0] rxdrop0=0
+[WIDLE] idle=386ms/47/mx74ms arr=245294
+[RDIAG] busy=43% msgs=30434/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=34% msgs=33507/s q_avg=0 q_max=1 cap=128
+[C8CONV-R] p0:fst=274597 dup=15 lead=47 unb=34/553ms
+[RFA] gen=0 fires=298 false=15 false_frac=0.0503 fill_coded=0 fill_src=283 dup_src=15 preempt_src=0 src_n=274612 rep_n=40 nu_recv=0.00109 fa_class=0.0625 rep_redundant=32 late_after_aban=0
+[QCLK] site=receiver evals=483 kept=483 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[SUCC] gen=0 det=283 res=283 orig_n=283 orig_p50_us=18432 orig_p90_us=40960 orig_p99_us=57344 orig_mx_us=57394 orig_mean_us=20930 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=283 xp_n=0 xp_frac=0.0000 sp_p50_us=18432 sp_p90_us=40960 xp_p50_us=- xp_p90_us=- rtx_n=242
+[ETA] site=receiver n=274654 p0:n=274357 bind=0.0011 tau_us=2669 srtt_src=echo l_p50=90112 l_p90=106496 l_p95=106496 l_p99=122880 l_mx=140710 sig_us=1051/n246 minrst=155
+[LAT] site=receiver n=274599 over=15 p0:n=274599 nowait=251067 minrst=2 ax_n=274599 ax_p50=20480 ax_p90=36864 ax_p95=36864 ax_p99=49152 ax_sum=5684337009 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=23532 rwsp_p50=7680 rwsp_p95=32768 rwsp_sum=267050727 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=20480 tot_p95=36864 tot_p99=61440 sh_ax=0.9551 sh_rwxp=0.0000 sh_rwsp=0.0449 sh_rwrep=0.0000 sh_rep=0.0000
+[LATE] n=283 lo_p50=18432 lo_p90=40960 lo_p99=57344 hi_p50=18432 hi_p90=40960 hi_p99=57344 orig=283 rep=0 aban=0 xp_n=0 sp_n=283 xp_frac=0.0000 d_us=20930 d_n=283 knee_us=8192 knee_n=5 rho_heal0=0.1449 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.8571 reports=7 rtx=242
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=10 empty=6 reports=7
+[CTLD] p0 tx=274643 rx=274657 dgrx0[fr=274657 rd=274667 ev=0] rxdrop0=0
+[WIDLE] idle=399ms/51/mx74ms arr=276670
+[RDIAG] busy=31% msgs=29170/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=29% msgs=26564/s q_avg=0 q_max=0 cap=128
+[2m2026-10-26T09:32:58.169058Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m5 [3mlive_sum[0m[2m=[0m5 [3mactive_sum[0m[2m=[0m5 [3mshort_ticks[0m[2m=[0m0 [3mzero_ticks[0m[2m=[0m0
+[DIAG] t=8.0s win=0/128 paused=0% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=0sym/s cum=1/0/1 sidle=0ms/0/mx0ms cwnd=10 infl=0 np=1 np_act=1 rtt=2.7ms bdp100=28sym sweeps=0 retx=0 gapdrop=0 nbud=10 xattr=0/0 mpr[rep=0 seqs=0 fired=0 y=0 r=0 fast=0 coal=0 supp=0/0/0 stale=0 plost=0 taper=0 age=0ms pf=0/0/0 fp/on] wnd2=0/0 relgap=7993ms/mx7993ms srel=0/0 gate=0 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=0% cmd=100% n=3 us=1999237 busy=0% busy_us=232] wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=6 cmd=6 timer_acked=0] dgq0[hand=302245 tx=302225 full=0 err=0 sp=4193656] p0:infl=0/sinfl=0/bdp0(cap0) sout=0 khr=1.00/kraw=- btlbw=0 sr=0/g0d0 est=n pl=0.0000 cmp=- rtt=3/wrtt=2/rtp3ms rtp_us=2669 sig_us=-/n1 rvar_us=0/n1 qsp_us=0/n1 msd_us=-/n0 tlag_us=-/n0 gapd=0/0 qcwnd=23580012 qce=0 qlp=1/44144 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1 plu=0.7209 plc=0.0000 rce=1/c1/w0/p0/a0/us1 dgev0=20 eb_bursts=1 eb_syms=1 eb_depth=1.00 eb_end=cap:0/store:0/tokens:0/drained:1 eb_maxrun=0:1/1.00
+[ETA] site=sender fhat_us=1793007170197730 n=1 zero=0.0000 place_n=1 cold_r=0.0000 cold_ge=1.0000 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=1/1 drop=0 tau_us=2669 e_p50=22528 e_p90=22528 e_p99=22528 e_mx=23665 late=0.0000 sig_us=-/n0
+[C8CONV-S] p0:sp=1 ro=0 st=0ms/0
+[SHEDH] evals=302240 dial=0 legacy=302240 dial_frac=0.0000 floor_n=302239 cap_n=0 interior_n=1 floor_frac=1.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=60000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[C8CONV-R] p0:fst=302198 dup=21 lead=50 unb=38/640ms
+[RFA] gen=0 fires=390 false=21 false_frac=0.0538 fill_coded=2 fill_src=367 dup_src=19 preempt_src=2 src_n=302217 rep_n=51 nu_recv=0.00129 fa_class=0.0625 rep_redundant=40 late_after_aban=0
+[QCLK] site=receiver evals=705 kept=705 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[SUCC] gen=0 det=369 res=369 orig_n=367 orig_p50_us=24576 orig_p90_us=40960 orig_p99_us=57344 orig_mx_us=57394 orig_mean_us=23874 rep_n=2 rep_p50_us=20480 rep_p90_us=20480 rep_p99_us=20480 rep_mx_us=22035 rep_mean_us=22035 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=0.9946 cross_us=- dump=0/0 sp_n=369 xp_n=0 xp_frac=0.0000 sp_p50_us=24576 sp_p90_us=40960 xp_p50_us=- xp_p90_us=- rtx_n=326
+[ETA] site=receiver n=302268 p0:n=301870 bind=0.0013 tau_us=2669 srtt_src=echo l_p50=90112 l_p90=106496 l_p95=106496 l_p99=122880 l_mx=140710 sig_us=901/n250 minrst=155
+[LAT] site=receiver n=302198 over=18 p0:n=302196 nowait=274158 minrst=2 ax_n=302196 ax_p50=22528 ax_p90=36864 ax_p95=36864 ax_p99=45056 ax_sum=6612808482 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=27130 rwsp_p50=8192 rwsp_p95=32768 rwsp_sum=322721200 rwrep_n=908 rwrep_p50=10240 rwrep_p95=20480 rwrep_sum=9959631 rep_n=909 rep_p50=20480 rep_p95=20480 rep_sum=20029815 tot_p50=24576 tot_p95=40960 tot_p99=61440 sh_ax=0.9494 sh_rwxp=0.0000 sh_rwsp=0.0463 sh_rwrep=0.0014 sh_rep=0.0029
+[LATE] n=369 lo_p50=24576 lo_p90=40960 lo_p99=57344 hi_p50=24576 hi_p90=40960 hi_p99=57344 orig=367 rep=2 aban=0 xp_n=0 sp_n=369 xp_frac=0.0000 d_us=23874 d_n=367 knee_us=8192 knee_n=5 rho_heal0=0.1111 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.8750 reports=8 rtx=326
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=10 empty=7 reports=8
+[CTLD] p0 tx=302255 rx=302264 dgrx0[fr=302264 rd=302291 ev=0] rxdrop0=0
+[WIDLE] idle=466ms/58/mx74ms arr=304222
+[RDIAG] busy=39% msgs=28570/s q_avg=0 q_max=1 cap=128
+[RDIAG] busy=32% msgs=29421/s q_avg=0 q_max=1 cap=128
+[C8CONV-R] p0:fst=330005 dup=24 lead=50 unb=46/771ms
+[RFA] gen=0 fires=455 false=24 false_frac=0.0527 fill_coded=2 fill_src=429 dup_src=22 preempt_src=2 src_n=330027 rep_n=59 nu_recv=0.00138 fa_class=0.0625 rep_redundant=49 late_after_aban=0
+[QCLK] site=receiver evals=871 kept=871 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+[SUCC] gen=0 det=431 res=431 orig_n=429 orig_p50_us=26624 orig_p90_us=40960 orig_p99_us=53248 orig_mx_us=57394 orig_mean_us=23951 rep_n=2 rep_p50_us=20480 rep_p90_us=20480 rep_p99_us=20480 rep_mx_us=22035 rep_mean_us=22035 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=0.9954 cross_us=- dump=0/0 sp_n=431 xp_n=0 xp_frac=0.0000 sp_p50_us=26624 sp_p90_us=40960 xp_p50_us=- xp_p90_us=- rtx_n=371
+[ETA] site=receiver n=330086 p0:n=329632 bind=0.0014 tau_us=2669 srtt_src=echo l_p50=90112 l_p90=106496 l_p95=114688 l_p99=122880 l_mx=152885 sig_us=827/n251 minrst=155
+[LAT] site=receiver n=330005 over=23 p0:n=330003 nowait=298405 minrst=2 ax_n=330003 ax_p50=24576 ax_p90=36864 ax_p95=36864 ax_p99=53248 ax_sum=7537837877 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=30690 rwsp_p50=8192 rwsp_p95=32768 rwsp_sum=367665981 rwrep_n=908 rwrep_p50=10240 rwrep_p95=20480 rwrep_sum=9959631 rep_n=909 rep_p50=20480 rep_p95=20480 rep_sum=20029815 tot_p50=24576 tot_p95=40960 tot_p99=65536 sh_ax=0.9499 sh_rwxp=0.0000 sh_rwsp=0.0463 sh_rwrep=0.0013 sh_rep=0.0025
+[LATE] n=431 lo_p50=26624 lo_p90=40960 lo_p99=53248 hi_p50=26624 hi_p90=40960 hi_p99=57344 orig=429 rep=2 aban=0 xp_n=0 sp_n=431 xp_frac=0.0000 d_us=23951 d_n=429 knee_us=8192 knee_n=5 rho_heal0=0.1346 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.8889 reports=9 rtx=371
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=10 empty=8 reports=9
+[CTLD] p0 tx=330082 rx=330102 dgrx0[fr=330102 rd=330122 ev=0] rxdrop0=0
+[WIDLE] idle=495ms/64/mx74ms arr=332131
+[RDIAG] busy=30% msgs=26423/s q_avg=0 q_max=1 cap=128
+{"assemble_s":9.302446,"bytes":400000000,"chunks":338410,"obj_id":1,"server":true}
+[THR] rt phase=xfer side=server obj=1 worker=0 busy_s=2.229 busy_frac=0.240 park=25662 unpark=51323 wall_s=9.302
+[THR] rt phase=xfer side=server obj=1 worker=1 busy_s=1.523 busy_frac=0.164 park=19175 unpark=38350 wall_s=9.302
+[THR] rt phase=xfer side=server obj=1 worker=2 busy_s=1.761 busy_frac=0.189 park=21979 unpark=43958 wall_s=9.302
+[THR] rt phase=xfer side=server obj=1 worker=3 busy_s=2.234 busy_frac=0.240 park=22869 unpark=45737 wall_s=9.302
+[THR] rt phase=xfer side=server obj=1 worker=4 busy_s=1.967 busy_frac=0.211 park=21505 unpark=43010 wall_s=9.302
+[THR] rt phase=xfer side=server obj=1 worker=5 busy_s=1.837 busy_frac=0.198 park=23266 unpark=46532 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437593 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437601 comm=rp-w-0 cpu_s=2.050 cores=0.220 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437602 comm=rp-w-1 cpu_s=1.580 cores=0.170 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437603 comm=rp-w-2 cpu_s=1.390 cores=0.149 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437604 comm=rp-w-3 cpu_s=1.790 cores=0.192 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437605 comm=rp-w-4 cpu_s=2.080 cores=0.224 wall_s=9.302
+[THR] os phase=xfer side=server obj=1 tid=437606 comm=rp-w-5 cpu_s=1.720 cores=0.185 wall_s=9.302
+[THR] sum phase=xfer side=server obj=1 workers=6 busy_s=11.551 threads=7 cpu_s=10.610 cores=1.141 wall_s=9.302
+[LAG] phase=xfer side=server obj=1 tick_ms=10 n=930 p50_us=825 p99_us=1982 max_us=5124 dropped=0
+[IOWN] phase=xfer side=server obj=1 path=0 rt=main polls=39603 drains=17802 tx_batches=0 tx_dg=0 ctrl_batches=19916 ctrl_dg=338485 rx_batches=21777 rx_dg=338455 rx_capped=3284 ack_batches=0 ack_dg=0 send_err=0 too_large_staged=0 orphaned=0 qcalls=1065966 q_secs=46682 q_wall_us=1441779 q_asleep_us=692389 asleep_frac=0.0744 drv_on=18100 drv_off=23350 wall_s=9.302 qk_snd=0/0/0/0/0/0/0/0 qk_rd=0/0/0/0/0/0/0/0 qk_pub=0/0/0/0/0/0/0/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=0 fl_full=0 fl_full_us=0
+[SPAN] t=9.3s ack=1 win=[0,1] wsize=2 a_star=Some(1) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=1 ar=0 agap=0/0 dg_rx=338499 dg_tx=338482
+[DIAG] t=9.3s win=1/128 paused=0% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=1sym/s cod=0sym/s cum=2/0/1 sidle=9307ms/1/mx9307ms cwnd=10 infl=1 np=1 np_act=1 rtt=2.7ms bdp100=28sym sweeps=0 retx=0 gapdrop=0 nbud=10 xattr=0/0 mpr[rep=0 seqs=0 fired=0 y=0 r=0 fast=0 coal=0 supp=0/0/0 stale=0 plost=0 taper=0 age=0ms pf=0/0/0 fp/on] wnd2=0/1 relgap=9305ms/mx9305ms srel=0/0 gate=0 wait[tun=100% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=0% cmd=0% n=3 us=1311567 busy=0% busy_us=138] wake[tun=2 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=7 cmd=7 timer_acked=0] dgq0[hand=338499 tx=338482 full=0 err=0 sp=4193152] p0:infl=1/sinfl=0/bdp0(cap0) sout=1 khr=1.00/kraw=- btlbw=0 sr=0/g0d0 est=n pl=0.0000 cmp=- rtt=3/wrtt=3/rtp3ms rtp_us=2669 sig_us=-/n1 rvar_us=0/n1 qsp_us=0/n1 msd_us=-/n0 tlag_us=-/n0 gapd=0/0 qcwnd=26388333 qce=0 qlp=1/50459 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1 plu=0.7209 plc=0.0000 rce=2/c1/w1/p0/a1/us2 dgev0=17 eb_bursts=2 eb_syms=2 eb_depth=1.00 eb_end=cap:0/store:0/tokens:0/drained:2 eb_maxrun=0:1/1.00
+[ETA] site=sender fhat_us=1793007179481958 n=2 zero=0.0000 place_n=2 cold_r=0.0000 cold_ge=0.5000 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=1/2 drop=0 tau_us=2669 e_p50=22528 e_p90=22528 e_p99=22528 e_mx=23665 late=0.0000 sig_us=-/n0
+[C8CONV-S] p0:sp=2 ro=0 st=0ms/0
+[SHEDH] evals=338492 dial=0 legacy=338492 dial_frac=0.0000 floor_n=338491 cap_n=0 interior_n=1 floor_frac=1.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=60000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[2m2026-10-26T09:32:59.811868Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m received SIGINT/SIGTERM, initiating graceful shutdown...
+[ETA] site=sender fhat_us=1793007179481958 n=2 zero=0.0000 place_n=2 cold_r=0.0000 cold_ge=0.5000 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=2/2 drop=0 tau_us=2669 e_p50=60 e_p90=22528 e_p99=22528 e_mx=23665 late=0.5000 sig_us=-/n0 final=1
+[2m2026-10-26T09:32:59.811975Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m window sender shut down gracefully
+[DCAP] on=1 eng=0/0 chg=0/0 chg_frac=0.0000 pin=0.0000 floor=0.0000 cap=0.0 ask=0.0 q=0.100000 b=2.0000
+[SUMCAP] on=1 eng=0/0 chg=0/0 chg_frac=0.0000 pin=0.0000 floor=0.0000 cap=0.0 ask=0.0
+[2m2026-10-26T09:32:59.812000Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m tunnel task exited — shutting down tunnel [3mtask[0m[2m=[0m"path-report"
+[QCLK] site=sender evals=2 kept=2 w_us_mean=62500.0 w_us_p05=25000 w_us_p50=100000 w_us_p95=100000 w_us_min=25000 w_us_max=100000 srtt_us_mean=26334.5 sigma_us_mean=0.0/n0 fa_class=0.0625
+[2m2026-10-26T09:32:59.812029Z[0m [32m INFO[0m [2mraptorpath::tun[0m[2m:[0m cleaning up TUN interface [3mname[0m[2m=[0mmem
+[2m2026-10-26T09:32:59.812070Z[0m [32m INFO[0m [2mraptorpath::net::receiver[0m[2m:[0m receiver shutting down
+[SUCC] gen=0 det=431 res=431 orig_n=429 orig_p50_us=26624 orig_p90_us=40960 orig_p99_us=53248 orig_mx_us=57394 orig_mean_us=23951 rep_n=2 rep_p50_us=20480 rep_p90_us=20480 rep_p99_us=20480 rep_mx_us=22035 rep_mean_us=22035 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=0.9954 cross_us=- dump=0/0 sp_n=431 xp_n=0 xp_frac=0.0000 sp_p50_us=26624 sp_p90_us=40960 xp_p50_us=- xp_p90_us=- rtx_n=371 final=1
+[ETA] site=receiver n=338492 p0:n=338038 bind=0.0013 tau_us=2669 srtt_src=echo l_p50=98304 l_p90=106496 l_p95=114688 l_p99=122880 l_mx=152885 sig_us=371/n242 minrst=155 final=1
+[LAT] site=receiver n=338411 over=24 p0:n=338409 nowait=306382 minrst=2 ax_n=338409 ax_p50=24576 ax_p90=36864 ax_p95=36864 ax_p99=53248 ax_sum=7829390796 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=31119 rwsp_p50=8192 rwsp_p95=32768 rwsp_sum=367666857 rwrep_n=908 rwrep_p50=10240 rwrep_p95=20480 rwrep_sum=9959631 rep_n=909 rep_p50=20480 rep_p95=20480 rep_sum=20029815 tot_p50=26624 tot_p95=40960 tot_p99=65536 sh_ax=0.9517 sh_rwxp=0.0000 sh_rwsp=0.0447 sh_rwrep=0.0012 sh_rep=0.0024 final=1
+[LATE] n=431 lo_p50=26624 lo_p90=40960 lo_p99=53248 hi_p50=26624 hi_p90=40960 hi_p99=57344 orig=429 rep=2 aban=0 xp_n=0 sp_n=431 xp_frac=0.0000 d_us=23951 d_n=429 knee_us=8192 knee_n=5 rho_heal0=0.1346 s_tot=1.0000 lstar_us=0 w=1.00 delta=0.00500 bar=0.0099 knee_bind=1.0000 sampler_bind=0.8000 reports=10 rtx=371 final=1
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0 final=1
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=10 empty=9 reports=10 final=1
+[THR] rt phase=run side=server worker=0 busy_s=2.231 busy_frac=0.209 park=25689 unpark=51377 wall_s=10.692
+[THR] rt phase=run side=server worker=1 busy_s=1.523 busy_frac=0.142 park=19176 unpark=38351 wall_s=10.692
+[THR] rt phase=run side=server worker=2 busy_s=1.762 busy_frac=0.165 park=22046 unpark=44092 wall_s=10.692
+[THR] rt phase=run side=server worker=3 busy_s=2.237 busy_frac=0.209 park=23109 unpark=46218 wall_s=10.692
+[THR] rt phase=run side=server worker=4 busy_s=1.967 busy_frac=0.184 park=21507 unpark=43013 wall_s=10.692
+[THR] rt phase=run side=server worker=5 busy_s=1.843 busy_frac=0.172 park=23320 unpark=46639 wall_s=10.692
+[THR] os phase=run side=server tid=437593 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=10.692
+[THR] os phase=run side=server tid=437601 comm=rp-w-0 cpu_s=2.050 cores=0.192 wall_s=10.692
+[THR] os phase=run side=server tid=437602 comm=rp-w-1 cpu_s=1.580 cores=0.148 wall_s=10.692
+[THR] os phase=run side=server tid=437603 comm=rp-w-2 cpu_s=1.390 cores=0.130 wall_s=10.692
+[THR] os phase=run side=server tid=437604 comm=rp-w-3 cpu_s=1.790 cores=0.167 wall_s=10.692
+[THR] os phase=run side=server tid=437605 comm=rp-w-4 cpu_s=2.080 cores=0.195 wall_s=10.692
+[THR] os phase=run side=server tid=437606 comm=rp-w-5 cpu_s=1.730 cores=0.162 wall_s=10.692
+[THR] sum phase=run side=server workers=6 busy_s=11.563 threads=7 cpu_s=10.620 cores=0.993 wall_s=10.692
+[LAG] phase=run side=server tick_ms=10 n=1069 p50_us=847 p99_us=2016 max_us=5124 dropped=0 final=1
+[IOWN] phase=run side=server path=0 rt=main polls=39625 drains=17812 tx_batches=2 tx_dg=2 ctrl_batches=19921 ctrl_dg=338499 rx_batches=21781 rx_dg=338498 rx_capped=3284 ack_batches=2 ack_dg=2 send_err=0 too_large_staged=0 orphaned=0 qcalls=1066091 q_secs=46706 q_wall_us=1442086 q_asleep_us=692485 asleep_frac=0.0648 drv_on=18113 drv_off=23365 wall_s=10.692 qk_snd=0/0/0/0/0/0/0/0 qk_rd=0/0/0/0/0/0/0/0 qk_pub=0/0/0/0/0/0/0/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=0 fl_full=0 fl_full_us=0
+[RACK] fa=24/455 fa_frac=0.0527 fa_class=0.0625
+[RFA] gen=0 fires=455 false=24 false_frac=0.0527 fill_coded=2 fill_src=429 dup_src=22 preempt_src=2 src_n=338433 rep_n=59 nu_recv=0.00134 fa_class=0.0625 rep_redundant=57 late_after_aban=0
+[QCLK] site=receiver evals=871 kept=871 w_us_mean=25000.0 w_us_p05=25000 w_us_p50=25000 w_us_p95=25000 w_us_min=25000 w_us_max=25000 srtt_us_mean=2669.0 sigma_us_mean=0.0/n0 fa_class=0.0625

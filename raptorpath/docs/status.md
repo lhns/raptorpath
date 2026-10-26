@@ -4997,3 +4997,58 @@ interleaved MAIN arm absorbs it. (iv) `SeqBits::refused()` (inserts refused
 past the 16 M-seq span) is counted but **not printed** by any gauge in this
 tree, so the battery cannot report it; the span bound is covered by the
 `seq_bits` test only.
+
+### 17. Receiver per-datagram cost (R1) — result
+
+**Outcome: `REFUTED-WITH-RECORD (R1 FAIL-AT-c1s-400): nothing ships.** Scored
+strictly as pre-registered (Amendments 1 and 2 applied: hard = launch + 4 h;
+launch precondition met: both locks free, loadavg 1.09, 0 cargo / rustc).
+Session 2026-10-26 08:05–09:37Z, one envelope, both locks held throughout,
+exit state 0 `raptorpath`, 0 `rp-*`, locks released. Tests first, on the R1
+tree `583b712` inside the locks: release **1 096 passed, 0 failed** (50
+ignored, 95 binaries), doc rc 0, wasm 35 passed, debug **955 passed, 0 failed**
+(49 ignored, 86 binaries), parsers rc 0; smoke passed; the battery ran in 550 s
+(48 rows, **all 48 LIVE**, no void, no witness failure, no abort token, no
+truncation, n = 6 per arm and cell, `RWM_RTOBS=1 RWM_RDIAG=1`). Ledgers:
+`docs/l1-raw/thread-r1/` (`all-era.txt`, `tr1.log`, `score.txt`, `TESTS.txt`,
+`BINSHA.txt`, `diag-tr1/` per-run logs).
+
+| cell | verdict | clauses |
+|---|---|---|
+| c1s-400 | **FAIL** | goodput **WORSE** 189 [185–192] vs 621 [344–658] Mbit/s (−69.6 %); CPUCLI/GB **WORSE** 22.5 vs 15.9 (+41 %); CPUSRV/GB **WORSE** 56.9 vs 22.8 (+149 %); `[LAG]` p99 and RTprop floor WITHIN; feed SAME |
+| c1d-400 | PASS | goodput TREND-WORSE 572 [546–597] vs 609 [560–641] (−6.2 %, ranges overlap); CPUCLI WITHIN (+4.3 %); CPUSRV WITHIN (+6.2 %); server `[LAG]` p99 TREND-BETTER (−26 %) |
+| c2-100 | PASS | goodput WITHIN (+0.1 %); CPUCLI WITHIN; CPUSRV TREND-WORSE (+9.6 %) |
+| c8-100 | PASS | goodput TREND-BETTER (+11.6 %); CPUSRV **BETTER** (−11.9 %); client `[LAG]` p99 TREND-BETTER (−47 %) |
+
+**Predictions (reported, not gating): all four MISSED.**
+`c1d_goodput_better` MISSED (goodput TREND-WORSE; server `[RDIAG]` busy median
+100 on both arms, not < 90); `cpusrv_better` MISSED (c1s WORSE, c1d WITHIN);
+`c1s_goodput_within` MISSED (WORSE); `c2_c8_within` MISSED on the letter (c2
+CPUSRV TREND-WORSE; c8 BETTER is on the good side).
+
+**What the record says.**
+1. **c1s is a deterministic collapse, not noise.** All six R1 rows read
+   185–192 Mbit/s (client sender `busy` 12 vs 39.5; the server's receiver
+   `[RDIAG]` 100 % vs MAIN's 85 %). In the server log of one pair
+   (s42 r1) the receiver handles 13–21 k messages/s at 100 % busy in R1 against
+   81 k at 77 % in MAIN: roughly **5× the CPU per message at N = 1**. The same
+   code at c1d (two paths) costs MAIN's. MAIN's c1s is bimodal (one of six rows
+   at 344, the rest 611–658), which does not rescue the comparison (R1's best
+   row is below MAIN's worst).
+2. **The change that was supposed to lower the receiver's cost raised it at
+   N = 1 only.** The unmeasured cause lies in what R1 changed on the
+   single-path receiver: the ring bitmap's range reads (`count_in`,
+   `each_run`) on a stalled frontier, the `[LAT]` `SeqRing` store and its span
+   guard, or the pool (c1s R1 `ibp_miss` 912–1 895 per run vs c1d 145–552, a
+   consequence of the saturated receiver, not a cause). **No `[RXSEC]` was
+   taken in the battery and no profile of the c1s receiver exists**; these are
+   hypotheses to be separated by a `RWM_RTOBS=2` c1s run of both trees and a
+   profile, as a new pre-registration, not tuned here.
+3. **c8 and the c1d server `[LAG]` improved** (CPUSRV −11.9 %, client lag
+   −47 %), the direction the mechanism predicts; c1d goodput did not rise and
+   the receiver stayed saturated (100 %) on both arms, so the receiver-bound
+   claim of §16 finding 4 is untouched by R1's allocation work.
+4. The dev read's low c1d goodput (525 Mbit/s) was co-tenant load: the
+   interleaved MAIN arm read 609 at c1d.
+5. `SeqBits::refused()` (inserts refused past the 16 M-seq span) is counted but
+   not printed by any gauge, so the battery cannot say whether it fired.
