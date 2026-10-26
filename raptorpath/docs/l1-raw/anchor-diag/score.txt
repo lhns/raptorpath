@@ -1,0 +1,130 @@
+ANCHOR-DIAG SCORE (pre-registration: status.md §23; diagnostic, nothing here ships)
+
+ROWS by (cell, arm): live / total / statuses
+  c1s-400 MAIN: live 3/3 {'LIVE': 3}
+  c1s-400 PRS: live 3/3 {'LIVE': 3}
+  c1s-400 S192: live 3/3 {'LIVE': 3}
+  c1s-400 S256: live 3/3 {'LIVE': 3}
+  c1s-400 S384: live 3/3 {'LIVE': 3}
+  c1s-400 S512: live 3/3 {'LIVE': 3}
+  c1s-400 S768: live 3/3 {'LIVE': 3}
+  c1s-400 S1024: live 3/3 {'LIVE': 3}
+  c1s-400 S1536: live 3/3 {'LIVE': 3}
+  c1s-400 S2048: live 3/3 {'LIVE': 3}
+  c2-100 MAIN: live 3/3 {'LIVE': 3}
+  c2-100 PRS: live 3/3 {'LIVE': 3}
+  c2-100 S64: live 2/2 {'LIVE': 2}
+  c2-100 S96: live 2/2 {'LIVE': 2}
+  c2-100 S128: live 2/2 {'LIVE': 2}
+  c2-100 S192: live 2/2 {'LIVE': 2}
+  c2-100 S256: live 2/2 {'LIVE': 2}
+  c2-100 S384: live 2/2 {'LIVE': 2}
+  c2-100 S512: live 2/2 {'LIVE': 2}
+  c2-100 S1024: live 2/2 {'LIVE': 2}
+  c1d-400 MAIN: live 3/3 {'LIVE': 3}
+  c1d-400 PRS: live 3/3 {'LIVE': 3}
+  c8-100 MAIN: live 3/3 {'LIVE': 3}
+  c8-100 PRS: live 3/3 {'LIVE': 3}
+
+VOID TABLE (rows not LIVE)
+  none
+
+== Q1 (MAIN rows) ==
+Q1 c1s-400 (MAIN live n=3; L=97700/s; need btlbw >= 3 L and >= 90% of samples elapsed_ms < 2)
+  s42 r1: btlbw=946575 (9.7 L) a=True; M n=252 frac<2ms=0.952 b=True; elapsed_ms p50/p90/max 1.01/1.65/2.76; delta p50/p90/max 404/611/947
+    ackdiag p0: gap_us p50/p90/p99 1/2/18; drecv p50/p90/max 1/1/11; x p50/p90/p99 0.87/2.94/7.58; xanchor 12.41; rd acc/rej 967/151578
+  s42 r2: btlbw=975974 (10.0 L) a=True; M n=242 frac<2ms=0.975 b=True; elapsed_ms p50/p90/max 1.00/1.45/3.33; delta p50/p90/max 403/612/976
+    ackdiag p0: gap_us p50/p90/p99 2/2/22; drecv p50/p90/max 1/1/1; x p50/p90/p99 0.84/2.83/8.04; xanchor 13.28; rd acc/rej 1035/146010
+  s7 r1: btlbw=752878 (7.7 L) a=True; M n=263 frac<2ms=0.985 b=True; elapsed_ms p50/p90/max 1.00/1.47/2.76; delta p50/p90/max 401/594/753
+    ackdiag p0: gap_us p50/p90/p99 2/2/27; drecv p50/p90/max 1/1/1; x p50/p90/p99 0.91/3.59/8.42; xanchor 9.95; rd acc/rej 872/150453
+  -> MECHANISM-CONFIRMED
+Q1 c2-100 (MAIN live n=3; L=9770/s; need btlbw >= 3 L and >= 90% of samples elapsed_ms < 2)
+  s42 r1: btlbw=124982 (12.8 L) a=True; M n=370 frac<2ms=0.951 b=True; elapsed_ms p50/p90/max 1.26/1.71/3.70; delta p50/p90/max 31/45/125
+    ackdiag p0: gap_us p50/p90/p99 2/22/2347; drecv p50/p90/max 1/1/6; x p50/p90/p99 0.99/1.93/3.31; xanchor 13.01; rd acc/rej 990/18226
+  s42 r2: btlbw=70909 (7.3 L) a=True; M n=349 frac<2ms=0.960 b=True; elapsed_ms p50/p90/max 1.19/1.70/3.63; delta p50/p90/max 31/45/106
+    ackdiag p0: gap_us p50/p90/p99 2/20/2461; drecv p50/p90/max 1/1/1; x p50/p90/p99 0.99/1.90/3.53; xanchor 7.50; rd acc/rej 935/18296
+  s7 r1: btlbw=86970 (8.9 L) a=True; M n=368 frac<2ms=0.970 b=True; elapsed_ms p50/p90/max 1.20/1.72/3.86; delta p50/p90/max 30/42/124
+    ackdiag p0: gap_us p50/p90/p99 2/24/2351; drecv p50/p90/max 1/1/1; x p50/p90/p99 0.96/1.98/3.06; xanchor 9.05; rd acc/rej 991/18235
+  -> MECHANISM-CONFIRMED
+
+== Q2 (PRS rows) ==
+Q2 c1s-400 (PRS live n=3; L per path [97700])
+  s42 r1: o per path p0=0.34
+  s42 r2: o per path p0=0.23
+  s7 r1: o per path p0=0.23
+  -> HONEST
+  PRS - MAIN (not scored) c1s-400: PRS n=3 MAIN n=3; diff / 2 sigma_pooled
+    goodput Mbit/s: PRS 188.2 MAIN 662.5 diff -474.3 2s 68.4
+    A_x p50 us: PRS 395 MAIN 13995 diff -13600 2s 2212
+    SUMCAP cap: PRS 63.6 MAIN 1706.8 diff -1643.2 2s 203.1
+    SUMCAP pin: PRS 0.000 MAIN 0.463 diff -0.463 2s 0.624
+    rtt ms: PRS 2.9 MAIN 22.2 diff -19.4 2s 3.9
+    client CPU s/GB: PRS 28.02 MAIN 15.15 diff 12.87 2s 2.78
+Q2 c2-100 (PRS live n=3; L per path [9770])
+  s42 r1: o per path p0=0.10
+  s42 r2: o per path p0=0.10
+  s7 r1: o per path p0=0.10
+  -> HONEST
+  PRS - MAIN (not scored) c2-100: PRS n=3 MAIN n=3; diff / 2 sigma_pooled
+    goodput Mbit/s: PRS 7.2 MAIN 89.9 diff -82.6 2s 0.8
+    A_x p50 us: PRS 4437 MAIN 106496 diff -102059 2s 41773
+    SUMCAP cap: PRS 11.3 MAIN 994.6 diff -983.4 2s 298.5
+    SUMCAP pin: PRS 0.000 MAIN 0.000 diff 0.000 2s 0.000
+    rtt ms: PRS 13.4 MAIN 127.7 diff -114.3 2s 56.2
+    client CPU s/GB: PRS 73.10 MAIN 33.90 diff 39.20 2s 1.57
+Q2 c1d-400 (PRS live n=3; L per path [97700, 97700])
+  s42 r1: o per path p0=0.46 p1=0.46
+  s42 r2: o per path p0=0.47 p1=0.50
+  s7 r1: o per path p0=0.40 p1=0.39
+  -> HONEST
+  PRS - MAIN (not scored) c1d-400: PRS n=3 MAIN n=3; diff / 2 sigma_pooled
+    goodput Mbit/s: PRS 439.2 MAIN 569.6 diff -130.4 2s 74.0
+    A_x p50 us: PRS 981 MAIN 19797 diff -18816 2s 13688
+    SUMCAP cap: PRS 213.5 MAIN 1757.2 diff -1543.8 2s 1141.0
+    SUMCAP pin: PRS 0.000 MAIN 0.000 diff 0.000 2s 0.000
+    rtt ms: PRS 4.0 MAIN 29.2 diff -25.2 2s 21.9
+    client CPU s/GB: PRS 23.45 MAIN 19.66 diff 3.79 2s 2.42
+Q2 c8-100 (PRS live n=3; L per path [9770, 1955])
+  s42 r1: o per path p0=0.11 p1=0.00
+  s42 r2: o per path p0=0.11 p1=0.00
+  s7 r1: o per path p0=1.05 p1=0.51
+  -> HONEST
+  PRS - MAIN (not scored) c8-100: PRS n=3 MAIN n=3; diff / 2 sigma_pooled
+    goodput Mbit/s: PRS 32.9 MAIN 100.7 diff -67.8 2s 56.7
+    A_x p50 us: PRS 5120 MAIN 92843 diff -87723 2s 6805
+    SUMCAP cap: PRS 63.2 MAIN 1599.3 diff -1536.1 2s 464.0
+    SUMCAP pin: PRS 0.000 MAIN 0.000 diff 0.000 2s 0.000
+    rtt ms: PRS 75.8 MAIN 243.2 diff -167.4 2s 86.7
+    client CPU s/GB: PRS 50.90 MAIN 45.77 diff 5.13 2s 21.29
+
+== Q3 (store sweep) ==
+Q3 c1s-400 (grid points with < 2 live rows: none)
+  n     live  goodput mean [min-max]   A_x p50 us  A_x p95 us  rtt ms  xanchor(p0)
+  192   3       445.8 [433.3-452.9]           853        2133     3.4    3.67
+  256   3       439.4 [278.4-535.0]          2923        5035     5.8    4.93
+  384   3       596.8 [565.2-616.9]          1792        5291     5.1    4.99
+  512   3       608.7 [578.1-637.0]          2560        6827     5.6    5.37
+  768   3       679.7 [645.9-724.5]          4608        9557     7.7    7.46
+  1024  3       598.0 [407.4-697.9]          6656       30379    25.9   19.88
+  1536  3       634.2 [485.3-753.7]         12288       30720    24.1   14.32
+  2048  3       727.2 [701.2-747.9]         15360       29355    21.6   10.56
+  Spearman(xanchor, n) over grid means (reported only): 0.90 on 8 points
+  Gmax 727.2  n* = 2048 (smallest n with G >= 0.95 Gmax)
+  bw_h 22947 sym/s  RTprop 2.24 ms  ask_h = 1.1 bw_h RTprop = 56.6 symbols; 1.5 ask_h = 84.9
+  H = n* - ask_h = 1991.4 symbols; H / bw_h = 86.78 ms
+  -> HEADROOM-MISSING
+Q3 c2-100 (grid points with < 2 live rows: none)
+  n     live  goodput mean [min-max]   A_x p50 us  A_x p95 us  rtt ms  xanchor(p0)
+  64    2        37.7 [37.3-38.1]          5120        7424    14.4    8.62
+  96    2        54.2 [53.9-54.5]          4864        7680    14.9    7.26
+  128   2        70.2 [70.0-70.3]          5632        7936    15.8    9.21
+  192   2        89.2 [89.1-89.2]          7424        9728    18.8    7.60
+  256   2        89.2 [88.0-90.3]         13824       15360    24.9    9.04
+  384   2        89.8 [89.3-90.4]         24576       27648    37.6    9.10
+  512   2        89.9 [89.5-90.4]         36864       38912    51.1    7.28
+  1024  2        89.8 [89.2-90.4]         86016       90112   102.8    6.92
+  Spearman(xanchor, n) over grid means (reported only): -0.29 on 8 points
+  Gmax 89.9  n* = 192 (smallest n with G >= 0.95 Gmax)
+  bw_h 966 sym/s  RTprop 6.46 ms  ask_h = 1.1 bw_h RTprop = 6.9 symbols; 1.5 ask_h = 10.3
+  H = n* - ask_h = 185.1 symbols; H / bw_h = 191.66 ms
+  -> HEADROOM-MISSING

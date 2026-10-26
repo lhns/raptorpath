@@ -1,0 +1,32 @@
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/build.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/ad.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /home/VMUSER/ad23/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-10-26T16:01:29Z user=VMUSER dir=/home/VMUSER/ad23/run launch=2026-10-26T16:01:29Z
+AD-ALL start load=1.87 1.40 0.85 2/355 614542 2026-10-26T16:01:29Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+AD-ALL locks held; cotenants cargo=0 rustc=0 load=0.70 1.34 1.05 2026-10-26T16:08:00Z
+AD-ALL parser test ok 2026-10-26T16:08:01Z
+AD-ALL built wall=310s 2026-10-26T16:13:11Z
+AD-ALL binary 54b7eaa735fa12323ba0f71c70a8c6d01a5e6521f22994b0cc5e2fae4cf8b4ff 2026-10-26T16:13:11Z
+SMOKE ('c1s-400', 'MAIN'): mbps=704.161 eng=781 btlbw={'0': 910572.0} win_den=2048..2048 legacy_n=285 rstrace_n=0 status=LIVE
+SMOKE ('c1s-400', 'PRS'): mbps=190.299 eng=3057 btlbw={'0': 29316.0} win_den=34..89 legacy_n=0 rstrace_n=0 status=LIVE
+SMOKE ('c2-100', 'S256'): mbps=89.921 eng=None btlbw={'0': 51919.0} win_den=256..256 legacy_n=348 rstrace_n=0 status=LIVE
+SMOKE-PASS
+AD-ALL SMOKE-PASS 2026-10-26T16:13:49Z
+AD-ALL battery start load=1.80 1.81 1.41 2026-10-26T16:13:49Z
+AD-ALL battery rc=0 wall=1138s 2026-10-26T16:32:47Z
+CHECK done=True rows=64/64
+AD-ALL end bat_ok=1 raptorpath=0 netns=0 load=2.07 1.36 1.42 2026-10-26T16:32:47Z
+AD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

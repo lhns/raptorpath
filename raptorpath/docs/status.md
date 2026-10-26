@@ -122,7 +122,7 @@ pipeline in `dacfd7c`.)
 | `net/sender_policy.rs` `use_packing` | symbol packing on Realtime only; since `bf3a636` also emission batching's exclusion (`emit_batch_on` requires `!use_packing`) |
 | `scheduler/copa.rs` `queue_target_mult` | Copa queue target 1.08 / 1.125 / 1.25 by hint |
 | `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`) | Copa's TCP-competitive mode switching |
-| `reliable` boolean branches in the window sender/receiver | ρ = 1 vs ρ < 1 selecting code paths instead of composing with δ; since `bf3a636` this includes emission batching (`emit_batch_on` requires `reliable`) |
+| `reliable` boolean branches in the window sender/receiver | ρ = 1 vs ρ < 1 selecting code paths instead of composing with δ; since `bf3a636` this includes emission batching (`emit_batch_on` requires `reliable`); at the store-cap seat ρ < 1 has no outstanding gate at all (`tx_paused` and `plain_dyn_cap` require `reliable`, no `sent_store`; how ρ would enter the law: paper §6.1, status §23) |
 
 ### 3.4 Open-constants register
 
@@ -6216,3 +6216,115 @@ p50 down. Q3: the c1s knee lies between 384 and 768 and the c2 knee between
 **Duration.** Build ≈ 10 min; 67 invocations at ≈ 14 s (§19: 54 in 757 s)
 ≈ 16 min; under one hour with the lock waits seen in §18/§19, well inside
 the 4 h launch deadline and the 5 h cap.
+
+### 23. The c1 anchor over-read and the store law's input — result
+
+Scored 2026-10-26 against the pre-registration above, literally; no
+threshold was touched after the data was read. Diagnostic: nothing ships or
+flips. **Q1 `MECHANISM-CONFIRMED` at `c1s-400` and `c2-100`. Q2 `HONEST`
+at all four cells by its rule, which has no lower bound: the send-interval
+anchor *under*-reads ×0.1–0.5 and the shipped law on it collapses to its
+floor (`OUTSIDE THE PRE-REGISTERED SET`, below). Q3 `HEADROOM-MISSING` at
+both single-path cells.** By the decision rule no input change is built;
+the finding below changes what the fix has to be.
+
+*Binary and session.* One binary, `sha256 54b7eaa7…cf8b4ff`, built fresh
+(310 s) from `025bc52` (engine identical to main `0972c3c`; the commits after
+it are this pre-registration and the harness). Envelope
+`tools/l1/anchordiag_run_all.sh` (battery `anchordiag_battery.sh`, parser
+`anchordiag_parse.py`, its test run in the session). Launched 16:01:29Z,
+waited 6.5 min for the locks (another agent), held both 16:08:00–16:32:47Z;
+cotenants cargo 0 / rustc 0 at lock time; smoke 16:13:49Z; battery 1 138 s,
+64 invocations; exit state 0 `raptorpath`, 0 `rp-*`; run dir removed.
+Ledgers: `docs/l1-raw/anchor-diag/` (`ad.log` with every `ADROW`,
+`score.txt`, `smoke*`, `all-era.txt`, `BINSHA.txt`, per-invocation logs in
+`diag-ad/`, `diag-smoke/`).
+
+*Abort table (filled).* `ABORT-LOCK`, `-CRLF`, `-SHA`,
+`-SENTINEL-UNWRITABLE`, `-SMOKE` (`SMOKE-PASS`, 3 rows), `-BUILD`, `-TESTS`,
+`-RC`, `-BRINGUP`, `VOID-COTENANT`: none fired. 64 of 64 rows LIVE, no
+retry.
+
+*Q1 (MAIN rows; `L` = link datagram rate).*
+
+| cell | `btlbw` / L | samples ≥ thr with `elapsed_ms` < 2 | `elapsed_ms` p50 | `delta` p50 (symbols) | `rd` accepted / rejected |
+|---|---|---|---|---|---|
+| c1s-400 | 7.7–10.0 | 0.952–0.985 (n 242–263) | 1.00–1.01 | 401–404 | 872–1 035 / 146–152 k |
+| c2-100 | 7.3–12.8 | 0.951–0.970 (n 349–370) | 1.19–1.26 | 30–31 | 935–991 / 18.2–18.3 k |
+
+The samples that set the max are one floor long: 99.3–99.4 % of
+`record_delivery` calls at c1s land inside the 1 ms floor and are carried
+into the next accepted sample, which then divides ≈ 400 symbols (≈ 4 ms of
+delivery at L) by ≈ 1 ms. `[ACKDIAG]` ack inter-arrival p50 1–2 µs at both
+cells: the sender processes acks in bunches. The location of the bunching
+(receiver emission, ack path, sender task) is not discriminated and does
+not need to be for what follows.
+
+*Q2 (PRS: `RWM_PLAIN_RS=1 RWM_HONEST_CAP=0`, the shipped law on the
+send-interval anchor; n = 3 per arm, not scored).*
+
+| cell | `btlbw` / L per path | goodput PRS / MAIN (Mbit/s) | `[SUMCAP]` cap PRS / MAIN | `A_x` p50 PRS / MAIN (ms) | rtt PRS / MAIN (ms) | client CPU s/GB PRS / MAIN |
+|---|---|---|---|---|---|---|
+| c1s-400 | 0.23–0.34 | 188.2 / 662.5 | 64 / 1 707 | 0.4 / 14.0 | 2.9 / 22.2 | 28.0 / 15.2 |
+| c2-100 | 0.10 | 7.2 / 89.9 | 11 / 995 | 4.4 / 106.5 | 13.4 / 127.7 | 73.1 / 33.9 |
+| c1d-400 | 0.39–0.50 | 439.2 / 569.6 | 214 / 1 757 | 1.0 / 19.8 | 4.0 / 29.2 | 23.5 / 19.7 |
+| c8-100 | p0 0.11–1.05, p1 0.00–0.51 | 32.9 / 100.7 | 63 / 1 599 | 5.1 / 92.8 | 75.8 / 243.2 | 50.9 / 45.8 |
+
+*Q3 (static cap sweep; means, [min–max]).*
+
+| c1s-400 n | 192 | 256 | 384 | 512 | 768 | 1024 | 1536 | 2048 |
+|---|---|---|---|---|---|---|---|---|
+| goodput | 445.8 | 439.4 [278–535] | 596.8 | 608.7 | 679.7 | 598.0 [407–698] | 634.2 [485–754] | 727.2 |
+| `A_x` p50 ms | 0.9 | 2.9 | 1.8 | 2.6 | 4.6 | 6.7 | 12.3 | 15.4 |
+| rtt ms | 3.4 | 5.8 | 5.1 | 5.6 | 7.7 | 25.9 | 24.1 | 21.6 |
+
+| c2-100 n | 64 | 96 | 128 | 192 | 256 | 384 | 512 | 1024 |
+|---|---|---|---|---|---|---|---|---|
+| goodput | 37.7 | 54.2 | 70.2 | 89.2 | 89.2 | 89.8 | 89.9 | 89.8 |
+| `A_x` p50 ms | 5.1 | 4.9 | 5.6 | 7.4 | 13.8 | 24.6 | 36.9 | 86.0 |
+| rtt ms | 14.4 | 14.9 | 15.8 | 18.8 | 24.9 | 37.6 | 51.1 | 102.8 |
+
+c1s: `n*` = 2048 by the 0.95 rule (`ask_h` = 57, `H` = 1 991 symbols); the
+curve is not monotone and its spread is wide (receiver-bound, §16 finding 4:
+goodput rises with the queue through receiver batching, not through a
+network knee). c2: `n*` = 192 (`ask_h` = 7, `H` = 185 symbols = 192 ms at
+the under-read `bw_h`; at L it is ≈ 19 ms). `xanchor` against n: Spearman
+0.90 at c1s (the over-read grows with the store it sizes), −0.29 at c2.
+
+*Predictions.* Q1 confirmed at both: MET. Q2 `HONEST`: MET by the rule;
+the c1s goodput fall: MET in sign, its size (−72 %, c2 −92 %) and the
+collapse to the floor not predicted. Q3: c2 knee in [128, 384] MET (192);
+c1s in [384, 768] MISSED (2048 by the rule; 768 reads 0.93·Gmax).
+
+*Outside the pre-registered set: the law is a window controller fed by its
+own output.* The PRS c2 trace (`diag-ad/c2-100-PRS-s42-r1-a1-c.log`)
+decays geometrically, `win=` 41 → 32 → 29 → 25 → 17 → 10 in 3 s, and sits
+at the floor 10 for the remaining 45 s with `btlbw` ≈ 870–1 030 = 10 /
+rtt. On a store-bound sender the delivered rate is `cap / T_loop`, so a law
+`cap = (1 + q)·bw·RTprop` fed by any sampler of the sender's own delivery is
+the map
+
+```text
+   cap'  =  g · cap ,      g  =  (1 + q)·RTprop / T_loop      (send-interval sampler)
+   cap'  =  g · x(cap) · cap                                  (ack-interval sampler, x = its over-read)
+```
+
+At c2 `T_loop` ≥ 12–15 ms against RTprop 6.5–6.9 ms even with ten
+symbols outstanding (netem jitter on both directions), so g ≈ 0.55–0.6;
+at c1s g ≈ 1.1·2.24/2.9 ≈ 0.85. Below 1 the honest law contracts to its
+floor; the ack-interval over-read (x ≈ 8–13, rising with the cap) makes the
+product exceed 1 and the law runs to the knee. Neither sampler measures the
+bottleneck, because the sender never sends above its own cap: **the
+over-read is the law's accidental probe**, which is why every honest-anchor
+arm on record lost goodput ("load-bearing"). What a working law must reach
+is visible in Q3: c2 at a static 192 holds goodput (89.2 vs MAIN 89.9) at
+`A_x` p50 7.4 ms against MAIN's 106 ms; c1s at 768 reads 680 vs 662 at 4.6
+ms against 14.0 ms. The two knees sit near 3.0·RTprop·L (c2) and
+3.5·RTprop·L (c1s).
+
+*What this settles.* The c1 anchor defect is the ack-interval sampler at
+its 1 ms floor (Q1), but replacing the input does not fix the law: the
+store-cap seat has no measurement of the rate the path could carry, only of
+the rate the cap lets through. The next step is a design decision on the
+controller (an unloaded loop-time term, an explicit probe, or the
+substrate's rate), not a build; it is the coordinator's.

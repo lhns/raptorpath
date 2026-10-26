@@ -1,0 +1,4 @@
+SMOKE ('c1s-400', 'MAIN'): mbps=704.161 eng=781 btlbw={'0': 910572.0} win_den=2048..2048 legacy_n=285 rstrace_n=0 status=LIVE
+SMOKE ('c1s-400', 'PRS'): mbps=190.299 eng=3057 btlbw={'0': 29316.0} win_den=34..89 legacy_n=0 rstrace_n=0 status=LIVE
+SMOKE ('c2-100', 'S256'): mbps=89.921 eng=None btlbw={'0': 51919.0} win_den=256..256 legacy_n=348 rstrace_n=0 status=LIVE
+SMOKE-PASS

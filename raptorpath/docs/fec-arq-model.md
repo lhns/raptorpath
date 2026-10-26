@@ -404,7 +404,9 @@ app-limited exclusion, per-path attribution from each ack's frontier and SACK
 difference) reads 1.02× the known link rate, costs 20 % at the single-path c2 cell under
 the old cap, and ships off. The two anchor families
 (delivery-clocked and send-clocked) remain the main unresolved measurement
-question under every cap law.
+question under every cap law. Status §23 settles half of it: on a
+store-bound sender both families measure the rate the cap lets through, not
+the bottleneck, so neither can be the store law's input alone (Section 6.1).
 
 ---
 
@@ -1525,9 +1527,29 @@ for every N ≥ 1:
 
 Shape: symbols (sym/s × s); order 1 in N (a symmetric cell gives
 N·(1 + q)·a, and the ceiling is linear too); non-decreasing in every bwᵢ
-and RTpropᵢ; continuous and increasing in δ's b through q; no ρ input (ρ
-decides what the store retains, not how much may be outstanding). No term
+and RTpropᵢ; continuous and increasing in δ's b through q; no ρ input. No term
 needs two paths: at N = 1 the sum has one term and the ceiling is 1·knee.
+
+*Where ρ enters (derived, not shipped; status §23).* "ρ decides what the
+store retains, not how much may be outstanding" is wrong under SACK-clocked
+release (Section 6.3): a delivered symbol leaves the gate count at its SACK,
+a lost one stays until its hole is resolved, by recovery on the retained
+share ρ and by shedding at the latest at D(δ) on the rest. That residence is
+the contract stall of Section 6.4, so Little's law on the hole population
+adds, per path,
+
+```text
+   + ε̂ᵢ · bwᵢ · stall(δ, ρ, i) ,      stall = (1 − ρ)·D(δ) + ρ·(9/8 + 1)·SRTTᵢ
+```
+
+with ε̂ᵢ the path's fed loss estimate (measured; Section 11.3). Linear in ρ
+with both terms always computed, so continuous across ρ → 1; its share is
+ε̂·17/8·SRTT/((1 + q)·RTprop), < 0.3 % at c1 and ≈ 6–10 % at c2; its loop
+gain through SRTT is ε̂·17/8 ≪ 1. It is not added while the law's rate input
+is unsettled (below). The engine also has no ρ < 1 seat for it: the EVICT
+path keeps no `sent_store` and `tx_paused` requires `reliable`, so ρ < 1
+runs with no outstanding gate at all (status §3.3), and the release bound of
+Section 6.3 assumes a receiver that never evicts above its frontier.
 
 `pooled_store_cap`, `pool_value_multiplier`, `codel_setpoint_q`
 (`net/store_cap.rs`); gates `RWM_SUM_CAP` and `RWM_DELTA_CAP`, both on
@@ -1572,6 +1594,33 @@ of r1. At the delivered rate it would ask ≈ 250–285. That over-read is an
 input defect the 1024 constant was hiding, not a property of the law; the
 `[SUMCAP]` pin fraction reports it at one path once the guard is gone
 (Section 11.2).
+
+**The law is fed by its own output (status §23).** On a store-bound sender
+the delivered rate is cap/T_loop, where T_loop is the send-to-release time.
+Any sampler of the sender's own delivery therefore closes a loop:
+
+```text
+   cap'  =  g · cap ,     g  =  (1 + q)·RTprop / T_loop          send-interval sampler
+   cap'  =  g · x(cap) · cap                                     ack-interval sampler, over-read x
+```
+
+At c2 T_loop is 12–15 ms with ten symbols outstanding against RTprop
+6.5–6.9 ms (jitter on both directions), g ≈ 0.6; at c1s g ≈ 0.85. With the
+honest send-interval sampler the law contracts to its floor (c2: cap 41 → 10
+in 3 s, goodput 7.2 against 89.9 Mbit/s; c1s 188 against 663). The
+ack-interval sampler's over-read (x ≈ 8–13 at c1s, Spearman 0.90 with the
+cap) makes g·x > 1 and the law runs to the knee. Neither measures the
+bottleneck, because the sender never sends above its own cap: the over-read
+is the law's accidental probe, which is what "load-bearing" meant in every
+honest-anchor arm on record. The c1 input defect itself is the 1 ms floor:
+99.4 % of ack-interval calls at c1s fall inside it and are carried into the
+next accepted sample, ≈ 400 symbols over ≈ 1 ms (Section 2.7). A static cap
+sweep shows what a working law must reach: c2 holds goodput at 192 symbols
+(89.2 Mbit/s, `A_x` p50 7.4 against 106 ms on main), c1s reads 680 Mbit/s at
+768 (4.6 against 14 ms). Both knees sit near 3–3.5·RTprop·L. The open
+design question is the controller's input: a non-circular unloaded loop
+time in place of RTprop, an explicit probe (BBR's gain cycle), or the
+substrate's rate estimate.
 
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the

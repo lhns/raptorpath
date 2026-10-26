@@ -1,0 +1,13 @@
+AD-ALL start load=1.87 1.40 0.85 2/355 614542 2026-10-26T16:01:29Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+AD-ALL locks held; cotenants cargo=0 rustc=0 load=0.70 1.34 1.05 2026-10-26T16:08:00Z
+AD-ALL parser test ok 2026-10-26T16:08:01Z
+AD-ALL built wall=310s 2026-10-26T16:13:11Z
+AD-ALL binary 54b7eaa735fa12323ba0f71c70a8c6d01a5e6521f22994b0cc5e2fae4cf8b4ff 2026-10-26T16:13:11Z
+AD-ALL SMOKE-PASS 2026-10-26T16:13:49Z
+AD-ALL battery start load=1.80 1.81 1.41 2026-10-26T16:13:49Z
+AD-ALL battery rc=0 wall=1138s 2026-10-26T16:32:47Z
+AD-ALL end bat_ok=1 raptorpath=0 netns=0 load=2.07 1.36 1.42 2026-10-26T16:32:47Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
