@@ -2159,6 +2159,85 @@ fn received_above_counter_matches_the_brute_force_count() {
     }
 }
 
+/// Threading R1 (c): the receiver's wire-facing laws read the ring bitmap
+/// exactly as they read the `BTreeSet` it replaced -- `next_expected` (the
+/// frontier walk, including a hold-expiry jump past holes), `received_above`
+/// (`ReceivedAbove::sync` against the brute-force count) and the SACK ranges
+/// (`received_sack_ranges`, capped at `MAX_SACK_RANGES` as a PREFIX of the
+/// true runs) -- over random arrival orders with gaps, duplicates, late
+/// copies below the prune point and prunes below the frontier (the contract
+/// the receiver loop keeps). The same script drives both instantiations.
+#[test]
+fn the_wire_laws_read_the_ring_bitmap_as_the_btreeset() {
+    use super::seq_bits::SeqBits;
+    let mut capped = 0u32;
+    for seed in 0..24u64 {
+        let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed.wrapping_mul(0xD1B5_4A32_D192_ED03);
+        let mut next = move |m: u64| {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (rng >> 33) % m.max(1)
+        };
+        let mut set: BTreeSet<u64> = BTreeSet::new();
+        let mut bits = SeqBits::new();
+        let (mut a_set, mut a_bits) = (ReceivedAbove::new(), ReceivedAbove::new());
+        let (mut f_set, mut f_bits) = (0u64, 0u64);
+        let (mut next_expected, mut top) = (0u64, 0u64);
+        // 200 isolated seqs above a missing 0: the SACK run list starts out
+        // past MAX_SACK_RANGES, so the cap is exercised for certain.
+        for s in (1..400u64).step_by(2) {
+            a_set.on_insert(s, set.insert(s));
+            a_bits.on_insert(s, bits.insert(s));
+            top = top.max(s);
+        }
+        for step in 0..3_000u64 {
+            match next(10) {
+                0..=6 => {
+                    // Mostly near the head; every other long-gap arrival lands
+                    // on an odd offset, so the SACK run list outgrows the cap.
+                    let seq = match next(8) {
+                        0 => next_expected.saturating_sub(next(120)),
+                        1 | 2 => next_expected + 2 * next(300) + 1,
+                        _ => next_expected + next(40),
+                    };
+                    let (n_set, n_bits) = (set.insert(seq), bits.insert(seq));
+                    a_set.on_insert(seq, n_set);
+                    a_bits.on_insert(seq, n_bits);
+                    top = top.max(seq);
+                }
+                7 | 8 => {
+                    while set.contains(&f_set) {
+                        f_set += 1;
+                    }
+                    while bits.contains(f_bits) {
+                        f_bits += 1;
+                    }
+                    assert_eq!(f_set.max(next_expected), f_bits.max(next_expected), "frontier, step {step}");
+                    next_expected = f_set.max(next_expected) + if next(5) == 0 { next(4) } else { 0 };
+                    (f_set, f_bits) = (next_expected, next_expected);
+                }
+                _ => {
+                    // The receiver's prune: sync the counter, then drop below
+                    // a point at or under the cumulative point.
+                    assert_eq!(a_set.sync(&set, next_expected), a_bits.sync(&bits, next_expected));
+                    let before = next_expected.saturating_sub(1 + next(60));
+                    set = set.split_off(&before);
+                    bits.prune_below(before);
+                }
+            }
+            if step % 3 == 0 {
+                let want_above = set.range(next_expected..).count().min(u32::MAX as usize) as u32;
+                let (g_set, g_bits) = (a_set.sync(&set, next_expected), a_bits.sync(&bits, next_expected));
+                assert_eq!((g_set, g_bits), (want_above, want_above), "received_above, seed {seed} step {step}");
+                let r_set = received_sack_ranges(&set, next_expected, top);
+                let r_bits = received_sack_ranges(&bits, next_expected, top);
+                assert_eq!(r_bits, r_set, "SACK ranges, seed {seed} step {step}");
+                capped += (r_set.len() == MAX_SACK_RANGES) as u32;
+            }
+        }
+    }
+    assert!(capped >= 24, "the script must reach the MAX_SACK_RANGES cap ({capped} reads)");
+}
+
 /// Wire v9 seq-0 cases at the sender: a delivered seq 0 alone
 /// (`next_expected = 1`) is a cumulative advance that prunes seq 0 from the
 /// store, the marks and the per-path accounts; `next_expected = 0` advances

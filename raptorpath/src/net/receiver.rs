@@ -37,7 +37,7 @@
 //! The receiver's locals stay locals: no other phase reads them, so a
 //! `ReceiverState` struct would add a `st.` prefix everywhere and buy nothing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -49,6 +49,7 @@ use tracing::{debug, error, info, warn};
 use super::control_msg::{RxControlCtx, handle_rx_control_message};
 use super::delivery::{WindowDelivery, delivered_prefix};
 use super::reorder::ReorderBuffer;
+use super::seq_bits::{ReceivedSeqs, SeqBits};
 use super::{
     DerivedRoundEcho, SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
@@ -59,6 +60,7 @@ use super::{
 use crate::fec::{FecBackend, WindowDecoder};
 use crate::monitor::stats::{SharedStats, TxPublished};
 use crate::scheduler::RxScheduler;
+use crate::task_obs::RxSec;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 
 /// The engine's receiver task. Consumes `(path_id, WireMessage)` from the
@@ -311,7 +313,9 @@ pub(crate) async fn run_receiver(
     // recovery to the sender's single-seq tail sweep alone.
     let mut last_hole_nack_at = Instant::now();
     // Track received seqs for WindowNack gap reporting
-    let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
+    // A ring bitmap (threading R1; `net/seq_bits.rs`), not a tree: no node
+    // allocation per seq, O(words) range reads.
+    let mut received_seqs = SeqBits::new();
     // Wire v9 `received_above`: |received_seqs ∩ [next_expected, ∞)|,
     // maintained incrementally (every WindowAck carries it, including one per
     // data message under the ack merge).
@@ -689,6 +693,9 @@ pub(crate) async fn run_receiver(
     let mut rdiag_qn: u64 = 0;
     let mut rdiag_last = Instant::now();
 
+    // Threading R1 (`RWM_RTOBS=2`): the loop's per-section CPU and backlog.
+    let rxp = crate::task_obs::RxProbe::new();
+
     'recv: loop {
         // Threading Q1 (plan rule 3, batch at the consumer): the messages of
         // one `recv_many` drain are processed back to back; the loop only
@@ -858,9 +865,17 @@ pub(crate) async fn run_receiver(
                 if n == 0 {
                     break; // channel closed
                 }
-                for b in inbox.drain(..) {
-                    queued.extend(b);
+                for mut b in inbox.drain(..) {
+                    // The owner's one-`Vec`-per-poll batch: flattened into
+                    // `queued`, then handed back to its path's owner for the
+                    // next poll (threading R1; a batch carries one path).
+                    let path = b.first().map(|m| m.0);
+                    queued.extend(b.drain(..));
+                    if let Some(v) = path.and_then(|p| recv_transport.view(p)) {
+                        v.recycle_inbound(b);
+                    }
                 }
+                rxp.backlog(queued.len());
                 match queued.pop_front() {
                     Some(m) => m,
                     None => continue, // only empty batches
@@ -943,7 +958,7 @@ pub(crate) async fn run_receiver(
                                 b_seen,
                                 b_rec,
                                 b_out,
-                                received_seqs.contains(&blocker),
+                                received_seqs.contains(blocker),
                                 pending,
                                 highest_seen_seq,
                                 seen_end.saturating_sub(next_expected),
@@ -1161,23 +1176,15 @@ pub(crate) async fn run_receiver(
                 rdiag_last = Instant::now();
             }
         }
+        let rxp_is_data = matches!(msg, WireMessage::Data(_));
+        let rxp_t_msg = rxp.begin();
         match msg {
             WireMessage::Data(batch) => {
                 let batch_send_ts = batch.send_timestamp_us;
                 // v8: the sender's own delivery prediction for this batch,
                 // us relative to `batch_send_ts`. 0 = no prediction.
                 let batch_eta_rel_us = batch.eta_rel_us;
-                // `[LAT]`: the SOURCE seqs of this batch, read before the
-                // decoder consumes it. (A repair symbol's `block_id` is its
-                // window anchor, not a seq it delivers.)
-                let lat_arrivals: Vec<u64> = batch
-                    .symbols
-                    .iter()
-                    .filter(|sym| !sym.is_repair)
-                    .map(|sym| sym.block_id)
-                    .collect();
                 let batch_seq = batch.batch_seq;
-                let batch_path_id = batch.path_id;
                 let symbol_count = batch.symbols.len() as u32;
                 if wdiag_on {
                     wdiag_batches += 1;
@@ -1283,6 +1290,7 @@ pub(crate) async fn run_receiver(
                         }
                     }
                     drop(ps);
+                    let rxp_t = rxp.begin();
                     blk.eta.observe(
                         path_id,
                         batch_send_ts,
@@ -1298,8 +1306,13 @@ pub(crate) async fn run_receiver(
                     // seq the decoder reconstructs never rode a wire as itself
                     // and has no queueing time of its own, so it is absent
                     // from `ax` rather than credited a zero.
-                    for sym in &lat_arrivals {
-                        blk.lat.note_arrival(*sym, path_id, batch_send_ts, arrival_us);
+                    // The batch's SOURCE seqs, read before the decoder
+                    // consumes it (a repair symbol's `block_id` is its window
+                    // anchor, not a seq it delivers). Iterated in place: the
+                    // per-message `Vec` this used to collect is gone
+                    // (threading R1).
+                    for sym in batch.symbols.iter().filter(|sym| !sym.is_repair) {
+                        blk.lat.note_arrival(sym.block_id, path_id, batch_send_ts, arrival_us);
                     }
                     // `[LATE]`'s knee: the gap since the previous arrival,
                     // counted only while the in-order frontier is behind the
@@ -1314,6 +1327,7 @@ pub(crate) async fn run_receiver(
                         }
                     }
                     late_last_arrival_us = arrival_us;
+                    rxp.end(RxSec::Book, rxp_t);
                 }
 
                 // Track batch sequences for loss detection (ADR-0003).
@@ -1388,7 +1402,7 @@ pub(crate) async fn run_receiver(
                         // (its goodput was already banked by the other copy).
                         if c8r_on
                             && !symbol.is_repair
-                            && received_seqs.contains(&symbol.block_id)
+                            && received_seqs.contains(symbol.block_id)
                         {
                             *c8r_dup.entry(path_id).or_insert(0) += 1;
                         }
@@ -1407,6 +1421,7 @@ pub(crate) async fn run_receiver(
                                 symbol.block_id < highest_seen_seq,
                             )
                         });
+                        let rxp_t = rxp.begin();
                         let recovered = if fdiag_on {
                             let t_dec = Instant::now();
                             let r = win_dec.add_symbol(symbol);
@@ -1418,6 +1433,7 @@ pub(crate) async fn run_receiver(
                         } else {
                             win_dec.add_symbol(symbol)
                         };
+                        rxp.end(RxSec::Decode, rxp_t);
                         if !recovered.is_empty() {
                             recovered_any = true;
                         }
@@ -1434,6 +1450,7 @@ pub(crate) async fn run_receiver(
                         // — a manufactured sample at the bottom of the
                         // histogram. So: resolve the whole batch first, then
                         // advance the mark. Read-only; see `net/succ.rs`.
+                        let rxp_t = rxp.begin();
                         let mut lat_release: crate::net::lat::Release = None;
                         {
                             let succ_now = Instant::now();
@@ -1485,6 +1502,7 @@ pub(crate) async fn run_receiver(
                                 );
                             }
                         }
+                        rxp.end(RxSec::Book, rxp_t);
                         for (seq, sym_data) in recovered {
                             // A seq that came out of the decoder rather than
                             // off its own source arrival was reconstructed
@@ -1539,14 +1557,14 @@ pub(crate) async fn run_receiver(
                                 // lets the sender discard its only copy).
                                 // Held packets go out on the `reserve()`
                                 // wake in the select above.
-                                if window_delivery
-                                    .offer(
-                                        &recv_tun_tx,
-                                        seq,
-                                        extract_window_packets(&sym_data, window_packed),
-                                    )
-                                    .is_err()
-                                {
+                                let rxp_t = rxp.begin();
+                                let offered = window_delivery.offer(
+                                    &recv_tun_tx,
+                                    seq,
+                                    extract_window_packets(&sym_data, window_packed),
+                                );
+                                rxp.end(RxSec::Deliv, rxp_t);
+                                if offered.is_err() {
                                     error!("TUN inject channel closed");
                                     break 'recv;
                                 }
@@ -1560,7 +1578,7 @@ pub(crate) async fn run_receiver(
                                 // The ack stops below the lowest seq still
                                 // held for the consumer (a received seq is
                                 // not yet a delivered one).
-                                while received_seqs.contains(&ooo_frontier) {
+                                while received_seqs.contains(ooo_frontier) {
                                     ooo_frontier += 1;
                                 }
                                 next_expected = next_expected.max(delivered_prefix(
@@ -1589,7 +1607,10 @@ pub(crate) async fn run_receiver(
                                 if abandoned_seqs.remove(&seq) {
                                     recv_rack_echo.record_late_after_aban();
                                 }
-                                reorder.push(seq, sym_data)
+                                let rxp_t = rxp.begin();
+                                let pushed = reorder.push(seq, sym_data);
+                                rxp.end(RxSec::Deliv, rxp_t);
+                                pushed
                             } else {
                                 // Never buffered: the delivery instant is
                                 // its own stamp, so `[LAT]`'s reorder wait is
@@ -1618,19 +1639,21 @@ pub(crate) async fn run_receiver(
                                 // buffer ever held; its class is the release
                                 // record above. Fed before the packet leaves,
                                 // so a full TUN channel cannot lose the datum.
+                                let rxp_t = rxp.begin();
                                 blk.lat.note_delivery(
                                     dseq,
                                     lat_now.saturating_duration_since(dbuf).as_micros() as u64,
                                     lat_release,
                                 );
-                                if window_delivery
-                                    .offer(
-                                        &recv_tun_tx,
-                                        dseq,
-                                        extract_window_packets(&ddata, window_packed),
-                                    )
-                                    .is_err()
-                                {
+                                rxp.end(RxSec::Book, rxp_t);
+                                let rxp_t = rxp.begin();
+                                let offered = window_delivery.offer(
+                                    &recv_tun_tx,
+                                    dseq,
+                                    extract_window_packets(&ddata, window_packed),
+                                );
+                                rxp.end(RxSec::Deliv, rxp_t);
+                                if offered.is_err() {
                                     error!("TUN inject channel closed");
                                     break 'recv;
                                 }
@@ -1653,6 +1676,7 @@ pub(crate) async fn run_receiver(
                             // past a hole) — so `aban_n = 0` there is a
                             // configuration fact, and a nonzero reading is a
                             // finding about the engine. Read-only.
+                            let rxp_t = rxp.begin();
                             if let Some(ref reorder) = reorder_buf {
                                 for rec in blk.succ.abandon_below(
                                     reorder.next_deliver_seq(),
@@ -1672,6 +1696,7 @@ pub(crate) async fn run_receiver(
                                     }
                                 }
                             }
+                            rxp.end(RxSec::Book, rxp_t);
                         }
                     }
 
@@ -1931,6 +1956,7 @@ pub(crate) async fn run_receiver(
                     // SACK ranges are the sender's only gap signal; without
                     // them a hole would be repaired solely by proactive FEC or
                     // the hold-expiry force-delivery.
+                    let rxp_t_ack = rxp.begin();
                     let cumulative_advanced = next_expected > last_advertised_ack;
                     let gap_pending = seen_end > next_expected
                         && highest_seen_seq > last_gap_ack_seen;
@@ -2034,6 +2060,8 @@ pub(crate) async fn run_receiver(
                         }
                     }
 
+                    rxp.end(RxSec::Ack, rxp_t_ack);
+
                     // Ack-merge control-datagram density gauge (see the
                     // declaration of `ctld_last_report` for why frames and not
                     // the qdisc packet counters). Cumulative per path, 1 Hz.
@@ -2133,7 +2161,7 @@ pub(crate) async fn run_receiver(
                         // removes only seqs below the cumulative point, which
                         // a synced counter no longer counts.
                         recv_above.sync(&received_seqs, next_expected);
-                        received_seqs = received_seqs.split_off(&prune_before);
+                        received_seqs.prune_below(prune_before);
                         window_decoder.advance(prune_before);
                         // Occupancy probe: peak reassembly held behind the frontier.
                         if reasm_bdp_on {
@@ -2143,7 +2171,7 @@ pub(crate) async fn run_receiver(
                                 .unwrap_or_else(|| {
                                     // OOO mode: no reorder buffer; the held state
                                     // is the received-seq set above the frontier.
-                                    received_seqs.range(ooo_frontier..).count()
+                                    received_seqs.count_in(ooo_frontier, u64::MAX) as usize
                                 });
                             reasm_max_pending = reasm_max_pending.max(pending);
                             let span = seen_end.saturating_sub(next_expected);
@@ -2168,24 +2196,7 @@ pub(crate) async fn run_receiver(
                 // payload rides the WindowAck's cumulative counters and its
                 // consumers use the counter diff.
                 let suppress_legacy_ack = ack_merge_recv;
-                // Collect received_ids for symbols in this batch
-                let received_ids: Vec<u32> = batch
-                    .symbols
-                    .iter()
-                    .map(|s| s.payload_id)
-                    .collect();
-                let ack = ControlMessage::Ack {
-                    block_id: batch
-                        .symbols
-                        .first()
-                        .map(|s| s.block_id)
-                        .unwrap_or(0),
-                    batch_seq,
-                    received_ids,
-                    echo_send_timestamp_us: batch_send_ts,
-                    expected_count: expected,
-                    received_count: symbol_count,
-                };
+                let rxp_t = rxp.begin();
 
                 // ADR-0003: update path loss stats with actual sent/received
                 record_incoming_loss(&mut rx_sched, path_id, expected, symbol_count);
@@ -2197,11 +2208,27 @@ pub(crate) async fn run_receiver(
 
                 // ADR-0005: send ACK as datagram (best-effort, low overhead)
                 if !suppress_legacy_ack {
+                    // Built only when it is sent: under the merge (the
+                    // default) the old code collected `received_ids` and
+                    // dropped the whole message (threading R1).
+                    let ack = ControlMessage::Ack {
+                        block_id: batch
+                            .symbols
+                            .first()
+                            .map(|s| s.block_id)
+                            .unwrap_or(0),
+                        batch_seq,
+                        received_ids: batch.symbols.iter().map(|s| s.payload_id).collect(),
+                        echo_send_timestamp_us: batch_send_ts,
+                        expected_count: expected,
+                        received_count: symbol_count,
+                    };
                     match recv_transport.send_control_datagram(&mut acks.borrow_mut(), path_id, ack) {
                         Err(e) => debug!(?e, path_id, "failed to send ACK datagram"),
                         Ok(()) => debug!(path_id, batch_seq, symbol_count, "ack sent"),
                     }
                 }
+                rxp.end(RxSec::Ack, rxp_t);
             }
             WireMessage::Control(ctrl_msg) => {
                 // Handle WindowStart packed flag in receiver loop
@@ -2236,6 +2263,7 @@ pub(crate) async fn run_receiver(
                 );
             }
         }
+        rxp.end_msg(rxp_t_msg, rxp_is_data);
     }
 
     // ── The exit flush ────────────────────────────────────────────────────

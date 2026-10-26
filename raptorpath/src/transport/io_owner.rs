@@ -101,6 +101,11 @@ pub const INBOUND_BATCH_MAX: usize = 32;
 /// owner's single stream slot forever.
 pub const CONTROL_SEND_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// The most emptied inbound `Vec`s a path keeps for reuse. The channel holds
+/// at most `MSG_CHANNEL_DEPTH / INBOUND_BATCH_MAX` batches in flight, so a few
+/// dozen cover the steady state; the rest are freed rather than hoarded.
+pub const INBOUND_POOL_MAX: usize = 64;
+
 /// Inbound channel item: one owner poll's datagrams, already decoded.
 pub type InboundBatch = Vec<(PathId, WireMessage)>;
 
@@ -231,6 +236,13 @@ pub struct OwnerCounters {
     pub fl_sends: AtomicU64,
     pub fl_full: AtomicU64,
     pub fl_full_ns: AtomicU64,
+    /// Threading R1. The inbound-`Vec` pool: polls that found a recycled
+    /// `Vec` and those that had to allocate (always counted).
+    pub ib_hit: AtomicU64,
+    pub ib_miss: AtomicU64,
+    /// The owner command channel's depth at each drain (`RWM_RTOBS=2`):
+    /// the drained commands plus what was still queued behind them.
+    pub cmdq: crate::task_obs::DepthHist,
 }
 
 /// What the owner publishes about its path. Read by the sender, the
@@ -274,6 +286,10 @@ pub struct PathView {
     pub drv_off: AtomicU64,
     /// Emptied batch `Vec`s, returned by the owner for the producers' reuse.
     pool: parking_lot::Mutex<Vec<Vec<Bytes>>>,
+    /// Emptied inbound batch `Vec`s, returned by the receiver (threading R1)
+    /// so the owner's next poll fills a warm `Vec` instead of growing a new
+    /// one from zero capacity. Bounded: see [`INBOUND_POOL_MAX`].
+    inbound_pool: parking_lot::Mutex<Vec<InboundBatch>>,
 }
 
 impl PathView {
@@ -301,6 +317,7 @@ impl PathView {
             drv_on: AtomicU64::new(0),
             drv_off: AtomicU64::new(0),
             pool: parking_lot::Mutex::new(Vec::new()),
+            inbound_pool: parking_lot::Mutex::new(Vec::new()),
         });
         registry().lock().push(Arc::downgrade(&v));
         v
@@ -344,6 +361,35 @@ impl PathView {
     /// A batch `Vec` for a producer: a recycled one when available.
     pub fn take_vec(&self) -> Vec<Bytes> {
         self.pool.lock().pop().unwrap_or_default()
+    }
+
+    /// An inbound batch `Vec` for the owner's next poll: a recycled one when
+    /// the receiver has returned one, else a fresh one sized for a full poll
+    /// ([`INBOUND_BATCH_MAX`]).
+    pub fn take_inbound(&self) -> InboundBatch {
+        match self.inbound_pool.lock().pop() {
+            Some(v) => {
+                self.ctr.ib_hit.fetch_add(1, Relaxed);
+                v
+            }
+            None => {
+                self.ctr.ib_miss.fetch_add(1, Relaxed);
+                Vec::with_capacity(INBOUND_BATCH_MAX)
+            }
+        }
+    }
+
+    /// Return a batch the receiver has drained (cleared here regardless).
+    /// Dropped instead of pooled when the pool is full.
+    pub fn recycle_inbound(&self, mut v: InboundBatch) {
+        v.clear();
+        if v.capacity() == 0 {
+            return;
+        }
+        let mut p = self.inbound_pool.lock();
+        if p.len() < INBOUND_POOL_MAX {
+            p.push(v);
+        }
     }
 
     fn recycle(&self, mut v: Vec<Bytes>) {
@@ -935,7 +981,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         readers = Some(r);
     }
     let mut reader_dead = false;
-    let mut inbound: InboundBatch = Vec::new();
+    let mut inbound: InboundBatch = view.take_inbound();
     // Threading Q2: the same poll's TX-direction control datagrams, for the
     // sender.
     let mut inbound_tx: InboundBatch = Vec::new();
@@ -993,6 +1039,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     break; // every producer handle is gone
                 }
                 ctr.drains.fetch_add(1, Relaxed);
+                if a.deep {
+                    ctr.cmdq.record((n + a.cmd_rx.len()) as u64);
+                }
                 let sec = section_begin(a.gauge);
                 let dsec = deep_begin(a.deep);
                 for cmd in cmds.drain(..) {
@@ -1081,7 +1130,8 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                         if !inbound.is_empty() {
                             let n = inbound.len() as u64;
                             let tx = &readers.as_ref().expect("reading implies readers").msg_tx;
-                            match tx.try_send(std::mem::take(&mut inbound)) {
+                            let fresh = view.take_inbound();
+                            match tx.try_send(std::mem::replace(&mut inbound, fresh)) {
                                 Ok(()) => {
                                     ctr.rx_batches.fetch_add(1, Relaxed);
                                     ctr.rx_dgrams.fetch_add(n, Relaxed);
@@ -1090,7 +1140,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                 // forwards it (reads pause meanwhile, so
                                 // quinn's own bounded buffer holds the rest).
                                 Err(mpsc::error::TrySendError::Full(b)) => {
-                                    inbound = b;
+                                    view.recycle_inbound(std::mem::replace(&mut inbound, b));
                                     if a.deep {
                                         ctr.rx_full.fetch_add(1, Relaxed);
                                         rx_full_at = Some(Instant::now());
@@ -1130,7 +1180,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     Some(permit) => {
                         ctr.rx_batches.fetch_add(1, Relaxed);
                         ctr.rx_dgrams.fetch_add(inbound.len() as u64, Relaxed);
-                        permit.send(std::mem::take(&mut inbound));
+                        permit.send(std::mem::replace(&mut inbound, view.take_inbound()));
                     }
                     None => {
                         inbound.clear();
@@ -1447,6 +1497,33 @@ mod tests {
 
     fn wire(m: ControlMessage) -> Bytes {
         Bytes::from(WireMessage::Control(m).serialize().expect("serializes"))
+    }
+
+    /// Threading R1 (a): a drained inbound `Vec` the receiver returns is the
+    /// very allocation the owner's next poll takes (same buffer, emptied,
+    /// capacity kept), every take is counted as a hit or a miss, and the
+    /// pool never holds more than `INBOUND_POOL_MAX` of them.
+    #[test]
+    fn a_recycled_inbound_vec_is_reused_and_the_pool_is_bounded() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let view = PathView::new(7, "server", "main".to_string());
+        let mut v = view.take_inbound();
+        assert!(v.capacity() >= INBOUND_BATCH_MAX && v.is_empty());
+        assert_eq!((view.ctr.ib_hit.load(Relaxed), view.ctr.ib_miss.load(Relaxed)), (0, 1));
+        let ping = WireMessage::deserialize(&wire(ControlMessage::Ping { timestamp_us: 1 })).unwrap();
+        v.push((7, ping));
+        let ptr = v.as_ptr();
+        view.recycle_inbound(v);
+        let v2 = view.take_inbound();
+        assert_eq!(v2.as_ptr(), ptr, "the owner got the returned allocation back");
+        assert!(v2.is_empty(), "returned batches are emptied");
+        assert_eq!((view.ctr.ib_hit.load(Relaxed), view.ctr.ib_miss.load(Relaxed)), (1, 1));
+        for _ in 0..INBOUND_POOL_MAX + 10 {
+            view.recycle_inbound(Vec::with_capacity(4));
+        }
+        view.recycle_inbound(Vec::new()); // no capacity: nothing worth keeping
+        let held = (0..INBOUND_POOL_MAX + 20).filter(|_| view.inbound_pool.lock().pop().is_some()).count();
+        assert_eq!(held, INBOUND_POOL_MAX, "the pool is bounded");
     }
 
     /// Threading Q2 — the owner's inbound routing (`push_inbound`): one
