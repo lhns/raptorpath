@@ -119,7 +119,18 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         if not row["echo_pool"]:
             p.append("pool-echo-missing")
     row["problems"].extend(p)
-    if p and row["status"] == "LIVE":
+    # A named hint (realtime) never prints the auto-selection line; accept it from
+    # `[PIPE] pipeline=window hint=<h>` (already checked by sp.make_row against the
+    # arm's hint) plus the `[DCAP] q=` echo showing the dial reached the seat.
+    want_hint = sp.ARM_SPEC[arm][2]
+    if (want_hint != "auto" and "window-line-missing-on-window" in row["problems"]
+            and row.get("pipe_cli") and row["pipe_cli"][0] == "window"
+            and row.get("pipe_srv") and row["pipe_srv"][0] == "window"
+            and row.get("dcap_q") is not None):
+        row["problems"].remove("window-line-missing-on-window")
+        if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+            row["status"] = "LIVE"
+    if row["problems"] and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
     return row
 
