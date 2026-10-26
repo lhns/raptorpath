@@ -1,0 +1,24 @@
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (100000000 x 1) start=17:53:03
+[2m2026-10-26T16:53:03.420463Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset RWM_COPA_DELTA=unset RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 RWM_DIAG=1 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=1 RWM_RTOBS=2 RWM_FDIAG=0 RWM_TRACE=0 RWM_PFRAC=0
+{"seconds":0.154981,"warmup":true}
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.0539,"mean_mbps":99.331,"mean_s":8.0539,"median_s":8.0539,"min_s":8.0539,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+[LPOLL] side=client summary n=738 dropped=0 printed=738
+    CPU: CPUSRV=5.26s CPUCLI=5.64s (srv=decoder cli=sender; whole-invocation incl warmup)
+    [THR] sum phase=xfer side=client run=1 workers=6 busy_s=5.476 threads=7 cpu_s=5.580 cores=0.693 wall_s=8.054
+    [LAG] phase=xfer side=client run=1 tick_ms=10 n=805 p50_us=386 p99_us=2554 max_us=5551 min_us=46 dropped=0
+    [THR] sum phase=xfer side=server obj=0 workers=6 busy_s=0.001 threads=7 cpu_s=0.000 cores=0.000 wall_s=0.001
+    [LAG] phase=xfer side=server obj=0 tick_ms=10 n=0 p50_us=- p99_us=- max_us=- min_us=- dropped=0
+    [THR] sum phase=xfer side=server obj=1 workers=6 busy_s=4.862 threads=7 cpu_s=5.200 cores=0.647 wall_s=8.038
+    [LAG] phase=xfer side=server obj=1 tick_ms=10 n=804 p50_us=514 p99_us=1355 max_us=1854 min_us=363 dropped=0
+    done 17:53:11
+--- server log tail:
+[QSOCK] phase=xfer side=server obj=1 sock=server-p1 send_calls=5660 send_us=117455 send_dg=6914 send_wb=0 gso=1.22 send_us_per_call=20.75 send_frac=0.0146 recv_calls=3295 recv_us=34815 recv_dg=15869 recv_frac=0.0043 wall_s=8.038
+[RXSEC] phase=xfer side=server obj=1 rx=1 msgs=85322 data=85314 total_us=1346520 decode_us=392811 deliv_us=200199 ack_us=155343 book_us=171185 other_us=426980 total_ns_pm=15782 decode_ns_pm=4604 deliv_ns_pm=2346 ack_ns_pm=1821 book_ns_pm=2006 other_ns_pm=5004 busy=0.168 bk_n=12300 bk_p50=7 bk_p99=14 bk_max=247 wall_s=8.038
+[SPAN] t=8.1s ack=1 win=[0,1] wsize=2 a_star=Some(1) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=1 ar=0 agap=0/0 dg_rx=70905 dg_tx=70898
+    QDISC cli0: qdisc netem 84a1: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 92164273 bytes 71024 pkt (dropped 274, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem 84a2: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 1042  Sent 18807616 bytes 15894 pkt (dropped 189, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 84a3: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 15406928199238484540  Sent 9591731 bytes 20854 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem 84a4: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 12286944272923697524  Sent 3377639 bytes 6941 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    [TRUTH] leg=0 dev=cli0 egress_dgrams=72826 egress_skbs=11073 gso=6.58 netem_sent_dgrams=71024 netem_dropped_skbs=274 backlog=0 lost=1802 loss=0.024744 rcvbuf_drops=0 rcvbuf_scope=netns
+    [TRUTH] leg=1 dev=cli1 egress_dgrams=16559 egress_skbs=4758 gso=3.48 netem_sent_dgrams=15894 netem_dropped_skbs=189 backlog=0 lost=665 loss=0.040159 rcvbuf_drops=0 rcvbuf_scope=netns
+    QCAP: /tmp/rwm-q.txt 21 lines

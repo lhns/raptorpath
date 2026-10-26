@@ -1,0 +1,77 @@
+== per-row table (client primary; E = p99 - min, us) ==
+tag rt n p50 p99 min max E | late ovl F | lpw/s steal_frac pBusy>=5 | srv_E srv_F | asl_inv asl_none | status
+b1-s42-rt2 rt2 805 386 2554 46 5551 2508 | 75 21 0.28 | 0.1979 0.0086 0 | - 0.14 | 56540 167658 | live
+b1-s7-rt2 rt2 771 1257 3240 608 5387 2632 | 162 28 0.17 | 0.1295 0.0079 0 | - 0 | 28463 147441 | live
+b10-s42-rt1 rt1 789 935 2302 677 4383 1625 | 0 0 - | - - - | - - | 0 0 | live
+b10-s42-rt2 rt2 814 625 2779 61 9773 2718 | 125 56 0.45 | 0.3734 0.0236 0.03 | - 0.2 | 112231 269288 | live
+b10-s7-rt2 rt2 927 1055 3509 91 6812 3418 | 427 167 0.39 | 0.3243 0.0098 0 | - 0.11 | 62209 210547 | live
+b11-s42-rt2 rt2 780 492 2258 238 4215 2020 | 45 19 0.42 | 0.2038 0.0079 0 | - 0.09 | 45507 184200 | live
+b11-s7-rt2 rt2 818 612 2954 271 9661 2683 | 79 41 0.52 | 0.279 0.0077 0 | - 0.1 | 40585 188151 | live
+b12-s42-rt2 rt2 838 719 2275 286 6014 1989 | 115 45 0.39 | 0.2688 0.011 0 | - 0.19 | 38321 194029 | live
+b12-s7-rt1 rt1 854 780 3636 399 9146 3237 | 0 0 - | - - - | - - | 0 0 | live
+b12-s7-rt2 rt2 1017 851 3723 112 43462 3611 | 325 117 0.36 | 0.2759 0.0049 0.03 | - 0.1 | 66905 193538 | live
+b2-s42-rt1 rt1 829 747 2550 464 4691 2086 | 0 0 - | - - - | - - | 0 0 | live
+b2-s42-rt2 rt2 857 802 2231 509 3557 1722 | 63 31 0.49 | 0.2558 0.0043 0 | - 0.11 | 45615 154345 | live
+b2-s7-rt2 rt2 899 838 3537 285 9171 3252 | 139 47 0.34 | 0.2261 0.0132 0 | - 0.21 | 55512 193933 | live
+b3-s42-rt2 rt2 770 1076 2651 500 8850 2151 | 129 25 0.19 | 0.1957 0.0113 0 | - 0.08 | 43662 163753 | live
+b3-s7-rt2 rt2 902 960 4036 172 7920 3864 | 309 74 0.24 | 0.2181 0.0079 0 | - 0.06 | 28878 171121 | live
+b4-s42-rt2 rt2 794 1218 2635 973 4331 1662 | 38 17 0.45 | 0.1884 0.0091 0 | - 0.1 | 26831 157329 | live
+b4-s7-rt1 rt1 774 1060 2958 826 4998 2132 | 0 0 - | - - - | - - | 0 0 | live
+b4-s7-rt2 rt2 919 945 4529 180 8504 4349 | 262 76 0.29 | 0.1842 0.0067 0 | - 0.08 | 37795 169829 | live
+b5-s42-rt2 rt2 851 1051 3668 384 7856 3284 | 178 32 0.18 | 0.1771 0.0133 0.01 | - 0.09 | 48906 180115 | live
+b5-s7-rt2 rt2 879 1101 4118 142 9196 3976 | 401 95 0.24 | 0.1631 0.0111 0 | - 0.05 | 33085 184326 | live
+b6-s42-rt1 rt1 786 880 3081 157 6891 2924 | 0 0 - | - - - | - - | 0 0 | live
+b6-s42-rt2 rt2 821 626 3519 249 7498 3270 | 84 23 0.27 | 0.1703 0.01 0 | - 0.08 | 35247 174971 | live
+b6-s7-rt2 rt2 838 765 4009 172 9986 3837 | 161 61 0.38 | 0.2395 0.0238 0 | - 0.05 | 48473 245050 | live
+b7-s42-rt2 rt2 930 966 4304 273 7682 4031 | 248 79 0.32 | 0.2507 0.0089 0.01 | - 0.09 | 45377 196425 | live
+b7-s7-rt2 rt2 827 798 3145 506 6027 2639 | 61 25 0.41 | 0.1587 0.0055 0 | - 0.08 | 39459 153268 | live
+b8-s42-rt2 rt2 830 1010 2282 740 3958 1542 | 40 17 0.42 | 0.2037 0.0054 0 | - 0.11 | 30854 147358 | live
+b8-s7-rt1 rt1 833 595 3363 149 7210 3214 | 0 0 - | - - - | - - | 0 0 | live
+b8-s7-rt2 rt2 895 958 4789 599 9460 4190 | 80 33 0.41 | 0.2088 0.0088 0 | - 0.06 | 45930 175133 | live
+b9-s42-rt2 rt2 873 610 4627 181 8228 4446 | 123 54 0.44 | 0.2919 0.0116 0 | - 0.13 | 39227 203136 | live
+b9-s7-rt2 rt2 913 378 4490 43 7607 4447 | 120 56 0.47 | 0.3585 0.0145 0.01 | - 0.11 | 66577 248197 | live
+rows=30 live=30 live_rt2=24 live_rt1=6 witness_fail=0
+== pooled over live RTOBS=2 rows (client) ==
+late=3789
+overlapped=1239
+F=0.327
+lpw_hi=0.2288
+lpw_lo=0.2008
+lpw_ratio=1.1393
+steal_hi=0.01
+steal_lo=0.0082
+p_steal_base=0.3779
+p_steal_cond=0.3471
+p_busy_base=0.0041
+p_busy_cond=0.0027
+cond_n=2550
+== tercile split by client E: high=8 rows, low=8 rows ==
+high: E_med=4110 lpw_s_med=0.2288 steal_frac_med=0.01003 pBusy5_med=0
+low: E_med=2004 lpw_s_med=0.2008 steal_frac_med=0.00822 pBusy5_med=0
+== per-task share of overlapped late ticks ==
+task=sender overlapped=1209 share=0.976
+task=qconn-client-p0 overlapped=13 share=0.01
+task=owner-client-p0 overlapped=5 share=0.004
+task=qep-client-p0 overlapped=4 share=0.003
+task=owner-client-p1 overlapped=3 share=0.002
+task=qconn-client-p1 overlapped=3 share=0.002
+task=perf overlapped=1 share=0.001
+task=qep-client-p1 overlapped=1 share=0.001
+== max_poll_us per task (run-cumulative, client, max over live RTOBS=2 rows) ==
+task=sender max_poll_us=114761
+task=qconn-client-p0 max_poll_us=48966
+task=owner-client-p0 max_poll_us=10501
+task=perf max_poll_us=9412
+task=qep-client-p1 max_poll_us=8152
+task=owner-client-p1 max_poll_us=5598
+task=qep-client-p0 max_poll_us=5354
+task=qconn-client-p1 max_poll_us=4290
+task=receiver max_poll_us=396
+task=clock-gap max_poll_us=214
+task=report max_poll_us=185
+task=ctrlfast max_poll_us=184
+RTOBS-COMPARE client E_med rt1=2528 rt2=3261 p99_med rt1=3020 rt2=3514 (n rt1=6 rt2=24)
+PHASE-OFFSET client min_us min=43 max=973 spread=930 spearman_rho(min_us,p50)=0.482 n=30 (finding A predicts a wide spread and rho >= 0.6)
+PERTURB E_med(rt2)/E_med(rt1)=1.29 ok
+WITNESS-FAIL rows excluded: 0
+OUTCOME UNSETTLED

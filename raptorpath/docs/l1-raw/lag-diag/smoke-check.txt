@@ -1,0 +1,9 @@
+ok   client [LAGRAW]
+ok   client [LPOLL] summary
+ok   client [TASK] max_poll_us
+ok   server [LAGRAW]
+ok   server [LPOLL] summary
+ok   server [TASK] max_poll_us
+ok   client [LAG] xfer min_us
+ok   stat samples >= 20 (98)
+SMOKE-PASS

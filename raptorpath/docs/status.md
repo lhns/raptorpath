@@ -6468,3 +6468,99 @@ proposed for future batteries; it changes no engine behaviour.
 `ABORT-TESTS`, `ABORT-SHA`, `ABORT-SMOKE`, `ABORT-BUDGET` (rows truncated at
 the soft deadline: scored on what ran, `UNSETTLED-INSTRUMENT` below 18);
 void class `VOID-COTENANT` (a `cargo`/`rustc` before or after a row).
+
+### 24. The c8 client `[LAG]` spread — result
+
+Read 2026-10-26 against the pre-registration above, literally. **`UNSETTLED`**:
+long task polls cover only a third of the late ticks (F = 0.33 < 0.5), and
+neither `/proc/stat` steal nor busy vCPUs are elevated at the late ticks.
+Placement is ruled out (step 1). Nothing in this session names an engine
+defect that explains the rep-to-rep spread, so no fix is designed and no
+ship battery is pre-registered. Nothing ships from this section.
+
+*Session.* Binary `eebb80f8…3ed10fcb` (pre-rebase commit `adb48f8` = 0972c3c + the
+instrument `e006240` + harness `adb48f8`; rebased onto 3982bd1 as
+`b2a5fcc` / `73bd3df`, same content), built fresh on the benchmark VM
+(330 s). In-session tests: cargo `runtime_obs task_obs gates` 33 passed,
+0 failed; `test_l1common.py` and `test_lagdiag_digest.py` rc 0. Locks were
+taken at 16:43:17Z and released at 17:01:36Z. Smoke passed. 30 rows, 30
+LIVE, 0 witness failures. Exit state: 0 `raptorpath`, 0 `rp-*`, run dir
+removed. Ledgers are in `docs/l1-raw/lag-diag/` (`digest.txt`, `era.txt`,
+`diag/` with every row's logs and 10 Hz stat file).
+
+*Abort table.* No abort fired: `ABORT-PRECONDITION`, `-LOCK`, `-CRLF`,
+`-BUILD`, `-TESTS`, `-SHA`, `-SMOKE` and `-BUDGET` all read *no*.
+`VOID-COTENANT`: 0 of 30 (no `cargo`/`rustc`). Note: the 1-min loadavg
+rose to 5.8–9.8 over the last 8 rows. The cause is D-state block-I/O
+kworkers (`blkcg_punt_bio`), not CPU, and it persisted after the session
+with no `raptorpath` running. Those rows' E median is 2700 µs against
+3277 µs for the rest, so they did not drive the high lags.
+
+*The decision numbers* (client, 24 RTOBS=2 rows; E = p99 − min):
+
+| quantity | value | rule |
+|---|---|---|
+| late ticks / overlapped by a long poll | 3789 / 1239, **F = 0.327** | IN-PROCESS needs ≥ 0.5 |
+| long-poll wall/s, high vs low tercile of E | 0.229 vs 0.201 (×1.14) | IN-PROCESS needs ≥ 1.5 |
+| P(steal > 0): base vs at non-overlapped late ticks | 0.378 vs 0.347 | VM-STEAL needs ≥ 2× |
+| steal share, high vs low tercile median | 0.0100 vs 0.0082 (×1.22) | VM-STEAL needs ≥ 2× |
+| P(≥ 5 of 6 vCPUs busy): base vs at late ticks | 0.004 vs 0.003 | GUEST-CPU needs ≥ 2× |
+| client E, high vs low tercile median | 4110 vs 2004 µs | the spread under study (2.0×) |
+
+*Reported, not gated.*
+
+- **`PHASE-OFFSET`.** Client `min_us` spans 43–973 µs over the 30 rows
+  (spread 930 µs). Finding 2's per-process rounding offset is confirmed in
+  size. ρ(min_us, p50) = 0.48, below the predicted 0.6: p50 also carries
+  U and S.
+- **`PERTURB`.** RTOBS=2 vs RTOBS=1 client E medians are 3261 vs 2528 µs
+  (×1.29, under the 1.5 flag). p99 medians are 3514 vs 3020 µs.
+- **Server, the same-VM control.** Server F is 0.05–0.21. Its late ticks are
+  even less a matter of long polls.
+
+*Findings.*
+
+1. **The sender task is the only in-process holder of the lag probe, and its
+   long polls are CPU.** 97.6 % of overlapped late ticks fall under a
+   `sender` poll. The sender logs ≈ 920 polls ≥ 1 ms per row (≈ 110/s).
+   Their wall is p50 1.4 ms, p99 11 ms, max 115 ms, and their CPU is p50
+   1.4 ms, p99 10 ms, max 112 ms. They hold 44.5 of 47.1 s of their own
+   wall in CPU, and 83 % of them show no context switch. The ≥ 10 ms polls
+   (≈ 11 per row) fall throughout the transfer, weighted to its second
+   half. They are not ramp-up. A single cooperative task running up to
+   0.11 s of CPU without yielding is a starvation hazard for anything
+   queued behind it on its worker. But it does not explain the spread:
+   long-poll wall barely differs between high- and low-lag reps (×1.14).
+   **[H]**, not localised: which phase of `run_window_sender` runs 10–112 ms
+   per poll is not measured (no section split inside the loop).
+2. **Two thirds of the late ticks have no long poll over them.** They do
+   not coincide with guest steal or saturated vCPUs either. Post hoc (not
+   pre-registered; n = 24, Spearman): E co-varies with goodput (ρ = −0.71,
+   reproducing §15's −0.83), with the `[TASK]` `asl_none` sum (ρ = +0.54:
+   wall lost inside polls with no guest context switch, i.e. vCPU
+   descheduling or clock granularity) and weakly with steal share
+   (ρ = +0.32). It does not co-vary with long-poll wall (+0.23), the loadavg
+   (−0.06) or row order (+0.11). The remaining candidates are tokio's timer
+   hand-off and host-side vCPU scheduling. tokio's timer hand-off: the
+   driver is serviced only by a parking worker, so a tick waits until some
+   worker parks. Host-side vCPU scheduling would be invisible to the guest's
+   steal counter at 100 ms. The probe as built cannot separate them.
+3. **What would decide it.** (a) A tokio-independent reference clock: a
+   plain OS thread sleeping 10 ms with `clock_nanosleep` and recording its
+   own lateness. If its tail tracks the `[LAG]` tail per rep, the cause is
+   host/vCPU; if it stays flat, it is the runtime's timer hand-off. (b) For
+   finding 1, a section split of the sender loop (the drain, the SACK
+   drain, emission, the throttled refreshes) under RTOBS=2, to name the
+   phase that runs 10–112 ms. Both are measurement-only. Neither is run
+   here.
+4. **The battery lag clause.** Finding 2 of step 1 stands, and the session
+   measured its size directly (`min_us` 43–973 µs). Future batteries should
+   score `[LAG]` on E = p99 − `min_us`, which `[LAG]` now prints at
+   `RWM_RTOBS=1`, rather than on raw p99. This changes no engine behaviour.
+   It removes a per-process uniform offset of up to ≈ 1 ms from the
+   comparison.
+
+**Scoring decision (operator, 2026-10-26).** From the next battery on, the
+`[LAG]` clause (client and server) is scored on **E = p99 − `min_us`** of
+the window, not raw p99; `min_us` is printed at `RWM_RTOBS=1` (rebased
+`b2a5fcc`). Raw p99 stays reported.
