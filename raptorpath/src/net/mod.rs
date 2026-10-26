@@ -840,12 +840,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // receiver's exit flush (`net/recv_block.rs`, `final=1`) would never be
     // seen on L1.
     let ctrlc_shutdown_tx = shutdown_tx.clone();
-    tokio::spawn(async move {
+    tokio::spawn(crate::task_obs::timed("shutdown-signal", async move {
         if shutdown_signal().await {
             info!("received SIGINT/SIGTERM, initiating graceful shutdown...");
             let _ = ctrlc_shutdown_tx.send(());
         }
-    });
+    }));
 
     // The peer's cumulative window ACK point: written by the sender's own ack
     // handling (threading Q2: `on_window_ack` runs in the sender), read by the
@@ -1361,11 +1361,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     if let Some(addr) = config.status_addr {
         let http_stats = stats.clone();
         let http_cmd_tx = path_cmd_tx.clone();
-        tokio::spawn(async move {
+        tokio::spawn(crate::task_obs::timed("http-status", async move {
             if let Err(e) = crate::monitor::http::serve(http_stats, addr, http_cmd_tx).await {
                 warn!(?e, "status HTTP endpoint failed");
             }
-        });
+        }));
     }
 
     // Path command processor: handles runtime add/remove of paths
@@ -1873,14 +1873,14 @@ async fn run_window_sender(
     // on normal recovery quiet periods).
     if let Some(w) = crate::control::anchor::stall_witness() {
         info!("clock-gap estimator hygiene ACTIVE (RWM_CLOCK_GAP: process-clock stall witness, post-stall sample discard at the ack feed sites)");
-        tokio::spawn(async {
+        tokio::spawn(crate::task_obs::timed("clock-gap", async {
             let mut iv = tokio::time::interval(Duration::from_millis(50));
             iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 iv.tick().await;
                 w.tick_now();
             }
-        });
+        }));
     }
     // ~500 ms sender-side span-law trace (RWM_DIAG only) — the live A*/Δ,
     // owed budget, window span vs the

@@ -93,6 +93,11 @@ impl LagLog {
         }
     }
 
+    /// Every sample, in order.
+    fn all(&self) -> Vec<LagSample> {
+        self.samples.lock().clone()
+    }
+
     /// The lateness samples (µs) observed in `[from_us, to_us]`.
     fn window(&self, from_us: u64, to_us: u64) -> Vec<u64> {
         self.samples
@@ -122,12 +127,36 @@ pub fn quantile(xs: &[u64], p: f64) -> Option<f64> {
 pub fn lag_line(phase: &str, side: &str, extra: &str, late_us: &[u64], dropped: usize) -> String {
     let f = |p: f64| quantile(late_us, p).map_or_else(|| "-".to_string(), |x| format!("{x:.0}"));
     format!(
-        "[LAG] phase={phase} side={side}{extra} tick_ms={} n={} p50_us={} p99_us={} max_us={} dropped={dropped}",
+        "[LAG] phase={phase} side={side}{extra} tick_ms={} n={} p50_us={} p99_us={} max_us={} min_us={} dropped={dropped}",
         LAG_TICK.as_millis(),
         late_us.len(),
         f(0.5),
         f(0.99),
         late_us.iter().max().map_or_else(|| "-".to_string(), |m| m.to_string()),
+        late_us.iter().min().map_or_else(|| "-".to_string(), |m| m.to_string()),
+    )
+}
+
+/// Cap on printed `[LAGRAW]` samples (20000 ticks of 10 ms = 200 s).
+const LAGRAW_PRINT_CAP: usize = 20_000;
+
+/// Render the `[LAGRAW]` line (`RWM_RTOBS=2`, once per process at run end):
+/// the probe's origin on the wall clock, the last transfer window's bounds
+/// (µs since the origin) and every sample as `at_us:late_us`, so a late tick
+/// can be placed on the unix timeline next to the `[LPOLL]` long polls.
+/// Pure, so the token set is unit-tested.
+fn lag_raw_line(side: &str, origin_unix_us: u64, xfer: Option<(u64, u64)>, samples: &[LagSample], cap: usize) -> String {
+    let shown = &samples[..samples.len().min(cap)];
+    let xf = xfer.map_or_else(|| "-".to_string(), |(a, b)| format!("{a}-{b}"));
+    let s = if shown.is_empty() {
+        "-".to_string()
+    } else {
+        shown.iter().map(|x| format!("{}:{}", x.at_us, x.late_us)).collect::<Vec<_>>().join(",")
+    };
+    format!(
+        "[LAGRAW] side={side} origin_unix_us={origin_unix_us} xfer={xf} n={} printed={} s={s}",
+        samples.len(),
+        shown.len()
     )
 }
 
@@ -303,8 +332,13 @@ pub fn thr_lines(
 struct Obs {
     handle: tokio::runtime::Handle,
     origin: Instant,
+    /// `origin` on the wall clock (µs since the UNIX epoch), read right next
+    /// to it, so `[LAGRAW]` samples can be joined to `[LPOLL]` end times.
+    origin_unix_us: u64,
     lag: Arc<LagLog>,
     side: OnceLock<&'static str>,
+    /// The last `emit_window`'s bounds (µs since `origin`), for `[LAGRAW]`.
+    xfer: Mutex<Option<(u64, u64)>>,
 }
 
 /// One I/O owner's counters at a snapshot (the `[IOWN]` window join key is
@@ -516,13 +550,16 @@ pub fn armed() -> bool {
 fn arm_unconditionally() {
     let handle = tokio::runtime::Handle::current();
     let origin = Instant::now();
+    let origin_unix_us = crate::task_obs::unix_us();
     let lag = Arc::new(LagLog::default());
     if OBS
         .set(Obs {
             handle: handle.clone(),
             origin,
+            origin_unix_us,
             lag: lag.clone(),
             side: OnceLock::new(),
+            xfer: Mutex::new(None),
         })
         .is_ok()
     {
@@ -598,6 +635,7 @@ pub fn emit_window(from: &Snapshot, extra: &str) {
     }
     let a = from.at.saturating_duration_since(o.origin).as_micros() as u64;
     let b = to.at.saturating_duration_since(o.origin).as_micros() as u64;
+    *o.xfer.lock() = Some((a, b));
     let lat = o.lag.window(a, b);
     crate::readout!("{}", lag_line("xfer", side, extra, &lat, o.lag.dropped.load(Ordering::Relaxed)));
     for l in io_lines("xfer", side, extra, wall, Some(from), &to) {
@@ -631,6 +669,15 @@ pub fn emit_run_end() {
     );
     for l in io_lines("run", side, "", wall, None, &to) {
         crate::readout!("{l}");
+    }
+    // Lag diagnosis (RWM_RTOBS=2): the raw ticks and the long polls.
+    if crate::task_obs::deep() {
+        let xfer = *o.xfer.lock();
+        crate::readout!("{}", lag_raw_line(side, o.origin_unix_us, xfer, &o.lag.all(), LAGRAW_PRINT_CAP));
+        let (polls, dropped) = crate::task_obs::long_polls();
+        for l in crate::task_obs::lpoll_lines(side, &polls, dropped, crate::task_obs::LPOLL_PRINT_CAP) {
+            crate::readout!("{l}");
+        }
     }
 }
 
@@ -769,10 +816,30 @@ mod tests {
     fn the_lag_line_renders_absent_as_dash() {
         assert_eq!(
             lag_line("run", "client", "", &[], 0),
-            "[LAG] phase=run side=client tick_ms=10 n=0 p50_us=- p99_us=- max_us=- dropped=0"
+            "[LAG] phase=run side=client tick_ms=10 n=0 p50_us=- p99_us=- max_us=- min_us=- dropped=0"
         );
         let l = lag_line("xfer", "server", " obj=1", &[100, 200, 300], 0);
-        assert!(l.contains("n=3 p50_us=200 p99_us=298 max_us=300"), "{l}");
+        assert!(l.contains("n=3 p50_us=200 p99_us=298 max_us=300 min_us=100 dropped=0"), "{l}");
+    }
+
+    #[test]
+    fn the_lagraw_line_carries_origin_xfer_bounds_and_the_samples() {
+        let s = |at_us, late_us| LagSample { at_us, late_us };
+        let v = [s(10_000, 120), s(20_000, 2_500), s(30_000, 90)];
+        assert_eq!(
+            lag_raw_line("client", 1_700_000_000_000_000, Some((5_000, 25_000)), &v, 20_000),
+            "[LAGRAW] side=client origin_unix_us=1700000000000000 xfer=5000-25000 n=3 printed=3 s=10000:120,20000:2500,30000:90"
+        );
+        // No xfer window yet, no samples.
+        assert_eq!(
+            lag_raw_line("server", 7, None, &[], 20_000),
+            "[LAGRAW] side=server origin_unix_us=7 xfer=- n=0 printed=0 s=-"
+        );
+        // The cap trims the printed samples, not n.
+        assert_eq!(
+            lag_raw_line("server", 7, None, &v, 2),
+            "[LAGRAW] side=server origin_unix_us=7 xfer=- n=3 printed=2 s=10000:120,20000:2500"
+        );
     }
 
     /// The runtime names its threads and the probe produces samples whose

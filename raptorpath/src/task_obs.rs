@@ -93,6 +93,10 @@ pub struct SpanCtr {
     pub asl_vol_ns: AtomicU64,
     pub asl_inv_ns: AtomicU64,
     pub asl_none_ns: AtomicU64,
+    /// Polls whose wall was >= [`LONG_POLL`] (set by [`Timed`] only).
+    pub long_polls: AtomicU64,
+    /// Longest single poll wall (ns), run-cumulative (set by [`Timed`] only).
+    pub max_wall_ns: AtomicU64,
     /// Set when a clock could not be read (non-Linux): the CPU and asleep
     /// figures are then unavailable.
     pub unavailable: AtomicU64,
@@ -110,8 +114,11 @@ impl Span {
         Self { wall: Instant::now(), cpu: thread_cpu_ns(), csw: thread_csw() }
     }
 
-    pub fn end(self, c: &SpanCtr) {
+    /// Close the stretch into `c` and return what it measured (CPU and switch
+    /// counts are 0 where a clock is unavailable).
+    pub fn end(self, c: &SpanCtr) -> PollTiming {
         let wall = self.wall.elapsed().as_nanos() as u64;
+        let mut out = PollTiming { wall_ns: wall, ..Default::default() };
         c.n.fetch_add(1, Relaxed);
         c.wall_ns.fetch_add(wall, Relaxed);
         match (self.cpu, thread_cpu_ns(), self.csw, thread_csw()) {
@@ -130,12 +137,91 @@ impl Span {
                     &c.asl_none_ns
                 };
                 bucket.fetch_add(asleep, Relaxed);
+                out.cpu_ns = cpu;
+                out.vcsw = dv;
+                out.ivcsw = di;
             }
             _ => {
                 c.unavailable.fetch_add(1, Relaxed);
             }
         }
+        out
     }
+}
+
+/// What one [`Span`] measured.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PollTiming {
+    pub wall_ns: u64,
+    pub cpu_ns: u64,
+    pub vcsw: u64,
+    pub ivcsw: u64,
+}
+
+/// A poll at least this long is logged individually (`[LPOLL]`, `RWM_RTOBS=2`).
+/// Provenance: the `[LAG]` probe's 1 ms rounding band (tokio rounds timer
+/// deadlines up to the next millisecond, so a tick later than floor + 1 ms
+/// cannot be explained by rounding); a poll shorter than that cannot be what
+/// delayed such a tick.
+pub const LONG_POLL: std::time::Duration = std::time::Duration::from_millis(1);
+
+/// Cap on the long-poll log; beyond it entries are dropped (counted).
+const LONG_POLL_CAP: usize = 1 << 16;
+
+/// One poll that took at least [`LONG_POLL`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct LongPoll {
+    pub task: String,
+    /// Wall clock at the poll's end (µs since the UNIX epoch).
+    pub end_unix_us: u64,
+    pub wall_us: u64,
+    pub cpu_us: u64,
+    pub vcsw: u64,
+    pub ivcsw: u64,
+}
+
+#[derive(Default)]
+struct LongPollLog {
+    v: Vec<LongPoll>,
+    dropped: u64,
+}
+
+fn long_poll_log() -> &'static parking_lot::Mutex<LongPollLog> {
+    static R: OnceLock<parking_lot::Mutex<LongPollLog>> = OnceLock::new();
+    R.get_or_init(|| parking_lot::Mutex::new(LongPollLog::default()))
+}
+
+/// Wall clock now, µs since the UNIX epoch (0 if the clock is before it).
+pub fn unix_us() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_micros() as u64)
+}
+
+/// The logged long polls and the dropped count.
+pub fn long_polls() -> (Vec<LongPoll>, u64) {
+    let l = long_poll_log().lock();
+    (l.v.clone(), l.dropped)
+}
+
+/// Cap on printed `[LPOLL]` entries.
+pub const LPOLL_PRINT_CAP: usize = 5000;
+
+/// Render the `[LPOLL]` lines: one per entry (first `cap`), then one summary
+/// (always, even with `n=0`). Pure, so the token set is tested.
+pub fn lpoll_lines(side: &str, polls: &[LongPoll], dropped: u64, cap: usize) -> Vec<String> {
+    let shown = &polls[..polls.len().min(cap)];
+    let mut v: Vec<String> = shown
+        .iter()
+        .map(|p| {
+            format!(
+                "[LPOLL] side={side} task={} end_unix_us={} wall_us={} cpu_us={} vcsw={} ivcsw={}",
+                p.task, p.end_unix_us, p.wall_us, p.cpu_us, p.vcsw, p.ivcsw
+            )
+        })
+        .collect();
+    v.push(format!("[LPOLL] side={side} summary n={} dropped={dropped} printed={}", polls.len(), shown.len()));
+    v
 }
 
 /// A point-in-time copy of a [`SpanCtr`].
@@ -149,6 +235,12 @@ pub struct SpanSample {
     pub asl_vol_ns: u64,
     pub asl_inv_ns: u64,
     pub asl_none_ns: u64,
+    /// Polls with wall >= [`LONG_POLL`]; differenced like the other counters.
+    pub long_polls: u64,
+    /// Longest single poll wall (ns). Run-cumulative: a maximum cannot be
+    /// differenced, so a window's line reads the maximum since the process
+    /// started (like `DepthSample::max`).
+    pub max_wall_ns: u64,
 }
 
 impl SpanCtr {
@@ -162,6 +254,8 @@ impl SpanCtr {
             asl_vol_ns: self.asl_vol_ns.load(Relaxed),
             asl_inv_ns: self.asl_inv_ns.load(Relaxed),
             asl_none_ns: self.asl_none_ns.load(Relaxed),
+            long_polls: self.long_polls.load(Relaxed),
+            max_wall_ns: self.max_wall_ns.load(Relaxed),
         }
     }
 }
@@ -178,6 +272,8 @@ impl SpanSample {
             asl_vol_ns: d(self.asl_vol_ns, b.asl_vol_ns),
             asl_inv_ns: d(self.asl_inv_ns, b.asl_inv_ns),
             asl_none_ns: d(self.asl_none_ns, b.asl_none_ns),
+            long_polls: d(self.long_polls, b.long_polls),
+            max_wall_ns: self.max_wall_ns,
         }
     }
 
@@ -261,7 +357,24 @@ impl<F: Future> Future for Timed<F> {
             Some(c) => {
                 let s = Span::begin();
                 let r = this.inner.as_mut().poll(cx);
-                s.end(&c.polls);
+                let t = s.end(&c.polls);
+                c.polls.max_wall_ns.fetch_max(t.wall_ns, Relaxed);
+                if t.wall_ns >= LONG_POLL.as_nanos() as u64 {
+                    c.polls.long_polls.fetch_add(1, Relaxed);
+                    let mut log = long_poll_log().lock();
+                    if log.v.len() < LONG_POLL_CAP {
+                        log.v.push(LongPoll {
+                            task: c.name.clone(),
+                            end_unix_us: unix_us(),
+                            wall_us: t.wall_ns / 1_000,
+                            cpu_us: t.cpu_ns / 1_000,
+                            vcsw: t.vcsw,
+                            ivcsw: t.ivcsw,
+                        });
+                    } else {
+                        log.dropped += 1;
+                    }
+                }
                 r
             }
         }
@@ -297,7 +410,10 @@ pub fn task_samples() -> Vec<TaskSample> {
 
 /// Render the `[TASK]` lines for the window `from → to` (joined by serial;
 /// a task with no poll in the window is skipped). `cores` = CPU / window
-/// wall; `busy` = poll wall / window wall. Pure, so the token set is tested.
+/// wall; `busy` = poll wall / window wall. `long_polls` = polls of at least
+/// [`LONG_POLL`] in the window; `max_poll_us` = the longest poll since the
+/// process started (run-cumulative, not differenced). Pure, so the token set
+/// is tested.
 pub fn task_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[TaskSample], to: &[TaskSample]) -> Vec<String> {
     let wall_s = wall_s.max(1e-9);
     let mut v: Vec<(String, String)> = to
@@ -309,7 +425,7 @@ pub fn task_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Tas
                 let line = format!(
                     "[TASK] phase={phase} side={side}{extra} task={} polls={} cpu_us={} wall_us={} \
                      cores={:.3} busy={:.3} asl_vol_us={} asl_inv_us={} asl_none_us={} vcsw={} ivcsw={} \
-                     cpu_per_poll_us={:.2} wall_s={wall_s:.3}",
+                     cpu_per_poll_us={:.2} wall_s={wall_s:.3} long_polls={} max_poll_us={}",
                     t.name,
                     d.n,
                     d.cpu_ns / 1_000,
@@ -322,6 +438,8 @@ pub fn task_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Tas
                     d.vcsw,
                     d.ivcsw,
                     d.cpu_ns as f64 / 1e3 / d.n as f64,
+                    d.long_polls,
+                    d.max_wall_ns / 1_000,
                 );
                 (t.name.clone(), line)
             })
@@ -863,6 +981,56 @@ mod tests {
             l[0]
         );
         assert!(l[0].contains(" vcsw=3 ") && l[0].contains(" cpu_per_poll_us=4000.00 "), "{}", l[0]);
+        // Long polls are differenced; the max poll is run-cumulative.
+        assert!(l[0].ends_with(" long_polls=0 max_poll_us=0"), "{}", l[0]);
+        let mut from2 = from.clone();
+        from2[0].s = SpanSample { long_polls: 2, max_wall_ns: 1_500_000, ..from[0].s };
+        let mut to2 = from2.clone();
+        to2[0].s = SpanSample { long_polls: 7, max_wall_ns: 4_200_000, ..to[0].s };
+        let l = task_lines("xfer", "client", "", 2.0, &from2, &to2);
+        assert!(l[0].ends_with(" long_polls=5 max_poll_us=4200"), "{}", l[0]);
+        // compact() keeps its 8-field format ([IOWN] qk_ parsers depend on it).
+        assert_eq!(to2[0].s.compact().split('/').count(), 8);
+    }
+
+    #[test]
+    fn the_lpoll_lines_render_entries_then_a_summary_even_when_empty() {
+        let p = |t: &str, e| LongPoll { task: t.into(), end_unix_us: e, wall_us: 2500, cpu_us: 2400, vcsw: 1, ivcsw: 2 };
+        let l = lpoll_lines("client", &[p("sender", 1_700_000_000_000_123), p("report", 1_700_000_000_000_999)], 3, 5000);
+        assert_eq!(
+            l,
+            vec![
+                "[LPOLL] side=client task=sender end_unix_us=1700000000000123 wall_us=2500 cpu_us=2400 vcsw=1 ivcsw=2",
+                "[LPOLL] side=client task=report end_unix_us=1700000000000999 wall_us=2500 cpu_us=2400 vcsw=1 ivcsw=2",
+                "[LPOLL] side=client summary n=2 dropped=3 printed=2",
+            ]
+        );
+        // The print cap trims entries, not the summary's n.
+        let l = lpoll_lines("server", &[p("a", 1), p("b", 2), p("c", 3)], 0, 1);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[1], "[LPOLL] side=server summary n=3 dropped=0 printed=1");
+        assert_eq!(lpoll_lines("server", &[], 0, 5000), vec!["[LPOLL] side=server summary n=0 dropped=0 printed=0"]);
+    }
+
+    #[test]
+    fn a_long_poll_is_logged_and_a_short_one_is_not() {
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let f = timed_if(true, "lp-test-long", async {
+            std::thread::sleep(std::time::Duration::from_millis(3));
+        });
+        let c = f.ctr.clone().unwrap();
+        let t0 = unix_us();
+        rt.block_on(f);
+        let t1 = unix_us();
+        rt.block_on(timed_if(true, "lp-test-short", async {}));
+        let (all, _) = long_polls();
+        let mine: Vec<&LongPoll> = all.iter().filter(|p| p.task == "lp-test-long").collect();
+        assert_eq!(mine.len(), 1, "{all:?}");
+        assert!(mine[0].wall_us >= 3000 && mine[0].end_unix_us >= t0 && mine[0].end_unix_us <= t1, "{:?}", mine[0]);
+        assert!(!all.iter().any(|p| p.task == "lp-test-short"));
+        let s = c.polls.sample();
+        assert_eq!(s.long_polls, 1);
+        assert!(s.max_wall_ns >= 3_000_000, "{s:?}");
     }
 
     #[test]

@@ -107,7 +107,7 @@ struct ObjState {
 pub async fn server(config: PeerConfig) -> anyhow::Result<()> {
     crate::runtime_obs::set_side("server");
     let (tun, mut mem) = TunInterface::memory(1500);
-    let mut engine = tokio::spawn(net::run_with_tun(config, tun));
+    let mut engine = tokio::spawn(crate::task_obs::timed("engine", net::run_with_tun(config, tun)));
     println!("perf server ready (rp-native object mode)");
 
     let mut objs: HashMap<u32, ObjState> = HashMap::new();
@@ -264,7 +264,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     };
     crate::runtime_obs::set_side("client");
     let (tun, mut mem) = TunInterface::memory(1500);
-    let _engine = tokio::spawn(net::run_with_tun(config, tun));
+    let _engine = tokio::spawn(crate::task_obs::timed("engine", net::run_with_tun(config, tun)));
 
     // Warm-up: a single-chunk object confirms both directions are up
     // before timing starts (the engine connects asynchronously).
