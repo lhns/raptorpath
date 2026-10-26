@@ -13,8 +13,8 @@
 //! same file builds on the tree before and after the change.
 //!
 //! The bound is set from the fixed code (see `BOUND`): measured on the VM,
-//! release, 1 path, loss-free, ce60079 vs R1. Red on ce60079 (25.3), green on
-//! R1 (22.9).
+//! release, 1 path, loss-free, ce60079 vs R1. Red on ce60079 (25.1-25.3), green on
+//! R1 (22.7-22.9).
 //!
 //!   cargo test --release -p raptorpath --test recv_alloc_bound -- --nocapture
 
@@ -50,11 +50,12 @@ unsafe impl GlobalAlloc for Counting {
 static GLOBAL: Counting = Counting;
 
 /// Allocations per source symbol the whole loopback may spend. Set from the
-/// fixed code, release, 1 path, VM (2 MB vs 12 MB objects): R1 measured
-/// 22.9, ce60079 measured 25.3 (status section 17 has the repeats). 24.0 sits
-/// between them: R1 passes with 1.1 to spare, a tree that brings back any one
-/// of the removed per-symbol allocations (about 1 each) fails.
-const BOUND: f64 = 24.0;
+/// fixed code, release, 1 path, VM (2 MB vs 12 MB objects), repeated runs:
+/// R1 22.74-22.94 (9 runs), ce60079 25.05-25.34 (10 runs). 23.5 is R1's worst
+/// run + 0.56 (about eight times its spread); the whole change is worth 2.4,
+/// so undoing it fails by 1.6. Undoing one fix alone (0.4 to 1) may not be
+/// caught: this is a regression gate for the set, not for each member.
+const BOUND: f64 = 23.5;
 
 async fn count(bytes: usize) -> u64 {
     use loopback::in_process::{cfgs, ports, resolve, run};
