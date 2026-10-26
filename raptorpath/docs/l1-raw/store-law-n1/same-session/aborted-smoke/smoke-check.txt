@@ -1,0 +1,6 @@
+SMOKE ('c1s-400', 'MAIN'): mbps=522.932 eng=0/0 pin=0.0 win_med=1024.0 win_distinct=1 status=LIVE
+SMOKE ('c1s-400', 'LAW'): mbps=642.612 eng=839/839 pin=0.5244 win_med=2048.0 win_distinct=4 status=LIVE
+SMOKE ('c2-100', 'MAIN'): mbps=89.175 eng=0/0 pin=0.0 win_med=1024.0 win_distinct=2 status=WITNESS-FAIL
+SMOKE ('c2-100', 'LAW'): mbps=89.661 eng=1556/1556 pin=0.0 win_med=1211.0 win_distinct=4 status=LIVE
+SMOKE ('c1s-400', 'LAW-realtime'): mbps=140.032 eng=4444/4444 pin=0.0 win_med=1002.0 win_distinct=15 status=LIVE
+SMOKE-FAIL ('c2-100', 'MAIN'): WITNESS-FAIL ['main-sumcap-eng-zero-at-N2']

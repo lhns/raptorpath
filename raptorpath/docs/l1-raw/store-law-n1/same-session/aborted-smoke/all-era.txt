@@ -1,0 +1,11 @@
+SL19-ALL start load=3.99 4.39 4.00 3/357 308163 2026-10-26T06:42:04Z
+LOCK-TAKEN /tmp/rwm-vm.lock
+LOCK-TAKEN /home/vibe/rp.lock
+SL19-ALL locks held; cotenants cargo=0 rustc=0 load=1.41 2.01 2.72 2026-10-26T07:08:24Z
+SL19-ALL parser test ok 2026-10-26T07:08:33Z
+SL19-ALL law built wall=441s 2026-10-26T07:15:54Z
+SL19-ALL main built wall=561s 2026-10-26T07:25:15Z
+SL19-ALL binaries MAIN=c9630606df2c9544d00c91ea1768c97fd32f797a5025ca5e6ebebd3b77f8f8cf LAW=17418fd840bac3ab809fdadfa1d646aa7da33ad5e6a1187891daf5a435a69ff4 2026-10-26T07:25:15Z
+SL19-ALL FAILED: ABORT-SMOKE (smoke-check.txt) 2026-10-26T07:26:32Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

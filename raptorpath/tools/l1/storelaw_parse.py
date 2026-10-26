@@ -39,7 +39,11 @@ WARM_S = 1.0              # DIAG windows before this are warm-up
 # CONTROL-MOVED reference at the N >= 2 cells.
 MAIN15 = {"c1d-400": (677.9, 755.1), "c2-100": (90.08, 90.32), "c8-100": (82.9, 102.9)}
 SCORED_CELL = "c1s-400"
-NOOP_CELLS = ["c1d-400", "c2-100", "c8-100"]
+NOOP_CELLS = ["c1d-400", "c2-100", "c8-100"]      # section 18's control-moved leg, as scored there
+# Section 19 (as amended): c2-100 is a SINGLE-path cell (stage3_parse.CELL_SPEC: c2/c2/single), so the
+# change applies there; the N >= 2 no-op cells are c1d and c8 only.
+SINGLE_CELLS = ["c1s-400", "c2-100"]
+NOOP19_CELLS = ["c1d-400", "c8-100"]
 
 _SUMCAP = re.compile(r"\[SUMCAP\] on=(\d) eng=(\d+)/(\d+) chg=(\d+)/(\d+) chg_frac=([\d.]+) "
                      r"pin=([\d.]+) floor=([\d.]+) cap=([\d.]+) ask=([\d.]+)")
@@ -93,6 +97,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row["win_cap_n"] = len(wins)
     row["win_cap_distinct"] = len(set(wins))
     row["win_cap_med"] = lc.med(wins) if wins else None
+    row["win_cap_max"] = max(wins) if wins else None
     row["occ_med"] = lc.med(occ) if occ else None
     row["paused_med"] = lc.med(paused) if paused else None
     row["rtt_med"] = lc.med(rtt) if rtt else None
@@ -115,11 +120,15 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     elif arm == "MAIN":
         # §19: main's single-path chain at c1s (eng=0/0, win constant 1024); the
         # same pooled law as LAW at every N >= 2 cell.
-        if cell == "c1s-400":
+        if cell in SINGLE_CELLS:
             if row["sumcap_eng"] not in (None, 0):
                 p.append(f"main-sumcap-eng={row['sumcap_eng']}")
-            if row["win_cap_n"] < 4 or row["win_cap_distinct"] != 1 or row["win_cap_med"] != 1024:
-                p.append(f"main-win-not-1024={row['win_cap_med']}/{row['win_cap_distinct']}")
+            # main's single-path chain clamp(2*bdp, 10, 1024): the constant 1024 at c1s (the anchor
+            # over-reads), up to 1024 and varying with the anchor at c2 (paper 6.2: 989-1024).
+            if row["win_cap_n"] < 4 or row["win_cap_max"] is None or row["win_cap_max"] > 1024:
+                p.append(f"main-win-above-1024={row['win_cap_max']}")
+            if cell == "c1s-400" and (row["win_cap_distinct"] != 1 or row["win_cap_med"] != 1024):
+                p.append(f"main-win-not-constant-1024={row['win_cap_med']}/{row['win_cap_distinct']}")
         else:
             if not row["sumcap_eng"]:
                 p.append("main-sumcap-eng-zero-at-N2")
@@ -348,12 +357,15 @@ def score19(paths, out=print):
             f"paused={f(r.get('paused_med'),0)} rtt={f(r.get('rtt_med'))} over={f(r.get('btlbw_overread'),1)} "
             f"ax50={r.get('ax_p50_us')} ax95={r.get('ax_p95_us')} {r['status']} {','.join(r['problems'])}")
     out("")
-    out("== c1s-400: LAW vs MAIN (section 18's outcome list and order) ==")
-    c1s = contrast(rows, SCORED_CELL, "LAW", "MAIN", out)
+    out("== single-path cells c1s-400 and c2-100: LAW vs MAIN (section 18's outcome list and order) ==")
+    single = {}
+    for cell in SINGLE_CELLS:
+        single[cell] = contrast(rows, cell, "LAW", "MAIN", out)
+    c1s = single[SCORED_CELL]
     out("")
-    out("== N >= 2 no-op cells: LAW vs MAIN goodput, REFUTED-NOOP if |mean diff| > 2 sigma_pooled ==")
+    out("== N >= 2 no-op cells (c1d, c8): LAW vs MAIN goodput, REFUTED-NOOP if |mean diff| > 2 sigma_pooled ==")
     noop_fail, unscoreable = [], []
-    for cell in NOOP_CELLS:
+    for cell in NOOP19_CELLS:
         r = contrast(rows, cell, "LAW", "MAIN", out)
         if r["unscoreable"]:
             unscoreable.append(cell)
@@ -379,16 +391,20 @@ def score19(paths, out=print):
             out(f"  {cell} realtime r{r['rep']}: {r['status']} dcap_q={r.get('dcap_q')} (want 0.05) "
                 f"mbps={f(r.get('mbps'))} pin={f(r.get('sumcap_pin'),3)} {','.join(r['problems'])}")
     out("")
-    c1s_refuted = (not c1s["unscoreable"]) and "REFUTED" in c1s.get("holds", [])
-    ships = (not noop_fail) and (not c1s_refuted) and not c1s["unscoreable"] and not unscoreable
-    out("DECISION RULE (section 19): ships iff no REFUTED-NOOP and c1s is not REFUTED; PINNED and LATENCY-COST do not block.")
+    s_ref = [c for c, r in single.items() if (not r["unscoreable"]) and "REFUTED" in r.get("holds", [])]
+    s_uns = [c for c, r in single.items() if r["unscoreable"]]
+    ships = (not noop_fail) and (not s_ref) and not s_uns and not unscoreable
+    out("DECISION RULE (section 19, as amended): ships iff no REFUTED-NOOP (c1d, c8) and neither single-path cell "
+        "(c1s, c2) is REFUTED; PINNED and LATENCY-COST do not block.")
     if noop_fail:
         out(f"RESULT: REFUTED-NOOP at {noop_fail}")
-    elif unscoreable or c1s["unscoreable"]:
-        out(f"RESULT: UNSCOREABLE at {unscoreable + (['c1s-400'] if c1s['unscoreable'] else [])}")
+    elif s_ref:
+        out(f"RESULT: REFUTED at the single-path cell(s) {s_ref} -> does not ship")
+    elif unscoreable or s_uns:
+        out(f"RESULT: UNSCOREABLE at {unscoreable + s_uns}")
     else:
-        out("N >= 2: the section 18 CONTROL-MOVED is attributed to the cross-session reference.")
-        out(f"RESULT: {'SHIPS (c1s: ' + c1s['first'] + ')' if ships else 'c1s REFUTED -> does not ship'}")
+        out("N >= 2 (c1d, c8): the section 18 CONTROL-MOVED at those cells is attributed to the cross-session reference.")
+        out(f"RESULT: SHIPS (c1s: {single['c1s-400']['first']}; c2: {single['c2-100']['first']})")
     return 0
 
 
@@ -448,8 +464,8 @@ def smoke19(path):
             bad.append(f"{k}: {r['status']} {r['problems']}")
         if not r.get("gates_cli"):
             bad.append(f"{k}: no [GATES] echo")
-        if k[0] == "c1s-400" and k[1] == "MAIN" and r.get("sumcap_eng") not in (None, 0):
-            bad.append(f"{k}: [SUMCAP] eng>0 on MAIN at c1s")
+        if k[0] in SINGLE_CELLS and k[1] == "MAIN" and r.get("sumcap_eng") not in (None, 0):
+            bad.append(f"{k}: [SUMCAP] eng>0 on MAIN at a single-path cell")
         if k[1] != "MAIN" and not r.get("sumcap_eng"):
             bad.append(f"{k}: [SUMCAP] eng=0 on a LAW arm")
         if k[1] == "LAW-realtime" and r.get("dcap_q") != 0.05:

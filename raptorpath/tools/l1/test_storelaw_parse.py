@@ -51,5 +51,18 @@ AUTO = os.path.join(LEDGER, "c1s-400-LAW-auto-s42-r2-a1-")
 r3 = row_of(AUTO, "LAW-auto")
 check("auto row unchanged (LIVE as scored in §18)", r3["status"] == "LIVE", (r3["status"], r3["problems"]))
 
+# Section 19: MAIN (ce60079) at the single-path cells. Saved from the aborted section-19 smoke:
+# c2-100 is a SINGLE-path cell, so main runs its single-path chain there (eng=0/0, cap up to 1024 and
+# varying with the anchor, 989-1024 per paper 6.2) -- not the pooled law and not the constant 1024.
+S19 = os.path.join(HERE, "..", "..", "docs", "l1-raw", "store-law-n1", "same-session", "aborted-smoke", "diag-smoke")
+m2 = row_of(os.path.join(S19, "c2-100-MAIN-s42-r1-a1-"), "MAIN", "c2-100")
+check("MAIN at c2 (single-path): eng=0/0", m2.get("sumcap_eng") == 0, m2.get("sumcap_eng"))
+check("MAIN at c2: window cap never above 1024", (m2.get("win_cap_max") or 0) <= 1024, m2.get("win_cap_max"))
+check("MAIN at c2 is LIVE (not a pooled-law cell)", m2["status"] == "LIVE", (m2["status"], m2["problems"]))
+m1 = row_of(os.path.join(S19, "c1s-400-MAIN-s42-r1-a1-"), "MAIN", "c1s-400")
+check("MAIN at c1s: constant 1024, LIVE", m1["status"] == "LIVE" and m1.get("win_cap_med") == 1024, (m1["status"], m1["problems"]))
+l2 = row_of(os.path.join(S19, "c2-100-LAW-s42-r1-a1-"), "LAW", "c2-100")
+check("LAW at c2 (single-path): the pooled law engaged", (l2.get("sumcap_eng") or 0) > 0 and l2["status"] == "LIVE", (l2.get("sumcap_eng"), l2["problems"]))
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
