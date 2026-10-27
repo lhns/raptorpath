@@ -7125,3 +7125,7 @@ passes). A suite failure is reported; it does not void the battery.
 **Duration.** Build ≈ 6–30 min; 130 invocations ≈ 25 min; suites ≈ 2 h
 (§21: release 34 min, debug 77 min); under the 5 h session cap, inside the
 4 h launch deadline for the battery.
+
+### 27. Amendment 1 (before any row ran): the first launch is `ABORT-TESTS`; relaunch
+
+The first launch met the precondition at 23:25:48Z, took both locks at 23:25:57Z and stopped one second later on `ABORT-TESTS`: the parser test (`test_loopdiag_parse.py`, 18 of its checks) failed because the shipped source archive excluded `docs/l1-raw/`, and the test reads its base line shapes from saved logs in `docs/l1-raw/store-law-n1/diag-sl/` and `docs/l1-raw/anchor-diag/diag-ad/` (the same test passes on the host). A packaging fault, not a code or parser fault: no build, no smoke, no row ran, nothing is scored. The ledger of the abort is kept in the persisted run dir. Fix: the two fixture directories are shipped with the tree; nothing in the harness, the plan or the outcomes changes. Relaunched under the same precondition.
