@@ -1,0 +1,66 @@
+   Compiling wasm-bindgen-shared v0.2.114
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling rustversion v1.0.22
+   Compiling libc v0.2.183
+   Compiling bumpalo v3.20.2
+   Compiling cfg-if v1.0.4
+   Compiling getrandom v0.3.4
+   Compiling gf256 v0.1.0 (/home/VMUSER/skrun/src/gf256)
+   Compiling once_cell v1.21.4
+   Compiling raptorpath-math v0.1.0 (/home/VMUSER/skrun/src/raptorpath-math)
+   Compiling wasm-bindgen v0.2.114
+   Compiling syn v2.0.117
+   Compiling wasm-bindgen-macro-support v0.2.114
+   Compiling wasm-bindgen-macro v0.2.114
+   Compiling raptorpath-wasm v0.1.0 (/home/VMUSER/skrun/src/raptorpath-wasm)
+    Finished `test` profile [optimized + debuginfo] target(s) in 18.92s
+     Running unittests src/lib.rs (target/debug/deps/raptorpath_wasm-9e75f9a9ef50b9cc)
+
+running 35 tests
+test tests::test_bulk_chi_ramps_at_stream_tail ... ok
+test tests::test_bulk_beats_fixed_001 ... ok
+test tests::test_channel_generation_loss_rate ... ok
+test tests::test_bulk_composes_with_rho ... ok
+test tests::test_ablation_p6_completion_exposure ... ok
+test tests::test_bulk_is_mostly_arq ... ok
+test tests::test_dial_reexports_are_bit_identical_to_the_shipped_sim_forms ... ok
+test tests::test_custom_rho_gives_up_late_losses ... ok
+test tests::test_excess_overhead_metric ... ok
+test tests::test_fixed_r_mode ... ok
+test tests::test_bulk_completes_faster_than_realtime ... ok
+test tests::test_fixed_r_sets_realized_rate ... ok
+test tests::test_estimator_converges_in_sim ... ok
+test tests::test_latency_metrics_show_the_trade ... ok
+test tests::test_multipath_custom_rho_semantics ... ok
+test tests::test_multipath_heterogeneous_beats_fast_path_alone ... ok
+test tests::test_continuum_one_law_across_the_dial ... ok
+test tests::test_ablation_completion_ramp_vs_burst ... ok
+test tests::test_multipath_symmetric_aggregation ... ok
+test tests::test_per_path_clock_phantom_counter ... ok
+test tests::test_sim_engine_tail_anchor_divergence_is_bounded ... ok
+test tests::test_sim_tail_target_of_delta_anchors ... ok
+test tests::test_no_end_of_stream_cliff_auto_realtime ... ok
+test tests::test_realtime_more_fec_than_bulk ... ok
+test tests::test_span_law_a_star ... ok
+test tests::test_span_law_deadline ... ok
+test tests::test_span_law_m_star ... ok
+test tests::test_span_law_shed_budget ... ok
+test tests::test_span_law_trailing_offset ... ok
+test tests::test_span_law_zeta_mapping ... ok
+test tests::test_simulation_runs_to_completion_auto ... ok
+test tests::test_store_pool_sack_release ... ok
+test tests::test_multipath_n1_identical_golden ... ok
+test tests::test_overhead_never_below_realized_floor ... ok
+test tests::test_derived_window_quality_vs_fixed64 has been running for over 60 seconds
+test tests::test_derived_window_quality_vs_fixed64 ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 105.06s
+
+   Doc-tests raptorpath_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

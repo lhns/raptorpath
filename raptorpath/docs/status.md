@@ -7130,3 +7130,61 @@ unclipped range, without the clip at `sent_store.last_seq()`. Result: FAILED
 (the panic at `sack_memo_tests.rs:58`); the other four tests pass on that
 stub. After reverting the stub, all five pass. The pre-registration is
 otherwise unchanged.
+
+### 28. Step 1 — ship battery — result
+
+Scored 2026-10-27 against the pre-registration, literally (no amendment
+beyond the pre-launch note). **`SHIP`: NEW (incremental SACK marking) is
+PASS-EVERYWHERE.** At c8 it is BETTER in client CPU per GB (−30.1 %, ranges
+disjoint) and BETTER in the client E-spread clause (max/min 1.64 vs 3.68).
+It is WITHIN everywhere else, apart from a c8 goodput TREND-WORSE (−5.7 %,
+ranges overlap) and a c2 RTprop TREND-BETTER. Shipping is the operator's
+merge.
+
+*Session.* The waiter retried twice behind §29 (`ABORT-PRECONDITION`), then
+ran 11:41–13:06Z under both locks.
+- Binaries: NEW `c3312f5a…f99d2c` (`634cb4d`, the same engine bytes as step
+  0's) and MAIN `37dfd2f8…ffab361` (92934a7, the same bytes as §26's MAIN).
+  Both were built fresh on disk and run from `/dev/shm/tsk`.
+- Full suites on NEW: release 1127 passed / 0 failed (50 ignored); doc rc 0;
+  wasm 35; debug 986 / 0 (49 ignored); parsers rc 0; identity panics 0.
+  `TESTS-OK`.
+- Smoke passed. Battery 12:59–13:06Z (436 s): 48 invocations, all LIVE,
+  0 witness failures, no abort token, no truncation.
+- io `full avg10` is ≤ 20 before and after every invocation, so no row is
+  flagged. Exit state: 0 `raptorpath`, 0 `rp-*`.
+- Ledgers: `docs/l1-raw/thread-sk/` (`score.txt` with every per-rep value,
+  `tsk.log` with the `IOP` lines, `TESTS.txt`, `diag-tsk/`).
+
+*Abort table.* None fired: `ABORT-LOCK`, `-CRLF`, `-BUILD`, `-TESTS`,
+`-SHA`, `-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUDGET`, `-ONDISK` all read
+*no*, and `ABORT-PRECONDITION` fired only on the two retries before launch.
+`ABORT-RC` / `ABORT-BRINGUP` / `VOID-COTENANT`: 0 / 0 / 0 of 48.
+
+*Per cell* (NEW vs MAIN, median [min–max], n = 6; E = `[LAG]` xfer p99 −
+`min_us`, µs):
+
+| cell | goodput Mbit/s | CPUCLI s/GB | CPUSRV s/GB | client E | server E | other | verdict |
+|---|---|---|---|---|---|---|---|
+| `c1s-400` | 738.2 vs 747.7 (−1.3 %, =) | 13.99 vs 13.70 (+2.1 %, =) | 19.60 vs 19.23 (=) | 2157 vs 2237 (=) | 1471 vs 1506 (=) | RTprop =, feed SAME | **PASS** |
+| `c1d-400` | 660.8 vs 668.5 (−1.1 %, =) | 18.88 vs 17.99 (+4.9 %, = at 6.5 %) | 23.06 vs 23.27 (=) | 2631 vs 2256 (=) | 1822 vs 1598 (=) | RTprop = / =, feed SAME | **PASS** |
+| `c2-100` | 89.60 vs 90.03 (=) | 30.75 vs 31.10 (=) | 37.2 vs 35.35 (+5.2 %, = at 6.3 %) | 1262 vs 1264 (=) | 1016 vs 1063 (=) | RTprop TREND-BETTER (−13.1 %) | **PASS** |
+| `c8-100` | 95.71 [81.9–101.8] vs 101.5 [89.4–103.4] (−5.7 %, TREND-WORSE) | **34.55 [33.2–37.0] vs 49.45 [42.1–57.3] (−30.1 %, BETTER)** | 43.8 vs 43.85 (=) | 1106 [1069–1753] vs 2562 [1132–4168] (−56.8 %, = within the 59 % band) | 1118 vs 1080 (=) | **E spread 1.64 vs 3.68 (BETTER)**; RTprop =, feed SAME | **PASS** |
+
+Arm verdict: `PASS-EVERYWHERE`, so the decision is **`SHIP`**.
+
+*Predictions.*
+- c8 client CPU/GB lower: **MET** (BETTER, −30 %; the client sender busy
+  fell 31 → 11.5 %; client cores 0.615 → 0.405).
+- c8 client E lower: **MET in direction** (−57 %), WITHIN by the min–max
+  rule because MAIN's range is wide.
+- c1s / c1d / c2 WITHIN: **MET**.
+- `[SACKI]` visited per report: c8 19.2, c1s 61–77, c1d ≈ 1, c2 ≈ 14; equal
+  to newly per report everywhere, so no redundant visits.
+
+*What it does not show.*
+- The c8 goodput TREND-WORSE (−5.7 %) is one low NEW row (81.9) against
+  overlapping ranges. §15 recorded c8 goodput spreads of 83–103 on one
+  binary. Recorded, not a clause failure.
+- c1d CPUCLI +4.9 % sits inside the 6.5 % band: a lean, not a reading.
+- Nothing here re-tests the timer hand-off part of the lag tail (§26 (a)).
