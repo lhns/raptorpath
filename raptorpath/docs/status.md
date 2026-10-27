@@ -7212,3 +7212,5 @@ always present, not a phase) or close the loop on delay rather than rate
 q·RTprop). The data here can pre-check the second offline: at the knees,
 Tmin/RTprop reads 1.32 (c2), 1.56–1.98 (c1s 768–1024) and 1.21–2.19 (c1d
 768–1024), so one fixed ratio does not mark every knee.
+
+*Suites (the instrument tree, same session, after the battery; `TESTS.txt` and the logs in `docs/l1-raw/loop-diag/p27/`).* Release `cargo test -p raptorpath -p raptorpath-math` **1 111 passed, 0 failed**, 50 ignored (1 522 s); `--doc` rc 0; `raptorpath-wasm` **35 passed**; debug `cargo test -p raptorpath` 969 passed, 1 failed, 49 ignored (2 782 s), `IDENTITY-PANICS 0`. The one failure, `place_arms_reachability::the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual`, passed on the immediate solo re-run: `FLAKE` by the rule (the same timing-dependent place-arm test §21 recorded; no store-cap or `[LOOPDIAG]` code on its path). Parser tests rc 0. `TESTS-OK`, `DONE-ALL` at 10:40Z; VM dirs removed.
