@@ -6851,3 +6851,34 @@ except:
    precondition, tmpfs, hard deadline launch + 2 h. The old
    `/home/VMUSER/r3prof` is removed at reship. Ledgers to
    `docs/l1-raw/thread-r3-diag/prof2/`.
+
+### 22. Amendment 5 — result; §22 closes
+
+**H-alloc (a): `UNREAD` (`ABORT-TEXT`). Per the operator's limit there is
+no fourth attempt, and the §22 decision rule selects no design: the R3
+build (in-place decoder) stays shelved and no decode-stage task is
+designed.** Session 11:29:25–11:40:11Z (engine `e4d078e`, harness
+`bcdfc4e`), both builds rc 0 (release-prof 337 s, release 308 s), then
+the `.text` check failed: sha256 `fbd88f46…` (release-prof) vs `9f50f56f…`
+(release). Nothing was recorded; END 0 `raptorpath`, 0 `rp-*`, locks
+released; the VM dir is removed. Ledgers: `docs/l1-raw/thread-r3-diag/prof2/`.
+
+*What it says.* The `Cargo.toml` comment on `[profile.release-prof]` ("does
+not alter instruction selection … expected to produce the same `.text`")
+is false on this tree: `debug = 1` changes the release `.text`. So a
+release-prof profile is not a profile of the shipped binary, and the
+release binary has no DWARF for user-frame attribution (Amendment 4).
+Neither of this section's two read paths can attribute the receiver's
+time to `add_symbol`'s callees on the shipped code. A future read needs a
+different method (e.g. `RWM_RTOBS=2` sub-sections inside `add_symbol`,
+measured on the release binary itself), which is a new pre-registration,
+not a §22 attempt. The `Cargo.toml` claim should be corrected (recorded
+here, not changed: outside this task's scope).
+
+*§22 in sum.* Read: the c1d receiver split on current main (decode 35–36 %
+of 15–18 µs per message, ≈ 0.31–0.32 core; ack 0.13–0.14; other 0.18),
+H-alloc (b) MET (2.15×), H-burst MET (the 2 s prune is a 63–90 ms stall),
+H-other MISSED; H-alloc (a) — the deciding witness — UNREAD three times.
+Not built or shipped: the R3 decoder change (`2d59e62`, `0702593`), its
+ship-battery pre-registration and harness (`0d4e910`, `6050e3c`, `c5b04eb`,
+Amendment 1 of the battery) stay on the branch, shelved.
