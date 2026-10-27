@@ -627,9 +627,9 @@ impl QuicTransport {
         if let Some((_, io)) = self.paths.remove(&path_id) {
             if let Err(mpsc::error::TrySendError::Full(cmd)) = io.tx.try_send(IoCmd::Close) {
                 let tx = io.tx.clone();
-                tokio::spawn(async move {
+                tokio::spawn(crate::task_obs::timed("close-fwd", async move {
                     let _ = tx.send(cmd).await;
-                });
+                }));
             }
         }
         self.rx_probe.remove(&path_id);

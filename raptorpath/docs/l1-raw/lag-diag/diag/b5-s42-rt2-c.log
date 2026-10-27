@@ -1,0 +1,1016 @@
+[2m2026-10-26T16:54:54.178087Z[0m [32m INFO[0m [2mraptorpath::control::estimator[0m[2m:[0m estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)
+[2m2026-10-26T16:54:54.178113Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): an unmeasured leg's SRTT_i in the §5.7 cost is the active set's fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed when OFF (shipped, bit-identical) [3mcold_place[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.178125Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m placement temperature (RWM_PLACE_T_DERIVED, paper §5.7): T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error dispersion when ON; the shipped place_temperature() when OFF [3mplace_t_derived[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.178134Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m placement frontier term (RWM_PLACE_HOL, paper §5.7): X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push against the sender's own F_hat, plus the (a2) wire-price ordering term at its derived W; ABSENT leaves the shipped cost untouched [3mplace_hol[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.178141Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper §5.7): fate*(p_BB - eps)+ * srtt/ref from the path's Gilbert-Elliott burst persistence when ON; the shipped w_div*fate when OFF [3mplace_wdiv_derived[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.178148Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m Copa wire-clocked signal (RWM_COPA_WIRE / RWM_QUIC_CC / RWM_COPA_FEED) [3mcopa_wire[0m[2m=[0mfalse [3mquic_cc[0m[2m=[0m"unset" [3mcopa_wire_env[0m[2m=[0m"unset"
+[2m2026-10-26T16:54:54.178155Z[0m [32m INFO[0m [2mraptorpath::gates::scheduler_gates[0m[2m:[0m Copa TCP-competitive mode (RWM_COPA_COMPETE, requires the wire signal) [3mcopa_compete[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.178220Z[0m [32m INFO[0m [2mraptorpath[0m[2m:[0m perf configuration [3mpeer_config[0m[2m=[0mPeerConfig { bind_addrs: [10.77.0.1:0, 10.78.0.1:0], peer_addrs: [10.77.0.2:7000, 10.78.0.2:7000], tun_name: "rpath0", tun_addr: "10.99.0.1/24", target_tail_loss: 1e-5, max_fec_overhead: 0.5, protocol_hint: Bulk, is_server: false, status_addr: None, routes: [], dns: None, pin_cert: None, fec_backend: Rlc, window_reliable: true, enable_pi_feedback: true, reorder_timeout_ms: 20, reorder_max_size: 500, inner_feedback_weight: 0.0, completion_feed: None, window_out_of_order: false, window_coded_only: false, window_generation_coding: false, window_systematic_repair: false }
+[2m2026-10-26T16:54:54.178368Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset RWM_COPA_DELTA=unset RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 RWM_DIAG=1 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=1 RWM_RTOBS=2 RWM_FDIAG=0 RWM_TRACE=0 RWM_PFRAC=0
+[2m2026-10-26T16:54:54.178415Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m reliable window mode (retain until acked): auto-selecting RLC windowed backend
+[2m2026-10-26T16:54:54.178426Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m [PIPE] pipeline=window backend=Rlc hint=bulk
+[2m2026-10-26T16:54:54.178429Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m window mode: clamping TUN MTU to fit one packet per symbol [3mmtu[0m[2m=[0m1196 [3msymbol_size[0m[2m=[0m1200
+[2m2026-10-26T16:54:54.178433Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m using injected TUN interface (no routes/DNS) [3mname[0m[2m=[0mmem
+[2m2026-10-26T16:54:54.178528Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)
+[2m2026-10-26T16:54:54.178539Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m client endpoint bound [3maddr[0m[2m=[0m10.77.0.1:0 [3mpath_id[0m[2m=[0m0
+[2m2026-10-26T16:54:54.178545Z[0m [33m WARN[0m [2mraptorpath::transport::quic[0m[2m:[0m TLS server certificate verification is DISABLED: no certificate pin was given (--pin-cert), so the peer is not authenticated. Pass --pin-cert outside dev/test.
+[2m2026-10-26T16:54:54.178564Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (ADR-0055) [3mfloor[0m[2m=[0m1350
+[2m2026-10-26T16:54:54.178571Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m compact DATA framing ACTIVE (RWM_WIRE_COMPACT v5: one-symbol datagrams ride the tag+varint frame, ~14-16 B vs 65-B legacy framing; receive support unconditional; datagrams SHRINK — no MTU-floor interaction)
+[RCVBUF] p0 role=client bind=10.77.0.1:47529 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+[2m2026-10-26T16:54:54.178974Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)
+[2m2026-10-26T16:54:54.178985Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m client endpoint bound [3maddr[0m[2m=[0m10.78.0.1:0 [3mpath_id[0m[2m=[0m1
+[2m2026-10-26T16:54:54.178999Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (ADR-0055) [3mfloor[0m[2m=[0m1350
+[2m2026-10-26T16:54:54.179002Z[0m [32m INFO[0m [2mraptorpath::transport::quic[0m[2m:[0m compact DATA framing ACTIVE (RWM_WIRE_COMPACT v5: one-symbol datagrams ride the tag+varint frame, ~14-16 B vs 65-B legacy framing; receive support unconditional; datagrams SHRINK — no MTU-floor interaction)
+[RCVBUF] p1 role=client bind=10.78.0.1:37787 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+[2m2026-10-26T16:54:54.206874Z[0m [32m INFO[0m [2mraptorpath::transport::io_owner[0m[2m:[0m handshake complete [3mlocal_version[0m[2m=[0m9 [3mpeer_version[0m[2m=[0m9 [3mpeer_path_id[0m[2m=[0m0
+[2m2026-10-26T16:54:54.206955Z[0m [32m INFO[0m [2mraptorpath::transport::io_owner[0m[2m:[0m connected and handshake complete [3mpath_id[0m[2m=[0m0 [3mpeer[0m[2m=[0m10.77.0.2:7000
+[2m2026-10-26T16:54:54.292446Z[0m [32m INFO[0m [2mraptorpath::transport::io_owner[0m[2m:[0m handshake complete [3mlocal_version[0m[2m=[0m9 [3mpeer_version[0m[2m=[0m9 [3mpeer_path_id[0m[2m=[0m1
+[2m2026-10-26T16:54:54.292528Z[0m [32m INFO[0m [2mraptorpath::transport::io_owner[0m[2m:[0m connected and handshake complete [3mpath_id[0m[2m=[0m1 [3mpeer[0m[2m=[0m10.78.0.2:7000
+[2m2026-10-26T16:54:54.292594Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m all paths connected
+[2m2026-10-26T16:54:54.292642Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m sliding-window FEC mode [3msymbol_size[0m[2m=[0m1200 [3mbackend[0m[2m=[0mRlc
+[2m2026-10-26T16:54:54.292683Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m O(1) windowed-max rate filter ACTIVE (RWM_HONEST_ANCHOR: max_bw read off a monotonic max-deque maintained beside bw_samples — the VALUE-IDENTICAL statistic, same [1s,10s] window, same evictions, amortized O(1) per accepted sample instead of the O(window) full-window fold that costs +61-64% sender CPU/byte at c1 under RWM_PLAIN_RS; zero constants; RWM_HONEST_ANCHOR=0 = legacy fold control, value-identical by unit-pinned equivalence)
+[2m2026-10-26T16:54:54.292701Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m ack-merge ACTIVE (RWM_ACK_MERGE: WINDOW mode sends ONE control datagram per data message instead of two — the legacy per-batch Ack is suppressed, the SACK WindowAck goes unconditional at that cadence and carries the Ack's payload in the v6 cumulative cum_expected/cum_received counters, every Ack-arm consumer re-homed onto the counter diff; BLOCK mode bit-exact; the delivery statistic/cadence/counts unchanged) [3mcopa_feed[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.292784Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m RWM_UNIFIED: receive path on the unified global decoder (one machine, both wires) [3mgeneration[0m[2m=[0mfalse
+[2m2026-10-26T16:54:54.292828Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m M* peer-report RTT-feed suppression ACTIVE (RWM_MSTAR_ANCHOR plain-live subset: local-echo-only RTT feed + estimator seed-from-sample)
+[2m2026-10-26T16:54:54.292855Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) at every N>=1; RWM_STORE_PATHS=0 = the clamp(gain*pipe, floor, store_max) control) [3mpool_per_path[0m[2m=[0m2048 [3mgain[0m[2m=[0m2.0
+[2m2026-10-26T16:54:54.292871Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs uncounted from the outstanding gate, payload + ARQ maps retained until the cumulative frontier — slot release, never recoverability)
+[2m2026-10-26T16:54:54.292877Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m budget-conserving taper emission ACTIVE (RWM_TAPER_R: plain-mode proactive repair budgeted at r x source per coding window; legacy = r per ack cycle)
+[2m2026-10-26T16:54:54.292883Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m unified span law ACTIVE (RWM_UNIFIED: plain-mode proactive repair over the trailing solvable span [end-A*, end-Δ), A* from δ) [3mhint[0m[2m=[0mBulk
+[2m2026-10-26T16:54:54.292890Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m A* send-rate anchor ACTIVE (RWM_ASTAR_ANCHOR: windowed-max send rate over ~8 SRTT, clock-gap sample discard)
+[2m2026-10-26T16:54:54.292903Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m clock-gap estimator hygiene ACTIVE (RWM_CLOCK_GAP: process-clock stall witness, post-stall sample discard at the ack feed sites)
+[2m2026-10-26T16:54:54.292934Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m multipath recovery suppression ACTIVE (RWM_RECOV_MP: per-flight RFC9002-style time-threshold hole law on the flight path's smoothed clocks; N=1 live path keeps legacy gates bit-exactly) [3mlaw[0m[2m=[0mtrue
+[2m2026-10-26T16:54:54.292945Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN intake + per-burst taper/span refresh; flow-control and pacing contracts enforced at symbol granularity) [3mburst[0m[2m=[0m64
+[2m2026-10-26T16:54:54.292971Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m0 [3mlive_sum[0m[2m=[0m0 [3mactive_sum[0m[2m=[0m0 [3mshort_ticks[0m[2m=[0m0 [3mzero_ticks[0m[2m=[0m0
+[SHEDH] evals=0 dial=0 legacy=0 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=0 floor_frac=0.0000 cap_frac=0.0000 interior_frac=0.0000 mean_us=- floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[WIDLE] idle=0ms/0/mx0ms arr=1
+{"seconds":0.142967,"warmup":true}
+[SPAN] t=0.0s ack=1 win=[0,1] wsize=2 a_star=Some(1) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=1 ar=0 agap=0/0 dg_rx=3 dg_tx=3
+[DIAG] t=0.3s win=862/884 paused=72% good=29.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=10454sym/s cod=36sym/s cum=2622/9/760 sidle=174ms/23/mx29ms cwnd=1070 infl=838 np=2 np_act=2 rtt=104.0ms bdp100=1083sym sweeps=0 retx=68 gapdrop=4 nbud=10 xattr=0/0 mpr[rep=55 seqs=3072 fired=68 y=11 r=57 fast=11 coal=29 supp=516/0/2379 stale=109 plost=0 taper=0 age=76ms pf=0/2583/10000 fp/on p0:57/11 p1:11/57] wnd2=862/0 relgap=1ms/mx28ms srel=538/1065 gate=1000 wait[tun=7% paused=47% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=45% cmd=0% n=299 us=250762 busy=9% busy_us=22882] wake[tun=79 paused=58 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=161 cmd=1 timer_acked=2] dgq0[hand=2129 tx=1774 full=0 err=0 sp=3741333] dgq1[hand=575 tx=335 full=0 err=0 sp=3857350] p0:infl=506/sinfl=0/bdp390(cap0) sout=998 khr=1.00/kraw=- btlbw=30872 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=51/wrtt=16/rtp13ms rtp_us=12635 sig_us=405/n1580 rvar_us=375/n1580 qsp_us=2358/n256 msd_us=2/n255 tlag_us=7820/n67 gapd=0/0 qcwnd=198484 qce=4 qlp=31/1808 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=90 plu=0.0036 plc=0.0168 p1:infl=332/sinfl=0/bdp413(cap0) sout=326 khr=1.00/kraw=- btlbw=10998 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=104/wrtt=60/rtp38ms rtp_us=37576 sig_us=1610/n176 rvar_us=1463/n176 qsp_us=34522/n176 msd_us=3/n175 tlag_us=14808/n14 gapd=0/0 qcwnd=207422 qce=1 qlp=1/359 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=26 plu=0.0287 plc=0.0056 rce=30/c1/w10/p1/a29/us35 dgev0=355 dgev1=240 eb_bursts=79 eb_syms=2622 eb_depth=33.19 eb_end=cap:17/store:60/tokens:0/drained:2 eb_maxrun=0:64/18.19,1:22/3.17
+[ETA] site=sender fhat_us=1793033694627555 n=2622 zero=0.0000 place_n=5616 cold_r=0.0000 cold_ge=0.1141 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=1576/2113 drop=0 tau_us=12635 e_p50=16384 e_p90=32768 e_p99=114688 e_mx=125348 late=0.3629 sig_us=9250/n67 p1:n=162/509 drop=0 tau_us=37576 e_p50=22528 e_p90=49152 e_p99=106496 e_mx=131212 late=0.7654 sig_us=32687/n13
+[C8CONV-S] p0:sp=2113 ro=57 st=86ms/2 p1:sp=509 ro=11 st=28ms/2
+[DIAG] t=0.5s win=884/884 paused=75% good=90.4Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11276sym/s cod=56sym/s cum=5441/23/3114 sidle=318ms/52/mx29ms cwnd=829 infl=649 np=2 np_act=2 rtt=66.1ms bdp100=689sym sweeps=2 retx=188 gapdrop=21 nbud=10 xattr=0/0 mpr[rep=165 seqs=8459 fired=188 y=14 r=174 fast=14 coal=125 supp=2309/0/4979 stale=983 plost=0 taper=0 age=110ms pf=0/5543/10000 fp/on p0:174/14 p1:14/174] wnd2=663/221 relgap=4ms/mx12ms srel=1443/4185 gate=1443 wait[tun=0% paused=32% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=67% cmd=0% n=424 us=250081 busy=17% busy_us=41790] wake[tun=173 paused=100 pace=0 gen=0 nack=3 defc=0 tail=2 flush=0 ack=444 cmd=1 timer_acked=3] dgq0[hand=4461 tx=4461 full=0 err=0 sp=4147906] dgq1[hand=1196 tx=1005 full=0 err=0 sp=3928180] p0:infl=312/sinfl=0/bdp390(cap0) sout=467 khr=1.00/kraw=- btlbw=30872 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=66/wrtt=58/rtp13ms rtp_us=12635 sig_us=1260/n3967 rvar_us=1154/n3967 qsp_us=3564/n256 msd_us=3/n255 tlag_us=3965/n164 gapd=0/0 qcwnd=750387 qce=9 qlp=160/4514 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=212 plu=0.0469 plc=0.0378 p1:infl=337/sinfl=0/bdp413(cap0) sout=417 khr=1.00/kraw=- btlbw=10998 sr=0/g0d0 est=Y pl=0.0291 cmp=- rtt=66/wrtt=67/rtp38ms rtp_us=37576 sig_us=1229/n655 rvar_us=912/n655 qsp_us=18303/n256 msd_us=22/n255 tlag_us=37436/n46 gapd=0/0 qcwnd=544517 qce=3 qlp=17/1064 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=99 plu=0.3476 plc=0.0209 rce=70/c1/w18/p2/a69/us107 dgev0=0 dgev1=191 eb_bursts=173 eb_syms=5441 eb_depth=31.45 eb_end=cap:26/store:145/tokens:0/drained:2 eb_maxrun=0:64/19.44,1:64/4.69
+[ETA] site=sender fhat_us=1793033694893286 n=5441 zero=0.0000 place_n=13270 cold_r=0.0000 cold_ge=0.0483 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=3953/4435 drop=0 tau_us=12635 e_p50=22528 e_p90=57344 e_p99=98304 e_mx=125348 late=0.1447 sig_us=7080/n164 p1:n=580/1006 drop=0 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=131072 e_mx=143499 late=0.8103 sig_us=30221/n45
+[C8CONV-S] p0:sp=4435 ro=174 st=338ms/4 p1:sp=1006 ro=14 st=69ms/9
+[SPAN] t=0.5s ack=3114 win=[5534,5734] wsize=201 a_star=Some(226) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=2621 ar=29952 agap=0/0 dg_rx=4249 dg_tx=4712
+[DIAG] t=0.8s win=974/974 paused=72% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11820sym/s cod=28sym/s cum=8408/30/3114 sidle=487ms/88/mx29ms cwnd=752 infl=653 np=2 np_act=1 rtt=247.4ms bdp100=2578sym sweeps=4 retx=254 gapdrop=31 nbud=10 xattr=0/0 mpr[rep=265 seqs=25221 fired=254 y=14 r=240 fast=14 coal=125 supp=6666/0/17318 stale=983 plost=0 taper=0 age=106ms pf=0/18080/10000 fp/on p0:230/48 p1:24/206] wnd2=974/0 relgap=3ms/mx35ms srel=4048/6790 gate=4320 wait[tun=1% paused=39% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=60% cmd=0% n=386 us=251018 busy=20% busy_us=50752] wake[tun=262 paused=142 pace=0 gen=0 nack=6 defc=0 tail=4 flush=0 ack=694 cmd=1 timer_acked=6] dgq0[hand=7239 tx=7197 full=0 err=0 sp=4119823] dgq1[hand=1458 tx=1447 full=0 err=0 sp=4188199] p0:infl=593/sinfl=0/bdp429(cap0) sout=998 khr=1.00/kraw=- btlbw=33919 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=67/wrtt=59/rtp13ms rtp_us=12635 sig_us=991/n6391 rvar_us=942/n6391 qsp_us=3213/n256 msd_us=6/n255 tlag_us=3750/n252 gapd=0/0 qcwnd=768735 qce=14 qlp=195/7316 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=322 plu=0.0062 plc=0.0289 p1:infl=60/sinfl=0/bdp456(cap0) sout=248 khr=1.00/kraw=- btlbw=12147 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=247/wrtt=203/rtp38ms rtp_us=37576 sig_us=1130/n1127 rvar_us=924/n1127 qsp_us=44394/n256 msd_us=4/n255 tlag_us=33568/n79 gapd=0/0 qcwnd=1135749 qce=6 qlp=52/1549 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=161 plu=0.0133 plc=0.0400 rce=108/c1/w28/p9/a107/us154 dgev0=42 dgev1=11 eb_bursts=262 eb_syms=8408 eb_depth=32.09 eb_end=cap:30/store:230/tokens:0/drained:2 eb_maxrun=0:64/20.73,1:64/3.75
+[ETA] site=sender fhat_us=1793033695202527 n=8408 zero=0.0000 place_n=19350 cold_r=0.0000 cold_ge=0.0331 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=6328/7174 drop=0 tau_us=12635 e_p50=26624 e_p90=57344 e_p99=81920 e_mx=125348 late=0.0904 sig_us=6545/n252 p1:n=955/1234 drop=0 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=131072 e_mx=147596 late=0.7602 sig_us=30221/n77
+[C8CONV-S] p0:sp=7174 ro=240 st=338ms/4 p1:sp=1234 ro=14 st=69ms/9
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[DIAG] t=1.0s win=1069/1158 paused=73% good=180.8Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11972sym/s cod=68sym/s cum=11411/47/7838 sidle=626ms/119/mx29ms cwnd=894 infl=659 np=2 np_act=1 rtt=180.7ms bdp100=1883sym sweeps=6 retx=361 gapdrop=41 nbud=10 xattr=0/0 mpr[rep=363 seqs=30394 fired=361 y=50 r=311 fast=50 coal=151 supp=9682/0/19293 stale=1058 plost=0 taper=0 age=134ms pf=0/20376/10000 fp/on p0:266/115 p1:95/246] wnd2=1069/0 relgap=0ms/mx8ms srel=1708/9141 gate=2504 wait[tun=1% paused=32% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=68% cmd=0% n=406 us=250694 busy=23% busy_us=57129] wake[tun=351 paused=180 pace=0 gen=0 nack=8 defc=0 tail=6 flush=0 ack=969 cmd=1 timer_acked=8] dgq0[hand=9728 tx=9682 full=0 err=0 sp=4055110] dgq1[hand=2096 tx=2096 full=0 err=0 sp=4190641] p0:infl=519/sinfl=0/bdp530(cap0) sout=1508 khr=1.00/kraw=- btlbw=41978 sr=0/g0d0 est=Y pl=0.0235 cmp=- rtt=69/wrtt=56/rtp13ms rtp_us=12635 sig_us=770/n8833 rvar_us=704/n8833 qsp_us=1443/n256 msd_us=2/n255 tlag_us=2721/n251 gapd=0/0 qcwnd=760581 qce=22 qlp=251/9835 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=443 plu=0.0233 plc=0.0267 p1:infl=140/sinfl=0/bdp522(cap0) sout=357 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=181/wrtt=163/rtp38ms rtp_us=37576 sig_us=1301/n1622 rvar_us=1201/n1622 qsp_us=32890/n256 msd_us=17/n255 tlag_us=30922/n114 gapd=0/0 qcwnd=1754312 qce=9 qlp=65/2250 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=227 plu=0.0244 plc=0.0328 rce=146/c1/w35/p19/a145/us197 dgev0=46 dgev1=0 eb_bursts=351 eb_syms=11411 eb_depth=32.51 eb_end=cap:35/store:314/tokens:0/drained:2 eb_maxrun=0:64/18.83,1:64/3.05
+[ETA] site=sender fhat_us=1793033695440432 n=11411 zero=0.0000 place_n=25754 cold_r=0.0000 cold_ge=0.0249 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=8701/9594 drop=27 tau_us=12635 e_p50=36864 e_p90=73728 e_p99=81920 e_mx=125348 late=0.0657 sig_us=5704/n251 p1:n=1390/1817 drop=0 tau_us=37576 e_p50=57344 e_p90=131072 e_p99=163840 e_mx=168424 late=0.7101 sig_us=30221/n107
+[C8CONV-S] p0:sp=9594 ro=281 st=776ms/9 p1:sp=1817 ro=80 st=69ms/9
+[SPAN] t=1.0s ack=8272 win=[11565,11765] wsize=201 a_star=Some(234) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=3494 ar=13456 agap=0/0 dg_rx=9093 dg_tx=9939
+[DIAG] t=1.3s win=1136/1158 paused=76% good=80.8Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11694sym/s cod=68sym/s cum=14341/64/9946 sidle=800ms/157/mx29ms cwnd=894 infl=630 np=2 np_act=1 rtt=206.7ms bdp100=2153sym sweeps=8 retx=458 gapdrop=47 nbud=0 xattr=0/0 mpr[rep=464 seqs=34708 fired=458 y=63 r=395 fast=63 coal=184 supp=12961/0/20181 stale=1108 plost=0 taper=0 age=150ms pf=0/21555/10000 fp/on p0:334/145 p1:124/313] wnd2=1136/0 relgap=1ms/mx9ms srel=2543/12044 gate=3259 wait[tun=0% paused=35% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=64% cmd=0% n=418 us=250435 busy=16% busy_us=39192] wake[tun=438 paused=224 pace=0 gen=0 nack=9 defc=0 tail=8 flush=0 ack=1253 cmd=1 timer_acked=9] dgq0[hand=12245 tx=12150 full=0 err=0 sp=4079518] dgq1[hand=2623 tx=2615 full=0 err=0 sp=4185757] p0:infl=542/sinfl=0/bdp530(cap0) sout=1481 khr=1.00/kraw=- btlbw=41978 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=68/wrtt=62/rtp13ms rtp_us=12635 sig_us=4240/n11237 rvar_us=3759/n11237 qsp_us=1534/n256 msd_us=2/n255 tlag_us=2288/n251 gapd=0/0 qcwnd=768735 qce=29 qlp=308/12303 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=562 plu=0.0028 plc=0.0259 p1:infl=88/sinfl=0/bdp522(cap0) sout=371 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0005 cmp=- rtt=207/wrtt=205/rtp38ms rtp_us=37576 sig_us=2035/n2097 rvar_us=1898/n2097 qsp_us=23120/n256 msd_us=13/n255 tlag_us=24928/n147 gapd=0/0 qcwnd=2352531 qce=13 qlp=92/2821 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=285 plu=0.0531 plc=0.0359 rce=186/c1/w46/p25/a185/us240 dgev0=95 dgev1=8 eb_bursts=438 eb_syms=14341 eb_depth=32.74 eb_end=cap:42/store:394/tokens:0/drained:2 eb_maxrun=0:64/17.69,1:64/2.66
+[ETA] site=sender fhat_us=1793033695690626 n=14341 zero=0.0000 place_n=31942 cold_r=0.0000 cold_ge=0.0201 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=11091/12078 drop=118 tau_us=12635 e_p50=49152 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0516 sig_us=4977/n251 p1:n=1813/2263 drop=0 tau_us=37576 e_p50=57344 e_p90=122880 e_p99=147456 e_mx=168424 late=0.7777 sig_us=27239/n140
+[C8CONV-S] p0:sp=12078 ro=349 st=1074ms/14 p1:sp=2263 ro=109 st=69ms/9
+[DIAG] t=1.5s win=1158/1158 paused=76% good=177.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11184sym/s cod=36sym/s cum=17145/73/14569 sidle=974ms/191/mx29ms cwnd=894 infl=556 np=2 np_act=1 rtt=236.6ms bdp100=2465sym sweeps=11 retx=519 gapdrop=59 nbud=10 xattr=0/0 mpr[rep=554 seqs=40042 fired=519 y=103 r=416 fast=103 coal=238 supp=16759/0/21455 stale=1309 plost=0 taper=0 age=156ms pf=0/23012/10000 fp/on p0:355/185 p1:164/334] wnd2=1158/0 relgap=5ms/mx13ms srel=250/14273 gate=1418 wait[tun=0% paused=39% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=59% cmd=0% n=378 us=250972 busy=20% busy_us=50193] wake[tun=515 paused=271 pace=0 gen=0 nack=12 defc=0 tail=11 flush=0 ack=1501 cmd=1 timer_acked=10] dgq0[hand=14653 tx=14548 full=0 err=0 sp=4026753] dgq1[hand=3089 tx=3084 full=0 err=0 sp=4189412] p0:infl=503/sinfl=0/bdp530(cap0) sout=1934 khr=1.00/kraw=- btlbw=41978 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=75/wrtt=61/rtp13ms rtp_us=12635 sig_us=491/n13634 rvar_us=479/n13634 qsp_us=2934/n256 msd_us=3/n255 tlag_us=2166/n250 gapd=0/0 qcwnd=758850 qce=30 qlp=318/14701 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=675 plu=0.0519 plc=0.0222 p1:infl=53/sinfl=0/bdp522(cap0) sout=392 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=237/wrtt=221/rtp38ms rtp_us=37576 sig_us=1111/n2567 rvar_us=931/n2567 qsp_us=20370/n256 msd_us=12/n255 tlag_us=20107/n180 gapd=0/0 qcwnd=2938052 qce=14 qlp=93/3339 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=345 plu=0.0113 plc=0.0299 rce=223/c1/w51/p26/a222/us288 dgev0=105 dgev1=5 eb_bursts=515 eb_syms=17145 eb_depth=33.29 eb_end=cap:50/store:463/tokens:0/drained:2 eb_maxrun=0:64/17.08,1:64/2.45
+[ETA] site=sender fhat_us=1793033695938014 n=17145 zero=0.0000 place_n=38092 cold_r=0.0000 cold_ge=0.0168 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=13429/14446 drop=190 tau_us=12635 e_p50=53248 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0426 sig_us=4564/n250 p1:n=2215/2699 drop=0 tau_us=37576 e_p50=49152 e_p90=122880 e_p99=147456 e_mx=168424 late=0.8181 sig_us=24405/n173
+[C8CONV-S] p0:sp=14446 ro=370 st=1315ms/21 p1:sp=2699 ro=149 st=88ms/11
+[SPAN] t=1.5s ack=14681 win=[17325,17525] wsize=201 a_star=Some(218) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=2845 ar=11856 agap=0/0 dg_rx=13931 dg_tx=14843
+[DIAG] t=1.8s win=1158/1158 paused=74% good=57.5Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11659sym/s cod=52sym/s cum=20064/86/16069 sidle=1148ms/230/mx29ms cwnd=894 infl=436 np=2 np_act=2 rtt=202.0ms bdp100=2104sym sweeps=12 retx=597 gapdrop=63 nbud=10 xattr=0/0 mpr[rep=667 seqs=43139 fired=597 y=137 r=460 fast=137 coal=307 supp=18378/0/22596 stale=1568 plost=0 taper=0 age=166ms pf=0/24387/10000 fp/on p0:376/242 p1:221/355] wnd2=1158/0 relgap=0ms/mx8ms srel=2036/17512 gate=2837 wait[tun=1% paused=38% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=61% cmd=0% n=394 us=250379 busy=18% busy_us=44921] wake[tun=606 paused=315 pace=0 gen=0 nack=17 defc=0 tail=12 flush=0 ack=1754 cmd=1 timer_acked=12] dgq0[hand=17127 tx=17052 full=0 err=0 sp=4081696] dgq1[hand=3625 tx=3619 full=0 err=0 sp=4188189] p0:infl=407/sinfl=0/bdp530(cap0) sout=1568 khr=1.00/kraw=- btlbw=41978 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=65/wrtt=54/rtp13ms rtp_us=12635 sig_us=339/n16055 rvar_us=270/n16055 qsp_us=2999/n256 msd_us=2/n255 tlag_us=1813/n250 gapd=0/0 qcwnd=762728 qce=39 qlp=409/17205 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=785 plu=0.0785 plc=0.0243 p1:infl=29/sinfl=0/bdp522(cap0) sout=391 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=202/wrtt=200/rtp38ms rtp_us=37576 sig_us=2502/n3064 rvar_us=1889/n3064 qsp_us=14409/n256 msd_us=18/n255 tlag_us=18482/n218 gapd=0/0 qcwnd=3566607 qce=19 qlp=134/3926 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=411 plu=0.0326 plc=0.0368 rce=262/c1/w57/p30/a261/us457 dgev0=75 dgev1=6 eb_bursts=606 eb_syms=20064 eb_depth=33.11 eb_end=cap:59/store:545/tokens:0/drained:2 eb_maxrun=0:64/16.31,1:64/2.31
+[ETA] site=sender fhat_us=1793033696160484 n=20064 zero=0.0000 place_n=44630 cold_r=0.0000 cold_ge=0.0144 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=15816/16862 drop=239 tau_us=12635 e_p50=49152 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0362 sig_us=4253/n251 p1:n=2692/3202 drop=0 tau_us=37576 e_p50=57344 e_p90=114688 e_p99=147456 e_mx=168424 late=0.8503 sig_us=21683/n210
+[C8CONV-S] p0:sp=16862 ro=391 st=1315ms/21 p1:sp=3202 ro=206 st=273ms/14
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[2m2026-10-26T16:54:56.294196Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m356 [3mlive_sum[0m[2m=[0m712 [3mactive_sum[0m[2m=[0m441 [3mshort_ticks[0m[2m=[0m264 [3mzero_ticks[0m[2m=[0m7
+[DIAG] t=2.0s win=1617/1799 paused=74% good=99.3Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=13293sym/s cod=68sym/s cum=23394/103/18661 sidle=1321ms/267/mx29ms cwnd=1389 infl=936 np=2 np_act=2 rtt=219.4ms bdp100=2285sym sweeps=14 retx=730 gapdrop=73 nbud=6 xattr=0/0 mpr[rep=758 seqs=48165 fired=730 y=137 r=593 fast=137 coal=342 supp=22774/0/23039 stale=1622 plost=0 taper=0 age=182ms pf=0/25229/10000 fp/on p0:486/275 p1:244/455] wnd2=1617/0 relgap=0ms/mx17ms srel=2202/20226 gate=3116 wait[tun=0% paused=35% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=64% cmd=0% n=392 us=250013 busy=19% busy_us=47905] wake[tun=698 paused=355 pace=0 gen=0 nack=19 defc=0 tail=14 flush=0 ack=2009 cmd=2 timer_acked=13] dgq0[hand=20038 tx=19457 full=0 err=0 sp=3484384] dgq1[hand=4128 tx=4125 full=0 err=0 sp=4191858] p0:infl=902/sinfl=0/bdp1114(cap0) sout=2191 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=69/wrtt=62/rtp13ms rtp_us=12635 sig_us=2054/n18459 rvar_us=1141/n18459 qsp_us=11261/n256 msd_us=3/n255 tlag_us=1819/n251 gapd=0/0 qcwnd=761511 qce=45 qlp=446/19618 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=901 plu=0.0092 plc=0.0231 p1:infl=34/sinfl=0/bdp522(cap0) sout=340 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=219/wrtt=218/rtp38ms rtp_us=37576 sig_us=1547/n3531 rvar_us=1479/n3531 qsp_us=10510/n256 msd_us=15/n255 tlag_us=16561/n250 gapd=0/0 qcwnd=4164499 qce=21 qlp=161/4480 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=466 plu=0.0159 plc=0.0381 rce=299/c1/w58/p37/a298/us1270 dgev0=581 dgev1=3 eb_bursts=698 eb_syms=23394 eb_depth=33.52 eb_end=cap:76/store:620/tokens:0/drained:2 eb_maxrun=0:64/16.57,1:64/2.22
+[ETA] site=sender fhat_us=1793033696423555 n=23394 zero=0.0000 place_n=51698 cold_r=0.0000 cold_ge=0.0124 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=18180/19798 drop=299 tau_us=12635 e_p50=49152 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0315 sig_us=3704/n251 p1:n=3107/3596 drop=0 tau_us=37576 e_p50=57344 e_p90=114688 e_p99=147456 e_mx=168424 late=0.8703 sig_us=17359/n242
+[C8CONV-S] p0:sp=19798 ro=501 st=1605ms/28 p1:sp=3596 ro=229 st=273ms/14
+[SPAN] t=2.0s ack=18661 win=[23693,23893] wsize=201 a_star=Some(261) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=5233 ar=12153 agap=0/0 dg_rx=18770 dg_tx=19813
+[RDIAG] busy=0% msgs=2/s q_avg=0 q_max=0 cap=128
+[DIAG] t=2.3s win=1781/1799 paused=73% good=71.5Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=12081sym/s cod=64sym/s cum=26419/119/20527 sidle=1474ms/299/mx29ms cwnd=1389 infl=1011 np=2 np_act=2 rtt=227.7ms bdp100=2372sym sweeps=17 retx=782 gapdrop=76 nbud=10 xattr=0/0 mpr[rep=869 seqs=54438 fired=782 y=155 r=627 fast=155 coal=406 supp=28682/0/23152 stale=1822 plost=0 taper=0 age=187ms pf=0/25498/10000 fp/on p0:505/308 p1:277/474] wnd2=1781/0 relgap=0ms/mx10ms srel=3527/23335 gate=4111 wait[tun=1% paused=33% pace=0% gen=0% nack=0% defc=0% tail=2% flush=0% ack=65% cmd=0% n=378 us=249630 busy=28% busy_us=69591] wake[tun=784 paused=390 pace=0 gen=0 nack=22 defc=0 tail=17 flush=0 ack=2260 cmd=2 timer_acked=13] dgq0[hand=22508 tx=21931 full=0 err=0 sp=3502778] dgq1[hand=4819 tx=4815 full=0 err=0 sp=4190635] p0:infl=829/sinfl=0/bdp1114(cap0) sout=1780 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=116/wrtt=60/rtp13ms rtp_us=12635 sig_us=860/n20864 rvar_us=769/n20864 qsp_us=5112/n256 msd_us=6/n255 tlag_us=2994/n249 gapd=0/0 qcwnd=762728 qce=50 qlp=486/22092 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1024 plu=0.0069 plc=0.0224 p1:infl=182/sinfl=0/bdp522(cap0) sout=585 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=228/wrtt=225/rtp38ms rtp_us=37576 sig_us=1655/n4021 rvar_us=1582/n4021 qsp_us=9685/n256 msd_us=12/n255 tlag_us=15025/n250 gapd=0/0 qcwnd=4759930 qce=24 qlp=180/5223 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=524 plu=0.0110 plc=0.0371 rce=340/c1/w63/p43/a339/us1899 dgev0=577 dgev1=4 eb_bursts=784 eb_syms=26419 eb_depth=33.70 eb_end=cap:85/store:697/tokens:0/drained:2 eb_maxrun=0:64/15.97,1:64/2.19
+[ETA] site=sender fhat_us=1793033696754215 n=26419 zero=0.0000 place_n=58284 cold_r=0.0000 cold_ge=0.0110 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=20556/22170 drop=309 tau_us=12635 e_p50=45056 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0997 sig_us=4353/n249 p1:n=3503/4249 drop=0 tau_us=37576 e_p50=61440 e_p90=98304 e_p99=147456 e_mx=168424 late=0.8850 sig_us=15825/n250
+[C8CONV-S] p0:sp=22170 ro=520 st=1813ms/39 p1:sp=4249 ro=262 st=312ms/17
+[DIAG] t=2.5s win=1781/1799 paused=75% good=83.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11355sym/s cod=32sym/s cum=29258/127/22690 sidle=1620ms/330/mx29ms cwnd=1389 infl=902 np=2 np_act=2 rtt=345.1ms bdp100=3595sym sweeps=19 retx=843 gapdrop=80 nbud=10 xattr=0/0 mpr[rep=970 seqs=59897 fired=843 y=188 r=655 fast=188 coal=414 supp=32859/0/24361 stale=1834 plost=0 taper=0 age=192ms pf=0/26890/10000 fp/on p0:533/343 p1:310/500] wnd2=1781/0 relgap=2ms/mx10ms srel=3131/25092 gate=4787 wait[tun=1% paused=27% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=72% cmd=0% n=373 us=250809 busy=26% busy_us=64441] wake[tun=872 paused=422 pace=0 gen=0 nack=24 defc=0 tail=19 flush=0 ack=2509 cmd=2 timer_acked=16] dgq0[hand=25035 tx=24405 full=0 err=0 sp=3412206] dgq1[hand=5200 tx=5196 full=0 err=0 sp=4190635] p0:infl=856/sinfl=0/bdp1114(cap0) sout=2980 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=122/wrtt=60/rtp13ms rtp_us=12635 sig_us=152/n23259 rvar_us=116/n23259 qsp_us=2454/n256 msd_us=2/n255 tlag_us=2949/n250 gapd=0/0 qcwnd=762728 qce=54 qlp=556/24566 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1149 plu=0.0048 plc=0.0230 p1:infl=46/sinfl=0/bdp522(cap0) sout=457 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=345/wrtt=330/rtp38ms rtp_us=37576 sig_us=754/n4504 rvar_us=437/n4504 qsp_us=22148/n256 msd_us=9/n255 tlag_us=14471/n249 gapd=0/0 qcwnd=5365167 qce=24 qlp=180/5642 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=578 plu=0.0048 plc=0.0333 rce=379/c1/w73/p46/a378/us4428 dgev0=630 dgev1=4 eb_bursts=872 eb_syms=29258 eb_depth=33.55 eb_end=cap:90/store:780/tokens:0/drained:2 eb_maxrun=0:64/15.90,1:64/2.12
+[ETA] site=sender fhat_us=1793033697008994 n=29258 zero=0.0000 place_n=64124 cold_r=0.0000 cold_ge=0.0100 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=22909/24662 drop=410 tau_us=12635 e_p50=45056 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0894 sig_us=3765/n250 p1:n=3977/4596 drop=0 tau_us=37576 e_p50=65536 e_p90=114688 e_p99=147456 e_mx=168424 late=0.8987 sig_us=14283/n251
+[C8CONV-S] p0:sp=24662 ro=548 st=2041ms/41 p1:sp=4596 ro=295 st=319ms/18
+[SPAN] t=2.5s ack=23858 win=[29374,29574] wsize=201 a_star=Some(218) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=5717 ar=18187 agap=0/0 dg_rx=23605 dg_tx=24766
+[DIAG] t=2.8s win=1772/1799 paused=74% good=64.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11296sym/s cod=88sym/s cum=32088/149/24364 sidle=1752ms/357/mx29ms cwnd=1389 infl=732 np=2 np_act=2 rtt=280.7ms bdp100=2924sym sweeps=21 retx=984 gapdrop=93 nbud=10 xattr=0/0 mpr[rep=1066 seqs=66872 fired=984 y=233 r=751 fast=233 coal=437 supp=39073/0/24961 stale=1854 plost=0 taper=0 age=210ms pf=0/27913/10000 fp/on p0:627/391 p1:357/593] wnd2=1772/0 relgap=0ms/mx19ms srel=4973/28582 gate=5952 wait[tun=1% paused=30% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=69% cmd=0% n=398 us=250478 busy=24% busy_us=60436] wake[tun=963 paused=453 pace=0 gen=0 nack=24 defc=0 tail=21 flush=0 ack=2783 cmd=2 timer_acked=17] dgq0[hand=27428 tx=26918 full=0 err=0 sp=3544347] dgq1[hand=5800 tx=5800 full=0 err=0 sp=4184520] p0:infl=684/sinfl=0/bdp1114(cap0) sout=2239 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=116/wrtt=57/rtp13ms rtp_us=12635 sig_us=194/n25681 rvar_us=143/n25681 qsp_us=1840/n256 msd_us=2/n255 tlag_us=2912/n250 gapd=0/0 qcwnd=751817 qce=60 qlp=647/27079 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1268 plu=0.0171 plc=0.0242 p1:infl=48/sinfl=0/bdp522(cap0) sout=512 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=281/wrtt=281/rtp38ms rtp_us=37576 sig_us=1563/n4982 rvar_us=1481/n4982 qsp_us=15817/n256 msd_us=19/n255 tlag_us=13039/n251 gapd=0/0 qcwnd=5964234 qce=28 qlp=191/6302 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=641 plu=0.0343 plc=0.0319 rce=416/c1/w79/p51/a415/us5491 dgev0=510 dgev1=0 eb_bursts=963 eb_syms=32088 eb_depth=33.32 eb_end=cap:94/store:867/tokens:0/drained:2 eb_maxrun=0:64/15.53,1:64/2.08
+[ETA] site=sender fhat_us=1793033697218526 n=32088 zero=0.0000 place_n=70150 cold_r=0.0000 cold_ge=0.0091 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=25287/27003 drop=437 tau_us=12635 e_p50=49152 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0810 sig_us=4587/n250 p1:n=4400/5085 drop=0 tau_us=37576 e_p50=65536 e_p90=114688 e_p99=147456 e_mx=168424 late=0.9084 sig_us=12818/n251
+[C8CONV-S] p0:sp=27003 ro=642 st=2141ms/46 p1:sp=5085 ro=342 st=319ms/18
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[DIAG] t=3.0s win=1799/1799 paused=74% good=135.5Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11432sym/s cod=76sym/s cum=34952/168/27899 sidle=1912ms/394/mx29ms cwnd=1389 infl=694 np=2 np_act=2 rtt=309.3ms bdp100=3222sym sweeps=23 retx=1073 gapdrop=96 nbud=10 xattr=0/0 mpr[rep=1168 seqs=76947 fired=1073 y=235 r=838 fast=235 coal=443 supp=48919/0/25092 stale=1863 plost=0 taper=0 age=220ms pf=0/28311/10000 fp/on p0:694/413 p1:379/660] wnd2=1799/0 relgap=5ms/mx11ms srel=3809/30948 gate=5254 wait[tun=1% paused=33% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=65% cmd=0% n=400 us=251042 busy=28% busy_us=69105] wake[tun=1051 paused=489 pace=0 gen=0 nack=27 defc=0 tail=23 flush=0 ack=3054 cmd=2 timer_acked=17] dgq0[hand=29848 tx=29342 full=0 err=0 sp=3588428] dgq1[hand=6352 tx=6346 full=0 err=0 sp=4188189] p0:infl=683/sinfl=0/bdp1114(cap0) sout=2679 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=114/wrtt=65/rtp13ms rtp_us=12635 sig_us=857/n28079 rvar_us=799/n28079 qsp_us=1435/n256 msd_us=3/n255 tlag_us=2185/n251 gapd=0/0 qcwnd=796852 qce=60 qlp=647/29503 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1389 plu=0.0012 plc=0.0222 p1:infl=11/sinfl=0/bdp522(cap0) sout=565 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=309/wrtt=306/rtp38ms rtp_us=37576 sig_us=644/n5467 rvar_us=551/n5467 qsp_us=3823/n256 msd_us=11/n255 tlag_us=12947/n250 gapd=0/0 qcwnd=6572047 qce=29 qlp=212/6899 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=697 plu=0.0084 plc=0.0327 rce=456/c1/w88/p51/a455/us5540 dgev0=506 dgev1=6 eb_bursts=1051 eb_syms=34952 eb_depth=33.26 eb_end=cap:99/store:950/tokens:0/drained:2 eb_maxrun=0:64/15.21,1:64/2.04
+[ETA] site=sender fhat_us=1793033697463977 n=34952 zero=0.0000 place_n=76112 cold_r=0.0000 cold_ge=0.0084 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=27639/29400 drop=477 tau_us=12635 e_p50=45056 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0741 sig_us=3561/n251 p1:n=4799/5552 drop=0 tau_us=37576 e_p50=65536 e_p90=106496 e_p99=147456 e_mx=168424 late=0.9160 sig_us=11866/n251
+[C8CONV-S] p0:sp=29400 ro=709 st=2444ms/47 p1:sp=5552 ro=364 st=319ms/18
+[SPAN] t=3.0s ack=27920 win=[35148,35348] wsize=201 a_star=Some(239) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=7429 ar=11726 agap=0/0 dg_rx=28412 dg_tx=29696
+[DIAG] t=3.3s win=1799/1799 paused=73% good=90.2Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11402sym/s cod=76sym/s cum=37806/187/30250 sidle=2080ms/430/mx29ms cwnd=1389 infl=722 np=2 np_act=2 rtt=344.7ms bdp100=3591sym sweeps=26 retx=1165 gapdrop=99 nbud=10 xattr=0/0 mpr[rep=1273 seqs=83521 fired=1165 y=317 r=848 fast=317 coal=501 supp=54470/0/25892 stale=1994 plost=0 taper=0 age=229ms pf=0/29387/10000 fp/on p0:704/495 p1:461/670] wnd2=1799/0 relgap=1ms/mx11ms srel=4093/33517 gate=5757 wait[tun=1% paused=31% pace=0% gen=0% nack=0% defc=0% tail=2% flush=0% ack=66% cmd=0% n=368 us=250322 busy=29% busy_us=72294] wake[tun=1132 paused=521 pace=0 gen=0 nack=31 defc=0 tail=26 flush=0 ack=3302 cmd=2 timer_acked=18] dgq0[hand=32454 tx=32090 full=0 err=0 sp=3735350] dgq1[hand=6711 tx=6706 full=0 err=0 sp=4189412] p0:infl=717/sinfl=0/bdp1114(cap0) sout=2984 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=118/wrtt=79/rtp13ms rtp_us=12635 sig_us=674/n30495 rvar_us=628/n30495 qsp_us=2101/n256 msd_us=3/n255 tlag_us=2193/n250 gapd=0/0 qcwnd=1105527 qce=68 qlp=721/32251 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1508 plu=0.1070 plc=0.0228 p1:infl=5/sinfl=0/bdp522(cap0) sout=479 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0005 cmp=- rtt=345/wrtt=346/rtp38ms rtp_us=37576 sig_us=609/n5949 rvar_us=586/n5949 qsp_us=7005/n256 msd_us=15/n255 tlag_us=11903/n249 gapd=0/0 qcwnd=7176043 qce=33 qlp=232/7307 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=758 plu=0.1653 plc=0.0333 rce=493/c1/w96/p59/a492/us6583 dgev0=364 dgev1=5 eb_bursts=1132 eb_syms=37806 eb_depth=33.40 eb_end=cap:105/store:1025/tokens:0/drained:2 eb_maxrun=0:64/15.20,1:64/1.99
+[ETA] site=sender fhat_us=1793033697729419 n=37806 zero=0.0000 place_n=82304 cold_r=0.0000 cold_ge=0.0078 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=30014/31924 drop=570 tau_us=12635 e_p50=45056 e_p90=65536 e_p99=81920 e_mx=125348 late=0.0683 sig_us=3193/n250 p1:n=5202/5882 drop=0 tau_us=37576 e_p50=73728 e_p90=122880 e_p99=163840 e_mx=188962 late=0.9225 sig_us=12189/n251
+[C8CONV-S] p0:sp=31924 ro=719 st=2765ms/55 p1:sp=5882 ro=446 st=319ms/18
+[DIAG] t=3.5s win=1799/1799 paused=75% good=158.9Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11131sym/s cod=72sym/s cum=40597/205/34401 sidle=2244ms/462/mx29ms cwnd=1389 infl=649 np=2 np_act=2 rtt=287.2ms bdp100=2992sym sweeps=28 retx=1273 gapdrop=105 nbud=10 xattr=0/0 mpr[rep=1372 seqs=88426 fired=1273 y=379 r=894 fast=379 coal=530 supp=58760/0/26376 stale=2017 plost=0 taper=0 age=240ms pf=0/30195/10000 fp/on p0:742/566 p1:531/707] wnd2=1799/0 relgap=2ms/mx12ms srel=3345/36876 gate=4397 wait[tun=1% paused=24% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=74% cmd=0% n=399 us=250741 busy=23% busy_us=57757] wake[tun=1214 paused=550 pace=0 gen=0 nack=32 defc=0 tail=28 flush=0 ack=3587 cmd=2 timer_acked=18] dgq0[hand=34852 tx=34505 full=0 err=0 sp=3758562] dgq1[hand=7230 tx=7226 full=0 err=0 sp=4190635] p0:infl=602/sinfl=0/bdp1114(cap0) sout=2345 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=129/wrtt=89/rtp13ms rtp_us=12635 sig_us=405/n32893 rvar_us=340/n32893 qsp_us=3260/n256 msd_us=3/n255 tlag_us=2065/n251 gapd=0/0 qcwnd=1074185 qce=72 qlp=765/34666 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1635 plu=0.0272 plc=0.0225 p1:infl=47/sinfl=0/bdp522(cap0) sout=506 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=287/wrtt=293/rtp38ms rtp_us=37576 sig_us=5120/n6418 rvar_us=3763/n6418 qsp_us=16219/n256 msd_us=28/n255 tlag_us=11271/n251 gapd=0/0 qcwnd=7762742 qce=38 qlp=256/7882 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=825 plu=0.0363 plc=0.0340 rce=531/c1/w103/p63/a530/us7115 dgev0=347 dgev1=4 eb_bursts=1214 eb_syms=40597 eb_depth=33.44 eb_end=cap:112/store:1100/tokens:0/drained:2 eb_maxrun=0:64/15.07,1:64/1.96
+[ETA] site=sender fhat_us=1793033697971830 n=40597 zero=0.0000 place_n=88184 cold_r=0.0000 cold_ge=0.0073 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=32334/34251 drop=637 tau_us=12635 e_p50=40960 e_p90=61440 e_p99=81920 e_mx=125348 late=0.0634 sig_us=2775/n251 p1:n=5627/6346 drop=0 tau_us=37576 e_p50=73728 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9284 sig_us=11274/n250
+[C8CONV-S] p0:sp=34251 ro=757 st=2972ms/60 p1:sp=6346 ro=516 st=368ms/19
+[SPAN] t=3.5s ack=34401 win=[40792,40992] wsize=201 a_star=Some(201) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=6592 ar=12977 agap=0/0 dg_rx=33278 dg_tx=34910
+[DIAG] t=3.8s win=1719/1799 paused=73% good=37.2Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11212sym/s cod=20sym/s cum=43403/210/35372 sidle=2420ms/496/mx29ms cwnd=1389 infl=505 np=2 np_act=2 rtt=278.9ms bdp100=2905sym sweeps=31 retx=1318 gapdrop=106 nbud=10 xattr=0/0 mpr[rep=1477 seqs=93943 fired=1318 y=379 r=939 fast=379 coal=560 supp=64171/0/26376 stale=2078 plost=0 taper=0 age=245ms pf=0/30330/10000 fp/on p0:787/575 p1:531/743] wnd2=1719/0 relgap=0ms/mx10ms srel=5034/39510 gate=6312 wait[tun=1% paused=37% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=62% cmd=0% n=375 us=249790 busy=27% busy_us=68359] wake[tun=1299 paused=584 pace=0 gen=0 nack=36 defc=0 tail=31 flush=0 ack=3836 cmd=2 timer_acked=18] dgq0[hand=37179 tx=36945 full=0 err=0 sp=3836896] dgq1[hand=7759 tx=7758 full=0 err=0 sp=4194304] p0:infl=476/sinfl=0/bdp1114(cap0) sout=2447 khr=1.00/kraw=- btlbw=88130 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=119/wrtt=87/rtp13ms rtp_us=12635 sig_us=230/n35306 rvar_us=205/n35306 qsp_us=2141/n256 msd_us=2/n255 tlag_us=2263/n251 gapd=0/0 qcwnd=1067291 qce=74 qlp=796/37091 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1754 plu=0.0681 plc=0.0218 p1:infl=29/sinfl=0/bdp522(cap0) sout=550 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=279/wrtt=270/rtp38ms rtp_us=37576 sig_us=1366/n6900 rvar_us=1202/n6900 qsp_us=7220/n256 msd_us=15/n255 tlag_us=11303/n250 gapd=0/0 qcwnd=8358227 qce=45 qlp=283/8468 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=886 plu=0.0247 plc=0.0350 rce=567/c1/w108/p66/a566/us9418 dgev0=234 dgev1=1 eb_bursts=1299 eb_syms=43403 eb_depth=33.41 eb_end=cap:120/store:1177/tokens:0/drained:2 eb_maxrun=0:64/14.88,1:64/1.95
+[ETA] site=sender fhat_us=1793033698206731 n=43403 zero=0.0000 place_n=94018 cold_r=0.0000 cold_ge=0.0068 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=34733/36569 drop=647 tau_us=12635 e_p50=36864 e_p90=61440 e_p99=81920 e_mx=125348 late=0.0590 sig_us=2975/n251 p1:n=6052/6834 drop=0 tau_us=37576 e_p50=73728 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9334 sig_us=10989/n251
+[C8CONV-S] p0:sp=36569 ro=794 st=3071ms/63 p1:sp=6834 ro=524 st=368ms/19
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[2m2026-10-26T16:54:58.295522Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m710 [3mlive_sum[0m[2m=[0m1420 [3mactive_sum[0m[2m=[0m1132 [3mshort_ticks[0m[2m=[0m281 [3mzero_ticks[0m[2m=[0m7
+[DIAG] t=4.0s win=1771/2210 paused=68% good=102.6Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11640sym/s cod=52sym/s cum=46326/223/38056 sidle=2589ms/528/mx29ms cwnd=1707 infl=573 np=2 np_act=2 rtt=310.1ms bdp100=3230sym sweeps=33 retx=1377 gapdrop=108 nbud=11 xattr=0/0 mpr[rep=1576 seqs=98725 fired=1377 y=379 r=998 fast=379 coal=598 supp=68832/0/26384 stale=2132 plost=0 taper=0 age=254ms pf=0/30515/10000 fp/on p0:815/606 p1:562/771] wnd2=1771/0 relgap=0ms/mx17ms srel=4992/42108 gate=6499 wait[tun=1% paused=39% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=60% cmd=0% n=332 us=250941 busy=35% busy_us=86598] wake[tun=1388 paused=620 pace=0 gen=0 nack=37 defc=0 tail=33 flush=0 ack=4039 cmd=3 timer_acked=18] dgq0[hand=39779 tx=39431 full=0 err=0 sp=3731614] dgq1[hand=8156 tx=8153 full=0 err=0 sp=4191862] p0:infl=569/sinfl=0/bdp1488(cap0) sout=2825 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0158 cmp=- rtt=118/wrtt=89/rtp13ms rtp_us=12635 sig_us=49/n37713 rvar_us=18/n37713 qsp_us=9519/n256 msd_us=2/n255 tlag_us=2480/n249 gapd=0/0 qcwnd=1087892 qce=81 qlp=863/39592 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1867 plu=0.0356 plc=0.0221 p1:infl=4/sinfl=0/bdp522(cap0) sout=453 khr=1.00/kraw=- btlbw=13879 sr=0/g0d0 est=Y pl=0.0564 cmp=- rtt=310/wrtt=303/rtp38ms rtp_us=37576 sig_us=2144/n7368 rvar_us=1985/n7368 qsp_us=6036/n256 msd_us=10/n255 tlag_us=10634/n250 gapd=0/0 qcwnd=8970943 qce=48 qlp=314/8907 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=942 plu=0.0646 plc=0.0366 rce=606/c1/w114/p75/a605/us13885 dgev0=348 dgev1=3 eb_bursts=1388 eb_syms=46326 eb_depth=33.38 eb_end=cap:130/store:1256/tokens:0/drained:2 eb_maxrun=0:64/14.91,1:64/1.92
+[ETA] site=sender fhat_us=1793033698471104 n=46326 zero=0.0000 place_n=100116 cold_r=0.0000 cold_ge=0.0064 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=37113/39136 drop=705 tau_us=12635 e_p50=32768 e_p90=61440 e_p99=81920 e_mx=125348 late=0.0583 sig_us=3275/n249 p1:n=6467/7190 drop=0 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9377 sig_us=11008/n252
+[C8CONV-S] p0:sp=39136 ro=822 st=3172ms/67 p1:sp=7190 ro=555 st=544ms/20
+[SPAN] t=4.1s ack=38061 win=[46998,47198] wsize=201 a_star=Some(227) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=9138 ar=14063 agap=0/0 dg_rx=38110 dg_tx=39839
+[RDIAG] busy=0% msgs=0/s q_avg=0 q_max=0 cap=128
+[DIAG] t=4.3s win=2287/2287 paused=72% good=165.3Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=13395sym/s cod=64sym/s cum=49675/239/42362 sidle=2765ms/562/mx29ms cwnd=1766 infl=886 np=2 np_act=2 rtt=249.6ms bdp100=2600sym sweeps=35 retx=1448 gapdrop=111 nbud=10 xattr=0/0 mpr[rep=1671 seqs=102781 fired=1448 y=379 r=1069 fast=379 coal=621 supp=72749/0/26396 stale=2188 plost=0 taper=0 age=264ms pf=0/30740/10000 fp/on p0:862/630 p1:586/818] wnd2=2287/0 relgap=7ms/mx9ms srel=4305/45681 gate=5026 wait[tun=1% paused=32% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=67% cmd=0% n=349 us=250668 busy=33% busy_us=82270] wake[tun=1475 paused=652 pace=0 gen=0 nack=40 defc=0 tail=35 flush=0 ack=4264 cmd=3 timer_acked=18] dgq0[hand=42518 tx=41976 full=0 err=0 sp=3475826] dgq1[hand=8853 tx=8853 full=0 err=0 sp=4189412] p0:infl=760/sinfl=0/bdp1488(cap0) sout=2363 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=158/wrtt=87/rtp13ms rtp_us=12635 sig_us=705/n40117 rvar_us=654/n40117 qsp_us=5182/n256 msd_us=3/n255 tlag_us=3175/n247 gapd=0/0 qcwnd=1096944 qce=89 qlp=982/42136 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1983 plu=0.0043 plc=0.0237 p1:infl=126/sinfl=0/bdp591(cap0) sout=645 khr=1.00/kraw=- btlbw=15722 sr=0/g0d0 est=Y pl=0.0673 cmp=- rtt=250/wrtt=255/rtp38ms rtp_us=37576 sig_us=5532/n7861 rvar_us=5220/n7861 qsp_us=14184/n256 msd_us=25/n255 tlag_us=9833/n250 gapd=0/0 qcwnd=9572702 qce=52 qlp=342/9662 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1007 plu=0.0568 plc=0.0375 rce=642/c1/w118/p85/a641/us18346 dgev0=542 dgev1=0 eb_bursts=1475 eb_syms=49675 eb_depth=33.68 eb_end=cap:148/store:1325/tokens:0/drained:2 eb_maxrun=0:64/14.89,1:64/1.93
+[ETA] site=sender fhat_us=1793033698747703 n=49675 zero=0.0000 place_n=107100 cold_r=0.0000 cold_ge=0.0060 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=39492/41850 drop=746 tau_us=12635 e_p50=32768 e_p90=61440 e_p99=73728 e_mx=125348 late=0.0730 sig_us=3528/n247 p1:n=6920/7825 drop=0 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9418 sig_us=10951/n250
+[C8CONV-S] p0:sp=41850 ro=869 st=3540ms/74 p1:sp=7825 ro=579 st=544ms/20
+[DIAG] t=4.5s win=2296/2296 paused=71% good=26.3Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11688sym/s cod=52sym/s cum=52598/252/43047 sidle=2928ms/597/mx29ms cwnd=1773 infl=825 np=2 np_act=2 rtt=286.6ms bdp100=2986sym sweeps=38 retx=1502 gapdrop=112 nbud=10 xattr=0/0 mpr[rep=1784 seqs=110810 fired=1502 y=379 r=1123 fast=379 coal=651 supp=80689/0/26396 stale=2223 plost=0 taper=0 age=270ms pf=0/30902/10000 fp/on p0:906/640 p1:596/862] wnd2=2296/0 relgap=19ms/mx67ms srel=3882/45929 gate=7255 wait[tun=1% paused=30% pace=0% gen=0% nack=0% defc=0% tail=2% flush=0% ack=68% cmd=0% n=372 us=250072 busy=30% busy_us=75147] wake[tun=1564 paused=683 pace=0 gen=0 nack=40 defc=0 tail=38 flush=0 ack=4513 cmd=3 timer_acked=19] dgq0[hand=44959 tx=44404 full=0 err=0 sp=3516212] dgq1[hand=9402 tx=9392 full=0 err=0 sp=4183297] p0:infl=747/sinfl=0/bdp1488(cap0) sout=4614 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=143/wrtt=90/rtp13ms rtp_us=12635 sig_us=354/n42515 rvar_us=309/n42515 qsp_us=2115/n256 msd_us=3/n255 tlag_us=3143/n248 gapd=0/0 qcwnd=1096944 qce=92 qlp=1023/44564 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2100 plu=0.0023 plc=0.0233 p1:infl=78/sinfl=0/bdp599(cap0) sout=1055 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=287/wrtt=286/rtp38ms rtp_us=37576 sig_us=1906/n8348 rvar_us=1779/n8348 qsp_us=12625/n256 msd_us=9/n255 tlag_us=9594/n250 gapd=0/0 qcwnd=10183105 qce=57 qlp=400/10248 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1066 plu=0.0139 plc=0.0418 rce=680/c1/w122/p89/a679/us22619 dgev0=555 dgev1=10 eb_bursts=1564 eb_syms=52598 eb_depth=33.63 eb_end=cap:154/store:1408/tokens:0/drained:2 eb_maxrun=0:64/14.73,1:64/1.92
+[ETA] site=sender fhat_us=1793033698985916 n=52598 zero=0.0000 place_n=113150 cold_r=0.0000 cold_ge=0.0057 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=41871/44276 drop=771 tau_us=12635 e_p50=30720 e_p90=61440 e_p99=73728 e_mx=125348 late=0.0756 sig_us=4522/n248 p1:n=7375/8322 drop=1 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9454 sig_us=11059/n252
+[C8CONV-S] p0:sp=44276 ro=913 st=3546ms/75 p1:sp=8322 ro=589 st=667ms/26
+[SPAN] t=4.6s ack=43440 win=[52887,53087] wsize=201 a_star=Some(226) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=9648 ar=12977 agap=0/0 dg_rx=42943 dg_tx=44832
+[DIAG] t=4.8s win=2296/2296 paused=72% good=88.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11488sym/s cod=68sym/s cum=55471/269/45343 sidle=3117ms/637/mx29ms cwnd=1773 infl=660 np=2 np_act=2 rtt=350.6ms bdp100=3652sym sweeps=40 retx=1570 gapdrop=116 nbud=10 xattr=0/0 mpr[rep=1884 seqs=117744 fired=1570 y=379 r=1191 fast=379 coal=709 supp=87489/0/26396 stale=2289 plost=0 taper=0 age=285ms pf=0/31106/10000 fp/on p0:971/645 p1:599/925] wnd2=2296/0 relgap=91ms/mx91ms srel=2714/46989 gate=7832 wait[tun=0% paused=31% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=68% cmd=0% n=344 us=250100 busy=29% busy_us=72358] wake[tun=1644 paused=714 pace=0 gen=0 nack=41 defc=0 tail=40 flush=0 ack=4743 cmd=3 timer_acked=19] dgq0[hand=47408 tx=46947 full=0 err=0 sp=3608012] dgq1[hand=9911 tx=9908 full=0 err=0 sp=4191858] p0:infl=657/sinfl=0/bdp1488(cap0) sout=6078 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=138/wrtt=81/rtp13ms rtp_us=12635 sig_us=4096/n44940 rvar_us=3537/n44940 qsp_us=1764/n256 msd_us=2/n255 tlag_us=3168/n250 gapd=0/0 qcwnd=1096944 qce=101 qlp=1131/47107 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2222 plu=0.0704 plc=0.0244 p1:infl=3/sinfl=0/bdp599(cap0) sout=1336 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=351/wrtt=351/rtp38ms rtp_us=37576 sig_us=2357/n8835 rvar_us=1900/n8835 qsp_us=6693/n256 msd_us=13/n255 tlag_us=9299/n250 gapd=0/0 qcwnd=10792057 qce=60 qlp=425/10810 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1123 plu=0.0131 plc=0.0421 rce=719/c1/w132/p100/a718/us27114 dgev0=461 dgev1=3 eb_bursts=1644 eb_syms=55471 eb_depth=33.74 eb_end=cap:164/store:1478/tokens:0/drained:2 eb_maxrun=0:64/14.65,1:64/1.90
+[ETA] site=sender fhat_us=1793033699231277 n=55471 zero=0.0000 place_n=119198 cold_r=0.0000 cold_ge=0.0054 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=44288/46719 drop=873 tau_us=12635 e_p50=30720 e_p90=57344 e_p99=73728 e_mx=125348 late=0.0715 sig_us=4044/n250 p1:n=7785/8752 drop=1 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9482 sig_us=11267/n250
+[C8CONV-S] p0:sp=46719 ro=976 st=3813ms/84 p1:sp=8752 ro=594 st=667ms/26
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[DIAG] t=5.0s win=2282/2296 paused=74% good=44.6Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11472sym/s cod=80sym/s cum=58353/289/46509 sidle=3289ms/672/mx29ms cwnd=1773 infl=676 np=2 np_act=2 rtt=355.8ms bdp100=3706sym sweeps=42 retx=1635 gapdrop=117 nbud=10 xattr=0/0 mpr[rep=1990 seqs=125311 fired=1635 y=379 r=1256 fast=379 coal=755 supp=94897/0/26396 stale=2383 plost=0 taper=0 age=309ms pf=0/31301/10000 fp/on p0:1013/668 p1:622/967] wnd2=2282/0 relgap=9ms/mx106ms srel=3560/48949 gate=9562 wait[tun=0% paused=33% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=65% cmd=0% n=368 us=250722 busy=31% busy_us=77006] wake[tun=1725 paused=747 pace=0 gen=0 nack=44 defc=0 tail=42 flush=0 ack=4992 cmd=3 timer_acked=19] dgq0[hand=49957 tx=49432 full=0 err=0 sp=3543142] dgq1[hand=10329 tx=10317 full=0 err=0 sp=4186966] p0:infl=667/sinfl=0/bdp1488(cap0) sout=7034 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0016 cmp=- rtt=137/wrtt=87/rtp13ms rtp_us=12635 sig_us=354/n47353 rvar_us=318/n47353 qsp_us=1676/n256 msd_us=3/n255 tlag_us=2123/n250 gapd=0/0 qcwnd=1089427 qce=110 qlp=1232/49592 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2344 plu=0.0539 plc=0.0252 p1:infl=9/sinfl=0/bdp599(cap0) sout=1250 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=356/wrtt=351/rtp38ms rtp_us=37576 sig_us=1337/n9307 rvar_us=1066/n9307 qsp_us=7476/n256 msd_us=18/n255 tlag_us=8076/n251 gapd=0/0 qcwnd=11381045 qce=61 qlp=426/11275 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1185 plu=0.0072 plc=0.0401 rce=758/c1/w142/p106/a757/us32819 dgev0=525 dgev1=12 eb_bursts=1725 eb_syms=58353 eb_depth=33.83 eb_end=cap:171/store:1552/tokens:0/drained:2 eb_maxrun=0:64/14.62,1:64/1.88
+[ETA] site=sender fhat_us=1793033699483973 n=58353 zero=0.0000 place_n=125320 cold_r=0.0000 cold_ge=0.0051 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=46688/49243 drop=947 tau_us=12635 e_p50=28672 e_p90=57344 e_p99=73728 e_mx=125348 late=0.0678 sig_us=3104/n250 p1:n=8177/9110 drop=32 tau_us=37576 e_p50=81920 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9507 sig_us=11157/n250
+[C8CONV-S] p0:sp=49243 ro=1018 st=3897ms/92 p1:sp=9110 ro=617 st=888ms/27
+[SPAN] t=5.1s ack=46509 win=[58635,58835] wsize=201 a_star=Some(213) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=12327 ar=13028 agap=0/0 dg_rx=47756 dg_tx=49854
+[DIAG] t=5.3s win=2270/2296 paused=73% good=3.3Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11373sym/s cod=68sym/s cum=61205/306/46596 sidle=3461ms/710/mx29ms cwnd=1773 infl=657 np=2 np_act=2 rtt=329.4ms bdp100=3431sym sweeps=44 retx=1695 gapdrop=117 nbud=6 xattr=0/0 mpr[rep=2094 seqs=130860 fired=1695 y=379 r=1316 fast=379 coal=767 supp=100361/0/26412 stale=2392 plost=0 taper=0 age=334ms pf=0/31497/10000 fp/on p0:1030/712 p1:665/983] wnd2=2270/0 relgap=0ms/mx55ms srel=6427/51893 gate=12339 wait[tun=1% paused=35% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=64% cmd=0% n=354 us=250518 busy=29% busy_us=72571] wake[tun=1807 paused=782 pace=0 gen=0 nack=47 defc=0 tail=44 flush=0 ack=5224 cmd=3 timer_acked=19] dgq0[hand=52418 tx=51885 full=0 err=0 sp=3523568] dgq1[hand=10793 tx=10788 full=0 err=0 sp=4189412] p0:infl=641/sinfl=0/bdp1488(cap0) sout=6992 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=146/wrtt=89/rtp13ms rtp_us=12635 sig_us=133/n49760 rvar_us=120/n49760 qsp_us=2044/n256 msd_us=3/n255 tlag_us=2111/n252 gapd=0/0 qcwnd=1100629 qce=113 qlp=1268/52045 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2464 plu=0.0035 plc=0.0247 p1:infl=16/sinfl=0/bdp599(cap0) sout=1190 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=329/wrtt=332/rtp38ms rtp_us=37576 sig_us=2200/n9791 rvar_us=1933/n9791 qsp_us=8356/n256 msd_us=17/n255 tlag_us=7479/n249 gapd=0/0 qcwnd=11991352 qce=65 qlp=450/11795 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1247 plu=0.0272 plc=0.0403 rce=797/c1/w152/p111/a796/us37282 dgev0=533 dgev1=5 eb_bursts=1807 eb_syms=61205 eb_depth=33.87 eb_end=cap:176/store:1629/tokens:0/drained:2 eb_maxrun=0:64/14.54,1:64/1.87
+[ETA] site=sender fhat_us=1793033699729849 n=61205 zero=0.0000 place_n=131196 cold_r=0.0000 cold_ge=0.0049 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=49064/51660 drop=990 tau_us=12635 e_p50=28672 e_p90=57344 e_p99=73728 e_mx=125348 late=0.0682 sig_us=2772/n252 p1:n=8606/9545 drop=40 tau_us=37576 e_p50=81920 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9532 sig_us=10148/n251
+[C8CONV-S] p0:sp=51660 ro=1034 st=4075ms/93 p1:sp=9545 ro=661 st=888ms/27
+[DIAG] t=5.5s win=2296/2296 paused=71% good=85.5Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11452sym/s cod=56sym/s cum=64070/320/48823 sidle=3628ms/743/mx29ms cwnd=1773 infl=577 np=2 np_act=2 rtt=281.4ms bdp100=2931sym sweeps=47 retx=1738 gapdrop=118 nbud=10 xattr=0/0 mpr[rep=2197 seqs=135636 fired=1738 y=379 r=1359 fast=379 coal=781 supp=105062/0/26412 stale=2424 plost=0 taper=0 age=354ms pf=0/31626/10000 fp/on p0:1055/730 p1:683/1008] wnd2=2296/0 relgap=1ms/mx115ms srel=6680/54346 gate=12951 wait[tun=1% paused=24% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=75% cmd=0% n=345 us=250857 busy=35% busy_us=88543] wake[tun=1890 paused=806 pace=0 gen=0 nack=51 defc=0 tail=47 flush=0 ack=5455 cmd=3 timer_acked=19] dgq0[hand=54761 tx=54329 full=0 err=0 sp=3653316] dgq1[hand=11376 tx=11376 full=0 err=0 sp=4188189] p0:infl=533/sinfl=0/bdp1488(cap0) sout=7235 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=141/wrtt=89/rtp13ms rtp_us=12635 sig_us=297/n52168 rvar_us=245/n52168 qsp_us=3879/n256 msd_us=3/n255 tlag_us=2178/n251 gapd=0/0 qcwnd=1100629 qce=117 qlp=1293/54489 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2588 plu=0.0053 plc=0.0240 p1:infl=44/sinfl=0/bdp599(cap0) sout=1332 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=281/wrtt=277/rtp38ms rtp_us=37576 sig_us=930/n10266 rvar_us=858/n10266 qsp_us=6594/n256 msd_us=20/n255 tlag_us=7096/n251 gapd=0/0 qcwnd=12595518 qce=72 qlp=490/12433 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1306 plu=0.0264 plc=0.0418 rce=836/c1/w158/p117/a835/us42238 dgev0=432 dgev1=0 eb_bursts=1890 eb_syms=64070 eb_depth=33.90 eb_end=cap:185/store:1703/tokens:0/drained:2 eb_maxrun=0:64/14.39,1:64/1.87
+[ETA] site=sender fhat_us=1793033699971170 n=64070 zero=0.0000 place_n=137104 cold_r=0.0000 cold_ge=0.0047 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=51436/53985 drop=1094 tau_us=12635 e_p50=28672 e_p90=57344 e_p99=73728 e_mx=125348 late=0.0662 sig_us=3299/n251 p1:n=9063/10085 drop=63 tau_us=37576 e_p50=81920 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9555 sig_us=9739/n250
+[C8CONV-S] p0:sp=53985 ro=1059 st=4209ms/96 p1:sp=10085 ro=679 st=1100ms/30
+[SPAN] t=5.6s ack=48827 win=[64370,64570] wsize=201 a_star=Some(202) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=15744 ar=11900 agap=0/0 dg_rx=52562 dg_tx=54712
+[DIAG] t=5.8s win=2296/2296 paused=64% good=54.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11545sym/s cod=52sym/s cum=66965/333/50237 sidle=3813ms/776/mx29ms cwnd=1773 infl=520 np=2 np_act=2 rtt=331.7ms bdp100=3455sym sweeps=49 retx=1799 gapdrop=123 nbud=10 xattr=0/0 mpr[rep=2284 seqs=139813 fired=1799 y=379 r=1420 fast=379 coal=822 supp=109135/0/26412 stale=2467 plost=0 taper=0 age=381ms pf=0/31809/10000 fp/on p0:1110/736 p1:689/1063] wnd2=2296/0 relgap=64ms/mx64ms srel=6087/55139 gate=14432 wait[tun=1% paused=31% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=69% cmd=0% n=282 us=250804 busy=42% busy_us=104435] wake[tun=1967 paused=825 pace=0 gen=0 nack=51 defc=0 tail=49 flush=0 ack=5639 cmd=3 timer_acked=19] dgq0[hand=57346 tx=56906 full=0 err=0 sp=3614128] dgq1[hand=11760 tx=11756 full=0 err=0 sp=4190635] p0:infl=520/sinfl=0/bdp1488(cap0) sout=9100 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=120/wrtt=82/rtp13ms rtp_us=12635 sig_us=394/n54588 rvar_us=315/n54588 qsp_us=2920/n256 msd_us=3/n255 tlag_us=2631/n250 gapd=0/0 qcwnd=1145817 qce=128 qlp=1464/57066 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2696 plu=0.0752 plc=0.0260 p1:infl=0/sinfl=0/bdp599(cap0) sout=1541 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=332/wrtt=325/rtp38ms rtp_us=37576 sig_us=1117/n10747 rvar_us=1063/n10747 qsp_us=7053/n256 msd_us=15/n255 tlag_us=7471/n251 gapd=0/0 qcwnd=13199655 qce=72 qlp=490/12858 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1361 plu=0.0058 plc=0.0400 rce=873/c1/w171/p122/a872/us47221 dgev0=440 dgev1=4 eb_bursts=1967 eb_syms=66965 eb_depth=34.04 eb_end=cap:200/store:1765/tokens:0/drained:2 eb_maxrun=0:64/14.48,1:64/1.85
+[ETA] site=sender fhat_us=1793033700220042 n=66965 zero=0.0000 place_n=143128 cold_r=0.0000 cold_ge=0.0045 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=53845/56563 drop=1194 tau_us=12635 e_p50=26624 e_p90=57344 e_p99=73728 e_mx=125348 late=0.0702 sig_us=3658/n250 p1:n=9489/10402 drop=63 tau_us=37576 e_p50=90112 e_p90=131072 e_p99=163840 e_mx=188962 late=0.9575 sig_us=10290/n250
+[C8CONV-S] p0:sp=56563 ro=1114 st=4333ms/102 p1:sp=10402 ro=685 st=1100ms/30
+[2m2026-10-26T16:55:00.296371Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m1060 [3mlive_sum[0m[2m=[0m2120 [3mactive_sum[0m[2m=[0m1832 [3mshort_ticks[0m[2m=[0m281 [3mzero_ticks[0m[2m=[0m7
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[DIAG] t=6.0s win=2238/2296 paused=70% good=1.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11219sym/s cod=64sym/s cum=69786/349/50267 sidle=3984ms/811/mx29ms cwnd=1773 infl=628 np=2 np_act=2 rtt=342.2ms bdp100=3564sym sweeps=51 retx=1890 gapdrop=125 nbud=7 xattr=0/0 mpr[rep=2380 seqs=145715 fired=1890 y=379 r=1511 fast=379 coal=833 supp=114943/0/26415 stale=2467 plost=0 taper=0 age=423ms pf=0/32085/10000 fp/on p0:1194/751 p1:696/1139] wnd2=2238/0 relgap=0ms/mx188ms srel=9040/58117 gate=17281 wait[tun=1% paused=31% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=68% cmd=0% n=338 us=249690 busy=37% busy_us=93504] wake[tun=2050 paused=852 pace=0 gen=0 nack=52 defc=0 tail=51 flush=0 ack=5863 cmd=4 timer_acked=19] dgq0[hand=59869 tx=59373 full=0 err=0 sp=3559040] dgq1[hand=12164 tx=12164 full=0 err=0 sp=4189412] p0:infl=610/sinfl=0/bdp1488(cap0) sout=8991 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=146/wrtt=95/rtp13ms rtp_us=12635 sig_us=1240/n56968 rvar_us=615/n56968 qsp_us=1944/n256 msd_us=2/n255 tlag_us=3066/n250 gapd=0/0 qcwnd=1145817 qce=133 qlp=1501/59533 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2810 plu=0.0020 plc=0.0255 p1:infl=18/sinfl=0/bdp599(cap0) sout=1488 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=342/wrtt=332/rtp38ms rtp_us=37576 sig_us=1442/n11223 rvar_us=1068/n11223 qsp_us=7647/n256 msd_us=18/n255 tlag_us=7495/n250 gapd=0/0 qcwnd=13793692 qce=74 qlp=503/13316 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1417 plu=0.0176 plc=0.0393 rce=911/c1/w185/p125/a910/us52297 dgev0=496 dgev1=0 eb_bursts=2050 eb_syms=69786 eb_depth=34.04 eb_end=cap:208/store:1840/tokens:0/drained:2 eb_maxrun=0:64/14.58,1:64/1.84
+[ETA] site=sender fhat_us=1793033700490328 n=69786 zero=0.0000 place_n=148984 cold_r=0.0000 cold_ge=0.0043 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=56220/59070 drop=1230 tau_us=12635 e_p50=26624 e_p90=57344 e_p99=73728 e_mx=125348 late=0.1037 sig_us=3658/n250 p1:n=9897/10716 drop=86 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9593 sig_us=9660/n251
+[C8CONV-S] p0:sp=59070 ro=1191 st=4333ms/102 p1:sp=10716 ro=699 st=1445ms/31
+[SPAN] t=6.1s ack=53170 win=[70078,70278] wsize=201 a_star=Some(213) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=17109 ar=11908 agap=0/0 dg_rx=57410 dg_tx=59824
+[RDIAG] busy=0% msgs=0/s q_avg=0 q_max=0 cap=128
+[DIAG] t=6.3s win=2267/2296 paused=69% good=160.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11663sym/s cod=64sym/s cum=72708/365/54443 sidle=4165ms/844/mx29ms cwnd=1773 infl=597 np=2 np_act=2 rtt=242.0ms bdp100=2521sym sweeps=53 retx=1959 gapdrop=129 nbud=10 xattr=0/0 mpr[rep=2477 seqs=153498 fired=1959 y=379 r=1580 fast=379 coal=875 supp=122610/0/26424 stale=2505 plost=0 taper=0 age=457ms pf=0/32301/10000 fp/on p0:1253/762 p1:706/1197] wnd2=2267/0 relgap=10ms/mx46ms srel=5659/58861 gate=15998 wait[tun=1% paused=29% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=69% cmd=0% n=309 us=251765 busy=46% busy_us=116121] wake[tun=2127 paused=875 pace=0 gen=0 nack=54 defc=0 tail=53 flush=0 ack=6068 cmd=4 timer_acked=20] dgq0[hand=62248 tx=61851 full=0 err=0 sp=3709610] dgq1[hand=12795 tx=12792 full=0 err=0 sp=4191858] p0:infl=519/sinfl=0/bdp1488(cap0) sout=10664 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=132/wrtt=93/rtp13ms rtp_us=12635 sig_us=320/n59395 rvar_us=256/n59395 qsp_us=2361/n256 msd_us=3/n255 tlag_us=2865/n249 gapd=0/0 qcwnd=1170073 qce=138 qlp=1532/62011 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=2918 plu=0.0066 plc=0.0250 p1:infl=78/sinfl=0/bdp599(cap0) sout=1942 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=242/wrtt=234/rtp38ms rtp_us=37576 sig_us=626/n11706 rvar_us=490/n11706 qsp_us=9550/n256 msd_us=16/n255 tlag_us=7887/n250 gapd=0/0 qcwnd=14391866 qce=80 qlp=517/13996 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1481 plu=0.0284 plc=0.0387 rce=950/c1/w202/p133/a949/us56862 dgev0=397 dgev1=3 eb_bursts=2127 eb_syms=72708 eb_depth=34.18 eb_end=cap:220/store:1905/tokens:0/drained:2 eb_maxrun=0:64/14.49,1:64/1.84
+[ETA] site=sender fhat_us=1793033700713586 n=72708 zero=0.0000 place_n=155074 cold_r=0.0000 cold_ge=0.0041 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=58637/61437 drop=1283 tau_us=12635 e_p50=24576 e_p90=57344 e_p99=73728 e_mx=125348 late=0.1184 sig_us=3815/n249 p1:n=10286/11271 drop=124 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9608 sig_us=10130/n250
+[C8CONV-S] p0:sp=61437 ro=1249 st=4498ms/109 p1:sp=11271 ro=710 st=1490ms/32
+[DIAG] t=6.5s win=2212/2296 paused=67% good=37.2Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11230sym/s cod=79sym/s cum=75542/385/55421 sidle=4306ms/876/mx29ms cwnd=1773 infl=504 np=2 np_act=2 rtt=324.0ms bdp100=3375sym sweeps=55 retx=2033 gapdrop=131 nbud=8 xattr=0/0 mpr[rep=2580 seqs=161037 fired=2033 y=379 r=1654 fast=379 coal=882 supp=129974/0/26519 stale=2511 plost=0 taper=0 age=490ms pf=0/32618/10000 fp/on p0:1304/780 p1:729/1253] wnd2=2212/0 relgap=0ms/mx68ms srel=8694/62868 gate=17909 wait[tun=1% paused=25% pace=0% gen=0% nack=0% defc=0% tail=2% flush=0% ack=72% cmd=0% n=351 us=251828 busy=43% busy_us=107048] wake[tun=2221 paused=896 pace=0 gen=0 nack=56 defc=0 tail=55 flush=0 ack=6300 cmd=4 timer_acked=20] dgq0[hand=64762 tx=64374 full=0 err=0 sp=3642294] dgq1[hand=13207 tx=13207 full=0 err=0 sp=4194304] p0:infl=504/sinfl=0/bdp1488(cap0) sout=9897 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=137/wrtt=95/rtp13ms rtp_us=12635 sig_us=1153/n61809 rvar_us=1106/n61809 qsp_us=1810/n256 msd_us=3/n255 tlag_us=2365/n249 gapd=0/0 qcwnd=1170073 qce=148 qlp=1630/64534 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3048 plu=0.0045 plc=0.0256 p1:infl=0/sinfl=0/bdp599(cap0) sout=1530 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0003 cmp=- rtt=324/wrtt=320/rtp38ms rtp_us=37576 sig_us=7085/n12200 rvar_us=5402/n12200 qsp_us=8490/n256 msd_us=12/n255 tlag_us=8133/n250 gapd=0/0 qcwnd=15009752 qce=83 qlp=530/14453 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1538 plu=0.0331 plc=0.0381 rce=991/c1/w213/p135/a990/us61525 dgev0=388 dgev1=0 eb_bursts=2221 eb_syms=75542 eb_depth=34.01 eb_end=cap:223/store:1996/tokens:0/drained:2 eb_maxrun=0:64/14.50,1:64/1.82
+[ETA] site=sender fhat_us=1793033700972263 n=75542 zero=0.0000 place_n=160942 cold_r=0.0000 cold_ge=0.0040 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=61030/63934 drop=1456 tau_us=12635 e_p50=24576 e_p90=57344 e_p99=73728 e_mx=125348 late=0.1417 sig_us=3151/n249 p1:n=10718/11608 drop=133 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9624 sig_us=9660/n250
+[C8CONV-S] p0:sp=63934 ro=1305 st=4538ms/110 p1:sp=11608 ro=728 st=1623ms/33
+[SPAN] t=6.6s ack=55421 win=[75884,76084] wsize=201 a_star=Some(236) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=20664 ar=13510 agap=0/0 dg_rx=12286 dg_tx=13284
+[DIAG] t=6.8s win=2296/2296 paused=70% good=118.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11826sym/s cod=44sym/s cum=78506/396/58503 sidle=4485ms/909/mx29ms cwnd=1773 infl=545 np=2 np_act=2 rtt=279.6ms bdp100=2913sym sweeps=57 retx=2064 gapdrop=131 nbud=10 xattr=0/0 mpr[rep=2672 seqs=165820 fired=2064 y=379 r=1685 fast=379 coal=897 supp=134710/0/26535 stale=2511 plost=0 taper=0 age=506ms pf=0/32727/10000 fp/on p0:1314/801 p1:750/1263] wnd2=2296/0 relgap=1ms/mx99ms srel=6644/63895 gate=17707 wait[tun=0% paused=28% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=72% cmd=0% n=327 us=251692 busy=50% busy_us=124849] wake[tun=2302 paused=916 pace=0 gen=0 nack=57 defc=0 tail=57 flush=0 ack=6523 cmd=4 timer_acked=20] dgq0[hand=67252 tx=66824 full=0 err=0 sp=3671660] dgq1[hand=13725 tx=13725 full=0 err=0 sp=4180851] p0:infl=512/sinfl=0/bdp1488(cap0) sout=11483 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=140/wrtt=93/rtp13ms rtp_us=12635 sig_us=531/n64239 rvar_us=481/n64239 qsp_us=3130/n256 msd_us=3/n255 tlag_us=2117/n250 gapd=0/0 qcwnd=1169019 qce=152 qlp=1660/66984 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3163 plu=0.0180 plc=0.0251 p1:infl=33/sinfl=0/bdp599(cap0) sout=1876 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0001 cmp=- rtt=280/wrtt=277/rtp38ms rtp_us=37576 sig_us=1689/n12676 rvar_us=1597/n12676 qsp_us=8924/n256 msd_us=27/n255 tlag_us=7919/n250 gapd=0/0 qcwnd=15611445 qce=87 qlp=548/15028 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1608 plu=0.0323 plc=0.0377 rce=1029/c1/w228/p141/a1028/us66120 dgev0=428 dgev1=0 eb_bursts=2302 eb_syms=78506 eb_depth=34.10 eb_end=cap:235/store:2065/tokens:0/drained:2 eb_maxrun=0:64/14.40,1:64/1.82
+[ETA] site=sender fhat_us=1793033701219198 n=78506 zero=0.0000 place_n=166954 cold_r=0.0000 cold_ge=0.0038 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=63450/66402 drop=1466 tau_us=12635 e_p50=22528 e_p90=57344 e_p99=73728 e_mx=125348 late=0.1744 sig_us=2815/n250 p1:n=11125/12104 drop=139 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9638 sig_us=9029/n251
+[C8CONV-S] p0:sp=66402 ro=1315 st=4925ms/111 p1:sp=12104 ro=749 st=1623ms/33
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[DIAG] t=7.0s win=2274/2296 paused=63% good=0.0Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11378sym/s cod=64sym/s cum=81360/412/58503 sidle=4641ms/941/mx29ms cwnd=1773 infl=460 np=2 np_act=2 rtt=275.9ms bdp100=2874sym sweeps=59 retx=2138 gapdrop=136 nbud=6 xattr=0/0 mpr[rep=2764 seqs=171527 fired=2138 y=379 r=1759 fast=379 coal=916 supp=140334/0/26539 stale=2516 plost=0 taper=0 age=538ms pf=0/32953/10000 fp/on p0:1380/808 p1:758/1330] wnd2=2274/0 relgap=0ms/mx64ms srel=10211/67462 gate=20583 wait[tun=0% paused=30% pace=0% gen=0% nack=0% defc=0% tail=2% flush=0% ack=68% cmd=0% n=323 us=249411 busy=48% busy_us=120387] wake[tun=2385 paused=937 pace=0 gen=0 nack=59 defc=0 tail=59 flush=0 ack=6738 cmd=4 timer_acked=20] dgq0[hand=69636 tx=69213 full=0 err=0 sp=3677776] dgq1[hand=14281 tx=14263 full=0 err=0 sp=4183297] p0:infl=439/sinfl=0/bdp1488(cap0) sout=10629 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0010 cmp=- rtt=129/wrtt=94/rtp13ms rtp_us=12635 sig_us=158/n66641 rvar_us=114/n66641 qsp_us=1628/n256 msd_us=3/n255 tlag_us=1952/n251 gapd=0/0 qcwnd=1112457 qce=156 qlp=1710/69373 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3283 plu=0.0262 plc=0.0249 p1:infl=21/sinfl=0/bdp599(cap0) sout=2017 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=276/wrtt=271/rtp38ms rtp_us=37576 sig_us=1761/n13150 rvar_us=1416/n13150 qsp_us=6142/n256 msd_us=16/n255 tlag_us=8416/n249 gapd=0/0 qcwnd=16200737 qce=88 qlp=564/15612 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1663 plu=0.0214 plc=0.0373 rce=1068/c1/w246/p147/a1067/us71846 dgev0=423 dgev1=18 eb_bursts=2385 eb_syms=81360 eb_depth=34.11 eb_end=cap:241/store:2142/tokens:0/drained:2 eb_maxrun=0:64/14.33,1:64/1.82
+[ETA] site=sender fhat_us=1793033701457000 n=81360 zero=0.0000 place_n=172852 cold_r=0.0000 cold_ge=0.0037 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=65828/68781 drop=1525 tau_us=12635 e_p50=20480 e_p90=57344 e_p99=73728 e_mx=125348 late=0.2042 sig_us=2501/n250 p1:n=11574/12579 drop=142 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9652 sig_us=8331/n251
+[C8CONV-S] p0:sp=68781 ro=1383 st=4925ms/111 p1:sp=12579 ro=755 st=1623ms/33
+[SPAN] t=7.1s ack=62712 win=[81536,81736] wsize=201 a_star=Some(220) delta=Some(1) owed=0.00 rr=0.000 debt=0.00 retx_buf=19025 ar=11630 agap=0/0 dg_rx=67069 dg_tx=69641
+[DIAG] t=7.3s win=2296/2296 paused=69% good=209.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=11414sym/s cod=64sym/s cum=84223/428/63967 sidle=4803ms/972/mx29ms cwnd=1773 infl=443 np=2 np_act=2 rtt=301.5ms bdp100=3140sym sweeps=61 retx=2232 gapdrop=140 nbud=10 xattr=0/0 mpr[rep=2860 seqs=178427 fired=2232 y=379 r=1853 fast=379 coal=966 supp=147033/0/26539 stale=2623 plost=0 taper=0 age=582ms pf=0/33235/10000 fp/on p0:1469/813 p1:763/1419] wnd2=2296/0 relgap=41ms/mx54ms srel=7473/70128 gate=17960 wait[tun=0% paused=32% pace=0% gen=0% nack=0% defc=0% tail=1% flush=0% ack=67% cmd=0% n=312 us=252246 busy=48% busy_us=120973] wake[tun=2466 paused=958 pace=0 gen=0 nack=61 defc=0 tail=61 flush=0 ack=6944 cmd=4 timer_acked=20] dgq0[hand=72156 tx=71755 full=0 err=0 sp=3652072] dgq1[hand=14738 tx=14738 full=0 err=0 sp=4186966] p0:infl=443/sinfl=0/bdp1488(cap0) sout=10990 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0002 cmp=- rtt=129/wrtt=93/rtp13ms rtp_us=12635 sig_us=31/n69059 rvar_us=25/n69059 qsp_us=1709/n256 msd_us=2/n255 tlag_us=2117/n250 gapd=0/0 qcwnd=1157079 qce=162 qlp=1799/71915 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3399 plu=0.0895 plc=0.0253 p1:infl=0/sinfl=0/bdp599(cap0) sout=1793 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=301/wrtt=299/rtp38ms rtp_us=37576 sig_us=1284/n13639 rvar_us=1238/n13639 qsp_us=5128/n256 msd_us=15/n255 tlag_us=7919/n251 gapd=0/0 qcwnd=16814776 qce=90 qlp=602/16130 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1719 plu=0.0110 plc=0.0384 rce=1108/c1/w255/p152/a1107/us76440 dgev0=401 dgev1=0 eb_bursts=2466 eb_syms=84223 eb_depth=34.15 eb_end=cap:251/store:2213/tokens:0/drained:2 eb_maxrun=0:64/14.37,1:64/1.81
+[ETA] site=sender fhat_us=1793033701715651 n=84223 zero=0.0000 place_n=179012 cold_r=0.0000 cold_ge=0.0036 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=68238/71292 drop=1584 tau_us=12635 e_p50=20480 e_p90=53248 e_p99=73728 e_mx=125348 late=0.2323 sig_us=2474/n250 p1:n=11989/12931 drop=168 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9664 sig_us=9689/n249
+[C8CONV-S] p0:sp=71292 ro=1472 st=5422ms/120 p1:sp=12931 ro=760 st=1623ms/33
+[DIAG] t=7.5s win=590/2296 paused=16% good=43.5Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=1520sym/s cod=52sym/s cum=84604/441/65103 sidle=5043ms/986/mx38ms cwnd=1829 infl=0 np=2 np_act=2 rtt=273.1ms bdp100=2844sym sweeps=64 retx=2296 gapdrop=146 nbud=10 xattr=0/0 mpr[rep=2923 seqs=184319 fired=2296 y=379 r=1917 fast=379 coal=1056 supp=152760/0/26539 stale=2724 plost=0 taper=0 age=613ms pf=0/33427/10000 fp/on p0:1529/822 p1:767/1474] wnd2=590/0 relgap=8ms/mx54ms srel=8094/71789 gate=18911 wait[tun=0% paused=4% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=95% cmd=0% n=169 us=250652 busy=51% busy_us=128783] wake[tun=2474 paused=961 pace=0 gen=0 nack=65 defc=0 tail=64 flush=0 ack=7095 cmd=4 timer_acked=20] dgq0[hand=72513 tx=72513 full=0 err=0 sp=4193082] dgq1[hand=14839 tx=14839 full=0 err=0 sp=4194304] p0:infl=0/sinfl=0/bdp1488(cap0) sout=9763 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0328 cmp=- rtt=65/wrtt=53/rtp13ms rtp_us=12635 sig_us=54482/n70687 rvar_us=51770/n70687 qsp_us=5244/n256 msd_us=2/n255 tlag_us=2543/n248 gapd=0/0 qcwnd=1094503 qce=165 qlp=1829/72728 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3475 plu=0.0169 plc=0.0251 p1:infl=0/sinfl=0/bdp599(cap0) sout=1644 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0001 cmp=- rtt=273/wrtt=271/rtp38ms rtp_us=37576 sig_us=1786/n14118 rvar_us=1552/n14118 qsp_us=15986/n256 msd_us=19/n255 tlag_us=8416/n250 gapd=0/0 qcwnd=17420711 qce=93 qlp=647/16285 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1772 plu=0.1538 plc=0.0398 rce=1142/c1/w258/p158/a1141/us80895 dgev0=0 dgev1=0 eb_bursts=2474 eb_syms=84604 eb_depth=34.20 eb_end=cap:253/store:2218/tokens:0/drained:3 eb_maxrun=0:64/14.39,1:64/1.81
+[ETA] site=sender fhat_us=1793033701748775 n=84604 zero=0.0000 place_n=180130 cold_r=0.0000 cold_ge=0.0036 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=69855/71635 drop=1601 tau_us=12635 e_p50=20480 e_p90=53248 e_p99=73728 e_mx=125348 late=0.2501 sig_us=2648/n251 p1:n=12350/12969 drop=168 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9674 sig_us=8950/n251
+[C8CONV-S] p0:sp=71635 ro=1532 st=5636ms/132 p1:sp=12969 ro=764 st=1623ms/33
+[DIAG] t=7.8s win=350/2051 paused=0% good=210.7Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=50sym/s cum=84604/456/71702 sidle=5349ms/998/mx92ms cwnd=1841 infl=0 np=2 np_act=2 rtt=180.4ms bdp100=1879sym sweeps=66 retx=2412 gapdrop=149 nbud=8 xattr=0/0 mpr[rep=2939 seqs=184876 fired=2412 y=379 r=2033 fast=379 coal=1130 supp=153130/0/26539 stale=2795 plost=0 taper=0 age=655ms pf=0/33775/10000 fp/on p0:1631/938 p1:781/1474] wnd2=350/0 relgap=88ms/mx88ms srel=7271/77445 gate=12552 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=52% flush=0% ack=48% cmd=0% n=36 us=300408 busy=25% busy_us=74334] wake[tun=2474 paused=961 pace=0 gen=0 nack=66 defc=0 tail=66 flush=0 ack=7128 cmd=4 timer_acked=20] dgq0[hand=72642 tx=72642 full=0 err=0 sp=4182084] dgq1[hand=14839 tx=14839 full=0 err=0 sp=4194304] p0:infl=0/sinfl=0/bdp1265(cap0) sout=4818 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0009 cmp=- rtt=17/wrtt=17/rtp11ms rtp_us=10746 sig_us=608/n70809 rvar_us=366/n70809 qsp_us=73344/n256 msd_us=2/n255 tlag_us=2290/n242 gapd=0/0 qcwnd=1094503 qce=167 qlp=1839/72873 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3491 plu=0.1741 plc=0.0252 p1:infl=0/sinfl=0/bdp599(cap0) sout=813 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=180/wrtt=192/rtp38ms rtp_us=37576 sig_us=15264/n14248 rvar_us=12587/n14248 qsp_us=20047/n256 msd_us=14/n255 tlag_us=8461/n251 gapd=0/0 qcwnd=17578583 qce=93 qlp=647/16297 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1786 plu=0.0160 plc=0.0394 rce=1159/c1/w258/p158/a1158/us82891 dgev0=0 dgev1=0 eb_bursts=2474 eb_syms=84604 eb_depth=34.20 eb_end=cap:253/store:2218/tokens:0/drained:3 eb_maxrun=0:64/14.39,1:64/1.81
+[ETA] site=sender fhat_us=1793033701748775 n=84604 zero=0.0000 place_n=180534 cold_r=0.0000 cold_ge=0.0036 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=69855/71635 drop=1601 tau_us=10746 e_p50=20480 e_p90=53248 e_p99=73728 e_mx=125348 late=0.2501 sig_us=2688/n251 p1:n=12417/12969 drop=168 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9675 sig_us=8836/n251
+[C8CONV-S] p0:sp=71635 ro=1634 st=5765ms/139 p1:sp=12969 ro=778 st=1623ms/33
+[2m2026-10-26T16:55:02.300936Z[0m [32m INFO[0m [2mraptorpath::net::sender_phases[0m[2m:[0m [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh [3mticks[0m[2m=[0m1349 [3mlive_sum[0m[2m=[0m2698 [3mactive_sum[0m[2m=[0m2410 [3mshort_ticks[0m[2m=[0m281 [3mzero_ticks[0m[2m=[0m7
+[SHEDH] evals=1 dial=0 legacy=1 dial_frac=0.0000 floor_n=0 cap_n=0 interior_n=1 floor_frac=0.0000 cap_frac=0.0000 interior_frac=1.0000 mean_us=200000 floor_ms=60 cap_ms=300
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[RDIAG] busy=0% msgs=1/s q_avg=0 q_max=0 cap=128
+[DIAG] t=8.1s win=249/2051 paused=0% good=179.4Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=39sym/s cum=84604/466/76506 sidle=5606ms/1008/mx95ms cwnd=1855 infl=0 np=2 np_act=2 rtt=180.4ms bdp100=1879sym sweeps=66 retx=2512 gapdrop=154 nbud=0 xattr=0/0 mpr[rep=2949 seqs=185016 fired=2512 y=379 r=2133 fast=379 coal=1188 supp=153169/0/26539 stale=2796 plost=0 taper=0 age=683ms pf=0/34075/10000 fp/on p0:1709/1038 p1:803/1474] wnd2=249/0 relgap=95ms/mx95ms srel=5542/80439 gate=7849 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=91% cmd=9% n=19 us=256473 busy=18% busy_us=46147] wake[tun=2474 paused=961 pace=0 gen=0 nack=66 defc=0 tail=66 flush=0 ack=7146 cmd=5 timer_acked=20] dgq0[hand=72744 tx=72744 full=0 err=0 sp=4194304] dgq1[hand=14840 tx=14840 full=0 err=0 sp=4194304] p0:infl=0/sinfl=0/bdp1265(cap0) sout=2233 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0909 cmp=- rtt=18/wrtt=12/rtp11ms rtp_us=10746 sig_us=7101/n70900 rvar_us=5464/n70900 qsp_us=119132/n256 msd_us=2/n255 tlag_us=2326/n236 gapd=0/0 qcwnd=5808 qce=169 qlp=1849/72995 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3505 plu=0.4469 plc=0.0253 p1:infl=0/sinfl=0/bdp599(cap0) sout=323 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=180/wrtt=173/rtp38ms rtp_us=37576 sig_us=15264/n14248 rvar_us=12587/n14248 qsp_us=20047/n256 msd_us=14/n255 tlag_us=8461/n251 gapd=0/0 qcwnd=17578837 qce=93 qlp=649/16304 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1786 plu=0.0160 plc=0.0394 rce=1169/c1/w258/p158/a1168/us83924 dgev0=0 dgev1=0 eb_bursts=2474 eb_syms=84604 eb_depth=34.20 eb_end=cap:253/store:2218/tokens:0/drained:3 eb_maxrun=0:64/14.39,1:64/1.81
+[ETA] site=sender fhat_us=1793033701748775 n=84604 zero=0.0000 place_n=180756 cold_r=0.0000 cold_ge=0.0035 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=69855/71635 drop=1601 tau_us=10746 e_p50=20480 e_p90=53248 e_p99=73728 e_mx=125348 late=0.2501 sig_us=2688/n251 p1:n=12417/12969 drop=168 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9675 sig_us=8836/n251
+[C8CONV-S] p0:sp=71635 ro=1712 st=6073ms/147 p1:sp=12969 ro=800 st=1642ms/34
+[DIAG] t=8.3s win=130/2051 paused=0% good=165.1Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=0sym/s cod=51sym/s cum=84604/479/80879 sidle=5860ms/1021/mx95ms cwnd=1770 infl=0 np=2 np_act=2 rtt=180.4ms bdp100=1879sym sweeps=68 retx=2631 gapdrop=160 nbud=0 xattr=0/0 mpr[rep=2962 seqs=185212 fired=2631 y=379 r=2252 fast=379 coal=1269 supp=153246/0/26539 stale=2796 plost=0 taper=0 age=710ms pf=0/34432/10000 fp/on p0:1793/1157 p1:838/1474] wnd2=0/130 relgap=103ms/mx198ms srel=3595/82766 gate=3595 wait[tun=0% paused=0% pace=0% gen=0% nack=0% defc=0% tail=37% flush=0% ack=63% cmd=0% n=25 us=251388 busy=18% busy_us=44940] wake[tun=2474 paused=961 pace=0 gen=0 nack=66 defc=0 tail=68 flush=0 ack=7169 cmd=5 timer_acked=20] dgq0[hand=72876 tx=72876 full=0 err=0 sp=4182084] dgq1[hand=14840 tx=14840 full=0 err=0 sp=4194304] p0:infl=0/sinfl=0/bdp1265(cap0) sout=90 khr=1.00/kraw=- btlbw=117731 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=18/wrtt=11/rtp11ms rtp_us=10746 sig_us=381/n71032 rvar_us=341/n71032 qsp_us=5245/n256 msd_us=2/n255 tlag_us=2326/n234 gapd=0/0 qcwnd=1094503 qce=169 qlp=1849/73143 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=3524 plu=0.0259 plc=0.0252 p1:infl=0/sinfl=0/bdp599(cap0) sout=40 khr=1.00/kraw=- btlbw=15943 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=180/wrtt=173/rtp38ms rtp_us=37576 sig_us=15264/n14248 rvar_us=12587/n14248 qsp_us=20047/n256 msd_us=14/n255 tlag_us=8461/n251 gapd=0/0 qcwnd=17578837 qce=93 qlp=649/16305 | ANCHOR sent=0 al=0 attr=0 nr=0 rej[iv=0 zr=0 al=0] gen=0 fill=1786 plu=0.0160 plc=0.0394 rce=1181/c1/w258/p158/a1180/us85028 dgev0=0 dgev1=0 eb_bursts=2474 eb_syms=84604 eb_depth=34.20 eb_end=cap:253/store:2218/tokens:0/drained:3 eb_maxrun=0:64/14.39,1:64/1.81
+[ETA] site=sender fhat_us=1793033701748775 n=84604 zero=0.0000 place_n=181020 cold_r=0.0000 cold_ge=0.0035 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=69855/71635 drop=1601 tau_us=10746 e_p50=20480 e_p90=53248 e_p99=73728 e_mx=125348 late=0.2501 sig_us=2688/n251 p1:n=12417/12969 drop=168 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9675 sig_us=8836/n251
+[C8CONV-S] p0:sp=71635 ro=1791 st=6170ms/154 p1:sp=12969 ro=840 st=1880ms/37
+[RDIAG] busy=0% msgs=3/s q_avg=0 q_max=0 cap=128
+[WIDLE] idle=8528ms/1/mx8528ms arr=2
+[C8CONV-R] p1:fst=2 dup=0 lead=0 unb=2/8556ms
+[RFA] gen=0 fires=0 false=0 false_frac=0.0000 fill_coded=0 fill_src=0 dup_src=0 preempt_src=0 src_n=2 rep_n=0 nu_recv=0.00000 fa_class=0.0625 rep_redundant=0 late_after_aban=0
+[SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=- rtx_n=0
+[ETA] site=receiver n=2 p1:n=2 bind=0.0000 tau_us=37576 srtt_src=echo l_p50=0 l_p90=9216 l_p95=9216 l_p99=9216 l_mx=9893 sig_us=-/n0 minrst=1
+[LAT] site=receiver n=2 over=0 p1:n=2 nowait=0 minrst=1 ax_n=2 ax_p50=0 ax_p90=4608 ax_p95=4608 ax_p99=4608 ax_sum=4728 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=2 rwsp_p50=3 rwsp_p95=3 rwsp_sum=6 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=3 tot_p95=4608 tot_p99=4608 sh_ax=0.9987 sh_rwxp=0.0000 sh_rwsp=0.0013 sh_rwrep=0.0000 sh_rep=0.0000
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=1 reports=1
+[CTLD] p0 tx=73019 rx=71185 p1 tx=14840 rx=14260 dgrx0[fr=71185 rd=71185 ev=0] dgrx1[fr=14260 rd=14260 ev=0] rxdrop0=0 rxdrop1=0
+[THR] rt phase=xfer side=client run=1 worker=0 busy_s=0.864 busy_frac=0.101 park=8161 unpark=16322 wall_s=8.529
+[THR] rt phase=xfer side=client run=1 worker=1 busy_s=0.842 busy_frac=0.099 park=7571 unpark=15141 wall_s=8.529
+[THR] rt phase=xfer side=client run=1 worker=2 busy_s=0.973 busy_frac=0.114 park=8796 unpark=17592 wall_s=8.529
+[THR] rt phase=xfer side=client run=1 worker=3 busy_s=0.888 busy_frac=0.104 park=8741 unpark=17482 wall_s=8.529
+[THR] rt phase=xfer side=client run=1 worker=4 busy_s=0.816 busy_frac=0.096 park=7149 unpark=14299 wall_s=8.529
+[THR] rt phase=xfer side=client run=1 worker=5 busy_s=1.012 busy_frac=0.119 park=9021 unpark=18043 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671204 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671205 comm=rp-w-0 cpu_s=0.910 cores=0.107 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671206 comm=rp-w-1 cpu_s=0.880 cores=0.103 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671207 comm=rp-w-2 cpu_s=0.840 cores=0.098 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671208 comm=rp-w-3 cpu_s=0.820 cores=0.096 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671209 comm=rp-w-4 cpu_s=0.990 cores=0.116 wall_s=8.529
+[THR] os phase=xfer side=client run=1 tid=671210 comm=rp-w-5 cpu_s=1.030 cores=0.121 wall_s=8.529
+[THR] sum phase=xfer side=client run=1 workers=6 busy_s=5.395 threads=7 cpu_s=5.470 cores=0.641 wall_s=8.529
+[LAG] phase=xfer side=client run=1 tick_ms=10 n=851 p50_us=1051 p99_us=3668 max_us=7856 min_us=384 dropped=0
+[IOWN] phase=xfer side=client run=1 path=0 rt=main polls=8945 drains=2671 tx_batches=2785 tx_dg=73012 ctrl_batches=4 ctrl_dg=4 rx_batches=4 rx_dg=4 rx_capped=120 ack_batches=6248 ack_dg=71178 send_err=0 too_large_staged=0 orphaned=0 qcalls=234185 q_secs=12986 q_wall_us=176026 q_asleep_us=55815 asleep_frac=0.0065 drv_on=4266 drv_off=6938 wall_s=8.529 qk_snd=2671/50414/28664/20836/20/892/233/1 qk_rd=6250/98355/76462/19837/24/2030/247/2 qk_pub=4065/27865/16178/11095/0/592/128/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=2789 fl_full=0 fl_full_us=0 ibp_hit=4 ibp_miss=0 cmdq_n=2671 cmdq_p50=1 cmdq_p99=2 cmdq_max=3
+[IOWN] phase=xfer side=client run=1 path=1 rt=main polls=5199 drains=2532 tx_batches=2631 tx_dg=14833 ctrl_batches=5 ctrl_dg=5 rx_batches=6 rx_dg=6 rx_capped=0 ack_batches=2638 ack_dg=14252 send_err=0 too_large_staged=0 orphaned=0 qcalls=55045 q_secs=8123 q_wall_us=66896 q_asleep_us=13746 asleep_frac=0.0016 drv_on=3266 drv_off=1373 wall_s=8.529 qk_snd=2532/21594/16933/3809/307/543/80/4 qk_rd=2643/28879/25295/2751/0/832/50/0 qk_pub=2948/14351/11312/2645/0/393/35/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=2636 fl_full=0 fl_full_us=0 ibp_hit=6 ibp_miss=0 cmdq_n=2532 cmdq_p50=1 cmdq_p99=2 cmdq_max=5
+[TASK] phase=xfer side=client run=1 task=clock-gap polls=171 cpu_us=977 wall_us=1149 cores=0.000 busy=0.000 asl_vol_us=8 asl_inv_us=0 asl_none_us=163 vcsw=1 ivcsw=0 cpu_per_poll_us=5.72 wall_s=8.529 long_polls=0 max_poll_us=40
+[TASK] phase=xfer side=client run=1 task=ctrlfast polls=10 cpu_us=44 wall_us=44 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=0 vcsw=0 ivcsw=0 cpu_per_poll_us=4.44 wall_s=8.529 long_polls=0 max_poll_us=8
+[TASK] phase=xfer side=client run=1 task=owner-client-p0 polls=8358 cpu_us=234217 wall_us=332650 cores=0.027 busy=0.039 asl_vol_us=91401 asl_inv_us=35 asl_none_us=6996 vcsw=1038 ivcsw=12 cpu_per_poll_us=28.02 wall_s=8.529 long_polls=1 max_poll_us=1416
+[TASK] phase=xfer side=client run=1 task=owner-client-p1 polls=5026 cpu_us=121343 wall_us=154355 cores=0.014 busy=0.018 asl_vol_us=26387 asl_inv_us=2892 asl_none_us=3731 vcsw=335 ivcsw=9 cpu_per_poll_us=24.14 wall_s=8.529 long_polls=3 max_poll_us=5505
+[TASK] phase=xfer side=client run=1 task=perf polls=9136 cpu_us=161181 wall_us=172731 cores=0.019 busy=0.020 asl_vol_us=1513 asl_inv_us=1710 asl_none_us=8325 vcsw=53 ivcsw=21 cpu_per_poll_us=17.64 wall_s=8.529 long_polls=1 max_poll_us=1309
+[TASK] phase=xfer side=client run=1 task=qconn-client-p0 polls=12373 cpu_us=798170 wall_us=845298 cores=0.094 busy=0.099 asl_vol_us=1475 asl_inv_us=7590 asl_none_us=38061 vcsw=35 ivcsw=45 cpu_per_poll_us=64.51 wall_s=8.529 long_polls=4 max_poll_us=4794
+[TASK] phase=xfer side=client run=1 task=qconn-client-p1 polls=6543 cpu_us=289806 wall_us=307446 cores=0.034 busy=0.036 asl_vol_us=1246 asl_inv_us=2625 asl_none_us=13767 vcsw=36 ivcsw=28 cpu_per_poll_us=44.29 wall_s=8.529 long_polls=2 max_poll_us=2950
+[TASK] phase=xfer side=client run=1 task=qep-client-p0 polls=10499 cpu_us=207028 wall_us=226068 cores=0.024 busy=0.027 asl_vol_us=42 asl_inv_us=148 asl_none_us=18848 vcsw=2 ivcsw=8 cpu_per_poll_us=19.72 wall_s=8.529 long_polls=1 max_poll_us=1057
+[TASK] phase=xfer side=client run=1 task=qep-client-p1 polls=5063 cpu_us=88042 wall_us=97083 cores=0.010 busy=0.011 asl_vol_us=0 asl_inv_us=51 asl_none_us=8990 vcsw=0 ivcsw=2 cpu_per_poll_us=17.39 wall_s=8.529 long_polls=0 max_poll_us=603
+[TASK] phase=xfer side=client run=1 task=receiver polls=10 cpu_us=483 wall_us=856 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=373 vcsw=0 ivcsw=0 cpu_per_poll_us=48.32 wall_s=8.529 long_polls=0 max_poll_us=396
+[TASK] phase=xfer side=client run=1 task=report polls=24 cpu_us=206 wall_us=240 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=33 vcsw=0 ivcsw=0 cpu_per_poll_us=8.62 wall_s=8.529 long_polls=0 max_poll_us=30
+[TASK] phase=xfer side=client run=1 task=sender polls=10089 cpu_us=2655933 wall_us=2789985 cores=0.311 busy=0.327 asl_vol_us=19368 asl_inv_us=33855 asl_none_us=80828 vcsw=341 ivcsw=110 cpu_per_poll_us=263.25 wall_s=8.529 long_polls=712 max_poll_us=39262
+[QSOCK] phase=xfer side=client run=1 sock=client-p0 send_calls=11235 send_us=282316 send_dg=73277 send_wb=0 gso=6.52 send_us_per_call=25.13 send_frac=0.0331 recv_calls=8782 recv_us=86259 recv_dg=20894 recv_frac=0.0101 wall_s=8.529
+[QSOCK] phase=xfer side=client run=1 sock=client-p1 send_calls=4666 send_us=116072 send_dg=16289 send_wb=0 gso=3.49 send_us_per_call=24.88 send_frac=0.0136 recv_calls=4053 recv_us=35549 recv_dg=6604 recv_frac=0.0042 wall_s=8.529
+[RXSEC] phase=xfer side=client run=1 rx=1 msgs=10 data=1 total_us=241 decode_us=7 deliv_us=18 ack_us=6 book_us=6 other_us=203 total_ns_pm=24158 decode_ns_pm=710 deliv_ns_pm=1850 ack_ns_pm=637 book_ns_pm=636 other_ns_pm=20325 busy=0.000 bk_n=10 bk_p50=1 bk_p99=1 bk_max=2 wall_s=8.529
+{"bytes":100000000,"hint":"bulk","mbps":93.808,"proto":"rp-native","run":1,"seconds":8.528097}
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.5281,"mean_mbps":93.808,"mean_s":8.5281,"median_s":8.5281,"min_s":8.5281,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+[ETA] site=sender fhat_us=1793033701748775 n=84604 zero=0.0000 place_n=181284 cold_r=0.0000 cold_ge=0.0035 t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- p0:n=69855/71635 drop=1601 tau_us=10746 e_p50=20480 e_p90=53248 e_p99=73728 e_mx=125348 late=0.2501 sig_us=2688/n251 p1:n=12417/12969 drop=168 tau_us=37576 e_p50=90112 e_p90=147456 e_p99=163840 e_mx=188962 late=0.9675 sig_us=8836/n251 final=1
+[2m2026-10-26T16:55:02.850751Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m TUN closed
+[DCAP] on=1 eng=1370/1370 chg=1370/1370 chg_frac=1.0000 pin=0.0000 floor=0.0000 cap=1833.7 ask=1833.1 q=0.100000 b=2.0000
+[SUMCAP] on=1 eng=1370/1370 chg=1370/1370 chg_frac=1.0000 pin=0.0000 floor=0.0000 cap=1833.7 ask=1833.1
+[THR] rt phase=run side=client worker=0 busy_s=0.866 busy_frac=0.100 park=8195 unpark=16389 wall_s=8.673
+[THR] rt phase=run side=client worker=1 busy_s=0.843 busy_frac=0.097 park=7578 unpark=15155 wall_s=8.673
+[THR] rt phase=run side=client worker=2 busy_s=0.974 busy_frac=0.112 park=8820 unpark=17640 wall_s=8.673
+[THR] rt phase=run side=client worker=3 busy_s=0.889 busy_frac=0.103 park=8768 unpark=17535 wall_s=8.673
+[THR] rt phase=run side=client worker=4 busy_s=0.816 busy_frac=0.094 park=7157 unpark=14313 wall_s=8.673
+[THR] rt phase=run side=client worker=5 busy_s=1.015 busy_frac=0.117 park=9078 unpark=18155 wall_s=8.673
+[THR] os phase=run side=client tid=671204 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=8.673
+[THR] os phase=run side=client tid=671205 comm=rp-w-0 cpu_s=0.910 cores=0.105 wall_s=8.673
+[THR] os phase=run side=client tid=671206 comm=rp-w-1 cpu_s=0.880 cores=0.101 wall_s=8.673
+[THR] os phase=run side=client tid=671207 comm=rp-w-2 cpu_s=0.840 cores=0.097 wall_s=8.673
+[THR] os phase=run side=client tid=671208 comm=rp-w-3 cpu_s=0.820 cores=0.095 wall_s=8.673
+[THR] os phase=run side=client tid=671209 comm=rp-w-4 cpu_s=0.990 cores=0.114 wall_s=8.673
+[THR] os phase=run side=client tid=671210 comm=rp-w-5 cpu_s=1.030 cores=0.119 wall_s=8.673
+[THR] sum phase=run side=client workers=6 busy_s=5.403 threads=7 cpu_s=5.470 cores=0.631 wall_s=8.673
+[LAG] phase=run side=client tick_ms=10 n=866 p50_us=1057 p99_us=3634 max_us=7856 min_us=384 dropped=0 final=1
+[IOWN] phase=run side=client path=0 rt=main polls=8959 drains=2676 tx_batches=2786 tx_dg=73013 ctrl_batches=6 ctrl_dg=6 rx_batches=6 rx_dg=6 rx_capped=120 ack_batches=6249 ack_dg=71179 send_err=0 too_large_staged=0 orphaned=0 qcalls=234223 q_secs=12997 q_wall_us=176080 q_asleep_us=55815 asleep_frac=0.0064 drv_on=4272 drv_off=6952 wall_s=8.673 qk_snd=2676/50437/28688/20836/20/892/233/1 qk_rd=6253/98372/76479/19837/24/2030/247/2 qk_pub=4068/27877/16190/11095/0/592/128/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=2792 fl_full=0 fl_full_us=0 ibp_hit=5 ibp_miss=2 cmdq_n=2676 cmdq_p50=1 cmdq_p99=2 cmdq_max=3
+[IOWN] phase=run side=client path=1 rt=main polls=5213 drains=2538 tx_batches=2631 tx_dg=14833 ctrl_batches=8 ctrl_dg=8 rx_batches=8 rx_dg=8 rx_capped=0 ack_batches=2638 ack_dg=14252 send_err=0 too_large_staged=0 orphaned=0 qcalls=55078 q_secs=8132 q_wall_us=66973 q_asleep_us=13747 asleep_frac=0.0016 drv_on=3275 drv_off=1379 wall_s=8.673 qk_snd=2538/21621/16960/3809/307/544/80/4 qk_rd=2645/28925/25342/2751/0/832/50/0 qk_pub=2949/14354/11315/2645/0/393/35/0 rx_full=0 rx_full_us=0 ack_full=0 ack_full_us=0 fl_sends=2639 fl_full=0 fl_full_us=0 ibp_hit=7 ibp_miss=2 cmdq_n=2538 cmdq_p50=1 cmdq_p99=2 cmdq_max=5
+[TASK] phase=run side=client task=clock-gap polls=173 cpu_us=988 wall_us=1161 cores=0.000 busy=0.000 asl_vol_us=8 asl_inv_us=0 asl_none_us=164 vcsw=1 ivcsw=0 cpu_per_poll_us=5.72 wall_s=8.673 long_polls=0 max_poll_us=40
+[TASK] phase=run side=client task=ctrlfast polls=12 cpu_us=56 wall_us=56 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=0 vcsw=0 ivcsw=0 cpu_per_poll_us=4.71 wall_s=8.673 long_polls=0 max_poll_us=8
+[TASK] phase=run side=client task=engine polls=5 cpu_us=582 wall_us=588 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=6 vcsw=0 ivcsw=0 cpu_per_poll_us=116.40 wall_s=8.673 long_polls=0 max_poll_us=252
+[TASK] phase=run side=client task=owner-client-p0 polls=8369 cpu_us=235149 wall_us=333631 cores=0.027 busy=0.038 asl_vol_us=91450 asl_inv_us=35 asl_none_us=6996 vcsw=1039 ivcsw=12 cpu_per_poll_us=28.10 wall_s=8.673 long_polls=1 max_poll_us=1416
+[TASK] phase=run side=client task=owner-client-p1 polls=5037 cpu_us=122153 wall_us=155255 cores=0.014 busy=0.018 asl_vol_us=26473 asl_inv_us=2892 asl_none_us=3735 vcsw=338 ivcsw=9 cpu_per_poll_us=24.25 wall_s=8.673 long_polls=3 max_poll_us=5505
+[TASK] phase=run side=client task=pathcmd polls=1 cpu_us=12 wall_us=12 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=0 vcsw=0 ivcsw=0 cpu_per_poll_us=12.90 wall_s=8.673 long_polls=0 max_poll_us=12
+[TASK] phase=run side=client task=perf polls=9138 cpu_us=162017 wall_us=173610 cores=0.019 busy=0.020 asl_vol_us=1513 asl_inv_us=1710 asl_none_us=8368 vcsw=53 ivcsw=21 cpu_per_poll_us=17.73 wall_s=8.673 long_polls=1 max_poll_us=1309
+[TASK] phase=run side=client task=qconn-client-p0 polls=12402 cpu_us=799797 wall_us=846942 cores=0.092 busy=0.098 asl_vol_us=1475 asl_inv_us=7590 asl_none_us=38077 vcsw=35 ivcsw=45 cpu_per_poll_us=64.49 wall_s=8.673 long_polls=4 max_poll_us=4794
+[TASK] phase=run side=client task=qconn-client-p1 polls=6563 cpu_us=291085 wall_us=308743 cores=0.034 busy=0.036 asl_vol_us=1246 asl_inv_us=2625 asl_none_us=13785 vcsw=36 ivcsw=28 cpu_per_poll_us=44.35 wall_s=8.673 long_polls=2 max_poll_us=2950
+[TASK] phase=run side=client task=qep-client-p0 polls=10522 cpu_us=207538 wall_us=226608 cores=0.024 busy=0.026 asl_vol_us=42 asl_inv_us=148 asl_none_us=18879 vcsw=2 ivcsw=8 cpu_per_poll_us=19.72 wall_s=8.673 long_polls=1 max_poll_us=1057
+[TASK] phase=run side=client task=qep-client-p1 polls=5081 cpu_us=88416 wall_us=97479 cores=0.010 busy=0.011 asl_vol_us=0 asl_inv_us=51 asl_none_us=9011 vcsw=0 ivcsw=2 cpu_per_poll_us=17.40 wall_s=8.673 long_polls=0 max_poll_us=603
+[TASK] phase=run side=client task=receiver polls=13 cpu_us=752 wall_us=1139 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=387 vcsw=0 ivcsw=0 cpu_per_poll_us=57.86 wall_s=8.673 long_polls=0 max_poll_us=396
+[TASK] phase=run side=client task=report polls=31 cpu_us=258 wall_us=293 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=34 vcsw=0 ivcsw=0 cpu_per_poll_us=8.35 wall_s=8.673 long_polls=0 max_poll_us=30
+[TASK] phase=run side=client task=sender polls=10092 cpu_us=2656303 wall_us=2790355 cores=0.306 busy=0.322 asl_vol_us=19368 asl_inv_us=33855 asl_none_us=80828 vcsw=341 ivcsw=110 cpu_per_poll_us=263.21 wall_s=8.673 long_polls=712 max_poll_us=39262
+[TASK] phase=run side=client task=shutdown-signal polls=1 cpu_us=22 wall_us=22 cores=0.000 busy=0.000 asl_vol_us=0 asl_inv_us=0 asl_none_us=0 vcsw=0 ivcsw=0 cpu_per_poll_us=22.50 wall_s=8.673 long_polls=0 max_poll_us=22
+[QSOCK] phase=run side=client sock=client-p0 send_calls=11259 send_us=282794 send_dg=73301 send_wb=0 gso=6.51 send_us_per_call=25.12 send_frac=0.0326 recv_calls=8797 recv_us=86433 recv_dg=20915 recv_frac=0.0100 wall_s=8.673
+[QSOCK] phase=run side=client sock=client-p1 send_calls=4683 send_us=116420 send_dg=16306 send_wb=0 gso=3.48 send_us_per_call=24.86 send_frac=0.0134 recv_calls=4062 recv_us=35645 recv_dg=6616 recv_frac=0.0041 wall_s=8.673
+[RXSEC] phase=run side=client rx=1 msgs=14 data=2 total_us=378 decode_us=16 deliv_us=33 ack_us=15 book_us=54 other_us=258 total_ns_pm=27067 decode_ns_pm=1208 deliv_ns_pm=2393 ack_ns_pm=1082 book_ns_pm=3898 other_ns_pm=18486 busy=0.000 bk_n=13 bk_p50=1 bk_p99=2 bk_max=2 wall_s=8.673
+[HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=3176 t_us=- obs_p50_us=14086 obs_p90_us=307505 obs_p99_us=319801 evals=1871 law_n=0 sup=0 emit=1871 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=2346 hn_p50_us=2560 hn_p90_us=24576 hy_n=51 hy_p50_us=8192 hy_p90_us=12288 cx_n=779 cx_p50_us=196608 cx_p90_us=294912 sp_n=2978 xp_n=178 up_n=20 xp_frac=0.0564 age_n=2852 age_ripe=1788 ripe_frac=0.6269 age_p50_us=294912 age_p90_us=1441792 thr_p50_us=73728 fa_class=0.0625
+[HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=5984 t_us=- obs_p50_us=5939 obs_p90_us=142671 obs_p99_us=414155 evals=880 law_n=0 sup=0 emit=880 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=5177 hn_p50_us=4608 hn_p90_us=20480 hy_n=313 hy_p50_us=2560 hy_p90_us=6656 cx_n=494 cx_p50_us=122880 cx_p90_us=212992 sp_n=292 xp_n=5692 up_n=0 xp_frac=0.9512 age_n=5973 age_ripe=437 ripe_frac=0.0732 age_p50_us=196608 age_p90_us=327680 thr_p50_us=229376 fa_class=0.0625
+[QCLK] site=sender evals=10760 kept=2690 w_us_mean=99989.7 w_us_p05=100000 w_us_p50=100000 w_us_p95=100000 w_us_min=92968 w_us_max=100000 srtt_us_mean=262550.2 sigma_us_mean=2698.7/n10750 fa_class=0.0625
+[RACK] fa=379/2751 fa_frac=0.1378 fa_class=0.0625
+[FCAUSE] gen=0 n=2751 timer=2 gap_data=2691 gap_refresh=58 other=0 timer_frac=0.0007 gap_frac=0.9993 fired=2751 unattr=0 fa_class=0.0625
+[LAGRAW] side=client origin_unix_us=1793033694178187 xfer=143128-8671651 n=866 printed=866 s=1038:982,11687:1630,21441:1385,31192:1135,41324:1268,51547:1490,61678:1621,71899:1843,81562:1506,91944:1887,101667:1610,111255:1199,121722:1666,131282:1226,141416:1360,151566:1509,160949:892,171506:1450,180950:894,190972:915,201868:1812,211726:1670,220997:941,231637:1580,241020:964,251173:1116,261246:1189,271387:1331,281616:1560,291036:979,301428:1371,310995:939,321001:945,331008:951,341553:1497,351201:1144,361352:1296,371485:1428,381175:1119,390958:902,401914:1857,411381:1324,421292:1235,431636:1580,441263:1207,451018:961,461148:1091,470982:925,481006:949,491322:1266,500965:909,511225:1169,520972:916,531254:1198,541176:1119,551187:1130,560938:882,571097:1040,581087:1030,591447:1391,600943:886,611167:1111,620969:912,630937:880,640976:920,650971:915,660983:927,671481:1425,681252:1195,690979:923,700986:930,710981:925,721027:971,731187:1130,740971:914,751723:1666,760970:913,770976:920,781245:1189,794475:4419,800972:915,811220:1163,821163:1107,831084:1028,841728:1672,851003:947,860958:901,871451:1395,880950:894,891114:1057,901182:1125,911053:997,920934:877,931128:1072,941783:1727,951073:1017,961883:1827,971159:1103,980977:921,990935:879,1001186:1130,1011218:1162,1021401:1345,1031107:1051,1040944:887,1050992:935,1060933:876,1071029:973,1081146:1089,1092033:1977,1100968:911,1111079:1022,1120978:921,1130996:940,1141012:956,1151109:1052,1161249:1193,1170953:896,1181277:1221,1191362:1305,1200964:907,1211192:1136,1221414:1357,1231226:1170,1241663:1607,1251350:1294,1261020:964,1271543:1487,1281028:972,1291106:1050,1301016:959,1311239:1183,1321262:1206,1331093:1037,1340938:882,1351806:1750,1360989:932,1371210:1154,1381076:1020,1391023:966,1401326:1269,1411493:1436,1421897:1841,1430988:932,1441010:953,1451231:1174,1461097:1041,1471633:1576,1481360:1303,1490983:926,1500964:908,1512041:1984,1520992:936,1530945:888,1540997:940,1551012:956,1561730:1674,1571131:1074,1581037:980,1591485:1429,1600968:911,1611134:1077,1620955:898,1630985:929,1641095:1039,1651371:1314,1661253:1197,1671512:1456,1681057:1001,1690946:890,1701192:1136,1710988:931,1721014:958,1730985:928,1741395:1338,1751016:959,1761783:1726,1771138:1081,1781015:958,1791370:1313,1801764:1708,1811252:1196,1821176:1120,1831817:1761,1841366:1310,1851411:1354,1861392:1335,1871828:1771,1881002:946,1891519:1463,1901902:1846,1911125:1069,1921078:1022,1931202:1145,1941343:1286,1950972:916,1961126:1070,1971230:1173,1981058:1002,1991060:1003,2001163:1106,2011483:1426,2021019:963,2031226:1170,2041536:1480,2051191:1135,2061329:1273,2071016:959,2081465:1408,2091007:951,2101965:1909,2111151:1095,2121083:1026,2130999:943,2142051:1995,2151206:1150,2160989:933,2171234:1178,2181214:1158,2191173:1117,2201820:1764,2211435:1378,2221023:966,2231074:1017,2241436:1379,2251676:1620,2260980:923,2271667:1611,2281017:961,2291396:1340,2301585:1529,2310959:902,2320949:893,2330963:907,2341107:1051,2351635:1579,2361079:1023,2371789:1733,2381971:1914,2390983:927,2401708:1652,2411220:1164,2421384:1328,2431211:1155,2440986:930,2450951:894,2461360:1304,2470954:898,2480985:929,2491049:992,2501312:1256,2511303:1247,2520973:916,2531345:1288,2541003:946,2551486:1429,2561431:1375,2570967:910,2580985:929,2590951:894,2601108:1052,2611396:1339,2621352:1296,2631310:1253,2641760:1704,2651476:1419,2661879:1823,2671028:972,2681714:1657,2690930:874,2701224:1168,2711187:1131,2721504:1447,2731209:1152,2741805:1749,2750960:904,2761114:1057,2771989:1933,2780981:924,2791200:1144,2801095:1038,2811141:1085,2820965:909,2831766:1709,2840997:940,2850979:922,2861003:946,2871057:1001,2881159:1102,2890974:918,2901364:1308,2911117:1060,2921168:1112,2930948:892,2941530:1474,2950973:917,2961646:1589,2970936:880,2981371:1315,2991772:1716,3001364:1308,3011008:951,3021022:965,3030954:897,3040974:917,3051024:968,3061747:1691,3070947:890,3080966:909,3091429:1373,3101350:1293,3110931:875,3121110:1053,3131151:1095,3140944:888,3151636:1579,3161105:1049,3171022:966,3181233:1177,3192134:2078,3200932:875,3211534:1478,3221060:1003,3231571:1514,3241037:980,3251453:1397,3261705:1648,3271211:1155,3281386:1329,3291321:1264,3301207:1151,3311468:1412,3321186:1129,3331313:1257,3341836:1779,3351489:1433,3360997:941,3370963:907,3381686:1630,3391014:957,3401018:961,3411103:1047,3421088:1032,3431134:1077,3441095:1039,3451289:1233,3461053:997,3472147:2091,3481058:1002,3491408:1351,3500930:874,3510969:912,3521080:1024,3530964:907,3541709:1652,3550948:892,3561741:1685,3571017:961,3580993:937,3591088:1031,3600980:924,3611990:1934,3621151:1095,3630977:921,3640958:902,3651325:1269,3661085:1028,3671410:1353,3681443:1387,3691404:1348,3700943:887,3711486:1430,3721428:1371,3731166:1109,3741325:1268,3751076:1019,3761440:1383,3771016:960,3780960:904,3791118:1061,3804448:4391,3811017:960,3821313:1256,3831036:980,3840973:917,3851301:1244,3861005:948,3871003:946,3881450:1394,3892301:2245,3901031:975,3911168:1112,3921107:1051,3930946:890,3940965:908,3950989:932,3961060:1004,3970988:931,3981120:1063,3991434:1377,4001153:1097,4011261:1205,4021130:1074,4032033:1977,4040961:905,4051182:1125,4061101:1044,4071245:1188,4081025:969,4091113:1057,4101423:1367,4111958:1901,4121053:997,4131433:1376,4141566:1510,4150969:913,4160945:889,4170968:911,4181169:1113,4191307:1250,4200983:927,4211318:1262,4221355:1299,4231142:1086,4241164:1108,4251275:1219,4261756:1700,4271152:1096,4281450:1394,4290934:877,4303410:3353,4311233:1176,4321329:1273,4331189:1133,4340973:917,4351304:1248,4361046:990,4370953:896,4381125:1069,4391120:1064,4401287:1231,4411085:1028,4420959:903,4431694:1638,4441468:1412,4450967:911,4461229:1173,4471871:1814,4481838:1782,4490988:931,4500950:894,4511182:1126,4521122:1066,4531077:1021,4541513:1457,4551118:1062,4561204:1148,4571366:1310,4580977:920,4591017:960,4601502:1446,4611047:990,4620947:891,4631014:958,4641447:1391,4651008:952,4661023:966,4670986:929,4680945:889,4691161:1104,4700962:906,4711010:954,4721655:1598,4731313:1256,4741853:1796,4751026:969,4761161:1105,4770934:877,4781523:1467,4791059:1003,4801916:1860,4810945:889,4821438:1381,4831394:1338,4841360:1304,4851004:947,4861306:1250,4871157:1100,4881167:1111,4891120:1064,4901147:1091,4911378:1321,4921139:1082,4930935:878,4940952:895,4951013:957,4960936:879,4970953:897,4981105:1049,4990953:896,5001369:1312,5010981:924,5021444:1387,5032382:2326,5041140:1083,5051006:949,5062015:1958,5070944:887,5081083:1027,5091407:1350,5101584:1528,5110975:918,5121446:1390,5130966:910,5140943:887,5151166:1110,5161203:1147,5171460:1404,5180988:932,5191492:1436,5201010:954,5211333:1277,5221117:1061,5231575:1519,5241095:1039,5251187:1131,5260934:878,5271883:1827,5281649:1593,5295546:5490,5305947:400,5316029:483,5326574:1028,5336702:1156,5346515:969,5356804:1257,5365968:422,5375963:416,5386869:1323,5395935:388,5406091:544,5416223:676,5425991:444,5436050:503,5445977:430,5456501:955,5466370:823,5476127:580,5486183:636,5496270:723,5506146:600,5516002:455,5526920:1373,5536127:580,5546102:555,5556953:1406,5566083:537,5576424:877,5585973:426,5595932:385,5605931:384,5616257:710,5626563:1016,5637162:1615,5646148:602,5656089:542,5666010:463,5675935:389,5686054:508,5696103:557,5706095:548,5716106:559,5726013:466,5736248:701,5746128:581,5756231:684,5766169:623,5775951:404,5786563:1017,5796134:587,5808203:2657,5816701:1155,5833402:7856,5844886:1484,5853960:557,5864706:1303,5874038:636,5884383:980,5894256:853,5904328:926,5914330:927,5924283:880,5934044:641,5944227:824,5954020:618,5964407:1005,5974716:1314,5983989:587,5993973:570,6004231:828,6014019:616,6025038:1636,6034054:651,6044379:977,6054023:621,6063951:549,6074502:1100,6084727:1325,6093979:577,6104463:1060,6114232:829,6124157:755,6133997:594,6144413:1011,6154101:699,6163978:575,6173949:546,6184584:1181,6194145:742,6204823:1420,6214991:1588,6224397:994,6234392:990,6243932:529,6254053:650,6264352:950,6274780:1378,6284225:822,6295197:1794,6308288:4886,6313966:563,6324756:1354,6334352:950,6344187:784,6354477:1074,6364473:1071,6373962:560,6384466:1063,6394129:726,6403957:554,6414196:793,6424373:970,6434998:1595,6444586:1183,6453936:533,6464372:969,6474048:645,6484176:773,6494776:1373,6504821:1418,6514298:895,6524632:1229,6533943:541,6544034:632,6554025:622,6564875:1473,6574083:681,6583941:539,6593960:557,6604173:770,6614143:741,6623942:539,6634294:891,6644837:1435,6654127:724,6663987:584,6673993:590,6684776:1373,6693935:532,6704163:761,6714059:656,6723989:586,6734715:1312,6743936:533,6754038:635,6764828:1425,6774004:601,6784213:810,6794437:1034,6805287:1884,6814548:1145,6824788:1385,6834008:605,6844721:1318,6854492:1090,6864016:614,6874106:704,6884463:1060,6894386:984,6904771:1368,6914121:719,6924259:856,6934245:842,6945347:1945,6953938:536,6964004:602,6974038:635,6984165:762,6994150:747,7004290:887,7014189:786,7024492:1089,7033987:585,7044487:1084,7053954:552,7064777:1374,7074695:1292,7085115:1712,7094588:1186,7104037:634,7114307:905,7124305:902,7134340:938,7144483:1080,7154197:795,7164195:792,7174334:931,7184211:809,7193993:591,7204648:1245,7214228:826,7224714:1311,7234349:946,7244368:965,7254204:802,7264509:1107,7274289:887,7285368:1965,7294137:734,7303982:579,7314620:1218,7323984:582,7334276:873,7344483:1080,7353953:551,7364130:727,7374236:833,7384570:1168,7394087:685,7403946:543,7414034:631,7424238:835,7434528:1126,7444500:1097,7454333:930,7464039:637,7474368:965,7484053:650,7494127:725,7504736:1334,7514144:742,7524706:1303,7533966:564,7544658:1256,7554668:1265,7564166:764,7574788:1385,7584507:1105,7594018:615,7604355:953,7614428:1026,7624927:1524,7634337:934,7644959:1557,7654968:1566,7666399:2996,7674590:1188,7688344:4941,7694328:926,7704048:645,7714329:926,7724856:1454,7734543:1140,7745003:1601,7754508:1106,7764882:1480,7774371:969,7784559:1156,7794675:1273,7804472:1069,7814294:891,7824553:1151,7834893:1491,7844805:1403,7854453:1051,7864779:1377,7874095:692,7885049:1646,7894418:1015,7904568:1166,7914821:1418,7924102:699,7934253:851,7944169:767,7954785:1383,7969315:5912,7983612:4297,7990941:1625,8000078:762,8010625:1309,8022872:3556,8030135:820,8042285:2969,8050872:1557,8060751:1436,8070946:1631,8080134:819,8090662:1346,8100895:1580,8110745:1430,8120598:1283,8130643:1327,8140746:1430,8150872:1557,8160531:1215,8170207:891,8180349:1034,8190517:1202,8202145:2829,8210222:906,8220689:1374,8230855:1540,8240096:781,8250251:936,8260510:1195,8270792:1477,8280959:1643,8290110:795,8301038:1723,8310102:787,8322689:3374,8330895:1580,8342399:3083,8350752:1436,8360797:1482,8370115:799,8380133:818,8393096:3780,8400309:994,8410391:1075,8420398:1083,8430989:1674,8440531:1216,8450668:1353,8460794:1479,8470248:933,8480810:1495,8490965:1649,8500727:1411,8510952:1637,8520994:1679,8530353:1038,8540350:1034,8550743:1427,8560985:1670,8570551:1236,8580671:1356,8590326:1010,8601004:1688,8610114:799,8620704:1389,8630846:1530,8641001:1686,8650901:1586,8660298:982,8670561:1246
+[2m2026-10-26T16:55:02.851470Z[0m [32m INFO[0m [2mraptorpath::tun[0m[2m:[0m cleaning up TUN interface [3mname[0m[2m=[0mmem
+[2m2026-10-26T16:55:02.851512Z[0m [32m INFO[0m [2mraptorpath::net[0m[2m:[0m tunnel task exited — shutting down tunnel [3mtask[0m[2m=[0m"sender"
+[LPOLL] side=client task=sender end_unix_us=1793033694361707 wall_us=1415 cpu_us=1394 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694439350 wall_us=3268 cpu_us=2841 vcsw=24 ivcsw=0
+[LPOLL] side=client task=qconn-client-p0 end_unix_us=1793033694473163 wall_us=1327 cpu_us=149 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033694624098 wall_us=1160 cpu_us=1089 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694727163 wall_us=1103 cpu_us=1054 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033694732736 wall_us=1088 cpu_us=1045 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694736930 wall_us=1047 cpu_us=977 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694738635 wall_us=1069 cpu_us=1038 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694775103 wall_us=1680 cpu_us=1659 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694789605 wall_us=2200 cpu_us=2175 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694800423 wall_us=1622 cpu_us=1563 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694807704 wall_us=1193 cpu_us=1036 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694900110 wall_us=1085 cpu_us=1043 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694951071 wall_us=2537 cpu_us=2223 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694959730 wall_us=1039 cpu_us=1025 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033694974478 wall_us=1545 cpu_us=1518 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695003424 wall_us=1042 cpu_us=694 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695046223 wall_us=1445 cpu_us=1432 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695059411 wall_us=1166 cpu_us=1007 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695072006 wall_us=4348 cpu_us=4262 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695078187 wall_us=2550 cpu_us=2516 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695099035 wall_us=1361 cpu_us=1313 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695104651 wall_us=1478 cpu_us=1396 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695114269 wall_us=1219 cpu_us=1202 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695141749 wall_us=1245 cpu_us=1210 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695145668 wall_us=1000 cpu_us=877 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695157921 wall_us=1355 cpu_us=1308 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695169972 wall_us=1859 cpu_us=1735 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695176933 wall_us=2280 cpu_us=2157 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695193932 wall_us=1151 cpu_us=1083 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695306084 wall_us=1104 cpu_us=1032 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695470797 wall_us=1038 cpu_us=424 vcsw=0 ivcsw=9
+[LPOLL] side=client task=sender end_unix_us=1793033695520293 wall_us=1008 cpu_us=996 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695525899 wall_us=1935 cpu_us=1840 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695529956 wall_us=1041 cpu_us=953 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695576286 wall_us=1994 cpu_us=1936 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695642892 wall_us=1102 cpu_us=1060 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695665602 wall_us=1602 cpu_us=1418 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695673089 wall_us=1197 cpu_us=1116 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695687613 wall_us=1126 cpu_us=1035 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695699729 wall_us=2689 cpu_us=2572 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695716892 wall_us=1675 cpu_us=1653 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695757199 wall_us=1106 cpu_us=1093 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695773950 wall_us=1773 cpu_us=1747 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695925405 wall_us=1552 cpu_us=1497 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695929446 wall_us=1376 cpu_us=1303 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695935097 wall_us=1074 cpu_us=894 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695936715 wall_us=1390 cpu_us=1350 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033695985299 wall_us=1138 cpu_us=949 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033696001125 wall_us=1601 cpu_us=1547 vcsw=2 ivcsw=0
+[LPOLL] side=client task=qconn-client-p1 end_unix_us=1793033696045383 wall_us=2950 cpu_us=2527 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696045433 wall_us=3555 cpu_us=705 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033696148052 wall_us=2019 cpu_us=1993 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696249051 wall_us=2269 cpu_us=2245 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696267844 wall_us=1913 cpu_us=1855 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696281902 wall_us=1515 cpu_us=1468 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696286580 wall_us=1570 cpu_us=1453 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696299392 wall_us=5745 cpu_us=5483 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696346206 wall_us=1269 cpu_us=704 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696397106 wall_us=1549 cpu_us=1483 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696410727 wall_us=1318 cpu_us=1235 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696430335 wall_us=2185 cpu_us=2103 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696437987 wall_us=2353 cpu_us=2253 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033696444918 wall_us=3681 cpu_us=3631 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696448900 wall_us=2052 cpu_us=2026 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696463506 wall_us=3148 cpu_us=3073 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696465998 wall_us=2093 cpu_us=1410 vcsw=0 ivcsw=2
+[LPOLL] side=client task=qconn-client-p1 end_unix_us=1793033696468885 wall_us=1437 cpu_us=94 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033696472481 wall_us=2671 cpu_us=2512 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033696495069 wall_us=1447 cpu_us=1211 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696500113 wall_us=2665 cpu_us=2560 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696512909 wall_us=1322 cpu_us=1286 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696548692 wall_us=1816 cpu_us=1774 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033696551350 wall_us=1105 cpu_us=1055 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696555768 wall_us=1135 cpu_us=1091 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696598400 wall_us=1113 cpu_us=1097 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696666092 wall_us=1615 cpu_us=1555 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696706775 wall_us=1149 cpu_us=1103 vcsw=0 ivcsw=0
+[LPOLL] side=client task=qep-client-p0 end_unix_us=1793033696712503 wall_us=1057 cpu_us=16 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696731243 wall_us=1394 cpu_us=390 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696732900 wall_us=1101 cpu_us=1056 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696748565 wall_us=1478 cpu_us=1354 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696763098 wall_us=1666 cpu_us=1651 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696766356 wall_us=1161 cpu_us=1137 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696776630 wall_us=2561 cpu_us=2065 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696794304 wall_us=2398 cpu_us=2258 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696798725 wall_us=1018 cpu_us=958 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696801718 wall_us=1154 cpu_us=1118 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696806616 wall_us=1050 cpu_us=1029 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696822843 wall_us=1020 cpu_us=989 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696836672 wall_us=1165 cpu_us=1127 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696847811 wall_us=2797 cpu_us=2700 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696896117 wall_us=2869 cpu_us=2827 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696910794 wall_us=1142 cpu_us=1129 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696980533 wall_us=1106 cpu_us=914 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033696989272 wall_us=1246 cpu_us=1194 vcsw=1 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697045534 wall_us=1434 cpu_us=1362 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697049382 wall_us=1194 cpu_us=1161 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697075575 wall_us=1094 cpu_us=1059 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697085511 wall_us=1736 cpu_us=1660 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697092343 wall_us=2316 cpu_us=2264 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697096903 wall_us=1010 cpu_us=931 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697121391 wall_us=1284 cpu_us=1209 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697124986 wall_us=1034 cpu_us=952 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697142155 wall_us=1601 cpu_us=1585 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697149023 wall_us=1544 cpu_us=1508 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697153650 wall_us=1354 cpu_us=1192 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697159514 wall_us=1665 cpu_us=1628 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697166464 wall_us=1217 cpu_us=1176 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697171691 wall_us=1461 cpu_us=1435 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697195731 wall_us=1033 cpu_us=1022 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697267878 wall_us=1238 cpu_us=1225 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697304331 wall_us=1254 cpu_us=1188 vcsw=4 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697319552 wall_us=3934 cpu_us=2081 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697349232 wall_us=4735 cpu_us=4402 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697355494 wall_us=3705 cpu_us=3497 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697358475 wall_us=1038 cpu_us=992 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697372765 wall_us=1772 cpu_us=1662 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697396954 wall_us=1241 cpu_us=1154 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697411530 wall_us=1219 cpu_us=1194 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697416435 wall_us=3686 cpu_us=3454 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697420832 wall_us=3175 cpu_us=3131 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697435301 wall_us=1186 cpu_us=1148 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697445809 wall_us=2110 cpu_us=2077 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697476206 wall_us=1291 cpu_us=993 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697484447 wall_us=1354 cpu_us=1079 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697516873 wall_us=1017 cpu_us=1007 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697518657 wall_us=1742 cpu_us=1218 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697564780 wall_us=1162 cpu_us=1148 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697577721 wall_us=4572 cpu_us=4480 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697583359 wall_us=1150 cpu_us=1121 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697585841 wall_us=1806 cpu_us=1513 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697634033 wall_us=2259 cpu_us=2207 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697672174 wall_us=1361 cpu_us=1317 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697707961 wall_us=1002 cpu_us=922 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697721337 wall_us=1007 cpu_us=981 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697739014 wall_us=1211 cpu_us=1171 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697759504 wall_us=1395 cpu_us=1290 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697772764 wall_us=1029 cpu_us=1015 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697806876 wall_us=2060 cpu_us=2029 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697823085 wall_us=1091 cpu_us=1077 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697827680 wall_us=1021 cpu_us=977 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697846663 wall_us=1246 cpu_us=1194 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697862637 wall_us=1082 cpu_us=1023 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697871450 wall_us=1294 cpu_us=1235 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697879942 wall_us=3452 cpu_us=3226 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697888669 wall_us=3099 cpu_us=2975 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697905904 wall_us=1853 cpu_us=1823 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697910816 wall_us=1204 cpu_us=1195 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697939688 wall_us=1206 cpu_us=1195 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697943605 wall_us=1577 cpu_us=1454 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033697973435 wall_us=2515 cpu_us=2485 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697976950 wall_us=2083 cpu_us=1782 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033697995881 wall_us=1265 cpu_us=1195 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698008841 wall_us=1257 cpu_us=1245 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698022502 wall_us=1111 cpu_us=1096 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698040834 wall_us=1357 cpu_us=1030 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698043986 wall_us=1638 cpu_us=1610 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698051362 wall_us=1972 cpu_us=1939 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698058558 wall_us=1011 cpu_us=993 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698064696 wall_us=1279 cpu_us=1268 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698070615 wall_us=1855 cpu_us=1563 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698073182 wall_us=2511 cpu_us=2488 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698088386 wall_us=1359 cpu_us=1320 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698104766 wall_us=2013 cpu_us=1884 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698111165 wall_us=1074 cpu_us=1035 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698116661 wall_us=2958 cpu_us=2921 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698122906 wall_us=1065 cpu_us=1002 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698128676 wall_us=1071 cpu_us=1055 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698135708 wall_us=1954 cpu_us=1885 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698148183 wall_us=1539 cpu_us=1383 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698149998 wall_us=1518 cpu_us=1423 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698154202 wall_us=3655 cpu_us=3608 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698163396 wall_us=1157 cpu_us=1015 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698167367 wall_us=3726 cpu_us=3627 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698173287 wall_us=1456 cpu_us=1385 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698182565 wall_us=2674 cpu_us=2604 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698194403 wall_us=1253 cpu_us=1136 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033698198853 wall_us=1511 cpu_us=1459 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698202203 wall_us=2821 cpu_us=2788 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698233474 wall_us=1278 cpu_us=1256 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698251070 wall_us=1465 cpu_us=1372 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698258664 wall_us=1023 cpu_us=945 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698260606 wall_us=1176 cpu_us=1140 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698267827 wall_us=1104 cpu_us=1066 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698275229 wall_us=1028 cpu_us=1014 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698297185 wall_us=2781 cpu_us=2441 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698304994 wall_us=4013 cpu_us=3777 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698308373 wall_us=1043 cpu_us=1029 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698317202 wall_us=1378 cpu_us=1355 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698328115 wall_us=1243 cpu_us=1232 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698343755 wall_us=1166 cpu_us=1154 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698353531 wall_us=1929 cpu_us=1896 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698360671 wall_us=1938 cpu_us=1805 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698364050 wall_us=1674 cpu_us=1663 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698372092 wall_us=1391 cpu_us=1288 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698380959 wall_us=6055 cpu_us=5884 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698391354 wall_us=1613 cpu_us=1533 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698393858 wall_us=1311 cpu_us=1299 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698398483 wall_us=1174 cpu_us=1088 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698404680 wall_us=2630 cpu_us=2582 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698407390 wall_us=1374 cpu_us=1318 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698413997 wall_us=1095 cpu_us=993 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698434756 wall_us=6394 cpu_us=6185 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698474947 wall_us=4051 cpu_us=1805 vcsw=0 ivcsw=8
+[LPOLL] side=client task=sender end_unix_us=1793033698482950 wall_us=1096 cpu_us=1094 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698484557 wall_us=1017 cpu_us=1005 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698495790 wall_us=1198 cpu_us=1165 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698511521 wall_us=1988 cpu_us=1959 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698519319 wall_us=1598 cpu_us=1386 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033698533949 wall_us=1119 cpu_us=1104 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698552823 wall_us=1128 cpu_us=1031 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698574064 wall_us=10548 cpu_us=10027 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698585093 wall_us=1194 cpu_us=1180 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698590586 wall_us=1237 cpu_us=1225 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698609004 wall_us=1044 cpu_us=982 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698628775 wall_us=1478 cpu_us=1468 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698630036 wall_us=1005 cpu_us=985 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698640935 wall_us=1043 cpu_us=1030 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698660046 wall_us=1144 cpu_us=1113 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033698683361 wall_us=1750 cpu_us=1711 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698705686 wall_us=1341 cpu_us=1281 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698726284 wall_us=1297 cpu_us=1267 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698735933 wall_us=1269 cpu_us=1150 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698799327 wall_us=1132 cpu_us=1108 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698803158 wall_us=1380 cpu_us=1361 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698810139 wall_us=1371 cpu_us=1361 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698821841 wall_us=1158 cpu_us=1131 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698835831 wall_us=1028 cpu_us=1000 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698838859 wall_us=1915 cpu_us=1868 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698851117 wall_us=4538 cpu_us=4304 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698859217 wall_us=1040 cpu_us=999 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698864167 wall_us=1429 cpu_us=1414 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698870991 wall_us=1358 cpu_us=1321 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698879102 wall_us=3319 cpu_us=3250 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698880861 wall_us=1263 cpu_us=1213 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698888051 wall_us=4691 cpu_us=4604 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698896327 wall_us=3556 cpu_us=3398 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698907609 wall_us=1649 cpu_us=1563 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698922585 wall_us=1109 cpu_us=1096 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698930782 wall_us=1330 cpu_us=1309 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698961882 wall_us=1907 cpu_us=1751 vcsw=0 ivcsw=0
+[LPOLL] side=client task=qconn-client-p0 end_unix_us=1793033698973320 wall_us=4794 cpu_us=149 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033698974550 wall_us=1176 cpu_us=1164 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033698977920 wall_us=1710 cpu_us=1554 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033699117408 wall_us=1034 cpu_us=999 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699135329 wall_us=1278 cpu_us=1187 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699140292 wall_us=1859 cpu_us=1713 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699178381 wall_us=1142 cpu_us=1112 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699210546 wall_us=2441 cpu_us=2396 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699220568 wall_us=1513 cpu_us=1326 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699225763 wall_us=1475 cpu_us=1419 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699227572 wall_us=1369 cpu_us=1322 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699237686 wall_us=7814 cpu_us=6704 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699243865 wall_us=1069 cpu_us=1012 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699249117 wall_us=1327 cpu_us=1277 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699254946 wall_us=3882 cpu_us=3824 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699261307 wall_us=2987 cpu_us=2856 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699268845 wall_us=3441 cpu_us=3395 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699271353 wall_us=1456 cpu_us=1422 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699290514 wall_us=2504 cpu_us=2461 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699341431 wall_us=1426 cpu_us=1372 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699373412 wall_us=1020 cpu_us=932 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699378384 wall_us=1429 cpu_us=1344 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699388734 wall_us=1304 cpu_us=1188 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699400853 wall_us=1521 cpu_us=1506 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699407286 wall_us=1225 cpu_us=1127 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699411288 wall_us=1205 cpu_us=1156 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699421341 wall_us=1157 cpu_us=1030 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699452115 wall_us=1290 cpu_us=1099 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699462838 wall_us=1037 cpu_us=947 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699469503 wall_us=4573 cpu_us=4362 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033699474649 wall_us=1478 cpu_us=1433 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033699487547 wall_us=1001 cpu_us=937 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699494018 wall_us=1325 cpu_us=1272 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699498341 wall_us=1762 cpu_us=1710 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699502034 wall_us=1118 cpu_us=1042 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699508936 wall_us=1168 cpu_us=1077 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699513733 wall_us=1420 cpu_us=1364 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699521580 wall_us=1044 cpu_us=1002 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699523955 wall_us=1158 cpu_us=1092 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699530211 wall_us=1122 cpu_us=1092 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699536563 wall_us=1048 cpu_us=986 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699539694 wall_us=1092 cpu_us=1080 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699546898 wall_us=2300 cpu_us=2273 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699554434 wall_us=1346 cpu_us=1305 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699559041 wall_us=1051 cpu_us=968 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699560539 wall_us=1446 cpu_us=1422 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699568802 wall_us=1101 cpu_us=1038 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699571093 wall_us=1301 cpu_us=1287 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699576880 wall_us=1009 cpu_us=973 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699583005 wall_us=1683 cpu_us=1578 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699592077 wall_us=1287 cpu_us=1277 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699598133 wall_us=1068 cpu_us=1057 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699601855 wall_us=1746 cpu_us=1702 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699605371 wall_us=1023 cpu_us=1006 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699611539 wall_us=1003 cpu_us=915 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699622506 wall_us=1341 cpu_us=1258 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699634873 wall_us=2378 cpu_us=2325 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699646525 wall_us=5952 cpu_us=5739 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699652555 wall_us=1303 cpu_us=1280 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699662528 wall_us=6106 cpu_us=6018 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699665782 wall_us=1225 cpu_us=1214 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699669709 wall_us=1234 cpu_us=1191 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699672517 wall_us=1603 cpu_us=1506 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699674735 wall_us=1588 cpu_us=1562 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699680796 wall_us=1003 cpu_us=954 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699686475 wall_us=1844 cpu_us=1683 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699693869 wall_us=1010 cpu_us=943 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699702366 wall_us=1137 cpu_us=1038 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699709184 wall_us=1059 cpu_us=1047 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699726536 wall_us=1737 cpu_us=1710 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699731447 wall_us=1288 cpu_us=1258 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699736598 wall_us=1344 cpu_us=1317 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699744916 wall_us=1490 cpu_us=1291 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699768867 wall_us=1057 cpu_us=995 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699786070 wall_us=2399 cpu_us=2329 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699793334 wall_us=1305 cpu_us=1196 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699802682 wall_us=2185 cpu_us=2035 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699813121 wall_us=7185 cpu_us=6155 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699815199 wall_us=1278 cpu_us=1179 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699817811 wall_us=2326 cpu_us=2250 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699821353 wall_us=1957 cpu_us=1924 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699822905 wall_us=1042 cpu_us=1024 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699829526 wall_us=1153 cpu_us=1076 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699836855 wall_us=1210 cpu_us=1130 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699845035 wall_us=3524 cpu_us=3485 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699853956 wall_us=1197 cpu_us=1150 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699858977 wall_us=1088 cpu_us=1053 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699866294 wall_us=1135 cpu_us=1104 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699873035 wall_us=4381 cpu_us=3725 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699878142 wall_us=1189 cpu_us=1175 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699889276 wall_us=4519 cpu_us=4412 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699894163 wall_us=3214 cpu_us=2967 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699898520 wall_us=1157 cpu_us=1145 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699906696 wall_us=4266 cpu_us=4190 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699917693 wall_us=1136 cpu_us=1107 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699926070 wall_us=2433 cpu_us=2221 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699929152 wall_us=1392 cpu_us=1335 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699934669 wall_us=2267 cpu_us=2234 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699939519 wall_us=2167 cpu_us=2098 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699943648 wall_us=2066 cpu_us=1950 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699954439 wall_us=6552 cpu_us=6295 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699960210 wall_us=1151 cpu_us=1080 vcsw=0 ivcsw=0
+[LPOLL] side=client task=owner-client-p1 end_unix_us=1793033699971296 wall_us=5505 cpu_us=85 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033699976418 wall_us=2007 cpu_us=1724 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033699990838 wall_us=4108 cpu_us=3129 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033699997058 wall_us=1561 cpu_us=1511 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700014631 wall_us=2515 cpu_us=2204 vcsw=1 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700022593 wall_us=1036 cpu_us=998 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700024554 wall_us=1173 cpu_us=1162 vcsw=0 ivcsw=0
+[LPOLL] side=client task=owner-client-p0 end_unix_us=1793033700027087 wall_us=1416 cpu_us=78 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700028228 wall_us=1484 cpu_us=1339 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700030189 wall_us=1079 cpu_us=970 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033700052785 wall_us=1572 cpu_us=1484 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700056882 wall_us=1103 cpu_us=1064 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700060347 wall_us=1594 cpu_us=1568 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700067788 wall_us=1152 cpu_us=1022 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700084377 wall_us=1068 cpu_us=1055 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700085955 wall_us=1157 cpu_us=1130 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700091224 wall_us=1480 cpu_us=1355 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700097502 wall_us=1142 cpu_us=1115 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700110646 wall_us=1699 cpu_us=1643 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700124579 wall_us=1046 cpu_us=1032 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700130225 wall_us=1066 cpu_us=1051 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700139336 wall_us=5604 cpu_us=5520 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700142228 wall_us=1023 cpu_us=920 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033700145111 wall_us=1434 cpu_us=1368 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700149534 wall_us=1884 cpu_us=1346 vcsw=1 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700159125 wall_us=1051 cpu_us=1003 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700189776 wall_us=2281 cpu_us=2251 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700195711 wall_us=1029 cpu_us=977 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700198969 wall_us=1397 cpu_us=1323 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700206390 wall_us=1363 cpu_us=1297 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700210619 wall_us=1035 cpu_us=1025 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700217385 wall_us=1165 cpu_us=1117 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700221314 wall_us=1567 cpu_us=1540 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700232964 wall_us=1813 cpu_us=1727 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700238780 wall_us=1181 cpu_us=1164 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700240304 wall_us=1050 cpu_us=1050 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700250041 wall_us=2460 cpu_us=2432 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700252732 wall_us=1226 cpu_us=1209 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700254667 wall_us=1414 cpu_us=1386 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700255970 wall_us=1038 cpu_us=1020 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700258796 wall_us=1812 cpu_us=1593 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700261670 wall_us=1964 cpu_us=1929 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700264332 wall_us=1244 cpu_us=1193 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700267186 wall_us=1212 cpu_us=1195 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700273769 wall_us=2326 cpu_us=2294 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700279941 wall_us=3882 cpu_us=3829 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700289040 wall_us=1595 cpu_us=1528 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700293207 wall_us=2094 cpu_us=1990 vcsw=0 ivcsw=0
+[LPOLL] side=client task=qconn-client-p0 end_unix_us=1793033700293513 wall_us=1036 cpu_us=203 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700296625 wall_us=2054 cpu_us=1326 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700299910 wall_us=1679 cpu_us=1410 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700313064 wall_us=8665 cpu_us=7574 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700326309 wall_us=6505 cpu_us=6196 vcsw=1 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700333507 wall_us=1084 cpu_us=1070 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700339789 wall_us=1130 cpu_us=1081 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700351137 wall_us=1659 cpu_us=1583 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700354372 wall_us=1987 cpu_us=1956 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700357773 wall_us=1013 cpu_us=1000 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700363172 wall_us=2862 cpu_us=2647 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700374051 wall_us=3243 cpu_us=2785 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700376019 wall_us=1232 cpu_us=1219 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700381127 wall_us=1434 cpu_us=1386 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700385009 wall_us=1002 cpu_us=978 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700386587 wall_us=1331 cpu_us=1286 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700396445 wall_us=1004 cpu_us=987 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700403515 wall_us=3653 cpu_us=3591 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700406182 wall_us=1650 cpu_us=812 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700409398 wall_us=1514 cpu_us=1491 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700417917 wall_us=1532 cpu_us=1518 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700422291 wall_us=1092 cpu_us=1064 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700428689 wall_us=1930 cpu_us=1896 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700433688 wall_us=1252 cpu_us=1238 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700439926 wall_us=4267 cpu_us=4137 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700444695 wall_us=1274 cpu_us=1262 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700447152 wall_us=1016 cpu_us=1005 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700454636 wall_us=1105 cpu_us=1094 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700459809 wall_us=1758 cpu_us=1689 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700464030 wall_us=4097 cpu_us=3819 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700476365 wall_us=8720 cpu_us=4885 vcsw=0 ivcsw=2
+[LPOLL] side=client task=owner-client-p1 end_unix_us=1793033700479872 wall_us=2630 cpu_us=118 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700486424 wall_us=6544 cpu_us=5962 vcsw=0 ivcsw=8
+[LPOLL] side=client task=sender end_unix_us=1793033700494734 wall_us=8008 cpu_us=7854 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700499843 wall_us=2614 cpu_us=2478 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700502923 wall_us=1395 cpu_us=1375 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700509110 wall_us=1023 cpu_us=1013 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700518390 wall_us=1233 cpu_us=1122 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700556058 wall_us=1337 cpu_us=1301 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700557292 wall_us=1103 cpu_us=1041 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700573611 wall_us=1076 cpu_us=1055 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700583887 wall_us=1367 cpu_us=1346 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700606988 wall_us=1243 cpu_us=1144 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700613090 wall_us=1094 cpu_us=1080 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700619717 wall_us=1091 cpu_us=1072 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700622827 wall_us=1008 cpu_us=985 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700624756 wall_us=1027 cpu_us=1008 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700630710 wall_us=1140 cpu_us=1124 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700632444 wall_us=1297 cpu_us=1146 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700633728 wall_us=1074 cpu_us=964 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700636374 wall_us=1731 cpu_us=1606 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700644150 wall_us=1393 cpu_us=1384 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700654610 wall_us=1433 cpu_us=1328 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700660214 wall_us=1904 cpu_us=1878 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700664477 wall_us=3055 cpu_us=3005 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700668941 wall_us=1920 cpu_us=1894 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700672561 wall_us=1631 cpu_us=1605 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700676376 wall_us=1323 cpu_us=1286 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700688508 wall_us=4577 cpu_us=4429 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700690343 wall_us=1220 cpu_us=1149 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700692781 wall_us=1786 cpu_us=1753 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700696800 wall_us=1134 cpu_us=1111 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700703165 wall_us=1716 cpu_us=1605 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700704945 wall_us=1719 cpu_us=1427 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700707650 wall_us=1115 cpu_us=1102 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700713605 wall_us=2394 cpu_us=2123 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700715838 wall_us=1031 cpu_us=1017 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700718951 wall_us=1264 cpu_us=1245 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700725525 wall_us=1693 cpu_us=1490 vcsw=2 ivcsw=0
+[LPOLL] side=client task=perf end_unix_us=1793033700726527 wall_us=1309 cpu_us=1181 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033700726987 wall_us=1018 cpu_us=974 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700732020 wall_us=1255 cpu_us=1191 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700738699 wall_us=3378 cpu_us=3007 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700743373 wall_us=1275 cpu_us=1236 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700749696 wall_us=2030 cpu_us=1981 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700751379 wall_us=1009 cpu_us=988 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700753796 wall_us=1167 cpu_us=1107 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700756046 wall_us=1552 cpu_us=1516 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700758048 wall_us=1078 cpu_us=1058 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700762070 wall_us=1188 cpu_us=1175 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700765007 wall_us=1269 cpu_us=1182 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700768286 wall_us=1166 cpu_us=1138 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700772012 wall_us=2504 cpu_us=2474 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700777588 wall_us=1728 cpu_us=1694 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700778930 wall_us=1250 cpu_us=1230 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700782318 wall_us=1080 cpu_us=1049 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700783725 wall_us=1056 cpu_us=1037 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700787228 wall_us=1254 cpu_us=1237 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700789323 wall_us=1288 cpu_us=1244 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700790576 wall_us=1021 cpu_us=968 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700792509 wall_us=1122 cpu_us=1110 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700795569 wall_us=1481 cpu_us=1373 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033700797002 wall_us=1314 cpu_us=1244 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700801681 wall_us=1557 cpu_us=1492 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700810036 wall_us=1992 cpu_us=1953 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700811403 wall_us=1069 cpu_us=1058 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700813637 wall_us=1900 cpu_us=1872 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700817066 wall_us=1129 cpu_us=1077 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700824115 wall_us=2179 cpu_us=2009 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700826213 wall_us=2034 cpu_us=1929 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700829433 wall_us=1309 cpu_us=1239 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700831959 wall_us=1183 cpu_us=1147 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700838537 wall_us=2387 cpu_us=2352 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700840505 wall_us=1750 cpu_us=1690 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700846747 wall_us=1614 cpu_us=1584 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700851758 wall_us=1085 cpu_us=1072 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700855288 wall_us=3055 cpu_us=2868 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700859017 wall_us=1047 cpu_us=1038 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700861403 wall_us=1035 cpu_us=952 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700867932 wall_us=1308 cpu_us=1285 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700870809 wall_us=1185 cpu_us=1150 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700871900 wall_us=1069 cpu_us=1022 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700875832 wall_us=1054 cpu_us=1044 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700879693 wall_us=1814 cpu_us=1780 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700886934 wall_us=1360 cpu_us=1305 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700890844 wall_us=1225 cpu_us=1172 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700906239 wall_us=4770 cpu_us=4522 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700909850 wall_us=1193 cpu_us=1176 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700912898 wall_us=1120 cpu_us=1068 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700916926 wall_us=1680 cpu_us=1653 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700918983 wall_us=1455 cpu_us=1439 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700922100 wall_us=1090 cpu_us=1021 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700924797 wall_us=2264 cpu_us=2162 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700928079 wall_us=1244 cpu_us=1222 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700929728 wall_us=1162 cpu_us=1123 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700933603 wall_us=2081 cpu_us=2005 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700935611 wall_us=1123 cpu_us=1061 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700940020 wall_us=1828 cpu_us=1807 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700943070 wall_us=1287 cpu_us=1274 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700944531 wall_us=1059 cpu_us=1007 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700953867 wall_us=1262 cpu_us=1250 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700957587 wall_us=1054 cpu_us=1037 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700960895 wall_us=1244 cpu_us=1211 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700987491 wall_us=24100 cpu_us=11865 vcsw=0 ivcsw=9
+[LPOLL] side=client task=sender end_unix_us=1793033700992657 wall_us=1440 cpu_us=1333 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033700995226 wall_us=1346 cpu_us=1145 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033701001881 wall_us=5314 cpu_us=5093 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701004333 wall_us=1165 cpu_us=1130 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701007357 wall_us=2412 cpu_us=2250 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701017805 wall_us=1135 cpu_us=1100 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701021884 wall_us=1674 cpu_us=1560 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701025229 wall_us=1298 cpu_us=1229 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701034694 wall_us=1387 cpu_us=1368 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701043415 wall_us=1050 cpu_us=1036 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701047643 wall_us=1522 cpu_us=1499 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701049541 wall_us=1122 cpu_us=972 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701053926 wall_us=1514 cpu_us=1499 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701059071 wall_us=1461 cpu_us=1373 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701067542 wall_us=1161 cpu_us=1149 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701080708 wall_us=7233 cpu_us=7118 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701086973 wall_us=3062 cpu_us=2934 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701091176 wall_us=1189 cpu_us=1164 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701095789 wall_us=1974 cpu_us=1879 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701103938 wall_us=1131 cpu_us=1034 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701110123 wall_us=1289 cpu_us=1198 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701117140 wall_us=1133 cpu_us=1108 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701119215 wall_us=1729 cpu_us=1716 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701123402 wall_us=1109 cpu_us=1074 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701127709 wall_us=3856 cpu_us=3204 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701130650 wall_us=1454 cpu_us=1375 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701137586 wall_us=1009 cpu_us=998 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701140131 wall_us=1006 cpu_us=937 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701143838 wall_us=1063 cpu_us=1050 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701149015 wall_us=1982 cpu_us=1950 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701153492 wall_us=1133 cpu_us=1023 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701161009 wall_us=1660 cpu_us=1627 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701164651 wall_us=1372 cpu_us=1323 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701171147 wall_us=1569 cpu_us=1543 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701179877 wall_us=3739 cpu_us=3657 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701181836 wall_us=1330 cpu_us=1312 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701183950 wall_us=1105 cpu_us=990 vcsw=0 ivcsw=0
+[LPOLL] side=client task=qconn-client-p0 end_unix_us=1793033701189707 wall_us=1934 cpu_us=1852 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701195914 wall_us=11719 cpu_us=11333 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701197834 wall_us=1309 cpu_us=1288 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701199676 wall_us=1153 cpu_us=1118 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701202838 wall_us=2442 cpu_us=2256 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701210676 wall_us=2674 cpu_us=2497 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701213769 wall_us=1519 cpu_us=1494 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701219339 wall_us=1253 cpu_us=1131 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701221401 wall_us=1065 cpu_us=986 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701223217 wall_us=1219 cpu_us=1157 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701228346 wall_us=3165 cpu_us=3035 vcsw=3 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701231874 wall_us=1082 cpu_us=1071 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701237855 wall_us=2702 cpu_us=2611 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701240233 wall_us=1231 cpu_us=1219 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701243361 wall_us=2134 cpu_us=1954 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701247828 wall_us=1664 cpu_us=1495 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701249658 wall_us=1297 cpu_us=1282 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701256210 wall_us=2810 cpu_us=2658 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701258858 wall_us=1464 cpu_us=1421 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701263518 wall_us=3557 cpu_us=3346 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701266936 wall_us=1143 cpu_us=1089 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701269542 wall_us=1219 cpu_us=1207 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701274740 wall_us=1214 cpu_us=1195 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701278096 wall_us=1165 cpu_us=1154 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701280358 wall_us=1629 cpu_us=1583 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701282212 wall_us=1374 cpu_us=1289 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701284366 wall_us=1784 cpu_us=1704 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701286352 wall_us=1033 cpu_us=1001 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701288835 wall_us=1528 cpu_us=1509 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701291183 wall_us=1476 cpu_us=1461 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701295735 wall_us=1114 cpu_us=1092 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701297148 wall_us=1067 cpu_us=1036 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701300736 wall_us=1444 cpu_us=1389 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701308240 wall_us=3338 cpu_us=3179 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701311026 wall_us=1887 cpu_us=1795 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701313816 wall_us=1037 cpu_us=960 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701316432 wall_us=1116 cpu_us=1050 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701320325 wall_us=2196 cpu_us=2150 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701327138 wall_us=2647 cpu_us=2506 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701330549 wall_us=1316 cpu_us=1227 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701334788 wall_us=1316 cpu_us=1168 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701339975 wall_us=3109 cpu_us=2473 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033701350516 wall_us=3161 cpu_us=3117 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701353832 wall_us=2944 cpu_us=2870 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701360507 wall_us=1088 cpu_us=1077 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701364104 wall_us=1077 cpu_us=1047 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701366123 wall_us=1874 cpu_us=1791 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701371468 wall_us=1217 cpu_us=1126 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701378056 wall_us=5063 cpu_us=4872 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701380655 wall_us=2426 cpu_us=2375 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701388855 wall_us=4474 cpu_us=4416 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701391478 wall_us=2256 cpu_us=2218 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701397087 wall_us=5544 cpu_us=5367 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701422602 wall_us=1197 cpu_us=1179 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701435507 wall_us=1210 cpu_us=1195 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701439846 wall_us=1019 cpu_us=903 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701447685 wall_us=1254 cpu_us=1237 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701458064 wall_us=9385 cpu_us=9011 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701470579 wall_us=6770 cpu_us=6404 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701472010 wall_us=1185 cpu_us=989 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033701476027 wall_us=1617 cpu_us=1350 vcsw=0 ivcsw=4
+[LPOLL] side=client task=sender end_unix_us=1793033701478198 wall_us=1095 cpu_us=1037 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701483544 wall_us=1258 cpu_us=1245 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701489274 wall_us=1699 cpu_us=1670 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701497104 wall_us=1593 cpu_us=1583 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701502075 wall_us=1057 cpu_us=1044 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701507113 wall_us=2356 cpu_us=2194 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701510538 wall_us=1055 cpu_us=1043 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701512485 wall_us=1097 cpu_us=1034 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701514010 wall_us=1184 cpu_us=1130 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701516079 wall_us=1865 cpu_us=1788 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701520179 wall_us=1245 cpu_us=1230 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701525095 wall_us=2185 cpu_us=2157 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701531147 wall_us=1102 cpu_us=1086 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701533337 wall_us=1777 cpu_us=1750 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701537784 wall_us=1879 cpu_us=1848 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701539209 wall_us=1094 cpu_us=1050 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701543687 wall_us=1003 cpu_us=962 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701555515 wall_us=1064 cpu_us=1052 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701572353 wall_us=1560 cpu_us=1463 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701575375 wall_us=1613 cpu_us=1556 vcsw=1 ivcsw=0
+[LPOLL] side=client task=owner-client-p1 end_unix_us=1793033701576528 wall_us=1143 cpu_us=42 vcsw=1 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701578847 wall_us=2054 cpu_us=2019 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701581990 wall_us=1388 cpu_us=1261 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701583374 wall_us=1305 cpu_us=1263 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701592625 wall_us=4617 cpu_us=4378 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701595224 wall_us=1863 cpu_us=1843 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701596982 wall_us=1130 cpu_us=1099 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701618943 wall_us=1029 cpu_us=971 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701625527 wall_us=1759 cpu_us=1729 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701632918 wall_us=1748 cpu_us=1720 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701637766 wall_us=1250 cpu_us=1226 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701643396 wall_us=1021 cpu_us=1007 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701649370 wall_us=3363 cpu_us=3304 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701651386 wall_us=1766 cpu_us=1731 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701656892 wall_us=1413 cpu_us=1399 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701662158 wall_us=1286 cpu_us=1238 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701683179 wall_us=18598 cpu_us=18303 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701692277 wall_us=1814 cpu_us=967 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701693552 wall_us=1062 cpu_us=1027 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701700874 wall_us=1427 cpu_us=1414 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701706997 wall_us=1545 cpu_us=1532 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701709791 wall_us=1218 cpu_us=1205 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701738793 wall_us=26544 cpu_us=23424 vcsw=0 ivcsw=2
+[LPOLL] side=client task=sender end_unix_us=1793033701752944 wall_us=8751 cpu_us=8460 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701760961 wall_us=7805 cpu_us=7595 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033701769540 wall_us=4302 cpu_us=4212 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701803685 wall_us=9730 cpu_us=9401 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701844495 wall_us=8330 cpu_us=8164 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701846099 wall_us=1278 cpu_us=1262 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701866478 wall_us=4902 cpu_us=4801 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701905972 wall_us=39262 cpu_us=38406 vcsw=2 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701910491 wall_us=3875 cpu_us=3785 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701912682 wall_us=2028 cpu_us=1994 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701923112 wall_us=3492 cpu_us=3451 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033701931601 wall_us=8167 cpu_us=7887 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033702024358 wall_us=1216 cpu_us=1169 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702041737 wall_us=1076 cpu_us=1053 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702125697 wall_us=1996 cpu_us=1954 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702147469 wall_us=5737 cpu_us=5634 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702161549 wall_us=3954 cpu_us=3883 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702164674 wall_us=2700 cpu_us=2653 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702178115 wall_us=3169 cpu_us=3118 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702180559 wall_us=2152 cpu_us=2066 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033702200964 wall_us=3751 cpu_us=3689 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702220396 wall_us=3827 cpu_us=3752 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702222955 wall_us=2253 cpu_us=2222 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702237695 wall_us=5745 cpu_us=5581 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702256898 wall_us=2334 cpu_us=2308 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702260345 wall_us=3124 cpu_us=3020 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702273848 wall_us=4718 cpu_us=4615 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702370044 wall_us=1118 cpu_us=1104 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702384009 wall_us=1471 cpu_us=1394 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702475909 wall_us=1037 cpu_us=1019 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702485041 wall_us=1490 cpu_us=1405 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702500769 wall_us=3883 cpu_us=3825 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702504689 wall_us=1950 cpu_us=1910 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702507646 wall_us=2586 cpu_us=2497 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702520515 wall_us=4528 cpu_us=4359 vcsw=0 ivcsw=1
+[LPOLL] side=client task=sender end_unix_us=1793033702525701 wall_us=4835 cpu_us=4758 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702537739 wall_us=3750 cpu_us=3711 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702553800 wall_us=2877 cpu_us=2816 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702557523 wall_us=3299 cpu_us=3175 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702571150 wall_us=4311 cpu_us=4243 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702586158 wall_us=2252 cpu_us=2218 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702588574 wall_us=2072 cpu_us=2041 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702604944 wall_us=3468 cpu_us=3426 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702624482 wall_us=4253 cpu_us=4186 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702642363 wall_us=2117 cpu_us=2070 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702654714 wall_us=3473 cpu_us=3376 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702672163 wall_us=2240 cpu_us=2059 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702684295 wall_us=1172 cpu_us=1146 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702699119 wall_us=1388 cpu_us=1362 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702700603 wall_us=1235 cpu_us=1222 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702714268 wall_us=2446 cpu_us=2412 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702724569 wall_us=1450 cpu_us=1426 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702743186 wall_us=2450 cpu_us=2414 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702762195 wall_us=2021 cpu_us=1990 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702779058 wall_us=1181 cpu_us=1152 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702797513 wall_us=1530 cpu_us=1443 vcsw=0 ivcsw=0
+[LPOLL] side=client task=sender end_unix_us=1793033702811557 wall_us=1118 cpu_us=1099 vcsw=0 ivcsw=0
+[LPOLL] side=client summary n=724 dropped=0 printed=724
+[SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=- rtx_n=0 final=1
+[ETA] site=receiver n=2 p1:n=2 bind=0.0000 tau_us=37576 srtt_src=echo l_p50=0 l_p90=9216 l_p95=9216 l_p99=9216 l_mx=9893 sig_us=-/n0 minrst=1 final=1
+[LAT] site=receiver n=2 over=0 p1:n=2 nowait=0 minrst=1 ax_n=2 ax_p50=0 ax_p90=4608 ax_p95=4608 ax_p99=4608 ax_sum=4728 rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0 rwsp_n=2 rwsp_p50=3 rwsp_p95=3 rwsp_sum=6 rwrep_n=0 rwrep_p50=- rwrep_p95=- rwrep_sum=0 rep_n=0 rep_p50=- rep_p95=- rep_sum=0 tot_p50=3 tot_p95=4608 tot_p99=4608 sh_ax=0.9987 sh_rwxp=0.0000 sh_rwsp=0.0013 sh_rwrep=0.0000 sh_rep=0.0000 final=1
+[REQ] on=0 rank=0 sent=0 spans=0 m_max=0 lstar_us=0 holes=0 final=1
+[RANK] holes=0 pivots=0 deficit=0 tail_overcount=0 max_deficit=0 empty=1 reports=1 final=1
+[RFA] gen=0 fires=0 false=0 false_frac=0.0000 fill_coded=0 fill_src=0 dup_src=0 preempt_src=0 src_n=2 rep_n=0 nu_recv=0.00000 fa_class=0.0625 rep_redundant=0 late_after_aban=0

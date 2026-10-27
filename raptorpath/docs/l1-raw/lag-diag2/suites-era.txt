@@ -1,0 +1,24 @@
+ABORT-PRECONDITION load1=5.08 io_full_avg60=82.29 cargo=0 rustc=0; NOTHING WAS RUN. 2026-10-26T20:23:05Z
+ABORT-PRECONDITION cargo=1 rustc=0 io_full_avg10=90.76 io_full_avg60=90.22 load=8.96 7.83 5.19; NOTHING WAS RUN. 2026-10-26T20:31:11Z
+ABORT-PRECONDITION cargo=1 rustc=0 io_full_avg10=93.98 io_full_avg60=93.91 load=9.75 8.59 6.41; NOTHING WAS RUN. 2026-10-26T20:37:58Z
+ABORT-PRECONDITION cargo=1 rustc=0 io_full_avg10=91.93 io_full_avg60=90.59 load=7.95 8.67 7.17; NOTHING WAS RUN. 2026-10-26T20:43:36Z
+ABORT-PRECONDITION cargo=1 rustc=2 io_full_avg10=54.99 io_full_avg60=53.86 load=7.13 6.96 6.76; NOTHING WAS RUN. 2026-10-26T20:48:36Z
+ABORT-PRECONDITION cargo=1 rustc=0 io_full_avg10=26.38 io_full_avg60=53.93 load=5.56 6.59 6.70; NOTHING WAS RUN. 2026-10-26T20:53:36Z
+ABORT-PRECONDITION cargo=1 rustc=1 io_full_avg10=40.74 io_full_avg60=32.23 load=3.22 4.00 5.51; NOTHING WAS RUN. 2026-10-26T20:58:36Z
+ABORT-LOCK /tmp/rwm-vm.lock is held: 724775 loopdiag_run_all:724775 2026-10-26T20:28:42Z
+NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for.
+ABORT-PRECONDITION cargo=1 rustc=0 io_full_avg10=64.63 io_full_avg60=33.45 load=2.12 3.38 4.64; NOTHING WAS RUN. 2026-10-26T21:08:37Z
+ABORT-PRECONDITION cargo=1 rustc=0 io_full_avg10=69.52 io_full_avg60=61.97 load=7.28 6.62 5.68; NOTHING WAS RUN. 2026-10-26T21:13:37Z
+ABORT-PRECONDITION cargo=1 rustc=1 io_full_avg10=5.45 io_full_avg60=6.39 load=1.27 3.49 4.61; NOTHING WAS RUN. 2026-10-26T21:18:37Z
+ABORT-PRECONDITION cargo=1 rustc=1 io_full_avg10=0.24 io_full_avg60=10.02 load=1.54 3.20 4.26; NOTHING WAS RUN. 2026-10-26T21:23:37Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+SUITES start src=/home/VMUSER/lagdiag2/src commit=4abe306 io_full_avg10=77.49 io_full_avg60=56.46 load=1.77 2.56 3.68 2026-10-26T21:28:37Z
+TEST release rc=0 passed=1122 failed=0 ignored=50 binaries=95 2026-10-26T22:00:21Z
+TEST doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-26T22:01:19Z
+TEST wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-10-26T22:03:45Z
+TEST debug rc=0 passed=981 failed=0 ignored=49 binaries=86 2026-10-26T23:06:34Z
+TEST parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-10-26T23:07:02Z
+SUITES OK 2026-10-26T23:08:41Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

@@ -1,0 +1,41 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LGD start commit=adb48f8 hard=1793040197 soft=1793039597 cargo=0 rustc=0 load=0.07 0.24 0.76 2026-10-26T16:43:17Z
+BUILD done wall=330s sha256=eebb80f8c67e115652cbc29a3a1e2482b501ee02e147dc7155253a8f3ed10fcb 2026-10-26T16:48:47Z
+TESTS cargo rc=0 test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 542 filtered out; finished in 0.26s 2026-10-26T16:52:46Z
+TESTS python l1common rc=0 digest rc=0 2026-10-26T16:52:50Z
+ROW smoke-s42-rt2 rc=0 mbps=101.077 cot_before=0 cot_after=0 load=1.08 1.76 1.58 2026-10-26T16:53:01Z
+SMOKE-PASS 2026-10-26T16:53:01Z
+ROW b1-s42-rt2 rc=0 mbps=99.331 cot_before=0 cot_after=0 load=1.21 1.77 1.58 2026-10-26T16:53:12Z
+ROW b1-s7-rt2 rc=0 mbps=103.732 cot_before=0 cot_after=0 load=1.67 1.84 1.61 2026-10-26T16:53:22Z
+ROW b2-s7-rt2 rc=0 mbps=88.699 cot_before=0 cot_after=0 load=1.78 1.86 1.62 2026-10-26T16:53:34Z
+ROW b2-s42-rt2 rc=0 mbps=93.363 cot_before=0 cot_after=0 load=1.75 1.85 1.62 2026-10-26T16:53:45Z
+ROW b2-s42-rt1 rc=0 mbps=96.477 cot_before=0 cot_after=0 load=1.56 1.81 1.61 2026-10-26T16:53:56Z
+ROW b3-s42-rt2 rc=0 mbps=103.651 cot_before=0 cot_after=0 load=2.03 1.90 1.64 2026-10-26T16:54:06Z
+ROW b3-s7-rt2 rc=0 mbps=88.383 cot_before=0 cot_after=0 load=1.94 1.89 1.64 2026-10-26T16:54:18Z
+ROW b4-s7-rt2 rc=0 mbps=86.485 cot_before=0 cot_after=0 load=1.96 1.89 1.64 2026-10-26T16:54:31Z
+ROW b4-s42-rt2 rc=0 mbps=100.781 cot_before=0 cot_after=0 load=1.81 1.86 1.64 2026-10-26T16:54:41Z
+ROW b4-s7-rt1 rc=0 mbps=103.384 cot_before=0 cot_after=0 load=1.84 1.86 1.64 2026-10-26T16:54:52Z
+ROW b5-s42-rt2 rc=0 mbps=93.808 cot_before=0 cot_after=0 load=2.04 1.90 1.66 2026-10-26T16:55:03Z
+ROW b5-s7-rt2 rc=0 mbps=90.882 cot_before=0 cot_after=0 load=1.95 1.89 1.65 2026-10-26T16:55:14Z
+ROW b6-s7-rt2 rc=0 mbps=94.831 cot_before=0 cot_after=0 load=1.73 1.84 1.64 2026-10-26T16:55:26Z
+ROW b6-s42-rt2 rc=0 mbps=97.103 cot_before=0 cot_after=0 load=1.78 1.85 1.65 2026-10-26T16:55:37Z
+ROW b6-s42-rt1 rc=0 mbps=101.488 cot_before=0 cot_after=0 load=1.69 1.83 1.64 2026-10-26T16:55:47Z
+ROW b7-s42-rt2 rc=0 mbps=85.525 cot_before=0 cot_after=0 load=1.65 1.81 1.64 2026-10-26T16:55:59Z
+ROW b7-s7-rt2 rc=0 mbps=96.62 cot_before=0 cot_after=0 load=1.55 1.79 1.63 2026-10-26T16:56:10Z
+ROW b8-s7-rt2 rc=0 mbps=89.032 cot_before=0 cot_after=0 load=1.47 1.76 1.62 2026-10-26T16:56:21Z
+ROW b8-s42-rt2 rc=0 mbps=96.432 cot_before=0 cot_after=0 load=1.50 1.76 1.62 2026-10-26T16:56:32Z
+ROW b8-s7-rt1 rc=0 mbps=95.702 cot_before=0 cot_after=0 load=1.27 1.70 1.61 2026-10-26T16:56:43Z
+ROW b9-s42-rt2 rc=0 mbps=91.188 cot_before=0 cot_after=0 load=1.61 1.76 1.63 2026-10-26T16:56:55Z
+ROW b9-s7-rt2 rc=0 mbps=87.294 cot_before=0 cot_after=0 load=1.86 1.80 1.65 2026-10-26T16:57:07Z
+ROW b10-s7-rt2 rc=0 mbps=86.114 cot_before=0 cot_after=0 load=5.79 4.26 2.67 2026-10-26T17:00:10Z
+ROW b10-s42-rt2 rc=0 mbps=97.934 cot_before=0 cot_after=0 load=5.44 4.23 2.68 2026-10-26T17:00:21Z
+ROW b10-s42-rt1 rc=0 mbps=101.428 cot_before=0 cot_after=0 load=4.99 4.17 2.68 2026-10-26T17:00:32Z
+ROW b11-s42-rt2 rc=0 mbps=102.474 cot_before=0 cot_after=0 load=6.20 4.48 2.81 2026-10-26T17:00:43Z
+ROW b11-s7-rt2 rc=0 mbps=97.3 cot_before=0 cot_after=0 load=7.47 4.81 2.93 2026-10-26T17:00:54Z
+ROW b12-s7-rt2 rc=0 mbps=78.111 cot_before=0 cot_after=0 load=9.21 5.32 3.13 2026-10-26T17:01:07Z
+ROW b12-s42-rt2 rc=0 mbps=95.308 cot_before=0 cot_after=0 load=9.71 5.56 3.23 2026-10-26T17:01:19Z
+ROW b12-s7-rt1 rc=0 mbps=93.192 cot_before=0 cot_after=0 load=9.84 5.72 3.31 2026-10-26T17:01:31Z
+END raptorpath=0 netns=0 OUTCOME UNSETTLED 2026-10-26T17:01:36Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

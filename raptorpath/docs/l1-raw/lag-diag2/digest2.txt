@@ -1,0 +1,69 @@
+== per-row table (client; E = p99 - min, us) ==
+tag rt lag_min lag_p99 E_lag | os_n os_min os_p99 E_os os_skip | rd_us/s | sender_polls txsec_iters | status
+b1-s42-rt2 rt2 135 4062 3927 | 854 27 1053 1026 0 | 47790 | 993 10585 | live
+b1-s7-rt2 rt2 146 4202 4056 | 874 32 869 837 0 | 53957 | 890 10539 | live
+b10-s42-rt2 rt2 280 3477 3197 | 827 26 558 532 0 | 62392 | 783 10523 | live
+b10-s7-rt2 rt2 196 3530 3334 | 878 19 2095 2076 0 | 65622 | 1244 9862 | live
+b11-s42-rt2 rt2 146 3803 3657 | 871 20 1007 987 0 | 53657 | 833 10671 | live
+b11-s7-rt2 rt2 75 3156 3081 | 956 36 445 409 1 | 52020 | 922 10653 | live
+b12-s42-rt2 rt2 330 3724 3394 | 833 27 510 483 0 | 53667 | 1039 10523 | live
+b12-s7-rt1 rt1 386 3384 2998 | - - - - - | - | 0 - | live
+b12-s7-rt2 rt2 304 3132 2828 | 798 33 377 344 0 | 51767 | 928 10585 | live
+b2-s42-rt2 rt2 56 4096 4040 | 899 40 1115 1075 0 | 50408 | 1160 10552 | live
+b2-s7-rt2 rt2 122 1878 1756 | 839 17 762 745 0 | 49990 | 839 10738 | live
+b3-s42-rt1 rt1 88 4719 4631 | - - - - - | - | 0 - | live
+b3-s42-rt2 rt2 734 2104 1370 | 785 31 667 636 0 | 54497 | 739 10947 | live
+b3-s7-rt2 rt2 467 3684 3217 | 916 23 1251 1228 0 | 56115 | 1035 10647 | live
+b4-s42-rt2 rt2 314 4373 4059 | 898 35 2046 2011 1 | 46724 | 929 10634 | live
+b4-s7-rt2 rt2 21 3619 3598 | 838 19 659 640 0 | 45165 | 866 10635 | live
+b5-s42-rt2 rt2 223 3369 3146 | 799 25 435 410 0 | 46456 | 638 11127 | live
+b5-s7-rt2 rt2 353 3639 3286 | 867 32 411 379 0 | 46698 | 725 11055 | live
+b6-s42-rt2 rt2 154 1619 1465 | 767 38 1282 1244 0 | 56162 | 651 10779 | live
+b6-s7-rt1 rt1 65 3381 3316 | - - - - - | - | 0 - | live
+b6-s7-rt2 rt2 358 4471 4113 | 870 30 387 357 0 | 45310 | 767 10915 | live
+b7-s42-rt2 rt2 222 3315 3093 | 827 37 809 772 0 | 49582 | 965 10474 | live
+b7-s7-rt2 rt2 333 3184 2851 | 795 23 386 363 0 | 56701 | 845 10553 | live
+b8-s42-rt2 rt2 101 4131 4030 | 861 59 717 658 0 | 50115 | 799 10667 | live
+b8-s7-rt2 rt2 226 2258 2032 | 829 34 306 272 0 | 63092 | 989 10371 | live
+b9-s42-rt1 rt1 334 2727 2393 | - - - - - | - | 0 - | live
+b9-s42-rt2 rt2 499 4076 3577 | 870 26 613 587 0 | 46316 | 888 11113 | live
+b9-s7-rt2 rt2 746 3488 2742 | 894 33 763 730 0 | 54262 | 1091 10221 | live
+rows=28 live=28 live_rt2=24 live_rt1=4 witness_fail=0
+== (a) OS reference clock vs the [LAG] tail (client, live RTOBS=2 rows) ==
+live_rt2=24
+spearman_rho(E_lag,E_os)=0.263
+terciles by E_lag: k=8 E_lag_med high=4035 low=2387
+E_os_med high=912 low=522 ratio=1.745
+spearman_rho(E_lag,run_delay_us_per_s)=-0.468 spearman_rho(E_os,run_delay_us_per_s)=0.119 n=24
+OUTCOME-A MIXED
+== (b) the sender's long polls (client task=sender [LPOLL], live RTOBS=2 rows) ==
+sender_polls=21558
+iters_per_poll >=1ms: n=21558 p50=3 p90=4
+iters_per_poll >=10ms: n=195 p50=8 p90=12.6
+wall_share >=1ms: sack=0.707 emit=0.134 arm_nack=0.067 arm_in=0.029 other=0.024 ackadv=0.018 in=0.009 pre=0.006 post=0.002 pace=0.002 nbud=0.001 gen=0.001 res=0.000 idle=0.000 arm_tail=0.000 arm_def=0.000 arm_pack=0.000 arm_req=0.000
+wall_share >=10ms: sack=0.812 emit=0.079 arm_nack=0.035 arm_in=0.021 other=0.017 ackadv=0.016 in=0.011 pre=0.004 pace=0.002 post=0.001 nbud=0.001 gen=0.000 res=0.000 arm_tail=0.000 idle=0.000 arm_def=0.000 arm_pack=0.000 arm_req=0.000
+outcome basis: polls >=10ms; p90_iters=12.6 top=sack(0.812) other=0.017
+== [TXSEC] xfer, pooled over the live RTOBS=2 client rows (ns share of all sections) ==
+sec=select(await) us=133487089 share=0.652 n=255371 max_us=94239
+sec=sack us=46721459 share=0.228 n=255369 max_us=19880
+sec=emit us=10501239 share=0.051 n=58862 max_us=8178
+sec=arm_nack us=5223412 share=0.026 n=255371 max_us=3347
+sec=arm_in us=4284952 share=0.021 n=171158 max_us=11151
+sec=ackadv us=1218115 share=0.006 n=255369 max_us=4291
+sec=pre us=807751 share=0.004 n=255368 max_us=3331
+sec=flush(await) us=733472 share=0.004 n=255368 max_us=8119
+sec=in us=641349 share=0.003 n=255369 max_us=3867
+sec=post us=292438 share=0.001 n=255369 max_us=955
+sec=pace us=287541 share=0.001 n=255368 max_us=2475
+sec=nbud us=255320 share=0.001 n=255371 max_us=737
+sec=gen us=174599 share=0.001 n=255368 max_us=2248
+sec=res us=88628 share=0 n=233438 max_us=866
+sec=idle us=23200 share=0 n=21933 max_us=6173
+sec=arm_tail us=2931 share=0 n=1647 max_us=59
+sec=arm_def us=0 share=0 n=0 max_us=0
+sec=arm_pack us=0 share=0 n=0 max_us=0
+sec=arm_req us=0 share=0 n=0 max_us=0
+OUTCOME-B UNBOUNDED-PER-WAKE(sack)
+PERTURB E_lag_med(rt2)/E_lag_med(rt1)=1.03 ok (n rt1=4 rt2=24)
+WITNESS-FAIL rows excluded: 0
+IO-COVARIATE live_rt2_rows_with_io_full_avg10>=20: 4; flagged outliers: 0

@@ -1,0 +1,37 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LG2 start commit=4abe306 hard=1793070521 soft=1793069921 cargo=0 rustc=0 load=2.43 1.71 1.46 2026-10-26T23:09:07Z
+BUILD done wall=365s sha256=37dfd2f8a942b48a7a9a1e5dfab5e6d2a77449414565763e9bc39cbb6ffab361 2026-10-26T23:15:12Z
+TESTS cargo rc=0 test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 536 filtered out; finished in 0.32s 2026-10-26T23:19:39Z
+TESTS python l1common rc=0 digest rc=0 digest2 rc=0 2026-10-26T23:19:46Z
+ROW smoke-s42-rt2 rc=0 mbps=97.109 cot_before=0 cot_after=0 load=1.50 2.47 2.11 io_full_avg10_before=0.34 io_full_avg10_after=2.90 2026-10-26T23:19:58Z
+SMOKE-PASS 2026-10-26T23:19:58Z
+ROW b1-s42-rt2 rc=0 mbps=93.655 cot_before=0 cot_after=0 load=2.16 2.59 2.16 io_full_avg10_before=2.90 io_full_avg10_after=1.15 2026-10-26T23:20:09Z
+ROW b1-s7-rt2 rc=0 mbps=91.574 cot_before=0 cot_after=0 load=2.13 2.57 2.15 io_full_avg10_before=1.15 io_full_avg10_after=15.03 2026-10-26T23:20:21Z
+ROW b2-s7-rt2 rc=0 mbps=95.35 cot_before=0 cot_after=0 load=2.02 2.52 2.15 io_full_avg10_before=15.03 io_full_avg10_after=19.50 2026-10-26T23:20:32Z
+ROW b2-s42-rt2 rc=0 mbps=88.99 cot_before=0 cot_after=0 load=2.02 2.51 2.14 io_full_avg10_before=15.97 io_full_avg10_after=6.93 2026-10-26T23:20:43Z
+ROW b3-s42-rt2 rc=0 mbps=102.0 cot_before=0 cot_after=0 load=1.71 2.42 2.12 io_full_avg10_before=6.93 io_full_avg10_after=3.14 2026-10-26T23:20:54Z
+ROW b3-s7-rt2 rc=0 mbps=87.371 cot_before=0 cot_after=0 load=1.74 2.41 2.12 io_full_avg10_before=2.57 io_full_avg10_after=0.94 2026-10-26T23:21:05Z
+ROW b3-s42-rt1 rc=0 mbps=85.697 cot_before=0 cot_after=0 load=1.58 2.34 2.10 io_full_avg10_before=0.94 io_full_avg10_after=0.28 2026-10-26T23:21:17Z
+ROW b4-s7-rt2 rc=0 mbps=95.38 cot_before=0 cot_after=0 load=1.57 2.31 2.10 io_full_avg10_before=0.28 io_full_avg10_after=0.45 2026-10-26T23:21:28Z
+ROW b4-s42-rt2 rc=0 mbps=88.983 cot_before=0 cot_after=0 load=1.49 2.27 2.08 io_full_avg10_before=0.45 io_full_avg10_after=0.73 2026-10-26T23:21:40Z
+ROW b5-s42-rt2 rc=0 mbps=100.087 cot_before=0 cot_after=0 load=1.34 2.21 2.07 io_full_avg10_before=0.73 io_full_avg10_after=0.26 2026-10-26T23:21:51Z
+ROW b5-s7-rt2 rc=0 mbps=92.3 cot_before=0 cot_after=0 load=1.35 2.17 2.05 io_full_avg10_before=0.26 io_full_avg10_after=18.00 2026-10-26T23:22:02Z
+ROW b6-s7-rt2 rc=0 mbps=91.902 cot_before=0 cot_after=0 load=1.21 2.11 2.04 io_full_avg10_before=18.00 io_full_avg10_after=12.94 2026-10-26T23:22:13Z
+ROW b6-s42-rt2 rc=0 mbps=104.298 cot_before=0 cot_after=0 load=1.57 2.16 2.05 io_full_avg10_before=12.94 io_full_avg10_after=4.76 2026-10-26T23:22:23Z
+ROW b6-s7-rt1 rc=0 mbps=101.363 cot_before=0 cot_after=0 load=1.40 2.10 2.04 io_full_avg10_before=4.76 io_full_avg10_after=5.42 2026-10-26T23:22:34Z
+ROW b7-s42-rt2 rc=0 mbps=96.654 cot_before=0 cot_after=0 load=1.49 2.10 2.04 io_full_avg10_before=5.42 io_full_avg10_after=12.29 2026-10-26T23:22:45Z
+ROW b7-s7-rt2 rc=0 mbps=100.693 cot_before=0 cot_after=0 load=1.38 2.05 2.02 io_full_avg10_before=12.29 io_full_avg10_after=3.70 2026-10-26T23:22:57Z
+ROW b8-s7-rt2 rc=0 mbps=96.555 cot_before=0 cot_after=0 load=1.24 1.99 2.00 io_full_avg10_before=3.70 io_full_avg10_after=1.36 2026-10-26T23:23:08Z
+ROW b8-s42-rt2 rc=0 mbps=92.945 cot_before=0 cot_after=0 load=1.21 1.96 1.99 io_full_avg10_before=1.11 io_full_avg10_after=0.81 2026-10-26T23:23:19Z
+ROW b9-s42-rt2 rc=0 mbps=92.002 cot_before=0 cot_after=0 load=1.34 1.96 1.99 io_full_avg10_before=0.81 io_full_avg10_after=0.24 2026-10-26T23:23:30Z
+ROW b9-s7-rt2 rc=0 mbps=89.498 cot_before=0 cot_after=0 load=1.37 1.95 1.99 io_full_avg10_before=0.24 io_full_avg10_after=12.86 2026-10-26T23:23:41Z
+ROW b9-s42-rt1 rc=0 mbps=86.705 cot_before=0 cot_after=0 load=1.74 2.00 2.00 io_full_avg10_before=12.86 io_full_avg10_after=16.02 2026-10-26T23:23:53Z
+ROW b10-s7-rt2 rc=0 mbps=91.132 cot_before=0 cot_after=0 load=1.87 2.02 2.01 io_full_avg10_before=16.02 io_full_avg10_after=17.01 2026-10-26T23:24:05Z
+ROW b10-s42-rt2 rc=0 mbps=96.711 cot_before=0 cot_after=0 load=1.98 2.03 2.01 io_full_avg10_before=17.01 io_full_avg10_after=5.12 2026-10-26T23:24:16Z
+ROW b11-s42-rt2 rc=0 mbps=91.789 cot_before=0 cot_after=0 load=1.69 1.97 1.99 io_full_avg10_before=5.12 io_full_avg10_after=1.88 2026-10-26T23:24:27Z
+ROW b11-s7-rt2 rc=0 mbps=83.522 cot_before=0 cot_after=0 load=1.81 1.98 2.00 io_full_avg10_before=1.88 io_full_avg10_after=18.11 2026-10-26T23:24:39Z
+ROW b12-s7-rt2 rc=0 mbps=100.313 cot_before=0 cot_after=0 load=1.53 1.92 1.98 io_full_avg10_before=18.11 io_full_avg10_after=13.51 2026-10-26T23:24:50Z
+ROW b12-s42-rt2 rc=0 mbps=96.079 cot_before=0 cot_after=0 load=1.60 1.92 1.98 io_full_avg10_before=13.51 io_full_avg10_after=27.83 2026-10-26T23:25:01Z
+ROW b12-s7-rt1 rc=0 mbps=97.75 cot_before=0 cot_after=0 load=1.76 1.94 1.98 io_full_avg10_before=27.83 io_full_avg10_after=28.55 2026-10-26T23:25:12Z
+END raptorpath=0 netns=0 OUTCOME-A MIXED OUTCOME-B UNBOUNDED-PER-WAKE(sack)  2026-10-26T23:25:25Z

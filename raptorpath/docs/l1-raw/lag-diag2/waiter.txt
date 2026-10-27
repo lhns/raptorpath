@@ -1,0 +1,19 @@
+BOOT ok 2026-10-26T20:23:05Z
+WAITER start 2026-10-26T20:23:05Z
+WAIT suites rc=3 load=5.08 io=[avg10=78.93 avg60=82.29] 2026-10-26T20:23:05Z
+BOOT ok 2026-10-26T20:31:11Z
+WAITER start 2026-10-26T20:31:11Z
+WAIT suites rc=3 load=8.96 io=[avg10=90.76 avg60=90.22] 2026-10-26T20:31:11Z
+WAIT suites rc=3 load=9.75 io=[avg10=93.98 avg60=93.91] 2026-10-26T20:37:58Z
+WAIT suites rc=3 load=7.95 io=[avg10=91.93 avg60=90.59] 2026-10-26T20:43:36Z
+WAIT suites rc=3 load=7.13 io=[avg10=54.99 avg60=53.86] 2026-10-26T20:48:36Z
+WAIT suites rc=3 load=5.56 io=[avg10=26.38 avg60=53.93] 2026-10-26T20:53:36Z
+WAIT suites rc=3 load=3.22 io=[avg10=40.74 avg60=32.23] 2026-10-26T20:58:36Z
+WAIT suites rc=4 load=5.24 io=[avg10=21.88 avg60=33.96] 2026-10-26T21:03:36Z
+WAIT suites rc=3 load=2.12 io=[avg10=64.63 avg60=33.45] 2026-10-26T21:08:37Z
+WAIT suites rc=3 load=7.28 io=[avg10=69.52 avg60=61.97] 2026-10-26T21:13:37Z
+WAIT suites rc=3 load=1.27 io=[avg10=5.45 avg60=6.39] 2026-10-26T21:18:37Z
+WAIT suites rc=3 load=1.54 io=[avg10=0.24 avg60=10.02] 2026-10-26T21:23:37Z
+DONE suites rc=0 2026-10-26T23:08:41Z
+DONE lagdiag2 rc=0 2026-10-26T23:25:25Z
+WAITER end 2026-10-26T23:25:25Z
