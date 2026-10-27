@@ -1656,10 +1656,15 @@ So P is a delay-ratio setpoint with a constant ratio G = 1 + q + g, and g
 is the unprovenanced gain 2.0 of Section 6.2 returning under another name.
 The ratio it would have to hit is not one number: at the §27 DEF knees
 T(Tp50)/RTprop reads 1.85 (c2, n = 192), 4.1 (c1s, 1 024), 3.3 (c1d, 768)
-and 2.7 (c8, 384, slow leg), so every constant G misses at least three of
-the four cells, and any G below c2's unloaded 1.35 (Tmin/RTprop at n = 64)
-contracts to the floor exactly as §23's honest arm did. **P is closed by
-the derivation** (the Little identity, not a measurement) and is not built.
+and at c8 (384) 2.7 on the fast leg and 1.68 on the slow one, so every
+constant G misses at least three of the four cells. On the same clock c2's
+unloaded ratio (Tp50/RTprop at n = 64: 14.9/7.0 = 2.1) already exceeds its
+knee ratio 1.85, so no G both escapes c2's floor and stops at its knee; and
+RTprop itself reads 7.0–11.4 ms across the c2 sweep rows (the windowed min
+of a jittered path), so a ratio to it is not a stable number there. The
+window is P's only lever (the reliable path has no pacer, Section 6.5), so
+this closure is the only form P can take. **P is closed by the derivation**
+(the Little identity, not a measurement) and is not built.
 It would also make the store cap a window congestion controller with a
 fixed delay target (ADR-0068's question), which is the weaker form of D.
 
@@ -1679,7 +1684,7 @@ from (RFC 8289 §3.2) — peaks there:
 | T(n) | the window median of the per-ack loop-time samples (`record_rtt`), max over live paths (the in-order frontier waits on the slowest) — measured |
 | α(δ) | Kleinrock's generalized power exponent on throughput [Kleinrock1979], mapped to the dial as b(δ) (Section 5.4): Bulk 2, Auto 1, Realtime ½ — a declared mapping, continuous and increasing in δ's b |
 | q(δ) | the step: the cap moves by at most a factor (1 + q) per window, q the CoDel band of this section — cited |
-| window | 10 delivery rounds of T, BBR's filter length (draft-ietf-ccwg-bbr) — cited |
+| window | two rounds of T per dither half: a cap change reaches the delivered rate after one loop (Little's law on the store), so the first round settles and is discarded and the second is measured — derived; a sample-count floor gauges thin windows |
 
 *Transcribed from the §27 DEF ledger* (`docs/l1-raw/loop-diag/p27/ld.log`,
 live DEF rows; goodput mean in Mbit/s, T = max over paths of the row's Tp50,
@@ -1703,21 +1708,31 @@ predicted points read 632 against 563–663 (c1s) and 604 against 526–570
 The online law (no phase, no mode, no branch on N or on the cell):
 
 ```text
-   n̄'  =  clamp( n̄ · (1 + q)^clamp(ê, −1, 1) ,  floor ,  N·knee )        once per window
-   cap =  n̄ · (1 + ½·q·s_k)  +  Σᵢ ε̂ᵢ·Dᵢ·stall(δ, ρ, i)                     s_k = +1, −1, +1, … (one sign per window)
-   ê   =  Δ ln Π / Δ ln cap   over the last two windows                       (the power elasticity)
+   one period = two windows at fixed n̄:  cap₊ = n̄·(1 + ½q),  then  cap₋ = n̄·(1 − ½q)
+   ê    =  ( ln Π₊ − ln Π₋ ) / ln( (1 + ½q) / (1 − ½q) )                    the power elasticity, Δ ln cap ≈ q fixed
+   n̄'   =  clamp( n̄ · (1 + q)^clamp(ê, −1, 1) ,  floor ,  N·knee )        once per period
+   cap  +=  Σᵢ ε̂ᵢ·Dᵢ·stall(δ, ρ, i)                                          the hole residency, additive
 ```
 
-The dither s_k is the excitation the gradient needs (extremum-seeking
-control of a static map [Ariyur2003]); it is a continuous
-square wave of amplitude ½q in log-cap, always on — not a phase — and its
-amplitude is gauged so a measurement can show it never dominates. ê > 0
-below the knee (D ∝ n, T flat: ê ≈ α), ê < 0 above it (D flat, T ∝ n:
-ê ≈ −1), so n̄ climbs and descends by at most (1 + q) per window and settles
-in a ±½q limit cycle around n*; the loop gain per window is bounded by the
-clamp on ê, and a floor start climbs ln(n*/10)/ln(1 + q) windows (38 at
-c1s's 384, ≈ 1.5 s at 10 rounds of ≈ 4 ms) — so it starts from the shipped
-law's ask, not the floor. ρ composes as derived above: the hole residency is
+The dither is the excitation the gradient needs (extremum-seeking control of
+a static map [Ariyur2003]): a square wave of amplitude ½q in log-cap,
+always on — not a phase — and gauged so a measurement can show it never
+dominates. n̄ is held for the whole period, so the elasticity divides by the
+known constant ln((1 + ½q)/(1 − ½q)) ≈ q and is well-conditioned by
+construction (updating n̄ every window would let n̄'s own step cancel the
+dither and divide by noise). ê > 0 below the knee (D ∝ n, T flat: ê ≈ α),
+ê < 0 above it (D flat, T ∝ n: ê ≈ −1), so n̄ climbs and descends by at
+most (1 + q) per period and settles in a limit cycle of about ±q around n*;
+the loop gain per period is bounded by the clamp on ê. A period is four
+rounds of T. A floor start would climb ln(n*/10)/ln(1 + q) periods (38 at
+c1s's 384), so n̄ starts from the shipped law's ask at the first refresh;
+the descent from there is ≈ 18 periods at both single-path cells (c1s
+2 048 → 384; c2 ≈ 1 000 → 192): ≈ 0.6 s at c1s (rounds 4–10 ms) and ≈ 3.5 s
+at c2 (rounds shrinking from ≈ 100 to ≈ 19 ms as the queue drains), a third
+or more of a c2 transfer, so the measurement reports latency both over the
+whole transfer and after convergence. A window of BBR's 10 rounds would
+take most of a c2 transfer to converge; that is why the window is derived
+from the loop, not borrowed from a filter length. ρ composes as derived above: the hole residency is
 an additive term outside the power seeker, linear in ρ, both terms computed.
 Bind gauges: floor and N·knee on n̄, the ê clamp, and the dither amplitude.
 
