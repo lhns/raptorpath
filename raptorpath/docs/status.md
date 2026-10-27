@@ -7122,3 +7122,11 @@ emission the largest share). It is not step 0's rule, which reads polls
 bounded at a few ms of real emission work, which is the Law-0 burst doing
 its job. `OUTCOME-A` reads `UNSETTLED-INSTRUMENT` (6 < 18 rows), as expected
 for this size.
+
+**§28 step 1 — pre-launch note (operator GO 2026-10-27).** The step-0
+caveat is closed. The randomized differential test (`differential_randomized`)
+was re-run red on a stub of the subtle bug: a memo that records the
+unclipped range, without the clip at `sent_store.last_seq()`. Result: FAILED
+(the panic at `sack_memo_tests.rs:58`); the other four tests pass on that
+stub. After reverting the stub, all five pass. The pre-registration is
+otherwise unchanged.
