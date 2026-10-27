@@ -1,0 +1,18 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+R3D start hard=1793059694 soft=1793059094 commit=e4d078e engine + 35085a9 harness cargo=0 rustc=0 load=1.47 3.33 4.64 procs_running=1 io_full=19.27/22.46 2026-10-26T21:08:24Z
+BUILD rc=0 wall=624s cargo=0 rustc=0 load=1.23 3.41 4.57 procs_running=1 io_full=5.18/6.53 2026-10-26T21:18:48Z
+TESTS task_obs rc=0 wall=349s test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 566 filtered out; finished in 0.00s 2026-10-26T21:24:37Z
+BENCH rc=0 2 lines 2026-10-26T21:25:55Z
+TMPFS run=/dev/shm/r3diag-a2139 bin_sha=aa09d965c2a7c440 2026-10-26T21:25:55Z
+ROW c1d-400-s42-r1 rc=0 "mbps":494.3 io_full10_max=66.73 FLAG-IOSTALL before[cargo=0 rustc=0 load=1.36 2.52 3.86 procs_running=1 io_full=66.73/59.46] after[cargo=0 rustc=0 load=2.09 2.63 3.88 procs_running=1 io_full=39.82/54.57] 2026-10-26T21:26:04Z
+ROW c1s-400-s42-r1 rc=0 "mbps":649.23 io_full10_max=37.95 FLAG-IOSTALL before[cargo=0 rustc=0 load=2.09 2.63 3.88 procs_running=1 io_full=35.50/53.31] after[cargo=0 rustc=0 load=2.40 2.68 3.89 procs_running=1 io_full=26.78/50.03] 2026-10-26T21:26:11Z
+ROW c1d-400-s7-r2 rc=0 "mbps":554.699 io_full10_max=26.78 FLAG-IOSTALL before[cargo=0 rustc=0 load=2.40 2.68 3.89 procs_running=1 io_full=26.78/50.03] after[cargo=0 rustc=0 load=2.29 2.65 3.87 procs_running=1 io_full=12.04/43.79] 2026-10-26T21:26:20Z
+ROW c1s-400-s7-r2 rc=0 "mbps":685.013 io_full10_max=17.46 before[cargo=0 rustc=0 load=2.29 2.65 3.87 procs_running=1 io_full=12.04/43.79] after[cargo=0 rustc=0 load=2.80 2.74 3.89 procs_running=1 io_full=14.22/40.46] 2026-10-26T21:26:27Z
+ROW c1d-400-s42-r3 rc=0 "mbps":576.663 io_full10_max=19.62 before[cargo=0 rustc=0 load=2.80 2.74 3.89 procs_running=1 io_full=14.22/40.46] after[cargo=0 rustc=0 load=2.90 2.77 3.89 procs_running=1 io_full=14.99/37.66] 2026-10-26T21:26:35Z
+ROW c1s-400-s42-r3 rc=0 "mbps":632.145 io_full10_max=19.70 before[cargo=0 rustc=0 load=2.90 2.77 3.89 procs_running=1 io_full=14.99/37.66] after[cargo=0 rustc=0 load=3.39 2.87 3.91 procs_running=1 io_full=16.48/35.41] 2026-10-26T21:26:42Z
+PERF P-c1d srv=763924 2026-10-26T21:26:47Z
+RUN P-c1d "mbps":614.25 after[cargo=0 rustc=0 load=3.23 2.95 3.89 procs_running=1 io_full=82.80/50.49] 2026-10-26T21:27:29Z
+END raptorpath=0 netns=0 2026-10-26T21:27:30Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

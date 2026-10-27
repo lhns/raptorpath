@@ -1,0 +1,371 @@
+   Compiling libc v0.2.183
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling cfg-if v1.0.4
+   Compiling shlex v1.3.0
+   Compiling find-msvc-tools v0.1.9
+   Compiling pin-project-lite v0.2.17
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.0
+   Compiling zerocopy v0.8.42
+   Compiling bytes v1.11.1
+   Compiling once_cell v1.21.4
+   Compiling smallvec v1.15.1
+   Compiling syn v2.0.117
+   Compiling parking_lot_core v0.9.12
+   Compiling log v0.4.29
+   Compiling jobserver v0.1.34
+   Compiling serde_core v1.0.228
+   Compiling cc v1.2.56
+   Compiling scopeguard v1.2.0
+   Compiling dunce v1.0.5
+   Compiling fs_extra v1.3.0
+   Compiling lock_api v0.4.14
+   Compiling getrandom v0.2.17
+   Compiling num-traits v0.2.19
+   Compiling cfg_aliases v0.2.1
+   Compiling itoa v1.0.17
+   Compiling futures-core v0.3.32
+   Compiling cmake v0.1.57
+   Compiling errno v0.3.14
+   Compiling socket2 v0.6.3
+   Compiling tracing-core v0.1.36
+   Compiling aws-lc-sys v0.38.0
+   Compiling ring v0.17.14
+   Compiling zeroize v1.8.2
+   Compiling typenum v1.19.0
+   Compiling serde v1.0.228
+   Compiling signal-hook-registry v1.4.8
+   Compiling parking_lot v0.12.5
+   Compiling mio v1.1.1
+   Compiling aws-lc-rs v1.16.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling getrandom v0.3.4
+   Compiling rustls-pki-types v1.14.0
+   Compiling untrusted v0.9.0
+   Compiling version_check v0.9.5
+   Compiling serde_derive v1.0.228
+   Compiling tracing-attributes v0.1.31
+   Compiling tokio-macros v2.6.1
+   Compiling generic-array v0.14.7
+   Compiling http v1.4.0
+   Compiling tokio v1.50.0
+   Compiling tracing v0.1.44
+   Compiling http-body v1.0.1
+   Compiling rand_core v0.9.5
+   Compiling rand_core v0.6.4
+   Compiling thiserror v2.0.18
+   Compiling bytemuck v1.25.0
+   Compiling rustls v0.23.37
+   Compiling httparse v1.10.1
+   Compiling slab v0.4.12
+   Compiling paste v1.0.15
+   Compiling safe_arch v0.7.4
+   Compiling rand_chacha v0.3.1
+   Compiling rand_chacha v0.9.0
+   Compiling thiserror-impl v2.0.18
+   Compiling matrixmultiply v0.3.10
+   Compiling powerfmt v0.2.0
+   Compiling subtle v2.6.1
+   Compiling zmij v1.0.21
+   Compiling openssl-probe v0.2.1
+   Compiling utf8parse v0.2.2
+   Compiling tower-service v0.3.3
+   Compiling anstyle-parse v1.0.0
+   Compiling rustls-native-certs v0.8.3
+   Compiling deranged v0.5.8
+   Compiling rand v0.9.2
+   Compiling wide v0.7.33
+   Compiling rand v0.8.5
+   Compiling approx v0.5.1
+   Compiling num-integer v0.1.46
+   Compiling num-complex v0.4.6
+   Compiling futures-channel v0.3.32
+   Compiling quinn-udp v0.5.14
+   Compiling nix v0.30.1
+   Compiling httpdate v1.0.3
+   Compiling percent-encoding v2.3.2
+   Compiling tinyvec_macros v0.1.1
+   Compiling futures-task v0.3.32
+   Compiling sync_wrapper v1.0.2
+   Compiling atomic-waker v1.1.2
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.16.1
+   Compiling regex-syntax v0.8.10
+   Compiling colorchoice v1.0.4
+   Compiling anstyle v1.0.13
+   Compiling pin-utils v0.1.0
+   Compiling num-conv v0.2.0
+   Compiling serde_json v1.0.149
+   Compiling siphasher v1.0.2
+   Compiling rawpointer v0.2.1
+   Compiling time-core v0.1.8
+   Compiling anstyle-query v1.1.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling crossbeam-utils v0.8.21
+   Compiling tower-layer v0.3.3
+   Compiling anstream v1.0.0
+   Compiling time v0.3.47
+   Compiling indexmap v2.13.0
+   Compiling regex-automata v0.4.14
+   Compiling fastbloom v0.14.1
+   Compiling hyper v1.8.1
+   Compiling futures-util v0.3.32
+   Compiling form_urlencoded v1.2.2
+   Compiling tinyvec v1.10.0
+   Compiling simba v0.8.1
+   Compiling num-rational v0.4.2
+   Compiling rand_distr v0.4.3
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling http-body-util v0.1.3
+   Compiling nalgebra-macros v0.2.2
+   Compiling quinn v0.11.9
+   Compiling bitflags v2.11.0
+   Compiling clap_lex v1.1.0
+   Compiling futures-sink v0.3.32
+   Compiling lru-slab v0.1.2
+   Compiling toml_write v0.1.2
+   Compiling rustc-hash v2.1.1
+   Compiling lazy_static v1.5.0
+   Compiling winnow v0.7.15
+   Compiling mime v0.3.17
+   Compiling heck v0.5.0
+   Compiling strsim v0.11.1
+   Compiling anyhow v1.0.102
+   Compiling memchr v2.8.0
+   Compiling ryu v1.0.23
+   Compiling base64 v0.22.1
+   Compiling pem v3.0.6
+   Compiling serde_urlencoded v0.7.1
+   Compiling toml_edit v0.22.27
+   Compiling clap_builder v4.6.0
+   Compiling nalgebra v0.32.6
+   Compiling clap_derive v4.6.0
+   Compiling axum-core v0.5.6
+   Compiling sharded-slab v0.1.7
+   Compiling tokio-util v0.7.18
+   Compiling digest v0.10.7
+   Compiling tower v0.5.3
+   Compiling hyper-util v0.1.20
+   Compiling matchers v0.2.0
+   Compiling yasna v0.5.2
+   Compiling serde_path_to_error v0.1.20
+   Compiling tracing-log v0.2.0
+   Compiling thread_local v1.1.9
+   Compiling matchit v0.8.4
+   Compiling gf256 v0.1.0 (/home/VMUSER/r3diag/src/gf256)
+   Compiling nu-ansi-term v0.50.3
+   Compiling hashbrown v0.14.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling tracing-subscriber v0.3.23
+   Compiling statrs v0.17.1
+   Compiling dashmap v6.1.0
+   Compiling axum v0.8.8
+   Compiling raptorpath-math v0.1.0 (/home/VMUSER/r3diag/src/raptorpath-math)
+   Compiling tun v0.7.22
+   Compiling clap v4.6.0
+   Compiling toml v0.8.23
+   Compiling bincode v1.3.3
+   Compiling hex v0.4.3
+   Compiling rcgen v0.13.2
+   Compiling rustls-webpki v0.103.9
+   Compiling rustls-platform-verifier v0.6.2
+   Compiling quinn-proto v0.11.14
+   Compiling raptorpath v0.1.0 (/home/VMUSER/r3diag/src/raptorpath)
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1892:5
+     |
+1892 |     /// Congestion-aware NACK repair throttle.
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1893 |     let mut nack_congestion = NackCongestionState::new();
+     |     ----------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1896:5
+     |
+1896 |     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1897 |     let mut nack_repairs_this_period: u64 = 0;
+     |     ------------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1898:5
+     |
+1898 | /     /// Cached throttle/ADR-0050 budget state, refreshed every
+1899 | |     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+1900 | |     /// budget inputs move; recomputing per ack would just churn locks).
+     | |________________________________________________________________________^
+1901 |       let mut last_budget_refresh_us: u64 = 0;
+     |       ---------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1904:5
+     |
+1904 | /     /// When the tail sweep last fired (µs) — rearm point. Must advance
+1905 | |     /// on every fire even if the retransmit was skipped (cooldown/budget
+1906 | |     /// exhausted), or a past deadline keeps the timer arm permanently ready
+1907 | |     /// and the select! busy-spins, starving TUN reads.
+     | |_______________________________________________________^
+1908 |       let mut last_tail_sweep_us: u64 = 0;
+     |       ------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1909:5
+     |
+1909 | /     /// The derived recovery round's one-shot mechanism-liveness echo at the
+1910 | |     /// sender site (ACTIVE + DIVERGED). Observation only.
+     | |__________________________________________________________^
+1911 |       let mut derived_round_echo = DerivedRoundEcho::default();
+     |       --------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1933:5
+     |
+1933 | /     /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+1934 | |     /// retained in `sent_store` but uncounted from the flow-control
+1935 | |     /// outstanding (SACKed by the receiver, cumulative frontier not yet
+1936 | |     /// past them). Invariant: subset of `sent_store` keys — maintained by
+1937 | |     /// marking only retained seqs and pruning with the same cumulative
+1938 | |     /// `split_off` twin. Empty whenever the gate is off.
+     | |_________________________________________________________^
+1939 |       let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+     |       ------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1940:5
+     |
+1940 | /     /// DIAG: cumulative count of slots released by the law (mechanism
+1941 | |     /// liveness at the gauge — `srel=cur/cum`).
+     | |________________________________________________^
+1942 |       let mut sack_released_total: u64 = 0;
+     |       ------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1943:5
+     |
+1943 | /     /// Wire v9: the newest `(next_expected, received_above)` pair off the
+1944 | |     /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+1945 | |     /// cap (`store_gate_released`). Stays at its default (no evidence)
+1946 | |     /// whenever the release law is off.
+     | |________________________________________^
+1947 |       let mut above_report = AboveReport::default();
+     |       ---------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused import: `FecBackend`
+  --> raptorpath/src/scheduler/mod.rs:47:18
+   |
+47 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated method `tun::Configuration::name`: Since the API `name` may have an easy name conflict when IDE prompts, it is replaced by `tun_name` for better coding experience
+  --> raptorpath/src/tun/linux/mod.rs:12:10
+   |
+12 |         .name(&config.name)
+   |          ^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:717:46
+    |
+717 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `hint` is never read
+  --> raptorpath/src/control/fec_rate.rs:88:5
+   |
+80 | pub struct FecRateController {
+   |            ----------------- field in this struct
+...
+88 |     hint: ProtocolHint,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+
+warning: method `final_done` is never used
+   --> raptorpath/src/net/recv_block.rs:113:19
+    |
+ 77 | impl RecvDiagBlock {
+    | ------------------ method in this implementation
+...
+113 |     pub(crate) fn final_done(&self) -> bool {
+    |                   ^^^^^^^^^^
+
+warning: method `armed` is never used
+   --> raptorpath/src/net/holddown.rs:224:19
+    |
+195 | impl HoldDownGauge {
+    | ------------------ method in this implementation
+...
+224 |     pub(crate) fn armed(&self) -> bool {
+    |                   ^^^^^
+
+warning: methods `is_empty`, `contains_key`, and `iter` are never used
+   --> raptorpath/src/net/seq_ring.rs:53:12
+    |
+ 41 | impl<V> SeqRing<V> {
+    | ------------------ methods in this implementation
+...
+ 53 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+    |            ^^^^^^^^^^^^
+...
+182 |     pub fn iter(&self) -> impl Iterator<Item = (u64, &V)> + '_ {
+    |            ^^^^
+
+warning: `raptorpath` (lib) generated 17 warnings (run `cargo fix --lib -p raptorpath` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 10m 23s

@@ -6679,3 +6679,69 @@ outlier, reported as such — it is **not** voided. A row whose binary or
 run dir is not on `/dev/shm` is `VOID-ONDISK`. Builds and test suites have
 no io gate. The waiter and envelope carry this (`r3diag_wait.sh`,
 `r3diag_run.sh`); the R3 battery's harness gains it before its launch.
+
+### 22. Threading R3 step 0 — the c1d receiver re-profile — result
+
+**Verdict: `UNREAD` on the deciding witness. The rule selects no design.**
+H-alloc (a), the profile witness, has no data: the `perf record` attach
+failed ("Couldn't create thread/CPU maps: No such process" — the pid
+`pgrep -o -x raptorpath` returned was not the live server's), so every perf
+product is empty. The decision rule builds the in-place R3 only if (a)
+holds, and a decode task only if (a) is refuted; neither is read, so
+neither is selected. Scored as pre-registered; nothing was changed after
+the data was read.
+
+*Session.* Launched by the waiter 2026-10-26 21:08:24Z after one clean
+refusal (20:28:44Z, `ABORT-LOCK`: another agent's session had taken the
+locks two seconds earlier; nothing ran). Engine `e4d078e`, harness
+`35085a9` (sha256 in the ledger), binary `aa09d965…`; build 624 s;
+`task_obs` tests 7 passed (the instrument's own tests, green); bench ran;
+rows 21:26:04–21:26:42Z from `/dev/shm`; END 0 `raptorpath`, 0 `rp-*`,
+locks released 21:27:30Z; the VM dir and the tmpfs dir are removed.
+Ledgers: `docs/l1-raw/thread-r3-diag/run/` (VM user and host scrubbed).
+Every row is LIVE and on tmpfs (no `VOID-ONDISK`). The first three rows
+carry `FLAG-IOSTALL` (io `full avg10` max 66.7, 38.0, 26.8 — the disk
+was recovering); c1d s42 r1 is the lowest c1d row (494 Mbit/s), so the
+flag is reported beside it, not voided.
+
+*The split on current main* (server `[RXSEC] phase=xfer`, ns per message,
+share of the handler; one message = one symbol):
+
+| row | goodput | total | decode | deliv | ack | book | arr | probe | prune | other | `[TASK]` cores / busy |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| c1d s42 r1 † | 494 | 17 837 | 6 425 (36 %) | 1 697 | 2 702 | 1 798 | 441 | 744 | 499 | 3 531 (20 %) | 0.889 / 0.966 |
+| c1d s7 r2 † | 555 | 15 918 | 5 729 (36 %) | 1 488 | 2 411 | 1 578 | 380 | 691 | 412 | 3 230 (20 %) | 0.900 / 0.967 |
+| c1d s42 r3 | 577 | 15 155 | 5 332 (35 %) | 1 475 | 2 357 | 1 597 | 377 | 641 | 355 | 3 020 (20 %) | 0.878 / 0.959 |
+| c1s s42 r1 † | 649 | 12 376 | 4 589 (37 %) | 1 249 | 1 260 | 910 | 379 | 629 | 385 | 2 974 (24 %) | 0.815 / 0.878 |
+| c1s s7 r2 | 685 | 12 193 | 4 633 (38 %) | 1 282 | 1 221 | 885 | 371 | 618 | 374 | 2 809 (23 %) | 0.854 / 0.911 |
+| c1s s42 r3 | 632 | 13 492 | 5 132 (38 %) | 1 436 | 1 353 | 949 | 397 | 648 | 487 | 3 091 (23 %) | 0.859 / 0.928 |
+
+† `FLAG-IOSTALL`. Server `[RDIAG]` busy 95–100 % in every in-transfer
+window at c1d; backlog p50 20–32, p99 1 536–1 792.
+
+*Predictions.*
+- **H-alloc (a): UNREAD** (no profile; above).
+- **H-alloc (b): MET.** Bench: source `add_symbol` 3 553 ns at the 140 k
+  cadence vs 1 656 ns at the 1 k cadence (2.15 ×, bar 1.5 ×); a k = 0
+  repair 2 114 vs 1 828 ns.
+- **H-burst: MET.** `prune_max_us` 63 196–82 892 at c1d (bar 5 000) and
+  65 616–89 740 at c1s, in every row; bench `adv_max_us` 74 455 at the
+  140 k cadence (1 477 at 1 k).
+- **H-other: MISSED.** At c1d `arr + probe + prune` = 1.4–1.7 µs, 9–10 %
+  of the handler (bar: half of R1's 26.4 %, i.e. ≥ 13.2 %); the new
+  remainder is 20 % (bar ≤ 15 %).
+- *Role cores* (share × `[TASK]` cores, c1d): decode 0.31–0.32 core; ack
+  0.13–0.14; other 0.18; book, deliv, arr, probe, prune each ≤ 0.09.
+  Decode alone sits at the 0.3 bar.
+
+*What it does not show.* The bench measures `add_symbol` with no GF work
+at all (an in-order, loss-free stream: every repair takes the k = 0 path)
+and finds 1.7–3.6 µs per source. That is consistent with H-alloc but is
+**not** the pre-registered witness (a), which reads the live c1d decode
+under loss and reordering, where the GF share is unknown. It is not
+substituted for it.
+
+*Next* (the coordinator's call): a profile-only re-read of H-alloc (a), a
+new amendment before VM contact — the same 1 GB c1d server `perf record`,
+the attach target taken from `perf_rwm_c.sh`'s own `srv_pid` (not
+`pgrep -o`), the same rule. The R3 build stays shelved until it reads.
