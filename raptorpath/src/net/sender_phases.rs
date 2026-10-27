@@ -1401,6 +1401,7 @@ pub(crate) struct AckAdvanceCtx<'a> {
     pub req_emitted: &'a mut std::collections::HashMap<u64, u64>,
     pub req_at_report: &'a mut std::collections::HashMap<u64, u64>,
     pub sack_released: &'a mut BTreeSet<u64>,
+    pub sack_memo: &'a mut SackMemo,
     /// The last `next_expected` this phase processed (count form, 0 at start).
     pub prev_ack: &'a mut u64,
     pub c8c_last_ack_adv_us: &'a mut u64,
@@ -1440,6 +1441,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         req_emitted,
         req_at_report,
         mut sack_released,
+        sack_memo,
         prev_ack: prev_ack_cell,
         c8c_last_ack_adv_us: c8c_last_ack_adv_us_cell,
         nack_repairs_this_period: nack_repairs_this_period_cell,
@@ -1612,6 +1614,8 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         if !sack_released.is_empty() {
             sack_release_prune(&mut sack_released, next_expected);
         }
+        // The memo of processed ranges prunes at the same point.
+        sack_memo.prune(next_expected);
         // Cumulative release of the per-path accounts (the split_off twin;
         // seqs already SACK-released are gone from the account map, so no
         // double-release).

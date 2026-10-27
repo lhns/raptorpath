@@ -191,6 +191,115 @@ pub fn sack_release_prune(released: &mut BTreeSet<u64>, next_expected: u64) {
     *released = released.split_off(&next_expected);
 }
 
+/// Incremental SACK marking (status §26 finding 1). Every report re-sends all
+/// ranges above a stalled frontier, so [`sack_release_mark_into`] re-visited
+/// every retained seq of the span (23 % of the sender's wall). This memo holds
+/// the disjoint, coalesced closed intervals already fully processed, so a
+/// range only visits the gaps it adds: O(ranges · log + newly-marked seqs).
+///
+/// Exactness. The old marker visits the retained seqs of `[start, end]` and
+/// inserts them into `released`. After one visit every retained seq of the
+/// interval is in `released` and stays until the shared prune
+/// ([`SackMemo::prune`] mirrors [`sack_release_prune`] at the same site with
+/// the same `next_expected`). The only way a revisit could mark something new
+/// is a seq that becomes retained later inside a covered interval. The sole
+/// `sent_store.insert` (`emit_source`) assigns strictly increasing seqs, so a
+/// later insert is above the highest retained seq `H` at processing time; the
+/// memo therefore records only `[start, min(end, H)]` (with no retained seq
+/// it records nothing). Within that clip the retained set cannot grow, and
+/// nothing is removed from `sent_store` except the prefix prune, which only
+/// shrinks it, so the skipped visits could not have marked anything.
+#[derive(Debug, Default)]
+pub struct SackMemo {
+    /// start -> end (inclusive), disjoint and non-adjacent.
+    covered: BTreeMap<u64, u64>,
+}
+
+impl SackMemo {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of disjoint intervals held.
+    pub fn intervals(&self) -> usize {
+        self.covered.len()
+    }
+
+    /// Drop everything below `next_expected` (the [`sack_release_prune`] twin).
+    pub fn prune(&mut self, next_expected: u64) {
+        if self.covered.is_empty() {
+            return;
+        }
+        let mut keep = self.covered.split_off(&next_expected);
+        if let Some((_, &e)) = self.covered.iter().next_back() {
+            if e >= next_expected {
+                keep.insert(next_expected, e);
+            }
+        }
+        self.covered = keep;
+    }
+
+    /// Incremental [`sack_release_mark_into`]: same `released` mutation and
+    /// same `newly` (ascending), visiting only seqs not already covered.
+    /// `visited` is bumped once per retained seq visited.
+    pub fn mark_into<S: super::seq_ring::RetainedSeqs>(
+        &mut self,
+        sent_store: &S,
+        released: &mut BTreeSet<u64>,
+        start: u64,
+        end: u64,
+        newly: &mut Vec<u64>,
+        visited: &mut u64,
+    ) {
+        newly.clear();
+        let Some(h) = sent_store.last_seq() else { return };
+        let hi = end.min(h);
+        if start > hi {
+            return;
+        }
+        let mut visit = |a: u64, b: u64, released: &mut BTreeSet<u64>, newly: &mut Vec<u64>| {
+            sent_store.for_each_seq_in(a, b, |seq| {
+                *visited += 1;
+                if released.insert(seq) {
+                    newly.push(seq);
+                }
+            });
+        };
+        // Walk the covered intervals overlapping [start, hi], visit the gaps.
+        let mut cursor = start; // next unvisited seq
+        let mut lo = start; // union's start
+        let mut top = hi; // union's end
+        let first = self.covered.range(..=start).next_back().map(|(&s, &e)| (s, e));
+        let mut overlapping: Vec<u64> = Vec::new();
+        if let Some((s, e)) = first {
+            if e.saturating_add(1) >= start {
+                overlapping.push(s);
+                lo = lo.min(s);
+                top = top.max(e);
+                cursor = cursor.max(e.saturating_add(1));
+            }
+        }
+        for (&s, &e) in self.covered.range(start..) {
+            if s > hi.saturating_add(1) {
+                break;
+            }
+            overlapping.push(s);
+            if s > cursor && cursor <= hi {
+                visit(cursor, (s - 1).min(hi), released, newly);
+            }
+            top = top.max(e);
+            cursor = cursor.max(e.saturating_add(1));
+        }
+        if cursor <= hi {
+            visit(cursor, hi, released, newly);
+        }
+        for s in overlapping {
+            self.covered.remove(&s);
+        }
+        self.covered.insert(lo, top);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Wire v9: the received-above-frontier count (plan 2c)
 // ---------------------------------------------------------------------------
