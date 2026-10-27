@@ -1,0 +1,18 @@
+WAITER start 2026-10-27T08:57:24Z wait_s=14400 vm_lock=/tmp/rwm-vm.lock rp_lock=/home/VMUSER/rp.lock
+WAITER precondition holds 2026-10-27T08:57:32Z waited=8s load=0.36 0.13 0.04; exec loopdiag_run_all.sh LD_PLAN=27
+LD-ALL start plan=27 load=0.36 0.13 0.04 1/335 846187 2026-10-27T08:57:33Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.36 0.13 0.04; io=full avg10=7.81 avg60=8.21 avg300=3.13 total=35393971858 2026-10-27T08:57:33Z
+LD-ALL parser test ok 2026-10-27T08:57:34Z
+LD-ALL built wall=314s 2026-10-27T09:02:48Z
+LD-ALL binary 10c0fa64b19d0672c44a8a6a7ba55b1734815da77ec14a9ea0bc6809a6d7ba68 2026-10-27T09:02:49Z
+SMOKE27 ('c2-100', 'BRS192'): mbps=85.75 eng=None ld_pn={'0': [34, 34]} cc_def=False cc_brs=True p0={'dlv_rate': 9442.0, 'jit_us': 86.0, 'q_cwnd': 239099.5, 'q_pace_bps': 79936968.0, 'q_srtt_us': 16764.5, 'rtprop_us': 8992.0, 'rtt_min_us': 13711.5, 'rtt_p10_us': 16675.5, 'rtt_p50_us': 19080.5, 'srtt_us': 18493.0} p1=None status=LIVE
+SMOKE27 ('c8-100', 'DEF512'): mbps=102.072 eng=None ld_pn={'0': [28, 28], '1': [28, 28]} cc_def=True cc_brs=False p0={'dlv_rate': 9613.0, 'jit_us': 77.0, 'q_cwnd': 1042855.5, 'q_pace_bps': 637670448.0, 'q_srtt_us': 35071.0, 'rtprop_us': 10736.0, 'rtt_min_us': 26111.0, 'rtt_p10_us': 31140.0, 'rtt_p50_us': 38851.5, 'srtt_us': 37145.0} p1={'dlv_rate': 1420.5, 'jit_us': 572.0, 'q_cwnd': 587615.0, 'q_pace_bps': 99247576.0, 'q_srtt_us': 65468.5, 'rtprop_us': 38393.0, 'rtt_min_us': 40186.0, 'rtt_p10_us': 50445.0, 'rtt_p50_us': 83821.5, 'srtt_us': 76029.0} status=LIVE
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-10-27T09:03:11Z
+LD-ALL battery start load=1.71 2.19 1.10; io=full avg10=0.72 avg60=0.73 avg300=1.60 total=35398387179 2026-10-27T09:03:11Z
+LD-ALL battery rc=0 wall=1370s 2026-10-27T09:26:01Z
+CHECK27 done=True rows=128/128
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=3.44 2.33 1.77; io=full avg10=0.05 avg60=0.11 avg300=0.23 total=35406857261 2026-10-27T09:26:01Z
+PERSISTED /dev/shm/ld27/run -> /home/VMUSER/ld27/run 2026-10-27T09:26:01Z

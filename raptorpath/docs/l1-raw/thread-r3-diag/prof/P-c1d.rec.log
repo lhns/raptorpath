@@ -1,0 +1,2 @@
+[ perf record: Woken up 470 times to write data ]
+[ perf record: Captured and wrote 121.823 MB /dev/shm/r3prof-a2139/P-c1d.perf.data (7567 samples) ]

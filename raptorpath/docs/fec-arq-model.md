@@ -1630,6 +1630,131 @@ stays at 5–7 ms while Tmin moves 10×: `(1 + q)·L·(RTprop + spread)` lands i
 c2's band, but it needs the link rate L, which nothing measured supplies at
 c2.
 
+**Two candidate laws (status §27–§29).** §27 settled that no sampler reads
+the link under the cap (bbr_rs reads the delivered rate; stock BBR over-reads
+under jitter) and that the loop spread is cap-flat only at c2. Two candidates
+remain that need no link rate. Both are derived here to their fixed points
+before anything is built; one does not survive the derivation.
+
+*(P) An always-on probe gain.* Offer more than the measured delivered rate:
+
+```text
+   cap'  =  (1 + q(δ) + g) · D̂ · τ
+```
+
+with D̂ the delivered rate (any honest sampler) and τ a time. On a
+store-bound sender Little's law gives D̂ = cap/T(cap), T the send-to-release
+loop time, so the map is closed by an identity, not a measurement:
+
+```text
+   τ = T̂ (a loop-time estimate):   cap' = (1 + q + g) · cap                 no interior fixed point; runs to the clamp
+   τ = RTprop:                      cap' = (1 + q + g) · cap · RTprop / T(cap)
+                                    fixed point  T(n*) = (1 + q + g) · RTprop
+```
+
+So P is a delay-ratio setpoint with a constant ratio G = 1 + q + g, and g
+is the unprovenanced gain 2.0 of Section 6.2 returning under another name.
+The ratio it would have to hit is not one number: at the §27 DEF knees
+T(Tp50)/RTprop reads 1.85 (c2, n = 192), 4.1 (c1s, 1 024), 3.3 (c1d, 768)
+and at c8 (384) 2.7 on the fast leg and 1.68 on the slow one, so every
+constant G misses at least three of the four cells. On the same clock c2's
+unloaded ratio (Tp50/RTprop at n = 64: 14.9/7.0 = 2.1) already exceeds its
+knee ratio 1.85, so no G both escapes c2's floor and stops at its knee; and
+RTprop itself reads 7.0–11.4 ms across the c2 sweep rows (the windowed min
+of a jittered path), so a ratio to it is not a stable number there. The
+window is P's only lever (the reliable path has no pacer, Section 6.5), so
+this closure is the only form P can take. **P is closed by the derivation**
+(the Little identity, not a measurement) and is not built.
+It would also make the store cap a window congestion controller with a
+fixed delay target (ADR-0068's question), which is the weaker form of D.
+
+*(D) Close on power, not on a ratio.* What marks the knee at every cell is
+not a delay ratio but the point where an added symbol of store stops buying
+goodput and starts buying only delay. Kleinrock's power [Kleinrock1979]
+— throughput^α over delay, the same power the CoDel setpoint q is derived
+from (RFC 8289 §3.2) — peaks there:
+
+```text
+   n*  =  argmax_n  Π(n) ,      Π(n)  =  D(n)^α(δ) / T(n) ,      α(δ) = b(δ) ∈ [½, 2]
+```
+
+| symbol | provenance |
+|---|---|
+| D(n) | delivered rate over a window (frontier advance ÷ window time; batch granularity) — measured |
+| T(n) | the window median of the per-ack loop-time samples (`record_rtt`), max over live paths (the in-order frontier waits on the slowest) — measured |
+| α(δ) | Kleinrock's generalized power exponent on throughput [Kleinrock1979], mapped to the dial as b(δ) (Section 5.4): Bulk 2, Auto 1, Realtime ½ — a declared mapping, continuous and increasing in δ's b |
+| q(δ) | the step: the cap moves by at most a factor (1 + q) per window, q the CoDel band of this section — cited |
+| window | two rounds of T per dither half: a cap change reaches the delivered rate after one loop (Little's law on the store), so the first round settles and is discarded and the second is measured — derived; a sample-count floor gauges thin windows |
+
+*Transcribed from the §27 DEF ledger* (`docs/l1-raw/loop-diag/p27/ld.log`,
+live DEF rows; goodput mean in Mbit/s, T = max over paths of the row's Tp50,
+ms; Π₂ = goodput²/T):
+
+| cell | n: Π₂ | argmax α=2 (α=1) | DEF knee band | goodput at argmax / Gmax | A_x p50 at argmax / MAIN |
+|---|---|---|---|---|---|
+| c2-100 | 128: 296, **192: 411**, 256: 320, 384: 204 | 192 (192) | [128, 288] | 88.8 / 90.3 | 6.7 / ≈ 74–106 ms |
+| c8-100 | 192: 133, **384: 172**, 512: 124 | 384 (192) | [256, 576] | 102.9 / 102.9 | 16.4 / ≈ 93 ms |
+| c1s-400 | 256: 72.0 k, **384: 83.4 k**, 512: 78.6 k, 1024: 54.7 k | 384 (256) | [683, 1 536] | 632 / 746 | 1.5 / ≈ 14–17 ms |
+| c1d-400 | **384: 71.4 k**, 512: 62.5 k, 768: 56.9 k | ≤ 384, the grid's edge (384) | [512, 1 152] | 604 / 700 | 1.7 / ≈ 20 ms |
+
+Predicted operating points, Bulk: c2 and c8 at their knees; c1s and c1d one
+to two grid steps below the 0.95 knee. That under-shoot is the law choosing,
+not missing: at the receiver-bound cells the last 10–15 % of goodput (the
+receiver's batching tail, status §16 finding 4) costs 3–6× the delay, and a
+power criterion with α = 2 declines it. Against MAIN's own goodput the
+predicted points read 632 against 563–663 (c1s) and 604 against 526–570
+(c1d, status §19/§27), i.e. within or above main, at a tenth of its delay.
+
+The online law (no phase, no mode, no branch on N or on the cell):
+
+```text
+   one period = two windows at fixed n̄:  cap₊ = n̄·(1 + ½q),  then  cap₋ = n̄·(1 − ½q)
+   ê    =  ( ln Π₊ − ln Π₋ ) / ln( (1 + ½q) / (1 − ½q) )                    the power elasticity, Δ ln cap ≈ q fixed
+   n̄'   =  clamp( n̄ · (1 + q)^clamp(ê, −1, 1) ,  floor ,  N·knee )        once per period
+   cap  +=  Σᵢ ε̂ᵢ·Dᵢ·stall(δ, ρ, i)                                          the hole residency, additive
+```
+
+The dither is the excitation the gradient needs (extremum-seeking control of
+a static map [Ariyur2003]): a square wave of amplitude ½q in log-cap,
+always on — not a phase — and gauged so a measurement can show it never
+dominates. n̄ is held for the whole period, so the elasticity divides by the
+known constant ln((1 + ½q)/(1 − ½q)) ≈ q and is well-conditioned by
+construction (updating n̄ every window would let n̄'s own step cancel the
+dither and divide by noise). ê > 0 below the knee (D ∝ n, T flat: ê ≈ α),
+ê < 0 above it (D flat, T ∝ n: ê ≈ −1), so n̄ climbs and descends by at
+most (1 + q) per period and settles in a limit cycle of about ±q around n*;
+the loop gain per period is bounded by the clamp on ê. A period is four
+rounds of T. A floor start would climb ln(n*/10)/ln(1 + q) periods (38 at
+c1s's 384), so n̄ starts from the shipped law's ask at the first refresh;
+the descent from there is ≈ 18 periods at both single-path cells (c1s
+2 048 → 384; c2 ≈ 1 000 → 192): ≈ 0.6 s at c1s (rounds 4–10 ms) and ≈ 3.5 s
+at c2 (rounds shrinking from ≈ 100 to ≈ 19 ms as the queue drains), a third
+or more of a c2 transfer, so the measurement reports latency both over the
+whole transfer and after convergence. A window of BBR's 10 rounds would
+take most of a c2 transfer to converge; that is why the window is derived
+from the loop, not borrowed from a filter length. ρ composes as derived above: the hole residency is
+an additive term outside the power seeker, linear in ρ, both terms computed.
+Bind gauges: floor and N·knee on n̄, the ê clamp, and the dither amplitude.
+
+Failure modes, named before any measurement: (1) noise — at c1s one static
+cap read 45–441 Mbit/s across rows (§27 DEF192), and a window-level
+elasticity may be dominated by it, so n̄ random-walks (gauge: the sign
+agreement of successive ê); (2) the law is an extremum-seeking window
+controller, i.e. the store cap becomes a congestion controller nested under
+quinn's BBR (ADR-0068, open question 12: no stability analysis of the
+nested delay loops); (3) c1d's predicted point sits at the §27 grid's lower
+edge, so its true argmax is not in the data; (4) α(δ) = b(δ) is a declared
+mapping, so the c1s/c1d goodput the law declines is a dial choice the user
+may price differently.
+
+Result (status §29): D as built is NOT-VIABLE, by failure mode (1). The ê
+clamp bound in 51–87 % of periods and successive ê agreed in sign only
+34–55 % of the time, so n̄ random-walked below the predicted point and cost
+goodput at c2 and c1s; where it settled, the location matched the
+prediction and A_x p50 was 5–12× below main. A retry needs a measurement
+window sized from the variance of ln Π, derived and pre-registered anew.
+The code is kept at tag `archive/store-power`, not on main.
+
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
 cap is exactly one BDP per path with zero standing queue, the null candidate
@@ -3210,6 +3335,12 @@ correction density in time and as the placement law's fixed point.
 - [Huang2012] T.-Y. Huang, N. Handigol, B. Heller, N. McKeown, R. Johari,
   "Confused, timid, and unstable: picking a video streaming rate is hard,"
   ACM IMC, 2012.
+- [Kleinrock1979] L. Kleinrock, "Power and deterministic rules of thumb for
+  probabilistic problems in computer communications," ICC 1979 (power as
+  throughput^α / delay; its maximum at the knee).
+- [Ariyur2003] K. B. Ariyur, M. Krstić, *Real-Time Optimization by
+  Extremum-Seeking Control*, Wiley, 2003 (dither-based gradient
+  estimation of a static map).
 - [RFC8289] K. Nichols, V. Jacobson, A. McGregor, J. Iyengar, "Controlled
   Delay Active Queue Management," RFC 8289, 2018.
 - [RFC8985] Y. Cheng, N. Cardwell, N. Dukkipati, P. Jha, "The RACK-TLP Loss

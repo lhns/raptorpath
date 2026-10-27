@@ -1,0 +1,1271 @@
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1893:5
+     |
+1893 |     /// Congestion-aware NACK repair throttle.
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1894 |     let mut nack_congestion = NackCongestionState::new();
+     |     ----------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1897:5
+     |
+1897 |     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1898 |     let mut nack_repairs_this_period: u64 = 0;
+     |     ------------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1899:5
+     |
+1899 | /     /// Cached throttle/ADR-0050 budget state, refreshed every
+1900 | |     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+1901 | |     /// budget inputs move; recomputing per ack would just churn locks).
+     | |________________________________________________________________________^
+1902 |       let mut last_budget_refresh_us: u64 = 0;
+     |       ---------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1905:5
+     |
+1905 | /     /// When the tail sweep last fired (µs) — rearm point. Must advance
+1906 | |     /// on every fire even if the retransmit was skipped (cooldown/budget
+1907 | |     /// exhausted), or a past deadline keeps the timer arm permanently ready
+1908 | |     /// and the select! busy-spins, starving TUN reads.
+     | |_______________________________________________________^
+1909 |       let mut last_tail_sweep_us: u64 = 0;
+     |       ------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1910:5
+     |
+1910 | /     /// The derived recovery round's one-shot mechanism-liveness echo at the
+1911 | |     /// sender site (ACTIVE + DIVERGED). Observation only.
+     | |__________________________________________________________^
+1912 |       let mut derived_round_echo = DerivedRoundEcho::default();
+     |       --------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1934:5
+     |
+1934 | /     /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+1935 | |     /// retained in `sent_store` but uncounted from the flow-control
+1936 | |     /// outstanding (SACKed by the receiver, cumulative frontier not yet
+1937 | |     /// past them). Invariant: subset of `sent_store` keys — maintained by
+1938 | |     /// marking only retained seqs and pruning with the same cumulative
+1939 | |     /// `split_off` twin. Empty whenever the gate is off.
+     | |_________________________________________________________^
+1940 |       let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+     |       ------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1941:5
+     |
+1941 | /     /// DIAG: cumulative count of slots released by the law (mechanism
+1942 | |     /// liveness at the gauge — `srel=cur/cum`).
+     | |________________________________________________^
+1943 |       let mut sack_released_total: u64 = 0;
+     |       ------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1944:5
+     |
+1944 | /     /// Wire v9: the newest `(next_expected, received_above)` pair off the
+1945 | |     /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+1946 | |     /// cap (`store_gate_released`). Stays at its default (no evidence)
+1947 | |     /// whenever the release law is off.
+     | |________________________________________^
+1948 |       let mut above_report = AboveReport::default();
+     |       ---------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused import: `FecBackend`
+  --> raptorpath/src/scheduler/mod.rs:47:18
+   |
+47 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated method `tun::Configuration::name`: Since the API `name` may have an easy name conflict when IDE prompts, it is replaced by `tun_name` for better coding experience
+  --> raptorpath/src/tun/linux/mod.rs:12:10
+   |
+12 |         .name(&config.name)
+   |          ^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:717:46
+    |
+717 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `hint` is never read
+  --> raptorpath/src/control/fec_rate.rs:88:5
+   |
+80 | pub struct FecRateController {
+   |            ----------------- field in this struct
+...
+88 |     hint: ProtocolHint,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+
+warning: method `final_done` is never used
+   --> raptorpath/src/net/recv_block.rs:113:19
+    |
+ 77 | impl RecvDiagBlock {
+    | ------------------ method in this implementation
+...
+113 |     pub(crate) fn final_done(&self) -> bool {
+    |                   ^^^^^^^^^^
+
+warning: method `armed` is never used
+   --> raptorpath/src/net/holddown.rs:224:19
+    |
+195 | impl HoldDownGauge {
+    | ------------------ method in this implementation
+...
+224 |     pub(crate) fn armed(&self) -> bool {
+    |                   ^^^^^
+
+warning: methods `is_empty`, `contains_key`, and `iter` are never used
+   --> raptorpath/src/net/seq_ring.rs:53:12
+    |
+ 41 | impl<V> SeqRing<V> {
+    | ------------------ methods in this implementation
+...
+ 53 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+    |            ^^^^^^^^^^^^
+...
+182 |     pub fn iter(&self) -> impl Iterator<Item = (u64, &V)> + '_ {
+    |            ^^^^
+
+warning: `raptorpath` (lib) generated 17 warnings (run `cargo fix --lib -p raptorpath` to apply 3 suggestions)
+warning: unused variable: `deactivated`
+  --> raptorpath/tests/rtcp_keepalive_test.rs:54:9
+   |
+54 |     let deactivated = sched.check_dead_paths(Duration::from_millis(0));
+   |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_deactivated`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `raptorpath` (test "rtcp_keepalive_test") generated 1 warning (run `cargo fix --test "rtcp_keepalive_test" -p raptorpath` to apply 1 suggestion)
+warning: unused variable: `cwnd1_before`
+   --> raptorpath/tests/multipath_simulation_test.rs:837:9
+    |
+837 |     let cwnd1_before = sched.path(1).unwrap().cwnd;
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cwnd1_before`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `cwnd1_congested`
+   --> raptorpath/tests/multipath_simulation_test.rs:853:9
+    |
+853 |     let cwnd1_congested = sched.path(1).unwrap().cwnd;
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cwnd1_congested`
+
+warning: variable `batch_num` is assigned to, but never used
+  --> raptorpath/tests/sim_pipeline_test.rs:51:9
+   |
+51 |     let mut batch_num = 0u32;
+   |         ^^^^^^^^^^^^^
+   |
+   = note: consider using `_batch_num` instead
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `batch_num` is never read
+   --> raptorpath/tests/sim_pipeline_test.rs:127:9
+    |
+127 |         batch_num += 1;
+    |         ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `total_dropped` is never read
+  --> raptorpath/tests/sim_pipeline_test.rs:26:5
+   |
+23 | struct PipelineRun {
+   |        ----------- field in this struct
+...
+26 |     total_dropped: u32,
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `seq` is never read
+  --> raptorpath/tests/common/mod.rs:79:9
+   |
+76 | pub struct SimPacket {
+   |            --------- field in this struct
+...
+79 |     pub seq: u64,
+   |         ^^^
+   |
+   = note: `SimPacket` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: associated function `new` is never used
+   --> raptorpath/tests/common/mod.rs:124:12
+    |
+123 | impl LinkModel {
+    | -------------- associated function in this implementation
+124 |     pub fn new(capacity_bps: f64, max_queue: usize) -> Self {
+    |            ^^^
+
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:239:12
+    |
+178 | impl SimChannel {
+    | --------------- associated items in this implementation
+...
+239 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+250 |     pub fn with_link(mut self, capacity_bps: f64, max_queue: usize) -> Self {
+    |            ^^^^^^^^^
+...
+256 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+261 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+323 |     pub fn in_flight_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^
+...
+328 |     pub fn ge_mut(&mut self) -> &mut GilbertElliottChannel {
+    |            ^^^^^^
+...
+333 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+338 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+
+warning: struct `ReliableSimChannel` is never constructed
+   --> raptorpath/tests/common/mod.rs:350:12
+    |
+350 | pub struct ReliableSimChannel {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:367:12
+    |
+366 | impl ReliableSimChannel {
+    | ----------------------- associated items in this implementation
+367 |     pub fn new(
+    |            ^^^
+...
+394 |     pub fn datacenter(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^
+...
+407 |     pub fn wifi(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^
+...
+420 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+433 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+446 |     pub fn with_link(mut self, capacity_bps: f64, max_queue: usize) -> Self {
+    |            ^^^^^^^^^
+...
+452 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+457 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+463 |     pub fn send(&mut self, symbol: WireSymbol) -> u32 {
+    |            ^^^^
+...
+526 |     pub fn deliver(&mut self) -> Vec<SimPacket> {
+    |            ^^^^^^^
+...
+545 |     pub fn total_transmissions(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+550 |     pub fn total_unique(&self) -> u64 {
+    |            ^^^^^^^^^^^^
+...
+555 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+...
+560 |     pub fn in_flight_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^
+...
+565 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `make_wire_symbol_sized` is never used
+   --> raptorpath/tests/common/mod.rs:575:8
+    |
+575 | pub fn make_wire_symbol_sized(id: u32, repair: bool, data_size: usize) -> WireSymbol {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `make_wire_symbol` is never used
+   --> raptorpath/tests/common/mod.rs:586:8
+    |
+586 | pub fn make_wire_symbol(id: u32, repair: bool) -> WireSymbol {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `make_source_batch` is never used
+   --> raptorpath/tests/common/mod.rs:591:8
+    |
+591 | pub fn make_source_batch(count: u32) -> Vec<WireSymbol> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `ge_for_target_loss` is never used
+   --> raptorpath/tests/common/mod.rs:607:8
+    |
+607 | pub fn ge_for_target_loss(target_loss: f64, mean_burst_len: f64) -> GilbertElliottChannel {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: struct `TrialStats` is never constructed
+   --> raptorpath/tests/common/mod.rs:621:12
+    |
+621 | pub struct TrialStats {
+    |            ^^^^^^^^^^
+
+warning: associated items `new`, `push`, `mean`, `stddev`, `ci95`, and `fmt_ci` are never used
+   --> raptorpath/tests/common/mod.rs:626:12
+    |
+625 | impl TrialStats {
+    | --------------- associated items in this implementation
+626 |     pub fn new() -> Self {
+    |            ^^^
+...
+632 |     pub fn push(&mut self, val: f64) {
+    |            ^^^^
+...
+636 |     pub fn mean(&self) -> f64 {
+    |            ^^^^
+...
+643 |     pub fn stddev(&self) -> f64 {
+    |            ^^^^^^
+...
+654 |     pub fn ci95(&self) -> f64 {
+    |            ^^^^
+...
+662 |     pub fn fmt_ci(&self) -> String {
+    |            ^^^^^^
+
+warning: `raptorpath` (test "multipath_simulation_test") generated 2 warnings (run `cargo fix --test "multipath_simulation_test" -p raptorpath` to apply 2 suggestions)
+warning: `raptorpath` (test "sim_pipeline_test") generated 14 warnings
+warning: variable does not need to be mutable
+    --> raptorpath/tests/store_cap_sf_bench.rs:4645:21
+     |
+4645 |                 let mut e = MeasEns::run(&geom, arm, feed, acct);
+     |                     ----^
+     |                     |
+     |                     help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `raptorpath` (test "store_cap_sf_bench") generated 1 warning (run `cargo fix --test "store_cap_sf_bench" -p raptorpath` to apply 1 suggestion)
+warning: methods `ge_mut` and `base_delay` are never used
+   --> raptorpath/tests/common/mod.rs:328:12
+    |
+178 | impl SimChannel {
+    | --------------- methods in this implementation
+...
+328 |     pub fn ge_mut(&mut self) -> &mut GilbertElliottChannel {
+    |            ^^^^^^
+...
+338 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `base_delay` is never used
+   --> raptorpath/tests/common/mod.rs:555:12
+    |
+366 | impl ReliableSimChannel {
+    | ----------------------- method in this implementation
+...
+555 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+
+warning: `raptorpath` (test "bench_suite") generated 5 warnings (3 duplicates)
+warning: associated function `new` is never used
+   --> raptorpath/tests/common/mod.rs:124:12
+    |
+123 | impl LinkModel {
+    | -------------- associated function in this implementation
+124 |     pub fn new(capacity_bps: f64, max_queue: usize) -> Self {
+    |            ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:200:12
+    |
+178 | impl SimChannel {
+    | --------------- associated items in this implementation
+...
+200 |     pub fn datacenter(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^
+...
+226 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+239 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+250 |     pub fn with_link(mut self, capacity_bps: f64, max_queue: usize) -> Self {
+    |            ^^^^^^^^^
+...
+256 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+261 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+323 |     pub fn in_flight_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^
+...
+328 |     pub fn ge_mut(&mut self) -> &mut GilbertElliottChannel {
+    |            ^^^^^^
+...
+333 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+338 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+
+warning: `raptorpath` (test "sim_nack_test") generated 7 warnings (5 duplicates)
+warning: `raptorpath` (test "sim_reorder_test") generated 7 warnings (7 duplicates)
+warning: fields `rate`, `pooled_us`, `n_holes`, `span_p50`, and `span_max` are never read
+   --> raptorpath/tests/slack_bench.rs:317:5
+    |
+315 | struct CellOut {
+    |        ------- fields in this struct
+316 |     rate_name: &'static str,
+317 |     rate: f64,
+    |     ^^^^
+...
+329 |     pooled_us: u64,
+    |     ^^^^^^^^^
+...
+334 |     n_holes: usize,
+    |     ^^^^^^^
+...
+338 |     span_p50: u64,
+    |     ^^^^^^^^
+339 |     span_max: u64,
+    |     ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `raptorpath` (test "slack_bench") generated 1 warning
+warning: unused variable: `gaps`
+  --> raptorpath/tests/window_nack_repair_test.rs:41:9
+   |
+41 |     let gaps = vec![(gap_start, gap_end)];
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_gaps`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `raptorpath` (test "window_nack_repair_test") generated 1 warning (run `cargo fix --test "window_nack_repair_test" -p raptorpath` to apply 1 suggestion)
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:200:12
+    |
+178 | impl SimChannel {
+    | --------------- associated items in this implementation
+...
+200 |     pub fn datacenter(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^
+...
+213 |     pub fn wifi(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^
+...
+226 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+239 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+256 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+261 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+323 |     pub fn in_flight_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^
+...
+333 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+338 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:394:12
+    |
+366 | impl ReliableSimChannel {
+    | ----------------------- associated items in this implementation
+...
+394 |     pub fn datacenter(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^
+...
+407 |     pub fn wifi(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^
+...
+420 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+433 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+452 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+457 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+550 |     pub fn total_unique(&self) -> u64 {
+    |            ^^^^^^^^^^^^
+...
+555 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+...
+565 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+
+warning: method `fmt_ci` is never used
+   --> raptorpath/tests/common/mod.rs:662:12
+    |
+625 | impl TrialStats {
+    | --------------- method in this implementation
+...
+662 |     pub fn fmt_ci(&self) -> String {
+    |            ^^^^^^
+
+warning: unused variable: `lo_legacy`
+   --> raptorpath/src/control/fec_rate/tests.rs:836:9
+    |
+836 |     let lo_legacy = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, false);
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lo_legacy`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:717:46
+    |
+717 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+
+warning: value assigned to `src` is never read
+   --> raptorpath/src/net/walldiag.rs:379:23
+    |
+379 |         let mut src = 1_000u64;
+    |                       ^^^^^^^^ this value is reassigned later and never used
+...
+382 |             src = t; // new data every iteration
+    |             ------- `src` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `contains_key` is never used
+  --> raptorpath/src/net/seq_ring.rs:74:12
+   |
+41 | impl<V> SeqRing<V> {
+   | ------------------ method in this implementation
+...
+74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: `raptorpath` (test "gate_suite") generated 6 warnings (3 duplicates)
+warning: `raptorpath` (lib test) generated 15 warnings (10 duplicates) (run `cargo fix --lib -p raptorpath --tests` to apply 2 suggestions)
+warning: unused import: `Clock`
+  --> raptorpath/tests/sim_copa_test.rs:10:29
+   |
+10 | use raptorpath::scheduler::{Clock, MockClock, PathState, Scheduler};
+   |                             ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable `sent` is assigned to, but never used
+  --> raptorpath/tests/sim_copa_test.rs:43:9
+   |
+43 |     let mut sent = 0u32;
+   |         ^^^^^^^^
+   |
+   = note: consider using `_sent` instead
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `sent` is never read
+  --> raptorpath/tests/sim_copa_test.rs:47:13
+   |
+47 |             sent += 1;
+   |             ^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `wired_cwnd`
+   --> raptorpath/tests/sim_copa_test.rs:272:9
+    |
+272 |     let wired_cwnd = sched.path(2).unwrap().cwnd;
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wired_cwnd`
+
+warning: fields `symbol` and `seq` are never read
+  --> raptorpath/tests/common/mod.rs:78:9
+   |
+76 | pub struct SimPacket {
+   |            --------- fields in this struct
+77 |     pub delivery_time: Instant,
+78 |     pub symbol: WireSymbol,
+   |         ^^^^^^
+79 |     pub seq: u64,
+   |         ^^^
+   |
+   = note: `SimPacket` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:213:12
+    |
+178 | impl SimChannel {
+    | --------------- associated items in this implementation
+...
+213 |     pub fn wifi(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^
+...
+226 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+239 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+250 |     pub fn with_link(mut self, capacity_bps: f64, max_queue: usize) -> Self {
+    |            ^^^^^^^^^
+...
+256 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+261 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+323 |     pub fn in_flight_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^
+...
+328 |     pub fn ge_mut(&mut self) -> &mut GilbertElliottChannel {
+    |            ^^^^^^
+...
+333 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+338 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+
+warning: `raptorpath` (test "sim_copa_test") generated 12 warnings (6 duplicates) (run `cargo fix --test "sim_copa_test" -p raptorpath` to apply 2 suggestions)
+warning: unused variable: `total`
+   --> raptorpath/tests/scheduler_test.rs:156:9
+    |
+156 |     let total: usize = result.iter().map(|(_, s)| s.len()).sum();
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_total`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `raptorpath` (test "scheduler_test") generated 1 warning (run `cargo fix --test "scheduler_test" -p raptorpath` to apply 1 suggestion)
+    Finished `test` profile [optimized + debuginfo] target(s) in 6.30s
+     Running unittests src/lib.rs (/home/VMUSER/ld27/target-tests/debug/deps/raptorpath-060d44938d87399e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 579 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/home/VMUSER/ld27/target-tests/debug/deps/raptorpath-99c8b3d6512cfc36)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ablation_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/ablation_bench-8cbe3640e9f310b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/ack_delivery.rs (/home/VMUSER/ld27/target-tests/debug/deps/ack_delivery-209c6779fe411803)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/ack_merge_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/ack_merge_loopback-676f80dda09ebd81)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/ack_merge_optout.rs (/home/VMUSER/ld27/target-tests/debug/deps/ack_merge_optout-ab601766f1e5a3b0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/ack_wake_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/ack_wake_loopback-4a1df59c9050fbc5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/ackdiag_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/ackdiag_loopback-187f243bee5d8576)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/ackdiag_repair_recon.rs (/home/VMUSER/ld27/target-tests/debug/deps/ackdiag_repair_recon-a161da90ebab61bb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/alloc_per_symbol.rs (/home/VMUSER/ld27/target-tests/debug/deps/alloc_per_symbol-cb9d8252356872e2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/anchor_rate_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/anchor_rate_bench-ebf4a2966b30e444)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/backpressure.rs (/home/VMUSER/ld27/target-tests/debug/deps/backpressure-c5fa214917dcd76a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/bench_suite.rs (/home/VMUSER/ld27/target-tests/debug/deps/bench_suite-f9b8bdd323e747aa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/block_profile_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/block_profile_test-230de50a3c87ac5d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/chi_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/chi_reachability-8a00eeb539c1f259)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/composed_cap_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/composed_cap_loopback-cebefcfac5bba96c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/config_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/config_test-c082f2c6ec3d6bcf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/congestion_control.rs (/home/VMUSER/ld27/target-tests/debug/deps/congestion_control-60a8fc269b0ef3d8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+
+     Running tests/congestion_production_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/congestion_production_test-fa4408717084f174)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+     Running tests/control_loop.rs (/home/VMUSER/ld27/target-tests/debug/deps/control_loop-e3b0a29cc7c0a5a8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+     Running tests/copa_sole_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/copa_sole_loopback-0beb55698e06a8a8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cpuprof_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/cpuprof_reachability-3a78a2aaa8d8853f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/emit_batch_default_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/emit_batch_default_loopback-d52a89c5caf4fad0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/emit_batch_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/emit_batch_loopback-0d955ba0b39d01e0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/emit_batch_scope_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/emit_batch_scope_loopback-f4121a87dbe120ea)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/estimator_production_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/estimator_production_test-c956a91b110f0550)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/eta_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/eta_reachability-a52c92b040b2082f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/fcause_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/fcause_reachability-4b1e1bbb9fedd9cd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/fec_backend_switching_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/fec_backend_switching_test-b354233f188560ef)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/fec_window_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/fec_window_test-4f7a5ecf578bf9d3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+     Running tests/formula_agreement.rs (/home/VMUSER/ld27/target-tests/debug/deps/formula_agreement-c676a515d0ffc77d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/gate_suite.rs (/home/VMUSER/ld27/target-tests/debug/deps/gate_suite-1a37bc7a8fec620d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+     Running tests/gauge_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/gauge_reachability-322a09ceb015d9ee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/gen_decode_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/gen_decode_bench-9ad6a7b57750ace3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/gen_substrate_l0.rs (/home/VMUSER/ld27/target-tests/debug/deps/gen_substrate_l0-9970e50b1d9a643d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/gilbert_elliott_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/gilbert_elliott_test-54884015b194aacf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/holddown_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/holddown_reachability-aca160efb6d1596f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/holeclass_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/holeclass_reachability-b746e82c55e6af0d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/honest_inputs_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/honest_inputs_bench-933d2522fcdf5a11)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/inbound_pool_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/inbound_pool_reachability-0ff1ce2fbde9b8de)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/io_owner_topology.rs (/home/VMUSER/ld27/target-tests/debug/deps/io_owner_topology-2fc2e263c9c23388)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/lat_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/lat_reachability-bd30a978770aaaec)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/late_rank_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/late_rank_reachability-7b5ee2ebab51fd89)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/lock_order_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/lock_order_loopback-c530de546a5dde69)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/monitoring_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/monitoring_test-91138491dddb0fff)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/mtu_blackhole_wedge.rs (/home/VMUSER/ld27/target-tests/debug/deps/mtu_blackhole_wedge-e83d59c276f41934)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/multipath_simulation_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/multipath_simulation_test-1065ba7c93741799)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/perf_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/perf_loopback-58b237083640fae9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/place_arms_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/place_arms_reachability-e3e3383fcd7e0ccb)
+
+running 1 test
+test the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 3.94s
+
+     Running tests/protocol_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/protocol_test-332727277ee06b14)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/quad_path_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/quad_path_loopback-14b544a859d8b85c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/rcvbuf_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/rcvbuf_reachability-54adfbf9208aa595)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/readout_newline.rs (/home/VMUSER/ld27/target-tests/debug/deps/readout_newline-65f4a97ac43bbd57)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/recov_mp_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/recov_mp_loopback-34d5e4a612a3b035)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/recovery_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/recovery_bench-0f9da7b3a921e94b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running tests/recv_alloc_bound.rs (/home/VMUSER/ld27/target-tests/debug/deps/recv_alloc_bound-2c0770e4a46d36c1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/recvlaw_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/recvlaw_reachability-db9c3d3a9f8049b2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/refresh_floor_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/refresh_floor_reachability-2d8a7b1112c1e3ba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/reliable_delivery_hold.rs (/home/VMUSER/ld27/target-tests/debug/deps/reliable_delivery_hold-50200c14d6f89093)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/rfa_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/rfa_reachability-d74308e8ee97c755)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/routing_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/routing_test-a464eb2243258acb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/rtcp_keepalive_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/rtcp_keepalive_test-68e60dd0f17984fb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/runtime_obs_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/runtime_obs_reachability-ee178916705460a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/scheduler_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/scheduler_test-d7d28cf95032047a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/shutdown_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/shutdown_test-87b842a933172f06)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/sigma_candidates_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/sigma_candidates_reachability-9f36d1724a0c9bd6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/sigma_diag_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/sigma_diag_reachability-b2f28142011f1905)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/sim_copa_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/sim_copa_test-22bf2ab2159514ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/sim_nack_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/sim_nack_test-d44073d85ac80e80)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/sim_pipeline_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/sim_pipeline_test-778a8861f1cd70d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/sim_reorder_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/sim_reorder_test-b698b3dddd3bdfca)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/slack_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/slack_bench-df041a152deb605e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+     Running tests/store_cap_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/store_cap_bench-63cccdabd1866805)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/store_cap_sf_bench.rs (/home/VMUSER/ld27/target-tests/debug/deps/store_cap_sf_bench-49b39118383c0008)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
+
+     Running tests/succ_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/succ_reachability-be72405efffbb459)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/sum_cap_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/sum_cap_loopback-1e2676586f190714)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/taper_emission_l0.rs (/home/VMUSER/ld27/target-tests/debug/deps/taper_emission_l0-920540839fce928d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/three_term_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/three_term_loopback-27bab4ab0ff6f2d8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/tlag_reachability.rs (/home/VMUSER/ld27/target-tests/debug/deps/tlag_reachability-433d08d065d4172b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/unified_l0.rs (/home/VMUSER/ld27/target-tests/debug/deps/unified_l0-1aefa103fd6a04ff)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/unified_stream_l0.rs (/home/VMUSER/ld27/target-tests/debug/deps/unified_stream_l0-bdf9e468bc0fa3c5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/walldiag_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/walldiag_loopback-7ae8c900c97811f6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/window_nack_repair_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/window_nack_repair_test-a21dccbfe38af71c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/window_realworld_recovery_test.rs (/home/VMUSER/ld27/target-tests/debug/deps/window_realworld_recovery_test-841a5c1f2280658f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/wire_compact_loopback.rs (/home/VMUSER/ld27/target-tests/debug/deps/wire_compact_loopback-6701e6da16b0bebd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+   Doc-tests raptorpath
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: 1 warning emitted
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

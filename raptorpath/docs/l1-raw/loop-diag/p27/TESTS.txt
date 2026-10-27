@@ -1,0 +1,9 @@
+TEST main rc=0 wall=1522s passed=1111 failed=0 ignored=50 binaries=95 cmd=[timeout 7200 /home/VMUSER/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=4s passed=0 failed=0 ignored=0 binaries=1 cmd=[timeout 3600 /home/VMUSER/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=119s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE timeout 3600 /home/VMUSER/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=101 wall=2782s passed=969 failed=1 ignored=49 binaries=86 cmd=[timeout 7200 /home/VMUSER/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+test the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual ... FAILED
+---- the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual stdout ----
+FLAKE debug-witness the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual (passed on the immediate solo re-run)
+TEST parsers rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py]
+IDENTITY-PANICS 0

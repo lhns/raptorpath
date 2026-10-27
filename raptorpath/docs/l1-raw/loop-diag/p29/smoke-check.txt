@@ -1,0 +1,3 @@
+SMOKE29 ('c2-100', 'PWR'): mbps=86.677 periods=92 conv=91 conv_t=9.22 nbar_post=162.1 nbar_final=147.4 floor_pin=0.0 knee_pin=0.0 sign=0.527 ld_pn={'0': [33, 33]} status=LIVE
+SMOKE29 ('c1s-400', 'PWR'): mbps=435.924 periods=266 conv=265 conv_t=7.34 nbar_post=488.1 nbar_final=443.7 floor_pin=0.0 knee_pin=0.0 sign=0.494 ld_pn={'0': [26, 26]} status=LIVE
+SMOKE-PASS
