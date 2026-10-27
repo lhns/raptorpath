@@ -1,0 +1,43 @@
+== per-row table (client; E = p99 - min, us) ==
+tag rt lag_min lag_p99 E_lag | os_n os_min os_p99 E_os os_skip | rd_us/s | sender_polls txsec_iters | status
+b1-s42-rt2 rt2 529 2070 1541 | 859 39 1061 1022 0 | 52111 | 135 11875 | live
+b1-s7-rt2 rt2 517 1902 1385 | 936 27 435 408 0 | 33952 | 60 12585 | live
+b2-s42-rt2 rt2 788 2391 1603 | 837 33 942 909 0 | 41444 | 61 12552 | live
+b2-s7-rt2 rt2 949 2045 1096 | 844 15 932 917 0 | 42915 | 60 12471 | live
+b3-s42-rt2 rt2 972 2105 1133 | 841 23 337 314 0 | 40620 | 63 12358 | live
+b3-s7-rt2 rt2 624 2317 1693 | 799 36 1494 1458 0 | 49388 | 61 12449 | live
+rows=6 live=6 live_rt2=6 live_rt1=0 witness_fail=0
+== (a) OS reference clock vs the [LAG] tail (client, live RTOBS=2 rows) ==
+live_rt2=6
+OUTCOME-A UNSETTLED-INSTRUMENT
+== (b) the sender's long polls (client task=sender [LPOLL], live RTOBS=2 rows) ==
+sender_polls=440
+iters_per_poll >=1ms: n=440 p50=3 p90=5
+iters_per_poll >=10ms: n=0 p50=- p90=-
+wall_share >=1ms: emit=0.403 ackadv=0.184 arm_nack=0.141 sack=0.123 other=0.049 arm_in=0.048 in=0.024 pre=0.016 post=0.005 nbud=0.002 pace=0.002 gen=0.002 res=0.001 arm_tail=0.000 idle=0.000 arm_def=0.000 arm_pack=0.000 arm_req=0.000
+wall_share >=10ms: (none)
+outcome basis: polls >=1ms (fewer than 20 polls >= 10 ms); p90_iters=5 top=emit(0.403) other=0.049
+== [TXSEC] xfer, pooled over the live RTOBS=2 client rows (ns share of all sections) ==
+sec=select(await) us=44443756 share=0.867 n=74291 max_us=99123
+sec=emit us=2432436 share=0.047 n=15459 max_us=6438
+sec=arm_nack us=1290823 share=0.025 n=74291 max_us=6840
+sec=arm_in us=1077405 share=0.021 n=50323 max_us=5250
+sec=sack us=943283 share=0.018 n=74290 max_us=2263
+sec=ackadv us=303642 share=0.006 n=74290 max_us=5534
+sec=pre us=203472 share=0.004 n=74290 max_us=747
+sec=flush(await) us=169155 share=0.003 n=74290 max_us=741
+sec=in us=121135 share=0.002 n=74290 max_us=2405
+sec=post us=75008 share=0.001 n=74290 max_us=116
+sec=pace us=70699 share=0.001 n=74290 max_us=212
+sec=nbud us=63557 share=0.001 n=74291 max_us=261
+sec=gen us=57884 share=0.001 n=74290 max_us=114
+sec=res us=23327 share=0 n=66644 max_us=106
+sec=idle us=4596 share=0 n=7647 max_us=38
+sec=arm_tail us=635 share=0 n=413 max_us=30
+sec=arm_def us=0 share=0 n=0 max_us=0
+sec=arm_pack us=0 share=0 n=0 max_us=0
+sec=arm_req us=0 share=0 n=0 max_us=0
+OUTCOME-B UNBOUNDED-PER-WAKE(emit)
+PERTURB E_lag_med(rt2)/E_lag_med(rt1)=- ok (n rt1=0 rt2=6)
+WITNESS-FAIL rows excluded: 0
+IO-COVARIATE live_rt2_rows_with_io_full_avg10>=20: 0; flagged outliers: 0

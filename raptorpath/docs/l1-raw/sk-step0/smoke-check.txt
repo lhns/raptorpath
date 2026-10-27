@@ -1,0 +1,14 @@
+ok   client [LAGRAW]
+ok   client [LPOLL] summary
+ok   client [TASK] max_poll_us
+ok   server [LAGRAW]
+ok   server [LPOLL] summary
+ok   server [TASK] max_poll_us
+ok   client [LAG] xfer min_us
+ok   stat samples >= 20 (102)
+ok   client [OSLAG] xfer with min_us
+ok   client [OSLAGRAW]
+ok   client [TXSEC] iters>0
+ok   client [LPOLL] task=sender entries (100) carry iters= and secs=
+ok   client [THR] os lines (8) carry run_delay_us=
+SMOKE-PASS

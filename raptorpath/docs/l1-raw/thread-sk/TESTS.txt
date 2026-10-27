@@ -1,0 +1,6 @@
+TEST main rc=0 wall=1472s passed=1127 failed=0 ignored=50 binaries=95 cmd=[/home/VMUSER/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/VMUSER/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=124s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/VMUSER/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=0 wall=2243s passed=986 failed=0 ignored=49 binaries=86 cmd=[/home/VMUSER/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+TEST parsers rc=0 wall=1s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py && python3 test_threadsk_parse.py]
+IDENTITY-PANICS 0

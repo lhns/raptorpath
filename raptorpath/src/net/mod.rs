@@ -1937,6 +1937,15 @@ async fn run_window_sender(
     /// marking only retained seqs and pruning with the same cumulative
     /// `split_off` twin. Empty whenever the gate is off.
     let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+    // Intervals of `sack_released`'s source ranges already processed: lets the
+    // drain visit only what a report adds (`SackMemo`); pruned with the set.
+    let mut sack_memo = SackMemo::new();
+    // `[SACKI]` witness (RWM_DIAG): plain locals, always counted.
+    let mut sacki_reports: u64 = 0;
+    let mut sacki_ranges: u64 = 0;
+    let mut sacki_visited: u64 = 0;
+    let mut sacki_newly: u64 = 0;
+    let mut sacki_last_us: u64 = 0;
     /// DIAG: cumulative count of slots released by the law (mechanism
     /// liveness at the gauge — `srel=cur/cum`).
     let mut sack_released_total: u64 = 0;
@@ -2164,7 +2173,7 @@ async fn run_window_sender(
     // time when `[DIAG]` (which keeps its own) is off.
     let mut wall_resolved_us: u64 = gd_last_us;
     // Scratch for the SACK drain's newly-released seqs (reused across
-    // iterations; `sack_release_mark_into` clears it per range).
+    // iterations; `SackMemo::mark_into` clears it per range).
     let mut sack_newly: Vec<u64> = Vec::new();
     // Threading P1, D11: ONE tail-sweep `Sleep` for the life of the loop,
     // `reset()` when the deadline moves (compared as the µs deadline, not
@@ -2264,6 +2273,7 @@ async fn run_window_sender(
         // input arm of the `select!`), so a report is on this channel by the
         // next loop top after its ack.
         while let Ok(report) = sack_rx.try_recv() {
+            sacki_reports += 1;
             if pol.store_sack_release_on {
                 // v9: the count the gate converges on past the SACK cap.
                 above_report.fold(report.next_expected, report.received_above);
@@ -2280,13 +2290,16 @@ async fn run_window_sender(
                     // clocks, source_path_map) until the cumulative
                     // frontier passes. sack_release_mark skips seqs
                     // already released — no double-release.
-                    sack_release_mark_into(
+                    sack_memo.mark_into(
                         &st.sent_store,
                         &mut sack_released,
                         start,
                         end,
                         &mut sack_newly,
+                        &mut sacki_visited,
                     );
+                    sacki_ranges += 1;
+                    sacki_newly += sack_newly.len() as u64;
                     sack_released_total += sack_newly.len() as u64;
                     if pol.percap_track {
                         for &k in &sack_newly {
@@ -2606,6 +2619,19 @@ async fn run_window_sender(
             if now.saturating_sub(shedh_last_us) > 1_000_000 {
                 shedh_last_us = now;
                 crate::readout!("{}", shedh_report_line());
+            }
+        }
+        // `[SACKI]` — the incremental SACK marker's witness (status §26
+        // finding 1): reports/ranges drained, retained seqs visited, seqs
+        // newly marked. Same 1 s cadence, cumulative, last line wins.
+        if gates.diag {
+            let now = now_us();
+            if now.saturating_sub(sacki_last_us) > 1_000_000 {
+                sacki_last_us = now;
+                crate::readout!(
+                    "[SACKI] reports={} ranges={} visited={} newly={}",
+                    sacki_reports, sacki_ranges, sacki_visited, sacki_newly
+                );
             }
         }
         // `[CHI]` — the completion-exposure gauge (paper §4.6), same 1 s
@@ -3602,6 +3628,7 @@ async fn run_window_sender(
             req_emitted: &mut req_emitted,
             req_at_report: &mut req_at_report,
             sack_released: &mut sack_released,
+            sack_memo: &mut sack_memo,
             prev_ack: &mut prev_ack,
             c8c_last_ack_adv_us: &mut c8c_last_ack_adv_us,
             nack_repairs_this_period: &mut nack_repairs_this_period,
@@ -3849,6 +3876,8 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod sack_memo_tests;
 #[cfg(test)]
 mod hotpath_pin;
 
