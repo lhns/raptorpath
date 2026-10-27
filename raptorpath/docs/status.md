@@ -7155,8 +7155,8 @@ the slow path p1 carried no RTT samples in ≥ 4 post-warm-up windows (the
 placement sent it nothing at those caps), and one at `c1d-400` (DEF768 s42,
 p0 had 2 windows). They are void per the witness rule; c8 is scored on the
 remaining points (DEF n = 256 and BRS n = 192–384 have no live row). The
-score file's `ROWS` and `VOID` tables print empty for plan 27 (a display
-fault in `score27`; the statuses above are read from the `LDROW` lines).
+score file's `ROWS` and `VOID` tables list them (an earlier note here called
+them empty; that was a filter in the reader's extract, not the parser).
 
 *Q1, the L source (bbr_rs rate ÷ link, BRS rows).*
 
