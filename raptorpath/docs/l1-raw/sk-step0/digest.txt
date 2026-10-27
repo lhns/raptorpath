@@ -1,0 +1,33 @@
+== per-row table (client primary; E = p99 - min, us) ==
+tag rt n p50 p99 min max E | late ovl F | lpw/s steal_frac pBusy>=5 | srv_E srv_F | asl_inv asl_none | status
+b1-s42-rt2 rt2 857 1140 2070 529 11782 1541 | 180 7 0.04 | 0.0322 0.0109 0 | - 0.16 | 25787 146005 | live
+b1-s7-rt2 rt2 936 814 1902 517 4564 1385 | 47 4 0.09 | 0.0113 0.0034 0 | - 0.04 | 14974 108442 | live
+b2-s42-rt2 rt2 836 1046 2391 788 9027 1603 | 41 4 0.1 | 0.0124 0.0024 0 | - 0.06 | 15247 108003 | live
+b2-s7-rt2 rt2 845 1200 2045 949 3926 1096 | 29 1 0.03 | 0.0113 0.0028 0 | - 0.24 | 17682 103111 | live
+b3-s42-rt2 rt2 841 1257 2105 972 4865 1133 | 36 5 0.14 | 0.0127 0.0065 0 | - 0.27 | 22102 118322 | live
+b3-s7-rt2 rt2 799 851 2317 624 4558 1693 | 32 3 0.09 | 0.0152 0.0036 0 | - 0.17 | 28573 125022 | live
+rows=6 live=6 live_rt2=6 live_rt1=0 witness_fail=0
+== pooled over live RTOBS=2 rows (client) ==
+== tercile split by client E: high=2 rows, low=2 rows ==
+high: E_med=1648 lpw_s_med=0.0138 steal_frac_med=0.003 pBusy5_med=0
+low: E_med=1114 lpw_s_med=0.012 steal_frac_med=0.00465 pBusy5_med=0
+== per-task share of overlapped late ticks ==
+(none)
+== max_poll_us per task (run-cumulative, client, max over live RTOBS=2 rows) ==
+task=sender max_poll_us=9231
+task=owner-client-p0 max_poll_us=6111
+task=qep-client-p0 max_poll_us=6060
+task=owner-client-p1 max_poll_us=6056
+task=qconn-client-p0 max_poll_us=6019
+task=qconn-client-p1 max_poll_us=5516
+task=perf max_poll_us=4615
+task=qep-client-p1 max_poll_us=3234
+task=receiver max_poll_us=327
+task=report max_poll_us=73
+task=clock-gap max_poll_us=41
+task=ctrlfast max_poll_us=15
+RTOBS-COMPARE client E_med rt1=- rt2=1463 p99_med rt1=- rt2=2088 (n rt1=0 rt2=6)
+PHASE-OFFSET client min_us min=517 max=972 spread=455 spearman_rho(min_us,p50)=0.829 n=6 (finding A predicts a wide spread and rho >= 0.6)
+PERTURB E_med(rt2)/E_med(rt1)=- ok
+WITNESS-FAIL rows excluded: 0
+OUTCOME UNSETTLED-INSTRUMENT

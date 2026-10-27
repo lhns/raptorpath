@@ -7088,3 +7088,37 @@ battery, same session.)**
     predicted.
 - *Abort causes.* §21's table plus `ABORT-ONDISK`. The budget is launch +
   4 h.
+
+### 28. Step 0 — result (diagnostic; ships nothing)
+
+Read 2026-10-27 against step 0's rule. **The per-wake bound is DROPPED:
+NEW = SK.** Under SK the client sender logged **no** poll ≥ 10 ms in any of
+the 6 c8 rows; the rule kept the bound only for a median ≥ 1 per row.
+
+*Session.* SK binary `c3312f5a…f99d2c` (`12ec8d5`). Built fresh on disk and
+run from `/dev/shm/sk0` via `lagdiag2_run.sh` (`LG2_BLOCKS=3 LG2_RT1=0`).
+The detached waiter retried from 10:12Z behind §27's locked suite and ran at
+10:53–10:59Z.
+- In-session tests: 53 passed.
+- Smoke passed. 6 of 6 rows live, with io `full avg10` ≤ 3.
+- Exit state: 0 `raptorpath`, 0 `rp-*`. The VM dirs were removed.
+- Ledgers: `docs/l1-raw/sk-step0/`.
+
+*Readings* (client, 6 rows; the §26 numbers for contrast are cross-session,
+report-only):
+
+| quantity | §26 (MAIN, 24 rows) | SK, step 0 (6 rows) |
+|---|---|---|
+| sender polls ≥ 1 ms per row | ≈ 900 | ≈ 73 (60–135) |
+| sender polls ≥ 10 ms, total | 195 | **0** |
+| `[TXSEC]` `sack` share of sender wall / max | 0.23 / 19.9 ms | 0.018 / 2.3 ms |
+| `[SACKI]` visited / newly | — | equal on every line (zero redundant visits) |
+| client E_lag | 1370–4113 µs (median ≈ 3200) | 1096–1693 µs (median ≈ 1460) |
+
+The digest's own `OUTCOME-B` line reads `UNBOUNDED-PER-WAKE(emit)`. That is
+§26's rule applied to the polls ≥ 1 ms (p90 of 5 iterations per poll, with
+emission the largest share). It is not step 0's rule, which reads polls
+≥ 10 ms and finds none. It is recorded as a reading. A sender poll is now
+bounded at a few ms of real emission work, which is the Law-0 burst doing
+its job. `OUTCOME-A` reads `UNSETTLED-INSTRUMENT` (6 < 18 rows), as expected
+for this size.

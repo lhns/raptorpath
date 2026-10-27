@@ -1,0 +1,301 @@
+   Compiling zerocopy v0.8.42
+   Compiling syn v2.0.117
+   Compiling serde v1.0.228
+   Compiling getrandom v0.3.4
+   Compiling regex-automata v0.4.14
+   Compiling crossbeam-epoch v0.9.18
+   Compiling either v1.15.0
+   Compiling rayon-core v1.13.0
+   Compiling rand_core v0.9.5
+   Compiling crossbeam-deque v0.8.6
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-backend v0.3.7
+   Compiling itertools v0.10.5
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling plotters-svg v0.3.7
+   Compiling walkdir v2.5.0
+   Compiling plotters v0.3.7
+   Compiling rayon v1.11.0
+   Compiling is-terminal v0.4.17
+   Compiling anes v0.1.6
+   Compiling criterion-plot v0.5.0
+   Compiling oorandom v11.1.5
+   Compiling matchers v0.2.0
+   Compiling regex v1.12.3
+   Compiling zerocopy-derive v0.8.42
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.6.1
+   Compiling tracing-attributes v0.1.31
+   Compiling thiserror-impl v2.0.18
+   Compiling tokio v1.50.0
+   Compiling tracing v0.1.44
+   Compiling nalgebra-macros v0.2.2
+   Compiling thiserror v2.0.18
+   Compiling clap_derive v4.6.0
+   Compiling axum-core v0.5.6
+   Compiling clap v4.6.0
+   Compiling quinn-udp v0.5.14
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling tinytemplate v1.2.1
+   Compiling serde_urlencoded v0.7.1
+   Compiling bincode v1.3.3
+   Compiling toml_edit v0.22.27
+   Compiling tracing-subscriber v0.3.23
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling hyper v1.8.1
+   Compiling rand_chacha v0.9.0
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.5
+   Compiling rand v0.9.2
+   Compiling fastbloom v0.14.1
+   Compiling rand_distr v0.4.3
+   Compiling ciborium-ll v0.2.2
+   Compiling nalgebra v0.32.6
+   Compiling quinn-proto v0.11.14
+   Compiling ciborium v0.2.2
+   Compiling hyper-util v0.1.20
+   Compiling tokio-stream v0.1.18
+   Compiling tokio-util v0.7.18
+   Compiling tower v0.5.3
+   Compiling axum v0.8.8
+   Compiling tokio-test v0.4.5
+   Compiling criterion v0.5.1
+   Compiling quinn v0.11.9
+   Compiling tun v0.7.22
+   Compiling toml v0.8.23
+   Compiling statrs v0.17.1
+   Compiling raptorpath v0.1.0 (/home/VMUSER/sk0/src/raptorpath)
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1892:5
+     |
+1892 |     /// Congestion-aware NACK repair throttle.
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1893 |     let mut nack_congestion = NackCongestionState::new();
+     |     ----------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1896:5
+     |
+1896 |     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1897 |     let mut nack_repairs_this_period: u64 = 0;
+     |     ------------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1898:5
+     |
+1898 | /     /// Cached throttle/ADR-0050 budget state, refreshed every
+1899 | |     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+1900 | |     /// budget inputs move; recomputing per ack would just churn locks).
+     | |________________________________________________________________________^
+1901 |       let mut last_budget_refresh_us: u64 = 0;
+     |       ---------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1904:5
+     |
+1904 | /     /// When the tail sweep last fired (µs) — rearm point. Must advance
+1905 | |     /// on every fire even if the retransmit was skipped (cooldown/budget
+1906 | |     /// exhausted), or a past deadline keeps the timer arm permanently ready
+1907 | |     /// and the select! busy-spins, starving TUN reads.
+     | |_______________________________________________________^
+1908 |       let mut last_tail_sweep_us: u64 = 0;
+     |       ------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1909:5
+     |
+1909 | /     /// The derived recovery round's one-shot mechanism-liveness echo at the
+1910 | |     /// sender site (ACTIVE + DIVERGED). Observation only.
+     | |__________________________________________________________^
+1911 |       let mut derived_round_echo = DerivedRoundEcho::default();
+     |       --------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1933:5
+     |
+1933 | /     /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+1934 | |     /// retained in `sent_store` but uncounted from the flow-control
+1935 | |     /// outstanding (SACKed by the receiver, cumulative frontier not yet
+1936 | |     /// past them). Invariant: subset of `sent_store` keys — maintained by
+1937 | |     /// marking only retained seqs and pruning with the same cumulative
+1938 | |     /// `split_off` twin. Empty whenever the gate is off.
+     | |_________________________________________________________^
+1939 |       let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+     |       ------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1949:5
+     |
+1949 | /     /// DIAG: cumulative count of slots released by the law (mechanism
+1950 | |     /// liveness at the gauge — `srel=cur/cum`).
+     | |________________________________________________^
+1951 |       let mut sack_released_total: u64 = 0;
+     |       ------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1952:5
+     |
+1952 | /     /// Wire v9: the newest `(next_expected, received_above)` pair off the
+1953 | |     /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+1954 | |     /// cap (`store_gate_released`). Stays at its default (no evidence)
+1955 | |     /// whenever the release law is off.
+     | |________________________________________^
+1956 |       let mut above_report = AboveReport::default();
+     |       ---------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: use of deprecated method `tun::Configuration::name`: Since the API `name` may have an easy name conflict when IDE prompts, it is replaced by `tun_name` for better coding experience
+  --> raptorpath/src/tun/linux/mod.rs:12:10
+   |
+12 |         .name(&config.name)
+   |          ^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `lo_legacy`
+   --> raptorpath/src/control/fec_rate/tests.rs:836:9
+    |
+836 |     let lo_legacy = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, false);
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lo_legacy`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:717:46
+    |
+717 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+
+warning: value assigned to `src` is never read
+   --> raptorpath/src/net/walldiag.rs:379:23
+    |
+379 |         let mut src = 1_000u64;
+    |                       ^^^^^^^^ this value is reassigned later and never used
+...
+382 |             src = t; // new data every iteration
+    |             ------- `src` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `contains_key` is never used
+  --> raptorpath/src/net/seq_ring.rs:74:12
+   |
+41 | impl<V> SeqRing<V> {
+   | ------------------ method in this implementation
+...
+74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: `raptorpath` (lib test) generated 15 warnings (run `cargo fix --lib -p raptorpath --tests` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 4m 09s
+     Running unittests src/lib.rs (/home/VMUSER/sk0/tgt/release/deps/raptorpath-e0211bae913969ea)
+
+running 53 tests
+test gates::forwarding_audit::every_forwarded_gate_has_a_liveness_echo ... ok
+test gates::forwarding_audit::the_gates_echo_is_two_sided ... ok
+test gates::tests::default_env_resolves_the_shipped_stack ... ok
+test gates::tests::env_parse_rejects_non_finite_floats ... ok
+test gates::tests::every_gate_accessor_reads_the_one_resolution ... ok
+test gates::tests::gates_echo_default_is_byte_pinned ... ok
+test gates::tests::gen_rate_floor_cannot_panic_on_a_small_or_nan_ceiling ... ok
+test gates::tests::honest_cap_echo_is_the_effective_value ... ok
+test gates::tests::ooo_retain_accepts_a_depth_and_the_strict_booleans ... ok
+test gates::tests::pool_anchor_does_not_follow_the_estimator_cadence ... ok
+test gates::tests::removed_gates_in_the_environment_are_ignored ... ok
+test gates::tests::the_copa_delta_override_echoes_its_resolved_value ... ok
+test gates::tests::the_rtobs_level_echoes_two_for_the_deep_gauge ... ok
+test net::ackdiag::tests::report_due_gates_on_the_active_window ... ok
+[RCVBUF] p0 role=client bind=127.0.0.1:38397 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+test gates::forwarding_audit::gate_forwarding_list_covers_the_engine_surface ... ok
+[DCAP] on=1 eng=0/0 chg=0/0 chg_frac=0.0000 pin=0.0000 floor=0.0000 cap=0.0 ask=0.0 q=0.100000 b=2.0000
+[SUMCAP] on=1 eng=0/0 chg=0/0 chg_frac=0.0000 pin=0.0000 floor=0.0000 cap=0.0 ask=0.0
+[QCLK] site=sender evals=4 kept=4 w_us_mean=100000.0 w_us_p05=100000 w_us_p50=100000 w_us_p95=100000 w_us_min=100000 w_us_max=100000 srtt_us_mean=50000.0 sigma_us_mean=0.0/n0 fa_class=0.0625
+test net::tests::q2_an_ack_batch_ends_a_paused_sender_wait_with_zero_timer_advance ... ok
+test net::tests::q2_no_coop_budget_charge_per_message ... ok
+test net::tests::q2_the_owner_routes_acks_to_the_sender_and_the_sender_takes_them ... ok
+test net::tests::q2_one_task_per_loop_no_multiplexer ... ok
+test net::tests::q2_the_tx_control_set_is_the_scheduler_touching_set ... ok
+test net::tests::the_derived_setpoint_gates_route_and_introduce_no_new_constant ... ok
+test runtime_obs::tests::a_missed_deadline_advances_past_now_and_counts_the_skips ... ok
+test runtime_obs::tests::schedstat_field_two_is_the_run_delay ... ok
+test runtime_obs::tests::the_iown_line_carries_deltas_and_the_asleep_gauge ... ok
+test runtime_obs::tests::the_lag_line_renders_absent_as_dash ... ok
+test runtime_obs::tests::the_lagraw_line_carries_origin_xfer_bounds_and_the_samples ... ok
+test net::tests::q2_the_scheduler_halves_sit_behind_no_mutex ... ok
+test runtime_obs::tests::the_oslag_line_mirrors_the_lag_line_and_counts_skips ... ok
+test runtime_obs::tests::the_oslag_window_filters_by_time_and_sums_skips ... ok
+test runtime_obs::tests::the_oslagraw_line_has_the_lagraw_shape ... ok
+test runtime_obs::tests::the_quantile_rule_is_l1commons ... ok
+test runtime_obs::tests::the_os_reference_thread_samples_at_the_tick ... ok
+test runtime_obs::tests::the_task_stat_parser_reads_comm_and_cpu_from_the_last_paren ... ok
+test runtime_obs::tests::the_thr_lines_carry_deltas_and_cores_over_the_window ... ok
+test runtime_obs::tests::the_thr_os_line_appends_run_delay_only_when_collected ... ok
+test runtime_obs::tests::without_the_os_reader_the_thr_lines_say_so ... ok
+test task_obs::tests::a_long_poll_is_logged_and_a_short_one_is_not ... ok
+test task_obs::tests::a_poll_attribution_excludes_await_sections_and_derives_other ... ok
+test task_obs::tests::a_probed_long_poll_carries_its_attribution ... ok
+test task_obs::tests::a_timed_future_records_its_polls_and_returns_the_inner_output ... ok
+test task_obs::tests::a_txprobe_accumulates_iterations_and_sections_and_off_records_nothing ... ok
+test task_obs::tests::an_off_probe_records_nothing_and_an_on_probe_registers ... ok
+test task_obs::tests::an_untimed_future_has_no_counter ... ok
+test task_obs::tests::the_depth_histogram_reads_back_quantiles_and_the_exact_max ... ok
+test task_obs::tests::the_lpoll_line_appends_the_attribution_only_on_probed_tasks ... ok
+test task_obs::tests::the_lpoll_lines_render_entries_then_a_summary_even_when_empty ... ok
+test task_obs::tests::the_rxsec_line_splits_a_message_into_its_sections ... ok
+test task_obs::tests::the_section_clock_partitions_iterations_contiguously ... ok
+test task_obs::tests::the_section_table_is_consistent_and_only_flush_and_select_await ... ok
+test task_obs::tests::the_sock_line_reports_gso_and_per_call_cost ... ok
+test task_obs::tests::the_task_line_carries_window_deltas_and_skips_idle_tasks ... ok
+test task_obs::tests::the_txsec_line_renders_sections_counts_and_awaits ... ok
+test runtime_obs::tests::the_runtime_names_workers_and_the_lag_probe_samples ... ok
+
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 541 filtered out; finished in 0.31s
+

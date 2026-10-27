@@ -1,0 +1,22 @@
+ABORT-PRECONDITION procs_running=[1,1,1,1,1,] cargo=1 rustc=0 io_full_avg10=3.25; NOTHING WAS RUN. 2026-10-27T10:12:49Z
+ABORT-PRECONDITION procs_running=[1,1,1,1,1,] cargo=1 rustc=0 io_full_avg10=1.29; NOTHING WAS RUN. 2026-10-27T10:17:57Z
+ABORT-PRECONDITION procs_running=[1,1,1,1,1,] cargo=1 rustc=0 io_full_avg10=2.62; NOTHING WAS RUN. 2026-10-27T10:23:05Z
+ABORT-PRECONDITION procs_running=[2,1,1,1,2,] cargo=1 rustc=0 io_full_avg10=5.19; NOTHING WAS RUN. 2026-10-27T10:28:14Z
+ABORT-PRECONDITION procs_running=[1,1,1,1,1,] cargo=1 rustc=0 io_full_avg10=2.55; NOTHING WAS RUN. 2026-10-27T10:33:22Z
+ABORT-PRECONDITION procs_running=[3,3,3,3,3,] cargo=1 rustc=0 io_full_avg10=1.17; NOTHING WAS RUN. 2026-10-27T10:38:30Z
+ABORT-PRECONDITION procs_running=[2,2,2,2,2,] cargo=1 rustc=1 io_full_avg10=5.54; NOTHING WAS RUN. 2026-10-27T10:43:38Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LG2 start commit=12ec8d5 hard=1793112518 soft=1793111918 cargo=0 rustc=0 load=0.18 0.99 1.25 2026-10-27T10:48:47Z
+BUILD done wall=294s sha256=c3312f5a231c576bd5be7015ba80f696a7aabae0262db1742609172f2cf99d2c 2026-10-27T10:53:41Z
+TESTS cargo rc=0 test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 541 filtered out; finished in 0.31s 2026-10-27T10:57:51Z
+TESTS python l1common rc=0 digest rc=0 digest2 rc=0 2026-10-27T10:57:59Z
+ROW smoke-s42-rt2 rc=0 mbps=90.606 cot_before=0 cot_after=0 load=1.06 1.50 1.52 io_full_avg10_before=1.40 io_full_avg10_after=0.58 2026-10-27T10:58:11Z
+SMOKE-PASS 2026-10-27T10:58:11Z
+ROW b1-s42-rt2 rc=0 mbps=93.162 cot_before=0 cot_after=0 load=1.34 1.55 1.53 io_full_avg10_before=0.58 io_full_avg10_after=0.17 2026-10-27T10:58:22Z
+ROW b1-s7-rt2 rc=0 mbps=85.406 cot_before=0 cot_after=0 load=1.13 1.49 1.51 io_full_avg10_before=0.17 io_full_avg10_after=3.00 2026-10-27T10:58:35Z
+ROW b2-s7-rt2 rc=0 mbps=94.73 cot_before=0 cot_after=0 load=1.26 1.51 1.52 io_full_avg10_before=3.00 io_full_avg10_after=0.90 2026-10-27T10:58:47Z
+ROW b2-s42-rt2 rc=0 mbps=95.538 cot_before=0 cot_after=0 load=1.14 1.47 1.51 io_full_avg10_before=0.90 io_full_avg10_after=1.48 2026-10-27T10:58:58Z
+ROW b3-s42-rt2 rc=0 mbps=95.127 cot_before=0 cot_after=0 load=1.29 1.49 1.51 io_full_avg10_before=1.48 io_full_avg10_after=0.54 2026-10-27T10:59:09Z
+ROW b3-s7-rt2 rc=0 mbps=100.052 cot_before=0 cot_after=0 load=1.25 1.47 1.51 io_full_avg10_before=0.54 io_full_avg10_after=0.20 2026-10-27T10:59:19Z
+END raptorpath=0 netns=0 OUTCOME-A UNSETTLED-INSTRUMENT OUTCOME-B UNBOUNDED-PER-WAKE(emit)  2026-10-27T10:59:20Z
