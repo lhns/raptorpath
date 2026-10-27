@@ -1,0 +1,21 @@
+WAITER start 2026-10-27T11:17:13Z wait_s=14400 vm_lock=/tmp/rwm-vm.lock rp_lock=/home/VMUSER/rp.lock
+WAITER precondition holds 2026-10-27T11:17:21Z waited=8s load=0.03 0.14 0.62; exec loopdiag_run_all.sh LD_PLAN=29
+LD-ALL start plan=29 load=0.03 0.14 0.62 1/335 985100 2026-10-27T11:17:22Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.03 0.14 0.62; io=full avg10=2.31 avg60=3.55 avg300=1.63 total=35484862891 2026-10-27T11:17:22Z
+LD-ALL parser test ok 2026-10-27T11:17:24Z
+LD-ALL built wall=313s 2026-10-27T11:22:37Z
+LD-ALL binary cef7ecf80361915b8c929b90d1f6595291fcd4f29a853e4afadc756e71086729 2026-10-27T11:22:37Z
+SMOKE29 ('c2-100', 'PWR'): mbps=86.677 periods=92 conv=91 conv_t=9.22 nbar_post=162.1 nbar_final=147.4 floor_pin=0.0 knee_pin=0.0 sign=0.527 ld_pn={'0': [33, 33]} status=LIVE
+SMOKE29 ('c1s-400', 'PWR'): mbps=435.924 periods=266 conv=265 conv_t=7.34 nbar_post=488.1 nbar_final=443.7 floor_pin=0.0 knee_pin=0.0 sign=0.494 ld_pn={'0': [26, 26]} status=LIVE
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-10-27T11:22:59Z
+LD-ALL battery start load=1.50 1.27 1.03; io=full avg10=2.98 avg60=1.98 avg300=1.30 total=35488979667 2026-10-27T11:22:59Z
+LD-ALL battery rc=0 wall=347s 2026-10-27T11:28:46Z
+CHECK29 done=True rows=36/36
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=2.61 1.89 1.35; io=full avg10=0.52 avg60=0.26 avg300=0.54 total=35490051986 2026-10-27T11:28:46Z
+PERSISTED /dev/shm/ld29/run -> /home/VMUSER/ld29/run 2026-10-27T11:28:46Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

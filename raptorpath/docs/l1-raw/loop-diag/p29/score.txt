@@ -1,0 +1,158 @@
+LOOP-DIAG PLAN 29 SCORE (the power store law vs MAIN and KNEE; diagnostic, nothing here ships)
+
+ROWS by (cell, arm): live / total / statuses
+  c2-100 MAIN: live 3/3 {'LIVE': 3}
+  c2-100 PWR: live 3/3 {'LIVE': 3}
+  c2-100 KNEE: live 3/3 {'LIVE': 3}
+  c1s-400 MAIN: live 3/3 {'LIVE': 3}
+  c1s-400 PWR: live 3/3 {'LIVE': 3}
+  c1s-400 KNEE: live 3/3 {'LIVE': 3}
+  c8-100 MAIN: live 3/3 {'LIVE': 3}
+  c8-100 PWR: live 2/3 {'WITNESS-FAIL': 1, 'LIVE': 2}
+  c8-100 KNEE: live 3/3 {'LIVE': 3}
+  c1d-400 MAIN: live 3/3 {'LIVE': 3}
+  c1d-400 PWR: live 3/3 {'LIVE': 3}
+  c1d-400 KNEE: live 3/3 {'LIVE': 3}
+
+VOID TABLE (rows not LIVE)
+  c8-100 PWR s42 r1: WITNESS-FAIL no-q-pace-bps-p1
+
+NOTES (recorded, never a void)
+  NOTE c8-100 KNEE s42 r1: p1-idle
+  NOTE c8-100 KNEE s42 r2: p1-idle
+
+IO PRESSURE (covariate; flagged at full avg10 >= 20, never voided)
+  no row flagged
+
+CELL c2-100  (KNEE n = 192; live rows MAIN 3 PWR 3 KNEE 3)
+  loop p50 post-convergence = median of the window medians (rtt_p50_us), all paths pooled, windows unweighted, windows with cutoff t >= 9.97s (the median PWR conv_t of this cell; the same cut for every arm)
+  A_x p50 whole-transfer is the cumulative [LAT] gauge of the whole run (it cannot be cut at convergence)
+  goodput Mbit/s   (higher is better)
+    MAIN  n=3  mean 90.2  sd 0.06
+    PWR   n=3  mean 80.7  sd 3.35
+    KNEE  n=3  mean 87.5  sd 1.27
+    KNEE vs MAIN  diff -2.7  2sigma 1.8  WORSE
+    PWR vs MAIN  diff -9.5  2sigma 4.7  WORSE
+    PWR vs KNEE  diff -6.8  2sigma 5.1  WORSE
+  A_x p50 whole-transfer (us)   (lower is better)
+    MAIN  n=3  mean 56661.3  sd 30399.75
+    PWR   n=3  mean 6826.7  sd 782.09
+    KNEE  n=3  mean 8192.0  sd 1773.62
+    KNEE vs MAIN  diff -48469.3  2sigma 43064.9  BETTER
+    PWR vs MAIN  diff -49834.7  2sigma 43006.0  BETTER
+    PWR vs KNEE  diff -1365.3  2sigma 2741.3  WITHIN
+  loop p50 post-convergence (us)   (lower is better)
+    MAIN  n=0  mean -  sd -
+    PWR   n=2  mean 16251.5  sd 194.45
+    KNEE  n=0  mean -  sd -
+    KNEE vs MAIN  diff -  2sigma -  -
+    PWR vs MAIN  diff -  2sigma -  -
+    PWR vs KNEE  diff -  2sigma -  -
+  PWR cap position: nbar_post 153.5 (time-average of n-bar over periods >= conv_period; 1/3 live PWR rows converged, a majority is required) vs KNEE n* = 192 band [128.0, 288.0]; final nbar mean 185.0, all-period nbar mean 161.2, conv_period mean 117.7 at conv_t mean 9.84s, periods mean 119.3
+  PREDICTED c2-100: nbar_post 153.5 vs point 192 (band [128.0, 288.0]) -> IN   (report only)
+  PWR stability inputs (per live row): s42r1 floor_pin 0.000 knee_pin 0.000 sign 0.440 post_floor 0 bind 0.675 hole 0.49 ext 0 -> NOISE-DOMINATED; s7r1 floor_pin 0.000 knee_pin 0.000 sign 0.471 post_floor 0 bind 0.733 hole 0.68 ext 0 -> NOISE-DOMINATED; s42r2 floor_pin 0.000 knee_pin 0.000 sign 0.342 post_floor 0 bind 0.732 hole 0.92 ext 0 -> NOISE-DOMINATED
+  GOODPUT WORSE   (PWR vs MAIN, 2 sigma_pooled; vs KNEE: WORSE)
+  LATENCY BETTER WITHIN   (A_x p50 whole-transfer: PWR vs MAIN, PWR vs KNEE)
+  LATENCY-LOOP - -   (loop p50 post-convergence: PWR vs MAIN, PWR vs KNEE)
+  FIXED-POINT NO-CONVERGENCE   (nbar_post 153.5 vs KNEE n* band [128.0, 288.0])
+  STABILITY NOISE-DOMINATED   (precedence FLOOR-COLLAPSE > RUNAWAY > NOISE-DOMINATED > STABLE, worst live PWR row)
+
+CELL c1s-400  (KNEE n = 1024; live rows MAIN 3 PWR 3 KNEE 3)
+  loop p50 post-convergence = median of the window medians (rtt_p50_us), all paths pooled, windows unweighted, windows with cutoff t >= 5.90s (the median PWR conv_t of this cell; the same cut for every arm)
+  A_x p50 whole-transfer is the cumulative [LAT] gauge of the whole run (it cannot be cut at convergence)
+  goodput Mbit/s   (higher is better)
+    MAIN  n=3  mean 748.3  sd 11.47
+    PWR   n=3  mean 517.9  sd 64.12
+    KNEE  n=3  mean 712.7  sd 47.06
+    KNEE vs MAIN  diff -35.6  2sigma 68.5  WITHIN
+    PWR vs MAIN  diff -230.4  2sigma 92.1  WORSE
+    PWR vs KNEE  diff -194.7  2sigma 112.5  WORSE
+  A_x p50 whole-transfer (us)   (lower is better)
+    MAIN  n=3  mean 13312.0  sd 1773.62
+    PWR   n=3  mean 1493.3  sd 411.46
+    KNEE  n=3  mean 6314.7  sd 295.60
+    KNEE vs MAIN  diff -6997.3  2sigma 2542.9  BETTER
+    PWR vs MAIN  diff -11818.7  2sigma 2574.9  BETTER
+    PWR vs KNEE  diff -4821.3  2sigma 716.5  BETTER
+  loop p50 post-convergence (us)   (lower is better)
+    MAIN  n=0  mean -  sd -
+    PWR   n=1  mean 3936.0  sd -
+    KNEE  n=0  mean -  sd -
+    KNEE vs MAIN  diff -  2sigma -  -
+    PWR vs MAIN  diff -  2sigma -  -
+    PWR vs KNEE  diff -  2sigma -  -
+  PWR cap position: nbar_post 390.8 (time-average of n-bar over periods >= conv_period; 2/3 live PWR rows converged, a majority is required) vs KNEE n* = 1024 band [682.7, 1536.0]; final nbar mean 383.6, all-period nbar mean 269.7, conv_period mean 225.7 at conv_t mean 6.21s, periods mean 228.0
+  PREDICTED c1s-400: nbar_post 390.8 vs point 384 (band [256.0, 576.0]) -> IN   (report only)
+  PWR stability inputs (per live row): s42r1 floor_pin 0.000 knee_pin 0.000 sign 0.513 post_floor 0 bind 0.794 hole 0.02 ext 13 -> NOISE-DOMINATED; s7r1 floor_pin 0.000 knee_pin 0.000 sign 0.482 post_floor 0 bind 0.871 hole 0.00 ext 17 -> NOISE-DOMINATED; s42r2 floor_pin 0.000 knee_pin 0.000 sign 0.533 post_floor 0 bind 0.834 hole 0.21 ext 7 -> NOISE-DOMINATED
+  GOODPUT WORSE   (PWR vs MAIN, 2 sigma_pooled; vs KNEE: WORSE)
+  LATENCY BETTER BETTER   (A_x p50 whole-transfer: PWR vs MAIN, PWR vs KNEE)
+  LATENCY-LOOP - -   (loop p50 post-convergence: PWR vs MAIN, PWR vs KNEE)
+  FIXED-POINT BELOW   (nbar_post 390.8 vs KNEE n* band [682.7, 1536.0])
+  STABILITY NOISE-DOMINATED   (precedence FLOOR-COLLAPSE > RUNAWAY > NOISE-DOMINATED > STABLE, worst live PWR row)
+
+CELL c8-100  (KNEE n = 384; live rows MAIN 3 PWR 2 KNEE 3)
+  loop p50 post-convergence = median of the window medians (rtt_p50_us), all paths pooled, windows unweighted, windows with cutoff t >= 7.18s (the median PWR conv_t of this cell; the same cut for every arm)
+  A_x p50 whole-transfer is the cumulative [LAT] gauge of the whole run (it cannot be cut at convergence)
+  goodput Mbit/s   (higher is better)
+    MAIN  n=3  mean 96.6  sd 6.80
+    PWR   n=2  mean 96.8  sd 6.05
+    KNEE  n=3  mean 93.9  sd 8.09
+    KNEE vs MAIN  diff -2.7  2sigma 15.0  WITHIN
+    PWR vs MAIN  diff +0.1  2sigma 12.9  WITHIN
+    PWR vs KNEE  diff +2.8  2sigma 14.3  WITHIN
+  A_x p50 whole-transfer (us)   (lower is better)
+    MAIN  n=3  mean 76458.7  sd 4729.65
+    PWR   n=2  mean 14848.0  sd 2172.23
+    KNEE  n=3  mean 20480.0  sd 3547.24
+    KNEE vs MAIN  diff -55978.7  2sigma 8360.9  BETTER
+    PWR vs MAIN  diff -61610.7  2sigma 7360.5  BETTER
+    PWR vs KNEE  diff -5632.0  2sigma 5882.4  WITHIN
+  loop p50 post-convergence (us)   (lower is better)
+    MAIN  n=3  mean 153074.8  sd 61231.49
+    PWR   n=2  mean 41062.0  sd 4138.70
+    KNEE  n=3  mean 39543.7  sd 3281.75
+    KNEE vs MAIN  diff -113531.2  2sigma 86718.7  BETTER
+    PWR vs MAIN  diff -112012.8  2sigma 86792.0  BETTER
+    PWR vs KNEE  diff +1518.3  2sigma 7469.8  WITHIN
+  PWR cap position: nbar_post 370.9 (time-average of n-bar over periods >= conv_period; 2/2 live PWR rows converged, a majority is required) vs KNEE n* = 384 band [256.0, 576.0]; final nbar mean 402.4, all-period nbar mean 308.4, conv_period mean 34.0 at conv_t mean 7.18s, periods mean 39.5
+  PREDICTED c8-100: nbar_post 370.9 vs point 384 (band [256.0, 576.0]) -> IN   (report only)
+  PWR stability inputs (per live row): s7r1 floor_pin 0.000 knee_pin 0.000 sign 0.452 post_floor 0 bind 0.562 hole 1.86 ext 0 -> NOISE-DOMINATED; s42r2 floor_pin 0.000 knee_pin 0.000 sign 0.391 post_floor 0 bind 0.511 hole 1.04 ext 0 -> NOISE-DOMINATED
+  GOODPUT WITHIN   (PWR vs MAIN, 2 sigma_pooled; vs KNEE: WITHIN)
+  LATENCY BETTER WITHIN   (A_x p50 whole-transfer: PWR vs MAIN, PWR vs KNEE)
+  LATENCY-LOOP BETTER WITHIN   (loop p50 post-convergence: PWR vs MAIN, PWR vs KNEE)
+  FIXED-POINT IN-BAND   (nbar_post 370.9 vs KNEE n* band [256.0, 576.0])
+  STABILITY NOISE-DOMINATED   (precedence FLOOR-COLLAPSE > RUNAWAY > NOISE-DOMINATED > STABLE, worst live PWR row)
+
+CELL c1d-400  (KNEE n = 768; live rows MAIN 3 PWR 3 KNEE 3)
+  loop p50 post-convergence = median of the window medians (rtt_p50_us), all paths pooled, windows unweighted, windows with cutoff t >= 5.67s (the median PWR conv_t of this cell; the same cut for every arm)
+  A_x p50 whole-transfer is the cumulative [LAT] gauge of the whole run (it cannot be cut at convergence)
+  goodput Mbit/s   (higher is better)
+    MAIN  n=3  mean 602.9  sd 48.92
+    PWR   n=3  mean 499.8  sd 60.24
+    KNEE  n=3  mean 622.1  sd 75.39
+    KNEE vs MAIN  diff +19.2  2sigma 127.1  WITHIN
+    PWR vs MAIN  diff -103.1  2sigma 109.8  WITHIN
+    PWR vs KNEE  diff -122.4  2sigma 136.5  WITHIN
+  A_x p50 whole-transfer (us)   (lower is better)
+    MAIN  n=3  mean 18773.3  sd 5051.27
+    PWR   n=3  mean 1493.3  sd 322.13
+    KNEE  n=3  mean 5802.7  sd 2069.22
+    KNEE vs MAIN  diff -12970.7  2sigma 7719.7  BETTER
+    PWR vs MAIN  diff -17280.0  2sigma 7158.1  BETTER
+    PWR vs KNEE  diff -4309.3  2sigma 2961.6  BETTER
+  loop p50 post-convergence (us)   (lower is better)
+    MAIN  n=1  mean 20549.5  sd -
+    PWR   n=3  mean 6928.2  sd 2568.30
+    KNEE  n=0  mean -  sd -
+    KNEE vs MAIN  diff -  2sigma -  -
+    PWR vs MAIN  diff -  2sigma -  -
+    PWR vs KNEE  diff -  2sigma -  -
+  PWR cap position: nbar_post 443.0 (time-average of n-bar over periods >= conv_period; 3/3 live PWR rows converged, a majority is required) vs KNEE n* = 768 band [512.0, 1152.0]; final nbar mean 451.3, all-period nbar mean 275.7, conv_period mean 210.3 at conv_t mean 6.23s, periods mean 215.0
+  PREDICTED c1d-400: nbar_post 443.0 vs bound < 512 -> IN   (report only)
+  PWR stability inputs (per live row): s42r1 floor_pin 0.000 knee_pin 0.000 sign 0.548 post_floor 0 bind 0.828 hole 0.10 ext 17 -> NOISE-DOMINATED; s7r1 floor_pin 0.000 knee_pin 0.000 sign 0.478 post_floor 0 bind 0.858 hole 0.00 ext 14 -> NOISE-DOMINATED; s42r2 floor_pin 0.000 knee_pin 0.000 sign 0.511 post_floor 0 bind 0.841 hole 0.01 ext 8 -> NOISE-DOMINATED
+  GOODPUT WITHIN   (PWR vs MAIN, 2 sigma_pooled; vs KNEE: WITHIN)
+  LATENCY BETTER BETTER   (A_x p50 whole-transfer: PWR vs MAIN, PWR vs KNEE)
+  LATENCY-LOOP - -   (loop p50 post-convergence: PWR vs MAIN, PWR vs KNEE)
+  FIXED-POINT BELOW   (nbar_post 443.0 vs KNEE n* band [512.0, 1152.0])
+  STABILITY NOISE-DOMINATED   (precedence FLOOR-COLLAPSE > RUNAWAY > NOISE-DOMINATED > STABLE, worst live PWR row)
+

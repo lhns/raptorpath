@@ -7310,3 +7310,68 @@ tail), `GOODPUT WITHIN` against MAIN, `LATENCY BETTER`; c1s
 
 **Duration.** Build ≈ 6 min; 38 invocations ≈ 8 min; well inside the
 deadlines.
+
+### 29. The power-seeking store law (candidate D) — result
+
+Scored 2026-10-27 against the pre-registration, literally. Diagnostic:
+nothing ships. **`NOT-VIABLE`** by the decision rule: `STABILITY` is
+`NOISE-DOMINATED` at all four cells, `GOODPUT` is `WORSE` at c2 and c1s, and
+`FIXED-POINT` is `IN-BAND` only at c8. The latency columns are what the law
+promised (A_x p50 `BETTER` than MAIN at every cell, by ×5–12); the estimator
+that is meant to hold the operating point is not.
+
+*Session.* Binary `cef7ecf8…086729` (tree `2fdc5fe`: main 92934a7 +
+`[LOOPDIAG]` + the power law, default off), built 313 s; waiter met the
+precondition at 11:17:13Z (load 0.03, io `full avg10` 2.3 %); smoke
+`SMOKE-PASS` 11:22:59Z; battery 11:22:59–11:28:46Z (347 s, 36 rows); exit
+0 `raptorpath`, 0 `rp-*`; run dirs removed. Ledgers:
+`docs/l1-raw/loop-diag/p29/`. A first waiter (11:16:32Z) met the
+precondition, took the locks, and stopped at `ABORT-TESTS` before any build
+(the parser fixtures were missing from the shipped archive, as in §27
+amendment 1); nothing ran. Its stale `FAILED-ALL` was carried into the
+persisted run dir and is kept, renamed `FAILED-ALL.first-launch-abort-tests`.
+
+*Abort table.* First waiter: `ABORT-TESTS` (nothing ran). The session: no
+token fired; 35 of 36 rows LIVE; 1 `WITNESS-FAIL` (c8 PWR s42 r1:
+`no-q-pace-bps-p1`); notes `p1-idle` on two c8 KNEE rows (recorded, not
+void); no row io-flagged.
+
+| cell | goodput MAIN / PWR / KNEE (Mbit/s) | `GOODPUT` (PWR vs MAIN) | A_x p50 MAIN / PWR / KNEE (ms) | `LATENCY` (vs MAIN, vs KNEE) | PWR n̄ post-conv · all-period (predicted) | `FIXED-POINT` | `STABILITY` |
+|---|---|---|---|---|---|---|---|
+| c2-100 | 90.2 / 80.7 / 87.5 | **WORSE** (−9.5, 2σ 4.7) | 56.7 / 6.8 / 8.2 | BETTER, WITHIN | 153.5 · 153–170 (192) | `NO-CONVERGENCE` (1/3 rows) | `NOISE-DOMINATED` |
+| c1s-400 | 748.3 / 517.9 / 712.7 | **WORSE** (−230, 2σ 92) | 13.3 / 1.5 / 6.3 | BETTER, BETTER | 390.8 · 213–313 (384) | `BELOW` (band [683, 1 536]) | `NOISE-DOMINATED` |
+| c8-100 | 96.6 / 96.8 / 93.9 | WITHIN (+0.1, 2σ 12.9) | 76.5 / 14.8 / 20.5 | BETTER, WITHIN | 370.9 · 258–359 (384) | `IN-BAND` | `NOISE-DOMINATED` |
+| c1d-400 | 602.9 / 499.8 / 622.1 | WITHIN (−103, 2σ 110) | 18.8 / 1.5 / 5.8 | BETTER, BETTER | 443.0 · 208–312 (< 512) | `BELOW` (band [512, 1 152]) | `NOISE-DOMINATED` |
+
+The post-convergence loop-time p50 is resolved only at c8 (PWR 41.1 against
+MAIN 153.1 ms, `BETTER`; against KNEE 39.5, `WITHIN`); elsewhere too few
+rows reached the cut.
+
+*Why it fails (the gauges, per PWR row).* The ê clamp binds in 51–87 % of
+periods (|ê| > 1): a single measured round's power is so noisy that the
+elasticity estimate is mostly its sign, and that sign agrees with the
+previous period's 34–55 % of the time — chance. n̄ therefore moves by a full
+(1 + q) step almost every period, in a random walk. The "converged" suffix
+is 1–9 periods out of 32–279; the time-average of n̄ over all periods sits
+below the predicted points (c2 153–170 against 192, c1s 213–313 against 384,
+c1d 208–312 against < 512, c8 258–359 against 384), and the goodput loss at
+c2 and c1s follows from that low, wandering operating point (§27's static
+curve at those caps reads 69–89 at c2 and 529–632 at c1s). No floor
+collapse and no runaway: floor and knee pins are 0 in every row.
+
+*Predictions.* c2/c8 `GOODPUT WITHIN`: MET at c8, MISSED at c2. `LATENCY
+BETTER`: MET at all four. c2/c8 `IN-BAND`: MET at c8, `NO-CONVERGENCE` at c2.
+c1s/c1d `BELOW`: MET. c1s `NOISE-DOMINATED` as the stated risk: it fired at
+every cell.
+
+*What the evidence says (outside the set, no verdict).* The power
+criterion's *location* is borne out where the seeker settled at all (c8 371
+against 384; c1s's post-convergence 391 against 384; c1d 443 against < 512),
+and so is the latency it buys; the online *estimator* is not. As built, D is
+dead. What would change it is the estimator, not the law: the per-half
+measurement is one loop round, and its power estimate has a standard error
+far above the dither's ln((1 + q/2)/(1 − q/2)) ≈ q signal. A derived window
+would size the rounds per half from the measured variance of ln Π so that
+its standard error falls below q/2, at the cost of convergence time (which
+already ran a third or more of a c2 transfer at one round). Whether that
+trade closes is a new derivation and a new pre-registration, not a re-run.
