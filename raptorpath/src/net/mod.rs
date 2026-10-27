@@ -1776,7 +1776,7 @@ async fn run_window_sender(
     // ramp below the link. The Copa cwnd/SRTT is the frontier-independent CC
     // rate (cwnd grows on delivery feedback regardless of the in-order hole);
     // pace at max(cwnd/SRTT, goodput-EWMA)×headroom so a stalled in-order
-    // frontier cannot starve the pace rate. Cached off the scheduler lock
+    // frontier cannot starve the pace rate. Cached, refreshed
     // every 5 ms.
     let mut cc_rate_cached: f64 = 0.0;
     let mut cc_rate_refresh_us: u64 = 0;
@@ -1958,8 +1958,7 @@ async fn run_window_sender(
     let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
 
     // Announce window mode to peer on all paths
-    // (P1 D2: the path set is collected and the guard dropped before any
-    // quinn call — no quinn call is made with the scheduler held.)
+    // (The path set is collected before any quinn call.)
     // (Threading Q1: staged and handed to each path's I/O owner in one
     // control-lane batch, before the sender state — and its own staging —
     // exists.)
@@ -2194,13 +2193,12 @@ async fn run_window_sender(
     let mut txp = crate::task_obs::TxProbe::new();
     loop {
         txp.iter();
-        // Scheduler reads in this loop are per phase, each under its own
-        // acquisition, taken where the value is used. A loop-top snapshot
-        // shared by the phases would not help:
-        //   1. Every phase below composes its scheduler-derived inputs under
-        //      one acquisition already, and the only rate×RTprop product in
-        //      play (`copa_bdp_anchor` = `max_bw × min_rtt`) is atomic inside
-        //      one `CopaState`. No derived value spans two acquisitions.
+        // Scheduler reads in this loop are per phase, taken where the value
+        // is used. A loop-top snapshot shared by the phases would not help:
+        //   1. Every phase below composes its scheduler-derived inputs in one
+        //      read already, and the only rate×RTprop product in play
+        //      (`copa_bdp_anchor` = `max_bw × min_rtt`) is atomic inside one
+        //      `CopaState`. No derived value spans two reads.
         //   2. The phases are independently throttled (~5 ms each, separate
         //      stamps), so they fire on different iterations and would
         //      consume different snapshots regardless.
@@ -2225,7 +2223,7 @@ async fn run_window_sender(
         {
             let mut touched = false;
             if !cmds_closed && !sender_cmds.is_empty() {
-                if let Some(n) = tx_inputs::poll_once(
+                if let Some(n) = crate::transport::io_owner::poll_once(
                     sender_cmds.recv_many(&mut cmd_buf, SENDER_CMD_DEPTH),
                 )
                 .await
@@ -2239,7 +2237,7 @@ async fn run_window_sender(
                 }
             }
             if !in_closed && !sender_in.is_empty() {
-                if let Some(n) = tx_inputs::poll_once(
+                if let Some(n) = crate::transport::io_owner::poll_once(
                     sender_in.recv_many(&mut in_buf, SENDER_IN_BATCHES),
                 )
                 .await
@@ -2483,8 +2481,8 @@ async fn run_window_sender(
         }
         // Plain-reliable delay-based window cap (paper §6.1): bound the
         // outstanding store to gain×BDP so the standing queue stays ~1 RTT and
-        // loss recovery does not stall behind a bloated queue. Refreshed off
-        // the scheduler lock at most every 5 ms.
+        // loss recovery does not stall behind a bloated queue. Refreshed at
+        // most every 5 ms.
         refresh_store_cap(
             &mut scs,
             StoreCapCtx {
@@ -2761,7 +2759,7 @@ async fn run_window_sender(
         // three 1 ms poll deadlines below (which previously read the clock
         // once each; `tokio::time::sleep(d)` is `sleep_until(now + d)`). The
         // phase between this read and the `select!` is synchronous loop body
-        // (one scheduler-lock take for the tail clock), so the reuse is stale
+        // (one scheduler read for the tail clock), so the reuse is stale
         // by microseconds — well inside one loop iteration. The tail deadline
         // is converted with the SAME read's `Instant`, so its absolute
         // instant is exact, not stale.
@@ -3107,7 +3105,7 @@ async fn run_window_sender(
                 );
                     }
                 }
-                // Send Shutdown on all paths (P1 D2: guard dropped first).
+                // Send Shutdown on all paths (the path set is collected first).
                 let paths = control_broadcast_paths(&*scheduler);
                 for pid in paths {
                     let _ = transport.send_control_datagram(&mut st.tx, pid, ControlMessage::Shutdown);

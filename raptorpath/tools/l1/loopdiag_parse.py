@@ -27,6 +27,8 @@ import l1common as lc  # noqa: E402
 import stage3_parse as sp  # noqa: E402
 import storelaw_parse as sl  # noqa: E402  (regexes only)
 import anchordiag_parse as ad  # noqa: E402  (shared extractors)
+from storelaw_parse import col, f, live, mean  # noqa: E402
+from anchordiag_parse import _r, arm_n  # noqa: E402
 
 GRID_C1S = [192, 256, 384, 512, 768, 1024, 1536, 2048]
 GRID_C2 = [64, 96, 128, 192, 256, 384, 512, 1024]
@@ -58,10 +60,6 @@ _LD = re.compile(
     r"q_pace_bps=(\S+) q_cwnd=(\S+) q_srtt_us=(\S+)")
 
 
-def _r(x, nd=3):
-    return None if x is None else round(x, nd)
-
-
 def loopdiag_windows(cli, path="0"):
     """Post-warm-up [LOOPDIAG] windows of one path -> list of dicts (None for `-`)."""
     out = []
@@ -88,11 +86,6 @@ def loopdiag_summary(cli):
         med[k] = _r(lc.med(v), 3) if v else None
     npace = sum(1 for w in ws if w.get("q_pace_bps") is not None)
     return len(ws), med, npace
-
-
-def arm_n(arm):
-    m = re.fullmatch(r"S(\d+)", arm)
-    return int(m.group(1)) if m else None
 
 
 IO_HIGH_FULL10 = 20.0   # io full avg10 at or above this flags a row (a covariate, never a void)
@@ -191,28 +184,12 @@ def rows_of(paths):
     return rows
 
 
-def mean(v):
-    return sum(v) / len(v) if v else None
-
-
 def median(v):
     v = sorted(v)
     if not v:
         return None
     k = len(v)
     return v[k // 2] if k % 2 else (v[k // 2 - 1] + v[k // 2]) / 2
-
-
-def f(x, nd=1):
-    return "-" if x is None else f"{x:.{nd}f}"
-
-
-def live(rows, cell, arm):
-    return [r for r in rows if r["cell"] == cell and r["arm"] == arm and r["status"] == "LIVE"]
-
-
-def col(rs, key):
-    return [r[key] for r in rs if r.get(key) is not None]
 
 
 def ldcol(rs, key):

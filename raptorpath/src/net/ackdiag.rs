@@ -46,10 +46,9 @@
 //! emission, admission, pacing, recovery or estimator decision can observe
 //! it. `ackdiag_is_observation_only` pins that structurally.
 //!
-//! Lock order. The feed sites are called while the caller holds the
-//! scheduler lock, so the gauge lock is inner: `scheduler → gauge`. The
-//! report takes its scheduler snapshot and releases it before it touches the
-//! gauge, so the gauge lock is never held while acquiring the scheduler lock.
+//! Locking. The gauge has one mutex of its own; the scheduler is owned by the
+//! sender task (no scheduler lock), and the report snapshots it before it
+//! touches the gauge.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -189,9 +188,8 @@ fn push_capped<T>(v: &mut Vec<T>, x: T, overflow: &mut u64) {
 // confusable with a measured zero).
 use crate::monitor::quantile::nearest_rank;
 
-/// What one path's report line needs from the engine, snapshotted under the
-/// scheduler lock and passed in after it is released (see the lock-order note
-/// in the module header).
+/// What one path's report line needs from the engine, snapshotted from the
+/// scheduler before the gauge is touched.
 #[derive(Debug, Clone, Copy)]
 pub struct PathSnapshot {
     pub path_id: u32,
@@ -536,9 +534,7 @@ pub fn gauge() -> Option<&'static AckCadenceGauge> {
 /// sender-loop iteration under the caller's `if pol.ackdiag_on` guard, so the
 /// shipped path pays nothing.
 ///
-/// Takes the scheduler lock for the snapshot only and releases it before
-/// touching the gauge — the lock order the feed sites establish (see the
-/// module header).
+/// Reads the scheduler for the snapshot only, before touching the gauge.
 ///
 /// Single-engine scope. The gauge is process-global (its feed sites are
 /// static functions on the ack path and in `CopaState`), but `stats` and

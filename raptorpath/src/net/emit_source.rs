@@ -338,7 +338,7 @@ pub(crate) fn emit_source(
     // and the end of the source send, so the reuse moves them by at most one
     // `send_symbols` (serialize + quinn handoff, incl. its connection-mutex
     // wait: mean 55 µs off-CPU in the P1 profile) plus a few short
-    // scheduler-lock takes — well inside one loop iteration (≈ 50–150 µs at
+    // scheduler reads — well inside one loop iteration (≈ 50–150 µs at
     // the measured rates). The correction loop's own reads and every other
     // wire stamp stay fresh.
     let (src_send_ts_us, src_now_i) = now_pair();
@@ -526,7 +526,7 @@ pub(crate) fn emit_source(
             }
             (rr, span)
         } else {
-        // The cadenced rate (Stage 1c): evaluated outside both locks on a
+        // The cadenced rate (Stage 1c): evaluated only on a
         // miss, at most once per `RepairRateCache` period.
         let window_rate = cadenced_repair_rate(
             &mut st.rate_cache,
@@ -880,13 +880,10 @@ pub(crate) fn worst_eps_path(
 /// The window sender's repair rate on the Stage-1c cadence (see
 /// [`RepairRateCache`]): source emission, `serve_gaps` and the
 /// cumulative-ack advance all read it here. On a hit (the entry is younger
-/// than its period — age is the only key) no lock is taken and no
-/// evaluation runs; W and the worst-ε path are inputs sampled at the
+/// than its period — age is the only key) no evaluation runs; W and the worst-ε path are inputs sampled at the
 /// evaluation instant (see [`RepairRateCache`]). On a miss the inputs are
-/// snapshotted under the controller → scheduler locks
-/// (the one lock order used wherever both are held) and the ~0.1 ms rate
-/// mix is evaluated after both are released, so ack processing never waits
-/// on the solver. 0.0 only when the channel has no path at all.
+/// snapshotted from the controller and scheduler and the ~0.1 ms rate mix is
+/// evaluated from that snapshot. 0.0 only when the channel has no path at all.
 pub(crate) fn cadenced_repair_rate(
     cache: &mut RepairRateCache,
     fec_controller: &FecRateController,

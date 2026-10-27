@@ -144,8 +144,8 @@ pub struct FecRateController {
 
 /// Everything one evaluation of the rate mix reads (see
 /// [`FecRateController::rate_snapshot`]): the shared `RateInputs` and the
-/// contract's mixing weight β. Plain data (`Copy`), so it outlives the locks
-/// it was taken under.
+/// contract's mixing weight β. Plain data (`Copy`), so it outlives the
+/// controller and scheduler borrows it was taken from.
 #[derive(Debug, Clone, Copy)]
 pub struct RateSnapshot {
     inputs: raptorpath_math::RateInputs,
@@ -445,8 +445,8 @@ impl FecRateController {
     /// The inputs `compute_repair_rate` reads, snapshotted: the estimator
     /// extraction (a few µs: the BOCD quantile, the mass moments) split from
     /// the evaluation ([`RateSnapshot::rate`], ~0.1 ms with the window-mass
-    /// solve), so a caller can take the snapshot under the controller and
-    /// scheduler locks and evaluate after releasing them.
+    /// solve), so a caller can take the snapshot from the controller and
+    /// scheduler and evaluate after the borrows end.
     /// `compute_repair_rate` is exactly `rate_snapshot(..).rate()`.
     pub fn rate_snapshot(&self, estimator: &LossEstimator, window_size: usize) -> RateSnapshot {
         // The formula itself lives in raptorpath-math::controller_rate — a

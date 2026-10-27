@@ -21,10 +21,11 @@ codegen-units = 1
 #     here overrides it — so `perf record --call-graph dwarf` can unwind
 #     without them.
 #
-# `debug = 1` adds DWARF alongside the code; it does not alter instruction
-# selection, so `--profile release-prof` and `--profile release` are expected
-# to produce the same `.text` (compare the section hashes before attributing a
-# profile to the release binary). Building with this profile is opt-in:
+# `debug = 1` was meant to add only DWARF, but on this tree it changes the
+# release `.text` (status §22 Amendment 5: the section hashes differ), so a
+# release-prof profile is NOT a profile of the shipped binary; compare the
+# `.text` hashes before attributing a profile to the release binary. Building
+# with this profile is opt-in:
 #
 #   cargo build --profile release-prof   ->  target/release-prof/raptorpath
 [profile.release-prof]

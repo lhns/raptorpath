@@ -82,6 +82,36 @@ fn assert_arm_echo(cli: &str, srv: &str, want: &[(&str, &str)]) {
 
 // ── The runs ────────────────────────────────────────────────────────────
 
+/// A run that hit the perf client's run timeout is a stall, not a gauge
+/// reading: the DNF line must fail the transfer, with the server tail.
+#[test]
+fn a_stalled_run_fails_as_a_dnf_not_as_a_gauge_reading() {
+    let run = r#"{"proto":"rp-native","hint":"bulk","run":1,"seconds":1.5,"mbps":53.3}"#;
+    let dnf = r#"{"proto":"rp-native","hint":"bulk","run":2,"dnf":true,"timeout_s":300}"#;
+    let cli = format!(
+        "{}\n{run}\n{dnf}\n{}\n",
+        r#"{"warmup":true,"seconds":0.01}"#,
+        r#"{"summary":true,"runs":2,"dnf":1}"#,
+    );
+    let srv = "INFO raptorpath: server saw STALL_MARKER_7\n";
+    let err = std::panic::catch_unwind(|| loopback::assert_no_dnf(&cli, Some(srv)))
+        .expect_err("a DNF run line must fail the transfer");
+    let msg = err
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+        .expect("panic message");
+    assert!(msg.contains("did not finish"), "{msg}");
+    assert!(msg.contains("STALL_MARKER_7"), "server tail missing: {msg}");
+
+    let clean = format!(
+        "{}\n{run}\n{run}\n{}\n",
+        r#"{"warmup":true,"seconds":0.01}"#,
+        r#"{"summary":true,"runs":2,"dnf":0}"#,
+    );
+    loopback::assert_no_dnf(&clean, Some(srv));
+}
+
 /// Control — every arm absent. The gauges exist on the line and read
 /// `-` / `0`; every other reading is a difference from this row.
 #[test]

@@ -233,7 +233,7 @@ async fn async_main() -> anyhow::Result<()> {
     if matches!(cli.command, None | Some(Commands::Run(_)) | Some(Commands::Perf(_))) {
         let _ = gates::get();
         // Threading-redesign P0 instrument: the [LAG] probe task and the
-        // [THR] metrics handle (measurement only, no gate).
+        // [THR] metrics handle (measurement only); a no-op unless RWM_RTOBS is set.
         raptorpath::runtime_obs::arm();
     }
 

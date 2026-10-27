@@ -737,7 +737,7 @@ pub(crate) async fn run_receiver(
 
         // In-order hold drain timer (both modes): refresh the SRTT-adaptive
         // timeout and compute the oldest-entry expiry. Only when entries are
-        // pending — the common case skips the locks. Window mode needs this
+        // pending — the common case skips the SRTT reads. Window mode needs this
         // timer too: a drain that ran only on symbol arrival lets a hole
         // deadlock the whole tunnel (hole → no delivery advance → no
         // WindowAck → sender window full → no sends → no arrivals → no drain).

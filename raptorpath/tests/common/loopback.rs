@@ -405,6 +405,34 @@ pub const CLEAN_RATE: [(&str, &str); 2] = [
     ("RWM_L0_SEED", "42"),
 ];
 
+/// Fail a stalled transfer AS a stall. A perf run that did not finish within
+/// the perf client's run timeout is printed as a `"dnf":true` run line and the
+/// client still exits 0, so without this check the stall surfaces downstream
+/// as a misleading gauge failure. The closing summary line (no `"run"` key)
+/// carries `"dnf":<count>` and is skipped. The panic carries the log tails.
+pub fn assert_no_dnf(cli_log: &str, srv_log: Option<&str>) {
+    let tail = |log: &str| {
+        let lines: Vec<&str> = log.lines().collect();
+        lines[lines.len().saturating_sub(80)..].join("\n")
+    };
+    for line in cli_log.lines().filter(|l| l.trim_start().starts_with('{')) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        if v.get("run").is_none() || v.get("dnf").is_none() {
+            continue; // the warm-up line, the closing summary, or a finished run
+        }
+        let srv = srv_log
+            .map(|s| format!("\n--- server log tail ---\n{}", tail(s)))
+            .unwrap_or_default();
+        panic!(
+            "a perf run did not finish within the perf client's run timeout \u{2014} a stalled \
+             transfer, not a gauge reading: {line}\n--- client log tail ---\n{}{srv}",
+            tail(cli_log)
+        );
+    }
+}
+
 /// Prove [`CLEAN_RATE`] executed on a client run (MEASUREMENT DISCIPLINE
 /// rule 1): the shim's own ACTIVE echo is present, its `shim OFF` warning is
 /// absent, exactly `runs` timed (non-warm-up, non-DNF) perf runs were
@@ -420,6 +448,7 @@ pub fn assert_clean_rate_executed(log: &str, bytes: u64, runs: usize) -> Vec<f64
         "the L0 netem shim logged `shim OFF` — the CLEAN_RATE spec did not parse \
          (comma instead of `;`?):\n{log}"
     );
+    assert_no_dnf(log, None);
     let mut secs = Vec::new();
     for line in log.lines().filter(|l| l.trim_start().starts_with('{')) {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
@@ -428,10 +457,6 @@ pub fn assert_clean_rate_executed(log: &str, bytes: u64, runs: usize) -> Vec<f64
         if v.get("run").is_none() {
             continue; // the warm-up line, or the closing summary
         }
-        assert!(
-            v.get("dnf").is_none(),
-            "a perf run did not finish under the CLEAN_RATE shaper: {line}"
-        );
         let s = v
             .get("seconds")
             .and_then(|s| s.as_f64())
@@ -518,6 +543,7 @@ pub fn transfer(t: Transfer<'_>) -> (String, String) {
     let mut cargs = perf_args(t.hint, t.bytes, t.runs).to_vec();
     cargs.extend_from_slice(t.extra_args);
     let cli = run_perf_client(&binds, &cenv, &cargs);
+    assert_no_dnf(&cli, Some(&srv.log.text()));
     let srv_log = match t.srv_tag {
         Some(tag) => srv.log_after(srv.log.len(), tag),
         None => srv.log.text(),
