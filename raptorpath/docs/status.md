@@ -7129,3 +7129,86 @@ passes). A suite failure is reported; it does not void the battery.
 ### 27. Amendment 1 (before any row ran): the first launch is `ABORT-TESTS`; relaunch
 
 The first launch met the precondition at 23:25:48Z, took both locks at 23:25:57Z and stopped one second later on `ABORT-TESTS`: the parser test (`test_loopdiag_parse.py`, 18 of its checks) failed because the shipped source archive excluded `docs/l1-raw/`, and the test reads its base line shapes from saved logs in `docs/l1-raw/store-law-n1/diag-sl/` and `docs/l1-raw/anchor-diag/diag-ad/` (the same test passes on the host). A packaging fault, not a code or parser fault: no build, no smoke, no row ran, nothing is scored. The ledger of the abort is kept in the persisted run dir. Fix: the two fixture directories are shipped with the tree; nothing in the harness, the plan or the outcomes changes. Relaunched under the same precondition.
+
+### 27. The spread law's two premises — result
+
+Scored 2026-10-27 against the pre-registration and amendment 1, literally.
+Diagnostic: nothing ships. **`PREMISES-FAIL`.** Neither premise holds at
+all four cells: bbr_rs reads the delivered rate, not the link (Q1 never
+`FLAT-AT-LINK`; `CIRCULAR` at c2), and the spread inflates with the cap
+everywhere except c2 (Q2). Q3 misses at every cell.
+
+*Session.* Relaunch after amendment 1: the waiter met the precondition at
+08:57:32Z (load 0.36, io `full avg10` 7.8 %); locks held from 08:57:33Z;
+build 314 s; smoke 09:03:11Z (`SMOKE-PASS`); battery 09:03:11–09:26:01Z
+(1 370 s, 128 rows); ledger persisted 09:26:01Z; the suites ran after it
+in the same session (below). Binary `10c0fa64…d7ba68` (engine = main +
+the `[LOOPDIAG]` instrument). Ledgers: `docs/l1-raw/loop-diag/p27/`.
+
+*Abort table.* First launch: `ABORT-TESTS` (amendment 1; nothing ran).
+Relaunch: no token fired; 0 `ABORT-RC`, 0 bring-up retries, 0
+`VOID-ONDISK`; no row io-flagged (`full avg10` < 20 throughout).
+
+*Rows.* 115 of 128 LIVE; 13 `WITNESS-FAIL`: 12 at `c8-100` (DEF 128, 256,
+256, 384, 512, 768; BRS 192, 192, 256, 256, 384, 384), every one because
+the slow path p1 carried no RTT samples in ≥ 4 post-warm-up windows (the
+placement sent it nothing at those caps), and one at `c1d-400` (DEF768 s42,
+p0 had 2 windows). They are void per the witness rule; c8 is scored on the
+remaining points (DEF n = 256 and BRS n = 192–384 have no live row). The
+score file's `ROWS` and `VOID` tables print empty for plan 27 (a display
+fault in `score27`; the statuses above are read from the `LDROW` lines).
+
+*Q1, the L source (bbr_rs rate ÷ link, BRS rows).*
+
+| cell | Q over the grid | Spearman(Q, n) | class |
+|---|---|---|---|
+| c2-100 | 0.40, 0.55, 0.67, 0.80 at n ≥ 192 | 0.91 | **`CIRCULAR`** |
+| c1s-400 | 0.74–1.02 (median 0.87) | 0.48 | `NEITHER` |
+| c8-100 | p0 0.66–0.81; p1 0.78–2.07 | 0.40 / −1.0 | `NEITHER` |
+| c1d-400 | 0.50–0.97 (median 0.86) | 0.64 / 0.64 | `NEITHER` |
+
+bbr_rs does not over-read (stock BBR reads ×7.3 at c2 and ×9.1 at c8, as in
+§24); it reads what is delivered. At c2 it tracks the cap below the knee and
+sits at 0.80 above it, which is the delivered 87 Mbit/s, not the 100 Mbit/s
+link. An honest sampler of an app-limited flow cannot see the headroom the
+cap withholds — the §23 circularity, one layer down.
+
+*Q2, the spread (DEF rows), with the fixed point on the true link.*
+
+| cell | S = Tp50 − Tmin over the grid | class | ask fixed point | slope | DEF band |
+|---|---|---|---|---|---|
+| c2-100 | 4.9–6.8 ms (max/min 1.39) | **`FLAT`** | 164 `STABLE` | 0.25 | [128, 288] |
+| c1s-400 | 1.3–10.2 ms (×7.9) | `INFLATES` | 701 `STABLE` | 0.82 | [683, 1 536] |
+| c8-100 | p0 5.3–27.8 ms (×5.3), p1 9.3–118 ms (×12.7) | `INFLATES` | 324 `STABLE` | 0.52 | [256, 576] |
+| c1d-400 | 2.2–17.4 ms (×7.8 / ×7.4) | `INFLATES` | `CEILING` (ask > n to 4 096) | – | [512, 1 152] |
+
+*Q3, reproduction with bbr_rs's rate (BRS rows).* c2 `FLOOR` (ask 55–152,
+below n everywhere: the circular rate starves it); c1s n_fp = 500 (band
+[683, 1 536]); c8 n_fp = 336 (band [341, 768]; inside the DEF band, reported
+only); c1d n_fp = 2 957 (band [683, 1 536]). **`MISSES` at all four.**
+
+*Predictions.* Q1 `APP-LIMITED` or `CIRCULAR` below the knee: MET in
+substance (`CIRCULAR` at c2; elsewhere `NEITHER` — it reads the delivered
+rate, below the link). Q2 `FLAT` at c2: MET; `INFLATES` at c1s and c1d: MET;
+`FLAT` on c8's fast leg: MISSED (×5.3). Q3 misses wherever Q1 fails: MET.
+`PREMISES-FAIL`: MET.
+
+*What it implies for the law (outside the set, no verdict).* (1) The rate
+premise is the binding one. Three samplers now read the same thing — ours
+(§23), quinn's stock BBR (§24, over-reads under jitter) and bbr_rs (this
+section, reads the delivered rate) — and none sees a link the store cap
+does not let the sender reach. A store law of the form `rate × time` cannot
+take its rate from the loop it closes; it needs an exploration term, i.e. a
+probe. (2) The time premise holds only at c2. Elsewhere the spread is
+the queue's own variance: it grows with the cap, receiver-bound at c1s/c1d
+and per leg at c8. With the true link the map is still stable at three cells
+(slopes 0.25–0.82) and lands in the knee band at c2, c1s and c8, so the
+spread term is not useless; but c1d runs to `CEILING`, and c1s's slope 0.82
+is near the 0.9 fragility line. (3) Together: there is no measured,
+non-circular input for this law in the current engine; the next candidate
+must either probe (bounded, continuous in δ — a gain on the cap that is
+always present, not a phase) or close the loop on delay rather than rate
+(grow the cap while the queue delay `Tmin − RTprop` stays under the dial's
+q·RTprop). The data here can pre-check the second offline: at the knees,
+Tmin/RTprop reads 1.32 (c2), 1.56–1.98 (c1s 768–1024) and 1.21–2.19 (c1d
+768–1024), so one fixed ratio does not mark every knee.

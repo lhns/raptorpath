@@ -1,0 +1,26 @@
+WAITER start 2026-10-26T21:33:59Z wait_s=14400 vm_lock=/tmp/rwm-vm.lock rp_lock=/home/VMUSER/rp.lock
+WAITER precondition holds 2026-10-26T23:25:48Z waited=6709s load=1.38 1.82 1.94; exec loopdiag_run_all.sh LD_PLAN=27
+SENTINEL-WRITABLE /dev/shm/ld27/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld27/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-10-26T23:25:57Z user=VMUSER dir=/dev/shm/ld27/run launch=2026-10-26T23:25:57Z
+LD-ALL start plan=27 load=1.32 1.79 1.93 1/328 844312 2026-10-26T23:25:57Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=1.32 1.79 1.93; io=full avg10=47.55 avg60=21.85 avg300=13.20 total=35229451102 2026-10-26T23:25:57Z
+LD-ALL FAILED: ABORT-TESTS (parser-test.log) 2026-10-26T23:25:58Z
+PERSISTED /dev/shm/ld27/run -> /home/VMUSER/ld27/run 2026-10-26T23:25:58Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

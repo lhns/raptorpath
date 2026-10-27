@@ -1,0 +1,267 @@
+LOOP-DIAG PLAN 27 SCORE (premises of the fixed-point model; diagnostic, nothing here ships)
+
+ROWS by (cell, arm): live / total / statuses
+  c2-100 DEF64: live 2/2 {'LIVE': 2}
+  c2-100 DEF96: live 2/2 {'LIVE': 2}
+  c2-100 DEF128: live 2/2 {'LIVE': 2}
+  c2-100 DEF192: live 2/2 {'LIVE': 2}
+  c2-100 DEF256: live 2/2 {'LIVE': 2}
+  c2-100 DEF384: live 2/2 {'LIVE': 2}
+  c2-100 DEF512: live 2/2 {'LIVE': 2}
+  c2-100 DEF1024: live 2/2 {'LIVE': 2}
+  c2-100 BRS64: live 2/2 {'LIVE': 2}
+  c2-100 BRS96: live 2/2 {'LIVE': 2}
+  c2-100 BRS128: live 2/2 {'LIVE': 2}
+  c2-100 BRS192: live 2/2 {'LIVE': 2}
+  c2-100 BRS256: live 2/2 {'LIVE': 2}
+  c2-100 BRS384: live 2/2 {'LIVE': 2}
+  c2-100 BRS512: live 2/2 {'LIVE': 2}
+  c2-100 BRS1024: live 2/2 {'LIVE': 2}
+  c1s-400 DEF192: live 2/2 {'LIVE': 2}
+  c1s-400 DEF256: live 2/2 {'LIVE': 2}
+  c1s-400 DEF384: live 2/2 {'LIVE': 2}
+  c1s-400 DEF512: live 2/2 {'LIVE': 2}
+  c1s-400 DEF768: live 2/2 {'LIVE': 2}
+  c1s-400 DEF1024: live 2/2 {'LIVE': 2}
+  c1s-400 DEF1536: live 2/2 {'LIVE': 2}
+  c1s-400 DEF2048: live 2/2 {'LIVE': 2}
+  c1s-400 BRS192: live 2/2 {'LIVE': 2}
+  c1s-400 BRS256: live 2/2 {'LIVE': 2}
+  c1s-400 BRS384: live 2/2 {'LIVE': 2}
+  c1s-400 BRS512: live 2/2 {'LIVE': 2}
+  c1s-400 BRS768: live 2/2 {'LIVE': 2}
+  c1s-400 BRS1024: live 2/2 {'LIVE': 2}
+  c1s-400 BRS1536: live 2/2 {'LIVE': 2}
+  c1s-400 BRS2048: live 2/2 {'LIVE': 2}
+  c8-100 DEF128: live 1/2 {'LIVE': 1, 'WITNESS-FAIL': 1}
+  c8-100 DEF192: live 2/2 {'LIVE': 2}
+  c8-100 DEF256: live 0/2 {'WITNESS-FAIL': 2}
+  c8-100 DEF384: live 1/2 {'LIVE': 1, 'WITNESS-FAIL': 1}
+  c8-100 DEF512: live 1/2 {'WITNESS-FAIL': 1, 'LIVE': 1}
+  c8-100 DEF768: live 1/2 {'WITNESS-FAIL': 1, 'LIVE': 1}
+  c8-100 DEF1024: live 2/2 {'LIVE': 2}
+  c8-100 DEF2048: live 2/2 {'LIVE': 2}
+  c8-100 BRS128: live 2/2 {'LIVE': 2}
+  c8-100 BRS192: live 0/2 {'WITNESS-FAIL': 2}
+  c8-100 BRS256: live 0/2 {'WITNESS-FAIL': 2}
+  c8-100 BRS384: live 0/2 {'WITNESS-FAIL': 2}
+  c8-100 BRS512: live 2/2 {'LIVE': 2}
+  c8-100 BRS768: live 2/2 {'LIVE': 2}
+  c8-100 BRS1024: live 2/2 {'LIVE': 2}
+  c8-100 BRS2048: live 2/2 {'LIVE': 2}
+  c1d-400 DEF384: live 2/2 {'LIVE': 2}
+  c1d-400 DEF512: live 2/2 {'LIVE': 2}
+  c1d-400 DEF768: live 1/2 {'WITNESS-FAIL': 1, 'LIVE': 1}
+  c1d-400 DEF1024: live 2/2 {'LIVE': 2}
+  c1d-400 DEF1536: live 2/2 {'LIVE': 2}
+  c1d-400 DEF2048: live 2/2 {'LIVE': 2}
+  c1d-400 DEF3072: live 2/2 {'LIVE': 2}
+  c1d-400 DEF4096: live 2/2 {'LIVE': 2}
+  c1d-400 BRS384: live 2/2 {'LIVE': 2}
+  c1d-400 BRS512: live 2/2 {'LIVE': 2}
+  c1d-400 BRS768: live 2/2 {'LIVE': 2}
+  c1d-400 BRS1024: live 2/2 {'LIVE': 2}
+  c1d-400 BRS1536: live 2/2 {'LIVE': 2}
+  c1d-400 BRS2048: live 2/2 {'LIVE': 2}
+  c1d-400 BRS3072: live 2/2 {'LIVE': 2}
+  c1d-400 BRS4096: live 2/2 {'LIVE': 2}
+
+VOID TABLE (rows not LIVE)
+  c1d-400 DEF768 s42 r1: WITNESS-FAIL loopdiag-p0-windows=2
+  c8-100 BRS192 s42 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 BRS192 s7 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 BRS256 s42 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 BRS256 s7 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 BRS384 s42 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 BRS384 s7 r1: WITNESS-FAIL loopdiag-p1-windows=1
+  c8-100 DEF128 s7 r1: WITNESS-FAIL no-q-pace-bps-p1
+  c8-100 DEF256 s42 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 DEF256 s7 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 DEF384 s7 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 DEF512 s42 r1: WITNESS-FAIL loopdiag-p1-windows=0,no-q-pace-bps-p1
+  c8-100 DEF768 s42 r1: WITNESS-FAIL loopdiag-p1-windows=1
+
+IO PRESSURE (covariate; flagged at full avg10 >= 20, never voided)
+  no row flagged
+
+CELL c2-100  (links B/s per path [12500000.0], W=1279 B/datagram, q=0.1)
+  ARM DEF: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    64    2        37.9 [37.8-37.9]       5120    p0     9468    14866    5397       6995   1.598
+    96    2        54.4 [54.0-54.9]       5120    p0    10150    15440    5289       8064   3.360
+    128   2        69.0 [68.9-69.1]       4864    p0    11162    16064    4902       9508   7.563
+    192   2        88.8 [88.7-88.9]       6656    p0    13677    19180    5503      10372   8.336
+    256   2        90.3 [90.1-90.4]      13824    p0    19168    25467    6300      10070   6.937
+    384   2        88.5 [87.8-89.1]      26624    p0    32251    38281    6030      10748   7.910
+    512   2        89.9 [89.6-90.3]      38912    p0    45006    51248    6243      11440  11.173
+    1024  2        90.3 [90.2-90.3]      90112    p0    96338   103139    6800      11173   5.824
+    DEF Gmax 90.3  n* = 192 (smallest n with G >= 0.95 Gmax = 85.8); band [n*/1.5, 1.5 n*] = [128.0, 288.0]
+  ARM BRS: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    64    2        37.1 [37.0-37.3]       4864    p0     9400    14945    5544       7422   0.397
+    96    2        53.2 [53.2-53.2]       5632    p0    10227    15539    5312       8251   0.551
+    128   2        68.0 [67.7-68.4]       4864    p0    11457    16062    4604       8614   0.666
+    192   2        86.7 [86.6-86.8]       7168    p0    13706    19232    5525      11217   0.795
+    256   2        87.1 [86.2-88.0]      13312    p0    19566    25693    6127      11810   0.796
+    384   2        85.6 [83.3-87.9]      26624    p0    32666    39012    6346      11188   0.786
+    512   2        87.8 [87.2-88.3]      38912    p0    44795    51292    6498      10598   0.805
+    1024  2        87.8 [87.8-87.8]      86016    p0    96200   103156    6956      10666   0.803
+    BRS Gmax 87.8  n* = 192 (smallest n with G >= 0.95 Gmax = 83.4); band [n*/1.5, 1.5 n*] = [128.0, 288.0]
+  Q1 [BRS] median Q 0.791; Spearman(Q,n) per path p0:0.905 -> CIRCULAR
+  Q1 [DEF, reference] median Q 7.250; Spearman(Q,n) per path p0:0.524 -> OVER-READ
+  Q2 [DEF] per path: p0:FLAT(max/min 1.387, end/start 1.260) -> FLAT
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  64:133.2/2.082  96:143.6/1.495  128:154.9/1.210  192:170.7/0.889  256:176.0/0.687  384:180.4/0.470  512:190.1/0.371  1024:193.2/0.189
+    fixed point: STABLE n_fp=163.7 slope=0.246
+  Q2 [BRS, reference] per path: p0:AMBIGUOUS(max/min 1.511, end/start 1.255) -> AMBIGUOUS
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  64:139.4/2.178  96:145.8/1.519  128:142.1/1.110  192:180.0/0.937  256:192.8/0.753  384:188.5/0.491  512:183.8/0.359  1024:189.4/0.185
+    fixed point: STABLE n_fp=162.6 slope=0.592
+  Q3 [BRS] ask(n) = 1.1 sum_p Q_p link_p/W (RTprop_p + S_p), ask:ask/n  64:55.4/0.866  96:80.4/0.838  128:94.7/0.740  192:143.1/0.745  256:153.5/0.600  384:148.2/0.386  512:148.0/0.289  1024:152.0/0.148
+    fixed point: FLOOR n_fp=- slope=-; in DEF band (report only): no
+  Q1 CIRCULAR
+  Q2 FLAT STABLE n_fp=163.7 slope=0.246
+  Q3 MISSES n_fp=- band=[128.0, 288.0]
+
+CELL c1s-400  (links B/s per path [125000000.0], W=1279 B/datagram, q=0.1)
+  ARM DEF: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    192   2       243.2 [45.2-441.2]      18816    p0    31933    33878    1945       6426   0.908
+    256   2       529.3 [508.1-550.5]        960    p0     2608     3891    1283       2404   1.014
+    384   2       632.0 [612.2-651.8]       1536    p0     2914     4790    1876       2440   1.178
+    512   2       674.8 [667.3-682.2]       2304    p0     3240     5796    2556       2532   0.897
+    768   2       701.4 [692.4-710.3]       4608    p0     4000     8458    4458       2570   0.995
+    1024  2       740.6 [724.5-756.7]       6144    p0     4831    10031    5200       2438   0.745
+    1536  2       745.9 [745.8-746.0]      10752    p0     7909    15250    7341       2522   0.816
+    2048  2       721.7 [712.3-731.0]      15872    p0    11994    22169   10175       2560   0.897
+    DEF Gmax 745.9  n* = 1024 (smallest n with G >= 0.95 Gmax = 708.6); band [n*/1.5, 1.5 n*] = [682.7, 1536.0]
+  ARM BRS: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    192   2       448.3 [439.1-457.5]        736    p0     2478     3456     978       2353   0.741
+    256   2       501.5 [493.6-509.3]       1024    p0     2669     3971    1302       2428   0.861
+    384   2       602.6 [601.3-603.9]       1728    p0     2900     4964    2064       2561   0.977
+    512   2       653.6 [650.0-657.3]       2432    p0     3172     6018    2846       2508   0.871
+    768   2       694.8 [694.2-695.4]       3968    p0     3988     8264    4276       2570   0.917
+    1024  2       738.8 [695.5-782.1]       5888    p0     4880    10568    5687       2515   0.775
+    1536  2       723.1 [678.3-767.8]      10752    p0     9470    17326    7856       2464   0.865
+    2048  2       712.7 [706.3-719.1]      15360    p0    10348    22640   12292       2596   1.018
+    BRS Gmax 738.8  n* = 1024 (smallest n with G >= 0.95 Gmax = 701.9); band [n*/1.5, 1.5 n*] = [682.7, 1536.0]
+  Q1 [BRS] median Q 0.868; Spearman(Q,n) per path p0:0.476 -> NEITHER
+  Q1 [DEF, reference] median Q 0.903; Spearman(Q,n) per path p0:-0.595 -> NEITHER
+  Q2 [DEF] per path: p0:INFLATES(max/min 7.930, end/start 5.231) -> INFLATES
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  192:899.9/4.687  256:396.3/1.548  384:464.0/1.208  512:547.0/1.068  768:755.6/0.984  1024:821.2/0.802  1536:1060.3/0.690  2048:1369.1/0.668
+    fixed point: STABLE n_fp=701.1 slope=0.815
+  Q2 [BRS, reference] per path: p0:INFLATES(max/min 12.575, end/start 12.575) -> INFLATES
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  192:358.0/1.865  256:400.9/1.566  384:497.2/1.295  512:575.7/1.124  768:736.0/0.958  1024:881.8/0.861  1536:1109.4/0.722  2048:1600.6/0.782
+    fixed point: STABLE n_fp=682.4 slope=0.626
+  Q3 [BRS] ask(n) = 1.1 sum_p Q_p link_p/W (RTprop_p + S_p), ask:ask/n  192:265.4/1.382  256:345.0/1.348  384:485.9/1.265  512:501.4/0.979  768:675.2/0.879  1024:683.5/0.667  1536:959.3/0.625  2048:1629.6/0.796
+    fixed point: STABLE n_fp=499.9 slope=0.121; in DEF band (report only): no
+  Q1 NEITHER
+  Q2 INFLATES STABLE n_fp=701.1 slope=0.815
+  Q3 MISSES n_fp=499.9 band=[682.7, 1536.0]
+
+CELL c8-100  (links B/s per path [12500000.0, 2500000.0], W=1279 B/datagram, q=0.1)
+  ARM DEF: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    128   1        65.4 [65.4-65.4]       6144    p0    10678    15975    5297       8657   3.537
+                                                       p1    37369    46714    9345      32434   6.195
+    192   2        79.0 [69.9-88.2]       6400    p0    12591    18333    5742       9327   9.160
+                                                       p1    37317    46948    9631      33619   3.145
+    256   0           - [---]          -    p0        -        -       -          -       -
+                                                       p1        -        -       -          -       -
+    384   1       102.9 [102.9-102.9]      16384    p0    18666    29209   10542      10912   9.276
+                                                       p1    40214    61590   21376      36723  10.737
+    512   1       102.0 [102.0-102.0]      24576    p0    24588    38986   14398      10973  20.342
+                                                       p1    40740    83746   43006      36034   9.251
+    768   1       102.3 [102.3-102.3]      40960    p0    33311    54013   20702      10644   9.480
+                                                       p1    42540   108630   66089      36431   7.158
+    1024  2       100.9 [100.9-100.9]      55296    p0    44917    72749   27832      11768   6.659
+                                                       p1    44489   162706  118216      37443   9.121
+    2048  2        99.0 [98.6-99.3]     106496    p0   104711   123976   19266      12734   5.264
+                                                       p1   233813   289492   55679      48288  13.984
+    DEF Gmax 102.9  n* = 384 (smallest n with G >= 0.95 Gmax = 97.8); band [n*/1.5, 1.5 n*] = [256.0, 576.0]
+  ARM BRS: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    128   2        65.7 [65.4-66.0]       5376    p0    11034    16064    5030       8790   0.658
+                                                       p1    38217    44794    6576      33029   2.065
+    192   0           - [---]          -    p0        -        -       -          -       -
+                                                       p1        -        -       -          -       -
+    256   0           - [---]          -    p0        -        -       -          -       -
+                                                       p1        -        -       -          -       -
+    384   0           - [---]          -    p0        -        -       -          -       -
+                                                       p1        -        -       -          -       -
+    512   2        98.5 [98.0-99.0]      25600    p0    24636    38655   14018      10990   0.807
+                                                       p1    41498    80109   38612      38366   1.039
+    768   2       100.6 [100.3-100.9]      40960    p0    37784    56887   19102      13604   0.797
+                                                       p1    42152   117523   75371      38486   1.035
+    1024  2        97.9 [96.1-99.6]      57344    p0    50440    74654   24214      19746   0.804
+                                                       p1    60042   154229   94188      39304   0.915
+    2048  2        96.6 [94.7-98.5]     114688    p0   116904   132269   15365      15540   0.806
+                                                       p1   201779   269448   67670      44568   0.777
+    BRS Gmax 100.6  n* = 512 (smallest n with G >= 0.95 Gmax = 95.6); band [n*/1.5, 1.5 n*] = [341.3, 768.0]
+  Q1 [BRS] median Q 0.807; Spearman(Q,n) per path p0:0.400 p1:-1.000 -> NEITHER
+  Q1 [DEF, reference] median Q 9.140; Spearman(Q,n) per path p0:0.071 p1:0.643 -> OVER-READ
+  Q2 [DEF] per path: p0:INFLATES(max/min 5.254, end/start 3.637) p1:INFLATES(max/min 12.650, end/start 5.958) -> INFLATES
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  128:239.8/1.874  192:255.0/1.328  256:-/-  384:355.6/0.926  512:442.7/0.865  768:557.4/0.726  1024:760.4/0.743  2048:567.6/0.277
+    fixed point: STABLE n_fp=324.3 slope=0.524
+  Q2 [BRS, reference] per path: p0:INFLATES(max/min 4.814, end/start 3.055) p1:INFLATES(max/min 14.322, end/start 10.290) -> INFLATES
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  128:233.7/1.826  192:-/-  256:-/-  384:-/-  512:434.4/0.848  768:596.4/0.777  1024:759.6/0.742  2048:573.6/0.280
+    fixed point: STABLE n_fp=349.4 slope=0.522
+  Q3 [BRS] ask(n) = 1.1 sum_p Q_p link_p/W (RTprop_p + S_p), ask:ask/n  128:273.7/2.138  192:-/-  256:-/-  384:-/-  512:389.0/0.760  768:533.4/0.695  1024:642.5/0.627  2048:455.2/0.222
+    fixed point: STABLE n_fp=336.2 slope=0.300; in DEF band (report only): yes
+  Q1 NEITHER
+  Q2 INFLATES STABLE n_fp=324.3 slope=0.524
+  Q3 MISSES n_fp=336.2 band=[341.3, 768.0]
+
+CELL c1d-400  (links B/s per path [125000000.0, 125000000.0], W=1279 B/datagram, q=0.1)
+  ARM DEF: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    384   2       604.3 [601.7-607.0]       1664    p0     2642     4819    2178       2522   0.838
+                                                       p1     2780     5117    2337       2503   0.971
+    512   2       633.6 [628.3-638.9]       2560    p0     2983     6308    3325       2616   1.047
+                                                       p1     3000     6285    3284       2688   0.775
+    768   1       699.8 [699.8-699.8]       4608    p0     3601     8599    4998       2566   0.771
+                                                       p1     3187     7670    4484       2642   0.452
+    1024  2       693.6 [657.7-729.6]       7680    p0     4976    12214    7238       2617   0.993
+                                                       p1     5297    11825    6528       2414   1.047
+    1536  2       675.2 [658.7-691.7]      14336    p0     9897    19544    9648       2657   0.878
+                                                       p1     9068    19362   10294       2581   1.027
+    2048  2       685.3 [681.6-689.0]      18432    p0    14990    24292    9302       2636   0.778
+                                                       p1    15552    24511    8958       2625   1.120
+    3072  2       699.8 [673.4-726.2]      29696    p0    24850    38452   13602       2548   1.219
+                                                       p1    26511    41390   14879       2642   0.901
+    4096  2       659.0 [610.2-707.7]      45056    p0    34206    51136   16930       2689   0.784
+                                                       p1    34612    51990   17378       2790   1.293
+    DEF Gmax 699.8  n* = 768 (smallest n with G >= 0.95 Gmax = 664.8); band [n*/1.5, 1.5 n*] = [512.0, 1152.0]
+  ARM BRS: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)
+    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q
+    384   2       596.8 [586.5-607.1]       1664    p0     2730     4940    2211       2462   0.603
+                                                       p1     2791     5070    2279       2390   0.687
+    512   2       654.3 [645.3-663.3]       2560    p0     3149     6049    2900       2420   0.887
+                                                       p1     2917     6260    3343       2620   0.580
+    768   2       534.6 [389.3-679.9]      14848    p0     3371    19716   16346       2486   0.500
+                                                       p1     3316     9894    6578       2526   0.596
+    1024  2       718.2 [716.1-720.4]       6144    p0     4182    10925    6744       2940   0.857
+                                                       p1     4224    11309    7086       2442   0.942
+    1536  2       696.1 [685.6-706.6]      12288    p0     7789    16846    9056       2460   0.860
+                                                       p1     7617    20172   12555       2636   0.961
+    2048  2       670.0 [657.1-683.0]      20480    p0    13690    26650   12960       2546   0.699
+                                                       p1    14078    25465   11388       2516   0.875
+    3072  2       653.7 [625.2-682.3]      31744    p0    24956    39540   14584       2432   0.928
+                                                       p1    25046    39838   14792       2641   0.705
+    4096  2       617.1 [603.5-630.6]      49152    p0    37832    54597   16765       2864   0.966
+                                                       p1    38544    53912   15368       2812   0.944
+    BRS Gmax 718.2  n* = 1024 (smallest n with G >= 0.95 Gmax = 682.3); band [n*/1.5, 1.5 n*] = [682.7, 1536.0]
+  Q1 [BRS] median Q 0.858; Spearman(Q,n) per path p0:0.643 p1:0.643 -> NEITHER
+  Q1 [DEF, reference] median Q 0.936; Spearman(Q,n) per path p0:0.000 p1:0.595 -> NEITHER
+  Q2 [DEF] per path: p0:INFLATES(max/min 7.774, end/start 7.774) p1:INFLATES(max/min 7.436, end/start 7.436) -> INFLATES
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  384:1025.5/2.671  512:1280.8/2.502  768:1579.2/2.056  1024:2020.7/1.973  1536:2706.9/1.762  2048:2528.8/1.235  3072:3619.7/1.178  4096:4277.3/1.044
+    fixed point: CEILING n_fp=- slope=-
+  Q2 [BRS, reference] per path: p0:INFLATES(max/min 7.582, end/start 7.582) p1:INFLATES(max/min 6.744, end/start 6.744) -> INFLATES
+    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  384:1004.2/2.615  512:1213.1/2.369  768:3003.3/3.911  1024:2065.5/2.017  1536:2871.2/1.869  2048:3161.5/1.544  3072:3703.5/1.206  4096:4064.6/0.992
+    fixed point: STABLE n_fp=4047.5 slope=0.353
+  Q3 [BRS] ask(n) = 1.1 sum_p Q_p link_p/W (RTprop_p + S_p), ask:ask/n  384:647.8/1.687  512:879.6/1.718  768:1595.2/2.077  1024:1857.5/1.814  1536:2633.6/1.715  2048:2472.2/1.207  3072:3018.3/0.983  4096:3883.5/0.948
+    fixed point: STABLE n_fp=2956.9 slope=0.533; in DEF band (report only): no
+  Q1 NEITHER
+  Q2 INFLATES CEILING n_fp=- slope=-
+  Q3 MISSES n_fp=2956.9 band=[682.7, 1536.0]
+
+PREMISES-FAIL c2-100:Q1=CIRCULAR c2-100:Q3=MISSES c1s-400:Q1=NEITHER c1s-400:Q2=INFLATES/STABLE c1s-400:Q3=MISSES c8-100:Q1=NEITHER c8-100:Q2=INFLATES/STABLE c8-100:Q3=MISSES c1d-400:Q1=NEITHER c1d-400:Q2=INFLATES/CEILING c1d-400:Q3=MISSES

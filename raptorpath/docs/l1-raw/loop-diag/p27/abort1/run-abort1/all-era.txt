@@ -1,0 +1,5 @@
+LD-ALL start plan=27 load=1.32 1.79 1.93 1/328 844312 2026-10-26T23:25:57Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=1.32 1.79 1.93; io=full avg10=47.55 avg60=21.85 avg300=13.20 total=35229451102 2026-10-26T23:25:57Z
+LD-ALL FAILED: ABORT-TESTS (parser-test.log) 2026-10-26T23:25:58Z

@@ -1,0 +1,154 @@
+ok   warm-up (t < 1.0 s) and other paths excluded
+ok   `-` fields parse to None, numbers to float
+ok   windows with n=0 do not count and do not enter the medians
+ok   per-row medians over all ten fields
+ok   q_pace_bps all `-`: median None, numeric count 0
+ok   MAIN pass
+ok   MAIN row carries the medians (rtt_min_us over 5 post-warm windows)
+ok   MAIN fail: SUMCAP eng absent
+ok   fail: no [ACKDIAG]
+ok   fail: 3 post-warm-up p0 windows < 4
+ok   fail: an n=0 window is not a witness window
+ok   fail: warm-up windows are not witnesses
+ok   fail: q_pace_bps never numeric
+ok   fail: p1 windows do not witness p0
+ok   MAIN fail: RWM_STORE set
+ok   S<n> pass (eng absent, every denominator == n)
+ok   S<n> fail: SUMCAP eng>0
+ok   S<n> fail: denominator != n
+ok   S<n> fail: gate RWM_STORE != n
+ok   void rows keep their status
+ok   real anchor-diag MAIN log: no LOOPDIAG -> loopdiag-p0-windows=0 and no-q-pace-bps
+ok   real log: everything else still extracts (goodput, SUMCAP, ACKDIAG, A_x, rtt, rtp_us, CPU/GB)
+ok   real log: LDROW round-trips through JSON
+ok   n* = 512 (smallest n with G >= 0.95 Gmax = 688.75)
+ok   band printed: [341.3, 768.0]
+ok   table has every column header
+ok   the two verdict lines are present
+ok   knee: G == 0.95 Gmax qualifies
+ok   O1 FLAT (constant Tmin, R1 = 1)
+ok   O1 FLAT at the 1.25 boundary (inclusive)
+ok   O1 INFLATES (R1 = 1.5 exactly)
+ok   O1 AMBIGUOUS (R1 = 1.3)
+ok   O1 AMBIGUOUS when only a mid-grid bump breaks FLAT (R1 = 1)
+ok   C1 fixed point: T=2 ms -> n_fp1 = 256 (C1 = 214.9 >= 192, < 256), outside the band -> MISSES
+ok   C1(n)/n printed per n
+ok   C1 fixed point: T=4 ms -> n_fp1 = 512 (C1 = 429.9) in [341.3, 768] -> REPRODUCES
+ok   C1 never < n on the grid -> n_fp1 `-`, MISSES
+ok   O3 FLAT-AT-LINK (Q = 1)
+ok   O3 FLAT-AT-LINK at both boundaries (0.8 and 1.25 inclusive)
+ok   O3 OVER-READ (median Q = 2)
+ok   O3 CIRCULAR (Q rises with n, Q(192) = 0.296 < 0.8, Spearman 1)
+ok   O3 NEITHER (Q = 0.5 flat below the link: no rise)
+ok   O3 NEITHER (Q falls with n)
+ok   O3 NEITHER (not flat, median in band, no rank rise to a low start)
+ok   C3med = 1.1 (Q linkB / W) RTprop = 430.0
+ok   C3 in the band -> OPTION3 REPRODUCES
+ok   C3b uses Tmin, not RTprop (Tmin = 1 ms -> 107.5)
+ok   C3 outside the band -> MISSES (Q = 0.25 -> C3 = 107.5 < 341.3)
+ok   CJ reported, with its own value: 1.1 L (RTprop + jit) = 1.1*97700*0.0041 = 440.6
+ok   sparse ledger: n*, O1, O3 still computed on what exists
+ok   empty ledger: dashes, MISSES, no exception
+ok   no quinn readings: O3 `-`, C3 `-`
+ok   non-live rows are ignored in the per-n means
+ok   c2: n* = 192; C1 = 1.1*9770*0.02 = 214.9 -> n_fp1 = 256
+ok   score: ROWS and VOID tables precede the cell blocks
+ok   score: void row listed with its problem
+ok   score: MAIN reference per cell (goodput 700.0, SUMCAP cap, LOOPDIAG medians)
+ok   score: verdict lines for both cells
+ok   score: empty ledger does not raise
+CHECK done=True rows=46/46
+ok   check: 46 rows + done line passes
+CHECK done=True rows=45/46
+ok   check: 45 rows fails
+CHECK done=False rows=46/46
+ok   check: no completion line fails
+SMOKE ('c1s-400', 'MAIN'): mbps=620.537 eng=100 ld_n=5 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=1024..1024 status=LIVE
+SMOKE ('c2-100', 'S192'): mbps=620.537 eng=None ld_n=5 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=192..192 status=LIVE
+SMOKE-PASS
+ok   smoke: two live rows pass
+SMOKE ('c1s-400', 'MAIN'): mbps=620.537 eng=100 ld_n=5 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=1024..1024 status=LIVE
+SMOKE ('c2-100', 'S192'): mbps=620.537 eng=None ld_n=1 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=192..192 status=WITNESS-FAIL
+SMOKE-FAIL ('c2-100', 'S192'): WITNESS-FAIL ['loopdiag-p0-windows=1']
+ok   smoke: a witness-failed row fails
+ok   plan arithmetic
+ok   DEF<n> pass (echo BBR, eng absent, den == n, gate == n)
+ok   DEF row has per-path dict ld_p0 with the seven medians
+ok   DEF fail: no BBR echo
+ok   DEF fail: burst-robust echo present
+ok   BRS<n> pass (burst-robust echo)
+ok   BRS fail: no burst-robust echo
+ok   DEF/BRS fail: SUMCAP eng > 0
+ok   DEF/BRS fail: denominator != n
+ok   DEF/BRS fail: gate RWM_STORE != n
+ok   dual cell pass: both paths witnessed
+ok   dual cell: per-path medians kept apart (p0 4000, p1 9000), p0 compat field intact
+ok   dual cell fail: p1 has no windows and no numeric q_pace_bps
+ok   dual cell fail: p1 q_pace_bps never numeric
+ok   dual cell fail: 3 post-warm-up windows per path < 4 (both named)
+ok   single cell: a stray p1 is stored but not required
+ok   Q1 FLAT-AT-LINK, both boundaries inclusive
+ok   Q1 CIRCULAR (Spearman 1, Q(n_min) 0.2 < 0.8)
+ok   Q1 CIRCULAR if ANY path circulates (dual: p0 flat, p1 rises)
+ok   Q1 CIRCULAR wins over OVER-READ (rises 0.64 -> 2.8)
+ok   Q1 OVER-READ (Q = 2 flat)
+ok   Q1 OVER-READ (rises but starts above 0.8: no CIRCULAR)
+ok   Q1 APP-LIMITED (Q = 0.5 flat)
+ok   Q1 NEITHER (median 1.0 in band, one dip, no rise)
+ok   Q1 no data -> `-`
+ok   Q1 FLAT-AT-LINK fails when one path leaves the band (dual p1 = 1.3)
+ok   Q2 path FLAT at max/min = 1.5 exactly
+ok   Q2 path INFLATES at S(nmax)/S(nmin) = 2.0 exactly
+ok   Q2 path AMBIGUOUS (end ratio 1.99, span 1.99)
+ok   Q2 path AMBIGUOUS (bump in the middle: span 3, end 1)
+ok   Q2 path: S(n_min) = 0, S(n_max) > 0 -> INFLATES
+ok   Q2 cell: all FLAT -> FLAT; any INFLATES -> INFLATES; else AMBIGUOUS; missing -> `-`
+ok   fixed point ask = 100 + 0.5 n: interior n_fp = 200 (pair 192..256), slope 0.5 -> STABLE
+ok   fixed point ask = 10 + 0.95 n: n_fp = 200, slope 0.95 -> FRAGILE
+ok   slope 0.85 < 0.9 -> STABLE (n_fp = 133.3)
+ok   ask(n_min) = 30 < 64 -> FLOOR, no n_fp
+ok   ask(n_max) >= n_max -> CEILING
+ok   ask(n_max) == n_max -> CEILING (>=)
+ok   a grid point without data is skipped: constant 215 -> n_fp between 192 and 256 = 215
+ok   fixed point with no data at all -> `-`
+ok   all four cells: PREMISES-HOLD
+ok   c2-100: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   c1s-400: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   c8-100: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   c1d-400: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   verdict lines present per cell, in the pre-registered format
+ok   cells print in battery order c2, c1s, c8, c1d
+ok   table columns present (goodput, A_x p50, Tmin, Tp50, S, RTprop, Q; ask/n)
+ok   c8-100 prints both paths (p0, p1) per n
+ok   c2: constant ask 1.01 x 192 = 193.92 -> n_fp interpolated between 192 and 256 = 193.92
+ok   Q3 uses Q x link: Q = 0.8 -> n_fp = 0.8 x 193.92 ~ 155.1 for c2; Q1 still FLAT-AT-LINK (0.8 inclusive)
+ok   PREMISES-FAIL: Q1 OVER-READ on a dual cell's second path names the cells
+ok   PREMISES-FAIL: DEF S inflates with n -> Q2 INFLATES (the BRS arm is only a reference)
+ok   Q2 INFLATES printed as the verdict line
+ok   PREMISES-FAIL: BRS ask collapses -> FLOOR counts as MISSES (Q3), Q1/Q2 hold
+ok   PREMISES-FAIL: BRS ask above the grid -> CEILING counts as MISSES
+ok   PREMISES-FAIL: DEF fixed point FRAGILE (slope 0.95) -> Q2 FLAT FRAGILE on the c2 cell
+ok   DEF slope 0.5: Q2 FLAT STABLE n_fp=200.0 slope=0.500
+ok   DEF ask floor: `Q2 FLAT FLOOR n_fp=- slope=-`
+ok   DEF ask ceiling: `Q2 FLAT CEILING n_fp=- slope=-`
+ok   Q3 MISSES when n_fp (193.9) is outside the BRS band [341.3, 768.0]; DEF band reported (yes)
+ok   non-live rows ignored in the means
+ok   empty ledger: PREMISES-FAIL, no exception
+ok   reference classifications printed (Q1 DEF, Q2 BRS)
+CHECK27 done=True rows=128/128
+ok   check27: 128 rows + done line passes
+CHECK27 done=True rows=127/128
+ok   check27: 127 rows fails
+CHECK27 done=False rows=128/128
+ok   check27: no completion line fails
+SMOKE27 ('c2-100', 'BRS192'): mbps=620.537 eng=None ld_pn={'0': [5, 5]} cc_def=False cc_brs=True p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1=None status=LIVE
+SMOKE27 ('c8-100', 'DEF512'): mbps=620.537 eng=None ld_pn={'0': [5, 5], '1': [5, 5]} cc_def=True cc_brs=False p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 9000.0, 'rtt_min_us': 9000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 9500.0, 'srtt_us': 4400.0} status=LIVE
+SMOKE-PASS
+ok   smoke27: BRS192 c2 + DEF512 c8 live -> pass
+SMOKE27 ('c2-100', 'BRS192'): mbps=620.537 eng=None ld_pn={'0': [5, 5]} cc_def=False cc_brs=True p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1=None status=LIVE
+SMOKE27 ('c8-100', 'DEF512'): mbps=620.537 eng=None ld_pn={'0': [5, 5], '1': [0, 0]} cc_def=True cc_brs=False p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1={'dlv_rate': None, 'jit_us': None, 'q_cwnd': None, 'q_pace_bps': None, 'q_srtt_us': None, 'rtprop_us': None, 'rtt_min_us': None, 'rtt_p10_us': None, 'rtt_p50_us': None, 'srtt_us': None} status=WITNESS-FAIL
+SMOKE-FAIL ('c8-100', 'DEF512'): WITNESS-FAIL ['loopdiag-p1-windows=0', 'no-q-pace-bps-p1']
+ok   smoke27: a dual cell with only p0 windows fails
+ok   plan 27 arithmetic: 2 blocks x 4 cells x 2 arms x 8 = 128
+ok   plan 24 constants untouched (46 rows)
+ALL OK
