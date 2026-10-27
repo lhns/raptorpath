@@ -25,6 +25,7 @@ sys.path.insert(0, HERE)
 import l1common as lc  # noqa: E402
 import stage3_parse as sp  # noqa: E402
 import storelaw_parse as sl  # noqa: E402  (regexes only)
+from storelaw_parse import col, f, live, mean  # noqa: E402
 
 GRID_C1S = [192, 256, 384, 512, 768, 1024, 1536, 2048]
 GRID_C2 = [64, 96, 128, 192, 256, 384, 512, 1024]
@@ -248,24 +249,8 @@ def rows_of(paths):
     return rows
 
 
-def mean(v):
-    return sum(v) / len(v) if v else None
-
-
 def sd(v):
     return sl.sd(v) if len(v) > 1 else None
-
-
-def f(x, nd=1):
-    return "-" if x is None else f"{x:.{nd}f}"
-
-
-def live(rows, cell, arm):
-    return [r for r in rows if r["cell"] == cell and r["arm"] == arm and r["status"] == "LIVE"]
-
-
-def col(rs, key):
-    return [r[key] for r in rs if r.get(key) is not None]
 
 
 def btl0(r):

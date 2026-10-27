@@ -40,6 +40,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import l1common as lc  # noqa: E402
 import stage3_parse as sp  # noqa: E402
+from l1ab import rdiag, RDIAG_MIN_MSGS, _RDIAG  # noqa: E402
 
 # ── THE DESIGN (docs/status.md §9) ───────────────────────────────────────
 ARMS = ["P0", "MAIN"]
@@ -60,25 +61,9 @@ S10_NEW = {
 D3_CELL = "c1s-400"
 D3_CORE = 0.90          # one thread / task at >= 0.9 core
 RDIAG_BUSY = 90.0       # [RDIAG] busy % equivalent of D3_CORE
-RDIAG_MIN_MSGS = 1000   # msgs/s: an [RDIAG] line inside the transfer
 MIN_LIVE = 3
 ABORT_FIRST = ("ABORT-LOCK", "ABORT-CRLF", "ABORT-BUILD", "ABORT-TESTS", "ABORT-SHA",
                "ABORT-SENTINEL-UNWRITABLE", "ABORT-SMOKE")
-
-_RDIAG = re.compile(r"\[RDIAG\] busy=(-?[0-9.]+)% msgs=(\d+)/s q_avg=([0-9.]+) q_max=(\d+)")
-
-
-def rdiag(lines):
-    """The in-transfer `[RDIAG]` lines -> (busy_med, busy_max, q_avg_med, n)."""
-    busy, qs = [], []
-    for ln in lines or []:
-        m = _RDIAG.search(ln)
-        if m and int(m.group(2)) >= RDIAG_MIN_MSGS:
-            busy.append(float(m.group(1)))
-            qs.append(float(m.group(3)))
-    if not busy:
-        return None, None, None, 0
-    return lc.med(busy), max(busy), lc.med(qs), len(busy)
 
 
 def has_thr(lines):
