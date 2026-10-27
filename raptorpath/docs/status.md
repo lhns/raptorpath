@@ -6781,3 +6781,48 @@ gf256 > 20 %; otherwise (gf256 ≤ 20 % but the bookkeeping classes < 50 %)
 table. MET selects the in-place R3 (then its ship battery, after the
 rebase and the harness amendments); REFUTED with decode ≥ 0.3 core (read
 above: 0.31–0.32) selects the decode-stage task.
+
+### 22. Amendment 4 — result
+
+**H-alloc (a): `UNREAD` again (rule 3). No design is selected.** The attach
+worked this time — `srv_pid` 971842 (`comm=raptorpath`), `perf record` rc 0,
+7 567 samples, `PERF-ATTACH-OK` with samples on 6 `rp-w-*` threads — but the
+pre-registered read found nothing to read: the fold saw **0 samples**.
+Two harness defects, both mine, found only in the products:
+1. `perf script -F tid,sym` prints no call chain (perf needs `ip` in the
+   field list for it), so the folded file holds tid lines only.
+2. The binary is `--release`, which carries no DWARF (`debug` is off in
+   `[profile.release]`), so dwarf unwinding stops in user code: in the
+   children view `run_receiver` reads 6.40 % children against 6.31 % self —
+   its callees are not attributed to it, and `add_symbol` reads 0.82 % /
+   0.71 %. Even with `ip` the fold would have found almost nothing under
+   `add_symbol`. (§16 built with line tables for exactly this; §20 did not,
+   and its children view shows the same flat shape.) The repo already has
+   the fix: `[profile.release-prof]` = release + `debug = 1`, declared to
+   produce the same `.text`.
+
+Session 10:41:08–10:46:32Z (after a lock wait from 09:02Z), engine
+`e4d078e`, harness `42161e4`, binary `aa09d965…` (the §22 rows' binary),
+1 GB c1d 640 Mbit/s, run from `/dev/shm`, io `full avg10` ≤ 0.92 (no flag);
+END 0 `raptorpath`, 0 `rp-*`, locks released. Ledgers:
+`docs/l1-raw/thread-r3-diag/prof/` (scrubbed). `/home/VMUSER/r3prof` (no
+target dir, < 1 MB) is left until the VM is free of the §29 session.
+
+*Not a verdict, reported for the operator:* the flat self profile (process
+wide, server) shows no `gf256` symbol at ≥ 0.3 % of samples, while the
+decoder's bookkeeping symbols are visible: `seq_probe` 1.53 %,
+`assimilate` 1.06 % self, `add_symbol` 0.71 %, `HashSet::insert` 0.89 %,
+`hash_one` 0.85 %, two `BTreeMap::insert` 0.67 % + 0.59 %,
+`hashbrown::insert` 0.64 %; the allocator family (`_int_malloc` 4.37,
+`_int_free_chunk` 2.00, `malloc_consolidate` 1.58, `__libc_malloc2` 1.36,
+`malloc` 1.28, `cfree` 1.02, `unlink_chunk` 1.44) ≈ 13 % and `memmove`
+4.78 % of the process. `mul_acc_slice` may be inlined into `assimilate`,
+and the allocator and `memmove` samples cannot be attributed to the
+decoder without call chains, so this is **not** substituted for (a).
+
+*Next* (the coordinator's call): a third read with both defects fixed and
+nothing else changed — `cargo build --profile release-prof`, `.text`
+section hash compared with the `--release` binary's and logged (a mismatch
+is `ABORT-TEXT`), `perf script -F tid,ip,sym`, and a fail-fast fold check
+on the VM (≥ 1 sample under `run_receiver` and under `add_symbol`, else
+`ABORT-FOLD`), as Amendment 5.

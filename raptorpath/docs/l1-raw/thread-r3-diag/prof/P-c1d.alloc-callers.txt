@@ -1,0 +1,24 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 7K of event 'cpu/cycles/P'
+# Event count (approx.): 13860104005
+#
+# Overhead  Symbol                          
+# ........  ................................
+#
+     4.78%  [.] __memmove_avx_unaligned_erms
+            |          
+             --0.71%--__memmove_avx_unaligned_erms
+
+     4.37%  [.] _int_malloc
+     2.00%  [.] _int_free_chunk
+     1.58%  [.] malloc_consolidate
+     1.36%  [.] __libc_malloc2
+
+
+#
+# (Tip: To record callchains for each sample: perf record -g)
+#

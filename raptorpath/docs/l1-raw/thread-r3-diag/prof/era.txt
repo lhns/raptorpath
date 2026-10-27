@@ -1,0 +1,11 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+R3P start hard=1793104858 commit=e4d078e engine + 42161e4 harness cargo=0 rustc=0 load=0.52 0.56 1.10 procs_running=1 io_full=0.92/4.25 2026-10-27T10:41:08Z
+BUILD rc=0 wall=302s cargo=0 rustc=0 load=1.14 1.44 1.41 procs_running=1 io_full=0.18/0.89 2026-10-27T10:46:10Z
+TMPFS run=/dev/shm/r3prof-a2139 bin_sha=aa09d965c2a7c440 2026-10-27T10:46:10Z
+PERF P-c1d srv_pid=971842 comm=raptorpath before[cargo=0 rustc=0 load=1.12 1.44 1.41 procs_running=1 io_full=0.18/0.89] 2026-10-27T10:46:15Z
+RUN P-c1d perf_rc=0 "mbps":639.777 after[cargo=0 rustc=0 load=1.80 1.58 1.46 procs_running=1 io_full=0.68/0.95] 2026-10-27T10:46:25Z
+PERF-ATTACH-OK rp_w_lines=6 2026-10-27T10:46:27Z
+END raptorpath=0 netns=0 2026-10-27T10:46:32Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

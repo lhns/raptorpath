@@ -1,0 +1,44 @@
+aw_version=1
+aw_tag=perf_rwm_c c1/c1/dual 1000000000
+aw_started=2026-10-27T10:46:10Z
+aw_pid=971517
+aw_cell=
+aw_arm=
+aw_era=
+aw_seed=42
+aw_rep=
+bin=/dev/shm/r3prof-a2139/bin/raptorpath
+drain_pids_t0=0
+ping_pathA_rc=0
+ping_pathA_attempts=1
+ping_pathA_max_attempts=26
+ping_pathA=1 packets transmitted, 1 received, 0% packet loss, time 0ms rtt min/avg/max/mdev = 4.228/4.228/4.228/0.000 ms
+ping_pathB_rc=0
+ping_pathB_attempts=1
+ping_pathB_max_attempts=26
+ping_pathB=1 packets transmitted, 1 received, 0% packet loss, time 0ms rtt min/avg/max/mdev = 4.194/4.194/4.194/0.000 ms
+step_topo_up_rc=0
+state_post_topo_netns=rp-srv rp-cli 
+state_post_topo_rp-cli_links=lo               UNKNOWN        127.0.0.1/8 ::1/128  cli0@if2         UP             10.77.0.1/24 fe80::58d4:e5ff:fe1e:f489/64  cli1@if3         UP             10.78.0.1/24 fe80::384e:4ff:fe57:a3fe/64  
+state_post_topo_rp-cli_qdisc=qdisc netem 8931: dev cli0 root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 42 qdisc clsact ffff: dev cli0 parent ffff:fff1  qdisc netem 8932: dev cli1 root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 1042 qdisc clsact ffff: dev cli1 parent ffff:fff1  
+state_post_topo_rp-cli_sock=State Recv-Q Send-Q Local Address:Port Peer Address:Port 
+state_post_topo_rp-srv_links=lo               UNKNOWN        127.0.0.1/8 ::1/128  srv0@if2         DOWN           10.77.0.2/24  srv1@if3         DOWN           10.78.0.2/24  
+state_post_topo_rp-srv_qdisc=qdisc netem 8933: dev srv0 root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 5894533641725591153 qdisc netem 8934: dev srv1 root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 6235213423697062099 
+state_post_topo_rp-srv_sock=State Recv-Q Send-Q Local Address:Port Peer Address:Port 
+state_post_topo_procs=
+state_post_topo_load=1.12 1.44 1.41
+srv_pid=971842
+srv_bound=1
+srv_waits=0
+srv_alive=1
+cli_rc=0
+cli_pipe=0 0 0 0
+log_final_cli_bytes=136925
+log_final_cli_gates=1
+log_final_cli_head=2026-10-27T10:46:12.372215Z  INFO raptorpath::control::estimator: estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts) 2026-10-27T10:46:12.372270Z  INFO raptorpath::gates::scheduler_gates: cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): an unmeasured leg's SRTT_i in the 5.7 cost is the active set's fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed when OFF (shipped, bit-identical) cold_place=false 2026-10-27T10:46:12.372282Z  INFO raptorpath::gates::scheduler_gates: placement temperature (RWM_PLACE
+log_final_srv_bytes=63888
+log_final_srv_gates=1
+log_final_srv_head=2026-10-27T10:46:11.256478Z  INFO raptorpath::control::estimator: estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts) 2026-10-27T10:46:11.256512Z  INFO raptorpath::gates::scheduler_gates: cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): an unmeasured leg's SRTT_i in the 5.7 cost is the active set's fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed when OFF (shipped, bit-identical) cold_place=false 2026-10-27T10:46:11.256522Z  INFO raptorpath::gates::scheduler_gates: placement temperature (RWM_PLACE
+gates_cli=1
+gates_srv=1
+aw_finished=2026-10-27T10:46:25Z

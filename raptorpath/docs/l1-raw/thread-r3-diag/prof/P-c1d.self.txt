@@ -1,0 +1,114 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 7K of event 'cpu/cycles/P'
+# Event count (approx.): 13860104005
+#
+# Overhead  Symbol                                                                                                                                                                                                                                                                                                                                                                                                                                     
+# ........  ...........................................................................................................................................................................................................................................................................................................................................................................................................................................
+#
+     6.31%  [.] raptorpath::net::receiver::run_receiver::{{closure}}
+     4.78%  [.] __memmove_avx_unaligned_erms
+            |          
+             --0.71%--__memmove_avx_unaligned_erms
+
+     4.37%  [.] _int_malloc
+     4.11%  [k] __pv_queued_spin_lock_slowpath
+            |          
+             --3.95%--_raw_spin_lock
+                       |          
+                        --3.87%--raw_spin_rq_lock_nested
+                                  |          
+                                   --3.70%--___task_rq_lock
+                                             try_to_wake_up
+                                             |          
+                                              --3.42%--wake_up_q
+                                                        futex_wake
+                                                        do_futex
+                                                        __x64_sys_futex
+                                                        do_syscall_64
+                                                        entry_SYSCALL_64_after_hwframe
+
+     3.36%  [.] _aesni_ctr32_ghash_6x
+     2.00%  [.] _int_free_chunk
+     1.58%  [.] malloc_consolidate
+     1.53%  [.] <raptorpath::fec::unified::UnifiedDecoder as raptorpath::fec::window_traits::WindowDecoder>::seq_probe
+     1.46%  [k] entry_SYSRETQ_unsafe_stack
+     1.44%  [.] unlink_chunk.isra.0
+     1.36%  [.] __libc_malloc2
+     1.28%  [.] malloc
+     1.24%  [.] 0x00000000000008eb
+     1.23%  [.] quinn::endpoint::RecvState::poll_socket
+     1.09%  [.] _int_free_create_chunk
+     1.06%  [.] raptorpath::fec::unified::UnifiedDecoder::assimilate
+     1.02%  [.] cfree@GLIBC_2.2.5
+     1.01%  [k] rep_movs_alternative
+            |          
+             --0.78%--_copy_to_iter
+                       |          
+                        --0.75%--__skb_datagram_iter
+                                  skb_copy_datagram_iter
+                                  udp_recvmsg
+                                  inet_recvmsg
+                                  |          
+                                  |--0.42%--sock_recvmsg
+                                  |          ____sys_recvmsg
+                                  |          ___sys_recvmsg
+                                  |          do_recvmmsg
+                                  |          __x64_sys_recvmmsg
+                                  |          do_syscall_64
+                                  |          entry_SYSCALL_64_after_hwframe
+                                  |          
+                                   --0.33%--____sys_recvmsg
+                                             ___sys_recvmsg
+                                             do_recvmmsg
+                                             __x64_sys_recvmmsg
+                                             do_syscall_64
+                                             entry_SYSCALL_64_after_hwframe
+
+     0.89%  [.] std::collections::hash::set::HashSet<T,S,A>::insert
+     0.85%  [.] core::hash::BuildHasher::hash_one
+     0.83%  [k] entry_SYSCALL_64
+     0.82%  [k] syscall_return_via_sysret
+     0.72%  [.] quinn_proto::connection::Connection::process_payload
+     0.71%  [.] <raptorpath::fec::unified::UnifiedDecoder as raptorpath::fec::window_traits::WindowDecoder>::add_symbol
+     0.67%  [.] alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     0.66%  [.] quinn_proto::connection::Connection::handle_decode
+     0.64%  [.] hashbrown::map::HashMap<K,V,S,A>::insert
+     0.63%  [.] tokio::runtime::task::raw::poll
+     0.59%  [.] alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     0.59%  [.] raptorpath::transport::io_owner::serve::{{closure}}
+     0.57%  [.] quinn_proto::connection::Connection::populate_packet
+     0.55%  [.] raptorpath::transport::protocol::WireMessage::deserialize
+     0.54%  [.] ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks
+     0.51%  [k] native_write_msr
+     0.51%  [.] bytes::bytes_mut::shared_v_drop
+     0.51%  [.] raptorpath::transport::protocol::WireMessage::serialize
+     0.50%  [.] <quinn::connection::ConnectionDriver as core::future::future::Future>::poll
+     0.49%  [.] raptorpath::monitor::stats::SharedStats::live_path_ids
+     0.49%  [.] quinn_proto::connection::Connection::poll_transmit
+     0.48%  [.] <raptorpath::net::seq_bits::SeqBits as raptorpath::net::seq_bits::ReceivedSeqs>::each_run
+     0.45%  [.] ring_core_0_17_14__gcm_ghash_avx
+     0.40%  [.] <std::sys::pal::unix::time::Timespec>::sub_timespec
+     0.40%  [.] raptorpath::net::late::LateGauge::note_hole
+     0.40%  [.] _int_realloc
+     0.39%  [.] tokio::sync::mpsc::bounded::Sender<T>::try_send
+     0.38%  [k] pvclock_clocksource_read_nowd
+     0.38%  [.] clock_gettime@@GLIBC_2.17
+     0.37%  [k] try_to_wake_up
+     0.34%  [.] raptorpath::perf::server::{{closure}}
+     0.34%  [.] _int_free_merge_chunk
+     0.34%  [.] raptorpath::net::succ::SuccGauge::abandon_below
+     0.33%  [.] realloc
+     0.32%  [k] fdget
+     0.31%  [.] <core::hash::sip::Hasher<S> as core::hash::Hasher>::write
+     0.31%  [k] fib_table_lookup
+     0.30%  [k] __irqentry_text_end
+     0.30%  [k] update_curr
+
+
+#
+# (Tip: To show IPC for sampling periods use perf record -e '{cycles,instructions}:S' and then browse context)
+#
