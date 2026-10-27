@@ -6826,3 +6826,28 @@ section hash compared with the `--release` binary's and logged (a mismatch
 is `ABORT-TEXT`), `perf script -F tid,ip,sym`, and a fail-fast fold check
 on the VM (≥ 1 sample under `run_receiver` and under `add_symbol`, else
 `ABORT-FOLD`), as Amendment 5.
+
+### 22. Amendment 5 — the third read of H-alloc (a) (before VM contact)
+
+Operator go, 2026-10-27; **the last attempt**: if this read is also
+`UNREAD`, the report stops there. Amendment 4 stands (the reading rule,
+bars, transfer, recording, attach to `srv_pid`, `ABORT-PERF-ATTACH`)
+except:
+1. **Binary:** `cargo build --profile release-prof` (release + `debug =
+   1`, line tables). The `--release` binary is built beside it and the two
+   `.text` sections' sha256 are logged; a mismatch is `ABORT-TEXT` (the
+   profiled code must be the shipped code).
+2. **Call chains:** `perf script -F tid,ip,sym --inline` (inlined frames
+   named, so `add_symbol` inlined under LTO is still a frame).
+3. **Dry check first:** a 400 MB c1d transfer with a 5 s record, folded
+   on the VM; it must show samples under `run_receiver` **and** samples
+   with frames below `run_receiver` (the fold's `receiver_nonleaf`, so
+   unwinding into its callees works), else `ABORT-FOLD-DRY` before the
+   read. The dry run is not read.
+4. **The read's own fold check** on the VM: ≥ 1 sample under
+   `run_receiver` and under `add_symbol`, else `ABORT-FOLD`.
+5. Envelope `tools/l1/r3prof_run.sh` (this commit), the on-VM waiter
+   after the §29 session (locks by `test -e`, never broken), shared
+   precondition, tmpfs, hard deadline launch + 2 h. The old
+   `/home/VMUSER/r3prof` is removed at reship. Ledgers to
+   `docs/l1-raw/thread-r3-diag/prof2/`.

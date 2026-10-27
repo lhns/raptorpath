@@ -58,6 +58,7 @@ def short(sym):
 def main():
     total = 0
     rx = 0
+    rx_nonleaf = 0
     callee = collections.Counter()
     leaf_rx = collections.Counter()
     dec = collections.Counter()
@@ -69,13 +70,14 @@ def main():
         if idx is None:
             continue
         rx += 1
+        rx_nonleaf += idx > 0
         callee[syms[idx - 1] if idx > 0 else "(self)"] += 1
         leaf_rx[leaf_class(syms[0])] += 1
         if any("add_symbol" in s for s in syms[:idx]):
             c = leaf_class(syms[0])
             dec[c] += 1
             dec_leaf[syms[0]] += 1
-    print(f"samples={total} receiver={rx} receiver_share={rx / max(total, 1):.3f}")
+    print(f"samples={total} receiver={rx} receiver_share={rx / max(total, 1):.3f} receiver_nonleaf={rx_nonleaf}")
     print("-- receiver leaf classes (share of receiver samples)")
     for k, v in leaf_rx.most_common():
         print(f"  {k:8s} {v:6d} {v / max(rx, 1):.3f}")
