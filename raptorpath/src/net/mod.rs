@@ -2483,6 +2483,7 @@ async fn run_window_sender(
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
                 ccap: &mut ccap,
+                diag_start_us: dg.diag_start_us,
             },
         );
         let effective_store_cap = if pol.plain_dyn_cap {

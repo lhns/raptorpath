@@ -1,5 +1,21 @@
 use super::*;
 
+/// `RWM_STORE_LAW` parses strictly: unset and `pooled` are the shipped law,
+/// `power` the experiment arm, anything else a startup error. The default echo
+/// stays byte-identical (`gates_echo_default_is_byte_pinned`): the gate rides
+/// `EXTERNALLY_ECHOED` with its own "power store law ACTIVE" echo.
+#[test]
+fn store_law_gate_parses_strictly() {
+    assert_eq!(StoreLaw::parse(None), Ok(StoreLaw::Pooled));
+    assert_eq!(StoreLaw::parse(Some("pooled")), Ok(StoreLaw::Pooled));
+    assert_eq!(StoreLaw::parse(Some("power")), Ok(StoreLaw::Power));
+    for bad in ["", "Power", "POWER", "1", "on", "pooled "] {
+        let e = StoreLaw::parse(Some(bad)).expect_err(bad);
+        assert!(e.contains("RWM_STORE_LAW"), "{e}");
+    }
+    assert!(!RuntimeGates::resolve().echo_line().contains("RWM_STORE_LAW"));
+}
+
 /// Behaviour pin: the default-environment `[GATES]` echo, byte for byte. Moving
 /// where gates are resolved must not move a character a battery parses.
 #[test]

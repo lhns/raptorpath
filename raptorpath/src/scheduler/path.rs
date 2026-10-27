@@ -115,6 +115,10 @@ pub struct PathState {
     /// is not applied. See [`release_1to1_active`] and
     /// [`Self::expire_in_flight`].
     release_1to1: bool,
+    /// `RWM_STORE_LAW=power`: the power law's per-round accumulator. `None`
+    /// (nothing allocated, nothing fed) unless the sender's store-cap seat
+    /// enabled it ([`crate::scheduler::Scheduler::enable_power_tap`]).
+    power_acc: Option<crate::net::PowerAcc>,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -175,8 +179,24 @@ impl PathState {
             release_sent_cursor: 0,
             release_recv_cursor: 0,
             release_1to1: release_1to1_active(),
+            power_acc: None,
             clock,
         }
+    }
+
+    /// Allocate the power-law round accumulator (idempotent).
+    pub fn enable_power_acc(&mut self) {
+        self.power_acc.get_or_insert_with(Default::default);
+    }
+
+    /// Drain the round accumulator; `None` when it was never enabled.
+    pub fn drain_power_round(&mut self, id: PathId) -> Option<crate::net::PathRound> {
+        self.power_acc.as_mut().map(|a| a.drain(id))
+    }
+
+    /// Whether the accumulator is allocated (zero-cost witness).
+    pub fn power_acc_enabled(&self) -> bool {
+        self.power_acc.is_some()
     }
 
     /// `RWM_LOSS_SENT_TRUTH` (default off) — the cross-path-clean loss pair:
@@ -507,6 +527,11 @@ impl PathState {
     /// exponential phase ends within one feedback message of the first
     /// standing-queue evidence rather than waiting out the SRTT window.
     pub fn on_ack(&mut self, acked: u32) {
+        // The power law's delivered count: the same `count` `record_delivery`
+        // is fed (engine state, not the `[LOOPDIAG]` gauge). `None` gate-off.
+        if let Some(a) = self.power_acc.as_mut() {
+            a.note_delivered(acked);
+        }
         let _rate = self.copa.record_delivery(acked);
         self.on_delivery_signal();
     }
@@ -638,6 +663,10 @@ impl PathState {
         // Copa consumes. A null check with the gate off.
         if let Some(g) = crate::net::loopdiag::gauge() {
             g.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        }
+        // The power law's loop-time sample (engine state; `None` gate-off).
+        if let Some(a) = self.power_acc.as_mut() {
+            a.note_rtt((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         }
         self.copa.record_rtt(rtt);
     }

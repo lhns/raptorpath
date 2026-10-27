@@ -552,5 +552,369 @@ check("plan 27 arithmetic: 2 blocks x 4 cells x 2 arms x 8 = 128",
       and all(len(g) == 8 for g in ld.GRID27.values()))
 check("plan 24 constants untouched (46 rows)", ld.EXPECT_ROWS == 46)
 
+
+# ═══ plan 29 (the power store law: MAIN / PWR / KNEE) ═════════════════════
+POWER_ECHO = "power store law ACTIVE (RWM_STORE_LAW=power): alpha=2.0000 q=0.1000 floor=10 knee=2048"
+PCAP_FROZEN = ("[PCAP] t=12.34s period=5 nbar=192.0 next=198.4 cap_p=201.6 cap_m=182.4 pi_p=1.2340e5 pi_m=1.1000e5 "
+               "e_raw=0.512 e_clamp=0.512 bind=0.000 floor_pin=0.000 knee_pin=0.000 hole=3.2 t_loop_us=14500 d_p=9770 "
+               "d_m=9700 ext=0 sign=0.500 conv=3 conv_t=1.20s out_pin=0.000")
+PCAP_DEF = dict(t="12.34s", period="5", nbar="192.0", next="198.4", cap_p="201.6", cap_m="182.4", pi_p="1.2340e5",
+                pi_m="1.1000e5", e_raw="0.512", e_clamp="0.512", bind="0.000", floor_pin="0.000", knee_pin="0.000",
+                hole="3.2", t_loop_us="14500", d_p="9770", d_m="9700", ext="0", sign="0.500", conv="3",
+                conv_t="1.20s", out_pin="0.000")
+
+
+def PC(**kw):
+    """A [PCAP] line in the frozen key order, any field overridable (strings, `-` allowed)."""
+    d = {**PCAP_DEF, **{k: str(v) for k, v in kw.items()}}
+    return "[PCAP] " + " ".join(f"{k}={v}" for k, v in d.items())
+
+
+check("PC() reproduces the frozen example byte for byte", PC() == PCAP_FROZEN, PC())
+fz = ld.pcap_periods([PCAP_FROZEN, "[DIAG] t=1.0s noise"])
+check("frozen line parses: every field", len(fz) == 1 and fz[0]["t"] == 12.34 and fz[0]["period"] == 5
+      and fz[0]["nbar"] == 192.0 and fz[0]["next"] == 198.4 and fz[0]["bind"] == 0.0 and fz[0]["hole"] == 3.2
+      and fz[0]["ext"] == 0 and fz[0]["sign"] == 0.5 and fz[0]["conv"] == 3 and fz[0]["conv_t"] == 1.2
+      and fz[0]["t_loop_us"] == 14500.0 and fz[0]["d_p"] == 9770.0 and fz[0]["pi_p"] == 1.234e5, fz)
+dash = ld.pcap_periods([PC(sign="-", conv="-", conv_t="-", hole="-")])
+check("`-` fields parse to None, line still counted", len(dash) == 1 and dash[0]["sign"] is None and dash[0]["conv"] is None
+      and dash[0]["conv_t"] is None and dash[0]["hole"] is None and dash[0]["nbar"] == 192.0, dash)
+check("liveness echo is not a [PCAP] period", ld.pcap_periods([POWER_ECHO]) == [])
+check("floor parsed from the echo, default 10", ld.pcap_floor([POWER_ECHO.replace("floor=10", "floor=12")]) == 12.0
+      and ld.pcap_floor([]) == 10.0)
+
+
+def periods(nbars, conv=2, conv_t="1.50s", t0=1.0, **kw):
+    """One [PCAP] line per nbar; `next` is the following nbar (last: itself)."""
+    out = []
+    for i, nb in enumerate(nbars):
+        nx = nbars[i + 1] if i + 1 < len(nbars) else nb
+        out.append(PC(t=f"{t0 + 0.5 * i:.2f}s", period=i, nbar=nb, next=nx, conv=conv, conv_t=conv_t, **kw))
+    return out
+
+
+pc = ld.pcap_summary(periods([100.0, 150.0, 190.0, 194.0, 190.0, 192.0], conv=2, bind="0.125", floor_pin="0.050",
+                             knee_pin="0.020", sign="0.750", ext="4", hole="2.0"))
+check("pcap summary: periods, conv, conv_t", pc["pcap_periods"] == 6 and pc["pcap_conv"] == 2 and pc["pcap_conv_t"] == 1.5, pc)
+check("pcap summary: nbar mean after convergence (periods >= conv: 190,194,190,192 -> 191.5) and over all",
+      pc["pcap_nbar_post"] == 191.5 and abs(pc["pcap_nbar_all"] - (100 + 150 + 190 + 194 + 190 + 192) / 6) < 1e-9
+      and pc["pcap_post_n"] == 4, pc)
+check("pcap summary: final nbar is the last `next`", pc["pcap_nbar_final"] == 192.0, pc)
+check("pcap summary: final cumulative fractions, sign, ext, hole mean",
+      pc["pcap_floor_pin"] == 0.05 and pc["pcap_knee_pin"] == 0.02 and pc["pcap_bind"] == 0.125
+      and pc["pcap_sign"] == 0.75 and pc["pcap_ext"] == 4 and pc["pcap_hole_mean"] == 2.0 and pc["pcap_out_pin"] == 0.0, pc)
+pc = ld.pcap_summary([PC(period=0, nbar=50, next=60, sign="-", conv="-", conv_t="-", hole="-"),
+                      PC(period=1, nbar=60, next=70, sign="-", conv="-", conv_t="-", hole="4.0")])
+check("never converged: conv None, post mean None, `-` sign None, hole mean skips `-`",
+      pc["pcap_conv"] is None and pc["pcap_nbar_post"] is None and pc["pcap_sign"] is None and pc["pcap_hole_mean"] == 4.0
+      and pc["pcap_nbar_final"] == 70.0 and pc["pcap_periods"] == 2, pc)
+pc = ld.pcap_summary(periods([100.0, 10.0, 10.0, 192.0], conv=1))
+check("post-convergence periods at the floor are counted (nbar <= floor 10)", pc["pcap_post_floor"] == 2, pc)
+check("no [PCAP] lines: periods 0, everything else None", ld.pcap_summary([])["pcap_periods"] == 0
+      and ld.pcap_summary([])["pcap_nbar_post"] is None)
+
+# ── post-convergence loop p50 from the [LOOPDIAG] windows ────────────────
+ser = ld.loop_series([LDL(1.0, p50="3000"), LDL(2.0, p50="5000"), LDL(2.0, p=1, p50="9000"), LDL(0.5, p50="1"),
+                      LDL(3.0, n=0, p50="-", mn="-", p10="-")])
+check("loop series: post-warm-up windows with n>0, all paths pooled, [t, p50]",
+      sorted(ser) == [[1.0, 3000.0], [2.0, 5000.0], [2.0, 9000.0]], ser)
+check("loop p50 post: median of window medians with t >= cutoff (pooled paths, window-unweighted)",
+      ld.loop_p50(ser, 2.0) == 7000.0 and ld.loop_p50(ser, 1.0) == 5000.0 and ld.loop_p50(ser, 9.0) is None)
+
+# ── plan shape ───────────────────────────────────────────────────────────
+pl = ld.plan29()
+check("plan 29: 36 rows", len(pl) == 36 == ld.EXPECT_ROWS29, len(pl))
+check("plan 29: block seeds/reps (42,1) (7,1) (42,2), 4 cells x 3 arms each",
+      [(b["seed"], b["rep"]) for b in pl[::12]] == [("42", 1), ("7", 1), ("42", 2)]
+      and all([b["cell"] for b in pl[12 * i:12 * i + 12]] == [c for c in ("c2-100", "c1s-400", "c8-100", "c1d-400") for _ in range(3)]
+              for i in range(3)), [(b["cell"], b["arm"]) for b in pl[:12]])
+check("plan 29: arm order rotates by block (MAIN,PWR,KNEE / PWR,KNEE,MAIN / KNEE,MAIN,PWR)",
+      [b["arm"] for b in pl[0:3]] == ["MAIN", "PWR", "KNEE"] and [b["arm"] for b in pl[12:15]] == ["PWR", "KNEE", "MAIN"]
+      and [b["arm"] for b in pl[24:27]] == ["KNEE", "MAIN", "PWR"]
+      and all([b["arm"] for b in pl[12 * i + 3 * j:12 * i + 3 * j + 3]] == [b["arm"] for b in pl[12 * i:12 * i + 3]]
+              for i in range(3) for j in range(4)))
+check("plan 29: every (block, cell) has MAIN, PWR, KNEE once; 12 rows per arm",
+      all(sorted(b["arm"] for b in pl[3 * k:3 * k + 3]) == ["KNEE", "MAIN", "PWR"] for k in range(12))
+      and all(sum(1 for b in pl if b["arm"] == a) == 12 for a in ("MAIN", "PWR", "KNEE")))
+check("plan 29: knee per cell 192/1024/768/384",
+      {b["cell"]: b["knee"] for b in pl} == {"c2-100": 192, "c1s-400": 1024, "c1d-400": 768, "c8-100": 384})
+sm29 = ld.plan29(smoke=True)
+check("plan 29 smoke: c2-100 PWR s42 and c1s-400 PWR s42",
+      [(b["cell"], b["arm"], b["seed"], b["rep"]) for b in sm29] == [("c2-100", "PWR", "42", 1), ("c1s-400", "PWR", "42", 1)])
+import subprocess  # noqa: E402
+cp = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan29"], capture_output=True, text=True)
+lines29 = cp.stdout.split("\n")[:-1]
+check("`plan29` subcommand prints 36 `cell arm seed rep knee` lines (the battery's single source)",
+      cp.returncode == 0 and len(lines29) == 36 and lines29[0] == "c2-100 MAIN 42 1 192" and lines29[35] == "c1d-400 PWR 42 2 768", lines29[:2])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan29", "smoke"], capture_output=True, text=True)
+check("`plan29 smoke` prints the two smoke rows", cp.stdout.split("\n")[:-1] == ["c2-100 PWR 42 1 192", "c1s-400 PWR 42 1 1024"], cp.stdout)
+
+# ── plan 29 witnesses ────────────────────────────────────────────────────
+GOODP = periods([100.0, 150.0, 190.0, 194.0, 190.0, 192.0])
+
+
+def mk29(arm, cell="c2-100", **kw):
+    if arm == "MAIN":
+        return mk("MAIN", cell=cell, **kw)
+    if arm == "KNEE":
+        if "store" not in kw:
+            kw.setdefault("n", ld.KNEE_N[cell])
+        kw.setdefault("eng", False)
+        return mk("KNEE", cell=cell, **kw)
+    kw.setdefault("eng", False)
+    kw.setdefault("extra", [POWER_ECHO] + GOODP)
+    return mk("PWR", cell=cell, **kw)
+
+
+w = mk29("MAIN")
+check("MAIN (plan 29) pass, no power echo, row carries zero [PCAP] periods", w["status"] == "LIVE" and w["pcap_periods"] == 0
+      and w["power_echo"] is False, (w["status"], w["problems"]))
+w = mk29("MAIN", extra=[POWER_ECHO])
+check("MAIN fail: a power echo present", "main-has-power-echo" in w["problems"] and w["status"] == "WITNESS-FAIL", w["problems"])
+w = mk29("PWR")
+check("PWR pass: echo + 6 periods, no RWM_STORE", w["status"] == "LIVE" and w["power_echo"] is True and w["pcap_periods"] == 6
+      and w["pcap_nbar_post"] == 191.5, (w["status"], w["problems"]))
+w = mk29("PWR", extra=GOODP)
+check("PWR fail: no power echo", "pwr-no-power-echo" in w["problems"] and w["status"] == "WITNESS-FAIL", w["problems"])
+w = mk29("PWR", extra=[POWER_ECHO] + GOODP[:2])
+check("PWR fail: 2 [PCAP] periods < 3", "pwr-pcap-periods=2" in w["problems"], w["problems"])
+w = mk29("PWR", extra=[POWER_ECHO] + GOODP[:3])
+check("PWR pass at exactly 3 periods", w["status"] == "LIVE", w["problems"])
+w = mk29("PWR", store="512")
+check("PWR fail: RWM_STORE set", "pwr-gate-store=512" in w["problems"], w["problems"])
+w = mk29("KNEE")
+check("KNEE pass (eng absent, every denominator == 192, gate RWM_STORE == 192)", w["status"] == "LIVE" and w["gate_store"] == "192", (w["status"], w["problems"]))
+check("KNEE fail: SUMCAP eng > 0", any(x.startswith("s-sumcap-eng") for x in mk29("KNEE", eng=True)["problems"]))
+check("KNEE fail: denominator != knee", any(x.startswith("s-win-den-not-n") for x in mk29("KNEE", den=1024)["problems"]))
+check("KNEE fail: gate != the cell's knee", "gate-store=256" in mk29("KNEE", store="256", den=192)["problems"])
+check("KNEE fail: power echo present", "knee-has-power-echo" in mk29("KNEE", extra=[POWER_ECHO])["problems"])
+check("knee per cell: c1s 1024, c1d 768, c8 384 (witness uses the cell's n)",
+      mk29("KNEE", cell="c1s-400")["gate_store"] == "1024" and mk29("KNEE", cell="c1d-400", ld_lines=two_path())["gate_store"] == "768"
+      and mk29("KNEE", cell="c8-100", ld_lines=two_path())["gate_store"] == "384")
+check("generic witnesses still bite on plan 29 arms: no ackdiag, 3 windows",
+      "no-ackdiag" in mk29("KNEE", ackdiag=False)["problems"]
+      and "loopdiag-p0-windows=3" in mk29("KNEE", ld_lines=[LDL(1.0), LDL(2.0), LDL(3.0)])["problems"])
+
+# c8 p1 idle: p1 delivered 0 in every post-warm-up window -> note, not a void
+idle = [ln for ln in two_path() if " p0 " in ln] + [LDL(t, p=1, n=0, mn="-", p10="-", p50="-", rtp="-", jit="-", srtt="-",
+                                                       dlv=0, rate=0, pace="-", cwnd="-", qs="-") for t in (1.0, 1.5, 2.0, 2.5)]
+w = mk29("KNEE", cell="c8-100", ld_lines=idle)
+check("c8 p1-idle (dlv=0 in every p1 window): LIVE with the note `p1-idle`", w["status"] == "LIVE" and "p1-idle" in w["notes"], (w["status"], w["problems"], w["notes"]))
+w = mk29("MAIN", cell="c8-100", ld_lines=idle)
+check("c8 p1-idle on MAIN too", w["status"] == "LIVE" and "p1-idle" in w["notes"], (w["status"], w["problems"]))
+busy_p1 = [ln for ln in two_path() if " p0 " in ln] + [LDL(t, p=1, n=0, mn="-", p10="-", p50="-", dlv=500, pace="-") for t in (1.0, 1.5, 2.0, 2.5)]
+w = mk29("KNEE", cell="c8-100", ld_lines=busy_p1)
+check("c8 p1 that delivered something is NOT idle: windows witness still voids",
+      "loopdiag-p1-windows=0" in w["problems"] and "p1-idle" not in w["notes"], (w["problems"], w["notes"]))
+mixed = [ln for ln in two_path() if " p0 " in ln] + [LDL(1.0, p=1, n=0, mn="-", p10="-", p50="-", dlv=0, pace="-"),
+                                                     LDL(1.5, p=1, n=0, mn="-", p10="-", p50="-", dlv=7, pace="-")]
+check("c8 p1 with one non-zero window is not idle", "p1-idle" not in mk29("KNEE", cell="c8-100", ld_lines=mixed)["notes"])
+w = mk29("KNEE", cell="c8-100", ld_lines=[ln for ln in two_path() if " p0 " in ln])
+check("c8 p1 with no windows at all is not `idle` (nothing shows dlv=0)", "p1-idle" not in w["notes"]
+      and "loopdiag-p1-windows=0" in w["problems"], (w["problems"], w["notes"]))
+check("p0 is never excused: c8 with p0 idle still fails",
+      "loopdiag-p0-windows=0" in mk29("KNEE", cell="c8-100", ld_lines=[ln.replace(" p0 ", " p9 ") for ln in idle])["problems"])
+w = mk29("KNEE", cell="c2-100", ld_lines=idle)
+check("p1-idle is only for c8: a single-path cell gets no note", "p1-idle" not in w["notes"])
+w = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=idle, extra=[DEF_ECHO])
+check("plan 27 arms keep the strict rule (p1 idle still voids DEF)", "loopdiag-p1-windows=0" in w["problems"] and w["notes"] == [], (w["problems"], w["notes"]))
+
+# post-convergence loop p50 on the row (PWR): conv_t 1.5 s
+w = mk29("PWR", ld_lines=[LDL(1.0, p50="3000"), LDL(1.5, p50="5000"), LDL(2.0, p50="7000"), LDL(2.5, p50="9000"),
+                          LDL(3.0, p50="11000")])
+check("row: loop p50 post-convergence (t >= conv_t 1.5: 5000..11000 -> 8000) and whole-run p50 (7000), both labelled",
+      w["loop_p50_post"] == 8000.0 and w["loop_p50_all"] == 7000.0 and w["ax_p50_us"] is not None, (w["loop_p50_post"], w["loop_p50_all"]))
+w = mk29("MAIN")
+check("MAIN row: loop_p50_post None (no conv_t), series kept for the scorer", w["loop_p50_post"] is None and len(w["ld_p50_series"]) == 5)
+
+# ── score29 ──────────────────────────────────────────────────────────────
+KN = {"c2-100": 192, "c1s-400": 1024, "c1d-400": 768, "c8-100": 384}
+
+
+def S29(t0=2.0):
+    return lambda p50: [[t0 + 0.25 * i, p50] for i in range(8)]
+
+
+def R29(cell, arm, mbps, ax, loop=5000.0, seed=42, rep=1, status="LIVE", **pc):
+    r = {"cell": cell, "arm": arm, "seed": str(seed), "rep": rep, "status": status, "problems": [], "notes": [],
+         "mbps": mbps, "ax_p50_us": ax, "ld_p50_series": [[0.5, 1.0]] + S29()(loop), "io_high": False}
+    if arm == "PWR":
+        r.update(pcap_periods=20, pcap_conv=5, pcap_conv_t=1.0, pcap_nbar_post=float(KN[cell]), pcap_floor_pin=0.0,
+                 pcap_knee_pin=0.0, pcap_sign=0.8, pcap_post_floor=0, pcap_post_n=15, pcap_bind=0.1, pcap_hole_mean=1.0,
+                 pcap_ext=0, pcap_nbar_final=float(KN[cell]), pcap_nbar_all=float(KN[cell]))
+        r.update(pc)
+    return r
+
+
+def three(mean, sd):
+    return [mean - sd, mean, mean + sd]       # sample sd = sd
+
+
+def cell29(cell="c2-100", main=(100.0, 2.0), pwr=(100.0, 2.0), knee=(100.0, 2.0), axm=(1000.0, 20.0),
+           axp=(1000.0, 20.0), axk=(1000.0, 20.0), lm=(5000.0, 100.0), lp=(5000.0, 100.0), lk=(5000.0, 100.0), **pcw):
+    rows = []
+    for arm, g, a, l in (("MAIN", main, axm, lm), ("PWR", pwr, axp, lp), ("KNEE", knee, axk, lk)):
+        for i, (gv, av, lv) in enumerate(zip(three(*g), three(*a), three(*l))):
+            rows.append(R29(cell, arm, gv, av, lv, seed=42 + i, rep=1 + i, **(pcw if arm == "PWR" else {})))
+    return rows
+
+
+def sc29(rows):
+    buf = []
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "ld.log")
+        with open(path, "w") as fh:
+            for r in rows:
+                fh.write("LDROW " + json.dumps(r) + "\n")
+        res = ld.score29([path], buf.append)
+    return res, "\n".join(buf)
+
+
+res, txt = sc29(cell29())
+r = res["c2-100"]
+check("baseline cell: GOODPUT WITHIN, LATENCY WITHIN/WITHIN, FIXED-POINT IN-BAND, STABILITY STABLE",
+      (r["GOODPUT"], r["LATENCY_MAIN"], r["LATENCY_KNEE"], r["FIXED-POINT"], r["STABILITY"]) == ("WITHIN", "WITHIN", "WITHIN", "IN-BAND", "STABLE"), r)
+check("printed token lines",
+      re.search(r"^  GOODPUT WITHIN\b", txt, re.M) and re.search(r"^  LATENCY WITHIN WITHIN\b", txt, re.M)
+      and re.search(r"^  FIXED-POINT IN-BAND\b", txt, re.M) and re.search(r"^  STABILITY STABLE\b", txt, re.M), txt)
+# goodput: 2 sigma_pooled = 2*2 = 4
+check("GOODPUT BETTER (+20 > 4)", sc29(cell29(pwr=(120.0, 2.0)))[0]["c2-100"]["GOODPUT"] == "BETTER")
+check("GOODPUT WORSE (-20)", sc29(cell29(pwr=(80.0, 2.0)))[0]["c2-100"]["GOODPUT"] == "WORSE")
+check("GOODPUT WITHIN at the boundary (diff == 2 sigma_pooled == 4)", sc29(cell29(pwr=(104.0, 2.0)))[0]["c2-100"]["GOODPUT"] == "WITHIN")
+check("GOODPUT BETTER just past the boundary", sc29(cell29(pwr=(104.5, 2.0)))[0]["c2-100"]["GOODPUT"] == "BETTER")
+check("sigma_pooled = sqrt((s1^2+s2^2)/2): sd 2 vs 6 -> 2 sigma = 8.94: diff 7 WITHIN, 9 BETTER",
+      sc29(cell29(main=(100.0, 2.0), pwr=(107.0, 6.0)))[0]["c2-100"]["GOODPUT"] == "WITHIN"
+      and sc29(cell29(main=(100.0, 2.0), pwr=(109.0, 6.0)))[0]["c2-100"]["GOODPUT"] == "BETTER")
+# latency: lower is better; vs MAIN and vs KNEE separately
+res, _ = sc29(cell29(axp=(700.0, 20.0)))
+check("LATENCY BETTER vs both (A_x lower by 300 > 40)", (res["c2-100"]["LATENCY_MAIN"], res["c2-100"]["LATENCY_KNEE"]) == ("BETTER", "BETTER"))
+res, _ = sc29(cell29(axp=(1300.0, 20.0), axk=(1300.0, 20.0)))
+check("LATENCY WORSE vs MAIN, WITHIN vs KNEE", (res["c2-100"]["LATENCY_MAIN"], res["c2-100"]["LATENCY_KNEE"]) == ("WORSE", "WITHIN"))
+res, txt = sc29(cell29(axp=(1000.0, 20.0), axk=(1300.0, 20.0)))
+check("LATENCY WITHIN vs MAIN, BETTER vs KNEE (printed in that order)",
+      (res["c2-100"]["LATENCY_MAIN"], res["c2-100"]["LATENCY_KNEE"]) == ("WITHIN", "BETTER") and re.search(r"^  LATENCY WITHIN BETTER\b", txt, re.M), txt)
+# the post-convergence loop p50 is reported separately and labelled
+res, txt = sc29(cell29(lp=(3000.0, 100.0)))
+check("loop p50 post-convergence reported beside A_x, labelled, own tokens (BETTER vs MAIN)",
+      res["c2-100"]["LOOP_MAIN"] == "BETTER" and "A_x p50 whole-transfer" in txt and "loop p50 post-convergence" in txt
+      and re.search(r"^  LATENCY-LOOP BETTER BETTER\b", txt, re.M) and res["c2-100"]["LATENCY_MAIN"] == "WITHIN", txt)
+check("loop cutoff = median PWR conv_t (1.0 s) printed", "cutoff t >= 1.00" in txt, txt)
+# the common cutoff is applied to every arm: early windows (t=0.5, p50 1.0) must not leak in
+rows = cell29()
+check("windows before the cutoff are excluded (the t=0.5 / 1 us window): each row's loop p50 is its own constant",
+      all(ld.loop_p50(r["ld_p50_series"], 1.0) == r["ld_p50_series"][1][1] > 1.0 for r in rows))
+# fixed point
+res, _ = sc29(cell29(pcap_nbar_post=100.0))
+check("FIXED-POINT BELOW (100 < 192/1.5 = 128)", res["c2-100"]["FIXED-POINT"] == "BELOW")
+res, _ = sc29(cell29(pcap_nbar_post=300.0))
+check("FIXED-POINT ABOVE (300 > 288)", res["c2-100"]["FIXED-POINT"] == "ABOVE")
+check("FIXED-POINT IN-BAND at both edges (128 and 288 inclusive)",
+      sc29(cell29(pcap_nbar_post=128.0))[0]["c2-100"]["FIXED-POINT"] == "IN-BAND"
+      and sc29(cell29(pcap_nbar_post=288.0))[0]["c2-100"]["FIXED-POINT"] == "IN-BAND")
+res, _ = sc29(cell29(pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None))
+check("FIXED-POINT NO-CONVERGENCE (no conv_period reached)", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE")
+res, _ = sc29(cell29(pcap_periods=2))
+check("FIXED-POINT NO-CONVERGENCE (too few periods)", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE")
+res, _ = sc29(cell29(pcap_post_n=1))
+check("FIXED-POINT NO-CONVERGENCE (fewer than 2 post-convergence periods)", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE")
+rows = cell29()
+for r_ in rows:
+    if r_["arm"] == "PWR" and r_["rep"] != 1:
+        r_.update(pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None)
+res, txt = sc29(rows)
+check("only 1 of 3 PWR rows converged (not a majority) -> NO-CONVERGENCE", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE", txt)
+rows = cell29()
+[r_ for r_ in rows if r_["arm"] == "PWR"][0].update(pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None)
+check("2 of 3 converged: IN-BAND on their mean", sc29(rows)[0]["c2-100"]["FIXED-POINT"] == "IN-BAND")
+check("fixed point per cell uses the KNEE n*: c1s 1024 band [682.7, 1536], c1d 768, c8 384",
+      sc29(cell29("c1s-400", pcap_nbar_post=700.0))[0]["c1s-400"]["FIXED-POINT"] == "IN-BAND"
+      and sc29(cell29("c1s-400", pcap_nbar_post=600.0))[0]["c1s-400"]["FIXED-POINT"] == "BELOW"
+      and sc29(cell29("c8-100", pcap_nbar_post=600.0))[0]["c8-100"]["FIXED-POINT"] == "ABOVE"
+      and sc29(cell29("c1d-400", pcap_nbar_post=500.0))[0]["c1d-400"]["FIXED-POINT"] == "BELOW")
+res, txt = sc29(cell29("c1s-400", pcap_nbar_post=384.0))
+check("paper's predicted power points reported separately (c1s 384 IN; token still BELOW the knee band)",
+      res["c1s-400"]["FIXED-POINT"] == "BELOW" and re.search(r"PREDICTED c1s-400.*point 384.*IN", txt), txt)
+res, txt = sc29(cell29("c1d-400", pcap_nbar_post=400.0))
+check("c1d prediction is an upper bound (< 512)", re.search(r"PREDICTED c1d-400.*< 512.*IN", txt)
+      and re.search(r"PREDICTED c1d-400.*< 512.*OUT", sc29(cell29("c1d-400", pcap_nbar_post=600.0))[1]), txt)
+
+
+# stability and its precedence
+def stab(**kw):
+    return sc29(cell29(**kw))[0]["c2-100"]["STABILITY"]
+
+
+check("STABILITY FLOOR-COLLAPSE (floor_pin 0.25)", stab(pcap_floor_pin=0.25) == "FLOOR-COLLAPSE")
+check("STABILITY not collapsed at floor_pin 0.249", stab(pcap_floor_pin=0.249) == "STABLE")
+check("STABILITY FLOOR-COLLAPSE (any post-convergence period at the floor)", stab(pcap_post_floor=1) == "FLOOR-COLLAPSE")
+check("STABILITY RUNAWAY (knee_pin 0.25)", stab(pcap_knee_pin=0.25) == "RUNAWAY")
+check("STABILITY NOISE-DOMINATED (converged suffix 9 of 30 periods)", stab(pcap_periods=30, pcap_post_n=9) == "NOISE-DOMINATED")
+check("STABILITY STABLE at a converged suffix of 10 of 30", stab(pcap_periods=30, pcap_post_n=10) == "STABLE")
+check("sign agreement alone never decides (a converged limit cycle alternates)", stab(pcap_sign=0.1) == "STABLE")
+check("precedence: FLOOR-COLLAPSE beats NOISE-DOMINATED", stab(pcap_floor_pin=0.3, pcap_periods=30, pcap_post_n=1) == "FLOOR-COLLAPSE")
+check("precedence: RUNAWAY beats NOISE-DOMINATED", stab(pcap_knee_pin=0.3, pcap_periods=30, pcap_post_n=1) == "RUNAWAY")
+check("precedence: FLOOR-COLLAPSE beats RUNAWAY", stab(pcap_floor_pin=0.3, pcap_knee_pin=0.3) == "FLOOR-COLLAPSE")
+rows = cell29()
+[r_ for r_ in rows if r_["arm"] == "PWR"][2].update(pcap_floor_pin=0.4)
+check("one collapsing PWR row makes the cell FLOOR-COLLAPSE (worst row by precedence)", sc29(rows)[0]["c2-100"]["STABILITY"] == "FLOOR-COLLAPSE")
+
+# comparison table: means and 2 sigma_pooled for every arm pair, three metrics
+res, txt = sc29(cell29(pwr=(112.0, 2.0), knee=(104.0, 2.0)))
+check("table: n, mean and sd per arm; pairs KNEE-vs-MAIN, PWR-vs-MAIN, PWR-vs-KNEE with diff and 2sigma",
+      all(h in txt for h in ("goodput", "A_x p50 whole-transfer", "loop p50 post-convergence", "KNEE vs MAIN", "PWR vs MAIN", "PWR vs KNEE", "2sigma"))
+      and re.search(r"goodput.*\n(?:.*\n)*?\s+PWR vs MAIN\s+diff \+12\.0\s+2sigma 4\.0\s+BETTER", txt)
+      and re.search(r"PWR vs KNEE\s+diff \+8\.0\s+2sigma 4\.0\s+BETTER", txt)
+      and re.search(r"KNEE vs MAIN\s+diff \+4\.0\s+2sigma 4\.0\s+WITHIN", txt), txt)
+res, txt = sc29(cell29(pwr=(130.0, 2.0)))
+check("PWR cap position table: time-avg nbar after convergence vs KNEE band and the stability inputs printed",
+      "band [128.0, 288.0]" in txt and "nbar_post 192.0" in txt and "floor_pin" in txt and "sign" in txt, txt)
+# fewer than 2 live rows in an arm -> `-`, never a made-up verdict
+rows = [r_ for r_ in cell29() if not (r_["arm"] == "KNEE" and r_["rep"] > 1)]
+res, txt = sc29(rows)
+check("an arm with < 2 live rows: comparison token `-` (cannot form sigma), others unaffected",
+      res["c2-100"]["LATENCY_KNEE"] == "-" and res["c2-100"]["GOODPUT"] == "WITHIN", res["c2-100"])
+rows = [dict(r_, status="WITNESS-FAIL") if r_["arm"] == "PWR" else r_ for r_ in cell29()]
+res, txt = sc29(rows)
+check("no live PWR rows: GOODPUT `-`, FIXED-POINT NO-CONVERGENCE, STABILITY `-`; void table lists them",
+      res["c2-100"]["GOODPUT"] == "-" and res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE" and res["c2-100"]["STABILITY"] == "-"
+      and "c2-100 PWR s42 r1: WITNESS-FAIL" in txt)
+res, txt = sc29([])
+check("empty ledger: no exception, tokens `-`", res["c2-100"]["GOODPUT"] == "-")
+rows = []
+for c in ("c2-100", "c1s-400", "c8-100", "c1d-400"):
+    rows += cell29(c)
+res, txt = sc29(rows)
+check("four cells print in battery order c2, c1s, c8, c1d",
+      txt.index("CELL c2-100") < txt.index("CELL c1s-400") < txt.index("CELL c8-100") < txt.index("CELL c1d-400"))
+rows[0]["notes"] = ["p1-idle"]
+res, txt = sc29(rows)
+check("notes (p1-idle) are listed", "NOTE c2-100 MAIN" in txt and "p1-idle" in txt, txt)
+
+# smoke29 / check29
+with tempfile.TemporaryDirectory() as td:
+    path = os.path.join(td, "ld.log")
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 36 + "LD-BATTERY-DONE tag=ld blocks=3 x\n")
+    check("check29: 36 rows + done line passes", ld.check29(path) == 0)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 35 + "LD-BATTERY-DONE tag=ld blocks=3 x\n")
+    check("check29: 35 rows fails", ld.check29(path) == 1)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 36)
+    check("check29: no completion line fails", ld.check29(path) == 1)
+    p29 = os.path.join(td, "smoke29.log")
+    sm = [mk29("PWR", cell="c2-100"), mk29("PWR", cell="c1s-400")]
+    with open(p29, "w") as fh:
+        for r_ in sm:
+            fh.write("LDROW " + json.dumps(r_, sort_keys=True) + "\n")
+    check("smoke29: both PWR rows live with periods -> pass", ld.smoke29(p29) == 0)
+    sm[1] = mk29("PWR", cell="c1s-400", extra=[POWER_ECHO] + GOODP[:1])
+    with open(p29, "w") as fh:
+        for r_ in sm:
+            fh.write("LDROW " + json.dumps(r_, sort_keys=True) + "\n")
+    check("smoke29: a PWR row with < 3 periods fails", ld.smoke29(p29) == 1)
+check("plan 29 arithmetic: 3 blocks x 4 cells x 3 arms = 36", 3 * 4 * 3 == ld.EXPECT_ROWS29 == 36)
+check("plans 24 and 27 constants untouched", ld.EXPECT_ROWS == 46 and ld.EXPECT_ROWS27 == 128)
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

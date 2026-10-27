@@ -242,6 +242,10 @@ pub(crate) struct SenderPolicy {
     /// the three-term law's stall term. The law is continuous and monotone
     /// in it.
     pub delta_b: f64,
+    /// `RWM_STORE_LAW=power` (default off; paper §6.1 (D)): the power-seeking
+    /// law decides the cap where the pooled law runs. A gate value, scoped to
+    /// the plain dynamic cap; nothing allocates or is fed when false.
+    pub power_store_law: bool,
     /// The retention dial ρ the three-term law is evaluated at.
     ///
     /// A value of the ρ axis, constant here by scope rather than by a branch:
@@ -894,6 +898,7 @@ impl SenderPolicy {
             delta_cap,
             late_brake,
             delta_b,
+            power_store_law: gates.store_law == crate::gates::StoreLaw::Power && plain_dyn_cap,
             contract_rho,
             store_sack_release_on,
             honest_cap_on,

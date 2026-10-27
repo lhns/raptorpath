@@ -14,19 +14,23 @@
 # test suites on the same on-disk source tree in a fresh $LD_ROOT/target-tests
 # (TESTS.txt, TESTS-OK / TESTS-FAIL). A suite failure is reported, never voids
 # the battery; DONE-ALL needs the battery ok; the final persist() runs last.
+#
+# LD_PLAN=29: the MAIN/PWR/KNEE battery of the power store law (smoke29/score29/
+# check29). No suite stage (that is plan 27 only); the parser test still gates.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
-crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_launch27.sh loopdiag_parse.py anchordiag_parse.py \
+crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_launch27.sh loopdiag_launch29.sh loopdiag_parse.py anchordiag_parse.py \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
 case "$PLAN" in
   24) P_SMOKE=smoke; P_SCORE=score; P_CHECK=check ;;
   27) P_SMOKE=smoke27; P_SCORE=score27; P_CHECK=check27 ;;
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27)"; exit 3 ;;
+  29) P_SMOKE=smoke29; P_SCORE=score29; P_CHECK=check29 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29)"; exit 3 ;;
 esac
 # Measurement runs from tmpfs (shared rules): the run dir and the measured
 # binary live under LD_SHM; the build stays on disk; persist() copies the run

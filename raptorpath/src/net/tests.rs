@@ -6653,7 +6653,16 @@ mod one_store_law_at_n1 {
     }
 
     fn policy(hint: ProtocolHint, store_paths: bool) -> SenderPolicy {
+        policy_law(hint, store_paths, crate::gates::StoreLaw::Pooled)
+    }
+
+    fn policy_law(
+        hint: ProtocolHint,
+        store_paths: bool,
+        law: crate::gates::StoreLaw,
+    ) -> SenderPolicy {
         let mut g = RuntimeGates::resolve();
+        g.store_law = law;
         // Neutralise the ambient environment: this asserts routing, not the
         // machine it runs on.
         g.store_paths = store_paths;
@@ -6692,9 +6701,104 @@ mod one_store_law_at_n1 {
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
                 ccap: &mut ccap,
+                diag_start_us: 0,
             },
         );
         (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)
+    }
+
+    /// The refresh seat, keeping the state (the `refresh` helper drops it).
+    fn refresh_scs(pol: &SenderPolicy, sched: &mut Scheduler) -> StoreCapState {
+        let gates = RuntimeGates::resolve();
+        let mut scs = StoreCapState::new(pol);
+        let mut sumcap = SumCapGauge::new(
+            pol.sum_cap, pol.store_cap_floor, pol.store_path_pool, pol.delta_cap, pol.delta_b);
+        let mut dcap = DeltaCapGauge::new(
+            pol.delta_cap, pol.store_cap_floor, pol.store_path_pool, pol.sum_cap, pol.delta_b);
+        let mut ccap = SenderTeardownGauges::new(false, pol.store_cap_floor);
+        let copa_feed: Option<Arc<CopaFeed>> = None;
+        crate::net::sender_phases::refresh_store_cap(
+            &mut scs,
+            crate::net::sender_phases::StoreCapCtx {
+                pol,
+                gates: &gates,
+                scheduler: sched,
+                copa_feed: &copa_feed,
+                sumcap: &mut sumcap,
+                dcap: &mut dcap,
+                ccap: &mut ccap,
+                diag_start_us: 0,
+            },
+        );
+        scs
+    }
+
+    /// (c) Routing: with `RWM_STORE_LAW=power` the seat writes the seeker's
+    /// cap — the first half is cap₊ = ceil(n̄·(1 + ½q)) with n̄ seeded at the
+    /// pooled law's ask — and with the default it writes exactly the pooled
+    /// law (the ask itself), allocating nothing.
+    #[test]
+    fn power_law_routes_through_the_seat_and_the_default_is_the_pooled_law() {
+        use crate::gates::StoreLaw;
+        for (hint, q) in presets() {
+            let pooled_pol = policy_law(hint, true, StoreLaw::Pooled);
+            let mut sched = warm_one_path();
+            let scs = refresh_scs(&pooled_pol, &mut sched);
+            let ask = scs.dyn_store_cap;
+            let (_, _, bdp) = refresh(&pooled_pol, &mut sched);
+            assert_eq!(ask, ((1.0 + q) * bdp).ceil() as usize, "{hint:?}: default is the pooled law");
+            assert!(scs.power.is_none(), "{hint:?}: default allocated the seeker");
+            assert!(!sched.power_tap_enabled(), "{hint:?}: default allocated the tap");
+
+            let pol = policy_law(hint, true, StoreLaw::Power);
+            assert!(pol.power_store_law);
+            let mut sched = warm_one_path();
+            let scs = refresh_scs(&pol, &mut sched);
+            let sk = scs.power.as_ref().expect("power law allocates the seeker");
+            assert!(sk.is_seeded(), "{hint:?}: not seeded at the first defined ask");
+            assert_eq!(sk.n_bar(), ask as f64, "{hint:?}: n̄ is not the pooled ask");
+            assert_eq!(
+                scs.dyn_store_cap,
+                (ask as f64 * (1.0 + 0.5 * q)).ceil() as usize,
+                "{hint:?}: the seat did not write cap₊"
+            );
+            assert!(scs.dyn_store_cap > ask, "{hint:?}: cap₊ must exceed n̄");
+            assert!(sched.power_tap_enabled() && sched.path(0).unwrap().power_acc_enabled());
+        }
+    }
+
+    /// (f) Default-off: with the gate unset nothing is allocated or fed.
+    #[test]
+    fn power_law_off_allocates_and_feeds_nothing() {
+        let pol = policy(ProtocolHint::Bulk, true);
+        assert!(!pol.power_store_law);
+        let mut sched = warm_one_path();
+        let scs = refresh_scs(&pol, &mut sched);
+        assert!(scs.power.is_none());
+        let p = sched.path_mut(0).unwrap();
+        p.record_rtt_sample(Duration::from_millis(3));
+        p.on_ack(5);
+        assert!(!p.power_acc_enabled(), "a feed allocated the accumulator");
+        assert!(sched.drain_power_rounds().is_empty());
+    }
+
+    /// With the gate on, the feed sites reach the accumulator: the round the
+    /// sender drains holds the delivered count and the loop-time median.
+    #[test]
+    fn power_law_feed_sites_reach_the_round_accumulator() {
+        let mut sched = warm_one_path();
+        sched.enable_power_tap();
+        let p = sched.path_mut(0).unwrap();
+        for ms in [2u64, 9, 4] {
+            p.record_rtt_sample(Duration::from_millis(ms));
+        }
+        p.on_ack(5);
+        p.on_ack(7);
+        let r = sched.drain_power_rounds();
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].id, r[0].delivered, r[0].loop_median_s), (0, 12, Some(0.004)));
+        sched.add_path(1);
+        assert!(sched.path(1).unwrap().power_acc_enabled(), "a path added later is tapped too");
     }
 
     /// Red-first 4: rule 1 — the mechanism under test executes. A one-path

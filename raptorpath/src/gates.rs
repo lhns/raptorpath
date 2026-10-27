@@ -83,6 +83,35 @@ fn rtobs_level() -> u8 {
     }
 }
 
+/// `RWM_STORE_LAW`: the store-cap law family (a gate value, not a dial).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreLaw {
+    /// The shipped pooled law, `(1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ`.
+    Pooled,
+    /// The power-seeking law (`net::PowerSeeker`), default off.
+    Power,
+}
+
+impl StoreLaw {
+    /// Strict parse of `RWM_STORE_LAW`'s value; `None` (unset) is the shipped law.
+    pub fn parse(raw: Option<&str>) -> Result<Self, String> {
+        match raw {
+            None | Some("pooled") => Ok(StoreLaw::Pooled),
+            Some("power") => Ok(StoreLaw::Power),
+            Some(other) => Err(format!(
+                "RWM_STORE_LAW={other:?} is not a store law (expected `pooled` or `power`)"
+            )),
+        }
+    }
+}
+
+/// Resolve `RWM_STORE_LAW` once; an unknown value aborts startup (no silent
+/// fallback to the shipped law: a typo'd arm would measure the wrong machine).
+fn resolve_store_law() -> StoreLaw {
+    let raw = std::env::var("RWM_STORE_LAW").ok();
+    StoreLaw::parse(raw.as_deref()).unwrap_or_else(|e| panic!("{e}"))
+}
+
 pub fn get() -> &'static RuntimeGates {
     static GATES: std::sync::OnceLock<RuntimeGates> = std::sync::OnceLock::new();
     GATES.get_or_init(RuntimeGates::resolve)
@@ -296,6 +325,11 @@ pub struct RuntimeGates {
     pub pfrac: bool,
 
     // ── Resolved here, not on the `[GATES]` line (own echoes; `EXTERNALLY_ECHOED`) ──
+    /// `RWM_STORE_LAW` (`pooled`, shipped | `power`, experiment arm; paper §6.1
+    /// (D)): which law decides the plain dynamic store cap where the pooled law
+    /// runs. Strict: an unknown value is a startup error. Not on the `[GATES]`
+    /// line (the default echo is byte-pinned); `power` prints its own echo.
+    pub store_law: StoreLaw,
     /// `RWM_COPA_WIRE` / `RWM_QUIC_CC` / `RWM_COPA_FEED`: the wire-clocked
     /// Copa signal (`scheduler::copa_wire_active`).
     pub copa_wire: bool,
@@ -349,6 +383,7 @@ impl RuntimeGates {
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
         RuntimeGates {
+            store_law: resolve_store_law(),
             unified,
             unified_shed: env_flag("RWM_UNIFIED_SHED", true),
             taper_r: env_flag("RWM_TAPER_R", unified),
@@ -577,6 +612,7 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_WIRE_COMPACT", "own echo: compact v5 DATA framing (transport/quic.rs part-2 echo)"),
     ("RWM_RS_TRACE", "instrument: its own [RSTRACE] output IS the echo"),
     ("RWM_LOOPDIAG", "instrument: its own [LOOPDIAG] output IS the echo"),
+    ("RWM_STORE_LAW", "own echo: 'power store law ACTIVE' (net/sender_phases.rs, printed when =power); the default echo is byte-pinned"),
     ("RWM_RSTAR_TAIL", "r* provisioning knob, read at the tail-provisioning site"),
     ("RWM_PLACE_T", "placement temperature, read by the perf harness path"),
     ("RWM_PERF_TIMEOUT_S", "harness-only: per-run completion timeout (src/perf.rs)"),

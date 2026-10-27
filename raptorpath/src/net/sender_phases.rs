@@ -36,11 +36,23 @@ pub(crate) struct StoreCapState {
     /// [DIAG] assembly: the population it reports is the store-cap phase's own
     /// instrument.
     pub sf_print_us: u64,
+    /// `RWM_STORE_LAW=power`: the power seeker. `None` (the default) means the
+    /// law is not allocated and `power_seat` returns the pooled ask untouched.
+    pub power: Option<PowerSeeker>,
 }
 
 impl StoreCapState {
     pub(crate) fn new(pol: &SenderPolicy) -> Self {
+        let power = pol.power_store_law.then(|| {
+            let (alpha, q) = (pol.delta_b, codel_setpoint_q(pol.delta_b));
+            crate::readout!(
+                "{}",
+                power_liveness_line(alpha, q, pol.store_cap_floor, pol.store_path_pool)
+            );
+            PowerSeeker::new(alpha, q)
+        });
         Self {
+            power,
             pa_engaged: false,
             pa_sum: 0.0,
             tt_terms_diag: None,
@@ -62,12 +74,76 @@ pub(crate) struct StoreCapCtx<'a> {
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
     pub ccap: &'a mut SenderTeardownGauges,
+    /// The `[DIAG]` clock origin, so `[PCAP] t=` shares `[LOOPDIAG] t=`'s clock.
+    pub diag_start_us: u64,
+}
+
+/// The power law's seat (`RWM_STORE_LAW=power`, paper §6.1 (D)): given the
+/// shipped pooled law's ask, return the cap. With the law not allocated
+/// (`power` is `None`) the ask passes through untouched, so the default is
+/// bit-identical. Otherwise the ask only seeds n̄ (at the first refresh where
+/// the pooled law is defined) and the cap is the seeker's dithered n̄ plus the
+/// additive hole term.
+fn power_seat(
+    power: &mut Option<PowerSeeker>,
+    ask: usize,
+    pol: &SenderPolicy,
+    gates: &crate::gates::RuntimeGates,
+    scheduler: &mut crate::scheduler::Scheduler,
+    n_live: usize,
+    dnow: u64,
+    diag_start_us: u64,
+) -> usize {
+    let Some(sk) = power.as_mut() else {
+        return ask;
+    };
+    scheduler.enable_power_tap();
+    let floor = pol.store_cap_floor;
+    let ceil = n_live.saturating_mul(pol.store_path_pool).max(floor);
+    if !sk.is_seeded() {
+        // Round length before any measurement: Copa srtt, max over live paths
+        // that have one.
+        let t0 = scheduler
+            .live_paths_iter()
+            .filter_map(|(_, p)| p.srtt_measured())
+            .map(|d| d.as_secs_f64())
+            .fold(0.0, f64::max);
+        if t0 <= 0.0 {
+            return ask;
+        }
+        let _ = scheduler.drain_power_rounds();
+        sk.seed(ask as f64, t0, dnow, diag_start_us);
+    } else if sk.round_due(dnow) {
+        let rounds = scheduler.drain_power_rounds();
+        if let Some(line) = sk.on_round(dnow, &rounds, floor, ceil) {
+            if gates.diag {
+                crate::readout!("{}", format_pcap_line(&line));
+            }
+        }
+    }
+    let hole_paths: Vec<HolePath> = scheduler
+        .live_paths_iter()
+        .map(|(id, p)| HolePath {
+            // The loss estimate the shipped repair margin and the cap's
+            // estimator read: `PathState::estimator.loss_rate()`.
+            eps: p.estimator.loss_rate(),
+            rate: sk
+                .last_rates()
+                .iter()
+                .find(|(i, _)| *i == id)
+                .map_or(0.0, |(_, r)| *r),
+            rtprop_s: p.min_rtt().map_or(0.0, |d| d.as_secs_f64()),
+            srtt_s: p.srtt().as_secs_f64(),
+        })
+        .collect();
+    sk.set_hole(power_hole_term(pol.contract_rho, pol.delta_b, &hole_paths));
+    sk.output_cap(floor, ceil)
 }
 
 /// Plain-reliable delay-based window cap (paper §6), refreshed off the
 /// scheduler lock at most every 5 ms.
 pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
-    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap } = ctx;
+    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap, diag_start_us } = ctx;
     if pol.plain_dyn_cap {
         let dnow = now_us();
         if dnow.saturating_sub(scs.dyn_cap_refresh_us) >= 5_000 {
@@ -295,11 +371,17 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_bdp_gain,
                     pol.store_cap_floor,
                     pol.store_path_pool,
-                ) {
+                )
+                .map(|ask| {
+                    power_seat(
+                        &mut scs.power, ask, pol, gates, scheduler, n_live, dnow, diag_start_us,
+                    )
+                }) {
                     // The shipped seat: every default dual cell's cap is
                     // decided here. `pol.sum_cap` and `pol.delta_cap` are
                     // values inside one expression, not second laws — see
-                    // `pooled_store_cap`.
+                    // `pooled_store_cap`. `power_seat` is the identity unless
+                    // `RWM_STORE_LAW=power` allocated the seeker.
                     sumcap.record(pol.sum_cap, n_live, bdp, pol.store_bdp_gain, cap);
                     dcap.record(n_live, bdp, pol.store_bdp_gain, cap);
                     cap

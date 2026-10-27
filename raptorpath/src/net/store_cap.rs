@@ -1238,3 +1238,8 @@ pub fn store_cap_sf_reset() {
 /// The retention/memory ceiling of the outstanding store — 4096 × ~1.2 KB
 /// ≈ 5 MB; the memory clamp of the composed/three-term laws.
 pub const WIN_STORE_MAX: usize = 4096;
+
+mod power;
+pub use power::*;
+#[cfg(test)]
+mod power_tests;

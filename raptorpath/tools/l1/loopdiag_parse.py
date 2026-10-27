@@ -13,6 +13,9 @@ delivered rate and quinn's own BBR pacing rate, side by side.
     loopdiag_parse.py score <ledger>...
     loopdiag_parse.py smoke27|check27 <ledger>     (plan 27: DEF<n>/BRS<n> arms, status section 27)
     loopdiag_parse.py score27 <ledger>...
+    loopdiag_parse.py smoke29|check29 <ledger>     (plan 29: MAIN/PWR/KNEE arms, the power store law)
+    loopdiag_parse.py score29 <ledger>...
+    loopdiag_parse.py plan29 [smoke]               (the plan table, `cell arm seed rep knee` per line; the battery's source)
 
 `row` prints one `LDROW {json}` line. Raw sample lists are never stored, only
 summaries. Nothing here is a ship verdict.
@@ -76,6 +79,25 @@ FRAGILE_SLOPE = 0.9
 CC_DEF_ECHO = "quinn congestion controller: BBR"      # src/transport/quic.rs, QuicCcMode::Bbr
 CC_BRS_ECHO = "burst-robust BBR"                      # src/transport/quic.rs, QuicCcMode::BbrRs
 
+# Plan 29 (the power store law): MAIN = shipped (no arm env), PWR = RWM_STORE_LAW=power,
+# KNEE = RWM_STORE=<the cell's knee>. plan29() below is the single source for the battery.
+CELLS29 = ["c2-100", "c1s-400", "c8-100", "c1d-400"]      # battery order; the score prints in this order
+ARMS29 = ["MAIN", "PWR", "KNEE"]
+KNEE_N = {"c2-100": 192, "c1s-400": 1024, "c1d-400": 768, "c8-100": 384}
+PRED29 = {"c2-100": 192, "c8-100": 384, "c1s-400": 384, "c1d-400": None}   # paper's predicted power points; c1d is "< 512"
+PRED29_C1D_BOUND = 512
+BLOCKS29 = [("42", 1), ("7", 1), ("42", 2)]
+EXPECT_ROWS29 = 36
+POWER_ECHO = "power store law ACTIVE"                     # once-at-start liveness echo of the engine
+MIN_PCAP_PERIODS = 3          # witness (PWR) and the FIXED-POINT floor: periods needed
+MIN_POST_PERIODS = 2          # FIXED-POINT: post-convergence periods needed for a time-average
+PIN_LIMIT = 0.25              # floor_pin / knee_pin at or above this: FLOOR-COLLAPSE / RUNAWAY
+SETTLED_MIN = 1.0 / 3.0       # converged suffix below this share of the periods: NOISE-DOMINATED
+# (sign agreement is reported only: in a converged limit cycle successive e-hat alternate, so it reads ~0 there)
+SIGMA_K = 2.0                 # 2 sigma_pooled
+for _a in ("PWR", "KNEE"):
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+
 for _a in ["MAIN"] + [f"S{n}" for n in sorted(set(GRID_C1S + GRID_C2))]:
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
 for _g in GRID27.values():
@@ -131,12 +153,93 @@ def arm_fam(arm):
     return m.group(1) if m else None
 
 
+_PCAP_KV = re.compile(r"(\w+)=(\S+)")
+_PCAP_INT = ("period", "conv", "ext")
+
+
+def pcap_periods(lines):
+    """Every `[PCAP]` per-period line -> a dict of floats (ints for period/conv/ext; None for `-`).
+    `t` and `conv_t` are printed with a trailing `s`. The once-at-start liveness echo has no [PCAP] prefix."""
+    out = []
+    for ln in lines:
+        i = ln.find("[PCAP] ")
+        if i < 0:
+            continue
+        d = {}
+        for k, v in _PCAP_KV.findall(ln[i + 7:]):
+            x = lc.fnum(v[:-1] if k in ("t", "conv_t") and v.endswith("s") else v)
+            d[k] = int(x) if x is not None and k in _PCAP_INT else x
+        out.append(d)
+    return out
+
+
+def pcap_floor(lines):
+    """The floor (symbols) from the liveness echo; 10 if absent."""
+    for ln in lines:
+        if POWER_ECHO in ln:
+            m = re.search(r"\bfloor=(\d+)", ln)
+            if m:
+                return float(m.group(1))
+    return 10.0
+
+
+def pcap_summary(lines):
+    """Row fields from the [PCAP] stream. Post-convergence = periods with index >= the last line's `conv`
+    (conv = first period index after which n-bar stayed within +-q of its current value; running estimate)."""
+    ps = pcap_periods(lines)
+    z = dict(pcap_periods=len(ps), pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None, pcap_post_n=0,
+             pcap_post_floor=0, pcap_nbar_all=None, pcap_nbar_final=None, pcap_floor_pin=None, pcap_knee_pin=None,
+             pcap_bind=None, pcap_out_pin=None, pcap_sign=None, pcap_hole_mean=None, pcap_ext=None)
+    if not ps:
+        return z
+    last = ps[-1]
+    conv = last.get("conv")
+    floor = pcap_floor(lines)
+    post = [p for p in ps if conv is not None and p.get("period") is not None and p["period"] >= conv
+            and p.get("nbar") is not None]
+    z.update(pcap_conv=conv, pcap_conv_t=last.get("conv_t"),
+             pcap_nbar_post=mean([p["nbar"] for p in post]), pcap_post_n=len(post),
+             pcap_post_floor=sum(1 for p in post if p["nbar"] <= floor),
+             pcap_nbar_all=mean([p["nbar"] for p in ps if p.get("nbar") is not None]),
+             pcap_nbar_final=last.get("next") if last.get("next") is not None else last.get("nbar"),
+             pcap_floor_pin=last.get("floor_pin"), pcap_knee_pin=last.get("knee_pin"), pcap_bind=last.get("bind"),
+             pcap_out_pin=last.get("out_pin"), pcap_sign=last.get("sign"),
+             pcap_hole_mean=mean([p["hole"] for p in ps if p.get("hole") is not None]), pcap_ext=last.get("ext"))
+    return z
+
+
+def loop_series(cli):
+    """Post-warm-up [LOOPDIAG] windows with n>0 and a numeric rtt_p50_us, ALL paths pooled -> [[t, rtt_p50_us]].
+    Stored compactly in the row so the scorer can cut every arm at the same post-convergence time."""
+    seen = {m.group(2) for m in (_LD.search(ln) for ln in cli) if m}
+    out = []
+    for pid in sorted(seen, key=int):
+        for w in loopdiag_windows(cli, pid):
+            if w["n"] > 0 and w.get("rtt_p50_us") is not None:
+                out.append([round(w["t"], 3), w["rtt_p50_us"]])
+    return out
+
+
+def loop_p50(series, cutoff):
+    """Loop-time p50 (us) after `cutoff`: the MEDIAN OF THE WINDOW MEDIANS (rtt_p50_us) over all pooled paths,
+    windows unweighted (a window's own sample count is not used). None if no window is at or after the cutoff."""
+    return median([p for t, p in series if t >= cutoff])
+
+
+def p1_idle(cli):
+    """c8 only: path 1 delivered 0 in EVERY post-warm-up window (and there is at least one). Then it sent nothing and
+    has no loop to witness (plan 27 lost 12 c8 rows to requiring it)."""
+    ws = loopdiag_windows(cli, "1")
+    return bool(ws) and all(w["dlv"] == 0 for w in ws)
+
+
 IO_HIGH_FULL10 = 20.0   # io full avg10 at or above this flags a row (a covariate, never a void)
 
 
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None):
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
     row["bin_sha"] = sha
+    row["notes"] = []
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
     cap = [m for m in (sl._SUMCAP.search(ln) for ln in cli) if m]
     if cap:
@@ -180,6 +283,13 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         pn_, pmed, ppace = loopdiag_summary(cli, pid)
         row[f"ld_p{pid}"] = pmed
         row["ld_pn"][pid] = [pn_, ppace]
+    row["power_echo"] = any(POWER_ECHO in ln for ln in cli)
+    row["gate_law"] = lc.gate_tok(cli, "RWM_STORE_LAW")
+    row.update(pcap_summary(cli))
+    row["ld_p50_series"] = loop_series(cli)
+    cv = row["pcap_conv_t"]
+    row["loop_p50_all"] = loop_p50(row["ld_p50_series"], 0.0)
+    row["loop_p50_post"] = loop_p50(row["ld_p50_series"], cv) if cv is not None else None
     row["cc_def_echo"] = any(CC_DEF_ECHO in ln for ln in cli)
     row["cc_brs_echo"] = any(CC_BRS_ECHO in ln for ln in cli)
     nbytes = sp.CELL_SPEC[cell][3]
@@ -188,13 +298,18 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     p = []
     if row["ackdiag_n"] < 1:
         p.append("no-ackdiag")
-    for i in range(nleg):                       # EVERY path of the cell
+    idle1 = arm in ARMS29 and cell == "c8-100" and p1_idle(cli)
+    if idle1:
+        row["notes"].append("p1-idle")
+    for i in range(nleg):                       # EVERY path of the cell (plan 29 c8: p1 only if it sent anything)
+        if i == 1 and idle1:
+            continue
         wn, pn_pace = row["ld_pn"][str(i)]
         if wn < MIN_LD_WINDOWS:
             p.append(f"loopdiag-p{i}-windows={wn}")
         if pn_pace < 1:
             p.append("no-q-pace-bps" if i == 0 else f"no-q-pace-bps-p{i}")
-    n = arm_n(arm)
+    n = KNEE_N[cell] if arm == "KNEE" else arm_n(arm)
     fam = arm_fam(arm)
     eng = row["sumcap_eng"]
     if arm == "MAIN":
@@ -202,7 +317,22 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             p.append("main-sumcap-eng-zero")
         if row["gate_store"] != "unset":
             p.append(f"gate-store={row['gate_store']}")
+        if row["power_echo"]:
+            p.append("main-has-power-echo")
+        if row["gate_law"] == "power":
+            p.append("main-gate-law-power")
+    elif arm == "PWR":
+        if not row["power_echo"]:
+            p.append("pwr-no-power-echo")
+        if row["pcap_periods"] < MIN_PCAP_PERIODS:
+            p.append(f"pwr-pcap-periods={row['pcap_periods']}")
+        if row["gate_store"] != "unset":
+            p.append(f"pwr-gate-store={row['gate_store']}")
+        if row["gate_law"] not in (None, "power"):
+            p.append(f"pwr-gate-law={row['gate_law']}")
     elif n is not None:
+        if arm == "KNEE" and row["power_echo"]:
+            p.append("knee-has-power-echo")
         if eng:
             p.append(f"s-sumcap-eng={eng}")
         if row["gate_store"] != str(n):
@@ -769,6 +899,221 @@ def smoke27(path):
     return 0
 
 
+# ── plan 29: MAIN / PWR / KNEE (the power store law) ──────────────────────
+def plan29(smoke=False):
+    """The plan table, in run order: [{block, seed, rep, cell, arm, knee}]. 3 blocks (seed, rep) = (42,1) (7,1) (42,2);
+    per block the cells c2-100, c1s-400, c8-100, c1d-400, each running the three arms in an order rotated by block
+    index (block 0: MAIN,PWR,KNEE; 1: PWR,KNEE,MAIN; 2: KNEE,MAIN,PWR). 36 rows. The smoke is 2 rows."""
+    if smoke:
+        return [dict(block=0, seed="42", rep=1, cell=c, arm="PWR", knee=KNEE_N[c]) for c in ("c2-100", "c1s-400")]
+    out = []
+    for b, (seed, rep) in enumerate(BLOCKS29):
+        order = ARMS29[b % 3:] + ARMS29[:b % 3]
+        for cell in CELLS29:
+            for arm in order:
+                out.append(dict(block=b, seed=seed, rep=rep, cell=cell, arm=arm, knee=KNEE_N[cell]))
+    return out
+
+
+def sd_of(v):
+    """Sample standard deviation (n-1); None below two values."""
+    if len(v) < 2:
+        return None
+    m = sum(v) / len(v)
+    return math.sqrt(sum((x - m) ** 2 for x in v) / (len(v) - 1))
+
+
+def compare29(a, b, lower_better=False):
+    """a, b: value lists. (diff = mean(a) - mean(b), 2 sigma_pooled, token). sigma_pooled = sqrt((s1^2+s2^2)/2).
+    Token BETTER / WORSE when |diff| > 2 sigma_pooled in the good / bad direction, WITHIN otherwise (boundary is
+    WITHIN); `-` if either arm has fewer than two values (no sigma can be formed)."""
+    sa, sb = sd_of(a), sd_of(b)
+    if sa is None or sb is None:
+        return None, None, "-"
+    diff = mean(a) - mean(b)
+    thr = SIGMA_K * math.sqrt((sa * sa + sb * sb) / 2)
+    if abs(diff) <= thr:
+        return diff, thr, "WITHIN"
+    good = diff < 0 if lower_better else diff > 0
+    return diff, thr, "BETTER" if good else "WORSE"
+
+
+def stability29(r):
+    """One PWR row. PRECEDENCE: FLOOR-COLLAPSE (floor_pin >= 0.25 or any post-convergence period at the floor), then
+    RUNAWAY (knee_pin >= 0.25), then NOISE-DOMINATED (the converged suffix covers < 1/3 of the periods), else STABLE.
+    A `-` (None) fraction counts as 0."""
+    if (r.get("pcap_floor_pin") or 0.0) >= PIN_LIMIT or (r.get("pcap_post_floor") or 0) >= 1:
+        return "FLOOR-COLLAPSE"
+    if (r.get("pcap_knee_pin") or 0.0) >= PIN_LIMIT:
+        return "RUNAWAY"
+    per, post = r.get("pcap_periods") or 0, r.get("pcap_post_n") or 0
+    if per > 0 and post / per < SETTLED_MIN:
+        return "NOISE-DOMINATED"
+    return "STABLE"
+
+
+STAB_ORDER = ["FLOOR-COLLAPSE", "RUNAWAY", "NOISE-DOMINATED", "STABLE"]      # worst first
+
+
+def converged29(r):
+    return (r.get("pcap_conv") is not None and r.get("pcap_nbar_post") is not None
+            and (r.get("pcap_periods") or 0) >= MIN_PCAP_PERIODS and (r.get("pcap_post_n") or 0) >= MIN_POST_PERIODS)
+
+
+def score_cell29(rows, cell, out):
+    """Prints every intermediate number; returns the outcome tokens of the PWR arm for this cell."""
+    arms = {a: live(rows, cell, a) for a in ARMS29}
+    pw = arms["PWR"]
+    ct = [r["pcap_conv_t"] for r in pw if r.get("pcap_conv_t") is not None]
+    cutoff = median(ct) if ct else WARM_S
+    for a in ARMS29:
+        for r in arms[a]:
+            r["_loop"] = loop_p50(r.get("ld_p50_series") or [], cutoff)
+    metrics = [("goodput Mbit/s", "mbps", False), ("A_x p50 whole-transfer (us)", "ax_p50_us", True),
+               ("loop p50 post-convergence (us)", "_loop", True)]
+    vals = {k: {a: col(arms[a], k) for a in ARMS29} for _, k, _ in metrics}
+    n_star = KNEE_N[cell]
+    out(f"CELL {cell}  (KNEE n = {n_star}; live rows MAIN {len(arms['MAIN'])} PWR {len(pw)} KNEE {len(arms['KNEE'])})")
+    out(f"  loop p50 post-convergence = median of the window medians (rtt_p50_us), all paths pooled, windows "
+        f"unweighted, windows with cutoff t >= {cutoff:.2f}s (the median PWR conv_t of this cell; the same cut for every arm)")
+    out("  A_x p50 whole-transfer is the cumulative [LAT] gauge of the whole run (it cannot be cut at convergence)")
+    toks = {}
+    for title, k, lower in metrics:
+        out(f"  {title}   (lower is better)" if lower else f"  {title}   (higher is better)")
+        for a in ARMS29:
+            v = vals[k][a]
+            out(f"    {a:<5} n={len(v)}  mean {f(mean(v),1)}  sd {f(sd_of(v),2)}")
+        for x, y in (("KNEE", "MAIN"), ("PWR", "MAIN"), ("PWR", "KNEE")):
+            d, t, tok = compare29(vals[k][x], vals[k][y], lower)
+            toks[(k, x, y)] = tok
+            dtxt = "-" if d is None else f"{d:+.1f}"
+            out(f"    {x} vs {y}  diff {dtxt}  2sigma {f(t,1)}  {tok}")
+    res = {"cell": cell, "GOODPUT": toks[("mbps", "PWR", "MAIN")], "GOODPUT_KNEE": toks[("mbps", "PWR", "KNEE")],
+           "LATENCY_MAIN": toks[("ax_p50_us", "PWR", "MAIN")], "LATENCY_KNEE": toks[("ax_p50_us", "PWR", "KNEE")],
+           "LOOP_MAIN": toks[("_loop", "PWR", "MAIN")], "LOOP_KNEE": toks[("_loop", "PWR", "KNEE")]}
+    # PWR cap position
+    cv = [r for r in pw if converged29(r)]
+    lo, hi = n_star / REPRO, REPRO * n_star
+    nb = mean([r["pcap_nbar_post"] for r in cv])
+    if not pw or len(cv) * 2 <= len(pw):
+        fp = "NO-CONVERGENCE"
+    elif nb < lo:
+        fp = "BELOW"
+    elif nb > hi:
+        fp = "ABOVE"
+    else:
+        fp = "IN-BAND"
+    out(f"  PWR cap position: nbar_post {f(nb,1)} (time-average of n-bar over periods >= conv_period; {len(cv)}/{len(pw)} "
+        f"live PWR rows converged, a majority is required) vs KNEE n* = {n_star} band [{lo:.1f}, {hi:.1f}]; "
+        f"final nbar mean {f(mean(col(pw, 'pcap_nbar_final')),1)}, all-period nbar mean {f(mean(col(pw, 'pcap_nbar_all')),1)}, "
+        f"conv_period mean {f(mean(col(pw, 'pcap_conv')),1)} at conv_t mean {f(mean(col(pw, 'pcap_conv_t')),2)}s, "
+        f"periods mean {f(mean(col(pw, 'pcap_periods')),1)}")
+    pt = PRED29[cell]
+    if pt is not None:
+        ok = nb is not None and pt / REPRO <= nb <= REPRO * pt
+        out(f"  PREDICTED {cell}: nbar_post {f(nb,1)} vs point {pt} (band [{pt / REPRO:.1f}, {REPRO * pt:.1f}]) -> "
+            f"{'-' if nb is None else ('IN' if ok else 'OUT')}   (report only)")
+    else:
+        ok = nb is not None and nb < PRED29_C1D_BOUND
+        out(f"  PREDICTED {cell}: nbar_post {f(nb,1)} vs bound < {PRED29_C1D_BOUND} -> "
+            f"{'-' if nb is None else ('IN' if ok else 'OUT')}   (report only)")
+    # stability
+    sts = [stability29(r) for r in pw]
+    st = next((s for s in STAB_ORDER if s in sts), "-")
+    out(f"  PWR stability inputs (per live row): " + "; ".join(
+        f"s{r['seed']}r{r['rep']} floor_pin {f(r.get('pcap_floor_pin'),3)} knee_pin {f(r.get('pcap_knee_pin'),3)} "
+        f"sign {f(r.get('pcap_sign'),3)} post_floor {r.get('pcap_post_floor')} bind {f(r.get('pcap_bind'),3)} "
+        f"hole {f(r.get('pcap_hole_mean'),2)} ext {r.get('pcap_ext')} -> {s}" for r, s in zip(pw, sts)))
+    out(f"  GOODPUT {res['GOODPUT']}   (PWR vs MAIN, 2 sigma_pooled; vs KNEE: {res['GOODPUT_KNEE']})")
+    out(f"  LATENCY {res['LATENCY_MAIN']} {res['LATENCY_KNEE']}   (A_x p50 whole-transfer: PWR vs MAIN, PWR vs KNEE)")
+    out(f"  LATENCY-LOOP {res['LOOP_MAIN']} {res['LOOP_KNEE']}   (loop p50 post-convergence: PWR vs MAIN, PWR vs KNEE)")
+    out(f"  FIXED-POINT {fp}   (nbar_post {f(nb,1)} vs KNEE n* band [{lo:.1f}, {hi:.1f}])")
+    out(f"  STABILITY {st}   (precedence FLOOR-COLLAPSE > RUNAWAY > NOISE-DOMINATED > STABLE, worst live PWR row)")
+    res.update({"FIXED-POINT": fp, "STABILITY": st, "nbar_post": nb})
+    return res
+
+
+def score29(paths, out=print):
+    rows = rows_of(paths)
+    out("LOOP-DIAG PLAN 29 SCORE (the power store law vs MAIN and KNEE; diagnostic, nothing here ships)")
+    out("")
+    out("ROWS by (cell, arm): live / total / statuses")
+    for c in CELLS29:
+        for a in ARMS29:
+            rs = [r for r in rows if r["cell"] == c and r["arm"] == a]
+            if not rs:
+                continue
+            st = {}
+            for r in rs:
+                st[r["status"]] = st.get(r["status"], 0) + 1
+            out(f"  {c} {a}: live {len([r for r in rs if r['status'] == 'LIVE'])}/{len(rs)} {st}")
+    out("")
+    out("VOID TABLE (rows not LIVE)")
+    void = [r for r in rows if r["status"] != "LIVE"]
+    for r in sorted(void, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: {r['status']} {','.join(r['problems'])}")
+    if not void:
+        out("  none")
+    out("")
+    out("NOTES (recorded, never a void)")
+    noted = [r for r in rows if r.get("notes")]
+    for r in sorted(noted, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        out(f"  NOTE {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: {','.join(r['notes'])}")
+    if not noted:
+        out("  none")
+    out("")
+    out(f"IO PRESSURE (covariate; flagged at full avg10 >= {IO_HIGH_FULL10:g}, never voided)")
+    for r in sorted(rows, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        if r.get("io_high"):
+            out(f"  FLAG {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: io_full10={r['io_full10']} "
+                f"goodput={r.get('mbps')} status={r['status']}")
+    if not any(r.get("io_high") for r in rows):
+        out("  no row flagged")
+    out("")
+    results = {}
+    for cell in CELLS29:
+        results[cell] = score_cell29(rows, cell, out)
+        out("")
+    return results
+
+
+def check29(path):
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK29 done={ok} rows={n}/{EXPECT_ROWS29}")
+    return 0 if ok and n == EXPECT_ROWS29 else 1
+
+
+def smoke29(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    bad = []
+    for k in [("c2-100", "PWR"), ("c1s-400", "PWR")]:
+        r = got.get(k)
+        if r is None:
+            bad.append(f"{k}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{k}: {r['status']} {r['problems']}")
+        if not r.get("gates_cli"):
+            bad.append(f"{k}: no [GATES] echo")
+        if not r.get("ackdiag_n"):
+            bad.append(f"{k}: no [ACKDIAG]")
+        if not r.get("power_echo"):
+            bad.append(f"{k}: no power-law echo")
+        if (r.get("pcap_periods") or 0) < MIN_PCAP_PERIODS:
+            bad.append(f"{k}: {r.get('pcap_periods')} [PCAP] periods")
+        print(f"SMOKE29 {k}: mbps={r.get('mbps')} periods={r.get('pcap_periods')} conv={r.get('pcap_conv')} "
+              f"conv_t={r.get('pcap_conv_t')} nbar_post={r.get('pcap_nbar_post')} nbar_final={r.get('pcap_nbar_final')} "
+              f"floor_pin={r.get('pcap_floor_pin')} knee_pin={r.get('pcap_knee_pin')} sign={r.get('pcap_sign')} "
+              f"ld_pn={r.get('ld_pn')} status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -793,6 +1138,17 @@ def main(argv):
         return check27(argv[2])
     if cmd == "score27":
         score27(argv[2:])
+        return 0
+    if cmd == "smoke29":
+        return smoke29(argv[2])
+    if cmd == "check29":
+        return check29(argv[2])
+    if cmd == "score29":
+        score29(argv[2:])
+        return 0
+    if cmd == "plan29":
+        for b in plan29(smoke=len(argv) > 2 and argv[2] == "smoke"):
+            print(f"{b['cell']} {b['arm']} {b['seed']} {b['rep']} {b['knee']}")
         return 0
     print(__doc__)
     return 2

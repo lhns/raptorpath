@@ -231,6 +231,9 @@ pub struct Scheduler {
     place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3), same discipline.
     place_wdiv_derived: bool,
+    /// `RWM_STORE_LAW=power`: every path carries a [`crate::net::PowerAcc`]
+    /// (set once by the sender's store-cap seat; false = nothing allocated).
+    power_tap: bool,
     /// Protocol hint — also sets Copa-lite's queue target on each path
     /// (paper §8.2).
     hint: ProtocolHint,
@@ -260,6 +263,7 @@ impl Scheduler {
             place_t_derived: place_t_derived_active(),
             place_hol: place_hol_active(),
             place_wdiv_derived: place_wdiv_derived_active(),
+            power_tap: false,
             clock,
             deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
@@ -312,8 +316,34 @@ impl Scheduler {
     }
 
     pub fn add_path(&mut self, id: PathId) {
-        self.paths
-            .insert(id, PathState::new_with_hint(id, self.clock.clone(), self.hint));
+        let mut p = PathState::new_with_hint(id, self.clock.clone(), self.hint);
+        if self.power_tap {
+            p.enable_power_acc();
+        }
+        self.paths.insert(id, p);
+    }
+
+    /// Allocate the power-law round accumulators on every path, present and
+    /// future. Idempotent; never called with the gate off.
+    pub fn enable_power_tap(&mut self) {
+        self.power_tap = true;
+        self.paths.values_mut().for_each(PathState::enable_power_acc);
+    }
+
+    /// Whether the power-law accumulators are allocated (zero-cost witness).
+    pub fn power_tap_enabled(&self) -> bool {
+        self.power_tap
+    }
+
+    /// Drain every path's round accumulator, in path-id order.
+    pub fn drain_power_rounds(&mut self) -> Vec<crate::net::PathRound> {
+        let mut v: Vec<crate::net::PathRound> = self
+            .paths
+            .iter_mut()
+            .filter_map(|(id, p)| p.drain_power_round(*id))
+            .collect();
+        v.sort_unstable_by_key(|r| r.id);
+        v
     }
 
     pub fn remove_path(&mut self, id: PathId) {
