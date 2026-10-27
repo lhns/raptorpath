@@ -31,7 +31,7 @@ while [ "$(date +%s)" -lt "$end" ]; do
   if ok; then
     n=$(( n + 1 ))
     log "LAUNCH attempt=$n procs_running=$(procs_running) load=$(cut -d' ' -f1-3 /proc/loadavg)"
-    H=$(( $(date +%s) + 10800 ))
+    H=$(( $(date +%s) + ${R3D_HARD_S:-10800} ))
     ( cd "$HERE" && R3D_ROOT="$R" R3D_HARD_DEADLINE=$H bash "${R3D_SCRIPT:-r3diag_run.sh}" ) > "$R/launch-$n.out" 2>&1 < /dev/null
     rc=$?
     if { [ "$rc" = 3 ] || [ "$rc" = 4 ]; } && ! grep -q "^BUILD " "$R/run/era.txt" 2>/dev/null; then
