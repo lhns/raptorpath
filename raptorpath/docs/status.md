@@ -6921,3 +6921,97 @@ amendment 1's load and io gates and its void).**
    locks and refuses (`ABORT-ONDISK`).
 4. **Builds and the full suites** have no load or io gate: locks and no
    other `cargo`/`rustc` only. The io state is recorded per suite.
+
+### 26. The c8 lag tail and the sender's long polls — result
+
+Read 2026-10-27 against the pre-registration above and its amendments 1–3,
+literally. **(a) `MIXED`. (b) `UNBOUNDED-PER-WAKE(sack)`**: the sender runs
+several loop iterations per wake without yielding, and 81 % of the wall of
+its polls of 10 ms or more is the SACK drain. Per (b)'s rule this breaks plan
+rule 3; the bound is designed in §28 and stops at the ship-battery gate.
+
+*Session.* The binary is `37dfd2f8…ffab361` (tree `4abe306`, archived LF,
+built fresh on disk). It ran from `/dev/shm/lag26`, so every row was in
+memory and none is `VOID-ONDISK`. A detached waiter on the VM started at
+20:31Z and retried through the I/O stall and other agents' builds and locks.
+- *Suites.* They ran 21:23–23:08Z under both locks:
+  - release: 1122 passed, 0 failed, 50 ignored;
+  - doc: rc 0;
+  - wasm: 35 passed;
+  - debug: 981 passed, 0 failed, 49 ignored;
+  - parser tests: rc 0;
+  - 0 identity panics.
+
+  `TESTS-OK`.
+- *Diagnostic.* The rows ran 23:12–23:25Z: 28 rows, 28 LIVE, 0 witness
+  failures, in-session tests 53 passed. The `procs_running` precondition
+  held. Exit state: 0 `raptorpath`, 0 `rp-*`; the VM dirs were removed.
+- *Ledgers.* `docs/l1-raw/lag-diag2/`: `digest2.txt`, `digest.txt` (§25's
+  digest re-read on this binary), `era.txt` (io `full avg10` before and after
+  every row), `SUITES-TESTS.txt`, `diag/`.
+
+*Abort table.* No abort fired: `ABORT-PRECONDITION`, `-LOCK`, `-ONDISK`,
+`-BUILD`, `-TESTS`, `-SHA`, `-SMOKE` and `-BUDGET` all read *no*.
+`VOID-COTENANT`: 0. Four RTOBS=2 rows reached io `full avg10` ≥ 20, and
+none is an E outlier, so 0 are flagged (`IO-COVARIATE`).
+
+*(a) The OS reference clock* (24 RTOBS=2 rows):
+
+| quantity | value | rule |
+|---|---|---|
+| ρ(E_lag, E_os) | **0.26** | OS-LEVEL needs ≥ 0.5; RUNTIME needs < 0.3 |
+| E_os median, high vs low tercile of E_lag | 912 vs 522 µs (×1.75) | OS-LEVEL needs ≥ 1.5; RUNTIME needs < 1.2 |
+| E_lag median, high vs low tercile | 4035 vs 2387 µs | — |
+| ρ(E_lag, worker run_delay/s) | −0.47 | reported |
+
+Neither bar is met: the rank correlation is weak, but the OS thread's tail
+is larger in the high-lag reps. Read plainly, both a host/OS component (E_os
+p99 300–2000 µs, about a quarter of E_lag) and a larger runtime component
+are present. Guest run-queue wait does not drive it: more run_delay goes
+with *less* lag.
+
+*(b) The sender's long polls* (client, 21 558 sender polls ≥ 1 ms over 24
+rows):
+
+| quantity | polls ≥ 1 ms | polls ≥ 10 ms (n = 195) |
+|---|---|---|
+| loop iterations per poll, p50 / p90 | 3 / 4 | **8 / 12.6** |
+| SACK drain share of poll wall | 0.71 | **0.81** |
+| emission share | 0.13 | 0.08 |
+| unattributed (`other`) | 0.02 | 0.02 |
+
+`[TXSEC]`, pooled over all iterations (with `select` and `flush` the
+awaits):
+
+| section | share of sender wall | per iteration | max |
+|---|---|---|---|
+| `select` (await, incl. sleep) | 0.65 | — | 94 ms |
+| **`sack`** | **0.23** | 183 µs mean | 19.9 ms |
+| `emit` | 0.05 | 178 µs mean, over the 58 862 emitting iterations | 8.2 ms |
+| `arm_nack` | 0.03 | — | 3.3 ms |
+| `arm_in` | 0.02 | — | 11.2 ms |
+
+*Reported.* PERTURB is ×1.03 (RTOBS=2 vs RTOBS=1 E_lag medians), so the
+deep gauge does not move the lag. §25's long-poll overlap re-read on this
+binary is F = 0.29, and 97 % of the overlapped late ticks again fall under
+the sender.
+
+*Findings.*
+
+1. **Rule 3 is broken, and the SACK drain is the work.** At c8 one sender
+   wake runs up to 12+ loop iterations. Each iteration drains *every* queued
+   `SackReport` (`while let Ok(report) = sack_rx.try_recv()`; the channel
+   depth is 64) and marks every retained seq in every range. Every report
+   re-sends all ranges above the stalled frontier, so most seqs are already
+   marked and the work is re-done per report: O(span above the frontier) per
+   SACK-bearing ack. That is why the drain is 23 % of the sender's whole wall
+   and its single longest section. The plan's rule-3 bound (one iteration
+   per wake, then a natural yield) is designed in §28. **The redundant
+   re-marking is a separate CPU defect.** It is recorded here and not fixed:
+   making the marking incremental changes the release law's input path and
+   needs its own derivation and battery.
+2. **The lag tail is not one cause.** The sender's polls cover 29 % of the
+   late ticks; the OS's own wake tail is about a quarter of E. The remainder
+   is in the runtime (timer hand-off). The rule-3 bound should shorten the
+   sender's polls (§28 predicts a lower c8 client E, reported). It is not
+   expected to remove the rep-to-rep spread.
