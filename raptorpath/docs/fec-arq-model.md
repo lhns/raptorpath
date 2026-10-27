@@ -1620,7 +1620,15 @@ sweep shows what a working law must reach: c2 holds goodput at 192 symbols
 768 (4.6 against 14 ms). Both knees sit near 3–3.5·RTprop·L. The open
 design question is the controller's input: a non-circular unloaded loop
 time in place of RTprop, an explicit probe (BBR's gain cycle), or the
-substrate's rate estimate.
+substrate's rate estimate. Status §24 measured two of them beside the same
+sweep and both fail: the window-min loop time is the standing queue plus a
+floor (×10 across the c2 grid), so `1.1·D·Tmin` still contracts (its map
+stays below 1 at every cap); quinn's BBR rate reads the link at c1s but
+over-reads ×3–20 at c2's jitter, and neither ask reaches a knee. What the
+c2 knee does track is the loop distribution's spread, `Tp50 − Tmin`, which
+stays at 5–7 ms while Tmin moves 10×: `(1 + q)·L·(RTprop + spread)` lands in
+c2's band, but it needs the link rate L, which nothing measured supplies at
+c2.
 
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
