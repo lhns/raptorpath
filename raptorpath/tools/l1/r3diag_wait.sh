@@ -3,7 +3,7 @@
 # launch precondition (§22 Amendment 3, the shared rule: both locks absent
 # by `test -e` only, no cargo / rustc, `procs_running` in /proc/stat ≤ 2 in
 # each of 5 samples 2 s apart) about once a minute for up to R3D_WAIT_S
-# (default 3 h), then runs r3diag_run.sh, which re-checks it and takes the
+# (default 3 h), then runs $R3D_SCRIPT (default r3diag_run.sh), which re-checks it and takes the
 # locks with take_lock. A run that refused before taking the locks
 # (precondition rc 3, a lock taken in between rc 4, and no BUILD line) is
 # retried; anything else ends the waiter. Never touches a lock.
@@ -32,7 +32,7 @@ while [ "$(date +%s)" -lt "$end" ]; do
     n=$(( n + 1 ))
     log "LAUNCH attempt=$n procs_running=$(procs_running) load=$(cut -d' ' -f1-3 /proc/loadavg)"
     H=$(( $(date +%s) + 10800 ))
-    ( cd "$HERE" && R3D_ROOT="$R" R3D_HARD_DEADLINE=$H bash r3diag_run.sh ) > "$R/launch-$n.out" 2>&1 < /dev/null
+    ( cd "$HERE" && R3D_ROOT="$R" R3D_HARD_DEADLINE=$H bash "${R3D_SCRIPT:-r3diag_run.sh}" ) > "$R/launch-$n.out" 2>&1 < /dev/null
     rc=$?
     if { [ "$rc" = 3 ] || [ "$rc" = 4 ]; } && ! grep -q "^BUILD " "$R/run/era.txt" 2>/dev/null; then
       log "REFUSED-BEFORE-LOCKS rc=$rc (retrying)"

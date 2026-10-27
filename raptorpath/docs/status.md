@@ -6745,3 +6745,39 @@ substituted for it.
 new amendment before VM contact — the same 1 GB c1d server `perf record`,
 the attach target taken from `perf_rwm_c.sh`'s own `srv_pid` (not
 `pgrep -o`), the same rule. The R3 build stays shelved until it reads.
+
+### 22. Amendment 4 — the profile-only re-read of H-alloc (a) (before VM contact)
+
+Operator go, 2026-10-27. **Only H-alloc (a) is re-read**; every other
+§22 reading above stands and is not re-measured. **Unchanged:** the
+prediction, its bars (gf256 ≤ 20 % of `add_symbol`'s children; allocator,
+`memmove`/`memset`, BTree and hash frames ≥ 50 %), the decision rule, the
+engine tree (`e4d078e`), the transfer (one 1 GB `c1d` invocation, seed 42,
+bulk, `--window-reliable`, `RWM_GEN=0 RWM_DIAG=1`, no `RWM_RTOBS`) and the
+recording (`perf record -g --call-graph dwarf,16384 -F 999`, 3 s, starting
+3 s after the driver's start line), read off the VM with
+`tools/l1/r3diag_fold.py` (the "under add_symbol: leaf classes" block).
+**Changed:**
+1. The attach target is the server pid `perf_rwm_c.sh` itself started
+   (its abort-witness `srv_pid`, written to the run dir), not
+   `pgrep -o -x raptorpath`.
+2. **Fail-fast witness:** `perf report --sort comm` must show samples on
+   the server's `rp-w-*` worker threads and `perf record` must exit 0;
+   otherwise the session ends `ABORT-PERF-ATTACH` and (a) stays UNREAD.
+3. Rule 1 for the read itself: the fold must find samples under
+   `run_receiver` and under `UnifiedDecoder::add_symbol`; zero under
+   either is `UNREAD`, not a verdict.
+4. Envelope `tools/l1/r3prof_run.sh` (build on disk; the measurement and
+   the perf data on `/dev/shm`; Amendments 2–3: the shared precondition,
+   io as a covariate). Started by the detached on-VM waiter
+   (`r3diag_wait.sh` with `R3D_SCRIPT=r3prof_run.sh`), which waits on the
+   locks (another agent may hold them) and never touches one. Hard
+   deadline launch + 2 h. Ledgers to `docs/l1-raw/thread-r3-diag/prof/`.
+
+**Reading:** (a) **MET** iff gf256 ≤ 20 % **and** allocator + memmove/memset
++ BTree + hash ≥ 50 % of the samples under `add_symbol`; **REFUTED** iff
+gf256 > 20 %; otherwise (gf256 ≤ 20 % but the bookkeeping classes < 50 %)
+**PARTIAL**, which selects neither branch and is reported with the leaf
+table. MET selects the in-place R3 (then its ship battery, after the
+rebase and the harness amendments); REFUTED with decode ≥ 0.3 core (read
+above: 0.31–0.32) selects the decode-stage task.
