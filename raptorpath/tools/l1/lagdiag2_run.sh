@@ -159,10 +159,12 @@ fi
 # ── plan: 12 blocks, 28 rows ─────────────────────────────────────────────
 # 2 RTOBS=2 rows per block (seed order swapped on even blocks) = 24, plus an
 # RTOBS=1 control row after blocks 3, 6, 9, 12 (seeds 42, 7, 42, 7).
-for b in $(seq 1 12); do
+# §28 step 0 reuses this envelope with LG2_BLOCKS=3 LG2_RT1=0 (6 RTOBS=2 rows).
+for b in $(seq 1 "${LG2_BLOCKS:-12}"); do
   if [ $(( b % 2 )) = 1 ]; then first=42; second=7; else first=7; second=42; fi
   row "b$b-s$first-rt2" "$first" 2 || break
   row "b$b-s$second-rt2" "$second" 2 || break
+  [ "${LG2_RT1:-1}" = 1 ] || continue
   case "$b" in
     3|9) row "b$b-s42-rt1" 42 1 || break ;;
     6|12) row "b$b-s7-rt1" 7 1 || break ;;

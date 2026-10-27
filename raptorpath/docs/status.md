@@ -7015,3 +7015,76 @@ the sender.
    is in the runtime (timer hand-off). The rule-3 bound should shorten the
    sender's polls (§28 predicts a lower c8 client E, reported). It is not
    expected to remove the rep-to-rep spread.
+
+## 28. Incremental SACK marking — ship battery (with a step-0 check of the per-wake bound) — pre-registration
+
+§26 finding 1: each `SackReport` re-sends every range above the stalled
+frontier, and the sender's drain re-marks every retained seq in every range
+(`sack_release_mark_into`: one `BTreeSet::insert` per seq). The cost is
+O(span above the frontier) per report. Measured: 23 % of the c8 client
+sender's wall, up to 20 ms per drain, and 81 % of the wall of its polls
+≥ 10 ms. Committed before any VM contact. **Step 1 is a ship battery and is
+stopped at the gate until the operator says go.** Step 0 is a diagnostic
+and ships nothing.
+
+**The change (`SK`, branch `fix/sack-incremental` from main 92934a7).**
+- *Incremental marking.* A coalesced interval set holds the ranges already
+  processed above the cumulative frontier. Each report visits only the
+  uncovered parts of its ranges. Work per report is O(ranges · log + newly
+  marked), not O(span).
+- *What stays exact.* The `released` set, the store gate's count, the
+  per-path releases, `above_report` and the wire-v9 semantics are all
+  unchanged. A differential test against the current marking checks this
+  over scripted and seeded-random report sequences: the same `released`
+  set, the same newly-marked seqs in the same order, the same totals.
+- *Cost bound test.* A re-sent report visits no seqs, and a report that adds
+  k seqs visits O(k).
+- *Constants and modes.* No constant, no mode.
+- *Witness.* `[SACKI] reports ranges visited newly` under `RWM_DIAG`.
+
+**Step 0 — does the per-wake bound still matter? (diagnostic, before the
+battery, same session.)**
+- *Rows.* SK binary, `c8-100`, 6 rows at `RWM_RTOBS=2` (seeds 42 and 7 × 3),
+  same env and run-from-tmpfs as §26.
+- *Rule (operator's).* The plan-rule-3 per-wake bound (one Law-0 burst of
+  work per wake, then one natural yield, no new constant) is **kept** iff,
+  under SK, the client sender still logs polls ≥ 10 ms: median count per
+  row ≥ 1 in `[LPOLL]`. Otherwise it is dropped.
+- *If kept.* The bound is implemented red-first on top of SK. NEW =
+  SK + bound, and step 1's arms and harness are amended before go.
+- *If dropped.* NEW = SK.
+
+**Step 1 — ship battery (stopped at the gate).** `MAIN` = main 92934a7 vs
+`NEW`.
+- *Cells and n.* `c1s-400`, `c1d-400`, `c2-100`, `c8-100`; n = 6 per arm
+  and cell (3 reps × seeds 42 and 7); arm order rotated per block.
+- *Env.* §21's (`RWM_RTOBS=1 RWM_RDIAG=1 RWM_GEN=0 RWM_DIAG=1`, the
+  standard `env -u` list).
+- *Harness.* `tools/l1/threadsk_run_all.sh`, `threadsk_battery.sh`,
+  `threadsk_parse.py` (tested), derived from §21's.
+  - Full suites run on the NEW tree: release, doc, wasm, debug, parsers.
+  - Precondition per the agent rules: both locks free, no
+    `cargo`/`rustc`, and `procs_running` ≤ 2 in 5 samples 2 s apart.
+  - Measurement from `/dev/shm/tsk` with an `ABORT-ONDISK` guard.
+  - io `full avg10` is recorded before and after every invocation as a
+    covariate.
+- *Binary witness.* `[SACKI]` must be in NEW's binary and absent from
+  MAIN's (two-sided, checked at launch). Every NEW client row must carry
+  `[SACKI]` with reports > 0.
+- *Pass rule per cell.* §21's clauses and min–max rule, with the `[LAG]`
+  clauses (client and server) on **E = p99 − `min_us`**. At `c8-100` only,
+  the extra clause `lag_E_spread_cli`: NEW's client-E max/min against
+  MAIN's; WORSE iff > ×1.5 MAIN's, BETTER iff < MAIN's / 1.5.
+- *Decision rule.* **`SHIP`** iff NEW is PASS-EVERYWHERE;
+  **`REFUTED-WITH-RECORD`** if it fails anywhere; **`UNSCOREABLE-AT(…)`**
+  as §21.
+- *Predictions (reported, not gating).*
+  - c8 client CPU per GB: lower (the drain was 23 % of sender wall), and
+    TREND-BETTER at least.
+  - c8 client E: lower.
+  - c1s, c1d, c2: WITHIN. A single path has fewer ranges above the
+    frontier.
+  - `[SACKI]` visited/report on NEW is far below the c8 span; no number is
+    predicted.
+- *Abort causes.* §21's table plus `ABORT-ONDISK`. The budget is launch +
+  4 h.
