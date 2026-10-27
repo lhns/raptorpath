@@ -949,7 +949,7 @@ struct Readers {
 
 /// Poll `f` once with the task's own context: `Some(output)` if it is ready
 /// now, `None` otherwise (its waker is then registered, harmlessly).
-async fn poll_once<F: Future>(f: F) -> Option<F::Output> {
+pub(crate) async fn poll_once<F: Future>(f: F) -> Option<F::Output> {
     let mut f = std::pin::pin!(f);
     std::future::poll_fn(|cx| {
         Poll::Ready(match f.as_mut().poll(cx) {
@@ -1006,7 +1006,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     // never wakes for it), rate-limited by snapshot age.
     let mut last_full = Instant::now();
     let mut dirty = false;
-    publish(conn, &view, true, copa_wire, a.gauge);
+    publish(conn, &view, true, copa_wire);
 
     loop {
         view.owner_thread.store(thread_token(), Relaxed);
@@ -1236,7 +1236,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         if full || copa_wire {
             let sec = section_begin(a.gauge && full);
             let dsec = deep_begin(a.deep && full);
-            publish(conn, &view, full, copa_wire, a.gauge);
+            publish(conn, &view, full, copa_wire);
             section_end(ctr, sec);
             deep_end(&ctr.k_pub, dsec);
         }
@@ -1254,7 +1254,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     }
     drop(stream_fut);
     drop(uni);
-    publish(conn, &view, true, copa_wire, a.gauge);
+    publish(conn, &view, true, copa_wire);
     conn.close(b"path removed");
 }
 
@@ -1328,7 +1328,7 @@ fn send_one(conn: &OwnedConn, a: &OwnerArgs, shim_q: &mut VecDeque<(u64, Bytes)>
 
 /// Publish the view: RTT (every call under `RWM_COPA_WIRE`), and the full
 /// snapshot when `full`.
-fn publish(conn: &OwnedConn, view: &PathView, full: bool, copa_wire: bool, _gauge: bool) {
+fn publish(conn: &OwnedConn, view: &PathView, full: bool, copa_wire: bool) {
     if full {
         let s = conn.stats();
         view.rtt_us.store(s.path.rtt.as_micros() as u64, Relaxed);
@@ -1373,11 +1373,6 @@ struct Slot {
 impl TxBatch {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Whether anything is staged.
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
     }
 
     /// Stage one serialized datagram. Fails (synchronously, as quinn's own

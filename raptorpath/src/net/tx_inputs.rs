@@ -26,10 +26,8 @@
 //! at its next loop top (P1's `AckWake` Notify is retired). Each drained
 //! batch is applied, then the TX view is published once.
 
-use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::task::Poll;
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -121,19 +119,6 @@ pub(crate) struct InputCtx<'a> {
     pub sack_tx: Option<&'a mpsc::Sender<SackReport>>,
     pub copa_feed: Option<&'a Arc<CopaFeed>>,
     pub mstar_anchor: bool,
-}
-
-/// Poll `f` once with the task's own context: `Some(output)` if it is ready
-/// now, `None` otherwise (its waker is then registered, harmlessly).
-pub(crate) async fn poll_once<F: Future>(f: F) -> Option<F::Output> {
-    let mut f = std::pin::pin!(f);
-    std::future::poll_fn(|cx| {
-        Poll::Ready(match f.as_mut().poll(cx) {
-            Poll::Ready(v) => Some(v),
-            Poll::Pending => None,
-        })
-    })
-    .await
 }
 
 /// Apply drained input batches (in order) to the TX half. Returns the

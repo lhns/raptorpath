@@ -2223,7 +2223,7 @@ async fn run_window_sender(
         {
             let mut touched = false;
             if !cmds_closed && !sender_cmds.is_empty() {
-                if let Some(n) = tx_inputs::poll_once(
+                if let Some(n) = crate::transport::io_owner::poll_once(
                     sender_cmds.recv_many(&mut cmd_buf, SENDER_CMD_DEPTH),
                 )
                 .await
@@ -2237,7 +2237,7 @@ async fn run_window_sender(
                 }
             }
             if !in_closed && !sender_in.is_empty() {
-                if let Some(n) = tx_inputs::poll_once(
+                if let Some(n) = crate::transport::io_owner::poll_once(
                     sender_in.recv_many(&mut in_buf, SENDER_IN_BATCHES),
                 )
                 .await
