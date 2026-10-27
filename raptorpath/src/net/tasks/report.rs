@@ -109,9 +109,10 @@ pub(crate) async fn run_report(
             // path dead after DEAD_PATH_TIMEOUT and QUIC would idle out.
             // The reliable control stream has its own flow control, so
             // reports and pings survive saturation.
-            // Hard deadline on control sends: this task also runs the
-            // dead-path checker, so it must never wedge (open_uni can
-            // block indefinitely once stream credit is exhausted).
+            // Hard deadline on control sends: this task drives the report
+            // tick (the sender's dead-path check rides it), so it must never
+            // wedge (open_uni can block indefinitely once stream credit is
+            // exhausted).
             match tokio::time::timeout(
                 Duration::from_millis(500),
                 report_transport.send_control(pid, report),

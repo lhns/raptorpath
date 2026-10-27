@@ -71,8 +71,6 @@ fn resolve_copa_delta() -> Option<f64> {
     env_parse::<f64>("RWM_COPA_DELTA").filter(|d| d.is_finite() && *d > 0.0)
 }
 
-/// The process's [`RuntimeGates`], resolved on first use; the only gate cache,
-/// so `[GATES]` prints what behaviour read.
 /// `RWM_RTOBS`: 0 (off), 1 (the observer), 2 (the observer plus the deep
 /// task/driver/section gauges). Any boolean spelling `env_flag` accepts maps
 /// to 0/1; `2` is the one extra value.
@@ -83,6 +81,8 @@ fn rtobs_level() -> u8 {
     }
 }
 
+/// The process's [`RuntimeGates`], resolved on first use; the only gate cache,
+/// so `[GATES]` prints what behaviour read.
 pub fn get() -> &'static RuntimeGates {
     static GATES: std::sync::OnceLock<RuntimeGates> = std::sync::OnceLock::new();
     GATES.get_or_init(RuntimeGates::resolve)

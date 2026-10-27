@@ -28,7 +28,7 @@ pub(crate) struct StoreCapState {
     /// refresh cadence; ~10 s window = two 5 s half-buckets
     /// (`PERCAP_K_HALF_WINDOW_US`, shared by every honest-cap consumer).
     pub percap_k: std::collections::HashMap<u32, EchoRatioMin>,
-    /// Throttled cache of the dynamic cap (recomputed off the scheduler lock at
+    /// Throttled cache of the dynamic cap (recomputed at
     /// most every 5 ms; the pipe/BDP move far slower than the select loop).
     pub dyn_store_cap: usize,
     pub dyn_cap_refresh_us: u64,
@@ -64,8 +64,8 @@ pub(crate) struct StoreCapCtx<'a> {
     pub ccap: &'a mut SenderTeardownGauges,
 }
 
-/// Plain-reliable delay-based window cap (paper §6), refreshed off the
-/// scheduler lock at most every 5 ms.
+/// Plain-reliable delay-based window cap (paper §6), refreshed at
+/// most every 5 ms.
 pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
     let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap } = ctx;
     if pol.plain_dyn_cap {
@@ -1357,7 +1357,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         }
 
         // Reduce repair_debt — NACK'd symbols are handled reactively now
-        // The cadenced rate (Stage 1c; evaluated outside the locks on a miss).
+        // The cadenced rate (Stage 1c; evaluated only on a cache miss).
         let repair_rate = super::emit_source::cadenced_repair_rate(
             &mut st.rate_cache,
             fec_controller,
@@ -1475,8 +1475,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
         let newly_acked = next_expected - prev_ack;
         // Compute the repair rate and the derived window target (paper §4.8)
-        // from the worst (highest-loss) channel path, under a single lock
-        // acquisition.
+        // from the worst (highest-loss) channel path.
         let derived_window = {
             let ctrl = &mut *fec_controller;
             let sched = &*scheduler;
@@ -1514,7 +1513,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             path_est.and_then(|est| ctrl.derive_window(est))
         };
         // The cadenced rate (Stage 1c): read after χ is published above, and
-        // evaluated outside the locks on a miss.
+        // evaluated only on a cache miss.
         let repair_rate = super::emit_source::cadenced_repair_rate(
             &mut st.rate_cache,
             fec_controller,

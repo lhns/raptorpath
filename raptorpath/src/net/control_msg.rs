@@ -317,7 +317,7 @@ fn on_ack(
         }
         // Wire-level loss evidence for the competitive AIMD (the per-batch
         // Ack arm; the WindowAck feed path has its own call). No-op unless
-        // RWM_COPA_COMPETE (read before the guard: `wire_reads`).
+        // RWM_COPA_COMPETE (read before the scheduler borrow: `wire_reads`).
         if let Some(ev) = wire.cong_events {
             path.on_wire_congestion_events(ev);
         }
@@ -377,7 +377,7 @@ fn on_ack(
         // The per-batch Ack arm drives Copa via
         // `sched.ack` above — publish its cwnd as the pass-through
         // substrate window too (no-op unless RWM_QUIC_CC=passthrough),
-        // after the guard is dropped.
+        // after the scheduler borrow ends.
         cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
     }
     if let Some(bytes) = cc_window {
@@ -385,8 +385,8 @@ fn on_ack(
     }
 }
 
-/// Threading P1, D2: the per-ack transport reads, taken with the scheduler
-/// released (`wire_rtt` is a quinn call; the congestion counter is the
+/// Threading P1, D2: the per-ack transport reads, taken before the scheduler
+/// is borrowed (`wire_rtt` is a quinn call; the congestion counter is the
 /// pass-through CC's atomics). Each is `None` unless its gate is on, so the
 /// shipped default makes no call at all.
 struct WireReads {
@@ -618,7 +618,7 @@ fn on_window_ack(
                 // when no live feed exists — `copa_feed_attribute` below
                 // carries its own call, so the event is exactly-once in
                 // both configurations.
-                // (Read before the guard: `wire_reads`, gated on
+                // (Read before the scheduler borrow: `wire_reads`, gated on
                 // `copa_compete_active() && copa_feed.is_none()`.)
                 if let Some(ev) = wire.cong_events {
                     path.on_wire_congestion_events(ev);
@@ -673,7 +673,7 @@ fn on_window_ack(
                 }
                 // Publish the cwnd as the
                 // pass-through substrate window (no-op unless
-                // RWM_QUIC_CC=passthrough) — after the guard drops.
+                // RWM_QUIC_CC=passthrough) — after the scheduler borrow ends.
                 cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
             }
         }

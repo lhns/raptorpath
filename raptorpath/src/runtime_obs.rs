@@ -35,7 +35,7 @@
 //!
 //! Phases: `phase=xfer` lines bracket one perf object (the perf client's
 //! timed run, the perf server's object from its first packet to its
-//! completion; [`snapshot`] at the start, [`emit`] at the end), so per-thread
+//! completion; [`snapshot`] at the start, [`emit_window`] at the end), so per-thread
 //! cores are CPU over the transfer's own wall; `phase=run` lines are emitted
 //! once at process end, cumulative since the runtime was built.
 

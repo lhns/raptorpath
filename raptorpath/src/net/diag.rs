@@ -6,8 +6,8 @@
 //! plane. Ordering constraints it keeps:
 //!   * the `if pol.diag_on` guard is at the call site, so the report costs
 //!     nothing on the shipped path;
-//!   * it takes one scheduler lock, scoped to the per-path `pp` string, with
-//!     `expire_in_flight()` inside it;
+//!   * it reads the scheduler (owned by the sender task) only to build the
+//!     per-path `pp` string, with `expire_in_flight()` inside it;
 //!   * the atomics (`window_ack_seq`, the `stats.fec` symbol totals) are read
 //!     with `Ordering::Relaxed`, and the per-iteration `sidle` handoff probe
 //!     runs before the 250 ms window test.
@@ -99,7 +99,7 @@ pub(crate) struct DiagState {
     //             every shipped arm) charges nothing on resolution, so its
     //             await is counted as body at the next `select!` entry.
     //
-    // The nine arm buckets hold AWAIT time only:
+    // The ten arm buckets hold AWAIT time only:
     //
     //   tun     — `tun.read_packet()` produced a packet: intake was ready.
     //             The only arm that carries new source data (a large share
@@ -384,7 +384,7 @@ pub(crate) struct DiagInputs<'a> {
 }
 
 /// The shared engine handles the report reads. All by shared reference: the
-/// report takes one scheduler lock (scoped to the per-path `pp` string) and
+/// report reads the scheduler only for the per-path `pp` string and
 /// otherwise only reads atomics and transport gauges.
 pub(crate) struct DiagCtx<'a> {
     pub scheduler: &'a mut crate::scheduler::Scheduler,
@@ -497,8 +497,8 @@ pub(crate) fn report(
         }
         // Threading P1, D2: the two quinn reads per path (`wire_rtt`,
         // `quinn_path_stats` — each takes the connection mutex) are taken
-        // here, with the scheduler released; they never depended on it. The
-        // block below only formats them.
+        // here, ahead of the block that formats them; they never depended on
+        // the scheduler.
         let quinn_reads: HashMap<u32, (f64, (u64, u64, u64, u64))> = {
             let ids = scheduler.all_path_ids();
             ids.into_iter()

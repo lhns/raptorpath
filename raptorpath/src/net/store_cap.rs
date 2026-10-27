@@ -404,8 +404,8 @@ pub fn honest_cap_term(
     honest_store_cap(anchor, rate, k_raw.unwrap_or(k), gain)
 }
 
-/// One path's inputs to [`honest_cap_term`], as read off `PathState` under
-/// the scheduler lock. Exists so the collector below can be driven from a
+/// One path's inputs to [`honest_cap_term`], as read off `PathState`.
+/// Exists so the collector below can be driven from a
 /// component bench with no transport, no tokio and no scheduler
 /// (`docs/measurement-discipline.md` rule 14).
 #[derive(Debug, Clone, Copy)]
@@ -549,8 +549,8 @@ pub fn contract_stall_s(rho: f64, b_hint: f64, rtprop_s: f64, srtt_s: f64) -> f6
     (1.0 - rho) * shed_term + rho * retain_term
 }
 
-/// One live path's inputs to the three-term law, as read off `PathState`
-/// under the scheduler lock. Exists (like [`HonestCapPath`]) so the law can
+/// One live path's inputs to the three-term law, as read off `PathState`.
+/// Exists (like [`HonestCapPath`]) so the law can
 /// be driven from a component bench with no transport, no tokio and no
 /// scheduler (`docs/measurement-discipline.md` rule 14).
 #[derive(Debug, Clone, Copy)]
@@ -951,7 +951,7 @@ impl SumCapGauge {
 
     /// Record one pooled-law refresh. Observation only — nothing here is read
     /// by any engine decision, and on the default arm the only cost is a
-    /// handful of flops off the scheduler lock.
+    /// handful of flops.
     pub(crate) fn record(&mut self, on: bool, n_live: usize, pipe_sum: f64, gain: f64, realized: usize) {
         self.refreshes += 1;
         self.engaged += 1;
