@@ -82,8 +82,6 @@ fn assert_arm_echo(cli: &str, srv: &str, want: &[(&str, &str)]) {
 
 // ── The runs ────────────────────────────────────────────────────────────
 
-/// Control — every arm absent. The gauges exist on the line and read
-/// `-` / `0`; every other reading is a difference from this row.
 /// A run that hit the perf client's run timeout is a stall, not a gauge
 /// reading: the DNF line must fail the transfer, with the server tail.
 #[test]
@@ -114,6 +112,8 @@ fn a_stalled_run_fails_as_a_dnf_not_as_a_gauge_reading() {
     loopback::assert_no_dnf(&clean, Some(srv));
 }
 
+/// Control — every arm absent. The gauges exist on the line and read
+/// `-` / `0`; every other reading is a difference from this row.
 #[test]
 fn the_control_arm_echoes_absent_and_every_arm_gauge_is_silent() {
     let (cli, srv) = run(2, Some("c2,c3"), "16000000", &[]);
