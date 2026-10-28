@@ -1755,6 +1755,174 @@ prediction and A_x p50 was 5–12× below main. A retry needs a measurement
 window sized from the variance of ln Π, derived and pre-registered anew.
 The code is kept at tag `archive/store-power`, not on main.
 
+*Candidate (D-W): a measurement window sized from the noise — derived,
+does not close (status §30).* Keep D's law and lengthen each measured half
+from one round to W rounds (one settling round still discarded), W chosen
+so the standard error of a half's ln Π falls below the half-dither q/2:
+
+```text
+   σ²(W)   =  var( mean of W rounds of ln Π, half to half ) / 2  ≈  σ₁² · W^(−γ)
+   W*(δ)   =  smallest W with σ²(W) ≤ (q(δ)/2)²
+   period  =  2 · (W* + 1) · T(n)                                  one ê per period
+   SE(ê)   =  √2 · (q/2) / ln((1 + ½q)/(1 − ½q))  ≈  0.71           at W = W*
+   E[step] =  ln(1 + q) · m(e),   m(e) = E[clamp(e + SE(ê)·Z, −1, 1)]:  m(+2) = 0.98,  m(−1) = −0.72
+   reach   =  (decisions in a time t) · |E[step]|                  the log-distance n̄ can travel in t
+```
+
+W*(δ) is continuous in δ through q(δ) and through α(δ) = b(δ) inside ln Π
+(σ₁² and γ are measured per α, below); no branch on the hint, the cell or
+N; ρ composes as in (D), the hole term additive outside the seeker. Read
+literally as a law, σ₁² and γ would be online estimates; here they are
+measured once from the ledgers to ask whether *any* W closes.
+
+| symbol | value | provenance |
+|---|---|---|
+| σ₁² | per cell, below | measured: var(ln Π₊ − ln Π₋)/2 over the p29 `[PCAP]` periods ≥ 3 of every live PWR row (one measured round per half, under the dithered controller); the signal ê·L adds ≤ 0.01 to the variance and is not removed |
+| σ²_win, W_win | per cell, below | measured: var of successive differences / 2 of ln Π = α·ln(dlv_rate) − ln(max-path rtt_p50) over the 250 ms `[LOOPDIAG]` windows (t ≥ 1 s) of the §27 DEF rows at the static cap nearest n* (c2 192, c8/c1s/c1d 384), no controller; W_win = 0.25 s / T_med |
+| γ | per cell | derived: the log-log slope through (1, σ₁²) and (W_win, σ²_win); γ = 1 is white noise, γ > 1 a granularity term that averages faster, γ < 1 red (long-memory) noise |
+| W* beyond W_win | lower bound | when σ²_win > (q/2)² the target lies beyond the data; the white extrapolation W_win·σ²_win/(q/2)² is used, a LOWER bound wherever γ < 1 (the power-law extrapolation is reported beside it). An analysis device, not a law term |
+| T(n) | §27 DEF T_med | measured (windows above); the round length the period is counted in |
+| n₀ | p29 PCAP period-0 n̄; MAIN's p29 `win_den_med` | measured: the shipped law's ask at its first refresh (the seed as built) and MAIN's settled cap (a seed from above) |
+| n* | §6.1 table | derived (Bulk argmax of Π₂ on the §27 ledger) |
+| G(n) | §27 DEF goodput | measured (static cap, another session; cross-session where it is compared with p29 MAIN) |
+| m(e), SE(ê) | above | derived: Gaussian ê at W*, e = α below the knee and −1 above it (§6.1) |
+
+Measured noise and the window it implies (Bulk, α = 2, q = 0.1, target
+(q/2)² = 0.0025; scripts and outputs in `docs/l1-raw/loop-diag/p29/derive30/`):
+
+| cell | var(Δ ln Π), one round | σ₁² | σ²_win (W_win) | γ | W* (rounds) | period at n* | periods per MAIN transfer | reach in ⅓ transfer |
+|---|---|---|---|---|---|---|---|---|
+| c2-100 | 0.128 | 0.064 | 0.0014 (13.1) | 1.48 | 9 (inside the data) | 0.38 s | 23 | ×1.71 |
+| c8-100 | 0.078 | 0.039 | 0.0061 (5.1) | 1.14 | 11 | 1.21 s | 6.9 | ×1.17 |
+| c1s-400 | 0.71 | 0.355 | 0.036 (52.5) | 0.58 | ≥ 765 (power law 5 500) | ≥ 7.3 s | ≤ 0.6 | ×1.01 |
+| c1d-400 | 0.89 | 0.443 | 0.029 (49.3) | 0.70 | ≥ 579 (power law 1 700) | ≥ 6.0 s | ≤ 0.9 | ×1.02 |
+
+The noise has two different natures. At c2 one round's ln D is dominated
+by a granularity term (its variance falls ×38 over 13 rounds, γ_D ≈ 1.4)
+and ln T is white (γ_T ≈ 1.0), so a 9-round half suffices. At c1s/c1d both
+components are red (γ_D ≈ 0.5–0.7, γ_T ≈ 0.7; one round's sd(Δ ln D) 0.36–0.39
+and sd(Δ ln T) 0.33–0.37, correlated only −0.2 to −0.3, so this is not one
+Little-identity term): 250 ms of averaging at a fixed cap cuts the variance
+×10–15, not ×50, and still leaves σ_win = 0.17–0.19 against the 0.05 target.
+That is consistent with the receiver's batching tail (status §16 finding
+4) seen at the round scale (an attribution, not measured here); no length of half within a 4–5 s transfer reaches it. The
+noise is also not stationary: at c1d §27's 512 cap and §29's 768 KNEE rows
+read σ²_win ≈ 0.48–0.49, against 0.029 at 384 and 0.050 for §27's 768,
+almost all in T.
+
+Convergence, mean-field (expected clamped step each period, G(n) and T(n)
+from the static curves, the dither's own cost and the limit cycle ignored —
+both favour D), against p29 MAIN's goodput and the §29 `GOODPUT` band:
+
+| cell | seed n₀ | converged after (share of the transfer) | goodput − MAIN (band) |
+|---|---|---|---|
+| c2-100 | p29 seeds 112 / 150 / 306 | 1.98 / 1.05 / 3.42 s (20 / 11 / 38 %) | −7.7 / −5.2 / −0.9 (±4.7) |
+| c2-100 | MAIN caps 405 / 634 / 1 100 | 6.3 s (70 %) / never / never | −0.9 / −0.7 / +0.1 |
+| c8-100 | p29 seeds 141 / 158 / 335 | never / never / 2.38 s (30 %) | −15.9 / −12.6 / +4.1 (±12.9) |
+| c8-100 | MAIN caps 1 325 / 1 568 / 2 290 | never | +3.7 / +3.2 / +2.4 |
+| c1s-400 | p29 seeds 43–62 | never (n̄ cannot leave the seed) | −602 to −640 (±92) |
+| c1s-400 | MAIN caps 1 802–2 048 | never | −16 to −27 |
+| c1d-400 | p29 seeds 42–164 | never | −332 to −517 (±110) |
+| c1d-400 | MAIN caps 1 509–2 300 | never | +73 to +82 (cross-session static curve) |
+
+Neither seed gives D: from a seed
+below the knee the climb costs goodput (c2 two of three seeds, c8 two of
+three, c1 all); from a seed above it the goodput holds only because the
+seeker never reaches the knee, so the transfer runs at MAIN's cap and MAIN's
+latency, which is what D was for. D-W closes only from a seed within its
+reach of n* — ×1.7 at c2, ×1.17 at c8, ×1.01 at c1 — and a seed that close
+is the knee location the law was meant to find without a link-rate input
+(§23–§27). Independently of the estimator, at c1s the fixed point itself
+fails the band: G(384) = 632 (§27) against p29 MAIN 748 ± 92, so the
+"within or above main" reading of the §6.1 table above holds against the
+§19/§27 MAIN (563–663), not the p29 one; that is failure mode (4), the
+α(δ) = b(δ) price of the receiver tail.
+
+Across the dial (σ₁² and σ²_win recomputed at each α, T at the Bulk n*):
+W* reads 7 / 7 / 9 at c2, 27 / 19 / 11 at c8, ≥ 424 / 538 / 765 at c1s and
+≥ 494 / 497 / 579 at c1d (Realtime / Auto / Bulk). A smaller α lowers the
+noise (the D term carries weight α) but q falls with it, and the step
+ln(1 + q) halves toward Realtime, so convergence is slowest there; the
+verdict does not depend on the dial position, and it is reached without a
+branch on it.
+
+The alternatives the derivation exposes, each sized the same way:
+
+- *Averaging ê across periods* (an EWMA over M periods of W = 1 while n̄
+  moves each period). The same information needs M ≈ W* periods of four
+  rounds — twice the time of a held W*-round half — and it adds a loop
+  delay: n̄ responds to an ê that lags ≈ (M − 1)/2 periods. Near n* the
+  per-period loop gain is g = ln(1 + q)·κ, κ the curvature of ln Π in ln n
+  from the §6.1 Π₂ table (c2 5.0, c8 3.1, c1s 1.7); a sampled integrator
+  with delay d is stable only for g < 2·sin(π / (2(2d + 1))). At c2
+  (M = 9, d = 4) the bound is 0.35 against g = 0.48, so the averaged seeker
+  oscillates with an amplitude of ≈ d steps (×1.5 in n̄); at c8 (d = 5)
+  0.29 against 0.29, marginal. Strictly worse than the held window.
+- *A step that decays with sign agreement* (Kesten's rule [Kesten1958]).
+  It needs sign agreement to tell "far from n*" (agreement above ½) from
+  "at n*" (½, below ½ in a limit cycle). With one round per half the
+  probability of the correct sign far from n* is Φ(|e|·L/√(2σ₁²)): 0.54–0.59
+  at c1 (agreement 0.504–0.518), 0.61–0.71 at c2 (0.52–0.59), 0.64–0.76 at
+  c8 (0.54–0.64). Telling 0.504 from ½ at 2σ takes (1/0.004)² ≈ 60 000
+  periods at c1s; 1 700 at c2 descending (≈ 117 periods per c2 transfer).
+  The rule therefore shrinks the step while still far, freezing the random
+  walk wherever it stands. At W* the sign is already right most of the
+  time (92 % descending, 99.8 % climbing) and the rule only narrows the
+  limit cycle; the window still sets the convergence time. Does not close.
+- *A robust half (median of the W rounds).* One round's Δ ln Π is
+  heavy-tailed at c1 (MAD-sd 0.42–0.60 against sd 0.82–0.99), so a median
+  gains at most the ratio sd²/((π/2)·MAD-sd²) ≈ 1.4–2.5 at c1 and ≈ 1 at c2.
+  The c1 window needs ×10 or more. Does not close.
+- *A sequential half* (Wald's test [Wald1948], the machine's own tool in
+  Section 7.2): end a half when the accumulated Δ ln Π crosses a boundary.
+  Its expected sample size is below a fixed W at equal error
+  rates far from n* (Wald's savings, roughly half) and unbounded at n*
+  (truncated to W*). Same order; does not close at c1.
+- *A larger dither* (amplitude A in place of q/2, decoupled from the
+  step). For c1s to descend from MAIN's cap (Λ = 1.6, ≈ 23 decisions) in a
+  third of its transfer, a half may last ≈ 5.5 rounds, where σ(5.5) ≥ 0.36
+  (power law) to 0.59 (white from the window): A ≥ 0.36, a ±36 % cap swing,
+  seven times the q/2 band that the CoDel derivation of q says is the most
+  standing queue worth buying, and wide enough to cover the whole flat top
+  of c1s's Π (256–512). Does not close.
+- *A noise-adaptive W* (σ̂² measured online, W = σ̂²/(q/2)²). Under red
+  noise the within-half spread underestimates the variance of the half mean
+  by W^(1−γ) — ×16 at c1s's W = 765 — so it would choose a window far too
+  short exactly where the noise is long-memory; the correct estimate is an
+  Allan-type variance at the half's own scale [Allan1966], which needs many
+  halves, the time the transfer does not have.
+
+What none of these change is the information budget: a decision takes
+2(W* + 1)·T(n*) of transfer, 0.38 s at c2 and ≥ 6 s at c1, and the law needs
+|ln(n₀/n*)|/|E[step]| of them. *Path memory* (carrying n̄ across transfers
+on the same path, RFC 9040's temporal sharing [RFC9040]) moves that budget
+from one transfer to the path's lifetime — ≈ 5.5 s of transfer per unit of
+ln n at c2, ≈ 2 min at c1s — and would need its own derivation and ADR (the
+static map's stationarity over minutes is unmeasured, and γ < 1 at c1 says
+it drifts). It is named, not derived.
+
+*The nested loop (ADR-0068, open question 12), as far as D is concerned.*
+D is an extremum seeker on the store cap above quinn's BBR. The two hold
+authority alternately: summed over the paths that delivered, quinn's cwnd
+sat below the store cap in bytes (n̄·(1 + ½q)·1 200 B, the + half's cap
+used throughout, so the share is an upper bound by ≤ 5 % of cap) in 18–24 % of the
+post-warm-up `[LOOPDIAG]` windows at c2, 4–32 % at c1s, 0–14 % at c1d and
+0–3 % at c8 (p29 PWR rows; an instantaneous cwnd at each window's end).
+While the cwnd binds, D and T are BBR's and Π is flat in n̄, so ê is noise
+with zero mean and the seeker has no restoring force: a plateau random walk
+bounded only by the clamps, an inner-loop-induced instance of failure mode
+(1). Where the cap binds, the seeker is a sampled integrator on a static
+map with per-period gain g = 0.16–0.48 < 1 (above), locally stable. The
+time-scale separation that averaging theory [Ariyur2003] asks for runs the
+wrong way for D: BBR's 8-round ProbeBW cycle (≈ 0.02–0.3 s here) sits inside
+a W*-round half and averages out, but its 10 s ProbeRTT [Cardwell2016] and
+the c1 red noise sit at the half's own scale. So question 12 stays open,
+with two additions: any nested store law needs an *authority gauge* (the
+share of time the cwnd, not the cap, binds — computed above from existing
+fields) beside its bind gauges, and a seeker above a delay-based inner loop
+must reject periods in which the inner loop held authority, or it seeks on
+a flat map.
+
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
 cap is exactly one BDP per path with zero standing queue, the null candidate
@@ -3343,6 +3511,16 @@ correction density in time and as the placement law's fixed point.
   estimation of a static map).
 - [RFC8289] K. Nichols, V. Jacobson, A. McGregor, J. Iyengar, "Controlled
   Delay Active Queue Management," RFC 8289, 2018.
+- [Kesten1958] H. Kesten, "Accelerated stochastic approximation," Ann.
+  Math. Statist. 29(1), 1958 (step decay on sign changes of successive
+  increments).
+- [Allan1966] D. W. Allan, "Statistics of atomic frequency standards,"
+  Proc. IEEE 54(2), 1966 (variance of successive differences of window
+  means as a function of the window; its slope separates white from red
+  noise).
+- [RFC9040] J. Touch, M. Welzl, S. Islam, "TCP Control Block
+  Interdependence," RFC 9040, 2021 (temporal sharing of path state across
+  connections).
 - [RFC8985] Y. Cheng, N. Cardwell, N. Dukkipati, P. Jha, "The RACK-TLP Loss
   Detection Algorithm for TCP," RFC 8985, 2021.
 - [RFC9002] J. Iyengar, I. Swett, "QUIC Loss Detection and Congestion

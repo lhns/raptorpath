@@ -1,0 +1,12 @@
+('c1d-400', 0.5) sigma1^2 pooled 0.1058
+('c1d-400', 1.0) sigma1^2 pooled 0.1813
+('c1d-400', 2.0) sigma1^2 pooled 0.4432
+('c1s-400', 0.5) sigma1^2 pooled 0.0808
+('c1s-400', 1.0) sigma1^2 pooled 0.1406
+('c1s-400', 2.0) sigma1^2 pooled 0.3552
+('c2-100', 0.5) sigma1^2 pooled 0.0083
+('c2-100', 1.0) sigma1^2 pooled 0.0198
+('c2-100', 2.0) sigma1^2 pooled 0.0638
+('c8-100', 0.5) sigma1^2 pooled 0.0146
+('c8-100', 1.0) sigma1^2 pooled 0.0195
+('c8-100', 2.0) sigma1^2 pooled 0.039

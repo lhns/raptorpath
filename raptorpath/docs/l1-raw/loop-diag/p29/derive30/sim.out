@@ -1,0 +1,44 @@
+== c2-100: sigma1^2=0.0639 sigma1=0.253  sigma^2_win=0.00137@W=13.1  gamma=1.49
+   W* = 9 rounds (interp inside data); white-from-W=1 would give 26; SE(e)=0.707; m(+2)=0.975 m(-1)=-0.719
+   period at n* = 0.37 s (T(n*)=19.2 ms); MAIN transfer 8.87 s -> 23.7 periods per transfer; static G(n*)=88.8 vs MAIN 90.2 band 4.7
+   p29 seed n0=112: Lambda=0.54 conv 1.98s of transfer 9.69s (20 %), goodput 82.5 (MAIN 90.2, diff -7.7, band 4.7)
+   p29 seed n0=150: Lambda=0.25 conv 1.05s of transfer 9.41s (11 %), goodput 85.0 (MAIN 90.2, diff -5.2, band 4.7)
+   p29 seed n0=306: Lambda=0.47 conv 3.42s of transfer 8.96s (38 %), goodput 89.3 (MAIN 90.2, diff -0.9, band 4.7)
+   MAIN cap seed n0=634: Lambda=1.19 conv never of transfer 8.94s (100 %), goodput 89.5 (MAIN 90.2, diff -0.7, band 4.7)
+   MAIN cap seed n0=1100: Lambda=1.75 conv never of transfer 8.86s (100 %), goodput 90.3 (MAIN 90.2, diff +0.1, band 4.7)
+   MAIN cap seed n0=405: Lambda=0.75 conv 6.30s of transfer 8.96s (70 %), goodput 89.3 (MAIN 90.2, diff -0.9, band 4.7)
+   W=1, e=+2: P(correct sign)=0.712, sign agreement=0.590
+   W=1, e=-1: P(correct sign)=0.610, sign agreement=0.524
+== c1s-400: sigma1^2=0.3547 sigma1=0.596  sigma^2_win=0.03642@W=52.5  gamma=0.57
+   W* = 765 rounds (beyond data: power-law 5554, white-from-window 765; min used); white-from-W=1 would give 142; SE(e)=0.707; m(+2)=0.975 m(-1)=-0.719
+   period at n* = 7.34 s (T(n*)=4.8 ms); MAIN transfer 4.28 s -> 0.6 periods per transfer; static G(n*)=632.0 vs MAIN 748.3 band 92.1
+   p29 seed n0=55: Lambda=1.94 conv never of transfer 24.24s (100 %), goodput 132.0 (MAIN 748.3, diff -616.3, band 92.1)
+   p29 seed n0=43: Lambda=2.19 conv never of transfer 29.66s (100 %), goodput 107.9 (MAIN 748.3, diff -640.4, band 92.1)
+   p29 seed n0=62: Lambda=1.82 conv never of transfer 21.88s (100 %), goodput 146.3 (MAIN 748.3, diff -602.0, band 92.1)
+   MAIN cap seed n0=2048: Lambda=1.67 conv never of transfer 4.43s (100 %), goodput 721.7 (MAIN 748.3, diff -26.6, band 92.1)
+   MAIN cap seed n0=2010: Lambda=1.66 conv never of transfer 4.42s (100 %), goodput 723.3 (MAIN 748.3, diff -25.0, band 92.1)
+   MAIN cap seed n0=1802: Lambda=1.55 conv never of transfer 4.37s (100 %), goodput 732.4 (MAIN 748.3, diff -15.9, band 92.1)
+   W=1, e=+2: P(correct sign)=0.594, sign agreement=0.518
+   W=1, e=-1: P(correct sign)=0.547, sign agreement=0.504
+== c1d-400: sigma1^2=0.4425 sigma1=0.665  sigma^2_win=0.02935@W=49.3  gamma=0.70
+   W* = 579 rounds (beyond data: power-law 1697, white-from-window 579; min used); white-from-W=1 would give 177; SE(e)=0.707; m(+2)=0.975 m(-1)=-0.719
+   period at n* = 5.95 s (T(n*)=5.1 ms); MAIN transfer 5.31 s -> 0.9 periods per transfer; static G(n*)=604.3 vs MAIN 602.9 band 110.0
+   p29 seed n0=42: Lambda=2.21 conv never of transfer 37.31s (100 %), goodput 85.8 (MAIN 602.9, diff -517.1, band 110.0)
+   p29 seed n0=63: Lambda=1.81 conv never of transfer 27.09s (100 %), goodput 118.1 (MAIN 602.9, diff -484.8, band 110.0)
+   p29 seed n0=164: Lambda=0.85 conv never of transfer 11.83s (100 %), goodput 270.6 (MAIN 602.9, diff -332.3, band 110.0)
+   MAIN cap seed n0=1509: Lambda=1.37 conv never of transfer 4.73s (100 %), goodput 676.0 (MAIN 602.9, diff +73.1, band 110.0)
+   MAIN cap seed n0=2300: Lambda=1.79 conv never of transfer 4.67s (100 %), goodput 685.3 (MAIN 602.9, diff +82.4, band 110.0)
+   MAIN cap seed n0=1732: Lambda=1.51 conv never of transfer 4.71s (100 %), goodput 679.4 (MAIN 602.9, diff +76.5, band 110.0)
+   W=1, e=+2: P(correct sign)=0.584, sign agreement=0.514
+   W=1, e=-1: P(correct sign)=0.542, sign agreement=0.504
+== c8-100: sigma1^2=0.0390 sigma1=0.197  sigma^2_win=0.00608@W=5.1  gamma=1.14
+   W* = 11 rounds (beyond data: power-law 11, white-from-window 12; min used); white-from-W=1 would give 16; SE(e)=0.707; m(+2)=0.975 m(-1)=-0.719
+   period at n* = 1.21 s (T(n*)=49.8 ms); MAIN transfer 8.28 s -> 6.9 periods per transfer; static G(n*)=102.9 vs MAIN 96.6 band 12.9
+   p29 seed n0=158: Lambda=0.89 conv never of transfer 9.53s (100 %), goodput 84.0 (MAIN 96.6, diff -12.6, band 12.9)
+   p29 seed n0=141: Lambda=1.00 conv never of transfer 9.91s (100 %), goodput 80.7 (MAIN 96.6, diff -15.9, band 12.9)
+   p29 seed n0=335: Lambda=0.14 conv 2.38s of transfer 7.95s (30 %), goodput 100.7 (MAIN 96.6, diff +4.1, band 12.9)
+   MAIN cap seed n0=2290: Lambda=1.79 conv never of transfer 8.08s (100 %), goodput 99.0 (MAIN 96.6, diff +2.4, band 12.9)
+   MAIN cap seed n0=1325: Lambda=1.24 conv never of transfer 7.98s (100 %), goodput 100.3 (MAIN 96.6, diff +3.7, band 12.9)
+   MAIN cap seed n0=1568: Lambda=1.41 conv never of transfer 8.02s (100 %), goodput 99.8 (MAIN 96.6, diff +3.2, band 12.9)
+   W=1, e=+2: P(correct sign)=0.763, sign agreement=0.639
+   W=1, e=-1: P(correct sign)=0.640, sign agreement=0.539
