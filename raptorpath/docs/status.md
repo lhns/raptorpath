@@ -8251,3 +8251,141 @@ release, doc, wasm, debug, parsers) on FIX.
 - Release builds had no panic but silently re-delivered a pruned seq; the fix is a correctness fix there too.
 - Open: a dead server receiver does not fail the client fast (each run waits its 300 s timeout); the `[LAT]` in-order assert is unaudited for evict-mode (ρ<1) debug tests with loss.
 
+
+## 32. The decoder prune per drain (the measured R3 subset) — ship battery — pre-registration
+
+§22 left the c1d receiver task as the ceiling (decode ≈ 0.31–0.32 core,
+`[RDIAG]` busy 95–100 %) and measured two costs of the 2 s prune cadence:
+an in-order source `add_symbol` costs 2.15× more than with a prune every
+1 000 symbols (H-alloc (b)), and the prune itself is a 63–90 ms stall
+(H-burst). Its deciding witness for the full in-place R3 (H-alloc (a)) was
+never read, so the full R3 stays shelved at `archive/thread-r3`. This
+section takes only the part §22 measured: evaluate the existing prune law
+at every receiver wait instead of on the report tick. Committed before any
+VM contact. **The battery is a ship battery and is stopped at the gate
+until the operator says go.** No number below is a result.
+
+**The change (`PD`, branch `worktree-agent-a1973fd76fa746af3`: main 71aa3ee
++ §31's re-delivery fix 17824f7 (cherry-picked) + PD; paper §5.2 "Retained
+state: the decode-inert floor, applied per drain").**
+- *Law, unchanged.* F = (next_expected − 1) − 2·W_cap, saturating, with
+  the existing `RWM_REASM_BDP` clamp. No new constant, no mode, nothing
+  reads δ, ρ or N.
+- *When.* At every wait of the receiver loop (once per drained `recv_many`
+  batch), before the staged-ack flush; the 2 s block keeps its other duties.
+- *Decoder floor.* §31 gave every decoder an advance floor (no seq returned
+  below it; a source below it refused). PD adds, on the unified decoder,
+  the refusal of a repair whose span ends at or below it and the count of
+  both refusals (`below_floor`). The prune is by range, O(pruned): the wire dedup set
+  becomes an ordered set with the same key, so no call scans the retained
+  set.
+- *Behaviour change, declared.* On §31's base the floor already refuses a
+  source below it; what moves is the floor. On the 2 s tick it lagged the
+  frontier by 2·W_cap plus up to 2 s of seqs (a sawtooth); per drain it
+  lags by 2·W_cap plus at most one drain. So a symbol more than 2·W_cap
+  seqs behind the frontier is now refused at once: at ρ = 1 such a source
+  is a duplicate of a delivered seq either way; at ρ < 1 it can be a late
+  fill of a hole the frontier gave up on, which was accepted until the
+  next tick and is now refused. A repair whose span ends at or below F is
+  refused (before: assimilated as a row of pruned columns and dropped at
+  the next prune). `[RFA]` reads a refused source arrival as a fill; that
+  count is bounded by `below_floor`.
+- *Not taken from R3.* Zero-copy payloads, the delivered set folded into the
+  payload store, the per-entry source flag, bounded covering-row lookups,
+  the reused worklist.
+- *Witness* (`RWM_RDIAG` only): the server `[RDIAG]` line appends
+  `dec[… recovered= … floor= below_floor=] wcap= prune_n= prune_max_us=`
+  (prunes since the last line; the run's longest prune).
+
+**Tests (red first; run on the VM under both locks before this battery,
+reported in the gate report, not results).**
+- `fec::unified` units: a source below the floor is refused and counted; a
+  repair whose span ends at or below the floor is refused and counted, one
+  that straddles it is not; the retained sets never hold a key below the
+  floor and stay within 2·W_cap + 1 + one drain (+ holes above the
+  frontier) under per-drain advances with late duplicates; delivery is
+  exactly-once with the source bytes under loss, repairs, immediate and
+  late duplicates and reordering (seeded). On the base (71aa3ee + 17824f7
+  + the witness commit) the two counting tests are red (`below_floor=0`);
+  the retained-state and exactly-once tests are green there, because
+  17824f7 already guarantees them (they were red on 71aa3ee alone: a key
+  below the floor retained; seq 2 delivered twice). They stay as guards of
+  that contract under per-drain advances.
+- `tests/receiver_prunes_per_drain.rs` (routing gate, rule 1): one decoder
+  prune site, at the wait point, guarded by `waiting`, none in the
+  REPORT_INTERVAL block; the `[RDIAG]` witness fields exist.
+- `tests/prune_per_drain_loopback.rs`: a clean loopback transfer; every
+  server `[RDIAG]` line has `recovered ≤ 2·wcap + 4 096` (one drain ≤
+  `MSG_CHANNEL_DEPTH`) and some line has `prune_n ≥ 2` (the 2 s tick gives
+  at most 1 per 500 ms window). Red on the witness-only commit (prune
+  still on the tick), green on PD.
+- Full suites on PD: release, doc, wasm, debug, parsers.
+
+**Ship battery.** `MAIN` = main at the merge of §31's fix (it carries
+17824f7; the per-drain change is then the only engine difference) vs
+`NEW` = PD rebased onto it. If §31 has not merged at launch, the battery
+does not launch; an amendment names the trees first.
+- *Cells and n.* `c1s-400`, `c1d-400`, `c2-100`, `c8-100`; n = 6 per arm
+  and cell (3 reps × seeds 42 and 7); arm order rotated per block.
+- *Env.* §28's (`RWM_RTOBS=1 RWM_RDIAG=1 RWM_GEN=0 RWM_DIAG=1
+  RWM_PERF_TIMEOUT_S=150`, the standard `env -u` list), bulk,
+  `--window-reliable`, shipped defaults.
+- *Harness.* `tools/l1/threadpd_run_all.sh`, `threadpd_battery.sh`,
+  `threadpd_parse.py` (tested by `test_threadpd_parse.py`), derived from
+  §28's `threadsk_*`, scoring through `l1ab.py`.
+  - Session order: NEW build and full suites (release, doc, wasm, debug,
+    parsers; a REAL failure is `ABORT-TESTS`), the decoder cadence bench
+    once (`bench_in_order_add_symbol_against_the_prune_cadence`, cadences
+    140 k / 1 k / 32; reported; a failed exactly-once assert is
+    `ABORT-TESTS`), MAIN build (fresh target), smoke, budget, battery,
+    score.
+  - Launch precondition (agent rules): both locks free (`test -e` only),
+    no `cargo`/`rustc` (`pgrep -x`), `procs_running` ≤ 2 in each of 5
+    samples 2 s apart; loadavg not used. Both locks for the whole session.
+  - Measurement from `/dev/shm/tpd` (binaries and run dir) with the
+    `ABORT-ONDISK` guard; ledgers copied to disk after the last row.
+  - io `full avg10` recorded before and after every invocation as a
+    covariate; rows that are goodput or wall outliers while it is high are
+    flagged, not voided.
+- *Binary witness (two-sided, at launch).* `below_floor=` and
+  `prune_max_us=` in NEW's binary; `below_floor=` absent from MAIN's
+  (`REFUSED` otherwise).
+- *Row witness (rule 1).* A NEW row is LIVE only if its server log carries
+  an in-transfer `[RDIAG]` line with `dec[` and `prune_n ≥ 2`; a MAIN
+  server log with `dec[` is a witness failure.
+- *Pass rule per cell.* §28's, unchanged: §21's clauses and min–max rule,
+  the `[LAG]` clauses (client and server) on E = p99 − `min_us`, and at
+  `c8-100` the `lag_E_spread_cli` clause (×1.5).
+- *Decision rule.* **`SHIP`** iff NEW is PASS-EVERYWHERE;
+  **`REFUTED-WITH-RECORD`** if it fails anywhere; **`UNSCOREABLE-AT(…)`**
+  as §21.
+- *Predictions (reported, not gating).*
+  - **c1d:** goodput up; server CPU per GB and the server `[RDIAG]` busy
+    median down; NEW `prune_max_us` < 5 000 µs (§22's H-burst bar) in every
+    row, against §22's 63 196–89 740 µs on the 2 s tick (cross-session,
+    report-only; MAIN has no in-binary reading of it). Size, stated
+    against §22's bar: the bench difference (3 553 → 1 656 ns per source)
+    is ≈ 1.9 µs of a 15–18 µs message, ≈ 11–13 %, about half of the
+    ≈ 25 % handler cut §22 named for a goodput BETTER beyond the 5.6 %
+    MDE. So the predicted c1d goodput clause is TREND-BETTER or BETTER, and
+    the `[RDIAG]` busy median may stay ≥ 90 %.
+  - c1s: the same direction, smaller (the receiver is not the only limit
+    there); c2, c8: WITHIN.
+  - NEW `recovered=` max ≤ 2·wcap + 4 096 at c1s and c1d (lossless enough
+    that the span above the frontier is small); at c2/c8 it also holds the
+    span above a hole, reported only. `below_floor` is reported per row; no
+    value predicted.
+  - Server `[LAG]` `max_us`, both arms: reported (the prune stall may or
+    may not land on the lag probe's worker).
+  - The bench: the 32 cadence costs no more per source than the 1 k
+    cadence (the prune is O(pruned)).
+  - *Receiver batching tail (for §30's open question, report-only).* §30
+    left open whether the c1 store-law noise is receiver-side (the
+    receiver's batching tail). Per cell and arm: server `[RDIAG]` `q_avg`
+    and `q_max` (median, min–max), the per-row coefficient of variation of
+    `q_avg` over the in-transfer lines, goodput max/min across reps, and
+    the acks/dgram spread. No direction is predicted; a NEW reduction in
+    the c1 `q_avg` CV and goodput spread would be evidence that the 2 s
+    prune stall feeds that noise. This is not a test of §30's law.
+- *Abort causes.* §21's table plus `ABORT-ONDISK`. Hard deadline launch +
+  4 h; planned ≈ 1.5–2 h (§28's session: 85 min, battery 436 s).
