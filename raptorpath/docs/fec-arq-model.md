@@ -1825,7 +1825,7 @@ both favour D), against p29 MAIN's goodput and the §29 `GOODPUT` band:
 | c1d-400 | p29 seeds 42–164 | never | −332 to −517 (±110) |
 | c1d-400 | MAIN caps 1 509–2 300 | never | +73 to +82 (cross-session static curve) |
 
-Two ways to stay inside the goodput band, neither of them D: from a seed
+Neither seed gives D: from a seed
 below the knee the climb costs goodput (c2 two of three seeds, c8 two of
 three, c1 all); from a seed above it the goodput holds only because the
 seeker never reaches the knee, so the transfer runs at MAIN's cap and MAIN's
@@ -1904,7 +1904,8 @@ it drifts). It is named, not derived.
 *The nested loop (ADR-0068, open question 12), as far as D is concerned.*
 D is an extremum seeker on the store cap above quinn's BBR. The two hold
 authority alternately: summed over the paths that delivered, quinn's cwnd
-sat below the store cap in bytes (n̄·(1 + ½q)·1 200 B) in 18–24 % of the
+sat below the store cap in bytes (n̄·(1 + ½q)·1 200 B, the + half's cap
+used throughout, so the share is an upper bound by ≤ 5 % of cap) in 18–24 % of the
 post-warm-up `[LOOPDIAG]` windows at c2, 4–32 % at c1s, 0–14 % at c1d and
 0–3 % at c8 (p29 PWR rows; an instantaneous cwnd at each window's end).
 While the cwnd binds, D and T are BBR's and Π is flat in n̄, so ê is noise
