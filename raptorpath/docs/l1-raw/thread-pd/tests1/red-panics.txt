@@ -1,0 +1,5 @@
+thread 'fec::unified::tests::a_repair_ending_at_or_below_the_floor_is_refused_and_counted' (1219539) panicked at raptorpath/src/fec/unified.rs:845:9:
+thread 'fec::unified::tests::a_source_below_the_floor_is_refused_and_counted' (1219540) panicked at raptorpath/src/fec/unified.rs:826:9:
+thread 'the_decoder_prune_runs_at_the_wait_point_not_in_the_report_block' (1219607) panicked at raptorpath/tests/receiver_prunes_per_drain.rs:25:5:
+thread 'the_decoder_holds_two_w_cap_plus_one_drain_not_two_seconds' (1219635) panicked at raptorpath/tests/prune_per_drain_loopback.rs:48:9:
+recovered 6065 > 2*W_cap + one drain = 4496 on `[RDIAG] busy=5% msgs=4051/s q_avg=0 q_max=0 cap=128 dec[rows=0 max_span=0 coeff_kb=0 recovered=6065 seen=6065 floor=0 below_floor=0] wcap=200 prune_n=0 prune_max_us=0`
