@@ -786,4 +786,266 @@ mod tests {
         assert_eq!(sb, vec![2, 5], "unified: displaced row recovers seq 5 too");
         assert_eq!(&b[1].1[..24], &vec![6u8; 24][..]);
     }
+
+    /// Paper §5.2 "Retained state": below `advance`'s floor a source copy is
+    /// refused and counted, not re-delivered.
+    #[test]
+    fn a_source_below_the_floor_is_refused_and_counted() {
+        let ss = 32u16;
+        let mut enc = RlcWindowEncoder::new(ss);
+        let mut dec = UnifiedDecoder::new(ss);
+        let syms: Vec<_> = (0..2000u64).map(|i| enc.add_source(&vec![i as u8; 24])).collect();
+        for s in &syms {
+            assert_eq!(dec.add_symbol(s).len(), 1);
+        }
+        dec.advance(1500);
+        assert!(dec.add_symbol(&syms[100]).is_empty(), "below the floor: refused");
+        let st = dec.diag_stats().unwrap();
+        assert!(st.contains("below_floor=1"), "{st}");
+    }
+
+    /// A repair whose whole span lies at or below the floor is decode-inert:
+    /// refused and counted, no rank claimed. One straddling the floor is live.
+    #[test]
+    fn a_repair_ending_at_or_below_the_floor_is_refused_and_counted() {
+        let ss = 32u16;
+        let mut enc = RlcWindowEncoder::new(ss);
+        let mut dec = UnifiedDecoder::new(ss);
+        for i in 0..2000u64 {
+            let s = enc.add_source(&vec![i as u8; 24]);
+            assert_eq!(dec.add_symbol(&s).len(), 1);
+        }
+        dec.advance(1500);
+        let useful = dec.repairs_useful();
+        let r = enc.generate_repair_range(100, 200).unwrap(); // [100, 300)
+        assert!(dec.add_symbol(&r).is_empty());
+        let st = dec.diag_stats().unwrap();
+        assert!(st.contains("below_floor=1"), "{st}");
+        assert_eq!(dec.repairs_useful(), useful, "a refused repair claims no rank");
+        // [1400, 1600) straddles the floor: not below it, so not counted.
+        let r = enc.generate_repair_range(1400, 200).unwrap();
+        let _ = dec.add_symbol(&r);
+        let st = dec.diag_stats().unwrap();
+        assert!(st.contains("below_floor=1"), "a straddling repair is live: {st}");
+    }
+
+    /// One drain of fresh sources; returns what arrives (~`loss` dropped).
+    fn drain_arrivals(
+        enc: &mut RlcWindowEncoder,
+        rng: &mut ChaCha8Rng,
+        syms: &mut Vec<WireSymbol>,
+        drain: usize,
+        loss: f64,
+    ) -> Vec<WireSymbol> {
+        let mut arr = Vec::new();
+        for _ in 0..drain {
+            let i = syms.len();
+            let mut p = vec![0u8; 40];
+            rng.fill(&mut p[..]);
+            p[0] = (i & 0xff) as u8;
+            let s = enc.add_source(&p);
+            syms.push(s.clone());
+            if rng.gen::<f64>() >= loss {
+                arr.push(s);
+            }
+        }
+        arr
+    }
+
+    /// Repairs over the live window `[lo, newest]` for the current holes
+    /// (one per hole plus slack).
+    fn live_repairs(enc: &mut RlcWindowEncoder, lo: u64, newest: u64, holes: usize) -> Vec<WireSymbol> {
+        (0..holes + 2)
+            .filter_map(|_| enc.generate_repair_range(lo, (newest + 1 - lo) as u16))
+            .collect()
+    }
+
+    /// Paper §5.2 "Retained state": with `advance(F)` per drain, F the
+    /// decode-inert floor, no retained key sits below the last floor and the
+    /// payload store stays within 2·W_cap + 1 plus what is held above the
+    /// frontier, whatever duplicates arrive (copies re-fed far below, and
+    /// just below, F are refused rather than re-entering the retained state).
+    #[test]
+    fn retained_state_stays_above_the_floor_and_within_two_w_cap_plus_one_drain() {
+        let ss = 48u16;
+        let (w_cap, drain, n) = (200u64, 32usize, 20_000usize);
+        let mut rng = ChaCha8Rng::seed_from_u64(0x5EED_0B);
+        let mut enc = RlcWindowEncoder::new(ss);
+        let mut dec = UnifiedDecoder::new(ss);
+        let mut syms: Vec<WireSymbol> = Vec::new();
+        let mut got: BTreeSet<u64> = BTreeSet::new();
+        let (mut nexp, mut floor) = (0u64, 0u64);
+        let mut max_recovered = 0usize;
+        while syms.len() < n {
+            let mut arr = drain_arrivals(&mut enc, &mut rng, &mut syms, drain, 0.05);
+            arr.shuffle(&mut rng);
+            for s in &arr {
+                for (q, _) in dec.add_symbol(s) {
+                    got.insert(q);
+                }
+            }
+            let newest = syms.len() as u64 - 1;
+            let holes: Vec<u64> = (nexp..=newest).filter(|q| !got.contains(q)).collect();
+            if let Some(&lo) = holes.first() {
+                for r in live_repairs(&mut enc, lo, newest, holes.len()) {
+                    for (q, _) in dec.add_symbol(&r) {
+                        got.insert(q);
+                    }
+                }
+            }
+            while got.contains(&nexp) {
+                nexp += 1;
+            }
+            floor = nexp.saturating_sub(1).saturating_sub(2 * w_cap);
+            dec.advance(floor);
+            enc.advance(floor);
+            // Duplicate copies far below F and just below F.
+            for q in [floor.checked_sub(300), floor.checked_sub(1)].into_iter().flatten() {
+                let _ = dec.add_symbol(&syms[q as usize]);
+            }
+            let [rec, del, seen, piv] = dec.min_retained_keys();
+            for (name, m) in [("recovered", rec), ("delivered", del), ("seen", seen), ("row pivot", piv)] {
+                assert!(
+                    m.map_or(true, |k| k >= floor),
+                    "{name} holds key {m:?} below the floor {floor} (nexp {nexp})"
+                );
+            }
+            let above = newest + 1 - nexp;
+            let bound = 2 * w_cap as usize + 1 + drain + above as usize;
+            assert!(
+                dec.recovered_len() <= bound,
+                "recovered {} > 2*W_cap+1+drain+above = {bound} (nexp {nexp})",
+                dec.recovered_len()
+            );
+            max_recovered = max_recovered.max(dec.recovered_len());
+        }
+        assert!(floor > 10_000, "the floor must have advanced through the run ({floor})");
+        println!("retained: max recovered {max_recovered} (2*W_cap+1 = {})", 2 * w_cap + 1);
+    }
+
+    /// Exactly-once delivery under duplicates, reordering and repairs, with
+    /// the floor advancing per drain: a source copy up to 3·W_cap behind the
+    /// frontier (below the floor once the frontier is past 2·W_cap) is never
+    /// re-delivered, and every seq below the final frontier arrives once with
+    /// its exact bytes.
+    #[test]
+    fn exactly_once_under_duplicates_and_repairs() {
+        let ss = 48u16;
+        // n is a whole number of drains: `drain_arrivals` always emits `drain`.
+        let (w_cap, drain, n) = (64u64, 32usize, 2_496usize);
+        for seed in 0..12u64 {
+            let mut rng = ChaCha8Rng::seed_from_u64(0xE0CE ^ seed);
+            let mut enc = RlcWindowEncoder::new(ss);
+            let mut dec = UnifiedDecoder::new(ss);
+            let mut syms: Vec<WireSymbol> = Vec::new();
+            let mut got: BTreeMap<u64, Bytes> = BTreeMap::new();
+            let mut nexp = 0u64;
+            let deliver = |out: Vec<(u64, Bytes)>, syms: &Vec<WireSymbol>, got: &mut BTreeMap<u64, Bytes>| {
+                for (q, b) in out {
+                    assert_eq!(b, syms[q as usize].data, "bytes of seq {q} (seed {seed})");
+                    assert!(got.insert(q, b).is_none(), "seq {q} delivered twice (seed {seed})");
+                }
+            };
+            let mut round = 0usize;
+            while syms.len() < n || nexp < n as u64 {
+                round += 1;
+                assert!(round < 500, "no progress (seed {seed}, nexp {nexp})");
+                let mut arr = if syms.len() < n {
+                    drain_arrivals(&mut enc, &mut rng, &mut syms, drain, 0.10)
+                } else {
+                    Vec::new()
+                };
+                // immediate and late duplicates (up to 3·W_cap behind)
+                let newest = syms.len() as u64 - 1;
+                for s in arr.clone() {
+                    if rng.gen::<f64>() < 0.15 {
+                        arr.push(s);
+                    }
+                }
+                for _ in 0..8 {
+                    let back = rng.gen_range(0..3 * w_cap);
+                    arr.push(syms[newest.saturating_sub(back) as usize].clone());
+                }
+                arr.shuffle(&mut rng);
+                for s in &arr {
+                    deliver(dec.add_symbol(s), &syms, &mut got);
+                }
+                let holes: Vec<u64> = (nexp..=newest).filter(|q| !got.contains_key(q)).collect();
+                if let Some(&lo) = holes.first() {
+                    for r in live_repairs(&mut enc, lo, newest, holes.len()) {
+                        deliver(dec.add_symbol(&r), &syms, &mut got);
+                        if rng.gen::<f64>() < 0.3 {
+                            deliver(dec.add_symbol(&r), &syms, &mut got); // immediate dup
+                        }
+                    }
+                }
+                while got.contains_key(&nexp) {
+                    nexp += 1;
+                }
+                let floor = nexp.saturating_sub(1).saturating_sub(2 * w_cap);
+                dec.advance(floor);
+                enc.advance(floor);
+            }
+            assert_eq!(nexp, n as u64, "seed {seed}");
+            assert_eq!(got.len(), n, "every seq delivered exactly once (seed {seed})");
+        }
+    }
+
+    /// Threading R3 step 0 (status §22): the decoder's per-symbol cost on an
+    /// in-order, loss-free stream at the c1d symbol size, against the prune
+    /// cadence. Before R3 the receiver called `advance` once per
+    /// `REPORT_INTERVAL` (2 s ≈ 140 k symbols at c1d); the arms are that
+    /// cadence, every 1 000 symbols, and every 32 (one owner batch = the
+    /// per-drain cadence), all to the same lag (400 = 2 × the default window
+    /// cap). One proactive repair of width 200 per 20 sources (all on the
+    /// k = 0 fast path: no loss). Timed: `add_symbol` and `advance` only. A
+    /// readout, not a gate (the exactly-once assert is its only check).
+    #[test]
+    #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
+    fn bench_in_order_add_symbol_against_the_prune_cadence() {
+        use std::time::Instant;
+        let ss = 1182u16;
+        let n: u64 = 300_000;
+        for every in [140_000u64, 1_000, 32] {
+            let mut enc = RlcWindowEncoder::new(ss);
+            let mut dec = UnifiedDecoder::new(ss);
+            let payload = vec![0x5au8; ss as usize];
+            let (mut src_ns, mut rep_ns, mut adv_ns, mut adv_max) = (0u128, 0u128, 0u128, 0u128);
+            let (mut n_rep, mut n_adv, mut out_n) = (0u64, 0u64, 0usize);
+            for i in 0..n {
+                let s = enc.add_source(&payload);
+                let t = Instant::now();
+                out_n += dec.add_symbol(&s).len();
+                src_ns += t.elapsed().as_nanos();
+                if i % 20 == 19 && i >= 200 {
+                    let r = enc.generate_repair_range(i - 199, 200).unwrap();
+                    let t = Instant::now();
+                    out_n += dec.add_symbol(&r).len();
+                    rep_ns += t.elapsed().as_nanos();
+                    n_rep += 1;
+                }
+                if i % 1_000 == 999 {
+                    enc.advance(i.saturating_sub(400));
+                }
+                if i % every == every - 1 {
+                    let t = Instant::now();
+                    dec.advance(i.saturating_sub(400));
+                    let d = t.elapsed().as_nanos();
+                    adv_ns += d;
+                    adv_max = adv_max.max(d);
+                    n_adv += 1;
+                }
+            }
+            assert_eq!(out_n as u64, n, "every source delivered exactly once");
+            println!(
+                "[DECBENCH] every={every} src_ns_per={:.0} rep_ns_per={:.0} adv_n={n_adv} adv_max_us={} adv_ns_per_src={:.0} total_ns_per_src={:.0} {}",
+                src_ns as f64 / n as f64,
+                rep_ns as f64 / n_rep.max(1) as f64,
+                adv_max / 1_000,
+                adv_ns as f64 / n as f64,
+                (src_ns + rep_ns + adv_ns) as f64 / n as f64,
+                dec.diag_stats().unwrap_or_default(),
+            );
+        }
+    }
 }
