@@ -100,6 +100,9 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
     );
     let cli_env: Vec<(&str, &str)> = ARM.iter().chain(loopback::CLEAN_RATE.iter()).copied().collect();
     let log = loopback::run_perf_client(&srv.addrs, &cli_env, &loopback::perf_args("bulk", "8000000", "2"));
+    // A stall fails here as a DNF with the server log tail, not as a bare
+    // assertion below.
+    loopback::assert_no_dnf(&log, Some(&srv.log.text()));
 
     // 1. The gate, two-sided: a missing `[DIAG]` must read as an unreached
     //    emission site, never as an unset gate.
