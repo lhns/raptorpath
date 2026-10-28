@@ -1191,6 +1191,63 @@ At realtime operating points the unified decoder's matrix is empty at
 essentially every sample: trailing-span repairs arrive solvable or deliver
 immediately; per-arrival decode is 6–11 µs.
 
+**Retained state: the decode-inert floor, applied per drain (the measured
+subset of threading R3, status §22 and §31; proposed, gated on §31's ship
+battery).** The decoder needs a known payload only while a repair can still
+reference it. Repairs reference the sender's window, which sits at or above
+the receiver's cumulative point less the window cap, so every column below
+
+```text
+   F  =  (next_expected − 1) − 2·W_cap        (saturating at 0; clamped ≤ next_expected − 1)
+```
+
+is decode-inert.
+
+| symbol | provenance |
+|---|---|
+| `next_expected` | the receiver's cumulative point (wire v9 count form: `next_expected − 1` is the last delivered seq) — measured, per message |
+| `W_cap` | the receiver's retained window `recv_win_cap` (`net/mod.rs`): 200 on the bulk window (`MAX_WINDOW_SIZE`), the coded-only window override clamped to [200, 4 096], the generation pipeline's span under generation — existing, unchanged |
+| 2 | one window for the sender's live span plus one for an ack in flight — the existing prune rule, unchanged |
+| clamp ≤ `next_expected − 1` | the `RWM_REASM_BDP` reliability clamp (never prune an undelivered seq) — existing; it never binds, since the subtraction already lands at or below it |
+
+F is a law of the delivered frontier alone, with no new constant and no
+dependence on N, δ or ρ. What changes is only *when* it is evaluated: at
+every receiver wait (each drained `recv_many` batch) instead of on the 2 s
+report tick. Status §22 measured what the tick costs at c1d: the retained
+set grows to ≈ `rate × 2 s` (≈ 140 k payloads), an in-order source
+`add_symbol` costs 2.15× more than with a prune every 1 000 symbols
+(H-alloc (b)), and the prune itself is one 63–90 ms stall (H-burst). Per
+drain, the retained set below the frontier is bounded by `2·W_cap + one
+drain` (one drain ≤ `MSG_CHANNEL_DEPTH` = 4 096 messages), and each prune
+removes only what one drain advanced. The prune is by range (O(pruned),
+never a scan of the retained set), so its per-call cost does not grow with
+the call rate.
+
+Below F the decoder refuses a symbol: a source seq < F, or a repair whose
+span ends at or below F (anchor + width ≤ F). Such a copy is either a
+duplicate of a delivered seq, which accepting it after the prune would
+deliver a second time (the defect status §30 traced the debug-suite stall
+to, on the 2 s cadence), or (ρ < 1 only) a late fill of a hole the frontier
+gave up on more than 2·W_cap seqs ago, which the give-up already declared
+lost. Before this change, whether such a copy was accepted was an
+accident of the prune cadence: a copy arriving after a 2 s prune passed
+the pruned dedup state as new. Now the cut is F itself. ρ
+composes: it moves the frontier (what is given up), F follows the frontier
+continuously, and nothing in the rule reads ρ or δ. Refusals are counted
+(`below_floor` in the decoder's `diag_stats`, beside `floor=`, on the
+receiver's `[RDIAG]` line): that counter is the bind gauge of the floor.
+One known effect on a gauge: `[RFA]` classifies a source arrival by the
+decoder's `seq_probe`, which knows nothing below F, so a source arriving
+more than 2·W_cap seqs behind the frontier reads as a first arrival; such
+arrivals are exactly the source part of `below_floor`, which bounds the
+misclassification.
+
+This is a subset of the R3 design kept at tag `archive/thread-r3`. The
+rest of R3 (known payloads held as the received `Bytes`, the delivered set
+folded into the payload store's key set, a per-entry source flag replacing
+the wire dedup set, bounded covering-row lookups, a reused worklist) is not
+taken: its deciding witness, H-alloc (a), was never read (§22).
+
 ### 5.3 The sender span law
 
 With one decoder, the difference between "realtime" and "bulk" is the
