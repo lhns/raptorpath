@@ -8438,3 +8438,27 @@ BASE ≈ +0.15 to +0.25 (median of 5); FIX − BASE ≤ +0.05 (the repair set
 only); FIX ≤ 23.5 in every run. If FIX − BASE > +0.05, the remaining delta
 is attributed before the battery (no bound change). Then the full suites
 (`suites_run.sh`: release, doc, wasm, debug, parsers) on NEW.
+
+### 32. Amendment 1 — result (tests; ships nothing)
+
+Session 2026-10-28 09:37–10:45Z, both locks, release, fresh target dirs.
+`recv_alloc_bound` allocations per source symbol, 5 runs each:
+
+| tree | runs | median |
+|---|---|---|
+| BASE `b30044b` | 23.121, 23.123, 23.273, 23.046, 23.271 | 23.123 |
+| PD `285cfe5` (BTreeSet dedup) | 23.420, 23.252, 23.457, 23.474, 23.271 | 23.420 |
+| FIX `4dcc893` (SeqBits + repair set) | 23.494, 23.108, 23.106, 23.036, 22.999 | 23.106 |
+
+PD − BASE = +0.30 (predicted +0.15 to +0.25: the sign and the cause hold,
+the size is a little above the range). FIX − BASE = −0.02 (predicted
+≤ +0.05): **MET**; FIX ≤ 23.5 in every run: **MET**. The gate is not
+touched. Recorded: BASE already reads up to 23.27 and FIX's worst run
+23.494, so the gate sits within about one run-spread of current main;
+it can flake on main itself, independent of this change.
+
+Full suites on NEW (`3596b0b`, engine `4dcc893`): release 1137/0
+(51 ignored), doc rc 0, wasm 35/0, debug 996/0 (50 ignored), parsers rc 0,
+identity panics 0. `SUITES OK`. END: 0 `raptorpath`, 0 `rp-*`; the VM dirs
+are removed. Ledgers: `docs/l1-raw/thread-pd/alloc/` and (the first
+session) `docs/l1-raw/thread-pd/tests1/`.

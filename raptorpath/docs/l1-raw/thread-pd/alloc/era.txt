@@ -1,0 +1,21 @@
+TPA start base=b30044b pd=285cfe5 fix=4dcc893 new=3596b0b 2026-10-28T09:37:21Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+TPA base run=1 rc=0 RECV_ALLOC small=40545 large=233539 allocs/symbol=23.121 bound=23.5 2026-10-28T09:42:37Z
+TPA base run=2 rc=0 RECV_ALLOC small=40660 large=233673 allocs/symbol=23.123 bound=23.5 2026-10-28T09:42:38Z
+TPA base run=3 rc=0 RECV_ALLOC small=40577 large=234842 allocs/symbol=23.273 bound=23.5 2026-10-28T09:42:39Z
+TPA base run=4 rc=0 RECV_ALLOC small=40614 large=232986 allocs/symbol=23.046 bound=23.5 2026-10-28T09:42:39Z
+TPA base run=5 rc=0 RECV_ALLOC small=40714 large=234960 allocs/symbol=23.271 bound=23.5 2026-10-28T09:42:40Z
+TPA pd run=1 rc=0 RECV_ALLOC small=40899 large=236391 allocs/symbol=23.420 bound=23.5 2026-10-28T09:47:56Z
+TPA pd run=2 rc=0 RECV_ALLOC small=40880 large=234970 allocs/symbol=23.252 bound=23.5 2026-10-28T09:47:57Z
+TPA pd run=3 rc=0 RECV_ALLOC small=40915 large=236714 allocs/symbol=23.457 bound=23.5 2026-10-28T09:47:58Z
+TPA pd run=4 rc=0 RECV_ALLOC small=41405 large=237349 allocs/symbol=23.474 bound=23.5 2026-10-28T09:47:59Z
+TPA pd run=5 rc=0 RECV_ALLOC small=40909 large=235158 allocs/symbol=23.271 bound=23.5 2026-10-28T09:48:00Z
+TPA fix run=1 rc=0 RECV_ALLOC small=40679 large=236793 allocs/symbol=23.494 bound=23.5 2026-10-28T09:53:06Z
+TPA fix run=2 rc=0 RECV_ALLOC small=40514 large=233398 allocs/symbol=23.108 bound=23.5 2026-10-28T09:53:07Z
+TPA fix run=3 rc=0 RECV_ALLOC small=40515 large=233385 allocs/symbol=23.106 bound=23.5 2026-10-28T09:53:08Z
+TPA fix run=4 rc=0 RECV_ALLOC small=40665 large=232948 allocs/symbol=23.036 bound=23.5 2026-10-28T09:53:09Z
+TPA fix run=5 rc=0 RECV_ALLOC small=40605 large=232580 allocs/symbol=22.999 bound=23.5 2026-10-28T09:53:10Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
+TPA done suites_rc=0 raptorpath=0 2026-10-28T10:45:37Z
