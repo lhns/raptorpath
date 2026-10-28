@@ -710,6 +710,45 @@ pub(crate) async fn run_receiver(
         // deadlines and their `[QCLK]` sample are evaluated once per wait,
         // not once per message of a batch.)
         let waiting = queued.is_empty();
+        if waiting {
+            // Prune old entries from received_seqs tracking and the window
+            // decoder's recovered/pivot/dedup state. Everything below the
+            // decode-inert floor (delivered prefix minus two windows) is
+            // inert: repairs only reference the sender's current window,
+            // which sits at or above its ack (= our delivered point).
+            // Evaluated at every wait (once per drained `recv_many` batch),
+            // not on the 2 s report tick (paper §5.2 "Retained state"): the
+            // decoder then holds 2·W_cap plus one drain instead of ~2 s of
+            // payloads.
+            // RWM_RDIAG only: count and time the prune (measurement; the
+            // prune itself never reads these).
+            let rdiag_prune_t = rdiag_on.then(Instant::now);
+            let delivered_last = next_expected.saturating_sub(1);
+            let mut prune_before = decode_inert_floor(next_expected, recv_win_cap);
+            // Reliability invariant (RWM_REASM_BDP): never evict a
+            // received symbol before it is delivered. Under SACK the
+            // sender races ahead of the frozen in-order frontier, so
+            // `highest_seen_seq` runs far above the cumulative point
+            // (the hole). The prune is keyed on the delivered frontier
+            // (so `prune_before ≤ delivered_last` already), but
+            // clamp it explicitly so a received-above-hole symbol the
+            // sender has pruned is never dropped. The reorder buffer is
+            // separately non-evicting (usize::MAX), so held source
+            // symbols survive to delivery regardless.
+            if reasm_bdp_on {
+                prune_before = prune_before.min(delivered_last);
+            }
+            // Sync the `received_above` counter first: the prune
+            // removes only seqs below the cumulative point, which
+            // a synced counter no longer counts.
+            recv_above.sync(&received_seqs, next_expected);
+            received_seqs.prune_below(prune_before);
+            window_decoder.advance(prune_before);
+            if let Some(t0) = rdiag_prune_t {
+                rdiag_prune_n += 1;
+                rdiag_prune_max_us = rdiag_prune_max_us.max(t0.elapsed().as_micros() as u64);
+            }
+        }
         // The staged control datagrams go to the owners before every wait
         // AND at least every INBOUND_BATCH_MAX processed messages: an ack is
         // never held behind more than one owner batch's worth of processing
@@ -2145,43 +2184,8 @@ pub(crate) async fn run_receiver(
                             last_pi_repairs_useful = useful;
                         }
 
-                        // Prune old entries from received_seqs tracking and
-                        // the window decoder's recovered/pivot/seen state
-                        // (unbounded otherwise over long streams). Everything
-                        // below the delivered prefix minus two windows is
-                        // decode-inert: repairs only reference the sender's
-                        // current window, which sits at or above its ack
-                        // (= our delivered point).
-                        // (v9 count form: `next_expected − 1` is the v8
-                        // `highest_delivered_seq`, so the prune point is
-                        // unchanged.)
-                        let delivered_last = next_expected.saturating_sub(1);
-                        let rdiag_prune_t = rdiag_on.then(Instant::now);
-                        let mut prune_before = decode_inert_floor(next_expected, recv_win_cap);
-                        // Reliability invariant (RWM_REASM_BDP): never evict a
-                        // received symbol before it is delivered. Under SACK the
-                        // sender races ahead of the frozen in-order frontier, so
-                        // `highest_seen_seq` runs far above the cumulative point
-                        // (the hole). The prune is keyed on the delivered frontier
-                        // (so `prune_before ≤ delivered_last` already), but
-                        // clamp it explicitly so a received-above-hole symbol the
-                        // sender has pruned is never dropped. The reorder buffer is
-                        // separately non-evicting (usize::MAX), so held source
-                        // symbols survive to delivery regardless.
-                        if reasm_bdp_on {
-                            prune_before = prune_before.min(delivered_last);
-                        }
-                        // Sync the `received_above` counter first: the prune
-                        // removes only seqs below the cumulative point, which
-                        // a synced counter no longer counts.
-                        recv_above.sync(&received_seqs, next_expected);
-                        received_seqs.prune_below(prune_before);
-                        window_decoder.advance(prune_before);
-                        if let Some(t0) = rdiag_prune_t {
-                            rdiag_prune_n += 1;
-                            rdiag_prune_max_us =
-                                rdiag_prune_max_us.max(t0.elapsed().as_micros() as u64);
-                        }
+                        // (The prune of `received_seqs` and the window decoder
+                        // moved to the loop's wait point — see there.)
                         // Occupancy probe: peak reassembly held behind the frontier.
                         if reasm_bdp_on {
                             let pending = reorder_buf

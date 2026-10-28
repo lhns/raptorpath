@@ -60,7 +60,7 @@
 //! Wire format: identical to `rlc_window`/`generation` (14-byte self-
 //! describing repair header, FILL_FLAG variant included).
 
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bytes::Bytes;
 
@@ -184,8 +184,9 @@ pub struct UnifiedDecoder {
     delivered: BTreeSet<u64>,
     /// Global RREF: pivot seq → row.
     rows: BTreeMap<u64, URow>,
-    /// Wire dedup: (block_id, payload_id, is_repair).
-    seen: HashSet<(u64, u32, bool)>,
+    /// Wire dedup: (block_id, payload_id, is_repair). Ordered so `advance`
+    /// pops the pruned prefix instead of scanning the set.
+    seen: BTreeSet<(u64, u32, bool)>,
     /// Symbols refused for lying below `floor` (paper §5.2 "Retained state").
     below_floor: u64,
     total_fed: u64,
@@ -202,7 +203,7 @@ impl UnifiedDecoder {
             recovered: BTreeMap::new(),
             delivered: BTreeSet::new(),
             rows: BTreeMap::new(),
-            seen: HashSet::new(),
+            seen: BTreeSet::new(),
             below_floor: 0,
             total_fed: 0,
             floor: 0,
@@ -402,6 +403,14 @@ impl UnifiedDecoder {
         if width == 0 {
             return vec![];
         }
+        // A span wholly at or below the floor is decode-inert. Its dedup key
+        // (block_id = span end - 1) lies below the floor too: drop it again so
+        // `seen` stays above the floor.
+        if anchor.saturating_add(width as u64) <= self.floor {
+            self.below_floor += 1;
+            self.seen.remove(&key);
+            return vec![];
+        }
         // FILL_FLAG: sender summed only the prefix [anchor, anchor+cw); the
         // matrix width on the wire is the full generation (see generation.rs).
         let (repair_index, coded_width, header_end) = if wire_index & FILL_FLAG != 0 {
@@ -450,6 +459,7 @@ impl WindowDecoder for UnifiedDecoder {
         // a late source copy is a duplicate, and a repair can only cascade
         // already-delivered seqs out.
         if !symbol.is_repair && symbol.block_id < self.floor {
+            self.below_floor += 1;
             return vec![];
         }
         let mut out = self.add_symbol_inner(symbol);
@@ -457,26 +467,35 @@ impl WindowDecoder for UnifiedDecoder {
         out
     }
 
+    /// Raise the floor and drop everything below it. Called once per drained
+    /// batch (paper §5.2), so the cost is O(entries pruned): every set is an
+    /// ordered one and is popped from the front, never scanned or collected.
     fn advance(&mut self, oldest_seq: u64) {
         self.floor = self.floor.max(oldest_seq);
+        let f = self.floor;
         // Rows pivoting below the frontier: the ack contract says everything
         // below is received/recovered, so these rows are stale — mirror the
         // sliding decoder and drop them.
-        let stale: Vec<u64> = self.rows.range(..oldest_seq).map(|(&p, _)| p).collect();
-        for p in stale {
-            self.rows.remove(&p);
+        while let Some(e) = self.rows.first_entry() {
+            if *e.key() >= f {
+                break;
+            }
+            e.remove();
         }
         // Stored rows never reference recovered columns (invariant), so the
         // payload store below the frontier is freely prunable.
-        let old: Vec<u64> = self.recovered.range(..oldest_seq).map(|(&s, _)| s).collect();
-        for s in old {
-            self.recovered.remove(&s);
+        while let Some(e) = self.recovered.first_entry() {
+            if *e.key() >= f {
+                break;
+            }
+            e.remove();
         }
-        let old_d: Vec<u64> = self.delivered.range(..oldest_seq).copied().collect();
-        for s in old_d {
-            self.delivered.remove(&s);
+        while self.delivered.first().is_some_and(|&s| s < f) {
+            self.delivered.pop_first();
         }
-        self.seen.retain(|(block_id, _, _)| *block_id >= oldest_seq);
+        while self.seen.first().is_some_and(|k| k.0 < f) {
+            self.seen.pop_first();
+        }
     }
 
     fn rank_in(&self, start: u64, count: u64) -> u64 {
