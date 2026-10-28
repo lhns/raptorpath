@@ -1192,7 +1192,7 @@ essentially every sample: trailing-span repairs arrive solvable or deliver
 immediately; per-arrival decode is 6–11 µs.
 
 **Retained state: the decode-inert floor, applied per drain (the measured
-subset of threading R3, status §22 and §31; proposed, gated on §31's ship
+subset of threading R3, status §22 and §32; proposed, gated on §32's ship
 battery).** The decoder needs a known payload only while a repair can still
 reference it. Repairs reference the sender's window, which sits at or above
 the receiver's cumulative point less the window cap, so every column below
@@ -1226,12 +1226,15 @@ the call rate.
 Below F the decoder refuses a symbol: a source seq < F, or a repair whose
 span ends at or below F (anchor + width ≤ F). Such a copy is either a
 duplicate of a delivered seq, which accepting it after the prune would
-deliver a second time (the defect status §30 traced the debug-suite stall
+deliver a second time (the defect status §31 traced the debug-suite stall
 to, on the 2 s cadence), or (ρ < 1 only) a late fill of a hole the frontier
 gave up on more than 2·W_cap seqs ago, which the give-up already declared
-lost. Before this change, whether such a copy was accepted was an
-accident of the prune cadence: a copy arriving after a 2 s prune passed
-the pruned dedup state as new. Now the cut is F itself. ρ
+lost. Before §31's fix, whether such a copy was accepted was an accident
+of the prune cadence: a copy arriving after a 2 s prune passed the pruned
+dedup state as new. §31 made the source refusal part of every
+`WindowDecoder`'s `advance` contract (`fec/window_traits.rs`: no seq is
+returned below the advance floor); this change adds the repair refusal
+and the count on the unified decoder, and evaluates F per drain. ρ
 composes: it moves the frontier (what is given up), F follows the frontier
 continuously, and nothing in the rule reads ρ or δ. Refusals are counted
 (`below_floor` in the decoder's `diag_stats`, beside `floor=`, on the
