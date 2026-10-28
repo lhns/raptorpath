@@ -186,6 +186,8 @@ pub struct UnifiedDecoder {
     rows: BTreeMap<u64, URow>,
     /// Wire dedup: (block_id, payload_id, is_repair).
     seen: HashSet<(u64, u32, bool)>,
+    /// Symbols refused for lying below `floor` (paper §5.2 "Retained state").
+    below_floor: u64,
     total_fed: u64,
     /// Highest `advance` frontier: seqs below it are pruned, hence never new.
     floor: u64,
@@ -201,11 +203,29 @@ impl UnifiedDecoder {
             delivered: BTreeSet::new(),
             rows: BTreeMap::new(),
             seen: HashSet::new(),
+            below_floor: 0,
             total_fed: 0,
             floor: 0,
             repairs_fed: 0,
             repairs_useful: 0,
         }
+    }
+
+    /// Test accessor: the smallest retained key of each retained set
+    /// (recovered, delivered, seen block_id, row pivot).
+    #[cfg(test)]
+    fn min_retained_keys(&self) -> [Option<u64>; 4] {
+        [
+            self.recovered.keys().next().copied(),
+            self.delivered.iter().next().copied(),
+            self.seen.iter().map(|k| k.0).min(),
+            self.rows.keys().next().copied(),
+        ]
+    }
+
+    #[cfg(test)]
+    fn recovered_len(&self) -> usize {
+        self.recovered.len()
     }
 
     /// Drive the assimilation worklist to fixpoint. Returns
@@ -507,12 +527,14 @@ impl WindowDecoder for UnifiedDecoder {
             coeff_bytes += r.coeffs.len();
         }
         Some(format!(
-            "rows={} max_span={} coeff_kb={} recovered={} seen={}",
+            "rows={} max_span={} coeff_kb={} recovered={} seen={} floor={} below_floor={}",
             rows,
             max_span,
             coeff_bytes / 1024,
             self.recovered.len(),
-            self.seen.len()
+            self.seen.len(),
+            self.floor,
+            self.below_floor
         ))
     }
 }
