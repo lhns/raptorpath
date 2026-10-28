@@ -8295,7 +8295,12 @@ state: the decode-inert floor, applied per drain").**
   the reused worklist.
 - *Witness* (`RWM_RDIAG` only): the server `[RDIAG]` line appends
   `dec[… recovered= … floor= below_floor=] wcap= prune_n= prune_max_us=`
-  (prunes since the last line; the run's longest prune).
+  (prunes since the last line; the run's longest prune). Under
+  `RWM_RDIAG=1` NEW pays two `Instant::now()` per wait for this witness
+  that MAIN does not: a between-arm instrument difference, small and
+  against NEW. `prune_max_us` is a wall-clock maximum, so a preemption
+  inside one prune can set it; the reading that matters is its order of
+  magnitude against §22's 63–90 ms, not the 5 000 µs bar below.
 
 **Tests (red first; run on the VM under both locks before this battery,
 reported in the gate report, not results).**
