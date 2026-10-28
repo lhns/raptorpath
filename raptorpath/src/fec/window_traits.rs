@@ -151,6 +151,13 @@ pub trait WindowDecoder: Send + Sync {
     fn add_symbol(&mut self, symbol: &WireSymbol) -> Vec<(u64, Bytes)>;
 
     /// Advance window: discard state for symbols older than `oldest_seq`.
+    ///
+    /// Contract: a decoder returns each seq at most once, and never a seq
+    /// below its advance floor, for any interleaving of `add_symbol` and
+    /// `advance`. Everything below the floor is by contract already
+    /// received/recovered, and its dedup state is pruned here, so the floor
+    /// itself is the dedup for those seqs (a late duplicate source or a
+    /// repair reaching below the floor must not re-deliver them).
     fn advance(&mut self, oldest_seq: u64);
 
     /// Independent rank the decoder currently holds over the span
@@ -214,5 +221,128 @@ pub trait WindowDecoder: Send + Sync {
     /// periodic report calls it at ~500 ms).
     fn diag_stats(&self) -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod advance_floor_tests {
+    //! Contract: a decoder returns each seq at most once and never a seq below
+    //! its `advance` floor, for any interleaving of `add_symbol`/`advance`.
+    use super::*;
+    use crate::fec::generation::reference::RefGenerationDecoder;
+    use crate::fec::generation::{GenerationDecoder, GenerationEncoder};
+    use crate::fec::rlc_window::{RlcWindowDecoder, RlcWindowEncoder};
+    use crate::fec::unified::UnifiedDecoder;
+    use std::collections::BTreeSet;
+
+    const SS: u16 = 32;
+    const N: u64 = 16;
+    const FLOOR: u64 = 10;
+
+    /// Tracks every returned seq and checks the contract at return time.
+    struct Checker {
+        dec: Box<dyn WindowDecoder>,
+        name: &'static str,
+        returned: BTreeSet<u64>,
+        floor: u64,
+    }
+
+    impl Checker {
+        fn new(name: &'static str, dec: Box<dyn WindowDecoder>) -> Self {
+            Self { dec, name, returned: BTreeSet::new(), floor: 0 }
+        }
+        fn feed(&mut self, sym: &WireSymbol) -> Vec<u64> {
+            let out: Vec<u64> = self.dec.add_symbol(sym).into_iter().map(|(s, _)| s).collect();
+            for &s in &out {
+                assert!(s >= self.floor, "{}: returned seq {s} below floor {}", self.name, self.floor);
+                assert!(self.returned.insert(s), "{}: seq {s} returned twice", self.name);
+            }
+            out
+        }
+        fn advance(&mut self, k: u64) {
+            self.dec.advance(k);
+            self.floor = self.floor.max(k);
+        }
+    }
+
+    /// Feed sources 0..N once, advance, then replay every source: nothing new.
+    fn source_case(name: &'static str, dec: Box<dyn WindowDecoder>, srcs: &[WireSymbol]) {
+        let mut c = Checker::new(name, dec);
+        for s in srcs {
+            c.feed(s);
+        }
+        assert_eq!(c.returned.len() as u64, N, "{name}: every source delivered once");
+        c.advance(FLOOR);
+        for s in srcs {
+            let out = c.feed(s);
+            assert!(out.is_empty(), "{name}: replayed seq {} returned {out:?}", s.block_id);
+        }
+    }
+
+    /// Sources, advance, then repairs over pruned seqs: nothing below the floor.
+    fn repair_case(
+        name: &'static str,
+        dec: Box<dyn WindowDecoder>,
+        srcs: &[WireSymbol],
+        repairs: &[WireSymbol],
+    ) {
+        let mut c = Checker::new(name, dec);
+        for s in srcs {
+            c.feed(s);
+        }
+        c.advance(FLOOR);
+        for r in repairs {
+            let out = c.feed(r);
+            assert!(out.is_empty(), "{name}: repair returned {out:?}");
+        }
+    }
+
+    fn payload(i: u64) -> Vec<u8> {
+        vec![i as u8 + 1; 24]
+    }
+
+    fn decoders() -> Vec<(&'static str, Box<dyn WindowDecoder>)> {
+        vec![
+            ("unified", Box::new(UnifiedDecoder::new(SS))),
+            ("rlc_window", Box::new(RlcWindowDecoder::new(SS))),
+            ("generation", Box::new(GenerationDecoder::new(SS))),
+            ("reference", Box::new(RefGenerationDecoder::new(SS))),
+        ]
+    }
+
+    #[test]
+    fn decoders_never_return_a_source_twice_across_advance() {
+        let mut enc = RlcWindowEncoder::new(SS);
+        let srcs: Vec<WireSymbol> = (0..N).map(|i| enc.add_source(&payload(i))).collect();
+        for (name, dec) in decoders() {
+            source_case(name, dec, &srcs);
+        }
+    }
+
+    #[test]
+    fn decoders_never_return_a_pruned_seq_from_a_repair() {
+        // Sliding wire: width-1 and straddling repairs over pruned seqs.
+        let mut enc = RlcWindowEncoder::new(SS);
+        let srcs: Vec<WireSymbol> = (0..N).map(|i| enc.add_source(&payload(i))).collect();
+        let repairs: Vec<WireSymbol> = [(3u64, 1u16), (FLOOR - 1, 1), (FLOOR - 2, 4), (0, 12)]
+            .iter()
+            .map(|&(st, n)| enc.generate_repair_range(st, n).expect("retained"))
+            .collect();
+        for (name, dec) in decoders() {
+            repair_case(name, dec, &srcs, &repairs);
+        }
+
+        // Generation wire (aligned generations of 8, plus range repairs).
+        let mut genc = GenerationEncoder::new_systematic(SS, 8, 2, 0.5);
+        let gsrcs: Vec<WireSymbol> = (0..N).map(|i| genc.add_source(&payload(i))).collect();
+        let mut grepairs: Vec<WireSymbol> = [(3u64, 1u16), (FLOOR - 1, 1), (FLOOR - 2, 4)]
+            .iter()
+            .map(|&(st, n)| genc.generate_repair_range(st, n).expect("retained"))
+            .collect();
+        grepairs.push(genc.generate_repair_for(0).expect("sealed generation 0"));
+        grepairs.push(genc.generate_repair_for(8).expect("sealed generation 1"));
+        for (name, dec) in decoders() {
+            repair_case(name, dec, &gsrcs, &grepairs);
+        }
     }
 }

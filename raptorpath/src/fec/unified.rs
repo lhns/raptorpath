@@ -187,6 +187,8 @@ pub struct UnifiedDecoder {
     /// Wire dedup: (block_id, payload_id, is_repair).
     seen: HashSet<(u64, u32, bool)>,
     total_fed: u64,
+    /// Highest `advance` frontier: seqs below it are pruned, hence never new.
+    floor: u64,
     repairs_fed: u64,
     repairs_useful: u64,
 }
@@ -200,6 +202,7 @@ impl UnifiedDecoder {
             rows: BTreeMap::new(),
             seen: HashSet::new(),
             total_fed: 0,
+            floor: 0,
             repairs_fed: 0,
             repairs_useful: 0,
         }
@@ -344,8 +347,9 @@ impl UnifiedDecoder {
     }
 }
 
-impl WindowDecoder for UnifiedDecoder {
-    fn add_symbol(&mut self, symbol: &WireSymbol) -> Vec<(u64, Bytes)> {
+impl UnifiedDecoder {
+    /// Decode without the advance-floor guard; see `add_symbol`.
+    fn add_symbol_inner(&mut self, symbol: &WireSymbol) -> Vec<(u64, Bytes)> {
         if symbol.backend != FecBackend::Rlc {
             return vec![];
         }
@@ -418,8 +422,23 @@ impl WindowDecoder for UnifiedDecoder {
         }
         out
     }
+}
+
+impl WindowDecoder for UnifiedDecoder {
+    fn add_symbol(&mut self, symbol: &WireSymbol) -> Vec<(u64, Bytes)> {
+        // Below the floor the dedup state is pruned, so the floor is the dedup:
+        // a late source copy is a duplicate, and a repair can only cascade
+        // already-delivered seqs out.
+        if !symbol.is_repair && symbol.block_id < self.floor {
+            return vec![];
+        }
+        let mut out = self.add_symbol_inner(symbol);
+        out.retain(|(s, _)| *s >= self.floor);
+        out
+    }
 
     fn advance(&mut self, oldest_seq: u64) {
+        self.floor = self.floor.max(oldest_seq);
         // Rows pivoting below the frontier: the ack contract says everything
         // below is received/recovered, so these rows are stale — mirror the
         // sliding decoder and drop them.
