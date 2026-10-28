@@ -8394,3 +8394,47 @@ does not launch; an amendment names the trees first.
     prune stall feeds that noise. This is not a test of §30's law.
 - *Abort causes.* §21's table plus `ABORT-ONDISK`. Hard deadline launch +
   4 h; planned ≈ 1.5–2 h (§28's session: 85 min, battery 436 s).
+
+### 32. Amendment 1 — the trees, the allocation gate, and its attribution (before VM contact)
+
+*Tests run so far (not results).* Session 2026-10-28 03:49–05:42Z on the
+pre-rebase trees (witness `bc1a52a`, PD `b2e257f`), both locks.
+- Red at the witness tree (prune still on the tick): the two counting
+  tests (`below_floor=0`), the routing gate, and the loopback bound, which
+  failed on the bound itself: `recovered 6065 > 2*W_cap + one drain = 4496`
+  with `prune_n=0`. Green at PD: 12 passed / 0 failed.
+- Suites on PD: doc, wasm, parsers pass; release 1136/1 and debug 995/1,
+  both `recv_alloc_bound::allocations_per_source_symbol_stay_under_the_bound`
+  (release: 23.512 allocations per source symbol against the gate's 23.5).
+
+*Cause, derived (to be checked below).* PD changed the decoder's wire
+dedup set from a `HashSet` to a `BTreeSet` so the per-drain prune could pop
+a prefix instead of scanning. A `HashSet` keeps its capacity across
+`retain`, so in steady state it allocates nothing per symbol; a B-tree
+allocates a new leaf every ≈ 5–6 ascending inserts (leaf capacity 11, split
+near the middle), ≈ +0.2 allocations per source symbol — the tree node per
+source symbol R1 removed from the receiver (`SeqBits`). It is a regression
+by the gate's own derivation (23.5 = R1's worst run + 0.56), not a bound to
+re-derive, so the bound is not touched.
+
+*Fix (`4dcc893`).* Source seqs (sources carry `payload_id` 0) are deduped
+in a `SeqBits` ring bitmap (prefix prune, no per-seq allocation); repairs
+keep an ordered set `(block_id, payload_id)`. Membership semantics and
+`seq_probe` are unchanged; the prune stays O(pruned). The "wire dedup set
+becomes an ordered set" line of the change description above is replaced
+by this.
+
+*Trees.* `MAIN` = main `b30044b` (§31 merged). `NEW` = this branch rebased
+onto `b30044b`; its engine tree is `4dcc893` (later commits are docs and
+tools only). The cherry-pick of 17824f7 is gone (it is in MAIN).
+
+*Attribution check (tests, not a battery; ships nothing by itself).* One
+session under both locks (launch precondition as above), release, fresh
+target dirs: `cargo test -p raptorpath --release --test recv_alloc_bound
+-- --nocapture` five times on each of `BASE` = `b30044b`, `PD` = the
+rebased change before the fix (`285cfe5`'s engine tree), `FIX` = `4dcc893`;
+the `RECV_ALLOC allocs/symbol` values reported per run. Prediction: PD −
+BASE ≈ +0.15 to +0.25 (median of 5); FIX − BASE ≤ +0.05 (the repair set
+only); FIX ≤ 23.5 in every run. If FIX − BASE > +0.05, the remaining delta
+is attributed before the battery (no bound change). Then the full suites
+(`suites_run.sh`: release, doc, wasm, debug, parsers) on NEW.
