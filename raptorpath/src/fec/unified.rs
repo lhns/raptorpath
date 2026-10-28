@@ -67,6 +67,7 @@ use bytes::Bytes;
 use super::gf256;
 use super::traits::{FecBackend, WireSymbol};
 use super::window_traits::WindowDecoder;
+use crate::net::seq_bits::SeqBits;
 
 pub use gf256::generate_window_coefficients;
 
@@ -184,9 +185,13 @@ pub struct UnifiedDecoder {
     delivered: BTreeSet<u64>,
     /// Global RREF: pivot seq → row.
     rows: BTreeMap<u64, URow>,
-    /// Wire dedup: (block_id, payload_id, is_repair). Ordered so `advance`
-    /// pops the pruned prefix instead of scanning the set.
-    seen: BTreeSet<(u64, u32, bool)>,
+    /// Wire dedup, split so `advance` prunes a prefix instead of scanning
+    /// and an in-order source allocates nothing: source seqs (sources carry
+    /// `payload_id` 0) in a ring bitmap, the receiver's own `SeqBits` (R1:
+    /// a tree node per source symbol is what that type removed); repairs
+    /// `(block_id, payload_id)` in an ordered set (one entry per repair).
+    src_seen: SeqBits,
+    repairs_seen: BTreeSet<(u64, u32)>,
     /// Symbols refused for lying below `floor` (paper §5.2 "Retained state").
     below_floor: u64,
     total_fed: u64,
@@ -203,7 +208,8 @@ impl UnifiedDecoder {
             recovered: BTreeMap::new(),
             delivered: BTreeSet::new(),
             rows: BTreeMap::new(),
-            seen: BTreeSet::new(),
+            src_seen: SeqBits::new(),
+            repairs_seen: BTreeSet::new(),
             below_floor: 0,
             total_fed: 0,
             floor: 0,
@@ -213,13 +219,14 @@ impl UnifiedDecoder {
     }
 
     /// Test accessor: the smallest retained key of each retained set
-    /// (recovered, delivered, seen block_id, row pivot).
+    /// (recovered, delivered, seen block_id, row pivot). A source below the
+    /// floor is never in `src_seen` (pruned, and refused on insert).
     #[cfg(test)]
     fn min_retained_keys(&self) -> [Option<u64>; 4] {
         [
             self.recovered.keys().next().copied(),
             self.delivered.iter().next().copied(),
-            self.seen.iter().map(|k| k.0).min(),
+            self.repairs_seen.iter().map(|k| k.0).min(),
             self.rows.keys().next().copied(),
         ]
     }
@@ -374,8 +381,15 @@ impl UnifiedDecoder {
         if symbol.backend != FecBackend::Rlc {
             return vec![];
         }
-        let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
-        if !self.seen.insert(key) {
+        let key = (symbol.block_id, symbol.payload_id);
+        let fresh = if symbol.is_repair {
+            self.repairs_seen.insert(key)
+        } else {
+            // `insert` also answers false for a seq it refuses to record
+            // (beyond its span cap); only a recorded seq is a duplicate.
+            self.src_seen.insert(symbol.block_id) || !self.src_seen.contains(symbol.block_id)
+        };
+        if !fresh {
             return vec![];
         }
         self.total_fed += 1;
@@ -405,10 +419,10 @@ impl UnifiedDecoder {
         }
         // A span wholly at or below the floor is decode-inert. Its dedup key
         // (block_id = span end - 1) lies below the floor too: drop it again so
-        // `seen` stays above the floor.
+        // the repair dedup set stays above the floor.
         if anchor.saturating_add(width as u64) <= self.floor {
             self.below_floor += 1;
-            self.seen.remove(&key);
+            self.repairs_seen.remove(&key);
             return vec![];
         }
         // FILL_FLAG: sender summed only the prefix [anchor, anchor+cw); the
@@ -493,8 +507,9 @@ impl WindowDecoder for UnifiedDecoder {
         while self.delivered.first().is_some_and(|&s| s < f) {
             self.delivered.pop_first();
         }
-        while self.seen.first().is_some_and(|k| k.0 < f) {
-            self.seen.pop_first();
+        self.src_seen.prune_below(f);
+        while self.repairs_seen.first().is_some_and(|k| k.0 < f) {
+            self.repairs_seen.pop_first();
         }
     }
 
@@ -519,7 +534,7 @@ impl WindowDecoder for UnifiedDecoder {
 
     fn seq_probe(&self, seq: u64) -> (bool, bool, bool) {
         (
-            self.seen.contains(&(seq, 0, false)),
+            self.src_seen.contains(seq),
             self.recovered.contains_key(&seq),
             self.delivered.contains(&seq),
         )
@@ -551,7 +566,7 @@ impl WindowDecoder for UnifiedDecoder {
             max_span,
             coeff_bytes / 1024,
             self.recovered.len(),
-            self.seen.len(),
+            self.src_seen.len() + self.repairs_seen.len(),
             self.floor,
             self.below_floor
         ))
