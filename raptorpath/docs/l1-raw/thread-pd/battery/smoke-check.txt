@@ -1,0 +1,5 @@
+SMOKE-ROW c1s-400 MAIN bin=main rc=0 status=LIVE mbps=612.886 cli=6.55 srv=8.64 dec=0/None/None E=1252.0/1018.0 
+SMOKE-ROW c1s-400 NEW bin=new rc=0 status=LIVE mbps=351.847 cli=7.83 srv=8.86 dec=18/401/43 E=1628.0/1582.0 
+SMOKE-ROW c8-100 NEW bin=new rc=0 status=LIVE mbps=104.468 cli=3.68 srv=4.51 dec=15/13409/68 E=1309.0/921.0 
+SMOKE-ROW c8-100 MAIN bin=main rc=0 status=LIVE mbps=97.293 cli=3.61 srv=4.43 dec=0/None/None E=1537.0/1706.0 
+SMOKE-PASS rows=4

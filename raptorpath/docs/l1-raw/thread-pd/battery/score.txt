@@ -1,0 +1,210 @@
+BINARIES main=2842127b9aea2b2647755c9180d43fb4010eb40a286117773611ec4219c93e75 new=7cab972361dbf0a1e4149e8347d70b25614ed579fe6173135b0a4a7523f0fe86
+STATUS-TABLE (every invocation row)
+  LIVE          48
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+PER-REP (rule 4): cell arm seed rep mbps cpu_cli cpu_srv busy rtp_floor feed lag_E cli/srv (p99 cli/srv) srv lag_max rec_max below_floor prune_max_us wcap prune_n_max
+  c1s-400 MAIN s42 r1 LIVE mbps=752.7 cli=5.57 srv=7.89 busy=46.5 rtp=2441 feed=1.001 E=1699/1508 (p99 2554/2146) lag_max=6093 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1s-400 MAIN s42 r2 LIVE mbps=740.5 cli=5.53 srv=7.79 busy=43.0 rtp=2413 feed=1.058 E=1555/1345 (p99 1638/2235) lag_max=3234 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1s-400 MAIN s42 r3 LIVE mbps=737.9 cli=5.50 srv=7.74 busy=47.0 rtp=2497 feed=1.075 E=2452/1928 (p99 2482/2708) lag_max=3835 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1s-400 MAIN s7 r1 LIVE mbps=712.2 cli=5.77 srv=8.18 busy=41.0 rtp=2387 feed=1.038 E=2203/1357 (p99 2950/2255) lag_max=3193 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1s-400 MAIN s7 r2 LIVE mbps=709.3 cli=5.62 srv=7.98 busy=41.0 rtp=2398 feed=1.065 E=3126/2249 (p99 3422/2990) lag_max=5038 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1s-400 MAIN s7 r3 LIVE mbps=735.1 cli=5.66 srv=8.01 busy=43.0 rtp=2440 feed=1.004 E=2055/1632 (p99 2445/2338) lag_max=4346 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1s-400 NEW s42 r1 LIVE mbps=833.7 cli=5.44 srv=6.59 busy=47.0 rtp=2338 feed=1.013 E=1817/1545 (p99 2216/2217) lag_max=4634 rec_max=401 below_floor=39 prune_max_us=2978 wcap=200 prune_n_max=1077
+  c1s-400 NEW s42 r2 LIVE mbps=802.6 cli=5.64 srv=6.57 busy=47.0 rtp=2455 feed=1.015 E=1764/1836 (p99 2657/2779) lag_max=3521 rec_max=401 below_floor=62 prune_max_us=2662 wcap=200 prune_n_max=993
+  c1s-400 NEW s42 r3 LIVE mbps=802.6 cli=5.44 srv=6.69 busy=50.0 rtp=2467 feed=1.012 E=2693/2106 (p99 2829/3042) lag_max=4653 rec_max=4108 below_floor=41 prune_max_us=3038 wcap=200 prune_n_max=970
+  c1s-400 NEW s7 r1 LIVE mbps=827.8 cli=5.47 srv=6.61 busy=50.0 rtp=2513 feed=0.990 E=3057/2149 (p99 3452/2364) lag_max=6807 rec_max=401 below_floor=40 prune_max_us=2184 wcap=200 prune_n_max=879
+  c1s-400 NEW s7 r2 LIVE mbps=824.8 cli=5.32 srv=6.61 busy=48.0 rtp=2430 feed=0.996 E=2375/1554 (p99 3323/2431) lag_max=4803 rec_max=2432 below_floor=51 prune_max_us=3372 wcap=200 prune_n_max=1677
+  c1s-400 NEW s7 r3 LIVE mbps=836.5 cli=5.58 srv=6.70 busy=52.0 rtp=2426 feed=0.996 E=1772/2162 (p99 2453/2324) lag_max=7661 rec_max=511 below_floor=33 prune_max_us=1669 wcap=200 prune_n_max=898
+  c1d-400 MAIN s42 r1 LIVE mbps=628.4 cli=8.00 srv=9.86 busy=66.0 rtp=2388/2641 feed=1.002/0.662 E=2291/1368 (p99 2963/1687) lag_max=4524 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1d-400 MAIN s42 r2 LIVE mbps=685.4 cli=7.55 srv=8.84 busy=75.0 rtp=2391/2387 feed=1.006/1.003 E=1932/2103 (p99 1956/2751) lag_max=6140 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1d-400 MAIN s42 r3 LIVE mbps=614.4 cli=8.15 srv=10.01 busy=66.0 rtp=2644/2573 feed=1.038/0.971 E=2648/1864 (p99 2854/2308) lag_max=4318 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1d-400 MAIN s7 r1 LIVE mbps=682.0 cli=7.54 srv=9.13 busy=68.5 rtp=2454/2585 feed=1.043/1.036 E=1556/1132 (p99 2419/1853) lag_max=6837 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1d-400 MAIN s7 r2 LIVE mbps=628.3 cli=7.99 srv=9.25 busy=74.5 rtp=2374/2424 feed=1.058/0.963 E=1366/1379 (p99 1377/2321) lag_max=3294 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1d-400 MAIN s7 r3 LIVE mbps=612.9 cli=8.16 srv=9.70 busy=72.0 rtp=2514/2584 feed=1.109/1.040 E=1919/1932 (p99 2587/2822) lag_max=3206 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c1d-400 NEW s42 r1 LIVE mbps=734.6 cli=7.49 srv=8.16 busy=82.0 rtp=2462/2378 feed=1.049/1.020 E=2483/1653 (p99 3332/1791) lag_max=3006 rec_max=487 below_floor=1387 prune_max_us=3625 wcap=200 prune_n_max=936
+  c1d-400 NEW s42 r2 LIVE mbps=747.4 cli=7.44 srv=8.23 busy=84.0 rtp=2394/2420 feed=1.016/1.285 E=3000/2434 (p99 3096/2638) lag_max=10451 rec_max=2148 below_floor=1892 prune_max_us=5103 wcap=200 prune_n_max=769
+  c1d-400 NEW s42 r3 LIVE mbps=740.4 cli=7.72 srv=8.33 busy=86.0 rtp=2746/2525 feed=1.025/1.013 E=3208/1702 (p99 3384/2125) lag_max=7246 rec_max=977 below_floor=1290 prune_max_us=4265 wcap=200 prune_n_max=582
+  c1d-400 NEW s7 r1 LIVE mbps=755.4 cli=7.41 srv=8.20 busy=80.0 rtp=2421/2358 feed=1.059/1.014 E=2559/1648 (p99 2598/1753) lag_max=3247 rec_max=1567 below_floor=1952 prune_max_us=2861 wcap=200 prune_n_max=823
+  c1d-400 NEW s7 r2 LIVE mbps=769.7 cli=7.13 srv=7.84 busy=82.5 rtp=2464/2664 feed=1.054/1.020 E=1850/1550 (p99 1856/2425) lag_max=3388 rec_max=3481 below_floor=1694 prune_max_us=10600 wcap=200 prune_n_max=503
+  c1d-400 NEW s7 r3 LIVE mbps=785.9 cli=7.13 srv=7.77 busy=85.0 rtp=2513/2408 feed=1.004/0.994 E=2072/1936 (p99 2184/1959) lag_max=2930 rec_max=2616 below_floor=1692 prune_max_us=4330 wcap=200 prune_n_max=717
+  c2-100 MAIN s42 r1 LIVE mbps=89.3 cli=3.25 srv=3.97 busy=9.0 rtp=11207 feed=0.992 E=1486/997 (p99 2322/1787) lag_max=3462 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c2-100 MAIN s42 r2 LIVE mbps=90.2 cli=3.21 srv=4.08 busy=9.0 rtp=11924 feed=1.002 E=1520/1125 (p99 2476/1436) lag_max=5535 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c2-100 MAIN s42 r3 LIVE mbps=89.7 cli=3.17 srv=3.92 busy=9.0 rtp=5831 feed=0.982 E=1871/1740 (p99 1936/2423) lag_max=5248 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c2-100 MAIN s7 r1 LIVE mbps=88.1 cli=3.12 srv=3.71 busy=9.0 rtp=13278 feed=1.006 E=1465/911 (p99 2426/1599) lag_max=4928 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c2-100 MAIN s7 r2 LIVE mbps=90.3 cli=3.38 srv=4.00 busy=10.0 rtp=13374 feed=1.008 E=1190/1350 (p99 2169/1725) lag_max=7495 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c2-100 MAIN s7 r3 LIVE mbps=90.0 cli=2.95 srv=3.36 busy=8.0 rtp=13933 feed=1.004 E=1259/868 (p99 1857/1717) lag_max=3897 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c2-100 NEW s42 r1 LIVE mbps=90.2 cli=3.17 srv=3.54 busy=9.0 rtp=11180 feed=0.995 E=1092/888 (p99 1102/1684) lag_max=5995 rec_max=969 below_floor=127 prune_max_us=606 wcap=200 prune_n_max=665
+  c2-100 NEW s42 r2 LIVE mbps=90.2 cli=3.15 srv=3.41 busy=9.0 rtp=7376 feed=0.989 E=2168/1752 (p99 2959/2097) lag_max=5775 rec_max=1289 below_floor=91 prune_max_us=5393 wcap=200 prune_n_max=710
+  c2-100 NEW s42 r3 LIVE mbps=89.8 cli=3.10 srv=3.61 busy=9.0 rtp=10813 feed=0.995 E=1375/896 (p99 1845/1725) lag_max=3887 rec_max=2353 below_floor=76 prune_max_us=760 wcap=200 prune_n_max=748
+  c2-100 NEW s7 r1 LIVE mbps=90.2 cli=3.07 srv=3.54 busy=9.0 rtp=10938 feed=1.008 E=1100/887 (p99 1914/1828) lag_max=3278 rec_max=997 below_floor=97 prune_max_us=797 wcap=200 prune_n_max=696
+  c2-100 NEW s7 r2 LIVE mbps=89.1 cli=3.27 srv=3.54 busy=9.0 rtp=12710 feed=1.021 E=1100/920 (p99 1699/1107) lag_max=2486 rec_max=1424 below_floor=103 prune_max_us=563 wcap=200 prune_n_max=681
+  c2-100 NEW s7 r3 LIVE mbps=89.7 cli=3.07 srv=3.67 busy=9.0 rtp=13932 feed=0.990 E=1249/946 (p99 1669/1922) lag_max=3074 rec_max=1638 below_floor=103 prune_max_us=959 wcap=200 prune_n_max=766
+  c8-100 MAIN s42 r1 LIVE mbps=93.2 cli=3.65 srv=4.52 busy=12.0 rtp=9167/43700 feed=1.002/1.011 E=1519/2183 (p99 2288/2390) lag_max=7209 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c8-100 MAIN s42 r2 LIVE mbps=100.6 cli=3.80 srv=4.82 busy=13.0 rtp=10348/41956 feed=1.005/1.003 E=1558/1108 (p99 2467/1761) lag_max=3318 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c8-100 MAIN s42 r3 LIVE mbps=103.9 cli=3.30 srv=4.18 busy=12.0 rtp=11341/39471 feed=0.995/0.973 E=1082/882 (p99 1972/1778) lag_max=3317 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c8-100 MAIN s7 r1 LIVE mbps=89.6 cli=3.71 srv=4.87 busy=13.0 rtp=10136/38402 feed=1.005/1.012 E=1883/1441 (p99 1890/2001) lag_max=4468 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c8-100 MAIN s7 r2 LIVE mbps=102.2 cli=3.43 srv=4.25 busy=12.0 rtp=10344/40258 feed=0.999/1.000 E=1673/894 (p99 2639/1863) lag_max=3710 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c8-100 MAIN s7 r3 LIVE mbps=83.2 cli=3.75 srv=4.79 busy=12.0 rtp=8640/42906 feed=0.996/1.015 E=1835/1130 (p99 2347/1776) lag_max=4173 rec_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=-
+  c8-100 NEW s42 r1 LIVE mbps=87.0 cli=3.78 srv=4.89 busy=13.0 rtp=8250/39251 feed=0.998/0.990 E=2395/1116 (p99 3129/2024) lag_max=4904 rec_max=33735 below_floor=40 prune_max_us=9720 wcap=200 prune_n_max=979
+  c8-100 NEW s42 r2 LIVE mbps=94.6 cli=3.44 srv=4.11 busy=12.0 rtp=9430/44208 feed=1.001/1.006 E=1379/1039 (p99 1661/1419) lag_max=4450 rec_max=23026 below_floor=27 prune_max_us=2832 wcap=200 prune_n_max=903
+  c8-100 NEW s42 r3 LIVE mbps=96.4 cli=3.46 srv=4.38 busy=11.0 rtp=7190/41037 feed=0.996/0.993 E=1277/1018 (p99 2202/1881) lag_max=2757 rec_max=17805 below_floor=52 prune_max_us=3140 wcap=200 prune_n_max=964
+  c8-100 NEW s7 r1 LIVE mbps=103.4 cli=3.62 srv=4.25 busy=12.0 rtp=10296/36409 feed=0.992/1.022 E=1088/1557 (p99 1367/1921) lag_max=5544 rec_max=9434 below_floor=52 prune_max_us=2317 wcap=200 prune_n_max=931
+  c8-100 NEW s7 r2 LIVE mbps=84.9 cli=3.64 srv=4.63 busy=11.0 rtp=8739/40797 feed=0.996/0.991 E=1103/1079 (p99 1995/1845) lag_max=5150 rec_max=39260 below_floor=3 prune_max_us=3713 wcap=200 prune_n_max=973
+  c8-100 NEW s7 r3 LIVE mbps=95.7 cli=3.60 srv=4.57 busy=12.0 rtp=9803/40882 feed=1.002/0.998 E=2412/1030 (p99 2458/1078) lag_max=3236 rec_max=18235 below_floor=13 prune_max_us=2689 wcap=200 prune_n_max=968
+
+PER-SEED MEDIANS (goodput, cpu_cli)
+  c1s-400 MAIN s42: gp=740.5 cli=5.53 s7: gp=712.2 cli=5.66
+  c1s-400 NEW s42: gp=802.6 cli=5.44 s7: gp=827.8 cli=5.47
+  c1d-400 MAIN s42: gp=628.4 cli=8.00 s7: gp=628.3 cli=7.99
+  c1d-400 NEW s42: gp=740.4 cli=7.49 s7: gp=769.7 cli=7.13
+  c2-100 MAIN s42: gp=89.7 cli=3.21 s7: gp=90.0 cli=3.12
+  c2-100 NEW s42: gp=90.2 cli=3.15 s7: gp=89.7 cli=3.07
+  c8-100 MAIN s42: gp=100.6 cli=3.65 s7: gp=89.6 cli=3.71
+  c8-100 NEW s42: gp=94.6 cli=3.46 s7: gp=95.7 cli=3.62
+
+[c1s-400]
+  FEED c1s-400 NEW p0 plc/truth NEW=1.004 MAIN=1.048 band=[0.806,1.362] -> SAME
+  CLAUSE c1s-400 NEW goodput: BETTER NEW=826.3 [802.6-836.5] MAIN=736.5 [709.3-752.7] (+12.2%, rel=0.049)
+  CLAUSE c1s-400 NEW cpu_cli/GB: TREND-BETTER NEW=13.64 [13.3-14.1] MAIN=13.99 [13.75-14.42] (-2.5%, rel=0.024)
+  CLAUSE c1s-400 NEW cpu_srv/GB: BETTER NEW=16.52 [16.43-16.75] MAIN=19.84 [19.35-20.45] (-16.7%, rel=0.024)
+  CLAUSE c1s-400 NEW lag_E_cli: WITHIN NEW=2096 [1764-3057] MAIN=2129 [1555-3126] (-1.6%, rel=0.369)
+  CLAUSE c1s-400 NEW lag_E_srv: WITHIN NEW=1971 [1545-2162] MAIN=1570 [1345-2249] (+25.5%, rel=0.288)
+  CLAUSE c1s-400 NEW rtp_floor_p0: WITHIN NEW=2442 [2338-2513] MAIN=2426 [2387-2497] (+0.7%, rel=0.050)
+  CELL c1s-400 NEW n=6 MAIN n=6 dnf MAIN=0.00 NEW=0.00 worse=- notes=goodput:BETTER,cpu_cli/GB:TREND-BETTER,cpu_srv/GB:BETTER => PASS
+  REPORT c1s-400 MAIN srv decoder recovered_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=- lag_max_us=4090 [3193-6093] n=6 rdiag_busy=90.2 [88.0-93.5] n=6
+  REPORT c1s-400 MAIN batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=2 [2-3] n=6 q_avg_cv(per row)=- goodput max/min=1.061 acks/dgram min-max=0.993-0.999
+  REPORT c1s-400 MAIN cpu_cli/GB=13.988 [13.750-14.425] n=6 cpu_srv/GB=19.837 [19.350-20.450] n=6 acks/dgram=0.995 [0.993-0.999] n=6 busy=43.0 [41.0-47.0] n=6
+  REPORT c1s-400 MAIN wake ack=1810 [1380-2282] n=6 cmd=1 [1-2] n=6 tun=5842 [5662-6010] n=6 paused=568 [514-677] n=6 timer_acked=122 [101-136] n=6
+  REPORT c1s-400 MAIN cli cores=1.266 [1.230-1.296] n=6 parks/s=13283 [12398-14036] n=6 lag p99=2518 [1638-3422] n=6 min=343 [30-855] n=6 E=2129 [1555-3126] n=6 ack_dg=338512 [338486-338521] n=6 rx_capped=9897 [9793-9930] n=6
+  REPORT c1s-400 MAIN srv cores=1.805 [1.757-1.846] n=6 parks/s=16960 [16647-17396] n=6 lag p99=2296 [2146-2990] n=6 min=760 [638-898] n=6 E=1570 [1345-2249] n=6 ack_dg=0 [0-0] n=6 rx_capped=6512 [6023-7362] n=6
+    THREADS c1s-400 MAIN s42 r1 cli=rp-w-0:0.233,rp-w-1:0.228,rp-w-4:0.226,rp-w-2:0.216 srv=rp-w-1:0.370,rp-w-5:0.363,rp-w-4:0.301,rp-w-0:0.294
+    THREADS c1s-400 MAIN s7 r1 cli=rp-w-3:0.220,rp-w-1:0.218,rp-w-5:0.218,rp-w-0:0.216 srv=rp-w-2:0.399,rp-w-1:0.339,rp-w-0:0.319,rp-w-3:0.274
+    THREADS c1s-400 MAIN s42 r2 cli=rp-w-4:0.224,rp-w-5:0.222,rp-w-3:0.211,rp-w-0:0.208 srv=rp-w-3:0.399,rp-w-0:0.290,rp-w-5:0.290,rp-w-1:0.285
+    THREADS c1s-400 MAIN s7 r2 cli=rp-w-3:0.215,rp-w-5:0.215,rp-w-1:0.213,rp-w-4:0.204 srv=rp-w-1:0.348,rp-w-2:0.306,rp-w-0:0.304,rp-w-5:0.284
+    THREADS c1s-400 MAIN s42 r3 cli=rp-w-4:0.226,rp-w-2:0.221,rp-w-1:0.217,rp-w-3:0.212 srv=rp-w-2:0.342,rp-w-0:0.314,rp-w-4:0.305,rp-w-3:0.298
+    THREADS c1s-400 MAIN s7 r3 cli=rp-w-5:0.234,rp-w-3:0.230,rp-w-4:0.223,rp-w-1:0.221 srv=rp-w-4:0.327,rp-w-3:0.320,rp-w-0:0.308,rp-w-5:0.304
+  REPORT c1s-400 NEW srv decoder recovered_max=456 [401-4108] n=6 below_floor=40 [33-62] n=6 prune_max_us=2820 [1669-3372] n=6 wcap=200 [200-200] n=6 prune_n_max=982 [879-1677] n=6 lag_max_us=4728 [3521-7661] n=6 rdiag_busy=67.5 [62.0-71.0] n=6
+  REPORT c1s-400 NEW batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=2 [1-2] n=6 q_avg_cv(per row)=- goodput max/min=1.042 acks/dgram min-max=0.999-1.000
+  REPORT c1s-400 NEW cpu_cli/GB=13.637 [13.300-14.100] n=6 cpu_srv/GB=16.525 [16.425-16.750] n=6 acks/dgram=1.000 [0.999-1.000] n=6 busy=49.0 [47.0-52.0] n=6
+  REPORT c1s-400 NEW wake ack=1498 [1295-1682] n=6 cmd=2 [1-2] n=6 tun=5808 [5636-6000] n=6 paused=486 [440-522] n=6 timer_acked=135 [128-151] n=6
+  REPORT c1s-400 NEW cli cores=1.397 [1.349-1.445] n=6 parks/s=14530 [13892-16300] n=6 lag p99=2743 [2216-3452] n=6 min=540 [136-948] n=6 E=2096 [1764-3057] n=6 ack_dg=338520 [338507-338530] n=6 rx_capped=9498 [9224-9619] n=6
+  REPORT c1s-400 NEW srv cores=1.691 [1.637-1.740] n=6 parks/s=18718 [17738-19662] n=6 lag p99=2398 [2217-3042] n=6 min=774 [162-943] n=6 E=1971 [1545-2162] n=6 ack_dg=0 [0-0] n=6 rx_capped=6171 [5312-6808] n=6
+    THREADS c1s-400 NEW s42 r1 cli=rp-w-5:0.258,rp-w-0:0.245,rp-w-4:0.234,rp-w-1:0.232 srv=rp-w-0:0.316,rp-w-2:0.308,rp-w-1:0.290,rp-w-4:0.274
+    THREADS c1s-400 NEW s7 r1 cli=rp-w-5:0.256,rp-w-1:0.238,rp-w-2:0.235,rp-w-0:0.228 srv=rp-w-5:0.298,rp-w-2:0.290,rp-w-0:0.287,rp-w-1:0.280
+    THREADS c1s-400 NEW s42 r2 cli=rp-w-1:0.248,rp-w-3:0.233,rp-w-4:0.231,rp-w-2:0.228 srv=rp-w-3:0.291,rp-w-2:0.279,rp-w-4:0.279,rp-w-5:0.279
+    THREADS c1s-400 NEW s7 r2 cli=rp-w-1:0.263,rp-w-2:0.237,rp-w-4:0.224,rp-w-5:0.214 srv=rp-w-5:0.299,rp-w-1:0.289,rp-w-0:0.286,rp-w-4:0.276
+    THREADS c1s-400 NEW s42 r3 cli=rp-w-2:0.243,rp-w-0:0.236,rp-w-1:0.228,rp-w-4:0.221 srv=rp-w-0:0.291,rp-w-2:0.291,rp-w-5:0.279,rp-w-3:0.274
+    THREADS c1s-400 NEW s7 r3 cli=rp-w-1:0.256,rp-w-5:0.246,rp-w-2:0.240,rp-w-3:0.238 srv=rp-w-2:0.309,rp-w-0:0.296,rp-w-3:0.293,rp-w-5:0.293
+[c1d-400]
+  FEED c1d-400 NEW p0 plc/truth NEW=1.037 MAIN=1.041 band=[0.800,1.353] -> SAME
+  FEED c1d-400 NEW p1 plc/truth NEW=1.017 MAIN=0.987 band=[0.759,1.283] -> SAME
+  CLAUSE c1d-400 NEW goodput: BETTER NEW=751.4 [734.6-785.9] MAIN=628.4 [612.9-685.4] (+19.6%, rel=0.056)
+  CLAUSE c1d-400 NEW cpu_cli/GB: TREND-BETTER NEW=18.56 [17.82-19.3] MAIN=19.99 [18.85-20.4] (-7.1%, rel=0.065)
+  CLAUSE c1d-400 NEW cpu_srv/GB: BETTER NEW=20.45 [19.42-20.82] MAIN=23.69 [22.1-25.02] (-13.7%, rel=0.065)
+  CLAUSE c1d-400 NEW lag_E_cli: WITHIN NEW=2521 [1850-3208] MAIN=1926 [1366-2648] (+30.9%, rel=0.333)
+  CLAUSE c1d-400 NEW lag_E_srv: WITHIN NEW=1678 [1550-2434] MAIN=1622 [1132-2103] (+3.5%, rel=0.299)
+  CLAUSE c1d-400 NEW rtp_floor_p0: WITHIN NEW=2463 [2394-2746] MAIN=2422 [2374-2644] (+1.7%, rel=0.056)
+  CLAUSE c1d-400 NEW rtp_floor_p1: TREND-BETTER NEW=2414 [2358-2664] MAIN=2578 [2387-2641] (-6.4%, rel=0.050)
+  CELL c1d-400 NEW n=6 MAIN n=6 dnf MAIN=0.00 NEW=0.00 worse=- notes=goodput:BETTER,cpu_cli/GB:TREND-BETTER,cpu_srv/GB:BETTER,rtp_floor_p1:TREND-BETTER => PASS
+  REPORT c1d-400 MAIN srv decoder recovered_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=- lag_max_us=4421 [3206-6837] n=6 rdiag_busy=99.0 [94.0-99.0] n=6
+  REPORT c1d-400 MAIN batching tail srv rdiag q_avg=0.00 [0.00-1.00] n=6 q_max=4 [2-11] n=6 q_avg_cv(per row)=1.658 [1.000-3.000] n=3 goodput max/min=1.118 acks/dgram min-max=0.987-1.000
+  REPORT c1d-400 MAIN cpu_cli/GB=19.987 [18.850-20.400] n=6 cpu_srv/GB=23.688 [22.100-25.025] n=6 acks/dgram=0.996 [0.987-1.000] n=6 busy=70.2 [66.0-75.0] n=6
+  REPORT c1d-400 MAIN wake ack=3054 [2478-3364] n=6 cmd=2 [0-2] n=6 tun=6030 [5694-6165] n=6 paused=218 [165-249] n=6 timer_acked=14 [11-16] n=6
+  REPORT c1d-400 MAIN cli cores=1.556 [1.553-1.602] n=6 parks/s=12507 [11743-13789] n=6 lag p99=2503 [1377-2963] n=6 min=437 [11-863] n=6 E=1926 [1366-2648] n=6 ack_dg=340120 [339362-340619] n=6 rx_capped=6773 [6485-7326] n=6
+  REPORT c1d-400 MAIN srv cores=1.898 [1.808-1.944] n=6 parks/s=15368 [14685-16652] n=6 lag p99=2314 [1687-2822] n=6 min=684 [319-942] n=6 E=1622 [1132-2103] n=6 ack_dg=0 [0-0] n=6 rx_capped=5617 [5008-6696] n=6
+    THREADS c1d-400 MAIN s42 r1 cli=rp-w-1:0.281,rp-w-0:0.265,rp-w-3:0.257,rp-w-4:0.257 srv=rp-w-3:0.432,rp-w-0:0.350,rp-w-5:0.320,rp-w-2:0.291
+    THREADS c1d-400 MAIN s7 r1 cli=rp-w-2:0.283,rp-w-0:0.271,rp-w-1:0.271,rp-w-4:0.268 srv=rp-w-1:0.392,rp-w-0:0.362,rp-w-4:0.304,rp-w-5:0.300
+    THREADS c1d-400 MAIN s42 r2 cli=rp-w-1:0.293,rp-w-5:0.289,rp-w-2:0.263,rp-w-0:0.255 srv=rp-w-2:0.390,rp-w-1:0.337,rp-w-3:0.326,rp-w-5:0.298
+    THREADS c1d-400 MAIN s7 r2 cli=rp-w-5:0.283,rp-w-4:0.267,rp-w-0:0.261,rp-w-1:0.261 srv=rp-w-1:0.352,rp-w-4:0.320,rp-w-5:0.295,rp-w-0:0.293
+    THREADS c1d-400 MAIN s42 r3 cli=rp-w-1:0.290,rp-w-4:0.263,rp-w-0:0.255,rp-w-2:0.255 srv=rp-w-1:0.367,rp-w-3:0.350,rp-w-5:0.327,rp-w-0:0.311
+    THREADS c1d-400 MAIN s7 r3 cli=rp-w-1:0.303,rp-w-5:0.285,rp-w-2:0.251,rp-w-0:0.241 srv=rp-w-4:0.334,rp-w-3:0.313,rp-w-2:0.311,rp-w-5:0.311
+  REPORT c1d-400 NEW srv decoder recovered_max=1858 [487-3481] n=6 below_floor=1693 [1290-1952] n=6 prune_max_us=4298 [2861-10600] n=6 wcap=200 [200-200] n=6 prune_n_max=743 [503-936] n=6 lag_max_us=3318 [2930-10451] n=6 rdiag_busy=96.0 [92.0-97.0] n=6
+  REPORT c1d-400 NEW batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=4 [2-13] n=6 q_avg_cv(per row)=2.646 [2.646-2.646] n=1 goodput max/min=1.070 acks/dgram min-max=0.995-1.000
+  REPORT c1d-400 NEW cpu_cli/GB=18.562 [17.825-19.300] n=6 cpu_srv/GB=20.450 [19.425-20.825] n=6 acks/dgram=0.996 [0.995-1.000] n=6 busy=83.2 [80.0-86.0] n=6
+  REPORT c1d-400 NEW wake ack=1926 [1542-2108] n=6 cmd=2 [0-2] n=6 tun=5478 [5408-5677] n=6 paused=98 [79-157] n=6 timer_acked=16 [8-18] n=6
+  REPORT c1d-400 NEW cli cores=1.724 [1.696-1.767] n=6 parks/s=12094 [11899-12722] n=6 lag p99=2847 [1856-3384] n=6 min=104 [6-849] n=6 E=2521 [1850-3208] n=6 ack_dg=340704 [340222-341127] n=6 rx_capped=7664 [7436-7726] n=6
+  REPORT c1d-400 NEW srv cores=1.906 [1.876-1.921] n=6 parks/s=15854 [15627-16465] n=6 lag p99=2042 [1753-2638] n=6 min=171 [23-875] n=6 E=1678 [1550-2434] n=6 ack_dg=0 [0-0] n=6 rx_capped=6274 [5876-6704] n=6
+    THREADS c1d-400 NEW s42 r1 cli=rp-w-4:0.331,rp-w-5:0.312,rp-w-1:0.292,rp-w-2:0.282 srv=rp-w-1:0.374,rp-w-5:0.362,rp-w-4:0.307,rp-w-2:0.302
+    THREADS c1d-400 NEW s7 r1 cli=rp-w-3:0.305,rp-w-0:0.297,rp-w-5:0.293,rp-w-2:0.288 srv=rp-w-1:0.369,rp-w-5:0.328,rp-w-4:0.324,rp-w-0:0.305
+    THREADS c1d-400 NEW s42 r2 cli=rp-w-5:0.306,rp-w-2:0.301,rp-w-1:0.283,rp-w-0:0.280 srv=rp-w-3:0.374,rp-w-1:0.344,rp-w-2:0.316,rp-w-0:0.304
+    THREADS c1d-400 NEW s7 r2 cli=rp-w-5:0.298,rp-w-1:0.293,rp-w-0:0.289,rp-w-4:0.286 srv=rp-w-4:0.349,rp-w-3:0.325,rp-w-5:0.320,rp-w-1:0.306
+    THREADS c1d-400 NEW s42 r3 cli=rp-w-2:0.335,rp-w-3:0.326,rp-w-5:0.305,rp-w-0:0.291 srv=rp-w-0:0.352,rp-w-4:0.336,rp-w-5:0.331,rp-w-3:0.317
+    THREADS c1d-400 NEW s7 r3 cli=rp-w-4:0.322,rp-w-3:0.307,rp-w-0:0.297,rp-w-2:0.277 srv=rp-w-0:0.349,rp-w-5:0.334,rp-w-2:0.315,rp-w-1:0.312
+[c2-100]
+  FEED c2-100 NEW p0 plc/truth NEW=0.995 MAIN=1.003 band=[0.771,1.304] -> SAME
+  CLAUSE c2-100 NEW goodput: WITHIN NEW=90.01 [89.11-90.25] MAIN=89.81 [88.06-90.35] (+0.2%, rel=0.014)
+  CLAUSE c2-100 NEW cpu_cli/GB: WITHIN NEW=31.25 [30.7-32.7] MAIN=31.9 [29.5-33.8] (-2.0%, rel=0.063)
+  CLAUSE c2-100 NEW cpu_srv/GB: TREND-BETTER NEW=35.4 [34.1-36.7] MAIN=39.45 [33.6-40.8] (-10.3%, rel=0.063)
+  CLAUSE c2-100 NEW lag_E_cli: WITHIN NEW=1174 [1092-2168] MAIN=1476 [1190-1871] (-20.4%, rel=0.231)
+  CLAUSE c2-100 NEW lag_E_srv: WITHIN NEW=908 [887-1752] MAIN=1061 [868-1740] (-14.4%, rel=0.411)
+  CLAUSE c2-100 NEW rtp_floor_p0: WITHIN NEW=1.106e+04 [7376-1.393e+04] MAIN=1.26e+04 [5831-1.393e+04] (-12.2%, rel=0.321)
+  CELL c2-100 NEW n=6 MAIN n=6 dnf MAIN=0.00 NEW=0.00 worse=- notes=cpu_srv/GB:TREND-BETTER => PASS
+  REPORT c2-100 MAIN srv decoder recovered_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=- lag_max_us=5088 [3462-7495] n=6 rdiag_busy=11.8 [10.0-12.0] n=6
+  REPORT c2-100 MAIN batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=0 [0-1] n=6 q_avg_cv(per row)=- goodput max/min=1.026 acks/dgram min-max=0.999-1.000
+  REPORT c2-100 MAIN cpu_cli/GB=31.900 [29.500-33.800] n=6 cpu_srv/GB=39.450 [33.600-40.800] n=6 acks/dgram=1.000 [0.999-1.000] n=6 busy=9.0 [8.0-10.0] n=6
+  REPORT c2-100 MAIN wake ack=6792 [6422-7077] n=6 cmd=5 [4-5] n=6 tun=4222 [4026-4904] n=6 paused=2238 [2101-2275] n=6 timer_acked=20 [17-32] n=6
+  REPORT c2-100 MAIN cli cores=0.350 [0.324-0.374] n=6 parks/s=5758 [5651-5979] n=6 lag p99=2246 [1857-2476] n=6 min=896 [65-979] n=6 E=1476 [1190-1871] n=6 ack_dg=85002 [84932-85113] n=6 rx_capped=118 [78-128] n=6
+  REPORT c2-100 MAIN srv cores=0.435 [0.372-0.454] n=6 parks/s=7432 [6775-8296] n=6 lag p99=1721 [1436-2423] n=6 min=686 [311-849] n=6 E=1061 [868-1740] n=6 ack_dg=0 [0-0] n=6 rx_capped=12 [5-16] n=6
+    THREADS c2-100 MAIN s42 r1 cli=rp-w-4:0.078,rp-w-3:0.074,rp-w-1:0.073,rp-w-0:0.071 srv=rp-w-0:0.097,rp-w-3:0.095,rp-w-1:0.086,rp-w-4:0.079
+    THREADS c2-100 MAIN s7 r1 cli=rp-w-1:0.076,rp-w-3:0.075,rp-w-0:0.063,rp-w-4:0.050 srv=rp-w-0:0.092,rp-w-2:0.089,rp-w-3:0.083,rp-w-1:0.082
+    THREADS c2-100 MAIN s42 r2 cli=rp-w-3:0.086,rp-w-5:0.076,rp-w-0:0.073,rp-w-2:0.068 srv=rp-w-1:0.098,rp-w-5:0.095,rp-w-2:0.089,rp-w-3:0.082
+    THREADS c2-100 MAIN s7 r2 cli=rp-w-1:0.078,rp-w-5:0.078,rp-w-0:0.077,rp-w-4:0.072 srv=rp-w-5:0.101,rp-w-0:0.095,rp-w-2:0.089,rp-w-1:0.087
+    THREADS c2-100 MAIN s42 r3 cli=rp-w-2:0.078,rp-w-1:0.073,rp-w-0:0.064,rp-w-3:0.063 srv=rp-w-5:0.093,rp-w-0:0.084,rp-w-2:0.083,rp-w-1:0.077
+    THREADS c2-100 MAIN s7 r3 cli=rp-w-1:0.070,rp-w-5:0.067,rp-w-0:0.066,rp-w-2:0.060 srv=rp-w-3:0.083,rp-w-0:0.074,rp-w-4:0.069,rp-w-5:0.064
+  REPORT c2-100 NEW srv decoder recovered_max=1356 [969-2353] n=6 below_floor=100 [76-127] n=6 prune_max_us=778 [563-5393] n=6 wcap=200 [200-200] n=6 prune_n_max=703 [665-766] n=6 lag_max_us=3582 [2486-5995] n=6 rdiag_busy=10.0 [10.0-11.0] n=6
+  REPORT c2-100 NEW batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=0 [0-1] n=6 q_avg_cv(per row)=- goodput max/min=1.013 acks/dgram min-max=1.000-1.000
+  REPORT c2-100 NEW cpu_cli/GB=31.250 [30.700-32.700] n=6 cpu_srv/GB=35.400 [34.100-36.700] n=6 acks/dgram=1.000 [1.000-1.000] n=6 busy=9.0 [9.0-9.0] n=6
+  REPORT c2-100 NEW wake ack=6789 [6475-7040] n=6 cmd=4 [4-5] n=6 tun=4580 [4368-4862] n=6 paused=2177 [2109-2293] n=6 timer_acked=18 [13-34] n=6
+  REPORT c2-100 NEW cli cores=0.344 [0.336-0.358] n=6 parks/s=5827 [5359-6188] n=6 lag p99=1772 [1102-2959] n=6 min=534 [10-814] n=6 E=1174 [1092-2168] n=6 ack_dg=84996 [84974-85040] n=6 rx_capped=94 [87-113] n=6
+  REPORT c2-100 NEW srv cores=0.394 [0.378-0.406] n=6 parks/s=7554 [7121-7836] n=6 lag p99=1776 [1107-2097] n=6 min=812 [187-976] n=6 E=908 [887-1752] n=6 ack_dg=0 [0-0] n=6 rx_capped=9 [6-14] n=6
+    THREADS c2-100 NEW s42 r1 cli=rp-w-3:0.076,rp-w-1:0.074,rp-w-2:0.072,rp-w-0:0.067 srv=rp-w-1:0.099,rp-w-2:0.089,rp-w-5:0.079,rp-w-0:0.066
+    THREADS c2-100 NEW s7 r1 cli=rp-w-3:0.074,rp-w-4:0.071,rp-w-1:0.067,rp-w-0:0.063 srv=rp-w-3:0.096,rp-w-0:0.090,rp-w-2:0.080,rp-w-5:0.064
+    THREADS c2-100 NEW s42 r2 cli=rp-w-4:0.081,rp-w-1:0.068,rp-w-2:0.065,rp-w-5:0.063 srv=rp-w-3:0.082,rp-w-0:0.078,rp-w-2:0.072,rp-w-1:0.067
+    THREADS c2-100 NEW s7 r2 cli=rp-w-5:0.072,rp-w-1:0.071,rp-w-4:0.071,rp-w-2:0.069 srv=rp-w-0:0.081,rp-w-4:0.079,rp-w-1:0.078,rp-w-3:0.069
+    THREADS c2-100 NEW s42 r3 cli=rp-w-4:0.074,rp-w-0:0.068,rp-w-1:0.067,rp-w-3:0.066 srv=rp-w-0:0.094,rp-w-1:0.090,rp-w-5:0.079,rp-w-2:0.055
+    THREADS c2-100 NEW s7 r3 cli=rp-w-2:0.077,rp-w-4:0.075,rp-w-5:0.065,rp-w-0:0.061 srv=rp-w-2:0.087,rp-w-4:0.083,rp-w-3:0.082,rp-w-0:0.078
+[c8-100]
+  FEED c8-100 NEW p0 plc/truth NEW=0.997 MAIN=1.001 band=[0.770,1.301] -> SAME
+  FEED c8-100 NEW p1 plc/truth NEW=0.996 MAIN=1.007 band=[0.775,1.309] -> SAME
+  CLAUSE c8-100 NEW goodput: WITHIN NEW=95.16 [84.9-103.4] MAIN=96.91 [83.21-103.9] (-1.8%, rel=0.040)
+  CLAUSE c8-100 NEW cpu_cli/GB: WITHIN NEW=36.1 [34.4-37.8] MAIN=36.8 [33-38] (-1.9%, rel=0.116)
+  CLAUSE c8-100 NEW cpu_srv/GB: WITHIN NEW=44.75 [41.1-48.9] MAIN=46.55 [41.8-48.7] (-3.9%, rel=0.116)
+  CLAUSE c8-100 NEW lag_E_cli: WITHIN NEW=1328 [1088-2412] MAIN=1616 [1082-1883] (-17.8%, rel=0.248)
+  CLAUSE c8-100 NEW lag_E_srv: WITHIN NEW=1059 [1018-1557] MAIN=1119 [882-2183] (-5.4%, rel=0.581)
+  CLAUSE c8-100 NEW lag_E_spread_cli: WITHIN NEW max/min=2.217 MAIN max/min=1.740 (x1.5 band [1.160,2.610])
+  CLAUSE c8-100 NEW rtp_floor_p0: WITHIN NEW=9084 [7190-1.03e+04] MAIN=1.024e+04 [8640-1.134e+04] (-11.3%, rel=0.132)
+  CLAUSE c8-100 NEW rtp_floor_p1: WITHIN NEW=4.084e+04 [3.641e+04-4.421e+04] MAIN=4.111e+04 [3.84e+04-4.37e+04] (-0.7%, rel=0.064)
+  CELL c8-100 NEW n=6 MAIN n=6 dnf MAIN=0.00 NEW=0.00 worse=- notes=- => PASS
+  REPORT c8-100 MAIN srv decoder recovered_max=- below_floor=- prune_max_us=- wcap=- prune_n_max=- lag_max_us=3942 [3317-7209] n=6 rdiag_busy=18.0 [16.0-18.0] n=6
+  REPORT c8-100 MAIN batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=1 [1-1] n=6 q_avg_cv(per row)=- goodput max/min=1.249 acks/dgram min-max=1.000-1.000
+  REPORT c8-100 MAIN cpu_cli/GB=36.800 [33.000-38.000] n=6 cpu_srv/GB=46.550 [41.800-48.700] n=6 acks/dgram=1.000 [1.000-1.000] n=6 busy=12.0 [12.0-13.0] n=6
+  REPORT c8-100 MAIN wake ack=8580 [8374-8997] n=6 cmd=4 [3-5] n=6 tun=2577 [2559-2624] n=6 paused=1288 [1251-1368] n=6 timer_acked=22 [16-24] n=6
+  REPORT c8-100 MAIN cli cores=0.416 [0.384-0.469] n=6 parks/s=6622 [5770-7185] n=6 lag p99=2318 [1890-2639] n=6 min=830 [7-966] n=6 E=1616 [1082-1883] n=6 ack_dg=85221 [85149-85645] n=6 rx_capped=87 [72-98] n=6
+  REPORT c8-100 MAIN srv cores=0.536 [0.491-0.601] n=6 parks/s=9117 [7893-9763] n=6 lag p99=1820 [1761-2390] n=6 min=650 [207-969] n=6 E=1119 [882-2183] n=6 ack_dg=0 [0-1] n=6 rx_capped=13 [5-18] n=6
+    THREADS c8-100 MAIN s42 r1 cli=rp-w-5:0.078,rp-w-2:0.071,rp-w-1:0.070,rp-w-0:0.068 srv=rp-w-5:0.102,rp-w-3:0.098,rp-w-1:0.090,rp-w-0:0.083
+    THREADS c8-100 MAIN s7 r1 cli=rp-w-0:0.078,rp-w-2:0.074,rp-w-3:0.069,rp-w-1:0.067 srv=rp-w-0:0.106,rp-w-5:0.106,rp-w-1:0.103,rp-w-4:0.102
+    THREADS c8-100 MAIN s42 r2 cli=rp-w-3:0.091,rp-w-5:0.084,rp-w-4:0.083,rp-w-1:0.075 srv=rp-w-2:0.121,rp-w-3:0.109,rp-w-0:0.099,rp-w-1:0.097
+    THREADS c8-100 MAIN s7 r2 cli=rp-w-1:0.087,rp-w-0:0.075,rp-w-4:0.072,rp-w-2:0.068 srv=rp-w-4:0.113,rp-w-5:0.104,rp-w-2:0.095,rp-w-1:0.078
+    THREADS c8-100 MAIN s42 r3 cli=rp-w-4:0.077,rp-w-0:0.073,rp-w-5:0.071,rp-w-1:0.069 srv=rp-w-0:0.108,rp-w-2:0.106,rp-w-4:0.099,rp-w-1:0.091
+    THREADS c8-100 MAIN s7 r3 cli=rp-w-3:0.073,rp-w-5:0.072,rp-w-4:0.071,rp-w-1:0.062 srv=rp-w-0:0.108,rp-w-4:0.094,rp-w-3:0.085,rp-w-2:0.081
+  REPORT c8-100 NEW srv decoder recovered_max=20630 [9434-39260] n=6 below_floor=34 [3-52] n=6 prune_max_us=2986 [2317-9720] n=6 wcap=200 [200-200] n=6 prune_n_max=966 [903-979] n=6 lag_max_us=4677 [2757-5544] n=6 rdiag_busy=16.2 [15.0-17.0] n=6
+  REPORT c8-100 NEW batching tail srv rdiag q_avg=0.00 [0.00-0.00] n=6 q_max=1 [1-1] n=6 q_avg_cv(per row)=- goodput max/min=1.218 acks/dgram min-max=1.000-1.000
+  REPORT c8-100 NEW cpu_cli/GB=36.100 [34.400-37.800] n=6 cpu_srv/GB=44.750 [41.100-48.900] n=6 acks/dgram=1.000 [1.000-1.000] n=6 busy=12.0 [11.0-13.0] n=6
+  REPORT c8-100 NEW wake ack=8633 [8466-8842] n=6 cmd=4 [3-5] n=6 tun=2598 [2504-2634] n=6 paused=1331 [1210-1470] n=6 timer_acked=23 [15-30] n=6
+  REPORT c8-100 NEW cli cores=0.406 [0.379-0.460] n=6 parks/s=6557 [6110-7414] n=6 lag p99=2098 [1367-3129] n=6 min=508 [46-925] n=6 E=1328 [1088-2412] n=6 ack_dg=85294 [85091-85391] n=6 rx_capped=86 [69-102] n=6
+  REPORT c8-100 NEW srv cores=0.524 [0.484-0.542] n=6 parks/s=8968 [8090-9446] n=6 lag p99=1863 [1078-2024] n=6 min=573 [48-908] n=6 E=1059 [1018-1557] n=6 ack_dg=0 [0-1] n=6 rx_capped=12 [9-15] n=6
+    THREADS c8-100 NEW s42 r1 cli=rp-w-1:0.075,rp-w-5:0.073,rp-w-0:0.067,rp-w-2:0.066 srv=rp-w-0:0.111,rp-w-1:0.109,rp-w-5:0.097,rp-w-2:0.090
+    THREADS c8-100 NEW s7 r1 cli=rp-w-0:0.080,rp-w-2:0.079,rp-w-3:0.079,rp-w-1:0.076 srv=rp-w-5:0.113,rp-w-1:0.098,rp-w-2:0.096,rp-w-3:0.091
+    THREADS c8-100 NEW s42 r2 cli=rp-w-0:0.076,rp-w-3:0.072,rp-w-5:0.069,rp-w-1:0.066 srv=rp-w-5:0.102,rp-w-2:0.094,rp-w-4:0.094,rp-w-0:0.068
+    THREADS c8-100 NEW s7 r2 cli=rp-w-0:0.074,rp-w-3:0.073,rp-w-4:0.066,rp-w-5:0.064 srv=rp-w-4:0.107,rp-w-0:0.101,rp-w-1:0.078,rp-w-3:0.078
+    THREADS c8-100 NEW s42 r3 cli=rp-w-1:0.077,rp-w-0:0.069,rp-w-2:0.069,rp-w-5:0.069 srv=rp-w-0:0.104,rp-w-3:0.098,rp-w-4:0.098,rp-w-5:0.082
+    THREADS c8-100 NEW s7 r3 cli=rp-w-3:0.081,rp-w-0:0.079,rp-w-5:0.077,rp-w-4:0.073 srv=rp-w-2:0.109,rp-w-4:0.105,rp-w-1:0.102,rp-w-3:0.092
+
+ARM NEW c1s-400:PASS c1d-400:PASS c2-100:PASS c8-100:PASS => PASS-EVERYWHERE
+VERDICT SHIP (NEW passes at every cell)

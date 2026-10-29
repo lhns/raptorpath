@@ -1,0 +1,23 @@
+TPD-ALL start 2026-10-29T02:25:08Z procs_running=[1,1,1,1,1,] io_full_avg10=20.25 hard=1793255108 soft=1793254508
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+TPD-ALL build start commit=5f31bb6 cargo=/home/VMUSER/.cargo/bin/cargo cotenants: cargo=0 rustc=0 procs_running=1 io_full_avg10=20.25 2026-10-29T02:25:16Z
+TPD-ALL cargo build --release rc=0 wall=327s 2026-10-29T02:30:43Z
+TPD-ALL test main rc=0 passed=1137 failed=0 ignored=51 binaries=97 2026-10-29T02:55:11Z
+TPD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-29T02:55:15Z
+TPD-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-10-29T02:57:19Z
+TPD-ALL test debug-witness rc=0 passed=996 failed=0 ignored=50 binaries=88 2026-10-29T03:20:35Z
+TPD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-10-29T03:20:38Z
+TPD-ALL bench rc=0 2026-10-29T03:20:49Z
+TPD-ALL [DECBENCH] every=140000 src_ns_per=3266 rep_ns_per=2105 adv_n=2 adv_max_us=63830 adv_ns_per_src=379 total_ns_per_src=3750 rows=0 max_span=0 coeff_kb=0 recovered=20401 seen=21422 floor=279599 below_floor=0 2026-10-29T03:20:49Z
+TPD-ALL [DECBENCH] every=1000 src_ns_per=1458 rep_ns_per=1961 adv_n=300 adv_max_us=615 adv_ns_per_src=209 total_ns_per_src=1765 rows=0 max_span=0 coeff_kb=0 recovered=401 seen=422 floor=299599 below_floor=0 2026-10-29T03:20:49Z
+TPD-ALL [DECBENCH] every=32 src_ns_per=1058 rep_ns_per=1875 adv_n=9375 adv_max_us=139 adv_ns_per_src=224 total_ns_per_src=1376 rows=0 max_span=0 coeff_kb=0 recovered=401 seen=422 floor=299599 below_floor=0 2026-10-29T03:20:49Z
+TPD-ALL tests done tfail=0 new sha256=7cab972361dbf0a1e4149e8347d70b25614ed579fe6173135b0a4a7523f0fe86 2026-10-29T03:24:10Z
+TPD-ALL main binary built wall=304s 2026-10-29T03:29:14Z
+TPD-ALL binaries new=7cab972361dbf0a1e4149e8347d70b25614ed579fe6173135b0a4a7523f0fe86 main=2842127b9aea2b2647755c9180d43fb4010eb40a286117773611ec4219c93e75 2026-10-29T03:29:14Z
+TPD-ALL smoke rc=0 wall=43s cotenants: cargo=0 rustc=0 procs_running=1 io_full_avg10=0.26 2026-10-29T03:29:57Z
+TPD-ALL SMOKE-PASS c_meas=40s c_pred=60s R_est=240s 2026-10-29T03:29:57Z
+TPD-ALL PLAN n_per_seed=3 seeds=42,7 block_est=240s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,NEW env=RWM_RTOBS=1 2026-10-29T03:29:57Z
+TPD-ALL battery start cotenants: cargo=0 rustc=0 procs_running=1 io_full_avg10=0.26 2026-10-29T03:29:57Z
+TPD-ALL battery rc=0 wall=432s cotenants: cargo=0 rustc=0 procs_running=1 io_full_avg10=0.62 2026-10-29T03:37:09Z
+TPD-ALL end bat_ok=1 soft_trunc=0 raptorpath=0 netns=0 cargo=0 rustc=0 procs_running=1 io_full_avg10=0.62 2026-10-29T03:37:10Z

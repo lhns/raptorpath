@@ -8462,3 +8462,93 @@ Full suites on NEW (`3596b0b`, engine `4dcc893`): release 1137/0
 identity panics 0. `SUITES OK`. END: 0 `raptorpath`, 0 `rp-*`; the VM dirs
 are removed. Ledgers: `docs/l1-raw/thread-pd/alloc/` and (the first
 session) `docs/l1-raw/thread-pd/tests1/`.
+
+### 32. Ship battery — result
+
+Scored 2026-10-29 against the pre-registration and Amendment 1, literally.
+**`SHIP`: NEW (the decoder prune per drain) is PASS-EVERYWHERE.** It is
+BETTER in goodput and in server CPU per GB at c1s and c1d, and WITHIN or
+better everywhere else. Shipping is the operator's merge.
+
+*Session.* Operator go 2026-10-29; github/main checked at `b30044b` before
+launch. The on-VM waiter (`threadpd_wait.sh`) found the precondition met at
+once and launched at 02:25:08Z (hard deadline + 4 h); the session ended
+03:37:10Z under both locks.
+- Binaries: NEW `7cab9723…f0fe86` (tree `5f31bb6`, engine `4dcc893`), MAIN
+  `2842127b…c93e75` (`b30044b`), both built fresh on disk and run from
+  `/dev/shm/tpd`.
+- Full suites on NEW: release 1137/0 (51 ignored), doc rc 0, wasm 35,
+  debug 996/0 (50 ignored), parsers rc 0, identity panics 0. `TESTS-OK`.
+- Bench (`[DECBENCH]`, release, ns per source including the prune):
+  140 k cadence 3 750 (`adv_max_us` 63 830), 1 k cadence 1 765 (615),
+  32 cadence 1 376 (139).
+- Smoke passed (43 s). Battery 03:29:57–03:37:09Z (432 s): 48 invocations,
+  all LIVE, 0 witness failures, no abort token, no truncation.
+- io `full avg10` ≤ 4.97 before and after every invocation, so no row is
+  flagged. END: 0 `raptorpath`, 0 `rp-*`; the VM dirs are removed.
+- Ledgers: `docs/l1-raw/thread-pd/battery/` (`score.txt` with every
+  per-rep value, `tpd.log` with the `IOP` lines, `TESTS.txt`, `bench.log`,
+  `diag-tpd/`; VM user and host scrubbed).
+
+*Abort table.* None fired (`ABORT-LOCK`, `-PRECONDITION`, `-CRLF`,
+`-BUILD`, `-TESTS`, `-SHA`, `-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUDGET`,
+`-ONDISK` all *no*); `ABORT-RC` / `ABORT-BRINGUP` / `VOID-COTENANT` 0 / 0 / 0
+of 48.
+
+*Per cell* (NEW vs MAIN, median [min–max], n = 6; E = `[LAG]` xfer p99 −
+`min_us`, µs; busy = server `[RDIAG]` busy median, %):
+
+| cell | goodput Mbit/s | CPUCLI s/GB | CPUSRV s/GB | client E | server E | NEW `prune_max_us` | `[RDIAG]` busy | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `c1s-400` | **826.3 [802.6–836.5] vs 736.5 [709.3–752.7] (+12.2 %, BETTER)** | 13.64 vs 13.99 (TREND-BETTER) | **16.52 vs 19.84 (−16.7 %, BETTER)** | 2096 vs 2129 (=) | 1971 vs 1570 (+25.5 %, =) | 2820 [1669–3372] | 67.5 vs 90.2 | **PASS** |
+| `c1d-400` | **751.4 [734.6–785.9] vs 628.4 [612.9–685.4] (+19.6 %, BETTER)** | 18.56 vs 19.99 (TREND-BETTER) | **20.45 vs 23.69 (−13.7 %, BETTER)** | 2521 vs 1926 (+30.9 %, =) | 1678 vs 1622 (=) | 4298 [2861–10600] | 96.0 vs 99.0 | **PASS** (RTprop p1 TREND-BETTER) |
+| `c2-100` | 90.01 vs 89.81 (=) | 31.25 vs 31.90 (=) | 35.40 vs 39.45 (−10.3 %, TREND-BETTER) | 1174 vs 1476 (=) | 908 vs 1061 (=) | 778 [563–5393] | 10.0 vs 11.8 | **PASS** |
+| `c8-100` | 95.16 vs 96.91 (=) | 36.10 vs 36.80 (=) | 44.75 vs 46.55 (=) | 1328 vs 1616 (=) | 1059 vs 1119 (=) | 2986 [2317–9720] | 16.2 vs 18.0 | **PASS** (E spread 2.22 vs 1.74, =) |
+
+Feed SAME at every cell and path. Arm verdict `PASS-EVERYWHERE`, so the
+decision is **`SHIP`**.
+
+*Predictions.*
+- c1d goodput up: **MET**, and larger than predicted: BETTER at +19.6 %
+  (ranges disjoint), where the bench-based size (≈ 11–13 % of the handler)
+  predicted TREND-BETTER or BETTER. The bench reads why: per source the
+  32 cadence costs 1 376 ns against 3 750 at the 2 s cadence, a 2.4 µs
+  saving (§22 had 1.9 µs), and the change also removed the SipHash dedup
+  for sources (Amendment 1's `SeqBits`).
+- c1d server CPU per GB down: **MET** (−13.7 %). `[RDIAG]` busy down:
+  **MET in direction** (99 → 96); it stays ≥ 90 % as allowed.
+- NEW `prune_max_us` < 5 000 in every c1d row: **MISSED** in two of six
+  (5 103, 10 600). Against §22's 63 196–89 740 µs on the tick it is one
+  order of magnitude lower in every row, which is the reading the
+  pre-registration named as the one that matters. Rows above 5 000 also
+  occur at c2 (5 393) and c8 (9 720). Reading: the prune is O(pruned),
+  and when a filled hole moves the frontier by thousands of seqs at once,
+  one prune removes that whole jump (c8 NEW `recovered=` max 9 434–39 260,
+  the span held above a hole). The bound 2·W_cap + one drain holds below
+  the frontier, not for the size of one frontier jump.
+- c1s same direction, smaller: **MET** (+12.2 %, below c1d's +19.6 %).
+  c2, c8 WITHIN: **MET**.
+- NEW `recovered=` max ≤ 2·wcap + 4 096 = 4 496 at c1s and c1d: **MET**
+  (c1s 401–4 108, c1d 487–3 481). `below_floor` per row: c1s 33–62,
+  c1d 1 290–1 952, c2 76–127, c8 3–52.
+- Bench: the 32 cadence costs no more per source than the 1 k cadence:
+  **MET** (1 376 vs 1 765 ns).
+- Server `[LAG]` `max_us` (report): c1s 4 728 vs 4 090, c1d 3 318 vs
+  4 421, c2 3 582 vs 5 088, c8 4 677 vs 3 942 (NEW vs MAIN medians).
+
+*Receiver batching tail (§30's open question, report-only).* The `[RDIAG]`
+`q_avg` reads 0 in almost every window on both arms (median 0, `q_max`
+1–13), so its CV is undefined in most rows: this instrument is too coarse
+to see a batching tail at this sampling. Goodput max/min across reps is
+lower on NEW at every cell: c1s 1.042 vs 1.061, c1d 1.070 vs 1.118, c2
+1.013 vs 1.026, c8 1.218 vs 1.249; acks/dgram spread c1s 0.999–1.000 vs
+0.993–0.999, elsewhere equal. That is weak evidence, in direction only,
+that the 2 s prune stall added to the c1 run-to-run spread. It does not
+test §30's law and does not explain its window-level noise.
+
+*What it does not show.*
+- c1d client E +30.9 % and c1s server E +25.5 % sit inside their min–max
+  bands; leans, not readings. The NEW arm also moves ≈ 12–20 % more data
+  per second at c1, which loads the same runtimes more.
+- Nothing here measures the legacy decoders (`RWM_UNIFIED=0`), whose
+  prune still scans and now runs once per drain.

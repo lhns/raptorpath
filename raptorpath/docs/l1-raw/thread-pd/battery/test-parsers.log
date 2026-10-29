@@ -1,0 +1,96 @@
+ok    strip removes ANSI, CR and the newline
+ok    strip leaves a clean line alone
+ok    a glued tracing record splits into two readouts (got 2)
+ok    the readout piece ends at the marker
+ok    final=1 survives the split
+ok    without the split the glued flush is NOT recognised
+ok    the tracing piece is colour-stripped
+ok    plain (no ANSI) interleave also splits
+ok    an unglued line is one piece
+ok    a line that IS a tracing record is not split at 0
+ok    an empty line stays one empty piece
+ok    read strips CR
+ok    read splits the glued line (4 readouts from 3 physical lines, got 4)
+ok    read strips ANSI
+ok    a missing file reads as []
+ok    no path reads as []
+ok    final=1 at the end
+ok    final=1 in the head
+ok    final=10 is not the flag
+ok    xfinal=1 is not the flag
+ok    None / empty are not final
+ok    a final=1 line wins wherever it sits
+ok    without a flush the last line wins
+ok    an absent gauge is None
+ok    fnum is strict
+ok    inum
+ok    numeric_prefix 41.0ms
+ok    numeric_prefix 3/5
+ok    numeric_prefix signed exponent
+ok    numeric_prefix on a non-number is None
+ok    field: the head wins over the p<id>: slots
+ok    field: the key may omit '='
+ok    field: first occurrence
+ok    field: n= does not match inside gen=
+ok    field: wrtt= is not rtt=
+ok    field: '-' is None
+ok    field: absent key is None
+ok    field: no line is None
+ok    field: raw token returned
+ok    gate_tok reads the LAST [GATES] line
+ok    gate: RWM_X is not confused with RWM_XY
+ok    gate: 1
+ok    gate: a non-boolean value is None, not its first digit
+ok    gate: absent is None
+ok    odd median is the middle value
+ok    even n=4 median is the mean of the middles
+ok    even n=6 median is the mean of the middles (no half-even flip)
+ok    n=2 median
+ok    n=1: every quantile is the value
+ok    empty is None
+ok    None values are ignored
+ok    q(1..100, .5) = 50.5
+ok    q(1..100, .99) = 99.01 (linear)
+ok    p=0 is min, p=1 is max
+ok    ndigits rounds
+ok    truth: one entry per leg, keyed by int leg
+ok    truth: loss and lost read as numbers
+ok    truth: egress datagrams and skbs
+ok    truth: gso and the skb drop count
+ok    truth: dev and rcvbuf_drops
+ok    truth: '-' (unreadable counter) is None, never 0
+ok    truth: the readable fields of a partial line survive
+ok    truth: lost = egress - netem_sent - backlog on the sample line
+ok    truth: loss = lost / egress
+ok    truth: the netem skb counter understates the datagram truth on the sample
+ok    truth: no [TRUTH] line is {} (a QDISC line is not truth)
+ok    truth: a line with no leg is skipped
+ok    truth: a repeated leg keeps its LAST line
+ok    truth: leg index 2 (quad legs)
+ok    truth_columns: per-leg columns keyed p<i>
+ok    truth_columns: an unread leg is None; rcvbuf is one per-netns column
+ok    truth_columns: n_legs fixes the row shape with None when nothing was captured
+ok    thr: default window is the longest wall (obj=1, not warm-up obj=0)
+ok    thr: side and wall_s read
+ok    thr: one rt line per worker
+ok    thr: one os line per thread
+ok    thr: the sum line
+ok    thr: the window's lag line
+ok    thr: explicit window; `-` lag reads None; no os lines -> threads None
+ok    thr: phase=run is the cumulative (keyless) window
+ok    thr: an absent window / no lines is None
+ok    thr: os unavailable -> threads None, sum cores None (never 0)
+ok    thr_columns: ranked busy fractions, None past n_workers
+ok    thr_columns: park/unpark per s
+ok    thr_columns: OS threads ranked by cores
+ok    thr_columns: main thread, rp-w-* sum, process sum
+ok    thr_columns: lag columns
+ok    thr_columns: the row shape does not depend on the capture (all None when absent)
+ok    thr: a [LAG] io line never overrides the main runtime's [LAG]
+test_l1common: 89 checks, 0 failed
+45/45 checks passed
+test_threadq1_parse: 26 checks, 0 failed
+test_threadq2_parse: 26 checks, 0 failed
+test_threadr2_parse: 39 checks, 0 failed
+test_threadsk_parse: 40 checks, 0 failed
+test_threadpd_parse: 48 checks, 0 failed
