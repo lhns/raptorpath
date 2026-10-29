@@ -1,0 +1,8 @@
+TPT start wit=bc1a52a pd=b2e257f 2026-10-28T03:49:59Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+TPT red rc=1 wall=567s passed=8 failed=4 2026-10-28T04:39:27Z
+TPT green rc=0 wall=558s passed=12 failed=0 2026-10-28T04:48:45Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
+TPT done suites_rc=1 raptorpath=0 2026-10-28T05:42:30Z

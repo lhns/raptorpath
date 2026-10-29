@@ -1,0 +1,178 @@
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1892:5
+     |
+1892 |     /// Congestion-aware NACK repair throttle.
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1893 |     let mut nack_congestion = NackCongestionState::new();
+     |     ----------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1896:5
+     |
+1896 |     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1897 |     let mut nack_repairs_this_period: u64 = 0;
+     |     ------------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1898:5
+     |
+1898 | /     /// Cached throttle/ADR-0050 budget state, refreshed every
+1899 | |     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+1900 | |     /// budget inputs move; recomputing per ack would just churn locks).
+     | |________________________________________________________________________^
+1901 |       let mut last_budget_refresh_us: u64 = 0;
+     |       ---------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1904:5
+     |
+1904 | /     /// When the tail sweep last fired (µs) — rearm point. Must advance
+1905 | |     /// on every fire even if the retransmit was skipped (cooldown/budget
+1906 | |     /// exhausted), or a past deadline keeps the timer arm permanently ready
+1907 | |     /// and the select! busy-spins, starving TUN reads.
+     | |_______________________________________________________^
+1908 |       let mut last_tail_sweep_us: u64 = 0;
+     |       ------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1909:5
+     |
+1909 | /     /// The derived recovery round's one-shot mechanism-liveness echo at the
+1910 | |     /// sender site (ACTIVE + DIVERGED). Observation only.
+     | |__________________________________________________________^
+1911 |       let mut derived_round_echo = DerivedRoundEcho::default();
+     |       --------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1933:5
+     |
+1933 | /     /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+1934 | |     /// retained in `sent_store` but uncounted from the flow-control
+1935 | |     /// outstanding (SACKed by the receiver, cumulative frontier not yet
+1936 | |     /// past them). Invariant: subset of `sent_store` keys — maintained by
+1937 | |     /// marking only retained seqs and pruning with the same cumulative
+1938 | |     /// `split_off` twin. Empty whenever the gate is off.
+     | |_________________________________________________________^
+1939 |       let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+     |       ------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1949:5
+     |
+1949 | /     /// DIAG: cumulative count of slots released by the law (mechanism
+1950 | |     /// liveness at the gauge — `srel=cur/cum`).
+     | |________________________________________________^
+1951 |       let mut sack_released_total: u64 = 0;
+     |       ------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1952:5
+     |
+1952 | /     /// Wire v9: the newest `(next_expected, received_above)` pair off the
+1953 | |     /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+1954 | |     /// cap (`store_gate_released`). Stays at its default (no evidence)
+1955 | |     /// whenever the release law is off.
+     | |________________________________________^
+1956 |       let mut above_report = AboveReport::default();
+     |       ---------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: use of deprecated method `tun::Configuration::name`: Since the API `name` may have an easy name conflict when IDE prompts, it is replaced by `tun_name` for better coding experience
+  --> raptorpath/src/tun/linux/mod.rs:12:10
+   |
+12 |         .name(&config.name)
+   |          ^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `lo_legacy`
+   --> raptorpath/src/control/fec_rate/tests.rs:836:9
+    |
+836 |     let lo_legacy = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, false);
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lo_legacy`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:717:46
+    |
+717 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+
+warning: value assigned to `src` is never read
+   --> raptorpath/src/net/walldiag.rs:379:23
+    |
+379 |         let mut src = 1_000u64;
+    |                       ^^^^^^^^ this value is reassigned later and never used
+...
+382 |             src = t; // new data every iteration
+    |             ------- `src` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `contains_key` is never used
+  --> raptorpath/src/net/seq_ring.rs:74:12
+   |
+41 | impl<V> SeqRing<V> {
+   | ------------------ method in this implementation
+...
+74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: `raptorpath` (lib test) generated 15 warnings (run `cargo fix --lib -p raptorpath --tests` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 6.02s
+     Running unittests src/lib.rs (target/release/deps/raptorpath-e0211bae913969ea)
+
+running 1 test
+[DECBENCH] every=140000 src_ns_per=3266 rep_ns_per=2105 adv_n=2 adv_max_us=63830 adv_ns_per_src=379 total_ns_per_src=3750 rows=0 max_span=0 coeff_kb=0 recovered=20401 seen=21422 floor=279599 below_floor=0
+[DECBENCH] every=1000 src_ns_per=1458 rep_ns_per=1961 adv_n=300 adv_max_us=615 adv_ns_per_src=209 total_ns_per_src=1765 rows=0 max_span=0 coeff_kb=0 recovered=401 seen=422 floor=299599 below_floor=0
+[DECBENCH] every=32 src_ns_per=1058 rep_ns_per=1875 adv_n=9375 adv_max_us=139 adv_ns_per_src=224 total_ns_per_src=1376 rows=0 max_span=0 coeff_kb=0 recovered=401 seen=422 floor=299599 below_floor=0
+test fec::unified::tests::bench_in_order_add_symbol_against_the_prune_cadence ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 600 filtered out; finished in 4.73s
+

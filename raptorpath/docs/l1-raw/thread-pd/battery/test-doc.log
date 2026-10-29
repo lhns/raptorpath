@@ -1,0 +1,217 @@
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1892:5
+     |
+1892 |     /// Congestion-aware NACK repair throttle.
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1893 |     let mut nack_congestion = NackCongestionState::new();
+     |     ----------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1896:5
+     |
+1896 |     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1897 |     let mut nack_repairs_this_period: u64 = 0;
+     |     ------------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1898:5
+     |
+1898 | /     /// Cached throttle/ADR-0050 budget state, refreshed every
+1899 | |     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+1900 | |     /// budget inputs move; recomputing per ack would just churn locks).
+     | |________________________________________________________________________^
+1901 |       let mut last_budget_refresh_us: u64 = 0;
+     |       ---------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1904:5
+     |
+1904 | /     /// When the tail sweep last fired (µs) — rearm point. Must advance
+1905 | |     /// on every fire even if the retransmit was skipped (cooldown/budget
+1906 | |     /// exhausted), or a past deadline keeps the timer arm permanently ready
+1907 | |     /// and the select! busy-spins, starving TUN reads.
+     | |_______________________________________________________^
+1908 |       let mut last_tail_sweep_us: u64 = 0;
+     |       ------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1909:5
+     |
+1909 | /     /// The derived recovery round's one-shot mechanism-liveness echo at the
+1910 | |     /// sender site (ACTIVE + DIVERGED). Observation only.
+     | |__________________________________________________________^
+1911 |       let mut derived_round_echo = DerivedRoundEcho::default();
+     |       --------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1933:5
+     |
+1933 | /     /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+1934 | |     /// retained in `sent_store` but uncounted from the flow-control
+1935 | |     /// outstanding (SACKed by the receiver, cumulative frontier not yet
+1936 | |     /// past them). Invariant: subset of `sent_store` keys — maintained by
+1937 | |     /// marking only retained seqs and pruning with the same cumulative
+1938 | |     /// `split_off` twin. Empty whenever the gate is off.
+     | |_________________________________________________________^
+1939 |       let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+     |       ------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1949:5
+     |
+1949 | /     /// DIAG: cumulative count of slots released by the law (mechanism
+1950 | |     /// liveness at the gauge — `srel=cur/cum`).
+     | |________________________________________________^
+1951 |       let mut sack_released_total: u64 = 0;
+     |       ------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1952:5
+     |
+1952 | /     /// Wire v9: the newest `(next_expected, received_above)` pair off the
+1953 | |     /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+1954 | |     /// cap (`store_gate_released`). Stays at its default (no evidence)
+1955 | |     /// whenever the release law is off.
+     | |________________________________________^
+1956 |       let mut above_report = AboveReport::default();
+     |       ---------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+
+warning: unused import: `FecBackend`
+  --> raptorpath/src/scheduler/mod.rs:47:18
+   |
+47 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated method `tun::Configuration::name`: Since the API `name` may have an easy name conflict when IDE prompts, it is replaced by `tun_name` for better coding experience
+  --> raptorpath/src/tun/linux/mod.rs:12:10
+   |
+12 |         .name(&config.name)
+   |          ^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:717:46
+    |
+717 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `hint` is never read
+  --> raptorpath/src/control/fec_rate.rs:88:5
+   |
+80 | pub struct FecRateController {
+   |            ----------------- field in this struct
+...
+88 |     hint: ProtocolHint,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+
+warning: method `final_done` is never used
+   --> raptorpath/src/net/recv_block.rs:113:19
+    |
+ 77 | impl RecvDiagBlock {
+    | ------------------ method in this implementation
+...
+113 |     pub(crate) fn final_done(&self) -> bool {
+    |                   ^^^^^^^^^^
+
+warning: method `armed` is never used
+   --> raptorpath/src/net/holddown.rs:224:19
+    |
+195 | impl HoldDownGauge {
+    | ------------------ method in this implementation
+...
+224 |     pub(crate) fn armed(&self) -> bool {
+    |                   ^^^^^
+
+warning: methods `is_empty`, `contains_key`, and `iter` are never used
+   --> raptorpath/src/net/seq_ring.rs:53:12
+    |
+ 41 | impl<V> SeqRing<V> {
+    | ------------------ methods in this implementation
+...
+ 53 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+    |            ^^^^^^^^^^^^
+...
+182 |     pub fn iter(&self) -> impl Iterator<Item = (u64, &V)> + '_ {
+    |            ^^^^
+
+warning: `raptorpath` (lib) generated 17 warnings (run `cargo fix --lib -p raptorpath` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 1.73s
+   Doc-tests raptorpath
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:92:9
+   |
+92 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+93 |             as usize)
+94 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+92 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+93 |             as usize)
+94 ~             .clamp(floor, ceiling),
+   |
+
+warning: 1 warning emitted
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
