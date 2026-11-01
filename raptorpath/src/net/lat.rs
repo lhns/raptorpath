@@ -54,6 +54,8 @@
 //! Nothing here branches, decides, or is reachable from a control law.
 
 use std::collections::{BTreeMap, VecDeque};
+#[cfg(debug_assertions)]
+use std::collections::BTreeSet;
 
 use super::seq_ring::SeqRing;
 use super::succ::{Hist, HoleOutcome, HoleRecord};
@@ -199,6 +201,80 @@ impl Pending {
     }
 }
 
+/// Debug-only exactly-once record for deliveries below the in-order floor.
+///
+/// The floor only moves up, so a delivery below it (a "late fill": the
+/// frontier gave up on the seq earlier, ρ < 1) must be one of the HOLES the
+/// frontier skipped, and must happen once. `holes` holds the skipped
+/// intervals `[start, end)`; a late fill removes its seq from them.
+///
+/// Bounded: intervals entirely below `floor − PENDING_SPAN_MAX` are pruned,
+/// so a late fill further below cannot be checked. That is sound for the
+/// check's purpose: the decoder refuses anything below its floor
+/// F = next_expected − 1 − 2·W_cap (W_cap ≤ 4096), so a legitimate late fill
+/// sits far inside the tracked span.
+///
+/// The gauge's floor can LAG the buffer's frontier: hold-expiry deliveries
+/// (receiver.rs) are not offered to the gauge. A late fill can therefore
+/// arrive at a seq still at or above the floor; `early` records those, so
+/// they are checked once as well and excluded from holes recorded later.
+#[cfg(debug_assertions)]
+#[derive(Default)]
+struct ExactlyOnce {
+    /// One past the last in-order delivery. Kept here, not read from
+    /// `Pending::floor`, which a late fill above the floor also moves.
+    floor: u64,
+    holes: BTreeMap<u64, u64>,
+    early: BTreeSet<u64>,
+}
+
+#[cfg(debug_assertions)]
+impl ExactlyOnce {
+    /// One delivery, checked against the floor BEFORE the floor moves.
+    fn check(&mut self, seq: u64, late: bool) {
+        let floor = self.floor;
+        if !late {
+            self.floor = seq + 1;
+            assert!(seq >= floor, "[LAT] in-order delivery {seq} below the floor {floor}");
+            assert!(!self.early.contains(&seq), "[LAT] seq {seq} delivered twice (late fill, then in order)");
+            if seq > floor {
+                // The skipped seqs [floor, seq), minus fills that already came.
+                let mut start = floor;
+                while let Some(&e) = self.early.range(floor..seq).next() {
+                    if e > start {
+                        self.holes.insert(start, e);
+                    }
+                    start = e + 1;
+                    self.early.remove(&e);
+                }
+                if start < seq {
+                    self.holes.insert(start, seq);
+                }
+            }
+            let cutoff = (seq + 1).saturating_sub(PENDING_SPAN_MAX);
+            while self.holes.first_key_value().is_some_and(|(_, &end)| end <= cutoff) {
+                self.holes.pop_first();
+            }
+        } else if seq >= floor {
+            // Hold-expiry carried the buffer's frontier past `seq` unseen.
+            assert!(self.early.insert(seq), "[LAT] seq {seq} delivered twice (late fill above the floor)");
+        } else if let Some((&start, &end)) = self.holes.range(..=seq).next_back().filter(|(_, &e)| seq < e) {
+            self.holes.remove(&start);
+            if start < seq {
+                self.holes.insert(start, seq);
+            }
+            if seq + 1 < end {
+                self.holes.insert(seq + 1, end);
+            }
+        } else {
+            assert!(
+                seq + PENDING_SPAN_MAX < floor,
+                "[LAT] seq {seq} delivered twice (not a skipped hole)"
+            );
+        }
+    }
+}
+
 /// The delivered-latency decomposition gauge. Owned by the receiver task.
 /// No engine handle, no shared state, nothing `&mut`-reachable from a
 /// decision site.
@@ -212,6 +288,8 @@ pub struct LatGauge {
     over: u64,
     /// Every delivery offered to the gauge — the identity's left side.
     n_deliv: u64,
+    #[cfg(debug_assertions)]
+    once: ExactlyOnce,
 }
 
 impl LatGauge {
@@ -237,7 +315,10 @@ impl LatGauge {
         self.over += self.pending.insert(seq, (path_id, ax));
     }
 
-    /// One in-order delivery. `wait_us` is `t_deliv − t_buffered` (0 for a
+    /// One delivery. `late` is the delivery path's declaration that `seq` is
+    /// delivered below the in-order frontier (a fill of a hole it gave up on,
+    /// or, unordered, an arrival-order delivery of a lower seq); it is never
+    /// derived from ρ or the hint. `wait_us` is `t_deliv − t_buffered` (0 for a
     /// symbol that was never buffered); `release` is the `[SUCC]` resolution
     /// record of the arrival that triggered this drain.
     ///
@@ -246,10 +327,14 @@ impl LatGauge {
     /// hole, or the frontier moved for a reason other than a resolution — is
     /// counted `rw_sp`, the conservative class: it can only make the
     /// cross-path share read low.
-    pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release, _late: bool) {
+    pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release, late: bool) {
         self.n_deliv += 1;
-        // The floor's premise: deliveries are in order and non-decreasing.
-        debug_assert!(seq >= self.pending.floor, "[LAT] delivery {seq} below the floor {}", self.pending.floor);
+        // The floor's premise: in-order deliveries are non-decreasing, and a
+        // late one is a skipped hole filled once (debug builds only).
+        #[cfg(debug_assertions)]
+        self.once.check(seq, late);
+        #[cfg(not(debug_assertions))]
+        let _ = late;
         let (got, dead) = self.pending.deliver(seq);
         self.over += dead;
         let Some((path_id, ax)) = got else {
