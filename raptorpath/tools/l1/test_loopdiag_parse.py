@@ -7,6 +7,7 @@ follow the Rust format strings (src/net/loopdiag.rs `format_line`,
 src/net/ackdiag.rs, src/gates.rs echo_line).
 """
 import json
+import math
 import os
 import re
 import sys
@@ -59,11 +60,11 @@ def set_den(lines, n):
     return [re.sub(r"\bwin=\d+/\d+", f"win={n}/{n}", ln) if "[DIAG] t=" in ln else ln for ln in lines]
 
 
-def mk(arm, cell="c1s-400", store=None, eng=True, ackdiag=True, n=None, den=None, ld_lines=None):
+def mk(arm, cell="c1s-400", store=None, eng=True, ackdiag=True, n=None, den=None, ld_lines=None, extra=None):
     cli = sub_gate(base_cli(), "RWM_STORE", store if store is not None else (str(n) if n else "unset"))
     if n is not None or den is not None:
         cli = set_den(cli, den if den is not None else n)
-    cli = [ln for ln in cli if "[SUMCAP]" not in ln]
+    cli = [ln for ln in cli if "[SUMCAP]" not in ln and "congestion controller" not in ln]   # the saved log carries the BBR echo
     if eng:
         cli.append(SUMCAP)
     if ackdiag:
@@ -71,6 +72,7 @@ def mk(arm, cell="c1s-400", store=None, eng=True, ackdiag=True, n=None, den=None
     if ld_lines is None:
         ld_lines = [LDL(0.5, mn="1"), LDL(1.0), LDL(1.5), LDL(2.0), LDL(2.5, mn="4200", p50="4500"), LDL(3.0)]
     cli += ld_lines
+    cli += extra or []
     return ld.make_row(cell, arm, "42", "1", 0, 10, lc.read(C1S + "drv.out"), cli, lc.read(C1S + "s.log"), 0, "x")
 
 
@@ -296,6 +298,690 @@ with tempfile.TemporaryDirectory() as td:
 
 # the plan: 3 blocks x (2 MAIN + 8) + 2 x 8 = 46
 check("plan arithmetic", 3 * (2 + len(ld.GRID_C1S)) + 2 * len(ld.GRID_C2) == ld.EXPECT_ROWS == 46)
+
+# ═══ plan 27 (status section 27) ═════════════════════════════════════════
+DEF_ECHO = "quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)"
+BRS_ECHO = "RWM_QUIC_CC=bbr_rs: burst-robust BBR (in-tree controller, interval-guarded per-flight rate sampler)"
+W = 1279.0
+
+
+def two_path(p1_kw=None, p0_kw=None):
+    out = []
+    for t in (1.0, 1.5, 2.0, 2.5, 3.0):
+        out.append(LDL(t, p=0, **(p0_kw or {})))
+        out.append(LDL(t, p=1, **{**{"mn": "9000", "p50": "9500", "rtp": "9000"}, **(p1_kw or {})}))
+    return out
+
+
+# ── per-row witnesses ────────────────────────────────────────────────────
+d1 = mk("DEF192", cell="c2-100", n=192, eng=False, extra=[DEF_ECHO])
+check("DEF<n> pass (echo BBR, eng absent, den == n, gate == n)", d1["status"] == "LIVE", (d1["status"], d1["problems"]))
+check("DEF row has per-path dict ld_p0 with the seven medians",
+      all(d1["ld_p0"].get(k) is not None for k in ("rtt_min_us", "rtt_p50_us", "rtprop_us", "jit_us", "dlv_rate", "q_pace_bps", "q_cwnd")),
+      d1.get("ld_p0"))
+check("DEF fail: no BBR echo", "def-no-bbr-echo" in mk("DEF192", cell="c2-100", n=192, eng=False)["problems"])
+check("DEF fail: burst-robust echo present", "def-has-brs-echo" in
+      mk("DEF192", cell="c2-100", n=192, eng=False, extra=[DEF_ECHO, BRS_ECHO])["problems"])
+b1 = mk("BRS192", cell="c2-100", n=192, eng=False, extra=[BRS_ECHO])
+check("BRS<n> pass (burst-robust echo)", b1["status"] == "LIVE", (b1["status"], b1["problems"]))
+b2 = mk("BRS192", cell="c2-100", n=192, eng=False, extra=[DEF_ECHO])
+check("BRS fail: no burst-robust echo", "brs-no-echo" in b2["problems"] and b2["status"] == "WITNESS-FAIL", b2["problems"])
+check("DEF/BRS fail: SUMCAP eng > 0", any(x.startswith("s-sumcap-eng") for x in
+      mk("BRS192", cell="c2-100", n=192, eng=True, extra=[BRS_ECHO])["problems"]))
+check("DEF/BRS fail: denominator != n", any(x.startswith("s-win-den-not-n") for x in
+      mk("DEF192", cell="c2-100", n=192, eng=False, den=1024, extra=[DEF_ECHO])["problems"]))
+check("DEF/BRS fail: gate RWM_STORE != n", "gate-store=512" in
+      mk("BRS192", cell="c2-100", store="512", den=192, eng=False, extra=[BRS_ECHO])["problems"])
+dd = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path(), extra=[DEF_ECHO])
+check("dual cell pass: both paths witnessed", dd["status"] == "LIVE", (dd["status"], dd["problems"]))
+check("dual cell: per-path medians kept apart (p0 4000, p1 9000), p0 compat field intact",
+      dd["ld_p0"]["rtt_min_us"] == 4000.0 and dd["ld_p1"]["rtt_min_us"] == 9000.0 and dd["ld_med"]["rtt_min_us"] == 4000.0
+      and dd["ld_pn"] == {"0": [5, 5], "1": [5, 5]}, (dd.get("ld_p0"), dd.get("ld_p1"), dd.get("ld_pn")))
+p0only = [ln for ln in two_path() if "] t=" in ln and " p0 " in ln]
+d2 = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=p0only, extra=[DEF_ECHO])
+check("dual cell fail: p1 has no windows and no numeric q_pace_bps",
+      "loopdiag-p1-windows=0" in d2["problems"] and "no-q-pace-bps-p1" in d2["problems"], d2["problems"])
+d3 = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path(p1_kw={"pace": "-"}), extra=[DEF_ECHO])
+check("dual cell fail: p1 q_pace_bps never numeric", d3["problems"] == ["no-q-pace-bps-p1"], d3["problems"])
+d4 = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path()[:6], extra=[DEF_ECHO])
+check("dual cell fail: 3 post-warm-up windows per path < 4 (both named)",
+      "loopdiag-p0-windows=3" in d4["problems"] and "loopdiag-p1-windows=3" in d4["problems"], d4["problems"])
+d5 = mk("DEF192", cell="c2-100", n=192, eng=False, ld_lines=two_path(), extra=[DEF_ECHO])
+check("single cell: a stray p1 is stored but not required", "ld_p1" in d5 and d5["status"] == "LIVE", d5["problems"])
+
+# ── Q1 (L source) ────────────────────────────────────────────────────────
+NS = [64, 96, 128, 192, 256, 384, 512, 1024]
+
+
+def qd(fn):
+    return {n: fn(n) for n in NS}
+
+
+check("Q1 FLAT-AT-LINK, both boundaries inclusive", ld.q1_class({0: qd(lambda n: 0.8 if n < 192 else 1.25)})[0] == "FLAT-AT-LINK")
+check("Q1 CIRCULAR (Spearman 1, Q(n_min) 0.2 < 0.8)", ld.q1_class({0: qd(lambda n: 0.2 + 0.0005 * n)})[0] == "CIRCULAR")
+c, med, rho = ld.q1_class({0: qd(lambda n: 1.0), 1: qd(lambda n: 0.2 + 0.0005 * n)})
+check("Q1 CIRCULAR if ANY path circulates (dual: p0 flat, p1 rises)", c == "CIRCULAR" and rho[1] == 1.0, (c, rho))
+check("Q1 CIRCULAR wins over OVER-READ (rises 0.64 -> 2.8)", ld.q1_class({0: qd(lambda n: 0.5 + n / 450.0)})[0] == "CIRCULAR")
+check("Q1 OVER-READ (Q = 2 flat)", ld.q1_class({0: qd(lambda n: 2.0)})[0] == "OVER-READ")
+check("Q1 OVER-READ (rises but starts above 0.8: no CIRCULAR)", ld.q1_class({0: qd(lambda n: 1.3 + 0.001 * n)})[0] == "OVER-READ")
+check("Q1 APP-LIMITED (Q = 0.5 flat)", ld.q1_class({0: qd(lambda n: 0.5)})[0] == "APP-LIMITED")
+check("Q1 NEITHER (median 1.0 in band, one dip, no rise)", ld.q1_class({0: qd(lambda n: 0.5 if n == 1024 else 1.0)})[0] == "NEITHER")
+check("Q1 no data -> `-`", ld.q1_class({0: qd(lambda n: None)})[0] == "-")
+check("Q1 FLAT-AT-LINK fails when one path leaves the band (dual p1 = 1.3)",
+      ld.q1_class({0: qd(lambda n: 1.0), 1: qd(lambda n: 1.3)})[0] != "FLAT-AT-LINK")
+
+# ── Q2 (spread) ──────────────────────────────────────────────────────────
+check("Q2 path FLAT at max/min = 1.5 exactly", ld.q2_path({1: 100.0, 2: 150.0, 3: 120.0})[0] == "FLAT")
+check("Q2 path INFLATES at S(nmax)/S(nmin) = 2.0 exactly", ld.q2_path({1: 100.0, 2: 150.0, 3: 200.0})[0] == "INFLATES")
+check("Q2 path AMBIGUOUS (end ratio 1.99, span 1.99)", ld.q2_path({1: 100.0, 2: 150.0, 3: 199.0})[0] == "AMBIGUOUS")
+check("Q2 path AMBIGUOUS (bump in the middle: span 3, end 1)", ld.q2_path({1: 100.0, 2: 300.0, 3: 100.0})[0] == "AMBIGUOUS")
+check("Q2 path: S(n_min) = 0, S(n_max) > 0 -> INFLATES", ld.q2_path({1: 0.0, 2: 50.0})[0] == "INFLATES")
+check("Q2 cell: all FLAT -> FLAT; any INFLATES -> INFLATES; else AMBIGUOUS; missing -> `-`",
+      ld.q2_cell(["FLAT", "FLAT"]) == "FLAT" and ld.q2_cell(["FLAT", "INFLATES"]) == "INFLATES"
+      and ld.q2_cell(["AMBIGUOUS", "INFLATES"]) == "INFLATES" and ld.q2_cell(["FLAT", "AMBIGUOUS"]) == "AMBIGUOUS"
+      and ld.q2_cell(["FLAT", "-"]) == "-")
+
+# fixed point arithmetic
+fp = ld.fixed_point27({n: 100.0 + 0.5 * n for n in NS})
+check("fixed point ask = 100 + 0.5 n: interior n_fp = 200 (pair 192..256), slope 0.5 -> STABLE",
+      fp["kind"] == "STABLE" and abs(fp["n_fp"] - 200.0) < 1e-9 and abs(fp["slope"] - 0.5) < 1e-12, fp)
+fp = ld.fixed_point27({n: 10.0 + 0.95 * n for n in NS})
+check("fixed point ask = 10 + 0.95 n: n_fp = 200, slope 0.95 -> FRAGILE", fp["kind"] == "FRAGILE"
+      and abs(fp["n_fp"] - 200.0) < 1e-9 and abs(fp["slope"] - 0.95) < 1e-12, fp)
+fp = ld.fixed_point27({n: 20.0 + 0.85 * n for n in NS})
+check("slope 0.85 < 0.9 -> STABLE (n_fp = 133.3)", fp["kind"] == "STABLE" and abs(fp["n_fp"] - 133.3333333) < 1e-4, fp)
+fp = ld.fixed_point27({n: 30.0 for n in NS})
+check("ask(n_min) = 30 < 64 -> FLOOR, no n_fp", fp["kind"] == "FLOOR" and fp["n_fp"] is None, fp)
+fp = ld.fixed_point27({n: 5000.0 for n in NS})
+check("ask(n_max) >= n_max -> CEILING", fp["kind"] == "CEILING" and fp["n_fp"] is None, fp)
+fp = ld.fixed_point27({n: 1024.0 for n in NS})
+check("ask(n_max) == n_max -> CEILING (>=)", fp["kind"] == "CEILING", fp)
+fp = ld.fixed_point27({n: (None if n == 128 else 215.0) for n in NS})
+check("a grid point without data is skipped: constant 215 -> n_fp between 192 and 256 = 215", fp["kind"] == "STABLE"
+      and abs(fp["n_fp"] - 215.0) < 1e-9 and fp["slope"] == 0.0, fp)
+check("fixed point with no data at all -> `-`", ld.fixed_point27({n: None for n in NS})["kind"] == "-")
+
+# ── whole cells: synthetic ledgers ───────────────────────────────────────
+TARGET = {"c2-100": 192, "c1s-400": 512, "c8-100": 256, "c1d-400": 1024}
+
+
+def sumL(cell):
+    return sum(b / W for b in ld.PATH_LINK27[cell])
+
+
+def cell_rows(cell, target=None, S=lambda fam, p, n: 100.0, Q=lambda fam, p, n: 1.0,
+              ask=None, scale=lambda fam: 1.0, per=2):
+    """Both arms. ask(fam, n) = the total ask in symbols (default 1.01 x target, flat in n); every path gets the same
+    RTprop + S = ask / (1.1 sum L), RTprop = that - S(n)."""
+    target = target or TARGET[cell]
+    ask = ask or (lambda fam, n: 1.01 * target * scale(fam))
+    rows = []
+    for fam in ld.FAMS27:
+        for n in ld.GRID27[cell]:
+            t_us = ask(fam, n) / (1.1 * sumL(cell)) * 1e6
+            for i in range(per):
+                r = R(cell, f"{fam}{n}", 100.0 if n >= target else 10.0, None, seed=42 + i)
+                del r["ld_med"]
+                for p, lb in enumerate(ld.PATH_LINK27[cell]):
+                    s = S(fam, p, n)
+                    r[f"ld_p{p}"] = {"rtt_min_us": 4000.0, "rtt_p50_us": 4000.0 + s, "rtprop_us": t_us - s, "jit_us": 50.0,
+                                     "dlv_rate": 1000.0, "q_pace_bps": Q(fam, p, n) * lb * 8.0, "q_cwnd": 9e5}
+                rows.append(r)
+    return rows
+
+
+def score27(rows):
+    buf = []
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "ld.log")
+        with open(path, "w") as fh:
+            for r in rows:
+                fh.write("LDROW " + json.dumps(r) + "\n")
+        res = ld.score27([path], buf.append)
+    return res, "\n".join(buf)
+
+
+def hold_rows(**kw):
+    rows = []
+    for c in ld.CELLS27:
+        rows += cell_rows(c, **kw)
+    return rows
+
+
+res, txt = score27(hold_rows())
+check("all four cells: PREMISES-HOLD", res["verdict"] == "PREMISES-HOLD" and txt.rstrip().endswith("PREMISES-HOLD"), txt[-600:])
+for c in ld.CELLS27:
+    r = res[c]
+    check(f"{c}: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target",
+          r["q1_BRS"] == "FLAT-AT-LINK" and r["q2_DEF"] == "FLAT" and r["fp_DEF"]["kind"] == "STABLE"
+          and r["q3"] == "REPRODUCES" and r["nstar"]["BRS"] == TARGET[c] == r["nstar"]["DEF"], r)
+check("verdict lines present per cell, in the pre-registered format",
+      len(re.findall(r"^  Q1 FLAT-AT-LINK$", txt, re.M)) == 4
+      and len(re.findall(r"^  Q2 FLAT STABLE n_fp=\d+\.\d slope=\S+$", txt, re.M)) == 4
+      and len(re.findall(r"^  Q3 REPRODUCES n_fp=\d+\.\d band=\[\S+, \S+\]$", txt, re.M)) == 4, txt)
+check("cells print in battery order c2, c1s, c8, c1d",
+      txt.index("CELL c2-100") < txt.index("CELL c1s-400") < txt.index("CELL c8-100") < txt.index("CELL c1d-400"))
+check("table columns present (goodput, A_x p50, Tmin, Tp50, S, RTprop, Q; ask/n)",
+      all(h in txt for h in ("goodput", "A_x p50", "Tmin us", "Tp50 us", "S us", "RTprop us", " Q", "ask/n", "n* =")), txt[:1500])
+check("c8-100 prints both paths (p0, p1) per n", txt.count("p1  ") >= 16)
+c2n = res["c2-100"]["fp_DEF"]["n_fp"]
+check("c2: constant ask 1.01 x 192 = 193.92 -> n_fp interpolated between 192 and 256 = 193.92",
+      abs(c2n - 193.92) < 1e-6, c2n)
+
+# the Q3 line uses the measured rate: Q = 0.8 on every path scales ask by 0.8 -> ask = 155.1 < 192 -> n_fp 155.1 in [128, 288]
+res, txt = score27(hold_rows(Q=lambda fam, p, n: 0.8 if fam == "BRS" else 1.0))
+check("Q3 uses Q x link: Q = 0.8 -> n_fp = 0.8 x 193.92 ~ 155.1 for c2; Q1 still FLAT-AT-LINK (0.8 inclusive)",
+      res["verdict"] == "PREMISES-HOLD" and abs(res["c2-100"]["fp3"]["n_fp"] - 155.136) < 0.1, (res["verdict"], res["c2-100"]["fp3"]))
+
+# each clause fails alone
+res, txt = score27(hold_rows(Q=lambda fam, p, n: 2.0 if (fam == "BRS" and p == 1) else 1.0))
+check("PREMISES-FAIL: Q1 OVER-READ on a dual cell's second path names the cells",
+      res["verdict"].startswith("PREMISES-FAIL") and "c8-100:Q1=OVER-READ" in res["verdict"] and "c1d-400:Q1=OVER-READ" in res["verdict"]
+      and "c2-100:Q1" not in res["verdict"] and "c1s-400:Q1" not in res["verdict"], res["verdict"])
+
+res, txt = score27(hold_rows(S=lambda fam, p, n: 100.0 + 2.0 * n if fam == "DEF" else 100.0))
+check("PREMISES-FAIL: DEF S inflates with n -> Q2 INFLATES (the BRS arm is only a reference)",
+      "c2-100:Q2=INFLATES/STABLE" in res["verdict"] and "Q1" not in res["verdict"] and "Q3" not in res["verdict"], res["verdict"])
+check("Q2 INFLATES printed as the verdict line", re.search(r"^  Q2 INFLATES STABLE n_fp=", txt, re.M), txt)
+
+res, txt = score27(hold_rows(scale=lambda fam: 0.05 if fam == "BRS" else 1.0))
+check("PREMISES-FAIL: BRS ask collapses -> FLOOR counts as MISSES (Q3), Q1/Q2 hold",
+      "c2-100:Q3=MISSES" in res["verdict"] and "Q1" not in res["verdict"] and "Q2" not in res["verdict"]
+      and re.search(r"^  Q3 MISSES n_fp=- band=", txt, re.M), res["verdict"])
+res, txt = score27(hold_rows(scale=lambda fam: 50.0 if fam == "BRS" else 1.0))
+check("PREMISES-FAIL: BRS ask above the grid -> CEILING counts as MISSES", "c1s-400:Q3=MISSES" in res["verdict"]
+      and "fixed point: CEILING" in txt, res["verdict"])
+res, txt = score27(hold_rows(ask=lambda fam, n: 0.95 * n + 10.0 if fam == "DEF" else 193.92, target=192, per=1))
+check("PREMISES-FAIL: DEF fixed point FRAGILE (slope 0.95) -> Q2 FLAT FRAGILE on the c2 cell",
+      "c2-100:Q2=FLAT/FRAGILE" in res["verdict"] and re.search(r"^  Q2 FLAT FRAGILE n_fp=\S+ slope=0.950$", txt, re.M), (res["verdict"], txt[-900:]))
+res, txt = score27(cell_rows("c2-100", ask=lambda fam, n: 0.5 * n + 100.0 if fam == "DEF" else 193.92, target=192))
+check("DEF slope 0.5: Q2 FLAT STABLE n_fp=200.0 slope=0.500", re.search(r"^  Q2 FLAT STABLE n_fp=200.0 slope=0.500$", txt, re.M), txt[-900:])
+res, txt = score27(cell_rows("c2-100", scale=lambda fam: 0.05 if fam == "DEF" else 1.0))
+check("DEF ask floor: `Q2 FLAT FLOOR n_fp=- slope=-`", re.search(r"^  Q2 FLAT FLOOR n_fp=- slope=-$", txt, re.M), txt[-900:])
+res, txt = score27(cell_rows("c2-100", scale=lambda fam: 50.0 if fam == "DEF" else 1.0))
+check("DEF ask ceiling: `Q2 FLAT CEILING n_fp=- slope=-`", re.search(r"^  Q2 FLAT CEILING n_fp=- slope=-$", txt, re.M), txt[-900:])
+
+# Q3 reproduction band: BRS n* moves, fp stays -> MISSES; DEF band reported separately
+rows = cell_rows("c2-100", target=192)
+for r in rows:
+    if r["arm"].startswith("BRS"):
+        r["mbps"] = 100.0 if int(r["arm"][3:]) >= 512 else 10.0       # BRS knee at 512: band [341.3, 768]
+res, txt = score27(rows)
+check("Q3 MISSES when n_fp (193.9) is outside the BRS band [341.3, 768.0]; DEF band reported (yes)",
+      res["c2-100"]["q3"] == "MISSES" and "band=[341.3, 768.0]" in txt and "in DEF band (report only): yes" in txt, txt[-900:])
+
+# non-live rows are ignored; sparse / empty ledgers do not raise and cannot HOLD
+rows = hold_rows()
+bad = dict(rows[0])
+bad.update(status="WITNESS-FAIL", mbps=9999.0)
+res, txt = score27(rows + [bad])
+check("non-live rows ignored in the means", "9999" not in txt and res["verdict"] == "PREMISES-HOLD")
+res, txt = score27([])
+check("empty ledger: PREMISES-FAIL, no exception", res["verdict"].startswith("PREMISES-FAIL") and "c2-100:Q1=-" in res["verdict"], res["verdict"])
+
+# the other arm is a reference: Q1 for DEF printed, Q2 for BRS printed
+res, txt = score27(hold_rows())
+check("reference classifications printed (Q1 DEF, Q2 BRS)", "Q1 [DEF, reference]" in txt and "Q2 [BRS, reference]" in txt
+      and "Q1 [BRS]" in txt and "Q2 [DEF]" in txt and "Q3 [BRS]" in txt)
+
+# smoke27 / check27
+with tempfile.TemporaryDirectory() as td:
+    path = os.path.join(td, "ld.log")
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 128 + "LD-BATTERY-DONE tag=ld blocks=2 x\n")
+    check("check27: 128 rows + done line passes", ld.check27(path) == 0)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 127 + "LD-BATTERY-DONE tag=ld blocks=2 x\n")
+    check("check27: 127 rows fails", ld.check27(path) == 1)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 128)
+    check("check27: no completion line fails", ld.check27(path) == 1)
+    p27 = os.path.join(td, "smoke27.log")
+    sm = [mk("BRS192", cell="c2-100", n=192, eng=False, extra=[BRS_ECHO]),
+          mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=two_path(), extra=[DEF_ECHO])]
+    with open(p27, "w") as fh:
+        for r in sm:
+            fh.write("LDROW " + json.dumps(r, sort_keys=True) + "\n")
+    check("smoke27: BRS192 c2 + DEF512 c8 live -> pass", ld.smoke27(p27) == 0)
+    sm[1] = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=p0only, extra=[DEF_ECHO])
+    with open(p27, "w") as fh:
+        for r in sm:
+            fh.write("LDROW " + json.dumps(r, sort_keys=True) + "\n")
+    check("smoke27: a dual cell with only p0 windows fails", ld.smoke27(p27) == 1)
+check("plan 27 arithmetic: 2 blocks x 4 cells x 2 arms x 8 = 128",
+      2 * len(ld.CELLS27) * len(ld.FAMS27) * 8 == ld.EXPECT_ROWS27 == 128
+      and all(len(g) == 8 for g in ld.GRID27.values()))
+check("plan 24 constants untouched (46 rows)", ld.EXPECT_ROWS == 46)
+
+
+# ═══ plan 29 (the power store law: MAIN / PWR / KNEE) ═════════════════════
+POWER_ECHO = "power store law ACTIVE (RWM_STORE_LAW=power): alpha=2.0000 q=0.1000 floor=10 knee=2048"
+PCAP_FROZEN = ("[PCAP] t=12.34s period=5 nbar=192.0 next=198.4 cap_p=201.6 cap_m=182.4 pi_p=1.2340e5 pi_m=1.1000e5 "
+               "e_raw=0.512 e_clamp=0.512 bind=0.000 floor_pin=0.000 knee_pin=0.000 hole=3.2 t_loop_us=14500 d_p=9770 "
+               "d_m=9700 ext=0 sign=0.500 conv=3 conv_t=1.20s out_pin=0.000")
+PCAP_DEF = dict(t="12.34s", period="5", nbar="192.0", next="198.4", cap_p="201.6", cap_m="182.4", pi_p="1.2340e5",
+                pi_m="1.1000e5", e_raw="0.512", e_clamp="0.512", bind="0.000", floor_pin="0.000", knee_pin="0.000",
+                hole="3.2", t_loop_us="14500", d_p="9770", d_m="9700", ext="0", sign="0.500", conv="3",
+                conv_t="1.20s", out_pin="0.000")
+
+
+def PC(**kw):
+    """A [PCAP] line in the frozen key order, any field overridable (strings, `-` allowed)."""
+    d = {**PCAP_DEF, **{k: str(v) for k, v in kw.items()}}
+    return "[PCAP] " + " ".join(f"{k}={v}" for k, v in d.items())
+
+
+check("PC() reproduces the frozen example byte for byte", PC() == PCAP_FROZEN, PC())
+fz = ld.pcap_periods([PCAP_FROZEN, "[DIAG] t=1.0s noise"])
+check("frozen line parses: every field", len(fz) == 1 and fz[0]["t"] == 12.34 and fz[0]["period"] == 5
+      and fz[0]["nbar"] == 192.0 and fz[0]["next"] == 198.4 and fz[0]["bind"] == 0.0 and fz[0]["hole"] == 3.2
+      and fz[0]["ext"] == 0 and fz[0]["sign"] == 0.5 and fz[0]["conv"] == 3 and fz[0]["conv_t"] == 1.2
+      and fz[0]["t_loop_us"] == 14500.0 and fz[0]["d_p"] == 9770.0 and fz[0]["pi_p"] == 1.234e5, fz)
+dash = ld.pcap_periods([PC(sign="-", conv="-", conv_t="-", hole="-")])
+check("`-` fields parse to None, line still counted", len(dash) == 1 and dash[0]["sign"] is None and dash[0]["conv"] is None
+      and dash[0]["conv_t"] is None and dash[0]["hole"] is None and dash[0]["nbar"] == 192.0, dash)
+check("liveness echo is not a [PCAP] period", ld.pcap_periods([POWER_ECHO]) == [])
+check("floor parsed from the echo, default 10", ld.pcap_floor([POWER_ECHO.replace("floor=10", "floor=12")]) == 12.0
+      and ld.pcap_floor([]) == 10.0)
+
+
+def periods(nbars, conv=2, conv_t="1.50s", t0=1.0, **kw):
+    """One [PCAP] line per nbar; `next` is the following nbar (last: itself)."""
+    out = []
+    for i, nb in enumerate(nbars):
+        nx = nbars[i + 1] if i + 1 < len(nbars) else nb
+        out.append(PC(t=f"{t0 + 0.5 * i:.2f}s", period=i, nbar=nb, next=nx, conv=conv, conv_t=conv_t, **kw))
+    return out
+
+
+pc = ld.pcap_summary(periods([100.0, 150.0, 190.0, 194.0, 190.0, 192.0], conv=2, bind="0.125", floor_pin="0.050",
+                             knee_pin="0.020", sign="0.750", ext="4", hole="2.0"))
+check("pcap summary: periods, conv, conv_t", pc["pcap_periods"] == 6 and pc["pcap_conv"] == 2 and pc["pcap_conv_t"] == 1.5, pc)
+check("pcap summary: nbar mean after convergence (periods >= conv: 190,194,190,192 -> 191.5) and over all",
+      pc["pcap_nbar_post"] == 191.5 and abs(pc["pcap_nbar_all"] - (100 + 150 + 190 + 194 + 190 + 192) / 6) < 1e-9
+      and pc["pcap_post_n"] == 4, pc)
+check("pcap summary: final nbar is the last `next`", pc["pcap_nbar_final"] == 192.0, pc)
+check("pcap summary: final cumulative fractions, sign, ext, hole mean",
+      pc["pcap_floor_pin"] == 0.05 and pc["pcap_knee_pin"] == 0.02 and pc["pcap_bind"] == 0.125
+      and pc["pcap_sign"] == 0.75 and pc["pcap_ext"] == 4 and pc["pcap_hole_mean"] == 2.0 and pc["pcap_out_pin"] == 0.0, pc)
+pc = ld.pcap_summary([PC(period=0, nbar=50, next=60, sign="-", conv="-", conv_t="-", hole="-"),
+                      PC(period=1, nbar=60, next=70, sign="-", conv="-", conv_t="-", hole="4.0")])
+check("never converged: conv None, post mean None, `-` sign None, hole mean skips `-`",
+      pc["pcap_conv"] is None and pc["pcap_nbar_post"] is None and pc["pcap_sign"] is None and pc["pcap_hole_mean"] == 4.0
+      and pc["pcap_nbar_final"] == 70.0 and pc["pcap_periods"] == 2, pc)
+pc = ld.pcap_summary(periods([100.0, 10.0, 10.0, 192.0], conv=1))
+check("post-convergence periods at the floor are counted (nbar <= floor 10)", pc["pcap_post_floor"] == 2, pc)
+check("no [PCAP] lines: periods 0, everything else None", ld.pcap_summary([])["pcap_periods"] == 0
+      and ld.pcap_summary([])["pcap_nbar_post"] is None)
+
+# ── post-convergence loop p50 from the [LOOPDIAG] windows ────────────────
+ser = ld.loop_series([LDL(1.0, p50="3000"), LDL(2.0, p50="5000"), LDL(2.0, p=1, p50="9000"), LDL(0.5, p50="1"),
+                      LDL(3.0, n=0, p50="-", mn="-", p10="-")])
+check("loop series: post-warm-up windows with n>0, all paths pooled, [t, p50]",
+      sorted(ser) == [[1.0, 3000.0], [2.0, 5000.0], [2.0, 9000.0]], ser)
+check("loop p50 post: median of window medians with t >= cutoff (pooled paths, window-unweighted)",
+      ld.loop_p50(ser, 2.0) == 7000.0 and ld.loop_p50(ser, 1.0) == 5000.0 and ld.loop_p50(ser, 9.0) is None)
+
+# ── plan shape ───────────────────────────────────────────────────────────
+pl = ld.plan29()
+check("plan 29: 36 rows", len(pl) == 36 == ld.EXPECT_ROWS29, len(pl))
+check("plan 29: block seeds/reps (42,1) (7,1) (42,2), 4 cells x 3 arms each",
+      [(b["seed"], b["rep"]) for b in pl[::12]] == [("42", 1), ("7", 1), ("42", 2)]
+      and all([b["cell"] for b in pl[12 * i:12 * i + 12]] == [c for c in ("c2-100", "c1s-400", "c8-100", "c1d-400") for _ in range(3)]
+              for i in range(3)), [(b["cell"], b["arm"]) for b in pl[:12]])
+check("plan 29: arm order rotates by block (MAIN,PWR,KNEE / PWR,KNEE,MAIN / KNEE,MAIN,PWR)",
+      [b["arm"] for b in pl[0:3]] == ["MAIN", "PWR", "KNEE"] and [b["arm"] for b in pl[12:15]] == ["PWR", "KNEE", "MAIN"]
+      and [b["arm"] for b in pl[24:27]] == ["KNEE", "MAIN", "PWR"]
+      and all([b["arm"] for b in pl[12 * i + 3 * j:12 * i + 3 * j + 3]] == [b["arm"] for b in pl[12 * i:12 * i + 3]]
+              for i in range(3) for j in range(4)))
+check("plan 29: every (block, cell) has MAIN, PWR, KNEE once; 12 rows per arm",
+      all(sorted(b["arm"] for b in pl[3 * k:3 * k + 3]) == ["KNEE", "MAIN", "PWR"] for k in range(12))
+      and all(sum(1 for b in pl if b["arm"] == a) == 12 for a in ("MAIN", "PWR", "KNEE")))
+check("plan 29: knee per cell 192/1024/768/384",
+      {b["cell"]: b["knee"] for b in pl} == {"c2-100": 192, "c1s-400": 1024, "c1d-400": 768, "c8-100": 384})
+sm29 = ld.plan29(smoke=True)
+check("plan 29 smoke: c2-100 PWR s42 and c1s-400 PWR s42",
+      [(b["cell"], b["arm"], b["seed"], b["rep"]) for b in sm29] == [("c2-100", "PWR", "42", 1), ("c1s-400", "PWR", "42", 1)])
+import subprocess  # noqa: E402
+cp = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan29"], capture_output=True, text=True)
+lines29 = cp.stdout.split("\n")[:-1]
+check("`plan29` subcommand prints 36 `cell arm seed rep knee` lines (the battery's single source)",
+      cp.returncode == 0 and len(lines29) == 36 and lines29[0] == "c2-100 MAIN 42 1 192" and lines29[35] == "c1d-400 PWR 42 2 768", lines29[:2])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan29", "smoke"], capture_output=True, text=True)
+check("`plan29 smoke` prints the two smoke rows", cp.stdout.split("\n")[:-1] == ["c2-100 PWR 42 1 192", "c1s-400 PWR 42 1 1024"], cp.stdout)
+
+# ── plan 29 witnesses ────────────────────────────────────────────────────
+GOODP = periods([100.0, 150.0, 190.0, 194.0, 190.0, 192.0])
+
+
+def mk29(arm, cell="c2-100", **kw):
+    if arm == "MAIN":
+        return mk("MAIN", cell=cell, **kw)
+    if arm == "KNEE":
+        if "store" not in kw:
+            kw.setdefault("n", ld.KNEE_N[cell])
+        kw.setdefault("eng", False)
+        return mk("KNEE", cell=cell, **kw)
+    kw.setdefault("eng", False)
+    kw.setdefault("extra", [POWER_ECHO] + GOODP)
+    return mk("PWR", cell=cell, **kw)
+
+
+w = mk29("MAIN")
+check("MAIN (plan 29) pass, no power echo, row carries zero [PCAP] periods", w["status"] == "LIVE" and w["pcap_periods"] == 0
+      and w["power_echo"] is False, (w["status"], w["problems"]))
+w = mk29("MAIN", extra=[POWER_ECHO])
+check("MAIN fail: a power echo present", "main-has-power-echo" in w["problems"] and w["status"] == "WITNESS-FAIL", w["problems"])
+w = mk29("PWR")
+check("PWR pass: echo + 6 periods, no RWM_STORE", w["status"] == "LIVE" and w["power_echo"] is True and w["pcap_periods"] == 6
+      and w["pcap_nbar_post"] == 191.5, (w["status"], w["problems"]))
+w = mk29("PWR", extra=GOODP)
+check("PWR fail: no power echo", "pwr-no-power-echo" in w["problems"] and w["status"] == "WITNESS-FAIL", w["problems"])
+w = mk29("PWR", extra=[POWER_ECHO] + GOODP[:2])
+check("PWR fail: 2 [PCAP] periods < 3", "pwr-pcap-periods=2" in w["problems"], w["problems"])
+w = mk29("PWR", extra=[POWER_ECHO] + GOODP[:3])
+check("PWR pass at exactly 3 periods", w["status"] == "LIVE", w["problems"])
+w = mk29("PWR", store="512")
+check("PWR fail: RWM_STORE set", "pwr-gate-store=512" in w["problems"], w["problems"])
+w = mk29("KNEE")
+check("KNEE pass (eng absent, every denominator == 192, gate RWM_STORE == 192)", w["status"] == "LIVE" and w["gate_store"] == "192", (w["status"], w["problems"]))
+check("KNEE fail: SUMCAP eng > 0", any(x.startswith("s-sumcap-eng") for x in mk29("KNEE", eng=True)["problems"]))
+check("KNEE fail: denominator != knee", any(x.startswith("s-win-den-not-n") for x in mk29("KNEE", den=1024)["problems"]))
+check("KNEE fail: gate != the cell's knee", "gate-store=256" in mk29("KNEE", store="256", den=192)["problems"])
+check("KNEE fail: power echo present", "knee-has-power-echo" in mk29("KNEE", extra=[POWER_ECHO])["problems"])
+check("knee per cell: c1s 1024, c1d 768, c8 384 (witness uses the cell's n)",
+      mk29("KNEE", cell="c1s-400")["gate_store"] == "1024" and mk29("KNEE", cell="c1d-400", ld_lines=two_path())["gate_store"] == "768"
+      and mk29("KNEE", cell="c8-100", ld_lines=two_path())["gate_store"] == "384")
+check("generic witnesses still bite on plan 29 arms: no ackdiag, 3 windows",
+      "no-ackdiag" in mk29("KNEE", ackdiag=False)["problems"]
+      and "loopdiag-p0-windows=3" in mk29("KNEE", ld_lines=[LDL(1.0), LDL(2.0), LDL(3.0)])["problems"])
+
+# c8 p1 idle: p1 delivered 0 in every post-warm-up window -> note, not a void
+idle = [ln for ln in two_path() if " p0 " in ln] + [LDL(t, p=1, n=0, mn="-", p10="-", p50="-", rtp="-", jit="-", srtt="-",
+                                                       dlv=0, rate=0, pace="-", cwnd="-", qs="-") for t in (1.0, 1.5, 2.0, 2.5)]
+w = mk29("KNEE", cell="c8-100", ld_lines=idle)
+check("c8 p1-idle (dlv=0 in every p1 window): LIVE with the note `p1-idle`", w["status"] == "LIVE" and "p1-idle" in w["notes"], (w["status"], w["problems"], w["notes"]))
+w = mk29("MAIN", cell="c8-100", ld_lines=idle)
+check("c8 p1-idle on MAIN too", w["status"] == "LIVE" and "p1-idle" in w["notes"], (w["status"], w["problems"]))
+busy_p1 = [ln for ln in two_path() if " p0 " in ln] + [LDL(t, p=1, n=0, mn="-", p10="-", p50="-", dlv=500, pace="-") for t in (1.0, 1.5, 2.0, 2.5)]
+w = mk29("KNEE", cell="c8-100", ld_lines=busy_p1)
+check("c8 p1 that delivered something is NOT idle: windows witness still voids",
+      "loopdiag-p1-windows=0" in w["problems"] and "p1-idle" not in w["notes"], (w["problems"], w["notes"]))
+mixed = [ln for ln in two_path() if " p0 " in ln] + [LDL(1.0, p=1, n=0, mn="-", p10="-", p50="-", dlv=0, pace="-"),
+                                                     LDL(1.5, p=1, n=0, mn="-", p10="-", p50="-", dlv=7, pace="-")]
+check("c8 p1 with one non-zero window is not idle", "p1-idle" not in mk29("KNEE", cell="c8-100", ld_lines=mixed)["notes"])
+w = mk29("KNEE", cell="c8-100", ld_lines=[ln for ln in two_path() if " p0 " in ln])
+check("c8 p1 with no windows at all is not `idle` (nothing shows dlv=0)", "p1-idle" not in w["notes"]
+      and "loopdiag-p1-windows=0" in w["problems"], (w["problems"], w["notes"]))
+check("p0 is never excused: c8 with p0 idle still fails",
+      "loopdiag-p0-windows=0" in mk29("KNEE", cell="c8-100", ld_lines=[ln.replace(" p0 ", " p9 ") for ln in idle])["problems"])
+w = mk29("KNEE", cell="c2-100", ld_lines=idle)
+check("p1-idle is only for c8: a single-path cell gets no note", "p1-idle" not in w["notes"])
+w = mk("DEF512", cell="c8-100", n=512, eng=False, ld_lines=idle, extra=[DEF_ECHO])
+check("plan 27 arms keep the strict rule (p1 idle still voids DEF)", "loopdiag-p1-windows=0" in w["problems"] and w["notes"] == [], (w["problems"], w["notes"]))
+
+# post-convergence loop p50 on the row (PWR): conv_t 1.5 s
+w = mk29("PWR", ld_lines=[LDL(1.0, p50="3000"), LDL(1.5, p50="5000"), LDL(2.0, p50="7000"), LDL(2.5, p50="9000"),
+                          LDL(3.0, p50="11000")])
+check("row: loop p50 post-convergence (t >= conv_t 1.5: 5000..11000 -> 8000) and whole-run p50 (7000), both labelled",
+      w["loop_p50_post"] == 8000.0 and w["loop_p50_all"] == 7000.0 and w["ax_p50_us"] is not None, (w["loop_p50_post"], w["loop_p50_all"]))
+w = mk29("MAIN")
+check("MAIN row: loop_p50_post None (no conv_t), series kept for the scorer", w["loop_p50_post"] is None and len(w["ld_p50_series"]) == 5)
+
+# ── score29 ──────────────────────────────────────────────────────────────
+KN = {"c2-100": 192, "c1s-400": 1024, "c1d-400": 768, "c8-100": 384}
+
+
+def S29(t0=2.0):
+    return lambda p50: [[t0 + 0.25 * i, p50] for i in range(8)]
+
+
+def R29(cell, arm, mbps, ax, loop=5000.0, seed=42, rep=1, status="LIVE", **pc):
+    r = {"cell": cell, "arm": arm, "seed": str(seed), "rep": rep, "status": status, "problems": [], "notes": [],
+         "mbps": mbps, "ax_p50_us": ax, "ld_p50_series": [[0.5, 1.0]] + S29()(loop), "io_high": False}
+    if arm == "PWR":
+        r.update(pcap_periods=20, pcap_conv=5, pcap_conv_t=1.0, pcap_nbar_post=float(KN[cell]), pcap_floor_pin=0.0,
+                 pcap_knee_pin=0.0, pcap_sign=0.8, pcap_post_floor=0, pcap_post_n=15, pcap_bind=0.1, pcap_hole_mean=1.0,
+                 pcap_ext=0, pcap_nbar_final=float(KN[cell]), pcap_nbar_all=float(KN[cell]))
+        r.update(pc)
+    return r
+
+
+def three(mean, sd):
+    return [mean - sd, mean, mean + sd]       # sample sd = sd
+
+
+def cell29(cell="c2-100", main=(100.0, 2.0), pwr=(100.0, 2.0), knee=(100.0, 2.0), axm=(1000.0, 20.0),
+           axp=(1000.0, 20.0), axk=(1000.0, 20.0), lm=(5000.0, 100.0), lp=(5000.0, 100.0), lk=(5000.0, 100.0), **pcw):
+    rows = []
+    for arm, g, a, l in (("MAIN", main, axm, lm), ("PWR", pwr, axp, lp), ("KNEE", knee, axk, lk)):
+        for i, (gv, av, lv) in enumerate(zip(three(*g), three(*a), three(*l))):
+            rows.append(R29(cell, arm, gv, av, lv, seed=42 + i, rep=1 + i, **(pcw if arm == "PWR" else {})))
+    return rows
+
+
+def sc29(rows):
+    buf = []
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "ld.log")
+        with open(path, "w") as fh:
+            for r in rows:
+                fh.write("LDROW " + json.dumps(r) + "\n")
+        res = ld.score29([path], buf.append)
+    return res, "\n".join(buf)
+
+
+res, txt = sc29(cell29())
+r = res["c2-100"]
+check("baseline cell: GOODPUT WITHIN, LATENCY WITHIN/WITHIN, FIXED-POINT IN-BAND, STABILITY STABLE",
+      (r["GOODPUT"], r["LATENCY_MAIN"], r["LATENCY_KNEE"], r["FIXED-POINT"], r["STABILITY"]) == ("WITHIN", "WITHIN", "WITHIN", "IN-BAND", "STABLE"), r)
+check("printed token lines",
+      re.search(r"^  GOODPUT WITHIN\b", txt, re.M) and re.search(r"^  LATENCY WITHIN WITHIN\b", txt, re.M)
+      and re.search(r"^  FIXED-POINT IN-BAND\b", txt, re.M) and re.search(r"^  STABILITY STABLE\b", txt, re.M), txt)
+# goodput: 2 sigma_pooled = 2*2 = 4
+check("GOODPUT BETTER (+20 > 4)", sc29(cell29(pwr=(120.0, 2.0)))[0]["c2-100"]["GOODPUT"] == "BETTER")
+check("GOODPUT WORSE (-20)", sc29(cell29(pwr=(80.0, 2.0)))[0]["c2-100"]["GOODPUT"] == "WORSE")
+check("GOODPUT WITHIN at the boundary (diff == 2 sigma_pooled == 4)", sc29(cell29(pwr=(104.0, 2.0)))[0]["c2-100"]["GOODPUT"] == "WITHIN")
+check("GOODPUT BETTER just past the boundary", sc29(cell29(pwr=(104.5, 2.0)))[0]["c2-100"]["GOODPUT"] == "BETTER")
+check("sigma_pooled = sqrt((s1^2+s2^2)/2): sd 2 vs 6 -> 2 sigma = 8.94: diff 7 WITHIN, 9 BETTER",
+      sc29(cell29(main=(100.0, 2.0), pwr=(107.0, 6.0)))[0]["c2-100"]["GOODPUT"] == "WITHIN"
+      and sc29(cell29(main=(100.0, 2.0), pwr=(109.0, 6.0)))[0]["c2-100"]["GOODPUT"] == "BETTER")
+# latency: lower is better; vs MAIN and vs KNEE separately
+res, _ = sc29(cell29(axp=(700.0, 20.0)))
+check("LATENCY BETTER vs both (A_x lower by 300 > 40)", (res["c2-100"]["LATENCY_MAIN"], res["c2-100"]["LATENCY_KNEE"]) == ("BETTER", "BETTER"))
+res, _ = sc29(cell29(axp=(1300.0, 20.0), axk=(1300.0, 20.0)))
+check("LATENCY WORSE vs MAIN, WITHIN vs KNEE", (res["c2-100"]["LATENCY_MAIN"], res["c2-100"]["LATENCY_KNEE"]) == ("WORSE", "WITHIN"))
+res, txt = sc29(cell29(axp=(1000.0, 20.0), axk=(1300.0, 20.0)))
+check("LATENCY WITHIN vs MAIN, BETTER vs KNEE (printed in that order)",
+      (res["c2-100"]["LATENCY_MAIN"], res["c2-100"]["LATENCY_KNEE"]) == ("WITHIN", "BETTER") and re.search(r"^  LATENCY WITHIN BETTER\b", txt, re.M), txt)
+# the post-convergence loop p50 is reported separately and labelled
+res, txt = sc29(cell29(lp=(3000.0, 100.0)))
+check("loop p50 post-convergence reported beside A_x, labelled, own tokens (BETTER vs MAIN)",
+      res["c2-100"]["LOOP_MAIN"] == "BETTER" and "A_x p50 whole-transfer" in txt and "loop p50 post-convergence" in txt
+      and re.search(r"^  LATENCY-LOOP BETTER BETTER\b", txt, re.M) and res["c2-100"]["LATENCY_MAIN"] == "WITHIN", txt)
+check("loop cutoff = median PWR conv_t (1.0 s) printed", "cutoff t >= 1.00" in txt, txt)
+# the common cutoff is applied to every arm: early windows (t=0.5, p50 1.0) must not leak in
+rows = cell29()
+check("windows before the cutoff are excluded (the t=0.5 / 1 us window): each row's loop p50 is its own constant",
+      all(ld.loop_p50(r["ld_p50_series"], 1.0) == r["ld_p50_series"][1][1] > 1.0 for r in rows))
+# fixed point
+res, _ = sc29(cell29(pcap_nbar_post=100.0))
+check("FIXED-POINT BELOW (100 < 192/1.5 = 128)", res["c2-100"]["FIXED-POINT"] == "BELOW")
+res, _ = sc29(cell29(pcap_nbar_post=300.0))
+check("FIXED-POINT ABOVE (300 > 288)", res["c2-100"]["FIXED-POINT"] == "ABOVE")
+check("FIXED-POINT IN-BAND at both edges (128 and 288 inclusive)",
+      sc29(cell29(pcap_nbar_post=128.0))[0]["c2-100"]["FIXED-POINT"] == "IN-BAND"
+      and sc29(cell29(pcap_nbar_post=288.0))[0]["c2-100"]["FIXED-POINT"] == "IN-BAND")
+res, _ = sc29(cell29(pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None))
+check("FIXED-POINT NO-CONVERGENCE (no conv_period reached)", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE")
+res, _ = sc29(cell29(pcap_periods=2))
+check("FIXED-POINT NO-CONVERGENCE (too few periods)", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE")
+res, _ = sc29(cell29(pcap_post_n=1))
+check("FIXED-POINT NO-CONVERGENCE (fewer than 2 post-convergence periods)", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE")
+rows = cell29()
+for r_ in rows:
+    if r_["arm"] == "PWR" and r_["rep"] != 1:
+        r_.update(pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None)
+res, txt = sc29(rows)
+check("only 1 of 3 PWR rows converged (not a majority) -> NO-CONVERGENCE", res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE", txt)
+rows = cell29()
+[r_ for r_ in rows if r_["arm"] == "PWR"][0].update(pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None)
+check("2 of 3 converged: IN-BAND on their mean", sc29(rows)[0]["c2-100"]["FIXED-POINT"] == "IN-BAND")
+check("fixed point per cell uses the KNEE n*: c1s 1024 band [682.7, 1536], c1d 768, c8 384",
+      sc29(cell29("c1s-400", pcap_nbar_post=700.0))[0]["c1s-400"]["FIXED-POINT"] == "IN-BAND"
+      and sc29(cell29("c1s-400", pcap_nbar_post=600.0))[0]["c1s-400"]["FIXED-POINT"] == "BELOW"
+      and sc29(cell29("c8-100", pcap_nbar_post=600.0))[0]["c8-100"]["FIXED-POINT"] == "ABOVE"
+      and sc29(cell29("c1d-400", pcap_nbar_post=500.0))[0]["c1d-400"]["FIXED-POINT"] == "BELOW")
+res, txt = sc29(cell29("c1s-400", pcap_nbar_post=384.0))
+check("paper's predicted power points reported separately (c1s 384 IN; token still BELOW the knee band)",
+      res["c1s-400"]["FIXED-POINT"] == "BELOW" and re.search(r"PREDICTED c1s-400.*point 384.*IN", txt), txt)
+res, txt = sc29(cell29("c1d-400", pcap_nbar_post=400.0))
+check("c1d prediction is an upper bound (< 512)", re.search(r"PREDICTED c1d-400.*< 512.*IN", txt)
+      and re.search(r"PREDICTED c1d-400.*< 512.*OUT", sc29(cell29("c1d-400", pcap_nbar_post=600.0))[1]), txt)
+
+
+# stability and its precedence
+def stab(**kw):
+    return sc29(cell29(**kw))[0]["c2-100"]["STABILITY"]
+
+
+check("STABILITY FLOOR-COLLAPSE (floor_pin 0.25)", stab(pcap_floor_pin=0.25) == "FLOOR-COLLAPSE")
+check("STABILITY not collapsed at floor_pin 0.249", stab(pcap_floor_pin=0.249) == "STABLE")
+check("STABILITY FLOOR-COLLAPSE (any post-convergence period at the floor)", stab(pcap_post_floor=1) == "FLOOR-COLLAPSE")
+check("STABILITY RUNAWAY (knee_pin 0.25)", stab(pcap_knee_pin=0.25) == "RUNAWAY")
+check("STABILITY NOISE-DOMINATED (converged suffix 9 of 30 periods)", stab(pcap_periods=30, pcap_post_n=9) == "NOISE-DOMINATED")
+check("STABILITY STABLE at a converged suffix of 10 of 30", stab(pcap_periods=30, pcap_post_n=10) == "STABLE")
+check("sign agreement alone never decides (a converged limit cycle alternates)", stab(pcap_sign=0.1) == "STABLE")
+check("precedence: FLOOR-COLLAPSE beats NOISE-DOMINATED", stab(pcap_floor_pin=0.3, pcap_periods=30, pcap_post_n=1) == "FLOOR-COLLAPSE")
+check("precedence: RUNAWAY beats NOISE-DOMINATED", stab(pcap_knee_pin=0.3, pcap_periods=30, pcap_post_n=1) == "RUNAWAY")
+check("precedence: FLOOR-COLLAPSE beats RUNAWAY", stab(pcap_floor_pin=0.3, pcap_knee_pin=0.3) == "FLOOR-COLLAPSE")
+rows = cell29()
+[r_ for r_ in rows if r_["arm"] == "PWR"][2].update(pcap_floor_pin=0.4)
+check("one collapsing PWR row makes the cell FLOOR-COLLAPSE (worst row by precedence)", sc29(rows)[0]["c2-100"]["STABILITY"] == "FLOOR-COLLAPSE")
+
+# comparison table: means and 2 sigma_pooled for every arm pair, three metrics
+res, txt = sc29(cell29(pwr=(112.0, 2.0), knee=(104.0, 2.0)))
+check("table: n, mean and sd per arm; pairs KNEE-vs-MAIN, PWR-vs-MAIN, PWR-vs-KNEE with diff and 2sigma",
+      all(h in txt for h in ("goodput", "A_x p50 whole-transfer", "loop p50 post-convergence", "KNEE vs MAIN", "PWR vs MAIN", "PWR vs KNEE", "2sigma"))
+      and re.search(r"goodput.*\n(?:.*\n)*?\s+PWR vs MAIN\s+diff \+12\.0\s+2sigma 4\.0\s+BETTER", txt)
+      and re.search(r"PWR vs KNEE\s+diff \+8\.0\s+2sigma 4\.0\s+BETTER", txt)
+      and re.search(r"KNEE vs MAIN\s+diff \+4\.0\s+2sigma 4\.0\s+WITHIN", txt), txt)
+res, txt = sc29(cell29(pwr=(130.0, 2.0)))
+check("PWR cap position table: time-avg nbar after convergence vs KNEE band and the stability inputs printed",
+      "band [128.0, 288.0]" in txt and "nbar_post 192.0" in txt and "floor_pin" in txt and "sign" in txt, txt)
+# fewer than 2 live rows in an arm -> `-`, never a made-up verdict
+rows = [r_ for r_ in cell29() if not (r_["arm"] == "KNEE" and r_["rep"] > 1)]
+res, txt = sc29(rows)
+check("an arm with < 2 live rows: comparison token `-` (cannot form sigma), others unaffected",
+      res["c2-100"]["LATENCY_KNEE"] == "-" and res["c2-100"]["GOODPUT"] == "WITHIN", res["c2-100"])
+rows = [dict(r_, status="WITNESS-FAIL") if r_["arm"] == "PWR" else r_ for r_ in cell29()]
+res, txt = sc29(rows)
+check("no live PWR rows: GOODPUT `-`, FIXED-POINT NO-CONVERGENCE, STABILITY `-`; void table lists them",
+      res["c2-100"]["GOODPUT"] == "-" and res["c2-100"]["FIXED-POINT"] == "NO-CONVERGENCE" and res["c2-100"]["STABILITY"] == "-"
+      and "c2-100 PWR s42 r1: WITNESS-FAIL" in txt)
+res, txt = sc29([])
+check("empty ledger: no exception, tokens `-`", res["c2-100"]["GOODPUT"] == "-")
+rows = []
+for c in ("c2-100", "c1s-400", "c8-100", "c1d-400"):
+    rows += cell29(c)
+res, txt = sc29(rows)
+check("four cells print in battery order c2, c1s, c8, c1d",
+      txt.index("CELL c2-100") < txt.index("CELL c1s-400") < txt.index("CELL c8-100") < txt.index("CELL c1d-400"))
+rows[0]["notes"] = ["p1-idle"]
+res, txt = sc29(rows)
+check("notes (p1-idle) are listed", "NOTE c2-100 MAIN" in txt and "p1-idle" in txt, txt)
+
+# smoke29 / check29
+with tempfile.TemporaryDirectory() as td:
+    path = os.path.join(td, "ld.log")
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 36 + "LD-BATTERY-DONE tag=ld blocks=3 x\n")
+    check("check29: 36 rows + done line passes", ld.check29(path) == 0)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 35 + "LD-BATTERY-DONE tag=ld blocks=3 x\n")
+    check("check29: 35 rows fails", ld.check29(path) == 1)
+    with open(path, "w") as fh:
+        fh.write("LDROW {}\n" * 36)
+    check("check29: no completion line fails", ld.check29(path) == 1)
+    p29 = os.path.join(td, "smoke29.log")
+    sm = [mk29("PWR", cell="c2-100"), mk29("PWR", cell="c1s-400")]
+    with open(p29, "w") as fh:
+        for r_ in sm:
+            fh.write("LDROW " + json.dumps(r_, sort_keys=True) + "\n")
+    check("smoke29: both PWR rows live with periods -> pass", ld.smoke29(p29) == 0)
+    sm[1] = mk29("PWR", cell="c1s-400", extra=[POWER_ECHO] + GOODP[:1])
+    with open(p29, "w") as fh:
+        for r_ in sm:
+            fh.write("LDROW " + json.dumps(r_, sort_keys=True) + "\n")
+    check("smoke29: a PWR row with < 3 periods fails", ld.smoke29(p29) == 1)
+check("plan 29 arithmetic: 3 blocks x 4 cells x 3 arms = 36", 3 * 4 * 3 == ld.EXPECT_ROWS29 == 36)
+check("plans 24 and 27 constants untouched", ld.EXPECT_ROWS == 46 and ld.EXPECT_ROWS27 == 128)
+
+# ═══ plan 34 (post-§32 c1 static grid: knee, noise at the argmax, receiver capacity, authority) ═══
+p34 = ld.plan34()
+check("plan 34: 39 rows = 3 blocks x (7 c1s + 6 c1d)", len(p34) == ld.EXPECT_ROWS34 == 39, len(p34))
+check("plan 34: block 0 c1s ascending first, block 1 c1d descending first",
+      p34[0] == ("c1s-400", "DEF256", "42", 1) and p34[13] == ("c1d-400", "DEF2048", "7", 1)
+      and p34[19] == ("c1s-400", "DEF2048", "7", 1), (p34[0], p34[13], p34[19]))
+check("plan 34 smoke rows", ld.plan34(smoke=True) == [("c1s-400", "DEF384", "42", 1), ("c1d-400", "DEF768", "42", 1)])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan34"], capture_output=True, text=True)
+check("`plan34` subcommand prints 39 `cell arm seed rep` lines", len(cp.stdout.split("\n")[:-1]) == 39, cp.stdout[:80])
+
+
+def DG34(t, cap=384, used=380, q=600000, hand=1000, tx=990):
+    return (f"[DIAG] t={t}s win={used}/{cap} paused=1% good=700.0Mbit cwnd=1 infl=1 rtt=4.0ms "
+            f"dgq0[hand={hand} tx={tx} full=0 err=0 sp=1] p0:infl=1 qcwnd={q} qce=0")
+
+
+cli34 = [LDL(1.0 + 0.25 * i, rate=90000 + 1000 * (i % 2), p50=str(5000 + 100 * (i % 3))) for i in range(12)]
+cli34 += [DG34(1.0 + 0.25 * i, tx=990 - (i % 2) * 10) for i in range(12)]
+srv34 = ["[RDIAG] busy=50% msgs=45000/s q_avg=0", "[RDIAG] busy=90% msgs=81000/s q_avg=0",
+         "[RDIAG] busy=10% msgs=9000/s q_avg=0", "[RDIAG] busy=80% msgs=72000/s q_avg=0"]
+fx = ld.plan34_fields(cli34, srv34, 1)
+check("plan34_fields: 12 ln Pi windows, ln Pi = 2 ln D - ln T",
+      len(fx["lnpi34"]) == 12 and abs(fx["lnpi34"][0] - (2 * math.log(90000) - math.log(5000e-6))) < 1e-4, fx["lnpi34"][:2])
+check("plan34_fields: mu_R = median msgs/busy over busy >= 20 % lines (the 10 % line dropped)",
+      fx["mu_r"] == 90000.0 and fx["rdiag_n"] == 3, (fx["mu_r"], fx["rdiag_n"]))
+check("plan34_fields: quinn backlog B = median hand - tx; dgq on every [DIAG] window",
+      fx["dgq_b"] == 15.0 and fx["dgq_n"] == fx["diag_n"] == 12, (fx["dgq_b"], fx["dgq_n"], fx["diag_n"]))
+check("plan34_fields: K < c share (600000/1279 = 469 > 384 -> 0)", fx["kshare"] == 0.0, fx["kshare"])
+check("_dvar: the successive-difference statistic", abs(ld._dvar([0.0, 1.0, 0.0, 1.0, 0.0]) - 0.5) < 1e-12)
+
+
+def R34(cell, n, mbps, mu, s_us=2000.0, rtp=2500.0, p50=5000.0, b=20.0, seed="42", rep=1, lnpi=None):
+    legs = ld.sp.N_LEGS[cell]
+    r = {"cell": cell, "arm": f"DEF{n}", "seed": seed, "rep": rep, "status": "LIVE", "mbps": mbps,
+         "ax_p50_us": 1000, "mu_r": mu, "rdiag_n": 5, "dgq_b": b, "kshare": 0.5, "notes": [], "problems": [],
+         "t34_med": p50 / 1e6, "lnpi34": lnpi if lnpi is not None else [0.0, 0.01, 0.0, 0.01] * 4}
+    for p in range(legs):
+        r[f"ld_p{p}"] = {"rtt_p50_us": p50, "rtt_min_us": p50 - s_us, "rtprop_us": rtp}
+    return r
+
+
+rows34 = []
+for n in ld.GRID34["c1d-400"]:
+    g = min(700.0, 300.0 + n)
+    rows34 += [R34("c1d-400", n, g, 90000.0, s_us=1000.0 + 4 * n), R34("c1d-400", n, g, 90000.0, s_us=1000.0 + 4 * n, seed="7")]
+for n in ld.GRID34["c1s-400"]:
+    rows34 += [R34("c1s-400", n, 800.0, 130000.0 * (1 + n / 2048), b=200.0 if n >= 1536 else 20.0)]
+with tempfile.TemporaryDirectory() as td:
+    path = os.path.join(td, "ld34.log")
+    with open(path, "w") as fh:
+        for r_ in rows34:
+            fh.write("LDROW " + json.dumps(r_) + "\n")
+    res = ld.score34([path], out=lambda *_: None)
+c1d = res["c1d-400"]
+check("score34 R1: c1d knee = smallest n with G >= 0.95 Gmax (665 -> 384 cap gives 684)", c1d["nstar"] == 384, c1d)
+check("score34 R3: c1d mu_R flat -> FLAT", c1d["R3"] == "FLAT", c1d)
+# ask(n) = 1.1 * 90000 * (2500 + 1000 + 4n) us: 384 -> 498 (> 384), 512 -> 549 (> 512), 768 -> 651 (< 768)
+check("score34 R3: interior fixed point 512 + 256*37/154 = 573, inside c1d's band [256, 576] -> REPRODUCES",
+      c1d["R3fp"] == "REPRODUCES", c1d)
+check("score34 R4: B 20 everywhere -> STORE-HOLDS", c1d["R4"] == "STORE-HOLDS", c1d)
+c1s = res["c1s-400"]
+check("score34 R3: mu_R doubling over the grid -> LOAD-DEPENDENT", c1s["R3"] == "LOAD-DEPENDENT", c1s)
+check("score34 R4: B 200 at 1536 (<= 1.5 n* = 384) -> STORE-HOLDS (1536 outside)", c1s["R4"] == "STORE-HOLDS", c1s)
+check("score34 R2: tiny window noise (s2 below the target) -> REOPENS", c1d["R2"] == "REOPENS", c1d)
+check("plan 34 constants", ld.EXPECT_ROWS34 == 39 and ld.MIN_LD_WINDOWS34 == 8 and ld.B_HOLD34 == 98.0)
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

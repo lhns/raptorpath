@@ -11,6 +11,11 @@ delivered rate and quinn's own BBR pacing rate, side by side.
     loopdiag_parse.py smoke <ledger>
     loopdiag_parse.py check <ledger>
     loopdiag_parse.py score <ledger>...
+    loopdiag_parse.py smoke27|check27 <ledger>     (plan 27: DEF<n>/BRS<n> arms, status section 27)
+    loopdiag_parse.py score27 <ledger>...
+    loopdiag_parse.py smoke29|check29 <ledger>     (plan 29: MAIN/PWR/KNEE arms, the power store law)
+    loopdiag_parse.py score29 <ledger>...
+    loopdiag_parse.py plan29 [smoke]               (the plan table, `cell arm seed rep knee` per line; the battery's source)
 
 `row` prints one `LDROW {json}` line. Raw sample lists are never stored, only
 summaries. Nothing here is a ship verdict.
@@ -27,8 +32,6 @@ import l1common as lc  # noqa: E402
 import stage3_parse as sp  # noqa: E402
 import storelaw_parse as sl  # noqa: E402  (regexes only)
 import anchordiag_parse as ad  # noqa: E402  (shared extractors)
-from storelaw_parse import col, f, live, mean  # noqa: E402
-from anchordiag_parse import _r, arm_n  # noqa: E402
 
 GRID_C1S = [192, 256, 384, 512, 768, 1024, 1536, 2048]
 GRID_C2 = [64, 96, 128, 192, 256, 384, 512, 1024]
@@ -51,13 +54,65 @@ REPRO = 1.5                   # a candidate REPRODUCES if in [n*/1.5, 1.5 n*]
 LD_KEYS = ["rtt_min_us", "rtt_p10_us", "rtt_p50_us", "rtprop_us", "jit_us", "srtt_us",
            "dlv_rate", "q_pace_bps", "q_cwnd", "q_srtt_us"]
 
+# Plan 27 (status section 27): DEF<n> = shipped defaults + RWM_STORE=n; BRS<n> = the
+# burst-robust BBR substrate (RWM_QUIC_CC=bbr_rs) + RWM_STORE=n.
+GRID27 = {
+    "c1s-400": [192, 256, 384, 512, 768, 1024, 1536, 2048],
+    "c2-100": [64, 96, 128, 192, 256, 384, 512, 1024],
+    "c1d-400": [384, 512, 768, 1024, 1536, 2048, 3072, 4096],
+    "c8-100": [128, 192, 256, 384, 512, 768, 1024, 2048],
+}
+CELLS27 = ["c2-100", "c1s-400", "c8-100", "c1d-400"]     # battery order; the score prints in this order
+FAMS27 = ["DEF", "BRS"]
+EXPECT_ROWS27 = 128
+# Per path (index = [LOOPDIAG] path id) link bytes/s: c1 125e6, c2 12.5e6, c3 2.5e6.
+# p0 = scenA, p1 = scenB (confirmed by the section 23 harness worker).
+PATH_LINK27 = {
+    "c1s-400": [125e6],
+    "c2-100": [12.5e6],
+    "c1d-400": [125e6, 125e6],
+    "c8-100": [12.5e6, 2.5e6],
+}
+Q1_LO, Q1_HI, Q1_SPEAR = 0.8, 1.25, 0.8
+Q2_FLAT, Q2_INFL = 1.5, 2.0
+FRAGILE_SLOPE = 0.9
+CC_DEF_ECHO = "quinn congestion controller: BBR"      # src/transport/quic.rs, QuicCcMode::Bbr
+CC_BRS_ECHO = "burst-robust BBR"                      # src/transport/quic.rs, QuicCcMode::BbrRs
+
+# Plan 29 (the power store law): MAIN = shipped (no arm env), PWR = RWM_STORE_LAW=power,
+# KNEE = RWM_STORE=<the cell's knee>. plan29() below is the single source for the battery.
+CELLS29 = ["c2-100", "c1s-400", "c8-100", "c1d-400"]      # battery order; the score prints in this order
+ARMS29 = ["MAIN", "PWR", "KNEE"]
+KNEE_N = {"c2-100": 192, "c1s-400": 1024, "c1d-400": 768, "c8-100": 384}
+PRED29 = {"c2-100": 192, "c8-100": 384, "c1s-400": 384, "c1d-400": None}   # paper's predicted power points; c1d is "< 512"
+PRED29_C1D_BOUND = 512
+BLOCKS29 = [("42", 1), ("7", 1), ("42", 2)]
+EXPECT_ROWS29 = 36
+POWER_ECHO = "power store law ACTIVE"                     # once-at-start liveness echo of the engine
+MIN_PCAP_PERIODS = 3          # witness (PWR) and the FIXED-POINT floor: periods needed
+MIN_POST_PERIODS = 2          # FIXED-POINT: post-convergence periods needed for a time-average
+PIN_LIMIT = 0.25              # floor_pin / knee_pin at or above this: FLOOR-COLLAPSE / RUNAWAY
+SETTLED_MIN = 1.0 / 3.0       # converged suffix below this share of the periods: NOISE-DOMINATED
+# (sign agreement is reported only: in a converged limit cycle successive e-hat alternate, so it reads ~0 there)
+SIGMA_K = 2.0                 # 2 sigma_pooled
+for _a in ("PWR", "KNEE"):
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+
 for _a in ["MAIN"] + [f"S{n}" for n in sorted(set(GRID_C1S + GRID_C2))]:
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+for _g in GRID27.values():
+    for _n in _g:
+        for _f in FAMS27:
+            sp.ARM_SPEC[f"{_f}{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
 
 _LD = re.compile(
     r"\[LOOPDIAG\] t=([\d.]+)s p(\d+) n=(\d+) ov=(\d+) rtt_min_us=(\S+) rtt_p10_us=(\S+) "
     r"rtt_p50_us=(\S+) rtprop_us=(\S+) jit_us=(\S+) srtt_us=(\S+) dlv=(\d+) dlv_rate=(\S+) "
     r"q_pace_bps=(\S+) q_cwnd=(\S+) q_srtt_us=(\S+)")
+
+
+def _r(x, nd=3):
+    return None if x is None else round(x, nd)
 
 
 def loopdiag_windows(cli, path="0"):
@@ -77,9 +132,9 @@ def loopdiag_windows(cli, path="0"):
     return out
 
 
-def loopdiag_summary(cli):
+def loopdiag_summary(cli, path="0"):
     """(windows with n>0, {key: median over those windows}, numeric q_pace window count)."""
-    ws = [w for w in loopdiag_windows(cli) if w["n"] > 0]
+    ws = [w for w in loopdiag_windows(cli, path) if w["n"] > 0]
     med = {}
     for k in LD_KEYS:
         v = [w[k] for w in ws if w.get(k) is not None]
@@ -88,12 +143,103 @@ def loopdiag_summary(cli):
     return len(ws), med, npace
 
 
+def arm_n(arm):
+    m = re.fullmatch(r"(?:S|DEF|BRS)(\d+)", arm)
+    return int(m.group(1)) if m else None
+
+
+def arm_fam(arm):
+    m = re.fullmatch(r"(DEF|BRS)\d+", arm)
+    return m.group(1) if m else None
+
+
+_PCAP_KV = re.compile(r"(\w+)=(\S+)")
+_PCAP_INT = ("period", "conv", "ext")
+
+
+def pcap_periods(lines):
+    """Every `[PCAP]` per-period line -> a dict of floats (ints for period/conv/ext; None for `-`).
+    `t` and `conv_t` are printed with a trailing `s`. The once-at-start liveness echo has no [PCAP] prefix."""
+    out = []
+    for ln in lines:
+        i = ln.find("[PCAP] ")
+        if i < 0:
+            continue
+        d = {}
+        for k, v in _PCAP_KV.findall(ln[i + 7:]):
+            x = lc.fnum(v[:-1] if k in ("t", "conv_t") and v.endswith("s") else v)
+            d[k] = int(x) if x is not None and k in _PCAP_INT else x
+        out.append(d)
+    return out
+
+
+def pcap_floor(lines):
+    """The floor (symbols) from the liveness echo; 10 if absent."""
+    for ln in lines:
+        if POWER_ECHO in ln:
+            m = re.search(r"\bfloor=(\d+)", ln)
+            if m:
+                return float(m.group(1))
+    return 10.0
+
+
+def pcap_summary(lines):
+    """Row fields from the [PCAP] stream. Post-convergence = periods with index >= the last line's `conv`
+    (conv = first period index after which n-bar stayed within +-q of its current value; running estimate)."""
+    ps = pcap_periods(lines)
+    z = dict(pcap_periods=len(ps), pcap_conv=None, pcap_conv_t=None, pcap_nbar_post=None, pcap_post_n=0,
+             pcap_post_floor=0, pcap_nbar_all=None, pcap_nbar_final=None, pcap_floor_pin=None, pcap_knee_pin=None,
+             pcap_bind=None, pcap_out_pin=None, pcap_sign=None, pcap_hole_mean=None, pcap_ext=None)
+    if not ps:
+        return z
+    last = ps[-1]
+    conv = last.get("conv")
+    floor = pcap_floor(lines)
+    post = [p for p in ps if conv is not None and p.get("period") is not None and p["period"] >= conv
+            and p.get("nbar") is not None]
+    z.update(pcap_conv=conv, pcap_conv_t=last.get("conv_t"),
+             pcap_nbar_post=mean([p["nbar"] for p in post]), pcap_post_n=len(post),
+             pcap_post_floor=sum(1 for p in post if p["nbar"] <= floor),
+             pcap_nbar_all=mean([p["nbar"] for p in ps if p.get("nbar") is not None]),
+             pcap_nbar_final=last.get("next") if last.get("next") is not None else last.get("nbar"),
+             pcap_floor_pin=last.get("floor_pin"), pcap_knee_pin=last.get("knee_pin"), pcap_bind=last.get("bind"),
+             pcap_out_pin=last.get("out_pin"), pcap_sign=last.get("sign"),
+             pcap_hole_mean=mean([p["hole"] for p in ps if p.get("hole") is not None]), pcap_ext=last.get("ext"))
+    return z
+
+
+def loop_series(cli):
+    """Post-warm-up [LOOPDIAG] windows with n>0 and a numeric rtt_p50_us, ALL paths pooled -> [[t, rtt_p50_us]].
+    Stored compactly in the row so the scorer can cut every arm at the same post-convergence time."""
+    seen = {m.group(2) for m in (_LD.search(ln) for ln in cli) if m}
+    out = []
+    for pid in sorted(seen, key=int):
+        for w in loopdiag_windows(cli, pid):
+            if w["n"] > 0 and w.get("rtt_p50_us") is not None:
+                out.append([round(w["t"], 3), w["rtt_p50_us"]])
+    return out
+
+
+def loop_p50(series, cutoff):
+    """Loop-time p50 (us) after `cutoff`: the MEDIAN OF THE WINDOW MEDIANS (rtt_p50_us) over all pooled paths,
+    windows unweighted (a window's own sample count is not used). None if no window is at or after the cutoff."""
+    return median([p for t, p in series if t >= cutoff])
+
+
+def p1_idle(cli):
+    """c8 only: path 1 delivered 0 in EVERY post-warm-up window (and there is at least one). Then it sent nothing and
+    has no loop to witness (plan 27 lost 12 c8 rows to requiring it)."""
+    ws = loopdiag_windows(cli, "1")
+    return bool(ws) and all(w["dlv"] == 0 for w in ws)
+
+
 IO_HIGH_FULL10 = 20.0   # io full avg10 at or above this flags a row (a covariate, never a void)
 
 
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None):
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
     row["bin_sha"] = sha
+    row["notes"] = []
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
     cap = [m for m in (sl._SUMCAP.search(ln) for ln in cli) if m]
     if cap:
@@ -128,24 +274,65 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row["ax_p95_us"] = int(ax[-1].group(3)) if ax else None
     row["ackdiag"], row["ackdiag_n"] = ad.ackdiag_last(cli)
     row["ld_n"], row["ld_med"], row["ld_pace_n"] = loopdiag_summary(cli)
+    # per path (plan 27): medians over post-warm-up windows with n>0 of every field
+    nleg = sp.N_LEGS[cell]
+    seen = {m.group(2) for m in (_LD.search(ln) for ln in cli) if m}
+    ids = sorted(seen | {str(i) for i in range(nleg)}, key=int)
+    row["ld_pn"] = {}
+    for pid in ids:
+        pn_, pmed, ppace = loopdiag_summary(cli, pid)
+        row[f"ld_p{pid}"] = pmed
+        row["ld_pn"][pid] = [pn_, ppace]
+    row["power_echo"] = any(POWER_ECHO in ln for ln in cli)
+    row["gate_law"] = lc.gate_tok(cli, "RWM_STORE_LAW")
+    row.update(pcap_summary(cli))
+    row["ld_p50_series"] = loop_series(cli)
+    cv = row["pcap_conv_t"]
+    row["loop_p50_all"] = loop_p50(row["ld_p50_series"], 0.0)
+    row["loop_p50_post"] = loop_p50(row["ld_p50_series"], cv) if cv is not None else None
+    row["cc_def_echo"] = any(CC_DEF_ECHO in ln for ln in cli)
+    row["cc_brs_echo"] = any(CC_BRS_ECHO in ln for ln in cli)
     nbytes = sp.CELL_SPEC[cell][3]
     row["cpu_cli_gb"] = _r(row["cpu_cli"] / (nbytes / 1e9)) if row.get("cpu_cli") is not None else None
 
     p = []
     if row["ackdiag_n"] < 1:
         p.append("no-ackdiag")
-    if row["ld_n"] < MIN_LD_WINDOWS:
-        p.append(f"loopdiag-p0-windows={row['ld_n']}")
-    if row["ld_pace_n"] < 1:
-        p.append("no-q-pace-bps")
-    n = arm_n(arm)
+    idle1 = arm in ARMS29 and cell == "c8-100" and p1_idle(cli)
+    if idle1:
+        row["notes"].append("p1-idle")
+    for i in range(nleg):                       # EVERY path of the cell (plan 29 c8: p1 only if it sent anything)
+        if i == 1 and idle1:
+            continue
+        wn, pn_pace = row["ld_pn"][str(i)]
+        if wn < MIN_LD_WINDOWS:
+            p.append(f"loopdiag-p{i}-windows={wn}")
+        if pn_pace < 1:
+            p.append("no-q-pace-bps" if i == 0 else f"no-q-pace-bps-p{i}")
+    n = KNEE_N[cell] if arm == "KNEE" else arm_n(arm)
+    fam = arm_fam(arm)
     eng = row["sumcap_eng"]
     if arm == "MAIN":
         if not eng:
             p.append("main-sumcap-eng-zero")
         if row["gate_store"] != "unset":
             p.append(f"gate-store={row['gate_store']}")
+        if row["power_echo"]:
+            p.append("main-has-power-echo")
+        if row["gate_law"] == "power":
+            p.append("main-gate-law-power")
+    elif arm == "PWR":
+        if not row["power_echo"]:
+            p.append("pwr-no-power-echo")
+        if row["pcap_periods"] < MIN_PCAP_PERIODS:
+            p.append(f"pwr-pcap-periods={row['pcap_periods']}")
+        if row["gate_store"] != "unset":
+            p.append(f"pwr-gate-store={row['gate_store']}")
+        if row["gate_law"] not in (None, "power"):
+            p.append(f"pwr-gate-law={row['gate_law']}")
     elif n is not None:
+        if arm == "KNEE" and row["power_echo"]:
+            p.append("knee-has-power-echo")
         if eng:
             p.append(f"s-sumcap-eng={eng}")
         if row["gate_store"] != str(n):
@@ -154,6 +341,23 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             p.append(f"s-win-windows={row['win_n']}")
         elif row["win_den_min"] != n or row["win_den_max"] != n:
             p.append(f"s-win-den-not-n={row['win_den_min']}..{row['win_den_max']}")
+    if fam == "DEF":
+        if not row["cc_def_echo"]:
+            p.append("def-no-bbr-echo")
+        if row["cc_brs_echo"]:
+            p.append("def-has-brs-echo")
+    elif fam == "BRS" and not row["cc_brs_echo"]:
+        p.append("brs-no-echo")
+    row.update(plan34_fields(cli, srv, nleg))
+    if os.environ.get("LD_PLAN") == "34":
+        for i in range(nleg):
+            wn = row["ld_pn"][str(i)][0]
+            if wn < MIN_LD_WINDOWS34:
+                p.append(f"p34-loopdiag-p{i}-windows={wn}")
+        if row["diag_n"] < 1 or row["dgq_n"] < row["diag_n"]:
+            p.append(f"p34-dgq-missing={row['dgq_n']}/{row['diag_n']}")
+        if row["rdiag_n"] < MIN_RDIAG34:
+            row["notes"].append(f"r3-void rdiag_busy_lines={row['rdiag_n']}")
     row["problems"].extend(p)
     if row["problems"] and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -184,12 +388,28 @@ def rows_of(paths):
     return rows
 
 
+def mean(v):
+    return sum(v) / len(v) if v else None
+
+
 def median(v):
     v = sorted(v)
     if not v:
         return None
     k = len(v)
     return v[k // 2] if k % 2 else (v[k // 2 - 1] + v[k // 2]) / 2
+
+
+def f(x, nd=1):
+    return "-" if x is None else f"{x:.{nd}f}"
+
+
+def live(rows, cell, arm):
+    return [r for r in rows if r["cell"] == cell and r["arm"] == arm and r["status"] == "LIVE"]
+
+
+def col(rs, key):
+    return [r[key] for r in rs if r.get(key) is not None]
 
 
 def ldcol(rs, key):
@@ -401,6 +621,771 @@ def smoke(path):
     return 0
 
 
+# ── plan 27 (status section 27): premises of the fixed-point model ─────────
+def _ldp(r, p):
+    return r.get(f"ld_p{p}") or {}
+
+
+def per_n27(rows, cell, fam):
+    """{n: {live, G, Gmin, Gmax, ax, paths: [{key: mean over live rows of the per-row path medians, Tmin, Tp50, S, Q}]}}"""
+    links = PATH_LINK27[cell]
+    out = {}
+    for n in GRID27[cell]:
+        rs = live(rows, cell, f"{fam}{n}")
+        g = col(rs, "mbps")
+        d = {"live": len(rs), "G": mean(g), "Gmin": min(g) if g else None, "Gmax": max(g) if g else None,
+             "ax": mean(col(rs, "ax_p50_us")), "paths": []}
+        for p, lb in enumerate(links):
+            pd = {k: mean([_ldp(r, p)[k] for r in rs if _ldp(r, p).get(k) is not None]) for k in LD_KEYS}
+            pd["Tmin"], pd["Tp50"] = pd["rtt_min_us"], pd["rtt_p50_us"]
+            pd["S"] = pd["Tp50"] - pd["Tmin"] if pd["Tp50"] is not None and pd["Tmin"] is not None else None
+            pd["Q"] = pd["q_pace_bps"] / 8.0 / lb if pd["q_pace_bps"] is not None else None
+            d["paths"].append(pd)
+        out[n] = d
+    return out
+
+
+def knee27(pn, cell):
+    """(Gmax, n*) from the arm's per-n goodput means; (None, None) without data."""
+    G = [(n, pn[n]["G"]) for n in GRID27[cell] if pn[n]["G"] is not None]
+    if not G:
+        return None, None
+    gmax = max(g for _, g in G)
+    return gmax, min(n for n, g in G if g >= KNEE * gmax)
+
+
+def q1_class(qs):
+    """qs: {path: {n: Q}} -> (class, median Q, {path: Spearman}). Pre-registered order of the tests."""
+    allq = [q for d in qs.values() for q in d.values() if q is not None]
+    if not allq:
+        return "-", None, {}
+    med = median(allq)
+    rho = {}
+    circ = False
+    for p, d in qs.items():
+        pts = sorted((n, q) for n, q in d.items() if q is not None)
+        if len(pts) < 3:
+            rho[p] = None
+            continue
+        rho[p] = spearman([n for n, _ in pts], [q for _, q in pts])
+        if rho[p] is not None and rho[p] >= Q1_SPEAR and pts[0][1] < Q1_LO:
+            circ = True
+    if all(Q1_LO <= q <= Q1_HI for q in allq):
+        return "FLAT-AT-LINK", med, rho
+    if circ:
+        return "CIRCULAR", med, rho
+    if med > Q1_HI:
+        return "OVER-READ", med, rho
+    if med < Q1_LO:
+        return "APP-LIMITED", med, rho
+    return "NEITHER", med, rho
+
+
+def _ratio(num, den):
+    if den > 0:
+        return num / den
+    return math.inf if num > 0 else 1.0
+
+
+def q2_path(sv):
+    """sv: {n: S} -> (FLAT|INFLATES|AMBIGUOUS|-, max/min ratio, S(nmax)/S(nmin) ratio)."""
+    pts = sorted((n, s) for n, s in sv.items() if s is not None)
+    if len(pts) < 2:
+        return "-", None, None
+    vals = [s for _, s in pts]
+    r_span = _ratio(max(vals), min(vals))
+    r_end = _ratio(pts[-1][1], pts[0][1])
+    if r_span <= Q2_FLAT:
+        return "FLAT", r_span, r_end
+    if r_end >= Q2_INFL:
+        return "INFLATES", r_span, r_end
+    return "AMBIGUOUS", r_span, r_end
+
+
+def q2_cell(classes):
+    if not classes or "-" in classes:
+        return "-"
+    if all(c == "FLAT" for c in classes):
+        return "FLAT"
+    if any(c == "INFLATES" for c in classes):
+        return "INFLATES"
+    return "AMBIGUOUS"
+
+
+def fixed_point27(ask):
+    """ask: {n: symbols or None}. -> {kind: FLOOR|CEILING|STABLE|FRAGILE|-, n_fp, slope}."""
+    ns = sorted(n for n, a in ask.items() if a is not None)
+    res = {"kind": "-", "n_fp": None, "slope": None}
+    if not ns:
+        return res
+    if ask[ns[0]] < ns[0]:
+        res["kind"] = "FLOOR"
+        return res
+    if ask[ns[-1]] >= ns[-1]:
+        res["kind"] = "CEILING"
+        return res
+    for lo, hi in zip(ns, ns[1:]):
+        if ask[lo] >= lo and ask[hi] < hi:
+            f_lo, f_hi = ask[lo] - lo, ask[hi] - hi
+            res["n_fp"] = lo + f_lo / (f_lo - f_hi) * (hi - lo)
+            res["slope"] = (ask[hi] - ask[lo]) / (hi - lo)
+            res["kind"] = "FRAGILE" if res["slope"] >= FRAGILE_SLOPE else "STABLE"
+            return res
+    return res
+
+
+def ask27(pn, cell, measured):
+    """ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [symbols]; L_p = link_p/W (true link) or Q_p link_p/W (measured)."""
+    ask = {}
+    for n in GRID27[cell]:
+        tot, ok = 0.0, True
+        for p, lb in enumerate(PATH_LINK27[cell]):
+            pd = pn[n]["paths"][p]
+            if pd["rtprop_us"] is None or pd["S"] is None or (measured and pd["Q"] is None):
+                ok = False
+                break
+            L = (pd["Q"] if measured else 1.0) * lb / W_WIRE
+            tot += L * (pd["rtprop_us"] + pd["S"]) / 1e6
+        ask[n] = Q_GAIN * tot if ok else None
+    return ask
+
+
+def print_arm27(pn, cell, fam, out):
+    links = PATH_LINK27[cell]
+    gmax, nstar = knee27(pn, cell)
+    out(f"  ARM {fam}: per n (means over live rows of the per-row path medians; S = Tp50 - Tmin; Q = q_pace_bps/8 / link_p)")
+    out("    n     live  goodput [min-max]       A_x p50   path  Tmin us  Tp50 us  S us   RTprop us  Q")
+    for n in GRID27[cell]:
+        d = pn[n]
+        for p in range(len(links)):
+            pd = d["paths"][p]
+            head = (f"    {n:<5} {d['live']:<5} {f(d['G'],1):>7} [{f(d['Gmin'],1)}-{f(d['Gmax'],1)}]"
+                    f"{'':<3}{f(d['ax'],0):>8}  ") if p == 0 else " " * 53
+            out(f"{head}  p{p}  {f(pd['Tmin'],0):>7}  {f(pd['Tp50'],0):>7}  {f(pd['S'],0):>6}  {f(pd['rtprop_us'],0):>9}  {f(pd['Q'],3):>6}")
+    if nstar is None:
+        out(f"    {fam} Gmax -, n* -")
+    else:
+        out(f"    {fam} Gmax {f(gmax,1)}  n* = {nstar} (smallest n with G >= {KNEE:g} Gmax = {f(KNEE * gmax,1)});"
+            f" band [n*/1.5, 1.5 n*] = [{f(nstar / REPRO,1)}, {f(REPRO * nstar,1)}]")
+    return nstar
+
+
+def q1_of(pn, cell):
+    qs = {p: {n: pn[n]["paths"][p]["Q"] for n in GRID27[cell]} for p in range(len(PATH_LINK27[cell]))}
+    return q1_class(qs)
+
+
+def q2_of(pn, cell):
+    classes, info = [], []
+    for p in range(len(PATH_LINK27[cell])):
+        c, r_span, r_end = q2_path({n: pn[n]["paths"][p]["S"] for n in GRID27[cell]})
+        classes.append(c)
+        info.append((c, r_span, r_end))
+    return q2_cell(classes), info
+
+
+def fp_str(fp):
+    return f"n_fp={f(fp['n_fp'],1)} slope={f(fp['slope'],3)}"
+
+
+def score_cell27(rows, cell, out):
+    """Prints every intermediate number; returns the verdict pieces."""
+    out(f"CELL {cell}  (links B/s per path {PATH_LINK27[cell]}, W={W_WIRE:g} B/datagram, q={Q_GAIN - 1:.1f})")
+    pns = {fam: per_n27(rows, cell, fam) for fam in FAMS27}
+    nstar = {fam: print_arm27(pns[fam], cell, fam, out) for fam in FAMS27}
+    res = {"cell": cell, "nstar": nstar}
+    # Q1: L source (BRS decides; DEF is reference)
+    for fam in ("BRS", "DEF"):
+        cls, med, rho = q1_of(pns[fam], cell)
+        out(f"  Q1 [{fam}{'' if fam == 'BRS' else ', reference'}] median Q {f(med,3)}; Spearman(Q,n) per path "
+            + " ".join(f"p{p}:{f(r,3)}" for p, r in rho.items()) + f" -> {cls}")
+        res[f"q1_{fam}"] = cls
+    # Q2: spread and the fixed point with the TRUE link (DEF decides; BRS is reference)
+    for fam in ("DEF", "BRS"):
+        cls, info = q2_of(pns[fam], cell)
+        out(f"  Q2 [{fam}{'' if fam == 'DEF' else ', reference'}] per path: " +
+            " ".join(f"p{p}:{c}(max/min {f(a,3)}, end/start {f(b,3)})" for p, (c, a, b) in enumerate(info)) + f" -> {cls}")
+        ask = ask27(pns[fam], cell, False)
+        out("    ask(n) = 1.1 sum_p L_p (RTprop_p + S_p) [true link], ask:ask/n  " +
+            "  ".join(f"{n}:{f(ask[n],1)}/{f(ask[n] / n if ask[n] is not None else None,3)}" for n in GRID27[cell]))
+        fp = fixed_point27(ask)
+        out(f"    fixed point: {fp['kind']} {fp_str(fp)}")
+        res[f"q2_{fam}"], res[f"fp_{fam}"] = cls, fp
+    # Q3: reproduction with the measured rate (BRS rows)
+    ask3 = ask27(pns["BRS"], cell, True)
+    out("  Q3 [BRS] ask(n) = 1.1 sum_p Q_p link_p/W (RTprop_p + S_p), ask:ask/n  " +
+        "  ".join(f"{n}:{f(ask3[n],1)}/{f(ask3[n] / n if ask3[n] is not None else None,3)}" for n in GRID27[cell]))
+    fp3 = fixed_point27(ask3)
+    ns_b, ns_d = nstar["BRS"], nstar["DEF"]
+    repro = fp3["n_fp"] is not None and ns_b is not None and in_band(fp3["n_fp"], ns_b)
+    in_def = fp3["n_fp"] is not None and ns_d is not None and in_band(fp3["n_fp"], ns_d)
+    out(f"    fixed point: {fp3['kind']} {fp_str(fp3)}; in DEF band (report only): {'yes' if in_def else 'no'}")
+    band = f"[{f(ns_b / REPRO,1)}, {f(REPRO * ns_b,1)}]" if ns_b is not None else "[-, -]"
+    out(f"  Q1 {res['q1_BRS']}")
+    out(f"  Q2 {res['q2_DEF']} {res['fp_DEF']['kind']} {fp_str(res['fp_DEF'])}")
+    out(f"  Q3 {'REPRODUCES' if repro else 'MISSES'} n_fp={f(fp3['n_fp'],1)} band={band}")
+    res.update(q3="REPRODUCES" if repro else "MISSES", fp3=fp3)
+    return res
+
+
+def score27(paths, out=print):
+    rows = rows_of(paths)
+    out("LOOP-DIAG PLAN 27 SCORE (premises of the fixed-point model; diagnostic, nothing here ships)")
+    out("")
+    out("ROWS by (cell, arm): live / total / statuses")
+    for c in CELLS27:
+        for fam in FAMS27:
+            for n in GRID27[c]:
+                rs = [r for r in rows if r["cell"] == c and r["arm"] == f"{fam}{n}"]
+                if not rs:
+                    continue
+                st = {}
+                for r in rs:
+                    st[r["status"]] = st.get(r["status"], 0) + 1
+                out(f"  {c} {fam}{n}: live {len([r for r in rs if r['status'] == 'LIVE'])}/{len(rs)} {st}")
+    out("")
+    out("VOID TABLE (rows not LIVE)")
+    void = [r for r in rows if r["status"] != "LIVE"]
+    for r in sorted(void, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: {r['status']} {','.join(r['problems'])}")
+    if not void:
+        out("  none")
+    out("")
+    out(f"IO PRESSURE (covariate; flagged at full avg10 >= {IO_HIGH_FULL10:g}, never voided)")
+    for r in sorted(rows, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        if r.get("io_high"):
+            out(f"  FLAG {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: io_full10={r['io_full10']} "
+                f"goodput={r.get('mbps')} status={r['status']}")
+    if not any(r.get("io_high") for r in rows):
+        out("  no row flagged")
+    out("")
+    fails, results = [], {}
+    for cell in CELLS27:
+        res = score_cell27(rows, cell, out)
+        results[cell] = res
+        out("")
+        if res["q1_BRS"] != "FLAT-AT-LINK":
+            fails.append(f"{cell}:Q1={res['q1_BRS']}")
+        if not (res["q2_DEF"] == "FLAT" and res["fp_DEF"]["kind"] == "STABLE"):
+            fails.append(f"{cell}:Q2={res['q2_DEF']}/{res['fp_DEF']['kind']}")
+        if res["q3"] != "REPRODUCES":
+            fails.append(f"{cell}:Q3={res['q3']}")
+    verdict = "PREMISES-HOLD" if not fails else "PREMISES-FAIL " + " ".join(fails)
+    out(verdict)
+    results["verdict"] = verdict
+    return results
+
+
+def check27(path):
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK27 done={ok} rows={n}/{EXPECT_ROWS27}")
+    return 0 if ok and n == EXPECT_ROWS27 else 1
+
+
+def smoke27(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    need = [("c2-100", "BRS192"), ("c8-100", "DEF512")]
+    bad = []
+    for k in need:
+        r = got.get(k)
+        if r is None:
+            bad.append(f"{k}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{k}: {r['status']} {r['problems']}")
+        if not r.get("gates_cli"):
+            bad.append(f"{k}: no [GATES] echo")
+        if not r.get("ackdiag_n"):
+            bad.append(f"{k}: no [ACKDIAG]")
+        print(f"SMOKE27 {k}: mbps={r.get('mbps')} eng={r.get('sumcap_eng')} ld_pn={r.get('ld_pn')} "
+              f"cc_def={r.get('cc_def_echo')} cc_brs={r.get('cc_brs_echo')} "
+              f"p0={r.get('ld_p0')} p1={r.get('ld_p1')} status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
+# ── plan 29: MAIN / PWR / KNEE (the power store law) ──────────────────────
+def plan29(smoke=False):
+    """The plan table, in run order: [{block, seed, rep, cell, arm, knee}]. 3 blocks (seed, rep) = (42,1) (7,1) (42,2);
+    per block the cells c2-100, c1s-400, c8-100, c1d-400, each running the three arms in an order rotated by block
+    index (block 0: MAIN,PWR,KNEE; 1: PWR,KNEE,MAIN; 2: KNEE,MAIN,PWR). 36 rows. The smoke is 2 rows."""
+    if smoke:
+        return [dict(block=0, seed="42", rep=1, cell=c, arm="PWR", knee=KNEE_N[c]) for c in ("c2-100", "c1s-400")]
+    out = []
+    for b, (seed, rep) in enumerate(BLOCKS29):
+        order = ARMS29[b % 3:] + ARMS29[:b % 3]
+        for cell in CELLS29:
+            for arm in order:
+                out.append(dict(block=b, seed=seed, rep=rep, cell=cell, arm=arm, knee=KNEE_N[cell]))
+    return out
+
+
+def sd_of(v):
+    """Sample standard deviation (n-1); None below two values."""
+    if len(v) < 2:
+        return None
+    m = sum(v) / len(v)
+    return math.sqrt(sum((x - m) ** 2 for x in v) / (len(v) - 1))
+
+
+def compare29(a, b, lower_better=False):
+    """a, b: value lists. (diff = mean(a) - mean(b), 2 sigma_pooled, token). sigma_pooled = sqrt((s1^2+s2^2)/2).
+    Token BETTER / WORSE when |diff| > 2 sigma_pooled in the good / bad direction, WITHIN otherwise (boundary is
+    WITHIN); `-` if either arm has fewer than two values (no sigma can be formed)."""
+    sa, sb = sd_of(a), sd_of(b)
+    if sa is None or sb is None:
+        return None, None, "-"
+    diff = mean(a) - mean(b)
+    thr = SIGMA_K * math.sqrt((sa * sa + sb * sb) / 2)
+    if abs(diff) <= thr:
+        return diff, thr, "WITHIN"
+    good = diff < 0 if lower_better else diff > 0
+    return diff, thr, "BETTER" if good else "WORSE"
+
+
+def stability29(r):
+    """One PWR row. PRECEDENCE: FLOOR-COLLAPSE (floor_pin >= 0.25 or any post-convergence period at the floor), then
+    RUNAWAY (knee_pin >= 0.25), then NOISE-DOMINATED (the converged suffix covers < 1/3 of the periods), else STABLE.
+    A `-` (None) fraction counts as 0."""
+    if (r.get("pcap_floor_pin") or 0.0) >= PIN_LIMIT or (r.get("pcap_post_floor") or 0) >= 1:
+        return "FLOOR-COLLAPSE"
+    if (r.get("pcap_knee_pin") or 0.0) >= PIN_LIMIT:
+        return "RUNAWAY"
+    per, post = r.get("pcap_periods") or 0, r.get("pcap_post_n") or 0
+    if per > 0 and post / per < SETTLED_MIN:
+        return "NOISE-DOMINATED"
+    return "STABLE"
+
+
+STAB_ORDER = ["FLOOR-COLLAPSE", "RUNAWAY", "NOISE-DOMINATED", "STABLE"]      # worst first
+
+
+def converged29(r):
+    return (r.get("pcap_conv") is not None and r.get("pcap_nbar_post") is not None
+            and (r.get("pcap_periods") or 0) >= MIN_PCAP_PERIODS and (r.get("pcap_post_n") or 0) >= MIN_POST_PERIODS)
+
+
+def score_cell29(rows, cell, out):
+    """Prints every intermediate number; returns the outcome tokens of the PWR arm for this cell."""
+    arms = {a: live(rows, cell, a) for a in ARMS29}
+    pw = arms["PWR"]
+    ct = [r["pcap_conv_t"] for r in pw if r.get("pcap_conv_t") is not None]
+    cutoff = median(ct) if ct else WARM_S
+    for a in ARMS29:
+        for r in arms[a]:
+            r["_loop"] = loop_p50(r.get("ld_p50_series") or [], cutoff)
+    metrics = [("goodput Mbit/s", "mbps", False), ("A_x p50 whole-transfer (us)", "ax_p50_us", True),
+               ("loop p50 post-convergence (us)", "_loop", True)]
+    vals = {k: {a: col(arms[a], k) for a in ARMS29} for _, k, _ in metrics}
+    n_star = KNEE_N[cell]
+    out(f"CELL {cell}  (KNEE n = {n_star}; live rows MAIN {len(arms['MAIN'])} PWR {len(pw)} KNEE {len(arms['KNEE'])})")
+    out(f"  loop p50 post-convergence = median of the window medians (rtt_p50_us), all paths pooled, windows "
+        f"unweighted, windows with cutoff t >= {cutoff:.2f}s (the median PWR conv_t of this cell; the same cut for every arm)")
+    out("  A_x p50 whole-transfer is the cumulative [LAT] gauge of the whole run (it cannot be cut at convergence)")
+    toks = {}
+    for title, k, lower in metrics:
+        out(f"  {title}   (lower is better)" if lower else f"  {title}   (higher is better)")
+        for a in ARMS29:
+            v = vals[k][a]
+            out(f"    {a:<5} n={len(v)}  mean {f(mean(v),1)}  sd {f(sd_of(v),2)}")
+        for x, y in (("KNEE", "MAIN"), ("PWR", "MAIN"), ("PWR", "KNEE")):
+            d, t, tok = compare29(vals[k][x], vals[k][y], lower)
+            toks[(k, x, y)] = tok
+            dtxt = "-" if d is None else f"{d:+.1f}"
+            out(f"    {x} vs {y}  diff {dtxt}  2sigma {f(t,1)}  {tok}")
+    res = {"cell": cell, "GOODPUT": toks[("mbps", "PWR", "MAIN")], "GOODPUT_KNEE": toks[("mbps", "PWR", "KNEE")],
+           "LATENCY_MAIN": toks[("ax_p50_us", "PWR", "MAIN")], "LATENCY_KNEE": toks[("ax_p50_us", "PWR", "KNEE")],
+           "LOOP_MAIN": toks[("_loop", "PWR", "MAIN")], "LOOP_KNEE": toks[("_loop", "PWR", "KNEE")]}
+    # PWR cap position
+    cv = [r for r in pw if converged29(r)]
+    lo, hi = n_star / REPRO, REPRO * n_star
+    nb = mean([r["pcap_nbar_post"] for r in cv])
+    if not pw or len(cv) * 2 <= len(pw):
+        fp = "NO-CONVERGENCE"
+    elif nb < lo:
+        fp = "BELOW"
+    elif nb > hi:
+        fp = "ABOVE"
+    else:
+        fp = "IN-BAND"
+    out(f"  PWR cap position: nbar_post {f(nb,1)} (time-average of n-bar over periods >= conv_period; {len(cv)}/{len(pw)} "
+        f"live PWR rows converged, a majority is required) vs KNEE n* = {n_star} band [{lo:.1f}, {hi:.1f}]; "
+        f"final nbar mean {f(mean(col(pw, 'pcap_nbar_final')),1)}, all-period nbar mean {f(mean(col(pw, 'pcap_nbar_all')),1)}, "
+        f"conv_period mean {f(mean(col(pw, 'pcap_conv')),1)} at conv_t mean {f(mean(col(pw, 'pcap_conv_t')),2)}s, "
+        f"periods mean {f(mean(col(pw, 'pcap_periods')),1)}")
+    pt = PRED29[cell]
+    if pt is not None:
+        ok = nb is not None and pt / REPRO <= nb <= REPRO * pt
+        out(f"  PREDICTED {cell}: nbar_post {f(nb,1)} vs point {pt} (band [{pt / REPRO:.1f}, {REPRO * pt:.1f}]) -> "
+            f"{'-' if nb is None else ('IN' if ok else 'OUT')}   (report only)")
+    else:
+        ok = nb is not None and nb < PRED29_C1D_BOUND
+        out(f"  PREDICTED {cell}: nbar_post {f(nb,1)} vs bound < {PRED29_C1D_BOUND} -> "
+            f"{'-' if nb is None else ('IN' if ok else 'OUT')}   (report only)")
+    # stability
+    sts = [stability29(r) for r in pw]
+    st = next((s for s in STAB_ORDER if s in sts), "-")
+    out(f"  PWR stability inputs (per live row): " + "; ".join(
+        f"s{r['seed']}r{r['rep']} floor_pin {f(r.get('pcap_floor_pin'),3)} knee_pin {f(r.get('pcap_knee_pin'),3)} "
+        f"sign {f(r.get('pcap_sign'),3)} post_floor {r.get('pcap_post_floor')} bind {f(r.get('pcap_bind'),3)} "
+        f"hole {f(r.get('pcap_hole_mean'),2)} ext {r.get('pcap_ext')} -> {s}" for r, s in zip(pw, sts)))
+    out(f"  GOODPUT {res['GOODPUT']}   (PWR vs MAIN, 2 sigma_pooled; vs KNEE: {res['GOODPUT_KNEE']})")
+    out(f"  LATENCY {res['LATENCY_MAIN']} {res['LATENCY_KNEE']}   (A_x p50 whole-transfer: PWR vs MAIN, PWR vs KNEE)")
+    out(f"  LATENCY-LOOP {res['LOOP_MAIN']} {res['LOOP_KNEE']}   (loop p50 post-convergence: PWR vs MAIN, PWR vs KNEE)")
+    out(f"  FIXED-POINT {fp}   (nbar_post {f(nb,1)} vs KNEE n* band [{lo:.1f}, {hi:.1f}])")
+    out(f"  STABILITY {st}   (precedence FLOOR-COLLAPSE > RUNAWAY > NOISE-DOMINATED > STABLE, worst live PWR row)")
+    res.update({"FIXED-POINT": fp, "STABILITY": st, "nbar_post": nb})
+    return res
+
+
+def score29(paths, out=print):
+    rows = rows_of(paths)
+    out("LOOP-DIAG PLAN 29 SCORE (the power store law vs MAIN and KNEE; diagnostic, nothing here ships)")
+    out("")
+    out("ROWS by (cell, arm): live / total / statuses")
+    for c in CELLS29:
+        for a in ARMS29:
+            rs = [r for r in rows if r["cell"] == c and r["arm"] == a]
+            if not rs:
+                continue
+            st = {}
+            for r in rs:
+                st[r["status"]] = st.get(r["status"], 0) + 1
+            out(f"  {c} {a}: live {len([r for r in rs if r['status'] == 'LIVE'])}/{len(rs)} {st}")
+    out("")
+    out("VOID TABLE (rows not LIVE)")
+    void = [r for r in rows if r["status"] != "LIVE"]
+    for r in sorted(void, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: {r['status']} {','.join(r['problems'])}")
+    if not void:
+        out("  none")
+    out("")
+    out("NOTES (recorded, never a void)")
+    noted = [r for r in rows if r.get("notes")]
+    for r in sorted(noted, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        out(f"  NOTE {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: {','.join(r['notes'])}")
+    if not noted:
+        out("  none")
+    out("")
+    out(f"IO PRESSURE (covariate; flagged at full avg10 >= {IO_HIGH_FULL10:g}, never voided)")
+    for r in sorted(rows, key=lambda r: (r["cell"], r["arm"], r["seed"], r["rep"])):
+        if r.get("io_high"):
+            out(f"  FLAG {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: io_full10={r['io_full10']} "
+                f"goodput={r.get('mbps')} status={r['status']}")
+    if not any(r.get("io_high") for r in rows):
+        out("  no row flagged")
+    out("")
+    results = {}
+    for cell in CELLS29:
+        results[cell] = score_cell29(rows, cell, out)
+        out("")
+    return results
+
+
+def check29(path):
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK29 done={ok} rows={n}/{EXPECT_ROWS29}")
+    return 0 if ok and n == EXPECT_ROWS29 else 1
+
+
+def smoke29(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    bad = []
+    for k in [("c2-100", "PWR"), ("c1s-400", "PWR")]:
+        r = got.get(k)
+        if r is None:
+            bad.append(f"{k}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{k}: {r['status']} {r['problems']}")
+        if not r.get("gates_cli"):
+            bad.append(f"{k}: no [GATES] echo")
+        if not r.get("ackdiag_n"):
+            bad.append(f"{k}: no [ACKDIAG]")
+        if not r.get("power_echo"):
+            bad.append(f"{k}: no power-law echo")
+        if (r.get("pcap_periods") or 0) < MIN_PCAP_PERIODS:
+            bad.append(f"{k}: {r.get('pcap_periods')} [PCAP] periods")
+        print(f"SMOKE29 {k}: mbps={r.get('mbps')} periods={r.get('pcap_periods')} conv={r.get('pcap_conv')} "
+              f"conv_t={r.get('pcap_conv_t')} nbar_post={r.get('pcap_nbar_post')} nbar_final={r.get('pcap_nbar_final')} "
+              f"floor_pin={r.get('pcap_floor_pin')} knee_pin={r.get('pcap_knee_pin')} sign={r.get('pcap_sign')} "
+              f"ld_pn={r.get('ld_pn')} status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
+# ── plan 34 (status section 34): the post-§32 c1 static grid ──────────────
+# Arms DEF<n> only (shipped substrate BBR + RWM_STORE=n), RWM_RDIAG=1 added. Readouts R1-R4 as
+# pre-registered: R1 the knee, R2 D-W's window noise at the power argmax, R3 the receiver
+# capacity mu_R = msgs / busy as a ceiling (c1d scored, c1s reported), R4 who holds authority.
+GRID34 = {"c1s-400": [256, 384, 512, 768, 1024, 1536, 2048], "c1d-400": [384, 512, 768, 1024, 1536, 2048]}
+CELLS34 = ["c1s-400", "c1d-400"]
+BLOCKS34 = [("42", 1), ("7", 1), ("42", 2)]
+EXPECT_ROWS34 = 39
+MIN_LD_WINDOWS34 = 8          # witness: post-warm-up [LOOPDIAG] windows with n>0, every path
+MIN_RDIAG34 = 3               # R3 needs >= 3 server [RDIAG] lines with busy >= RDIAG_BUSY34 (else R3-void only)
+RDIAG_BUSY34 = 20.0
+ALPHA34 = 2.0                 # Bulk: alpha = b(delta) = 2
+Q34 = 0.1                     # Bulk q
+SPACING34 = 0.25              # [LOOPDIAG]/[DIAG] window (s)
+PIN34 = 2048                  # the shipped law's pin (N*knee at N = 1; R2's descent start)
+STEP_M34 = 0.72               # m(-1) of §30: the expected clamped step descending
+B_HOLD34 = 98.0               # 1 ms of one c1 leg's L (datagrams)
+LEG_L34 = 97700.0             # c1 leg datagram rate
+_RD34 = re.compile(r"\[RDIAG\] busy=(\d+)% msgs=(\d+)/s")
+_DG34 = re.compile(r"^\[DIAG\] t=([\d.]+)s win=(\d+)/(\d+) ")
+_QC34 = re.compile(r"qcwnd=(\d+)")
+_DGQ34 = re.compile(r"dgq\d+\[hand=(\d+) tx=(\d+)")
+for _g in GRID34.values():
+    for _n in _g:
+        sp.ARM_SPEC[f"DEF{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
+
+
+def plan34_fields(cli, srv, nleg):
+    """Per-row summaries plan 34 scores from (computed on every row; cheap):
+    lnpi34: the post-warm-up window series of alpha*ln(sum_p dlv_rate) - ln(max_p rtt_p50_us/1e6), windows with
+    every path reporting and D >= 0.5 * the row's median D (as derive30/win.py); t34_med: median max-path
+    rtt_p50 (s); mu_r: median over [RDIAG] lines with busy >= 20 % of msgs/(busy/100), rdiag_n those lines;
+    dgq_b: median over post-warm-up [DIAG] windows of sum_p (hand - tx); dgq_n / diag_n: windows with dgq /
+    all post-warm-up [DIAG] windows; kshare: share of windows with sum qcwnd / W < the store cap."""
+    per = [{w["t"]: w for w in loopdiag_windows(cli, str(i)) if w["n"] > 0} for i in range(nleg)]
+    ts = sorted(set.intersection(*[set(d) for d in per])) if per and all(per) else []
+    ws = []
+    for t in ts:
+        d = sum((per[i][t].get("dlv_rate") or 0.0) for i in range(nleg))
+        tt = [per[i][t].get("rtt_p50_us") for i in range(nleg)]
+        if d > 0 and all(x for x in tt):
+            ws.append((t, d, max(tt) / 1e6))
+    if ws:
+        dm = median([w[1] for w in ws])
+        ws = [w for w in ws if w[1] >= 0.5 * dm]
+    mus = []
+    for ln in srv:
+        m = _RD34.search(ln)
+        if m and float(m.group(1)) >= RDIAG_BUSY34 and int(m.group(2)) > 0:
+            mus.append(float(m.group(2)) / (float(m.group(1)) / 100.0))
+    bs, kl, diag_n = [], [], 0
+    for ln in cli:
+        m = _DG34.match(ln)
+        if not m or float(m.group(1)) < WARM_S:
+            continue
+        diag_n += 1
+        dq = _DGQ34.findall(ln)
+        if dq:
+            bs.append(sum(int(h) - int(x) for h, x in dq))
+        qs = [int(x) for x in _QC34.findall(ln)]
+        if qs:
+            kl.append(1 if sum(qs) / W_WIRE < int(m.group(3)) else 0)
+    return {"lnpi34": [_r(ALPHA34 * math.log(d) - math.log(t), 5) for _, d, t in ws],
+            "t34_med": _r(median([w[2] for w in ws]), 6) if ws else None,
+            "mu_r": _r(median(mus), 1) if mus else None, "rdiag_n": len(mus),
+            "dgq_b": median(bs) if bs else None, "dgq_n": len(bs), "diag_n": diag_n,
+            "kshare": _r(mean(kl), 3) if kl else None}
+
+
+def _dvar(xs):
+    """var(successive difference)/2 (the §30 statistic); None below 3 points."""
+    d = [b - a for a, b in zip(xs, xs[1:])]
+    if len(d) < 2:
+        return None
+    m = sum(d) / len(d)
+    return sum((x - m) ** 2 for x in d) / len(d) / 2
+
+
+def plan34(smoke=False):
+    """The plan table in run order: [(cell, arm, seed, rep)]. Blocks (42,1) (7,1) (42,2); per block the two cells,
+    c1s first on even blocks and c1d first on odd; each grid ascending on even blocks, descending on odd."""
+    if smoke:
+        return [("c1s-400", "DEF384", "42", 1), ("c1d-400", "DEF768", "42", 1)]
+    out = []
+    for b, (seed, rep) in enumerate(BLOCKS34):
+        cells = CELLS34 if b % 2 == 0 else CELLS34[::-1]
+        for cell in cells:
+            g = GRID34[cell] if b % 2 == 0 else GRID34[cell][::-1]
+            out += [(cell, f"DEF{n}", seed, rep) for n in g]
+    return out
+
+
+def check34(path):
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK34 done={ok} rows={n}/{EXPECT_ROWS34}")
+    return 0 if ok and n == EXPECT_ROWS34 else 1
+
+
+def smoke34(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    bad = []
+    for cell, arm, _, _ in plan34(smoke=True):
+        r = got.get((cell, arm))
+        if r is None:
+            bad.append(f"{cell} {arm}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{cell} {arm}: {r['status']} {r['problems']}")
+        if r.get("rdiag_n", 0) < MIN_RDIAG34:
+            bad.append(f"{cell} {arm}: rdiag_n={r.get('rdiag_n')}")
+        print(f"SMOKE34 {cell} {arm}: mbps={r.get('mbps')} ld_pn={r.get('ld_pn')} lnpi_n={len(r.get('lnpi34') or [])} "
+              f"mu_r={r.get('mu_r')} rdiag_n={r.get('rdiag_n')} dgq_b={r.get('dgq_b')} kshare={r.get('kshare')} "
+              f"status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
+def per_n34(rows, cell):
+    out = {}
+    for n in GRID34[cell]:
+        rs = live(rows, cell, f"DEF{n}")
+        g = col(rs, "mbps")
+        tp = [max(_ldp(r, p).get("rtt_p50_us") or 0 for p in range(sp.N_LEGS[cell])) for r in rs]
+        rt = [mean([x for x in (_ldp(r, p).get("rtprop_us") for p in range(sp.N_LEGS[cell])) if x is not None])
+              for r in rs]
+        sv = [mean([(_ldp(r, p)["rtt_p50_us"] - _ldp(r, p)["rtt_min_us"]) for p in range(sp.N_LEGS[cell])
+                     if _ldp(r, p).get("rtt_p50_us") is not None and _ldp(r, p).get("rtt_min_us") is not None])
+              for r in rs]
+        r3 = [r for r in rs if r.get("rdiag_n", 0) >= MIN_RDIAG34 and r.get("mu_r") is not None]
+        s2 = [_dvar(r["lnpi34"]) for r in rs if r.get("lnpi34")]
+        s2 = [x for x in s2 if x is not None]
+        d = {"live": len(rs), "G": mean(g), "Gmin": min(g) if g else None, "Gmax": max(g) if g else None,
+             "ax": mean(col(rs, "ax_p50_us")), "Tp50max_us": mean([x for x in tp if x]),
+             "rtprop_us": mean([x for x in rt if x is not None]), "S_us": mean([x for x in sv if x is not None]),
+             "mu_r": mean([r["mu_r"] for r in r3]), "mu_r_rows": len(r3),
+             "B": median(col(rs, "dgq_b")), "kshare": mean(col(rs, "kshare")),
+             "s2": mean(s2), "s2_rows": len(s2), "T34": median(col(rs, "t34_med")), "rows": rs}
+        d["Pi2"] = d["G"] ** 2 / (d["Tp50max_us"] / 1e3) if d["G"] is not None and d["Tp50max_us"] else None
+        out[n] = d
+    return out
+
+
+def gamma34(rs):
+    """gamma from the pooled 250 ms window statistic and the pooled 1 s block statistic (blocks of 4 windows),
+    both var(successive difference)/2 pooled over rows: gamma = ln(s2_win/s2_block)/ln 4."""
+    dw, db = [], []
+    for r in rs:
+        x = r.get("lnpi34") or []
+        dw += [b - a for a, b in zip(x, x[1:])]
+        bl = [sum(x[i:i + 4]) / 4 for i in range(0, len(x) - 3, 4)]
+        db += [b - a for a, b in zip(bl, bl[1:])]
+    def v(d):
+        if len(d) < 2:
+            return None
+        m = sum(d) / len(d)
+        return sum((y - m) ** 2 for y in d) / len(d) / 2
+    sw, sb = v(dw), v(db)
+    g = math.log(sw / sb) / math.log(4) if sw and sb and sw > 0 and sb > 0 else None
+    return sw, sb, g, len(dw), len(db)
+
+
+def score34(paths, out=print):
+    rows = rows_of(paths)
+    out("LOOP-DIAG PLAN 34 SCORE (post-§32 c1 static grid; diagnostic, nothing here ships)")
+    st = {}
+    for r in rows:
+        st.setdefault((r["cell"], r["status"]), 0)
+        st[(r["cell"], r["status"])] += 1
+    out(f"ROWS {len(rows)}/{EXPECT_ROWS34} status counts {sorted(st.items())}")
+    for r in rows:
+        if r["status"] != "LIVE" or r.get("notes") or r.get("io_high"):
+            out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']}: {r['status']} problems={r.get('problems')} "
+                f"notes={r.get('notes')} io_full10={r.get('io_full10')}")
+    res = {}
+    qh2 = (Q34 / 2) ** 2
+    for cell in CELLS34:
+        pn = per_n34(rows, cell)
+        out(f"CELL {cell}")
+        out("  n     live  goodput [min-max]    A_x p50 us  Tp50max us  RTprop us  S us    Pi2      s2_win(rows) "
+            "mu_R msgs/s(rows)  B dgrams  K<c share")
+        for n in GRID34[cell]:
+            d = pn[n]
+            out(f"  {n:<5} {d['live']:<5} {f(d['G'])} [{f(d['Gmin'])}-{f(d['Gmax'])}]   {f(d['ax'], 0):>8}   "
+                f"{f(d['Tp50max_us'], 0):>8}   {f(d['rtprop_us'], 0):>7}  {f(d['S_us'], 0):>6}  {f(d['Pi2'], 0):>7}  "
+                f"{f(d['s2'], 5)}({d['s2_rows']})  {f(d['mu_r'], 0)}({d['mu_r_rows']})  {f(d['B'], 0)}  {f(d['kshare'], 2)}")
+        G = [(n, pn[n]["G"]) for n in GRID34[cell] if pn[n]["G"] is not None]
+        if not G:
+            out("  UNSCOREABLE (no live rows)")
+            continue
+        gmax = max(g for _, g in G)
+        nstar = min(n for n, g in G if g >= KNEE * gmax)
+        band = (nstar / REPRO, REPRO * nstar)
+        pis = [(n, pn[n]["Pi2"]) for n in GRID34[cell] if pn[n]["Pi2"] is not None]
+        narg = max(pis, key=lambda x: x[1])[0] if pis else None
+        out(f"  R1 Gmax {gmax:.1f}  n* = {nstar} (0.95 rule)  band [{band[0]:.0f}, {band[1]:.0f}]  Pi2 argmax = {narg}")
+        # R2
+        r2 = "UNSCOREABLE"
+        if narg is not None and pn[narg]["s2"] is not None and pn[narg]["T34"]:
+            d = pn[narg]
+            s2 = d["s2"]
+            T = d["T34"]
+            wwin = SPACING34 / T
+            sw, sb, gam, nw, nb = gamma34(d["rows"])
+            w_white = wwin * s2 / qh2
+            w_gam = wwin * (s2 / qh2) ** (1.0 / gam) if gam and gam > 0 else math.inf
+            if s2 <= qh2:
+                w_white = w_gam = wwin * s2 / qh2  # already below target inside one window
+            xfer = 400e6 * 8 / (d["G"] * 1e6)
+            step = math.log(1 + Q34) * STEP_M34
+            need = math.log(PIN34 / narg) if narg < PIN34 else 0.0
+            def reach(w):
+                if not math.isfinite(w):
+                    return 0.0
+                period = 2 * (max(w, 1.0) + 1) * T
+                return (xfer / 3) / period * step
+            rw, rg = reach(w_white), reach(w_gam)
+            if rw >= need and rg >= need:
+                r2 = "REOPENS"
+            elif rw < need:
+                r2 = "CLOSED"
+            else:
+                r2 = "AMBIGUOUS"
+            out(f"  R2 at n={narg}: s2_win={s2:.5f} T={T * 1e3:.2f} ms W_win={wwin:.1f}  pooled s2_win={f(sw, 5)} "
+                f"s2_block(1 s)={f(sb, 5)} gamma={f(gam, 2)} (diffs {nw}/{nb})  W*_white={w_white:.1f} W*_gamma={w_gam:.1f}  "
+                f"transfer {xfer:.2f} s  reach(white)={rw:.3f} reach(gamma)={rg:.3f} need ln({PIN34}/{narg})={need:.3f}  -> {r2}")
+        # R3
+        mus = [pn[n]["mu_r"] for n in GRID34[cell] if pn[n]["mu_r"] is not None]
+        r3c = "UNSCOREABLE"
+        if len(mus) >= 2:
+            ratio = max(mus) / min(mus)
+            r3c = "FLAT" if ratio <= 1.25 else ("LOAD-DEPENDENT" if ratio >= 1.5 else "AMBIGUOUS")
+            sp_ = spearman([n for n in GRID34[cell] if pn[n]["mu_r"] is not None], mus)
+            ask = {}
+            for n in GRID34[cell]:
+                d = pn[n]
+                ask[n] = ((1 + Q34) * d["mu_r"] * (d["rtprop_us"] + d["S_us"]) / 1e6
+                          if d["mu_r"] is not None and d["rtprop_us"] is not None and d["S_us"] is not None else None)
+            fp = fixed_point27(ask)
+            rep = (fp["kind"] in ("STABLE", "FRAGILE") and fp["n_fp"] is not None
+                   and band[0] <= fp["n_fp"] <= band[1] and fp["slope"] < FRAGILE_SLOPE)
+            asks = "  ".join(f"{n}:{f(a, 0)}" for n, a in ask.items())
+            out(f"  R3 mu_R max/min {ratio:.2f} Spearman(mu_R, n) {f(sp_, 2)} -> {r3c};  ask(n) {asks}")
+            out(f"     fixed point {fp['kind']} n_fp={f(fp['n_fp'], 0)} slope={f(fp['slope'], 2)} -> "
+                f"{'REPRODUCES' if rep else 'MISSES'}{'' if cell == 'c1d-400' else ' (reported only)'}")
+            r3r = "REPRODUCES" if rep else "MISSES"
+        else:
+            r3r = "UNSCOREABLE"
+        # R4
+        hold = [pn[n]["B"] for n in GRID34[cell] if n <= REPRO * nstar and pn[n]["B"] is not None]
+        bad = [n for n in GRID34[cell] if n <= REPRO * nstar and pn[n]["B"] is not None and pn[n]["B"] > B_HOLD34]
+        r4 = "UNSCOREABLE" if not hold else ("STORE-HOLDS" if not bad else "QUINN-SHARES " + ",".join(map(str, bad)))
+        out(f"  R4 B at n <= 1.5 n*: {[f(x, 0) for x in hold]} (threshold {B_HOLD34:.0f}) -> {r4}")
+        res[cell] = {"nstar": nstar, "band": band, "narg": narg, "R2": r2, "R3": r3c, "R3fp": r3r, "R4": r4}
+    out("RESULT " + json.dumps(res, sort_keys=True))
+    return res
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -419,6 +1404,35 @@ def main(argv):
         return check(argv[2])
     if cmd == "score":
         return score(argv[2:])
+    if cmd == "smoke27":
+        return smoke27(argv[2])
+    if cmd == "check27":
+        return check27(argv[2])
+    if cmd == "score27":
+        score27(argv[2:])
+        return 0
+    if cmd == "smoke29":
+        return smoke29(argv[2])
+    if cmd == "check29":
+        return check29(argv[2])
+    if cmd == "score29":
+        score29(argv[2:])
+        return 0
+    if cmd == "smoke34":
+        return smoke34(argv[2])
+    if cmd == "check34":
+        return check34(argv[2])
+    if cmd == "score34":
+        score34(argv[2:])
+        return 0
+    if cmd == "plan34":
+        for cell, arm, seed, rep in plan34(smoke=len(argv) > 2 and argv[2] == "smoke"):
+            print(f"{cell} {arm} {seed} {rep}")
+        return 0
+    if cmd == "plan29":
+        for b in plan29(smoke=len(argv) > 2 and argv[2] == "smoke"):
+            print(f"{b['cell']} {b['arm']} {b['seed']} {b['rep']} {b['knee']}")
+        return 0
     print(__doc__)
     return 2
 
