@@ -1696,6 +1696,7 @@ pub(crate) async fn run_receiver(
                                     dseq,
                                     lat_now.saturating_duration_since(dbuf).as_micros() as u64,
                                     lat_release,
+                                    false,
                                 );
                                 rxp.end(RxSec::Book, rxp_t);
                                 let rxp_t = rxp.begin();

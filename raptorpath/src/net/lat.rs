@@ -246,7 +246,7 @@ impl LatGauge {
     /// hole, or the frontier moved for a reason other than a resolution — is
     /// counted `rw_sp`, the conservative class: it can only make the
     /// cross-path share read low.
-    pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release) {
+    pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release, _late: bool) {
         self.n_deliv += 1;
         // The floor's premise: deliveries are in order and non-decreasing.
         debug_assert!(seq >= self.pending.floor, "[LAT] delivery {seq} below the floor {}", self.pending.floor);
@@ -444,7 +444,7 @@ mod tests {
         for s in 0..50_000u64 {
             g.note_arrival(s, 0, s * 10, s * 10 + 500);
             assert!(span(&g) <= 2, "seq {s}: ring slot span {} after an in-order insert", span(&g));
-            g.note_delivery(s, 0, None);
+            g.note_delivery(s, 0, None, false);
             assert!(
                 g.pending.ring.first().map_or(true, |(lo, _)| lo >= s),
                 "seq {s}: a record below the delivered seq is held"
@@ -496,7 +496,7 @@ mod tests {
         {
             let seq = i as u64;
             g.note_arrival(seq, 0, 0, 10_000 + 100 * seq);
-            g.note_delivery(seq, wait, rel);
+            g.note_delivery(seq, wait, rel, false);
         }
         assert!(g.is_receiver_site());
         let l = g.line();
@@ -519,7 +519,7 @@ mod tests {
             for (i, gap) in [30_000u64, 25_000, 40_000].into_iter().enumerate() {
                 let seq = i as u64;
                 g.note_arrival(seq, 1, 1_000, 1_000 + gap + offset);
-                g.note_delivery(seq, 0, None);
+                g.note_delivery(seq, 0, None, false);
             }
             g.line()
         };
@@ -540,6 +540,7 @@ mod tests {
             99,
             5_000,
             Some(HoleRecord { seq: 99, outcome: HoleOutcome::Repair, cross: false, us: 1, hi_us: 1 }),
+            false,
         );
         let l = g.line();
         assert!(l.starts_with("[LAT] site=receiver n=1 over=1"), "{l}");
@@ -551,11 +552,119 @@ mod tests {
     fn absent_classes_render_dash_and_never_zero() {
         let mut g = LatGauge::default();
         g.note_arrival(0, 3, 0, 100);
-        g.note_delivery(0, 0, None);
+        g.note_delivery(0, 0, None, false);
         let l = g.line();
         for k in ["rwxp_p50=-", "rwxp_p95=-", "rwsp_p50=-", "rwrep_p50=-", "rep_p50=-"] {
             assert!(l.contains(k), "`{k}` missing from {l}");
         }
         assert!(l.contains("rwxp_n=0 rwxp_p50=- rwxp_p95=- rwxp_sum=0"), "{l}");
+    }
+
+    // ---- late fills: delivered below the in-order frontier (ρ < 1) ----
+
+    fn deliver(g: &mut LatGauge, seq: u64, late: bool) {
+        g.note_arrival(seq, 0, 0, 100);
+        g.note_delivery(seq, 0, None, late);
+    }
+
+    /// The frontier gave up on seq 1 (EVICT) and it arrives afterwards: the
+    /// receiver delivers it at once, below the floor. Not a violation.
+    #[test]
+    fn a_late_fill_into_a_skipped_hole_is_not_an_order_violation() {
+        let mut g = LatGauge::default();
+        deliver(&mut g, 0, false);
+        deliver(&mut g, 2, false); // skips 1
+        deliver(&mut g, 1, true);
+        assert_eq!(g.n_deliv(), 3);
+    }
+
+    /// Holes inside one big frontier jump are each fillable once.
+    #[test]
+    fn late_fills_inside_a_big_jump_are_each_accepted() {
+        let mut g = LatGauge::default();
+        deliver(&mut g, 0, false);
+        deliver(&mut g, 10, false);
+        deliver(&mut g, 5, true);
+        deliver(&mut g, 3, true);
+        assert_eq!(g.n_deliv(), 4);
+    }
+
+    /// The wiring formula, with the real buffer: `late = seq <
+    /// next_deliver_seq()` evaluated BEFORE the push, exactly as the receiver
+    /// does. Hold-expiry deliveries are NOT offered to the gauge (the
+    /// receiver's expiry arm bypasses `[LAT]`), so the gauge sees 0, then 3
+    /// (skipping 1 and 2), and the late fill of 1 lands below its floor.
+    #[test]
+    fn the_receivers_late_formula_over_the_real_reorder_buffer() {
+        use crate::net::reorder::ReorderBuffer;
+        let t0 = std::time::Instant::now();
+        let mut rb = ReorderBuffer::new(10, 100);
+        let mut g = LatGauge::default();
+        let feed = |rb: &mut ReorderBuffer, g: &mut LatGauge, seq: u64, at: std::time::Instant| {
+            let late = seq < rb.next_deliver_seq();
+            for (dseq, _, _) in rb.push_with_time(seq, bytes::Bytes::new(), at) {
+                g.note_arrival(dseq, 0, 0, 100);
+                g.note_delivery(dseq, 0, None, late);
+            }
+        };
+        feed(&mut rb, &mut g, 0, t0); // in order
+        feed(&mut rb, &mut g, 2, t0); // held behind the hole at 1
+        // The hold expires: 2 is force-delivered (not offered to the gauge).
+        let expired = rb.drain_expired(t0 + std::time::Duration::from_millis(20));
+        assert_eq!(expired.len(), 1);
+        assert_eq!(rb.next_deliver_seq(), 3);
+        feed(&mut rb, &mut g, 3, t0 + std::time::Duration::from_millis(30)); // in order again
+        feed(&mut rb, &mut g, 1, t0 + std::time::Duration::from_millis(31)); // late fill, below the floor
+        feed(&mut rb, &mut g, 4, t0 + std::time::Duration::from_millis(32));
+        assert_eq!(g.n_deliv(), 4); // 0, 3, late 1, 4
+    }
+
+    /// Debug builds assert exactly-once delivery below the floor: a duplicate
+    /// of an in-order delivery is not a skipped hole.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "delivered twice")]
+    fn a_duplicate_of_an_in_order_delivery_is_caught() {
+        let mut g = LatGauge::default();
+        for s in 0..3 {
+            deliver(&mut g, s, false);
+        }
+        deliver(&mut g, 1, true);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "delivered twice")]
+    fn the_same_late_fill_twice_is_caught() {
+        let mut g = LatGauge::default();
+        deliver(&mut g, 0, false);
+        deliver(&mut g, 2, false);
+        deliver(&mut g, 1, true);
+        deliver(&mut g, 1, true);
+    }
+
+    /// A delivery that claims to be in order must not sit below the floor.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "in-order delivery")]
+    fn a_non_late_delivery_below_the_floor_is_caught() {
+        let mut g = LatGauge::default();
+        deliver(&mut g, 0, false);
+        deliver(&mut g, 5, false);
+        deliver(&mut g, 3, false);
+    }
+
+    /// A late fill above the floor is the hold-expiry case (those deliveries
+    /// never reach the gauge, so its floor lags): accepted once, and a repeat
+    /// is still a double delivery.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "delivered twice")]
+    fn a_late_fill_above_a_lagging_floor_is_accepted_once_only() {
+        let mut g = LatGauge::default();
+        deliver(&mut g, 0, false);
+        deliver(&mut g, 5, true); // expiry carried the frontier past 5 unseen
+        assert_eq!(g.n_deliv(), 2);
+        deliver(&mut g, 5, true);
     }
 }
