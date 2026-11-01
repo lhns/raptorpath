@@ -8799,3 +8799,64 @@ ship tree.
 
 **Gate.** STOPPED before VM contact. Re-applying the instrument is engine
 code (default-off, observation only) and is the coordinator's call.
+
+### 34. Amendment 1 — trees, session order and the scorer's arithmetic (before VM contact)
+
+Coordinator go 2026-11-02. Nothing in the readouts, outcomes or decision
+rule above changes; this fixes what the pre-registration left to the
+harness.
+
+*Trees.* Docs and harness branch: main `a722513` + the plan-34 harness
+`7c77de3` (`tools/l1/loopdiag_*`: plan 34 in `loopdiag_battery.sh`,
+`loopdiag_run_all.sh`, `loopdiag_parse.py` with its tests, and the waiter
+`loopdiag_wait34.sh`; the plan 27/29 harness restored from
+`archive/store-power`, tools only). Run branch `run34` = that + the
+`[LOOPDIAG]` instrument `a48f25f` (bd74aa0 re-applied, unchanged; the power
+law is not taken). The instrument commit is not for merge.
+
+*Session order (one session, both locks).* The on-VM waiter launches
+`loopdiag_run_all.sh` with `LD_PLAN=34` and `LD_HARD` = launch + 4 h. The
+envelope waits for both locks (`test -e` only), checks the launch
+precondition (`procs_running` ≤ 2 in 5 samples 2 s apart, no cargo/rustc;
+exit 3 and nothing run otherwise, the waiter retries every 10 min), takes
+the locks, runs the parser tests, builds the release binary fresh on disk
+and copies it to `/dev/shm/ld34`, then the suites on the same source tree
+in a fresh target (release `-p raptorpath -p raptorpath-math`, doc, wasm,
+debug, parsers; a failure that passes its immediate solo re-run is
+`FLAKE`, any other is `REAL` and stops the session as `ABORT-TESTS`), then
+the smoke and the battery from tmpfs. The battery does not start with less
+than 30 min to `LD_HARD` (`ABORT-BUDGET`) and its timeout ends there.
+
+*Row witnesses as implemented.* The §27 DEF witnesses (`[GATES]`, the BBR
+echo, every post-warm-up `win=` denominator = n, `[SUMCAP] eng` 0, ≥ 1
+`[ACKDIAG]`) plus the plan-34 ones: ≥ 8 post-warm-up `[LOOPDIAG]` windows
+with samples on every path, `dgq` on every post-warm-up `[DIAG]` line; a
+row with < 3 server `[RDIAG]` lines at busy ≥ 20 % is LIVE but carries the
+note `r3-void` and is left out of R3 only.
+
+*Scorer arithmetic (`loopdiag_parse.py score34`).*
+- ln Π per window = 2·ln(Σ_paths `dlv_rate`) − ln(max_paths `rtt_p50_us`),
+  windows where every path reports, D ≥ ½ the row's median D (as §30's
+  `win.py`). σ²_win at a cap = mean over its live rows of var(Δ ln Π)/2;
+  T = median over rows of the row's median max-path Tp50; W_win = 0.25 s / T.
+- γ = ln(σ²_250ms / σ²_1s)/ln 4, both statistics pooled over the cap's rows,
+  the 1 s values the means of consecutive blocks of four windows.
+- Π₂ per cap = mean goodput² / mean max-path Tp50 (ms); its argmax is R2's cap.
+- R2's transfer = 400 MB·8 / mean goodput at that cap; a decision period
+  = 2·(max(W*, 1) + 1)·T; reach = (transfer/3)/period·ln(1.1)·0.72; the
+  descent needed is ln(2048/n_argmax). If σ²_win is already ≤ (q/2)², W* is
+  below one window and reach is computed at W* = 1.
+- R3: μ_R per cap = mean over its R3-valid rows of the row median of
+  msgs/(busy/100); RTprop̄ and S̄ = means over legs of the row medians,
+  averaged over rows; the fixed point by §27's interpolation
+  (`fixed_point27`), `REPRODUCES` iff interior, inside R1's band, slope < 0.9.
+- R4: B per cap = median over rows of the row median of Σ (hand − tx).
+
+*Dry run (no VM).* The scorer run on §27's c1s/c1d DEF logs (no `[RDIAG]`
+there, so R3 is unscoreable) reproduces §30: c1s σ²_win 0.0364 at 384,
+T 4.79 ms, W*_white 760 (§30: 765), `CLOSED`; c1d 0.0333 at 384, `CLOSED`;
+R4 `STORE-HOLDS` at both (B 16–66). Two §27 c1d rows would fail the new
+≥ 8-window witness (5 and 2 windows), so c1d may lose rows to it.
+
+*Duration.* Build ≈ 6 min, suites ≈ 1.5–2 h (§27: release 25 min, debug
+46 min, plus builds), smoke and battery ≈ 15 min; inside `LD_HARD`.
