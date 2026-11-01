@@ -11,11 +11,12 @@
 //!     [window_start(8 LE)][window_count(2 LE)][repair_index(4 LE)][coded_data]
 
 use bytes::Bytes;
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::gf256;
 use super::traits::{FecBackend, WireSymbol};
 use super::window_traits::{WindowDecoder, WindowEncoder};
+use crate::net::seq_bits::SeqBits;
 
 pub use gf256::generate_window_coefficients;
 
@@ -253,8 +254,10 @@ pub struct RlcWindowDecoder {
     pivots: BTreeMap<u64, PivotRow>,
     /// Sequences that have been output (to avoid duplicate delivery)
     output: BTreeSet<u64>,
-    /// Deduplication: seen (block_id, payload_id, is_repair) tuples
-    seen: HashSet<(u64, u32, bool)>,
+    /// Deduplication: source seqs seen (a bitmap pruned from the front) ...
+    src_seen: SeqBits,
+    /// ... and repairs seen, ordered so `advance` pops what it prunes.
+    repairs_seen: BTreeSet<(u64, u32)>,
     /// Total symbols fed
     total_fed: u64,
     /// Highest `advance` frontier: seqs below it are pruned, hence never new.
@@ -272,7 +275,8 @@ impl RlcWindowDecoder {
             recovered: BTreeMap::new(),
             pivots: BTreeMap::new(),
             output: BTreeSet::new(),
-            seen: HashSet::new(),
+            src_seen: SeqBits::new(),
+            repairs_seen: BTreeSet::new(),
             total_fed: 0,
             floor: 0,
             repairs_fed: 0,
@@ -288,7 +292,7 @@ impl RlcWindowDecoder {
         [
             self.recovered.keys().next().copied(),
             self.output.iter().next().copied(),
-            self.seen.iter().filter(|k| k.2).map(|k| k.0).min(),
+            self.repairs_seen.iter().next().map(|k| k.0),
             self.pivots.keys().next().copied(),
             self.pivots.values().filter_map(|r| r.coefficients.keys().next().copied()).min(),
         ]
@@ -454,9 +458,16 @@ impl RlcWindowDecoder {
             return vec![];
         }
 
-        // Deduplicate
-        let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
-        if !self.seen.insert(key) {
+        // Deduplicate: sources by seq (their payload_id is always 0), repairs
+        // by (block_id, payload_id).
+        let fresh = if symbol.is_repair {
+            self.repairs_seen.insert((symbol.block_id, symbol.payload_id))
+        } else {
+            // `insert` also answers false for a seq it refuses to record
+            // (beyond its span cap); only a recorded seq is a duplicate.
+            self.src_seen.insert(symbol.block_id) || !self.src_seen.contains(symbol.block_id)
+        };
+        if !fresh {
             return vec![];
         }
 
@@ -540,37 +551,36 @@ impl WindowDecoder for RlcWindowDecoder {
         out
     }
 
+    /// Raise the floor and drop everything below it. Called once per drained
+    /// batch, so the cost is O(entries pruned): every set is ordered and is
+    /// popped from the front, never scanned or collected.
     fn advance(&mut self, oldest_seq: u64) {
         self.floor = self.floor.max(oldest_seq);
-        // Remove recovered symbols older than oldest_seq
-        let old_seqs: Vec<u64> = self
-            .recovered
-            .range(..oldest_seq)
-            .map(|(k, _)| *k)
-            .collect();
-        for seq in old_seqs {
-            self.recovered.remove(&seq);
+        let f = self.floor;
+        while let Some(e) = self.recovered.first_entry() {
+            if *e.key() >= f {
+                break;
+            }
+            e.remove();
         }
-
-        // Remove output tracking older than oldest_seq
-        let old_output: Vec<u64> = self.output.range(..oldest_seq).copied().collect();
-        for seq in old_output {
-            self.output.remove(&seq);
+        while self.output.first().is_some_and(|&s| s < f) {
+            self.output.pop_first();
         }
-
-        // Remove pivot rows for old sequences
-        let old_pivots: Vec<u64> = self.pivots.range(..oldest_seq).map(|(k, _)| *k).collect();
-        for seq in old_pivots {
-            self.pivots.remove(&seq);
+        // Rows pivoting below the floor are dropped. No surviving row needs
+        // its columns trimmed: a row's pivot is the smallest key of its
+        // equation (`insert_equation` takes the first key of the reduced
+        // map), the stored columns are all above it, and the cascade only
+        // ever removes columns. So a row with pivot >= f has every column > f.
+        while let Some(e) = self.pivots.first_entry() {
+            if *e.key() >= f {
+                break;
+            }
+            e.remove();
         }
-        // Also clean coefficients in remaining pivot rows
-        for (_, row) in self.pivots.iter_mut() {
-            row.coefficients.retain(|seq, _| *seq >= oldest_seq);
+        self.src_seen.prune_below(f);
+        while self.repairs_seen.first().is_some_and(|k| k.0 < f) {
+            self.repairs_seen.pop_first();
         }
-
-        // Clean up seen set for old sequences
-        self.seen
-            .retain(|(block_id, _, _)| *block_id >= oldest_seq);
     }
 
     fn rank_in(&self, start: u64, count: u64) -> u64 {
@@ -604,7 +614,7 @@ impl WindowDecoder for RlcWindowDecoder {
 
     fn seq_probe(&self, seq: u64) -> (bool, bool, bool) {
         (
-            self.seen.contains(&(seq, 0, false)),
+            self.src_seen.contains(seq),
             self.recovered.contains_key(&seq),
             self.output.contains(&seq),
         )
@@ -643,7 +653,7 @@ impl WindowDecoder for RlcWindowDecoder {
             max_span,
             coeff_n,
             self.recovered.len(),
-            self.seen.len()
+            self.src_seen.len() + self.repairs_seen.len()
         ))
     }
 }

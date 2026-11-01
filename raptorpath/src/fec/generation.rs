@@ -31,13 +31,14 @@
 //! anchor arrive (decode-on-K), delivering its sources out-of-order — no
 //! decoder change is needed.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use bytes::Bytes;
 
 use super::gf256;
 use super::traits::{FecBackend, WireSymbol};
 use super::window_traits::{WindowDecoder, WindowEncoder};
+use crate::net::seq_bits::SeqBits;
 
 pub use gf256::generate_window_coefficients;
 
@@ -768,8 +769,15 @@ pub struct GenerationDecoder {
     /// a seq still covered by a live Solving slot (this decoder holds no
     /// private copies in unit rows).
     recovered: BTreeMap<u64, Vec<u8>>,
-    /// Wire-symbol dedup: (block_id, payload_id, is_repair).
-    seen: HashSet<(u64, u32, bool)>,
+    /// `(anchor, width)` of every Solving slot in `gens`, ordered: the first
+    /// is the live floor `advance` must keep payloads from. Updated at the one
+    /// Solving insert, the one transition to Done, and on removal.
+    solving: BTreeSet<(u64, usize)>,
+    /// Wire-symbol dedup: source seqs (a bitmap pruned from the front) ...
+    src_seen: SeqBits,
+    /// ... and repairs (block_id, payload_id), ordered so `advance` pops
+    /// what it prunes.
+    repairs_seen: BTreeSet<(u64, u32)>,
     total_fed: u64,
     /// Highest `advance` frontier: seqs below it are pruned, hence never new.
     floor: u64,
@@ -784,7 +792,7 @@ impl GenerationDecoder {
     pub(crate) fn min_retained_keys(&self) -> [Option<u64>; 4] {
         [
             self.recovered.keys().next().copied(),
-            self.seen.iter().filter(|k| k.2).map(|k| k.0).min(),
+            self.repairs_seen.iter().next().map(|k| k.0),
             self.gens.keys().map(|&(a, w)| a + w as u64).min(),
             self.gens
                 .iter()
@@ -799,7 +807,9 @@ impl GenerationDecoder {
             symbol_size: symbol_size as usize,
             gens: BTreeMap::new(),
             recovered: BTreeMap::new(),
-            seen: HashSet::new(),
+            solving: BTreeSet::new(),
+            src_seen: SeqBits::new(),
+            repairs_seen: BTreeSet::new(),
             total_fed: 0,
             floor: 0,
             repairs_fed: 0,
@@ -837,6 +847,7 @@ impl GenerationDecoder {
             for (&seq, _) in self.recovered.range(anchor..anchor + width as u64) {
                 known[(seq - anchor) as usize] = true;
             }
+            self.solving.insert((anchor, width));
             self.gens.insert(
                 (anchor, width),
                 GenSlot::Solving {
@@ -955,6 +966,7 @@ impl GenerationDecoder {
 
         if *known_count == width {
             *slot = GenSlot::Done;
+            self.solving.remove(&(anchor, width));
         }
         (true, out)
     }
@@ -1074,8 +1086,16 @@ impl GenerationDecoder {
         if symbol.backend != FecBackend::Rlc {
             return vec![];
         }
-        let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
-        if !self.seen.insert(key) {
+        // Sources dedup by seq (their payload_id is always 0), repairs by
+        // (block_id, payload_id).
+        let fresh = if symbol.is_repair {
+            self.repairs_seen.insert((symbol.block_id, symbol.payload_id))
+        } else {
+            // `insert` also answers false for a seq it refuses to record
+            // (beyond its span cap); only a recorded seq is a duplicate.
+            self.src_seen.insert(symbol.block_id) || !self.src_seen.contains(symbol.block_id)
+        };
+        if !fresh {
             return vec![];
         }
         self.total_fed += 1;
@@ -1173,17 +1193,25 @@ impl WindowDecoder for GenerationDecoder {
         out
     }
 
+    /// Raise the floor and drop everything below it. Called once per drained
+    /// batch, so the cost is O(entries pruned + generations straddling the
+    /// floor): every set is ordered and is popped from the front.
     fn advance(&mut self, oldest_seq: u64) {
         self.floor = self.floor.max(oldest_seq);
         // Drop whole generations that end at or before the retention frontier.
-        let drop: Vec<(u64, usize)> = self
-            .gens
-            .keys()
-            .filter(|&&(anchor, width)| anchor + width as u64 <= oldest_seq)
-            .copied()
-            .collect();
-        for k in drop {
-            self.gens.remove(&k);
+        // `gens` is ordered by anchor, so only the prefix with anchor < the
+        // frontier is visited; a generation straddling it stays.
+        let mut from = std::ops::Bound::Unbounded;
+        while let Some((&(anchor, width), _)) = self.gens.range((from, std::ops::Bound::Unbounded)).next() {
+            if anchor >= oldest_seq {
+                break;
+            }
+            if anchor + width as u64 <= oldest_seq {
+                self.gens.remove(&(anchor, width));
+                self.solving.remove(&(anchor, width));
+            } else {
+                from = std::ops::Bound::Excluded((anchor, width));
+            }
         }
         // Prune recovered payloads below the frontier — except the span of any
         // surviving Solving slot: its `known` columns eliminate against these
@@ -1192,19 +1220,18 @@ impl WindowDecoder for GenerationDecoder {
         // the dense decoder's — one payload per known
         // column per live span — and a live slot's span is bounded (slots drop
         // above the moment their whole span passes the frontier).
-        let live_floor = self
-            .gens
-            .iter()
-            .filter(|(_, slot)| matches!(slot, GenSlot::Solving { .. }))
-            .map(|(&(anchor, _), _)| anchor)
-            .min()
-            .unwrap_or(u64::MAX);
+        let live_floor = self.solving.first().map_or(u64::MAX, |&(anchor, _)| anchor);
         let prune_to = oldest_seq.min(live_floor);
-        let old: Vec<u64> = self.recovered.range(..prune_to).map(|(&k, _)| k).collect();
-        for s in old {
-            self.recovered.remove(&s);
+        while let Some(e) = self.recovered.first_entry() {
+            if *e.key() >= prune_to {
+                break;
+            }
+            e.remove();
         }
-        self.seen.retain(|(block_id, _, _)| *block_id >= oldest_seq);
+        self.src_seen.prune_below(self.floor);
+        while self.repairs_seen.first().is_some_and(|k| k.0 < self.floor) {
+            self.repairs_seen.pop_first();
+        }
     }
 
     fn rank_in(&self, start: u64, count: u64) -> u64 {
