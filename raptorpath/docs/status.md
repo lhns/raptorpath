@@ -9053,3 +9053,46 @@ test commits and green at their fix commits (named in the result), then
 the full suites (`tools/l1/suites_run.sh`: release, doc, wasm, debug,
 parsers) on the branch head. A REAL failure is reported, not retried
 away. VM dirs removed at the end; 0 `raptorpath`, 0 `rp-*` confirmed.
+
+### 34. Item 5 diagnostic — result: H-leak REFUTED; the spread is the run's own speed
+
+Session 2026-11-01 22:55–23:01Z, both locks, release, fresh target, tree
+`08cfda9`. Ledger: the `RAS` lines below (VM dir removed).
+
+| variant | per-symbol, 6 pairs | range | median |
+|---|---|---|---|
+| `shared` (the gate's method) | 23.327, 23.236, 23.061, 23.132, 23.419, 23.089 | 0.358 | 23.184 |
+| `fresh` (one runtime per count) | 23.264, 23.121, 23.340, 23.013, 23.107, 23.014 | 0.327 | 23.114 |
+| gate, 5 runs | 23.029, 23.288, 22.958, 22.974, 23.110 | 0.330 | 23.029 |
+
+- Leftover engines idle at 20–36 allocations/s, so `L` = 0.001–0.002 per
+  symbol, two orders below the 0.36 range; `fresh` is not tighter (0.327 vs
+  0.358). **H-leak REFUTED** by both clauses.
+- The figure tracks the 12 MB run's own wall time: over the 12 pairs,
+  r = 0.87 between `t_large` (0.38–0.57 s) and the per-symbol figure,
+  slope ≈ 1.6 per symbol per second, i.e. ≈ 13 000 allocations per extra
+  second of an ACTIVE transfer (an idle engine makes ~25/s). So a part of
+  the engine's allocations is per unit of active time (wakes, polls,
+  batches), not per symbol; a slower run spends more of it per symbol.
+  Size classes: the varying share sits mostly in 17–32 B (3.71–3.96 per
+  symbol), with 257–512 B, 1–2 KiB and 4–8 KiB smaller; 8–16 B, 16 B,
+  64 B and the 1 KiB payload class are flat to 0.01.
+- The noise is one-sided in that sense: the fast runs form a floor
+  (22.96–23.03 in 5 of 17 runs); slowness only adds.
+
+### 34. Amendment 1 — the gate's estimator (before the change)
+
+The gate keeps its bound (23.5, unchanged) and its method per count, and
+changes its statistic from one pair to the **minimum over k = 5 pairs** in
+one test process. Derivation: the figure is `a + (time-coupled
+allocations)/symbols`, where the second term is ≥ 0 and grows with the
+run's wall time; the minimum over pairs estimates `a`, the per-symbol cost
+the gate exists to bound (the R1 set, worth 2.4), and a regression in `a`
+moves every pair, so the minimum keeps the gate's sensitivity to it. k = 5
+because a pair costs ≈ 1 s (the 12 MB run is 0.4–0.6 s) and 5 of the 17
+runs above sat at the floor, so the chance that 5 pairs all miss it is
+small; k is not tuned to a target false-alarm rate. Every pair's value is
+printed, so the spread stays visible. Not taken: the `fresh` method (no
+gain, measured), a time-regression correction (it would turn the bound
+into a fitted model). Check: the gate five times in the test session (each
+reports its 5 pairs and the minimum).
