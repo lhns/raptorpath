@@ -8569,10 +8569,13 @@ committed ledgers only; there was no VM contact.
 rows (SK binary, c8-100, RTOBS=2; smoke excluded) stand in for current
 main; the 24 + 24 §26 rows (pre-SK MAIN 92934a7) are the contrast. The
 proxy holds for the client's timer path: between the SK engine (320668c)
-and bb29595 the client-side changes are refactors only (`poll_once` moved
-from `tx_inputs.rs` to `io_owner.rs`, an unused `publish` argument and
-`is_dirty` removed); §31/§32 changed the receiver and the decoders. Script:
-`tools/l1/lagfloor_read.py` (read-only); output in `docs/l1-raw/lag-floor/`
+and bb29595 the client-side code changes are refactors only (`poll_once`
+moved from `tx_inputs.rs` to `io_owner.rs`, an unused `publish` argument and
+`is_dirty` removed); `emit_source.rs`, `sender_phases.rs`, `store_cap.rs`,
+`diag.rs`, `ackdiag.rs`, `control_msg.rs`, `tasks/report.rs`, `gates.rs`,
+`main.rs` and `runtime_obs.rs` changed in comments only; §31/§32 changed
+the receiver and the decoders. Script: `tools/l1/lagfloor_read.py`
+(read-only, no unit test: it gates nothing); output in `docs/l1-raw/lag-floor/`
 (`sk-client.txt`, `s26-client.txt`, `s26-server.txt`). Battery numbers are
 from `thread-sk/score.txt` and `thread-pd/battery/score.txt`.
 
@@ -8594,7 +8597,7 @@ tail* (x over the transfer, medians over rows):
 | quantity | c8 client, SK (≈ current main) | c8 client, §26 MAIN (pre-SK) | c8 server, §26 (control) |
 |---|---|---|---|
 | x p95 | **993** | 1491 | 884 |
-| x p99 (= E) | **1554** | 3411 | 1514 |
+| x p99 (≈ E) | **1554** | 3411 | 1514 |
 | ticks with x ≥ 1500 µs | **1.4 %** | 4.9 % | 1.0 % |
 | ticks with x ≥ 2000 µs | 0.8 % | 2.4 % | 0.7 % |
 | ticks ≥ 1500 µs overlapping an OS-clock stall ≥ 300 µs | 13 / 57 (23 %) | 65 / 1163 (6 %) | 51 / 222 (23 %) |
@@ -8609,15 +8612,17 @@ client now reads like the §26 server under load, and on current main its E
 is no higher than the other cells' (§32 NEW: c2 1262, c1s 2157). The
 c8-specific tail §25 set out to explain went with §28.
 
-*Finding 3 — no engine path at c8 waits on that timer.* The sender's timed
+*Finding 3 — none of the sender's timed arms is on the c8 path.* The sender's timed
 arms at c8 (`[DIAG]` `wake[]`): `pace=0` on every line of every c8 client
 row of §28 step 0 and of §32 (both arms), so the pacing poll never fires.
 Current main (§32 NEW REPORT, medians per run): `paused` 1 331 against
 `ack` 8 633, with `timer_acked` 23. A paused sender is woken by
 the always-armed input arm when acks arrive; the 1 ms poll fires only in
 true ack gaps. The tail sweep (≈ 66 fires per run) runs at 2 × SRTT, with
-RTprop ≥ 9 ms here. A sub-ms hand-off therefore delays no store release
-or emission measurably.
+RTprop ≥ 9 ms here. A sub-ms hand-off therefore delays no sender store
+release or emission measurably. Not examined: quinn's own timers (pacer,
+loss/PTO) and the I/O owner's shim timer (`io_owner.rs`, armed only with a
+non-empty shim queue) run on the same ms wheel.
 
 *Finding 4 — no c8 goodput deficit is established, and none links to the
 hand-off.* Post-SK c8 rows (§28 NEW, §32 MAIN, §32 NEW; n = 18): median
@@ -8638,7 +8643,10 @@ own c8 client E spans ×2.2. A tokio-knob change aimed at it (e.g.
 `event_interval`) would be unscoreable, so none is designed.
 
 *Limitations.* The per-tick reading is on the SK binary, not bb29595
-(argued above), with n = 6 proxy rows. The overlap test credits a tick to
+(argued above), with n = 6 proxy rows. Current main's battery rows reach a
+higher client E (§32 NEW max 2412, 2395) than any proxy row (max 1865), so
+the proxy's tail may be thinner and the ≈ 0.3–0.4 ms hand-off figure is a
+typical value, not a ceiling. The overlap test credits a tick to
 the OS only when the OS reference thread stalled at the same time; an OS
 stall that hit a worker but not `rp-osref` counts as runtime, so the
 runtime share is an upper bound. Driver-side delay (no worker parked on
