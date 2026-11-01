@@ -1245,6 +1245,40 @@ more than 2·W_cap seqs behind the frontier reads as a first arrival; such
 arrivals are exactly the source part of `below_floor`, which bounds the
 misclassification.
 
+*The size of one prune, and why it is not budgeted (status §32, §34).*
+Per drain the retained set *below* the frontier is bounded, but one prune
+is not: when a filled hole moves the frontier by J seqs at once, the next
+prune removes those J entries (the span the decoder held above the hole).
+§32 read this as `prune_max_us` up to 10 600 µs at c1d and 9 720 µs at
+c8, with `recovered=` up to 39 260 at c8, i.e. ≈ 250–270 ns per removed
+entry. A per-call work budget would be a new constant, and the honest
+derivation of one gives none:
+
+- *Total work is fixed.* Every entry is inserted once and removed once;
+  a budget only moves removals to later drains. It frees no memory sooner
+  (it frees it later) and saves no CPU.
+- *The prune is never the larger half of its own stall.* The prune that
+  removes J entries runs in the wait after the drain whose arrival filled
+  the hole, and that same drain delivered the J seqs: a reorder-buffer
+  drain, the `[LAT]` bookkeeping, the frame extraction and a consumer
+  channel offer per seq. Per entry that delivery costs at least what a
+  B-tree removal costs, so `W_prune(J) ≤ W_deliver(J)` for the same J:
+  the receiver is busy for O(J) after a jump with or without the prune,
+  and a budget could at most halve that stall, never bound it.
+- *A budget derived from what is available reduces to the status quo.*
+  The only inputs a budget could be derived from are the drain (≤
+  `MSG_CHANNEL_DEPTH` messages) and W_cap. A budget of one drain's worth
+  of entries bounds the prune by the same O(drain) the delivery already
+  costs, and leaves a backlog of `J − budget` entries that is again
+  cleared per drain — the prune is then a fixed fraction of each drain's
+  delivery work, which is what it already is on average. A budget in
+  W_cap units bounds nothing the delivery does not.
+
+So the prune stays O(pruned) per call with no budget. The reading that
+would change this: a prune measured larger than the delivery work of the
+same jump (for example a per-entry removal cost above the per-seq
+delivery cost), which would make the prune, not the jump, the stall.
+
 This is a subset of the R3 design kept at tag `archive/thread-r3`. The
 rest of R3 (known payloads held as the received `Bytes`, the delivered set
 folded into the payload store's key set, a per-entry source flag replacing
