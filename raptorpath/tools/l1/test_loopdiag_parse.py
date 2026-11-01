@@ -18,6 +18,10 @@ sys.path.insert(0, HERE)
 import l1common as lc  # noqa: E402
 import loopdiag_parse as ld  # noqa: E402
 
+# The envelope exports LD_PLAN for the battery; the plan-34 row witnesses key on it, so the
+# tests of the other plans must not inherit it (the first §34 launch stopped on exactly that).
+os.environ.pop("LD_PLAN", None)
+
 RAW = os.path.join(HERE, "..", "..", "docs", "l1-raw", "store-law-n1", "diag-sl")
 C1S = os.path.join(RAW, "c1s-400-CTL-s42-r1-a1-")
 ADRAW = os.path.join(HERE, "..", "..", "docs", "l1-raw", "anchor-diag", "diag-ad")
@@ -981,7 +985,13 @@ c1s = res["c1s-400"]
 check("score34 R3: mu_R doubling over the grid -> LOAD-DEPENDENT", c1s["R3"] == "LOAD-DEPENDENT", c1s)
 check("score34 R4: B 200 at 1536 (<= 1.5 n* = 384) -> STORE-HOLDS (1536 outside)", c1s["R4"] == "STORE-HOLDS", c1s)
 check("score34 R2: tiny window noise (s2 below the target) -> REOPENS", c1d["R2"] == "REOPENS", c1d)
-check("plan 34 constants", ld.EXPECT_ROWS34 == 39 and ld.MIN_LD_WINDOWS34 == 8 and ld.B_HOLD34 == 98.0)
+os.environ["LD_PLAN"] = "34"
+w34 = mk("S192", n=192)
+os.environ.pop("LD_PLAN", None)
+check("plan 34 witness: < 8 [LOOPDIAG] windows voids the row only under LD_PLAN=34",
+      "p34-loopdiag-p0-windows=5" in w34["problems"] and w34["status"] == "WITNESS-FAIL"
+      and "p34-loopdiag-p0-windows=5" not in mk("S192", n=192)["problems"], w34["problems"])
+check("plan 34 constants",ld.EXPECT_ROWS34 == 39 and ld.MIN_LD_WINDOWS34 == 8 and ld.B_HOLD34 == 98.0)
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
