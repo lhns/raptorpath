@@ -55,6 +55,13 @@ static GLOBAL: Counting = Counting;
 /// run + 0.56 (about eight times its spread); the whole change is worth 2.4,
 /// so undoing it fails by 1.6. Undoing one fix alone (0.4 to 1) may not be
 /// caught: this is a regression gate for the set, not for each member.
+///
+/// The bound applies to the MINIMUM over [`PAIRS`] pairs (status §34): part of
+/// the engine's allocations is per unit of active transfer time (≈ 13 000 per
+/// extra second), so a slower run reads higher per symbol (r = 0.87 with the
+/// 12 MB run's wall time; range ≈ 0.35 on one tree). That term only adds, so
+/// the minimum estimates the per-symbol cost this gate bounds, and a
+/// regression in that cost moves every pair.
 const BOUND: f64 = 23.5;
 
 async fn count(bytes: usize) -> u64 {
@@ -66,16 +73,24 @@ async fn count(bytes: usize) -> u64 {
     ALLOCS.load(Ordering::Relaxed) - a0
 }
 
+/// Pairs per test (status §34 Amendment 1): a pair costs ≈ 1 s.
+const PAIRS: usize = 5;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn allocations_per_source_symbol_stay_under_the_bound() {
     // Symbol payload of the default window framing (symbol_size - 2-byte
     // length prefix); the perf object rides full-size packets.
     let payload = 1198.0;
     let (small, large) = (2_000_000usize, 12_000_000usize);
-    let a_s = count(small).await;
-    let a_l = count(large).await;
-    let per_sym = (a_l as f64 - a_s as f64) / ((large - small) as f64 / payload);
-    println!("RECV_ALLOC small={a_s} large={a_l} allocs/symbol={per_sym:.3} bound={BOUND}");
+    let mut per_sym = f64::INFINITY;
+    for pair in 1..=PAIRS {
+        let a_s = count(small).await;
+        let a_l = count(large).await;
+        let v = (a_l as f64 - a_s as f64) / ((large - small) as f64 / payload);
+        println!("RECV_ALLOC_PAIR pair={pair} small={a_s} large={a_l} allocs/symbol={v:.3}");
+        per_sym = per_sym.min(v);
+    }
+    println!("RECV_ALLOC min_of={PAIRS} allocs/symbol={per_sym:.3} bound={BOUND}");
     assert!(
         per_sym <= BOUND,
         "allocations per source symbol {per_sym:.3} exceed the bound {BOUND}"
