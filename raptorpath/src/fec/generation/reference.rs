@@ -58,6 +58,18 @@ pub struct RefGenerationDecoder {
 }
 
 impl RefGenerationDecoder {
+    /// Test accessor, same shape as `GenerationDecoder::min_retained_keys`
+    /// (this decoder keeps no Solving-anchor floor: the last entry is `None`).
+    #[cfg(test)]
+    pub(crate) fn min_retained_keys(&self) -> [Option<u64>; 4] {
+        [
+            self.recovered.keys().next().copied(),
+            self.seen.iter().filter(|k| k.2).map(|k| k.0).min(),
+            self.gens.keys().map(|&(a, w)| a + w as u64).min(),
+            None,
+        ]
+    }
+
     pub fn new(symbol_size: u16) -> Self {
         Self {
             symbol_size: symbol_size as usize,

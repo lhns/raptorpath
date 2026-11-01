@@ -280,6 +280,20 @@ impl RlcWindowDecoder {
         }
     }
 
+    /// Test accessor: the smallest retained key of each retained set
+    /// (recovered, output, seen repair block_id, row pivot, and the smallest
+    /// column inside any surviving row).
+    #[cfg(test)]
+    pub(crate) fn min_retained_keys(&self) -> [Option<u64>; 5] {
+        [
+            self.recovered.keys().next().copied(),
+            self.output.iter().next().copied(),
+            self.seen.iter().filter(|k| k.2).map(|k| k.0).min(),
+            self.pivots.keys().next().copied(),
+            self.pivots.values().filter_map(|r| r.coefficients.keys().next().copied()).min(),
+        ]
+    }
+
     /// Try to insert an equation (coefficients + data) into the pivot table.
     /// Returns any newly recovered (seq, data) pairs.
     fn insert_equation(

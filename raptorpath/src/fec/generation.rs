@@ -778,6 +778,22 @@ pub struct GenerationDecoder {
 }
 
 impl GenerationDecoder {
+    /// Test accessor: `[recovered min, seen repair min, smallest end
+    /// (anchor + width) of any generation, smallest Solving anchor]`.
+    #[cfg(test)]
+    pub(crate) fn min_retained_keys(&self) -> [Option<u64>; 4] {
+        [
+            self.recovered.keys().next().copied(),
+            self.seen.iter().filter(|k| k.2).map(|k| k.0).min(),
+            self.gens.keys().map(|&(a, w)| a + w as u64).min(),
+            self.gens
+                .iter()
+                .filter(|(_, s)| matches!(s, GenSlot::Solving { .. }))
+                .map(|(&(a, _), _)| a)
+                .min(),
+        ]
+    }
+
     pub fn new(symbol_size: u16) -> Self {
         Self {
             symbol_size: symbol_size as usize,

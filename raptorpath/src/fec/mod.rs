@@ -12,6 +12,8 @@ pub(crate) mod window_traits;
 pub(crate) mod rlc_window;
 pub(crate) mod generation;
 pub(crate) mod unified;
+#[cfg(test)]
+mod prune_contract_tests;
 
 pub use traits::{EncodingParams, FecBackend, WireSymbol};
 pub use window_traits::{WindowEncoder, WindowDecoder};
