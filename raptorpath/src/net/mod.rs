@@ -1417,7 +1417,15 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // must say which task exited and why; a silent `_ = handle => {}` arm
     // would let a task that returns instantly shut the tunnel down with no
     // log line.
+    // Every path's QUIC connection lost (quinn's idle timeout on a silent
+    // peer): the peer is gone, end the run instead of waiting on a dead tunnel.
+    let lost_transport = transport_arc.clone();
+    let mut peer_lost = None;
     tokio::select! {
+        reason = lost_transport.all_connections_lost() => {
+            error!(%reason, "every path's QUIC connection is lost — the peer is gone; shutting down tunnel");
+            peer_lost = Some(anyhow::anyhow!("peer lost: every path's QUIC connection closed ({reason})"));
+        }
         r = sender_handle => { log_task_exit("sender", &r); r?; }
         r = receiver_handle => { log_task_exit("receiver", &r); r?; }
         r = report_handle => { log_task_exit("path-report", &r); r?; }
@@ -1433,7 +1441,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         routing::revert_dns(dns).await;
     }
 
-    Ok(())
+    peer_lost.map_or(Ok(()), Err)
 }
 
 /// Log why a top-level tunnel task exited. main()'s select! treats any task

@@ -19,6 +19,4 @@ pub use protocol::{
     WireMessage, COMPACT_DATA_TAG, PROTOCOL_VERSION, WIRE_MAGIC,
 };
 pub use io_owner::{InboundBatch, TxBatch};
-pub use quic::QuicTransport;
-/// quinn 0.11's default idle timeout (the dead-peer fail-fast bound).
-pub const QUIC_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+pub use quic::{QuicTransport, QUIC_IDLE_TIMEOUT};

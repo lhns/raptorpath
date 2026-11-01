@@ -239,6 +239,28 @@ async fn run_object(
     }
 }
 
+/// `run_object`, but ends with the engine's own error if the engine task
+/// ends first (e.g. "peer lost"), like the server: a dead tunnel must not
+/// sit out the run timeout.
+async fn run_watched(
+    engine: &mut tokio::task::JoinHandle<anyhow::Result<()>>,
+    mem: &mut MemTun,
+    obj_id: u32,
+    nbytes: usize,
+    payload_len: usize,
+    deadline: Duration,
+    feed: Option<&std::sync::Arc<net::CompletionFeed>>,
+) -> anyhow::Result<RunOutcome> {
+    tokio::select! {
+        r = run_object(mem, obj_id, nbytes, payload_len, deadline, feed) => r,
+        r = &mut *engine => match r {
+            Ok(Ok(())) => anyhow::bail!("engine exited during object {obj_id}"),
+            Ok(Err(e)) => Err(e.context(format!("engine ended during object {obj_id}"))),
+            Err(e) => Err(anyhow::anyhow!("engine task failed: {e}")),
+        },
+    }
+}
+
 /// Run the perf client: warm-up object, then `runs` sequential timed
 /// objects on the same warm engine (matching quinn-perf's warm
 /// connection geometry). Emits one JSON line per run plus a summary
@@ -264,11 +286,11 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     };
     crate::runtime_obs::set_side("client");
     let (tun, mut mem) = TunInterface::memory(1500);
-    let _engine = tokio::spawn(crate::task_obs::timed("engine", net::run_with_tun(config, tun)));
+    let mut engine = tokio::spawn(crate::task_obs::timed("engine", net::run_with_tun(config, tun)));
 
     // Warm-up: a single-chunk object confirms both directions are up
     // before timing starts (the engine connects asynchronously).
-    match run_object(&mut mem, 0, 64, payload_len, run_timeout(), feed.as_ref()).await? {
+    match run_watched(&mut engine, &mut mem, 0, 64, payload_len, run_timeout(), feed.as_ref()).await? {
         RunOutcome::Acked(s) => {
             println!(
                 "{}",
@@ -284,7 +306,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
         // `[THR]`/`[LAG]` over this timed object only (runtime_obs).
         let obs0 = crate::runtime_obs::snapshot();
         let outcome =
-            run_object(&mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref()).await?;
+            run_watched(&mut engine, &mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref()).await?;
         if let Some(s0) = &obs0 {
             crate::runtime_obs::emit_window(s0, &format!(" run={run}"));
         }

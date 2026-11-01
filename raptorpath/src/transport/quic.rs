@@ -22,6 +22,7 @@ use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
@@ -214,6 +215,11 @@ fn quic_cc_factory(
     }
 }
 
+/// How long a QUIC connection may be silent before quinn closes it. This is
+/// quinn 0.11's default (30 s), made explicit so the dead-peer fail-fast
+/// bound can cite it; no behaviour change.
+pub const QUIC_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// A QUIC-based multipath transport.
 ///
 /// Threading Q1: every path is served by its I/O owner
@@ -262,6 +268,9 @@ pub struct QuicTransport {
     route_probe: bool,
     /// The lock-wait gauge's clock reads (`RWM_RTOBS`).
     gauge: bool,
+    /// Notified by any owner whose connection is lost (see
+    /// [`QuicTransport::all_connections_lost`]).
+    lost: Arc<tokio::sync::Notify>,
 }
 
 impl QuicTransport {
@@ -324,6 +333,7 @@ impl QuicTransport {
             rt: tokio::runtime::Handle::current(),
             route_probe,
             gauge: crate::gates::get().rtobs,
+            lost: Arc::new(tokio::sync::Notify::new()),
         };
         for (i, addr) in bind_addrs.iter().enumerate() {
             t.spawn_path(i as PathId, *addr).await?;
@@ -374,6 +384,7 @@ impl QuicTransport {
             dg_audit: self.dg_audit,
             gauge: self.gauge,
             deep: crate::task_obs::deep(),
+            lost: self.lost.clone(),
         };
         let side = if self.is_server { "server" } else { "client" };
         self.rt
@@ -622,6 +633,37 @@ impl QuicTransport {
         }
     }
 
+    /// Resolves once every current path's QUIC connection is lost (quinn
+    /// closed it: idle timeout, reset, peer close), with each path's reason.
+    /// One lost path while another lives is NOT lost: multipath must outlive
+    /// a single path's death. Paths removed by `remove_path` do not count;
+    /// a transport with no path is never "lost".
+    pub async fn all_connections_lost(&self) -> String {
+        loop {
+            // Enable before checking, so a loss between the check and the
+            // await still wakes us.
+            let notified = self.lost.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let mut reasons = Vec::new();
+            let mut all = !self.paths.is_empty();
+            for p in self.paths.iter() {
+                match p.value().view.conn_lost() {
+                    Some(r) => reasons.push(format!("path {}: {r}", p.key())),
+                    None => {
+                        all = false;
+                        break;
+                    }
+                }
+            }
+            if all {
+                reasons.sort();
+                return reasons.join("; ");
+            }
+            notified.await;
+        }
+    }
+
     /// Remove a path at runtime: its owner closes the connection and ends.
     pub fn remove_path(&self, path_id: PathId) {
         if let Some((_, io)) = self.paths.remove(&path_id) {
@@ -866,6 +908,7 @@ impl QuicTransport {
         let transport = Arc::get_mut(&mut server_config.transport).unwrap();
         transport.max_concurrent_bidi_streams(100u32.into());
         transport.max_concurrent_uni_streams(100u32.into());
+        transport.max_idle_timeout(Some(QUIC_IDLE_TIMEOUT.try_into().expect("idle timeout fits a VarInt")));
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
         Self::apply_mtu_floor(transport);
@@ -910,6 +953,7 @@ impl QuicTransport {
         ));
 
         let mut transport = quinn::TransportConfig::default();
+        transport.max_idle_timeout(Some(QUIC_IDLE_TIMEOUT.try_into().expect("idle timeout fits a VarInt")));
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
         Self::apply_mtu_floor(&mut transport);
