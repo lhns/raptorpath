@@ -184,7 +184,7 @@ fn symbol_size_for_hint(hint: ProtocolHint) -> u16 {
 }
 
 /// RTCP-style report interval (how often we send PathReport + Ping).
-const REPORT_INTERVAL: Duration = Duration::from_secs(2);
+pub const REPORT_INTERVAL: Duration = Duration::from_secs(2);
 
 /// The inbound message channel's bound in MESSAGES (ADR-0011: large, so the
 /// readers do not stall under load). The value is ADR-0011's literal,
