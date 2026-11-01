@@ -8991,3 +8991,65 @@ often runs on one leg at a static cap, which no store law can fix and
 which makes c1d's knee partly a placement question. What remains is the
 link rate at c1s, c2 and c8, for which only a dispersion instrument is
 named. The `[LOOPDIAG]` instrument stays off main (run branch only).
+## 34. Receiver-side follow-ups of §31/§32 — the `recv_alloc_bound` spread (diagnostic) and the test sessions — pre-registration
+
+Five open items from §31 and §32 (dead-peer fail-fast, the `[LAT]`
+in-order assert under ρ < 1, the legacy decoders' prune, the size of one
+prune, the allocation gate's spread). Items 1–3 are code with red-first
+unit and loopback tests; item 4 is a paper decision (§5.2); none of them
+changes the default path's cost (item 1 adds no work to any per-message
+path; item 2 is debug-only; item 3 touches only `RWM_UNIFIED=0`), so no
+performance battery is planned. This section pre-registers the one VM
+measurement (item 5's diagnostic) and the test sessions. Committed before
+any VM contact. Nothing below is a result.
+
+**Item 5 — why `recv_alloc_bound` spreads (diagnostic; ships nothing).**
+§32 Amendment 1 read 23.0–23.5 allocations per source symbol on one tree
+(the gate is 23.5). The gate counts process-wide allocations over a 2 MB
+and a 12 MB in-process loopback on ONE runtime and divides the difference
+by the extra source symbols (8 347).
+
+- *Hypothesis H-leak.* `in_process::run` aborts only the perf server
+  task; the engines both ends spawned keep running on the runtime. So the
+  2 MB count's two engines are alive during the 12 MB count and allocate
+  on their timers (the 1 ms loop wake, the 2 s report tick and pings) at
+  some rate `r_idle`. That share, `r_idle · T_large / 8 347` per symbol,
+  scales with the 12 MB run's wall time, not its symbols, and its
+  run-to-run variance is `T_large`'s.
+- *Alternative H-batch.* The spread is in-run: per-batch allocations
+  (owner polls, `recv_many` drains, ack batches, quinn's packet handling)
+  whose count per symbol depends on scheduling.
+- *Instrument.* `tests/recv_alloc_spread_diag.rs` (`#[ignore]`d, asserts
+  nothing): per pair, the per-symbol figure by the gate's method
+  (`shared`: one runtime) with each count's wall time and the leftover
+  engines' allocation rate in a 1 s idle window after each count, and by
+  `fresh` (each count on its own runtime, shut down after it, so no engine
+  outlives its count); plus the per-symbol difference per log2 size class.
+- *Session (tests, not a battery).* Both locks for the whole session
+  (`take_lock`), no other cargo/rustc; builds and tests have no I/O gate.
+  Tree = this commit, `git archive` (LF), fresh target dir on disk,
+  release. (1) `recv_alloc_spread_diag -- --ignored --nocapture` once with
+  `RAS_PAIRS=6`; (2) `recv_alloc_bound` five times (reference). ≈ 40 min.
+- *Readings and decision rule.* Per variant, the per-symbol range
+  (max − min) and median over the 6 pairs; per `shared` pair the leak
+  estimate `L = idle_after_small · t_large / 8 347`.
+  - **H-leak SUPPORTED** iff `fresh`'s range ≤ ½ of `shared`'s range AND
+    the median `L` ≥ ½ of `shared`'s range. Then the gate moves to the
+    `fresh` method (no engine outlives its count) and its bound is
+    re-derived for that statistic in an amendment, with calibration on
+    main and on ce60079 (the gate's red tree; the file builds on both), so
+    the R1 discrimination the bound exists for is kept. The number is not
+    raised to absorb the spread.
+  - **H-leak REFUTED** otherwise. The size classes whose per-symbol
+    difference varies most across pairs name the in-run source; the fix
+    (or an estimator such as min-of-k for one-sided noise) is decided in
+    an amendment before any change to the gate.
+- *What it does not show.* Process-wide counts: a class is a size, not a
+  call site.
+
+**Test sessions (not measurements).** On the VM under both locks, fresh
+target dirs, `git archive` trees: the new tests of items 1–3 red at their
+test commits and green at their fix commits (named in the result), then
+the full suites (`tools/l1/suites_run.sh`: release, doc, wasm, debug,
+parsers) on the branch head. A REAL failure is reported, not retried
+away. VM dirs removed at the end; 0 `raptorpath`, 0 `rp-*` confirmed.
