@@ -1,0 +1,30 @@
+ALPHA=2.0
+ledger    cell     arm      rows wins cap_med used_med good_mean T_med_ms  s2_diag   vD_diag  vT_diag   s2_loop  diag/loop
+battery   c1d-400  MAIN        6   97    2323     1946     673.9    28.90  0.30435  0.02364  0.16527       nan     nan
+      row s2=0.09716 vD=0.00884 vT=0.04795 n=17 good=663.3 cap=2231
+      row s2=0.19607 vD=0.03017 vT=0.06986 n=15 good=723.3 cap=4096
+      row s2=0.33228 vD=0.01636 vT=0.27088 n=17 good=632.2 cap=2079
+      row s2=0.13044 vD=0.01439 vT=0.05961 n=15 good=708.3 cap=1650
+      row s2=0.48037 vD=0.02444 vT=0.27786 n=17 good=666.5 cap=2415
+      row s2=0.58978 vD=0.04767 vT=0.26546 n=16 good=649.7 cap=3444
+battery   c1d-400  NEW         6   81    2636     1830     807.7    20.57  0.32808  0.00383  0.28784       nan     nan
+      row s2=0.60814 vD=0.00275 vT=0.53700 n=14 good=792.6 cap=2736
+      row s2=0.18043 vD=0.00220 vT=0.15465 n=14 good=810.1 cap=2536
+      row s2=0.45698 vD=0.00387 vT=0.41410 n=14 good=780.9 cap=4075
+      row s2=0.10052 vD=0.00478 vT=0.09617 n=13 good=796.8 cap=2114
+      row s2=0.36015 vD=0.00357 vT=0.36226 n=13 good=827.8 cap=2024
+      row s2=0.26224 vD=0.00582 vT=0.16288 n=13 good=838.4 cap=3451
+battery   c1s-400  MAIN        6   83    2048     1911     782.8    21.12  0.20478  0.01573  0.11184       nan     nan
+      row s2=0.04535 vD=0.01880 vT=0.03503 n=13 good=812.0 cap=2048
+      row s2=0.15694 vD=0.00797 vT=0.14276 n=14 good=813.1 cap=2048
+      row s2=0.06592 vD=0.00983 vT=0.05434 n=14 good=800.4 cap=2048
+      row s2=0.21235 vD=0.01794 vT=0.07527 n=14 good=746.4 cap=2048
+      row s2=0.64947 vD=0.03255 vT=0.29491 n=14 good=746.0 cap=2048
+      row s2=0.09864 vD=0.00730 vT=0.06874 n=14 good=779.3 cap=2048
+battery   c1s-400  NEW         6   70    2048     1978     900.4    18.15  0.06941  0.00386  0.04591       nan     nan
+      row s2=0.06448 vD=0.00796 vT=0.02899 n=12 good=909.0 cap=2048
+      row s2=0.03737 vD=0.00188 vT=0.02968 n=11 good=894.8 cap=2048
+      row s2=0.06797 vD=0.00639 vT=0.02115 n=11 good=915.0 cap=2048
+      row s2=0.08080 vD=0.00079 vT=0.06512 n=12 good=905.9 cap=2048
+      row s2=0.10624 vD=0.00399 vT=0.08891 n=12 good=882.2 cap=2048
+      row s2=0.05960 vD=0.00216 vT=0.04160 n=12 good=895.8 cap=2048

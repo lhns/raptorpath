@@ -8659,3 +8659,143 @@ quantization by construction, so it is blind below that floor and noisy at
 p99 (one tail tick moves it). A future battery could score the share of
 ticks with x ≥ 1500 µs beside E. That is an instrument-only change and
 needs its own operator decision.
+
+## 34. The store law's missing input after the receiver change — derivation, no VM — verdict, and a diagnostic pre-registration (not run)
+
+§30 left the store law without its one input: the knee location, or the rate
+of the bottleneck that sets it. §32 then made the receiver cheaper at c1. This
+section asks, on paper from the committed ledgers, (a) whether §32 reopens
+D-W at c1, and (b) whether any source that needs no new sender-side rate
+sampler supplies the input. Derivations, provenance and tables: paper §6.1,
+"Candidate inputs for the knee after the receiver change". Scripts and
+outputs: `docs/l1-raw/thread-pd/battery/derive34/` (`diagwin.py` window noise
+from `[DIAG]` with its calibration against `[LOOPDIAG]`; `qcwnd.py` quinn's
+window on the §27 grid; `authority.py` store occupancy and quinn's backlog;
+`rcap.py` receiver capacity from `[RDIAG]`). No code, no build, no VM.
+
+**Verdict: `NONE-CLOSES` on the committed ledgers.**
+
+*(a) §32 against §30.* The §32 ledgers carry no `[LOOPDIAG]` and no static
+cap, so they cannot give σ²_win at n*; they give a same-session MAIN/NEW
+contrast at the shipped law's pin through a `[DIAG]` proxy (within ×1–5 of
+§30's statistic at c1, reproducible across sessions at one cap, useless at
+c2/c8). c1s: 0.205 → 0.069 (×2 median, ×3 mean), mostly in D (×4); c1d:
+0.304 → 0.328, no change. Even the favourable ×3 at n* leaves W* ≥ 250
+rounds, one decision per ≈ 2.4 s of a ≈ 3.9 s transfer; reaching §6.1's c1s
+point from the pin within a third of a transfer needs a ×166 cut.
+**`NOT-REOPENED`.** Open, and only measurable: post-§32 c1s is link-bound at
+the pin (receiver busy 69 %, capacity 1.38 L, delivered 0.96 L), so its knee
+and the nature of its noise may both have moved.
+
+*(b) Per candidate (fixed point · noise · circularity).*
+
+| candidate | fixed point | noise | circularity | verdict |
+|---|---|---|---|---|
+| (b1) quinn's BBR window, cap = (1 + q)·K, K = 2·max_bw·min_rtt + ack height | c1d ≈ 1 050 (in band), c1s ≈ 545 (below band, G ≈ 0.91–0.94 Gmax), c2 ≥ 1 024 and c8 at the clamp (×5–15 above the knee) | cv(K) 0.08–1.32 in a row; c1s at cap 2048 reads 575–2 680 across sessions (a max filter holding non-app-limited reads) | Spearman(K, n) 0.90 at c1s and c2 (K ≈ n at c1s 192); 0.17 c1d, 0.52 c8 | does not close; the gain 2 returns as BBR's `cwnd_gain` |
+| (b2) cwnd-binding share (ADR-0068 q12) | the authority crossover: ≈ 2048 at c1s, > 1 024 at c2/c8, above every knee | as (b1) | reads K through a threshold | does not close; survives as the authority gauge (below) |
+| (b3) path memory (RFC 9040) | D's argmax (right in §29) | first transfer pays D-W: ≈ 5.5 s per unit ln n at c2, ≈ 40 s–2 min at c1s | none in rate; adds an unmeasured stationarity premise (§32 itself moved the c1 map) | a seed, not an input: conditional at c2/c8 from the second transfer, minutes at c1 |
+| (b4i) receiver delivered rate | cap/T (Little) | — | circular by identity (§27 one layer down) | closed by derivation |
+| (b4ii) receiver capacity μ_R = msgs ÷ busy, as a receiver-wide ceiling | c1d ≈ 430 (pre-§32 μ_R, below band) or ≈ 670 (NEW μ_R with §27's spread, in band; cross-session); over-asks ×1.4–4.7 where the receiver is not the bottleneck (c1s post-§32, c2, c8) | cv 0.04–0.05 per row on NEW | not the sender's delivery; load dependence (batching) unmeasured, since no static-cap ledger has `[RDIAG]` | open at c1d only; needs a receiver → sender field and an ADR |
+| (b4iii) receiver-side dispersion | the link rate, in principle | skb-unit arrivals (GSO g ≈ 2.7–4.9), batch-drained receiver | non-circular in principle | named; no ledger carries arrival times |
+
+*The authority finding (ADR-0068 q12).* At every static cap the store sits at
+0.88–1.00 of its cap, and quinn's own backlog (`dgq[hand − tx]`) is ≤ 92
+datagrams (≤ 1 ms of L) at every cap up to 1.5·n* in every cell: the store
+cap, not quinn's window, holds authority at and around every knee, and the
+c1 knee is not quinn's. Quinn takes part of the authority only at the pin
+(c1s: 228 at §27's 2048, 584 ≈ 6 ms of L on §32 NEW). §30's K < c shares
+(4–32 % at c1s, 18–24 % at c2) count a different thing — the store holds a
+symbol until SACK release, quinn until its QUIC ACK — and overstate quinn's
+authority; any nested store law's authority gauge is the quinn backlog B.
+
+*What it leaves.* The law stays as shipped (ADR-0072). The link rate at c1s
+(post-§32), c2 and c8 still has no source; a dispersion instrument is the
+only named non-circular candidate and is not built. One question is still
+live and measurable: at the receiver-bound cell (c1d), does the receiver
+capacity, as a ceiling with RTprop plus the loop spread, land on the
+post-§32 knee with a stable fixed point — and, on the same grid, has §32
+moved c1s's knee and noise enough to reopen D-W? The diagnostic below
+answers both. **It is pre-registered here and NOT run: stopped before any VM
+contact, for the coordinator's decision** (it needs the `[LOOPDIAG]`
+instrument re-applied to main, an instrument-only engine diff).
+
+### 34. Diagnostic — the post-§32 c1 static grid: knee, noise at the knee, receiver capacity, authority — pre-registration
+
+Diagnostic: nothing ships or flips, whatever the result; no law is built.
+
+**Tree.** github/main at launch (≥ `baadb32`) plus the `[LOOPDIAG]`
+instrument from `archive/store-power` re-applied as its own commit
+(observation only, default off; the power law itself is not taken). One
+binary, built fresh on disk, measured from tmpfs.
+
+**Design.** Arm `DEF<n>` = `RWM_STORE=<n>`, shipped substrate BBR. Cells and
+grids: `c1s-400` {256, 384, 512, 768, 1024, 1536, 2048}; `c1d-400` {384,
+512, 768, 1024, 1536, 2048}. Env: Bulk, `--window-reliable`, `RWM_GEN=0
+RWM_DIAG=1 RWM_ACKDIAG=1 RWM_LOOPDIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150`,
+§27's withholding list. Three blocks (42, 1), (7, 1), (42, 2), sweep
+ascending on even blocks and descending on odd, cells alternated; 39 rows
+after a 2-row smoke (c1s DEF384, c1d DEF768). Harness `tools/l1/loopdiag_*`
+as §27/§29, a plan 34; parser tests run in the session.
+
+*Rules (shared file):* launch precondition (both locks free by `test -e`
+only, no cargo/rustc by `pgrep -x`, `procs_running` ≤ 2 in 5 samples 2 s
+apart); run dir and binary on `/dev/shm`; io `full avg10` before/after every
+row, flagged at ≥ 20, never voided; `VOID-ONDISK` off tmpfs.
+
+*Witnesses (row void otherwise):* `[GATES]`; every post-warm-up `win=`
+denominator equal to n and `[SUMCAP] eng` absent or 0; ≥ 8 post-warm-up
+`[LOOPDIAG]` windows on every path; a `dgq` field on every `[DIAG]` line;
+≥ 3 server `[RDIAG]` lines with busy ≥ 20 % (else the row is void for R3
+only).
+
+*Abort table:* as §27/§29 (`ABORT-LOCK`, `-CRLF`, `-SHA`,
+`-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUILD`, `-TESTS`, `-RC`, `-BRINGUP`,
+`VOID-COTENANT`, `VOID-ONDISK`), filled in the result.
+
+**Readouts and outcomes (fixed now; L = 97 700 datagrams/s per c1 leg,
+W = 1 279 B, q = 0.1, α = 2).** Per cell and n, means over live rows.
+- **R1, the knee.** n* = smallest n with goodput ≥ 0.95·Gmax; band
+  [n*/1.5, 1.5·n*]; the Bulk argmax of Π₂ = goodput²/T (T = max-path Tp50)
+  beside it. Reported, no outcome.
+- **R2, D-W at c1 (question (a)).** σ²_win at the grid cap nearest the Π₂
+  argmax, by §30's `win.py` statistic; γ from the ratio of the variance of
+  1 s block means to the 250 ms window variance (log-log slope over the 4×
+  span); W*_white = W_win·σ²_win/(q/2)² and W*_γ = W_win·(σ²_win/(q/2)²)^(1/γ);
+  reach = (decisions in ⅓ of the row's transfer)·ln(1 + q)·0.72. Per cell:
+  **`REOPENS`** iff reach ≥ ln(2048/n_argmax) at both W*; **`CLOSED`** iff it
+  fails at W*_white (the lower bound); else `AMBIGUOUS`.
+- **R3, the receiver capacity as a ceiling (question (b4ii); c1d scored,
+  c1s reported).** μ_R(n) = median over the row's `[RDIAG]` lines with
+  busy ≥ 20 % of msgs ÷ busy. `FLAT` iff max_n μ_R / min_n μ_R ≤ 1.25,
+  `LOAD-DEPENDENT` iff ≥ 1.5, else `AMBIGUOUS`. Fixed point of
+  ask(n) = (1 + q)·μ_R(n)·(RTprop̄(n) + S̄(n)) (S = Tp50 − Tmin; both means
+  over legs) by §27's interpolation rule: `FLOOR` / `CEILING` / interior
+  n_fp with its slope; **`REPRODUCES`** iff interior, inside the R1 band, and
+  slope < 0.9.
+- **R4, authority.** B(n) = median of `dgq[hand − tx]` summed over paths;
+  **`STORE-HOLDS`** iff B ≤ 98 datagrams (1 ms of one leg's L) at every grid
+  n ≤ 1.5·n*; else `QUINN-SHARES`, naming the caps. The K < c share is
+  reported beside it.
+
+**Decision rule (ships nothing).** If R2 `REOPENS` at a cell, D-W is
+re-derived there with the measured σ²_win and γ and a build is proposed to
+the coordinator (no build follows from this section). If at c1d R3 is
+`FLAT` and `REPRODUCES` and R4 `STORE-HOLDS`, the receiver-capacity ceiling
+goes to a law derivation in paper §6.1 and an ADR (the new receiver → sender
+field). Otherwise the input stays open, and the report names what remains:
+the link rate at c1s/c2/c8, for which only a dispersion instrument is named.
+
+**Predictions (before any number).** R1: c1s's knee moves below §27's 1 024
+(the receiver no longer holds the c1s curve up); c1d's stays near 768. R2:
+`CLOSED` at c1d (§32 left its noise unchanged); c1s `AMBIGUOUS` or `CLOSED`
+— `REOPENS` there would need a ×10 or larger cut from §30's 0.036. R3:
+`LOAD-DEPENDENT` is the stated risk (batching); if `FLAT`, an interior n_fp
+near 600–700. R4: `STORE-HOLDS` in both cells.
+
+**Duration.** Instrument re-apply and fresh build ≈ 10 min; parser tests;
+41 invocations ≈ 10–12 min (§27: 128 rows in 1 370 s); inside the 4 h launch
+deadline and the 5 h session cap. No suites: the instrument tree is not a
+ship tree.
+
+**Gate.** STOPPED before VM contact. Re-applying the instrument is engine
+code (default-off, observation only) and is the coordinator's call.

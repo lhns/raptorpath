@@ -1983,6 +1983,173 @@ fields) beside its bind gauges, and a seeker above a delay-based inner loop
 must reject periods in which the inner loop held authority, or it seeks on
 a flat map.
 
+**Candidate inputs for the knee after the receiver change (status §34) —
+derived, none closes on the committed ledgers.** The law still lacks the knee
+location, or the rate of whatever bottleneck sets it. Four sources that need
+no new sender-side rate sampler are taken to their fixed point, their noise
+and their circularity (does the reading return our own cap?), as §27 did.
+Scripts and outputs: `docs/l1-raw/thread-pd/battery/derive34/`. Every
+candidate below is continuous in δ through q(δ) (and α(δ) where Π enters),
+reads no hint, cell or N, and keeps ρ's hole term additive outside it; the
+no-mode-switch rule kills none of them.
+
+*(a) What the receiver change (§32) did to D-W's noise.* The §32 ledgers carry
+no `[LOOPDIAG]` (the instrument is at `archive/store-power`) and no static
+cap: every row runs the shipped law, pinned near N·knee. They support one
+contrast — the same statistic, MAIN against NEW, at the same cap, in one
+session — and not §30's quantity at n*.
+
+| symbol | value | provenance |
+|---|---|---|
+| σ²_diag | var(Δ ln Π)/2 over 250 ms `[DIAG]` windows, t ≥ 1 s; D = `good=` (cumulative-ack advance), T = `rtt=` (max over paths of the smoothed RTT at the window's end), α = 2 | measured (`diagwin.py`); a proxy for §30's σ²_win, not the same quantity |
+| proxy calibration | σ²_diag / σ²_win = 1.0–4.7 at c1 caps 256–2048 on the same §27/§29 rows; 10–400 at c2/c8 (the cumulative-ack frontier is lumpy under loss) | measured on rows carrying both lines: a c1-only proxy, within ×1–5 |
+| reproducibility | c1s at cap 2048: §27 DEF 0.201, §29 MAIN 0.152, §32 MAIN 0.205 | measured: the proxy is stable across sessions at one cap |
+
+| cell (cap) | σ²_diag MAIN → NEW (row range) | vD | vT | receiver busy (`[RDIAG]` median) |
+|---|---|---|---|---|
+| c1s (2048) | 0.205 → 0.069 (0.045–0.65 → 0.037–0.106) | 0.016 → 0.004 | 0.112 → 0.046 | 90 → 69 % |
+| c1d (2 300–2 600) | 0.304 → 0.328 | 0.024 → 0.004 | 0.165 → 0.288 | 99 → 96 % |
+
+At c1s the receiver change cut the window noise ×2 (median) to ×3 (mean) at
+the pin, mostly in D (×4), as a 63–90 ms stall every 2 s should; at c1d the
+D term fell as much but T rose and the total did not move. Put the
+favourable ×3 through §30's white extrapolation at c1s, as if it held at n*:
+σ²_win 0.036 → 0.012, W* ≥ 52.5·0.012/0.0025 ≈ 250 rounds, a decision every
+2(W* + 1)·4.79 ms ≈ 2.4 s, against a post-§32 transfer of ≈ 3.9 s (§30's
+4.3 s at 748 Mbit/s, scaled to 826). The descent from the shipped cap to
+§6.1's c1s point, ln(2048/384) = 1.67 at |E[step]| = ln(1 + q)·0.72 = 0.069
+per decision, needs 24 decisions; in a third of a transfer that is a period
+of 54 ms, W* ≈ 4.6, i.e. σ²_win ≤ 2.2·10⁻⁴: a ×166 cut where §32 gave ×3.
+**(a) does not reopen D-W at c1.** Two things the ledgers cannot settle and
+that a diagnostic would need (status §34): post-§32 c1s is no longer
+receiver-bound (busy 69 %, receiver capacity 1.38 L, delivered 0.96 L at the
+pin; table (b4)), so both its knee and the *nature* of its noise may have
+moved — if c1s's noise turned c2-like (granularity, γ > 1; W* = 9 at c2) the
+reach would be ×1.4 in a third of a transfer and ×2.5 in a whole one — and
+neither n* nor σ²_win at n* exists post-§32.
+
+*(b1) quinn's BBR state read as the knee.* What it is (quinn-proto 0.11.14,
+`congestion/bbr`): `window()` = `K_DERIVED_HIGH_CWNDGAIN` (2.0) · max_bw ·
+min_rtt + `max_ack_height`; pacing rate = pacing_gain · max_bw; max_bw is a
+windowed max of min(send_rate, ack_rate) over consecutive packet pairs,
+updated only on samples not marked app-limited. Read as an ask:
+
+```text
+   cap  =  (1 + q) · K ,      K  =  Σᵢ windowᵢ / W ,      windowᵢ  =  2·L̂_q,ᵢ·min_rttᵢ + hᵢ
+```
+
+So the gain 2 of Section 6.2 returns under BBR's name (as P's g did), with
+L̂_q quinn's max-filtered pair rate. On the §27 DEF grid (`qcwnd.py`, K in
+datagrams of W = 1 279 B, row medians):
+
+| cell | K over the grid | Spearman(K, n) | map n → (1 + q)K, fixed point | DEF knee band |
+|---|---|---|---|---|
+| c1s | 210 (n 192), 391, 490, 498, 494, 636, 1 188, 575 (n 2048) | 0.90 | ≈ 545 (stable: K flat 490–498 over 384–768 ≈ 2·L·RTprop = 469) | [683, 1 536] |
+| c1d | 554–965 | 0.17 | ≈ 1 050 | [512, 1 152] |
+| c2 | 162 (n 64) … 1 128 (n 192) … 1 316 (n 1024) | 0.90 | ask > n at every grid cap: ≥ 1 024 | [128, 288] |
+| c8 | 1 099–5 500 | 0.52 | ask > n everywhere: the N·knee clamp | [256, 576] |
+
+Fixed point: at c1d inside the band, at c1s just below it (G ≈ 675–700 of
+746), at c2 and c8 ×5–15 above the knee — MAIN's latency. Noise: within a row
+at a fixed cap cv(K) = 0.08–1.32; across sessions at c1s's cap 2048 the row
+medians read 575 / 749 / 632 / 915 (§27, §29 MAIN, §32 MAIN, §32 NEW), with
+the §32 NEW mean of row medians at 2 680: a max filter that keeps whatever a
+non-app-limited moment read. Circularity: K follows the cap at the small caps
+at c1s and c2 (Spearman 0.90; K ≈ n at c1s 192), the §27 rule's shape. The
+over-read at c2/c8 is consistent with ack compression on the jittered
+reverse path (c2/c3 shapes carry 3/5 ms jitter both ways, c1 none; §24 read
+the pacing rate ≈ 1.0 L at c1s and ×7.6 at c2) — a reading of the
+mechanism, not measured here. **Does not close** (c2, c8; and the constant
+2 is not a derivation).
+
+*(b2) The cwnd-binding share (ADR-0068 question 12) as an input, and as the
+authority gauge.* §30 counted windows with quinn's window below the store cap
+(K < c). That is not authority: the store counts a symbol until its SACK
+releases it, quinn until its QUIC ACK, so K < c can hold while the store is
+full. The direct witness is quinn's own backlog, B = Σ `dgq[hand − tx]`
+(datagrams handed to quinn and not yet sent), which grows only when quinn's
+window or pacer, not the cap, holds the sender (`authority.py`):
+
+| cell | store occupancy u/c, all static caps | B (datagrams) at caps ≤ 1.5·n* | B at the pin | share K < c (§30's reading) at the knee caps |
+|---|---|---|---|---|
+| c1s | 0.88–1.00 | 16–92 (≤ 1 ms of L) | 228 (§27 2048), 584 (§32 NEW, ≈ 6 ms of L) | 0.64–0.90 (512–1 024) |
+| c1d | 0.91–0.98 | 17–66 | 47–156 | 0–0.62 |
+| c2 | 0.99–1.00 | 2–10 | 11–21 (shipped cap) | 0.18–0.27 |
+| c8 | 0.99–1.00 | 0–5 | 37–259 | 0–0.08 |
+
+The store cap holds authority at and around every knee; the c1 knee is not
+quinn's window. Quinn takes part of the authority only at the pin (c1s 2048,
+c8 2048). So §30's K < c shares are upper bounds that overstate quinn's
+authority, and the authority gauge any nested store law carries is B, not
+K < c. As an input ("grow while the cap binds, hold where quinn binds") the
+fixed point is the authority crossover, where B starts to grow: ≈ 2048 at
+c1s, beyond 1 024 at c2 and c8 — above every knee, because it is (b1)'s K
+read through a threshold. **Does not close**; it survives as the gauge.
+
+*(b3) Path memory (RFC 9040 temporal sharing of n̄).* A seed, not an input:
+it carries a knee that a finder must still find once. Fixed point: D's argmax
+(the location §29 bore out). Noise: the first transfer pays D-W's budget,
+2(W* + 1)·T per decision — ≈ 5.5 s of transfer per unit ln n at c2, ≈ 2 min
+at c1s before §32 (white, a lower bound) and ≈ 40–60 s with (a)'s ×2–3 if it
+held at n*. Circularity: none in rate. What it adds is a premise nobody has
+measured: the map's knee location is stationary over the path's lifetime.
+§32's rep spread (goodput max/min 1.04–1.07) is goodput at the pin, not knee
+stationarity, and §32 itself moved the c1 map (c1s at the pin 736 → 826),
+so an engine release invalidates the memory. Where the premise holds it
+closes c2/c8 from the second transfer on (D-W converges from a seed within
+×1.7 / ×1.17 of n*, §30); c1 stays at minutes. It needs per-path state across
+transfers and an ADR. **Does not close at c1; a conditional seed at c2/c8.**
+
+*(b4) Receiver-side signals.* Three different readings:
+
+- *The receiver's delivered rate* is the sender's D half a loop later; Little's
+  identity on a store-bound sender makes it cap/T (§23), §27's bbr_rs result one
+  layer further down. **Closed by the derivation.**
+- *The receiver's capacity*, μ_R = msgs/s ÷ busy (server `[RDIAG]`, lines with
+  busy ≥ 20 %; `rcap.py`): the rate the receiver task could sustain at its
+  measured cost per message.
+
+  | cell | MAIN → NEW μ_R (msgs/s) | cv within a row | μ_R / L | busy |
+  |---|---|---|---|---|
+  | c1d | 75 k → 89.5 k | 0.13 → 0.05 | 0.38 → 0.46 | 99 → 96 % |
+  | c1s | 94 k → 135 k | 0.19 → 0.04 | 0.96 → 1.38 | 90 → 69 % |
+  | c8 | 55 k → 53 k | 0.49–0.68 | 4.5–4.7 | 21–22 % |
+
+  It is not the sender's own delivery, so the §23 identity does not close on
+  it, and post-§32 it is quiet (cv 0.04–0.05). But a rate is not a knee: with
+  RTprop it gives (1 + q)·μ_R·RTprop ≈ 250 at c1d, the honest-BDP class §23/§24
+  already showed starves the law; with §27's spread,
+  `(1 + q)·μ_R·(RTprop + S̄(n))` (S̄ the mean over legs) has a stable fixed point
+  at c1d — ≈ 430 at the pre-§32 μ_R (slope 0.77, below the band [512, 1 152],
+  near D's own c1d point 443) and ≈ 670 at the NEW μ_R (slope 0.54, in the
+  band; a cross-session mix of §32's μ_R with §27's S). It bounds only a
+  receiver-bound cell: at c1s after §32, and at c2/c8 (busy 10–22 %), the
+  receiver is not the bottleneck and μ_R over-asks ×1.4–4.7, so it can only
+  enter as a ceiling, `Σᵢ … ≤ (1 + q)·μ_R·(…)`, receiver-wide (not per path),
+  continuous through min(·), with a bind gauge; it does not supply the link
+  rate those cells lack. Circularity open: the receiver's cost per message
+  falls with batch size (§16 finding 4), so μ_R rises with the cap by an
+  unmeasured amount — no static-cap ledger carries `[RDIAG]`. It would also
+  need a new receiver → sender field (an ADR).
+- *Receiver-side dispersion* (the spacing of datagrams that queued at the
+  bottleneck): non-circular in principle, because netem with `rate` releases
+  in FIFO no faster than one skb time apart (`tools/l1/lib.sh`), and it avoids
+  the reverse-path ack compression (b1). But a GSO skb (g ≈ 2.7–4.9
+  datagrams) arrives as one unit, and the receiver task sees datagrams in
+  drained batches; no ledger carries per-datagram arrival times. Named, not
+  derived.
+
+*Verdict (status §34): none closes on the committed ledgers.* Quinn's state
+and the authority crossover inherit BBR's gain 2 and its jittered over-read;
+path memory is a seed whose finder is D-W; the receiver's delivered rate is
+circular. The one reading with a live derivation is the receiver capacity
+as a ceiling at a receiver-bound cell (c1d), and its fixed point there turns
+on two unmeasured quantities: μ_R's slope in the cap and S̄ on the post-§32
+receiver. The same static grid answers (a) — post-§32 n* and σ²_win at n* at
+c1s/c1d — so status §34 pre-registers one diagnostic for both and stops
+before running it. Whatever it reads, the link rate L at c1s (post-§32), c2
+and c8 still has no source.
+
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
 cap is exactly one BDP per path with zero standing queue, the null candidate
