@@ -1,0 +1,38 @@
+LOOP-DIAG PLAN 34 SCORE (post-§32 c1 static grid; diagnostic, nothing here ships)
+ROWS 39/39 status counts [(('c1d-400', 'LIVE'), 17), (('c1d-400', 'WITNESS-FAIL'), 1), (('c1s-400', 'LIVE'), 21)]
+  c1d-400 DEF768 s42 r1: LIVE problems=[] notes=['p1-idle'] io_full10=0.0
+  c1d-400 DEF1024 s42 r1: LIVE problems=[] notes=['p1-idle'] io_full10=0.18
+  c1d-400 DEF1536 s42 r1: LIVE problems=[] notes=['p0-idle'] io_full10=0.14
+  c1d-400 DEF2048 s7 r1: LIVE problems=[] notes=['p0-idle'] io_full10=0.04
+  c1d-400 DEF1536 s7 r1: LIVE problems=[] notes=['p0-idle'] io_full10=0.01
+  c1d-400 DEF512 s7 r1: WITNESS-FAIL problems=['loopdiag-p1-windows=2', 'p34-loopdiag-p1-windows=2'] notes=[] io_full10=0.0
+  c1d-400 DEF768 s42 r2: LIVE problems=[] notes=['p0-idle'] io_full10=0.0
+  c1d-400 DEF1024 s42 r2: LIVE problems=[] notes=['p1-idle'] io_full10=0.0
+CELL c1s-400
+  n     live  goodput [min-max]    A_x p50 us  Tp50max us  RTprop us  S us    Pi2      s2_win(rows) mu_R msgs/s(rows)  B dgrams  K<c share
+  256   3     526.3 [521.3-531.1]       1003       3919      2561    1223    70683  0.01856(3)  119341(3)  20  0.03
+  384   3     537.9 [276.5-681.0]       1664      10321      2552    3434    28032  0.07179(3)  122699(3)  25  0.49
+  512   3     686.6 [654.4-706.0]       2091       5851      2598    2600    80566  0.02051(3)  116404(3)  50  0.54
+  768   3     773.0 [754.2-796.5]       3413       7470      2846    3643    79983  0.01811(3)  120871(3)  128  0.90
+  1024  3     792.0 [767.4-826.6]       5120       9626      2741    5146    65158  0.00979(3)  117864(3)  64  0.85
+  1536  3     816.0 [792.8-832.7]       8875      14156      2537    6784    47032  0.02110(3)  115941(3)  133  0.35
+  2048  3     824.5 [796.7-844.9]      12288      18899      2667   10097    35972  0.02058(3)  120047(3)  563  0.81
+  R1 Gmax 824.5  n* = 1024 (0.95 rule)  band [683, 1536]  Pi2 argmax = 512
+  R2 at n=512: s2_win=0.02051 T=5.77 ms W_win=43.3  pooled s2_win=0.02068 s2_block(1 s)=0.00998 gamma=0.53 (diffs 43/7)  W*_white=355.2 W*_gamma=2373.6  transfer 4.66 s  reach(white)=0.026 reach(gamma)=0.004 need ln(2048/512)=1.386  -> CLOSED
+  R3 mu_R max/min 1.06 Spearman(mu_R, n) -0.29 -> FLAT;  ask(n) 256:497  384:808  512:666  768:863  1024:1023  1536:1189  2048:1686
+     fixed point STABLE n_fp=1020 slope=0.62 -> REPRODUCES (reported only)
+  R4 B at n <= 1.5 n*: ['20', '25', '50', '128', '64', '133'] (threshold 98) -> QUINN-SHARES 768,1536
+CELL c1d-400
+  n     live  goodput [min-max]    A_x p50 us  Tp50max us  RTprop us  S us    Pi2      s2_win(rows) mu_R msgs/s(rows)  B dgrams  K<c share
+  384   3     642.3 [613.1-691.9]       1323       4672      2512    1858    88300  0.02457(3)  86828(3)  29  0.00
+  512   2     706.0 [702.7-709.3]       2176       5668      2526    2563    87929  0.02813(2)  86923(2)  22  0.07
+  768   3     758.5 [741.5-791.4]       9301       7560      2706    3834    76105  0.02757(3)  108104(3)  69  0.05
+  1024  3     779.8 [764.7-803.0]       5291       9964      2710    5879    61036  0.02595(3)  107248(3)  192  0.64
+  1536  3     813.3 [762.1-859.6]      31061      14494      2960    8137    45634  0.02737(3)  110315(3)  83  0.33
+  2048  3     758.7 [692.5-835.4]      70656      20680      2801   12970    27837  0.03024(3)  94166(3)  228  0.67
+  R1 Gmax 813.3  n* = 1024 (0.95 rule)  band [683, 1536]  Pi2 argmax = 384
+  R2 at n=384: s2_win=0.02457 T=4.90 ms W_win=51.0  pooled s2_win=0.02482 s2_block(1 s)=0.00488 gamma=1.17 (diffs 46/8)  W*_white=501.5 W*_gamma=357.5  transfer 4.98 s  reach(white)=0.023 reach(gamma)=0.032 need ln(2048/384)=1.674  -> CLOSED
+  R3 mu_R max/min 1.27 Spearman(mu_R, n) 0.60 -> AMBIGUOUS;  ask(n) 384:417  512:487  768:778  1024:1013  1536:1347  2048:1634
+     fixed point STABLE n_fp=457 slope=0.54 -> MISSES
+  R4 B at n <= 1.5 n*: ['29', '22', '69', '192', '83'] (threshold 98) -> QUINN-SHARES 1024
+RESULT {"c1d-400": {"R2": "CLOSED", "R3": "AMBIGUOUS", "R3fp": "MISSES", "R4": "QUINN-SHARES 1024", "band": [682.6666666666666, 1536.0], "narg": 384, "nstar": 1024}, "c1s-400": {"R2": "CLOSED", "R3": "FLAT", "R3fp": "REPRODUCES", "R4": "QUINN-SHARES 768,1536", "band": [682.6666666666666, 1536.0], "narg": 512, "nstar": 1024}}

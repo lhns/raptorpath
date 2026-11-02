@@ -2150,6 +2150,18 @@ c1s/c1d — so status §34 pre-registers one diagnostic for both and stops
 before running it. Whatever it reads, the link rate L at c1s (post-§32), c2
 and c8 still has no source.
 
+*Result of that diagnostic (status §34, post-§32 main, static caps).* The
+0.95 knee is 1 024 at c1s and c1d (Gmax 825 / 813 Mbit/s); the Π₂ argmax
+is 512 / 384. D-W stays closed: σ²_win at the argmax is 0.021 (c1s, γ 0.53)
+and 0.025 (c1d, γ 1.17), a ×1.2–1.8 cut where ×100 was needed. The
+receiver capacity at c1d is not flat in the cap (86.8 k → 110 k msgs/s,
+max/min 1.27) and the ceiling's fixed point, 457, sits below the knee band.
+And the (b2) authority reading above, taken from pre-§32 ledgers, no longer
+holds from the knee up: quinn's backlog B reaches 128–192 datagrams
+(1.3–2 ms of L) at c1s 768/1 536 and c1d 1 024, while it stays ≤ 50 at caps
+≤ 512, so a nested store law at c1 needs the authority gauge B and the
+rejection of inner-loop periods. 7 of 17 live c1d rows ran on one leg.
+
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
 cap is exactly one BDP per path with zero standing queue, the null candidate

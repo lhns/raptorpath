@@ -1,0 +1,56 @@
+SENTINEL-WRITABLE /dev/shm/ld34/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-02T00:30:51Z user=VMUSER dir=/dev/shm/ld34/run launch=2026-11-02T00:30:51Z
+LD-ALL start plan=34 load=0.48 0.56 2.68 1/386 504390 2026-11-02T00:30:51Z
+ABORT-PRECONDITION procs_running=[1,1,1,1,12,] cargo=0 rustc=0; NOTHING WAS RUN 2026-11-02T00:30:59Z
+SENTINEL-WRITABLE /dev/shm/ld34/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld34/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-02T01:00:59Z user=VMUSER dir=/dev/shm/ld34/run launch=2026-11-02T01:00:59Z
+LD-ALL start plan=34 load=0.20 1.27 2.11 1/388 516193 2026-11-02T01:00:59Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.15 avg300=0.35 total=4066613870 2026-11-02T01:01:08Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.17 1.23 2.09; io=full avg10=0.00 avg60=0.15 avg300=0.35 total=4066613870 2026-11-02T01:01:08Z
+LD-ALL parser test ok 2026-11-02T01:01:10Z
+LD-ALL built wall=341s 2026-11-02T01:06:51Z
+LD-ALL binary 920a92f2d6c34ae79cd2b9ada01df876914d167ca4d76b851226e0eded0a91ff 2026-11-02T01:06:51Z
+LD-ALL suites: reused TESTS-OK from /home/VMUSER/ld34/run-abort2 (same engine tree) 2026-11-02T01:06:51Z
+LD-ALL suites ok; before the smoke procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.00 avg300=0.13 total=4067254859 2026-11-02T01:06:59Z
+SMOKE34 c1s-400 DEF384: mbps=650.924 ld_pn={'0': [16, 16]} lnpi_n=16 mu_r=115978.3 rdiag_n=9 dgq_b=21.0 kshare=0.062 status=LIVE
+SMOKE34 c1d-400 DEF768: mbps=699.501 ld_pn={'0': [15, 15], '1': [15, 15]} lnpi_n=15 mu_r=82922.4 rdiag_n=9 dgq_b=11 kshare=0.867 status=LIVE
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-02T01:07:14Z
+LD-ALL battery start load=1.61 1.60 2.03; io=full avg10=0.00 avg60=0.00 avg300=0.13 total=4067254957 2026-11-02T01:07:14Z
+LD-ALL battery rc=0 wall=281s 2026-11-02T01:11:55Z
+CHECK34 done=True rows=39/39
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=3.25 2.50 2.29; io=full avg10=0.00 avg60=0.00 avg300=0.04 total=4067475836 2026-11-02T01:11:55Z
+PERSISTED /dev/shm/ld34/run -> /home/VMUSER/ld34/run 2026-11-02T01:11:55Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

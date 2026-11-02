@@ -1,0 +1,3 @@
+SMOKE34 c1s-400 DEF384: mbps=650.924 ld_pn={'0': [16, 16]} lnpi_n=16 mu_r=115978.3 rdiag_n=9 dgq_b=21.0 kshare=0.062 status=LIVE
+SMOKE34 c1d-400 DEF768: mbps=699.501 ld_pn={'0': [15, 15], '1': [15, 15]} lnpi_n=15 mu_r=82922.4 rdiag_n=9 dgq_b=11 kshare=0.867 status=LIVE
+SMOKE-PASS
