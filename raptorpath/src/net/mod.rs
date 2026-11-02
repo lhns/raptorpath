@@ -1419,10 +1419,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // log line.
     // Every path's QUIC connection lost (quinn's idle timeout on a silent
     // peer): the peer is gone, end the run instead of waiting on a dead tunnel.
+    // Dialing side only: a server outlives its client leaving (it is stopped
+    // by signal, and its exit flush runs then).
     let lost_transport = transport_arc.clone();
     let mut peer_lost = None;
     tokio::select! {
-        reason = lost_transport.all_connections_lost() => {
+        reason = lost_transport.all_connections_lost(), if !config.is_server => {
             error!(%reason, "every path's QUIC connection is lost — the peer is gone; shutting down tunnel");
             peer_lost = Some(anyhow::anyhow!("peer lost: every path's QUIC connection closed ({reason})"));
         }

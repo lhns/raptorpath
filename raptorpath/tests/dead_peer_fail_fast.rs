@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 fn kill_server_mid_transfer(addrs: &[SocketAddr]) {
     // The red run (no fail-fast) ends at the DNF timeout: keep it bounded.
     let run_timeout = (3 * QUIC_IDLE_TIMEOUT).as_secs().to_string();
-    let mut srv = spawn_perf_server(addrs, &[], &[]);
+    let mut srv = spawn_perf_server(addrs, &[], &["--protocol-hint", "bulk", "--window-reliable"]);
     // Large enough that the transfer is still under way when the server dies.
     let args = perf_args("bulk", "2000000000", "1");
     let mut cli = spawn_perf_client(addrs, &[("RWM_PERF_TIMEOUT_S", &run_timeout)], &args);
