@@ -9175,3 +9175,9 @@ target): release 1146/0 (52 ignored), doc rc 0, wasm 35/0, debug 1009/0
 `raptorpath`, 0 `rp-*`; the VM dir is removed. Ledgers:
 `docs/l1-raw/rx-follow/` (VM user scrubbed; the run-1 red/green era file
 is kept and marked VOID).
+
+*Commit names.* The SHAs in §35 are the tested trees before the rebase onto
+`3939d4f` (no engine change on main in between). After it: `d6b3828` →
+`7383494`, `01f6841` → `fb7783b`, `81f0f8c` → `3114907`, `8a00599` →
+`0b3a094`, `5ff8030` → `b099242`, `567d26a` → `a7b08a8`, `e301bba` →
+`33a4ed8`, `0ef8f29` → `6115c81`, `08cfda9` → `5e1b74b`.
