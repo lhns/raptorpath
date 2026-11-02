@@ -1245,7 +1245,7 @@ more than 2·W_cap seqs behind the frontier reads as a first arrival; such
 arrivals are exactly the source part of `below_floor`, which bounds the
 misclassification.
 
-*The size of one prune, and why it is not budgeted (status §32, §34).*
+*The size of one prune, and why it is not budgeted (status §32, §35).*
 Per drain the retained set *below* the frontier is bounded, but one prune
 is not: when a filled hole moves the frontier by J seqs at once, the next
 prune removes those J entries (the span the decoder held above the hole).

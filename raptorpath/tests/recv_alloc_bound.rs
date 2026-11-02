@@ -56,7 +56,7 @@ static GLOBAL: Counting = Counting;
 /// so undoing it fails by 1.6. Undoing one fix alone (0.4 to 1) may not be
 /// caught: this is a regression gate for the set, not for each member.
 ///
-/// The bound applies to the MINIMUM over [`PAIRS`] pairs (status §34): part of
+/// The bound applies to the MINIMUM over [`PAIRS`] pairs (status §35): part of
 /// the engine's allocations is per unit of active transfer time (≈ 13 000 per
 /// extra second), so a slower run reads higher per symbol (r = 0.87 with the
 /// 12 MB run's wall time; range ≈ 0.35 on one tree). That term only adds, so
@@ -73,7 +73,7 @@ async fn count(bytes: usize) -> u64 {
     ALLOCS.load(Ordering::Relaxed) - a0
 }
 
-/// Pairs per test (status §34 Amendment 1): a pair costs ≈ 1 s.
+/// Pairs per test (status §35 Amendment 1): a pair costs ≈ 1 s.
 const PAIRS: usize = 5;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

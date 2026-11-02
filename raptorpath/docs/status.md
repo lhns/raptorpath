@@ -8991,7 +8991,8 @@ often runs on one leg at a static cap, which no store law can fix and
 which makes c1d's knee partly a placement question. What remains is the
 link rate at c1s, c2 and c8, for which only a dispersion instrument is
 named. The `[LOOPDIAG]` instrument stays off main (run branch only).
-## 34. Receiver-side follow-ups of §31/§32 — the `recv_alloc_bound` spread (diagnostic) and the test sessions — pre-registration
+
+## 35. Receiver-side follow-ups of §31/§32 — the `recv_alloc_bound` spread (diagnostic) and the test sessions — pre-registration
 
 Five open items from §31 and §32 (dead-peer fail-fast, the `[LAT]`
 in-order assert under ρ < 1, the legacy decoders' prune, the size of one
@@ -9054,7 +9055,7 @@ the full suites (`tools/l1/suites_run.sh`: release, doc, wasm, debug,
 parsers) on the branch head. A REAL failure is reported, not retried
 away. VM dirs removed at the end; 0 `raptorpath`, 0 `rp-*` confirmed.
 
-### 34. Item 5 diagnostic — result: H-leak REFUTED; the spread is the run's own speed
+### 35. Item 5 diagnostic — result: H-leak REFUTED; the spread is the run's own speed
 
 Session 2026-11-01 22:55–23:01Z, both locks, release, fresh target, tree
 `08cfda9`. Ledger: the `RAS` lines below (VM dir removed).
@@ -9080,7 +9081,7 @@ Session 2026-11-01 22:55–23:01Z, both locks, release, fresh target, tree
 - The noise is one-sided in that sense: the fast runs form a floor
   (22.96–23.03 in 5 of 17 runs); slowness only adds.
 
-### 34. Amendment 1 — the gate's estimator (before the change)
+### 35. Amendment 1 — the gate's estimator (before the change)
 
 The gate keeps its bound (23.5, unchanged) and its method per count, and
 changes its statistic from one pair to the **minimum over k = 5 pairs** in
@@ -9097,7 +9098,7 @@ gain, measured), a time-regression correction (it would turn the bound
 into a fitted model). Check: the gate five times in the test session (each
 reports its 5 pairs and the minimum).
 
-### 34. Items 1–4 — result (tests; ships nothing by itself)
+### 35. Items 1–4 — result (tests; ships nothing by itself)
 
 *Item 1 — dead peer.* Cause: the per-path I/O owner (`transport/io_owner.rs`)
 logged a terminal quinn `ConnectionError` from `read_datagram` and kept

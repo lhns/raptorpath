@@ -1,4 +1,4 @@
-//! Status §34 — what drives the run-to-run spread of `recv_alloc_bound`
+//! Status §35 — what drives the run-to-run spread of `recv_alloc_bound`
 //! (a diagnostic, `#[ignore]`d; it asserts nothing and gates nothing).
 //!
 //! `recv_alloc_bound` counts process-wide allocations over a 2 MB and a 12 MB
@@ -123,7 +123,7 @@ fn bucket_line(s: &Count, l: &Count) -> String {
 }
 
 #[test]
-#[ignore = "status §34 diagnostic; run explicitly with --ignored"]
+#[ignore = "status §35 diagnostic; run explicitly with --ignored"]
 fn recv_alloc_spread_diagnostic() {
     let pairs: usize = std::env::var("RAS_PAIRS").ok().and_then(|v| v.parse().ok()).unwrap_or(6);
     for pair in 1..=pairs {
