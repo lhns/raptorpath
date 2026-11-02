@@ -9096,3 +9096,66 @@ printed, so the spread stays visible. Not taken: the `fresh` method (no
 gain, measured), a time-regression correction (it would turn the bound
 into a fitted model). Check: the gate five times in the test session (each
 reports its 5 pairs and the minimum).
+
+### 34. Items 1–4 — result (tests; ships nothing by itself)
+
+*Item 1 — dead peer.* Cause: the per-path I/O owner (`transport/io_owner.rs`)
+logged a terminal quinn `ConnectionError` from `read_datagram` and kept
+serving; nothing told the engine, and `perf::client` did not watch its
+engine task. After a SIGKILL'd server the client's connection does close
+at quinn's idle timeout (30 s, quinn 0.11's default), but the run waited
+its full timeout. Fix (`01f6841`, `e301bba`): the owner records the loss
+on its `PathView` and wakes `QuicTransport::all_connections_lost`, which
+resolves when every current path's connection is lost (one lost path
+while another lives is not lost); `run_impl` ends with `peer lost: …` on
+the dialing side; `perf::client` watches its engine. The idle timeout is
+now explicit (`QUIC_IDLE_TIMEOUT`, unchanged value). Declared: the arm is
+gated on the dialing side (`!is_server`), because a perf server must
+outlive its client leaving (the harness stops it by signal and reads its
+exit flush); a server whose peer is gone stays up, as before. Loss is
+noticed by a reading owner only. Test `tests/dead_peer_fail_fast.rs`
+(1 and 2 paths, SIGKILL after warm-up, bound `QUIC_IDLE_TIMEOUT +
+REPORT_INTERVAL` = 32 s, non-zero exit, `peer lost` in the output): red at
+`d6b3828` (client still running 90 s after the kill, both tests), green at
+`81f0f8c`, `5ff8030`, `e301bba` (≈ 30 s each).
+
+*Item 2 — `[LAT]` assert.* The receiver now declares a late fill (`seq <
+next_deliver_seq()` before the push with a reorder buffer; `dseq <
+next_expected` without one; never ρ or the hint), and debug builds check
+exactly-once: an in-order delivery must be ≥ the floor; a late one must
+fill a hole the frontier skipped, once (a hole record capped at
+`PENDING_SPAN_MAX`). Found while building it: the hold-expiry deliveries
+(`drain_expired`) are not offered to `[LAT]`, so its floor can lag the
+buffer's frontier; a late fill at or above the lagging floor is accepted
+once and a repeat fires; a duplicate of an expiry-delivered seq cannot be
+seen by the gauge. 7 new `net::lat` tests red at `81f0f8c`, 24/24 green at
+`5ff8030` and `e301bba`. Audit: no non-ignored debug test runs the evict
+window with loss (every subprocess loopback passes `--window-reliable`;
+`auto` resolves to reliable); the `#[ignore]`d L0 instruments
+(`unified_l0`, `unified_stream_l0`, `taper_emission_l0`) are the ones that
+can produce late fills. Not changed, reported: `Pending::insert` refuses
+`seq < floor`, so a late fill's arrival record is lost and counted twice
+in `over`.
+
+*Item 3 — legacy decoders.* RLC, Generation and the reference decoder
+prune by popping ordered sets from the front; `seen` is `SeqBits` for
+sources plus an ordered repair set (the unified pattern); the generation
+prune visits only anchors below the frontier and keeps an ordered set of
+Solving slots for its live floor; RLC's per-row coefficient trim is
+deleted (dead work: a row's columns all lie above its pivot). Source gate
+`tests/legacy_decoders_prune_by_removal.rs` red at `5ff8030`, green at
+`e301bba`; the contract tests in `fec::prune_contract_tests` (retained
+keys ≥ floor, exactly-once, below-floor re-feed) green at both (guards).
+Non-default path (`RWM_UNIFIED=0`): no battery.
+
+*Item 4 — size of one prune.* Left as is; the reasoning is in the paper,
+§5.2 "The size of one prune" (`0ef8f29`).
+
+*Item 5 — the gate after Amendment 1* (`e301bba`, five runs, each the
+minimum of 5 pairs): 22.815, 22.954, 23.009, 22.811, 22.995 (pairs
+22.81–23.30). Bound 23.5 unchanged.
+
+*Session hygiene.* A first red/green pass shared one target dir across the
+archived trees; their commit-time mtimes made cargo reuse the first
+tree's binaries, so those t2/t3 readings were void and were re-run with a
+fresh target dir per tree (the numbers above).
