@@ -153,7 +153,15 @@ run_suites() {
   return $TFAIL
 }
 if [ "$PLAN" = "34" ]; then
-  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
+  # Amendment 2: a relaunch on the same engine tree may reuse a green suite run of that
+  # tree (LD_PRIOR_TESTS = its run dir, which must hold TESTS-OK); it is copied in and named.
+  if [ -n "${LD_PRIOR_TESTS:-}" ]; then
+    [ -e "$LD_PRIOR_TESTS/TESTS-OK" ] || fail_all "ABORT-TESTS (no TESTS-OK in $LD_PRIOR_TESTS)"
+    cp "$LD_PRIOR_TESTS/TESTS.txt" "$RUN/TESTS-prior.txt" && touch "$RUN/TESTS-OK"
+    era "LD-ALL suites: reused TESTS-OK from $LD_PRIOR_TESTS (same engine tree)"
+  else
+    run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
+  fi
   era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
 fi
 

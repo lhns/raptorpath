@@ -8860,3 +8860,36 @@ R4 `STORE-HOLDS` at both (B 16–66). Two §27 c1d rows would fail the new
 
 *Duration.* Build ≈ 6 min, suites ≈ 1.5–2 h (§27: release 25 min, debug
 46 min, plus builds), smoke and battery ≈ 15 min; inside `LD_HARD`.
+
+### 34. Amendment 2 — an idle c1d leg, and the relaunch (before any scored row)
+
+*First launch (2026-11-01 23:30Z):* `ABORT-TESTS` before any build: the
+parser tests inherited the envelope's `LD_PLAN=34`, which the plan-34
+witnesses key on, so 17 tests of the other plans failed. Fixed in the test
+(it drops an inherited `LD_PLAN`, `3d75442`); nothing ran.
+
+*Second launch (23:33Z–00:21Z, both locks):* build 330 s (binary
+`920a92f2…a91ff`, tree `5020f80`), suites green on the instrumented tree —
+release 1 143 passed / 0 failed (51 ignored), doc rc 0, wasm 35, debug
+1 002 / 0 (50 ignored), parsers rc 0 (`TESTS-OK`). Then `ABORT-SMOKE`: the
+c1d DEF768 smoke row delivered almost everything on leg 1 (leg 0: 4 289
+egress datagrams of ≈ 341 000) and carried no post-warm-up `[LOOPDIAG]`
+sample on leg 0, so the every-path window witness voided it. §27 lost the
+same row the same way (c1d DEF768 s42, leg 0 with 2 windows). The c1s smoke
+row was LIVE (16 windows, μ_R 124 k msgs/s, B 64). No battery row ran.
+
+*Change (nothing in the readouts, outcomes or decision rule moves).* As
+§29's c8 rule: under plan 34 a leg with no post-warm-up `[LOOPDIAG]` window
+carrying samples is noted `p<i>-idle` and is not witnessed; the row is void
+only if every leg is idle. A leg that carried some samples but fewer than 8
+windows still voids the row. ln Π sums D and takes the max T over the legs
+that carry samples. Re-checked on the two saved smoke rows: both LIVE (c1d
+with the note `p0-idle`). An idle leg means the cell ran that row on one
+path; the score lists those rows, so R1–R4 at c1d can be read with and
+without them.
+
+*Relaunch.* Same engine tree; harness only. The suites are not re-run: the
+envelope takes `LD_PRIOR_TESTS` (the second launch's run dir, which holds
+`TESTS-OK`) and copies its `TESTS.txt` in as `TESTS-prior.txt`. Fresh target
+dirs (the old ones are removed while both locks are free and nothing
+measures). New `LD_HARD` = relaunch + 4 h.

@@ -991,7 +991,10 @@ os.environ.pop("LD_PLAN", None)
 check("plan 34 witness: < 8 [LOOPDIAG] windows voids the row only under LD_PLAN=34",
       "p34-loopdiag-p0-windows=5" in w34["problems"] and w34["status"] == "WITNESS-FAIL"
       and "p34-loopdiag-p0-windows=5" not in mk("S192", n=192)["problems"], w34["problems"])
-check("plan 34 constants",ld.EXPECT_ROWS34 == 39 and ld.MIN_LD_WINDOWS34 == 8 and ld.B_HOLD34 == 98.0)
+fx2 = ld.plan34_fields(cli34, srv34, 2)
+check("plan34_fields (amendment 2): a dual-cell leg with no samples is left out of ln Pi, not a zero series",
+      len(fx2["lnpi34"]) == 12 and fx2["lnpi34"] == fx["lnpi34"], fx2["lnpi34"][:2])
+check("plan 34 constants", ld.EXPECT_ROWS34 == 39 and ld.MIN_LD_WINDOWS34 == 8 and ld.B_HOLD34 == 98.0)
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

@@ -301,8 +301,14 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     idle1 = arm in ARMS29 and cell == "c8-100" and p1_idle(cli)
     if idle1:
         row["notes"].append("p1-idle")
+    # Plan 34 (amendment 2): a leg with no post-warm-up [LOOPDIAG] window carrying samples was left
+    # idle by the placement; it has no loop to witness. Noted, not voided, as plan 29's c8 rule.
+    p34 = os.environ.get("LD_PLAN") == "34"
+    idle34 = [i for i in range(nleg) if p34 and row["ld_pn"][str(i)][0] == 0] if nleg > 1 else []
+    for i in idle34:
+        row["notes"].append(f"p{i}-idle")
     for i in range(nleg):                       # EVERY path of the cell (plan 29 c8: p1 only if it sent anything)
-        if i == 1 and idle1:
+        if (i == 1 and idle1) or i in idle34:
             continue
         wn, pn_pace = row["ld_pn"][str(i)]
         if wn < MIN_LD_WINDOWS:
@@ -349,8 +355,12 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     elif fam == "BRS" and not row["cc_brs_echo"]:
         p.append("brs-no-echo")
     row.update(plan34_fields(cli, srv, nleg))
-    if os.environ.get("LD_PLAN") == "34":
+    if p34:
+        if len(idle34) == nleg:
+            p.append("p34-every-leg-idle")
         for i in range(nleg):
+            if i in idle34:
+                continue
             wn = row["ld_pn"][str(i)][0]
             if wn < MIN_LD_WINDOWS34:
                 p.append(f"p34-loopdiag-p{i}-windows={wn}")
@@ -1159,11 +1169,12 @@ def plan34_fields(cli, srv, nleg):
     dgq_b: median over post-warm-up [DIAG] windows of sum_p (hand - tx); dgq_n / diag_n: windows with dgq /
     all post-warm-up [DIAG] windows; kshare: share of windows with sum qcwnd / W < the store cap."""
     per = [{w["t"]: w for w in loopdiag_windows(cli, str(i)) if w["n"] > 0} for i in range(nleg)]
-    ts = sorted(set.intersection(*[set(d) for d in per])) if per and all(per) else []
+    per = [d for d in per if d]              # a leg with no samples at all (left idle) is not in the sum (amendment 2)
+    ts = sorted(set.intersection(*[set(d) for d in per])) if per else []
     ws = []
     for t in ts:
-        d = sum((per[i][t].get("dlv_rate") or 0.0) for i in range(nleg))
-        tt = [per[i][t].get("rtt_p50_us") for i in range(nleg)]
+        d = sum((pd[t].get("dlv_rate") or 0.0) for pd in per)
+        tt = [pd[t].get("rtt_p50_us") for pd in per]
         if d > 0 and all(x for x in tt):
             ws.append((t, d, max(tt) / 1e6))
     if ws:

@@ -23,7 +23,7 @@ while :; do
   if free; then
     HARD=$(( $(date +%s) + 4 * 3600 ))
     say "launch hard=$HARD"
-    ( cd "$HERE" && LD_ROOT="$LD_ROOT" LD_SHM="$LD_SHM" LD_PLAN=34 LD_HARD="$HARD" \
+    ( cd "$HERE" && LD_ROOT="$LD_ROOT" LD_SHM="$LD_SHM" LD_PLAN=34 LD_HARD="$HARD" LD_PRIOR_TESTS="${LD_PRIOR_TESTS:-}" \
         timeout $(( 4 * 3600 + 600 )) bash ./loopdiag_run_all.sh ) >> "$LD_ROOT/launch.out" 2>&1 < /dev/null
     rc=$?
     say "run_all rc=$rc"
