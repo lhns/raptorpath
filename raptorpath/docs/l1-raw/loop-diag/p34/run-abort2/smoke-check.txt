@@ -1,0 +1,3 @@
+SMOKE34 c1s-400 DEF384: mbps=655.634 ld_pn={'0': [16, 16]} lnpi_n=16 mu_r=123910.2 rdiag_n=9 dgq_b=64.0 kshare=0.312 status=LIVE
+SMOKE34 c1d-400 DEF768: mbps=790.837 ld_pn={'0': [0, 0], '1': [13, 13]} lnpi_n=0 mu_r=124974.3 rdiag_n=8 dgq_b=64 kshare=0.0 status=WITNESS-FAIL
+SMOKE-FAIL c1d-400 DEF768: WITNESS-FAIL ['loopdiag-p0-windows=0', 'no-q-pace-bps', 'p34-loopdiag-p0-windows=0']

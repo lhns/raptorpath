@@ -8893,3 +8893,101 @@ envelope takes `LD_PRIOR_TESTS` (the second launch's run dir, which holds
 `TESTS-OK`) and copies its `TESTS.txt` in as `TESTS-prior.txt`. Fresh target
 dirs (the old ones are removed while both locks are free and nothing
 measures). New `LD_HARD` = relaunch + 4 h.
+
+### 34. Diagnostic — result
+
+Scored 2026-11-02 against the pre-registration and amendments 1–2,
+literally (`score.txt` is the parser's output, unedited). Diagnostic:
+nothing ships. **R1: the knee is 1 024 at both cells. R2 `CLOSED` at both,
+so D-W is not reopened. R3 at c1d: μ_R `AMBIGUOUS` (max/min 1.27) and its
+fixed point `MISSES` (457, band [683, 1 536]). R4 `QUINN-SHARES` at both
+(c1s 768 and 1 536, c1d 1 024).** By the decision rule no branch fires:
+the store law's input stays open.
+
+*Session.* Host `cargo check -p raptorpath --all-targets` on the run tree:
+clean (warnings only). Launches: first `ABORT-TESTS` (parser env, nothing
+run), second suites green then `ABORT-SMOKE` (amendment 2), third
+2026-11-02 01:00:59–01:11:55Z (VM clock): precondition met
+(`procs_running` [1,1,1,1,1], io `full avg10` 0.00), both locks, parser
+tests ok, build 341 s (binary `920a92f2…a91ff`, the second launch's binary
+bit for bit; tree `d2dfa45`), suites reused from the second launch
+(`TESTS-prior.txt`: release 1 143/0, doc, wasm 35, debug 1 002/0, parsers),
+smoke `SMOKE-PASS`, battery 281 s, 39 rows, `DONE-ALL`; exit 0
+`raptorpath`, 0 `rp-*`. Ledgers: `docs/l1-raw/loop-diag/p34/` (`run/`
+the scored session, `run-abort1/` and `run-abort2/` the two stopped
+launches with the second's suite logs; VM user and host scrubbed).
+
+*Abort table.* First launch `ABORT-TESTS`, second `ABORT-SMOKE` (both
+before any battery row; amendments 1–2). Third: none (`ABORT-LOCK`, `-CRLF`,
+`-SHA`, `-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUILD`, `-TESTS`, `-BUDGET`,
+`-RC`, `-BRINGUP`, `VOID-COTENANT`, `VOID-ONDISK` all *no*); no row
+io-flagged (`full avg10` ≤ 0.18).
+
+*Rows.* 38 of 39 LIVE; 1 `WITNESS-FAIL` (c1d DEF512 s7: leg 1 with 2
+windows, neither idle nor witnessed). **7 of the 17 live c1d rows ran on
+one leg** (`p0-idle` or `p1-idle`, at caps 768–2048): on post-§32 main a
+static cap at c1d often leaves one leg without traffic.
+
+*Per cap* (means over live rows; B = quinn's backlog Σ `dgq[hand − tx]`,
+row medians; μ_R in msgs/s):
+
+| c1s n | 256 | 384 | 512 | 768 | 1024 | 1536 | 2048 |
+|---|---|---|---|---|---|---|---|
+| goodput | 526 | 538 [277–681] | 687 | 773 | 792 | 816 | 825 |
+| A_x p50 ms | 1.0 | 1.7 | 2.1 | 3.4 | 5.1 | 8.9 | 12.3 |
+| σ²_win | 0.019 | 0.072 | 0.021 | 0.018 | 0.010 | 0.021 | 0.021 |
+| μ_R k | 119 | 123 | 116 | 121 | 118 | 116 | 120 |
+| B | 20 | 25 | 50 | 128 | 64 | 133 | 563 |
+
+| c1d n | 384 | 512 | 768 | 1024 | 1536 | 2048 |
+|---|---|---|---|---|---|---|
+| goodput | 642 | 706 | 759 | 780 | 813 | 759 |
+| A_x p50 ms | 1.3 | 2.2 | 9.3 | 5.3 | 31.1 | 70.7 |
+| σ²_win | 0.025 | 0.028 | 0.028 | 0.026 | 0.027 | 0.030 |
+| μ_R k | 86.8 | 86.9 | 108.1 | 107.2 | 110.3 | 94.2 |
+| B | 29 | 22 | 69 | 192 | 83 | 228 |
+
+- **R1.** c1s Gmax 824.5 (at 2048), n* = 1 024, band [683, 1 536], Π₂
+  argmax 512 (§27: n* 1 024, argmax 384, Gmax 746). c1d Gmax 813.3, n* =
+  1 024 (§27: 768), argmax 384. The receiver change raised the c1s curve by
+  +2 to +14 % at the caps ≥ 512 but did not move the 0.95 knee (one c1s
+  DEF384 row read 277 Mbit/s and pulls that cap down).
+- **R2 `CLOSED` at both.** c1s at 512: σ²_win 0.0205 (§27 at 512: 0.0277;
+  §30's 0.036 was at 384), T 5.77 ms, γ 0.53 (still red), W*_white 355,
+  W*_γ 2 374; reach in a third of the 4.7 s transfer 0.026 against the
+  1.386 needed. c1d at 384: 0.0246 (§30 0.029), γ 1.17, W* 358–502, reach
+  0.02–0.03 against 1.674. §32 cut the c1 window noise by ×1.2–1.8 at the
+  argmax; D-W needed ×100 or more.
+- **R3 (c1d scored).** μ_R 86.8 k at 384–512, 107–110 k at 768–1 536,
+  94 k at 2048: max/min 1.27, `AMBIGUOUS` (`LOAD-DEPENDENT` at ≥ 1.5), the
+  step sitting where the idle-leg rows begin. The ceiling ask
+  (1 + q)·μ_R·(RTprop̄ + S̄) has a stable fixed point at 457 (slope 0.54),
+  below the band: `MISSES`. Reported only, c1s: μ_R flat (116–123 k,
+  max/min 1.06, 1.2 L — the receiver is not c1s's bottleneck) and the same
+  form lands at 1 020 (slope 0.62), inside the band, because μ_R·(RTprop +
+  S) happens to equal L·(RTprop + S) within 20 % there; with L itself §27
+  read 701.
+- **R4 `QUINN-SHARES`.** quinn's own backlog stays ≤ 50 datagrams (≤ 0.5 ms
+  of L) at caps ≤ 512 at both cells, and reaches 128–192 (1.3–2 ms of L) at
+  the knee caps (c1s 768 and 1 536, c1d 1 024). On the post-§32 receiver the
+  store cap is the only brake below ≈ 512 and shares authority with quinn's
+  window from the knee up; the K < c share reads 0.35–0.90 from 384 up at c1s.
+
+*Predictions.* R1: c1s's knee moves below 1 024: MISSED (it stays at
+1 024; the curve rose instead); c1d stays near 768: MISSED (1 024). R2
+`CLOSED` at c1d: MET; c1s `AMBIGUOUS` or `CLOSED`: MET (`CLOSED`). R3
+stated risk `LOAD-DEPENDENT`: MISSED narrowly (`AMBIGUOUS`, 1.27); the
+interior n_fp near 600–700: MISSED (457). R4 `STORE-HOLDS`: MISSED at both.
+
+*What it means for the store law (outside the decision rule, no
+verdict).* (1) D-W is closed at c1 on post-§32 main as well; the noise fell
+a little and stayed red at c1s. (2) The receiver capacity is not a usable
+c1d ceiling: it is load- and leg-dependent and its fixed point sits below
+the knee. (3) §34's committed-ledger reading that the store cap holds
+authority at every knee (from §27/§29, pre-§32) no longer holds at c1: from
+the knee up quinn's window shares it, so a nested store law there would
+need the authority gauge B and the rejection rule of paper §6.1. (4) c1d
+often runs on one leg at a static cap, which no store law can fix and
+which makes c1d's knee partly a placement question. What remains is the
+link rate at c1s, c2 and c8, for which only a dispersion instrument is
+named. The `[LOOPDIAG]` instrument stays off main (run branch only).
