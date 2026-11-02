@@ -1642,6 +1642,12 @@ pub(crate) async fn run_receiver(
 
                             // ----- in-order delivery (default: TCP-in-
                             // tunnel and Realtime need the frontier) -----
+                            // `[LAT]`'s late declaration: with a reorder buffer, a
+                            // push below its frontier returns exactly that one
+                            // item (a fill of a hole it gave up on) and every
+                            // other returned item is in order; without one, each
+                            // item is judged against `next_expected` below.
+                            let mut buf_late: Option<bool> = None;
                             let deliverable = if let Some(ref mut reorder) = reorder_buf {
                                 // `[RFA] late_after_aban`: this seq's copy
                                 // arrived for a seq the frontier had already
@@ -1659,6 +1665,7 @@ pub(crate) async fn run_receiver(
                                 if abandoned_seqs.remove(&seq) {
                                     recv_rack_echo.record_late_after_aban();
                                 }
+                                buf_late = Some(seq < reorder.next_deliver_seq());
                                 let rxp_t = rxp.begin();
                                 let pushed = reorder.push(seq, sym_data);
                                 rxp.end(RxSec::Deliv, rxp_t);
@@ -1696,6 +1703,7 @@ pub(crate) async fn run_receiver(
                                     dseq,
                                     lat_now.saturating_duration_since(dbuf).as_micros() as u64,
                                     lat_release,
+                                    buf_late.unwrap_or(dseq < next_expected),
                                 );
                                 rxp.end(RxSec::Book, rxp_t);
                                 let rxp_t = rxp.begin();

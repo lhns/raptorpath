@@ -19,4 +19,4 @@ pub use protocol::{
     WireMessage, COMPACT_DATA_TAG, PROTOCOL_VERSION, WIRE_MAGIC,
 };
 pub use io_owner::{InboundBatch, TxBatch};
-pub use quic::QuicTransport;
+pub use quic::{QuicTransport, QUIC_IDLE_TIMEOUT};

@@ -1,0 +1,17 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+RG t1(d6b3828) item1 rc=101 test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 180.29s  FAILED=[] 2026-11-02T00:47:06Z
+RG t1(d6b3828) item2 rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.25s  FAILED=[] 2026-11-02T00:50:36Z
+RG t1(d6b3828) item3u rc=0 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s  FAILED=[] 2026-11-02T00:50:36Z
+RG t1(d6b3828) item3g rc=101  FAILED=[] 2026-11-02T00:50:37Z
+RG t2(81f0f8c) item1 rc=101 test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 180.28s  FAILED=[] 2026-11-02T00:53:37Z
+RG t2(81f0f8c) item2 rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.19s  FAILED=[] 2026-11-02T00:53:39Z
+RG t2(81f0f8c) item3u rc=0 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s  FAILED=[] 2026-11-02T00:53:40Z
+RG t2(81f0f8c) item3g rc=101  FAILED=[] 2026-11-02T00:53:40Z
+RG t3(5ff8030) item1 rc=101 test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 180.34s  FAILED=[] 2026-11-02T00:56:41Z
+RG t3(5ff8030) item2 rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.19s  FAILED=[] 2026-11-02T00:56:41Z
+RG t3(5ff8030) item3u rc=0 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s  FAILED=[] 2026-11-02T00:56:42Z
+RG t3(5ff8030) item3g rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s  FAILED=[legacy_decoder_advance_touches_only_what_it_removes ] 2026-11-02T00:57:53Z
+RG done 2026-11-02T00:57:54Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

@@ -4,7 +4,8 @@
 //! modify: its value is that it preserves the exact dense behaviour.
 
 use super::*;
-use std::collections::HashSet;
+use crate::net::seq_bits::SeqBits;
+use std::collections::BTreeSet;
 
 type GenRow = Vec<u8>;
 
@@ -48,8 +49,11 @@ pub struct RefGenerationDecoder {
     /// disjoint, so nothing is ever pre-known and this costs nothing.  Pruned on
     /// `advance`.
     recovered: BTreeMap<u64, Vec<u8>>,
-    /// Wire-symbol dedup: (block_id, payload_id, is_repair).
-    seen: HashSet<(u64, u32, bool)>,
+    /// Wire-symbol dedup: source seqs (a bitmap pruned from the front) ...
+    src_seen: SeqBits,
+    /// ... and repairs (block_id, payload_id), ordered so `advance` pops
+    /// what it prunes.
+    repairs_seen: BTreeSet<(u64, u32)>,
     total_fed: u64,
     /// Highest `advance` frontier: seqs below it are pruned, hence never new.
     floor: u64,
@@ -58,12 +62,25 @@ pub struct RefGenerationDecoder {
 }
 
 impl RefGenerationDecoder {
+    /// Test accessor, same shape as `GenerationDecoder::min_retained_keys`
+    /// (this decoder keeps no Solving-anchor floor: the last entry is `None`).
+    #[cfg(test)]
+    pub(crate) fn min_retained_keys(&self) -> [Option<u64>; 4] {
+        [
+            self.recovered.keys().next().copied(),
+            self.repairs_seen.iter().next().map(|k| k.0),
+            self.gens.keys().map(|&(a, w)| a + w as u64).min(),
+            None,
+        ]
+    }
+
     pub fn new(symbol_size: u16) -> Self {
         Self {
             symbol_size: symbol_size as usize,
             gens: BTreeMap::new(),
             recovered: BTreeMap::new(),
-            seen: HashSet::new(),
+            src_seen: SeqBits::new(),
+            repairs_seen: BTreeSet::new(),
             total_fed: 0,
             floor: 0,
             repairs_fed: 0,
@@ -323,8 +340,16 @@ impl RefGenerationDecoder {
         if symbol.backend != FecBackend::Rlc {
             return vec![];
         }
-        let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
-        if !self.seen.insert(key) {
+        // Sources dedup by seq (their payload_id is always 0), repairs by
+        // (block_id, payload_id).
+        let fresh = if symbol.is_repair {
+            self.repairs_seen.insert((symbol.block_id, symbol.payload_id))
+        } else {
+            // `insert` also answers false for a seq it refuses to record
+            // (beyond its span cap); only a recorded seq is a duplicate.
+            self.src_seen.insert(symbol.block_id) || !self.src_seen.contains(symbol.block_id)
+        };
+        if !fresh {
             return vec![];
         }
         self.total_fed += 1;
@@ -421,23 +446,35 @@ impl WindowDecoder for RefGenerationDecoder {
         out
     }
 
+    /// Raise the floor and drop everything below it, by popping from the
+    /// front of the ordered sets (cost O(entries pruned + generations
+    /// straddling the floor)).
     fn advance(&mut self, oldest_seq: u64) {
         self.floor = self.floor.max(oldest_seq);
         // Drop whole generations that end at or before the retention frontier.
-        let drop: Vec<(u64, usize)> = self
-            .gens
-            .keys()
-            .filter(|&&(anchor, width)| anchor + width as u64 <= oldest_seq)
-            .copied()
-            .collect();
-        for k in drop {
-            self.gens.remove(&k);
+        // `gens` is ordered by anchor: visit only anchor < frontier; a
+        // generation straddling it stays.
+        let mut from = std::ops::Bound::Unbounded;
+        while let Some((&(anchor, width), _)) = self.gens.range((from, std::ops::Bound::Unbounded)).next() {
+            if anchor >= oldest_seq {
+                break;
+            }
+            if anchor + width as u64 <= oldest_seq {
+                self.gens.remove(&(anchor, width));
+            } else {
+                from = std::ops::Bound::Excluded((anchor, width));
+            }
         }
-        let old: Vec<u64> = self.recovered.range(..oldest_seq).map(|(&k, _)| k).collect();
-        for s in old {
-            self.recovered.remove(&s);
+        while let Some(e) = self.recovered.first_entry() {
+            if *e.key() >= oldest_seq {
+                break;
+            }
+            e.remove();
         }
-        self.seen.retain(|(block_id, _, _)| *block_id >= oldest_seq);
+        self.src_seen.prune_below(self.floor);
+        while self.repairs_seen.first().is_some_and(|k| k.0 < self.floor) {
+            self.repairs_seen.pop_first();
+        }
     }
 
     fn rank_in(&self, start: u64, count: u64) -> u64 {

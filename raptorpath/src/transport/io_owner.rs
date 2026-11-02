@@ -290,6 +290,10 @@ pub struct PathView {
     /// so the owner's next poll fills a warm `Vec` instead of growing a new
     /// one from zero capacity. Bounded: see [`INBOUND_POOL_MAX`].
     inbound_pool: parking_lot::Mutex<Vec<InboundBatch>>,
+    /// The path's QUIC connection is terminally lost (quinn's
+    /// `ConnectionError`, Display). Set once, by the owner, the first time
+    /// `read_datagram` fails; never cleared.
+    conn_lost: std::sync::OnceLock<String>,
 }
 
 impl PathView {
@@ -318,9 +322,22 @@ impl PathView {
             drv_off: AtomicU64::new(0),
             pool: parking_lot::Mutex::new(Vec::new()),
             inbound_pool: parking_lot::Mutex::new(Vec::new()),
+            conn_lost: std::sync::OnceLock::new(),
         });
         registry().lock().push(Arc::downgrade(&v));
         v
+    }
+
+    /// Why the path's QUIC connection is lost, `None` while it lives.
+    pub fn conn_lost(&self) -> Option<&str> {
+        self.conn_lost.get().map(String::as_str)
+    }
+
+    /// Owner only: record the terminal connection error and wake
+    /// `QuicTransport::all_connections_lost`.
+    fn set_conn_lost(&self, e: &quinn::ConnectionError, lost: &tokio::sync::Notify) {
+        let _ = self.conn_lost.set(e.to_string());
+        lost.notify_waiters();
     }
 
     /// quinn's RTT for this path, `None` before the first publish.
@@ -855,6 +872,9 @@ pub(crate) struct OwnerArgs {
     pub gauge: bool,
     /// `RWM_RTOBS=2`: the deep gauge (`task_obs`).
     pub deep: bool,
+    /// Shared by every path's owner: notified when a path's connection is
+    /// lost (`PathView::conn_lost`).
+    pub lost: Arc<tokio::sync::Notify>,
 }
 
 /// The owner task. Spawned on the main runtime; the identity task-local is
@@ -1096,6 +1116,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                 Some(Ok(d)) => push_inbound(&mut inbound, &mut inbound_tx, &view, a.dg_audit, path, d),
                                 Some(Err(e)) => {
                                     error!(path_id = path, ?e, "datagram receive error");
+                                    view.set_conn_lost(&e, &a.lost);
                                     reader_dead = true;
                                     break;
                                 }
@@ -1154,6 +1175,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     }
                     Err(e) => {
                         error!(path_id = path, ?e, "datagram receive error");
+                        view.set_conn_lost(&e, &a.lost);
                         reader_dead = true;
                     }
                 }

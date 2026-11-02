@@ -231,6 +231,13 @@ impl PerfServer {
         self.reaper.0.id()
     }
 
+    /// SIGKILL the server and reap it: a silent peer (no CONNECTION_CLOSE),
+    /// the worst case for a client.
+    pub fn kill(&mut self) {
+        let _ = self.reaper.0.kill();
+        let _ = self.reaper.0.wait();
+    }
+
     /// The server log after the client finished: waits (≤ 10 s) for a
     /// `pat` line emitted after `mark` — one gauge emission that post-dates
     /// the transfer — and then for the log to go quiet for 100 ms (≤ 2 s), so
@@ -337,6 +344,48 @@ pub fn perf_client_output(peers: &[SocketAddr], env: &[(&str, &str)], args: &[&s
     cli.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     apply_env(&mut cli, env);
     cli.output().expect("run perf client")
+}
+
+/// A running perf client child, its stdout+stderr merged into one log.
+pub struct PerfClient {
+    pub log: ServerLog,
+    pub child: Reaper,
+    readers: Vec<ThreadHandle<()>>,
+}
+
+impl PerfClient {
+    /// Has the child exited? `Some(status)` once it has.
+    pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.0.try_wait().ok().flatten()
+    }
+
+    /// Kill (if still running), reap, and return the full log.
+    pub fn finish(&mut self) -> String {
+        let _ = self.child.0.kill();
+        let _ = self.child.0.wait();
+        for r in self.readers.drain(..) {
+            let _ = r.join();
+        }
+        self.log.text()
+    }
+}
+
+/// Spawn `raptorpath perf --client --peer <peers> <args…>` as a child with a
+/// merged, line-buffered log (the non-blocking form of
+/// [`perf_client_output`]).
+pub fn spawn_perf_client(peers: &[SocketAddr], env: &[(&str, &str)], args: &[&str]) -> PerfClient {
+    let mut cli = Command::new(env!("CARGO_BIN_EXE_raptorpath"));
+    cli.args(["perf", "--client", "--peer", &join(peers)]);
+    cli.args(args);
+    cli.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    apply_env(&mut cli, env);
+    let mut child = Reaper(cli.spawn().expect("spawn perf client"));
+    let log = ServerLog::default();
+    let readers = vec![
+        pump(child.0.stdout.take().expect("client stdout"), log.clone()),
+        pump(child.0.stderr.take().expect("client stderr"), log.clone()),
+    ];
+    PerfClient { log, child, readers }
 }
 
 /// [`perf_client_output`], asserting success; returns `stdout\nstderr`.

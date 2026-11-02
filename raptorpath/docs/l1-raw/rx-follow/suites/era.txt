@@ -1,0 +1,11 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+SUITES start src=/home/VMUSER/rxf/t4 commit=e301bba io_full_avg10=0.18 io_full_avg60=0.03 load=0.01 0.51 2.11 2026-11-02T01:56:31Z
+TEST release rc=0 passed=1146 failed=0 ignored=52 binaries=100 2026-11-02T02:19:57Z
+TEST doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-02T02:20:01Z
+TEST wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-11-02T02:22:25Z
+TEST debug rc=0 passed=1009 failed=0 ignored=51 binaries=91 2026-11-02T02:42:55Z
+TEST parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-02T02:43:04Z
+SUITES OK 2026-11-02T02:43:12Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
