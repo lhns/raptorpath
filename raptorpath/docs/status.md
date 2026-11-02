@@ -9159,3 +9159,18 @@ minimum of 5 pairs): 22.815, 22.954, 23.009, 22.811, 22.995 (pairs
 archived trees; their commit-time mtimes made cargo reuse the first
 tree's binaries, so those t2/t3 readings were void and were re-run with a
 fresh target dir per tree (the numbers above).
+
+*Not covered by a test, declared.* No non-ignored test drives the
+receiver's `late` line itself; the composition test proves the formula
+over the real `ReorderBuffer` only. The unordered branch (`dseq <
+next_expected`) is reached only on the evict window without a reorder
+buffer, where nothing is held, so `next_expected` is the gauge's floor;
+the out-of-order reliable arm `continue`s before `[LAT]` and never reaches
+it.
+
+*Full suites on `e301bba`* (2026-11-02 01:56–02:43Z, both locks, fresh
+target): release 1146/0 (52 ignored), doc rc 0, wasm 35/0, debug 1009/0
+(51 ignored), parsers rc 0, identity panics 0. `SUITES OK`. END: 0
+`raptorpath`, 0 `rp-*`; the VM dir is removed. Ledgers:
+`docs/l1-raw/rx-follow/` (VM user scrubbed; the run-1 red/green era file
+is kept and marked VOID).

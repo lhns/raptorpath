@@ -1192,7 +1192,7 @@ essentially every sample: trailing-span repairs arrive solvable or deliver
 immediately; per-arrival decode is 6–11 µs.
 
 **Retained state: the decode-inert floor, applied per drain (the measured
-subset of threading R3, status §22 and §32; proposed, gated on §32's ship
+subset of threading R3, status §22 and §32; shipped by §32's ship
 battery).** The decoder needs a known payload only while a repair can still
 reference it. Repairs reference the sender's window, which sits at or above
 the receiver's cumulative point less the window cap, so every column below

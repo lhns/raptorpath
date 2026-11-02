@@ -1,0 +1,12 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+RAS start commit=08cfda9 2026-11-01T22:55:26Z
+RAS diag rc=0 2026-11-01T23:01:15Z
+RAS gate run=1 rc=0 RECV_ALLOC small=40774 large=233003 allocs/symbol=23.029 bound=23.5 2026-11-01T23:01:16Z
+RAS gate run=2 rc=0 RECV_ALLOC small=40708 large=235095 allocs/symbol=23.288 bound=23.5 2026-11-01T23:01:17Z
+RAS gate run=3 rc=0 RECV_ALLOC small=40733 large=232368 allocs/symbol=22.958 bound=23.5 2026-11-01T23:01:18Z
+RAS gate run=4 rc=0 RECV_ALLOC small=40735 large=232506 allocs/symbol=22.974 bound=23.5 2026-11-01T23:01:19Z
+RAS gate run=5 rc=0 RECV_ALLOC small=40594 large=233500 allocs/symbol=23.110 bound=23.5 2026-11-01T23:01:20Z
+RAS done 2026-11-01T23:01:20Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

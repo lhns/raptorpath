@@ -1,0 +1,22 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+RG t2(81f0f8c) item1 rc=0 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 60.34s  FAILED=[] 2026-11-02T01:19:05Z
+RG t2(81f0f8c) item2 rc=101 test result: FAILED. 17 passed; 7 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.22s  FAILED=[net::lat::tests::a_late_fill_into_a_skipped_hole_is_not_an_order_violation net::lat::tests::a_duplicate_of_an_in_order_delivery_is_caught net::lat::tests::a_late_fill_above_a_lagging_floor_is_accepted_once_only net::lat::tests::a_non_late_delivery_below_the_floor_is_caught net::lat::tests::late_fills_inside_a_big_jump_are_each_accepted net::lat::tests::the_receivers_late_formula_over_the_real_reorder_buffer net::lat::tests::the_same_late_fill_twice_is_caught ] 2026-11-02T01:22:26Z
+RG t2(81f0f8c) item3u rc=0 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 0.00s  FAILED=[] 2026-11-02T01:22:27Z
+RG t2(81f0f8c) item3g rc=101  FAILED=[] 2026-11-02T01:22:27Z
+RG t3(5ff8030) item1 rc=0 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 60.37s  FAILED=[] 2026-11-02T01:28:34Z
+RG t3(5ff8030) item2 rc=0 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 588 filtered out; finished in 0.16s  FAILED=[] 2026-11-02T01:32:12Z
+RG t3(5ff8030) item3u rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 0.07s  FAILED=[] 2026-11-02T01:32:12Z
+RG t3(5ff8030) item3g rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s  FAILED=[legacy_decoder_advance_touches_only_what_it_removes ] 2026-11-02T01:33:25Z
+RG t4(e301bba) item1 rc=0 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 60.34s  FAILED=[] 2026-11-02T01:39:52Z
+RG t4(e301bba) item2 rc=0 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 588 filtered out; finished in 0.20s  FAILED=[] 2026-11-02T01:43:26Z
+RG t4(e301bba) item3u rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 0.07s  FAILED=[] 2026-11-02T01:43:27Z
+RG t4(e301bba) item3g rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s  FAILED=[] 2026-11-02T01:44:41Z
+RG gate run=1 rc=0 22.963 22.815 23.083 23.017 23.150  RECV_ALLOC min_of=5 allocs/symbol=22.815 bound=23.5 2026-11-02T01:46:50Z
+RG gate run=2 rc=0 23.111 23.108 23.013 22.954 23.030  RECV_ALLOC min_of=5 allocs/symbol=22.954 bound=23.5 2026-11-02T01:46:54Z
+RG gate run=3 rc=0 23.072 23.009 23.009 23.156 23.048  RECV_ALLOC min_of=5 allocs/symbol=23.009 bound=23.5 2026-11-02T01:46:58Z
+RG gate run=4 rc=0 22.998 22.815 23.117 22.811 22.919  RECV_ALLOC min_of=5 allocs/symbol=22.811 bound=23.5 2026-11-02T01:47:02Z
+RG gate run=5 rc=0 23.299 23.274 22.995 23.055 22.999  RECV_ALLOC min_of=5 allocs/symbol=22.995 bound=23.5 2026-11-02T01:47:05Z
+RG done 2026-11-02T01:47:07Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
