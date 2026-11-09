@@ -9181,3 +9181,104 @@ is kept and marked VOID).
 `7383494`, `01f6841` → `fb7783b`, `81f0f8c` → `3114907`, `8a00599` →
 `0b3a094`, `5ff8030` → `b099242`, `567d26a` → `a7b08a8`, `e301bba` →
 `33a4ed8`, `0ef8f29` → `6115c81`, `08cfda9` → `5e1b74b`.
+
+## 36. Receiver-side dispersion as the store law's link-rate source — capture diagnostic — pre-registration
+
+§34 left the store law without a link-rate source at c1s, c2 and c8.
+Paper §6.1, "Receiver-side dispersion as the link-rate source", shows that
+a perfect L would close the law: `(1 + q)·Σ L·(RTprop + S)` has stable fixed
+points near the Π₂ argmax at c2 (164), c8 (324) and post-§32 c1s (614,
+slope 0.54), with c1d at `CEILING`. It also derives from netem's release
+rule why trains of skbs at the receiver should read the link. This session
+tests that estimator on a packet capture. Diagnostic: no engine diff, no
+law built, nothing ships.
+
+**Tree.** github/main at launch (≥ `4926822`) plus a tools-only harness
+commit: an opt-in capture in `tools/l1/perf_rwm_c.sh` (`RWM_PCAP_DIR`), a
+plan 36 in `loopdiag_*`, and a capture scorer with tests. The engine binary
+is main's, built fresh on disk and run from `/dev/shm`. No suites: no
+engine code changes. The parser and scorer tests run in the session.
+
+**Capture.** On each data leg's receiver device (`srv0`, `srv1` in the
+`rp-*` server netns), from server bind to client exit:
+`tcpdump -i <dev> -s 64 --time-stamp-precision=nano -B 16384 -w
+/dev/shm/<run>/<row>.<leg>.pcap udp and src <client addr>`. The process is
+stopped by its PID, never by `pkill`. Netem sits on the client-side
+egress, so these timestamps are taken at the peer's receive, right after
+netem's release. Per skb: (t, b), with b the bytes netem charged:
+`orig_len + (segs − 1)·42`, segs = ⌈UDP payload / (udp_len − 8)⌉. The
+pcaps stay on tmpfs and are deleted after the row is scored. Per-row
+summaries are committed.
+
+**Design.** Static cap `RWM_STORE=<n>`, shipped substrate BBR, Bulk,
+`--window-reliable`, `RWM_GEN=0 RWM_DIAG=1`, §34's withholding list.
+
+| cell | caps | role |
+|---|---|---|
+| `c1s-400` | {64, 128, 256, 512, 1024, 2048} | scored |
+| `c2-100` | {16, 32, 64, 128, 256, 512} | scored |
+| `c8-100` | {64, 128, 256, 384, 512, 1024} | scored, both legs |
+| `c1d-400` | {128, 512, 2048} | reported |
+
+- Arm `CAP<n>` captures. Arm `NOCAP<n>` at c1s {256, 1024, 2048} does not;
+  it is the same-session control for the capture's CPU cost.
+- Two blocks, seeds 42 then 7, one rep each. Ascending on the first block,
+  descending on the second; cells alternated. 54 rows, after a 2-row smoke
+  (c1s CAP256, c8 CAP128).
+
+*Rules (shared file).* Launch precondition: both locks free (`test -e`
+only), no cargo/rustc (`pgrep -x`), `procs_running` ≤ 2 in 5 samples 2 s
+apart. Run dir, binary and pcaps on `/dev/shm`. io `full avg10`
+before/after every row, flagged at ≥ 20, never voided. `VOID-ONDISK` off
+tmpfs.
+
+*Witnesses (row void otherwise).* `[GATES]`; `[SUMCAP] eng` absent or 0;
+tcpdump reports 0 packets dropped by the kernel; per leg, the captured
+segment count is within 1 % of `[TRUTH] netem_sent_dgrams`. A leg with
+< 200 captured skbs is noted `p<i>-idle` and is not scored. The row is
+void only if every leg is idle.
+
+*Abort table:* `ABORT-LOCK`, `-CRLF`, `-SHA`, `-SMOKE`, `-BUILD`, `-TESTS`
+(parser/scorer), `-RC`, `-BRINGUP`, `-BUDGET`, `VOID-COTENANT`,
+`VOID-ONDISK`.
+
+**Estimator (fixed now; it uses no L).** Per leg, skbs in arrival order;
+post-warm-up = after the first 1 s of the leg's capture. Train rate
+`r_k(j) = Σ_{i=j+1..j+k} bᵢ / (t_{j+k} − t_j)`. Per 250 ms window w,
+`L̂_k(w) = max_j r_k(j)` over trains starting in w. Per row,
+`L̂_k = median_w L̂_k(w)` and `cv_k = sd_w / mean_w`. Scored at **k = 4**;
+k ∈ {2, 8, 16} and the window p90 in place of the max are reported.
+
+**Readouts and outcomes.** Links in bytes/s: c1 125·10⁶, c2 12.5·10⁶,
+c3 (c8's slow leg) 2.5·10⁶. Q(p, n) = mean over live rows of L̂_4 ÷ link.
+- **D1, the reading (per cell, per leg).** §27's classes, tightened.
+  `FLAT-AT-LINK` iff every Q(p, n) ∈ [0.85, 1.15]. Else `CIRCULAR` iff
+  Spearman(Q, n) ≥ 0.8 and Q(n_min) < 0.85. Else `OVER-READ` iff the median
+  Q > 1.15. Else `APP-LIMITED` iff the median Q < 0.85. Else `NEITHER`.
+- **D2, the noise.** Within-row `cv_4` per cap: `QUIET` iff ≤ 0.10 at every
+  cap, else `NOISY` (naming the caps).
+- **D3, the premise (diagnostic, uses L).** In-run share = the fraction of
+  consecutive pairs with spacing within ±10 % of b/R. Also the distribution
+  of busy-run lengths in skbs, per cap. Reported, no outcome.
+- **D4, the capture's cost.** c1s NOCAP − CAP goodput at {256, 1024, 2048}.
+  Reported. A drop > 5 % is named as a covariate of c1s's D1.
+- **D5, the law at L̂.** §27's fixed point with Lₚ = Q·link/W and RTprop
+  and S from the same rows' `[DIAG]`, beside the oracle-L fixed point.
+  Reported.
+
+**Decision rule (ships nothing).** `DISPERSION-READS-LINK` iff D1 is
+`FLAT-AT-LINK` and D2 `QUIET` at c1s, c2 and both legs of c8. Then paper
+§6.1 writes the law `(1 + q)·Σ L̂ᵢ·(RTpropᵢ + Sᵢ)` with its bind gauges, an
+ADR covers receive timestamps and the receiver → sender field, and a build
+is pre-registered. That stops for the user's go. Otherwise `NOT-YET`,
+naming the failed cells, clauses and the k at which they would pass. Any
+re-scoring at another k is a new registration.
+
+**Predictions (before any number).** c2 and c8 `FLAT-AT-LINK` (a slow link
+makes J small against k·b/R; jitter builds busy runs). c1s: `QUIET`, but
+`OVER-READ` at k = 4 is the stated risk (J of 20 µs against 4 × 28 µs ≈
++18 %), with the risk of short trains at caps 64–128. c1d reads ≈ L per
+leg (dispersion sees the link, not the receiver). D4 < 5 %.
+
+**Duration.** Build ≈ 6 min; 56 invocations ≈ 15 min; scoring on the VM
+≈ 5 min. Inside the 4 h launch deadline and the 5 h cap.

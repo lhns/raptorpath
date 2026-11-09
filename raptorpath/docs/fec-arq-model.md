@@ -2196,6 +2196,67 @@ holds from the knee up: quinn's backlog B reaches 128–192 datagrams
 ≤ 512, so a nested store law at c1 needs the authority gauge B and the
 rejection of inner-loop periods. 7 of 17 live c1d rows ran on one leg.
 
+**Receiver-side dispersion as the link-rate source — derived (status §36).**
+Two questions are kept apart: does the law close if L is known, and can the
+receiver read L.
+
+*The law with the true link (oracle L).* `ask(n) = (1 + q)·Σᵢ Lᵢ·(RTpropᵢ +
+Sᵢ(n))`, with S = Tp50 − Tmin, Lᵢ = netem rate ÷ W, and §27's interpolation
+rule:
+
+| cell (ledger) | fixed point | slope | Π₂ argmax | 0.95 knee band |
+|---|---|---|---|---|
+| c2-100 (§27) | 164 | 0.25 | 192 | [128, 288] |
+| c8-100 (§27) | 324 | 0.52 | 384 | [256, 576] |
+| c1s-400 (§34, post-§32) | 614 | 0.54 | 512 | [683, 1 536] |
+| c1d-400 (§27) | `CEILING` (ask > n to 4 096) | — | 384 | [512, 1 152] |
+
+Note `RTprop + S = Tp50 − (Tmin − RTprop)`: the loop time minus the
+standing queue. For a hard knee, `D(n) = min(n/T₀, L)`, the product `L·T₀`
+is the argmax of `D^α/T` for every α, so this law aims at D's location,
+the power point, without D's estimator. The fixed points agree: each one
+lies within one grid step of the Π₂ argmax, and at c1s it lies below the
+0.95 band. The law claims the power point, not the 0.95 knee. At c1d the
+receiver, not the link, is the bottleneck, so ΣL over-asks and the N·knee
+clamp binds. Main already sits there; that is a bound on the law, not a
+regression. So a perfect L closes the law at c2, c8 and c1s. The missing
+input is L alone; the time term stays.
+
+*Why the receiver can read L (netem, Linux 7.0 `sch_netem.c`).* With `rate`
+set and the delay line non-empty (true whenever the one-way delay exceeds
+the gap between sends), netem schedules skb i at
+
+```text
+   tᵢ  =  max( tᵢ₋₁ ,  aᵢ + dᵢ )  +  bᵢ / R          (bᵢ = qdisc_pkt_len, R = the rate)
+```
+
+aᵢ is the enqueue time and dᵢ the drawn delay including jitter. Inside a
+busy run (`tᵢ₋₁ ≥ aᵢ + dᵢ`) the spacing is exactly bᵢ/R, whatever the cap,
+the jitter or the sender's pacing. Jitter sits before the rate server, so it
+creates busy runs and does not corrupt them. A train of k consecutive skbs
+inside one busy run gives `Σ b / (t_{j+k} − t_j) = R` exactly.
+
+- *Fixed point:* R, independent of the cap. This is the property no sender
+  sampler has (§23, §24, §27).
+- *Noise:* release-timer and receive-timestamp lateness J compresses
+  spacings, so a train reads high by at most J/(k·b/R). The error is
+  one-sided upward and shrinks with k and on slower links. Gaps (a run that
+  ends inside the train) read low. The per-window estimator is therefore a
+  max over trains. A fixed train length k in skbs (not in time) keeps it
+  scale-free, with no L in the rule.
+- *Circularity premise:* a train needs k + 1 skbs queued back to back.
+  `L̂ = min(R, the sender's intra-burst rate)`. If the sender's bursts are
+  shorter than k + 1 skbs, or paced below R, L̂ falls to the delivered rate
+  and §23's contraction returns. The store cap bounds a train at about
+  n/g skbs (g the GSO factor), so small caps are where the premise can fail.
+- *Real links:* aggregation and token buckets make dispersion over-read the
+  sustained rate. This is a declared premise, bounded by the per-path knee
+  clamp. It is not tested on L1.
+
+The engine form would need kernel receive timestamps through quinn's socket
+and a receiver → sender field (an ADR). Status §36 first measures the
+estimator from a receiver-side packet capture, with no engine diff.
+
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
 cap is exactly one BDP per path with zero standing queue, the null candidate
