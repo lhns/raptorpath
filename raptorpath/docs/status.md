@@ -9447,3 +9447,22 @@ receiver → sender field should follow draft-ietf-quic-receive-ts
   constants missing from §11.2.
 - The CLAUDE.md reference to the deleted `goal-gate.md`.
 - Fixing the placement lock-out (B2).
+
+### 36. Amendment 4 — the row count, the lateness bound, tcpdump's user (before VM contact)
+
+- *Rows.* The enumerated grids give 2 blocks × (c1s 9 + c2 6 + c8 8 +
+  c1d 3 + NOCAP 3) = 58 rows, plus the 2-row smoke. The "54", "62" and "64"
+  written above were miscounts; the grids stand as listed.
+- *Lateness bound.* Lateness J on a train's anchor skb shortens its span
+  from k·b/R to k·b/R − J. So the train reads R/(1 − x), with x =
+  J/(k·b/R), an over-read of x/(1 − x), not x. At the c1s prediction (J
+  20 µs, k = 4) that is ≈ +22 %, not +18 %. The prediction is unchanged in
+  kind.
+- *tcpdump's user.* The capture runs with `-Z root`, so a build that drops
+  privileges before opening `-w` can still write the root-owned run dir.
+- *Witness set.* The DEF-arm witnesses carried over (`[GATES]`, the store
+  gate, every post-warm-up `win=` denominator equal to n, `[SUMCAP] eng`)
+  apply as listed in the pre-registration's witness line.
+- *Erratum to §37.* `goal-gate.md`'s rules live in
+  `docs/measurement-discipline.md` (ADR-0052). Main's CLAUDE.md already
+  cites that file; only an older branch's copy cites `goal-gate.md`.
