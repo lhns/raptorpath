@@ -225,7 +225,7 @@ if [[ -n "$PCAP_DIR" ]]; then
     command -v tcpdump >/dev/null 2>&1 || { echo "RWM_PCAP_DIR set but tcpdump is missing" >&2; exit 2; }
     mkdir -p "$PCAP_DIR" || exit 2
     for ((li = 0; li < ${#SRV_LEGS[@]}; li++)); do
-        ip netns exec "$NS_SRV" tcpdump -i "${SRV_LEGS[$li]}" -s 64 --time-stamp-precision=nano -B 16384 \
+        ip netns exec "$NS_SRV" tcpdump -Z root -i "${SRV_LEGS[$li]}" -s 64 --time-stamp-precision=nano -B 16384 \
             -w "$PCAP_DIR/p$li.pcap" udp and src "10.$((77 + li)).0.1" 2>"$PCAP_DIR/p$li.err" &
         TCPD_PIDS+=("$!")
     done

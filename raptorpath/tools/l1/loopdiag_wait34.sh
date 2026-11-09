@@ -1,5 +1,5 @@
 #!/bin/bash
-# Status §34: the on-VM waiter for the post-§32 c1 static grid (LD_PLAN=34).
+# Status §34: the on-VM waiter for the post-§32 c1 static grid (LD_PLAN=34; LDW_PLAN=36 for status §36).
 # Polls every 10 min (`test -e` on both locks, no cargo/rustc) and launches
 # loopdiag_run_all.sh with a hard deadline LD_HARD = launch + 4 h; a refusal
 # before anything ran (rc 3 precondition, rc 4 lock) is retried until
@@ -23,7 +23,7 @@ while :; do
   if free; then
     HARD=$(( $(date +%s) + 4 * 3600 ))
     say "launch hard=$HARD"
-    ( cd "$HERE" && LD_ROOT="$LD_ROOT" LD_SHM="$LD_SHM" LD_PLAN=34 LD_HARD="$HARD" LD_PRIOR_TESTS="${LD_PRIOR_TESTS:-}" \
+    ( cd "$HERE" && LD_ROOT="$LD_ROOT" LD_SHM="$LD_SHM" LD_PLAN="${LDW_PLAN:-34}" LD_HARD="$HARD" LD_PRIOR_TESTS="${LD_PRIOR_TESTS:-}" \
         timeout $(( 4 * 3600 + 600 )) bash ./loopdiag_run_all.sh ) >> "$LD_ROOT/launch.out" 2>&1 < /dev/null
     rc=$?
     say "run_all rc=$rc"
