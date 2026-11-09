@@ -130,7 +130,7 @@ Section 4:
 4. **A flow-control law with no fitted multiplier.** At every path count
    the pooled outstanding cap is `(1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ`, where q(δ) is
    mapped onto the standing-queue setpoint RFC 8289 derives from Kleinrock
-   power (Section 6). The multiplier is not fitted. The law's rate input is:
+   power (Section 6). The multiplier is not fitted. The law's rate input is circular:
    every sender-side sampler of the delivered rate is fed by the cap's own
    output, and no non-circular source of the link rate is shipped. That input
    is open (Section 6.1; status §23–§34).
