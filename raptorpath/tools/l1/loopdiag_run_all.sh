@@ -24,12 +24,16 @@
 # nothing run) and recorded again before the smoke; LD_HARD (epoch, required) bounds the
 # battery: it is not started with less than 30 min left (ABORT-BUDGET), and its timeout
 # ends at LD_HARD.
+#
+# LD_PLAN=36 (status section 36): the same precondition, LD_HARD and budget as plan 34, but NO suites (no engine
+# change: main's binary, built fresh); the parser and scorer tests (test_loopdiag_parse.py, test_disp36.py) gate
+# instead (ABORT-TESTS). The battery needs tcpdump and keeps the per-skb tables in $RUN/tables (persisted).
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
-crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py \
+crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
@@ -38,7 +42,8 @@ case "$PLAN" in
   27) P_SMOKE=smoke27; P_SCORE=score27; P_CHECK=check27 ;;
   29) P_SMOKE=smoke29; P_SCORE=score29; P_CHECK=check29 ;;
   34) P_SMOKE=smoke34; P_SCORE=score34; P_CHECK=check34 ;;
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34)"; exit 3 ;;
+  36) P_SMOKE=smoke36; P_SCORE=score36; P_CHECK=check36 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36)"; exit 3 ;;
 esac
 # Measurement runs from tmpfs (shared rules): the run dir and the measured
 # binary live under LD_SHM; the build stays on disk; persist() copies the run
@@ -69,8 +74,8 @@ install_lock_traps
 # with ABORT-LOCK and nothing run; relaunch.
 until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
 prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' /proc/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
-if [ "$PLAN" = "34" ]; then
-  : "${LD_HARD:?LD_HARD (epoch) is required for plan 34}"
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ]; then
+  : "${LD_HARD:?LD_HARD (epoch) is required for plan $PLAN}"
   PREC=$(prec_samples)
   if [ "${PREC%% *}" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
     era "ABORT-PRECONDITION ${PREC#* }; NOTHING WAS RUN"; exit 3
@@ -82,6 +87,10 @@ take_lock /home/vibe/rp.lock
 era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 
 python3 ./test_loopdiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"
+if [ "$PLAN" = "36" ]; then
+  python3 ./test_disp36.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_disp36.py)"
+  command -v tcpdump >/dev/null 2>&1 || fail_all "ABORT-BRINGUP no tcpdump on this host"
+fi
 era "LD-ALL parser test ok"
 
 CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
@@ -180,7 +189,7 @@ era "LD-ALL SMOKE-PASS"
 T0=$(date +%s)
 era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 BTO=10800
-if [ "$PLAN" = "34" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ]; then
   BTO=$(( LD_HARD - $(date +%s) ))
   [ "$BTO" -ge 1800 ] || fail_all "ABORT-BUDGET ${BTO}s left before LD_HARD"
 fi
