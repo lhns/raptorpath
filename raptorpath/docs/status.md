@@ -60,8 +60,11 @@ instrument). The refuted arms `RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
 `RWM_PERCAP_GUARD`, `RWM_STORE_BORROW`, `RWM_WIN_DECOUPLE`, `RWM_PLACE_SLACK`,
 `RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`, `RWM_QUANTILE_CLOCKS`, `RWM_W_FORM`
 and `RWM_ALPHA_OVERRIDE` are removed; set in the environment they are ignored
-(paper §10). `RWM_RECOV_SP` is kept as an off arm. Store gain 2.0, store
-boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
+(paper §10). `RWM_RECOV_SP` is kept as an off arm. Store boot 128 and the
+per-path pool 2048 are shipped store constants (§3.4). The store gain 2.0 is a
+gate default, not a shipped cap constant: the default cap multiplies by
+1 + q(δ) (ADR-0072), and the gain reaches only the `RWM_STORE_PATHS=0` control
+and other arms (paper §11.2). *Corrected 2026-11-10.*
 
 ## 2. Most recent verdicts
 
@@ -135,9 +138,9 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 | RECOV_MP thresholds | `9/8·max(srtt, ewma)`, 3 packets | `net/recovery_laws.rs` `mp_time_threshold_split` | RFC 9002 values applied to an age that includes sender dwell |
 | `GAP_ACK_MIN_INTERVAL` | 2 ms | `net/mod.rs` | a rate limit that is also the hole sampler; not derived |
 | `NACK_RETX_COOLDOWN_FLOOR_US` | 10 ms | `net/mod.rs` | 10× kGranularity by choice; moves W by 6.8× across its range |
-| `ELIGIBLE_SKEW` | 75 ms | `scheduler/mod.rs` | a threshold that selects a code path |
+| `ELIGIBLE_SKEW` | — | removed with the block pipeline (`dacfd7c`, 2026-10-04); no longer in `src` | *(row stale; corrected 2026-11-10)* |
 | taper copy `p_lost` | model-derived | `net/emit_source.rs` | measured waste is zero; why it never fires is undecided |
-| store gain / recovery round | 2.0 / 100 ms | `gates.rs`, `net/store_cap.rs` `HONEST_RECOVERY_ROUND_S` | the headroom H is proportional to gain − 1; κ is a fit |
+| store gain / recovery round | 2.0 / 100 ms | `gates.rs`, `net/store_cap.rs` `HONEST_RECOVERY_ROUND_S` | the gain no longer sets the default cap (1 + q(δ), ADR-0072; paper §11.2), only the `=0` control and off arms; κ is a fit *(corrected 2026-11-10)* |
 | heal/closed classifier | `srtt/2` | D0 instrument (offline) | biases π0 upward; gates nothing; the engine's `[LATE]` π̂0 uses sender-stamp order instead |
 | `PLACE_TEMPERATURE` | 0.15 | `scheduler/place.rs` | argmax of a four-point sweep whose verdict failed |
 | `w_div` | 1.0 | `scheduler/mod.rs` `SchedulingWeights::from_hint` | derived GE form gives 0.475 (c2) / 0.552 (c3) |
@@ -146,7 +149,7 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 | stall fraction κ in placement | 1 | `place_costs` | declared upper bound; measured 0.005–0.067 |
 | `BULK_TAIL_BUDGET` | 0.05 | `raptorpath-math` | an "e.g." in the derivation promoted to a const |
 | `queue_target_mult` | 1.08 / 1.125 / 1.25 | `scheduler/copa.rs` | declared corner; no continuous form fits the three points |
-| block shape by hint | `BlockProfile::from_hint`, interleave 2/1/3 | `net/mod.rs`, `config.rs` | declared corners; interleave is non-monotone in δ |
+| block shape by hint | — | removed with the block pipeline (`dacfd7c`); `BlockProfile::from_hint` is no longer in `src` | *(row stale; corrected 2026-11-10)* |
 | Realtime duplicate send | on at Realtime | `net/emit_source.rs` | a rate decision taken by a hint equality |
 | `use_packing` | on at Realtime | `net/sender_policy.rs` | declared corner |
 | emission burst bound | `RWM_EMIT_BURST` = 64 | `net/emit_burst.rs` `emit_burst_bound` | "≈ 64 KB", not swept; shipped as measured (§8); binds 0.84 of bursts at c1 |
