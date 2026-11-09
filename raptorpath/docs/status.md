@@ -9356,3 +9356,13 @@ Reported only; D1–D5's outcomes and the decision rule do not change.
   not the global one (Dovrolis et al., ToN 2004); on netem the max is
   expected to match. Any change to the scored estimator is a new
   registration.
+
+### 36. Erratum to amendments 2–3 (before VM contact)
+
+- *Field names.* Quinn's window per leg is `[DIAG]`'s per-path `p<i>:… qcwnd=`
+  (src/net/diag.rs:717). The top-level `cwnd=` is not quinn's per-leg window.
+  D6 reads `qcwnd`, and R̂ = `win=` numerator − Σ `qcwnd` − B. The D6 dwell
+  term and D8 read `rtt=` and `wrtt=` (ms), `rtp_us=` (µs) and `infl=`, all
+  from the same `p<i>:` block.
+- *Estimator robustness.* The mode of r_4 is dropped, because it has no
+  pre-registered bin width; the median stays.
