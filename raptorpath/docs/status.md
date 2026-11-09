@@ -9314,3 +9314,20 @@ Nothing in the estimator, the outcomes or the decision rule changes.
   64, 128, 256, 384, 512, 1024}. That is 62 rows plus a 2-row smoke.
   `RWM_PERF_TIMEOUT_S=300`, because c8 at 16 may need about 100 s.
 - *Duration.* About 35 min of rows plus the build; inside both limits.
+
+### 36. Amendment 2 — the coupled loops, reported beside D1–D5 (before VM contact)
+
+The store law does not act alone. Quinn's window (ADR-0068 q12), the
+placement law (paper §5.7) and the recovery headroom H (§7.3) share its
+fixed point, and a joint derivation follows this session. Two readouts are
+added, reported only; nothing in D1–D5 or the decision rule changes.
+- **D6, authority.** Per cap and leg: quinn's window (`[DIAG]` `cwnd=`) and
+  backlog B = median of `dgq<i>[hand − tx]` over post-warm-up `[DIAG]` lines,
+  each beside n. These show where the cap shares authority with quinn's
+  window.
+- **D7, placement.** Per cap: each leg's share of `[TRUTH] egress_dgrams`,
+  and the idle-leg notes. These feed B2 and the shared rule the store and
+  placement laws need for a path that carries no traffic, so has no trains.
+
+A `DISPERSION-READS-LINK` verdict therefore pre-registers the joint
+derivation (store × substrate window × placement × H × dials), not a build.

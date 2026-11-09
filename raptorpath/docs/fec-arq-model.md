@@ -2219,8 +2219,13 @@ lies within one grid step of the Π₂ argmax, and at c1s it lies below the
 0.95 band. The law claims the power point, not the 0.95 knee. At c1d the
 receiver, not the link, is the bottleneck, so ΣL over-asks and the N·knee
 clamp binds. Main already sits there; that is a bound on the law, not a
-regression. So a perfect L closes the law at c2, c8 and c1s. The missing
-input is L alone; the time term stays.
+regression. These are steady-state locations on static grids, for the store
+law taken alone. They show that a perfect L puts the law's fixed point near
+the power point at c2, c8 and c1s. They do not show who holds authority there:
+quinn's window (open question 12, status §34 R4) shares it at c1 from about
+512 up, exactly where c1s lands. Nor do they show the coupled loops are
+stable. Placement, the recovery headroom H and the dials enter the same fixed
+point; the joint derivation is open (status §36, amendment 2).
 
 *Why the receiver can read L (netem, Linux 7.0 `sch_netem.c`).* With `rate`
 set and the delay line non-empty (true whenever the one-way delay exceeds
