@@ -55,7 +55,7 @@ def pkt_of(t_ns, orig, payload):
 
 def write_pcap(path, recs, end="<", magic=None, link=1):
     """recs [(t_ns, orig_len, payload)]"""
-    mg = magic if magic is not None else (dp.MAGIC_LE if end == "<" else dp.MAGIC_BE)
+    mg = magic if magic is not None else struct.pack(end + "I", 0xA1B23C4D)      # the nanosecond magic, written independently of disp36
     with open(path, "wb") as fh:
         fh.write(mg + struct.pack(end + "HHiIII", 2, 4, 0, 0, 64, link))
         for t, orig, pay in recs:
@@ -105,6 +105,8 @@ with tempfile.TemporaryDirectory() as td:
         check("reader refuses a microsecond pcap (a silent tcpdump fallback would mis-scale every spacing)", False)
     except dp.PcapError:
         check("reader refuses a microsecond pcap (a silent tcpdump fallback would mis-scale every spacing)", True)
+    check("the module's magic constants are the nanosecond magic 0xa1b23c4d in both byte orders",
+      dp.MAGIC_LE == struct.pack("<I", 0xA1B23C4D) and dp.MAGIC_BE == struct.pack(">I", 0xA1B23C4D))
     write_pcap(os.path.join(td, "l.pcap"), recs, "<", link=113)
     try:
         dp.read_pcap(os.path.join(td, "l.pcap"))
@@ -237,9 +239,13 @@ def drv_lines(cell, legs, sent=None, skbs=None, kdrop=0, egress=None, drop=0):
     return out
 
 
+TMPDIRS = []
+
+
 def row(cell, arm, legs, R, **kw):
     """Write the pcaps of `legs` ({i: skbs as (t, orig, payload)}) and run row_fields."""
     td = tempfile.mkdtemp()
+    TMPDIRS.append(td)
     ser = {}
     for i, rc in legs.items():
         write_pcap(os.path.join(td, f"p{i}.pcap"), rc)
@@ -293,16 +299,25 @@ check("NOCAP: no capture expected, no capture problems", prob == [] and d36["leg
 check("NOCAP with a capture line or pcap dir is a witness failure", "p36-nocap-has-capture" in prob, prob)
 
 # ── D6 / D7 extraction ─────────────────────────────────────────────────────
-def DG(t, h0, x0, h1, x1, q0=468342, q1=441144, g=1853):
-    return (f"[DIAG] t={t}s win=768/1024 paused=19% good=842.6Mbit sidle=1080ms/211/mx15ms cwnd={g} infl=437 np=2 rtt=104.1ms "
+def DG(t, h0, x0, h1, x1, q0=468342, q1=441144, g=1853, r0=7, w0=3, win=768):
+    return (f"[DIAG] t={t}s win={win}/1024 paused=19% good=842.6Mbit sidle=1080ms/211/mx15ms cwnd={g} infl=437 np=2 rtt=104.1ms "
             f"dgq0[hand={h0} tx={x0} full=0 err=0 sp=1] dgq1[hand={h1} tx={x1} full=0 err=0 sp=1] "
-            f"p0:infl=437/sinfl=0/bdp1977(cap0) rtp_us=2842 qcwnd={q0} qce=16 qlp=360/251405 | ANCHOR sent=0 "
-            f"p1:infl=0/sinfl=0/bdp106(cap0) rtp_us=2597 qcwnd={q1} qce=0 qlp=0/1186 | ANCHOR sent=0")
-cl = [DG(0.5, 9999, 0, 9999, 0, q0=1), DG(1.0, 1000, 990, 50, 50), DG(1.25, 2000, 1970, 60, 55, q0=500000), DG(1.5, 3000, 2950, 70, 60, q0=520000)]
+            f"p0:infl=437/sinfl=0/bdp1977(cap0) sout=0 est=Y pl=0.0000 cmp=- rtt={r0}/wrtt={w0}/rtp3ms rtp_us=2842 sig_us=1/n2 qcwnd={q0} qce=16 qlp=360/251405 | ANCHOR sent=0 "
+            f"p1:infl=7/sinfl=0/bdp106(cap0) sout=0 est=Y pl=0.0000 cmp=- rtt=104/wrtt=2/rtp3ms rtp_us=2597 sig_us=1/n2 qcwnd={q1} qce=0 qlp=0/1186 | ANCHOR sent=0")
+cl = [DG(0.5, 9999, 0, 9999, 0, q0=1), DG(1.0, 1000, 990, 50, 50, win=1000, q0=127900, q1=127900, r0=9),
+      DG(1.25, 2000, 1970, 60, 55, q0=500000, win=1000, q1=127900), DG(1.5, 3000, 2950, 70, 60, q0=520000, win=1000, q1=127900, r0=12, w0=2)]
 d6, gc = dp.diag_d6(cl, 2)
-check("D6: post-warm-up median quinn window per leg (qcwnd, bytes)", d6[0]["qcwnd_med"] == 500000 and d6[1]["qcwnd_med"] == 441144, d6)
+check("D6: post-warm-up median quinn window per leg (qcwnd, bytes)", d6[0]["qcwnd_med"] == 500000 and d6[1]["qcwnd_med"] == 127900, d6)
 check("D6: backlog B = median of hand - tx per leg over post-warm-up lines (the 0.5 s line excluded)", d6[0]["B_med"] == 30 and d6[1]["B_med"] == 5, d6)
-check("D6: the line's own cwnd= is read beside", gc == 1853, gc)
+check("D6: dwell = rtt - wrtt per leg (whole ms, from the p<i>: block): p0 median(6, 4, 10) = 6, p1 median(102 x3) = 102",
+      d6[0]["dwell_med"] == 6 and d6[1]["dwell_med"] == 102, d6)
+check("D8 inputs: the LAST post-warm-up line's rtt, wrtt, rtp_us and infl per leg",
+      d6[0]["last"] == {"t": 1.5, "rtt": 12, "wrtt": 2, "rtp_us": 2842, "infl": 437} and d6[1]["last"]["infl"] == 7 and d6[1]["last"]["rtp_us"] == 2597, d6[0]["last"])
+# R-hat = win - sum(qcwnd)/1279 - B over lines with B > 0:  1000 - (127900+127900)/1279 - (10+0) = 790 ;
+# 1000 - (500000+127900)/1279 - 35 = 474.1 ; 1000 - (520000+127900)/1279 - 60 = 433.4 -> median 474.1
+check("R-hat = win numerator - sum qcwnd (datagrams) - B, over lines with B > 0, median",
+      abs(gc["rhat_med"] - (1000 - 627900 / 1279.0 - 35)) < 1e-9 and gc["rhat_n"] == 3, gc)
+check("the top-level cwnd= is kept in the row only (the scheduler's, not quinn's)", gc["cwnd_med"] == 1853, gc)
 real = lc.read(os.path.join(HERE, "..", "..", "docs", "l1-raw", "loop-diag", "p34", "run", "diag-ld", "c1d-400-DEF1024-s42-r1-a1-c.log"))
 rd6, _ = dp.diag_d6(real, 2)
 check("D6 on a real saved main [DIAG] log: both legs read", rd6[0]["qcwnd_med"] and rd6[0]["dgq_n"] > 5 and rd6[1]["diag_n"] > 5, rd6)
@@ -381,8 +396,8 @@ with tempfile.TemporaryDirectory() as led:
     check("Q rising 0.5 -> 1.0 with n (Spearman 1, Q(n_min) < 0.85) -> CIRCULAR", res["cells"]["c1s-400"]["legs"]["0"]["D1"]["4"] == "CIRCULAR", res["cells"]["c1s-400"]["legs"]["0"]["D1"])
     res, _ = run(ledger_rows(lambda c, i, n: (0.9 - 0.4 * g.index(n) / (len(g) - 1)) if c == "c1s-400" else 1.0), ledgers=led)
     check("Q falling 0.9 -> 0.5 -> not circular, median < 0.85 -> APP-LIMITED", res["cells"]["c1s-400"]["legs"]["0"]["D1"]["4"] == "APP-LIMITED")
-    res, _ = run(ledger_rows(lambda c, i, n: (1.3 if g.index(n) % 2 else 0.7) if c == "c1s-400" else 1.0), ledgers=led)
-    check("Q alternating 0.7 / 1.3 (median 1.0, no trend) -> NEITHER", res["cells"]["c1s-400"]["legs"]["0"]["D1"]["4"] == "NEITHER")
+    res, _ = run(ledger_rows(lambda c, i, n: (0.7, 1.3, 1.0)[g.index(n) % 3] if c == "c1s-400" else 1.0), ledgers=led)
+    check("Q cycling 0.7 / 1.3 / 1.0 (median 1.0, no trend) -> NEITHER", res["cells"]["c1s-400"]["legs"]["0"]["D1"]["4"] == "NEITHER")
     res, _ = run(ledger_rows(lambda c, i, n: 1.0, cvfun=lambda c, i, n: 0.11 if (c, i, n) == ("c8-100", 1, 64) else 0.05), ledgers=led)
     fl = res["failed"]
     check("D2: cv_4 0.11 at one cap of c8 p1 -> NOISY naming the cap; the others stay QUIET",
@@ -390,7 +405,7 @@ with tempfile.TemporaryDirectory() as led:
           and res["cells"]["c8-100"]["legs"]["0"]["D2"]["4"] == "QUIET", fl)
     check("D2 boundary: cv = 0.10 exactly is QUIET", run(ledger_rows(lambda c, i, n: 1.0, cvfun=lambda c, i, n: 0.10), ledgers=led)[0]["verdict"] == "DISPERSION-READS-LINK")
     res, _ = run(ledger_rows(lambda c, i, n: 1.0, skip={("c2-100", 16)}), ledgers=led)
-    check("a missing cap is UNSCOREABLE, never a vacuous FLAT -> NOT-YET", res["verdict"] == "NOT-YET" and res["failed"][0]["got"] == "UNSCOREABLE", res["failed"])
+    check("a missing cap is UNSCOREABLE (D1 and D2), never a vacuous FLAT -> NOT-YET", res["verdict"] == "NOT-YET" and res["failed"][0]["got"] == "UNSCOREABLE" and res["cells"]["c2-100"]["legs"]["0"]["D1"]["4"] == "UNSCOREABLE" and res["cells"]["c2-100"]["legs"]["0"]["D2"]["4"] == "UNSCOREABLE", res["failed"])
     res, _ = run([], ledgers=led)
     check("an empty ledger is NOT-YET (every required clause unscoreable)", res["verdict"] == "NOT-YET" and len(res["failed"]) == 8, len(res["failed"]))
     res, _ = run([r for r in ledger_rows(lambda c, i, n: 1.0) if r["cell"] != "c1d-400"], ledgers=led)
@@ -444,11 +459,64 @@ with tempfile.TemporaryDirectory() as led:
           d67["share"] == [0.9, 0.1] and d67["p1"]["idle_rows"] == 2 and d67["p0"]["idle_rows"] == 0, d67)
     check("D6: quinn window (639000 B / 1279 = 500 datagrams) and backlog B per cap/leg", abs(d67["p0"]["qcwnd_dgrams"] - 639000 / 1279.0) < 1e-9 and d67["p0"]["B"] == 12.0, d67)
 
+# ── Amendment 3: window median beside the max (the mode was dropped by the erratum), D8, mu_R by active legs ──
+check("estimator: per-window median is reported, equal to the max on a busy run; no mode field remains",
+      all(dp.estimate(busy_stream(12_500_000)[1])[k]["wmed"] == 12_500_000 and "wmode" not in dp.estimate(busy_stream(12_500_000)[1])[k] for k in dp.K_LIST))
+check("estimator: on a stuttering stream the window median sits below the max (max is the scored statistic)", em[4]["wmed"] < em[4]["lhat"], (em[4]["wmed"], em[4]["lhat"]))
+check("c1s grid carries 768 (brackets the oracle-L point 614)", 768 in dp.GRID36["c1s-400"] and dp.GRID36["c1s-400"] == sorted(dp.GRID36["c1s-400"]))
+import loopdiag_parse as _ld  # noqa: E402
+check("W_WIRE36 equals loopdiag_parse.W_WIRE", dp.W_WIRE36 == _ld.W_WIRE)
+
+
+def last(rtt, wrtt, rtp, infl):
+    return {"t": 9.0, "rtt": rtt, "wrtt": wrtt, "rtp_us": rtp, "infl": infl}
+
+
+def c8row(share1, state1, last1, arm="CAP64"):
+    r = mkrow("c8-100", int(arm[3:]), [1.0, 1.0], arm=arm)
+    r["d36"]["legs"][0]["egress_dgrams"] = 1000
+    r["d36"]["legs"][1]["egress_dgrams"] = int(1000 * share1)
+    r["d36"]["legs"][0]["last"] = last(10, 5, 5000, 100)
+    r["d36"]["legs"][1]["last"] = last1
+    r["d36"]["legs"][1]["state"] = state1
+    return r
+
+
+d8 = dp.d8_rows([c8row(0.0, "idle", last(100, 5, 5000, 0)), c8row(0.03, "live", last(100, 5, 10000, 50), arm="CAP64")], "c8-100")["64"]
+e = d8[0]
+check("D8: an idle leg and a 3 %-share leg are both reported, as ratios to the active leg (rtt 10, wrtt 1, rtp_us 1.5 mean of 1 and 2, infl 0.25 mean of 0 and 0.5)",
+      e["leg"] == 1 and e["ref"] == 0 and e["rows"] == 2 and e["rtt"] == 10.0 and e["wrtt"] == 1.0 and abs(e["rtp_us"] - 1.5) < 1e-12 and abs(e["infl"] - 0.25) < 1e-12
+      and e["own_rtt_over_wrtt"] == 20.0, d8)
+check("D8: a leg with a 10 % share and live state is not reported", dp.d8_rows([c8row(0.10, "live", last(100, 5, 5000, 0))], "c8-100") == {})
+check("D8: a leg without a last-window record is skipped, not invented", dp.d8_rows([c8row(0.0, "idle", None)], "c8-100") == {})
+
+# mu_R by active legs: the line index is the 500 ms period since the first captured packet
+t0 = EPOCH
+s0 = [(t0 + i * 5_000_000, 1000) for i in range(300)]                                 # leg 0 busy through periods 0..2
+s1 = [(t0 + i * 5_000_000, 1000) for i in range(99)] + [(t0 + 1_100_000_000, 1000)]     # leg 1: period 0 only (+1 stray skb in period 2: < 5 % of it)
+srv = ["[RDIAG] busy=50% msgs=50000/s q_avg=0", "[RDIAG] busy=10% msgs=9000/s q_avg=0", "[RDIAG] busy=80% msgs=80000/s q_avg=0",
+       "[RDIAG] busy=0% msgs=0/s q_avg=0"]
+mu = dp.rdiag_mu(srv, {0: s0, 1: s1})
+check("mu_R: busy >= 20 % lines only (the 10 % and 0 % lines dropped after indexing), msgs/s over busy: 100000, 100000",
+      [round(x["mu"]) for x in mu] == [100000, 100000] and [x["k"] for x in mu] == [0, 2], mu)
+check("mu_R: period 0 has both legs active, period 2 only leg 0", [x["active"] for x in mu] == [2, 1], mu)
+rows_ = [{"cell": "c1d-400", "arm": "CAP128", "status": "LIVE", "d36": {"mur": mu}}]
+mb = dp.mu_by_active(rows_, "c1d-400")
+check("mu_R by active legs: medians per count", mb == {"2": {"median": 100000.0, "n": 1}, "1": {"median": 100000.0, "n": 1}}, mb)
+(d36, prob, _), _ = row("c8-100", "CAP128", {0: recs_, 1: recs3}, 0)
+check("row_fields keeps mu_R only for c1d with a server log", "mur" not in d36)
+td_ = tempfile.mkdtemp()
+TMPDIRS.append(td_)
+write_pcap(os.path.join(td_, "p0.pcap"), recs_)
+write_pcap(os.path.join(td_, "p1.pcap"), recs_)
+d36, prob, _ = dp.row_fields("c1d-400", "CAP128", drv_lines("c1d-400", {0: ser, 1: ser}), [], td_, None, "r", srv)
+check("row_fields on a c1d row with [RDIAG] lines records the mu_R periods", [x["k"] for x in d36["mur"]] == [0, 2] and d36["mur"][0]["active"] == 2, d36.get("mur"))
+
 # ── the plan table ─────────────────────────────────────────────────────────
 pl = dp.plan36()
-check("plan 36: 56 invocations = 2 x (c1s 8 + c2 6 + c8 8 + c1d 3 + 3 NOCAP) (amendment 1's `62` does not add up)", len(pl) == 56 == dp.EXPECT_ROWS36, len(pl))
+check("plan 36: 58 invocations = 2 x (c1s 9 + c2 6 + c8 8 + c1d 3 + 3 NOCAP) (the amendments' `64` does not add up)", len(pl) == 58 == dp.EXPECT_ROWS36, len(pl))
 check("plan 36: block 0 (seed 42) first, ascending, c1s first; block 1 (seed 7) descending, c1d first",
-      pl[0] == ("c1s-400", "CAP16", "42", 1) and pl[28][0] == "c1d-400" and pl[28][2:] == ("7", 1) and pl[28][1] == "CAP2048", (pl[0], pl[28]))
+      pl[0] == ("c1s-400", "CAP16", "42", 1) and pl[29][0] == "c1d-400" and pl[29][2:] == ("7", 1) and pl[29][1] == "CAP2048", (pl[0], pl[29]))
 check("plan 36: per-cell grids", {c: sorted({int(a[3:]) for cc, a, s, _ in pl if cc == c and a.startswith("CAP") and s == "42"}) for c in dp.CELLS36} == dp.GRID36)
 check("plan 36: NOCAP only at c1s {256,1024,2048}, once per block, beside its CAP row",
       sorted((a, s) for c, a, s, _ in pl if a.startswith("NOCAP")) == sorted((f"NOCAP{n}", s) for n in dp.NOCAP_C1S for s in ("42", "7"))
@@ -456,5 +524,8 @@ check("plan 36: NOCAP only at c1s {256,1024,2048}, once per block, beside its CA
 check("plan 36: smoke = c1s CAP256 and c8 CAP128", dp.plan36(smoke=True) == [("c1s-400", "CAP256", "42", 1), ("c8-100", "CAP128", "42", 1)])
 check("plan 36: no duplicate rows", len(set(pl)) == len(pl))
 
+import shutil  # noqa: E402
+for _d in TMPDIRS:
+    shutil.rmtree(_d, ignore_errors=True)
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

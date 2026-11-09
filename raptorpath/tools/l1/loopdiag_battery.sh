@@ -40,7 +40,7 @@
 #   [LOOPDIAG]/[ACKDIAG], so neither is requested or required. Arms CAP<n> (RWM_STORE=<n> + a tcpdump per data leg,
 #   RWM_PCAP_DIR) and NOCAP<n> (RWM_STORE=<n>, no capture). RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=300. Pcaps go to
 #   $LD_OUTDIR/pcap/<row>/ (tmpfs); after each row loopdiag_parse.py (-> disp36.py) scores them, writes the kept per-skb
-#   tables to $LD_OUTDIR/tables/, and the pcaps are deleted. 56 invocations; the smoke is 2 (c1s-400 CAP256,
+#   tables to $LD_OUTDIR/tables/, and the pcaps are deleted. 58 invocations; the smoke is 2 (c1s-400 CAP256,
 #   c8-100 CAP128). The table is `loopdiag_parse.py plan36 [smoke]` (disp36.plan36).
 # Launched by loopdiag_run_all.sh (the envelope, which holds both VM locks).
 set -uo pipefail
@@ -130,6 +130,8 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
     # Plan 36: the CAP arm's pcap dir on tmpfs (fresh per attempt); NOCAP and the other plans set no RWM_PCAP_DIR.
     pdir="$OUTDIR/pcap/${name}-s${seed}-r${rep}-a${attempt}"
     cap_env=()
+    # Plan 36 c1d rows also read the server's [RDIAG] (mu_R split by active legs; status 36 amendment 3).
+    [ "$PLAN" = "36" ] && [ "$cell" = "c1d-400" ] && cap_env+=(RWM_RDIAG=1)
     if [ "$PLAN" = "36" ] && [[ "$arm" == CAP* ]]; then rm -rf "$pdir"; mkdir -p "$pdir"; cap_env=(RWM_PCAP_DIR="$pdir"); fi
     cot_b=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     io_b=$(io_full10)
@@ -278,7 +280,7 @@ plan36() { # smoke -> the whole plan (0), or the two smoke rows (1)
     [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN36 smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
   else
     mapfile -t tbl < <(python3 ./loopdiag_parse.py plan36)
-    [ "${#tbl[@]}" -eq 56 ] || { echo "ABORT-PLAN36 table has ${#tbl[@]} rows (56)" >> "$OUT"; exit 3; }
+    [ "${#tbl[@]}" -eq 58 ] || { echo "ABORT-PLAN36 table has ${#tbl[@]} rows (58)" >> "$OUT"; exit 3; }
   fi
   for line in "${tbl[@]}"; do
     read -r cell arm seed rep <<< "$line"

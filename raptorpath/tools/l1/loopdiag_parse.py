@@ -373,7 +373,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     if p36:
         import disp36
         d36, p36p, p36n = disp36.row_fields(cell, arm, drv, cli, os.environ.get("LD_PCAP_DIR"),
-                                            os.environ.get("LD_TABLE_DIR"), f"{cell}-{arm}-s{seed}-r{rep}")
+                                            os.environ.get("LD_TABLE_DIR"), f"{cell}-{arm}-s{seed}-r{rep}", srv)
         row["d36"] = d36
         p.extend(p36p)
         row["notes"].extend(p36n)
@@ -1437,6 +1437,9 @@ def smoke36(path):
         if r["status"] != "LIVE":
             bad.append(f"{cell} {arm}: {r['status']} {r['problems']}")
         legs = (r.get("d36") or {}).get("legs") or []
+        for x in legs:
+            if x.get("state") == "live" and ((x.get("k") or {}).get("4") or {}).get("lhat") is None:
+                bad.append(f"{cell} {arm}: live leg p{x['i']} has no L-hat_4 (the estimator did not run)")
         print(f"SMOKE36 {cell} {arm}: mbps={r.get('mbps')} m={(r.get('d36') or {}).get('m')} "
               + " ".join(f"p{x['i']}={x.get('state')}/skbs={x.get('skbs')}/L4={(x.get('k') or {}).get('4', {}).get('lhat')}" for x in legs)
               + f" status={r['status']}")

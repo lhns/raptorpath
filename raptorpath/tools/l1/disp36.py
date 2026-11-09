@@ -53,7 +53,7 @@ LINKS36 = {                   # per leg link bytes/s: c1 125e6, c2 12.5e6, c3 2.
     "c1s-400": [125e6], "c2-100": [12.5e6], "c8-100": [12.5e6, 2.5e6], "c1d-400": [125e6, 125e6],
 }
 GRID36 = {
-    "c1s-400": [16, 32, 64, 128, 256, 512, 1024, 2048],
+    "c1s-400": [16, 32, 64, 128, 256, 512, 768, 1024, 2048],
     "c2-100": [16, 32, 64, 128, 256, 512],
     "c8-100": [16, 32, 64, 128, 256, 384, 512, 1024],
     "c1d-400": [128, 512, 2048],
@@ -171,8 +171,10 @@ def _median(xs):
 
 
 def estimate(skbs, ks=K_LIST):
-    """{k: {lhat, cv, p90, nwin, zero_dt}} (bytes/s). Post-warm-up = after the first 1 s of the leg."""
-    res = {k: {"lhat": None, "cv": None, "p90": None, "nwin": 0, "zero_dt": 0} for k in ks}
+    """{k: {lhat, cv, p90, wmed, nwin, zero_dt}} (bytes/s). Post-warm-up = after the first 1 s of the leg.
+    lhat (the per-window max) is the scored statistic; p90 and wmed (the window median, Amendment 3; its mode was
+    dropped by the erratum) are reported beside it. Each is the per-row median over windows."""
+    res = {k: {"lhat": None, "cv": None, "p90": None, "wmed": None, "nwin": 0, "zero_dt": 0} for k in ks}
     n = len(skbs)
     if n < 2:
         return res
@@ -194,10 +196,12 @@ def estimate(skbs, ks=K_LIST):
         keep = [w for w in sorted(wins) if t0 + (w + 1) * WIN_NS <= tlast]
         mx = [max(wins[w]) for w in keep]
         p9 = [_pct(wins[w], 0.9) for w in keep]
+        wm = [_median(wins[w]) for w in keep]
         d = res[k]
         d["zero_dt"], d["nwin"] = zero, len(keep)
         if mx:
             d["lhat"], d["p90"] = _median(mx), _median(p9)
+            d["wmed"] = _median(wm)
             mean = sum(mx) / len(mx)
             sd = math.sqrt(sum((x - mean) ** 2 for x in mx) / len(mx))
             d["cv"] = sd / mean if mean > 0 else None
@@ -242,8 +246,13 @@ _QDISC = re.compile(r"QDISC cli(\d+): .*?Sent (\d+) bytes (\d+) pkt \(dropped (\
 _CAPTURE = re.compile(r"\[CAPTURE\] leg=(\d+) dev=(\S+) captured=(\S+) kdrop=(\S+)")
 _DIAG_T = re.compile(r"^\[DIAG\] t=([\d.]+)s ")
 _GCWND = re.compile(r" cwnd=(\d+) infl=")
-_QCW = re.compile(r"\bp(\d+):infl=.*?qcwnd=(\d+)")
+_WIN = re.compile(r"^\[DIAG\] t=[\d.]+s win=(\d+)/(\d+) ")
+_PATH = re.compile(r"\bp(\d+):infl=(\d+)/.*?rtt=(\d+)/wrtt=(\d+)/rtp\d+ms rtp_us=(\d+).*?qcwnd=(\d+)")
 _DGQ = re.compile(r"dgq(\d+)\[hand=(\d+) tx=(\d+)")
+_RDIAG = re.compile(r"\[RDIAG\] busy=(\d+)% msgs=(\d+)/s")
+W_WIRE36 = 1279.0             # wire bytes per datagram (loopdiag_parse.W_WIRE; a test pins the equality)
+RDIAG_BUSY = 20.0
+RDIAG_PERIOD_NS = 500_000_000
 
 
 def parse_qdisc(drv):
@@ -265,26 +274,84 @@ def parse_capture(drv):
 
 
 def diag_d6(cli, nleg, warm_s=1.0):
-    """D6 per leg from post-warm-up [DIAG] lines: median quinn window qcwnd (bytes), median backlog
-    B = hand - tx (datagrams); plus the median of the line's own `cwnd=` (store window, symbols)."""
-    qc = {i: [] for i in range(nleg)}
-    bb = {i: [] for i in range(nleg)}
-    gc = []
+    """D6/D8 inputs from the [DIAG] lines of main's binary (src/net/diag.rs). Per leg, post-warm-up medians of:
+    qcwnd (quinn's window, bytes), B = hand - tx (datagrams), dwell = rtt - wrtt (ms; both whole-ms in the line:
+    the app-echo RTT minus quinn's); and the LAST line's rtt, wrtt, rtp_us, infl (D8). Row level: the median of
+    the line's own `cwnd=` (the scheduler's cwnd summed over ALL registered paths -- not quinn's window; kept in
+    the row only) and R-hat = win numerator - sum qcwnd - B over the lines with total B > 0 (Amendment 3 + erratum).
+    All per-leg fields come from the `p<i>:` block of src/net/diag.rs."""
+    keys = ("qcwnd", "B", "dwell")
+    ser = {i: {k: [] for k in keys} for i in range(nleg)}
+    last = {i: None for i in range(nleg)}
+    ndiag = {i: 0 for i in range(nleg)}
+    gc, rh = [], []
     for ln in cli:
         m = _DIAG_T.match(ln)
         if not m or float(m.group(1)) < warm_s:
             continue
         g = _GCWND.search(ln)
-        if g:
-            gc.append(int(g.group(1)))
-        for pid, v in _QCW.findall(ln):
-            if int(pid) in qc:
-                qc[int(pid)].append(int(v))
+        cwnd = int(g.group(1)) if g else None
+        if cwnd is not None:
+            gc.append(cwnd)
+        btot = 0
         for pid, h, x in _DGQ.findall(ln):
-            if int(pid) in bb:
-                bb[int(pid)].append(int(h) - int(x))
-    return ([{"qcwnd_med": _median(qc[i]), "B_med": _median(bb[i]), "diag_n": len(qc[i]), "dgq_n": len(bb[i])}
-             for i in range(nleg)], _median(gc))
+            b = int(h) - int(x)
+            btot += b
+            if int(pid) in ser:
+                ser[int(pid)]["B"].append(b)
+        paths = _PATH.findall(ln)
+        w = _WIN.match(ln)
+        if w and paths and btot > 0:
+            # R-hat = win numerator - sum_p qcwnd_p - B (qcwnd in bytes -> datagrams of W bytes, win is in symbols)
+            rh.append(int(w.group(1)) - sum(int(x[5]) for x in paths) / W_WIRE36 - btot)
+        for pid, infl, rtt, wrtt, rtp, qc in paths:
+            p = int(pid)
+            if p not in ser:
+                continue
+            ndiag[p] += 1
+            ser[p]["qcwnd"].append(int(qc))
+            ser[p]["dwell"].append(int(rtt) - int(wrtt))
+            last[p] = {"t": float(m.group(1)), "rtt": int(rtt), "wrtt": int(wrtt), "rtp_us": int(rtp), "infl": int(infl)}
+    legs = [{"qcwnd_med": _median(ser[i]["qcwnd"]), "B_med": _median(ser[i]["B"]), "dwell_med": _median(ser[i]["dwell"]),
+             "last": last[i], "diag_n": ndiag[i], "dgq_n": len(ser[i]["B"])} for i in range(nleg)]
+    return legs, {"cwnd_med": _median(gc), "rhat_med": _median(rh), "rhat_n": len(rh)}
+
+
+def rdiag_mu(srv, skbs_by_leg):
+    """mu_R = msgs/s / (busy/100) per server [RDIAG] line with busy >= 20 % (plan 34's rule), tagged with the
+    number of active legs in that line's 500 ms period. The lines carry no stamps: period k is taken to start
+    at the first captured packet of any leg (approximate: the receiver loop starts earlier), and a leg is active
+    in a period when it carries >= 5 % of the period's skbs. -> [{k, mu, active}]"""
+    lines = []
+    for ln in srv:
+        m = _RDIAG.search(ln)
+        if m and float(m.group(1)) >= RDIAG_BUSY and int(m.group(2)) > 0:
+            lines.append(int(m.group(2)) / (float(m.group(1)) / 100.0))
+    allts = [t for sk in skbs_by_leg.values() for t, _ in sk]
+    if not lines or not allts:
+        return []
+    t0 = min(allts)
+    cnt = {}
+    for i, sk in skbs_by_leg.items():
+        for t, _ in sk:
+            cnt.setdefault((t - t0) // RDIAG_PERIOD_NS, {}).setdefault(i, 0)
+            cnt[(t - t0) // RDIAG_PERIOD_NS][i] += 1
+    out = []
+    # every [RDIAG] line (printed or not) is one period; busy < 20 % lines are dropped after indexing
+    idx = 0
+    for ln in srv:
+        m = _RDIAG.search(ln)
+        if not m:
+            continue
+        k = idx
+        idx += 1
+        if float(m.group(1)) < RDIAG_BUSY or int(m.group(2)) <= 0:
+            continue
+        c = cnt.get(k, {})
+        tot = sum(c.values())
+        act = sum(1 for v in c.values() if tot and v / tot >= 0.05)
+        out.append({"k": k, "mu": int(m.group(2)) / (float(m.group(1)) / 100.0), "active": act})
+    return out
 
 
 def write_table(path, skbs):
@@ -311,15 +378,15 @@ def read_table(path):
 
 
 # ── one row ───────────────────────────────────────────────────────────────
-def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None):
-    """-> (d36 dict, problems [str], notes [str]). `drv`/`cli` are line lists."""
+def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None, srv=None):
+    """-> (d36 dict, problems [str], notes [str]). `drv`/`cli`/`srv` are line lists."""
     kind, _ = arm36(arm)
     nleg = len(LINKS36[cell])
     problems, notes = [], []
     cap = parse_capture(drv)
-    d6, gcwnd = diag_d6(cli, nleg)
+    d6, dx = diag_d6(cli, nleg)
     truth = lc.truth(drv)
-    d = {"kind": kind, "m": None, "gcwnd_med": gcwnd, "legs": []}
+    d = {"kind": kind, "m": None, "gcwnd_med": dx["cwnd_med"], "rhat_med": dx["rhat_med"], "rhat_n": dx["rhat_n"], "legs": []}
     for i in range(nleg):
         t = truth.get(i, {})
         d["legs"].append({"i": i, "state": "none", **d6[i], "egress_dgrams": t.get("egress_dgrams")})
@@ -343,6 +410,7 @@ def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None
     m = full_segment_payload(p for i in recs for _, _, p in recs[i])
     d["m"] = m
     live = 0
+    sk_by_leg = {}
     for i in range(nleg):
         leg = d["legs"][i]
         c = cap.get(i)
@@ -354,6 +422,7 @@ def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None
         if i in bad:
             continue
         skbs = skb_series(recs[i], m)
+        sk_by_leg[i] = skbs
         leg["skbs"], leg["bytes"] = len(skbs), sum(b for _, b in skbs)
         if len(skbs) < IDLE_SKBS:
             leg["state"] = "idle"
@@ -384,6 +453,8 @@ def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None
             write_table(os.path.join(table_dir, f"{row_name}.p{i}.gz"), skbs)
     if live == 0:
         problems.append("p36-every-leg-idle")
+    if srv and cell == "c1d-400":
+        d["mur"] = rdiag_mu(srv, sk_by_leg)
     return d, problems, notes
 
 
@@ -509,6 +580,45 @@ def goodput_curve(rows, cell):
     return {n: _mean([r["mbps"] for r in cap_rows(rows, cell, n) if r.get("mbps") is not None]) for n in GRID36[cell]}
 
 
+def d8_rows(rows, cell):
+    """{n: [{leg, ref, rows, ratios}]}: for a leg noted idle or with egress share < 5 % in a live CAP row, its last
+    [DIAG] rtt, wrtt, rtp_us and infl as ratios to the busiest leg's; averaged over the cap's such rows."""
+    out = {}
+    for n in GRID36[cell]:
+        acc = {}
+        for r in cap_rows(rows, cell, n):
+            legs = (r.get("d36") or {}).get("legs") or []
+            eg = [x.get("egress_dgrams") or 0 for x in legs]
+            tot = sum(eg)
+            if len(legs) < 2 or not tot:
+                continue
+            ref = max(range(len(legs)), key=lambda i: eg[i])
+            for i, x in enumerate(legs):
+                if i == ref or not (x.get("state") == "idle" or eg[i] / tot < 0.05):
+                    continue
+                a, b = x.get("last"), legs[ref].get("last")
+                if not a or not b:
+                    continue
+                e = acc.setdefault((i, ref), {"rows": 0, "own": [], "rtt": [], "wrtt": [], "rtp_us": [], "infl": []})
+                e["rows"] += 1
+                e["own"].append(a["rtt"] / a["wrtt"] if a["wrtt"] else None)
+                for k in ("rtt", "wrtt", "rtp_us", "infl"):
+                    e[k].append(a[k] / b[k] if b[k] else None)
+        out[str(n)] = [{"leg": i, "ref": ref, "rows": e["rows"], "own_rtt_over_wrtt": _mean(e["own"]),
+                        **{k: _mean(e[k]) for k in ("rtt", "wrtt", "rtp_us", "infl")}} for (i, ref), e in sorted(acc.items())]
+    return {k: v for k, v in out.items() if v}
+
+
+def mu_by_active(rows, cell):
+    """{active legs: {median, n}} of mu_R over the live CAP rows' RDIAG periods (c1d rows only)."""
+    pool = {}
+    for r in rows:
+        if r["cell"] == cell and r["status"] == "LIVE" and r["arm"].startswith("CAP"):
+            for e in (r.get("d36") or {}).get("mur") or []:
+                pool.setdefault(str(e["active"]), []).append(e["mu"])
+    return {k: {"median": _median(v), "n": len(v)} for k, v in pool.items()}
+
+
 def score_rows(rows, out=print, ledgers=None):
     import loopdiag_parse as ld
     out("DISPERSION DIAGNOSTIC PLAN 36 SCORE (receiver-side dispersion as the store law's link-rate source; nothing here ships)")
@@ -527,7 +637,8 @@ def score_rows(rows, out=print, ledgers=None):
         cres = {"legs": {}}
         for leg in range(nleg):
             out(f"  LEG p{leg}")
-            out("    n      rows  Q(k=2)  Q(k=4)  Q(k=8)  Q(k=16) Q(k=4,p90)  cv4 mean/max   in-run share  runs n/mean/med/p90")
+            out("    n      rows  Q(k=2)  Q(k=4)  Q(k=8)  Q(k=16) Q(4,p90) Q(4,wmed)  cv4 mean/max   in-run share  runs n/mean/med/p90")
+            qwm = q_by_cap(rows, cell, leg, K_SCORED, "wmed")
             qs = {k: q_by_cap(rows, cell, leg, k) for k in K_LIST}
             qp = q_by_cap(rows, cell, leg, K_SCORED, "p90")
             cv = cv_by_cap(rows, cell, leg, K_SCORED)
@@ -542,7 +653,7 @@ def score_rows(rows, out=print, ledgers=None):
                 rn, rm, rmed, rp9 = run_stats(runs)
                 c = cv.get(n)
                 out(f"    {n:<6} {len(lv):<4} " + " ".join(f"{fmt(qs[k].get(n), 3):>7}" for k in K_LIST)
-                    + f" {fmt(qp.get(n), 3):>9}  {fmt(c[0] if c else None, 3)}/{fmt(c[1] if c else None, 3)}"
+                    + f" {fmt(qp.get(n), 3):>8} {fmt(qwm.get(n), 3):>9}  {fmt(c[0] if c else None, 3)}/{fmt(c[1] if c else None, 3)}"
                     + f"   {fmt(shr, 3):>8}   {rn}/{fmt(rm, 1)}/{fmt(rmed, 1)}/{fmt(rp9, 1)}")
             lres = {"D1": {}, "D2": {}}
             for k in K_LIST:
@@ -554,6 +665,8 @@ def score_rows(rows, out=print, ledgers=None):
                     lres["D1med"] = med
                     lres["D2noisy"] = noisy
                     lres["Q"] = {str(n): v for n, v in sorted(qs[k].items())}
+                    lres["cv4"] = {str(n): list(v) for n, v in sorted(cv_by_cap(rows, cell, leg, k).items())}
+                    lres["Q_wmed"] = {str(n): v for n, v in sorted(qwm.items())}
             clsp, _ = d1_class(qp, cell)
             lres["D1p90"] = clsp
             out(f"    D1 (k=4) {lres['D1']['4']} (median Q {fmt(lres.get('D1med'), 3)}); D2 (k=4) {lres['D2']['4']}"
@@ -561,9 +674,10 @@ def score_rows(rows, out=print, ledgers=None):
                 + f";  other k: D1 {[(k, lres['D1'][str(k)]) for k in K_LIST if k != K_SCORED]}"
                 f" D2 {[(k, lres['D2'][str(k)]) for k in K_LIST if k != K_SCORED]};  D1 p90-variant (k=4) {clsp}")
             cres["legs"][str(leg)] = lres
-        # D6 / D7
-        out("  D6 authority and D7 placement per cap (means over live CAP rows)")
-        out("    n      rows  " + "  ".join(f"p{p}: qcwnd B/dgram(W)   B     state" for p in range(nleg)) + "   store cwnd=  egress share p0..")
+        # D6 (authority, dwell, R-hat), D7 (placement share), D8 (idle-leg prices), mu_R by active legs
+        out("  D6/D7 per cap (means over live CAP rows). qcwnd in datagrams (W); B = quinn backlog (dgrams); dwell = rtt - wrtt (ms, whole-ms fields);")
+        out("     R-hat = win numerator - sum qcwnd (as datagrams) - B over lines with B > 0; all per-leg fields from the p<i>: block of [DIAG]")
+        out("    n      rows  " + "  ".join(f"p{p}: qcwnd     B  dwell idle" for p in range(nleg)) + "   R-hat   egress share p0..")
         d67 = {}
         for n in GRID36[cell]:
             rs = cap_rows(rows, cell, n)
@@ -573,17 +687,33 @@ def score_rows(rows, out=print, ledgers=None):
                 lg = [((r.get("d36") or {}).get("legs") or [{}] * nleg)[p] for r in rs]
                 qc = _mean([x.get("qcwnd_med") for x in lg])
                 bb = _mean([x.get("B_med") for x in lg])
+                dw = _mean([x.get("dwell_med") for x in lg])
                 idle = sum(1 for x in lg if x.get("state") == "idle")
-                cells_.append(f"{fmt(qc / ld.W_WIRE if qc is not None else None, 0):>6} {fmt(bb, 0):>6} idle={idle}/{len(lg)}")
-                eg = [x.get("egress_dgrams") for x in lg]
-                sh.append(_mean([e for e in eg]))
-                d67.setdefault(str(n), {})[f"p{p}"] = {"qcwnd_dgrams": None if qc is None else qc / ld.W_WIRE, "B": bb, "idle_rows": idle}
-            tot = sum(s for s in sh if s)
-            shares = [None if not tot or s is None else s / tot for s in sh]
-            gc = _mean([(r.get("d36") or {}).get("gcwnd_med") for r in rs])
-            out(f"    {n:<6} {len(rs):<4}  " + "  ".join(cells_) + f"   {fmt(gc, 0):>8}   " + " ".join(fmt(s, 3) for s in shares))
+                cells_.append(f"{fmt(qc / ld.W_WIRE if qc is not None else None, 0):>6} {fmt(bb, 0):>6} {fmt(dw, 1):>5} {idle}/{len(lg)}")
+                sh.append(_mean([x.get("egress_dgrams") for x in lg]))
+                d67.setdefault(str(n), {})[f"p{p}"] = {"qcwnd_dgrams": None if qc is None else qc / ld.W_WIRE, "qcwnd_bytes": qc, "B": bb,
+                                                        "dwell_ms": dw, "idle_rows": idle}
+            tot = sum(x for x in sh if x)
+            shares = [None if not tot or x is None else x / tot for x in sh]
+            rh = _mean([(r.get("d36") or {}).get("rhat_med") for r in rs])
+            out(f"    {n:<6} {len(rs):<4}  " + "  ".join(cells_) + f"   {fmt(rh, 0):>6}   " + " ".join(fmt(x, 3) for x in shares))
             d67[str(n)]["share"] = shares
+            d67[str(n)]["rhat"] = rh
         cres["D6D7"] = d67
+        if nleg > 1:
+            d8 = d8_rows(rows, cell)
+            out("  D8 idle-leg prices: legs noted idle or with egress share < 5 %, last [DIAG] window, ratio to the active leg"
+                " (rtt >> wrtt on the leg itself = frozen dwell-inclusive srtt = lock-out; fresh prices with a low share = the placement law)")
+            for n in GRID36[cell]:
+                for e in d8.get(str(n), []):
+                    out(f"    n={n} p{e['leg']} (rows {e['rows']}): own rtt/wrtt {fmt(e['own_rtt_over_wrtt'], 2)}; ratios to p{e['ref']}: "
+                        f"rtt {fmt(e['rtt'], 2)} wrtt {fmt(e['wrtt'], 2)} rtp_us {fmt(e['rtp_us'], 2)} infl {fmt(e['infl'], 2)}")
+            cres["D8"] = d8
+            mu = mu_by_active(rows, cell)
+            if mu:
+                out("  mu_R (server msgs/s / busy) split by active legs (RDIAG, busy >= 20 %): "
+                    + "; ".join(f"{k} active: median {fmt(v['median'], 0)} (n={v['n']})" for k, v in sorted(mu.items())))
+                cres["muR_by_active"] = mu
         # D5
         rts, tag, why = ledger_rtp_s(cell, ledgers)
         if rts is None:

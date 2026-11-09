@@ -1002,16 +1002,16 @@ import disp36  # noqa: E402
 
 check("plan 36: arm_n reads CAP<n> and NOCAP<n>", ld.arm_n("CAP256") == 256 and ld.arm_n("NOCAP1024") == 1024 and ld.arm_n("CAP") is None)
 cp36 = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan36"], capture_output=True, text=True)
-check("`plan36` subcommand prints the 56 `cell arm seed rep` lines of disp36.plan36",
-      cp36.stdout.splitlines() == [" ".join(map(str, r)) for r in disp36.plan36()] and len(disp36.plan36()) == 56, cp36.stdout[:60])
+check("`plan36` subcommand prints the 58 `cell arm seed rep` lines of disp36.plan36",
+      cp36.stdout.splitlines() == [" ".join(map(str, r)) for r in disp36.plan36()] and len(disp36.plan36()) == 58, cp36.stdout[:60])
 check("`plan36 smoke` is c1s CAP256 and c8 CAP128", ld.plan36(smoke=True) == [("c1s-400", "CAP256", "42", 1), ("c8-100", "CAP128", "42", 1)])
 
 
 def pcap36(path, n=300, b=1242):
     with open(path, "wb") as fh:
-        fh.write(disp36.MAGIC_LE + struct.pack("<HHiIII", 2, 4, 0, 0, 64, 1))
+        fh.write(struct.pack("<I", 0xA1B23C4D) + struct.pack("<HHiIII", 2, 4, 0, 0, 64, 1))
         for i in range(n):
-            t = 1_700_000_000 * 10 ** 9 + i * 10_000
+            t = 1_700_000_000 * 10 ** 9 + i * 7_000_000
             pay = b - 42
             pkt = (bytes([2] * 6 + [4] * 6 + [8, 0]) + struct.pack(">BBHHHBBH4s4s", 0x45, 0, pay + 28, 0, 0, 64, 17, 0, bytes([10, 77, 0, 1]), bytes([10, 77, 0, 2]))
                    + struct.pack(">HHHH", 1, 2, pay + 8, 0) + bytes(64))[:64]
@@ -1066,7 +1066,24 @@ with tempfile.TemporaryDirectory() as td36:
         cs = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "score36", led], capture_output=True, text=True)
         check("`score36` runs on a ledger and ends in a RESULT line with a NOT-YET verdict (one row is not a result)",
               cs.returncode == 0 and cs.stdout.strip().splitlines()[-1].startswith("RESULT {") and '"verdict": "NOT-YET"' in cs.stdout, cs.stdout[-300:] + cs.stderr[-300:])
-        check("`check36` wants all 56 rows", subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "check36", led], capture_output=True).returncode == 1)
+        check("`check36` wants all 58 rows", subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "check36", led], capture_output=True).returncode == 1)
+
+    import copy
+    with tempfile.TemporaryDirectory() as td3:
+        good8 = copy.deepcopy(r36)
+        good8["cell"], good8["arm"] = "c8-100", "CAP128"
+
+        def smoke_rc(r1):
+            pth = os.path.join(td3, "sm.log")
+            with open(pth, "w") as fh:
+                fh.write("LDROW " + json.dumps(r1) + "\nLDROW " + json.dumps(good8) + "\n")
+            return subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "smoke36", pth], capture_output=True, text=True)
+        ok1 = smoke_rc(r36)
+        bad1 = copy.deepcopy(r36)
+        del bad1["d36"]["legs"][0]["k"]
+        bad = smoke_rc(bad1)
+        check("smoke36 passes on two live rows whose live legs have an L-hat_4", ok1.returncode == 0 and "SMOKE-PASS" in ok1.stdout, ok1.stdout[-300:])
+        check("smoke36 fails when a live leg has no L-hat_4 (the estimator did not run)", bad.returncode == 1 and "has no L-hat_4" in bad.stdout, bad.stdout[-300:])
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

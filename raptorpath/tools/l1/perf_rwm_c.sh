@@ -334,6 +334,7 @@ if [[ "${#TCPD_PIDS[@]}" -gt 0 ]]; then
         _kd=$(sed -n 's/^\([0-9]*\) packets dropped by kernel.*/\1/p' "$PCAP_DIR/p$li.err" | tail -1)
         echo "[CAPTURE] leg=$li dev=${SRV_LEGS[$li]} captured=${_cap:--} kdrop=${_kd:--}"
     done
+    TCPD_PIDS=()   # reaped: cleanup must not signal a recycled PID
 fi
 # Recorded on every invocation, so it is a column with a control and not only
 # an abort field.
