@@ -9466,3 +9466,41 @@ receiver → sender field should follow draft-ietf-quic-receive-ts
 - *Erratum to §37.* `goal-gate.md`'s rules live in
   `docs/measurement-discipline.md` (ADR-0052). Main's CLAUDE.md already
   cites that file; only an older branch's copy cites `goal-gate.md`.
+
+### 36. Amendment 5 — a pre-launch check row fails both capture witnesses (after one check row, before any scored row)
+
+*Check row.* `perf_rwm_c.sh c2 c2 bulk 100000000 1 single`, `RWM_STORE=128`,
+with the capture and `RWM_RDIAG=1`, in the real `rp-*` netns on main's
+binary. Not scored; no ledger kept. Results:
+
+- tcpdump 4.99.6 `-Z root` wrote a nanosecond pcap to root-owned /dev/shm,
+  with kdrop 0.
+- main prints `[RDIAG]` (22 lines).
+- netem on `cli0`: Sent 110 501 532 B and 90 115 pkt. `[TRUTH]`:
+  egress_skbs 18 599, netem_dropped_skbs 484, so 18 115 skbs released.
+- Captured on `srv0`: 17 161 skbs, 5.3 % low.
+- With m = 1 252: Σb is 105 151 140 (4.8 % low) and Σsegs is 89 231 (1.0 % low).
+- GRO is off on `srv0` and `cli0`.
+
+*Two defects.*
+1. Amendment 1's m rule ("most frequent payload ≤ 1 472 B") returns 36:
+   small client datagrams outnumber single-segment data skbs. m becomes the
+   payload that carries the most bytes, count × payload (here 1 252).
+2. The skb and byte gaps (≈ 5 %) agree with each other but not with the
+   datagram gap (1 %), so they are not one cause. The witnesses also compare
+   a filtered, windowed capture against all-protocol counters that cover the
+   qdisc's whole lifetime.
+
+*Next (before any scored row).* One kept diagnostic row reconciles skbs,
+bytes and datagrams:
+- the engine's fed loss against `[TRUTH]`;
+- unfiltered taps on `cli0` egress and `srv0` ingress, diffed per skb;
+- counter deltas over the capture window (qdisc, clsact, `ip -s link`,
+  `softnet_stat`);
+- `qdisc_pkt_len` and bstats from v7.0 `net/core/dev.c`, with orig_len,
+  IP length and `uh->len` dumped for multi-segment skbs.
+
+Whatever the cause, the scored capture becomes unfiltered, and every skb on
+the leg counts toward a train's span, since netem's rate server spaces them
+all. The battery launches only after the row reconciles within the
+witnesses' 1 %.
