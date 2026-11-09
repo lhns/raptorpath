@@ -1660,7 +1660,13 @@ paths with spare congestion window, and `RWM_STORE_CAP_UNIFIED` (retired)
 was the live-set arm. Under Copa-sole pass-through the anchor is Σ cwnd.
 **Engine status:** the guard is removed (ADR-0072, code phase done): the law
 runs at every N ≥ 1, and `RWM_STORE_PATHS = 0` re-runs the predecessor of
-Section 6.2 at every N. The validation battery has not run (status §18).
+Section 6.2 at every N. The validation battery ran (status §18, §19) and
+ADR-0072 is Accepted. Against a same-session main there is no N ≥ 2 move at
+c1d or c8, c1s reads `PINNED` (the knee binds in 70 % of windows) and c2 reads
+`INERT-AS-DERIVED`. The first run (status §18) read `REFUTED` through
+`CONTROL-MOVED`, which §19 attributes to the cross-session reference (both arms
+sat about 24 % below the earlier session, within 3 % of each other). The
+recorded §18 verdict is not relabelled.
 
 | symbol | value | provenance |
 |---|---|---|
@@ -1674,8 +1680,9 @@ Section 6.2 at every N. The validation battery has not run (status §18).
 | knee | 2048 per path | resource bound, not a law term: retained payload per live path (≈ 2.5 MB at 1.2 kB); value measured but stale (`RWM_STORE_PATH_POOL`, the 2026-07-14 static sweep); gauge `[SUMCAP] pin=` |
 
 **One path is not a case.** The `n_live < 2` guard in `pooled_store_cap`
-is not part of any derivation. It entered as the A/B hygiene of the
-path-scaled pool (ADR-0058: "N = 1 keeps the single-path law bit-exactly")
+(removed; ADR-0072) was not part of any derivation. It entered as the A/B
+hygiene of the path-scaled pool (its N = 1 clause, "N = 1 keeps the
+single-path law bit-exactly", was ADR-0058's; ADR-0072 supersedes it)
 and stayed as the ×N and δ-cap arms' "bit-identical at N = 1" after both
 flipped. It made one path a different law (Section 6.2) whose ceiling, 1024,
 has no provenance and binds in every post-warm-up window at c1s
@@ -1693,8 +1700,8 @@ anchor it reads, the law asks 1.37–2.34 k symbols at c1s and the knee binds
 whenever a > knee/(1 + q) = 1862 (Bulk): 7 of the 15 post-warm-up windows
 of r1. At the delivered rate it would ask ≈ 250–285. That over-read is an
 input defect the 1024 constant was hiding, not a property of the law; the
-`[SUMCAP]` pin fraction reports it at one path once the guard is gone
-(Section 11.2).
+`[SUMCAP]` pin fraction reports it at one path now the guard is gone: the
+knee binds in 70 % of c1s windows (status §18; Section 11.2).
 
 **The law is fed by its own output (status §23).** On a store-bound sender
 the delivered rate is cap/T_loop, where T_loop is the send-to-release time.
@@ -2071,9 +2078,13 @@ neither n* nor σ²_win at n* exists post-§32.
 
 *(b1) quinn's BBR state read as the knee.* What it is (quinn-proto 0.11.14,
 `congestion/bbr`): `window()` = `K_DERIVED_HIGH_CWNDGAIN` (2.0) · max_bw ·
-min_rtt + `max_ack_height`; pacing rate = pacing_gain · max_bw; max_bw is a
-windowed max of min(send_rate, ack_rate) over consecutive packet pairs,
-updated only on samples not marked app-limited. Read as an ask:
+min_rtt + `max_ack_height`; pacing rate = pacing_gain · max_bw; max_bw is
+fed by min(send_rate, ack_rate) over consecutive packet pairs, and is called
+a windowed max, but it is a ratchet. `bw_estimation.rs:65` calls `update_max`
+only when a non-app-limited sample exceeds the current max, and `update_max`
+then takes its new-max branch and refills every slot of the filter
+(`min_max.rs:57-61`), so the window's expiry never runs. K only grows, except
+through min_rtt (status §37). Read as an ask:
 
 ```text
    cap  =  (1 + q) · K ,      K  =  Σᵢ windowᵢ / W ,      windowᵢ  =  2·L̂_q,ᵢ·min_rttᵢ + hᵢ
@@ -2094,8 +2105,8 @@ Fixed point: at c1d inside the band, at c1s just below it (G ≈ 675–700 of
 746), at c2 and c8 ×5–15 above the knee — MAIN's latency. Noise: within a row
 at a fixed cap cv(K) = 0.08–1.32; across sessions at c1s's cap 2048 the row
 medians read 575 / 749 / 632 / 915 (§27, §29 MAIN, §32 MAIN, §32 NEW), with
-the §32 NEW mean of row medians at 2 680: a max filter that keeps whatever a
-non-app-limited moment read. Circularity: K follows the cap at the small caps
+the §32 NEW mean of row medians at 2 680: a ratchet that keeps the largest
+non-app-limited reading it has seen. Circularity: K follows the cap at the small caps
 at c1s and c2 (Spearman 0.90; K ≈ n at c1s 192), the §27 rule's shape. The
 over-read at c2/c8 is consistent with ack compression on the jittered
 reverse path (c2/c3 shapes carry 3/5 ms jitter both ways, c1 none; §24 read
@@ -2218,6 +2229,18 @@ rule:
 | c1s-400 (§34, post-§32) | 614 | 0.54 | 512 | [683, 1 536] |
 | c1d-400 (§27) | `CEILING` (ask > n to 4 096) | — | 384 | [512, 1 152] |
 
+*Reading the table (status §37).* Three of its cells carry a caveat.
+- c8's 324 comes from the surviving rows only. The void rows are a placement
+  lock-out: an idle leg is priced on a frozen, dwell-inclusive srtt (status
+  §37). The figure is not a cell-wide fixed point.
+- c1s's S may contain the law's own dwell. At the fixed point B ≈ 81
+  (about 0.8 ms at 614), and at slope 0.54 each 0.1 ms of dwell in S moves the
+  point down by about 23. Status §36 D6 decides this.
+- c2 is the one robust cell.
+
+At c8 the fast leg's S is itself produced by placement, so a placement price
+that reads S needs its own fixed-point check.
+
 Note `RTprop + S = Tp50 − (Tmin − RTprop)`: the loop time minus the
 standing queue. For a hard knee, `D(n) = min(n/T₀, L)`, the product `L·T₀`
 is the argmax of `D^α/T` for every α, so this law aims at D's location,
@@ -2308,7 +2331,8 @@ one. The paired dead-wall contrast at c8 favours the δ-cap in 18 of 23
 non-zero pairs (two-sided sign test p ≈ 0.011). At c8L the pin fraction is
 0.23, between the pre-declared branches, so no verdict is claimed there.
 These batteries measured N ≥ 2 only: the engine's guard kept single-path
-cells on the predecessor below, so the law is unmeasured at one path.
+cells on the predecessor below. The one-path law was measured afterwards, by
+ADR-0072's battery (status §18, §19; the first paragraph of this section).
 
 ### 6.2 The single-path predecessor (retired by ADR-0072)
 
@@ -3565,7 +3589,7 @@ never-delivered tail target.
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
-| 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`, `:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's window clamp and path-map floor (`net/sender_phases.rs:984`, `:1161`, `:1173`, `:1314`, `:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
+| 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`) and the correction path (`:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's gap clamp (`net/sender_phases.rs:984`), repair and retransmit placement (`:1161`, `:1173`, `:1314`) and path-map floor (`:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
 
 ### 11.2 Open-constants register
 
@@ -3581,8 +3605,8 @@ decide it.
 | per-path thresholds 9/8 and 3 | `mp_time_threshold_split`, `MP_PACKET_THRESHOLD` | cited from RFC 9002 (9/8 is an empirical recommendation; RACK uses 5/4); measured against age including sender dwell | lateness coordinate in place of age |
 | `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs` | a rate limit that is also the hole sampler; manufactures no holes on a lossless wire (`holeclass_reachability.rs`) | none yet; it sets the α ≈ 1 corner |
 | `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` | `net/mod.rs` | 10× RFC 9002's granularity | re-fire cost against F |
-| `RWM_STORE_GAIN = 2.0` | single-path predecessor (Section 6.2); H = (gain − 1)·RTprop at N = 1 | sets the single-path store headroom while the `n_live < 2` guard ships; ADR-0072 replaces it there by 1 + q(δ), after which it reaches only the `RWM_STORE_PATHS = 0` arm and the default-off honest and pool-anchor arms | the ADR-0072 battery (N = 1 contrast) |
-| `RELIABLE_STORE_MAX = 1024` | single-path ceiling (`net/mod.rs`) | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"); binds in every post-warm-up c1s window and 17/18 sc2 reps; not a memory bound in practice (the N = 2 pool already reaches 2734). ADR-0072 retires it from the shipped seat; it stays the ceiling of the `RWM_STORE_PATHS = 0` arm and the `min` under the boot cap | the ADR-0072 battery |
+| `RWM_STORE_GAIN = 2.0` | `gates.rs:361`; the single-path predecessor (Section 6.2) | no longer sets the shipped cap. The `n_live < 2` guard is gone (`net/store_cap.rs`, ADR-0072) and the default pooled cap multiplies by 1 + q(δ) at every N. The gain is still read by the `RWM_STORE_PATHS = 0` control, by `RWM_DELTA_CAP = 0`, by the default-off honest and pool-anchor arms, by the seats where `plain_dyn_cap` is false (generation coding, an explicit `RWM_STORE`; `net/sender_policy.rs`, where `delta_cap` is `gates.delta_cap && plain_dyn_cap`) and by the default-off placement frontier arm (`scheduler/place.rs:409`, H = (gain − 1)·RTprop). It is a shipped gate default with no live use on the default plain-reliable path | none needed on the default path; the `=0` control keeps it re-runnable |
+| `RELIABLE_STORE_MAX = 1024` | `net/mod.rs:442`; the former single-path ceiling | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"). It bound in every post-warm-up c1s window and 17/18 sc2 reps while it was the single-path ceiling, so every single-path goodput measured before ADR-0072 went through it. The shipped seat no longer uses it: the ceiling is N·knee at every N (ADR-0072). It stays the ceiling of the `RWM_STORE_PATHS = 0` arm (`net/sender_policy.rs:529`) and the `min` under the boot cap. Its successor at one path is the knee, which binds in 70 % of c1s windows (status §18) | the ADR-0072 battery ran (status §18, §19); the knee is the open constant now |
 | `HONEST_RECOVERY_ROUND_S = 100 ms` | honest per-path cap (`net/store_cap.rs`) | inert by default (needs `RWM_PLAIN_RS`) | — |
 | κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067 | an `s_i > H` bind fraction |
 | `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref` | σ̂_e on the ETA stream |
@@ -3605,6 +3629,11 @@ decide it.
 | control-stream write deadline `CONTROL_SEND_TIMEOUT = 500 ms` | `transport/io_owner.rs` | the report task's existing 500 ms control-send deadline (`net/tasks/report.rs`), applied at the operation inside the owner | — |
 | sender input channel depth `SENDER_IN_BATCHES` = `MSG_CHANNEL_BATCHES` (128 owner batches) | `net/tx_inputs.rs` | a resource bound outside any law: the ack lane is the other half of the same owner polls whose data half the receiver's inbound channel carries, so it takes that channel's bound (ADR-0011's 4096 datagrams / `INBOUND_BATCH_MAX`); full = the owner keeps the batch and pauses its reads, never a drop | `[IOWN] ack_batches` / `ack_dg` per cell |
 | sender command channel depth `SENDER_CMD_DEPTH = 64` | `net/tx_inputs.rs` | a resource bound: the cold producers send a few commands per 2 s report interval; 64 is the depth of the other cold channels (`deficit_tx`, `request_tx`, `sack_tx`) | — |
+| Δ cap 64 | `net/emit_source.rs:591`, `Δ = clamp(⌈rate·jitter⌉, 1, 64)` | floor 1 is structural; the cap 64 has no provenance (Section 5.3) | a cap-bind fraction at a high-rate jittered cell |
+| M* clamp [2, 32] | `net/mod.rs:448` (`GEN_PIPE_MAX_GENS`), `:473-479` (`gen_pipe_depth`) | generation seat only (opt-in, status §3.2). The floor 2 is the fixed cold-start pipeline; the ceiling 32 is a memory backstop (32·G ≈ 12 k symbols ≈ 15 MB at 1200 B), declared | a bind gauge on the clamp; the depth knee at the generation cells |
+| store boot 128 (`RWM_STORE_BOOT`) | `gates.rs:364` | "a fit to one cell's link budget (≈ 1.5 × a 100 Mbit / 10 ms BDP), never swept" (`net/sender_policy.rs`). The derived value is 10 (`STORE_BOOT_DERIVED`, `:121` = the cap floor) and does not ship, because boot once also bound mid-transfer when the anchor set emptied. The Σ now ranges over the channel's membership, so boot is reached only at cold start, where the two values are not distinguishable; not re-measured | swap in the derived boot and re-measure the first RTTs |
+| repair floors 0.15 (systematic) / 0.20 (coded) (`RWM_GEN_R`) | `gates.rs:165`, `net/sender_policy.rs:369`, read at `net/emit_source.rs:701` | generation seat only (opt-in, status §3.2). The floor stands in for r*, which reaches the wire through the plain window's taper (Section 11.3); no derivation and no sweep | a sweep of the floor, or r* in its place, at the generation cells |
+| rate cadence `min(5 ms, SRTT/4)` | `control/fec_rate.rs:181` (`RATE_CADENCE_MAX_US`), `:234` (`period_us`) | introduced by `1b890e0`, which fixed sc2 (status §3.1 item 2). 5 ms is a resource bound (one evaluation costs about 0.1 ms, so at most about 2 % of a core), SRTT/4 is declared; the cached rate is bit-identical to a fresh one younger than one period (`rate_cadence_*` tests). Not swept: the cost of a stale rate in goodput or tail is not measured | the rate's staleness against its cadence at c2 and c8 |
 | `SRTT/2` heal classifier | attribution audit (offline) | biases π₀ upward; the engine's own classifier does not use it (sender-stamp order, Section 7.6) | — |
 
 ### 11.3 Code/model divergences
@@ -3614,10 +3643,10 @@ decide it.
 | span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop |
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
-| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | `clamp(2.0·BDP, 10, 1024)` behind the `n_live < 2` guard until ADR-0072's code phase (now `RWM_STORE_PATHS = 0` only); the wasm model already scales its pool per path with no guard |
+| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | the same expression: `pooled_store_cap` has no path-count branch (ADR-0072; `net/store_cap.rs`). No divergence on the default path. `RWM_STORE_PATHS = 0` re-runs `clamp(2.0·BDP, 10, 1024)` as a control arm at every N; the wasm model scales its pool per path with no guard |
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
-| store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | at N = 1 the engine still has `(gain − 1)·RTprop`; at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
+| store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | the multiplier is `1 + q(δ)` at every N (ADR-0072), so H = q(δ)·RTprop_w, and SACK-clocked release uncounts SACKed symbols. The `(gain − 1)·RTprop` form survives only in the `RWM_STORE_PATHS = 0` control and the default-off placement frontier arm (`scheduler/place.rs:409`). H is read from `[WIDLE]` (Section 7.3) |
 | r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
 | P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
