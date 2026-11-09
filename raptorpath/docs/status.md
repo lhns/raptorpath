@@ -9331,3 +9331,28 @@ added, reported only; nothing in D1–D5 or the decision rule changes.
 
 A `DISPERSION-READS-LINK` verdict therefore pre-registers the joint
 derivation (store × substrate window × placement × H × dials), not a build.
+
+### 36. Amendment 3 — readouts from the joint derivation and the literature scan (before VM contact)
+
+Reported only; D1–D5's outcomes and the decision rule do not change.
+
+- *Grid.* c1s adds 768, which brackets the oracle-L point 614. That gives 64
+  rows plus a 2-row smoke.
+- *D6 additions.*
+  - Per cap and leg, the median over post-warm-up `[DIAG]` lines of
+    `rtt=` − `wrtt=`: the app-echo RTT minus quinn's. It reads the dwell
+    (store plus quinn backlog) inside the store law's time term.
+  - R̂ = `win=` numerator − `cwnd=` − B, where B > 0: what quinn has acked
+    and the store has not yet released.
+- *D8, idle legs.* For every leg noted `p<i>-idle` or with egress share
+  < 5 %, its last-window `rtt`, `wrtt`, `rtp_us` and `infl`, as ratios to
+  the active leg. A frozen dwell-inclusive srtt on an idle leg (`rtt` ≫
+  `wrtt`) is a lock-out; fresh prices with a low share are the placement
+  law. Feeds B2.
+- *c1d receiver.* c1d rows add `RWM_RDIAG=1` (server readout, no engine
+  diff). μ_R is reported split by the number of active legs.
+- *Estimator robustness.* Beside the scored per-window max, also report the
+  per-window median and mode of r_4. Dispersion's capacity is a local mode,
+  not the global one (Dovrolis et al., ToN 2004); on netem the max is
+  expected to match. Any change to the scored estimator is a new
+  registration.
