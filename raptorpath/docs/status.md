@@ -9282,3 +9282,35 @@ leg (dispersion sees the link, not the receiver). D4 < 5 %.
 
 **Duration.** Build ≈ 6 min; 56 invocations ≈ 15 min; scoring on the VM
 ≈ 5 min. Inside the 4 h launch deadline and the 5 h cap.
+
+### 36. Amendment 1 — capture accounting, kept tables, the floor caps (before VM contact)
+
+Nothing in the estimator, the outcomes or the decision rule changes.
+
+- *Segments.* On Linux 7.0 a UDP-GSO skb carries the total length in
+  `uh->len` (`udp_send_skb`), so the per-segment length is not on the wire
+  the tap sees. segs = ⌈UDP payload / m⌉, where m is the row's full-segment
+  payload: the most frequent payload among skbs ≤ 1 472 B. b = `orig_len +
+  (segs − 1)·42`.
+- *Witnesses (replacing the segment-count one).*
+  - Bytes: Σb per leg is within 1 % of the netem qdisc's `Sent … bytes` on
+    the client-side device, which counts `qdisc_pkt_len`.
+  - Release unit: captured skbs per leg equal `[TRUTH] egress_skbs −
+    netem_dropped_skbs` within 1 %. This catches a tap that merges or
+    splits skbs, where spacings would be meaningless.
+  - tcpdump's kernel-drop count stays 0. It is read from tcpdump's stderr
+    after SIGINT by PID and `wait`.
+- *Kept tables.* The per-skb (Δt ns, b) table of every live leg is kept,
+  gzipped, under `docs/l1-raw/disp36/`. Re-scoring at another k or with
+  another estimator is then an offline re-registration on the committed
+  ledger. Only the pcaps are deleted.
+- *D5.* Main's `[DIAG]` carries no Tp50/Tmin (`[LOOPDIAG]` is off main).
+  So D5 takes RTprop and S per cap from the §27 (c2, c8) and §34 (c1s)
+  ledgers, interpolated in n, and says it is cross-session. It also reports
+  goodput at the fixed point, interpolated from this session's static grid,
+  against Gmax.
+- *Floor caps.* §23's contraction trap sits at the floor. c1s and c8 add
+  caps 16 and 32: c1s {16, 32, 64, 128, 256, 512, 1024, 2048}, c8 {16, 32,
+  64, 128, 256, 384, 512, 1024}. That is 62 rows plus a 2-row smoke.
+  `RWM_PERF_TIMEOUT_S=300`, because c8 at 16 may need about 100 s.
+- *Duration.* About 35 min of rows plus the build; inside both limits.
