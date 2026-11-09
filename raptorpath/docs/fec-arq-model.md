@@ -32,9 +32,12 @@ complete delivery under bursty loss (p99 36–39 ms at a 2.6 % Gilbert-Elliott
 cell, where QUIC reaches 55–342 ms and TCP 0.2–1.4 s with delivery cliffs).
 For bulk it is far above every Cubic-family stack but not faster than
 well-tuned BBR-class single-path stacks or kernel MPTCP over BBR. The
-derived flow-control laws are goodput-parity results that remove 10–200 ms
-of standing queue. The paper reports the refuted designs alongside the
-shipped ones, and lists every remaining constant that has no derivation.
+derived flow-control laws are goodput-parity results. Whether they also
+remove standing queue is unresolved: the δ-cap's re-measure lands inside 2σ.
+The evaluation tables were not re-measured on the current binary and have no
+same-session competitor baseline (Section 9). The paper reports the refuted
+designs alongside the shipped ones, and lists the remaining constants it has
+found that have no derivation (Section 11.2).
 
 ---
 
@@ -124,10 +127,13 @@ Section 4:
    receive machines (sliding-window RLC, generation, streaming). The
    difference between "realtime" and "bulk" moves to the sender's span law,
    `(δ, ρ, r) → (A*, M*, Δ)` (Section 5).
-4. **A flow-control law with no fitted multiplier.** At two or more paths
+4. **A flow-control law with no fitted multiplier.** At every path count
    the pooled outstanding cap is `(1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ`, where q(δ) is
    mapped onto the standing-queue setpoint RFC 8289 derives from Kleinrock
-   power (Section 6).
+   power (Section 6). The multiplier is not fitted. The law's rate input is:
+   every sender-side sampler of the delivered rate is fed by the cap's own
+   output, and no non-circular source of the link rate is shipped. That input
+   is open (Section 6.1; status §23–§34).
 5. **The recovery decision as a sequential test.** Every recovery clock
    written for this machine is one one-sided sequential test on a different
    measurand. The value of waiting is bounded by counters the machine already
@@ -147,8 +153,9 @@ loss-robust far above every Cubic-family stack, but it is not a faster bulk
 pipe than well-tuned BBR-class single-path stacks or kernel MPTCP over BBR,
 and at the heterogeneous dual cell it is measurably behind them
 (Section 9.2). The two derived flow-control flips are parity results in
-goodput that remove standing queue; they make the machine cheaper, not
-faster.
+goodput; whether they remove standing queue is unresolved, because the
+δ-cap's re-measure lands inside 2σ (Section 9.4). They do not make the
+machine faster.
 
 ### 1.5 Architecture as shipped
 
@@ -3161,6 +3168,21 @@ status §12 diagnosis addendum) govern it:
 
 ## 9. Evaluation
 
+**Currency of the tables (status §37).** The tables below were measured at
+different commits, and none was re-measured after the threading redesign
+(status §9–§16), the incremental SACK marking (status §28) or the decoder
+prune per drain (status §32). The competitor table (Section 9.2) is the
+July baseline: `0f27f99` (2026-07-22) with the framing and ack-merge flips of
+2026-08-06 and 2026-08-08. Its realtime rows were re-run once, at `f671f61`
+(2026-09-08). Section 9.3 dates from 2026-07-14 to 2026-07-21, Section 9.4
+from 2026-08-19 and Section 9.6 from `754139c` (2026-08-06). Section 9.7 and
+Section 9.8 carry their own commits. The only later readings are within-tree
+A/B batteries of the shipped default against the previous main, in one
+session each (status §19, §32). They have no competitor arm. There is
+therefore no same-session competitor baseline on the current binary, and
+cross-session references drift (about 24 % at c1d, status §19). Read every
+competitor ratio below as a July ratio.
+
 ### 9.1 Method
 
 **Cells.** All measurements run the engine's own `perf` driver over Linux
@@ -3230,7 +3252,7 @@ Law 0, A.5; flipped in `bf3a636` on the status §8 re-run, not in scope at
 
 ### 9.2 Against QUIC, TCP and MPTCP
 
-Measured at `0f27f99` (both netem seeds, same cells, same day, same VM;
+Measured at `0f27f99` (the c1 row excepted; both netem seeds, same cells, same day, same VM;
 competitors quinn-perf with Cubic and BBR, kernel TCP Cubic and BBR on
 application-acknowledged delivery, kernel MPTCP v1). Bulk rows are updated
 by the framing flip (`078b0ce`) and the ack-merge flip (`bdab7de`).
@@ -3239,7 +3261,7 @@ by the framing flip (`078b0ce`) and the ack-merge flip (`bdab7de`).
 |---|---|---|---|
 | c2 realtime (50 msg/s, 400/1200 B) | p99 median 36–39 ms, 1000/1000 delivered | QUIC 55–342 ms; TCP 209–1407 ms, delivery down to 687/1000 | win ×1.4–8.8 vs QUIC, ×5–38 vs TCP |
 | c3 realtime | p99 median 92–103 ms, 1000/1000 | QUIC 150–759 ms (worst reps 38–44 s); TCP 830–3878 ms, delivered to 525/1000 | win ×1.5–41; only delivery-complete stack |
-| c1 bulk (clean 1 Gbit/s) | ~229 Mbit/s | quinn-BBR 915, kernel TCP ~900 | loss ×4 |
+| c1 bulk (clean 1 Gbit/s) | c1s 826.3 [802.6–836.5], c1d 751.4 [734.6–785.9] at engine `4dcc893` (scored 2026-10-29; status §32). The July reading was ~229 | quinn-BBR 915, kernel TCP ~900 (July, cross-session; no same-session competitor) | not stated: the gap to BBR is not re-measured |
 | c2 bulk | 87.8–88.1 | quinn-BBR 91.9–92.4 | loss −4…−5 % |
 | c3 bulk | 16.6 | quinn-BBR 18.6, TCP-BBR 17.5–19.4 | loss −8…−11 % |
 | c7 bulk (symmetric dual) | 147–151 | MPTCP-BBR 149 / 169 | tie / −13 % |
@@ -3257,10 +3279,16 @@ spreads (c2 36–40 ms, c3 100–113 ms).
 
 **Bulk.** The machine is loss-robust far above every Cubic-family stack but
 is not a faster bulk pipe than BBR-class single-path stacks or kernel MPTCP
-over BBR. The clean-path gap is the engine's per-message service wall (a
-measured opt-in, sender batching plus estimator cadence, reaches 446–505
-Mbit/s at c1; the estimator cadence alone has shipped since `83462ae`, so
-sender batching is the remaining opt-in). The lossy-single gap was accounted to closure at `db40d2f`:
+over BBR. The clean-path gap to the July competitor numbers was the engine's
+per-message service wall. The shipped default has since moved from ~229 to
+826.3 (c1s) and 751.4 (c1d) Mbit/s (status §32, NEW arm against a same-session
+MAIN at 736.5 and 628.4). Several changes lie between the two readings (the
+estimator cadence since `83462ae`, the receiver changes of status §17–§32) and
+this section does not apportion the gain. The quinn-BBR 915 is a July number
+from another session, so the ratio to it is not a measurement: cross-session
+references drift by about 24 % (status §19). No competitor was re-run. The
+opt-in reading of 446–505 Mbit/s is superseded by the shipped default. The
+lossy-single gap was accounted to closure at `db40d2f`:
 framing and MTU tax (~4.3 / 0.95 Mbit/s at c2 / c3) and reactive over-fire
 (~2.7 / 1.7), with the wire ≥ 98 % utilised; compact framing then recovered
 part of it. At the heterogeneous dual, slow-path source is negative-margin
@@ -3268,12 +3296,17 @@ under every placement law measured: goodput falls monotonically as the slow
 path's source share rises.
 
 **Validity window.** The bulk rows describe the binaries of the competitive
-baseline. On the current binary line the 100 Mbit/s single path sc2 does not
-complete 100 MB in 300 s (about 2 Mbit/s, 6/6 and 8/8 reps), and sc3 and c7
-read far below these rows in recent batteries (sc3 2.4–3.5 Mbit/s, c7 control
-54–87 Mbit/s against 157–168 earlier). This is an undiagnosed regression and
-the first item of Section 11.1's owed work; no bulk number in this section is
-claimed for the current binary.
+baseline, except the c1 row, which is the current default. A later binary line
+did not complete the 100 Mbit/s single path sc2 (100 MB in 300 s, about
+2 Mbit/s in 6/6 and 8/8 reps), and sc3 and c7 read far below these rows in
+those batteries (sc3 2.4–3.5 Mbit/s, c7 control 54–87 Mbit/s against 157–168
+earlier). The sc2 regression is diagnosed and fixed (`1b890e0`, 2026-09-29;
+status §3.1 item 2, §3.5 item 1). The cause was the CPU-bound sender: since
+`d60f3ab` the r(β) mix evaluated the window-mass anchor term once per source
+symbol, about 6 ms a call. The rate is now evaluated on a cadence of
+min(5 ms, SRTT/4). The sc3 and c7 readings were taken on the same binary
+line. No re-measure after the fix is recorded in status. No bulk number
+in this section other than the c1 row is claimed for the current binary.
 
 ### 9.3 Multipath aggregation
 
@@ -3301,8 +3334,13 @@ coded arms stay unimodal where plain arms go bimodal on a lossy leg.
 | cumulative effect of one era's flips | no two-sided goodput loss at any cell or seed; c1 seed 7 +9.6 %; c8 CPU/Gbit −31 % send, −9 % receive | `f605f92` |
 | δ-honest shedding, unified default | zero collapse reps in 96 tail reps; p99 at or below the streaming code everywhere; 100 % delivery at the c3 message cell (streaming 79–81 %) | Section 5.6 |
 
-The two derived flow-control flips are parity results: the pool's former gain
-was funding delay, not goodput. They make the machine cheaper, not faster.
+The two derived flow-control flips are parity results in goodput: the pool's
+former gain was funding delay, not goodput. They do not make the machine
+faster. The queue reduction is unresolved. The first measurement (`18dbf10`)
+read q_p50 down by 10–200 ms, and the re-measure at n = 12 (`e57f365`)
+reproduced its direction (Δ −115…−218 ms at c8/c8L) inside 2σ (129–377 ms). It
+is a point estimate, not a resolved effect, so no queue figure is claimed for
+the flips.
 
 ### 9.5 Wire and engine flips
 
@@ -3385,11 +3423,13 @@ not a stable quantile.
 The latency budget at the duals is dominated by queueing above the path
 floor, not by placement; the recovery clocks are inert on false alarms
 because fires are gap-driven; proactive FEC at r > 0 slowed the lossy single
-path; and the two flow-control flips removed queue at goodput parity. The
-remaining bulk gaps are the engine's per-message service wall (clean path),
-the reactive plane's over-fire and framing tax (lossy singles), slow-path
-conversion at the heterogeneous dual, and the unexplained regression of
-Section 9.2. Owed instruments: the sender ETA stream needs an exit flush and a
+path; and the two flow-control flips held goodput at parity (their queue
+effect is unresolved, Section 9.4). The remaining bulk gaps are the engine's
+per-message service wall (clean path, with no same-session competitor to size
+it against), the reactive plane's over-fire and framing tax (lossy singles)
+and slow-path conversion at the heterogeneous dual. The sc2 regression of
+Section 9.2 is fixed (`1b890e0`); no re-measure of sc3 or c7 is recorded since.
+Owed instruments: the sender ETA stream needs an exit flush and a
 consistent time reference; the engine must echo Copa's δ; and the diagnostic
 writer needs line discipline. The receiver's self-heal classifier no longer
 counts retransmit copies, and `cod=` no longer counts source copies.
@@ -3513,7 +3553,7 @@ never-delivered tail target.
 
 | # | question | what would decide it |
 |---|---|---|
-| 0 | Why does the current binary line run sc2 at ~2 Mbit/s (and sc3, c7 far below their earlier readings)? | a bisect against the competitive-baseline binary (Section 9.2) |
+| 0 | Do sc3 and c7 still read far below their earlier values? The sc2 regression (~2 Mbit/s) was a CPU-bound sender and is fixed in `1b890e0` (status §3.1 item 2); the sc3 and c7 low readings came from the same binary line, and no re-measure after the fix is recorded | re-run sc3 and c7 on the current binary (Section 9.2) |
 | 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break |
 | 3 | Does Auto's rate sit at the corner r* = 0? | an echo of Copa's delay normaliser d beside D_arq (Section 4.9) |
 | 4 | Does the span law stay continuous at the named points? | an isolating pure-law test of `(δ, ρ, r) → (A*, M*, Δ)` with ±2 % nudges, as the rate law has |
@@ -3523,9 +3563,9 @@ never-delivered tail target.
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
 | 9 | Why does the probabilistic taper retransmit never fire? | whether ε̂ at send is structurally ~0 or the oldest symbol never ages past the P_lost knee |
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
-| 11 | Can the machine beat BBR-class stacks on clean single-path bulk? | the engine's per-message service walls; the measured opt-in (sender batching plus estimator cadence, the cadence now shipped) reaches 446–505 Mbit/s at c1 against 915 for quinn-BBR |
+| 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
-| 13 | Remaining hint-keyed sites | `queue_target_mult` (1.08/1.125/1.25), the symbol size per named point (512/1200), the Realtime duplicate source send, `use_packing`, `RWM_COPA_COMPETE`; each is a declared corner, not a law (the block hint tables and the pipeline fork were removed with the block pipeline) |
+| 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`, `:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's window clamp and path-map floor (`net/sender_phases.rs:984`, `:1161`, `:1173`, `:1314`, `:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
 
 ### 11.2 Open-constants register
 
