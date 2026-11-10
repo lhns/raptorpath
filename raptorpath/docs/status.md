@@ -11548,6 +11548,103 @@ No outcome or label changes.
 - **Prediction caveat.** These are offline-map predictions from p27
   (static rows, pre-§32 receiver), not closed-loop ones.
 
+### 43. Result
+
+Scored 2026-11-10 from the `oracle43` ledger on `harness43` (`4ad1fdf`):
+24/24 LIVE, no DNF, no abort in the main run. **c2 `BISTABLE`; c1s
+`UNSTABLE`.** Diagnostic only; nothing ships.
+
+*Session.*
+- **Tree:** `run43` `b2b75b7` plus `harness43` `f6b06ff`. Binary
+  `94959c05…c1dc008`, built fresh.
+- **Check run:** the first launch hit `ABORT-PRECONDITION`, caused by the
+  worker's own ssh. The relaunch passed all witnesses: sampler Σ n_k =
+  offered, `nk_min` 14 253 at c1s (above the old 8 192 cap), routing 1.0,
+  and the 5 GB row ran. It then stopped by its deliberate `ABORT-BUDGET`.
+- **Main run:** 15:54Z, `DONE-ALL`, battery 1 398 s.
+- **The `ENGINE-STALL` rule** (the note before the score) was implemented
+  as a DNF-only classifier. With 0 DNF rows it never fired.
+
+*c2 (600 MB; 3 rows per arm).*
+
+| arm | n_end | goodput | Tp50 | note |
+|---|---|---|---|---|
+| SL | 168 / 156 / 163 | 82.8–85.3 (WORSE than MAIN by 6.3) | ≈ 17 ms | `wbind` 0 |
+| SH | 1 814 / 1 855 / 1 618 | — | — | all NOT-RETURNED (HIGH), HOLD-EXPIRED; ask/H over the hold's last 2 s: 1.006 / 1.059 / 1.005 |
+| MAIN | pinned at 2 048 | 89.9–90.3 | ≈ 208 ms | A_x ≈ 180 ms |
+| SL-B0 (b₀ = 2 470 µs, reported) | 207 / 239 / 233.5 | 89.3 / 90.1 / 89.6 (WITHIN MAIN) | 20.6–23.3 ms | A_x 9–11 ms (BETTER) |
+| SL-G12 (gain 1.2, reported) | 201.5 / 206 / 165 | 87.7 / 89.6 / 84.6 (WITHIN) | 17.0–20.2 ms | A_x 7–9 ms (BETTER) |
+
+*c1s (5 GB).*
+- SL: 828.5 / 588 / one RUNAWAY row (`SL s42 r2`, pinned at N·knee from
+  5.8 s, 292 Mbit/s, 136.7 s).
+- SH: s42 r1 and r2 RETURNED (16.6 s and 16.8 s; ask/H 0.83 and 0.80).
+  SH s7 was HOLD-INERT, left out.
+- MAIN pinned at 2 048, Tp50 20–29 ms.
+- Goodput and delay of SL against MAIN: WITHIN, at a wide 2σ.
+
+*Readouts R1–R10.* The full set is in `oracle43/score.txt`: final point and
+spread, goodput and delay against MAIN, return time, ask/H, the brake over
+time, bind fractions (`wbind`, floor, pin, hold), sampler counts, quinn's
+backlog, occupancy, and the lowest window count.
+- Spread: c2 0.05 against the predicted 0.08; c1s 0.103 against 0.11.
+- The c1s hold threshold margin was thin, as predicted (3.0–3.2 ms against
+  RTprop 3.2–3.5 ms).
+
+*Predictions.*
+- c2 `BISTABLE`: MET.
+- Plain start-low goodput −5…−12 % at c2: MET (−7 %).
+- c1s `CONVERGES`: MISSED (one runaway).
+- The offset arm's location: MISSED (median 233.5 against 195). The offline
+  map under-reads, so its 648 threshold is equally soft.
+- Gain 1.2: 201.5 against 184.
+
+*The c1s runaway is the substrate, not the law.* From its kept client log:
+- up to t = 4.0 s, quinn's window `qcwnd` is ≈ 500 KB and goodput ≈ 850;
+- at 4.3 s `qcwnd` falls to ≈ 100 KB and stays there. Goodput drops to
+  ≈ 330, and wire RTT stays at 2 ms;
+- only then does n climb to the clamp, because with an oracle L any
+  delivery shortfall reads as a need for more store.
+
+It is not §42's anchor mechanism: it happened before the 10 s filter could
+expire. §42's split diagnostic is not the next step for it.
+
+*Reading for the user.*
+- At c2, with an oracle L, the offset arm held MAIN's goodput with no
+  goodput loss resolvable at ≈ 2 %, at about a tenth of MAIN's delay
+  (A_x 9–11 ms against ≈ 180 ms). Caveats: three reported-only rows,
+  start-low, Bulk, oracle L and oracle offset.
+- MAIN's delay grows with transfer length: 208 ms Tp50 at 600 MB, against
+  the 40–100 ms quoted from 100 MB rows.
+- The δ-authority revisit trigger (a measured δ→latency trade on the wire)
+  is met.
+
+*Next (offline, then possibly one short session; no build).* At gain 1.1
+the high point is held by the last few percent of the gain: ask/H was
+1.006–1.059, so at gain 1.0 it would read 0.91–0.96 and fall. Check a third
+anchor option before "lifetime minimum or drain" goes to the user: gain ≤ 1
+with the headroom as an additive time, whose share of ask shrinks as n
+grows. Sweep gain and offset offline on c2 and c8, looking for a stable
+point in the knee band with no upper crossing on the expired-anchor map.
+If one exists, register start-low and start-high at c2 with `run43`'s
+existing envs (≈ 8 min, no build).
+
+### 41b. Erratum — the slow c1s row is a quinn congestion-window collapse, not a SACK-release stall
+
+The §41b result called the 68.3 Mbit/s MAIN row an echo and SACK-release
+stall. Its kept client log shows otherwise:
+- quinn's `qcwnd` falls from ≈ 600 KB to **13.8 KB** at t ≈ 1.8 s and
+  stays there;
+- goodput sits at ≈ 39 Mbit/s;
+- by Little, 2 048 / 6.7 k/s ≈ 310 ms, which is the echo RTT it showed,
+  with the store queued behind quinn's tiny window (backlog 2 041 of 2 048).
+
+§43's c1s runaway is the same event: `qcwnd` drops from ≈ 500 KB to
+≈ 100 KB. **Rare c1s rows run with quinn's BBR window collapsed and not
+recovering.** That replaces both the "SACK-release stall" and §42's split
+diagnostic as the c1 diagnosis item. It is also the likely cause of every
+earlier unexplained slow c1s row (§34's 277, §38's 575 and 684).
+
 ## 44. Is the model overcomplicated? — law inventory and simplification review — no VM, record
 
 The user asked whether the formulas could be simpler. An Opus inventory of
