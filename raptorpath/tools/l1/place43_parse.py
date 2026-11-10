@@ -53,11 +53,11 @@ for _a in ARMS + EXTRA_ARMS:
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
 
 # ── plan 43b (status 43b): the gain <= 1 + additive-time law at c2 from both starts ─────────────────────────
-# The pair (G, tau) and the band are set by an amendment BEFORE launch; unset (None) by default and the battery refuses to
-# launch while any is unset (`place43_parse.py vars43b` exits 3). SL-T / SH-T are the plan's names for the §43 ladder's SL / SH.
-G43B = None                    # RWM_ORACLE_GAIN of the SL-T and SH-T arms
-TAU43B_US = None               # RWM_ORACLE_BRAKE_OFFSET_US of the SL-T and SH-T arms (µs)
-BAND43B = None                 # (lo, hi): the cell's predicted band, "offline value to x1.2"
+# The pair (G, tau) and the band are set by an amendment BEFORE launch (None = unset, and the battery refuses to
+# launch while any is unset); amendment 1 of status 43b set G = 0.9, tau = 5000 us, band [178, 217] (`place43_parse.py vars43b` exits 3). SL-T / SH-T are the plan's names for the §43 ladder's SL / SH.
+G43B = 0.9                     # (status 43b amendment 1) RWM_ORACLE_GAIN of the SL-T and SH-T arms
+TAU43B_US = 5000.0             # (amendment 1) RWM_ORACLE_BRAKE_OFFSET_US of the SL-T and SH-T arms (µs)
+BAND43B = (178.0, 217.0)       # (amendment 1) (lo, hi): the cell's predicted band, "offline value to x1.2"
 ARMS43B = ["MAIN", "SL-T", "SH-T"]
 ARM_ROLE = {"SL-T": "SL", "SH-T": "SH"}
 SMOKE43B = [("c2-100", "SH-T", "42", 1), ("c2-100", "SL-T", "42", 1)]
