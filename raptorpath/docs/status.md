@@ -13063,3 +13063,43 @@ measurements.
 - Step 0: host builds plus suites ≈ 2–3 h under the mutex.
 - Step 1: two builds (≈ 11 min) and 74 invocations (≈ 80 min), inside
   launch + 4 h.
+
+
+### 48. Amendment 2 — the guard, the cost label, the trees and the host gate (before any VM contact; advisor review)
+
+- **Guard.** §41b's statistic misses +15 % CPU at 26 clauses (its z
+  saturates near 3; see the guard rework under way). §48 uses whichever
+  guard statistic passes the acceptance table (one separated clause gives
+  p ≤ 0.01; A/A false-fail ≈ 5 %; a per-clause power table), registered as
+  §41c. §41b's statistic is not used.
+- **The cost label.** `CONTROLLED-WITH-COST` also reports A_x
+  (delivered-data delay) beside wire RTT. The rule states what that outcome
+  buys and what it does not:
+  - the c1 collapse is gone, and the substrate actually limits;
+  - delivered delay at c2 is predicted unchanged (the queue moves from the
+    link into quinn's send buffer);
+  - goodput is 0–10 % lower at c2 and c8.
+- **Trees.** The battery runs after the `diag36` merge decision. BASE =
+  main at that time; CAND = the §48 commits rebased on it. Both are pinned
+  by SHA. The promoted placement price reads quinn's SRTT, which this fix
+  moves.
+- **Added to the host gate.**
+  - A **jitter scenario** in `cc_sim`: netem's release rule with c2's delays
+    (5 ms ± 3 ms per direction) across one ProbeRtt. By the loop map, once
+    2·m̂ < R̄₀ the estimate settles at A/(R̄₀ − 2·m̂). If b̂ decays there,
+    the law needs a jitter allowance before any VM time. It is the same
+    defect as the store law's brake bias.
+  - **Quinn's `rtt.min()`** is logged beside m̂ on CAND rows. A reading
+    below 2 ms at c1s confirms §47's inferred cause.
+  - **The new gauges go on their own log line** (`[QCC]`), not the pinned
+    per-path `[DIAG]` format. BASE rows simply lack it.
+  - **`congestion_state()` is read only at the DIAG tick.** Its per-call
+    cost is measured on the host (§38 failed on 360 ns per call).
+  - **Datagram evictions per row** (`dgq full=`, `dgev`) are reported. With
+    quinn limiting, the store's backlog sits in its 4 MiB buffer, and an
+    eviction reads as loss.
+- **ProbeRtt is a periodic drain** of up to 200 ms every 10 s. It sits in
+  the substrate, not in our laws, and the user is told so.
+- **After §48, if it controls:** three reported rows at c2 with §43b's law
+  over the fixed substrate, where the two loops first meet (≈ 150 KB in
+  flight against a 170–300 KB window).
