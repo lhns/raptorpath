@@ -763,6 +763,8 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod place_alloc_tests;
 
 // ── The one-sided-clamp witness, process-wide (`[LCW]`) ───────────────
 //

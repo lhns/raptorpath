@@ -604,22 +604,39 @@ impl Scheduler {
         // `place_probs_with_temperature` resolves an exact tie with `min_by`
         // (which keeps the first minimum) and `place_symbol`'s inverse-CDF
         // walk consumes the candidates in this order. Sorting by id makes both
-        // reproducible without moving any probability. The arm's shipped-cost
-        // column is kept in a second vector that exists only while the arm is
-        // armed, so an absent arm costs neither an allocation nor a comparison.
+        // reproducible without moving any probability. The frontier arm's
+        // shipped-cost column is kept in a second vector that exists only while
+        // that arm is armed, so an absent arm costs neither an allocation nor a
+        // comparison.
+        //
+        // The wire arm's witnesses (status §41) are running minima over the
+        // same pass, not columns: no allocation, no extra scan. A candidate
+        // replaces the incumbent when strictly cheaper, or equal with a smaller
+        // id, which is `min_by`'s first-minimum over the id-sorted candidates
+        // regardless of the map's iteration order (the costs are finite; a NaN
+        // would never replace and so could differ from the sorted scan).
         let mut bases: Vec<(PathId, f64)> = Vec::new();
-        let mut shipped_col: Vec<(PathId, f64)> = Vec::new();
+        let mut min_shipped: Option<(PathId, f64)> = None;
+        let mut min_base: Option<(PathId, f64)> = None;
+        let mut raw_ref = f64::INFINITY;
         let mut out: Vec<(PathId, f64)> = self
             .paths
             .values()
             .filter(|p| p.active)
             .map(|p| {
                 let (shipped, base, x) = cost_of(p);
-                if hol.is_some() || wire_on {
+                if hol.is_some() {
                     bases.push((p.id, base));
                 }
                 if wire_on {
-                    shipped_col.push((p.id, shipped));
+                    let first_min = |m: &mut Option<(PathId, f64)>, v: f64| {
+                        if m.map_or(true, |(id, b)| v < b || (v == b && p.id < id)) {
+                            *m = Some((p.id, v));
+                        }
+                    };
+                    first_min(&mut min_shipped, shipped);
+                    first_min(&mut min_base, base);
+                    raw_ref = raw_ref.min(srtt_of(p));
                 }
                 (p.id, base + x)
             })
@@ -631,24 +648,11 @@ impl Scheduler {
         // This asks the question `place_probs_with_temperature` will ask —
         // first-minimum over the id-sorted candidates — with and without the
         // arm's addition, and counts the disagreements.
-        let arg = |v: &[(PathId, f64)]| -> Option<PathId> {
-            v.iter()
-                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(id, _)| *id)
-        };
         if wire_on {
             // Witness of the wire arm: did the corrected base change which leg
             // is cheapest? And did the 1 ms floor of `ref` bind (the raw
             // fastest srtt is below it)?
-            bases.sort_unstable_by_key(|(id, _)| *id);
-            shipped_col.sort_unstable_by_key(|(id, _)| *id);
-            let moved_now = arg(&shipped_col) != arg(&bases);
-            let raw_ref = self
-                .paths
-                .values()
-                .filter(|p| p.active)
-                .map(&srtt_of)
-                .fold(f64::INFINITY, f64::min);
+            let moved_now = min_shipped.map(|m| m.0) != min_base.map(|m| m.0);
             let floor_now = raw_ref.is_finite() && raw_ref < PLACE_REF_FLOOR_SECS;
             let (c, n, moved, calls, floor) = self.place_wire_gauge.get();
             self.place_wire_gauge.set((
@@ -661,6 +665,11 @@ impl Scheduler {
         }
         if hol.is_some() {
             bases.sort_unstable_by_key(|(id, _)| *id);
+            let arg = |v: &[(PathId, f64)]| -> Option<PathId> {
+                v.iter()
+                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(id, _)| *id)
+            };
             let moved_now = arg(&bases) != arg(&out);
             let (sh, n, moved, calls, w) = self.place_hol_gauge.get();
             self.place_hol_gauge
