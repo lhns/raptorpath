@@ -10166,6 +10166,33 @@ price is the law's.**
 - Nothing else changes: cells, n, seeds, env, witnesses and abort table
   stand as amended.
 
+### 38. Amendment 3 — the build, and two spec corrections (before VM contact)
+
+*Build.* `RWM_PLACE_WIRE` is implemented (`eb1d66e`, tests `ac6110b`,
+merged on `diag36`).
+- With the gate off it is bit-identical to main, which
+  `every_arm_absent_leaves_the_probabilities_bit_identical` pins, also with
+  a mirrored wire RTT present.
+- Suites on the VM: release 1 162/0 (52 ignored), debug 1 025/0 (51
+  ignored), doc, wasm 35 (golden fingerprints unmoved), and the `tools/l1`
+  python tests.
+- Red-first evidence is in the merge's branch report: each behavioural test
+  failed against an inert stub. The invariant tests hold on both sides by
+  construction.
+
+*Corrections.*
+- **Amendment 1's test-6 arithmetic.** For the DEF256 state (s 24/390, ŵ
+  23/45, ε̂ 0.026/0.017, I = 0), the gap is +3.04 nats, so P₁ = σ(−3.04) =
+  0.046, not +3.8 / 0.022. The difference is Bulk's w_bw·(r₁ − r₀) term.
+  The test asserts the formula value. The cure claim (P ≥ e⁻⁴ against
+  P_off < 10⁻²⁰) stands.
+- **A test-only hook.** `RWM_TEST_PLACE_HOLD=<leg>:<ms>` withholds one leg
+  for a set time from the start, for the loopback test. It is unset in every
+  shipped configuration and in every battery row; the battery withholds it.
+- **Fallback.** `min_j wire_j` ranges over active candidate legs.
+- **Gauges.** `w_cold` counts per leg evaluation; `w_mv` and `ref_fl` count
+  per `place_costs` call. The denominators print as `w_n=` and `w_calls=`.
+
 ## 39. The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
 
 §37 rated the rate law "the maths holds, inert", and the user opened the
