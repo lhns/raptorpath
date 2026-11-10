@@ -9712,3 +9712,86 @@ invocations take ≈ 35 min (c8 rows ≈ 20 s, others ≈ 12 s), and scoring
 ≈ 5 min. That is inside the 4 h launch deadline and the 5 h cap. This
 section stops here: the build and the VM session start only on the user's
 go.
+
+### 38. Amendment 1 — the stamp, the fresh-share cell, the ladder, the confound (before VM contact)
+
+A review of the registration above found four gaps. They are fixed here,
+before any build or VM contact.
+
+- *The `[ETA]` stamp stays on the shipped E.*
+  - The arm as written above also moved `E_picked` (`emit_source.rs`).
+    That stamp rides the wire and feeds `[ETA]`/`[LAT]` and F̂, so the arm
+    would have had a second mechanism, and c1s and c2 would not be no-ops.
+  - The arm now changes `place_costs` alone; it keeps the ŵ mirror reads and
+    its gauges. Paper §5.7 says this.
+  - The stamp's predictor then differs from the law's by the local dwell
+    (½ + ε̂)·(s − ŵ), and X_i with this arm would compare the two. Neither
+    `RWM_PLACE_T_DERIVED` nor `RWM_PLACE_HOL` is combined with it here.
+  - Build-gate test `eta_stamp_reads_the_arms_E` is replaced by
+    `eta_stamp_is_the_shipped_E_under_the_wire_arm`: arm on and off, the
+    stamped `E_picked` is bit-identical.
+  - The controls' witness becomes two parts: `w_mv = 0`, and the `[ETA]`
+    line's `e_p50`/`e_p90` reads WITHIN between arms. The second is
+    reported, not gated.
+- *The regime the share must be preserved in is now in the battery.*
+  - The share clause above sat at c8 default (link-saturated, share ≈ 0.18).
+    The low-share regime is c8 caps 128–192.
+  - That regime is where Table 5.7a's largest open-loop shift sits: −2.6 nats
+    at DEF192 s42, about 5.7 % → 45 % in share terms. In that row the slow
+    leg carried a stale local dwell (`rtt` 84 against `wrtt` 68).
+  - Cell added: `c8-100` `RWM_STORE=192`, n = 6 per arm, the same witnesses.
+    That makes 96 rows plus the smoke, about 40 min.
+  - Clause `SHARE-PRESERVED` at that cell: the WIRE median slow-leg share
+    lies within [½, 2] × MAIN's median, or within ±0.03 of it.
+  - A miss is a `REGRESSES-AT(c8-192)` finding.
+  - Prediction: inside the band. Three of the four ledger rows at 128–192
+    had fresh prices, where the arm equals the shipped law, and the slow
+    leg's own queue term closes most of the open-loop shift.
+  - §21's goodput and CPU clauses are scored there as at the other cells.
+- *The verdict ladder keys on the stratified c1d comparison.*
+  - As written, the pooled c1d-1536 clause decided `CURED` against
+    `CURED-AT-COST`. If MAIN locks only 2–3 of 6 rows, the pooled median sits
+    at the two-leg level and would read no cost.
+  - Outcome 5 now reads: `CURED-AT-COST(<x %>)` iff §21's goodput rule,
+    applied to WIRE rows against MAIN's one-leg rows at `c1d-400`
+    `RWM_STORE=1536`, reads WORSE or TREND-WORSE. x is that median
+    difference.
+  - This needs ≥ 2 MAIN one-leg rows there, otherwise
+    `NOT-REPRODUCED-AT(c1d-1536)`. The pooled clause is reported beside it.
+  - Outcome 6 (`CURED`) is the same comparison reading WITHIN or better.
+  - Outcome 4 (`NOT-CURED`) now fires on lock-outs only: any WIRE row
+    LOCKED at a reproduced static cell. The c8 goodput gain is reported
+    separately and stratified the same way: WIRE against MAIN's LOCKED rows,
+    and WIRE against MAIN's fresh rows.
+  - A pooled c8 static goodput WORSE stays a `REGRESSES` finding. The
+    clause "not at least TREND-BETTER ⇒ `NOT-CURED`" is withdrawn.
+- *The confound behind "absent at the default law", resolved on the
+  ledgers.*
+  - Every LOCKED row in the p27/p34 tables comes from a static cap on the
+    `[LOOPDIAG]` binary, and the clean rows above came from main's binary
+    at the default law. Both read `RWM_STORE_BOOT=128` on `[GATES]`. So
+    "boots at 128 and grows" does not explain the absence; it was an
+    inference and is withdrawn.
+  - A scan of every other committed c1d and c8 sender log (anchor-diag,
+    p29, store-law-n1, thread-pd, thread-r1, thread-r2, thread-r3-diag,
+    thread-sk; the classifier above) separates the two. The instrument is
+    not the cause: the same p29 `[LOOPDIAG]` binary locked 0 of 12 rows at
+    the default law, and 2 of 3 at c8 `RWM_STORE=384` (c1d
+    `RWM_STORE=768` 0 of 3).
+  - The default law is not immune. Main's binaries show 1 LOCKED row in 149
+    two-leg default-law rows: anchor-diag, c8, `PRS` arm, s7, where leg 1
+    froze at 137 ms against `wrtt` 44 from t = 0.5 s.
+  - So the static cap raises the rate, and the default cells' expected
+    count is about 0 to 1 in 6, not exactly 0. Outcome 3's default cells
+    are therefore scored on §21's clauses and the share clause, not on a
+    lock-out count.
+  - §36's D8, registered on main's binary at static caps (c1d {128, 512,
+    2048}, c8 {16 … 1024}), answers reproduction on main's binary first. If
+    §36 runs first and D8 shows no frozen idle leg at c8 ≥ 256 or
+    c1d ≥ 512, then §38 is re-registered before its session, not run as
+    written.
+- *Stated for the reader.*
+  - Paper §5.7's fixed points are gaps at I_A = 0, not closed-loop shares:
+    per-leg W_i is not in the ledgers.
+  - Test 6 now pins I_0 = 0, ε̂_0 = 0.026 and ε̂_1 = 0.017, at which the arm's
+    gap is +3.8 nats and P(leg 1) = σ(−3.8) = 0.022 ≥ e^−4.
