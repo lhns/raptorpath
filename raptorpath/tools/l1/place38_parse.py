@@ -449,9 +449,11 @@ def score(paths, out=print):
     if verdict is None:
         for cell, store in CONTROLS + DEFAULTS:
             k = key(cell, store)
-            if res["cells"][k]["worse"]:
+            # Amendment 4: §21's goodput clause at c1d default decides CURED vs CURED-AT-COST only (exempt here).
+            worse = [w for w in res["cells"][k]["worse"] if not (k == key("c1d-400", "def") and w == "goodput")]
+            if worse:
                 reg.append(k)
-                out(f"REGRESSES? {k}: §21 clause(s) WORSE: {','.join(res['cells'][k]['worse'])}")
+                out(f"REGRESSES? {k}: §21 clause(s) WORSE: {','.join(worse)}")
         for cell, store in CONTROLS:
             k = key(cell, store)
             wm = [_f((r.get("eta") or {}).get("w_mv")) for r in cell_rows(live, cell, store, "WIRE")]

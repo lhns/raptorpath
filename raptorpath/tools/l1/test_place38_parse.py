@@ -263,8 +263,10 @@ v, txt = run(ledger(trend_worse, lock_main=LOCK))
 check("CURED-AT-COST(x %): the c1d default goodput clause reads TREND-WORSE (median -7.5 %, ranges overlap) -> x = the median difference",
       v.startswith("CURED-AT-COST(-7.5 %)") and "TREND-WORSE" in txt, v)
 v, txt = run(ledger(wire_gp("c1d-400", "def", 0.90), lock_main=LOCK))
-check("OPEN POINT (asked of the coordinator): goodput WORSE (disjoint, -10 %) at c1d default satisfies outcome 3 (a §21 clause WORSE at a default "
-      "cell) before outcome 5 -> REGRESSES-AT(c1d-400@def), taken literally", v == "REGRESSES-AT(c1d-400@def)", v)
+check("Amendment 4: goodput WORSE (disjoint, -10 %) at c1d default is exempt from outcome 3 and decides 5 vs 6 -> CURED-AT-COST(-10.0 %)",
+      v.startswith("CURED-AT-COST(-10.0 %)"), v)
+v, _ = run(ledger(lambda r: dict(trend_worse(wire_gp("c1d-400", "def", 1.0)(r)), cpu_cli=r["cpu_cli"] * 1.5) if (r["cell"], r["store"], r["arm"]) == ("c1d-400", "def", "WIRE") else r, lock_main=LOCK))
+check("... but every other §21 clause at c1d default stays in outcome 3 (client CPU +50 % -> REGRESSES-AT(c1d-400@def))", v == "REGRESSES-AT(c1d-400@def)", v)
 v, _ = run(ledger(wire_gp("c1d-400", "def", 0.97), lock_main=LOCK))
 check("... a 3 % dip is inside c1d's 5.6 % MDE: CURED", v.startswith("CURED") and "AT-COST" not in v, v)
 v, _ = run(ledger())
