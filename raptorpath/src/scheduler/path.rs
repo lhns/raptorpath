@@ -25,6 +25,13 @@ pub struct PathState {
     pub src_inflight: u32,
     /// Whether the path is considered usable
     pub active: bool,
+    /// quinn's packet-timed smoothed RTT of this leg's connection, mirrored
+    /// here at every ack batch and path report (`RWM_PLACE_WIRE`, paper §5.7).
+    /// `None` until quinn has an RTT sample for the leg. Unlike `srtt()` it
+    /// does not need this leg's own symbols to be echoed, so an idle leg keeps
+    /// it fresh, and it holds no local dwell. Read only by `place_costs` under
+    /// the arm; written only while the arm is on.
+    wire_rtt: Option<Duration>,
     /// Slow-start threshold (kept for test compatibility)
     pub ssthresh: u32,
     /// Whether we are in slow-start phase (Copa startup)
@@ -147,6 +154,7 @@ impl PathState {
             in_flight: 0,
             src_inflight: 0,
             active: true,
+            wire_rtt: None,
             ssthresh: 64,
             in_slow_start: true,
             last_report: now,
@@ -469,6 +477,23 @@ impl PathState {
         queue_wait + srtt / 2.0 + eps * srtt
     }
 
+    /// `expected_delivery_load_at` with the propagation base read off the
+    /// leg's wire RTT (`RWM_PLACE_WIRE`, paper §5.7):
+    ///
+    /// ```text
+    ///   E_i = (I_i/W_i)·s_i  +  (1/2 + eps_i)·w^_i
+    /// ```
+    ///
+    /// The queue term keeps the echo srtt `s_i` (it is multiplied by this leg's
+    /// own load, so it is exactly 0 at idle); only the base moves to `w^_i`,
+    /// which holds no local dwell and does not freeze when the leg idles.
+    /// With `w^_i == srtt` this is `expected_delivery_load_at(srtt)`.
+    pub fn expected_delivery_load_wire_at(&self, srtt: f64, wire: f64) -> f64 {
+        let eps = self.estimator.loss_rate();
+        let cwnd = self.cwnd.max(1) as f64;
+        (self.in_flight as f64 / cwnd) * srtt + (0.5 + eps) * wire
+    }
+
     /// Effective goodput: throughput * (1 - loss_rate).
     /// This is what actually gets through to the receiver.
     pub fn effective_goodput(&self) -> f64 {
@@ -698,6 +723,16 @@ impl PathState {
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
     pub fn copa_min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
+    }
+
+    /// Mirror quinn's packet-timed RTT for this leg (`RWM_PLACE_WIRE`).
+    pub fn set_wire_rtt(&mut self, rtt: Duration) {
+        self.wire_rtt = Some(rtt);
+    }
+
+    /// The mirrored wire RTT, `None` if quinn has not measured the leg yet.
+    pub fn wire_rtt(&self) -> Option<Duration> {
+        self.wire_rtt
     }
 
     /// Smoothed RTT estimate (Copa's EWMA; the loss estimator's EWMA as a

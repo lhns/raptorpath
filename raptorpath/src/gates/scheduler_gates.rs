@@ -235,6 +235,36 @@ pub(crate) fn resolve_place_wdiv_derived() -> bool {
     on
 }
 
+/// Whether the wire-clocked placement base is active (`RWM_PLACE_WIRE`,
+/// experiment arm, paper §5.7 "The corrected price", status §38): the base of
+/// the completion-time term reads quinn's packet-timed RTT of the leg,
+///
+/// ```text
+///     E_i  =  (I_i/W_i) * s_i  +  (1/2 + eps_i) * w_i^
+///     w_i^ =  wire_i  ?:  min_j wire_j  ?:  s_i          (availability, not a mode)
+/// ```
+///
+/// where the shipped base is `(1/2 + eps_i) * s_i` with `s_i` the app-echo
+/// srtt, which freezes (with the leg's own dwell in it) when the leg carries
+/// nothing. `ref`, the queue term, `B_i`, `V_i` and the `[ETA]` stamp are
+/// unchanged. Off is the shipped law bit-for-bit.
+pub fn place_wire_active() -> bool {
+    crate::gates::get().place_wire
+}
+
+/// The resolve-time read behind [`place_wire_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_place_wire() -> bool {
+    let on = place_arm_flag("RWM_PLACE_WIRE");
+    tracing::info!(
+        place_wire = on,
+        "placement base (RWM_PLACE_WIRE, paper §5.7): (1/2+eps)*w_i with w_i \
+         quinn's packet-timed RTT of the leg when ON; the app-echo srtt when \
+         OFF (shipped, bit-identical)"
+    );
+    on
+}
+
 /// Whether the cold-start placement price is active (`RWM_COLD_PLACE`,
 /// anchor-hygiene family, default off).
 ///

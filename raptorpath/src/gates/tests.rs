@@ -59,7 +59,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 ",
     "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
     "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 ",
-    "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
+    "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_PLACE_WIRE=0 RWM_GEN=384 RWM_PIPELINE=2 ",
     "RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 ",
     "RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 ",
     "RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset ",
@@ -561,6 +561,7 @@ fn every_gate_accessor_reads_the_one_resolution() {
     assert_eq!(crate::scheduler::place_t_derived_active(), g.place_t_derived);
     assert_eq!(crate::scheduler::place_hol_active(), g.place_hol);
     assert_eq!(crate::scheduler::place_wdiv_derived_active(), g.place_wdiv_derived);
+    assert_eq!(crate::scheduler::place_wire_active(), g.place_wire);
     assert_eq!(crate::scheduler::ack_merge_active(), g.ack_merge);
     assert_eq!(crate::scheduler::loss_sent_truth_active(), g.loss_sent_truth);
     assert_eq!(crate::scheduler::release_1to1_active(), g.release_1to1);
@@ -606,4 +607,24 @@ fn pool_anchor_does_not_follow_the_estimator_cadence() {
         "the [GATES] echo must witness the decoupled pool anchor: {}",
         g.echo_line()
     );
+}
+
+/// `RWM_PLACE_WIRE` (status §38): default absent, named two-sided on the
+/// `[GATES]` echo, and the scheduler's per-instance flag follows the process
+/// gate. Written on a resolved copy, no env, so parallel resolves cannot race.
+#[test]
+fn place_wire_resolves_off_by_default_and_echoes() {
+    let mut g = RuntimeGates::resolve();
+    assert!(!g.place_wire, "RWM_PLACE_WIRE ships ABSENT: the wire-clocked base is opt-in");
+    assert!(
+        g.echo_line().contains(" RWM_PLACE_WDIV_DERIVED=0 RWM_PLACE_WIRE=0 "),
+        "the default echo must NAME `RWM_PLACE_WIRE=0` two-sided: {}",
+        g.echo_line()
+    );
+    g.place_wire = true;
+    assert!(g.echo_line().contains(" RWM_PLACE_WIRE=1 "), "{}", g.echo_line());
+    // The process resolution and a fresh scheduler agree with the echo.
+    assert!(!crate::scheduler::place_wire_active());
+    let sched = crate::scheduler::Scheduler::new(std::sync::Arc::new(crate::scheduler::WallClock));
+    assert!(!sched.place_wire(), "a fresh scheduler carries the resolved (absent) arm");
 }
