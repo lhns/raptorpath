@@ -1,0 +1,11 @@
+LD-ALL start plan=43 load=0.15 0.06 0.46 1/384 1225847 2026-11-10T15:44:43Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=1.00 avg60=1.00 avg300=0.46 total=4492377743 2026-11-10T15:44:51Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.12 0.06 0.46; io=full avg10=1.00 avg60=1.00 avg300=0.46 total=4492377743 2026-11-10T15:44:51Z
+LD-ALL parser test ok 2026-11-10T15:44:59Z
+LD-ALL built wall=318s 2026-11-10T15:50:17Z
+LD-ALL binary 94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008 2026-11-10T15:50:17Z
+LD-ALL SMOKE-PASS 2026-11-10T15:52:06Z
+LD-ALL battery start load=2.69 2.19 1.55; io=full avg10=0.03 avg60=0.16 avg300=0.23 total=4493709090 2026-11-10T15:52:06Z
+LD-ALL FAILED: ABORT-BUDGET 1632s left before LD_HARD (need 2700) 2026-11-10T15:52:06Z
