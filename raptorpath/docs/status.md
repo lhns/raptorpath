@@ -10456,6 +10456,68 @@ slow.
 **Duration.** Build ≈ 6 min; 110 invocations ≈ 60–75 min (c8 at 16 ≈
 100 s). Inside the 4 h launch deadline and the 5 h cap.
 
+### 40. Result
+
+Scored 2026-11-10 against the pre-registration, literally
+(`docs/l1-raw/disp40/score.txt`). Diagnostic: nothing ships.
+**`NOT-YET`**, failed on one leg only: c8's slow leg, where E3 fails at cap
+32 and E4 is unscoreable at 256. **E1–E4 all pass at c1s, c2 and c8's fast
+leg. `AGG-OVER-READ`, ×2.05 (`c2slot`); `c2tbf` does not over-read.**
+
+*Session.* 08:31:04–09:36:11Z. Precondition met, both locks, gate ok,
+build 338 s (binary `79572edd…edfff5`, the §36 engine = main), smoke ok,
+battery `DONE-ALL`. 108/108 rows LIVE, all rc 0, io `full avg10` ≤ 0.49.
+Abort table: none. tc: both scenarios valid as written (`c2tbf` uses netem
+`root handle 1:` with the tbf as child `10:`). The root `Sent` equals the
+child's, so the windowed witnesses held unchanged.
+
+*Readings (Q = mean L̂ ÷ sustained rate; 4 rows per cap).*
+
+| cell / leg | Q below the crossover | Q at and above the crossover | E3 min (1+q)·L̂/D | E4 max/min ≥ crossover | verdict |
+|---|---|---|---|---|---|
+| c1s | 0.09, 0.30, 0.50 (16–64) | 1.001–1.038 (128–2 048) | 1.93 | ≤ 1.013 | E1–E4 PASS |
+| c2 | 0.17, 0.54 (16–32); 1.000 at 64 | 1.009 (128–512) | 1.65 | ≤ 1.001 | E1–E4 PASS |
+| c8 fast | 0.17, 0.50; 1.00 at 64 | 1.009–1.013 | 1.12 | ≤ 1.005 | E1–E4 PASS |
+| c8 slow | 0.008–0.20 (16–128) | 0.995–1.011 (256–1 024) | 0.81 at 32 | 256: 3 rows only | E3 FAIL, E4 UNSCOREABLE |
+| c2slot | 0.51 (32) | 1.62 (128), 2.05 (512) | 3.07 | ≤ 1.023 | E1, E2 FAIL |
+| c2tbf | 1.09 (32) | 1.01 (128, 512) | 1.36 | ≤ 1.004 | E1–E4 PASS |
+
+- **c8 slow leg.** Three rows had the slow leg idle (CAP128 s42 ×2, CAP256
+  s7). At cap 32 one row's L̂/D gives 0.81. That leg carries ≈ 2 % of the
+  traffic below the crossover by the placement law (§36 D7/D8), so its
+  floor escape is set by placement, not by the store.
+- **E6** (the µs fields at c1s; meaning per `src/net/diag.rs`, not yet
+  read):
+  - `sig_us` and `rvar_us` fall from 64 to 15 µs as the cap grows;
+  - `qsp_us` rises from 139 to 738 µs up to 512 and then falls;
+  - `tlag_us` rises from 91 µs to 2.24 ms;
+  - `msd_us` stays at 2.
+
+*Predictions.*
+- E1–E3 at c2 and c8, and E1/E2 at c1s: MET, except E3 on c8's slow leg.
+- E4 the risk at c1s: MISSED (it passes at ≤ 1.013).
+- `c2slot` over-reads ×1.5–3: MET (×1.62–2.05).
+- `c2tbf` ≈ ×2: MISSED (1.01). netem releases the policer's burst into the
+  tbf child at the netem rate and the tbf passes it on at its own token
+  rate, so no burst reaches the wire faster than the sustained rate here. A
+  policer upstream of a faster link was not tested.
+- Expected verdict `P90-READS-LINK` with `AGG-OVER-READ`: MISSED, on the
+  slow leg only.
+
+*What it means (outside the decision rule, no verdict).* The p90 estimator,
+fixed in advance, reads the link within +4 % on every leg that carries its
+share of traffic. That holds from a cap crossover up, with no over-read and
+row agreement within 1.3 %. Below the crossover it reads ≥ 1.5 × the
+delivered rate on those legs, so a store law fed by it expands out of the
+floor.
+
+What fails is a placement-starved leg, which forms no trains to read: the
+§38 lock-out and the placement law's own low share. Aggregation (`slot`)
+over-reads ×2, so a law built on L̂ needs an aggregation bound before any
+build, as §40's decision rule names. The store law still lacks a
+dwell-free S (§37 addendum). Next: the joint law with L̂, an aggregation
+bound and a placement-aware rule for a leg with no trains, derived on paper.
+
 ### 40. Standing decision — δ's authority on the store law (user, 2026-11-10)
 
 The store law's δ dial moves its fixed point by only ≈ 5–10 % across the
