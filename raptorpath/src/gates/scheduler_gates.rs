@@ -247,25 +247,6 @@ pub(crate) fn resolve_cold_place() -> bool {
     on
 }
 
-/// Whether the raw-sample echo-ratio floor is active (`RWM_HONEST_K`,
-/// anchor-hygiene family, default off).
-///
-/// K_i (`EchoRatioMin`, the residence-clock ratio of the honest caps and the
-/// three-term law) is meant to be the smallest observed echoSRTT/RTprop but is
-/// fed the smoothed srtt at the 5 ms refresh clock. The minimum of an EWMA sits
-/// near the distribution's mean, so K reads high wherever delay is wide. On,
-/// the same tracker (same window, same ≥ 1 clamp) is fed the raw per-sample
-/// echo/RTprop ratio at `record_rtt`, making K min(raw)/min(raw).
-pub fn honest_k_active() -> bool {
-    crate::gates::get().honest_k
-}
-
-/// The resolve-time read behind [`honest_k_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_honest_k() -> bool {
-    crate::config::anchor_gate("RWM_HONEST_K")
-}
-
 /// Whether the window-mode control-datagram merge is active (`RWM_ACK_MERGE`,
 /// default on; `=0` is the opt-out arm; paper §9.5).
 ///

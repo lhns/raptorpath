@@ -1003,19 +1003,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
              control, value-identical by unit-pinned equivalence)"
         );
     }
-    if crate::scheduler::honest_k_active() {
-        info!(
-            "raw-sample echo-ratio floor ACTIVE (RWM_HONEST_K: EchoRatioMin fed \
-             the RAW per-sample rtt/RTprop ratio at the sample clock in \
-             PathState::record_rtt, consumed as k_raw.unwrap_or(legacy) by every \
-             honest-cap/three-term K read — the windowed MIN reads the delay \
-             distribution's FLOOR instead of the smoothed series' near-mean \
-             minimum (the measured jit25 x1.34 inversion); same window, clamp \
-             and seed-identity guard; zero constants; RWM_HONEST_K=0 = \
-             smoothed-at-refresh control)"
-        );
-    }
-
     // ── Window-mode control-datagram merge (env RWM_ACK_MERGE) ────────────
     // Mechanism-liveness echo (measurement-discipline rule 1) — emitted in
     // `run_impl` so it fires in both roles: the receiver is what suppresses

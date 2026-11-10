@@ -3367,36 +3367,6 @@ fn echo_ratio_seed_identity_sample_is_discarded_not_latched() {
     );
 }
 
-#[test]
-fn honest_store_cap_is_residence_plus_recovery_runway() {
-    // Derived, not tuned: cap_i = anchor_i·(K_i + gain − 1) +
-    // rate_i·(gain−1)·R — residence (Little's law on the unloaded
-    // drain clock) + (gain−1) recovery rounds on the recovery engine's
-    // clock (R = 100 ms, the hole-refresh/tail-sweep cadence bound)
-    // plus the retransmit flight (the anchor term's second round).
-    // c2-like at the measured cell clocks (rate 10 400 sym/s, RTprop
-    // 8 ms → anchor 83.2; K = 2): 83.2×3 + 10 400×0.1 = 1289.6.
-    let c = honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 2.0, 2.0)
-        .unwrap();
-    assert!((c - 1289.6).abs() < 1e-6);
-    // K clamps at 1 from below (K < 1 is clock noise).
-    assert_eq!(
-        honest_store_cap(Some(83.2), Some(10_400.0), 0.5, 2.0),
-        honest_store_cap(Some(83.2), Some(10_400.0), 1.0, 2.0)
-    );
-    // gain = 1: pure residence, zero runway — the R term vanishes with
-    // (gain−1), never a negative runway.
-    let g1 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 1.0).unwrap();
-    assert!((g1 - 83.2 * 1.5).abs() < 1e-9);
-    let g05 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 0.5).unwrap();
-    assert!((g05 - 83.2 * 1.5).abs() < 1e-9);
-    // Warm-up (no anchor / no rate): None — the caller keeps its
-    // warm-up share.
-    assert_eq!(honest_store_cap(None, Some(10_400.0), 2.0, 2.0), None);
-    assert_eq!(honest_store_cap(Some(83.2), None, 2.0, 2.0), None);
-    assert_eq!(honest_store_cap(Some(0.0), Some(10_400.0), 2.0, 2.0), None);
-}
-
 // ── The three-term law ────────────────────────────────────────────────
 
 /// A warm term at the bench's own axes: `k = srtt/RTprop` exactly, so
@@ -3706,7 +3676,6 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
         rate: Some(10_400.0),
         srtt: Duration::from_millis(12), // RTprop 8 ms + a 4 ms wire queue
         rtprop: Some(Duration::from_millis(8)),
-        k_raw: None,
     };
     let t0 = 1_000_000u64;
     let first = three_term_terms(&mut ks, &[Some(honest)], t0);
@@ -3738,128 +3707,6 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
         three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap().0,
         WIN_STORE_MAX
     );
-}
-
-/// `RWM_HONEST_K`: the K override is one formula —
-/// `k_raw.unwrap_or(smoothed)` — so (a) `k_raw = None` (the shipped
-/// default: the gate resolves off and `PathState::k_raw()` returns None)
-/// is byte-identical to the smoothed law, (b) `Some(k)` substitutes the
-/// raw-fed floor into the unchanged law, and (c) the smoothed tracker's
-/// window state is observed identically either way (the A/B isolates the
-/// K source, nothing else).
-#[test]
-fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
-    let mk = |k_raw: Option<f64>| HonestCapPath {
-        id: 1,
-        anchor: Some(83.2),
-        rate: Some(10_400.0),
-        srtt: Duration::from_millis(12),
-        rtprop: Some(Duration::from_millis(8)),
-        k_raw,
-    };
-    // (a) Off ⇒ byte-identical to the smoothed law.
-    let mut ks_off: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let off = honest_cap_terms(&mut ks_off, &[Some(mk(None))], 1_000_000, 2.0);
-    let legacy_k = 12.0 / 8.0;
-    let expect_legacy = honest_store_cap(Some(83.2), Some(10_400.0), legacy_k, 2.0);
-    assert_eq!(off[0], expect_legacy, "None ⇒ the legacy K, bit-exactly");
-
-    // (b) On ⇒ the same law at the raw floor.
-    let mut ks_on: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let on = honest_cap_terms(&mut ks_on, &[Some(mk(Some(1.0)))], 1_000_000, 2.0);
-    let expect_raw = honest_store_cap(Some(83.2), Some(10_400.0), 1.0, 2.0);
-    assert_eq!(on[0], expect_raw, "Some(k) ⇒ the same law at the raw K");
-    assert!(on[0].unwrap() < off[0].unwrap(), "the floor is below the smoothed read");
-
-    // (c) The smoothed tracker was fed identically on both arms.
-    assert_eq!(ks_off.get(&1).map(|e| e.k()), ks_on.get(&1).map(|e| e.k()));
-
-    // Same law through the three-term collector: the window term's K.
-    let tt = |k_raw: Option<f64>| ThreeTermPath {
-        id: 2,
-        rate: Some(10_400.0),
-        srtt: Duration::from_millis(12),
-        rtprop: Some(Duration::from_millis(8)),
-        k_raw,
-    };
-    let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let t_off = three_term_terms(&mut ks, &[Some(tt(None))], 1_000_000);
-    assert!((t_off[0].unwrap().k - legacy_k).abs() < 1e-12);
-    let t_on = three_term_terms(&mut ks, &[Some(tt(Some(1.0)))], 1_000_000);
-    assert!((t_on[0].unwrap().k - 1.0).abs() < 1e-12);
-}
-
-#[test]
-fn honest_caps_shallow_account_sits_at_recovery_budget_not_knee() {
-    // On honest anchors. Deep c2-like path (rate 10 400, RTprop 8 ms,
-    // K 1.5): cap = 1248 — differentiated, inside the knee (an over-read
-    // anchor knee-clamps to 2048).
-    let fast = (honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 1.5, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, 2048);
-    assert_eq!(fast, 1248);
-    assert!(fast < 2048, "fast cap must be derived, not knee-clamped");
-    // Shallow c8-slow-class path (rate 1 954, RTprop 60 ms → anchor
-    // 117.2; K 1.3): cap = 466 ≈ a measured good pin (508 outstanding,
-    // 0.26 s dwell) — its recovery budget, not the 2048 knee (≈1 s parked
-    // dwell). The own-pick parking channel is closed by construction.
-    let slow = (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, 2048);
-    assert_eq!(slow, 466);
-    assert!(slow < 2048 / 4, "slow cap must sit at its recovery budget, not the knee");
-    // Per-path independence still holds: deepening the fast pipe does
-    // not move the slow cap.
-    let fast2 = (honest_store_cap(Some(20_800.0 * 0.008), Some(20_800.0), 1.5, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, 2048);
-    assert!(fast2 > fast);
-    assert_eq!(
-        (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
-            .unwrap()
-            .ceil() as usize)
-            .clamp(64, 2048),
-        slow
-    );
-}
-
-#[test]
-fn honest_anchor_sum_cap_preserves_sc2_throughput_headroom() {
-    // At the law level: on honest anchors the floor law's cap falls from
-    // the 1024 latch to gain·anchor_honest ≈ 150–170 at a true 8-ms
-    // RTprop — a 100-Mbit pipe whose recovery round is ~12× its wire
-    // round trip.
-    let rate: f64 = 10_400.0;
-    let anchor: f64 = rate * 0.008;
-    let store_max = 1024usize;
-    // The floor law on honest anchors (the floor-law control
-    // arm): gain·anchor = 167 ≪ 1024.
-    let floor_law = ((2.0 * anchor).ceil() as usize).clamp(64, store_max);
-    assert_eq!(floor_law, 167);
-    // The honest law at measured drain clocks (K ≈ 2): 1290 → latches
-    // the 1024 store — headroom supplied by the engine's own recovery
-    // cadence.
-    let honest = (honest_store_cap(Some(anchor), Some(rate), 2.0, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, store_max);
-    assert_eq!(honest, store_max);
-    // Monotone: for any measured K ≥ 1 the honest cap strictly exceeds
-    // the floor law — honest anchors can widen but never shrink
-    // the single-path window relative to the control.
-    for k in [1.0, 1.2, 1.7, 2.5, 4.0] {
-        let c = (honest_store_cap(Some(anchor), Some(rate), k, 2.0)
-            .unwrap()
-            .ceil() as usize)
-            .clamp(64, store_max);
-        assert!(c > floor_law);
-    }
 }
 
 /// The derived pipeline depth M* = ceil(rate·2·SRTT/G)+1 — A* =

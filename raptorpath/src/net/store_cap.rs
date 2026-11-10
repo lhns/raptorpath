@@ -261,150 +261,10 @@ impl EchoRatioMin {
     }
 }
 
-/// The recovery engine's per-round latency ceiling, in seconds — the
-/// hole-refresh / tail-sweep cadence clamp (`HOLE_NACK_REFRESH_MAX` =
-/// `TAIL_SWEEP_MAX_US` = 100 ms). A stalled hole in plain window mode is
-/// recovered by the SACK re-advertisement + tail-sweep engine, whose round
-/// runs on this clock (2×SRTT clamped [25, 100] ms), not on RTprop — at a
-/// short-RTprop cell a recovery round is many wire round trips. The honest
-/// cap's runway term must fund it (see [`honest_store_cap`]); the clamp
-/// ceiling is the honest worst round, which GE burst loss routinely reaches.
-pub const HONEST_RECOVERY_ROUND_S: f64 = TAIL_SWEEP_MAX_US as f64 / 1e6;
-
-/// Honest store cap: the outstanding cap derived on the honest plain-mode
-/// anchor (`RWM_PLAIN_RS`), without the loaded echo clock whose
-/// dwell→echo→cap feedback parks a slow path.
-///
-/// Derivation (Little's law on the retention store, on clocks the store's own
-/// queue cannot inflate):
-///
-///   - a retained symbol's unloaded residence is K·RTprop (K = the
-///     windowed-min echoSRTT/RTprop ratio, [`EchoRatioMin`]; the loaded echo
-///     is used nowhere in this cap). Sustaining rate_i needs
-///     rate_i·K_i·RTprop_i outstanding — the residence term;
-///   - a hole strands the in-order frontier for one recovery round, which
-///     runs on the recovery engine's clock: R = 100 ms
-///     ([`HONEST_RECOVERY_ROUND_S`]) plus the retransmit flight RTprop_i.
-///     Keeping the pipe fed across it needs (gain−1) rounds of runway — the
-///     runway term (gain 2.0 = 1 round):
-///
-/// ```text
-///   cap_i = rate_i·(K_i·RTprop_i + (gain−1)·(R + RTprop_i))
-///         = anchor_i·(K_i + gain − 1) + rate_i·(gain−1)·R
-/// ```
-///
-/// where `anchor_i` = BtlBw_i×RTprop_i (`copa_bdp_anchor`). The floor law
-/// gain·anchor_i is the R = 0, K = 1 degenerate; the honest form strictly
-/// widens it (K ≥ 1, R > 0), so it never shrinks a cap below that law. The
-/// caller clamps to [floor, knee/store]; warm-up (no anchor) returns None and
-/// the caller keeps its warm-up share. `R` is an open constant (paper §11.2).
-pub fn honest_store_cap(
-    anchor_bdp: Option<f64>,
-    rate: Option<f64>,
-    k_ratio: f64,
-    gain: f64,
-) -> Option<f64> {
-    match (anchor_bdp, rate) {
-        (Some(a), Some(r)) if a > 0.0 && r > 0.0 => {
-            let runway_rounds = (gain - 1.0).max(0.0);
-            Some(
-                a * (k_ratio.max(1.0) + runway_rounds)
-                    + r * runway_rounds * HONEST_RECOVERY_ROUND_S,
-            )
-        }
-        _ => None,
-    }
-}
-
 /// The `EchoRatioMin` half-window for the store-cap K_i state: ~10 s total
 /// = two 5 s half-buckets (the min-RTT window class). Every consumer of the
 /// honest per-path cap keys its windowed-min tracker on this one window.
 pub const PERCAP_K_HALF_WINDOW_US: u64 = 5_000_000;
-
-/// One honest per-path store-cap term — the law once, with its inputs chosen
-/// at the call site:
-///
-///   1. fetch-or-create this path's windowed-min echo-ratio tracker
-///      (`EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)`),
-///   2. feed it this refresh's (srtt, RTprop) sample
-///      (`observe_srtt_over_rtprop` — seed-identity guarded),
-///   3. evaluate [`honest_store_cap`] on (anchor, rate, K_i, gain).
-///
-/// K_i is observed for every path this is called on, warm anchor or not —
-/// the tracker is a clock statistic, not a cap statistic, and starving it on
-/// cold-anchor ticks would make the window's min depend on anchor warmth.
-/// Idempotent within a refresh tick.
-///
-/// `k_raw` (`RWM_HONEST_K`) is the path's raw-sample windowed-min ratio
-/// (`PathState::k_raw`), substituted for the tracker's k in the unchanged law
-/// — `k_raw.unwrap_or(k)`. The tracker is still observed on every call, so its
-/// window state does not depend on the gate; `None` (default) is unchanged
-/// behaviour.
-pub fn honest_cap_term(
-    ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
-    id: u32,
-    srtt: Duration,
-    rtprop: Option<Duration>,
-    now_us: u64,
-    anchor: Option<f64>,
-    rate: Option<f64>,
-    gain: f64,
-    k_raw: Option<f64>,
-) -> Option<f64> {
-    let k = ks
-        .entry(id)
-        .or_insert_with(|| EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US))
-        .observe_srtt_over_rtprop(srtt, rtprop, now_us);
-    honest_store_cap(anchor, rate, k_raw.unwrap_or(k), gain)
-}
-
-/// One path's inputs to [`honest_cap_term`], as read off `PathState`.
-/// Exists so the collector below can be driven from a
-/// component bench with no transport, no tokio and no scheduler
-/// (`docs/measurement-discipline.md` rule 14).
-#[derive(Debug, Clone, Copy)]
-pub struct HonestCapPath {
-    pub id: u32,
-    /// The cap's RESIDENCE anchor (BtlBw_i·RTprop_i), `None` until warm.
-    pub anchor: Option<f64>,
-    /// The cap's RUNWAY rate (symbols/s), `None` until warm.
-    pub rate: Option<f64>,
-    pub srtt: Duration,
-    pub rtprop: Option<Duration>,
-    /// `RWM_HONEST_K`: the path's raw-sample windowed-min echo ratio
-    /// (`PathState::k_raw`), `Some` only with the gate on. Consumers read
-    /// `k_raw.unwrap_or(<tracker's k>)`; `None` (the default) leaves the
-    /// tracker's k in place.
-    pub k_raw: Option<f64>,
-}
-
-/// One collector for the honest per-path cap terms over a path set.
-///
-/// The pooled store-cap laws (`RWM_POOL_ANCHOR`) differ only in (a) which rate source fills
-/// [`HonestCapPath`] and (b) which path set the caller enumerates. Both are
-/// the caller's choice; the loop is not.
-///
-/// A `None` slot is a path id that no longer resolves to a `PathState`
-/// between the caller taking the id list and reading it: it contributes a
-/// `None` term (so `capw_store_cap`'s all-warm requirement still refuses to
-/// engage on a partial sum) and observes no clock sample.
-pub fn honest_cap_terms(
-    ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
-    paths: &[Option<HonestCapPath>],
-    now_us: u64,
-    gain: f64,
-) -> Vec<Option<f64>> {
-    paths
-        .iter()
-        .map(|slot| {
-            slot.and_then(|p| {
-                honest_cap_term(
-                    ks, p.id, p.srtt, p.rtprop, now_us, p.anchor, p.rate, gain, p.k_raw,
-                )
-            })
-        })
-        .collect()
-}
 
 // ═══ The three-term outstanding-data limit (RWM_THREE_TERM, off) ═════════
 //
@@ -503,7 +363,7 @@ pub fn contract_stall_s(rho: f64, b_hint: f64, rtprop_s: f64, srtt_s: f64) -> f6
 }
 
 /// One live path's inputs to the three-term law, as read off `PathState`.
-/// Exists (like [`HonestCapPath`]) so the law can
+/// Exists so the law can
 /// be driven from a component bench with no transport, no tokio and no
 /// scheduler (`docs/measurement-discipline.md` rule 14).
 #[derive(Debug, Clone, Copy)]
@@ -513,11 +373,6 @@ pub struct ThreeTermPath {
     pub rate: Option<f64>,
     pub srtt: Duration,
     pub rtprop: Option<Duration>,
-    /// `RWM_HONEST_K`: the raw-sample windowed-min ratio
-    /// (`PathState::k_raw`), `Some` only with the gate on — substituted for
-    /// the tracker's k in the unchanged law (`k_raw.unwrap_or(k)`), including
-    /// the `[3T]` window term. `None` (default) leaves the tracker's k.
-    pub k_raw: Option<f64>,
 }
 
 /// One warm path's three-term term, with the honest clock already resolved.
@@ -535,13 +390,12 @@ pub struct ThreeTermTerm {
 }
 
 /// One collector for the three-term inputs over a path set — the
-/// [`honest_cap_terms`] shape, and deliberately the same `EchoRatioMin` map
+/// per-path-term shape, and deliberately the same `EchoRatioMin` map
 /// and window, so the engine has exactly one definition of K per path.
 ///
 /// K is observed for every path this is called on, warm anchor or not (the
 /// tracker is a clock statistic, not a cap statistic). Idempotent within a
-/// refresh tick, so calling it beside [`honest_cap_terms`] at the same
-/// `now_us` cannot perturb either.
+/// refresh tick.
 pub fn three_term_terms(
     ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
     paths: &[Option<ThreeTermPath>],
@@ -555,9 +409,6 @@ pub fn three_term_terms(
                 .entry(p.id)
                 .or_insert_with(|| EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US))
                 .observe_srtt_over_rtprop(p.srtt, p.rtprop, now_us);
-            // `RWM_HONEST_K`: the raw-sample floor when the gate supplies
-            // one; the tracker above is still observed on every tick.
-            let k = p.k_raw.unwrap_or(k);
             let rtprop_s = p.rtprop?.as_secs_f64();
             let rate = p.rate.filter(|r| *r > 0.0)?;
             if rtprop_s <= 0.0 {

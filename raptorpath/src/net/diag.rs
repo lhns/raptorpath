@@ -615,14 +615,6 @@ pub(crate) fn report(
                     // windowed-min echoSRTT/RTprop ratio K_i feeding
                     // the honest cap laws (1.00 when not engaged).
                     let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
-                    // `RWM_HONEST_K`: kraw = the raw-sample windowed-min
-                    // ratio the K consumers substitute under the gate ("-"
-                    // when the gate is off). khr stays the smoothed read
-                    // either way, so khr − kraw is the smoothing bias.
-                    let kraw_s = p
-                        .k_raw()
-                        .map(|k| format!("{k:.2}"))
-                        .unwrap_or_else(|| "-".to_string());
                     // The RTT second moment (paper §7.4): the standard-
                     // deviation estimate `√(EWMA[(rtt−srtt)²])`
                     // (`Path::rtt_sigma_us`) and the number of samples folded
@@ -702,8 +694,8 @@ pub(crate) fn report(
                     let plu_i = p.estimator.predictive_loss_upper(0.95);
                     let plc_i = p.estimator.cumulative_loss();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill, plu_i, plc_i
                     ));
                 }

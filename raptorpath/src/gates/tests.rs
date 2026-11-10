@@ -52,7 +52,7 @@ fn the_rtobs_level_echoes_two_for_the_deep_gauge() {
 const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
     "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 ",
-    "RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 ",
+    "RWM_HONEST_ANCHOR=1 RWM_STORE_SACK_RELEASE=1 ",
     "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
     "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 ",
     "RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
@@ -327,8 +327,8 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
     );
     // Experiments / instruments (default OFF)
-    // Honest anchor ships on, honest K off; both are named on the echo so a
-    // control arm can assert them (`docs/measurement-discipline.md` rule 15).
+    // Honest anchor ships on and is named on the echo so a control arm can
+    // assert it (`docs/measurement-discipline.md` rule 15).
     assert!(
         g.honest_anchor,
         "RWM_HONEST_ANCHOR ships default ON (value-identical by the \
@@ -336,14 +336,8 @@ fn default_env_resolves_the_shipped_stack() {
          legacy-fold A/B arm."
     );
     assert!(
-        !g.honest_k,
-        "RWM_HONEST_K ships default OFF (A/B arm)"
-    );
-    assert!(
-        g.echo_line().contains("RWM_HONEST_ANCHOR=1")
-            && g.echo_line().contains("RWM_HONEST_K=0"),
-        "the default echo must NAME both Honest-Inputs gates with their shipped \
-         values (anchor=1, K=0): {}",
+        g.echo_line().contains("RWM_HONEST_ANCHOR=1"),
+        "the default echo must NAME the Honest-Inputs gate with its shipped value (anchor=1): {}",
         g.echo_line()
     );
     assert!(
@@ -530,7 +524,6 @@ fn every_gate_accessor_reads_the_one_resolution() {
     assert_eq!(crate::scheduler::copa_wire_active(), g.copa_wire);
     assert_eq!(crate::scheduler::copa_compete_active(), g.copa_compete);
     assert_eq!(crate::scheduler::honest_anchor_active(), g.honest_anchor);
-    assert_eq!(crate::scheduler::honest_k_active(), g.honest_k);
     assert_eq!(crate::scheduler::cold_place_active(), g.cold_place);
     assert_eq!(crate::scheduler::place_t_derived_active(), g.place_t_derived);
     assert_eq!(crate::scheduler::place_hol_active(), g.place_hol);

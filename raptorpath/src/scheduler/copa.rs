@@ -601,18 +601,6 @@ pub struct CopaState {
     /// Cumulative congestion-event counter last seen from the pass-through
     /// shim (diffed, not reset — the shim counter is monotone).
     last_cong_events: u64,
-    // --- Raw-sample echo-ratio floor (`RWM_HONEST_K`) -------------------------
-    /// `RWM_HONEST_K` resolved at construction: feed the K tracker below the
-    /// raw per-sample ratio at the sample clock. False (default) ⇒ the
-    /// tracker is never fed and `k_raw_ratio()` is `None` — every K consumer
-    /// keeps the smoothed-at-refresh feed.
-    k_raw_on: bool,
-    /// The path's raw-fed windowed-min echo-ratio (`EchoRatioMin`, the same
-    /// window/clamp/guard as the net-side refresh-clock trackers): fed
-    /// rtt_raw/RTprop per sample in `record_rtt` under `k_raw_on`.
-    k_raw: crate::net::EchoRatioMin,
-    /// Monotonic µs epoch for `k_raw`'s window arithmetic.
-    k_raw_epoch: Instant,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
@@ -640,9 +628,6 @@ impl CopaState {
             compete_max_deque: VecDeque::new(),
             loss_since_update: false,
             last_cong_events: 0,
-            k_raw_on: honest_k_active(),
-            k_raw: crate::net::EchoRatioMin::new(crate::net::PERCAP_K_HALF_WINDOW_US),
-            k_raw_epoch: now,
             bw_samples: VecDeque::new(),
             bw_mono: VecDeque::new(),
             bw_o1: honest_anchor_active(),
@@ -1047,24 +1032,6 @@ impl CopaState {
                 self.rtt_tlag
                     .push_back((now, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32));
             }
-        }
-
-        // `RWM_HONEST_K`: feed the K tracker the raw sample's ratio at the
-        // sample clock, against the freshest floor. The windowed min then
-        // reads the delay distribution's floor — the quantity the
-        // honest-cap/three-term derivations assume — instead of the min of the
-        // smoothed series, which sits near the distribution's mean and reads
-        // high under heavy jitter. Same tracker type, same window, same ≥ 1 clamp,
-        // same seed-identity guard (which here also discards the exact
-        // floor-setting sample — the min then reads the second-lowest in
-        // window, a negligible upward bias under any dense sample stream,
-        // and the guard stays shared discipline rather than forking).
-        // Gated: off ⇒ nothing is fed and `k_raw_ratio()` is None — every
-        // consumer keeps the smoothed feed.
-        if self.k_raw_on {
-            let now_us = now.duration_since(self.k_raw_epoch).as_micros() as u64;
-            self.k_raw
-                .observe_srtt_over_rtprop(rtt, self.min_rtt, now_us);
         }
 
         // Copa §2.2 competitive-mode detector sampling: mark the instants at
@@ -1543,25 +1510,6 @@ impl CopaState {
             self.delta_base = self.delta;
             self.in_compete = false;
         }
-    }
-
-    /// The raw-fed windowed-min echo ratio (`RWM_HONEST_K`), or None with
-    /// the gate off (the smoothed-at-refresh feed stays the only K source).
-    /// 1.0 before the first raw sample — identical to a cold smoothed
-    /// tracker, so warm-up has no behavior cliff.
-    pub(crate) fn k_raw_ratio(&self) -> Option<f64> {
-        if self.k_raw_on {
-            Some(self.k_raw.k())
-        } else {
-            None
-        }
-    }
-
-    /// Test hook: force the raw-sample K feed on (bypasses the
-    /// process-global env cache, which other tests' env vars could race).
-    #[cfg(test)]
-    pub(crate) fn force_k_raw(&mut self) {
-        self.k_raw_on = true;
     }
 
     /// Test hook: force the O(1) max-filter read (bypasses the

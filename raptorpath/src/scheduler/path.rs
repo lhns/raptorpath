@@ -1060,16 +1060,6 @@ impl PathState {
         self.copa.min_rtt()
     }
 
-    /// `RWM_HONEST_K`: the raw-sample windowed-min echo-ratio for this path,
-    /// or None with the gate off. `Some` values are what the honest-cap /
-    /// three-term collectors substitute for the smoothed-at-refresh K
-    /// (`k_raw.unwrap_or(smoothed)` — one formula, the gate changes which
-    /// measured series feeds it); None ⇒ every consumer reads the smoothed
-    /// feed.
-    pub fn k_raw(&self) -> Option<f64> {
-        self.copa.k_raw_ratio()
-    }
-
     /// BtlBw (bottleneck rate) for this path in symbols/second — the path's
     /// own drain rate = anchor / RTprop = (BtlBw·RTprop)/RTprop.  This is the
     /// BBR-style per-path pacing rate: the slow path's future-offset data

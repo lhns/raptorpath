@@ -108,8 +108,6 @@ pub struct RuntimeGates {
     /// `RWM_HONEST_ANCHOR` (on, shipped): BtlBw windowed max on an O(1) max-deque; `=0` is the same
     /// statistic by an O(window·rate) full fold.
     pub honest_anchor: bool,
-    /// `RWM_HONEST_K` (off, arm): `EchoRatioMin` fed the raw echo/RTprop ratio, not SRTT.
-    pub honest_k: bool,
 
     // ── Store / flow control (paper §6) ──
     /// `RWM_STORE_SACK_RELEASE` (on, shipped): SACK frees the slot, keeps the payload (ADR-0060).
@@ -326,7 +324,6 @@ impl RuntimeGates {
         // The gates that print their own liveness echo at resolve time, in
         // the order the echoes have always come out.
         let honest_anchor = crate::gates::scheduler_gates::resolve_honest_anchor();
-        let honest_k = crate::gates::scheduler_gates::resolve_honest_k();
         let est_cadence = crate::control::estimator::resolve_est_cadence();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
         let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
@@ -341,7 +338,6 @@ impl RuntimeGates {
             astar_anchor: anchor_gate_default("RWM_ASTAR_ANCHOR", true),
             mstar_anchor: anchor_gate_default("RWM_MSTAR_ANCHOR", true),
             honest_anchor,
-            honest_k,
             store_sack_release: env_flag("RWM_STORE_SACK_RELEASE", true),
             store_paths: env_flag("RWM_STORE_PATHS", true),
             store_path_pool: env_parse::<usize>("RWM_STORE_PATH_POOL").unwrap_or(2048),
@@ -465,7 +461,7 @@ impl RuntimeGates {
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} \
-             RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
+             RWM_HONEST_ANCHOR={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
              RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
@@ -495,7 +491,7 @@ impl RuntimeGates {
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor),
-            b(self.honest_anchor), b(self.honest_k),
+            b(self.honest_anchor),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot,
             b(self.three_term), b(self.composed_cap),
