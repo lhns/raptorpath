@@ -1252,18 +1252,16 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 debug!(seq, nack_path, "SACK-gap retransmit");
                 // `RWM_CHARGE_RECOVERY` (default off): bypass channel 1 of 2.
                 // Without it this symbol reaches the link with no in-flight
-                // charge, no pacer debit and no `symbols_sent` increment,
-                // where every other channel meters all three at the handoff
+                // charge and no `symbols_sent` increment, where every
+                // other channel meters both at the handoff
                 // (see `send_arq_repair_batch`). Charging cannot deadlock
                 // recovery: this site reads neither `available()` nor
-                // `cwnd_full`; it is budgeted by `cached_nack_budget`. The
-                // pacer debit may go negative, as the block-ARQ repair's does.
+                // `cwnd_full`; it is budgeted by `cached_nack_budget`.
                 if crate::scheduler::charge_recovery_active() {
                     {
                         let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(nack_path) {
                             p.charge_in_flight(1);
-                            p.consume_pace_tokens(1);
                         }
                     }
                     if let Some(ps) = stats.path_ref(nack_path) {
@@ -1343,7 +1341,6 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(margin_path) {
                             p.charge_in_flight(1);
-                            p.consume_pace_tokens(1);
                         }
                     }
                     if let Some(ps) = stats.path_ref(margin_path) {

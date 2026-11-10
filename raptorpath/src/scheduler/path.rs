@@ -39,14 +39,6 @@ pub struct PathState {
     pub(crate) pending_touch: Option<Instant>,
     /// Copa delay-based congestion control state.
     pub(crate) copa: CopaState,
-    /// Token-bucket pacing: symbols sendable right now. Replenished at
-    /// cwnd/SRTT symbols per second, capped at the burst allowance
-    /// max(10, cwnd/8). May go negative: the drain in net/mod.rs is
-    /// batch-granular and lets the final batch overdraft; the debt is
-    /// repaid before the next drain, so the average rate stays cwnd/SRTT.
-    pub(crate) pace_tokens: f64,
-    /// Last time pacing tokens were replenished.
-    pub(crate) last_pace_refill: Instant,
     /// FIFO log of in_flight charges (charge instant, symbols) backing the
     /// time-based release in `expire_in_flight`. Invariant (best-effort):
     /// sum of counts == in_flight; direct writes to `in_flight` (tests,
@@ -158,8 +150,6 @@ impl PathState {
                 c.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)
                 c
             },
-            pace_tokens: Self::INITIAL_CWND as f64,
-            last_pace_refill: now,
             in_flight_log: VecDeque::new(),
             send_anchor: crate::control::SendRateAnchor::new(),
             pool_anchor_feed: pool_anchor_active(),
@@ -1125,43 +1115,6 @@ impl PathState {
         if let Some(floor) = self.copa.anchor_floor() {
             self.cwnd = self.cwnd.max(floor.min(Self::MAX_CWND));
         }
-    }
-
-    // --- Token-bucket pacing ---
-    //
-    // Units: tokens are symbols. Refill rate = cwnd [symbols] / SRTT [s]
-    // = symbols/second; burst allowance = max(10, cwnd/8) symbols.
-
-    /// Replenish pacing tokens for elapsed wall time.
-    pub fn pace_refill(&mut self) {
-        let now = self.clock.now();
-        let elapsed = now.duration_since(self.last_pace_refill).as_secs_f64();
-        self.last_pace_refill = now;
-        let srtt = self.srtt().as_secs_f64().max(1e-3);
-        let rate = self.cwnd as f64 / srtt; // symbols per second
-        let burst = (self.cwnd as f64 / 8.0).max(10.0);
-        self.pace_tokens = (self.pace_tokens + rate * elapsed).min(burst);
-    }
-
-    /// Current pacing token balance (symbols; may be negative — see field).
-    pub fn pace_tokens(&self) -> f64 {
-        self.pace_tokens
-    }
-
-    /// Consume tokens for `n` symbols just sent (may push balance negative).
-    pub fn consume_pace_tokens(&mut self, n: u32) {
-        self.pace_tokens -= n as f64;
-    }
-
-    /// Time until at least one pacing token is available at the current
-    /// refill rate (zero if a token is already available).
-    pub fn pace_delay(&self) -> Duration {
-        if self.pace_tokens >= 1.0 {
-            return Duration::ZERO;
-        }
-        let srtt = self.srtt().as_secs_f64().max(1e-3);
-        let rate = (self.cwnd as f64 / srtt).max(1.0); // symbols per second
-        Duration::from_secs_f64((1.0 - self.pace_tokens) / rate)
     }
 
     // --- in_flight budget accounting ---

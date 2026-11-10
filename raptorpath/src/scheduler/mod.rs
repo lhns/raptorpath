@@ -15,8 +15,6 @@
 //!     exceeds floor × {1.08 Realtime, 1.125 Auto, 1.25 Bulk}.
 //!   - Two-speed ramp: multiplicative ×1.5+1 per RTT until the first
 //!     backoff, then additive +2 / multiplicative ×0.92.
-//!   - Token-bucket pacing at cwnd/SRTT with burst allowance max(10, cwnd/8)
-//!     (state lives here; the drain in net/mod.rs consumes the tokens).
 //!
 //! Loss alone does not reduce the window — only a standing queue does.
 //! This prevents wireless random loss from collapsing throughput.
@@ -417,14 +415,12 @@ impl Scheduler {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
                 // Reset to startup on recovery (Copa reset keeps the hint's
-                // queue target; pacing restarts at the initial burst; the
-                // dead path's in-flight budget is gone with it).
+                // queue target; the dead path's in-flight budget is gone
+                // with it).
                 path.cwnd = PathState::INITIAL_CWND;
                 path.ssthresh = 64;
                 path.in_slow_start = true;
                 path.copa.reset();
-                path.pace_tokens = PathState::INITIAL_CWND as f64;
-                path.last_pace_refill = path.last_report;
                 path.in_flight = 0;
                 path.in_flight_log.clear();
             }

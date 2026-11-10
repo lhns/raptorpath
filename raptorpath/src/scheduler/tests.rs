@@ -591,46 +591,6 @@ fn test_hint_plumbed_to_paths() {
 }
 
 #[test]
-fn test_pacing_token_bucket_rate_and_burst() {
-    let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new(clock.clone());
-    sched.add_path(0);
-
-    let path = sched.path_mut(0).unwrap();
-    // SRTT = 100ms exactly (EWMA of identical samples).
-    for _ in 0..4 {
-        path.record_rtt_sample(millis(100));
-    }
-    path.cwnd = 200; // rate = 200/0.1 = 2000 symbols/sec
-    path.pace_tokens = 0.0;
-
-    clock.advance(millis(5)); // 2000/s × 5ms = 10 tokens
-    sched.path_mut(0).unwrap().pace_refill();
-    let tokens = sched.path(0).unwrap().pace_tokens();
-    assert!((tokens - 10.0).abs() < 1e-6, "refill rate is cwnd/SRTT, got {tokens}");
-
-    clock.advance(millis(100)); // would add 200 → capped at burst
-    sched.path_mut(0).unwrap().pace_refill();
-    let tokens = sched.path(0).unwrap().pace_tokens();
-    // burst allowance = max(10, cwnd/8) = max(10, 25) = 25
-    assert!((tokens - 25.0).abs() < 1e-6, "burst cap is max(10, cwnd/8), got {tokens}");
-
-    // Batch-granular overdraft: consumption may push the bucket negative.
-    let path = sched.path_mut(0).unwrap();
-    path.consume_pace_tokens(30);
-    assert!(path.pace_tokens() < 0.0);
-    assert!(path.pace_delay() > Duration::ZERO);
-
-    // Small-cwnd burst floor: max(10, cwnd/8) = 10.
-    let path = sched.path_mut(0).unwrap();
-    path.cwnd = 16;
-    path.pace_tokens = 0.0;
-    clock.advance(millis(1000));
-    path.pace_refill();
-    assert!((path.pace_tokens() - 10.0).abs() < 1e-6);
-}
-
-#[test]
 fn test_copa_target_cwnd_units() {
     // Units doc-test: floor = SRTT = 100ms → dq clamps at 0.1ms.
     // rate = 1/(0.5 [1/sym] × 1e-4 [s]) = 20000 symbols/s
@@ -641,51 +601,6 @@ fn test_copa_target_cwnd_units() {
     let path = sched.path_mut(0).unwrap();
     path.record_rtt_sample(millis(100));
     assert_eq!(path.copa_target_cwnd(), 2000);
-}
-
-#[test]
-fn test_paced_ramp_reaches_block_scale_without_spurious_backoff() {
-    // With symbol-paced sends the standing queue stays near zero, so at
-    // C2-like parameters (10ms floor, no competing traffic) the ramp must
-    // sail past one 64KB block (~56 symbols) within 15 SRTTs and never
-    // back off. Batch-granular pacing fails exactly this: every block
-    // burst self-queues above Bulk's 2.5ms threshold and cwnd pins just
-    // under one block.
-    let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new(clock.clone()); // Auto: 1.125 target
-    sched.add_path(0);
-
-    for round in 0..15 {
-        // Token-paced send phase across one RTT: consume only what
-        // the bucket allows, in 1ms steps (never a whole-block burst).
-        for _ in 0..12 {
-            let p = sched.path_mut(0).unwrap();
-            p.pace_refill();
-            let budget = p.pace_tokens().max(0.0) as u32;
-            if budget > 0 {
-                p.consume_pace_tokens(budget);
-            }
-            clock.advance(millis(1));
-        }
-        // Paced sends leave only sub-threshold jitter over the floor
-        // (alternating 10.0/10.5ms; Auto's backoff needs > 11.25ms).
-        let sample = if round % 2 == 0 { 10_000 } else { 10_500 };
-        let p = sched.path_mut(0).unwrap();
-        p.record_rtt_sample(Duration::from_micros(sample));
-
-        let before = sched.path(0).unwrap().cwnd;
-        sched.ack(0, before.min(64));
-        let after = sched.path(0).unwrap().cwnd;
-        assert!(
-            after >= before,
-            "paced sends must not trigger a backoff (round {round}): {before} -> {after}"
-        );
-    }
-    let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(
-        cwnd > 100,
-        "ramp must clear one 64KB block (~56 symbols) at C2, got {cwnd}"
-    );
 }
 
 #[test]
@@ -704,10 +619,6 @@ fn test_schedule_ack_roundtrip_conserves_in_flight() {
     assert_eq!(scheduled, 8);
     assert_eq!(sched.path(0).unwrap().in_flight, 8);
 
-    // The paced drain charges tokens only — in_flight must not move
-    // between schedule and ack (as in net/mod.rs).
-    sched.path_mut(0).unwrap().consume_pace_tokens(8);
-    assert_eq!(sched.path(0).unwrap().in_flight, 8);
 
     // ACK feedback releases everything: budget conserved, gate opens.
     sched.ack(0, 8);
@@ -789,14 +700,12 @@ fn test_c2_loop_cwnd_grows_past_200_within_5s() {
             }
         }
 
-        // Pacer: send from the carry under tokens; the batch timestamp
-        // is stamped here (wire time), as in send_interleaved_batches.
+        // Send the whole carry; the batch timestamp is stamped here
+        // (wire time), as in send_interleaved_batches.
         {
             let p = sched.path_mut(0).unwrap();
-            p.pace_refill();
-            let budget = (p.pace_tokens().max(0.0) as u32).min(carry);
+            let budget = carry;
             if budget > 0 {
-                p.consume_pace_tokens(budget);
                 carry -= budget;
                 total_sent += budget as u64;
                 // Receiver ACKs each datagram after one RTT; ~1.3% of

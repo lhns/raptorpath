@@ -3522,7 +3522,7 @@ async fn run_window_sender(
                             false
                         }
                     };
-                    // The three meters, at the handoff, exactly as every other
+                    // The meters, at the handoff, exactly as every other
                     // correction channel meters them (the gap loop's two
                     // bypass channels are the exception, not the rule, and a
                     // new channel does not inherit an exception).
@@ -3530,7 +3530,6 @@ async fn run_window_sender(
                         let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(path) {
                             p.charge_in_flight(1);
-                            p.consume_pace_tokens(1);
                         }
                     }
                     if let Some(ps) = stats.path_ref(path) {

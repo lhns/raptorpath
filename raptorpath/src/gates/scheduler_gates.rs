@@ -388,13 +388,13 @@ pub(crate) fn resolve_release_1to1() -> bool {
 /// retransmit and the NACK repair margin.
 ///
 /// Both build a `SymbolBatch` and call `transport.send_symbols` with no
-/// `charge_in_flight`, no `consume_pace_tokens` and no `PathStats::symbols_sent`
+/// `charge_in_flight` and no `PathStats::symbols_sent`
 /// increment, while every other wire channel (source, taper correction, the
-/// generation arms, block-ARQ repair) meters all three at the handoff. Recovery
+/// generation arms, block-ARQ repair) meters both at the handoff. Recovery
 /// is exempt from the ack-clocked admission target, not from the ledger, and
 /// charging cannot deadlock these sites because neither reads `available()` or
 /// `cwnd_full`; they are budgeted by `cached_nack_budget` and the NACK
-/// congestion multiplier. The three meters move together, as at the peer
+/// congestion multiplier. The meters move together, as at the peer
 /// sites, so a battery cannot attribute among them. Not a dial.
 pub fn charge_recovery_active() -> bool {
     crate::gates::get().charge_recovery
