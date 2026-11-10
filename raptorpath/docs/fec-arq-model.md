@@ -4287,8 +4287,7 @@ machine as a whole.
   repeats a coded packet unless the channel rate minus the DoF ratio
   `m_d/a_d` exceeds a threshold (`r − d > th` adds a new packet).
 - *Multipath AC-RLNC.* Cohen, Thiran, Bar Bracha and Médard [Cohen2020mp]
-  (IEEE Trans. Commun. 69(2), 2021, arXiv:1910.13290) extend this to many
-  paths. They estimate `md`/`ad` for unacknowledged packets from per-path
+  (arXiv:1910.13290; venue unverified) extend this to many paths. They estimate `md`/`ad` for unacknowledged packets from per-path
   rates and allocate by a bit-filling argmax.
 - *FlEC.* Michel, Cohen, Malak, De Coninck, Médard and Bonaventure
   [Michel2023] (IEEE/ACM ToN 31(2), 2023, arXiv:2208.07741) build the rule
@@ -4454,6 +4453,21 @@ correction density in time and as the placement law's fixed point.
   arXiv:2005.06914, 2020.
 - [RLC_GE2025] "On the analysis of random linear streaming codes in
   stochastic channels," arXiv:2509.01894, 2025.
+
+**Feedback DoF accounting**
+
+- [Cohen2020] A. Cohen, D. Malak, V. Bar Bracha, M. Médard, "Adaptive causal
+  network coding with feedback," *IEEE Trans. Communications* 68(7), 2020,
+  arXiv:1905.02870.
+- [Cohen2020mp] A. Cohen, G. Thiran, V. Bar Bracha, M. Médard, "Adaptive
+  causal network coding with feedback for multipath multi-hop
+  communications," arXiv:1910.13290, 2019 (venue and year of the journal
+  version unverified).
+- [Michel2023] F. Michel, A. Cohen, D. Malak, Q. De Coninck, M. Médard,
+  O. Bonaventure, "FlEC: Enhancing QUIC with flexible loss recovery,"
+  *IEEE/ACM Trans. Networking* 31(2), 2023, arXiv:2208.07741.
+- [Meng2024] Z. Meng et al., "Hairpin: Rethinking packet loss recovery in
+  edge-based interactive video streaming," NSDI 2024.
 
 **Multipath, scheduling and queueing**
 
