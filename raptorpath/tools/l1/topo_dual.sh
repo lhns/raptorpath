@@ -44,8 +44,16 @@ shape() { # ns dev scenario seed
     local sd=""
     [[ -n "$seed" ]] && sd="seed $seed"
     # shellcheck disable=SC2086
-    ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
-        delay "${one_way}ms" $jit rate "$rate" $loss $sd
+    local extra child
+    extra="$(scenario_netem_extra "$scenario")"
+    child="$(scenario_child_qdisc "$scenario")"
+    local h=""
+    [[ -n "$child" ]] && h="handle 1:"
+    ip netns exec "$ns" tc qdisc add dev "$dev" root $h netem \
+        delay "${one_way}ms" $jit rate "$rate" $loss $sd $extra
+    if [[ -n "$child" ]]; then
+        ip netns exec "$ns" tc qdisc add dev "$dev" parent 1: handle 10: $child
+    fi
     # The per-datagram loss-truth counter, ahead of netem on this data egress
     # (lib.sh `truth_counter_install`; netem's own counters are per skb).
     # `shape` is only ever called on the data direction.

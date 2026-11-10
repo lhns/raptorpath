@@ -50,7 +50,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -58,14 +58,14 @@ OUTDIR="${LD_OUTDIR:?LD_OUTDIR}"
 TAG="${LD_TAG:-ld}"
 TRIES="${LD_BRINGUP_TRIES:-2}"
 PLAN="${LD_PLAN:-24}"
-case "$PLAN" in 24|27|29|34|36) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36)"; exit 3 ;; esac
+case "$PLAN" in 24|27|29|34|36|40) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|40)"; exit 3 ;; esac
 # Plan 34 reads the receiver task's [RDIAG] line (R3); the other plans keep it unset.
 RDIAG_ENV=()
 [ "$PLAN" = "34" ] && RDIAG_ENV=(RWM_RDIAG=1)
 # The per-plan instrument env and the driver-output lines the ledger keeps.
 INSTR_ENV=(RWM_ACKDIAG=1 RWM_LOOPDIAG=1 RWM_PERF_TIMEOUT_S=150)
 KEEP_PAT='summary|"dnf"|CPU:|GUARD|\[TRUTH\]|--- RWM-C perf'
-if [ "$PLAN" = "36" ]; then
+if [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then
   INSTR_ENV=(RWM_PERF_TIMEOUT_S=300)
   KEEP_PAT="$KEEP_PAT|\[CAPTURE|\[SNAP\]|QDISC cli"
 fi
@@ -78,7 +78,7 @@ LB_LOG="$OUT"
 
 # The instruments and gates the arms need must be in the binary.
 # Plan 36 runs main's binary, which lacks both instruments: it asks only for the store override it sets.
-if [ "$PLAN" = "36" ]; then preflight_binary "$BIN" "RWM_STORE"; else preflight_binary "$BIN" "ACKDIAG" "LOOPDIAG"; fi
+if [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then preflight_binary "$BIN" "RWM_STORE"; else preflight_binary "$BIN" "ACKDIAG" "LOOPDIAG"; fi
 [ "$PLAN" = "27" ] && preflight_binary "$BIN" "burst-robust BBR"
 [ "$PLAN" = "29" ] && preflight_binary "$BIN" "power store law ACTIVE"
 GOT="$(sha256sum "$BIN" | cut -d' ' -f1)"
@@ -93,6 +93,8 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
     c2-100)  echo "c2 c2 single 100000000" ;;
     c1d-400) echo "c1 c1 dual 400000000" ;;
     c8-100)  echo "c2 c3 dual 100000000" ;;
+    c2slot-100) echo "c2slot c2slot single 100000000" ;;
+    c2tbf-100)  echo "c2tbf c2tbf single 100000000" ;;
     *) echo "" ;;
   esac
 }
@@ -113,7 +115,7 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
     DEF[0-9]*) arm_env=(RWM_STORE="${arm#DEF}") ;;
     BRS[0-9]*) arm_env=(RWM_QUIC_CC=bbr_rs RWM_STORE="${arm#BRS}") ;;
     CAP[0-9]*|NOCAP[0-9]*)
-          [ "$PLAN" = "36" ] || { echo "UNKNOWN-ARM $arm (plan 36 only)" >> "$OUT"; return 0; }
+          [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ] || { echo "UNKNOWN-ARM $arm (plan 36/40 only)" >> "$OUT"; return 0; }
           arm_env=(RWM_STORE="${arm##*[A-Z]}") ;;
     PWR) arm_env=(RWM_STORE_LAW=power) ;;
     KNEE) [[ "$knee" =~ ^[0-9]+$ ]] || { echo "UNKNOWN-KNEE $cell '$knee'" >> "$OUT"; return 0; }
@@ -136,7 +138,7 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
     cap_env=()
     # Plan 36 c1d rows also read the server's [RDIAG] (mu_R split by active legs; status 36 amendment 3).
     [ "$PLAN" = "36" ] && [ "$cell" = "c1d-400" ] && cap_env+=(RWM_RDIAG=1)
-    if [ "$PLAN" = "36" ] && [[ "$arm" == CAP* ]]; then rm -rf "$pdir"; mkdir -p "$pdir"; cap_env=(RWM_PCAP_DIR="$pdir"); fi
+    if { [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; } && [[ "$arm" == CAP* ]]; then rm -rf "$pdir"; mkdir -p "$pdir"; cap_env=(RWM_PCAP_DIR="$pdir"); fi
     cot_b=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     io_b=$(io_full10)
     t0=$(date +%s)
@@ -179,7 +181,7 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
       python3 ./loopdiag_parse.py row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
       /tmp/ld-drv.out /tmp/rwm-c.log /tmp/rwm-s.log "$cot" "$sha" >> "$OUT" 2>&1; then
     # Scored (summary in the ledger, per-skb tables kept): only now do the pcaps go.
-    [ "$PLAN" = "36" ] && rm -rf "$OUTDIR/pcap/${name}-s${seed}-r${rep}-"a*
+    { [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; } && rm -rf "$OUTDIR/pcap/${name}-s${seed}-r${rep}-"a*
   else
     echo "LDROW-PARSE-FAIL $name s$seed rep=$rep (pcaps kept under $OUTDIR/pcap)" >> "$OUT"
   fi
@@ -300,6 +302,45 @@ plan36() { # smoke -> the whole plan (0), or the two smoke rows (1)
     BLOCK=$(( b + 1 ))
   fi
 }
+
+# ── plan 40 ───────────────────────────────────────────────────────────────
+plan40() { # smoke -> the whole plan (0), or the two smoke rows (1)
+  local -a tbl
+  local line cell arm seed rep prev="" b=0 last_seed="" last_rep=""
+  if [ "$1" = "1" ]; then
+    mapfile -t tbl < <(python3 ./loopdiag_parse.py plan40 smoke)
+    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN40 smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
+  else
+    mapfile -t tbl < <(python3 ./loopdiag_parse.py plan40)
+    [ "${#tbl[@]}" -eq 108 ] || { echo "ABORT-PLAN40 table has ${#tbl[@]} rows (108)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell arm seed rep <<< "$line"
+    if [ "$1" != "1" ] && [ -n "$prev" ] && [ "$prev" != "$seed/$rep" ]; then
+      echo "BLOCK-COMPLETE rep=$last_rep seed=$last_seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+      b=$(( b + 1 ))
+    fi
+    prev="$seed/$rep"; last_seed="$seed"; last_rep="$rep"
+    run_one "$cell" "$arm" "$seed" "$rep"
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE rep=$last_rep seed=$last_seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=$(( b + 1 ))
+  fi
+}
+
+if [ "$PLAN" = "40" ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan40 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan40 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^LDROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 
 if [ "$PLAN" = "36" ]; then
   if [ "${LD_SMOKE:-0}" = "1" ]; then
