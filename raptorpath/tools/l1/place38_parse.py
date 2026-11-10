@@ -54,6 +54,10 @@ BASE_CELLS = [("c1s-400", "def"), ("c1d-400", "def")]
 SMOKE41 = SMOKE38 + [("c1s-400", "def", "BASE", "42", 1)]        # DECISION (reported): a BASE row in the smoke
 EXPECT_ROWS41 = EXPECT_ROWS38 + len(BASE_CELLS) * len(BLOCKS38)  # n = 6 per BASE cell: 108 (the pre-registration says 24 / 120)
 MATCH_BAND = 0.03
+# ── status §41b: BASE n = 12, MAIN n = 6, WIRE n = 6 per cell, c1s and c1d default only ──
+EXPECT_ROWS41B = len(BASE_CELLS) * (12 + 6 + 6)                    # 48
+SMOKE41B = [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "MAIN", "42", 1)]   # one row per binary
+ARMS41B = ["BASE", "MAIN", "BASE", "WIRE"]                         # the pattern, rotated by group (g mod 4)
 S3_REL = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065},
           "c2-100": {"gp": 0.014, "cpu": 0.063}, "c8-100": {"gp": 0.040, "cpu": 0.116}}
 DNF_THRESHOLD = 0.20
@@ -101,6 +105,25 @@ def plan41(smoke=False):
             if (cell, store) in BASE_CELLS:
                 arms.insert(base_position(b), "BASE")
             out += [(cell, store, a, seed, rep) for a in arms]
+    return out
+
+
+def plan41b(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status §41b). Six groups, one per (seed, rep) of the 3 reps x 2 seeds; per
+    group and cell four rows in the pattern BASE, MAIN, BASE, WIRE rotated by g mod 4 (so each arm meets each position). MAIN and
+    WIRE run (seed, rep); the group's two BASE rows run (seed, rep) and (seed, rep + 3), so BASE covers 6 reps x 2 seeds."""
+    if smoke:
+        return list(SMOKE41B)
+    out = []
+    for g, (seed, rep) in enumerate(BLOCKS38):
+        for cell, store in BASE_CELLS:
+            k = g % 4
+            nb = 0
+            for a in ARMS41B[k:] + ARMS41B[:k]:
+                r = rep
+                if a == "BASE":
+                    r, nb = (rep if nb == 0 else rep + 3), nb + 1
+                out.append((cell, store, a, seed, r))
     return out
 
 
@@ -613,22 +636,44 @@ def score(paths, out=print, plan41=False):
     return verdict
 
 
-def check(path, plan41=False):
+def score41b(paths, out=print):
+    """Status §41b: the status table and the c1s contention covariates, then the A/A-calibrated guard (place41b_score.py)."""
+    import place41b_score
+    rows, tokens = rows_of(paths)
+    aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
+    out("PLACE-WIRE GATE-OFF GUARD (status §41b): BASE = main 4926822 (n = 12 per cell), MAIN = diag36 gate off, WIRE = RWM_PLACE_WIRE=1 (reported only)")
+    out(f"ROWS {len(rows)}/{EXPECT_ROWS41B}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
+    out("STATUS-TABLE (every invocation row)")
+    for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL"):
+        out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
+    for r in rows:
+        if r["status"] != "LIVE" or r.get("io_high"):
+            out(f"  NONLIVE {r['cell']}@{r['store']} {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} rc={r['rc']} "
+                f"{' '.join(r['problems'])} io_full10={r.get('io_full10')}")
+    out("")
+    res = place41b_score.report(rows, out)
+    out("")
+    contention(rows, out)
+    out("VERDICT " + ("UNSCOREABLE (abort " + ",".join(aborted) + ")" if aborted else f"GATE-41b {res['gate']}"))
+    return res
+
+
+def check(path, plan41=False, plan41b=False):
     rows, tokens = rows_of([path])
     t = open(path, errors="replace").read()
-    want = EXPECT_ROWS41 if plan41 else EXPECT_ROWS38
+    want = EXPECT_ROWS41B if plan41b else EXPECT_ROWS41 if plan41 else EXPECT_ROWS38
     ok = "LD-BATTERY-DONE" in t and len(rows) == want
-    print(f"CHECK{'41' if plan41 else '38'} done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{want}")
+    print(f"CHECK{'41b' if plan41b else '41' if plan41 else '38'} done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{want}")
     return 0 if ok else 1
 
 
-def smoke(path, plan41=False):
+def smoke(path, plan41=False, plan41b=False):
     """rc 0 iff both smoke rows (MAIN and WIRE at c8-100@256) are LIVE with the gauges the scorer reads and WIRE has w_calls > 0.
     Plan 41 adds one BASE row (c1s-400 default): LIVE with the one-leg clause inputs."""
     rows, _ = rows_of([path])
     bad = []
     got = {(r["cell"], r["store"], r["arm"]): r for r in rows}
-    for cell, store, arm, _, _ in (SMOKE41 if plan41 else SMOKE38):
+    for cell, store, arm, _, _ in (SMOKE41B if plan41b else SMOKE41 if plan41 else SMOKE38):
         r = got.get((cell, store, arm))
         if r is None:
             bad.append(f"{arm}: no row")
@@ -670,6 +715,17 @@ def main(argv):
     if cmd == "plan41":
         for c, s, ar, seed, rep in plan41(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "plan41b":
+        for c, s, ar, seed, rep in plan41b(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "check41b":
+        return check(a[0], plan41b=True)
+    if cmd == "smoke41b":
+        return smoke(a[0], plan41b=True)
+    if cmd == "score41b":
+        score41b(a)
         return 0
     if cmd == "check":
         return check(a[0])
