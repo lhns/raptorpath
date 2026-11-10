@@ -230,6 +230,8 @@ struct Sc {
     stale: Option<(Duration, Duration, usize)>,
     /// End the run this long after the first ProbeRtt exit (`dur` is the cap).
     stop_after_probe_rtt: Option<Duration>,
+    /// Poll grid of both endpoints (`TICK` = RECV_TIME_BOUND, 50 us).
+    tick: Duration,
     cc: Cc,
 }
 
@@ -259,6 +261,8 @@ struct Run {
     quinn_state: Vec<(Duration, String)>,
     /// quinn's whole Bbr Debug at the end of the run (evidence for the pins).
     quinn_final_dbg: String,
+    /// quinn's whole Bbr Debug every 10 ms (characterisation dump).
+    quinn_dbgs: Vec<(Duration, String)>,
     stale_events: usize,
     /// ACK-bearing datagrams that arrived after a stale stamp and whose
     /// stamp-based sample reads below the true RTT floor and above 0.
@@ -343,7 +347,7 @@ fn run(sc: &Sc) -> Run {
 
     let mut k: u64 = 0;
     loop {
-        let tau = TICK * k as u32;
+        let tau = sc.tick * k as u32;
         k += 1;
         if tau > sc.dur {
             break;
@@ -421,7 +425,7 @@ fn run(sc: &Sc) -> Run {
                             break;
                         }
                     }
-                } else if k % 20 == 0 {
+                } else if (tau + sc.tick).as_nanos() % MS.as_nanos() == 0 {
                     credit += sc.supply * MS.as_secs_f64();
                     while credit >= max as f64 {
                         credit -= max as f64;
@@ -480,6 +484,7 @@ fn run(sc: &Sc) -> Run {
                 let b = conn.congestion_state().clone_box().into_any().downcast::<Bbr>().unwrap();
                 let dbg = format!("{:?}", *b);
                 r.quinn_min_rtt.push((tau, quinn_bbr_min_rtt(&dbg)));
+                r.quinn_dbgs.push((tau, dbg.clone()));
                 r.quinn_state.push((tau, format!("{} full={}", dbg_field(&dbg, "mode: "), dbg_field(&dbg, "is_at_full_bandwidth: "))));
             }
         }
@@ -498,6 +503,11 @@ const C1_RATE: f64 = 125_000_000.0; // 1 Gbit/s
 const BDP_TRUE: u64 = 250_000; // 1 Gbit/s x 2 ms
 
 fn c1(cc: Cc, stale: bool) -> Sc {
+    c1_ph(cc, stale, 1_200_500)
+}
+
+/// The c1 scenario with the first stale event at `t0_us` (phase sweep).
+fn c1_ph(cc: Cc, stale: bool, t0_us: u64) -> Sc {
     Sc {
         rate: C1_RATE,
         limit: 1000,
@@ -507,8 +517,9 @@ fn c1(cc: Cc, stale: bool) -> Sc {
         bulk_until: Duration::from_secs(1),
         supply: 0.9 * C1_RATE,
         loss_burst: Some((Duration::from_millis(1800), 28)),
-        stale: stale.then(|| (Duration::from_micros(1_200_500), Duration::from_millis(100), 18)),
+        stale: stale.then(|| (Duration::from_micros(t0_us), Duration::from_millis(100), 18)),
         stop_after_probe_rtt: None,
+        tick: TICK,
         cc,
     }
 }
@@ -597,6 +608,7 @@ fn bbr_rs_min_rtt_follows_a_path_rtt_rise() {
         loss_burst: None,
         stale: None,
         stop_after_probe_rtt: None,
+        tick: TICK,
         cc: Cc::BbrRs,
     };
     let r = run(&sc);
@@ -684,6 +696,7 @@ fn bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_across_probe_rtt() {
         loss_burst: None,
         stale: None,
         stop_after_probe_rtt: Some(Duration::from_secs(3)),
+        tick: TICK,
         cc: Cc::BbrRs,
     };
     let r = run(&sc);
@@ -780,4 +793,167 @@ fn qcc_gauge_reads_the_running_controller_and_its_cost_is_measured() {
         tr[tr.len() * 99 / 100],
         tr[tr.len() - 1]
     );
+}
+
+// ── offline characterisation of quinn's BBR and the stale-phase sweep ───
+
+fn dbg_nested(dbg: &str, key: &str, then: &str) -> u64 {
+    let i = dbg.find(key).unwrap_or_else(|| panic!("{key} in Debug"));
+    let r = &dbg[i..];
+    let j = r.find(then).unwrap() + then.len();
+    let r = &r[j..];
+    r[..r.find([',', ' ', '}']).unwrap()].parse().unwrap()
+}
+
+fn dbg_num(dbg: &str, key: &str) -> u64 {
+    dbg_field(dbg, key).parse().unwrap()
+}
+
+/// Status §48 follow-up: quinn's BBR over time, stale run and no-stale control.
+/// Writes `docs/l1-raw/bbrfix48/quinn-dump.txt`. Columns: t, mode, bandwidth
+/// filter, max ack height, pacing rate, cwnd (quinn's own field), W (the
+/// window quinn applies, `stats().path.cwnd`), delivered rate (bytes acked per
+/// s over the 10 ms), min_rtt.
+#[test]
+#[ignore = "characterisation dump; writes docs/l1-raw/bbrfix48/quinn-dump.txt"]
+fn quinn_characterisation_dump() {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for (label, stale) in [("stale", true), ("nostale", false)] {
+        let r = c1_run(Cc::QuinnBbr, stale);
+        writeln!(out, "## quinn BBR, {label} run (c1: 1 Gbit/s link = 125 MB/s, BDP 250 kB; phase A bulk to 1.0 s, phase B 0.9 L)").unwrap();
+        writeln!(out, "# stale events (tau, L, smallest stamp-based sample): {:?}", r.stale_min_sample).unwrap();
+        writeln!(out, "# t_ms mode filter_MBs ackheight_B pacing_MBs cwnd_B W_B delivered_MBs min_rtt_us recovery_state recovery_window note").unwrap();
+        let (mut prev_acked, mut prev_mode) = (0u64, String::new());
+        let (mut dsum_a, mut na, mut dsum_b, mut nb) = (0f64, 0, 0f64, 0);
+        for (t, dbg) in &r.quinn_dbgs {
+            let acked = dbg_num(dbg, "total_acked: ");
+            let deliv = (acked - prev_acked) as f64 / 0.01 / 1e6;
+            let mode = dbg_field(dbg, "mode: ").to_string();
+            let w = r.samples.iter().find(|s| s.t == *t).map_or(0, |s| s.w);
+            let note = if mode == "ProbeRtt" {
+                "ProbeRtt"
+            } else if prev_mode == "ProbeRtt" {
+                "post-ProbeRtt-exit"
+            } else {
+                ""
+            };
+            writeln!(
+                out,
+                "{:>6} {:<8} {:>8.2} {:>11} {:>8.2} {:>11} {:>10} {:>8.2} {:>6} {:<12} {:>9} {}",
+                t.as_millis(),
+                mode,
+                dbg_nested(dbg, "max_filter: MinMax", "value: ") as f64 / 1e6,
+                dbg_nested(dbg, "max_ack_height: MinMax", "value: "),
+                dbg_num(dbg, "pacing_rate: ") as f64 / 1e6,
+                dbg_num(dbg, " cwnd: "),
+                w,
+                deliv,
+                quinn_bbr_min_rtt(dbg).as_micros(),
+                dbg_field(dbg, "recovery_state: "),
+                dbg_num(dbg, "recovery_window: "),
+                note
+            )
+            .unwrap();
+            if t.as_millis() > 500 && t.as_millis() <= 1000 {
+                dsum_a += deliv;
+                na += 1;
+            }
+            if t.as_millis() > 1300 {
+                dsum_b += deliv;
+                nb += 1;
+            }
+            prev_acked = acked;
+            prev_mode = mode;
+        }
+        writeln!(
+            out,
+            "# mean delivered: phase A (0.5-1.0 s) {:.1} MB/s; phase B (1.3-3.0 s) {:.1} MB/s (link 125, supply 112.5)\n",
+            dsum_a / na as f64,
+            dsum_b / nb as f64
+        )
+        .unwrap();
+    }
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/l1-raw/bbrfix48");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("quinn-dump.txt"), &out).unwrap();
+    println!("{out}");
+}
+
+/// Status §48 follow-up: the stale-event phase swept over one chunk period
+/// (first event at 1.2000 + k x 0.1 ms, k = 0..9), verdicts of tests 1, 2, 4,
+/// 5 per phase. Prints `SWEEP` lines; `CC_SIM_TREE` labels the tree.
+#[test]
+#[ignore = "phase sweep; prints SWEEP lines"]
+fn stale_phase_sweep() {
+    let tree = std::env::var("CC_SIM_TREE").unwrap_or_else(|_| "?".into());
+    let (a, b) = (Duration::from_millis(1300), Duration::from_secs(3));
+    let v = |ok: bool| if ok { "green" } else { "RED" };
+    for k in 0..10u64 {
+        let t0 = 1_200_000 + 100 * k;
+        let rb = run(&c1_ph(Cc::BbrRs, true, t0));
+        let rq = run(&c1_ph(Cc::QuinnBbr, true, t0));
+        let share = share_below(&rb, a, b, BDP_TRUE);
+        let minw = min_w(&rb, a, b);
+        let mmin = rb
+            .samples
+            .iter()
+            .filter(|s| s.t >= Duration::from_millis(1200))
+            .map(|s| s.qcc.unwrap().rt_us)
+            .min()
+            .unwrap();
+        let qshare = share_below(&rq, a, b, BDP_TRUE);
+        let qmin = rq.quinn_min_rtt.last().unwrap().1;
+        println!(
+            "SWEEP tree={tree} phase_us={k}00 witness={}/{} | t1={} (share {share:.4}, minW {minw}) | t2={} (min m-hat {mmin} us) | t4={} (quinn share {qshare:.4}) | t5={} (quinn min_rtt {qmin:?})",
+            rb.witness,
+            rq.witness,
+            if rb.witness == 0 { "VOID" } else { v(share <= 0.05 && minw >= BDP_TRUE / 2) },
+            v(mmin >= 2000),
+            v(qshare > 0.5),
+            v(!qmin.is_zero() && qmin < MS),
+        );
+    }
+}
+
+/// Status §48 follow-up: does the quinn-BBR bandwidth filter, and with it the
+/// collapse, depend on the simulator's poll grid? Quinn's filter admits one
+/// packet per ACK frame (the rest see a zero gap), so it reads about
+/// 1 MTU / (gap between frames' stamps): 1312 B / 50 us = 26 MB/s. Runs the
+/// quinn run at three poll grids. Prints `TICKVAR` lines.
+#[test]
+#[ignore = "poll-grid variants of the quinn run; prints TICKVAR lines"]
+fn quinn_poll_grid_variants() {
+    let (a, b) = (Duration::from_millis(1300), Duration::from_secs(3));
+    for tick_us in [50u64, 20, 10] {
+        for stale in [true, false] {
+            let mut sc = c1(Cc::QuinnBbr, stale);
+            sc.tick = Duration::from_micros(tick_us);
+            let r = run(&sc);
+            let at = |ms: u64| r.quinn_dbgs.iter().find(|x| x.0 >= Duration::from_millis(ms)).unwrap().1.clone();
+            let fmt = |ms: u64| {
+                let d = at(ms);
+                format!(
+                    "{ms}ms[{} filter {:.1}MB/s ackh {}B cwnd {}B rec {} recw {} minrtt {}us]",
+                    dbg_field(&d, "mode: "),
+                    dbg_nested(&d, "max_filter: MinMax", "value: ") as f64 / 1e6,
+                    dbg_nested(&d, "max_ack_height: MinMax", "value: "),
+                    dbg_num(&d, " cwnd: "),
+                    dbg_field(&d, "recovery_state: "),
+                    dbg_num(&d, "recovery_window: "),
+                    quinn_bbr_min_rtt(&d).as_micros()
+                )
+            };
+            println!(
+                "TICKVAR tick={tick_us}us stale={stale} share(W<BDP)={:.4} minW={} {} {} {} {} {}",
+                share_below(&r, a, b, BDP_TRUE),
+                min_w(&r, a, b),
+                fmt(900),
+                fmt(1790),
+                fmt(1830),
+                fmt(2000),
+                fmt(2990)
+            );
+        }
+    }
 }
