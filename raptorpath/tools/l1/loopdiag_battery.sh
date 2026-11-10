@@ -42,6 +42,12 @@
 #   $LD_OUTDIR/pcap/<row>/ (tmpfs); after each row loopdiag_parse.py (-> disp36.py) scores them, writes the kept per-skb
 #   tables to $LD_OUTDIR/tables/, and the pcaps are deleted. 58 invocations; the smoke is 2 (c1s-400 CAP256,
 #   c8-100 CAP128). The table is `loopdiag_parse.py plan36 [smoke]` (disp36.plan36).
+# PLAN 38 (LD_PLAN=38, status section 38 + amendments 1-3; earlier plans unchanged): the wire-clocked placement base.
+#   One binary, arms MAIN (RWM_PLACE_WIRE unset) and WIRE (RWM_PLACE_WIRE=1); cells (c1s, c2 default; c1d, c8 default;
+#   c1d RWM_STORE=1536; c8 RWM_STORE=192/256/512). RWM_RTOBS=1 RWM_RDIAG=1 RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150; the
+#   env -u list also withholds RWM_PLACE_WIRE and RWM_TEST_PLACE_HOLD. 96 invocations (6 blocks x 8 cells x 2 arms); the
+#   smoke is 2 (c8-100 RWM_STORE=256, MAIN and WIRE). The table is `place38_parse.py plan [smoke]`
+#   (`cell store arm seed rep` per line); rows are parsed by place38_parse.py (P38ROW lines).
 # Launched by loopdiag_run_all.sh (the envelope, which holds both VM locks).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
@@ -50,7 +56,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -58,7 +64,7 @@ OUTDIR="${LD_OUTDIR:?LD_OUTDIR}"
 TAG="${LD_TAG:-ld}"
 TRIES="${LD_BRINGUP_TRIES:-2}"
 PLAN="${LD_PLAN:-24}"
-case "$PLAN" in 24|27|29|34|36|40) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|40)"; exit 3 ;; esac
+case "$PLAN" in 24|27|29|34|36|38|40) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40)"; exit 3 ;; esac
 # Plan 34 reads the receiver task's [RDIAG] line (R3); the other plans keep it unset.
 RDIAG_ENV=()
 [ "$PLAN" = "34" ] && RDIAG_ENV=(RWM_RDIAG=1)
@@ -69,6 +75,9 @@ if [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then
   INSTR_ENV=(RWM_PERF_TIMEOUT_S=300)
   KEEP_PAT="$KEEP_PAT|\[CAPTURE|\[SNAP\]|QDISC cli"
 fi
+if [ "$PLAN" = "38" ]; then
+  INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)
+fi
 OUT="$OUTDIR/${TAG}.log"
 DDIR="$OUTDIR/diag-${TAG}"
 mkdir -p "$OUTDIR" "$DDIR"
@@ -78,7 +87,9 @@ LB_LOG="$OUT"
 
 # The instruments and gates the arms need must be in the binary.
 # Plan 36 runs main's binary, which lacks both instruments: it asks only for the store override it sets.
-if [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then preflight_binary "$BIN" "RWM_STORE"; else preflight_binary "$BIN" "ACKDIAG" "LOOPDIAG"; fi
+if [ "$PLAN" = "38" ]; then preflight_binary "$BIN" "RWM_STORE" "RWM_PLACE_WIRE"
+elif [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then preflight_binary "$BIN" "RWM_STORE"
+else preflight_binary "$BIN" "ACKDIAG" "LOOPDIAG"; fi
 [ "$PLAN" = "27" ] && preflight_binary "$BIN" "burst-robust BBR"
 [ "$PLAN" = "29" ] && preflight_binary "$BIN" "power store law ACTIVE"
 GOT="$(sha256sum "$BIN" | cut -d' ' -f1)"
@@ -102,13 +113,15 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
 # /proc/pressure/io `full avg10`: a per-row covariate (flagged in the parser, never a void).
 io_full10() { awk '/^full/{for(i=1;i<=NF;i++) if($i ~ /^avg10=/){sub("avg10=","",$i); print $i}}' /proc/pressure/io 2>/dev/null || echo -1; }
 
-run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE; knee = the cell's knee n, KNEE only)
+run_one() { # cell arm seed rep [knee|store]   (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE|WIRE; knee = the cell's knee n, KNEE only; plan 38: the 5th is the store, def|<n>)
   local cell="$1" arm="$2" seed="$3" rep="$4" knee="${5:-}" ca cb mode bytes t0 rc wall attempt sha
   local cot_b=0 cot_a=0 cot=0
   read -r ca cb mode bytes <<< "$(cell_spec "$cell")"
   [ -n "$ca" ] || { echo "UNKNOWN-CELL $cell" >> "$OUT"; return 0; }
   local name="$cell-$arm"
   local arm_env=()
+  local p38store=""
+  if [ "$PLAN" = "38" ]; then p38store="${knee:-def}"; knee=""; name="$cell@$p38store-$arm"; fi
   case "$arm" in
     MAIN) ;;
     S[0-9]*) arm_env=(RWM_STORE="${arm#S}") ;;
@@ -117,11 +130,14 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
     CAP[0-9]*|NOCAP[0-9]*)
           [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ] || { echo "UNKNOWN-ARM $arm (plan 36/40 only)" >> "$OUT"; return 0; }
           arm_env=(RWM_STORE="${arm##*[A-Z]}") ;;
+    WIRE) [ "$PLAN" = "38" ] || { echo "UNKNOWN-ARM $arm (plan 38 only)" >> "$OUT"; return 0; }
+          arm_env=(RWM_PLACE_WIRE=1) ;;
     PWR) arm_env=(RWM_STORE_LAW=power) ;;
     KNEE) [[ "$knee" =~ ^[0-9]+$ ]] || { echo "UNKNOWN-KNEE $cell '$knee'" >> "$OUT"; return 0; }
           arm_env=(RWM_STORE="$knee") ;;
     *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
   esac
+  [ "$PLAN" = "38" ] && [ "$p38store" != "def" ] && arm_env+=(RWM_STORE="$p38store")
   for attempt in $(seq 1 "$TRIES"); do
     # A binary that vanished from tmpfs stops the battery: never run it off disk (that is VOID-ONDISK).
     if [ ! -x "$BIN" ]; then
@@ -144,7 +160,7 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
     t0=$(date +%s)
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
         -u RWM_RTOBS -u RWM_ACKDIAG -u RWM_LOOPDIAG -u RWM_IO_RT -u RWM_STORE_PATHS \
-        -u RWM_PLAIN_RS -u RWM_HONEST_CAP -u RWM_STORE -u RWM_QUIC_CC -u RWM_STORE_LAW -u RWM_RDIAG -u RWM_PCAP_DIR \
+        -u RWM_PLAIN_RS -u RWM_HONEST_CAP -u RWM_STORE -u RWM_QUIC_CC -u RWM_STORE_LAW -u RWM_RDIAG -u RWM_PCAP_DIR -u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD \
         "${arm_env[@]}" "${RDIAG_ENV[@]}" "${cap_env[@]}" \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 "${INSTR_ENV[@]}" \
         RWM_C_PIPELINE=window RWM_BIN="$BIN" \
@@ -177,8 +193,10 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
   ondisk=0
   case "$BIN" in /dev/shm/*) ;; *) ondisk=1 ;; esac
   case "$OUTDIR" in /dev/shm/*) ;; *) ondisk=1 ;; esac
-  if LD_PLAN="$PLAN" LD_ONDISK="$ondisk" LD_IO_FULL10="$io_max" LD_PCAP_DIR="$pdir" LD_TABLE_DIR="$OUTDIR/tables" \
-      python3 ./loopdiag_parse.py row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
+  local parser=./loopdiag_parse.py
+  [ "$PLAN" = "38" ] && parser=./place38_parse.py
+  if LD_PLAN="$PLAN" LD_ONDISK="$ondisk" LD_IO_FULL10="$io_max" LD_PCAP_DIR="$pdir" LD_TABLE_DIR="$OUTDIR/tables" P38_STORE="${p38store:-def}" \
+      python3 "$parser" row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
       /tmp/ld-drv.out /tmp/rwm-c.log /tmp/rwm-s.log "$cot" "$sha" >> "$OUT" 2>&1; then
     # Scored (summary in the ledger, per-skb tables kept): only now do the pcaps go.
     { [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; } && rm -rf "$OUTDIR/pcap/${name}-s${seed}-r${rep}-"a*
@@ -328,6 +346,45 @@ plan40() { # smoke -> the whole plan (0), or the two smoke rows (1)
     BLOCK=$(( b + 1 ))
   fi
 }
+
+# ── plan 38 ───────────────────────────────────────────────────────────────
+plan38() { # smoke -> the whole plan (0), or the two smoke rows (1)
+  local -a tbl
+  local line cell store arm seed rep prev="" b=0 last_seed="" last_rep=""
+  if [ "$1" = "1" ]; then
+    mapfile -t tbl < <(python3 ./place38_parse.py plan smoke)
+    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN38 smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
+  else
+    mapfile -t tbl < <(python3 ./place38_parse.py plan)
+    [ "${#tbl[@]}" -eq 96 ] || { echo "ABORT-PLAN38 table has ${#tbl[@]} rows (96)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell store arm seed rep <<< "$line"
+    if [ "$1" != "1" ] && [ -n "$prev" ] && [ "$prev" != "$seed/$rep" ]; then
+      echo "BLOCK-COMPLETE rep=$last_rep seed=$last_seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+      b=$(( b + 1 ))
+    fi
+    prev="$seed/$rep"; last_seed="$seed"; last_rep="$rep"
+    run_one "$cell" "$arm" "$seed" "$rep" "$store"
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE rep=$last_rep seed=$last_seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=$(( b + 1 ))
+  fi
+}
+
+if [ "$PLAN" = "38" ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan38 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan38 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 
 if [ "$PLAN" = "40" ]; then
   if [ "${LD_SMOKE:-0}" = "1" ]; then

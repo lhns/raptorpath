@@ -1545,6 +1545,16 @@ def main(argv):
         for cell, arm, seed, rep in plan36(smoke=len(argv) > 2 and argv[2] == "smoke"):
             print(f"{cell} {arm} {seed} {rep}")
         return 0
+    if cmd == "smoke38":
+        import place38_parse
+        return place38_parse.smoke(argv[2])
+    if cmd == "check38":
+        import place38_parse
+        return place38_parse.check(argv[2])
+    if cmd == "score38":
+        import place38_parse
+        place38_parse.score(argv[2:])
+        return 0
     if cmd == "smoke40":
         return smoke40(argv[2])
     if cmd == "check40":

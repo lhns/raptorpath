@@ -320,7 +320,7 @@ check("E5: the window-median Q and the in-run share are printed beside", "Q(wmed
 bat = open(os.path.join(HERE, "loopdiag_battery.sh"), encoding="utf-8").read()
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
 check("battery: plan 40 accepted, 108-row table, cells c2slot-100/c2tbf-100 specified, ABORT-BIN kept",
-      "24|27|29|34|36|40" in bat and '-eq 108' in bat and "c2slot-100)" in bat and "c2tbf-100)" in bat and "ABORT-BIN" in bat)
+      "36|38|40" in bat and '-eq 108' in bat and "c2slot-100)" in bat and "c2tbf-100)" in bat and "ABORT-BIN" in bat)
 check("run_all: plan 40 takes the §36 precondition, LD_HARD, root-owned tmpfs tree and root-installed binary, and gates on test_disp40.py",
       'P_SMOKE=smoke40' in runall and runall.count('"$PLAN" = "40"') >= 6 and "test_disp40.py" in runall)
 
