@@ -2917,8 +2917,12 @@ section.
   one loop later. So about Tp50/T_w of each window still describes the
   previous cap. A stale share larger than q(δ) would bias S by more than the
   standing-queue allowance the law prices, so T_w ≥ Tp50/q(δ). At the
-  predicted points this is ≈ 190 ms at c2 (Tp50 ≈ 19 ms; 250 ms is 13
-  loops) and ≈ 60–75 ms at c1s (Tp50 ≈ 6–7.5 ms; ≈ 35–40 loops).
+  predicted points, at Bulk (q = 0.10), this is ≈ 190 ms at c2 (Tp50 ≈
+  19 ms; 250 ms is 13 loops) and ≈ 60–75 ms at c1s (Tp50 ≈ 6–7.5 ms;
+  ≈ 35–40 loops). The bound holds only near Bulk. At c2 it reads ≈ 285 ms
+  at Auto (q = 0.0667) and ≈ 380 ms at Realtime (q = 0.05), both above
+  250 ms, so away from Bulk the declared window sits below its own lower
+  bound and `wbind` reports it. The battery runs Bulk only.
 - *Upper bound.* T_w must be short against the filter. The brake is
   Tmin_k − RTprop, and as T_w approaches the filter length Tmin_k approaches
   RTprop, so the brake vanishes whatever the queue does. 250 ms is the
@@ -2955,8 +2959,10 @@ that caveat, and its direction is unknown.
 *The cadence.* n is recomputed at the shipped store-cap refresh (at most
 every 5 ms, `refresh_store_cap`). L is constant and S changes only when a
 window closes, so between closes only RTprop moves n. No new timer drives
-the cap. The scorer reads n at each window close, which is §42's model: one
-update per window.
+the cap. The scorer reads n at each window close. §42's model, one update
+per window, is therefore approximate: RTprop can fall at a new minimum or
+climb as old samples expire. The per-window min and max of n are logged
+to bound the gap.
 
 *No step limit: n = ask.*
 - Every measured crossing has a positive slope (0.25–0.56 at the stable
@@ -2998,6 +3004,8 @@ threshold, and empty windows are counted.
 - t_h = 15 s is the filter plus 5 s. The minimum recorded at boot leaves the
   filter at about 10–11 s.
 - h ≡ 0 in every start-low row; the same code serves both arms.
+- H ≤ N·knee is checked at startup, as the L list's length is, so the
+  clamp's bounds cannot invert.
 - The hold is not built on `RWM_STORE`, because that switches the law off.
 
 *δ, ρ and the path count.*

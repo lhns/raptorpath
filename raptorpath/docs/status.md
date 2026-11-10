@@ -11041,8 +11041,10 @@ list plus `RWM_STORE_LAW` and `RWM_ORACLE_*`. `RWM_ORACLE_L_DGPS` is 9 773
   as observation only (`RWM_ORACLE_DIAG=1` without `RWM_STORE_LAW`).
 - `RWM_ORACLE_DIAG=1` prints one `[OCAP]` line per path per window close: t,
   n, ask, h, rtprop_us, tmin_us, tp50_us, S, brake_us = tmin − rtprop, n_k,
-  offered, the loop count r_k = T_w/Tp50, and the binds `floor` / `pin` /
-  `hold` / `wbind`.
+  offered, the loop count r_k = T_w/Tp50, the binds `floor` / `pin` /
+  `hold` / `wbind`, and n's min and max over the window. Between closes only
+  RTprop moves n, so the min/max shows how far the per-window model is
+  from literal.
 
 **Rows.** n = 3 per (cell, arm). Three blocks, (42, 1), (7, 1), (42, 2).
 Cells alternate (c2 first on even blocks), and the arm order rotates per
@@ -11079,10 +11081,15 @@ block: MAIN SL SH / SL SH MAIN / SH MAIN SL. That makes 18 rows, plus a
   log, because a collapsed ORACLE row is data. Any other rc ≠ 0 is
   `ABORT-RC`.
 - SH rows only, `HOLD-EXPIRED` or `HOLD-INERT`. `HOLD-EXPIRED` iff
-  RTprop(t_h) ≥ RTprop(1 s) + ½·(median Tmin_k over the hold's last 2 s −
-  RTprop(1 s)), i.e. the anchor caught at least half of the queue. A
-  `HOLD-INERT` row would "return" trivially, so it is reported and left out
-  of the outcome.
+  RTprop(t_h) ≥ RTprop(1 s) + ½·(min Tmin_k over the hold's last 2 s −
+  RTprop(1 s)), i.e. the anchor rose at least halfway to the queue's lower
+  envelope. A windowed min can reach only that envelope, never the median.
+  On the ledger rows the threshold reads 50.2 ms at c2 1 024 (expired ≈ 89)
+  and 3.49 ms at c1s 2 048 (expired ≈ 4.31), and both fresh anchors fail
+  it. A `HOLD-INERT` row would "return" trivially, so it is reported and
+  left out of the outcome.
+- SH rows: H ≤ N·knee is a startup configuration check, as the L list's
+  length is, so the clamp's bounds never invert.
 
 *Abort table:* `ABORT-LOCK`, `-CRLF`, `-SHA`, `-BIN`,
 `-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUILD`, `-TESTS`, `-RC`, `-BRINGUP`,
@@ -11161,14 +11168,17 @@ Reported beside the label:
   - c8's idle-leg rule;
   - the goodput the power point gives up (the §40 standing decision on δ's
     authority).
-- *`BISTABLE` or `MIXED` at c2:* the anchor becomes the user's design
+- *`BISTABLE` or `MIXED` at any cell:* the anchor becomes the user's design
   decision: a lifetime minimum, a drain, or another brake. It is presented
   with R3's ask/H and R4's brake trajectories, and no engine L̂ work starts
   before that decision.
 - *`UNSTABLE` at any cell:* §42's next step 3, the split diagnostic (sender
   dwell against the endpoint loop, at µs), comes before anything else.
-- *`ONE-POINT-OFF-PREDICTION`:* the c1s map is re-derived from this
-  battery's uncapped windows before any c1s prediction is quoted again.
+- *`ONE-POINT-OFF-PREDICTION` at any cell:* that cell's map is re-derived
+  from this battery's uncapped windows before any prediction for it is
+  quoted again.
+- *`UNSCOREABLE` at any cell:* the cell's question stays open. The missing
+  rows are named, and a re-run needs an amendment that says why they failed.
 - *`GOODPUT` and `DELAY`* go to the user as the price of the power point.
   No flip.
 
