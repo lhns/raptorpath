@@ -518,6 +518,17 @@ impl QuicTransport {
         self.view(path_id)?.path_stats()
     }
 
+    /// The `[QCC]` gauge for `path_id` (a diagnosis instrument, read only at
+    /// the DIAG tick): `(gauge, last read ns, reads, mean ns)`. Only under
+    /// `RWM_QUIC_CC=bbr_rs` (the only controller with a model to read); `None`
+    /// before the owner's first read, which the call itself requests.
+    pub(crate) fn qcc_gauge(&self, path_id: PathId) -> Option<(super::bbr_rs::Qcc, u64, u64, u64)> {
+        if quic_cc_mode() != QuicCcMode::BbrRs {
+            return None;
+        }
+        self.view(path_id)?.qcc_request()
+    }
+
     /// L0 shim transit counters, None when the shim is off —
     /// (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
     pub fn l0_transit_stats(&self) -> Option<(u64, u64, u64, u64, u64, usize)> {

@@ -949,6 +949,34 @@ pub(crate) fn report(
             dgev,
             dg.eb.diag_token(),
         );
+        // ── `[QCC]` substrate-controller readout (`RWM_QUIC_CC=bbr_rs`) ──
+        // The controller's own model per path: qm (S/D/B/R), qrt_us (m̂, the
+        // windowed min of the ack-event loop time), qsr_us (its smoothed
+        // mean), qbw (b̂, B/s), qmin_us (quinn's lifetime rtt.min(), beside
+        // m̂) and qcns (host cost of the read, ns: last/reads/mean). Its own
+        // line: the per-path `[DIAG]` format is pinned. Absent under any
+        // other controller. Each path's read is requested here and taken by
+        // its owner at the next snapshot (so a value is one tick old).
+        {
+            let ids: Vec<u32> = {
+                let mut v = scheduler.all_path_ids();
+                v.sort_unstable();
+                v
+            };
+            let mut s = String::new();
+            for id in ids {
+                if let Some((q, ns, n, mean)) = transport.qcc_gauge(id) {
+                    s.push_str(&q.token(id, ns, n, mean));
+                }
+            }
+            if !s.is_empty() {
+                crate::readout!(
+                    "[QCC] t={:.1}s{}",
+                    dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
+                    s
+                );
+            }
+        }
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
         // 250 ms cadence, same `RWM_DIAG` gate, same cumulative

@@ -270,6 +270,15 @@ pub struct PathView {
     cong_events: AtomicU64,
     lost_packets: AtomicU64,
     sent_packets: AtomicU64,
+    /// `[QCC]` request: set by the DIAG tick (`qcc_request`), taken by the
+    /// owner's next full snapshot, which then reads `congestion_state()` once.
+    /// Nothing else asks quinn for the controller, so the clone (the sampler's
+    /// record map) is paid once per DIAG tick, never per ack or per snapshot.
+    qcc_req: AtomicBool,
+    /// The last `[QCC]` read: the gauge and its host cost in ns.
+    qcc: parking_lot::Mutex<Option<(super::bbr_rs::Qcc, u64)>>,
+    qcc_reads: AtomicU64,
+    qcc_ns_sum: AtomicU64,
     /// The `RWM_DIAG` send-queue audit.
     pub audit: DatagramQueueAudit,
     /// `RWM_DIAG` receive audit: datagrams the owner read from quinn.
@@ -313,6 +322,10 @@ impl PathView {
             cong_events: AtomicU64::new(0),
             lost_packets: AtomicU64::new(0),
             sent_packets: AtomicU64::new(0),
+            qcc_req: AtomicBool::new(false),
+            qcc: parking_lot::Mutex::new(None),
+            qcc_reads: AtomicU64::new(0),
+            qcc_ns_sum: AtomicU64::new(0),
             audit: DatagramQueueAudit::default(),
             app_read: AtomicU64::new(0),
             readers_started: AtomicBool::new(false),
@@ -373,6 +386,17 @@ impl PathView {
                 self.sent_packets.load(Relaxed),
             )
         })
+    }
+
+    /// The DIAG tick's `[QCC]` read: asks the owner for a fresh controller
+    /// read at its next full snapshot and returns the last one,
+    /// `(gauge, last read ns, reads, mean ns)`. `None` until the first read,
+    /// and for a connection that does not run `bbr_rs`.
+    pub(crate) fn qcc_request(&self) -> Option<(super::bbr_rs::Qcc, u64, u64, u64)> {
+        self.qcc_req.store(true, Relaxed);
+        let (q, ns) = (*self.qcc.lock())?;
+        let n = self.qcc_reads.load(Relaxed);
+        Some((q, ns, n, self.qcc_ns_sum.load(Relaxed) / n.max(1)))
     }
 
     /// A batch `Vec` for a producer: a recycled one when available.
@@ -669,6 +693,14 @@ impl OwnedConn {
     fn stats(&self) -> quinn::ConnectionStats {
         self.enter("stats");
         self.raw.stats()
+    }
+
+    /// The controller's model for the `[QCC]` gauge: `Connection::
+    /// congestion_state()` clones the controller under the connection lock,
+    /// so it is called only for a pending DIAG request (`publish`).
+    fn congestion_qcc(&self) -> Option<super::bbr_rs::Qcc> {
+        self.enter("congestion_state");
+        super::bbr_rs::qcc_of(self.raw.congestion_state())
     }
 
     fn max_datagram_size(&self) -> Option<usize> {
@@ -1363,6 +1395,16 @@ fn publish(conn: &OwnedConn, view: &PathView, full: bool, copa_wire: bool) {
         let m = conn.max_datagram_size().map_or(0, |m| m as u64 + 1);
         view.max_dgram_p1.store(m, Relaxed);
         view.snap.store(true, Relaxed);
+        if view.qcc_req.swap(false, Relaxed) {
+            let t0 = Instant::now();
+            let q = conn.congestion_qcc();
+            let ns = t0.elapsed().as_nanos() as u64;
+            if let Some(q) = q {
+                *view.qcc.lock() = Some((q, ns));
+                view.qcc_reads.fetch_add(1, Relaxed);
+                view.qcc_ns_sum.fetch_add(ns, Relaxed);
+            }
+        }
     } else if copa_wire {
         view.rtt_us.store(conn.rtt().as_micros() as u64, Relaxed);
         view.snap.store(true, Relaxed);

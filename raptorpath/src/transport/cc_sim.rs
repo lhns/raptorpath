@@ -30,7 +30,7 @@ use quinn_proto::{
     ServerConfig,
 };
 
-use super::bbr_rs::{BbrRs, BbrRsConfig, Qcc};
+use super::bbr_rs::{qcc_of, BbrRs, BbrRsConfig, Qcc};
 use super::quic::QuicTransport;
 
 const TICK: Duration = Duration::from_micros(50);
@@ -272,6 +272,11 @@ struct Run {
     /// First ProbeRtt entry / exit (sampled at 1 ms).
     r_enter: Option<Duration>,
     r_exit: Option<Duration>,
+    /// Host cost (ns) of one `[QCC]` read (`congestion_state()` clone + gauge),
+    /// taken every 1 ms mid-run on the loaded connection.
+    qcc_ns: Vec<u64>,
+    /// The sampler's outstanding-record count (what the clone copies), every 10 ms.
+    tracked: Vec<usize>,
 }
 
 fn parse_dur(s: &str) -> Duration {
@@ -442,14 +447,22 @@ fn run(sc: &Sc) -> Run {
             let conn = client.conn.as_ref().unwrap();
             let w = conn.stats().path.cwnd;
             let qcc = match sc.cc {
-                Cc::BbrRs => conn
-                    .congestion_state()
-                    .clone_box()
-                    .into_any()
-                    .downcast::<BbrRs>()
-                    .ok()
-                    .map(|b| b.qcc()),
-                Cc::QuinnBbr => None,
+                Cc::BbrRs => {
+                    // the engine's `[QCC]` read, timed: clone + downcast + gauge
+                    let t0 = std::time::Instant::now();
+                    let q = qcc_of(conn.congestion_state().clone_box());
+                    r.qcc_ns.push(t0.elapsed().as_nanos() as u64);
+                    if tau.as_nanos() % (10 * MS).as_nanos() == 0 {
+                        let b = conn.congestion_state().clone_box().into_any().downcast::<BbrRs>().unwrap();
+                        r.tracked.push(b.tracked_records());
+                    }
+                    q
+                }
+                Cc::QuinnBbr => {
+                    // another controller: the engine prints no [QCC] for it
+                    assert!(qcc_of(conn.congestion_state().clone_box()).is_none());
+                    None
+                }
             };
             if let Some(q) = &qcc {
                 if !r.modes.contains(q.mode) {
@@ -544,7 +557,7 @@ fn bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps() {
     let share = share_below(r, a, b, BDP_TRUE);
     let min = min_w(r, a, b);
     let m = r.samples.iter().filter(|s| s.t >= a).map(|s| s.qcc.unwrap().rt_us).min().unwrap();
-    eprintln!(
+    println!(
         "[cc_sim t1] share(W<BDP)={share:.4} minW={min} modes={} min m̂={m}us witness={} tail_drops={}",
         r.modes, r.witness, r.tail_drops
     );
@@ -590,7 +603,7 @@ fn bbr_rs_min_rtt_follows_a_path_rtt_rise() {
     let at = |t: Duration| r.samples.iter().find(|s| s.t >= t).unwrap();
     let m = at(Duration::from_millis(12_500)).qcc.unwrap().rt_us;
     let share = share_below(&r, Duration::from_secs(13), Duration::from_secs(14), 50_000);
-    eprintln!("[cc_sim t3] m̂(12.5s)={m}us share(W<50kB)[13,14]={share:.4} modes={}", r.modes);
+    println!("[cc_sim t3] m̂(12.5s)={m}us share(W<50kB)[13,14]={share:.4} modes={}", r.modes);
     assert!(m >= 36_000, "m̂ = {m} us at 12.5 s, expected >= 36 ms after the RTT rise to 40 ms");
     assert_eq!(share, 0.0, "W < 50 kB at some sample in [13, 14] s");
 }
@@ -616,7 +629,7 @@ fn quinn_bbr_window_collapses_under_stale_stamps() {
     let share_no_stale = share_below(base, a, b, BDP_TRUE);
     let last = r.quinn_min_rtt.last().unwrap();
     let last_no = base.quinn_min_rtt.last().unwrap();
-    eprintln!(
+    println!(
         "[cc_sim t4] quinn share(W<BDP): stale={share:.4} no-stale={share_no_stale:.4}; \
          latched min_rtt: stale={:?} no-stale={:?}; minW stale={} no-stale={}
   quinn state (stale run) at 0.5/1.0/1.2/2.0/3.0 s: {:?}
@@ -702,7 +715,7 @@ fn bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_across_probe_rtt() {
     let (pre_lo, pre_med) = bw(Duration::from_secs(3), enter);
     let (in_lo, _) = bw(enter, exit);
     let (post_lo, post_med) = bw(exit + s1, end + MS);
-    eprintln!(
+    println!(
         "[cc_sim c2-jitter] ProbeRtt {enter:?}..{exit:?}; run end {end:?}; modes={}; tail_drops={}
            b̂/L: pre[3s,enter) min/med={:.3}/{:.3}; at enter-1ms={:.3}; in ProbeRtt min={:.3};          at exit={:.3}, +1s={:.3}, +2s={:.3}, +3s={:.3}; post[exit+1s,end) min/med={:.3}/{:.3}
            m̂(us): enter-1ms={} in-ProbeRtt={} exit+3s={}; sr(us) exit+3s={}",
@@ -731,4 +744,40 @@ impl Run {
     fn dur_hint(&self) -> Duration {
         self.samples.last().map_or(Duration::ZERO, |s| s.t)
     }
+}
+
+/// Status §48 gauge wiring on a live loaded connection: the `[QCC]` read
+/// returns the running controller's model with `qm` in {S, D, B, R} and numeric
+/// fields (and, in the run above, `None` for quinn's own BBR), and its host
+/// cost is measured: `congestion_state()` clones the controller, sampler record
+/// map included, under the connection lock.
+#[test]
+fn qcc_gauge_reads_the_running_controller_and_its_cost_is_measured() {
+    let r = c1_run(Cc::BbrRs, true);
+    let at = |ms: u64| r.samples.iter().find(|s| s.t >= Duration::from_millis(ms)).unwrap().qcc.unwrap();
+    for s in &r.samples {
+        let q = s.qcc.unwrap();
+        assert!("SDBR".contains(q.mode), "qm {:?} at {:?}", q.mode, s.t);
+    }
+    let q = at(1500);
+    assert!(q.rt_us >= 2000 && q.sr_us > 0 && q.bw > 10_000_000 && q.quinn_min_us > 0, "{q:?}");
+    let tok = q.token(0, 1234, 5, 1000);
+    for f in ["p0:qm=", "qrt_us=", "qsr_us=", "qbw=", "qmin_us=", "qcns=1234/5/1000"] {
+        assert!(tok.contains(f), "{f} in {tok}");
+    }
+    let mut ns = r.qcc_ns.clone();
+    ns.sort_unstable();
+    let mut tr = r.tracked.clone();
+    tr.sort_unstable();
+    println!(
+        "[cc_sim qcc-cost] read ns: n={} p50={} p90={} p99={} max={}; sampler records outstanding: p50={} p99={} max={}",
+        ns.len(),
+        ns[ns.len() / 2],
+        ns[ns.len() * 9 / 10],
+        ns[ns.len() * 99 / 100],
+        ns[ns.len() - 1],
+        tr[tr.len() / 2],
+        tr[tr.len() * 99 / 100],
+        tr[tr.len() - 1]
+    );
 }
