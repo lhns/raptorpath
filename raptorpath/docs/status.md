@@ -10193,6 +10193,37 @@ merged on `diag36`).
 - **Gauges.** `w_cold` counts per leg evaluation; `w_mv` and `ref_fl` count
   per `place_costs` call. The denominators print as `w_n=` and `w_calls=`.
 
+### 38. Amendment 4 — the ladder's overlap at c1d default, and the harness's readings (before VM contact)
+
+- *The overlap.* Outcome 3 (`REGRESSES-AT`: a §21 clause WORSE at a control
+  or default cell) and Amendment 2's outcome 5 (`CURED-AT-COST`: §21's
+  goodput rule at c1d default reads WORSE or TREND-WORSE) both fire on a
+  WORSE goodput at c1d default. Amendment 2 is the later and more specific
+  clause, and it names that goodput as the arm's own cost. So **§21's
+  goodput clause at c1d default is exempt from outcome 3 and decides only
+  5 against 6.** A WORSE there gives `CURED-AT-COST(x %)` with x stated. The
+  ship decision is the user's either way. Every other §21 clause at c1d
+  default, and every clause at the other cells, stays in outcome 3.
+- *Readings fixed (from the harness, `place38`, `87b0f31`).*
+  1. `[LAG]` is scored on E = p99 − min_us, as §28/§32; raw p99 is printed
+     beside it.
+  2. The store witnesses (`[SUMCAP] eng` 0 and `win=` denominator = n) apply
+     at the static cells only. The default law engages the store law by
+     design.
+  3. The MAIN witness is `wpl_us=-`, `ref_fl`/`w_cold`/`w_mv` = `-` and
+     `w_n = w_calls = 0`. WIRE needs `w_calls > 0`.
+  4. Cell order within a block follows the table, with c8-192 before 256
+     and 512. Blocks are rep-major over seeds 42 and 7 (3 reps), and arms
+     rotate by block (MAIN first on even blocks): 96 rows plus a 2-row
+     smoke (c8-100 `RWM_STORE=256`, MAIN and WIRE).
+  5. A static cell is reproduced iff MAIN has ≥ 2 LOCKED rows there. At a
+     non-reproduced cell the share and goodput clauses are reported, not
+     scored as regressions.
+  6. At c1s and c2 (N = 1), WIRE rows need `w_calls > 0`, and a non-zero
+     `w_mv` is a `REGRESSES-AT` finding. One unscored check row (c2 WIRE)
+     confirms the N = 1 print before launch. If it prints `-`, the session
+     stops for an amendment.
+
 ## 39. The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
 
 §37 rated the rate law "the maths holds, inert", and the user opened the
