@@ -121,6 +121,10 @@ run_one() { # cell arm seed rep [knee]    (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE
     *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
   esac
   for attempt in $(seq 1 "$TRIES"); do
+    # A binary that vanished from tmpfs stops the battery: never run it off disk (that is VOID-ONDISK).
+    if [ ! -x "$BIN" ]; then
+      _lb_say "ABORT-BIN $name s$seed rep=$rep: $BIN is missing or not executable -- battery stopped"; exit 5
+    fi
     sha="$(sha256sum "$BIN" | cut -d' ' -f1)"
     if [ "$sha" != "$WANT" ]; then
       _lb_say "ABORT-SHA $name s$seed rep=$rep: $sha != $WANT -- battery stopped"; exit 5
