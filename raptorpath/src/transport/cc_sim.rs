@@ -819,8 +819,16 @@ fn dbg_num(dbg: &str, key: &str) -> u64 {
 fn quinn_characterisation_dump() {
     use std::fmt::Write as _;
     let mut out = String::new();
-    for (label, stale) in [("stale", true), ("nostale", false)] {
-        let r = c1_run(Cc::QuinnBbr, stale);
+    let fine: Vec<(String, Run)> = [true, false]
+        .into_iter()
+        .map(|stale| {
+            let mut sc = c1(Cc::QuinnBbr, stale);
+            sc.tick = Duration::from_micros(10);
+            (format!("{}-10us-grid", if stale { "stale" } else { "nostale" }), run(&sc))
+        })
+        .collect();
+    let coarse = [("stale", true), ("nostale", false)].map(|(l, st)| (l.to_string(), c1_run(Cc::QuinnBbr, st)));
+    for (label, r) in coarse.iter().map(|(l, r)| (l, *r)).chain(fine.iter().map(|(l, r)| (l, r))) {
         writeln!(out, "## quinn BBR, {label} run (c1: 1 Gbit/s link = 125 MB/s, BDP 250 kB; phase A bulk to 1.0 s, phase B 0.9 L)").unwrap();
         writeln!(out, "# stale events (tau, L, smallest stamp-based sample): {:?}", r.stale_min_sample).unwrap();
         writeln!(out, "# t_ms mode filter_MBs ackheight_B pacing_MBs cwnd_B W_B delivered_MBs min_rtt_us recovery_state recovery_window note").unwrap();
@@ -886,13 +894,33 @@ fn quinn_characterisation_dump() {
 #[test]
 #[ignore = "phase sweep; prints SWEEP lines"]
 fn stale_phase_sweep() {
+    for k in 0..10u64 {
+        sweep_line(1_200_000 + 100 * k, 50);
+    }
+}
+
+/// The same verdicts on the 10 us poll grid, where quinn's filter reads the
+/// link (see `quinn_poll_grid_variants`); five phases.
+#[test]
+#[ignore = "phase sweep on the 10 us grid; prints SWEEP lines"]
+fn stale_phase_sweep_10us_grid() {
+    for k in [0u64, 2, 4, 6, 8] {
+        sweep_line(1_200_000 + 100 * k, 10);
+    }
+}
+
+fn sweep_line(t0: u64, tick_us: u64) {
     let tree = std::env::var("CC_SIM_TREE").unwrap_or_else(|_| "?".into());
     let (a, b) = (Duration::from_millis(1300), Duration::from_secs(3));
     let v = |ok: bool| if ok { "green" } else { "RED" };
-    for k in 0..10u64 {
-        let t0 = 1_200_000 + 100 * k;
-        let rb = run(&c1_ph(Cc::BbrRs, true, t0));
-        let rq = run(&c1_ph(Cc::QuinnBbr, true, t0));
+    let k = (t0 - 1_200_000) / 100;
+    {
+        let mut sb = c1_ph(Cc::BbrRs, true, t0);
+        sb.tick = Duration::from_micros(tick_us);
+        let mut sq = c1_ph(Cc::QuinnBbr, true, t0);
+        sq.tick = Duration::from_micros(tick_us);
+        let rb = run(&sb);
+        let rq = run(&sq);
         let share = share_below(&rb, a, b, BDP_TRUE);
         let minw = min_w(&rb, a, b);
         let mmin = rb
@@ -905,7 +933,7 @@ fn stale_phase_sweep() {
         let qshare = share_below(&rq, a, b, BDP_TRUE);
         let qmin = rq.quinn_min_rtt.last().unwrap().1;
         println!(
-            "SWEEP tree={tree} phase_us={k}00 witness={}/{} | t1={} (share {share:.4}, minW {minw}) | t2={} (min m-hat {mmin} us) | t4={} (quinn share {qshare:.4}) | t5={} (quinn min_rtt {qmin:?})",
+            "SWEEP tree={tree} grid={tick_us}us phase_us={k}00 witness={}/{} | t1={} (share {share:.4}, minW {minw}) | t2={} (min m-hat {mmin} us) | t4={} (quinn share {qshare:.4}) | t5={} (quinn min_rtt {qmin:?})",
             rb.witness,
             rq.witness,
             if rb.witness == 0 { "VOID" } else { v(share <= 0.05 && minw >= BDP_TRUE / 2) },
@@ -956,4 +984,34 @@ fn quinn_poll_grid_variants() {
             );
         }
     }
+}
+
+/// Status §48 follow-up: the quinn-BBR pin on the 10 us poll grid. Quinn's
+/// bandwidth filter admits one packet per ACK frame, so it reads 1 MTU / the
+/// poll gap: 26 MB/s on the 50 us grid (which then inflates its ack-height term
+/// to 253 MB and hides the collapse), 131 MB/s (= the link) on the 10 us grid.
+/// There the latched min_rtt makes the window 2 x filter x min_rtt: it falls
+/// to ~100 kB at the first sub-RTT sample and to ~50 kB by 3 s, against a
+/// BDP of 250 kB; the no-stale control holds 307 kB.
+#[test]
+fn quinn_bbr_window_collapses_under_stale_stamps_on_a_fine_poll_grid() {
+    let (a, b) = (Duration::from_millis(1300), Duration::from_secs(3));
+    let go = |stale: bool| {
+        let mut sc = c1(Cc::QuinnBbr, stale);
+        sc.tick = Duration::from_micros(10);
+        run(&sc)
+    };
+    let (r, base) = (go(true), go(false));
+    assert_c1_witnesses(&r);
+    let (s1, s0) = (share_below(&r, a, b, BDP_TRUE), share_below(&base, a, b, BDP_TRUE));
+    println!(
+        "[cc_sim t4@10us] quinn share(W<BDP): stale={s1:.4} no-stale={s0:.4}; minW stale={} no-stale={}; latched min_rtt stale={:?} no-stale={:?}",
+        min_w(&r, a, b),
+        min_w(&base, a, b),
+        r.quinn_min_rtt.last().unwrap().1,
+        base.quinn_min_rtt.last().unwrap().1
+    );
+    assert!(s1 > 0.5, "stale: share(W < BDP_true) = {s1:.4}, expected > 0.5");
+    assert!(s0 < 0.05, "control: share(W < BDP_true) = {s0:.4}, expected < 0.05");
+    assert!(r.quinn_min_rtt.last().unwrap().1 < MS);
 }
