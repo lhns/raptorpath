@@ -55,7 +55,14 @@ SRC="$ROOT/src/raptorpath"
 TARGET="$ROOT/target"
 BIN="$SHM/bin/raptorpath"
 BUILDLOG="$ROOT/build.log"
-mkdir -p "$RUN" "$SHM/bin"
+# Plan 36: systemd-logind RemoveIPC (default yes) deletes a non-system user's /dev/shm objects when the user's last
+# session ends -- a binary copied there vanished between ssh sessions. So the tmpfs tree is ROOT-owned (sticky
+# world-writable dirs, so this script can still write its sentinels) and the binary is installed as root.
+if [ "$PLAN" = "36" ]; then
+  sudo -n mkdir -p "$SHM" "$RUN" "$SHM/bin" && sudo -n chmod 1777 "$SHM" "$RUN" "$SHM/bin" || { echo "ABORT-SHM cannot create the root-owned tmpfs tree"; exit 3; }
+else
+  mkdir -p "$RUN" "$SHM/bin"
+fi
 persist() { mkdir -p "$ROOT/run" && cp -a "$RUN/." "$ROOT/run/" && echo "PERSISTED $RUN -> $ROOT/run $(date -u +%FT%TZ)"; }
 SENTINELS="DONE-ALL FAILED-ALL all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
 probe_sentinel "$RUN/all.out"
@@ -100,7 +107,11 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 T0=$(date +%s)
 ( cd "$SRC" && CARGO_TARGET_DIR="$TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$BUILDLOG" 2>&1 \
   || fail_all "ABORT-BUILD ($BUILDLOG)"
-cp "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
+if [ "$PLAN" = "36" ]; then
+  sudo -n install -m 0755 -o root -g root "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
+else
+  cp "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
+fi
 era "LD-ALL built wall=$(( $(date +%s) - T0 ))s"
 SHA="$(sha256sum "$BIN" | cut -d' ' -f1)"
 echo "$SHA  $BIN  commit=$(cat "$ROOT/COMMIT" 2>/dev/null)" > "$RUN/BINSHA.txt"
