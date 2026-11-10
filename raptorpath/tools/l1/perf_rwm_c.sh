@@ -108,7 +108,10 @@ esac
 TOPO=./topo_dual.sh
 [[ "$MODE" == "quad" ]] && TOPO=./topo_quad.sh
 
+TCPD_PIDS=()   # capture PIDs (RWM_PCAP_DIR; empty otherwise)
 cleanup() {
+    # A capture still running (early exit) is stopped by PID, never by pattern.
+    for _tp in "${TCPD_PIDS[@]}"; do kill -TERM "$_tp" 2>/dev/null || true; done
     # TERM + 3 s grace + KILL (lib.sh): the receiver's `final=1` exit flush
     # rides on the graceful path, and the server log is read AFTER this.
     stop_raptorpath
@@ -212,6 +215,60 @@ if [ "$SRV_BOUND" -eq 0 ]; then
     aw_logs srv_bind
     aw_state srv_bind
 fi
+
+# Opt-in receiver-side capture (status §36): one UNFILTERED tcpdump per data leg in the server netns, on
+# the receiver device, inbound only (-Q in): every skb that reaches the leg counts, of any protocol,
+# because netem's rate server spaces them all. Netem sits on the client-side egress, so these stamps are
+# taken right after its release. Stopped by PID, never pkill. Unset RWM_PCAP_DIR = nothing below runs.
+#   RWM_PCAP_DIAG=1 (diagnostic row, status §36 amendment 5) adds a tap on each client device (-Q out,
+#   c<i>.pcap) and raw counter snapshots (ip -s link, softnet_stat) at the window's start and stop.
+# Counter snapshots bracket the capture window; the witnesses compare deltas over it:
+#   [SNAP] tag=start|stop leg=<i> dev=<cliN> qdisc: <tc -s qdisc text>  filter: <tc -s filter egress text>
+PCAP_DIR="${RWM_PCAP_DIR:-}"
+unset RWM_PCAP_DIR
+PCAP_DIAG="${RWM_PCAP_DIAG:-0}"
+unset RWM_PCAP_DIAG
+pcap_snap() { # tag
+    local tag="$1" li dev q e
+    for ((li = 0; li < ${#CLI_LEGS[@]}; li++)); do
+        dev="${CLI_LEGS[$li]}"
+        q=$(qdisc_stats_netem "$NS_CLI" "$dev" | tr '\n' ' ')
+        e=$(ip netns exec "$NS_CLI" tc -s filter show dev "$dev" egress 2>/dev/null | tr '\n' ' ')
+        echo "[SNAP] tag=$tag leg=$li dev=$dev qdisc: $q filter: $e"
+        if [[ "$PCAP_DIAG" == "1" ]]; then
+            { ip netns exec "$NS_CLI" ip -s link show dev "$dev"; ip netns exec "$NS_SRV" ip -s link show dev "${SRV_LEGS[$li]}"; } \
+                > "$PCAP_DIR/ipl.$tag.$li.txt" 2>&1
+        fi
+    done
+    [[ "$PCAP_DIAG" == "1" ]] && cat /proc/net/softnet_stat > "$PCAP_DIR/softnet.$tag.txt" 2>/dev/null
+    return 0
+}
+if [[ -n "$PCAP_DIR" ]]; then
+    command -v tcpdump >/dev/null 2>&1 || { echo "RWM_PCAP_DIR set but tcpdump is missing" >&2; exit 2; }
+    mkdir -p "$PCAP_DIR" || exit 2
+    for ((li = 0; li < ${#SRV_LEGS[@]}; li++)); do
+        ip netns exec "$NS_SRV" tcpdump -Z root -i "${SRV_LEGS[$li]}" -Q in -s 64 --time-stamp-precision=nano -B 16384 \
+            -w "$PCAP_DIR/p$li.pcap" 2>"$PCAP_DIR/p$li.err" &
+        TCPD_PIDS+=("$!")
+        if [[ "$PCAP_DIAG" == "1" ]]; then
+            ip netns exec "$NS_CLI" tcpdump -Z root -i "${CLI_LEGS[$li]}" -Q out -s 64 --time-stamp-precision=nano -B 16384 \
+                -w "$PCAP_DIR/c$li.pcap" 2>"$PCAP_DIR/c$li.err" &
+            TCPD_PIDS+=("$!")
+            # the pre-amendment-5 configuration (filtered, both directions), for the reconciliation
+            ip netns exec "$NS_SRV" tcpdump -Z root -i "${SRV_LEGS[$li]}" -s 64 --time-stamp-precision=nano -B 16384 \
+                -w "$PCAP_DIR/f$li.pcap" udp and src "10.$((77 + li)).0.1" 2>"$PCAP_DIR/f$li.err" &
+            TCPD_PIDS+=("$!")
+        fi
+    done
+    # Ready when each tcpdump says it is listening (bounded: 5 s).
+    for _e in "$PCAP_DIR"/*.err; do
+        for _w in $(seq 1 50); do
+            grep -q "listening on" "$_e" 2>/dev/null && break
+            sleep 0.1
+        done
+    done
+    pcap_snap start
+fi
 sleep 1
 
 echo "--- RWM-C perf pipeline=$PIPELINE mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
@@ -293,6 +350,49 @@ CLI_RC="${CLI_PIPE[0]}"
 CLI_ST=0
 for _s in "${CLI_PIPE[@]}"; do [ "$_s" -ne 0 ] && CLI_ST="$_s"; done
 [ "$CLI_ST" -ne 0 ] && echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+# Stop the captures (SIGINT by PID, then wait) and print each one's counts as a parseable line:
+#   [CAPTURE] leg=<i> dev=<dev> captured=<n> kdrop=<n>     (`-` when tcpdump printed no summary)
+# SIGINT can be ignored by a `&` job without job control: bounded wait, then SIGTERM by PID.
+if [[ "${#TCPD_PIDS[@]}" -gt 0 ]]; then
+    # The client can exit while netem still holds a standing queue (limit 1000 skbs: ~0.6 s of a 100 Mbit
+    # leg). Stopping the taps then loses the tail the qdisc counters still count. So wait until every client
+    # device's qdisc backlog is 0 (bounded by RWM_PCAP_DRAIN_MAX_S, default 5; 0 = do not wait, which
+    # reproduces the status 36 amendment 5 check row's 5 % gap), then snapshot the counters and stop the
+    # taps: the window is [start snapshot, stop snapshot].
+    _dmax=$(( ${RWM_PCAP_DRAIN_MAX_S:-5} * 10 ))
+    for ((_w = 0; _w < _dmax; _w++)); do
+        _bl=0
+        for DEV in "${CLI_LEGS[@]}"; do
+            [[ "$(qdisc_stats_netem "$NS_CLI" "$DEV" | grep -m1 -o 'backlog [0-9]*b [0-9]*p')" == 'backlog 0b 0p' ]] || _bl=1
+        done
+        [[ "$_bl" == 0 ]] && break
+        sleep 0.1
+    done
+    sleep "${RWM_PCAP_SETTLE_S:-1.5}"   # partial AF_PACKET blocks retire on libpcap's 1 s timeout
+    pcap_snap stop
+    for _tp in "${TCPD_PIDS[@]}"; do kill -INT "$_tp" 2>/dev/null || true; done
+    for _e in "$PCAP_DIR"/*.err; do
+        for _w in $(seq 1 50); do
+            grep -q "dropped by kernel" "$_e" 2>/dev/null && break
+            sleep 0.1
+        done
+    done
+    for _tp in "${TCPD_PIDS[@]}"; do
+        kill -0 "$_tp" 2>/dev/null && kill -TERM "$_tp" 2>/dev/null
+        wait "$_tp" 2>/dev/null || true
+    done
+    for _e in "$PCAP_DIR"/*.err; do
+        _b=$(basename "$_e" .err)
+        _cap=$(sed -n 's/^\([0-9]*\) packets captured.*/\1/p' "$_e" | tail -1)
+        _kd=$(sed -n 's/^\([0-9]*\) packets dropped by kernel.*/\1/p' "$_e" | tail -1)
+        case "$_b" in
+            p*) echo "[CAPTURE] leg=${_b#p} dev=${SRV_LEGS[${_b#p}]} captured=${_cap:--} kdrop=${_kd:--}" ;;
+            c*) echo "[CAPTURE-DIAG] tap=cli leg=${_b#c} dev=${CLI_LEGS[${_b#c}]} captured=${_cap:--} kdrop=${_kd:--}" ;;
+            f*) echo "[CAPTURE-DIAG] tap=filtered leg=${_b#f} dev=${SRV_LEGS[${_b#f}]} captured=${_cap:--} kdrop=${_kd:--}" ;;
+        esac
+    done
+    TCPD_PIDS=()   # reaped: cleanup must not signal a recycled PID
+fi
 # Recorded on every invocation, so it is a column with a control and not only
 # an abort field.
 aw_kv cli_rc "$CLI_RC"

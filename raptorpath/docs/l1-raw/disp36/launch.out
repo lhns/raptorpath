@@ -1,0 +1,36 @@
+SENTINEL-WRITABLE /dev/shm/ld36/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld36/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-10T00:28:53Z user=VMUSER dir=/dev/shm/ld36/run launch=2026-11-10T00:28:53Z
+LD-ALL start plan=36 load=3.48 1.00 0.59 1/395 809912 2026-11-10T00:28:53Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=2.25 avg60=2.25 avg300=1.56 total=4403268759 2026-11-10T00:29:01Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=3.75 1.14 0.64; io=full avg10=2.25 avg60=2.25 avg300=1.56 total=4403268759 2026-11-10T00:29:01Z
+LD-ALL parser test ok 2026-11-10T00:29:06Z
+LD-ALL built wall=314s 2026-11-10T00:34:20Z
+LD-ALL binary 79572edd05dbbee3184e038db88c7143a952415bed2da21c1000ce1525edfff5 2026-11-10T00:34:20Z
+SMOKE36 c1s-400 CAP256: mbps=278.838 m=1252 p0=live/skbs=40039/L4=137770693.63593882 status=LIVE
+SMOKE36 c8-100 CAP128: mbps=66.59 m=1252 p0=live/skbs=17166/L4=13145153.923449347 p1=live/skbs=1128/L4=961706.5362344044 status=LIVE
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-10T00:34:58Z
+LD-ALL battery start load=1.30 1.73 1.17; io=full avg10=0.13 avg60=0.18 avg300=0.55 total=4404159157 2026-11-10T00:34:58Z
+LD-ALL battery rc=0 wall=1470s 2026-11-10T00:59:28Z
+CHECK36 done=True rows=57/58
+LD-ALL end bat_ok=0 raptorpath=0 netns=0 load=0.60 0.74 0.75; io=full avg10=0.19 avg60=0.20 avg300=0.17 total=4408797189 2026-11-10T00:59:29Z
+LD-ALL FAILED: battery_ok=0 2026-11-10T00:59:29Z
+PERSISTED /dev/shm/ld36/run -> /home/VMUSER/ld36/run 2026-11-10T00:59:29Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock
