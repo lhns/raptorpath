@@ -2855,11 +2855,24 @@ inside one busy run gives `Σ b / (t_{j+k} − t_j) = R` exactly.
   n/g skbs (g the GSO factor), so small caps are where the premise can fail.
 - *Real links:* aggregation and token buckets make dispersion over-read the
   sustained rate. This is a declared premise, bounded by the per-path knee
-  clamp. It is not tested on L1.
+  clamp. Status §40 tests it on L1: `slot` fails, the policer is not cleared
+  (below).
 
 The engine form would need kernel receive timestamps through quinn's socket
 and a receiver → sender field (an ADR). Status §36 first measures the
 estimator from a receiver-side packet capture, with no engine diff.
+
+*Result of the p90 estimator, fixed in advance (status §40, `NOT-YET`).*
+From a cap crossover up, the per-window p90 of k = 4 train rates reads the
+link within +4 % (c1s 1.001–1.038, c2 and c8's fast leg ≤ 1.013, c8's slow
+leg 0.995–1.011 from 256) on every leg that carries traffic. It fails on c8's
+placement-starved slow leg, where the leg is near idle and its floor escape
+is set by placement, not by the store. Aggregation breaks it: netem `slot`
+over-reads ×2.05 (`AGG-OVER-READ`). The policer is not cleared: `c2tbf`
+stays within 1.10 only at the three caps run, and caps between 32 and 128
+were not run. Offline, §36's D5 rerun with the p90 map at c8 lands at 329
+(slope 0.53; oracle 324). That holds on the static grid only and assumes no
+lock-out (status §38). The rule for a leg with no trains stays open.
 
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
