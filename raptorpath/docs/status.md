@@ -10842,6 +10842,60 @@ c1s client CPU/GB is WITHIN (≤ +1 %), and the ladder reads `CURED`, since
   missing cell reads UNREADABLE. The BASE witnesses: no `RWM_PLACE_WIRE`
   token, no numeric `wpl_us`, no `w_*` gauges.
 
+### 41. Result
+
+Scored 2026-11-10 (`docs/l1-raw/place41/score.txt`). **Ladder `CURED`
+(WIRE against MAIN); BASE gate `FAIL`.** By the gate's own rule, the arm
+cannot reach main as registered.
+
+*Session.* One launch at 13:17Z: precondition met, both locks, gate, two
+fresh builds (322 s and 319 s), suites, smoke, then the battery
+14:13–14:29Z, `DONE-ALL`.
+- Suites on the diag36 tree: release 1 163/0, doc, wasm 35, debug 1 026/0,
+  tools/l1 python tests. No flake.
+- 108 rows: 106 LIVE, plus two WIRE rows `WITNESS-FAIL` on the ≥ 95 %
+  `wpl`-within-1 ms witness (92 % and 94 %), left void.
+- No abort token fired.
+
+*Ladder.*
+- **c1s default:** all clauses WITHIN. Client CPU/GB is +0.8 % (WIRE 15.76
+  against MAIN 15.64; tolerance 2.4 %), and +1.7 % at matched speed (4 rows
+  per arm; §38 read +1.9 %). The overhead is reduced, not gone.
+- **c1d default:** goodput +0.1 %, so `CURED`, not `-AT-COST`.
+- **c1d 1536:** LOCKED 4/6 under MAIN, 0/6 under WIRE.
+- **c8:** static caps 192, 256 and 512 were NOT reproduced this time (MAIN
+  locked 1/6 at each). The share is preserved.
+- The cure therefore rests on c1d 1536 in two sessions, and on c8 256 in
+  §38 only.
+
+*BASE gate.*
+- **c1s:** PASS, every clause WITHIN.
+- **c1d default:** FAIL, on one clause. `lag_E_cli` reads TREND-BETTER:
+  MAIN 1 290 against BASE 1 814 µs median, −28.9 % against a 28.5 %
+  tolerance. All other clauses are WITHIN.
+- **Per-row (ledger):** BASE's six c1d rows read 1 519–2 552 µs. The new
+  binary's MAIN and WIRE rows read 858–2 823 µs, mostly 900–1 700.
+- **Reading.** Both new-binary arms sit lower than BASE, so the difference
+  is the binary or the run order, not the arm switch. The new binary
+  differs from main only by the gate-off arm code, its printed fields and
+  the test hook. A better lag is not harm.
+- **But the gate was never sized.** How often two identical binaries trip a
+  13-clause all-WITHIN gate was not measured (an A/A pair). That gap is the
+  coordinator's.
+
+*Decision for the user (§43 amendment 1 allows two routes).*
+- **Recommended: archive.** Tag `archive/place-wire`, revert the arm's
+  engine merges from `diag36`, and keep the docs, harness and ledgers.
+  - No default-law benefit showed in two sessions.
+  - §45's rule is promote or archive at the verdict, and Stage 3 redesigns
+    the price inputs anyway.
+  - `diag36`'s engine then equals main, which clears the merge and gives
+    §43 a clean comparator.
+- **Alternative:** a calibrated re-test as a new registration, ≈ 10 min,
+  with arms BASE, BASE′ (relabelled) and MAIN. MAIN-against-BASE must not
+  exceed BASE-against-BASE′.
+- Either way, §45's guard needs an A/A pair in its first run.
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
@@ -11392,6 +11446,28 @@ stops at 0.10 at Bulk, while the knees need ≈ 1.2 (c2, c8) and 1.2–1.3
 - Run the registered form at 1.2 against the expired anchor. That shows
   the anchor margin a larger gain costs.
 
+
+*The debias result (offline, `docs/l1-raw/s42/s43gain.out`; registered
+form, p27 static rows).*
+
+| variant | c2 fresh | c2 expired | c2 stuck-high threshold | c8 fresh / expired (thin) |
+|---|---|---|---|---|
+| registered, 1.1 | 164, 0.887 Gmax, Tp50 17.8 ms | 157 | 927 | 324 / 287 |
+| brake offset b₀ = 2.47 ms added, 1.1 | **195 (slope 0.08), 0.985 Gmax, Tp50 19.5 ms** | 196 | **648** | 413 / 346 |
+| gain 1.2 | 184, 0.957 Gmax | 179 | 504 | 399 / 330 |
+
+- At c2 the undershoot was estimator bias: with the no-queue brake offset
+  added back, the law lands on the knee at 0.985 of Gmax, with Tp50 at
+  19.5 ms against 40–100 ms on main. So "both" is reachable at c2 on the
+  offline map. q stays as it is.
+- **The price is anchor margin:** the stuck-high threshold falls from 927 to
+  648.
+- **b₀ has no engine source.** It is an oracle constant read off this
+  ledger's smallest caps. "Both minima on one horizon", taken literally,
+  removes the brake, which is the 250 ms-minimum case with no fixed point.
+  A source for b₀ is the open design item.
+- c8 is thin and c1s is unread (truncated windows). These are offline maps,
+  not closed-loop runs.
 
 ## 45. Simplification plan — reduce complexity, keep or improve performance — no VM, plan
 

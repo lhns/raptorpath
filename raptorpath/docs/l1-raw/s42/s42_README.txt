@@ -19,3 +19,19 @@ s42rtprop.py  python -I s42rtprop.py LD > s42rtprop.out   (imports s42noise.py)
   The row-median map with RTprop := each row's and leg's lowest post-warm-up rtt_min_us (an expired 10 s filter under
   a standing queue), with S unchanged. Prints the original and new map per cap, Tmin - rtprop_us per leg, the
   classifier and every crossing.
+
+s43res.py     python -I s43res.py LD > s43res.out   (imports s42noise.py from this directory)
+  The residence-time store law ask = g·ΣLᵢ(R̄ − (Tminᵢ − RTpropᵢ)), R̄ = occupancy/D, g ∈ {0.8, 0.9, 1.0, 1.1}, on the p27
+  c2/c8/c1s and p34 c1s static DEF rows. occupancy = [DIAG] win= numerator (a snapshot at the tick); D = Σ legs [LOOPDIAG]
+  dlv_rate (delivered symbols/s = datagrams/s, L's units), cross-checked against the [DIAG] cum= ack delta. Per cap: the
+  Little check (R̄, n/D, srtt snapshot mean as the only mean-loop-time proxy, Tp50, τ), the map and every crossing under a
+  fresh (rtprop_us) and an expired (row floor of rtt_min_us) anchor, goodput fraction and Tp50 at the stable point, ask/n
+  above the knee, the floor (ask_1/n, g_min, the g that reaches the knee; oracle L and L̂ = D), and per-window noise at the
+  bracketing caps. c1s is printed twice: all LIVE rows (as s42) and with goodput outlier rows dropped (< 0.6x the cap's
+  other rows: p34 DEF384 s42r1, p27 DEF192 s42r1, the 70 s row). c8 is one row per cap at most caps.
+  A row's last window is dropped when the store has drained (occ < 0.1 cap at the transfer end; 4 windows, listed).
+
+s43gain.py    python -I s43gain.py LD > s43gain.out   (imports s42noise, s42rtprop, s43res from this directory)
+  The registered law G·ΣL(RTprop + S) at p27 c2 and c8, fresh and expired anchor: the gate (G = 1.1, reproduces 164/157/927
+  and 324/287/492), (1) a debiased brake b0 = mean(Tmin − RTprop) over the two smallest caps added to the time term at
+  G = 1.1, (2) no debias at G = 1.2. Fixed point, slope, band, G/Gmax, Tp50, every crossing, ask/n above the knee.
