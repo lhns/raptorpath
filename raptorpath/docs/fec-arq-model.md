@@ -2068,6 +2068,18 @@ equilibrium.
   decays slowly (269 → 216 ms over 0.8 s, c8 MAIN s42 r1). The arm prices
   that leg fresh while it carries, so §38 reports the idle-leg ŵ decay as a
   witness rather than assuming it.
+  - *Idle refresh rate (status §46).* Quinn samples only when one of its own
+    ack-eliciting packets is acked. On an idle leg those packets are the 2 s
+    `PathReport` + `Ping` and the `Pong` that answers the peer's 2 s `Ping`.
+    No keep-alive is set.
+    - That gives 2–3 samples per 2 s (derived). At that rate a leg's excess
+      over its true RTT halves in about 3.5–5 s and falls to 10 % in
+      11–17 s.
+    - Only the Pong's 1 per 2 s is measured: the frozen leg's `dgq tx` on
+      §38's locked c8 rows. At that floor the times are about 10 s and 34 s.
+    - The old base had no idle refresh at all, because broadcast acks carry
+      echo 0.
+    - Status §46 registers the path event that tells the two apart.
 - I_i: live. The residual frozen term is (I_i/W_i)·s_i on a leg whose
   in_flight is stuck above 0 without echoes. Every locked ledger leg read
   `infl=0`.
