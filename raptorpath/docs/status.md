@@ -9559,6 +9559,62 @@ c1d reads ≈ L per leg: MISSED (the max over-reads ×7–21). D4 < 5 %: MET.
 4. Re-scoring with the median, or with a byte floor plus the median, would
    be a new registration on the kept tables.
 
+### 36. Result — addendum (exploratory, post hoc on the seen ledger)
+
+Both registered estimators failed: the k = 4 max (scored) and the
+amendment-7 byte-floored max. What follows are leads, computed on the kept
+tables by `tools/l1/disp36_explore.py` (output in
+`docs/l1-raw/disp36/explore.txt`). They are not a verdict. A pass needs a
+fresh registration with one estimator fixed, plus an aggregation cell (netem
+`slot`) and a policer cell (`tbf`).
+
+- **The p90 variant (registered as a readout, omitted above).**
+  - It never exceeds 1.032 of the link anywhere, including c1, where the max
+    reads ×125.
+  - It reaches the link one grid step below the median: from 128 at c1s,
+    64 at c2 and c8 fast, and 256 at c8 slow.
+- **Within-row noise of p90 and the median is large.** c1s cv is 0.29–0.56
+  and c2 0.19–0.34; c8 fast reads 0.002–0.21. In many 250 ms windows the
+  link forms no busy run, so the per-window value is bimodal (link or
+  delivered rate). The median over windows is stable across caps and rows.
+  The within-row cv measures how often busy runs form, not estimator error.
+  D2 as registered does not separate the two.
+- **The floor (correcting "a law would still need a way out of the
+  floor").**
+  - Below the crossover, L̂/D (D = the delivered rate from the same table)
+    is 1.6–3.9 for p90 at every sub-crossover cap of every leg, and
+    1.06–1.45 for the median (0.72–0.97 on c8's slow leg at 16–128).
+  - At small caps Tmin ≈ RTprop, so RTprop + S ≈ Tp50 ≈ T, and the law's
+    map gain is g ≈ (1 + q)·L̂/D. That is ≈ 1.7–4.3 for p90: the map expands
+    out of the floor, so there is no trap.
+  - For the median, g ≈ 1.2–1.6 holds on the active legs. On c8's slow leg
+    it is ≈ 0.8–1.07: marginal there, but that leg's share is set by
+    placement, not the store.
+  - The boot cap 128 is at or above the p90 crossover on every leg except
+    c8 slow.
+- **The cause of the 1 Gbit/s over-read is netem's release, not receive
+  stamping.**
+  - 64-skb blocks span as little as 0.895 of their ideal b/R time at c1s
+    1 024–2 048 (≥ 0.96 on the 100 Mbit/s legs).
+  - Compressed k = 4 trains (span < ½ ideal) are 0.3–0.9 % at c1 against
+    ≤ 0.15 % elsewhere.
+  - The c2 two-tap check put the tap pair within 2.5 µs.
+  - So at sub-ms scale the c1 link releases late in batches: c1 here already
+    behaves as an aggregating link, which is the §37 caveat for real links.
+- **Dwell in the time term: unsettled.** `rtt − wrtt` is dwell in T, not in
+  S: dwell present in every sample moves Tp50 and Tmin together. It reads
+  ≈ 1 ms at the small caps of every cell (an offset). Whether S at c1s 614
+  carries any of it needs the µs fields of the kept client logs. Each 1 ms
+  truly in S moves the c1s point by ≈ 230.
+- **D5's oracle points recompute the location** from the same cross-session
+  RTprop and S, so they reproduce by construction. Only the goodput at them
+  (c1s 0.945, c2 0.85, c8 0.89 of Gmax) is new.
+
+*Lead for a fresh registration (not made here).* The per-window p90 of
+k = 4 train rates, the median over windows, cells c1s, c2 and c8, plus
+`slot` and `tbf` cells. It is scored on D1 with a noise clause defined on
+the median-over-windows' across-row spread.
+
 ## 37. Model review — joint fixed point, internal audit, literature — no VM, record
 
 The user asked for the whole model and pipeline to be rated, with the

@@ -2772,11 +2772,14 @@ inside one busy run gives `Σ b / (t_{j+k} − t_j) = R` exactly.
 - *Fixed point:* R, independent of the cap. This is the property no sender
   sampler has (§23, §24, §27).
 - *Noise:* release-timer and receive-timestamp lateness J compresses
-  spacings, so a train reads high by at most J/(k·b/R). The error is
-  one-sided upward and shrinks with k and on slower links. Gaps (a run that
-  ends inside the train) read low. The per-window estimator is therefore a
-  max over trains. A fixed train length k in skbs (not in time) keeps it
-  scale-free, with no L in the rule.
+  spacings, so a train reads high by x/(1 − x), x = J/(k·b/R). The error
+  is one-sided upward and shrinks with k and on slower links. Gaps (a run
+  that ends inside the train) read low. §36 registered a per-window max over
+  trains. Measured, the max fails at 1 Gbit/s (up to ×125): netem's own
+  late, batched release compresses 64-skb blocks by up to 10 % against b/R,
+  so the link is not time-conserving at sub-ms scale. The per-window p90 and
+  median read 1.00–1.03 of the link above a cap crossover (status §36
+  result and addendum; exploratory, not registered).
 - *Circularity premise:* a train needs k + 1 skbs queued back to back.
   `L̂ = min(R, the sender's intra-burst rate)`. If the sender's bursts are
   shorter than k + 1 skbs, or paced below R, L̂ falls to the delivered rate
