@@ -11078,6 +11078,35 @@ The wire-clocked placement base becomes the shipped placement price.
 - **Evidence:** §38, §41 and §41b. Not tested off Bulk or at four paths;
   that is stated in §5.7.
 
+### 41b. Promotion — built and merged on `diag36` (`place-promote`, 4265e3d + c1000c3 + 0ae5a3b)
+
+The wire base is the only placement base. Removed:
+- the old base;
+- the `RWM_PLACE_WIRE` gate (`RWM_FORWARD` 97 → 96, `[GATES]` 84 → 83);
+- the `RWM_TEST_PLACE_HOLD` hook.
+
+Red → green on 13 tests. Targeted debug tests 121/0, plus the
+`place_wire_loopback`, `place_arms_reachability` and `eta_reachability`
+integration tests. The `place_costs` allocation test still makes 0 extra
+heap blocks.
+
+**Two deliberate departures from the ruling text above:**
+- **The `[ETA]` stamp is now the priced E.** Stamp, price and X_i's
+  arrival read one seat (`Scheduler::place_e`), so they cannot drift. As a
+  consequence, `[ETA]` residuals and `lag_E` re-baseline, and σ̂_e (read by
+  the default-off `RWM_PLACE_T_DERIVED`) measures the wire-base predictor.
+  - The stamp adds one min-wire scan per stamped symbol on the sender path.
+    That CPU cost is checked by the guard.
+- **`w_mv` is removed:** it compared against the deleted base. `w_cold`
+  and `ref_fl` stay as the price's bind gauges.
+
+**Harness debt before the merge-candidate session.** `place38_parse.py`'s
+`_ETA` regex requires `w_mv=`. `place38_parse.py`, `loopdiag_battery.sh`
+and `place41b_score.py` expect `RWM_PLACE_WIRE` in the binary or the
+`[GATES]` echo. The MAIN-against-WIRE battery is retired. The §41b guard
+and the §46 CAND preflight must accept the promoted tree before VM
+contact.
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
