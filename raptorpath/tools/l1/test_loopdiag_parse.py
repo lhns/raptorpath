@@ -1086,5 +1086,10 @@ with tempfile.TemporaryDirectory() as td36:
         check("smoke36 passes on two live rows whose live legs have an L-hat_4", ok1.returncode == 0 and "SMOKE-PASS" in ok1.stdout, ok1.stdout[-300:])
         check("smoke36 fails when a live leg has no L-hat_4 (the estimator did not run)", bad.returncode == 1 and "has no L-hat_4" in bad.stdout, bad.stdout[-300:])
 
+# every arm the plan-36 table runs must be a known arm (the first launch lost c1s CAP768 to a KeyError in ARM_SPEC)
+check("plan 36: every (cell, arm) of the 58-row table and the smoke is registered in ARM_SPEC",
+      all(arm in ld.sp.ARM_SPEC for _, arm, _, _ in disp36.plan36() + disp36.plan36(smoke=True)),
+      [arm for _, arm, _, _ in disp36.plan36() if arm not in ld.sp.ARM_SPEC])
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

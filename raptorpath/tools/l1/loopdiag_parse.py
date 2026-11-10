@@ -1170,7 +1170,7 @@ for _g in GRID34.values():
     for _n in _g:
         sp.ARM_SPEC[f"DEF{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
 # Plan 36 (disp36.py): CAP<n> = RWM_STORE=<n> + packet capture, NOCAP<n> = RWM_STORE=<n> alone.
-for _n in (16, 32, 64, 128, 256, 384, 512, 1024, 2048):
+for _n in (16, 32, 64, 128, 256, 384, 512, 768, 1024, 2048):
     for _a in ("CAP", "NOCAP"):
         sp.ARM_SPEC[f"{_a}{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
 
