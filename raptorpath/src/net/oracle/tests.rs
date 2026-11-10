@@ -379,6 +379,42 @@ fn oracle43_ocap_line_is_the_logged_contract() {
     assert!(l.contains(" wbind=1 ") && l.contains(" r_k=0.83 ") && l.contains("brake_us=10000"), "{l}");
 }
 
+/// The `[DIAG]` tick (`diag::report` calls `close_tick`): every registered path's
+/// window closes once, in path-id order (paths added 1 then 0), the refresh
+/// accumulators drain once (both lines carry the same n / ask / bind window),
+/// S carries across an empty window, and the next tick starts a fresh refresh
+/// window with the last n still in force.
+#[test]
+fn oracle43_tick_closes_every_path_once_and_drains_the_refresh_once() {
+    let tg = TestGauge::install();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock);
+    sched.add_path(1);
+    sched.add_path(0);
+    sched.path_mut(0).unwrap().record_rtt_sample(Duration::from_micros(7000));
+    sched.path_mut(1).unwrap().record_rtt_sample(Duration::from_micros(3000));
+    tg.0.note_rtt(0, 12400);
+    tg.0.note_rtt(1, 3500);
+    tg.0.note_rtt(1, 3500);
+    tg.0.note_refresh(201, &oracle_cap(200.4, STORE_CAP_FLOOR, 0, 2 * KNEE), 0);
+    tg.0.note_refresh(250, &oracle_cap(250.0, STORE_CAP_FLOOR, 0, 2 * KNEE), 0);
+    let b = delta_budget_b(ProtocolHint::Bulk);
+    let l = close_tick(tg.0, &sched, 12.5, b, true);
+    assert_eq!(l.len(), 2);
+    assert_eq!(
+        l[0],
+        "[OCAP] t=12.5s p0 law=oracle n=250 ask=250.00 h=0 rtprop_us=7000 tmin_us=7000 tp50_us=12400 s_us=5400 \
+         brake_us=0 n_k=2 offered=2 r_k=20.16 floor=0.000 pin=0.000 hold=0.000 wbind=0 nmin=201 nmax=250 \
+         refreshes=2 q=0.1000"
+    );
+    assert!(l[1].starts_with("[OCAP] t=12.5s p1 law=oracle n=250 ask=250.00 h=0 rtprop_us=3000 tmin_us=3000 tp50_us=3500 s_us=500 "), "{}", l[1]);
+    assert!(l[1].contains(" n_k=3 offered=3 ") && l[1].contains(" nmin=201 nmax=250 refreshes=2 "), "{}", l[1]);
+    // Next tick: no refresh happened, no sample arrived. n carries, the window is empty, S carries, offered stays.
+    let l = close_tick(tg.0, &sched, 12.75, b, true);
+    assert!(l[0].contains(" n=250 ask=250.00 ") && l[0].contains(" tmin_us=- tp50_us=- s_us=5400 brake_us=- n_k=0 offered=2 r_k=- "), "{}", l[0]);
+    assert!(l[0].contains(" nmin=250 nmax=250 refreshes=0 "), "{}", l[0]);
+}
+
 // ── (a) default off is bit-identical ─────────────────────────────────────
 
 fn warm_one_path() -> Scheduler {
