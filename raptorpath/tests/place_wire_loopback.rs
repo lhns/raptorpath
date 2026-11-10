@@ -1,7 +1,10 @@
-//! `RWM_PLACE_WIRE` (status §38, paper §5.7): the wire-clocked placement
-//! base reads a per-leg RTT that is mirrored into the scheduler at every ack
-//! batch and path report for EVERY leg, including a leg that carries nothing
-//! (measurement-discipline rule 1: the wiring routes there).
+//! The wire-clocked placement base (status §38/§41b, paper §5.7) reads a
+//! per-leg RTT that is mirrored into the scheduler at every ack batch and
+//! path report for EVERY leg (measurement-discipline rule 1: the wiring
+//! routes there). That the read list names an idle leg and that the mirror
+//! writes every leg it is handed is pinned at unit level
+//! (`scheduler::tests::the_wire_mirror_writes_every_leg`); the test-only
+//! placement hold that once forced a leg idle in a real transfer is gone.
 //!
 //! Own test binary: `RWM_L0_NETEM` is process-global in the child.
 
@@ -50,20 +53,12 @@ fn legs(line: &str) -> Vec<Leg> {
     out
 }
 
-/// A two-leg transfer in which leg 1 is held out of placement for 1.2 s
-/// (`RWM_TEST_PLACE_HOLD`, test-only) and then released: in every `[DIAG]`
-/// line after the first ack, each leg's `wpl_us` lies within 1 ms of the
-/// transport's `wrtt` (which `[DIAG]` prints rounded to a whole millisecond,
-/// hence the 0.5 ms print allowance), including leg 1 while its `infl` is 0.
+/// A two-leg transfer: in every `[DIAG]` line after the first ack, each
+/// leg's `wpl_us` lies within 1 ms of the transport's `wrtt` (which `[DIAG]`
+/// prints rounded to a whole millisecond, hence the 0.5 ms print allowance).
 #[test]
-fn wire_srtt_mirrors_every_leg_including_an_idle_one() {
-    let env = [
-        ("RWM_DIAG", "1"),
-        ("RWM_PLAIN_RS", "1"),
-        ("RWM_PLACE_WIRE", "1"),
-        ("RWM_TEST_PLACE_HOLD", "1:1200"),
-        ("RUST_LOG", "raptorpath=info"),
-    ];
+fn wire_srtt_mirrors_every_leg() {
+    let env = [("RWM_DIAG", "1"), ("RWM_PLAIN_RS", "1"), ("RUST_LOG", "raptorpath=info")];
     let (cli, _srv) = loopback::transfer(loopback::Transfer {
         paths: 2,
         env: &env,
@@ -72,11 +67,7 @@ fn wire_srtt_mirrors_every_leg_including_an_idle_one() {
         ..Default::default()
     });
 
-    let g = gauge::require(&cli, "[GATES]", "the sender must echo its gates");
-    assert!(g.contains("RWM_PLACE_WIRE=1"), "arm not armed on the sender: {g}");
-
     let mut seen = 0usize;
-    let mut idle_seen = 0usize;
     let mut started = false;
     for line in cli.lines().filter(|l| l.contains("[DIAG]")) {
         let ls = legs(line);
@@ -102,40 +93,8 @@ fn wire_srtt_mirrors_every_leg_including_an_idle_one() {
                 l.wrtt_ms,
                 l.infl
             );
-            if l.id == 1 && l.infl == 0 {
-                idle_seen += 1;
-            }
         }
         seen += 1;
     }
     assert!(seen >= 3, "only {seen} usable [DIAG] lines");
-    assert!(
-        idle_seen >= 2,
-        "leg 1 was never observed idle (infl=0) with a mirrored wpl_us ({idle_seen} lines): \
-         the placement hold did not execute"
-    );
-}
-
-/// Control: with the arm absent the mirror is never written, so `wpl_us` is
-/// `-` on every leg of every `[DIAG]` line.
-#[test]
-fn without_the_arm_wpl_us_is_a_dash() {
-    let env = [("RWM_DIAG", "1"), ("RWM_PLAIN_RS", "1"), ("RUST_LOG", "raptorpath=info")];
-    let (cli, _srv) = loopback::transfer(loopback::Transfer {
-        paths: 2,
-        env: &env,
-        client_env: &loopback::shaped(Some("c2,c2")),
-        bytes: "8000000",
-        ..Default::default()
-    });
-    let g = gauge::require(&cli, "[GATES]", "the sender must echo its gates");
-    assert!(g.contains("RWM_PLACE_WIRE=0"), "{g}");
-    let mut seen = 0;
-    for line in cli.lines().filter(|l| l.contains("[DIAG]")) {
-        for l in legs(line) {
-            assert!(l.wpl_us.is_none(), "p{} printed a wire price with the arm absent: {line}", l.id);
-            seen += 1;
-        }
-    }
-    assert!(seen > 0, "no [DIAG] legs parsed");
 }

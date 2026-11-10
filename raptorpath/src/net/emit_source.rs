@@ -315,7 +315,7 @@ pub(crate) fn emit_source(
     };
     st.last_source_path = source_path;
     // ── `[ETA]`: stamp the sender's own prediction ───────────────────────
-    // `E_picked` is the `expected_delivery_load()` of the path the placement
+    // `E_picked` is `E_i` (`Scheduler::place_e`) of the path the placement
     // law just chose. It is the same quantity the law's `load` term is built
     // from (there de-dimensionalised by `ref_srtt` and offset by the
     // deadline; here in raw seconds), so the receiver is told the sender's

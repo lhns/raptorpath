@@ -706,9 +706,8 @@ pub(crate) fn report(
                     // wire truth). Both appended at the end of the segment.
                     let plu_i = p.estimator.predictive_loss_upper(0.95);
                     let plc_i = p.estimator.cumulative_loss();
-                    // `RWM_PLACE_WIRE`: the wire RTT the scheduler holds for
-                    // this leg (µs), to read beside `wrtt`. `-` with the arm
-                    // absent or before quinn has a sample.
+                    // The wire RTT the scheduler holds for this leg (µs), to
+                    // read beside `wrtt`. `-` before quinn has a sample.
                     let wpl_s = p
                         .wire_rtt()
                         .map(|d| d.as_micros().to_string())
