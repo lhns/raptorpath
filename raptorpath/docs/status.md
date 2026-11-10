@@ -11735,3 +11735,19 @@ wrong. It also:
 The BtlBw anchor it hosts feeds the shipped store cap and stays. So Stage
 3.1 is a redesign of four consumers, not the largest deletion. It needs the
 Realtime cells, and moves after the per-leg state (3.2).
+
+### 45. User ruling — the grouped deletions and ADR-0073 (2026-11-10)
+
+- **Groups A, B and C are approved for deletion.** Each gets an archive tag
+  and a re-ask clause.
+  - **A (pre-discipline):** `RWM_REPAIR_WAIT`, `RWM_PROACTIVE_PACER`,
+    `RWM_XPATH_REPAIR`, `RWM_REASM_BDP`. `XPATH_REPAIR` lives in `place.rs`
+    and waits until §41b's fence lifts.
+  - **B:** `RWM_THREE_TERM` and `RWM_COMPOSED_CAP`. The contract-stall
+    formula stays in the paper. The intake-brake path it shares with
+    `RWM_LATE_BRAKE` (no verdict) stays.
+  - **C:** `RWM_HOLDDOWN_Q`, `RWM_REFRESH_FLOOR_US`, `RWM_DERIVED_SWEEP`.
+    Re-ask once the store law sets H.
+- **ADR-0073 (promote or archive at the verdict) is accepted.** It
+  supersedes ADR-0052's two-stage retirement.
+
