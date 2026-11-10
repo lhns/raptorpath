@@ -1824,7 +1824,7 @@ an unmeasured leg takes the best measured leg's value, so it gets sampled.
 `RWM_COLD_PLACE` already does this for srtt; the corrected price below does
 it for its base. The clamp also has a step: r → ∞ as ε̂ → 1⁻, then 10 at
 ε̂ = 1. Its continuous form is min(ε̂/(1 − ε̂), 10), which binds from
-ε̂ = 10/11 on. That is owed, and it is outside the §38 arm, which reads
+ε̂ = 10/11 on. That is owed, and it is outside the wire base, which reads
 nothing new from it.
 
 **The idle-leg lock-out (status §37).** A leg that carries nothing gets no
@@ -2078,7 +2078,7 @@ equilibrium.
 - ŵ_i: refreshed by quinn, not by us. Its residual risk is a leg that idles
   while its own netem queue is still in quinn's EWMA. At c8 default the slow
   leg reads ŵ_1 = 245–366 ms while carrying, and after the transfer it
-  decays slowly (269 → 216 ms over 0.8 s, c8 MAIN s42 r1). The arm prices
+  decays slowly (269 → 216 ms over 0.8 s, c8 MAIN s42 r1). The wire base prices
   that leg fresh while it carries, so §38 reports the idle-leg ŵ decay as a
   witness rather than assuming it.
 - I_i: live. The residual frozen term is (I_i/W_i)·s_i on a leg whose
