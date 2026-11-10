@@ -56,6 +56,11 @@ pub struct OracleGates {
     /// knob for off-law rows, not a law term: nothing derives it and no law is
     /// built from it. Unset (the default) leaves the formula untouched.
     pub gain: Option<f64>,
+    /// `RWM_ORACLE_BRAKE_OFFSET_US`: a constant b0 (µs, >= 0) added to every path's
+    /// time term, RTprop + S + b0. An oracle INPUT like L (it comes from the
+    /// environment), not a law term: nothing derives it. 0 (unset) leaves the formula
+    /// untouched.
+    pub brake_offset_us: f64,
     /// The first parse error, if any.
     pub err: Option<String>,
 }
@@ -124,6 +129,18 @@ impl OracleGates {
         }
     }
 
+    /// Read `RWM_ORACLE_BRAKE_OFFSET_US` (a finite number >= 0) into `brake_offset_us`.
+    pub fn apply_brake_offset(&mut self, raw: Option<&str>) {
+        if let Some(raw) = raw {
+            match raw.trim().parse::<f64>() {
+                Ok(b) if b.is_finite() && b >= 0.0 => self.brake_offset_us = b,
+                _ => {
+                    self.err.get_or_insert(format!("RWM_ORACLE_BRAKE_OFFSET_US={raw:?} is not a number >= 0"));
+                }
+            }
+        }
+    }
+
     pub fn resolve() -> Self {
         let env = |k: &str| std::env::var(k).ok();
         let mut g = Self::parse(
@@ -133,6 +150,7 @@ impl OracleGates {
             env("RWM_ORACLE_DIAG").as_deref(),
         );
         g.apply_gain(env("RWM_ORACLE_GAIN").as_deref());
+        g.apply_brake_offset(env("RWM_ORACLE_BRAKE_OFFSET_US").as_deref());
         g
     }
 
@@ -202,13 +220,13 @@ impl OracleGates {
                 .hold
                 .map_or_else(|| "none".to_string(), |(h, t)| format!("H={h} t_h={t}s"));
             Some(format!(
-                "oracle store law ACTIVE (RWM_STORE_LAW=oracle, diagnostic, never merged): L_dgps={:?} hold={} T_w={}s gain={}",
-                self.l_dgps, hold, T_W_S, self.gain.map_or_else(|| "q".to_string(), |g| g.to_string())
+                "oracle store law ACTIVE (RWM_STORE_LAW=oracle, diagnostic, never merged): L_dgps={:?} hold={} T_w={}s b0_us={} gain={}",
+                self.l_dgps, hold, T_W_S, self.brake_offset_us, self.gain.map_or_else(|| "q".to_string(), |g| g.to_string())
             ))
         } else if self.diag {
             Some(format!(
-                "[OCAP] sampler readout ACTIVE (RWM_ORACLE_DIAG=1, observation only): L_dgps={:?} T_w={}s gain={}",
-                self.l_dgps, T_W_S, self.gain.map_or_else(|| "q".to_string(), |g| g.to_string())
+                "[OCAP] sampler readout ACTIVE (RWM_ORACLE_DIAG=1, observation only): L_dgps={:?} T_w={}s b0_us={} gain={}",
+                self.l_dgps, T_W_S, self.brake_offset_us, self.gain.map_or_else(|| "q".to_string(), |g| g.to_string())
             ))
         } else {
             None
@@ -290,7 +308,8 @@ pub(crate) fn decide(
         .map(|(id, p)| OracleTerm {
             l_dgps: og.l_dgps.get(*id as usize).copied().unwrap_or(0.0),
             rtprop_s: p.min_rtt().map_or(0.0, |d| d.as_secs_f64()),
-            s_s: g.s_s(*id),
+            // RTprop + S + b0: the diagnostic offset rides the time term (an oracle input like L).
+            s_s: g.s_s(*id) + og.brake_offset_us / 1e6,
         })
         .collect();
     let h = hold_h(og.hold, t_s);

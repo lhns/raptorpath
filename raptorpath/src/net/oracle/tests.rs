@@ -33,7 +33,7 @@ impl Drop for TestGauge {
 }
 
 fn gates(law: bool, diag: bool, l: &[f64], hold: Option<(usize, f64)>) -> OracleGates {
-    OracleGates { law, diag, l_dgps: l.to_vec(), hold, gain: None, err: None }
+    OracleGates { law, diag, l_dgps: l.to_vec(), hold, gain: None, brake_offset_us: 0.0, err: None }
 }
 
 /// One path whose RTprop is `rtt_us` (a sample fed through the path itself,
@@ -146,12 +146,44 @@ fn oracle43_gain_replaces_one_plus_q() {
         assert!(g.check(1, KNEE, true, true).is_err(), "{bad:?}");
     }
     let mut g = gates(true, false, &[9773.0], None);
-    assert!(g.echo().unwrap().ends_with("gain=q"));
+    assert!(g.echo().unwrap().ends_with("b0_us=0 gain=q"));
     g.apply_gain(Some("2"));
-    assert!(g.echo().unwrap().ends_with("gain=2"), "{:?}", g.echo());
+    assert!(g.echo().unwrap().ends_with("b0_us=0 gain=2"), "{:?}", g.echo());
     let mut m = gates(false, true, &[9773.0], None);
     m.apply_gain(Some("2"));
     assert!(m.echo().unwrap().contains("gain=2") && !m.echo().unwrap().contains("oracle store law ACTIVE"));
+}
+
+// ── the diagnostic brake offset (RWM_ORACLE_BRAKE_OFFSET_US) ─────────────
+
+/// b0 adds to the time term: RTprop + S + b0. L 9 773, RTprop 7.0 ms, S 5.4 ms,
+/// b0 = 1 000 us: 1.1 · 9773 · 0.0134 = 144.0540 -> n = 145 (b0 = 0: 134). With
+/// gain 2.0: 2 · 9773 · 0.0134 = 261.9 -> 262. Unset is the default exactly; the
+/// parse is strict; the echo declares it.
+#[test]
+fn oracle43_brake_offset_adds_to_the_time_term() {
+    let tg = TestGauge::install();
+    let sched = sched_with_rtt(Some(7000));
+    close_with(tg.0, &[12400, 12400]);
+    let b = delta_budget_b(ProtocolHint::Bulk);
+    let mut og = gates(true, false, &[9773.0], None);
+    assert_eq!(decide_at(&og, tg.0, &sched, b, 20.0).0.n, 134, "unset: the default formula");
+    og.apply_brake_offset(Some("1000"));
+    assert_eq!(og.brake_offset_us, 1000.0);
+    let (d, _) = decide_at(&og, tg.0, &sched, b, 20.0);
+    assert!((d.ask - 144.0540).abs() < 1e-3, "{}", d.ask);
+    assert_eq!(d.n, 145);
+    og.apply_brake_offset(Some("0"));
+    assert_eq!(decide_at(&og, tg.0, &sched, b, 20.0).0.n, 134, "b0 = 0 is the default");
+    og.apply_brake_offset(Some("1000"));
+    og.apply_gain(Some("2.0"));
+    assert_eq!(decide_at(&og, tg.0, &sched, b, 20.0).0.n, 262);
+    for bad in ["-1", "x", "inf", "NaN", ""] {
+        let mut g = gates(true, false, &[9773.0], None);
+        g.apply_brake_offset(Some(bad));
+        assert!(g.check(1, KNEE, true, true).is_err(), "{bad:?}");
+    }
+    assert!(og.echo().unwrap().contains("b0_us=1000 gain=2"), "{:?}", og.echo());
 }
 
 // ── (c) a 30 000-sample window kept whole ────────────────────────────────
