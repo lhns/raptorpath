@@ -393,7 +393,7 @@ pub struct CopaState {
     pub(crate) bw_mono: VecDeque<BwSample>,
     /// `RWM_HONEST_ANCHOR` resolved at construction: `max_bw` = the mono
     /// deque's front (O(1)) instead of the per-sample full-window fold
-    /// (O(window), a CPU tax under `RWM_PLAIN_RS`). Value-identical either way.
+    /// (O(window), a CPU tax under `RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS)). Value-identical either way.
     bw_o1: bool,
     /// Sliding window of RTT samples.
     rtt_samples: VecDeque<RttSample>,
@@ -720,7 +720,7 @@ impl CopaState {
     /// Recompute `max_bw` after a push/evict. `RWM_HONEST_ANCHOR` selects the
     /// cost of the same value: the mono deque's front (O(1) amortized) or
     /// the full-window fold (O(window) per accepted sample — a sender-CPU tax
-    /// once `RWM_PLAIN_RS` feeds this per delivered symbol instead of per ack).
+    /// once `RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS) feeds this per delivered symbol instead of per ack).
     fn bw_refresh_max(&mut self) {
         self.max_bw = if self.bw_o1 {
             self.bw_mono.front().map_or(0.0, |s| s.delivery_rate)
@@ -930,7 +930,7 @@ impl CopaState {
             .checked_sub(Duration::from_secs_f64(win))
             .unwrap_or(now);
         self.bw_evict_before(cutoff);
-        // Under RWM_PLAIN_RS this runs once per delivered source symbol, so
+        // Under the removed RWM_PLAIN_RS (tag archive/RWM_PLAIN_RS) this runs once per delivered source symbol, so
         // the full-window fold here is O(window·rate) per second, a real
         // sender-CPU tax. RWM_HONEST_ANCHOR reads the same value off the mono
         // deque in O(1).

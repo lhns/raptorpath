@@ -208,11 +208,6 @@ pub(crate) struct SenderPolicy {
     /// composed three-term law (`net::three_term_store_cap`). Scoped to the
     /// plain dynamic cap.
     pub three_term_on: bool,
-    /// `RWM_COMPOSED_CAP` (default off; paper §10): the composition arm. Implies
-    /// [`Self::three_term_on`] (same pool law, same function) and additionally
-    /// arms the late-stage per-path brake with the path's own cwnd as its cap,
-    /// over `live_paths()` (with `active_paths()` the brake could never close).
-    pub composed_cap: bool,
     /// `RWM_SUM_CAP` (default on; paper §6.1): the pooled law's count
     /// multiplier is removed from the value and kept in the ceiling
     /// (`net::pooled_store_cap`'s `sum_cap` argument). The Σ's path set is
@@ -227,9 +222,8 @@ pub(crate) struct SenderPolicy {
     /// `cap = clamp((1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ, floor, N·knee)`.
     pub delta_cap: bool,
     /// `RWM_LATE_BRAKE` (default off): the late-stage per-path cwnd brake,
-    /// armed without the composed pool law — [`Self::composed_cap`]'s brake
-    /// alone: same code path, same per-path cap (the path's own cwnd), same
-    /// `live_paths()` set, no constant in the predicate. Off, `cwnd_full`
+    /// armed with no pool law: the path's own cwnd is the per-path cap, over
+    /// the `live_paths()` set, no constant in the predicate. Off, `cwnd_full`
     /// stays false on the plain seat.
     pub late_brake: bool,
     /// The δ dial's deadline budget b(δ) at this tunnel's named point
@@ -575,14 +569,7 @@ impl SenderPolicy {
         // term is identically zero at a single path by arithmetic (max RTprop =
         // min RTprop), so there is no `if N == 1`. Scoped to the plain dynamic
         // cap: under Copa ownership cwnd is the operating point.
-        //
-        // The composed cap (`RWM_COMPOSED_CAP`, default off): the same pool law
-        // as `three_term_on` (`net::three_term_store_cap`), plus the unified live
-        // set at the brake, plus the late-stage per-path brake on the path's own
-        // cwnd. It introduces no law and no constant of its own; the three-term
-        // arm stays exactly what it was.
-        let composed_cap = gates.composed_cap && plain_dyn_cap;
-        let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;
+        let three_term_on = gates.three_term && plain_dyn_cap;
         // The `×N` deletion (`RWM_SUM_CAP`, default on; paper §6.1). The pooled
         // law's count multiplier is removed from the value and kept in the
         // ceiling:
@@ -840,7 +827,6 @@ impl SenderPolicy {
             store_paths_on,
             store_path_pool,
             three_term_on,
-            composed_cap,
             sum_cap,
             delta_cap,
             late_brake,

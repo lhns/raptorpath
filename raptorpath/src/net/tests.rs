@@ -2193,7 +2193,7 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 /// * every one of the five bits survives resolution (none is silently
 ///   ANDed away by a scope it does not satisfy);
 /// * the pool law reached is the pooled one, not the three-term law — i.e.
-///   `three_term_on` and `composed_cap` stay off (the composed pool law's
+///   `three_term_on` stays off (the composed pool law's
 ///   magnitude is refuted, paper §10);
 /// * the brake is armed without it;
 /// * and the control arm — every bit off, `RWM_SUM_CAP` explicitly off
@@ -2243,7 +2243,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
     assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
     assert!(!ctl.late_brake, "control: the brake must be OFF");
-    assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
+    assert!(!ctl.three_term_on, "control: pooled law only");
 
     // ── The full arm ──────────────────────────────────────────────────
     // Set by field rather than through the environment on purpose: an
@@ -2292,7 +2292,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     //    is refuted (WIN_STORE_MAX becomes the law at every dual), so the
     //    full arm carries the ×N deletion instead of it, not as well.
     assert!(
-        !arm.three_term_on && !arm.composed_cap,
+        !arm.three_term_on,
         "FULL: the composed/three-term pool law engaged — the arm is not \
          the ×N deletion any more"
     );
@@ -2300,7 +2300,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     // 3. The brake is armed without the composed law: `RWM_LATE_BRAKE`
     //    arms the cwnd brake without forcing `three_term_on`.
     assert!(
-        arm.late_brake && !arm.composed_cap,
+        arm.late_brake,
         "FULL: the brake is only reachable through the composed law — the \
          extraction did not take"
     );
@@ -2953,124 +2953,20 @@ mod law_shape {
     }
 }
 
-// ----- The composed cap law's report line --------------------------------
+// ----- The late-brake [CCAP] line ----------------------------------------
 
-/// The `[CCAP]` line's shape, pinned absolutely. An L1 parser is written
-/// against these keys, and the two that carry the argument are `eng=`
-/// (mechanism liveness — measurement-discipline rule 1) and `mem=` (the
-/// bind fraction of the only bound left above the law). A silent rename
-/// would leave a battery reading zeros and calling a warm-up failure a
-/// null result.
+/// The `[CCAP]` line's shape, pinned absolutely: an L1 parser scrapes
+/// `brake=<closed>/<ticks>` (`brake=0/N` armed and never closed, `brake=0/0`
+/// never armed).
 #[test]
-fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
-    // Engaged everywhere, nothing bound, brake closed a quarter of the
-    // time: the reading the composed arm is predicted to produce.
-    // A symmetric cell: span 0 at every refresh, so the span field reads
-    // exactly 0 and the ratio is the well-defined 0.000 that says
-    // "undefined — read `span=` first", never a NaN.
-    let line = ccap_report_line(
-        200,
-        200,
-        0,
-        0,
-        200.0 * 3020.0,
-        1_000,
-        250,
-        64,
-        0.0,
-        0.0,
-        200.0 * 9_400.0,
-        0.0,
-    );
-    assert_eq!(
-        line,
-        "[CCAP] eng=200/200 cap=3020.0 mem=0.0000 floor=0.0000 floor_val=64 \
-         brake=250/1000 brake_frac=0.2500 span=0.0 span_sigma=0.0 \
-         span_ratio=0.000 rate_fast=9400.0 spread_us=0.0"
-    );
-
-    // Configured but never engaged — a warm-up failure, and it must be
-    // distinguishable from a null result. `eng=0/200` is that signature;
-    // the bind fractions are 0/0 = 0.0 rather than NaN, so a parser reads
-    // "undefined" from `eng` and never from a poisoned float.
-    let cold = ccap_report_line(200, 0, 0, 0, 200.0 * 128.0, 1_000, 0, 64, 0.0, 0.0, 0.0, 0.0);
-    assert!(cold.contains("eng=0/200"), "{cold}");
-    assert!(cold.contains("mem=0.0000") && cold.contains("floor=0.0000"), "{cold}");
-    // The span block on a never-engaged run: zeros, not NaNs.
-    assert!(
-        cold.contains("span=0.0 span_sigma=0.0 span_ratio=0.000")
-            && cold.contains("rate_fast=0.0 spread_us=0.0"),
-        "{cold}"
-    );
-
-    // The stop condition: the memory bound has become the law.
-    let pinned = ccap_report_line(
-        100,
-        100,
-        100,
-        0,
-        100.0 * 4096.0,
-        500,
-        500,
-        64,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    );
-    assert!(pinned.contains("mem=1.0000"), "{pinned}");
-    assert!(pinned.contains("cap=4096.0"), "{pinned}");
-
-    // Zero refreshes must not divide by zero.
-    assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64, 0.0, 0.0, 0.0, 0.0).contains("cap=0.0"));
-}
-
-/// The c9h reading (two fast legs, two slow), rendered and pinned as a
-/// string so the L1 parser and the renderer agree. The numbers are the
-/// cell's anchors (`rate_fast` 9 400 sym/s, spread 29.88 ms ⇒ shipped
-/// ≈ 281 sym), and the Σ form at c9h's two min-RTprop legs is twice that.
-///
-/// This is why the field set is four numbers and not one: from this line
-/// alone a reader can (a) read the anchor-free ratio 2.000, (b) check the
-/// 281 against the `[265, 315]` band, and (c) if it lands outside both
-/// bands, attribute that to the anchors, because `rate_fast=` and
-/// `spread_us=` are right there.
-#[test]
-fn the_ccap_span_block_renders_the_c9h_discriminator() {
-    let n = 40u64;
-    let (rate_fast, spread_s) = (9_400.0, 0.029_88);
-    let shipped = rate_fast * spread_s; // ~= 280.9 sym
-    let line = ccap_report_line(
-        n,
-        n,
-        0,
-        0,
-        n as f64 * 3020.0,
-        100,
-        0,
-        64,
-        n as f64 * shipped,
-        n as f64 * 2.0 * shipped,
-        n as f64 * rate_fast,
-        n as f64 * spread_s,
-    );
-    assert!(line.contains("span=280.9"), "{line}");
-    assert!(line.contains("span_sigma=561.7"), "{line}");
-    // The ratio — anchor-free, predicted exactly 2.000.
-    assert!(line.contains("span_ratio=2.000"), "{line}");
-    // The anchors, so a both-bands miss is attributable.
-    assert!(line.contains("rate_fast=9400.0"), "{line}");
-    assert!(line.contains("spread_us=29880.0"), "{line}");
-    // And the absolute band is readable off `span=` directly.
-    let span: f64 = line
-        .split_whitespace()
-        .find_map(|t| t.strip_prefix("span="))
-        .and_then(|v| v.parse().ok())
-        .expect("span= must parse as f64");
-    assert!(
-        (265.0..=315.0).contains(&span),
-        "the anchors no longer land in C9-L3's own band: {line}"
-    );
+fn the_ccap_line_reports_the_brake_liveness() {
+    assert_eq!(ccap_report_line(1_000, 250), "[CCAP] brake=250/1000 brake_frac=0.2500");
+    assert_eq!(ccap_report_line(1_000, 0), "[CCAP] brake=0/1000 brake_frac=0.0000");
+    assert_eq!(ccap_report_line(0, 0), "[CCAP] brake=0/0 brake_frac=0.0000");
+    let mut g = SenderTeardownGauges::new(true);
+    g.brake_ticks = 40;
+    g.brake_closed = 10;
+    assert_eq!(g.ccap_line(), ccap_report_line(40, 10));
 }
 
 /// The two span forms, computed by one function, over the geometries that
@@ -3182,65 +3078,6 @@ fn the_span_gauge_is_the_laws_own_term_3() {
             "the law's TERM 3 and the [CCAP] span gauge diverged"
         );
     }
-}
-
-/// The carrier and the renderer cannot drift apart.
-///
-/// `[CCAP]`'s tally lives in `SenderTeardownGauges` so that the counters
-/// and their emission site are one object. This pins that the carrier
-/// renders exactly what the pinned renderer renders for the same tally,
-/// field for field and in the same order.
-///
-/// Reachability — that the destructor actually fires under the harness's
-/// exit path — is asserted by `tests/gauge_reachability.rs`, which is the
-/// half no unit test can see.
-#[test]
-fn the_teardown_carrier_renders_exactly_the_pinned_ccap_line() {
-    let mut g = SenderTeardownGauges::new(true, 64);
-    g.refreshes = 200;
-    g.engaged = 190;
-    g.at_mem = 3;
-    g.at_floor = 7;
-    g.cap_sum = 200.0 * 3020.0;
-    g.brake_ticks = 1_000;
-    g.brake_closed = 250;
-    // The span block travels through the carrier too — and it is fed here
-    // by `record_span`, the same call the refresh site makes, so a drift
-    // between the accumulator and the renderer is visible.
-    g.record_span(SpanForms {
-        shipped: 190.0 * 280.9,
-        sigma: 190.0 * 561.8,
-        rate_fast: 190.0 * 9_400.0,
-        spread_s: 190.0 * 0.029_88,
-    });
-    assert_eq!(
-        g.ccap_line(),
-        ccap_report_line(
-            200,
-            190,
-            3,
-            7,
-            200.0 * 3020.0,
-            1_000,
-            250,
-            64,
-            190.0 * 280.9,
-            190.0 * 561.8,
-            190.0 * 9_400.0,
-            190.0 * 0.029_88,
-        ),
-        "the carrier and the renderer disagree — a positional-argument drift"
-    );
-    assert!(
-        g.ccap_line().contains("span_ratio=2.000"),
-        "the carrier must render the scored ratio: {}",
-        g.ccap_line()
-    );
-    // And the fresh carrier is the well-defined zero, not a NaN: a sender
-    // that ended before its first refresh must still print a readable line.
-    assert!(SenderTeardownGauges::new(true, 64)
-        .ccap_line()
-        .contains("eng=0/0"));
 }
 
 /// The brake's set is load-bearing (CLAUDE.md: every documented
@@ -6212,7 +6049,6 @@ mod one_store_law_at_n1 {
         g.sum_cap = true;
         g.delta_cap = true;
         g.three_term = false;
-        g.composed_cap = false;
         g.copa_feed = false;
         g.store_override = None;
         g.store_env_set = false;
@@ -6228,7 +6064,6 @@ mod one_store_law_at_n1 {
             pol.sum_cap, pol.store_cap_floor, pol.store_path_pool, pol.delta_cap, pol.delta_b);
         let mut dcap = DeltaCapGauge::new(
             pol.delta_cap, pol.store_cap_floor, pol.store_path_pool, pol.sum_cap, pol.delta_b);
-        let mut ccap = SenderTeardownGauges::new(false, pol.store_cap_floor);
         let bdp = store_cap_pool_inputs(sched);
         let copa_feed: Option<Arc<CopaFeed>> = None;
         crate::net::sender_phases::refresh_store_cap(
@@ -6240,7 +6075,6 @@ mod one_store_law_at_n1 {
                 copa_feed: &copa_feed,
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
-                ccap: &mut ccap,
             },
         );
         (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)

@@ -2018,13 +2018,7 @@ async fn run_window_sender(
     // exactly once, `final=1`, at the clean exits below or — when this task
     // is dropped instead — by `TxCore`'s destructor, which owns the
     // scheduler it renders from (threading Q2: no lock to try).
-    let mut ccap = SenderTeardownGauges::new(
-        // The `[CCAP]` line is emitted for either door into the brake,
-        // because its `brake=<closed>/<ticks>` field is the primary readout
-        // of both the extraction arm and the composed arm.
-        pol.composed_cap || pol.late_brake,
-        pol.store_cap_floor,
-    );
+    let mut ccap = SenderTeardownGauges::new(pol.late_brake);
     // `[SUMCAP]` (paper §6.1): the `×N` deletion's engagement echo. Fed on
     // both arms at every pooled-law refresh — including the counterfactual, so
     // "did the gate change anything" is answerable from one run — and emitted
@@ -2303,7 +2297,7 @@ async fn run_window_sender(
         // the slow path is at its RTT-inflated cap. Without per-path caps the
         // test is the global Σ in-flight ≥ Σ cap.
         // ── The late-stage brake, and the composed arm's derived cap ──────
-        // `RWM_COMPOSED_CAP` (paper §10) arms this brake with no new
+        // `RWM_LATE_BRAKE` arms this brake with no new
         // constant: the per-path cap is the path's own cwnd, i.e. the
         // congestion controller's own window, which is what a congestion
         // brake ought to be made of. `eff_infl_cap` is then irrelevant to
@@ -2324,11 +2318,12 @@ async fn run_window_sender(
         // path is at or above its own congestion window.
         //
         // `RWM_LATE_BRAKE` arms the same brake without the composed pool law
-        // (`composed_cap` also forces `three_term_on`). Everything below reads
-        // `cwnd_brake` rather than `composed_cap` so the two gates cannot
+        // Everything below reads
+        // `cwnd_brake`, so the removed composed-cap door (tag
+        // `archive/RWM_COMPOSED_CAP`) cannot
         // drift into two brakes — the composed arm is still exactly this
         // brake, reached by a different door.
-        let cwnd_brake = pol.composed_cap || pol.late_brake;
+        let cwnd_brake = pol.late_brake;
         let brake_armed = eff_infl_cap > 0 || cwnd_brake;
         let (pipe_infl, percap_full): (u64, bool) = if brake_armed {
             let sched = &mut *scheduler;
@@ -2391,7 +2386,6 @@ async fn run_window_sender(
                 copa_feed: &copa_feed,
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
-                ccap: &mut ccap,
             },
         );
         let effective_store_cap = if pol.plain_dyn_cap {

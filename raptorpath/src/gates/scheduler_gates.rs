@@ -88,7 +88,7 @@ pub(crate) fn resolve_copa_compete(wire_active: bool) -> bool {
 ///
 /// `CopaState`'s BtlBw windowed max (`max_bw`) used to be a full-window fold
 /// over `bw_samples` on every accepted sample: invisible when fed per ACK,
-/// O(window·rate) work when fed per delivered symbol (`RWM_PLAIN_RS`). On, it
+/// O(window·rate) work when fed per delivered symbol (`RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS)). On, it
 /// is read off a monotonic max-deque beside `bw_samples`: the same statistic to
 /// the bit (`bw_mono_front_equals_full_window_fold`), same [1 s, 10 s] window,
 /// amortized O(1). The gate selects cost, not behaviour; `=0` runs the fold.

@@ -521,7 +521,7 @@ impl PathState {
 
     // --- Per-path send-interval rate sampling (the CopaFeed's anchor) ---
     //
-    // The plain-mode Copa delivery feed (`RWM_PLAIN_RS`, ADR-0061)
+    // The plain-mode Copa delivery feed (`RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS), ADR-0061)
     // attributes each newly-acked source seq to the path that
     // carried it and drives that path's BBR-correct send-interval sampler,
     // so BtlBw_i / the per-path BDP anchor establish per path.

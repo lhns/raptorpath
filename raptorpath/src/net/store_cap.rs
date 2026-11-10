@@ -581,76 +581,15 @@ pub fn three_term_store_cap(
     Some((limit, window, slack, span))
 }
 
-/// The composed law's per-run `[CCAP]` readout (paper §10).
+/// The per-run `[CCAP]` readout: the late-stage brake's own liveness
+/// (`RWM_LATE_BRAKE`; the removed composed-cap arm shared this brake).
 ///
-/// Split from its emission so the always-on pins assert the string an L1
-/// parser will scrape, and so the two teardown arms share one renderer.
-///
-/// * `eng=<engaged>/<refreshes>` — mechanism liveness
-///   (`docs/measurement-discipline.md` rule 1). `eng=0/N` with
-///   `RWM_COMPOSED_CAP=1` in the `[GATES]` echo is a warm-up failure (some
-///   live path was cold at every refresh), not a null result.
-/// * `cap=` — the realized mean cap.
-/// * `mem=` / `floor=` — the bind fractions of the two bounds: `WIN_STORE_MAX`,
-///   a memory bound stated outside the law, and `store_cap_floor`. A composed
-///   run with `mem` above zero means the memory bound has become the law.
-/// * `brake=<closed>/<ticks>` — the late-stage brake's own liveness:
-///   `brake=0/N` distinguishes "the brake never bound" from "the brake was
-///   never armed".
-///
-/// The span block (`span=` … `spread_us=`) is [`SpanForms`] averaged over the
-/// engaged refreshes:
-///
-/// * `span=` — the shipped `rate_fast·spread`; reads 0 at a symmetric cell.
-/// * `span_sigma=` — the alternative `Σ bwᵢ(RTT_max − RTTᵢ)`, reported so the
-///   discriminating ratio is measured, not assumed. No engine path reads it.
-/// * `span_ratio=` — `Σ span_sigma / Σ span`, equal to the ratio of the two
-///   means because both share the `engaged` denominator. `0.000` when `Σ span`
-///   is 0 (every symmetric cell, where the ratio is undefined); a parser must
-///   read `span=` first.
-/// * `rate_fast=` (sym/s) and `spread_us=` (µs) — the two absolute anchors.
-pub fn ccap_report_line(
-    refreshes: u64,
-    engaged: u64,
-    at_mem: u64,
-    at_floor: u64,
-    cap_sum: f64,
-    brake_ticks: u64,
-    brake_closed: u64,
-    floor: usize,
-    span_sum: f64,
-    span_sigma_sum: f64,
-    rate_fast_sum: f64,
-    spread_s_sum: f64,
-) -> String {
-    let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
-    // Means over engaged refreshes — the ticks on which the law produced a
-    // span at all. `eng=0/N` therefore renders a well-defined 0.0 block and
-    // never a NaN, the same rule the bind fractions follow.
-    let mean = |s: f64| if engaged == 0 { 0.0 } else { s / engaged as f64 };
-    format!(
-        "[CCAP] eng={}/{} cap={:.1} mem={:.4} floor={:.4} floor_val={} brake={}/{} \
-         brake_frac={:.4} span={:.1} span_sigma={:.1} span_ratio={:.3} \
-         rate_fast={:.1} spread_us={:.1}",
-        engaged,
-        refreshes,
-        if refreshes == 0 { 0.0 } else { cap_sum / refreshes as f64 },
-        frac(at_mem, engaged),
-        frac(at_floor, engaged),
-        floor,
-        brake_closed,
-        brake_ticks,
-        frac(brake_closed, brake_ticks),
-        mean(span_sum),
-        mean(span_sigma_sum),
-        if span_sum > 0.0 {
-            span_sigma_sum / span_sum
-        } else {
-            0.0
-        },
-        mean(rate_fast_sum),
-        mean(spread_s_sum) * 1e6,
-    )
+/// `brake=<closed>/<ticks>`: `brake=0/N` distinguishes "the brake never
+/// bound" from "the brake was never armed" (`brake=0/0`). Split from its
+/// emission so an always-on pin asserts the string an L1 parser scrapes.
+pub fn ccap_report_line(brake_ticks: u64, brake_closed: u64) -> String {
+    let frac = if brake_ticks == 0 { 0.0 } else { brake_closed as f64 / brake_ticks as f64 };
+    format!("[CCAP] brake={}/{} brake_frac={:.4}", brake_closed, brake_ticks, frac)
 }
 
 /// The `[SUMCAP]` line — the `×N` deletion's engagement echo (paper §6.1).

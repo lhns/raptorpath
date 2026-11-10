@@ -53,13 +53,12 @@ pub(crate) struct StoreCapCtx<'a> {
     pub copa_feed: &'a Option<Arc<CopaFeed>>,
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
-    pub ccap: &'a mut SenderTeardownGauges,
 }
 
 /// Plain-reliable delay-based window cap (paper §6), refreshed at
 /// most every 5 ms.
 pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
-    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap } = ctx;
+    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap } = ctx;
     if pol.plain_dyn_cap {
         let dnow = now_us();
         if dnow.saturating_sub(scs.dyn_cap_refresh_us) >= 5_000 {
@@ -81,7 +80,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 );
             }
             // Σ-cwnd store law only when the feed owns the operating point
-            // (Copa-sole); the sampling-only feed (RWM_PLAIN_RS) keeps the
+            // (Copa-sole); the sampling-only feed (removed RWM_PLAIN_RS, tag archive/RWM_PLAIN_RS) keeps the
             // anchor-sum law, fed honest samples.
             if copa_feed.is_some() {
                 // Copa owns the operating point (ADR-0062), so the outstanding
@@ -212,36 +211,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 } else {
                     pol.store_boot_cap.min(pol.store_max)
                 };
-                // `[CCAP]` bind fractions, taken at the refresh that computed
-                // the cap. The unclamped law is `window + slack + span`,
-                // recorded separately from its bounds
-                // (`docs/measurement-discipline.md` rule 17).
-                if pol.composed_cap {
-                    ccap.refreshes += 1;
-                    ccap.cap_sum += scs.dyn_store_cap as f64;
-                    if let Some((w, sl, sp)) = scs.tt_terms_diag {
-                        ccap.engaged += 1;
-                        // TERM 3's geometry, folded in at the same refresh
-                        // that counted the engagement. `span_forms` returns
-                        // `Some` on exactly the ticks `three_term_store_cap`
-                        // did, so the means and `eng=` share one denominator.
-                        if let Some(sf) = span_forms(&tt_terms) {
-                            debug_assert!(
-                                (sf.shipped - sp).abs() <= 1e-9 * sp.abs().max(1.0),
-                                "the [CCAP] span gauge and the law's TERM 3 \
-                                 disagree — two computations of one geometry"
-                            );
-                            ccap.record_span(sf);
-                        }
-                        let unclamped = (w + sl + sp).ceil();
-                        if unclamped >= WIN_STORE_MAX as f64 {
-                            ccap.at_mem += 1;
-                        }
-                        if unclamped <= pol.store_cap_floor as f64 {
-                            ccap.at_floor += 1;
-                        }
-                    }
-                }
             }
             // `[3T]` readout — the three-term law's mechanism-liveness echo
             // (`docs/measurement-discipline.md` rule 15). It prints whenever

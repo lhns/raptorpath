@@ -55,7 +55,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_HONEST_ANCHOR=1 RWM_STORE_SACK_RELEASE=1 ",
     "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
     "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 ",
-    "RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
+    "RWM_THREE_TERM=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
     "RWM_DELTA_CAP=1 RWM_ACK_MERGE=1 ",
     "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
     "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 ",
@@ -392,16 +392,6 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(
         g.echo_line().contains("RWM_THREE_TERM=0"),
         "the default echo must NAME the three-term gate with its 0 value: {}",
-        g.echo_line()
-    );
-    // The composed cap (paper §10) ships off, same two-sided property.
-    assert!(
-        !g.composed_cap,
-        "RWM_COMPOSED_CAP ships default OFF (A/B arm — paper §10)"
-    );
-    assert!(
-        g.echo_line().contains("RWM_COMPOSED_CAP=0"),
-        "the default echo must NAME the composed-cap gate with its 0 value: {}",
         g.echo_line()
     );
     // The `×N` deletion ships on (paper §6.1); the `=0` arm's off value is

@@ -205,8 +205,6 @@ pub struct RuntimeGates {
     pub recov_mp_law: bool,
     /// `RWM_THREE_TERM` (off, arm; paper §10): `net::three_term_store_cap` as the plain cap.
     pub three_term: bool,
-    /// `RWM_COMPOSED_CAP` (off, arm; paper §10): three-term cap plus the per-path cwnd brake.
-    pub composed_cap: bool,
     /// `RWM_SUM_CAP` (on, shipped; paper §6.1): pooled cap `gain·Σ`; `=0` is `gain·N·Σ`.
     pub sum_cap: bool,
     /// `RWM_LATE_BRAKE` (off, arm): brake when every live path has `in_flightᵢ ≥ cwndᵢ`.
@@ -382,7 +380,6 @@ impl RuntimeGates {
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             three_term: env_flag("RWM_THREE_TERM", false),
-            composed_cap: env_flag("RWM_COMPOSED_CAP", false),
             sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
@@ -455,7 +452,7 @@ impl RuntimeGates {
              RWM_HONEST_ANCHOR={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
-             RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
+             RWM_THREE_TERM={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
@@ -485,7 +482,7 @@ impl RuntimeGates {
             b(self.honest_anchor),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot,
-            b(self.three_term), b(self.composed_cap),
+            b(self.three_term),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),

@@ -2,7 +2,7 @@
 //! brake (`RWM_LATE_BRAKE`) route end to end (`docs/measurement-discipline.md`
 //! rule 1; the law arithmetic is pinned in the store-cap benches and
 //! `formula_agreement`). The test proves: both gates resolve and are echoed
-//! while `RWM_COMPOSED_CAP`/`RWM_THREE_TERM` stay `0`, so the brake is
+//! while `RWM_THREE_TERM` stays `0`, so the brake is
 //! scrapeably armed without the composed pool law; no new constant reaches
 //! either mechanism (the brake caps at the path's own cwnd, the pool keeps
 //! its shipped knee/gain/boot); and a window-reliable loopback completes —
@@ -41,13 +41,12 @@ async fn sum_cap_and_late_brake_route_without_the_composed_law_and_the_loopback_
     // The brake is armed and the composed pool law is not — the combination
     // `RWM_LATE_BRAKE` exists to express.
     assert!(
-        !g.composed_cap && !g.three_term,
+        !g.three_term,
         "the brake must be armed WITHOUT the composed/three-term pool law — \
          that combination is the reason the gate exists"
     );
     assert!(
-        g.echo_line().contains("RWM_COMPOSED_CAP=0")
-            && g.echo_line().contains("RWM_THREE_TERM=0"),
+        g.echo_line().contains("RWM_THREE_TERM=0"),
         "this arm must not masquerade as the composed or three-term arm: {}",
         g.echo_line()
     );
