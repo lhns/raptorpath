@@ -11645,6 +11645,72 @@ recovering.** That replaces both the "SACK-release stall" and §42's split
 diagnostic as the c1 diagnosis item. It is also the likely cause of every
 earlier unexplained slow c1s row (§34's 277, §38's 575 and 684).
 
+### 43. Addendum — gain ≤ 1 plus an additive time (offline, `s42/s43tau.out`), and the §43b registration
+
+*Sweep.* The form is ask = G·ΣL·(RTprop + S + τ), over G ∈ {0.85…1.0} × τ ∈
+{0…10 ms}, on p27 at c2 and c8, on both fresh and expired anchor maps.
+- **Eight pairs give** a stable point in the knee band on both maps, with no
+  upper crossing inside the grid, at both cells. They also stay in band
+  after the ×1.2 closed-loop correction (§43: 233.5 / 195).
+- For example, (0.9, 5 ms) gives c2 181/178 (≈ 0.95 Gmax, Tp50 ≈ 17–19 ms)
+  and c8 313/288.
+
+*This does not dissolve the anchor question (advisor).*
+- Once the anchor has absorbed the queue, the law is affine:
+  ask = G·(L/D)·n + G·L·(τ − β), with β the remaining brake. A pair is
+  trap-free only while τ < β(n) + (1 − G·L/D)·n/(G·L) above the knee, and
+  it reaches the knee only if τ clears the no-queue brake b₀.
+- So τ has a window per link. At c2 it is roughly 4–9 ms. At c1s, β ≈ 1–4 ms
+  and b₀ < 1 ms, so a fixed 5 ms likely lies outside it.
+- The eight pairs are a two-parameter fit on two cells, made after seeing
+  §43.
+- **Pending (offline):** print b₀, β(n) and the window per cell, including
+  c1s from `oracle43`'s uncapped rows. Test which form of τ fits every
+  window with one coefficient: a constant, k·RTprop, or k·b₀. That is τ's
+  provenance and δ's seat.
+
+### 43b. The gain ≤ 1 + additive-time law at c2, from both starts — pre-registration
+
+*Question.* With G·L/D < 1 and an additive time τ, does c2 settle at one
+point in the knee band from both a low and a high start, with goodput not
+worse than MAIN's?
+
+*Pair selection (the rule is fixed now and applied by script to
+`s43tau.out` before VM contact; the chosen pair is recorded in an amendment
+before launch):*
+1. G·1.016·1.04 < 1. This keeps the map's high-n limit below 1 with room
+   for L̂'s measured +1–4 % over-read, so G ≤ 0.9 on this grid.
+2. Both ×1.2 points (fresh and expired) at c2 are at least 25 below the
+   band's upper edge (288).
+3. Among those, the lowest expired-map slope at c2, ties within 0.1.
+4. Then the highest predicted c2 G/Gmax.
+
+*Design.*
+- **Tree:** the §43 binary (`run43` `b2b75b7`, sha `94959c05…`; the sha must
+  match), using `RWM_ORACLE_GAIN` = G and `RWM_ORACLE_BRAKE_OFFSET_US` = τ.
+- **Rows:** c2-100, 600 MB, Bulk, three arms with 3 rows each (seeds
+  42 / 7 / 42), interleaved:
+  - SL-τ: start-low;
+  - SH-τ: start-high, hold 1 536 for 15 s, then the law;
+  - MAIN, same session (cross-session references drift, §19).
+- 9 rows plus a 2-row smoke, about 12 min. No suites.
+- **Scoring:** §43's ladder and scorer, unchanged, with this cell's
+  predicted band restated as "offline value to ×1.2".
+- **Witnesses:** each row's echo declares its own `gain` and `b0_us`.
+- **Reported per row:** the lowest `qcwnd` against its median, so a quinn
+  window collapse is not scored as the law.
+
+*Predictions.*
+- From §43's hold, ask/H = G·r/1.1 + G·L·τ/H, with r ∈ {1.006, 1.059,
+  1.005}. That is below 1 for every eligible pair, so the start-high rows
+  return. The return alone is weak evidence.
+- The informative readouts are:
+  - where both starts settle (inside the ×1–1.2 predicted band);
+  - the return time;
+  - goodput WITHIN MAIN's;
+  - delay BETTER than MAIN's.
+- **Expected label:** CONVERGES-ONE-POINT.
+
 ## 44. Is the model overcomplicated? — law inventory and simplification review — no VM, record
 
 The user asked whether the formulas could be simpler. An Opus inventory of

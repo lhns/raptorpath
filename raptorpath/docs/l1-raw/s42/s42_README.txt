@@ -35,3 +35,8 @@ s43gain.py    python -I s43gain.py LD > s43gain.out   (imports s42noise, s42rtpr
   The registered law G·ΣL(RTprop + S) at p27 c2 and c8, fresh and expired anchor: the gate (G = 1.1, reproduces 164/157/927
   and 324/287/492), (1) a debiased brake b0 = mean(Tmin − RTprop) over the two smallest caps added to the time term at
   G = 1.1, (2) no debias at G = 1.2. Fixed point, slope, band, G/Gmax, Tp50, every crossing, ask/n above the knee.
+
+s43tau.py     python -I s43tau.py LD > s43tau.out   (imports s42noise, s43res, s43gain from this directory)
+  ask = G·ΣL(RTprop + S + τ) at p27 c2 and c8, G ∈ {0.85, 0.9, 0.95, 1.0} × τ ∈ {0, 2.5, 5, 7.5, 10} ms, fresh and expired
+  anchor: stable point, slope, band, G/Gmax, Tp50, the expired map's upward crossings, ask/n at 1 024 / 2 048 (c2's grid
+  ends at 1 024), the point ×233.5/195 (§43's closed-loop offset) with its band, and OK pairs.

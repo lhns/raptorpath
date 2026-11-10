@@ -1,0 +1,54 @@
+Status §43 follow-up: ask = G·ΣLᵢ(RTpropᵢ + Sᵢ + τ), S = Tp50 − Tmin, G ∈ {0.85..1.0}, τ ∈ {0..10} ms, p27 c2 and c8.
+Fresh anchor = Copa rtprop_us row median; expired = row lowest post-warm-up rtt_min_us (as s42rtprop / s43gain).
+OK = stable in-band point on BOTH maps and no upward crossing on the expired map inside the grid.
+Bias note: §43's closed loop read the registered offset arm's point ~20 % above the offline map (233.5 vs 195), so
+each offline point is also printed ×1.2 ("CL~"), with that value's band too. c2's grid ends at 1 024: no ask/n at 2 048.
+Usage: python -I s43tau.py <loop-diag dir>
+
+== p27 c2-100: knee 192, band [128, 288], grid [64, 96, 128, 192, 256, 384, 512, 1024]
+     G  τms | fresh: fp slope band G/Gmax Tp50   | expired: fp slope band G/Gmax Tp50 | expired up-crossings   a/n@1024 a/n@2048 | CL~ fresh/expired (band) | OK
+  0.85  0.0 |   117  0.27 no   0.707  15.8ms     |   112  0.12 no   0.681  15.7ms     | none                      0.779      nan | 140(y) / 134(y)          | 
+  0.85  2.5 |   143  0.19 yes  0.817  16.8ms     |   137  0.26 yes  0.794  16.5ms     | none                      0.799      nan | 172(y) / 164(y)          | OK
+  0.85  5.0 |   169  0.19 yes  0.905  18.1ms     |   165  0.26 yes  0.890  17.8ms     | none                      0.820      nan | 202(y) / 197(y)          | OK
+  0.85  7.5 |   194  0.06 yes  0.984  19.4ms     |   193  0.54 yes  0.984  19.3ms     | none                      0.840      nan | 233(y) / 231(y)          | OK
+  0.85 10.0 |   217  0.06 yes  0.990  21.6ms     |   239  0.54 yes  0.995  23.8ms     | none                      0.860      nan | 259(y) / 286(y)          | OK
+  0.90  0.0 |   126  0.29 no   0.755  16.0ms     |   119  0.13 no   0.719  15.9ms     | none                      0.825      nan | 151(y) / 143(y)          | 
+  0.90  2.5 |   154  0.20 yes  0.853  17.3ms     |   148  0.28 yes  0.832  17.0ms     | none                      0.846      nan | 184(y) / 177(y)          | OK
+  0.90  5.0 |   181  0.20 yes  0.948  18.7ms     |   178  0.28 yes  0.936  18.5ms     | none                      0.868      nan | 217(y) / 213(y)          | OK
+  0.90  7.5 |   207  0.07 yes  0.987  20.6ms     |   220  0.57 yes  0.991  21.9ms     | none                      0.889      nan | 247(y) / 263(y)          | OK
+  0.90 10.0 |   230  0.07 yes  0.993  22.9ms     |   266  0.31 yes  0.998  26.4ms     | none                      0.911      nan | 276(y) / 318(n)          | OK
+  0.95  0.0 |   135  0.21 yes  0.789  16.4ms     |   127  0.13 no   0.758  16.0ms     | none                      0.871      nan | 162(y) / 152(y)          | 
+  0.95  2.5 |   165  0.21 yes  0.891  17.9ms     |   159  0.29 yes  0.871  17.6ms     | none                      0.893      nan | 197(y) / 191(y)          | OK
+  0.95  5.0 |   194  0.07 yes  0.984  19.4ms     |   192  0.61 yes  0.984  19.2ms     | none                      0.916      nan | 232(y) / 230(y)          | OK
+  0.95  7.5 |   219  0.07 yes  0.991  21.8ms     |   251  0.61 yes  0.999  25.0ms     | none                      0.939      nan | 262(y) / 301(n)          | OK
+  0.95 10.0 |   244  0.07 yes  0.997  24.3ms     |   288  0.33 yes  0.995  28.6ms     | none                      0.961      nan | 292(n) / 344(n)          | OK
+  1.00  0.0 |   145  0.22 yes  0.821  16.9ms     |   136  0.31 yes  0.792  16.5ms     | none                      0.917      nan | 173(y) / 163(y)          | OK
+  1.00  2.5 |   176  0.22 yes  0.929  18.4ms     |   171  0.31 yes  0.913  18.2ms     | none                      0.940      nan | 211(y) / 205(y)          | OK
+  1.00  5.0 |   205  0.08 yes  0.987  20.5ms     |   220  0.64 yes  0.991  21.9ms     | none                      0.964      nan | 245(y) / 263(y)          | OK
+  1.00  7.5 |   231  0.08 yes  0.994  23.1ms     |   273  0.34 yes  0.997  27.2ms     | none                      0.988      nan | 277(y) / 327(n)          | OK
+  1.00 10.0 |   258  0.03 yes  1.000  25.6ms     |   311  0.34 no   0.991  30.9ms     | 477                       1.012      nan | 309(n) / 372(n)          | 
+  OK pairs (stable in-band on both maps, no upward crossing on the expired map in the grid): G=0.85 τ=2.5, G=0.85 τ=5.0, G=0.85 τ=7.5, G=0.85 τ=10.0, G=0.9 τ=2.5, G=0.9 τ=5.0, G=0.9 τ=7.5, G=0.9 τ=10.0, G=0.95 τ=2.5, G=0.95 τ=5.0, G=0.95 τ=7.5, G=0.95 τ=10.0, G=1.0 τ=0.0, G=1.0 τ=2.5, G=1.0 τ=5.0, G=1.0 τ=7.5
+
+== p27 c8-100: knee 384, band [256, 576], grid [128, 192, 384, 512, 768, 1024, 2048]  [THIN: 1 row at most caps]
+     G  τms | fresh: fp slope band G/Gmax Tp50   | expired: fp slope band G/Gmax Tp50 | expired up-crossings   a/n@1024 a/n@2048 | CL~ fresh/expired (band) | OK
+  0.85  0.0 |   200  0.40 no   0.778  18.8ms     |   196  0.28 no   0.773  18.6ms     | none                      0.699    0.242 | 240(n) / 235(n)          | 
+  0.85  2.5 |   242  0.40 no   0.829  21.2ms     |   231  0.28 no   0.815  20.5ms     | none                      0.724    0.254 | 290(y) / 276(y)          | 
+  0.85  5.0 |   284  0.40 yes  0.879  23.6ms     |   266  0.28 yes  0.857  22.5ms     | none                      0.748    0.266 | 340(y) / 318(y)          | OK
+  0.85  7.5 |   326  0.40 yes  0.930  25.9ms     |   300  0.28 yes  0.899  24.5ms     | none                      0.772    0.278 | 390(y) / 359(y)          | OK
+  0.85 10.0 |   368  0.40 yes  0.981  28.3ms     |   335  0.28 yes  0.941  26.4ms     | none                      0.797    0.290 | 441(y) / 401(y)          | OK
+  0.90  0.0 |   221  0.43 no   0.803  20.0ms     |   213  0.30 no   0.793  19.5ms     | none                      0.741    0.256 | 265(y) / 255(n)          | 
+  0.90  2.5 |   267  0.43 yes  0.859  22.6ms     |   250  0.30 no   0.838  21.6ms     | none                      0.766    0.269 | 320(y) / 300(y)          | 
+  0.90  5.0 |   313  0.43 yes  0.915  25.2ms     |   288  0.30 yes  0.884  23.8ms     | none                      0.792    0.282 | 375(y) / 345(y)          | OK
+  0.90  7.5 |   360  0.43 yes  0.971  27.8ms     |   325  0.30 yes  0.929  25.9ms     | none                      0.818    0.295 | 431(y) / 390(y)          | OK
+  0.90 10.0 |   412  0.56 yes  0.998  31.4ms     |   363  0.30 yes  0.974  28.0ms     | 436                       0.844    0.308 | 494(y) / 435(y)          | 
+  0.95  0.0 |   244  0.45 no   0.830  21.3ms     |   230  0.31 no   0.814  20.5ms     | none                      0.782    0.270 | 292(y) / 275(y)          | 
+  0.95  2.5 |   294  0.45 yes  0.892  24.1ms     |   270  0.31 yes  0.863  22.8ms     | none                      0.809    0.284 | 353(y) / 324(y)          | OK
+  0.95  5.0 |   345  0.45 yes  0.953  27.0ms     |   311  0.31 yes  0.912  25.1ms     | none                      0.836    0.297 | 413(y) / 373(y)          | OK
+  0.95  7.5 |   400  0.59 yes  0.999  30.4ms     |   352  0.31 yes  0.961  27.4ms     | 446                       0.863    0.311 | 479(y) / 421(y)          | 
+  0.95 10.0 |   468  0.59 yes  0.994  35.6ms     |   572  0.15 yes  0.992  42.5ms     | none                      0.891    0.325 | 560(y) / 686(n)          | OK
+  1.00  0.0 |   268  0.48 yes  0.860  22.6ms     |   248  0.33 no   0.836  21.5ms     | none                      0.823    0.284 | 321(y) / 297(y)          | 
+  1.00  2.5 |   324  0.48 yes  0.927  25.8ms     |   292  0.33 yes  0.889  24.0ms     | none                      0.851    0.299 | 388(y) / 349(y)          | OK
+  1.00  5.0 |   380  0.48 yes  0.995  29.0ms     |   336  0.33 yes  0.941  26.5ms     | 460                       0.880    0.313 | 455(y) / 402(y)          | 
+  1.00  7.5 |   455  0.62 yes  0.995  34.7ms     |   379  0.33 yes  0.994  28.9ms     | 391                       0.909    0.327 | 545(y) / 454(y)          | 
+  1.00 10.0 |   525  0.41 yes  0.991  39.8ms     |   608  0.16 no   0.992  44.6ms     | none                      0.937    0.342 | 629(n) / 728(n)          | 
+  OK pairs (stable in-band on both maps, no upward crossing on the expired map in the grid): G=0.85 τ=5.0, G=0.85 τ=7.5, G=0.85 τ=10.0, G=0.9 τ=5.0, G=0.9 τ=7.5, G=0.95 τ=2.5, G=0.95 τ=5.0, G=0.95 τ=10.0, G=1.0 τ=2.5
