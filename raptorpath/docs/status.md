@@ -10046,6 +10046,126 @@ before any build or VM contact.
   - Test 6 now pins I_0 = 0, ε̂_0 = 0.026 and ε̂_1 = 0.017, at which the arm's
     gap is +3.8 nats and P(leg 1) = σ(−3.8) = 0.022 ≥ e^−4.
 
+### 38. Amendment 2 — ref's clock, the start-up trigger, the cells and the ladder (before VM contact)
+
+Two checks were asked for before the build: whether ref's clock explains the
+large open-loop shifts on two "fresh" c8 rows, and whether the lock-out is
+an artefact of the static arm's start-up. Both were settled offline on the
+p27, p29, p34, disp36, anchor-diag and thread-pd ledgers, with
+`tools/l1/place38_onset.py` (new) and paper §5.7's per-line δg. No engine
+code, no VM.
+
+**Check 1, units: ref's clock does not explain it, and the formula is
+unchanged.**
+- Every cost term is in seconds, and ref divides every term of every leg
+  by the same number. So ref sets only the temperature in seconds, T·ref,
+  and a different clock for ref rescales every gap without shifting any.
+- Measured: ref = max(min_j ŵ_j, 1 ms) moves the 11 fresh c8 rows' per-row
+  median shifts by ≤ 0.4 nats, because the fast leg sets ref and has
+  s ≈ ŵ. On the locked rows it widens the arm's gaps to −10.4…+0.2 (c1d)
+  and −0.9…+4.0 (c8). Every lock-out is still cured.
+- What it would change is T wherever s ≫ ŵ on every leg: at c1d default,
+  ×7–15 sharper. That is a second mechanism and belongs to T's derived
+  form, in which ref cancels, so the arm keeps ref.
+- The two "jumps" came from the method, not the law.
+  - Table 5.7a's fresh column took δg from each row's medians of s and ŵ.
+    δg does not depend on load, so it is now evaluated per in-transfer
+    `[DIAG]` line. Per-row medians: −0.2 to −0.5 nats at caps 128–512, −0.9
+    at 768, −2.5 / −1.3 at 1 024, +1.0 / +0.1 at 2 048.
+  - DEF192 s42 is a role-swap row. Its fast leg froze at 416 ms against
+    `wrtt` 23 from 1.0 to 2.5 s (a transient lock-out the share classifier
+    misses) while the slow leg carried everything; then the roles swapped.
+    Per line its shift is −0.43, not −2.6, so the 5.7 % → 45 % figure is
+    withdrawn.
+  - The 1 024 rows oscillate within each window. In idle phases the slow
+    leg's echo srtt holds up to 130 ms of stale local dwell above ŵ, which
+    the arm reads lower by design. Those rows sit at capacity share
+    (0.156–0.160 against 0.167), the c8 default cell's regime.
+- Paper §5.7 (Table 5.7a, the c8 fixed point and a units paragraph) is
+  corrected.
+
+**Check 2, start-up: the trigger is the static arm's start-up; the frozen
+price is the law's.**
+- *Onset.* All 28 LOCKED rows froze at t ≤ 1.0 s: ≤ 0.5 s in 21, 0.8 s in
+  6, 1.0 s in 1. Two recovered late in the row. No lock-out starts later.
+- *Rates.*
+  - Static arm: 27 of 110 rows LOCKED (c1d 10 of 59, c8 17 of 51).
+  - Default law: 1 of 161 (anchor-diag c8 `PRS` s7, onset 0.8 s).
+  - disp36 is main's binary and locked 5 of its static rows, so the
+    instrument is not the cause.
+- *By cap, a band.* c8: 0/6 at 16–64, 1/6 at 128, 2/4 at 192, 5/6 at 256,
+  6/9 at 384, 2/6 at 512, 1/4 at 768, 0/10 at 1 024–2 048. c1d: 0/9 at
+  128–384, 2–3 per 7–10 at 512–2 048, 0/8 at 3 072–4 096. Above the band
+  the active leg's own queue lifts its price past the frozen one.
+- *What `RWM_STORE` switches.* It sets `store_env_set`, which turns
+  `plain_dyn_cap` off. That removes, together:
+  - the boot cap (`RWM_STORE_BOOT=128` is echoed on `[GATES]` but not read);
+  - the gain·BDP law and the path pool;
+  - `RWM_DELTA_CAP` and `RWM_SUM_CAP`;
+  - the honest cap and the per-path `sout` gauge.
+
+  The window is n from the first symbol.
+- *Mechanism.* Before any echo both legs carry the 50 ms seed, so the first
+  burst splits evenly, whatever the capacities.
+  - At c8 the 20 Mbit/s leg takes about half of n (DEF256 s42: 96 of 212
+    in flight at 0.3 s), and its echoes read 156–390 ms against `wrtt`
+    42–46. Its srtt jumps, placement leaves it, and its price freezes.
+  - At c1d one leg's early echoes read 54–369 ms against `wrtt` 2–7. Where
+    that dwell sits (sender backlog or receiver) is not resolved offline.
+  - The default law's first burst is the whole pool at 128, the band's
+    lower edge, hence 1 in 161.
+- *The answer.* The lock-out is specific to a large first window, which the
+  static arm provides and the default law provides only rarely. The default
+  law is not immune, because the absorbing frozen price is the law's own.
+  The arm also shrinks the trigger: quinn's RTT exists from the handshake,
+  so at c8 the slow leg's cold price sits ½·(43 − 14) ms above the fast
+  leg's, not level with it. That is expected, and measured below.
+
+**What changes in the registration (amendment 1 as amended).**
+- *Roles of the cells.*
+  - The default-law cells (`c1d-400`, `c8-100`) and the controls (c1s, c2)
+    now carry the shipping question: does the arm cost anything where the
+    machine ships?
+  - The static cells (`c1d` 1536, `c8` 192 / 256 / 512) carry the
+    mechanism question: does the arm remove the absorbing state where the
+    trigger fires?
+  - The benefit at the default law (about 1 row in 161) cannot be measured
+    at n = 6. That is stated, not hidden; the static cells stand in for it.
+- *Outcomes 5 and 6 move to the default cell.*
+  - `CURED-AT-COST(<x %>)` iff §21's goodput rule, WIRE against MAIN at
+    `c1d-400` default, reads WORSE or TREND-WORSE. x is the median
+    difference. MAIN there is two-leg (0 of 81 default c1d rows LOCKED on
+    the ledgers), so x is the arm's own cost, not a lost accidental gain.
+  - `CURED` iff that clause reads WITHIN or better.
+  - Both still require outcomes 2–4 to pass on the static cells.
+- *The static c1d cost is reported, not decided on.* Amendment 1's
+  stratified c1d-1536 comparison (WIRE against MAIN's one-leg rows)
+  measures the lock-out's accidental one-leg gain (the receiver runs
+  ×1.35 faster on one leg). It is reported with x beside it and decides
+  nothing.
+- *The c8-192 share clause compares fresh rows only.* 192 lies in the
+  lock-out band (2 of 4 LOCKED), so MAIN's pooled share there includes
+  locked rows near 0 %, which WIRE would correctly lift.
+  - `SHARE-PRESERVED` now compares the WIRE median with the median of
+    MAIN's non-LOCKED rows at that cell.
+  - With fewer than 2 non-LOCKED MAIN rows there, the clause is reported,
+    not gated.
+  - The same applies to `c8-100` default's ±0.03 clause (expected: all rows
+    non-LOCKED).
+- *Readout added (reported).* At the static cells, per arm: the slow
+  (c8) or second (c1d) leg's in-flight share and `rtt`/`wrtt` on the first
+  `[DIAG]` line (t ≈ 0.3 s). This is the trigger. Predicted: WIRE puts
+  less of the first burst on c8's slow leg than MAIN's even split.
+- *Predictions revised.*
+  - MAIN at c8-192: 2–4 of 6 LOCKED.
+  - WIRE at c8-192: share within [½, 2] × MAIN's non-LOCKED median.
+  - `c1d-400` default, WIRE against MAIN: WITHIN, so the expected verdict
+    is `CURED`, not `CURED-AT-COST`.
+  - The static c1d-1536 pooled cost stays as predicted (−5 to −12 %,
+    reported).
+- Nothing else changes: cells, n, seeds, env, witnesses and abort table
+  stand as amended.
+
 ## 39. The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
 
 §37 rated the rate law "the maths holds, inert", and the user opened the
