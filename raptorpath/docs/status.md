@@ -11423,6 +11423,35 @@ No outcome or label changes.
   below its own lower bound Tp50/q off Bulk (≈ 285–380 ms at c2).
 
 
+
+### 43. Amendment 2 — the scorer rulings, the two diagnostic envs, the c2 offset and gain rows (before VM contact)
+
+- **Rulings applied** (`harness43` `6e9ff1b`):
+  - COLLAPSE is the DNF row only, because the floor clause is unreachable:
+    the ask is at least (1+q)·L·RTprop after the first sample.
+  - "Scored" rows are LIVE and not SHORT. SH rows count only if
+    HOLD-EXPIRED.
+  - At c1s, when at least 2 SH rows read HOLD-INERT and at least 2 SL rows
+    are scored, the SL rows carry the cell. The label then carries
+    `[SL-ONLY: SH cannot test bistability at c1s]`.
+- **Two diagnostic envs on `run43`.** Both are declared oracle inputs, not
+  law terms, and are echoed. Red-first and default-off tests are in place;
+  the debug lib passes 632/0.
+  - `RWM_ORACLE_GAIN` (`2ca74cb`) replaces (1+q(δ)) with a fixed
+    multiplier.
+  - `RWM_ORACLE_BRAKE_OFFSET_US` (`b2b75b7`) adds b₀ to the time term,
+    giving RTprop + S + b₀.
+- **Added rows (reported only; they do not enter §43's outcome).** All are
+  start-low at c2, 600 MB, n = 3 each (seeds 42 / 7 / 42):
+  - `SL-B0`: b₀ = 2 470 µs (the §44-erratum no-queue brake), gain unset.
+    Predicted operating point ≈ 195, goodput ≈ 0.985 Gmax, Tp50 ≈ 19.5 ms.
+  - `SL-G12`: gain 1.2, b₀ unset. Predicted ≈ 184, ≈ 0.957 Gmax.
+  - Readouts R1–R10 as for SL rows, plus goodput and delay against §43's
+    MAIN rows.
+  - 6 more rows; the total is 26 invocations, within `LD_HARD`.
+- **Prediction caveat.** These are offline-map predictions from p27
+  (static rows, pre-§32 receiver), not closed-loop ones.
+
 ## 44. Is the model overcomplicated? — law inventory and simplification review — no VM, record
 
 The user asked whether the formulas could be simpler. An Opus inventory of
