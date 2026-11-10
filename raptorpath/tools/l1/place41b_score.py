@@ -33,6 +33,8 @@ N_PERM = 10000
 RNG_SEED = 4141
 P_PASS = 0.05
 CELLS = [("c1s-400", "def"), ("c1d-400", "def")]
+# Status 47: the guard on the merge candidate runs at four cells (BASE n = 12, CAND n = 6 each), the same statistic over all their clauses.
+CELLS_GUARD = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-100", "def")]
 
 
 def clause_defs(cell):
@@ -111,8 +113,8 @@ def relabel(pools, n_perm=N_PERM, seed=RNG_SEED):
     return xt, xs
 
 
-def statistic(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED):
-    pools = [Pool(rows, cell, ref_arm, test_arm) for cell, _ in CELLS]
+def statistic(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None):
+    pools = [Pool(rows, cell, ref_arm, test_arm) for cell, _ in (cells or CELLS)]
     xt, xs = relabel(pools, n_perm, seed)
     sd = {}
     for k, v in xs.items():
@@ -139,17 +141,18 @@ def statistic(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED):
             "argmax_share": {k: v / n_perm for k, v in sorted(arg.items(), key=lambda kv: -kv[1])}, "n_perm": n_perm}
 
 
-def resolution(rows, arm="BASE"):
+def resolution(rows, arm="BASE", cells=None):
     """BASE alone: per cell and clause the q95 of |x_c| over the half-per-seed splits, beside the §21 tolerance."""
+    from place38_parse import S3_REL
     out = []
-    for cell, _ in CELLS:
+    for cell, _ in (cells or CELLS):
         base = live(rows, cell, arm)
         defs = clause_defs(cell)
         vals = {n: [value(r, cell, k) for r in base] for n, k, _ in defs}
         seeds = sorted({r["seed"] for r in base})
         groups = {s: [i for i, r in enumerate(base) if r["seed"] == s] for s in seeds}
         splits = [sum(c, ()) for c in itertools.product(*[list(itertools.combinations(groups[s], len(groups[s]) // 2)) for s in seeds])]
-        rel = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065}}[cell]
+        rel = S3_REL[cell]
         for n, k, sg in defs:
             xv = []
             for sel in splits:
@@ -163,15 +166,15 @@ def resolution(rows, arm="BASE"):
     return out
 
 
-def tail_lines(rows, out):
+def tail_lines(rows, out, cells=None, arms=("BASE", "MAIN", "WIRE")):
     """Reported only: per cell and arm the lowest LIVE row's goodput against the cell median (the median of all live rows at the
     cell, every arm pooled), and how many of the arm's rows lie below 0.5 x that median."""
-    for cell, _ in CELLS:
-        pool = [r for a in ("BASE", "MAIN", "WIRE") for r in live(rows, cell, a) if r.get("mbps") is not None and not r.get("dnf")]
+    for cell, _ in (cells or CELLS):
+        pool = [r for a in arms for r in live(rows, cell, a) if r.get("mbps") is not None and not r.get("dnf")]
         m = med([r["mbps"] for r in pool])
         if not m:
             continue
-        for arm in ("BASE", "MAIN", "WIRE"):
+        for arm in arms:
             rs = [r for r in pool if r["arm"] == arm]
             if not rs:
                 continue
@@ -181,24 +184,31 @@ def tail_lines(rows, out):
                 f"rows below 0.5 x median: {n_lo} of {len(rs)}")
 
 
-def report(rows, out=print, dry=False):
-    out(f"§41b GUARD ({'DRY RUN on a ledger with fewer BASE rows' if dry else 'real scoring'}): N_PERM={N_PERM} RNG seed {RNG_SEED}, one-sided, "
-        f"max over every clause of both cells, PASS iff p > {P_PASS}")
-    cnt = {(c, a): len(live(rows, c, a)) for c, _ in CELLS for a in ("BASE", "MAIN", "WIRE")}
-    out("LIVE ROWS " + "  ".join(f"{c} {a}={cnt[(c, a)]}" for c, _ in CELLS for a in ("BASE", "MAIN", "WIRE")))
+def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=True, title="§41b GUARD", gate_name="GATE-41b",
+           subject="the gate-off binary"):
+    """The registered guard. Defaults reproduce status 41b (BASE against MAIN, WIRE reported, c1s and c1d); the merge-candidate guard
+    (status 47) passes cells=CELLS_GUARD, test_arm="CAND", with_wire=False."""
+    cells = cells or CELLS
+    ta = test_arm
+    arms_all = ("BASE", ta, "WIRE") if with_wire else ("BASE", ta)
+    ncell = {2: "both", 3: "all three", 4: "all four"}.get(len(cells), str(len(cells)))
+    out(f"{title} ({'DRY RUN on a ledger with fewer BASE rows' if dry else 'real scoring'}): N_PERM={N_PERM} RNG seed {RNG_SEED}, one-sided, "
+        f"max over every clause of {ncell} cells, PASS iff p > {P_PASS}")
+    cnt = {(c, a): len(live(rows, c, a)) for c, _ in cells for a in arms_all}
+    out("LIVE ROWS " + "  ".join(f"{c} {a}={cnt[(c, a)]}" for c, _ in cells for a in arms_all))
     out("")
-    out("RESOLUTION (computed from BASE rows alone, before MAIN is read): per clause the q95 of |x_c| over the half-per-seed splits of BASE, beside the §21 tolerance")
-    for r in resolution(rows):
+    out(f"RESOLUTION (computed from BASE rows alone, before {ta} is read): per clause the q95 of |x_c| over the half-per-seed splits of BASE, beside the §21 tolerance")
+    for r in resolution(rows, cells=cells):
         q = r["q95"]
         out(f"  {r['cell']} {r['clause']:<14} q95|x|={('%.4f' % q) if q is not None else '-'} (splits={r['splits']}, nBASE={r['n_base']})  §21 tol={r['tol']:.4f}  "
             + ("" if q is None else ("q95 > tol: the guard cannot see this clause below q95" if q > r["tol"] else "q95 <= tol")))
     out("")
-    res = statistic(rows, "BASE", "MAIN")
+    res = statistic(rows, "BASE", ta, cells=cells)
     pools = res["pools"]
-    out("MAIN against BASE (pooled relabelling)")
+    out(f"{ta} against BASE (pooled relabelling)")
     for p in pools:
-        out(f"  {p.cell}: pool {len(p.ref_rows)} BASE + {len(p.test_rows)} MAIN; relabelled MAIN rows per seed " + " ".join(f"s{s}:{p.k[s]}" for s in p.seeds))
-    out("  clause x_c(true), sd_c, z_c(true)  (x worse-signed: positive = MAIN worse)")
+        out(f"  {p.cell}: pool {len(p.ref_rows)} BASE + {len(p.test_rows)} {ta}; relabelled {ta} rows per seed " + " ".join(f"s{s}:{p.k[s]}" for s in p.seeds))
+    out(f"  clause x_c(true), sd_c, z_c(true)  (x worse-signed: positive = {ta} worse)")
     for k in res["z_true"]:
         out(f"    {k[0]} {k[1]:<14} x={res['x_true'][k] * 100:+7.2f} %  sd={res['sd'][k] * 100:6.2f} %  z={res['z_true'][k]:+6.2f}")
     out(f"  T(true) = {res['T_true']:+.3f} at {res['arg_true'][0]} {res['arg_true'][1]}")
@@ -206,33 +216,33 @@ def report(rows, out=print, dry=False):
         + ", ".join(f"{k[0]} {k[1]} {v:.3f}" for k, v in list(res["argmax_share"].items())[:8]))
     out(f"  p = {res['p']:.4f}  (share of {res['n_perm']} relabellings with T >= T(true))")
     gate = "PASS" if res["p"] > P_PASS else "FAIL"
-    out(f"GATE-41b {gate} (p={res['p']:.4f}; the gate-off binary {'may' if gate == 'PASS' else 'may not'} reach main)")
+    out(f"{gate_name} {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
     out("")
-    out("§21 READINGS of MAIN against all BASE rows (reported beside the gate)")
+    out(f"§21 READINGS of {ta} against all BASE rows (reported beside the gate)")
     import place38_parse as pp
-    for cell, store in CELLS:
-        xs_, rs_ = live(rows, cell, "MAIN"), live(rows, cell, "BASE")
+    for cell, store in cells:
+        xs_, rs_ = live(rows, cell, ta), live(rows, cell, "BASE")
         if xs_ and rs_:
-            pp.clause_readings(xs_, rs_, cell, out, f"41b-{cell}@{store}", "MAIN", "BASE")
+            pp.clause_readings(xs_, rs_, cell, out, f"41b-{cell}@{store}", ta, "BASE")
     wres = None
-    if any(cnt[(c, "WIRE")] for c, _ in CELLS):
+    if with_wire and any(cnt[(c, "WIRE")] for c, _ in cells):
         out("")
         out("WIRE (RWM_PLACE_WIRE=1), reported only: its own pooled relabelling against BASE")
-        wres = statistic(rows, "BASE", "WIRE")
+        wres = statistic(rows, "BASE", "WIRE", cells=cells)
         for k in wres["z_true"]:
             out(f"    {k[0]} {k[1]:<14} x={wres['x_true'][k] * 100:+7.2f} %  sd={wres['sd'][k] * 100:6.2f} %  z={wres['z_true'][k]:+6.2f}")
         out(f"  T(true) = {wres['T_true']:+.3f} at {wres['arg_true'][0]} {wres['arg_true'][1]};  p = {wres['p']:.4f}  (reported, not a gate)")
-        for cell, store in CELLS:
+        for cell, store in cells:
             xs_, rs_ = live(rows, cell, "WIRE"), live(rows, cell, "BASE")
             if xs_ and rs_:
                 pp.clause_readings(xs_, rs_, cell, out, f"41b-WIRE-{cell}@{store}", "WIRE", "BASE")
     out("")
     out("TAIL (reported only): lowest goodput per arm and cell against the cell median (all live rows pooled), and the count below 0.5 x median")
-    tail_lines(rows, out)
+    tail_lines(rows, out, cells, arms_all)
     out("")
     out("RUN ORDER (ledger order; every row, any status): idx cell arm seed rep status mbps cpuC/GB cpuS/GB lagC lagS")
     for i, r in enumerate(rows):
-        if r["cell"] in dict(CELLS):
+        if r["cell"] in dict(cells):
             b = sp.CELL_SPEC[r["cell"]][3] / 1e9
             f = lambda k, s=1.0: ("%.1f" % (r[k] / s)) if r.get(k) is not None else "-"  # noqa: E731
             out(f"  {i:>3} {r['cell']} {r['arm']:<4} s{r['seed']} r{r['rep']} {r['status']} {f('mbps')} {f('cpu_cli', b)} {f('cpu_srv', b)} {f('cli_lag_E')} {f('srv_lag_E')}")

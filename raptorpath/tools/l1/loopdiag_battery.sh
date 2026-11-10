@@ -89,7 +89,7 @@ OUTDIR="${LD_OUTDIR:?LD_OUTDIR}"
 TAG="${LD_TAG:-ld}"
 TRIES="${LD_BRINGUP_TRIES:-2}"
 PLAN="${LD_PLAN:-24}"
-case "$PLAN" in 24|27|29|34|36|38|40|41|41b|43|43b|46) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|43|43b|46)"; exit 3 ;; esac
+case "$PLAN" in 24|27|29|34|36|38|40|41|41b|41c|43|43b|46) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -101,9 +101,12 @@ if [ "$PLAN" = "43b" ]; then
 fi
 SHA43="94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008"
 P46=0; [ "$PLAN" = "46" ] && P46=1
+# Plan 41c (status 47) is the status-41b guard on the merge candidate: BASE (main 4926822) against CAND, no WIRE arm. PCAND=1 marks the
+# plans whose LD_BIN is the promoted candidate build (it must not carry RWM_PLACE_WIRE).
+PCAND=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ]; } && PCAND=1
 # Plans 38, 41 and 41b share everything but the BASE arm (P38=1 is "the place-wire battery"; P41=1 has the BASE binary).
-P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P38=1
-P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P41=1
+P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$PLAN" = "41c" ]; } && P38=1
+P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$PLAN" = "41c" ]; } && P41=1
 BIN_BASE=""; WANT_BASE=""
 if [ "$P41" = 1 ] || [ "$P46" = 1 ]; then
   BIN_BASE="${LD_BIN_BASE:?LD_BIN_BASE}"
@@ -139,7 +142,7 @@ LB_LOG="$OUT"
 # The instruments and gates the arms need must be in the binary.
 # Plan 36 runs main's binary, which lacks both instruments: it asks only for the store override it sets.
 if [ "$P43" = 1 ]; then preflight_binary "$BIN" "RWM_STORE_LAW" "oracle store law ACTIVE" "RWM_ORACLE_L_DGPS" "RWM_ORACLE_HOLD" "RWM_ORACLE_DIAG" "RWM_ORACLE_GAIN" "RWM_ORACLE_BRAKE_OFFSET_US"
-elif [ "$P46" = 1 ]; then
+elif [ "$PCAND" = 1 ]; then
   # CAND must contain the promotion (no RWM_PLACE_WIRE token) and BASE is main's: neither may carry the arm.
   preflight_binary "$BIN" "RWM_STORE"
   if grep -aq -- "RWM_PLACE_WIRE" "$BIN" 2>/dev/null; then _lb_say "ABORT-CAND the CAND binary $BIN still carries RWM_PLACE_WIRE: it does not contain the promotion"; exit 5; fi
@@ -226,7 +229,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
         arm_env=(RWM_STORE_LAW=oracle "RWM_ORACLE_GAIN=$G43B" "RWM_ORACLE_BRAKE_OFFSET_US=$TAU43B") ;;
     SH-T) [ "$PLAN" = "43b" ] || { echo "UNKNOWN-ARM $arm (plan 43b only)" >> "$OUT"; return 0; }
         arm_env=(RWM_STORE_LAW=oracle "RWM_ORACLE_GAIN=$G43B" "RWM_ORACLE_BRAKE_OFFSET_US=$TAU43B" "RWM_ORACLE_HOLD=$(p43_h "$cell"):15") ;;
-    CAND) [ "$P46" = 1 ] || { echo "UNKNOWN-ARM $arm (plan 46 only)" >> "$OUT"; return 0; } ;;
+    CAND) [ "$PCAND" = 1 ] || { echo "UNKNOWN-ARM $arm (plan 41c/46 only)" >> "$OUT"; return 0; } ;;
     PWR) arm_env=(RWM_STORE_LAW=power) ;;
     KNEE) [[ "$knee" =~ ^[0-9]+$ ]] || { echo "UNKNOWN-KNEE $cell '$knee'" >> "$OUT"; return 0; }
           arm_env=(RWM_STORE="$knee") ;;
@@ -534,6 +537,40 @@ plan41b() { # smoke -> the whole plan (0), or the two smoke rows (1)
     BLOCK=6
   fi
 }
+
+# ── plan 41c ──────────────────────────────────────────────────────────────
+plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
+  local -a tbl
+  local line cell store arm seed rep
+  if [ "$1" = "1" ]; then
+    mapfile -t tbl < <(python3 ./place38_parse.py plan41c smoke)
+    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN41C smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
+  else
+    mapfile -t tbl < <(python3 ./place38_parse.py plan41c)
+    [ "${#tbl[@]}" -eq 72 ] || { echo "ABORT-PLAN41C table has ${#tbl[@]} rows (72)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell store arm seed rep <<< "$line"
+    run_one "$cell" "$arm" "$seed" "$rep" "$store"
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE 6 groups $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=6
+  fi
+}
+
+if [ "$PLAN" = "41c" ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan41c 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan41c 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 
 # ── plan 46 ───────────────────────────────────────────────────────────────
 plan46() { # smoke -> the 22 battery rows (0), or the two check rows (1)

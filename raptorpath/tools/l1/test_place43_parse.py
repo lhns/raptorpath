@@ -83,7 +83,7 @@ check("the cells' constants are §43's: L, H, band, sd_pred, bytes",
 bat = open(os.path.join(HERE, "loopdiag_battery.sh"), encoding="utf-8").read()
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
 check("battery: plan 43 accepted, arms SL/SH set RWM_STORE_LAW=oracle (+ RWM_ORACLE_HOLD=<H>:15), every arm carries the L list, 24-row table",
-      "38|40|41|41b|43" in bat and "RWM_STORE_LAW=oracle" in bat and 'RWM_ORACLE_HOLD=$(p43_h "$cell"):15' in bat
+      "38|40|41|41b|41c|43" in bat and "RWM_STORE_LAW=oracle" in bat and 'RWM_ORACLE_HOLD=$(p43_h "$cell"):15' in bat
       and 'RWM_ORACLE_L_DGPS=$(p43_l "$cell")' in bat and "-eq 24" in bat and "P43ROW" in bat)
 check("battery (amendment 2): SL-B0 sets RWM_ORACLE_BRAKE_OFFSET_US=2470 and SL-G12 RWM_ORACLE_GAIN=1.2 on top of the oracle law, c2-100 only; "
       "both envs are withheld and preflighted",
