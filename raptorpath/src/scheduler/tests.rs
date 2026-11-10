@@ -591,19 +591,6 @@ fn test_hint_plumbed_to_paths() {
 }
 
 #[test]
-fn test_copa_target_cwnd_units() {
-    // Units doc-test: floor = SRTT = 100ms → dq clamps at 0.1ms.
-    // rate = 1/(0.5 [1/sym] × 1e-4 [s]) = 20000 symbols/s
-    // cwnd = 20000 [sym/s] × 0.1 [s] = 2000 symbols
-    let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new(clock);
-    sched.add_path(0);
-    let path = sched.path_mut(0).unwrap();
-    path.record_rtt_sample(millis(100));
-    assert_eq!(path.copa_target_cwnd(), 2000);
-}
-
-#[test]
 fn test_schedule_ack_roundtrip_conserves_in_flight() {
     // The in_flight budget is charged once, at schedule time. A double
     // charge (schedule() and then the paced drain at send time) leaks +1

@@ -135,8 +135,8 @@ pub(crate) const COMPETE_INV_DELTA_MAX: f64 = PathState::MAX_CWND as f64 / 2.0;
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
-///   - `copa_target_cwnd()` divides by dq; on a LAN where a sample can equal
-///     the floor exactly, dq → 0 would explode the target to infinity.
+///   - The Copa target `srtt/(δ·dq)` divides by dq; on a LAN where a sample
+///     can equal the floor exactly, dq → 0 would explode the target to infinity.
 ///   - The backoff threshold (queue_mult − 1) × floor collapses toward 0 on
 ///     sub-millisecond-RTT links; flooring both dq and the threshold at the
 ///     same 0.1 ms means jitter at the clamp boundary cannot trigger a
@@ -562,8 +562,7 @@ pub struct CopaState {
     /// ⇒ the application-echo law.
     wire_mode: bool,
     /// Copa δ (1/symbols): the hint-mapped latency price (`copa_delta`).
-    /// Outside wire mode this stays COPA_DELTA so the diagnostic
-    /// `copa_target_cwnd` is unchanged.
+    /// Outside wire mode this stays COPA_DELTA.
     pub(crate) delta: f64,
     /// Copa velocity v: the per-SRTT step is v/δ symbols; v doubles once
     /// per update while the direction has persisted ≥ 3 consecutive
@@ -1474,27 +1473,6 @@ impl CopaState {
         self.dir_streak = 1;
         self.last_dir_up = Some(false);
         (cwnd as f64 * BACKOFF_MULT).round() as u32
-    }
-
-    /// Classic Copa rate target — diagnostic only (the cwnd dynamics above
-    /// are the ramp/backoff scheme; this is the closed-form equilibrium).
-    ///
-    /// Units:
-    ///   dq   [s]         = SRTT − floor, clamped ≥ DQ_FLOOR_SECS
-    ///   rate [symbols/s] = 1 / (COPA_DELTA [1/symbols] × dq [s])
-    ///   cwnd [symbols]   = rate [symbols/s] × SRTT [s]
-    ///
-    /// (rate × SRTT is the pipe-plus-standing-queue the rate can keep full
-    /// over one feedback delay.)
-    pub(crate) fn copa_target_cwnd(&self) -> u32 {
-        let floor = self.min_rtt.unwrap_or(DEFAULT_SRTT).as_secs_f64();
-        let srtt = self.srtt().as_secs_f64();
-        let dq = (srtt - floor).max(DQ_FLOOR_SECS);
-        // `delta` == COPA_DELTA outside wire mode; in wire mode it is the
-        // hint-mapped δ the live law targets.
-        let rate = 1.0 / (self.delta * dq); // symbols per second
-        let cwnd = rate * srtt; // symbols
-        (cwnd.round() as u32).clamp(PathState::MIN_CWND, PathState::MAX_CWND)
     }
 
     /// BtlBw×RTprop BDP estimate in symbols — the active recovery anchor

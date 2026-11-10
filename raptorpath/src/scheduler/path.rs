@@ -1064,12 +1064,6 @@ impl PathState {
         }
     }
 
-    /// Classic Copa equilibrium target, for diagnostics (see
-    /// `CopaState::copa_target_cwnd` for the units derivation).
-    pub fn copa_target_cwnd(&self) -> u32 {
-        self.copa.copa_target_cwnd()
-    }
-
     /// BtlBw×RTprop BDP anchor estimate in symbols, once established
     /// (paper §8.3). None during warm-up / before a min-RTT
     /// sample. Diagnostic/benchmarking accessor.
