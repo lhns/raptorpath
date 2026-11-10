@@ -10245,3 +10245,103 @@ refuted. The parity derivation (funded r on one saturated path is capped at
 parity with ARQ) stands. The ledger would not make FEC act at Bulk; only an
 off-Bulk cell on the wire can show a gain. Owed: §11.6 reference entries,
 and the §9.8 and §10 wording.
+
+## 40. The p90 dispersion estimator, fixed in advance, with aggregation and policer cells — capture diagnostic — pre-registration
+
+§36 failed both registered estimators. Its exploratory addendum found a lead:
+the per-window p90 of k = 4 train rates never exceeded 1.032 of the link,
+read it from a cap crossover up, and read 1.6–3.9× the delivered rate below
+that crossover, which keeps a store-law map out of the floor. That reading
+was post hoc. This section tests it fresh, with the estimator fixed now.
+It adds the two real-link failure modes the literature names: aggregation
+(netem `slot`) and a token-bucket policer (`tbf`). Diagnostic: no engine
+diff, nothing ships, no law is built.
+
+**Tree, capture, rules.** As §36 after amendment 6: main's engine (the
+diff outside `docs/` and `tools/` is empty); unfiltered `-Q in` capture
+with drain and settle; windowed `[SNAP]` witnesses at 1 %; root-owned
+tmpfs and the per-row `ABORT-BIN` sha check; the §36 launch precondition,
+locks and abort table. Static cap `RWM_STORE=<n>`, Bulk,
+`--window-reliable`, `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=300`.
+
+**Estimator (fixed; it uses no L).** Per leg, all skbs in arrival order, b
+as §36, after a 1 s warm-up. For each 250 ms window, take the p90 of
+`r_4(j) = Σ_{i=j+1..j+4} bᵢ / (t_{j+4} − t_j)` over trains starting in
+it. The row value L̂ is the median over windows.
+
+**Cells.**
+
+| cell | caps | sustained rate (B/s) | role |
+|---|---|---|---|
+| `c1s-400` | {16, 32, 64, 128, 256, 512, 1024, 2048} | 125·10⁶ | scored |
+| `c2-100` | {16, 32, 64, 128, 256, 512} | 12.5·10⁶ | scored |
+| `c8-100` | {16, 32, 64, 128, 256, 512, 1024} | 12.5·10⁶ / 2.5·10⁶ | scored, both legs |
+| `c2slot` | {32, 128, 512} | 12.5·10⁶ | aggregation, reported |
+| `c2tbf` | {32, 128, 512} | 6.25·10⁶ | policer, reported |
+
+- `c2slot` is c2's netem plus `slot 1ms 3ms packets 16`: release in bursts
+  of ≤ 16 packets at 1–3 ms intervals.
+- `c2tbf` is c2's netem (100 Mbit/s) plus a child `tbf rate 50mbit burst
+  125000 latency 50ms`: a policer whose burst drains at the netem rate.
+- Each cell runs seeds 42 and 7, two reps each: 4 rows per cap, 108 rows,
+  plus a 2-row smoke (c2 CAP128, c2tbf CAP128).
+- Block order as §36: ascending, then descending, cells alternated.
+
+**Witnesses.** As §36, amendment 6. For `c2slot` and `c2tbf`, the
+skb/byte witnesses read the clsact counter against the root qdisc's
+`Sent` (the qdisc tree), with the tolerance unchanged.
+
+**Readouts and outcomes.** Q(p, n) = mean over the cap's live rows of
+L̂ ÷ sustained rate. D(p, n) = delivered bytes ÷ time from the same capture.
+Crossover caps, fixed from §36: 128 on c1s, c2 and c8 fast; 256 on c8
+slow.
+
+- **E1, above the crossover.** Q ∈ [0.90, 1.10] at every cap ≥ the
+  crossover.
+- **E2, never over.** Q ≤ 1.10 at every cap.
+- **E3, floor escape.** (1 + q)·L̂/D ≥ 1.2 at every cap below the
+  crossover, with q = 0.1. Per row; the cap's minimum is reported.
+- **E4, row agreement.** At every cap ≥ the crossover, the 4 rows' L̂ agree
+  within max/min ≤ 1.05.
+- **E5 (reported).** Within-row cv over windows, the in-run share, and the
+  same readouts for the window median.
+- **E6 (reported).** Medians of the `p<i>:` µs fields `sig_us`, `rvar_us`,
+  `qsp_us`, `msd_us` and `tlag_us` per cap, toward the open question of
+  dwell in S (§36 addendum).
+- **Aggregation and policer.**
+  - `c2slot` and `c2tbf` get E1 and E2 against their sustained rates,
+    reported.
+  - `AGG-SAFE` iff both hold E2. Otherwise `AGG-OVER-READ`, with the
+    factor.
+
+**Decision rule (ships nothing).**
+- `P90-READS-LINK` iff E1–E4 hold at c1s, c2 and both c8 legs. The store
+  law can then take L̂ from dispersion between the floor and the knee, and
+  the next step is the joint derivation with it. A dwell-free S is still
+  missing, so no build follows.
+- If, in addition, `AGG-OVER-READ`, the law also needs an aggregation bound
+  (a windowed excess, as BBR's `extra_acked`) before any build.
+- Otherwise `NOT-YET`, naming the failed cells and clauses.
+
+**Predictions (before any number).**
+- E1, E2 and E3 hold at c2 and c8 (§36: p90 1.00–1.01 above the crossover,
+  L̂/D ≥ 1.6 below it).
+- At c1s, E1 and E2 hold (§36 max 1.032). E4 is the stated risk there,
+  because the batched release spreads the rows.
+- `c2slot` over-reads (bursts of 16 at line rate): `AGG-OVER-READ`,
+  ×1.5–3.
+- `c2tbf` reads the netem rate inside bursts: ≈ ×2 over its sustained rate.
+- So the expected verdict is `P90-READS-LINK` with `AGG-OVER-READ`.
+
+**Duration.** Build ≈ 6 min; 110 invocations ≈ 60–75 min (c8 at 16 ≈
+100 s). Inside the 4 h launch deadline and the 5 h cap.
+
+### 40. Standing decision — δ's authority on the store law (user, 2026-11-10)
+
+The store law's δ dial moves its fixed point by only ≈ 5–10 % across the
+named points: q(δ) is its only δ term, while the power argmax moves ×2
+between α = 1 and 2 (§37). The user accepted this **for now, to be
+revisited**. It is reopened when a store law with a measured input is
+derived (after §40), or when the δ → latency trade-off is measured on the
+wire. The revisit is to decide whether δ needs authority beyond q, for
+example a δ-indexed quantile in S, as the joint derivation suggested.
