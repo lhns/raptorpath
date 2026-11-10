@@ -10982,6 +10982,83 @@ inside the A/A resolution, reported.
 
 **Duration.** Two builds (≈ 11 min) and 50 invocations (≈ 11 min).
 
+### 41b. Result
+
+Scored 2026-11-10 (`docs/l1-raw/place41b/score.txt`). **GATE PASS,
+p = 0.7195.** The gate-off `diag36` binary may reach main.
+
+*Session.* 15:04–15:22Z. Precondition met first try. Parser gate passed.
+Two builds (331 s and 328 s). Smoke passed. Battery took 362 s: 48/48 rows
+LIVE, rc 0, no witness failure, no abort.
+- Pre-launch: `raptorpath/src` equals `85be32a` and `40c55dd` (sha256 of 92
+  files), and the binary sha equals §41's.
+- The scorer dry-run on §41's rows confirmed the scaling fix. After
+  scaling, the maxima spread over all 13 clauses (8–11 % each), where the
+  raw maximum had been a lag clause every time.
+- Readings fixed by the harness: sample sd (n − 1); q95 = rank
+  ⌈0.95·n⌉; resolution splits are half of each seed's BASE rows.
+
+*Resolution table (from BASE alone; this is the guard's calibration).*
+
+| clause | c1s q95 / §21 tol | c1d q95 / §21 tol |
+|---|---|---|
+| goodput | 3.8 % / 4.9 % | **6.4 % / 5.6 %** |
+| client CPU/GB | 1.2 % / 2.4 % | 3.1 % / 6.5 % |
+| server CPU/GB | 1.5 % / 2.4 % | 2.8 % / 6.5 % |
+| `lag_E_cli` / `lag_E_srv` | 31 % / 20 % | 53 % / 53 % |
+| `rtp_floor` | 1.6 % | 2.3–3.1 % |
+
+- The guard resolves about 1.2 % CPU and 3.8 % goodput at c1s.
+- At c1d it cannot see a goodput loss under 6.4 %.
+- The lag clauses carry no information at n = 12.
+
+*MAIN against BASE.*
+- T(true) = +1.256, at c1s `lag_E_srv` (x = +16.4 %); every other z is
+  below +0.7. p = 0.7195.
+- Every §21 reading against all 12 BASE rows is WITHIN, and the feed reads
+  SAME.
+
+*WIRE (reported only).*
+- p = 0.9316. Every §21 reading is WITHIN.
+- c1s client CPU/GB +0.0 %, c1d +0.2 %. Across sessions, WIRE's c1s CPU
+  cost reads +2.5 % (§38), +0.8 % (§41) and 0.0 % (§41b): below
+  resolution, not zero.
+
+*Anomaly: MAIN c1s s7 r3 ran at 68.3 Mbit/s.*
+- From its kept client log, the store is full at the knee (`win=2048/2048`,
+  pin 0.987, floor 0). The sender is paused 59–85 % of the time.
+- The app-echo RTT reads 242–466 ms while quinn's wire RTT reads 2 ms.
+  Quinn's backlog is ≈ 2 000 datagrams; the receiver is busy 36–75 %.
+- So it is not the law contracting to its floor. The echo and SACK release
+  path stalls, with GSO 7.6 against a typical ≈ 2.7.
+- This is an engine fault on the gate-off path, i.e. main's code path; the
+  arm is off. Slow c1s rows: 3 of 36 on the `diag36` binary against 0 of 18
+  on main's, too few to blame the binary.
+- It is the likely answer to the earlier unexplained slow c1s rows (§34's
+  277, §38's 575 and 684). It is now an open diagnosis item.
+- The guard works on medians, so it is blind to a rare collapse. From now
+  on it also reports a tail line: the lowest row per arm against the cell
+  median.
+
+*Next.* §41's ladder (`CURED`) together with this PASS puts the arm to the
+user's promote-or-archive call (ADR-0073). Promoting deletes the old base
+and the gate in the same merge, as a new engine tree, through suites and
+the guard. It also removes the test hold hook. `XPATH_REPAIR` waits for
+that call.
+
+### 43. Note before the score is read (2026-11-10, while the battery is running)
+
+A row that runs slowly because of the engine stall above would hit
+`RWM_PERF_TIMEOUT_S=200` at 5 GB as DNF. Under amendment 2, COLLAPSE is
+"any DNF row", so an engine fault could label the law UNSTABLE.
+Fixed now, before any score:
+- every DNF row is also classified from its n series;
+- a DNF row whose n stayed at or above its last-third median until the
+  stall, with the sender paused and the echo RTT far above the wire RTT, is
+  reported as `ENGINE-STALL` beside the label.
+
+The registered label is still computed and reported literally.
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
