@@ -11655,3 +11655,83 @@ harness, old plans frozen). Ask first.
 **Order.** §41 → §43 → cleanup and merge of `diag36` to main → scoreboard
 at main → Stage 1 → user's go on Stage 2 → Stage 3 items one at a time →
 Stage 4.
+
+
+### 45. Addendum — the gate class table, the scoreboard, and what can go now (no VM)
+
+The full inventory is `docs/l1-raw/s45/gate_inventory.md`, read at main
+`4926822`; scripts are alongside it. It was reviewed with the advisor
+before any deletion.
+
+**Scoreboard at main.**
+
+| quantity | count |
+|---|---|
+| `RWM_` gates | 95 |
+| §11.2 rows | 30 |
+| hint-keyed decision sites | 6 engine + 1 harness |
+| Rust SLOC (non-test files) | 46 124 |
+| smoothed-RTT estimators | 4 |
+| RTprop estimators | 3 + P10 |
+| delivery-rate estimators | 6 |
+| loss estimators | 3 |
+
+**No arm on main was refuted by a battery on the current substrate.**
+Every deletion therefore needs a stated route: a structural refutation, a
+supersession (`RWM_RATE_WIRE` / `RWM_SRC_BP` precedent, old ledger
+GG ~955–1030), or a user ruling. Arm gates are 32, plus 13 for the
+generation seat (corrected from "about a dozen").
+
+**Batch 1 (no further ruling needed).** Worker on main, one item per
+commit, with the guard after.
+- **Dead code**, each with a grep proof at main:
+  - `CorrectionDeficit`;
+  - the per-path token bucket (`path.rs` ~1136–1165) and its three
+    `consume_pace_tokens` calls. It is on the send path, so host ns per
+    call is measured before and after;
+  - `copa_target_cwnd` and `schedule()`.
+- **The honest store family:** `RWM_PLAIN_RS`, `RWM_HONEST_CAP`,
+  `RWM_HONEST_K`, `RWM_POOL_ANCHOR`.
+  - The route is current-substrate evidence plus a structural derivation
+    (§23, §27), as with `RATE_WIRE`.
+  - `HONEST_CAP` resolves on, so a test first asserts it is inert without
+    `PLAIN_RS`.
+  - The shipped neighbours `RWM_HONEST_ANCHOR` and `RWM_RS_ATTR` stay.
+  - Each removal updates `lib.sh` `RWM_FORWARD`, regenerates the `[GATES]`
+    pin, and writes a paper §10 row (cite, date, substrate, route,
+    `archive/<arm>` tag) in the same commit.
+
+**For one grouped user ruling (recommend delete, with an archive tag and a
+re-ask clause in the row):**
+- the pre-discipline four (2026-07-08): `RWM_REPAIR_WAIT`,
+  `RWM_PROACTIVE_PACER`, `RWM_XPATH_REPAIR` (fenced until §41b ends) and
+  `RWM_REASM_BDP`;
+- `RWM_THREE_TERM` with `RWM_COMPOSED_CAP`. THREE_TERM is the only reader
+  of the contract-stall term, which §37's joint law still carries.
+- the recovery three: `RWM_HOLDDOWN_Q`, `RWM_REFRESH_FLOOR_US` and
+  `RWM_DERIVED_SWEEP`, refuted at today's dwell-inflated H.
+
+**Left out of this pass:** every flagged gate with no verdict, plus the
+NEEDS-MORE gates, `COLD_PLACE`, `INFL_CAP`, the Copa wire family, and the
+generation seat.
+
+**ADR.** ADR-0052's warn-on-activation stage no longer exists in code. The
+promote-or-archive rule replaces it, which needs a short superseding ADR
+and the user's go.
+
+**Before the first gate goes:** the guard's parser (`place38_parse.py`,
+in use by §41b) is fixed to accept a missing token, tested on a fabricated
+`[GATES]` line, once §41b's VM session ends.
+
+**Correction to §45 Stage 3.1 (Copa's legacy controller).** Its cwnd
+gates neither intake nor the wire, as stated. But "it only feeds
+placement's queue term, `spare_capacity` and the active-path filter" is
+wrong. It also:
+- clamps repair emission through `spare_capacity`;
+- picks paths at ρ < 1 and for the Realtime duplicate;
+- is the in-flight leak backstop (`report.rs:183`);
+- feeds the ETA wire stamp.
+
+The BtlBw anchor it hosts feeds the shipped store cap and stays. So Stage
+3.1 is a redesign of four consumers, not the largest deletion. It needs the
+Realtime cells, and moves after the per-leg state (3.2).
