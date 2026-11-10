@@ -36,6 +36,20 @@
 //! share the timestamp and therefore the snapshot — same send state by
 //! construction).
 
+//!
+//! Window law (status §48, paper §8.4 "The substrate's window law, fixed").
+//! Three defects of the port are fixed, each against v1 (`tcp_bbr.c`):
+//! - Own ack clock: every ack-side time is a_e, read once per ACK event
+//!   (`BbrRsConfig::clock`; quinn's runtime clock in production), because
+//!   quinn's `now` is a per-poll stamp that can precede a datagram's arrival.
+//!   m̂ is the 10 s windowed minimum of r_e = a_e - max time_sent, not quinn's
+//!   lifetime `rtt.min()`; the sampler's interval guard is max(m̂, 1 ms).
+//! - Startup grows only while W < T(2.885) + e (the port compared a gain
+//!   with a byte count); Drain's window and exit test are both T(1);
+//!   ProbeBw is min(T(2) + A, W + a).
+//! - ProbeRtt is entered when the min filter expires (and its stamp restarts
+//!   on exit), not on a 10 s timer.
+
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -348,8 +362,15 @@ pub struct BbrRs {
     min_cwnd: u64,
     prev_in_flight_count: u64,
     exit_probe_rtt_at: Option<Instant>,
-    probe_rtt_last_started_at: Option<Instant>,
+    /// m̂: the 10 s windowed minimum of the ack-event loop time r_e (ZERO
+    /// until the first event).
     min_rtt: Duration,
+    /// t_m: when m̂ was last refreshed (`None` until the first event).
+    min_rtt_stamp: Option<Instant>,
+    /// The ACK event in progress (first `ack()` .. `on_end_acks`).
+    event: Option<AckEvent>,
+    /// Smoothed r_e (gain 1/8), observation only: the `[QCC]` `qsr_us`.
+    smoothed_loop: Duration,
     /// quinn's own `rtt.min()` as last seen by `on_ack`: observation only
     /// (the `[QCC]` gauge reads it beside `min_rtt`), never read by the law.
     quinn_min_rtt: Duration,
@@ -392,8 +413,10 @@ impl BbrRs {
             min_cwnd: calculate_min_window(current_mtu as u64),
             prev_in_flight_count: 0,
             exit_probe_rtt_at: None,
-            probe_rtt_last_started_at: None,
             min_rtt: Default::default(),
+            min_rtt_stamp: None,
+            event: None,
+            smoothed_loop: Default::default(),
             quinn_min_rtt: Default::default(),
             exiting_quiescence: false,
             pacing_rate: 0,
@@ -414,24 +437,35 @@ impl BbrRs {
     /// One acked packet. The `Controller::on_ack` body, split out because
     /// `RttEstimator` has no public constructor: unit tests drive this with
     /// `quinn_min` (quinn's `rtt.min()`) directly.
+    ///
+    /// Every ack-side time is the event clock a_e, read once at the event's
+    /// first callback (paper §8.4): quinn's `now` is a per-poll stamp that can
+    /// precede the datagram's arrival. `_now` is that stamp, unused.
     pub(crate) fn ack(
         &mut self,
-        now: Instant,
+        _now: Instant,
         sent: Instant,
         bytes: u64,
         app_limited: bool,
         quinn_min: Duration,
     ) {
-        // The changed call: per-flight sample with the RTprop interval guard
-        // (quinn's `rtt.min()`; RS_MIN_INTERVAL until real samples exist /
-        // for sub-ms LAN paths).
+        let a_e = match &mut self.event {
+            Some(e) => {
+                e.max_sent = e.max_sent.max(sent);
+                e.a_e
+            }
+            None => {
+                let a_e = self.config.clk();
+                self.event = Some(AckEvent { a_e, max_sent: sent });
+                a_e
+            }
+        };
+        // Per-flight sample; the interval guard is max(m̂, 1 ms) (the sampler
+        // floors at RS_MIN_INTERVAL).
         self.max_bandwidth
-            .on_ack(now, sent, bytes, self.round_count, app_limited, quinn_min);
+            .on_ack(a_e, sent, bytes, self.round_count, app_limited, self.min_rtt);
         self.acked_bytes += bytes;
         self.quinn_min_rtt = quinn_min;
-        if self.is_min_rtt_expired(now, app_limited) || self.min_rtt > quinn_min {
-            self.min_rtt = quinn_min;
-        }
     }
 
     /// The `[QCC]` gauge: the controller's own model, read off a clone.
@@ -444,7 +478,7 @@ impl BbrRs {
                 Mode::ProbeRtt => 'R',
             },
             rt_us: self.min_rtt.as_micros() as u64,
-            sr_us: 0,
+            sr_us: self.smoothed_loop.as_micros() as u64,
             bw: self.max_bandwidth.get_estimate(),
             quinn_min_us: self.quinn_min_rtt.as_micros() as u64,
         }
@@ -456,7 +490,7 @@ impl BbrRs {
     #[cfg(test)]
     pub(crate) fn plant_min_rtt(&mut self, d: Duration) {
         self.min_rtt = d;
-        self.probe_rtt_last_started_at = Some(self.config.clk());
+        self.min_rtt_stamp = Some(self.config.clk());
     }
 
     fn enter_startup_mode(&mut self) {
@@ -560,36 +594,26 @@ impl BbrRs {
         if self.mode == Mode::Startup && self.is_at_full_bandwidth {
             self.mode = Mode::Drain;
             self.pacing_gain = self.drain_gain;
-            self.cwnd_gain = self.high_cwnd_gain;
+            self.cwnd_gain = K_DRAIN_CWND_GAIN;
         }
         if self.mode == Mode::Drain && in_flight <= self.get_target_cwnd(1.0) {
             self.enter_probe_bandwidth_mode(now);
         }
     }
 
-    fn is_min_rtt_expired(&self, now: Instant, app_limited: bool) -> bool {
-        !app_limited
-            && self
-                .probe_rtt_last_started_at
-                .map(|last| now.saturating_duration_since(last) > Duration::from_secs(10))
-                .unwrap_or(true)
-    }
-
     fn maybe_enter_or_exit_probe_rtt(
         &mut self,
-        now: Instant,
+        a_e: Instant,
         is_round_start: bool,
         bytes_in_flight: u64,
-        app_limited: bool,
+        min_rtt_expired: bool,
     ) {
-        let min_rtt_expired = self.is_min_rtt_expired(now, app_limited);
         if min_rtt_expired && !self.exiting_quiescence && self.mode != Mode::ProbeRtt {
             self.mode = Mode::ProbeRtt;
             self.pacing_gain = 1.0;
             // Do not decide on the time to exit ProbeRtt until the
             // |bytes_in_flight| is at the target small value.
             self.exit_probe_rtt_at = None;
-            self.probe_rtt_last_started_at = Some(now);
         }
 
         if self.mode == Mode::ProbeRtt {
@@ -601,14 +625,16 @@ impl BbrRs {
                     // checks CWND before sending a packet.
                     if bytes_in_flight < self.get_probe_rtt_cwnd() + self.current_mtu {
                         const K_PROBE_RTT_TIME: Duration = Duration::from_millis(200);
-                        self.exit_probe_rtt_at = Some(now + K_PROBE_RTT_TIME);
+                        self.exit_probe_rtt_at = Some(a_e + K_PROBE_RTT_TIME);
                     }
                 }
-                Some(exit_time) if is_round_start && now >= exit_time => {
+                Some(exit_time) if is_round_start && a_e >= exit_time => {
+                    // v1: the filter stamp restarts on exit.
+                    self.min_rtt_stamp = Some(a_e);
                     if !self.is_at_full_bandwidth {
                         self.enter_startup_mode();
                     } else {
-                        self.enter_probe_bandwidth_mode(now);
+                        self.enter_probe_bandwidth_mode(a_e);
                     }
                 }
                 Some(_) => {}
@@ -664,27 +690,27 @@ impl BbrRs {
     }
 
     fn calculate_cwnd(&mut self, bytes_acked: u64, excess_acked: u64) {
-        if self.mode == Mode::ProbeRtt {
-            return;
-        }
-        let mut target_window = self.get_target_cwnd(self.cwnd_gain);
-        if self.is_at_full_bandwidth {
-            // Add the max recently measured ack aggregation to CWND.
-            target_window += self.ack_aggregation.max_ack_height.get();
-        } else {
-            // Add the most recent excess acked.  Because CWND never decreases in
-            // STARTUP, this will automatically create a very localized max filter.
-            target_window += excess_acked;
-        }
-        // Instead of immediately setting the target CWND as the new one, BBR grows
-        // the CWND towards |target_window| by only increasing it |bytes_acked| at a
-        // time.
-        if self.is_at_full_bandwidth {
-            self.cwnd = target_window.min(self.cwnd + bytes_acked);
-        } else if (self.cwnd_gain < target_window as f32) || (self.acked_bytes < self.init_cwnd) {
-            // If the connection is not yet out of startup phase, do not decrease
-            // the window.
-            self.cwnd += bytes_acked;
+        match self.mode {
+            Mode::ProbeRtt => return,
+            // Drain: W = T(1), and the exit test is on the same T(1), the only
+            // window form whose exit is reachable under a backlog.
+            Mode::Drain => self.cwnd = self.get_target_cwnd(self.cwnd_gain),
+            _ if self.is_at_full_bandwidth => {
+                // ProbeBw: W <- min(T(g_c) + A, W + a), A the 10-round max ack height.
+                let target_window =
+                    self.get_target_cwnd(self.cwnd_gain) + self.ack_aggregation.max_ack_height.get();
+                self.cwnd = target_window.min(self.cwnd + bytes_acked);
+            }
+            _ => {
+                // Startup (v1 bbr_set_cwnd): grow by the acked bytes only while
+                // the window is below the model target (plus the most recent
+                // excess acked) or the initial window has not been delivered.
+                // Never decreases.
+                let target_window = self.get_target_cwnd(self.cwnd_gain) + excess_acked;
+                if self.cwnd < target_window || self.acked_bytes < self.init_cwnd {
+                    self.cwnd += bytes_acked;
+                }
+            }
         }
 
         // Enforce the limits on the congestion window.
@@ -784,15 +810,36 @@ impl Controller for BbrRs {
 
     fn on_end_acks(
         &mut self,
-        now: Instant,
+        _now: Instant,
         in_flight: u64,
         app_limited: bool,
         largest_packet_num_acked: Option<u64>,
     ) {
+        let event = self.event.take();
+        let a_e = event.map_or_else(|| self.config.clk(), |e| e.a_e);
+
+        // v1 bbr_update_min_rtt on the event clock: r_e = a_e - max s_k.
+        let min_rtt_expired = self
+            .min_rtt_stamp
+            .is_some_and(|t| a_e.saturating_duration_since(t) > MIN_RTT_WINDOW);
+        if let Some(e) = event {
+            let r_e = a_e.saturating_duration_since(e.max_sent);
+            self.smoothed_loop = if self.smoothed_loop.is_zero() {
+                r_e
+            } else {
+                // 7/8 old + 1/8 new
+                (self.smoothed_loop * 7 + r_e) / 8
+            };
+            if self.min_rtt_stamp.is_none() || r_e <= self.min_rtt || min_rtt_expired {
+                self.min_rtt = r_e;
+                self.min_rtt_stamp = Some(a_e);
+            }
+        }
+
         let bytes_acked = self.max_bandwidth.bytes_acked_this_window();
         let excess_acked = self.ack_aggregation.update_ack_aggregation_bytes(
             bytes_acked,
-            now,
+            a_e,
             self.round_count,
             self.max_bandwidth.get_estimate(),
         );
@@ -814,16 +861,16 @@ impl Controller for BbrRs {
         self.update_recovery_state(is_round_start);
 
         if self.mode == Mode::ProbeBw {
-            self.update_gain_cycle_phase(now, in_flight);
+            self.update_gain_cycle_phase(a_e, in_flight);
         }
 
         if is_round_start && !self.is_at_full_bandwidth {
             self.check_if_full_bw_reached(app_limited);
         }
 
-        self.maybe_exit_startup_or_drain(now, in_flight);
+        self.maybe_exit_startup_or_drain(a_e, in_flight);
 
-        self.maybe_enter_or_exit_probe_rtt(now, is_round_start, in_flight, app_limited);
+        self.maybe_enter_or_exit_probe_rtt(a_e, is_round_start, in_flight, min_rtt_expired);
 
         // After the model is updated, recalculate the pacing rate and congestion window.
         self.calculate_pacing_rate();
@@ -949,6 +996,14 @@ impl ControllerFactory for BbrRsConfig {
     }
 }
 
+/// One ACK event: a_e = the event clock (read once, at its first callback);
+/// `max_sent` = the latest send stamp of a packet newly acked in it.
+#[derive(Debug, Clone, Copy)]
+struct AckEvent {
+    a_e: Instant,
+    max_sent: Instant,
+}
+
 #[derive(Debug, Default, Copy, Clone)]
 struct AckAggregationState {
     max_ack_height: MinMax,
@@ -1045,6 +1100,10 @@ fn calculate_min_window(current_mtu: u64) -> u64 {
 const K_DEFAULT_HIGH_GAIN: f32 = 2.885;
 // The newly derived CWND gain for STARTUP, 2.
 const K_DERIVED_HIGH_CWNDGAIN: f32 = 2.0;
+// Drain's window gain: T(1) (v1 drains with a pacing gain quinn ignores).
+const K_DRAIN_CWND_GAIN: f32 = 1.0;
+// v1 `bbr_min_rtt_win_sec`.
+const MIN_RTT_WINDOW: Duration = Duration::from_secs(10);
 // The cycle of gains used during the ProbeBw stage.
 const K_PACING_GAIN: [f32; 8] = [1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
 
