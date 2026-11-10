@@ -1,0 +1,5 @@
+(b) A/A: share of datasets with p <= 0.05 (the false-alarm rate; expect about 0.05), N_PERM=2000
+    bootstrap of the real rows, four cells, BASE 12 vs 'CAND' 6: relabel-max: 14/400 = 0.035 (95 % binomial band about +-0.021); mean p 0.512
+    bootstrap of the real rows, four cells, BASE 12 vs 'CAND' 6: rank-minp: 11/400 = 0.028 (95 % binomial band about +-0.021); mean p 0.528
+    real A/A splits of the 18 real BASE rows of c1s + c1d (3 + 3 of 9 + 9 vs the rest): relabel-max: 32/400 = 0.080 (95 % binomial band about +-0.021); mean p 0.476
+    real A/A splits of the 18 real BASE rows of c1s + c1d (3 + 3 of 9 + 9 vs the rest): rank-minp: 30/400 = 0.075 (95 % binomial band about +-0.021); mean p 0.494

@@ -3,6 +3,8 @@
 
     place41b_score.py score <ledger>...     the real scoring: arms BASE (12 per cell), MAIN (6), WIRE (6, reported only)
     place41b_score.py dry <ledger>...       the same code on a ledger with fewer BASE rows (§41's: BASE 6, MAIN 6 per cell)
+    options: --method relabel-max (the registered 41b statistic, default) | rank-minp (stratified rank sums, min-p; status 47 candidate)
+             --guard   four cells (c1s c1d c2 c8), CAND against BASE, no WIRE arm
 
 Fixed by the spec, implemented exactly:
   * per cell the rows of BASE and the tested arm are pooled; one relabelling picks, per seed, as many rows as the tested arm
@@ -141,6 +143,74 @@ def statistic(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None)
             "argmax_share": {k: v / n_perm for k, v in sorted(arg.items(), key=lambda kv: -kv[1])}, "n_perm": n_perm}
 
 
+def _midranks(vals):
+    """Midranks (1-based, ties averaged) of a list; None -> the neutral mean rank."""
+    idx = sorted((i for i, v in enumerate(vals) if v is not None), key=lambda i: vals[i])
+    out = [None] * len(vals)
+    j = 0
+    while j < len(idx):
+        k = j
+        while k + 1 < len(idx) and vals[idx[k + 1]] == vals[idx[j]]:
+            k += 1
+        for t in range(j, k + 1):
+            out[idx[t]] = (j + k) / 2 + 1
+        j = k + 1
+    neutral = (len(vals) + 1) / 2
+    return [neutral if v is None else v for v in out]
+
+
+def rank_scores(pool):
+    """Per clause, per pooled row: the WITHIN-SEED worse-side midrank (higher = worse: a higher CPU / lag / rtp floor, a lower goodput)."""
+    sc = {}
+    for n, _, sg in pool.defs:
+        v = [None] * len(pool.rows)
+        for s_, idxs in pool.groups.items():
+            ranks = _midranks([None if pool.vals[n][i] is None else sg * pool.vals[n][i] for i in idxs])
+            for i, r in zip(idxs, ranks):
+                v[i] = r
+        sc[n] = v
+    return sc
+
+
+def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None):
+    """The stratified rank-sum min-p guard (status 47 candidate). Per clause: the worse-side rank sum of the tested rows, ranks taken
+    within seed. The clause statistics share the SAME joint relabellings as `statistic` (same RNG stream, same draws); each clause's
+    permutation p is the share of labellings (the draws plus the true one) with a rank sum >= the labelling's own (ties extreme); the
+    labelling's score is the MIN of its clause p-values over every clause of every cell; the gate p is the share of labellings whose
+    min-p <= the true min-p. -> dict(p, T_true (the true min-p), p_true {(cell, clause): p}, S_true, argmin, n_perm)"""
+    import bisect
+    pools = [Pool(rows, cell, ref_arm, test_arm) for cell, _ in (cells or CELLS)]
+    sc = {p.cell: rank_scores(p) for p in pools}
+    keys = [(p.cell, n) for p in pools for n, _, _ in p.defs]
+    S = {k: [] for k in keys}
+    rng = random.Random(seed)
+    for _ in range(n_perm):
+        for p in pools:
+            sel = p.draw(rng)
+            for n, _, _ in p.defs:
+                v = sc[p.cell][n]
+                S[(p.cell, n)].append(sum(v[i] for i in sel))
+    S_true = {}
+    for p in pools:
+        for n, _, _ in p.defs:
+            v = sc[p.cell][n]
+            S_true[(p.cell, n)] = sum(v[i] for i in p.true)
+    N1 = n_perm + 1
+    pk = {}                                            # per clause: value -> p (share of the N+1 labellings with S >= value)
+    for k in keys:
+        allv = sorted(S[k] + [S_true[k]])
+        pk[k] = {v: (N1 - bisect.bisect_left(allv, v)) / N1 for v in set(allv)}
+    p_true = {k: pk[k][S_true[k]] for k in keys}
+    T_true = min(p_true.values())
+    hits = 1                                           # the true labelling itself
+    for i in range(n_perm):
+        if min(pk[k][S[k][i]] for k in keys) <= T_true + 1e-12:
+            hits += 1
+    arg = min(keys, key=lambda k: p_true[k])
+    return {"pools": pools, "p": hits / N1, "T_true": T_true, "p_true": p_true, "S_true": S_true, "argmin": arg, "n_perm": n_perm,
+            "S_null_mean": {k: sum(S[k]) / n_perm for k in keys}}
+
+
 def resolution(rows, arm="BASE", cells=None):
     """BASE alone: per cell and clause the q95 of |x_c| over the half-per-seed splits, beside the §21 tolerance."""
     from place38_parse import S3_REL
@@ -185,7 +255,7 @@ def tail_lines(rows, out, cells=None, arms=("BASE", "MAIN", "WIRE")):
 
 
 def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=True, title="§41b GUARD", gate_name="GATE-41b",
-           subject="the gate-off binary"):
+           subject="the gate-off binary", method="relabel-max"):
     """The registered guard. Defaults reproduce status 41b (BASE against MAIN, WIRE reported, c1s and c1d); the merge-candidate guard
     (status 47) passes cells=CELLS_GUARD, test_arm="CAND", with_wire=False."""
     cells = cells or CELLS
@@ -203,20 +273,35 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
         out(f"  {r['cell']} {r['clause']:<14} q95|x|={('%.4f' % q) if q is not None else '-'} (splits={r['splits']}, nBASE={r['n_base']})  §21 tol={r['tol']:.4f}  "
             + ("" if q is None else ("q95 > tol: the guard cannot see this clause below q95" if q > r["tol"] else "q95 <= tol")))
     out("")
-    res = statistic(rows, "BASE", ta, cells=cells)
-    pools = res["pools"]
-    out(f"{ta} against BASE (pooled relabelling)")
-    for p in pools:
-        out(f"  {p.cell}: pool {len(p.ref_rows)} BASE + {len(p.test_rows)} {ta}; relabelled {ta} rows per seed " + " ".join(f"s{s}:{p.k[s]}" for s in p.seeds))
-    out(f"  clause x_c(true), sd_c, z_c(true)  (x worse-signed: positive = {ta} worse)")
-    for k in res["z_true"]:
-        out(f"    {k[0]} {k[1]:<14} x={res['x_true'][k] * 100:+7.2f} %  sd={res['sd'][k] * 100:6.2f} %  z={res['z_true'][k]:+6.2f}")
-    out(f"  T(true) = {res['T_true']:+.3f} at {res['arg_true'][0]} {res['arg_true'][1]}")
-    out("  share of relabellings whose max is attained at each clause (top 8): "
-        + ", ".join(f"{k[0]} {k[1]} {v:.3f}" for k, v in list(res["argmax_share"].items())[:8]))
-    out(f"  p = {res['p']:.4f}  (share of {res['n_perm']} relabellings with T >= T(true))")
-    gate = "PASS" if res["p"] > P_PASS else "FAIL"
-    out(f"{gate_name} {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
+    if method == "rank-minp":
+        res = statistic_rank(rows, "BASE", ta, cells=cells)
+        pools = res["pools"]
+        out(f"{ta} against BASE (stratified rank sums, min-p over the same joint relabellings)")
+        for p in pools:
+            out(f"  {p.cell}: pool {len(p.ref_rows)} BASE + {len(p.test_rows)} {ta}; relabelled {ta} rows per seed " + " ".join(f"s{s}:{p.k[s]}" for s in p.seeds))
+        out(f"  clause: worse-signed relative median difference x, rank sum S (true / null mean), clause permutation p  (positive x = {ta} worse)")
+        xt = {(p.cell, n): x for p in pools for n, x in p.x_all(p.true).items()}
+        for k in res["p_true"]:
+            out(f"    {k[0]} {k[1]:<14} x={(xt[k] if xt[k] is not None else float('nan')) * 100:+7.2f} %  S={res['S_true'][k]:6.1f} / {res['S_null_mean'][k]:6.2f}  p={res['p_true'][k]:.4f}")
+        out(f"  min-p (true) = {res['T_true']:.5f} at {res['argmin'][0]} {res['argmin'][1]}")
+        out(f"  p = {res['p']:.4f}  (share of the {res['n_perm']} relabellings plus the true labelling whose min-p <= the true min-p)")
+        gate = "PASS" if res["p"] > P_PASS else "FAIL"
+        out(f"{gate_name}[rank-minp] {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
+    else:
+        res = statistic(rows, "BASE", ta, cells=cells)
+        pools = res["pools"]
+        out(f"{ta} against BASE (pooled relabelling)")
+        for p in pools:
+            out(f"  {p.cell}: pool {len(p.ref_rows)} BASE + {len(p.test_rows)} {ta}; relabelled {ta} rows per seed " + " ".join(f"s{s}:{p.k[s]}" for s in p.seeds))
+        out(f"  clause x_c(true), sd_c, z_c(true)  (x worse-signed: positive = {ta} worse)")
+        for k in res["z_true"]:
+            out(f"    {k[0]} {k[1]:<14} x={res['x_true'][k] * 100:+7.2f} %  sd={res['sd'][k] * 100:6.2f} %  z={res['z_true'][k]:+6.2f}")
+        out(f"  T(true) = {res['T_true']:+.3f} at {res['arg_true'][0]} {res['arg_true'][1]}")
+        out("  share of relabellings whose max is attained at each clause (top 8): "
+            + ", ".join(f"{k[0]} {k[1]} {v:.3f}" for k, v in list(res["argmax_share"].items())[:8]))
+        out(f"  p = {res['p']:.4f}  (share of {res['n_perm']} relabellings with T >= T(true))")
+        gate = "PASS" if res["p"] > P_PASS else "FAIL"
+        out(f"{gate_name} {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
     out("")
     out(f"§21 READINGS of {ta} against all BASE rows (reported beside the gate)")
     import place38_parse as pp
@@ -247,7 +332,7 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
             f = lambda k, s=1.0: ("%.1f" % (r[k] / s)) if r.get(k) is not None else "-"  # noqa: E731
             out(f"  {i:>3} {r['cell']} {r['arm']:<4} s{r['seed']} r{r['rep']} {r['status']} {f('mbps')} {f('cpu_cli', b)} {f('cpu_srv', b)} {f('cli_lag_E')} {f('srv_lag_E')}")
     return {"gate": gate, "p": res["p"], "T_true": res["T_true"], "wire_p": wres["p"] if wres else None,
-            "argmax_share": res["argmax_share"], "z_true": res["z_true"]}
+            "argmax_share": res.get("argmax_share"), "z_true": res.get("z_true")}
 
 
 def main(argv):
@@ -255,8 +340,16 @@ def main(argv):
         print(__doc__)
         return 2
     import place38_parse as pp
-    rows, _ = pp.rows_of(argv[1:])
-    report(rows, dry=argv[0] == "dry")
+    args, method, cells, ta = list(argv[1:]), "relabel-max", None, "MAIN"
+    if "--method" in args:
+        i = args.index("--method")
+        method = args[i + 1]
+        del args[i:i + 2]
+    if "--guard" in args:           # the merge-candidate guard: four cells, CAND against BASE, no WIRE
+        args.remove("--guard")
+        cells, ta = CELLS_GUARD, "CAND"
+    rows, _ = pp.rows_of(args)
+    report(rows, dry=argv[0] == "dry", cells=cells, test_arm=ta, with_wire=(ta == "MAIN"), method=method)
     return 0
 
 
