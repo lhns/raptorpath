@@ -11743,6 +11743,65 @@ samples, `path.rs:848–855`) is on b₀'s scale at c2 and c8 (×0.75–1.15) bu
 reads 2–3 × b₀ at c1s. It is not a drop-in source. The dispersion gauges
 stay out of the simplify lane until this is decided.
 
+### 43b. Result
+
+Scored 2026-11-10 from `docs/l1-raw/oracle43b/` (`harness43c` `f787c96`):
+9/9 LIVE, no DNF, no abort. **c2 `CONVERGES-ONE-POINT`** at G = 0.9,
+τ = 5 ms.
+- Binary `94959c05…`, equal to §43's. Battery 17:11–17:20Z.
+- The score's "at both cells" decision line is §43's wording. It is
+  cosmetic: only c2 ran.
+
+*Readings.*
+
+| start | n_end (s42 r1 / s7 / s42 r2) | median | t_ret after release | ask/H, hold's last 2 s |
+|---|---|---|---|---|
+| SL-τ | 191 / 196 / 184.5 | 191 | — | — |
+| SH-τ | 198 / 178 / 187 | 187 | 11.8 / 5.8 / 9.3 s | 0.840 / 0.870 / 0.859 |
+
+- **Goodput:** SL-τ 89.4 / 89.5 / 87.0 against MAIN 90.3 / 90.3 / 90.3, so
+  −1.68 against a 2σ of 2.00. **About 2 % lower, not resolved at n = 3.**
+  SH-τ reads 88.4–90.0 after release.
+- **Delay:** Tp50 18–19.6 ms against MAIN's ≈ 208 ms (MAIN pinned at
+  2 048). A_x is BETTER.
+- **Spread** s_end 0.042–0.068 (predicted 0.08). `wbind` 0. Sampler
+  `nk_min` > 1 500.
+- All SH rows HOLD-EXPIRED.
+
+*Predictions.*
+- The band [178, 217]: MET on all 6 rows (178 sits on the edge).
+- The closed-loop line, 186–193: MET on both medians (191, 187).
+- The predicted ask/H of 0.84–0.85: MET.
+- The closed-loop line T(n) = 14.7–14.9 ms + 0.057–0.062 ms/symbol has now
+  predicted four c2 arms. It is preferred over the offline maps.
+
+*Reading.*
+- **Return time is a cost:** 5.8–11.8 s of high delay after an excursion.
+  The floor is W·ln(H/n*) ÷ −ln(G·L/D), about 5.8 s at one window per step.
+  If it holds against the rows, G has a meaning, escape rate against
+  goodput, which would be its provenance. To be checked.
+- **No δ in this form.** q(δ) was δ's only seat on the store law, and the
+  gain 0.9 replaces it. δ would have to enter through τ. (RFC 8289's
+  absolute 5 ms target is a candidate provenance for τ, to be verified.)
+- **Any delivery shortfall runs it to the clamp.** With L as link capacity,
+  ask/n > 1 once D/L < G. §43's quinn-collapse row is that case, and a
+  competing flow or a receiver-bound cell is the same algebra. It is no
+  worse than MAIN, which already sits there. It is a paper item before any
+  engine L̂ work.
+- **Anchor:** the lifetime-minimum-or-drain choice is not needed for
+  own-queue excursions at c2.
+- **The qcwnd readout does not discriminate.** Healthy rows read 0.11–0.15
+  and the collapse row 0.10. It is replaced by a duration measure: the
+  share of windows with qcwnd below ¼ of the row median, checked on
+  `oracle43` and `place41b`.
+
+*Next.*
+1. The merge-candidate VM session.
+2. The quinn window-collapse diagnosis, read-only: kept logs and quinn's
+   BBR source.
+3. c1s at τ = 3.5 and 5 ms, to test the window prediction, with the fixed
+   collapse witness.
+
 ## 44. Is the model overcomplicated? — law inventory and simplification review — no VM, record
 
 The user asked whether the formulas could be simpler. An Opus inventory of
