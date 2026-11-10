@@ -168,8 +168,6 @@ pub(crate) struct SenderPolicy {
     pub no_reactive: bool,
     /// `RWM_XPATH_REPAIR` ∧ generation: repair to the max-spare path.
     pub xpath_repair: bool,
-    /// `RWM_PROACTIVE_PACER` ∧ systematic: present-at-stall proactive repair.
-    pub proactive_pacer: bool,
 
     // ── CC / pacing ──────────────────────────────────────────────────────
     /// `RWM_CC_PACE`: CC-rate pacing of the systematic source.
@@ -688,22 +686,6 @@ impl SenderPolicy {
         // at the live (r, A*, σ²) operating point). Budget spent ⇒ serialize
         // (ρ wins over δ).
         let shed_on = shed_armed(gates.unified, reliable, gates.unified_shed);
-        // Proactive-repair pacer (`RWM_PROACTIVE_PACER`, systematic only) —
-        // present-at-stall. A dedicated proactive-repair emission on the
-        // generation grid, decoupled from both source availability and the
-        // ack-clock `target`. For each in-flight generation (still filling or
-        // recently sealed) it emits proactive repair over the retained contiguous
-        // prefix at the full generation width (`generate_repair_filling` → same
-        // (anchor, G) matrix, no cross-grid stranding), paced by the shared CC
-        // token bucket. It runs every main-loop iteration including tx_paused
-        // wakeups, so repair flows under backpressure, and it codes the
-        // generation grid, so a buffered filling equation combines directly with
-        // the reactive generation deficit. The covering equation reaches the
-        // receiver around when the hole is sent, so it is present when the
-        // frontier detects the hole → proactive decode, no round trip. Supersedes
-        // the sealed batched proactive path when on; the reactive deficit
-        // (`RWM_REACT_CAP` + `RWM_REPAIR_WAIT`) stays the bounded fallback.
-        let proactive_pacer = systematic && gates.proactive_pacer;
         // Cross-path repair placement (`RWM_XPATH_REPAIR`, generation only,
         // default off). Route proactive (and deficit) repair to the
         // max-spare-capacity path instead of the marginal-cost softmax (which
@@ -841,7 +823,6 @@ impl SenderPolicy {
             coded_src_clock,
             no_reactive,
             xpath_repair,
-            proactive_pacer,
             cc_pace,
             cc_pace_headroom,
             react_cap_cfg,

@@ -443,8 +443,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
         gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(gen_tok_cap);
         let burst_cap = if pol.cc_pace { 64u32 } else { 256u32 };
         let mut emitted = 0u32;
-        while !pol.proactive_pacer
-            && (gen_coded_total as f64) < target
+        while (gen_coded_total as f64) < target
             && emitted < burst_cap
             && gen_tokens >= 1.0
             && !cwnd_full
@@ -489,59 +488,6 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-        }
-
-        // Proactive pacer (`RWM_PROACTIVE_PACER`) — present-at-stall. Emit
-        // filling-generation proactive repair on the generation grid, paced by
-        // the same CC token bucket but without the ack-clock `target` gate
-        // (the cumulative ack is stalled exactly when the frontier needs
-        // repair) and without any source-availability gate (this block runs
-        // every loop iteration, including tx_paused wakeups). Bounded by each
-        // generation's ceil(len·r) budget (wants_filling_coding turns false at
-        // budget), the CC rate (gen_tokens) and congestion (cwnd_full).
-        // Supersedes the sealed batched proactive path above; the reactive
-        // deficit below remains the fallback.
-        if pol.proactive_pacer {
-            let mut fill_emitted = 0u32;
-            while fill_emitted < burst_cap
-                && gen_tokens >= 1.0
-                && !cwnd_full
-                && st.encoder.wants_filling_coding()
-            {
-                let path = {
-                    let sched = &*scheduler;
-                    if pol.xpath_repair {
-                        sched.place_repair_spare_path().unwrap_or(0)
-                    } else {
-                        sched.place_symbol(true, &[]).unwrap_or(0)
-                    }
-                };
-                let sym = st.encoder.generate_repair_filling();
-                fill_emitted += 1;
-                gen_tokens -= 1.0;
-                // Count against per-generation in-flight accounting so the
-                // deficit loop never double-sends what proactive covered.
-                if sym.data.len() >= 8 {
-                    let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
-                    *gen_emitted.entry(anchor).or_insert(0) += 1;
-                }
-                proactive_coded_total += 1;
-                let seqs = batch_counter.next(path);
-                let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
-                if let Err(e) = transport.send_symbols(&mut st.tx, path, batch) {
-                    warn!(path, ?e, "failed to send filling-generation repair");
-                }
-                {
-                    let sched = &mut *scheduler;
-                    if let Some(p) = sched.path_mut(path) {
-                        p.charge_in_flight(1);
-                    }
-                }
-                if let Some(ps) = stats.path_ref(path) {
-                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-                }
-                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-            }
         }
 
         // Deficit-driven recovery emission. Emit the residual coded symbols

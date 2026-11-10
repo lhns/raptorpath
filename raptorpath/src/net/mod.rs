@@ -564,53 +564,6 @@ fn collect_gen_deficits(
     deficits
 }
 
-/// Repair-coverage horizon gate: the FEC discipline of waiting for the coded
-/// repair before falling back to ARQ.
-///
-/// In generation mode the deficit report is the reactive NACK, and it would
-/// fire the instant a hole appears at the frontier, before the in-flight
-/// proactive repair covering that hole (which rides with the surrounding data
-/// and arrives ~1 generation-span later) has a chance to decode it. A hole
-/// proactive repair would have covered then gets a redundant ARQ round-trip,
-/// capping the proactive recovery fraction and binding throughput to the
-/// round-trip regime at high RTT.
-///
-/// A generation's residual deficit is only eligible to be reported (a
-/// reactive NACK) once it has been outstanding for at least `horizon` — the
-/// time for the covering proactive repair to arrive + decode (~the generation
-/// / window span at the current send rate, not an RTT). Newly-deficient
-/// anchors are armed (their first-seen instant recorded in `armed`) and
-/// withheld; an anchor that decodes within the horizon drops out of
-/// `deficits` and is disarmed — a proactive recovery, no round-trip. Only
-/// anchors whose horizon has expired are returned (the reactive fallback that
-/// keeps reliability intact).
-///
-/// `horizon == 0` reports immediately (the shipped path). Extracted pure so
-/// the "hole covered by proactive repair within the horizon fires no NACK"
-/// invariant is unit-tested without the async receiver loop.
-fn horizon_gate_deficits(
-    deficits: &[(u64, u32)],
-    armed: &mut BTreeMap<u64, Instant>,
-    horizon: Duration,
-    now: Instant,
-) -> Vec<(u64, u32)> {
-    if horizon.is_zero() {
-        return deficits.to_vec();
-    }
-    // Disarm anchors that no longer carry a deficit (decoded within the
-    // horizon → proactive win) so `armed` tracks only live holes.
-    let live: std::collections::BTreeSet<u64> = deficits.iter().map(|&(a, _)| a).collect();
-    armed.retain(|a, _| live.contains(a));
-    let mut ready: Vec<(u64, u32)> = Vec::new();
-    for &(anchor, deficit) in deficits {
-        let first = *armed.entry(anchor).or_insert(now);
-        if now.saturating_duration_since(first) >= horizon {
-            ready.push((anchor, deficit));
-        }
-    }
-    ready
-}
-
 /// Main entry point.
 pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     run_impl(config, None).await
@@ -1257,21 +1210,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // forwards inbound GenerationDeficit vectors to the local sender's recovery
     // loop over this clone (generation mode only).
     let recv_deficit_tx = deficit_tx.clone();
-    // SACK + BDP reassembly (RWM_REASM_BDP) hardens the receiver so a sender
-    // decoupled from the in-order frontier is safe for reliable in-order
-    // delivery. The invariant it guarantees: a received symbol is never
-    // evicted from the receiver's reassembly state before it is delivered
-    // (its in-order frontier passes), so a symbol whose sender-side slot was
-    // released on SACK always survives at the receiver until use → no
-    // un-recoverable eviction. Concretely it (a) clamps the
-    // window-decoder/received-seq prune so it can never advance above the
-    // delivered frontier (the reorder buffer is already usize::MAX /
-    // non-evicting), and (b) probes the reassembly occupancy so the bound can
-    // be reported (`[REASM]`). The reassembly stays BDP-bounded because the
-    // sender's outstanding is bounded (plain_dyn_cap = gain·BDP store cap,
-    // default on) and working FEC recovers holes fast. Default off.
-    let reasm_bdp_on = gates.reasm_bdp;
-
     // ack-merge (RWM_ACK_MERGE): hoisted for the receiver's per-batch hot
     // path.
     let ack_merge_recv = gates.ack_merge;
@@ -1312,7 +1250,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         recv_request_tx,
         recv_request_law,
         recv_rank_feedback,
-        reasm_bdp_on,
         ack_merge_recv,
         recv_diag_on,
         rdiag_probe,

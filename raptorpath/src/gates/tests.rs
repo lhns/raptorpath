@@ -62,9 +62,9 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
     "RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 ",
     "RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 ",
-    "RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset ",
+    "RWM_WINDOW=unset RWM_REPORT_GENS=unset ",
     "RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 ",
-    "RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 ",
+    "RWM_MIN_R=0 RWM_CC_PACE=0 ",
     "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
     "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_EMIT_BATCH=1 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
@@ -436,7 +436,7 @@ fn default_env_resolves_the_shipped_stack() {
         "the default echo must NAME the late-brake gate with its 0 value: {}",
         g.echo_line()
     );
-    assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
+    assert!(!g.xpath_repair && !g.no_reactive);
     assert!(!g.diag && !g.rdiag && !g.rtobs && !g.fdiag && !g.trace && !g.pfrac);
     // Instruments ship off, each named with its 0 value on the echo.
     assert!(

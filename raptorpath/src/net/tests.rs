@@ -491,44 +491,6 @@ fn receiver_tail_reports_all_deficits_in_one_round() {
     assert!(none.is_empty(), "decoded generations report no deficit");
 }
 
-/// Repair-coverage horizon: a hole covered by the in-flight proactive
-/// repair within the horizon fires no reactive NACK; a hole still uncovered
-/// when the horizon expires falls back to the NACK.
-#[test]
-fn horizon_withholds_nack_until_repair_window_then_falls_back() {
-    use std::time::{Duration, Instant};
-    let horizon = Duration::from_millis(5);
-    let mut armed: BTreeMap<u64, Instant> = BTreeMap::new();
-    let t0 = Instant::now();
-
-    // A frontier generation just went deficient. First sight → armed and
-    // withheld: no reactive NACK yet (give the proactive repair its horizon).
-    let d = vec![(0u64, 3u32)];
-    let ready = horizon_gate_deficits(&d, &mut armed, horizon, t0);
-    assert!(ready.is_empty(), "a fresh hole is withheld, not NACKed immediately");
-    assert_eq!(armed.len(), 1, "the fresh hole is armed");
-
-    // The proactive repair decodes it within the horizon → it drops out of
-    // the deficit set → disarmed, and no NACK ever fired (the proactive win).
-    let none: Vec<(u64, u32)> = vec![];
-    let ready = horizon_gate_deficits(&none, &mut armed, horizon, t0 + Duration::from_millis(2));
-    assert!(ready.is_empty());
-    assert!(armed.is_empty(), "decoded-within-horizon hole is disarmed with no NACK");
-
-    // A hole that proactive repair does not cover: still deficient after the
-    // horizon expires → the reactive NACK fires (the reliability fallback).
-    let d2 = vec![(384u64, 2u32)];
-    let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0);
-    assert!(ready.is_empty(), "still withheld before the horizon");
-    let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0 + Duration::from_millis(6));
-    assert_eq!(ready, vec![(384, 2)], "horizon expired uncovered → reactive fallback fires");
-
-    // horizon == 0 restores the immediate shipped path.
-    let mut armed0: BTreeMap<u64, Instant> = BTreeMap::new();
-    let ready = horizon_gate_deficits(&d, &mut armed0, Duration::ZERO, t0);
-    assert_eq!(ready, d, "horizon 0 reports immediately (shipped path)");
-}
-
 #[test]
 fn test_parse_cidr() {
     let (ip, prefix) = parse_cidr("10.99.0.1/24").unwrap();
@@ -3983,7 +3945,7 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
             highest_delivered_seq = highest_delivered_seq.max(dseq);
         }
         // The receiver periodically prunes its decoder/received-seq state.
-        // Invariant (RWM_REASM_BDP clamp): prune_before never exceeds the
+        // Invariant (removed RWM_REASM_BDP clamp): prune_before never exceeds the
         // delivered frontier, so no received-above-hole symbol is evicted.
         let prune_before = highest_delivered_seq
             .saturating_sub(recv_win_cap * 2)

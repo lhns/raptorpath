@@ -169,18 +169,12 @@ pub struct RuntimeGates {
     pub window_override: Option<usize>,
     /// `RWM_REPORT_GENS` (unset = M*+1 under gen_pipe, else 6): generations per report.
     pub report_gens: Option<usize>,
-    /// `RWM_REPAIR_WAIT` (ms, unset = 0): wait before a frontier hole fires a NACK.
-    pub repair_wait_ms: Option<u64>,
     /// `RWM_CODED_SRC` (off, arm): clock the coded budget on the sent frontier.
     pub coded_src: bool,
     /// `RWM_NO_REACTIVE` (off, arm): disable the reactive loop.
     pub no_reactive: bool,
     /// `RWM_XPATH_REPAIR` (off, arm): route repair to the path with most spare capacity.
     pub xpath_repair: bool,
-    /// `RWM_PROACTIVE_PACER` (off, arm): present-at-stall filling-repair pacer.
-    pub proactive_pacer: bool,
-    /// `RWM_REASM_BDP` (off, arm): never evict an undelivered above-frontier symbol.
-    pub reasm_bdp: bool,
     /// `RWM_MIN_R` (default 0, clamped [0, 2]): repair-rate floor (test instrument).
     pub min_r: f64,
 
@@ -369,12 +363,9 @@ impl RuntimeGates {
                 .unwrap_or(16),
             window_override: env_parse::<usize>("RWM_WINDOW"),
             report_gens: env_parse::<usize>("RWM_REPORT_GENS"),
-            repair_wait_ms: env_parse::<u64>("RWM_REPAIR_WAIT"),
             coded_src: env_flag("RWM_CODED_SRC", false),
             no_reactive: env_flag("RWM_NO_REACTIVE", false),
             xpath_repair: env_flag("RWM_XPATH_REPAIR", false),
-            proactive_pacer: env_flag("RWM_PROACTIVE_PACER", false),
-            reasm_bdp: env_flag("RWM_REASM_BDP", false),
             min_r: env_parse::<f64>("RWM_MIN_R").unwrap_or(0.0).clamp(0.0, 2.0),
             cc_pace: env_flag("RWM_CC_PACE", copa_wire),
             cc_pace_headroom: env_parse::<f64>("RWM_CC_PACE_HR")
@@ -474,8 +465,8 @@ impl RuntimeGates {
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
              RWM_OOO_RETAIN={}/{} RWM_WINDOW={} RWM_REPORT_GENS={} \
-             RWM_REPAIR_WAIT={} RWM_CODED_SRC={} RWM_NO_REACTIVE={} \
-             RWM_XPATH_REPAIR={} RWM_PROACTIVE_PACER={} RWM_REASM_BDP={} \
+             RWM_CODED_SRC={} RWM_NO_REACTIVE={} \
+             RWM_XPATH_REPAIR={} \
              RWM_MIN_R={} RWM_CC_PACE={} RWM_CC_PACE_HR={} RWM_REACT_CAP={} \
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
@@ -505,9 +496,8 @@ impl RuntimeGates {
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
             b(self.ooo_retain), self.ooo_gens, ou(&self.window_override),
             ou(&self.report_gens),
-            self.repair_wait_ms.map_or("unset".to_string(), |v| v.to_string()),
             b(self.coded_src), b(self.no_reactive),
-            b(self.xpath_repair), b(self.proactive_pacer), b(self.reasm_bdp),
+            b(self.xpath_repair),
             self.min_r, b(self.cc_pace), self.cc_pace_headroom, o(&self.react_cap),
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
