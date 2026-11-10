@@ -344,18 +344,7 @@ pub(crate) fn emit_source(
     let (src_send_ts_us, src_now_i) = now_pair();
     // Last source-intake time (generation-mode pacing input).
     st.gen_last_source_us = src_send_ts_us;
-    let eta_rel_us = {
-        let sched = &mut *ctx.scheduler;
-        let e = sched
-            .path(source_path)
-            .map(|p| p.expected_delivery_load())
-            .unwrap_or(0.0);
-        // Non-finite (a path with no cwnd yet) reads as no prediction — the
-        // 0 sentinel — rather than as a fabricated number.
-        let us = if e.is_finite() && e > 0.0 { (e * 1e6) as u64 } else { 0 };
-        sched.eta_mut().stamp(source_path, src_send_ts_us, us);
-        us
-    };
+    let eta_rel_us = ctx.scheduler.stamp_placement_eta(source_path, src_send_ts_us);
     // Idle-triggered recovery: stamp the last new-source send so the NACK
     // throttle can tell "actively pushing data" (repairs would load a
     // congested path) from "idle except for a hole" (targeted recovery is

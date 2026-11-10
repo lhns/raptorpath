@@ -90,6 +90,14 @@ pub(crate) fn resolve_place_temperature() -> f64 {
         .unwrap_or(PLACE_TEMPERATURE)
 }
 
+/// `RWM_TEST_PLACE_HOLD=<leg>:<ms>`, the loopback tests' placement hold (see
+/// `Scheduler::test_hold`). Unset in every shipped configuration.
+pub(crate) fn resolve_test_place_hold() -> Option<(PathId, Duration)> {
+    let v = std::env::var("RWM_TEST_PLACE_HOLD").ok()?;
+    let (leg, ms) = v.split_once(':')?;
+    Some((leg.parse().ok()?, Duration::from_millis(ms.parse().ok()?)))
+}
+
 /// Floor (seconds) for the SRTT reference that de-dimensionalises the
 /// propagation-preference term — a div-by-zero guard for the pre-first-sample
 /// window, not a tuning knob (any positive value cancels once real RTTs land).
@@ -141,7 +149,23 @@ impl Scheduler {
     ///
     /// Returns the sampled `PathId`, or `None` if no path is up at all.
     pub fn place_symbol(&self, is_repair: bool, covered_paths: &[PathId]) -> Option<PathId> {
-        let probs = self.place_probs(is_repair, covered_paths);
+        let mut probs = self.place_probs(is_repair, covered_paths);
+        if let Some((leg, hold)) = self.test_hold {
+            let now = self.clock.now();
+            let t0 = self.test_hold_t0.get().unwrap_or_else(|| {
+                self.test_hold_t0.set(Some(now));
+                now
+            });
+            if probs.len() > 1 && now.saturating_duration_since(t0) < hold {
+                probs.retain(|(pid, _)| *pid != leg);
+                let z: f64 = probs.iter().map(|(_, p)| p).sum();
+                if z > 0.0 {
+                    for (_, p) in &mut probs {
+                        *p /= z;
+                    }
+                }
+            }
+        }
         if probs.is_empty() {
             return None;
         }
@@ -385,6 +409,24 @@ impl Scheduler {
         let w_bw = self.weights.w_bw;
         let w_div = self.weights.w_div;
 
+        // ── Placement arm 4 (`RWM_PLACE_WIRE`): the wire-clocked base ──────
+        // w^_i = wire_i ?: min_j wire_j ?: s_i. The first alternative is the
+        // leg's own quinn RTT, the second the best measured one among the
+        // candidates, the third the shipped price: an information-availability
+        // chain, not a mode. `wire_min` is `None` with the arm absent, and the
+        // closure below then never reads a wire RTT.
+        let wire_on = self.place_wire;
+        let wire_min: Option<f64> = wire_on
+            .then(|| {
+                self.paths
+                    .values()
+                    .filter(|p| p.active)
+                    .filter_map(|p| p.wire_rtt())
+                    .map(|d| d.as_secs_f64())
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .filter(|m| m.is_finite());
+
         let covered_total = covered_paths.len() as f64;
 
         // ── Placement arm 2 (`RWM_PLACE_HOL`): the frontier term's inputs ──
@@ -460,11 +502,12 @@ impl Scheduler {
             (f_hat_s, now_s, delta, h_s, w)
         });
 
-        // Returns `(shipped cost, the arm's addition)` so the execution
-        // witness below can ask whether the addition moved the argmin. With
-        // the arm absent the addition is a literal `0.0` and `base + 0.0` is
-        // `base` exactly.
-        let cost_of = |p: &PathState| -> (f64, f64) {
+        // Returns `(shipped cost, the cost with the wire base, the frontier
+        // term's addition)` so the execution witnesses below can ask whether
+        // each arm moved the argmin. With the wire arm absent the second is
+        // the first, and with the frontier arm absent the addition is a
+        // literal `0.0` and `base + 0.0` is `base` exactly.
+        let cost_of = |p: &PathState| -> (f64, f64, f64) {
             // Frontier-completion-time — the always-on load term (unit weight),
             // de-dimensionalised by the fastest SRTT so it is O(1). This single
             // term carries both the congestion signal (queue drain at the pacing
@@ -473,6 +516,16 @@ impl Scheduler {
             // than over-loading the slow path.
             let srtt_i = srtt_of(p);
             let load = p.expected_delivery_load_at(srtt_i).max(0.0) / ref_srtt;
+            // The wire-clocked base replaces only `(1/2 + eps)·s_i`; the
+            // queue term keeps `s_i` and is exactly 0 at I_i = 0.
+            let wire_load = wire_on.then(|| {
+                let wire_i = p.wire_rtt().map(|d| d.as_secs_f64());
+                let (c, w_cold_n, m, k, f) = self.place_wire_gauge.get();
+                self.place_wire_gauge
+                    .set((c + u64::from(wire_i.is_none()), w_cold_n + 1, m, k, f));
+                let w_hat = wire_i.or(wire_min).unwrap_or(srtt_i);
+                p.expected_delivery_load_wire_at(srtt_i, w_hat).max(0.0) / ref_srtt
+            });
             // Bandwidth/correction burden (loss/wire waste); the hint's w_bw
             // dial. w_lat does not gate placement: on a reliable in-order stream
             // latency-to-frontier is the completion cost itself, already carried
@@ -540,7 +593,9 @@ impl Scheduler {
                     .set((sh + u64::from(over > 0.0), n + 1, moved, calls, w));
                 place_frontier_cost(delta, push, behind, h_s, w, ref_srtt)
             });
-            (load + w_bw * r + div, x_i)
+            let shipped = load + w_bw * r + div;
+            let base = wire_load.map_or(shipped, |wl| wl + w_bw * r + div);
+            (shipped, base, x_i)
         };
 
         // Deterministic tie-break: `self.paths` is a `HashMap`, so its
@@ -553,14 +608,18 @@ impl Scheduler {
         // column is kept in a second vector that exists only while the arm is
         // armed, so an absent arm costs neither an allocation nor a comparison.
         let mut bases: Vec<(PathId, f64)> = Vec::new();
+        let mut shipped_col: Vec<(PathId, f64)> = Vec::new();
         let mut out: Vec<(PathId, f64)> = self
             .paths
             .values()
             .filter(|p| p.active)
             .map(|p| {
-                let (base, x) = cost_of(p);
-                if hol.is_some() {
+                let (shipped, base, x) = cost_of(p);
+                if hol.is_some() || wire_on {
                     bases.push((p.id, base));
+                }
+                if wire_on {
+                    shipped_col.push((p.id, shipped));
                 }
                 (p.id, base + x)
             })
@@ -572,13 +631,36 @@ impl Scheduler {
         // This asks the question `place_probs_with_temperature` will ask —
         // first-minimum over the id-sorted candidates — with and without the
         // arm's addition, and counts the disagreements.
+        let arg = |v: &[(PathId, f64)]| -> Option<PathId> {
+            v.iter()
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(id, _)| *id)
+        };
+        if wire_on {
+            // Witness of the wire arm: did the corrected base change which leg
+            // is cheapest? And did the 1 ms floor of `ref` bind (the raw
+            // fastest srtt is below it)?
+            bases.sort_unstable_by_key(|(id, _)| *id);
+            shipped_col.sort_unstable_by_key(|(id, _)| *id);
+            let moved_now = arg(&shipped_col) != arg(&bases);
+            let raw_ref = self
+                .paths
+                .values()
+                .filter(|p| p.active)
+                .map(&srtt_of)
+                .fold(f64::INFINITY, f64::min);
+            let floor_now = raw_ref.is_finite() && raw_ref < PLACE_REF_FLOOR_SECS;
+            let (c, n, moved, calls, floor) = self.place_wire_gauge.get();
+            self.place_wire_gauge.set((
+                c,
+                n,
+                moved + u64::from(moved_now),
+                calls + 1,
+                floor + u64::from(floor_now),
+            ));
+        }
         if hol.is_some() {
             bases.sort_unstable_by_key(|(id, _)| *id);
-            let arg = |v: &[(PathId, f64)]| -> Option<PathId> {
-                v.iter()
-                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(|(id, _)| *id)
-            };
             let moved_now = arg(&bases) != arg(&out);
             let (sh, n, moved, calls, w) = self.place_hol_gauge.get();
             self.place_hol_gauge
@@ -602,5 +684,26 @@ impl Scheduler {
         // and `W` at its live value.
         let (sh, sh_n, moved, calls, w) = self.place_hol_gauge.replace((0, 0, 0, 0, 0.0));
         self.eta.add_place_hol(sh, sh_n, moved, calls, w);
+        // Placement arm 4: the wire base's fallback, witness and floor binds.
+        let (cold, n, moved, calls, floor) = self.place_wire_gauge.replace((0, 0, 0, 0, 0));
+        self.eta.add_place_wire(cold, n, moved, calls, floor);
+    }
+
+    /// Stamp the sender's own prediction for a placement and return it, in
+    /// µs (0 = no prediction). `E_picked` is the SHIPPED
+    /// `expected_delivery_load()` of the picked leg under every arm: the
+    /// `RWM_PLACE_WIRE` base changes what the law prices, not what the sender
+    /// tells the receiver (status §38 amendment 1). One seat, so the test that
+    /// pins this exercises the code the emitter runs.
+    pub(crate) fn stamp_placement_eta(&mut self, path: PathId, send_ts_us: u64) -> u64 {
+        let e = self
+            .path(path)
+            .map(|p| p.expected_delivery_load())
+            .unwrap_or(0.0);
+        // Non-finite (a path with no cwnd yet) reads as no prediction — the
+        // 0 sentinel — rather than as a fabricated number.
+        let us = if e.is_finite() && e > 0.0 { (e * 1e6) as u64 } else { 0 };
+        self.eta_mut().stamp(path, send_ts_us, us);
+        us
     }
 }

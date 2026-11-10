@@ -218,6 +218,9 @@ pub struct Scheduler {
     /// bind fraction and the execution witness that the term actually
     /// changed a decision.
     place_hol_gauge: std::cell::Cell<(u64, u64, u64, u64, f64)>,
+    /// `place_wire_gauge` = `(w_cold, leg evaluations, argmin-moved, place_costs
+    /// calls, ref-floor binds)` for `RWM_PLACE_WIRE`; drained with the others.
+    place_wire_gauge: std::cell::Cell<(u64, u64, u64, u64, u64)>,
     clock: Arc<dyn Clock>,
     /// Global correction deficit tracker (paper §5.9).
     pub deficit: CorrectionDeficit,
@@ -231,6 +234,15 @@ pub struct Scheduler {
     place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3), same discipline.
     place_wdiv_derived: bool,
+    /// `RWM_PLACE_WIRE` (placement arm 4: the wire-clocked base), same
+    /// discipline.
+    place_wire: bool,
+    /// Test-only placement hold (`RWM_TEST_PLACE_HOLD=<leg>:<ms>`): the leg is
+    /// left out of `place_symbol` for the first `<ms>` after the first
+    /// placement, so a loopback test can hold a leg idle and then release it.
+    /// `None` unless that variable is set; the engine never sets it.
+    test_hold: Option<(PathId, Duration)>,
+    test_hold_t0: std::cell::Cell<Option<Instant>>,
     /// Protocol hint — also sets Copa-lite's queue target on each path
     /// (paper §8.2).
     hint: ProtocolHint,
@@ -257,9 +269,13 @@ impl Scheduler {
             place_bind: std::cell::Cell::new((0, 0, 0)),
             place_t_gauge: std::cell::Cell::new((0.0, 0, 0)),
             place_hol_gauge: std::cell::Cell::new((0, 0, 0, 0, 0.0)),
+            place_wire_gauge: std::cell::Cell::new((0, 0, 0, 0, 0)),
             place_t_derived: place_t_derived_active(),
             place_hol: place_hol_active(),
             place_wdiv_derived: place_wdiv_derived_active(),
+            place_wire: place_wire_active(),
+            test_hold: place::resolve_test_place_hold(),
+            test_hold_t0: std::cell::Cell::new(None),
             clock,
             deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
@@ -304,6 +320,42 @@ impl Scheduler {
     /// Is the derived diversity weight armed on this scheduler?
     pub fn place_wdiv_derived(&self) -> bool {
         self.place_wdiv_derived
+    }
+
+    /// `RWM_PLACE_WIRE` (placement arm 4) for this scheduler.
+    pub fn set_place_wire(&mut self, enabled: bool) {
+        self.place_wire = enabled;
+    }
+
+    /// Is the wire-clocked placement base armed on this scheduler?
+    pub fn place_wire(&self) -> bool {
+        self.place_wire
+    }
+
+    /// The legs whose quinn RTT the caller should read before borrowing the
+    /// scheduler: every leg when the arm is armed, none otherwise (the shipped
+    /// path makes no quinn call at all).
+    pub fn wire_rtt_reads_wanted(&self) -> Vec<PathId> {
+        if !self.place_wire {
+            return Vec::new();
+        }
+        let mut ids = self.all_path_ids();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Mirror quinn's packet-timed RTT into each named leg (`RWM_PLACE_WIRE`).
+    /// Called at every ack batch and path report with the RTT of every leg, so
+    /// a leg that carries nothing is refreshed by traffic on the others.
+    pub fn mirror_wire_rtts(&mut self, reads: &[(PathId, Duration)]) {
+        if !self.place_wire {
+            return;
+        }
+        for (id, rtt) in reads {
+            if let Some(p) = self.paths.get_mut(id) {
+                p.set_wire_rtt(*rtt);
+            }
+        }
     }
 
     /// The cold-start placement price setting in force for this scheduler.
