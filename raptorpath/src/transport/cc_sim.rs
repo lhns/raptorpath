@@ -597,7 +597,16 @@ fn bbr_rs_min_rtt_follows_a_path_rtt_rise() {
 
 /// Status §48 test 4: pins quinn's own BBR defect (if a quinn bump turns it
 /// red, ask again).
+///
+/// STOP-NOT-REPRODUCED (status §48 gate rule): the mechanism is realised
+/// (witness > 0; test 5 green: quinn's `min_rtt` latches at 550 us on a 2.1 ms
+/// path) but quinn's window does not collapse in this simulator. Its bandwidth
+/// filter reads 26 MB/s (0.2 x the link), so its ack-aggregation term grows
+/// without bound against that low model (max ack height 253 MB) and the
+/// window stays at 253 MB, far above the BDP. Ignored until the user rules;
+/// run with `--ignored` to see the failure and the dumped state.
 #[test]
+#[ignore = "STOP-NOT-REPRODUCED: quinn's window does not collapse in the simulator (ack-height term)"]
 fn quinn_bbr_window_collapses_under_stale_stamps() {
     let r = c1_run(Cc::QuinnBbr, true);
     assert_c1_witnesses(r);
