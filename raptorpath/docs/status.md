@@ -10824,6 +10824,24 @@ c1s client CPU/GB is WITHIN (≤ +1 %), and the ladder reads `CURED`, since
 - **Next:** the full suites and the §41 battery (with the BASE arm) on the
   VM.
 
+### 41. Amendment 1 — the row count and the harness's readings (before VM contact)
+
+- **Rows.** BASE runs at c1s and c1d default with n = 6 each: **12 rows**,
+  108 in all. "24" and "120" above were miscounts. Duration falls with it.
+- **Arm order.** MAIN and WIRE keep plan 38's order exactly (MAIN first on
+  even blocks). BASE is inserted at position (block mod 3), so each block
+  position gets it twice. A test pins plan 41 minus BASE = plan 38.
+- **Smoke.** Plan 38's two rows plus one BASE row (c1s default).
+- **No N = 1 check row.** WIRE rows already need `w_calls > 0` to be LIVE,
+  and §41 changed no printed field.
+- **Contention.** One `/proc/stat` `procs_running` sample and io `full
+  avg10`, just before and just after each invocation. Covariates only;
+  they never void a row.
+- **BASE gate.** It passes only if every §21 clause reads exactly WITHIN,
+  the feed reads SAME, and there is no DNF. TREND-* and BETTER fail it; a
+  missing cell reads UNREADABLE. The BASE witnesses: no `RWM_PLACE_WIRE`
+  token, no numeric `wpl_us`, no `w_*` gauges.
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
