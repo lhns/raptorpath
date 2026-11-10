@@ -10518,6 +10518,50 @@ build, as §40's decision rule names. The store law still lacks a
 dwell-free S (§37 addendum). Next: the joint law with L̂, an aggregation
 bound and a placement-aware rule for a leg with no trains, derived on paper.
 
+### 40. Result — addendum (offline, exploratory; the verdict stands)
+
+The registered rule licenses no next step. What follows is offline reading
+of the ledger, and it is labelled as such.
+
+- **c8's slow leg and the law.** The joint derivation (§37) found that the
+  slow leg's credit in the pooled Σ funds the queue that activates it, so
+  its failure is not only placement's.
+  - §36's D5 rerun offline with §40's p90 Q on both legs: Q interpolated in
+    n, RTprop and S from p27 (cross-session).
+  - Both legs: STABLE at 329, slope 0.53 (oracle 324).
+  - With the slow leg's credit removed: STABLE at 160 (the fast-leg-only
+    point; goodput there ≈ 65–79 against 103).
+  - The p90 map still lands at the oracle point, because at 128 its ask
+    (169) is above n and the slow leg reads its link from 256.
+  - This holds on the static grid only. It assumes Q between 128 and 256 as
+    interpolated and no lock-out (§38). Three of the 28 c8 rows had the slow
+    leg idle.
+  - The rule for a leg with no trains stays the open piece.
+- **E5 (registered, omitted from the result): the window median is the
+  aggregation-robust candidate.**
+  - At `c2slot` it reads 0.20 / 0.78 / 1.00 where p90 reads 0.51 / 1.62 /
+    2.05.
+  - Its cost: a crossover one grid step higher, and a weaker floor escape
+    (§36: L̂/D 1.06–1.45).
+- **The policer is not cleared.** `c2tbf` stays within 1.10 only at the
+  three caps run. At cap 32, 36 % of pairs sit at the netem rate (twice
+  sustained) and one row reads 1.114. Caps between 32 and 128, where load
+  sits just under the token rate, were not run. The result's mechanism
+  sentence (no burst faster than sustained) is withdrawn.
+- **Errata (none changes the verdict).**
+  - *E3 column:* it took the minimum over all caps. Below-crossover minima
+    are c1s 1.93, c2 1.79, c8 fast 1.81 and `c2tbf` 2.95. The 1.12 shown for
+    c8 fast is at cap 256, above its crossover.
+  - *D:* defined over the whole post-warm-up capture, D counts idle capture
+    time (§36's explore reads 0.33 of link at c1s 256, where goodput was
+    599 Mbit/s). The E3 verdicts survive because the minima sit at cap 16,
+    where transfers run about a minute. L̂/D at caps ≥ 64 is not to be
+    carried into a derivation until D is recomputed over the data span.
+  - *E6:* `sig_us`, `rvar_us`, `qsp_us`, `msd_us` and `tlag_us` are the RTT
+    dispersion (σ) candidates of paper §7.4 on the app-echo samples
+    (`src/net/diag.rs` ~630–690). They are not dwell measures and do not
+    settle dwell in S.
+
 ### 40. Standing decision — δ's authority on the store law (user, 2026-11-10)
 
 The store law's δ dial moves its fixed point by only ≈ 5–10 % across the
