@@ -161,6 +161,47 @@ def diag_ticks(cli):
     return out
 
 
+_PAUSED = re.compile(r"\bpaused=(\d+)%")
+_LEG0 = re.compile(r"\bp0:infl=\d+/.*?\brtt=(\d+)/wrtt=(\d+)/")
+STALL_PAUSED = 90        # ENGINE-STALL (status 43 note): `paused` >= 90 % ...
+STALL_RTT_X = 10.0       # ... and the app-echo rtt >= 10 x the wire rtt (wrtt, floored at 1 ms) ...
+STALL_TAIL_FRAC = 0.9    # ... on >= 90 % of the windows from the onset to the row's end ...
+STALL_MIN_WINDOWS = 8    # ... over at least 8 windows (2 s).
+
+
+def stall_ticks(cli):
+    """[(t, paused_pct, rtt_ms, wrtt_ms)] for the client's `[DIAG]` lines with t >= 1 s that carry path 0's rtt/wrtt."""
+    out = []
+    for ln in cli:
+        mt = sl._T.search(ln)
+        if not mt or float(mt.group(1)) < WARM_S:
+            continue
+        mp, ml = _PAUSED.search(ln), _LEG0.search(ln)
+        if mp and ml:
+            out.append((float(mt.group(1)), int(mp.group(1)), int(ml.group(1)), int(ml.group(2))))
+    return out
+
+
+def engine_stall(dnf, ticks, series, n_end):
+    """The status 43 note's ENGINE-STALL classification of a DNF row, REPORTED BESIDE the label (it changes no rule).
+    Components, all reported: a stall onset (the first stalled window from which >= 90 % of the remaining windows, at least 8,
+    are stalled: paused >= 90 % and rtt >= 10 x wrtt); n held at or above the row's last-third median n_end on every window
+    from 1 s to the onset. ENGINE-STALL = DNF and an onset and n held. -> dict"""
+    res = {"dnf": bool(dnf), "onset": None, "n_held": None, "stalled_frac": None, "engine_stall": False}
+    flags = [(t, p >= STALL_PAUSED and r >= STALL_RTT_X * max(w, 1)) for t, p, r, w in ticks]
+    for i, (t, st) in enumerate(flags):
+        tail = [x for _, x in flags[i:]]
+        if st and len(tail) >= STALL_MIN_WINDOWS and sum(tail) / len(tail) >= STALL_TAIL_FRAC:
+            res["onset"], res["stalled_frac"] = t, sum(tail) / len(tail)
+            break
+    if res["onset"] is not None and n_end is not None:
+        pre = [n for t, n in series if t < res["onset"]]
+        res["n_held"] = bool(pre) and all(n >= n_end for n in pre)
+        res["pre_min_n"] = min(pre) if pre else None
+    res["engine_stall"] = bool(dnf and res["onset"] is not None and res["n_held"])
+    return res
+
+
 def ocap_series(cli, path=0):
     """The row's windows: path `path`'s `[OCAP]` lines joined with the same tick's `[DIAG]` (occupancy, B)."""
     dt = {tstr: (num, den, b) for tstr, _, num, den, b in diag_ticks(cli)}
@@ -391,6 +432,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row.update(ro)
     ax = [m for m in (sl._AX.search(ln) for ln in srv if "[LAT]" in ln) if m]
     row["ax_p50_us"] = int(ax[-1].group(1)) if ax else None
+    row["stall"] = engine_stall(row["dnf"], stall_ticks(cli), row.get("series") or [], row.get("n_end"))
     # ── witnesses ──
     p, bad_sampler = [], []
     exp_l = str(float(cfg["L"]))
@@ -522,7 +564,8 @@ def cell_outcome(rows, cell, out=print):
         f"SH {len(cell_arm(allr, cell, 'SH'))}; scored MAIN {len(mn_)} SL {len(sl_)} SH {len(sh_)}")
     for r in allr:
         flags = [r["status"]] + (["SHORT"] if r.get("short") else []) + ([r["hold_state"]] if r.get("hold_state") else []) \
-            + (["DNF"] if r.get("dnf") else []) + (["IO-HIGH"] if r.get("io_high") else [])
+            + (["DNF"] if r.get("dnf") else []) + (["IO-HIGH"] if r.get("io_high") else []) \
+            + (["ENGINE-STALL"] if (r.get("stall") or {}).get("engine_stall") else [])
         out(f"  ROW {rid(r)}: {' '.join(flags)} dur={fmt(duration_s(r), 1)}s n_end={fmt(r.get('n_end'), 1)} "
             f"s_end={fmt(r.get('s_end'), 3)} floor/pin last={fmt(r.get('floor_last'), 3)}/{fmt(r.get('pin_last'), 3)} "
             f"mbps={fmt(r.get('mbps'), 1)} {' '.join(r.get('problems') or [])}")
@@ -632,6 +675,13 @@ def score(paths, out=print):
     for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "VOID-SAMPLER", "CONTAMINATED", "WITNESS-FAIL"):
         out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
     res = {"cells": {}}
+    dn = [r for r in rows if r.get("dnf")]
+    out(f"DNF rows {len(dn)}: ENGINE-STALL (status 43 note, reported beside the registered label, which is computed literally)")
+    for r in dn:
+        st = r.get("stall") or {}
+        out(f"  DNF {rid(r)}: {'ENGINE-STALL' if st.get('engine_stall') else 'not ENGINE-STALL'} onset={st.get('onset')} "
+            f"stalled_frac={fmt(st.get('stalled_frac'), 3)} n_held={st.get('n_held')} pre_min_n={st.get('pre_min_n')} n_end={fmt(r.get('n_end'), 1)}")
+    res["engine_stall"] = {rid(r): bool((r.get("stall") or {}).get("engine_stall")) for r in dn}
     for cell in CELL_ORDER:
         res["cells"][cell] = cell_outcome([r for r in rows if r["cell"] == cell], cell, out)
     out("")

@@ -251,9 +251,10 @@ def ocap(t, n, **kw):
             f"nmax={d['nmax']} refreshes={d['refreshes']} q=0.1000")
 
 
-def diag(t, num, den, dgq=True):
-    return (f"[DIAG] t={t:.1f}s win={num}/{den} paused=19% good=84.6Mbit cwnd=100 infl=40 np=1 np_act=1 rtt=14.2ms"
-            + (" dgq0[hand=41123 tx=41091 full=0 err=0 sp=4156391]" if dgq else "") + " p0:infl=37")
+def diag(t, num, den, dgq=True, paused=19, rtt=14, wrtt=14):
+    return (f"[DIAG] t={t:.1f}s win={num}/{den} paused={paused}% good=84.6Mbit cwnd=100 infl=40 np=1 np_act=1 rtt=14.2ms"
+            + (" dgq0[hand=41123 tx=41091 full=0 err=0 sp=4156391]" if dgq else "")
+            + f" p0:infl=37/sinfl=0/bdp418(cap0) sout=143 khr=1.00/kraw=- btlbw=44336 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt={rtt}/wrtt={wrtt}/rtp9ms rtp_us=9429")
 
 
 def echo(arm, cell="c2-100", hold=None, l=None, b0=None, gain=None):
@@ -268,7 +269,7 @@ def echo(arm, cell="c2-100", hold=None, l=None, b0=None, gain=None):
 
 
 def mk(arm="SL", cell="c2-100", ns=None, seconds=60.0, dnf=False, rc=0, omit_t=None, off_by=None, route_bad=0, no_dgq=False,
-       echo_line="auto", sumcap=None, per=None, gate_store="unset", t_end=None, mbps=80.0):
+       echo_line="auto", sumcap=None, per=None, gate_store="unset", t_end=None, mbps=80.0, stall_from=None):
     drv, cli, srv = base_logs()
     cli = gates(cli, RWM_STORE=gate_store, RWM_DIAG="1")
     srv = gates(srv, RWM_STORE=gate_store, RWM_DIAG="1")
@@ -290,7 +291,9 @@ def mk(arm="SL", cell="c2-100", ns=None, seconds=60.0, dnf=False, rc=0, omit_t=N
             cli.append(diag(t, 100, n))
             continue
         cum += nk
-        cli.append(diag(t, 100, n + (7 if (route_bad and i < route_bad) else 0), dgq=not no_dgq))
+        stalled = stall_from is not None and t >= stall_from
+        cli.append(diag(t, 100, n + (7 if (route_bad and i < route_bad) else 0), dgq=not no_dgq,
+                        paused=97 if stalled else 19, rtt=380 if stalled else 14, wrtt=2 if stalled else 14))
         cli.append(ocap(t, n, n_k=nk, offered=cum + (off_by if (off_by and i == len(ns) // 2) else 0), law=("shadow" if arm == "MAIN" else "oracle"), **kw))
     if dnf:
         cli = cli + ['{"bytes":600000000,"run":1,"dnf":true,"timeout_s":200}', '{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
@@ -504,6 +507,38 @@ check("  the extra rows are listed as ROW lines too, and SHORT extras are left o
       any(m.strip().startswith("ROW c2-100 SL-B0") for m in msgs)
       and pp.cell_outcome(sl3 + sh3 + mn3 + [dict(x, short=True) for x in ex], "c2-100", out=lambda *_: None)["extra"]["SL-B0"]["scored"] == 0)
 check("  at c1s no extra section is printed", ladder(sl3c + inert3 + mn3c, "c1s-400")["extra"] == {})
+
+
+# ── the status 43 note: ENGINE-STALL, reported beside the (unchanged) label ──
+# n above its last-third median before the stall; the stall: paused 97 %, rtt 380 ms against wrtt 2 ms from t = 100 s.
+ns_stall = [900] * 400 + [400] * 400                              # 200 s of windows; the stall starts at 100 s with n = 400
+dst = mk("SL", cell="c1s-400", ns=ns_stall, dnf=True, seconds=None, t_end=200, stall_from=100.0, echo_line=echo("SL", "c1s-400"))
+check("ENGINE-STALL: a DNF row with n at/above its last-third median until the stall, paused 97 % and rtt 380 >> wrtt 2 from 100 s",
+      dst["status"] == "LIVE" and dst["dnf"] and dst["stall"]["engine_stall"] and dst["stall"]["onset"] is not None
+      and 99.5 <= dst["stall"]["onset"] <= 100.5 and dst["stall"]["n_held"] and dst["stall"]["stalled_frac"] == 1.0, dst["stall"])
+dno = mk("SL", cell="c1s-400", ns=[600] * 800, dnf=True, seconds=None, t_end=200, echo_line=echo("SL", "c1s-400"))
+check("  a DNF row with no stall (paused 19 %, rtt = wrtt) is not ENGINE-STALL, and a completed row never is",
+      not dno["stall"]["engine_stall"] and dno["stall"]["onset"] is None and not mk("SL", stall_from=30.0)["stall"]["engine_stall"], dno["stall"])
+dnl = mk("SL", cell="c1s-400", ns=[300] * 200 + [900] * 600, dnf=True, seconds=None, t_end=200, stall_from=100.0, echo_line=echo("SL", "c1s-400"))
+check("  n BELOW its last-third median before the stall is not ENGINE-STALL (the components are still reported)",
+      not dnl["stall"]["engine_stall"] and dnl["stall"]["onset"] is not None and dnl["stall"]["n_held"] is False, dnl["stall"])
+dsh = mk("SL", cell="c1s-400", ns=ns_stall, dnf=True, seconds=None, t_end=200, stall_from=199.0, echo_line=echo("SL", "c1s-400"))
+check("  a stall shorter than 8 windows (2 s) is no onset", dsh["stall"]["onset"] is None and not dsh["stall"]["engine_stall"], dsh["stall"])
+msg = []
+lab_a = ladder(sl3c + inert3 + mn3c + [dst], "c1s-400")["label"]
+lab_b = ladder(sl3c + inert3 + mn3c, "c1s-400")["label"]
+check("  the registered label is computed literally: the stalled DNF row is an SL row for the ladder and ENGINE-STALL changes no rule",
+      lab_a != "" and isinstance(lab_a, str) and lab_b == "CONVERGES-ONE-POINT", (lab_a, lab_b))
+lg = []
+with tempfile.TemporaryDirectory() as td2:
+    lp2 = os.path.join(td2, "s.log")
+    with open(lp2, "w", encoding="utf-8") as f:
+        for r in [dst, dno]:
+            f.write("P43ROW " + json.dumps(r, sort_keys=True) + "\n")
+    pp.score([lp2], out=lg.append)
+check("score prints the DNF classification block with both the label and ENGINE-STALL",
+      any("DNF rows 2: ENGINE-STALL" in m for m in lg) and any("DNF c1s-400 SL" in m and ": ENGINE-STALL" in m for m in lg)
+      and any("not ENGINE-STALL" in m for m in lg) and any("LABEL c1s-400" in m for m in lg))
 
 print("FAILS %d" % fails)
 sys.exit(1 if fails else 0)
