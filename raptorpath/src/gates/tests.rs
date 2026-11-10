@@ -56,7 +56,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
     "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 ",
     "RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
-    "RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 ",
+    "RWM_DELTA_CAP=1 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 ",
     "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
     "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 ",
     "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
@@ -119,24 +119,6 @@ fn removed_gates_in_the_environment_are_ignored() {
         assert!(
             !line.contains(&format!("{name}=")),
             "{name} is no longer a gate but is still echoed: {line}"
-        );
-    }
-}
-
-/// The `[GATES]` echo prints the EFFECTIVE honest-cap law: it is inert
-/// unless `RWM_PLAIN_RS` is on, so the echo must not read `1` then.
-#[test]
-fn honest_cap_echo_is_the_effective_value() {
-    let mut g = RuntimeGates::resolve();
-    for (honest, plain, want) in
-        [(true, false, "0"), (true, true, "1"), (false, true, "0"), (false, false, "0")]
-    {
-        g.honest_cap = honest;
-        g.plain_rs = plain;
-        let e = g.echo_line();
-        assert!(
-            e.contains(&format!("RWM_HONEST_CAP={want} RWM_POOL_ANCHOR=")),
-            "honest_cap={honest} plain_rs={plain} must echo {want}: {e}"
         );
     }
 }

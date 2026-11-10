@@ -169,12 +169,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     Vec::new()
                 };
                 let tt_terms = three_term_terms(&mut scs.percap_k, &tt_slots, dnow);
-                // Alongside the Σanchor base, accumulate the honest per-path
-                // cap sum Σ anchor_i·(K_i+gain−1) when the honest sampler is
-                // live (see `honest_store_cap`; K_i observed here at the
-                // refresh cadence). hsum = 0.0 whenever honest_cap_on is
-                // false, and the expressions below then run unchanged.
-                let (bdp, hsum, n_live): (f64, f64, usize) = {
+                let (bdp, n_live): (f64, usize) = {
                     let sched = &*scheduler;
                     let live = sched.live_paths();
                     let n = live.len().max(1);
@@ -188,20 +183,8 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // filter is short of membership at this refresh.
                     let act = sched.active_paths();
                     store_cap_sf_record(live.len(), act.len());
-                    // Warm-anchor slots for the honest per-path cap, in
-                    // path-set order — collected here, evaluated once by
-                    // `honest_cap_terms` below (the law lives there).
-                    let (bdp, slots) = store_cap_pool_inputs(&sched, pol.honest_cap_on);
-                    let terms =
-                        honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain);
-                    // hsum = 0.0 whenever honest_cap_on is false, and the
-                    // expressions below run unchanged.
-                    let hsum: f64 = if pol.honest_cap_on {
-                        terms.iter().flatten().sum()
-                    } else {
-                        0.0
-                    };
-                    (bdp, hsum, n)
+                    let bdp = store_cap_pool_inputs(&sched);
+                    (bdp, n)
                 };
                 // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`):
                 // per-live-path honest caps on the send-interval anchor.
@@ -259,18 +242,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // `None` ⇒ the configured chain below runs verbatim.
                     scs.tt_terms_diag = Some((w, sl, sp));
                     cap
-                } else if pol.honest_cap_on && hsum > 0.0 {
-                    // Honest law: the Σ is already per-path-composed (each
-                    // term carries its own K_i and runway), so no gain×
-                    // multiplier here. Ceiling: the N×knee pool when the
-                    // path-scaled pool is configured (every N ≥ 1), else the
-                    // store latch (the `RWM_STORE_PATHS=0` arm).
-                    let ceiling = if pol.store_paths_on {
-                        n_live.saturating_mul(pol.store_path_pool).max(pol.store_cap_floor)
-                    } else {
-                        pol.store_max
-                    };
-                    (hsum.ceil() as usize).clamp(pol.store_cap_floor, ceiling)
                 } else if let Some(cap) = capw_store_cap(
                     pol.pool_anchor_on,
                     &pa_terms,
@@ -280,8 +251,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // Pool-anchor law engaged (RWM_POOL_ANCHOR, all
                     // send anchors warm): Σ honest per-path caps on the
                     // burst-immune send-interval rate, clamped [floor, N·knee].
-                    // The explicit experiment arm (RWM_PLAIN_RS+RWM_HONEST_CAP)
-                    // takes precedence above.
                     scs.pa_engaged = true;
                     scs.pa_sum = pa_terms.iter().flatten().sum();
                     cap

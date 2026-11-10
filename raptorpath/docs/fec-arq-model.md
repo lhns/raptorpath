@@ -3425,6 +3425,8 @@ shipped.
 | Hold-down clock (`RWM_HOLDDOWN_Q`) | suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven | `5509e37` | off |
 | Refresh-floor lift (`RWM_REFRESH_FLOOR_US`) | entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume | `a8bcce0` | off |
 | Receiver request law (`RWM_RECV_REQUEST_LAW`) | refuted at both duals on every arm: ℓ* = 0 on 48 of 48 dual rows, knee-bound by the store headroom; the receiver's π̂₀ was contaminated by retransmit copies (since fixed; not re-run); one arm DNF 12/12 | `0159290` | off |
+| **Honest store family** | | | |
+| Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`) | verdict: the honest-inputs family, old ledger GG ~23640, 2026-08-11, pre-wire-v9 substrate; not re-run on the current substrate; route: structural (status §23/§27: the arm only acts under the off-by-default sampler `RWM_PLAIN_RS`), plus the new test `honest_cap_is_inert_without_plain_rs` proving the default path bit-identical; removed 2026-11-10 (simplification batch 1, ADR-0073); tag `archive/RWM_HONEST_CAP` | `archive/RWM_HONEST_CAP` | removed |
 | **Earlier verdicts** | | | |
 | Generation-inert era | the harness never enabled generation coding, so the coded path was dead during a whole series of measurements; superseded by a re-baseline with a liveness guard | `161aff1` | superseded |
 | "Arc concluded" aggregation verdict | measured under three hidden binders (substrate Cubic, the PMTU wedge, the 1024-symbol pool); replaced by the measured regime map | `acefc47` | superseded |

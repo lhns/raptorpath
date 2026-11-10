@@ -252,8 +252,6 @@ pub(crate) struct SenderPolicy {
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
 
-    /// `RWM_HONEST_CAP` (+ `RWM_PLAIN_RS`): honest floor-clock caps.
-    pub honest_cap_on: bool,
     /// `diag_on && plain_dyn_cap` — under `RWM_DIAG` the per-path store
     /// attribution maps behind `[DIAG] sout=` are maintained. A gauge only.
     pub percap_track: bool,
@@ -665,19 +663,6 @@ impl SenderPolicy {
         // stays empty and the gate arithmetic is exactly `store_len`.
         let store_sack_release_on =
             reliable && !generation && !coded_only && gates.store_sack_release;
-        // Honest floor-clock store caps (`RWM_HONEST_CAP`, with `RWM_PLAIN_RS`).
-        // The ack-interval plain anchor over-reads, so a knee-clamped slow-path
-        // cap never engages the derived per-path differentiation. With the
-        // honest send-interval sampler (`RWM_PLAIN_RS`, default off) the anchor
-        // reads ≈1× truth, and the cap law is re-derived on it:
-        // cap_i = anchor_i·(K_i + gain − 1) + rate_i·(gain−1)·R — residence on
-        // the measured unloaded drain clock plus runway on the recovery
-        // engine's clock (R = the 100-ms hole-refresh/tail-sweep bound), see
-        // `honest_store_cap`. K supplies explicitly the headroom the over-read
-        // supplied by accident. Engaged only where the honest sampler is live
-        // (plain in-order, no Copa CC ownership — the Σcwnd and per-path cwnd
-        // laws are already honest). `RWM_HONEST_CAP=0` is the floor-law arm.
-        let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
         // Budget-conserving taper (`RWM_TAPER_R`, default = `RWM_UNIFIED`; paper
         // §3.3). A per-ack-cycle taper accrual sums to Σ τ(t) = r symbols per
         // ack cycle (taper_offset resets on cumulative-ack advancement), so the
@@ -896,7 +881,6 @@ impl SenderPolicy {
             delta_b,
             contract_rho,
             store_sack_release_on,
-            honest_cap_on,
             percap_track,
             unified_span,
             astar_anchor_on,

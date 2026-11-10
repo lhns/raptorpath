@@ -54,7 +54,6 @@ def set_den(lines, n):
 def mk(arm, cell="c1s-400", plain=None, honest=None, store=None, eng=True, sampler=False, honest_echo=False,
        ackdiag=True, n=None, den=None):
     cli = sub_gate(base_cli(), "RWM_PLAIN_RS", plain if plain is not None else ("1" if arm == "PRS" else "0"))
-    cli = sub_gate(cli, "RWM_HONEST_CAP", honest if honest is not None else "0")
     cli = sub_gate(cli, "RWM_STORE", store if store is not None else (str(n) if n else "unset"))
     if n is not None or den is not None:
         cli = set_den(cli, den if den is not None else n)
@@ -66,8 +65,6 @@ def mk(arm, cell="c1s-400", plain=None, honest=None, store=None, eng=True, sampl
         cli += [ACK, ACK]
     if sampler:
         cli.append("plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only)")
-    if honest_echo:
-        cli.append("honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP)")
     cli += [LEG.format(r=300000, d=300, e="1.00"), LEG.format(r=300000, d=300, e="1.50"),
             LEG.format(r=250000, d=40, e="3.00"), RS]
     return ad.make_row(cell, arm, "42", "1", 0, 10, lc.read(C1S + "drv.out"), cli, lc.read(C1S + "s.log"), 0, "x")
@@ -121,10 +118,6 @@ p = mk("PRS", sampler=True)
 check("PRS pass", p["status"] == "LIVE", (p["status"], p["problems"]))
 p2 = mk("PRS", sampler=False)
 check("PRS fail: SAMPLER echo missing", "prs-sampler-echo-missing" in p2["problems"], p2["problems"])
-p3 = mk("PRS", sampler=True, honest="1")
-check("PRS fail: effective RWM_HONEST_CAP=1", "gate-honest-cap=1" in p3["problems"], p3["problems"])
-p4 = mk("PRS", sampler=True, honest_echo=True)
-check("PRS fail: honest-cap echo present", "prs-honest-cap-echo-present" in p4["problems"], p4["problems"])
 p5 = mk("PRS", sampler=True, eng=False)
 check("PRS fail: SUMCAP eng absent", "prs-sumcap-eng-zero" in p5["problems"], p5["problems"])
 s = mk("S256", n=256, eng=False)

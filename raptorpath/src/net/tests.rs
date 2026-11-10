@@ -830,87 +830,6 @@ fn c1_attribution_lock_blocking_bench() {
     }
 }
 
-/// Mechanism side (always-on, deterministic): the DH arm's own store-cap
-/// law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1` — evaluated over the
-/// sender's own pool inputs (`store_cap_pool_inputs`, the channel's
-/// membership set) at the same warm path, unsaturated and then
-/// cwnd-saturated.
-///
-/// The chain mirrored here is `run_window_sender`'s dyn-cap block (the
-/// `honest_cap_on` branch and its fallbacks). Before plan 2b the Σ ranged
-/// over `active_paths()`, which a cwnd-full path leaves: the honest law's
-/// inputs vanished and the cap fell to the 128 boot value (the cliff). The
-/// invariant now: the saturated cap EQUALS the warm cap.
-#[test]
-fn dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation() {
-    let clock = Arc::new(crate::scheduler::MockClock::new());
-    let mut sched = Scheduler::new(clock.clone());
-    sched.add_path(0);
-    // Warm the honest (send-interval) anchor at the c1 shape: 24 k
-    // sym/s, RTprop 2 ms, deliveries lagging sends by ~3 ms.
-    {
-        let p = sched.path_mut(0).unwrap();
-        p.record_rtt_sample(Duration::from_millis(2));
-        let step = Duration::from_micros(41);
-        for seq in 0..4000u64 {
-            p.on_src_sent(seq, false);
-            if seq >= 72 {
-                p.on_src_delivered_seq(seq - 72);
-            }
-            clock.advance(step);
-        }
-        assert!(
-            p.copa_bdp_anchor().is_some(),
-            "honest anchor must be warm (samples accepted)"
-        );
-    }
-    // The DH law chain over the sender's pool inputs, exactly as the
-    // sender computes it (RWM_STORE_GAIN default 2.0; floor 64;
-    // N·knee ceiling (RWM_STORE_PATH_POOL 2048 per live path, every N >= 1
-    // since ADR-0072); store_boot_cap 128 — gates.rs defaults).
-    let now = now_us();
-    let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let mut cap_over = |sched: &Scheduler| -> usize {
-        let (bdp, slots) = store_cap_pool_inputs(sched, true);
-        let terms = honest_cap_terms(&mut ks, &slots, now, 2.0);
-        let hsum: f64 = terms.iter().flatten().sum();
-        let ceiling = sched.live_paths().len().max(1) * 2048;
-        if hsum > 0.0 {
-            (hsum.ceil() as usize).clamp(64, ceiling)
-        } else if bdp > 0.0 {
-            ((2.0 * bdp).ceil() as usize).clamp(64, ceiling)
-        } else {
-            128 // store_boot_cap fallback — the (former) cliff
-        }
-    };
-
-    // Unsaturated: the honest law computes its warm cap (runway term ≈
-    // rate·0.1 ⇒ the 1·knee ceiling at c1 rates).
-    let warm_cap = cap_over(&sched);
-    assert_eq!(
-        warm_cap, 2048,
-        "c1-class honest cap latches the one-path knee ceiling"
-    );
-
-    // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
-    // spare-capacity filter empties the placement set while the path is
-    // alive and its anchor is warm.
-    {
-        let p = sched.path_mut(0).unwrap();
-        let cw = p.cwnd;
-        p.charge_in_flight(cw);
-        assert_eq!(p.available(), 0);
-    }
-    assert!(sched.active_paths().is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
-    assert_eq!(sched.live_paths(), vec![0], "…while the path is fully live");
-    assert_eq!(
-        cap_over(&sched),
-        warm_cap,
-        "no cliff: the saturated path keeps its warm honest cap (was 128 on active_paths())"
-    );
-}
-
 /// Coupling side (always-on, deterministic): why the DH sender falls off
 /// the cliff harder than A. One delivery process, two feeds:
 ///   - honest (`RWM_PLAIN_RS` send-interval sampler): the windowed-max
@@ -4081,7 +4000,7 @@ fn honest_anchor_sum_cap_preserves_sc2_throughput_headroom() {
     let rate: f64 = 10_400.0;
     let anchor: f64 = rate * 0.008;
     let store_max = 1024usize;
-    // The floor law on honest anchors (the RWM_HONEST_CAP=0 control
+    // The floor law on honest anchors (the floor-law control
     // arm): gain·anchor = 167 ≪ 1024.
     let floor_law = ((2.0 * anchor).ceil() as usize).clamp(64, store_max);
     assert_eq!(floor_law, 167);
@@ -5679,13 +5598,9 @@ fn read_both<T>(f: impl Fn(&Scheduler) -> T) -> (T, T) {
 
 #[test]
 fn saturated_channel_store_cap_sigma_has_no_boot_cliff() {
-    // (Σ anchor, number of honest-cap slots) — the plain dyn-cap's inputs
-    // (the sender's own collector).
-    let (un, sat) = read_both(|s| {
-        let (bdp, slots) = store_cap_pool_inputs(s, true);
-        (bdp, slots.len())
-    });
-    assert!(un.0 > 0.0 && un.1 == 2, "unsaturated: both anchors in the Σ ({un:?})");
+    // Σ anchor — the plain dyn-cap's input (the sender's own collector).
+    let (un, sat) = read_both(store_cap_pool_inputs);
+    assert!(un > 0.0, "unsaturated: both anchors in the Σ ({un:?})");
     assert_eq!(
         sat, un,
         "saturated: the store-cap Σ must not lose the cwnd-full paths (Σ = 0 is the boot-cap-128 cliff)"
@@ -6653,10 +6568,6 @@ mod one_store_law_at_n1 {
     }
 
     fn policy(hint: ProtocolHint, store_paths: bool) -> SenderPolicy {
-        policy_hc(hint, store_paths, false)
-    }
-
-    fn policy_hc(hint: ProtocolHint, store_paths: bool, honest_cap: bool) -> SenderPolicy {
         let mut g = RuntimeGates::resolve();
         // Neutralise the ambient environment: this asserts routing, not the
         // machine it runs on.
@@ -6666,7 +6577,6 @@ mod one_store_law_at_n1 {
         g.three_term = false;
         g.composed_cap = false;
         g.pool_anchor = false;
-        g.honest_cap = honest_cap;
         g.plain_rs = false;
         g.copa_feed = false;
         g.store_override = None;
@@ -6684,7 +6594,7 @@ mod one_store_law_at_n1 {
         let mut dcap = DeltaCapGauge::new(
             pol.delta_cap, pol.store_cap_floor, pol.store_path_pool, pol.sum_cap, pol.delta_b);
         let mut ccap = SenderTeardownGauges::new(false, pol.store_cap_floor);
-        let (bdp, _) = store_cap_pool_inputs(sched, false);
+        let bdp = store_cap_pool_inputs(sched);
         let copa_feed: Option<Arc<CopaFeed>> = None;
         crate::net::sender_phases::refresh_store_cap(
             &mut scs,
@@ -6699,24 +6609,6 @@ mod one_store_law_at_n1 {
             },
         );
         (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)
-    }
-
-    /// `RWM_HONEST_CAP` resolves ON by default but only acts together with
-    /// `RWM_PLAIN_RS`. With PLAIN_RS off the whole refresh is bit-identical
-    /// with HONEST_CAP on vs off: same policy flags, same `dyn_store_cap`,
-    /// same `[SUMCAP]` line (so the gate can go without moving the default).
-    #[test]
-    fn honest_cap_is_inert_without_plain_rs() {
-        for (hint, _) in presets() {
-            let off = policy_hc(hint, true, false);
-            let on = policy_hc(hint, true, true);
-            assert!(!off.honest_cap_on && !on.honest_cap_on, "{hint:?}: arm engaged without PLAIN_RS");
-            let (cap_off, line_off, bdp_off) = refresh(&off, &mut warm_one_path());
-            let (cap_on, line_on, bdp_on) = refresh(&on, &mut warm_one_path());
-            assert_eq!(cap_off, cap_on, "{hint:?}: HONEST_CAP moved the cap with PLAIN_RS off");
-            assert_eq!(line_off, line_on, "{hint:?}: HONEST_CAP moved [SUMCAP] with PLAIN_RS off");
-            assert_eq!(bdp_off.to_bits(), bdp_on.to_bits(), "{hint:?}: bdp");
-        }
     }
 
     /// Red-first 4: rule 1 — the mechanism under test executes. A one-path

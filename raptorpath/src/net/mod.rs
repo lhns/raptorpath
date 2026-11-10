@@ -1838,16 +1838,6 @@ async fn run_window_sender(
              RWM_THREE_TERM=0 = the shipped-default control arm)"
         );
     }
-    if pol.honest_cap_on {
-        // Mechanism-liveness echo (measurement-discipline rule 1): asserted
-        // present on honest-cap arms, absent on knee-clamp control arms.
-        info!(
-            gain = pol.store_bdp_gain,
-            floor = pol.store_cap_floor,
-            pool_per_path = pol.store_path_pool,
-            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
-        );
-    }
     // The store-cap refresh phase's own state (see `StoreCapState`).
     let mut scs = StoreCapState::new(&pol);
     if pol.taper_r_budget {

@@ -426,8 +426,7 @@ pub struct HonestCapPath {
 
 /// One collector for the honest per-path cap terms over a path set.
 ///
-/// The pooled store-cap laws (`RWM_PLAIN_RS` + `RWM_HONEST_CAP`,
-/// `RWM_POOL_ANCHOR`) differ only in (a) which rate source fills
+/// The pooled store-cap laws (`RWM_POOL_ANCHOR`) differ only in (a) which rate source fills
 /// [`HonestCapPath`] and (b) which path set the caller enumerates. Both are
 /// the caller's choice; the loop is not.
 ///

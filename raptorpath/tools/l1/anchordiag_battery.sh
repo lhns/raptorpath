@@ -6,7 +6,7 @@
 #   sudo env AD_BIN=<bin> AD_SHA=<sha256> AD_OUTDIR=<dir> AD_TAG=<tag> \
 #     [AD_SMOKE=1] bash anchordiag_battery.sh
 #
-# Arms: MAIN (no arm env), PRS (RWM_PLAIN_RS=1 RWM_HONEST_CAP=0), S<n> (RWM_STORE=<n>).
+# Arms: MAIN (no arm env), PRS (RWM_PLAIN_RS=1), S<n> (RWM_STORE=<n>).
 # PLAN (64 invocations; the smoke is 3), blocks (seed,rep) = (42,1) (7,1) (42,2):
 #   per block: c1s-400 c2-100 c1d-400 c8-100, each {MAIN,PRS} (order flips on odd
 #   blocks); then the c1s-400 store sweep (ascending on even blocks, descending
@@ -60,7 +60,7 @@ run_one() { # cell arm seed rep     (arm: MAIN|PRS|S<n>)
   local arm_env=()
   case "$arm" in
     MAIN) ;;
-    PRS) arm_env=(RWM_PLAIN_RS=1 RWM_HONEST_CAP=0) ;;
+    PRS) arm_env=(RWM_PLAIN_RS=1) ;;
     S[0-9]*) arm_env=(RWM_STORE="${arm#S}") ;;
     *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
   esac
@@ -76,7 +76,7 @@ run_one() { # cell arm seed rep     (arm: MAIN|PRS|S<n>)
     t0=$(date +%s)
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
         -u RWM_RTOBS -u RWM_ACKDIAG -u RWM_IO_RT -u RWM_STORE_PATHS \
-        -u RWM_PLAIN_RS -u RWM_HONEST_CAP -u RWM_STORE \
+        -u RWM_PLAIN_RS -u RWM_STORE \
         "${arm_env[@]}" \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_RS_TRACE="$thr" \
         RWM_PERF_TIMEOUT_S=150 RWM_C_PIPELINE=window RWM_BIN="$BIN" \
@@ -110,7 +110,7 @@ run_one() { # cell arm seed rep     (arm: MAIN|PRS|S<n>)
 
 echo "=== ANCHOR-DIAG BATTERY tag=$TAG smoke=${AD_SMOKE:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $WANT" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_RS_TRACE=<thr> RWM_PERF_TIMEOUT_S=150 bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_HONEST_CAP RWM_STORE; PRS sets RWM_PLAIN_RS=1 RWM_HONEST_CAP=0; S<n> sets RWM_STORE=<n>" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_RS_TRACE=<thr> RWM_PERF_TIMEOUT_S=150 bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_STORE; PRS sets RWM_PLAIN_RS=1; S<n> sets RWM_STORE=<n>" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
 
 if [ "${AD_SMOKE:-0}" = "1" ]; then

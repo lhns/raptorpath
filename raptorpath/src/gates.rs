@@ -128,8 +128,6 @@ pub struct RuntimeGates {
     pub store_gain: f64,
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw anchor warms.
     pub store_boot: usize,
-    /// `RWM_HONEST_CAP` (on, shipped; needs `plain_rs`): floor-clock caps on the send anchor.
-    pub honest_cap: bool,
     /// `RWM_POOL_ANCHOR` (off, arm; independent of `est_cadence`): at N ≥ 2 the pooled cap is Σᵢ honest_store_cap on
     /// each path's send-interval anchor, not the ack-interval max.
     pub pool_anchor: bool,
@@ -362,7 +360,6 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
-            honest_cap: env_flag("RWM_HONEST_CAP", true),
             pool_anchor,
             ack_merge: crate::gates::scheduler_gates::resolve_ack_merge(),
             loss_sent_truth: crate::gates::scheduler_gates::resolve_loss_sent_truth(),
@@ -484,7 +481,7 @@ impl RuntimeGates {
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
              RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
-             RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
+             RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_SIDLE_DERIVED={} \
@@ -515,8 +512,7 @@ impl RuntimeGates {
             ou(&self.store_override), self.store_gain, self.store_boot,
             b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
-            // EFFECTIVE value: the honest-cap law only runs with plain_rs.
-            b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
+            b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.sidle_derived),

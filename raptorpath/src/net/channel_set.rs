@@ -97,7 +97,7 @@ pub fn channel_max_rtprop_s(sched: &Scheduler) -> f64 {
 pub fn channel_bdp_anchor_sum(sched: &Scheduler) -> f64 {
     channel_paths_iter(sched)
         .filter_map(|(_, p)| p.copa_bdp_anchor())
-        .sum()
+        .fold(0.0f64, |acc, a| acc + a)
 }
 
 /// The channel's max SRTT (µs); `None` on an empty set.
@@ -115,36 +115,16 @@ pub fn control_broadcast_paths(sched: &Scheduler) -> Vec<PathId> {
     channel_paths(sched)
 }
 
-/// The plain dyn-store-cap's pool inputs over the channel: Σ of the warm
-/// BDP anchors, and (when `want_k`, the honest per-path cap is live) one
-/// warm-anchor slot per path in set order for `honest_cap_terms`.
+/// The plain dyn-store-cap's pool input over the channel: Σ of the warm
+/// BDP anchors.
 ///
 /// Over [`channel_paths`] — the set `n_live` is counted from — so the
 /// path-scaled law's Σ-base and its ×N multiplier range over the same
 /// paths, and a cwnd-full path keeps its warm anchor in the Σ (no Σ = 0 →
 /// boot-cap cliff).
-pub fn store_cap_pool_inputs(
-    sched: &Scheduler,
-    want_k: bool,
-) -> (f64, Vec<Option<super::HonestCapPath>>) {
-    let mut bdp = 0.0f64;
-    let mut slots: Vec<Option<super::HonestCapPath>> = Vec::new();
-    for id in channel_paths(sched) {
-        if let Some(p) = sched.path(id) {
-            if let Some(a) = p.copa_bdp_anchor() {
-                bdp += a;
-                if want_k {
-                    slots.push(Some(super::HonestCapPath {
-                        id,
-                        anchor: Some(a),
-                        rate: p.btlbw_sym_per_s(),
-                        srtt: p.srtt(),
-                        rtprop: p.min_rtt(),
-                        k_raw: p.k_raw(),
-                    }));
-                }
-            }
-        }
-    }
-    (bdp, slots)
+pub fn store_cap_pool_inputs(sched: &Scheduler) -> f64 {
+    channel_paths(sched)
+        .into_iter()
+        .filter_map(|id| sched.path(id).and_then(|p| p.copa_bdp_anchor()))
+        .fold(0.0f64, |acc, a| acc + a)
 }
