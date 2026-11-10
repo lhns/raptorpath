@@ -12,6 +12,8 @@ relative median difference) and `rank-minp` (stratified rank sums, min-p over th
     guard_power.py b      [--draws N] [--nperm N]       (b) bootstrap A/A at four cells + exact A/A on the 18 real BASE rows of c1s / c1d
     guard_power.py c      [--draws N] [--nperm N] [--cand N]   (c) the power table (CAND n = 6 by default; --cand 12 for the n = 12 variant)
     guard_power.py rescore                               the committed 41 / 41b ledgers re-scored with both statistics
+    guard_power.py d      [--draws N] [--nperm N] [--aa N]      (a)(b)(c) at the registered design (CAND 12 / BASE 12 at c1s, c1d; 6 / 6 at c2, c8), single-session rows,
+                                                         with all 26 clauses and with lag_E reported-only (18 clauses)
 
 Data. c1s / c1d: the real BASE rows of the 41b ledger (12 per cell) and the 41 ledger (6 per cell), 18 per cell, 9 per seed. c2 / c8: the
 only main-era default-law rows are 38's MAIN arm (gate off, 6 per cell, 3 per seed): they stand in for BASE there, so c2 / c8 power rests
@@ -40,10 +42,20 @@ GRID = [0.01, 0.015, 0.02, 0.024, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.15, 0.20
 NAMED = {"cpu_cli/GB": 0.024, "cpu_srv/GB": 0.024, "goodput": 0.05}      # the shifts the coordinator asked for explicitly
 
 
-def load_pools():
-    """{cell: {seed: [row, ...]}} of real BASE-like rows."""
+# The design the guard is registered at (status 47): one interleaved session, balanced per seed. (n_base, n_cand) per cell.
+DESIGN = {"c1s-400": (12, 12), "c1d-400": (12, 12), "c2-100": (6, 6), "c8-100": (6, 6)}
+if os.environ.get("GUARD_DESIGN"):        # e.g. GUARD_DESIGN='{"c2-100":[8,8]}' overrides the cells it names (design sensitivity runs)
+    DESIGN = {**DESIGN, **{c: tuple(v) for c, v in json.loads(os.environ["GUARD_DESIGN"]).items()}}
+NOLAG = ("lag_E_cli", "lag_E_srv")
+
+
+def load_pools(single_session=False):
+    """{cell: {seed: [row, ...]}} of real BASE-like rows. single_session=True keeps ONE session per cell (41b's BASE at c1s / c1d, 6 per seed;
+    38's MAIN at c2 / c8, 3 per seed) so that no cross-session offset sits in the null."""
     pools = {c: {s: [] for s in SEEDS} for c, _ in CELLS4}
     src = [("place41b", "BASE", ("c1s-400", "c1d-400")), ("place41", "BASE", ("c1s-400", "c1d-400")), ("place38", "MAIN", ("c2-100", "c8-100"))]
+    if single_session:
+        src = [x for x in src if x[0] != "place41"]
     for d, arm, cells in src:
         rows, _ = pp.rows_of([os.path.join(RAW, d, "ld.log")])
         for r in rows:
@@ -62,13 +74,15 @@ def row_for(r, arm, tag):
     return x
 
 
-def draw_dataset(rng, pools, n_base=12, n_cand=6, replace=True):
-    """Bootstrap one guard dataset: per cell and seed n_base/2 BASE rows and n_cand/2 CAND rows resampled from the real rows."""
+def draw_dataset(rng, pools, n_base=12, n_cand=6, replace=True, design=None):
+    """Bootstrap one guard dataset: per cell and seed n_base/2 BASE rows and n_cand/2 CAND rows resampled from the real rows
+    (`design` = {cell: (n_base, n_cand)} overrides the two numbers per cell)."""
     rows = []
     for cell, _ in CELLS4:
+        nb, nc = (design or {}).get(cell, (n_base, n_cand))
         for s in SEEDS:
             src = pools[cell][s]
-            for a, n in (("BASE", n_base // 2), ("CAND", n_cand // 2)):
+            for a, n in (("BASE", nb // 2), ("CAND", nc // 2)):
                 pick = [rng.choice(src) for _ in range(n)] if replace else rng.sample(src, n)
                 rows += [row_for(r, a, f"{a}{i}") for i, r in enumerate(pick)]
     return rows
@@ -101,10 +115,10 @@ def separate(rows, cell, clause):
             r[k] = edge + 0.01 * i * abs(edge)
 
 
-def p_of(method, rows, nperm, cells=CELLS4):
+def p_of(method, rows, nperm, cells=CELLS4, exclude=()):
     if method == "relabel-max":
         return g.statistic(rows, "BASE", "CAND", n_perm=nperm, cells=cells)["p"]
-    return g.statistic_rank(rows, "BASE", "CAND", n_perm=nperm, cells=cells)["p"]
+    return g.statistic_rank(rows, "BASE", "CAND", n_perm=nperm, cells=cells, exclude=exclude)["p"]
 
 
 # ── workers (top level for multiprocessing) ──
@@ -146,6 +160,20 @@ def w_c(args):
     rows = draw_dataset(rng, pools, 12, n_cand)
     shift(rows, cell, clause, delta)
     return (method, cell, clause, delta, draw, p_of(method, rows, nperm))
+
+
+def w_d(args):
+    """The registered design: power / A/A / separated-clause at DESIGN, single-session rows, optionally without the lag clauses."""
+    kind, variant, cell, clause, delta, draw, nperm = args
+    pools = load_pools(single_session=True)
+    ex = NOLAG if variant == "nolag" else ()
+    rng = random.Random(77 * draw + int(delta * 1000) + zlib.crc32(f"{cell}/{clause}".encode()) % 983)
+    rows = draw_dataset(rng, pools, design=DESIGN)
+    if kind == "power":
+        shift(rows, cell, clause, delta)
+    elif kind == "sep":
+        separate(rows, cell, clause)
+    return (kind, variant, cell, clause, delta, draw, p_of("rank-minp", rows, nperm, exclude=ex))
 
 
 def run(tasks, fn, procs=14):
@@ -239,11 +267,54 @@ def exp_rescore(argv):
                         print("      " + ln.strip())
 
 
+def exp_d(argv):
+    """The registered design (status 47): CAND 12 / BASE 12 at c1s and c1d, CAND 6 / BASE 6 at c2 and c8, one interleaved session, balanced per seed;
+    rows resampled from ONE session per cell. Reports (a), (b), (c) for rank-minp with all 26 clauses and with the two lag_E clauses reported-only."""
+    draws, nperm = arg(argv, "--draws", 60), arg(argv, "--nperm", 2000)
+    variants = ("all", "nolag")
+    print(f"DESIGN {DESIGN} (n_base, n_cand per cell); rows: 41b BASE (c1s, c1d: 6 distinct per seed), 38 MAIN (c2, c8: 3 distinct per seed); resampled with replacement")
+    # (a) separated clause, every clause
+    tasks = [("sep", v, c, cl, 0.0, d, 10000) for v in variants for c, _ in CELLS4 for cl in clause_list(c) if not (v == "nolag" and cl in NOLAG) for d in range(5)]
+    res = run(tasks, w_d)
+    print(f"(a) one fully separated clause at one cell (5 datasets per clause, N_PERM=10000): worst p")
+    for v in variants:
+        ps = [r[6] for r in res if r[1] == v]
+        print(f"    {v}: worst {max(ps):.4f}, mean {sum(ps) / len(ps):.4f} over {len(ps)} cases -> {'ACCEPT' if max(ps) <= 0.01 else 'REJECT'}")
+    # (b) A/A
+    nb = arg(argv, "--aa", 600)
+    tasks = [("aa", v, "-", "-", 0.0, d, nperm) for v in variants for d in range(nb)]
+    res = run(tasks, w_d)
+    print(f"(b) A/A bootstrap at the design ({nb} datasets, N_PERM={nperm}): share with p <= 0.05")
+    for v in variants:
+        ps = [r[6] for r in res if r[1] == v]
+        print(f"    {v}: {sum(1 for p in ps if p <= 0.05)}/{len(ps)} = {sum(1 for p in ps if p <= 0.05) / len(ps):.3f}; mean p {sum(ps) / len(ps):.3f}")
+    # (c) power
+    tasks = [("power", v, c, cl, dl, d, nperm) for v in variants for c, _ in CELLS4 for cl in clause_list(c) if not (v == "nolag" and cl in NOLAG)
+             for dl in GRID for d in range(draws)]
+    res = run(tasks, w_d)
+    print(f"(c) POWER at the design ({draws} draws per point, N_PERM={nperm}): smallest grid delta with power >= 0.8, and the power at +2.4 % CPU / -5 % goodput; all 26 clauses | lag_E reported-only")
+    for c, _ in CELLS4:
+        for cl in clause_list(c):
+            line = f"    {c:<8} {cl:<14}"
+            for v in variants:
+                if v == "nolag" and cl in NOLAG:
+                    line += " | nolag: (reported only)"
+                    continue
+                pw = {}
+                for dl in GRID:
+                    ps = [r[6] for r in res if r[1] == v and r[2] == c and r[3] == cl and r[4] == dl]
+                    pw[dl] = sum(1 for p in ps if p <= 0.05) / len(ps)
+                ok = [dl for dl in GRID if pw[dl] >= 0.8]
+                nm = f" @{100 * NAMED[cl]:.1f}%={pw[NAMED[cl]]:.2f}" if cl in NAMED else ""
+                line += f" | {v}: d80={(str(round(100 * min(ok), 1)) + ' %') if ok else '>100 %'}{nm}"
+            print(line)
+
+
 def main(argv):
     if not argv:
         print(__doc__)
         return 2
-    {"a": exp_a, "b": exp_b, "c": exp_c, "rescore": exp_rescore}[argv[0]](argv[1:])
+    {"a": exp_a, "b": exp_b, "c": exp_c, "rescore": exp_rescore, "d": exp_d}[argv[0]](argv[1:])
     return 0
 
 

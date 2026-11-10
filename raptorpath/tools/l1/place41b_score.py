@@ -34,6 +34,7 @@ from l1ab import spread_rel  # noqa: E402
 N_PERM = 10000
 RNG_SEED = 4141
 P_PASS = 0.05
+COLLAPSE_FRAC = 0.5
 CELLS = [("c1s-400", "def"), ("c1d-400", "def")]
 # Status 47: the guard on the merge candidate runs at four cells (BASE n = 12, CAND n = 6 each), the same statistic over all their clauses.
 CELLS_GUARD = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-100", "def")]
@@ -80,12 +81,18 @@ def live(rows, cell, arm):
 class Pool:
     """One cell's pooled rows (reference arm first, tested arm after) and the true selection."""
 
-    def __init__(self, rows, cell, ref_arm, test_arm):
+    def __init__(self, rows, cell, ref_arm, test_arm, exclude=()):
         self.cell = cell
         self.ref_rows, self.test_rows = live(rows, cell, ref_arm), live(rows, cell, test_arm)
         self.rows = self.ref_rows + self.test_rows
         self.true = list(range(len(self.ref_rows), len(self.rows)))
-        self.defs = clause_defs(cell)
+        self.defs = [d for d in clause_defs(cell) if d[0] not in exclude]
+        # DNF and collapse (status 47): such a row is the WORST rank on every clause of its cell in the rank statistic. A collapse is a
+        # completed row whose goodput is below COLLAPSE_FRAC x the median goodput of the cell's pooled rows (the tail line's threshold).
+        mb = med([r["mbps"] for r in self.rows if not r.get("dnf") and r.get("mbps") is not None])
+        self.bad_why = [("DNF" if r.get("dnf") else "collapse" if (mb and r.get("mbps") is not None and r["mbps"] < COLLAPSE_FRAC * mb) else None)
+                        for r in self.rows]
+        self.bad = [w is not None for w in self.bad_why]
         self.vals = {n: [value(r, cell, k) for r in self.rows] for n, k, _ in self.defs}
         self.seeds = sorted({r["seed"] for r in self.rows})
         self.groups = {s: [i for i, r in enumerate(self.rows) if r["seed"] == s] for s in self.seeds}
@@ -160,26 +167,32 @@ def _midranks(vals):
 
 
 def rank_scores(pool):
-    """Per clause, per pooled row: the WITHIN-SEED worse-side midrank (higher = worse: a higher CPU / lag / rtp floor, a lower goodput)."""
+    """Per clause, per pooled row: the WITHIN-SEED worse-side midrank (higher = worse: a higher CPU / lag / rtp floor, a lower goodput).
+    A DNF or collapsed row (pool.bad) is worse than every other row on EVERY clause (value +inf; several such rows tie at the top);
+    only an absent instrument value on an otherwise completed row is neutral (the stratum's mean rank), and those fills are counted
+    (pool.neutral[clause])."""
     sc = {}
+    pool.neutral = {}
+    inf = float("inf")
     for n, _, sg in pool.defs:
         v = [None] * len(pool.rows)
+        pool.neutral[n] = sum(1 for i, b in enumerate(pool.bad) if not b and pool.vals[n][i] is None)
         for s_, idxs in pool.groups.items():
-            ranks = _midranks([None if pool.vals[n][i] is None else sg * pool.vals[n][i] for i in idxs])
+            ranks = _midranks([inf if pool.bad[i] else (None if pool.vals[n][i] is None else sg * pool.vals[n][i]) for i in idxs])
             for i, r in zip(idxs, ranks):
                 v[i] = r
         sc[n] = v
     return sc
 
 
-def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None):
+def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None, exclude=(), design=None):
     """The stratified rank-sum min-p guard (status 47 candidate). Per clause: the worse-side rank sum of the tested rows, ranks taken
     within seed. The clause statistics share the SAME joint relabellings as `statistic` (same RNG stream, same draws); each clause's
     permutation p is the share of labellings (the draws plus the true one) with a rank sum >= the labelling's own (ties extreme); the
     labelling's score is the MIN of its clause p-values over every clause of every cell; the gate p is the share of labellings whose
     min-p <= the true min-p. -> dict(p, T_true (the true min-p), p_true {(cell, clause): p}, S_true, argmin, n_perm)"""
     import bisect
-    pools = [Pool(rows, cell, ref_arm, test_arm) for cell, _ in (cells or CELLS)]
+    pools = [Pool(rows, cell, ref_arm, test_arm, exclude) for cell, _ in (cells or CELLS)]
     sc = {p.cell: rank_scores(p) for p in pools}
     keys = [(p.cell, n) for p in pools for n, _, _ in p.defs]
     S = {k: [] for k in keys}
@@ -207,8 +220,18 @@ def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=
         if min(pk[k][S[k][i]] for k in keys) <= T_true + 1e-12:
             hits += 1
     arg = min(keys, key=lambda k: p_true[k])
+    incomplete = []
+    for cell, (nb, nc) in (design or {}).items():
+        pl = next((p for p in pools if p.cell == cell), None)
+        for arm, want, got in ((ref_arm, nb, len(pl.ref_rows) if pl else 0), (test_arm, nc, len(pl.test_rows) if pl else 0)):
+            if got < want:
+                incomplete.append((cell, arm, want, got))
     return {"pools": pools, "p": hits / N1, "T_true": T_true, "p_true": p_true, "S_true": S_true, "argmin": arg, "n_perm": n_perm,
-            "S_null_mean": {k: sum(S[k]) / n_perm for k in keys}}
+            "S_null_mean": {k: sum(S[k]) / n_perm for k in keys},
+            "neutral": {(p.cell, n): p.neutral[n] for p in pools for n in p.neutral},
+            "bad": {p.cell: sum(p.bad) for p in pools},
+            "bad_rows": [(p.cell, r["arm"], r["seed"], r["rep"], p.bad_why[i]) for p in pools for i, r in enumerate(p.rows) if p.bad[i]],
+            "incomplete": incomplete}
 
 
 def resolution(rows, arm="BASE", cells=None):
@@ -255,7 +278,7 @@ def tail_lines(rows, out, cells=None, arms=("BASE", "MAIN", "WIRE")):
 
 
 def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=True, title="§41b GUARD", gate_name="GATE-41b",
-           subject="the gate-off binary", method="relabel-max"):
+           subject="the gate-off binary", method="relabel-max", exclude=(), design=None):
     """The registered guard. Defaults reproduce status 41b (BASE against MAIN, WIRE reported, c1s and c1d); the merge-candidate guard
     (status 47) passes cells=CELLS_GUARD, test_arm="CAND", with_wire=False."""
     cells = cells or CELLS
@@ -274,7 +297,7 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
             + ("" if q is None else ("q95 > tol: the guard cannot see this clause below q95" if q > r["tol"] else "q95 <= tol")))
     out("")
     if method == "rank-minp":
-        res = statistic_rank(rows, "BASE", ta, cells=cells)
+        res = statistic_rank(rows, "BASE", ta, cells=cells, exclude=exclude, design=design)
         pools = res["pools"]
         out(f"{ta} against BASE (stratified rank sums, min-p over the same joint relabellings)")
         for p in pools:
@@ -283,9 +306,17 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
         xt = {(p.cell, n): x for p in pools for n, x in p.x_all(p.true).items()}
         for k in res["p_true"]:
             out(f"    {k[0]} {k[1]:<14} x={(xt[k] if xt[k] is not None else float('nan')) * 100:+7.2f} %  S={res['S_true'][k]:6.1f} / {res['S_null_mean'][k]:6.2f}  p={res['p_true'][k]:.4f}")
+        out(f"  neutral fills (an absent instrument value on a completed row gets the stratum's mean rank): "
+            + (", ".join(f"{k[0]} {k[1]} {v}" for k, v in res["neutral"].items() if v) or "none") + f"  (total {sum(res['neutral'].values())})")
+        out(f"  worst-ranked rows (DNF or collapse < {COLLAPSE_FRAC} x the cell's median goodput; the worst rank on every clause of the cell): "
+            + (", ".join(f"{c} {a} s{sd} r{rp} {w}" for c, a, sd, rp, w in res["bad_rows"]) or "none"))
+        if res["incomplete"]:
+            out("  INCOMPLETE DESIGN (fewer live rows than the design): " + ", ".join(f"{c} {a} {got}/{want}" for c, a, want, got in res["incomplete"]))
         out(f"  min-p (true) = {res['T_true']:.5f} at {res['argmin'][0]} {res['argmin'][1]}")
         out(f"  p = {res['p']:.4f}  (share of the {res['n_perm']} relabellings plus the true labelling whose min-p <= the true min-p)")
         gate = "PASS" if res["p"] > P_PASS else "FAIL"
+        if gate == "PASS" and res["incomplete"]:
+            gate = "INCOMPLETE"             # a design with missing live rows can never PASS silently (a stalled build leaves no live rows)
         out(f"{gate_name}[rank-minp] {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
     else:
         res = statistic(rows, "BASE", ta, cells=cells)

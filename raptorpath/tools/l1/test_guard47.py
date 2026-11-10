@@ -117,5 +117,63 @@ src = open(os.path.join(HERE, "place41b_score.py"), encoding="utf-8").read()
 body = src[src.index("def clause_defs"):src.index("def med(")]
 check("... and place41b_score's clause code never mentions [ETA], e_p50, e_p90 or the residual", not re.search(r"ETA|e_p50|e_p90|residual", body))
 
+# ── DNF / collapse / missing instrument (status 47, red-first) ────────────
+def stalled(kind, cell="c1s-400", n_bad=None):
+    rows = gp.draw_dataset(random.Random(21), pools)
+    k = 0
+    for r in rows:
+        if r["cell"] == cell and r["arm"] == "CAND":
+            if n_bad is not None and k >= n_bad:
+                break
+            k += 1
+            if kind == "dnf-empty":                       # a stalled build: dnf, no goodput, no clause values at all
+                r["dnf"] = True
+                for key in ("mbps", "cpu_cli", "cpu_srv", "cli_lag_E", "srv_lag_E", "rtp_floor_p0", "rtp_floor_p1"):
+                    r[key] = None
+            elif kind == "dnf-partial":                   # dnf, but the driver's CPU line and the lag lines were still read
+                r["dnf"] = True
+                r["mbps"] = None
+            elif kind == "collapse":                      # completes, but at a tiny fraction of the cell's goodput
+                r["mbps"] = 40.0
+    return rows
+
+
+for kind in ("dnf-empty", "dnf-partial", "collapse"):
+    pr = g.statistic_rank(stalled(kind), "BASE", "CAND", n_perm=4000, cells=gp.CELLS4)
+    check(f"a stalled CAND build ({kind}: all 6 CAND rows at c1s) FAILS the gate (p <= 0.01): such a row takes the worst rank on every clause of its cell", pr["p"] <= 0.01, pr["p"])
+one = g.statistic_rank(stalled("dnf-empty", n_bad=1), "BASE", "CAND", n_perm=4000, cells=gp.CELLS4)
+check("one DNF CAND row of six is not by itself a failure (it is the worst rank on every c1s clause, which a single row cannot make significant)", one["p"] > 0.05, one["p"])
+base_dnf = stalled("dnf-empty", n_bad=0)
+for r in base_dnf:
+    if r["cell"] == "c1s-400" and r["arm"] == "BASE" and r["seed"] == "42":
+        r["dnf"] = True
+        r["mbps"] = None
+        break
+check("a DNF BASE row is ranked worst too (rank is a property of the row, not its label): the null stays exchangeable and the gate does not fail",
+      g.statistic_rank(base_dnf, "BASE", "CAND", n_perm=2000, cells=gp.CELLS4)["p"] > 0.05)
+nm = gp.draw_dataset(random.Random(22), pools)
+hit = [r for r in nm if r["cell"] == "c2-100" and r["arm"] == "CAND"][0]
+hit["cli_lag_E"] = None
+res_nm = g.statistic_rank(nm, "BASE", "CAND", n_perm=500, cells=gp.CELLS4)
+check("an absent instrument line (a lag_E that could not be read) is neutral, and the neutral fills are COUNTED per clause: c2 lag_E_cli 1, every other clause 0",
+      res_nm["neutral"][("c2-100", "lag_E_cli")] == 1 and sum(res_nm["neutral"].values()) == 1 and not any(res_nm["bad"].values()), (res_nm["neutral"], res_nm["bad"]))
+dn = stalled("dnf-empty", n_bad=2)
+res_dn = g.statistic_rank(dn, "BASE", "CAND", n_perm=500, cells=gp.CELLS4)
+check("DNF rows are counted separately from neutral fills (bad rows per cell: 2 at c1s) and are not neutral", res_dn["bad"]["c1s-400"] == 2 and sum(res_dn["neutral"].values()) == 0, (res_dn["bad"], res_dn["neutral"]))
+lines = []
+g.report(rows41b, out=lines.append, method="rank-minp")
+check("the rank-minp report prints the neutral fills and the DNF / collapse rows", any("neutral fills" in ln for ln in lines) and any("worst-ranked rows (DNF or collapse" in ln for ln in lines), [ln for ln in lines if "neutral" in ln][:2])
+
+# ── exclude (lag_E reported-only) and the design check ────────────────────
+rx = g.statistic_rank(gp.draw_dataset(random.Random(31), pools), "BASE", "CAND", n_perm=500, cells=gp.CELLS4, exclude=gp.NOLAG)
+check("exclude=('lag_E_cli','lag_E_srv') removes the two lag clauses of every cell: 18 clauses left (c1s 4, c1d 5, c2 4, c8 5), none a lag_E",
+      len(rx["p_true"]) == 18 and not any(k[1].startswith("lag_E") for k in rx["p_true"]), len(rx["p_true"]))
+few = [r for r in gp.draw_dataset(random.Random(32), pools) if not (r["cell"] == "c2-100" and r["arm"] == "CAND" and r["seed"] == "42")]
+ri = g.statistic_rank(few, "BASE", "CAND", n_perm=500, cells=gp.CELLS4, design={"c2-100": (6, 6), "c1s-400": (12, 6)})
+check("a design check: a cell with fewer live CAND rows than the design is reported INCOMPLETE and can never PASS", ri["incomplete"] == [("c2-100", "CAND", 6, 3)], ri["incomplete"])
+li = []
+rr = g.report(few, out=li.append, cells=gp.CELLS4, test_arm="CAND", with_wire=False, method="rank-minp", design={"c2-100": (6, 6)})
+check("... the report says so and the gate reads INCOMPLETE (not PASS) even though p > 0.05", any("INCOMPLETE DESIGN" in ln for ln in li) and rr["gate"] == "INCOMPLETE" or rr["p"] <= 0.05, (rr["gate"], rr["p"]))
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
