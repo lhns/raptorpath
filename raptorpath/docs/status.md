@@ -9485,6 +9485,80 @@ from it is a new registration.
 against `4926822` outside `raptorpath/docs` and `raptorpath/tools` is empty,
 so the engine is main's.
 
+### 36. Result
+
+Scored 2026-11-10 against the pre-registration and amendments 1–7,
+literally (`docs/l1-raw/disp36/score.txt`, the scorer's output). Diagnostic:
+nothing ships. **`NOT-YET`.** At k = 4, D1 is `CIRCULAR` and D2 `NOISY` on
+c1s, c2 and both c8 legs. No k in {2, 8, 16} passes either clause.
+
+*Session.* Launch 00:28:52Z; precondition met (`procs_running`
+[1,1,1,1,1], no cargo/rustc); both locks; scorer gate ok; build 314 s
+(binary `79572edd…edfff5`, engine = main `4926822`, tree `5d4b12a`); smoke
+`SMOKE-PASS`; battery 00:34:58–00:59:29Z. 58/58 rows LIVE, all rc 0, io
+`full avg10` ≤ 0.61. Abort table: none fired.
+- The c1s CAP768 s42 row failed its first parse: `CAP768` was missing from
+  the parser's arm list, a harness defect fixed in `d3c3045`. It was
+  re-parsed from its kept pcaps and logs. The envelope stamped
+  `FAILED-ALL` at 57 rows; `ANNOTATIONS.txt` records this.
+- The /dev/shm binary that vanished in the check rows was logind's
+  `RemoveIPC`: user-owned tmpfs files are purged at the user's last logout.
+  The run tree and binary are now root-owned, and the battery has an
+  `ABORT-BIN` check before each row.
+
+*Readings (Q = estimate ÷ link, means over the 2 rows per cap; full tables in
+`score.txt`).*
+
+| cell / leg | scored max, k = 4 | window median, k = 4 | byte-floored max (am. 7) | in-run share |
+|---|---|---|---|---|
+| c1s | 0.11 (16) … 1.71 (256), 15.6–128 (512–1 024) | 0.06 (16), 0.48 (128), 0.95 (256), 1.00 (≥ 512) | 0.08 (16), 1.01 (64), 2.1–125 (≥ 512) | 0.10 (16) → 0.78 (2 048) |
+| c2 | 0.23 (16), 1.01–1.09 (≥ 32) | 0.13 (16), 0.47 (64), 1.00 (≥ 128) | 0.18 (16), 0.38 (32), 1.00–1.02 (≥ 64) | 0.25 → 0.74 |
+| c8 fast | 0.22 (16), 1.01–1.06 (32–128), 1.4–8.8 (≥ 256) | 0.13 (16), 0.99–1.00 (≥ 128) | 0.18 (16), 1.00–1.04 (≥ 64) | 0.24 → 0.77 |
+| c8 slow | 0.01–0.30 (≤ 128), 1.02–1.15 (≥ 256) | ≤ 0.06 (≤ 128), 0.33 (256), 1.00 (1 024) | ≤ 0.15 (≤ 128), 1.00 (≥ 256) | 0.09 → 0.78 |
+| c1d | 1.2 (128), 6.8–20.8 (512–2 048) | 0.22 (128), 0.85–1.00 (≥ 512) | 1.0–2.4 | 0.19–0.68 |
+
+- **D4 (capture cost):** none. CAP − NOCAP goodput at c1s: +1.5 % (256),
+  −0.2 % (1 024), +4.9 % (2 048).
+- **D5:**
+  - c2 at L̂ has a STABLE fixed point at 172 (oracle 160), 0.87 of Gmax.
+  - c1s and c8 at L̂ run to CEILING, because the max over-reads.
+  - The oracle points are reproduced: c1s 614 (0.945 Gmax), c8 324
+    (0.89 Gmax).
+- **D6:** the dwell `rtt − wrtt` at c1s grows from 1 ms (≤ 256) to 1.8 /
+  2.8 / 4.0 / 13.5 ms (512 / 768 / 1 024 / 2 048), with quinn's backlog B
+  at 80–96 from 512 to 1 024. At the c1s point the time term carries
+  ≈ 2 ms of the law's own dwell. The R̂ column is not usable: the field
+  mixes units, and qcwnd medians reach 10⁴–10⁵ on some caps.
+- **D7/D8:** c8 slow-leg share is 1.4–2.1 % at 16–128 with fresh prices
+  (own rtt/wrtt 1.0–1.1, the placement law), and 4–8 % at 256–512 where
+  one row in two is a lock-out (own rtt/wrtt 6–8). c1d 512 has one leg at
+  0.7 % with rtt/wrtt 28.8, a lock-out in both rows.
+
+*Predictions.* c2 and c8 `FLAT-AT-LINK`: MISSED; they read the link only
+from cap 32–64 (max) or 128 (median) up. c1s `QUIET` with an `OVER-READ`
+risk: MISSED (`NOISY`), and the over-read is far larger than predicted.
+c1d reads ≈ L per leg: MISSED (the max over-reads ×7–21). D4 < 5 %: MET.
+
+*What it means (outside the decision rule, no verdict).*
+1. **The premise holds only above a cap.** Netem's busy runs exist only
+   when the store holds enough to queue at the link. Below that, every
+   estimator falls toward the delivered rate. This is §23's circularity,
+   one layer down, and the floor trap the amendment-1 caps were added to
+   test. The crossover is ≈ 64 (c2, c8 fast, max), ≈ 128–256 (median), and
+   ≈ 256 on c8's slow leg.
+2. **Above the crossover, the median reads the link.** The window median is
+   1.00 ± 0.01 at every leg once its in-run share passes ≈ 0.6. The max does
+   at the 100 Mbit/s legs (1.00–1.04 byte-floored). At 1 Gbit/s it
+   over-reads by up to ×125, because receive stamps of skbs drained in one
+   batch sit microseconds apart.
+3. **So dispersion is a bounded-region source.** It reads L between a floor
+   crossover and the knee, and the law's oracle fixed points (c2 160, c8
+   324, c1s 614) lie inside that region. A law fed by it would still need a
+   way out of the floor, which is the §27 exploration question. It also
+   inherits ≈ 2 ms of its own dwell in S at c1s (D6).
+4. Re-scoring with the median, or with a byte floor plus the median, would
+   be a new registration on the kept tables.
+
 ## 37. Model review — joint fixed point, internal audit, literature — no VM, record
 
 The user asked for the whole model and pipeline to be rated, with the
