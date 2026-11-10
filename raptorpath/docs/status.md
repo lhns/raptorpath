@@ -11059,6 +11059,25 @@ Fixed now, before any score:
 
 The registered label is still computed and reported literally.
 
+### 41b. User ruling — promote `RWM_PLACE_WIRE` (2026-11-10, ADR-0073)
+
+The wire-clocked placement base becomes the shipped placement price.
+- **In the same change**, deleted: the old frozen-srtt base path, the
+  `RWM_PLACE_WIRE` gate (with its `RWM_FORWARD` and `[GATES]` entries), and
+  the test-only `RWM_TEST_PLACE_HOLD` hook. Its loopback test is rewritten
+  on `#[cfg(test)]` seams, or dropped if that is not possible.
+- **Kept:** the `[ETA]` stamp stays on the shipped E as before. The
+  `w_mv` / `ref_fl` / `w_cold` gauges stay; they become the price's bind
+  gauges.
+- **Paper §5.7:** the wire base is the shipped law, and §10 gets the old
+  base's row (re-ask clause: "if quinn's SRTT is unavailable on a
+  substrate").
+- **Next:** this new engine tree goes through suites and the guard in the
+  merge-candidate session, together with simplification batch 1. Then
+  `XPATH_REPAIR` (group A) is deleted on the promoted `place.rs`.
+- **Evidence:** §38, §41 and §41b. Not tested off Bulk or at four paths;
+  that is stated in §5.7.
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
