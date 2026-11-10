@@ -10804,6 +10804,25 @@ c1s client CPU/GB is WITHIN (≤ +1 %), and the ladder reads `CURED`, since
 (≈ 25 min), inside the 4 h launch deadline.
 
 
+### 41. Host gate — result (before VM contact)
+
+**PASS.** The change is `9354111`, merged on `diag36`.
+- **Allocations:** the armed path now makes 0 extra heap blocks per
+  `place_costs` call. Off and armed make 1 each (the result `Vec`, as on
+  main), against 2 extra before. `armed_place_costs_allocates_exactly_what_off_does`
+  was red on the old code ("left: 2, right: 0").
+- **Cost:** the armed − off overhead is 43 / 45 / 40 ns, against 206 / 209 /
+  190 ns before. Method: a release host bench, median of 2·10⁵ calls in
+  batches of 100 (the Windows `Instant` tick is 100 ns), three runs.
+- **Result:** below the 100 ns gate and the 50 ns prediction. What remains is
+  the second load term, the gauge updates and the running-min tracking.
+- **Unchanged:** the witnesses are now running minima in the single pass,
+  with first-minimum tie-break by id, identical to the old sorted `min_by`
+  for finite costs. The law, the mirror and the printed fields are
+  unchanged. Release `scheduler::`/`gates::`/`net::eta` tests give 121/0.
+- **Next:** the full suites and the §41 battery (with the BASE arm) on the
+  VM.
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
