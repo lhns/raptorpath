@@ -264,6 +264,15 @@ What this voids or restates (each traced to its source):
 | D0 attribution audit (π0 heal share) | engine-side hole accounting (`holeaudit_*`) | not affected: never reads tc |
 | sender-truth estimator refuted (27e36e3) | fed ε̂ against the wire | not reversed: it feeds ≈ 0.94 in window mode (V3), wrong at any truth |
 
+### 3.9 Harness rule: report the lock-out classifier (2026-11-10)
+
+Every multi-leg static-cap battery reports the §38 lock-out classifier per
+row: LOCKED = a leg with egress share < 10 % and median post-warm-up
+(t ≥ 1 s) `rtt` ≥ 3 × median `wrtt` (`tools/l1/place38_onset.py`). A LOCKED
+row is flagged in the table, not averaged in silently. Reason: 27 of 110
+static-arm rows were locked (c1d 10 of 59, c8 17 of 51; §38 amendment 2),
+and an unflagged lock-out reads as a cap effect.
+
 ## 4. Block default re-test — pre-registration
 
 Discharges ADR-0069's re-test clause. Committed before VM contact; no number
