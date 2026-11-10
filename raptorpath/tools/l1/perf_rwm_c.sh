@@ -334,6 +334,20 @@ if [[ "${RWM_LATPROBE:-0}" != "0" ]]; then
         disown "$PP" 2>/dev/null || true
     done
 fi
+# Status section 46: the path-event injector (harness only). RWM_EVENT=<leg>:<delta_ms> steps that leg's one-way delay up at
+# transfer start + RWM_EVENT_ONSET_S (default 5) and restores it RWM_EVENT_HOLD_S (default 2) later; RWM_EVENT_QDISC=1 also captures
+# `tc -s qdisc show` around the event. Unset (every other plan): nothing runs and nothing is written.
+EVT_PID=""
+if [[ -n "${RWM_EVENT:-}" ]]; then
+    rm -f /tmp/rwm-evt.txt /tmp/rwm-evtq.txt
+    _evleg="${RWM_EVENT%%:*}"; _evdelta="${RWM_EVENT#*:}"
+    _evscen="$SCENA"; [[ "$_evleg" == "1" ]] && _evscen="$SCENB"
+    python3 ./event_inject.py --log /tmp/rwm-c.log --out /tmp/rwm-evt.txt --ns "$NS_CLI" --dev "cli${_evleg}" \
+        --scenario "$_evscen" --seed "$(leg_seed "${SEED:-42}" "$_evleg")" --delta-ms "$_evdelta" \
+        --onset-s "${RWM_EVENT_ONSET_S:-5}" --hold-s "${RWM_EVENT_HOLD_S:-2}" \
+        ${RWM_EVENT_QDISC:+--qdisc-out /tmp/rwm-evtq.txt} > /tmp/rwm-evt.err 2>&1 &
+    EVT_PID=$!
+fi
 timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
     $WR_FLAG $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
@@ -347,6 +361,13 @@ timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $T
 # command in between overwrites it.
 CLI_PIPE=("${PIPESTATUS[@]}")
 CLI_RC="${CLI_PIPE[0]}"
+if [[ -n "$EVT_PID" ]]; then
+    # The injector ends itself a few seconds after the restore; a client that died early leaves it waiting, so stop it by PID.
+    _w=0
+    while kill -0 "$EVT_PID" 2>/dev/null && [[ "$_w" -lt 30 ]]; do sleep 0.1; _w=$((_w + 1)); done
+    kill -TERM "$EVT_PID" 2>/dev/null || true
+    wait "$EVT_PID" 2>/dev/null || true
+fi
 CLI_ST=0
 for _s in "${CLI_PIPE[@]}"; do [ "$_s" -ne 0 ] && CLI_ST="$_s"; done
 [ "$CLI_ST" -ne 0 ] && echo "{\"dnf\":true,\"mode\":\"$MODE\"}"

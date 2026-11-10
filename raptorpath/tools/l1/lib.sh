@@ -232,6 +232,31 @@ scenario_params() {
 
 # Extra `tc qdisc ... netem` options of a scenario (appended after rate/loss/seed); empty for most.
 #   c2slot: release in bursts of <= 16 packets at 1-3 ms intervals (aggregation, as a Wi-Fi/DOCSIS/LTE link).
+# The one netem argument builder (status section 46). `shape` (topo_dual.sh) issues `tc qdisc add ... netem $(netem_args ...)` and
+# `reshape` issues `tc qdisc change ... netem $(netem_args ... <delay_ms>)`: the same words, so a path event changes the delay and
+# nothing else. Prints the argument words on one line; callers split it unquoted (no word contains whitespace or a glob character).
+#   netem_args <scenario> [seed] [delay_ms]    delay_ms overrides the scenario's one-way delay
+netem_args() {
+    local scenario="$1" seed="${2:-}" delay_ms="${3:-}"
+    local rate one_way jitter ge_p ge_q
+    read -r rate one_way jitter ge_p ge_q <<< "$(scenario_params "$scenario")"
+    [[ -n "$delay_ms" ]] && one_way="$delay_ms"
+    local jit="" loss="" sd="" extra
+    [[ "$jitter" != "0" ]] && jit="${jitter}ms"
+    [[ "$ge_p" != "0" ]] && loss="loss gemodel ${ge_p}% ${ge_q}%"
+    [[ -n "$seed" ]] && sd="seed $seed"
+    extra="$(scenario_netem_extra "$scenario")"
+    # shellcheck disable=SC2086
+    echo delay "${one_way}ms" $jit rate "$rate" $loss $sd $extra
+}
+
+# The scenario's own one-way delay in ms (what `reshape` restores).
+scenario_one_way_ms() { # scenario
+    local rate one_way jitter ge_p ge_q
+    read -r rate one_way jitter ge_p ge_q <<< "$(scenario_params "$1")"
+    echo "$one_way"
+}
+
 scenario_netem_extra() { # scenario
     case "$1" in
         c2slot) echo "slot 1ms 3ms packets 16" ;;
