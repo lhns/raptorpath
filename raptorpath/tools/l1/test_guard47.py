@@ -162,7 +162,7 @@ res_dn = g.statistic_rank(dn, "BASE", "CAND", n_perm=500, cells=gp.CELLS4)
 check("DNF rows are counted separately from neutral fills (bad rows per cell: 2 at c1s) and are not neutral", res_dn["bad"]["c1s-400"] == 2 and sum(res_dn["neutral"].values()) == 0, (res_dn["bad"], res_dn["neutral"]))
 lines = []
 g.report(rows41b, out=lines.append, method="rank-minp")
-check("the rank-minp report prints the neutral fills and the DNF / collapse rows", any("neutral fills" in ln for ln in lines) and any("worst-ranked rows (DNF or collapse" in ln for ln in lines), [ln for ln in lines if "neutral" in ln][:2])
+check("the rank-minp report prints the neutral fills and the DNF / collapse rows", any("neutral fills" in ln for ln in lines) and any("worst-ranked rows (DNF = harness 43's COLLAPSE" in ln for ln in lines), [ln for ln in lines if "neutral" in ln][:2])
 
 # ── exclude (lag_E reported-only) and the design check ────────────────────
 rx = g.statistic_rank(gp.draw_dataset(random.Random(31), pools), "BASE", "CAND", n_perm=500, cells=gp.CELLS4, exclude=gp.NOLAG)
@@ -173,7 +173,54 @@ ri = g.statistic_rank(few, "BASE", "CAND", n_perm=500, cells=gp.CELLS4, design={
 check("a design check: a cell with fewer live CAND rows than the design is reported INCOMPLETE and can never PASS", ri["incomplete"] == [("c2-100", "CAND", 6, 3)], ri["incomplete"])
 li = []
 rr = g.report(few, out=li.append, cells=gp.CELLS4, test_arm="CAND", with_wire=False, method="rank-minp", design={"c2-100": (6, 6)})
-check("... the report says so and the gate reads INCOMPLETE (not PASS) even though p > 0.05", any("INCOMPLETE DESIGN" in ln for ln in li) and rr["gate"] == "INCOMPLETE" or rr["p"] <= 0.05, (rr["gate"], rr["p"]))
+check("... the report says so and the gate reads NO VERDICT (not PASS) whatever p reads", any("INCOMPLETE DESIGN" in ln for ln in li) and rr["gate"] == "NO VERDICT" and any("NO VERDICT, re-run" in ln for ln in li), (rr["gate"], rr["p"]))
+
+# ── the mandatory design of the merge-candidate guard (red-first) ─────────
+D12 = {c: (12, 12) for c, _ in gp.CELLS4}
+
+
+def gdata(seed=41):
+    return gp.draw_dataset(random.Random(seed), pools, design=D12)
+
+
+def guard_out(rows, design):
+    lines = []
+    try:
+        res = g.report_guard(rows, lines.append, design)
+    except Exception as e:           # noqa: BLE001
+        return None, lines, e
+    return res, lines, None
+
+
+for bad_design in (None, {}, {"c1s-400": (12, 12)}):
+    _, _, err = guard_out(gdata(), bad_design)
+    check(f"the guard refuses a missing / empty / partial design ({bad_design!r}): an error, never a silent PASS", isinstance(err, ValueError), err)
+res, lines, err = guard_out(gdata(), D12)
+check("the guard with the full 12/12 design and a complete A/A dataset gives a verdict (PASS or FAIL by p) and prints no NO VERDICT", err is None and res["gate"] in ("PASS", "FAIL") and not any("NO VERDICT" in ln for ln in lines), (err, res and res["gate"]))
+short = [r for r in gdata() if not (r["cell"] == "c8-100" and r["arm"] == "CAND" and r["rep"] == "CAND0" and r["seed"] == "42")]
+res, lines, err = guard_out(short, D12)
+check("a cell short of one CAND row reads NO VERDICT, re-run (never PASS), whatever p reads", err is None and res["gate"] == "NO VERDICT" and any("NO VERDICT, re-run" in ln for ln in lines) and not any("] PASS" in ln for ln in lines), (err, res and res["gate"]))
+voided = gdata()
+for r in voided:
+    if r["cell"] == "c1s-400" and r["arm"] == "BASE":
+        r["status"] = "WITNESS-FAIL"
+        break
+res, lines, err = guard_out(voided, D12)
+check("a voided (non-LIVE) row in a cell leaves the design incomplete: NO VERDICT, re-run", err is None and res["gate"] == "NO VERDICT")
+gone = [r for r in gdata() if not (r["cell"] == "c2-100" and r["arm"] == "CAND")]
+res, lines, err = guard_out(gone, D12)
+check("a cell whose CAND rows never went live (a stalled build: VOID-RC / NO_DATA rows are not LIVE) reads NO VERDICT, never PASS", err is None and res["gate"] == "NO VERDICT")
+check("the INCOMPLETE design names the cell, arm and counts", any("INCOMPLETE DESIGN" in ln and "c2-100 CAND 0/12" in ln for ln in lines), [ln for ln in lines if "INCOMPLETE" in ln])
+extra = gdata() + [dict(r) for r in gdata()[:2]]
+res, lines, err = guard_out(extra, D12)
+check("more live rows than the design (a re-run replacing a void one) is fine", err is None and res["gate"] in ("PASS", "FAIL"))
+lines = []
+import place38_parse as pp2  # noqa: E402
+with __import__("tempfile").TemporaryDirectory() as td:
+    pth = os.path.join(td, "l.log")
+    open(pth, "w").write("".join("P38ROW " + __import__("json").dumps(r) + chr(10) for r in short))
+    pp2.score41c([pth], out=lines.append)
+check("score41c uses the mandatory-design guard: an incomplete ledger ends in 'VERDICT NO VERDICT, re-run'", lines[-1].startswith("VERDICT NO VERDICT, re-run"), lines[-1])
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

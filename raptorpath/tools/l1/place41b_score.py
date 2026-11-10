@@ -34,7 +34,7 @@ from l1ab import spread_rel  # noqa: E402
 N_PERM = 10000
 RNG_SEED = 4141
 P_PASS = 0.05
-COLLAPSE_FRAC = 0.5
+SLOW_FRAC = 0.5                 # a completed row below this fraction of the pooled cell median goodput is listed (reported only)
 CELLS = [("c1s-400", "def"), ("c1d-400", "def")]
 # Status 47: the guard on the merge candidate runs at four cells (BASE n = 12, CAND n = 6 each), the same statistic over all their clauses.
 CELLS_GUARD = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-100", "def")]
@@ -87,12 +87,14 @@ class Pool:
         self.rows = self.ref_rows + self.test_rows
         self.true = list(range(len(self.ref_rows), len(self.rows)))
         self.defs = [d for d in clause_defs(cell) if d[0] not in exclude]
-        # DNF and collapse (status 47): such a row is the WORST rank on every clause of its cell in the rank statistic. A collapse is a
-        # completed row whose goodput is below COLLAPSE_FRAC x the median goodput of the cell's pooled rows (the tail line's threshold).
+        # COLLAPSE (status 47) is harness 43's definition (place43_parse.py: "COLLAPSE is the DNF row only", amendment 2): a DNF row is the WORST
+        # rank on every clause of its cell in the rank statistic. A completed row far below the cell's goodput is NOT forced: it ranks by
+        # its own values and is listed as a slow row (goodput < SLOW_FRAC x the median of the cell's POOLED rows, BASE and CAND together,
+        # DNF excluded: label-free, never BASE-only).
         mb = med([r["mbps"] for r in self.rows if not r.get("dnf") and r.get("mbps") is not None])
-        self.bad_why = [("DNF" if r.get("dnf") else "collapse" if (mb and r.get("mbps") is not None and r["mbps"] < COLLAPSE_FRAC * mb) else None)
-                        for r in self.rows]
+        self.bad_why = ["DNF" if r.get("dnf") else None for r in self.rows]
         self.bad = [w is not None for w in self.bad_why]
+        self.slow = [bool(mb and not r.get("dnf") and r.get("mbps") is not None and r["mbps"] < SLOW_FRAC * mb) for r in self.rows]
         self.vals = {n: [value(r, cell, k) for r in self.rows] for n, k, _ in self.defs}
         self.seeds = sorted({r["seed"] for r in self.rows})
         self.groups = {s: [i for i, r in enumerate(self.rows) if r["seed"] == s] for s in self.seeds}
@@ -231,6 +233,7 @@ def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=
             "neutral": {(p.cell, n): p.neutral[n] for p in pools for n in p.neutral},
             "bad": {p.cell: sum(p.bad) for p in pools},
             "bad_rows": [(p.cell, r["arm"], r["seed"], r["rep"], p.bad_why[i]) for p in pools for i, r in enumerate(p.rows) if p.bad[i]],
+            "slow_rows": [(p.cell, r["arm"], r["seed"], r["rep"], r["mbps"]) for p in pools for i, r in enumerate(p.rows) if p.slow[i]],
             "incomplete": incomplete}
 
 
@@ -308,16 +311,22 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
             out(f"    {k[0]} {k[1]:<14} x={(xt[k] if xt[k] is not None else float('nan')) * 100:+7.2f} %  S={res['S_true'][k]:6.1f} / {res['S_null_mean'][k]:6.2f}  p={res['p_true'][k]:.4f}")
         out(f"  neutral fills (an absent instrument value on a completed row gets the stratum's mean rank): "
             + (", ".join(f"{k[0]} {k[1]} {v}" for k, v in res["neutral"].items() if v) or "none") + f"  (total {sum(res['neutral'].values())})")
-        out(f"  worst-ranked rows (DNF or collapse < {COLLAPSE_FRAC} x the cell's median goodput; the worst rank on every clause of the cell): "
+        out("  worst-ranked rows (DNF = harness 43's COLLAPSE; the worst rank on every clause of the cell): "
             + (", ".join(f"{c} {a} s{sd} r{rp} {w}" for c, a, sd, rp, w in res["bad_rows"]) or "none"))
+        out(f"  slow rows (reported only, ranked by their own values): goodput < {SLOW_FRAC} x the POOLED (BASE + {ta}) median of the cell: "
+            + (", ".join(f"{c} {a} s{sd} r{rp} {mb:.1f}" for c, a, sd, rp, mb in res["slow_rows"]) or "none"))
         if res["incomplete"]:
             out("  INCOMPLETE DESIGN (fewer live rows than the design): " + ", ".join(f"{c} {a} {got}/{want}" for c, a, want, got in res["incomplete"]))
         out(f"  min-p (true) = {res['T_true']:.5f} at {res['argmin'][0]} {res['argmin'][1]}")
         out(f"  p = {res['p']:.4f}  (share of the {res['n_perm']} relabellings plus the true labelling whose min-p <= the true min-p)")
         gate = "PASS" if res["p"] > P_PASS else "FAIL"
-        if gate == "PASS" and res["incomplete"]:
-            gate = "INCOMPLETE"             # a design with missing live rows can never PASS silently (a stalled build leaves no live rows)
-        out(f"{gate_name}[rank-minp] {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
+        if res["incomplete"]:
+            # A design with missing live rows (a voided row, a cell that did not run, a stalled build whose rows never went LIVE) has NO verdict:
+            # never PASS, whatever p reads; re-run.
+            gate = "NO VERDICT"
+            out(f"{gate_name}[rank-minp] NO VERDICT, re-run (the design is incomplete; p={res['p']:.4f} is not a verdict)")
+        else:
+            out(f"{gate_name}[rank-minp] {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
     else:
         res = statistic(rows, "BASE", ta, cells=cells)
         pools = res["pools"]
@@ -364,6 +373,19 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
             out(f"  {i:>3} {r['cell']} {r['arm']:<4} s{r['seed']} r{r['rep']} {r['status']} {f('mbps')} {f('cpu_cli', b)} {f('cpu_srv', b)} {f('cli_lag_E')} {f('srv_lag_E')}")
     return {"gate": gate, "p": res["p"], "T_true": res["T_true"], "wire_p": wres["p"] if wres else None,
             "argmax_share": res.get("argmax_share"), "z_true": res.get("z_true")}
+
+
+# The registered design of the merge-candidate guard (status 47): CAND 12 / BASE 12 at every cell, one interleaved session, 6 + 6 per seed.
+GUARD_DESIGN = {cell: (12, 12) for cell, _ in CELLS_GUARD}
+
+
+def report_guard(rows, out, design):
+    """The merge-candidate guard: rank-minp over the four guard cells, CAND against BASE, WITH A MANDATORY DESIGN. A missing, empty or partial
+    design is an error (never a silent PASS); a design with missing live rows reads `NO VERDICT, re-run`."""
+    if not design or set(design) != {c for c, _ in CELLS_GUARD}:
+        raise ValueError(f"the guard's design= is mandatory and must name every guard cell {[c for c, _ in CELLS_GUARD]}, got {design!r}")
+    return report(rows, out, cells=CELLS_GUARD, test_arm="CAND", with_wire=False, method="rank-minp", design=design,
+                  title="§41b GUARD ON THE MERGE CANDIDATE", subject="the candidate build")
 
 
 def main(argv):

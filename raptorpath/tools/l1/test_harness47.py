@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for the status 47 harness: the promoted `[ETA]` line and gate (no w_mv, no RWM_PLACE_WIRE), the qcwnd-below-BDP witness, the guard on
-the merge candidate (plan 41c: BASE n = 12 against CAND n = 6 at c1s, c1d, c2, c8 default), and the combined merge-candidate session (plan 47).
+the merge candidate (plan 41c: BASE n = 12 against CAND n = 12 at c1s, c1d, c2, c8 default), and the combined merge-candidate session (plan 47).
 Run: python3 test_harness47.py"""
 import json
 import os
@@ -126,19 +126,17 @@ check("the witness never voids a row: a row with every line below the BDP is sti
 
 # ── plan 41c: the guard on the merge candidate ────────────────────────────
 p41c = pp.plan41c()
-check("plan 41c: 72 rows = 4 cells x (BASE 12 + CAND 6); smoke = one row per binary at c1s", len(p41c) == 72 == pp.EXPECT_ROWS41C and pp.plan41c(smoke=True) == [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "CAND", "42", 1)])
-check("plan 41c: c1s, c1d, c2 and c8 default only, in that order within each group", [c for c, *_ in p41c[:3 * 4:3]] == ["c1s-400", "c1d-400", "c2-100", "c8-100"] and {a for *_, a, _, _ in p41c} == {"BASE", "CAND"})
+check("plan 41c: 96 rows = 4 cells x (BASE 12 + CAND 12); smoke = one row per binary at c1s", len(p41c) == 96 == pp.EXPECT_ROWS41C and pp.plan41c(smoke=True) == [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "CAND", "42", 1)])
+check("plan 41c: c1s, c1d, c2 and c8 default only, in that order within each group", [c for c, *_ in p41c[:8:2]] == ["c1s-400", "c1d-400", "c2-100", "c8-100"] and {a for *_, a, _, _ in p41c} == {"BASE", "CAND"})
 for cs in pp.GUARD_CELLS:
     rs = [r for r in p41c if (r[0], r[1]) == cs]
     allsr = sorted((sd, rp) for sd in ("42", "7") for rp in range(1, 7))
-    check(f"plan 41c {cs[0]}: BASE = seeds 42 and 7 x reps 1-6 (12), CAND = seeds 42 and 7 x reps 1-3 (6)",
-          sorted((sd, rp) for c, st, a, sd, rp in rs if a == "BASE") == allsr
-          and sorted((sd, rp) for c, st, a, sd, rp in rs if a == "CAND") == sorted((sd, rp) for sd in ("42", "7") for rp in (1, 2, 3)))
-EXP41C = [["BASE", "CAND", "BASE"], ["CAND", "BASE", "BASE"], ["BASE", "BASE", "CAND"]] * 2
-got = [[r[2] for r in p41c[i * 3:(i + 1) * 3]] for i in range(24)]
-check("plan 41c: the order is pinned: per group and cell BASE,CAND,BASE rotated by group (g mod 3); CAND meets every position, twice each",
-      all(got[j::4] == EXP41C for j in range(4)) and all(sorted(i for grp in got[j::4] for i, a in enumerate(grp) if a == "CAND") == [0, 0, 1, 1, 2, 2] for j in range(4)), got[:6])
-check("plan 41c: groups run in plan 38's block order", [(r[3], r[4]) for r in p41c if r[0] == "c2-100" and r[2] == "CAND"] == [("42", 1), ("7", 1), ("42", 2), ("7", 2), ("42", 3), ("7", 3)])
+    check(f"plan 41c {cs[0]}: BASE = seeds 42 and 7 x reps 1-6 (12) and CAND = the same 12 (6 + 6 per seed): the registered design, one interleaved session",
+          sorted((sd, rp) for c, st, a, sd, rp in rs if a == "BASE") == allsr and sorted((sd, rp) for c, st, a, sd, rp in rs if a == "CAND") == allsr)
+got = [[r[2] for r in p41c[i * 2:(i + 1) * 2]] for i in range(48)]
+check("plan 41c: the order is pinned: per group and cell the pair BASE,CAND (even groups) or CAND,BASE (odd groups); each arm leads half the groups at every cell",
+      all(got[j::4] == [["BASE", "CAND"], ["CAND", "BASE"]] * 6 for j in range(4)), got[:8])
+check("plan 41c: 12 groups, rep-major, seed 42 before 7", [(r[3], r[4]) for r in p41c if r[0] == "c2-100" and r[2] == "CAND"] == [(sd, rp) for rp in range(1, 7) for sd in ("42", "7")])
 
 # ── the guard's scorer on synthetic rows ──────────────────────────────────
 def grow(cell, arm, seed, rep, rng, cli=16.0, mbps=800.0, lag=1000.0, qany=0.1):
@@ -171,20 +169,24 @@ def grun(rows):
 resA, tA = grun(gledger())
 check("guard A/A: CAND drawn from BASE's distribution passes (p > 0.05) at four cells", resA["gate"] == "PASS" and resA["p"] > 0.05 and "GATE-41b PASS" in tA and "the candidate build may reach main" in tA, resA)
 check("guard: all four cells and 26 clauses are in the statistic (c1s 6, c1d 7, c2 6, c8 7)", len(resA["z_true"]) == 26 and {k[0] for k in resA["z_true"]} == {c for c, _ in pp.GUARD_CELLS}, len(resA["z_true"]))
-check("guard: BASE n = 12 + CAND n = 6 are pooled per cell and the relabelling keeps 3 + 3", tA.count("pool 12 BASE + 6 CAND; relabelled CAND rows per seed s42:3 s7:3") == 4, tA[:900])
+check("guard: BASE n = 12 + CAND n = 12 are pooled per cell and the relabelling keeps 6 + 6", tA.count("pool 12 BASE + 12 CAND; relabelled CAND rows per seed s42:6 s7:6") == 4, tA[:900])
 check("guard: the resolution table covers the four cells with their own §21 tolerances (c2 goodput 1.4 %, c8 goodput 4.0 %) and is printed before CAND",
       "c2-100 goodput" in tA and "§21 tol=0.0140" in tA and "c8-100 goodput" in tA and "§21 tol=0.0400" in tA and tA.index("RESOLUTION") < tA.index("CAND against BASE"))
 check("guard: no WIRE arm anywhere in the report", "WIRE" not in tA)
 check("guard: the tail line is printed per arm and cell (BASE and CAND at all four cells)", tA.count("  TAIL ") == 8 and "TAIL c2-100 CAND" in tA and "TAIL c8-100 BASE" in tA)
-resB, tB = grun(gledger(cand_kw={"cli": 16.0 * 1.30}, only="c2-100"))
-check("guard: a +30 % client CPU on CAND at c2 alone is caught (FAIL, p < 0.05, the max at a client-CPU clause)", resB["gate"] == "FAIL" and resB["p"] < 0.05 and "cpu_cli/GB" in tB.split("T(true) =")[1].split("\n")[0], tB.split("T(true) =")[1].split("\n")[0])
+def rk(rows):
+    return g41.statistic_rank(rows, "BASE", "CAND", n_perm=3000, cells=g41.CELLS_GUARD)
+
+
+resB = rk(gledger(cand_kw={"cli": 16.0 * 1.30}, only="c2-100"))
+check("guard (rank-minp, 12/12): a +30 % client CPU on CAND at c2 alone is caught (p <= 0.01, the smallest clause p at a CPU clause)",
+      resB["p"] <= 0.01 and resB["argmin"][0] == "c2-100" and resB["argmin"][1].startswith("cpu_"), (resB["p"], resB["argmin"]))
 resS, _ = grun(gledger(cand_kw={"cli": 16.0 * 1.60}, only="c2-100"))
-check("guard power (observation, pinned): z_c(true) saturates near 3 however large the shift (the pool's sd absorbs it): +60 % client CPU gives T about 3.07 and "
-      "p about 0.036, and +15 % (p about 0.053) does not trip the 0.05 rule on this design", 2.8 < resS["T_true"] < 3.4 and 0.02 < resS["p"] < 0.05, (resS["T_true"], resS["p"]))
-resC, _ = grun(gledger(cand_kw={"mbps": 800.0 * 0.90}, only="c8-100"))
-check("guard: 10 % lower goodput at c8 is caught", resC["gate"] == "FAIL", resC)
+check("the registered 41b statistic (relabel-max) stays blind to a +60 % client CPU at c2 on this design (p well above 0.05): why it was replaced", resS["p"] > 0.05, resS["p"])
+resC = rk(gledger(cand_kw={"mbps": 800.0 * 0.90}, only="c8-100"))
+check("guard (rank-minp): 10 % lower goodput at c8 is caught", resC["p"] <= 0.05, resC["p"])
 resD, _ = grun(gledger(cand_kw={"mbps": 880.0, "lag": 600.0}))
-check("guard: one-sided - a CAND that is better on goodput and lag passes", resD["gate"] == "PASS", resD)
+check("guard: one-sided - a CAND that is better on goodput and lag passes (rank-minp)", rk(gledger(cand_kw={"mbps": 880.0, "lag": 600.0}))["p"] > 0.05)
 # the committed 41b path is unchanged by the generalisation
 rows41b = pp.rows_of([os.path.join(RAW, "place41b", "ld.log")])[0]
 l41b = []
@@ -202,8 +204,8 @@ with tempfile.TemporaryDirectory() as td:
             fh.write("P38ROW " + json.dumps(r) + "\n")
     pp.score41c([pth], out=lines.append)
 tx = "\n".join(lines)
-check("score41c: ROWS 72/72, the guard, the QCWND-BELOW-BDP witness per cell and arm with the BDP values used, the c1s contention list and a VERDICT line",
-      "ROWS 72/72" in tx and "QCWND-BELOW-BDP (reported only)" in tx and "c8-100@def: BDP per leg = [125000, 100000] B" in tx and "c1d-400@def: BDP per leg = [250000, 250000] B" in tx
+check("score41c: ROWS 96/96, the guard, the QCWND-BELOW-BDP witness per cell and arm with the BDP values used, the c1s contention list and a VERDICT line",
+      "ROWS 96/96" in tx and "QCWND-BELOW-BDP (reported only)" in tx and "c8-100@def: BDP per leg = [125000, 100000] B" in tx and "c1d-400@def: BDP per leg = [250000, 250000] B" in tx
       and "c2-100@def: BDP per leg = [125000] B" in tx and "c1s-400@def: BDP per leg = [250000] B" in tx and "any leg: share below" in tx and "CONTENTION c1s-400@def" in tx
       and lines[-1].startswith("VERDICT GATE-41b "), lines[-1])
 sm = []
@@ -219,7 +221,7 @@ with tempfile.TemporaryDirectory() as td:
     ok2 = pp.smoke(pth, plan41c=True) == 1
     open(pth, "w").write("".join("P38ROW " + json.dumps(r) + "\n" for r in rr) + "LD-BATTERY-DONE tag=ld blocks=6\n")
     ok3 = pp.check(pth, plan41c=True) == 0
-check("smoke41c passes on LIVE BASE + CAND rows and fails without the CAND row; check41c wants 72 rows + LD-BATTERY-DONE", ok1 and ok2 and ok3)
+check("smoke41c passes on LIVE BASE + CAND rows and fails without the CAND row; check41c wants 96 rows + LD-BATTERY-DONE", ok1 and ok2 and ok3)
 
 # ── plan 46: the qcwnd witness is reported ────────────────────────────────
 def r46(arm, variant, i, kind="scored", qany=0.2):
@@ -255,8 +257,8 @@ PLANS = ["24", "27", "29", "34", "36", "38", "40", "41", "41b", "41c", "43", "43
 m_b = re.search(r'case "\$PLAN" in ([^)]*)\) ;;', bat)
 check("battery: every plan is accepted (24/27/29/34/36/38/40/41/41b/41c/43/43b/46)", m_b is not None and sorted(m_b.group(1).split("|")) == sorted(PLANS), m_b and m_b.group(1))
 check("run_all: every plan is selectable (the plan case lists 24..46 and 47)", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in PLANS + ["47"]))
-check("battery: plan 41c = 72-row table, smoke 2, the candidate must lack RWM_PLACE_WIRE (PCAND), CAND arm allowed for 41c and 46, parsed by place38_parse",
-      '-eq 72' in bat and "ABORT-PLAN41C" in bat and 'PCAND=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ]; } && PCAND=1' in bat and 'elif [ "$PCAND" = 1 ]; then' in bat
+check("battery: plan 41c = 96-row table, smoke 2, the candidate must lack RWM_PLACE_WIRE (PCAND), CAND arm allowed for 41c and 46, parsed by place38_parse",
+      '-eq 96' in bat and "ABORT-PLAN41C" in bat and 'PCAND=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ]; } && PCAND=1' in bat and 'elif [ "$PCAND" = 1 ]; then' in bat
       and 'CAND) [ "$PCAND" = 1 ]' in bat and "plan41c 0" in bat and "place38_parse.py plan41c" in bat)
 i_suites, i_guard, i_p46 = runall.index('run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"'), runall.index("stage guard 41c"), runall.index("stage p46 46")
 check("run_all plan 47: suites on CAND's tree first, then the guard (41c), then plan 46; each in its own subdir (suites/, guard/, p46/)",

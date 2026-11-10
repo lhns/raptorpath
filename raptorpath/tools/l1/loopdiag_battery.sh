@@ -547,15 +547,15 @@ plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
     [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN41C smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
   else
     mapfile -t tbl < <(python3 ./place38_parse.py plan41c)
-    [ "${#tbl[@]}" -eq 72 ] || { echo "ABORT-PLAN41C table has ${#tbl[@]} rows (72)" >> "$OUT"; exit 3; }
+    [ "${#tbl[@]}" -eq 96 ] || { echo "ABORT-PLAN41C table has ${#tbl[@]} rows (96)" >> "$OUT"; exit 3; }
   fi
   for line in "${tbl[@]}"; do
     read -r cell store arm seed rep <<< "$line"
     run_one "$cell" "$arm" "$seed" "$rep" "$store"
   done
   if [ "$1" != "1" ]; then
-    echo "BLOCK-COMPLETE 6 groups $(date -u +%FT%TZ)" >> "$OUT"
-    BLOCK=6
+    echo "BLOCK-COMPLETE 12 groups $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=12
   fi
 }
 

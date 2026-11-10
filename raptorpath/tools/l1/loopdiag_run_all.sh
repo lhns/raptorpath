@@ -37,7 +37,8 @@
 # and no scored row runs. The ledger score reads smoke.log and ld.log.
 #
 # LD_PLAN=41c (status 47): the status-41b guard on the merge candidate: BASE (main 4926822, n = 12) against CAND ($LD_ROOT/src at
-# LD_CAND_SHA, n = 6) at c1s, c1d, c2 and c8 default, no WIRE arm (72 rows + a 2-row smoke); scored by place41b_score.py.
+# LD_CAND_SHA, n = 12) at c1s, c1d, c2 and c8 default, no WIRE arm (96 rows + a 2-row smoke); scored by place41b_score.py (rank-minp,
+# the design mandatory: an incomplete cell reads "NO VERDICT, re-run").
 # LD_PLAN=47 (status 47, "merge candidate"): ONE session on the candidate tree: the suites on CAND's tree first (release, doc, wasm,
 # debug, every tools/l1 python test; the FLAKE rule; a REAL failure is ABORT-TESTS and nothing else runs), then the guard (plan 41c),
 # then the path-event test (plan 46: its check rows are the smoke, ABORT-INJECT stops it). Each has its own ledger subdir under the

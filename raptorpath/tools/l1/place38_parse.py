@@ -60,9 +60,9 @@ SMOKE41B = [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "MAIN", "42"
 ARMS41B = ["BASE", "MAIN", "BASE", "WIRE"]                         # the pattern, rotated by group (g mod 4)
 # ── status 47: the guard on the merge candidate (plan 41c): BASE = main 4926822, CAND = the candidate, c1s / c1d / c2 / c8 default ──
 GUARD_CELLS = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-100", "def")]
-EXPECT_ROWS41C = len(GUARD_CELLS) * (12 + 6)                       # 72: BASE n = 12 and CAND n = 6 per cell
+EXPECT_ROWS41C = len(GUARD_CELLS) * (12 + 12)                      # 96: BASE n = 12 and CAND n = 12 per cell (the registered design)
 SMOKE41C = [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "CAND", "42", 1)]   # one row per binary
-ARMS41C = ["BASE", "CAND", "BASE"]                                 # the pattern, rotated by group (g mod 3)
+BLOCKS41C = [(sd, rp) for rp in range(1, 7) for sd in ("42", "7")]   # 12 groups, rep-major, seed 42 before 7: 6 + 6 per seed per arm
 S3_REL = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065},
           "c2-100": {"gp": 0.014, "cpu": 0.063}, "c8-100": {"gp": 0.040, "cpu": 0.116}}
 DNF_THRESHOLD = 0.20
@@ -119,21 +119,16 @@ def plan41(smoke=False):
 
 
 def plan41c(smoke=False):
-    """[(cell, store, arm, seed, rep)] in run order (status 47). Six groups (seed, rep) of plan 38's block order; per group and cell three
-    rows in the pattern BASE, CAND, BASE rotated by g mod 3, so each arm meets each position (CAND positions 1,0,2,1,0,2). The
-    group's two BASE rows run (seed, rep) and (seed, rep + 3): BASE covers 6 reps x 2 seeds, CAND 3 reps x 2 seeds."""
+    """[(cell, store, arm, seed, rep)] in run order (status 47, the registered design: BASE 12 and CAND 12 at every cell, one interleaved session,
+    6 + 6 per seed per arm). Twelve groups (seed, rep), rep-major, seed 42 before 7; per group and cell the pair BASE, CAND (even groups) or CAND,
+    BASE (odd groups), so each arm leads half the groups; cells in table order c1s, c1d, c2, c8 inside a group."""
     if smoke:
         return list(SMOKE41C)
     out = []
-    for g, (seed, rep) in enumerate(BLOCKS38):
+    for g, (seed, rep) in enumerate(BLOCKS41C):
         for cell, store in GUARD_CELLS:
-            k = g % 3
-            nb = 0
-            for a in ARMS41C[k:] + ARMS41C[:k]:
-                r = rep
-                if a == "BASE":
-                    r, nb = (rep if nb == 0 else rep + 3), nb + 1
-                out.append((cell, store, a, seed, r))
+            for a in (["BASE", "CAND"] if g % 2 == 0 else ["CAND", "BASE"]):
+                out.append((cell, store, a, seed, rep))
     return out
 
 
@@ -741,12 +736,12 @@ def score(paths, out=print, plan41=False):
 
 
 def score41c(paths, out=print):
-    """Status 47: the status-41b guard on the merge candidate (BASE n = 12, CAND n = 6 at c1s, c1d, c2, c8 default), no WIRE arm; with the
-    tail line and the qcwnd-below-BDP witness (reported only)."""
+    """Status 47: the merge-candidate guard (rank-minp; BASE n = 12 and CAND n = 12 at c1s, c1d, c2, c8 default), no WIRE arm, the design MANDATORY
+    (a cell short of its design reads `NO VERDICT, re-run`, never PASS); with the tail line and the qcwnd-below-BDP witness (reported only)."""
     import place41b_score
     rows, tokens = rows_of(paths)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
-    out("MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 4926822 (n = 12 per cell), CAND = the merge-candidate build (n = 6 per cell)")
+    out("MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 4926822 (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
     out(f"ROWS {len(rows)}/{EXPECT_ROWS41C}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
     for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL"):
@@ -756,13 +751,17 @@ def score41c(paths, out=print):
             out(f"  NONLIVE {r['cell']}@{r['store']} {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} rc={r['rc']} "
                 f"{' '.join(r['problems'])} io_full10={r.get('io_full10')}")
     out("")
-    res = place41b_score.report(rows, out, cells=place41b_score.CELLS_GUARD, test_arm="CAND", with_wire=False,
-                                title="§41b GUARD ON THE MERGE CANDIDATE", subject="the candidate build")
+    res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN)
     out("")
     qcwnd_report(rows, ("BASE", "CAND"), GUARD_CELLS, out)
     out("")
     contention(rows, out)
-    out("VERDICT " + ("UNSCOREABLE (abort " + ",".join(aborted) + ")" if aborted else f"GATE-41b {res['gate']}"))
+    if aborted:
+        out("VERDICT UNSCOREABLE (abort " + ",".join(aborted) + ")")
+    elif res["gate"] == "NO VERDICT":
+        out("VERDICT NO VERDICT, re-run (the design is incomplete: a voided or missing cell)")
+    else:
+        out(f"VERDICT GATE-41b {res['gate']}")
     return res
 
 

@@ -271,7 +271,7 @@ def exp_d(argv):
     """The registered design (status 47): CAND 12 / BASE 12 at c1s and c1d, CAND 6 / BASE 6 at c2 and c8, one interleaved session, balanced per seed;
     rows resampled from ONE session per cell. Reports (a), (b), (c) for rank-minp with all 26 clauses and with the two lag_E clauses reported-only."""
     draws, nperm = arg(argv, "--draws", 60), arg(argv, "--nperm", 2000)
-    variants = ("all", "nolag")
+    variants = tuple(arg(argv, "--variants", "all,nolag").split(","))
     print(f"DESIGN {DESIGN} (n_base, n_cand per cell); rows: 41b BASE (c1s, c1d: 6 distinct per seed), 38 MAIN (c2, c8: 3 distinct per seed); resampled with replacement")
     # (a) separated clause, every clause
     tasks = [("sep", v, c, cl, 0.0, d, 10000) for v in variants for c, _ in CELLS4 for cl in clause_list(c) if not (v == "nolag" and cl in NOLAG) for d in range(5)]
