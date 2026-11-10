@@ -28,6 +28,13 @@
 # LD_PLAN=36 (status section 36): the same precondition, LD_HARD and budget as plan 34, but NO suites (no engine
 # change: main's binary, built fresh); the parser and scorer tests (test_loopdiag_parse.py, test_disp36.py) gate
 # instead (ABORT-TESTS). The battery needs tcpdump and keeps the per-skb tables in $RUN/tables (persisted).
+#
+# LD_PLAN=41 (status section 41): plan 38's battery plus the arm BASE, main's own binary. TWO fresh builds, each from its own
+# `git archive` tree with its own fresh target dir: $LD_ROOT/src (the shipped tree, COMMIT at $LD_ROOT/COMMIT) and
+# $LD_ROOT/base/src (main at 4926822, COMMIT at $LD_ROOT/base/COMMIT, target $LD_ROOT/target-base). Order: parser gate,
+# both builds, the suites on the shipped tree (a REAL failure is ABORT-TESTS: no row runs; the tools/l1 python tests are all
+# test_*.py), the smoke, the battery from root-owned tmpfs. The BASE binary is installed as $LD_SHM/bin-base/raptorpath (same
+# file name, so pgrep -x / pkill -x raptorpath see it).
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
@@ -45,8 +52,11 @@ case "$PLAN" in
   36) P_SMOKE=smoke36; P_SCORE=score36; P_CHECK=check36 ;;
   40) P_SMOKE=smoke40; P_SCORE=score40; P_CHECK=check40 ;;
   38) P_SMOKE=smoke38; P_SCORE=score38; P_CHECK=check38 ;;
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40)"; exit 3 ;;
+  41) P_SMOKE=smoke41; P_SCORE=score41; P_CHECK=check41 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41)"; exit 3 ;;
 esac
+# Plans 38 and 41 share everything but the BASE arm (P38=1 is "the place-wire battery").
+P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ]; } && P38=1
 # Measurement runs from tmpfs (shared rules): the run dir and the measured
 # binary live under LD_SHM; the build stays on disk; persist() copies the run
 # dir to $ROOT/run after the last row (and on every exit path).
@@ -56,12 +66,15 @@ RUN="$SHM/run"
 SRC="$ROOT/src/raptorpath"
 TARGET="$ROOT/target"
 BIN="$SHM/bin/raptorpath"
+BASE_SRC="$ROOT/base/src/raptorpath"
+BASE_TARGET="$ROOT/target-base"
+BIN_BASE="$SHM/bin-base/raptorpath"
 BUILDLOG="$ROOT/build.log"
 # Plan 36: systemd-logind RemoveIPC (default yes) deletes a non-system user's /dev/shm objects when the user's last
 # session ends -- a binary copied there vanished between ssh sessions. So the tmpfs tree is ROOT-owned (sticky
 # world-writable dirs, so this script can still write its sentinels) and the binary is installed as root.
-if [ "$PLAN" = "36" ] || [ "$PLAN" = "38" ] || [ "$PLAN" = "40" ]; then
-  sudo -n mkdir -p "$SHM" "$RUN" "$SHM/bin" && sudo -n chmod 1777 "$SHM" "$RUN" "$SHM/bin" || { echo "ABORT-SHM cannot create the root-owned tmpfs tree"; exit 3; }
+if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
+  sudo -n mkdir -p "$SHM" "$RUN" "$SHM/bin" "$SHM/bin-base" && sudo -n chmod 1777 "$SHM" "$RUN" "$SHM/bin" "$SHM/bin-base" || { echo "ABORT-SHM cannot create the root-owned tmpfs tree"; exit 3; }
 else
   mkdir -p "$RUN" "$SHM/bin"
 fi
@@ -83,7 +96,7 @@ install_lock_traps
 # with ABORT-LOCK and nothing run; relaunch.
 until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
 prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' /proc/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
-if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$PLAN" = "38" ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
   : "${LD_HARD:?LD_HARD (epoch) is required for plan $PLAN}"
   PREC=$(prec_samples)
   if [ "${PREC%% *}" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
@@ -96,7 +109,7 @@ take_lock /home/vibe/rp.lock
 era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 
 python3 ./test_loopdiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"
-if [ "$PLAN" = "38" ]; then
+if [ "$P38" = 1 ]; then
   python3 ./test_place38_parse.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_place38_parse.py)"
 fi
 if [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then
@@ -113,7 +126,7 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 T0=$(date +%s)
 ( cd "$SRC" && CARGO_TARGET_DIR="$TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$BUILDLOG" 2>&1 \
   || fail_all "ABORT-BUILD ($BUILDLOG)"
-if [ "$PLAN" = "36" ] || [ "$PLAN" = "38" ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
   sudo -n install -m 0755 -o root -g root "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
 else
   cp "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
@@ -122,6 +135,22 @@ era "LD-ALL built wall=$(( $(date +%s) - T0 ))s"
 SHA="$(sha256sum "$BIN" | cut -d' ' -f1)"
 echo "$SHA  $BIN  commit=$(cat "$ROOT/COMMIT" 2>/dev/null)" > "$RUN/BINSHA.txt"
 era "LD-ALL binary $SHA"
+SHA_BASE=""
+if [ "$PLAN" = "41" ]; then
+  # BASE: main's own binary, its own archive tree and its own fresh target dir (never shared with the shipped tree's).
+  [ -d "$BASE_SRC" ] || fail_all "ABORT-BUILD no $BASE_SRC"
+  [ ! -e "$BASE_SRC/target" ] || fail_all "ABORT-BUILD $BASE_SRC/target is not fresh"
+  [ ! -e "$BASE_TARGET" ] || fail_all "ABORT-BUILD $BASE_TARGET is not fresh"
+  case "$(cat "$ROOT/base/COMMIT" 2>/dev/null)" in 4926822*) ;; *) fail_all "ABORT-BUILD base COMMIT is not 4926822" ;; esac
+  T1=$(date +%s)
+  ( cd "$BASE_SRC" && CARGO_TARGET_DIR="$BASE_TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$ROOT/build-base.log" 2>&1 \
+    || fail_all "ABORT-BUILD (base: $ROOT/build-base.log)"
+  sudo -n install -m 0755 -o root -g root "$BASE_TARGET/release/raptorpath" "$BIN_BASE" || fail_all "ABORT-BUILD copy (base)"
+  SHA_BASE="$(sha256sum "$BIN_BASE" | cut -d' ' -f1)"
+  echo "$SHA_BASE  $BIN_BASE  commit=$(cat "$ROOT/base/COMMIT" 2>/dev/null) (BASE)" >> "$RUN/BINSHA.txt"
+  era "LD-ALL built BASE wall=$(( $(date +%s) - T1 ))s binary $SHA_BASE"
+  [ "$SHA_BASE" != "$SHA" ] || fail_all "ABORT-BUILD BASE and MAIN binaries are identical"
+fi
 
 # ── plan 27: the test suites, after the battery ledger is on disk ────────────
 # Same on-disk source tree (the workspace root, as threadr2_run_all.sh), its own
@@ -172,12 +201,21 @@ run_suites() {
   tst doc timeout 3600 "$CARGO" test --doc -p raptorpath --release || TFAIL=1
   tst wasm env -u GOLDEN_CAPTURE timeout 3600 "$CARGO" test -p raptorpath-wasm || TFAIL=1
   tst debug-witness timeout 7200 "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-  tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
+  if [ "$PLAN" = "41" ]; then
+    # Status 41: "the tools/l1 python tests" are all of them.
+    tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
+  else
+    tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
+  fi
   echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$RUN/test-debug-witness.log")" >> "$RUN/TESTS.txt"
   if [ "$TFAIL" = "0" ]; then touch "$RUN/TESTS-OK"; else touch "$RUN/TESTS-FAIL"; fi
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
+if [ "$PLAN" = "41" ]; then
+  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+fi
 if [ "$PLAN" = "34" ]; then
   # Amendment 2: a relaunch on the same engine tree may reuse a green suite run of that
   # tree (LD_PRIOR_TESTS = its run dir, which must hold TESTS-OK); it is copied in and named.
@@ -192,6 +230,7 @@ if [ "$PLAN" = "34" ]; then
 fi
 
 BENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$RUN" LD_PLAN="$PLAN")
+[ "$PLAN" = "41" ] && BENV+=(LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE")
 sudo -n env "${BENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
 SRC_RC=$?
 if [ "$SRC_RC" != "0" ] || ! python3 ./loopdiag_parse.py "$P_SMOKE" "$RUN/smoke.log" > "$RUN/smoke-check.txt" 2>&1; then
@@ -206,7 +245,7 @@ era "LD-ALL SMOKE-PASS"
 T0=$(date +%s)
 era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 BTO=10800
-if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$PLAN" = "38" ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
   BTO=$(( LD_HARD - $(date +%s) ))
   [ "$BTO" -ge 1800 ] || fail_all "ABORT-BUDGET ${BTO}s left before LD_HARD"
 fi
