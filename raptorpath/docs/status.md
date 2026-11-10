@@ -11391,3 +11391,76 @@ stops at 0.10 at Bulk, while the knees need ≈ 1.2 (c2, c8) and 1.2–1.3
   estimator bias and q stays as it is.
 - Run the registered form at 1.2 against the expired anchor. That shows
   the anchor margin a larger gain costs.
+
+
+## 45. Simplification plan — reduce complexity, keep or improve performance — no VM, plan
+
+The user asked for a plan to simplify the model while keeping or improving
+performance. It was made with the advisor from §44's inventory. Principle:
+**delete before redesigning, and police every stage with one cheap A/B.**
+No engine code changes while §41 and §43 use `diag36`'s tree.
+Simplification branches from main after `diag36` is merged.
+
+**The guard (keeps performance honest).**
+- §41's BASE comparison, reused: new binary against the previous main,
+  same session, default law, at c1s, c1d, c2 and c8, on §21's clauses. It
+  takes ≈ 15–20 min per stage.
+- It is calibrated by §41's MAIN-against-BASE result. If two binaries that
+  behave the same do not read WITHIN, the guard is fixed first (the
+  unexplained slow c1s rows), before it polices anything.
+- Two Realtime cells are added before Stage 3. The headline claim lives
+  there and has not been measured since the threading redesign.
+- **Scoreboard**, recorded at main before Stage 1 and after each stage:
+  `RWM_` gates, §11.2 rows, estimators per quantity, hint-keyed sites and
+  source lines. Bind gauges and witnesses are not counted (FORMULA-FIRST
+  requires them).
+
+**Stage 1 — bit-identical.** Suites plus one guard run.
+- §44's three items:
+  - one smoothed-RTT copy where `est.rtt()` ≡ Copa `srtt`, after
+    asserting equality;
+  - delete the unread `CorrectionDeficit`;
+  - rename the deadline's `rtprop` variable.
+- **Unread hot-path work.** Any gauge or estimator computed per sample and
+  read by nothing with diagnostics off, for example the RTT-dispersion
+  candidates in `diag.rs`. c1 is engine-bound (§42), so this is where
+  simplifying can also buy goodput. §41's pattern applies: host ns per call
+  before any VM time.
+- **The dial coordinate u (§44 item 1).** In the paper, with one continuity
+  test. In code only if the wasm golden fingerprints do not move.
+
+**Stage 2 — retire default-off arms.** User's go. Default behaviour is
+unchanged by construction.
+- **Inventory first.** Classify every gate: shipped, refuted on the current
+  substrate, refuted on an old one, never tested, instrument, or test-only,
+  each with its status-section verdict.
+- **Retirement per ADR-0052.** An arm refuted on the current substrate is
+  tagged `archive/<arm>`, then deleted with its tests and register rows. For
+  every other arm the user picks re-test or delete.
+- **Coupling.** The `[GATES]` line is byte-pinned and the harness parsers
+  witness on it, so the old plans' fixtures are frozen first.
+- **Standing rule against re-growth.** An arm is a question. At its verdict
+  it is either promoted, with the old path deleted in the same merge, or
+  archived. That covers `RWM_PLACE_WIRE` after §41, and the test hold hook.
+
+**Stage 3 — behaviour changes, one at a time.** Each is formula-first and
+pre-registered against the guard.
+1. **Copa's legacy controller.** Grep the readers of its cwnd first. It is
+   the largest single removal, and takes the `queue_target_mult` hint
+   table, a NO-MODE-SWITCH debt, with it. Its RTprop filter stays.
+2. **One per-leg state** in place of the duplicate estimators. The store
+   law's brake bias (§44 erratum: two minima on two horizons) is the same
+   defect.
+3. **The generation seat.** Keep or archive.
+4. **The remaining hint-keyed sites.** These need the Realtime cells.
+5. **Waiting.**
+   - The rate law needs one off-Bulk row with a which-term-wins tally
+     first.
+   - The recovery timeouts wait for the store law to settle H.
+
+**Stage 4 — module splits and the harness merge** (one declarative
+harness, old plans frozen). Ask first.
+
+**Order.** §41 → §43 → cleanup and merge of `diag36` to main → scoreboard
+at main → Stage 1 → user's go on Stage 2 → Stage 3 items one at a time →
+Stage 4.
