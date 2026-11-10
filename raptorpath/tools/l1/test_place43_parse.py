@@ -553,10 +553,14 @@ check("plan 43b: n = 3 per arm with seeds 42 / 7 / 42, the arm order rotating pe
       and [a for c, a, s_, r in p43b[6:9]] == ["SH-T", "MAIN", "SL-T"])
 cp = subprocess.run([sys.executable, os.path.join(HERE, "place43_parse.py"), "plan43b"], capture_output=True, text=True)
 check("`plan43b` prints the 9 lines", cp.stdout.splitlines() == [" ".join(map(str, r)) for r in p43b])
-check("the plan variables are unset by default and `vars43b` refuses (rc 3, ABORT-PLAN43B-UNSET)",
-      pp.G43B is None and pp.TAU43B_US is None and pp.BAND43B is None and pp.plan43b_vars() is None)
+check("the plan variables are amendment 1's: G = 0.9, tau = 5000 us, band [178, 217]",
+      pp.G43B == 0.9 and pp.TAU43B_US == 5000.0 and pp.BAND43B == (178.0, 217.0) and pp.plan43b_vars() == (0.9, 5000.0, (178.0, 217.0)))
 cv = subprocess.run([sys.executable, os.path.join(HERE, "place43_parse.py"), "vars43b"], capture_output=True, text=True)
-check("  ... the CLI exits 3", cv.returncode == 3 and "ABORT-PLAN43B-UNSET" in cv.stderr, (cv.returncode, cv.stderr))
+check("  ... `vars43b` prints them the way the engine echoes them (the battery's G and tau)", cv.returncode == 0 and cv.stdout.split() == ["0.9", "5000"], (cv.returncode, cv.stdout))
+_saved = (pp.G43B, pp.TAU43B_US, pp.BAND43B)
+pp.G43B = None
+check("  ... and refuses (rc 3) while any is unset", pp.plan43b_vars() is None)
+pp.G43B = _saved[0]
 check("rust_f64 prints as the engine's echo does (5000.0 -> 5000, 0.9 -> 0.9, 2470.5 -> 2470.5)",
       pp.rust_f64(5000.0) == "5000" and pp.rust_f64(0.9) == "0.9" and pp.rust_f64(2470.5) == "2470.5" and pp.rust_f64(1) == "1")
 check("battery (43b): refuses while the variables are unset, arm envs from G43B / TAU43B, hold 1536:15, plan table of 9, the sha of status 43",
@@ -571,7 +575,6 @@ check("the SHA constant of battery and scorer agrees with the ledger of status 4
       pp.SHA43 in open(os.path.join(HERE, "..", "..", "docs", "l1-raw", "oracle43", "BINSHA.txt"), encoding="utf-8").read())
 
 # the row under LD_PLAN=43b with the pair set by an "amendment"
-pp.G43B, pp.TAU43B_US, pp.BAND43B = 0.9, 5000.0, (150.0, 250.0)
 os.environ["LD_PLAN"] = "43b"
 et = lambda b0="5000", g="0.9", hold="none": f"oracle store law ACTIVE (RWM_STORE_LAW=oracle, diagnostic, never merged): L_dgps=[9773.0] hold={hold} T_w=0.25s b0_us={b0} gain={g}"  # noqa: E731
 rt = mk("SL-T", echo_line=et(), sha=pp.SHA43)
@@ -590,7 +593,7 @@ check("43b: a binary other than status 43's is a witness failure on the row (the
 pp.G43B = None
 check("43b: with the plan variables unset every row is void (plan-43b-variables-unset)",
       "plan-43b-variables-unset" in mk("SL-T", echo_line=et(), sha=pp.SHA43)["problems"])
-pp.G43B = 0.9
+pp.G43B = _saved[0]
 os.environ.pop("LD_PLAN", None)
 
 # qcwnd: the lowest against the median, per row
