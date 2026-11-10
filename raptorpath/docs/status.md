@@ -10278,6 +10278,41 @@ has shown such rows before (§34's 277).
 - Default cells and controls within their bands: MET except c1s client CPU.
 - The pooled c1d 1536 cost of −5 to −12 %: MET (−5.5 %).
 
+### 38. Result — addendum (from the ledger, no VM)
+
+- **Attribution: the per-placement cost, not the mirror.** At c1s, WIRE
+  rows ran 338 822–338 964 `place_costs` calls (`w_calls`), against
+  11 245–13 069 ack batches (`[IOWN] ack_batches`), ×29 more. Each armed
+  call fills two extra `Vec`s (`bases`, `shipped_col`), runs two argmin
+  scans and updates the gauge cell. The mirror runs per ack batch and is the
+  smaller term. The result's cause paragraph is corrected to this.
+- **Size at matched speed.**
+  - MAIN's CPU/GB is flat in goodput (15.58–16.00 over 737–822 Mbit/s).
+  - WIRE's four rows at 788–806 Mbit/s read 16.02–16.25 (mean 16.10)
+    against MAIN's 15.81: +1.9 %, still disjoint.
+  - The two slow WIRE rows (574.7, 683.5) read 16.65 and 17.62. They
+    inflate the registered +2.5 %, but the excess does not depend on them.
+  - +1.9 % of ≈ 6.4 s client CPU over 3.4·10⁵ calls is ≈ 360 ns per armed
+    call: allocation-sized, an implementation overhead and not the law.
+  - Post hoc; the registered verdict stands.
+- **First-burst split (registered readout, omitted from the result).**
+  - c1d 1536: the second leg's in-flight share at t ≈ 0.3 s is MAIN 0.612
+    [0.24–1.00], WIRE 0.628 [0.53–0.69].
+  - c8 192: the slow leg's share is MAIN 0.009, WIRE 0.085, with rtt/wrtt
+    1.18 against 1.06.
+  - The claim that the arm shrinks the start-up trigger is **not shown**.
+    What the arm shows is that no leg stays locked.
+- **What §38 says about shipping.** At the default law neither arm locked
+  (0/6 at c1d and c8), so the arm has no measured benefit where it would
+  ship, as Amendment 2 predicted. Default-law goodput point estimates are
+  −1.8, −0.3, +0.5 and −3.4 %, all WITHIN. The measured benefit is at
+  static caps: c1d 1536 went from 5/6 locked to 0/6, and c8 256 from 3/6
+  locked to 0/6 with +5.2 % goodput. So the arm's case is robustness, and
+  static diagnostic grids that are not voided by lock-outs (§36/§40's idle
+  slow-leg rows), not a default-law gain.
+- **Not a fix:** skipping the arm at one leg would be the path-count branch
+  ADR-0072 removed.
+
 ## 39. The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
 
 §37 rated the rate law "the maths holds, inert", and the user opened the
