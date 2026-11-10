@@ -1938,7 +1938,7 @@ The only change is the base: the shipped (½ + ε̂_i)·s_i becomes
 | I_i | `PathState.in_flight`: charged at placement, released by ack or expiry | every placement and ack | 0, so the term (I_i/W_i)·s_i is exactly 0 whatever s_i holds |
 | W_i | `PathState.cwnd` (Copa), `max(1)` (cannot bind: MIN_CWND ≥ 1) | Copa update | unused |
 | s_i | `srtt_of(i)`: Copa app-echo EWMA, or the `RWM_COLD_PLACE` best-measured value, or the 50 ms seed | leg i's echoes | frozen, multiplied by 0 |
-| ŵ_i | quinn's packet-timed smoothed RTT of leg i's connection (`PathView.rtt_us` via `QuicTransport::wire_rtt`), mirrored into `PathState` for every leg at every ack batch (any leg) and every path report | quinn's own ack-eliciting traffic, independent of our symbols. Observed moving on idle legs: c1d 3 042 → 2 792 → 2 643 µs, c8 DEF256 p1 42 → 46 → 44 → 45 ms | the leg's network transit, no local dwell |
+| ŵ_i | quinn's packet-timed smoothed RTT of leg i's connection (`PathView.rtt_us` via `QuicTransport::wire_rtt`), mirrored into `PathState` for every leg at every ack batch (any leg) and every path report | quinn's own ack-eliciting traffic, independent of our symbols. Observed moving on idle legs: c1d 3 042 → 2 792 → 2 643 µs, c8 DEF256 p1 42 → 46 → 44 → 45 ms | the leg's network transit, including any standing queue in the network (delivery delay, which placement prices), with no local dwell |
 | ε̂_i | `estimator.loss_rate()` (EWMA, starts at 0) | loss reports | frozen, never above the last measurement, and 0 if never measured |
 | ref | min over active legs of s_j, 1 ms floor | — | a scale common to all legs (no differential); a frozen small s_j sharpens the softmax, never excludes a leg |
 | r_i, V_i, X_i | unchanged; X_i's arrival reads this E_i, its F̂ the shipped stamp (not combined in §38) | — | — |
@@ -2802,7 +2802,9 @@ rule:
   §37). The figure is not a cell-wide fixed point.
 - c1s's S may contain the law's own dwell. At the fixed point B ≈ 81
   (about 0.8 ms at 614), and at slope 0.54 each 0.1 ms of dwell in S moves the
-  point down by about 23. Status §36 D6 decides this.
+  point down by about 23. Status §42 revises this: the store at c1s holds time
+  inside the endpoints, which S rightly includes, so a dwell-free S is not
+  the target.
 - c2 is the one robust cell.
 
 At c8 the fast leg's S is itself produced by placement, so a placement price

@@ -10802,3 +10802,81 @@ c1s client CPU/GB is WITHIN (≤ +1 %), and the ladder reads `CURED`, since
 
 **Duration.** Two fresh builds (≈ 12 min) and 120 rows plus the smoke
 (≈ 25 min), inside the 4 h launch deadline.
+
+
+## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
+
+Two read-only reports, reviewed with the advisor. No code, no VM.
+
+**(a) Kernel receive timestamps for an engine L̂. `FEASIBLE-IN-TREE`, not
+built.**
+- quinn-udp 0.5.14 (pinned) and 0.5.16 carry no receive timestamp:
+  `RecvMeta` is addr, len, stride, ecn and dst_ip.
+- Its cmsg buffer is a fixed `CMSG_LEN` (`unix.rs:100`), and `decode_recv`
+  drops unknown cmsgs. Setting `SO_TIMESTAMPNS` on the fd is therefore
+  unsafe: the report computes an overflow of the 88 B buffer on a
+  dual-stack socket, which would silently truncate the GRO cmsg. That
+  arithmetic is not yet confirmed in source.
+- The measurement can only sit at the socket layer: quinn-proto takes one
+  `now` per drive cycle. Each owner's socket is one leg, so no 4-tuple
+  keying is needed.
+- Options:
+  - (a) an in-tree `AsyncUdpSocket` receive path on the existing Runtime
+    seam (`io_owner.rs` ~849, the `TimedRuntime` pattern), ≈ 2–3 days;
+  - (b) a `[patch]` of quinn-udp, ≈ 1–1.5 days, carried as a fork.
+- Feedback needs a new `PathReport` or `WindowAck` field: wire v9 → v10
+  and an ADR extending ADR-0072. The ignored `throughput_bps` field is not
+  to be reused.
+- Risks:
+  - real-NIC GRO and interrupt coalescing over-read, as §40's `slot` did;
+  - CPU (≈ 10–30 ns per buffer, unmeasured);
+  - the socket sees only its own flow, where the capture saw every skb.
+- Kernel behaviours the report marks UNVERIFIED stay so.
+
+**(b) The time term S. The wire clock is not its source.**
+- quinn exposes per leg only the smoothed RTT (`PathView.rtt_us` from
+  `path.rtt` / `conn.rtt()`, `io_owner.rs` ~1356–1367), plus a lifetime
+  minimum (`RttEstimator::min`, `paths.rs:320–331`, never expires).
+  `latest` and RTTVAR are private.
+- At c1s, quinn's SRTT stays 2.4–3.5 ms from cap 256 to 1 024 (p34;
+  `wrtt` 3–5 ms in §36/§40) while goodput rises from 526 to 792 Mbit/s.
+  Any wire-clocked time term (SRTT is its upper bound) puts the law at
+  ≈ 262, 0.64 of Gmax.
+- What buys goodput at c1s is time inside the endpoints: Tp50 − SRTT =
+  1.5 / 3.2 / 6.2 ms at 256 / 512 / 1 024. Quinn's backlog accounts for
+  only ≈ 0.8–1 ms of it.
+- One residual is unmeasured: ack delay, which SRTT subtracts. It would
+  need to be ≈ 1.7 ms to change this.
+- So **"c1s decided on SRTT; ack-delay residual unmeasured"**.
+- At c1, the knee is an engine property: an endpoint loop of 1.5–6 ms
+  against 2.6 ms of wire. Engine latency work (as §32) is the lever there.
+  The store law's prize is at c2 and c8.
+- **Correction to §37's addendum and to paper §6.1's "D6 decides".** S =
+  Tp50 − Tmin already drops a standing component wherever it stands, and
+  the static-grid map slopes (0.25–0.54) were measured with dwell inside.
+  The time term needs no dwell-free source. Its source is a windowed
+  sampler on the existing app-echo samples (what `[LOOPDIAG]` computed).
+  It must not use the SRTT level: at c2, SRTT rises with the standing
+  queue and the map runs away (slope ≈ 1.1).
+- At c2, the smoothed RTT attenuates the 3 ms netem jitter by ≈ ×0.3
+  (series p50 − min 1.4–1.9 ms against S 4.9–5.5 ms), so ŵ cannot carry
+  c2's S either.
+- **The idle-leg credit.** A leg with no trains has no L̂. A "last
+  measured" credit is absorbing when pessimistic: at c8 it settles at
+  ≈ 160–185, with goodput 65–79 Mbit/s. A decaying-optimistic credit
+  `L̃ = (ν·L̂ + κ·L₀)/(ν + κ)` self-corrects in a worked example. κ and ν's
+  decay have no provenance, and L₀ inherits the aggregation over-read. It
+  is a candidate, not a law, and is kept out of the paper.
+
+**Next (cheapest first; none run yet).**
+1. Offline, no VM: the law's per-window noise. On the p27 and p34
+   `[LOOPDIAG]` windows at the caps bracketing each fixed point: the
+   per-window ask's cv, and how often ask − n has the right sign (D died at
+   34–55 %). If p29's power rows carry per-window cap and loop times, also
+   check how S moves just after a cap step.
+2. If that survives: a closed-loop oracle arm (L from the environment, S
+   app-clocked, default off, not for merge, as `run34`), ≈ 30 rows. It is a
+   build and needs the user's go.
+3. Only if step 2 runs away: the split diagnostic (sender dwell against the
+   endpoint loop at µs).
+The socket work (2–3 days), wire v10 and the ADR come only after step 2.
