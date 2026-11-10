@@ -1380,7 +1380,7 @@ So:
 - **Bulk mid-stream stays at the corner.** The ledger is FlEC's bulk rule,
   and FlEC finds no mid-stream bulk gain either: earlier flights are
   recovered by retransmission before any quiescence.
-- **The import is continuous but cannot help measurably on the measured
+- **The import is continuous, and no gain is shown on the measured
   cells.** It removes at most 0.5 % of source at the corner (3.4 % if the
   re-fires are reachable), 1.7 % at funded GLIDE and 3.4 % at MID. MID is itself unmeasurable until the
   engine echoes Copa's δ (Section 9.9). All of these are below the
@@ -1396,7 +1396,8 @@ So:
 - **The bound's own limits.** The counters come from one seed and n = 4,
   on the September binary, which ran c3hg and sc2 at about 2 Mbit/s
   (out-of-band on 69 of 72 rows; status §37 records that regression as
-  since fixed).
+  since fixed). The gain therefore reads **not shown**, not refuted
+  (status §39 addendum). Only an off-Bulk cell on the wire can show one.
 - **Readings that would reopen it.** A δ off the corner with an echoed
   Copa δ, where `preempt_src` reaches 1.3–3.4 % at the singles. A pinned
   store, where an earlier close frees a cap slot. The evicting Realtime
@@ -1871,8 +1872,10 @@ is still echoed on `[GATES]` but is not read.)
   start-up.
 - The corrected base below also prices the first burst. Quinn's RTT exists
   from the handshake, so at c8 the slow leg's cold price is ½·(43 − 14) ms
-  above the fast leg's, not equal. That shrinks the trigger as well as
-  removing the absorbing state; it is expected, not yet measured.
+  above the fast leg's, not equal. That the arm also shrinks the trigger
+  is **not shown** (status §38 addendum): the first-burst split is within
+  the spread (c1d 1536, second leg's in-flight share at t ≈ 0.3 s: MAIN
+  0.612, WIRE 0.628). What the arm shows is that no leg stays locked.
 
 *The constraint.* When I_i = 0 the price may read only state that refreshes
 without our symbols, or state that is never pessimistic. Load-dependent
@@ -2068,6 +2071,21 @@ equilibrium.
 - I_i: live. The residual frozen term is (I_i/W_i)·s_i on a leg whose
   in_flight is stuck above 0 without echoes. Every locked ledger leg read
   `infl=0`.
+
+*Result (status §38): `REGRESSES-AT(c1s-400@def)`; the arm does not ship.*
+- It cures the absorbing lock-out. At the four static cells (c1d 1536,
+  c8 192, 256, 512; 24 rows per arm) 0 WIRE rows locked, against 10 MAIN
+  rows (5, 1, 3, 1). c8 256 goodput rose 90.4 → 95.1 Mbit/s (+5.2 %).
+- The one failed clause is client CPU per GB at the c1s control: +2.5 %
+  against a 2.4 % tolerance, ranges disjoint (+1.9 % at matched speed). The
+  cause is the armed `place_costs` call's overhead, about 360 ns per call,
+  ≈ 3.4·10⁵ calls per row, not the mirror and not the law.
+- At the default law neither arm locked (0 of 6 at c1d and c8), so no
+  benefit was measured where the arm would ship. The measured benefit sits
+  at static caps, which makes the case robustness of static diagnostic grids
+  and not a default-law gain.
+- Status §41 pre-registers one iteration, an allocation-free witness. It is
+  pending; a second `REGRESSES` result reverts the arm.
 
 ### 5.8 The generation seat
 
@@ -2838,11 +2856,24 @@ inside one busy run gives `Σ b / (t_{j+k} − t_j) = R` exactly.
   n/g skbs (g the GSO factor), so small caps are where the premise can fail.
 - *Real links:* aggregation and token buckets make dispersion over-read the
   sustained rate. This is a declared premise, bounded by the per-path knee
-  clamp. It is not tested on L1.
+  clamp. Status §40 tests it on L1: `slot` fails, the policer is not cleared
+  (below).
 
 The engine form would need kernel receive timestamps through quinn's socket
 and a receiver → sender field (an ADR). Status §36 first measures the
 estimator from a receiver-side packet capture, with no engine diff.
+
+*Result of the p90 estimator, fixed in advance (status §40, `NOT-YET`).*
+From a cap crossover up, the per-window p90 of k = 4 train rates reads the
+link within +4 % (c1s 1.001–1.038, c2 and c8's fast leg ≤ 1.013, c8's slow
+leg 0.995–1.011 from 256) on every leg that carries traffic. It fails on c8's
+placement-starved slow leg, where the leg is near idle and its floor escape
+is set by placement, not by the store. Aggregation breaks it: netem `slot`
+over-reads ×2.05 (`AGG-OVER-READ`). The policer is not cleared: `c2tbf`
+stays within 1.10 only at the three caps run, and caps between 32 and 128
+were not run. Offline, §36's D5 rerun with the p90 map at c8 lands at 329
+(slope 0.53; oracle 324). That holds on the static grid only and assumes no
+lock-out (status §38). The rule for a leg with no trains stays open.
 
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
@@ -3965,6 +3996,10 @@ Measured at `754139c`, before the two flow-control flips:
   holes, 4–6×, in 16 of 16 readable single-path reps; 28–38 against 10–16 ms
   at c8. The mid-stream arm was void at 5 of 6 cell sizes because the engine
   does not echo Copa's δ.
+* **What this does and does not bound (status §39).** Funded r on one
+  saturated path is capped at parity with ARQ (Section 3.7). The battery
+  does not test the DoF ledger of Section 4.13: that gain is not shown, and
+  not refuted.
 
 **Receiver request law (`0159290`).** Refuted with record at both duals on
 every arm. The false-repair fraction rose ×5.74 at c7 (0.038 → 0.217) and
@@ -4066,7 +4101,7 @@ shipped.
 | Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`) | the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed) | `3a0ca0c` | off |
 | Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`) | repair anchored at the frontier loses to its own ARQ (4 useful of 718) | `bede4a3` | removed |
 | Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`) | presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip | `806c0f4` | off |
-| Funded proactive coding at r > 0 (the r > 0 battery) | at the lossy single path funding coding made the transfer slower, and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the r* = 0 corner | `91895dd` | refuted |
+| Funded proactive coding at r > 0 (the r > 0 battery) | at the lossy single path funding coding made the transfer slower (one seed, n = 4, direction only), and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the r* = 0 corner; funded r is capped at parity with ARQ on one saturated path, and the DoF ledger's gain is not shown, not refuted (status §39) | `91895dd` | refuted |
 | **Scheduling and placement** | | | |
 | DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) | their wins were measured in an era where the coded path was dead; the live ablation measured −17 to −30 % at the symmetric dual; the surviving ideas became the M* law and the anchor-hygiene laws | `9b48286` | removed |
 | Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) | decode-clocked samples make the windowed max the correct statistic; any sub-max quantile under-reads about 65× (heterogeneous dual 3–6× worse) | `f1f32c5` | removed |
@@ -4203,7 +4238,7 @@ decide it.
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
 | store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | the multiplier is `1 + q(δ)` at every N (ADR-0072), so H = q(δ)·RTprop_w, and SACK-clocked release uncounts SACKed symbols. The `(gain − 1)·RTprop` form survives only in the `RWM_STORE_PATHS = 0` control and the default-off placement frontier arm (`scheduler/place.rs:409`). H is read from `[WIDLE]` (Section 7.3) |
 | r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget. The seat's deficit loop (`GenerationDeficit` minus in-flight) is already the ledger's a-posteriori term (Section 4.13) |
-| the rate law's feedback leg | one DoF ledger over live symbols, `Ω = Σ_c (k_c − a_c)⁺ + B`, with B the taper bank and copies accruing r(β) (Section 4.13) | not implemented on the plain window: proactive repairs come from the open-loop `TaperBudget`, the reactive plane serves each ripe hole by its own cooldown plus `ceil(retx·ε̂)` leading-window repairs, and neither counts the other's live symbols or the decoder's held rows; the receiver's rank deficit (`RepairRequest`) is sent only by the off request-law arm. Bounded by the r > 0 battery's `[RFA]` counters: the removable part is `preempt_src`, ≤ 0.5 % of source at the corner (Section 4.13); status §39 records the verdict and the owed tests, with no battery |
+| the rate law's feedback leg | one DoF ledger over live symbols, `Ω = Σ_c (k_c − a_c)⁺ + B`, with B the taper bank and copies accruing r(β) (Section 4.13) | not implemented on the plain window: proactive repairs come from the open-loop `TaperBudget`, the reactive plane serves each ripe hole by its own cooldown plus `ceil(retx·ε̂)` leading-window repairs, and neither counts the other's live symbols or the decoder's held rows; the receiver's rank deficit (`RepairRequest`) is sent only by the off request-law arm. Bounded by the r > 0 battery's `[RFA]` counters: the removable part is `preempt_src`, ≤ 0.5 % of source at the corner (Section 4.13); status §39 records the verdict (gain not shown, not refuted) and the owed tests, with no battery |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
 | P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
 | GE estimator input | per-symbol loss sequence | per-batch counts, losses fed before receives |
@@ -4257,8 +4292,7 @@ machine as a whole.
   repeats a coded packet unless the channel rate minus the DoF ratio
   `m_d/a_d` exceeds a threshold (`r − d > th` adds a new packet).
 - *Multipath AC-RLNC.* Cohen, Thiran, Bar Bracha and Médard [Cohen2020mp]
-  (IEEE Trans. Commun. 69(2), 2021, arXiv:1910.13290) extend this to many
-  paths. They estimate `md`/`ad` for unacknowledged packets from per-path
+  (arXiv:1910.13290; venue unverified) extend this to many paths. They estimate `md`/`ad` for unacknowledged packets from per-path
   rates and allocate by a bit-filling argmax.
 - *FlEC.* Michel, Cohen, Malak, De Coninck, Médard and Bonaventure
   [Michel2023] (IEEE/ACM ToN 31(2), 2023, arXiv:2208.07741) build the rule
@@ -4424,6 +4458,21 @@ correction density in time and as the placement law's fixed point.
   arXiv:2005.06914, 2020.
 - [RLC_GE2025] "On the analysis of random linear streaming codes in
   stochastic channels," arXiv:2509.01894, 2025.
+
+**Feedback DoF accounting**
+
+- [Cohen2020] A. Cohen, D. Malak, V. Bar Bracha, M. Médard, "Adaptive causal
+  network coding with feedback," *IEEE Trans. Communications* 68(7), 2020,
+  arXiv:1905.02870.
+- [Cohen2020mp] A. Cohen, G. Thiran, V. Bar Bracha, M. Médard, "Adaptive
+  causal network coding with feedback for multipath multi-hop
+  communications," arXiv:1910.13290, 2019 (venue and year of the journal
+  version unverified).
+- [Michel2023] F. Michel, A. Cohen, D. Malak, Q. De Coninck, M. Médard,
+  O. Bonaventure, "FlEC: Enhancing QUIC with flexible loss recovery,"
+  *IEEE/ACM Trans. Networking* 31(2), 2023, arXiv:2208.07741.
+- [Meng2024] Z. Meng et al., "Hairpin: Rethinking packet loss recovery in
+  edge-based interactive video streaming," NSDI 2024.
 
 **Multipath, scheduling and queueing**
 
