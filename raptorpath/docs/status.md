@@ -11233,3 +11233,33 @@ Reported beside the label:
 **Gate.** STOPPED before the build. The arm is engine code (default off,
 not for merge). Its build, the host gate (a)–(g), the harness plan and the
 VM session are the next phase, on the coordinator's go.
+
+
+### 43. Amendment 1 — readouts, the timeout bound, branches and order (before any build)
+
+No outcome or label changes.
+- **R9 (reported): store occupancy per window**, the `win=` numerator ÷ n,
+  beside quinn's backlog B. The predicted c1s point is where quinn shares
+  authority (§34 R4). If the store is not full there, n is not the brake,
+  and R1's operating point is read with that caveat.
+- **R10 (reported): the lowest per-window sample count per row**, and the
+  share of windows with fewer than 8 samples. S from a one-sample window is
+  0 and drops n to (1+q)·L·RTprop.
+- **Timeout bound.** `RWM_PERF_TIMEOUT_S=200` bounds a collapsed row (c2 at
+  the floor would need ≈ 11 min for 600 MB). The worst case is 20 × 200 s
+  ≈ 67 min, inside `LD_HARD`.
+- **Branches.** The arm, the hold and the MAIN-side sampler readout are
+  built on `run43`, which is never merged (as `run34`). Only this section,
+  the paper block and the plan-43 harness go on `diag36`.
+- **Order.** §43 launches only after §41's BASE gate reads WITHIN, because
+  §43's MAIN arm is `diag36`'s engine. If §41 reverts the placement arm,
+  `run43` is rebased first.
+- **Before VM contact:**
+  - the plan-43 scorer is dry-run on ledger rows (p29's power rows, where
+    the cap moves, and the p27/p34 static rows). Its labels — returned,
+    OSCILLATION, RUNAWAY, SHORT — must behave as specified;
+  - one unscored check row confirms the sampler and routing witnesses.
+- **No VM suites:** `run43` is not a ship tree. The host gate is debug-
+  profile targeted tests (a)–(g).
+- **Open for any real law, not this diagnostic.** The 250 ms window sits
+  below its own lower bound Tp50/q off Bulk (≈ 285–380 ms at c2).
