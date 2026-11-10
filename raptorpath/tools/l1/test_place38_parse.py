@@ -44,7 +44,7 @@ check("battery: plan 38 accepted, arms MAIN/WIRE, RWM_PLACE_WIRE and RWM_TEST_PL
       "36|38|40" in bat and "-u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD" in bat and "RWM_PLACE_WIRE=1" in bat and "-eq 96" in bat
       and "RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150" in bat and "ABORT-BIN" in bat)
 check("run_all: plan 38 is gated on test_place38_parse.py, takes the root-owned tmpfs tree and LD_HARD, scores with score38",
-      "test_place38_parse.py" in runall and "P_SCORE=score38" in runall and runall.count('"$PLAN" = "38"') >= 5)
+      "test_place38_parse.py" in runall and "P_SCORE=score38" in runall and runall.count('"$P38" = 1') >= 5)
 
 
 # ── synthetic client logs ─────────────────────────────────────────────────
@@ -334,6 +334,185 @@ sm2 = [row38("c8-100", "256", "MAIN", 0), row38("c8-100", "256", "WIRE", 0)]
 sm2[1]["eta"]["w_calls"] = 0
 check("smoke fails when the WIRE arm never ran (w_calls = 0)", smoke_rc(sm2) == 1)
 check("smoke fails with a missing arm", smoke_rc(sm[:1]) == 1)
+
+# ══ status §41: the BASE arm (main's own binary, 4926822), beside the ladder ══════════════════════════════════════════
+p41 = pp.plan41()
+check("plan 41: 108 invocations = plan 38's 96 + BASE x 2 cells x 6 (n = 6 per cell; the pre-registration's '24 / 120' is open)",
+      len(p41) == 108 == pp.EXPECT_ROWS41 and pp.EXPECT_ROWS41 - pp.EXPECT_ROWS38 == 12, len(p41))
+check("plan 41 minus BASE is plan 38 exactly (cells, ladder arms, seeds, reps and order unchanged)",
+      [r for r in p41 if r[2] != "BASE"] == pl)
+check("BASE runs only at c1s-400 and c1d-400 default, 6 rows each: 3 reps x seeds 42 and 7",
+      sorted({(c, s) for c, s, a, _, _ in p41 if a == "BASE"}) == [("c1d-400", "def"), ("c1s-400", "def")]
+      and all(sorted((sd, rp) for c, st, a, sd, rp in p41 if (c, st) == cs and a == "BASE") == sorted(("42" if i % 2 == 0 else "7", 1 + i // 2) for i in range(6))
+              for cs in pp.BASE_CELLS))
+pos = {cs: [] for cs in pp.BASE_CELLS}
+for cs in pp.BASE_CELLS:
+    blocks = [[a for c, st, a, sd, rp in p41 if (c, st) == cs and (sd, rp) == b] for b in pp.BLOCKS38]
+    pos[cs] = [blk.index("BASE") for blk in blocks]
+    check(f"BASE is interleaved into every block at {cs[0]}, in each position (front, middle, back) twice (the position rule is a DECISION)",
+          all(len(blk) == 3 for blk in blocks) and sorted(pos[cs]) == [0, 0, 1, 1, 2, 2], pos[cs])
+check("plan 41 smoke = plan 38's two rows plus one BASE row (c1s-400 default)", pp.plan41(smoke=True) == pp.plan38(smoke=True) + [("c1s-400", "def", "BASE", "42", 1)])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "place38_parse.py"), "plan41"], capture_output=True, text=True)
+check("`plan41` prints the 108 `cell store arm seed rep` lines", cp.stdout.splitlines() == [" ".join(map(str, r)) for r in p41])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "place38_parse.py"), "plan"], capture_output=True, text=True)
+check("`plan` (plan 38) is unchanged: 96 lines", cp.stdout.splitlines() == [" ".join(map(str, r)) for r in pl])
+check("battery: plan 41 accepted; BASE arm runs its own binary (RBIN / LD_BIN_BASE / LD_SHA_BASE), the BASE binary must lack RWM_PLACE_WIRE; "
+      "108-row table; PROCS and the four contention values passed to the parser",
+      "24|27|29|34|36|38|40|41" in bat and "LD_BIN_BASE" in bat and "LD_SHA_BASE" in bat and 'RBIN="$BIN_BASE"' in bat and 'grep -aq -- "RWM_PLACE_WIRE" "$BIN_BASE"' in bat
+      and "-eq 108" in bat and "ABORT-PLAN41" in bat and "procs_running_before" in bat and 'LD_PROCS_B="$procs_b"' in bat and 'LD_IO_B="$io_b"' in bat
+      and 'sha256sum "$RBIN"' in bat and 'RWM_BIN="$RBIN"' in bat and "-u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD" in bat)
+check("run_all: plan 41 scores with score41, builds BASE from its own tree into its own target dir and installs it as bin-base/raptorpath, "
+      "runs the suites (all tools/l1 python tests) before the smoke, and hands both binaries to the battery",
+      "P_SCORE=score41" in runall and "target-base" in runall and "bin-base/raptorpath" in runall and 'base/COMMIT' in runall and "test_*.py" in runall
+      and 'LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE"' in runall
+      and runall.index('if [ "$PLAN" = "41" ]; then\n  run_suites') < runall.index("BENV=(") and runall.index("built BASE") < runall.index('if [ "$PLAN" = "41" ]; then\n  run_suites'))
+
+# BASE rows on real main-binary logs (the §32 thread-pd battery: RTOBS + RDIAG, no wpl_us, no [ETA] w_* fields)
+PD = os.path.join(RAW, "thread-pd", "battery")
+
+
+def base_real(cell, d, **kw):
+    drv, cli, srv = (lc.read(os.path.join(PD, d + x)) for x in ("drv.out", "c.log", "s.log"))
+    return pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv, cli, srv, 0, "x", store="def", **kw), (drv, cli, srv)
+
+
+for cell, d in (("c1d-400", "diag-tpd/c1d-400-MAIN-s42-r1-a1-"), ("c1s-400", "diag-smoke/c1s-400-MAIN-s42-r1-a1-")):
+    rb, (drv_, cli_, srv_) = base_real(cell, d)
+    nl = 2 if cell.startswith("c1d") else 1
+    need = ["cpu_cli", "cpu_srv", "mbps", "cli_lag_E", "srv_lag_E"] + [f"feed_ratio_p{i}" for i in range(nl)] + [f"rtp_floor_p{i}" for i in range(nl)]
+    check(f"a main-binary log (no wpl_us, no w_* gauges) is a LIVE BASE row at {cell}: every §21 clause input is read, the legs are read despite the missing wpl_us",
+          rb["status"] == "LIVE" and rb["problems"] == [] and all(rb.get(k) is not None for k in need)
+          and all(v is not None for v in rb["rtt_wrtt_med"]) and rb["locked"] is False and rb["eta"] is None, (rb["status"], rb["problems"], [k for k in need if rb.get(k) is None]))
+    check(f"... the same log is a LIVE MAIN row except for the gate echo (it has no RWM_PLACE_WIRE token), so BASE's gate witness is 'absent'",
+          pp.make_row(cell, "MAIN", "42", 1, 0, 12.0, drv_, cli_, srv_, 0, "x", store="def")["status"] == "WITNESS-FAIL")
+    rg = pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, gates(cli_, RWM_PLACE_WIRE="0"), gates(srv_, RWM_PLACE_WIRE="0"), 0, "x", store="def")
+    check(f"BASE witness: a [GATES] line that echoes RWM_PLACE_WIRE is void (the binary is not main's) at {cell}", rg["status"] == "WITNESS-FAIL" and any("on BASE" in q for q in rg["problems"]), rg["problems"])
+    check("BASE witness: a numeric wpl_us on a BASE row is void",
+          "wpl_us-numeric-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, [ln + "" for ln in cli_] + [diag(2.0, [(1, 8, 7, 7000)] * nl)], srv_, 0, "x", store="def")["problems"])
+    check("BASE witness: w_* gauges on an [ETA] sender line are void",
+          "wire-gauges-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, cli_ + [eta()], srv_, 0, "x", store="def")["problems"])
+
+# the contention covariates ride the environment
+os.environ.update(LD_PROCS_B="1", LD_PROCS_A="3", LD_IO_B="0.50", LD_IO_A="2.25")
+rc_, _ = base_real("c1s-400", "diag-smoke/c1s-400-MAIN-s42-r1-a1-")
+for k_ in ("LD_PROCS_B", "LD_PROCS_A", "LD_IO_B", "LD_IO_A"):
+    os.environ.pop(k_)
+check("per-row contention: procs_running and io full avg10 before and after are recorded on the row",
+      (rc_["procs_before"], rc_["procs_after"], rc_["io_before"], rc_["io_after"]) == (1.0, 3.0, 0.5, 2.25), rc_)
+check("... and are None when the battery did not sample them", base_real("c1s-400", "diag-smoke/c1s-400-MAIN-s42-r1-a1-")[0]["procs_before"] is None)
+
+# ── the scorer ──
+def row41(cell, store, arm, i, **kw):
+    r = row38(cell, store, arm, i, **kw)
+    r["procs_before"], r["procs_after"], r["io_before"], r["io_after"] = 1.0, 2.0, 0.1, 0.2
+    return r
+
+
+def ledger41(mod=lambda r: r, n=6, base_mod=None):
+    rows = ledger(mod, n=n, lock_main=LOCK)
+    for cell, store in pp.BASE_CELLS:
+        for i in range(n):
+            r = row41(cell, store, "BASE", i, share=0.5 if cell.startswith("c1d") else None)
+            rows.append((base_mod or mod)(r))
+    for r in rows:
+        r.setdefault("procs_before", 1.0), r.setdefault("procs_after", 2.0), r.setdefault("io_before", 0.1), r.setdefault("io_after", 0.2)
+    return rows
+
+
+def run41(rows, abort=None):
+    lines = []
+    with tempfile.TemporaryDirectory() as td:
+        pth = os.path.join(td, "l.log")
+        with open(pth, "w") as fh:
+            for r in rows:
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+            if abort:
+                fh.write(abort + " reason\n")
+        v = pp.score([pth], out=lines.append, plan41=True)
+    return v, "\n".join(lines)
+
+
+v41, t41 = run41(ledger41())
+v38, _ = run(ledger(lock_main=LOCK))
+check("BASE rows never reach the ladder: the verdict with BASE rows present equals the verdict without", v41 == v38 and v41.startswith("CURED"), (v41, v38))
+check("BASE gate PASS when MAIN equals BASE on every §21 clause at both cells; ROWS counted against 108", "BASE-GATE PASS" in t41 and "ROWS 108/108" in t41, t41[:400])
+check("... the gate output labels the pair MAIN against BASE (not MAIN=... MAIN=...)", "CLAUSE BASE-GATE c1s-400@def goodput: WITHIN MAIN=" in t41 and " BASE=" in t41 and "MAIN=" in t41.split("CLAUSE BASE-GATE c1s-400@def goodput")[1].split("\n")[0])
+check("the RESULT json carries the gate", json.loads(t41.splitlines()[-1][7:])["base_gate"] == "PASS")
+for what, f, cellk in (("goodput -10 % (WORSE)", lambda r: dict(r, mbps=r["mbps"] * 0.90), "c1s-400@def goodput"),
+                       ("goodput +10 % (BETTER is not WITHIN)", lambda r: dict(r, mbps=r["mbps"] * 1.10), "c1s-400@def goodput"),
+                       ("client CPU/GB +50 %", lambda r: dict(r, cpu_cli=r["cpu_cli"] * 1.5), "c1s-400@def cpu_cli/GB"),
+                       ("rtp floor x2 on p0", lambda r: dict(r, rtp_floor_p0=r["rtp_floor_p0"] * 2), "c1s-400@def rtp_floor_p0")):
+    _, tx = run41(ledger41(base_mod=lambda r, f=f: f(r)))
+    check(f"BASE gate FAIL when BASE differs from MAIN on a clause ({what}) at c1s, named in the output; the ladder verdict is untouched",
+          "BASE-GATE FAIL" in tx and f"BASE-GATE c1s-400@def: FAIL" in tx and cellk.split(" ")[1].split("/")[0] in tx, tx[tx.find("BASE-GATE c1s"):][:300])
+_, tx = run41(ledger41(base_mod=lambda r: dict(r, mbps=r["mbps"] * 0.90) if r["cell"] == "c1d-400" else r))
+check("BASE gate FAIL at c1d only is a FAIL overall, with c1s PASS", "BASE-GATE c1s-400@def: PASS" in tx and "BASE-GATE c1d-400@def: FAIL" in tx and "\nBASE-GATE FAIL" in tx)
+_, tx = run41(ledger41(base_mod=lambda r: dict(r, mbps=r["mbps"] * 1.03)))
+check("TREND-* is not WITHIN: a +3 % BASE goodput (inside the 4.9 % MDE) is still WITHIN, so the gate passes", "\nBASE-GATE PASS" in tx, tx[tx.find("BASE-GATE"):][:200])
+rows_ = [r for r in ledger41() if not (r["arm"] == "BASE" and r["cell"] == "c1d-400")]
+_, tx = run41(rows_)
+check("BASE gate UNREADABLE (never a silent pass) when a BASE cell has no live rows; the ladder is untouched", "\nBASE-GATE UNREADABLE" in tx and "BASE-GATE c1d-400@def: UNREADABLE" in tx)
+v_, tx = run41(ledger41(), abort="ABORT-BIN")
+check("an abort token still makes the ladder UNSCOREABLE in plan 41", v_.startswith("UNSCOREABLE"))
+check("matched speed: client / server CPU/GB for WIRE and MAIN within +-3 % of the pooled median at every cell, with n per arm; BASE beside them at its cells",
+      "MATCHED-SPEED c1s-400@def: pooled WIRE+MAIN median goodput" in t41 and "client CPU/GB WIRE vs MAIN at matched speed" in t41 and "  BASE: n=" in t41
+      and "MATCHED-SPEED c8-100@512" in t41)
+
+
+def mx(r):                                       # WIRE rows: 4 inside the +-3 % window, 2 slow with the high CPU/GB of the slow rows
+    if (r["cell"], r["store"], r["arm"]) == ("c1s-400", "def", "WIRE") and r["seed"] == "7" and r["rep"] in (1, 2):
+        return dict(r, mbps=60.0, cpu_cli=17.5)
+    if (r["cell"], r["store"], r["arm"]) == ("c1s-400", "def", "WIRE"):
+        return dict(r, cpu_cli=10.2)
+    return r
+
+
+_, tx = run41(ledger41(mx))
+ms = [ln for ln in tx.splitlines() if ln.startswith("  client CPU/GB WIRE vs MAIN at matched speed")]
+blk = tx.split("MATCHED-SPEED c1s-400@def")[1].split("MATCHED-SPEED c2-100@def")[0]
+check("matched speed excludes the slow WIRE rows and reads the excess from the rest: +2.0 % (10.2 vs 10.0 per 0.4 GB, i.e. 25.5 vs 25.0 per GB), n = 4/6", "+2.0 % (WIRE 25.500, MAIN 25.000; n=4/6)" in blk, blk)
+cn = [ln for ln in t41.splitlines() if ln.startswith("  MAIN s42 r1 LIVE") or ln.startswith("  WIRE s7 r2") or ln.startswith("  BASE s42 r1")]
+check("contention: every c1s row (all three arms, 18 rows) prints procs_running and io full avg10 before/after",
+      t41.count("| procs_running 1/2 | io 0.10/0.20") == 18 and len(cn) >= 3 and "CONTENTION c1s-400@def" in t41, (t41.count("| procs_running"), cn))
+
+# the committed §38 ledger: plan 41's scorer reproduces its ladder (every CLAUSE / VERDICT / REGRESSES / REPRODUCTION / SHARE line) byte for byte
+LG38 = os.path.join(RAW, "place38")
+ref_ = open(os.path.join(LG38, "score.txt"), encoding="utf-8").read().splitlines()
+got_, got41 = [], []
+pp.score([os.path.join(LG38, "ld.log")], out=got_.append)
+pp.score([os.path.join(LG38, "ld.log")], out=got41.append, plan41=True)
+mark_ = "=== beside the ladder (status §41; none of this enters the verdict) ==="
+ladder41 = got41[2:got41.index(mark_) - 1]
+check("plan 38's scorer reproduces the committed §38 score.txt byte for byte (nothing in the ladder moved)", got_ == ref_)
+check("plan 41's scorer on the committed §38 ledger reproduces the whole ladder part of score.txt (every CLAUSE, VERDICT, REGRESSES, SHARE line) byte for byte",
+      ladder41 == ref_[2:-1], [(a, b) for a, b in zip(ladder41, ref_[2:-1]) if a != b][:1])
+check("... with BASE absent the gate reads UNREADABLE, not PASS", "\nBASE-GATE UNREADABLE" in "\n".join(got41))
+check("... and the verdict line is the registered one", "VERDICT REGRESSES-AT(c1s-400@def) [NOT-REPRODUCED-AT(c8-100@192,c8-100@512)]" in got41, [ln for ln in got41 if ln.startswith("VERDICT")])
+
+# smoke 41
+def smoke41_rc(rows):
+    with tempfile.TemporaryDirectory() as td:
+        pth = os.path.join(td, "s.log")
+        with open(pth, "w") as fh:
+            for r in rows:
+                fh.write("P38ROW " + json.dumps(r) + chr(10))
+        return pp.smoke(pth, plan41=True)
+
+
+sm41 = sm + [row38("c1s-400", "def", "BASE", 0)]
+check("smoke 41 passes on LIVE MAIN, WIRE (w_calls > 0) and BASE rows", smoke41_rc(sm41) == 0)
+check("smoke 41 fails without the BASE row", smoke41_rc(sm) == 1)
+bad_ = [dict(sm41[2], status="WITNESS-FAIL")]
+check("smoke 41 fails on a void BASE row", smoke41_rc(sm[:2] + bad_) == 1)
+with tempfile.TemporaryDirectory() as td:
+    pth = os.path.join(td, "c.log")
+    with open(pth, "w") as fh:
+        for r in ledger41():
+            fh.write("P38ROW " + json.dumps(r) + "\n")
+        fh.write("LD-BATTERY-DONE tag=ld blocks=6\n")
+    ok41 = pp.check(pth, plan41=True) == 0
+    ok38 = pp.check(pth) == 1
+check("check41 accepts 108 rows + LD-BATTERY-DONE; check (plan 38) still demands 96", ok41 and ok38)
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

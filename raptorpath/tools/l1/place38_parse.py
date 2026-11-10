@@ -8,6 +8,10 @@ c8 192 / 256 / 512). Derived from threadpd_parse.py (§21's pass rule through l1
     place38_parse.py check|smoke <ledger>
     place38_parse.py score <ledger>
     place38_parse.py plan [smoke]            (`cell store arm seed rep` per line; the battery's source)
+    place38_parse.py plan41 [smoke] | check41 <ledger> | smoke41 <ledger> | score41 <ledger>
+        status §41: §38's battery unchanged plus the arm BASE (main's own binary, 4926822, built fresh) at c1s-400 and
+        c1d-400 default. BASE never reaches the ladder; it gets its own gate (MAIN against BASE, WITHIN on every §21
+        clause), printed beside it, plus the matched-speed CPU/GB and the per-row contention readouts.
 
 Interpretations the spec leaves open (listed in the harness report):
   * the [LAG] clauses score E = p99 - min_us at RWM_RTOBS=1 (§28/§32's form of §21's [LAG] p99 clause); raw p99 is reported;
@@ -32,9 +36,9 @@ from l1ab import (  # noqa: E402
 from threadp1_parse import rtp_floor  # noqa: E402
 from threadpd_parse import lag_E, lag_max  # noqa: E402
 
-for _a in ("MAIN", "WIRE"):
+for _a in ("MAIN", "WIRE", "BASE"):
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
-ARMS = ["MAIN", "WIRE"]
+ARMS = ["MAIN", "WIRE"]                                  # the ladder's arms; BASE (status §41) never enters it
 
 # (cell, store) in a block's order; store "def" = the shipped default law.
 CELLS38 = [("c1s-400", "def"), ("c2-100", "def"), ("c1d-400", "def"), ("c8-100", "def"),
@@ -45,6 +49,11 @@ STATIC = [c for c in CELLS38 if c[1] != "def"]
 BLOCKS38 = [("42", 1), ("7", 1), ("42", 2), ("7", 2), ("42", 3), ("7", 3)]        # rep-major, as §32
 SMOKE38 = [("c8-100", "256", "MAIN", "42", 1), ("c8-100", "256", "WIRE", "42", 1)]
 EXPECT_ROWS38 = len(CELLS38) * len(ARMS) * len(BLOCKS38)
+# ── status §41 ──
+BASE_CELLS = [("c1s-400", "def"), ("c1d-400", "def")]
+SMOKE41 = SMOKE38 + [("c1s-400", "def", "BASE", "42", 1)]        # DECISION (reported): a BASE row in the smoke
+EXPECT_ROWS41 = EXPECT_ROWS38 + len(BASE_CELLS) * len(BLOCKS38)  # n = 6 per BASE cell: 108 (the pre-registration says 24 / 120)
+MATCH_BAND = 0.03
 S3_REL = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065},
           "c2-100": {"gp": 0.014, "cpu": 0.063}, "c8-100": {"gp": 0.040, "cpu": 0.116}}
 DNF_THRESHOLD = 0.20
@@ -74,9 +83,30 @@ def plan38(smoke=False):
     return out
 
 
+def base_position(b):
+    """DECISION (reported): where BASE sits among the two ladder arms in block b. MAIN and WIRE keep §38's order (MAIN
+    first on even blocks), so the plan minus BASE is plan38() exactly; BASE takes position b mod 3 (front, middle, back),
+    twice each over the six blocks."""
+    return b % 3
+
+
+def plan41(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order: plan38() plus BASE at BASE_CELLS."""
+    if smoke:
+        return list(SMOKE41)
+    out = []
+    for b, (seed, rep) in enumerate(BLOCKS38):
+        for cell, store in CELLS38:
+            arms = list(ARMS if b % 2 == 0 else ARMS[::-1])
+            if (cell, store) in BASE_CELLS:
+                arms.insert(base_position(b), "BASE")
+            out += [(cell, store, a, seed, rep) for a in arms]
+    return out
+
+
 # ── readers ───────────────────────────────────────────────────────────────
 _DIAG_T = re.compile(r"^\[DIAG\] t=([\d.]+)s ")
-_LEG = re.compile(r"\bp(\d+):infl=(\d+)/.*?rtt=(\d+)/wrtt=(\d+)/.*?wpl_us=(\S+)")
+_LEG = re.compile(r"\bp(\d+):infl=(\d+)/.*?rtt=(\d+)/wrtt=(\d+)/(?:.*?\bwpl_us=(\S+))?")
 _ETA = re.compile(r"\[ETA\] site=sender .*?\bcold_r=(\S+) cold_ge=(\S+) .*?ref_fl=(\S+) w_cold=(\S+) w_mv=(\S+) w_n=(\d+) w_calls=(\d+)")
 _ETA_P = re.compile(r"\bp(\d+):n=\S+ drop=\S+ tau_us=\S+ e_p50=(\S+) e_p90=(\S+)")
 
@@ -96,7 +126,7 @@ def diag_lines(cli):
             if g:
                 wpl = g.group(5)
                 legs[int(g.group(1))] = (int(g.group(2)), int(g.group(3)), int(g.group(4)),
-                                         int(wpl) if wpl.isdigit() else None)
+                                         int(wpl) if (wpl or "").isdigit() else None)
         if legs:
             out.append((float(m.group(1)), legs))
     return out
@@ -209,7 +239,11 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     # ── witnesses (a row is void otherwise) ──
     p = []
     want = "1" if arm == "WIRE" else "0"
-    if row["gate_wire_cli"] != want or row["gate_wire_srv"] != want:
+    if arm == "BASE":
+        # Main's own binary (§41) has no RWM_PLACE_WIRE: the token must be absent, and nothing of the arm may print.
+        if row["gate_wire_cli"] is not None or row["gate_wire_srv"] is not None:
+            p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} on BASE (want absent)")
+    elif row["gate_wire_cli"] != want or row["gate_wire_srv"] != want:
         p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} (want {want})")
     if store == "def":
         if row["gate_store"] != "unset":
@@ -241,9 +275,9 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                 p.append(f"w_mv={eta['w_mv']}")
     else:
         if any(L[i][3] is not None for _, L in diag for i in L):
-            p.append("wpl_us-numeric-on-MAIN")
+            p.append(f"wpl_us-numeric-on-{arm}")
         if eta is not None and (eta["w_n"] or eta["w_calls"] or any(eta[k] != "-" for k in ("ref_fl", "w_cold", "w_mv"))):
-            p.append("wire-gauges-on-MAIN")
+            p.append(f"wire-gauges-on-{arm}")
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -255,6 +289,12 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     except ValueError:
         row["io_full10"] = None
     row["io_high"] = row["io_full10"] is not None and row["io_full10"] >= 20.0
+    # §41: the per-row contention covariates, sampled by the battery before and after the invocation (never a void).
+    for k, env in (("procs_before", "LD_PROCS_B"), ("procs_after", "LD_PROCS_A"), ("io_before", "LD_IO_B"), ("io_after", "LD_IO_A")):
+        try:
+            row[k] = float(os.environ[env])
+        except (KeyError, ValueError):
+            row[k] = None
     return row
 
 
@@ -288,30 +328,30 @@ def med_mm(v, nd=3):
     return f"{lc.med(v):.{nd}f} [{min(v):.{nd}f}-{max(v):.{nd}f}] n={len(v)}"
 
 
-def clause_readings(xs, rs, cell, out, tag):
+def clause_readings(xs, rs, cell, out, tag, name="WIRE", ref="MAIN"):
     """§21's pass rule of the WIRE rows `xs` against MAIN rows `rs` at one (cell, store): the readings and the list of
     WORSE clauses (feed moved and the DNF excess included)."""
     rel = S3_REL[cell]
     c = {}
-    c["goodput"] = reading(vals(xs, "mbps"), vals(rs, "mbps"), rel["gp"], True, "WIRE")
-    c["cpu_cli/GB"] = reading(per_byte(xs, "cpu_cli"), per_byte(rs, "cpu_cli"), rel["cpu"], False, "WIRE")
-    c["cpu_srv/GB"] = reading(per_byte(xs, "cpu_srv"), per_byte(rs, "cpu_srv"), rel["cpu"], False, "WIRE")
+    c["goodput"] = reading(vals(xs, "mbps"), vals(rs, "mbps"), rel["gp"], True, name, ref)
+    c["cpu_cli/GB"] = reading(per_byte(xs, "cpu_cli"), per_byte(rs, "cpu_cli"), rel["cpu"], False, name, ref)
+    c["cpu_srv/GB"] = reading(per_byte(xs, "cpu_srv"), per_byte(rs, "cpu_srv"), rel["cpu"], False, name, ref)
     for side in ("cli", "srv"):
         k = f"{side}_lag_E"
         rv = vals(rs, k)
-        c[f"lag_E_{side}"] = reading(vals(xs, k), rv, spread_rel(rv), False, "WIRE")
+        c[f"lag_E_{side}"] = reading(vals(xs, k), rv, spread_rel(rv), False, name, ref)
     feed_bad, feed_unread = [], []
     for i in range(sp.N_LEGS[cell]):
         k = "rtp_floor_p%d" % i
         rv = vals(rs, k)
-        c[f"rtp_floor_p{i}"] = reading(vals(xs, k), rv, spread_rel(rv), False, "WIRE")
+        c[f"rtp_floor_p{i}"] = reading(vals(xs, k), rv, spread_rel(rv), False, name, ref)
         fk = "feed_ratio_p%d" % i
         fx, fr = lc.med(vals(xs, fk)), lc.med(vals(rs, fk))
         if fx is None or fr is None:
             feed_unread.append(i)
         elif not (fr / FEED_BAND <= fx <= fr * FEED_BAND):
             feed_bad.append(i)
-        out(f"    FEED {tag} p{i} plc/truth WIRE={fmt(fx, 3)} MAIN={fmt(fr, 3)} -> "
+        out(f"    FEED {tag} p{i} plc/truth {name}={fmt(fx, 3)} {ref}={fmt(fr, 3)} -> "
             + ("UNREAD" if fx is None or fr is None else ("SAME" if i not in feed_bad else "FEED-MOVED")))
     dr = (sum(1 for r in rs if r["dnf"]) / len(rs)) if rs else None
     dx = (sum(1 for r in xs if r["dnf"]) / len(xs)) if xs else None
@@ -338,12 +378,77 @@ def share_clause(xs, rs, band):
                                                 f"{'|d| <= %.2f' % SHARE_ABS}{' or within [1/2, 2] x' if band else ''}")
 
 
-def score(paths, out=print):
+# ── status §41: the BASE gate, matched-speed CPU/GB, contention (reported beside the ladder, never part of it) ──
+def base_gate(live, out):
+    """BASE gate: MAIN (the new binary, RWM_PLACE_WIRE unset) against BASE (main's own binary) must read WITHIN on every
+    §21 clause at both BASE cells. Literal: TREND-* and BETTER are not WITHIN, VACUOUS / UNREAD are not a pass.
+    -> (state, {cell@store: [non-passing items]}) with state PASS / FAIL / UNREADABLE (< MIN_LIVE rows in either arm)."""
+    per, state = {}, "PASS"
+    for cell, store in BASE_CELLS:
+        k = key(cell, store)
+        ms, bs = cell_rows(live, cell, store, "MAIN"), cell_rows(live, cell, store, "BASE")
+        out(f"[BASE-GATE {k}]  live MAIN={len(ms)} BASE={len(bs)}")
+        if len(ms) < MIN_LIVE or len(bs) < MIN_LIVE:
+            per[k] = [f"< {MIN_LIVE} live rows (MAIN {len(ms)}, BASE {len(bs)})"]
+            state = "UNREADABLE" if state == "PASS" else state
+            out(f"  BASE-GATE {k}: UNREADABLE {per[k][0]}")
+            continue
+        c, worse, feed_unread = clause_readings(ms, bs, cell, out, "BASE-GATE " + k, "MAIN", "BASE")
+        bad = [f"{n}={rd}" for n, (rd, _) in c.items() if rd != "WITHIN"]
+        bad += [w for w in worse if w.startswith("feed_") or w == "dnf"]
+        bad += [f"feed_p{i}=UNREAD" for i in feed_unread]
+        per[k] = bad
+        out(f"  BASE-GATE {k}: {'PASS' if not bad else 'FAIL ' + ', '.join(bad)}")
+        if bad:
+            state = "FAIL"
+    return state, per
+
+
+def matched_speed(live, out):
+    """Reported: client / server CPU per GB of WIRE and MAIN rows within +-3 % of the pooled (WIRE + MAIN) median goodput
+    at each cell; BASE rows in the same window are printed beside them where the cell has them."""
+    for cell, store in CELLS38:
+        k = key(cell, store)
+        pool = [r for r in live if (r["cell"], r["store"]) == (cell, store) and r["arm"] in ARMS and r.get("mbps") is not None]
+        med = lc.med([r["mbps"] for r in pool])
+        if med is None:
+            out(f"MATCHED-SPEED {k}: no rows")
+            continue
+        lo, hi = med * (1 - MATCH_BAND), med * (1 + MATCH_BAND)
+        out(f"MATCHED-SPEED {k}: pooled WIRE+MAIN median goodput {med:.1f} Mbit/s (n={len(pool)}); window [{lo:.1f}, {hi:.1f}]")
+        sel_ = {a: [r for r in cell_rows(live, cell, store, a) if r.get("mbps") is not None and lo <= r["mbps"] <= hi]
+                for a in ("MAIN", "WIRE", "BASE")}
+        for a in ("MAIN", "WIRE", "BASE"):
+            if a == "BASE" and not cell_rows(live, cell, store, "BASE"):
+                continue
+            out(f"  {a}: n={len(sel_[a])} of {len(cell_rows(live, cell, store, a))}  goodput {mmm(vals(sel_[a], 'mbps'), 1)}  "
+                f"client CPU/GB {mmm(per_byte(sel_[a], 'cpu_cli'))}  server CPU/GB {mmm(per_byte(sel_[a], 'cpu_srv'))}")
+        for lab, kk in (("client", "cpu_cli"), ("server", "cpu_srv")):
+            mx, mr = lc.med(per_byte(sel_["WIRE"], kk)), lc.med(per_byte(sel_["MAIN"], kk))
+            out(f"  {lab} CPU/GB WIRE vs MAIN at matched speed: "
+                + (f"{100 * (mx / mr - 1):+.1f} % (WIRE {mx:.3f}, MAIN {mr:.3f}; n={len(sel_['WIRE'])}/{len(sel_['MAIN'])})" if mx and mr else "not readable"))
+
+
+def contention(live_or_all, out):
+    """Reported: every c1s row's procs_running and io `full avg10`, before and after the invocation."""
+    out("CONTENTION c1s-400@def, every row (status or not): arm seed rep status mbps | procs_running before/after | io full avg10 before/after")
+    rs = sorted([r for r in live_or_all if r["cell"] == "c1s-400" and r["store"] == "def"],
+                key=lambda r: (r["arm"], r["seed"], r["rep"]))
+    for r in rs:
+        out(f"  {r['arm']} s{r['seed']} r{r['rep']} {r['status']} mbps={fmt(r.get('mbps'), 1)} | procs_running {fmt(r.get('procs_before'), 0)}/{fmt(r.get('procs_after'), 0)}"
+            f" | io {fmt(r.get('io_before'), 2)}/{fmt(r.get('io_after'), 2)}")
+
+
+def score(paths, out=print, plan41=False):
     rows, tokens = rows_of(paths)
     live = [r for r in rows if r["status"] == "LIVE"]
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
-    out("PLACE-WIRE BATTERY (status §38) SCORE: MAIN = RWM_PLACE_WIRE unset, WIRE = RWM_PLACE_WIRE=1, one binary")
-    out(f"ROWS {len(rows)}/{EXPECT_ROWS38}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
+    if plan41:
+        out("PLACE-WIRE BATTERY (status §41 = §38 + arm BASE) SCORE: MAIN = RWM_PLACE_WIRE unset, WIRE = RWM_PLACE_WIRE=1, one binary; "
+            "BASE = main's own binary (4926822), reported beside the ladder")
+    else:
+        out("PLACE-WIRE BATTERY (status §38) SCORE: MAIN = RWM_PLACE_WIRE unset, WIRE = RWM_PLACE_WIRE=1, one binary")
+    out(f"ROWS {len(rows)}/{EXPECT_ROWS41 if plan41 else EXPECT_ROWS38}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
     for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL"):
         out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
@@ -493,30 +598,44 @@ def score(paths, out=print):
         verdict += " [" + "; ".join(notes) + "]"
     out("VERDICT " + verdict)
     res["verdict"], res["reproduced"], res["unscoreable"] = verdict, reproduced, unsc
+    if plan41:
+        out("")
+        out("=== beside the ladder (status §41; none of this enters the verdict) ===")
+        state, per = base_gate(live, out)
+        out(f"BASE-GATE {state}" + ("" if state == "PASS" else " (the new binary does not reach main even switched off, whatever the ladder says)"
+                                    if state == "FAIL" else ""))
+        res["base_gate"], res["base_gate_items"] = state, per
+        out("")
+        matched_speed(live, out)
+        out("")
+        contention(rows, out)
     out("RESULT " + json.dumps(res, sort_keys=True, default=str))
     return verdict
 
 
-def check(path):
+def check(path, plan41=False):
     rows, tokens = rows_of([path])
     t = open(path, errors="replace").read()
-    ok = "LD-BATTERY-DONE" in t and len(rows) == EXPECT_ROWS38
-    print(f"CHECK38 done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{EXPECT_ROWS38}")
+    want = EXPECT_ROWS41 if plan41 else EXPECT_ROWS38
+    ok = "LD-BATTERY-DONE" in t and len(rows) == want
+    print(f"CHECK{'41' if plan41 else '38'} done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{want}")
     return 0 if ok else 1
 
 
-def smoke(path):
-    """rc 0 iff both smoke rows (MAIN and WIRE at c8-100@256) are LIVE with the gauges the scorer reads and WIRE has w_calls > 0."""
+def smoke(path, plan41=False):
+    """rc 0 iff both smoke rows (MAIN and WIRE at c8-100@256) are LIVE with the gauges the scorer reads and WIRE has w_calls > 0.
+    Plan 41 adds one BASE row (c1s-400 default): LIVE with the one-leg clause inputs."""
     rows, _ = rows_of([path])
     bad = []
     got = {(r["cell"], r["store"], r["arm"]): r for r in rows}
-    for cell, store, arm, _, _ in SMOKE38:
+    for cell, store, arm, _, _ in (SMOKE41 if plan41 else SMOKE38):
         r = got.get((cell, store, arm))
         if r is None:
             bad.append(f"{arm}: no row")
             continue
         miss = [] if r["status"] == "LIVE" else [r["status"]]
-        for k in ("cpu_cli", "cpu_srv", "mbps", "cli_lag_E", "srv_lag_E", "feed_ratio_p0", "feed_ratio_p1", "rtp_floor_p0", "rtp_floor_p1"):
+        legs = range(sp.N_LEGS[cell])
+        for k in ["cpu_cli", "cpu_srv", "mbps", "cli_lag_E", "srv_lag_E"] + [f"feed_ratio_p{i}" for i in legs] + [f"rtp_floor_p{i}" for i in legs]:
             if r.get(k) is None:
                 miss.append(f"no-{k}")
         if arm == "WIRE" and not ((r.get("eta") or {}).get("w_calls") or 0) > 0:
@@ -548,12 +667,23 @@ def main(argv):
         for c, s, ar, seed, rep in plan38(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
         return 0
+    if cmd == "plan41":
+        for c, s, ar, seed, rep in plan41(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
     if cmd == "check":
         return check(a[0])
+    if cmd == "check41":
+        return check(a[0], plan41=True)
     if cmd == "smoke":
         return smoke(a[0])
+    if cmd == "smoke41":
+        return smoke(a[0], plan41=True)
     if cmd == "score":
         score(a)
+        return 0
+    if cmd == "score41":
+        score(a, plan41=True)
         return 0
     print(f"unknown command {cmd}")
     return 2

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Status §34: the on-VM waiter for the post-§32 c1 static grid (LD_PLAN=34; LDW_PLAN=36 for status §36).
+# Status §34: the on-VM waiter for the post-§32 c1 static grid (LD_PLAN=34; LDW_PLAN=36, 38, 40 or 41 for the later sections).
 # Polls every 10 min (`test -e` on both locks, no cargo/rustc) and launches
 # loopdiag_run_all.sh with a hard deadline LD_HARD = launch + 4 h; a refusal
 # before anything ran (rc 3 precondition, rc 4 lock) is retried until
