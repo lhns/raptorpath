@@ -48,6 +48,9 @@ def release(arrivals, sizes, R, delay=0):
 def pkt_of(t_ns, orig, payload):
     """(t, orig_len, udp_payload) -> an Ethernet/IPv4/UDP frame truncated to 64 B, as tcpdump -s 64 writes it."""
     eth = b"\x02" * 6 + b"\x04" * 6 + b"\x08\x00"
+    if payload is None:         # an ICMP echo (any non-UDP protocol must count too)
+        icmp_ip = struct.pack(">BBHHHBBH4s4s", 0x45, 0, orig - 14, 0, 0, 64, 1, 0, bytes([10, 77, 0, 1]), bytes([10, 77, 0, 2]))
+        return (eth + icmp_ip + b"\x08\x00" + b"\x00" * 64)[:64], orig
     ip = struct.pack(">BBHHHBBH4s4s", 0x45, 0, min(payload + 28, 65535), 0, 0, 64, 17, 0, bytes([10, 77, 0, 1]), bytes([10, 77, 0, 2]))
     udp = struct.pack(">HHHH", 40000, 7000, payload + 8, 0)
     return (eth + ip + udp + b"\x00" * 64)[:64], orig
@@ -118,6 +121,9 @@ with tempfile.TemporaryDirectory() as td:
 check("m = the most frequent payload among skbs <= 1472 B (GSO totals and the odd tail ignored)",
       dp.full_segment_payload([1200] * 5 + [100] * 3 + [3600] * 50 + [2400] * 9) == 1200)
 check("m tie goes to the larger payload", dp.full_segment_payload([1200, 1200, 800, 800]) == 1200)
+check("m = the payload carrying the most bytes: 36-byte client datagrams (3161) outnumber 1252-byte skbs (588), 1252 wins (the check row's data)",
+      dp.full_segment_payload([36] * 3161 + [40] * 1348 + [1252] * 588 + [1253] * 341 + [12520] * 2500) == 1252)
+check("m ignores non-UDP skbs (payload None)", dp.full_segment_payload([None] * 50 + [1252] * 3) == 1252)
 check("m of nothing is None", dp.full_segment_payload([]) is None)
 sk = dp.skb_series([(1, 1242, 1200), (2, frame_len(3600), 3600), (3, frame_len(100), 100), (4, frame_len(2500), 2500)], 1200)
 check("b = orig_len + (segs-1)*42: 1 seg, 3 segs, a short single, a 3-seg skb with a short tail",
@@ -225,16 +231,29 @@ with tempfile.TemporaryDirectory() as td:
     check("table bytes are deterministic (mtime 0)", open(pth, "rb").read() == a)
 
 # ── the row: witnesses ─────────────────────────────────────────────────────
-def drv_lines(cell, legs, sent=None, skbs=None, kdrop=0, egress=None, drop=0):
-    """legs: {i: [skb (t,b)]} -> a driver-output fragment in the shapes of perf_rwm_c.sh / lib.sh truth_compute."""
+def snap_line(tag, i, sent_b, sent_p, dropped, backlog, hit):
+    """A [SNAP] line in the shape perf_rwm_c.sh pcap_snap prints (tc -s qdisc text, then the clsact egress filter text)."""
+    return (f"[SNAP] tag={tag} leg={i} dev=cli{i} qdisc: qdisc netem 8039: root refcnt 11 limit 1000 delay 5ms  3ms rate 100Mbit seed 42  "
+            f"Sent {sent_b} bytes {sent_p} pkt (dropped {dropped}, overlimits 0 requeues 0)   backlog {backlog * 7000}b {backlog}p requeues 0  "
+            f"filter: filter protocol all pref 49152 matchall chain 0  filter protocol all pref 49152 matchall chain 0 handle 0x1    "
+            f"not_in_hw (rule hit {hit}) \taction order 1: gact action pass \t random type none pass val 0 \t index 1 ref 1 bind 1 installed 6 sec "
+            f"used 1 sec firstused 6 sec \tAction statistics: \tSent {sent_b} bytes {sent_p} pkt (dropped 0, overlimits 0 requeues 0)  \tbacklog 0b 0p requeues 0  ")
+
+
+START = dict(sent_b=678, sent_p=9, dropped=0, backlog=0, hit=9)       # bring-up traffic before the window
+
+
+def drv_lines(cell, legs, sent=None, kdrop=0, egress=None, drop=0, backlog=0):
+    """legs: {i: [skb (t,b)]} -> a driver-output fragment: the window's [SNAP] start/stop and the [CAPTURE] line.
+    Over the window netem releases len(ser) skbs and sum(b) bytes (overrides: `sent` bytes, `egress` skbs entering
+    the qdisc), drops `drop` skbs and still holds `backlog` skbs at the stop snapshot."""
     out = []
     for i, ser in legs.items():
         sb = sum(b for _, b in ser) if sent is None else sent
-        out.append(f"    QDISC cli{i}: qdisc netem 8039: root refcnt 11 limit 1000 delay 1ms rate 1Gbit seed 42  Sent {sb} bytes {len(ser) * 3} pkt "
-                   f"(dropped {drop}, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 ")
-        eg = (len(ser) + drop) if egress is None else egress
-        out.append(f"    [TRUTH] leg={i} dev=cli{i} egress_dgrams={eg * 3} egress_skbs={eg} gso=3.00 netem_sent_dgrams={len(ser) * 3} "
-                   f"netem_dropped_skbs={drop} backlog=0 lost=0 loss=0.000000 rcvbuf_drops=0 rcvbuf_scope=netns")
+        eg = (len(ser) + drop + backlog) if egress is None else egress
+        out.append(snap_line("start", i, **START))
+        out.append(snap_line("stop", i, START["sent_b"] + sb, START["sent_p"] + len(ser) * 3, START["dropped"] + drop, START["backlog"] + backlog,
+                             START["hit"] + eg))
         out.append(f"[CAPTURE] leg={i} dev=srv{i} captured={len(ser)} kdrop={kdrop}")
     return out
 
@@ -265,10 +284,24 @@ check("witness trips: capture bytes 2 % below netem Sent bytes", any(p.startswit
 (d36, prob, _), _ = row("c2-100", "CAP256", {0: recs_}, 12_500_000, drvkw=dict(sent=int(sum(b for _, b in ser) / 1.0099)))
 check("witness holds inside 1 % (0.99 % off)", prob == [], prob)
 (d36, prob, _), _ = row("c2-100", "CAP256", {0: recs_}, 12_500_000, drvkw=dict(egress=int(len(ser) * 1.02)))
-check("witness trips: captured skbs 2 % below [TRUTH] egress_skbs - netem_dropped_skbs (a tap that merged skbs)",
+check("witness trips: captured skbs 2 % below the window's (qdisc hits - drops - queued) (a tap that merged skbs or stopped early)",
       any(p.startswith("p36-skbs-p0=") for p in prob), prob)
 (d36, prob, _), _ = row("c2-100", "CAP256", {0: recs_}, 12_500_000, drvkw=dict(egress=len(ser) + 7, drop=7))
-check("release unit nets the netem drops: egress - dropped == captured passes", prob == [], prob)
+check("release unit nets the netem drops: hits - dropped == captured passes", prob == [], prob)
+(d36, prob, _), _ = row("c2-100", "CAP256", {0: recs_}, 12_500_000, drvkw=dict(drop=3, backlog=40))
+check("release unit nets the skbs still queued at the stop snapshot (hits - drops - backlog), over the window", prob == [], prob)
+# the amendment-5 defect: the tap stopped before its last partial AF_PACKET block (~745 skbs) was delivered, while
+# netem's counters (read over the same window) include them
+cut = recs_[:-int(len(recs_) * 0.05)]
+write_pcap(os.path.join(td, "p0.pcap"), cut)
+d_cut = drv_lines("c2-100", {0: ser})                                  # netem released all of ser; the capture holds 95 % of it
+(d36, prob, _) = dp.row_fields("c2-100", "CAP256", d_cut, [], td, None, "r")
+check("witnesses trip together on a tail-truncated capture (5 % of the skbs missing): skbs and bytes both > 1 %",
+      any(p.startswith("p36-skbs-p0=") for p in prob) and any(p.startswith("p36-bytes-p0=") for p in prob), prob)
+write_pcap(os.path.join(td, "p0.pcap"), recs_)
+check("the window deltas, not lifetime totals: the start snapshot's bring-up traffic is subtracted (678 B, 9 pkts, 9 hits)",
+      dp.window_expect(dp.parse_snap(d_cut)[0]) == (sum(b for _, b in ser), len(ser)), dp.window_expect(dp.parse_snap(d_cut)[0]))
+check("a missing start or stop snapshot gives no expectation", dp.window_expect({"start": {}}) is None and dp.window_expect(None) is None)
 (d36, prob, _), _ = row("c2-100", "CAP256", {0: recs_}, 12_500_000, drvkw=dict(kdrop=3))
 check("witness trips: tcpdump kernel drops > 0", "p36-kdrop-p0=3" in prob, prob)
 (d36, prob, _), _ = row("c2-100", "CAP256", {0: recs_}, 12_500_000, drvkw=dict(kdrop="-"))
@@ -276,8 +309,10 @@ check("witness trips: no tcpdump summary (kdrop `-` is never read as 0)", any(p.
 d_ = drv_lines("c2-100", {0: ser})
 (d36, prob, _) = dp.row_fields("c2-100", "CAP256", [x for x in d_ if "[CAPTURE]" not in x], [], td, None, "r")
 check("witness trips: [CAPTURE] line missing", "p36-capture-line-missing-p0" in prob, prob)
-(d36, prob, _) = dp.row_fields("c2-100", "CAP256", [x for x in d_ if "QDISC" not in x], [], td, None, "r")
-check("witness trips: netem QDISC line missing", "p36-no-qdisc-p0" in prob, prob)
+(d36, prob, _) = dp.row_fields("c2-100", "CAP256", [x for x in d_ if "[SNAP]" not in x], [], td, None, "r")
+check("witness trips: [SNAP] lines missing", "p36-no-snap-p0" in prob, prob)
+(d36, prob, _) = dp.row_fields("c2-100", "CAP256", [x for x in d_ if "tag=start" not in x], [], td, None, "r")
+check("witness trips: the start snapshot missing", "p36-no-snap-p0" in prob, prob)
 (d36, prob, _) = dp.row_fields("c2-100", "CAP256", d_, [], os.path.join(td, "nope"), None, "r")
 check("witness trips: pcap missing/unreadable; with every leg unreadable nothing is scored", "p36-pcap-unreadable-p0" in prob and d36["legs"][0]["state"] == "none", prob)
 # idle leg: c1d with a 50-skb second leg
@@ -511,6 +546,29 @@ write_pcap(os.path.join(td_, "p0.pcap"), recs_)
 write_pcap(os.path.join(td_, "p1.pcap"), recs_)
 d36, prob, _ = dp.row_fields("c1d-400", "CAP128", drv_lines("c1d-400", {0: ser, 1: ser}), [], td_, None, "r", srv)
 check("row_fields on a c1d row with [RDIAG] lines records the mu_R periods", [x["k"] for x in d36["mur"]] == [0, 2] and d36["mur"][0]["active"] == 2, d36.get("mur"))
+
+# ── unfiltered capture: every skb of any protocol counts in b and in the train spans ──
+R_ = 12_500_000
+mix, bs_mix = [], []
+for i in range(4000):
+    if i % 5 == 4:
+        mix.append((110, None))                                 # an ICMP echo (frame 110 B), netem spaces it like any skb
+    else:
+        s_ = (1, 6, 2, 11)[i % 4]
+        mix.append((frame_len(s_ * M), s_ * M))
+bs_mix = [o + (max(1, -(-p // M)) - 1) * HDR if p else o for o, p in mix]
+ts_mix = release([EPOCH] * len(mix), bs_mix, R_)
+with tempfile.TemporaryDirectory() as td_:
+    pth = os.path.join(td_, "mix.pcap")
+    write_pcap(pth, [(t, o, p) for t, (o, p) in zip(ts_mix, mix)])
+    rr, st_ = dp.read_pcap(pth)
+check("reader: non-UDP skbs are records too (payload None), counted in stats", len(rr) == 4000 and sum(1 for r_ in rr if r_[2] is None) == 800 and st_["other"] == 800, st_)
+sk_all = dp.skb_series(rr, dp.full_segment_payload(r_[2] for r_ in rr))
+check("an ICMP skb is charged its frame length (b = orig_len, one segment)", [b for (_, b), (o, p) in zip(sk_all, mix) if p is None][0] == 110)
+check("with the non-UDP skbs in, a busy mixed stream reads the link exactly (k=4)", dp.estimate(sk_all)[4]["lhat"] == R_, dp.estimate(sk_all)[4]["lhat"])
+sk_udp = [x for x, (o, p) in zip(sk_all, mix) if p is not None]
+check("... every train reads R (window median == R); left out (a UDP-only filter) the trains that span an ICMP skb read low",
+      dp.estimate(sk_all)[4]["wmed"] == R_ and dp.estimate(sk_udp)[4]["wmed"] < R_ * 0.999, (dp.estimate(sk_all)[4]["wmed"], dp.estimate(sk_udp)[4]["wmed"]))
 
 # ── the plan table ─────────────────────────────────────────────────────────
 pl = dp.plan36()

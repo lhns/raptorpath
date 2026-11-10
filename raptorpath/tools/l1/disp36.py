@@ -4,12 +4,16 @@ as the store law's link-rate source. Pure stdlib, no scapy.
 
 Per row (called from loopdiag_parse.make_row under LD_PLAN=36):
   * a minimal pcap reader (nanosecond magic 0xa1b23c4d, little or big endian, Ethernet);
-  * per leg the skb series (t_ns, b): b = orig_len + (segs-1)*42, segs = ceil(udp_payload / m),
-    m = the row's full-segment payload (most frequent payload among skbs <= 1472 B);
+  * per leg the skb series (t_ns, b) of EVERY skb the unfiltered inbound tap saw (any protocol):
+    b = orig_len + (segs-1)*42, segs = ceil(udp_payload / m), m = the payload carrying the most bytes
+    (count x payload) among UDP skbs <= 1472 B. The engine's gso_size varies per skb (1246..1266), so
+    one m over-counts segments by ~4 %: netem's byte count differs by exactly 42 B per phantom segment
+    (0.15 %), inside the 1 % witness;
   * the estimator of §36 (1 s warm-up, train rate r_k(j) = sum b[j+1..j+k] / (t[j+k]-t[j]),
     250 ms windows, per-window max, per-row median and cv; the window-p90 variant), k in 2/4/8/16;
-  * D3 (in-run share, busy-run lengths), the witnesses (bytes vs netem Sent bytes, skbs vs
-    [TRUTH] egress_skbs - netem_dropped_skbs, kernel drops, the idle leg), D6 (quinn window,
+  * D3 (in-run share, busy-run lengths), the witnesses over the capture window's counter DELTAS
+    ([SNAP] start/stop: bytes vs netem Sent bytes; skbs vs qdisc hits - drops - queued; kernel drops; the
+    idle leg), D6 (quinn window,
     backlog B) and D7 (egress share per leg);
   * the kept per-skb tables (gzipped "dt_ns b" lines, first line the absolute t).
 Per ledger: score_paths() -> D1, D2, D4, D5, D6, D7 and the verdict, ending in `RESULT {json}`.
@@ -99,8 +103,10 @@ def arm36(arm):
 
 # ── pcap ──────────────────────────────────────────────────────────────────
 def read_pcap(path):
-    """-> (records [(t_ns, orig_len, udp_payload)], stats). Only the nanosecond magic is accepted: a
-    microsecond file (tcpdump falling back silently) would mis-scale every spacing, so it is refused."""
+    """-> (records [(t_ns, orig_len, udp_payload | None)], stats). EVERY captured skb is a record, of any
+    protocol (netem's rate server spaces them all); the UDP payload is None for anything that is not IPv4/UDP.
+    Only the nanosecond magic is accepted: a microsecond file (tcpdump falling back silently) would mis-scale
+    every spacing, so it is refused."""
     with open(path, "rb") as fh:
         data = fh.read()
     if len(data) < 24:
@@ -116,7 +122,7 @@ def read_pcap(path):
     if link != 1:
         raise PcapError(f"link type {link} (want 1, Ethernet)")
     rec = struct.Struct(end + "IIII")
-    off, recs, other, trunc = 24, [], 0, 0
+    off, recs, other, trunc, other_bytes = 24, [], 0, 0, 0
     while off + 16 <= len(data):
         sec, nsec, incl, orig = rec.unpack_from(data, off)
         off += 16
@@ -127,32 +133,33 @@ def read_pcap(path):
             break
         pkt = data[off:off + incl]
         off += incl
-        if incl < 42 or pkt[12:14] != b"\x08\x00":
+        pay = None
+        if incl >= 42 and pkt[12:14] == b"\x08\x00":
+            ihl = (pkt[14] & 0x0F) * 4
+            if pkt[23] == 17 and ihl >= 20 and incl >= 14 + ihl + 8:
+                pay = struct.unpack_from(">H", pkt, 14 + ihl + 4)[0] - 8
+        if pay is None:
             other += 1
-            continue
-        ihl = (pkt[14] & 0x0F) * 4
-        if pkt[23] != 17 or ihl < 20 or incl < 14 + ihl + 8:
-            other += 1
-            continue
-        ulen = struct.unpack_from(">H", pkt, 14 + ihl + 4)[0]
-        recs.append((sec * NS + nsec, orig, ulen - 8))
-    return recs, {"other": other, "truncated": trunc}
+            other_bytes += orig
+        recs.append((sec * NS + nsec, orig, pay))
+    return recs, {"other": other, "other_bytes": other_bytes, "truncated": trunc}
 
 
 def full_segment_payload(payloads):
-    """The most frequent payload among skbs <= 1472 B (a tie goes to the larger); None without any."""
-    c = Counter(p for p in payloads if 0 < p <= M_MAX_PAYLOAD)
+    """The payload that carries the most bytes (count x payload) among UDP skbs <= 1472 B (a tie goes to the
+    larger); None without any. Not the most frequent one: small client datagrams (36-41 B) outnumber the
+    single-segment data skbs (status §36 amendment 5)."""
+    c = Counter(p for p in payloads if p is not None and 0 < p <= M_MAX_PAYLOAD)
     if not c:
         return None
-    top = max(c.values())
-    return max(p for p, n in c.items() if n == top)
+    return max(c, key=lambda p: (p * c[p], p))
 
 
 def skb_series(recs, m):
     """[(t_ns, b)] with b = orig_len + (segs-1)*42, segs = ceil(payload/m)."""
     out = []
     for t, orig, pay in recs:
-        segs = max(1, -(-pay // m)) if m else 1
+        segs = max(1, -(-pay // m)) if (m and pay) else 1
         out.append((t, orig + (segs - 1) * EXTRA_HDR))
     return out
 
@@ -262,6 +269,40 @@ def parse_qdisc(drv):
         if m:
             out[int(m.group(1))] = {"sent_bytes": int(m.group(2)), "sent_pkts": int(m.group(3)), "dropped": int(m.group(4))}
     return out
+
+
+_SNAP = re.compile(r"\[SNAP\] tag=(\w+) leg=(\d+) dev=(\S+) qdisc: (.*?) filter: (.*)$")
+_QSENT = re.compile(r"Sent (\d+) bytes (\d+) pkt \(dropped (\d+)")
+_QBACK = re.compile(r"backlog (\d+)b (\d+)p")
+_HIT = re.compile(r"rule hit (\d+)")
+
+
+def parse_snap(drv):
+    """{leg: {"start"|"stop": {sent_bytes, sent_pkts, dropped, backlog_pkts, hit}}} from the [SNAP] lines that
+    perf_rwm_c.sh prints when the taps start and (after netem's queue drained) stop. The first `Sent`/`backlog`
+    of the qdisc text is netem's; `rule hit` is the clsact egress counter in front of it (skbs)."""
+    out = {}
+    for ln in drv:
+        m = _SNAP.search(ln)
+        if not m:
+            continue
+        q, bl, hit = _QSENT.search(m.group(4)), _QBACK.search(m.group(4)), _HIT.search(m.group(5))
+        if not (q and bl and hit):
+            continue
+        out.setdefault(int(m.group(2)), {})[m.group(1)] = {
+            "sent_bytes": int(q.group(1)), "sent_pkts": int(q.group(2)), "dropped": int(q.group(3)),
+            "backlog_pkts": int(bl.group(2)), "hit": int(hit.group(1))}
+    return out
+
+
+def window_expect(snap):
+    """(bytes, skbs) netem released over the capture window: delta Sent bytes, and delta (skbs entering the
+    qdisc - skbs dropped - skbs still queued). None when either snapshot is missing."""
+    a, b = (snap or {}).get("start"), (snap or {}).get("stop")
+    if not a or not b:
+        return None
+    return (b["sent_bytes"] - a["sent_bytes"],
+            (b["hit"] - a["hit"]) - (b["dropped"] - a["dropped"]) - (b["backlog_pkts"] - a["backlog_pkts"]))
 
 
 def parse_capture(drv):
@@ -397,7 +438,7 @@ def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None
     if kind != "CAP":
         problems.append(f"p36-unknown-arm={arm}")
         return d, problems, notes
-    qd = parse_qdisc(drv)
+    snaps = parse_snap(drv)
     recs, bad = {}, set()
     for i in range(nleg):
         path = os.path.join(pcap_dir or "", f"p{i}.pcap")
@@ -430,21 +471,18 @@ def row_fields(cell, arm, drv, cli, pcap_dir=None, table_dir=None, row_name=None
             continue
         leg["state"] = "live"
         live += 1
-        q = qd.get(i)
-        if q is None:
-            problems.append(f"p36-no-qdisc-p{i}")
+        # The witnesses compare the capture window's DELTAS (the qdisc's lifetime counters also cover the
+        # topology bring-up and warm-up), against the unfiltered inbound tap.
+        w = window_expect(snaps.get(i))
+        if w is None:
+            problems.append(f"p36-no-snap-p{i}")
         else:
-            leg["sent_bytes"] = q["sent_bytes"]
-            if q["sent_bytes"] <= 0 or abs(leg["bytes"] - q["sent_bytes"]) / q["sent_bytes"] > WITNESS_TOL:
-                problems.append(f"p36-bytes-p{i}={leg['bytes']}/{q['sent_bytes']}")
-        t = truth.get(i, {})
-        if t.get("egress_skbs") is None or t.get("netem_dropped_skbs") is None:
-            problems.append(f"p36-no-truth-p{i}")
-        else:
-            exp = t["egress_skbs"] - t["netem_dropped_skbs"]
-            leg["exp_skbs"] = exp
-            if exp <= 0 or abs(leg["skbs"] - exp) / exp > WITNESS_TOL:
-                problems.append(f"p36-skbs-p{i}={leg['skbs']}/{exp}")
+            exp_b, exp_s = w
+            leg["window_bytes"], leg["window_skbs"] = exp_b, exp_s
+            if exp_b <= 0 or abs(leg["bytes"] - exp_b) / exp_b > WITNESS_TOL:
+                problems.append(f"p36-bytes-p{i}={leg['bytes']}/{exp_b}")
+            if exp_s <= 0 or abs(leg["skbs"] - exp_s) / exp_s > WITNESS_TOL:
+                problems.append(f"p36-skbs-p{i}={leg['skbs']}/{exp_s}")
         est = estimate(skbs)
         leg["k"] = {str(k): v for k, v in est.items()}
         leg["d3"] = d3(skbs, LINKS36[cell][i])

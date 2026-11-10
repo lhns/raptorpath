@@ -1019,10 +1019,11 @@ def pcap36(path, n=300, b=1242):
 
 
 def mk36(arm, n, kdrop=0, pdir=None, sent=None, cell="c1s-400"):
-    drv = lc.read(C1S + "drv.out") + [
-        f"    QDISC cli0: qdisc netem 8039: root refcnt 11 limit 1000 delay 1ms rate 1Gbit  Sent {sent if sent is not None else 300 * 1242} bytes 900 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p",
-        "    [TRUTH] leg=0 dev=cli0 egress_dgrams=900 egress_skbs=300 gso=3.00 netem_sent_dgrams=900 netem_dropped_skbs=0 backlog=0 lost=0 loss=0.000000 rcvbuf_drops=0 rcvbuf_scope=netns",
-    ]
+    def snap(tag, sb, hit):
+        return (f"[SNAP] tag={tag} leg=0 dev=cli0 qdisc: qdisc netem 8039: root refcnt 11 limit 1000 delay 5ms rate 100Mbit  Sent {sb} bytes 9 pkt "
+                f"(dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0  filter: filter protocol all pref 49152 matchall chain 0 handle 0x1 "
+                f"not_in_hw (rule hit {hit}) Action statistics: Sent {sb} bytes 9 pkt (dropped 0, overlimits 0 requeues 0)")
+    drv = lc.read(C1S + "drv.out") + [snap("start", 678, 9), snap("stop", 678 + (sent if sent is not None else 300 * 1242), 9 + 300)]
     if arm.startswith("CAP"):
         drv.append(f"[CAPTURE] leg=0 dev=srv0 captured=300 kdrop={kdrop}")
     cli = sub_gate(base_cli(), "RWM_STORE", str(n))
