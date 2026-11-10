@@ -484,6 +484,12 @@ impl BbrRs {
         }
     }
 
+    /// Outstanding send-state snapshots (what `congestion_state()` clones).
+    #[cfg(test)]
+    pub(crate) fn tracked_records(&self) -> usize {
+        self.max_bandwidth.sent.len()
+    }
+
     /// Test seam: plant the min-RTT model `d`, fresh as of the controller's
     /// clock. Pre-fix this sets `min_rtt` and the ProbeRtt stamp; post-fix it
     /// seeds the windowed filter. Tests using it are identical on both trees.
@@ -941,6 +947,24 @@ pub(crate) struct Qcc {
     pub bw: u64,
     /// quinn's own `rtt.min()` (µs), beside m̂.
     pub quinn_min_us: u64,
+}
+
+/// The `[QCC]` read of a connection's controller (`congestion_state()`'s
+/// clone): `None` when the connection runs another controller.
+pub(crate) fn qcc_of(c: Box<dyn Controller>) -> Option<Qcc> {
+    c.into_any().downcast::<BbrRs>().ok().map(|b| b.qcc())
+}
+
+impl Qcc {
+    /// One path's `[QCC]` block: `p<id>:qm=<S|D|B|R> qrt_us=<m̂> qsr_us=<smoothed
+    /// r_e> qbw=<b̂ B/s> qmin_us=<quinn's rtt.min()> qcns=<last>/<reads>/<mean>`,
+    /// the last field the host cost (ns) of the `congestion_state()` read.
+    pub(crate) fn token(&self, path: u32, last_ns: u64, reads: u64, mean_ns: u64) -> String {
+        format!(
+            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}",
+            self.mode, self.rt_us, self.sr_us, self.bw, self.quinn_min_us
+        )
+    }
 }
 
 /// The ack-side clock: quinn's runtime clock in production, injectable for
