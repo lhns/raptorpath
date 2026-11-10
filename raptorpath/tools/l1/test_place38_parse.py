@@ -90,12 +90,18 @@ def base_logs(cell):
     return drv, cli, srv
 
 
-def mk(cell="c8-100", arm="WIRE", store="256", legs_fn=None, eta_line="auto", shares=(0.8, 0.2), gate_wire=None, sumcap=False, den=None, nlines=12, seed="42", rep=1):
+def mk(cell="c8-100", arm="WIRE", store="256", legs_fn=None, eta_line="auto", shares=(0.8, 0.2), gate_wire=None, sumcap=False, den=None, nlines=12, seed="42", rep=1, drop=(), set_gates=None):
     drv, cli, srv = base_logs(cell)
     nleg = 1 if cell.startswith(("c1s", "c2")) else 2
     gw = ("1" if arm == "WIRE" else "0") if gate_wire is None else gate_wire
     gs = "unset" if store == "def" else store
     cli, srv = gates(cli, RWM_PLACE_WIRE=gw, RWM_STORE=gs), gates(srv, RWM_PLACE_WIRE=gw, RWM_STORE=gs)
+    if set_gates:
+        cli, srv = gates(cli, **set_gates), gates(srv, **set_gates)
+    if drop:       # delete gate tokens from the [GATES] lines, as the simplification stages delete the gates
+        def _drop(lines):
+            return [re.sub(r"\s(?:%s)=\S+" % "|".join(drop), "", ln) if "[GATES]" in ln else ln for ln in lines]
+        cli, srv = _drop(cli), _drop(srv)
     n = den if den is not None else (int(store) if store != "def" else 1024)
     legs_fn = legs_fn or (lambda t: [(5, 8, 7, 7300)] + ([(3, 44, 43, 43200)] if nleg == 2 else [])
                           if arm == "WIRE" else [(5, 8, 7, "-")] + ([(3, 44, 43, "-")] if nleg == 2 else []))
@@ -655,6 +661,47 @@ with tempfile.TemporaryDirectory() as td:
         fh.write("LD-BATTERY-DONE tag=ld blocks=6\n")
     ok_ = pp.check(pth, plan41b=True) == 0
 check("check41b accepts 48 rows + LD-BATTERY-DONE", ok_)
+
+# ══ missing gate tokens: the gates the simplification stages delete read as "off" when absent ══
+GONE = list(pp.GATES_ABSENT_IS_OFF)
+check("the twelve deletable gates are the registered list", GONE == ["RWM_PLAIN_RS", "RWM_HONEST_CAP", "RWM_HONEST_K", "RWM_POOL_ANCHOR", "RWM_THREE_TERM", "RWM_COMPOSED_CAP",
+      "RWM_HOLDDOWN_Q", "RWM_REFRESH_FLOOR_US", "RWM_DERIVED_SWEEP", "RWM_REPAIR_WAIT", "RWM_PROACTIVE_PACER", "RWM_REASM_BDP"])
+base_ = mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,))
+check("a fixture whose [GATES] line still carries the gates is LIVE", base_["status"] == "LIVE", base_["problems"])
+for arm_, st_, cell_, sh_ in (("MAIN", "def", "c1s-400", (1.0,)), ("WIRE", "def", "c1d-400", (0.5, 0.5)), ("BASE", "def", "c1d-400", (0.5, 0.5))):
+    r_ = mk(cell=cell_, arm=arm_, store=st_, shares=sh_, drop=GONE + (["RWM_PLACE_WIRE"] if arm_ == "BASE" else []))
+    check(f"a [GATES] line WITHOUT the twelve deleted gates is LIVE for a {arm_} row at {cell_} (absent = off)", r_["status"] == "LIVE" and r_["problems"] == [], (r_["status"], r_["problems"]))
+r_ = mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), drop=GONE)
+check("... the row records which of the twelve were absent", r_["gates_absent"] == sorted(GONE) or set(r_["gates_absent"]) == set(GONE), r_["gates_absent"])
+check("... and the pool-anchor gauge reads None (absent), not 0", r_["pa_cli"] is None and r_["pa_srv"] is None)
+check("a deleted gate that is still PRESENT must still read off: RWM_POOL_ANCHOR=1 is void",
+      any(p_.startswith("pool-anchor") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), set_gates={"RWM_POOL_ANCHOR": "1"})["problems"]))
+check("... and RWM_POOL_ANCHOR=0 present stays LIVE", mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), set_gates={"RWM_POOL_ANCHOR": "0"})["status"] == "LIVE")
+# strictness on gates that still exist
+check("RWM_PLACE_WIRE absent from [GATES] is still void on a MAIN row (a live gate keeps its strict witness)",
+      any(p_.startswith("gate-place-wire") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), drop=["RWM_PLACE_WIRE"])["problems"]))
+check("RWM_PLACE_WIRE absent is still void on a WIRE row", any(p_.startswith("gate-place-wire") for p_ in mk(cell="c1s-400", arm="WIRE", store="def", shares=(1.0,), drop=["RWM_PLACE_WIRE"])["problems"]))
+check("RWM_STORE absent is still void at a default cell (strict `unset`) and at a static cell",
+      any(p_.startswith("gate-store") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), drop=["RWM_STORE"])["problems"])
+      and any(p_.startswith("gate-store") for p_ in mk(store="256", drop=["RWM_STORE"])["problems"]))
+check("a [GATES] line that is entirely absent is still void (no-gates-cli / no-gates-srv)",
+      "no-gates-cli" in pp.make_row("c1s-400", "MAIN", "42", 1, 0, 12.0, *[(lambda d, c, s: (d, [ln for ln in c if "[GATES]" not in ln], [ln for ln in s if "[GATES]" not in ln]))(*base_logs("c1s-400"))][0], 0, "x", store="def")["problems"])
+
+# ══ the 41b scorer's tail line ══
+tl = []
+rows_t = ledger41b()
+for r in rows_t:
+    if (r["cell"], r["arm"], r["seed"], r["rep"]) == ("c1s-400", "MAIN", "7", 3):
+        r["mbps"] = 60.0
+g41.tail_lines(rows_t, tl.append)
+ttxt = chr(10).join(tl)
+mline = [ln for ln in tl if "TAIL c1s-400 MAIN" in ln][0]
+check("tail line: the lowest MAIN row at c1s (60 Mbit/s) against the pooled cell median, with the row id and the count below 0.5 x median",
+      "lowest 60.0 Mbit/s (s7 r3)" in mline and "rows below 0.5 x median: 1 of 6" in mline and "x cell median 8" in mline, mline)
+check("... every arm and cell is listed (6 lines), and arms without a slow row count 0",
+      len(tl) == 6 and all("rows below 0.5 x median: 0 of" in ln for ln in tl if "MAIN" not in ln or "c1d" in ln), ttxt)
+check("... the report prints it (reported only: the gate is unchanged by a slow row)",
+      "TAIL (reported only)" in run_g(rows_t)[1] and run_g(rows_t)[0]["gate"] in ("PASS", "FAIL"))
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
