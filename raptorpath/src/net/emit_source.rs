@@ -11,7 +11,7 @@
 //!     no lock) is read and written in this order: the source placement pick, the ETA stamp, the
 //!     `charge_in_flight` + Copa `on_sent`/`charge_src`/`on_src_sent` block,
 //!     the redundant-source pick and its charge, the worst-loss ε read, the
-//!     `deficit.on_send` write, the taper `spare_capacity`/estimator read, the
+//!     taper `spare_capacity`/estimator read, the
 //!     per-correction worst-loss read, the correction placement pick, and the
 //!     correction `charge_in_flight`;
 //!   * in the taper block the FEC controller is read before the scheduler;
@@ -466,9 +466,6 @@ pub(crate) fn emit_source(
                 .unwrap_or(0.0)
         };
         st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
-        // Track correction deficit: this symbol needs epsilon coverage
-        let sched = &mut *ctx.scheduler;
-        sched.deficit.on_send(wire_sym.block_id, source_path, epsilon);
     }
 
     // Redundant send for Realtime: duplicate source on second-best path

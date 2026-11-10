@@ -227,56 +227,6 @@ fn test_best_repair_path_avoiding_falls_back_single_path() {
 }
 
 // -----------------------------------------------------------------------
-// Correction deficit tests (paper §5.9)
-// -----------------------------------------------------------------------
-
-#[test]
-fn test_deficit_tracks_sends_and_acks() {
-    let mut deficit = CorrectionDeficit::new();
-    assert_eq!(deficit.deficit(), 0.0);
-
-    deficit.on_send(0, 1, 0.10);
-    deficit.on_send(1, 1, 0.10);
-    deficit.on_send(2, 2, 0.05);
-    assert!((deficit.deficit() - 0.25).abs() < 1e-10);
-    assert_eq!(deficit.pending_count(), 3);
-
-    // ACK symbol 1
-    assert!(deficit.on_ack(1));
-    assert!((deficit.deficit() - 0.15).abs() < 1e-10);
-    assert_eq!(deficit.pending_count(), 2);
-
-    // ACK unknown symbol → no change
-    assert!(!deficit.on_ack(99));
-    assert!((deficit.deficit() - 0.15).abs() < 1e-10);
-}
-
-#[test]
-fn test_deficit_cumulative_ack() {
-    let mut deficit = CorrectionDeficit::new();
-    for seq in 0..10 {
-        deficit.on_send(seq, 1, 0.10);
-    }
-    assert!((deficit.deficit() - 1.0).abs() < 1e-10);
-
-    deficit.on_ack_cumulative(4); // ACK 0..=4
-    assert_eq!(deficit.pending_count(), 5);
-    assert!((deficit.deficit() - 0.5).abs() < 1e-10);
-}
-
-#[test]
-fn test_deficit_per_path() {
-    let mut deficit = CorrectionDeficit::new();
-    deficit.on_send(0, 1, 0.10);
-    deficit.on_send(1, 2, 0.05);
-    deficit.on_send(2, 1, 0.10);
-
-    assert!((deficit.path_deficit(1) - 0.20).abs() < 1e-10);
-    assert!((deficit.path_deficit(2) - 0.05).abs() < 1e-10);
-    assert!((deficit.path_deficit(3) - 0.00).abs() < 1e-10);
-}
-
-// -----------------------------------------------------------------------
 // Effective delivery time tests
 // -----------------------------------------------------------------------
 

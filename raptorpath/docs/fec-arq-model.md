@@ -1545,8 +1545,8 @@ window, so a correction on any path can recover a loss on any other.
 * **Interleaving.** Source and corrections must not be separated by path: a
   burst on a source-only path has no interleaved corrections to survive it.
 
-The engine keeps a `CorrectionDeficit` counter, but its placement law does
-not read it.
+The deficit is analytic only: the engine keeps no deficit counter (the
+unread `CorrectionDeficit` tracker was removed, simplification batch 1).
 
 ### 5.10 One pipeline, not mode switching
 
@@ -3882,7 +3882,7 @@ engine.
    shed  ⇔  age > D(δ)  ∧  shed_total + 1 ≤ ε̂·(1 − P_fec(r, A*))·src_total     shed_allowed
 
    W_mp  ≳  Σᵢ gᵢ·(RTT_max + t_slack)                                      —
-   deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        CorrectionDeficit
+   deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        (analytic only)
 
    P(i) ∝ exp(−(c_i − c_min)/T) ,   T = 0.15                               place_probs_with_temperature
    c_i  =  (E_i − min(S, 9/8·srtt_i))⁺/ref + w_bw(δ)·r_i + w_div·fate_i      place_costs

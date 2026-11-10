@@ -1637,11 +1637,6 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
                 v.drain(..idx);
             }
         }
-        // Update correction deficit: ACKed symbols no longer need coverage
-        {
-            let sched = &mut *scheduler;
-            sched.deficit.on_ack_cumulative(ack);
-        }
         // Reset taper offset on window advancement (new correction cycle)
         st.taper_offset = 0;
 
