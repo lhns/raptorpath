@@ -1805,14 +1805,6 @@ async fn run_window_sender(
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) at every N>=1; RWM_STORE_PATHS=0 = the clamp(gain*pipe, floor, store_max) control)"
         );
     }
-    if pol.pool_anchor_on {
-        // Mechanism-liveness echo (measurement-discipline rule 1).
-        info!(
-            pool_per_path = pol.store_path_pool,
-            gain = pol.store_bdp_gain,
-            "pool-anchor honest dual-store law ACTIVE (RWM_POOL_ANCHOR: pooled cap = sum_i honest_store_cap(sr_i*RTprop_i, sr_i, K_i, gain) on the per-path send-interval anchor, clamp [floor, N*knee]; all-warm else path-scaled fallback; Copa cwnd feed untouched)"
-        );
-    }
     if pol.store_sack_release_on {
         // Mechanism-liveness echo (measurement-discipline rule 1).
         info!(
@@ -2552,8 +2544,6 @@ async fn run_window_sender(
                         sack_released.len(),
                         above_report,
                     ),
-                    pa_engaged: scs.pa_engaged,
-                    pa_sum: scs.pa_sum,
                     wnd2_frontier_last,
                     wnd2_frontier_change_us,
                     cached_nack_budget,

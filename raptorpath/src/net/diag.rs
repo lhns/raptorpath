@@ -366,9 +366,6 @@ pub(crate) struct DiagInputs<'a> {
     /// Above `sack_released.len()` exactly when the received-above count
     /// carries the gate past the SACK prefix -- the term-bind gauge.
     pub gate_released: usize,
-    /// RWM_POOL_ANCHOR: honest dual-store engagement + Σ honest caps.
-    pub pa_engaged: bool,
-    pub pa_sum: f64,
     /// The live release frontier (the `wnd2=`/`relgap=` gauge's input).
     pub wnd2_frontier_last: u64,
     pub wnd2_frontier_change_us: u64,
@@ -426,8 +423,6 @@ pub(crate) fn report(
         sack_released,
         sack_released_total,
         gate_released,
-        pa_engaged,
-        pa_sum,
         wnd2_frontier_last,
         wnd2_frontier_change_us,
         cached_nack_budget,
@@ -706,16 +701,9 @@ pub(crate) fn report(
                     // wire truth). Both appended at the end of the segment.
                     let plu_i = p.estimator.predictive_loss_upper(0.95);
                     let plc_i = p.estimator.cumulative_loss();
-                    // RWM_POOL_ANCHOR: the per-path send-
-                    // interval anchor rate (0 = no surviving bucket
-                    // / feed off) + its gap/discard hygiene gauges
-                    // — vs btlbw (the ack-interval read, which
-                    // feeds cwnd only).
-                    let sr_i = p.send_rate_anchor().unwrap_or(0.0);
-                    let (sa_g, sa_d) = p.send_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill, plu_i, plc_i
                     ));
                 }
@@ -822,15 +810,6 @@ pub(crate) fn report(
                 sack_released_total,
                 gate_released
             )
-        } else {
-            String::new()
-        };
-        // RWM_POOL_ANCHOR: the honest dual-store law's
-        // engagement + its Σ honest caps before clamping (the
-        // mechanism gauge — win=/cap shows the clamped result).
-        // Empty when not engaged (N = 1, warm-up, or gate off).
-        let padiag = if pa_engaged {
-            format!(" pa=on/{:.0}", pa_sum)
         } else {
             String::new()
         };
@@ -948,7 +927,7 @@ pub(crate) fn report(
             String::new()
         };
         crate::readout!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -970,7 +949,6 @@ pub(crate) fn report(
             sd2,
             wnd2diag,
             srdiag,
-            padiag,
             sheddiag,
             waitdiag,
             dgq,

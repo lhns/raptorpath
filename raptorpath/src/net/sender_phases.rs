@@ -9,14 +9,8 @@ use super::sender_policy::SenderPolicy;
 
 /// The dynamic store-cap refresh's state: every loop local the refresh block
 /// wrote. Other loop phases READ `dyn_store_cap` (the flow-control gate) and
-/// the DIAG report reads the pool-anchor and K_i gauges.
+/// the DIAG report reads the K_i gauges.
 pub(crate) struct StoreCapState {
-    /// Pool-anchor law state (`RWM_POOL_ANCHOR`, DIAG): whether the N ≥ 2
-    /// honest send-anchor pool computed the cap at the last refresh, and its
-    /// Σ before clamping (the cap gauge decides; the btlbw gauge may stay
-    /// inflated since the cwnd feed is untouched).
-    pub pa_engaged: bool,
-    pub pa_sum: f64,
     /// Three-term law state (`RWM_THREE_TERM`): `Some((window, slack, span))`
     /// at the last refresh where the law engaged, `None` where it did not. The
     /// mechanism gauge (`docs/measurement-discipline.md` rule 15): a battery
@@ -41,8 +35,6 @@ pub(crate) struct StoreCapState {
 impl StoreCapState {
     pub(crate) fn new(pol: &SenderPolicy) -> Self {
         Self {
-            pa_engaged: false,
-            pa_sum: 0.0,
             tt_terms_diag: None,
             tt_print_us: 0,
             percap_k: std::collections::HashMap::new(),
@@ -115,7 +107,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                         .sum();
                     (cs, live.len().max(1))
                 };
-                scs.pa_engaged = false; // Copa-sole owns the store law (Σcwnd)
                 scs.dyn_store_cap = if let Some(cap) = pooled_store_cap(
                     pol.store_paths_on,
                     pol.sum_cap,
@@ -186,48 +177,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     let bdp = store_cap_pool_inputs(&sched);
                     (bdp, n)
                 };
-                // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`):
-                // per-live-path honest caps on the send-interval anchor.
-                // Collected at every N ≥ 1 (ADR-0072); a cold send anchor or RTprop
-                // yields a None term, so capw_store_cap's all-warm requirement
-                // falls back to the configured chain below. live_paths(), not
-                // active_paths(): the cwnd-saturation filter must not drop a
-                // saturated path's earned share.
-                let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on {
-                    // Rate source: the send-interval anchor (the ratcheted
-                    // send mean). Path set: live_paths().
-                    let slots: Vec<Option<HonestCapPath>> = {
-                        let sched = &*scheduler;
-                        sched
-                            .live_paths()
-                            .iter()
-                            .map(|id| {
-                                sched.path(*id).and_then(|p| {
-                                    // Cold send anchor or cold RTprop → no
-                                    // slot at all, before feeding the clock
-                                    // tracker.
-                                    let sr = p.send_rate_anchor().filter(|r| *r > 0.0)?;
-                                    let rtp = p
-                                        .min_rtt()
-                                        .map(|d| d.as_secs_f64())
-                                        .filter(|r| *r > 0.0)?;
-                                    Some(HonestCapPath {
-                                        id: *id,
-                                        anchor: Some(sr * rtp),
-                                        rate: Some(sr),
-                                        srtt: p.srtt(),
-                                        rtprop: p.min_rtt(),
-                                        k_raw: p.k_raw(),
-                                    })
-                                })
-                            })
-                            .collect()
-                    };
-                    honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain)
-                } else {
-                    Vec::new()
-                };
-                scs.pa_engaged = false;
                 scs.tt_terms_diag = None;
                 scs.dyn_store_cap = if let Some((cap, w, sl, sp)) = three_term_store_cap(
                     pol.three_term_on,
@@ -237,22 +186,9 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_cap_floor,
                 ) {
                     // The law under test takes precedence over every
-                    // pooled fallback, exactly as `capw_store_cap` does
-                    // for its own arm. Warm-up (any live path cold) ⇒
+                    // pooled fallback. Warm-up (any live path cold) ⇒
                     // `None` ⇒ the configured chain below runs verbatim.
                     scs.tt_terms_diag = Some((w, sl, sp));
-                    cap
-                } else if let Some(cap) = capw_store_cap(
-                    pol.pool_anchor_on,
-                    &pa_terms,
-                    pol.store_cap_floor,
-                    pol.store_path_pool,
-                ) {
-                    // Pool-anchor law engaged (RWM_POOL_ANCHOR, all
-                    // send anchors warm): Σ honest per-path caps on the
-                    // burst-immune send-interval rate, clamped [floor, N·knee].
-                    scs.pa_engaged = true;
-                    scs.pa_sum = pa_terms.iter().flatten().sum();
                     cap
                 } else if let Some(cap) = pooled_store_cap(
                     pol.store_paths_on,

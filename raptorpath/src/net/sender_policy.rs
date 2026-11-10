@@ -206,8 +206,6 @@ pub(crate) struct SenderPolicy {
     pub store_paths_on: bool,
     /// `RWM_STORE_PATH_POOL`: per-live-path pool knee.
     pub store_path_pool: usize,
-    /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
-    pub pool_anchor_on: bool,
     /// `RWM_THREE_TERM` (default off): the plain dynamic store cap is the
     /// composed three-term law (`net::three_term_store_cap`). Scoped to the
     /// plain dynamic cap.
@@ -570,18 +568,6 @@ impl SenderPolicy {
         // `clamp(gain·Σ, floor, store_max)` control at every N.
         let store_paths_on = gates.store_paths;
         let store_path_pool: usize = gates.store_path_pool;
-        // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`). The
-        // pooled-store cap's rate input is the per-path send-interval
-        // anchor (`SendRateAnchor` fed at `charge_in_flight` — burst-immune by
-        // construction: Δt spans the send interval, so ack bursts cannot inflate
-        // it; clock-gap buckets discarded) instead of the ack-interval
-        // windowed-max, which over-reads. Law: pool = clamp(Σ_i
-        // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
-        // the capw shape (one shared pool, borrowing free), engaged only with
-        // all live send-anchors warm; until then the configured path-scaled law
-        // runs. The Copa cwnd feed is untouched. Default off, independent of
-        // `RWM_EST_CADENCE`.
-        let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
         // The store-cap path set is not a dial: the dyn-cap phase's Σ-anchor
         // base and honest per-path cap sum range over the channel's
         // membership (`net::channel_paths`), the set `n_live` is counted from.
@@ -872,7 +858,6 @@ impl SenderPolicy {
             store_cap_floor,
             store_paths_on,
             store_path_pool,
-            pool_anchor_on,
             three_term_on,
             composed_cap,
             sum_cap,

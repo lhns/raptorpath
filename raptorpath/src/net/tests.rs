@@ -2266,9 +2266,8 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 ///
 /// Compositions whose members do not compose are the failure mode: e.g.
 /// the retired `RWM_STORE_CAPW` made the (also retired, plan 2b)
-/// `RWM_STORE_CAP_UNIFIED` bit a no-op wherever capw engaged, because
-/// `capw_store_cap` sat above `path_scaled_store_cap` in the chain and read
-/// `live_paths()` unconditionally. The Σ's set is now membership everywhere.
+/// `RWM_STORE_CAP_UNIFIED` bit a no-op wherever capw engaged. The Σ's set is
+/// now membership everywhere.
 ///
 /// This test asserts the full arm's gate set resolves to the machine it is
 /// supposed to be, at the policy layer where the collapses happen:
@@ -3365,123 +3364,6 @@ fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
     // Saturated beyond the window (a retransmit can overshoot) still
     // reads full — the predicate is `>=`, not `==`.
     assert!(infl_percap_full(&[(120, 100), (41, 40)]));
-}
-
-// ----- Capacity-weighted pool (RWM_STORE_CAPW) -----------------------------
-
-#[test]
-fn capw_store_cap_not_engaged_off_or_unwarm() {
-    // Flag off: never engaged.
-    assert_eq!(
-        capw_store_cap(false, &[Some(1000.0), Some(400.0)], 64, 2048),
-        None
-    );
-    // N = 1 engages (ADR-0072): one term, clamped [floor, 1·knee]. The
-    // pooled arms have no path-count branch.
-    assert_eq!(capw_store_cap(true, &[Some(1000.0)], 64, 2048), Some(1000));
-    assert_eq!(capw_store_cap(true, &[Some(5000.0)], 64, 2048), Some(2048));
-    // Anchors-not-warm fallback: any unwarm live path → None → the
-    // caller keeps the configured pooled law (path-scaled / single-path)
-    // until every anchor is live — a partial sum would under-provision
-    // the unwarm path's share of the shared pool.
-    assert_eq!(capw_store_cap(true, &[Some(1000.0), None], 64, 2048), None);
-    assert_eq!(capw_store_cap(true, &[None, None], 64, 2048), None);
-    assert_eq!(
-        capw_store_cap(true, &[Some(1000.0), Some(0.0)], 64, 2048),
-        None
-    );
-    assert_eq!(capw_store_cap(true, &[], 64, 2048), None);
-}
-
-#[test]
-fn capw_store_cap_symmetric_is_n_times_single() {
-    // The c7 degenerate: N identical paths → pool = N × the single-path
-    // honest term (≈ N×(single pool) — symmetric cells preserved).
-    let single = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap();
-    // 83.2·(1.5+1) + 10 400·1·0.1 = 208 + 1040 = 1248.
-    assert!((single - 1248.0).abs() < 1e-6);
-    assert_eq!(
-        capw_store_cap(true, &[Some(single), Some(single)], 64, 2048),
-        Some(2496)
-    );
-    // Three symmetric paths: 3× (ceiling 3×2048 not binding).
-    assert_eq!(
-        capw_store_cap(true, &[Some(single); 3].to_vec(), 64, 2048),
-        Some(3744)
-    );
-}
-
-#[test]
-fn capw_store_cap_asymmetric_weights_by_capacity_not_path_count() {
-    // The c8 shape (the law's target cell): a c2-class fast path
-    // (10 400 sym/s, RTprop 8 ms → anchor 83.2) + a c3-class slow path
-    // (2000 sym/s, RTprop 40 ms → anchor 80). Each earns its own pipe +
-    // recovery round — the slow path's 1/5 rate earns ~1/3 of the fast
-    // term (its longer RTprop partially offsets), not the equal ×knee
-    // share the path-count law grants.
-    let fast = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap(); // 1248
-    let slow = honest_store_cap(Some(80.0), Some(2_000.0), 1.5, 2.0).unwrap(); // 200+200=400
-    assert!((slow - 400.0).abs() < 1e-6);
-    let pool = capw_store_cap(true, &[Some(fast), Some(slow)], 64, 2048).unwrap();
-    assert_eq!(pool, 1648);
-    // Strictly between the single-path 1024 latch (fast path
-    // under-provisioned) and the
-    // path-scaled N×2048 = 4096 (slow path over-provisioned).
-    assert!(pool > 1024 && pool < 4096);
-    // Capacity weighting: the slow path's contribution is its own term,
-    // ~24% of the pool — not the 50% the count-scaled ceiling implies.
-    assert!((slow / (fast + slow) - 0.243).abs() < 0.01);
-}
-
-#[test]
-fn capw_store_cap_overread_anchors_clamp_to_the_path_scaled_ceiling() {
-    // The ack-interval anchor over-reads several-fold: inflated terms
-    // clamp at the N×knee ceiling — the path-scaled degenerate (without
-    // honest anchors, `RWM_PLAIN_RS=1`, the law cannot differentiate).
-    // Floor guards transiently-tiny terms.
-    assert_eq!(
-        capw_store_cap(true, &[Some(6.0 * 1248.0), Some(6.0 * 400.0)], 64, 2048),
-        Some(4096)
-    );
-    assert_eq!(
-        capw_store_cap(true, &[Some(1.0), Some(2.0)], 64, 2048),
-        Some(64)
-    );
-}
-
-// ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR) -----------------
-
-/// At the law level: with a c7-class true send rate (≈ 8.9k sym/s/path,
-/// RTprop 8 ms, K ≈ 2) the honest send-anchor pool sizes to the ~2.2k
-/// residence+runway class, while an inflated ack-interval anchor (the
-/// burst-peak over-read) drives the path-scaled law to its 4096 clamp —
-/// standing-queue headroom. Same pure functions the engine branch calls
-/// (honest_store_cap terms → capw_store_cap pool).
-#[test]
-fn pool_anchor_honest_terms_bound_the_dual_pool_where_the_legacy_law_clamps() {
-    let sr = 8_900.0; // true per-path send rate, sym/s (c7 ≈ 85 Mbit @1200B)
-    let rtp = 0.008; // c2-class RTprop
-    let term = honest_store_cap(Some(sr * rtp), Some(sr), 2.0, 2.0).unwrap();
-    // cap_i = 71.2·(2+1) + 8900·1·0.1 ≈ 1104 — the 1024-per-path class.
-    assert!((1000.0..1300.0).contains(&term), "cap_i class, got {term}");
-    let pool = capw_store_cap(true, &[Some(term), Some(term)], 64, 2048).unwrap();
-    assert!((1500..3000).contains(&pool), "Σ pool class, got {pool}");
-    // An inflated ack-interval anchor: Σ bdp ≈ 2 × 330k × 8 ms ⇒ the
-    // path-scaled law rails at the N×knee ceiling.
-    let inflated_bdp_sum = 2.0 * 330_000.0 * rtp;
-    assert_eq!(
-        path_scaled_store_cap(true, 2, inflated_bdp_sum, 2.0, 64, 2048),
-        Some(4096)
-    );
-    assert!(pool < 4096, "the honest pool removes the clamp headroom");
-    // N = 1 is the same law with one term (ADR-0072): N = 2 symmetric is
-    // exactly twice it (inert clamps).
-    assert_eq!(
-        capw_store_cap(true, &[Some(term)], 64, 2048),
-        Some(term.ceil() as usize)
-    );
-    // Warm-up: any unwarm live path defers to the configured fallback.
-    assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
 }
 
 // ----- Honest floor-clock caps --------------------------------------------
@@ -6576,7 +6458,6 @@ mod one_store_law_at_n1 {
         g.delta_cap = true;
         g.three_term = false;
         g.composed_cap = false;
-        g.pool_anchor = false;
         g.plain_rs = false;
         g.copa_feed = false;
         g.store_override = None;
@@ -6736,16 +6617,6 @@ mod one_store_law_at_n1 {
                     }
                 }
             }
-            // The capacity-weighted arm is unchanged at N >= 2 too.
-            let terms: Vec<Option<f64>> = (0..n).map(|i| Some(100.0 + 37.0 * i as f64)).collect();
-            let sum: f64 = terms.iter().flatten().sum();
-            assert_eq!(
-                capw_store_cap(true, &terms, 10, 2048),
-                Some((sum.ceil() as usize).clamp(10, n * 2048))
-            );
-            let mut cold = terms.clone();
-            cold[0] = None;
-            assert_eq!(capw_store_cap(true, &cold, 10, 2048), None);
         }
         assert!(checked > 1000);
     }

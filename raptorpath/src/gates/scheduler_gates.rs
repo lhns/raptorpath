@@ -82,26 +82,6 @@ pub(crate) fn resolve_copa_compete(wire_active: bool) -> bool {
     on
 }
 
-/// Whether the pool-anchor law is active (`RWM_POOL_ANCHOR`, experiment arm):
-/// at N ≥ 2 live paths the pooled store cap's rate input is each path's
-/// send-interval anchor ([`crate::control::SendRateAnchor`], burst-immune,
-/// clock-gap discard) instead of the ack-interval windowed max, whose burst
-/// peaks over-read under the estimator-cadence ack clock. Default OFF,
-/// independent of `RWM_EST_CADENCE`: it used to follow the cadence when
-/// unset, and Stage 3 (d) measured the cadence with it off (status.md §5), so
-/// shipping the cadence must not switch this law on. Consumers:
-/// `PathState::charge_in_flight` and the
-/// N ≥ 2 dynamic cap; the Copa cwnd feed is untouched.
-pub fn pool_anchor_active() -> bool {
-    crate::gates::get().pool_anchor
-}
-
-/// The resolve-time read behind [`pool_anchor_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_pool_anchor() -> bool {
-    crate::config::env_flag("RWM_POOL_ANCHOR", false)
-}
-
 /// Whether the O(1) windowed-max rate filter is active (`RWM_HONEST_ANCHOR`,
 /// anchor-hygiene family, default on; the `RWM_ANCHOR_HYGIENE` umbrella
 /// overrides either way).

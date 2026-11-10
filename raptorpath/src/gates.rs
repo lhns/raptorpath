@@ -128,9 +128,6 @@ pub struct RuntimeGates {
     pub store_gain: f64,
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw anchor warms.
     pub store_boot: usize,
-    /// `RWM_POOL_ANCHOR` (off, arm; independent of `est_cadence`): at N ≥ 2 the pooled cap is Σᵢ honest_store_cap on
-    /// each path's send-interval anchor, not the ack-interval max.
-    pub pool_anchor: bool,
     /// `RWM_ACK_MERGE` (on, shipped): window mode drops the per-batch `Ack`; its payload rides
     /// `WindowAck`'s cumulative counters.
     pub ack_merge: bool,
@@ -335,7 +332,6 @@ impl RuntimeGates {
         let honest_anchor = crate::gates::scheduler_gates::resolve_honest_anchor();
         let honest_k = crate::gates::scheduler_gates::resolve_honest_k();
         let est_cadence = crate::control::estimator::resolve_est_cadence();
-        let pool_anchor = crate::gates::scheduler_gates::resolve_pool_anchor();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
         let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
         let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
@@ -360,7 +356,6 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
-            pool_anchor,
             ack_merge: crate::gates::scheduler_gates::resolve_ack_merge(),
             loss_sent_truth: crate::gates::scheduler_gates::resolve_loss_sent_truth(),
             release_1to1: crate::gates::scheduler_gates::resolve_release_1to1(),
@@ -481,7 +476,6 @@ impl RuntimeGates {
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
              RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
-             RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_SIDLE_DERIVED={} \
@@ -512,7 +506,6 @@ impl RuntimeGates {
             ou(&self.store_override), self.store_gain, self.store_boot,
             b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
-            b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.sidle_derived),

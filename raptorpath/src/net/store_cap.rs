@@ -192,52 +192,6 @@ pub fn pooled_store_cap_unclamped(
     value_multiplier * count_multiplier * pipe_sum
 }
 
-/// Capacity-weighted shared outstanding pool — the pure pooled clamp the
-/// `RWM_POOL_ANCHOR` law evaluates.
-///
-/// The path-scaled pool (`RWM_STORE_PATHS`) scales by path count, which at
-/// asymmetric cells over-weights the slow path: a 1/5-rate path contributes
-/// to the ceiling exactly like a full-rate path, granting unacked-frontier
-/// depth the slow path cannot drain within its recovery round. Under
-/// SACK-clocked release (ADR-0060) the pool bounds the unacked-frontier span,
-/// so excess depth is span the cumulative frontier must resequence across the
-/// slow path's stragglers.
-///
-/// This law scales by capacity instead: each live path earns depth for its
-/// own pipe plus its own recovery round — the honest per-path cap
-/// ([`honest_store_cap`]: cap_i = rate_i·(K_i·RTprop_i + (gain−1)·(R +
-/// RTprop_i))) — summed as one shared pool, not per-path accounts, so
-/// cross-path borrowing stays free (paper §6.1).
-///
-/// ```text
-///   pool = clamp(Σ_i cap_i, floor, N·knee)
-/// ```
-///
-/// Degenerates (unit-tested): symmetric N-path → N × the single-path term;
-/// N = 1 → the one term, clamped [floor, 1·knee]; over-read anchors → the
-/// terms clamp at the N·knee ceiling ≡ the path-scaled law (so the law reads
-/// honestly only with the `RWM_PLAIN_RS` send-interval sampler).
-///
-/// `terms` = the per-live-path honest cap (None until that path's anchor is
-/// warm). Returns `None` — the caller falls back to the configured pooled
-/// law — unless the gate is on, there is at least one live path, and every
-/// live path's anchor is warm (a partial sum would under-provision the unwarm
-/// path's share).
-pub fn capw_store_cap(
-    on: bool,
-    terms: &[Option<f64>],
-    floor: usize,
-    pool: usize,
-) -> Option<usize> {
-    if !on || terms.is_empty() || terms.iter().any(|t| !matches!(t, Some(v) if *v > 0.0)) {
-        return None;
-    }
-    let n = terms.len();
-    let sum: f64 = terms.iter().map(|t| t.unwrap_or(0.0)).sum();
-    let ceiling = n.saturating_mul(pool).max(floor);
-    Some((sum.ceil() as usize).clamp(floor, ceiling))
-}
-
 /// Windowed-MIN echo-ratio tracker: K_i = the smallest observed
 /// echoSRTT_i/RTprop_i over a ~2-half-window (~10 s, the min-RTT window
 /// class) — the path's unloaded drain-clock ratio.

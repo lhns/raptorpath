@@ -45,20 +45,6 @@ pub struct PathState {
     /// the leak-guard backstop) break it temporarily and all helpers
     /// saturate rather than trust it.
     pub(crate) in_flight_log: VecDeque<(Instant, u32)>,
-    /// Pool-anchor store law (`RWM_POOL_ANCHOR`): per-path hygiene-grade
-    /// send-interval rate anchor (ADR-0061 `SendRateAnchor`: ≈SRTT/2 buckets,
-    /// windowed-max ≈ 8·SRTT, clock-gap discard + quarantine), fed by this
-    /// path's own send events at `charge_in_flight` — every wire send on the
-    /// path (source, redundant, retransmit). Burst-immune by construction (Δt
-    /// spans the send interval on the sender's clock), it is the N ≥ 2
-    /// pooled-store cap's rate input and feeds nothing else (Copa cwnd
-    /// dynamics keep the `record_delivery` path).
-    send_anchor: crate::control::SendRateAnchor,
-    /// Whether the send-anchor feed is on (resolved once at construction
-    /// from `pool_anchor_active()`; test-forcible). Off ⇒ `charge_in_flight`
-    /// does no clock read and no bucket work, so the A/B arm stays
-    /// cost-honest.
-    pool_anchor_feed: bool,
     /// ack-merge (`RWM_ACK_MERGE`): the sender-side cursor for the
     /// `WindowAck` cumulative counters. The merged ack carries the receiver's
     /// per-path running `(total_expected, total_received)`; the sender diffs
@@ -151,8 +137,6 @@ impl PathState {
                 c
             },
             in_flight_log: VecDeque::new(),
-            send_anchor: crate::control::SendRateAnchor::new(),
-            pool_anchor_feed: pool_anchor_active(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
             loss_sent_cursor: 0,
@@ -1132,42 +1116,7 @@ impl PathState {
         }
         self.in_flight = self.in_flight.saturating_add(n);
         let now = self.clock.now();
-        // Pool-anchor feed (RWM_POOL_ANCHOR): every wire send on this path
-        // is a send-process sample for the pooled-store anchor. O(1)
-        // amortized; gate resolved once at construction — the off arm skips
-        // entirely (cost-honest A/B).
-        if self.pool_anchor_feed {
-            let srtt = self.srtt();
-            self.send_anchor.on_send(now, n as u64, srtt);
-        }
         self.in_flight_log.push_back((now, n));
-    }
-
-    /// The pool-anchor send rate for this path (symbols/s) — the gap-robust
-    /// windowed mean (`SendRateAnchor::mean_rate`; an admission-gated
-    /// sender's refill bursts would latch a windowed max) — or None before
-    /// the first surviving bucket / with the feed off. The N ≥ 2 pooled-store
-    /// cap law's rate input (paper §6.1). Read-only: consumes no sample, owns
-    /// no cwnd dynamics.
-    pub fn send_rate_anchor(&self) -> Option<f64> {
-        if !self.pool_anchor_feed {
-            return None;
-        }
-        self.send_anchor.mean_rate(self.clock.now(), self.srtt())
-    }
-
-    /// (gaps detected, buckets discarded) for the pool-anchor sampler — the
-    /// DIAG hygiene gauges.
-    pub fn send_anchor_stats(&self) -> (u64, u64) {
-        self.send_anchor.stats()
-    }
-
-    /// Test hook: force the pool-anchor feed regardless of the process-global
-    /// env cache (unit tests must not depend on it — the `force_wire`
-    /// pattern).
-    #[cfg(test)]
-    pub fn force_pool_anchor_feed(&mut self, on: bool) {
-        self.pool_anchor_feed = on;
     }
 
     /// Test hook: force the 1:1 release (`RWM_RELEASE_1TO1`). Unit tests must

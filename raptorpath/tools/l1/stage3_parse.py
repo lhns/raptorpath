@@ -288,7 +288,9 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
     if row["gen_guard"]:
         other.append("generation-guard-present")
     other.extend(cadence_witness(row, cad))
-    if row["pa_cli"] != 0 or row["pa_srv"] != 0:
+    # RWM_POOL_ANCHOR was removed (a missing token is expected); flag it only
+    # if an older binary still echoes it as on.
+    if row["pa_cli"] not in (0, None) or row["pa_srv"] not in (0, None):
         other.append(f"pool-anchor={row['pa_cli']}/{row['pa_srv']}")
     p.extend(other)
     row["cotenant"] = int(cotenant)
