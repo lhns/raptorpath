@@ -12220,3 +12220,164 @@ fails. The precondition, locks, tmpfs and `LD_HARD` = launch + 4 h are as
 
 **Duration.** Two builds (≈ 11 min). Then 18 c8 invocations at ≈ 65 s
 each, and 2 c1d at ≈ 70 s (≈ 22 min). Scoring ≈ 5 min.
+
+### 46. Amendment 1 (before build)
+
+A coordinator review asked for nine checks before the harness is built. All
+are settled here from code and the committed ledgers. No engine code, no VM
+contact.
+
+**1. The dead-path timeout cannot fire; the test measures the price, not a
+revival.**
+- *The rule.* `DEAD_PATH_TIMEOUT` = 6 s (`net/mod.rs:496`). At every 2 s
+  report tick, `report_tick_tx` calls `check_dead_paths` (`report.rs:161`).
+  That marks a leg inactive when now − `last_report` > 6 s
+  (`scheduler/mod.rs:571`–`582`).
+- *What moves `last_report`.* `touch_path_at` (`scheduler/mod.rs:546`–`550`)
+  moves it, from these sources:
+  - the peer's `Ping` (`control_msg.rs:185`);
+  - the per-batch `Ack` (`:236`);
+  - the peer's `PathReport` (`:441`);
+  - every `WindowAck`, including the echo-0 broadcasts (`:533`);
+  - the receiver-side arrival stamps (`sync_rx`, `scheduler/mod.rs:592`–`608`).
+  So it keys on anything heard on the leg, in either direction.
+- *Silence on the client (the sender, whose price is under test).* The
+  event delays only the data direction, the client's egress `cli<i>`. The
+  peer's `PathReport` and `Ping` reach the client on the undelayed `srv<i>`
+  egress every 2 s, and so do its echo-0 broadcasts. Worst-case silence is
+  therefore ≈ 2 s plus the 500 ms send deadline, which is ≤ 2.5 s, against
+  6 s.
+- *Silence on the server.* The server hears the hit leg only through the
+  delayed direction.
+  - The client's reports leave every 2 s. Shifting their arrivals by Δ at
+    onset opens one gap of at most 2 s + Δ + 0.5 s = 4.0 s at Δ = 1.5 s.
+  - After restore, packets leave in send order behind the delayed tail
+    (item 2). So arrival gaps shrink, never grow.
+  - 4.0 s < 6 s, so no leg goes inactive in either arm. Δ would have to
+    exceed ≈ 3.5 s for this to bind.
+- *Witness, added.* Count the `path timed out — marking inactive` and `path
+  recovered` lines (`scheduler/mod.rs:576`, `:552`) in both logs of every
+  row. Any non-zero count voids the row. A revival resets Copa and the cwnd
+  (`:557`–`560`), which would be a second mechanism.
+
+**2. The event does not end at restore.**
+- *Netem's release rule.* A packet sent at t leaves at max(t + delay,
+  t_tail) + t_pkt.
+  - A packet sent just before restore leaves ≈ Δ later.
+  - Packets sent after restore queue behind it, so the leg's true RTT falls
+    linearly from ≈ Δ + floor back to its floor over [t_off, t_off + Δ].
+  - It then drains whatever queued behind at the leg's rate:
+    - SLOW-HIT: the leg is idle, so there is nothing behind it beyond a few
+      control packets;
+    - FAST-HIT: up to quinn's cwnd, ≈ 400 datagrams ≈ 40 ms at 100 Mbit/s.
+- *Consequence.* R and R0, measured from the `tc` restore call, have a
+  **floor near Δ = 1.5 s in both arms**. The price cannot see a recovered
+  link before the link has recovered.
+- *Quinn's samples inside the tail.* Idle-leg samples taken in [t_off,
+  t_off + Δ] read the residual delay, so ŵ's decay toward the floor starts
+  between t_off and t_off + Δ.
+- *Readout added (reported).* T_w is the time from t_off until the hit
+  leg's `wrtt` is back to ≤ 1.1 × its pre-event median (the median over
+  [2.0 s, t_on)). It is censored at H.
+- *Predictions redone with the tail (they replace §46's where they differ).*
+  - **SLOW-HIT, BASE.** `rtt` frozen at 1.54–1.9 s. R censored (">25") in
+    all 4 rows. T_w ≈ 11–17 s at 2–3 samples per 2 s, and censored at the
+    floor rate. The leg is idle, so its `wrtt` must decay from ≈ 1.5 s to
+    ≈ 240 ms by quinn's idle samples: 15 samples.
+  - **SLOW-HIT, CAND.**
+    - R0 ≈ 2.5–8.5 s, which is ≈ 0–1.5 s of tail plus 3–7 samples.
+    - R ≈ 4–12 s, median ≈ 7.
+    - At the measured floor of 1 sample per 2 s: R0 ≤ 15.5 s and R ≤ 19 s,
+      still inside H = 25 s.
+    - T_w ≈ R0 + 1 s, because a carrying leg's `wrtt` follows within an RTT
+      or two.
+  - **FAST-HIT, both arms.** R ≈ 1.5–4 s, overlapping. T_w ≈ 1.5–2 s.
+
+**3. A second step size, reported only: SLOW-HIT at +500 ms.**
+- *Design.* 2 rows per arm (s42, s7). They run after the 16 scored rows and
+  before c1d, with the same event, readouts and witnesses. They are never
+  scored and never enter the verdict.
+- *What each step represents.*
+  - The scored Δ = 1.5 s is an **outage-class event on a lossy link**:
+    roaming, a stall, a scan. The old price freezes there, and repairs do
+    not heal it.
+  - +500 ms is the **ordinary hiccup**.
+- *Prediction.*
+  - 500 ms exceeds the slow leg's standing wait (130–280 ms), so the step
+    bites, by ≈ 220–370 ms of RTT on a loaded leg and ≈ 500 ms once it
+    idles.
+  - BASE: s* ≈ 0.54–0.9 s, so at restore g ≈ 2–16 nats (the upper end only
+    if the local dwell at the freeze is large).
+  - At g ≲ 8, sources still land at ≥ 4/s and repairs heal the rest, so
+    the leg is sampled again within about 1 s in both arms.
+  - Predicted R ≈ 1–3.5 s in both arms (≈ 0.5 s floor from the tail),
+    ranges overlapping: no difference.
+  - The stated risk: a BASE row whose s* includes ≳ 300 ms of local dwell
+    can hold out for ≈ 5–20 s. That would be reported as the hiccup-scale
+    tail of the same defect.
+
+**4. c1d is read on R, not goodput (reported only).**
+- c1d is the clean-link case: c1's loss is ≈ 0.1 %, so there are few
+  repairs to heal the old price. Its goodput comparison is confounded by
+  the receiver running faster on one leg (§38, ×1.35 μ_R).
+- Predicted:
+  - BASE R censored;
+  - CAND R ≈ 13.5–21.5 s (1.5 s tail plus ≈ 18 idle samples), which may
+    censor at the floor rate.
+
+**5. Scoring decides on absolute goodput; G becomes reported only.**
+- G's baseline is the 3 s window [2.0 s, t_on), just after start-up, while
+  the store window is still growing (§38 rows: `win` 1 400 → 1 600 over
+  2–5 s). It is too noisy a denominator to decide on.
+- **Scored instead:** ḡ_post, the time-weighted mean of `good=` over
+  [t_off, t_off + 25 s], CAND against BASE. It uses the same disjoint rule.
+  The floor is 4.0 % of BASE's median (c8's goodput MDE, §38).
+- Outcome 2's goodput clause now reads "ḡ_post reads WORSE (CAND lower)".
+  G stays printed beside it.
+- Predicted:
+  - SLOW-HIT: BASE ≈ 86–92 Mbit/s (one leg), CAND ≈ 94–102. Likely BETTER
+    (disjointness at n = 4 is not assured).
+  - FAST-HIT: within the floor.
+
+**6. Check rows: one per binary.**
+- BASE runs SLOW-HIT and CAND runs FAST-HIT, so each binary and each
+  variant's injection path is exercised once.
+- Each check row keeps §46's `tc -s qdisc show` captures (the delay-only
+  diff and the backlog < 900 packets).
+- Each also prints the row's witnesses:
+  - the hit leg's peak `rtt` and peak `wpl_us` (or `wrtt` on BASE);
+  - the inactive and recovered line counts (item 1);
+  - the number of idle-leg samples, i.e. `wrtt` step changes per 2 s on
+    idle lines;
+  - the event and exit witnesses.
+- A dead injection stops the session before the 16 scored rows. A dead
+  injection is a failed event witness, a failed exit witness at SLOW-HIT on
+  BASE, a non-zero inactive count, or a failed qdisc diff.
+- The fix is then a new amendment, never an in-session re-tune of Δ or D.
+
+**7. Netem state.** Each `tc qdisc change` that carries the full line
+re-parses every option, and likely restarts netem's Gilbert–Elliott chain
+and its random sequence, re-seeded from the line's `seed`. That happens at
+onset and at restore. It is the same in both arms, by seed and at the same
+instants relative to transfer start. The check rows' qdisc captures show
+what changed.
+
+**8. CAND's identity.**
+- CAND is the **merge-candidate build**: `diag36` + the promotion +
+  simplification batch 1. Its SHA is recorded by a further amendment
+  before launch, and must contain the promotion (§46's conditions).
+- If the result is `CAND-WORSE`, the cause is bisected against
+  `place-promote` alone (`diag36` + the promotion) under a new
+  registration with this design. That separates the price from batch 1.
+- No other verdict needs the bisection.
+
+**9. The guard, run in the same session (not part of §46).** §41b cleared
+only the gate-off binary, at c1s and c1d. So the promoted build also runs
+§41b's guard (BASE n = 12 per cell against the candidate) at c2 default
+and c8 default in this session, under §41b's statistic and decision rule.
+It is noted here for the session plan. It neither enters nor depends on
+§46's verdict.
+
+**Row count and duration.** 2 check rows, then 16 scored rows, 4 rows at
++500 ms and 2 c1d rows: 24 invocations, ≈ 27 min, plus two builds
+(≈ 11 min) and the guard.
