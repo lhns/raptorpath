@@ -268,10 +268,10 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     # ── witnesses (a row is void otherwise) ──
     p = []
     want = "1" if arm == "WIRE" else "0"
-    if arm == "BASE":
-        # Main's own binary (§41) has no RWM_PLACE_WIRE: the token must be absent, and nothing of the arm may print.
+    if arm in ("BASE", "CAND"):
+        # Main's own binary (BASE, §41) and the promoted build (CAND, §46) have no RWM_PLACE_WIRE: the token must be absent.
         if row["gate_wire_cli"] is not None or row["gate_wire_srv"] is not None:
-            p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} on BASE (want absent)")
+            p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} on {arm} (want absent)")
     elif row["gate_wire_cli"] != want or row["gate_wire_srv"] != want:
         p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} (want {want})")
     if store == "def":
@@ -302,6 +302,8 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                     p.append(f"wpl-within-1ms-of-wrtt={close}/{len(post)}")
             if eta is not None and not (_f(eta["w_mv"]) or 0) > 0:
                 p.append(f"w_mv={eta['w_mv']}")
+    elif arm == "CAND":
+        pass        # §46: the promoted build may print wpl_us / the w_* gauges or not; that is reported, not a witness
     else:
         if any(L[i][3] is not None for _, L in diag for i in L):
             p.append(f"wpl_us-numeric-on-{arm}")

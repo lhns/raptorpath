@@ -29,6 +29,13 @@
 # change: main's binary, built fresh); the parser and scorer tests (test_loopdiag_parse.py, test_disp36.py) gate
 # instead (ABORT-TESTS). The battery needs tcpdump and keeps the per-skb tables in $RUN/tables (persisted).
 #
+# LD_PLAN=46 (status section 46): the path-event test. Two trees like plan 41 (CAND at $LD_ROOT/src with its COMMIT file, BASE =
+# main 4926822 at $LD_ROOT/base/src), built fresh. It REFUSES to launch (ABORT-CAND, nothing run) unless LD_CAND_SHA is set to the
+# SHA recorded by amendment, is not the placeholder, and equals $LD_ROOT/COMMIT; and the CAND binary must not carry RWM_PLACE_WIRE.
+# Suites only with LD_P46_SUITES=1 (the merge-candidate session runs them first). The smoke is the two CHECK ROWS (BASE at
+# SLOW-HIT, CAND at FAST-HIT): a failed qdisc diff / backlog / event / exit witness or a non-zero inactive count is ABORT-INJECT
+# and no scored row runs. The ledger score reads smoke.log and ld.log.
+#
 # LD_PLAN=41b (status section 41b): the same two-tree build as plan 41 and NO suites (raptorpath/src is unchanged from section 41's
 # tested tree); the battery is 48 rows (BASE 12, MAIN 6, WIRE 6 per cell, c1s and c1d default) scored by place41b_score.py.
 #
@@ -43,7 +50,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
-crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py \
+crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py place46_parse.py event_inject.py test_harness46.py test_topo_netem.sh \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
@@ -57,11 +64,19 @@ case "$PLAN" in
   38) P_SMOKE=smoke38; P_SCORE=score38; P_CHECK=check38 ;;
   41) P_SMOKE=smoke41; P_SCORE=score41; P_CHECK=check41 ;;
   41b) P_SMOKE=smoke41b; P_SCORE=score41b; P_CHECK=check41b ;;
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b)"; exit 3 ;;
+  46) P_SMOKE=smoke46; P_SCORE=score46; P_CHECK=check46 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|46)"; exit 3 ;;
 esac
 # Plans 38, 41 and 41b share everything but the BASE arm (P38=1 is "the place-wire battery"; P41=1 builds and runs the BASE binary).
 P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P38=1
-P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P41=1
+P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$PLAN" = "46" ]; } && P41=1
+P46=0; [ "$PLAN" = "46" ] && P46=1
+# Plan 46 shares the root-owned tmpfs tree, LD_HARD and the two-tree build with plans 38 / 41 (P38 stays 0: no place-wire arms or ladder).
+if [ "$P46" = 1 ]; then
+  CAND_SHA="${LD_CAND_SHA:-UNSET}"
+  case "$CAND_SHA" in UNSET|"") echo "ABORT-CAND LD_CAND_SHA is unset (the CAND SHA is recorded by amendment before launch); NOTHING WAS RUN"; exit 3 ;; esac
+  [ "$(cat "$LD_ROOT/COMMIT" 2>/dev/null)" = "$CAND_SHA" ] || { echo "ABORT-CAND $LD_ROOT/COMMIT is not LD_CAND_SHA=$CAND_SHA; NOTHING WAS RUN"; exit 3; }
+fi
 # Measurement runs from tmpfs (shared rules): the run dir and the measured
 # binary live under LD_SHM; the build stays on disk; persist() copies the run
 # dir to $ROOT/run after the last row (and on every exit path).
@@ -78,7 +93,7 @@ BUILDLOG="$ROOT/build.log"
 # Plan 36: systemd-logind RemoveIPC (default yes) deletes a non-system user's /dev/shm objects when the user's last
 # session ends -- a binary copied there vanished between ssh sessions. So the tmpfs tree is ROOT-owned (sticky
 # world-writable dirs, so this script can still write its sentinels) and the binary is installed as root.
-if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ]; then
   sudo -n mkdir -p "$SHM" "$RUN" "$SHM/bin" "$SHM/bin-base" && sudo -n chmod 1777 "$SHM" "$RUN" "$SHM/bin" "$SHM/bin-base" || { echo "ABORT-SHM cannot create the root-owned tmpfs tree"; exit 3; }
 else
   mkdir -p "$RUN" "$SHM/bin"
@@ -101,7 +116,7 @@ install_lock_traps
 # with ABORT-LOCK and nothing run; relaunch.
 until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
 prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' /proc/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
-if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ]; then
   : "${LD_HARD:?LD_HARD (epoch) is required for plan $PLAN}"
   PREC=$(prec_samples)
   if [ "${PREC%% *}" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
@@ -114,6 +129,9 @@ take_lock /home/vibe/rp.lock
 era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 
 python3 ./test_loopdiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"
+if [ "$P46" = 1 ]; then
+  python3 ./test_harness46.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_harness46.py)"
+fi
 if [ "$P38" = 1 ]; then
   python3 ./test_place38_parse.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_place38_parse.py)"
 fi
@@ -131,7 +149,7 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 T0=$(date +%s)
 ( cd "$SRC" && CARGO_TARGET_DIR="$TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$BUILDLOG" 2>&1 \
   || fail_all "ABORT-BUILD ($BUILDLOG)"
-if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ]; then
   sudo -n install -m 0755 -o root -g root "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
 else
   cp "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
@@ -155,6 +173,14 @@ if [ "$P41" = 1 ]; then
   echo "$SHA_BASE  $BIN_BASE  commit=$(cat "$ROOT/base/COMMIT" 2>/dev/null) (BASE)" >> "$RUN/BINSHA.txt"
   era "LD-ALL built BASE wall=$(( $(date +%s) - T1 ))s binary $SHA_BASE"
   [ "$SHA_BASE" != "$SHA" ] || fail_all "ABORT-BUILD BASE and MAIN binaries are identical"
+fi
+if [ "$P46" = 1 ]; then
+  grep -aq -- "RWM_PLACE_WIRE" "$BIN" && fail_all "ABORT-CAND the CAND binary carries RWM_PLACE_WIRE: it does not contain the promotion"
+  grep -aq -- "RWM_PLACE_WIRE" "$BIN_BASE" && fail_all "ABORT-CAND the BASE binary carries RWM_PLACE_WIRE: it is not main's"
+fi
+if [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; then
+  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
 fi
 
 # ── plan 27: the test suites, after the battery ledger is on disk ────────────
@@ -241,6 +267,7 @@ SRC_RC=$?
 if [ "$SRC_RC" != "0" ] || ! python3 ./loopdiag_parse.py "$P_SMOKE" "$RUN/smoke.log" > "$RUN/smoke-check.txt" 2>&1; then
   cat "$RUN/smoke-check.txt" 2>/dev/null
   touch "$RUN/ABORT-SMOKE"
+  grep -q '^ABORT-INJECT' "$RUN/smoke-check.txt" 2>/dev/null && fail_all "ABORT-INJECT (smoke-check.txt: a check row failed; no scored row ran)"
   fail_all "ABORT-SMOKE (smoke-check.txt)"
 fi
 cat "$RUN/smoke-check.txt"
@@ -250,14 +277,18 @@ era "LD-ALL SMOKE-PASS"
 T0=$(date +%s)
 era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 BTO=10800
-if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ]; then
   BTO=$(( LD_HARD - $(date +%s) ))
   [ "$BTO" -ge 1800 ] || fail_all "ABORT-BUDGET ${BTO}s left before LD_HARD"
 fi
 timeout "$BTO" sudo -n env "${BENV[@]}" LD_TAG=ld bash ./loopdiag_battery.sh
 BRC=$?
 era "LD-ALL battery rc=$BRC wall=$(( $(date +%s) - T0 ))s"
-python3 ./loopdiag_parse.py "$P_SCORE" "$RUN/ld.log" > "$RUN/score.txt" 2>&1
+if [ "$P46" = 1 ]; then
+  python3 ./loopdiag_parse.py "$P_SCORE" "$RUN/smoke.log" "$RUN/ld.log" > "$RUN/score.txt" 2>&1
+else
+  python3 ./loopdiag_parse.py "$P_SCORE" "$RUN/ld.log" > "$RUN/score.txt" 2>&1
+fi
 BAT_OK=0
 [ "$BRC" = "0" ] && python3 ./loopdiag_parse.py "$P_CHECK" "$RUN/ld.log" && BAT_OK=1
 era "LD-ALL end bat_ok=$BAT_OK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-') load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
