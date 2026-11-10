@@ -9427,6 +9427,46 @@ the leg counts toward a train's span, since netem's rate server spaces them
 all. The battery launches only after the row reconciles within the
 witnesses' 1 %.
 
+
+### 36. Amendment 6 — the capture gap diagnosed; the capture and witnesses changed (after check rows, before any scored row)
+
+*Cause.* A tcpdump stopped within about 1 s of the last packet loses its last
+partial AF_PACKET block. That was a contiguous tail of 734–748 skbs, about
+0.45 s at c2, which is the whole ≈ 5 % gap. Stop-timing sweep, filtered tap
+short by: 735 (0 s), 8 (0.5 s), 13–14 (≥ 1.2 s). The residue is the
+non-UDP skbs the filter excluded. The datagram gap was a separate
+artefact: the engine's gso_size varies per skb (multiples of 1 252: 6 050
+skbs; of 1 253: 3 063; others 2 746), so one m over-counts segments by
+≈ 4 % while moving bytes by only 0.15 %.
+
+*Reconciliation (one drained c2 row, `RWM_STORE=128`, deltas over the
+capture window).*
+- An unfiltered `cli0 -Q out` tap and an unfiltered `srv0 -Q in` tap match
+  skb for skb: 18 328 each, the same count as Δ(clsact hits) − Δ(netem
+  drops). Zero skbs were lost between netem and the receiver.
+- The `srv0` stamps follow `cli0` by a median of 2.5 µs, so both taps sit
+  after netem.
+- Σb matches netem's Δ Sent bytes to +0.15 %, which is exactly the phantom
+  segments × 42 B. Linux 7.0 `qdisc_pkt_len_segs_init` charges
+  `len + (segs − 1)·42`.
+- So `[TRUTH]` and netem's counters are right; only the tap was short.
+
+*Changes (harness `7c3c9b7`).*
+- The scored capture is unfiltered inbound on the leg device (`-Q in`).
+  Every skb of any protocol is a record with b = orig_len for single-segment
+  skbs, and it counts in train spans, since netem's rate server spaces them
+  all.
+- m is the payload carrying the most bytes. The stop waits for netem's
+  backlog to drain (≤ 5 s), then settles 1.5 s.
+- The witnesses compare windowed deltas from `[SNAP]` start/stop snapshots:
+  bytes against Δ Sent bytes, skbs against Δhits − Δdrops − Δbacklog. The
+  1 % tolerance is unchanged.
+
+*Fresh check rows (production capture, not scored).*
+- c2: skbs 1.0004, bytes 1.0016, kdrop 0.
+- c8: leg 0 at 1.0000 / 1.0010, leg 1 at 1.0000 / 1.0028, kdrop 0.
+- All witnesses pass. The battery may launch.
+
 ## 37. Model review — joint fixed point, internal audit, literature — no VM, record
 
 The user asked for the whole model and pipeline to be rated, with the
