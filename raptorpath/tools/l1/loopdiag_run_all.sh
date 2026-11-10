@@ -38,6 +38,9 @@
 # both builds, the suites on the shipped tree (a REAL failure is ABORT-TESTS: no row runs; the tools/l1 python tests are all
 # test_*.py), the smoke, the battery from root-owned tmpfs. The BASE binary is installed as $LD_SHM/bin-base/raptorpath (same
 # file name, so pgrep -x / pkill -x raptorpath see it).
+# LD_PLAN=43b (status 43b): plan 43's code and binary (sha checked) with the SL-T / SH-T / MAIN arms at c2; refuses while G43B / TAU43B_US /
+# BAND43B are unset. Otherwise the same envelope as plan 43.
+#
 # LD_PLAN=43 (status section 43 + amendments 1-2): the oracle store law in closed loop. run43's binary (diagnostic arm, never merged),
 # built fresh. The plan-36 launch precondition, LD_HARD and root-owned tmpfs tree, but the budget guard is 45 min (ABORT-BUDGET) and
 # no engine suites run here (the host gate (a)-(g) did); test_place43_parse.py gates (ABORT-TESTS). Launch through
@@ -62,8 +65,14 @@ case "$PLAN" in
   41) P_SMOKE=smoke41; P_SCORE=score41; P_CHECK=check41 ;;
   41b) P_SMOKE=smoke41b; P_SCORE=score41b; P_CHECK=check41b ;;
   43) P_SMOKE=smoke43; P_SCORE=score43; P_CHECK=check43 ;;
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|43)"; exit 3 ;;
+  43b) P_SMOKE=smoke43b; P_SCORE=score43b; P_CHECK=check43b ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|43|43b)"; exit 3 ;;
 esac
+# Plans 43 and 43b share the oracle code path (P43=1). Plan 43b refuses to launch while its plan variables are unset (nothing run).
+P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
+if [ "$PLAN" = "43b" ]; then
+  python3 ./place43_parse.py vars43b > /dev/null || { echo "ABORT-PLAN43B-UNSET G43B / TAU43B_US / BAND43B are unset: NOTHING WAS RUN"; exit 3; }
+fi
 # Plans 38, 41 and 41b share everything but the BASE arm (P38=1 is "the place-wire battery"; P41=1 builds and runs the BASE binary).
 P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P38=1
 P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P41=1
@@ -83,7 +92,7 @@ BUILDLOG="$ROOT/build.log"
 # Plan 36: systemd-logind RemoveIPC (default yes) deletes a non-system user's /dev/shm objects when the user's last
 # session ends -- a binary copied there vanished between ssh sessions. So the tmpfs tree is ROOT-owned (sticky
 # world-writable dirs, so this script can still write its sentinels) and the binary is installed as root.
-if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$PLAN" = "43" ]; then
+if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   sudo -n mkdir -p "$SHM" "$RUN" "$SHM/bin" "$SHM/bin-base" && sudo -n chmod 1777 "$SHM" "$RUN" "$SHM/bin" "$SHM/bin-base" || { echo "ABORT-SHM cannot create the root-owned tmpfs tree"; exit 3; }
 else
   mkdir -p "$RUN" "$SHM/bin"
@@ -106,7 +115,7 @@ install_lock_traps
 # with ABORT-LOCK and nothing run; relaunch.
 until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
 prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' /proc/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
-if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$PLAN" = "43" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   : "${LD_HARD:?LD_HARD (epoch) is required for plan $PLAN}"
   PREC=$(prec_samples)
   if [ "${PREC%% *}" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
@@ -119,7 +128,7 @@ take_lock /home/vibe/rp.lock
 era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 
 python3 ./test_loopdiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"
-if [ "$PLAN" = "43" ]; then
+if [ "$P43" = 1 ]; then
   python3 ./test_place43_parse.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_place43_parse.py)"
 fi
 if [ "$P38" = 1 ]; then
@@ -139,13 +148,16 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 T0=$(date +%s)
 ( cd "$SRC" && CARGO_TARGET_DIR="$TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$BUILDLOG" 2>&1 \
   || fail_all "ABORT-BUILD ($BUILDLOG)"
-if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$PLAN" = "43" ]; then
+if [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   sudo -n install -m 0755 -o root -g root "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
 else
   cp "$TARGET/release/raptorpath" "$BIN" || fail_all "ABORT-BUILD copy"
 fi
 era "LD-ALL built wall=$(( $(date +%s) - T0 ))s"
 SHA="$(sha256sum "$BIN" | cut -d' ' -f1)"
+# Plan 43b runs the binary of status 43 (run43 b2b75b7): any other is ABORT-SHA, nothing measured.
+SHA43="94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008"
+[ "$PLAN" != "43b" ] || [ "$SHA" = "$SHA43" ] || fail_all "ABORT-SHA plan 43b needs status 43's binary $SHA43, built $SHA"
 echo "$SHA  $BIN  commit=$(cat "$ROOT/COMMIT" 2>/dev/null)" > "$RUN/BINSHA.txt"
 era "LD-ALL binary $SHA"
 SHA_BASE=""
@@ -258,12 +270,12 @@ era "LD-ALL SMOKE-PASS"
 T0=$(date +%s)
 era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
 BTO=10800
-if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$PLAN" = "43" ]; then
+if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   BTO=$(( LD_HARD - $(date +%s) ))
   MINBTO=1800
   # status 43: not started with less than 45 min left. Amendment 2 (26 invocations): about 35 min expected, worst case
   # 26 x (200 s timeout + ~15 s bring-up) = 93 min, which LD_HARD (launch + 4 h) covers; the guard is unchanged.
-  [ "$PLAN" = "43" ] && MINBTO=2700
+  [ "$P43" = 1 ] && MINBTO=2700
   [ "$BTO" -ge "$MINBTO" ] || fail_all "ABORT-BUDGET ${BTO}s left before LD_HARD (need $MINBTO)"
 fi
 timeout "$BTO" sudo -n env "${BENV[@]}" LD_TAG=ld bash ./loopdiag_battery.sh
