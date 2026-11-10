@@ -1754,7 +1754,7 @@ rule, sampled as a softmax (`Scheduler::place_costs`,
 
    c_i  =  L_i  +  B_i  +  V_i                                  (shipped)
    L_i  =  ( E_i − min(S, 9/8·srtt_i) )⁺ / ref                  completion-time term, S = 0 by default
-   E_i  =  (in_flight_i / cwnd_i)·srtt_i  +  srtt_i/2  +  ε_i·srtt_i
+   E_i  =  (in_flight_i / cwnd_i)·srtt_i  +  (½ + ε_i)·ŵ_i ,   ŵ_i = wire_i ?: min_j wire_j ?: srtt_i
    B_i  =  w_bw(δ) · r_i ,    r_i = ε_i/(1 − ε_i)  (10.0 at ε_i ≥ 1, a dead leg)
    V_i  =  w_div · fate_i      (repairs only, w_div = 1.0)
    w_bw(δ)  =  clamp( ½ − ¼·log₁₀(δ/δ_auto) , 0 , 1 )
@@ -1763,7 +1763,9 @@ rule, sampled as a softmax (`Scheduler::place_costs`,
 ref is the fastest active path's srtt, floored at 1 ms. srtt_i is Copa's
 app-echo EWMA (`srtt_measured()`, β = 1/8; `RWM_COPA_WIRE` off): it
 includes the sender's own backlog dwell on leg i, and it updates only when
-leg i's own symbols are echoed.
+leg i's own symbols are echoed. ŵ_i is quinn's packet-timed smoothed RTT of
+leg i: it holds no local dwell and refreshes without our symbols ("The shipped
+price" below).
 `SchedulingWeights::from_delta`: w_bw is exactly {0, ½, 1} at Realtime,
 Auto, Bulk (pinned bit-exact by `scheduling_weights_are_the_dial_not_a_mode`);
 the ¼ is the dial's width (δ spans four decades, the weights span 1). E_i
@@ -1872,10 +1874,11 @@ is still echoed on `[GATES]` but is not read.)
   start-up.
 - The corrected base below also prices the first burst. Quinn's RTT exists
   from the handshake, so at c8 the slow leg's cold price is ½·(43 − 14) ms
-  above the fast leg's, not equal. That the arm also shrinks the trigger
-  is **not shown** (status §38 addendum): the first-burst split is within
-  the spread (c1d 1536, second leg's in-flight share at t ≈ 0.3 s: MAIN
-  0.612, WIRE 0.628). What the arm shows is that no leg stays locked.
+  above the fast leg's, not equal. That the corrected base also shrinks the
+  trigger is **not shown** (status §38 addendum): the first-burst split is
+  within the spread (c1d 1536, second leg's in-flight share at t ≈ 0.3 s:
+  frozen base 0.612, wire base 0.628). What the wire base shows is that no
+  leg stays locked.
 
 *The constraint.* When I_i = 0 the price may read only state that refreshes
 without our symbols, or state that is never pessimistic. Load-dependent
@@ -1898,9 +1901,9 @@ the sender's `[DIAG]` (`rtt`, `wrtt`, `rtp_us`) and `[LOOPDIAG]`
 *Table 5.7a.* Gap g in nats; a locked leg is egress share < 2 % with
 median `rtt` ≥ 3 × median `wrtt`.
 
-| price base on L and A | 6 locked c1d rows (p34) | 5 locked c8 rows (p27) | 11 fresh c8 rows: shift against shipped, per-row median over in-transfer `[DIAG]` lines |
+| price base on L and A | 6 locked c1d rows (p34) | 5 locked c8 rows (p27) | 11 fresh c8 rows: shift against the frozen base, per-row median over in-transfer `[DIAG]` lines |
 |---|---|---|---|
-| shipped `(½+ε)·srtt` | +35 to +116 | +17 to +57 | 0 |
+| frozen-srtt `(½+ε)·srtt` (the pre-§41b base) | +35 to +116 | +17 to +57 | 0 |
 | `(½+ε)·(RTprop + S)`, S = p50 − min kept | +2.7 to +58 (4 of 6 ≥ 20) | +1.0 to +25 (3 of 5 ≥ 12) | −7.0 to +1.2 (from row medians) |
 | `(½+ε)·(RTprop + S)`, S = p50 − RTprop kept | +26 to +94 | +14 to +50 | −6.9 to +0.6 (from row medians) |
 | `(½+ε)·RTprop` | −0.2 to +0.1 | +1.3 to +6.3 | −5.0 to −1.0 (median −1.5) |
@@ -1921,7 +1924,8 @@ included. Placement must not, because the dwell is leg i's own backlog,
 which its occupancy term already prices live. The two laws share RTprop,
 not S.
 
-**The corrected price (the `RWM_PLACE_WIRE` arm, status §38).**
+**The shipped price: the wire base (status §38, §41, §41b).** It is the
+only placement base; it has no gate.
 
 ```text
    c_i  =  E_i / ref  +  w_bw(δ)·r_i  +  V_i  ( + X_i )
@@ -1930,8 +1934,8 @@ not S.
    ref  =  max( min_j s_j , 1 ms )                              (unchanged)
 ```
 
-The only change is the base: the shipped (½ + ε̂_i)·s_i becomes
-(½ + ε̂_i)·ŵ_i. The queue term already carried s_i and stays.
+The base is (½ + ε̂_i)·ŵ_i. The frozen-srtt base (½ + ε̂_i)·s_i that it
+replaced is a §10 row. The queue term carries s_i and is unchanged.
 
 | symbol | source | refresh | at idle (I_i = 0) |
 |---|---|---|---|
@@ -1941,15 +1945,21 @@ The only change is the base: the shipped (½ + ε̂_i)·s_i becomes
 | ŵ_i | quinn's packet-timed smoothed RTT of leg i's connection (`PathView.rtt_us` via `QuicTransport::wire_rtt`), mirrored into `PathState` for every leg at every ack batch (any leg) and every path report | quinn's own ack-eliciting traffic, independent of our symbols. Observed moving on idle legs: c1d 3 042 → 2 792 → 2 643 µs, c8 DEF256 p1 42 → 46 → 44 → 45 ms | the leg's network transit, including any standing queue in the network (delivery delay, which placement prices), with no local dwell |
 | ε̂_i | `estimator.loss_rate()` (EWMA, starts at 0) | loss reports | frozen, never above the last measurement, and 0 if never measured |
 | ref | min over active legs of s_j, 1 ms floor | — | a scale common to all legs (no differential); a frozen small s_j sharpens the softmax, never excludes a leg |
-| r_i, V_i, X_i | unchanged; X_i's arrival reads this E_i, its F̂ the shipped stamp (not combined in §38) | — | — |
+| r_i, V_i, X_i | unchanged; X_i's arrival reads this E_i, and F̂ is built from the stamp of the same E_i | — | — |
 
-The `[ETA]` arrival stamp (`emit_source.rs`, `E_picked`) keeps the shipped
-E. It feeds only gauges (`[ETA]`, `[LAT]`) and F̂, which only the
-default-off X_i reads. So the arm changes nothing at N = 1 except the ŵ
-mirror reads. Under the arm the stamp's predictor differs from the law's by
-(½ + ε̂_i)·(s_i − ŵ_i), the local dwell that `rtt` − `wrtt` reports.
-Combining the arm with `RWM_PLACE_T_DERIVED` or `RWM_PLACE_HOL` would move
-the stamp first; §38 combines neither.
+The `[ETA]` arrival stamp (`emit_source.rs`, `E_picked`) is the shipped E:
+`stamp_placement_eta` reads the same `E_i` the price does (one seat,
+`Scheduler::place_e`), including the `RWM_COLD_PLACE` value of s_i. The
+stamp therefore predicts what placement priced, and the receiver's residual
+(realized − predicted) measures that quantity. Before §41b the stamp kept
+the frozen-srtt E under the then-optional wire base, so its predictor
+differed from the law's by (½ + ε̂_i)·(s_i − ŵ_i), the local dwell that
+`rtt` − `wrtt` reports; that gap is gone. The stamp feeds only gauges
+(`[ETA]`, `[LAT]`) and F̂, which only the default-off X_i reads, so at N = 1
+the base changes nothing except the ŵ mirror reads. The derived-temperature
+arm (`RWM_PLACE_T_DERIVED`) reads σ̂_e off this stream and so now measures
+the wire-base predictor. A test (`eta_stamp_is_the_priced_e`) pins stamp
+and price to each other.
 
 *Bind gauges.* Each clamp or fallback gets a gauge, on the `[ETA]
 site=sender` line unless noted.
@@ -1959,12 +1969,15 @@ site=sender` line unless noted.
 - The ŵ fallback: `w_cold=`, the fraction of evaluations where wire_i was
   absent.
 - The seed in s_i: `cold_ge=` (exists).
-- The arm's execution witness: `w_mv=`, the placements whose argmin
-  differs from the shipped base's argmin (measurement discipline rule 1).
+- There is no argmin-moved witness: it compared the wire base's argmin with
+  the frozen-srtt base's, which the engine no longer computes. The wire
+  base's execution is witnessed by `w_cold=` (the fallback taken, so the
+  wire reads are live when it is below 1) and by the unit tests that pin
+  its absolute values at every anchor.
 - On `[DIAG]`, `p<i>: … wpl_us=` is the ŵ_i the scheduler holds, so it can
   be read beside `wrtt`.
 
-*No mode bit.* The arm is one expression for every leg, every δ and every
+*No mode bit.* The base is one expression for every leg, every δ and every
 path count. N = 1 gives P = 1 (single-path cells are untouched by
 construction). δ enters only through w_bw(δ), unchanged, and ρ does not
 enter. The `?:` chain is an information-availability fallback, as in
@@ -1978,16 +1991,16 @@ seconds, T·ref. Switching ref to the base's clock, ref = max(min_j ŵ_j,
 1 ms), rescales every gap by min s / min ŵ and creates no shift of its own.
 - On the 11 fresh c8 rows it moves the per-row median shifts by ≤ 0.4 nats,
   because the fast leg (the ref leg) has s ≈ ŵ.
-- On the locked rows it widens the arm's gaps to −10.4…+0.2 (c1d,
+- On the locked rows it widens the base's gaps to −10.4…+0.2 (c1d,
   ×2.3–8) and −0.9…+4.0 (c8). Every lock-out is still cured.
 - What it would change is the temperature wherever dwell makes s ≫ ŵ on
   every leg. At c1d default (s ≈ 20–45 ms, ŵ ≈ 3 ms) the softmax would
   sharpen ×7–15 on queue differences. That is a second mechanism, a change
   to T, not to the lock-out, and it belongs to T's derived form,
   T·ref = (√6/π)·σ̂_e, in which ref cancels.
-- So the arm keeps ref. When dwell dominates, the queue term (I_i/W_i)·s_i
-  carries most of the cost difference under the arm, and that is intended:
-  the shipped base counted the same dwell a second time.
+- So the base keeps ref. When dwell dominates, the queue term (I_i/W_i)·s_i
+  carries most of the cost difference, and that is intended: the
+  frozen-srtt base counted the same dwell a second time.
 
 *Fixed point, c1d (symmetric legs).* Both legs read ŵ = 2–8 ms on every p34
 and p27 row, and ε̂ = 0, so c_1 − c_0 = (I_1·s_1/W_1 − I_0·s_0/W_0)/ref +
@@ -1999,7 +2012,7 @@ one fixed point, φ_1 = ½ at equal state.
   I_0·s_0/(W_0·ref). On the locked rows the first part, divided by T,
   is −1.3 to +0.1 nats, so φ_1 ≥ 0.47 there even at I_0 = 0. It is not a
   fixed point.
-- The shipped law has a second, absorbing fixed point at the same state:
+- The frozen-srtt law had a second, absorbing fixed point at the same state:
   +35 to +116 nats on the locked rows.
 - That fixed point is the one-leg state, and one-leg rows ran faster.
   Within a cap (p34 means), locked rows ran ahead of two-leg rows by +3.2 %
@@ -2018,7 +2031,7 @@ loop is negative feedback. Load on leg 0 raises s_0 and ŵ_0 together, so
 equilibrium.
 - The circularity is harmless because the S it reads is live. It drains
   with the load, and quinn sees it drain, because the leg keeps carrying.
-- On the 11 fresh c8 rows the arm moves g by the local dwell only, δg =
+- On the 11 fresh c8 rows the wire base moves g by the local dwell only, δg =
   [(½+ε̂_1)(ŵ_1 − s_1) − (½+ε̂_0)(ŵ_0 − s_0)]/(ref·T). δg does not depend on
   the load, so it is evaluated on every in-transfer `[DIAG]` line. The
   per-row medians are −0.2 to −0.5 nats at caps 128–512, −0.9 at 768, −2.5
@@ -2032,7 +2045,7 @@ equilibrium.
   - The 1 024 rows oscillate within each 250 ms window between a loaded
     and an idle slow leg. In the idle phases its echo srtt holds up to
     130 ms of local dwell above ŵ (e.g. `rtt` 305 against `wrtt` 172), and
-    the arm reads that stale dwell lower, which is the correction itself.
+    the wire base reads that stale dwell lower, which is the correction itself.
     These rows already sit at capacity share (0.156–0.160 against 0.167),
     the regime of the c8 default cell, whose share clause (±0.03) §38
     gates.
@@ -2043,11 +2056,11 @@ equilibrium.
 - The low slow-leg share at caps 128–192 (1.7–5.7 %) comes from fresh prices
   (`rtt` − `wrtt` = 2 ms on three of the four rows). Where echo and wire agree
   it is unchanged by construction: when s_i = ŵ_i on
-  every leg, the arm's cost equals the shipped cost exactly (test
-  `wire_base_equals_shipped_when_echo_equals_wire`).
+  every leg, the wire base's cost equals the frozen-srtt cost exactly (test
+  `wire_equal_to_echo_prices_the_echo_srtt`).
 - On the 5 locked c8 rows the gap falls from +17…+57 to −0.7…+3.8 at
   I_0 = 0, so the slow leg is sampled again. The c8 MAIN default rows (§32:
-  share 0.175–0.185, slow-leg `rtt` within 7 % of `wrtt`) are the arm's predicted equilibrium.
+  share 0.175–0.185, slow-leg `rtt` within 7 % of `wrtt`) are the wire base's predicted equilibrium.
 
 *Staleness, what keeps each input fresh.*
 - RTprop: Copa's 10 s windowed min. `expire_old_samples` runs only inside
@@ -2072,20 +2085,28 @@ equilibrium.
   in_flight is stuck above 0 without echoes. Every locked ledger leg read
   `infl=0`.
 
-*Result (status §38): `REGRESSES-AT(c1s-400@def)`; the arm does not ship.*
+*Result: shipped (status §38, §41, §41b; user ruling 2026-11-10, ADR-0073).*
 - It cures the absorbing lock-out. At the four static cells (c1d 1536,
-  c8 192, 256, 512; 24 rows per arm) 0 WIRE rows locked, against 10 MAIN
-  rows (5, 1, 3, 1). c8 256 goodput rose 90.4 → 95.1 Mbit/s (+5.2 %).
-- The one failed clause is client CPU per GB at the c1s control: +2.5 %
-  against a 2.4 % tolerance, ranges disjoint (+1.9 % at matched speed). The
-  cause is the armed `place_costs` call's overhead, about 360 ns per call,
-  ≈ 3.4·10⁵ calls per row, not the mirror and not the law.
-- At the default law neither arm locked (0 of 6 at c1d and c8), so no
-  benefit was measured where the arm would ship. The measured benefit sits
-  at static caps, which makes the case robustness of static diagnostic grids
-  and not a default-law gain.
-- Status §41 pre-registers one iteration, an allocation-free witness. It is
-  pending; a second `REGRESSES` result reverts the arm.
+  c8 192, 256, 512; 24 rows per arm) 0 wire-base rows locked, against 10
+  frozen-base rows (5, 1, 3, 1). c8 256 goodput rose 90.4 → 95.1 Mbit/s
+  (+5.2 %).
+- §38 scored `REGRESSES-AT(c1s-400@def)`: client CPU per GB at the c1s
+  control +2.5 % against a 2.4 % tolerance, ranges disjoint. The cause was
+  the then-optional `place_costs` call's overhead, about 360 ns per call,
+  not the mirror and not the law.
+- §41 made the witness allocation-free: 0 extra heap blocks per
+  `place_costs` (test `place_costs_allocates_exactly_its_result_vec`), and
+  the c1s CPU cost read +0.8 %.
+- §41b scored the gate-off binary against main under an A/A-calibrated
+  guard: GATE PASS, p = 0.7195. The wire arm itself read p = 0.9316, with
+  every §21 reading WITHIN and c1s client CPU +0.0 %, c1d +0.2 %.
+- At the default law neither base locked (0 of 6 at c1d and c8), so no
+  benefit was measured where the base ships; the measured benefit sits at
+  static caps. It ships because the user ruled so on the evidence above,
+  and the frozen-srtt base's absorbing fixed point is removed with it.
+- **Not tested off Bulk or at four paths.** The cells above are the Bulk
+  point at N = 2 (c1s as the N = 1 control); the base is one expression
+  continuous in δ and N by construction, but those regions are untested.
 
 ### 5.8 The generation seat
 
@@ -3806,6 +3827,7 @@ shipped.
 | Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) | decode-clocked samples make the windowed max the correct statistic; any sub-max quantile under-reads about 65× (heterogeneous dual 3–6× worse) | `f1f32c5` | removed |
 | Place-slack (`RWM_PLACE_SLACK`) | at the heterogeneous dual goodput falls monotonically as slow-path source share rises (6 % → 88.6 Mbit/s, 16–18 % → 70–83); the symmetric-dual clause failed (0.86–0.90×Σ) | `cc15b83` | removed |
 | Derived placement temperature, frontier term, derived diversity weight (`RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL`, `RWM_PLACE_WDIV_DERIVED`) | inert on delivered latency, with goodput regressions under the guard; placement-manufactured wait is only ~6 % of delivered latency | `5e6e3f5` | off |
+| Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) | on an idle leg the echo srtt freezes with the leg's own dwell, so its price stays +17 to +116 nats above the loaded leg's on 11 locked rows and the one-leg state is absorbing (10 of 24 static-cap rows locked, against 0 with the wire base); replaced by `(½ + ε̂)·ŵ_i`, quinn's packet-timed RTT (status §38, §41, §41b; ADR-0073; §5.7). Not tested off Bulk or at four paths. **Re-ask if quinn's SRTT is unavailable on a substrate** (then ŵ_i falls through `min_j wire_j ?: s_i` to this base) | status §38, §41, §41b | superseded; code and gate removed |
 | Copa per path as the substrate default (the original design) | on the clean substrate Copa-sole is 0.57–0.97× BBR bulk; its earlier heterogeneous-dual win was a broken-substrate artefact; BBR-under is the default and Copa the queue/tail policy point | `7652ccb`, `519467e` | superseded |
 | Quinn's stock Cubic under the engine | the hidden loss-reactive substrate controller was the 15–17 Mbit/s "link ceiling" | `519467e` | superseded |
 | Engine or receiver parallelisation | one core per side sustains 136–188 Mbit/s with an empty queue; the walls are per-symbol service time and recovery waste | `cee499c` | refuted, never built |
@@ -3902,10 +3924,10 @@ decide it.
 | `RWM_STORE_GAIN = 2.0` | `gates.rs:361`; the single-path predecessor (Section 6.2) | no longer sets the shipped cap. The `n_live < 2` guard is gone (`net/store_cap.rs`, ADR-0072) and the default pooled cap multiplies by 1 + q(δ) at every N. The gain is still read by the `RWM_STORE_PATHS = 0` control, by `RWM_DELTA_CAP = 0`, by the default-off honest and pool-anchor arms, by the seats where `plain_dyn_cap` is false (generation coding, an explicit `RWM_STORE`; `net/sender_policy.rs`, where `delta_cap` is `gates.delta_cap && plain_dyn_cap`) and by the default-off placement frontier arm (`scheduler/place.rs:409`, H = (gain − 1)·RTprop). It is a shipped gate default with no live use on the default plain-reliable path | none needed on the default path; the `=0` control keeps it re-runnable |
 | `RELIABLE_STORE_MAX = 1024` | `net/mod.rs:442`; the former single-path ceiling | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"). It bound in every post-warm-up c1s window and 17/18 sc2 reps while it was the single-path ceiling, so every single-path goodput measured before ADR-0072 went through it. The shipped seat no longer uses it: the ceiling is N·knee at every N (ADR-0072). It stays the ceiling of the `RWM_STORE_PATHS = 0` arm (`net/sender_policy.rs:529`) and the `min` under the boot cap. Its successor at one path is the knee, which binds in 70 % of c1s windows (status §18) | the ADR-0072 battery ran (status §18, §19); the knee is the open constant now |
 | `HONEST_RECOVERY_ROUND_S = 100 ms` | honest per-path cap (`net/store_cap.rs`) | inert by default (needs `RWM_PLAIN_RS`) | — |
-| κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067; under `RWM_PLACE_WIRE` (§5.7) X_i's arrival reads the corrected E_i against F̂ from the shipped stamp, so the two arms are not combined | an `s_i > H` bind fraction (`hol_sh=`) |
-| `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref`. `RWM_PLACE_WIRE` keeps ref (min srtt), so T's unit is unchanged; it leaves the `[ETA]` stamp on the shipped E, so σ̂_e under that arm measures the shipped predictor, off by the local dwell | σ̂_e on the ETA stream |
+| κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067; with the wire base (§5.7) X_i's arrival reads the shipped E_i against F̂ built from the stamp of the same E_i | an `s_i > H` bind fraction (`hol_sh=`) |
+| `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref`. the wire base keeps ref (min srtt), so T's unit is unchanged; the `[ETA]` stamp is the same wire-base E, so σ̂_e measures the predictor placement priced | σ̂_e on the ETA stream |
 | `w_div = 1.0` | `SchedulingWeights` | derived form `(p_BB − ε)⁺·srtt/ref` gives 0.475 (c2), 0.552 (c3). Its srtt_i is the frozen app-echo srtt on an idle leg (the §5.7 lock-out); the derived form should read ŵ_i | per-path p_BB beside placement |
-| dead-leg clamp `r_i = 10.0`; the cold price is the 50 ms `DEFAULT_SRTT` seed | `place_costs`, `srtt()` | the 10.0 binds only at ε̂ ≥ 1 (ε̂ starts at 0, so an unmeasured leg is priced lossless) and has a step there (r → ∞ as ε̂ → 1⁻; continuous form min(ε̂/(1−ε̂), 10)). What prices an unmeasured leg is the 50 ms srtt seed, a pessimistic constant (e^−17 to e^−55 at c1d). Derived form: the best measured leg's value, optimistic so the leg is sampled (`RWM_COLD_PLACE` for s_i; the `RWM_PLACE_WIRE` ŵ fallback for the base) | `cold_r=` 0 on all 31 807 `[ETA]` lines; `cold_ge=` (the seed) 0.036 of c1d's first 0.3 s |
+| dead-leg clamp `r_i = 10.0`; the cold price is the 50 ms `DEFAULT_SRTT` seed | `place_costs`, `srtt()` | the 10.0 binds only at ε̂ ≥ 1 (ε̂ starts at 0, so an unmeasured leg is priced lossless) and has a step there (r → ∞ as ε̂ → 1⁻; continuous form min(ε̂/(1−ε̂), 10)). What prices an unmeasured leg is the 50 ms srtt seed, a pessimistic constant (e^−17 to e^−55 at c1d). Derived form: the best measured leg's value, optimistic so the leg is sampled (`RWM_COLD_PLACE` for s_i; the `min_j wire_j` fallback of ŵ_i for the base) | `cold_r=` 0 on all 31 807 `[ETA]` lines; `cold_ge=` (the seed) 0.036 of c1d's first 0.3 s |
 | near-tie band 0.8 and floor 0.25 | `place_repair_spare_path` | a relative band plus an absolute floor signals a missing scale; derived form `max_spare − z·σ̂_spare` | σ̂_spare |
 | `BULK_TAIL_BUDGET = 0.05` | `raptorpath-math` | an "e.g." promoted to a constant | the completion-glide battery arm |
 | χ constants 1.5, 4·RTTVAR, SRTT/4 | `completion_exposure` | — | — |
