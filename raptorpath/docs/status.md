@@ -11363,3 +11363,31 @@ complicated is the idle-leg credit (κ, ν), which is kept out.
 - The recovery timeouts wait until the store law settles H.
 - The paper's `RWM_RSTAR_TAIL` "on by default" and status §1's on-list
   disagree; reconcile them.
+
+
+### 44. Erratum — the residence-time form is refuted (offline, `s43res`)
+
+§44 item 2 ("the store-law candidate simplifies") is withdrawn.
+- **It rests on a false premise.** On the p27/p34 static rows, residence
+  time R̄ = occupancy ÷ delivered rate matches Tp50 within 1–3 % at c2 and
+  ±5 % at c1s. Little's law holds in the windows.
+- **The undershoot is the brake itself.** The 20–25 % gap below the knee is
+  the brake Tmin − RTprop, not the time symbols wait in the store. At c2,
+  with no queue, the 250 ms window minimum sits 1.7–2.5 ms above the 10 s
+  minimum under netem jitter, so the law reads jitter as a standing queue.
+- **D = L never occurs.** The maximum D/L is 0.984 at c2 (loss and repair)
+  and 0.85–0.95 at c1s.
+- **Little movement, more noise.** With a gain g, the form moves c2 only
+  from 164 to 171 at g = 1.1. At c1s it is ill-conditioned, and its
+  predicted spread is 0.32–0.41 against the registered form's 0.11.
+- **What the user was told is withdrawn.** "g = 1 is the knee, and getting
+  both costs only the jitter" does not hold.
+
+The registered form already carries the continuous parameter: q(δ). It
+stops at 0.10 at Bulk, while the knees need ≈ 1.2 (c2, c8) and 1.2–1.3
+(c1s). Pending, offline:
+- Debias the brake by its no-queue value, so both minima sit on one
+  horizon. If c2 and c8 then land in their knee bands, the miss is
+  estimator bias and q stays as it is.
+- Run the registered form at 1.2 against the expired anchor. That shows
+  the anchor margin a larger gain costs.
