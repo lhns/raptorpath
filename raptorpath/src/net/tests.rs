@@ -6692,6 +6692,7 @@ mod one_store_law_at_n1 {
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
                 ccap: &mut ccap,
+                diag_start_us: 0,
             },
         );
         (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)

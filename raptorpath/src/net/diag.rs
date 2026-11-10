@@ -512,6 +512,19 @@ pub(crate) fn report(
                 })
                 .collect()
         };
+        // The §43 oracle sampler (net/oracle.rs): close this tick's window of
+        // every path and format the `[OCAP]` lines, printed after `[DIAG]`. The
+        // cap they report is the law's own last output, read from the gauge.
+        let oc_lines: Vec<String> = match crate::net::oracle::gauge() {
+            Some(g) => crate::net::oracle::close_tick(
+                g,
+                &*scheduler,
+                dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
+                pol.delta_b,
+                crate::gates::get().oracle.law,
+            ),
+            None => Vec::new(),
+        };
         let (cw, fl, np, np_act, min_rtt_us, pp) = {
             let sched = &mut *scheduler;
             let mut cw = 0u64;
@@ -990,6 +1003,9 @@ pub(crate) fn report(
             dgev,
             dg.eb.diag_token(),
         );
+        for l in &oc_lines {
+            crate::readout!("{}", l);
+        }
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
         // 250 ms cadence, same `RWM_DIAG` gate, same cumulative

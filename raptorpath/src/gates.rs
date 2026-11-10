@@ -294,6 +294,11 @@ pub struct RuntimeGates {
     pub pfrac: bool,
 
     // ── Resolved here, not on the `[GATES]` line (own echoes; `EXTERNALLY_ECHOED`) ──
+    /// `RWM_STORE_LAW=oracle`, `RWM_ORACLE_L_DGPS`, `RWM_ORACLE_HOLD`,
+    /// `RWM_ORACLE_DIAG` (all off; status §43, diagnostic, never merged): the
+    /// oracle store law and its sampler readout. Not on the `[GATES]` line
+    /// (the default echo is byte-pinned); the arm prints its own echo.
+    pub oracle: crate::net::oracle::OracleGates,
     /// `RWM_COPA_WIRE` / `RWM_QUIC_CC` / `RWM_COPA_FEED`: the wire-clocked
     /// Copa signal (`scheduler::copa_wire_active`).
     pub copa_wire: bool,
@@ -348,6 +353,7 @@ impl RuntimeGates {
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
         RuntimeGates {
+            oracle: crate::net::oracle::OracleGates::resolve(),
             unified,
             unified_shed: env_flag("RWM_UNIFIED_SHED", true),
             taper_r: env_flag("RWM_TAPER_R", unified),
@@ -575,6 +581,10 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_QUIC_CC", "own echo: 'quinn congestion controller: …' (transport/quic.rs)"),
     ("RWM_WIRE_COMPACT", "own echo: compact v5 DATA framing (transport/quic.rs part-2 echo)"),
     ("RWM_RS_TRACE", "instrument: its own [RSTRACE] output IS the echo"),
+    ("RWM_STORE_LAW", "own echo: 'oracle store law ACTIVE' (net/oracle.rs, printed when =oracle); the default echo is byte-pinned"),
+    ("RWM_ORACLE_L_DGPS", "own echo: the L list inside 'oracle store law ACTIVE' / '[OCAP] sampler readout ACTIVE'"),
+    ("RWM_ORACLE_HOLD", "own echo: the hold inside 'oracle store law ACTIVE'"),
+    ("RWM_ORACLE_DIAG", "instrument: its own [OCAP] output and '[OCAP] sampler readout ACTIVE' echo"),
     ("RWM_RSTAR_TAIL", "r* provisioning knob, read at the tail-provisioning site"),
     ("RWM_PLACE_T", "placement temperature, read by the perf harness path"),
     ("RWM_PERF_TIMEOUT_S", "harness-only: per-run completion timeout (src/perf.rs)"),

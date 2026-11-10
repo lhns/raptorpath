@@ -62,12 +62,14 @@ pub(crate) struct StoreCapCtx<'a> {
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
     pub ccap: &'a mut SenderTeardownGauges,
+    /// The `[DIAG]` clock origin: `h(t)` and `[OCAP] t=` share it (net/oracle.rs).
+    pub diag_start_us: u64,
 }
 
 /// Plain-reliable delay-based window cap (paper §6), refreshed at
 /// most every 5 ms.
 pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
-    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap } = ctx;
+    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap, diag_start_us } = ctx;
     if pol.plain_dyn_cap {
         let dnow = now_us();
         if dnow.saturating_sub(scs.dyn_cap_refresh_us) >= 5_000 {
@@ -87,6 +89,27 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     zero_ticks = ze,
                     "[SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh"
                 );
+            }
+            // The §43 oracle store law (`RWM_STORE_LAW=oracle`, diagnostic, default
+            // off, never merged) has its own seat ahead of the shipped chain: from
+            // boot (n = floor before any sample, not the 128 boot cap) and with no
+            // `[SUMCAP]`/`[DCAP]` record (those gauges read the shipped law).
+            if gates.oracle.law {
+                if let Some(g) = crate::net::oracle::gauge() {
+                    let t_s = dnow.saturating_sub(diag_start_us) as f64 / 1e6;
+                    let (d, h) = crate::net::oracle::decide(
+                        &gates.oracle,
+                        g,
+                        &*scheduler,
+                        pol.delta_b,
+                        pol.store_cap_floor,
+                        pol.store_path_pool,
+                        t_s,
+                    );
+                    g.note_refresh(d.n, &d, h);
+                    scs.dyn_store_cap = d.n;
+                    return;
+                }
             }
             // Σ-cwnd store law only when the feed owns the operating point
             // (Copa-sole); the sampling-only feed (RWM_PLAIN_RS) keeps the
@@ -337,6 +360,23 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                             ccap.at_floor += 1;
                         }
                     }
+                }
+            }
+            // `RWM_ORACLE_DIAG` without the law (MAIN): the counterfactual ask of the
+            // oracle formula beside the cap actually in force. Observation only.
+            if gates.oracle.diag && !gates.oracle.law {
+                if let Some(g) = crate::net::oracle::gauge() {
+                    let t_s = dnow.saturating_sub(diag_start_us) as f64 / 1e6;
+                    let (d, h) = crate::net::oracle::decide(
+                        &gates.oracle,
+                        g,
+                        &*scheduler,
+                        pol.delta_b,
+                        pol.store_cap_floor,
+                        pol.store_path_pool,
+                        t_s,
+                    );
+                    g.note_refresh(scs.dyn_store_cap, &d, h);
                 }
             }
             // `[3T]` readout — the three-term law's mechanism-liveness echo

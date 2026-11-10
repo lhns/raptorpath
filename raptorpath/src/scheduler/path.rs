@@ -659,6 +659,12 @@ impl PathState {
         if let Some(d) = crate::net::rttdump::gauge() {
             d.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         }
+        // The §43 oracle sampler (`RWM_STORE_LAW=oracle` / `RWM_ORACLE_DIAG`,
+        // net/oracle.rs): the same series Copa consumes, uncapped. A null
+        // check with both gates off.
+        if let Some(g) = crate::net::oracle::gauge() {
+            g.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        }
         self.copa.record_rtt(rtt);
     }
 

@@ -22,6 +22,7 @@ pub mod eta;
 pub mod framing;
 pub mod lat;
 pub mod late;
+pub mod oracle;
 pub mod receiver;
 pub mod recv_block;
 pub mod reorder;
@@ -691,6 +692,22 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let window_systematic = window_reliable && config.window_systematic_repair;
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair);
+
+    // The §43 oracle store law and its sampler readout (diagnostic, default
+    // off): a mis-sized L list, a hold above N·knee, or a seat the law cannot
+    // run on each refuse to start, since each would measure another machine.
+    gates
+        .oracle
+        .check(
+            config.bind_addrs.len(),
+            gates.store_path_pool,
+            gates.diag,
+            window_reliable && !window_generation && !window_coded_only && !gates.store_env_set,
+        )
+        .map_err(|e| anyhow::anyhow!("oracle store law configuration refused: {e}"))?;
+    if let Some(line) = gates.oracle.echo() {
+        info!("{line}");
+    }
 
     // The window pipeline carries at most one packet per source symbol: SymbolPacker
     // frames each packet with a 2-byte length prefix and closes the symbol
@@ -2503,6 +2520,7 @@ async fn run_window_sender(
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
                 ccap: &mut ccap,
+                diag_start_us: dg.diag_start_us,
             },
         );
         let effective_store_cap = if pol.plain_dyn_cap {
