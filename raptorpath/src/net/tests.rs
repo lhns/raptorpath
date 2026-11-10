@@ -6653,6 +6653,10 @@ mod one_store_law_at_n1 {
     }
 
     fn policy(hint: ProtocolHint, store_paths: bool) -> SenderPolicy {
+        policy_hc(hint, store_paths, false)
+    }
+
+    fn policy_hc(hint: ProtocolHint, store_paths: bool, honest_cap: bool) -> SenderPolicy {
         let mut g = RuntimeGates::resolve();
         // Neutralise the ambient environment: this asserts routing, not the
         // machine it runs on.
@@ -6662,7 +6666,7 @@ mod one_store_law_at_n1 {
         g.three_term = false;
         g.composed_cap = false;
         g.pool_anchor = false;
-        g.honest_cap = false;
+        g.honest_cap = honest_cap;
         g.plain_rs = false;
         g.copa_feed = false;
         g.store_override = None;
@@ -6695,6 +6699,24 @@ mod one_store_law_at_n1 {
             },
         );
         (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)
+    }
+
+    /// `RWM_HONEST_CAP` resolves ON by default but only acts together with
+    /// `RWM_PLAIN_RS`. With PLAIN_RS off the whole refresh is bit-identical
+    /// with HONEST_CAP on vs off: same policy flags, same `dyn_store_cap`,
+    /// same `[SUMCAP]` line (so the gate can go without moving the default).
+    #[test]
+    fn honest_cap_is_inert_without_plain_rs() {
+        for (hint, _) in presets() {
+            let off = policy_hc(hint, true, false);
+            let on = policy_hc(hint, true, true);
+            assert!(!off.honest_cap_on && !on.honest_cap_on, "{hint:?}: arm engaged without PLAIN_RS");
+            let (cap_off, line_off, bdp_off) = refresh(&off, &mut warm_one_path());
+            let (cap_on, line_on, bdp_on) = refresh(&on, &mut warm_one_path());
+            assert_eq!(cap_off, cap_on, "{hint:?}: HONEST_CAP moved the cap with PLAIN_RS off");
+            assert_eq!(line_off, line_on, "{hint:?}: HONEST_CAP moved [SUMCAP] with PLAIN_RS off");
+            assert_eq!(bdp_off.to_bits(), bdp_on.to_bits(), "{hint:?}: bdp");
+        }
     }
 
     /// Red-first 4: rule 1 — the mechanism under test executes. A one-path
