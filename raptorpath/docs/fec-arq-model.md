@@ -3346,6 +3346,239 @@ universal.
 lossy c2 cell (Cubic is Mathis-bound there) and 0.02–0.24 on a clean
 bufferbloated bottleneck.
 
+**The substrate's window law, fixed (`bbr_rs`; status §47 diagnosis, §48
+candidate, not shipped).** Status §47 found that quinn's BBR is not a
+controller at c1: Startup grows without bound, and after Startup the model
+BDP collapses to `min_window`. The in-tree port `bbr_rs` shares both defects.
+This subsection states the fixed law. The state machine is BBR v1's, cited
+from Linux `net/ipv4/tcp_bbr.c` (`bbr_set_cwnd`, `bbr_update_min_rtt`,
+`bbr_update_bw`). The deviations from v1 are forced by quinn's `Controller`
+trait, and each is derived below.
+
+*The actuator.* quinn paces at 1.25·W/srtt (`pacing.rs:92`), in bursts of
+10–256 MTU, and reads the controller's `pacing_rate` only for qlog. The
+window W is therefore the only actuator, so every BBR gain must act through
+W. Every other path to the wire passes through min(W, the store), which is
+how the substrate composes with our machine.
+
+*The clock.* Every `now` the trait passes is quinn's stamp, and none of them
+is a valid receive time.
+- The endpoint driver takes `now` once at the top of a poll (quinn
+  `endpoint.rs:372`). It then drains the socket (`:774–799`) for about
+  `RECV_TIME_BOUND` = 50 µs, a work budget rather than a bound: a vCPU
+  preemption between the stamp and `recvmmsg` stretches it. A datagram that
+  arrives after the stamp is processed with it.
+- quinn's RTT sample is that stamp minus the send stamp, and its `min()` is
+  a lifetime minimum (`paths.rs:329–333`). A single early stamp therefore
+  latches below the path for the whole connection.
+- The kept logs give the size. With bŵ ≥ L, §47's ProbeRtt floor of 5 808 B
+  at c1s needs 0 < m̂ ≤ 82 µs on a 2 ms path: at least one stamp read early
+  by 1.92–2.0 ms, and none by more than the RTT (a gap ≥ RTT saturates the
+  sample to 0, and quinn then falls back to `init_cwnd`). The skew itself
+  has no direct measurement. Section 8.5's 1.5–3.3 ms drain pauses do not
+  measure it: a driver that is not running re-stamps fresh when it
+  resumes, so they bound stall length, not skew.
+- The `rtt` argument cannot repair this. quinn calls `on_ack` and
+  `on_end_acks` before `rtt.update` for the same ACK (`connection/mod.rs`
+  1505 vs 1522), and `RttEstimator` exposes no latest sample.
+
+The fixed controller reads its own ack clock instead:
+
+```text
+   a_e  =  clk()   read once per ACK event (first callback of the event), cached until on_end_acks
+   r_e  =  a_e − max_{k ∈ e} s_k          s_k = quinn's time_sent of a packet newly acked in event e
+```
+
+**Claim: r_e never reads below the path's RTT.**
+- s_k is taken in `drive_transmit` (quinn `connection.rs:996`) before the
+  packet is built and written, so s_k ≤ w_k, its wire send time.
+- a_e is read while the ACK is processed. That happens after the datagram
+  carrying the ACK was read from the socket, so a_e ≥ its socket arrival
+  time.
+- Hence r_e ≥ arrival − w_k ≥ RTprop, and the windowed minimum of such
+  samples is ≥ RTprop.
+
+The premises are a monotonic clock shared with quinn and the two orderings
+above. quinn 0.11.9 / quinn-proto 0.11.14 hold them at the cited lines, and
+they are re-verified on any quinn bump.
+- **The error is one-sided:** r_e − r_phys = (host receive delay) +
+  (build-to-wire delay) + (peer ACK delay) ≥ 0. A min filter keeps the
+  least-delayed samples.
+- **The over-read is the real loop:** quinn counts a packet in flight from
+  `on_sent` (≈ s_k) to ACK processing (≈ a_e). r_e is therefore exactly the
+  loop the window must cover, and it is not an error the window should
+  remove.
+- **clk() must be quinn's runtime clock,** `tokio::time::Instant::now().into_std()`
+  (quinn `runtime/tokio.rs:37`), so that it shares a time base with s_k
+  under paused test time. It is injectable through `BbrRsConfig` for host
+  tests.
+- **Every ack-side time uses a_e:** the min filter, the rate sampler's
+  ack_elapsed, ack height, the ProbeRtt timers and the gain-cycle clock.
+  `on_sent` keeps quinn's `now`, because that value is the snapshot key
+  quinn returns as `sent`.
+
+*The law.*
+
+```text
+   min-RTT filter (v1 bbr_update_min_rtt):
+      expired  =  a_e − t_m > W_m
+      if r_e < m̂  or  expired :   m̂ ← r_e ,  t_m ← a_e          (m̂ = none until the first event)
+   ProbeRtt entry  ⇔  expired  ∧  mode ≠ ProbeRtt  ∧  ¬exiting_quiescence ;   on ProbeRtt exit  t_m ← a_e
+   bandwidth (per-flight sampler, ADR-0061):  b̂ = 10-round max of Δdelivered / max(send_elapsed, ack_elapsed),
+      sample admitted iff max(send_elapsed, ack_elapsed) ≥ max(m̂, 1 ms);  app-limited samples raise-only
+   window targets, T(g) = max(g·b̂·m̂, W_min)   (T = W_init while b̂·m̂ = 0)
+      Startup :  W ← W + a        iff  W < T(g_s) + e   or  delivered < W_init        (v1 bbr_set_cwnd)
+      Drain   :  W = T(1)                      exit to ProbeBw  ⇔  F ≤ T(1)
+      ProbeBw :  W ← min( T(g_c) + A ,  W + a )
+      ProbeRtt:  W = T(g_r)  for max(T_R, one round) after F ≤ T(g_r) + MTU
+      recovery (not Startup):  W_eff = min(W, w_rec),   w_rec ≥ T(1)            (bbr_rs floor, ADR-0054 addendum)
+```
+
+| symbol | value | provenance |
+|---|---|---|
+| a_e, r_e | ACK-event clock; event RTT sample | derived (the claim above); replaces quinn's stamp and `rtt.min()` |
+| m̂, W_m | windowed min of r_e; 10 s | cited: v1 `bbr_min_rtt_win_sec = 10` |
+| T_R | 200 ms | cited: v1 `bbr_probe_rtt_mode_ms` |
+| b̂ | 10-round max delivery rate | cited: v1 `bbr_bw_rtts = 10`; sampler ADR-0061 (draft-cheng-iccrg-delivery-rate-estimation); app-limited admission as v1 `bbr_update_bw` |
+| guard max(m̂, 1 ms) | sampler interval floor | derived: a span below one RTprop is the aggregation artefact (ADR-0061). It now reads m̂, which is ≥ RTprop, instead of the under-reading `rtt.min()`. 1 ms is the engine `rs_*` floor before the first sample |
+| g_s | 2/ln 2 = 2.885 | cited: v1 `bbr_high_gain` |
+| g_c | 2 | cited: v1 `bbr_cwnd_gain` |
+| g_d (window) | 1 | derived: v1 drains with pacing gain 1/2.885, which quinn ignores. A window of T(1) with the exit test on the same T(1) is the only window form whose exit is reachable under a backlog (≤ (g_s − 1)·m̂ ≈ 1.9 m̂) |
+| g_r | 0.75 | the port's (quinn `PROBE_RTT_BASED_ON_BDP`, `K_MODERATE_PROBE_RTT_MULTIPLIER`), kept; v1 uses 4 packets |
+| W_min | 4 MTU | cited: v1 `bbr_cwnd_min_target = 4` |
+| W_init | 200 × 1200 B | the port's (quinn's) initial window |
+| e, A | excess acked this event; 10-round max ack height | the port's ack-aggregation term. It is computed on a_e, so it can only over-read |
+| F, a | bytes in flight; bytes acked this event | quinn |
+
+*What changes against the port (`bbr_rs.rs` before §48).*
+1. **Startup.** The port grows while `cwnd_gain < target_window` (`:632`,
+   upstream `mod.rs:326`), a gain compared with a byte count, which is
+   always true. v1's test (`bbr_set_cwnd`) is `W < target`.
+2. **The min-RTT source.** The port takes the lifetime `rtt.min()`
+   (`:733–738`). The fix takes m̂ on a_e.
+3. **ProbeRtt entry.** The port enters on "10 s since the last ProbeRtt
+   start", with `None` read as expired (`:518–524`). That fires on the first
+   non-app-limited ACK and every 10 s after, and it re-reads the same
+   lifetime minimum. The fix keys entry on the filter's age, as v1 does, and
+   drops the port's app-limited gate: an app-limited flow with an empty
+   queue refreshes t_m by itself.
+4. **Drain's window.** It is T(1); the port's was T(2.885) (`:511`), which
+   leaves Drain only at the next ProbeRtt, ≤ 10 s later.
+5. **The sampler's guard** reads m̂.
+
+Kept as is:
+- Startup does not exit while app-limited (`check_if_full_bw_reached`,
+  which is v1's). Under the store's brake the substrate can sit in Startup
+  for a whole row, now with a bounded window.
+- The sampler's pipe-restart branch is dead after the first ACK, because
+  `split_off(&key)` keeps the key (`:246`). A stale `delivered_time`
+  lengthens ack_elapsed, which can only lower a sample, and that is safe for
+  a max filter. This is recorded and not fixed.
+
+*Loop stability: when the window form probes.* Take a window-limited,
+non-app-limited flow. Write R̄₀ for the mean loop time r_e at zero standing
+queue (base RTT, jitter mean, host and ACK delays). The delivered rate is
+x = min(L, W/R̄), so with W = g·b̂·m̂ + A the max filter follows the map
+
+```text
+   b̂′  =  min( L ,  (g·m̂·b̂ + A) / R̄₀ )
+   ⇒  b̂ → L                       iff   g·m̂ + A/L  ≥  R̄₀          (per-round growth factor g·m̂/R̄₀)
+      b̂ → A / (R̄₀ − g·m̂)         otherwise (contraction)
+```
+
+- **One line gives §47's collapse:** g·m̂ = 2 × 0.08 ms ≪ R̄₀ ≈ 2 ms.
+- **The under-read tolerance:** m̂ ≥ (R̄₀ − A/L)/g.
+- **The window alone is enough to probe.** In ProbeBw, g_c = 2 gives a
+  per-round discovery factor of 2·m̂/R̄₀ > 1 whenever the loop excess over
+  RTprop is below one RTprop plus A/L, so pacing gains are not needed. A
+  window gain cycled at 1.25/0.75/1 instead cruises at g = 1, where the
+  margin is m̂/R̄₀ < 1 under any jitter. That is the measured
+  "bŵ decays to the achieved rate at 1×BDP̂" fixed point (ADR-0068
+  addendum 2). ProbeBw therefore keeps v1's window, and the pacing-gain
+  cycle stays as the port's (inert) phase clock.
+- **ProbeRtt (g = 0.75) contracts by design.** It lasts T_R/R̄₀ rounds
+  (≈ 100 at c1s, so the 10-round filter decays to ≈ 0.75·L·m̂/R̄₀), then
+  recovers at ×2·m̂/R̄₀ per round.
+- **Margins at g_c = 2.** Measured m̂ against netem means:
+  - c1 ≈ 2·2.0/(2.0 + host delay) ≈ 1.6–2 (host delay unmeasured; bind gauge below);
+  - c2 ≈ 2·m̂/R̄₀ with m̂ between 7.0 ms (the legacy floor of Section 8.2)
+    and 10–12 ms (the wire-clocked 10 s floor `rtp_us` on §43b's low-queue
+    rows), against R̄₀ ≈ 12–13 ms typical: 1.1–1.8;
+  - c3 leg ≈ 2·(30–40)/(40–45) ≈ 1.3–2.
+
+  c2 is the thin one, and the battery's bind gauge settles its value.
+
+*The nested loop (open question 12).* The store and the substrate compose
+as a min, and the authority gauge is quinn's backlog B (Section 6.1, status
+§34 R4).
+- **Who holds authority.** Write F_s for the in-flight bytes the store would
+  put on the wire (store occupancy minus symbols past their QUIC ACK that
+  still await SACK, minus B). The substrate takes authority iff
+  F_s > T(g_c) + A ≈ 2·BDP̂ + A. So with a store law that settles below
+  about two BDPs of wire in-flight (§43b's oracle at c2: about 190 symbols,
+  about 150 KB on the wire against a substrate window of about 180–190 KB),
+  the store keeps authority and the substrate is a safety net. (With m̂ at
+  c2's measured wire floor of 10–12 ms the window is ≈ 250–300 KB, which
+  widens the gap.)
+- **Where the store is pinned** (the shipped law at c2, `n` = 2 048,
+  §43b), the substrate takes the wire. The network queue is then
+  ≤ W − L·R̄₀, about 4–12 ms at c2 across the m̂ range, against `wrtt` p50
+  95–137 ms on §43b's MAIN rows. The rest of the store's dwell moves into B, so the app-echo delay
+  A_x (≈ n/x) does not fall; the wire RTT does.
+- **At c1** the window, ≈ 2 × 103 MB/s × 2 ms ≈ 410 KB, sits above the wire
+  in-flight the sender reaches, so neither median moves. Only the collapse
+  tail goes.
+
+*No mode switch.* NO-MODE-SWITCH governs our machine's laws: no threshold
+on δ or ρ and no hint branch. The substrate is outside them, like a
+kernel's TCP: it reads no δ, ρ or hint, runs the same law at every dial
+position, and composes with the store as a min. Its phases are BBR v1's
+own, keyed on its own measurements, never on the dial.
+- **A default flip is dial-independent.** It changes the substrate at every
+  dial position at once. Selecting the substrate by hint, ADR-0054's old
+  "endstate policy", would be a mode switch, and nothing here does it.
+- **Two behaviour steps are in time, not in the dial:** the authority
+  handover at F_s = T(g_c) + A, and the ProbeRtt dip (g = 0.75 for 200 ms
+  per ≤ 10 s).
+- **The cost of those steps:** any of our laws that reads the substrate's
+  window or its RTT reads them too. That is one more reason the substrate
+  window is not a store-law input, as §34 (b1) already found.
+
+*Anchor hygiene (ADR-0061) for m̂.*
+1. **Measured seed:** m̂ is none until the first event, and no static
+   default survives.
+2. **Clock-gap discard: not needed.** A process stall can only lengthen r_e
+   or ack_elapsed. The min filter and the max-of-rate filter both ignore a
+   lengthened sample, so a stall cannot move either estimate the wrong way.
+   Under quinn's stamp a stall in the wrong place does move it, and that is
+   the defect the ack clock removes.
+3. **Expiring floor:** W_m = 10 s, and ProbeRtt forces a refresh.
+
+*Bind gauges.* The `[DIAG]` path block reads the controller through
+`Connection::congestion_state()` → `into_any` → `BbrRs`, and for `bbr_rs`
+it adds:
+- `qm=` the mode (S, D, B, R) and its occupancy;
+- `qrt_us=` m̂, the claim's in-vivo check against the netem base;
+- `qsr_us=` an EWMA of r_e (gain 1/8);
+- `qbw=` b̂.
+
+The loop margin 2·m̂/qsr is the stability term above. Other controllers
+print `-`. The §47 witness (share of lines with `qcwnd` below the true BDP)
+is read on every arm.
+
+*Tests (red-first, status §48 step 0).*
+- **Unit:** `bbr_rs::tests::startup_window_is_bounded_by_the_model_target`,
+  `drain_exits_under_a_backlog`,
+  `probe_rtt_fires_only_on_an_expired_min_filter`.
+- **In-process quinn-proto pair** on a synthetic clock
+  (`transport/cc_sim.rs`; both controllers through the real
+  `RttEstimator`):
+  - `bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps` (1 Gbit/s);
+  - `bbr_rs_min_rtt_never_reads_below_the_path`;
+  - `bbr_rs_min_rtt_follows_a_path_rtt_rise`;
+  - the upstream pins `quinn_bbr_window_collapses_under_stale_stamps` and
+    `quinn_bbr_min_rtt_under_reads_under_stale_stamps`.
+
 ### 8.5 The substrate's other control loops
 
 A transport composed over another transport must enumerate the substrate's
