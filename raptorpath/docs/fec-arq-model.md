@@ -1871,8 +1871,10 @@ is still echoed on `[GATES]` but is not read.)
   start-up.
 - The corrected base below also prices the first burst. Quinn's RTT exists
   from the handshake, so at c8 the slow leg's cold price is ½·(43 − 14) ms
-  above the fast leg's, not equal. That shrinks the trigger as well as
-  removing the absorbing state; it is expected, not yet measured.
+  above the fast leg's, not equal. That the arm also shrinks the trigger
+  is **not shown** (status §38 addendum): the first-burst split is within
+  the spread (c1d 1536, second leg's in-flight share at t ≈ 0.3 s: MAIN
+  0.612, WIRE 0.628). What the arm shows is that no leg stays locked.
 
 *The constraint.* When I_i = 0 the price may read only state that refreshes
 without our symbols, or state that is never pessimistic. Load-dependent
@@ -2068,6 +2070,21 @@ equilibrium.
 - I_i: live. The residual frozen term is (I_i/W_i)·s_i on a leg whose
   in_flight is stuck above 0 without echoes. Every locked ledger leg read
   `infl=0`.
+
+*Result (status §38): `REGRESSES-AT(c1s-400@def)`; the arm does not ship.*
+- It cures the absorbing lock-out. At the four static cells (c1d 1536,
+  c8 192, 256, 512; 24 rows per arm) 0 WIRE rows locked, against 10 MAIN
+  rows (5, 1, 3, 1). c8 256 goodput rose 90.4 → 95.1 Mbit/s (+5.2 %).
+- The one failed clause is client CPU per GB at the c1s control: +2.5 %
+  against a 2.4 % tolerance, ranges disjoint (+1.9 % at matched speed). The
+  cause is the armed `place_costs` call's overhead, about 360 ns per call,
+  ≈ 3.4·10⁵ calls per row, not the mirror and not the law.
+- At the default law neither arm locked (0 of 6 at c1d and c8), so no
+  benefit was measured where the arm would ship. The measured benefit sits
+  at static caps, which makes the case robustness of static diagnostic grids
+  and not a default-law gain.
+- Status §41 pre-registers one iteration, an allocation-free witness. It is
+  pending; a second `REGRESSES` result reverts the arm.
 
 ### 5.8 The generation seat
 
