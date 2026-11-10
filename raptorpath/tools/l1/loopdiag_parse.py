@@ -297,7 +297,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
 
     p = []
     # Plan 36 runs main's binary: no [ACKDIAG]/[LOOPDIAG] witnesses exist for it (status §36 amendment 1).
-    p36 = os.environ.get("LD_PLAN") == "36"
+    p36 = os.environ.get("LD_PLAN") in ("36", "40")      # plan 40 reuses plan 36's capture and witnesses
     if row["ackdiag_n"] < 1 and not p36:
         p.append("no-ackdiag")
     idle1 = arm in ARMS29 and cell == "c8-100" and p1_idle(cli)
@@ -372,7 +372,8 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["notes"].append(f"r3-void rdiag_busy_lines={row['rdiag_n']}")
     if p36:
         import disp36
-        d36, p36p, p36n = disp36.row_fields(cell, arm, drv, cli, os.environ.get("LD_PCAP_DIR"),
+        import disp40
+        d36, p36p, p36n = (disp40 if os.environ.get("LD_PLAN") == "40" else disp36).row_fields(cell, arm, drv, cli, os.environ.get("LD_PCAP_DIR"),
                                             os.environ.get("LD_TABLE_DIR"), f"{cell}-{arm}-s{seed}-r{rep}", srv)
         row["d36"] = d36
         p.extend(p36p)
@@ -1169,6 +1170,10 @@ _DGQ34 = re.compile(r"dgq\d+\[hand=(\d+) tx=(\d+)")
 for _g in GRID34.values():
     for _n in _g:
         sp.ARM_SPEC[f"DEF{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
+# Plan 40 (disp40.py) adds two single-leg scenario cells to the stage-3 cell table.
+for _c, _spec in (("c2slot-100", ("c2slot", "c2slot", "single", 100000000)), ("c2tbf-100", ("c2tbf", "c2tbf", "single", 100000000))):
+    sp.CELL_SPEC[_c] = _spec
+    sp.N_LEGS[_c] = 1
 # Plan 36 (disp36.py): CAP<n> = RWM_STORE=<n> + packet capture, NOCAP<n> = RWM_STORE=<n> alone.
 for _n in (16, 32, 64, 128, 256, 384, 512, 768, 1024, 2048):
     for _a in ("CAP", "NOCAP"):
@@ -1450,6 +1455,45 @@ def smoke36(path):
     return 0
 
 
+# ── plan 40 (the p90 dispersion estimator; table, scorer and row fields live in disp40.py) ──
+def plan40(smoke=False):
+    import disp40
+    return disp40.plan40(smoke)
+
+
+def check40(path):
+    import disp40
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK40 done={ok} rows={n}/{disp40.EXPECT_ROWS40}")
+    return 0 if ok and n == disp40.EXPECT_ROWS40 else 1
+
+
+def smoke40(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    bad = []
+    for cell, arm, _, _ in plan40(smoke=True):
+        r = got.get((cell, arm))
+        if r is None:
+            bad.append(f"{cell} {arm}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{cell} {arm}: {r['status']} {r['problems']}")
+        legs = (r.get("d36") or {}).get("legs") or []
+        for x in legs:
+            if x.get("state") == "live" and ((x.get("p90") or {}).get("lhat")) is None:
+                bad.append(f"{cell} {arm}: live leg p{x['i']} has no p90 L-hat (the estimator did not run)")
+        print(f"SMOKE40 {cell} {arm}: mbps={r.get('mbps')} m={(r.get('d36') or {}).get('m')} "
+              + " ".join(f"p{x['i']}={x.get('state')}/skbs={x.get('skbs')}/Lhat={(x.get('p90') or {}).get('lhat')}/D={(x.get('p90') or {}).get('D')}" for x in legs)
+              + f" status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -1499,6 +1543,18 @@ def main(argv):
         return 0
     if cmd == "plan36":
         for cell, arm, seed, rep in plan36(smoke=len(argv) > 2 and argv[2] == "smoke"):
+            print(f"{cell} {arm} {seed} {rep}")
+        return 0
+    if cmd == "smoke40":
+        return smoke40(argv[2])
+    if cmd == "check40":
+        return check40(argv[2])
+    if cmd == "score40":
+        import disp40
+        disp40.score_paths(argv[2:])
+        return 0
+    if cmd == "plan40":
+        for cell, arm, seed, rep in plan40(smoke=len(argv) > 2 and argv[2] == "smoke"):
             print(f"{cell} {arm} {seed} {rep}")
         return 0
     if cmd == "plan34":
