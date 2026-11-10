@@ -892,7 +892,7 @@ impl QuicTransport {
         }
     }
 
-    fn generate_self_signed_config(
+    pub(super) fn generate_self_signed_config(
         cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> anyhow::Result<(ServerConfig, Vec<CertificateDer<'static>>)> {
         let cert = rcgen::generate_simple_self_signed(vec!["raptorpath".into()])?;
@@ -921,7 +921,7 @@ impl QuicTransport {
 
     /// Build a client config with either pinned cert verification or
     /// insecure mode (skip verification) for dev/testing.
-    fn make_client_config(
+    pub(super) fn make_client_config(
         pinned_hash: Option<[u8; 32]>,
         cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> ClientConfig {

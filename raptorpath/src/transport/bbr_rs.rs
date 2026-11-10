@@ -350,6 +350,9 @@ pub struct BbrRs {
     exit_probe_rtt_at: Option<Instant>,
     probe_rtt_last_started_at: Option<Instant>,
     min_rtt: Duration,
+    /// quinn's own `rtt.min()` as last seen by `on_ack`: observation only
+    /// (the `[QCC]` gauge reads it beside `min_rtt`), never read by the law.
+    quinn_min_rtt: Duration,
     exiting_quiescence: bool,
     pacing_rate: u64,
     max_acked_packet_number: u64,
@@ -391,6 +394,7 @@ impl BbrRs {
             exit_probe_rtt_at: None,
             probe_rtt_last_started_at: None,
             min_rtt: Default::default(),
+            quinn_min_rtt: Default::default(),
             exiting_quiescence: false,
             pacing_rate: 0,
             max_acked_packet_number: 0,
@@ -405,6 +409,54 @@ impl BbrRs {
             // rand 0.8 API (upstream uses 0.9's from_os_rng): OS-seeded.
             random_number_generator: rand::rngs::StdRng::from_entropy(),
         }
+    }
+
+    /// One acked packet. The `Controller::on_ack` body, split out because
+    /// `RttEstimator` has no public constructor: unit tests drive this with
+    /// `quinn_min` (quinn's `rtt.min()`) directly.
+    pub(crate) fn ack(
+        &mut self,
+        now: Instant,
+        sent: Instant,
+        bytes: u64,
+        app_limited: bool,
+        quinn_min: Duration,
+    ) {
+        // The changed call: per-flight sample with the RTprop interval guard
+        // (quinn's `rtt.min()`; RS_MIN_INTERVAL until real samples exist /
+        // for sub-ms LAN paths).
+        self.max_bandwidth
+            .on_ack(now, sent, bytes, self.round_count, app_limited, quinn_min);
+        self.acked_bytes += bytes;
+        self.quinn_min_rtt = quinn_min;
+        if self.is_min_rtt_expired(now, app_limited) || self.min_rtt > quinn_min {
+            self.min_rtt = quinn_min;
+        }
+    }
+
+    /// The `[QCC]` gauge: the controller's own model, read off a clone.
+    pub(crate) fn qcc(&self) -> Qcc {
+        Qcc {
+            mode: match self.mode {
+                Mode::Startup => 'S',
+                Mode::Drain => 'D',
+                Mode::ProbeBw => 'B',
+                Mode::ProbeRtt => 'R',
+            },
+            rt_us: self.min_rtt.as_micros() as u64,
+            sr_us: 0,
+            bw: self.max_bandwidth.get_estimate(),
+            quinn_min_us: self.quinn_min_rtt.as_micros() as u64,
+        }
+    }
+
+    /// Test seam: plant the min-RTT model `d`, fresh as of the controller's
+    /// clock. Pre-fix this sets `min_rtt` and the ProbeRtt stamp; post-fix it
+    /// seeds the windowed filter. Tests using it are identical on both trees.
+    #[cfg(test)]
+    pub(crate) fn plant_min_rtt(&mut self, d: Duration) {
+        self.min_rtt = d;
+        self.probe_rtt_last_started_at = Some(self.config.clk());
     }
 
     fn enter_startup_mode(&mut self) {
@@ -727,15 +779,7 @@ impl Controller for BbrRs {
         app_limited: bool,
         rtt: &RttEstimator,
     ) {
-        // The changed call: per-flight sample with the RTprop interval guard
-        // (rtt.min() — quinn's packet-timed floor; RS_MIN_INTERVAL until
-        // real samples exist / for sub-ms LAN paths).
-        self.max_bandwidth
-            .on_ack(now, sent, bytes, self.round_count, app_limited, rtt.min());
-        self.acked_bytes += bytes;
-        if self.is_min_rtt_expired(now, app_limited) || self.min_rtt > rtt.min() {
-            self.min_rtt = rtt.min();
-        }
+        self.ack(now, sent, bytes, app_limited, rtt.min());
     }
 
     fn on_end_acks(
@@ -837,17 +881,64 @@ impl Controller for BbrRs {
     }
 }
 
+/// The controller's own model, for the `[QCC]` gauge line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Qcc {
+    /// `S`tartup, `D`rain, `B` (ProbeBw), `R` (ProbeRtt).
+    pub mode: char,
+    /// m̂ (µs): the controller's min-RTT model.
+    pub rt_us: u64,
+    /// Smoothed ack-event loop time r_e (µs).
+    pub sr_us: u64,
+    /// b̂ (bytes/s): the windowed-max delivery rate.
+    pub bw: u64,
+    /// quinn's own `rtt.min()` (µs), beside m̂.
+    pub quinn_min_us: u64,
+}
+
+/// The ack-side clock: quinn's runtime clock in production, injectable for
+/// host tests.
+#[derive(Clone)]
+pub(crate) struct Clock(Arc<dyn Fn() -> Instant + Send + Sync>);
+
+impl Debug for Clock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Clock")
+    }
+}
+
 /// Configuration for the [`BbrRs`] congestion controller (mirrors upstream
-/// `BbrConfig`: `initial_window` is the only knob, same default).
+/// `BbrConfig`: `initial_window` is the only knob, same default; `clock` is
+/// the test seam, inert before the §48 fix).
 #[derive(Debug, Clone)]
 pub struct BbrRsConfig {
     initial_window: u64,
+    /// `None`: `tokio::time::Instant::now().into_std()`, quinn's own runtime
+    /// clock (quinn `runtime/tokio.rs`), so it shares a time base with the
+    /// send stamps under paused test time.
+    clock: Option<Clock>,
 }
 
 impl Default for BbrRsConfig {
     fn default() -> Self {
         Self {
             initial_window: K_MAX_INITIAL_CONGESTION_WINDOW * BASE_DATAGRAM_SIZE,
+            clock: None,
+        }
+    }
+}
+
+impl BbrRsConfig {
+    /// A config whose ack clock is `f` (host tests).
+    #[cfg(test)]
+    pub(crate) fn with_clock(f: impl Fn() -> Instant + Send + Sync + 'static) -> Self {
+        Self { clock: Some(Clock(Arc::new(f))), ..Self::default() }
+    }
+
+    fn clk(&self) -> Instant {
+        match &self.clock {
+            Some(c) => (c.0)(),
+            None => tokio::time::Instant::now().into_std(),
         }
     }
 }
@@ -1121,13 +1212,12 @@ mod tests {
         let mut bbr = BbrRs::new(cfg, 1200);
         let t0 = Instant::now();
         // Established model: RTprop 10 ms, bw 12 MB/s (~100 mbit).
-        bbr.min_rtt = 10 * MS;
+        // m̂ planted through the filter, fresh now: keeps ProbeRtt out of the
+        // law under test.
+        bbr.plant_min_rtt(10 * MS);
         bbr.max_bandwidth.max_filter.update_max(1, 12_000_000);
         bbr.is_at_full_bandwidth = true;
         bbr.mode = Mode::ProbeBw;
-        // Keep the spurious-ProbeRtt entry out of the law under test (the
-        // 10-s min-RTT refresh is upstream behavior, not this law).
-        bbr.probe_rtt_last_started_at = Some(t0);
         bbr.cwnd = bbr.get_target_cwnd(2.0);
         let bdp = bbr.get_target_cwnd(1.0); // = bw x RTprop = 120 kB
         // Drive rounds that each carry loss (GE + tail-drop cell class):
@@ -1175,13 +1265,158 @@ mod tests {
         // Drive the estimator directly (the controller's cwnd law reads
         // get_target_cwnd = gain × bw × min_rtt): plant an honest bw and a
         // floor, then check the target-cwnd arithmetic stays ~2×BDP class.
-        bbr.min_rtt = 10 * MS;
+        bbr.plant_min_rtt(10 * MS);
         bbr.max_bandwidth.max_filter.update_max(1, 12_000_000); // 12 MB/s
         let target = bbr.get_target_cwnd(2.0);
         let bdp = 12_000_000u64 / 100; // bw × 10 ms = 120 kB
         assert!(
             target >= 2 * bdp * 9 / 10 && target <= 2 * bdp * 11 / 10,
             "target cwnd {target} must be ~2×BDP ({bdp})"
+        );
+    }
+
+    // ── §48 window-law tests (identical on the pre-fix and post-fix trees) ─
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// A controller on an injectable ack clock, driven one ACK event at a
+    /// time. `RttEstimator` cannot be built here, so it drives `ack()`.
+    struct H {
+        bbr: BbrRs,
+        base: Instant,
+        clock: Arc<AtomicU64>,
+        pn: u64,
+    }
+
+    impl H {
+        fn new() -> Self {
+            let base = Instant::now();
+            let clock = Arc::new(AtomicU64::new(0));
+            let c = clock.clone();
+            let cfg = Arc::new(BbrRsConfig::with_clock(move || {
+                base + Duration::from_nanos(c.load(Ordering::Relaxed))
+            }));
+            Self { bbr: BbrRs::new(cfg, 1200), base, clock, pn: 0 }
+        }
+
+        fn at(&self, t: Duration) -> Instant {
+            self.base + t
+        }
+
+        /// One ACK event at time `t` (>= `rtt`): `n` 1200-B packets sent at
+        /// `t - rtt` and acked together. The clock reads `t`, quinn's stamp
+        /// is also `t`, quinn's `rtt.min()` is `rtt`.
+        fn event(&mut self, t: Duration, rtt: Duration, n: u64, app_limited: bool, in_flight: u64) {
+            self.clock.store(t.as_nanos() as u64, Ordering::Relaxed);
+            let sent = self.at(t - rtt);
+            for _ in 0..n {
+                self.pn += 1;
+                self.bbr.on_sent(sent, 1200, self.pn);
+            }
+            for _ in 0..n {
+                self.bbr.ack(self.at(t), sent, 1200, app_limited, rtt);
+            }
+            self.bbr.on_end_acks(self.at(t), in_flight, app_limited, Some(self.pn));
+        }
+    }
+
+    /// Status §48 test 6. v1 grows the Startup window only while it is below
+    /// the model target. The port compared a gain with a byte count (always
+    /// true), so with the store keeping the flow app-limited (Startup never
+    /// ends) the window was the sum of the acked bytes.
+    #[test]
+    fn startup_window_is_bounded_by_the_model_target() {
+        let mut h = H::new();
+        h.bbr.plant_min_rtt(10 * MS);
+        h.bbr.max_bandwidth.max_filter.update_max(0, 12_000_000);
+        let target = h.bbr.get_target_cwnd(K_DEFAULT_HIGH_GAIN); // 2.885 x 120 kB
+        assert!((340_000..=350_000).contains(&target), "plant: target {target}");
+        let acked_per_event = 100 * 1200;
+        let mut max_e = 0;
+        for i in 0..50u32 {
+            // app-limited: the full-bandwidth check is skipped, Startup stays
+            h.event(10 * MS * (i + 2), 10 * MS, 100, true, 0);
+            max_e = max_e.max(h.bbr.ack_aggregation.max_ack_height.get());
+        }
+        assert_eq!(h.bbr.mode, Mode::Startup, "the regime under test is app-limited Startup");
+        let w = h.bbr.window();
+        assert!(
+            w <= target + max_e + acked_per_event,
+            "Startup window {w} exceeds T(2.885) {target} + max excess {max_e} + one event {acked_per_event}"
+        );
+    }
+
+    /// Status §48 test 7. With in_flight held at the window (a backlog), the
+    /// exit test F <= T(1) must be reachable: Drain's window is T(1).
+    #[test]
+    fn drain_exits_under_a_backlog() {
+        let mut h = H::new();
+        h.bbr.plant_min_rtt(10 * MS);
+        h.bbr.max_bandwidth.max_filter.update_max(0, 12_000_000);
+        let (mut full_at, mut bw_at) = (None, None);
+        for i in 0..60u32 {
+            if h.bbr.is_at_full_bandwidth {
+                // a nonzero ack-aggregation term: Drain's window and exit test
+                // must both leave it out (T(1), not T(1) + A)
+                let round = h.bbr.round_count;
+                h.bbr.ack_aggregation.max_ack_height.update_max(round, 50_000);
+            }
+            let backlog = h.bbr.window(); // in flight held at W
+            h.event(10 * MS * (i + 2), 10 * MS, 100, false, backlog);
+            assert_ne!(h.bbr.mode, Mode::ProbeRtt, "a ProbeRtt in between voids the test (event {i})");
+            if full_at.is_none() && h.bbr.is_at_full_bandwidth {
+                full_at = Some(i);
+            }
+            if full_at.is_some() && bw_at.is_none() && h.bbr.mode == Mode::ProbeBw {
+                bw_at = Some(i);
+            }
+        }
+        let f = full_at.expect("full bandwidth never reached: the scenario is broken");
+        let b = bw_at.unwrap_or_else(|| {
+            panic!(
+                "Drain (entered at event {f}) never exited to ProbeBw under a backlog; mode {:?}, W {}, T(1) {}",
+                h.bbr.mode,
+                h.bbr.window(),
+                h.bbr.get_target_cwnd(1.0)
+            )
+        });
+        // events are one m̂ (10 ms) apart
+        assert!(b - f <= 3, "Drain took {} m̂ (events {f} -> {b})", b - f);
+    }
+
+    /// Status §48 test 8. v1 enters ProbeRtt when the min filter has expired
+    /// (no sample at or below m̂ for 10 s), not on a timer.
+    #[test]
+    fn probe_rtt_fires_only_on_an_expired_min_filter() {
+        let mut h = H::new();
+        let s = Duration::from_secs;
+        let mut entries: Vec<Duration> = Vec::new();
+        let mut in_probe_rtt = false;
+        let mut run = |h: &mut H, t: Duration, rtt: Duration| {
+            h.event(t, rtt, 10, false, 0);
+            let now = h.bbr.mode == Mode::ProbeRtt;
+            if now && !in_probe_rtt {
+                entries.push(t);
+            }
+            in_probe_rtt = now;
+            entries.len()
+        };
+        // a new minimum every second for 31 s (r_e falls 1 us per second, so
+        // the test holds under both `<` and `<=`), from the very first
+        // non-app-limited event
+        for sec in 1..=31u32 {
+            let n = run(&mut h, s(sec as u64), 10 * MS - Duration::from_micros(sec as u64));
+            assert_eq!(n, 0, "ProbeRtt at t={sec}s while r_e refreshes the filter every second");
+        }
+        // refreshes stop (r_e above m̂): exactly one ProbeRtt, when the filter expires
+        for sec in 32..=45 {
+            run(&mut h, s(sec), 15 * MS);
+        }
+        assert_eq!(entries.len(), 1, "ProbeRtt entries {entries:?}");
+        assert!(
+            entries[0] > s(41) && entries[0] <= s(42),
+            "ProbeRtt at {:?}, expected at t_m + 10 s = 41 s (first event past it: 42 s)",
+            entries[0]
         );
     }
 }
