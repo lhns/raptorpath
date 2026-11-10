@@ -2796,7 +2796,10 @@ rule:
 | c1s-400 (§34, post-§32) | 614 | 0.54 | 512 | [683, 1 536] |
 | c1d-400 (§27) | `CEILING` (ask > n to 4 096) | — | 384 | [512, 1 152] |
 
-*Reading the table (status §37).* Three of its cells carry a caveat.
+*Reading the table (status §37, §42).* Every fixed point here assumes a
+start-of-transfer RTprop: the rows were shorter than Copa's 10 s filter.
+With an expired anchor the low points hold (c2 157, c1s 699), and c2 gains
+an unstable threshold near 927 (status §42 addendum). Three of its cells carry a caveat.
 - c8's 324 comes from the surviving rows only. The void rows are a placement
   lock-out: an idle leg is priced on a frozen, dwell-inclusive srtt (status
   §37). The figure is not a cell-wide fixed point.

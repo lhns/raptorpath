@@ -10880,3 +10880,73 @@ built.**
 3. Only if step 2 runs away: the split diagnostic (sender dwell against the
    endpoint loop at µs).
 The socket work (2–3 days), wire v10 and the ADR come only after step 2.
+
+### 42. Addendum — the law's per-window noise and its anchor (offline, committed ledgers; scripts and outputs in `docs/l1-raw/s42/`)
+
+*The gate.* The row-median map reproduces §27/§34 exactly: c2 163.7, c8
+324.3, c1s p34 614.3, c1s p27 701.1, c1d `CEILING`.
+
+*Noise.*
+- Scored against D's test (as briefed), per window of 250 ms:
+  - c2 `NEEDS-AVERAGING(2)` (0.89 single-window, 0.97 at 2 windows);
+  - c1s p34 `NOISE-BOUND, marginal`: 0.85–0.87 single-window, ≥ 0.97 at
+    4 windows; it misses the ≥ 3-decisions-per-third rule by ≈ 0.3 s;
+  - c8 `NOISE-BOUND` (0.71, on one live row).
+- That test suits a law that steps by (1 + q). This law sets n = ask and
+  contracts (slopes 0.25–0.54), so what matters for it is:
+  - single-window sign agreement of 0.71–0.89, against D's 0.34–0.55;
+  - D's own consecutive-sign statistic of 0.56–0.84;
+  - a predicted closed-loop spread sd(ln n) ≈ 0.08 (c2), 0.11 (c1s), and
+    ≈ 0.14 at c8 (one row).
+- **Noise is not what blocks this law.**
+
+*Caveat at c1.* Every c1s/c1d window overflows the 8 192-sample cap of
+`[LOOPDIAG]` (8–15 k samples), so §27/§34's Tmin and Tp50 at c1 come from
+≈ 40 % of each window (the first ≈ 100 ms). The direction of the bias is
+unknown.
+
+*The anchor (correcting §42: S has a source, RTprop is untested beyond one
+filter length).*
+- By Little, ask/n = (1+q)·(L/D)·(τ/T̄) with τ = Tp50 − (Tmin − RTprop), so
+  the law's only brake is Tmin − RTprop.
+- RTprop is Copa's 10 s windowed min (`rtprop_us`). Every fixed point quoted
+  so far (164, 324, 614, §40's 329) used a start-of-transfer RTprop, because
+  the rows were 4–9 s long, shorter than the filter. In the one 70 s row
+  (p27 c1s DEF192) the filter expires and `rtprop_us` climbs from 2.5 to
+  61 ms.
+- Recomputed with RTprop := each row's lowest post-warm-up `rtt_min_us`
+  (what an expired filter holds under a persistent queue; pessimistic):
+
+  | cell | original | expired-anchor crossings | note |
+  |---|---|---|---|
+  | c2 | 164 stable (0.25) | **157 stable (0.34)**; 927 unstable (1.09) | ask/n 0.93 at 512, 1.01 at 1 024: no restoring force above ≈ 512 |
+  | c1s p34 | 614 stable (0.54) | **699 stable (0.56)**, inside the knee band | queue small: brake ≤ 1.7 ms at the floor |
+  | c1s p27 | 701 stable (0.82) | 889 stable (0.50) | — |
+  | c8 | 324 stable (0.52) | 287 stable, 492 unstable, 526 stable | one row per cap: not decidable |
+
+- At the low points the brake offset is ≈ 0 (c2 within ±0.7 ms, c1s
+  +0.35 ms), so the anchor refreshes itself there.
+- c2 has a threshold near 927, not a runaway. Below it the cap returns to
+  157; above it, it drifts to the clamp. Sitting up there needs a full
+  filter length: until the 10 s filter expires, ask at 1 024 is 193, a hard
+  pull down. Something outside the law can still hold it there, such as
+  competing traffic holding the queue or a start at a high cap.
+- Main's own c2 caps already sit at 405–1 100 (p29 MAIN), so that regime is
+  today's behaviour, not a new failure.
+
+*Next (proposed to the user; a build, so their go; VM after §41).* A
+closed-loop oracle arm at c2 and c1s only:
+- L from the environment and S app-clocked; default off, not for merge (as
+  `run34`).
+- In the paper first: W = 250 ms (no provenance yet), RTprop as Copa's
+  shipped 10 s filter, the refresh cadence, and n = ask with no step limit.
+- Rows at least three filter lengths long (c2 400 MB, c1s 4 GB), and a
+  sampler without the 8 192 cap.
+- Per cell, a start-low (boot) and a start-high pair (a static cap above the
+  threshold, held longer than the filter, then released to the law). The
+  same end point within the predicted spread means one operating point in
+  practice. If start-high rows stay high, the anchor (a lifetime minimum or
+  a drain) is the user's design decision.
+- c8 waits for an idle-leg rule that covers both L and S. Competing-traffic
+  rows are named as untested and not added, for cost.
+- About 20 rows.
