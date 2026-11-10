@@ -13103,3 +13103,91 @@ measurements.
 - **After §48, if it controls:** three reported rows at c2 with §43b's law
   over the fixed substrate, where the two loops first meet (≈ 150 KB in
   flight against a 170–300 KB window).
+
+
+## 41c. The merge guard: rank-minp, 12/12 at four cells — pre-registration
+
+Registered 2026-11-10, before any VM contact. It replaces §41b's guard
+statistic for every guard run from now on: the merge-candidate session
+(§46 item 9), the deletion batches and §48. §41b's statistic stays in the
+scorer only to re-score history.
+
+**Why.** Offline, on §41's and §41b's real rows (`guard47` 8721efb,
+`docs/l1-raw/guard47/`), the max-z statistic is blind. With one clause fully
+separated (CAND beyond every BASE row by ≥ 10 %), it read p up to 0.63, and
+it reached 80 % power at no clause. Its saturating scale caps it near
+p ≈ 0.036. So §41b's PASS was weaker than reported.
+
+**Statistic (`place41b_score.py`, `report_guard`, `--method rank-minp`).**
+- Clauses: 26 in all; c1s 6, c1d 7, c2 6, c8 7.
+  - goodput;
+  - client CPU/GB and server CPU/GB;
+  - `lag_E_cli` and `lag_E_srv` (`[LAG] phase=xfer`, p99 − min);
+  - the rtp floor per leg (minimum `rtp_us` in `[DIAG]`).
+- Per clause, the worse-side rank sum of the CAND rows, using midranks
+  within seed.
+- Neutral and worst ranks:
+  - an absent instrument value on a completed row takes the neutral mean
+    rank. Fills are counted and printed per clause.
+  - a **DNF row** (harness 43's COLLAPSE = DNF) takes the **worst rank on
+    every clause** of its cell.
+  - slow rows (goodput < 0.5 × the pooled, label-free cell median) are listed
+    and reported only.
+- Relabelling: one joint draw across all cells and clauses, stratified per
+  seed with the true group sizes. N_PERM = 10 000, RNG seed 4141, and the
+  true labelling counts as a member.
+- Clause p = the share of labellings whose rank sum is ≥ the true one.
+- Gate p = the share of labellings whose minimum clause p over all 26 is ≤
+  the true minimum.
+- **PASS iff p > 0.05.** One-sided: only the worse side fails.
+- A cell short of its design (a voided row, or a row that never went LIVE)
+  reads **NO VERDICT, re-run**, never PASS. The design is a required argument.
+
+**Design.** BASE n = 12 and CAND n = 12 per cell, at c1s, c1d, c2 and c8
+default.
+- Seeds 7 and 8, 6 + 6 per seed.
+- One session, interleaved in 12 rep-major (seed, rep) groups, each holding
+  a BASE/CAND pair per cell. The order alternates by group.
+- 96 rows plus a 2-row smoke; the battery asserts 96.
+- No historical rows enter the null.
+
+**Acceptance, met offline before registering**
+- (a) One fully separated clause at any cell gives worst p = 0.0020 (130
+  cases).
+- (b) A/A false-alarm rate:
+  - 4.0 % over 600 bootstrap datasets;
+  - 5.6 % over 2 400 real splits, and 4.0 % over 4 000 fresh ones. The
+    deciles are uniform.
+- A stalled CAND build (all rows DNF) fails. It read p = 0.084 before the
+  DNF rule.
+
+**Resolution: the smallest shift caught in ≥ 80 % of draws**, with power at
++2.4 % CPU and −5 % goodput in brackets. c2 and c8 rest on stand-in rows
+(§38 MAIN, 3 distinct per seed), so they are reported only. They are
+recomputed from this session's BASE rows and printed beside the verdict.
+
+| cell | goodput | client CPU/GB | server CPU/GB | rtp floor |
+|---|---|---|---|---|
+| c1s | 6 % (0.78) | 2.0 % (0.90) | 2.4 % (0.82) | 6 % |
+| c1d | 10 % (0.30) | 10 % (0.35) | 5 % (0.25) | 5–6 % |
+| c2 | 1 % (1.00) | 5 % (0.25) | 8 % (0.10) | 30 % |
+| c8 | 10 % (0.40) | 6 % (0.35) | 6 % (0.13) | 10–15 % |
+
+**Stated limits.**
+- The two lag clauses are nearly blind: 30–100 % shifts go uncaught. A
+  lag-only regression passes this guard.
+- A PASS means "no regression above this table's resolution", nothing more.
+- §41b's PASS re-scores under rank-minp at p = 0.692 (minimum clause p
+  0.1235, c1s `lag_E_srv`, no DNF). §41's dry run re-scores at p = 0.140.
+
+**Registered readout beside the guard: host ns per stamped symbol.** The
+promotion adds a min-wire scan to every `[ETA]` stamp. A host bench reads
+ns per stamped symbol, CAND against BASE, release profile, with the median
+of 5 runs printed. It is reported only: it is the sensitive detector for
+that CPU cost, and the VM guard is not.
+
+**Amendment to §46 item 8 (CAND's identity).** CAND for the merge-candidate
+session is `diag36`'s tip alone: the promotion, without simplification
+batch 1. The batch gets its own guard run against the new main. BASE =
+main `4926822`. Both SHAs are recorded by amendment before launch. With
+batch 1 absent, the bisection clause of item 8 is void.
