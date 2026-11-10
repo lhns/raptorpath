@@ -102,7 +102,7 @@ check("battery: plan 43 sizes the cells itself (600 MB / 5 GB) and parses rows w
       'bytes="$(p43_bytes "$cell")"' in bat and "parser=./place43_parse.py" in bat)
 check("run_all: plan 43 takes the root-owned tmpfs tree, the precondition and LD_HARD, the root-installed binary, a 45 min budget, "
       "gates on test_place43_parse.py and scores with score43",
-      "test_place43_parse.py" in runall and "P_SCORE=score43" in runall and runall.count('"$PLAN" = "43"') >= 6 and "MINBTO=2700" in runall)
+      "test_place43_parse.py" in runall and "P_SCORE=score43" in runall and runall.count('"$P43" = 1') >= 6 and "MINBTO=2700" in runall)
 lp = open(os.path.join(HERE, "loopdiag_parse.py"), encoding="utf-8").read()
 check("loopdiag_parse.py dispatches smoke43 / check43 / score43 to place43_parse", all(c in lp for c in ('cmd == "smoke43"', 'cmd == "check43"', 'cmd == "score43"')))
 
@@ -251,10 +251,10 @@ def ocap(t, n, **kw):
             f"nmax={d['nmax']} refreshes={d['refreshes']} q=0.1000")
 
 
-def diag(t, num, den, dgq=True, paused=19, rtt=14, wrtt=14):
+def diag(t, num, den, dgq=True, paused=19, rtt=14, wrtt=14, qcwnd=None):
     return (f"[DIAG] t={t:.1f}s win={num}/{den} paused={paused}% good=84.6Mbit cwnd=100 infl=40 np=1 np_act=1 rtt=14.2ms"
             + (" dgq0[hand=41123 tx=41091 full=0 err=0 sp=4156391]" if dgq else "")
-            + f" p0:infl=37/sinfl=0/bdp418(cap0) sout=143 khr=1.00/kraw=- btlbw=44336 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt={rtt}/wrtt={wrtt}/rtp9ms rtp_us=9429")
+            + f" p0:infl=37/sinfl=0/bdp418(cap0) sout=143 khr=1.00/kraw=- btlbw=44336 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt={rtt}/wrtt={wrtt}/rtp9ms rtp_us=9429" + (f" sig_us=1/n2 qcwnd={qcwnd} qce=16" if qcwnd is not None else ""))
 
 
 def echo(arm, cell="c2-100", hold=None, l=None, b0=None, gain=None):
@@ -269,7 +269,7 @@ def echo(arm, cell="c2-100", hold=None, l=None, b0=None, gain=None):
 
 
 def mk(arm="SL", cell="c2-100", ns=None, seconds=60.0, dnf=False, rc=0, omit_t=None, off_by=None, route_bad=0, no_dgq=False,
-       echo_line="auto", sumcap=None, per=None, gate_store="unset", t_end=None, mbps=80.0, stall_from=None):
+       echo_line="auto", sumcap=None, per=None, gate_store="unset", t_end=None, mbps=80.0, stall_from=None, qcw=None, sha=None):
     drv, cli, srv = base_logs()
     cli = gates(cli, RWM_STORE=gate_store, RWM_DIAG="1")
     srv = gates(srv, RWM_STORE=gate_store, RWM_DIAG="1")
@@ -293,7 +293,8 @@ def mk(arm="SL", cell="c2-100", ns=None, seconds=60.0, dnf=False, rc=0, omit_t=N
         cum += nk
         stalled = stall_from is not None and t >= stall_from
         cli.append(diag(t, 100, n + (7 if (route_bad and i < route_bad) else 0), dgq=not no_dgq,
-                        paused=97 if stalled else 19, rtt=380 if stalled else 14, wrtt=2 if stalled else 14))
+                        paused=97 if stalled else 19, rtt=380 if stalled else 14, wrtt=2 if stalled else 14,
+                        qcwnd=(qcw(i) if qcw else None)))
         cli.append(ocap(t, n, n_k=nk, offered=cum + (off_by if (off_by and i == len(ns) // 2) else 0), law=("shadow" if arm == "MAIN" else "oracle"), **kw))
     if dnf:
         cli = cli + ['{"bytes":600000000,"run":1,"dnf":true,"timeout_s":200}', '{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
@@ -301,7 +302,7 @@ def mk(arm="SL", cell="c2-100", ns=None, seconds=60.0, dnf=False, rc=0, omit_t=N
         cli = cli + [json.dumps({"bytes": 600000000, "run": 1, "seconds": seconds, "mbps": mbps}),
                      json.dumps({"bytes": 600000000, "dnf": 0, "hint": "bulk", "mean_mbps": mbps, "median_s": seconds, "summary": True, "runs": 1})]
     srv = srv + ["[LAT] site=receiver n=9 ax_p50=15000 ax_p90=20000 ax_p95=22000"]
-    return pp.make_row(cell, arm, "42", 1, rc, 70.0, drv, cli, srv, 0, "x")
+    return pp.make_row(cell, arm, "42", 1, rc, 70.0, drv, cli, srv, 0, sha)
 
 
 r = mk("SL")
@@ -539,6 +540,84 @@ with tempfile.TemporaryDirectory() as td2:
 check("score prints the DNF classification block with both the label and ENGINE-STALL",
       any("DNF rows 2: ENGINE-STALL" in m for m in lg) and any("DNF c1s-400 SL" in m and ": ENGINE-STALL" in m for m in lg)
       and any("not ENGINE-STALL" in m for m in lg) and any("LABEL c1s-400" in m for m in lg))
+
+
+# ── plan 43b (status 43b): SL-T / SH-T / MAIN at c2 under a plan pair (G, tau) and a band set by amendment ──
+p43b = pp.plan43b()
+check("plan 43b: 9 scored invocations = 3 blocks x 3 arms at c2-100 only; the smoke is c2 SH-T and SL-T",
+      len(p43b) == 9 == pp.EXPECT_ROWS43B and {c for c, a, s_, r in p43b} == {"c2-100"}
+      and pp.plan43b(smoke=True) == [("c2-100", "SH-T", "42", 1), ("c2-100", "SL-T", "42", 1)])
+check("plan 43b: n = 3 per arm with seeds 42 / 7 / 42, the arm order rotating per block (MAIN SL-T SH-T / SL-T SH-T MAIN / SH-T MAIN SL-T)",
+      all([(s_, r) for c, a, s_, r in p43b if a == x] == [("42", 1), ("7", 1), ("42", 2)] for x in pp.ARMS43B)
+      and [a for c, a, s_, r in p43b[0:3]] == ["MAIN", "SL-T", "SH-T"] and [a for c, a, s_, r in p43b[3:6]] == ["SL-T", "SH-T", "MAIN"]
+      and [a for c, a, s_, r in p43b[6:9]] == ["SH-T", "MAIN", "SL-T"])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "place43_parse.py"), "plan43b"], capture_output=True, text=True)
+check("`plan43b` prints the 9 lines", cp.stdout.splitlines() == [" ".join(map(str, r)) for r in p43b])
+check("the plan variables are unset by default and `vars43b` refuses (rc 3, ABORT-PLAN43B-UNSET)",
+      pp.G43B is None and pp.TAU43B_US is None and pp.BAND43B is None and pp.plan43b_vars() is None)
+cv = subprocess.run([sys.executable, os.path.join(HERE, "place43_parse.py"), "vars43b"], capture_output=True, text=True)
+check("  ... the CLI exits 3", cv.returncode == 3 and "ABORT-PLAN43B-UNSET" in cv.stderr, (cv.returncode, cv.stderr))
+check("rust_f64 prints as the engine's echo does (5000.0 -> 5000, 0.9 -> 0.9, 2470.5 -> 2470.5)",
+      pp.rust_f64(5000.0) == "5000" and pp.rust_f64(0.9) == "0.9" and pp.rust_f64(2470.5) == "2470.5" and pp.rust_f64(1) == "1")
+check("battery (43b): refuses while the variables are unset, arm envs from G43B / TAU43B, hold 1536:15, plan table of 9, the sha of status 43",
+      'ABORT-PLAN43B-UNSET' in bat and 'vars43b' in bat and 'RWM_ORACLE_GAIN=$G43B' in bat and 'RWM_ORACLE_BRAKE_OFFSET_US=$TAU43B' in bat
+      and 'SH-T)' in bat and 'SL-T)' in bat and '-eq 9 ]' in bat and "94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008" in bat
+      and '"$PLAN" != "43b" ] || [ "$GOT" = "$SHA43" ]' in bat and "ABORT-SHA plan 43b" in bat and "plan43b smoke" in bat and 'P43=1' in bat)
+check("run_all (43b): refuses before any lock while the variables are unset, ABORT-SHA on any other binary, scores with score43b",
+      'vars43b' in runall and "ABORT-PLAN43B-UNSET" in runall and 'ABORT-SHA plan 43b' in runall and "P_SCORE=score43b" in runall
+      and pp.SHA43 == "94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008")
+check("loopdiag_parse.py dispatches smoke43b / check43b / score43b", all(c in open(os.path.join(HERE, "loopdiag_parse.py"), encoding="utf-8").read() for c in ('cmd == "smoke43b"', 'cmd == "check43b"', 'cmd == "score43b"')))
+check("the SHA constant of battery and scorer agrees with the ledger of status 43 (BINSHA.txt)",
+      pp.SHA43 in open(os.path.join(HERE, "..", "..", "docs", "l1-raw", "oracle43", "BINSHA.txt"), encoding="utf-8").read())
+
+# the row under LD_PLAN=43b with the pair set by an "amendment"
+pp.G43B, pp.TAU43B_US, pp.BAND43B = 0.9, 5000.0, (150.0, 250.0)
+os.environ["LD_PLAN"] = "43b"
+et = lambda b0="5000", g="0.9", hold="none": f"oracle store law ACTIVE (RWM_STORE_LAW=oracle, diagnostic, never merged): L_dgps=[9773.0] hold={hold} T_w=0.25s b0_us={b0} gain={g}"  # noqa: E731
+rt = mk("SL-T", echo_line=et(), sha=pp.SHA43)
+check("43b: a good SL-T row is LIVE; the ladder sees it as an SL row (arm_name keeps SL-T); its echo declares its own gain and b0_us",
+      rt["status"] == "LIVE" and rt["arm"] == "SL" and rt["arm_name"] == "SL-T" and rt["echo_b0_gain"] == ["5000", "0.9"], (rt["status"], rt["problems"]))
+rh = mk("SH-T", echo_line=et(hold="H=1536 t_h=15s"), sha=pp.SHA43)
+check("43b: a good SH-T row is an SH row", rh["status"] == "LIVE" and rh["arm"] == "SH" and rh["arm_name"] == "SH-T", rh["problems"])
+check("43b: MAIN must declare b0_us=0 gain=q", mk("MAIN", sha=pp.SHA43)["status"] == "LIVE"
+      and any(p_.startswith("echo-b0-gain") for p_ in mk("MAIN", echo_line=echo("MAIN", gain="0.9"), sha=pp.SHA43)["problems"]))
+check("43b: an SL-T row whose echo declares another gain or another b0_us is void",
+      any(p_.startswith("echo-b0-gain") for p_ in mk("SL-T", echo_line=et(g="1"), sha=pp.SHA43)["problems"])
+      and any(p_.startswith("echo-b0-gain") for p_ in mk("SL-T", echo_line=et(b0="0"), sha=pp.SHA43)["problems"])
+      and mk("SL-T", echo_line=et(g="1"), sha=pp.SHA43)["status"] == "WITNESS-FAIL")
+check("43b: a binary other than status 43's is a witness failure on the row (the battery aborts on it before any row)",
+      any(p_.startswith("bin-sha") for p_ in mk("SL-T", echo_line=et(), sha="0" * 64)["problems"]))
+pp.G43B = None
+check("43b: with the plan variables unset every row is void (plan-43b-variables-unset)",
+      "plan-43b-variables-unset" in mk("SL-T", echo_line=et(), sha=pp.SHA43)["problems"])
+pp.G43B = 0.9
+os.environ.pop("LD_PLAN", None)
+
+# qcwnd: the lowest against the median, per row
+rq = mk("SL", qcw=lambda i: 20000 if i == 100 else 100000)
+check("per row: the lowest qcwnd against its median (a quinn window collapse is not scored as the law)",
+      rq["qcwnd_min"] == 20000 and rq["qcwnd_med"] == 100000 and abs(rq["qcwnd_ratio"] - 0.2) < 1e-12, (rq["qcwnd_min"], rq["qcwnd_med"]))
+ms = []
+pp.cell_outcome([rq], "c2-100", out=ms.append)
+check("  ... printed on the ROW line", any("qcwnd min/med=20000/100000 (0.200)" in m for m in ms), ms[:2])
+qq = pp.qcwnd_series(lc.read(os.path.join(HERE, "..", "..", "docs", "l1-raw", "oracle43", "diag-ld", "c1s-400-SL-s42-r2-a1-c.log")))
+check("  ... and read from a committed §43 client log (c1s SL s42 r2, the runaway row: min / median about 0.10)",
+      len(qq) > 500 and 0.05 < min(qq) / lc.med(qq) < 0.2, (len(qq), min(qq) / lc.med(qq)))
+
+# the band is a plan constant for 43b
+sl_b = [lrow("SL", 160, seed=s_, rep=i) for i, s_ in enumerate("427")]
+sh_b = [lrow("SH", 160, seed=s_, rep=i) for i, s_ in enumerate("427")]
+mn_b = [lrow("MAIN", 2048, seed=s_, rep=i) for i, s_ in enumerate("427")]
+check("43b: the cell's band is the plan constant (160 inside (150, 250) -> CONVERGES; against (300, 400) -> ONE-POINT-OFF-PREDICTION)",
+      pp.cell_outcome(sl_b + sh_b + mn_b, "c2-100", out=lambda *_: None, band=(150.0, 250.0))["label"] == "CONVERGES-ONE-POINT"
+      and pp.cell_outcome(sl_b + sh_b + mn_b, "c2-100", out=lambda *_: None, band=(300.0, 400.0))["label"] == "ONE-POINT-OFF-PREDICTION")
+
+# the dry run on status 43's committed rows, SL standing for SL-T
+cd_ = subprocess.run([sys.executable, os.path.join(HERE, "place43_parse.py"), "dryrun43b",
+                      os.path.join(HERE, "..", "..", "docs", "l1-raw", "oracle43", "ld.log")], capture_output=True, text=True, encoding="utf-8",
+                     env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+check("dry run on §43's ledger rows (c2 MAIN / SL / SH as MAIN / SL-T / SH-T): runs, 9/9 rows, the ladder gives §43's label",
+      cd_.returncode == 0 and "ROWS 9/9" in cd_.stdout and "LABEL c2-100: BISTABLE" in cd_.stdout, (cd_.returncode, cd_.stderr[-300:]))
 
 print("FAILS %d" % fails)
 sys.exit(1 if fails else 0)

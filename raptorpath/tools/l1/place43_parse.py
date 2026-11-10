@@ -52,6 +52,41 @@ PRED_EXTRA = {"SL-B0": 195.0, "SL-G12": 184.0}                   # amendment 2's
 for _a in ARMS + EXTRA_ARMS:
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
 
+# ── plan 43b (status 43b): the gain <= 1 + additive-time law at c2 from both starts ─────────────────────────
+# The pair (G, tau) and the band are set by an amendment BEFORE launch; unset (None) by default and the battery refuses to
+# launch while any is unset (`place43_parse.py vars43b` exits 3). SL-T / SH-T are the plan's names for the §43 ladder's SL / SH.
+G43B = None                    # RWM_ORACLE_GAIN of the SL-T and SH-T arms
+TAU43B_US = None               # RWM_ORACLE_BRAKE_OFFSET_US of the SL-T and SH-T arms (µs)
+BAND43B = None                 # (lo, hi): the cell's predicted band, "offline value to x1.2"
+ARMS43B = ["MAIN", "SL-T", "SH-T"]
+ARM_ROLE = {"SL-T": "SL", "SH-T": "SH"}
+SMOKE43B = [("c2-100", "SH-T", "42", 1), ("c2-100", "SL-T", "42", 1)]
+EXPECT_ROWS43B = len(ARMS43B) * 3                                        # 9 (+ the 2 smoke rows = 11 invocations)
+SHA43 = "94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008"   # §43's binary: 43b must run the same one (ABORT-SHA)
+for _a in ARMS43B:
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+
+
+def rust_f64(x):
+    """A float as Rust's `{}` prints it (the engine's echo): 5000.0 -> '5000', 0.9 -> '0.9'."""
+    r = repr(float(x))
+    return r[:-2] if r.endswith(".0") else r
+
+
+def plan43b_vars():
+    """(G, tau_us, band) or None when any plan variable is unset."""
+    if G43B is None or TAU43B_US is None or BAND43B is None:
+        return None
+    return G43B, TAU43B_US, BAND43B
+
+
+def want_env(name, plan43b):
+    """The (b0_us, gain) tokens an arm's echo must declare."""
+    if plan43b and name in ("SL-T", "SH-T"):
+        v = plan43b_vars()
+        return (rust_f64(v[1]), rust_f64(v[0])) if v else (None, None)
+    return EXTRA_ENV.get(name, ("0", "q"))
+
 # ── §43's constants ──────────────────────────────────────────────────────
 TW = 0.25                    # the window, s
 WARM_S = 1.0                 # windows with t >= 1 s are scored
@@ -82,6 +117,18 @@ LAW_ECHO = "oracle store law ACTIVE"
 HOLD_RE = re.compile(r"hold=H=(\d+) t_h=([\d.]+)s")
 LIST_RE = re.compile(r"L_dgps=\[([^\]]*)\]")
 B0_RE = re.compile(r"b0_us=(\S+) gain=(\S+)")
+
+
+def plan43b(smoke=False):
+    """[(cell, arm, seed, rep)] for plan 43b: c2-100 only, three blocks, the arm order rotating per block
+    (MAIN SL-T SH-T / SL-T SH-T MAIN / SH-T MAIN SL-T), the same rotation as §43's."""
+    if smoke:
+        return list(SMOKE43B)
+    out = []
+    for b, (seed, rep) in enumerate(BLOCKS):
+        a = ARMS43B[b % 3:] + ARMS43B[:b % 3]
+        out += [("c2-100", x, seed, rep) for x in a]
+    return out
 
 
 def plan43(smoke=False):
@@ -167,6 +214,22 @@ STALL_PAUSED = 90        # ENGINE-STALL (status 43 note): `paused` >= 90 % ...
 STALL_RTT_X = 10.0       # ... and the app-echo rtt >= 10 x the wire rtt (wrtt, floored at 1 ms) ...
 STALL_TAIL_FRAC = 0.9    # ... on >= 90 % of the windows from the onset to the row's end ...
 STALL_MIN_WINDOWS = 8    # ... over at least 8 windows (2 s).
+
+
+_QCW = re.compile(r"\bp0:infl=\d+/.*?\bqcwnd=(\d+)")
+
+
+def qcwnd_series(cli):
+    """Path 0's quinn congestion window (bytes) at each client `[DIAG]` tick with t >= 1 s."""
+    out = []
+    for ln in cli:
+        mt = sl._T.search(ln)
+        if not mt or float(mt.group(1)) < WARM_S:
+            continue
+        m = _QCW.search(ln)
+        if m:
+            out.append(int(m.group(1)))
+    return out
 
 
 def stall_ticks(cli):
@@ -413,8 +476,16 @@ def returned(row, n_sl, cfg):
 # ── ROW ──────────────────────────────────────────────────────────────────
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None):
     cfg = CELLS[cell]
+    is43b = os.environ.get("LD_PLAN") == "43b"
+    arm_name = arm
+    if is43b:
+        arm = ARM_ROLE.get(arm_name, arm_name)        # the ladder's role: SL-T is an SL row, SH-T an SH row
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
+    row["arm_name"] = arm_name
     row["bin_sha"] = sha
+    qc = qcwnd_series(cli)
+    row["qcwnd_min"], row["qcwnd_med"] = (min(qc), lc.med(qc)) if qc else (None, None)
+    row["qcwnd_ratio"] = (row["qcwnd_min"] / row["qcwnd_med"]) if (qc and row["qcwnd_med"]) else None
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
     row["gate_diag"] = lc.gate_tok(cli, "RWM_DIAG")
     cap = [m for m in (sl._SUMCAP.search(ln) for ln in cli) if m]
@@ -457,7 +528,11 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             if arm != "SH" and "hold=none" not in line:
                 p.append("oracle-hold-on-" + arm)
     echo_line = (law_cli[-1] if law_cli else next((ln for ln in reversed(cli) if "[OCAP] sampler readout ACTIVE" in ln), None))
-    want_b0, want_gain = EXTRA_ENV.get(arm, ("0", "q"))
+    want_b0, want_gain = want_env(arm_name, is43b)
+    if want_b0 is None:
+        p.append("plan-43b-variables-unset")
+    if is43b and sha is not None and sha != SHA43:
+        p.append(f"bin-sha!=§43's ({sha[:16]})")
     bm = B0_RE.search(echo_line) if echo_line else None
     row["echo_b0_gain"] = list(bm.groups()) if bm else None
     if echo_line and (not bm or bm.groups() != (want_b0, want_gain)):
@@ -553,9 +628,10 @@ def pooled_cmp(x, y, lower_is_better):
     return ("BETTER" if better else "WORSE"), diff, tol
 
 
-def cell_outcome(rows, cell, out=print):
-    """The cell's label by the ladder, plus SPREAD / GOODPUT / DELAY. -> dict"""
-    cfg = CELLS[cell]
+def cell_outcome(rows, cell, out=print, band=None):
+    """The cell's label by the ladder, plus SPREAD / GOODPUT / DELAY. -> dict. `band` overrides the cell's predicted band
+    (plan 43b restates it as a plan constant)."""
+    cfg = dict(CELLS[cell], band=tuple(band)) if band else CELLS[cell]
     res = {"cell": cell}
     allr = [r for r in rows if r["cell"] == cell]
     sc = lambda arm: [r for r in allr if r["arm"] == arm and scored(r)]  # noqa: E731
@@ -568,7 +644,8 @@ def cell_outcome(rows, cell, out=print):
             + (["ENGINE-STALL"] if (r.get("stall") or {}).get("engine_stall") else [])
         out(f"  ROW {rid(r)}: {' '.join(flags)} dur={fmt(duration_s(r), 1)}s n_end={fmt(r.get('n_end'), 1)} "
             f"s_end={fmt(r.get('s_end'), 3)} floor/pin last={fmt(r.get('floor_last'), 3)}/{fmt(r.get('pin_last'), 3)} "
-            f"mbps={fmt(r.get('mbps'), 1)} {' '.join(r.get('problems') or [])}")
+            f"mbps={fmt(r.get('mbps'), 1)} qcwnd min/med={fmt(r.get('qcwnd_min'), 0)}/{fmt(r.get('qcwnd_med'), 0)}"
+            f" ({fmt(r.get('qcwnd_ratio'), 3)}) {' '.join(r.get('problems') or [])}")
         if not scored(r) and r["status"] == "LIVE" and unstable_modes(r):
             out(f"  EXCLUDED-WOULD-TRIGGER {rid(r)}: {','.join(unstable_modes(r))} (left out of the outcome: "
                 f"{'SHORT' if r.get('short') else r.get('hold_state')})")
@@ -665,12 +742,21 @@ def cell_outcome(rows, cell, out=print):
     return res
 
 
-def score(paths, out=print):
-    rows, tokens = rows_of(paths)
+def score(paths, out=print, plan43b=False, rows=None, band=None):
+    if rows is None:
+        rows, tokens = rows_of(paths)
+    else:
+        tokens = []
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
-    out("ORACLE STORE LAW IN CLOSED LOOP (status §43) SCORE: MAIN = shipped law + sampler readout, SL = oracle from boot, "
-        "SH = oracle with the 15 s hold; SL-B0 / SL-G12 = reported-only c2 start-low arms (amendment 2)")
-    out(f"ROWS {len(rows)}/{EXPECT_ROWS}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
+    if plan43b:
+        band = band or BAND43B
+        out("GAIN <= 1 + ADDITIVE-TIME LAW AT c2 FROM BOTH STARTS (status §43b): MAIN = shipped law, SL-T = start-low, "
+            f"SH-T = start-high (hold 1536 for 15 s); band {band}; §43's ladder unchanged")
+        out(f"ROWS {len(rows)}/{EXPECT_ROWS43B}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
+    else:
+        out("ORACLE STORE LAW IN CLOSED LOOP (status §43) SCORE: MAIN = shipped law + sampler readout, SL = oracle from boot, "
+            "SH = oracle with the 15 s hold; SL-B0 / SL-G12 = reported-only c2 start-low arms (amendment 2)")
+        out(f"ROWS {len(rows)}/{EXPECT_ROWS}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
     for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "VOID-SAMPLER", "CONTAMINATED", "WITNESS-FAIL"):
         out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
@@ -682,8 +768,8 @@ def score(paths, out=print):
         out(f"  DNF {rid(r)}: {'ENGINE-STALL' if st.get('engine_stall') else 'not ENGINE-STALL'} onset={st.get('onset')} "
             f"stalled_frac={fmt(st.get('stalled_frac'), 3)} n_held={st.get('n_held')} pre_min_n={st.get('pre_min_n')} n_end={fmt(r.get('n_end'), 1)}")
     res["engine_stall"] = {rid(r): bool((r.get("stall") or {}).get("engine_stall")) for r in dn}
-    for cell in CELL_ORDER:
-        res["cells"][cell] = cell_outcome([r for r in rows if r["cell"] == cell], cell, out)
+    for cell in (["c2-100"] if plan43b else CELL_ORDER):
+        res["cells"][cell] = cell_outcome([r for r in rows if r["cell"] == cell], cell, out, band=band if plan43b else None)
     out("")
     labs = {c: v["label"] for c, v in res["cells"].items()}
     if aborted:
@@ -710,21 +796,22 @@ def decision(labs):
     return "CONVERGES-ONE-POINT at both cells: the shipped anchor gives one operating point in practice; next steps go to the user as a proposal"
 
 
-def check(path):
+def check(path, plan43b=False):
     rows, tokens = rows_of([path])
     t = open(path, errors="replace").read()
-    ok = "LD-BATTERY-DONE" in t and len(rows) == EXPECT_ROWS
-    print(f"CHECK43 done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{EXPECT_ROWS}")
+    want = EXPECT_ROWS43B if plan43b else EXPECT_ROWS
+    ok = "LD-BATTERY-DONE" in t and len(rows) == want
+    print(f"CHECK43{'B' if plan43b else ''} done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{want}")
     return 0 if ok else 1
 
 
-def smoke(path):
+def smoke(path, plan43b=False):
     """rc 0 iff both smoke rows (c2 SH, c1s SL, full size) are LIVE with the witnesses the scorer reads (sampler, routing,
     dgq, the law echo) and a non-empty [OCAP] series."""
     rows, _ = rows_of([path])
     got = {(r["cell"], r["arm"]): r for r in rows}
     bad = []
-    for cell, arm, _, _ in SMOKE:
+    for cell, arm, _, _ in ([(c, ARM_ROLE[a], x, y) for c, a, x, y in SMOKE43B] if plan43b else SMOKE):
         r = got.get((cell, arm))
         if r is None:
             bad.append(f"{cell} {arm}: no row")
@@ -818,6 +905,17 @@ def main(argv):
         r = make_row(cell, arm, seed, rep, rc, wall, lc.read(drv), lc.read(cli), lc.read(srv), cot, sha)
         print("P43ROW " + json.dumps(r, sort_keys=True))
         return 0
+    if cmd == "vars43b":
+        v = plan43b_vars()
+        if v is None:
+            print("ABORT-PLAN43B-UNSET G43B / TAU43B_US / BAND43B are not all set (an amendment sets them)", file=sys.stderr)
+            return 3
+        print(rust_f64(v[0]), rust_f64(v[1]))
+        return 0
+    if cmd == "plan43b":
+        for c, ar, seed, rep in plan43b(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {ar} {seed} {rep}")
+        return 0
     if cmd == "plan":
         for c, ar, seed, rep in plan43(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {ar} {seed} {rep}")
@@ -828,6 +926,12 @@ def main(argv):
         return smoke(a[0])
     if cmd == "score":
         score(a)
+        return 0
+    if cmd == "dryrun43b":
+        # the scorer on §43's rows, SL standing for SL-T and SH for SH-T (c2 MAIN / SL / SH only), a placeholder band
+        rows, _ = rows_of(a)
+        rows = [r for r in rows if r["cell"] == "c2-100" and r["arm"] in ("MAIN", "SL", "SH")]
+        score(None, plan43b=True, rows=rows, band=BAND43B or (157.0, 164.0))
         return 0
     if cmd == "dryrun":
         dryrun(a)
