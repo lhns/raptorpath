@@ -163,6 +163,24 @@ def resolution(rows, arm="BASE"):
     return out
 
 
+def tail_lines(rows, out):
+    """Reported only: per cell and arm the lowest LIVE row's goodput against the cell median (the median of all live rows at the
+    cell, every arm pooled), and how many of the arm's rows lie below 0.5 x that median."""
+    for cell, _ in CELLS:
+        pool = [r for a in ("BASE", "MAIN", "WIRE") for r in live(rows, cell, a) if r.get("mbps") is not None and not r.get("dnf")]
+        m = med([r["mbps"] for r in pool])
+        if not m:
+            continue
+        for arm in ("BASE", "MAIN", "WIRE"):
+            rs = [r for r in pool if r["arm"] == arm]
+            if not rs:
+                continue
+            lo = min(rs, key=lambda r: r["mbps"])
+            n_lo = sum(1 for r in rs if r["mbps"] < 0.5 * m)
+            out(f"  TAIL {cell} {arm:<4} lowest {lo['mbps']:.1f} Mbit/s (s{lo['seed']} r{lo['rep']}) = {lo['mbps'] / m:.3f} x cell median {m:.1f}; "
+                f"rows below 0.5 x median: {n_lo} of {len(rs)}")
+
+
 def report(rows, out=print, dry=False):
     out(f"§41b GUARD ({'DRY RUN on a ledger with fewer BASE rows' if dry else 'real scoring'}): N_PERM={N_PERM} RNG seed {RNG_SEED}, one-sided, "
         f"max over every clause of both cells, PASS iff p > {P_PASS}")
@@ -208,6 +226,9 @@ def report(rows, out=print, dry=False):
             xs_, rs_ = live(rows, cell, "WIRE"), live(rows, cell, "BASE")
             if xs_ and rs_:
                 pp.clause_readings(xs_, rs_, cell, out, f"41b-WIRE-{cell}@{store}", "WIRE", "BASE")
+    out("")
+    out("TAIL (reported only): lowest goodput per arm and cell against the cell median (all live rows pooled), and the count below 0.5 x median")
+    tail_lines(rows, out)
     out("")
     out("RUN ORDER (ledger order; every row, any status): idx cell arm seed rep status mbps cpuC/GB cpuS/GB lagC lagS")
     for i, r in enumerate(rows):

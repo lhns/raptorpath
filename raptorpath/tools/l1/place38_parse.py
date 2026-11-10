@@ -67,6 +67,11 @@ ONE_LEG_SHARE = 0.05
 SHARE_ABS, SHARE_BAND = 0.03, 2.0
 WPL_TOL_US, WPL_FRAC = 1000, 0.95
 WARM_S = 1.0
+# Gates the simplification stages delete from the engine: a `[GATES]` line without them reads as "off", never as a witness failure
+# (RWM_POOL_ANCHOR is the only one of them a row witness reads, in stage3_parse.make_row via absent_off). Any gate that still
+# exists keeps its strict witness (RWM_PLACE_WIRE, RWM_STORE, ...), and a deleted gate that is still PRESENT must still read 0.
+GATES_ABSENT_IS_OFF = ("RWM_PLAIN_RS", "RWM_HONEST_CAP", "RWM_HONEST_K", "RWM_POOL_ANCHOR", "RWM_THREE_TERM", "RWM_COMPOSED_CAP",
+                       "RWM_HOLDDOWN_Q", "RWM_REFRESH_FLOOR_US", "RWM_DERIVED_SWEEP", "RWM_REPAIR_WAIT", "RWM_PROACTIVE_PACER", "RWM_REASM_BDP")
 ABORT_TOKENS = ("ABORT-LOCK", "ABORT-CRLF", "ABORT-SHA", "ABORT-BIN", "ABORT-SENTINEL-UNWRITABLE", "ABORT-SMOKE")
 
 
@@ -222,7 +227,8 @@ def idle_decay(diag):
 # ── ROW ───────────────────────────────────────────────────────────────────
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None, store=None):
     store = store or os.environ.get("P38_STORE", "def")
-    row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
+    row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant, absent_off=True)
+    row["gates_absent"] = sorted(g for g in GATES_ABSENT_IS_OFF if lc.gate_tok(cli, g) is None or lc.gate_tok(srv, g) is None)
     row["bin_sha"], row["store"] = sha, store
     nleg = sp.N_LEGS[cell]
     row["gate_wire_cli"], row["gate_wire_srv"] = lc.gate_tok(cli, "RWM_PLACE_WIRE"), lc.gate_tok(srv, "RWM_PLACE_WIRE")
