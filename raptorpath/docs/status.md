@@ -10224,6 +10224,60 @@ merged on `diag36`).
      confirms the N = 1 print before launch. If it prints `-`, the session
      stops for an amendment.
 
+### 38. Result
+
+Scored 2026-11-10 against the pre-registration and amendments 1–4, literally
+(`docs/l1-raw/place38/score.txt`). **`REGRESSES-AT(c1s-400@def)`**, with
+c8 192 and 512 not reproduced. The verdict rests on one clause: WIRE's
+client CPU per GB at the c1s control is +2.5 %, against a tolerance of
+2.4 %, with disjoint ranges (WIRE 16.02–17.62, MAIN 15.58–16.00).
+Every other clause of the ladder passes. Without that clause the ladder
+reads `CURED`. The arm does not ship.
+
+*Session.* An unscored N = 1 check row (c2 WIRE) printed `w_calls=87 103`
+and `w_mv=0`. First launch: `ABORT-PRECONDITION` (`procs_running`
+[1,1,1,12,12]; nothing ran). Relaunch 11:10:21Z: both locks, gate, build
+(binary `2b960cbd…22ab`, tree `f50cb6d` = `diag36` + the harness), smoke ok,
+battery 11:16:17–11:31:41Z, `DONE-ALL`. 96/96 rows LIVE, rc 0, no io flag.
+No other abort.
+
+*Readings (WIRE against MAIN, medians, n = 6 per arm).*
+
+| cell | LOCKED MAIN / WIRE | goodput | other |
+|---|---|---|---|
+| c1s default | 0 / 0 | 788.9 vs 803.1 (−1.8 %, WITHIN; WIRE range 574.7–806.2) | client CPU/GB **+2.5 % WORSE**; server WITHIN; `w_mv` = 0 |
+| c2 default | 0 / 0 | 89.75 vs 89.98, WITHIN | all clauses WITHIN |
+| c1d default | 0 / 0 | 780.9 vs 777.2 (+0.5 %, WITHIN) | share 0.481 vs 0.483 |
+| c8 default | 0 / 0 | 96.9 vs 100.4 (−3.4 %, WITHIN) | slow-leg share 0.183 vs 0.185, preserved |
+| c1d 1536 | 5 / 0 | 771.4 vs 816.3 (−5.5 %, WITHIN) | CPU/GB client +38.9 %, server +23.4 % (static cell, reported; two legs cost more than one) |
+| c8 192 | 1 / 0 (not reproduced) | 86.55 vs 87.95 | share 0.038 vs 0.032, preserved |
+| c8 256 | 3 / 0 | 95.1 vs 90.4 (+5.2 %, TREND-BETTER) | — |
+| c8 512 | 1 / 0 (not reproduced) | 103.6 vs 102.2 | — |
+
+No WIRE row locked anywhere. `wpl_us` sits within 1 ms of `wrtt` on every
+WIRE row.
+
+*The c1s clause.* At N = 1 the arm moves no placement (`w_mv` = 0 exactly).
+What it adds there is the mirror (`control_msg.rs`). At every ack batch and
+path report it:
+- builds two `Vec`s and sorts the leg ids;
+- does a map lookup and an `Arc<PathView>` clone per leg;
+- copies the RTT into the scheduler.
+
+The snapshot it reads is refreshed at most once per `VIEW_REFRESH` = 1 ms
+(`io_owner.rs`). Reading it more often than that buys nothing. A
++2.5 % client CPU/GB at c1s, the highest-rate cell, fits that per-batch
+overhead. This is the expected cause, not a measured attribution. Two
+WIRE seed-7 rows at 574.7 and 683.5 Mbit/s widen its goodput range. c1s
+has shown such rows before (§34's 277).
+
+*Predictions.*
+- `CURED`: MISSED, by the CPU clause.
+- No lock-outs under WIRE: MET.
+- c8 256 goodput rising from 88–90 to 95–103: MET (95.1).
+- Default cells and controls within their bands: MET except c1s client CPU.
+- The pooled c1d 1536 cost of −5 to −12 %: MET (−5.5 %).
+
 ## 39. The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
 
 §37 rated the rate law "the maths holds, inert", and the user opened the
