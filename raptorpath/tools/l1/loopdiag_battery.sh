@@ -52,6 +52,15 @@
 #   tree and target dir; LD_BIN_BASE / LD_SHA_BASE, installed as .../bin-base/raptorpath so pgrep -x raptorpath still matches) at
 #   c1s-400 and c1d-400 default, interleaved into the same blocks (place38_parse.py plan41). BASE has no RWM_PLACE_WIRE and no w_*
 #   gauges; its rows run the same env as MAIN. Each row also records procs_running and io full avg10 before and after.
+# PLAN 43 (LD_PLAN=43, status section 43 + amendments 1-2): the oracle store law in closed loop (diagnostic arm, run43's binary).
+#   Arms MAIN (the shipped law; RWM_ORACLE_DIAG=1 + the L list = the sampler and the counterfactual ask as a readout),
+#   SL (RWM_STORE_LAW=oracle) and SH (SL + RWM_ORACLE_HOLD=<H>:15). Cells c2-100 (600 MB, L 9773, H 1536) and c1s-400
+#   (5 GB, L 97733, H 2048): the size is this plan's, the names keep their scenario. Every arm runs RWM_GEN=0 RWM_DIAG=1
+#   RWM_ORACLE_DIAG=1 RWM_PERF_TIMEOUT_S=200; the env -u list also withholds RWM_ORACLE_*. Amendment 2 adds two reported-only
+#   c2-100 start-low arms: SL-B0 (SL + RWM_ORACLE_BRAKE_OFFSET_US=2470) and SL-G12 (SL + RWM_ORACLE_GAIN=1.2). 24 scored
+#   invocations (3 blocks x (2 cells x 3 arms + 2 extra arms); a perf timeout is a DNF row, rc 0, not ABORT-RC) + the smoke
+#   (2: c2-100 SH, c1s-400 SL, full size) = 26 invocations, about 35 min at ~75 s each (worst case 26 x 215 s = 93 min, inside LD_HARD).
+#   The table is `place43_parse.py plan [smoke]` (`cell arm seed rep` per line); rows are parsed by place43_parse.py (P43ROW lines).
 # Launched by loopdiag_run_all.sh (the envelope, which holds both VM locks).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
@@ -60,7 +69,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py place43_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -68,7 +77,7 @@ OUTDIR="${LD_OUTDIR:?LD_OUTDIR}"
 TAG="${LD_TAG:-ld}"
 TRIES="${LD_BRINGUP_TRIES:-2}"
 PLAN="${LD_PLAN:-24}"
-case "$PLAN" in 24|27|29|34|36|38|40|41|41b) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b)"; exit 3 ;; esac
+case "$PLAN" in 24|27|29|34|36|38|40|41|41b|43) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|43)"; exit 3 ;; esac
 # Plans 38, 41 and 41b share everything but the BASE arm (P38=1 is "the place-wire battery"; P41=1 has the BASE binary).
 P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P38=1
 P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ]; } && P41=1
@@ -90,6 +99,13 @@ fi
 if [ "$P38" = 1 ]; then
   INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)
 fi
+if [ "$PLAN" = "43" ]; then
+  INSTR_ENV=(RWM_ORACLE_DIAG=1 RWM_PERF_TIMEOUT_S=200)
+fi
+# Plan 43's per-cell constants (status section 43; place43_parse.CELLS is the scorer's copy, test_place43_parse.py asserts they agree).
+p43_bytes() { case "$1" in c2-100) echo 600000000 ;; c1s-400) echo 5000000000 ;; *) echo "" ;; esac; }
+p43_l()     { case "$1" in c2-100) echo 9773 ;; c1s-400) echo 97733 ;; *) echo "" ;; esac; }
+p43_h()     { case "$1" in c2-100) echo 1536 ;; c1s-400) echo 2048 ;; *) echo "" ;; esac; }
 OUT="$OUTDIR/${TAG}.log"
 DDIR="$OUTDIR/diag-${TAG}"
 mkdir -p "$OUTDIR" "$DDIR"
@@ -99,7 +115,8 @@ LB_LOG="$OUT"
 
 # The instruments and gates the arms need must be in the binary.
 # Plan 36 runs main's binary, which lacks both instruments: it asks only for the store override it sets.
-if [ "$P38" = 1 ]; then preflight_binary "$BIN" "RWM_STORE" "RWM_PLACE_WIRE"
+if [ "$PLAN" = "43" ]; then preflight_binary "$BIN" "RWM_STORE_LAW" "oracle store law ACTIVE" "RWM_ORACLE_L_DGPS" "RWM_ORACLE_HOLD" "RWM_ORACLE_DIAG" "RWM_ORACLE_GAIN" "RWM_ORACLE_BRAKE_OFFSET_US"
+elif [ "$P38" = 1 ]; then preflight_binary "$BIN" "RWM_STORE" "RWM_PLACE_WIRE"
 elif [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then preflight_binary "$BIN" "RWM_STORE"
 else preflight_binary "$BIN" "ACKDIAG" "LOOPDIAG"; fi
 [ "$PLAN" = "27" ] && preflight_binary "$BIN" "burst-robust BBR"
@@ -141,6 +158,8 @@ run_one() { # cell arm seed rep [knee|store]   (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR
   local cot_b=0 cot_a=0 cot=0 RBIN="$BIN" RWANT="$WANT" procs_b=-1 procs_a=-1
   read -r ca cb mode bytes <<< "$(cell_spec "$cell")"
   [ -n "$ca" ] || { echo "UNKNOWN-CELL $cell" >> "$OUT"; return 0; }
+  # Plan 43 sizes the cells itself (c2-100 is 600 MB and c1s-400 5 GB here); the cell names keep their scenario.
+  [ "$PLAN" = "43" ] && bytes="$(p43_bytes "$cell")"
   local name="$cell-$arm"
   local arm_env=()
   local p38store=""
@@ -157,12 +176,27 @@ run_one() { # cell arm seed rep [knee|store]   (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR
           arm_env=(RWM_PLACE_WIRE=1) ;;
     BASE) [ "$P41" = 1 ] || { echo "UNKNOWN-ARM $arm (plan 41/41b only)" >> "$OUT"; return 0; }
           RBIN="$BIN_BASE"; RWANT="$WANT_BASE" ;;
+    SL) [ "$PLAN" = "43" ] || { echo "UNKNOWN-ARM $arm (plan 43 only)" >> "$OUT"; return 0; }
+        arm_env=(RWM_STORE_LAW=oracle) ;;
+    SH) [ "$PLAN" = "43" ] || { echo "UNKNOWN-ARM $arm (plan 43 only)" >> "$OUT"; return 0; }
+        arm_env=(RWM_STORE_LAW=oracle "RWM_ORACLE_HOLD=$(p43_h "$cell"):15") ;;
+    SL-B0) [ "$PLAN" = "43" ] || { echo "UNKNOWN-ARM $arm (plan 43 only)" >> "$OUT"; return 0; }
+        [ "$cell" = "c2-100" ] || { echo "UNKNOWN-ARM $arm at $cell (c2-100 only)" >> "$OUT"; return 0; }
+        arm_env=(RWM_STORE_LAW=oracle RWM_ORACLE_BRAKE_OFFSET_US=2470) ;;
+    SL-G12) [ "$PLAN" = "43" ] || { echo "UNKNOWN-ARM $arm (plan 43 only)" >> "$OUT"; return 0; }
+        [ "$cell" = "c2-100" ] || { echo "UNKNOWN-ARM $arm at $cell (c2-100 only)" >> "$OUT"; return 0; }
+        arm_env=(RWM_STORE_LAW=oracle RWM_ORACLE_GAIN=1.2) ;;
     PWR) arm_env=(RWM_STORE_LAW=power) ;;
     KNEE) [[ "$knee" =~ ^[0-9]+$ ]] || { echo "UNKNOWN-KNEE $cell '$knee'" >> "$OUT"; return 0; }
           arm_env=(RWM_STORE="$knee") ;;
     *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
   esac
   [ "$P38" = 1 ] && [ "$p38store" != "def" ] && arm_env+=(RWM_STORE="$p38store")
+  # Plan 43: every arm, MAIN included, carries the cell's L list (MAIN's readout computes the counterfactual ask from it).
+  if [ "$PLAN" = "43" ]; then
+    [ -n "$(p43_l "$cell")" ] || { echo "UNKNOWN-CELL $cell (plan 43)" >> "$OUT"; return 0; }
+    arm_env+=("RWM_ORACLE_L_DGPS=$(p43_l "$cell")")
+  fi
   for attempt in $(seq 1 "$TRIES"); do
     # A binary that vanished from tmpfs stops the battery: never run it off disk (that is VOID-ONDISK).
     if [ ! -x "$RBIN" ]; then
@@ -187,6 +221,7 @@ run_one() { # cell arm seed rep [knee|store]   (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
         -u RWM_RTOBS -u RWM_ACKDIAG -u RWM_LOOPDIAG -u RWM_IO_RT -u RWM_STORE_PATHS \
         -u RWM_PLAIN_RS -u RWM_HONEST_CAP -u RWM_STORE -u RWM_QUIC_CC -u RWM_STORE_LAW -u RWM_RDIAG -u RWM_PCAP_DIR -u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD \
+        -u RWM_ORACLE_L_DGPS -u RWM_ORACLE_HOLD -u RWM_ORACLE_DIAG -u RWM_ORACLE_GAIN -u RWM_ORACLE_BRAKE_OFFSET_US \
         "${arm_env[@]}" "${RDIAG_ENV[@]}" "${cap_env[@]}" \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 "${INSTR_ENV[@]}" \
         RWM_C_PIPELINE=window RWM_BIN="$RBIN" \
@@ -223,6 +258,7 @@ run_one() { # cell arm seed rep [knee|store]   (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR
   case "$OUTDIR" in /dev/shm/*) ;; *) ondisk=1 ;; esac
   local parser=./loopdiag_parse.py
   [ "$P38" = 1 ] && parser=./place38_parse.py
+  [ "$PLAN" = "43" ] && parser=./place43_parse.py
   if LD_PLAN="$PLAN" LD_ONDISK="$ondisk" LD_IO_FULL10="$io_max" LD_IO_B="$io_b" LD_IO_A="$io_a" LD_PROCS_B="$procs_b" LD_PROCS_A="$procs_a" LD_PCAP_DIR="$pdir" LD_TABLE_DIR="$OUTDIR/tables" P38_STORE="${p38store:-def}" \
       python3 "$parser" row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
       /tmp/ld-drv.out /tmp/rwm-c.log /tmp/rwm-s.log "$cot" "$sha" >> "$OUT" 2>&1; then
@@ -458,6 +494,45 @@ if [ "$PLAN" = "41b" ]; then
   plan41b 0
   echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
   grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
+
+# ── plan 43 ───────────────────────────────────────────────────────────────
+plan43() { # smoke -> the whole plan (0), or the two smoke rows (1)
+  local -a tbl
+  local line cell arm seed rep prev="" b=0 last_seed="" last_rep=""
+  if [ "$1" = "1" ]; then
+    mapfile -t tbl < <(python3 ./place43_parse.py plan smoke)
+    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN43 smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
+  else
+    mapfile -t tbl < <(python3 ./place43_parse.py plan)
+    [ "${#tbl[@]}" -eq 24 ] || { echo "ABORT-PLAN43 table has ${#tbl[@]} rows (24)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell arm seed rep <<< "$line"
+    if [ "$1" != "1" ] && [ -n "$prev" ] && [ "$prev" != "$seed/$rep" ]; then
+      echo "BLOCK-COMPLETE rep=$last_rep seed=$last_seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+      b=$(( b + 1 ))
+    fi
+    prev="$seed/$rep"; last_seed="$seed"; last_rep="$rep"
+    run_one "$cell" "$arm" "$seed" "$rep"
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE rep=$last_rep seed=$last_seed block=$b $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=$(( b + 1 ))
+  fi
+}
+
+if [ "$PLAN" = "43" ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan43 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan43 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P43ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
   echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
   exit 0
 fi
