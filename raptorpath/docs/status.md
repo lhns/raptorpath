@@ -11711,6 +11711,38 @@ before launch):*
   - delay BETTER than MAIN's.
 - **Expected label:** CONVERGES-ONE-POINT.
 
+### 43b. Amendment 1 — the pair, the band, a closed-loop prediction, and the limit of a pass (before VM contact)
+
+*Pair, chosen by the registered rule* (`s42/s43win.out`): **G = 0.9,
+τ = 5 000 µs.** Rule 1 leaves G ≤ 0.9. Rule 2 leaves (0.85, 5), (0.85, 7.5)
+and (0.9, 5). Rule 3 keeps (0.85, 5) and (0.9, 5) at expired slope 0.28.
+Rule 4 picks (0.9, 5).
+
+*Band:* `BAND43B = [178, 217]`, the offline point to ×1.2 over the fresh
+and expired maps.
+
+*Second prediction (closed-loop line, `s42/s43win2.out`).* §43's c2 rows
+give the law's time term T(n) = 14.7–14.9 ms + 0.057–0.062 ms·(n − 163).
+This fit predicts §43's arms within 2–8 symbols. It predicts the
+start-low point at ≈ 186–193. Start-high should return to the same point:
+(0.9, 5) applied to §43's SH windows gives ask/n of 0.84–0.85 in the
+median.
+
+*The limit of a pass, stated now.* c2's τ window is [0.9, 9.2) ms. A pass
+shows that a gain below 1 removes the high point at c2. It does not settle
+τ's value or form across links.
+- Constant τ fits c2/c8/c1s only within [2.88, 3.94) ms at G = 0.9.
+- τ = b₀ + c fits with c ∈ [1.40, 3.64) ms, twice as wide. Every edge is
+  offline, and c1s's lower edge rests on truncated minima.
+- A c1s registration follows only if c2 converges. At G = 0.9, c1s is
+  predicted to have one settling point per τ: ≈ 1 250–1 300 at 3.5 ms and
+  ≈ 1 530–1 560 at 5 ms, with no second point.
+
+*b₀'s engine source.* `qsp_us` (P90 − P50 of a leg's last 256 RTT
+samples, `path.rs:848–855`) is on b₀'s scale at c2 and c8 (×0.75–1.15) but
+reads 2–3 × b₀ at c1s. It is not a drop-in source. The dispersion gauges
+stay out of the simplify lane until this is decided.
+
 ## 44. Is the model overcomplicated? — law inventory and simplification review — no VM, record
 
 The user asked whether the formulas could be simpler. An Opus inventory of

@@ -40,3 +40,16 @@ s43tau.py     python -I s43tau.py LD > s43tau.out   (imports s42noise, s43res, s
   ask = G·ΣL(RTprop + S + τ) at p27 c2 and c8, G ∈ {0.85, 0.9, 0.95, 1.0} × τ ∈ {0, 2.5, 5, 7.5, 10} ms, fresh and expired
   anchor: stable point, slope, band, G/Gmax, Tp50, the expired map's upward crossings, ask/n at 1 024 / 2 048 (c2's grid
   ends at 1 024), the point ×233.5/195 (§43's closed-loop offset) with its band, and OK pairs.
+
+s43win.py     python -I s43win.py LD <worktree root> > s43win.out   (imports s42noise, s42rtprop, s43res; reads oracle43 via
+  git show github/harness43). (1) §43b's pair rule applied to the recomputed s43tau sweep -> the chosen (G, τ) with its
+  offline-to-×1.2 band, G/Gmax and Tp50. (2) Per cell: b0, β(n) = Tmin − expired anchor, θ(n) (exact map bound; the Little
+  form beside it) and the window [τ_lo, min(τ_trap, τ_band)) for G = 0.85–1.0, for c2, c8 (thin) and c1s (p34 truncated;
+  oracle43's uncapped [OCAP] windows binned by n for the bounds near and above the knee). (3) Whether τ = const, k·RTprop
+  or k·b0 fits every cell with one coefficient.
+
+s43win2.py    python -I s43win2.py LD <worktree root> > s43win2.out   (imports s43win; reads oracle43 via github/harness43)
+  (1) Closed-loop line T(n) = a + b·(n − 163) of the law's time term (OCAP rtprop+S) on oracle43 c2 SL / SL-G12 / SL-B0
+  last-third windows, residuals, n* = G·L·(a − 163b + τ)/(1 − G·L·b) per arm against measured, the (0.9, 5 ms) prediction,
+  and ask/n under (0.9, 5) on the SH rows' windows. (2) c windows for τ = b0 + c. (3) c1s settling points at G = 0.9,
+  τ = 3.5 / 5 on oracle43 bins and p34. (4) qsp_us (P90 − P50 of the last 256 RTT samples; code lines cited) against b0.
