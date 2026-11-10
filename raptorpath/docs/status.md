@@ -9489,30 +9489,36 @@ pre-registered.**
 *The formula (continuous, no mode bit).*
 
 ```text
-   Ω  =  Σ_c ( k_c − (1 − r(β))·a_c )⁺   +   ( r(β)·n_N − p )⁺
+   Ω  =  Σ_c ( k_c − a_c )⁺   +   B
+   B  ←  min(B + r(β), max(r(β)·W, 1)) per source or copy sent;  B ← B − 1 per proactive repair
 ```
 
 | term | meaning | provenance |
 |---|---|---|
 | k_c | decoder component c's unknowns minus held rows | receiver |
 | a_c | live corrections touching c | sender |
-| n_N | live unreflected source | sender |
-| p | live proactive repairs not counted in any a_c | sender |
+| B | the shipped `TaperBudget` bank plus the debt it grants into (schematic above), with copies accruing too | sender |
 | r(β) | the blended rate law | §4.5, clamped |
-| live | younger than the correction's own-path §7.1 threshold | shipped law |
+| live | not yet reflected (ack/SACK, exact), and younger than the correction's own-path §7.1 threshold | shipped law |
+
+A bank is needed. A stateless count over the live set, `(r·n_live − p)⁺`
+(this branch's first form), loses every fraction below 1 as symbols age
+out: at r = 0.01 on a 94-symbol live set it never emits.
 
 - Ω is continuous in δ through r(β). It has no hint argument and no
   threshold on δ or ρ; ρ enters only through the shed law's hole set.
 - FlEC's ds is derived: `ds = r(β) − l̂`. Bulk's −l̂ is the β = 1, χ = 0
   point.
-- r* stays the a-priori term. The ledger is the a-posteriori correction,
-  and it replaces three pieces: the taper budget's open-loop accumulator,
-  the `ceil(retx·ε̂)` margin and the `nacked·r` debt reduction.
+- r* stays the a-priori term, spent through the existing bank. The ledger
+  is the a-posteriori correction on top of it. It replaces the
+  `ceil(retx·ε̂)` margin (by r(β) accrued per copy) and the `nacked·r` debt
+  reduction (by counting live repairs in a_c).
 
 *Why it cannot help measurably.* The double coverage the ledger removes is
 `[RFA] preempt_src`: a copy arriving for a sequence the decoder had already
-rebuilt (`net/report.rs`). On every row `preempt_src ≈ 0.85·fill_coded`,
-so nearly every decoded hole also got a copy.
+rebuilt (`net/report.rs`). On every row `preempt_src ≈ 0.85·fill_coded`.
+At the singles nearly every decoded hole also got a copy; at c8 a
+preempting arrival can be the original on the slower leg.
 
 | 1.8 MB | CTL preempt | GLIDE preempt | MID preempt | completion spread, CTL |
 |---|---|---|---|---|
@@ -9522,25 +9528,40 @@ so nearly every decoded hole also got a copy.
 
 - The larger waste classes do not move:
   - `dup_src` (re-fires and false alarms: 1.3–3.0 % at CTL, up to 25 % at
-    c8 GLIDE) belongs to the recovery clock. The ledger's liveness is at
-    most a 9/8 stretch of the shipped cooldown at one path.
+    c8 GLIDE) belongs to the recovery clock. The shipped cooldown is
+    `max(pooled estimator RTT, 10 ms)`, and the ledger's liveness is
+    `9/8·max(Copa SRTT_p, estimator RTT_p)`. If the two RTTs agree, that is
+    a 9/8 stretch and `dup_src` is out of reach. If the Copa SRTT runs well
+    above the estimator, part of `dup_src` is removable, and the corner
+    bound widens to preempt + dup: ≤ 3.4 % of source at c3hg, ≤ 1.5 % at
+    sc2. Which holds was not read.
   - `rep_redundant` is a-priori insurance.
 - At the corner, dropping the margin also drops its decodes (fill_coded
   0.56 % at c3hg), which copies would have covered anyway. The net is
   ≤ about 1 % of source.
-- No cell is buffer-limited in FlEC's sense. SACK-clocked release (§6.3)
-  frees every SACKed slot, so FlEC's one mid-stream bulk gain does not
-  apply.
+- By construction no cell is buffer-limited in FlEC's sense: SACK-clocked
+  release (§6.3) frees every SACKed slot, so FlEC's one mid-stream bulk
+  gain does not apply. This was not measured on these rows.
 - The single-path throughput identity (§3.7) caps funded r at parity.
 - The decode-closed latency (4–6×) is a max-of-k effect that a count does
   not change.
 
-So the predicted effect is ≤ 0.5 % of wire at the shipped corner and
-≤ 1.7 % at the only measurable funded point. Both are an order of magnitude
-under the completion spread. The bound is also an upper bound: it credits
-the ledger with every preempted copy.
+So the predicted effect is ≤ 0.5 % of wire at the shipped corner (≤ 3.4 %
+if the re-fires are reachable) and ≤ 1.7 % at the only measurable funded
+point. All are well under the completion spread (c3hg CTL ±15 % around its
+median). The bound is also an upper bound: it credits the ledger with every
+preempted copy.
 
-*Correction to this branch's first draft (before any registration was
+The bound's own limits:
+
+- The counters come from one seed and n = 4.
+- They were taken on the September binary, which ran c3hg and sc2 at about
+  2 Mbit/s against 20 and 100 Mbit/s links (`OUT-OF-BAND-RESULT` on 69 of
+  72 rows; §37 records the sc2 regression as since fixed in `1b890e0`).
+- A launch-day binary could carry different class shares. The verdict
+  rests on their ratio to the completion spread, not on their level.
+
+*Corrections to this branch's first draft (before any registration was
 recorded).* The first draft attributed the funded arms' excess `dup_src`
 to double coverage. It read "84–92 % of GLIDE's extra corrections arrived
 redundant" and pre-registered `dup_src` as the primary measurand. By the
@@ -9549,8 +9570,9 @@ already arrived, a recovery-clock class that the ledger does not reach. The
 removable class is `preempt_src`. Its excess over CTL is 4–30× smaller
 than the `dup_src` excess. That pre-registration was committed on this
 unpushed branch and withdrawn (reset) before any push or VM contact, so no
-registered outcome was changed. The paper commit on this branch carries
-only the corrected text.
+registered outcome was changed. The draft's stateless prior term (see the
+formula above) was also replaced by the bank. The paper commit on this
+branch carries only the corrected text.
 
 **Premises found false or imprecise.**
 
@@ -9585,25 +9607,31 @@ absolute).**
 
 Pure law: `raptorpath-math/src/dof.rs`, with tests in
 `raptorpath-math/tests/dof_ledger.rs`. The signature is
-`(r_beta, components: &[(k_c, a_c)], n_n, p)`, with no hint, δ or ρ.
+`(components: &[(k_c, a_c)], bank)`, with the bank accrued by
+`TaperBudget` and r(β). There is no hint, δ or ρ argument.
 
 - `dof_ledger_bulk_corner_owes_one_per_uncovered_missing_dof`: r = 0,
-  components {(3, 1), (2, 2), (0, 1)}, n_N = 100, p = 3 ⇒ Ω = 2.0 exactly.
-  It is finite when read through `controller_rate`'s clamped output at
-  β = 1, χ = 0.
+  components {(3, 1), (2, 2), (0, 1)} ⇒ B = 0 and Ω = 2.0 exactly. It is
+  finite when read through `controller_rate`'s clamped output at β = 1,
+  χ = 0.
 - `dof_ledger_without_feedback_is_the_taper_budget`: no components,
-  r ∈ {0.01, 0.064, 0.2}, n = 10 000 ⇒ cumulative emission ⌊r·n⌋ ± 1, and
-  equal to `TaperBudget::accrue` (spare = ∞) ± 1.
+  r ∈ {0.01, 0.064, 0.2}, n = 10 000 sources, with symbols ageing out of the
+  live set at a 94-symbol flight. Emission equals the shipped
+  `TaperBudget::accrue` (spare = ∞) symbol for symbol, so it is ⌊r·n⌋ ± 1
+  at r = 0.01 as well. The stateless form emits 0 there, and the test must
+  fail on it.
 - `dof_ledger_held_rows_reduce_what_is_owed`: 5 unknowns and 3 rows ⇒
   Ω = 2.0. The shipped count is 5 copies plus `ceil(5·ε̂) ≥ 1`.
-- `dof_ledger_live_copy_is_not_refired`: (k 1, a 1) gives Ω = 0 at r = 0
-  and Ω = 0.1 at r = 0.1. Past the path threshold, a = 0 and Ω = 1.
-- `dof_ledger_insurance_replaces_the_ceil_margin`: (k 10, a 10) gives
-  Ω = 0 at r = 0, against the shipped `ceil(10·0.05) = 1`, and Ω = 2.0 at
-  r = 0.2.
-- `dof_ledger_one_law_across_the_dial`: at every preset and ±2 % nudge,
-  `|ΔΩ| ≤ (Σ a_c + n_N)·|Δr(β)|`, which → 0. Ω is non-decreasing in r,
-  including across the Bulk preset.
+- `dof_ledger_live_copy_is_not_refired`: (k 1, a 1) after the copy is
+  sent gives Ω = 0 at r = 0 and Ω = B = 0.1 at r = 0.1. Past the path
+  threshold, a = 0 and Ω = 1 (+ B).
+- `dof_ledger_insurance_replaces_the_ceil_margin`: 10 copies sent for
+  (k 10, a 10) give Ω = 0 at r = 0, against the shipped
+  `ceil(10·0.05) = 1`, and Ω = B = 2.0 at r = 0.2.
+- `dof_ledger_one_law_across_the_dial`: run the same symbol sequence at
+  every preset and its ±2 % nudges. Cumulative Ω satisfies
+  `|ΔΩ| ≤ (sources + copies)·|Δr(β)|`, which → 0. Ω is non-decreasing in
+  r, including across the Bulk preset.
 
 Wiring (measurement-discipline rule 1), in `src/net/tests.rs`:
 
