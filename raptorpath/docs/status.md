@@ -10896,6 +10896,92 @@ fresh builds (322 s and 319 s), suites, smoke, then the battery
   exceed BASE-against-BASE′.
 - Either way, §45's guard needs an A/A pair in its first run.
 
+## 41b. `RWM_PLACE_WIRE` gate-off against main — an A/A-calibrated guard — pre-registration
+
+§41's BASE gate failed on one clause on the better side (c1d `lag_E_cli`
+−28.9 % against 28.5 %), and that gate had never been sized against two
+identical binaries. The user chose a calibrated re-test over archiving.
+This section also fixes the guard rule that §45 uses for every
+simplification stage.
+
+**Question.** Is the `diag36` binary with the placement arm off
+(`RWM_PLACE_WIRE` unset) worse than main's binary on any §21 clause, beyond
+what two runs of main's own binary differ by?
+
+**Trees.**
+- BASE: main `4926822`.
+- MAIN and WIRE: `diag36` at `85be32a` (engine = main + the placement arm
+  and its §41 witness change), gate off for MAIN and on for WIRE.
+- Each is built fresh in its own `git archive` tree with its own target
+  dir. No suites: the `diag36` tree passed them in §41's session.
+
+**Design.**
+- Cells c1s-400 and c1d-400, default store law, Bulk, `--window-reliable`,
+  env as §38.
+- BASE: n = 12 per cell (seeds 42 and 7 × 6 reps). MAIN: n = 6 per cell
+  (seeds 42 and 7 × 3 reps). WIRE: n = 6 per cell, reported only.
+- 48 rows plus a 2-row smoke (one per binary, c1s). Arms interleave per
+  block (BASE, MAIN, BASE, WIRE patterns rotated so each arm meets each
+  block position), fixed by the harness and pinned by a test.
+- Harness: plan 41's (`place38_parse.py`, plan 41 in `loopdiag_*`) with
+  BASE at n = 12 and MAIN and WIRE at n = 6. §41's rules carry over:
+  precondition, both locks (`test -e`), root-owned tmpfs, `ABORT-BIN`, and
+  `LD_HARD` = launch + 4 h.
+
+**Why a raw max fails (dry-run on §41's BASE rows, before writing this).**
+Over all 3/3 splits of §41's six BASE rows per cell, the clause attaining
+the max of raw relative differences was a lag clause in 20 of 20 splits at
+both cells (`srv_lag_E` 14, `cli_lag_E` 6). A raw max would therefore be
+blind to CPU and goodput. Each clause is scaled by its own null spread.
+
+**The statistic (fixed now; one-sided, one number over both cells).**
+- **Rows and clauses.** Per cell, the 18 rows are pooled (12 BASE + 6
+  MAIN). The clauses are §21's as scored in §41: goodput, client and server
+  CPU/GB, `lag_E_cli`, `lag_E_srv`, and `rtp_floor` per leg. Each has a
+  worse direction: lower goodput; higher CPU, lag and rtp floor.
+- **One relabelling** picks 6 rows per cell as "MAIN", 3 from each seed
+  (matching the true MAIN's seed balance). The rest are the reference.
+- **Clause value.** For relabelling π and clause c,
+  x_c(π) = worse-signed (med(sel) − med(ref)) / med(ref).
+- **Scaling.** z_c(π) = x_c(π) / sd_c, where sd_c is the sd of x_c over
+  10 000 relabellings (RNG seed 4141).
+- **Statistic.** T(π) = max of z_c(π) over all clauses of both cells.
+- **p-value.** p = the share of the 10 000 relabellings with T(π) ≥
+  T(true), where "true" is the real MAIN rows.
+- **Gate PASS iff p > 0.05.**
+- **Resolution table, computed from BASE rows alone before MAIN is read:**
+  per clause, the A/A q95 of |x_c| over 3+3-vs-6 splits of BASE's 12 rows,
+  beside its §21 tolerance. It states what the guard cannot see. This is
+  the calibration the user asked for.
+- **Reported beside the gate:** every clause's §21 reading of MAIN against
+  all 12 BASE rows, z_c(true), and the run-order values.
+
+**Also run, reported only: WIRE.** `RWM_PLACE_WIRE=1` on the `diag36`
+binary, 6 rows per cell (3 per seed), scored by the same statistic against
+BASE in its own pooled relabelling. That is 12 more rows. It gives the
+promote-or-archive call direct evidence.
+
+**Decision rule.**
+- **PASS:** the gate-off binary may reach main. Under §45's rule ("an arm
+  is promoted or archived at its verdict"), the user then makes the
+  promote-or-archive call on the arm. The WIRE readout and §38/§41 are the
+  evidence.
+- **FAIL:** tag `archive/place-wire`, revert the arm's engine merges from
+  `diag36`, and keep the docs, harness and ledgers.
+- **Guard reuse:** this statistic, with BASE at n = 12 per cell, is §45's
+  guard from here on.
+
+**Pinning.** MAIN and WIRE are `diag36` at `85be32a`. `raptorpath/src` is
+unchanged from §41's tested tree `40c55dd`; that is checked before launch,
+which is why no suites run.
+
+**Predictions.** In §41, gate-off against BASE read +0.6 % client CPU and
++1.2 % goodput at c1s, and only the c1d lag clause failed (better side).
+So p > 0.05: PASS. WIRE reads about +1–2 % client CPU at c1s: likely
+inside the A/A resolution, reported.
+
+**Duration.** Two builds (≈ 11 min) and 50 invocations (≈ 11 min).
+
 ## 42. The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
 
 Two read-only reports, reviewed with the advisor. No code, no VM.
