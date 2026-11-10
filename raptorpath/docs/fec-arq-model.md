@@ -1830,25 +1830,49 @@ its own backlog was draining keeps that dwell as its price. That price is
 pessimistic, and a pessimistic price is absorbing: the leg is never
 sampled again, so the price never refreshes. In c1d DEF1024 s42 r2 (p34)
 leg 1 reads `rtt=156` ms against quinn's `wrtt=3` from t = 0.5 s to the end
-of the row. Every full-row lock-out in the ledgers froze within the first
-second (t = 0.5–1.0 s), and all of them ran under a static `RWM_STORE=<n>`:
+of the row.
 
-- c1d: 6 of 18 p34 rows locked for the whole row, at caps 768–2048, and 2
-  more froze mid-row (shares 0.063 and 0.128, at 1536 and 512).
-- c8: 5 of 8 p27 rows, at caps 256–768.
-- At the default store law it is rare. Main's binaries show 1 lock-out in
-  149 two-leg rows (anchor-diag, c8 under the `PRS` arm, s7: leg 1 frozen at
-  137 ms against `wrtt` 44 from t = 0.5 s). The `[LOOPDIAG]` binary shows
-  0 in 12 (p29).
+*Where lock-outs happen (status §38 amendment 2).* A scan of every committed
+two-leg sender log (`tools/l1/place38_onset.py`; LOCKED = egress share
+< 10 % and median `rtt` ≥ 3 × median `wrtt`):
+- Static `RWM_STORE=<n>` rows: 27 of 110 LOCKED (c1d 10 of 59, c8 17 of
+  51), across p27, p29, p34 and disp36. disp36 ran main's binary, so the
+  `[LOOPDIAG]` instrument is not the cause.
+- Default-law rows: 1 of 161, anchor-diag c8 `PRS` s7 (main's binaries:
+  1 of 149; the p29 `[LOOPDIAG]` binary: 0 of 12).
+- Every LOCKED row's onset is at t ≤ 1.0 s: ≤ 0.5 s in 21, 0.8 s in 6,
+  1.0 s in 1. No lock-out starts later. Two recovered late in the row (at
+  about 3 s and 10 s).
+- By cap, lock-outs form a band: c8 0/6 at 16–64, 1/6 at 128, 2/4 at 192,
+  5/6 at 256, 6/9 at 384, 2/6 at 512, 1/4 at 768, 0/10 at 1 024–2 048; c1d
+  0/9 at 128–384, 2–3 per 7–10 at 512–2 048, 0/8 at 3 072–4 096. Above the
+  band the active leg's own queue lifts its price past the frozen one, so
+  the idle leg re-enters.
 
-The instrument does not cause it. The same p29 binary locked 2 of 3 rows at
-c8 `RWM_STORE=384` and 0 of 12 at the default law. What raises the rate is
-the static cap. Static and default rows alike read `RWM_STORE_BOOT=128`, so
-the boot value does not explain the difference; how the static cap feeds
-the start-up burst is not established. It is still a defect of the law, because nothing in the price
-can leave that state, and it occurs at the default law too.
-(Classifier: egress share < 10 % and median `rtt` ≥ 3 × median `wrtt`; the
-scan covers every committed c1d and c8 sender log.)
+*The mechanism is the static arm's start-up.* `RWM_STORE=<n>` sets
+`store_env_set`, which turns `plain_dyn_cap` off (`sender_policy.rs`). That
+removes the boot cap (128), the gain·BDP law, `RWM_DELTA_CAP`,
+`RWM_SUM_CAP`, the path pool, the honest cap and the per-path `sout`
+gauge, and the window is n from the first symbol. (`RWM_STORE_BOOT=128`
+is still echoed on `[GATES]` but is not read.)
+- Before any echo both legs carry the 50 ms seed, so placement splits the
+  first burst evenly whatever the legs' capacities.
+- At c8 the 20 Mbit/s leg takes about half of n at once. At t = 0.3 s it
+  has 96 of 212 in flight in DEF256 s42, and its echoes then read
+  156–390 ms against `wrtt` 42–46. Its srtt jumps, placement leaves it, it
+  drains, and its price freezes at the spike.
+- At c1d the same burst splits over two 1 Gbit/s legs and one leg's echoes
+  still read 54–369 ms in the first second, against `wrtt` 2–7. Where that
+  dwell sits (sender backlog or receiver) is not resolved offline.
+- The default law boots the whole pool at 128 and grows it from measured
+  BDP, so its first burst is at the band's lower edge (c8 static 128: 1 of
+  6). That is why the default law locks rarely (1 in 161). It is not
+  immune: the frozen price is the law's, and only the trigger is the
+  start-up.
+- The corrected base below also prices the first burst. Quinn's RTT exists
+  from the handshake, so at c8 the slow leg's cold price is ½·(43 − 14) ms
+  above the fast leg's, not equal. That shrinks the trigger as well as
+  removing the absorbing state; it is expected, not yet measured.
 
 *The constraint.* When I_i = 0 the price may read only state that refreshes
 without our symbols, or state that is never pessimistic. Load-dependent
@@ -1871,19 +1895,19 @@ the sender's `[DIAG]` (`rtt`, `wrtt`, `rtp_us`) and `[LOOPDIAG]`
 *Table 5.7a.* Gap g in nats; a locked leg is egress share < 2 % with
 median `rtt` ≥ 3 × median `wrtt`.
 
-| price base on L and A | 6 locked c1d rows (p34) | 5 locked c8 rows (p27) | 11 fresh c8 rows: shift against shipped |
+| price base on L and A | 6 locked c1d rows (p34) | 5 locked c8 rows (p27) | 11 fresh c8 rows: shift against shipped, per-row median over in-transfer `[DIAG]` lines |
 |---|---|---|---|
 | shipped `(½+ε)·srtt` | +35 to +116 | +17 to +57 | 0 |
-| `(½+ε)·(RTprop + S)`, S = p50 − min kept | +2.7 to +58 (4 of 6 ≥ 20) | +1.0 to +25 (3 of 5 ≥ 12) | −7.0 to +1.2 |
-| `(½+ε)·(RTprop + S)`, S = p50 − RTprop kept | +26 to +94 | +14 to +50 | −6.9 to +0.6 |
-| `(½+ε)·RTprop` | −0.2 to +0.1 | +1.3 to +6.3 | −7.9 to −0.7 |
-| `(½+ε)·ŵ`, quinn's srtt | **−1.3 to +0.1** | **−0.7 to +3.8** | **−2.6 to +0.9 (median −0.2)** |
+| `(½+ε)·(RTprop + S)`, S = p50 − min kept | +2.7 to +58 (4 of 6 ≥ 20) | +1.0 to +25 (3 of 5 ≥ 12) | −7.0 to +1.2 (from row medians) |
+| `(½+ε)·(RTprop + S)`, S = p50 − RTprop kept | +26 to +94 | +14 to +50 | −6.9 to +0.6 (from row medians) |
+| `(½+ε)·RTprop` | −0.2 to +0.1 | +1.3 to +6.3 | −5.0 to −1.0 (median −1.5) |
+| `(½+ε)·ŵ`, quinn's srtt | **−1.3 to +0.1** | **−0.7 to +3.8** | **−2.5 to +1.0 (median −0.4)** |
 
 So the joint derivation's per-leg (RTprop + S), kept when idle, does not
 cure the lock-out. S on main is app-echo and so dwell-inclusive. Its last
 window is the dwell spike that idled the leg: 140 ms of S at c1d r2, 127 ms
-at c8 DEF256 s42. RTprop alone cures it but moves every fresh c8 row by up
-to 7.9 nats toward the slow leg, because it drops the slow leg's network
+at c8 DEF256 s42. RTprop alone cures it but moves every fresh c8 row toward
+the slow leg (per-row medians −1.0 to −5.0 nats), because it drops the slow leg's network
 jitter and its own live netem queue from the price. Quinn's packet-timed
 srtt ŵ_i does both jobs. It excludes the sender's local dwell, and it keeps the
 network delay, jitter and queue. The idle leg's `rtt` − `wrtt` is 83–367 ms
@@ -1943,6 +1967,25 @@ construction). δ enters only through w_bw(δ), unchanged, and ρ does not
 enter. The `?:` chain is an information-availability fallback, as in
 `srtt_of`, and selects no law.
 
+*Units: ref and the base's clock (status §38 amendment 2).* The base is
+wire-clocked and ref = min_j s_j is echo-clocked. That does not mix units
+inside a cost: every term is in seconds, and ref divides every term of
+every leg by the same number. So ref sets only the softmax's temperature in
+seconds, T·ref. Switching ref to the base's clock, ref = max(min_j ŵ_j,
+1 ms), rescales every gap by min s / min ŵ and creates no shift of its own.
+- On the 11 fresh c8 rows it moves the per-row median shifts by ≤ 0.4 nats,
+  because the fast leg (the ref leg) has s ≈ ŵ.
+- On the locked rows it widens the arm's gaps to −10.4…+0.2 (c1d,
+  ×2.3–8) and −0.9…+4.0 (c8). Every lock-out is still cured.
+- What it would change is the temperature wherever dwell makes s ≫ ŵ on
+  every leg. At c1d default (s ≈ 20–45 ms, ŵ ≈ 3 ms) the softmax would
+  sharpen ×7–15 on queue differences. That is a second mechanism, a change
+  to T, not to the lock-out, and it belongs to T's derived form,
+  T·ref = (√6/π)·σ̂_e, in which ref cancels.
+- So the arm keeps ref. When dwell dominates, the queue term (I_i/W_i)·s_i
+  carries most of the cost difference under the arm, and that is intended:
+  the shipped base counted the same dwell a second time.
+
 *Fixed point, c1d (symmetric legs).* Both legs read ŵ = 2–8 ms on every p34
 and p27 row, and ε̂ = 0, so c_1 − c_0 = (I_1·s_1/W_1 − I_0·s_0/W_0)/ref +
 ½·(ŵ_1 − ŵ_0)/ref. Each leg's own cost rises strictly with its own load,
@@ -1973,19 +2016,27 @@ equilibrium.
 - The circularity is harmless because the S it reads is live. It drains
   with the load, and quinn sees it drain, because the leg keeps carrying.
 - On the 11 fresh c8 rows the arm moves g by the local dwell only, δg =
-  [(½+ε̂_1)(ŵ_1 − s_1) − (½+ε̂_0)(ŵ_0 − s_0)]/(ref·T). That is a median
-  of −0.2 nats, and |δg| ≤ 0.9 except two rows (−2.6 at DEF192 s42 and −1.4
-  at DEF1024 s42).
-  - In those two rows the slow leg carried a stale local dwell: s_1 − ŵ_1
-    = 16 and 32 ms.
-  - The arm reads them lower, which is the correction itself.
-  - In share terms, open-loop: DEF192 s42 goes from 5.7 % to about 45 %
-    (logit −2.81 → −0.21), DEF1024 s42 from 15.6 % to about 43 %, and the
-    other nine move by a factor ≤ e^0.9 ≈ 2.5.
-  - These are upper bounds. The slow leg's own queue term rises as it
-    takes load, which shrinks the share's response; closed-loop shares are
-    not computed, because per-leg W_i is not in the ledgers. §38 measures
-    the 192 cell.
+  [(½+ε̂_1)(ŵ_1 − s_1) − (½+ε̂_0)(ŵ_0 − s_0)]/(ref·T). δg does not depend on
+  the load, so it is evaluated on every in-transfer `[DIAG]` line. The
+  per-row medians are −0.2 to −0.5 nats at caps 128–512, −0.9 at 768, −2.5
+  and −1.3 at 1 024, and +1.0 and +0.1 at 2 048.
+  - An earlier version of this paragraph took δg from each row's medians
+    of s and ŵ and read −2.6 at DEF192 s42 (an open-loop 5.7 % → 45 %).
+    That row is not stationary: its fast leg froze at 416 ms against
+    `wrtt` 23 from 1.0 to 2.5 s while the slow leg carried everything, and
+    then the roles swapped. Medians across the two phases describe neither,
+    and per line its median shift is −0.43.
+  - The 1 024 rows oscillate within each 250 ms window between a loaded
+    and an idle slow leg. In the idle phases its echo srtt holds up to
+    130 ms of local dwell above ŵ (e.g. `rtt` 305 against `wrtt` 172), and
+    the arm reads that stale dwell lower, which is the correction itself.
+    These rows already sit at capacity share (0.156–0.160 against 0.167),
+    the regime of the c8 default cell, whose share clause (±0.03) §38
+    gates.
+  - Shifts are open-loop and evaluated at I_A = 0, so they are upper
+    bounds on a share move. The slow leg's own queue term rises as it takes
+    load; closed-loop shares are not computed, because per-leg W_i is not
+    in the ledgers.
 - The low slow-leg share at caps 128–192 (1.7–5.7 %) comes from fresh prices
   (`rtt` − `wrtt` = 2 ms on three of the four rows). Where echo and wire agree
   it is unchanged by construction: when s_i = ŵ_i on
