@@ -9370,6 +9370,63 @@ Reported only; D1–D5's outcomes and the decision rule do not change.
 - *Estimator robustness.* The mode of r_4 is dropped, because it has no
   pre-registered bin width; the median stays.
 
+### 36. Amendment 4 — the row count, the lateness bound, tcpdump's user (before VM contact)
+
+- *Rows.* The enumerated grids give 2 blocks × (c1s 9 + c2 6 + c8 8 +
+  c1d 3 + NOCAP 3) = 58 rows, plus the 2-row smoke. The "54", "62" and "64"
+  written above were miscounts; the grids stand as listed.
+- *Lateness bound.* Lateness J on a train's anchor skb shortens its span
+  from k·b/R to k·b/R − J. So the train reads R/(1 − x), with x =
+  J/(k·b/R), an over-read of x/(1 − x), not x. At the c1s prediction (J
+  20 µs, k = 4) that is ≈ +22 %, not +18 %. The prediction is unchanged in
+  kind.
+- *tcpdump's user.* The capture runs with `-Z root`, so a build that drops
+  privileges before opening `-w` can still write the root-owned run dir.
+- *Witness set.* The DEF-arm witnesses carried over (`[GATES]`, the store
+  gate, every post-warm-up `win=` denominator equal to n, `[SUMCAP] eng`)
+  apply as listed in the pre-registration's witness line.
+- *Erratum to §37.* `goal-gate.md`'s rules live in
+  `docs/measurement-discipline.md` (ADR-0052). Main's CLAUDE.md already
+  cites that file; only an older branch's copy cites `goal-gate.md`.
+
+### 36. Amendment 5 — a pre-launch check row fails both capture witnesses (after one check row, before any scored row)
+
+*Check row.* `perf_rwm_c.sh c2 c2 bulk 100000000 1 single`, `RWM_STORE=128`,
+with the capture and `RWM_RDIAG=1`, in the real `rp-*` netns on main's
+binary. Not scored; no ledger kept. Results:
+
+- tcpdump 4.99.6 `-Z root` wrote a nanosecond pcap to root-owned /dev/shm,
+  with kdrop 0.
+- main prints `[RDIAG]` (22 lines).
+- netem on `cli0`: Sent 110 501 532 B and 90 115 pkt. `[TRUTH]`:
+  egress_skbs 18 599, netem_dropped_skbs 484, so 18 115 skbs released.
+- Captured on `srv0`: 17 161 skbs, 5.3 % low.
+- With m = 1 252: Σb is 105 151 140 (4.8 % low) and Σsegs is 89 231 (1.0 % low).
+- GRO is off on `srv0` and `cli0`.
+
+*Two defects.*
+1. Amendment 1's m rule ("most frequent payload ≤ 1 472 B") returns 36:
+   small client datagrams outnumber single-segment data skbs. m becomes the
+   payload that carries the most bytes, count × payload (here 1 252).
+2. The skb and byte gaps (≈ 5 %) agree with each other but not with the
+   datagram gap (1 %), so they are not one cause. The witnesses also compare
+   a filtered, windowed capture against all-protocol counters that cover the
+   qdisc's whole lifetime.
+
+*Next (before any scored row).* One kept diagnostic row reconciles skbs,
+bytes and datagrams:
+- the engine's fed loss against `[TRUTH]`;
+- unfiltered taps on `cli0` egress and `srv0` ingress, diffed per skb;
+- counter deltas over the capture window (qdisc, clsact, `ip -s link`,
+  `softnet_stat`);
+- `qdisc_pkt_len` and bstats from v7.0 `net/core/dev.c`, with orig_len,
+  IP length and `uh->len` dumped for multi-segment skbs.
+
+Whatever the cause, the scored capture becomes unfiltered, and every skb on
+the leg counts toward a train's span, since netem's rate server spaces them
+all. The battery launches only after the row reconciles within the
+witnesses' 1 %.
+
 ## 37. Model review — joint fixed point, internal audit, literature — no VM, record
 
 The user asked for the whole model and pipeline to be rated, with the
@@ -9451,62 +9508,334 @@ receiver → sender field should follow draft-ietf-quic-receive-ts
 - The CLAUDE.md reference to the deleted `goal-gate.md`.
 - Fixing the placement lock-out (B2).
 
-### 36. Amendment 4 — the row count, the lateness bound, tcpdump's user (before VM contact)
+## 38. The idle-leg lock-out — the wire-clocked placement base (`RWM_PLACE_WIRE`) — pre-registration
 
-- *Rows.* The enumerated grids give 2 blocks × (c1s 9 + c2 6 + c8 8 +
-  c1d 3 + NOCAP 3) = 58 rows, plus the 2-row smoke. The "54", "62" and "64"
-  written above were miscounts; the grids stand as listed.
-- *Lateness bound.* Lateness J on a train's anchor skb shortens its span
-  from k·b/R to k·b/R − J. So the train reads R/(1 − x), with x =
-  J/(k·b/R), an over-read of x/(1 − x), not x. At the c1s prediction (J
-  20 µs, k = 4) that is ≈ +22 %, not +18 %. The prediction is unchanged in
-  kind.
-- *tcpdump's user.* The capture runs with `-Z root`, so a build that drops
-  privileges before opening `-w` can still write the root-owned run dir.
-- *Witness set.* The DEF-arm witnesses carried over (`[GATES]`, the store
-  gate, every post-warm-up `win=` denominator equal to n, `[SUMCAP] eng`)
-  apply as listed in the pre-registration's witness line.
-- *Erratum to §37.* `goal-gate.md`'s rules live in
-  `docs/measurement-discipline.md` (ADR-0052). Main's CLAUDE.md already
-  cites that file; only an older branch's copy cites `goal-gate.md`.
+§37 verified the defect (B2): placement prices a leg from the app-echo
+srtt, which freezes when the leg carries nothing, so a leg that idled while
+its own backlog drained keeps that dwell as an absorbing price. Paper §5.7
+derives the correction and scores it on the committed ledgers (Table 5.7a,
+`tools/l1/place38_ledger_score.py`). This section pre-registers its build
+gate and a battery against main, same binary. Nothing here touches the VM.
 
-### 36. Amendment 5 — a pre-launch check row fails both capture witnesses (after one check row, before any scored row)
+**Premises checked (no VM).**
+- *The joint derivation's (RTprop + S), kept when idle, does not cure the
+  lock-out.* S on main is app-echo, so its last window is the dwell spike
+  that idled the leg: 140.6 ms in c1d DEF1024 s42 r2, 126.6 ms in c8 DEF256
+  s42. At I_A = 0 the idle leg's gap is still +2.7 to +58 nats on the 6
+  locked c1d rows (4 of 6 ≥ 20) and +1.0 to +25 on the 5 locked c8 rows.
+- *Ŝ per leg on main.* The only per-leg spread is Copa's `rtt_win` (the
+  last 256 app-echo samples), which is dwell-inclusive and frozen when idle.
+  No dwell-free distribution exists on main. The dwell-free per-leg delay on
+  main is quinn's smoothed srtt (`PathView.rtt_us`), which reaches the
+  scheduler only under `RWM_COPA_WIRE` (off; `copa_wire=false` on the
+  ledgers' `[GATES]`).
+- *Windowed-min staleness.* Copa's 10 s min expires only inside
+  `record_rtt`, so an idle leg holds its lower envelope (optimistic). Under
+  a standing queue held for more than 10 s it expires upward, and an idle leg
+  then holds a pessimistic floor. Nothing keeps it honest except a drain
+  probe, which is a mode. The corrected price does not read it.
+- *The defect is absent at main's default store law.* §32's battery and
+  store-law-n1 have 0 lock-outs in 24 c1d and 12 c8 rows. Every full-row
+  lock-out froze within the first second under a static `RWM_STORE=<n>`:
+  - p34 c1d: 6 of 18 rows locked for the whole row, plus 2 that froze
+    mid-row;
+  - p27 c8: 5 of 8 at caps 256–768.
 
-*Check row.* `perf_rwm_c.sh c2 c2 bulk 100000000 1 single`, `RWM_STORE=128`,
-with the capture and `RWM_RDIAG=1`, in the real `rp-*` netns on main's
-binary. Not scored; no ledger kept. Results:
+  A default-only battery would read "no cost" from a no-op, so the cure is
+  scored at static caps where main reproduces it, and the default cells are
+  no-regression cells.
+- *c1d's cost and c8's gain have opposite signs.*
+  - c1d, within a cap: locked one-leg rows ran +1.6 to +16.0 % ahead of
+    two-leg rows (×1.35 μ_R).
+  - c8: locked rows ran 88–90 Mbit/s, against 102–103 for two-leg rows at
+    caps 384–768.
+- *The cold price.* r = 10 never binds (`cold_r = 0`). The binding cold
+  price is the 50 ms srtt seed. Paper §5.7/§11.2 are corrected. The r clamp's
+  step at ε̂ = 1 is owed and outside this arm.
 
-- tcpdump 4.99.6 `-Z root` wrote a nanosecond pcap to root-owned /dev/shm,
-  with kdrop 0.
-- main prints `[RDIAG]` (22 lines).
-- netem on `cli0`: Sent 110 501 532 B and 90 115 pkt. `[TRUTH]`:
-  egress_skbs 18 599, netem_dropped_skbs 484, so 18 115 skbs released.
-- Captured on `srv0`: 17 161 skbs, 5.3 % low.
-- With m = 1 252: Σb is 105 151 140 (4.8 % low) and Σsegs is 89 231 (1.0 % low).
-- GRO is off on `srv0` and `cli0`.
+**The arm (paper §5.7).** `RWM_PLACE_WIRE=1`, default off, echoed on
+`[GATES]`:
 
-*Two defects.*
-1. Amendment 1's m rule ("most frequent payload ≤ 1 472 B") returns 36:
-   small client datagrams outnumber single-segment data skbs. m becomes the
-   payload that carries the most bytes, count × payload (here 1 252).
-2. The skb and byte gaps (≈ 5 %) agree with each other but not with the
-   datagram gap (1 %), so they are not one cause. The witnesses also compare
-   a filtered, windowed capture against all-protocol counters that cover the
-   qdisc's whole lifetime.
+```text
+   E_i  =  (I_i/W_i)·s_i  +  (½ + ε̂_i)·ŵ_i,    ŵ_i = wire_i ?: min_j wire_j ?: s_i
+```
 
-*Next (before any scored row).* One kept diagnostic row reconciles skbs,
-bytes and datagrams:
-- the engine's fed loss against `[TRUTH]`;
-- unfiltered taps on `cli0` egress and `srv0` ingress, diffed per skb;
-- counter deltas over the capture window (qdisc, clsact, `ip -s link`,
-  `softnet_stat`);
-- `qdisc_pkt_len` and bstats from v7.0 `net/core/dev.c`, with orig_len,
-  IP length and `uh->len` dumped for multi-segment skbs.
+The arm and the placement law are the same everywhere else.
+- ŵ_i is mirrored into `PathState` for every leg at every ack batch on any
+  leg and at every path report.
+- The `[ETA]` stamp (`emit_source.rs` `E_picked`) and X_i read the same E_i.
+- Gate off: the cost table is byte-identical
+  (`place_costs_match_the_pinned_table`), and `[ETA]`'s added fields render
+  `-`.
+- New gauges (paper §5.7): `[ETA]` `ref_fl=`, `w_cold=` and `w_mv=` (the
+  argmin-moved execution witness), and `[DIAG]` `p<i>: wpl_us=`.
 
-Whatever the cause, the scored capture becomes unfiltered, and every skb on
-the leg counts toward a train's span, since netem's rate server spaces them
-all. The battery launches only after the row reconciles within the
-witnesses' 1 %.
+**Build gate (red-first, before any VM contact).** Each test is written
+first and fails on main, on its assertion where the API allows it, and
+otherwise because the arm's setter is missing.
+- Tests in `src/scheduler/tests.rs`. They feed Copa through
+  `record_rtt_sample` under `MockClock`, not through `set_rtt` (which feeds
+  only the estimator and leaves Copa's min and window empty).
+  1. `idle_leg_price_is_its_wire_transit_not_its_frozen_srtt`. This replays
+     the p34 c1d r2 shape: leg 1 gets 2.5 ms floor samples, then a spike to
+     156 ms, then silence for 5 s on the mock clock. Leg 0 is active at
+     9 ms. With I_1 = 0, wire_1 = 3 ms and the arm on, leg 1's cost equals
+     (½ + ε̂_1)·3 ms / ref to 1e-12. With the arm off it equals
+     ½·s_1/ref, with s_1 ≥ 100 ms (the defect, pinned).
+  2. `idle_leg_is_not_absorbing_at_symmetric_legs`. This uses the same
+     state, with I_0/W_0 = 0.6. Arm on: P(leg 1) ≥ ½. Arm off:
+     P(leg 1) < 1e−15.
+  3. `symmetric_legs_at_equal_state_split_exactly_half`. Equal
+     (I, W, s, ŵ, ε̂) at three load levels (I/W = 0, 0.5, 1.5), 2 and 3
+     legs, arm on and off: every p = 1/N ± 1e-12.
+  4. `wire_base_equals_shipped_when_echo_equals_wire`. Every state of
+     `cost_table_states()` with wire_i := s_i, arm on, matches the pinned
+     table to 1e-12. This is the c8-fresh preservation, made absolute.
+  5. `c8_fresh_state_share_is_unchanged`. The p27 c8 DEF128 s42 state
+     (s = 16 / 45 ms, ŵ = 14 / 43 ms, ε̂ = 0.026 / 0.017, I_0/W_0 = 0.38,
+     I_1 = 0, Bulk) must satisfy |ln(P1_on/P1_off)| ≤ |δg| + 1e-9, where δg
+     is paper §5.7's open-loop shift computed in the test (0.007 nats here).
+  6. `locked_c8_leg_is_sampled_again`. This is the p27 c8 DEF256 s42 state
+     (s = 24 / 390 ms, ŵ = 23 / 45 ms, I_1 = 0). Arm on: P(leg 1) ≥ e^−4.
+     Arm off: P(leg 1) < 1e−20.
+  7. `own_cost_is_increasing_in_own_in_flight_with_the_wire_base`, the
+     fixed point's premise: c_i is strictly increasing in I_i, with the
+     other leg held.
+  8. `unmeasured_wire_takes_the_best_measured_wire`. With wire_1 absent,
+     ŵ_1 = min_j wire_j, and `w_cold` counts it.
+  9. `wire_arm_is_independent_of_the_dial`. At δ·(1 ± 0.02) around
+     Realtime, Auto and Bulk, the arm's difference c_on − c_off is the same
+     to 1e-12. So the arm adds no δ dependence and no step at a preset, and
+     the existing continuity gates carry over unchanged.
+  10. `every_arm_absent_leaves_the_probabilities_bit_identical`, extended to
+      `set_place_wire(false)`.
+- `src/gates/tests.rs`: `place_wire_resolves_off_by_default_and_echoes`.
+- `tests/place_wire_loopback.rs` (rule 1: the wiring routes there):
+  - `wire_srtt_mirrors_every_leg_including_an_idle_one`. A two-leg loopback
+    transfer in which leg 1 is held idle for ≥ 1 s by a test-only placement
+    override, then released. In every `[DIAG]` line, each leg's `wpl_us`
+    lies within 1 ms of `wrtt`, including leg 1 while its `infl` = 0.
+  - `eta_stamp_reads_the_arms_E`. With the arm on, the stamped `E_picked`
+    equals `expected_delivery_load` of the arm's E for the picked leg.
+- Full suites on the build (release, debug, doc, wasm, parsers), as §32.
+  A real failure is `ABORT-TESTS`. The wasm golden fingerprints do not move
+  (no visualizer change).
+
+**Battery.** One binary, built fresh on disk and run from `/dev/shm`. Arms
+`MAIN` (gate unset) and `WIRE` (`RWM_PLACE_WIRE=1`).
+
+| cell | store | role |
+|---|---|---|
+| `c1s-400` | default | no-op control (N = 1) |
+| `c2-100` | default | no-op control (N = 1) |
+| `c1d-400` | default | no regression |
+| `c8-100` | default | no regression; fresh-share preservation |
+| `c1d-400` | `RWM_STORE=1536` | the cure and its c1d cost (p34 rows: 2 of 3 froze) |
+| `c8-100` | `RWM_STORE=256` | the cure (p27: 2 of 2 locked) |
+| `c8-100` | `RWM_STORE=512` | the cure past the store-limited regime (p27: 1 of 2) |
+
+- *n and seeds.* n = 6 per arm and cell (3 reps × seeds 42 and 7), arm
+  order rotated per block, as §32. 84 rows after a 2-row smoke (`c8-100`
+  `RWM_STORE=256` in each arm).
+- *Env.* §32's: `RWM_RTOBS=1 RWM_RDIAG=1 RWM_GEN=0 RWM_DIAG=1
+  RWM_PERF_TIMEOUT_S=150`, the standard `env -u` list, Bulk,
+  `--window-reliable`, shipped defaults apart from the column above.
+- *Harness.* `tools/l1/place38_run_all.sh`, `place38_battery.sh` and
+  `place38_parse.py` (tested by `test_place38_parse.py`), derived from
+  §32's `threadpd_*`, scoring through `l1ab.py`.
+- *Rules (shared file).* Launch precondition: both locks free (`test -e`
+  only), no cargo/rustc (`pgrep -x`), `procs_running` ≤ 2 in each of 5
+  samples 2 s apart. Both locks for the whole session. Binary and run dir
+  on `/dev/shm`, with the `ABORT-ONDISK` guard. io `full avg10` before and
+  after every row, flagged at ≥ 20, never voided.
+
+*Witnesses (row void otherwise).*
+- Binary: `[GATES]` echoes `RWM_PLACE_WIRE=0` on MAIN rows and `=1` on WIRE
+  rows, and `RWM_STORE` matches the cell.
+- Store: `[SUMCAP] eng` is absent or 0. At static cells every post-warm-up
+  `win=` denominator equals n.
+- WIRE, two-leg cells:
+  - `wpl_us` is numeric on both legs in every post-warm-up `[DIAG]` line;
+  - it lies within 1 000 µs of `wrtt` in ≥ 95 % of those lines;
+  - the final `[ETA]` line has `w_mv` > 0.
+- WIRE, N = 1 cells: `w_mv = 0` exactly (one candidate). A non-zero value is
+  a `REGRESSES` finding, not a void.
+- MAIN rows: `wpl_us=-`.
+
+**Readouts (fixed now).**
+- *Lock-out (per row and leg).* A leg is LOCKED iff its `[TRUTH]` egress
+  share is < 10 % and its median post-warm-up (t ≥ 1 s) `[DIAG]` `rtt` is
+  ≥ 3 × its median `wrtt`. A row is LOCKED iff any leg is. This is wider
+  than Table 5.7a's 2 % so that a leg frozen mid-row counts. On the ledgers
+  it classifies 7 of 18 p34 c1d rows, 1 p27 c1d row (DEF768 s42) and 5 p27
+  c8 rows as LOCKED. No fresh row is LOCKED: the fresh c8 slow legs read
+  `rtt`/`wrtt` ≤ 1.25.
+- *Share.* The slow leg's (c8) or second leg's (c1d) `[TRUTH]` egress
+  share, as median [min–max].
+- *Clauses.* §21's pass rule per cell, WIRE against MAIN: goodput, client and
+  server CPU per byte, RTprop per leg, `[LAG]` p99 client and server, fed
+  loss and DNF. The MDEs are the cell's (c1s 4.9 %, c1d 5.6 %, c2 1.4 %,
+  c8 4.0 %), and WORSE / TREND-WORSE / BETTER / TREND-BETTER are as §21.
+- *c1d cost (stated, always reported).* At `c1d-400` `RWM_STORE=1536`,
+  WIRE − MAIN goodput as % of MAIN's median, with min–max. It is also
+  reported stratified:
+  - MAIN one-leg rows (LOCKED, or any leg share < 5 %) against MAIN two-leg
+    rows, which is the lock-out's accidental gain;
+  - WIRE rows against MAIN two-leg rows, which tests whether the arm costs
+    anything beyond that gain.
+  The same readout is given at `c1d-400` default.
+- *Reported only.*
+  - Idle-leg ŵ decay: per WIRE row, the largest post-warm-up `wpl_us` on a
+    leg with `infl` = 0, and its value 1 s later.
+  - `w_cold`, `ref_fl`, `cold_ge`, `cold_r`.
+  - The `[ETA]` `e_p50` / `e_p90` per arm.
+
+**Outcomes and decision rule (one verdict, in precedence order).**
+1. `UNSCOREABLE`: an abort cause fired, or a cell has < 3 live rows in
+   either arm.
+2. `NOT-REPRODUCED`: MAIN has < 2 of 6 LOCKED rows at every static cell. The
+   cure cannot be read. The default and control readings are recorded, and
+   nothing is decided on the arm. A single static cell that does not
+   reproduce is named, `NOT-REPRODUCED-AT(<cell>)`, and dropped from
+   outcome 4.
+3. `REGRESSES-AT(<cells>)`, if any of these holds:
+   - a §21 clause is WORSE at a control or default cell;
+   - `w_mv` ≠ 0 at a control;
+   - c8 default's slow-leg share medians differ by more than 0.03 between
+     arms (the fresh-share preservation);
+   - goodput is WORSE at a reproduced c8 static cell.
+4. `NOT-CURED`: any WIRE row is LOCKED at a reproduced static cell, or a
+   reproduced c8 static cell's WIRE goodput is not at least TREND-BETTER.
+5. `CURED-AT-COST(<x %>)`: none of the above holds, and the goodput clause
+   at `c1d-400` `RWM_STORE=1536` reads WORSE or TREND-WORSE (x = the stated
+   cost). Nothing ships on this verdict. It goes to the user with x, the
+   stratified c1d readout and the c8 gain. The choice is then either to ship
+   the cure and accept x at c1d under large static caps, or first to price
+   the receiver's per-leg cost, which is why one-leg rows run ×1.35 μ_R.
+6. `CURED`: as 5, with that clause WITHIN or better. This is a ship
+   candidate, merged on the user's go.
+
+No tuning in this battery: there is no re-run at another cap, threshold or
+gauge. A follow-up is a new registration.
+
+**Predictions (before any number).**
+- *MAIN lock-outs.* About 4 of 6 at c1d `RWM_STORE=1536` (p34: 2 of 3; p27
+  0 of 2 on an older binary), 5–6 of 6 at c8 `RWM_STORE=256`, about 3 of 6 at
+  c8 `RWM_STORE=512`, and 0 of 6 at both default cells.
+- *WIRE lock-outs.* 0 everywhere. At I_A = 0 the arm's gap on every ledger
+  lock-out is ≤ +3.8 nats, against +17 to +116 shipped.
+- *c8 `RWM_STORE=256`.*
+  - WIRE share: 0.03–0.19 (wide; the fresh rows bracket it at 192 and 384).
+  - WIRE goodput: 95–103, against MAIN's 88–90, so BETTER.
+- *c8 `RWM_STORE=512`.*
+  - WIRE share ≈ 0.15 and goodput ≈ 102.
+  - MAIN mixes locked rows (about 90) with fresh ones (about 102), so the
+    clause reads TREND-BETTER or BETTER.
+- *c1d `RWM_STORE=1536`.*
+  - WIRE goodput ≈ MAIN's two-leg level (p34 762).
+  - The pooled cost is −5 to −12 %, so WORSE or TREND-WORSE.
+  - WIRE against MAIN's two-leg rows reads WITHIN.
+  - Expected verdict: `CURED-AT-COST`.
+- *Defaults.* c1d: two legs in both arms (share 0.3–0.7), all clauses
+  WITHIN. c8: share 0.17–0.19 in both arms (|Δ| ≤ 0.03), all clauses
+  WITHIN.
+- *Controls.* All clauses WITHIN, and `w_mv = 0`.
+- *Idle-leg ŵ.* It moves on idle legs, as on the ledgers (c1d 3.0 → 2.6 ms;
+  c8 p1 42 → 46 → 45 ms). Its decay after a netem queue is slow (269 →
+  216 ms over 0.8 s), and it is reported only.
+
+*Abort table:* §32's (`ABORT-LOCK`, `-CRLF`, `-SHA`, `-SMOKE`, `-BUILD`,
+`-TESTS`, `-RC`, `-BRINGUP`, `-BUDGET`, `-ONDISK`, `VOID-COTENANT`),
+filled in the result.
+
+**Duration.** Build ≈ 6 min, then suites and tests as §32. The 86
+invocations take ≈ 35 min (c8 rows ≈ 20 s, others ≈ 12 s), and scoring
+≈ 5 min. That is inside the 4 h launch deadline and the 5 h cap. This
+section stops here: the build and the VM session start only on the user's
+go.
+
+### 38. Amendment 1 — the stamp, the fresh-share cell, the ladder, the confound (before VM contact)
+
+A review of the registration above found four gaps. They are fixed here,
+before any build or VM contact.
+
+- *The `[ETA]` stamp stays on the shipped E.*
+  - The arm as written above also moved `E_picked` (`emit_source.rs`).
+    That stamp rides the wire and feeds `[ETA]`/`[LAT]` and F̂, so the arm
+    would have had a second mechanism, and c1s and c2 would not be no-ops.
+  - The arm now changes `place_costs` alone; it keeps the ŵ mirror reads and
+    its gauges. Paper §5.7 says this.
+  - The stamp's predictor then differs from the law's by the local dwell
+    (½ + ε̂)·(s − ŵ), and X_i with this arm would compare the two. Neither
+    `RWM_PLACE_T_DERIVED` nor `RWM_PLACE_HOL` is combined with it here.
+  - Build-gate test `eta_stamp_reads_the_arms_E` is replaced by
+    `eta_stamp_is_the_shipped_E_under_the_wire_arm`: arm on and off, the
+    stamped `E_picked` is bit-identical.
+  - The controls' witness becomes two parts: `w_mv = 0`, and the `[ETA]`
+    line's `e_p50`/`e_p90` reads WITHIN between arms. The second is
+    reported, not gated.
+- *The regime the share must be preserved in is now in the battery.*
+  - The share clause above sat at c8 default (link-saturated, share ≈ 0.18).
+    The low-share regime is c8 caps 128–192.
+  - That regime is where Table 5.7a's largest open-loop shift sits: −2.6 nats
+    at DEF192 s42, about 5.7 % → 45 % in share terms. In that row the slow
+    leg carried a stale local dwell (`rtt` 84 against `wrtt` 68).
+  - Cell added: `c8-100` `RWM_STORE=192`, n = 6 per arm, the same witnesses.
+    That makes 96 rows plus the smoke, about 40 min.
+  - Clause `SHARE-PRESERVED` at that cell: the WIRE median slow-leg share
+    lies within [½, 2] × MAIN's median, or within ±0.03 of it.
+  - A miss is a `REGRESSES-AT(c8-192)` finding.
+  - Prediction: inside the band. Three of the four ledger rows at 128–192
+    had fresh prices, where the arm equals the shipped law, and the slow
+    leg's own queue term closes most of the open-loop shift.
+  - §21's goodput and CPU clauses are scored there as at the other cells.
+- *The verdict ladder keys on the stratified c1d comparison.*
+  - As written, the pooled c1d-1536 clause decided `CURED` against
+    `CURED-AT-COST`. If MAIN locks only 2–3 of 6 rows, the pooled median sits
+    at the two-leg level and would read no cost.
+  - Outcome 5 now reads: `CURED-AT-COST(<x %>)` iff §21's goodput rule,
+    applied to WIRE rows against MAIN's one-leg rows at `c1d-400`
+    `RWM_STORE=1536`, reads WORSE or TREND-WORSE. x is that median
+    difference.
+  - This needs ≥ 2 MAIN one-leg rows there, otherwise
+    `NOT-REPRODUCED-AT(c1d-1536)`. The pooled clause is reported beside it.
+  - Outcome 6 (`CURED`) is the same comparison reading WITHIN or better.
+  - Outcome 4 (`NOT-CURED`) now fires on lock-outs only: any WIRE row
+    LOCKED at a reproduced static cell. The c8 goodput gain is reported
+    separately and stratified the same way: WIRE against MAIN's LOCKED rows,
+    and WIRE against MAIN's fresh rows.
+  - A pooled c8 static goodput WORSE stays a `REGRESSES` finding. The
+    clause "not at least TREND-BETTER ⇒ `NOT-CURED`" is withdrawn.
+- *The confound behind "absent at the default law", resolved on the
+  ledgers.*
+  - Every LOCKED row in the p27/p34 tables comes from a static cap on the
+    `[LOOPDIAG]` binary, and the clean rows above came from main's binary
+    at the default law. Both read `RWM_STORE_BOOT=128` on `[GATES]`. So
+    "boots at 128 and grows" does not explain the absence; it was an
+    inference and is withdrawn.
+  - A scan of every other committed c1d and c8 sender log (anchor-diag,
+    p29, store-law-n1, thread-pd, thread-r1, thread-r2, thread-r3-diag,
+    thread-sk; the classifier above) separates the two. The instrument is
+    not the cause: the same p29 `[LOOPDIAG]` binary locked 0 of 12 rows at
+    the default law, and 2 of 3 at c8 `RWM_STORE=384` (c1d
+    `RWM_STORE=768` 0 of 3).
+  - The default law is not immune. Main's binaries show 1 LOCKED row in 149
+    two-leg default-law rows: anchor-diag, c8, `PRS` arm, s7, where leg 1
+    froze at 137 ms against `wrtt` 44 from t = 0.5 s.
+  - So the static cap raises the rate, and the default cells' expected
+    count is about 0 to 1 in 6, not exactly 0. Outcome 3's default cells
+    are therefore scored on §21's clauses and the share clause, not on a
+    lock-out count.
+  - §36's D8, registered on main's binary at static caps (c1d {128, 512,
+    2048}, c8 {16 … 1024}), answers reproduction on main's binary first. If
+    §36 runs first and D8 shows no frozen idle leg at c8 ≥ 256 or
+    c1d ≥ 512, then §38 is re-registered before its session, not run as
+    written.
+- *Stated for the reader.*
+  - Paper §5.7's fixed points are gaps at I_A = 0, not closed-loop shares:
+    per-leg W_i is not in the ledgers.
+  - Test 6 now pins I_0 = 0, ε̂_0 = 0.026 and ε̂_1 = 0.017, at which the arm's
+    gap is +3.8 nats and P(leg 1) = σ(−3.8) = 0.022 ≥ e^−4.
 
 ## 39. The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
 
