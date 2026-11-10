@@ -8,6 +8,8 @@
 //! (`io_owner`), the only code that calls quinn for the path.
 
 mod bbr_rs;
+#[cfg(test)]
+mod cc_sim;
 pub mod io_owner;
 mod l0_netem;
 mod protocol;
