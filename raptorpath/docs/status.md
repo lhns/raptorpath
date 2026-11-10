@@ -9467,6 +9467,24 @@ capture window).*
 - c8: leg 0 at 1.0000 / 1.0010, leg 1 at 1.0000 / 1.0028, kdrop 0.
 - All witnesses pass. The battery may launch.
 
+### 36. Amendment 7 — a named re-score for small-skb trains (before any score exists)
+
+About 27 % of c2 skbs are 36–40 B client datagrams. A k = 4 train of them
+spans microseconds, so the noise bound J/(k·b/R) that the scored estimator
+assumed does not hold for it, and a per-window max picks the shortest span.
+The c2 check row's L̂₄ of 1.07 is consistent with that.
+
+The scored estimator is not changed. Its re-score is named now, before
+`score.txt` exists. That re-score runs on the kept per-skb tables (offline,
+no VM). It uses a byte-floored train: from each anchor j, extend until
+Σb ≥ 4 × the row's byte-weighted median skb size. It feeds D1 and D2
+unchanged. It is reported beside the scored k = 4 result, and a verdict
+from it is a new registration.
+
+*Run tree.* `diag36` carries only docs and tools beyond main: the diff
+against `4926822` outside `raptorpath/docs` and `raptorpath/tools` is empty,
+so the engine is main's.
+
 ## 37. Model review — joint fixed point, internal audit, literature — no VM, record
 
 The user asked for the whole model and pipeline to be rated, with the
@@ -9547,6 +9565,27 @@ receiver → sender field should follow draft-ietf-quic-receive-ts
   constants missing from §11.2.
 - The CLAUDE.md reference to the deleted `goal-gate.md`.
 - Fixing the placement lock-out (B2).
+
+### 37. Addendum — what the design passes changed (no VM)
+
+- *The store law's time term has no source either.* §38 found no dwell-free
+  per-leg S on main: every ledger's S comes from app-echo samples that
+  include the sender's dwell. "L is the missing input" was too narrow: the
+  law lacks both L and a dwell-free S. §36 D6 (`rtt` − `wrtt`, whole ms)
+  cannot settle the ≈ 0.8 ms question at c1s. The µs fields of the `p<i>:`
+  block (`qsp_us`, `msd_us`, `tlag_us`) are to be read offline first.
+- *Placement.*
+  - Keeping RTprop + S when idle does not cure the lock-out. An idle leg's
+    last S is the dwell spike that idled it (140.6 ms at c1d DEF1024 s42
+    r2).
+  - What prices an unmeasured leg is the 50 ms srtt seed, not r = 10.
+  - The lock-out is rare at main's default store law (1 in 149 two-leg
+    default rows) and common at static caps.
+  - Whether it is a start-up artefact of the static arm (the traced row
+    locked by 0.5 s) is open, and it bears on every static grid, §36's c1d
+    and c8 rows included.
+- *User decisions 1 and 2 (a same-session competitor battery; q-only δ
+  authority on the store law) are still open.*
 
 ## 38. The idle-leg lock-out — the wire-clocked placement base (`RWM_PLACE_WIRE`) — pre-registration
 
@@ -10067,3 +10106,12 @@ Wiring (measurement-discipline rule 1), in `src/net/tests.rs`:
 - a Realtime (ρ < 1) cell.
 
 A pre-registration for any of them starts from the tests above.
+
+### 39. Addendum — the verdict's strength
+
+The bound behind "cannot help measurably" comes from one seed, n = 4, on the
+binary line that ran sc2 at about 2 Mbit/s. It reads as **not shown**, not as
+refuted. The parity derivation (funded r on one saturated path is capped at
+parity with ARQ) stands. The ledger would not make FEC act at Bulk; only an
+off-Bulk cell on the wire can show a gain. Owed: §11.6 reference entries,
+and the §9.8 and §10 wording.
