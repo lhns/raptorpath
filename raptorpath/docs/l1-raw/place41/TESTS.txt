@@ -1,0 +1,6 @@
+TEST main rc=0 wall=1339s passed=1163 failed=0 ignored=53 binaries=101 cmd=[timeout 7200 /home/VMUSER/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[timeout 3600 /home/VMUSER/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=121s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE timeout 3600 /home/VMUSER/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=0 wall=1166s passed=1026 failed=0 ignored=52 binaries=92 cmd=[timeout 7200 /home/VMUSER/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+TEST parsers rc=0 wall=19s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done]
+IDENTITY-PANICS 0
