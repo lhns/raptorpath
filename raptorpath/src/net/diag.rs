@@ -790,13 +790,6 @@ pub(crate) fn report(
             }
             (s, ev)
         };
-        // Cross-path-history attributions and
-        // how many the flight witness credited to the previous
-        // flight (spurious-retransmit class). Zeros without a feed.
-        let (xat_c, xat_w) = copa_feed
-            .as_ref()
-            .map(|f| f.attr_diag())
-            .unwrap_or((0, 0));
         // RWM_STORE_SACK_RELEASE: currently released (retained
         // but uncounted) / cumulative slots released — the store-
         // dwell mechanism gauge (win= already shows the uncounted
@@ -927,7 +920,7 @@ pub(crate) fn report(
             String::new()
         };
         crate::readout!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} {}{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -944,7 +937,6 @@ pub(crate) fn report(
             min_rtt_us as f64 / 1000.0,
             bdp_100m,
             dg.diag_sweeps, dg.diag_retx, dg.diag_gaps_dropped, cached_nack_budget,
-            xat_c, xat_w,
             mpr,
             sd2,
             wnd2diag,

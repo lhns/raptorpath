@@ -622,7 +622,7 @@ fn c1_attribution_lock_blocking_bench() {
             p.record_rtt_sample(Duration::from_millis(2));
             p.force_honest_anchor_for_test(); // the DH arm's O(1) deque
         }
-        let feed = Arc::new(CopaFeed::new_sampling_only(true));
+        let feed = Arc::new(CopaFeed::new());
         let frontier = AU64::new(0); // seqs sent so far
         let stop = AtomicBool::new(false);
 
@@ -728,7 +728,7 @@ fn c1_attribution_lock_blocking_bench() {
                             let mut sched = scheduler.lock();
                             let w = tq.elapsed().as_nanos() as u64;
                             let th = Instant::now();
-                            copa_attribute_newly(&feed, 0, now_us(), &newly, &mut sched);
+                            copa_attribute_newly(&feed, 0, &newly, &mut sched);
                             drop(sched);
                             (w, th.elapsed().as_nanos() as u64)
                         } else {
@@ -1080,9 +1080,7 @@ fn copa_feed_sack_dedupes_against_frontier() {
 }
 
 /// seq→path attribution: the seq is charged to the path it was (last)
-/// sent on; unknown seqs fall back to the ack path. A cross-path
-/// retransmit keeps the previous commitment as the flight-witness
-/// fallback.
+/// sent on; unknown seqs fall back to the ack path.
 #[test]
 fn copa_feed_seq_path_last_send_wins() {
     let feed = CopaFeed::new();
@@ -1090,49 +1088,7 @@ fn copa_feed_seq_path_last_send_wins() {
     feed.on_sent(10, 1); // retransmit on the other path
     let commit = feed.seq_path.remove(&10).map(|(_, c)| c).unwrap();
     assert_eq!(commit.last.0, 1);
-    assert_eq!(commit.prev.map(|(p, _)| p), Some(0));
     assert!(feed.seq_path.remove(&10).is_none());
-}
-
-/// The flight-time witness. An ack younger than the
-/// retransmit path's RTprop proves the original flight delivered the
-/// seq — the retransmit path's delivered counter must not advance. An
-/// ack older than RTprop credits the retransmit path (a genuine
-/// retransmit delivery). Unknown RTprop / single-path history keep
-/// last-sent attribution.
-#[test]
-fn flight_witness_credits_original_path_for_spurious_retransmit() {
-    // Original on fast (path 0) at t=0, retransmitted on slow (path 1,
-    // RTprop 60 ms) at t=1_000_000.
-    let commit = SendCommit {
-        last: (1, 1_000_000),
-        prev: Some((0, 0)),
-    };
-    let rtprop = |pid: u32| if pid == 1 { Some(60_000u64) } else { Some(8_000u64) };
-    // Ack 5 ms after the retransmit: the slow flight cannot have
-    // completed — the fast original delivered it.
-    assert_eq!(resolve_flight_path(&commit, 1_005_000, rtprop), 0);
-    // Ack 80 ms after the retransmit: the slow flight qualifies.
-    assert_eq!(resolve_flight_path(&commit, 1_080_000, rtprop), 1);
-    // Exactly RTprop old: qualifies (>=).
-    assert_eq!(resolve_flight_path(&commit, 1_060_000, rtprop), 1);
-    // Warm-up (no RTprop yet): last-sent attribution.
-    assert_eq!(resolve_flight_path(&commit, 1_005_000, |_| None), 1);
-    // Single-path history: always the last (= only) commitment.
-    let single = SendCommit {
-        last: (1, 1_000_000),
-        prev: None,
-    };
-    assert_eq!(resolve_flight_path(&single, 1_000_001, rtprop), 1);
-    // A→B→A bounce: prev is the previous distinct path (B), and a
-    // young ack after the same-path resend credits B's older flight.
-    let feed = CopaFeed::new();
-    feed.on_sent(7, 0);
-    feed.on_sent(7, 1);
-    feed.on_sent(7, 0);
-    let c = feed.seq_path.remove(&7).map(|(_, c)| c).unwrap();
-    assert_eq!(c.last.0, 0);
-    assert_eq!(c.prev.map(|(p, _)| p), Some(1));
 }
 
 // ----- The skew-aware hole law (paper §7.1) -----
@@ -3928,16 +3884,6 @@ fn gen_pipe_depth_covers_bdp_plus_one_deficit_round() {
     assert_eq!(gen_pipe_depth(1e9, 1.0, 384), GEN_PIPE_MAX_GENS);
 }
 
-// `RWM_PLAIN_RS`: the sampling-only feed must declare that it does not
-// own the CC operating point — everything the
-// Copa-sole feed switches (store-cap law, percap pipes, cwnd-dynamics
-// call site, pass-through window writes) keys on `owns_cc()`.
-#[test]
-fn sampling_only_feed_does_not_own_cc() {
-    assert!(CopaFeed::new().owns_cc());
-    assert!(!CopaFeed::new_sampling_only(true).owns_cc());
-}
-
 /// Per-path BDP in-flight cap. The sender is "full" only when no path is
 /// below its own cap (gain·BtlBw_i·RTprop_i). The slow path's RTT-inflated
 /// cap bounds only the slow path; the fast path with room keeps the pipe
@@ -6458,7 +6404,6 @@ mod one_store_law_at_n1 {
         g.delta_cap = true;
         g.three_term = false;
         g.composed_cap = false;
-        g.plain_rs = false;
         g.copa_feed = false;
         g.store_override = None;
         g.store_env_set = false;

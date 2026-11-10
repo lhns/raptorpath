@@ -110,14 +110,10 @@ m = mk("MAIN")
 check("MAIN pass", m["status"] == "LIVE", (m["status"], m["problems"]))
 m2 = mk("MAIN", eng=False)
 check("MAIN fail: SUMCAP eng absent", m2["status"] == "WITNESS-FAIL" and "main-sumcap-eng-zero" in m2["problems"], m2["problems"])
-m3 = mk("MAIN", sampler=True)
-check("MAIN fail: SAMPLER echo present", "main-sampler-echo-present" in m3["problems"] and m3["status"] == "WITNESS-FAIL", m3["problems"])
 m4 = mk("MAIN", ackdiag=False)
 check("any arm fail: no [ACKDIAG]", "no-ackdiag" in m4["problems"], m4["problems"])
 p = mk("PRS", sampler=True)
 check("PRS pass", p["status"] == "LIVE", (p["status"], p["problems"]))
-p2 = mk("PRS", sampler=False)
-check("PRS fail: SAMPLER echo missing", "prs-sampler-echo-missing" in p2["problems"], p2["problems"])
 p5 = mk("PRS", sampler=True, eng=False)
 check("PRS fail: SUMCAP eng absent", "prs-sumcap-eng-zero" in p5["problems"], p5["problems"])
 s = mk("S256", n=256, eng=False)
@@ -137,7 +133,6 @@ check("S<n> fail: gate RWM_STORE != n", "gate-store=512" in s4["problems"], s4["
 s5 = ad.make_row("c1s-400", "S256", "42", "1", 0, 10, lc.read(C1S + "drv.out"),
                  [ln for ln in set_den(s0, 256) if "[DIAG] t=" not in ln], lc.read(C1S + "s.log"), 0, "x")
 check("S<n> fail: fewer than 2 windows", any(x.startswith("s-win-windows") for x in s5["problems"]), s5["problems"])
-check("MAIN fail: wrong gate RWM_PLAIN_RS", "gate-plain-rs=1" in mk("MAIN", plain="1")["problems"])
 check("void rows keep their status", ad.make_row("c1s-400", "MAIN", "42", "1", 3, 10, [], [], [], 0, "x")["status"] == "VOID-RC")
 
 
@@ -277,7 +272,7 @@ with tempfile.TemporaryDirectory() as td:
         for r in sm:
             fh.write("ADROW " + json.dumps(r, sort_keys=True) + "\n")
     check("smoke: three live rows pass", ad.smoke(path2) == 0)
-    sm[1] = mk("PRS", sampler=False)
+    sm[1] = mk("PRS", sampler=True, eng=False)
     with open(path2, "w") as fh:
         for r in sm:
             fh.write("ADROW " + json.dumps(r, sort_keys=True) + "\n")

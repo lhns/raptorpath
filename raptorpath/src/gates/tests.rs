@@ -51,7 +51,7 @@ fn the_rtobs_level_echoes_two_for_the_deep_gauge() {
 
 const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
-    "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 ",
+    "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 ",
     "RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 ",
     "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
     "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 ",
@@ -66,7 +66,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 ",
     "RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 ",
     "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
-    "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 ",
+    "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_EMIT_BATCH=1 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
     "RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
     "RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
@@ -327,7 +327,6 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
     );
     // Experiments / instruments (default OFF)
-    assert!(!g.plain_rs);
     // Honest anchor ships on, honest K off; both are named on the echo so a
     // control arm can assert them (`docs/measurement-discipline.md` rule 15).
     assert!(

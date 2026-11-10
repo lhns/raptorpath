@@ -23,10 +23,6 @@ async fn composed_cap_composes_its_three_pieces_and_the_loopback_completes() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     std::env::set_var("RWM_COMPOSED_CAP", "1");
-    // The honest-anchor composition the law is linear in: the law consumes
-    // a rate anchor, so the arm runs on honest inputs (default ON) plus
-    // RWM_PLAIN_RS.
-    std::env::set_var("RWM_PLAIN_RS", "1");
     let g = raptorpath::gates::RuntimeGates::resolve();
 
     // ── 1. The gate composes what it claims ──────────────────────────────
@@ -42,10 +38,6 @@ async fn composed_cap_composes_its_three_pieces_and_the_loopback_completes() {
         g.echo_line().contains("RWM_THREE_TERM=0"),
         "the composed arm must not masquerade as the three-term arm: {}",
         g.echo_line()
-    );
-    assert!(
-        g.plain_rs,
-        "the honest-anchor composition must resolve ON too"
     );
 
     // ── 2. No new constant reached the brake ─────────────────────────────

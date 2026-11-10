@@ -964,24 +964,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             && !window_generation
             && !window_coded_only
             && !config.window_out_of_order;
-        // `RWM_PLAIN_RS` (paper §2.7): the send-interval sampler without
-        // Copa ownership — plain mode under any substrate CC gets an
-        // honest per-path BtlBw anchor (the WindowAck attribution machinery
-        // reused sampling-only). The full feed (`wanted`) takes precedence.
-        let plain_rs = gates.plain_rs;
-        if !wanted && plain_rs && plain_inorder {
-            let feed = CopaFeed::new_sampling_only(gates.rs_attr);
-            info!(
-                "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
-                 WindowAck frontier/SACK -> per-path send-interval rate samples; \
-                 CC ownership unchanged; flight-witness attribution={} \
-                 [residual (iii): cross-path retransmit acks younger than the \
-                 retransmit path's RTprop credit the ORIGINAL flight; \
-                 RWM_RS_ATTR=0 = legacy last-sent control])",
-                feed.attr_witness
-            );
-            Some(Arc::new(feed))
-        } else if wanted && plain_inorder {
+        if wanted && plain_inorder {
             info!(
                 "plain-mode Copa delivery feed ACTIVE (WindowAck frontier/SACK → per-path send-interval rate samples + cwnd dynamics)"
             );

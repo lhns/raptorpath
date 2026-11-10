@@ -49,7 +49,6 @@ Q3_MIN_ROWS = 2
 Q3_MAX_THIN = 2               # more than this many grid points under Q3_MIN_ROWS: UNSCOREABLE
 SIGMA_K = 2.0
 
-SAMPLER_ECHO = "plain-mode send-interval SAMPLER ACTIVE"
 
 for _a in ["MAIN", "PRS"] + [f"S{n}" for n in GRID_C1S + GRID_C2]:
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
@@ -149,9 +148,7 @@ def arm_n(arm):
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None):
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
     row["bin_sha"] = sha
-    row["gate_plain_rs"] = lc.gate_tok(cli, "RWM_PLAIN_RS")
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
-    row["echo_sampler"] = any(SAMPLER_ECHO in ln for ln in cli)
     cap = [m for m in (sl._SUMCAP.search(ln) for ln in cli) if m]
     if cap:
         m = cap[-1]
@@ -201,17 +198,11 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     if arm == "MAIN":
         if not eng:
             p.append("main-sumcap-eng-zero")
-        if row["echo_sampler"]:
-            p.append("main-sampler-echo-present")
-        if row["gate_plain_rs"] != "0":
-            p.append(f"gate-plain-rs={row['gate_plain_rs']}")
         if row["gate_store"] != "unset":
             p.append(f"gate-store={row['gate_store']}")
     elif arm == "PRS":
-        if not row["echo_sampler"]:
-            p.append("prs-sampler-echo-missing")
-        if row["gate_plain_rs"] != "1":
-            p.append(f"gate-plain-rs={row['gate_plain_rs']}")
+        # RWM_PLAIN_RS was removed: this arm can no longer be launched; the
+        # branch only keeps old PRS captures parseable.
         if not eng:
             p.append("prs-sumcap-eng-zero")
     elif n is not None:

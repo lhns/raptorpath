@@ -83,7 +83,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
             // Σ-cwnd store law only when the feed owns the operating point
             // (Copa-sole); the sampling-only feed (RWM_PLAIN_RS) keeps the
             // anchor-sum law, fed honest samples.
-            if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
+            if copa_feed.is_some() {
                 // Copa owns the operating point (ADR-0062), so the outstanding
                 // window is keyed to Σ cwnd (the probe state), not the BtlBw
                 // anchor. With the honest send-interval sampler a 2×anchor cap

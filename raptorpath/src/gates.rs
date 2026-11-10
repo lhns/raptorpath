@@ -105,8 +105,6 @@ pub struct RuntimeGates {
     /// `RWM_MSTAR_ANCHOR` (on, shipped): measured RTprop floor, fast-seed filter, (M*+2)·G
     /// backstop.
     pub mstar_anchor: bool,
-    /// `RWM_PLAIN_RS` (off, arm): plain-mode BBR send-interval sampler (paper §8.3).
-    pub plain_rs: bool,
     /// `RWM_HONEST_ANCHOR` (on, shipped): BtlBw windowed max on an O(1) max-deque; `=0` is the same
     /// statistic by an O(window·rate) full fold.
     pub honest_anchor: bool,
@@ -201,8 +199,6 @@ pub struct RuntimeGates {
     pub infl_bdp: Option<f64>,
     /// `RWM_COPA_FEED` (off, arm; implied by `RWM_QUIC_CC=passthrough`): Copa feed (ADR-0062).
     pub copa_feed: bool,
-    /// `RWM_RS_ATTR` (on, shipped): flight-time witness for cross-path ack attribution.
-    pub rs_attr: bool,
 
     // ── Emission ──
     /// `RWM_EMIT_BATCH` (on, shipped; status §8): pacer-quantum emission batching, every path count (Law 0).
@@ -344,7 +340,6 @@ impl RuntimeGates {
             taper_r: env_flag("RWM_TAPER_R", unified),
             astar_anchor: anchor_gate_default("RWM_ASTAR_ANCHOR", true),
             mstar_anchor: anchor_gate_default("RWM_MSTAR_ANCHOR", true),
-            plain_rs: anchor_gate("RWM_PLAIN_RS"),
             honest_anchor,
             honest_k,
             store_sack_release: env_flag("RWM_STORE_SACK_RELEASE", true),
@@ -393,7 +388,6 @@ impl RuntimeGates {
             infl_cap: env_parse::<u64>("RWM_INFL_CAP").unwrap_or(0),
             infl_bdp: env_parse::<f64>("RWM_INFL_BDP"),
             copa_feed: env_flag("RWM_COPA_FEED", false),
-            rs_attr: env_flag("RWM_RS_ATTR", true),
             emit_batch: env_flag("RWM_EMIT_BATCH", true),
             emit_burst: env_parse::<usize>("RWM_EMIT_BURST")
                 .unwrap_or(64)
@@ -470,7 +464,7 @@ impl RuntimeGates {
         let o64 = |v: &Option<u64>| v.map_or("unset".to_string(), |x| x.to_string());
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
-             RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
+             RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} \
              RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
@@ -487,7 +481,7 @@ impl RuntimeGates {
              RWM_REPAIR_WAIT={} RWM_CODED_SRC={} RWM_NO_REACTIVE={} \
              RWM_XPATH_REPAIR={} RWM_PROACTIVE_PACER={} RWM_REASM_BDP={} \
              RWM_MIN_R={} RWM_CC_PACE={} RWM_CC_PACE_HR={} RWM_REACT_CAP={} \
-             RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
+             RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
@@ -500,7 +494,7 @@ impl RuntimeGates {
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
-            b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
+            b(self.astar_anchor), b(self.mstar_anchor),
             b(self.honest_anchor), b(self.honest_k),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot,
@@ -519,7 +513,7 @@ impl RuntimeGates {
             b(self.coded_src), b(self.no_reactive),
             b(self.xpath_repair), b(self.proactive_pacer), b(self.reasm_bdp),
             self.min_r, b(self.cc_pace), self.cc_pace_headroom, o(&self.react_cap),
-            self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
+            self.infl_cap, o(&self.infl_bdp), b(self.copa_feed),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_sp),
             b(self.derived_sweep),
@@ -551,7 +545,7 @@ impl RuntimeGates {
 /// harness/L0-sim knob, with the reason the coverage test accepts it.
 #[cfg(test)]
 const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
-    ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar/plain_rs values this line prints"),
+    ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar values this line prints"),
     ("RWM_CLOCK_GAP", "own echo: 'clock-gap estimator hygiene ACTIVE' (control/anchor.rs wiring, net/mod.rs)"),
     ("RWM_COPA_WIRE", "own echo: scheduler Copa family resolve"),
     ("RWM_COPA_COMPETE", "own echo: scheduler Copa family resolve"),
