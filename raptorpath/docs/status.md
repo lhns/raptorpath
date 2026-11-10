@@ -10718,3 +10718,52 @@ revisited**. It is reopened when a store law with a measured input is
 derived (after §40), or when the δ → latency trade-off is measured on the
 wire. The revisit is to decide whether δ needs authority beyond q, for
 example a δ-indexed quantile in S, as the joint derivation suggested.
+
+## 41. `RWM_PLACE_WIRE`, iteration once — an allocation-free witness — host gate, then battery — pre-registration
+
+§38 read `REGRESSES-AT(c1s@def)` on one clause: client CPU per GB +2.5 %
+(+1.9 % at matched speed). The ledger attributes it to the armed
+`place_costs` call (≈ 3.4·10⁵ calls per c1s row, ≈ 360 ns each). That call
+fills two extra `Vec`s and runs two argmin scans for the witnesses. The
+mirror runs 29× less often and is left unchanged. By ADR-0052 a failed
+prediction is iterated only when the failure names a mechanism. This one
+does, so §41 is the single iteration. **Stop rule, fixed now:** a second
+`REGRESSES` result, or a failed host gate, means the arm is tagged
+`archive/place-wire` and reverted from `diag36`. The docs stay.
+
+**Change (engine, arm-only).** The armed witness computes, in one pass and
+with no heap allocation, both the shipped and the wire-based argmin, plus
+the `ref` floor bind. Nothing in the law, the mirror or the gauge
+definitions changes. The gate-off path must do no additional work against
+main: no `Vec`, no extra pass, and no armed gauge update. Its printed lines
+stay as §38 shipped them.
+
+**Host gate (before any VM contact).**
+- A red-first test asserts that an armed `place_costs` call on a two-leg
+  scheduler allocates zero heap blocks (a counting allocator in the test
+  binary), and likewise with the arm off.
+- A host micro-measurement reports ns per call, armed against off, on the
+  same scheduler state (release build, median of ≥ 10⁵ calls; reported, not
+  scored).
+- **Gate:** if the armed call still costs ≥ 100 ns more than off, the stop
+  rule fires and no VM time is spent.
+
+**Battery.** As §38 with amendments 1–4, unchanged: cells, n = 6 per arm,
+seeds, block order, the ladder with amendment 4's exemption, every clause
+and tolerance (client CPU/GB rel 0.024). Nothing is loosened. Added:
+- **Arm BASE:** main's own binary (`4926822`, built fresh from that tree),
+  at c1s default and c1d default, n = 6. **BASE gate:** MAIN (the new
+  binary with the gate off) against BASE must read WITHIN on every §21
+  clause at both cells. Otherwise the arm cannot reach main even switched
+  off, whatever the ladder says. That is 24 more rows.
+- **Reported beside the clause:** client CPU/GB at matched speed (WIRE and
+  MAIN rows within ±3 % of the pooled median goodput), and per-row
+  contention (`procs_running` and io `full avg10` before/after) for every
+  c1s row. §38's slow WIRE rows (575, 684 Mbit/s) are not yet explained.
+
+**Predictions.** The host gate passes, with the armed overhead ≤ 50 ns. The
+c1s client CPU/GB is WITHIN (≤ +1 %), and the ladder reads `CURED`, since
+§38's other clauses all passed. BASE against MAIN reads WITHIN.
+
+**Duration.** Two fresh builds (≈ 12 min) and 120 rows plus the smoke
+(≈ 25 min), inside the 4 h launch deadline.
