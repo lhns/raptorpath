@@ -1130,6 +1130,290 @@ bound. At the shipped corner (Bulk, χ = 0) the condition is the inequality: an
 upper bound on the reactive false-alarm budget. Its dominant error term is
 σ, which Section 7.4 shows the tree cannot yet estimate stably.
 
+### 4.13 The feedback leg: degree-of-freedom accounting
+
+The rate law above is open loop. It sizes protection from a channel model
+(Section 4.2) and spends it per source symbol (`TaperBudget`, Section 3.3).
+The reactive plane answers holes on its own books (Section 7.1). Neither
+plane counts what the other already has in flight or what the decoder
+already holds. FlEC [Michel2023] and AC-RLNC [Cohen2020, Cohen2020mp] close
+this loop by counting degrees of freedom (DoF). This section writes their
+rule on the dial. **It is a model statement; the plain window does not
+implement it** (Section 11.3, status §39).
+
+**What already exists.** The premise "the FEC half has no feedback leg" is
+only partly true:
+
+- The generation seat (Section 5.8) already runs the AC-RLNC loop. The
+  receiver's `GenerationDeficit` carries `K_g − rank_g`. The sender emits
+  that deficit minus what it sent since the last report (`gen_want`,
+  RTT-spaced).
+- The v8 `RepairRequest (a, m, k)` carries the decoder's rank deficit
+  `k = holes − pivots` over a span. Today only the refuted request law of
+  Section 7.6 sends it.
+- On the plain window the reactive plane is already FlEC's bulk rule. One
+  copy answers each ripe hole, and the per-sequence cooldown stands in for
+  "a correction for this hole is in flight".
+
+What is missing is one ledger across the two planes.
+
+**FlEC's rule in difference form.** FlEC [Michel2023, Algorithm 1] makes a
+decision at every free congestion-window slot. It sends a repair iff
+`r̂ − md/ad < ds()`, where:
+
+- `r̂ = 1 − l̂` is the receive rate, not a loss estimate;
+- `md` is the missing DoF in the coding window, which grows only when QUIC's
+  loss detection marks a packet lost;
+- `ad` is the in-flight repairs that protect the window;
+- `ds()` is a policy function.
+
+Multiplying by ad > 0 gives `md − (1 − l̂ − ds)·ad > 0`. This form also
+covers ad = 0, so no quotient is needed. Two named points follow:
+
+- Bulk, `ds = −l̂`: `md > ad`. This is selective-repeat ARQ in coded form.
+- AC-RLNC, `ds = c·l̂`: insures in-flight corrections against their own
+  loss at a declared constant c.
+
+FlEC's last-flight protection is a second hook, `FECPattern()`. It fires
+once all application data has been sent, not through ds.
+
+**The ledger.** Write one rule: a count over live corrections, plus the
+existing a-priori bank.
+
+```text
+   Ω  =  Σ_c ( k_c − a_c )⁺   +   B
+
+   B  ←  min( B + r(β) ,  max(r(β)·W, 1) )   per source symbol or copy sent
+   B  ←  B − 1                               per proactive repair sent
+
+   k_c   =  u_c − R_c        missing DoF of decoder component c: unknown columns
+                             minus coded rows held over them
+   a_c   =  live corrections (copies and repairs) whose span meets component c
+   r(β)  =  the composed, blended rate of Section 4.5 (clamped to [0, r_max], finite)
+   live  =  sent, and neither reflected by a report (acked or SACKed, the
+            exact signal) nor older than its own path's time threshold
+            9/8·max(SRTT_p, EWMA_p) (Section 7.1, mp_time_threshold_split)
+```
+
+B is the shipped `TaperBudget` bank together with the repair debt it
+grants into (Section 3.3). The two lines above are its schematic; the
+shipped re-timing, spare cap and window expiry apply unchanged. The one
+change is that a copy accrues r(β) exactly as a source does. A bank is needed because a stateless count
+over the live set, `(r·n_live − p)⁺`, loses every fraction r·n_live < 1
+when the symbols age out. At r = 0.01 on a 94-symbol live set it would
+never emit.
+
+Emission follows the debt loop that exists today: a correction takes the
+next slot while Ω ≥ 1.
+
+- B keeps the spare-capacity cap and the one-repair-per-source pacing of
+  Section 3.3, and the taper still re-times it.
+- The first term keeps the reactive plane's budget and per-path detection.
+  §3.4's localisation rule still decides between a copy and a repair.
+- A component is a maximal set of unknowns that coded rows connect. A hole
+  that no row touches is its own component, and for it `k_c = 1`.
+- A live proactive repair whose span meets a reported component counts in
+  that component's a_c. This is the coupling between the planes.
+
+| symbol | provenance |
+|---|---|
+| u_c, R_c | measured by the receiver: the unified decoder's unknown columns and RREF rows (Section 5.2), reported per component as `RepairRequest (a, m, k_c)` at the gap-report cadence, as a report, not as a request authority |
+| a_c | the sender's own state: `nack_retx_at`, the repair spans it emitted, the acks |
+| B | the sender's `TaperBudget`, unchanged except that copies accrue |
+| live | the exact reflection signal, else the shipped per-path threshold on the correction's own flight |
+| r(β) | Section 4.5, unchanged |
+| (·)⁺ | a correction count cannot be negative |
+
+**Anchors** (each is a red-first test, status §39):
+
+1. *Bulk corner.* At β = 1 and χ = 0, r(β) = 0, so B = 0 and
+   `Ω = Σ_c (k_c − a_c)⁺`. That is one live correction per detected,
+   uncovered missing DoF, and it is finite. The z = −∞ of Section 4.5 cannot
+   leak in, because the ledger reads the clamped output r(β), not z. This is
+   FlEC's bulk rule. A lost copy leaves the live set at its own path's
+   threshold and is counted again, which is ARQ.
+2. *No feedback.* With no component reported, `Ω = B`, which is exactly the
+   shipped `TaperBudget`. Emission is r(β) per source.
+3. *The dial.* B's accrual is linear in r(β), the first term does not read
+   r, and r(β) is continuous in δ (Section 4.5). So Ω is continuous in δ.
+   ρ enters only through which holes exist: the shed law of Section 5.6
+   removes holes past D(δ) inside the 1 − ρ budget. The rule has no hint
+   argument and no threshold on δ or ρ.
+
+**ds derived, not declared.** Take a component whose live corrections are
+all copies. In long-run rate terms it receives one copy per missing DoF
+plus r(β) of insurance per copy. That is FlEC's `md > (1 − l̂ − ds)·ad`
+with
+
+```text
+   ds(δ, χ)  =  r(β(δ, χ)) − l̂
+```
+
+Bulk's −l̂ is the β = 1, χ = 0 point. AC-RLNC's c·l̂ is replaced by the
+dial's own r: the ε/(1−ε) chain plus the tail margin. ρ composes through
+the hole set.
+
+**How it composes with r\*.** r* (with the mass and burst terms, through
+r(β)) stays the a-priori term, spent through the existing bank. The ledger
+is the a-posteriori correction on top of it. It replaces two open-loop
+pieces of the reactive plane, both in `serve_gaps`:
+
+- the margin `ceil(retx·ε̂)`, by r(β) accrued per copy;
+- the debt reduction `repair_debt −= nacked·r`, by counting live repairs
+  in a_c.
+
+The margin is a step: it adds at least one repair to every gap report that
+fires any retransmit. Its repair is also a leading-window `generate_repair()`
+whose span covers in-flight members, the form Section 10 superseded. At
+Bulk the ledger's counterpart is 0.
+
+**FECPattern's counterpart.** χ (Section 4.6) is the candidate. At T_rem = 0
+it is ≈ 1, and the bank then holds the protection of the last flight. Corrections at that point take slots that no source can use,
+which is FlEC's displacement-free last-flight protection. Before the end χ
+ramps over about 1.5 SRTT while source still flows. The ledger then spends
+inside a busy window, and each correction displaces a source in quinn's
+window (Section 3.7). That is where the open-loop glide measured +55 %
+(Section 9.8). The ledger does not remove that displacement; it removes
+only the double coverage below.
+
+**Windows.** "Inside cwnd" names three windows on this stack:
+
+- *Quinn's window.* Its congestion controller (BBR) gates every datagram,
+  so every correction displaces a source 1:1 whenever the path is
+  window-bound. FlEC's in-cwnd rule holds by construction.
+- *The scheduler's Copa-lite cwnd.* It caps only the proactive term,
+  through `spare_capacity()`.
+- *Reactive symbols.* Gap copies and the margin repairs are not charged to
+  the scheduler's in-flight count unless `RWM_CHARGE_RECOVERY` is set
+  (default off).
+
+The pooled store counts retained source only: the retention insert in
+`emit_source` sits under `pol.reliable && !pol.generation`. The ledger
+changes neither cap. It moves no symbol out of a window; it withholds
+corrections that the decoder or a live correction already covers.
+
+**Recovery and placement.** The ledger reads the recovery decision; it
+does not change it:
+
+- Which holes count is what §7.1's per-path law reports. T* (Section 7.3)
+  and ℓ* (Section 7.6) are untouched.
+- Two effects are new. A hole whose component already holds enough rows,
+  or has a live covering correction, is not served. A re-fire waits for the
+  live copy's own-path threshold instead of the pooled-SRTT cooldown.
+- The cost of withholding: when a withheld-behind repair is lost, the copy
+  leaves up to one live time (9/8·SRTT_p) late. In expectation that is
+  `ε̂·9/8·SRTT_p` per such hole. At c3hg (ε̂ ≈ 0.08, SRTT_p 45–170 ms)
+  that is 4–15 ms, against a measured copy-closed hole time of 41–70 ms.
+
+The ledger decides how many corrections. Where they go stays with the
+placement law (Section 5.7), whose path enters only as the liveness clock.
+AC-RLNC's multipath allocation is not imported:
+
+- Its bit-filling [Cohen2020mp, Proposition 1] sends new packets on the
+  best-rate path subset whose complement can carry the DoF gap. That is a
+  hard argmax.
+- The zero-temperature placement arm measured 0.35–0.38× goodput at c7
+  (Section 9.8).
+- Its global `md_g/ad_g` over paths is what one decoder already gives
+  (Sections 5.2, 5.9). Its `ad₂ = Σ_p r_p·|in-flight repairs on p|` is
+  replaced here by the bank's r(β) accrual on every copy.
+
+**What it can win.** The r > 0 battery's receiver counters (`[RFA]`,
+`net/report.rs`; seed 42, reps 1–4, `db30e43`) bound the gain. They split
+every hole-closing or wasted arrival into four disjoint classes:
+
+- `fill_coded`: a hole the decoder rebuilt from coded repair.
+- `fill_src`: a hole a source copy closed.
+- `dup_src`: a second source copy of a sequence whose copy had already
+  arrived. On a FIFO single path this is a re-fire or a false alarm of the
+  recovery clock.
+- `preempt_src`: a source copy for a sequence the decoder had already
+  rebuilt. This is exactly a copy for a hole a repair had covered.
+
+`rep_redundant` counts repairs that added no rank. All are taken per
+source symbol, at 1.8 MB:
+
+| cell | arm | fill_coded | preempt_src | dup_src | rep_redundant |
+|---|---|---|---|---|---|
+| c3hg | CTL | 0.56 % | 0.48 % | 2.95 % | 0.48 % |
+| | GLIDE | 1.36 | 1.15 | 6.62 | 3.31 |
+| | MID | 4.10 | 3.37 | 7.56 | 7.62 |
+| sc2 | CTL | 0.17 | 0.14 | 1.38 | 0.31 |
+| | GLIDE | 0.38 | 0.34 | 2.23 | 1.39 |
+| | MID | 1.47 | 1.33 | 4.41 | 8.41 |
+| c8 | CTL | 0.58 | 0.50 | 1.34 | 1.08 |
+| | GLIDE | 0.4–2.2 | 0.4–1.7 | 0.4–25 | 6.95 |
+
+At every cell and arm, `preempt_src ≈ 0.85·fill_coded`. At the FIFO
+singles that means almost every hole the decoder closed also received a
+copy. At c8 a preempting arrival can also be the original on the slower
+leg. That is the double coverage the
+ledger removes, since a held row or a live covering repair withholds the
+copy. Its size is `preempt_src`: 0.14–0.50 % of source at the corner,
+0.34–1.7 % at GLIDE and 1.3–3.4 % at MID. The larger rows do not move:
+
+- `dup_src` is the recovery clock's own over-fire. The ledger touches it
+  only by replacing the cooldown, `max(pooled estimator RTT, 10 ms)`, with
+  the copy's own-path threshold `9/8·max(Copa SRTT_p, estimator RTT_p)`.
+  If the two RTTs agree, that is a 9/8 stretch and `dup_src` is out of
+  reach. If the Copa SRTT runs well above the estimator, part of `dup_src`
+  is removable, and the corner bound widens to preempt + dup: ≤ 3.4 % of
+  source at c3hg and ≤ 1.5 % at sc2. Which holds was not read. At the duals
+  most of `dup_src` is placement-skew fires (π₀ ≈ 0.92–0.96, Section 7.2),
+  which no count removes.
+- `rep_redundant` is a-priori insurance bought before any feedback existed.
+
+At the corner, removing the `ceil(retx·ε̂)` margin also removes its decodes
+(fill_coded 0.56 % at c3hg). Those holes would have received copies anyway
+(preempt 0.48 %), so the net saving there is ≤ about 1 % of source.
+
+FlEC's one mid-stream bulk gain is its buffer-limited case. A loss there
+blocks a receive window smaller than the congestion window. On this stack
+SACK-clocked release (Section 6.3) uncounts every SACKed symbol, so a frozen
+frontier holds only its holes' own store slots. So by construction none of
+the r > 0 cells is buffer-limited in FlEC's sense; no row measured this. The candidate would be a pinned pool
+(c8L, pin fraction 0.23, Section 11.2), which nothing has measured under
+the ledger.
+
+So:
+
+- **Bulk mid-stream stays at the corner.** The ledger is FlEC's bulk rule,
+  and FlEC finds no mid-stream bulk gain either: earlier flights are
+  recovered by retransmission before any quiescence.
+- **The import is continuous but cannot help measurably on the measured
+  cells.** It removes at most 0.5 % of source at the corner (3.4 % if the
+  re-fires are reachable), 1.7 % at funded GLIDE and 3.4 % at MID. MID is itself unmeasurable until the
+  engine echoes Copa's δ (Section 9.9). All of these are below the
+  completion spread of every battery so far (c3hg CTL: 5.4–7.2 s at
+  1.8 MB).
+- **At funded points it makes r slightly cheaper, not better.** On one
+  saturated path the throughput identity of Section 3.7 still caps r > 0 at
+  parity with ARQ.
+- **It does not shorten decode latency.** Decode-closed holes measured 4–6×
+  slower than copy-closed ones (Section 9.8). A decode-closed hole waits
+  for the slowest other unknown in its span, a maximum over k recoveries.
+  The ledger changes how many corrections go out, not that maximum.
+- **The bound's own limits.** The counters come from one seed and n = 4,
+  on the September binary, which ran c3hg and sc2 at about 2 Mbit/s
+  (out-of-band on 69 of 72 rows; status §37 records that regression as
+  since fixed).
+- **Readings that would reopen it.** A δ off the corner with an echoed
+  Copa δ, where `preempt_src` reaches 1.3–3.4 % at the singles. A pinned
+  store, where an earlier close frees a cap slot. The evicting Realtime
+  seat.
+
+**Realtime.** At the evicting seat (ρ < 1, Section 5.1) the same ledger
+applies, with the shed law removing given-up holes from k_c. No cell
+measures it.
+
+- Hairpin [Meng2024] raises a batch's redundancy rate as retransmissions
+  bring its remaining time closer to the deadline. The ledger insures every
+  live copy at one r(β). That is the deadline-free (ρ = 1) corner of
+  Hairpin's problem, declared here, not derived.
+- Tambur [Rudow2023] sizes streaming-code parity per frame with a
+  predictive model fed by one bit of receiver feedback. It is an a-priori
+  rate on a slow loop, not DoF accounting, and stands with Section 4.2.
+
 
 ---
 
@@ -3616,6 +3900,9 @@ decide it.
 | `BULK_TAIL_BUDGET = 0.05` | `raptorpath-math` | an "e.g." promoted to a constant | the completion-glide battery arm |
 | χ constants 1.5, 4·RTTVAR, SRTT/4 | `completion_exposure` | — | — |
 | W* fraction α = 0.25, bounds [16, 512], `MAX_WINDOW_SIZE = 200` | `derive_window`, sender | 200 is below W_mp at the heterogeneous cell | — |
+| reactive repair margin `ceil(retx·ε̂)` | `serve_gaps` (`net/sender_phases.rs`) | a step, not a law: at least one repair per gap report that fires any retransmit; coded over the leading window (`generate_repair()`), the superseded leading-window form (Section 10); derived form: the ledger's insurance r(β) per live copy, 0 at Bulk (Section 4.13) | `preempt_src` and `fill_coded` under a ledger arm (Section 4.13; status §39 verdict, not run) |
+| debt reduction `repair_debt −= nacked·r` | `serve_gaps` | a proxy for "the reactive plane covers these"; no derivation; subsumed by the ledger's a_c (Section 4.13) | as the margin row |
+| generation repair floor `RWM_GEN_R` 0.15 systematic / 0.20 coded | `sender_policy.rs`, `GenerationEncoder` | a constant prior where r(β) is the derived one; the seat's deficit loop is already the ledger's a-posteriori term (Sections 5.8, 4.13) | none yet: the seat is not in the default machine |
 | knee = 2048 per path | pooled cap ceiling, `N·knee` at every N | a resource bound outside the law (retained payload per live path), value measured but stale; inert at c7/c8 under the δ-cap; predicted to bind at c1s at N = 1 (7/15 windows at the r1 anchor trajectory) because the c1 anchor over-reads ×7–9 | `[SUMCAP] pin=` at c1s; the anchor over-read (`btlbw`/delivered) beside it |
 | `queue_target_mult` 1.08 / 1.125 / 1.25 | Copa legacy branch | a declared corner: not affine in log δ | a CoDel-derived per-δ setpoint |
 | receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
@@ -3647,7 +3934,8 @@ decide it.
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
 | store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | the multiplier is `1 + q(δ)` at every N (ADR-0072), so H = q(δ)·RTprop_w, and SACK-clocked release uncounts SACKed symbols. The `(gain − 1)·RTprop` form survives only in the `RWM_STORE_PATHS = 0` control and the default-off placement frontier arm (`scheduler/place.rs:409`). H is read from `[WIDLE]` (Section 7.3) |
-| r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget |
+| r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget. The seat's deficit loop (`GenerationDeficit` minus in-flight) is already the ledger's a-posteriori term (Section 4.13) |
+| the rate law's feedback leg | one DoF ledger over live symbols, `Ω = Σ_c (k_c − a_c)⁺ + B`, with B the taper bank and copies accruing r(β) (Section 4.13) | not implemented on the plain window: proactive repairs come from the open-loop `TaperBudget`, the reactive plane serves each ripe hole by its own cooldown plus `ceil(retx·ε̂)` leading-window repairs, and neither counts the other's live symbols or the decoder's held rows; the receiver's rank deficit (`RepairRequest`) is sent only by the off request-law arm. Bounded by the r > 0 battery's `[RFA]` counters: the removable part is `preempt_src`, ≤ 0.5 % of source at the corner (Section 4.13); status §39 records the verdict and the owed tests, with no battery |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
 | P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
 | GE estimator input | per-symbol loss sequence | per-batch counts, losses fed before receives |
@@ -3691,6 +3979,34 @@ form from the GE survival function instead of solving an MDP, carries burst
 correlation in the margin, and addresses multipath and multiple classes.
 Razavi et al. [Razavi2008] search joint FEC/ARQ parameters numerically under
 GE.
+
+**Feedback DoF accounting.** These are the nearest prior art to the
+machine as a whole.
+
+- *AC-RLNC.* Cohen, Malak, Bar Bracha and Médard [Cohen2020] (IEEE Trans.
+  Commun. 68(7), 2020, arXiv:1905.02870) combine an a-priori FEC (m repairs
+  after each RTT's worth of new packets) with an a-posteriori FB-FEC. FB-FEC
+  repeats a coded packet unless the channel rate minus the DoF ratio
+  `m_d/a_d` exceeds a threshold (`r − d > th` adds a new packet).
+- *Multipath AC-RLNC.* Cohen, Thiran, Bar Bracha and Médard [Cohen2020mp]
+  (IEEE Trans. Commun. 69(2), 2021, arXiv:1910.13290) extend this to many
+  paths. They estimate `md`/`ad` for unacknowledged packets from per-path
+  rates and allocate by a bit-filling argmax.
+- *FlEC.* Michel, Cohen, Malak, De Coninck, Médard and Bonaventure
+  [Michel2023] (IEEE/ACM ToN 31(2), 2023, arXiv:2208.07741) build the rule
+  into QUIC as `r̂ − md/ad < ds()`, plus an `FECPattern()` hook. Repair stays
+  inside the congestion window. Bulk is SR-ARQ plus last-flight protection.
+
+Section 4.13 writes their rule on the dial: ds = r(β) − l̂, derived rather
+than chosen per use case. FlEC's bulk ds = −l̂ falls out as the β = 1,
+χ = 0 corner. AC-RLNC's bit-filling is not imported (Section 5.7). Hairpin
+[Meng2024] (Meng et al., NSDI 2024) differentiates redundancy per
+retransmission round under a frame deadline, which is the ρ < 1 refinement
+the ledger declares and does not derive. Tambur [Rudow2023] and the
+streaming-code line are open loop; this machine shares that a-priori form
+in Section 4.2. Tetrys (RFC 9407) is the IETF's sliding-window
+elastic-encoding-window family, of which the unified decoder (Section 5.2)
+is a member.
 
 **Streaming codes.** Delay-constrained burst erasure correction
 [Martinian2004] and its layered constructions [Badr2017, Fong2019,
