@@ -514,5 +514,147 @@ with tempfile.TemporaryDirectory() as td:
     ok38 = pp.check(pth) == 1
 check("check41 accepts 108 rows + LD-BATTERY-DONE; check (plan 38) still demands 96", ok41 and ok38)
 
+# ══ status §41b: the A/A-calibrated guard ═════════════════════════════════════════════════════════════════════════════
+import place41b_score as g41
+p41b = pp.plan41b()
+check("plan 41b: 48 invocations = 2 cells x (BASE 12 + MAIN 6 + WIRE 6); smoke = one row per binary at c1s (BASE, MAIN)",
+      len(p41b) == 48 == pp.EXPECT_ROWS41B and pp.plan41b(smoke=True) == [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "MAIN", "42", 1)], len(p41b))
+check("plan 41b: only c1s-400 and c1d-400 default",  sorted({(c, s) for c, s, *_ in p41b}) == [("c1d-400", "def"), ("c1s-400", "def")])
+for cs in pp.BASE_CELLS:
+    rs = [r for r in p41b if (r[0], r[1]) == cs]
+    allseedrep = sorted((sd, rp) for sd in ("42", "7") for rp in range(1, 7))
+    check(f"plan 41b {cs[0]}: BASE = seeds 42 and 7 x reps 1-6 (12 rows); MAIN and WIRE = seeds 42 and 7 x reps 1-3 (6 rows each)",
+          sorted((sd, rp) for c, st, a, sd, rp in rs if a == "BASE") == allseedrep
+          and sorted((sd, rp) for c, st, a, sd, rp in rs if a == "MAIN") == sorted((sd, rp) for sd in ("42", "7") for rp in (1, 2, 3))
+          and sorted((sd, rp) for c, st, a, sd, rp in rs if a == "WIRE") == sorted((sd, rp) for sd in ("42", "7") for rp in (1, 2, 3)))
+EXP41B = [["BASE", "MAIN", "BASE", "WIRE"], ["MAIN", "BASE", "WIRE", "BASE"], ["BASE", "WIRE", "BASE", "MAIN"],
+          ["WIRE", "BASE", "MAIN", "BASE"], ["BASE", "MAIN", "BASE", "WIRE"], ["MAIN", "BASE", "WIRE", "BASE"]]
+got_ = [[r[2] for r in p41b[i * 4:(i + 1) * 4]] for i in range(12)]
+check("plan 41b: the order is pinned: per group and cell the pattern BASE,MAIN,BASE,WIRE rotated by group (g mod 4), the cells c1s then c1d",
+      got_[0::2] == EXP41B and got_[1::2] == EXP41B, got_)
+for arm in ("BASE", "MAIN", "WIRE"):
+    check(f"plan 41b: arm {arm} meets every block position (0-3) at both cells",
+          all({i for grp in got_[j::2] for i, a in enumerate(grp) if a == arm} == {0, 1, 2, 3} for j in (0, 1)))
+check("plan 41b: the groups run in plan 38's block order and BASE's second row of a group is (seed, rep + 3)",
+      [(r[3], r[4]) for r in p41b if r[0] == "c1s-400" and r[2] == "MAIN"] == [("42", 1), ("7", 1), ("42", 2), ("7", 2), ("42", 3), ("7", 3)])
+cp = subprocess.run([sys.executable, os.path.join(HERE, "place38_parse.py"), "plan41b"], capture_output=True, text=True)
+check("`plan41b` prints the 48 `cell store arm seed rep` lines", cp.stdout.splitlines() == [" ".join(map(str, r)) for r in p41b])
+check("battery: plan 41b accepted, 48-row table (smoke 2), the BASE binary preflighted; run_all: no suites for 41b, score41b, place41b_score gated by crlf_guard",
+      "41|41b" in bat and "-eq 48" in bat and "ABORT-PLAN41B" in bat and 'P41=1' in bat and "place41b_score.py" in bat
+      and "P_SCORE=score41b" in runall and 'if [ "$PLAN" = "41" ]; then\n  run_suites' in runall and "place41b_score.py" in runall)
+
+# ── synthetic rows (a fixed RNG; real-looking noise) ──
+import random as _rnd
+
+
+def srow(cell, arm, seed, rep, rng, mbps=800.0, cli=16.0, srv=19.0, lag=1000.0, rtp=2500.0, status="LIVE"):
+    n = 2 if cell.startswith("c1d") else 1
+    r = {"cell": cell, "store": "def", "arm": arm, "seed": seed, "rep": rep, "rc": 0, "status": status, "problems": [], "dnf": False,
+         "mbps": rng.gauss(mbps, 0.02 * mbps), "cpu_cli": rng.gauss(cli, 0.012 * cli) * 0.4, "cpu_srv": rng.gauss(srv, 0.012 * srv) * 0.4,
+         "cli_lag_E": lag * rng.lognormvariate(0, 0.3), "srv_lag_E": lag * rng.lognormvariate(0, 0.3), "feed_ratio_p0": 1.0, "feed_ratio_p1": 1.0,
+         "shares": [1.0], "locked": False, "eta": None}
+    for i in range(n):
+        r["rtp_floor_p%d" % i] = rng.gauss(rtp, 0.025 * rtp)
+    return r
+
+
+def ledger41b(main_kw=None, wire_kw=None, base_kw=None, seed=11, nbase=12, nmain=6):
+    rng = _rnd.Random(seed)
+    rows = []
+    for (c, st, a, sd, rp) in pp.plan41b():
+        kw = {"BASE": base_kw, "MAIN": main_kw, "WIRE": wire_kw}[a] or {}
+        rows.append(srow(c, a, sd, rp, rng, **kw))
+    return rows
+
+
+def run_g(rows, dry=False):
+    lines = []
+    res = g41.report(rows, out=lines.append, dry=dry)
+    return res, "\n".join(lines)
+
+
+rowsA = ledger41b()
+resA, txtA = run_g(rowsA)
+check("A/A: MAIN drawn from BASE's distribution passes (p > 0.05) and reports the gate", resA["gate"] == "PASS" and resA["p"] > 0.05 and "GATE-41b PASS" in txtA, resA)
+res2, txt2 = run_g(rowsA)
+check("the statistic is deterministic (RNG seed 4141): the same ledger gives the same T and p", (res2["p"], res2["T_true"]) == (resA["p"], resA["T_true"]))
+check("the constants are the registered ones: 10 000 relabellings, RNG seed 4141, pass iff p > 0.05", (g41.N_PERM, g41.RNG_SEED, g41.P_PASS) == (10000, 4141, 0.05))
+resB, txtB = run_g(ledger41b(main_kw={"cli": 16.0 * 1.06}))
+check("a +6 % client CPU/GB on MAIN (c1s and c1d) is caught: FAIL with p < 0.05 and the max at a client-CPU clause",
+      resB["gate"] == "FAIL" and resB["p"] < 0.05 and "T(true)" in txtB and "cpu_cli/GB" in txtB.split("T(true) =")[1].split("\n")[0], (resB, txtB.split("T(true) =")[1].split("\n")[0]))
+resC, _ = run_g(ledger41b(main_kw={"mbps": 800.0 * 1.15, "lag": 600.0}))
+check("one-sided: MAIN better on goodput (+15 %) and lag (-40 %) is not a failure", resC["gate"] == "PASS", resC)
+resD, _ = run_g(ledger41b(main_kw={"mbps": 800.0 * 0.90}))
+check("worse-signed goodput: MAIN 10 % LOWER goodput FAILs", resD["gate"] == "FAIL", resD)
+resE, txtE = run_g(ledger41b(main_kw={"lag": 1000.0 * 1.6}))
+check("a lag clause 60 % worse is caught only on the scaled scale (z-score), FAIL, with the lag clause as the max", resE["gate"] == "FAIL" and "lag_E" in txtE.split("T(true) =")[1].split("\n")[0])
+resW, txtW = run_g(ledger41b(wire_kw={"cli": 16.0 * 1.10}))
+check("WIRE is reported only: a +10 % WIRE client CPU does not change the MAIN gate, and WIRE's own p is printed",
+      resW["gate"] == resA["gate"] and resW["wire_p"] is not None and resW["wire_p"] < 0.05 and "reported, not a gate" in txtW)
+# resolution: from BASE alone
+ra = g41.resolution(rowsA)
+rb = g41.resolution(ledger41b(main_kw={"cli": 99.0}, wire_kw={"mbps": 1.0}))
+check("the resolution table is computed from BASE rows alone: changing MAIN and WIRE leaves it identical", ra == rb)
+check("... 400 splits per clause for 12 BASE rows (3 + 3 vs 6, 6 per seed): C(6,3)^2", all(r["splits"] == 400 and r["n_base"] == 12 for r in ra), set((r["splits"], r["n_base"]) for r in ra))
+check("... and it is printed before MAIN is read", txtA.index("RESOLUTION") < txtA.index("MAIN against BASE"))
+check("... 13 clauses: c1s (goodput, 2 CPU, 2 lag, 1 rtp floor) and c1d (the same, 2 rtp floors)", len(ra) == 13, len(ra))
+# the relabelling keeps the true MAIN's seed balance
+pool = g41.Pool(rowsA, "c1s-400", "BASE", "MAIN")
+rng_ = _rnd.Random(1)
+check("a relabelling picks 3 rows per seed, as the true MAIN (3 + 3), from the seed's own pool of 9", pool.k == {"42": 3, "7": 3} and all(
+    sorted(sum(1 for i in pool.draw(rng_) if pool.rows[i]["seed"] == s) for s in pool.seeds) == [3, 3] for _ in range(20)))
+check("... and the pool is 12 BASE + 6 MAIN", len(pool.ref_rows) == 12 and len(pool.test_rows) == 6 and len(pool.rows) == 18)
+# a void row: the relabelling follows the real seed balance
+rv = ledger41b()
+rv = [dict(r, status="WITNESS-FAIL") if (r["arm"], r["cell"], r["seed"], r["rep"]) == ("MAIN", "c1s-400", "42", 1) else r for r in rv]
+pv = g41.Pool(rv, "c1s-400", "BASE", "MAIN")
+check("a void MAIN row is left out and the relabelling matches the remaining seed balance (2 + 3)", pv.k == {"42": 2, "7": 3} and len(pv.test_rows) == 5, pv.k)
+# raw max vs scaled max (the point of the scaling): lag dominates raw differences, not the scaled ones
+xt, xs = g41.relabel([g41.Pool(rowsA, c, "BASE", "MAIN") for c, _ in g41.CELLS], n_perm=300)
+raw_arg = {}
+for i in range(300):
+    k = max(xs, key=lambda kk: (xs[kk][i] if xs[kk][i] is not None else -9))
+    raw_arg[k[1]] = raw_arg.get(k[1], 0) + 1
+check("why scaling is there: the RAW max over clauses is a lag clause in most relabellings", (raw_arg.get("lag_E_cli", 0) + raw_arg.get("lag_E_srv", 0)) > 0.7 * 300, raw_arg)
+sh = resA["argmax_share"]
+check("... and after scaling no single clause carries more than 25 % of the maxima, and goodput / CPU clauses carry some",
+      max(sh.values()) < 0.25 and sum(v for k, v in sh.items() if k[1] in ("goodput", "cpu_cli/GB", "cpu_srv/GB")) > 0.15, sorted(sh.items(), key=lambda kv: -kv[1])[:4])
+# reported beside the gate
+check("reported beside the gate: §21 readings of MAIN against all BASE rows, z_c(true) per clause, the run-order values",
+      "CLAUSE 41b-c1s-400@def goodput" in txtA and "z=" in txtA and "RUN ORDER" in txtA and txtA.count("c1s-400 BASE") >= 12)
+# the dry run on the committed §41 ledger (BASE 6, MAIN 6 per cell): runs and adapts n
+resX, txtX = run_g(pp.rows_of([os.path.join(RAW, "place41", "ld.log")])[0], dry=True)
+check("dry run on §41's committed ledger runs (BASE 6, MAIN 6 per cell), relabels 3 + 3 and prints the gate", "BASE=6" in txtX and "s42:3 s7:3" in txtX and "GATE-41b" in txtX, txtX[:300])
+# score41b entry
+lines41b = []
+with tempfile.TemporaryDirectory() as td:
+    pth = os.path.join(td, "l.log")
+    with open(pth, "w") as fh:
+        for r in rowsA:
+            fh.write("P38ROW " + json.dumps(r) + "\n")
+    pp.score41b([pth], out=lines41b.append)
+check("score41b: status table, ROWS 48/48, the guard and a VERDICT line", "ROWS 48/48" in "\n".join(lines41b) and lines41b[-1].startswith("VERDICT GATE-41b"), lines41b[-1:])
+
+# smoke / check for 41b
+def smoke41b_rc(rows):
+    with tempfile.TemporaryDirectory() as td:
+        pth = os.path.join(td, "s.log")
+        with open(pth, "w") as fh:
+            for r in rows:
+                fh.write("P38ROW " + json.dumps(r) + chr(10))
+        return pp.smoke(pth, plan41b=True)
+
+
+s41b = [row38("c1s-400", "def", "BASE", 0), row38("c1s-400", "def", "MAIN", 0)]
+check("smoke 41b passes on LIVE BASE and MAIN rows at c1s and fails without the BASE row", smoke41b_rc(s41b) == 0 and smoke41b_rc(s41b[1:]) == 1)
+with tempfile.TemporaryDirectory() as td:
+    pth = os.path.join(td, "c.log")
+    with open(pth, "w") as fh:
+        for r in rowsA:
+            fh.write("P38ROW " + json.dumps(r) + "\n")
+        fh.write("LD-BATTERY-DONE tag=ld blocks=6\n")
+    ok_ = pp.check(pth, plan41b=True) == 0
+check("check41b accepts 48 rows + LD-BATTERY-DONE", ok_)
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

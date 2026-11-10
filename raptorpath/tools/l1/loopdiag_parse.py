@@ -1555,6 +1555,16 @@ def main(argv):
         import place38_parse
         place38_parse.score(argv[2:])
         return 0
+    if cmd == "smoke41b":
+        import place38_parse
+        return place38_parse.smoke(argv[2], plan41b=True)
+    if cmd == "check41b":
+        import place38_parse
+        return place38_parse.check(argv[2], plan41b=True)
+    if cmd == "score41b":
+        import place38_parse
+        place38_parse.score41b(argv[2:])
+        return 0
     if cmd == "smoke41":
         import place38_parse
         return place38_parse.smoke(argv[2], plan41=True)
