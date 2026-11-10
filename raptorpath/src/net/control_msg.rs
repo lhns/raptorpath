@@ -411,10 +411,10 @@ fn wire_reads(transport: &QuicTransport, path_id: u32, compete_here: bool) -> Wi
     }
 }
 
-/// `RWM_PLACE_WIRE`: quinn's packet-timed RTT of every leg, read before the
-/// scheduler is borrowed (like [`wire_reads`]) and mirrored into it at every
-/// ack batch and path report, whichever leg the message arrived on. Empty,
-/// and no quinn call at all, with the arm absent.
+/// The placement base (paper §5.7): quinn's packet-timed RTT of every leg,
+/// read before the scheduler is borrowed (like [`wire_reads`]) and mirrored
+/// into it at every ack batch and path report, whichever leg the message
+/// arrived on.
 fn wire_mirror_reads(transport: &QuicTransport, sched: &Scheduler) -> Vec<(u32, Duration)> {
     sched
         .wire_rtt_reads_wanted()

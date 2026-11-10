@@ -3,7 +3,7 @@
 //! The placement law (`place_costs`, paper §5.7) computes, for every
 //! candidate path, the time a symbol handed to that path now takes to reach
 //! the receiver — `E_i` =
-//! [`crate::scheduler::PathState::expected_delivery_load`] — uses it to
+//! [`crate::scheduler::PathState::expected_delivery_load_at`] — uses it to
 //! choose, and discards it. The receiver detects holes by sequence alone.
 //! Putting the sender's ETA on the wire (v8 `SymbolBatch::eta_rel_us`) lets
 //! the receiver read "late against the sender's prediction" — the lateness
@@ -264,16 +264,13 @@ pub struct SenderEta {
     hol_moved: u64,
     hol_calls: u64,
     hol_w: f64,
-    /// Placement arm `RWM_PLACE_WIRE`. `w_cold` / `w_n`: leg evaluations whose
-    /// `wire_i` was absent (the `min_j wire_j ?: s_i` fallback) out of all leg
-    /// evaluations. `w_mv` / `w_calls`: the execution witness, placements whose
-    /// argmin differs from the shipped base's, out of all placements.
-    /// `ref_fl`: placements where the 1 ms floor of `ref` bound (same
-    /// denominator). With the arm absent every denominator stays 0 and the
-    /// fields print `-`.
+    /// The wire base's bind gauges (paper §5.7). `w_cold` / `w_n`: leg
+    /// evaluations whose `wire_i` was absent (the `min_j wire_j ?: s_i`
+    /// fallback) out of all leg evaluations. `ref_fl` / `w_calls`: placements
+    /// where the 1 ms floor of `ref` bound, out of all placements. Before the
+    /// first placement both denominators are 0 and the fields print `-`.
     w_cold: u64,
     w_n: u64,
-    w_mv: u64,
     w_calls: u64,
     ref_fl: u64,
     paths: BTreeMap<u32, PathEta>,
@@ -387,20 +384,19 @@ impl SenderEta {
         }
     }
 
-    /// Fold in the `RWM_PLACE_WIRE` gauges: `cold` of `n` leg evaluations had
-    /// no wire RTT, `moved` of `calls` placements changed the argmin, and the
-    /// ref floor bound in `floor` of them. Observation only.
-    pub fn add_place_wire(&mut self, cold: u64, n: u64, moved: u64, calls: u64, floor: u64) {
+    /// Fold in the wire base's bind gauges: `cold` of `n` leg evaluations had
+    /// no wire RTT, and the ref floor bound in `floor` of `calls` placements.
+    /// Observation only.
+    pub fn add_place_wire(&mut self, cold: u64, n: u64, calls: u64, floor: u64) {
         self.w_cold += cold;
         self.w_n += n;
-        self.w_mv += moved;
         self.w_calls += calls;
         self.ref_fl += floor;
     }
 
-    /// `(w_cold, leg evaluations, w_mv, placements, ref_fl)`. Test seat.
-    pub fn wire_gauges(&self) -> (u64, u64, u64, u64, u64) {
-        (self.w_cold, self.w_n, self.w_mv, self.w_calls, self.ref_fl)
+    /// `(w_cold, leg evaluations, placements, ref_fl)`. Test seat.
+    pub fn wire_gauges(&self) -> (u64, u64, u64, u64) {
+        (self.w_cold, self.w_n, self.w_calls, self.ref_fl)
     }
 
     /// `T_eff` as last resolved, or `None` with the arm absent. Test seat.
@@ -449,7 +445,7 @@ impl SenderEta {
         let mut s = format!(
             "[ETA] site=sender fhat_us={} n={} zero={} place_n={} cold_r={} cold_ge={} \
              t_eff={} t_cold={} t_n={} hol_sh={} hol_n={} hol_mv={} hol_calls={} hol_w={} \
-             ref_fl={} w_cold={} w_mv={} w_n={} w_calls={}",
+             ref_fl={} w_cold={} w_n={} w_calls={}",
             self.frontier_eta_us,
             self.stamped_n,
             optf(self.stamped_zero, self.stamped_n),
@@ -466,7 +462,6 @@ impl SenderEta {
             lvl(self.hol_w, self.hol_calls),
             optf(self.ref_fl, self.w_calls),
             optf(self.w_cold, self.w_n),
-            optf(self.w_mv, self.w_calls),
             self.w_n,
             self.w_calls,
         );

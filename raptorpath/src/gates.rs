@@ -154,8 +154,6 @@ pub struct RuntimeGates {
     pub place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (absent, arm): repair weight `fate_i·(p_BB,i − ε_i)+·srtt_i/ref`.
     pub place_wdiv_derived: bool,
-    /// `RWM_PLACE_WIRE` (absent, arm): placement base `(1/2+eps)*w_i` on the wire-clocked RTT.
-    pub place_wire: bool,
 
     // ── Generation stack (paper §5.8) ──
     /// `RWM_GEN` (default 384, min 1): generation size G.
@@ -344,7 +342,6 @@ impl RuntimeGates {
         let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
         let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
         let place_wdiv_derived = crate::gates::scheduler_gates::resolve_place_wdiv_derived();
-        let place_wire = crate::gates::scheduler_gates::resolve_place_wire();
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
         RuntimeGates {
@@ -376,7 +373,6 @@ impl RuntimeGates {
             place_t_derived,
             place_hol,
             place_wdiv_derived,
-            place_wire,
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
@@ -493,7 +489,7 @@ impl RuntimeGates {
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_SIDLE_DERIVED={} \
              RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
-             RWM_PLACE_WDIV_DERIVED={} RWM_PLACE_WIRE={} \
+             RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
              RWM_OOO_RETAIN={}/{} RWM_WINDOW={} RWM_REPORT_GENS={} \
@@ -525,7 +521,7 @@ impl RuntimeGates {
             b(self.release_1to1), b(self.charge_recovery),
             b(self.sidle_derived),
             b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
-            b(self.place_wdiv_derived), b(self.place_wire),
+            b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
             b(self.ooo_retain), self.ooo_gens, ou(&self.window_override),
