@@ -12749,8 +12749,11 @@ probes. The diag gauges are `qm=`, `qrt_us=`, `qsr_us=` and `qbw=`.
 ### Step 0 — the host gate (before any VM contact)
 
 *Red first.* The tests are committed on `bbrfix48` before the fix, against
-the unchanged controller. The only addition is an inert clock seam in
-`BbrRsConfig`, which the pre-fix code does not read. Their red output is
+the unchanged controller. The only additions are two test seams that
+both trees carry unchanged: an inert clock in `BbrRsConfig`, which the
+pre-fix code does not read, and `#[cfg(test)] plant_min_rtt(d)`, which sets
+the `min_rtt` field pre-fix and seeds the filter post-fix. Tests 6–9 are
+therefore byte-identical across the fix. Their red output is
 saved to `docs/l1-raw/bbr48/host-red.txt`. The fix then follows in its own
 commit, and the green output goes to `host-green.txt`.
 
@@ -12760,39 +12763,53 @@ commit, and the green output goes to `host-green.txt`.
   (`transport/quic.rs` `generate_self_signed_config`,
   `make_client_config`, MTU floor 1350). Both controllers therefore see
   quinn's real `RttEstimator`, ACK framing and pacer.
-- **The client** keeps ≥ 1 MB of 1 279 B QUIC datagrams queued (bulk, not
-  app-limited).
+- **The client source has two phases.**
+  - Phase A, 0–1.0 s, is bulk: ≥ 1 MB of 1 279 B datagrams stays queued, so
+    the flow is not app-limited and both controllers leave Startup.
+  - Phase B, 1.0–3.0 s, supplies 0.9·L in 1 ms chunks. This is the
+    store-braked regime: the wire queue drains to ≈ 0, matching the 2 ms
+    `wrtt` that §41b read in vivo at c1s.
 - **The link (c1):** 1 Gbit/s serialisation, 1 ms each way, a FIFO of 1 000
   packets (netem's default limit), no jitter.
 - **Loss burst:** 28 consecutive client datagrams dropped at t = 1.8 s
-  (§41b's collapsed row: lost +28 at 1.8 s).
+  (§41b's collapsed row: lost +28 at 1.8 s), inside phase B.
 - **Polls.** The client endpoint polls every 50 µs (`RECV_TIME_BOUND`). A
   poll stamped τ hands every datagram that arrived by τ to `handle(τ, …)`.
-- **Stale-stamp events.** Every 100 ms from t = 0.3 s, one poll's drain
-  instead covers (τ, τ + L_j] with stamp τ. L_j cycles through {1.5, 1.7, …,
-  3.3} ms, the c1s drain-pause range measured in paper §8.5, set from that
-  record and not tuned. During such a drain the injected clock reads τ + L_j,
-  the drain's end, which is the proof's tight edge.
+- **Stale-stamp events.** At t = 1.2 + 0.1·j s, j = 0…17 (18 events in
+  phase B, wire queue ≈ 0), one poll's drain instead covers (τ, τ + L_j]
+  with stamp τ.
+  - L_j cycles through {0.5, 0.8, 1.1, 1.4, 1.7, 1.9, 1.95} ms, all below
+    the 2 ms RTT, so no sample saturates to 0.
+  - The top values come from §47's fingerprint, which implies a skew of
+    1.92–2.0 ms (paper §8.4). The skew distribution and the 10/s rate are
+    **declared, unprovenanced**: no record measures the stamp skew, and
+    paper §8.5's drain pauses bound stall length, not skew.
+  - During such a drain the injected clock reads τ + L_j, the drain's end,
+    which is the proof's tight edge.
+- **Mechanism witness.** The harness knows every datagram's true arrival
+  time. For each stale event it counts ACK-bearing datagrams that arrived
+  after τ: their quinn sample, τ − send, reads below the true RTT and
+  above 0. A run with zero such datagrams is `VOID-SIM`.
 - **Run length:** 3.0 s simulated. The window is sampled every 1 ms;
   BDP_true = 250 000 B.
-- **Expected failure path for quinn.** An event with L_j ≥ the RTT at that
-  moment makes quinn's sample saturate to 0. quinn's min then becomes 0,
-  its target falls back to `init_cwnd` = 240 000 B < BDP_true, and the
-  witness reads red. A smaller L_j latches a tiny min instead and gives the
-  §47 collapse. Both branches read red.
+- **Expected failure path for quinn.** One event at 1.9–1.95 ms latches a
+  min of 50–100 µs, giving T(2) ≈ 2 × 125 MB/s × 0.1 ms ≈ 25 KB + A against
+  the ≈ 225 KB that phase B carries in flight. That is the §47 collapse.
 
 *Tests and assertions (absolute).*
 1. **`cc_sim::bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps`.**
-   Over t ∈ [0.5, 3.0] s:
+   Over t ∈ [1.3, 3.0] s:
    - share(W < BDP_true) ≤ 0.05 (the §47 witness, bounded by the ProbeRtt
      and Drain duty cycle);
    - min W ≥ 0.5·BDP_true.
 
-   Witnesses: the controller left Startup at least once (`qm` ≠ S); the
-   link dropped exactly 28; 25 stale events were applied.
+   Witnesses: the controller left Startup in phase A (`qm` ≠ S); the link
+   dropped exactly 28; 18 stale events were applied; the mechanism witness
+   is > 0.
    **Predicted RED pre-fix:** m̂ = latched `rtt.min()`.
 2. **`cc_sim::bbr_rs_min_rtt_never_reads_below_the_path`.** The same run;
    at every sample after the first event, m̂ ≥ 2.000 ms. Predicted RED
+   pre-fix. Phase A's bulk queue only raises samples, so it cannot help
    pre-fix.
 3. **`cc_sim::bbr_rs_min_rtt_follows_a_path_rtt_rise`.** 10 Mbit/s;
    one-way delay 5 ms, stepped to 20 ms at t = 2 s; 14 s simulated; no stale
@@ -12808,7 +12825,8 @@ commit, and the green output goes to `host-green.txt`.
    the latched `min_rtt` from quinn's `Debug`. That separates the min-RTT
    term from the bandwidth term, which is §47's open item.
 5. **`cc_sim::quinn_bbr_min_rtt_under_reads_under_stale_stamps`.** quinn's
-   `min_rtt` (from `Debug`) < 1.0 ms after the events.
+   `min_rtt` (from `Debug`) ∈ (0, 1.0 ms) after the events. This is the
+   mechanism realised in quinn's own estimator.
 6. **`bbr_rs::tests::startup_window_is_bounded_by_the_model_target`
    (unit).** b̂ = 12 MB/s and m̂ = 10 ms planted; 50 rounds of ACK events
    flagged app-limited, so the full-bandwidth check is skipped and the
@@ -12843,9 +12861,14 @@ commit, and the green output goes to `host-green.txt`.
     `-p raptorpath -p raptorpath-math`, `--doc`, `raptorpath-wasm`, debug
     `-p raptorpath`, and the parser tests (`FLAKE` by a solo re-run, as
     §27).
-- **`STOP-NOT-REPRODUCED`** if test 1 or 2 is green pre-fix, or test 4 or 5
-  is red. §47's inferred cause is then not reproduced by the mechanism the
-  fix targets. Report; no VM.
+- **`VOID-SIM`** if the mechanism witness is 0 or test 5 is red: the
+  simulator did not realise a stamp that reads early without saturating.
+  This is a harness fault and says nothing about §47. Fix the harness
+  (never the L_j grid toward red) and re-run.
+- **`STOP-NOT-REPRODUCED`** if the mechanism is realised (witness > 0,
+  test 5 green) but test 4 is red or test 1 or 2 is green pre-fix. An early
+  stamp then does not collapse the window, and §47's inferred cause is
+  refuted in simulation. Report; no VM.
 - **`STOP-FIX`** if any post-fix test is red after one focused fix attempt.
 - Local cargo only under the host mutex.
 
@@ -12896,12 +12919,18 @@ main differ by?
   otherwise they are re-run before the battery.
 
 *Witnesses (row void otherwise).*
-- `[GATES]` and the arm's substrate echo: BASE has the stock-BBR echo and
-  `qm=-`; CAND has the `burst-robust BBR` echo and a numeric `qm=` on every
-  path block.
+- `[GATES]` and the arm's substrate echo:
+  - BASE: the stock-BBR echo, and no `qm=` field (main's binary has none);
+  - CAND: the `burst-robust BBR` echo, and `qm=` in {S, D, B, R} on every
+    path block.
 - ≥ 20 s of post-warm-up `[DIAG]` lines.
-- The row is LIVE and not DNF (`RWM_PERF_TIMEOUT_S` = 200). A DNF row is
-  also classified as in the §43 note (`ENGINE-STALL`).
+- The row ran (rc 0, bring-up ok). **A DNF (`RWM_PERF_TIMEOUT_S` = 200)
+  is not void; it is scored per arm:**
+  - a CAND DNF fails the tail clause, and its lines enter R2;
+  - a BASE DNF is reported as collapse evidence.
+
+  DNF rows are excluded from R1's medians only, as in §41b, and are also
+  classified as in the §43 note (`ENGINE-STALL`).
 
 *Readouts (fixed now).*
 - **R1, the guard.** §41b's statistic exactly, with the RNG seed 4141 and
@@ -12919,14 +12948,19 @@ main differ by?
   - **Also reported:** the tail line (each arm's lowest row against its own
     cell median) and every clause's z.
 - **R2, the §47 witness.** Per row and active leg, where a leg is active if
-  its `qlp` sent counter advanced since the previous line:
-  - the share of `[DIAG]` lines at t ≥ 1 s with `qcwnd` < BDP_leg, with
-    BDP_leg = 250 000 B for a c1 leg, 125 000 B for c2 and 100 000 B for
-    c3;
-  - the deep share, `qcwnd` < 0.25·BDP_leg (§47's collapse sits at
-    0.023·BDP).
-
-  Reported for both arms; scored on CAND.
+  its `qlp` sent counter advanced since the previous line. BDP_leg =
+  250 000 B for a c1 leg, 125 000 B for c2 and 100 000 B for c3.
+  - **R2a, reported for both arms (§47's form):** the share of `[DIAG]`
+    lines at t ≥ 1 s with `qcwnd` < BDP_leg. The fixed law's window is
+    g·b̂·m̂, so R2a ≈ 0 is not implied where b̂/L or m̂/R_nom is below 1:
+    §27 read b̂/L 0.66–0.81 at c2/c8 and from 0.50 at c1d. R2a is not
+    scored.
+  - **R2b, scored (the collapse):** the share of lines at t ≥ 1 s with
+    `qcwnd` < 0.5·BDP_leg **and** the leg's B = `hand − tx` ≥ 98 datagrams.
+    That is a window far below the link while quinn holds a backlog. A
+    trickle leg (app-limited, B ≈ 0) or a window above the carried
+    in-flight does not count. §47's collapsed row reads `qcwnd` 0.023·BDP
+    with B ≈ 2 000.
 - **R3, authority and delay.** Per leg, the row medians of:
   - B = `hand − tx`;
   - `wrtt` (quinn's wire srtt);
@@ -12941,10 +12975,10 @@ main differ by?
   - the loop margin 2·qrt_us/qsr_us, the paper's stability term.
 
 *Outcomes and decision rule (applied in this order).*
-1. **`NOT-CONTROLLED`** if any CAND row has a deep-share line on an active
-   leg, or if the median over CAND rows of the R2 share exceeds 0.05 at
-   c1s or c1d, or 0.10 at c2 or c8. The fix does not hold the pipe in vivo.
-   Stop; no flip; diagnose from R4.
+1. **`NOT-CONTROLLED`** if, at any cell, the median over CAND rows of R2b
+   exceeds 0.05 (ProbeRtt's duty, ≤ 0.03, sits below it), or if any CAND row
+   has R2b > 0.25. The fix does not hold the pipe in vivo. Stop; no flip;
+   diagnose from R4.
 2. **`PROMOTE-ELIGIBLE`** if R1 PASSes and, at every cell, CAND's lowest
    row is ≥ 0.8 × CAND's cell median.
 3. **`CONTROLLED-WITH-COST`** if R1 fails but p_rest > 0.05, and all of the
@@ -12972,15 +13006,16 @@ measurements.
 
 | cell | substrate window W_q = 2·b̂·m̂ + A | authority | goodput | delay gauges | §47 witness (CAND) |
 |---|---|---|---|---|---|
-| c1s | ≈ 2 × 103 MB/s × 2.0–2.3 ms ≈ 410–470 KB, above the wire in-flight (≈ 210–260 KB at 2–2.5 ms) | store; ΔB ≤ 98 | Δ median within 3.8 %; the tail improves (no row < 0.8× median) | `wrtt`, A_x: same | share ≤ 0.03; deep 0; `qm` mostly S (app-limited Startup) |
-| c1d | the same per active leg; an idle leg keeps `init_cwnd` as BASE does | store | within 6.4 % | same | ≤ 0.03 on active legs |
-| c2 | ≈ 2 × 12.2 MB/s × 7.0 ms + A ≈ 180–190 KB (1.45–1.5 BDP); margin 1.4–1.5 | **quinn takes the wire** (the shipped law pins 2 048): B_CAND ≫ B_BASE, > 500 | [0.92, 1.00] × BASE: masking risk (ADR-0054 addendum −4…−14 % at GE cells) and recovery conservation at 2.6 % GE | `wrtt` p50 13–17 ms against BASE ≥ 20 ms; A_x within ±15 % (≈ n/x, the dwell moves into B) | ≤ 0.10 (ProbeRtt at 0.75·b̂m̂ ≈ 64 KB plus recovery lines) |
-| c8 | p0 as c2; p1 ≈ 2 × 2.4 MB/s × 30–32 ms + A ≈ 150–165 KB; margin 1.5–1.6 | quinn takes the slow leg's wire | [0.90, 1.00] × BASE | p1 `wrtt` p50 ≤ 0.6 × BASE (BASE over-reads ×9.1, §24; its slow-path queue 88–124 ms, ADR-0054); `lag_E` same or better | ≤ 0.10 |
+| c1s | ≈ 2 × 103 MB/s × 2.0–2.3 ms ≈ 410–470 KB, above the wire in-flight (≈ 210–260 KB at 2–2.5 ms) | store; ΔB ≤ 98 | Δ median within 3.8 %; the tail improves (no row < 0.8× median) | `wrtt`, A_x: same | R2b ≤ 0.02; R2a ≤ 0.05; `qm` mostly S (app-limited Startup) |
+| c1d | the same per active leg; an idle leg keeps `init_cwnd` as BASE does | store | within 6.4 % | same | R2b ≤ 0.02; R2a reported (b̂/L from 0.5 on a light leg) |
+| c2 | ≈ 2 × (11.3–12.2 MB/s) × m̂ + A, with m̂ between 7.0 ms and the wire floor of 10–12 ms (§43b SL rows `rtp_us` p50 10.2–11.8 ms): ≈ 170–300 KB (1.4–2.4 BDP); margin 1.1–1.8 | **quinn takes the wire** (the shipped law pins 2 048): B_CAND ≫ B_BASE, > 500 | [0.92, 1.00] × BASE: masking risk (ADR-0054 addendum −4…−14 % at GE cells), recovery conservation at 2.6 % GE, and the thin margin at the low end of m̂ | `wrtt` p50 ≤ 30 ms against BASE 95–137 ms (§43b MAIN rows' p50); A_x within ±15 % (≈ n/x; the dwell moves into B) | R2b ≤ 0.03; R2a reported |
+| c8 | p0 as c2; p1 ≈ 2 × 2.4 MB/s × 30–40 ms + A ≈ 150–200 KB; margin 1.3–2 | quinn takes the slow leg's wire | [0.90, 1.00] × BASE | p1 `wrtt` p50 ≤ 0.6 × BASE (BASE over-reads ×9.1, §24; its slow-path queue 88–124 ms, ADR-0054); `lag_E` same or better | R2b ≤ 0.03; R2a reported |
 
 - **Expected label:** `CONTROLLED-WITH-COST`, failing R1 on c2/c8 goodput,
   with `PROMOTE-ELIGIBLE` second.
-- **R4:** median `qrt_us` 2.0–2.5 ms at c1, 6–8 ms at c2, 30–34 ms on c3;
-  loop margin ≥ 1.3 everywhere.
+- **R4:** median `qrt_us` 2.0–2.5 ms at c1, 7–12 ms at c2, 30–40 ms on c3.
+  Loop margin ≥ 1.3 at c1 and on c3, and 1.1–1.8 at c2; this gauge settles
+  which end holds.
 - **BASE witness:** a few percent on healthy rows, most lines on any
   collapsed row (§47).
 
@@ -12988,8 +13023,9 @@ measurements.
 - **Host delay at c1s.** m̂ and qsr include the connection task's
   processing delay. If the typical delay exceeds about 2 ms at c1s, the
   margin falls below 1 and CAND contracts there. R4 reads this directly.
-- **c2 is thin.** Its margin (1.4–1.5) is the thinnest, because its m̂ is
-  the jitter floor.
+- **c2 is thin.** Its margin (1.1–1.8) is the thinnest, because its m̂ is
+  a jitter floor. At the low end, recovery rounds can under-fill the
+  link.
 - **Placement at c8** reads quinn's srtt (`RWM_PLACE_WIRE`, promoted), so
   CAND's lower p1 wire RTT may shift the split. That is reported, not
   scored.

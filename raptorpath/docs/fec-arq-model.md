@@ -3351,8 +3351,12 @@ is a valid receive time.
   a lifetime minimum (`paths.rs:329–333`). A single early stamp therefore
   latches below the path for the whole connection.
 - The kept logs give the size. With bŵ ≥ L, §47's ProbeRtt floor of 5 808 B
-  at c1s needs m̂ ≤ 82 µs on a 2 ms path. Drain pauses at c1s of
-  1.5–3.3 ms and longer are measured (Section 8.5).
+  at c1s needs 0 < m̂ ≤ 82 µs on a 2 ms path: at least one stamp read early
+  by 1.92–2.0 ms, and none by more than the RTT (a gap ≥ RTT saturates the
+  sample to 0, and quinn then falls back to `init_cwnd`). The skew itself
+  has no direct measurement. Section 8.5's 1.5–3.3 ms drain pauses do not
+  measure it: a driver that is not running re-stamps fresh when it
+  resumes, so they bound stall length, not skew.
 - The `rtt` argument cannot repair this. quinn calls `on_ack` and
   `on_end_acks` before `rtt.update` for the same ACK (`connection/mod.rs`
   1505 vs 1522), and `RttEstimator` exposes no latest sample.
@@ -3419,16 +3423,16 @@ they are re-verified on any quinn bump.
 | g_s | 2/ln 2 = 2.885 | cited: v1 `bbr_high_gain` |
 | g_c | 2 | cited: v1 `bbr_cwnd_gain` |
 | g_d (window) | 1 | derived: v1 drains with pacing gain 1/2.885, which quinn ignores. A window of T(1) with the exit test on the same T(1) is the only window form whose exit is reachable under a backlog (≤ (g_s − 1)·m̂ ≈ 1.9 m̂) |
-| g_r | 0.75 | cited: Chromium `bbr_sender` BDP-based ProbeRtt, kept from the port. v1 uses 4 packets |
+| g_r | 0.75 | the port's (quinn `PROBE_RTT_BASED_ON_BDP`, `K_MODERATE_PROBE_RTT_MULTIPLIER`), kept; v1 uses 4 packets |
 | W_min | 4 MTU | cited: v1 `bbr_cwnd_min_target = 4` |
 | W_init | 200 × 1200 B | the port's (quinn's) initial window |
-| e, A | excess acked this event; 10-round max ack height | the port's (Chromium's) ack-aggregation term. It is computed on a_e, so it can only over-read |
+| e, A | excess acked this event; 10-round max ack height | the port's ack-aggregation term. It is computed on a_e, so it can only over-read |
 | F, a | bytes in flight; bytes acked this event | quinn |
 
 *What changes against the port (`bbr_rs.rs` before §48).*
 1. **Startup.** The port grows while `cwnd_gain < target_window` (`:632`,
    upstream `mod.rs:326`), a gain compared with a byte count, which is
-   always true. v1's test, also Chromium's, is `W < target`.
+   always true. v1's test (`bbr_set_cwnd`) is `W < target`.
 2. **The min-RTT source.** The port takes the lifetime `rtt.min()`
    (`:733–738`). The fix takes m̂ on a_e.
 3. **ProbeRtt entry.** The port enters on "10 s since the last ProbeRtt
@@ -3476,11 +3480,12 @@ x = min(L, W/R̄), so with W = g·b̂·m̂ + A the max filter follows the map
   recovers at ×2·m̂/R̄₀ per round.
 - **Margins at g_c = 2.** Measured m̂ against netem means:
   - c1 ≈ 2·2.0/(2.0 + host delay) ≈ 1.6–2 (host delay unmeasured; bind gauge below);
-  - c2 ≈ (2·7.0 + A/L)/10.x ≈ 1.4–1.5, with m̂ = 7.0 ms the measured 10 s
-    floor under ±3 ms jitter (Section 8.2);
-  - c3 leg ≈ 2·(30–32)/40 ≈ 1.5–1.6.
+  - c2 ≈ 2·m̂/R̄₀ with m̂ between 7.0 ms (the legacy floor of Section 8.2)
+    and 10–12 ms (the wire-clocked 10 s floor `rtp_us` on §43b's low-queue
+    rows), against R̄₀ ≈ 12–13 ms typical: 1.1–1.8;
+  - c3 leg ≈ 2·(30–40)/(40–45) ≈ 1.3–2.
 
-  c2 is the thin one.
+  c2 is the thin one, and the battery's bind gauge settles its value.
 
 *The nested loop (open question 12).* The store and the substrate compose
 as a min, and the authority gauge is quinn's backlog B (Section 6.1, status
@@ -3491,10 +3496,13 @@ as a min, and the authority gauge is quinn's backlog B (Section 6.1, status
   F_s > T(g_c) + A ≈ 2·BDP̂ + A. So with a store law that settles below
   about two BDPs of wire in-flight (§43b's oracle at c2: about 190 symbols,
   about 150 KB on the wire against a substrate window of about 180–190 KB),
-  the store keeps authority and the substrate is a safety net.
+  the store keeps authority and the substrate is a safety net. (With m̂ at
+  c2's measured wire floor of 10–12 ms the window is ≈ 250–300 KB, which
+  widens the gap.)
 - **Where the store is pinned** (the shipped law at c2, `n` = 2 048,
-  §43b), the substrate takes the wire. Network queue ≤ W − L·R̄₀ ≈ 4–6 ms
-  at c2. The rest of the store's dwell moves into B, so the app-echo delay
+  §43b), the substrate takes the wire. The network queue is then
+  ≤ W − L·R̄₀, about 4–12 ms at c2 across the m̂ range, against `wrtt` p50
+  95–137 ms on §43b's MAIN rows. The rest of the store's dwell moves into B, so the app-echo delay
   A_x (≈ n/x) does not fall; the wire RTT does.
 - **At c1** the window, ≈ 2 × 103 MB/s × 2 ms ≈ 410 KB, sits above the wire
   in-flight the sender reaches, so neither median moves. Only the collapse
