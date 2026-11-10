@@ -70,6 +70,7 @@ and other arms (paper §11.2). *Corrected 2026-11-10.*
 
 | measurement | design | verdict |
 |---|---|---|
+| Oracle store law in closed loop (§43) | `RWM_STORE_LAW=oracle` (L from netem, Copa's 10 s RTprop, app-echo S over 250 ms with no sample cap), default off and never merged; c2-100 at 600 MB and c1s-400 at 5 GB; arms SL, SH (a 15 s hold at 1 536 / 2 048) and MAIN, n = 3 each, 20 invocations | pre-registered, stopped before the build. Predicted: c2 `BISTABLE`, c1s `CONVERGES-ONE-POINT`; goodput `WORSE`, delay `BETTER` |
 | `RWM_PLACE_WIRE` iteration (§41) | the allocation-free witness for the armed `place_costs` call; host gate (zero heap blocks, < 100 ns armed over off), then the §38 battery against main's binary; stop rule fixed | pre-registered, pending. A second `REGRESSES` or a failed host gate reverts the arm to `archive/place-wire` |
 | p90 dispersion estimator (§40) | the per-window p90 of k = 4 train rates fixed in advance, plus aggregation (netem `slot`) and policer (`tbf`) cells; capture diagnostic, no engine diff | `NOT-YET`, failed on one leg: c8's slow leg (E3 fails at cap 32, E4 unscoreable at 256); E1–E4 pass at c1s, c2 and c8's fast leg; `AGG-OVER-READ` ×2.05 (`c2slot`); `c2tbf` does not over-read, but the policer is not cleared (caps 32–128 not run); nothing ships |
 | DoF ledger, the rate law's feedback leg (§39) | FlEC/AC-RLNC import derived on paper and bounded from the r > 0 battery's `[RFA]` counters; no VM | `CONTINUOUS-BUT-CANNOT-HELP-MEASURABLY`; no battery pre-registered. Addendum: one seed, n = 4, so the gain is "not shown", not refuted; funded r on one saturated path stays capped at parity with ARQ |
@@ -10969,3 +10970,266 @@ closed-loop oracle arm at c2 and c1s only:
 - c8 waits for an idle-leg rule that covers both L and S. Competing-traffic
   rows are named as untested and not added, for cost.
 - About 20 rows.
+
+## 43. The oracle store law in closed loop: one operating point or two? — diagnostic arm `RWM_STORE_LAW=oracle` at c2 and c1s — pre-registration
+
+This is §42's step 2; the user approved the design. Paper §6.1 ("The
+closed-loop oracle arm") fixes the law's free choices first:
+
+```text
+   n(t) = clamp( (1 + q(δ)) · Σᵢ Lᵢ · (RTpropᵢ(t) + Sᵢ(t)) ,  max(floor, h(t)) ,  N·knee )
+```
+
+- L comes from the environment.
+- RTprop is Copa's shipped 10 s windowed min.
+- S = Tp50 − Tmin of the last closed 250 ms window, from an uncapped
+  app-echo sampler.
+- n is recomputed at the shipped ≤ 5 ms refresh, with no step limit.
+- Boot is a zero initial state.
+- h(t) is the start-high hold.
+
+The question is whether this loop, run for several filter lengths, has one
+operating point from below and from above. §42's expired-anchor map says c2
+may have two. Diagnostic: the arm is default off and never merged, nothing
+ships, and no law is built from it.
+
+**Premises checked (no VM).**
+- *The filter is 10 s.* `CopaState::window_duration` is 10 s at every gate,
+  and `expire_old_samples` applies it to the RTT samples. The ≈ 10·RTprop
+  [1 s, 10 s] cutoff (`rs_on_delivered`) evicts bandwidth samples only.
+- *The truncation being replaced.* `[LOOPDIAG]` (`archive/store-power`,
+  `net/loopdiag.rs`) buffers the first `RTT_CAP` = 8 192 samples per path
+  per window and counts the rest in `ov=`. At c1, windows hold 8–15 k
+  samples (§42 addendum).
+- *The payload at 5 GB.* The perf client streams the object from a
+  one-chunk buffer (`perf.rs` `run_object`), so its memory does not grow
+  with the size. The chunk count, 5·10⁹ ÷ payload ≈ 4.2 M, fits its `u32`.
+  The receiver's memory at 5 GB is not checked from source, so the smoke
+  rows run at full size.
+- *Row lengths.* Three filter lengths are counted from the release, so the
+  brief's sizes were raised:
+  - At 400 MB c2 runs ≈ 36–40 s and leaves ≈ 21–25 s after a 15 s hold.
+    At 4 GB c1s runs ≈ 39–43 s and leaves ≈ 24–28 s.
+  - **c2-100 runs 600 MB** (≈ 53 s at MAIN's ≈ 90 Mbit/s, ≈ 60 s at the
+    law's ≈ 80; ≥ 38 s after the hold).
+  - **c1s-400 runs 5 GB** (≈ 48 s at ≈ 826 Mbit/s, ≈ 54 s at ≈ 740;
+    ≥ 37 s after the hold).
+  - One size per cell for every arm. The cell names keep their scenario
+    (c2 100 Mbit/s, c1 1 Gbit/s); the size is this section's.
+
+**Tree and build.**
+- Branch `oracle43`: `ce389a8` (github/diag36), then the paper `9a42b2a`,
+  this section, the arm commit (engine code, default off, not for merge, as
+  `run34`), and harness plan 43 (`tools/l1/loopdiag_*`).
+- One binary, built fresh on disk with a fresh target dir, and measured from
+  root-owned `/dev/shm`.
+- *Host build gate, red first, before VM contact.*
+  - (a) Default off: with `RWM_STORE_LAW` unset, the shipped cap sequence is
+    bit-identical.
+  - (b) Absolute values. Bulk, L 9 773, RTprop 7.0 ms, S 5.4 ms gives ask
+    133.3 and n = 134. L 97 733, RTprop 2.60 ms, S 2.60 ms gives 559.0 and
+    n = 560. The clamp gives 10 and 2 048.
+  - (c) A window of 30 000 samples is kept whole, with the exact
+    nearest-rank median, and Σ n_k equals the offered count.
+  - (d) The hold: n = max(ask, H) while t < t_h and ask after. ask is
+    logged in both.
+  - (e) An L list whose length differs from the configured path count
+    refuses to start.
+  - (f) n is continuous and monotone in b through every named point (±2 %
+    nudges), in the form of the no-mode-switch gates.
+  - (g) Boot: n = floor before any sample; from the first sample to the
+    first close, n = clamp((1 + q)·L·RTprop).
+- *VM suites,* as §34 amendment 1: release, debug, doc, wasm and parsers on
+  the arm tree in a fresh target. A failure that passes its immediate solo
+  re-run is `FLAKE`; any other is `REAL` and fires `ABORT-TESTS`.
+
+**Arms.** All arms run Bulk, `--window-reliable`, `RWM_GEN=0 RWM_DIAG=1
+RWM_ORACLE_DIAG=1 RWM_PERF_TIMEOUT_S=200`. The environment withholds §27's
+list plus `RWM_STORE_LAW` and `RWM_ORACLE_*`. `RWM_ORACLE_L_DGPS` is 9 773
+(c2) or 97 733 (c1), the netem rate ÷ (8·1 279 B).
+- `SL`, ORACLE start-low: `RWM_STORE_LAW=oracle`, from boot.
+- `SH`, ORACLE start-high: `SL` plus `RWM_ORACLE_HOLD=<H>:15`, with H = 1 536
+  at c2 and 2 048 at c1s. The hold raises the clamp's lower bound to H for
+  15 s, then drops it (paper §6.1: an exogenous initial condition, not a law
+  mode).
+  - c2's H is ln(1 536/927) = 0.50 above §42's threshold, about 6 sd. At
+    1 024 the margin would be ≈ 1.2 sd, and noise alone could split the
+    rows.
+  - c1s's H is N·knee, the highest cap available. c1s has no threshold.
+- `MAIN`: the shipped law. The arm's sampler and the counterfactual ask run
+  as observation only (`RWM_ORACLE_DIAG=1` without `RWM_STORE_LAW`).
+- `RWM_ORACLE_DIAG=1` prints one `[OCAP]` line per path per window close: t,
+  n, ask, h, rtprop_us, tmin_us, tp50_us, S, brake_us = tmin − rtprop, n_k,
+  offered, the loop count r_k = T_w/Tp50, the binds `floor` / `pin` /
+  `hold` / `wbind`, and n's min and max over the window. Between closes only
+  RTprop moves n, so the min/max shows how far the per-window model is
+  from literal.
+
+**Rows.** n = 3 per (cell, arm). Three blocks, (42, 1), (7, 1), (42, 2).
+Cells alternate (c2 first on even blocks), and the arm order rotates per
+block: MAIN SL SH / SL SH MAIN / SH MAIN SL. That makes 18 rows, plus a
+2-row smoke at full size (c2 SH, c1s SL), 20 invocations in all.
+
+*Rules (shared file).*
+- Launch precondition: both locks free (`test -e` only), no cargo/rustc
+  (`pgrep -x`), and `procs_running` ≤ 2 in 5 samples 2 s apart. The locks
+  are taken via `lib_battery.sh`.
+- The run tree and binary are root-owned on `/dev/shm`, with an `ABORT-BIN`
+  sha check before every row.
+- io `full avg10` is read before and after every row; ≥ 20 is flagged,
+  never voided. Off tmpfs, a row is `VOID-ONDISK`.
+- `LD_HARD` = launch + 4 h. The battery does not start with less than
+  45 min left (`ABORT-BUDGET`).
+
+*Witnesses (the row is void otherwise).*
+- `[GATES]` carries the arm's environment. ORACLE rows carry the echo
+  "oracle store law ACTIVE" with the L list and the hold. MAIN rows carry no
+  oracle law echo and `[SUMCAP] eng>0`.
+- Every path has an `[OCAP]` line for every window with t ≥ 1 s.
+- Σ n_k equals the sampler's offered count exactly; otherwise the row is
+  `VOID-SAMPLER`.
+- *Routing* (`goal-gate.md` rule 1). In ORACLE rows, the `[DIAG]` `win=`
+  denominator equals the same tick's `[OCAP]` n on ≥ 99 % of ticks with
+  t ≥ 1 s, so the gate runs on the law's n.
+- A `dgq` field appears on every `[DIAG]` line with t ≥ 1 s.
+
+*Labels (the row stays live).*
+- `SHORT`: an SL or MAIN row under 30 s, or an SH row under t_h + 30 s =
+  45 s. Such rows are reported and left out of the outcome.
+- `DNF`: the perf timeout. It is not `ABORT-RC`. The row is scored from its
+  log, because a collapsed ORACLE row is data. Any other rc ≠ 0 is
+  `ABORT-RC`.
+- SH rows only, `HOLD-EXPIRED` or `HOLD-INERT`. `HOLD-EXPIRED` iff
+  RTprop(t_h) ≥ RTprop(1 s) + ½·(min Tmin_k over the hold's last 2 s −
+  RTprop(1 s)), i.e. the anchor rose at least halfway to the queue's lower
+  envelope. A windowed min can reach only that envelope, never the median.
+  On the ledger rows the threshold reads 50.2 ms at c2 1 024 (expired ≈ 89)
+  and 3.49 ms at c1s 2 048 (expired ≈ 4.31), and both fresh anchors fail
+  it. A `HOLD-INERT` row would "return" trivially, so it is reported and
+  left out of the outcome.
+- SH rows: H ≤ N·knee is a startup configuration check, as the L list's
+  length is, so the clamp's bounds never invert.
+
+*Abort table:* `ABORT-LOCK`, `-CRLF`, `-SHA`, `-BIN`,
+`-SENTINEL-UNWRITABLE`, `-SMOKE`, `-BUILD`, `-TESTS`, `-RC`, `-BRINGUP`,
+`-BUDGET`, `VOID-COTENANT`, `VOID-ONDISK`, `VOID-SAMPLER`, filled in the
+result. If the 5 GB smoke fails on memory, the size falls back, by an
+amendment before any scored row.
+
+**Readouts (per row; windows with t ≥ 1 s; the last third is the windows
+with t ≥ ⅔ of the row's last window time).**
+- **R1, the operating point.**
+  - n_end = the median n over the last third; s_end = sd(ln n) over the
+    same windows.
+  - ñ_SL = the median of n_end over the cell's live SL rows.
+- **R2, goodput and delay.** Goodput in Mbit/s from perf. A_x p50 over the
+  whole transfer, as §29. The sampler's Tp50, median over the last third.
+  SL is scored against MAIN; SH is reported on its post-release windows.
+- **R3, return (SH).**
+  - t_ret = the first window after t_h that opens 4 consecutive windows
+    with |ln(n/ñ_SL)| ≤ 2·sd_pred; otherwise "none".
+  - Beside it, the median ask/H over the hold's last 2 s: the open map at H
+    with the anchor expired.
+- **R4, the brake.** Tmin_k − RTprop per window: medians per third and at
+  the release, plus RTprop at 1 s, 10 s, t_h and the end.
+- **R5, the binds.** The `floor`, `pin`, `hold` and `wbind` fractions, over
+  the whole row and over the last third.
+- **R6, the sampler.** n_k min, median and max per row and in the last
+  third, and the share of windows with n_k > 8 192 (what the `[LOOPDIAG]`
+  cap would have cut).
+- **R7, authority.** B = Σ `dgq[hand − tx]`, median per third. Reported
+  against 1 ms of L: 98 datagrams at c1, 10 at c2.
+- **R8, MAIN on the oracle map.** MAIN's counterfactual ask/n, median per
+  third. Reported.
+
+**Outcomes per cell (fixed now).** The constants:
+- predicted bands: c2 [157, 164], c1s [614, 699];
+- sd_pred: 0.08 at c2, 0.11 at c1s (§42);
+- d(x) = 0 inside the band, else |ln| to the nearer edge;
+- k = 2.
+
+Each scored SH row (`HOLD-EXPIRED`, not `SHORT`) is `RETURNED` iff
+|ln(n_end/ñ_SL)| ≤ 2·sd_pred, else `NOT-RETURNED`, with its direction
+(HIGH or LOW) reported. The cell takes the first label that matches:
+
+1. **`UNSCOREABLE`**: fewer than 2 scored SL rows, or fewer than 2 scored
+   SH rows.
+2. **`UNSTABLE`**: any live ORACLE row shows one of the following (the label
+   names the rows and the modes):
+   - `COLLAPSE`: `floor` ≥ 0.25 over the last third, or a `DNF` row with
+     `floor` ≥ 0.25 over its windows after 5 s;
+   - `OSCILLATION`: s_end > 3·sd_pred (0.24 at c2, 0.33 at c1s);
+   - `RUNAWAY`, SL rows only: `pin` ≥ 0.25 over the last third. A pinned SH
+     row is evidence for `BISTABLE`, not `RUNAWAY`.
+3. **`BISTABLE`**: ≥ 2 SH rows `NOT-RETURNED`.
+4. **`MIXED`**: exactly 1 SH row `NOT-RETURNED`; the threshold lies within
+   noise of the start.
+5. **`CONVERGES-ONE-POINT`**: no SH row `NOT-RETURNED`, and
+   d(ñ_SL) ≤ 2·sd_pred.
+6. **`ONE-POINT-OFF-PREDICTION`**: no SH row `NOT-RETURNED`, and
+   d(ñ_SL) > 2·sd_pred. There is one point, but not where §42 put it; the c1
+   truncation caveat is the first suspect.
+
+Reported beside the label:
+- `SPREAD`: the median of s_end over SL rows ÷ sd_pred, `AS-PREDICTED` iff
+  in [0.5, 2].
+- `GOODPUT`: SL − MAIN against ±2σ_pooled (the two arms' sample sds),
+  `BETTER`, `WITHIN` or `WORSE`.
+- `DELAY`: A_x p50 and the last-third Tp50, each `BETTER`, `WITHIN` or
+  `WORSE` by 2σ_pooled.
+- Fewer than 2 live rows in an arm makes that comparison `UNSCOREABLE`.
+
+**Decision rule (diagnostic; nothing ships; the arm is never merged).**
+- *`CONVERGES-ONE-POINT` at both cells:* the shipped anchor gives one
+  operating point in practice. The next steps go to the user as a proposal;
+  none starts from this section:
+  - the engine L̂ (§42 (a): socket timestamps, wire v10, an ADR);
+  - c8's idle-leg rule;
+  - the goodput the power point gives up (the §40 standing decision on δ's
+    authority).
+- *`BISTABLE` or `MIXED` at any cell:* the anchor becomes the user's design
+  decision: a lifetime minimum, a drain, or another brake. It is presented
+  with R3's ask/H and R4's brake trajectories, and no engine L̂ work starts
+  before that decision.
+- *`UNSTABLE` at any cell:* §42's next step 3, the split diagnostic (sender
+  dwell against the endpoint loop, at µs), comes before anything else.
+- *`ONE-POINT-OFF-PREDICTION` at any cell:* that cell's map is re-derived
+  from this battery's uncapped windows before any prediction for it is
+  quoted again.
+- *`UNSCOREABLE` at any cell:* the cell's question stays open. The missing
+  rows are named, and a re-run needs an amendment that says why they failed.
+- *`GOODPUT` and `DELAY`* go to the user as the price of the power point.
+  No flip.
+
+**Predictions (before any number).**
+- **c2:**
+  - SL: ñ_SL ≈ 157–164, with spread `AS-PREDICTED` (≈ 0.08).
+  - SH: `HOLD-EXPIRED` (a ≈ 150 ms queue held 15 s); ask/H ≥ 1.0 at the
+    end of the hold; the row runs to the pin.
+  - Label: **`BISTABLE`**.
+  - `GOODPUT` `WORSE` by 5–12 %; `DELAY` `BETTER` (Tp50 ≈ 16–19 ms against
+    ≈ 40–100 ms).
+  - `wbind` ≈ 0 in SL's last third and > 0 during SH's hold. n_k ≈ 2–2.5 k.
+- **c1s:**
+  - SL: ñ_SL ≈ 614–699, spread ≈ 0.11.
+  - SH: ask/H ≈ 0.76; it returns within ≈ 3 windows.
+  - Label: **`CONVERGES-ONE-POINT`**. The stated risk is
+    `ONE-POINT-OFF-PREDICTION`, because the predicted map was built from
+    truncated windows.
+  - `HOLD-EXPIRED` is expected, with RTprop rising from ≈ 2.6 to ≈ 4.3 ms
+    (the ledger's Tmin floor at 2 048). The stated risk is `HOLD-INERT`,
+    which would leave c1s's start-high question `UNSCOREABLE`; a return
+    from 2 048 is expected even with a fresh anchor (ask 1 372).
+  - `GOODPUT` `WORSE` by 7–17 % (≈ 685–773 against ≈ 826 Mbit/s); `DELAY`
+    `BETTER` (≈ 6–7.5 against ≈ 19 ms).
+  - B ≈ 50–190 datagrams (§34: ≤ 50 at caps ≤ 512, 128–192 at 768).
+  - n_k ≈ 8–18 k (§42 saw 8–15 k at c1; the bound is L·T_w ≈ 24 k), so
+    most windows lie above 8 192.
+
+**Duration.** Build ≈ 6 min. Suites ≈ 1.5–2 h. The 20 invocations take
+≈ 25 min (rows of 48–60 s plus ≈ 15 s of bring-up). All of it fits inside
+`LD_HARD`.
+
+**Gate.** STOPPED before the build. The arm is engine code (default off,
+not for merge). Its build, the host gate (a)–(g), the harness plan and the
+VM session are the next phase, on the coordinator's go.

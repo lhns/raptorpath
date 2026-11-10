@@ -2880,6 +2880,159 @@ were not run. Offline, §36's D5 rerun with the p90 map at c8 lands at 329
 (slope 0.53; oracle 324). That holds on the static grid only and assumes no
 lock-out (status §38). The rule for a leg with no trains stays open.
 
+**The closed-loop oracle arm — the law's free choices, fixed before any
+build (status §42 addendum, §43).** The fixed points above are crossings of
+static-cap maps, read from rows shorter than Copa's 10 s RTprop filter.
+They do not show that the loop `n ← ask(n)`, run for several filter lengths,
+settles at one point. Status §42 found that it may not at c2: once the
+filter expires, the map has a second, unstable crossing near 927, above
+which the cap drifts to the clamp. This arm closes the loop with the true
+link rate, so that the input L̂ is not under test. `RWM_STORE_LAW=oracle`
+is default off and diagnostic only, never for merge (as `run34` and
+`archive/store-power`). It is not a candidate law, because its L comes from
+the environment.
+
+```text
+   n(t)   =  clamp( (1 + q(δ)) · Σᵢ Lᵢ · ( RTpropᵢ(t) + Sᵢ(t) ) ,  max(floor, h(t)) ,  N·knee )
+
+   Sᵢ(t)  =  Tp50ᵢ,ₖ − Tminᵢ,ₖ      over window k, the last closed window holding ≥ 1 sample of path i; 0 before the first
+   h(t)   =  H · 1{t < t_h}           start-high rows only (1{·} the indicator); h ≡ 0 in every other row
+```
+
+| symbol | value | provenance / status |
+|---|---|---|
+| Lᵢ | netem rate ÷ (8·1 279 B): c2 9 773, c1 97 733 datagrams/s | oracle, from the environment (`RWM_ORACLE_L_DGPS`, one entry per configured path, in path-id order); the datagram length is §34/§36's W |
+| RTpropᵢ(t) | Copa's windowed min over 10 s (`min_rtt`, `window_duration` in `scheduler/copa.rs`), read live | shipped and unmodified: the arm tests the shipped anchor, whose expiry §42 left open |
+| Tminᵢ,ₖ, Tp50ᵢ,ₖ | min and nearest-rank median of every app-echo sample of window k | measured by the arm's own sampler (below) |
+| T_w | 250 ms, tumbling, on the `[DIAG]` clock | declared (below), with a derived admissible range and a bind gauge |
+| q(δ) | (b(δ) + 1)/30; Bulk 0.10 | cited, as the shipped law |
+| floor, knee, N | 10; 2 048 per path; live paths | shipped resource bounds; at N = 1 the ceiling is 2 048 |
+| h(t), H, t_h | c2 1 536, c1s 2 048; t_h = 15 s | diagnostic start condition (below), not a law term |
+
+The window length is named T_w because W is the datagram length in this
+section.
+
+*The window, T_w = 250 ms: declared, inside a derived range.*
+- *Lower bound.* By Little's law, a cap change reaches the loop-time samples
+  one loop later. So about Tp50/T_w of each window still describes the
+  previous cap. A stale share larger than q(δ) would bias S by more than the
+  standing-queue allowance the law prices, so T_w ≥ Tp50/q(δ). At the
+  predicted points, at Bulk (q = 0.10), this is ≈ 190 ms at c2 (Tp50 ≈
+  19 ms; 250 ms is 13 loops) and ≈ 60–75 ms at c1s (Tp50 ≈ 6–7.5 ms;
+  ≈ 35–40 loops). The bound holds only near Bulk. At c2 it reads ≈ 285 ms
+  at Auto (q = 0.0667) and ≈ 380 ms at Realtime (q = 0.05), both above
+  250 ms, so away from Bulk the declared window sits below its own lower
+  bound and `wbind` reports it. The battery runs Bulk only.
+- *Upper bound.* T_w must be short against the filter. The brake is
+  Tmin_k − RTprop, and as T_w approaches the filter length Tmin_k approaches
+  RTprop, so the brake vanishes whatever the queue does. 250 ms is the
+  filter length ÷ 40.
+- *Inside that range,* the noise decides. The closed-loop spread is measured
+  only at 250 ms (§42: sd(ln n) ≈ 0.08 at c2, 0.11 at c1s), and the ledgers
+  support only multiples of 250 ms. So T_w is declared at the window where
+  the predictions exist.
+- *The scale-free successor,* T_w = Tp50/q(δ), is named and not used. At c1s
+  it would be ≈ 60–75 ms, where the noise is unmeasured. If §42's
+  γ ≈ 1.2–1.3 held below 250 ms, the spread there would be sd(ln n) ≈ 0.2–0.27.
+- *Bind gauge (`wbind=`).* Per window, the loop count r_k = T_w/Tp50_k; the
+  gauge is the share of windows with 1/r_k > q(δ). It is predicted ≈ 0 at
+  the operating points, and above 0 only in c2's start-high hold and descent
+  (Tp50 ≈ 100–160 ms at 1 024–1 536 gives 1.6–2.5 loops per window).
+
+*The sampler.* It takes every sample `PathState::record_rtt_sample`
+receives, which is the series Copa's RTprop is built from, so Tmin_k ≥
+RTprop(t) holds for every t until the next close: the brake is ≥ 0 by
+construction. The sampler has no cap. Its buffer is reused per window and
+grows to the window's population: ≈ 2 400 samples at c2 and up to
+L·T_w ≈ 24 000 at c1. The `[LOOPDIAG]` instrument
+(`archive/store-power`, `net/loopdiag.rs`) kept only the first 8 192
+samples per path per window (`RTT_CAP`, first come) and counted the rest in
+`ov=`. At c1 every window overflowed, so §27/§34's c1 Tmin and Tp50 come
+from the start of each window (§42 addendum). The c1s prediction inherits
+that caveat, and its direction is unknown.
+- *Witness:* the per-window count n_k, and Σₖ n_k equal to the sampler's
+  offered counter.
+- In MAIN the same sampler runs as an observation-only readout (with the
+  ask computed from the same L), so the delay comparison uses one estimator
+  in both arms.
+
+*The cadence.* n is recomputed at the shipped store-cap refresh (at most
+every 5 ms, `refresh_store_cap`). L is constant and S changes only when a
+window closes, so between closes only RTprop moves n. No new timer drives
+the cap. The scorer reads n at each window close. §42's model, one update
+per window, is therefore approximate: RTprop can fall at a new minimum or
+climb as old samples expire. The per-window min and max of n are logged
+to bound the gap.
+
+*No step limit: n = ask.*
+- Every measured crossing has a positive slope (0.25–0.56 at the stable
+  points, 1.09 at c2's threshold).
+- On a map with slope in (0, 1), the memoryless iteration n ← ask converges
+  monotonically. A step limit could change only the speed, not the fixed
+  point or which crossings are stable.
+- A constant per-window limit, such as D's (1 + q), would bring back a rate
+  parameter with no provenance. It would also stretch c1s's start-high
+  descent from about 3 windows to ln(2 048/699)/ln 1.1 ≈ 11.
+- Overshoot would need a slope below −1. None has been measured, and §43's
+  oscillation outcome would detect one.
+
+*Clamp bind gauges.* Per window: `floor=` (the floor binds), `pin=` (N·knee
+binds) and `hold=` (h binds). Each is reported over the whole row and over
+its last third, as `[SUMCAP]` does. Beside them sits the authority gauge
+that any nested store law carries (§34 R4): quinn's backlog
+B = Σ `dgq[hand − tx]`.
+
+*Boot: no rule of its own.* Sᵢ and RTpropᵢ start at 0, so before a path's
+first RTT sample its term is 0 and n = floor, for one round trip. From the
+first sample until the first window closes, Sᵢ = 0 and
+n = (1 + q)·L·RTprop: ≈ 75–123 at c2 (RTprop 7.0–11.4 ms) and ≈ 260–310 at
+c1s (2.4–2.85 ms). Both are below the predicted points, so start-low really
+starts low. A window with no sample leaves Sᵢ at its last value. This is the
+sampler's definition (a statistic of an empty set does not exist), not a
+threshold, and empty windows are counted.
+
+*Start-high is an initial condition, not a mode.*
+- The law is memoryless. Its only state lives in the environment: the
+  standing queue and the RTprop filter. So the only way to start the loop
+  high is to hold the environment there.
+- h(t) is an exogenous, time-indexed step on the clamp's lower bound. It
+  reads no δ, ρ, hint, path count or measurement.
+- The formula and its inputs are evaluated the same way through the hold.
+  ask is computed and logged throughout, so the hold also measures the open
+  map at H: first with a fresh anchor, then, after about 10 s, with an
+  expired one.
+- t_h = 15 s is the filter plus 5 s. The minimum recorded at boot leaves the
+  filter at about 10–11 s.
+- h ≡ 0 in every start-low row; the same code serves both arms.
+- H ≤ N·knee is checked at startup, as the L list's length is, so the
+  clamp's bounds cannot invert.
+- The hold is not built on `RWM_STORE`, because that switches the law off.
+
+*δ, ρ and the path count.*
+- δ enters only through q(δ), which is continuous; the standing decision of
+  status §40 stands. The battery runs Bulk.
+- The ρ hole term is not added, as on the shipped seat (above: ρ < 1 has no
+  outstanding gate, status §3.3). The arm runs at ρ = 1 (`--window-reliable`).
+- The Σ has the same form at every N. A single-path battery is a choice of
+  cells, not a guard. If the L list's length differs from the configured
+  path count, the arm refuses to start (a configuration error at the
+  `[GATES]` echo), and nothing branches inside the law.
+
+*Predicted operating points (Bulk, from §42's ledger maps).*
+
+| cell | start-low n | sd(ln n) | start-high H; ask/H at the end of the hold | predicted reading |
+|---|---|---|---|---|
+| c2-100 | 157–164 (slope 0.25–0.34) | 0.08 | 1 536; ≥ 1.0, extrapolated (ledger 1.01 at 1 024 with the anchor expired, tending to 1 + q as the queue's median/mean ratio tends to 1) | start-high runs to the N·knee clamp: bistable |
+| c1s-400 | 614–699 (slope 0.54–0.56) | 0.11 | 2 048; 0.76 (ledger 1 549 with the anchor expired) | returns within ≈ 3 windows: one point |
+
+At these points the law gives up goodput for delay, as it does on the
+static grid. c2 at 157–164 sits between §27's 128 and 192 rows, ≈ 69 and
+89 Mbit/s. c1s at 614–699 sits between §34's 512 and 768 rows, ≈ 685 and
+773 Mbit/s, against MAIN's ≈ 826. Loop-time Tp50 (the ledgers' Tmin + S at
+the bracketing caps) is expected ≈ 16–19 ms at c2 and ≈ 6–7.5 ms at c1s. On
+the same ledgers, MAIN's caps (c2 405–1 100, c1s 2 048) put it at
+≈ 40–100 ms and ≈ 19 ms.
+
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
 cap is exactly one BDP per path with zero standing queue, the null candidate
