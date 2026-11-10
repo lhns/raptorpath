@@ -36,21 +36,12 @@ down() {
 
 shape() { # ns dev scenario seed
     local ns="$1" dev="$2" scenario="$3" seed="${4:-}"
-    read -r rate one_way jitter ge_p ge_q <<< "$(scenario_params "$scenario")"
-    local jit=""
-    [[ "$jitter" != "0" ]] && jit="${jitter}ms"
-    local loss=""
-    [[ "$ge_p" != "0" ]] && loss="loss gemodel ${ge_p}% ${ge_q}%"
-    local sd=""
-    [[ -n "$seed" ]] && sd="seed $seed"
-    # shellcheck disable=SC2086
-    local extra child
-    extra="$(scenario_netem_extra "$scenario")"
+    local child h=""
     child="$(scenario_child_qdisc "$scenario")"
-    local h=""
     [[ -n "$child" ]] && h="handle 1:"
-    ip netns exec "$ns" tc qdisc add dev "$dev" root $h netem \
-        delay "${one_way}ms" $jit rate "$rate" $loss $sd $extra
+    # The netem words come from lib.sh `netem_args` (one builder for `shape` and `reshape`).
+    # shellcheck disable=SC2046,SC2086
+    ip netns exec "$ns" tc qdisc add dev "$dev" root $h netem $(netem_args "$scenario" "$seed")
     if [[ -n "$child" ]]; then
         ip netns exec "$ns" tc qdisc add dev "$dev" parent 1: handle 10: $child
     fi
@@ -58,6 +49,22 @@ shape() { # ns dev scenario seed
     # (lib.sh `truth_counter_install`; netem's own counters are per skb).
     # `shape` is only ever called on the data direction.
     truth_counter_install "$ns" "$dev"
+}
+
+# A path event (status section 46): re-issue the FULL netem line of a live data egress with only the delay changed.
+#   reshape <ns> <dev> <scenario> <seed> <delay_ms>      delay_ms is the absolute one-way delay
+# It is `tc qdisc change` and nothing else. `add` or `replace` would drop the queue and reset the qdisc counters that `[TRUTH]`
+# and the QDISC tail read, and the truth counter (clsact) is never touched.
+reshape() {
+    local ns="$1" dev="$2" scenario="$3" seed="${4:-}" delay_ms="${5:-}"
+    guard_ns "$ns"
+    guard_dev "$dev"
+    [[ "$delay_ms" =~ ^[0-9]+$ ]] || { echo "REFUSED: reshape needs an integer delay in ms, got '$delay_ms'" >&2; return 1; }
+    local child h=""
+    child="$(scenario_child_qdisc "$scenario")"
+    [[ -n "$child" ]] && h="handle 1:"
+    # shellcheck disable=SC2046,SC2086
+    ip netns exec "$ns" tc qdisc change dev "$dev" root $h netem $(netem_args "$scenario" "$seed" "$delay_ms")
 }
 
 up() {
@@ -127,5 +134,8 @@ up() {
 case "${1:-}" in
     up) shift; up "$@" ;;
     down) down ;;
-    *) echo "usage: $0 up <scenA> <scenB> [--seed A[,B]] | down" >&2; exit 1 ;;
+    shape) shift; shape "$@" ;;
+    reshape) shift; reshape "$@" ;;
+    oneway) scenario_one_way_ms "${2:?scenario}" ;;
+    *) echo "usage: $0 up <scenA> <scenB> [--seed A[,B]] | down | shape <ns> <dev> <scen> <seed> | reshape <ns> <dev> <scen> <seed> <delay_ms> | oneway <scen>" >&2; exit 1 ;;
 esac
