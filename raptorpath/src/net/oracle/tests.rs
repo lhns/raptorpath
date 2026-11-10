@@ -33,7 +33,7 @@ impl Drop for TestGauge {
 }
 
 fn gates(law: bool, diag: bool, l: &[f64], hold: Option<(usize, f64)>) -> OracleGates {
-    OracleGates { law, diag, l_dgps: l.to_vec(), hold, err: None }
+    OracleGates { law, diag, l_dgps: l.to_vec(), hold, gain: None, err: None }
 }
 
 /// One path whose RTprop is `rtt_us` (a sample fed through the path itself,
@@ -113,6 +113,45 @@ fn oracle43_b_decide_routes_rtprop_s_l_and_q() {
     let (d2, _) = decide_at(&og2, tg2.0, &sched2, delta_budget_b(ProtocolHint::Bulk), 20.0);
     assert!((d2.ask - 559.0328).abs() < 1e-3, "{}", d2.ask);
     assert_eq!(d2.n, 560);
+}
+
+// ── the diagnostic gain (RWM_ORACLE_GAIN) ────────────────────────────────
+
+/// A set gain replaces (1 + q): L 9 773, RTprop 7.0 ms, S 5.4 ms at gain 2.0 gives
+/// 2 · 9773 · 0.0124 = 242.3704 -> n = 243 (the default, Bulk q, gives 134). Unset
+/// is the default exactly; the parse is strict; the echo declares it.
+#[test]
+fn oracle43_gain_replaces_one_plus_q() {
+    let tg = TestGauge::install();
+    let sched = sched_with_rtt(Some(7000));
+    close_with(tg.0, &[12400, 12400]);
+    let b = delta_budget_b(ProtocolHint::Bulk);
+    let mut og = gates(true, false, &[9773.0], None);
+    let (d0, _) = decide_at(&og, tg.0, &sched, b, 20.0);
+    assert_eq!(d0.n, 134, "unset: the default formula, unchanged");
+    og.apply_gain(Some("2.0"));
+    assert_eq!(og.gain, Some(2.0));
+    let (d, _) = decide_at(&og, tg.0, &sched, b, 20.0);
+    assert!((d.ask - 242.3704).abs() < 1e-3, "{}", d.ask);
+    assert_eq!(d.n, 243);
+    // The gain replaces the multiplier: δ no longer moves the ask.
+    assert_eq!(decide_at(&og, tg.0, &sched, 0.5, 20.0).0.n, 243);
+    // Gain 1.1 is the Bulk default.
+    og.apply_gain(Some("1.1"));
+    assert_eq!(decide_at(&og, tg.0, &sched, 0.5, 20.0).0.n, 134);
+    // Strict parse, and the echo declares it.
+    for bad in ["0", "-1", "x", "inf", "NaN", ""] {
+        let mut g = gates(true, false, &[9773.0], None);
+        g.apply_gain(Some(bad));
+        assert!(g.check(1, KNEE, true, true).is_err(), "{bad:?}");
+    }
+    let mut g = gates(true, false, &[9773.0], None);
+    assert!(g.echo().unwrap().ends_with("gain=q"));
+    g.apply_gain(Some("2"));
+    assert!(g.echo().unwrap().ends_with("gain=2"), "{:?}", g.echo());
+    let mut m = gates(false, true, &[9773.0], None);
+    m.apply_gain(Some("2"));
+    assert!(m.echo().unwrap().contains("gain=2") && !m.echo().unwrap().contains("oracle store law ACTIVE"));
 }
 
 // ── (c) a 30 000-sample window kept whole ────────────────────────────────

@@ -583,6 +583,7 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_RS_TRACE", "instrument: its own [RSTRACE] output IS the echo"),
     ("RWM_STORE_LAW", "own echo: 'oracle store law ACTIVE' (net/oracle.rs, printed when =oracle); the default echo is byte-pinned"),
     ("RWM_ORACLE_L_DGPS", "own echo: the L list inside 'oracle store law ACTIVE' / '[OCAP] sampler readout ACTIVE'"),
+    ("RWM_ORACLE_GAIN", "own echo: gain= inside 'oracle store law ACTIVE' / '[OCAP] sampler readout ACTIVE' (diagnostic multiplier, not a law term)"),
     ("RWM_ORACLE_HOLD", "own echo: the hold inside 'oracle store law ACTIVE'"),
     ("RWM_ORACLE_DIAG", "instrument: its own [OCAP] output and '[OCAP] sampler readout ACTIVE' echo"),
     ("RWM_RSTAR_TAIL", "r* provisioning knob, read at the tail-provisioning site"),

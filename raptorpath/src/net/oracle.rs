@@ -52,6 +52,10 @@ pub struct OracleGates {
     pub l_dgps: Vec<f64>,
     /// `RWM_ORACLE_HOLD=<H>:<t_h seconds>`: the start-high hold.
     pub hold: Option<(usize, f64)>,
+    /// `RWM_ORACLE_GAIN`: when set, replaces the multiplier (1 + q(δ)). A DIAGNOSTIC
+    /// knob for off-law rows, not a law term: nothing derives it and no law is
+    /// built from it. Unset (the default) leaves the formula untouched.
+    pub gain: Option<f64>,
     /// The first parse error, if any.
     pub err: Option<String>,
 }
@@ -108,14 +112,28 @@ impl OracleGates {
         g
     }
 
+    /// Read `RWM_ORACLE_GAIN` (a positive finite number) into `gain`.
+    pub fn apply_gain(&mut self, raw: Option<&str>) {
+        if let Some(raw) = raw {
+            match raw.trim().parse::<f64>() {
+                Ok(g) if g.is_finite() && g > 0.0 => self.gain = Some(g),
+                _ => {
+                    self.err.get_or_insert(format!("RWM_ORACLE_GAIN={raw:?} is not a positive number"));
+                }
+            }
+        }
+    }
+
     pub fn resolve() -> Self {
         let env = |k: &str| std::env::var(k).ok();
-        Self::parse(
+        let mut g = Self::parse(
             env("RWM_STORE_LAW").as_deref(),
             env("RWM_ORACLE_L_DGPS").as_deref(),
             env("RWM_ORACLE_HOLD").as_deref(),
             env("RWM_ORACLE_DIAG").as_deref(),
-        )
+        );
+        g.apply_gain(env("RWM_ORACLE_GAIN").as_deref());
+        g
     }
 
     /// Either the law or the readout is on.
@@ -184,13 +202,13 @@ impl OracleGates {
                 .hold
                 .map_or_else(|| "none".to_string(), |(h, t)| format!("H={h} t_h={t}s"));
             Some(format!(
-                "oracle store law ACTIVE (RWM_STORE_LAW=oracle, diagnostic, never merged): L_dgps={:?} hold={} T_w={}s",
-                self.l_dgps, hold, T_W_S
+                "oracle store law ACTIVE (RWM_STORE_LAW=oracle, diagnostic, never merged): L_dgps={:?} hold={} T_w={}s gain={}",
+                self.l_dgps, hold, T_W_S, self.gain.map_or_else(|| "q".to_string(), |g| g.to_string())
             ))
         } else if self.diag {
             Some(format!(
-                "[OCAP] sampler readout ACTIVE (RWM_ORACLE_DIAG=1, observation only): L_dgps={:?} T_w={}s",
-                self.l_dgps, T_W_S
+                "[OCAP] sampler readout ACTIVE (RWM_ORACLE_DIAG=1, observation only): L_dgps={:?} T_w={}s gain={}",
+                self.l_dgps, T_W_S, self.gain.map_or_else(|| "q".to_string(), |g| g.to_string())
             ))
         } else {
             None
@@ -210,7 +228,12 @@ pub struct OracleTerm {
 
 /// The unclamped ask: (1 + q) · Σᵢ Lᵢ · (RTpropᵢ + Sᵢ).
 pub fn oracle_ask(q: f64, terms: &[OracleTerm]) -> f64 {
-    (1.0 + q) * terms.iter().map(|t| t.l_dgps * (t.rtprop_s + t.s_s)).sum::<f64>()
+    oracle_ask_gain(1.0 + q, terms)
+}
+
+/// The same ask with an explicit multiplier (`RWM_ORACLE_GAIN` replaces 1 + q).
+pub fn oracle_ask_gain(mult: f64, terms: &[OracleTerm]) -> f64 {
+    mult * terms.iter().map(|t| t.l_dgps * (t.rtprop_s + t.s_s)).sum::<f64>()
 }
 
 /// h(t) = H · 1{t < t_h}; 0 without a hold.
@@ -272,7 +295,8 @@ pub(crate) fn decide(
         .collect();
     let h = hold_h(og.hold, t_s);
     let upper = live.len().max(1).saturating_mul(pool);
-    (oracle_cap(oracle_ask(q, &terms), floor, h, upper), h)
+    let mult = og.gain.unwrap_or(1.0 + q);
+    (oracle_cap(oracle_ask_gain(mult, &terms), floor, h, upper), h)
 }
 
 // ── the sampler ──────────────────────────────────────────────────────────
