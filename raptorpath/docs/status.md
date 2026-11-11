@@ -13225,23 +13225,26 @@ quinn's window never falls below the BDP (share 0.0, stale and control
 alike). So the battery does not run under §48.
 
 **Deviations from the registration, all recorded.**
-- **Stale-event phase.** The registered phase (events on a 1 ms chunk edge)
-  left test 5 red (quinn's minimum 1.05 ms) and a `bbr_rs` test green
-  pre-fix. The worker moved the events to 1.2005 s + 0.1·j after seeing
-  this. A sweep over the phase, run afterwards, is the check (below).
+- **Stale-event phase.** At the registered phase (events on a 1 ms chunk
+  edge), test 5 was red (quinn's minimum 1.05 ms). By the gate rule that is
+  `VOID-SIM`, a harness fault, and the rule permits a harness fix with the
+  L_j grid unchanged. The worker moved the events to 1.2005 s + 0.1·j, and
+  the grid is unchanged. A phase sweep, run afterwards, checks that the
+  choice does not matter post-fix (below).
 - **Extra seams:** an `ack()` split of `on_ack`, `qcc()`/`qcc_of`,
   `pub(super)` QUIC config builders, a test-only `tracked_records()`, and an
-  `Instant`-valued `AckEvent`. All are behaviour-neutral.
+  `Instant`-valued `AckEvent`. The worker calls them behaviour-neutral; that
+  is not yet checked here.
 - **Gauges** ride their own `[QCC]` line (amendment 2), not `[DIAG]`.
 - **Jitter scenario.** The assertions were the worker's choice: b̂ ≥ 0.9·L
   before the first ProbeRtt and from exit + 1 s, over one ProbeRtt and 3 s
   after it. They held: b̂/L 1.03–1.07 outside ProbeRtt, a dip to 0.61 for
   0.21 s inside it. No jitter allowance is indicated.
-- **Min filter.** The code uses `r_e ≤ m̂` (v1's `bbr_update_min_rtt`); §8.4's
-  formula line says `<`. With `<`, an equal recurring minimum never restamps
-  t_m, and ProbeRtt fires every 10 s on a stable path. `≤` is the intended
-  law. The paper's formula line is corrected to `≤` with the next paper
-  edit.
+- **Min filter.** The code uses `r_e ≤ m̂` (v1's `bbr_update_min_rtt`);
+  §8.4's formula line says `<`. The two differ only on samples that tie m̂
+  exactly. Under `<`, a tied recurring minimum would not restamp t_m. This
+  is derived, not measured: the jitter run entered ProbeRtt at 10.0 s under
+  `≤` too, so the 10 s drain stays either way. A tie test goes into §48b.
 
 **Why test 4 was red: the simulator's clock, not quinn.**
 - Quinn's bandwidth sampler takes min(send rate, ack rate) per `on_ack`
@@ -13261,9 +13264,11 @@ alike). So the battery does not run under §48.
   The window equals 2 × filter × latched `min_rtt`. §47's inferred cause (a
   latched-low `min_rtt`) is therefore realised in simulation. It is **not
   refuted**.
-- **Not reproduced:** the in-vivo row's pin at 13.8 KB with no further loss
-  (§41b MAIN c1s s7 r3: qce 6→7 and lost +28 at 1.8 s, then qcwnd 13.8–14.4
-  KB for > 5 s).
+- **Not yet reproduced:** the in-vivo row's pin at 13.8 KB with no further
+  loss (§41b MAIN c1s s7 r3: qce 6→7 and lost +28 at 1.8 s, then qcwnd
+  13.8–14.4 KB for > 5 s). Under W = 2 × filter × latch, 13.8 KB needs a
+  55 µs latch at link rate, or a filter decayed toward the delivered rate. It
+  may be the same mechanism at a lower fixed point; that is being tested.
 
 **The fix at 10 µs** (`stale_phase_sweep_10us_grid`, post-fix, 5 phases
 over 0–800 µs, at HEAD 7c65cb3): `bbr_rs` holds the pipe at every phase
@@ -13277,7 +13282,12 @@ at every phase (share 0.75–0.85).
 - Every run prints pwd, HEAD and dirty count.
 - Five earlier logs ran a stale binary, because two worktrees shared a
   target dir. They are discarded.
-- **The pre-fix phase sweep never ran:** its filter matched 0 tests.
+- **The pre-fix phase sweep never ran:** its binary held 620 tests, against
+  626 at 7c65cb3, so the overlay never landed. So the 10 µs result is not
+  yet attributed to the fix by a red run at that grid.
+- **Where the evidence is:** `green2`, `full2` and `grid_post2` sit in the
+  worker's scratch logs until they are committed under
+  `docs/l1-raw/bbrfix48/` and pushed.
 - **Not run:** the release, `--doc` and wasm suites.
 
 **What this means.**
