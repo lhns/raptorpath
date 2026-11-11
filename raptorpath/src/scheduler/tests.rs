@@ -3870,3 +3870,43 @@ fn the_wire_mirror_writes_every_leg() {
     assert_eq!(sched.path(0).unwrap().wire_rtt(), Some(Duration::from_micros(3_000)));
     assert_eq!(sched.path(1).unwrap().wire_rtt(), Some(Duration::from_micros(9_000)));
 }
+
+/// Status §41c readout: host ns per stamped symbol (the `[ETA]` stamp of
+/// `net/emit_source.rs`). Run: `cargo test --release -p raptorpath --lib
+/// nsbench41c -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn nsbench41c_stamp_ns() {
+    use std::hint::black_box;
+    const N: u64 = 2_000_000;
+    for &n_paths in &[2usize, 4] {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        for k in 0..n_paths {
+            sched.add_path(k as PathId);
+            let p = sched.path_mut(k as PathId).unwrap();
+            for _ in 0..8 {
+                p.estimator.record_rtt(std::time::Duration::from_micros(5_000 + 4_000 * k as u64));
+            }
+            p.in_flight = p.cwnd / 3;
+            p.set_wire_rtt(std::time::Duration::from_micros(4_000 + 3_000 * k as u64));
+        }
+        // Mechanism proof: the stamp is non-trivial on every path.
+        for k in 0..n_paths {
+            let path = k as PathId;
+            let ts = 1_000 + k as u64;
+            let us = sched.stamp_placement_eta(path, ts);
+            assert!(us > 0, "stamp must be non-zero on path {k}");
+        }
+        let mut sum = 0u64;
+        let t0 = std::time::Instant::now();
+        for i in 0..N {
+            let path = (i % n_paths as u64) as PathId;
+            let ts = 10_000 + i;
+            let us = sched.stamp_placement_eta(path, ts);
+            sum = sum.wrapping_add(black_box(us));
+        }
+        let el = t0.elapsed();
+        assert!(sum > 0);
+        println!("NSBENCH41C paths={n_paths} ns_per_call={:.2} checksum={sum}", el.as_nanos() as f64 / N as f64);
+    }
+}
