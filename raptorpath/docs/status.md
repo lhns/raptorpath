@@ -13204,9 +13204,10 @@ section): rank-minp, 12/12 at c1s, c1d, c2 and c8, 96 rows, about 15 min.
 It replaces "§41b's guard at c2 and c8". §46's own rows are unchanged.
 
 **NO VERDICT.** A re-run is a fresh full guard session, and the voided
-session's p is never used. If a second session also voids on CAND rows
-only, that is reported as a candidate defect, `CAND-UNSTABLE`, and the
-candidate does not merge. BASE =
+session's p is never used. If a second session again has CAND rows that DNF
+or crash, and no BASE rows do, that is reported as a candidate defect,
+`CAND-UNSTABLE`, and the candidate does not merge. A witness void alone is
+not a candidate defect. BASE =
 main `4926822`. Both SHAs are recorded by amendment before launch. With
 batch 1 absent, the bisection clause of item 8 is void.
 
@@ -13323,3 +13324,16 @@ at every phase (share 0.75–0.85).
 - `LD_CAND_SHA=814b8ce…` (the full SHA is pinned in the launch log).
 - **Session order:** suites on CAND, then the §41c guard (96 rows), then §46.
 - **On the host after the session:** the resolution table (`resolution41c`), and the ns-per-stamped-symbol readout (`nsbench41c`, run on the host).
+
+**§41c amendment 3 (before VM contact): prediction, decision rule, scorer wording.**
+- **Prediction.** `GATE-41c PASS`. The likeliest clause to trip is c1s client CPU/GB. The promotion's scan read +0.8 % to +2.5 % there in §38, §41 and §41b, and the guard resolves about 2.0 % (§41c table). A FAIL on that clause is a live outcome.
+- **Decision rule.**
+  - **PASS** together with a §46 verdict other than `CAND-WORSE` or `UNSCOREABLE`: `diag36` merges to main (the user's go of 2026-11-11, given for this session).
+  - **FAIL:** no merge. The user re-rules with the failing clause, its size, and the host ns bench beside it.
+  - **§46 verdicts:**
+    - `CAND-WORSE` blocks the merge (§46).
+    - `UNSCOREABLE` defers the merge to a re-run.
+    - `NOT-PROVOKED` and `NO-DIFFERENCE` go to the user labelled as such, and do not block a PASS merge.
+    - `CAND-RECOVERS-FASTER` supports the merge.
+  - **NO VERDICT:** re-run (amendment 1).
+- **Scorer wording.** Since `6dedf2b`, `score41c` prints only the verdict block. The resolution table is the separate host command `place38_parse.py resolution41c <ledger> [--seed N]`, reported only. Its default seed is named in its header. The ns readout's BASE variant inlines main's stamp code (main has no `stamp_placement_eta`), so the ratio prices the wire-RTT lookup and the min-wire scan together.
