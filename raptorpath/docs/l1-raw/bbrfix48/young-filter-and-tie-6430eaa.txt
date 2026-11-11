@@ -1,0 +1,62 @@
+pwd=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
+HEAD=6430eaabe0a23f7e114535b6e0e739b9f38a8a65
+dirty=0
+TARGET=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+running 2 tests
+test transport::bbr_rs::tests::tied_min_rtt_samples_keep_the_filter_fresh_under_le_and_would_fire_probe_rtt_under_lt ... [bbr_rs tie] `<=`: ProbeRtt entries []; strict `<` (model): [12, 24, 36] over 40 s of tied samples
+ok
+test transport::cc_sim::quinn_young_filter_burst_at_the_delivered_rate ... YOUNG stale=true: burst_drops=28 stale_events=30 min W after 0.9 s = 136141, W at end = 136141
+  t=200ms ProbeRtt filter 130.9MB/s ackh 2627B cwnd 241200B W 198313 rec NotInRecovery recw 0 minrtt 2020us delivered 96.4MB/s
+  t=400ms ProbeBw filter 130.9MB/s ackh 2628B cwnd 531464B W 531464 rec NotInRecovery recw 0 minrtt 2020us delivered 124.9MB/s
+  t=600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 0 minrtt 2020us delivered 5.2MB/s
+  t=790ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 397941B W 397941 rec NotInRecovery recw 0 minrtt 1510us delivered 5.2MB/s
+  t=800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 397941B W 397941 rec NotInRecovery recw 0 minrtt 1510us delivered 5.2MB/s
+  t=810ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 397941B W 397941 rec NotInRecovery recw 0 minrtt 1510us delivered 1.3MB/s
+  t=820ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 397941B W 397941 rec NotInRecovery recw 13080 minrtt 1510us delivered 4.7MB/s
+  t=830ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 397941B W 397941 rec NotInRecovery recw 13080 minrtt 1510us delivered 5.0MB/s
+  t=1000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 397941B W 397941 rec NotInRecovery recw 13080 minrtt 1510us delivered 5.2MB/s
+  t=1200ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=1400ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=1600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=1800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=2000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=2200ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=2400ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.2MB/s
+  t=2600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=2800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=3000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=3200ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=3400ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=3600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=3800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+  t=4000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 136141B W 136141 rec NotInRecovery recw 13080 minrtt 510us delivered 5.0MB/s
+YOUNG stale=false: burst_drops=28 stale_events=0 min W after 0.9 s = 531459, W at end = 531459
+  t=200ms ProbeRtt filter 130.9MB/s ackh 2627B cwnd 241200B W 198313 rec NotInRecovery recw 0 minrtt 2020us delivered 96.4MB/s
+  t=400ms ProbeBw filter 130.9MB/s ackh 2628B cwnd 531464B W 531464 rec NotInRecovery recw 0 minrtt 2020us delivered 124.9MB/s
+  t=600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 0 minrtt 2020us delivered 5.2MB/s
+  t=790ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 0 minrtt 2020us delivered 5.2MB/s
+  t=800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 0 minrtt 2020us delivered 5.0MB/s
+  t=810ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 0 minrtt 2020us delivered 1.6MB/s
+  t=820ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=830ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=1000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=1200ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=1400ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=1600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=1800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=2000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=2200ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=2400ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=2600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=2800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=3000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=3200ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=3400ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=3600ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.2MB/s
+  t=3800ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+  t=4000ms ProbeBw filter 130.9MB/s ackh 2623B cwnd 531459B W 531459 rec NotInRecovery recw 13080 minrtt 2020us delivered 5.0MB/s
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 626 filtered out; finished in 5.99s
+
+EXIT=0
