@@ -12,7 +12,7 @@ relative median difference) and `rank-minp` (stratified rank sums, min-p over th
     guard_power.py b      [--draws N] [--nperm N]       (b) bootstrap A/A at four cells + exact A/A on the 18 real BASE rows of c1s / c1d
     guard_power.py c      [--draws N] [--nperm N] [--cand N]   (c) the power table (CAND n = 6 by default; --cand 12 for the n = 12 variant)
     guard_power.py rescore                               the committed 41 / 41b ledgers re-scored with both statistics
-    guard_power.py dry    [--seed N] [--void]      end-to-end dry run of score41c on a bootstrapped 96-row ledger in plan 41c's layout (--void: a CAND row voided)
+    guard_power.py dry    [--seed N] [--void]      end-to-end dry run of score41c on a bootstrapped 96-row ledger in plan 41c's layout (--void: a CAND row voided; --replaced: voided and replaced by a later row)
     guard_power.py d      [--draws N] [--nperm N] [--aa N]      (a)(b)(c) at the registered design (CAND 12 / BASE 12 at c1s, c1d; 6 / 6 at c2, c8), single-session rows,
                                                          with all 26 clauses and with lag_E reported-only (18 clauses)
 
@@ -311,7 +311,7 @@ def exp_d(argv):
             print(line)
 
 
-def dry_ledger(seed=5, void=None):
+def dry_ledger(seed=5, void=None, replace=False):
     """A 96-row ledger in plan 41c's exact layout (12 rep-major groups, a BASE / CAND pair per cell and group, in plan order), each row bootstrapped
     from the real single-session rows (41b's BASE at c1s / c1d, 38's MAIN at c2 / c8). void = (cell, arm, seed, rep) marks that row WITNESS-FAIL."""
     rng = random.Random(seed)
@@ -324,6 +324,9 @@ def dry_ledger(seed=5, void=None):
             r["status"] = "WITNESS-FAIL"
             r["problems"] = ["void for the dry run"]
         rows.append(r)
+    if void and replace:                    # the replacement row of the voided slot, appended at the end like the battery's repl.log
+        i = next(i for i, r in enumerate(rows) if (r["cell"], r["arm"], r["seed"], r["rep"]) == tuple(void))
+        rows.append({**rows[i], "status": "LIVE", "problems": []})
     return rows
 
 
@@ -331,7 +334,7 @@ def exp_dry(argv):
     """End-to-end dry run of score41c on a bootstrapped 96-row ledger (--void: one c8 CAND row voided)."""
     import tempfile
     seed = arg(argv, "--seed", 5)
-    rows = dry_ledger(seed, void=("c8-100", "CAND", "7", 3) if "--void" in argv else None)
+    rows = dry_ledger(seed, void=("c8-100", "CAND", "7", 3) if ("--void" in argv or "--replaced" in argv) else None, replace="--replaced" in argv)
     with tempfile.TemporaryDirectory() as td:
         pth = os.path.join(td, "ld.log")
         open(pth, "w").write("".join("P38ROW " + json.dumps(r) + chr(10) for r in rows) + "LD-BATTERY-DONE tag=ld blocks=12" + chr(10))

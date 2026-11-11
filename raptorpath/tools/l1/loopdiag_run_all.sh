@@ -323,7 +323,25 @@ if [ "$PLAN" = "47" ]; then
     timeout "$bto" sudo -n env "${SENV[@]}" LD_TAG=ld bash ./loopdiag_battery.sh
     brc=$?
     era "LD-ALL stage $name battery rc=$brc wall=$(( $(date +%s) - T1 ))s"
+    if [ "$splan" = "41c" ] && [ "$brc" = "0" ]; then
+      # The replacement rule (status 47): a slot voided by a witness (not DNF, not crash) is re-run once with the same (cell, arm, seed, rep); at most 4.
+      python3 ./place38_parse.py replacements41c "$dir/ld.log" > "$dir/repl-slots.txt" 2> "$dir/repl-slots.err"
+      local rrc=$?
+      if [ "$rrc" = "3" ]; then
+        era "LD-ALL guard: TOO-MANY voided slots, no replacement runs; the guard reads NO VERDICT ($(cat "$dir/repl-slots.err"))"
+      elif [ "$rrc" = "0" ] && [ -s "$dir/repl-slots.txt" ]; then
+        bto=$(( LD_HARD - $(date +%s) ))
+        if [ "$bto" -ge 900 ]; then
+          era "LD-ALL guard: re-running $(wc -l < "$dir/repl-slots.txt") voided slot(s) once: $(tr '\n' ';' < "$dir/repl-slots.txt")"
+          timeout "$bto" sudo -n env "${SENV[@]}" LD_REPL_FILE="$dir/repl-slots.txt" LD_TAG=repl bash ./loopdiag_battery.sh
+          era "LD-ALL guard: replacement run rc=$?"
+        else
+          era "ABORT-BUDGET guard replacement: ${bto}s left before LD_HARD (need 900)"
+        fi
+      fi
+    fi
     if [ "$splan" = "46" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/smoke.log" "$dir/ld.log" > "$dir/score.txt" 2>&1
+    elif [ "$splan" = "41c" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" "$dir/repl.log" > "$dir/score.txt" 2>&1
     else python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" > "$dir/score.txt" 2>&1; fi
     [ "$brc" = "0" ] && python3 ./loopdiag_parse.py "$chk" "$dir/ld.log" && ok=1
     if [ "$splan" = "41c" ]; then

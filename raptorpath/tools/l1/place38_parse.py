@@ -735,23 +735,91 @@ def score(paths, out=print, plan41=False):
     return verdict
 
 
+# ── the replacement rule of the plan-41c guard (status 47) ──
+# A slot (cell, arm, seed, rep) voided by a WITNESS (not a DNF, not a crash) is re-run once at the end of the battery with the same slot key; the
+# replacement row takes the slot. DNF rows (LIVE, dnf true) and crash rows (VOID-RC, NO_DATA) are never replaced: they are the worst rank.
+# At most MAX_REPLACEMENTS slots may be replaced in a session; more voided slots than that is NO VERDICT (and no replacement runs).
+REPLACEABLE = ("WITNESS-FAIL", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK")
+MAX_REPLACEMENTS = 4
+
+
+def _slot(r):
+    return (r["cell"], r["arm"], str(r["seed"]), str(r["rep"]))
+
+
+def apply_replacements(rows):
+    """Ledger rows (ld.log then repl.log) -> (the rows to score, info). The first row of a slot is the original; a later row of the same slot is
+    a replacement ONLY if the original was voided by a witness, otherwise it is ignored and named. info: replaced [(slot, original status,
+    replacement status)], ignored [(slot, status)], void_slots, too_many, n_slots, n_extra."""
+    first, extras, order = {}, {}, []
+    for r in rows:
+        k = _slot(r)
+        if k not in first:
+            first[k] = r
+            order.append(k)
+        else:
+            extras.setdefault(k, []).append(r)
+    out_rows, replaced, ignored, void_slots = [], [], [], []
+    for k in order:
+        o = first[k]
+        ex = extras.get(k, [])
+        if o["status"] in REPLACEABLE:
+            void_slots.append(k)
+            if ex:
+                out_rows.append(ex[0])
+                replaced.append((k, o["status"], ex[0]["status"]))
+                ignored += [(k, x["status"]) for x in ex[1:]]
+            else:
+                out_rows.append(o)
+        else:
+            out_rows.append(o)
+            ignored += [(k, x["status"]) for x in ex]
+    return out_rows, {"replaced": replaced, "ignored": ignored, "void_slots": void_slots, "too_many": len(void_slots) > MAX_REPLACEMENTS,
+                      "n_slots": len(order), "n_extra": sum(len(v) for v in extras.values())}
+
+
+def replacements41c(path):
+    """The slots voided by a witness in a ledger (ld.log), as `cell store arm seed rep` lines; rc 3 (nothing printed) if more than MAX_REPLACEMENTS."""
+    rows, _ = rows_of([path])
+    _, info = apply_replacements(rows)
+    if info["too_many"]:
+        print(f"TOO-MANY {len(info['void_slots'])} voided slots (more than {MAX_REPLACEMENTS}): no replacement runs, the guard reads NO VERDICT", file=sys.stderr)
+        return 3
+    for (cell, arm, seed, rep) in info["void_slots"]:
+        print(f"{cell} def {arm} {seed} {rep}")
+    return 0
+
+
 def score41c(paths, out=print):
     """Status 47: the merge-candidate guard (rank-minp; BASE n = 12 and CAND n = 12 at c1s, c1d, c2, c8 default), no WIRE arm, the design MANDATORY
     (a cell short of its design reads `NO VERDICT, re-run`, never PASS); with the tail line and the qcwnd-below-BDP witness (reported only)."""
     import place41b_score
-    rows, tokens = rows_of(paths)
+    rows_all, tokens = rows_of(paths)
+    rows, rinfo = apply_replacements(rows_all)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
     out("MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 4926822 (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
-    out(f"ROWS {len(rows)}/{EXPECT_ROWS41C}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
+    extra = f" (+{rinfo['n_extra']} replacement row{'s' if rinfo['n_extra'] != 1 else ''} in the ledger)" if rinfo["n_extra"] else ""
+    out(f"ROWS {rinfo['n_slots']}/{EXPECT_ROWS41C}{extra}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
     for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL"):
         out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
-    for r in rows:
+    for r in rows_all:
         if r["status"] != "LIVE" or r.get("io_high"):
             out(f"  NONLIVE {r['cell']}@{r['store']} {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} rc={r['rc']} "
                 f"{' '.join(r['problems'])} io_full10={r.get('io_full10')}")
     out("")
-    res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN)
+    sl = lambda k: f"{k[0]} {k[1]} s{k[2]} r{k[3]}"  # noqa: E731
+    out(f"REPLACED SLOTS: {len(rinfo['replaced'])} of at most {MAX_REPLACEMENTS} (slots voided by a witness: {len(rinfo['void_slots'])})"
+        + ("" if rinfo["replaced"] else " - none"))
+    for k, o, n in rinfo["replaced"]:
+        out(f"  {sl(k)} {o} -> {n}")
+    unrep = [k for k in rinfo["void_slots"] if k not in {x[0] for x in rinfo["replaced"]}]
+    if unrep:
+        out("  voided and NOT replaced: " + ", ".join(sl(k) for k in unrep))
+    for k, st in rinfo["ignored"]:
+        out(f"  IGNORED EXTRA ROW {sl(k)} (status {st}): the slot's first row is not voided by a witness (LIVE, DNF or crash), so it is never replaced")
+    reason = (f"more than {MAX_REPLACEMENTS} voided slots ({len(rinfo['void_slots'])}): beyond the replacement cap" if rinfo["too_many"] else None)
+    res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN, no_verdict_reason=reason)
     out("")
     qcwnd_report(rows, ("BASE", "CAND"), GUARD_CELLS, out)
     out("")
@@ -759,7 +827,7 @@ def score41c(paths, out=print):
     if aborted:
         out("VERDICT UNSCOREABLE (abort " + ",".join(aborted) + ")")
     elif res["gate"] == "NO VERDICT":
-        out("VERDICT NO VERDICT, re-run (the design is incomplete: a voided or missing cell)")
+        out("VERDICT NO VERDICT, re-run (" + (reason or "the design is incomplete: a voided or missing slot") + ")")
     else:
         out(f"VERDICT GATE-41c {res['gate']}")
     # The verdict is complete and flushed BEFORE anything else: the resolution table is a separate, host-side command (below) and can never
@@ -771,12 +839,15 @@ def score41c(paths, out=print):
     return res
 
 
-def resolution41c(paths, out=print, seed=0, **kw):
+def resolution41c(paths, out=print, seed=None, **kw):
     """Status 47, host side: the session resolution of the merge-candidate guard, recomputed from the kept ledger's BASE rows. Reported only;
     seeded (the same ledger and seed give the same table); a separate command, so it cannot touch the verdict that score41c has already printed."""
     import place41b_score
     rows, _ = rows_of(paths)
-    out(f"SESSION RESOLUTION of the status-41c guard from {len(rows)} ledger rows ({' '.join(paths)}), seed {seed}")
+    rows, _info = apply_replacements(rows)
+    given = seed is not None
+    seed = seed if given else place41b_score.RES_SEED_DEFAULT
+    out(f"SESSION RESOLUTION of the status-41c guard from {len(rows)} ledger slots ({' '.join(paths)}), seed {seed} ({'given' if given else 'default'})")
     sr = place41b_score.resolution_report(rows, out, seed=seed, **kw)
     sys.stdout.flush()
     return sr
@@ -866,8 +937,10 @@ def main(argv):
         for c, s, ar, seed, rep in plan41b(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
         return 0
+    if cmd == "replacements41c":
+        return replacements41c(a[0])
     if cmd == "resolution41c":
-        seed = int(a[a.index("--seed") + 1]) if "--seed" in a else 0
+        seed = int(a[a.index("--seed") + 1]) if "--seed" in a else None
         paths = [x for i, x in enumerate(a) if x != "--seed" and (i == 0 or a[i - 1] != "--seed")]
         resolution41c(paths, seed=seed)
         return 0
