@@ -10,7 +10,9 @@ STATUS-TABLE (every invocation row)
   WITNESS-FAIL  1
   NONLIVE c8-100@def CAND s7 rep3 WITNESS-FAIL rc=0 void for the dry run io_full10=0.28
 
-§41b GUARD ON THE MERGE CANDIDATE (real scoring): N_PERM=10000 RNG seed 4141, one-sided, max over every clause of all four cells, PASS iff p > 0.05
+REPLACED SLOTS: 0 of at most 4 (slots voided by a witness: 1) - none
+  voided and NOT replaced: c8-100 CAND s7 r3
+§41c GUARD ON THE MERGE CANDIDATE (real scoring): N_PERM=10000 RNG seed 4141, one-sided, max over every clause of all four cells, PASS iff p > 0.05
 LIVE ROWS c1s-400 BASE=12  c1s-400 CAND=12  c1d-400 BASE=12  c1d-400 CAND=12  c2-100 BASE=12  c2-100 CAND=12  c8-100 BASE=12  c8-100 CAND=11
 
 RESOLUTION (computed from BASE rows alone, before CAND is read): per clause the q95 of |x_c| over the half-per-seed splits of BASE, beside the §21 tolerance
@@ -79,7 +81,7 @@ CAND against BASE (stratified rank sums, min-p over the same joint relabellings)
   INCOMPLETE DESIGN (fewer live rows than the design): c8-100 CAND 11/12
   min-p (true) = 0.09979 at c1s-400 lag_E_srv
   p = 0.8198  (share of the 10000 relabellings plus the true labelling whose min-p <= the true min-p)
-GATE-41b[rank-minp] NO VERDICT, re-run (the design is incomplete; p=0.8198 is not a verdict)
+GATE-41c[rank-minp] NO VERDICT, re-run (the design is incomplete; p=0.8198 is not a verdict)
 
 §21 READINGS of CAND against all BASE rows (reported beside the gate)
     FEED 41b-c1s-400@def p0 plc/truth CAND=1.026 BASE=0.987 -> SAME
@@ -223,35 +225,6 @@ RUN ORDER (ledger order; every row, any status): idx cell arm seed rep status mb
    94 c8-100 CAND s7 r6 LIVE 102.2 37.7 46.4 1238.0 1239.0
    95 c8-100 BASE s7 r6 LIVE 101.6 38.1 47.6 1225.0 1692.0
 
-RESOLUTION FROM THIS SESSION'S BASE ROWS (reported only; not part of the verdict): BASE rows resampled with replacement to the design {'c1s-400': (12, 12), 'c1d-400': (12, 12), 'c2-100': (12, 12), 'c8-100': (12, 12)}, balanced per seed; 30 draws per point, N_PERM 1000, grid ['1 %', '2 %', '2.4 %', '3 %', '5 %', '8 %', '12 %', '20 %', '50 %', '100 %']
-  per clause: smallest shift caught in >= 80 % of draws (d80), and the power at the named shifts (client / server CPU +2.4 %, goodput -5 %)
-  c1s-400  goodput        d80 = 5 %  power at 5 % = 1.00
-  c1s-400  cpu_cli/GB     d80 = 2 %  power at 2.4 % = 0.83
-  c1s-400  cpu_srv/GB     d80 = 2.4 %  power at 2.4 % = 0.80
-  c1s-400  lag_E_cli      d80 = 50 %
-  c1s-400  lag_E_srv      d80 = 50 %
-  c1s-400  rtp_floor_p0   d80 = 5 %
-  c1d-400  goodput        d80 = 8 %  power at 5 % = 0.67
-  c1d-400  cpu_cli/GB     d80 = 2 %  power at 2.4 % = 0.80
-  c1d-400  cpu_srv/GB     d80 = 2 %  power at 2.4 % = 0.83
-  c1d-400  lag_E_cli      d80 = 100 %
-  c1d-400  lag_E_srv      d80 = 100 %
-  c1d-400  rtp_floor_p0   d80 = 2.4 %
-  c1d-400  rtp_floor_p1   d80 = 5 %
-  c2-100   goodput        d80 = 1 %  power at 5 % = 1.00
-  c2-100   cpu_cli/GB     d80 = 5 %  power at 2.4 % = 0.30
-  c2-100   cpu_srv/GB     d80 = 8 %  power at 2.4 % = 0.50
-  c2-100   lag_E_cli      d80 = 2.4 %
-  c2-100   lag_E_srv      d80 = 1 %
-  c2-100   rtp_floor_p0   d80 = 20 %
-  c8-100   goodput        d80 = 12 %  power at 5 % = 0.33
-  c8-100   cpu_cli/GB     d80 = 8 %  power at 2.4 % = 0.30
-  c8-100   cpu_srv/GB     d80 = 8 %  power at 2.4 % = 0.17
-  c8-100   lag_E_cli      d80 = 50 %
-  c8-100   lag_E_srv      d80 = 100 %
-  c8-100   rtp_floor_p0   d80 = 12 %
-  c8-100   rtp_floor_p1   d80 = 12 %
-
 QCWND-BELOW-BDP (reported only): share of [DIAG] lines (measured run, t >= 1 s) whose per-path qcwnd < the cell's BDP; BDP per leg = link x 2 x one-way delay
   c1s-400@def: BDP per leg = [250000] B
   c1d-400@def: BDP per leg = [250000, 250000] B
@@ -283,4 +256,5 @@ CONTENTION c1s-400@def, every row (status or not): arm seed rep status mbps | pr
   CAND s7 r4 LIVE mbps=805.7 | procs_running 1/1 | io 0.00/0.00
   CAND s7 r5 LIVE mbps=805.7 | procs_running 1/1 | io 0.00/0.00
   CAND s7 r6 LIVE mbps=825.9 | procs_running 1/1 | io 0.03/0.01
-VERDICT NO VERDICT, re-run (the design is incomplete: a voided or missing cell)
+VERDICT NO VERDICT, re-run (the design is incomplete: a voided or missing slot)
+RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger, re-runnable and seeded:  python3 raptorpath/tools/l1/place38_parse.py resolution41c <kept ledger>/ld.log

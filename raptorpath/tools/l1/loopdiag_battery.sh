@@ -542,7 +542,11 @@ plan41b() { # smoke -> the whole plan (0), or the two smoke rows (1)
 plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
   local -a tbl
   local line cell store arm seed rep
-  if [ "$1" = "1" ]; then
+  if [ -n "${LD_REPL_FILE:-}" ]; then
+    # The replacement run (status 47): the slots voided by a witness are re-run ONCE, each with its own (cell, arm, seed, rep); at most 4.
+    mapfile -t tbl < "$LD_REPL_FILE"
+    { [ "${#tbl[@]}" -ge 1 ] && [ "${#tbl[@]}" -le 4 ]; } || { echo "ABORT-PLAN41C replacement list has ${#tbl[@]} rows (1 to 4)" >> "$OUT"; exit 3; }
+  elif [ "$1" = "1" ]; then
     mapfile -t tbl < <(python3 ./place38_parse.py plan41c smoke)
     [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN41C smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
   else

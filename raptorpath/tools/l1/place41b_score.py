@@ -78,12 +78,23 @@ def live(rows, cell, arm):
     return [r for r in rows if r["status"] == "LIVE" and r["cell"] == cell and r["store"] == "def" and r["arm"] == arm]
 
 
+# A CRASH (rc != 0 -> VOID-RC; no summary -> NO_DATA) is never replaced and, like a DNF, is the worst rank on every clause of its cell in the rank
+# statistic (status 47). Rows voided by a witness (WITNESS-FAIL, CONTAMINATED, VOID-COTENANT, VOID-ONDISK) are replaceable and are not scored.
+CRASH_STATUSES = ("VOID-RC", "NO_DATA")
+
+
+def crash(rows, cell, arm):
+    return [r for r in rows if r["status"] in CRASH_STATUSES and r["cell"] == cell and r["store"] == "def" and r["arm"] == arm]
+
+
 class Pool:
     """One cell's pooled rows (reference arm first, tested arm after) and the true selection."""
 
-    def __init__(self, rows, cell, ref_arm, test_arm, exclude=()):
+    def __init__(self, rows, cell, ref_arm, test_arm, exclude=(), with_crash=False):
         self.cell = cell
         self.ref_rows, self.test_rows = live(rows, cell, ref_arm), live(rows, cell, test_arm)
+        if with_crash:                          # crash rows fill their slots (and are the worst rank); only the rank statistic asks for them
+            self.ref_rows, self.test_rows = self.ref_rows + crash(rows, cell, ref_arm), self.test_rows + crash(rows, cell, test_arm)
         self.rows = self.ref_rows + self.test_rows
         self.true = list(range(len(self.ref_rows), len(self.rows)))
         self.defs = [d for d in clause_defs(cell) if d[0] not in exclude]
@@ -92,7 +103,7 @@ class Pool:
         # its own values and is listed as a slow row (goodput < SLOW_FRAC x the median of the cell's POOLED rows, BASE and CAND together,
         # DNF excluded: label-free, never BASE-only).
         mb = med([r["mbps"] for r in self.rows if not r.get("dnf") and r.get("mbps") is not None])
-        self.bad_why = ["DNF" if r.get("dnf") else None for r in self.rows]
+        self.bad_why = ["DNF" if r.get("dnf") else (f"CRASH({r['status']})" if r["status"] in CRASH_STATUSES else None) for r in self.rows]
         self.bad = [w is not None for w in self.bad_why]
         self.slow = [bool(mb and not r.get("dnf") and r.get("mbps") is not None and r["mbps"] < SLOW_FRAC * mb) for r in self.rows]
         self.vals = {n: [value(r, cell, k) for r in self.rows] for n, k, _ in self.defs}
@@ -194,7 +205,7 @@ def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=
     labelling's score is the MIN of its clause p-values over every clause of every cell; the gate p is the share of labellings whose
     min-p <= the true min-p. -> dict(p, T_true (the true min-p), p_true {(cell, clause): p}, S_true, argmin, n_perm)"""
     import bisect
-    pools = [Pool(rows, cell, ref_arm, test_arm, exclude) for cell, _ in (cells or CELLS)]
+    pools = [Pool(rows, cell, ref_arm, test_arm, exclude, with_crash=True) for cell, _ in (cells or CELLS)]
     sc = {p.cell: rank_scores(p) for p in pools}
     keys = [(p.cell, n) for p in pools for n, _, _ in p.defs]
     S = {k: [] for k in keys}
@@ -281,7 +292,7 @@ def tail_lines(rows, out, cells=None, arms=("BASE", "MAIN", "WIRE")):
 
 
 def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=True, title="§41b GUARD", gate_name="GATE-41b",
-           subject="the gate-off binary", method="relabel-max", exclude=(), design=None):
+           subject="the gate-off binary", method="relabel-max", exclude=(), design=None, no_verdict_reason=None):
     """The registered guard. Defaults reproduce status 41b (BASE against MAIN, WIRE reported, c1s and c1d); the merge-candidate guard
     (status 47) passes cells=CELLS_GUARD, test_arm="CAND", with_wire=False."""
     cells = cells or CELLS
@@ -320,11 +331,12 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
         out(f"  min-p (true) = {res['T_true']:.5f} at {res['argmin'][0]} {res['argmin'][1]}")
         out(f"  p = {res['p']:.4f}  (share of the {res['n_perm']} relabellings plus the true labelling whose min-p <= the true min-p)")
         gate = "PASS" if res["p"] > P_PASS else "FAIL"
-        if res["incomplete"]:
-            # A design with missing live rows (a voided row, a cell that did not run, a stalled build whose rows never went LIVE) has NO verdict:
-            # never PASS, whatever p reads; re-run.
+        if res["incomplete"] or no_verdict_reason:
+            # A design with missing rows (a slot voided by a witness and not replaced, a cell that did not run) or beyond the replacement cap has NO
+            # verdict: never PASS, whatever p reads; re-run. (DNF and crash rows fill their slots and are the worst rank: they are not "missing".)
             gate = "NO VERDICT"
-            out(f"{gate_name}[rank-minp] NO VERDICT, re-run (the design is incomplete; p={res['p']:.4f} is not a verdict)")
+            why = no_verdict_reason or "the design is incomplete"
+            out(f"{gate_name}[rank-minp] NO VERDICT, re-run ({why}; p={res['p']:.4f} is not a verdict)")
         else:
             out(f"{gate_name}[rank-minp] {gate} (p={res['p']:.4f}; {subject} {'may' if gate == 'PASS' else 'may not'} reach main)")
     else:
@@ -379,13 +391,13 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
 GUARD_DESIGN = {cell: (12, 12) for cell, _ in CELLS_GUARD}
 
 
-def report_guard(rows, out, design):
+def report_guard(rows, out, design, no_verdict_reason=None):
     """The merge-candidate guard: rank-minp over the four guard cells, CAND against BASE, WITH A MANDATORY DESIGN. A missing, empty or partial
     design is an error (never a silent PASS); a design with missing live rows reads `NO VERDICT, re-run`."""
     if not design or set(design) != {c for c, _ in CELLS_GUARD}:
         raise ValueError(f"the guard's design= is mandatory and must name every guard cell {[c for c, _ in CELLS_GUARD]}, got {design!r}")
     return report(rows, out, cells=CELLS_GUARD, test_arm="CAND", with_wire=False, method="rank-minp", design=design,
-                  title="§41c GUARD ON THE MERGE CANDIDATE", gate_name="GATE-41c", subject="the candidate build")
+                  title="§41c GUARD ON THE MERGE CANDIDATE", gate_name="GATE-41c", subject="the candidate build", no_verdict_reason=no_verdict_reason)
 
 
 # ── the guard's resolution, recomputed from THIS session's BASE rows (reported only; status 47) ─────────────────────────────────
@@ -397,6 +409,7 @@ RES_GRID = [0.01, 0.02, 0.024, 0.03, 0.05, 0.08, 0.12, 0.20, 0.50, 1.00]
 RES_DRAWS = 30
 RES_NPERM = 1000                 # must be >= 1000: with 26 clauses the gate p cannot reach 0.05 at a few hundred relabellings (floor about 26 / (N + 1))
 RES_POWER = 0.8
+RES_SEED_DEFAULT = 0             # resolution41c's seed when none is given (printed in its header)
 NAMED_SHIFTS = {"cpu_cli/GB": 0.024, "cpu_srv/GB": 0.024, "goodput": 0.05}
 _RES = {}
 
