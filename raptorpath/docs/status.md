@@ -13209,3 +13209,82 @@ only, that is reported as a candidate defect, `CAND-UNSTABLE`, and the
 candidate does not merge. BASE =
 main `4926822`. Both SHAs are recorded by amendment before launch. With
 batch 1 absent, the bisection clause of item 8 is void.
+
+
+### 48. Result — the host gate: `STOP-NOT-REPRODUCED` as registered; on a finer simulator clock, quinn's collapse reproduces and the fix holds
+
+Branch `bbrfix48-impl` (from main 4926822): `fbfea55` red tests, sim and
+seams; `d455d7e` the fix; `15a16c5` the `[QCC]` gauge; `608c47b`, `1a7a29b`,
+`7c65cb3` offline diagnostics. Evidence is in `docs/l1-raw/bbrfix48/` on that
+branch. No VM contact.
+
+**The registered outcome is `STOP-NOT-REPRODUCED`.** On the registered
+simulator (50 µs poll grid), the mechanism is realised: quinn's `min_rtt`
+latches at 150–950 µs on a 2.02 ms path (test 5 green). But test 4 is red:
+quinn's window never falls below the BDP (share 0.0, stale and control
+alike). So the battery does not run under §48.
+
+**Deviations from the registration, all recorded.**
+- **Stale-event phase.** The registered phase (events on a 1 ms chunk edge)
+  left test 5 red (quinn's minimum 1.05 ms) and a `bbr_rs` test green
+  pre-fix. The worker moved the events to 1.2005 s + 0.1·j after seeing
+  this. A sweep over the phase, run afterwards, is the check (below).
+- **Extra seams:** an `ack()` split of `on_ack`, `qcc()`/`qcc_of`,
+  `pub(super)` QUIC config builders, a test-only `tracked_records()`, and an
+  `Instant`-valued `AckEvent`. All are behaviour-neutral.
+- **Gauges** ride their own `[QCC]` line (amendment 2), not `[DIAG]`.
+- **Jitter scenario.** The assertions were the worker's choice: b̂ ≥ 0.9·L
+  before the first ProbeRtt and from exit + 1 s, over one ProbeRtt and 3 s
+  after it. They held: b̂/L 1.03–1.07 outside ProbeRtt, a dip to 0.61 for
+  0.21 s inside it. No jitter allowance is indicated.
+- **Min filter.** The code uses `r_e ≤ m̂` (v1's `bbr_update_min_rtt`); §8.4's
+  formula line says `<`. With `<`, an equal recurring minimum never restamps
+  t_m, and ProbeRtt fires every 10 s on a stable path. `≤` is the intended
+  law. The paper's formula line is corrected to `≤` with the next paper
+  edit.
+
+**Why test 4 was red: the simulator's clock, not quinn.**
+- Quinn's bandwidth sampler takes min(send rate, ack rate) per `on_ack`
+  call. Within one ACK frame, every call after the first sees a zero gap,
+  so only the frame's first packet counts: 1 312 B over the gap between
+  frame stamps. On a 50 µs grid that is 26.2 MB/s, against the 26.4 MB/s
+  the filter read, which is 0.2 × the link.
+- The delivered rate was normal (phase B 113.6 MB/s against a 112.5 MB/s
+  supply). The ack-height term then grew to 253 MB, and the window with it.
+- At a 10 µs grid, quinn's filter reads the link (130.9 MB/s), and the
+  collapse reproduces (`7c65cb3`, run at HEAD 7c65cb3, dirty 0):
+  - **stale:** share(W < BDP) = 0.806, min W 49 746 B, latched `min_rtt`
+    180 µs on a 2.02 ms path;
+  - **phase-B delivery:** 57.4 MB/s against 115.1 MB/s without stale stamps;
+  - **no-stale control:** min W 307 633 B, share 0.0.
+
+  The window equals 2 × filter × latched `min_rtt`. §47's inferred cause (a
+  latched-low `min_rtt`) is therefore realised in simulation. It is **not
+  refuted**.
+- **Not reproduced:** the in-vivo row's pin at 13.8 KB with no further loss
+  (§41b MAIN c1s s7 r3: qce 6→7 and lost +28 at 1.8 s, then qcwnd 13.8–14.4
+  KB for > 5 s).
+
+**The fix at 10 µs** (`stale_phase_sweep_10us_grid`, post-fix, 5 phases
+over 0–800 µs, at HEAD 7c65cb3): `bbr_rs` holds the pipe at every phase
+(share 0.0, min W 307 518–307 577 B, minimum m̂ 2 020 µs). Quinn collapses
+at every phase (share 0.75–0.85).
+
+**Provenance.**
+- Red at `fbfea55`: a fresh build, 7 passed, 7 failed, matching `red.txt`.
+- Green at `15a16c5`: 14 passed, 0 failed, 1 ignored (the 50 µs quinn pin).
+- Full debug lib suite at `15a16c5`: 611 passed, 0 failed, 10 ignored.
+- Every run prints pwd, HEAD and dirty count.
+- Five earlier logs ran a stale binary, because two worktrees shared a
+  target dir. They are discarded.
+- **The pre-fix phase sweep never ran:** its filter matched 0 tests.
+- **Not run:** the release, `--doc` and wasm suites.
+
+**What this means.**
+- The fix cures `bbr_rs`'s own defects, and it holds the pipe in the
+  scenario where quinn collapses.
+- Simulation does not reproduce the in-vivo pin. The VM is the only test of
+  whether the fix cures that.
+- Any VM test needs a new registration (§48b): the 10 µs grid fixed in
+  advance; the pre-fix sweep run; the full suites; the §41c guard, settled
+  against CONTROLLED-WITH-COST.
