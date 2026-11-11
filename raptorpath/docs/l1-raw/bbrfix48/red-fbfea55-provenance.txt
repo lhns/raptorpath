@@ -1,7 +1,7 @@
-pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/a269-red
+pwd=~/Documents/claude/raptorpath/.claude/worktrees/a269-red
 HEAD=fbfea550b6c4bcc5187d57110778dd00c7fca37f
 dirty=0
-TARGET=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+TARGET=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
 running 14 tests
 test transport::bbr_rs::tests::app_limited_samples_are_raise_only ... ok
 test transport::bbr_rs::tests::controller_window_tracks_honest_bdp_under_clusters ... ok
