@@ -1,0 +1,26 @@
+pwd=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
+HEAD=ad4142841e46d4110de9da5e20f07f7d5047527f
+dirty=0
+TARGET=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+running 2 tests
+test transport::cc_sim::stale_phase_sweep ... SWEEP tree=pre-fix grid=50us phase_us=000 witness=130/132 | t1=RED (share 0.8349, minW 13310) | t2=RED (min m-hat 250 us) | t4=RED (quinn share 0.0000) | t5=RED (quinn min_rtt 1.05ms)
+SWEEP tree=pre-fix grid=50us phase_us=100 witness=105/152 | t1=RED (share 0.6918, minW 20722) | t2=RED (min m-hat 150 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 150µs)
+SWEEP tree=pre-fix grid=50us phase_us=200 witness=106/176 | t1=RED (share 0.7490, minW 13310) | t2=RED (min m-hat 250 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 250µs)
+SWEEP tree=pre-fix grid=50us phase_us=300 witness=172/204 | t1=RED (share 0.7473, minW 46914) | t2=RED (min m-hat 350 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 350µs)
+SWEEP tree=pre-fix grid=50us phase_us=400 witness=160/234 | t1=RED (share 0.8071, minW 14222) | t2=RED (min m-hat 150 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 450µs)
+SWEEP tree=pre-fix grid=50us phase_us=500 witness=166/264 | t1=RED (share 0.7976, minW 11293) | t2=RED (min m-hat 150 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 550µs)
+SWEEP tree=pre-fix grid=50us phase_us=600 witness=132/297 | t1=RED (share 0.8027, minW 18673) | t2=RED (min m-hat 200 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 650µs)
+SWEEP tree=pre-fix grid=50us phase_us=700 witness=168/333 | t1=RED (share 0.8501, minW 15839) | t2=RED (min m-hat 150 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 750µs)
+SWEEP tree=pre-fix grid=50us phase_us=800 witness=172/369 | t1=RED (share 0.8472, minW 10888) | t2=RED (min m-hat 150 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 850µs)
+SWEEP tree=pre-fix grid=50us phase_us=900 witness=141/402 | t1=RED (share 0.8454, minW 6540) | t2=RED (min m-hat 200 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 950µs)
+ok
+test transport::cc_sim::stale_phase_sweep_10us_grid ... SWEEP tree=pre-fix grid=10us phase_us=000 witness=306/256 | t1=RED (share 0.8941, minW 24517) | t2=RED (min m-hat 130 us) | t4=green (quinn share 0.8481) | t5=green (quinn min_rtt 80µs)
+SWEEP tree=pre-fix grid=10us phase_us=200 witness=259/292 | t1=RED (share 0.7484, minW 23900) | t2=RED (min m-hat 100 us) | t4=green (quinn share 0.7490) | t5=green (quinn min_rtt 100µs)
+SWEEP tree=pre-fix grid=10us phase_us=400 witness=407/371 | t1=RED (share 0.8077, minW 57928) | t2=RED (min m-hat 400 us) | t4=green (quinn share 0.8060) | t5=green (quinn min_rtt 110µs)
+SWEEP tree=pre-fix grid=10us phase_us=600 witness=280/312 | t1=RED (share 0.8027, minW 26475) | t2=RED (min m-hat 150 us) | t4=green (quinn share 0.8027) | t5=green (quinn min_rtt 120µs)
+SWEEP tree=pre-fix grid=10us phase_us=800 witness=415/403 | t1=RED (share 0.8472, minW 21565) | t2=RED (min m-hat 140 us) | t4=green (quinn share 0.8478) | t5=green (quinn min_rtt 150µs)
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 624 filtered out; finished in 418.55s
+
+EXIT=0
