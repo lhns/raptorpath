@@ -1502,4 +1502,43 @@ mod tests {
             entries[0]
         );
     }
+
+    /// Status §48 follow-up (report only): TIED r_e samples, as a quantised
+    /// clock produces. The shipped filter refreshes t_m on `r_e <= m̂` (v1
+    /// `bbr_update_min_rtt`), so a recurring minimum keeps it fresh and ProbeRtt
+    /// never fires. The §8.4 formula line reads `r_e < m̂`; a strict filter
+    /// would restamp only on a new minimum, so on the same samples it expires
+    /// 10 s after the first sample and again after every ProbeRtt exit. That
+    /// second half is a model of the strict rule (`strict_entries`), not the
+    /// controller; the law is not changed.
+    #[test]
+    fn tied_min_rtt_samples_keep_the_filter_fresh_under_le_and_would_fire_probe_rtt_under_lt() {
+        let mut h = H::new();
+        let mut entries: Vec<u64> = Vec::new();
+        let mut in_probe_rtt = false;
+        for sec in 1..=40u64 {
+            h.event(Duration::from_secs(sec), 10 * MS, 10, false, 0); // r_e == m̂ every second
+            let now = h.bbr.mode == Mode::ProbeRtt;
+            if now && !in_probe_rtt {
+                entries.push(sec);
+            }
+            in_probe_rtt = now;
+        }
+        assert!(entries.is_empty(), "`<=`: ProbeRtt at {entries:?} while the minimum recurs every second");
+
+        // strict `<`: t_m moves only on a new minimum (the first sample), and on ProbeRtt
+        // exit one event after entry
+        let (mut t_m, mut strict_entries) = (1u64, Vec::new());
+        let mut sec = 2;
+        while sec <= 40 {
+            if sec - t_m > 10 {
+                strict_entries.push(sec);
+                t_m = sec + 1; // exit one event later restamps
+                sec += 1;
+            }
+            sec += 1;
+        }
+        println!("[bbr_rs tie] `<=`: ProbeRtt entries {entries:?}; strict `<` (model): {strict_entries:?} over 40 s of tied samples");
+        assert_eq!(strict_entries, vec![12, 24, 36]);
+    }
 }
