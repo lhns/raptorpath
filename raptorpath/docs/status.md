@@ -13145,10 +13145,12 @@ p ≈ 0.036. So §41b's PASS was weaker than reported.
 
 **Design.** BASE n = 12 and CAND n = 12 per cell, at c1s, c1d, c2 and c8
 default.
-- Seeds 7 and 8, 6 + 6 per seed.
+- Seeds 42 and 7, 6 + 6 per seed (`BLOCKS41C`, `place38_parse.py`).
 - One session, interleaved in 12 rep-major (seed, rep) groups, each holding
   a BASE/CAND pair per cell. The order alternates by group.
 - 96 rows plus a 2-row smoke; the battery asserts 96.
+- Duration: about 15 min, from §38's mean row times (c1s 6.3 s, c1d
+  6.2 s, c2 11.2 s, c8 11.0 s) times 24 rows per cell, plus the smoke.
 - No historical rows enter the null.
 
 **Acceptance, met offline before registering**
@@ -13163,8 +13165,15 @@ default.
 
 **Resolution: the smallest shift caught in ≥ 80 % of draws**, with power at
 +2.4 % CPU and −5 % goodput in brackets. c2 and c8 rest on stand-in rows
-(§38 MAIN, 3 distinct per seed), so they are reported only. They are
-recomputed from this session's BASE rows and printed beside the verdict.
+(§38 MAIN, 3 distinct per seed), so they are reported only. `score41c`
+recomputes the table from this session's BASE rows (`session_resolution`:
+resampled to the design and balanced per seed; 30 draws per point,
+N_PERM 1000, 10 shift values) and prints it beside the verdict, for all four
+cells, marked reported only.
+
+The acceptance figures were computed at N_PERM 2000, the real-split A/A at
+N_PERM 2000 and 500, and the real-split A/A on c1 cells only, before the DNF
+rule.
 
 | cell | goodput | client CPU/GB | server CPU/GB | rtp floor |
 |---|---|---|---|---|
@@ -13188,6 +13197,15 @@ that CPU cost, and the VM guard is not.
 
 **Amendment to §46 item 8 (CAND's identity).** CAND for the merge-candidate
 session is `diag36`'s tip alone: the promotion, without simplification
-batch 1. The batch gets its own guard run against the new main. BASE =
+batch 1. The batch gets its own guard run against the new main.
+
+**Amendment to §46 item 9.** The guard in that session is §41c (this
+section): rank-minp, 12/12 at c1s, c1d, c2 and c8, 96 rows, about 15 min.
+It replaces "§41b's guard at c2 and c8". §46's own rows are unchanged.
+
+**NO VERDICT.** A re-run is a fresh full guard session, and the voided
+session's p is never used. If a second session also voids on CAND rows
+only, that is reported as a candidate defect, `CAND-UNSTABLE`, and the
+candidate does not merge. BASE =
 main `4926822`. Both SHAs are recorded by amendment before launch. With
 batch 1 absent, the bisection clause of item 8 is void.
