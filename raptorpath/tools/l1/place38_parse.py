@@ -36,7 +36,7 @@ from l1ab import (  # noqa: E402
 from threadp1_parse import rtp_floor  # noqa: E402
 from threadpd_parse import lag_E, lag_max  # noqa: E402
 
-for _a in ("MAIN", "WIRE", "BASE"):
+for _a in ("MAIN", "WIRE", "BASE", "CAND"):
     sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
 ARMS = ["MAIN", "WIRE"]                                  # the ladder's arms; BASE (status §41) never enters it
 
@@ -58,6 +58,11 @@ MATCH_BAND = 0.03
 EXPECT_ROWS41B = len(BASE_CELLS) * (12 + 6 + 6)                    # 48
 SMOKE41B = [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "MAIN", "42", 1)]   # one row per binary
 ARMS41B = ["BASE", "MAIN", "BASE", "WIRE"]                         # the pattern, rotated by group (g mod 4)
+# ── status 47: the guard on the merge candidate (plan 41c): BASE = main 4926822, CAND = the candidate, c1s / c1d / c2 / c8 default ──
+GUARD_CELLS = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-100", "def")]
+EXPECT_ROWS41C = len(GUARD_CELLS) * (12 + 12)                      # 96: BASE n = 12 and CAND n = 12 per cell (the registered design)
+SMOKE41C = [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "CAND", "42", 1)]   # one row per binary
+BLOCKS41C = [(sd, rp) for rp in range(1, 7) for sd in ("42", "7")]   # 12 groups, rep-major, seed 42 before 7: 6 + 6 per seed per arm
 S3_REL = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065},
           "c2-100": {"gp": 0.014, "cpu": 0.063}, "c8-100": {"gp": 0.040, "cpu": 0.116}}
 DNF_THRESHOLD = 0.20
@@ -113,6 +118,20 @@ def plan41(smoke=False):
     return out
 
 
+def plan41c(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 47, the registered design: BASE 12 and CAND 12 at every cell, one interleaved session,
+    6 + 6 per seed per arm). Twelve groups (seed, rep), rep-major, seed 42 before 7; per group and cell the pair BASE, CAND (even groups) or CAND,
+    BASE (odd groups), so each arm leads half the groups; cells in table order c1s, c1d, c2, c8 inside a group."""
+    if smoke:
+        return list(SMOKE41C)
+    out = []
+    for g, (seed, rep) in enumerate(BLOCKS41C):
+        for cell, store in GUARD_CELLS:
+            for a in (["BASE", "CAND"] if g % 2 == 0 else ["CAND", "BASE"]):
+                out.append((cell, store, a, seed, rep))
+    return out
+
+
 def plan41b(smoke=False):
     """[(cell, store, arm, seed, rep)] in run order (status §41b). Six groups, one per (seed, rep) of the 3 reps x 2 seeds; per
     group and cell four rows in the pattern BASE, MAIN, BASE, WIRE rotated by g mod 4 (so each arm meets each position). MAIN and
@@ -135,7 +154,7 @@ def plan41b(smoke=False):
 # ── readers ───────────────────────────────────────────────────────────────
 _DIAG_T = re.compile(r"^\[DIAG\] t=([\d.]+)s ")
 _LEG = re.compile(r"\bp(\d+):infl=(\d+)/.*?rtt=(\d+)/wrtt=(\d+)/(?:.*?\bwpl_us=(\S+))?")
-_ETA = re.compile(r"\[ETA\] site=sender .*?\bcold_r=(\S+) cold_ge=(\S+) .*?ref_fl=(\S+) w_cold=(\S+) w_mv=(\S+) w_n=(\d+) w_calls=(\d+)")
+_ETA = re.compile(r"\[ETA\] site=sender .*?\bcold_r=(\S+) cold_ge=(\S+) .*?ref_fl=(\S+) w_cold=(\S+) (?:w_mv=(\S+) )?w_n=(\d+) w_calls=(\d+)")
 _ETA_P = re.compile(r"\bp(\d+):n=\S+ drop=\S+ tau_us=\S+ e_p50=(\S+) e_p90=(\S+)")
 
 
@@ -160,6 +179,72 @@ def diag_lines(cli):
     return out
 
 
+# ── status 47: per-path quinn cwnd against the cell's true BDP (a reported witness, never a void) ──
+# BDP per leg = link rate x RTprop, RTprop = 2 x the scenario's one-way delay (lib.sh scenario table, no jitter, no queue):
+#   c1 1 Gbit x 2 ms = 250 000 B;  c2 100 Mbit x 10 ms = 125 000 B;  c3 20 Mbit x 40 ms = 100 000 B.
+# So c1s / c1d: 250 000 per leg; c2: 125 000; c8 (c2 + c3 legs): 125 000 and 100 000.
+SCEN_LINK = {"c1": (1e9, 1), "c2": (1e8, 5), "c3": (2e7, 20)}      # rate bit/s, one-way ms
+
+
+def bdp_bytes(cell):
+    """Per-leg BDP in bytes for a cell of stage3_parse.CELL_SPEC."""
+    ca, cb, mode, _ = sp.CELL_SPEC[cell]
+    legs = [ca, cb] if mode == "dual" else [ca]
+    return [int(SCEN_LINK[s][0] / 8 * 2 * SCEN_LINK[s][1] / 1000) for s in legs]
+
+
+_QCWND = re.compile(r"\bqcwnd=(\d+)")
+
+
+def qcwnd_below_bdp(cli, cell):
+    """The share of the measured run's [DIAG] lines (after the warm-up line, t >= 1 s) whose per-path `qcwnd` is below the cell's BDP:
+    {"bdp": [...], "n": lines, "per_leg": [share...], "any": share of lines with at least one leg below}; None without data."""
+    lines = list(cli or [])
+    idx = [i for i, ln in enumerate(lines) if '"warmup":true' in ln]
+    if idx:
+        lines = lines[idx[-1] + 1:]
+    try:
+        bdp = bdp_bytes(cell)
+    except KeyError:
+        return None
+    n, below, anyb = 0, [0] * len(bdp), 0
+    for ln in lines:
+        m = _DIAG_T.match(ln)
+        if not m or float(m.group(1)) < WARM_S:
+            continue
+        cw = {}
+        for part in re.split(r"(?= p\d+:infl=)", ln)[1:]:
+            g, q = re.match(r" p(\d+):", part), _QCWND.search(part)
+            if g and q:
+                cw[int(g.group(1))] = int(q.group(1))
+        if len(cw) < len(bdp):
+            continue
+        n += 1
+        flags = [cw[i] < bdp[i] for i in range(len(bdp))]
+        for i, f in enumerate(flags):
+            below[i] += f
+        anyb += any(flags)
+    if not n:
+        return None
+    return {"bdp": bdp, "n": n, "per_leg": [b / n for b in below], "any": anyb / n}
+
+
+def qcwnd_report(rows, arms, cells, out):
+    """Reported only: per cell and arm the median [min-max] of the share of lines with qcwnd below the BDP, per leg and for any leg."""
+    out("QCWND-BELOW-BDP (reported only): share of [DIAG] lines (measured run, t >= 1 s) whose per-path qcwnd < the cell's BDP; BDP per leg = link x 2 x one-way delay")
+    for cell, store in cells:
+        bd = bdp_bytes(cell)
+        out(f"  {cell}@{store}: BDP per leg = {bd} B")
+        for a in arms:
+            rs = [r for r in rows if r["cell"] == cell and r["store"] == store and r["arm"] == a and r["status"] == "LIVE" and r.get("qcwnd_below")]
+            if not rs:
+                continue
+            for i in range(len(bd)):
+                v = [r["qcwnd_below"]["per_leg"][i] for r in rs]
+                out(f"    {a:<5} leg{i}: share below {med_mm(v, 3)}")
+            out(f"    {a:<5} any leg: share below {med_mm([r['qcwnd_below']['any'] for r in rs], 3)}")
+
+
 def eta_last(cli):
     """The last `[ETA] site=sender` line -> {cold_r, cold_ge, ref_fl, w_cold, w_mv, w_n, w_calls, e_p50, e_p90}; None if absent."""
     last = None
@@ -171,6 +256,8 @@ def eta_last(cli):
     m = _ETA.search(last)
     if not m:
         return None
+    # The promoted tree (status 41b, ADR-0073) prints `ref_fl= w_cold= w_n= w_calls=` with no `w_mv=` (it compared against the
+    # deleted base): w_mv is then None. Both forms parse, so the committed 38 / 41 / 41b ledgers still score.
     d = {"cold_r": m.group(1), "cold_ge": m.group(2), "ref_fl": m.group(3), "w_cold": m.group(4), "w_mv": m.group(5),
          "w_n": int(m.group(6)), "w_calls": int(m.group(7)), "e_p50": {}, "e_p90": {}}
     for p in _ETA_P.finditer(last):
@@ -265,10 +352,14 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         row[f"{side}_lag_p99_us"], row[f"{side}_lag_min_us"], row[f"{side}_lag_E"] = p99, mn, e
         row[f"{side}_lag_max_us"] = lag_max(lines, win)
     post = [(t, L) for t, L in diag if t >= WARM_S]
+    row["qcwnd_below"] = qcwnd_below_bdp(cli, cell)
     # ── witnesses (a row is void otherwise) ──
     p = []
     want = "1" if arm == "WIRE" else "0"
-    if arm in ("BASE", "CAND"):
+    promoted = row["gate_wire_cli"] is None and row["gate_wire_srv"] is None
+    if arm == "MAIN" and promoted:
+        pass        # the gate is gone (promotion, ADR-0073): an absent token means "promoted", not a failed witness
+    elif arm in ("BASE", "CAND"):
         # Main's own binary (BASE, §41) and the promoted build (CAND, §46) have no RWM_PLACE_WIRE: the token must be absent.
         if row["gate_wire_cli"] is not None or row["gate_wire_srv"] is not None:
             p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} on {arm} (want absent)")
@@ -300,10 +391,10 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                 row["wpl_close_frac"] = close / len(post)
                 if close / len(post) < WPL_FRAC:
                     p.append(f"wpl-within-1ms-of-wrtt={close}/{len(post)}")
-            if eta is not None and not (_f(eta["w_mv"]) or 0) > 0:
+            if eta is not None and eta["w_mv"] is not None and not (_f(eta["w_mv"]) or 0) > 0:
                 p.append(f"w_mv={eta['w_mv']}")
-    elif arm == "CAND":
-        pass        # §46: the promoted build may print wpl_us / the w_* gauges or not; that is reported, not a witness
+    elif arm == "CAND" or (arm == "MAIN" and promoted):
+        pass        # the promoted build prints wpl_us and the bind gauges always: reported, not a witness
     else:
         if any(L[i][3] is not None for _, L in diag for i in L):
             p.append(f"wpl_us-numeric-on-{arm}")
@@ -644,6 +735,53 @@ def score(paths, out=print, plan41=False):
     return verdict
 
 
+def score41c(paths, out=print):
+    """Status 47: the merge-candidate guard (rank-minp; BASE n = 12 and CAND n = 12 at c1s, c1d, c2, c8 default), no WIRE arm, the design MANDATORY
+    (a cell short of its design reads `NO VERDICT, re-run`, never PASS); with the tail line and the qcwnd-below-BDP witness (reported only)."""
+    import place41b_score
+    rows, tokens = rows_of(paths)
+    aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
+    out("MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 4926822 (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
+    out(f"ROWS {len(rows)}/{EXPECT_ROWS41C}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
+    out("STATUS-TABLE (every invocation row)")
+    for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL"):
+        out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
+    for r in rows:
+        if r["status"] != "LIVE" or r.get("io_high"):
+            out(f"  NONLIVE {r['cell']}@{r['store']} {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} rc={r['rc']} "
+                f"{' '.join(r['problems'])} io_full10={r.get('io_full10')}")
+    out("")
+    res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN)
+    out("")
+    qcwnd_report(rows, ("BASE", "CAND"), GUARD_CELLS, out)
+    out("")
+    contention(rows, out)
+    if aborted:
+        out("VERDICT UNSCOREABLE (abort " + ",".join(aborted) + ")")
+    elif res["gate"] == "NO VERDICT":
+        out("VERDICT NO VERDICT, re-run (the design is incomplete: a voided or missing cell)")
+    else:
+        out(f"VERDICT GATE-41c {res['gate']}")
+    # The verdict is complete and flushed BEFORE anything else: the resolution table is a separate, host-side command (below) and can never
+    # withhold or alter it.
+    sys.stdout.flush()
+    out("RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger, re-runnable and seeded:  "
+        f"python3 raptorpath/tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
+    sys.stdout.flush()
+    return res
+
+
+def resolution41c(paths, out=print, seed=0, **kw):
+    """Status 47, host side: the session resolution of the merge-candidate guard, recomputed from the kept ledger's BASE rows. Reported only;
+    seeded (the same ledger and seed give the same table); a separate command, so it cannot touch the verdict that score41c has already printed."""
+    import place41b_score
+    rows, _ = rows_of(paths)
+    out(f"SESSION RESOLUTION of the status-41c guard from {len(rows)} ledger rows ({' '.join(paths)}), seed {seed}")
+    sr = place41b_score.resolution_report(rows, out, seed=seed, **kw)
+    sys.stdout.flush()
+    return sr
+
+
 def score41b(paths, out=print):
     """Status §41b: the status table and the c1s contention covariates, then the A/A-calibrated guard (place41b_score.py)."""
     import place41b_score
@@ -666,22 +804,22 @@ def score41b(paths, out=print):
     return res
 
 
-def check(path, plan41=False, plan41b=False):
+def check(path, plan41=False, plan41b=False, plan41c=False):
     rows, tokens = rows_of([path])
     t = open(path, errors="replace").read()
-    want = EXPECT_ROWS41B if plan41b else EXPECT_ROWS41 if plan41 else EXPECT_ROWS38
+    want = EXPECT_ROWS41C if plan41c else EXPECT_ROWS41B if plan41b else EXPECT_ROWS41 if plan41 else EXPECT_ROWS38
     ok = "LD-BATTERY-DONE" in t and len(rows) == want
-    print(f"CHECK{'41b' if plan41b else '41' if plan41 else '38'} done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{want}")
+    print(f"CHECK{'41c' if plan41c else '41b' if plan41b else '41' if plan41 else '38'} done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{want}")
     return 0 if ok else 1
 
 
-def smoke(path, plan41=False, plan41b=False):
+def smoke(path, plan41=False, plan41b=False, plan41c=False):
     """rc 0 iff both smoke rows (MAIN and WIRE at c8-100@256) are LIVE with the gauges the scorer reads and WIRE has w_calls > 0.
     Plan 41 adds one BASE row (c1s-400 default): LIVE with the one-leg clause inputs."""
     rows, _ = rows_of([path])
     bad = []
     got = {(r["cell"], r["store"], r["arm"]): r for r in rows}
-    for cell, store, arm, _, _ in (SMOKE41B if plan41b else SMOKE41 if plan41 else SMOKE38):
+    for cell, store, arm, _, _ in (SMOKE41C if plan41c else SMOKE41B if plan41b else SMOKE41 if plan41 else SMOKE38):
         r = got.get((cell, store, arm))
         if r is None:
             bad.append(f"{arm}: no row")
@@ -727,6 +865,22 @@ def main(argv):
     if cmd == "plan41b":
         for c, s, ar, seed, rep in plan41b(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "resolution41c":
+        seed = int(a[a.index("--seed") + 1]) if "--seed" in a else 0
+        paths = [x for i, x in enumerate(a) if x != "--seed" and (i == 0 or a[i - 1] != "--seed")]
+        resolution41c(paths, seed=seed)
+        return 0
+    if cmd == "plan41c":
+        for c, s, ar, seed, rep in plan41c(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "check41c":
+        return check(a[0], plan41c=True)
+    if cmd == "smoke41c":
+        return smoke(a[0], plan41c=True)
+    if cmd == "score41c":
+        score41c(a)
         return 0
     if cmd == "check41b":
         return check(a[0], plan41b=True)

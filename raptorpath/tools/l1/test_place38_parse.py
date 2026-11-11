@@ -389,8 +389,8 @@ for cell, d in (("c1d-400", "diag-tpd/c1d-400-MAIN-s42-r1-a1-"), ("c1s-400", "di
     check(f"a main-binary log (no wpl_us, no w_* gauges) is a LIVE BASE row at {cell}: every §21 clause input is read, the legs are read despite the missing wpl_us",
           rb["status"] == "LIVE" and rb["problems"] == [] and all(rb.get(k) is not None for k in need)
           and all(v is not None for v in rb["rtt_wrtt_med"]) and rb["locked"] is False and rb["eta"] is None, (rb["status"], rb["problems"], [k for k in need if rb.get(k) is None]))
-    check(f"... the same log is a LIVE MAIN row except for the gate echo (it has no RWM_PLACE_WIRE token), so BASE's gate witness is 'absent'",
-          pp.make_row(cell, "MAIN", "42", 1, 0, 12.0, drv_, cli_, srv_, 0, "x", store="def")["status"] == "WITNESS-FAIL")
+    check(f"... the same log read as a MAIN row is LIVE too: an absent RWM_PLACE_WIRE token means 'promoted' (the gate is deleted, ADR-0073)",
+          pp.make_row(cell, "MAIN", "42", 1, 0, 12.0, drv_, cli_, srv_, 0, "x", store="def")["status"] == "LIVE")
     rg = pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, gates(cli_, RWM_PLACE_WIRE="0"), gates(srv_, RWM_PLACE_WIRE="0"), 0, "x", store="def")
     check(f"BASE witness: a [GATES] line that echoes RWM_PLACE_WIRE is void (the binary is not main's) at {cell}", rg["status"] == "WITNESS-FAIL" and any("on BASE" in q for q in rg["problems"]), rg["problems"])
     check("BASE witness: a numeric wpl_us on a BASE row is void",
@@ -678,8 +678,9 @@ check("a deleted gate that is still PRESENT must still read off: RWM_POOL_ANCHOR
       any(p_.startswith("pool-anchor") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), set_gates={"RWM_POOL_ANCHOR": "1"})["problems"]))
 check("... and RWM_POOL_ANCHOR=0 present stays LIVE", mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), set_gates={"RWM_POOL_ANCHOR": "0"})["status"] == "LIVE")
 # strictness on gates that still exist
-check("RWM_PLACE_WIRE absent from [GATES] is still void on a MAIN row (a live gate keeps its strict witness)",
-      any(p_.startswith("gate-place-wire") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), drop=["RWM_PLACE_WIRE"])["problems"]))
+check("RWM_PLACE_WIRE absent from [GATES] on a MAIN row means 'promoted': LIVE (the gate no longer exists); a present token must still read 0",
+      mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), drop=["RWM_PLACE_WIRE"])["status"] == "LIVE"
+      and any(p_.startswith("gate-place-wire") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), set_gates={"RWM_PLACE_WIRE": "1"})["problems"]))
 check("RWM_PLACE_WIRE absent is still void on a WIRE row", any(p_.startswith("gate-place-wire") for p_ in mk(cell="c1s-400", arm="WIRE", store="def", shares=(1.0,), drop=["RWM_PLACE_WIRE"])["problems"]))
 check("RWM_STORE absent is still void at a default cell (strict `unset`) and at a static cell",
       any(p_.startswith("gate-store") for p_ in mk(cell="c1s-400", arm="MAIN", store="def", shares=(1.0,), drop=["RWM_STORE"])["problems"])

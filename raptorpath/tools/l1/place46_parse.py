@@ -433,6 +433,16 @@ def row_line(r):
             f"refresh/2s={fmtf(m.get('refresh_per_2s'), 2)} " + ' '.join(r.get('problems') or []))
 
 
+def qcwnd_line(rs):
+    """Reported witness (status 47): the share of [DIAG] lines whose per-path qcwnd is below the cell's BDP -> text for a set of rows."""
+    rs = [r for r in rs if r.get("qcwnd_below")]
+    if not rs:
+        return "-"
+    nl = len(rs[0]["qcwnd_below"]["per_leg"])
+    legs = " ".join(f"leg{i} {pp.med_mm([r['qcwnd_below']['per_leg'][i] for r in rs], 3)}" for i in range(nl))
+    return f"{legs}; any leg {pp.med_mm([r['qcwnd_below']['any'] for r in rs], 3)}"
+
+
 def score(paths, out=print):
     rows, tokens = rows_of(paths)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
@@ -450,6 +460,14 @@ def score(paths, out=print):
     out("PER-ROW (variant arm seed rep status R R0 T_w gbar_post G gbar_hold sigma_pre event exit peaks idle refresh): R/R0/T_w in s from t_off, '>25' = censored")
     for r in sorted(rows, key=lambda r: (r.get("kind") != "check", r.get("variant", ""), r["arm"], r["seed"], r["rep"])):
         out(row_line(r))
+    out("")
+    out("QCWND-BELOW-BDP (reported only): share of [DIAG] lines (measured run, t >= 1 s) whose per-path qcwnd < the cell's BDP; "
+        "BDP per leg = link x 2 x one-way delay (c8: leg 0 = c2 125 000 B, leg 1 = c3 100 000 B; c1d: 250 000 B per leg)")
+    for var in VARIANTS:
+        for arm in ARMS46:
+            rs = [r for r in rows if r.get("variant") == var and r["arm"] == arm and r["status"] == "LIVE" and r.get("kind") != "check"]
+            if rs:
+                out(f"  {var:<7} {arm:<4} BDP {pp.bdp_bytes(VARIANTS[var][0])} B: {qcwnd_line(rs)}")
     out("")
     # check rows
     check_fail = []
@@ -545,6 +563,7 @@ def smoke(path):
               f"peak_rtt={m.get('peak_rtt')} peak_wpl_us={m.get('peak_wpl_us')} peak_wrtt={m.get('event_peak_wrtt')} "
               f"inactive={r.get('path_inactive')} recovered={r.get('path_recovered')} refresh_per_2s={fmtf(m.get('refresh_per_2s'))} "
               f"idle_lines={m.get('idle_lines')} qdisc_ok={q.get('ok')} backlog_peak={q.get('peak_backlog')} inject_ok={r.get('inject_ok')} "
+              f"qcwnd_below_bdp={qcwnd_line([r])} "
               f"{' '.join(r.get('problems') or [])}")
         if miss:
             bad.append(f"{arm}/{var}: {miss}")

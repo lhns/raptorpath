@@ -1,0 +1,12 @@
+== §41b ledger, final rank-minp (DNF = worst rank on every clause; neutral fills counted), BASE against MAIN, N_PERM 10000
+   p = 0.6920   min clause p = 0.1235 at c1s-400 lag_E_srv
+   rows by arm (LIVE) per cell: c1s-400 BASE=12 MAIN=6 WIRE=6; c1d-400 BASE=12 MAIN=6 WIRE=6
+   DNF rows (tagged worst-rank) per cell/arm: none; in the statistic: bad={'c1s-400': 0, 'c1d-400': 0}, rows none
+   neutral fills: total 0 
+   slow rows (reported, ranked by own values): [('c1s-400', 'MAIN', '7', 3, 68.318)]
+== §41 ledger, final rank-minp (DNF = worst rank on every clause; neutral fills counted), BASE against MAIN, N_PERM 10000
+   p = 0.1399   min clause p = 0.0191 at c1s-400 rtp_floor_p0
+   rows by arm (LIVE) per cell: c1s-400 BASE=6 MAIN=6 WIRE=6; c1d-400 BASE=6 MAIN=6 WIRE=5
+   DNF rows (tagged worst-rank) per cell/arm: none; in the statistic: bad={'c1s-400': 0, 'c1d-400': 0}, rows none
+   neutral fills: total 0 
+   slow rows (reported, ranked by own values): none
