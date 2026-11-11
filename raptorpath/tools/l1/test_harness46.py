@@ -239,6 +239,8 @@ check("qdisc check fails when after != before", not q.qdisc_check(qcap(qd("20ms"
 check("qdisc check fails when the delay did not move by +1500 ms", not q.qdisc_check(qcap(qd("20ms"), [qd("520ms")], qd("20ms")), 1500)["ok"])
 check("qdisc check fails at a backlog peak of 900 packets (needs < 900)", not q.qdisc_check(qcap(qd("20ms"), [qd("1.52s", 900)], qd("20ms")), 1500)["ok"] and q.qdisc_check(qcap(qd("20ms"), [qd("1.52s", 899)], qd("20ms")), 1500)["ok"])
 check("qdisc check fails with no during captures", not q.qdisc_check("### before wall=1\n" + qd("20ms") + "### after wall=2\n" + qd("20ms"), 1500)["ok"])
+check("qdisc check passes at the c8 FAST leg: 5 ms + 1500 ms, which tc prints with 3 significant digits as 1.5s (session 47b's false SMOKE-FAIL)", q.qdisc_check(qcap(qd("5ms"), [qd("1.5s")], qd("5ms")), 1500)["ok"])
+check("qdisc check still fails beyond display precision: 5 ms + 1500 ms read as 1.52s (15 ms off, tolerance 5 ms)", not q.qdisc_check(qcap(qd("5ms"), [qd("1.52s")], qd("5ms")), 1500)["ok"])
 check("qdisc check ignores the clsact block and counters (they differ between blocks)", q.qdisc_check(good.replace("Sent 1000 bytes", "Sent 7777 bytes", 1), 1500)["ok"])
 
 # ── a real row through make_row ───────────────────────────────────────────

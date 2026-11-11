@@ -275,6 +275,12 @@ def _ms(v, u):
     return float(v) * {"us": 0.001, "ms": 1.0, "s": 1000.0}[u]
 
 
+def _tc_tol_ms(v_ms):
+    """tc prints netem delays with "%.3g" (iproute2 sprint_time64), so 1505 ms reads back as 1.5s: allow half a unit
+    of the third significant digit, and never less than 1 ms."""
+    return max(1.0, 0.5 * 10 ** (math.floor(math.log10(v_ms)) - 2)) if v_ms > 0 else 1.0
+
+
 def qdisc_check(text, delta_ms):
     """The check rows' qdisc diff (section 46): apart from counters the `during` netem line differs from `before` only in `delay`
     (+delta), `after` equals `before`, and the backlog peaks below 900 packets. -> dict(ok, notes, peak_backlog, base_delay_ms)"""
@@ -308,7 +314,7 @@ def qdisc_check(text, delta_ms):
             notes.append(f"during[{i}] differs from before beyond delay")
             break
         md = _DELAY.search(ln)
-        if base is None or not md or abs(_ms(*md.groups()) - (base + delta_ms)) > 1.0:
+        if base is None or not md or abs(_ms(*md.groups()) - (base + delta_ms)) > _tc_tol_ms(base + delta_ms):
             ok = False
             notes.append(f"during[{i}] delay is not before + {delta_ms} ms")
             break

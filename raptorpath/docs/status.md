@@ -13373,3 +13373,24 @@ at every phase (share 0.75–0.85).
 **§41c amendment 5 (before VM contact): re-pinned CAND.**
 - **CAND = `diag36` at `fb67a6c2f438b0bc4676301fe6daa581e683f940`** (`alloc47` merged). It supersedes the `b6c6212d` pin. Behaviour is unchanged apart from the allocations; the §41c ns readout (taken at `2d625fa`) stands as an upper bound.
 - Everything else in §41c and amendments 1–4 is unchanged. Session 2 re-runs the whole plan 47, suites first.
+
+**§41c session 2 result** (CAND `fb67a6c2`, launched 2026-11-11T16:30:22Z, ended 17:46:29Z): suites PASS, guard **PASS**, §46 `ABORT-INJECT` (no scored row ran).
+- **Suites:** main rc 0 (1164 passed, 0 failed); doc ok; wasm 35 ok; debug-witness 1027 passed, 0 failed; parsers ok. `recv_alloc_bound` passes.
+- **Guard (`GATE-41c[rank-minp]`): PASS, p = 0.2256.**
+  - Design complete: 96/96 rows LIVE, no voids, 0 replaced slots, no DNF/crash/slow rows, no neutral fills.
+  - Min-p (true) 0.0116 at c1d `rtp_floor_p0` (x = +4.8 %, inside §21's 5.7 % and below the BASE resolution q95 5.6 %). No other clause has p < 0.15.
+  - Worse-side readings above 2 %: c1s `lag_E_srv` +6.3 % (p 0.21), c1d `rtp_floor_p1` +4.7 % (p 0.18); goodput is within ±2.1 % in every cell.
+  - c1s client CPU/GB −0.2 % (p 0.58): the predicted live risk did not show. The resolution table marks c1s CPU blind below ≈ 2.8 % (q95 > §21 tol), as registered.
+  - Tail: no row below 0.5 × cell median. The lowest CAND row is c1d s7 r2 at 0.797 × median (BASE's lowest 0.913).
+  - QCWND-BELOW-BDP (reported): c1d CAND has rows with a leg's quinn cwnd under the BDP for up to the whole run (median 0), BASE at most 0.154. This is the §47 collapse signature; it is reported only.
+- **§46: `ABORT-INJECT` at the check rows; a harness false fail, not an engine result.**
+  - BASE/SLOW passed. CAND/FAST failed only on `qdisc: during[0] delay is not before + 1500 ms`.
+  - Cause: `tc` prints netem delays with `%.3g` (iproute2 `sprint_time64`), so 5 + 1500 = 1505 ms reads back as `1.5s`; the checker's tolerance was 1 ms. The injection itself was right: injector `on.delay_ms` 1505 rc 0, and the engine saw it (`peak_wrtt` 1516 ms). BASE's 20 + 1500 prints exactly as `1.52s`, so the tests never hit this.
+  - Fix (`place46_parse.py` `_tc_tol_ms`): tolerance = half a unit of the third significant digit, at least 1 ms (5 ms at 1505). Red-first test (5ms → 1.5s passes) plus a bound (5ms → 1.52s, 15 ms off, still fails). Dry-run on session 2's real captures: `SMOKE-PASS`.
+
+**§46 amendment (before VM contact): the qdisc witness tolerance is tc's display precision** (above). Nothing else in §46 changes.
+
+**§41c amendment 6 (before VM contact): session 3 runs §46 alone.**
+- Session 2's suites and guard verdict stand; the guard is not re-run (its design completed and was scored; re-drawing it would raise which draw counts). No scored §46 row has run, so session 3 is not a second look at §46 data.
+- **CAND = the commit that carries this amendment and the checker fix.** `raptorpath/src` is byte-identical to `fb67a6c2` (only `tools/l1/place46_parse.py`, `tools/l1/test_harness46.py` and this file differ), so session 2's suites and guard bind it.
+- Session 3: `LD_PLAN=46`, a fresh build of both trees, no suites (`LD_P46_SUITES` unset), `LD_CAND_SHA` = the new pin. The decision rule is unchanged: guard PASS (session 2) plus a §46 verdict other than `CAND-WORSE`/`UNSCOREABLE` merges.
