@@ -1,7 +1,7 @@
-pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
+pwd=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
 HEAD=608c47bba3aab4ebcc505e004e0aab4e47600f57
 dirty=1
-TARGET=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+TARGET=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
 running 1 test
 test transport::cc_sim::stale_phase_sweep ... SWEEP tree=post-fix phase_us=000 witness=132/132 | t1=green (share 0.0000, minW 303650) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=RED (quinn min_rtt 1.05ms)
 SWEEP tree=post-fix phase_us=100 witness=152/152 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 150µs)

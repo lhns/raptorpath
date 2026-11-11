@@ -1,7 +1,7 @@
-pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
+pwd=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
 HEAD=608c47bba3aab4ebcc505e004e0aab4e47600f57
 dirty=0
-TARGET=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+TARGET=~/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
 running 2 tests
 test transport::cc_sim::quinn_characterisation_dump ... ## quinn BBR, stale run (c1: 1 Gbit/s link = 125 MB/s, BDP 250 kB; phase A bulk to 1.0 s, phase B 0.9 L)
 # stale events (tau, L, smallest stamp-based sample): [(1.2005s, 500µs, None), (1.3005s, 800µs, Some(1.55ms)), (1.4005s, 1.1ms, Some(1.55ms)), (1.5005s, 1.4ms, Some(1.55ms)), (1.6005s, 1.7ms, Some(550µs)), (1.7005s, 1.9ms, Some(550µs)), (1.8005s, 1.95ms, Some(550µs)), (1.9005s, 500µs, None), (2.0005s, 800µs, Some(1.55ms)), (2.1005s, 1.1ms, Some(1.55ms)), (2.2005s, 1.4ms, Some(1.55ms)), (2.3005s, 1.7ms, Some(550µs)), (2.4005s, 1.9ms, Some(550µs)), (2.5005s, 1.95ms, Some(550µs)), (2.6005s, 500µs, None), (2.7005s, 800µs, Some(1.55ms)), (2.8005s, 1.1ms, Some(1.55ms)), (2.9005s, 1.4ms, Some(1.55ms))]
