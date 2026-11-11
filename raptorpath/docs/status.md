@@ -13233,8 +13233,10 @@ alike). So the battery does not run under §48.
   choice does not matter post-fix (below).
 - **Extra seams:** an `ack()` split of `on_ack`, `qcc()`/`qcc_of`,
   `pub(super)` QUIC config builders, a test-only `tracked_records()`, and an
-  `Instant`-valued `AckEvent`. The worker calls them behaviour-neutral; that
-  is not yet checked here.
+  `Instant`-valued `AckEvent`. The `on_ack` split is neutral at `fbfea55`:
+  `ack()` holds the identical body, `rtt.min()` is a pure getter read once,
+  and the added `quinn_min_rtt` field is read only by the gauge. The fix
+  then changes `ack()` on purpose.
 - **Gauges** ride their own `[QCC]` line (amendment 2), not `[DIAG]`.
 - **Jitter scenario.** The assertions were the worker's choice: b̂ ≥ 0.9·L
   before the first ProbeRtt and from exit + 1 s, over one ProbeRtt and 3 s
@@ -13243,8 +13245,10 @@ alike). So the battery does not run under §48.
 - **Min filter.** The code uses `r_e ≤ m̂` (v1's `bbr_update_min_rtt`);
   §8.4's formula line says `<`. The two differ only on samples that tie m̂
   exactly. Under `<`, a tied recurring minimum would not restamp t_m. This
-  is derived, not measured: the jitter run entered ProbeRtt at 10.0 s under
-  `≤` too, so the 10 s drain stays either way. A tie test goes into §48b.
+  is not a cure for the drain: the jitter run entered ProbeRtt at 10.0 s
+  under `≤` too. A tie test (40 s of tied r_e = 10 ms samples) gives no
+  ProbeRtt under the shipped `≤`, and entries at 12, 24 and 36 s for a model
+  of `<`. It is reported only; the law is unchanged.
 
 **Why test 4 was red: the simulator's clock, not quinn.**
 - Quinn's bandwidth sampler takes min(send rate, ack rate) per `on_ack`
@@ -13267,8 +13271,16 @@ alike). So the battery does not run under §48.
 - **Not yet reproduced:** the in-vivo row's pin at 13.8 KB with no further
   loss (§41b MAIN c1s s7 r3: qce 6→7 and lost +28 at 1.8 s, then qcwnd
   13.8–14.4 KB for > 5 s). Under W = 2 × filter × latch, 13.8 KB needs a
-  55 µs latch at link rate, or a filter decayed toward the delivered rate. It
-  may be the same mechanism at a lower fixed point; that is being tested.
+  55 µs latch at link rate, or about 1.28 ms at the delivered rate
+  (≈ 5.4 MB/s). That is roughly half the ≈ 2.5 ms loop time, where the
+  window-limited loop is neutral (2·m̂/R ≈ 1): a flat pin with no restoring
+  force, as observed. This is inference from the law and the log.
+  - In the sim the filter never decays: quinn only raises it, and phase-A
+    bulk had set it at link rate.
+  - A young-filter run (`6430eaa`) settles at W = 136 kB = 2 × 130.9 MB/s ×
+    0.51 ms. It holds flat with no further loss, against 531 kB without stale
+    stamps.
+  - So the flat pin with no loss reproduces, but at a higher level.
 
 **The fix at 10 µs** (`stale_phase_sweep_10us_grid`, post-fix, 5 phases
 over 0–800 µs, at HEAD 7c65cb3): `bbr_rs` holds the pipe at every phase
@@ -13282,17 +13294,23 @@ at every phase (share 0.75–0.85).
 - Every run prints pwd, HEAD and dirty count.
 - Five earlier logs ran a stale binary, because two worktrees shared a
   target dir. They are discarded.
-- **The pre-fix phase sweep never ran:** its binary held 620 tests, against
-  626 at 7c65cb3, so the overlay never landed. So the 10 µs result is not
-  yet attributed to the fix by a red run at that grid.
-- **Where the evidence is:** `green2`, `full2` and `grid_post2` sit in the
-  worker's scratch logs until they are committed under
-  `docs/l1-raw/bbrfix48/` and pushed.
+- **Pre-fix phase sweep** (`ad41428` = `fbfea55` + `7c65cb3`'s sim, 626
+  tests, dirty 0). Tests 1 and 2 are red at every phase:
+  - 50 µs grid, 10 phases: share 0.69–0.85, min W 6.5–47 kB, m̂ 150–350 µs;
+  - 10 µs grid, 5 phases: share 0.75–0.89, min W 21.6–57.9 kB.
+
+  Post-fix they are green at every phase on both grids, so the result is
+  attributed to the fix.
+- Debug lib at `6430eaa`: 613 passed, 0 failed, 15 ignored.
+- The release, `--doc` and wasm suites are still queued.
+- Evidence is committed under `docs/l1-raw/bbrfix48/` on `bbrfix48-impl`
+  (54e9a13, pushed). The invalid logs are not committed.
 - **Not run:** the release, `--doc` and wasm suites.
 
 **What this means.**
-- The fix cures `bbr_rs`'s own defects, and it holds the pipe in the
-  scenario where quinn collapses.
+- The fix cures `bbr_rs`'s own defects. It holds the pipe in the scenario
+  where quinn collapses, at every phase, and the unfixed controller
+  collapses there too.
 - Simulation does not reproduce the in-vivo pin. The VM is the only test of
   whether the fix cures that.
 - Any VM test needs a new registration (§48b): the 10 µs grid fixed in
