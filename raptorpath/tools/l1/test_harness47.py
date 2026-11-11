@@ -210,7 +210,7 @@ tx = "\n".join(lines)
 check("score41c: ROWS 96/96, the guard, the QCWND-BELOW-BDP witness per cell and arm with the BDP values used, the c1s contention list and a VERDICT line",
       "ROWS 96/96" in tx and "QCWND-BELOW-BDP (reported only)" in tx and "c8-100@def: BDP per leg = [125000, 100000] B" in tx and "c1d-400@def: BDP per leg = [250000, 250000] B" in tx
       and "c2-100@def: BDP per leg = [125000] B" in tx and "c1s-400@def: BDP per leg = [250000] B" in tx and "any leg: share below" in tx and "CONTENTION c1s-400@def" in tx
-      and lines[-1].startswith("VERDICT GATE-41b "), lines[-1])
+      and any(ln.startswith("VERDICT GATE-41c ") for ln in lines) and not any(ln.startswith("VERDICT GATE-41b") for ln in lines), lines[-3:])
 sm = []
 for arm in ("BASE", "CAND"):
     r = grow("c1s-400", arm, "42", 1, random.Random(1))

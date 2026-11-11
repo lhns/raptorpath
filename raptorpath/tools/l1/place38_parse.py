@@ -753,8 +753,6 @@ def score41c(paths, out=print):
     out("")
     res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN)
     out("")
-    place41b_score.resolution_report(rows, out)
-    out("")
     qcwnd_report(rows, ("BASE", "CAND"), GUARD_CELLS, out)
     out("")
     contention(rows, out)
@@ -763,8 +761,25 @@ def score41c(paths, out=print):
     elif res["gate"] == "NO VERDICT":
         out("VERDICT NO VERDICT, re-run (the design is incomplete: a voided or missing cell)")
     else:
-        out(f"VERDICT GATE-41b {res['gate']}")
+        out(f"VERDICT GATE-41c {res['gate']}")
+    # The verdict is complete and flushed BEFORE anything else: the resolution table is a separate, host-side command (below) and can never
+    # withhold or alter it.
+    sys.stdout.flush()
+    out("RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger, re-runnable and seeded:  "
+        f"python3 raptorpath/tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
+    sys.stdout.flush()
     return res
+
+
+def resolution41c(paths, out=print, seed=0, **kw):
+    """Status 47, host side: the session resolution of the merge-candidate guard, recomputed from the kept ledger's BASE rows. Reported only;
+    seeded (the same ledger and seed give the same table); a separate command, so it cannot touch the verdict that score41c has already printed."""
+    import place41b_score
+    rows, _ = rows_of(paths)
+    out(f"SESSION RESOLUTION of the status-41c guard from {len(rows)} ledger rows ({' '.join(paths)}), seed {seed}")
+    sr = place41b_score.resolution_report(rows, out, seed=seed, **kw)
+    sys.stdout.flush()
+    return sr
 
 
 def score41b(paths, out=print):
@@ -850,6 +865,11 @@ def main(argv):
     if cmd == "plan41b":
         for c, s, ar, seed, rep in plan41b(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "resolution41c":
+        seed = int(a[a.index("--seed") + 1]) if "--seed" in a else 0
+        paths = [x for i, x in enumerate(a) if x != "--seed" and (i == 0 or a[i - 1] != "--seed")]
+        resolution41c(paths, seed=seed)
         return 0
     if cmd == "plan41c":
         for c, s, ar, seed, rep in plan41c(smoke=bool(a) and a[0] == "smoke"):

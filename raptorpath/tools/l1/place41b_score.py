@@ -385,7 +385,7 @@ def report_guard(rows, out, design):
     if not design or set(design) != {c for c, _ in CELLS_GUARD}:
         raise ValueError(f"the guard's design= is mandatory and must name every guard cell {[c for c, _ in CELLS_GUARD]}, got {design!r}")
     return report(rows, out, cells=CELLS_GUARD, test_arm="CAND", with_wire=False, method="rank-minp", design=design,
-                  title="§41b GUARD ON THE MERGE CANDIDATE", subject="the candidate build")
+                  title="§41c GUARD ON THE MERGE CANDIDATE", gate_name="GATE-41c", subject="the candidate build")
 
 
 # ── the guard's resolution, recomputed from THIS session's BASE rows (reported only; status 47) ─────────────────────────────────
@@ -430,7 +430,7 @@ def _res_eval(task):
     return statistic_rank(rows, "BASE", "CAND", n_perm=RES_NPERM, cells=cells)["p"] <= P_PASS
 
 
-def session_resolution(rows, cells=None, design=None, draws=None, grid=None, procs=None):
+def session_resolution(rows, cells=None, design=None, draws=None, grid=None, procs=None, seed=0):
     """-> {(cell, clause): {"d80": smallest grid delta with power >= RES_POWER or None, "power": {delta: power}}} from this ledger's BASE rows,
     or None if a (cell, seed) has fewer than 2 BASE rows."""
     cells = cells or CELLS_GUARD
@@ -445,8 +445,8 @@ def session_resolution(rows, cells=None, design=None, draws=None, grid=None, pro
             data[cell][sd] = [r for r in live(rows, cell, "BASE") if r["seed"] == sd and not r.get("dnf")]
         if len(data[cell]) < 2 or any(len(v) < 2 for v in data[cell].values()):
             return None
-    tasks = [(cell, n, d, k, tuple(cells), dict(design)) for cell, _ in cells for n, _, _ in clause_defs(cell) for d in grid for k in range(draws)]
-    procs = procs or min(8, os.cpu_count() or 1)
+    tasks = [(cell, n, d, k + 100000 * seed, tuple(cells), dict(design)) for cell, _ in cells for n, _, _ in clause_defs(cell) for d in grid for k in range(draws)]
+    procs = min(procs or 2, 2, os.cpu_count() or 1)          # at most 2 workers: the step must not push the host into the memory reaper
     res = None
     if procs > 1:
         try:
@@ -471,11 +471,11 @@ def session_resolution(rows, cells=None, design=None, draws=None, grid=None, pro
 
 
 def resolution_report(rows, out, cells=None, design=None, **kw):
-    """Prints the session resolution table (reported only)."""
+    """Prints the session resolution table (reported only). Deterministic: the same ledger (and seed) gives the same table."""
     cells = cells or CELLS_GUARD
     design = design or GUARD_DESIGN
     des = {c: design[c] for c, _ in cells}
-    out(f"RESOLUTION FROM THIS SESSION'S BASE ROWS (reported only; not part of the verdict): BASE rows resampled with replacement to the design "
+    out(f"RESOLUTION FROM THIS SESSION'S BASE ROWS (reported only; a lower bound on the 10 000-permutation verdict's power (N_PERM {RES_NPERM}); not part of the verdict): BASE rows resampled with replacement to the design "
         f"{des}, balanced per seed; {kw.get('draws') or RES_DRAWS} draws per point, N_PERM {RES_NPERM}, grid "
         f"{[f'{100 * d:g} %' for d in (kw.get('grid') or RES_GRID)]}")
     sr = session_resolution(rows, cells, design, **kw)

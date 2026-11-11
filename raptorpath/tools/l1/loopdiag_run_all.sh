@@ -332,6 +332,10 @@ if [ "$PLAN" = "47" ]; then
       if [ "$nrows" != "96" ]; then era "ABORT-ROWS stage $name: $nrows P38ROW lines, the guard's design is 96"; ok=0; fi
     fi
     era "LD-ALL stage $name end ok=$ok $(grep -a '^VERDICT' "$dir/score.txt" | head -1)"
+    if [ "$splan" = "41c" ]; then
+      # Only the verdict is computed on the VM. The resolution table (reported only) is recomputed on the HOST from the kept ledger.
+      era "LD-ALL guard resolution NOT computed on the VM; on the host: python3 raptorpath/tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log"
+    fi
     [ "$ok" = "1" ] && touch "$dir/DONE" && return 0
     return 1
   }
