@@ -94,3 +94,28 @@ fn place_costs_ns() {
     }
     println!("PLACE_COSTS_NS {:.0}", median_ns(&two_leg()));
 }
+
+/// The per-ack wire-RTT mirror step (id walk + transport read per leg).
+#[test]
+fn wire_mirror_step_allocates_nothing() {
+    let mut sched = two_leg();
+    let read = |id: PathId| Some(Duration::from_millis(10 + id as u64));
+    sched.mirror_wire_rtts(read);
+    let a0 = allocs();
+    sched.mirror_wire_rtts(read);
+    let n = allocs() - a0;
+    assert_eq!(sched.path(1).unwrap().wire_rtt(), Some(Duration::from_millis(11)));
+    assert_eq!(n, 0, "per-ack wire mirror must not allocate");
+}
+
+/// The per-symbol `[ETA]` stamp, steady state (leg already in the ETA map).
+#[test]
+fn stamp_placement_eta_allocates_nothing() {
+    let mut sched = two_leg();
+    let _ = sched.stamp_placement_eta(0, 1_000);
+    let a0 = allocs();
+    let us = sched.stamp_placement_eta(0, 2_000);
+    let n = allocs() - a0;
+    assert!(us > 0);
+    assert_eq!(n, 0, "per-symbol ETA stamp must not allocate");
+}
