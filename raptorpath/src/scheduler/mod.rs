@@ -311,22 +311,15 @@ impl Scheduler {
         self.place_wdiv_derived
     }
 
-    /// The legs whose quinn RTT the caller should read before borrowing the
-    /// scheduler: every leg, in id order.
-    pub fn wire_rtt_reads_wanted(&self) -> Vec<PathId> {
-        let mut ids = self.all_path_ids();
-        ids.sort_unstable();
-        ids
-    }
-
-    /// Mirror quinn's packet-timed RTT into each named leg (the placement
-    /// base, paper §5.7).
-    /// Called at every ack batch and path report with the RTT of every leg, so
-    /// a leg that carries nothing is refreshed by traffic on the others.
-    pub fn mirror_wire_rtts(&mut self, reads: &[(PathId, Duration)]) {
-        for (id, rtt) in reads {
-            if let Some(p) = self.paths.get_mut(id) {
-                p.set_wire_rtt(*rtt);
+    /// Mirror quinn's packet-timed RTT into every leg (the placement base,
+    /// paper §5.7). `read` is the caller's transport read per leg id; a leg
+    /// it has no sample for is left as is. Called at every ack batch and path
+    /// report, so a leg that carries nothing is refreshed by traffic on the
+    /// others. Allocation-free: legs are independent, so map order is moot.
+    pub fn mirror_wire_rtts(&mut self, mut read: impl FnMut(PathId) -> Option<Duration>) {
+        for (id, p) in self.paths.iter_mut() {
+            if let Some(rtt) = read(*id) {
+                p.set_wire_rtt(rtt);
             }
         }
     }

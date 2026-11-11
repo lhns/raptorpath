@@ -230,11 +230,10 @@ fn on_ack(
     // The transport reads (published owner view / pass-through CC atomics)
     // and the pass-through window write; neither depends on scheduler state.
     let wire = wire_reads(transport, path_id, true);
-    let mirror = wire_mirror_reads(transport, &*ctx.scheduler);
     let mut cc_window: Option<u64> = None;
     let sched = &mut *ctx.scheduler;
     sched.touch_path(path_id);
-    sched.mirror_wire_rtts(&mirror);
+    sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
     // `RWM_CLOCK_GAP` (ADR-0061): samples processed in a stall's
     // release-flood quarantine measured the stall, not the path — the
     // RTT/delivered-rate feeds below are skipped (budget release and loss
@@ -411,18 +410,6 @@ fn wire_reads(transport: &QuicTransport, path_id: u32, compete_here: bool) -> Wi
     }
 }
 
-/// The placement base (paper §5.7): quinn's packet-timed RTT of every leg,
-/// read before the scheduler is borrowed (like [`wire_reads`]) and mirrored
-/// into it at every ack batch and path report, whichever leg the message
-/// arrived on.
-fn wire_mirror_reads(transport: &QuicTransport, sched: &Scheduler) -> Vec<(u32, Duration)> {
-    sched
-        .wire_rtt_reads_wanted()
-        .into_iter()
-        .filter_map(|id| transport.wire_rtt(id).map(|d| (id, d)))
-        .collect()
-}
-
 fn on_path_report(
     ctx: &mut ControlCtx<'_>,
     report_path_id: u32,
@@ -435,11 +422,10 @@ fn on_path_report(
     let mstar_anchor = ctx.mstar_anchor;
 
     let wire = wire_reads(transport, report_path_id, false);
-    let mirror = wire_mirror_reads(transport, &*ctx.scheduler);
     let sched = &mut *ctx.scheduler;
     // Touch path — this doubles as keepalive
     sched.touch_path(report_path_id);
-    sched.mirror_wire_rtts(&mirror);
+    sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
     if let Some(path) = sched.path_mut(report_path_id) {
         let rtt_duration = Duration::from_micros(avg_rtt_us);
         // `RWM_MSTAR_ANCHOR` (ADR-0061): the peer's `avg_rtt_us` is the
@@ -526,12 +512,11 @@ fn on_window_ack(
     let now = now_us();
     let rtt_us = now.saturating_sub(echo_send_timestamp_us);
     let wire = wire_reads(transport, path_id, copa_feed.is_none());
-    let mirror = wire_mirror_reads(transport, &*ctx.scheduler);
     let mut cc_window: Option<u64> = None;
     {
         let sched = &mut *ctx.scheduler;
         sched.touch_path(path_id);
-        sched.mirror_wire_rtts(&mirror);
+        sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
         // `RWM_CLOCK_GAP`: quarantined echoes (stall release flood)
         // measured the stall — discard.
         let gap_q = crate::control::anchor::stall_witness()

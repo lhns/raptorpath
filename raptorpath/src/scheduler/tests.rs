@@ -3858,15 +3858,13 @@ fn wire_base_at_one_leg_is_the_identity() {
     assert!(sched.eta().line().contains(" w_n=1 w_calls=1"));
 }
 
-/// The mirror: quinn's RTT is stored for every leg handed to it, and the
-/// read list is every leg - the idle ones included, which is what keeps an
+/// The mirror: quinn's RTT is stored for every leg the read answers, and
+/// the read covers every leg - the idle ones included, which is what keeps an
 /// idle leg's wire RTT fresh from traffic on the others.
 #[test]
 fn the_wire_mirror_writes_every_leg() {
-    let reads = [(0, Duration::from_micros(3_000)), (1, Duration::from_micros(9_000))];
     let mut sched = wire_state(ProtocolHint::Auto, &[wleg(0, 10.0, None), wleg(1, 10.0, None)]);
-    assert_eq!(sched.wire_rtt_reads_wanted(), vec![0, 1]);
-    sched.mirror_wire_rtts(&reads);
+    sched.mirror_wire_rtts(|id| Some(Duration::from_micros(3_000 + 6_000 * id as u64)));
     assert_eq!(sched.path(0).unwrap().wire_rtt(), Some(Duration::from_micros(3_000)));
     assert_eq!(sched.path(1).unwrap().wire_rtt(), Some(Duration::from_micros(9_000)));
 }
