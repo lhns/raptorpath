@@ -13394,3 +13394,18 @@ at every phase (share 0.75–0.85).
 - Session 2's suites and guard verdict stand; the guard is not re-run (its design completed and was scored; re-drawing it would raise which draw counts). No scored §46 row has run, so session 3 is not a second look at §46 data.
 - **CAND = the commit that carries this amendment and the checker fix.** `raptorpath/src` is byte-identical to `fb67a6c2` (only `tools/l1/place46_parse.py`, `tools/l1/test_harness46.py` and this file differ), so session 2's suites and guard bind it.
 - Session 3: `LD_PLAN=46`, a fresh build of both trees, no suites (`LD_P46_SUITES` unset), `LD_CAND_SHA` = the new pin. The decision rule is unchanged: guard PASS (session 2) plus a §46 verdict other than `CAND-WORSE`/`UNSCOREABLE` merges.
+
+**§46 Result (session 3, CAND `dffd8517`, launched 2026-11-11T22:19:02Z, `LD-ALL-DONE` 22:47:21Z): `VERDICT NO-DIFFERENCE`.**
+- Check rows: SLOW/BASE and FAST/CAND LIVE, qdisc ok (backlog peaks 362, 276); `SMOKE-PASS` under the amended tolerance. 22/22 battery rows ran; ABORT-TOKENS none.
+- **SLOW-HIT** (4 vs 4 LIVE; the exit witness held on BASE 4/4, PROVOKED):
+  - R: WITHIN, CAND median 3.85 s [1.97, 3.95, 4.74, 3.74] vs BASE 4.51 s [6.48, 4.27, 1.95, 4.75] (floor 1.00).
+  - gbar_post: WITHIN, CAND 88.1 vs BASE 92.0 Mbit/s (floor 3.68).
+  - Reported: G CAND 11.3 % vs BASE 9.4 %; R0 3.35 vs 4.21 s; T_w 3.50 vs 4.21 s.
+- **FAST-HIT** (4 vs 4 LIVE; PROVOKED 4/4):
+  - R: WITHIN, CAND 1.77 s vs BASE 1.75 s (floor 1.00).
+  - gbar_post: WITHIN, CAND 82.9 vs BASE 86.0 Mbit/s (floor 3.44).
+  - Reported: G CAND 5.1 % vs BASE −8.2 %; R0 0.48 vs 0.45 s; T_w 1.77 vs 1.75 s.
+- **+500 ms at SLOW-HIT (reported only): no LIVE row.** All 4 rows are `WITNESS-FAIL event-did-not-bite`: the event witness asks for pre + 750 ms, but a +500 ms event can reach at most pre + 500 (peaks 545–590 against pre 204–290). The witness threshold is a fixed 750 ms that does not scale with the event's delta, a harness defect. It touches no scored row; to be fixed before these rows are read again.
+- **c1d, leg 1 hit (reported only, n = 1 each):** R CAND 2.40 s vs BASE 6.22 s (BETTER, p(disjoint) 0.5, not scored); gbar_post 936.6 vs 876.4 Mbit/s.
+- **QCWND-BELOW-BDP (reported):** c8 shares ≤ 0.024 in every arm; c1d BASE 0.215 vs CAND 0.024 (n = 1).
+- **Decision rule (§41c):** guard PASS (session 2) with §46 `NO-DIFFERENCE` → `diag36` merges to main. NO-DIFFERENCE is reported to the user as such; it does not block.
