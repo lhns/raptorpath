@@ -13316,3 +13316,10 @@ at every phase (share 0.75–0.85).
 - Any VM test needs a new registration (§48b): the 10 µs grid fixed in
   advance; the pre-fix sweep run; the full suites; the §41c guard, settled
   against CONTROLLED-WITH-COST.
+
+**§41c amendment 2 / §46 amendment: the trees for the merge-candidate session (status §47's plan, before VM contact).**
+- **BASE = main `4926822`.**
+- **CAND = `diag36` at `814b8ce`.** Its `raptorpath/src` equals `2d625fa`'s, which holds the promotion: the stamp is the priced E, and `RWM_PLACE_WIRE` is removed. The tree also carries the `guard47` scorer (`6dedf2b`). Later `diag36` commits are status-only, and the shipped tree is `814b8ce`.
+- `LD_CAND_SHA=814b8ce…` (the full SHA is pinned in the launch log).
+- **Session order:** suites on CAND, then the §41c guard (96 rows), then §46.
+- **On the host after the session:** the resolution table (`resolution41c`), and the ns-per-stamped-symbol readout (`nsbench41c`, run on the host).
