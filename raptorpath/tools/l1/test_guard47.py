@@ -222,5 +222,55 @@ with __import__("tempfile").TemporaryDirectory() as td:
     pp2.score41c([pth], out=lines.append)
 check("score41c uses the mandatory-design guard: an incomplete ledger ends in 'VERDICT NO VERDICT, re-run'", lines[-1].startswith("VERDICT NO VERDICT, re-run"), lines[-1])
 
+# ── the session resolution table (red-first): recomputed from THIS session's BASE rows, reported only ──────────
+import json as _json  # noqa: E402
+import tempfile as _tf  # noqa: E402
+
+
+def design_ledger(seed=5, cpu_noise=1.0):
+    """A 96-row ledger in plan 41c's exact layout (12 rep-major groups, BASE/CAND pairs per cell), bootstrapped from the real single-session rows."""
+    rng = random.Random(seed)
+    pl = gp.load_pools(single_session=True)
+    rows = []
+    for (c, st, a, sd, rp) in pp.plan41c():
+        src = pl[c][sd]
+        r = dict(rng.choice(src))
+        r.update({"arm": a, "rep": rp, "seed": sd, "status": "LIVE", "store": "def", "dnf": False, "rc": 0, "problems": [], "problem": None})
+        if cpu_noise != 1.0:
+            m = {"c1s-400": 15.0 * 0.4, "c1d-400": 21.0 * 0.4, "c2-100": 31.0 * 0.1, "c8-100": 36.0 * 0.1}[c]      # per-GB level x the cell's GB
+            r["cpu_cli"] = m + (r["cpu_cli"] - m) * cpu_noise
+        rows.append(r)
+    return rows
+
+
+def score41c_text(rows):
+    lines = []
+    with _tf.TemporaryDirectory() as td:
+        pth = os.path.join(td, "l.log")
+        open(pth, "w").write("".join("P38ROW " + _json.dumps(r) + chr(10) for r in rows))
+        pp.score41c([pth], out=lines.append)
+    return lines
+
+
+g.RES_DRAWS, g.RES_NPERM, g.RES_GRID = 6, 1000, [0.024, 0.05, 0.12, 0.5]
+led = design_ledger()
+lt = score41c_text(led)
+tx = "\n".join(lt)
+check("score41c prints the session resolution beside the verdict, marked reported only, for every clause of the four cells (26 lines)",
+      "RESOLUTION FROM THIS SESSION'S BASE ROWS (reported only; not part of the verdict)" in tx
+      and sum(1 for ln in lt if " d80 = " in ln) == 26 and all(any(f"  {c:<8} " in ln and " d80 = " in ln for ln in lt) for c, _ in gp.CELLS4), [ln for ln in lt if "RESOLUTION FROM" in ln][:1])
+check("... with the power at the named shifts (+2.4 % client / server CPU, -5 % goodput) on the CPU and goodput lines",
+      sum(1 for ln in lt if "power at 2.4 %" in ln) == 8 and sum(1 for ln in lt if "power at 5 %" in ln) == 4, sum(1 for ln in lt if "power at" in ln))
+check("... printed after the guard verdict block and before the final VERDICT line", tx.index("GATE-41b[rank-minp]") < tx.index("RESOLUTION FROM THIS SESSION") < tx.rindex("VERDICT "))
+d80 = lambda L, c, n: next(ln for ln in L if ln.startswith(f"  {c:<8} {n:<14} d80 = "))   # noqa: E731
+quiet = score41c_text(design_ledger(cpu_noise=0.2))
+noisy = score41c_text(design_ledger(cpu_noise=4.0))
+pw = lambda ln: float(ln.split("power at 2.4 % = ")[1])   # noqa: E731
+check("the resolution is recomputed from THIS session's rows: with a quiet BASE (client CPU noise x0.2) the power at +2.4 % at c1s is higher than with a noisy one (x4)",
+      pw(d80(quiet, "c1s-400", "cpu_cli/GB")) > pw(d80(noisy, "c1s-400", "cpu_cli/GB")), (d80(quiet, "c1s-400", "cpu_cli/GB"), d80(noisy, "c1s-400", "cpu_cli/GB")))
+few = [r for r in led if not (r["cell"] == "c2-100" and r["arm"] == "BASE" and r["seed"] == "42")] + [r for r in led if r["cell"] == "c2-100" and r["arm"] == "BASE" and r["seed"] == "42"][:1]
+lf = score41c_text(few)
+check("with fewer than 2 live BASE rows in a (cell, seed) the resolution says so instead of guessing", any("not computed: a (cell, seed) has fewer than 2 live BASE rows" in ln for ln in lf))
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

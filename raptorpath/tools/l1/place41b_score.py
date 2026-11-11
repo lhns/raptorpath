@@ -388,6 +388,107 @@ def report_guard(rows, out, design):
                   title="§41b GUARD ON THE MERGE CANDIDATE", subject="the candidate build")
 
 
+# ── the guard's resolution, recomputed from THIS session's BASE rows (reported only; status 47) ─────────────────────────────────
+# Per cell and clause: the smallest shift of that clause (CAND rows worse by delta: goodput x (1 - delta), the rest x (1 + delta)) that the
+# rank-minp gate catches (p <= 0.05) in >= RES_POWER of RES_DRAWS datasets resampled from this session's own BASE rows (BASE and "CAND" drawn
+# with replacement from the cell's BASE rows, balanced per seed, at the design's sizes), plus the power at +2.4 % CPU and -5 % goodput.
+# N_PERM is small (RES_NPERM) so the whole table costs minutes, not hours; it is a resolution estimate, never part of the verdict.
+RES_GRID = [0.01, 0.02, 0.024, 0.03, 0.05, 0.08, 0.12, 0.20, 0.50, 1.00]
+RES_DRAWS = 30
+RES_NPERM = 1000                 # must be >= 1000: with 26 clauses the gate p cannot reach 0.05 at a few hundred relabellings (floor about 26 / (N + 1))
+RES_POWER = 0.8
+NAMED_SHIFTS = {"cpu_cli/GB": 0.024, "cpu_srv/GB": 0.024, "goodput": 0.05}
+_RES = {}
+
+
+def _res_init(data):
+    _RES["data"] = data
+
+
+def _res_dataset(rng, data, cells, design):
+    rows = []
+    for cell, _ in cells:
+        nb, nc = design[cell]
+        for sd in sorted(data[cell]):
+            src = data[cell][sd]
+            for arm, n in (("BASE", nb // 2), ("CAND", nc // 2)):
+                for i in range(n):
+                    r = dict(rng.choice(src))
+                    r["arm"], r["rep"], r["status"], r["dnf"] = arm, f"{arm}{i}", "LIVE", False
+                    rows.append(r)
+    return rows
+
+
+def _res_eval(task):
+    cell, clause, delta, draw, cells, design = task
+    rng = random.Random(1009 * draw + int(delta * 10000) + sum(map(ord, cell + clause)))
+    rows = _res_dataset(rng, _RES["data"], cells, design)
+    key = {n: k for n, k, _ in clause_defs(cell)}[clause]
+    for r in rows:
+        if r["cell"] == cell and r["arm"] == "CAND" and r.get(key) is not None:
+            r[key] = r[key] * (1 - delta) if clause == "goodput" else r[key] * (1 + delta)
+    return statistic_rank(rows, "BASE", "CAND", n_perm=RES_NPERM, cells=cells)["p"] <= P_PASS
+
+
+def session_resolution(rows, cells=None, design=None, draws=None, grid=None, procs=None):
+    """-> {(cell, clause): {"d80": smallest grid delta with power >= RES_POWER or None, "power": {delta: power}}} from this ledger's BASE rows,
+    or None if a (cell, seed) has fewer than 2 BASE rows."""
+    cells = cells or CELLS_GUARD
+    design = design or GUARD_DESIGN
+    draws, grid = draws or RES_DRAWS, grid or RES_GRID
+    if RES_NPERM < 1000:
+        raise ValueError(f"RES_NPERM={RES_NPERM} is too small for a 26-clause gate (needs >= 1000)")
+    data = {}
+    for cell, _ in cells:
+        data[cell] = {}
+        for sd in sorted({r["seed"] for r in live(rows, cell, "BASE")}):
+            data[cell][sd] = [r for r in live(rows, cell, "BASE") if r["seed"] == sd and not r.get("dnf")]
+        if len(data[cell]) < 2 or any(len(v) < 2 for v in data[cell].values()):
+            return None
+    tasks = [(cell, n, d, k, tuple(cells), dict(design)) for cell, _ in cells for n, _, _ in clause_defs(cell) for d in grid for k in range(draws)]
+    procs = procs or min(8, os.cpu_count() or 1)
+    res = None
+    if procs > 1:
+        try:
+            import multiprocessing as mp
+            with mp.Pool(procs, initializer=_res_init, initargs=(data,)) as pool:
+                res = pool.map(_res_eval, tasks, chunksize=8)
+        except Exception:                                # no usable process pool here: serial
+            res = None
+    if res is None:
+        _res_init(data)
+        res = [_res_eval(t) for t in tasks]
+    caught = {}
+    for t, hit in zip(tasks, res):
+        caught.setdefault((t[0], t[1], t[2]), []).append(hit)
+    out = {}
+    for cell, _ in cells:
+        for n, _, _ in clause_defs(cell):
+            pw = {d: sum(caught[(cell, n, d)]) / len(caught[(cell, n, d)]) for d in grid}
+            ok = [d for d in grid if pw[d] >= RES_POWER]
+            out[(cell, n)] = {"d80": min(ok) if ok else None, "power": pw}
+    return out
+
+
+def resolution_report(rows, out, cells=None, design=None, **kw):
+    """Prints the session resolution table (reported only)."""
+    cells = cells or CELLS_GUARD
+    design = design or GUARD_DESIGN
+    des = {c: design[c] for c, _ in cells}
+    out(f"RESOLUTION FROM THIS SESSION'S BASE ROWS (reported only; not part of the verdict): BASE rows resampled with replacement to the design "
+        f"{des}, balanced per seed; {kw.get('draws') or RES_DRAWS} draws per point, N_PERM {RES_NPERM}, grid "
+        f"{[f'{100 * d:g} %' for d in (kw.get('grid') or RES_GRID)]}")
+    sr = session_resolution(rows, cells, design, **kw)
+    if sr is None:
+        out("  not computed: a (cell, seed) has fewer than 2 live BASE rows")
+        return None
+    out(f"  per clause: smallest shift caught in >= {int(100 * RES_POWER)} % of draws (d80), and the power at the named shifts (client / server CPU +2.4 %, goodput -5 %)")
+    for (cell, n), v in sr.items():
+        nm = f"  power at {100 * NAMED_SHIFTS[n]:g} % = {v['power'].get(NAMED_SHIFTS[n], float('nan')):.2f}" if n in NAMED_SHIFTS else ""
+        out(f"  {cell:<8} {n:<14} d80 = {('%g %%' % (100 * v['d80'])) if v['d80'] is not None else '> %g %%' % (100 * max(kw.get('grid') or RES_GRID))}{nm}")
+    return sr
+
+
 def main(argv):
     if len(argv) < 2 or argv[0] not in ("score", "dry"):
         print(__doc__)

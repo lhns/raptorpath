@@ -326,6 +326,11 @@ if [ "$PLAN" = "47" ]; then
     if [ "$splan" = "46" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/smoke.log" "$dir/ld.log" > "$dir/score.txt" 2>&1
     else python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" > "$dir/score.txt" 2>&1; fi
     [ "$brc" = "0" ] && python3 ./loopdiag_parse.py "$chk" "$dir/ld.log" && ok=1
+    if [ "$splan" = "41c" ]; then
+      # The guard step is scored by score41c (rank-minp, the design mandatory), never by 41b's report, and its ledger must hold the 96 rows of the design.
+      local nrows; nrows=$(grep -ac '^P38ROW ' "$dir/ld.log")
+      if [ "$nrows" != "96" ]; then era "ABORT-ROWS stage $name: $nrows P38ROW lines, the guard's design is 96"; ok=0; fi
+    fi
     era "LD-ALL stage $name end ok=$ok $(grep -a '^VERDICT' "$dir/score.txt" | head -1)"
     [ "$ok" = "1" ] && touch "$dir/DONE" && return 0
     return 1

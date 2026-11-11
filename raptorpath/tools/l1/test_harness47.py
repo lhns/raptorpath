@@ -28,6 +28,9 @@ def check(name, ok, detail=""):
         fails += 1
 
 
+# the session-resolution table that score41c prints is slow at its production size (tested in test_guard47.py); a tiny one here
+g41.RES_DRAWS, g41.RES_GRID = 2, [0.05]
+
 bat = open(os.path.join(HERE, "loopdiag_battery.sh"), encoding="utf-8").read()
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
 
@@ -271,6 +274,11 @@ check("run_all plan 47: a failed guard VERDICT does not stop plan 46 (only a sta
 check("run_all plan 47 / 41c / 46 are pinned by LD_CAND_SHA (refuse to launch while unset) and the parser gates include test_harness47.py",
       "ABORT-CAND LD_CAND_SHA is unset" in runall and 'test_harness47.py >>' in runall and 'P46=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ] || [ "$PLAN" = "47" ]; } && P46=1' in runall)
 check("run_all: the suite logs go to $SD (so plan 47 keeps them under suites/) and other plans keep $RUN", 'SD="$RUN"' in runall and runall.count('"$SD/TESTS.txt"') >= 4)
+
+check("run_all plan 47: the guard step is scored by score41c (never 41b's report) and asserts the 96 rows of the design",
+      "41c) smk=smoke41c; scr=score41c; chk=check41c" in runall and 'if [ "$splan" = "41c" ]; then' in runall and '[ "$nrows" != "96" ]' in runall
+      and "ABORT-ROWS stage" in runall and "score41b" not in runall.split("stage() {")[1].split("GOK=0")[0])
+check("the guard's plan table seeds are 42 and 7 (rep-major, 6 + 6 per seed): the SEED passed to each row is the seed column", sorted({sd for *_, sd, _ in pp.plan41c()}) == ["42", "7"])
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

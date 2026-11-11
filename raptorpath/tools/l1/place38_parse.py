@@ -753,6 +753,8 @@ def score41c(paths, out=print):
     out("")
     res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN)
     out("")
+    place41b_score.resolution_report(rows, out)
+    out("")
     qcwnd_report(rows, ("BASE", "CAND"), GUARD_CELLS, out)
     out("")
     contention(rows, out)
