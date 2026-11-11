@@ -1,0 +1,20 @@
+pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba
+HEAD=608c47bba3aab4ebcc505e004e0aab4e47600f57
+dirty=1
+TARGET=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+running 1 test
+test transport::cc_sim::stale_phase_sweep ... SWEEP tree=post-fix phase_us=000 witness=132/132 | t1=green (share 0.0000, minW 303650) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=RED (quinn min_rtt 1.05ms)
+SWEEP tree=post-fix phase_us=100 witness=152/152 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 150µs)
+SWEEP tree=post-fix phase_us=200 witness=176/176 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 250µs)
+SWEEP tree=post-fix phase_us=300 witness=204/204 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 350µs)
+SWEEP tree=post-fix phase_us=400 witness=234/234 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 450µs)
+SWEEP tree=post-fix phase_us=500 witness=264/264 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 550µs)
+SWEEP tree=post-fix phase_us=600 witness=297/297 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 650µs)
+SWEEP tree=post-fix phase_us=700 witness=333/333 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 750µs)
+SWEEP tree=post-fix phase_us=800 witness=369/369 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 850µs)
+SWEEP tree=post-fix phase_us=900 witness=402/402 | t1=green (share 0.0000, minW 303593) | t2=green (min m-hat 2100 us) | t4=RED (quinn share 0.0000) | t5=green (quinn min_rtt 950µs)
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 623 filtered out; finished in 598.66s
+
+EXIT=0

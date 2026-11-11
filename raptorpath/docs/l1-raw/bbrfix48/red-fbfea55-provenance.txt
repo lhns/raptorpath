@@ -1,0 +1,67 @@
+pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/a269-red
+HEAD=fbfea550b6c4bcc5187d57110778dd00c7fca37f
+dirty=0
+TARGET=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-a269fa7da8ed10fba/target
+running 14 tests
+test transport::bbr_rs::tests::app_limited_samples_are_raise_only ... ok
+test transport::bbr_rs::tests::controller_window_tracks_honest_bdp_under_clusters ... ok
+test transport::bbr_rs::tests::drain_exits_under_a_backlog ... 
+thread 'transport::bbr_rs::tests::drain_exits_under_a_backlog' (27080) panicked at raptorpath\src\transport\bbr_rs.rs:1376:13:
+Drain (entered at event 3) never exited to ProbeBw under a backlog; mode Drain, W 396199, T(1) 120000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test transport::bbr_rs::tests::estimator_reads_true_link_under_token_bucket_ack_clusters ... ok
+test transport::bbr_rs::tests::estimator_rejects_sub_rtprop_intervals ... ok
+test transport::bbr_rs::tests::probe_rtt_fires_only_on_an_expired_min_filter ... 
+thread 'transport::bbr_rs::tests::probe_rtt_fires_only_on_an_expired_min_filter' (26012) panicked at raptorpath\src\transport\bbr_rs.rs:1409:13:
+assertion `left == right` failed: ProbeRtt at t=1s while r_e refreshes the filter every second
+  left: 1
+ right: 0
+FAILED
+test transport::bbr_rs::tests::startup_window_is_bounded_by_the_model_target ... 
+thread 'transport::bbr_rs::tests::startup_window_is_bounded_by_the_model_target' (12140) panicked at raptorpath\src\transport\bbr_rs.rs:1343:9:
+Startup window 6240000 exceeds T(2.885) 346199 + max excess 0 + one event 120000
+FAILED
+test transport::bbr_rs::tests::sustained_loss_cannot_clamp_recovery_below_the_pipe ... ok
+test transport::cc_sim::bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_across_probe_rtt ... [cc_sim c2-jitter] ProbeRtt 23ms..243ms; run end 3.243s; modes=SRB; tail_drops=0
+           b̂/L: pre[3s,enter) min/med=737869762948.382/0.000; at enter-1ms=0.000; in ProbeRtt min=0.033;          at exit=0.372, +1s=1.047, +2s=1.065, +3s=1.068; post[exit+1s,end) min/med=1.045/1.065
+           m̂(us): enter-1ms=0 in-ProbeRtt=8250 exit+3s=7450; sr(us) exit+3s=0
+ok
+test transport::cc_sim::bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps ... [cc_sim t1] share(W<BDP)=0.7976 minW=11293 modes=SRB min m̂=150us witness=166 tail_drops=0
+
+thread 'transport::cc_sim::bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps' (23960) panicked at raptorpath\src\transport\cc_sim.rs:551:5:
+share(W < BDP_true) = 0.7976 over [1.3, 3.0] s
+FAILED
+test transport::cc_sim::bbr_rs_min_rtt_follows_a_path_rtt_rise ... [cc_sim t3] m̂(12.5s)=11100us share(W<50kB)[13,14]=1.0000 modes=SRB
+
+thread 'transport::cc_sim::bbr_rs_min_rtt_follows_a_path_rtt_rise' (7816) panicked at raptorpath\src\transport\cc_sim.rs:594:5:
+m̂ = 11100 us at 12.5 s, expected >= 36 ms after the RTT rise to 40 ms
+FAILED
+test transport::cc_sim::bbr_rs_min_rtt_never_reads_below_the_path ... 
+thread 'transport::cc_sim::bbr_rs_min_rtt_never_reads_below_the_path' (3788) panicked at raptorpath\src\transport\cc_sim.rs:568:5:
+m̂ read 150 us at t=2.503s: below the 2.000 ms path RTT
+FAILED
+test transport::cc_sim::quinn_bbr_min_rtt_under_reads_under_stale_stamps ... ok
+test transport::cc_sim::quinn_bbr_window_collapses_under_stale_stamps ... [cc_sim t4] quinn share(W<BDP): stale=0.0000 no-stale=0.0000; latched min_rtt: stale=550µs no-stale=2.1ms; minW stale=303593 no-stale=303704
+  quinn state (stale run) at 0.5/1.0/1.2/2.0/3.0 s: [Some("ProbeBw full=true"), Some("ProbeBw full=true"), Some("ProbeBw full=true"), Some("ProbeBw full=true"), Some("ProbeBw full=true")]
+  (no-stale run): [Some("ProbeBw full=true"), Some("ProbeBw full=true"), Some("ProbeBw full=true"), Some("ProbeBw full=true"), Some("ProbeBw full=true")]
+
+thread 'transport::cc_sim::quinn_bbr_window_collapses_under_stale_stamps' (26864) panicked at raptorpath\src\transport\cc_sim.rs:622:5:
+share(W < BDP_true) = 0.0000, expected > 0.5; quinn Bbr at the end of the stale run: Bbr { config: BbrConfig { initial_window: 240000 }, current_mtu: 1350, max_bandwidth: BandwidthEstimation { total_acked: 331347582, prev_total_acked: 331346273, acked_time: Some(Instant { t: 632858.8997331s }), prev_acked_time: Some(Instant { t: 632858.8997331s }), total_sent: 910595944, prev_total_sent: 910594635, sent_time: Some(Instant { t: 632858.8997331s }), prev_sent_time: Some(Instant { t: 632858.8997331s }), max_filter: MinMax { window: 10, samples: [MinMaxSample { time: 159, value: 26380000 }, MinMaxSample { time: 159, value: 26380000 }, MinMaxSample { time: 159, value: 26380000 }] }, acked_at_last_window: 331347582 }, acked_bytes: 331347582, mode: ProbeBw, loss_state: LossState { lost_bytes: 0 }, recovery_state: NotInRecovery, recovery_window: 303593, is_at_full_bandwidth: true, pacing_gain: 0.75, high_gain: 2.885, drain_gain: 0.34662044, cwnd_gain: 2.0, high_cwnd_gain: 2.885, last_cycle_start: Some(Instant { t: 632858.8992331s }), current_cycle_offset: 7, init_cwnd: 240000, min_cwnd: 5400, prev_in_flight_count: 230400, exit_probe_rtt_at: Some(Instant { t: 632856.1055331s }), probe_rtt_last_started_at: Some(Instant { t: 632855.9039831s }), min_rtt: 550µs, exiting_quiescence: false, pacing_rate: 19785000, max_acked_packet_number: 695374, max_sent_packet_number: 695638, end_recovery_at_packet_number: 591758, cwnd: 253630882, current_round_trip_end_packet_number: 695374, round_count: 811, bw_at_last_round: 26180000, round_wo_bw_gain: 3, ack_aggregation: AckAggregationState { max_ack_height: MinMax { window: 10, samples: [MinMaxSample { time: 811, value: 253601864 }, MinMaxSample { time: 811, value: 253601864 }, MinMaxSample { time: 811, value: 253601864 }] }, aggregation_epoch_start_time: Some(Instant { t: 632856.1092831s }), aggregation_epoch_bytes: 327213935 }, random_number_generator: StdRng(ChaCha12Rng { rng: BlockRng { core: ChaChaXCore {}, result_len: 64, index: 1 } }) }
+FAILED
+
+failures:
+
+failures:
+    transport::bbr_rs::tests::drain_exits_under_a_backlog
+    transport::bbr_rs::tests::probe_rtt_fires_only_on_an_expired_min_filter
+    transport::bbr_rs::tests::startup_window_is_bounded_by_the_model_target
+    transport::cc_sim::bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps
+    transport::cc_sim::bbr_rs_min_rtt_follows_a_path_rtt_rise
+    transport::cc_sim::bbr_rs_min_rtt_never_reads_below_the_path
+    transport::cc_sim::quinn_bbr_window_collapses_under_stale_stamps
+
+test result: FAILED. 7 passed; 7 failed; 0 ignored; 0 measured; 606 filtered out; finished in 123.09s
+
+error: test failed, to rerun pass `-p raptorpath --lib`
+EXIT=101
