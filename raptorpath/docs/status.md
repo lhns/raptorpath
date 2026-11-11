@@ -13345,3 +13345,20 @@ at every phase (share 0.75–0.85).
   - A slot voided by a witness is re-run once at the end of the battery, with the same cell, arm, seed and rep. At most 4 per session; beyond that, NO VERDICT.
   - Crash rows (`VOID-RC`, `NO_DATA`) and DNF rows are never replaced. They take the worst rank on every clause.
   - The void rate in §38, §41 and §41b was 2 of 252 rows. Both were WIRE rows on a WIRE-only witness, and none were BASE or MAIN rows.
+
+**Session launched** 2026-11-11T13:28:24Z (VM UTC):
+- `LD_PLAN=47`, `LD_CAND_SHA=b6c6212d0f0114c5faaf16caf816ea9372d8f667`, BASE `4926822a14af…`, `LD_HARD` = launch + 4 h.
+- The precondition was met (procs_running [1,1,2,1,1], cargo 0, rustc 0), and both locks were taken.
+
+**§41c readout: ns per stamped symbol** (`nsbench41c`, reported only).
+- **Where.** Run on the VM (host memory was short): release build, `taskset -c 2`, 5 alternating BASE/CAND pairs, 2 000 000 calls per point.
+- **Trees.** BASE = main `4926822` plus the test, which inlines main's stamp code. CAND = `2d625fa` plus the test, which calls `stamp_placement_eta` (branch `nsbench41c` 7a831e2).
+- **Results** (ns per call, median with [min–max]):
+
+| paths | BASE | CAND | CAND − BASE | ratio |
+|---|---|---|---|---|
+| 2 | 160.1 [154.6–187.1] | 210.3 [193.3–235.7] | +50 | 1.31 |
+| 4 | 192.4 [184.1–243.8] | 231.3 [218.5–260.4] | +39 | 1.20 |
+
+- The extra cost is the wire-RTT lookup plus the min-wire scan. At c1s's ≈ 90 k symbols/s, +50 ns is ≈ 4.5 ms of CPU per second, about 0.45 % of a core. That sits below the guard's ≈ 2 % c1s CPU resolution.
+- The checksums differ by tree because the stamped values come from different laws.
