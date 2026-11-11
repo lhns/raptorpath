@@ -13337,3 +13337,11 @@ at every phase (share 0.75–0.85).
     - `CAND-RECOVERS-FASTER` supports the merge.
   - **NO VERDICT:** re-run (amendment 1).
 - **Scorer wording.** Since `6dedf2b`, `score41c` prints only the verdict block. The resolution table is the separate host command `place38_parse.py resolution41c <ledger> [--seed N]`, reported only. Its default seed is named in its header. The ns readout's BASE variant inlines main's stamp code (main has no `stamp_placement_eta`), so the ratio prices the wire-RTT lookup and the min-wire scan together.
+
+**§41c amendment 4 (before VM contact): re-pinned CAND, and the replacement rule.**
+- **CAND = `diag36` at `b6c6212d`.** It adds `guard47b`'s harness. Its `raptorpath/src` still equals `2d625fa`'s, and it supersedes the `814b8ce` pin.
+- **All 28 `tools/l1` tests pass at `b6c6212d`.**
+- **Replacement rule** (`guard47b`):
+  - A slot voided by a witness is re-run once at the end of the battery, with the same cell, arm, seed and rep. At most 4 per session; beyond that, NO VERDICT.
+  - Crash rows (`VOID-RC`, `NO_DATA`) and DNF rows are never replaced. They take the worst rank on every clause.
+  - The void rate in §38, §41 and §41b was 2 of 252 rows. Both were WIRE rows on a WIRE-only witness, and none were BASE or MAIN rows.
