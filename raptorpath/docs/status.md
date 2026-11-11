@@ -13362,3 +13362,14 @@ at every phase (share 0.75–0.85).
 
 - The extra cost is the wire-RTT lookup plus the min-wire scan. At c1s's ≈ 90 k symbols/s, +50 ns is ≈ 4.5 ms of CPU per second, about 0.45 % of a core. That sits below the guard's ≈ 2 % c1s CPU resolution.
 - The checksums differ by tree because the stamped values come from different laws.
+
+**§41c session 1 result: `LD-ALL FAILED: ABORT-TESTS`** (14:28:18Z). The guard and §46 never ran, so there is no verdict.
+- Suites: main rc 101 (1161 passed, 1 failed); debug-witness 1024 passed, 1 failed; doc ok; wasm 35 ok; parsers ok.
+- The one failure, in both profiles: `allocations_per_source_symbol_stay_under_the_bound` (`tests/recv_alloc_bound.rs`), 25.03 and 24.99 against the bound 23.5 (main read 22.7–22.9 when the bound was set).
+- **Cause.** `control_msg.rs` `wire_mirror_reads()` (from the `RWM_PLACE_WIRE` promotion) built two `Vec`s per ack batch, window ack and path report.
+- **Fix** (`alloc47` 21836e9a): `Scheduler::mirror_wire_rtts(read)` walks the paths in place; both helpers are deleted. Red-first test `wire_mirror_step_allocates_nothing` (red at 2, green at 0); `stamp_placement_eta_allocates_nothing` reads 0 before and after.
+- **VM check** (debug, 3 runs per tree): main passes 3/3; the old CAND fails 3/3 (25.13, 25.08, 25.11); the fix passes 3/3. `cargo check --all-targets` on the fix tree: rc 0.
+
+**§41c amendment 5 (before VM contact): re-pinned CAND.**
+- **CAND = `diag36` at `fb67a6c2f438b0bc4676301fe6daa581e683f940`** (`alloc47` merged). It supersedes the `b6c6212d` pin. Behaviour is unchanged apart from the allocations; the §41c ns readout (taken at `2d625fa`) stands as an upper bound.
+- Everything else in §41c and amendments 1–4 is unchanged. Session 2 re-runs the whole plan 47, suites first.
