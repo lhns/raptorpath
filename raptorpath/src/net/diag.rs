@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::emit_source::SenderState;
 use super::sender_policy::SenderPolicy;
-use super::{CopaFeed, EchoRatioMin, LOOP_WAKE_US, now_us, stall_threshold_us};
+use super::{EchoRatioMin, LOOP_WAKE_US, now_us, stall_threshold_us};
 use crate::monitor::stats::SharedStats;
 use crate::transport::QuicTransport;
 
@@ -388,7 +388,6 @@ pub(crate) struct DiagCtx<'a> {
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub window_ack_seq: &'a Arc<AtomicU64>,
-    pub copa_feed: &'a Option<Arc<CopaFeed>>,
 }
 
 /// Emit the periodic `[DIAG]` / `[C8CONV-S]` report.
@@ -413,7 +412,6 @@ pub(crate) fn report(
         transport,
         stats,
         window_ack_seq,
-        copa_feed,
     } = ctx;
     let DiagInputs {
         tx_paused,

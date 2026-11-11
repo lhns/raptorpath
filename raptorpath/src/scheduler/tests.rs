@@ -690,7 +690,6 @@ fn test_c2_loop_cwnd_grows_past_200_within_5s() {
         // Send the whole carry; the batch timestamp is stamped here
         // (wire time), as in send_interleaved_batches.
         {
-            let p = sched.path_mut(0).unwrap();
             let budget = carry;
             if budget > 0 {
                 carry -= budget;

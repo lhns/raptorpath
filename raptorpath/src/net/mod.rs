@@ -2431,7 +2431,6 @@ async fn run_window_sender(
                     transport,
                     stats,
                     window_ack_seq,
-                    copa_feed: &copa_feed,
                 },
                 DiagInputs {
                     tx_paused,

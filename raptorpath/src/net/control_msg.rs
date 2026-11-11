@@ -252,7 +252,7 @@ fn on_ack(
     // suppresses the `record_delivery` anchor feed while the paused feed
     // supplies no samples either, and the anchor never establishes (dyn cap
     // stuck at boot 128).
-    if let Some(feed) = copa_feed {
+    if copa_feed.is_some() {
         if let Some(p) = sched.path_mut(path_id) {
             p.release_in_flight(received_ids.len() as u32);
             // The Copa-sole feed runs its dynamics in `copa_feed_attribute`.
@@ -549,7 +549,7 @@ fn on_window_ack(
         }
         let am_live = d_expected > 0 || d_received > 0;
         if am_live {
-            if let Some(feed) = copa_feed {
+            if copa_feed.is_some() {
                 if let Some(p) = sched.path_mut(path_id) {
                     p.release_in_flight(d_received);
                 }
