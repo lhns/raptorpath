@@ -1,0 +1,37 @@
+SENTINEL-WRITABLE /dev/shm/s46c/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s46c/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-11T22:19:02Z user=VMUSER dir=/dev/shm/s46c/run launch=2026-11-11T22:19:02Z
+LD-ALL start plan=46 load=3.34 0.76 0.26 2/384 1465966 2026-11-11T22:19:02Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=2.21 avg60=0.95 avg300=0.24 total=4558901145 2026-11-11T22:19:10Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=3.88 0.92 0.32; io=full avg10=2.21 avg60=0.95 avg300=0.24 total=4558901955 2026-11-11T22:19:10Z
+LD-ALL parser test ok 2026-11-11T22:19:37Z
+LD-ALL built wall=311s 2026-11-11T22:24:48Z
+LD-ALL binary a33990618417075f2529688a65a6e5ad99b911a410cf22cbec0733102818f57e 2026-11-11T22:24:48Z
+LD-ALL built BASE wall=304s binary 79572edd05dbbee3184e038db88c7143a952415bed2da21c1000ce1525edfff5 2026-11-11T22:29:52Z
+SMOKE46 BASE SLOW: status=LIVE event_witness=True exit_witness=True peak_rtt=1803 peak_wpl_us=None peak_wrtt=1556 inactive=0 recovered=0 refresh_per_2s=2.42 idle_lines=14 qdisc_ok=True backlog_peak=362 inject_ok=True qcwnd_below_bdp=leg0 0.000 [0.000-0.000] n=1 leg1 0.034 [0.034-0.034] n=1; any leg 0.034 [0.034-0.034] n=1 
+SMOKE46 CAND FAST: status=LIVE event_witness=True exit_witness=True peak_rtt=2413 peak_wpl_us=1519613 peak_wrtt=1520 inactive=0 recovered=0 refresh_per_2s=- idle_lines=0 qdisc_ok=True backlog_peak=276 inject_ok=True qcwnd_below_bdp=leg0 0.000 [0.000-0.000] n=1 leg1 0.012 [0.012-0.012] n=1; any leg 0.012 [0.012-0.012] n=1 
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-11T22:31:19Z
+LD-ALL battery start load=1.37 1.78 1.39; io=full avg10=0.20 avg60=0.13 avg300=0.17 total=4562639378 2026-11-11T22:31:19Z
+LD-ALL battery rc=0 wall=962s 2026-11-11T22:47:21Z
+CHECK46 done=True rows=22/22
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=4.41 2.02 1.43; io=full avg10=0.00 avg60=0.00 avg300=0.05 total=4563935979 2026-11-11T22:47:21Z
+PERSISTED /dev/shm/s46c/run -> ~/s46c/run 2026-11-11T22:47:21Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

@@ -1,0 +1,16 @@
+Status 41b battery, ledger annotations (written by the harness worker, not by the battery)
+
+- Tree: branch place41b = github/diag36 4241d64 + the plan-41b harness (ff965d0); COMMIT shipped = ff965d044cbc2fa582de5805a11998ea80444730.
+  BASE tree: main 4926822a14af2c17e98a2b2f5d99971bc9cef825, own archive, own target dir. Both archives taken with core.autocrlf=false
+  (the sandbox refuses `git -c`; the repo setting was flipped for the archive calls and restored).
+- Pre-launch check: raptorpath/src of the run tree is file-for-file identical to 85be32a and to 40c55dd (92 files; sha256 of every file compared,
+  run tree on the VM against the local archives). The shipped binary sha256 equals section 41's (8dee8f0d...). No suites run (plan 41b).
+- Waiter (LDW_PLAN=41b) launched 2026-11-10T15:04:02Z, LD_HARD = 1794337442 (launch + 4 h). Precondition met first try. Parser gate 15:04:42Z,
+  builds 15:10:13Z (shipped, 331 s) and 15:15:41Z (BASE, 328 s), smoke passed 15:15:55Z, battery 15:15:55-15:21:57Z (362 s), DONE-ALL, bat_ok=1.
+- Rows: 48/48 LIVE, no witness fail, no abort token, no io flag, rc 0 everywhere. BASE 12, MAIN 6, WIRE 6 per cell.
+- Anomaly: MAIN c1s-400 s7 r3 ran at 68.3 Mbit/s (CPU/GB 29.8 / 30.4); no contention signature (procs_running 1/1, io 0.00/0.19). It is LIVE and stays in
+  the statistic (medians; it also widens MAIN's range in the section 21 readings). Not re-run.
+- Scoring is place41b_score.py (N_PERM 10000, RNG seed 4141), exactly the registered statistic. Its resolution table uses the half-per-seed splits
+  of the 12 BASE rows (400 per clause); q95 is the value at rank ceil(0.95 n); sd_c is the sample sd (n - 1).
+- Per-row logs in diag-ld/ and diag-smoke/ (client and server logs gzipped; drv.out plain). The VM user is scrubbed to VMUSER, the host to HOST.
+- VM cleaned: ld41b dirs removed, 0 raptorpath/tcpdump processes, 0 rp-* netns, both locks free.

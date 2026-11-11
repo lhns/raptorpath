@@ -1,0 +1,14 @@
+Status 38 battery, ledger annotations (written by the harness worker, not by the battery)
+
+- Tree: branch place38 (from 75c3c60 on diag36 + the plan-38 harness); COMMIT is the commit shipped to the VM (f50cb6d).
+  Engine binary sha256 in BINSHA.txt (built fresh on the VM from that tree, run from a root-owned /dev/shm tree).
+- The unscored N = 1 check row (c2 WIRE, status 38 amendment 4) ran first: [ETA] w_calls=87103, w_mv=0.0000 (the arm prints
+  numbers at N = 1), row LIVE. It is not in this ledger.
+- Waiter (LDW_PLAN=38) first launch 2026-11-10T11:00:13Z: ABORT-PRECONDITION at 11:00:21Z (procs_running=[1,1,1,12,12],
+  NOTHING WAS RUN, rc 3); the waiter relaunched 10 minutes later at 11:10:21Z (LD_HARD = 1794323421 = launch + 4 h).
+  This ledger is the second launch: locks 11:10:30Z, parser gate 11:10:34Z, binary 11:15:54Z, smoke passed 11:16:17Z,
+  battery 11:16:17Z to 11:31:41Z, bat_ok=1, DONE-ALL.
+- No defects, no hot fixes, no re-parsed rows: 96 of 96 rows LIVE, no abort token.
+- Per-row logs in diag-ld/ and diag-smoke/: client and server logs (*-c.log, *-s.log) are gzipped here; drv.out is plain.
+  File names carry the store: <cell>@<store>-<arm>-s<seed>-r<rep>-a1-*.
+- The VM user is scrubbed to VMUSER.

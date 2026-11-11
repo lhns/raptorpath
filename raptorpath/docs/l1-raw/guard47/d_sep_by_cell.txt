@@ -1,0 +1,8 @@
+all    c1s-400  separated clause: mean p 0.0009  worst 0.0012  best 0.0006  (n=30)
+all    c1d-400  separated clause: mean p 0.0010  worst 0.0013  best 0.0006  (n=35)
+all    c2-100   separated clause: mean p 0.0335  worst 0.0389  best 0.0286  (n=30)
+all    c8-100   separated clause: mean p 0.0247  worst 0.0315  best 0.0070  (n=35)
+nolag  c1s-400  separated clause: mean p 0.0007  worst 0.0008  best 0.0005  (n=20)
+nolag  c1d-400  separated clause: mean p 0.0007  worst 0.0009  best 0.0005  (n=25)
+nolag  c2-100   separated clause: mean p 0.0253  worst 0.0299  best 0.0200  (n=20)
+nolag  c8-100   separated clause: mean p 0.0179  worst 0.0216  best 0.0045  (n=25)

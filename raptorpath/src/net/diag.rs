@@ -706,6 +706,12 @@ pub(crate) fn report(
                     // wire truth). Both appended at the end of the segment.
                     let plu_i = p.estimator.predictive_loss_upper(0.95);
                     let plc_i = p.estimator.cumulative_loss();
+                    // The wire RTT the scheduler holds for this leg (µs), to
+                    // read beside `wrtt`. `-` before quinn has a sample.
+                    let wpl_s = p
+                        .wire_rtt()
+                        .map(|d| d.as_micros().to_string())
+                        .unwrap_or_else(|| "-".to_string());
                     // RWM_POOL_ANCHOR: the per-path send-
                     // interval anchor rate (0 = no surviving bucket
                     // / feed off) + its gap/discard hygiene gauges
@@ -714,9 +720,9 @@ pub(crate) fn report(
                     let sr_i = p.send_rate_anchor().unwrap_or(0.0);
                     let (sa_g, sa_d) = p.send_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4}",
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4} wpl_us={}",
                         id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
-                        qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill, plu_i, plc_i
+                        qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill, plu_i, plc_i, wpl_s
                     ));
                 }
             }

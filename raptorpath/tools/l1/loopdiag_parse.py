@@ -144,7 +144,7 @@ def loopdiag_summary(cli, path="0"):
 
 
 def arm_n(arm):
-    m = re.fullmatch(r"(?:S|DEF|BRS)(\d+)", arm)
+    m = re.fullmatch(r"(?:S|DEF|BRS|CAP|NOCAP)(\d+)", arm)
     return int(m.group(1)) if m else None
 
 
@@ -296,7 +296,9 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row["cpu_cli_gb"] = _r(row["cpu_cli"] / (nbytes / 1e9)) if row.get("cpu_cli") is not None else None
 
     p = []
-    if row["ackdiag_n"] < 1:
+    # Plan 36 runs main's binary: no [ACKDIAG]/[LOOPDIAG] witnesses exist for it (status §36 amendment 1).
+    p36 = os.environ.get("LD_PLAN") in ("36", "40")      # plan 40 reuses plan 36's capture and witnesses
+    if row["ackdiag_n"] < 1 and not p36:
         p.append("no-ackdiag")
     idle1 = arm in ARMS29 and cell == "c8-100" and p1_idle(cli)
     if idle1:
@@ -308,7 +310,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     for i in idle34:
         row["notes"].append(f"p{i}-idle")
     for i in range(nleg):                       # EVERY path of the cell (plan 29 c8: p1 only if it sent anything)
-        if (i == 1 and idle1) or i in idle34:
+        if (i == 1 and idle1) or i in idle34 or p36:
             continue
         wn, pn_pace = row["ld_pn"][str(i)]
         if wn < MIN_LD_WINDOWS:
@@ -368,6 +370,14 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             p.append(f"p34-dgq-missing={row['dgq_n']}/{row['diag_n']}")
         if row["rdiag_n"] < MIN_RDIAG34:
             row["notes"].append(f"r3-void rdiag_busy_lines={row['rdiag_n']}")
+    if p36:
+        import disp36
+        import disp40
+        d36, p36p, p36n = (disp40 if os.environ.get("LD_PLAN") == "40" else disp36).row_fields(cell, arm, drv, cli, os.environ.get("LD_PCAP_DIR"),
+                                            os.environ.get("LD_TABLE_DIR"), f"{cell}-{arm}-s{seed}-r{rep}", srv)
+        row["d36"] = d36
+        p.extend(p36p)
+        row["notes"].extend(p36n)
     row["problems"].extend(p)
     if row["problems"] and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -664,8 +674,9 @@ def knee27(pn, cell):
     return gmax, min(n for n, g in G if g >= KNEE * gmax)
 
 
-def q1_class(qs):
-    """qs: {path: {n: Q}} -> (class, median Q, {path: Spearman}). Pre-registered order of the tests."""
+def q1_class(qs, lo=Q1_LO, hi=Q1_HI, spear=Q1_SPEAR):
+    """qs: {path: {n: Q}} -> (class, median Q, {path: Spearman}). Pre-registered order of the tests.
+    lo/hi/spear default to §27's band; §36's D1 passes its tightened [0.85, 1.15]."""
     allq = [q for d in qs.values() for q in d.values() if q is not None]
     if not allq:
         return "-", None, {}
@@ -678,15 +689,15 @@ def q1_class(qs):
             rho[p] = None
             continue
         rho[p] = spearman([n for n, _ in pts], [q for _, q in pts])
-        if rho[p] is not None and rho[p] >= Q1_SPEAR and pts[0][1] < Q1_LO:
+        if rho[p] is not None and rho[p] >= spear and pts[0][1] < lo:
             circ = True
-    if all(Q1_LO <= q <= Q1_HI for q in allq):
+    if all(lo <= q <= hi for q in allq):
         return "FLAT-AT-LINK", med, rho
     if circ:
         return "CIRCULAR", med, rho
-    if med > Q1_HI:
+    if med > hi:
         return "OVER-READ", med, rho
-    if med < Q1_LO:
+    if med < lo:
         return "APP-LIMITED", med, rho
     return "NEITHER", med, rho
 
@@ -1159,6 +1170,14 @@ _DGQ34 = re.compile(r"dgq\d+\[hand=(\d+) tx=(\d+)")
 for _g in GRID34.values():
     for _n in _g:
         sp.ARM_SPEC[f"DEF{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
+# Plan 40 (disp40.py) adds two single-leg scenario cells to the stage-3 cell table.
+for _c, _spec in (("c2slot-100", ("c2slot", "c2slot", "single", 100000000)), ("c2tbf-100", ("c2tbf", "c2tbf", "single", 100000000))):
+    sp.CELL_SPEC[_c] = _spec
+    sp.N_LEGS[_c] = 1
+# Plan 36 (disp36.py): CAP<n> = RWM_STORE=<n> + packet capture, NOCAP<n> = RWM_STORE=<n> alone.
+for _n in (16, 32, 64, 128, 256, 384, 512, 768, 1024, 2048):
+    for _a in ("CAP", "NOCAP"):
+        sp.ARM_SPEC[f"{_a}{_n}"] = ("window", "Rlc", "bulk", "ACTIVE")
 
 
 def plan34_fields(cli, srv, nleg):
@@ -1397,6 +1416,84 @@ def score34(paths, out=print):
     return res
 
 
+# ── plan 36 (receiver-side dispersion; the table, scorer and row fields live in disp36.py) ──
+def plan36(smoke=False):
+    import disp36
+    return disp36.plan36(smoke)
+
+
+def check36(path):
+    import disp36
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK36 done={ok} rows={n}/{disp36.EXPECT_ROWS36}")
+    return 0 if ok and n == disp36.EXPECT_ROWS36 else 1
+
+
+def smoke36(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    bad = []
+    for cell, arm, _, _ in plan36(smoke=True):
+        r = got.get((cell, arm))
+        if r is None:
+            bad.append(f"{cell} {arm}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{cell} {arm}: {r['status']} {r['problems']}")
+        legs = (r.get("d36") or {}).get("legs") or []
+        for x in legs:
+            if x.get("state") == "live" and ((x.get("k") or {}).get("4") or {}).get("lhat") is None:
+                bad.append(f"{cell} {arm}: live leg p{x['i']} has no L-hat_4 (the estimator did not run)")
+        print(f"SMOKE36 {cell} {arm}: mbps={r.get('mbps')} m={(r.get('d36') or {}).get('m')} "
+              + " ".join(f"p{x['i']}={x.get('state')}/skbs={x.get('skbs')}/L4={(x.get('k') or {}).get('4', {}).get('lhat')}" for x in legs)
+              + f" status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
+# ── plan 40 (the p90 dispersion estimator; table, scorer and row fields live in disp40.py) ──
+def plan40(smoke=False):
+    import disp40
+    return disp40.plan40(smoke)
+
+
+def check40(path):
+    import disp40
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t
+    n = len([ln for ln in t.splitlines() if ln.startswith("LDROW ")])
+    print(f"CHECK40 done={ok} rows={n}/{disp40.EXPECT_ROWS40}")
+    return 0 if ok and n == disp40.EXPECT_ROWS40 else 1
+
+
+def smoke40(path):
+    got = {(r["cell"], r["arm"]): r for r in rows_of([path])}
+    bad = []
+    for cell, arm, _, _ in plan40(smoke=True):
+        r = got.get((cell, arm))
+        if r is None:
+            bad.append(f"{cell} {arm}: no row")
+            continue
+        if r["status"] != "LIVE":
+            bad.append(f"{cell} {arm}: {r['status']} {r['problems']}")
+        legs = (r.get("d36") or {}).get("legs") or []
+        for x in legs:
+            if x.get("state") == "live" and ((x.get("p90") or {}).get("lhat")) is None:
+                bad.append(f"{cell} {arm}: live leg p{x['i']} has no p90 L-hat (the estimator did not run)")
+        print(f"SMOKE40 {cell} {arm}: mbps={r.get('mbps')} m={(r.get('d36') or {}).get('m')} "
+              + " ".join(f"p{x['i']}={x.get('state')}/skbs={x.get('skbs')}/Lhat={(x.get('p90') or {}).get('lhat')}/D={(x.get('p90') or {}).get('D')}" for x in legs)
+              + f" status={r['status']}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -1435,6 +1532,100 @@ def main(argv):
         return check34(argv[2])
     if cmd == "score34":
         score34(argv[2:])
+        return 0
+    if cmd == "smoke36":
+        return smoke36(argv[2])
+    if cmd == "check36":
+        return check36(argv[2])
+    if cmd == "score36":
+        import disp36
+        disp36.score_paths(argv[2:])
+        return 0
+    if cmd == "plan36":
+        for cell, arm, seed, rep in plan36(smoke=len(argv) > 2 and argv[2] == "smoke"):
+            print(f"{cell} {arm} {seed} {rep}")
+        return 0
+    if cmd == "smoke38":
+        import place38_parse
+        return place38_parse.smoke(argv[2])
+    if cmd == "check38":
+        import place38_parse
+        return place38_parse.check(argv[2])
+    if cmd == "score38":
+        import place38_parse
+        place38_parse.score(argv[2:])
+        return 0
+    if cmd == "smoke41c":
+        import place38_parse
+        return place38_parse.smoke(argv[2], plan41c=True)
+    if cmd == "check41c":
+        import place38_parse
+        return place38_parse.check(argv[2], plan41c=True)
+    if cmd == "score41c":
+        import place38_parse
+        place38_parse.score41c(argv[2:])
+        return 0
+    if cmd == "smoke46":
+        import place46_parse
+        return place46_parse.smoke(argv[2])
+    if cmd == "check46":
+        import place46_parse
+        return place46_parse.check(argv[2])
+    if cmd == "score46":
+        import place46_parse
+        place46_parse.score(argv[2:])
+        return 0
+    if cmd == "smoke41b":
+        import place38_parse
+        return place38_parse.smoke(argv[2], plan41b=True)
+    if cmd == "check41b":
+        import place38_parse
+        return place38_parse.check(argv[2], plan41b=True)
+    if cmd == "score41b":
+        import place38_parse
+        place38_parse.score41b(argv[2:])
+        return 0
+    if cmd == "smoke41":
+        import place38_parse
+        return place38_parse.smoke(argv[2], plan41=True)
+    if cmd == "check41":
+        import place38_parse
+        return place38_parse.check(argv[2], plan41=True)
+    if cmd == "score41":
+        import place38_parse
+        place38_parse.score(argv[2:], plan41=True)
+        return 0
+    if cmd == "smoke43b":
+        import place43_parse
+        return place43_parse.smoke(argv[2], plan43b=True)
+    if cmd == "check43b":
+        import place43_parse
+        return place43_parse.check(argv[2], plan43b=True)
+    if cmd == "score43b":
+        import place43_parse
+        place43_parse.score(argv[2:], plan43b=True)
+        return 0
+    if cmd == "smoke43":
+        import place43_parse
+        return place43_parse.smoke(argv[2])
+    if cmd == "check43":
+        import place43_parse
+        return place43_parse.check(argv[2])
+    if cmd == "score43":
+        import place43_parse
+        place43_parse.score(argv[2:])
+        return 0
+    if cmd == "smoke40":
+        return smoke40(argv[2])
+    if cmd == "check40":
+        return check40(argv[2])
+    if cmd == "score40":
+        import disp40
+        disp40.score_paths(argv[2:])
+        return 0
+    if cmd == "plan40":
+        for cell, arm, seed, rep in plan40(smoke=len(argv) > 2 and argv[2] == "smoke"):
+            print(f"{cell} {arm} {seed} {rep}")
         return 0
     if cmd == "plan34":
         for cell, arm, seed, rep in plan34(smoke=len(argv) > 2 and argv[2] == "smoke"):

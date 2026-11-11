@@ -25,6 +25,13 @@ pub struct PathState {
     pub src_inflight: u32,
     /// Whether the path is considered usable
     pub active: bool,
+    /// quinn's packet-timed smoothed RTT of this leg's connection, mirrored
+    /// here at every ack batch and path report (paper §5.7).
+    /// `None` until quinn has an RTT sample for the leg. Unlike `srtt()` it
+    /// does not need this leg's own symbols to be echoed, so an idle leg keeps
+    /// it fresh, and it holds no local dwell. Read only by `place_costs` under
+    /// the arm; written only while the arm is on.
+    wire_rtt: Option<Duration>,
     /// Slow-start threshold (kept for test compatibility)
     pub ssthresh: u32,
     /// Whether we are in slow-start phase (Copa startup)
@@ -147,6 +154,7 @@ impl PathState {
             in_flight: 0,
             src_inflight: 0,
             active: true,
+            wire_rtt: None,
             ssthresh: 64,
             in_slow_start: true,
             last_report: now,
@@ -432,41 +440,34 @@ impl PathState {
         rtt_secs / 2.0 + eps * t_recovery
     }
 
-    /// Load-dependent expected frontier-completion-time `E_i(load)` (seconds) —
+    /// Load-dependent expected frontier-completion-time `E_i(load)` (seconds) -
     /// the always-on load term of the placement law (paper §5.7). The time a
     /// symbol handed to this path now takes to reach the receiver:
     ///
     /// ```text
-    ///   E_i(load) = in_flight_i / (cwnd_i/SRTT_i)   ← drain the current backlog
-    ///             + SRTT_i / 2                        ← one-way propagation
-    ///             + eps_i · RTT_i                     ← expected loss recovery
+    ///   E_i = (I_i/W_i) * s_i  +  (1/2 + eps_i) * w^_i
     /// ```
     ///
-    /// The queue term uses the path's live pacing rate (`cwnd/SRTT`), so a
-    /// backlog on a low-capacity / high-RTT path costs proportionally more real
-    /// time than the same backlog on the fast path — this is what makes the law
-    /// water-fill by capacity (arrival rate matches drain rate at equilibrium),
-    /// not by equal window-fraction (which over-loads the slow path and, on a
-    /// reliable in-order stream, collapses the frontier). It rises
-    /// continuously with `in_flight` (past cwnd under overdraft), so spillover
-    /// is a smooth equilibrium, not a regime switch. Because it is the delivery
-    /// latency of a reliable in-order stream (the completion cost itself), it
-    /// carries unit weight independent of the protocol hint.
-    pub fn expected_delivery_load(&self) -> f64 {
-        self.expected_delivery_load_at(self.srtt().as_secs_f64())
-    }
-
-    /// `expected_delivery_load` with the path's latency anchor supplied by
-    /// the caller, in seconds. Same formula, one free variable: `E_i` is
-    /// linear in SRTT_i, and the only thing `RWM_COLD_PLACE` changes is which
-    /// measurement stands in for SRTT_i on a leg that has never had a sample.
-    /// `expected_delivery_load()` is this at `srtt()`, so no caller of the
-    /// nullary form can observe a difference.
-    pub fn expected_delivery_load_at(&self, srtt: f64) -> f64 {
+    /// - `(I_i/W_i) * s_i` drains the current backlog at the path's pacing rate
+    ///   `cwnd/SRTT`, so a backlog on a low-capacity / high-RTT path costs
+    ///   proportionally more real time than the same backlog on the fast path.
+    ///   That is what makes the law water-fill by capacity, not by equal
+    ///   window-fraction (which over-loads the slow path and, on a reliable
+    ///   in-order stream, collapses the frontier). It is multiplied by the
+    ///   leg's own load, so it is exactly 0 at `I_i = 0` whatever `s_i` holds.
+    /// - `(1/2 + eps_i) * w^_i` is propagation plus expected loss recovery,
+    ///   read off the wire RTT `w^_i`, which holds no local dwell and does not
+    ///   freeze when the leg idles (the caller resolves the availability
+    ///   chain `wire_i ?: min_j wire_j ?: s_i`).
+    ///
+    /// It rises continuously with `in_flight` (past cwnd under overdraft), so
+    /// spillover is a smooth equilibrium, not a regime switch. Because it is
+    /// the delivery latency of a reliable in-order stream (the completion cost
+    /// itself), it carries unit weight independent of the protocol hint.
+    pub fn expected_delivery_load_at(&self, srtt: f64, wire: f64) -> f64 {
         let eps = self.estimator.loss_rate();
         let cwnd = self.cwnd.max(1) as f64;
-        let queue_wait = (self.in_flight as f64 / cwnd) * srtt;
-        queue_wait + srtt / 2.0 + eps * srtt
+        (self.in_flight as f64 / cwnd) * srtt + (0.5 + eps) * wire
     }
 
     /// Effective goodput: throughput * (1 - loss_rate).
@@ -698,6 +699,16 @@ impl PathState {
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
     pub fn copa_min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
+    }
+
+    /// Mirror quinn's packet-timed RTT for this leg (placement base, paper §5.7).
+    pub fn set_wire_rtt(&mut self, rtt: Duration) {
+        self.wire_rtt = Some(rtt);
+    }
+
+    /// The mirrored wire RTT, `None` if quinn has not measured the leg yet.
+    pub fn wire_rtt(&self) -> Option<Duration> {
+        self.wire_rtt
     }
 
     /// Smoothed RTT estimate (Copa's EWMA; the loss estimator's EWMA as a

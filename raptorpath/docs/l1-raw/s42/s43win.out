@@ -1,0 +1,136 @@
+Status §43b pair rule + the τ window per cell (offline, read-only).
+
+Law: ask = G·ΣLᵢ(RTpropᵢ + Sᵢ + τ), S = Tp50 − Tmin. Anchors: fresh = Copa rtprop_us; expired = the row's lowest
+post-warm-up Tmin (s42rtprop). Per cap the map is EXACT in τ, so ask(n) < n  <=>  τ < θ(n) with
+    θ_A(n) = n/(G·ΣL) − Σ(Lᵢ/ΣL)·(anchor_A,ᵢ + Sᵢ)                   (A = fresh | expired)
+  = β(n) + (1 − G·L/D)·n/(G·L)  under Little (n ≈ D·Tp50, single leg), β = Tmin − expired anchor (printed beside it).
+Window at gain G:
+  τ_lo = max_A θ_A(n*/1.5)  (ask >= n at the band's lower edge on both maps: the stable point is >= n*/1.5)
+  τ_trap = min over grid caps n > n* of θ_exp(n)  (no upward crossing on the expired map above the knee, in the grid)
+  τ_band = min_A θ_A(1.5·n*)  (stable point <= 1.5·n* on both maps)
+  window = [τ_lo, min(τ_trap, τ_band)). θ at non-grid n is linear interpolation of its anchor+S term.
+b₀ = mean (Tmin − RTprop_fresh) over the two smallest caps (c2 64/96, c8 128/192, c1s p34 256/384 ex-outlier).
+c1s: p34 static rows (Tmin/Tp50 TRUNCATED to the first 8 192 samples per window; DEF384 s42r1 outlier dropped), and
+oracle43's uncapped [OCAP] windows (github/harness43) binned by n, for θ near and above the knee only (no low caps:
+the closed loop never sat below ~490). Usage: python -I s43win.py <loop-diag dir> <worktree root>
+
+#### 1. §43b pair-selection rule (status §43b), applied to the s43tau sweep (recomputed here)
+  eligible = the sweep's OK pairs (stable in band on both maps, no expired upward crossing) at c2 AND c8
+     G    τ | okc2 okc8 | rule1 G·1.016·1.04<1 | ×1.2 c2 fresh/exp (<= 263?) | slope_exp c2 | c2 G/Gmax f/e
+  0.85  0.0 | n    n    | pass                |  140 /  134 pass           |  0.12        | 0.707 / 0.681
+  0.85  2.5 | y    n    | pass                |  172 /  164 pass           |  0.26        | 0.817 / 0.794
+  0.85  5.0 | y    y    | pass                |  202 /  197 pass           |  0.26        | 0.905 / 0.890
+  0.85  7.5 | y    y    | pass                |  233 /  231 pass           |  0.54        | 0.984 / 0.984
+  0.85 10.0 | y    y    | pass                |  259 /  286 fail           |  0.54        | 0.990 / 0.995
+  0.90  0.0 | n    n    | pass                |  151 /  143 pass           |  0.13        | 0.755 / 0.719
+  0.90  2.5 | y    n    | pass                |  184 /  177 pass           |  0.28        | 0.853 / 0.832
+  0.90  5.0 | y    y    | pass                |  217 /  213 pass           |  0.28        | 0.948 / 0.936
+  0.90  7.5 | y    y    | pass                |  247 /  263 fail           |  0.57        | 0.987 / 0.991
+  0.90 10.0 | y    n    | pass                |  276 /  318 fail           |  0.31        | 0.993 / 0.998
+  0.95  0.0 | n    n    | fail                |  162 /  152 pass           |  0.13        | 0.789 / 0.758
+  0.95  2.5 | y    y    | fail                |  197 /  191 pass           |  0.29        | 0.891 / 0.871
+  0.95  5.0 | y    y    | fail                |  232 /  230 pass           |  0.61        | 0.984 / 0.984
+  0.95  7.5 | y    n    | fail                |  262 /  301 fail           |  0.61        | 0.991 / 0.999
+  0.95 10.0 | y    y    | fail                |  292 /  344 fail           |  0.33        | 0.997 / 0.995
+  1.00  0.0 | y    n    | fail                |  173 /  163 pass           |  0.31        | 0.821 / 0.792
+  1.00  2.5 | y    y    | fail                |  211 /  205 pass           |  0.31        | 0.929 / 0.913
+  1.00  5.0 | y    n    | fail                |  245 /  263 fail           |  0.64        | 0.987 / 0.991
+  1.00  7.5 | y    n    | fail                |  277 /  327 fail           |  0.34        | 0.994 / 0.997
+  1.00 10.0 | n    n    | fail                |  309 /  372 fail           |  0.34        | 1.000 / 0.991
+  after rules 1-2: (0.85, 5.0) slope 0.26, (0.85, 7.5) slope 0.54, (0.9, 5.0) slope 0.28
+  rule 3 (lowest expired slope 0.26, ties within 0.1): (0.85, 5.0), (0.9, 5.0)
+  rule 4 (highest mean of fresh/expired c2 G/Gmax): CHOSEN G = 0.9, τ = 5.0 ms
+    c2 fresh  : point 181 -> predicted band [181, 217] (offline to ×1.2), slope 0.20, G/Gmax 0.948, Tp50 18.7 ms
+    c2 expired: point 178 -> predicted band [178, 213] (offline to ×1.2), slope 0.28, G/Gmax 0.936, Tp50 18.5 ms
+    c8 fresh   (thin): point 313 -> [313, 375], slope 0.43, G/Gmax 0.915, Tp50 25.2 ms
+    c8 expired (thin): point 288 -> [288, 345], slope 0.30, G/Gmax 0.884, Tp50 23.8 ms
+
+#### 2. τ window per cell
+
+  == c2 (p27): knee 192, band [128, 288]; b0 = p0 2.28 ms (L-wt 2.28); RTprop_fresh at the knee (L-wt) 10.37 ms
+   G=0.85: τ_lo   1.74 | τ_trap  10.95 | τ_band  13.68 -> window [1.74, 10.95)
+   per cap (G=0.9): n | β = Tmin−floor (ms, L-wt) | brake_fresh | θ_exp(n) | θ_fresh(n) | Little form β+(1−G·L/D)n/(G·L)
+        64 |   2.61 |   2.47 |   -4.98 |   -5.12 |   -5.89
+        96 |   2.23 |   2.09 |   -2.29 |   -2.44 |   -3.19
+       128 |   2.39 |   1.65 |    0.88 |    0.14 |   -0.22
+       192 |   3.50 |   3.31 |    6.15 |    5.95 |    5.12
+       256 |   5.61 |   9.10 |    9.24 |   12.73 |    8.12   (above knee)
+       384 |  13.92 |  21.50 |   19.30 |   26.88 |   17.60   (above knee)
+       512 |   7.01 |  33.57 |   13.97 |   40.53 |   11.96   (above knee)
+      1024 |   7.10 |  85.17 |   20.38 |   98.44 |   17.01   (above knee)
+   G=0.90: τ_lo   0.88 | τ_trap   9.24 | τ_band  11.76 -> window [0.88, 9.24)
+   G=0.95: τ_lo   0.12 | τ_trap   7.71 | τ_band  10.03 -> window [0.12, 7.71)
+   G=1.00: τ_lo  -0.57 | τ_trap   6.33 | τ_band   8.48 -> window [-0.57, 6.33)
+
+  == c8 (p27, THIN): knee 384, band [256, 576]; b0 = p0 2.64, p1 4.32 ms (L-wt 2.92); RTprop_fresh at the knee (L-wt) 15.21 ms
+   G=0.85: τ_lo   4.31 | τ_trap  10.78 | τ_band  16.35 -> window [4.31, 10.78)
+   per cap (G=0.9): n | β = Tmin−floor (ms, L-wt) | brake_fresh | θ_exp(n) | θ_fresh(n) | Little form β+(1−G·L/D)n/(G·L)
+       128 |   2.48 |   2.51 |   -6.49 |   -6.46 |   -3.40
+       192 |   3.53 |   3.34 |   -1.38 |   -1.58 |    1.49
+       384 |   9.63 |   7.04 |   11.41 |    8.82 |   11.49
+       512 |   5.87 |  12.13 |    7.93 |   14.19 |    8.58   (above knee)
+       768 |  19.12 |  19.91 |   28.77 |   29.55 |   23.74   (above knee)
+      1024 |  15.90 |  28.80 |   25.17 |   38.07 |   23.02   (above knee)
+      2048 | 101.90 | 107.57 |  144.36 |  150.03 |  118.19   (above knee)
+   G=0.90: τ_lo   2.88 | τ_trap   7.93 | τ_band  13.14 -> window [2.88, 7.93)
+   G=0.95: τ_lo   1.61 | τ_trap   5.38 | τ_band  10.27 -> window [1.61, 5.38)
+   G=1.00: τ_lo   0.46 | τ_trap   3.08 | τ_band   7.68 -> window [0.46, 3.08)
+
+  == c1s (p34, TRUNCATED minima): knee 1024, band [683, 1536]; b0 = p0 0.30 ms (L-wt 0.30); RTprop_fresh at the knee (L-wt) 2.74 ms
+   G=0.85: τ_lo   2.16 | τ_trap   7.61 | τ_band   7.61 -> window [2.16, 7.61)
+   per cap (G=0.9): n | β = Tmin−floor (ms, L-wt) | brake_fresh | θ_exp(n) | θ_fresh(n) | Little form β+(1−G·L/D)n/(G·L)
+       256 |   0.18 |   0.14 |   -0.83 |   -0.87 |   -1.34
+       384 |   0.28 |   0.46 |    0.01 |    0.19 |   -0.56
+       512 |   0.32 |   0.65 |    0.29 |    0.62 |   -0.64
+       768 |   0.61 |   0.98 |    1.87 |    2.24 |    0.46
+      1024 |   1.10 |   1.74 |    3.12 |    3.75 |    1.12
+      1536 |   3.28 |   4.83 |    6.58 |    8.14 |    3.84   (above knee)
+      2048 |   4.49 |   6.13 |    8.87 |   10.52 |    5.89   (above knee)
+   G=0.90: τ_lo   1.70 | τ_trap   6.58 | τ_band   6.58 -> window [1.70, 6.58)
+   G=0.95: τ_lo   1.29 | τ_trap   5.66 | τ_band   5.66 -> window [1.29, 5.66)
+   G=1.00: τ_lo   0.93 | τ_trap   4.84 | τ_band   4.84 -> window [0.93, 4.84)
+
+  == c1s from oracle43 (uncapped minima), near and above the knee
+   G=0.85: oracle43 τ_trap (bins > knee)   4.84 | τ_band (θ interpolated at n=1536)   5.88 | with p34 τ_lo 2.16 -> window [2.16, 4.84)
+   oracle43 uncapped [OCAP] windows (t >= 1 s; SL s42 r2 = quinn collapse dropped; rows ['c1s-400-MAIN-s42-r1', 'c1s-400-MAIN-s42-r2', 'c1s-400-MAIN-s7-r1', 'c1s-400-SH-s42-r1', 'c1s-400-SH-s42-r2', 'c1s-400-SH-s7-r1', 'c1s-400-SL-s42-r1', 'c1s-400-SL-s7-r1'])
+   bin | windows rows | median n | β=Tmin−floor | brake_fresh | Tp50 | θ_exp(n) | θ_fresh(n)   (G=0.9, medians, ms)
+     512 |  322  4 |    569 |   0.41 |   0.39 |   5.70 |    1.25 |    1.18
+     768 |  289  5 |    741 |   0.65 |   0.52 |   7.48 |    1.72 |    1.54
+    1024 |  133  5 |   1017 |   1.31 |   1.13 |  10.74 |    2.54 |    2.29
+    1536 |   24  4 |   1352 |   1.80 |   1.27 |  13.61 |    3.94 |    3.75
+    2048 |  726  7 |   2048 |   4.44 |   4.32 |  20.11 |    8.05 |    7.95
+   G=0.90: oracle43 τ_trap (bins > knee)   3.94 | τ_band (θ interpolated at n=1536)   4.86 | with p34 τ_lo 1.70 -> window [1.70, 3.94)
+   G=0.95: oracle43 τ_trap (bins > knee)   3.13 | τ_band (θ interpolated at n=1536)   3.94 | with p34 τ_lo 1.29 -> window [1.29, 3.13)
+   G=1.00: oracle43 τ_trap (bins > knee)   2.40 | τ_band (θ interpolated at n=1536)   3.11 | with p34 τ_lo 0.93 -> window [0.93, 2.40)
+
+#### 3. One coefficient for every cell? (windows [τ_lo, τ_hi) in ms; forms τ = const, k·RTprop, k·b0)
+  G=0.85
+    const (ms): c2 [1.74, 10.95); c8 (thin) [4.31, 10.78); c1s p34 [2.16, 7.61); c1s p34 lo / oracle43 hi [2.16, 4.84)  => common (c2, c8, c1s-oracle): [4.31, 4.84)
+                without c8: [2.16, 4.84)
+    k·RTprop  : c2 [0.17, 1.06); c8 (thin) [0.28, 0.71); c1s p34 [0.79, 2.78); c1s p34 lo / oracle43 hi [0.79, 1.77)  => common (c2, c8, c1s-oracle): NONE
+                without c8: [0.79, 1.06)
+    k·b0      : c2 [0.76, 4.80); c8 (thin) [1.48, 3.69); c1s p34 [7.24, 25.53); c1s p34 lo / oracle43 hi [7.24, 16.24)  => common (c2, c8, c1s-oracle): NONE
+                without c8: NONE
+  G=0.90
+    const (ms): c2 [0.88, 9.24); c8 (thin) [2.88, 7.93); c1s p34 [1.70, 6.58); c1s p34 lo / oracle43 hi [1.70, 3.94)  => common (c2, c8, c1s-oracle): [2.88, 3.94)
+                without c8: [1.70, 3.94)
+    k·RTprop  : c2 [0.09, 0.89); c8 (thin) [0.19, 0.52); c1s p34 [0.62, 2.40); c1s p34 lo / oracle43 hi [0.62, 1.44)  => common (c2, c8, c1s-oracle): NONE
+                without c8: [0.62, 0.89)
+    k·b0      : c2 [0.39, 4.05); c8 (thin) [0.99, 2.71); c1s p34 [5.71, 22.08); c1s p34 lo / oracle43 hi [5.71, 13.21)  => common (c2, c8, c1s-oracle): NONE
+                without c8: NONE
+  G=0.95
+    const (ms): c2 [0.12, 7.71); c8 (thin) [1.61, 5.38); c1s p34 [1.29, 5.66); c1s p34 lo / oracle43 hi [1.29, 3.13)  => common (c2, c8, c1s-oracle): [1.61, 3.13)
+                without c8: [1.29, 3.13)
+    k·RTprop  : c2 [0.01, 0.74); c8 (thin) [0.11, 0.35); c1s p34 [0.47, 2.07); c1s p34 lo / oracle43 hi [0.47, 1.14)  => common (c2, c8, c1s-oracle): NONE
+                without c8: [0.47, 0.74)
+    k·b0      : c2 [0.05, 3.38); c8 (thin) [0.55, 1.84); c1s p34 [4.34, 19.00); c1s p34 lo / oracle43 hi [4.34, 10.49)  => common (c2, c8, c1s-oracle): NONE
+                without c8: NONE
+  G=1.00
+    const (ms): c2 [-0.57, 6.33); c8 (thin) [0.46, 3.08); c1s p34 [0.93, 4.84); c1s p34 lo / oracle43 hi [0.93, 2.40)  => common (c2, c8, c1s-oracle): [0.93, 2.40)
+                without c8: [0.93, 2.40)
+    k·RTprop  : c2 [-0.06, 0.61); c8 (thin) [0.03, 0.20); c1s p34 [0.34, 1.76); c1s p34 lo / oracle43 hi [0.34, 0.88)  => common (c2, c8, c1s-oracle): NONE
+                without c8: [0.34, 0.61)
+    k·b0      : c2 [-0.25, 2.78); c8 (thin) [0.16, 1.05); c1s p34 [3.11, 16.22); c1s p34 lo / oracle43 hi [3.11, 8.05)  => common (c2, c8, c1s-oracle): NONE
+                without c8: NONE
+
+Chosen §43b pair: G = 0.9, τ = 5.0 ms

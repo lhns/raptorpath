@@ -1,0 +1,405 @@
+ok   warm-up (t < 1.0 s) and other paths excluded
+ok   `-` fields parse to None, numbers to float
+ok   windows with n=0 do not count and do not enter the medians
+ok   per-row medians over all ten fields
+ok   q_pace_bps all `-`: median None, numeric count 0
+ok   MAIN pass
+ok   MAIN row carries the medians (rtt_min_us over 5 post-warm windows)
+ok   MAIN fail: SUMCAP eng absent
+ok   fail: no [ACKDIAG]
+ok   fail: 3 post-warm-up p0 windows < 4
+ok   fail: an n=0 window is not a witness window
+ok   fail: warm-up windows are not witnesses
+ok   fail: q_pace_bps never numeric
+ok   fail: p1 windows do not witness p0
+ok   MAIN fail: RWM_STORE set
+ok   S<n> pass (eng absent, every denominator == n)
+ok   S<n> fail: SUMCAP eng>0
+ok   S<n> fail: denominator != n
+ok   S<n> fail: gate RWM_STORE != n
+ok   void rows keep their status
+ok   real anchor-diag MAIN log: no LOOPDIAG -> loopdiag-p0-windows=0 and no-q-pace-bps
+ok   real log: everything else still extracts (goodput, SUMCAP, ACKDIAG, A_x, rtt, rtp_us, CPU/GB)
+ok   real log: LDROW round-trips through JSON
+ok   n* = 512 (smallest n with G >= 0.95 Gmax = 688.75)
+ok   band printed: [341.3, 768.0]
+ok   table has every column header
+ok   the two verdict lines are present
+ok   knee: G == 0.95 Gmax qualifies
+ok   O1 FLAT (constant Tmin, R1 = 1)
+ok   O1 FLAT at the 1.25 boundary (inclusive)
+ok   O1 INFLATES (R1 = 1.5 exactly)
+ok   O1 AMBIGUOUS (R1 = 1.3)
+ok   O1 AMBIGUOUS when only a mid-grid bump breaks FLAT (R1 = 1)
+ok   C1 fixed point: T=2 ms -> n_fp1 = 256 (C1 = 214.9 >= 192, < 256), outside the band -> MISSES
+ok   C1(n)/n printed per n
+ok   C1 fixed point: T=4 ms -> n_fp1 = 512 (C1 = 429.9) in [341.3, 768] -> REPRODUCES
+ok   C1 never < n on the grid -> n_fp1 `-`, MISSES
+ok   O3 FLAT-AT-LINK (Q = 1)
+ok   O3 FLAT-AT-LINK at both boundaries (0.8 and 1.25 inclusive)
+ok   O3 OVER-READ (median Q = 2)
+ok   O3 CIRCULAR (Q rises with n, Q(192) = 0.296 < 0.8, Spearman 1)
+ok   O3 NEITHER (Q = 0.5 flat below the link: no rise)
+ok   O3 NEITHER (Q falls with n)
+ok   O3 NEITHER (not flat, median in band, no rank rise to a low start)
+ok   C3med = 1.1 (Q linkB / W) RTprop = 430.0
+ok   C3 in the band -> OPTION3 REPRODUCES
+ok   C3b uses Tmin, not RTprop (Tmin = 1 ms -> 107.5)
+ok   C3 outside the band -> MISSES (Q = 0.25 -> C3 = 107.5 < 341.3)
+ok   CJ reported, with its own value: 1.1 L (RTprop + jit) = 1.1*97700*0.0041 = 440.6
+ok   sparse ledger: n*, O1, O3 still computed on what exists
+ok   empty ledger: dashes, MISSES, no exception
+ok   no quinn readings: O3 `-`, C3 `-`
+ok   non-live rows are ignored in the per-n means
+ok   c2: n* = 192; C1 = 1.1*9770*0.02 = 214.9 -> n_fp1 = 256
+ok   score: ROWS and VOID tables precede the cell blocks
+ok   score: void row listed with its problem
+ok   score: MAIN reference per cell (goodput 700.0, SUMCAP cap, LOOPDIAG medians)
+ok   score: verdict lines for both cells
+ok   score: empty ledger does not raise
+CHECK done=True rows=46/46
+ok   check: 46 rows + done line passes
+CHECK done=True rows=45/46
+ok   check: 45 rows fails
+CHECK done=False rows=46/46
+ok   check: no completion line fails
+SMOKE ('c1s-400', 'MAIN'): mbps=620.537 eng=100 ld_n=5 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=1024..1024 status=LIVE
+SMOKE ('c2-100', 'S192'): mbps=620.537 eng=None ld_n=5 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=192..192 status=LIVE
+SMOKE-PASS
+ok   smoke: two live rows pass
+SMOKE ('c1s-400', 'MAIN'): mbps=620.537 eng=100 ld_n=5 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=1024..1024 status=LIVE
+SMOKE ('c2-100', 'S192'): mbps=620.537 eng=None ld_n=1 ld_med={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} win_den=192..192 status=WITNESS-FAIL
+SMOKE-FAIL ('c2-100', 'S192'): WITNESS-FAIL ['loopdiag-p0-windows=1']
+ok   smoke: a witness-failed row fails
+ok   plan arithmetic
+ok   DEF<n> pass (echo BBR, eng absent, den == n, gate == n)
+ok   DEF row has per-path dict ld_p0 with the seven medians
+ok   DEF fail: no BBR echo
+ok   DEF fail: burst-robust echo present
+ok   BRS<n> pass (burst-robust echo)
+ok   BRS fail: no burst-robust echo
+ok   DEF/BRS fail: SUMCAP eng > 0
+ok   DEF/BRS fail: denominator != n
+ok   DEF/BRS fail: gate RWM_STORE != n
+ok   dual cell pass: both paths witnessed
+ok   dual cell: per-path medians kept apart (p0 4000, p1 9000), p0 compat field intact
+ok   dual cell fail: p1 has no windows and no numeric q_pace_bps
+ok   dual cell fail: p1 q_pace_bps never numeric
+ok   dual cell fail: 3 post-warm-up windows per path < 4 (both named)
+ok   single cell: a stray p1 is stored but not required
+ok   Q1 FLAT-AT-LINK, both boundaries inclusive
+ok   Q1 CIRCULAR (Spearman 1, Q(n_min) 0.2 < 0.8)
+ok   Q1 CIRCULAR if ANY path circulates (dual: p0 flat, p1 rises)
+ok   Q1 CIRCULAR wins over OVER-READ (rises 0.64 -> 2.8)
+ok   Q1 OVER-READ (Q = 2 flat)
+ok   Q1 OVER-READ (rises but starts above 0.8: no CIRCULAR)
+ok   Q1 APP-LIMITED (Q = 0.5 flat)
+ok   Q1 NEITHER (median 1.0 in band, one dip, no rise)
+ok   Q1 no data -> `-`
+ok   Q1 FLAT-AT-LINK fails when one path leaves the band (dual p1 = 1.3)
+ok   Q2 path FLAT at max/min = 1.5 exactly
+ok   Q2 path INFLATES at S(nmax)/S(nmin) = 2.0 exactly
+ok   Q2 path AMBIGUOUS (end ratio 1.99, span 1.99)
+ok   Q2 path AMBIGUOUS (bump in the middle: span 3, end 1)
+ok   Q2 path: S(n_min) = 0, S(n_max) > 0 -> INFLATES
+ok   Q2 cell: all FLAT -> FLAT; any INFLATES -> INFLATES; else AMBIGUOUS; missing -> `-`
+ok   fixed point ask = 100 + 0.5 n: interior n_fp = 200 (pair 192..256), slope 0.5 -> STABLE
+ok   fixed point ask = 10 + 0.95 n: n_fp = 200, slope 0.95 -> FRAGILE
+ok   slope 0.85 < 0.9 -> STABLE (n_fp = 133.3)
+ok   ask(n_min) = 30 < 64 -> FLOOR, no n_fp
+ok   ask(n_max) >= n_max -> CEILING
+ok   ask(n_max) == n_max -> CEILING (>=)
+ok   a grid point without data is skipped: constant 215 -> n_fp between 192 and 256 = 215
+ok   fixed point with no data at all -> `-`
+ok   all four cells: PREMISES-HOLD
+ok   c2-100: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   c1s-400: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   c8-100: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   c1d-400: Q1 FLAT-AT-LINK, Q2 FLAT STABLE, Q3 REPRODUCES, n* = target
+ok   verdict lines present per cell, in the pre-registered format
+ok   cells print in battery order c2, c1s, c8, c1d
+ok   table columns present (goodput, A_x p50, Tmin, Tp50, S, RTprop, Q; ask/n)
+ok   c8-100 prints both paths (p0, p1) per n
+ok   c2: constant ask 1.01 x 192 = 193.92 -> n_fp interpolated between 192 and 256 = 193.92
+ok   Q3 uses Q x link: Q = 0.8 -> n_fp = 0.8 x 193.92 ~ 155.1 for c2; Q1 still FLAT-AT-LINK (0.8 inclusive)
+ok   PREMISES-FAIL: Q1 OVER-READ on a dual cell's second path names the cells
+ok   PREMISES-FAIL: DEF S inflates with n -> Q2 INFLATES (the BRS arm is only a reference)
+ok   Q2 INFLATES printed as the verdict line
+ok   PREMISES-FAIL: BRS ask collapses -> FLOOR counts as MISSES (Q3), Q1/Q2 hold
+ok   PREMISES-FAIL: BRS ask above the grid -> CEILING counts as MISSES
+ok   PREMISES-FAIL: DEF fixed point FRAGILE (slope 0.95) -> Q2 FLAT FRAGILE on the c2 cell
+ok   DEF slope 0.5: Q2 FLAT STABLE n_fp=200.0 slope=0.500
+ok   DEF ask floor: `Q2 FLAT FLOOR n_fp=- slope=-`
+ok   DEF ask ceiling: `Q2 FLAT CEILING n_fp=- slope=-`
+ok   Q3 MISSES when n_fp (193.9) is outside the BRS band [341.3, 768.0]; DEF band reported (yes)
+ok   non-live rows ignored in the means
+ok   empty ledger: PREMISES-FAIL, no exception
+ok   reference classifications printed (Q1 DEF, Q2 BRS)
+CHECK27 done=True rows=128/128
+ok   check27: 128 rows + done line passes
+CHECK27 done=True rows=127/128
+ok   check27: 127 rows fails
+CHECK27 done=False rows=128/128
+ok   check27: no completion line fails
+SMOKE27 ('c2-100', 'BRS192'): mbps=620.537 eng=None ld_pn={'0': [5, 5]} cc_def=False cc_brs=True p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1=None status=LIVE
+SMOKE27 ('c8-100', 'DEF512'): mbps=620.537 eng=None ld_pn={'0': [5, 5], '1': [5, 5]} cc_def=True cc_brs=False p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 9000.0, 'rtt_min_us': 9000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 9500.0, 'srtt_us': 4400.0} status=LIVE
+SMOKE-PASS
+ok   smoke27: BRS192 c2 + DEF512 c8 live -> pass
+SMOKE27 ('c2-100', 'BRS192'): mbps=620.537 eng=None ld_pn={'0': [5, 5]} cc_def=False cc_brs=True p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1=None status=LIVE
+SMOKE27 ('c8-100', 'DEF512'): mbps=620.537 eng=None ld_pn={'0': [5, 5], '1': [0, 0]} cc_def=True cc_brs=False p0={'dlv_rate': 97000.0, 'jit_us': 150.0, 'q_cwnd': 900000.0, 'q_pace_bps': 1000000000.0, 'q_srtt_us': 4200.0, 'rtprop_us': 4000.0, 'rtt_min_us': 4000.0, 'rtt_p10_us': 4100.0, 'rtt_p50_us': 4300.0, 'srtt_us': 4400.0} p1={'dlv_rate': None, 'jit_us': None, 'q_cwnd': None, 'q_pace_bps': None, 'q_srtt_us': None, 'rtprop_us': None, 'rtt_min_us': None, 'rtt_p10_us': None, 'rtt_p50_us': None, 'srtt_us': None} status=WITNESS-FAIL
+SMOKE-FAIL ('c8-100', 'DEF512'): WITNESS-FAIL ['loopdiag-p1-windows=0', 'no-q-pace-bps-p1']
+ok   smoke27: a dual cell with only p0 windows fails
+ok   plan 27 arithmetic: 2 blocks x 4 cells x 2 arms x 8 = 128
+ok   plan 24 constants untouched (46 rows)
+ok   PC() reproduces the frozen example byte for byte
+ok   frozen line parses: every field
+ok   `-` fields parse to None, line still counted
+ok   liveness echo is not a [PCAP] period
+ok   floor parsed from the echo, default 10
+ok   pcap summary: periods, conv, conv_t
+ok   pcap summary: nbar mean after convergence (periods >= conv: 190,194,190,192 -> 191.5) and over all
+ok   pcap summary: final nbar is the last `next`
+ok   pcap summary: final cumulative fractions, sign, ext, hole mean
+ok   never converged: conv None, post mean None, `-` sign None, hole mean skips `-`
+ok   post-convergence periods at the floor are counted (nbar <= floor 10)
+ok   no [PCAP] lines: periods 0, everything else None
+ok   loop series: post-warm-up windows with n>0, all paths pooled, [t, p50]
+ok   loop p50 post: median of window medians with t >= cutoff (pooled paths, window-unweighted)
+ok   plan 29: 36 rows
+ok   plan 29: block seeds/reps (42,1) (7,1) (42,2), 4 cells x 3 arms each
+ok   plan 29: arm order rotates by block (MAIN,PWR,KNEE / PWR,KNEE,MAIN / KNEE,MAIN,PWR)
+ok   plan 29: every (block, cell) has MAIN, PWR, KNEE once; 12 rows per arm
+ok   plan 29: knee per cell 192/1024/768/384
+ok   plan 29 smoke: c2-100 PWR s42 and c1s-400 PWR s42
+ok   `plan29` subcommand prints 36 `cell arm seed rep knee` lines (the battery's single source)
+ok   `plan29 smoke` prints the two smoke rows
+ok   MAIN (plan 29) pass, no power echo, row carries zero [PCAP] periods
+ok   MAIN fail: a power echo present
+ok   PWR pass: echo + 6 periods, no RWM_STORE
+ok   PWR fail: no power echo
+ok   PWR fail: 2 [PCAP] periods < 3
+ok   PWR pass at exactly 3 periods
+ok   PWR fail: RWM_STORE set
+ok   KNEE pass (eng absent, every denominator == 192, gate RWM_STORE == 192)
+ok   KNEE fail: SUMCAP eng > 0
+ok   KNEE fail: denominator != knee
+ok   KNEE fail: gate != the cell's knee
+ok   KNEE fail: power echo present
+ok   knee per cell: c1s 1024, c1d 768, c8 384 (witness uses the cell's n)
+ok   generic witnesses still bite on plan 29 arms: no ackdiag, 3 windows
+ok   c8 p1-idle (dlv=0 in every p1 window): LIVE with the note `p1-idle`
+ok   c8 p1-idle on MAIN too
+ok   c8 p1 that delivered something is NOT idle: windows witness still voids
+ok   c8 p1 with one non-zero window is not idle
+ok   c8 p1 with no windows at all is not `idle` (nothing shows dlv=0)
+ok   p0 is never excused: c8 with p0 idle still fails
+ok   p1-idle is only for c8: a single-path cell gets no note
+ok   plan 27 arms keep the strict rule (p1 idle still voids DEF)
+ok   row: loop p50 post-convergence (t >= conv_t 1.5: 5000..11000 -> 8000) and whole-run p50 (7000), both labelled
+ok   MAIN row: loop_p50_post None (no conv_t), series kept for the scorer
+ok   baseline cell: GOODPUT WITHIN, LATENCY WITHIN/WITHIN, FIXED-POINT IN-BAND, STABILITY STABLE
+ok   printed token lines
+ok   GOODPUT BETTER (+20 > 4)
+ok   GOODPUT WORSE (-20)
+ok   GOODPUT WITHIN at the boundary (diff == 2 sigma_pooled == 4)
+ok   GOODPUT BETTER just past the boundary
+ok   sigma_pooled = sqrt((s1^2+s2^2)/2): sd 2 vs 6 -> 2 sigma = 8.94: diff 7 WITHIN, 9 BETTER
+ok   LATENCY BETTER vs both (A_x lower by 300 > 40)
+ok   LATENCY WORSE vs MAIN, WITHIN vs KNEE
+ok   LATENCY WITHIN vs MAIN, BETTER vs KNEE (printed in that order)
+ok   loop p50 post-convergence reported beside A_x, labelled, own tokens (BETTER vs MAIN)
+ok   loop cutoff = median PWR conv_t (1.0 s) printed
+ok   windows before the cutoff are excluded (the t=0.5 / 1 us window): each row's loop p50 is its own constant
+ok   FIXED-POINT BELOW (100 < 192/1.5 = 128)
+ok   FIXED-POINT ABOVE (300 > 288)
+ok   FIXED-POINT IN-BAND at both edges (128 and 288 inclusive)
+ok   FIXED-POINT NO-CONVERGENCE (no conv_period reached)
+ok   FIXED-POINT NO-CONVERGENCE (too few periods)
+ok   FIXED-POINT NO-CONVERGENCE (fewer than 2 post-convergence periods)
+ok   only 1 of 3 PWR rows converged (not a majority) -> NO-CONVERGENCE
+ok   2 of 3 converged: IN-BAND on their mean
+ok   fixed point per cell uses the KNEE n*: c1s 1024 band [682.7, 1536], c1d 768, c8 384
+ok   paper's predicted power points reported separately (c1s 384 IN; token still BELOW the knee band)
+ok   c1d prediction is an upper bound (< 512)
+ok   STABILITY FLOOR-COLLAPSE (floor_pin 0.25)
+ok   STABILITY not collapsed at floor_pin 0.249
+ok   STABILITY FLOOR-COLLAPSE (any post-convergence period at the floor)
+ok   STABILITY RUNAWAY (knee_pin 0.25)
+ok   STABILITY NOISE-DOMINATED (converged suffix 9 of 30 periods)
+ok   STABILITY STABLE at a converged suffix of 10 of 30
+ok   sign agreement alone never decides (a converged limit cycle alternates)
+ok   precedence: FLOOR-COLLAPSE beats NOISE-DOMINATED
+ok   precedence: RUNAWAY beats NOISE-DOMINATED
+ok   precedence: FLOOR-COLLAPSE beats RUNAWAY
+ok   one collapsing PWR row makes the cell FLOOR-COLLAPSE (worst row by precedence)
+ok   table: n, mean and sd per arm; pairs KNEE-vs-MAIN, PWR-vs-MAIN, PWR-vs-KNEE with diff and 2sigma
+ok   PWR cap position table: time-avg nbar after convergence vs KNEE band and the stability inputs printed
+ok   an arm with < 2 live rows: comparison token `-` (cannot form sigma), others unaffected
+ok   no live PWR rows: GOODPUT `-`, FIXED-POINT NO-CONVERGENCE, STABILITY `-`; void table lists them
+ok   empty ledger: no exception, tokens `-`
+ok   four cells print in battery order c2, c1s, c8, c1d
+ok   notes (p1-idle) are listed
+CHECK29 done=True rows=36/36
+ok   check29: 36 rows + done line passes
+CHECK29 done=True rows=35/36
+ok   check29: 35 rows fails
+CHECK29 done=False rows=36/36
+ok   check29: no completion line fails
+SMOKE29 ('c2-100', 'PWR'): mbps=620.537 periods=6 conv=2 conv_t=1.5 nbar_post=191.5 nbar_final=192.0 floor_pin=0.0 knee_pin=0.0 sign=0.5 ld_pn={'0': [5, 5]} status=LIVE
+SMOKE29 ('c1s-400', 'PWR'): mbps=620.537 periods=6 conv=2 conv_t=1.5 nbar_post=191.5 nbar_final=192.0 floor_pin=0.0 knee_pin=0.0 sign=0.5 ld_pn={'0': [5, 5]} status=LIVE
+SMOKE-PASS
+ok   smoke29: both PWR rows live with periods -> pass
+SMOKE29 ('c2-100', 'PWR'): mbps=620.537 periods=6 conv=2 conv_t=1.5 nbar_post=191.5 nbar_final=192.0 floor_pin=0.0 knee_pin=0.0 sign=0.5 ld_pn={'0': [5, 5]} status=LIVE
+SMOKE29 ('c1s-400', 'PWR'): mbps=620.537 periods=1 conv=2 conv_t=1.5 nbar_post=None nbar_final=150.0 floor_pin=0.0 knee_pin=0.0 sign=0.5 ld_pn={'0': [5, 5]} status=WITNESS-FAIL
+SMOKE-FAIL ('c1s-400', 'PWR'): WITNESS-FAIL ['pwr-pcap-periods=1']; ('c1s-400', 'PWR'): 1 [PCAP] periods
+ok   smoke29: a PWR row with < 3 periods fails
+ok   plan 29 arithmetic: 3 blocks x 4 cells x 3 arms = 36
+ok   plans 24 and 27 constants untouched
+ok   plan 34: 39 rows = 3 blocks x (7 c1s + 6 c1d)
+ok   plan 34: block 0 c1s ascending first, block 1 c1d descending first
+ok   plan 34 smoke rows
+ok   `plan34` subcommand prints 39 `cell arm seed rep` lines
+ok   plan34_fields: 12 ln Pi windows, ln Pi = 2 ln D - ln T
+ok   plan34_fields: mu_R = median msgs/busy over busy >= 20 % lines (the 10 % line dropped)
+ok   plan34_fields: quinn backlog B = median hand - tx; dgq on every [DIAG] window
+ok   plan34_fields: K < c share (600000/1279 = 469 > 384 -> 0)
+ok   _dvar: the successive-difference statistic
+ok   score34 R1: c1d knee = smallest n with G >= 0.95 Gmax (665 -> 384 cap gives 684)
+ok   score34 R3: c1d mu_R flat -> FLAT
+ok   score34 R3: interior fixed point 512 + 256*37/154 = 573, inside c1d's band [256, 576] -> REPRODUCES
+ok   score34 R4: B 20 everywhere -> STORE-HOLDS
+ok   score34 R3: mu_R doubling over the grid -> LOAD-DEPENDENT
+ok   score34 R4: B 200 at 1536 (<= 1.5 n* = 384) -> STORE-HOLDS (1536 outside)
+ok   score34 R2: tiny window noise (s2 below the target) -> REOPENS
+ok   plan 34 witness: < 8 [LOOPDIAG] windows voids the row only under LD_PLAN=34
+ok   plan34_fields (amendment 2): a dual-cell leg with no samples is left out of ln Pi, not a zero series
+ok   plan 34 constants
+ok   plan 36: arm_n reads CAP<n> and NOCAP<n>
+ok   `plan36` subcommand prints the 58 `cell arm seed rep` lines of disp36.plan36
+ok   `plan36 smoke` is c1s CAP256 and c8 CAP128
+ok   plan 36 CAP row: no [ACKDIAG]/[LOOPDIAG] needed, capture witnesses pass -> LIVE with the d36 summary
+ok   plan 36 row: LDROW round-trips through JSON
+ok   plan 36 witness: kernel drops void the row
+ok   plan 36 witness: bytes 2 % off netem Sent void the row
+ok   plan 36 CAP row without its pcaps is WITNESS-FAIL
+ok   plan 36 NOCAP row: LIVE without capture, store gate and denominators still witnessed
+ok   plan 36 NOCAP row: a wrong store gate still voids
+ok   without LD_PLAN=36 the same log fails the ACKDIAG/LOOPDIAG witnesses
+ok   `score36` runs on a ledger and ends in a RESULT line with a NOT-YET verdict (one row is not a result)
+ok   `check36` wants all 58 rows
+ok   smoke36 passes on two live rows whose live legs have an L-hat_4
+ok   smoke36 fails when a live leg has no L-hat_4 (the estimator did not run)
+ALL OK
+ok   reader (LE): ns timestamps (epoch > 2**53), orig_len, UDP payload from uh->len
+ok   reader (BE): ns timestamps (epoch > 2**53), orig_len, UDP payload from uh->len
+ok   reader refuses a microsecond pcap (a silent tcpdump fallback would mis-scale every spacing)
+ok   the module's magic constants are the nanosecond magic 0xa1b23c4d in both byte orders
+ok   reader refuses a non-Ethernet link type
+ok   m = the most frequent payload among skbs <= 1472 B (GSO totals and the odd tail ignored)
+ok   m tie goes to the larger payload
+ok   m = the payload carrying the most bytes: 36-byte client datagrams (3161) outnumber 1252-byte skbs (588), 1252 wins (the check row's data)
+ok   m ignores non-UDP skbs (payload None)
+ok   m of nothing is None
+ok   b = orig_len + (segs-1)*42: 1 seg, 3 segs, a short single, a 3-seg skb with a short tail
+ok   busy run at R=125,000,000 B/s with mixed GSO sizes reads R exactly for k=2/4/8/16 (==)
+ok   ... and its in-run share is 1.0 with one busy run of the whole post-warm-up length (R=125,000,000)
+ok   busy run at R=12,500,000 B/s with mixed GSO sizes reads R exactly for k=2/4/8/16 (==)
+ok   ... and its in-run share is 1.0 with one busy run of the whole post-warm-up length (R=12,500,000)
+ok   busy run at R=2,500,000 B/s with mixed GSO sizes reads R exactly for k=2/4/8/16 (==)
+ok   ... and its in-run share is 1.0 with one busy run of the whole post-warm-up length (R=2,500,000)
+ok   the first 1 s of the leg is excluded (a compressed warm-up does not move L-hat; the median would follow it if it counted)
+ok   timer lateness J on one skb per window: k=4 over-read = x/(1-x) = 11.1 % exactly, within the J/(k b/R) bound's 1/(1-x)
+ok   ... and the over-read shrinks with k (k=16: x = 2.5 %)
+ok   ... lateness once only (a single late skb) leaves the per-row median at R
+ok   a leg that is never busy reads its own spacing: 10 kB per 1 ms = 1e7 B/s = 0.08 of the link
+ok   a 7 ms gap inside a busy leg: only the trains that straddle it read low; the window max stays R
+ok   windows with no train are skipped, not zero (a 1 s silence does not pull the median)
+ok   trains with t[j+k] == t[j] are skipped and counted, not read as infinite
+ok   window-p90 variant <= the window max, strictly below on a stuttering stream
+ok   simulated netem (GSO skbs, bursts, idle gaps): per-window max reads the link exactly in the backlogged windows
+ok   D3: runs of 5 skbs (4 in-run pairs) after every gap: share 4/5 of post-warm-up pairs, run length 5
+ok   D3 run statistics: n, mean, median, p90 of the run lengths
+ok   D3: ±10 % edge (spacing 1.1 b/R in, 1.12 b/R out)
+ok   table: first line absolute t, then `dt_ns b`
+ok   table round-trips
+ok   table bytes are deterministic (mtime 0)
+ok   clean row: no problems, leg live, m recovered from the capture
+ok   clean row: k=4 L-hat == the link, exactly
+ok   witness trips: capture bytes 2 % below netem Sent bytes
+ok   witness holds inside 1 % (0.99 % off)
+ok   witness trips: captured skbs 2 % below the window's (qdisc hits - drops - queued) (a tap that merged skbs or stopped early)
+ok   release unit nets the netem drops: hits - dropped == captured passes
+ok   release unit nets the skbs still queued at the stop snapshot (hits - drops - backlog), over the window
+ok   witnesses trip together on a tail-truncated capture (5 % of the skbs missing): skbs and bytes both > 1 %
+ok   the window deltas, not lifetime totals: the start snapshot's bring-up traffic is subtracted (678 B, 9 pkts, 9 hits)
+ok   a missing start or stop snapshot gives no expectation
+ok   witness trips: tcpdump kernel drops > 0
+ok   witness trips: no tcpdump summary (kdrop `-` is never read as 0)
+ok   witness trips: [CAPTURE] line missing
+ok   witness trips: [SNAP] lines missing
+ok   witness trips: the start snapshot missing
+ok   witness trips: pcap missing/unreadable; with every leg unreadable nothing is scored
+ok   a leg with < 200 skbs is noted p1-idle, not scored, and its witnesses are not applied (live c8 leg 0 has the full record)
+ok   the row is void only if every leg is idle
+ok   a kernel drop on an idle leg still voids the row
+ok   kept table equals the skb series of the leg
+ok   NOCAP: no capture expected, no capture problems
+ok   NOCAP with a capture line or pcap dir is a witness failure
+ok   D6: post-warm-up median quinn window per leg (qcwnd, bytes)
+ok   D6: backlog B = median of hand - tx per leg over post-warm-up lines (the 0.5 s line excluded)
+ok   D6: dwell = rtt - wrtt per leg (whole ms, from the p<i>: block): p0 median(6, 4, 10) = 6, p1 median(102 x3) = 102
+ok   D8 inputs: the LAST post-warm-up line's rtt, wrtt, rtp_us and infl per leg
+ok   R-hat = win numerator - sum qcwnd (datagrams) - B, over lines with B > 0, median
+ok   the top-level cwnd= is kept in the row only (the scheduler's, not quinn's)
+ok   D6 on a real saved main [DIAG] log: both legs read
+ok   QDISC lines of a real saved driver output parse (netem `Sent … bytes … pkt` on the client-side devices)
+ok   verdict: Q = 1.00 at every cap/leg, cv 0.05 -> DISPERSION-READS-LINK
+ok   score ends in a RESULT json line
+ok   D1 band is closed: Q = 0.85 and 1.15 exactly are FLAT-AT-LINK
+ok   D1 band: 1.1501 is OVER-READ -> NOT-YET naming the cell
+ok   c1s OVER-READ at k=4 (1.3) but flat at k=8 and 16 -> NOT-YET, D1 OVER-READ, would pass at k=[8, 16]
+ok   ... the score text names it
+ok   flat Q = 0.5 -> APP-LIMITED
+ok   Q rising 0.5 -> 1.0 with n (Spearman 1, Q(n_min) < 0.85) -> CIRCULAR
+ok   Q falling 0.9 -> 0.5 -> not circular, median < 0.85 -> APP-LIMITED
+ok   Q cycling 0.7 / 1.3 / 1.0 (median 1.0, no trend) -> NEITHER
+ok   D2: cv_4 0.11 at one cap of c8 p1 -> NOISY naming the cap; the others stay QUIET
+ok   D2 boundary: cv = 0.10 exactly is QUIET
+ok   a missing cap is UNSCOREABLE (D1 and D2), never a vacuous FLAT -> NOT-YET
+ok   an empty ledger is NOT-YET (every required clause unscoreable)
+ok   c1d is reported only: its absence does not touch the verdict
+ok   non-LIVE rows are not scored
+ok   idle legs have no Q: c8 p1 UNSCOREABLE -> NOT-YET
+ok   D4: NOCAP 1000 vs CAP 900 = 10 % drop > 5 % -> named as a covariate at every n
+ok   D4: a 4 % drop is not a covariate
+ok   D5 oracle-L at c2: constant ask = 1.1 * (12.5e6/1279) * 10 ms = 107.5 -> interior fixed point n_fp = 107.5, STABLE (slope 0)
+ok   D5: goodput at the fixed point is interpolated from this session's grid (G(64)=64, G(128)=100) against Gmax = 100
+ok   D5 L-hat at Q = 0.8 scales the ask: n_fp = 0.8 * 107.5 = 86.0
+ok   D5 at c8 sums both legs: n_fp = 1.1 * (12.5e6 + 2.5e6)/1279 * 10 ms = 129.0
+ok   D5 has no ask below the ledger's lowest cap (no extrapolation): caps 16 and 32 print `-`
+ok   D5 says so when a ledger is absent and the rest of the score still runs
+ok   D7: each leg's share of egress_dgrams per cap (900/100 -> 0.9, 0.1) and the idle-leg count
+ok   D6: quinn window (639000 B / 1279 = 500 datagrams) and backlog B per cap/leg
+ok   estimator: per-window median is reported, equal to the max on a busy run; no mode field remains
+ok   estimator: on a stuttering stream the window median sits below the max (max is the scored statistic)
+ok   c1s grid carries 768 (brackets the oracle-L point 614)
+ok   W_WIRE36 equals loopdiag_parse.W_WIRE
+ok   D8: an idle leg and a 3 %-share leg are both reported, as ratios to the active leg (rtt 10, wrtt 1, rtp_us 1.5 mean of 1 and 2, infl 0.25 mean of 0 and 0.5)
+ok   D8: a leg with a 10 % share and live state is not reported
+ok   D8: a leg without a last-window record is skipped, not invented
+ok   mu_R: busy >= 20 % lines only (the 10 % and 0 % lines dropped after indexing), msgs/s over busy: 100000, 100000
+ok   mu_R: period 0 has both legs active, period 2 only leg 0
+ok   mu_R by active legs: medians per count
+ok   row_fields keeps mu_R only for c1d with a server log
+ok   row_fields on a c1d row with [RDIAG] lines records the mu_R periods
+ok   reader: non-UDP skbs are records too (payload None), counted in stats
+ok   an ICMP skb is charged its frame length (b = orig_len, one segment)
+ok   with the non-UDP skbs in, a busy mixed stream reads the link exactly (k=4)
+ok   ... every train reads R (window median == R); left out (a UDP-only filter) the trains that span an ICMP skb read low
+ok   plan 36: 58 invocations = 2 x (c1s 9 + c2 6 + c8 8 + c1d 3 + 3 NOCAP) (the amendments' `64` does not add up)
+ok   plan 36: block 0 (seed 42) first, ascending, c1s first; block 1 (seed 7) descending, c1d first
+ok   plan 36: per-cell grids
+ok   plan 36: NOCAP only at c1s {256,1024,2048}, once per block, beside its CAP row
+ok   plan 36: smoke = c1s CAP256 and c8 CAP128
+ok   plan 36: no duplicate rows
+ALL OK

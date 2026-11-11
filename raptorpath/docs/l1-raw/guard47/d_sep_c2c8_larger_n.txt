@@ -1,0 +1,8 @@
+c2/c8 at 8+8: all    c2-100   separated clause: mean p 0.0022 worst 0.0028
+c2/c8 at 8+8: all    c8-100   separated clause: mean p 0.0046 worst 0.0060
+c2/c8 at 8+8: nolag  c2-100   separated clause: mean p 0.0016 worst 0.0018
+c2/c8 at 8+8: nolag  c8-100   separated clause: mean p 0.0033 worst 0.0044
+c2/c8 at 10+10: all    c2-100   separated clause: mean p 0.0012 worst 0.0016
+c2/c8 at 10+10: all    c8-100   separated clause: mean p 0.0012 worst 0.0019
+c2/c8 at 10+10: nolag  c2-100   separated clause: mean p 0.0009 worst 0.0011
+c2/c8 at 10+10: nolag  c8-100   separated clause: mean p 0.0008 worst 0.0014

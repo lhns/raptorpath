@@ -1,0 +1,15 @@
+Status 36 battery, ledger annotations (written by the harness worker, not by the battery)
+
+- Tree: branch disp36-harness; COMMIT is the commit shipped to the VM (5d4b12a). Binary sha256 in BINSHA.txt.
+- Launch 2026-11-10T00:28:52Z by the detached on-VM waiter (LDW_PLAN=36), LD_HARD = launch + 4 h; battery 00:34:58Z to 00:59:29Z.
+- One defect found during the battery, fixed hot (a one-token edit on the VM tree, same fix committed as d3c3045):
+  loopdiag_parse.py registered the plan-36 arms CAP16..CAP2048 in ARM_SPEC without CAP768. The row c1s-400 CAP768 seed 42
+  therefore raised KeyError in the parser (see LDROW-PARSE-FAIL in ld.log); its pcaps and logs were kept. The fix was applied
+  while the battery ran, so the seed-7 CAP768 row parsed normally.
+- After the battery the lost row was re-parsed from its kept pcaps and logs (REPARSED line in ld.log; io_full10 = max of the
+  row's before/after readings, 0.54; wall 12 s from its RUNTIME line). The ledger then holds 58/58 rows (CHECK36 done=True rows=58/58).
+- run_all marked the session FAILED-ALL (FAILED-ALL sentinel, "battery_ok=0" in all-era.txt) because check36 counted 57 rows at
+  that moment. score.txt in this directory is the re-score of the complete ledger (score36 on ld.log).
+- Per-row logs in diag-ld/ and diag-smoke/: the client and server logs (*-c.log, *-s.log) are gzipped here; drv.out is plain.
+- tables/: per-skb tables, gzipped "dt_ns b" lines, first line the absolute timestamp (ns), one file per live leg of every CAP row.
+- The VM user is scrubbed to VMUSER.

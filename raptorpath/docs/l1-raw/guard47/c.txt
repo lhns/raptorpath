@@ -1,0 +1,28 @@
+(c) POWER from resampled BASE rows (CAND n = 6, BASE n = 12 per cell): share of 60 draws with gate p <= 0.05 when ONE clause of ONE cell is made worse by delta (goodput x (1 - delta), the rest x (1 + delta)); N_PERM=2000
+    per clause: smallest grid delta with power >= 0.8 | power at the named shifts (client / server CPU +2.4 %, goodput -5 %)
+    c1s-400  goodput        | relabel-max: d80=>100 % @5.0%=0.07 | rank-minp: d80=6.0 % @5.0%=0.48
+    c1s-400  cpu_cli/GB     | relabel-max: d80=>100 % @2.4%=0.12 | rank-minp: d80=3.0 % @2.4%=0.72
+    c1s-400  cpu_srv/GB     | relabel-max: d80=>100 % @2.4%=0.03 | rank-minp: d80=4.0 % @2.4%=0.63
+    c1s-400  lag_E_cli      | relabel-max: d80=>100 % | rank-minp: d80=>100 %
+    c1s-400  lag_E_srv      | relabel-max: d80=>100 % | rank-minp: d80=100.0 %
+    c1s-400  rtp_floor_p0   | relabel-max: d80=>100 % | rank-minp: d80=8.0 %
+    c1d-400  goodput        | relabel-max: d80=>100 % @5.0%=0.02 | rank-minp: d80=15.0 % @5.0%=0.15
+    c1d-400  cpu_cli/GB     | relabel-max: d80=>100 % @2.4%=0.02 | rank-minp: d80=8.0 % @2.4%=0.08
+    c1d-400  cpu_srv/GB     | relabel-max: d80=>100 % @2.4%=0.07 | rank-minp: d80=8.0 % @2.4%=0.15
+    c1d-400  lag_E_cli      | relabel-max: d80=>100 % | rank-minp: d80=100.0 %
+    c1d-400  lag_E_srv      | relabel-max: d80=>100 % | rank-minp: d80=100.0 %
+    c1d-400  rtp_floor_p0   | relabel-max: d80=>100 % | rank-minp: d80=8.0 %
+    c1d-400  rtp_floor_p1   | relabel-max: d80=>100 % | rank-minp: d80=8.0 %
+    c2-100   goodput        | relabel-max: d80=>100 % @5.0%=0.07 | rank-minp: d80=1.0 % @5.0%=1.00
+    c2-100   cpu_cli/GB     | relabel-max: d80=>100 % @2.4%=0.07 | rank-minp: d80=5.0 % @2.4%=0.20
+    c2-100   cpu_srv/GB     | relabel-max: d80=>100 % @2.4%=0.10 | rank-minp: d80=8.0 % @2.4%=0.22
+    c2-100   lag_E_cli      | relabel-max: d80=>100 % | rank-minp: d80=50.0 %
+    c2-100   lag_E_srv      | relabel-max: d80=>100 % | rank-minp: d80=100.0 %
+    c2-100   rtp_floor_p0   | relabel-max: d80=>100 % | rank-minp: d80=50.0 %
+    c8-100   goodput        | relabel-max: d80=>100 % @5.0%=0.03 | rank-minp: d80=10.0 % @5.0%=0.22
+    c8-100   cpu_cli/GB     | relabel-max: d80=>100 % @2.4%=0.10 | rank-minp: d80=10.0 % @2.4%=0.23
+    c8-100   cpu_srv/GB     | relabel-max: d80=>100 % @2.4%=0.05 | rank-minp: d80=15.0 % @2.4%=0.08
+    c8-100   lag_E_cli      | relabel-max: d80=>100 % | rank-minp: d80=50.0 %
+    c8-100   lag_E_srv      | relabel-max: d80=>100 % | rank-minp: d80=100.0 %
+    c8-100   rtp_floor_p0   | relabel-max: d80=>100 % | rank-minp: d80=20.0 %
+    c8-100   rtp_floor_p1   | relabel-max: d80=>100 % | rank-minp: d80=50.0 %

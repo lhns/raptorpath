@@ -51,15 +51,15 @@ def per_byte(rows, key):
     return out
 
 
-def reading(xv, rv, rel, higher_is_better, name="ARM"):
-    """The median clause with the min-max rule (arm against MAIN)."""
+def reading(xv, rv, rel, higher_is_better, name="ARM", ref="MAIN"):
+    """The median clause with the min-max rule (arm against MAIN; `ref` only relabels the reference in the detail)."""
     if not rv:
         return "VACUOUS", "reference has no value"
     if not xv:
         return "WORSE", f"{name} has no value"
     xm, rm = lc.med(xv), lc.med(rv)
     lo, hi = rm * (1 - rel), rm * (1 + rel)
-    det = (f"{name}={xm:.4g} [{min(xv):.4g}-{max(xv):.4g}] MAIN={rm:.4g} [{min(rv):.4g}-{max(rv):.4g}] "
+    det = (f"{name}={xm:.4g} [{min(xv):.4g}-{max(xv):.4g}] {ref}={rm:.4g} [{min(rv):.4g}-{max(rv):.4g}] "
            f"({100 * (xm / rm - 1):+.1f}%, rel={rel:.3f})")
     if higher_is_better:
         worse_med, better_med = xm < lo, xm > hi
