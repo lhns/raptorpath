@@ -1015,3 +1015,62 @@ fn quinn_bbr_window_collapses_under_stale_stamps_on_a_fine_poll_grid() {
     assert!(s0 < 0.05, "control: share(W < BDP_true) = {s0:.4}, expected < 0.05");
     assert!(r.quinn_min_rtt.last().unwrap().1 < MS);
 }
+
+/// Status §48 follow-up (the in-vivo pin, §41b MAIN c1s s7 r3): quinn's BBR with
+/// the loss burst landing while its bandwidth filter is young and the flow
+/// delivers only ~5 MB/s (~40 Mbit/s, the kept row's rate), on the 10 us poll
+/// grid. In vivo qcwnd fell 624 kB -> 30.8 kB -> 13.8 kB at the burst and stayed
+/// pinned with no further loss. Prints `YOUNG` rows every 200 ms for the stale
+/// run and the no-stale control; reports min W after the burst.
+#[test]
+#[ignore = "in-vivo-shaped quinn run; prints YOUNG rows"]
+fn quinn_young_filter_burst_at_the_delivered_rate() {
+    for stale in [true, false] {
+        let sc = Sc {
+            rate: C1_RATE,
+            limit: 1000,
+            delay: Arc::new(|_| MS),
+            jitter: Duration::ZERO,
+            dur: Duration::from_secs(4),
+            bulk_until: Duration::from_millis(400),
+            supply: 5_000_000.0,
+            loss_burst: Some((Duration::from_millis(800), 28)),
+            stale: stale.then(|| (Duration::from_micros(600_500), Duration::from_millis(100), 30)),
+            stop_after_probe_rtt: None,
+            tick: Duration::from_micros(10),
+            cc: Cc::QuinnBbr,
+        };
+        let r = run(&sc);
+        let mut prev = 0u64;
+        let mut rows = Vec::new();
+        for (t, dbg) in &r.quinn_dbgs {
+            let acked = dbg_num(dbg, "total_acked: ");
+            let deliv = (acked - prev) as f64 / 0.01 / 1e6;
+            prev = acked;
+            if t.as_millis() % 200 == 0 || (t.as_millis() >= 790 && t.as_millis() <= 830) {
+                rows.push(format!(
+                    "  t={}ms {} filter {:.1}MB/s ackh {}B cwnd {}B W {} rec {} recw {} minrtt {}us delivered {:.1}MB/s",
+                    t.as_millis(),
+                    dbg_field(dbg, "mode: "),
+                    dbg_nested(dbg, "max_filter: MinMax", "value: ") as f64 / 1e6,
+                    dbg_nested(dbg, "max_ack_height: MinMax", "value: "),
+                    dbg_num(dbg, " cwnd: "),
+                    r.samples.iter().find(|s| s.t == *t).map_or(0, |s| s.w),
+                    dbg_field(dbg, "recovery_state: "),
+                    dbg_num(dbg, "recovery_window: "),
+                    quinn_bbr_min_rtt(dbg).as_micros(),
+                    deliv
+                ));
+            }
+        }
+        let after = Duration::from_millis(900);
+        println!(
+            "YOUNG stale={stale}: burst_drops={} stale_events={} min W after 0.9 s = {}, W at end = {}\n{}",
+            r.burst_drops,
+            r.stale_events,
+            min_w(&r, after, Duration::from_secs(4)),
+            r.samples.last().unwrap().w,
+            rows.join("\n")
+        );
+    }
+}
