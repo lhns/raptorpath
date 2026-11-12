@@ -1,0 +1,95 @@
+# red run on scaffold-only tree (law unchanged vs e5d7ffbd)
+pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/bbrrs-r2/raptorpath HEAD=e5d7ffbd3a6701cdab924ed9937c5a86877ad65c
+warning: field `nack_expected` is never read
+test transport::bbr_rs::tests::controller_window_tracks_honest_bdp_under_clusters ... ok
+test transport::bbr_rs::tests::app_limited_samples_are_raise_only ... ok
+test transport::bbr_rs::tests::drain_exits_under_a_backlog ... ok
+test transport::bbr_rs::tests::estimator_rejects_sub_rtprop_intervals ... ok
+test transport::bbr_rs::tests::estimator_reads_true_link_under_token_bucket_ack_clusters ... ok
+test transport::bbr_rs::tests::probe_rtt_exit_installs_the_fresh_round_min ... FAILED
+test transport::bbr_rs::tests::probe_rtt_exits_after_burst_loss_across_the_markers ... FAILED
+test transport::bbr_rs::tests::probe_rtt_expiry_on_an_app_limited_leg_still_refreshes_m_hat ... FAILED
+test transport::bbr_rs::tests::probe_rtt_fires_only_on_an_expired_min_filter ... ok
+test transport::bbr_rs::tests::probe_rtt_holds_one_clean_round_at_two_rtts ... FAILED
+test transport::bbr_rs::tests::probe_rtt_round_count_parameter_holds_n_clean_rounds ... FAILED
+test transport::bbr_rs::tests::probe_rtt_waits_for_the_first_post_drain_ack_then_exits ... FAILED
+test transport::bbr_rs::tests::probe_rtt_refreshes_a_latched_low_min ... ok
+test transport::bbr_rs::tests::probe_rtt_window_reads_no_dial ... ok
+test transport::bbr_rs::tests::probe_rtt_with_no_post_drain_samples_keeps_m_hat_and_exits ... FAILED
+test transport::bbr_rs::tests::startup_window_is_bounded_by_the_model_target ... ok
+test transport::bbr_rs::tests::sustained_loss_cannot_clamp_recovery_below_the_pipe ... ok
+test transport::bbr_rs::tests::tied_min_rtt_samples_keep_the_filter_fresh_under_le_and_would_fire_probe_rtt_under_lt ... ok
+test transport::bbr_rs::tests::probe_rtt_window_is_f_times_the_pre_expiry_model ... FAILED
+thread 'transport::bbr_rs::tests::probe_rtt_exit_installs_the_fresh_round_min' (21192) panicked at raptorpath\src\transport\bbr_rs.rs:1744:9:
+assertion `left == right` failed: pre-expiry model kept in ProbeRtt
+  left: 25000
+ right: 10000
+thread 'transport::bbr_rs::tests::probe_rtt_exits_after_burst_loss_across_the_markers' (1308) panicked at raptorpath\src\transport\bbr_rs.rs:1870:9:
+thread 'transport::bbr_rs::tests::probe_rtt_expiry_on_an_app_limited_leg_still_refreshes_m_hat' (20544) panicked at raptorpath\src\transport\bbr_rs.rs:1794:13:
+  left: 15000
+ right: 10000
+thread 'transport::bbr_rs::tests::probe_rtt_holds_one_clean_round_at_two_rtts' (21760) panicked at raptorpath\src\transport\bbr_rs.rs:1701:13:
+anchor 2ms: still in ProbeRtt at entry+2, i.e. 2 m-hat after entry
+thread 'transport::bbr_rs::tests::probe_rtt_round_count_parameter_holds_n_clean_rounds' (1996) panicked at raptorpath\src\transport\bbr_rs.rs:1727:13:
+assertion `left == right` failed: 1 clean round(s): exit at event 2N after entry
+  left: None
+ right: Some(2)
+thread 'transport::bbr_rs::tests::probe_rtt_waits_for_the_first_post_drain_ack_then_exits' (816) panicked at raptorpath\src\transport\bbr_rs.rs:1844:9:
+thread 'transport::bbr_rs::tests::probe_rtt_with_no_post_drain_samples_keeps_m_hat_and_exits' (21660) panicked at raptorpath\src\transport\bbr_rs.rs:1819:9:
+thread 'transport::bbr_rs::tests::probe_rtt_window_is_f_times_the_pre_expiry_model' (23040) panicked at raptorpath\src\transport\bbr_rs.rs:1683:9:
+ProbeRtt window 225000, expected 0.75 x b-hat x 10 ms = 90000 (b-hat 12000000)
+test result: FAILED. 11 passed; 8 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.06s
+---- cc_sim
+pwd=/c/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/bbrrs-r2/raptorpath HEAD=e5d7ffbd3a6701cdab924ed9937c5a86877ad65c
+thread 'transport::bbr_rs::tests::probe_rtt_exits_after_burst_loss_across_the_markers' (24140) panicked at raptorpath\src\transport\bbr_rs.rs:1870:9:
+thread 'transport::bbr_rs::tests::probe_rtt_exit_installs_the_fresh_round_min' (22500) panicked at raptorpath\src\transport\bbr_rs.rs:1744:9:
+test transport::bbr_rs::tests::probe_rtt_exit_installs_the_fresh_round_min ... FAILED
+test transport::bbr_rs::tests::probe_rtt_exits_after_burst_loss_across_the_markers ... FAILED
+test transport::bbr_rs::tests::probe_rtt_fires_only_on_an_expired_min_filter ... ok
+thread 'transport::bbr_rs::tests::probe_rtt_expiry_on_an_app_limited_leg_still_refreshes_m_hat' (7020) panicked at raptorpath\src\transport\bbr_rs.rs:1794:13:
+thread 'transport::bbr_rs::tests::probe_rtt_holds_one_clean_round_at_two_rtts' (5884) panicked at raptorpath\src\transport\bbr_rs.rs:1701:13:
+test transport::bbr_rs::tests::probe_rtt_expiry_on_an_app_limited_leg_still_refreshes_m_hat ... FAILED
+test transport::bbr_rs::tests::probe_rtt_holds_one_clean_round_at_two_rtts ... FAILED
+test transport::bbr_rs::tests::probe_rtt_refreshes_a_latched_low_min ... ok
+thread 'transport::bbr_rs::tests::probe_rtt_round_count_parameter_holds_n_clean_rounds' (11220) panicked at raptorpath\src\transport\bbr_rs.rs:1727:13:
+test transport::bbr_rs::tests::probe_rtt_round_count_parameter_holds_n_clean_rounds ... FAILED
+thread 'transport::bbr_rs::tests::probe_rtt_waits_for_the_first_post_drain_ack_then_exits' (24308) panicked at raptorpath\src\transport\bbr_rs.rs:1844:9:
+test transport::bbr_rs::tests::probe_rtt_waits_for_the_first_post_drain_ack_then_exits ... FAILED
+test transport::bbr_rs::tests::probe_rtt_window_reads_no_dial ... ok
+thread 'transport::bbr_rs::tests::probe_rtt_window_is_f_times_the_pre_expiry_model' (20360) panicked at raptorpath\src\transport\bbr_rs.rs:1683:9:
+ProbeRtt window 225000, expected 0.75 x b-hat x 10 ms = 90000 (b-hat 12000000)
+thread 'transport::bbr_rs::tests::probe_rtt_with_no_post_drain_samples_keeps_m_hat_and_exits' (25536) panicked at raptorpath\src\transport\bbr_rs.rs:1819:9:
+test transport::bbr_rs::tests::probe_rtt_window_is_f_times_the_pre_expiry_model ... FAILED
+test transport::bbr_rs::tests::probe_rtt_with_no_post_drain_samples_keeps_m_hat_and_exits ... FAILED
+test transport::bbr_rs::tests::tied_min_rtt_samples_keep_the_filter_fresh_under_le_and_would_fire_probe_rtt_under_lt ... ok
+test transport::cc_sim::bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_across_probe_rtt ... ok
+[cc_sim w1r2 t5] min b-hat/L inside ProbeRtt over 3 episodes = 0.588
+thread 'transport::cc_sim::bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_inside_probe_rtt' (3696) panicked at raptorpath\src\transport\cc_sim.rs:1204:5:
+b-hat fell to 0.588 L inside ProbeRtt
+test transport::cc_sim::bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_inside_probe_rtt ... FAILED
+test transport::cc_sim::bbr_rs_min_rtt_follows_a_path_rtt_rise ... ok
+test transport::cc_sim::bbr_rs_min_rtt_never_reads_below_the_path ... ok
+test transport::cc_sim::bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps ... ok
+[cc_sim w1r2 t6] m-hat at exits (us) [8100, 6900, 6000]; successive ratios ["0.852", "0.870"]
+test transport::cc_sim::probe_rtt_min_does_not_ratchet_up_under_jitter ... ok
+[cc_sim w1r2 2ms] episodes [(10.186s, 10.388s)]; last gauge Some(Qcc { mode: 'B', rt_us: 2200, sr_us: 4602, bw: 12514782, quinn_min_us: 2200, qrn: 0, qrus: 0, qrb: 0, qab: 0, qage_us: 0 })
+thread 'transport::cc_sim::probe_rtt_is_one_round_at_a_2ms_rtt' (10468) panicked at raptorpath\src\transport\cc_sim.rs:1263:5:
+ProbeRtt lasted 202ms on a 2 ms path (20 loop times = 40 ms bound)
+test transport::cc_sim::probe_rtt_is_one_round_at_a_2ms_rtt ... FAILED
+[cc_sim w1r2 t4] episodes=3 [R 10.012s..10.222s = 210.0 ms = 13.40 x mean sr 15675 us; m-hat at exit 8100 us, u vs 8.1 ms = +0.000] [R 20.226s..20.439s = 213.0 ms = 14.76 x mean sr 14434 us; m-hat at exit 6900 us, u vs 8.1 ms = -0.148] [R 30.439s..30.643s = 204.0 ms = 14.25 x mean sr 14317 us; m-hat at exit 6000 us, u vs 8.1 ms = -0.259]
+[cc_sim w1r2 t4] [1,11) s: share(R)=0.0210 share(W<b-hat m-hat)=0.0210
+thread 'transport::cc_sim::probe_rtt_time_and_reduced_window_per_10s_at_c2' (13136) panicked at raptorpath\src\transport\cc_sim.rs:1176:9:
+share(ProbeRtt) = 0.0210 in [1,11) s
+test transport::cc_sim::probe_rtt_time_and_reduced_window_per_10s_at_c2 ... FAILED
+test transport::cc_sim::qcc_gauge_reads_the_running_controller_and_its_cost_is_measured ... ok
+[cc_sim w1r2 t6-mutation] f=1.25: m-hat at exits (us) [23900, 50250, 102550]
+test transport::cc_sim::probe_rtt_ratchet_gate_sees_a_mutated_gain_of_1_25 ... ok
+test transport::cc_sim::quinn_bbr_window_collapses_under_stale_stamps ... ignored, STOP-NOT-REPRODUCED: quinn's window does not collapse in the simulator (ack-height term)
+test transport::cc_sim::quinn_bbr_min_rtt_under_reads_under_stale_stamps ... ok
+test transport::cc_sim::quinn_characterisation_dump ... ignored, characterisation dump; writes docs/l1-raw/bbrfix48/quinn-dump.txt
+test transport::cc_sim::quinn_poll_grid_variants ... ignored, poll-grid variants of the quinn run; prints TICKVAR lines
+test transport::cc_sim::quinn_young_filter_burst_at_the_delivered_rate ... ignored, in-vivo-shaped quinn run; prints YOUNG rows
+test transport::cc_sim::stale_phase_sweep ... ignored, phase sweep; prints SWEEP lines
+test transport::cc_sim::stale_phase_sweep_10us_grid ... ignored, phase sweep on the 10 us grid; prints SWEEP lines
+test transport::cc_sim::quinn_bbr_window_collapses_under_stale_stamps_on_a_fine_poll_grid ... ok
+test result: FAILED. 13 passed; 11 failed; 6 ignored; 0 measured; 604 filtered out; finished in 77.38s
