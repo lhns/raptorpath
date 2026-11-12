@@ -2243,6 +2243,87 @@ mod tests {
         assert!((30.0..45.0).contains(&w), "expected burst-floor ~37, got {w}");
     }
 
+    // Paper §4.8 worked table, recomputed. (channel, eps, sigma2, srtt, send_rate)
+    // with sigma2 = 1 / 3 / 5 for DC / WiFi / Satellite as in the tests above.
+    const W_CELLS: [(&str, f64, f64, f64, f64); 3] = [
+        ("DC", 0.001, 1.0, 0.001, 100_000.0),
+        ("WiFi", 0.025, 3.0, 0.013, 10_000.0),
+        ("Satellite", 0.09, 5.0, 0.210, 2_041.0),
+    ];
+
+    /// Reconciliation N3b: the paper's §4.8 table is the output of
+    /// `derive_window` at ITS stated inputs (per-hint targets 1e-2 / 1e-4 /
+    /// 1e-6 and per-hint budgets 2 / 1 / 1/2 RTT), to +-1 symbol. It is NOT the
+    /// engine's operating point: the engine passes budget 0 (= 1 RTT at every
+    /// delta, see the `derived_window_runs_one_rtt_budget_at_every_delta`
+    /// engine test) and the shipped t_tail presets are 1e-3 / 1e-5 / 1e-7.
+    #[test]
+    fn derive_window_paper_table_reproduces_at_its_stated_inputs() {
+        // (cell, hint targets/budget-in-RTT) -> paper W*.
+        let paper: [[f64; 3]; 3] = [
+            [200.0, 100.0, 50.0],  // DC:        Bulk, Auto, Realtime
+            [120.0, 130.0, 65.0],  // WiFi
+            [512.0, 429.0, 214.0], // Satellite
+        ];
+        let hints = [(1e-2, 2.0), (1e-4, 1.0), (1e-6, 0.5)];
+        for (cell, row) in W_CELLS.iter().zip(paper) {
+            let (name, eps, s2, rtt, rate) = *cell;
+            for ((t, b), want) in hints.iter().zip(row) {
+                let w = derive_window(*t, eps, s2, rtt, rate, b * rtt);
+                assert!(
+                    (w - want).abs() <= 1.0,
+                    "{name} target {t} budget {b} RTT: W* = {w}, paper §4.8 table = {want}"
+                );
+            }
+        }
+    }
+
+    /// Reconciliation N3: with the engine's budget 0 (read as 1 RTT at every
+    /// delta) the Realtime and Bulk cells move off the paper's table, while the
+    /// Auto column (b = 1) is unchanged. Exact values, named against the paper.
+    #[test]
+    fn derive_window_zero_budget_is_one_rtt_and_moves_the_off_auto_cells() {
+        for (name, eps, s2, rtt, rate) in W_CELLS {
+            for t in [1e-2, 1e-4, 1e-6] {
+                assert_eq!(
+                    derive_window(t, eps, s2, rtt, rate, 0.0),
+                    derive_window(t, eps, s2, rtt, rate, rtt),
+                    "{name}: budget 0 is exactly 1 RTT (the engine passes 0 at every delta)"
+                );
+            }
+        }
+        // Realtime (paper: 1/2 RTT): WiFi 65 -> 130, Satellite 214 -> 420.
+        let wifi_rt = derive_window(1e-6, 0.025, 3.0, 0.013, 10_000.0, 0.0);
+        let sat_rt = derive_window(1e-6, 0.09, 5.0, 0.210, 2_041.0, 0.0);
+        assert!((wifi_rt - 130.0).abs() <= 1.0, "WiFi Realtime at 1 RTT = {wifi_rt} (paper table: 65)");
+        assert!((sat_rt - 428.6).abs() <= 1.0, "Satellite Realtime at 1 RTT = {sat_rt} (paper table: 214)");
+        // Bulk (paper: 2 RTT): Satellite 512 -> latency-bound 1 RTT.
+        let sat_bulk = derive_window(1e-2, 0.09, 5.0, 0.210, 2_041.0, 0.0);
+        assert!((sat_bulk - 428.6).abs() <= 1.0, "Satellite Bulk at 1 RTT = {sat_bulk} (paper table: 512)");
+        // Auto (b = 1) agrees with the engine: the paper's column is right there.
+        let sat_auto = derive_window(1e-4, 0.09, 5.0, 0.210, 2_041.0, 0.0);
+        assert!((sat_auto - 429.0).abs() <= 1.0, "Satellite Auto = {sat_auto} (paper table: 429)");
+    }
+
+    /// Reconciliation N3b: at the SHIPPED targets (Bulk 1e-3, Auto 1e-5,
+    /// Realtime 1e-7; paper §4.1) with the engine's 1-RTT budget, the
+    /// table's rows come out as below. Pins the engine operating point so the
+    /// paper can retabulate against it.
+    #[test]
+    fn derive_window_at_the_shipped_targets_and_engine_budget() {
+        // At the shipped targets every cell is latency-bound at 1 RTT x rate
+        // (100 / 130 / 428.6), so the table's hint columns collapse to one.
+        for ((name, eps, s2, rtt, rate), want) in W_CELLS.iter().copied().zip([100.0, 130.0, 428.61]) {
+            for t in [1e-3, 1e-5, 1e-7] {
+                let w = derive_window(t, eps, s2, rtt, rate, 0.0);
+                assert!(
+                    (w - want).abs() <= 1.0,
+                    "{name} at shipped target {t}, engine budget: W* = {w}, expected {want}                      (paper table columns 10^-2/-4/-6 at 2/1/1/2 RTT differ)"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_derive_window_no_throughput_disables_ceiling() {
         // No send_rate sample => latency ceiling disabled => the overhead knee

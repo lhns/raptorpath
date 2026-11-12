@@ -392,4 +392,71 @@ mod tests {
             "z(0.95) should be ~1.645, got {z95}"
         );
     }
+
+    /// Paper §11.3 row 14 (divergence): `predictive_quantile` is the
+    /// run-length-weighted AVERAGE of the per-run-length quantiles, not the
+    /// quantile of the run-length MIXTURE the paper's §3 text names. This pins
+    /// (a) the exact identity Σwᵢqᵢ/Σwᵢ, and (b) the gap to the true mixture
+    /// quantile on a two-regime posterior, so a switch to the mixture quantile
+    /// (or any drift in the approximation) fails here.
+    #[test]
+    fn bocd_quantile_is_the_weighted_average_of_quantiles_not_the_mixture_quantile() {
+        let mut bocd = BayesianChangepoint::default_fec();
+        for _ in 0..50 {
+            bocd.update(99, 1); // 1 % regime
+        }
+        for _ in 0..4 {
+            bocd.update(90, 10); // fresh 10 % regime: posterior is bimodal in run length
+        }
+        let conf = 0.95;
+
+        // (a) exact identity, recomputed from the public formula's inputs.
+        let mut num = 0.0;
+        let mut den = 0.0;
+        // (b) components of the normal-approximated mixture.
+        let mut comps: Vec<(f64, f64, f64)> = Vec::new(); // (w, mean, std)
+        for r in 0..=MAX_RUN_LENGTH {
+            let w = bocd.run_probs[r];
+            if w < 1e-300 {
+                continue;
+            }
+            let st = &bocd.stats[r];
+            num += w * st.loss_quantile(conf);
+            den += w;
+            let (a, b) = (st.beta, st.alpha);
+            let tot = a + b;
+            comps.push((w, a / tot, ((a * b) / (tot * tot * (tot + 1.0))).sqrt()));
+        }
+        let avg = num / den;
+        assert_eq!(
+            bocd.predictive_quantile(conf),
+            avg,
+            "predictive_quantile must be exactly the run-length-weighted average of quantiles              (paper §3 names the mixture quantile; this pins the divergence, §11.3 row 14)"
+        );
+
+        // Φ via Abramowitz-Stegun 7.1.26 erf (|err| < 1.5e-7).
+        let phi = |x: f64| {
+            let t = 1.0 / (1.0 + 0.3275911 * (x.abs() / std::f64::consts::SQRT_2));
+            let y = 1.0
+                - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
+                    + 0.254829592)
+                    * t
+                    * (-(x * x) / 2.0).exp();
+            if x >= 0.0 { 0.5 * (1.0 + y) } else { 0.5 * (1.0 - y) }
+        };
+        let cdf = |q: f64| comps.iter().map(|&(w, m, s)| w * phi((q - m) / s)).sum::<f64>() / den;
+        let (mut lo, mut hi) = (0.0f64, 1.0f64);
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            if cdf(mid) < conf { lo = mid } else { hi = mid }
+        }
+        let mixture = 0.5 * (lo + hi);
+        let gap = (avg - mixture).abs();
+        // Measured: avg 0.10749, mixture 0.11132, gap 0.00383.
+        let (gap_lo, gap_hi) = (0.003, 0.0045);
+        assert!(
+            gap > gap_lo && gap < gap_hi,
+            "weighted-average vs mixture quantile gap {gap} (avg {avg}, mixture {mixture}) must stay              in ({gap_lo}, {gap_hi}); outside means the approximation changed"
+        );
+    }
 }

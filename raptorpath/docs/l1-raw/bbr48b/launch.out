@@ -1,0 +1,46 @@
+SENTINEL-WRITABLE /dev/shm/s48b/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s48b/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-12T09:19:53Z user=VMUSER dir=/dev/shm/s48b/run launch=2026-11-12T09:19:53Z
+LD-ALL start plan=48 load=0.63 1.24 1.22 1/391 1759476 2026-11-12T09:19:53Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=5.76 avg60=5.15 avg300=2.02 total=4731043080 2026-11-12T09:20:01Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.53 1.19 1.21; io=full avg10=5.76 avg60=5.15 avg300=2.02 total=4731043080 2026-11-12T09:20:01Z
+LD-ALL parser test ok 2026-11-12T09:20:43Z
+LD-ALL built wall=308s 2026-11-12T09:25:51Z
+LD-ALL binary 943680f1d5dae1f30df50661d73b36d533da0b2be645530afe1bf281deb68a19 2026-11-12T09:25:51Z
+LD-ALL built BASE wall=307s binary 6bcb46e83c1fcdfb9c5aeebfe674e1a0683d473a9b3a140a22044b4de55e3ae5 2026-11-12T09:30:58Z
+LD-ALL test main rc=101 passed=1143 failed=1 ignored=55 binaries=99 2026-11-12T09:53:20Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-12T09:53:55Z
+LD-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-11-12T09:55:55Z
+LD-ALL test debug-witness rc=0 passed=1007 failed=0 ignored=54 binaries=90 2026-11-12T10:15:59Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-12T10:21:39Z
+LD-ALL suites done tfail=0 2026-11-12T10:21:39Z
+LD-ALL suites ok; before the smoke procs_running=[1,1,1,2,1,] cargo=0 rustc=0 io=full avg10=0.15 avg60=0.15 avg300=0.14 total=4743191630 2026-11-12T10:21:47Z
+LD-ALL stage bbr48 (plan 48) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.06 avg60=0.13 avg300=0.14 total=4743191797 2026-11-12T10:21:55Z
+SMOKE48 c8-100 CAND: status=LIVE mbps=96.051 span=48.8 qcc_legs=[(195, {'B': 0.9846153846153847, 'D': 0.0, 'R': 0.015384615384615385, 'S': 0.0}), (195, {'B': 0.9641025641025641, 'D': 0.0, 'R': 0.015384615384615385, 'S': 0.020512820512820513})] 
+SMOKE48 c8-100 BASE: status=LIVE mbps=99.234 span=47.3 qcc_legs=[(0, {'B': None, 'D': None, 'R': None, 'S': None}), (0, {'B': None, 'D': None, 'R': None, 'S': None})] 
+SMOKE-PASS
+LD-ALL stage bbr48 SMOKE-PASS 2026-11-12T10:23:40Z
+LD-ALL stage bbr48 battery rc=0 wall=5198s 2026-11-12T11:50:18Z
+CHECK41c done=True rows=96/96
+LD-ALL stage bbr48 end ok=1 VERDICT48 REGRESSION 2026-11-12T11:50:20Z
+LD-ALL guard resolution NOT computed on the VM; on the host: python3 raptorpath/tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log 2026-11-12T11:50:20Z
+LD-ALL end plan 48 ok=1 raptorpath=0 netns=0 2026-11-12T11:50:20Z
+PERSISTED /dev/shm/s48b/run -> ~/s48b/run 2026-11-12T11:50:21Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

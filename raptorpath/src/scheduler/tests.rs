@@ -590,6 +590,39 @@ fn test_hint_plumbed_to_paths() {
     assert_eq!(sched.path(1).unwrap().copa.queue_mult, 1.08);
 }
 
+/// Paper §8.2 / §11.3 row 3: off the wire signal, Copa's price is the constant
+/// δ = 0.5 at EVERY hint (the paper's hint->δ map {50, 0.5, 0.005} applies only
+/// when the wire gate is on). Pins the constant; the queue-multiplier table is
+/// pinned by `test_hint_plumbed_to_paths`.
+#[test]
+fn copa_delta_is_half_at_every_hint_off_the_wire_signal() {
+    use crate::scheduler::copa::{copa_delta_for_hint, COPA_DELTA};
+    assert!(
+        !crate::scheduler::copa_wire_active(),
+        "precondition: the wire signal is off in the test environment (RWM_COPA_WIRE/RWM_QUIC_CC unset)"
+    );
+    assert_eq!(COPA_DELTA, 0.5);
+    for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), hint);
+        sched.add_path(0);
+        assert_eq!(
+            sched.path(0).unwrap().copa.delta,
+            0.5,
+            "{hint:?}: Copa delta is the constant 0.5 off-wire (paper §8.2 maps it per hint; this pins the divergence)"
+        );
+    }
+    // The hint map itself (the wire-on value) is {50, 0.5, 0.005}, as the paper says.
+    // With no RWM_COPA_DELTA/RWM_DELTA override it is COPA_DELTA / tail_loss_scale.
+    for (hint, want) in [
+        (ProtocolHint::Realtime, 50.0),
+        (ProtocolHint::Auto, 0.5),
+        (ProtocolHint::Bulk, 0.005),
+    ] {
+        let got = copa_delta_for_hint(hint);
+        assert!((got - want).abs() < 1e-12, "{hint:?}: wire-on delta {got}, paper {want}");
+    }
+}
+
 #[test]
 fn test_schedule_ack_roundtrip_conserves_in_flight() {
     // The in_flight budget is charged once, at schedule time. A double

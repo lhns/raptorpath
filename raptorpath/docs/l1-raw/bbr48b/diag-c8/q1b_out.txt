@@ -1,0 +1,133 @@
+POST HOC / NOT REGISTERED. Mediation: OLS  cpu = a + b_arm*CAND + b_seed*s7 [+ c*X(z-scored)], per cell, n=24. 'kept' = b_arm with X / b_arm without X.
+
+== c8-100 srv: b_arm (no mediator) = +1.331 s  (resid sd 1.041)
+  wall_s                   dX(arm)=     +1.179 (  +2.4%)  c=+0.098s/sd  b_arm|X=+1.188  kept=+0.89  resid sd 1.039
+  srv.park                 dX(arm)= +2.602e+04 (  +6.7%)  c=+0.833s/sd  b_arm|X=+0.096  kept=+0.07  resid sd 0.905
+  srv.leg1 rx_batches      dX(arm)=      +3936 ( +21.0%)  c=+1.139s/sd  b_arm|X=-0.812  kept=-0.61  resid sd 0.967
+  srv.leg0 rx_batches      dX(arm)=      -1498 (  -2.4%)  c=-0.803s/sd  b_arm|X=+0.060  kept=+0.05  resid sd 0.919
+  srv.all io batches       dX(arm)=      +5139 (  +3.2%)  c=-0.169s/sd  b_arm|X=+1.602  kept=+1.20  resid sd 1.036
+  srv.all polls            dX(arm)=      +5071 (  +3.2%)  c=-0.210s/sd  b_arm|X=+1.663  kept=+1.25  resid sd 1.033
+  srv.dec_rows             dX(arm)=     +60.69 ( +74.0%)  c=+1.610s/sd  b_arm|X=-1.678  kept=-1.26  resid sd 0.870
+  srv.reorder lead(p0+p1)  dX(arm)= +4.074e+04 ( +48.9%)  c=+1.623s/sd  b_arm|X=-1.702  kept=-1.28  resid sd 0.870
+  srv.LATE.d_us            dX(arm)= +4.667e+05 (+124.0%)  c=-0.236s/sd  b_arm|X=+1.747  kept=+1.31  resid sd 1.036
+  coded_share              dX(arm)= +0.0007459 ( +13.0%)  c=+0.810s/sd  b_arm|X=+0.014  kept=+0.01  resid sd 0.939
+  srv.rtx_n                dX(arm)=       -200 (  -1.5%)  c=-0.693s/sd  b_arm|X=+0.955  kept=+0.72  resid sd 0.996
+  srv.RFA.fires            dX(arm)= -7.547e+04 ( -37.0%)  c=+0.696s/sd  b_arm|X=+2.350  kept=+1.77  resid sd 0.936
+  srv.LAT.over             dX(arm)= +8.575e+04 ( +10.9%)  c=+0.480s/sd  b_arm|X=+0.764  kept=+0.57  resid sd 0.967
+  egress_skbs              dX(arm)=      -7089 (  -7.1%)  c=-2.169s/sd  b_arm|X=-2.853  kept=-2.14  resid sd 0.874
+  cli.leg1 tx_batches      dX(arm)=      +4050 ( +30.6%)  c=+0.995s/sd  b_arm|X=-0.454  kept=-0.34  resid sd 0.944
+  cli.all io batches       dX(arm)=      +6826 (  +7.8%)  c=-0.353s/sd  b_arm|X=+1.959  kept=+1.47  resid sd 1.029
+  cli.sender task busy     dX(arm)=    +0.3374 (  +5.8%)  c=+0.844s/sd  b_arm|X=+0.297  kept=+0.22  resid sd 0.804
+  cli.park                 dX(arm)=     +816.9 (  +0.3%)  c=-0.560s/sd  b_arm|X=+1.447  kept=+1.09  resid sd 0.893
+  run order                dX(arm)= -1.066e-14 (  -0.0%)  c=-0.340s/sd  b_arm|X=+1.331  kept=+1.00  resid sd 0.985
+  load/io_before           dX(arm)=   +0.07667 (+170.4%)  c=-0.043s/sd  b_arm|X=+1.344  kept=+1.01  resid sd 1.040
+
+== c8-100 cli: b_arm (no mediator) = +0.753 s  (resid sd 0.521)
+  wall_s                   dX(arm)=     +1.179 (  +2.4%)  c=+0.049s/sd  b_arm|X=+0.682  kept=+0.90  resid sd 0.520
+  srv.park                 dX(arm)= +2.602e+04 (  +6.7%)  c=+0.417s/sd  b_arm|X=+0.136  kept=+0.18  resid sd 0.453
+  srv.leg1 rx_batches      dX(arm)=      +3936 ( +21.0%)  c=-0.039s/sd  b_arm|X=+0.827  kept=+1.10  resid sd 0.521
+  srv.leg0 rx_batches      dX(arm)=      -1498 (  -2.4%)  c=-0.536s/sd  b_arm|X=-0.095  kept=-0.13  resid sd 0.406
+  srv.all io batches       dX(arm)=      +5139 (  +3.2%)  c=-0.404s/sd  b_arm|X=+1.401  kept=+1.86  resid sd 0.461
+  srv.all polls            dX(arm)=      +5071 (  +3.2%)  c=-0.413s/sd  b_arm|X=+1.407  kept=+1.87  resid sd 0.456
+  srv.dec_rows             dX(arm)=     +60.69 ( +74.0%)  c=+0.238s/sd  b_arm|X=+0.308  kept=+0.41  resid sd 0.514
+  srv.reorder lead(p0+p1)  dX(arm)= +4.074e+04 ( +48.9%)  c=+0.442s/sd  b_arm|X=-0.072  kept=-0.10  resid sd 0.497
+  srv.LATE.d_us            dX(arm)= +4.667e+05 (+124.0%)  c=+0.530s/sd  b_arm|X=-0.179  kept=-0.24  resid sd 0.460
+  coded_share              dX(arm)= +0.0007459 ( +13.0%)  c=+0.070s/sd  b_arm|X=+0.639  kept=+0.85  resid sd 0.519
+  srv.rtx_n                dX(arm)=       -200 (  -1.5%)  c=-0.079s/sd  b_arm|X=+0.711  kept=+0.94  resid sd 0.520
+  srv.RFA.fires            dX(arm)= -7.547e+04 ( -37.0%)  c=-0.201s/sd  b_arm|X=+0.459  kept=+0.61  resid sd 0.504
+  srv.LAT.over             dX(arm)= +8.575e+04 ( +10.9%)  c=+0.075s/sd  b_arm|X=+0.665  kept=+0.88  resid sd 0.517
+  egress_skbs              dX(arm)=      -7089 (  -7.1%)  c=-1.134s/sd  b_arm|X=-1.434  kept=-1.90  resid sd 0.428
+  cli.leg1 tx_batches      dX(arm)=      +4050 ( +30.6%)  c=+0.043s/sd  b_arm|X=+0.676  kept=+0.90  resid sd 0.521
+  cli.all io batches       dX(arm)=      +6826 (  +7.8%)  c=-0.502s/sd  b_arm|X=+1.647  kept=+2.19  resid sd 0.470
+  cli.sender task busy     dX(arm)=    +0.3374 (  +5.8%)  c=+0.621s/sd  b_arm|X=-0.007  kept=-0.01  resid sd 0.187
+  cli.park                 dX(arm)=     +816.9 (  +0.3%)  c=-0.061s/sd  b_arm|X=+0.766  kept=+1.02  resid sd 0.518
+  run order                dX(arm)= -1.066e-14 (  -0.0%)  c=-0.364s/sd  b_arm|X=+0.753  kept=+1.00  resid sd 0.377
+  load/io_before           dX(arm)=   +0.07667 (+170.4%)  c=-0.018s/sd  b_arm|X=+0.759  kept=+1.01  resid sd 0.521
+
+== c1d-400 srv: b_arm (no mediator) = -2.303 s  (resid sd 3.683)
+  wall_s                   dX(arm)=     -3.538 (  -7.3%)  c=+3.827s/sd  b_arm|X=+0.158  kept=-0.07  resid sd 1.178
+  srv.park                 dX(arm)= -6.841e+04 (  -6.2%)  c=+3.474s/sd  b_arm|X=-0.037  kept=+0.02  resid sd 1.714
+  srv.leg1 rx_batches      dX(arm)=      -5246 (  -4.8%)  c=+2.447s/sd  b_arm|X=-1.422  kept=+0.62  resid sd 2.788
+  srv.leg0 rx_batches      dX(arm)=      -6631 (  -5.9%)  c=+0.859s/sd  b_arm|X=-1.836  kept=+0.80  resid sd 3.590
+  srv.all io batches       dX(arm)= -1.817e+04 (  -4.3%)  c=+3.453s/sd  b_arm|X=-0.087  kept=+0.04  resid sd 1.733
+  srv.all polls            dX(arm)= -2.221e+04 (  -6.0%)  c=+3.455s/sd  b_arm|X=-0.053  kept=+0.02  resid sd 1.733
+  srv.dec_rows             dX(arm)=   -0.01101 ( -17.3%)  c=+1.212s/sd  b_arm|X=-1.753  kept=+0.76  resid sd 3.489
+  srv.reorder lead(p0+p1)  dX(arm)=       -366 ( -29.4%)  c=-0.663s/sd  b_arm|X=-2.754  kept=+1.20  resid sd 3.630
+  srv.LATE.d_us            dX(arm)=      -2330 ( -56.2%)  c=+2.850s/sd  b_arm|X=+0.459  kept=-0.20  resid sd 2.750
+  coded_share              dX(arm)= +3.737e-05 (  +6.6%)  c=-1.103s/sd  b_arm|X=-1.658  kept=+0.72  resid sd 3.530
+  srv.rtx_n                dX(arm)=     -72.42 (  -1.8%)  c=-0.507s/sd  b_arm|X=-2.474  kept=+1.07  resid sd 3.671
+  srv.RFA.fires            dX(arm)=  +2.12e+05 ( +10.6%)  c=+0.037s/sd  b_arm|X=-2.344  kept=+1.02  resid sd 3.683
+  srv.LAT.over             dX(arm)=      -1066 (  -5.0%)  c=-1.415s/sd  b_arm|X=-2.548  kept=+1.11  resid sd 3.404
+  egress_skbs              dX(arm)= +2.198e+04 (  +3.9%)  c=-2.131s/sd  b_arm|X=+0.105  kept=-0.05  resid sd 3.237
+  cli.leg1 tx_batches      dX(arm)=     -118.2 (  -0.2%)  c=+3.347s/sd  b_arm|X=-2.183  kept=+0.95  resid sd 1.709
+  cli.all io batches       dX(arm)=      -8877 (  -2.6%)  c=+3.585s/sd  b_arm|X=-0.616  kept=+0.27  resid sd 1.351
+  cli.sender task busy     dX(arm)=     -2.176 (  -5.3%)  c=+4.063s/sd  b_arm|X=+1.221  kept=-0.53  resid sd 1.148
+  cli.park                 dX(arm)= -4.857e+04 (  -4.9%)  c=+3.376s/sd  b_arm|X=+0.033  kept=-0.01  resid sd 1.909
+  run order                dX(arm)= -4.441e-15 (  -0.0%)  c=+0.376s/sd  b_arm|X=-2.303  kept=+1.00  resid sd 3.664
+  load/io_before           dX(arm)=   -0.01583 ( -30.6%)  c=-0.136s/sd  b_arm|X=-2.332  kept=+1.01  resid sd 3.681
+
+== c1d-400 cli: b_arm (no mediator) = -2.582 s  (resid sd 4.243)
+  wall_s                   dX(arm)=     -3.538 (  -7.3%)  c=+4.524s/sd  b_arm|X=+0.327  kept=-0.13  resid sd 0.996
+  srv.park                 dX(arm)= -6.841e+04 (  -6.2%)  c=+4.045s/sd  b_arm|X=+0.057  kept=-0.02  resid sd 1.894
+  srv.leg1 rx_batches      dX(arm)=      -5246 (  -4.8%)  c=+2.813s/sd  b_arm|X=-1.568  kept=+0.61  resid sd 3.217
+  srv.leg0 rx_batches      dX(arm)=      -6631 (  -5.9%)  c=+1.129s/sd  b_arm|X=-1.968  kept=+0.76  resid sd 4.102
+  srv.all io batches       dX(arm)= -1.817e+04 (  -4.3%)  c=+4.054s/sd  b_arm|X=+0.021  kept=-0.01  resid sd 1.854
+  srv.all polls            dX(arm)= -2.221e+04 (  -6.0%)  c=+4.052s/sd  b_arm|X=+0.057  kept=-0.02  resid sd 1.865
+  srv.dec_rows             dX(arm)=   -0.01101 ( -17.3%)  c=+1.556s/sd  b_arm|X=-1.874  kept=+0.73  resid sd 3.963
+  srv.reorder lead(p0+p1)  dX(arm)=       -366 ( -29.4%)  c=-0.477s/sd  b_arm|X=-2.906  kept=+1.13  resid sd 4.219
+  srv.LATE.d_us            dX(arm)=      -2330 ( -56.2%)  c=+3.576s/sd  b_arm|X=+0.885  kept=-0.34  resid sd 2.924
+  coded_share              dX(arm)= +3.737e-05 (  +6.6%)  c=-1.543s/sd  b_arm|X=-1.679  kept=+0.65  resid sd 3.979
+  srv.rtx_n                dX(arm)=     -72.42 (  -1.8%)  c=-0.130s/sd  b_arm|X=-2.626  kept=+1.02  resid sd 4.242
+  srv.RFA.fires            dX(arm)=  +2.12e+05 ( +10.6%)  c=-0.255s/sd  b_arm|X=-2.305  kept=+0.89  resid sd 4.238
+  srv.LAT.over             dX(arm)=      -1066 (  -5.0%)  c=-1.537s/sd  b_arm|X=-2.848  kept=+1.10  resid sd 3.959
+  egress_skbs              dX(arm)= +2.198e+04 (  +3.9%)  c=-2.792s/sd  b_arm|X=+0.574  kept=-0.22  resid sd 3.565
+  cli.leg1 tx_batches      dX(arm)=     -118.2 (  -0.2%)  c=+3.790s/sd  b_arm|X=-2.446  kept=+0.95  resid sd 2.087
+  cli.all io batches       dX(arm)=      -8877 (  -2.6%)  c=+4.139s/sd  b_arm|X=-0.634  kept=+0.25  resid sd 1.535
+  cli.sender task busy     dX(arm)=     -2.176 (  -5.3%)  c=+4.805s/sd  b_arm|X=+1.586  kept=-0.61  resid sd 0.936
+  cli.park                 dX(arm)= -4.857e+04 (  -4.9%)  c=+3.960s/sd  b_arm|X=+0.159  kept=-0.06  resid sd 2.085
+  run order                dX(arm)= -4.441e-15 (  -0.0%)  c=+0.431s/sd  b_arm|X=-2.582  kept=+1.00  resid sd 4.221
+  load/io_before           dX(arm)=   -0.01583 ( -30.6%)  c=-0.409s/sd  b_arm|X=-2.668  kept=+1.03  resid sd 4.223
+
+== c2-100 srv: b_arm (no mediator) = -0.402 s  (resid sd 0.768)
+  wall_s                   dX(arm)=    +0.8323 (  +1.6%)  c=+0.310s/sd  b_arm|X=-0.910  kept=+2.27  resid sd 0.748
+  srv.park                 dX(arm)= -1.449e+04 (  -4.5%)  c=+0.735s/sd  b_arm|X=+0.313  kept=-0.78  resid sd 0.423
+  srv.leg0 rx_batches      dX(arm)=     +1.583 (  +0.0%)  c=-0.659s/sd  b_arm|X=-0.400  kept=+1.00  resid sd 0.455
+  srv.all io batches       dX(arm)=     +19.25 (  +0.0%)  c=-0.670s/sd  b_arm|X=-0.394  kept=+0.98  resid sd 0.437
+  srv.all polls            dX(arm)=     +44.17 (  +0.0%)  c=-0.688s/sd  b_arm|X=-0.385  kept=+0.96  resid sd 0.408
+  srv.dec_rows             dX(arm)=   -0.05559 (  -2.7%)  c=+0.068s/sd  b_arm|X=-0.375  kept=+0.93  resid sd 0.766
+  srv.reorder lead(p0+p1)  dX(arm)=     +6.583 (  +0.4%)  c=-0.044s/sd  b_arm|X=-0.396  kept=+0.99  resid sd 0.767
+  srv.LATE.d_us            dX(arm)=      +6197 (  +3.4%)  c=-0.159s/sd  b_arm|X=-0.252  kept=+0.63  resid sd 0.760
+  coded_share              dX(arm)= -2.357e-05 (  -0.6%)  c=-0.610s/sd  b_arm|X=-0.603  kept=+1.50  resid sd 0.705
+  srv.rtx_n                dX(arm)=     +99.83 (  +0.8%)  c=+0.269s/sd  b_arm|X=-0.482  kept=+1.20  resid sd 0.758
+  srv.RFA.fires            dX(arm)=     +73.92 (  +0.5%)  c=-0.004s/sd  b_arm|X=-0.401  kept=+1.00  resid sd 0.768
+  srv.LAT.over             dX(arm)=     -21.83 (  -1.2%)  c=-0.380s/sd  b_arm|X=-0.508  kept=+1.27  resid sd 0.684
+  egress_skbs              dX(arm)=      -3512 (  -4.1%)  c=-1.600s/sd  b_arm|X=-3.438  kept=+8.56  resid sd 0.592
+  cli.all io batches       dX(arm)=      -4316 (  -5.8%)  c=-0.212s/sd  b_arm|X=-0.747  kept=+1.86  resid sd 0.759
+  cli.sender task busy     dX(arm)=  +0.004028 (  +0.1%)  c=+0.684s/sd  b_arm|X=-0.421  kept=+1.05  resid sd 0.371
+  cli.park                 dX(arm)=      -5794 (  -2.1%)  c=+0.002s/sd  b_arm|X=-0.399  kept=+0.99  resid sd 0.768
+  run order                dX(arm)= -1.066e-14 (  -0.0%)  c=-0.444s/sd  b_arm|X=-0.402  kept=+1.00  resid sd 0.630
+  load/io_before           dX(arm)=   -0.01167 ( -30.4%)  c=+0.004s/sd  b_arm|X=-0.401  kept=+1.00  resid sd 0.768
+
+== c2-100 cli: b_arm (no mediator) = -0.172 s  (resid sd 0.452)
+  wall_s                   dX(arm)=    +0.8323 (  +1.6%)  c=+0.146s/sd  b_arm|X=-0.412  kept=+2.40  resid sd 0.444
+  srv.park                 dX(arm)= -1.449e+04 (  -4.5%)  c=+0.330s/sd  b_arm|X=+0.150  kept=-0.87  resid sd 0.348
+  srv.leg0 rx_batches      dX(arm)=     +1.583 (  +0.0%)  c=-0.387s/sd  b_arm|X=-0.171  kept=+1.00  resid sd 0.268
+  srv.all io batches       dX(arm)=     +19.25 (  +0.0%)  c=-0.392s/sd  b_arm|X=-0.167  kept=+0.97  resid sd 0.260
+  srv.all polls            dX(arm)=     +44.17 (  +0.0%)  c=-0.396s/sd  b_arm|X=-0.162  kept=+0.95  resid sd 0.253
+  srv.dec_rows             dX(arm)=   -0.05559 (  -2.7%)  c=-0.003s/sd  b_arm|X=-0.173  kept=+1.01  resid sd 0.452
+  srv.reorder lead(p0+p1)  dX(arm)=     +6.583 (  +0.4%)  c=-0.043s/sd  b_arm|X=-0.167  kept=+0.97  resid sd 0.451
+  srv.LATE.d_us            dX(arm)=      +6197 (  +3.4%)  c=-0.093s/sd  b_arm|X=-0.085  kept=+0.49  resid sd 0.447
+  coded_share              dX(arm)= -2.357e-05 (  -0.6%)  c=-0.424s/sd  b_arm|X=-0.311  kept=+1.81  resid sd 0.399
+  srv.rtx_n                dX(arm)=     +99.83 (  +0.8%)  c=-0.038s/sd  b_arm|X=-0.160  kept=+0.93  resid sd 0.452
+  srv.RFA.fires            dX(arm)=     +73.92 (  +0.5%)  c=-0.170s/sd  b_arm|X=-0.133  kept=+0.77  resid sd 0.445
+  srv.LAT.over             dX(arm)=     -21.83 (  -1.2%)  c=-0.165s/sd  b_arm|X=-0.218  kept=+1.27  resid sd 0.426
+  egress_skbs              dX(arm)=      -3512 (  -4.1%)  c=-0.934s/sd  b_arm|X=-1.945  kept=+11.33  resid sd 0.351
+  cli.all io batches       dX(arm)=      -4316 (  -5.8%)  c=-0.175s/sd  b_arm|X=-0.457  kept=+2.66  resid sd 0.441
+  cli.sender task busy     dX(arm)=  +0.004028 (  +0.1%)  c=+0.435s/sd  b_arm|X=-0.184  kept=+1.07  resid sd 0.146
+  cli.park                 dX(arm)=      -5794 (  -2.1%)  c=+0.106s/sd  b_arm|X=-0.015  kept=+0.09  resid sd 0.447
+  run order                dX(arm)= -1.066e-14 (  -0.0%)  c=-0.265s/sd  b_arm|X=-0.172  kept=+1.00  resid sd 0.368
+  load/io_before           dX(arm)=   -0.01167 ( -30.4%)  c=-0.001s/sd  b_arm|X=-0.172  kept=+1.00  resid sd 0.452
+
+== c8: server parks per I/O event, per arm (medians)
+  BASE: park 388014  rx_batches L0 62322 L1 18554  dg/rx_batch L0 6.86 L1 4.46  ctrl dg/batch L0 7.06 L1 4.53  cli tx dg/batch L0 26.25 L1 6.80  gso L0 6.09 L1 3.52  park/(rx_batches) 4.81  srv drv_off/(on+off) L0 0.427 L1 0.312  cli drv_off/(on+off) L0 0.526 L1 0.343
+  CAND: park 413452  rx_batches L0 61156 L1 22678  dg/rx_batch L0 6.96 L1 3.77  ctrl dg/batch L0 7.17 L1 3.80  cli tx dg/batch L0 25.64 L1 5.18  gso L0 6.44 L1 3.66  park/(rx_batches) 4.94  srv drv_off/(on+off) L0 0.435 L1 0.318  cli drv_off/(on+off) L0 0.569 L1 0.526

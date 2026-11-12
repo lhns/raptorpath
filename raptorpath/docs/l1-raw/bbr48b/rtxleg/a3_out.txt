@@ -1,0 +1,28 @@
+== c8-100 BASE within-bin (row-demeaned, n=262): T_h slope on s1*(c1-c0) = 0.78 +- 0.11 (1.0 = slow-leg retx holds its slot for the full slow-leg clock; 0 = no send-leg effect); on C 0.09, on c0 0.86
+   counterfactual (retx stay on original leg): H0 measured 1890 (rho*lag model end 1888) -> model 769; tail measured 3.91s -> H0'/mu_tail 1.53s (floor 0.15 s)
+     s42r1: H0 1716 -> 571  tail 3.42 -> 1.07
+     s42r2: H0 1808 -> 769  tail 4.17 -> 1.60
+     s42r3: H0 1408 -> 60  tail 2.99 -> 0.15
+     s42r4: H0 1769 -> 1675  tail 3.57 -> 2.98
+     s42r5: H0 2083 -> 829  tail 5.14 -> 1.86
+     s42r6: H0 1808 -> 869  tail 3.59 -> 1.62
+     s7r1: H0 1785 -> 0  tail 3.19 -> 0.15
+     s7r2: H0 1872 -> 561  tail 4.20 -> 1.13
+     s7r3: H0 2049 -> 590  tail 4.06 -> 1.11
+     s7r4: H0 1800 -> 518  tail 4.51 -> 1.14
+     s7r5: H0 2382 -> 1291  tail 4.12 -> 2.83
+     s7r6: H0 2196 -> 1494  tail 4.00 -> 2.77
+== c8-100 CAND within-bin (row-demeaned, n=264): T_h slope on s1*(c1-c0) = 0.92 +- 0.08 (1.0 = slow-leg retx holds its slot for the full slow-leg clock; 0 = no send-leg effect); on C 0.13, on c0 1.01
+   counterfactual (retx stay on original leg): H0 measured 2246 (rho*lag model end 2246) -> model 118; tail measured 4.73s -> H0'/mu_tail 0.32s (floor 0.15 s)
+     s42r1: H0 2449 -> 0  tail 4.83 -> 0.15
+     s42r2: H0 2401 -> 56  tail 4.66 -> 0.15
+     s42r3: H0 2113 -> 174  tail 4.23 -> 0.34
+     s42r4: H0 2034 -> 0  tail 4.15 -> 0.15
+     s42r5: H0 1976 -> 456  tail 4.45 -> 0.97
+     s42r6: H0 1922 -> 574  tail 4.15 -> 1.17
+     s7r1: H0 2502 -> 89  tail 5.57 -> 0.19
+     s7r2: H0 2352 -> 0  tail 5.32 -> 0.15
+     s7r3: H0 2383 -> 55  tail 5.27 -> 0.15
+     s7r4: H0 2233 -> 0  tail 4.15 -> 0.15
+     s7r5: H0 2418 -> 8  tail 5.09 -> 0.15
+     s7r6: H0 2164 -> 0  tail 4.93 -> 0.15
