@@ -312,6 +312,12 @@ def idle_decay(diag):
 
 
 # ── ROW ───────────────────────────────────────────────────────────────────
+def base_promoted():
+    """BASE is main's binary. Main before `85c2295` (the historical pin 4926822) has no wire gauges; any later main
+    (LD_BASE_SHA set to another sha, status 49 / 48b) carries the ADR-0073 promotion and prints them, like CAND."""
+    return not os.environ.get("LD_BASE_SHA", "4926822").startswith("4926822")
+
+
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None, store=None):
     store = store or os.environ.get("P38_STORE", "def")
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant, absent_off=True)
@@ -393,7 +399,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                     p.append(f"wpl-within-1ms-of-wrtt={close}/{len(post)}")
             if eta is not None and eta["w_mv"] is not None and not (_f(eta["w_mv"]) or 0) > 0:
                 p.append(f"w_mv={eta['w_mv']}")
-    elif arm == "CAND" or (arm == "MAIN" and promoted):
+    elif arm == "CAND" or (arm == "MAIN" and promoted) or (arm == "BASE" and base_promoted()):
         pass        # the promoted build prints wpl_us and the bind gauges always: reported, not a witness
     else:
         if any(L[i][3] is not None for _, L in diag for i in L):
