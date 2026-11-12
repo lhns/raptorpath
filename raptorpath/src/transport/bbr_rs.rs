@@ -57,6 +57,7 @@ use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use quinn_proto::RttEstimator;
@@ -397,6 +398,10 @@ pub struct BbrRs {
     /// (the `[QCC]` gauge reads it beside `min_rtt`), never read by the law.
     quinn_min_rtt: Duration,
     pacing_rate: u64,
+    /// Times quinn's pacer asked for `pacing_rate()` and got `Some` (shared by
+    /// clones, so the `[QCC]` read of a clone sees the live count): the
+    /// execution witness of `RWM_BBR_PACE`.
+    pace_reads: Arc<AtomicU64>,
     max_acked_packet_number: u64,
     max_sent_packet_number: u64,
     end_recovery_at_packet_number: u64,
@@ -448,6 +453,7 @@ impl BbrRs {
             smoothed_loop: Default::default(),
             quinn_min_rtt: Default::default(),
             pacing_rate: 0,
+            pace_reads: Arc::new(AtomicU64::new(0)),
             max_acked_packet_number: 0,
             max_sent_packet_number: 0,
             end_recovery_at_packet_number: 0,
@@ -521,6 +527,9 @@ impl BbrRs {
                 (Some(t), Some(a)) => a.saturating_duration_since(t).as_micros() as u64,
                 _ => 0,
             },
+            qpace: self.config.pace as u8,
+            qpr: self.pacing_rate,
+            qpn: self.pace_reads.load(Ordering::Relaxed),
         }
     }
 
@@ -1001,6 +1010,17 @@ impl Controller for BbrRs {
         self.cwnd
     }
 
+    /// The pacing rate (B/s) quinn's pacer refills at, only under
+    /// `RWM_BBR_PACE=1` and once a rate exists; otherwise `None` and quinn
+    /// paces at 1.25 x window / srtt as before.
+    fn pacing_rate(&self) -> Option<u64> {
+        if !self.config.pace || self.pacing_rate == 0 {
+            return None;
+        }
+        self.pace_reads.fetch_add(1, Ordering::Relaxed);
+        Some(self.pacing_rate)
+    }
+
     fn metrics(&self) -> ControllerMetrics {
         let mut m = ControllerMetrics::default();
         m.congestion_window = self.window();
@@ -1045,6 +1065,13 @@ pub(crate) struct Qcc {
     pub qab: u64,
     /// The min filter's age (µs) at the last ACK event: a_e - t_m.
     pub qage_us: u64,
+    /// `RWM_BBR_PACE` (1: the controller supplies the pacing rate).
+    pub qpace: u8,
+    /// The pacing rate (B/s) the model currently holds (supplied only if `qpace=1`).
+    pub qpr: u64,
+    /// Times the pacer actually read a `Some` rate (0 with `qpace=0`: the
+    /// witness that the hook executes, not merely that it is configured).
+    pub qpn: u64,
 }
 
 /// The `[QCC]` read of a connection's controller (`congestion_state()`'s
@@ -1059,9 +1086,10 @@ impl Qcc {
     /// the last field the host cost (ns) of the `congestion_state()` read.
     pub(crate) fn token(&self, path: u32, last_ns: u64, reads: u64, mean_ns: u64) -> String {
         format!(
-            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}              qrn={} qrus={} qrb={} qab={} qage_us={}",
+            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}              qrn={} qrus={} qrb={} qab={} qage_us={} qpace={} qpr={} qpn={}",
             self.mode, self.rt_us, self.sr_us, self.bw, self.quinn_min_us,
-            self.qrn, self.qrus, self.qrb, self.qab, self.qage_us
+            self.qrn, self.qrus, self.qrb, self.qab, self.qage_us,
+            self.qpace, self.qpr, self.qpn
         )
     }
 }
@@ -1091,6 +1119,10 @@ pub struct BbrRsConfig {
     /// installs its minimum (default 1). A diagnostic arm: one rule,
     /// parameterised by the count.
     probe_rtt_rounds: u32,
+    /// `RWM_BBR_PACE=1`: `pacing_rate()` hands the model's pacing rate to
+    /// quinn's pacer (default off: quinn paces at 1.25 x window / srtt). A
+    /// diagnostic arm, read once at construction.
+    pace: bool,
     /// Test-only override of the ProbeRtt window factor f (mutation checks).
     #[cfg(test)]
     probe_rtt_gain: f32,
@@ -1098,6 +1130,14 @@ pub struct BbrRsConfig {
 
 /// Name of the env var behind [`BbrRsConfig::probe_rtt_rounds`].
 const PROBE_RTT_ROUNDS_ENV: &str = "RWM_BBR_PROBERTT_ROUNDS";
+
+/// Name of the env var behind [`BbrRsConfig::pace`].
+const PACE_ENV: &str = "RWM_BBR_PACE";
+
+/// `RWM_BBR_PACE` resolved: on only for exactly `1`.
+pub(crate) fn resolve_pace(raw: Option<&str>) -> bool {
+    raw.map(str::trim) == Some("1")
+}
 
 /// `RWM_BBR_PROBERTT_ROUNDS` resolved: a positive integer, else 1.
 pub(crate) fn resolve_probe_rtt_rounds(raw: Option<&str>) -> u32 {
@@ -1110,6 +1150,7 @@ impl Default for BbrRsConfig {
             initial_window: K_MAX_INITIAL_CONGESTION_WINDOW * BASE_DATAGRAM_SIZE,
             clock: None,
             probe_rtt_rounds: resolve_probe_rtt_rounds(std::env::var(PROBE_RTT_ROUNDS_ENV).ok().as_deref()),
+            pace: resolve_pace(std::env::var(PACE_ENV).ok().as_deref()),
             #[cfg(test)]
             probe_rtt_gain: K_PROBE_RTT_GAIN,
         }
@@ -1120,7 +1161,7 @@ impl BbrRsConfig {
     /// A config whose ack clock is `f` (host tests).
     #[cfg(test)]
     pub(crate) fn with_clock(f: impl Fn() -> Instant + Send + Sync + 'static) -> Self {
-        Self { clock: Some(Clock(Arc::new(f))), probe_rtt_rounds: 1, ..Self::default() }
+        Self { clock: Some(Clock(Arc::new(f))), probe_rtt_rounds: 1, pace: false, ..Self::default() }
     }
 
     /// The ProbeRtt round count and window factor under test.
@@ -1129,6 +1170,18 @@ impl BbrRsConfig {
         self.probe_rtt_rounds = rounds;
         self.probe_rtt_gain = gain;
         self
+    }
+
+    /// The pacing-rate hook under test.
+    #[cfg(test)]
+    pub(crate) fn with_pace(mut self, pace: bool) -> Self {
+        self.pace = pace;
+        self
+    }
+
+    /// Whether the controller supplies the pacing rate, for the construction echo.
+    pub(crate) fn pace(&self) -> bool {
+        self.pace
     }
 
     /// The ProbeRtt round count, for the construction echo.
@@ -1777,6 +1830,37 @@ mod tests {
             assert!(!h.in_r(), "anchor {a:?}: still in ProbeRtt at entry+2, i.e. 2 m-hat after entry");
             assert_eq!(h.bbr.qcc().rt_us, a_us, "anchor {a:?}: fresh min installed");
         }
+    }
+
+    /// `RWM_BBR_PACE`: off is inert (`None`, no read counted); on supplies the
+    /// model's rate once it exists, and the shared read counter (the `[QCC]`
+    /// `qpn` witness) counts exactly the `Some` answers, also through a clone.
+    #[test]
+    fn pacing_rate_hook_is_gated_and_witnessed() {
+        assert!(!resolve_pace(None));
+        assert!(!resolve_pace(Some("0")));
+        assert!(!resolve_pace(Some("true")));
+        assert!(resolve_pace(Some(" 1 ")));
+
+        let mut off = BbrRs::new(Arc::new(BbrRsConfig::default().with_pace(false)), 1200);
+        off.pacing_rate = 5_000_000;
+        assert_eq!(off.pacing_rate(), None);
+        assert_eq!((off.qcc().qpace, off.qcc().qpr, off.qcc().qpn), (0, 5_000_000, 0));
+
+        let mut on = BbrRs::new(Arc::new(BbrRsConfig::default().with_pace(true)), 1200);
+        assert_eq!(on.pacing_rate(), None, "no model rate yet: window law");
+        assert_eq!(on.qcc().qpn, 0);
+        on.pacing_rate = 5_000_000;
+        let clone = on.clone();
+        assert_eq!(on.pacing_rate(), Some(5_000_000));
+        assert_eq!(on.pacing_rate(), Some(5_000_000));
+        let q = clone.qcc();
+        assert_eq!((q.qpace, q.qpr, q.qpn), (1, 5_000_000, 2));
+        assert!(q_token_tail(&q).ends_with("qpace=1 qpr=5000000 qpn=2"));
+    }
+
+    fn q_token_tail(q: &Qcc) -> String {
+        q.token(0, 0, 0, 0)
     }
 
     /// The diagnostic arm: one rule, parameterised by the round count. N clean
