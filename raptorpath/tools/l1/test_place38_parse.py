@@ -397,6 +397,12 @@ for cell, d in (("c1d-400", "diag-tpd/c1d-400-MAIN-s42-r1-a1-"), ("c1s-400", "di
           "wpl_us-numeric-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, [ln + "" for ln in cli_] + [diag(2.0, [(1, 8, 7, 7000)] * nl)], srv_, 0, "x", store="def")["problems"])
     check("BASE witness: w_* gauges on an [ETA] sender line are void",
           "wire-gauges-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, cli_ + [eta()], srv_, 0, "x", store="def")["problems"])
+    os.environ["LD_BASE_SHA"] = "b3000701f440d11b1b5ad946c8b36c3623c770cd"
+    check("status 49: a promoted main as BASE (LD_BASE_SHA past 4926822) prints wpl_us and the wire gauges like CAND: not a witness failure",
+          not any(x.startswith(("wpl_us-numeric-on", "wire-gauges-on")) for x in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, [ln + "" for ln in cli_] + [diag(2.0, [(1, 8, 7, 7000)] * nl), eta()], srv_, 0, "x", store="def")["problems"]))
+    del os.environ["LD_BASE_SHA"]
+    check("status 49: with LD_BASE_SHA unset BASE is the historical 4926822 and the gauges still void it",
+          "wire-gauges-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, cli_ + [eta()], srv_, 0, "x", store="def")["problems"])
 
 # the contention covariates ride the environment
 os.environ.update(LD_PROCS_B="1", LD_PROCS_A="3", LD_IO_B="0.50", LD_IO_A="2.25")
