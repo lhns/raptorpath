@@ -13681,3 +13681,47 @@ Session (`LD_PLAN=41c`, `LD_P46_SUITES=1`), CAND `simplify-5` `d5bd282a`, BASE m
 - **Debt carried:** the kept hole-class `[HOLD]` gauge (`evals` + class fields; delete or keep: a later ruling); `qnative_recovery_round_us` may now have no non-test user; stale comments named by the workers (`recovery_clock.rs:8`, `docs/research/literature-crosscheck.md`).
 
 **Build-cost measurement (ADR-0076 Q4, reported only; VM, main `36c54292`, fresh target, `cargo build -p raptorpath --release --tests --timings`):** wall **746 s**, 351 units, Σ unit time 5 999 s. **The 86 integration-test targets take 5 228 s (87 %)**; the `raptorpath` bin 173 s, the lib 56 s, the largest dependency build script (aws-lc-sys) 74 s. Each test target links separately under `[profile.release] lto = true, codegen-units = 1`. So the release suite's build is dominated by per-test-binary LTO links, not by the engine. Candidate levers for ADR-0076 phase 5 (each its own decision, measured again): a test-build profile without LTO for the suites (changes what the suites compile, not the shipped binary; needs a stated equivalence argument), and consolidating integration tests into fewer binaries (minding the process-global hazards ADR-0076 lists: 3 global allocators, 17 `set_var` callers against 16 `OnceLock` statics, 2 signal senders). Report: `docs/l1-raw/build-timings/cargo-timing-release-tests.html`.
+
+
+## 52. The c8 recovery levers — gap horizon (scored) and retransmit leg choice (reported) — pre-registration (before any VM contact)
+
+**Why.** The c8 completion tail (≈ 3.9 s on main, ≈ 8 % of a c8 run) is a hole backlog (H0 ≈ 1 890) built in the main phase and drained at ≈ 500/s ("c8 completion tail diagnosis"). Two levers, both post-hoc findings:
+- **(B) the sender's gap horizon** is 20 of the 64 ranges a report carries;
+- **leg choice:** SACK-gap retransmits are placed 786 : 1 against their original leg by the diversity weight, so c8's fast-leg holes are re-sent on the slow leg and hold their horizon slots for its clock ("Retransmit leg choice at c8").
+
+**Trees.**
+- **BASE = `base52`:** main + `wdiv-diag` (`RWM_PLACE_WDIV`, default unset = bit-identical by test; `[HOLD]` `cx_leg=`).
+- **CAND = `cand52`:** BASE + `gaphorizon` (`sack_to_gaps` uses `MAX_SACK_RANGES`).
+- `git diff BASE CAND -- raptorpath/src raptorpath/tests` = 3 files (`net/mod.rs`, `net/sack.rs`, `net/tests.rs`), lever B alone. Both pinned by amendment.
+
+**Session (`LD_PLAN=52`).**
+- **Suites** on CAND's tree.
+- **The §41c guard, scored and unchanged:** rank-minp, 12 + 12 at c1s/c1d/c2/c8 default sizes, 96 rows, PASS iff p > 0.05.
+- **Then a reported-only block** at c8-100 with 600 MB transfers. Arms, n = 6 each:
+  - **BASE**;
+  - **CAND**;
+  - **W0** (BASE binary, `RWM_PLACE_WDIV=0`: retransmits place like source);
+  - **W05** (`RWM_PLACE_WDIV=0.5`);
+  - **WDER** (`RWM_PLACE_WDIV_DERIVED=1`).
+- **Block layout:** 30 rows, rotated per group, never scored, no replacement. A rehearsal runs first.
+
+**Readouts (reported, `tail52_score.py`, which reproduces §48b's c8 numbers exactly on the committed logs):**
+- **Per arm:** goodput, completion tail, H0, frontier lag at source end, `[HOLD]` first-report age p50/p90 and closed-by-retransmit p50/p90 per original path, the `cx_leg` send-leg split, the retransmit send-leg-1 share (`mpr fp/on`), retransmits/GB, receiver duplicates, CPU/GB.
+- **The lever-B premise:** K = μ·C per 4 s main-phase bin and N_h (seqs visited per report).
+- **Witnesses:** each arm's env in its `[GATES]` echo on both ends; BASE/CAND carry none.
+- **WDER's derived branch sits behind `ge.is_valid()`, which `[GATES]` cannot witness.** Its execution witness is therefore an outcome: its retransmit send-leg-1 share must differ from BASE's beyond BASE's own row range; otherwise WDER is read as not executed.
+- **Watch item from §50:** c1s `lag_E_cli` (reported beside the guard).
+
+**Predictions (numbers before results).**
+- **Guard:** PASS. Lever B changes behaviour only where reports carry more than 20 ranges, i.e. c8 (≈ 63 ranges) and c1d (25–30); c1s and c2 are byte-identical in behaviour.
+  - Risk: per-report CPU about × 3 at c8/c1d, below the guard's c8 CPU resolution (d80 8–12 %).
+  - Not expected: c8 goodput WORSE; a shorter tail is a gain the one-sided guard does not score.
+- **CAND at c8 600 MB, if K scales with the horizon (the premise; K ≈ 63–103 → ≈ 200–330 per bin):** H0 ≈ 100–200, tail ≈ 0.2–0.4 s, first-report age p50 < 1 s. If K does not scale, the tail moves little and the premise is refuted. The 64-range wire cap is the next limit.
+- **W0:** send-leg-1 share falls from ≈ 0.58 toward the original-leg-1 share (≈ 0.24–0.27); tail ≈ 1.5–1.9 s (model; a knife edge, λ ≈ μ). **W05:** between W0 and BASE.
+- **WDER:** the share falls (derived V ≈ 0.475 on the fast leg, against 1.0), by less than W0.
+
+**Decision rule.**
+- **Guard PASS:** `cand52` merges to main (`--no-ff`), carrying lever B and `wdiv-diag`'s inert plumbing.
+  - **What vouches for `wdiv-diag`'s default-path cost** (the `cx_leg` count per closed retransmit), which the guard does not cover (it is in both arms): the suites' allocation bounds (`recv_alloc_bound`, `alloc_per_symbol`) and its unit tests. If either allocation bound fails, it does not merge.
+- **Guard FAIL:** no merge; the failing clause, its size and the resolution table go to the user.
+- **The reported block decides nothing by itself.** A leg-choice change (w_div's value or form) is its own registration after this result.

@@ -60,3 +60,6 @@ raptorpath/docs/l1-raw/thread-pd/battery/diag-smoke/c1s-400-MAIN-s42-r1-a1-s.log
 raptorpath/docs/l1-raw/thread-pd/battery/diag-tpd/c1d-400-MAIN-s42-r1-a1-c.log -export-ignore
 raptorpath/docs/l1-raw/thread-pd/battery/diag-tpd/c1d-400-MAIN-s42-r1-a1-drv.out -export-ignore
 raptorpath/docs/l1-raw/thread-pd/battery/diag-tpd/c1d-400-MAIN-s42-r1-a1-s.log -export-ignore
+# plan 52 (status §52): tail52_score.py / test_tail52.py read these (added after the read-set measurement)
+raptorpath/docs/l1-raw/bbr48b/diag-ld-full.tgz -export-ignore
+raptorpath/docs/l1-raw/bbr48b/tail-c8/*.* -export-ignore
