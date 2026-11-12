@@ -13550,3 +13550,28 @@ Session `LD_PLAN=48`, CAND `bbr48cand` `e5d7ffbd` (`RWM_QUIC_CC=bbr_rs`), BASE m
 - **Cost attribution (plan W1.1, fixed before the result, reported only; `attribution.txt`, `attr48.py`):** on CAND's lowest-goodput third of rows, active-leg lines at t ≥ 1 s are QUINN-LIMITED (B ≥ 98 and qm ∈ {B,S,D}) **97.3 % at c2, 83.0 % at c8**; STORE-LIMITED 0 % / 6.6 %, UNDER-READ 0 % / 6.5 %, PROBE-RTT 2.1 % / 1.9 %. **The class naming the cost is QUINN-LIMITED.** Read with R4: the window binds because m̂ (the RTT floor) is well below the loop time R̄; b̂ is not under-read at c2.
 - **Not scored, noted:** H1 (§48b derivation) is not read here; `[SUMCAP]` was not part of plan 48's readouts.
 - **Decision (§48b item 7):** `REGRESSION` goes to the user: archive `bbr_rs`, or §47's options 1/3, or the W1.2 route (QUINN-LIMITED → the δ-free window fix first: a loop-time allowance from the measured ê = R̄ − m̂ on the window, then δ on the store).
+
+### 48b. Erratum and supplement (same day, advisor review) — the label and numbers stand; two readings are withdrawn
+
+**Withdrawn 1: "loop margin below 1 means the window sits below the loop's in-flight".** Quinn ignores `pacing_rate`, so the whole window is in flight and R̄ = W/x. Then 2·m̂/R̄ = (x/b̂)/(1 + A/(2·b̂·m̂)), which is below 1 whenever the window binds. So a margin below 1 reads *window-limited*, not *window too small*: c2's `qsr` (21.7 ms) is the 21.8 ms wire RTT the window itself produced, and c1s reads 0.84 with better goodput than BASE. The fix the Result proposed (an allowance from ê = R̄ − m̂ on the window) feeds the window's own queue back into the window: the form W1.2 rejected (candidate B).
+
+**Withdrawn 2: "QUINN-LIMITED names the cost".** The registered attribution counts lines, not lost goodput, and its B ≥ 98 threshold does not discriminate: BASE also holds a large quinn backlog. The registered output (`attribution.txt`) stands as printed; the reading is withdrawn.
+
+**Post-hoc supplement (not registered; `supplement.txt`, `supp48.py`, from the kept c2/c8 logs):**
+- c2: BASE B p50 808, `paused` p50 72 %, joint (`paused` ≥ 50 % and B ≥ 98) 0.828; CAND B p50 1803, `paused` 71 %, joint 0.997. c8: BASE 600 / 79 % / 0.761; CAND 986 / 79 % / 0.904. **In both arms the store caps the in-flight; with `bbr_rs` its queue sits in quinn instead of on the link.**
+- **ProbeRtt's own goodput cost:** c2, 2.0 % of lines at mean `good` 52.4 against 90.7 Mbit/s → **≈ 0.84 % of goodput** (of the 1.48 % deficit); c8, 3.3 % at 75.8 against 99.7 → **≈ 0.78 %** (of 2.56 %). The rest (≈ 0.6 % at c2, ≈ 1.8 % at c8) is unattributed.
+- **c8 CPU** (the clause that decides the label): the placement split is unchanged (leg shares 0.823/0.177 vs 0.828/0.172), coded share 0.0058 vs 0.0064, loss per leg equal; CPU totals cli 20.78 → 21.51 s, srv 27.27 → 28.71 s on runs 2.6 % longer (48.1 → 49.4 s). CPU/GB rises only at the two-leg cell. **Unexplained.** Hypothesis, untested: `bbr_rs`'s per-packet send-record bookkeeping (up to 8 192 tracked records per path). A host ns bench decides it.
+
+**Registered readouts missing from the Result:**
+- **Quinn's `rtt.min()` (`qmin_us`), the §47 witness in vivo:** median 1 772 µs at c1s (lows 0), **84 µs** on c1d leg 0 and 704 µs on leg 1 (lows 0), against `bbr_rs`'s m̂ 2.15–2.20 ms on the same rows. **§47's inferred cause (a latched-low quinn min-RTT) is confirmed in vivo.**
+- **Datagram evictions:** `dgq full` 0 in essentially every row (BASE c1d up to 246; CAND c1d up to 3); the `dgev` column is the hand − tx backlog, not evictions.
+- **R2a (reported):** CAND medians 0.014–0.083 per leg; BASE c1s/c1d ranges reach 0.94 / 0.92.
+- **`qcns` (`congestion_state()` cost per read):** mean 4.3–14.6 µs per read (one read per DIAG tick).
+- **Predictions, line by line:**
+  - Hit: c1 tail improves; R2b ≤ 0.02 (c2 0.005, c8 0.005); c2 `wrtt` ≤ 30 ms (21.8); c2 A_x within ±15 % (+0.3 %); c8 slow-leg `wrtt` ≤ 0.6 × BASE (0.38 ×); c2 goodput in [0.92, 1.00] × BASE (0.985); c8 in [0.90, 1.00] (0.974).
+  - Missed: the loop-margin predictions (≥ 1.3 at c1 → c1s 0.84; 1.1–1.8 at c2 → 0.72). This was a prediction error, given the identity above.
+  - Missed: the label (`CONTROLLED-WITH-COST` → `REGRESSION`, through p_rest at c8 CPU).
+- **The resolution table** (`resolution41c`) is computed on the host and appended when done.
+- **Suites note:** the dead-peer test's FLAKE is its first this session, on a tree that edits `io_owner.rs`. Recorded, not explained.
+
+**What doing nothing costs (main, BASE rows of this session):** R2b > 0.25 in 4 of 12 c1s rows and 5 of 12 c1d rows; 3 of 12 c1s rows below 0.5 × the cell median (lowest 265.5 Mbit/s). Delivered delay at c2 is ≈ 206 ms in both arms.
