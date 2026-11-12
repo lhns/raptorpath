@@ -156,6 +156,10 @@ pub(crate) struct HoldDownGauge {
     /// true-heal CDF `F` the theory needs is `clsh[0]` (and `clsh[1]`), which
     /// is why the classes carry their own histograms rather than one pooled.
     clsh: std::collections::HashMap<u32, [crate::net::succ::Hist; 3]>,
+    /// Per original path: the `closed_retx` count split by the SEND leg of the
+    /// retransmit that closed the hole (leg id -> count). Sums to
+    /// `cls[..][2]` by construction; printed as `cx_leg=`.
+    cxl: std::collections::HashMap<u32, std::collections::BTreeMap<u32, u64>>,
     /// Per original path: `[same_path, cross_path, unattributed]` — did the
     /// gap report whose absence resolved the hole arrive on the same path the
     /// original flew? The third slot is the sender's own tail sweep, which
@@ -202,6 +206,7 @@ impl HoldDownGauge {
             first: std::collections::BTreeMap::new(),
             cls: std::collections::HashMap::new(),
             clsh: std::collections::HashMap::new(),
+            cxl: std::collections::HashMap::new(),
             xps: std::collections::HashMap::new(),
             age: std::collections::HashMap::new(),
             win: std::collections::HashMap::new(),
@@ -408,6 +413,9 @@ impl HoldDownGauge {
                 };
                 self.cls.entry(rec.orig_path).or_insert([0; 3])[k] += 1;
                 self.clsh.entry(rec.orig_path).or_insert_with(Default::default)[k].add(dt);
+                if let (2, Some((_, pr))) = (k, rec.retx) {
+                    *self.cxl.entry(rec.orig_path).or_default().entry(pr).or_insert(0) += 1;
+                }
                 let x = self.xps.entry(rec.orig_path).or_insert([0; 3]);
                 if ack_path == u32::MAX {
                     x[2] += 1;
@@ -459,6 +467,10 @@ impl HoldDownGauge {
         let cls = self.cls.get(&path).copied().unwrap_or([0; 3]);
         let clsh = self.clsh.get(&path);
         let xps = self.xps.get(&path).copied().unwrap_or([0; 3]);
+        // `leg:count` pairs ascending by leg, `-` when no retransmit closed a hole.
+        let cx_leg = self.cxl.get(&path).filter(|m| !m.is_empty()).map_or("-".to_string(), |m| {
+            m.iter().map(|(l, n)| format!("{l}:{n}")).collect::<Vec<_>>().join(",")
+        });
         let age = self.age.get(&path);
         let frac = |num: u64, den: u64| {
             if den == 0 {
@@ -475,7 +487,7 @@ impl HoldDownGauge {
              hn_n={} hn_p50_us={} hn_p90_us={} hy_n={} hy_p50_us={} hy_p90_us={} \
              cx_n={} cx_p50_us={} cx_p90_us={} sp_n={} xp_n={} up_n={} xp_frac={} \
              age_n={} age_ripe={} ripe_frac={} age_p50_us={} age_p90_us={} \
-             thr_p50_us={} fa_class={:.4}",
+             thr_p50_us={} cx_leg={} fa_class={:.4}",
             self.site,
             if path == u32::MAX {
                 "-".to_string()
@@ -523,6 +535,7 @@ impl HoldDownGauge {
             us(age.and_then(|a| a.0.quantile(0.50))),
             us(age.and_then(|a| a.0.quantile(0.90))),
             us(age.and_then(|a| a.1.quantile(0.50))),
+            cx_leg,
             // The sacrificial trailing constant — stderr has two writers and a
             // `tracing` write can land inside a gauge line's last field.
             RACK_SPURIOUS_BUDGET,
