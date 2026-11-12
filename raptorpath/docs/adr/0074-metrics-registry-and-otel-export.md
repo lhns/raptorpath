@@ -42,16 +42,25 @@ path:
    - Counters and gauges are atomics on the dense 64-path table. Histograms
      are fixed arrays of atomic buckets that are exactly OTel's exponential
      scale 3 (bounds 2^(i/8), indexed without `log` by a 7-entry mantissa
-     table), so OTLP gets a native `ExponentialHistogram`.
-   - Recording is one relaxed `fetch_add` (two for a histogram) and never
-     allocates.
-   - The only attributes are path index and role. δ, ρ and r are gauges,
+     table, upper-inclusive), so OTLP gets a native `ExponentialHistogram`.
+     Every instrument exports in the unit it records, with no rescaling.
+   - Recording is a single-writer atomic store, or one relaxed `fetch_add`
+     where a cell has two writers, plus the bucket index for a histogram.
+     It never allocates.
+   - The attribute set is closed:
+     - the path index;
+     - role and instance as resource attributes;
+     - on tick-computed process and task instruments only, semconv's
+       `cpu.mode` and `process.context_switch.type`, and a fixed task-name
+       set.
+   - Every other split is a separate instrument. δ, ρ and r are gauges,
      never labels; no hint name is ever an attribute.
 2. **Three renderings of the one registry.**
    - `/status` (v2: corrected fields, every old key kept with its meaning
      documented);
-   - the existing log tags, **byte-identical**, each formatter reading the
-     registry;
+   - the existing log tags, **byte-identical**, each formatter reading its
+     own registry snapshot at its own cadence, so per-line values do not
+     shift;
    - an OTLP exporter behind cargo feature `otel` (off by default, wasm
      untouched). It builds OTLP data from a registry snapshot on its own
      collection tick through `opentelemetry-proto` types and posts it over
@@ -62,7 +71,7 @@ path:
    registry histogram is fed by the same record call, and a test bounds the
    two to one bucket width.
 4. **A flight recorder for per-symbol events.**
-   - Fixed 16-byte records go into per-thread rings, with a deterministic
+   - Fixed 16-byte records go into per-task rings, with a deterministic
      sample by seq hash.
    - A dump fires on read-only anomaly detectors.
    - An offline converter writes OTLP traces, qlog and Perfetto.

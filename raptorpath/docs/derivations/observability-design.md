@@ -47,18 +47,18 @@ Legend used throughout:
 | 8 | wire RTT `wrtt` (§48 R3) | no | `[DIAG]` `rtt/wrtt/rtp` (`RWM_DIAG`; `PathView.rtt_us` counted always) | G | `raptorpath.path.rtt.wire` |
 | 9 | app-echo RTT A_x (§48 R3) | `rtt_ms`, but mixed with the peer's report and the 50 ms seed (§2) | `[DIAG]` `rtt` | A (misleading) | a clean one-clock `rtt.echo` |
 | 10 | send-buffer dwell B = hand − tx (§48 R2b/R3, §48b supplement) | no | `[DIAG]` `dgq`, `dgev` (`RWM_DIAG`, counting gated) | G | `raptorpath.path.dwell.send_buffer` |
-| 11 | §48 R4: `qm` occupancy, m̂ (`qrt_us`), loop margin 2·m̂/R̄ (`qsr_us`) | no | `[DIAG]` on `bbr48cand` only; **not on main** | M (main) | `cc.wire.state`, `.bw`, `.min_rtt` |
+| 11 | §48 R4: `qm` occupancy, m̂ (`qrt_us`), loop margin 2·m̂/R̄ (`qsr_us`) | no | a separate `[QCC]` line under `RWM_DIAG` on `bbr48cand` only (`diag.rs:952–974` there, read through `transport.qcc_gauge` at the owner's snapshot); **not on main** | M (main) | `cc.wire.state`, `.bw`, `.min_rtt`, which exist only while `bbr_rs` is the controller |
 | 12 | ProbeRtt time and its goodput cost (§48b ≈ 0.8 %) | no | none on main; on `bbr48cand`, the `qm` share of `[DIAG]` lines | M | `cc.wire.probe_rtt.time`; goodput per tick |
-| 13 | quinn's lifetime `rtt.min()` `qmin_us` (§47 witness, confirmed §48b) | no | none on main (registered on `bbr48cand`) | M | `rtt.wire` min |
+| 13 | quinn's lifetime `rtt.min()` `qmin_us` (§47 witness, confirmed §48b) | no | none on main. On `bbr48cand` it is `[QCC]` `qmin_us`, read from the controller side at 4.3–14.6 µs per read (`qcns`, §48b) | M | `cc.wire.quinn_min_rtt` (tick-only read) |
 | 14 | delivered delay (`[LAT]` decomposition) | no | `[LAT]` (`RWM_DIAG`/`RWM_FDIAG`, 1 s; **counted always**, `LatGauge` fed per delivered symbol) | G | delivery-delay histogram rendered always |
 | 15 | hole backlog H, H0 at source end (c8 tail law) | no | `[RANK] holes`, `[REQ] holes`, `[SACKI]` (`RWM_DIAG`/`RWM_FDIAG`); H0 was reconstructed post hoc | G | `recovery.holes.open` |
-| 16 | first-report hole age (c8: 3.1 s / 5.2 s vs c2 197 ms) | no | `[HOLD]` `age_p50/90_us` (always, **teardown only**, one line per path that fired) | E | an age histogram per tick |
+| 16 | first-report hole age (c8: 3.1 s / 5.2 s vs c2 197 ms) | no | `[HOLD]` `age_p50/90_us` (always, **teardown only**, one line per path that fired). Its clock: the age of the seq's live flight at the sender's first report, measured from the original's send, so it **includes the sender's own queue dwell** (`holddown.rs:166–170`) | E | an age histogram per tick, on the same clock |
 | 17 | recovery causes | no | `[FCAUSE]` (always, teardown), `[RACK]`, `[RFA]` Drop | E | per-cause counters at run time |
 | 18 | completion tail duration (c8: 3.9 s BASE / 4.7 s CAND, 70 % of the deficit) | no | none. Reconstructed post hoc from `[DIAG]` `t`, `infl` and dgq | M | `transfer.duration` split main/tail |
 | 19 | store-cap engagement (`[SUMCAP]`, `[DCAP]`) | no | `[SUMCAP]`/`[DCAP]` (default ON gates, teardown) | E | run-time engagement |
 | 20 | store cap value series and `paused` (§48b supplement: `paused` p50 71–79 %) | no | `[DIAG]` `win`, `paused` (`RWM_DIAG`, `DiagState`, counting gated) | G | `store.cap`, `store.occupancy`, `store.paused.time` |
 | 21 | placement shares (§48b: 0.823/0.177) | `symbols_sent` per path (counts source **and** copies **and** coded: 8 increment sites) | `[C8CONV-S] sp`, `[DIAG]` per path | A (approx.) | a source-only per-path counter |
-| 22 | per-leg loss `plc` (fed), `plu` | `loss_rate` (fed EWMA), `peer_loss_rate` | `[DIAG]` `plc`, `plu` | A | cumulative `plc` exactly as scored |
+| 22 | per-leg loss `plc` (the cumulative fed loss, checked against `[TRUTH]`) and `plu` (the BOCD predictive upper quantile at 0.95 that the rate law reads, `diag.rs:680–690`) | only `loss_rate` = `pl`, the per-ack EWMA that decays to 0 between losses, and `peer_loss_rate`. Neither is `plc` or `plu` | `[DIAG]` `plc`, `plu` (`RWM_DIAG`) | G | `path.loss.fed_cum` (`plc`), `path.loss.upper` (`plu`) |
 | 23 | coded share | `fec.total_repair_symbols`, `total_source_symbols`, `overhead_ratio` (copies `total_copy_symbols` **not** rendered) | `[DIAG]` `cod`, `cum` | A | copies in `/status` |
 | 24 | repair rate r (the dial's realized r) | no | `[DIAG]` `rce=`, `eff_pace` | G | `dial.r`, `dial.beta` |
 | 25 | decode failures | `blocks.decoded_fail`: **no writer anywhere** (§2) | `[SUCC]` `aban_n` (counted always; printed under `RWM_DIAG`/`RWM_FDIAG`) | G | a real counter |
@@ -67,11 +67,11 @@ Legend used throughout:
 | 28 | evictions (`dgq full`; §48b: the `dgev` column is the backlog, not evictions) | no | `[DIAG]` `dgq[… full …]` (counting gated) | G | `store.evictions` |
 | 29 | δ / ρ / r dial values | no | `[PIPE]` prints the hint *name* (always); `[LATE]` prints `delta` (G); no numeric ρ | G | `dial.*` gauges |
 
-**Counts (29 rows): A 4 (one of them misleading), E 4, G 17, M 4.**
-- In the requested three bins: **covered always-on 8** (A + E, of which only
-  4 are readable while the run is live), **covered by a gated log only 17**,
+**Counts (29 rows): A 3 (one misleading, one approximate), E 4, G 18, M 4.**
+- In the requested three bins: **covered always-on 7** (A + E, of which only
+  3 are readable while the run is live), **covered by a gated log only 18**,
   **missing 4**.
-- Of the 17 G rows, 5 are counted always and printed gated (6's `qcwnd`,
+- Of the 18 G rows, 5 are counted always and printed gated (6's `qcwnd`,
   8, 14, 25, 27). For these the fix is a rendering, with no
   new data-path cost.
 - The rest need new always-on counting and are priced in §4.
@@ -92,7 +92,7 @@ Two side findings:
 | `blocks.encoded/decoded_ok/decoded_fail/pending` | **none**. The only reader is `main.rs:511–515` (the `status` CLI) and the only writers are tests (`tests/monitoring_test.rs:70–81`). The block pipeline was deleted (ADR-0069). | always 0 | **dead**: remove, or move under `legacy` (Q1) |
 | `fec.actual_failure_rate`, `fec.pi_correction` | **none** (`FecStats` bits never stored; `control/fec_rate.rs:574` has same-named fields that never reach `SharedStats`) | always 0 | **dead** |
 | `fec.target_tail_loss` | `net/mod.rs:778`, once from config | config echo | fine |
-| `paths[].rtt_ms` | Three writers, last one wins:<br>(a) `on_window_ack`, `control_msg.rs:692–697`: the raw app-echo sample `now − echo_send_timestamp_us` (`:504`), only when `echo > 0`;<br>(b) `on_path_report`, `control_msg.rs:459–460`: **the peer's** reported `avg_rtt_us`;<br>(c) `on_ack`, `:358–360`: an echo sample. The per-batch `Ack` is suppressed under the default `RWM_ACK_MERGE=1` (`gates/scheduler_gates.rs:274`), so (c) does not run on the shipped path.<br>Seed: 50 ms (`stats.rs:305`), shown as if measured. | It alternates between this end's **unsmoothed app-echo** sample and the peer's average. Neither is quinn's wire RTT (`QuicTransport::wire_rtt`, `transport/quic.rs:491`), which excludes the app-layer and send-buffer dwell. That difference was 206 ms against 21.8 ms at c2 under `bbr_rs` (§48b R3). | **misleading** (two clocks, two directions, seed) |
+| `paths[].rtt_ms` | Three writers, last one wins:<br>(a) `on_window_ack`, `control_msg.rs:692–697`: the raw app-echo sample `now − echo_send_timestamp_us` (`:504`), only when `echo > 0`;<br>(b) `on_path_report`, `control_msg.rs:459–460`: **the peer's** reported `avg_rtt_us`;<br>(c) `on_ack`, `:358–360`: an echo sample. The receiver builds and sends the per-batch `Ack` only `if !suppress_legacy_ack` (`receiver.rs:2160–2164`), which is the default `RWM_ACK_MERGE=1` (`gates/scheduler_gates.rs:274`), so (c) does not run on the shipped path.<br>Seed: 50 ms (`stats.rs:305`), shown as if measured. | It alternates between this end's **unsmoothed app-echo** sample and the peer's average. Neither is quinn's wire RTT (`QuicTransport::wire_rtt`, `transport/quic.rs:491`), which excludes the app-layer and send-buffer dwell. That difference was 206 ms against 21.8 ms at c2 under `bbr_rs` (§48b R3). | **misleading** (two clocks, two directions, seed) |
 | `paths[].jitter_us` | Three writers:<br>`receiver.rs:1276`: this end's RFC 3550 **arrival** jitter, per arrival;<br>`control_msg.rs:461`: the peer's reported jitter;<br>`control_msg.rs:696`: the jitter echoed in the WindowAck, i.e. the peer's arrival jitter for **our** TX direction. | two directions in one field | **misleading** |
 | `paths[].throughput_mbps` | `control_msg.rs:362` (on_ack, off-path) and `:657–658` (window ack). It stores `estimator.throughput()`: the EWMA (`control/estimator.rs:492`) of the report task's `symbols_sent` delta × symbol size / dt (`net/tasks/report.rs:63–85`, `:155`). | the **offered** symbol rate on this path: source, copies and coded, excluding QUIC overhead. It is not goodput and not wire bytes. | **misleading by name** |
 | `paths[].cwnd`, `in_flight` | `control_msg.rs:363–364`, `:659–660`; `copa_feed.rs:136–137` | **Copa's in-app window and ledger, in symbols.** It gates in-app placement: `available() = cwnd − in_flight` (`scheduler/path.rs:456`) filters every placement choice (`scheduler/mod.rs:267, 315, 531, 552, 567, 593`). It reaches the wire only under `RWM_QUIC_CC=passthrough` (`set_cc_window_bytes` is a no-op otherwise, `quic.rs:465–468`). The wire is gated by quinn's controller window, `PathView.cwnd` (`io_owner.rs:1359`, `qcwnd`, bytes), which `/status` does not expose. Copa's window grows without bound while app-limited (c8 tail diagnosis). | **misleading** (unit, and which window binds) |
@@ -112,7 +112,7 @@ and corrects or documents each one; renaming is Q1.
 
 | diagnosis | what it needed | readable today from always-on metrics? | instruments that would make it so |
 |---|---|---|---|
-| **§47 quinn min-RTT collapse** (c1s) | the `qcwnd` series; the ProbeRtt fingerprint (`qcwnd` = 4·MTU at t = 10.0/20.1/30.1 s); quinn's `rtt.min()`; the loss burst before it (`qce`, lost packets) | **No.** `qcwnd`/`qce`/`qlp` exist only in `RWM_DIAG` `[DIAG]` (a rerun under the gate). `qmin` is not exposed on main. `/status` `cwnd` is Copa's window. | `cc.wire.window` (gauge + per-tick histogram); `rtt.wire` min (the latched-low witness); `wire.congestion_events`, `.lost_packets` (all class T from the owner's existing `publish`); the **collapse detector** (R2b form, §7.3) dumping the flight recorder |
+| **§47 quinn min-RTT collapse** (c1s) | the `qcwnd` series; the ProbeRtt fingerprint (`qcwnd` = 4·MTU at t = 10.0/20.1/30.1 s); quinn's `rtt.min()`; the loss burst before it (`qce`, lost packets) | **No.** `qcwnd`/`qce`/`qlp` exist only in `RWM_DIAG` `[DIAG]` (a rerun under the gate). `qmin` is not exposed on main. `/status` `cwnd` is Copa's window. | `cc.wire.window` (gauge + per-tick histogram); `cc.wire.quinn_min_rtt` (the latched-low witness; a controller-side read, tick only); `wire.congestion_events`, `.lost_packets` (class T from the owner's existing `publish`); the **collapse detector** (R2b shape, §7.3) dumping the flight recorder |
 | **§48b c8 completion-tail backlog** | H0 and μ; the 20-gap horizon actually used; the pooled recovery clock C and which leg sets it; ranges per report; first-report age; the cooldown-suppressed share; the tail duration | **No.** It was reconstructed post hoc from gated `[DIAG]`, `[SACKI]`, teardown `[HOLD]` and a `[SUCCDUMP]` rerun. | `recovery.holes.open`, `.horizon.used`, `.clock` (with the setting leg as a second gauge), `.cooldown_suppressed`, `.holes.first_report_age`, `transfer.duration` main/tail; the **tail detector** dumps the recorder at source end |
 | **quinn send-buffer dwell inflating the recovery clock** (open in the tail diagnosis: does leg 1's app-echo clock include the B ≈ 327-datagram dwell?) | echo RTT against wire RTT per leg, at the same instants, plus B | **No.** `/status` `rtt_ms` mixes clocks; `wrtt` and B are gated. | `rtt.echo` and `rtt.wire` side by side; `dwell.send_buffer` (B). A per-tick derived `rtt.echo − rtt.wire` against B / tx rate (Little's law over the FIFO DATAGRAM queue: the k-th handed datagram is the k-th DATAGRAM frame sent, so dwell is the lag between the `hand` and `frame_tx.datagram` counters) answers the question directly |
 | **ProbeRtt goodput cost** (≈ 0.84 % c2, ≈ 0.78 % c8) | controller state per tick, plus goodput per tick | **No** (on `bbr48cand` it was the `qm` share of `[DIAG]` lines times `good`). | `cc.wire.state` gauge, `cc.wire.probe_rtt.time` counter, `transfer.delivered` per tick. The cost is then Σ over ProbeRtt ticks of (mean − tick goodput), computable by any OTel backend |
@@ -128,16 +128,26 @@ All five could be with the catalogue in §4:
 
 **Conventions.**
 - **Names.** Instruments sit in the `raptorpath.*` namespace. Where an OTel
-  semantic convention exists, the instrument uses its name and unit:
+  semantic convention exists, the instrument uses its name and unit. The
+  `process.*` metric conventions are **Development** status, so the semconv
+  version is pinned in the scope's `schema_url`:
   - `process.cpu.time` (`s`, attribute `cpu.mode` = user | system);
   - `process.memory.usage` (`By`);
   - `process.context_switches` (`{context_switch}`, attribute
     `process.context_switch.type` = voluntary | involuntary);
   - `process.thread.count`.
-- **Units.** Units are UCUM: `s`, `us` only where a tag prints µs (the OTLP
-  rendering converts to `s`), `By`, `{symbol}`, `{datagram}`, `{hole}`, `1`.
-- **Attributes** are bounded and closed:
+- **Units.** Units are UCUM: `us`, `s`, `By`, `{symbol}`, `{datagram}`,
+  `{hole}`, `1`. **Every instrument exports in the unit it records.** A µs
+  histogram is exported in `us`: converting its bounds to seconds would
+  multiply 2^(i/8) by 10⁻⁶, which is no longer an exponential-histogram
+  bound.
+- **Attributes** form a closed set, the one the ADR states:
   - `rp.path` is the path index 0..63, from the dense table;
+  - on class-T process and task instruments only, fixed enumerations:
+    semconv's `cpu.mode` and `process.context_switch.type`, and `rp.task`
+    from the fixed task-name set (≤ 16);
+  - nothing else. Any other split (a phase, a recovery cause, a symbol
+    kind) is a separate instrument, not a label;
   - role (`client` | `server`) and `service.instance.id` are **resource**
     attributes, set once and never sent per point.
   - δ, ρ and r are gauges, never attributes. No hint name, gate name or
@@ -145,7 +155,8 @@ All five could be with the catalogue in §4:
     one `raptorpath.build.info` gauge = 1 whose attributes are resolved
     once at start-up (commit, gate digest).
 
-**Cost classes** (per record, on the recording thread):
+**Cost classes** (per record, on the recording thread). Every ns figure in
+this document is an **estimate, unmeasured until the P1 bench**:
 - **H0**, a single-writer counter or gauge: `load` + `store`, no lock
   prefix, ≈ 1 ns. Each instrument has one writing task, named in the
   "recorded at" column. A second writer requires `fetch_add` and an entry
@@ -173,7 +184,7 @@ for the whole always-on set is **≤ 10 instrument records per symbol and
 |---|---|---|---|---|---|
 | `raptorpath.transfer.delivered` | counter | By | application bytes delivered in order to the consumer (TUN/perf sink) | receiver delivery | H0 per batch |
 | `raptorpath.transfer.goodput` | gauge | bit/s | delivered bytes over the transfer window (first to last delivery); the perf JSON `mbps` is the scored source and this one must agree with it (§8.2) | collector | T |
-| `raptorpath.transfer.duration` | gauge | s | transfer window; with `phase` ∈ {main, tail} split at "source end emitted" (the c8 tail diagnosis split) | collector | T |
+| `raptorpath.transfer.duration.main`, `.tail` | gauge | s | the transfer window split at "source end emitted" (the c8 tail diagnosis split). Two instruments, no `phase` label | collector | T |
 | `raptorpath.delivery.delay` | histogram | us | send stamp → in-order delivery (the `[LAT]` decomposition's end-to-end, app-echo clock domain). Sampled to every symbol | receiver delivery | H2 |
 | `raptorpath.delivery.hol_wait` | histogram | us | arrival → in-order delivery (head-of-line part of the above) | receiver delivery | H2 |
 | `raptorpath.decode.failures` | counter | {event} | decoder give-ups (`aban` class) — must stay 0 at ρ = 1 | receiver | H0 |
@@ -184,13 +195,15 @@ for the whole always-on set is **≤ 10 instrument records per symbol and
 | name | kind | unit | semantics / clock | recorded at | cost |
 |---|---|---|---|---|---|
 | `raptorpath.path.rtt.echo` | histogram + gauge (srtt, min) | us | **app-echo RTT** (`now − echo_send_timestamp_us`, `control_msg.rs:504`): includes the sender's store dwell, the owner hop and quinn's send-buffer dwell | sender ack arm | H2 per ack |
-| `raptorpath.path.rtt.wire` | gauge (srtt, min, latest) | us | **quinn's packet-timed RTT** (`QuicTransport::wire_rtt`, `quic.rs:491`): excludes the app/send-buffer dwell. `min` is quinn's lifetime `rtt.min()` — the §47 latched-low witness (`qmin_us`) | owner `publish` | T |
+| `raptorpath.path.rtt.wire` | gauge (srtt, min, latest) | us | **quinn's packet-timed RTT** (`QuicTransport::wire_rtt`, `quic.rs:491`): excludes the app/send-buffer dwell. On main quinn exposes only the smoothed `rtt()` and `PathStats`. Quinn's lifetime `rtt.min()` (the §47 latched-low witness `qmin_us`) needs the controller-side read that `bbr48cand` added (`qcc_gauge`), as `cc.wire.quinn_min_rtt`, tick only | owner `publish` | T |
 | `raptorpath.path.rtt.rtprop` | gauge | us | the engine's RTprop (`PathState::min_rtt`) — the scored `rtp_floor` is its run minimum | sender | H0 |
-| `raptorpath.path.dwell.send_buffer` | gauge + histogram (per tick) | {datagram} | B = `hand − tx`: datagrams handed to quinn not yet on the wire (the §48 R2b/R3 backlog) | owner | T (counters exist; the audit is `RWM_DIAG`-gated today — §1) |
+| `raptorpath.path.dwell.send_buffer` | gauge + histogram (per tick) | {datagram} | B = `hand − tx − evicted − send_err`: datagrams handed to quinn and not yet on the wire (the §48 R2b/R3 backlog) | owner | T (counters exist; the audit is `RWM_DIAG`-gated today — §1) |
 | `raptorpath.path.sent` | counter | {symbol} | symbols handed to the transport on this path, attribute-free split by **kind** as three instruments: `.source`, `.copy`, `.coded` (no `kind` label: three counters keep the record H0) | sender | H0 |
 | `raptorpath.path.wire.sent_packets`, `.lost_packets`, `.congestion_events` | counter | {packet}/{event} | quinn `PathStats` | owner publish | T |
-| `raptorpath.path.loss.fed` | gauge | 1 | the estimator's fed loss (`plc`) | sender ack arm | H0 |
-| `raptorpath.path.loss.peer` | gauge | 1 | the peer's reported incoming loss (`plu`-class; monitoring only) | sender report arm | H0 |
+| `raptorpath.path.loss.ewma` | gauge | 1 | `pl`: the per-ack EWMA (today's `/status` `loss_rate`) | sender ack arm | H0 |
+| `raptorpath.path.loss.fed_cum` | gauge | 1 | `plc`: the estimator's cumulative fed loss | sender ack arm | H0 |
+| `raptorpath.path.loss.upper` | gauge | 1 | `plu`: the BOCD predictive upper quantile at 0.95, which the rate law reads | sender | H0 |
+| `raptorpath.path.loss.peer` | gauge | 1 | the peer's reported incoming loss (monitoring only; not `plu`) | sender report arm | H0 |
 | `raptorpath.path.placement.share` | gauge | 1 | this path's share of placed source symbols over the last tick | collector from `.source` | T |
 | `raptorpath.path.active` | gauge | 1 | liveness | sender | H0 |
 
@@ -203,7 +216,8 @@ for the whole always-on set is **≤ 10 instrument records per symbol and
 | `raptorpath.cc.wire.window` | gauge | By | quinn's controller window (`qcwnd`) — the one that gates the wire | owner publish | T |
 | `raptorpath.cc.wire.state` | gauge | 1 | `bbr_rs` phase as an integer gauge (0 S, 1 D, 2 B, 3 R) — `qm`; one gauge, not a label | owner publish | T |
 | `raptorpath.cc.wire.probe_rtt.time` | counter | s | time spent in ProbeRtt (the §48b ≈ 0.8 % goodput cost) | owner publish (phase-change edge) | T |
-| `raptorpath.cc.wire.bw`, `.min_rtt` | gauge | bit/s, us | controller's b̂, m̂ (§48 R4) | owner publish | T |
+| `raptorpath.cc.wire.bw`, `.min_rtt`, `.loop_rtt` | gauge | bit/s, us | the controller's b̂, m̂ and smoothed loop time (`qbw`, `qrt_us`, `qsr_us`; §48 R4). They exist only while `bbr_rs` is the controller. Read through `qcc_gauge` at 4–15 µs per read, so tick only | owner snapshot | T |
+| `raptorpath.cc.wire.quinn_min_rtt` | gauge | us | quinn's lifetime `rtt.min()` (`qmin_us`) | owner snapshot | T |
 
 ### 4.4 Recovery and the store
 
@@ -253,7 +267,7 @@ process keep two)
      │             └─ [Cell; N_PATH_SCALAR], [Hist; N_PATH_HIST]
      ├─ hists:    [Hist; N_HIST]
      └─ fr:       FlightRecorder handles (§6)
-Cell = CachePadded<AtomicU64>   (f64 gauges as bits; one writer per Cell)
+Cell = AtomicU64 in a #[repr(align(64))] group per writer task   (f64 gauges as bits)
 Hist = { buckets: [AtomicU64; NB], zero: AtomicU64, count, sum, min, max }
 ```
 
@@ -281,10 +295,21 @@ Hist = { buckets: [AtomicU64; NB], zero: AtomicU64, count, sum, min, max }
   compatible). Nothing on the data path is ever reset: a reader never
   writes, so the "last line wins" cumulative reading the harness relies on
   holds for every rendering.
-- The `/status` handler, the tag printers and the exporter each take the
-  latest `Snapshot` by `Arc` clone (`ArcSwap`-style, one pointer swap per
-  tick). They never read cells directly. The test in §8.3 relies on this:
-  **every rendering is a pure function of one `Snapshot`**.
+- **Who takes snapshots.**
+  - `/status` and the exporter take the collector's latest `Snapshot`: an
+    `Arc` behind a `parking_lot::Mutex` (already a dependency), locked
+    only off the data path, once per tick and per request.
+  - **The log tags take their own snapshots at their own cadence**:
+    `[DIAG]` every 250 ms in the sender loop, the receiver block every
+    1 s, the teardown lines at `Drop`. Their read/reset windows become
+    the delta between two of the tag's own consecutive snapshots, kept
+    in `TagLocals`.
+  - This keeps per-line values, and the line-share statistics scored from
+    them (R2a/R2b), exactly as they are. Rendering tags from the 1 s
+    collector snapshot would keep the bytes' format but shift the values.
+- The test in §8.3 relies on one property: **every rendering is a pure
+  function of a `Snapshot`** (plus, for windowed values, the previous
+  snapshot from the same renderer).
 
 ### 5.3 Histograms (no allocation, exact OTel buckets)
 
@@ -292,14 +317,20 @@ Hist = { buckets: [AtomicU64; NB], zero: AtomicU64, count, sum, min, max }
   2^(i/8), relative width 9.05 %) is computed exactly, without `log`:
   - convert the integer sample `v` to `f64` (exact below 2^53);
   - take its exponent `e` and the top mantissa bits `m`;
-  - `index = 8·e + Σ_{k=1..7} [m ≥ T_k]`, with `T_k` the mantissa bits of
-    2^(k/8), a 7-entry `const` table.
+  - OTel buckets are **upper-inclusive**: bucket i holds
+    (base^i, base^(i+1)] (`metrics.proto`, `opentelemetry-proto` 0.33.1,
+    lines 563–564 and 600–601).
+  - So `index = 8·e + Σ_{k=1..7} [m > T_k] − [m = 0]`, with `T_k` the
+    mantissa bits of 2^(k/8) in a 7-entry `const` table. The `[m = 0]`
+    term puts an exact power of two, which is common for integer µs, in
+    the bucket below. The `T_k` with k ≥ 1 are irrational powers, so no
+    mantissa equals them.
 - This is branchless: one conversion and seven compares, ≈ 2–3 ns. It is
   **not** the log-linear `leading_zeros + shift` index, whose bounds are
   `2^e·(1 + k/8)` and are not OTel's.
 - A unit test checks every boundary: each `T_k` against `2^(k/8)`, and the
-  recorded index against the rendered `[lower, upper)` for values on both
-  sides of every bound.
+  recorded index against the rendered `(lower, upper]` for values on both
+  sides of every bound, exact powers of two included.
 - **Range.** The range per instrument is fixed in the descriptor: µs
   instruments 1 µs .. 2^27 µs (134 s), 27 octaves × 8 = 216 buckets
   (1.7 KB), plus zero, under and over. Under and over are counted, never
@@ -330,7 +361,9 @@ The SDK is not called on any data path, for four reasons read at source:
   `experimental_metrics_bound_instruments` (`opentelemetry` 0.33.1
   `instruments/counter.rs:41`).
 - The SDK records no exemplars: every data point is built with
-  `exemplars: vec![]` (`internal/aggregate.rs:271, 303, 308`). Its
+  `exemplars: vec![]` (`internal/aggregate.rs:271, 303, 308, 350, 355,
+  401, 458`; `internal/exponential_histogram.rs:481, 541`). No code path
+  outside tests fills them. Its
   `ResourceMetrics` cannot be built outside the crate (fields
   `pub(crate)`, `data/mod.rs:13–17`), so pre-aggregated data cannot pass
   through its `PushMetricExporter`. The OTel API also has no asynchronous
@@ -465,6 +498,14 @@ String`:
     **swaps** its ring with a preallocated spare (an O(1) pointer swap) and
     sends the full ring to a writer thread. No memcpy happens on the data
     path; the loop is never stalled by a dump.
+  - **The wedged-task case** is the stall detector's own case: a task
+    that never wakes never swaps.
+    - So the 16-byte record is two `AtomicU64` written with Relaxed
+      stores (the same instructions as plain stores on x86-64, and no data
+      race), and `head` is published with Release once per batch.
+    - If a request is not acknowledged within 2 ticks, the writer thread
+      copies the ring itself. It reads `head` before and after and
+      discards the records the writer could have overwritten in between.
 - **Events per symbol:** about 2 per end:
   - sender: emit, plus SACK or cumulative cover;
   - receiver: arrival, plus delivery;
@@ -507,10 +548,16 @@ String`:
   - **Stall.** The in-order frontier has not advanced for ≥ 8 ×
     (max over live legs of the wire SRTT) while data is outstanding. This
     is the `[WEDGE]` condition, made scale-free.
-  - **Collapse (the R2b form, §48).** On an active leg, the wire window
-    is < ½ × (delivery rate × wire min RTT) **and** B ≥ 98 datagrams. The
-    98 is §48's registered constant, so detector hits and R2b readings
-    count the same lines.
+  - **Collapse (the R2b shape, §48).** On an active leg, the wire window
+    is < ½ × (delivery rate × R_ref) **and** B ≥ 98 datagrams (§48's
+    constant).
+    - R_ref is the **10 s windowed minimum of the per-tick wire SRTT**,
+      kept by the collector. It cannot latch the way quinn's lifetime
+      `rtt.min()` does: a reference taken from that would be blind to
+      §47 itself.
+    - This is an online approximation, not R2b. R2b stays computed by
+      the harness with the cell's fixed `BDP_leg`. Detector hits are
+      reported beside R2b, never instead of it.
   - **Backlog growth.** `recovery.holes.open` rose over 3 consecutive
     ticks while the pooled clock C exceeds the 4 s-bin service bound (the
     tail diagnosis's K/C).
@@ -566,9 +613,12 @@ String`:
 - **What is recorded.** Exemplars are recorded only for **sampled** seqs
   (the hash test of §7.2).
 - **How.** Each H2 histogram has one exemplar slot per octave (27 slots of
-  `value, seq, t`). When a sampled seq is recorded, three single-writer
-  stores overwrite its octave's slot. This is ≈ 1 ns amortized (1/64 of
-  records).
+  `value, seq, t`).
+  - When a sampled seq is recorded, the single writer updates its octave's
+    slot under a sequence counter: bump to odd, three stores, bump to
+    even. The collector retries a read that saw an odd or changed count,
+    so it never pairs one record's value with another's seq.
+  - Cost is ≈ 1 ns amortized (1/64 of records; an estimate).
 - **Rendering.** The slot becomes an OTLP `Exemplar` with
   `trace_id = H(transfer)` and `span_id = H(seq)`, the same functions as
   the converter. A click from a p99 bucket therefore lands on that
@@ -642,7 +692,8 @@ String`:
   - Render `/status`, every tag, and the OTLP request (encoded, then
     decoded).
   - Assert every value equal across renderings: exact for integers;
-    exact for unit conversions (µs → s as declared); for a histogram
+    no unit conversion anywhere (every instrument exports in its recorded
+    unit); for a histogram
     quantile against a tag's nearest-rank, within one bucket (9.05 %).
   - Any rendering that deliberately differs (rounding in a tag) has its
     own bounding assertion. No difference is left as prose.
