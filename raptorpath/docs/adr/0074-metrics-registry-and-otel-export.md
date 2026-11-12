@@ -99,3 +99,13 @@ path:
   user's call.
 - The phased plan (design doc §9) is red-first. Each phase keeps every
   committed log format byte-identical.
+
+## Decisions (user, 2026-11-12)
+
+The status stays Proposed until the implementation passes its gates; these answer the design's open questions (`observability-design.md` §11). Q3–Q5 rationale is the coordinator's (the advisor was unavailable), to be confirmed at the next review.
+- **Q1 — `/status` dead and misleading keys: removed.** `blocks.*`, `fec.actual_failure_rate`, `fec.pi_correction` go; `rtt_ms`, `throughput_mbps`, `cwnd`/`in_slow_start`, `jitter_us`, `symbols_received` are replaced by the catalogue's named instruments (the clock and unit in the name). The `status` CLI and `monitoring_test.rs` change with them.
+- **Q2 — OTLP `http/protobuf`** (the spec default) for now.
+- **Q3 — the flight recorder's sampling is a configurable ratio, like probabilistic tracing.** The deterministic seq-hash mask is the sampler (a `TraceIdRatioBased` analogue keyed on the symbol seq, so both ends and every recorder sample the same symbols); the ratio is one continuous parameter, read from the standard `OTEL_TRACES_SAMPLER=traceidratio` / `OTEL_TRACES_SAMPLER_ARG`. Default 1/64 always on; ratio 1 is the full-rate recorder.
+- **Q4 — the 10 ms lag probe: decided by measurement, rule fixed now.** Phase P1 measures its cost (ns bench + in-process CPU, metrics on vs off). If ≤ 0.1 % of a core and no §41c clause moves, it is always on at 10 ms; otherwise always on at 100 ms, with 10 ms enabled only together with the full-rate recorder.
+- **Q5 — collector tick 1 s, OTLP export 60 s** (the spec default `OTEL_METRIC_EXPORT_INTERVAL`, overridable by the standard variable). The harness reads the 1 s snapshot JSONL, never OTLP (battery rows are shorter than one export interval).
+- **Q6 — Prometheus through an OpenTelemetry Collector** (OTLP in, Prometheus out). No native `/metrics` renderer: OTLP is the single export path, so a second renderer would be one more rendering to keep consistent. ADR-0013's Layer 4 is superseded.
