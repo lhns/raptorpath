@@ -3,7 +3,7 @@
 //!
 //! Under `RWM_QUIC_CC=bbr_rs` the sender's `[QCC]` line carries, per path,
 //! `qm=` in {S, D, B, R} and numeric `qrt_us=`, `qsr_us=`, `qbw=`, `qmin_us=`
-//! and the read-cost `qcns=<last>/<reads>/<mean>`; under the default
+//! the read-cost `qcns=<last>/<reads>/<mean>` and the ProbeRtt counters `qrn=`, `qrus=`, `qrb=`, `qab=`, `qage_us=`; under the default
 //! substrate (quinn's BBR) there is no `[QCC]` line at all, while `[DIAG]` is
 //! still printing, so an absent line cannot be an unset gate. The `[DIAG]`
 //! per-path format is pinned and untouched. Own test binary: the spawned
@@ -61,7 +61,7 @@ fn qcc_line_reads_bbr_rs_and_is_absent_under_the_default_substrate() {
         for b in bs {
             let qm = b.get("qm").unwrap_or_else(|| panic!("qm missing in {l}"));
             assert!(matches!(qm.as_str(), "S" | "D" | "B" | "R"), "qm={qm} in {l}");
-            for k in ["qrt_us", "qsr_us", "qbw", "qmin_us"] {
+            for k in ["qrt_us", "qsr_us", "qbw", "qmin_us", "qrn", "qrus", "qrb", "qab", "qage_us"] {
                 b.get(k)
                     .unwrap_or_else(|| panic!("{k} missing in {l}"))
                     .parse::<u64>()
