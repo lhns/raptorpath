@@ -3102,3 +3102,125 @@ fn the_wire_mirror_writes_every_leg() {
     assert_eq!(sched.path(0).unwrap().wire_rtt(), Some(Duration::from_micros(3_000)));
     assert_eq!(sched.path(1).unwrap().wire_rtt(), Some(Duration::from_micros(9_000)));
 }
+
+// ===================================================================
+// Bounds on the sensitivity of the placement constants T = 0.15 and
+// w_div = 1.0 (CLAUDE.md rule 17: absolute, continuous, no thresholds).
+//
+// T and w_div are in units of `ref`, the fastest leg's ECHO srtt, which
+// includes send-buffer dwell: in seconds they are load-dependent. This
+// test does not say 0.15 is right. It BOUNDS what the constant decides at
+// the two operating points that matter, over the whole range the open-
+// constants register allows for T and over `ref` x0.5 .. x2, so a change
+// that moves the placement outside the bounds fails here rather than in a
+// battery.
+//
+// Fixtures (declared, not measured here): idle legs (in_flight = 0,
+// cwnd = 100, no loss), so cost_i = (1/2)*wire_i/ref (+ w_div*fate_i for
+// a SACK-gap retransmit, `fate` = 1 on its original leg).
+//   c8  leg0: echo 100 ms, wire 21 ms | leg1: echo 300 ms, wire 88 ms
+//   c1d leg0: echo  20 ms, wire  2 ms | leg1: echo  20 ms, wire  2 ms
+// `ref` is scaled by scaling BOTH echo srtts (wire RTTs stay put).
+//
+// Bounds are the min/max of the closed form sigmoid(-dC/T) over the grid
+// below, widened by 1 %. The shipped point (T = 0.15, scale 1) is pinned.
+//
+// NEEDS THE COORDINATOR'S COMPILE CHECK: written without cargo.
+// ===================================================================
+
+const T_GRID: [f64; 9] = [0.03, 0.05, 0.08, 0.10, 0.15, 0.20, 0.30, 0.45, 0.68];
+const REF_SCALES: [f64; 3] = [0.5, 1.0, 2.0];
+
+/// `(echo0_ms, wire0_ms, echo1_ms, wire1_ms)`, idle, scaled in `ref`.
+fn two_leg_at(fx: (f64, f64, f64, f64), ref_scale: f64) -> Scheduler {
+    wire_state(
+        ProtocolHint::Auto,
+        &[wleg(0, fx.0 * ref_scale, Some(fx.1)), wleg(1, fx.2 * ref_scale, Some(fx.3))],
+    )
+}
+
+/// `rel` of the value plus a 1e-12 absolute floor (the values reach 1e-25).
+fn within(got: f64, want: f64, rel: f64) -> bool {
+    (got - want).abs() <= rel * want.abs() + 1e-12
+}
+
+/// One operating point's declared bounds: `(lo, hi)` for P(slow leg gets a
+/// source symbol), P(a retransmit stays on leg 0), P(... stays on leg 1);
+/// and the pinned shipped-point values `(T = 0.15, scale 1)`.
+struct SensBounds {
+    p_slow: (f64, f64),
+    stay0: (f64, f64),
+    stay1: (f64, f64),
+    shipped: (f64, f64, f64),
+}
+
+fn assert_sensitivity(name: &str, fx: (f64, f64, f64, f64), b: &SensBounds) {
+    for &scale in &REF_SCALES {
+        let sched = two_leg_at(fx, scale);
+        for &t in &T_GRID {
+            let src = sched.place_probs_with_temperature(false, &[], t);
+            let p_slow = prob_of(&src, 1);
+            let r0 = sched.place_probs_with_temperature(true, &[0], t);
+            let r1 = sched.place_probs_with_temperature(true, &[1], t);
+            let (stay0, stay1) = (prob_of(&r0, 0), prob_of(&r1, 1));
+            let at = format!("{name} T={t} ref x{scale}");
+            assert!(
+                (b.p_slow.0..=b.p_slow.1).contains(&p_slow),
+                "{at}: P_slow {p_slow:e} outside {:?}", b.p_slow
+            );
+            assert!(
+                (b.stay0.0..=b.stay0.1).contains(&stay0),
+                "{at}: P(retx stays on leg 0) {stay0:e} outside {:?}", b.stay0
+            );
+            assert!(
+                (b.stay1.0..=b.stay1.1).contains(&stay1),
+                "{at}: P(retx stays on leg 1) {stay1:e} outside {:?}", b.stay1
+            );
+        }
+    }
+    let sched = two_leg_at(fx, 1.0);
+    let shipped = |covered: Option<PathId>| match covered {
+        None => prob_of(&sched.place_probs(false, &[]), 1),
+        Some(o) => prob_of(&sched.place_probs(true, &[o]), o),
+    };
+    assert!(within(shipped(None), b.shipped.0, 0.01), "{name} shipped P_slow {:e}", shipped(None));
+    assert!(within(shipped(Some(0)), b.shipped.1, 0.01), "{name} shipped stay0 {:e}", shipped(Some(0)));
+    assert!(within(shipped(Some(1)), b.shipped.2, 0.01), "{name} shipped stay1 {:e}", shipped(Some(1)));
+}
+
+/// c8: dC = (1/2)(88-21)/(100 ms x scale) = 0.335/scale, so the slow leg
+/// takes 0.097 of the source symbols at the shipped T, at most 0.439 at
+/// T = 0.68 with ref x2 and 2e-10 at T = 0.03 with ref x0.5. A SACK-gap
+/// retransmit stays on the fast leg with 0.0117 at the shipped T (<= 0.381
+/// anywhere on the grid), on the slow leg with 1.4e-4.
+#[test]
+fn placement_sensitivity_to_t_and_ref_is_bounded_at_c8() {
+    assert_sensitivity(
+        "c8",
+        (100.0, 21.0, 300.0, 88.0),
+        &SensBounds {
+            p_slow: (1.978e-10, 0.4431),
+            stay0: (8.79e-13, 0.3848),
+            stay1: (6.6e-25, 0.1538),
+            shipped: (0.096797, 0.011735, 1.3637e-4),
+        },
+    );
+}
+
+/// c1d: identical legs, so a source symbol splits exactly 1/2 whatever T and
+/// ref are, and a retransmit's only price is w_div = 1.0 on its original
+/// leg: it stays with sigmoid(-1/T) = 0.00127 at the shipped T, at most
+/// 0.187 at T = 0.68 (the diversity charge is the only thing T decides here).
+#[test]
+fn placement_sensitivity_to_t_and_ref_is_bounded_at_c1d() {
+    assert_sensitivity(
+        "c1d",
+        (20.0, 2.0, 20.0, 2.0),
+        &SensBounds {
+            p_slow: (0.5 - 1e-9, 0.5 + 1e-9),
+            stay0: (3.30e-15, 0.1888),
+            stay1: (3.30e-15, 0.1888),
+            shipped: (0.5, 0.0012710, 0.0012710),
+        },
+    );
+}
