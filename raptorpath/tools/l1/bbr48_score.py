@@ -359,7 +359,7 @@ def score(paths, out=print, dry=False):
     rows_all, tokens = pp.rows_of(paths)
     rows, rinfo = pp.apply_replacements(rows_all)
     aborted = sorted({t for t in tokens if t in pp.ABORT_TOKENS})
-    out("BBR_RS BATTERY (status 48b): BASE = main at launch (quinn BBR, n = 12 per cell), CAND = BASE + the §48 commits with RWM_QUIC_CC=bbr_rs (n = 12 per cell); "
+    out(f"BBR_RS BATTERY (status 48b): BASE = main {os.environ.get('LD_BASE_SHA', '(LD_BASE_SHA unset)')[:8]} (quinn BBR, n = 12 per cell), CAND = BASE + the §48 commits with RWM_QUIC_CC=bbr_rs (n = 12 per cell); "
         "cells c1s-400 / c1d-400 (5 GB), c2-100 / c8-100 (600 MB)")
     extra = f" (+{rinfo['n_extra']} replacement row{'s' if rinfo['n_extra'] != 1 else ''} in the ledger)" if rinfo["n_extra"] else ""
     out(f"ROWS {rinfo['n_slots']}/{pp.EXPECT_ROWS41C}{extra}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
