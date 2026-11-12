@@ -89,6 +89,10 @@ OUTDIR="${LD_OUTDIR:?LD_OUTDIR}"
 TAG="${LD_TAG:-ld}"
 TRIES="${LD_BRINGUP_TRIES:-2}"
 PLAN="${LD_PLAN:-24}"
+# Test seams (test_stubrun.py runs the launch path against stubs); on the VM none is set and the defaults are the real paths.
+DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"
+# TMPD: where the driver's per-row logs live. perf_rwm_c.sh itself writes /tmp, so a real run never sets it; only a stub driver may.
+TMPD="${LD_TMPD:-/tmp}"
 case "$PLAN" in 24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
@@ -176,7 +180,7 @@ if [ "$P41" = 1 ] || [ "$P46" = 1 ]; then
   [ "$GOTB" != "$WANT" ] || { _lb_say "ABORT-SHA BASE and MAIN binaries are identical"; exit 5; }
 fi
 # /proc/stat procs_running, a per-row covariate (status section 41).
-procs_running() { awk '/^procs_running/{print $2}' /proc/stat 2>/dev/null || echo -1; }
+procs_running() { awk '/^procs_running/{print $2}' "$PROCFS"/stat 2>/dev/null || echo -1; }
 if pgrep -x raptorpath >/dev/null 2>&1; then
   _lb_say "BUSY: raptorpath already running -- aborting"; exit 3
 fi
@@ -196,7 +200,7 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
 }
 
 # /proc/pressure/io `full avg10`: a per-row covariate (flagged in the parser, never a void).
-io_full10() { awk '/^full/{for(i=1;i<=NF;i++) if($i ~ /^avg10=/){sub("avg10=","",$i); print $i}}' /proc/pressure/io 2>/dev/null || echo -1; }
+io_full10() { awk '/^full/{for(i=1;i<=NF;i++) if($i ~ /^avg10=/){sub("avg10=","",$i); print $i}}' "$PROCFS"/pressure/io 2>/dev/null || echo -1; }
 
 run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|BRS<n>|PWR|KNEE|WIRE; knee = the cell's knee n, KNEE only; plan 38: the 5th is the store, def|<n>)
   local cell="$1" arm="$2" seed="$3" rep="$4" knee="${5:-}" ca cb mode bytes t0 rc wall attempt sha
@@ -266,7 +270,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
       _lb_say "ABORT-SHA $name s$seed rep=$rep: $sha != $RWANT -- battery stopped"; exit 5
     fi
     echo "=== rep=$rep seed=$seed cell=$cell arm=$arm attempt=$attempt pipeline=window hint=bulk spec=$ca/$cb/$mode bytes=$bytes arm_env='${arm_env[*]}' bin=$RBIN sha=${sha:0:16} $(date -u +%T)" >> "$OUT"
-    rm -f /tmp/rwm-c.log /tmp/rwm-s.log /tmp/ld-drv.out /tmp/rwm-evt.txt /tmp/rwm-evtq.txt
+    rm -f "$TMPD/rwm-c.log" "$TMPD/rwm-s.log" "$TMPD/ld-drv.out" "$TMPD/rwm-evt.txt" "$TMPD/rwm-evtq.txt"
     # Plan 36: the CAP arm's pcap dir on tmpfs (fresh per attempt); NOCAP and the other plans set no RWM_PCAP_DIR.
     pdir="$OUTDIR/pcap/${name}-s${seed}-r${rep}-a${attempt}"
     cap_env=()
@@ -285,39 +289,39 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
         "${arm_env[@]}" "${evt_env[@]}" "${RDIAG_ENV[@]}" "${cap_env[@]}" \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 "${INSTR_ENV[@]}" \
         RWM_C_PIPELINE=window RWM_BIN="$RBIN" \
-      bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" > /tmp/ld-drv.out 2>&1
+      bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" > "$TMPD/ld-drv.out" 2>&1
     rc=$?
     wall=$(( $(date +%s) - t0 ))
     cot_a=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     io_a=$(io_full10)
     procs_a=$(procs_running)
     io_max=$(awk -v a="$io_b" -v b="$io_a" 'BEGIN{print (a>b)?a:b}')
-    echo "COTENANT $name s$seed rep=$rep before=$cot_b after=$cot_a load=$(cut -d" " -f1-3 /proc/loadavg)" >> "$OUT"
-    echo "IOPRESSURE $name s$seed rep=$rep full_avg10_before=$io_b full_avg10_after=$io_a $(grep '^full' /proc/pressure/io)" >> "$OUT"
+    echo "COTENANT $name s$seed rep=$rep before=$cot_b after=$cot_a load=$(cut -d" " -f1-3 "$PROCFS"/loadavg)" >> "$OUT"
+    echo "IOPRESSURE $name s$seed rep=$rep full_avg10_before=$io_b full_avg10_after=$io_a $(grep '^full' "$PROCFS"/pressure/io)" >> "$OUT"
     echo "PROCS $name s$seed rep=$rep procs_running_before=$procs_b procs_running_after=$procs_a" >> "$OUT"
-    grep -aE "$KEEP_PAT" /tmp/ld-drv.out >> "$OUT" || true
+    grep -aE "$KEEP_PAT" "$TMPD/ld-drv.out" >> "$OUT" || true
     echo "RUNTIME $name s$seed rep=$rep attempt=$attempt ${wall}s rc=$rc" >> "$OUT"
     [ "$rc" = "0" ] || echo "ABORT-RC $name s$seed rep=$rep rc=$rc (row void, battery goes on)" >> "$OUT"
     local base="$DDIR/${name}-s${seed}-r${rep}-a${attempt}"
-    cp /tmp/ld-drv.out "$base-drv.out" 2>/dev/null || true
-    cp /tmp/rwm-c.log "$base-c.log" 2>/dev/null || true
-    cp /tmp/rwm-s.log "$base-s.log" 2>/dev/null || true
-    cp /tmp/rwm-evt.txt "$base-evt.txt" 2>/dev/null || true
-    cp /tmp/rwm-evtq.txt "$base-evtq.txt" 2>/dev/null || true
-    if [ "$rc" = "0" ] && ! grep -aq '"summary"' /tmp/rwm-c.log 2>/dev/null \
+    cp "$TMPD/ld-drv.out" "$base-drv.out" 2>/dev/null || true
+    cp "$TMPD/rwm-c.log" "$base-c.log" 2>/dev/null || true
+    cp "$TMPD/rwm-s.log" "$base-s.log" 2>/dev/null || true
+    cp "$TMPD/rwm-evt.txt" "$base-evt.txt" 2>/dev/null || true
+    cp "$TMPD/rwm-evtq.txt" "$base-evtq.txt" 2>/dev/null || true
+    if [ "$rc" = "0" ] && ! grep -aq '"summary"' "$TMPD/rwm-c.log" 2>/dev/null \
         && [ "$attempt" -lt "$TRIES" ]; then
       echo "RUN-RETRY $name s$seed rep=$rep attempt=$attempt (no summary)" >> "$OUT"
       continue
     fi
     break
   done
-  if [ "$rc" = "0" ] && ! grep -aq '"summary"' /tmp/rwm-c.log 2>/dev/null; then
+  if [ "$rc" = "0" ] && ! grep -aq '"summary"' "$TMPD/rwm-c.log" 2>/dev/null; then
     echo "ABORT-BRINGUP $name s$seed rep=$rep after $TRIES attempts: NO_DATA" >> "$OUT"
   fi
   [ $(( cot_b + cot_a )) -gt 0 ] && cot=1
   ondisk=0
-  case "$RBIN" in /dev/shm/*) ;; *) ondisk=1 ;; esac
-  case "$OUTDIR" in /dev/shm/*) ;; *) ondisk=1 ;; esac
+  case "$RBIN" in "$DEVSHM"/*) ;; *) ondisk=1 ;; esac
+  case "$OUTDIR" in "$DEVSHM"/*) ;; *) ondisk=1 ;; esac
   local parser=./loopdiag_parse.py
   [ "$P38" = 1 ] && parser=./place38_parse.py
   [ "$P43" = 1 ] && parser=./place43_parse.py
@@ -325,7 +329,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
   if LD_PLAN="$PLAN" LD_ROW_BYTES="$rowbytes" LD_ONDISK="$ondisk" LD_IO_FULL10="$io_max" LD_IO_B="$io_b" LD_IO_A="$io_a" LD_PROCS_B="$procs_b" LD_PROCS_A="$procs_a" LD_PCAP_DIR="$pdir" LD_TABLE_DIR="$OUTDIR/tables" P38_STORE="${p38store:-def}" \
       P46_VARIANT="$variant" LD_EVT="$base-evt.txt" LD_EVTQ="$base-evtq.txt" \
       python3 "$parser" row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
-      /tmp/ld-drv.out /tmp/rwm-c.log /tmp/rwm-s.log "$cot" "$sha" >> "$OUT" 2>&1; then
+      "$TMPD/ld-drv.out" "$TMPD/rwm-c.log" "$TMPD/rwm-s.log" "$cot" "$sha" >> "$OUT" 2>&1; then
     # Scored (summary in the ledger, per-skb tables kept): only now do the pcaps go.
     { [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; } && rm -rf "$OUTDIR/pcap/${name}-s${seed}-r${rep}-"a*
   else

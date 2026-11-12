@@ -93,6 +93,8 @@ case "$PLAN" in
   48) P_SMOKE=smoke48; P_SCORE=score48; P_CHECK=check48 ;;        # unused: the stage below picks them
   *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|47|48)"; exit 3 ;;
 esac
+# Test seams (test_stubrun.py runs this script end to end against stubs); on the VM none is set and the defaults are the real paths.
+DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-/home/vibe/rp.lock}"
 # LD_REHEARSE=1 (plans 41c, 46, 47, 48; status 48b amendment 1): the launch path up to and including each smoke and its check (gates, locks, builds,
 # binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites (unless LD_PRIOR_TESTS names a run to verify) and no battery.
 REHEARSE="${LD_REHEARSE:-0}"
@@ -124,7 +126,7 @@ fi
 # binary live under LD_SHM; the build stays on disk; persist() copies the run
 # dir to $ROOT/run after the last row (and on every exit path).
 SHM="${LD_SHM:?LD_SHM (a /dev/shm dir)}"
-case "$SHM" in /dev/shm/*) ;; *) echo "ABORT-SHM $SHM is not under /dev/shm"; exit 3 ;; esac
+case "$SHM" in "$DEVSHM"/*) ;; *) echo "ABORT-SHM $SHM is not under $DEVSHM"; exit 3 ;; esac
 RUN="$SHM/run"
 SRC="$ROOT/src/raptorpath"
 TARGET="$ROOT/target"
@@ -152,24 +154,24 @@ era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$RUN/all-era.txt"; }
 fail_all() { era "LD-ALL FAILED: $*"; touch "$RUN/FAILED-ALL"; persist; exit 5; }
 LB_TAG="loopdiag_run_all:$$"
 LB_LOG="$RUN/all-era.txt"
-era "LD-ALL start plan=$PLAN load=$(cat /proc/loadavg)"
+era "LD-ALL start plan=$PLAN load=$(cat "$PROCFS"/loadavg)"
 install_lock_traps
 # Wait read-only (test -e only) until both locks are free, then take them with
 # lib_battery.sh take_lock (noclobber + flock on a <> fd). A lost race aborts
 # with ABORT-LOCK and nothing run; relaunch.
-until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
-prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' /proc/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
+until ! test -e "$LOCK_VM" && ! test -e "$LOCK_RP"; do sleep 30; done
+prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' "$PROCFS"/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
 if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   : "${LD_HARD:?LD_HARD (epoch) is required for plan $PLAN}"
   PREC=$(prec_samples)
   if [ "${PREC%% *}" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
     era "ABORT-PRECONDITION ${PREC#* }; NOTHING WAS RUN"; exit 3
   fi
-  era "LD-ALL precondition met ${PREC#* } io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL precondition met ${PREC#* } io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
-take_lock /tmp/rwm-vm.lock
-take_lock /home/vibe/rp.lock
-era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
+take_lock "$LOCK_VM"
+take_lock "$LOCK_RP"
+era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
 
 python3 ./test_loopdiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"
 if [ "$P43" = 1 ]; then
@@ -322,11 +324,11 @@ suites_stage() {
 # Plans 46 / 41c with LD_P46_SUITES=1 (status 49): after run_suites is defined (it was called above its definition before).
 if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "$PLAN" != "48" ] && { [ "${LD_P46_SUITES:-0}" = "1" ] || [ -n "${LD_PRIOR_TESTS:-}" ]; }; then
   suites_stage
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 if [ "$PLAN" = "41" ]; then
   run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 if [ "$PLAN" = "34" ]; then
   # Amendment 2: a relaunch on the same engine tree may reuse a green suite run of that
@@ -338,14 +340,14 @@ if [ "$PLAN" = "34" ]; then
   else
     run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
   fi
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 
 # ── plan 47: suites on CAND's tree, then the guard (41c), then the path-event test (46); one ledger subdir each ──────────────────
 if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   SD="$RUN/suites"; mkdir -p "$SD"
   suites_stage
-  era "LD-ALL suites ok; before the $([ "$PLAN" = "48" ] && echo smoke || echo guard) $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL suites ok; before the $([ "$PLAN" = "48" ] && echo smoke || echo guard) $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
   stage() { # name plan: smoke -> battery -> score -> check, all in $RUN/<name>; rc 0 iff the stage ran to the end
     local name="$1" splan="$2" dir="$RUN/$1" smk scr chk bto brc ok=0
     case "$splan" in
@@ -356,7 +358,7 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
     mkdir -p "$dir"
     # LD_BASE_SHA rides explicitly: `sudo -n env` resets the environment, and the row parser reads it (status 49).
     local SENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$dir" LD_PLAN="$splan" LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE" LD_BASE_SHA="${LD_BASE_SHA:-}")
-    era "LD-ALL stage $name (plan $splan) smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+    era "LD-ALL stage $name (plan $splan) smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
     sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
     if [ "$?" != "0" ] || ! python3 ./loopdiag_parse.py "$smk" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; then
       cat "$dir/smoke-check.txt" 2>/dev/null
@@ -449,7 +451,7 @@ era "LD-ALL SMOKE-PASS"
 if [ "$REHEARSE" = 1 ]; then touch "$RUN/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS (smoke only, no battery)"; persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
 
 T0=$(date +%s)
-era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
+era "LD-ALL battery start load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
 BTO=10800
 if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   BTO=$(( LD_HARD - $(date +%s) ))
@@ -469,7 +471,7 @@ else
 fi
 BAT_OK=0
 [ "$BRC" = "0" ] && python3 ./loopdiag_parse.py "$P_CHECK" "$RUN/ld.log" && BAT_OK=1
-era "LD-ALL end bat_ok=$BAT_OK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-') load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
+era "LD-ALL end bat_ok=$BAT_OK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-') load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
 
 if [ "$PLAN" = "27" ]; then
   persist
