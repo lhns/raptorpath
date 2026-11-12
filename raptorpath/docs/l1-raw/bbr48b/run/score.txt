@@ -1,0 +1,2 @@
+BBR_RS BATTERY (status 48b): suites/TESTS.txt, bbr48/score.txt
+VERDICT48 REGRESSION
