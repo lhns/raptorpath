@@ -324,7 +324,8 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
       46) smk=smoke46; scr=score46; chk=check46 ;;
     esac
     mkdir -p "$dir"
-    local SENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$dir" LD_PLAN="$splan" LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE")
+    # LD_BASE_SHA rides explicitly: `sudo -n env` resets the environment, and the row parser reads it (status 49).
+    local SENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$dir" LD_PLAN="$splan" LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE" LD_BASE_SHA="${LD_BASE_SHA:-}")
     era "LD-ALL stage $name (plan $splan) smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
     sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
     if [ "$?" != "0" ] || ! python3 ./loopdiag_parse.py "$smk" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; then
@@ -393,7 +394,7 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   fail_all "stage p46 did not complete (p46/)"
 fi
 
-BENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$RUN" LD_PLAN="$PLAN")
+BENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$RUN" LD_PLAN="$PLAN" LD_BASE_SHA="${LD_BASE_SHA:-}")
 [ "$P41" = 1 ] && BENV+=(LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE")
 sudo -n env "${BENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
 SRC_RC=$?
