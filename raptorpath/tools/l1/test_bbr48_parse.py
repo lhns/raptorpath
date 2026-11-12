@@ -412,7 +412,7 @@ else:
     check("dry-run ledger present", False, LEDGER)
 
 check("run_all plan 48: LD_REHEARSE=1 skips the suites, stops after the smoke check with REHEARSAL-PASS (return 2) and exits 0 with LD-ALL-REHEARSAL-DONE (status 48b amendment 1)",
-      '[ "$PLAN" = "48" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then era "LD-ALL suites SKIPPED (rehearsal)"' in runall
+      '[ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"' in runall
       and 'touch "$dir/REHEARSAL-PASS"' in runall and 'return 2; fi' in runall
       and 'if [ "$src" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi' in runall
       and runall.index('touch "$dir/SMOKE-PASS"') < runall.index('touch "$dir/REHEARSAL-PASS"') < runall.index('LD_TAG=ld bash ./loopdiag_battery.sh'))

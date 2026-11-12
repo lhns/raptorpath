@@ -42,7 +42,7 @@ e_old, e_new = pp.eta_last([OLD]), pp.eta_last([NEW])
 check("run_all: BASE's COMMIT pin is LD_BASE_SHA when set (new main as BASE), else the historical 4926822",
       'BASE_PIN="${LD_BASE_SHA:-4926822}"' in runall and 'in "$BASE_PIN"*) ;;' in runall and "4926822*) ;;" not in runall)
 check("run_all: the LD_P46_SUITES call of run_suites comes after its definition (§49 session 1 ABORT-TESTS: called before defined)",
-      runall.index("run_suites() {") < runall.index('[ "${LD_P46_SUITES:-0}" = "1" ]; then\n  run_suites'))
+      runall.index("run_suites() {") < runall.index('[ "${LD_P46_SUITES:-0}" = "1" ]; then\n  if [ "$REHEARSE" = 1 ]') < runall.index('else run_suites || fail_all "ABORT-TESTS (TESTS.txt)"; fi'))
 check("run_all: a suites run under LD_P46_SUITES runs every tools/l1 python test (status 49)",
       '|| { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then' in runall)
 check("run_all: LD_BASE_SHA rides through `sudo -n env` in both battery env arrays (sudo resets the environment; §49 session 5 ABORT-SMOKE)",

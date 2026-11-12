@@ -93,6 +93,12 @@ case "$PLAN" in
   48) P_SMOKE=smoke48; P_SCORE=score48; P_CHECK=check48 ;;        # unused: the stage below picks them
   *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|47|48)"; exit 3 ;;
 esac
+# LD_REHEARSE=1 (plans 41c, 46, 47, 48; status 48b amendment 1): the launch path up to and including each smoke and its check (gates, locks, builds,
+# binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites and no battery.
+REHEARSE="${LD_REHEARSE:-0}"
+if [ "$REHEARSE" = 1 ]; then
+  case "$PLAN" in 41c|46|47|48) ;; *) echo "ABORT-REHEARSE LD_REHEARSE=1 is defined for plans 41c|46|47|48 only, not $PLAN; NOTHING WAS RUN"; exit 3 ;; esac
+fi
 # Plans 43 and 43b share the oracle code path (P43=1). Plan 43b refuses to launch while its plan variables are unset (nothing run).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 if [ "$PLAN" = "43b" ]; then
@@ -136,7 +142,7 @@ else
   mkdir -p "$RUN" "$SHM/bin"
 fi
 persist() { mkdir -p "$ROOT/run" && cp -a "$RUN/." "$ROOT/run/" && echo "PERSISTED $RUN -> $ROOT/run $(date -u +%FT%TZ)"; }
-SENTINELS="DONE-ALL FAILED-ALL all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
+SENTINELS="DONE-ALL FAILED-ALL all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS REHEARSAL-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
 probe_sentinel "$RUN/all.out"
 exec > >(tee -a "$RUN/all.out") 2>&1
 LB_PROOF_EXTRA="launch=$(date -u +%FT%TZ)" prove_sentinels "$RUN" $SENTINELS
@@ -291,7 +297,8 @@ run_suites() {
 }
 # Plans 46 / 41c with LD_P46_SUITES=1 (status 49): after run_suites is defined (it was called above its definition before).
 if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "$PLAN" != "48" ] && [ "${LD_P46_SUITES:-0}" = "1" ]; then
-  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
+  if [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
+  else run_suites || fail_all "ABORT-TESTS (TESTS.txt)"; fi
   era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
 fi
 if [ "$PLAN" = "41" ]; then
@@ -314,8 +321,7 @@ fi
 # ── plan 47: suites on CAND's tree, then the guard (41c), then the path-event test (46); one ledger subdir each ──────────────────
 if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   SD="$RUN/suites"; mkdir -p "$SD"
-  # LD_REHEARSE=1 (plan 48 only, status 48b amendment 1): the builds, the smoke rows and their check, then stop; no suites, no battery.
-  if [ "$PLAN" = "48" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then era "LD-ALL suites SKIPPED (rehearsal)"
+  if [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
   else run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"; fi
   era "LD-ALL suites ok; before the $([ "$PLAN" = "48" ] && echo smoke || echo guard) $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
   stage() { # name plan: smoke -> battery -> score -> check, all in $RUN/<name>; rc 0 iff the stage ran to the end
@@ -338,7 +344,7 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
       return 1
     fi
     cat "$dir/smoke-check.txt"; touch "$dir/SMOKE-PASS"; era "LD-ALL stage $name SMOKE-PASS"
-    if [ "$splan" = "48" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then touch "$dir/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS stage $name (smoke only, no battery)"; return 2; fi
+    if [ "$REHEARSE" = 1 ]; then touch "$dir/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS stage $name (smoke only, no battery)"; return 2; fi
     bto=$(( LD_HARD - $(date +%s) ))
     if [ "$bto" -lt 1800 ]; then era "ABORT-BUDGET stage $name: ${bto}s left before LD_HARD (need 1800)"; return 1; fi
     local T1; T1=$(date +%s)
@@ -390,7 +396,13 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
     fail_all "stage bbr48 did not complete (bbr48/)"
   fi
   GOK=0; EOK=0
-  stage guard 41c && GOK=1
+  stage guard 41c; grc=$?
+  if [ "$grc" = "2" ]; then        # rehearsal: the guard's smoke passed; the path-event test's check rows are the second smoke
+    stage p46 46; prc=$?
+    if [ "$prc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
+    fail_all "rehearsal: stage p46 smoke did not pass (p46/)"
+  fi
+  [ "$grc" = "0" ] && GOK=1
   [ "$GOK" = "1" ] || fail_all "stage guard did not complete (guard/)"
   stage p46 46 && EOK=1
   { echo "MERGE-CANDIDATE SESSION (status 47): suites/TESTS.txt, guard/score.txt, p46/score.txt"; for f in guard p46; do echo "== $f"; grep -a '^VERDICT' "$RUN/$f/score.txt"; done; } > "$RUN/score.txt"
@@ -412,6 +424,7 @@ fi
 cat "$RUN/smoke-check.txt"
 touch "$RUN/SMOKE-PASS"
 era "LD-ALL SMOKE-PASS"
+if [ "$REHEARSE" = 1 ]; then touch "$RUN/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS (smoke only, no battery)"; persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
 
 T0=$(date +%s)
 era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
