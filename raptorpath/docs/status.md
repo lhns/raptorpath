@@ -13451,3 +13451,43 @@ at every phase (share 0.75–0.85).
 **6. Before VM contact:** the harness (plan 48 in `loopdiag_*`, `tools/l1/bbr48_score.py`, `test_bbr48_parse.py`) is built and tested; the scorer dry-runs on §41c session 2's BASE rows and reproduces its GATE-41c verdict and resolution table bit-for-bit when given the same rows as both arms' pool; the trees are pinned by amendment.
 
 **7. After the verdict (unchanged from §48).** `PROMOTE-ELIGIBLE` or `CONTROLLED-WITH-COST` goes to the user, who rules on flipping `RWM_QUIC_CC` (a new ADR superseding ADR-0054's default, and quinn's path deleted unless kept as a reference arm). `NOT-CONTROLLED` or `REGRESSION` goes to the user to choose: archive (`archive/bbr-rs`) or §47's option 1 or 3. Nothing merges to main automatically. **The registered prediction stays `CONTROLLED-WITH-COST`** (failing R1 on c2/c8 goodput, wrtt at c2 ≤ 0.3 × BASE).
+
+
+## 49. Simplify batch 1 (`simplify-2`) against main — the guard session — pre-registration (before any VM contact)
+
+**What is tested.** `simplify-1` (from old main `4926822`) deletes the default-off arms `RWM_PLAIN_RS`, `RWM_RS_ATTR`, `RWM_HONEST_K`, `RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`, `RWM_REPAIR_WAIT`, `RWM_PROACTIVE_PACER`, `RWM_REASM_BDP` and `RWM_COMPOSED_CAP` plus dead code; each arm is tagged `archive/RWM_*`. `simplify-2` is that work with current main merged in. On the default path every deleted gate resolved off or inert, so the expected behaviour change is none. **The guard asks whether the deletions are free.**
+
+**Trees.**
+- **BASE = main at launch** (`LD_BASE_SHA`, full sha, recorded by amendment).
+- **CAND = `simplify-2`** (main merged in, so `git diff BASE CAND -- raptorpath/src` is the deletions alone), pinned by amendment (`LD_CAND_SHA`).
+
+**Session (`LD_PLAN=41c`, `LD_P46_SUITES=1`).** The suites on CAND's tree first (release, doc, wasm, debug-witness, every `tools/l1` test; a REAL failure is `ABORT-TESTS`), then §41c's guard exactly: `rank-minp`, N_PERM 10 000, seed 4141, one-sided, PASS iff p > 0.05; 26 clauses; BASE n = 12 and CAND n = 12 at c1s-400, c1d-400, c2-100 and c8-100 default (96 rows plus the 2-row smoke); §41c's DNF rule and replacement rule (≤ 4 witness-voided slots, re-run once); an incomplete design reads NO VERDICT. No §46 stage.
+
+**Readouts.** The guard's verdict block, the §21 readings, the tail line, QCWND-BELOW-BDP; on the host afterwards the resolution table (`resolution41c`, reported only).
+
+**Prediction.** PASS. Every deleted arm is off on the default path; the risk is a merge error in the shared files (`net/diag.rs`, `net/control_msg.rs`, `scheduler/*`), which the suites and the guard both see.
+
+**Decision rule.**
+- **PASS:** `simplify-2` merges to main (`--no-ff`), and status §1's on-list drops `RWM_RS_ATTR` and the `RWM_POOL_ANCHOR` / `RWM_HONEST_CAP` / `RWM_PLAIN_RS` sentences in the same merge, with the `[GATES]` byte pin.
+- **FAIL:** no merge; the failing clause, its size and the resolution table go to the user. Bisection is by arm (one commit per arm on `simplify-1`).
+- **NO VERDICT:** re-run.
+- **ABORT-TESTS:** fixed on the branch and re-run.
+
+§48b's BASE is pinned only after this verdict, to main as it then is.
+
+**§49 amendment 1 (before VM contact): the trees.**
+- **BASE = main `b3000701f440d11b1b5ad946c8b36c3623c770cd`** (`LD_BASE_SHA`). Later main commits are status-only.
+- **CAND = `simplify-2` `c634f3326254767d0fd03a99efb8078ca5e52fa3`** (`LD_CAND_SHA`): main merged in, so `git diff BASE CAND -- raptorpath/src` is the deletions alone (20 files, +142 / −2 665).
+- **Host checks at CAND:** `cargo check --all-targets` rc 0; all 28 `tools/l1` python tests pass. The host lib suites were not run: the host disk filled (os error 112). The session's suites are the test of record.
+- **Merge review:** `[DIAG]` per path loses `kraw=` and `sr=…/g…d…` (the deleted `RWM_HONEST_K` and `RWM_POOL_ANCHOR` gauges). No `tools/l1` parser reads either field; they appear only in test fixtures.
+
+**§49 session 1: `ABORT-TESTS` before any test ran** (2026-11-12T04:16:47Z). A harness defect: plan 41c's `LD_P46_SUITES` path called `run_suites` above its definition in `loopdiag_run_all.sh` (the path had never run; plan 47 calls the suites further down). Both binaries built (BASE `a3399061…`, identical to §41c session 2's CAND binary, as `raptorpath/src` is). Fixed on main `baa92d5` (the call moved below the definition, and that path now runs every `tools/l1` python test, as §49 registered), with two harness tests.
+
+**§49 amendment 2 (before VM contact): re-pinned CAND.** CAND = `simplify-2` `cd84a7f6a2feecc47cc522a2d0fbd3b900d505f4` (main `baa92d5` merged in; `raptorpath/src` unchanged from amendment 1's CAND). BASE stays `b3000701` (main's later commits touch no `raptorpath/src`).
+
+**§49 session 2: `ABORT-TESTS`** (CAND `cd84a7f6`, 2026-11-12T05:22:10Z). Release 1131 passed / 2 failed, debug-witness 994 / 2, doc ok, wasm 35, every `tools/l1` python test ok. The two failures, in both profiles: `the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs` (no `[DIAG]` tick with a cwnd-full path) and `the_frontier_arm_runs_and_moves_the_argmin_on_the_dual` (`hol_mv=0`; release passed on the solo re-run).
+- **Not a default-path change.** Both tests set `RWM_PLAIN_RS=1`. On main that ran the plain-RS store with `RWM_HONEST_CAP` (default on) live, and that arm is what drove the path to its window. Bisect (fresh target per commit): first bad `c8aaff29`, the `RWM_HONEST_CAP` removal. Control: main `4926822` with the tests' `RWM_PLAIN_RS=0` (the default path) fails the same way: sigma 0 of 13 saturated ticks in 2 of 2 runs, frontier 1 of 2.
+- **Discarded evidence:** an earlier sweep shared one target dir across 13 source trees, so every test ran a stale pre-simplify binary (`RWM_POOL_ANCHOR` strings present) and read "pass". Its results are void.
+- **Fix** (`simplify-2` `b1673419`, tests only): both tests set `RWM_STORE=4096` in place of the dead `RWM_PLAIN_RS=1`. Sigma passes 3 of 3; place_arms' other four tests pass. The frontier assertion is `#[ignore]` with its evidence: on the default path the frontier term moves the argmin in only some runs (2 of 3 at 4096, 5 of 6 at 16384, 1 of 2 on main). The arm `RWM_PLACE_HOL` is default off; INERT-AS-DERIVED is its reading.
+
+**§49 amendment 3 (before VM contact): re-pinned CAND** = `simplify-2` `b16734195caf5de56c3cc6b895aa9f77289705c7` (`raptorpath/src` unchanged; two test files differ from amendment 2's CAND). BASE stays `b3000701`.

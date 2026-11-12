@@ -41,6 +41,10 @@ NEW = OLD.replace("w_mv=0.2000 ", "")
 e_old, e_new = pp.eta_last([OLD]), pp.eta_last([NEW])
 check("run_all: BASE's COMMIT pin is LD_BASE_SHA when set (new main as BASE), else the historical 4926822",
       'BASE_PIN="${LD_BASE_SHA:-4926822}"' in runall and 'in "$BASE_PIN"*) ;;' in runall and "4926822*) ;;" not in runall)
+check("run_all: the LD_P46_SUITES call of run_suites comes after its definition (§49 session 1 ABORT-TESTS: called before defined)",
+      runall.index("run_suites() {") < runall.index('[ "${LD_P46_SUITES:-0}" = "1" ]; then\n  run_suites'))
+check("run_all: a suites run under LD_P46_SUITES runs every tools/l1 python test (status 49)",
+      '|| { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then' in runall)
 check("[ETA]: the promoted line (ends `ref_fl= w_cold= w_n= w_calls=`, no w_mv) parses: w_mv None, the rest as before",
       e_new is not None and e_new["w_mv"] is None and e_new["w_n"] == 500 and e_new["w_calls"] == 1000 and e_new["ref_fl"] == "0.0000" and e_new["w_cold"] == "0.0100"
       and e_new["e_p50"][0] == "900" and e_new["cold_ge"] == "0.2500", e_new)
