@@ -314,7 +314,9 @@ fi
 # ── plan 47: suites on CAND's tree, then the guard (41c), then the path-event test (46); one ledger subdir each ──────────────────
 if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   SD="$RUN/suites"; mkdir -p "$SD"
-  run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"
+  # LD_REHEARSE=1 (plan 48 only, status 48b amendment 1): the builds, the smoke rows and their check, then stop; no suites, no battery.
+  if [ "$PLAN" = "48" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then era "LD-ALL suites SKIPPED (rehearsal)"
+  else run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"; fi
   era "LD-ALL suites ok; before the $([ "$PLAN" = "48" ] && echo smoke || echo guard) $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
   stage() { # name plan: smoke -> battery -> score -> check, all in $RUN/<name>; rc 0 iff the stage ran to the end
     local name="$1" splan="$2" dir="$RUN/$1" smk scr chk bto brc ok=0
@@ -336,6 +338,7 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
       return 1
     fi
     cat "$dir/smoke-check.txt"; touch "$dir/SMOKE-PASS"; era "LD-ALL stage $name SMOKE-PASS"
+    if [ "$splan" = "48" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then touch "$dir/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS stage $name (smoke only, no battery)"; return 2; fi
     bto=$(( LD_HARD - $(date +%s) ))
     if [ "$bto" -lt 1800 ]; then era "ABORT-BUDGET stage $name: ${bto}s left before LD_HARD (need 1800)"; return 1; fi
     local T1; T1=$(date +%s)
@@ -378,7 +381,9 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   }
   if [ "$PLAN" = "48" ]; then
     BOK=0
-    stage bbr48 48 && BOK=1
+    stage bbr48 48; src=$?
+    if [ "$src" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
+    [ "$src" = "0" ] && BOK=1
     { echo "BBR_RS BATTERY (status 48b): suites/TESTS.txt, bbr48/score.txt"; grep -a '^VERDICT' "$RUN/bbr48/score.txt"; } > "$RUN/score.txt"
     era "LD-ALL end plan 48 ok=$BOK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
     if [ "$BOK" = "1" ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi
