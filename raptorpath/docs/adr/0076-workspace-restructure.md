@@ -31,9 +31,10 @@ on `main` at 3bec7652:
   raptorpath-math --release`) ran 1 283–1 522 s wall in four archived
   sessions; its build phase was 12 m 54 s–17 m 10 s of that and the summed
   test run times 468–506 s. The `test`-profile build of the same tree (opt
-  2, no LTO, debuginfo) took 10 m 15 s–14 m 48 s. So fat LTO is not the
-  dominant build cost. How much of the build is the 86 per-binary links has
-  not been measured (`cargo build --release --tests --timings` would).
+  2, no LTO, debuginfo) took 10 m 15 s–14 m 48 s. The two builds cost about
+  the same, but they differ in LTO, codegen units, opt level and debuginfo
+  at once, so nothing here isolates the cost of LTO or of the 86 per-binary
+  links (`cargo build --release --tests --timings` would).
 - **Derivations.** Six branches (`derive-w1`, `adr68-amend`, `paper-recon`,
   `perleg-design`, `w1r2`, `otel-design`) each add files under
   `raptorpath/docs/derivations/`, with no name clashes and no index.
@@ -89,8 +90,9 @@ removed. `vendor/** -text` stays after the `*` rule so it wins.
   flags. Keep `crlf_guard` (cheap, tested); drop the flags from the launch
   recipe once BASE is post-rule.
 - **Gate:** `git ls-files --eol | grep -c 'w/crlf'` is 0 after the
-  re-checkout; an archive of HEAD extracted on the host has no CR byte in
-  `*.sh` / `*.py`.
+  re-checkout; `git archive HEAD | tar -xO | tr -cd '\r' | wc -c` is 0.
+  Count CR bytes with `tr`, not `grep $'\r'`: Git Bash's grep strips CR and
+  matches every line (it reported 392 "CR lines" for a file with none).
 
 ### Phase 2 — ledgers out of archives and worktrees
 
@@ -135,7 +137,17 @@ the crate.
 - **Citations survive.** 96 of 101 ledger citations are written
   `docs/l1-raw/...` and 106 of 110 harness citations `tools/l1/...`; after
   the move they read as root-relative paths. Only the
-  `raptorpath/docs/...` / `raptorpath/tools/...` spellings need editing.
+  `raptorpath/docs/...` / `raptorpath/tools/...` spellings need editing. The
+  reverse holds for crate-relative citations in the docs (`src/net/...`,
+  36 in status and the paper): they stop being root-relative; left as prose.
+- **Phase 2's lines move too.** The `export-ignore` paths in
+  `.gitattributes` are spelled `raptorpath/docs/l1-raw/...` and are rewritten
+  in the fix-up commit (with option (b) they become one line).
+- **Checked and unaffected:** `raptorpath-visualizer/build_visualizer.sh`
+  (works from the workspace root, names no `docs/` or `tools/` path) and the
+  `CLAUDE.md` enforcement paths (`raptorpath-visualizer/*.mjs`,
+  `raptorpath-wasm`); only its two `measurement-discipline.md` pointers
+  change.
 - **Engine bytes.** `gates.rs:598` (test code) reads
   `CARGO_MANIFEST_DIR/tools/l1/lib.sh`; the fix-up edits engine source, so
   the suite-reuse manifest changes and the first post-move session runs the
@@ -181,16 +193,24 @@ step changes engine bytes, so each needs the §41c guard and the ns bench.
    visited the files it is meant to cover and walks every crate the engine's
    code lives in, and each negative bound is paired with a positive one that
    locates the guarded code.
-2. **`net/` submodules** along sender / receiver / recovery / control.
+2. **The suite-reuse manifest.** `src_manifest` (`loopdiag_run_all.sh:304-308`)
+   hashes `raptorpath/src`, `raptorpath/tests`, `raptorpath-math/src`,
+   `raptorpath-wasm/src`, `vendor/` and the Cargo files; it is mirrored in
+   `test_harness_paths.py:68-69` and `test_stubrun.py:223,245`. A new crate's
+   source is outside it, so a change there would not invalidate an
+   `LD_PRIOR_TESTS` reuse. Any new crate is added to all three in the same
+   commit. Existing gap today: `gf256/src` (an engine dependency) is not in
+   the manifest either.
+3. **`net/` submodules** along sender / receiver / recovery / control.
    A module move within the crate; it breaks the path-bound tests in 1.
-3. **Controller crate** (`bbr_rs`, with the vendored quinn-proto as its
+4. **Controller crate** (`bbr_rs`, with the vendored quinn-proto as its
    dependency). On `pacing-seam`, `bbr_rs.rs` (2 055 lines) has no `crate::`
    edges (quinn-proto, rand, std), so it extracts cleanly. `cc_sim.rs` imports `QuicTransport`'s config
    builders, so it stays in the engine or takes the configs as arguments.
    The `RWM_BBR_*` gates would leave the `gates.rs:567` walk. The gain is
    one file's compile isolation; recommend only when a second
    consumer or a measured compile-time win exists.
-4. **Integration-test consolidation.** Measure first
+5. **Integration-test consolidation.** Measure first
    (`cargo build --release --tests --timings`). Binaries that cannot share a
    process: the three with a `#[global_allocator]` counter
    (`alloc_per_symbol`, `recv_alloc_bound`, `recv_alloc_spread_diag`); the
@@ -299,20 +319,24 @@ directory without listing every sibling, and `docs/derivations/` is about to
 appear on six branches). The same keep list, derived from `.gitattributes`:
 
 ```
-git worktree add --no-checkout <path> <ref> && cd <path>
+git worktree add --no-checkout --detach <path> <ref> && cd <path>
 { echo '/*'; echo '!/raptorpath/docs/l1-raw/**/*.*'
-  tr -d '\r' < .gitattributes | sed -n 's#^\(raptorpath/docs/l1-raw/[^ ]*\) -export-ignore$#/\1#p'
+  MSYS_NO_PATHCONV=1 git show "<ref>:.gitattributes" | tr -d '\r' |
+    sed -n 's#^\(raptorpath/docs/l1-raw/[^ ]*\) -export-ignore$#/\1#p'
 } | git sparse-checkout set --no-cone --stdin
-git checkout <ref>
+git checkout --detach <ref>      # or: git switch -c <branch> <ref>
 ```
 
-Checked in a scratch clone: the kept files and the markers are checked out,
-the rest is not (226 MB to 5.4 MB). Notes: patterns go through `--stdin`
-because Git Bash rewrites a leading `/` argument into a Windows path
-(observed); a directory pattern (`dir/`) does not re-include files excluded
+Checked exactly as written, in a fresh scratch clone: the worktree gets the
+49 kept files and the 69 markers (226 MB to 4.9 MB), all other sources
+intact, the main checkout not sparse. The keep list is read with `git show`
+because a `--no-checkout` worktree has no `.gitattributes` on disk yet.
+Notes: Git Bash rewrites a leading `/` argument and a `<ref>:<path>`
+argument into Windows paths (both observed), hence `--stdin` and
+`MSYS_NO_PATHCONV=1`; a directory pattern (`dir/`) does not re-include files excluded
 by the file pattern, so the list names files; `git sparse-checkout` in a
-linked worktree enables `extensions.worktreeConfig` in the shared repository
-config once, so do it when no worker is running. A worker that needs a full
+linked worktree sets `extensions.worktreeConfig=true` in the shared
+repository config (observed), so do the first one when no worker is running. A worker that needs a full
 ledger runs `git sparse-checkout disable`.
 
 ## Path contracts

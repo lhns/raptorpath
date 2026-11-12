@@ -46,7 +46,8 @@ cargo test -p raptorpath-wasm
 ```
 
 The L1 harness's python tests (`test_stubrun.py` re-runs the session driver
-against stubs and takes minutes):
+end to end against stubs, about four minutes per launch path; the VM suites
+skip it):
 
 ```bash
 cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t"; done
