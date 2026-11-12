@@ -200,7 +200,10 @@ fn quic_cc_factory(
                 "RWM_QUIC_CC=bbr_rs: burst-robust BBR (in-tree controller, \
                  interval-guarded per-flight rate sampler — ADR-0061 family)"
             );
-            Some(Arc::new(super::bbr_rs::BbrRsConfig::default()))
+            let cfg = super::bbr_rs::BbrRsConfig::default();
+            // Diagnostic arm echo (measurement-discipline rule 1).
+            info!("RWM_BBR_PROBERTT_ROUNDS={} (bbr_rs ProbeRtt clean rounds)", cfg.probe_rtt_rounds());
+            Some(Arc::new(cfg))
         }
         QuicCcMode::NewReno => {
             info!("RWM_QUIC_CC=newreno: quinn congestion controller overridden to NewReno");

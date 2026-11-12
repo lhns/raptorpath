@@ -481,6 +481,11 @@ impl BbrRs {
             sr_us: self.smoothed_loop.as_micros() as u64,
             bw: self.max_bandwidth.get_estimate(),
             quinn_min_us: self.quinn_min_rtt.as_micros() as u64,
+            qrn: 0,
+            qrus: 0,
+            qrb: 0,
+            qab: 0,
+            qage_us: 0,
         }
     }
 
@@ -662,10 +667,17 @@ impl BbrRs {
         cwnd.max(self.min_cwnd)
     }
 
+    /// f: ProbeRtt's window as a fraction of the model target.
+    fn probe_rtt_gain(&self) -> f32 {
+        #[cfg(test)]
+        return self.config.probe_rtt_gain;
+        #[cfg(not(test))]
+        K_PROBE_RTT_GAIN
+    }
+
     fn get_probe_rtt_cwnd(&self) -> u64 {
-        const K_MODERATE_PROBE_RTT_MULTIPLIER: f32 = 0.75;
         if PROBE_RTT_BASED_ON_BDP {
-            return self.get_target_cwnd(K_MODERATE_PROBE_RTT_MULTIPLIER);
+            return self.get_target_cwnd(self.probe_rtt_gain());
         }
         self.min_cwnd
     }
@@ -947,6 +959,16 @@ pub(crate) struct Qcc {
     pub bw: u64,
     /// quinn's own `rtt.min()` (µs), beside m̂.
     pub quinn_min_us: u64,
+    /// Cumulative ProbeRtt entries.
+    pub qrn: u64,
+    /// Cumulative µs spent in ProbeRtt, drain included.
+    pub qrus: u64,
+    /// Cumulative bytes acked in events that began in ProbeRtt.
+    pub qrb: u64,
+    /// Cumulative bytes acked in total.
+    pub qab: u64,
+    /// The min filter's age (µs) at the last ACK event: a_e - t_m.
+    pub qage_us: u64,
 }
 
 /// The `[QCC]` read of a connection's controller (`congestion_state()`'s
@@ -961,8 +983,9 @@ impl Qcc {
     /// the last field the host cost (ns) of the `congestion_state()` read.
     pub(crate) fn token(&self, path: u32, last_ns: u64, reads: u64, mean_ns: u64) -> String {
         format!(
-            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}",
-            self.mode, self.rt_us, self.sr_us, self.bw, self.quinn_min_us
+            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}              qrn={} qrus={} qrb={} qab={} qage_us={}",
+            self.mode, self.rt_us, self.sr_us, self.bw, self.quinn_min_us,
+            self.qrn, self.qrus, self.qrb, self.qab, self.qage_us
         )
     }
 }
@@ -988,6 +1011,21 @@ pub struct BbrRsConfig {
     /// clock (quinn `runtime/tokio.rs`), so it shares a time base with the
     /// send stamps under paused test time.
     clock: Option<Clock>,
+    /// `RWM_BBR_PROBERTT_ROUNDS`: the clean rounds ProbeRtt samples before it
+    /// installs its minimum (default 1). A diagnostic arm: one rule,
+    /// parameterised by the count.
+    probe_rtt_rounds: u32,
+    /// Test-only override of the ProbeRtt window factor f (mutation checks).
+    #[cfg(test)]
+    probe_rtt_gain: f32,
+}
+
+/// Name of the env var behind [`BbrRsConfig::probe_rtt_rounds`].
+const PROBE_RTT_ROUNDS_ENV: &str = "RWM_BBR_PROBERTT_ROUNDS";
+
+/// `RWM_BBR_PROBERTT_ROUNDS` resolved: a positive integer, else 1.
+pub(crate) fn resolve_probe_rtt_rounds(raw: Option<&str>) -> u32 {
+    raw.and_then(|s| s.trim().parse::<u32>().ok()).filter(|n| *n >= 1).unwrap_or(1)
 }
 
 impl Default for BbrRsConfig {
@@ -995,6 +1033,9 @@ impl Default for BbrRsConfig {
         Self {
             initial_window: K_MAX_INITIAL_CONGESTION_WINDOW * BASE_DATAGRAM_SIZE,
             clock: None,
+            probe_rtt_rounds: resolve_probe_rtt_rounds(std::env::var(PROBE_RTT_ROUNDS_ENV).ok().as_deref()),
+            #[cfg(test)]
+            probe_rtt_gain: K_PROBE_RTT_GAIN,
         }
     }
 }
@@ -1003,7 +1044,20 @@ impl BbrRsConfig {
     /// A config whose ack clock is `f` (host tests).
     #[cfg(test)]
     pub(crate) fn with_clock(f: impl Fn() -> Instant + Send + Sync + 'static) -> Self {
-        Self { clock: Some(Clock(Arc::new(f))), ..Self::default() }
+        Self { clock: Some(Clock(Arc::new(f))), probe_rtt_rounds: 1, ..Self::default() }
+    }
+
+    /// The ProbeRtt round count and window factor under test.
+    #[cfg(test)]
+    pub(crate) fn with_probe_rtt(mut self, rounds: u32, gain: f32) -> Self {
+        self.probe_rtt_rounds = rounds;
+        self.probe_rtt_gain = gain;
+        self
+    }
+
+    /// The ProbeRtt round count, for the construction echo.
+    pub(crate) fn probe_rtt_rounds(&self) -> u32 {
+        self.probe_rtt_rounds
     }
 
     fn clk(&self) -> Instant {
@@ -1138,6 +1192,8 @@ const K_ROUND_TRIPS_WITHOUT_GROWTH_BEFORE_EXITING_STARTUP: u8 = 3;
 const K_MAX_INITIAL_CONGESTION_WINDOW: u64 = 200;
 
 const PROBE_RTT_BASED_ON_BDP: bool = true;
+// ProbeRtt's window factor f (quinn's "moderate" multiplier).
+const K_PROBE_RTT_GAIN: f32 = 0.75;
 const DRAIN_TO_TARGET: bool = true;
 
 #[cfg(test)]
@@ -1373,12 +1429,17 @@ mod tests {
 
     impl H {
         fn new() -> Self {
+            Self::with_probe_rtt(1, K_PROBE_RTT_GAIN)
+        }
+
+        fn with_probe_rtt(rounds: u32, gain: f32) -> Self {
             let base = Instant::now();
             let clock = Arc::new(AtomicU64::new(0));
             let c = clock.clone();
-            let cfg = Arc::new(BbrRsConfig::with_clock(move || {
-                base + Duration::from_nanos(c.load(Ordering::Relaxed))
-            }));
+            let cfg = Arc::new(
+                BbrRsConfig::with_clock(move || base + Duration::from_nanos(c.load(Ordering::Relaxed)))
+                    .with_probe_rtt(rounds, gain),
+            );
             Self { bbr: BbrRs::new(cfg, 1200), base, clock, pn: 0 }
         }
 
@@ -1540,5 +1601,295 @@ mod tests {
         }
         println!("[bbr_rs tie] `<=`: ProbeRtt entries {entries:?}; strict `<` (model): {strict_entries:?} over 40 s of tied samples");
         assert_eq!(strict_entries, vec![12, 24, 36]);
+    }
+
+    // ── W1 round 2: a one-round, delta-free ProbeRtt (derivation
+    //    w1-round2-probertt.md, T1-T3 and the advisor additions) ──
+
+    fn sec(s: u64) -> Duration {
+        Duration::from_secs(s)
+    }
+
+    impl H {
+        /// Plant m̂ = `d`, fresh as of clock time `t0`.
+        fn plant_at(&mut self, t0: Duration, d: Duration) {
+            self.clock.store(t0.as_nanos() as u64, Ordering::Relaxed);
+            self.bbr.plant_min_rtt(d);
+        }
+
+        fn in_r(&self) -> bool {
+            self.bbr.mode == Mode::ProbeRtt
+        }
+
+        /// A free-form ACK event at `t`: send `send` new packets at `t - rtt`,
+        /// ack `samples` of them as loop-time samples of `rtt`, and report
+        /// `acked` as the largest acked packet number (`None`: no `on_end_acks`
+        /// call at all). `samples == 0` with `acked` set is an event without a
+        /// sample.
+        fn raw(&mut self, t: Duration, rtt: Duration, send: u64, samples: u64, acked: Option<u64>, in_flight: u64) {
+            self.clock.store(t.as_nanos() as u64, Ordering::Relaxed);
+            let sent = self.at(t.saturating_sub(rtt));
+            for _ in 0..send {
+                self.pn += 1;
+                self.bbr.on_sent(sent, 1200, self.pn);
+            }
+            for _ in 0..samples {
+                self.bbr.ack(self.at(t), sent, 1200, false, rtt);
+            }
+            if acked.is_some() {
+                self.bbr.on_end_acks(self.at(t), in_flight, false, acked);
+            }
+        }
+
+        /// Events every second up to 9 s past `t0`, then every `step` until the
+        /// first event in ProbeRtt (the filter has expired); the loaded `rtt`
+        /// never refreshes it. Returns that event's time.
+        fn drive_to_entry(&mut self, t0: Duration, step: Duration, rtt: Duration, n: u64, app_limited: bool) -> Duration {
+            for k in 1..=9 {
+                self.event(t0 + sec(k), rtt, n, app_limited, 0);
+                assert!(!self.in_r(), "ProbeRtt at {k} s: the filter has not expired");
+            }
+            let mut t = t0 + sec(9);
+            while t < t0 + sec(13) {
+                t += step;
+                self.event(t, rtt, n, app_limited, 0);
+                if self.in_r() {
+                    assert!(t - t0 > sec(10), "ProbeRtt entered at {:?} after the plant, before expiry", t - t0);
+                    return t;
+                }
+            }
+            panic!("no ProbeRtt within 13 s of the plant");
+        }
+    }
+
+    /// W1r2 T1. In ProbeRtt the window is f x b-hat x (the pre-expiry model),
+    /// not f x the loaded sample the expiry event carries.
+    #[test]
+    fn probe_rtt_window_is_f_times_the_pre_expiry_model() {
+        let mut h = H::new();
+        h.plant_at(sec(1), 10 * MS);
+        let mut t = sec(1);
+        while !h.in_r() {
+            t += 10 * MS;
+            assert!(t < sec(13), "no ProbeRtt");
+            h.event(t, 25 * MS, 100, false, 1_000_000);
+        }
+        assert_eq!(t, sec(1) + sec(10) + 10 * MS, "first event past the 10 s window");
+        let q = h.bbr.qcc();
+        assert!(q.bw >= 1_000_000, "non-vacuity: b-hat {} B/s", q.bw);
+        let expect = (0.75f64 * (10_000 * q.bw) as f64 / 1e6) as u64;
+        assert!(expect > 4800, "non-vacuity: expected window {expect} above min_cwnd");
+        let w = h.bbr.window();
+        assert!(w.abs_diff(expect) <= 1, "ProbeRtt window {w}, expected 0.75 x b-hat x 10 ms = {expect} (b-hat {})", q.bw);
+        assert_eq!(q.rt_us, 10_000, "m-hat must not be reset to the loaded sample (25 ms) on entry");
+    }
+
+    /// W1r2 T2 (anchors 2, 10 and 40 ms): with the drain already met at entry,
+    /// ProbeRtt holds exactly one clean round. The entry event is the drain
+    /// moment, the next event sets E, the one after exits: time in ProbeRtt =
+    /// 2 m-hat.
+    #[test]
+    fn probe_rtt_holds_one_clean_round_at_two_rtts() {
+        for a_us in [2_000u64, 10_000, 40_000] {
+            let a = Duration::from_micros(a_us);
+            let mut h = H::new();
+            h.plant_at(sec(1), a);
+            let te = h.drive_to_entry(sec(1), a, 2 * a, 10, false);
+            h.event(te + a, a, 10, false, 0);
+            assert!(h.in_r(), "anchor {a:?}: left ProbeRtt at entry+1 (E is set there, the exit test runs later)");
+            h.event(te + 2 * a, a, 10, false, 0);
+            assert!(!h.in_r(), "anchor {a:?}: still in ProbeRtt at entry+2, i.e. 2 m-hat after entry");
+            assert_eq!(h.bbr.qcc().rt_us, a_us, "anchor {a:?}: fresh min installed");
+        }
+    }
+
+    /// The diagnostic arm: one rule, parameterised by the round count. N clean
+    /// rounds exit at event 2N after entry.
+    #[test]
+    fn probe_rtt_round_count_parameter_holds_n_clean_rounds() {
+        assert_eq!(resolve_probe_rtt_rounds(None), 1);
+        assert_eq!(resolve_probe_rtt_rounds(Some("0")), 1);
+        assert_eq!(resolve_probe_rtt_rounds(Some("x")), 1);
+        assert_eq!(resolve_probe_rtt_rounds(Some(" 3 ")), 3);
+        let a = 10 * MS;
+        for n in 1..=3u32 {
+            let mut h = H::with_probe_rtt(n, K_PROBE_RTT_GAIN);
+            h.plant_at(sec(1), a);
+            let te = h.drive_to_entry(sec(1), a, 2 * a, 10, false);
+            let mut exit_at = None;
+            for k in 1..=(2 * n + 2) {
+                h.event(te + a * k, a, 10, false, 0);
+                if !h.in_r() {
+                    exit_at = Some(k);
+                    break;
+                }
+            }
+            assert_eq!(exit_at, Some(2 * n), "{n} clean round(s): exit at event 2N after entry");
+        }
+    }
+
+    /// W1r2 T3 case A: ProbeRtt installs the min of the clean round's samples
+    /// (the drain-moment event's loaded sample excluded), not the loaded
+    /// expiry sample.
+    #[test]
+    fn probe_rtt_exit_installs_the_fresh_round_min() {
+        let mut h = H::new();
+        h.plant_at(Duration::ZERO, 10 * MS);
+        let mut t = Duration::ZERO;
+        while !h.in_r() {
+            t += 100 * MS;
+            assert!(t < sec(13), "no ProbeRtt");
+            h.event(t, 25 * MS, 10, false, 0);
+        }
+        assert_eq!(h.bbr.qcc().rt_us, 10_000, "pre-expiry model kept in ProbeRtt");
+        h.event(t + 100 * MS, 12 * MS, 10, false, 0);
+        h.event(t + 200 * MS, Duration::from_micros(11_500), 10, false, 0);
+        assert!(!h.in_r(), "exit at entry+2");
+        for k in 3..6 {
+            h.event(t + 100 * MS * k, Duration::from_micros(11_800), 10, false, 0);
+        }
+        assert_eq!(h.bbr.qcc().rt_us, 11_500, "m-hat is the clean round's min, not the 25 ms expiry sample");
+    }
+
+    /// W1r2 T3 case B: a latched-low model (the section 47 scale, 50 us) is
+    /// discarded by one drained round.
+    #[test]
+    fn probe_rtt_refreshes_a_latched_low_min() {
+        let mut h = H::new();
+        h.plant_at(Duration::ZERO, Duration::from_micros(50));
+        let mut t = Duration::ZERO;
+        while !h.in_r() {
+            t += 100 * MS;
+            assert!(t < sec(13), "no ProbeRtt");
+            h.event(t, 2 * MS, 100, false, 0);
+        }
+        assert_eq!(h.bbr.window(), 4800, "0.75 x b-hat x 50 us is below min_cwnd");
+        h.event(t + 100 * MS, 2 * MS, 100, false, 0);
+        h.event(t + 200 * MS, 2 * MS, 100, false, 0);
+        assert!(!h.in_r());
+        let q = h.bbr.qcc();
+        assert_eq!(q.rt_us, 2_000);
+        assert!(h.bbr.window() >= 2 * q.bw * 2 / 1000, "window {} < 2 b-hat m-hat", h.bbr.window());
+    }
+
+    /// Advisor (a): expiry on an app-limited leg. Entry reads only the filter
+    /// age (it needs no non-app-limited ack), and the clean round's samples
+    /// refresh m-hat although every event is app-limited. Before the fix the
+    /// expiry event itself reset m-hat to its sample.
+    #[test]
+    fn probe_rtt_expiry_on_an_app_limited_leg_still_refreshes_m_hat() {
+        for idle_gap in [false, true] {
+            let mut h = H::new();
+            h.plant_at(sec(1), 10 * MS);
+            let te = if idle_gap {
+                // no ack for 20 s, then the first (app-limited) ack
+                h.event(sec(2), 15 * MS, 10, true, 0);
+                let t = sec(22);
+                h.event(t, 15 * MS, 10, true, 0);
+                assert!(h.in_r(), "idle restart: the first ack past expiry enters ProbeRtt");
+                t
+            } else {
+                h.drive_to_entry(sec(1), 100 * MS, 15 * MS, 10, true)
+            };
+            assert_eq!(h.bbr.qcc().rt_us, 10_000, "idle={idle_gap}: the pre-expiry model, not the expiry sample");
+            h.event(te + 100 * MS, 15 * MS, 10, true, 0);
+            assert!(h.in_r());
+            h.event(te + 200 * MS, 15 * MS, 10, true, 0);
+            assert!(!h.in_r(), "idle={idle_gap}: an app-limited leg must still exit at entry+2");
+            assert_eq!(h.bbr.qcc().rt_us, 15_000, "idle={idle_gap}: refreshed from the app-limited clean round");
+            assert_eq!(h.bbr.qcc().qage_us, 0, "idle={idle_gap}: the stamp restarted at exit");
+        }
+    }
+
+    /// Advisor (b), all samples lost: the events after the drain carry no
+    /// sample. m-hat is kept (never empty or zero) and the state still exits,
+    /// on the second event past the drain.
+    #[test]
+    fn probe_rtt_with_no_post_drain_samples_keeps_m_hat_and_exits() {
+        let mut h = H::new();
+        h.plant_at(sec(1), 10 * MS);
+        let te = h.drive_to_entry(sec(1), 20 * MS, 25 * MS, 10, false);
+        for k in 1..=2u32 {
+            let top = h.pn + 5;
+            h.raw(te + 20 * MS * k, 25 * MS, 5, 0, Some(top), 0);
+            if k == 1 {
+                assert!(h.in_r(), "E is set at the first post-drain ack");
+            }
+        }
+        assert!(!h.in_r(), "exit at the second event past the drain even with no sample");
+        let q = h.bbr.qcc();
+        assert_eq!(q.rt_us, 10_000, "no sample: the model is kept");
+        assert_eq!(q.qage_us, 0);
+    }
+
+    /// Advisor (b), nothing sent after P_d: acks that cover only packets sent
+    /// before the drain do not set E, so ProbeRtt waits. The wait is harmless
+    /// (the leg is idle) and ends exactly two events after the first
+    /// post-drain ack.
+    #[test]
+    fn probe_rtt_waits_for_the_first_post_drain_ack_then_exits() {
+        let mut h = H::new();
+        h.plant_at(sec(1), 10 * MS);
+        let te = h.drive_to_entry(sec(1), 20 * MS, 25 * MS, 10, false);
+        let p_d = h.pn;
+        for k in 1..=50u32 {
+            let t = te + 100 * MS * k;
+            h.clock.store(t.as_nanos() as u64, Ordering::Relaxed);
+            h.bbr.ack(h.at(t), h.at(t - 30 * MS), 1200, false, 30 * MS);
+            h.bbr.on_end_acks(h.at(t), 0, false, Some(p_d));
+            assert!(h.in_r(), "event {k}: no post-drain ack yet");
+        }
+        let t = te + sec(6);
+        h.event(t, 12 * MS, 10, false, 0);
+        assert!(h.in_r());
+        h.event(t + 20 * MS, 12 * MS, 10, false, 0);
+        assert!(!h.in_r());
+        assert_eq!(h.bbr.qcc().rt_us, 12_000);
+    }
+
+    /// Advisor (c): a loss burst across the markers. The packets after P_d are
+    /// lost, then E itself is lost; ProbeRtt still exits at the second acking
+    /// event past the drain, with the min over the samples that arrived.
+    #[test]
+    fn probe_rtt_exits_after_burst_loss_across_the_markers() {
+        let mut h = H::new();
+        h.plant_at(sec(1), 10 * MS);
+        let te = h.drive_to_entry(sec(1), 20 * MS, 25 * MS, 10, false);
+        // 30 packets after the drain, all lost
+        h.raw(te + 5 * MS, Duration::ZERO, 30, 0, None, 0);
+        // 10 more: the first ack past P_d sets E = the last of these
+        let top = h.pn + 10;
+        h.raw(te + 20 * MS, 12 * MS, 10, 3, Some(top - 7), 0);
+        assert!(h.in_r(), "E set, not yet reached");
+        let e = h.pn;
+        // 30 more, lost (E is among the unacked); then 10 more, the last acked
+        h.raw(te + 30 * MS, Duration::ZERO, 30, 0, None, 0);
+        let top = h.pn + 10;
+        h.raw(te + 60 * MS, 18 * MS, 10, 3, Some(top), 0);
+        assert!(top >= e);
+        assert!(!h.in_r(), "exit at the first ack >= E, the second acking event after the drain");
+        assert_eq!(h.bbr.qcc().rt_us, 12_000, "the min of the samples that arrived (12 ms, 18 ms)");
+    }
+
+    /// NO-MODE-SWITCH witness: ProbeRtt reads no dial. The config holds no
+    /// delta, rho or hint, and two identical streams give identical windows.
+    #[test]
+    fn probe_rtt_window_reads_no_dial() {
+        let dbg = format!("{:?}", BbrRsConfig::default()).to_lowercase();
+        for k in ["delta", "rho", "hint"] {
+            assert!(!dbg.contains(k), "{k} in the controller config: {dbg}");
+        }
+        let trace = || {
+            let mut h = H::new();
+            h.plant_at(sec(1), 10 * MS);
+            let te = h.drive_to_entry(sec(1), 10 * MS, 25 * MS, 20, false);
+            let mut v = vec![h.bbr.window()];
+            for k in 1..=2 {
+                h.event(te + 10 * MS * k, 10 * MS, 20, false, 0);
+                v.push(h.bbr.window());
+            }
+            v
+        };
+        assert_eq!(trace(), trace());
     }
 }

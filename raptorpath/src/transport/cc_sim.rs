@@ -43,6 +43,9 @@ type CcFactory = Arc<dyn ControllerFactory + Send + Sync + 'static>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Cc {
     BbrRs,
+    /// `BbrRs` with ProbeRtt's window factor f = 1.25 (mutation check of the
+    /// ratchet gate: f x b-hat/L > 1 must make m-hat grow).
+    BbrRsF125,
     QuinnBbr,
 }
 
@@ -316,11 +319,13 @@ fn run(sc: &Sc) -> Run {
     let base = Instant::now();
     let clock = Arc::new(AtomicU64::new(0));
     let cc: CcFactory = match sc.cc {
-        Cc::BbrRs => {
+        Cc::BbrRs | Cc::BbrRsF125 => {
             let c = clock.clone();
-            Arc::new(BbrRsConfig::with_clock(move || {
-                base + Duration::from_nanos(c.load(Ordering::Relaxed))
-            }))
+            let gain = if sc.cc == Cc::BbrRsF125 { 1.25 } else { 0.75 };
+            Arc::new(
+                BbrRsConfig::with_clock(move || base + Duration::from_nanos(c.load(Ordering::Relaxed)))
+                    .with_probe_rtt(1, gain),
+            )
         }
         Cc::QuinnBbr => Arc::new(BbrConfig::default()),
     };
@@ -451,7 +456,7 @@ fn run(sc: &Sc) -> Run {
             let conn = client.conn.as_ref().unwrap();
             let w = conn.stats().path.cwnd;
             let qcc = match sc.cc {
-                Cc::BbrRs => {
+                Cc::BbrRs | Cc::BbrRsF125 => {
                     // the engine's `[QCC]` read, timed: clone + downcast + gauge
                     let t0 = std::time::Instant::now();
                     let q = qcc_of(conn.congestion_state().clone_box());
@@ -530,7 +535,7 @@ fn c1_run(cc: Cc, stale: bool) -> &'static Run {
         (Cc::BbrRs, true) => 0,
         (Cc::QuinnBbr, true) => 1,
         (Cc::QuinnBbr, false) => 2,
-        (Cc::BbrRs, false) => unreachable!("not a registered scenario"),
+        (Cc::BbrRsF125, _) | (Cc::BbrRs, false) => unreachable!("not a registered scenario"),
     };
     RUNS[slot].get_or_init(|| run(&c1(cc, stale)))
 }
@@ -775,7 +780,7 @@ fn qcc_gauge_reads_the_running_controller_and_its_cost_is_measured() {
     let q = at(1500);
     assert!(q.rt_us >= 2000 && q.sr_us > 0 && q.bw > 10_000_000 && q.quinn_min_us > 0, "{q:?}");
     let tok = q.token(0, 1234, 5, 1000);
-    for f in ["p0:qm=", "qrt_us=", "qsr_us=", "qbw=", "qmin_us=", "qcns=1234/5/1000"] {
+    for f in ["p0:qm=", "qrt_us=", "qsr_us=", "qbw=", "qmin_us=", "qcns=1234/5/1000", "qrn=", "qrus=", "qrb=", "qab=", "qage_us="] {
         assert!(tok.contains(f), "{f} in {tok}");
     }
     let mut ns = r.qcc_ns.clone();
@@ -1073,4 +1078,189 @@ fn quinn_young_filter_burst_at_the_delivered_rate() {
             rows.join("\n")
         );
     }
+}
+
+// ── W1 round 2: a one-round, delta-free ProbeRtt (derivation
+//    w1-round2-probertt.md, T4-T6, plus the advisor additions) ───────────
+
+const C2_RATE: f64 = 12_500_000.0; // 100 Mbit/s
+
+/// c2's jitter link (5 ms +- 3 ms per direction, 100 Mbit/s), bulk, no stop.
+fn c2_jitter(dur: Duration, cc: Cc) -> Sc {
+    Sc {
+        rate: C2_RATE,
+        limit: 1000,
+        delay: Arc::new(|_| 5 * MS),
+        jitter: 3 * MS,
+        dur,
+        bulk_until: Duration::from_secs(10_000),
+        supply: 0.0,
+        loss_burst: None,
+        stale: None,
+        stop_after_probe_rtt: None,
+        tick: TICK,
+        cc,
+    }
+}
+
+/// The shared 32 s c2-jitter runs (T4, T5, T6 and the mutation check).
+fn c2_long_run(cc: Cc) -> &'static Run {
+    static RUNS: [OnceLock<Run>; 2] = [OnceLock::new(), OnceLock::new()];
+    let slot = match cc {
+        Cc::BbrRs => 0,
+        Cc::BbrRsF125 => 1,
+        Cc::QuinnBbr => unreachable!("not a registered scenario"),
+    };
+    RUNS[slot].get_or_init(|| run(&c2_jitter(Duration::from_secs(32), cc)))
+}
+
+/// ProbeRtt episodes as sampled at 1 ms: (first sample in R, first sample after).
+fn episodes(r: &Run) -> Vec<(Duration, Duration)> {
+    let mut out = Vec::new();
+    let mut start: Option<Duration> = None;
+    for s in &r.samples {
+        let in_r = s.qcc.unwrap().mode == 'R';
+        match (start, in_r) {
+            (None, true) => start = Some(s.t),
+            (Some(a), false) => {
+                out.push((a, s.t));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn qcc_at(r: &Run, t: Duration) -> Qcc {
+    r.samples.iter().find(|s| s.t >= t).or(r.samples.last()).unwrap().qcc.unwrap()
+}
+
+/// W1r2 T4. Per 10 s window of the 32 s c2-jitter run: ProbeRtt (drain
+/// included) costs at most 0.8 % of the time, the window sits below one BDP
+/// (b-hat x m-hat) for at most 0.8 %, and ProbeRtt is entered exactly once
+/// per filter period (3 in 32 s). The `[QCC]` counters agree.
+#[test]
+fn probe_rtt_time_and_reduced_window_per_10s_at_c2() {
+    let r = c2_long_run(Cc::BbrRs);
+    let eps = episodes(r);
+    let u0 = 8_100.0; // the section 48 sim's 200 ms-hold min read (green.txt)
+    let mut line = String::new();
+    for (a, b) in &eps {
+        let sr: Vec<u64> = r.samples.iter().filter(|s| s.t >= *a && s.t < *b).map(|s| s.qcc.unwrap().sr_us).collect();
+        let mean_r = sr.iter().sum::<u64>() as f64 / sr.len().max(1) as f64;
+        let m = qcc_at(r, *b).rt_us as f64;
+        line += &format!(
+            " [R {a:?}..{b:?} = {:.1} ms = {:.2} x mean sr {:.0} us; m-hat at exit {m:.0} us, u vs 8.1 ms = {:+.3}]",
+            (*b - *a).as_secs_f64() * 1e3,
+            (*b - *a).as_micros() as f64 / mean_r,
+            mean_r,
+            m / u0 - 1.0
+        );
+    }
+    println!("[cc_sim w1r2 t4] episodes={}{line}", eps.len());
+    assert_eq!(eps.len(), 3, "ProbeRtt entries in 32 s: {eps:?}");
+    for (from, to) in [(1u64, 11u64), (11, 21), (21, 31)] {
+        let v: Vec<&Sample> = r.samples.iter().filter(|s| s.t >= sec_(from) && s.t < sec_(to)).collect();
+        let n = v.len() as f64;
+        let in_r = v.iter().filter(|s| s.qcc.unwrap().mode == 'R').count() as f64 / n;
+        let low = v
+            .iter()
+            .filter(|s| {
+                let q = s.qcc.unwrap();
+                (s.w as f64) < q.bw as f64 * q.rt_us as f64 / 1e6
+            })
+            .count() as f64
+            / n;
+        println!("[cc_sim w1r2 t4] [{from},{to}) s: share(R)={in_r:.4} share(W<b-hat m-hat)={low:.4}");
+        assert!(in_r <= 0.008, "share(ProbeRtt) = {in_r:.4} in [{from},{to}) s");
+        assert!(low <= 0.008, "share(W < b-hat x m-hat) = {low:.4} in [{from},{to}) s");
+    }
+    let q = r.samples.last().unwrap().qcc.unwrap();
+    println!("[cc_sim w1r2 t4] last gauge: qrn={} qrus={} qrb={} qab={} qage_us={}", q.qrn, q.qrus, q.qrb, q.qab, q.qage_us);
+    assert_eq!(q.qrn, 3, "qrn counts ProbeRtt entries");
+    assert!(q.qrus > 0 && q.qrus <= 240_000, "qrus = {} us: <= 3 x 0.8 % of 10 s", q.qrus);
+    assert!(q.qrb > 0 && q.qrb < q.qab, "qrb {} must be a part of qab {}", q.qrb, q.qab);
+    assert!(q.qage_us < 10_000_000, "filter age {} us at the end exceeds the 10 s window", q.qage_us);
+}
+
+fn sec_(s: u64) -> Duration {
+    Duration::from_secs(s)
+}
+
+/// W1r2 T5: b-hat keeps the link rate INSIDE ProbeRtt (the 10-round max
+/// filter outlives the one-round hold). Shipped: 0.608 L (green.txt).
+#[test]
+fn bbr_rs_c2_jitter_keeps_bhat_at_the_link_rate_inside_probe_rtt() {
+    let r = c2_long_run(Cc::BbrRs);
+    let eps = episodes(r);
+    assert_eq!(eps.len(), 3, "episodes {eps:?}");
+    let mut worst = f64::MAX;
+    for (a, b) in &eps {
+        let lo = r.samples.iter().filter(|s| s.t >= *a && s.t < *b).map(|s| s.qcc.unwrap().bw).min().unwrap();
+        worst = worst.min(lo as f64 / C2_RATE);
+    }
+    println!("[cc_sim w1r2 t5] min b-hat/L inside ProbeRtt over {} episodes = {worst:.3}", eps.len());
+    assert!(worst >= 0.9, "b-hat fell to {worst:.3} L inside ProbeRtt");
+}
+
+/// The ratchet gate (T6): m-hat at each ProbeRtt exit, in us. Err: the run
+/// does not have 3 exits, so it cannot say anything.
+fn exit_m_hats(r: &Run) -> Result<Vec<u64>, String> {
+    let eps = episodes(r);
+    if eps.len() < 3 {
+        return Err(format!("VOID: {} ProbeRtt episodes in the run, need 3", eps.len()));
+    }
+    Ok(eps.iter().map(|(_, b)| qcc_at(r, *b).rt_us).collect())
+}
+
+/// `Some(why)` when m-hat ratchets up across the periods.
+fn ratchet_violation(m: &[u64]) -> Option<String> {
+    if let Some(k) = m.iter().position(|&x| x >= 10_000) {
+        return Some(format!("m-hat at exit {} = {} us >= 10.0 ms (the nominal mean RTT)", k + 1, m[k]));
+    }
+    if m[2] > m[0] + 1_000 {
+        return Some(format!("m-hat grew from {} to {} us over two periods (> 1.0 ms)", m[0], m[2]));
+    }
+    None
+}
+
+/// W1r2 T6: the one-round minimum does not ratchet up under jitter.
+#[test]
+fn probe_rtt_min_does_not_ratchet_up_under_jitter() {
+    let m = exit_m_hats(c2_long_run(Cc::BbrRs)).unwrap();
+    let ratio: Vec<String> = m.windows(2).map(|w| format!("{:.3}", w[1] as f64 / w[0] as f64)).collect();
+    println!("[cc_sim w1r2 t6] m-hat at exits (us) {m:?}; successive ratios {ratio:?}");
+    assert_eq!(ratchet_violation(&m), None, "m-hat at the exits {m:?}");
+}
+
+/// W1r2 T6 mutation check (measurement discipline rule 1): with f = 1.25
+/// through the test-only config override, f x b-hat/L > 1 and the gate above
+/// must SEE the ratchet. If this is red the T6 gate is blind.
+#[test]
+fn probe_rtt_ratchet_gate_sees_a_mutated_gain_of_1_25() {
+    let m = exit_m_hats(c2_long_run(Cc::BbrRsF125)).unwrap();
+    println!("[cc_sim w1r2 t6-mutation] f=1.25: m-hat at exits (us) {m:?}");
+    let v = ratchet_violation(&m);
+    assert!(v.is_some(), "f = 1.25 did not trip the ratchet gate: m-hat at exits {m:?}; the gate is blind (lengthen the run, do not loosen the bound)");
+}
+
+/// Advisor (d), 2 ms anchor on the simulator: 100 Mbit/s, 1 ms each way, no
+/// jitter. One ProbeRtt per period, and it lasts a few loop times, not 200 ms.
+#[test]
+fn probe_rtt_is_one_round_at_a_2ms_rtt() {
+    static RUN: OnceLock<Run> = OnceLock::new();
+    let r = RUN.get_or_init(|| {
+        let mut sc = c2_jitter(Duration::from_secs(12), Cc::BbrRs);
+        sc.delay = Arc::new(|_| MS);
+        sc.jitter = Duration::ZERO;
+        run(&sc)
+    });
+    let eps = episodes(r);
+    println!("[cc_sim w1r2 2ms] episodes {eps:?}; last gauge {:?}", r.samples.last().unwrap().qcc);
+    assert_eq!(eps.len(), 1, "ProbeRtt entries in 12 s: {eps:?}");
+    let d = eps[0].1 - eps[0].0;
+    assert!(d <= 40 * MS, "ProbeRtt lasted {d:?} on a 2 ms path (20 loop times = 40 ms bound)");
+    let m = qcc_at(r, eps[0].1).rt_us;
+    assert!((2_000..4_000).contains(&m), "m-hat {m} us after ProbeRtt on a 2 ms path");
 }
