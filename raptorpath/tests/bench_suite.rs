@@ -1755,11 +1755,11 @@ fn write_results(
     // Write files
     let base_dir = env!("CARGO_MANIFEST_DIR");
     let md_path = format!(
-        "{}/docs/benchmark-results-{}.md",
+        "{}/../docs/benchmark-results-{}.md",
         base_dir, timestamp_suffix
     );
     let json_path = format!(
-        "{}/docs/benchmark-results-{}.json",
+        "{}/../docs/benchmark-results-{}.json",
         base_dir, timestamp_suffix
     );
 

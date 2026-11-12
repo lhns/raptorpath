@@ -25,14 +25,14 @@ emulated L1 rig.
 
 | what | where |
 |---|---|
-| the paper (derivations of every law) | [`raptorpath/docs/fec-arq-model.md`](raptorpath/docs/fec-arq-model.md) |
-| what ships, verdicts, open debts, pre-registered batteries | [`raptorpath/docs/status.md`](raptorpath/docs/status.md) (authoritative; cited by `§` number) |
-| architecture decisions | [`raptorpath/docs/adr/`](raptorpath/docs/adr/README.md) |
-| measurement discipline (binding for any L1 verdict) | [`raptorpath/docs/measurement-discipline.md`](raptorpath/docs/measurement-discipline.md) |
-| the L1 harness (netem cells on a VM) | [`raptorpath/tools/l1/`](raptorpath/tools/l1/), plan in [`raptorpath/docs/l1-harness-plan.md`](raptorpath/docs/l1-harness-plan.md) |
-| raw L1 ledgers (evidence cited by status and the paper) | [`raptorpath/docs/l1-raw/`](raptorpath/docs/l1-raw/) |
-| in-process benchmark suite | [`raptorpath/docs/benchmark-methodology.md`](raptorpath/docs/benchmark-methodology.md) |
-| research notes | [`raptorpath/docs/research/`](raptorpath/docs/research/) |
+| the paper (derivations of every law) | [`docs/fec-arq-model.md`](docs/fec-arq-model.md) |
+| what ships, verdicts, open debts, pre-registered batteries | [`docs/status.md`](docs/status.md) (authoritative; cited by `§` number) |
+| architecture decisions | [`docs/adr/`](docs/adr/README.md) |
+| measurement discipline (binding for any L1 verdict) | [`docs/measurement-discipline.md`](docs/measurement-discipline.md) |
+| the L1 harness (netem cells on a VM) | [`tools/l1/`](tools/l1/), plan in [`docs/l1-harness-plan.md`](docs/l1-harness-plan.md) |
+| raw L1 ledgers (evidence cited by status and the paper) | [`docs/l1-raw/`](docs/l1-raw/) |
+| in-process benchmark suite | [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md) |
+| research notes | [`docs/research/`](docs/research/) |
 
 ## Build and test
 
@@ -50,7 +50,7 @@ end to end against stubs, about four minutes per launch path; the VM suites
 skip it):
 
 ```bash
-cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t"; done
+cd tools/l1 && for t in test_*.py; do python3 "$t"; done
 ```
 
 The visualizer (needs `wasm-pack` and `node`; runs both continuity gates and
@@ -59,7 +59,7 @@ Typst):
 
 ```bash
 bash raptorpath-visualizer/build_visualizer.sh
-bash raptorpath/tools/build_paper.sh
+bash tools/build_paper.sh
 ```
 
 Running the tunnel, `perf` and the `RWM_*` gates: see

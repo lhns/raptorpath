@@ -565,7 +565,7 @@ mod forwarding_audit {
     /// The harness's `RWM_FORWARD` array in `tools/l1/lib.sh`.
     fn harness_forward_list() -> BTreeSet<String> {
         let lib = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/l1/lib.sh"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/l1/lib.sh"),
         )
         .expect("tools/l1/lib.sh must exist — it is the single forwarding list");
         let body = lib
