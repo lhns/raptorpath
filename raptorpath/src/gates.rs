@@ -505,6 +505,7 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_EST_CADENCE", "own echo, both sides: 'estimator heavy-math cadence ACTIVE' / '... cadence OFF' (control/estimator.rs)"),
     ("RWM_MTU_FLOOR", "own echo: 'MTU floor: …' / 'MTU floor OFF' (transport/quic.rs)"),
     ("RWM_BBR_PROBERTT_ROUNDS", "own echo: 'RWM_BBR_PROBERTT_ROUNDS=<n> (bbr_rs ProbeRtt clean rounds)' (transport/quic.rs)"),
+    ("RWM_BBR_PACE", "own echo: 'RWM_BBR_PACE=<0|1> (bbr_rs supplies quinn's pacing rate ...)' (transport/quic.rs)"),
     ("RWM_QUIC_CC", "own echo: 'quinn congestion controller: …' (transport/quic.rs)"),
     ("RWM_WIRE_COMPACT", "own echo: compact v5 DATA framing (transport/quic.rs part-2 echo)"),
     ("RWM_RS_TRACE", "instrument: its own [RSTRACE] output IS the echo"),

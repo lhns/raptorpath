@@ -203,6 +203,7 @@ fn quic_cc_factory(
             let cfg = super::bbr_rs::BbrRsConfig::default();
             // Diagnostic arm echo (measurement-discipline rule 1).
             info!("RWM_BBR_PROBERTT_ROUNDS={} (bbr_rs ProbeRtt clean rounds)", cfg.probe_rtt_rounds());
+            info!("RWM_BBR_PACE={} (bbr_rs supplies quinn's pacing rate; 0 = quinn paces 1.25 x window / srtt)", cfg.pace() as u8);
             Some(Arc::new(cfg))
         }
         QuicCcMode::NewReno => {
