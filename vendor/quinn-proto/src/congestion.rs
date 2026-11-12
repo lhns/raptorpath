@@ -65,6 +65,16 @@ pub trait Controller: Send + Sync {
     /// Number of ack-eliciting bytes that may be in flight
     fn window(&self) -> u64;
 
+    /// The pacing rate the controller wants, in bytes per second
+    ///
+    /// When `Some(r)` with `r > 0`, the pacer refills at `r` (burst capacity `r` x 2 ms, kept
+    /// within the usual 10..=256 MTU clamp) instead of deriving a rate from [`window`](Self::window)
+    /// and the smoothed RTT. The window still bounds the bytes in flight. The default, `None`,
+    /// keeps the built-in pacing rate of 1.25 x window / smoothed RTT.
+    fn pacing_rate(&self) -> Option<u64> {
+        None
+    }
+
     /// Retrieve implementation-specific metrics used to populate `qlog` traces when they are enabled
     fn metrics(&self) -> ControllerMetrics {
         ControllerMetrics {

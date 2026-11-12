@@ -535,6 +535,10 @@ impl quinn::congestion::Controller for RouteProbe {
         self.inner.window()
     }
 
+    fn pacing_rate(&self) -> Option<u64> {
+        self.inner.pacing_rate()
+    }
+
     fn metrics(&self) -> quinn_proto::congestion::ControllerMetrics {
         self.inner.metrics()
     }
