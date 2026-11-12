@@ -1,6 +1,6 @@
 # ADR-0076: Workspace restructure — one docs tree, one tools tree, ledgers out of the build path
 
-## Status: Proposed (2026-11-12). For the owner's review; nothing below is executed except phase 0.
+## Status: Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Phase 0: done. Phase 2: lines committed on `restructure` (not yet merged). Phases 1, 3–6: Proposed, not executed.
 
 Number: 0076 is the next free number across every local and remote branch
 (0074 is `otel-design`, 0075 is `pacing-seam`). Drafts that exist only
@@ -46,12 +46,59 @@ bytes needs the §41c guard and the ns bench. Pre-registrations cite
 `status §N`, the ledgers and tool paths, so every move must keep those
 citations resolvable.
 
+## Decisions (user, 2026-11-12)
+
+1. **Ledgers (phase 2): export-ignore now** with the 49-file keep list
+   below. The fixtures version (option (b)) follows with phase 3. The lines
+   are committed on `restructure`; the first VM launch from a tree that
+   carries them ships the 18 MB archive.
+2. **status.md split: yes.** §1–§3 and an index stay in `docs/status.md`;
+   each closed section moves to `docs/status/NN-slug.md`; each new
+   pre-registration is its own file. The coordinator authors them; workers
+   still never write status. Done as pure moves after the open branches
+   merge (with phase 3).
+3. **Phase 6: move.** The wasm model's five local closed forms
+   (`span_deadline_d`, `span_width_a_star`, `pipeline_depth_m_star`,
+   `trailing_offset_delta`, `sim_tail_target_of_delta`) and the parts of the
+   `Simulation` that are law rather than sim plumbing move into
+   `raptorpath-math`. Candidates for the latter, from `raptorpath-wasm/src/lib.rs`:
+   the source-position completion kernel
+   χ_trunc(remaining, W) = Φ̄((remaining − W/2)/(W/4)) and the tail budget
+   r_tail·W·dχ·(1 − β) in `completion_debt_increment` (`:705`), and the
+   continuum tail blend (log-blend of the anchor tail with
+   p̂ + (BULK_TAIL_BUDGET − p̂)·χ, weighted by β) in `continuum_tail`
+   (`:734`). Only branch-free formulas move: the model today still carries
+   `hint_bulk` / `legacy_*` / `fixed_r` branches (27 sites) around them, and
+   those stay in the model (the no-mode-switch invariant forbids carrying
+   them into a law crate). This is a **deliberate model change**: the wasm
+   golden fingerprints are re-captured with `GOLDEN_CAPTURE=1` in the same
+   change, and the commit says so.
+
+   It **amends CLAUDE.md's scope rule** (owner decision). The amendment is
+   drafted here and is not applied to `CLAUDE.md` until the owner applies or
+   approves it. Proposed replacement for the first bullet of "Scope rules":
+
+   > - The visualizer (`raptorpath-visualizer/` + `raptorpath-wasm/`) is a
+   >   self-contained L0 model: never change the engine crate
+   >   (`raptorpath`) for a visualizer feature. A closed-form law the model
+   >   evaluates belongs in `raptorpath-math`, shared with the engine, so
+   >   both evaluate the same expression (ADR-0076 phase 6); it moves there
+   >   with its paper derivation and a deliberate `GOLDEN_CAPTURE=1`
+   >   re-capture. Simulation plumbing (state, RNG, stepping, hint
+   >   selection) stays in `raptorpath-wasm`.
+
+4. **Integration-test consolidation: measure first, yes.** One
+   `cargo build --release --tests --timings` on the VM (pre-registered like
+   any VM contact) before any consolidation.
+5. **`gf256/src` in `src_manifest`: yes.** Done by the harness owner, not on
+   this branch.
+
 ## Decision
 
 Six phases. Each has its own precondition and gate and can be accepted or
 declined on its own.
 
-### Phase 0 — free items (done on branch `restructure`)
+### Phase 0 — free items (done: `daf3d65c`, `db4aeb1e`)
 
 A root `README.md` (what the project is, the workspace map, where the paper,
 status, ADRs, discipline, harness and ledgers live, the build/test commands
@@ -221,8 +268,9 @@ step changes engine bytes, so each needs the §41c guard and the ns bench.
    area. The FLAKE solo re-run (`-- <name> --exact`) still works, but test
    names gain a module prefix, which pre-registrations and ledgers quote.
 
-### Phase 6 — laws shared by the engine and the model (owner's call)
+### Phase 6 — laws shared by the engine and the model (decided: move, see Decisions)
 
+Decided: move (Decisions, item 3). Context as reviewed:
 `raptorpath-math` already is the shared-laws crate; `raptorpath-wasm` calls
 it 63 times. What `raptorpath-wasm` still computes locally:
 `span_deadline_d`, `span_width_a_star`, `pipeline_depth_m_star`,
@@ -390,4 +438,4 @@ stays where it is.
   in-flight branches started before it must be rebased across a rename.
 - Phase 5 is engine work with guard and bench cost per step; it is worth it
   only after the walk-based audits are made non-vacuous.
-- Phase 6 needs a ruling on the scope rule before anything moves.
+- Phase 6 needs the owner to apply the drafted `CLAUDE.md` amendment and a deliberate golden re-capture.
