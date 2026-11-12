@@ -1299,8 +1299,13 @@ impl ControllerFactory for RttProbe {
     }
 }
 
-#[derive(Debug)]
 struct ProbeCc(Box<dyn Controller>);
+
+impl std::fmt::Debug for ProbeCc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProbeCc")
+    }
+}
 
 impl Controller for ProbeCc {
     fn on_sent(&mut self, now: Instant, bytes: u64, pn: u64) {
