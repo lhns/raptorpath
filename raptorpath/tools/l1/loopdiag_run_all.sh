@@ -45,6 +45,11 @@
 # run dir: suites/, guard/, p46/ (score.txt in each). A failed guard verdict does not stop plan 46; a stage that cannot run
 # (smoke, budget, battery rc) stops the session.
 #
+# LD_PLAN=48 (status 48b, the bbr_rs battery): plan 41c's design (96 rows + a 2-row smoke) at section 48's sizes with TWO fresh trees: CAND at $LD_ROOT/src
+# (COMMIT == LD_CAND_SHA else ABORT-CAND) run with RWM_QUIC_CC=bbr_rs, BASE = main at launch at $LD_ROOT/base/src (COMMIT == LD_BASE_SHA, set at launch). Order: parser
+# gates, both builds, the suites on CAND's tree (a REAL failure is ABORT-TESTS: no row runs), the smoke (one CAND row then one BASE row at c8, unscored; ABORT-SMOKE),
+# the battery, the plan-41c replacement rule (at most 4 witness-voided slots re-run once), score48 (VERDICT48 <label>). Ledgers under $RUN/bbr48/.
+#
 # LD_PLAN=41b (status section 41b): the same two-tree build as plan 41 and NO suites (raptorpath/src is unchanged from section 41's
 # tested tree); the battery is 48 rows (BASE 12, MAIN 6, WIRE 6 per cell, c1s and c1d default) scored by place41b_score.py.
 #
@@ -66,7 +71,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
-crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_topo_netem.sh \
+crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_topo_netem.sh \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
@@ -85,8 +90,17 @@ case "$PLAN" in
   46) P_SMOKE=smoke46; P_SCORE=score46; P_CHECK=check46 ;;
   41c) P_SMOKE=smoke41c; P_SCORE=score41c; P_CHECK=check41c ;;
   47) P_SMOKE=smoke46; P_SCORE=score46; P_CHECK=check46 ;;        # unused: the stages below pick their own parsers
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|47)"; exit 3 ;;
+  48) P_SMOKE=smoke48; P_SCORE=score48; P_CHECK=check48 ;;        # unused: the stage below picks them
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|47|48)"; exit 3 ;;
 esac
+# Test seams (test_stubrun.py runs this script end to end against stubs); on the VM none is set and the defaults are the real paths.
+DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-/home/vibe/rp.lock}"
+# LD_REHEARSE=1 (plans 41c, 46, 47, 48; status 48b amendment 1): the launch path up to and including each smoke and its check (gates, locks, builds,
+# binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites (unless LD_PRIOR_TESTS names a run to verify) and no battery.
+REHEARSE="${LD_REHEARSE:-0}"
+if [ "$REHEARSE" = 1 ]; then
+  case "$PLAN" in 41c|46|47|48) ;; *) echo "ABORT-REHEARSE LD_REHEARSE=1 is defined for plans 41c|46|47|48 only, not $PLAN; NOTHING WAS RUN"; exit 3 ;; esac
+fi
 # Plans 43 and 43b share the oracle code path (P43=1). Plan 43b refuses to launch while its plan variables are unset (nothing run).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 if [ "$PLAN" = "43b" ]; then
@@ -97,17 +111,22 @@ P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$
 P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$PLAN" = "41c" ] || [ "$PLAN" = "46" ] || [ "$PLAN" = "47" ]; } && P41=1
 # P46=1: a candidate plan (46, 41c, 47): the shipped tree is the merge candidate, pinned by LD_CAND_SHA, and must hold the promotion.
 P46=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ] || [ "$PLAN" = "47" ]; } && P46=1
+# Plan 48 is a candidate plan too (CAND pinned by LD_CAND_SHA) and builds BASE; its BASE is pinned by LD_BASE_SHA (main at launch).
+P48=0; [ "$PLAN" = "48" ] && { P48=1; P46=1; P41=1; }
 # Plan 46 shares the root-owned tmpfs tree, LD_HARD and the two-tree build with plans 38 / 41 (P38 stays 0: no place-wire arms or ladder).
 if [ "$P46" = 1 ]; then
   CAND_SHA="${LD_CAND_SHA:-UNSET}"
   case "$CAND_SHA" in UNSET|"") echo "ABORT-CAND LD_CAND_SHA is unset (the CAND SHA is recorded by amendment before launch); NOTHING WAS RUN"; exit 3 ;; esac
   [ "$(cat "$LD_ROOT/COMMIT" 2>/dev/null)" = "$CAND_SHA" ] || { echo "ABORT-CAND $LD_ROOT/COMMIT is not LD_CAND_SHA=$CAND_SHA; NOTHING WAS RUN"; exit 3; }
 fi
+if [ "$P48" = 1 ]; then
+  : "${LD_BASE_SHA:?LD_BASE_SHA (main at launch, recorded by amendment) is required for plan 48}"
+fi
 # Measurement runs from tmpfs (shared rules): the run dir and the measured
 # binary live under LD_SHM; the build stays on disk; persist() copies the run
 # dir to $ROOT/run after the last row (and on every exit path).
 SHM="${LD_SHM:?LD_SHM (a /dev/shm dir)}"
-case "$SHM" in /dev/shm/*) ;; *) echo "ABORT-SHM $SHM is not under /dev/shm"; exit 3 ;; esac
+case "$SHM" in "$DEVSHM"/*) ;; *) echo "ABORT-SHM $SHM is not under $DEVSHM"; exit 3 ;; esac
 RUN="$SHM/run"
 SRC="$ROOT/src/raptorpath"
 TARGET="$ROOT/target"
@@ -125,7 +144,7 @@ else
   mkdir -p "$RUN" "$SHM/bin"
 fi
 persist() { mkdir -p "$ROOT/run" && cp -a "$RUN/." "$ROOT/run/" && echo "PERSISTED $RUN -> $ROOT/run $(date -u +%FT%TZ)"; }
-SENTINELS="DONE-ALL FAILED-ALL all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
+SENTINELS="DONE-ALL FAILED-ALL all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS REHEARSAL-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
 probe_sentinel "$RUN/all.out"
 exec > >(tee -a "$RUN/all.out") 2>&1
 LB_PROOF_EXTRA="launch=$(date -u +%FT%TZ)" prove_sentinels "$RUN" $SENTINELS
@@ -135,24 +154,24 @@ era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$RUN/all-era.txt"; }
 fail_all() { era "LD-ALL FAILED: $*"; touch "$RUN/FAILED-ALL"; persist; exit 5; }
 LB_TAG="loopdiag_run_all:$$"
 LB_LOG="$RUN/all-era.txt"
-era "LD-ALL start plan=$PLAN load=$(cat /proc/loadavg)"
+era "LD-ALL start plan=$PLAN load=$(cat "$PROCFS"/loadavg)"
 install_lock_traps
 # Wait read-only (test -e only) until both locks are free, then take them with
 # lib_battery.sh take_lock (noclobber + flock on a <> fd). A lost race aborts
 # with ABORT-LOCK and nothing run; relaunch.
-until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
-prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' /proc/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
+until ! test -e "$LOCK_VM" && ! test -e "$LOCK_RP"; do sleep 30; done
+prec_samples() { local i p s="" ok=1; for i in 1 2 3 4 5; do p=$(awk '/^procs_running/{print $2}' "$PROCFS"/stat); s="$s${p:-?},"; [ -n "$p" ] && [ "$p" -le 2 ] || ok=0; [ "$i" -lt 5 ] && sleep 2; done; echo "$ok procs_running=[$s] cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc)"; }
 if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   : "${LD_HARD:?LD_HARD (epoch) is required for plan $PLAN}"
   PREC=$(prec_samples)
   if [ "${PREC%% *}" != 1 ] || [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -ne 0 ]; then
     era "ABORT-PRECONDITION ${PREC#* }; NOTHING WAS RUN"; exit 3
   fi
-  era "LD-ALL precondition met ${PREC#* } io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL precondition met ${PREC#* } io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
-take_lock /tmp/rwm-vm.lock
-take_lock /home/vibe/rp.lock
-era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
+take_lock "$LOCK_VM"
+take_lock "$LOCK_RP"
+era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
 
 python3 ./test_loopdiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"
 if [ "$P43" = 1 ]; then
@@ -161,6 +180,9 @@ fi
 if [ "$P46" = 1 ]; then
   python3 ./test_harness46.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_harness46.py)"
   python3 ./test_harness47.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_harness47.py)"
+fi
+if [ "$P48" = 1 ]; then
+  python3 ./test_bbr48_parse.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_bbr48_parse.py)"
 fi
 if [ "$P38" = 1 ]; then
   python3 ./test_place38_parse.py >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: test_place38_parse.py)"
@@ -264,25 +286,55 @@ run_suites() {
   tst doc timeout 3600 "$CARGO" test --doc -p raptorpath --release || TFAIL=1
   tst wasm env -u GOLDEN_CAPTURE timeout 3600 "$CARGO" test -p raptorpath-wasm || TFAIL=1
   tst debug-witness timeout 7200 "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-  if [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
-    # Status 41 / 47: "the tools/l1 python tests" are all of them.
-    tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
+  if [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
+    # Status 41 / 47 / 48 / 49: "the tools/l1 python tests" are all of them, except test_stubrun.py: it re-runs this very script against stubs
+    # (minutes, even in its fast mode) and belongs to harness changes only, never to a measurement session.
+    tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do [ "$t" = test_stubrun.py ] && continue; python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
   else
     tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
   fi
   echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$SD/test-debug-witness.log")" >> "$SD/TESTS.txt"
+  src_manifest > "$SD/SRC-MANIFEST.sha256"       # what the run covered: LD_PRIOR_TESTS reuse compares against it
   if [ "$TFAIL" = "0" ]; then touch "$SD/TESTS-OK"; else touch "$SD/TESTS-FAIL"; fi
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
+# The identity of what the suites ran on: sha256 of every file under raptorpath/src, raptorpath/tests, raptorpath-math/src, raptorpath-wasm/src and vendor/
+# (a patched dependency), plus the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml, in C-locale path order. A dependency patch invalidates a reuse.
+src_manifest() {
+  ( cd "$(cd "$HERE/../../.." && pwd)" || exit 1
+    { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
+      find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-wasm/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
+}
+# LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of a BYTE-IDENTICAL tree (see src_manifest) may stand in for
+# this session's suites. "Same tree" is the src_manifest paths above. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
+# and the SRC-MANIFEST.sha256 recorded at suite time, and the manifest of this tree must equal it. Anything else is ABORT-TESTS.
+reuse_prior_tests() {
+  local d="" c
+  for c in "$LD_PRIOR_TESTS" "$LD_PRIOR_TESTS/suites"; do [ -e "$c/TESTS-OK" ] && { d="$c"; break; }; done
+  [ -n "$d" ] || { era "LD-ALL prior suites: no TESTS-OK in $LD_PRIOR_TESTS"; return 1; }
+  [ -s "$d/SRC-MANIFEST.sha256" ] || { era "LD-ALL prior suites: $d has no SRC-MANIFEST.sha256 (recorded at suite time since this change); cannot prove the same tree"; return 1; }
+  src_manifest > "$SD/SRC-MANIFEST.now"
+  if ! cmp -s "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now"; then
+    era "LD-ALL prior suites: the manifest (src, tests, workspace and crate Cargo files, vendor/) differs from the tree $d ran on ($(diff "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now" | grep -c '^[<>]') manifest lines)"; return 1
+  fi
+  cp "$d/TESTS.txt" "$SD/TESTS-prior.txt" && cp "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.sha256" && touch "$SD/TESTS-OK"
+  era "LD-ALL suites: reused TESTS-OK from $d (manifest byte-identical, $(wc -l < "$SD/SRC-MANIFEST.sha256") files)"
+}
+# The suites step of the candidate plans: a verified reuse, else skipped by a rehearsal, else run.
+suites_stage() {
+  if [ -n "${LD_PRIOR_TESTS:-}" ]; then reuse_prior_tests || fail_all "ABORT-TESTS (prior suites not reusable: $LD_PRIOR_TESTS)"
+  elif [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
+  else run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"; fi
+}
 # Plans 46 / 41c with LD_P46_SUITES=1 (status 49): after run_suites is defined (it was called above its definition before).
-if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "${LD_P46_SUITES:-0}" = "1" ]; then
-  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "$PLAN" != "48" ] && { [ "${LD_P46_SUITES:-0}" = "1" ] || [ -n "${LD_PRIOR_TESTS:-}" ]; }; then
+  suites_stage
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 if [ "$PLAN" = "41" ]; then
   run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 if [ "$PLAN" = "34" ]; then
   # Amendment 2: a relaunch on the same engine tree may reuse a green suite run of that
@@ -294,24 +346,25 @@ if [ "$PLAN" = "34" ]; then
   else
     run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
   fi
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 
 # ── plan 47: suites on CAND's tree, then the guard (41c), then the path-event test (46); one ledger subdir each ──────────────────
-if [ "$PLAN" = "47" ]; then
+if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   SD="$RUN/suites"; mkdir -p "$SD"
-  run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"
-  era "LD-ALL suites ok; before the guard $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+  suites_stage
+  era "LD-ALL suites ok; before the $([ "$PLAN" = "48" ] && echo smoke || echo guard) $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
   stage() { # name plan: smoke -> battery -> score -> check, all in $RUN/<name>; rc 0 iff the stage ran to the end
     local name="$1" splan="$2" dir="$RUN/$1" smk scr chk bto brc ok=0
     case "$splan" in
       41c) smk=smoke41c; scr=score41c; chk=check41c ;;
+      48) smk=smoke48; scr=score48; chk=check48 ;;
       46) smk=smoke46; scr=score46; chk=check46 ;;
     esac
     mkdir -p "$dir"
     # LD_BASE_SHA rides explicitly: `sudo -n env` resets the environment, and the row parser reads it (status 49).
     local SENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$dir" LD_PLAN="$splan" LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE" LD_BASE_SHA="${LD_BASE_SHA:-}")
-    era "LD-ALL stage $name (plan $splan) smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+    era "LD-ALL stage $name (plan $splan) smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
     sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
     if [ "$?" != "0" ] || ! python3 ./loopdiag_parse.py "$smk" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; then
       cat "$dir/smoke-check.txt" 2>/dev/null
@@ -321,13 +374,14 @@ if [ "$PLAN" = "47" ]; then
       return 1
     fi
     cat "$dir/smoke-check.txt"; touch "$dir/SMOKE-PASS"; era "LD-ALL stage $name SMOKE-PASS"
+    if [ "$REHEARSE" = 1 ]; then touch "$dir/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS stage $name (smoke only, no battery)"; return 2; fi
     bto=$(( LD_HARD - $(date +%s) ))
     if [ "$bto" -lt 1800 ]; then era "ABORT-BUDGET stage $name: ${bto}s left before LD_HARD (need 1800)"; return 1; fi
     local T1; T1=$(date +%s)
     timeout "$bto" sudo -n env "${SENV[@]}" LD_TAG=ld bash ./loopdiag_battery.sh
     brc=$?
     era "LD-ALL stage $name battery rc=$brc wall=$(( $(date +%s) - T1 ))s"
-    if [ "$splan" = "41c" ] && [ "$brc" = "0" ]; then
+    if { [ "$splan" = "41c" ] || [ "$splan" = "48" ]; } && [ "$brc" = "0" ]; then
       # The replacement rule (status 47): a slot voided by a witness (not DNF, not crash) is re-run once with the same (cell, arm, seed, rep); at most 4.
       python3 ./place38_parse.py replacements41c "$dir/ld.log" > "$dir/repl-slots.txt" 2> "$dir/repl-slots.err"
       local rrc=$?
@@ -345,24 +399,40 @@ if [ "$PLAN" = "47" ]; then
       fi
     fi
     if [ "$splan" = "46" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/smoke.log" "$dir/ld.log" > "$dir/score.txt" 2>&1
-    elif [ "$splan" = "41c" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" "$dir/repl.log" > "$dir/score.txt" 2>&1
+    elif [ "$splan" = "41c" ] || [ "$splan" = "48" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" "$dir/repl.log" > "$dir/score.txt" 2>&1
     else python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" > "$dir/score.txt" 2>&1; fi
     [ "$brc" = "0" ] && python3 ./loopdiag_parse.py "$chk" "$dir/ld.log" && ok=1
-    if [ "$splan" = "41c" ]; then
-      # The guard step is scored by score41c (rank-minp, the design mandatory), never by 41b's report, and its ledger must hold the 96 rows of the design.
+    if [ "$splan" = "41c" ] || [ "$splan" = "48" ]; then
+      # The guard step is scored by score41c / score48 (rank-minp, the design mandatory), never by 41b's report, and its ledger must hold the 96 rows of the design.
       local nrows; nrows=$(grep -ac '^P38ROW ' "$dir/ld.log")
       if [ "$nrows" != "96" ]; then era "ABORT-ROWS stage $name: $nrows P38ROW lines, the guard's design is 96"; ok=0; fi
     fi
     era "LD-ALL stage $name end ok=$ok $(grep -a '^VERDICT' "$dir/score.txt" | head -1)"
-    if [ "$splan" = "41c" ]; then
+    if [ "$splan" = "41c" ] || [ "$splan" = "48" ]; then
       # Only the verdict is computed on the VM. The resolution table (reported only) is recomputed on the HOST from the kept ledger.
       era "LD-ALL guard resolution NOT computed on the VM; on the host: python3 raptorpath/tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log"
     fi
     [ "$ok" = "1" ] && touch "$dir/DONE" && return 0
     return 1
   }
+  if [ "$PLAN" = "48" ]; then
+    BOK=0
+    stage bbr48 48; src=$?
+    if [ "$src" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
+    [ "$src" = "0" ] && BOK=1
+    { echo "BBR_RS BATTERY (status 48b): suites/TESTS.txt, bbr48/score.txt"; grep -a '^VERDICT' "$RUN/bbr48/score.txt"; } > "$RUN/score.txt"
+    era "LD-ALL end plan 48 ok=$BOK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
+    if [ "$BOK" = "1" ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi
+    fail_all "stage bbr48 did not complete (bbr48/)"
+  fi
   GOK=0; EOK=0
-  stage guard 41c && GOK=1
+  stage guard 41c; grc=$?
+  if [ "$grc" = "2" ]; then        # rehearsal: the guard's smoke passed; the path-event test's check rows are the second smoke
+    stage p46 46; prc=$?
+    if [ "$prc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
+    fail_all "rehearsal: stage p46 smoke did not pass (p46/)"
+  fi
+  [ "$grc" = "0" ] && GOK=1
   [ "$GOK" = "1" ] || fail_all "stage guard did not complete (guard/)"
   stage p46 46 && EOK=1
   { echo "MERGE-CANDIDATE SESSION (status 47): suites/TESTS.txt, guard/score.txt, p46/score.txt"; for f in guard p46; do echo "== $f"; grep -a '^VERDICT' "$RUN/$f/score.txt"; done; } > "$RUN/score.txt"
@@ -384,9 +454,10 @@ fi
 cat "$RUN/smoke-check.txt"
 touch "$RUN/SMOKE-PASS"
 era "LD-ALL SMOKE-PASS"
+if [ "$REHEARSE" = 1 ]; then touch "$RUN/REHEARSAL-PASS"; era "LD-ALL REHEARSAL-PASS (smoke only, no battery)"; persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
 
 T0=$(date +%s)
-era "LD-ALL battery start load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
+era "LD-ALL battery start load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
 BTO=10800
 if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] || [ "$PLAN" = "40" ] || [ "$P43" = 1 ]; then
   BTO=$(( LD_HARD - $(date +%s) ))
@@ -406,7 +477,7 @@ else
 fi
 BAT_OK=0
 [ "$BRC" = "0" ] && python3 ./loopdiag_parse.py "$P_CHECK" "$RUN/ld.log" && BAT_OK=1
-era "LD-ALL end bat_ok=$BAT_OK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-') load=$(cut -d' ' -f1-3 /proc/loadavg); io=$(grep '^full' /proc/pressure/io)"
+era "LD-ALL end bat_ok=$BAT_OK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-') load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
 
 if [ "$PLAN" = "27" ]; then
   persist
