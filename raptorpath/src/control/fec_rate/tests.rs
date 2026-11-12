@@ -421,6 +421,25 @@ fn test_saturation_cap_binds_with_throughput() {
     );
 }
 
+/// Paper §4.5/§4.9: r*(Bulk, chi = 0) = 0 IDENTICALLY. The sibling test only
+/// bounds it `< 0.01`; this pins the exact zero through the controller, at 5 %
+/// and 10 % loss, as on the tunnel (chi never set).
+#[test]
+fn bulk_rate_is_exactly_zero_through_the_controller() {
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+    for (ok, name) in [(95u32, "5 %"), (90, "10 %")] {
+        let mut est = LossEstimator::new();
+        for _ in 0..100 {
+            est.record_batch(100, ok);
+        }
+        assert_eq!(
+            ctrl.compute_repair_rate(&est, W),
+            0.0,
+            "Bulk at {name} loss with chi unset must be exactly 0.0 (paper §4.9: r* = 0 identically)"
+        );
+    }
+}
+
 #[test]
 fn test_bulk_pure_arq_zero_steady_state_rate() {
     // P4a/P6 (paper §4.6): Bulk's effective tail target is the
@@ -844,6 +863,56 @@ fn test_taper_budget_tracks_r_magnitude() {
     assert!(
         (hi as f64) > 10.0 * (hi_legacy.max(1) as f64),
         "the budget law must break the per-ack-cycle ceiling: budget={hi} legacy={hi_legacy}"
+    );
+}
+
+/// Paper §4.13 / status §39 / §11.3 row 9: the rate law's feedback leg (a DoF
+/// ledger) is NOT implemented. What exists is the open loop: `TaperBudget`
+/// banks the computed rate per source symbol and grants from it, with no input
+/// from any receiver-reported deficit, and the reactive plane adds a
+/// `ceil(retx * eps_hat)` margin and a `nacked * r` debt reduction. This pins
+/// the open loop exactly: Sigma grants + banked = r x source (conservation),
+/// and `accrue` has no feedback parameter, so the only inputs are
+/// (rate, phase, taper shape, span, spare). The margin and the debt reduction
+/// are inline in `serve_gaps` (no unit to call), so they are source pins.
+/// A ledger that closes the loop would change these and must replace this test.
+#[test]
+fn rate_law_feedback_leg_is_the_open_loop_budget() {
+    let (r, span, n) = (0.25_f64, 64usize, 1000u64);
+    let taper = TaperFunction { amplitude: r * 0.4, decay: 0.6, total_rate: r, q: 0.4 };
+    let mut b = TaperBudget::new();
+    let mut granted = 0.0;
+    for t in 0..n {
+        let g = b.accrue(r, t, &taper, span, f64::INFINITY);
+        assert!((0.0..=1.0).contains(&g), "grant {g} is within [0, 1] per source symbol");
+        granted += g;
+    }
+    // Conservation, exact: nothing expires at an unconstrained spare, so
+    // Sigma grants + the banked remainder == r x source (paper §4.13: a
+    // ledger would also move this with the receiver's reported deficit).
+    assert!(
+        (granted + b.owed() - r * n as f64).abs() < 1e-9,
+        "open-loop budget: granted {granted} + owed {} != r x n = {}",
+        b.owed(),
+        r * n as f64
+    );
+    // Same inputs, same outputs: the budget carries no hidden feedback state.
+    let mut b2 = TaperBudget::new();
+    let again: f64 = (0..n).map(|t| b2.accrue(r, t, &taper, span, f64::INFINITY)).sum();
+    assert_eq!(granted, again);
+
+    // The reactive plane's two open-loop terms (sender_phases.rs serve_gaps).
+    let flat: String = include_str!("../../net/sender_phases.rs")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(
+        flat.contains("letmargin=(retransmittedasf64*current_loss).ceil()asu64;"),
+        "reactive margin is no longer ceil(retx * eps_hat) (status §39: the ledger is not implemented)"
+    );
+    assert!(
+        flat.contains("letdebt_reduction=nacked_countasf64*repair_rate;"),
+        "repair-debt reduction is no longer nacked * r (status §39: the ledger is not implemented)"
     );
 }
 

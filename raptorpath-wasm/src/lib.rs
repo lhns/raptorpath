@@ -2770,6 +2770,37 @@ mod tests {
         assert_eq!(dual.get_pool_cap(), 2 * STORE_PER_PATH);
     }
 
+    /// Paper §6.1 / reconciliation 4b (divergence, bounded): the engine's
+    /// retention-store cap is the law `ceil((1+q(delta))*bdp)` (it moves with the
+    /// BDP and with delta); the model's pool is the CONSTANT 512 per path. This pins the model:
+    /// exactly 512 x n_paths at every delta, hint, RTT and capacity, before and
+    /// after stepping, until the model adopts the law (a deliberate model change
+    /// that moves the golden fingerprints).
+    #[test]
+    fn wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp() {
+        assert_eq!(STORE_PER_PATH, 512, "the model's per-path pool constant");
+        for n in 1usize..=3 {
+            for (rtt, cap) in [(10u32, 2u32), (50, 4), (200, 8)] {
+                for delta in [Some(0.005), Some(0.5), Some(50.0), None] {
+                    let hint = if delta.is_some() { "continuum" } else { "auto" };
+                    let mut sim = Simulation::multipath(
+                        vec![0.02; n], vec![0.5; n], vec![rtt; n], vec![cap; n],
+                        64, hint.into(), None, delta, None,
+                    );
+                    let want = 512 * n as u32;
+                    assert_eq!(
+                        sim.get_pool_cap(), want,
+                        "pool = 512 x {n} paths at rtt {rtt} cap {cap} delta {delta:?}                          (paper §6.1 law is ceil((1+q(delta))*BDP); this pins the divergence)"
+                    );
+                    for _ in 0..50 {
+                        sim.step();
+                    }
+                    assert_eq!(sim.get_pool_cap(), want, "pool does not move as the sim runs");
+                }
+            }
+        }
+    }
+
     /// Wall #8 model: on a heterogeneous 2-path cell, slow-path holes are
     /// HELD by their own path's RTT clock past the aggregate clock — the
     /// phantom retransmits a global-clock plane would have fired.

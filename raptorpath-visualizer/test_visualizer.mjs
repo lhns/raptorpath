@@ -341,6 +341,30 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   check("NO-MODE-SWITCH invariant: sim behavior continuous across the Bulk preset",
     Math.abs(atP.get_total_fec() - offP.get_total_fec()) <= 10,
     `fec at=${atP.get_total_fec()}, off=${offP.get_total_fec()}`);
+
+  // The Auto preset is where the rate mix's `bulkness > 0` guard flips branch
+  // (β = 0 exactly at δ ≥ 0.5, β > 0 below it). A 2% nudge each side must not
+  // step the sim. Measured: |ΔFEC@300| = 1 and 0 symbols, |Δticks| = 0 and 1,
+  // |ΔFEC at end| = 3 and 1 (0.49 and 0.51 against 0.5); a guard that changed
+  // law at β = 0⁺ would step by tens. Bounds are set at the measured maxima
+  // with one symbol of slack, so they pin the ABSOLUTE continuity, not an order.
+  const runAuto = (d) => {
+    const s = new api.Simulation(0.05, 0.5, 50, 64, "continuum", undefined, d, undefined);
+    for (let i = 0; i < 300; i++) s.step();
+    const fec300 = s.get_total_fec();
+    let n = 300;
+    while (!s.is_finished() && n < 20000) { s.step(); n++; }
+    return { fec300, fecEnd: s.get_total_fec(), ticks: n, done: s.get_cum_decoded() === s.get_num_source() };
+  };
+  const a0 = runAuto(0.5), aLo = runAuto(0.49), aHi = runAuto(0.51);
+  check("NO-MODE-SWITCH invariant: sim behavior continuous across the Auto preset (β = 0⁺ guard)",
+    api.bulkness_of_delta(0.5) === 0 && api.bulkness_of_delta(0.49) > 0 &&
+    [aLo, aHi].every((a) =>
+      Math.abs(a.fec300 - a0.fec300) <= 2 &&
+      Math.abs(a.fecEnd - a0.fecEnd) <= 4 &&
+      Math.abs(a.ticks - a0.ticks) <= 2 &&
+      a.done) && a0.done,
+    `fec@300 ${aLo.fec300}/${a0.fec300}/${aHi.fec300}, fec_end ${aLo.fecEnd}/${a0.fecEnd}/${aHi.fecEnd}, ticks ${aLo.ticks}/${a0.ticks}/${aHi.ticks}`);
 }
 
 // --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the

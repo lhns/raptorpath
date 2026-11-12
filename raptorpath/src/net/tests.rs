@@ -6209,3 +6209,239 @@ mod one_store_law_at_n1 {
         assert!(checked > 1000);
     }
 }
+
+// ── Paper-vs-engine divergence bounds (reconciliation W3.7) ──────────────
+//
+// Each test pins the engine's CURRENT behaviour exactly and names the paper's
+// value in its message. If one fails, either the divergence was closed (update
+// the paper's §11.3 row and this test together) or the engine drifted.
+// Source-text pins (`flat`) are used only where the divergent expression sits
+// inline in a loop body that no unit can reach without a refactor; each says so.
+mod paper_bounds {
+    use super::*;
+    use crate::control::estimator::LossEstimator;
+    use crate::control::fec_rate::{FecRateController, ProtocolHint};
+    use crate::fec::FecBackend;
+
+    /// Source text with all whitespace removed, for tripwires on inline expressions.
+    fn flat(src: &str) -> String {
+        src.chars().filter(|c| !c.is_whitespace()).collect()
+    }
+
+    /// Paper §5.3/§11.3 row 1: the span deadline D = min(b·RTprop, 2·RTprop)
+    /// is fed `est.rtt()` (the EWMA SRTT), not a windowed-min RTprop.
+    #[test]
+    fn span_deadline_reads_the_ewma_rtt_not_rtprop() {
+        // `est.rtt()` is an EWMA: after a high sample then low ones it sits
+        // strictly between the minimum sample and the high one, so any D fed
+        // from it is not the RTprop-based D the paper writes.
+        let mut est = LossEstimator::new();
+        est.record_rtt(Duration::from_millis(100));
+        for _ in 0..3 {
+            est.record_rtt(Duration::from_millis(20));
+        }
+        let ewma = est.rtt();
+        assert!(
+            ewma > Duration::from_millis(20) && ewma < Duration::from_millis(100),
+            "est.rtt() is the EWMA, not the minimum sample: {ewma:?} \
+             (paper §5.3 says RTprop; this pins the divergence)"
+        );
+        // D at Auto (b = 1) is therefore the EWMA in µs, not the 20 ms minimum.
+        let us = ewma.as_micros() as u64;
+        assert_eq!(shed_deadline_us(1.0, us), us, "D = b·rtt with b = 1 at Auto");
+        assert_ne!(shed_deadline_us(1.0, us), 20_000, "D is not the RTprop-based 20 ms");
+        // The call site: both D consumers read `est.rtt()`. The span block is
+        // inline in the per-symbol send loop (no pure fn to call), so this is a
+        // source-text pin; switching to an RTprop input fails it.
+        let src = flat(include_str!("emit_source.rs"));
+        for needle in [
+            "letrtprop=est.rtt().as_secs_f64();",
+            "letd=(b*rtprop).min(2.0*rtprop);",
+            "shed_deadline_us(b,est.rtt().as_micros()asu64,)",
+        ] {
+            assert!(
+                src.contains(needle),
+                "emit_source.rs span block no longer feeds D from est.rtt(): missing `{needle}` \
+                 (paper §5.3 names RTprop; update §11.3 row 1 with this test)"
+            );
+        }
+    }
+
+    /// Paper §11.3 row 8: the generation encoder's proactive repair floor r*
+    /// is a constant prior (0.15 systematic / 0.20 coded), not the rate law,
+    /// at every hint (so it is not on the δ dial either).
+    #[test]
+    fn generation_repair_floor_is_the_constant_prior() {
+        use crate::gates::RuntimeGates;
+        use crate::net::sender_policy::SenderPolicy;
+        let mut g = RuntimeGates::resolve();
+        g.gen_r = None; // RWM_GEN_R unset
+        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let sys = SenderPolicy::resolve(&g, 1200, hint, true, false, true, true);
+            let coded = SenderPolicy::resolve(&g, 1200, hint, true, false, true, false);
+            assert_eq!(sys.gen_repair_floor, 0.15, "systematic floor is the constant 0.15 at {hint:?}");
+            assert_eq!(coded.gen_repair_floor, 0.20, "coded floor is the constant 0.20 at {hint:?}");
+        }
+        // RWM_GEN_R overrides, clamped to [0, 2].
+        g.gen_r = Some(0.03);
+        let o = SenderPolicy::resolve(&g, 1200, ProtocolHint::Auto, true, false, true, true);
+        assert_eq!(o.gen_repair_floor, 0.03);
+        g.gen_r = Some(5.0);
+        let o = SenderPolicy::resolve(&g, 1200, ProtocolHint::Auto, true, false, true, true);
+        assert_eq!(o.gen_repair_floor, 2.0);
+        // The emitted rate is max(r*, floor): inline in the send loop, so a source pin.
+        assert!(
+            flat(include_str!("emit_source.rs")).contains("repair_rate.max(pol.gen_repair_floor)"),
+            "the generation floor is no longer applied as max(r*, floor)"
+        );
+    }
+
+    /// Paper §3.2 vs engine, §11.3 row 11: the P_lost reader's RTTVAR is the
+    /// constant 0.1·SRTT (no measured RTTVAR), on a measured path and in the
+    /// cold fallback.
+    #[test]
+    fn p_lost_rttvar_is_a_tenth_of_srtt() {
+        let sched = channel_fixture();
+        let (srtt, rttvar, eps) = p_lost_inputs(&sched);
+        let (_, worst) = worst_eps_channel_path(&sched).unwrap();
+        assert_eq!(srtt, worst.estimator.rtt().as_secs_f64(), "SRTT is the worst-ε path's EWMA");
+        assert!(srtt > 0.0 && eps > 0.0, "measured path, not the fallback");
+        assert_eq!(rttvar, srtt * 0.1, "P_lost RTTVAR = 0.1·SRTT exactly (paper §3.2 has a measured RTTVAR)");
+        // Cold fallback (no path): (SRTT, RTTVAR, ε) = (0.05, 0.005, 0.0), same 0.1 ratio.
+        let empty = Scheduler::new(Arc::new(crate::scheduler::MockClock::new()));
+        let (s0, v0, e0) = p_lost_inputs(&empty);
+        assert_eq!((s0, v0, e0), (0.05, 0.005, 0.0));
+        assert!((v0 - s0 * 0.1).abs() < 1e-15, "fallback keeps the 0.1 ratio");
+    }
+
+    /// Reconciliation N2: one RTTVAR, two stand-ins. The P_lost reader uses
+    /// 0.1·SRTT; χ (completion exposure) uses 0.125·SRTT. They give different
+    /// σ_ARQ, hence different χ at the same T_rem; unifying them changes χ.
+    #[test]
+    fn chi_and_p_lost_rttvar_stand_ins_differ_by_the_declared_ratio() {
+        let srtt = 0.05;
+        let t_rem = 1.5 * srtt + 0.5 * srtt; // 2·SRTT
+        // σ_ARQ = max(4·RTTVAR, SRTT/4): 0.5·SRTT at 0.125, 0.4·SRTT at 0.1.
+        let chi_engine = raptorpath_math::completion_exposure(t_rem, srtt, 0.125 * srtt);
+        let chi_p_lost_style = raptorpath_math::completion_exposure(t_rem, srtt, 0.1 * srtt);
+        // Q(1.0) = 0.158655, Q(1.25) = 0.105650 (standard normal upper tail).
+        assert!((chi_engine - 0.158_655_3).abs() < 1e-6, "χ at 0.125·SRTT = Q(1.0): {chi_engine}");
+        assert!((chi_p_lost_style - 0.105_649_8).abs() < 1e-6, "χ at 0.1·SRTT = Q(1.25): {chi_p_lost_style}");
+        // The two constants in the engine: χ's literal and the P_lost reader's.
+        assert!(
+            flat(include_str!("sender_phases.rs"))
+                .contains("completion_exposure(t_rem,srtt,0.125*srtt)"),
+            "χ's RTTVAR stand-in is no longer 0.125·SRTT"
+        );
+        assert!(
+            flat(include_str!("channel_set.rs")).contains("(srtt,srtt*0.1,p.estimator.loss_rate())"),
+            "P_lost's RTTVAR stand-in is no longer 0.1·SRTT"
+        );
+    }
+
+    /// Paper §4.8 / reconciliation N3: W* is sized with `latency_budget = 0`,
+    /// which the math layer reads as 1·SRTT at EVERY δ. The paper tabulates
+    /// per-hint budgets (Bulk 2, Auto 1, Realtime ½ RTT). This pins the
+    /// controller's window to the 1-RTT form exactly, at all three hints.
+    #[test]
+    fn derived_window_runs_one_rtt_budget_at_every_delta() {
+        let mut est = LossEstimator::new();
+        est.record_rtt(Duration::from_millis(13));
+        est.record_throughput(10_000.0 * 1200.0);
+        for _ in 0..200 {
+            est.record_batch(100, 97);
+        }
+        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let ctrl = FecRateController::new(1e-5, 0.5, hint, FecBackend::Rlc, 1200);
+            let got = ctrl.derive_window(&est).expect("throughput and RTT are measured");
+            let ge = est.ge_estimator();
+            let sigma2 = if ge.is_valid() {
+                raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg())
+            } else {
+                1.0
+            };
+            let srtt = est.rtt().as_secs_f64();
+            let eps = est.predictive_loss_upper(0.95).max(1e-6);
+            let rate = est.throughput() / 1200.0;
+            let one_rtt = raptorpath_math::derive_window(1e-5, eps, sigma2, srtt, rate, srtt);
+            assert_eq!(
+                got,
+                one_rtt.round() as usize,
+                "{hint:?}: W* uses a 1·SRTT budget (paper §4.8 tabulates b(δ)·RTT; this pins the divergence)"
+            );
+        }
+    }
+
+    /// Paper §4.8 / reconciliation N4: on the default (systematic) seat the
+    /// window's trailing edge is `ack − W*.clamp(16, win_cap)` and `win_cap` is
+    /// 200, so the paper's W* = 512 / 429 / 214 (satellite) all act as 200.
+    #[test]
+    fn keep_behind_is_w_star_clipped_to_the_seat_cap() {
+        use crate::gates::RuntimeGates;
+        use crate::net::sender_policy::SenderPolicy;
+        let g = RuntimeGates::resolve();
+        let pol = SenderPolicy::resolve(&g, 1200, ProtocolHint::Auto, true, false, false, true);
+        assert_eq!(pol.win_cap, 200, "systematic seat: MAX_WINDOW_SIZE = 200 (paper §4.8 notes the cap)");
+        // The paper's own satellite W* values, and a below-cap one, through the
+        // engine's clamp.
+        for (w_star, kept) in [(512usize, 200usize), (429, 200), (214, 200), (130, 130), (16, 16), (8, 16)] {
+            assert_eq!(w_star.clamp(16, pol.win_cap), kept, "W* = {w_star}");
+        }
+        // The call site is inline in the ack-advance branch: source pin.
+        let src = flat(include_str!("sender_phases.rs"));
+        assert!(
+            src.contains("derived_window.map(|w|w.clamp(16,pol.win_cap)).unwrap_or(pol.win_cap/2)asu64;"),
+            "keep_behind is no longer W*.clamp(16, win_cap) (default win_cap/2)"
+        );
+        assert!(
+            src.contains("st.encoder.advance(ack.saturating_sub(keep_behind))"),
+            "the trailing edge is no longer ack − keep_behind"
+        );
+    }
+
+    /// Paper §11.3 row 10: the pacer debits the SOURCE arm only, and is off by
+    /// default (`cc_pace` follows `copa_wire`). Engine-level (the bench test
+    /// `pacer_debit_bounds_only_the_source_arm_not_the_wire` asserts the same
+    /// identities on its own replica): exactly one `src_tokens -=` exists in
+    /// the engine, in `emit_source.rs`, under `if pol.cc_pace`, inside the
+    /// source-send function; repair, retransmit and margin sites never debit.
+    #[test]
+    fn pacer_debit_is_the_source_arm_only_and_off_by_default() {
+        use crate::gates::RuntimeGates;
+        let g = RuntimeGates::resolve();
+        assert_eq!(g.cc_pace, g.copa_wire, "RWM_CC_PACE defaults to the wire-signal gate");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut sites = Vec::new();
+        let mut stack = vec![root];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs")
+                    && p.file_name().is_some_and(|n| n != "tests.rs")
+                {
+                    let t = std::fs::read_to_string(&p).unwrap();
+                    for (i, l) in t.lines().enumerate() {
+                        let l = l.trim();
+                        if !l.starts_with("//") && l.contains("src_tokens -=") {
+                            sites.push((p.file_name().unwrap().to_string_lossy().into_owned(), i + 1));
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            sites.len(),
+            1,
+            "the pacer has exactly one debit site (the source arm); paper §11.3 row 10 says \
+             repair/retx/margin are unpaced. Found: {sites:?}"
+        );
+        assert_eq!(sites[0].0, "emit_source.rs");
+        let src = flat(include_str!("emit_source.rs"));
+        assert!(
+            src.contains("ifpol.cc_pace{st.src_tokens-=1.0;}"),
+            "the debit is no longer `if pol.cc_pace {{ st.src_tokens -= 1.0 }}`"
+        );
+    }
+}
