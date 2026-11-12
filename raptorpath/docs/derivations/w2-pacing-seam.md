@@ -4,7 +4,8 @@ Plan W2.2, input to ADR-0068 Addendum 3. Code reading only: no cargo, no VM.
 
 **Pins.** Engine citations are `github/main` at `fdad664e`. `bbr_rs` citations
 are `github/bbr48cand` at `e5d7ffbd` (the fixed window law, 1544 lines; main's
-`bbr_rs.rs` is the older 1187-line port). quinn citations are quinn-proto
+`bbr_rs.rs` is the older 1187-line port), as is `transport/cc_sim.rs` (not on
+main). quinn citations are quinn-proto
 0.11.14, the version in `Cargo.lock`.
 
 ## 1. What exists today
@@ -23,6 +24,9 @@ are `github/bbr48cand` at `e5d7ffbd` (the fixed window law, 1544 lines; main's
 - In `poll_transmit` (`connection/mod.rs:606-628`), window-blocked and
   pacing-blocked both set `congestion_blocked`. Then
   `app_limited = buf.is_empty() && !congestion_blocked` (`mod.rs:940`).
+  The flag's only other setters are the closing and drained states
+  (`mod.rs:482-491`). Its consumer is `on_end_acks(…, self.app_limited, …)`
+  (`mod.rs:1505-1510`).
   So quinn's own pacer never makes a sample app-limited. A sender that paces
   above quinn does: quinn sees an empty buffer.
 
@@ -75,7 +79,8 @@ are `github/bbr48cand` at `e5d7ffbd` (the fixed window law, 1544 lines; main's
 - **No per-path pacer.** The I/O owner hands every queued datagram to
   `send_datagram` at once (`io_owner.rs:1069-1085`). Anything queued below
   placement waits in quinn's 4 MB datagram buffer, which silently evicts the
-  oldest on overflow (`io_owner.rs:129-133`, quinn `datagrams.rs:38-48`).
+  oldest on overflow (quinn `connection/datagrams.rs:38-47`: with `drop`, it
+  pops the front while `outgoing_total > datagram_send_buffer_size`).
 
 ### `bbr_rs` (bbr48cand): the probe cycle has no actuator
 
@@ -103,9 +108,12 @@ are `github/bbr48cand` at `e5d7ffbd` (the fixed window law, 1544 lines; main's
 
 ε̂ is `PathState.estimator: LossEstimator` (`scheduler/path.rs:10`). Its point
 estimate is the TX loss EWMA (`control/estimator.rs:498`), and it is per path,
-engine-side. The worst-ε reader is `net/channel_set.rs:37-45`. It measures
-**all** loss on the path, congestion loss included. It has no channel-only
-component.
+engine-side. The worst-ε reader is `net/channel_set.rs:37-45`.
+- **Feed.** The EWMA is fed from (sent, received) counts
+  (`estimator.rs:342-351`). It therefore measures **all** loss on the path,
+  congestion loss included.
+- **Split.** As far as this reading goes, nothing separates channel loss from
+  congestion loss. BOCD flags regime changes; it does not split causes.
 
 ## 2. What the four amendment steps need
 
@@ -114,15 +122,32 @@ component.
 | (a) δ-continuous time term in W (plan W1) | W | yes (W1 is designed for it) |
 | (b) δ seat: probe amplitude from δ | W (amplitude = gain on T) | amplitude yes; a probe that ends in a drain no (§1: the cycle is unactuated) |
 | (b) δ seat: probe dwell from δ | rate | no |
-| (c) ε̂-referenced loss discrimination | W (bounded in-flight) + ε̂ input | the response yes; ε̂ must cross engine→controller |
-| (d) Copa-style drain replacing ProbeRtt | rate below bŵ for a bounded time | no: a window cut is ProbeRtt itself |
+| (c) ε̂-referenced loss discrimination | W (bounded in-flight) + ε̂ input | yes; ε̂ must cross engine→controller on a shared per-path handle (no rate needed) |
+| (d) Copa-style drain replacing ProbeRtt | a dip below BDP̂ for a few RTTs | a window dip, yes; a rate-based drain, no |
 
-So pacing ownership binds the second half of (b) as well as (c) and (d).
-(c)'s hard part is not the actuator. It is a channel-only ε̂ reference: §1
-shows the estimator includes congestion loss, so referencing loss to itself
-is circular.
+**(d) in detail.** Two window-actuated drains already exist:
+- Copa-sole's ±v/δ dither drives the wire through the passthrough window
+  alone, plus `cc_pace` derived from it (`copa.rs:1388-1430`).
+- `bbr_rs`'s Drain state empties the queue at W = T(1) (`bbr_rs.rs:599-607`,
+  `:698-701`).
+
+So a window dip is possible behind the trait. Whether a window-only dip
+avoids ProbeRtt's FEC protection gap (paper §8.2) on the shallow and jitter
+cells is open; a rate-based drain would not need the window to fall below
+BDP̂.
+
+**Where rate ownership actually binds.** It binds (b): the probe cycle, which
+§1 shows is unactuated today and which Addendum 2 measured as the shal8
+failure. (c) needs a handle, not a rate. (d) is open.
+
+**(c)'s hard part** is not the actuator. It is a channel-only ε̂ reference:
+§1 shows the estimator includes congestion loss, so referencing loss to
+itself is circular.
 
 ## 3. Seam options
+
+Only the seams are sized here. The formulas of (b)–(d) are not; each gets
+its own derivation.
 
 **S1: controller in quinn, exports a rate, the engine paces.**
 - **How.** `bbr_rs` publishes `pacing_rate` into a per-path shared handle, built
@@ -130,8 +155,9 @@ is circular.
   instead of `cwnd_i/srtt_i`. ε̂ crosses the other way on the same handle.
 - **Defect.** The engine pacing below the window makes quinn's buffer empty,
   so `app_limited` is true (`mod.rs:940`). `bbr_rs` then admits samples
-  raise-only, and Startup cannot exit while app-limited. The model loses its
-  decay. The fix is an engine→controller backlog bit that overrides quinn's
+  raise-only (module doc `bbr_rs.rs:33-34`), and Startup cannot exit while
+  app-limited (`check_if_full_bw_reached` returns early, `:778-781`). The
+  model loses its decay. The fix is an engine→controller backlog bit that overrides quinn's
   flag: a second channel and a second notion of app-limited.
 - **Multipath.** Pacing stays aggregate at intake. A true per-path pacer below
   placement queues into the evicting datagram buffer (§1). It must

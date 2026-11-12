@@ -209,15 +209,21 @@ battery:
   only; it works behind quinn's trait.
 - (b) **The δ seat.** Item 3's probe amplitude and dwell are derived
   from δ. The amplitude acts through W; the dwell needs a rate actuator.
-- (c) **ε̂-referenced loss discrimination** (item 4). This needs a
-  channel-only loss reference: today's per-path estimator includes
-  congestion loss, so referencing loss to it is circular.
+- (c) **ε̂-referenced loss discrimination** (item 4).
+  - It acts through W and needs ε̂ on a per-path handle shared with the
+    engine, not a rate.
+  - Open: a channel-only loss reference. The per-path estimator is fed
+    from sent/received counts and, as far as read, includes congestion
+    loss.
 - (d) **A Copa-style drain replacing ProbeRtt.** This removes a state and
-  adds none.
+  adds none. A window dip is possible behind the trait (Copa-sole and
+  `bbr_rs`'s Drain both do it). Whether that avoids the FEC protection gap
+  is open.
 
-**Pacing ownership.** The second half of (b), and (c)/(d) in full, need a
-rate the controller owns (audit: `docs/derivations/w2-pacing-seam.md`).
-The audit refines Addendum 2's seam:
+**Pacing ownership.** A rate the controller owns is needed for (b)'s
+probe cycle, the shal8 failure of Addendum 2 (audit:
+`docs/derivations/w2-pacing-seam.md`). It may be needed for (d). The audit
+refines Addendum 2's seam:
 
 - The passthrough *mode* cannot host `bbr_rs`: it replaces quinn's
   controller with a no-op.
