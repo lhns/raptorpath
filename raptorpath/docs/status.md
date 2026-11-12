@@ -13474,3 +13474,9 @@ at every phase (share 0.75–0.85).
 - **ABORT-TESTS:** fixed on the branch and re-run.
 
 §48b's BASE is pinned only after this verdict, to main as it then is.
+
+**§49 amendment 1 (before VM contact): the trees.**
+- **BASE = main `b3000701f440d11b1b5ad946c8b36c3623c770cd`** (`LD_BASE_SHA`). Later main commits are status-only.
+- **CAND = `simplify-2` `c634f3326254767d0fd03a99efb8078ca5e52fa3`** (`LD_CAND_SHA`): main merged in, so `git diff BASE CAND -- raptorpath/src` is the deletions alone (20 files, +142 / −2 665).
+- **Host checks at CAND:** `cargo check --all-targets` rc 0; all 28 `tools/l1` python tests pass. The host lib suites were not run: the host disk filled (os error 112). The session's suites are the test of record.
+- **Merge review:** `[DIAG]` per path loses `kraw=` and `sr=…/g…d…` (the deleted `RWM_HONEST_K` and `RWM_POOL_ANCHOR` gauges). No `tools/l1` parser reads either field; they appear only in test fixtures.
