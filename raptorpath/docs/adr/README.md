@@ -44,7 +44,7 @@ Conventions in the ADRs below:
 | [0062](0062-copa-wire-signal-competitive-mode.md) | Copa wire signal + competitive mode | Accepted | Copa-sole is the queue/tail arm of the CC surface; competitive mode is built but off. |
 | [0063](0063-rstar-window-mass-provisioning.md) | r* window-mass provisioning | Accepted | r* provisions the window loss-mass quantile (`RWM_RSTAR_TAIL`); realized through the span machine. |
 | [0064](0064-unified-span-machine.md) | Unified span machine + δ-honest shedding | Accepted | One decoder and one continuous span law across δ; shedding within the 1 − ρ budget. |
-| [0068](0068-copa-bbr-fusion.md) | Copa/BBR fusion | Proposed | One δ-priced controller over a measured rate model; targets measured, nothing built. |
+| [0068](0068-copa-bbr-fusion.md) | Copa/BBR fusion | Proposed | One δ-priced controller over a measured rate model; targets measured, nothing built. Addendum 3 (draft): grow `bbr_rs` one formula at a time; needs a pacing seam. |
 | [0069](0069-block-mode-disposition.md) | Block mode is legacy | Accepted, executed (`dacfd7c`) | The block/window fork was the last mode bit; after the Stage-3 re-test the window pipeline is the default for every hint and the block pipeline is deleted. |
 | [0072](0072-one-store-law-at-every-path-count.md) | One store-cap law at every path count | Accepted | The `n_live < 2` guard is removed: the pooled δ-priced cap runs at N = 1; 1024 leaves the shipped seat. |
 | [0073](0073-promote-or-archive-at-the-verdict.md) | An arm is promoted or archived at its verdict | Accepted | Supersedes ADR-0052's two-stage retirement: archive tag, §10 row with a re-ask clause, same-commit `RWM_FORWARD`/`[GATES]` update. |

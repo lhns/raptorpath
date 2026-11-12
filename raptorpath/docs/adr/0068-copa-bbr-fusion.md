@@ -193,3 +193,60 @@ back −4…−14% at GE cells until the recovery-latency story is
 queue-independent — the store-dwell binder of the MEASURED BASELINE
 addendum, same family). Evidence: ledger "Ship The Wins 2: shal8
 anchor"; paper §9.6.
+
+## Addendum 3 — direction: grow `bbr_rs` one registered formula at a time (draft; status stays Proposed)
+
+**Why.** Item 2's rate model now exists as a controller: `bbr_rs`
+(the fixed window law, status §48, paper §8.4; on `bbr48cand`, not on main).
+A second, engine-side controller beside it would rebuild the
+two-controllers-behind-a-switch situation this ADR exists to remove.
+So the fusion grows `bbr_rs` by one registered formula at a time.
+Each step is one formula continuous in δ (no δ, ρ or hint threshold),
+red-first `cc_sim` tests at the anchor points, and its own pre-registered
+battery:
+
+- (a) **The δ-continuous time term in the window** (plan W1). Window
+  only; it works behind quinn's trait.
+- (b) **The δ seat.** Item 3's probe amplitude and dwell are derived
+  from δ. The amplitude acts through W; the dwell needs a rate actuator.
+- (c) **ε̂-referenced loss discrimination** (item 4). This needs a
+  channel-only loss reference: today's per-path estimator includes
+  congestion loss, so referencing loss to it is circular.
+- (d) **A Copa-style drain replacing ProbeRtt.** This removes a state and
+  adds none.
+
+**Pacing ownership.** The second half of (b), and (c)/(d) in full, need a
+rate the controller owns (audit: `docs/derivations/w2-pacing-seam.md`).
+The audit refines Addendum 2's seam:
+
+- The passthrough *mode* cannot host `bbr_rs`: it replaces quinn's
+  controller with a no-op.
+- Only its *mechanism*, a per-path handle shared between controller and
+  engine, carries over.
+- `bbr_rs`'s 1.25/0.75 gain cycle has no actuator behind the trait today.
+- Pacing from the engine marks quinn's samples app-limited.
+- The audit's recommendation is a patched quinn-proto pacer that honours
+  the controller's rate. The fallback is an engine pacer fed by the
+  exported rate, plus a backlog bit. Choosing between them is the user's
+  call (a quinn-proto fork is a dependency decision with its own ADR).
+
+**Bars (unchanged; restated with what is stale).**
+
+| cell | bar |
+|---|---|
+| c2ctl | ≥ ~0.95× BBR-under, at Copa's 5–6 ms wireQ class |
+| jit0–jit25 | ≥ 0.9× BBR-under without the standing queue |
+| shal8 | no regression below Copa-sole's 75–79 Mbit; Addendum 2's external bar is kernel BBRv1's 93 Mbit |
+| pol100 | no CC-side target until burst-loss recovery is fixed |
+| jit15 | the realtime crown, as above |
+
+- **Stale numbers.** Every number above predates the current store law
+  and placement. Re-measure Copa-sole and BBR-under on the current
+  substrate before any build (plan W5.3 cells, W2.3).
+- **Reference arm.** That re-measure fixes the "BBR-under" reference arm:
+  shipped quinn BBR, or `bbr_rs` if promoted.
+- **Order.** The build gate follows W1's promotion and the W5.3 cells.
+
+**Conditional on.** This direction assumes W1 proceeds. If §48b's label
+is `NOT-CONTROLLED` or `REGRESSION`, `bbr_rs` stops, and this addendum
+returns to the user with §47's options.
