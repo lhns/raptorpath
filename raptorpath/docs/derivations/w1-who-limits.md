@@ -26,16 +26,20 @@ Sources for the three lines:
 - Oracle store: status §43b; paper §6.1 "closed-loop oracle arm".
 - `bbr_rs` ProbeBw: `bbr_rs.rs:706–709`, constants `:1124–1141`; paper §8.4.
 
-**Who limits** (one unit, wire in-flight bytes, per leg):
+**Who limits** (one unit, wire in-flight bytes, single leg):
 - The store's wire share is F_s = n·s − x·λ − B, where:
-  - λ is the lag from QUIC ACK to SACK release, during which the store still counts a symbol (OPEN, ≥ 0);
+  - λ is the lag from QUIC ACK to SACK release, during which the store still counts a symbol;
   - B is quinn's backlog `hand − tx` (paper §6.1, "the authority gauge").
 - The substrate holds authority iff F_s > W (paper §8.4, "The nested loop").
 - Dividing by x̂ ≈ b̂ gives the condition in time units:
 
 ```text
-   store limits  ⟺   G·(T_s + τ_s(δ)) − λ   <   2·m̂ + A/b̂            (T_s = RTprop + S at the operating point)
+   store limits  ⟺   G·(T_s + τ_s(δ)) − λ_eff   <   2·m̂ + A/b̂        (T_s = RTprop + S at the operating point; λ_eff = λ + B/x)
 ```
+
+**λ_eff, bounded from the paper's own numbers** (paper §8.4: at §43b's point, about 190 symbols but only about 150 KB on the wire): 190 × 1 279 B ≈ 243 KB, so x·λ_eff ≈ 93 KB, about 7 ms at 12.5 MB/s. This is one inferred point and is not gauged (OPEN as a gauge).
+
+**At N ≥ 2 the condition does not hold as written.** The store is one pooled Σ, but the windows are per leg, so the per-leg split of F_s is needed. That split is OPEN (c8).
 
 **Exactly one δ seat** means that δ enters exactly one of τ_s and τ_w, and only through `net::delta_price` → b(δ) → q(δ):
 - b(δ) is `store_cap.rs:294/311`, which reads `raptorpath_math::span_horizon_b`;
@@ -54,7 +58,7 @@ No third map is added. Each candidate in Section 3 is one assignment of the seat
 | Where does the engine know δ? | **Before the transport exists:** `config.protocol_hint` is in scope at `QuicTransport::new` (`net/mod.rs:725`). `SenderPolicy::resolve` resolves b(δ) once (`sender_policy.rs:620`, `delta_b`). δ is otherwise read live through `net::delta_price(hint)` (`store_cap.rs:311`, with the `RWM_DELTA` override). **It can change at run time:** `Scheduler::set_protocol_hint` re-prices Copa per path (`scheduler/mod.rs:634`; only tests call it today). So a controller seat must read a live handle, not a value fixed at construction, and it must read `delta_price` with no new env var. | as cited |
 | Does quinn's `RttEstimator` expose a variance? | **No.** 0.11.14 exposes only `get()` (smoothed), `conservative()` (= max(smoothed, latest)) and `min()`. The `var` and `latest` fields are private, and `pto_base` is `pub(crate)`. The `Controller` trait hands the estimator to `on_ack` only, and quinn calls `on_ack` **before** `rtt.update` for that ACK (status §48 claim-2 row). | quinn-proto 0.11.14 `connection/paths.rs:285–329`; `congestion.rs:17–35` |
 | Does `bbr_rs` already have its own RTT series? | **Yes, and it is the better source.** Every ACK event gives r_e = a_e − max s_k on its own ack clock (`bbr_rs.rs:826–842`). It keeps the min m̂ and an EWMA `smoothed_loop`, gain 1/8 (`:833`), which the `[QCC]` gauge reports as `qsr_us`. A dispersion of r_e (an RFC 6298 mean deviation of r_e, or a windowed P90 − P50) can be computed inside the controller with no quinn change. Inside the controller, the loop excess ê = qsr − m̂ is the substrate's analogue of the store's no-queue brake b₀: both measure the loop time at zero standing queue minus the minimum (jitter, host and ACK delays). | `bbr_rs.rs:826–842`; paper §8.4 (R̄₀) |
-| Can the engine read the controller's model? | **Yes, read-only, per `[DIAG]` tick.** `congestion_qcc()` → `congestion_state()` (a clone under the connection lock) → `into_any` → `Qcc{mode, m̂, smoothed r_e, b̂, quinn min}`. Each read costs one lock and one clone, gauged as `qcns`. So b̂, m̂ and qsr can reach a store law. A second field set (A, the recovery state) would need `Qcc` widened. | `io_owner.rs:395–400`, `:701–703`; `bbr_rs.rs:472–487`, `:939–970` |
+| Can the engine read the controller's model? | **Yes, read-only, per `[DIAG]` tick.** `congestion_qcc()` → `congestion_state()` → `into_any` → `Qcc{mode, m̂, smoothed r_e, b̂, quinn min}`. `congestion_state()` clones **the whole controller** under the connection lock, including the sampler's send-record map (up to `RS_MAX_TRACKED` = 8 192 entries); the cost is gauged as `qcns`. That is fine for a diagnostic tick but **not for a law-rate input**. A store law that reads b̂ and m̂ (A's L̂ option, or C) needs the controller to publish them to an atomic handle (the same Arc pattern as the δ write seam), not the `[QCC]` clone. A, the recovery state and ê are not in `Qcc` today. | `io_owner.rs:395–400`, `:701–703`; `bbr_rs.rs:180`, `:198`, `:472–487`, `:939–970` |
 | Engine-side dispersion sources | `qsp_us` = P90 − P50 of a leg's last 256 RTT samples (`scheduler/path.rs:775–798`). It matches b₀'s scale at c2 and c8 (×0.75–1.15) but reads 2–3 × b₀ at c1s (status §43b amendment 1), so it is not a drop-in b₀. | as cited |
 | The actuator | quinn paces at 1.25·W/srtt and ignores `pacing_rate`. **W is the substrate's only actuator.** | quinn 0.11.14 `pacing.rs:92`; paper §8.4 |
 
@@ -68,15 +72,17 @@ No third map is added. Each candidate in Section 3 is one assignment of the seat
 
 | cell | store | substrate | who limits | evidence |
 |---|---|---|---|---|
-| c2, BASE (quinn BBR) | pinned at N·knee = 2 048 (the Copa bw anchor over-reads ×3–20 under c2's jitter) | quinn BBR's window over-reads (≈ 180–600 KB against a true ≈ 125 KB) and never binds | **neither law:** the queue sits in the link (`wrtt` ≈ 95–137 ms; MAIN Tp50 ≈ 208 ms at 600 MB) | status §43 Result, §43b, §47; paper §6.1 |
+| c2, BASE (quinn BBR) | pinned at N·knee = 2 048. The shipped law reaches the knee only through its anchor's ack-interval over-read, "the law's accidental probe"; with an honest sampler it contracts to its floor (c2: cap 41 → 10 in 3 s, 7.2 against 89.9 Mbit/s) | quinn BBR's window over-reads (≈ 180–600 KB against a true ≈ 125 KB) and never binds | **neither law:** the queue sits in the link (`wrtt` ≈ 95–137 ms; MAIN Tp50 ≈ 208 ms at 600 MB) | status §43 Result, §43b, §47; paper §6.1 (the g·x paragraph) |
 | c2, CAND (`bbr_rs`, shipped store) | predicted still pinned (but see H1 below) | W = 2·b̂·m̂ + A ≈ 2 BDP̂ + A; network queue ≤ W − L·R̄₀ ≈ 4–12 ms | **substrate** on the wire; the store's dwell moves into B, so A_x does not fall | paper §8.4 "nested loop" |
 | c2, oracle store (G = 0.9, τ = 5 ms) | n ≈ 187–191; about 150 KB of wire in-flight | window ≈ 180–190 KB at m̂ = 7 ms, ≈ 250–300 KB at m̂ = 10–12 ms | **store** (substrate is the safety net) | status §43b Result; paper §8.4 |
 | c1s | — | window ≈ 410 KB, above the wire in-flight the sender reaches | store or receiver; the substrate binds only in the collapse tail | paper §8.4 |
 
 **H1, a prediction to test and not a finding.**
-- `bbr_rs` bounds the wire queue, so Copa's anchors may read less inflated, and the shipped law (1 + q)·Σ bw·RTprop may come off its pin.
-- Its time allowance is then q·RTprop ≈ 1.04 ms at c2 Bulk, which is **below b₀ ≈ 2.3–2.5 ms**. The law would settle under the knee, as §43's plain start-low arm did (−7 % goodput at G = 1.1, τ = 0).
-- **Test gauge:** CAND against BASE at c2, using the `[SUMCAP]` `pin=` fraction and the `[DCAP]` value. Read it beside the STORE-LIMITED class.
+- The shipped law, (1 + q)·Σ bw·RTprop, has **no S term**. With an honest anchor it asks 1.1·L·RTprop ≈ 1.1 × 9.773 × 10.4 ≈ 111 symbols at c2. That is below the knee band's lower edge of 128, and on the honest-sampler record it contracts all the way to the floor.
+- It holds the pin only through the ack-interval over-read (paper §6.1).
+- If `bbr_rs`'s bounded wire queue changes the ACK clustering behind that over-read, the shipped law loses its accidental probe and falls toward its floor. The result is STORE-LIMITED with a large deficit, not a few percent.
+- Whether `bbr_rs` changes the over-read is unknown.
+- **Test gauges:** CAND against BASE at c2, reading the `[SUMCAP]` `pin=` fraction, the cap value, and the anchor fields of `[DIAG]` (`btlbw=`, `est=`). Read them beside the STORE-LIMITED class.
 
 ## 3. Candidate forms (one δ seat each)
 
@@ -87,14 +93,16 @@ Common notation:
 ### A: the δ seat on the store; the substrate stays δ-free
 
 ```text
-   n  =  clamp( G · Σᵢ L̂ᵢ · ( RTpropᵢ + Sᵢ + τ_s,i(δ) ),  floor,  N·knee )
-   τ_s,i(δ)  =  b₀,ᵢ  +  q(δ)·RTpropᵢ                    (W unchanged: 2·b̂·m̂ + A)
+   n  =  clamp( G · Σᵢ L̂ᵢ · ( RTpropᵢ + Sᵢ + τ_s,i(δ) ),  floor,  N·knee )        (W unchanged: 2·b̂·m̂ + A)
+   τ_s,i(δ)  =  b₀,ᵢ  +  c(δ)
+     A(q):  c(δ) = q(δ)·RTpropᵢ              (provenanced: the shipped CoDel setpoint, RFC 8289)
+     A(c):  c(δ) = c_B · q(δ)/q(Bulk)         (c_B ≈ 2.7 ms fits every cell at Bulk; c_B has no source, OPEN)
 ```
 
-**Why this form.**
+**Why this shape.**
 - The shipped law is already "BDP plus a time allowance": (1 + q)·bw·RTprop = bw·(RTprop + q·RTprop).
-- §44's debias result shows that the shipped law's undershoot at c2 is estimator bias. Adding the no-queue brake b₀ lands the law on the knee at 0.985 Gmax with "q stays as it is" (status §44, `s43gain.out`).
-- So b₀ restores the knee, and q(δ)·RTprop keeps its RFC 8289 provenance as the δ-priced standing-queue setpoint. τ > b₀ holds at every δ, so the law reaches the knee at every δ, as §43's addendum requires.
+- The status §44 erratum's debias result shows the law's undershoot at c2 is estimator bias. Adding the no-queue brake b₀ lands it on the knee (195 symbols, 0.985 Gmax), **but at gain 1.1, not at G < 1** (`s43gain.out`).
+- b₀ cancels the jitter that the law otherwise reads as standing queue. c(δ) is then the δ-priced standing-queue allowance on top of it.
 - G < 1 removes the high trap (§43b).
 
 **τ forms tested against the measured τ windows** (`docs/l1-raw/s42/s43win.out` §3: the window is [τ_lo, min(τ_trap, τ_band)); b₀ and RTprop at the knee are from the same file):
@@ -102,67 +110,77 @@ Common notation:
 | form | c2 (b₀ 2.28, RTprop 10.37) | c8 thin (b₀ 2.92, RTprop 15.21) | c1s (b₀ 0.30, RTprop 2.74; truncated minima) | common window |
 |---|---|---|---|---|
 | constant τ | [0.88, 9.24) | [2.88, 7.93) | [1.70, 3.94) | **[2.88, 3.94)** at G = 0.9, but no measured source and no δ |
-| k·RTprop (the shipped q·RTprop is k = q) | k ∈ [0.09, 0.89) | [0.19, 0.52) | [0.62, 1.44) | **none**. Bulk q = 0.10 sits below c1s's band and just above c2's lower edge: the shipped law's undershoot |
+| k·RTprop (the shipped q·RTprop is k = q) | k ∈ [0.09, 0.89) | [0.19, 0.52) | [0.62, 1.44) | **none** |
 | k·b₀ (including b(δ)·b₀) | k ∈ [0.39, 4.05) | [0.99, 2.71) | [5.71, 13.21) | **none** (rejected: c1s needs k ≥ 5.7) |
-| b₀ + c | c ∈ [−1.40, 6.96) | [−0.04, 5.01) | [1.40, 3.64) | c ∈ [1.40, 3.64): c is a free constant (OPEN) |
-| **b₀ + q(δ)·RTprop** (A) | Bulk 3.32, Auto 2.97, Realtime 2.80 | Bulk 4.44, Auto 3.93, Realtime 3.68 | Bulk 0.57, Auto 0.48, Realtime 0.44 | c2 ✓ and c8 ✓ at G = 0.9 and 0.95; **c1s below its lower edge** (c = 0.27 < 1.40) |
+| b₀ + c | c ∈ [−1.40, 6.96) | [−0.04, 5.01) | [1.40, 3.64) | **c ∈ [1.40, 3.64)** |
+| A(q): b₀ + q(δ)·RTprop | Bulk 3.32, Auto 2.97, Realtime 2.80 | Bulk 4.44, Auto 3.93, Realtime 3.68 | Bulk 0.57, Auto 0.48, Realtime 0.44 | c2 ✓ and c8 ✓; **c1s below its lower edge** (c = 0.27 < 1.40) |
+| A(c): b₀ + 2.7·q(δ)/0.1 | Bulk 4.98, Realtime 3.63 | Bulk 5.62, Realtime 4.27 | Bulk 3.00, Realtime 1.65 | ✓ at all three cells at Bulk |
 
-Values are ms, at G = 0.9 unless stated.
-- At G = 0.95 the windows are c2 [0.12, 7.71), c8 [1.61, 5.38) and c1s [1.29, 3.13): A passes c2 and c8 and fails c1s low.
-- At G = 1.0, c8's trap edge is 3.08 < 4.44, so A **fails c8 high**. **G < 1 is required.**
+Values are ms, at G = 0.9.
+- At G = 0.95 the windows are c2 [0.12, 7.71), c8 [1.61, 5.38) and c1s [1.29, 3.13).
+- At G = 1.0, c8's trap edge is 3.08, so every A form **fails c8 high**. **G < 1 is required.**
 
 **Lower and upper edges mean different things.**
 - The upper edge (τ_trap: no upward crossing above the knee) is a stability bound and applies at every δ. τ_s is largest at Bulk, so checking it at Bulk suffices.
-- The lower edge (τ_lo: stable point ≥ n*/1.5) is a Bulk goodput target. Below it, at Realtime, is the intended trade.
-- So A's only failure is c1s's goodput edge at Bulk. That edge rests on truncated minima measured with quinn's BBR uncontrolled (§47), so it is soft: re-measure c1s's b₀ under `bbr_rs` (OPEN).
+- The lower edge (τ_lo: stable point ≥ n*/1.5) is a **weak** goodput requirement. Being inside it does not mean being at the knee; the c2 trade below shows how far apart the two are.
+- The c1s windows were measured on truncated minima with quinn's BBR uncontrolled (§47), so they are soft. Re-measure under `bbr_rs` (OPEN).
 
-**Predicted c2 trade** (status §43b's closed-loop line T(n) = 14.8 ms + 0.06 ms·(n − 163), which predicted four c2 arms; L = 9.773 datagrams/ms):
+**Predicted c2 trade.**
+- Operating point: status §43b's closed-loop line, T(n) = 14.8 ms + 0.06 ms·(n − 163), which predicted four c2 arms (L = 9.773 datagrams/ms):
 
 ```text
    n* = G·L·(T(n*) + τ)  ⇒  n* = G·L·(14.8 − 0.06·163 + τ) / (1 − 0.06·G·L)
       G = 0.9:  n* = 18.63·(5.02 + τ)      (check: τ = 5 → 187; measured 191 / 187)
+      map slope at n*: 0.06·G·L = 0.53 < 1  →  one fixed point
 ```
 
-| δ point | τ_s (ms) | n* (G = 0.9) | time term T(n*) | goodput (offline G/Gmax at G = 0.9, then the closed-loop offset seen at τ = 5) |
+- Goodput: a line between the two **measured** closed-loop c2 points:
+  - §43 SL: median n ≈ 163, −7 % against MAIN;
+  - §43b SL-τ: n ≈ 191, −1.9 %.
+- Below 163 the value is an extrapolation.
+
+| form, δ point | τ_s (ms) | n* | goodput against MAIN | time term T(n*) |
 |---|---|---|---|---|
-| Bulk | 3.32 | 155 | 14.3 ms | offline ≈ 0.89 → closed loop ≈ 0.92 ⇒ **≈ 5–8 % below MAIN** |
-| Auto | 2.97 | 149 | 13.9 ms | ≈ 0.90–0.91 closed loop |
-| Realtime | 2.80 | 146 | 13.8 ms | ≈ 0.89–0.90 closed loop |
+| A(q) Bulk | 3.32 | 155 | **≈ −8.5 %** (extrapolated) | 14.3 ms |
+| A(q) Auto | 2.97 | 149 | ≈ −9.5 % | 13.9 ms |
+| A(q) Realtime | 2.80 | 146 | ≈ −10 % | 13.8 ms |
+| A(c) Bulk | 4.98 | 186 | ≈ −1.9 % measured at τ = 5 (§43b, n 191); the line reads −2.8 % | 16.2 ms |
+| A(c) Auto | 4.08 | 170 | ≈ −5.8 % | 15.2 ms |
+| A(c) Realtime | 3.63 | 161 | ≈ −7.4 % | 14.7 ms |
 
-How the goodput column is computed:
-- `s43win.out` gives offline G/Gmax 0.853/0.832 at τ = 2.5 and 0.948/0.936 at τ = 5. The other values are linear interpolations.
-- At τ = 5 the closed loop measured −1.7 % against MAIN, where the offline map said −5 %. That +0.03 offset is applied as an assumption, not a law.
-- Delay: Tp50 ≈ 16–17 ms against MAIN's ≈ 208 ms, the §43b order of improvement.
+- Delay at these points: Tp50 ≈ 16–19.6 ms (§43b measured 18–19.6 at τ = 5), against MAIN's ≈ 208 ms at 600 MB.
+- **A(q) cannot reach the c2 knee at a trap-free G.** Reaching n ≈ 190 at τ = 3.32 needs G ≈ 0.985, which breaks rule 1 (G ≤ 0.946) and c8's trap edge. q's 5–10 % band is about 1.7 ms short at c2. The provenanced form therefore costs about 8.5 % at Bulk.
+- A(c) reaches the knee at Bulk but has an unsourced c_B.
+- Across the dial, A(c) gives δ a real lever (n moves 161 → 186, −7.4 % → −1.9 %). A(q)'s lever is small (n moves 146 → 155).
 
-Over the whole Realtime→Bulk range, δ moves n* by about 6 % and the time term by about 0.5 ms. **With q's 5–10 % CoDel band, δ's authority at c2 is small.** Paper §6.1 already says the derivation "compresses the dial's authority" (user question U2).
-
-At G = 0.95 (which fails the §43b rule-1 trap margin G·1.016·1.04 < 1 by 0.004), Bulk gives n* = 20.96·(5.02 + 3.32) ≈ 175, ≈ 0.93–0.95 Gmax. **G is the goodput lever. Its value is OPEN**; the candidate provenance is §43b's escape rate, return time = W·ln(H/n*) / −ln(G·L/D).
+**Under PROMOTE-ELIGIBLE, A introduces a cost where `bbr_rs` had none.** At best (A(c)) it is −1.9 % goodput at Bulk, bought for about 10× lower delay. That is the §43b trade, and it is the user's call (U3).
 
 **c8 (thin; offline only).**
-- (0.9, 5) gives 313/288, 0.915/0.884 Gmax, Tp50 25.2/23.8 ms.
-- A's Bulk value of 4.44 sits just below that: ≈ 0.87–0.91 Gmax offline. No closed-loop line exists for c8 (OPEN).
+- (0.9, 5) gives 313/288, 0.915/0.884 Gmax, Tp50 25.2/23.8 ms. A(q) at Bulk (4.44) sits slightly below that; A(c) at Bulk (5.62) slightly above.
+- c8 has no closed-loop line, and the pooled-store-against-per-leg-window split is OPEN (Section 0).
 
-**Who limits under A** (Section 0 condition at Bulk, c2):
-- Store side: G·(T_s + τ_s) − λ ≈ 0.9·(14.3 + 3.3) − λ ≈ 15.8 ms − λ.
-- Substrate side: 2·m̂ + A/b̂ ≥ 14–24 ms + A/b̂.
-- So the **store limits at every δ**, but only for m̂ ≥ 8 ms. At the legacy 7 ms floor the margin is gone unless λ + A/b̂ ≳ 2 ms. The paper's byte figures (150 KB of store wire in-flight against a 180–300 KB window) agree.
-- At c1s the condition (0.9·(T_s + 0.6) against 4 ms + A/b̂) is **not** guaranteed by this algebra. There the store and the receiver bound the wire first (paper §8.4).
-- The δ* crossover lies outside the dial at c2 and c8, and is unresolved at c1s (gauge: B, the share of `hand − tx` ≥ 98).
+**Who limits under A** (Section 0 condition at Bulk, c2, single leg):
+- Store side: G·(T_s + τ_s) − λ_eff ≈ 0.9·(16.2 + 5.0) − 7 ≈ 12 ms (A(c)); for A(q) it is smaller.
+- Substrate side: 2·m̂ + A/b̂ ≥ 14 ms at the legacy m̂ floor of 7 ms.
+- So the **store limits at every δ**, which matches the paper's 150 KB of wire against a 180–300 KB window.
+- δ* lies outside the dial at c2. At c8 it is OPEN (the pooled split). At c1s it is unresolved: 0.9·(≈ 7 + 3) − λ_eff against 4 ms + A/b̂; the gauge is the share of lines with B ≥ 98.
 
 **Loop stability.**
 - The window is unchanged, so its margin 2·m̂/R̄₀ stays 1.1–1.8 at c2, 1.6–2 at c1 and 1.3–2 on the c3 leg (paper §8.4).
-- The store map slope at the c2 point is ≈ 0.28 on the expired map (`s43win.out`, G = 0.9), below 1, so the point is unique.
-- τ_trap (9.24 / 7.93 / 3.94 ms) sits above A's Bulk τ at all three cells.
+- The store map slope is 0.53 on the closed-loop line, below 1.
+- τ_trap (9.24 / 7.93 / 3.94 ms at G = 0.9) sits above every A Bulk value.
 
 **Continuity.**
 - q is affine in clamp(b, ½, 2), and b(δ) is continuous. τ_s is therefore continuous, and strictly monotone between the anchors.
 - With a map slope below 1, the unique n*(δ) is continuous (implicit function).
 - W does not depend on δ. **No step at any preset.**
 
-**What A needs before it is an engine law.**
-- An engine L̂. The store law is oracle-only today (W3.3 OPEN). `bbr_rs`'s b̂ is a candidate through the `[QCC]` read seam, but under store limitation the flow is app-limited and b̂ is raise-only, so b̂'s staleness under a sustained store brake is OPEN.
+**What A needs before it is an engine law (W3.3).**
+- An engine L̂ (the store law is oracle-only today). `bbr_rs`'s b̂ is a candidate through a published atomic (Section 1), but under a store brake the flow is app-limited and b̂ is raise-only, so its staleness is OPEN.
 - An engine b₀ (OPEN; `qsp_us` fails at c1s).
-- G (OPEN).
+- G and, for A(c), c_B (OPEN).
+
+**Under A, W1.3's planned change to `get_target_cwnd` dissolves into W3.3.** The δ work moves to the store law. `bbr_rs` keeps its window, apart from δ-neutral fixes (D) and gauges.
 
 ### B: the δ seat on the window; the store stays δ-free
 
@@ -205,7 +223,7 @@ At G = 0.95 (which fails the §43b rule-1 trap margin G·1.016·1.04 < 1 by 0.00
   - §34 (b1), "quinn's BBR window as a store input", which was closed against the *broken* quinn BBR (§47 lists its re-reading as owed);
   - paper §8.4's "the substrate window is not a store-law input";
   - ADR-0068's open question, "is the store law meant to be the congestion controller?"
-- **Seam:** both directions, δ in and b̂/m̂/A out (widen `Qcc`). The read cost is per tick (gauge `qcns`).
+- **Seam:** both directions: δ in, and b̂/m̂/A out through a published atomic. The `[QCC]` clone is too costly at law rate (Section 1).
 
 ### D: δ-neutral fixes (not a seat; they address the other attribution classes)
 
@@ -221,51 +239,72 @@ At G = 0.95 (which fails the §43b rule-1 trap margin G·1.016·1.04 < 1 by 0.00
 
 | | δ seat | δ-free side | who limits (c2, Bulk) | crossover δ* in the dial? | margin (c2) | c2 trade, predicted | c8 | open constants |
 |---|---|---|---|---|---|---|---|---|
-| **A** | store τ_s = b₀ + q(δ)·RTprop | W = 2b̂m̂ + A | store; window is a safety net | none at c2 and c8 (m̂ ≥ 8 ms); unresolved at c1s | 2m̂/R̄₀ 1.1–1.8 (unchanged); store slope 0.28 | n* 155, ≈ 5–8 % below MAIN, Tp50 ≈ 16–17 ms vs ≈ 208 ms | inside the window; ≈ 0.87–0.91 Gmax offline (thin) | G, engine b₀, engine L̂ |
-| **B** | window τ_w = ê + q(δ)·m̂ | store (pinned) | window on the wire, store on the dwell | n/a (δ prices only `wrtt`) | 1.04–1.08 + A/(b̂R̄₀) | goodput ≈ L if the margin holds; `wrtt` ≈ m̂ + 1 ms; **A_x ≈ unchanged** | same | ê source |
-| **C** | Θ = m̂ + ê + q(δ)·m̂, shared | store = Σ W + runway | tie (by construction) | none | 1.04–1.08; or ≥ 2m̂/R̄₀ with δ authority ≤ 5 % | A_x ≈ 25–30 ms; goodput ≈ L if the margin holds | per leg, same | ê, λ̂, g_c |
-| **D** | — | — | — | — | — | removes ≤ ≈ 2 % (PROBE-RTT) or an estimator fault | — | — |
+| **A(q)** | store, τ_s = b₀ + q(δ)·RTprop | W = 2b̂m̂ + A | store; the window is a safety net | none at c2; OPEN at c8 (pooled split); unresolved at c1s | window 2m̂/R̄₀ 1.1–1.8 (unchanged); store map slope 0.53 | n* 146–155: **≈ −8.5 % (Bulk) to −10 % (Realtime)**; Tp50 ≈ 16–17 ms vs ≈ 208 ms | inside the window (thin) | G, engine b₀, engine L̂ |
+| **A(c)** | store, τ_s = b₀ + c_B·q(δ)/0.1 | the same | the same | the same | the same | n* 161–186: **≈ −1.9 % (Bulk) to −7.4 % (Realtime)**; Tp50 ≈ 18–19.6 ms at Bulk | inside the window (thin) | as A(q), plus c_B ≈ 2.7 ms |
+| **B** | window, τ_w = ê + q(δ)·m̂ | store (pinned) | window on the wire, store on the dwell | n/a (δ prices only `wrtt`) | 1.04–1.08 + A/(b̂R̄₀) | goodput ≈ L if the margin holds; `wrtt` ≈ m̂ + 1 ms; **A_x ≈ unchanged** | the same | the ê source |
+| **C** | shared, Θ = m̂ + ê + q(δ)·m̂ | store = Σ W + runway | tie (by construction) | none | 1.04–1.08; or ≥ 2m̂/R̄₀ with δ authority ≤ 5 % | A_x ≈ 25–30 ms; goodput ≈ L if the margin holds | per leg, the same | ê, λ̂, g_c |
+| **D** | — | — | — | — | — | removes ≤ ≈ 2 % (PROBE-RTT), or fixes an estimator or recovery-window fault | — | — |
 
 ## 5. Which §48b outcome picks which
 
 These are the plan W1.1 classes, applied per CAND row at c2 and c8. The class with the largest share in the lowest-goodput third names the cost.
 
+**Why QUINN-LIMITED is an estimator question first.**
+- Paper §8.4's map is x = min(L, W/R̄). A window that binds with b̂ = L costs no goodput: the queue it builds raises R̄ until x = L.
+- So a goodput deficit on window-bound lines implies W < L·R̄₀ there. That means one of two things:
+  - b̂ < L·(R̄₀ − A/L)/(2m̂), i.e. b̂ ≲ 0.55–0.9 L at c2's margins;
+  - the window is not T(2) + A, for example `window()` = min(cwnd, recovery_window) with the recovery window near its T(1) floor (`bbr_rs.rs:774`, `:907–915`).
+- The tempting readout 2·qrt/qsr does **not** discriminate. On a window-bound line, qsr already contains the queue the window builds (R̄ = W/L), so 2·qrt/qsr ≤ 1 on every such line.
+
 | §48b outcome / class | what it says | pick | why |
 |---|---|---|---|
-| **PROMOTE-ELIGIBLE** (no cost) | the window costs nothing | **A** | the seat lands on the store and `bbr_rs` stays δ-free (paper §8.4 stands); W1.3 changes nothing in `get_target_cwnd` beyond gauges |
-| **STORE-LIMITED** (paused ≥ 50 %, B < 98) | the store binds below the knee | **A** | the cost is the store's allowance; H1's mechanism (q·RTprop < b₀ once the anchors deflate) is exactly what A's b₀ term fixes. Confirm with the `[SUMCAP]` `pin=` drop at c2 |
-| **QUINN-LIMITED** (B ≥ 98, qm ∈ {B, S, D}) | the window binds and quinn holds the backlog | **A or C (user, U1)** | under A the store goes interior and the window returns to a safety net, so the cost disappears if the Section 0 condition holds at Bulk; but that needs A's engine L̂ and b₀ first. C fixes it now, with b̂ as L̂, at the price of §8.4's stance and a thin margin. **B is not a stand-alone pick:** it leaves A_x where it is. **Sub-readout first:** if 2·qrt/qsr < 1.1 on those lines, the cost is the window's jitter tolerance, a δ-free window question that comes before any seat |
-| **PROBE-RTT** (qm = R) | the dip is the cost | **D (drain)**; seat by the PROMOTE-ELIGIBLE rule | bounded at ≈ 0.8–2 %; if the deficit is larger, the attribution is mixed: re-read the next class |
-| **UNDER-READ** (qbw < 0.8 L) | the estimator is wrong | **D (sampler)**; this blocks C | fix b̂ before anything reads it |
+| **PROMOTE-ELIGIBLE** (no cost) | the window costs nothing | **A** (A(c) if U3 accepts the cost) | the seat lands on the store and `bbr_rs` stays δ-free (paper §8.4 stands); W1.3's `get_target_cwnd` change dissolves into W3.3. **A then introduces the cost (≥ ≈ 2 % at c2 Bulk)** in exchange for about 10× lower delay |
+| **STORE-LIMITED** (paused ≥ 50 %, B < 98) | the store binds | **A** | the cost is the shipped law's allowance. If H1 holds (the pin drops and the cap falls toward 111 or the floor), the shipped law has lost its accidental probe, and A's b₀ + c(δ) time term is the derived replacement. Confirm with `[SUMCAP]` `pin=`, the cap value, and `btlbw=`/`est=` |
+| **QUINN-LIMITED** (B ≥ 98, qm ∈ {B, S, D}) | the window binds and quinn holds the backlog | **D first, then the seat by the PROMOTE-ELIGIBLE rule (A); C only by U1** | sub-readout: qbw/L on those lines, with R̄₀ taken from low-backlog lines (B < 98). If qbw < L, it is an estimator or recovery-window fault: fix it δ-neutrally. C inherits that fault, because C reads b̂ as its L̂. **B is never a stand-alone pick:** it leaves A_x unchanged. Recovery state is not gauged; adding it to `Qcc` is a prerequisite for this readout |
+| **PROBE-RTT** (qm = R) | the dip is the cost | **D (drain)**; then the seat by the PROMOTE-ELIGIBLE rule | bounded at ≈ 0.8–2 %; a larger deficit means a mixed attribution: re-read the next class |
+| **UNDER-READ** (qbw < 0.8 L) | the estimator is wrong | **D (sampler)**; blocks C | fix b̂ before anything reads it |
 | **NOT-CONTROLLED / REGRESSION** | W1 stops (plan) | — | the derivation is parked |
+
+**Net result.** Every attribution outcome puts the δ seat on the store (A). The window changes only through δ-neutral fixes (D). C stays as the user's alternative (U1): the substrate as the controller. **Which A form (q or c) to use is the open derivation item**, and it does not depend on the attribution.
 
 ## 6. Open items (each named; none is tuned here)
 
-1. **G** (A): rule 1 of §43b requires G ≤ 0.946. The candidate provenance is the escape rate (§43b return-time floor).
-2. **b₀'s engine source** (A): `qsp_us` reads 2–3 × b₀ at c1s. Candidates are a windowed min of the app-echo ratio (`EchoRatioMin`, `store_cap.rs`) or `bbr_rs`'s ê. Neither is validated.
-3. **c1s's τ window under `bbr_rs`:** the current window was measured with quinn's BBR uncontrolled on truncated minima (§47). A's c1s failure is on this soft edge.
-4. **The engine L̂** (A; W3.3): whether b̂ holds L under a sustained store brake (app-limited, raise-only).
-5. **λ, the ACK→SACK lag** (all candidates; C needs it as λ̂): not gauged.
-6. **ê in the controller** (B, C): no estimator exists. Under-reading it is the unsafe side for B and C.
-7. **A, the ack-aggregation term in time units** (A/b̂): not gauged in `[QCC]`. Adding `max_ack_height` to `Qcc` would close the Section 0 condition at c1s.
-8. **c8's closed-loop line:** offline only (thin).
+1. **c_B, or q's band (A).**
+   - A(q) is provenanced but about 1.7 ms short at c2 (≈ −8.5 % at Bulk).
+   - A(c) fits every window at c_B ≈ 2.7 ms, but c_B has no source.
+   - This is U2.
+2. **G (A).** Rule 1 of §43b requires G ≤ 0.946. The candidate provenance is the escape rate (§43b return-time floor).
+3. **b₀'s engine source (A).** `qsp_us` reads 2–3 × b₀ at c1s. The candidates, neither validated:
+   - a windowed min of the app-echo ratio (`EchoRatioMin`, `store_cap.rs`);
+   - `bbr_rs`'s ê.
+4. **c1s's τ window under `bbr_rs`.** The current window comes from truncated minima with quinn's BBR uncontrolled (§47).
+5. **The engine L̂ (A; W3.3).** Does b̂ hold L under a sustained store brake (app-limited, raise-only)? And a law-rate read needs a published atomic, not the `[QCC]` clone.
+6. **λ_eff = λ + B/x.** One inferred point is ≈ 7 ms at c2 (Section 0); it is not gauged. C needs it as λ̂.
+7. **The pooled store against per-leg windows at N ≥ 2 (c8).** The per-leg share of F_s is needed.
+8. **ê in the controller (B, C).** No estimator exists. Under-reading it is the unsafe side.
+9. **A/b̂ and the recovery state.** Neither is in `Qcc`. Adding `max_ack_height` and the recovery state would close the c1s condition and the QUINN-LIMITED sub-readout.
+10. **c8's closed-loop line.** Offline only (thin).
 
 ## 7. Questions for the user
 
-- **U1. Where does δ live: the store (A), or the window with the store as its image (C)?**
-  - C reverses paper §8.4's "the substrate reads no δ" and §34 (b1).
-  - A keeps both, but waits on the engine L̂ and b₀.
-  - This is ADR-0068's question in concrete form. It decides only under QUINN-LIMITED; the other outcomes pick A.
+- **U1. Is the substrate meant to be the controller (C), or the safety net under a δ-priced store (A)?**
+  - C reverses paper §8.4's "the substrate reads no δ" and reopens §34 (b1).
+  - A keeps both.
+  - This is ADR-0068's question in concrete form. No §48b outcome forces C.
 - **U2. Is q(δ)'s 5–10 % CoDel band the intended δ authority?**
-  - Under every candidate, δ moves the c2 operating point by about 6 % in n and under 1 ms of delay.
-  - A wider lever would reuse b(δ) (a 4× range), but every k·b₀ form fails c1s (Section 3 A table).
+  - Under A(q), δ moves the c2 point from 146 to 155 symbols, and Bulk sits ≈ 8.5 % under MAIN.
+  - A(c) gives δ a real lever (−1.9 % to −7.4 %), but it needs a source for c_B ≈ 2.7 ms.
+  - Every k·b₀ form, b(δ)·b₀ included, fails c1s.
   - This is status §43's "δ-authority revisit".
-- **U3. Is a Bulk goodput cost of ≈ 5–8 % at c2 (A at G = 0.9) acceptable for Tp50 ≈ 16–17 ms against ≈ 208 ms?** If not, G ≈ 0.94 buys back about 3–5 % at a thinner trap margin.
+- **U3. Is about 2 % of Bulk goodput at c2 (A(c), the §43b point) worth Tp50 ≈ 18–19.6 ms against ≈ 208 ms?**
+  - The cost grows toward Realtime by design.
+  - A(q) costs ≈ 8.5 % at Bulk.
+  - Under PROMOTE-ELIGIBLE this cost is new: the substrate alone costs nothing.
 
 ## 8. Tests the pick carries (CLAUDE.md: absolute, at the anchors, plus routing)
 
 - **A:**
-  - formula-agreement tests: τ_s at the three anchors, exactly (b₀ + q·RTprop with q = 0.05/0.0667/0.10), with ±2 % δ nudges through each preset (continuity and monotonicity);
+  - formula-agreement tests on τ_s at the three anchors, exactly: b₀ + c(δ) with q = 0.05/0.0667/0.10, with ±2 % δ nudges through each preset (continuity and monotonicity);
   - a `cc_sim` check that W does not depend on δ (W identical across hints);
   - a routing gate: the store law's echo shows the `delta_price` it read.
 - **B or C:**
@@ -274,4 +313,4 @@ These are the plan W1.1 classes, applied per CAND row at c2 and c8. The class wi
   - the margin 1 + (q·m̂ + A/b̂)/R̄₀ ≥ a registered bound under the `cc_sim` jitter scenario;
   - ProbeRtt unchanged;
   - a routing witness: `[QCC]` echoes the δ the controller read.
-- **Every divergence between this model and the engine** (for example λ = 0 assumed, the offline +0.03 closed-loop offset) gets a bounding test or a registered readout, not prose.
+- **Every divergence between this model and the engine** gets a bounding test or a registered readout, not prose. Examples: λ_eff inferred from one point; the goodput line extrapolated below n = 163.
