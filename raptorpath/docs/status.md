@@ -13575,3 +13575,5 @@ Session `LD_PLAN=48`, CAND `bbr48cand` `e5d7ffbd` (`RWM_QUIC_CC=bbr_rs`), BASE m
 - **Suites note:** the dead-peer test's FLAKE is its first this session, on a tree that edits `io_owner.rs`. Recorded, not explained.
 
 **What doing nothing costs (main, BASE rows of this session):** R2b > 0.25 in 4 of 12 c1s rows and 5 of 12 c1d rows; 3 of 12 c1s rows below 0.5 × the cell median (lowest 265.5 Mbit/s). Delivered delay at c2 is ≈ 206 ms in both arms.
+
+**§48b user decision (2026-11-12): continue `bbr_rs`.** A new registration with the §48 ladder unchanged. First the δ-free fixes: ProbeRtt's goodput cost (≈ 0.8 % at c2/c8) and the unexplained c8 CPU cost (a host/VM ns bench of `bbr_rs`'s per-packet path against quinn's BBR decides it). Then δ on the store law (W1.2 candidate A). The `bbr_rs` code does not reach main before a passing registration.
