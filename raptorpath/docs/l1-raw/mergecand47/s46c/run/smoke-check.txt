@@ -1,0 +1,3 @@
+SMOKE46 BASE SLOW: status=LIVE event_witness=True exit_witness=True peak_rtt=1803 peak_wpl_us=None peak_wrtt=1556 inactive=0 recovered=0 refresh_per_2s=2.42 idle_lines=14 qdisc_ok=True backlog_peak=362 inject_ok=True qcwnd_below_bdp=leg0 0.000 [0.000-0.000] n=1 leg1 0.034 [0.034-0.034] n=1; any leg 0.034 [0.034-0.034] n=1 
+SMOKE46 CAND FAST: status=LIVE event_witness=True exit_witness=True peak_rtt=2413 peak_wpl_us=1519613 peak_wrtt=1520 inactive=0 recovered=0 refresh_per_2s=- idle_lines=0 qdisc_ok=True backlog_peak=276 inject_ok=True qcwnd_below_bdp=leg0 0.000 [0.000-0.000] n=1 leg1 0.012 [0.012-0.012] n=1; any leg 0.012 [0.012-0.012] n=1 
+SMOKE-PASS

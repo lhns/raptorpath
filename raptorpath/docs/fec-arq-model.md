@@ -32,9 +32,12 @@ complete delivery under bursty loss (p99 36–39 ms at a 2.6 % Gilbert-Elliott
 cell, where QUIC reaches 55–342 ms and TCP 0.2–1.4 s with delivery cliffs).
 For bulk it is far above every Cubic-family stack but not faster than
 well-tuned BBR-class single-path stacks or kernel MPTCP over BBR. The
-derived flow-control laws are goodput-parity results that remove 10–200 ms
-of standing queue. The paper reports the refuted designs alongside the
-shipped ones, and lists every remaining constant that has no derivation.
+derived flow-control laws are goodput-parity results. Whether they also
+remove standing queue is unresolved: the δ-cap's re-measure lands inside 2σ.
+The evaluation tables were not re-measured on the current binary and have no
+same-session competitor baseline (Section 9). The paper reports the refuted
+designs alongside the shipped ones, and lists the remaining constants it has
+found that have no derivation (Section 11.2).
 
 ---
 
@@ -124,10 +127,13 @@ Section 4:
    receive machines (sliding-window RLC, generation, streaming). The
    difference between "realtime" and "bulk" moves to the sender's span law,
    `(δ, ρ, r) → (A*, M*, Δ)` (Section 5).
-4. **A flow-control law with no fitted multiplier.** At two or more paths
+4. **A flow-control law with no fitted multiplier.** At every path count
    the pooled outstanding cap is `(1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ`, where q(δ) is
    mapped onto the standing-queue setpoint RFC 8289 derives from Kleinrock
-   power (Section 6).
+   power (Section 6). The multiplier is not fitted. The law's rate input is circular:
+   every sender-side sampler of the delivered rate is fed by the cap's own
+   output, and no non-circular source of the link rate is shipped. That input
+   is open (Section 6.1; status §23–§34).
 5. **The recovery decision as a sequential test.** Every recovery clock
    written for this machine is one one-sided sequential test on a different
    measurand. The value of waiting is bounded by counters the machine already
@@ -147,8 +153,9 @@ loss-robust far above every Cubic-family stack, but it is not a faster bulk
 pipe than well-tuned BBR-class single-path stacks or kernel MPTCP over BBR,
 and at the heterogeneous dual cell it is measurably behind them
 (Section 9.2). The two derived flow-control flips are parity results in
-goodput that remove standing queue; they make the machine cheaper, not
-faster.
+goodput; whether they remove standing queue is unresolved, because the
+δ-cap's re-measure lands inside 2σ (Section 9.4). They do not make the
+machine faster.
 
 ### 1.5 Architecture as shipped
 
@@ -1123,6 +1130,291 @@ bound. At the shipped corner (Bulk, χ = 0) the condition is the inequality: an
 upper bound on the reactive false-alarm budget. Its dominant error term is
 σ, which Section 7.4 shows the tree cannot yet estimate stably.
 
+### 4.13 The feedback leg: degree-of-freedom accounting
+
+The rate law above is open loop. It sizes protection from a channel model
+(Section 4.2) and spends it per source symbol (`TaperBudget`, Section 3.3).
+The reactive plane answers holes on its own books (Section 7.1). Neither
+plane counts what the other already has in flight or what the decoder
+already holds. FlEC [Michel2023] and AC-RLNC [Cohen2020, Cohen2020mp] close
+this loop by counting degrees of freedom (DoF). This section writes their
+rule on the dial. **It is a model statement; the plain window does not
+implement it** (Section 11.3, status §39).
+
+**What already exists.** The premise "the FEC half has no feedback leg" is
+only partly true:
+
+- The generation seat (Section 5.8) already runs the AC-RLNC loop. The
+  receiver's `GenerationDeficit` carries `K_g − rank_g`. The sender emits
+  that deficit minus what it sent since the last report (`gen_want`,
+  RTT-spaced).
+- The v8 `RepairRequest (a, m, k)` carries the decoder's rank deficit
+  `k = holes − pivots` over a span. Today only the refuted request law of
+  Section 7.6 sends it.
+- On the plain window the reactive plane is already FlEC's bulk rule. One
+  copy answers each ripe hole, and the per-sequence cooldown stands in for
+  "a correction for this hole is in flight".
+
+What is missing is one ledger across the two planes.
+
+**FlEC's rule in difference form.** FlEC [Michel2023, Algorithm 1] makes a
+decision at every free congestion-window slot. It sends a repair iff
+`r̂ − md/ad < ds()`, where:
+
+- `r̂ = 1 − l̂` is the receive rate, not a loss estimate;
+- `md` is the missing DoF in the coding window, which grows only when QUIC's
+  loss detection marks a packet lost;
+- `ad` is the in-flight repairs that protect the window;
+- `ds()` is a policy function.
+
+Multiplying by ad > 0 gives `md − (1 − l̂ − ds)·ad > 0`. This form also
+covers ad = 0, so no quotient is needed. Two named points follow:
+
+- Bulk, `ds = −l̂`: `md > ad`. This is selective-repeat ARQ in coded form.
+- AC-RLNC, `ds = c·l̂`: insures in-flight corrections against their own
+  loss at a declared constant c.
+
+FlEC's last-flight protection is a second hook, `FECPattern()`. It fires
+once all application data has been sent, not through ds.
+
+**The ledger.** Write one rule: a count over live corrections, plus the
+existing a-priori bank.
+
+```text
+   Ω  =  Σ_c ( k_c − a_c )⁺   +   B
+
+   B  ←  min( B + r(β) ,  max(r(β)·W, 1) )   per source symbol or copy sent
+   B  ←  B − 1                               per proactive repair sent
+
+   k_c   =  u_c − R_c        missing DoF of decoder component c: unknown columns
+                             minus coded rows held over them
+   a_c   =  live corrections (copies and repairs) whose span meets component c
+   r(β)  =  the composed, blended rate of Section 4.5 (clamped to [0, r_max], finite)
+   live  =  sent, and neither reflected by a report (acked or SACKed, the
+            exact signal) nor older than its own path's time threshold
+            9/8·max(SRTT_p, EWMA_p) (Section 7.1, mp_time_threshold_split)
+```
+
+B is the shipped `TaperBudget` bank together with the repair debt it
+grants into (Section 3.3). The two lines above are its schematic; the
+shipped re-timing, spare cap and window expiry apply unchanged. The one
+change is that a copy accrues r(β) exactly as a source does. A bank is needed because a stateless count
+over the live set, `(r·n_live − p)⁺`, loses every fraction r·n_live < 1
+when the symbols age out. At r = 0.01 on a 94-symbol live set it would
+never emit.
+
+Emission follows the debt loop that exists today: a correction takes the
+next slot while Ω ≥ 1.
+
+- B keeps the spare-capacity cap and the one-repair-per-source pacing of
+  Section 3.3, and the taper still re-times it.
+- The first term keeps the reactive plane's budget and per-path detection.
+  §3.4's localisation rule still decides between a copy and a repair.
+- A component is a maximal set of unknowns that coded rows connect. A hole
+  that no row touches is its own component, and for it `k_c = 1`.
+- A live proactive repair whose span meets a reported component counts in
+  that component's a_c. This is the coupling between the planes.
+
+| symbol | provenance |
+|---|---|
+| u_c, R_c | measured by the receiver: the unified decoder's unknown columns and RREF rows (Section 5.2), reported per component as `RepairRequest (a, m, k_c)` at the gap-report cadence, as a report, not as a request authority |
+| a_c | the sender's own state: `nack_retx_at`, the repair spans it emitted, the acks |
+| B | the sender's `TaperBudget`, unchanged except that copies accrue |
+| live | the exact reflection signal, else the shipped per-path threshold on the correction's own flight |
+| r(β) | Section 4.5, unchanged |
+| (·)⁺ | a correction count cannot be negative |
+
+**Anchors** (each is a red-first test, status §39):
+
+1. *Bulk corner.* At β = 1 and χ = 0, r(β) = 0, so B = 0 and
+   `Ω = Σ_c (k_c − a_c)⁺`. That is one live correction per detected,
+   uncovered missing DoF, and it is finite. The z = −∞ of Section 4.5 cannot
+   leak in, because the ledger reads the clamped output r(β), not z. This is
+   FlEC's bulk rule. A lost copy leaves the live set at its own path's
+   threshold and is counted again, which is ARQ.
+2. *No feedback.* With no component reported, `Ω = B`, which is exactly the
+   shipped `TaperBudget`. Emission is r(β) per source.
+3. *The dial.* B's accrual is linear in r(β), the first term does not read
+   r, and r(β) is continuous in δ (Section 4.5). So Ω is continuous in δ.
+   ρ enters only through which holes exist: the shed law of Section 5.6
+   removes holes past D(δ) inside the 1 − ρ budget. The rule has no hint
+   argument and no threshold on δ or ρ.
+
+**ds derived, not declared.** Take a component whose live corrections are
+all copies. In long-run rate terms it receives one copy per missing DoF
+plus r(β) of insurance per copy. That is FlEC's `md > (1 − l̂ − ds)·ad`
+with
+
+```text
+   ds(δ, χ)  =  r(β(δ, χ)) − l̂
+```
+
+Bulk's −l̂ is the β = 1, χ = 0 point. AC-RLNC's c·l̂ is replaced by the
+dial's own r: the ε/(1−ε) chain plus the tail margin. ρ composes through
+the hole set.
+
+**How it composes with r\*.** r* (with the mass and burst terms, through
+r(β)) stays the a-priori term, spent through the existing bank. The ledger
+is the a-posteriori correction on top of it. It replaces two open-loop
+pieces of the reactive plane, both in `serve_gaps`:
+
+- the margin `ceil(retx·ε̂)`, by r(β) accrued per copy;
+- the debt reduction `repair_debt −= nacked·r`, by counting live repairs
+  in a_c.
+
+The margin is a step: it adds at least one repair to every gap report that
+fires any retransmit. Its repair is also a leading-window `generate_repair()`
+whose span covers in-flight members, the form Section 10 superseded. At
+Bulk the ledger's counterpart is 0.
+
+**FECPattern's counterpart.** χ (Section 4.6) is the candidate. At T_rem = 0
+it is ≈ 1, and the bank then holds the protection of the last flight. Corrections at that point take slots that no source can use,
+which is FlEC's displacement-free last-flight protection. Before the end χ
+ramps over about 1.5 SRTT while source still flows. The ledger then spends
+inside a busy window, and each correction displaces a source in quinn's
+window (Section 3.7). That is where the open-loop glide measured +55 %
+(Section 9.8). The ledger does not remove that displacement; it removes
+only the double coverage below.
+
+**Windows.** "Inside cwnd" names three windows on this stack:
+
+- *Quinn's window.* Its congestion controller (BBR) gates every datagram,
+  so every correction displaces a source 1:1 whenever the path is
+  window-bound. FlEC's in-cwnd rule holds by construction.
+- *The scheduler's Copa-lite cwnd.* It caps only the proactive term,
+  through `spare_capacity()`.
+- *Reactive symbols.* Gap copies and the margin repairs are not charged to
+  the scheduler's in-flight count unless `RWM_CHARGE_RECOVERY` is set
+  (default off).
+
+The pooled store counts retained source only: the retention insert in
+`emit_source` sits under `pol.reliable && !pol.generation`. The ledger
+changes neither cap. It moves no symbol out of a window; it withholds
+corrections that the decoder or a live correction already covers.
+
+**Recovery and placement.** The ledger reads the recovery decision; it
+does not change it:
+
+- Which holes count is what §7.1's per-path law reports. T* (Section 7.3)
+  and ℓ* (Section 7.6) are untouched.
+- Two effects are new. A hole whose component already holds enough rows,
+  or has a live covering correction, is not served. A re-fire waits for the
+  live copy's own-path threshold instead of the pooled-SRTT cooldown.
+- The cost of withholding: when a withheld-behind repair is lost, the copy
+  leaves up to one live time (9/8·SRTT_p) late. In expectation that is
+  `ε̂·9/8·SRTT_p` per such hole. At c3hg (ε̂ ≈ 0.08, SRTT_p 45–170 ms)
+  that is 4–15 ms, against a measured copy-closed hole time of 41–70 ms.
+
+The ledger decides how many corrections. Where they go stays with the
+placement law (Section 5.7), whose path enters only as the liveness clock.
+AC-RLNC's multipath allocation is not imported:
+
+- Its bit-filling [Cohen2020mp, Proposition 1] sends new packets on the
+  best-rate path subset whose complement can carry the DoF gap. That is a
+  hard argmax.
+- The zero-temperature placement arm measured 0.35–0.38× goodput at c7
+  (Section 9.8).
+- Its global `md_g/ad_g` over paths is what one decoder already gives
+  (Sections 5.2, 5.9). Its `ad₂ = Σ_p r_p·|in-flight repairs on p|` is
+  replaced here by the bank's r(β) accrual on every copy.
+
+**What it can win.** The r > 0 battery's receiver counters (`[RFA]`,
+`net/report.rs`; seed 42, reps 1–4, `db30e43`) bound the gain. They split
+every hole-closing or wasted arrival into four disjoint classes:
+
+- `fill_coded`: a hole the decoder rebuilt from coded repair.
+- `fill_src`: a hole a source copy closed.
+- `dup_src`: a second source copy of a sequence whose copy had already
+  arrived. On a FIFO single path this is a re-fire or a false alarm of the
+  recovery clock.
+- `preempt_src`: a source copy for a sequence the decoder had already
+  rebuilt. This is exactly a copy for a hole a repair had covered.
+
+`rep_redundant` counts repairs that added no rank. All are taken per
+source symbol, at 1.8 MB:
+
+| cell | arm | fill_coded | preempt_src | dup_src | rep_redundant |
+|---|---|---|---|---|---|
+| c3hg | CTL | 0.56 % | 0.48 % | 2.95 % | 0.48 % |
+| | GLIDE | 1.36 | 1.15 | 6.62 | 3.31 |
+| | MID | 4.10 | 3.37 | 7.56 | 7.62 |
+| sc2 | CTL | 0.17 | 0.14 | 1.38 | 0.31 |
+| | GLIDE | 0.38 | 0.34 | 2.23 | 1.39 |
+| | MID | 1.47 | 1.33 | 4.41 | 8.41 |
+| c8 | CTL | 0.58 | 0.50 | 1.34 | 1.08 |
+| | GLIDE | 0.4–2.2 | 0.4–1.7 | 0.4–25 | 6.95 |
+
+At every cell and arm, `preempt_src ≈ 0.85·fill_coded`. At the FIFO
+singles that means almost every hole the decoder closed also received a
+copy. At c8 a preempting arrival can also be the original on the slower
+leg. That is the double coverage the
+ledger removes, since a held row or a live covering repair withholds the
+copy. Its size is `preempt_src`: 0.14–0.50 % of source at the corner,
+0.34–1.7 % at GLIDE and 1.3–3.4 % at MID. The larger rows do not move:
+
+- `dup_src` is the recovery clock's own over-fire. The ledger touches it
+  only by replacing the cooldown, `max(pooled estimator RTT, 10 ms)`, with
+  the copy's own-path threshold `9/8·max(Copa SRTT_p, estimator RTT_p)`.
+  If the two RTTs agree, that is a 9/8 stretch and `dup_src` is out of
+  reach. If the Copa SRTT runs well above the estimator, part of `dup_src`
+  is removable, and the corner bound widens to preempt + dup: ≤ 3.4 % of
+  source at c3hg and ≤ 1.5 % at sc2. Which holds was not read. At the duals
+  most of `dup_src` is placement-skew fires (π₀ ≈ 0.92–0.96, Section 7.2),
+  which no count removes.
+- `rep_redundant` is a-priori insurance bought before any feedback existed.
+
+At the corner, removing the `ceil(retx·ε̂)` margin also removes its decodes
+(fill_coded 0.56 % at c3hg). Those holes would have received copies anyway
+(preempt 0.48 %), so the net saving there is ≤ about 1 % of source.
+
+FlEC's one mid-stream bulk gain is its buffer-limited case. A loss there
+blocks a receive window smaller than the congestion window. On this stack
+SACK-clocked release (Section 6.3) uncounts every SACKed symbol, so a frozen
+frontier holds only its holes' own store slots. So by construction none of
+the r > 0 cells is buffer-limited in FlEC's sense; no row measured this. The candidate would be a pinned pool
+(c8L, pin fraction 0.23, Section 11.2), which nothing has measured under
+the ledger.
+
+So:
+
+- **Bulk mid-stream stays at the corner.** The ledger is FlEC's bulk rule,
+  and FlEC finds no mid-stream bulk gain either: earlier flights are
+  recovered by retransmission before any quiescence.
+- **The import is continuous, and no gain is shown on the measured
+  cells.** It removes at most 0.5 % of source at the corner (3.4 % if the
+  re-fires are reachable), 1.7 % at funded GLIDE and 3.4 % at MID. MID is itself unmeasurable until the
+  engine echoes Copa's δ (Section 9.9). All of these are below the
+  completion spread of every battery so far (c3hg CTL: 5.4–7.2 s at
+  1.8 MB).
+- **At funded points it makes r slightly cheaper, not better.** On one
+  saturated path the throughput identity of Section 3.7 still caps r > 0 at
+  parity with ARQ.
+- **It does not shorten decode latency.** Decode-closed holes measured 4–6×
+  slower than copy-closed ones (Section 9.8). A decode-closed hole waits
+  for the slowest other unknown in its span, a maximum over k recoveries.
+  The ledger changes how many corrections go out, not that maximum.
+- **The bound's own limits.** The counters come from one seed and n = 4,
+  on the September binary, which ran c3hg and sc2 at about 2 Mbit/s
+  (out-of-band on 69 of 72 rows; status §37 records that regression as
+  since fixed). The gain therefore reads **not shown**, not refuted
+  (status §39 addendum). Only an off-Bulk cell on the wire can show one.
+- **Readings that would reopen it.** A δ off the corner with an echoed
+  Copa δ, where `preempt_src` reaches 1.3–3.4 % at the singles. A pinned
+  store, where an earlier close frees a cap slot. The evicting Realtime
+  seat.
+
+**Realtime.** At the evicting seat (ρ < 1, Section 5.1) the same ledger
+applies, with the shed law removing given-up holes from k_c. No cell
+measures it.
+
+- Hairpin [Meng2024] raises a batch's redundancy rate as retransmissions
+  bring its remaining time closer to the deadline. The ledger insures every
+  live copy at one r(β). That is the deadline-free (ρ = 1) corner of
+  Hairpin's problem, declared here, not derived.
+- Tambur [Rudow2023] sizes streaming-code parity per frame with a
+  predictive model fed by one bit of receiver feedback. It is an a-priori
+  rate on a slow loop, not DoF accounting, and stands with Section 4.2.
+
 
 ---
 
@@ -1462,13 +1754,18 @@ rule, sampled as a softmax (`Scheduler::place_costs`,
 
    c_i  =  L_i  +  B_i  +  V_i                                  (shipped)
    L_i  =  ( E_i − min(S, 9/8·srtt_i) )⁺ / ref                  completion-time term, S = 0 by default
-   E_i  =  (in_flight_i / cwnd_i)·srtt_i  +  srtt_i/2  +  ε_i·srtt_i
-   B_i  =  w_bw(δ) · r_i ,    r_i = ε_i/(1 − ε_i)  (10.0 for an unmeasured path)
+   E_i  =  (in_flight_i / cwnd_i)·srtt_i  +  (½ + ε_i)·ŵ_i ,   ŵ_i = wire_i ?: min_j wire_j ?: srtt_i
+   B_i  =  w_bw(δ) · r_i ,    r_i = ε_i/(1 − ε_i)  (10.0 at ε_i ≥ 1, a dead leg)
    V_i  =  w_div · fate_i      (repairs only, w_div = 1.0)
    w_bw(δ)  =  clamp( ½ − ¼·log₁₀(δ/δ_auto) , 0 , 1 )
 ```
 
-ref is the fastest active path's srtt, floored at 1 ms.
+ref is the fastest active path's srtt, floored at 1 ms. srtt_i is Copa's
+app-echo EWMA (`srtt_measured()`, β = 1/8; `RWM_COPA_WIRE` off): it
+includes the sender's own backlog dwell on leg i, and it updates only when
+leg i's own symbols are echoed. ŵ_i is quinn's packet-timed smoothed RTT of
+leg i: it holds no local dwell and refreshes without our symbols ("The shipped
+price" below).
 `SchedulingWeights::from_delta`: w_bw is exactly {0, ½, 1} at Realtime,
 Auto, Bulk (pinned bit-exact by `scheduling_weights_are_the_dial_not_a_mode`);
 the ¼ is the dial's width (δ spans four decades, the weights span 1). E_i
@@ -1512,6 +1809,316 @@ the shipped 0.15 is not a stable quantile of the measured ETA error
 (Section 9.8). At the dual cells 92–96 % of detected holes are closed by the
 other leg catching up, i.e. manufactured by placement skew rather than by
 loss (π₀, Section 7.2).
+
+**The cold price, corrected.** `correction_rate()` is infinite only at
+ε̂_i ≥ 1, and ε̂_i starts at 0. So the literal 10.0 is a dead-leg clamp, and an
+unmeasured leg is priced as lossless (optimistic). `cold_r = 0` on all
+31 807 `[ETA]` lines under `docs/l1-raw`, and the "hard exclusion" this
+section and §11.2 claimed is unreachable. The cold price that does bind is
+the 50 ms `DEFAULT_SRTT` seed that `srtt()` returns before a leg's first
+sample. The pinned `cold-path` cost 2.5 is ½·50/10, and `cold_ge` counts the
+evaluations it prices (0.036 of them in c1d DEF1024 s42 r2's first 0.3 s).
+At c1d (ref ≈ 3–10 ms) the seed costs 2.5–8 units, e^−17 to e^−55 odds: a
+pessimistic constant. The rule this section needs is the optimistic one:
+an unmeasured leg takes the best measured leg's value, so it gets sampled.
+`RWM_COLD_PLACE` already does this for srtt; the corrected price below does
+it for its base. The clamp also has a step: r → ∞ as ε̂ → 1⁻, then 10 at
+ε̂ = 1. Its continuous form is min(ε̂/(1 − ε̂), 10), which binds from
+ε̂ = 10/11 on. That is owed, and it is outside the wire base, which reads
+nothing new from it.
+
+**The idle-leg lock-out (status §37).** A leg that carries nothing gets no
+echo, so its srtt_i freezes at its last value. A leg that went idle while
+its own backlog was draining keeps that dwell as its price. That price is
+pessimistic, and a pessimistic price is absorbing: the leg is never
+sampled again, so the price never refreshes. In c1d DEF1024 s42 r2 (p34)
+leg 1 reads `rtt=156` ms against quinn's `wrtt=3` from t = 0.5 s to the end
+of the row.
+
+*Where lock-outs happen (status §38 amendment 2).* A scan of every committed
+two-leg sender log (`tools/l1/place38_onset.py`; LOCKED = egress share
+< 10 % and median `rtt` ≥ 3 × median `wrtt`):
+- Static `RWM_STORE=<n>` rows: 27 of 110 LOCKED (c1d 10 of 59, c8 17 of
+  51), across p27, p29, p34 and disp36. disp36 ran main's binary, so the
+  `[LOOPDIAG]` instrument is not the cause.
+- Default-law rows: 1 of 161, anchor-diag c8 `PRS` s7 (main's binaries:
+  1 of 149; the p29 `[LOOPDIAG]` binary: 0 of 12).
+- Every LOCKED row's onset is at t ≤ 1.0 s: ≤ 0.5 s in 21, 0.8 s in 6,
+  1.0 s in 1. No lock-out starts later. Two recovered late in the row (at
+  about 3 s and 10 s).
+- By cap, lock-outs form a band: c8 0/6 at 16–64, 1/6 at 128, 2/4 at 192,
+  5/6 at 256, 6/9 at 384, 2/6 at 512, 1/4 at 768, 0/10 at 1 024–2 048; c1d
+  0/9 at 128–384, 2–3 per 7–10 at 512–2 048, 0/8 at 3 072–4 096. Above the
+  band the active leg's own queue lifts its price past the frozen one, so
+  the idle leg re-enters.
+
+*The mechanism is the static arm's start-up.* `RWM_STORE=<n>` sets
+`store_env_set`, which turns `plain_dyn_cap` off (`sender_policy.rs`). That
+removes the boot cap (128), the gain·BDP law, `RWM_DELTA_CAP`,
+`RWM_SUM_CAP`, the path pool, the honest cap and the per-path `sout`
+gauge, and the window is n from the first symbol. (`RWM_STORE_BOOT=128`
+is still echoed on `[GATES]` but is not read.)
+- Before any echo both legs carry the 50 ms seed, so placement splits the
+  first burst evenly whatever the legs' capacities.
+- At c8 the 20 Mbit/s leg takes about half of n at once. At t = 0.3 s it
+  has 96 of 212 in flight in DEF256 s42, and its echoes then read
+  156–390 ms against `wrtt` 42–46. Its srtt jumps, placement leaves it, it
+  drains, and its price freezes at the spike.
+- At c1d the same burst splits over two 1 Gbit/s legs and one leg's echoes
+  still read 54–369 ms in the first second, against `wrtt` 2–7. Where that
+  dwell sits (sender backlog or receiver) is not resolved offline.
+- The default law boots the whole pool at 128 and grows it from measured
+  BDP, so its first burst is at the band's lower edge (c8 static 128: 1 of
+  6). That is why the default law locks rarely (1 in 161). It is not
+  immune: the frozen price is the law's, and only the trigger is the
+  start-up.
+- The corrected base below also prices the first burst. Quinn's RTT exists
+  from the handshake, so at c8 the slow leg's cold price is ½·(43 − 14) ms
+  above the fast leg's, not equal. That the corrected base also shrinks the
+  trigger is **not shown** (status §38 addendum): the first-burst split is
+  within the spread (c1d 1536, second leg's in-flight share at t ≈ 0.3 s:
+  frozen base 0.612, wire base 0.628). What the wire base shows is that no
+  leg stays locked.
+
+*The constraint.* When I_i = 0 the price may read only state that refreshes
+without our symbols, or state that is never pessimistic. Load-dependent
+delay (the leg's own backlog and the queue it built) may enter only
+multiplied by a live load counter, which is 0 at idle.
+
+*Candidates on the ledgers.* Table 5.7a gives, per row, the idle leg L's
+price gap against the active leg A, g = (c_L − c_A)/T. It is computed at
+I_A/W_A = 0, the case least favourable to L, from post-warm-up medians of
+the sender's `[DIAG]` (`rtt`, `wrtt`, `rtp_us`) and `[LOOPDIAG]`
+(S = p50 − min), with T = 0.15, ref = s_A and Bulk.
+- S is a cross-instrument proxy, because main's own per-leg spread
+  (`rtt_win`, the last 256 app-echo samples) is not `[LOOPDIAG]`'s 250 ms
+  window. Both are app-echo.
+- A leg that stopped sampling keeps its last window, which is what "keep S
+  when idle" keeps.
+- g ≳ 7 nats is below 0.1 % share.
+- Script: `tools/l1/place38_ledger_score.py` (prints every row).
+
+*Table 5.7a.* Gap g in nats; a locked leg is egress share < 2 % with
+median `rtt` ≥ 3 × median `wrtt`.
+
+| price base on L and A | 6 locked c1d rows (p34) | 5 locked c8 rows (p27) | 11 fresh c8 rows: shift against the frozen base, per-row median over in-transfer `[DIAG]` lines |
+|---|---|---|---|
+| frozen-srtt `(½+ε)·srtt` (the pre-§41b base) | +35 to +116 | +17 to +57 | 0 |
+| `(½+ε)·(RTprop + S)`, S = p50 − min kept | +2.7 to +58 (4 of 6 ≥ 20) | +1.0 to +25 (3 of 5 ≥ 12) | −7.0 to +1.2 (from row medians) |
+| `(½+ε)·(RTprop + S)`, S = p50 − RTprop kept | +26 to +94 | +14 to +50 | −6.9 to +0.6 (from row medians) |
+| `(½+ε)·RTprop` | −0.2 to +0.1 | +1.3 to +6.3 | −5.0 to −1.0 (median −1.5) |
+| `(½+ε)·ŵ`, quinn's srtt | **−1.3 to +0.1** | **−0.7 to +3.8** | **−2.5 to +1.0 (median −0.4)** |
+
+So the joint derivation's per-leg (RTprop + S), kept when idle, does not
+cure the lock-out. S on main is app-echo and so dwell-inclusive. Its last
+window is the dwell spike that idled the leg: 140 ms of S at c1d r2, 127 ms
+at c8 DEF256 s42. RTprop alone cures it but moves every fresh c8 row toward
+the slow leg (per-row medians −1.0 to −5.0 nats), because it drops the slow leg's network
+jitter and its own live netem queue from the price. Quinn's packet-timed
+srtt ŵ_i does both jobs. It excludes the sender's local dwell, and it keeps the
+network delay, jitter and queue. The idle leg's `rtt` − `wrtt` is 83–367 ms
+on the locked c1d rows and 241–644 ms on the locked c8 rows, against
+2–32 ms on the fresh c8 slow legs. The store law may read the
+loop-time S, because it sizes the store over the whole loop, dwell
+included. Placement must not, because the dwell is leg i's own backlog,
+which its occupancy term already prices live. The two laws share RTprop,
+not S.
+
+**The shipped price: the wire base (status §38, §41, §41b).** It is the
+only placement base; it has no gate.
+
+```text
+   c_i  =  E_i / ref  +  w_bw(δ)·r_i  +  V_i  ( + X_i )
+   E_i  =  (I_i / W_i) · s_i   +   (½ + ε̂_i) · ŵ_i
+   ŵ_i  =  wire_i  ?:  min_{j measured} wire_j  ?:  s_i        (availability, not a mode)
+   ref  =  max( min_j s_j , 1 ms )                              (unchanged)
+```
+
+The base is (½ + ε̂_i)·ŵ_i. The frozen-srtt base (½ + ε̂_i)·s_i that it
+replaced is a §10 row. The queue term carries s_i and is unchanged.
+
+| symbol | source | refresh | at idle (I_i = 0) |
+|---|---|---|---|
+| I_i | `PathState.in_flight`: charged at placement, released by ack or expiry | every placement and ack | 0, so the term (I_i/W_i)·s_i is exactly 0 whatever s_i holds |
+| W_i | `PathState.cwnd` (Copa), `max(1)` (cannot bind: MIN_CWND ≥ 1) | Copa update | unused |
+| s_i | `srtt_of(i)`: Copa app-echo EWMA, or the `RWM_COLD_PLACE` best-measured value, or the 50 ms seed | leg i's echoes | frozen, multiplied by 0 |
+| ŵ_i | quinn's packet-timed smoothed RTT of leg i's connection (`PathView.rtt_us` via `QuicTransport::wire_rtt`), mirrored into `PathState` for every leg at every ack batch (any leg) and every path report | quinn's own ack-eliciting traffic, independent of our symbols. Observed moving on idle legs: c1d 3 042 → 2 792 → 2 643 µs, c8 DEF256 p1 42 → 46 → 44 → 45 ms | the leg's network transit, including any standing queue in the network (delivery delay, which placement prices), with no local dwell |
+| ε̂_i | `estimator.loss_rate()` (EWMA, starts at 0) | loss reports | frozen, never above the last measurement, and 0 if never measured |
+| ref | min over active legs of s_j, 1 ms floor | — | a scale common to all legs (no differential); a frozen small s_j sharpens the softmax, never excludes a leg |
+| r_i, V_i, X_i | unchanged; X_i's arrival reads this E_i, and F̂ is built from the stamp of the same E_i | — | — |
+
+The `[ETA]` arrival stamp (`emit_source.rs`, `E_picked`) is the shipped E:
+`stamp_placement_eta` reads the same `E_i` the price does (one seat,
+`Scheduler::place_e`), including the `RWM_COLD_PLACE` value of s_i. The
+stamp therefore predicts what placement priced, and the receiver's residual
+(realized − predicted) measures that quantity. Before §41b the stamp kept
+the frozen-srtt E under the then-optional wire base, so its predictor
+differed from the law's by (½ + ε̂_i)·(s_i − ŵ_i), the local dwell that
+`rtt` − `wrtt` reports; that gap is gone. The stamp feeds only gauges
+(`[ETA]`, `[LAT]`) and F̂, which only the default-off X_i reads, so at N = 1
+the base changes nothing except the ŵ mirror reads. The derived-temperature
+arm (`RWM_PLACE_T_DERIVED`) reads σ̂_e off this stream and so now measures
+the wire-base predictor. A test (`eta_stamp_is_the_priced_e`) pins stamp
+and price to each other.
+
+*Bind gauges.* Each clamp or fallback gets a gauge, on the `[ETA]
+site=sender` line unless noted.
+- The ref floor: `ref_fl=`, the fraction of evaluations where 1 ms binds.
+  Predicted 0, since every cell's min srtt is ≥ 2 ms.
+- The r clamp: `cold_r=` (exists). It measured 0.
+- The ŵ fallback: `w_cold=`, the fraction of evaluations where wire_i was
+  absent.
+- The seed in s_i: `cold_ge=` (exists).
+- There is no argmin-moved witness: it compared the wire base's argmin with
+  the frozen-srtt base's, which the engine no longer computes. The wire
+  base's execution is witnessed by `w_cold=` (the fallback taken, so the
+  wire reads are live when it is below 1) and by the unit tests that pin
+  its absolute values at every anchor.
+- On `[DIAG]`, `p<i>: … wpl_us=` is the ŵ_i the scheduler holds, so it can
+  be read beside `wrtt`.
+
+*No mode bit.* The base is one expression for every leg, every δ and every
+path count. N = 1 gives P = 1 (single-path cells are untouched by
+construction). δ enters only through w_bw(δ), unchanged, and ρ does not
+enter. The `?:` chain is an information-availability fallback, as in
+`srtt_of`, and selects no law.
+
+*Units: ref and the base's clock (status §38 amendment 2).* The base is
+wire-clocked and ref = min_j s_j is echo-clocked. That does not mix units
+inside a cost: every term is in seconds, and ref divides every term of
+every leg by the same number. So ref sets only the softmax's temperature in
+seconds, T·ref. Switching ref to the base's clock, ref = max(min_j ŵ_j,
+1 ms), rescales every gap by min s / min ŵ and creates no shift of its own.
+- On the 11 fresh c8 rows it moves the per-row median shifts by ≤ 0.4 nats,
+  because the fast leg (the ref leg) has s ≈ ŵ.
+- On the locked rows it widens the base's gaps to −10.4…+0.2 (c1d,
+  ×2.3–8) and −0.9…+4.0 (c8). Every lock-out is still cured.
+- What it would change is the temperature wherever dwell makes s ≫ ŵ on
+  every leg. At c1d default (s ≈ 20–45 ms, ŵ ≈ 3 ms) the softmax would
+  sharpen ×7–15 on queue differences. That is a second mechanism, a change
+  to T, not to the lock-out, and it belongs to T's derived form,
+  T·ref = (√6/π)·σ̂_e, in which ref cancels.
+- So the base keeps ref. When dwell dominates, the queue term (I_i/W_i)·s_i
+  carries most of the cost difference, and that is intended: the
+  frozen-srtt base counted the same dwell a second time.
+
+*Fixed point, c1d (symmetric legs).* Both legs read ŵ = 2–8 ms on every p34
+and p27 row, and ε̂ = 0, so c_1 − c_0 = (I_1·s_1/W_1 − I_0·s_0/W_0)/ref +
+½·(ŵ_1 − ŵ_0)/ref. Each leg's own cost rises strictly with its own load,
+because ∂c_i/∂I_i = s_i/(W_i·ref) > 0 and s_i itself rises with load. For two legs,
+φ_1 = σ((c_0 − c_1)/T) is a decreasing function of φ_1, so it has exactly
+one fixed point, φ_1 = ½ at equal state.
+- The lock-out state (I_1 = 0) gives c_1 − c_0 = ½·(ŵ_1 − ŵ_0)/ref −
+  I_0·s_0/(W_0·ref). On the locked rows the first part, divided by T,
+  is −1.3 to +0.1 nats, so φ_1 ≥ 0.47 there even at I_0 = 0. It is not a
+  fixed point.
+- The frozen-srtt law had a second, absorbing fixed point at the same state:
+  +35 to +116 nats on the locked rows.
+- That fixed point is the one-leg state, and one-leg rows ran faster.
+  Within a cap (p34 means), locked rows ran ahead of two-leg rows by +3.2 %
+  (768), +1.6 % (1024), +10.1 % (1536, with the partial row, against the s42
+  r2 two-leg row) and +16.0 % (2048).
+  Behind this is the receiver: one-leg rows ran ×1.35 μ_R.
+- The corrected law removes that point. Its c1d goodput cost is measured
+  and stated in §38, not hidden. Pricing the receiver's per-leg cost is
+  the law-level fix and is not attempted here.
+
+*Fixed point, c8 (heterogeneous legs: c2 100 Mbit 5 ± 3 ms, c3 20 Mbit
+20 ± 5 ms).* Placement builds the fast leg's netem queue, and the price
+reads it back: ŵ_0 rises from 14 ms at cap 128 to 86–105 ms at 2048. That
+loop is negative feedback. Load on leg 0 raises s_0 and ŵ_0 together, so
+∂c_0/∂φ_0 > 0, and the one-crossing argument above applies: one stable
+equilibrium.
+- The circularity is harmless because the S it reads is live. It drains
+  with the load, and quinn sees it drain, because the leg keeps carrying.
+- On the 11 fresh c8 rows the wire base moves g by the local dwell only, δg =
+  [(½+ε̂_1)(ŵ_1 − s_1) − (½+ε̂_0)(ŵ_0 − s_0)]/(ref·T). δg does not depend on
+  the load, so it is evaluated on every in-transfer `[DIAG]` line. The
+  per-row medians are −0.2 to −0.5 nats at caps 128–512, −0.9 at 768, −2.5
+  and −1.3 at 1 024, and +1.0 and +0.1 at 2 048.
+  - An earlier version of this paragraph took δg from each row's medians
+    of s and ŵ and read −2.6 at DEF192 s42 (an open-loop 5.7 % → 45 %).
+    That row is not stationary: its fast leg froze at 416 ms against
+    `wrtt` 23 from 1.0 to 2.5 s while the slow leg carried everything, and
+    then the roles swapped. Medians across the two phases describe neither,
+    and per line its median shift is −0.43.
+  - The 1 024 rows oscillate within each 250 ms window between a loaded
+    and an idle slow leg. In the idle phases its echo srtt holds up to
+    130 ms of local dwell above ŵ (e.g. `rtt` 305 against `wrtt` 172), and
+    the wire base reads that stale dwell lower, which is the correction itself.
+    These rows already sit at capacity share (0.156–0.160 against 0.167),
+    the regime of the c8 default cell, whose share clause (±0.03) §38
+    gates.
+  - Shifts are open-loop and evaluated at I_A = 0, so they are upper
+    bounds on a share move. The slow leg's own queue term rises as it takes
+    load; closed-loop shares are not computed, because per-leg W_i is not
+    in the ledgers.
+- The low slow-leg share at caps 128–192 (1.7–5.7 %) comes from fresh prices
+  (`rtt` − `wrtt` = 2 ms on three of the four rows). Where echo and wire agree
+  it is unchanged by construction: when s_i = ŵ_i on
+  every leg, the wire base's cost equals the frozen-srtt cost exactly (test
+  `wire_equal_to_echo_prices_the_echo_srtt`).
+- On the 5 locked c8 rows the gap falls from +17…+57 to −0.7…+3.8 at
+  I_0 = 0, so the slow leg is sampled again. The c8 MAIN default rows (§32:
+  share 0.175–0.185, slow-leg `rtt` within 7 % of `wrtt`) are the wire base's predicted equilibrium.
+
+*Staleness, what keeps each input fresh.*
+- RTprop: Copa's 10 s windowed min. `expire_old_samples` runs only inside
+  `record_rtt`, so an idle leg expires nothing and holds its lower envelope.
+  That stale value is optimistic, never absorbing.
+  - Under a standing queue held for more than 10 s while loaded, it expires
+    upward. A leg that then idles holds the inflated floor, which is
+    pessimistic.
+  - The ledgers cannot show this, because their transfers last ≤ 9 s.
+  - The locked c8 legs read 42–52 ms against 32–44 fresh, because their
+    only samples were the start-up spike.
+  - The corrected price does not read RTprop. The store law and X_i's H do.
+  - The only cure that keeps a windowed min honest is a drain probe (BBR's
+    ProbeRTT), and that is a mode (§24 O1).
+- ŵ_i: refreshed by quinn, not by us. Its residual risk is a leg that idles
+  while its own netem queue is still in quinn's EWMA. At c8 default the slow
+  leg reads ŵ_1 = 245–366 ms while carrying, and after the transfer it
+  decays slowly (269 → 216 ms over 0.8 s, c8 MAIN s42 r1). The wire base prices
+  that leg fresh while it carries, so §38 reports the idle-leg ŵ decay as a
+  witness rather than assuming it.
+  - *Idle refresh rate (status §46).* Quinn samples only when one of its own
+    ack-eliciting packets is acked. On an idle leg those packets are the 2 s
+    `PathReport` + `Ping` and the `Pong` that answers the peer's 2 s `Ping`.
+    No keep-alive is set.
+    - That gives 2–3 samples per 2 s (derived). At that rate a leg's excess
+      over its true RTT halves in about 3.5–5 s and falls to 10 % in
+      11–17 s.
+    - Only the Pong's 1 per 2 s is measured: the frozen leg's `dgq tx` on
+      §38's locked c8 rows. At that floor the times are about 10 s and 34 s.
+    - The old base had no idle refresh at all, because broadcast acks carry
+      echo 0.
+    - Status §46 registers the path event that tells the two apart.
+- I_i: live. The residual frozen term is (I_i/W_i)·s_i on a leg whose
+  in_flight is stuck above 0 without echoes. Every locked ledger leg read
+  `infl=0`.
+
+*Result: shipped (status §38, §41, §41b; user ruling 2026-11-10, ADR-0073).*
+- It cures the absorbing lock-out. At the four static cells (c1d 1536,
+  c8 192, 256, 512; 24 rows per arm) 0 wire-base rows locked, against 10
+  frozen-base rows (5, 1, 3, 1). c8 256 goodput rose 90.4 → 95.1 Mbit/s
+  (+5.2 %).
+- §38 scored `REGRESSES-AT(c1s-400@def)`: client CPU per GB at the c1s
+  control +2.5 % against a 2.4 % tolerance, ranges disjoint. The cause was
+  the then-optional `place_costs` call's overhead, about 360 ns per call,
+  not the mirror and not the law.
+- §41 made the witness allocation-free: 0 extra heap blocks per
+  `place_costs` (test `place_costs_allocates_exactly_its_result_vec`), and
+  the c1s CPU cost read +0.8 %.
+- §41b scored the gate-off binary against main under an A/A-calibrated
+  guard: GATE PASS, p = 0.7195. The wire arm itself read p = 0.9316, with
+  every §21 reading WITHIN and c1s client CPU +0.0 %, c1d +0.2 %.
+- At the default law neither base locked (0 of 6 at c1d and c8), so no
+  benefit was measured where the base ships; the measured benefit sits at
+  static caps. It ships because the user ruled so on the evidence above,
+  and the frozen-srtt base's absorbing fixed point is removed with it.
+- **Not tested off Bulk or at four paths.** The cells above are the Bulk
+  point at N = 2 (c1s as the N = 1 control); the base is one expression
+  continuous in δ and N by construction, but those regions are untested.
 
 ### 5.8 The generation seat
 
@@ -1653,7 +2260,13 @@ paths with spare congestion window, and `RWM_STORE_CAP_UNIFIED` (retired)
 was the live-set arm. Under Copa-sole pass-through the anchor is Σ cwnd.
 **Engine status:** the guard is removed (ADR-0072, code phase done): the law
 runs at every N ≥ 1, and `RWM_STORE_PATHS = 0` re-runs the predecessor of
-Section 6.2 at every N. The validation battery has not run (status §18).
+Section 6.2 at every N. The validation battery ran (status §18, §19) and
+ADR-0072 is Accepted. Against a same-session main there is no N ≥ 2 move at
+c1d or c8, c1s reads `PINNED` (the knee binds in 70 % of windows) and c2 reads
+`INERT-AS-DERIVED`. The first run (status §18) read `REFUTED` through
+`CONTROL-MOVED`, which §19 attributes to the cross-session reference (both arms
+sat about 24 % below the earlier session, within 3 % of each other). The
+recorded §18 verdict is not relabelled.
 
 | symbol | value | provenance |
 |---|---|---|
@@ -1667,8 +2280,9 @@ Section 6.2 at every N. The validation battery has not run (status §18).
 | knee | 2048 per path | resource bound, not a law term: retained payload per live path (≈ 2.5 MB at 1.2 kB); value measured but stale (`RWM_STORE_PATH_POOL`, the 2026-07-14 static sweep); gauge `[SUMCAP] pin=` |
 
 **One path is not a case.** The `n_live < 2` guard in `pooled_store_cap`
-is not part of any derivation. It entered as the A/B hygiene of the
-path-scaled pool (ADR-0058: "N = 1 keeps the single-path law bit-exactly")
+(removed; ADR-0072) was not part of any derivation. It entered as the A/B
+hygiene of the path-scaled pool (its N = 1 clause, "N = 1 keeps the
+single-path law bit-exactly", was ADR-0058's; ADR-0072 supersedes it)
 and stayed as the ×N and δ-cap arms' "bit-identical at N = 1" after both
 flipped. It made one path a different law (Section 6.2) whose ceiling, 1024,
 has no provenance and binds in every post-warm-up window at c1s
@@ -1686,8 +2300,8 @@ anchor it reads, the law asks 1.37–2.34 k symbols at c1s and the knee binds
 whenever a > knee/(1 + q) = 1862 (Bulk): 7 of the 15 post-warm-up windows
 of r1. At the delivered rate it would ask ≈ 250–285. That over-read is an
 input defect the 1024 constant was hiding, not a property of the law; the
-`[SUMCAP]` pin fraction reports it at one path once the guard is gone
-(Section 11.2).
+`[SUMCAP]` pin fraction reports it at one path now the guard is gone: the
+knee binds in 70 % of c1s windows (status §18; Section 11.2).
 
 **The law is fed by its own output (status §23).** On a store-bound sender
 the delivered rate is cap/T_loop, where T_loop is the send-to-release time.
@@ -1724,65 +2338,9 @@ stays at 5–7 ms while Tmin moves 10×: `(1 + q)·L·(RTprop + spread)` lands i
 c2's band, but it needs the link rate L, which nothing measured supplies at
 c2.
 
-**Two candidate laws (status §27–§29).** §27 settled that no sampler reads
-the link under the cap (bbr_rs reads the delivered rate; stock BBR over-reads
-under jitter) and that the loop spread is cap-flat only at c2. Two candidates
-remain that need no link rate. Both are derived here to their fixed points
-before anything is built; one does not survive the derivation.
+**Closed candidates for the knee (status §23–§34).** Candidates P (probe gain), D (power seeker), D-W (noise-sized window), (b1) quinn's BBR window, (b2) the cwnd-binding share, (b3) path memory and (b4) the receiver capacity μ_R as a ceiling were each derived to a fixed point or built and measured, and none closed. They are summarized in Section 10 with their status sections; the law's rate input stays open, and no measured source of the link rate L exists at c1s (post-§32), c2 or c8.
 
-*(P) An always-on probe gain.* Offer more than the measured delivered rate:
-
-```text
-   cap'  =  (1 + q(δ) + g) · D̂ · τ
-```
-
-with D̂ the delivered rate (any honest sampler) and τ a time. On a
-store-bound sender Little's law gives D̂ = cap/T(cap), T the send-to-release
-loop time, so the map is closed by an identity, not a measurement:
-
-```text
-   τ = T̂ (a loop-time estimate):   cap' = (1 + q + g) · cap                 no interior fixed point; runs to the clamp
-   τ = RTprop:                      cap' = (1 + q + g) · cap · RTprop / T(cap)
-                                    fixed point  T(n*) = (1 + q + g) · RTprop
-```
-
-So P is a delay-ratio setpoint with a constant ratio G = 1 + q + g, and g
-is the unprovenanced gain 2.0 of Section 6.2 returning under another name.
-The ratio it would have to hit is not one number: at the §27 DEF knees
-T(Tp50)/RTprop reads 1.85 (c2, n = 192), 4.1 (c1s, 1 024), 3.3 (c1d, 768)
-and at c8 (384) 2.7 on the fast leg and 1.68 on the slow one, so every
-constant G misses at least three of the four cells. On the same clock c2's
-unloaded ratio (Tp50/RTprop at n = 64: 14.9/7.0 = 2.1) already exceeds its
-knee ratio 1.85, so no G both escapes c2's floor and stops at its knee; and
-RTprop itself reads 7.0–11.4 ms across the c2 sweep rows (the windowed min
-of a jittered path), so a ratio to it is not a stable number there. The
-window is P's only lever (the reliable path has no pacer, Section 6.5), so
-this closure is the only form P can take. **P is closed by the derivation**
-(the Little identity, not a measurement) and is not built.
-It would also make the store cap a window congestion controller with a
-fixed delay target (ADR-0068's question), which is the weaker form of D.
-
-*(D) Close on power, not on a ratio.* What marks the knee at every cell is
-not a delay ratio but the point where an added symbol of store stops buying
-goodput and starts buying only delay. Kleinrock's power [Kleinrock1979]
-— throughput^α over delay, the same power the CoDel setpoint q is derived
-from (RFC 8289 §3.2) — peaks there:
-
-```text
-   n*  =  argmax_n  Π(n) ,      Π(n)  =  D(n)^α(δ) / T(n) ,      α(δ) = b(δ) ∈ [½, 2]
-```
-
-| symbol | provenance |
-|---|---|
-| D(n) | delivered rate over a window (frontier advance ÷ window time; batch granularity) — measured |
-| T(n) | the window median of the per-ack loop-time samples (`record_rtt`), max over live paths (the in-order frontier waits on the slowest) — measured |
-| α(δ) | Kleinrock's generalized power exponent on throughput [Kleinrock1979], mapped to the dial as b(δ) (Section 5.4): Bulk 2, Auto 1, Realtime ½ — a declared mapping, continuous and increasing in δ's b |
-| q(δ) | the step: the cap moves by at most a factor (1 + q) per window, q the CoDel band of this section — cited |
-| window | two rounds of T per dither half: a cap change reaches the delivered rate after one loop (Little's law on the store), so the first round settles and is discarded and the second is measured — derived; a sample-count floor gauges thin windows |
-
-*Transcribed from the §27 DEF ledger* (`docs/l1-raw/loop-diag/p27/ld.log`,
-live DEF rows; goodput mean in Mbit/s, T = max over paths of the row's Tp50,
-ms; Π₂ = goodput²/T):
+Three results of those derivations are still cited below. First, the power point: Π(n) = D(n)^α(δ)/T(n), α(δ) = b(δ), with D the delivered rate over a window and T the window median of the per-ack loop time, max over live paths. Its argmax n* is the location the oracle-L fixed points are compared with. Transcribed from the §27 DEF ledger (`docs/l1-raw/loop-diag/p27/ld.log`, live DEF rows; goodput mean in Mbit/s, T = max over paths of the row's Tp50, ms; Π₂ = goodput²/T):
 
 | cell | n: Π₂ | argmax α=2 (α=1) | DEF knee band | goodput at argmax / Gmax | A_x p50 at argmax / MAIN |
 |---|---|---|---|---|---|
@@ -1791,410 +2349,263 @@ ms; Π₂ = goodput²/T):
 | c1s-400 | 256: 72.0 k, **384: 83.4 k**, 512: 78.6 k, 1024: 54.7 k | 384 (256) | [683, 1 536] | 632 / 746 | 1.5 / ≈ 14–17 ms |
 | c1d-400 | **384: 71.4 k**, 512: 62.5 k, 768: 56.9 k | ≤ 384, the grid's edge (384) | [512, 1 152] | 604 / 700 | 1.7 / ≈ 20 ms |
 
-Predicted operating points, Bulk: c2 and c8 at their knees; c1s and c1d one
-to two grid steps below the 0.95 knee. That under-shoot is the law choosing,
-not missing: at the receiver-bound cells the last 10–15 % of goodput (the
-receiver's batching tail, status §16 finding 4) costs 3–6× the delay, and a
-power criterion with α = 2 declines it. Against MAIN's own goodput the
-predicted points read 632 against 563–663 (c1s) and 604 against 526–570
-(c1d, status §19/§27), i.e. within or above main, at a tenth of its delay.
+Predicted operating points, Bulk: c2 and c8 at their knees; c1s and c1d one to two grid steps below the 0.95 knee. That under-shoot is the law choosing, not missing: at the receiver-bound cells the last 10–15 % of goodput costs 3–6× the delay, and a power criterion with α = 2 declines it. Against MAIN's own goodput the predicted points read 632 against 563–663 (c1s) and 604 against 526–570 (c1d, status §19/§27), i.e. within or above main, at a tenth of its delay. Post-§32 (status §34, static caps) the 0.95 knee is 1 024 at c1s and c1d (Gmax 825 / 813 Mbit/s) and the Π₂ argmax is 512 / 384.
 
-The online law (no phase, no mode, no branch on N or on the cell):
+Second, the authority gauge. The store counts a symbol until its SACK releases it, quinn until its QUIC ACK, so "quinn's window below the store cap" (K < c) is not authority and overstates quinn's share. The direct witness is quinn's backlog B = Σ `dgq[hand − tx]` (datagrams handed to quinn and not yet sent), and any nested store law carries it beside its bind gauges (ADR-0068, open question 12). On the pre-§32 ledgers the store cap holds authority at and around every knee; post-§32, B reaches 128–192 datagrams (1.3–2 ms of L) at c1s 768 / 1 536 and c1d 1 024 while it stays ≤ 50 at caps ≤ 512, so a nested store law at c1 needs B and the rejection of inner-loop periods. A seeker above a delay-based inner loop that does not reject them seeks on a flat map.
 
-```text
-   one period = two windows at fixed n̄:  cap₊ = n̄·(1 + ½q),  then  cap₋ = n̄·(1 − ½q)
-   ê    =  ( ln Π₊ − ln Π₋ ) / ln( (1 + ½q) / (1 − ½q) )                    the power elasticity, Δ ln cap ≈ q fixed
-   n̄'   =  clamp( n̄ · (1 + q)^clamp(ê, −1, 1) ,  floor ,  N·knee )        once per period
-   cap  +=  Σᵢ ε̂ᵢ·Dᵢ·stall(δ, ρ, i)                                          the hole residency, additive
-```
+Third, reverse-path ack compression on the jittered shapes (c2/c3 carry 3/5 ms jitter both ways, c1 none) inflates quinn's BBR rate at c2 and c8 (candidate (b1) in Section 10; a reading of the mechanism, not measured). The receiver-side dispersion block below avoids it.
 
-The dither is the excitation the gradient needs (extremum-seeking control of
-a static map [Ariyur2003]): a square wave of amplitude ½q in log-cap,
-always on — not a phase — and gauged so a measurement can show it never
-dominates. n̄ is held for the whole period, so the elasticity divides by the
-known constant ln((1 + ½q)/(1 − ½q)) ≈ q and is well-conditioned by
-construction (updating n̄ every window would let n̄'s own step cancel the
-dither and divide by noise). ê > 0 below the knee (D ∝ n, T flat: ê ≈ α),
-ê < 0 above it (D flat, T ∝ n: ê ≈ −1), so n̄ climbs and descends by at
-most (1 + q) per period and settles in a limit cycle of about ±q around n*;
-the loop gain per period is bounded by the clamp on ê. A period is four
-rounds of T. A floor start would climb ln(n*/10)/ln(1 + q) periods (38 at
-c1s's 384), so n̄ starts from the shipped law's ask at the first refresh;
-the descent from there is ≈ 18 periods at both single-path cells (c1s
-2 048 → 384; c2 ≈ 1 000 → 192): ≈ 0.6 s at c1s (rounds 4–10 ms) and ≈ 3.5 s
-at c2 (rounds shrinking from ≈ 100 to ≈ 19 ms as the queue drains), a third
-or more of a c2 transfer, so the measurement reports latency both over the
-whole transfer and after convergence. A window of BBR's 10 rounds would
-take most of a c2 transfer to converge; that is why the window is derived
-from the loop, not borrowed from a filter length. ρ composes as derived above: the hole residency is
-an additive term outside the power seeker, linear in ρ, both terms computed.
-Bind gauges: floor and N·knee on n̄, the ê clamp, and the dither amplitude.
+**Receiver-side dispersion as the link-rate source — derived (status §36).**
+Two questions are kept apart: does the law close if L is known, and can the
+receiver read L.
 
-Failure modes, named before any measurement: (1) noise — at c1s one static
-cap read 45–441 Mbit/s across rows (§27 DEF192), and a window-level
-elasticity may be dominated by it, so n̄ random-walks (gauge: the sign
-agreement of successive ê); (2) the law is an extremum-seeking window
-controller, i.e. the store cap becomes a congestion controller nested under
-quinn's BBR (ADR-0068, open question 12: no stability analysis of the
-nested delay loops); (3) c1d's predicted point sits at the §27 grid's lower
-edge, so its true argmax is not in the data; (4) α(δ) = b(δ) is a declared
-mapping, so the c1s/c1d goodput the law declines is a dial choice the user
-may price differently.
+*The law with the true link (oracle L).* `ask(n) = (1 + q)·Σᵢ Lᵢ·(RTpropᵢ +
+Sᵢ(n))`, with S = Tp50 − Tmin, Lᵢ = netem rate ÷ W, and §27's interpolation
+rule:
 
-Result (status §29): D as built is NOT-VIABLE, by failure mode (1). The ê
-clamp bound in 51–87 % of periods and successive ê agreed in sign only
-34–55 % of the time, so n̄ random-walked below the predicted point and cost
-goodput at c2 and c1s; where it settled, the location matched the
-prediction and A_x p50 was 5–12× below main. A retry needs a measurement
-window sized from the variance of ln Π, derived and pre-registered anew.
-The code is kept at tag `archive/store-power`, not on main.
+| cell (ledger) | fixed point | slope | Π₂ argmax | 0.95 knee band |
+|---|---|---|---|---|
+| c2-100 (§27) | 164 | 0.25 | 192 | [128, 288] |
+| c8-100 (§27) | 324 | 0.52 | 384 | [256, 576] |
+| c1s-400 (§34, post-§32) | 614 | 0.54 | 512 | [683, 1 536] |
+| c1d-400 (§27) | `CEILING` (ask > n to 4 096) | — | 384 | [512, 1 152] |
 
-*Candidate (D-W): a measurement window sized from the noise — derived,
-does not close (status §30).* Keep D's law and lengthen each measured half
-from one round to W rounds (one settling round still discarded), W chosen
-so the standard error of a half's ln Π falls below the half-dither q/2:
+*Reading the table (status §37, §42).* Every fixed point here assumes a
+start-of-transfer RTprop: the rows were shorter than Copa's 10 s filter.
+With an expired anchor the low points hold (c2 157, c1s 699), and c2 gains
+an unstable threshold near 927 (status §42 addendum). Three of its cells carry a caveat.
+- c8's 324 comes from the surviving rows only. The void rows are a placement
+  lock-out: an idle leg is priced on a frozen, dwell-inclusive srtt (status
+  §37). The figure is not a cell-wide fixed point.
+- c1s's S may contain the law's own dwell. At the fixed point B ≈ 81
+  (about 0.8 ms at 614), and at slope 0.54 each 0.1 ms of dwell in S moves the
+  point down by about 23. Status §42 revises this: the store at c1s holds time
+  inside the endpoints, which S rightly includes, so a dwell-free S is not
+  the target.
+- c2 is the one robust cell.
+
+At c8 the fast leg's S is itself produced by placement, so a placement price
+that reads S needs its own fixed-point check.
+
+Note `RTprop + S = Tp50 − (Tmin − RTprop)`: the loop time minus the
+standing queue. For a hard knee, `D(n) = min(n/T₀, L)`, the product `L·T₀`
+is the argmax of `D^α/T` for every α, so this law aims at D's location,
+the power point, without D's estimator. The fixed points agree: each one
+lies within one grid step of the Π₂ argmax, and at c1s it lies below the
+0.95 band. The law claims the power point, not the 0.95 knee. At c1d the
+receiver, not the link, is the bottleneck, so ΣL over-asks and the N·knee
+clamp binds. Main already sits there; that is a bound on the law, not a
+regression. These are steady-state locations on static grids, for the store
+law taken alone. They show that a perfect L puts the law's fixed point near
+the power point at c2, c8 and c1s. They do not show who holds authority there:
+quinn's window (open question 12, status §34 R4) shares it at c1 from about
+512 up, exactly where c1s lands. Nor do they show the coupled loops are
+stable. Placement, the recovery headroom H and the dials enter the same fixed
+point; the joint derivation is open (status §36, amendment 2).
+
+*Why the receiver can read L (netem, Linux 7.0 `sch_netem.c`).* With `rate`
+set and the delay line non-empty (true whenever the one-way delay exceeds
+the gap between sends), netem schedules skb i at
 
 ```text
-   σ²(W)   =  var( mean of W rounds of ln Π, half to half ) / 2  ≈  σ₁² · W^(−γ)
-   W*(δ)   =  smallest W with σ²(W) ≤ (q(δ)/2)²
-   period  =  2 · (W* + 1) · T(n)                                  one ê per period
-   SE(ê)   =  √2 · (q/2) / ln((1 + ½q)/(1 − ½q))  ≈  0.71           at W = W*
-   E[step] =  ln(1 + q) · m(e),   m(e) = E[clamp(e + SE(ê)·Z, −1, 1)]:  m(+2) = 0.98,  m(−1) = −0.72
-   reach   =  (decisions in a time t) · |E[step]|                  the log-distance n̄ can travel in t
+   tᵢ  =  max( tᵢ₋₁ ,  aᵢ + dᵢ )  +  bᵢ / R          (bᵢ = qdisc_pkt_len, R = the rate)
 ```
 
-W*(δ) is continuous in δ through q(δ) and through α(δ) = b(δ) inside ln Π
-(σ₁² and γ are measured per α, below); no branch on the hint, the cell or
-N; ρ composes as in (D), the hole term additive outside the seeker. Read
-literally as a law, σ₁² and γ would be online estimates; here they are
-measured once from the ledgers to ask whether *any* W closes.
+aᵢ is the enqueue time and dᵢ the drawn delay including jitter. Inside a
+busy run (`tᵢ₋₁ ≥ aᵢ + dᵢ`) the spacing is exactly bᵢ/R, whatever the cap,
+the jitter or the sender's pacing. Jitter sits before the rate server, so it
+creates busy runs and does not corrupt them. A train of k consecutive skbs
+inside one busy run gives `Σ b / (t_{j+k} − t_j) = R` exactly.
 
-| symbol | value | provenance |
+- *Fixed point:* R, independent of the cap. This is the property no sender
+  sampler has (§23, §24, §27).
+- *Noise:* release-timer and receive-timestamp lateness J compresses
+  spacings, so a train reads high by x/(1 − x), x = J/(k·b/R). The error
+  is one-sided upward and shrinks with k and on slower links. Gaps (a run
+  that ends inside the train) read low. §36 registered a per-window max over
+  trains. Measured, the max fails at 1 Gbit/s (up to ×125): netem's own
+  late, batched release compresses 64-skb blocks by up to 10 % against b/R,
+  so the link is not time-conserving at sub-ms scale. The per-window p90 and
+  median read 1.00–1.03 of the link above a cap crossover (status §36
+  result and addendum; exploratory, not registered).
+- *Circularity premise:* a train needs k + 1 skbs queued back to back.
+  `L̂ = min(R, the sender's intra-burst rate)`. If the sender's bursts are
+  shorter than k + 1 skbs, or paced below R, L̂ falls to the delivered rate
+  and §23's contraction returns. The store cap bounds a train at about
+  n/g skbs (g the GSO factor), so small caps are where the premise can fail.
+- *Real links:* aggregation and token buckets make dispersion over-read the
+  sustained rate. This is a declared premise, bounded by the per-path knee
+  clamp. Status §40 tests it on L1: `slot` fails, the policer is not cleared
+  (below).
+
+The engine form would need kernel receive timestamps through quinn's socket
+and a receiver → sender field (an ADR). Status §36 first measures the
+estimator from a receiver-side packet capture, with no engine diff.
+
+*Result of the p90 estimator, fixed in advance (status §40, `NOT-YET`).*
+From a cap crossover up, the per-window p90 of k = 4 train rates reads the
+link within +4 % (c1s 1.001–1.038, c2 and c8's fast leg ≤ 1.013, c8's slow
+leg 0.995–1.011 from 256) on every leg that carries traffic. It fails on c8's
+placement-starved slow leg, where the leg is near idle and its floor escape
+is set by placement, not by the store. Aggregation breaks it: netem `slot`
+over-reads ×2.05 (`AGG-OVER-READ`). The policer is not cleared: `c2tbf`
+stays within 1.10 only at the three caps run, and caps between 32 and 128
+were not run. Offline, §36's D5 rerun with the p90 map at c8 lands at 329
+(slope 0.53; oracle 324). That holds on the static grid only and assumes no
+lock-out (status §38). The rule for a leg with no trains stays open.
+
+**The closed-loop oracle arm — the law's free choices, fixed before any
+build (status §42 addendum, §43).** The fixed points above are crossings of
+static-cap maps, read from rows shorter than Copa's 10 s RTprop filter.
+They do not show that the loop `n ← ask(n)`, run for several filter lengths,
+settles at one point. Status §42 found that it may not at c2: once the
+filter expires, the map has a second, unstable crossing near 927, above
+which the cap drifts to the clamp. This arm closes the loop with the true
+link rate, so that the input L̂ is not under test. `RWM_STORE_LAW=oracle`
+is default off and diagnostic only, never for merge (as `run34` and
+`archive/store-power`). It is not a candidate law, because its L comes from
+the environment.
+
+```text
+   n(t)   =  clamp( (1 + q(δ)) · Σᵢ Lᵢ · ( RTpropᵢ(t) + Sᵢ(t) ) ,  max(floor, h(t)) ,  N·knee )
+
+   Sᵢ(t)  =  Tp50ᵢ,ₖ − Tminᵢ,ₖ      over window k, the last closed window holding ≥ 1 sample of path i; 0 before the first
+   h(t)   =  H · 1{t < t_h}           start-high rows only (1{·} the indicator); h ≡ 0 in every other row
+```
+
+| symbol | value | provenance / status |
 |---|---|---|
-| σ₁² | per cell, below | measured: var(ln Π₊ − ln Π₋)/2 over the p29 `[PCAP]` periods ≥ 3 of every live PWR row (one measured round per half, under the dithered controller); the signal ê·L adds ≤ 0.01 to the variance and is not removed |
-| σ²_win, W_win | per cell, below | measured: var of successive differences / 2 of ln Π = α·ln(dlv_rate) − ln(max-path rtt_p50) over the 250 ms `[LOOPDIAG]` windows (t ≥ 1 s) of the §27 DEF rows at the static cap nearest n* (c2 192, c8/c1s/c1d 384), no controller; W_win = 0.25 s / T_med |
-| γ | per cell | derived: the log-log slope through (1, σ₁²) and (W_win, σ²_win); γ = 1 is white noise, γ > 1 a granularity term that averages faster, γ < 1 red (long-memory) noise |
-| W* beyond W_win | lower bound | when σ²_win > (q/2)² the target lies beyond the data; the white extrapolation W_win·σ²_win/(q/2)² is used, a LOWER bound wherever γ < 1 (the power-law extrapolation is reported beside it). An analysis device, not a law term |
-| T(n) | §27 DEF T_med | measured (windows above); the round length the period is counted in |
-| n₀ | p29 PCAP period-0 n̄; MAIN's p29 `win_den_med` | measured: the shipped law's ask at its first refresh (the seed as built) and MAIN's settled cap (a seed from above) |
-| n* | §6.1 table | derived (Bulk argmax of Π₂ on the §27 ledger) |
-| G(n) | §27 DEF goodput | measured (static cap, another session; cross-session where it is compared with p29 MAIN) |
-| m(e), SE(ê) | above | derived: Gaussian ê at W*, e = α below the knee and −1 above it (§6.1) |
+| Lᵢ | netem rate ÷ (8·1 279 B): c2 9 773, c1 97 733 datagrams/s | oracle, from the environment (`RWM_ORACLE_L_DGPS`, one entry per configured path, in path-id order); the datagram length is §34/§36's W |
+| RTpropᵢ(t) | Copa's windowed min over 10 s (`min_rtt`, `window_duration` in `scheduler/copa.rs`), read live | shipped and unmodified: the arm tests the shipped anchor, whose expiry §42 left open |
+| Tminᵢ,ₖ, Tp50ᵢ,ₖ | min and nearest-rank median of every app-echo sample of window k | measured by the arm's own sampler (below) |
+| T_w | 250 ms, tumbling, on the `[DIAG]` clock | declared (below), with a derived admissible range and a bind gauge |
+| q(δ) | (b(δ) + 1)/30; Bulk 0.10 | cited, as the shipped law |
+| floor, knee, N | 10; 2 048 per path; live paths | shipped resource bounds; at N = 1 the ceiling is 2 048 |
+| h(t), H, t_h | c2 1 536, c1s 2 048; t_h = 15 s | diagnostic start condition (below), not a law term |
 
-Measured noise and the window it implies (Bulk, α = 2, q = 0.1, target
-(q/2)² = 0.0025; scripts and outputs in `docs/l1-raw/loop-diag/p29/derive30/`):
+The window length is named T_w because W is the datagram length in this
+section.
 
-| cell | var(Δ ln Π), one round | σ₁² | σ²_win (W_win) | γ | W* (rounds) | period at n* | periods per MAIN transfer | reach in ⅓ transfer |
-|---|---|---|---|---|---|---|---|---|
-| c2-100 | 0.128 | 0.064 | 0.0014 (13.1) | 1.48 | 9 (inside the data) | 0.38 s | 23 | ×1.71 |
-| c8-100 | 0.078 | 0.039 | 0.0061 (5.1) | 1.14 | 11 | 1.21 s | 6.9 | ×1.17 |
-| c1s-400 | 0.71 | 0.355 | 0.036 (52.5) | 0.58 | ≥ 765 (power law 5 500) | ≥ 7.3 s | ≤ 0.6 | ×1.01 |
-| c1d-400 | 0.89 | 0.443 | 0.029 (49.3) | 0.70 | ≥ 579 (power law 1 700) | ≥ 6.0 s | ≤ 0.9 | ×1.02 |
+*The window, T_w = 250 ms: declared, inside a derived range.*
+- *Lower bound.* By Little's law, a cap change reaches the loop-time samples
+  one loop later. So about Tp50/T_w of each window still describes the
+  previous cap. A stale share larger than q(δ) would bias S by more than the
+  standing-queue allowance the law prices, so T_w ≥ Tp50/q(δ). At the
+  predicted points, at Bulk (q = 0.10), this is ≈ 190 ms at c2 (Tp50 ≈
+  19 ms; 250 ms is 13 loops) and ≈ 60–75 ms at c1s (Tp50 ≈ 6–7.5 ms;
+  ≈ 35–40 loops). The bound holds only near Bulk. At c2 it reads ≈ 285 ms
+  at Auto (q = 0.0667) and ≈ 380 ms at Realtime (q = 0.05), both above
+  250 ms, so away from Bulk the declared window sits below its own lower
+  bound and `wbind` reports it. The battery runs Bulk only.
+- *Upper bound.* T_w must be short against the filter. The brake is
+  Tmin_k − RTprop, and as T_w approaches the filter length Tmin_k approaches
+  RTprop, so the brake vanishes whatever the queue does. 250 ms is the
+  filter length ÷ 40.
+- *Inside that range,* the noise decides. The closed-loop spread is measured
+  only at 250 ms (§42: sd(ln n) ≈ 0.08 at c2, 0.11 at c1s), and the ledgers
+  support only multiples of 250 ms. So T_w is declared at the window where
+  the predictions exist.
+- *The scale-free successor,* T_w = Tp50/q(δ), is named and not used. At c1s
+  it would be ≈ 60–75 ms, where the noise is unmeasured. If §42's
+  γ ≈ 1.2–1.3 held below 250 ms, the spread there would be sd(ln n) ≈ 0.2–0.27.
+- *Bind gauge (`wbind=`).* Per window, the loop count r_k = T_w/Tp50_k; the
+  gauge is the share of windows with 1/r_k > q(δ). It is predicted ≈ 0 at
+  the operating points, and above 0 only in c2's start-high hold and descent
+  (Tp50 ≈ 100–160 ms at 1 024–1 536 gives 1.6–2.5 loops per window).
 
-The noise has two different natures. At c2 one round's ln D is dominated
-by a granularity term (its variance falls ×38 over 13 rounds, γ_D ≈ 1.4)
-and ln T is white (γ_T ≈ 1.0), so a 9-round half suffices. At c1s/c1d both
-components are red (γ_D ≈ 0.5–0.7, γ_T ≈ 0.7; one round's sd(Δ ln D) 0.36–0.39
-and sd(Δ ln T) 0.33–0.37, correlated only −0.2 to −0.3, so this is not one
-Little-identity term): 250 ms of averaging at a fixed cap cuts the variance
-×10–15, not ×50, and still leaves σ_win = 0.17–0.19 against the 0.05 target.
-That is consistent with the receiver's batching tail (status §16 finding
-4) seen at the round scale (an attribution, not measured here); no length of half within a 4–5 s transfer reaches it. The
-noise is also not stationary: at c1d §27's 512 cap and §29's 768 KNEE rows
-read σ²_win ≈ 0.48–0.49, against 0.029 at 384 and 0.050 for §27's 768,
-almost all in T.
+*The sampler.* It takes every sample `PathState::record_rtt_sample`
+receives, which is the series Copa's RTprop is built from, so Tmin_k ≥
+RTprop(t) holds for every t until the next close: the brake is ≥ 0 by
+construction. The sampler has no cap. Its buffer is reused per window and
+grows to the window's population: ≈ 2 400 samples at c2 and up to
+L·T_w ≈ 24 000 at c1. The `[LOOPDIAG]` instrument
+(`archive/store-power`, `net/loopdiag.rs`) kept only the first 8 192
+samples per path per window (`RTT_CAP`, first come) and counted the rest in
+`ov=`. At c1 every window overflowed, so §27/§34's c1 Tmin and Tp50 come
+from the start of each window (§42 addendum). The c1s prediction inherits
+that caveat, and its direction is unknown.
+- *Witness:* the per-window count n_k, and Σₖ n_k equal to the sampler's
+  offered counter.
+- In MAIN the same sampler runs as an observation-only readout (with the
+  ask computed from the same L), so the delay comparison uses one estimator
+  in both arms.
 
-Convergence, mean-field (expected clamped step each period, G(n) and T(n)
-from the static curves, the dither's own cost and the limit cycle ignored —
-both favour D), against p29 MAIN's goodput and the §29 `GOODPUT` band:
+*The cadence.* n is recomputed at the shipped store-cap refresh (at most
+every 5 ms, `refresh_store_cap`). L is constant and S changes only when a
+window closes, so between closes only RTprop moves n. No new timer drives
+the cap. The scorer reads n at each window close. §42's model, one update
+per window, is therefore approximate: RTprop can fall at a new minimum or
+climb as old samples expire. The per-window min and max of n are logged
+to bound the gap.
 
-| cell | seed n₀ | converged after (share of the transfer) | goodput − MAIN (band) |
-|---|---|---|---|
-| c2-100 | p29 seeds 112 / 150 / 306 | 1.98 / 1.05 / 3.42 s (20 / 11 / 38 %) | −7.7 / −5.2 / −0.9 (±4.7) |
-| c2-100 | MAIN caps 405 / 634 / 1 100 | 6.3 s (70 %) / never / never | −0.9 / −0.7 / +0.1 |
-| c8-100 | p29 seeds 141 / 158 / 335 | never / never / 2.38 s (30 %) | −15.9 / −12.6 / +4.1 (±12.9) |
-| c8-100 | MAIN caps 1 325 / 1 568 / 2 290 | never | +3.7 / +3.2 / +2.4 |
-| c1s-400 | p29 seeds 43–62 | never (n̄ cannot leave the seed) | −602 to −640 (±92) |
-| c1s-400 | MAIN caps 1 802–2 048 | never | −16 to −27 |
-| c1d-400 | p29 seeds 42–164 | never | −332 to −517 (±110) |
-| c1d-400 | MAIN caps 1 509–2 300 | never | +73 to +82 (cross-session static curve) |
+*No step limit: n = ask.*
+- Every measured crossing has a positive slope (0.25–0.56 at the stable
+  points, 1.09 at c2's threshold).
+- On a map with slope in (0, 1), the memoryless iteration n ← ask converges
+  monotonically. A step limit could change only the speed, not the fixed
+  point or which crossings are stable.
+- A constant per-window limit, such as D's (1 + q), would bring back a rate
+  parameter with no provenance. It would also stretch c1s's start-high
+  descent from about 3 windows to ln(2 048/699)/ln 1.1 ≈ 11.
+- Overshoot would need a slope below −1. None has been measured, and §43's
+  oscillation outcome would detect one.
 
-Neither seed gives D: from a seed
-below the knee the climb costs goodput (c2 two of three seeds, c8 two of
-three, c1 all); from a seed above it the goodput holds only because the
-seeker never reaches the knee, so the transfer runs at MAIN's cap and MAIN's
-latency, which is what D was for. D-W closes only from a seed within its
-reach of n* — ×1.7 at c2, ×1.17 at c8, ×1.01 at c1 — and a seed that close
-is the knee location the law was meant to find without a link-rate input
-(§23–§27). Independently of the estimator, at c1s the fixed point itself
-fails the band: G(384) = 632 (§27) against p29 MAIN 748 ± 92, so the
-"within or above main" reading of the §6.1 table above holds against the
-§19/§27 MAIN (563–663), not the p29 one; that is failure mode (4), the
-α(δ) = b(δ) price of the receiver tail.
+*Clamp bind gauges.* Per window: `floor=` (the floor binds), `pin=` (N·knee
+binds) and `hold=` (h binds). Each is reported over the whole row and over
+its last third, as `[SUMCAP]` does. Beside them sits the authority gauge
+that any nested store law carries (§34 R4): quinn's backlog
+B = Σ `dgq[hand − tx]`.
 
-Across the dial (σ₁² and σ²_win recomputed at each α, T at the Bulk n*):
-W* reads 7 / 7 / 9 at c2, 27 / 19 / 11 at c8, ≥ 424 / 538 / 765 at c1s and
-≥ 494 / 497 / 579 at c1d (Realtime / Auto / Bulk). A smaller α lowers the
-noise (the D term carries weight α) but q falls with it, and the step
-ln(1 + q) halves toward Realtime, so convergence is slowest there; the
-verdict does not depend on the dial position, and it is reached without a
-branch on it.
+*Boot: no rule of its own.* Sᵢ and RTpropᵢ start at 0, so before a path's
+first RTT sample its term is 0 and n = floor, for one round trip. From the
+first sample until the first window closes, Sᵢ = 0 and
+n = (1 + q)·L·RTprop: ≈ 75–123 at c2 (RTprop 7.0–11.4 ms) and ≈ 260–310 at
+c1s (2.4–2.85 ms). Both are below the predicted points, so start-low really
+starts low. A window with no sample leaves Sᵢ at its last value. This is the
+sampler's definition (a statistic of an empty set does not exist), not a
+threshold, and empty windows are counted.
 
-The alternatives the derivation exposes, each sized the same way:
+*Start-high is an initial condition, not a mode.*
+- The law is memoryless. Its only state lives in the environment: the
+  standing queue and the RTprop filter. So the only way to start the loop
+  high is to hold the environment there.
+- h(t) is an exogenous, time-indexed step on the clamp's lower bound. It
+  reads no δ, ρ, hint, path count or measurement.
+- The formula and its inputs are evaluated the same way through the hold.
+  ask is computed and logged throughout, so the hold also measures the open
+  map at H: first with a fresh anchor, then, after about 10 s, with an
+  expired one.
+- t_h = 15 s is the filter plus 5 s. The minimum recorded at boot leaves the
+  filter at about 10–11 s.
+- h ≡ 0 in every start-low row; the same code serves both arms.
+- H ≤ N·knee is checked at startup, as the L list's length is, so the
+  clamp's bounds cannot invert.
+- The hold is not built on `RWM_STORE`, because that switches the law off.
 
-- *Averaging ê across periods* (an EWMA over M periods of W = 1 while n̄
-  moves each period). The same information needs M ≈ W* periods of four
-  rounds — twice the time of a held W*-round half — and it adds a loop
-  delay: n̄ responds to an ê that lags ≈ (M − 1)/2 periods. Near n* the
-  per-period loop gain is g = ln(1 + q)·κ, κ the curvature of ln Π in ln n
-  from the §6.1 Π₂ table (c2 5.0, c8 3.1, c1s 1.7); a sampled integrator
-  with delay d is stable only for g < 2·sin(π / (2(2d + 1))). At c2
-  (M = 9, d = 4) the bound is 0.35 against g = 0.48, so the averaged seeker
-  oscillates with an amplitude of ≈ d steps (×1.5 in n̄); at c8 (d = 5)
-  0.29 against 0.29, marginal. Strictly worse than the held window.
-- *A step that decays with sign agreement* (Kesten's rule [Kesten1958]).
-  It needs sign agreement to tell "far from n*" (agreement above ½) from
-  "at n*" (½, below ½ in a limit cycle). With one round per half the
-  probability of the correct sign far from n* is Φ(|e|·L/√(2σ₁²)): 0.54–0.59
-  at c1 (agreement 0.504–0.518), 0.61–0.71 at c2 (0.52–0.59), 0.64–0.76 at
-  c8 (0.54–0.64). Telling 0.504 from ½ at 2σ takes (1/0.004)² ≈ 60 000
-  periods at c1s; 1 700 at c2 descending (≈ 117 periods per c2 transfer).
-  The rule therefore shrinks the step while still far, freezing the random
-  walk wherever it stands. At W* the sign is already right most of the
-  time (92 % descending, 99.8 % climbing) and the rule only narrows the
-  limit cycle; the window still sets the convergence time. Does not close.
-- *A robust half (median of the W rounds).* One round's Δ ln Π is
-  heavy-tailed at c1 (MAD-sd 0.42–0.60 against sd 0.82–0.99), so a median
-  gains at most the ratio sd²/((π/2)·MAD-sd²) ≈ 1.4–2.5 at c1 and ≈ 1 at c2.
-  The c1 window needs ×10 or more. Does not close.
-- *A sequential half* (Wald's test [Wald1948], the machine's own tool in
-  Section 7.2): end a half when the accumulated Δ ln Π crosses a boundary.
-  Its expected sample size is below a fixed W at equal error
-  rates far from n* (Wald's savings, roughly half) and unbounded at n*
-  (truncated to W*). Same order; does not close at c1.
-- *A larger dither* (amplitude A in place of q/2, decoupled from the
-  step). For c1s to descend from MAIN's cap (Λ = 1.6, ≈ 23 decisions) in a
-  third of its transfer, a half may last ≈ 5.5 rounds, where σ(5.5) ≥ 0.36
-  (power law) to 0.59 (white from the window): A ≥ 0.36, a ±36 % cap swing,
-  seven times the q/2 band that the CoDel derivation of q says is the most
-  standing queue worth buying, and wide enough to cover the whole flat top
-  of c1s's Π (256–512). Does not close.
-- *A noise-adaptive W* (σ̂² measured online, W = σ̂²/(q/2)²). Under red
-  noise the within-half spread underestimates the variance of the half mean
-  by W^(1−γ) — ×16 at c1s's W = 765 — so it would choose a window far too
-  short exactly where the noise is long-memory; the correct estimate is an
-  Allan-type variance at the half's own scale [Allan1966], which needs many
-  halves, the time the transfer does not have.
+*δ, ρ and the path count.*
+- δ enters only through q(δ), which is continuous; the standing decision of
+  status §40 stands. The battery runs Bulk.
+- The ρ hole term is not added, as on the shipped seat (above: ρ < 1 has no
+  outstanding gate, status §3.3). The arm runs at ρ = 1 (`--window-reliable`).
+- The Σ has the same form at every N. A single-path battery is a choice of
+  cells, not a guard. If the L list's length differs from the configured
+  path count, the arm refuses to start (a configuration error at the
+  `[GATES]` echo), and nothing branches inside the law.
 
-What none of these change is the information budget: a decision takes
-2(W* + 1)·T(n*) of transfer, 0.38 s at c2 and ≥ 6 s at c1, and the law needs
-|ln(n₀/n*)|/|E[step]| of them. *Path memory* (carrying n̄ across transfers
-on the same path, RFC 9040's temporal sharing [RFC9040]) moves that budget
-from one transfer to the path's lifetime — ≈ 5.5 s of transfer per unit of
-ln n at c2, ≈ 2 min at c1s — and would need its own derivation and ADR (the
-static map's stationarity over minutes is unmeasured, and γ < 1 at c1 says
-it drifts). It is named, not derived.
+*Predicted operating points (Bulk, from §42's ledger maps).*
 
-*The nested loop (ADR-0068, open question 12), as far as D is concerned.*
-D is an extremum seeker on the store cap above quinn's BBR. The two hold
-authority alternately: summed over the paths that delivered, quinn's cwnd
-sat below the store cap in bytes (n̄·(1 + ½q)·1 200 B, the + half's cap
-used throughout, so the share is an upper bound by ≤ 5 % of cap) in 18–24 % of the
-post-warm-up `[LOOPDIAG]` windows at c2, 4–32 % at c1s, 0–14 % at c1d and
-0–3 % at c8 (p29 PWR rows; an instantaneous cwnd at each window's end).
-While the cwnd binds, D and T are BBR's and Π is flat in n̄, so ê is noise
-with zero mean and the seeker has no restoring force: a plateau random walk
-bounded only by the clamps, an inner-loop-induced instance of failure mode
-(1). Where the cap binds, the seeker is a sampled integrator on a static
-map with per-period gain g = 0.16–0.48 < 1 (above), locally stable. The
-time-scale separation that averaging theory [Ariyur2003] asks for runs the
-wrong way for D: BBR's 8-round ProbeBW cycle (≈ 0.02–0.3 s here) sits inside
-a W*-round half and averages out, but its 10 s ProbeRTT [Cardwell2016] and
-the c1 red noise sit at the half's own scale. So question 12 stays open,
-with two additions: any nested store law needs an *authority gauge* (the
-share of time the cwnd, not the cap, binds — computed above from existing
-fields) beside its bind gauges, and a seeker above a delay-based inner loop
-must reject periods in which the inner loop held authority, or it seeks on
-a flat map.
-
-**Candidate inputs for the knee after the receiver change (status §34) —
-derived, none closes on the committed ledgers.** The law still lacks the knee
-location, or the rate of whatever bottleneck sets it. Four sources that need
-no new sender-side rate sampler are taken to their fixed point, their noise
-and their circularity (does the reading return our own cap?), as §27 did.
-Scripts and outputs: `docs/l1-raw/thread-pd/battery/derive34/`. Every
-candidate below is continuous in δ through q(δ) (and α(δ) where Π enters),
-reads no hint, cell or N, and keeps ρ's hole term additive outside it; the
-no-mode-switch rule kills none of them.
-
-*(a) What the receiver change (§32) did to D-W's noise.* The §32 ledgers carry
-no `[LOOPDIAG]` (the instrument is at `archive/store-power`) and no static
-cap: every row runs the shipped law, pinned near N·knee. They support one
-contrast — the same statistic, MAIN against NEW, at the same cap, in one
-session — and not §30's quantity at n*.
-
-| symbol | value | provenance |
-|---|---|---|
-| σ²_diag | var(Δ ln Π)/2 over 250 ms `[DIAG]` windows, t ≥ 1 s; D = `good=` (cumulative-ack advance), T = `rtt=` (max over paths of the smoothed RTT at the window's end), α = 2 | measured (`diagwin.py`); a proxy for §30's σ²_win, not the same quantity |
-| proxy calibration | σ²_diag / σ²_win = 1.0–4.7 at c1 caps 256–2048 on the same §27/§29 rows; 10–400 at c2/c8 (the cumulative-ack frontier is lumpy under loss) | measured on rows carrying both lines: a c1-only proxy, within ×1–5 |
-| reproducibility | c1s at cap 2048: §27 DEF 0.201, §29 MAIN 0.152, §32 MAIN 0.205 | measured: the proxy is stable across sessions at one cap |
-
-| cell (cap) | σ²_diag MAIN → NEW (row range) | vD | vT | receiver busy (`[RDIAG]` median) |
+| cell | start-low n | sd(ln n) | start-high H; ask/H at the end of the hold | predicted reading |
 |---|---|---|---|---|
-| c1s (2048) | 0.205 → 0.069 (0.045–0.65 → 0.037–0.106) | 0.016 → 0.004 | 0.112 → 0.046 | 90 → 69 % |
-| c1d (2 300–2 600) | 0.304 → 0.328 | 0.024 → 0.004 | 0.165 → 0.288 | 99 → 96 % |
+| c2-100 | 157–164 (slope 0.25–0.34) | 0.08 | 1 536; ≥ 1.0, extrapolated (ledger 1.01 at 1 024 with the anchor expired, tending to 1 + q as the queue's median/mean ratio tends to 1) | start-high runs to the N·knee clamp: bistable |
+| c1s-400 | 614–699 (slope 0.54–0.56) | 0.11 | 2 048; 0.76 (ledger 1 549 with the anchor expired) | returns within ≈ 3 windows: one point |
 
-At c1s the receiver change cut the window noise ×2 (median) to ×3 (mean) at
-the pin, mostly in D (×4), as a 63–90 ms stall every 2 s should; at c1d the
-D term fell as much but T rose and the total did not move. Put the
-favourable ×3 through §30's white extrapolation at c1s, as if it held at n*:
-σ²_win 0.036 → 0.012, W* ≥ 52.5·0.012/0.0025 ≈ 250 rounds, a decision every
-2(W* + 1)·4.79 ms ≈ 2.4 s, against a post-§32 transfer of ≈ 3.9 s (§30's
-4.3 s at 748 Mbit/s, scaled to 826). The descent from the shipped cap to
-§6.1's c1s point, ln(2048/384) = 1.67 at |E[step]| = ln(1 + q)·0.72 = 0.069
-per decision, needs 24 decisions; in a third of a transfer that is a period
-of 54 ms, W* ≈ 4.6, i.e. σ²_win ≤ 2.2·10⁻⁴: a ×166 cut where §32 gave ×3.
-**(a) does not reopen D-W at c1.** Two things the ledgers cannot settle and
-that a diagnostic would need (status §34): post-§32 c1s is no longer
-receiver-bound (busy 69 %, receiver capacity 1.38 L, delivered 0.96 L at the
-pin; table (b4)), so both its knee and the *nature* of its noise may have
-moved — if c1s's noise turned c2-like (granularity, γ > 1; W* = 9 at c2) the
-reach would be ×1.4 in a third of a transfer and ×2.5 in a whole one — and
-neither n* nor σ²_win at n* exists post-§32.
-
-*(b1) quinn's BBR state read as the knee.* What it is (quinn-proto 0.11.14,
-`congestion/bbr`): `window()` = `K_DERIVED_HIGH_CWNDGAIN` (2.0) · max_bw ·
-min_rtt + `max_ack_height`; pacing rate = pacing_gain · max_bw; max_bw is a
-windowed max of min(send_rate, ack_rate) over consecutive packet pairs,
-updated only on samples not marked app-limited. Read as an ask:
-
-```text
-   cap  =  (1 + q) · K ,      K  =  Σᵢ windowᵢ / W ,      windowᵢ  =  2·L̂_q,ᵢ·min_rttᵢ + hᵢ
-```
-
-So the gain 2 of Section 6.2 returns under BBR's name (as P's g did), with
-L̂_q quinn's max-filtered pair rate. On the §27 DEF grid (`qcwnd.py`, K in
-datagrams of W = 1 279 B, row medians):
-
-| cell | K over the grid | Spearman(K, n) | map n → (1 + q)K, fixed point | DEF knee band |
-|---|---|---|---|---|
-| c1s | 210 (n 192), 391, 490, 498, 494, 636, 1 188, 575 (n 2048) | 0.90 | ≈ 545 (stable: K flat 490–498 over 384–768 ≈ 2·L·RTprop = 469) | [683, 1 536] |
-| c1d | 554–965 | 0.17 | ≈ 1 050 | [512, 1 152] |
-| c2 | 162 (n 64) … 1 128 (n 192) … 1 316 (n 1024) | 0.90 | ask > n at every grid cap: ≥ 1 024 | [128, 288] |
-| c8 | 1 099–5 500 | 0.52 | ask > n everywhere: the N·knee clamp | [256, 576] |
-
-Fixed point: at c1d inside the band, at c1s just below it (G ≈ 675–700 of
-746), at c2 and c8 ×5–15 above the knee — MAIN's latency. Noise: within a row
-at a fixed cap cv(K) = 0.08–1.32; across sessions at c1s's cap 2048 the row
-medians read 575 / 749 / 632 / 915 (§27, §29 MAIN, §32 MAIN, §32 NEW), with
-the §32 NEW mean of row medians at 2 680: a max filter that keeps whatever a
-non-app-limited moment read. Circularity: K follows the cap at the small caps
-at c1s and c2 (Spearman 0.90; K ≈ n at c1s 192), the §27 rule's shape. The
-over-read at c2/c8 is consistent with ack compression on the jittered
-reverse path (c2/c3 shapes carry 3/5 ms jitter both ways, c1 none; §24 read
-the pacing rate ≈ 1.0 L at c1s and ×7.6 at c2) — a reading of the
-mechanism, not measured here. **Does not close** (c2, c8; and the constant
-2 is not a derivation).
-
-*(b2) The cwnd-binding share (ADR-0068 question 12) as an input, and as the
-authority gauge.* §30 counted windows with quinn's window below the store cap
-(K < c). That is not authority: the store counts a symbol until its SACK
-releases it, quinn until its QUIC ACK, so K < c can hold while the store is
-full. The direct witness is quinn's own backlog, B = Σ `dgq[hand − tx]`
-(datagrams handed to quinn and not yet sent), which grows only when quinn's
-window or pacer, not the cap, holds the sender (`authority.py`):
-
-| cell | store occupancy u/c, all static caps | B (datagrams) at caps ≤ 1.5·n* | B at the pin | share K < c (§30's reading) at the knee caps |
-|---|---|---|---|---|
-| c1s | 0.88–1.00 | 16–92 (≤ 1 ms of L) | 228 (§27 2048), 584 (§32 NEW, ≈ 6 ms of L) | 0.64–0.90 (512–1 024) |
-| c1d | 0.91–0.98 | 17–66 | 47–156 | 0–0.62 |
-| c2 | 0.99–1.00 | 2–10 | 11–21 (shipped cap) | 0.18–0.27 |
-| c8 | 0.99–1.00 | 0–5 | 37–259 | 0–0.08 |
-
-The store cap holds authority at and around every knee; the c1 knee is not
-quinn's window. Quinn takes part of the authority only at the pin (c1s 2048,
-c8 2048). So §30's K < c shares are upper bounds that overstate quinn's
-authority, and the authority gauge any nested store law carries is B, not
-K < c. As an input ("grow while the cap binds, hold where quinn binds") the
-fixed point is the authority crossover, where B starts to grow: ≈ 2048 at
-c1s, beyond 1 024 at c2 and c8 — above every knee, because it is (b1)'s K
-read through a threshold. **Does not close**; it survives as the gauge.
-
-*(b3) Path memory (RFC 9040 temporal sharing of n̄).* A seed, not an input:
-it carries a knee that a finder must still find once. Fixed point: D's argmax
-(the location §29 bore out). Noise: the first transfer pays D-W's budget,
-2(W* + 1)·T per decision — ≈ 5.5 s of transfer per unit ln n at c2, ≈ 2 min
-at c1s before §32 (white, a lower bound) and ≈ 40–60 s with (a)'s ×2–3 if it
-held at n*. Circularity: none in rate. What it adds is a premise nobody has
-measured: the map's knee location is stationary over the path's lifetime.
-§32's rep spread (goodput max/min 1.04–1.07) is goodput at the pin, not knee
-stationarity, and §32 itself moved the c1 map (c1s at the pin 736 → 826),
-so an engine release invalidates the memory. Where the premise holds it
-closes c2/c8 from the second transfer on (D-W converges from a seed within
-×1.7 / ×1.17 of n*, §30); c1 stays at minutes. It needs per-path state across
-transfers and an ADR. **Does not close at c1; a conditional seed at c2/c8.**
-
-*(b4) Receiver-side signals.* Three different readings:
-
-- *The receiver's delivered rate* is the sender's D half a loop later; Little's
-  identity on a store-bound sender makes it cap/T (§23), §27's bbr_rs result one
-  layer further down. **Closed by the derivation.**
-- *The receiver's capacity*, μ_R = msgs/s ÷ busy (server `[RDIAG]`, lines with
-  busy ≥ 20 %; `rcap.py`): the rate the receiver task could sustain at its
-  measured cost per message.
-
-  | cell | MAIN → NEW μ_R (msgs/s) | cv within a row | μ_R / L | busy |
-  |---|---|---|---|---|
-  | c1d | 75 k → 89.5 k | 0.13 → 0.05 | 0.38 → 0.46 | 99 → 96 % |
-  | c1s | 94 k → 135 k | 0.19 → 0.04 | 0.96 → 1.38 | 90 → 69 % |
-  | c8 | 55 k → 53 k | 0.49–0.68 | 4.5–4.7 | 21–22 % |
-
-  It is not the sender's own delivery, so the §23 identity does not close on
-  it, and post-§32 it is quiet (cv 0.04–0.05). But a rate is not a knee: with
-  RTprop it gives (1 + q)·μ_R·RTprop ≈ 250 at c1d, the honest-BDP class §23/§24
-  already showed starves the law; with §27's spread,
-  `(1 + q)·μ_R·(RTprop + S̄(n))` (S̄ the mean over legs) has a stable fixed point
-  at c1d — ≈ 430 at the pre-§32 μ_R (slope 0.77, below the band [512, 1 152],
-  near D's own c1d point 443) and ≈ 670 at the NEW μ_R (slope 0.54, in the
-  band; a cross-session mix of §32's μ_R with §27's S). It bounds only a
-  receiver-bound cell: at c1s after §32, and at c2/c8 (busy 10–22 %), the
-  receiver is not the bottleneck and μ_R over-asks ×1.4–4.7, so it can only
-  enter as a ceiling, `Σᵢ … ≤ (1 + q)·μ_R·(…)`, receiver-wide (not per path),
-  continuous through min(·), with a bind gauge; it does not supply the link
-  rate those cells lack. Circularity open: the receiver's cost per message
-  falls with batch size (§16 finding 4), so μ_R rises with the cap by an
-  unmeasured amount — no static-cap ledger carries `[RDIAG]`. It would also
-  need a new receiver → sender field (an ADR).
-- *Receiver-side dispersion* (the spacing of datagrams that queued at the
-  bottleneck): non-circular in principle, because netem with `rate` releases
-  in FIFO no faster than one skb time apart (`tools/l1/lib.sh`), and it avoids
-  the reverse-path ack compression (b1). But a GSO skb (g ≈ 2.7–4.9
-  datagrams) arrives as one unit, and the receiver task sees datagrams in
-  drained batches; no ledger carries per-datagram arrival times. Named, not
-  derived.
-
-*Verdict (status §34): none closes on the committed ledgers.* Quinn's state
-and the authority crossover inherit BBR's gain 2 and its jittered over-read;
-path memory is a seed whose finder is D-W; the receiver's delivered rate is
-circular. The one reading with a live derivation is the receiver capacity
-as a ceiling at a receiver-bound cell (c1d), and its fixed point there turns
-on two unmeasured quantities: μ_R's slope in the cap and S̄ on the post-§32
-receiver. The same static grid answers (a) — post-§32 n* and σ²_win at n* at
-c1s/c1d — so status §34 pre-registers one diagnostic for both and stops
-before running it. Whatever it reads, the link rate L at c1s (post-§32), c2
-and c8 still has no source.
-
-*Result of that diagnostic (status §34, post-§32 main, static caps).* The
-0.95 knee is 1 024 at c1s and c1d (Gmax 825 / 813 Mbit/s); the Π₂ argmax
-is 512 / 384. D-W stays closed: σ²_win at the argmax is 0.021 (c1s, γ 0.53)
-and 0.025 (c1d, γ 1.17), a ×1.2–1.8 cut where ×100 was needed. The
-receiver capacity at c1d is not flat in the cap (86.8 k → 110 k msgs/s,
-max/min 1.27) and the ceiling's fixed point, 457, sits below the knee band.
-And the (b2) authority reading above, taken from pre-§32 ledgers, no longer
-holds from the knee up: quinn's backlog B reaches 128–192 datagrams
-(1.3–2 ms of L) at c1s 768/1 536 and c1d 1 024, while it stays ≤ 50 at caps
-≤ 512, so a nested store law at c1 needs the authority gauge B and the
-rejection of inner-loop periods. 7 of 17 live c1d rows ran on one leg.
+At these points the law gives up goodput for delay, as it does on the
+static grid. c2 at 157–164 sits between §27's 128 and 192 rows, ≈ 69 and
+89 Mbit/s. c1s at 614–699 sits between §34's 512 and 768 rows, ≈ 685 and
+773 Mbit/s, against MAIN's ≈ 826. Loop-time Tp50 (the ledgers' Tmin + S at
+the bracketing caps) is expected ≈ 16–19 ms at c2 and ≈ 6–7.5 ms at c1s. On
+the same ledgers, MAIN's caps (c2 405–1 100, c1s 2 048) put it at
+≈ 40–100 ms and ≈ 19 ms.
 
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
@@ -2235,7 +2646,8 @@ one. The paired dead-wall contrast at c8 favours the δ-cap in 18 of 23
 non-zero pairs (two-sided sign test p ≈ 0.011). At c8L the pin fraction is
 0.23, between the pre-declared branches, so no verdict is claimed there.
 These batteries measured N ≥ 2 only: the engine's guard kept single-path
-cells on the predecessor below, so the law is unmeasured at one path.
+cells on the predecessor below. The one-path law was measured afterwards, by
+ADR-0072's battery (status §18, §19; the first paragraph of this section).
 
 ### 6.2 The single-path predecessor (retired by ADR-0072)
 
@@ -2934,6 +3346,239 @@ universal.
 lossy c2 cell (Cubic is Mathis-bound there) and 0.02–0.24 on a clean
 bufferbloated bottleneck.
 
+**The substrate's window law, fixed (`bbr_rs`; status §47 diagnosis, §48
+candidate, not shipped).** Status §47 found that quinn's BBR is not a
+controller at c1: Startup grows without bound, and after Startup the model
+BDP collapses to `min_window`. The in-tree port `bbr_rs` shares both defects.
+This subsection states the fixed law. The state machine is BBR v1's, cited
+from Linux `net/ipv4/tcp_bbr.c` (`bbr_set_cwnd`, `bbr_update_min_rtt`,
+`bbr_update_bw`). The deviations from v1 are forced by quinn's `Controller`
+trait, and each is derived below.
+
+*The actuator.* quinn paces at 1.25·W/srtt (`pacing.rs:92`), in bursts of
+10–256 MTU, and reads the controller's `pacing_rate` only for qlog. The
+window W is therefore the only actuator, so every BBR gain must act through
+W. Every other path to the wire passes through min(W, the store), which is
+how the substrate composes with our machine.
+
+*The clock.* Every `now` the trait passes is quinn's stamp, and none of them
+is a valid receive time.
+- The endpoint driver takes `now` once at the top of a poll (quinn
+  `endpoint.rs:372`). It then drains the socket (`:774–799`) for about
+  `RECV_TIME_BOUND` = 50 µs, a work budget rather than a bound: a vCPU
+  preemption between the stamp and `recvmmsg` stretches it. A datagram that
+  arrives after the stamp is processed with it.
+- quinn's RTT sample is that stamp minus the send stamp, and its `min()` is
+  a lifetime minimum (`paths.rs:329–333`). A single early stamp therefore
+  latches below the path for the whole connection.
+- The kept logs give the size. With bŵ ≥ L, §47's ProbeRtt floor of 5 808 B
+  at c1s needs 0 < m̂ ≤ 82 µs on a 2 ms path: at least one stamp read early
+  by 1.92–2.0 ms, and none by more than the RTT (a gap ≥ RTT saturates the
+  sample to 0, and quinn then falls back to `init_cwnd`). The skew itself
+  has no direct measurement. Section 8.5's 1.5–3.3 ms drain pauses do not
+  measure it: a driver that is not running re-stamps fresh when it
+  resumes, so they bound stall length, not skew.
+- The `rtt` argument cannot repair this. quinn calls `on_ack` and
+  `on_end_acks` before `rtt.update` for the same ACK (`connection/mod.rs`
+  1505 vs 1522), and `RttEstimator` exposes no latest sample.
+
+The fixed controller reads its own ack clock instead:
+
+```text
+   a_e  =  clk()   read once per ACK event (first callback of the event), cached until on_end_acks
+   r_e  =  a_e − max_{k ∈ e} s_k          s_k = quinn's time_sent of a packet newly acked in event e
+```
+
+**Claim: r_e never reads below the path's RTT.**
+- s_k is taken in `drive_transmit` (quinn `connection.rs:996`) before the
+  packet is built and written, so s_k ≤ w_k, its wire send time.
+- a_e is read while the ACK is processed. That happens after the datagram
+  carrying the ACK was read from the socket, so a_e ≥ its socket arrival
+  time.
+- Hence r_e ≥ arrival − w_k ≥ RTprop, and the windowed minimum of such
+  samples is ≥ RTprop.
+
+The premises are a monotonic clock shared with quinn and the two orderings
+above. quinn 0.11.9 / quinn-proto 0.11.14 hold them at the cited lines, and
+they are re-verified on any quinn bump.
+- **The error is one-sided:** r_e − r_phys = (host receive delay) +
+  (build-to-wire delay) + (peer ACK delay) ≥ 0. A min filter keeps the
+  least-delayed samples.
+- **The over-read is the real loop:** quinn counts a packet in flight from
+  `on_sent` (≈ s_k) to ACK processing (≈ a_e). r_e is therefore exactly the
+  loop the window must cover, and it is not an error the window should
+  remove.
+- **clk() must be quinn's runtime clock,** `tokio::time::Instant::now().into_std()`
+  (quinn `runtime/tokio.rs:37`), so that it shares a time base with s_k
+  under paused test time. It is injectable through `BbrRsConfig` for host
+  tests.
+- **Every ack-side time uses a_e:** the min filter, the rate sampler's
+  ack_elapsed, ack height, the ProbeRtt timers and the gain-cycle clock.
+  `on_sent` keeps quinn's `now`, because that value is the snapshot key
+  quinn returns as `sent`.
+
+*The law.*
+
+```text
+   min-RTT filter (v1 bbr_update_min_rtt):
+      expired  =  a_e − t_m > W_m
+      if r_e < m̂  or  expired :   m̂ ← r_e ,  t_m ← a_e          (m̂ = none until the first event)
+   ProbeRtt entry  ⇔  expired  ∧  mode ≠ ProbeRtt  ∧  ¬exiting_quiescence ;   on ProbeRtt exit  t_m ← a_e
+   bandwidth (per-flight sampler, ADR-0061):  b̂ = 10-round max of Δdelivered / max(send_elapsed, ack_elapsed),
+      sample admitted iff max(send_elapsed, ack_elapsed) ≥ max(m̂, 1 ms);  app-limited samples raise-only
+   window targets, T(g) = max(g·b̂·m̂, W_min)   (T = W_init while b̂·m̂ = 0)
+      Startup :  W ← W + a        iff  W < T(g_s) + e   or  delivered < W_init        (v1 bbr_set_cwnd)
+      Drain   :  W = T(1)                      exit to ProbeBw  ⇔  F ≤ T(1)
+      ProbeBw :  W ← min( T(g_c) + A ,  W + a )
+      ProbeRtt:  W = T(g_r)  for max(T_R, one round) after F ≤ T(g_r) + MTU
+      recovery (not Startup):  W_eff = min(W, w_rec),   w_rec ≥ T(1)            (bbr_rs floor, ADR-0054 addendum)
+```
+
+| symbol | value | provenance |
+|---|---|---|
+| a_e, r_e | ACK-event clock; event RTT sample | derived (the claim above); replaces quinn's stamp and `rtt.min()` |
+| m̂, W_m | windowed min of r_e; 10 s | cited: v1 `bbr_min_rtt_win_sec = 10` |
+| T_R | 200 ms | cited: v1 `bbr_probe_rtt_mode_ms` |
+| b̂ | 10-round max delivery rate | cited: v1 `bbr_bw_rtts = 10`; sampler ADR-0061 (draft-cheng-iccrg-delivery-rate-estimation); app-limited admission as v1 `bbr_update_bw` |
+| guard max(m̂, 1 ms) | sampler interval floor | derived: a span below one RTprop is the aggregation artefact (ADR-0061). It now reads m̂, which is ≥ RTprop, instead of the under-reading `rtt.min()`. 1 ms is the engine `rs_*` floor before the first sample |
+| g_s | 2/ln 2 = 2.885 | cited: v1 `bbr_high_gain` |
+| g_c | 2 | cited: v1 `bbr_cwnd_gain` |
+| g_d (window) | 1 | derived: v1 drains with pacing gain 1/2.885, which quinn ignores. A window of T(1) with the exit test on the same T(1) is the only window form whose exit is reachable under a backlog (≤ (g_s − 1)·m̂ ≈ 1.9 m̂) |
+| g_r | 0.75 | the port's (quinn `PROBE_RTT_BASED_ON_BDP`, `K_MODERATE_PROBE_RTT_MULTIPLIER`), kept; v1 uses 4 packets |
+| W_min | 4 MTU | cited: v1 `bbr_cwnd_min_target = 4` |
+| W_init | 200 × 1200 B | the port's (quinn's) initial window |
+| e, A | excess acked this event; 10-round max ack height | the port's ack-aggregation term. It is computed on a_e, so it can only over-read |
+| F, a | bytes in flight; bytes acked this event | quinn |
+
+*What changes against the port (`bbr_rs.rs` before §48).*
+1. **Startup.** The port grows while `cwnd_gain < target_window` (`:632`,
+   upstream `mod.rs:326`), a gain compared with a byte count, which is
+   always true. v1's test (`bbr_set_cwnd`) is `W < target`.
+2. **The min-RTT source.** The port takes the lifetime `rtt.min()`
+   (`:733–738`). The fix takes m̂ on a_e.
+3. **ProbeRtt entry.** The port enters on "10 s since the last ProbeRtt
+   start", with `None` read as expired (`:518–524`). That fires on the first
+   non-app-limited ACK and every 10 s after, and it re-reads the same
+   lifetime minimum. The fix keys entry on the filter's age, as v1 does, and
+   drops the port's app-limited gate: an app-limited flow with an empty
+   queue refreshes t_m by itself.
+4. **Drain's window.** It is T(1); the port's was T(2.885) (`:511`), which
+   leaves Drain only at the next ProbeRtt, ≤ 10 s later.
+5. **The sampler's guard** reads m̂.
+
+Kept as is:
+- Startup does not exit while app-limited (`check_if_full_bw_reached`,
+  which is v1's). Under the store's brake the substrate can sit in Startup
+  for a whole row, now with a bounded window.
+- The sampler's pipe-restart branch is dead after the first ACK, because
+  `split_off(&key)` keeps the key (`:246`). A stale `delivered_time`
+  lengthens ack_elapsed, which can only lower a sample, and that is safe for
+  a max filter. This is recorded and not fixed.
+
+*Loop stability: when the window form probes.* Take a window-limited,
+non-app-limited flow. Write R̄₀ for the mean loop time r_e at zero standing
+queue (base RTT, jitter mean, host and ACK delays). The delivered rate is
+x = min(L, W/R̄), so with W = g·b̂·m̂ + A the max filter follows the map
+
+```text
+   b̂′  =  min( L ,  (g·m̂·b̂ + A) / R̄₀ )
+   ⇒  b̂ → L                       iff   g·m̂ + A/L  ≥  R̄₀          (per-round growth factor g·m̂/R̄₀)
+      b̂ → A / (R̄₀ − g·m̂)         otherwise (contraction)
+```
+
+- **One line gives §47's collapse:** g·m̂ = 2 × 0.08 ms ≪ R̄₀ ≈ 2 ms.
+- **The under-read tolerance:** m̂ ≥ (R̄₀ − A/L)/g.
+- **The window alone is enough to probe.** In ProbeBw, g_c = 2 gives a
+  per-round discovery factor of 2·m̂/R̄₀ > 1 whenever the loop excess over
+  RTprop is below one RTprop plus A/L, so pacing gains are not needed. A
+  window gain cycled at 1.25/0.75/1 instead cruises at g = 1, where the
+  margin is m̂/R̄₀ < 1 under any jitter. That is the measured
+  "bŵ decays to the achieved rate at 1×BDP̂" fixed point (ADR-0068
+  addendum 2). ProbeBw therefore keeps v1's window, and the pacing-gain
+  cycle stays as the port's (inert) phase clock.
+- **ProbeRtt (g = 0.75) contracts by design.** It lasts T_R/R̄₀ rounds
+  (≈ 100 at c1s, so the 10-round filter decays to ≈ 0.75·L·m̂/R̄₀), then
+  recovers at ×2·m̂/R̄₀ per round.
+- **Margins at g_c = 2.** Measured m̂ against netem means:
+  - c1 ≈ 2·2.0/(2.0 + host delay) ≈ 1.6–2 (host delay unmeasured; bind gauge below);
+  - c2 ≈ 2·m̂/R̄₀ with m̂ between 7.0 ms (the legacy floor of Section 8.2)
+    and 10–12 ms (the wire-clocked 10 s floor `rtp_us` on §43b's low-queue
+    rows), against R̄₀ ≈ 12–13 ms typical: 1.1–1.8;
+  - c3 leg ≈ 2·(30–40)/(40–45) ≈ 1.3–2.
+
+  c2 is the thin one, and the battery's bind gauge settles its value.
+
+*The nested loop (open question 12).* The store and the substrate compose
+as a min, and the authority gauge is quinn's backlog B (Section 6.1, status
+§34 R4).
+- **Who holds authority.** Write F_s for the in-flight bytes the store would
+  put on the wire (store occupancy minus symbols past their QUIC ACK that
+  still await SACK, minus B). The substrate takes authority iff
+  F_s > T(g_c) + A ≈ 2·BDP̂ + A. So with a store law that settles below
+  about two BDPs of wire in-flight (§43b's oracle at c2: about 190 symbols,
+  about 150 KB on the wire against a substrate window of about 180–190 KB),
+  the store keeps authority and the substrate is a safety net. (With m̂ at
+  c2's measured wire floor of 10–12 ms the window is ≈ 250–300 KB, which
+  widens the gap.)
+- **Where the store is pinned** (the shipped law at c2, `n` = 2 048,
+  §43b), the substrate takes the wire. The network queue is then
+  ≤ W − L·R̄₀, about 4–12 ms at c2 across the m̂ range, against `wrtt` p50
+  95–137 ms on §43b's MAIN rows. The rest of the store's dwell moves into B, so the app-echo delay
+  A_x (≈ n/x) does not fall; the wire RTT does.
+- **At c1** the window, ≈ 2 × 103 MB/s × 2 ms ≈ 410 KB, sits above the wire
+  in-flight the sender reaches, so neither median moves. Only the collapse
+  tail goes.
+
+*No mode switch.* NO-MODE-SWITCH governs our machine's laws: no threshold
+on δ or ρ and no hint branch. The substrate is outside them, like a
+kernel's TCP: it reads no δ, ρ or hint, runs the same law at every dial
+position, and composes with the store as a min. Its phases are BBR v1's
+own, keyed on its own measurements, never on the dial.
+- **A default flip is dial-independent.** It changes the substrate at every
+  dial position at once. Selecting the substrate by hint, ADR-0054's old
+  "endstate policy", would be a mode switch, and nothing here does it.
+- **Two behaviour steps are in time, not in the dial:** the authority
+  handover at F_s = T(g_c) + A, and the ProbeRtt dip (g = 0.75 for 200 ms
+  per ≤ 10 s).
+- **The cost of those steps:** any of our laws that reads the substrate's
+  window or its RTT reads them too. That is one more reason the substrate
+  window is not a store-law input, as §34 (b1) already found.
+
+*Anchor hygiene (ADR-0061) for m̂.*
+1. **Measured seed:** m̂ is none until the first event, and no static
+   default survives.
+2. **Clock-gap discard: not needed.** A process stall can only lengthen r_e
+   or ack_elapsed. The min filter and the max-of-rate filter both ignore a
+   lengthened sample, so a stall cannot move either estimate the wrong way.
+   Under quinn's stamp a stall in the wrong place does move it, and that is
+   the defect the ack clock removes.
+3. **Expiring floor:** W_m = 10 s, and ProbeRtt forces a refresh.
+
+*Bind gauges.* The `[DIAG]` path block reads the controller through
+`Connection::congestion_state()` → `into_any` → `BbrRs`, and for `bbr_rs`
+it adds:
+- `qm=` the mode (S, D, B, R) and its occupancy;
+- `qrt_us=` m̂, the claim's in-vivo check against the netem base;
+- `qsr_us=` an EWMA of r_e (gain 1/8);
+- `qbw=` b̂.
+
+The loop margin 2·m̂/qsr is the stability term above. Other controllers
+print `-`. The §47 witness (share of lines with `qcwnd` below the true BDP)
+is read on every arm.
+
+*Tests (red-first, status §48 step 0).*
+- **Unit:** `bbr_rs::tests::startup_window_is_bounded_by_the_model_target`,
+  `drain_exits_under_a_backlog`,
+  `probe_rtt_fires_only_on_an_expired_min_filter`.
+- **In-process quinn-proto pair** on a synthetic clock
+  (`transport/cc_sim.rs`; both controllers through the real
+  `RttEstimator`):
+  - `bbr_rs_holds_the_pipe_after_a_loss_burst_under_stale_stamps` (1 Gbit/s);
+  - `bbr_rs_min_rtt_never_reads_below_the_path`;
+  - `bbr_rs_min_rtt_follows_a_path_rtt_rise`;
+  - the upstream pins `quinn_bbr_window_collapses_under_stale_stamps` and
+    `quinn_bbr_min_rtt_under_reads_under_stale_stamps`.
+
 ### 8.5 The substrate's other control loops
 
 A transport composed over another transport must enumerate the substrate's
@@ -3095,6 +3740,21 @@ status §12 diagnosis addendum) govern it:
 
 ## 9. Evaluation
 
+**Currency of the tables (status §37).** The tables below were measured at
+different commits, and none was re-measured after the threading redesign
+(status §9–§16), the incremental SACK marking (status §28) or the decoder
+prune per drain (status §32). The competitor table (Section 9.2) is the
+July baseline: `0f27f99` (2026-07-22) with the framing and ack-merge flips of
+2026-08-06 and 2026-08-08. Its realtime rows were re-run once, at `f671f61`
+(2026-09-08). Section 9.3 dates from 2026-07-14 to 2026-07-21, Section 9.4
+from 2026-08-19 and Section 9.6 from `754139c` (2026-08-06). Section 9.7 and
+Section 9.8 carry their own commits. The only later readings are within-tree
+A/B batteries of the shipped default against the previous main, in one
+session each (status §19, §32). They have no competitor arm. There is
+therefore no same-session competitor baseline on the current binary, and
+cross-session references drift (about 24 % at c1d, status §19). Read every
+competitor ratio below as a July ratio.
+
 ### 9.1 Method
 
 **Cells.** All measurements run the engine's own `perf` driver over Linux
@@ -3164,7 +3824,7 @@ Law 0, A.5; flipped in `bf3a636` on the status §8 re-run, not in scope at
 
 ### 9.2 Against QUIC, TCP and MPTCP
 
-Measured at `0f27f99` (both netem seeds, same cells, same day, same VM;
+Measured at `0f27f99` (the c1 row excepted; both netem seeds, same cells, same day, same VM;
 competitors quinn-perf with Cubic and BBR, kernel TCP Cubic and BBR on
 application-acknowledged delivery, kernel MPTCP v1). Bulk rows are updated
 by the framing flip (`078b0ce`) and the ack-merge flip (`bdab7de`).
@@ -3173,7 +3833,7 @@ by the framing flip (`078b0ce`) and the ack-merge flip (`bdab7de`).
 |---|---|---|---|
 | c2 realtime (50 msg/s, 400/1200 B) | p99 median 36–39 ms, 1000/1000 delivered | QUIC 55–342 ms; TCP 209–1407 ms, delivery down to 687/1000 | win ×1.4–8.8 vs QUIC, ×5–38 vs TCP |
 | c3 realtime | p99 median 92–103 ms, 1000/1000 | QUIC 150–759 ms (worst reps 38–44 s); TCP 830–3878 ms, delivered to 525/1000 | win ×1.5–41; only delivery-complete stack |
-| c1 bulk (clean 1 Gbit/s) | ~229 Mbit/s | quinn-BBR 915, kernel TCP ~900 | loss ×4 |
+| c1 bulk (clean 1 Gbit/s) | c1s 826.3 [802.6–836.5], c1d 751.4 [734.6–785.9] at engine `4dcc893` (scored 2026-10-29; status §32). The July reading was ~229 | quinn-BBR 915, kernel TCP ~900 (July, cross-session; no same-session competitor) | not stated: the gap to BBR is not re-measured |
 | c2 bulk | 87.8–88.1 | quinn-BBR 91.9–92.4 | loss −4…−5 % |
 | c3 bulk | 16.6 | quinn-BBR 18.6, TCP-BBR 17.5–19.4 | loss −8…−11 % |
 | c7 bulk (symmetric dual) | 147–151 | MPTCP-BBR 149 / 169 | tie / −13 % |
@@ -3191,10 +3851,16 @@ spreads (c2 36–40 ms, c3 100–113 ms).
 
 **Bulk.** The machine is loss-robust far above every Cubic-family stack but
 is not a faster bulk pipe than BBR-class single-path stacks or kernel MPTCP
-over BBR. The clean-path gap is the engine's per-message service wall (a
-measured opt-in, sender batching plus estimator cadence, reaches 446–505
-Mbit/s at c1; the estimator cadence alone has shipped since `83462ae`, so
-sender batching is the remaining opt-in). The lossy-single gap was accounted to closure at `db40d2f`:
+over BBR. The clean-path gap to the July competitor numbers was the engine's
+per-message service wall. The shipped default has since moved from ~229 to
+826.3 (c1s) and 751.4 (c1d) Mbit/s (status §32, NEW arm against a same-session
+MAIN at 736.5 and 628.4). Several changes lie between the two readings (the
+estimator cadence since `83462ae`, the receiver changes of status §17–§32) and
+this section does not apportion the gain. The quinn-BBR 915 is a July number
+from another session, so the ratio to it is not a measurement: cross-session
+references drift by about 24 % (status §19). No competitor was re-run. The
+opt-in reading of 446–505 Mbit/s is superseded by the shipped default. The
+lossy-single gap was accounted to closure at `db40d2f`:
 framing and MTU tax (~4.3 / 0.95 Mbit/s at c2 / c3) and reactive over-fire
 (~2.7 / 1.7), with the wire ≥ 98 % utilised; compact framing then recovered
 part of it. At the heterogeneous dual, slow-path source is negative-margin
@@ -3202,12 +3868,17 @@ under every placement law measured: goodput falls monotonically as the slow
 path's source share rises.
 
 **Validity window.** The bulk rows describe the binaries of the competitive
-baseline. On the current binary line the 100 Mbit/s single path sc2 does not
-complete 100 MB in 300 s (about 2 Mbit/s, 6/6 and 8/8 reps), and sc3 and c7
-read far below these rows in recent batteries (sc3 2.4–3.5 Mbit/s, c7 control
-54–87 Mbit/s against 157–168 earlier). This is an undiagnosed regression and
-the first item of Section 11.1's owed work; no bulk number in this section is
-claimed for the current binary.
+baseline, except the c1 row, which is the current default. A later binary line
+did not complete the 100 Mbit/s single path sc2 (100 MB in 300 s, about
+2 Mbit/s in 6/6 and 8/8 reps), and sc3 and c7 read far below these rows in
+those batteries (sc3 2.4–3.5 Mbit/s, c7 control 54–87 Mbit/s against 157–168
+earlier). The sc2 regression is diagnosed and fixed (`1b890e0`, 2026-09-29;
+status §3.1 item 2, §3.5 item 1). The cause was the CPU-bound sender: since
+`d60f3ab` the r(β) mix evaluated the window-mass anchor term once per source
+symbol, about 6 ms a call. The rate is now evaluated on a cadence of
+min(5 ms, SRTT/4). The sc3 and c7 readings were taken on the same binary
+line. No re-measure after the fix is recorded in status. No bulk number
+in this section other than the c1 row is claimed for the current binary.
 
 ### 9.3 Multipath aggregation
 
@@ -3235,8 +3906,13 @@ coded arms stay unimodal where plain arms go bimodal on a lossy leg.
 | cumulative effect of one era's flips | no two-sided goodput loss at any cell or seed; c1 seed 7 +9.6 %; c8 CPU/Gbit −31 % send, −9 % receive | `f605f92` |
 | δ-honest shedding, unified default | zero collapse reps in 96 tail reps; p99 at or below the streaming code everywhere; 100 % delivery at the c3 message cell (streaming 79–81 %) | Section 5.6 |
 
-The two derived flow-control flips are parity results: the pool's former gain
-was funding delay, not goodput. They make the machine cheaper, not faster.
+The two derived flow-control flips are parity results in goodput: the pool's
+former gain was funding delay, not goodput. They do not make the machine
+faster. The queue reduction is unresolved. The first measurement (`18dbf10`)
+read q_p50 down by 10–200 ms, and the re-measure at n = 12 (`e57f365`)
+reproduced its direction (Δ −115…−218 ms at c8/c8L) inside 2σ (129–377 ms). It
+is a point estimate, not a resolved effect, so no queue figure is claimed for
+the flips.
 
 ### 9.5 Wire and engine flips
 
@@ -3285,6 +3961,10 @@ Measured at `754139c`, before the two flow-control flips:
   holes, 4–6×, in 16 of 16 readable single-path reps; 28–38 against 10–16 ms
   at c8. The mid-stream arm was void at 5 of 6 cell sizes because the engine
   does not echo Copa's δ.
+* **What this does and does not bound (status §39).** Funded r on one
+  saturated path is capped at parity with ARQ (Section 3.7). The battery
+  does not test the DoF ledger of Section 4.13: that gain is not shown, and
+  not refuted.
 
 **Receiver request law (`0159290`).** Refuted with record at both duals on
 every arm. The false-repair fraction rose ×5.74 at c7 (0.038 → 0.217) and
@@ -3319,11 +3999,13 @@ not a stable quantile.
 The latency budget at the duals is dominated by queueing above the path
 floor, not by placement; the recovery clocks are inert on false alarms
 because fires are gap-driven; proactive FEC at r > 0 slowed the lossy single
-path; and the two flow-control flips removed queue at goodput parity. The
-remaining bulk gaps are the engine's per-message service wall (clean path),
-the reactive plane's over-fire and framing tax (lossy singles), slow-path
-conversion at the heterogeneous dual, and the unexplained regression of
-Section 9.2. Owed instruments: the sender ETA stream needs an exit flush and a
+path; and the two flow-control flips held goodput at parity (their queue
+effect is unresolved, Section 9.4). The remaining bulk gaps are the engine's
+per-message service wall (clean path, with no same-session competitor to size
+it against), the reactive plane's over-fire and framing tax (lossy singles)
+and slow-path conversion at the heterogeneous dual. The sc2 regression of
+Section 9.2 is fixed (`1b890e0`); no re-measure of sc3 or c7 is recorded since.
+Owed instruments: the sender ETA stream needs an exit flush and a
 consistent time reference; the engine must echo Copa's δ; and the diagnostic
 writer needs line discipline. The receiver's self-heal classifier no longer
 counts retransmit copies, and `cod=` no longer counts source copies.
@@ -3384,12 +4066,13 @@ shipped.
 | Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`) | the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed) | `3a0ca0c` | off |
 | Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`) | repair anchored at the frontier loses to its own ARQ (4 useful of 718) | `bede4a3` | removed |
 | Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`) | presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip | `806c0f4` | off |
-| Funded proactive coding at r > 0 (the r > 0 battery) | at the lossy single path funding coding made the transfer slower, and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the r* = 0 corner | `91895dd` | refuted |
+| Funded proactive coding at r > 0 (the r > 0 battery) | at the lossy single path funding coding made the transfer slower (one seed, n = 4, direction only), and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the r* = 0 corner; funded r is capped at parity with ARQ on one saturated path, and the DoF ledger's gain is not shown, not refuted (status §39) | `91895dd` | refuted |
 | **Scheduling and placement** | | | |
 | DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) | their wins were measured in an era where the coded path was dead; the live ablation measured −17 to −30 % at the symmetric dual; the surviving ideas became the M* law and the anchor-hygiene laws | `9b48286` | removed |
 | Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) | decode-clocked samples make the windowed max the correct statistic; any sub-max quantile under-reads about 65× (heterogeneous dual 3–6× worse) | `f1f32c5` | removed |
 | Place-slack (`RWM_PLACE_SLACK`) | at the heterogeneous dual goodput falls monotonically as slow-path source share rises (6 % → 88.6 Mbit/s, 16–18 % → 70–83); the symmetric-dual clause failed (0.86–0.90×Σ) | `cc15b83` | removed |
 | Derived placement temperature, frontier term, derived diversity weight (`RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL`, `RWM_PLACE_WDIV_DERIVED`) | inert on delivered latency, with goodput regressions under the guard; placement-manufactured wait is only ~6 % of delivered latency | `5e6e3f5` | off |
+| Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) | on an idle leg the echo srtt freezes with the leg's own dwell, so its price stays +17 to +116 nats above the loaded leg's on 11 locked rows and the one-leg state is absorbing (10 of 24 static-cap rows locked, against 0 with the wire base); replaced by `(½ + ε̂)·ŵ_i`, quinn's packet-timed RTT (status §38, §41, §41b; ADR-0073; §5.7). Not tested off Bulk or at four paths. **Re-ask if quinn's SRTT is unavailable on a substrate** (then ŵ_i falls through `min_j wire_j ?: s_i` to this base) | status §38, §41, §41b | superseded; code and gate removed |
 | Copa per path as the substrate default (the original design) | on the clean substrate Copa-sole is 0.57–0.97× BBR bulk; its earlier heterogeneous-dual win was a broken-substrate artefact; BBR-under is the default and Copa the queue/tail policy point | `7652ccb`, `519467e` | superseded |
 | Quinn's stock Cubic under the engine | the hidden loss-reactive substrate controller was the 15–17 Mbit/s "link ceiling" | `519467e` | superseded |
 | Engine or receiver parallelisation | one core per side sustains 136–188 Mbit/s with an empty queue; the walls are per-symbol service time and recovery waste | `cee499c` | refuted, never built |
@@ -3413,6 +4096,14 @@ shipped.
 | Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) | Stage 3 (d): not worse at any of five cells; dual c1 +41 % (193.9 → 274.1 Mbit/s), sender CPU −12 to −32 %, fed loss vs truth unchanged at every leg | Stage 3, `83462ae` | shipped; `RWM_POOL_ANCHOR` stays an off arm |
 | Emission batching as default (`RWM_EMIT_BATCH`), first attempt | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | superseded by the Law-0 form below |
 | Emission batching, Law 0 (`RWM_EMIT_BATCH`, burst bound 64 at every path count) | status §8 re-run on `927bb00` (with the §7 receive-buffer fix), n = 16 per cell and arm: BETTER at every cell and WORSE on no clause; `c1d-400` goodput +41.1 % and sender CPU −34.5 %, CPU −25.3 % (`c1s-400`), −11.8 % (`c2-100`), −20.5 % (`c8-100`); fed loss vs truth unchanged at every leg; 0 receive-buffer drops in 128/128 rows | §8, `bf3a636` | shipped; `=0` is the per-symbol control arm (own `OFF` echo) |
+| **Store-law candidates for the knee (Section 6.1 keeps the shipped law)** | | | |
+| (P) probe gain: `cap' = (1 + q + g)·D̂·τ` | with τ = RTprop the fixed point is the delay ratio T(n*) = (1 + q + g)·RTprop, a constant that misses at least three of four cells' knee ratios (1.85, 4.1, 3.3, 2.7 / 1.68), and with τ = T̂ there is no interior fixed point; the gain 2.0 of Section 6.2 returns under another name | — | closed by derivation, never built (status §27–§29) |
+| (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker | built as specified and NOT-VIABLE: the ê clamp bound in 51–87 % of periods and successive ê agreed in sign only 34–55 %, so n̄ random-walked below the predicted point and cost goodput at c2 and c1s (where it settled, A_x p50 was 5–12× below main) | tag `archive/store-power` | closed (status §29) |
+| (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²` | c1's noise is red (γ 0.58–0.70), so W* ≥ 579–765 rounds and a decision takes ≥ 6 s against a 4–5 s transfer; D-W reaches only ×1.71 (c2), ×1.17 (c8), ×1.01–1.02 (c1) in a third of a transfer, so no seed makes it pay; averaging ê, Kesten's rule, a median half, a sequential half, a larger dither and a noise-adaptive W do not close either; the §32 receiver change cut c1s window noise ×2–3 where ×100 was needed, and the post-§32 diagnostic read ×1.2–1.8 | — | closed (status §30, §34) |
+| (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W` | the gain 2 returns under BBR's name; the fixed point is ×5–15 above the knee at c2 and c8 (ack-compression over-read), and K is a ratchet that keeps the largest non-app-limited reading (c1s at cap 2048: 575 / 749 / 632 / 915 across sessions) | — | closed (status §34, §37) |
+| (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds | the fixed point is the authority crossover (≈ 2048 at c1s, beyond 1 024 at c2 and c8), above every knee, because it is (b1)'s K read through a threshold; it survives as the authority gauge B (Section 6.1) | — | closed as an input (status §34) |
+| (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing) | a seed, not an input: the first transfer still needs D-W's finder (≈ 5.5 s of transfer per unit ln n at c2, ≈ 2 min at c1s), knee stationarity over the path's lifetime is unmeasured, and §32 moved the c1 map; at most a conditional seed at c2 and c8 | — | closed at c1 (status §34) |
+| (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))` | the ceiling's fixed point at c1d post-§32 is 457, below the knee band [512, 1 152], and μ_R is not flat in the cap (86.8 k → 110 k msgs/s, max/min 1.27); at c1s post-§32, c2 and c8 the receiver is not the bottleneck and μ_R over-asks ×1.4–4.7; the receiver's delivered rate is the sender's D half a loop later (cap/T, circular) | — | closed (status §23, §34) |
 | **Recovery clocks** | | | |
 | Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed; the per-path sequence returns ungated as wire v9 `path_seq` (Section 2.2), so the cadence re-heat is the first reading its VM run owes |
 | Singles hole suppression (`RWM_RECOV_SP`) | +0.3 Mbit/s at sc3, a tie at sc2; re-fires are re-serve-clocked | `db40d2f` | off (kept; open) |
@@ -3447,7 +4138,7 @@ never-delivered tail target.
 
 | # | question | what would decide it |
 |---|---|---|
-| 0 | Why does the current binary line run sc2 at ~2 Mbit/s (and sc3, c7 far below their earlier readings)? | a bisect against the competitive-baseline binary (Section 9.2) |
+| 0 | Do sc3 and c7 still read far below their earlier values? The sc2 regression (~2 Mbit/s) was a CPU-bound sender and is fixed in `1b890e0` (status §3.1 item 2); the sc3 and c7 low readings came from the same binary line, and no re-measure after the fix is recorded | re-run sc3 and c7 on the current binary (Section 9.2) |
 | 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break |
 | 3 | Does Auto's rate sit at the corner r* = 0? | an echo of Copa's delay normaliser d beside D_arq (Section 4.9) |
 | 4 | Does the span law stay continuous at the named points? | an isolating pure-law test of `(δ, ρ, r) → (A*, M*, Δ)` with ±2 % nudges, as the rate law has |
@@ -3457,9 +4148,9 @@ never-delivered tail target.
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
 | 9 | Why does the probabilistic taper retransmit never fire? | whether ε̂ at send is structurally ~0 or the oldest symbol never ages past the P_lost knee |
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
-| 11 | Can the machine beat BBR-class stacks on clean single-path bulk? | the engine's per-message service walls; the measured opt-in (sender batching plus estimator cadence, the cadence now shipped) reaches 446–505 Mbit/s at c1 against 915 for quinn-BBR |
+| 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
-| 13 | Remaining hint-keyed sites | `queue_target_mult` (1.08/1.125/1.25), the symbol size per named point (512/1200), the Realtime duplicate source send, `use_packing`, `RWM_COPA_COMPETE`; each is a declared corner, not a law (the block hint tables and the pipeline fork were removed with the block pipeline) |
+| 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`) and the correction path (`:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's gap clamp (`net/sender_phases.rs:984`), repair and retransmit placement (`:1161`, `:1173`, `:1314`) and path-map floor (`:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
 
 ### 11.2 Open-constants register
 
@@ -3475,17 +4166,20 @@ decide it.
 | per-path thresholds 9/8 and 3 | `mp_time_threshold_split`, `MP_PACKET_THRESHOLD` | cited from RFC 9002 (9/8 is an empirical recommendation; RACK uses 5/4); measured against age including sender dwell | lateness coordinate in place of age |
 | `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs` | a rate limit that is also the hole sampler; manufactures no holes on a lossless wire (`holeclass_reachability.rs`) | none yet; it sets the α ≈ 1 corner |
 | `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` | `net/mod.rs` | 10× RFC 9002's granularity | re-fire cost against F |
-| `RWM_STORE_GAIN = 2.0` | single-path predecessor (Section 6.2); H = (gain − 1)·RTprop at N = 1 | sets the single-path store headroom while the `n_live < 2` guard ships; ADR-0072 replaces it there by 1 + q(δ), after which it reaches only the `RWM_STORE_PATHS = 0` arm and the default-off honest and pool-anchor arms | the ADR-0072 battery (N = 1 contrast) |
-| `RELIABLE_STORE_MAX = 1024` | single-path ceiling (`net/mod.rs`) | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"); binds in every post-warm-up c1s window and 17/18 sc2 reps; not a memory bound in practice (the N = 2 pool already reaches 2734). ADR-0072 retires it from the shipped seat; it stays the ceiling of the `RWM_STORE_PATHS = 0` arm and the `min` under the boot cap | the ADR-0072 battery |
+| `RWM_STORE_GAIN = 2.0` | `gates.rs:361`; the single-path predecessor (Section 6.2) | no longer sets the shipped cap. The `n_live < 2` guard is gone (`net/store_cap.rs`, ADR-0072) and the default pooled cap multiplies by 1 + q(δ) at every N. The gain is still read by the `RWM_STORE_PATHS = 0` control, by `RWM_DELTA_CAP = 0`, by the default-off honest and pool-anchor arms, by the seats where `plain_dyn_cap` is false (generation coding, an explicit `RWM_STORE`; `net/sender_policy.rs`, where `delta_cap` is `gates.delta_cap && plain_dyn_cap`) and by the default-off placement frontier arm (`scheduler/place.rs:409`, H = (gain − 1)·RTprop). It is a shipped gate default with no live use on the default plain-reliable path | none needed on the default path; the `=0` control keeps it re-runnable |
+| `RELIABLE_STORE_MAX = 1024` | `net/mod.rs:442`; the former single-path ceiling | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"). It bound in every post-warm-up c1s window and 17/18 sc2 reps while it was the single-path ceiling, so every single-path goodput measured before ADR-0072 went through it. The shipped seat no longer uses it: the ceiling is N·knee at every N (ADR-0072). It stays the ceiling of the `RWM_STORE_PATHS = 0` arm (`net/sender_policy.rs:529`) and the `min` under the boot cap. Its successor at one path is the knee, which binds in 70 % of c1s windows (status §18) | the ADR-0072 battery ran (status §18, §19); the knee is the open constant now |
 | `HONEST_RECOVERY_ROUND_S = 100 ms` | honest per-path cap (`net/store_cap.rs`) | inert by default (needs `RWM_PLAIN_RS`) | — |
-| κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067 | an `s_i > H` bind fraction |
-| `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref` | σ̂_e on the ETA stream |
-| `w_div = 1.0` | `SchedulingWeights` | derived form `(p_BB − ε)⁺·srtt/ref` gives 0.475 (c2), 0.552 (c3) | per-path p_BB beside placement |
-| cold-path price `r_i = 10.0` | `place_costs` | a hard exclusion (e^−66 odds at T = 0.15) in continuous form; derived form: price an unmeasured path at the worst measured one | a cold-price bind fraction |
+| κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067; with the wire base (§5.7) X_i's arrival reads the shipped E_i against F̂ built from the stamp of the same E_i | an `s_i > H` bind fraction (`hol_sh=`) |
+| `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref`. the wire base keeps ref (min srtt), so T's unit is unchanged; the `[ETA]` stamp is the same wire-base E, so σ̂_e measures the predictor placement priced | σ̂_e on the ETA stream |
+| `w_div = 1.0` | `SchedulingWeights` | derived form `(p_BB − ε)⁺·srtt/ref` gives 0.475 (c2), 0.552 (c3). Its srtt_i is the frozen app-echo srtt on an idle leg (the §5.7 lock-out); the derived form should read ŵ_i | per-path p_BB beside placement |
+| dead-leg clamp `r_i = 10.0`; the cold price is the 50 ms `DEFAULT_SRTT` seed | `place_costs`, `srtt()` | the 10.0 binds only at ε̂ ≥ 1 (ε̂ starts at 0, so an unmeasured leg is priced lossless) and has a step there (r → ∞ as ε̂ → 1⁻; continuous form min(ε̂/(1−ε̂), 10)). What prices an unmeasured leg is the 50 ms srtt seed, a pessimistic constant (e^−17 to e^−55 at c1d). Derived form: the best measured leg's value, optimistic so the leg is sampled (`RWM_COLD_PLACE` for s_i; the `min_j wire_j` fallback of ŵ_i for the base) | `cold_r=` 0 on all 31 807 `[ETA]` lines; `cold_ge=` (the seed) 0.036 of c1d's first 0.3 s |
 | near-tie band 0.8 and floor 0.25 | `place_repair_spare_path` | a relative band plus an absolute floor signals a missing scale; derived form `max_spare − z·σ̂_spare` | σ̂_spare |
 | `BULK_TAIL_BUDGET = 0.05` | `raptorpath-math` | an "e.g." promoted to a constant | the completion-glide battery arm |
 | χ constants 1.5, 4·RTTVAR, SRTT/4 | `completion_exposure` | — | — |
 | W* fraction α = 0.25, bounds [16, 512], `MAX_WINDOW_SIZE = 200` | `derive_window`, sender | 200 is below W_mp at the heterogeneous cell | — |
+| reactive repair margin `ceil(retx·ε̂)` | `serve_gaps` (`net/sender_phases.rs`) | a step, not a law: at least one repair per gap report that fires any retransmit; coded over the leading window (`generate_repair()`), the superseded leading-window form (Section 10); derived form: the ledger's insurance r(β) per live copy, 0 at Bulk (Section 4.13) | `preempt_src` and `fill_coded` under a ledger arm (Section 4.13; status §39 verdict, not run) |
+| debt reduction `repair_debt −= nacked·r` | `serve_gaps` | a proxy for "the reactive plane covers these"; no derivation; subsumed by the ledger's a_c (Section 4.13) | as the margin row |
+| generation repair floor `RWM_GEN_R` 0.15 systematic / 0.20 coded | `sender_policy.rs`, `GenerationEncoder` | a constant prior where r(β) is the derived one; the seat's deficit loop is already the ledger's a-posteriori term (Sections 5.8, 4.13) | none yet: the seat is not in the default machine |
 | knee = 2048 per path | pooled cap ceiling, `N·knee` at every N | a resource bound outside the law (retained payload per live path), value measured but stale; inert at c7/c8 under the δ-cap; predicted to bind at c1s at N = 1 (7/15 windows at the r1 anchor trajectory) because the c1 anchor over-reads ×7–9 | `[SUMCAP] pin=` at c1s; the anchor over-read (`btlbw`/delivered) beside it |
 | `queue_target_mult` 1.08 / 1.125 / 1.25 | Copa legacy branch | a declared corner: not affine in log δ | a CoDel-derived per-δ setpoint |
 | receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
@@ -3499,6 +4193,11 @@ decide it.
 | control-stream write deadline `CONTROL_SEND_TIMEOUT = 500 ms` | `transport/io_owner.rs` | the report task's existing 500 ms control-send deadline (`net/tasks/report.rs`), applied at the operation inside the owner | — |
 | sender input channel depth `SENDER_IN_BATCHES` = `MSG_CHANNEL_BATCHES` (128 owner batches) | `net/tx_inputs.rs` | a resource bound outside any law: the ack lane is the other half of the same owner polls whose data half the receiver's inbound channel carries, so it takes that channel's bound (ADR-0011's 4096 datagrams / `INBOUND_BATCH_MAX`); full = the owner keeps the batch and pauses its reads, never a drop | `[IOWN] ack_batches` / `ack_dg` per cell |
 | sender command channel depth `SENDER_CMD_DEPTH = 64` | `net/tx_inputs.rs` | a resource bound: the cold producers send a few commands per 2 s report interval; 64 is the depth of the other cold channels (`deficit_tx`, `request_tx`, `sack_tx`) | — |
+| Δ cap 64 | `net/emit_source.rs:591`, `Δ = clamp(⌈rate·jitter⌉, 1, 64)` | floor 1 is structural; the cap 64 has no provenance (Section 5.3) | a cap-bind fraction at a high-rate jittered cell |
+| M* clamp [2, 32] | `net/mod.rs:448` (`GEN_PIPE_MAX_GENS`), `:473-479` (`gen_pipe_depth`) | generation seat only (opt-in, status §3.2). The floor 2 is the fixed cold-start pipeline; the ceiling 32 is a memory backstop (32·G ≈ 12 k symbols ≈ 15 MB at 1200 B), declared | a bind gauge on the clamp; the depth knee at the generation cells |
+| store boot 128 (`RWM_STORE_BOOT`) | `gates.rs:364` | "a fit to one cell's link budget (≈ 1.5 × a 100 Mbit / 10 ms BDP), never swept" (`net/sender_policy.rs`). The derived value is 10 (`STORE_BOOT_DERIVED`, `:121` = the cap floor) and does not ship, because boot once also bound mid-transfer when the anchor set emptied. The Σ now ranges over the channel's membership, so boot is reached only at cold start, where the two values are not distinguishable; not re-measured | swap in the derived boot and re-measure the first RTTs |
+| repair floors 0.15 (systematic) / 0.20 (coded) (`RWM_GEN_R`) | `gates.rs:165`, `net/sender_policy.rs:369`, read at `net/emit_source.rs:701` | generation seat only (opt-in, status §3.2). The floor stands in for r*, which reaches the wire through the plain window's taper (Section 11.3); no derivation and no sweep | a sweep of the floor, or r* in its place, at the generation cells |
+| rate cadence `min(5 ms, SRTT/4)` | `control/fec_rate.rs:181` (`RATE_CADENCE_MAX_US`), `:234` (`period_us`) | introduced by `1b890e0`, which fixed sc2 (status §3.1 item 2). 5 ms is a resource bound (one evaluation costs about 0.1 ms, so at most about 2 % of a core), SRTT/4 is declared; the cached rate is bit-identical to a fresh one younger than one period (`rate_cadence_*` tests). Not swept: the cost of a stale rate in goodput or tail is not measured | the rate's staleness against its cadence at c2 and c8 |
 | `SRTT/2` heal classifier | attribution audit (offline) | biases π₀ upward; the engine's own classifier does not use it (sender-stamp order, Section 7.6) | — |
 
 ### 11.3 Code/model divergences
@@ -3508,11 +4207,12 @@ decide it.
 | span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop |
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
-| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | `clamp(2.0·BDP, 10, 1024)` behind the `n_live < 2` guard until ADR-0072's code phase (now `RWM_STORE_PATHS = 0` only); the wasm model already scales its pool per path with no guard |
+| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | the same expression: `pooled_store_cap` has no path-count branch (ADR-0072; `net/store_cap.rs`). No divergence on the default path. `RWM_STORE_PATHS = 0` re-runs `clamp(2.0·BDP, 10, 1024)` as a control arm at every N; the wasm model scales its pool per path with no guard |
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
-| store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | at N = 1 the engine still has `(gain − 1)·RTprop`; at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
-| r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget |
+| store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | the multiplier is `1 + q(δ)` at every N (ADR-0072), so H = q(δ)·RTprop_w, and SACK-clocked release uncounts SACKed symbols. The `(gain − 1)·RTprop` form survives only in the `RWM_STORE_PATHS = 0` control and the default-off placement frontier arm (`scheduler/place.rs:409`). H is read from `[WIDLE]` (Section 7.3) |
+| r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget. The seat's deficit loop (`GenerationDeficit` minus in-flight) is already the ledger's a-posteriori term (Section 4.13) |
+| the rate law's feedback leg | one DoF ledger over live symbols, `Ω = Σ_c (k_c − a_c)⁺ + B`, with B the taper bank and copies accruing r(β) (Section 4.13) | not implemented on the plain window: proactive repairs come from the open-loop `TaperBudget`, the reactive plane serves each ripe hole by its own cooldown plus `ceil(retx·ε̂)` leading-window repairs, and neither counts the other's live symbols or the decoder's held rows; the receiver's rank deficit (`RepairRequest`) is sent only by the off request-law arm. Bounded by the r > 0 battery's `[RFA]` counters: the removable part is `preempt_src`, ≤ 0.5 % of source at the corner (Section 4.13); status §39 records the verdict (gain not shown, not refuted) and the owed tests, with no battery |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
 | P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
 | GE estimator input | per-symbol loss sequence | per-batch counts, losses fed before receives |
@@ -3556,6 +4256,33 @@ form from the GE survival function instead of solving an MDP, carries burst
 correlation in the margin, and addresses multipath and multiple classes.
 Razavi et al. [Razavi2008] search joint FEC/ARQ parameters numerically under
 GE.
+
+**Feedback DoF accounting.** These are the nearest prior art to the
+machine as a whole.
+
+- *AC-RLNC.* Cohen, Malak, Bar Bracha and Médard [Cohen2020] (IEEE Trans.
+  Commun. 68(7), 2020, arXiv:1905.02870) combine an a-priori FEC (m repairs
+  after each RTT's worth of new packets) with an a-posteriori FB-FEC. FB-FEC
+  repeats a coded packet unless the channel rate minus the DoF ratio
+  `m_d/a_d` exceeds a threshold (`r − d > th` adds a new packet).
+- *Multipath AC-RLNC.* Cohen, Thiran, Bar Bracha and Médard [Cohen2020mp]
+  (arXiv:1910.13290; venue unverified) extend this to many paths. They estimate `md`/`ad` for unacknowledged packets from per-path
+  rates and allocate by a bit-filling argmax.
+- *FlEC.* Michel, Cohen, Malak, De Coninck, Médard and Bonaventure
+  [Michel2023] (IEEE/ACM ToN 31(2), 2023, arXiv:2208.07741) build the rule
+  into QUIC as `r̂ − md/ad < ds()`, plus an `FECPattern()` hook. Repair stays
+  inside the congestion window. Bulk is SR-ARQ plus last-flight protection.
+
+Section 4.13 writes their rule on the dial: ds = r(β) − l̂, derived rather
+than chosen per use case. FlEC's bulk ds = −l̂ falls out as the β = 1,
+χ = 0 corner. AC-RLNC's bit-filling is not imported (Section 5.7). Hairpin
+[Meng2024] (Meng et al., NSDI 2024) differentiates redundancy per
+retransmission round under a frame deadline, which is the ρ < 1 refinement
+the ledger declares and does not derive. Tambur [Rudow2023] and the
+streaming-code line are open loop; this machine shares that a-priori form
+in Section 4.2. Tetrys (RFC 9407) is the IETF's sliding-window
+elastic-encoding-window family, of which the unified decoder (Section 5.2)
+is a member.
 
 **Streaming codes.** Delay-constrained burst erasure correction
 [Martinian2004] and its layered constructions [Badr2017, Fong2019,
@@ -3705,6 +4432,21 @@ correction density in time and as the placement law's fixed point.
   arXiv:2005.06914, 2020.
 - [RLC_GE2025] "On the analysis of random linear streaming codes in
   stochastic channels," arXiv:2509.01894, 2025.
+
+**Feedback DoF accounting**
+
+- [Cohen2020] A. Cohen, D. Malak, V. Bar Bracha, M. Médard, "Adaptive causal
+  network coding with feedback," *IEEE Trans. Communications* 68(7), 2020,
+  arXiv:1905.02870.
+- [Cohen2020mp] A. Cohen, G. Thiran, V. Bar Bracha, M. Médard, "Adaptive
+  causal network coding with feedback for multipath multi-hop
+  communications," arXiv:1910.13290, 2019 (venue and year of the journal
+  version unverified).
+- [Michel2023] F. Michel, A. Cohen, D. Malak, Q. De Coninck, M. Médard,
+  O. Bonaventure, "FlEC: Enhancing QUIC with flexible loss recovery,"
+  *IEEE/ACM Trans. Networking* 31(2), 2023, arXiv:2208.07741.
+- [Meng2024] Z. Meng et al., "Hairpin: Rethinking packet loss recovery in
+  edge-based interactive video streaming," NSDI 2024.
 
 **Multipath, scheduling and queueing**
 

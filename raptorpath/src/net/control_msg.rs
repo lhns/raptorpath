@@ -233,6 +233,7 @@ fn on_ack(
     let mut cc_window: Option<u64> = None;
     let sched = &mut *ctx.scheduler;
     sched.touch_path(path_id);
+    sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
     // `RWM_CLOCK_GAP` (ADR-0061): samples processed in a stall's
     // release-flood quarantine measured the stall, not the path — the
     // RTT/delivered-rate feeds below are skipped (budget release and loss
@@ -424,6 +425,7 @@ fn on_path_report(
     let sched = &mut *ctx.scheduler;
     // Touch path — this doubles as keepalive
     sched.touch_path(report_path_id);
+    sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
     if let Some(path) = sched.path_mut(report_path_id) {
         let rtt_duration = Duration::from_micros(avg_rtt_us);
         // `RWM_MSTAR_ANCHOR` (ADR-0061): the peer's `avg_rtt_us` is the
@@ -514,6 +516,7 @@ fn on_window_ack(
     {
         let sched = &mut *ctx.scheduler;
         sched.touch_path(path_id);
+        sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
         // `RWM_CLOCK_GAP`: quarantined echoes (stall release flood)
         // measured the stall — discard.
         let gap_q = crate::control::anchor::stall_witness()

@@ -216,7 +216,9 @@ def cadence_witness(row, want):
     return p
 
 
-def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
+def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, absent_off=False):
+    """`absent_off`: a `[GATES]` line without RWM_POOL_ANCHOR (the gate was deleted from the engine) counts as off, as `=0`; a present
+    token must still read 0."""
     want_pipe, want_backend, want_hint, cad = ARM_SPEC[arm]
     objs = _jsons(cli)
     summ = [o for o in objs if o.get("summary") is True]
@@ -288,7 +290,8 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
     if row["gen_guard"]:
         other.append("generation-guard-present")
     other.extend(cadence_witness(row, cad))
-    if row["pa_cli"] != 0 or row["pa_srv"] != 0:
+    pa_ok = lambda v: v == 0 or (absent_off and v is None)  # noqa: E731
+    if not (pa_ok(row["pa_cli"]) and pa_ok(row["pa_srv"])):
         other.append(f"pool-anchor={row['pa_cli']}/{row['pa_srv']}")
     p.extend(other)
     row["cotenant"] = int(cotenant)

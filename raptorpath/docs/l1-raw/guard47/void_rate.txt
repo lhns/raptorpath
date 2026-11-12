@@ -1,0 +1,33 @@
+WITNESSES THAT CAN MAKE A plan-41c ROW NON-LIVE (decision order: rc, cotenant, no summary, contamination, other witnesses; DNF is not a void)
+  VOID-RC        rc != 0                                                        [BASE, CAND] the driver / client exited non-zero (crash, timeout kill, topology failure): a CRASH, never replaced, worst rank
+  VOID-COTENANT  cargo / rustc running before or after the row                  [BASE, CAND] a co-tenant build on the box: replaceable
+  NO_DATA        no summary JSON in the client log                              [BASE, CAND] bring-up produced no result (retried once by the battery): a CRASH, never replaced, worst rank
+  CONTAMINATED   no-pipe-echo-cli/srv, pipe-echo-cli/srv=..., header=...        [BASE, CAND] the pipeline / backend / hint echo is not window/Rlc/bulk: replaceable
+  WITNESS-FAIL   no-gates-cli / no-gates-srv                                    [BASE, CAND] no [GATES] line on an endpoint: replaceable
+  WITNESS-FAIL   window-line-missing-on-window                                  [BASE, CAND] the --window-reliable echo is missing: replaceable
+  WITNESS-FAIL   generation-guard-present                                       [BASE, CAND] the generation guard fired: replaceable
+  WITNESS-FAIL   cadence-ACTIVE-missing / cadence-OFF-on-ACTIVE-arm             [BASE, CAND] the estimator-cadence echo is not ACTIVE on both endpoints: replaceable
+  WITNESS-FAIL   pool-anchor=...                                                [BASE, CAND] RWM_POOL_ANCHOR present and not 0 (absent = off): replaceable
+  WITNESS-FAIL   gate-place-wire=... on BASE|CAND (want absent)                 [BASE, CAND] an RWM_PLACE_WIRE token on [GATES]: the binary is not main's / not promoted: replaceable
+  WITNESS-FAIL   gate-store=... (want unset)                                    [BASE, CAND] RWM_STORE not unset at a default cell: replaceable
+  WITNESS-FAIL   wpl_us-numeric-on-BASE                                         [BASE only] main's binary printed a numeric wpl_us: replaceable
+  WITNESS-FAIL   wire-gauges-on-BASE                                            [BASE only] main's [ETA] line carried the wire gauges: replaceable
+  VOID-ONDISK    binary or run dir not on /dev/shm                              [BASE, CAND] tmpfs rule: every row would fire (so > 4 voids -> NO VERDICT)
+
+== place38: 96 rows
+   MAIN  rows 48: LIVE 48; DNF rows (LIVE, dnf true) 0
+   WIRE  rows 48: LIVE 48; DNF rows (LIVE, dnf true) 0
+   witness problems fired: none
+   io full avg10 >= 20 rows (a covariate, never a void): 0
+== place41: 108 rows
+   BASE  rows 12: LIVE 12; DNF rows (LIVE, dnf true) 0
+   MAIN  rows 48: LIVE 48; DNF rows (LIVE, dnf true) 0
+   WIRE  rows 48: LIVE 46, WITNESS-FAIL 2; DNF rows (LIVE, dnf true) 0
+   witness problems fired: WIRE wpl-within-1ms-of-wrtt x2
+   io full avg10 >= 20 rows (a covariate, never a void): 0
+== place41b: 48 rows
+   BASE  rows 24: LIVE 24; DNF rows (LIVE, dnf true) 0
+   MAIN  rows 12: LIVE 12; DNF rows (LIVE, dnf true) 0
+   WIRE  rows 12: LIVE 12; DNF rows (LIVE, dnf true) 0
+   witness problems fired: none
+   io full avg10 >= 20 rows (a covariate, never a void): 0
