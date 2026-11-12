@@ -227,8 +227,12 @@ p34), `mergecand47`, `oracle43`, `place38`, `place41`, `place41b`,
 
 Proposed `.gitattributes` lines (verified: `git archive` of a commit with
 them carries exactly these 49 files plus the 69 extension-less marker files
-such as `COMMIT` and `DONE-ALL`; the archive drops from about 240 MB to 18 MB;
-every `tools/l1/test_*.py` passes in the extracted archive):
+such as `COMMIT` and `DONE-ALL`; the archive drops from 242 MB to 18 MB; in
+the extracted archive all 30 `tools/l1/test_*.py` that `run_suites` runs pass
+with the same number of `ok` checks as on `main`, so none skipped a missing
+ledger. `test_stubrun.py` was not re-run there: it hit a 900 s host limit
+in the trace run, and its only ledger reads, the `thread-pd/battery`
+fixtures of `stubrun_gen.py`, are in the set):
 
 ```
 raptorpath/docs/l1-raw/**/*.* export-ignore
@@ -342,7 +346,7 @@ Silent (nothing fails if left wrong):
 
 | contract | sites |
 |---|---|
-| **a test that skips when its file is absent** | `test_place43_parse.py:40-47` reads `HERE/../../src/net/oracle/tests.rs` and prints "skip" when it is missing: after the move it must read `../../raptorpath/src/...` or it stops comparing the Rust fixture without failing. `test_place43_parse.py:421` (`isdir(loop-diag/p27)`) does the same for a ledger, so phase 2 must keep that file |
+| **a test that skips when its file is absent** | `test_place43_parse.py:40-47` reads `HERE/../../src/net/oracle/tests.rs` and prints "skip" when it is missing: after the move it must read `../../raptorpath/src/...` or it stops comparing the Rust fixture without failing. `test_place43_parse.py:421` (`isdir(loop-diag/p27)`) does the same for a ledger, so phase 2 keeps that file. Note: `src/net/oracle/tests.rs` is not on `main`, so the fixture comparison already skips there today |
 | standing-rule pointers | `CLAUDE.md:43,72` |
 | markdown links into `docs/` from outside it | 12 in `raptorpath/README.md` and `DESIGN.md`; the root `README.md` |
 | printed host commands | `bbr48_score.py:413`, `place38_parse.py:866`, `loopdiag_run_all.sh:413` (`python3 raptorpath/tools/l1/...`) |
