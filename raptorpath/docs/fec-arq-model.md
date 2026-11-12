@@ -1797,9 +1797,10 @@ cell. The derived diversity weight prices only the excess burst probability,
 `fate_i·(p_BB,i − ε_i)⁺·srtt_i/ref`, which vanishes on a memoryless channel
 (0.475 at c2, 0.552 at c3, against the shipped 1.0).
 
-The three derived forms are built as arms, absent by default:
-`RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL` (X_i), `RWM_PLACE_WDIV_DERIVED`;
-with all three absent the cost table is byte-identical to a pinned table
+The three derived forms were built as arms, absent by default:
+`RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL` (X_i), `RWM_PLACE_WDIV_DERIVED`.
+`RWM_PLACE_HOL` is since removed (tag `archive/RWM_PLACE_HOL`; §10); the other
+two remain. With the arms absent the cost table is byte-identical to a pinned table
 (`place_costs_match_the_pinned_table`).
 
 **Measured (the placement battery, `5e6e3f5`).** Placement-manufactured
@@ -4071,7 +4072,7 @@ shipped.
 | DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) | their wins were measured in an era where the coded path was dead; the live ablation measured −17 to −30 % at the symmetric dual; the surviving ideas became the M* law and the anchor-hygiene laws | `9b48286` | removed |
 | Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) | decode-clocked samples make the windowed max the correct statistic; any sub-max quantile under-reads about 65× (heterogeneous dual 3–6× worse) | `f1f32c5` | removed |
 | Place-slack (`RWM_PLACE_SLACK`) | at the heterogeneous dual goodput falls monotonically as slow-path source share rises (6 % → 88.6 Mbit/s, 16–18 % → 70–83); the symmetric-dual clause failed (0.86–0.90×Σ) | `cc15b83` | removed |
-| Derived placement temperature, frontier term, derived diversity weight (`RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL`, `RWM_PLACE_WDIV_DERIVED`) | inert on delivered latency, with goodput regressions under the guard; placement-manufactured wait is only ~6 % of delivered latency | `5e6e3f5` | off |
+| Derived placement temperature, frontier term, derived diversity weight (`RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL`, `RWM_PLACE_WDIV_DERIVED`) | inert on delivered latency, with goodput regressions under the guard; placement-manufactured wait is only ~6 % of delivered latency | `5e6e3f5` | `RWM_PLACE_HOL` removed (simplification batch 3; tag `archive/RWM_PLACE_HOL`; re-ask: when placement-manufactured wait is a material share of delivered latency); the other two stay, off |
 | Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) | on an idle leg the echo srtt freezes with the leg's own dwell, so its price stays +17 to +116 nats above the loaded leg's on 11 locked rows and the one-leg state is absorbing (10 of 24 static-cap rows locked, against 0 with the wire base); replaced by `(½ + ε̂)·ŵ_i`, quinn's packet-timed RTT (status §38, §41, §41b; ADR-0073; §5.7). Not tested off Bulk or at four paths. **Re-ask if quinn's SRTT is unavailable on a substrate** (then ŵ_i falls through `min_j wire_j ?: s_i` to this base) | status §38, §41, §41b | superseded; code and gate removed |
 | Copa per path as the substrate default (the original design) | on the clean substrate Copa-sole is 0.57–0.97× BBR bulk; its earlier heterogeneous-dual win was a broken-substrate artefact; BBR-under is the default and Copa the queue/tail policy point | `7652ccb`, `519467e` | superseded |
 | Quinn's stock Cubic under the engine | the hidden loss-reactive substrate controller was the 15–17 Mbit/s "link ceiling" | `519467e` | superseded |
@@ -4176,7 +4177,7 @@ decide it.
 | `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` | `net/mod.rs` | 10× RFC 9002's granularity | re-fire cost against F |
 | `RWM_STORE_GAIN = 2.0` | `gates.rs:361`; the single-path predecessor (Section 6.2) | no longer sets the shipped cap. The `n_live < 2` guard is gone (`net/store_cap.rs`, ADR-0072) and the default pooled cap multiplies by 1 + q(δ) at every N. The gain is still read by the `RWM_STORE_PATHS = 0` control, by `RWM_DELTA_CAP = 0`, by the default-off honest and pool-anchor arms, by the seats where `plain_dyn_cap` is false (generation coding, an explicit `RWM_STORE`; `net/sender_policy.rs`, where `delta_cap` is `gates.delta_cap && plain_dyn_cap`) and by the default-off placement frontier arm (`scheduler/place.rs:409`, H = (gain − 1)·RTprop). It is a shipped gate default with no live use on the default plain-reliable path | none needed on the default path; the `=0` control keeps it re-runnable |
 | `RELIABLE_STORE_MAX = 1024` | `net/mod.rs:442`; the former single-path ceiling | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"). It bound in every post-warm-up c1s window and 17/18 sc2 reps while it was the single-path ceiling, so every single-path goodput measured before ADR-0072 went through it. The shipped seat no longer uses it: the ceiling is N·knee at every N (ADR-0072). It stays the ceiling of the `RWM_STORE_PATHS = 0` arm (`net/sender_policy.rs:529`) and the `min` under the boot cap. Its successor at one path is the knee, which binds in 70 % of c1s windows (status §18) | the ADR-0072 battery ran (status §18, §19); the knee is the open constant now |
-| κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067; with the wire base (§5.7) X_i's arrival reads the shipped E_i against F̂ built from the stamp of the same E_i | an `s_i > H` bind fraction (`hol_sh=`) |
+| κ = 1 in the placement frontier term | `place_costs` X_i | removed with `RWM_PLACE_HOL` (§10; tag `archive/RWM_PLACE_HOL`); was a declared upper bound, fitted κ 0.0048–0.067 | — (the `hol_sh=` bind gauge went with it) |
 | `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref`. the wire base keeps ref (min srtt), so T's unit is unchanged; the `[ETA]` stamp is the same wire-base E, so σ̂_e measures the predictor placement priced | σ̂_e on the ETA stream |
 | `w_div = 1.0` | `SchedulingWeights` | derived form `(p_BB − ε)⁺·srtt/ref` gives 0.475 (c2), 0.552 (c3). Its srtt_i is the frozen app-echo srtt on an idle leg (the §5.7 lock-out); the derived form should read ŵ_i | per-path p_BB beside placement |
 | dead-leg clamp `r_i = 10.0`; the cold price is the 50 ms `DEFAULT_SRTT` seed | `place_costs`, `srtt()` | the 10.0 binds only at ε̂ ≥ 1 (ε̂ starts at 0, so an unmeasured leg is priced lossless) and has a step there (r → ∞ as ε̂ → 1⁻; continuous form min(ε̂/(1−ε̂), 10)). What prices an unmeasured leg is the 50 ms srtt seed, a pessimistic constant (e^−17 to e^−55 at c1d). Derived form: the best measured leg's value, optimistic so the leg is sampled (`RWM_COLD_PLACE` for s_i; the `min_j wire_j` fallback of ŵ_i for the base) | `cold_r=` 0 on all 31 807 `[ETA]` lines; `cold_ge=` (the seed) 0.036 of c1d's first 0.3 s |
@@ -4637,7 +4638,7 @@ engine.
    c_i  =  (E_i − min(S, 9/8·srtt_i))⁺/ref + w_bw(δ)·r_i + w_div·fate_i      place_costs
    E_i  =  (in_flight_i/cwnd_i)·srtt_i + srtt_i/2 + ε_i·srtt_i
    w_bw(δ)  =  clamp( ½ − ¼·log₁₀(δ/δ_auto), 0, 1 )                          SchedulingWeights::from_delta
-   X_i  =  [δ·s_i + κ·(s_i − H)⁺]/ref ,  s_i = [(now + E_i) − F̂]⁺           RWM_PLACE_HOL (off)
+   X_i  =  [δ·s_i + κ·(s_i − H)⁺]/ref ,  s_i = [(now + E_i) − F̂]⁺           RWM_PLACE_HOL (removed; tag archive/RWM_PLACE_HOL)
    T    =  (√6/π)·σ̂_e/ref                                                   RWM_PLACE_T_DERIVED (off)
 ```
 

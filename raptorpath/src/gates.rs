@@ -141,8 +141,6 @@ pub struct RuntimeGates {
     pub cold_place: bool,
     /// `RWM_PLACE_T_DERIVED` (absent, arm): temperature `T = (√6/π)·σ_e/ref_srtt`.
     pub place_t_derived: bool,
-    /// `RWM_PLACE_HOL` (absent, arm): source head-of-line cost `[δ·s_i + κ·(s_i − H)+]/ref`.
-    pub place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (absent, arm): repair weight `fate_i·(p_BB,i − ε_i)+·srtt_i/ref`.
     pub place_wdiv_derived: bool,
 
@@ -319,7 +317,6 @@ impl RuntimeGates {
         let est_cadence = crate::control::estimator::resolve_est_cadence();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
         let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
-        let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
         let place_wdiv_derived = crate::gates::scheduler_gates::resolve_place_wdiv_derived();
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
@@ -346,7 +343,6 @@ impl RuntimeGates {
             sidle_derived: crate::gates::scheduler_gates::resolve_sidle_derived(),
             cold_place,
             place_t_derived,
-            place_hol,
             place_wdiv_derived,
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
@@ -457,7 +453,7 @@ impl RuntimeGates {
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_SIDLE_DERIVED={} \
-             RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
+             RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} \
              RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
@@ -487,7 +483,7 @@ impl RuntimeGates {
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.sidle_derived),
-            b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
+            b(self.cold_place), b(self.place_t_derived),
             b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),

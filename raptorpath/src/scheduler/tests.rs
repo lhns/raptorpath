@@ -2422,7 +2422,7 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 }
 
 // ===================================================================
-// The placement arms (paper §5.7, all three absent by default)
+// The placement arms (paper §5.7, all absent by default)
 //
 // The order of these tests is the order of the claims they defend:
 // (1) with every arm absent the shipped law is byte-identical, in costs
@@ -2441,7 +2441,6 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 fn every_arm_absent_leaves_the_probabilities_untouched() {
     for (name, mut sched, is_repair, covered) in cost_table_states() {
         sched.set_place_t_derived(false);
-        sched.set_place_hol(false);
         sched.set_place_wdiv_derived(false);
         let got = sched.place_probs(is_repair, &covered);
         let want =
@@ -2468,13 +2467,12 @@ fn a_garbage_arm_value_is_an_error_naming_the_gate() {
 }
 
 /// The arms are absent by default. A fresh scheduler in a clean
-/// environment carries all three off, which is what makes the pinned
+/// environment carries them all off, which is what makes the pinned
 /// tables an oracle for every other test in this file.
 #[test]
 fn the_placement_arms_are_absent_by_default() {
     let sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
     assert!(!sched.place_t_derived(), "RWM_PLACE_T_DERIVED ships ABSENT");
-    assert!(!sched.place_hol(), "RWM_PLACE_HOL ships ABSENT");
     assert!(!sched.place_wdiv_derived(), "RWM_PLACE_WDIV_DERIVED ships ABSENT");
 }
 
@@ -2576,172 +2574,6 @@ fn the_derived_temperature_is_the_gumbel_variance_match() {
     );
 }
 
-/// Arm 2's own limit: a placement behind the frontier is free.
-/// `now + E_i <= F_hat` gives `push = 0` and therefore `X_i = 0` exactly
-/// -- not "small", zero -- which is the property that makes the term a
-/// water-filling incentive rather than a slow-path penalty. Only the
-/// wire price, three orders of magnitude down, remains.
-#[test]
-fn the_frontier_term_is_exactly_zero_behind_the_frontier() {
-    assert_eq!(place_frontier_cost(0.5, 0.0, 0.0, 0.010, 0.0, 0.010), 0.0);
-    // Any distance behind the frontier leaves the priced and the stall
-    // legs both at zero; the wire price is all that is left.
-    let only_wire = place_frontier_cost(50.0, 0.0, 0.030, 0.010, 1.12e-2, 0.010);
-    assert!((only_wire - 1.12e-2 * 0.030 / 0.010).abs() < 1e-15);
-    assert!(only_wire < 0.04, "the (a2) price is PREDICTED INERT against an O(1) load term");
-}
-
-/// Arm 2's knee is `C0` at `push = H`. The `(push - H)+` kink is a
-/// corner, not a step: nudging `push` by +/-eps around `H` moves the cost
-/// by O(eps), and the one-sided limits agree at the knee itself. A step
-/// here would be exactly the behaviour-across-a-point defect the
-/// no-mode-switch invariant forbids.
-#[test]
-fn the_frontier_knee_is_continuous_at_the_headroom() {
-    let (delta, h, w, refs) = (0.5_f64, 0.010_f64, 0.0_f64, 0.010_f64);
-    let at = place_frontier_cost(delta, h, 0.0, h, w, refs);
-    for eps in [1e-6_f64, 1e-9, 1e-12] {
-        let lo = place_frontier_cost(delta, h - eps, 0.0, h, w, refs);
-        let hi = place_frontier_cost(delta, h + eps, 0.0, h, w, refs);
-        // Both sides converge on the knee value, and the jump across it is
-        // bounded by (delta + kappa)*2eps/ref -- a slope, not a step.
-        let bound = (delta + PLACE_KAPPA) * 2.0 * eps / refs + 1e-15;
-        assert!((hi - lo).abs() <= bound, "step at the knee: {lo} -> {hi} (eps {eps})");
-        assert!((at - lo).abs() <= bound && (hi - at).abs() <= bound);
-    }
-}
-
-/// Arm 2 is monotone in the push. A bigger frontier push costs more,
-/// everywhere, on both sides of the knee. (And the slope beyond the knee
-/// is the steeper one, which is what `kappa` is for.)
-#[test]
-fn the_frontier_term_is_monotone_in_the_push() {
-    let (delta, h, refs) = (0.5_f64, 0.010_f64, 0.010_f64);
-    let mut prev = f64::NEG_INFINITY;
-    for i in 0..200 {
-        let push = i as f64 * 0.0002;
-        let c = place_frontier_cost(delta, push, 0.0, h, 0.0, refs);
-        assert!(c >= prev - 1e-15, "cost fell as the push grew at push={push}");
-        prev = c;
-    }
-    let below = place_frontier_cost(delta, h * 0.5, 0.0, h, 0.0, refs);
-    let just = place_frontier_cost(delta, h, 0.0, h, 0.0, refs);
-    let above = place_frontier_cost(delta, h * 1.5, 0.0, h, 0.0, refs);
-    assert!(
-        (above - just) > (just - below),
-        "the stall leg must be the STEEPER one beyond H"
-    );
-}
-
-/// The dial-continuity gate (CLAUDE.md). `delta` enters `X_i` as a
-/// multiplier and nothing else, so the term is continuous and
-/// non-decreasing in `delta` through each of the three named points --
-/// checked at +/-2 % around every one of them, plus a dense sweep of the
-/// whole dial. A behaviour step across a preset is a defect even if each
-/// side is individually correct.
-#[test]
-fn the_frontier_term_is_continuous_through_every_named_point_on_the_dial() {
-    let (push, h, refs) = (0.020_f64, 0.010_f64, 0.010_f64);
-    for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-        let d = crate::scheduler::hint_delta_price(hint);
-        let at = place_frontier_cost(d, push, 0.0, h, 0.0, refs);
-        for f in [0.98_f64, 1.02] {
-            let n = place_frontier_cost(d * f, push, 0.0, h, 0.0, refs);
-            let jump = (n - at).abs();
-            // The exact bound the form gives: |delta - delta'|*push/ref.
-            let bound = (d * (f - 1.0)).abs() * push / refs + 1e-12;
-            assert!(
-                jump <= bound,
-                "a 2 % nudge at {hint:?} (delta={d}) moved the term by {jump} > {bound}"
-            );
-        }
-    }
-    // Dense monotone sweep across the whole dial, presets included.
-    let mut prev = f64::NEG_INFINITY;
-    for i in 0..=400 {
-        let d = 0.001_f64 * 10f64.powf(i as f64 / 80.0);
-        let c = place_frontier_cost(d, push, 0.0, h, 0.0, refs);
-        assert!(c >= prev - 1e-12, "the dial sweep is not monotone at delta={d}");
-        prev = c;
-    }
-}
-
-/// Arm 2, end to end: the term reaches `place_costs` and its gauges
-/// fire. A pure-function test proves the form; this proves the wiring
-/// (docs/measurement-discipline.md rule 1). With `F_hat` set far in the past
-/// every candidate pushes the frontier hard, so the `s_i > H` bind is
-/// taken and the costs are strictly above the shipped ones.
-#[test]
-fn the_frontier_term_reaches_place_costs_and_gauges_its_bind() {
-    let mut sched = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
-    );
-    let shipped = sched.place_costs(false, &[]);
-    // A stamp in the distant past: `now` is far beyond it, so every
-    // candidate lands ahead of the frontier by more than any headroom.
-    sched.eta_mut().stamp(0, 1_000, 1);
-    sched.set_place_hol(true);
-    let armed = sched.place_costs(false, &[]);
-    for ((_, a), (_, b)) in armed.iter().zip(shipped.iter()) {
-        assert!(a > b, "the frontier term must CHARGE a frontier push: {a} vs {b}");
-    }
-    sched.drain_place_bind();
-    let l = sched.eta().line();
-    assert!(l.contains("hol_sh=1.0000"), "the s_i > H bind must be gauged: {l}");
-    assert!(l.contains("hol_n=2"), "{l}");
-    assert!(!l.contains("hol_w=-"), "W must print at its live value: {l}");
-}
-
-/// The execution witness itself. The `hol_mv` counter is what
-/// distinguishes "the term was computed" from "the term decided". It is
-/// zero for a symmetric pair (nothing to move) and nonzero when the
-/// frontier term genuinely reverses the argmin -- built here by giving the
-/// shipped-cheaper path a backlog large enough that its arrival, and only
-/// its arrival, clears the frontier.
-#[test]
-fn the_argmin_witness_counts_only_real_reversals() {
-    // Symmetric: no reversal is possible, and the witness says 0.
-    let mut sym = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)],
-    );
-    sym.eta_mut().stamp(0, 1_000, 1);
-    sym.set_place_hol(true);
-    let _ = sym.place_costs(false, &[]);
-    sym.drain_place_bind();
-    let (_, _, moved, calls, _) = sym.eta().hol_gauges();
-    assert_eq!((moved, calls), (0, 1), "a symmetric pair has no argmin to move");
-
-    // Asymmetric, with `F_hat` between the two arrivals: path 0 is the
-    // shipped argmin and lands ahead of the frontier; path 1 is dearer by
-    // the shipped law but lands behind it. The stall leg is worth more
-    // than the load gap, so the term reverses the pick.
-    let mut sched = cost_state(
-        ProtocolHint::Realtime,
-        &[(0, Some(10), 10, 9), (1, Some(11), 10, 0)],
-    );
-    let base = sched.place_costs(false, &[]);
-    let base_arg = if base[0].1 <= base[1].1 { 0 } else { 1 };
-    // `F_hat` a hair ahead of the cheaper path's arrival: path 0's own
-    // backlog pushes it past the frontier, path 1's idle propagation does
-    // not.
-    let now_us = place_wall_now_us();
-    sched.eta_mut().stamp(0, now_us, 6_000);
-    sched.set_place_hol(true);
-    let armed = sched.place_costs(false, &[]);
-    let armed_arg = if armed[0].1 <= armed[1].1 { 0 } else { 1 };
-    sched.drain_place_bind();
-    let (_, _, moved, calls, _) = sched.eta().hol_gauges();
-    assert_eq!(calls, 1);
-    assert_eq!(
-        moved,
-        u64::from(base_arg != armed_arg),
-        "the witness must count exactly the reversals that happened \
-         (base {base_arg} -> armed {armed_arg}; {base:?} -> {armed:?})"
-    );
-}
-
 /// Arm 3 cannot move a source placement, by construction: `fate_i` is
 /// identically zero for source symbols, so the derived diversity weight
 /// multiplies zero. Every source row of the pinned table therefore stands
@@ -2813,9 +2645,7 @@ fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
 fn a_single_path_is_the_identity_with_every_arm_armed() {
     let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 3)]);
     sched.set_place_t_derived(true);
-    sched.set_place_hol(true);
     sched.set_place_wdiv_derived(true);
-    sched.eta_mut().stamp(0, 1_000, 1);
     let dist = sched.place_probs(false, &[]);
     assert_eq!(dist.len(), 1);
     assert_eq!(dist[0].0, 0);
@@ -2834,9 +2664,7 @@ fn the_tie_break_is_still_ascending_by_id_with_every_arm_armed() {
         set_rtt(&mut sched, id, 10);
     }
     sched.set_place_t_derived(true);
-    sched.set_place_hol(true);
     sched.set_place_wdiv_derived(true);
-    sched.eta_mut().stamp(3, 1_000, 1);
     let ids: Vec<PathId> =
         sched.place_costs(false, &[]).into_iter().map(|(i, _)| i).collect();
     assert_eq!(ids, vec![1, 3, 5, 7, 9], "candidates must stay ascending by id");

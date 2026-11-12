@@ -119,8 +119,8 @@ else
 fi
 
 # ── preflight_binary ──
-printf '#!/bin/sh\n# RWM_PLACE_HOL\nexit 0\n' > "$TD/bin"; chmod +x "$TD/bin"
-( preflight_binary "$TD/bin" RWM_PLACE_HOL >/dev/null 2>&1 ) && ok "preflight passes a binary carrying the gate" || bad "preflight refused a good binary"
+printf '#!/bin/sh\n# RWM_PLACE_T_DERIVED\nexit 0\n' > "$TD/bin"; chmod +x "$TD/bin"
+( preflight_binary "$TD/bin" RWM_PLACE_T_DERIVED >/dev/null 2>&1 ) && ok "preflight passes a binary carrying the gate" || bad "preflight refused a good binary"
 ( preflight_binary "$TD/bin" RWM_NOPE >/dev/null 2>&1 ); ckeq "preflight refuses a missing gate (exit 5)" "5" "$?"
 ( preflight_binary "$TD/missing" >/dev/null 2>&1 ); ckeq "preflight refuses a missing binary (exit 4)" "4" "$?"
 

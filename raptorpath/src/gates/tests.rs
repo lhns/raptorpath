@@ -59,7 +59,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_DELTA_CAP=1 RWM_ACK_MERGE=1 ",
     "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
     "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 ",
-    "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
+    "RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
     "RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 ",
     "RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 ",
     "RWM_WINDOW=unset RWM_REPORT_GENS=unset ",
@@ -358,7 +358,7 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
          placement repair must be opted into"
     );
-    // ── The three placement arms (paper §5.7) ──
+    // ── The placement arms (paper §5.7) ──
     // All absent by default and named with `0` on the echo, so a control arm can
     // assert them absent; the pinned cost table is an oracle only while this holds.
     assert!(
@@ -367,16 +367,11 @@ fn default_env_resolves_the_shipped_stack() {
          softmax temperature must be opted into)"
     );
     assert!(
-        !g.place_hol,
-        "RWM_PLACE_HOL ships ABSENT (Track A arm 2 — the frontier term \
-         must be opted into)"
-    );
-    assert!(
         !g.place_wdiv_derived,
         "RWM_PLACE_WDIV_DERIVED ships ABSENT (Track A arm 3 — the derived \
          diversity weight must be opted into)"
     );
-    for k in ["RWM_PLACE_T_DERIVED=0", "RWM_PLACE_HOL=0", "RWM_PLACE_WDIV_DERIVED=0"] {
+    for k in ["RWM_PLACE_T_DERIVED=0", "RWM_PLACE_WDIV_DERIVED=0"] {
         assert!(
             g.echo_line().contains(k),
             "the default echo must NAME `{k}` two-sided: {}",
@@ -516,7 +511,6 @@ fn every_gate_accessor_reads_the_one_resolution() {
     assert_eq!(crate::scheduler::honest_anchor_active(), g.honest_anchor);
     assert_eq!(crate::scheduler::cold_place_active(), g.cold_place);
     assert_eq!(crate::scheduler::place_t_derived_active(), g.place_t_derived);
-    assert_eq!(crate::scheduler::place_hol_active(), g.place_hol);
     assert_eq!(crate::scheduler::place_wdiv_derived_active(), g.place_wdiv_derived);
     assert_eq!(crate::scheduler::ack_merge_active(), g.ack_merge);
     assert_eq!(crate::scheduler::loss_sent_truth_active(), g.loss_sent_truth);

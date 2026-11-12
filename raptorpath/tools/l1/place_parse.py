@@ -320,6 +320,9 @@ def parse(cell, arm, seed, rep, cli, srv):
         row["cold_r"] = num(es, "cold_r=")
         row["cold_ge"] = num(es, "cold_ge=")
         # 3. The arm bind gauges.
+        # `hol_*` belong to the removed RWM_PLACE_HOL arm (tag
+        # archive/RWM_PLACE_HOL): old ledgers carry them, current engines do
+        # not print them, and an absent key reads as None.
         row["t_eff"] = num(es, "t_eff=")
         row["t_cold"] = num(es, "t_cold=")
         row["t_n"] = num(es, "t_n=")
