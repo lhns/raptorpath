@@ -94,7 +94,7 @@ case "$PLAN" in
   *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|47|48)"; exit 3 ;;
 esac
 # LD_REHEARSE=1 (plans 41c, 46, 47, 48; status 48b amendment 1): the launch path up to and including each smoke and its check (gates, locks, builds,
-# binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites and no battery.
+# binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites (unless LD_PRIOR_TESTS names a run to verify) and no battery.
 REHEARSE="${LD_REHEARSE:-0}"
 if [ "$REHEARSE" = 1 ]; then
   case "$PLAN" in 41c|46|47|48) ;; *) echo "ABORT-REHEARSE LD_REHEARSE=1 is defined for plans 41c|46|47|48 only, not $PLAN; NOTHING WAS RUN"; exit 3 ;; esac
@@ -291,14 +291,37 @@ run_suites() {
     tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
   fi
   echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$SD/test-debug-witness.log")" >> "$SD/TESTS.txt"
+  src_manifest > "$SD/SRC-MANIFEST.sha256"       # what the run covered: LD_PRIOR_TESTS reuse compares against it
   if [ "$TFAIL" = "0" ]; then touch "$SD/TESTS-OK"; else touch "$SD/TESTS-FAIL"; fi
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
+# The identity of the engine tree the suites ran on: sha256 of every file under raptorpath/src and raptorpath/tests, in C-locale path order.
+src_manifest() { ( cd "$(cd "$HERE/../../.." && pwd)" && find raptorpath/src raptorpath/tests -type f 2>/dev/null | LC_ALL=C sort | xargs -r sha256sum ); }
+# LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of BYTE-IDENTICAL raptorpath/src + tests may stand in for
+# this session's suites. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
+# and the SRC-MANIFEST.sha256 recorded at suite time, and the manifest of this tree must equal it. Anything else is ABORT-TESTS.
+reuse_prior_tests() {
+  local d="" c
+  for c in "$LD_PRIOR_TESTS" "$LD_PRIOR_TESTS/suites"; do [ -e "$c/TESTS-OK" ] && { d="$c"; break; }; done
+  [ -n "$d" ] || { era "LD-ALL prior suites: no TESTS-OK in $LD_PRIOR_TESTS"; return 1; }
+  [ -s "$d/SRC-MANIFEST.sha256" ] || { era "LD-ALL prior suites: $d has no SRC-MANIFEST.sha256 (recorded at suite time since this change); cannot prove the same tree"; return 1; }
+  src_manifest > "$SD/SRC-MANIFEST.now"
+  if ! cmp -s "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now"; then
+    era "LD-ALL prior suites: raptorpath/src+tests differ from the tree $d ran on ($(diff "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now" | grep -c '^[<>]') manifest lines)"; return 1
+  fi
+  cp "$d/TESTS.txt" "$SD/TESTS-prior.txt" && cp "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.sha256" && touch "$SD/TESTS-OK"
+  era "LD-ALL suites: reused TESTS-OK from $d (raptorpath/src+tests byte-identical, $(wc -l < "$SD/SRC-MANIFEST.sha256") files)"
+}
+# The suites step of the candidate plans: a verified reuse, else skipped by a rehearsal, else run.
+suites_stage() {
+  if [ -n "${LD_PRIOR_TESTS:-}" ]; then reuse_prior_tests || fail_all "ABORT-TESTS (prior suites not reusable: $LD_PRIOR_TESTS)"
+  elif [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
+  else run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"; fi
+}
 # Plans 46 / 41c with LD_P46_SUITES=1 (status 49): after run_suites is defined (it was called above its definition before).
-if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "$PLAN" != "48" ] && [ "${LD_P46_SUITES:-0}" = "1" ]; then
-  if [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
-  else run_suites || fail_all "ABORT-TESTS (TESTS.txt)"; fi
+if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "$PLAN" != "48" ] && { [ "${LD_P46_SUITES:-0}" = "1" ] || [ -n "${LD_PRIOR_TESTS:-}" ]; }; then
+  suites_stage
   era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
 fi
 if [ "$PLAN" = "41" ]; then
@@ -321,8 +344,7 @@ fi
 # ── plan 47: suites on CAND's tree, then the guard (41c), then the path-event test (46); one ledger subdir each ──────────────────
 if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]; then
   SD="$RUN/suites"; mkdir -p "$SD"
-  if [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
-  else run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"; fi
+  suites_stage
   era "LD-ALL suites ok; before the $([ "$PLAN" = "48" ] && echo smoke || echo guard) $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
   stage() { # name plan: smoke -> battery -> score -> check, all in $RUN/<name>; rc 0 iff the stage ran to the end
     local name="$1" splan="$2" dir="$RUN/$1" smk scr chk bto brc ok=0

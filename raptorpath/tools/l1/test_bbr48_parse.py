@@ -386,10 +386,10 @@ check("battery plan 48: the CAND binary must carry [QCC] and RWM_QUIC_CC, BASE m
 check("battery: every row's env unsets RWM_QUIC_CC before the arm env (BASE never inherits it)", "-u RWM_QUIC_CC" in bat and bat.index("-u RWM_QUIC_CC") < bat.index('"${arm_env[@]}" "${evt_env[@]}"'))
 check("run_all plan 48: selectable, needs LD_CAND_SHA (ABORT-CAND) and LD_BASE_SHA, builds BASE, suites first on CAND's tree, then ONE stage (smoke -> battery -> replacements -> score48)",
       re.search(r"^  48\) P_SMOKE=", runall, re.M) and "ABORT-CAND LD_CAND_SHA is unset" in runall and "LD_BASE_SHA" in runall and 'P48=0; [ "$PLAN" = "48" ] && { P48=1; P46=1; P41=1; }' in runall
-      and runall.index('run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"') < runall.index("stage bbr48 48") and "48) smk=smoke48; scr=score48; chk=check48 ;;" in runall
+      and runall.index('SD="$RUN/suites"; mkdir -p "$SD"\n  suites_stage\n') < runall.index("stage bbr48 48") and "48) smk=smoke48; scr=score48; chk=check48 ;;" in runall
       and 'test_bbr48_parse.py >>' in runall)
 check("run_all plan 48: ABORT-SMOKE when smoke-check fails, ABORT-ROWS unless 96 rows, the 41c replacement rule applies, a REAL suite failure is ABORT-TESTS",
-      "ABORT-SMOKE stage" in runall and '[ "$nrows" != "96" ]' in runall and '[ "$splan" = "41c" ] || [ "$splan" = "48" ]' in runall and 'fail_all "ABORT-TESTS (suites/TESTS.txt)"' in runall
+      "ABORT-SMOKE stage" in runall and '[ "$nrows" != "96" ]' in runall and '[ "$splan" = "41c" ] || [ "$splan" = "48" ]' in runall and 'else run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"; fi' in runall
       and '[ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ]' in runall)
 check("run_all / battery crlf_guard list the new files", "bbr48_score.py test_bbr48_parse.py" in runall and "bbr48_score.py test_bbr48_parse.py" in bat)
 lp = open(os.path.join(HERE, "loopdiag_parse.py"), encoding="utf-8").read()

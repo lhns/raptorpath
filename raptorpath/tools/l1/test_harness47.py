@@ -42,7 +42,7 @@ e_old, e_new = pp.eta_last([OLD]), pp.eta_last([NEW])
 check("run_all: BASE's COMMIT pin is LD_BASE_SHA when set (new main as BASE), else the historical 4926822",
       'BASE_PIN="${LD_BASE_SHA:-4926822}"' in runall and 'in "$BASE_PIN"*) ;;' in runall and "4926822*) ;;" not in runall)
 check("run_all: the LD_P46_SUITES call of run_suites comes after its definition (§49 session 1 ABORT-TESTS: called before defined)",
-      runall.index("run_suites() {") < runall.index('[ "${LD_P46_SUITES:-0}" = "1" ]; then\n  if [ "$REHEARSE" = 1 ]') < runall.index('else run_suites || fail_all "ABORT-TESTS (TESTS.txt)"; fi'))
+      runall.index("run_suites() {") < runall.index('[ "${LD_P46_SUITES:-0}" = "1" ] || [ -n "${LD_PRIOR_TESTS:-}" ]; }; then\n  suites_stage\n') and runall.index("run_suites() {") < runall.index("suites_stage() {") < runall.index("suites_stage\n"))
 check("run_all: a suites run under LD_P46_SUITES runs every tools/l1 python test (status 49)",
       '|| { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then' in runall)
 check("run_all: LD_BASE_SHA rides through `sudo -n env` in both battery env arrays (sudo resets the environment; §49 session 5 ABORT-SMOKE)",
@@ -271,11 +271,11 @@ check("run_all: every plan is selectable (the plan case lists 24..46, 47 and 48)
 check("battery: plan 41c = 96-row table, smoke 2, the candidate must lack RWM_PLACE_WIRE (PCAND), CAND arm allowed for 41c and 46, parsed by place38_parse",
       '-eq 96' in bat and "ABORT-PLAN41C" in bat and 'PCAND=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ]; } && PCAND=1' in bat and 'elif [ "$PCAND" = 1 ]; then' in bat
       and 'CAND) [ "$PCAND" = 1 ]' in bat and "plan41c 0" in bat and "place38_parse.py plan41c" in bat)
-i_suites, i_guard, i_p46 = runall.index('run_suites || fail_all "ABORT-TESTS (suites/TESTS.txt)"'), runall.index("stage guard 41c"), runall.index("stage p46 46")
+i_suites, i_guard, i_p46 = runall.index('SD="$RUN/suites"; mkdir -p "$SD"\n  suites_stage\n'), runall.index("stage guard 41c"), runall.index("stage p46 46")
 check("run_all plan 47: suites on CAND's tree first, then the guard (41c), then plan 46; each in its own subdir (suites/, guard/, p46/)",
       i_suites < i_guard < i_p46 and 'SD="$RUN/suites"' in runall and 'dir="$RUN/$1"' in runall and "stage guard 41c" in runall and "stage p46 46" in runall)
 check("run_all plan 47: a REAL suite failure is ABORT-TESTS before anything else runs; the FLAKE rule is the existing tst; all tools/l1 python tests run",
-      'fail_all "ABORT-TESTS (suites/TESTS.txt)"' in runall and "FLAKE $name $t" in runall and '[ "$PLAN" = "41" ] || [ "$PLAN" = "47" ]' in runall
+      'else run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"; fi' in runall and "FLAKE $name $t" in runall and '[ "$PLAN" = "41" ] || [ "$PLAN" = "47" ]' in runall
       and "test_*.py" in runall and 'tst doc' in runall and 'tst wasm' in runall and 'tst debug-witness' in runall and 'tst main' in runall)
 check("run_all plan 47: a failed guard VERDICT does not stop plan 46 (only a stage that cannot run does); budget checked before each battery",
       "stage guard did not complete" in runall and 'if [ "$bto" -lt 1800 ]' in runall and "ABORT-INJECT stage" in runall)
