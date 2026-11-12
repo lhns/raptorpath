@@ -24,7 +24,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
-use quinn_proto::congestion::{Bbr, BbrConfig, ControllerFactory};
+use quinn_proto::congestion::{Bbr, BbrConfig, Controller, ControllerFactory};
 use quinn_proto::{
     ClientConfig, Connection, ConnectionHandle, DatagramEvent, Endpoint, EndpointConfig, Event,
     ServerConfig,
@@ -47,6 +47,50 @@ enum Cc {
     /// ratchet gate: f x b-hat/L > 1 must make m-hat grow).
     BbrRsF125,
     QuinnBbr,
+    /// [`FixedRate`]: a huge window and a constant controller pacing rate
+    /// (`None`: no rate, so quinn's window-derived pacing). Deterministic, no
+    /// OS-seeded state; the pacer-seam probe.
+    Fixed(Option<u64>),
+}
+
+/// A controller with a huge window and a constant pacing rate: the only thing
+/// that can limit its send rate is the pacer honouring `rate` (vendored
+/// quinn-proto, ADR-0075).
+#[derive(Debug, Clone)]
+struct FixedRate {
+    rate: Option<u64>,
+    mtu: u16,
+}
+
+/// 32 MiB: never the binding limit on the sim's 1 Gbit/s, 2 ms link.
+const FIXED_WINDOW: u64 = 32 << 20;
+
+impl Controller for FixedRate {
+    fn on_congestion_event(&mut self, _: Instant, _: Instant, _: bool, _: u64) {}
+    fn on_mtu_update(&mut self, new_mtu: u16) {
+        self.mtu = new_mtu;
+    }
+    fn window(&self) -> u64 {
+        FIXED_WINDOW
+    }
+    fn pacing_rate(&self) -> Option<u64> {
+        self.rate
+    }
+    fn clone_box(&self) -> Box<dyn Controller> {
+        Box::new(self.clone())
+    }
+    fn initial_window(&self) -> u64 {
+        FIXED_WINDOW
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
+
+impl ControllerFactory for FixedRate {
+    fn build(self: Arc<Self>, _now: Instant, current_mtu: u16) -> Box<dyn Controller> {
+        Box::new(FixedRate { rate: self.rate, mtu: current_mtu })
+    }
 }
 
 // ── the link ────────────────────────────────────────────────────────────
@@ -275,6 +319,8 @@ struct Run {
     stale_min_sample: Vec<(Duration, Duration, Option<Duration>)>,
     burst_drops: u64,
     tail_drops: u64,
+    /// Client datagram bytes put on the wire, as (t, cumulative), every 1 ms.
+    tx_bytes: Vec<(Duration, u64)>,
     modes: String,
     /// First ProbeRtt entry / exit (sampled at 1 ms).
     r_enter: Option<Duration>,
@@ -328,6 +374,7 @@ fn run(sc: &Sc) -> Run {
             )
         }
         Cc::QuinnBbr => Arc::new(BbrConfig::default()),
+        Cc::Fixed(rate) => Arc::new(FixedRate { rate, mtu: 1200 }),
     };
     let (server_cfg, _) = QuicTransport::generate_self_signed_config(None).unwrap();
     let client_cfg: ClientConfig = QuicTransport::make_client_config(None, Some(cc));
@@ -347,6 +394,7 @@ fn run(sc: &Sc) -> Run {
     let mut stale_done = 0usize;
     let mut burst_left = sc.loss_burst.map_or(0, |b| b.1);
     let mut credit = 0.0f64;
+    let mut tx_total = 0u64;
     let mut out: Vec<Vec<u8>> = Vec::new();
     let payload = Bytes::from(vec![0xA5u8; DGRAM]);
 
@@ -448,10 +496,14 @@ fn run(sc: &Sc) -> Run {
                     continue;
                 }
             }
+            tx_total += d.len() as u64;
             c2s.enqueue(tau, Pkt { data: d, wire_sent: tau, acks_up_to: Duration::ZERO });
         }
 
         // ── sampling ──
+        if tau.as_nanos() % MS.as_nanos() == 0 {
+            r.tx_bytes.push((tau, tx_total));
+        }
         if client.connected && tau.as_nanos() % MS.as_nanos() == 0 {
             let conn = client.conn.as_ref().unwrap();
             let w = conn.stats().path.cwnd;
@@ -467,7 +519,7 @@ fn run(sc: &Sc) -> Run {
                     }
                     q
                 }
-                Cc::QuinnBbr => {
+                Cc::QuinnBbr | Cc::Fixed(_) => {
                     // another controller: the engine prints no [QCC] for it
                     assert!(qcc_of(conn.congestion_state().clone_box()).is_none());
                     None
@@ -535,7 +587,7 @@ fn c1_run(cc: Cc, stale: bool) -> &'static Run {
         (Cc::BbrRs, true) => 0,
         (Cc::QuinnBbr, true) => 1,
         (Cc::QuinnBbr, false) => 2,
-        (Cc::BbrRsF125, _) | (Cc::BbrRs, false) => unreachable!("not a registered scenario"),
+        (Cc::BbrRsF125, _) | (Cc::BbrRs, false) | (Cc::Fixed(_), _) => unreachable!("not a registered scenario"),
     };
     RUNS[slot].get_or_init(|| run(&c1(cc, stale)))
 }
@@ -780,7 +832,7 @@ fn qcc_gauge_reads_the_running_controller_and_its_cost_is_measured() {
     let q = at(1500);
     assert!(q.rt_us >= 2000 && q.sr_us > 0 && q.bw > 10_000_000 && q.quinn_min_us > 0, "{q:?}");
     let tok = q.token(0, 1234, 5, 1000);
-    for f in ["p0:qm=", "qrt_us=", "qsr_us=", "qbw=", "qmin_us=", "qcns=1234/5/1000", "qrn=", "qrus=", "qrb=", "qab=", "qage_us="] {
+    for f in ["p0:qm=", "qrt_us=", "qsr_us=", "qbw=", "qmin_us=", "qcns=1234/5/1000", "qrn=", "qrus=", "qrb=", "qab=", "qage_us=", "qpace=", "qpr=", "qpn="] {
         assert!(tok.contains(f), "{f} in {tok}");
     }
     let mut ns = r.qcc_ns.clone();
@@ -1277,4 +1329,57 @@ fn probe_rtt_is_one_round_at_a_2ms_rtt() {
     assert!(d <= 40 * MS, "ProbeRtt lasted {d:?} on a 2 ms path (20 loop times = 40 ms bound)");
     let m = qcc_at(r, eps[0].1).rt_us;
     assert!((2_000..4_000).contains(&m), "m-hat {m} us after ProbeRtt on a 2 ms path");
+}
+
+// ── pacer seam: the pacer honours a controller rate (ADR-0075) ──────────
+
+/// The fixed-rate scenario: 1 Gbit/s link, bulk always queued, 2 s measured
+/// after a 0.5 s warm-up.
+fn fixed_rate_sc(rate: Option<u64>) -> Sc {
+    Sc {
+        rate: C1_RATE,
+        limit: 1000,
+        delay: Arc::new(|_| MS),
+        jitter: Duration::ZERO,
+        dur: Duration::from_millis(2500),
+        bulk_until: Duration::from_secs(3),
+        supply: 0.0,
+        loss_burst: None,
+        stale: None,
+        stop_after_probe_rtt: None,
+        tick: TICK,
+        cc: Cc::Fixed(rate),
+    }
+}
+
+/// Client wire bytes sent in [0.5 s, 2.5 s].
+fn fixed_rate_sent(rate: Option<u64>) -> f64 {
+    let r = run(&fixed_rate_sc(rate));
+    let at = |t: Duration| r.tx_bytes.iter().find(|(x, _)| *x >= t).map(|(_, b)| *b).expect("tx sample");
+    (at(Duration::from_millis(2500)) - at(Duration::from_millis(500))) as f64
+}
+
+/// A controller rate R with a window that never binds sends at R: absolute
+/// bounds on the bytes in 2 s (R x 2 s plus one 2 ms burst of slack, and a
+/// 3 % shortfall for ACK-only / timer slop).
+#[test]
+fn pacer_honours_controller_rate() {
+    const R: u64 = 12_500_000; // 100 Mbit/s, 1/10 of the link
+    let sent = fixed_rate_sent(Some(R));
+    let want = R as f64 * 2.0;
+    println!("[cc_sim pace] R={R} B/s: sent {sent} B in 2 s (want {want})");
+    assert!(sent <= want + 60_000.0, "sent {sent} B exceeds R x 2 s + burst = {want}");
+    assert!(sent >= 0.97 * want, "sent {sent} B is under 97 % of R x 2 s = {want}");
+}
+
+/// The control of the test above: the same controller with NO rate is paced
+/// by the window law (1.25 x 32 MiB / srtt, far above the link), so it sends
+/// at the link's rate, 10x R. This is what the bound above rejects; it pins
+/// the default (inert) path.
+#[test]
+fn pacer_without_controller_rate_is_window_paced() {
+    const R: f64 = 12_500_000.0;
+    let sent = fixed_rate_sent(None);
+    println!("[cc_sim pace] no rate: sent {sent} B in 2 s");
+    assert!(sent > 5.0 * R * 2.0, "window-paced sender sent only {sent} B in 2 s");
 }
