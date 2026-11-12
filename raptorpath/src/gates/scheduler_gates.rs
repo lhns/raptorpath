@@ -215,6 +215,30 @@ pub(crate) fn resolve_place_wdiv_derived() -> bool {
     on
 }
 
+/// The diagnostic override of the repair diversity weight (`RWM_PLACE_WDIV`,
+/// f64 >= 0, unset = the shipped `w_div`): a PARAMETER of the one placement
+/// law, not a mode. `0` removes the diversity term, so a SACK-gap retransmit
+/// is placed like a fresh source symbol. A value that is not a finite number
+/// >= 0 is a startup error naming the gate.
+pub fn place_wdiv_override() -> Option<f64> {
+    crate::gates::get().place_wdiv
+}
+
+/// The resolve-time read behind [`place_wdiv_override`].
+pub(crate) fn resolve_place_wdiv() -> Option<f64> {
+    let raw = std::env::var("RWM_PLACE_WDIV").ok()?;
+    let w = raw
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|w| *w >= 0.0 && w.is_finite())
+        .unwrap_or_else(|| {
+            panic!("invalid value {raw:?} for RWM_PLACE_WDIV: expected a finite number >= 0")
+        });
+    tracing::info!(place_wdiv = w, "placement diversity weight override (RWM_PLACE_WDIV)");
+    Some(w)
+}
+
 /// Whether the cold-start placement price is active (`RWM_COLD_PLACE`,
 /// anchor-hygiene family, default off).
 ///

@@ -151,6 +151,9 @@ pub struct Scheduler {
     place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3), same discipline.
     place_wdiv_derived: bool,
+    /// `RWM_PLACE_WDIV` (diagnostic parameter): overrides `weights.w_div`.
+    /// `None` is the shipped `w_div`, bit-identical.
+    place_wdiv: Option<f64>,
     /// Protocol hint — also sets Copa-lite's queue target on each path
     /// (paper §8.2).
     hint: ProtocolHint,
@@ -181,6 +184,7 @@ impl Scheduler {
             place_t_derived: place_t_derived_active(),
             place_hol: place_hol_active(),
             place_wdiv_derived: place_wdiv_derived_active(),
+            place_wdiv: place_wdiv_override(),
             clock,
             weights: SchedulingWeights::from_hint(hint),
             hint,
@@ -224,6 +228,17 @@ impl Scheduler {
     /// Is the derived diversity weight armed on this scheduler?
     pub fn place_wdiv_derived(&self) -> bool {
         self.place_wdiv_derived
+    }
+
+    /// `RWM_PLACE_WDIV` for this scheduler (`None` = the shipped weight).
+    pub fn set_place_wdiv(&mut self, w: Option<f64>) {
+        self.place_wdiv = w;
+    }
+
+    /// The repair diversity weight in force: the override, else the shipped
+    /// `w_div`. The one read behind every use of `w_div`.
+    pub fn w_div(&self) -> f64 {
+        self.place_wdiv.unwrap_or(self.weights.w_div)
     }
 
     /// Mirror quinn's packet-timed RTT into every leg (the placement base,
