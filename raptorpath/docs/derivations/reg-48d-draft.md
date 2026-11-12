@@ -13,14 +13,14 @@ Nothing here has touched the VM. The derivation behind it is `derivations/w1-rou
 
 - **BASE:** main at launch, pinned by amendment with its sha. Quinn's BBR is the default; the binary has no `qm=` and no `[QCC]`.
 - **BBRRS-fixed (CAND):** BASE plus the §48 commits (as in §48b's `bbr48cand`), plus:
-  - (i) the one-round ProbeRtt of the derivation (section 2), with its tests T1–T7 and the `[QCC]` counters `qrn`, `qrus` and `qrb`;
+  - (i) the one-round ProbeRtt of the derivation (section 2), with its tests T1–T7 and the cumulative `[QCC]` counters `qrn`, `qrus`, `qrb` and `qab`, plus the `qage_us` gauge;
   - (ii) **[PLACEHOLDER: the c8 CPU fix, if the pending host/VM ns bench of `bbr_rs`'s per-packet path against quinn's BBR finds one. Fill in: the bench result, the commit, the predicted CPU/GB delta at c8. If the bench finds none, write "none". CAND is then (i) only, and the prediction branch "no CPU fix" in section 6 applies.]**
   - It runs with `RWM_QUIC_CC=bbr_rs`. The default is not flipped.
 - **Pre-launch diff check:** `git diff --stat BASE CAND -- raptorpath/src` lists only §48b's file list, plus (ii)'s files if any.
 - **Host gate before VM contact:**
   - T1, T2, T4 and T5 are red on `e5d7ffbd` and green on CAND, with the red and green outputs saved under `docs/l1-raw/bbr48d/`;
   - T3, T6 and T7 are green on both;
-  - T6's f = 1 mutation run is red, with its output saved;
+  - T6's f = 1.25 mutation run is red, with its output saved;
   - all of §48's host tests stay green;
   - the full suites pass as §48b item 5.
   - `GATE-48d PASS` iff all of the above hold. Otherwise stop: no VM.
@@ -60,24 +60,32 @@ Nothing here has touched the VM. The derivation behind it is `derivations/w1-rou
 - C_R,lines = share_R × (1 − ḡ_R/ḡ_nonR).
 - Its bias is stated: a 250 ms tick dilutes a short episode, so after the fix this readout can **under-read toward 0**. Readout C is the primary one.
 
-**C. ProbeRtt goodput, counter method** (new; per CAND row and leg, from the last `[QCC]` line's cumulative `qrn`, `qrus` and `qrb`, and the row's totals T, bytes):
+**C. ProbeRtt goodput, counter method** (new). Per CAND row and leg, from the last `[QCC]` line's cumulative counters:
+- `qab`: bytes acked;
+- `qrb`: bytes acked in R;
+- `qrus`: µs in R;
+- `qrn`: R entries;
+- T: the leg's span from its first to its last `[QCC]` line.
 
 ```text
-   r_nonR   = (bytes − qrb) / (T − qrus)
-   C_R,leg  = (r_nonR · qrus − qrb) / bytes            (the bytes the leg would have delivered at its own non-R rate)
-   C_R,row  = Σ_leg C_R,leg · bytes_leg / Σ bytes_leg
+   r_nonR   = (qab − qrb) / (T − qrus)
+   C_R,leg  = (r_nonR · qrus − qrb) / qab               (the bytes the leg would have delivered at its own non-R rate)
+   C_R,row  = Σ_leg C_R,leg · qab_leg / Σ_leg qab_leg
 ```
 
 - Also: the time share in R per 10 s (qrus / T), and the mean R duration (qrus / qrn) in units of that leg's median `qsr_us`.
-- **Witness:** qrn ≥ ⌊T/10.5 s⌋ on every active leg. If it fails, ProbeRtt did not run as designed and the row reads `VOID-R` for this readout only.
+- **Witness, keyed on the filter's age, not on the entry count** (a leg whose filter refreshes naturally rightly has fewer entries): on every active leg, every `[QCC]` line shows `qage_us` ≤ 10 s + 3 × the leg's `qsr_us` + one tick (250 ms).
+  - This proves that an expired filter was refreshed, whether by ProbeRtt or naturally (measurement discipline rule 1).
+  - A leg that fails it reads `VOID-R` for this readout only.
 
 **D. Goodput-weighted cost attribution** (replaces §48b W1.1's line count, which the §48b erratum withdrew):
-- Per cell, a CAND line's class is one of the §48b W1.1 classes, as a partition:
-  - PROBE-RTT (any leg qm = R);
-  - UNDER-READ (qbw < 0.8 L on an active leg);
-  - QUINN-LIMITED (B ≥ 98, qm ∈ {B, S, D});
-  - STORE-LIMITED (`paused` ≥ 50 %, B < 98);
-  - OTHER (the remainder, defined so that the classes partition the lines).
+- **Classes:** each active leg of a CAND line takes the first matching §48b W1.1 class, in `attr48.py`'s order:
+  1. STORE-LIMITED (`paused` ≥ 50 %, B < 98);
+  2. QUINN-LIMITED (B ≥ 98, qm ∈ {B, S, D});
+  3. PROBE-RTT (qm = R);
+  4. UNDER-READ (qbw < 0.8 L);
+  5. OTHER.
+- **The line's class** is the highest-precedence class over its active legs, so every line has exactly one class (a partition, which c8's two legs need).
 - The reference ḡ_ref is **BASE's mean line `good`** in the same cell (t ≥ 1 s), fixed now.
 
 ```text
@@ -92,8 +100,8 @@ Nothing here has touched the VM. The derivation behind it is `derivations/w1-rou
 
 ## 5. Outcome additions (none change the ladder)
 
-- **`FIX-INERT` (reported):** C_R,row's CAND median > 0.4 % at c2, or > 0.5 % at c8. The ProbeRtt fix did not remove its cost in vivo. This is read before any label discussion.
-- **`RATCHET` (reported):** median `qrt_us` at c2 > 10.0 ms, or any c2 row's `qrt_us` p90 > 12 ms. This is the upward failure direction of the derivation's section 0; it says to re-derive f from the measured u.
+- **`FIX-INERT` (reported):** C_R,row's CAND median > 0.4 % at c2, or > 0.6 % at c8. The ProbeRtt fix did not remove its cost in vivo. This is read before any label discussion.
+- **`RATCHET` (reported):** median `qrt_us` at c2 > 10.0 ms, or any c2 row's `qrt_us` p90 > 12 ms. This is the upward failure direction of the derivation's section 0: either f·b̂/L ≥ 1 in vivo (check qbw against L) or the ×0.8-per-period decay has not reached the fixed point. Re-derive f from the measured b̂/L; do not tune it.
 
 ## 6. Predictions (before any number)
 
@@ -101,16 +109,16 @@ Nothing here has touched the VM. The derivation behind it is `derivations/w1-rou
 |---|---|---|---|---|---|---|---|
 | c1s | ≤ 0.05 % | ≤ 0.1 % | better or equal (§48b −2.3 %, i.e. CAND better; tail CAND ≥ 0.95 ×) | 2.15–2.4 ms | as §48b | 17.6 ms ± 20 % | ≤ 0.02 |
 | c1d | ≤ 0.05 % | ≤ 0.1 % | better or equal (§48b −4.9 %) | 2.15–2.4 ms | as §48b | as §48b ± 20 % | ≤ 0.02 |
-| c2 | **0.09–0.17 %** (from 0.84) | ≤ 0.5 % | **0.988–0.996** (deficit ≈ 0.7 %, range 0.4–1.2 %) | **7.8–9.2 ms** (from 7.81) | 21.8–25 ms (BASE ≈ 112) | ≈ 206 ms ± 15 % (unchanged; the queue sits in quinn) | ≤ 0.02 |
-| c8 | **0.11–0.21 %, ≤ 0.3 %** (from 0.78) | fast leg ≤ 0.5 %, slow leg ≤ 2.5 % | **0.974–0.986** (deficit ≈ 1.9 %, range 1.4–2.6 %), before any CPU fix | 8.3–9.6 / 39.4–41 ms | fast ≈ 22–25 ms; slow ≈ 88 ms ± 15 % | fast ≈ 122 ms, slow ≈ 251 ms, each ± 15 % | ≤ 0.02 |
+| c2 | **0.13–0.23 %** (from 0.84) | ≤ 0.5 % | **0.987–0.995** (deficit ≈ 0.8 %, range 0.5–1.3 %) | **7.8–9.2 ms** (from 7.81) | 21.8–25 ms (BASE ≈ 112) | ≈ 206 ms ± 15 % (unchanged; the queue sits in quinn) | ≤ 0.02 |
+| c8 | **0.17–0.32 %, ≤ 0.4 %** (from 0.78) | fast leg ≤ 0.5 %, slow leg ≤ 2.5 % | **0.974–0.985** (deficit ≈ 2.0 %, range 1.5–2.6 %), before any CPU fix | 8.3–9.6 / 39.4–41 ms | fast ≈ 22–25 ms; slow ≈ 88 ms ± 15 % | fast ≈ 122 ms, slow ≈ 251 ms, each ± 15 % | ≤ 0.02 |
 
 **The label, conditional on the CPU placeholder.**
 - **R1:**
-  - c2 goodput's d80 is 1 %. A 0.7 % shift is caught in about half of the draws.
-  - c8 goodput's d80 is 2.4 %, against a 1.9 % shift.
+  - c2 goodput's d80 is 1 %. A 0.8 % shift is caught in roughly half to two thirds of the draws.
+  - c8 goodput's d80 is 2.4 %, against a 2.0 % shift.
   - **R1 is predicted to FAIL (p ≤ 0.05) more likely than not.** `PROMOTE-ELIGIBLE` is not predicted from this fix alone: the unattributed ≈ 0.6 % (c2) and ≈ 1.8 % (c8) remain.
 - **Branch "no CPU fix":** c8 `cpu_cli/GB` +3.5 % and `cpu_srv/GB` +5.3 % stand, so p_rest ≈ 0.01 as in §48b. **Predicted `REGRESSION` again.** The readouts B–D still say whether ProbeRtt's cost is gone.
-- **Branch "CPU fix" (filled in from the placeholder):** if the fix's host bench predicts c8 CPU/GB within ±2 % of BASE, then p_rest > 0.05 is predicted. The other `CONTROLLED-WITH-COST` conditions held in §48b (0.985 / 0.974 ≥ 0.90; `wrtt` 0.19 × / 0.38 ×; tail 0.98 / 0.95), so **`CONTROLLED-WITH-COST` is predicted**, with `PROMOTE-ELIGIBLE` second. That second outcome needs c2's R1 clause to miss a 0.7 % shift.
+- **Branch "CPU fix" (filled in from the placeholder):** if the fix's host bench predicts c8 CPU/GB within ±2 % of BASE, then p_rest > 0.05 is predicted. The other `CONTROLLED-WITH-COST` conditions held in §48b (0.985 / 0.974 ≥ 0.90; `wrtt` 0.19 × / 0.38 ×; tail 0.98 / 0.95), so **`CONTROLLED-WITH-COST` is predicted**, with `PROMOTE-ELIGIBLE` second. That second outcome needs c2's R1 clause to miss a 0.8 % shift.
 
 ## 7. After the verdict (§48b item 7, unchanged)
 
