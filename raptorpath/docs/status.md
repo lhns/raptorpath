@@ -13497,3 +13497,7 @@ at every phase (share 0.75–0.85).
 - **Smoke:** CAND LIVE (835.6 Mbit/s). BASE `WITNESS-FAIL` on `wpl_us-numeric-on-BASE wire-gauges-on-BASE`: a third harness assumption that BASE is the unpromoted `4926822`. The new main carries ADR-0073's promotion and prints those gauges, as CAND does. Fixed on main (`place38_parse.base_promoted()`: BASE counts as promoted when `LD_BASE_SHA` names a later main), with two tests. Dry run on this session's real smoke logs: both rows LIVE with `LD_BASE_SHA` set; the original failure reproduces with it unset.
 
 **§49 amendment 4 (before VM contact).** CAND = `simplify-2` `91625f3a7a8aced20d078f8d0ebe6be9c4fd448a` (`raptorpath/src` and `raptorpath/tests` byte-identical to session 3's CAND). Session 3's suites bind it, as in §41c amendment 6, so session 4 runs `LD_PLAN=41c` without `LD_P46_SUITES`: the smoke and the guard. BASE stays `b3000701`.
+
+**§49 session 4: `ABORT-TESTS` at the parser gate** (2026-11-12T07:43:26Z, before any build). `test_place38_parse.py`'s historical-BASE checks ran with the session's `LD_BASE_SHA` in their environment and read the promoted BASE. The test now clears the variable first (main), and all 28 `tools/l1` tests pass with it set.
+
+**§49 amendment 5 (before VM contact).** CAND = `simplify-2` `b1e6bfb7c3ac79597380c05ead6da3619e49b2d0` (`raptorpath/src` and `raptorpath/tests` byte-identical to session 3's). Session 3's suites carry; smoke and guard only. BASE stays `b3000701`.

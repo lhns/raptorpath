@@ -315,7 +315,7 @@ def idle_decay(diag):
 def base_promoted():
     """BASE is main's binary. Main before `85c2295` (the historical pin 4926822) has no wire gauges; any later main
     (LD_BASE_SHA set to another sha, status 49 / 48b) carries the ADR-0073 promotion and prints them, like CAND."""
-    return not os.environ.get("LD_BASE_SHA", "4926822").startswith("4926822")
+    return not (os.environ.get("LD_BASE_SHA") or "4926822").startswith("4926822")   # empty = unset (run_all passes it through sudo)
 
 
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=None, store=None):
