@@ -1165,7 +1165,10 @@ struct BenchPath {
     rng: u64,
 }
 
-const NSB_INFLIGHT: u64 = 1000;
+/// Packets in flight per path; `NSBENCH48_INFLIGHT` overrides (default 1000).
+fn nsb_inflight() -> u64 {
+    std::env::var("NSBENCH48_INFLIGHT").ok().and_then(|v| v.parse().ok()).unwrap_or(1000)
+}
 const NSB_PKT: u64 = 1200;
 /// Loss probability numerator over 1000 (2.5 %).
 const NSB_LOSS_PER_MILLE: u64 = 25;
@@ -1205,7 +1208,7 @@ impl NsBench {
     /// accumulates every `window()` read.
     fn run(&mut self, n: u64, est: &quinn_proto::RttEstimator) {
         // global spacing: two paths, each NSB_INFLIGHT packets per rtt
-        let dt_ns = (self.rtt.as_nanos() as u64 / (2 * NSB_INFLIGHT)).max(1);
+        let dt_ns = (self.rtt.as_nanos() as u64 / (2 * nsb_inflight())).max(1);
         for _ in 0..n {
             let now = self.base + Duration::from_nanos(self.i * dt_ns);
             let p = &mut self.paths[(self.i & 1) as usize];
@@ -1299,7 +1302,8 @@ fn nsbench48_controller_ns_per_packet() {
         s[s.len() / 2]
     };
     println!(
-        "NSBENCH48 n={n} pairs=5 rtt={rtt:?} inflight/path={NSB_INFLIGHT} loss={}% (ns per sent packet, median [min-max])",
+        "NSBENCH48 n={n} pairs=5 rtt={rtt:?} inflight/path={} loss={}% (ns per sent packet, median [min-max])",
+        nsb_inflight(),
         NSB_LOSS_PER_MILLE as f64 / 10.0
     );
     for k in 0..3 {
