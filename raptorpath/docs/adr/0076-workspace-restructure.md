@@ -15,9 +15,9 @@ on `main` at 3bec7652:
 
 - **Ledgers in the build path.** `raptorpath/docs/l1-raw` holds 4 723 files,
   226 MB (41.7 MB `loop-diag`, 20.4 MB `bbr48b`, 19.6 MB `oracle43`, ...).
-  Every VM launch `git archive`s two trees of about 200 MB each, and every
-  agent worktree checks them out. The python tests read 18 of those files
-  (see "Ledger read set").
+  Every VM launch `git archive`s two trees of about 240 MB each, and every
+  agent worktree checks them out. The python tests and scorers read 49 of
+  those files, 4.9 MB (see "Ledger read set").
 - **EOL.** The index is all LF (4 009 text files `i/lf`, 0 `i/crlf`). The
   1 066 `-text` files are all `*.gz` / `*.tgz` under `l1-raw`. With
   `core.autocrlf=true` 3 801 files check out CRLF, so every launch archives
@@ -79,8 +79,10 @@ removed. `vendor/** -text` stays after the `*` rule so it wins.
 - **Per worktree, once:** `git rm -rq --cached . && git reset -q --hard`.
   This rewrites every checked-out file as LF and discards uncommitted
   changes. Precondition: no worker mid-edit in that worktree.
-- **What it retires.** `git archive` applies the `eol=lf` attribute, so a
-  tree at or after this commit archives LF without
+- **What it retires.** `git archive` applies the attributes of the tree it
+  archives (checked: under `core.autocrlf=true`, `raptorpath/src/lib.rs`
+  archives with 15 CR bytes from `main` and 0 from a commit carrying the
+  rule), so a tree at or after this commit archives LF without
   `-c core.autocrlf=false -c core.eol=lf`, and `crlf_guard` can no longer
   fire on it. Both stay until no session archives a pre-rule tree: attributes
   come from the archived tree, so a BASE at an older SHA still needs the
@@ -182,18 +184,19 @@ step changes engine bytes, so each needs the §41c guard and the ns bench.
 2. **`net/` submodules** along sender / receiver / recovery / control.
    A module move within the crate; it breaks the path-bound tests in 1.
 3. **Controller crate** (`bbr_rs`, with the vendored quinn-proto as its
-   dependency). `bbr_rs.rs` has no `crate::` edges (quinn-proto, rand, std),
-   so it extracts cleanly. `cc_sim.rs` imports `QuicTransport`'s config
+   dependency). On `pacing-seam`, `bbr_rs.rs` (2 055 lines) has no `crate::`
+   edges (quinn-proto, rand, std), so it extracts cleanly. `cc_sim.rs` imports `QuicTransport`'s config
    builders, so it stays in the engine or takes the configs as arguments.
    The `RWM_BBR_*` gates would leave the `gates.rs:567` walk. The gain is
-   one 2 000-line file's compile isolation; recommend only when a second
+   one file's compile isolation; recommend only when a second
    consumer or a measured compile-time win exists.
 4. **Integration-test consolidation.** Measure first
    (`cargo build --release --tests --timings`). Binaries that cannot share a
    process: the three with a `#[global_allocator]` counter
    (`alloc_per_symbol`, `recv_alloc_bound`, `recv_alloc_spread_diag`); the
-   17 that call `set_var` while 11 `OnceLock` statics in `src` resolve gates
-   once per process; the two that send signals (`eta_reachability`,
+   17 that call `set_var`, while 16 process-wide `OnceLock` statics in `src`
+   resolve the gates (`gates.rs:87`) and the env-armed gauges once per
+   process, so the first test in a shared binary would fix them for all; the two that send signals (`eta_reachability`,
    `runtime_obs_reachability`). The rest may merge into a few binaries by
    area. The FLAKE solo re-run (`-- <name> --exact`) still works, but test
    names gain a module prefix, which pre-registrations and ledgers quote.
