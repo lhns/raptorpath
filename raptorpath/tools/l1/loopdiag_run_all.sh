@@ -197,7 +197,9 @@ if [ "$P41" = 1 ]; then
   [ -d "$BASE_SRC" ] || fail_all "ABORT-BUILD no $BASE_SRC"
   [ ! -e "$BASE_SRC/target" ] || fail_all "ABORT-BUILD $BASE_SRC/target is not fresh"
   [ ! -e "$BASE_TARGET" ] || fail_all "ABORT-BUILD $BASE_TARGET is not fresh"
-  case "$(cat "$ROOT/base/COMMIT" 2>/dev/null)" in 4926822*) ;; *) fail_all "ABORT-BUILD base COMMIT is not 4926822" ;; esac
+  # BASE's pin: LD_BASE_SHA (the full sha, recorded by amendment before launch) when set, else the historical main 4926822.
+  BASE_PIN="${LD_BASE_SHA:-4926822}"
+  case "$(cat "$ROOT/base/COMMIT" 2>/dev/null)" in "$BASE_PIN"*) ;; *) fail_all "ABORT-BUILD base COMMIT is not $BASE_PIN" ;; esac
   T1=$(date +%s)
   ( cd "$BASE_SRC" && CARGO_TARGET_DIR="$BASE_TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$ROOT/build-base.log" 2>&1 \
     || fail_all "ABORT-BUILD (base: $ROOT/build-base.log)"

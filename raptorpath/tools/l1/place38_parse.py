@@ -797,7 +797,7 @@ def score41c(paths, out=print):
     rows_all, tokens = rows_of(paths)
     rows, rinfo = apply_replacements(rows_all)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
-    out("MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 4926822 (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
+    out(f"MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main {os.environ.get('LD_BASE_SHA', '4926822')[:8]} (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
     extra = f" (+{rinfo['n_extra']} replacement row{'s' if rinfo['n_extra'] != 1 else ''} in the ledger)" if rinfo["n_extra"] else ""
     out(f"ROWS {rinfo['n_slots']}/{EXPECT_ROWS41C}{extra}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
