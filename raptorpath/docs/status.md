@@ -13658,3 +13658,10 @@ Session `LD_PLAN=48`, CAND `bbr48cand` `e5d7ffbd` (`RWM_QUIC_CC=bbr_rs`), BASE m
 - **PASS:** `simplify-5` merges to main (`--no-ff`), with status §1's on-list and the `[GATES]` pin already updated in the branch.
 - **FAIL:** no merge; the failing clause, its size and the resolution table go to the user; bisect by arm commit.
 - **NO VERDICT:** re-run. **ABORT-TESTS:** fixed on the branch and re-run.
+
+**§50 amendment 1 (before VM contact, advisor review).**
+- **Trees:** BASE = main `318a881212acef7441fd1e086ef4aeb1db0e05b2` (`raptorpath/src` and `raptorpath/tests` identical to `3ac3a209`, which carries the bounding tests). CAND = `simplify-5` `d5bd282af072eeff128d8bc0919b458d335eade7` (main merged in). BASE-vs-CAND over `raptorpath/src raptorpath/tests raptorpath-math raptorpath-wasm Cargo.*`: 36 files, +343 / −2 921, the deletions alone.
+- **Merged-tree pre-flight (VM, fresh target):** `cargo check --all-targets` 0 errors; **full lib suite 586 passed / 0 failed / 9 ignored.**
+- **Parser chain:** the post-simplify `[ETA] site=sender` line (no `t_*`/`hol_*`) parses through `place38_parse.eta_last` (cold_r, cold_ge, ref_fl, w_cold, w_n, w_calls, per-leg e_p50/e_p90; w_mv None). None of the removed `[ETA]`/`[HOLD]` fields are read anywhere in plan 41c's chain (grep).
+- **The one live-path refactor** (`1b00ede5`: `patience_floor_us` deleted; sender and receiver call `hole_nack_refresh` / `tail_sweep_timeout_us` directly): `the_shipped_recovery_clocks_are_pinned_absolutely` pins the shipped values (tail sweep 2·srtt clamped to [25, 100] ms incl. `TAIL_SWEEP_MIN_US` = 25 000 at c1's 2 ms srtt; the hole-refresh table at the same srtt points as the deleted test). The guard cannot resolve recovery at c8 (goodput d80 8–12 %), so this pin is the evidence for "unchanged".
+- **Correction:** "collapse rows are reported, never scored" is wrong. §41c ranks every LIVE row by its own values ("slow rows, reported only" means *listed*, not excluded). Registered reading: no row is dropped or relabelled; on a FAIL the user gets each c1 row's QCWND-below-BDP share beside the failing clause.
