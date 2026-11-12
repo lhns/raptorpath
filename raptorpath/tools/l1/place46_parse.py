@@ -21,7 +21,7 @@ Readouts (client [DIAG] lines, one per ~250 ms, after the warm-up line), exactly
   * gbar_post (scored): the time-weighted mean of `good=` over [t_off, t_off + 25 s] (weights = the gap in t to the previous line);
   * G = 1 - gbar_post / gbar_pre, gbar_pre over [2.0 s, t_on) (reported only); R0 = the first line after t_off with d_hit > 2; T_w =
     the time from t_off until the hit leg's `wrtt` is <= 1.1 x its pre-event median (all censored at H); goodput in the hold.
-  * witnesses: the event bites (max hit `wrtt` over [t_on, t_off + 1.5 s] >= pre median + 750 ms) and the injector's two `tc` calls
+  * witnesses: the event bites (max hit `wrtt` over [t_on, t_off + 1.5 s] >= pre median + Delta / 2) and the injector's two `tc` calls
     returned 0; the exit witness (some 4 consecutive lines inside [t_on, t_off + 1 s] with pooled share < sigma_pre / 2); the
     `path timed out` / `path recovered` log lines (any, in either log, voids the row).
 Interpretations the spec leaves implicit are listed in the harness report.
@@ -50,7 +50,7 @@ for _a in ("BASE", "CAND"):
 H = 25.0                       # the horizon, s
 ONSET_S, HOLD_S = 5.0, 2.0
 PRE_FROM = 2.0                 # the pre-event window starts here, s
-EVENT_BITE_MS = 750            # half of Delta = 1500 ms
+EVENT_BITE_FRAC = 0.5          # the event bites at half of its Delta (750 ms at the scored 1500 ms, 250 ms at +500)
 EXIT_WINDOW = 4
 R_FLOOR_S = 1.0
 GP_FLOOR_FRAC = 0.04
@@ -157,7 +157,7 @@ def _gbar(S, lo, hi, hi_incl=True):
     return (num / den) if den > 0 else None
 
 
-def analyze(S, t_on, t_off, hit, nleg=2):
+def analyze(S, t_on, t_off, hit, nleg=2, delta_ms=1500):
     """All of section 46's per-row readouts from a series and the event's [DIAG]-axis times. Pure; the scorer's input."""
     W = _windows(S, nleg)
     tot = lambda r: sum(r["d"])  # noqa: E731
@@ -200,7 +200,7 @@ def analyze(S, t_on, t_off, hit, nleg=2):
     # witnesses
     peak = max([s["wrtt"].get(hit) for s in S if t_on <= s["t"] <= t_off + 1.5 and s["wrtt"].get(hit) is not None] or [None], key=lambda x: -1 if x is None else x)
     m["event_peak_wrtt"] = peak
-    m["event_ok"] = bool(peak is not None and pre_wrtt is not None and peak >= pre_wrtt + EVENT_BITE_MS)
+    m["event_ok"] = bool(peak is not None and pre_wrtt is not None and peak >= pre_wrtt + EVENT_BITE_FRAC * delta_ms)
     ex = False
     if sigma is not None:
         for j in range(len(W) - EXIT_WINDOW + 1):
@@ -357,11 +357,11 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         p.append("no-event-axis")
     else:
         row["t_on"], row["t_off"] = ax
-        m = analyze(S, ax[0], ax[1], hit)
+        m = analyze(S, ax[0], ax[1], hit, delta_ms=delta)
         if m["sigma_pre"] is None:
             p.append("no-pre-event-share")
         if not m["event_ok"]:
-            p.append(f"event-did-not-bite(peak wrtt {m['event_peak_wrtt']} vs pre {m['pre_wrtt']} + {EVENT_BITE_MS})")
+            p.append(f"event-did-not-bite(peak wrtt {m['event_peak_wrtt']} vs pre {m['pre_wrtt']} + {EVENT_BITE_FRAC * delta:g})")
     row["m"] = m
     n_in_c, n_rec_c = count_path_events(cli)
     n_in_s, n_rec_s = count_path_events(srv)

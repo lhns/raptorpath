@@ -36,7 +36,8 @@ byte-pinned by `gates_echo_default_is_byte_pinned`): `RWM_UNIFIED`,
 `RWM_HONEST_ANCHOR`, `RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
 `RWM_GEN_PIPE` (only reached when generation is on), `RWM_RS_ATTR`,
 `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`, `RWM_DELTA_CAP`,
-`RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`, `RWM_EST_CADENCE` (the loss
+`RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`, `RWM_RSTAR_TAIL` (r* provisions the
+window loss-mass quantile, ADR-0063; `=0` is GE-only), `RWM_EST_CADENCE` (the loss
 estimator's BOCD update batched: clean evidence accumulates and flushes every
 10 ms, a loss-bearing ack flushes at once; flipped in `83462ae` on Stage 3
 (d), §5; own echo, ACTIVE or OFF, not on `[GATES]`), `RWM_EMIT_BATCH`
@@ -48,6 +49,9 @@ packing, a coded wire). `RWM_POOL_ANCHOR` is
 independent of the cadence and ships off (it used to follow it when unset).
 `RWM_HONEST_CAP` resolves on but is inert
 without `RWM_PLAIN_RS`, so `[GATES]` echoes its effective value, 0.
+
+Placement prices every leg on its wire RTT (ADR-0073, promoted from
+`RWM_PLACE_WIRE` in `2d625fa`, merged to main in `85c2295`); there is no gate.
 
 The recovery clocks (tail sweep, refresh, per-sequence cooldown) and the repair
 margin pool over the live paths (`recovery_clock_paths`), not the
@@ -13416,3 +13420,7 @@ at every phase (share 0.75–0.85).
 
 **Merge basis.** `diag36` merges on the guard of session 2 (CAND `fb67a6c2`) and §46 of session 3 (CAND `dffd8517`, engine bytes identical), under the unchanged §41c decision rule and the user's go of 2026-11-11. Ledgers: `docs/l1-raw/mergecand47/` (VM user and paths scrubbed).
 - **Debt carried to main:** reconcile the `RWM_RSTAR_TAIL` default between the paper and status §1 (code: default ON, `fec_rate.rs:128`); the +500 ms witness to scale with Δ; `RWM_TEST_PLACE_HOLD` is already gone from `raptorpath/src`.
+
+**Debt closed (2026-11-12, branch `fix49`).**
+- `RWM_RSTAR_TAIL`: status §1's on-list now names it (code `gates.rs`, the paper §4.3 and ADR-0063 already said default on); §1 also records the ADR-0073 placement promotion. Closes §43's reconcile item.
+- §46's event witness scales with the event: it bites at Δ/2 (`EVENT_BITE_FRAC = 0.5`), so 750 ms at the scored Δ = 1500 (unchanged) and 250 ms at +500. Session 3's four +500 ms rows (peaks +292 to +342 ms over pre) would read LIVE under it; they are not re-scored here. Tests: +500 at +300 bites, +500 at +200 does not, Δ = 1500 at +700 does not.
