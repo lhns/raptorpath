@@ -13501,3 +13501,7 @@ at every phase (share 0.75–0.85).
 **§49 session 4: `ABORT-TESTS` at the parser gate** (2026-11-12T07:43:26Z, before any build). `test_place38_parse.py`'s historical-BASE checks ran with the session's `LD_BASE_SHA` in their environment and read the promoted BASE. The test now clears the variable first (main), and all 28 `tools/l1` tests pass with it set.
 
 **§49 amendment 5 (before VM contact).** CAND = `simplify-2` `b1e6bfb7c3ac79597380c05ead6da3619e49b2d0` (`raptorpath/src` and `raptorpath/tests` byte-identical to session 3's). Session 3's suites carry; smoke and guard only. BASE stays `b3000701`.
+
+**§49 session 5: `ABORT-SMOKE`** (2026-11-12T08:17:28Z). BASE again `WITNESS-FAIL` on the wire gauges: `loopdiag_run_all.sh` runs the battery under `sudo -n env`, which resets the environment, so the row parser never saw `LD_BASE_SHA`. Verified on the VM (a plain `sudo -n env` drops it; the explicit pass-through delivers it). Fixed on main: both battery env arrays pass `LD_BASE_SHA`, and an empty value reads as unset. CAND LIVE (798.1 Mbit/s).
+
+**§49 amendment 6 (before VM contact).** CAND = `simplify-2` `54600e5d75b7dfb772e2acdfdbede0ddbb647304` (`raptorpath/src` and `raptorpath/tests` byte-identical to session 3's). Session 3's suites carry; smoke and guard only. BASE stays `b3000701`.
