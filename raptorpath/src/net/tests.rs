@@ -1645,12 +1645,12 @@ fn lost_seqs_zero_and_one_are_both_sack_reported() {
 
 #[test]
 fn test_sack_to_gaps_caps_at_max_gaps() {
-    // 2×MAX_NACK_GAPS isolated received seqs → gap list is capped.
-    let sack: Vec<(u64, u64)> = (0..(MAX_NACK_GAPS as u64 * 2))
+    // 2×MAX_SACK_RANGES isolated received seqs → gap list is capped.
+    let sack: Vec<(u64, u64)> = (0..(MAX_SACK_RANGES as u64 * 2))
         .map(|i| (2 + i * 2, 2 + i * 2))
         .collect();
     let gaps = sack_to_gaps(0, &sack);
-    assert_eq!(gaps.len(), MAX_NACK_GAPS);
+    assert_eq!(gaps.len(), MAX_SACK_RANGES);
 }
 
 /// The sender's gap horizon is the whole report: a report carrying

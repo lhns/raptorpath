@@ -64,7 +64,9 @@ pub fn compute_gap_ranges(
     gaps
 }
 
-/// Invert SACK ranges into missing-seq gaps.
+/// Invert SACK ranges into missing-seq gaps: the sender acts on every gap a
+/// report carries (at most [`MAX_SACK_RANGES`], what one control datagram
+/// holds), not a smaller literal horizon.
 ///
 /// `sack_ranges` are inclusive, ascending, disjoint ranges of seqs the
 /// receiver has at or above the cumulative point `next_expected` (wire v9:
@@ -80,7 +82,7 @@ pub fn sack_to_gaps(next_expected: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64,
     for &(start, end) in sack_ranges {
         if start > expected {
             gaps.push((expected, start - 1));
-            if gaps.len() >= MAX_NACK_GAPS {
+            if gaps.len() >= MAX_SACK_RANGES {
                 return gaps;
             }
         }
@@ -518,7 +520,7 @@ pub const SACK_RANGE_MARGIN_BYTES: usize = 48;
 /// Maximum SACK ranges one `WindowAck` carries: the largest `n` with
 /// `72 + 16·n ≤ 1155 − 48`, i.e. ⌊(1155 − 72 − 48) / 16⌋ = 64 (1096 bytes on
 /// the wire; the v9 `received_above` field did not move the cap). Derived from what one control datagram can carry, not from the
-/// sender's per-report NACK cap ([`MAX_NACK_GAPS`]).
+/// sender's gap horizon, which is this constant.
 pub const MAX_SACK_RANGES: usize = (SACK_DATAGRAM_BUDGET
     - WINDOW_ACK_BASE_BYTES
     - SACK_RANGE_MARGIN_BYTES)
