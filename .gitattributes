@@ -1,9 +1,9 @@
-# Scripts that run on Linux (VM batteries, build) or under node must keep LF
-# line endings regardless of the checkout's core.autocrlf. A CRLF shebang/line
-# breaks bash ("$'\r': command not found") and python on the VM.
-*.sh  text eol=lf
-*.py  text eol=lf
-*.mjs text eol=lf
+# One EOL rule (ADR-0076 phase 1): the index is LF, and checkouts and
+# `git archive` are LF regardless of core.autocrlf (a CRLF shebang breaks bash
+# on the VM). Archives are binary.
+* text=auto eol=lf
+*.gz  binary
+*.tgz binary
 
 # Ledgers stay in the repo (evidence, full history) but out of `git archive`
 # (ADR-0076 phase 2): only the 49 files the tools/l1 tests and scorers read
