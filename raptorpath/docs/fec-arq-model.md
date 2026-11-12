@@ -3019,8 +3019,9 @@ legs; lowering ρ moves the optimum toward waiting. The only indicator,
 Four sender-side clocks were derived and measured. They are one test on four
 measurands (Section 7.2), and each failed for a reason worth keeping. The
 Cantelli and quantile-native arms are removed from the engine; the hold-down
-arm remains, off, and the quantile-native order statistic survives as the
-hold-down's window law (`net/recovery_clock.rs`, `net/holddown.rs`).
+arm was removed after its verdict (`RWM_HOLDDOWN_Q`, tag
+`archive/RWM_HOLDDOWN_Q`; Section 10); the quantile-native order statistic
+survives as `qnative_window_n` in `net/recovery_clock.rs`.
 
 **Cantelli margin.** Let X be the ack-arrival time; a false alarm is X > W, so
 the clock is a quantile `W(α) = F_X⁻¹(1 − α)`. Cantelli's one-sided bound
@@ -4113,8 +4114,8 @@ shipped.
 | RACK-shaped clocks (`RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`) | fails RACK's own 6.25 % spurious budget at every arm and cell (0.21–0.78); its SRTT ceiling bound 0 times in 108 847 evaluations | `18dbf10` | removed |
 | Cantelli recovery clock (`RWM_QUANTILE_CLOCKS`, `RWM_ALPHA_OVERRIDE`) | needs 316σ and ~10⁵ samples at the contract's α; pricing α from the tail-loss target is a category error | `c249c20` | removed |
 | Dispersion estimators (fixed-sample-lag, fixed-time-lag) | the 287× spread is the estimator; the time-lag form confirms rate invariance and still misses its bar | `89d7946` | open |
-| Quantile-native clock (`RWM_W_FORM`) | commanded false-alarm rate does not track α at 5 of 5 cells: the measurand is wrong | `6b3d3c3` | removed (the order statistic survives as the hold-down's window law) |
-| Hold-down clock (`RWM_HOLDDOWN_Q`) | suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven | `5509e37` | off |
+| Quantile-native clock (`RWM_W_FORM`) | commanded false-alarm rate does not track α at 5 of 5 cells: the measurand is wrong | `6b3d3c3` | removed (the order statistic survives as `qnative_window_n` in `net/recovery_clock.rs`) |
+| Hold-down clock (`RWM_HOLDDOWN_Q`) | suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven | `5509e37` | removed (simplification batch 4; user ruling, status §45; tag `archive/RWM_HOLDDOWN_Q`; the `[HOLD]` gauge stays as an observation-only instrument; re-ask: once the store law sets H) |
 | Refresh-floor lift (`RWM_REFRESH_FLOOR_US`) | entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume | `a8bcce0` | off |
 | Receiver request law (`RWM_RECV_REQUEST_LAW`) | refuted at both duals on every arm: ℓ* = 0 on 48 of 48 dual rows, knee-bound by the store headroom; the receiver's π̂₀ was contaminated by retransmit copies (since fixed; not re-run); one arm DNF 12/12 | `0159290` | off |
 | **Honest store family** | | | |
@@ -4669,8 +4670,8 @@ engine.
 
    W(α)  = SRTT + k(α)·σ                                                  refuted, removed (Section 10)
    σ̂_Δ(τ) = median |rtt(tᵢ) − rtt(t_{j(i)})| ,  τ ≤ tᵢ − t_{j(i)} ≤ 2τ ,  τ = RTprop   —
-   W_q(α) = X_(N−K+1) ,  N = max(⌈K/α⌉, 2K) ,  K = 10                       qnative_window_n (hold-down)
-   hold-down level  s(q*) = w·π₀·d/(δ·(1 − π₀)·P_arq)                        RWM_HOLDDOWN_Q (off)
+   W_q(α) = X_(N−K+1) ,  N = max(⌈K/α⌉, 2K) ,  K = 10                       qnative_window_n
+   hold-down level  s(q*) = w·π₀·d/(δ·(1 − π₀)·P_arq)                        RWM_HOLDDOWN_Q (removed; tag archive/RWM_HOLDDOWN_Q)
 
    L(α) = ν·α·(1 + h/T_pay) + δ·owed·k(α)·σ/d + λ·owed·max(0, k(α)σ − D(δ))/D(δ)   —
    k(α) = √((1 − α)/α) ,   owed = max(0, ε̂·(1 − P_fec) − (1 − ρ))

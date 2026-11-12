@@ -214,8 +214,6 @@ pub struct RuntimeGates {
     /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
     /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
-    /// `RWM_HOLDDOWN_Q` (absent, arm): hold a reported hole `T(q) = W_q(1 − q)` (paper §7.2).
-    pub holddown_q: Option<f64>,
     /// `RWM_REFRESH_FLOOR_US` (absent = 25 ms, arm): hole-refresh band floor (paper §7.4).
     pub refresh_floor_us: Option<u64>,
     /// `RWM_DELTA` (absent, arm): the contract's δ as a number (paper §4.1); `RWM_COPA_DELTA`
@@ -381,10 +379,6 @@ impl RuntimeGates {
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             delta_cap: env_flag("RWM_DELTA_CAP", true),
-            // Out-of-domain values resolve to absent (echo `unset`): q ≤ 0 is the
-            // shipped machine and the window law diverges at q ≥ 1.
-            holddown_q: env_parse::<f64>("RWM_HOLDDOWN_Q")
-                .filter(|q| q.is_finite() && *q > 0.0 && *q < 1.0),
             // Below the receiver loop's wake granularity the cadence cannot be
             // expressed; above the shipped upper rail it leaves the band.
             refresh_floor_us: env_parse::<u64>("RWM_REFRESH_FLOOR_US").filter(|f| {
@@ -464,7 +458,7 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
-             RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
+             RWM_DERIVED_SWEEP={} \
              RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
@@ -498,7 +492,6 @@ impl RuntimeGates {
             b(self.derived_sweep),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.
-            o(&self.holddown_q),
             o64(&self.refresh_floor_us),
             o(&self.delta),
             o(&self.copa_delta),

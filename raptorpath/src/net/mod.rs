@@ -1819,12 +1819,8 @@ async fn run_window_sender(
     // `[QCLK]` — the realized recovery clock as a distribution, at the site
     // that runs it; see the gauge's decl.
     let mut qclk_echo = QuantileClockGauge::new("sender");
-    // `[HOLD]` (paper §7.4) — the hold-down arm, on the path that takes most
-    // of the fires. Constructed on every arm, control included: with
-    // `RWM_HOLDDOWN_Q` absent it stamps nothing, allocates nothing,
-    // suppresses nothing, and prints `q=unset` — so an absent arm is read off
-    // the run's own output rather than inferred.
-    let mut hold_echo = HoldDownGauge::new("sender", pol.holddown_q);
+    // `[HOLD]` — hole outcomes and closure classes, observation only.
+    let mut hold_echo = HoldDownGauge::new("sender");
     hold_echo.set_send_generation(pol.generation);
 
 

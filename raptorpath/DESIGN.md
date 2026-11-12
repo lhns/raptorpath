@@ -109,7 +109,7 @@ at Bulk/Auto, EVICT at Realtime — and composes with δ; it selects no pipeline
 | `net/mod.rs` | orchestration (`run_impl`), pipeline routing (`is_window_mode`), the window sender loop (`run_window_sender`), the monotonic engine clock `now_us` |
 | `net/sender_phases.rs` | the window sender's loop phases: store-cap refresh, generation emission, gap serving, ack advance |
 | `net/recovery_laws.rs` | per-path loss detection (`mp_time_threshold_split`, `mp_hole_ripe`), refresh and tail-sweep clocks, `recovery_clock_paths` |
-| `net/holddown.rs`, `net/recovery_clock.rs` | the hold-down arm (`RWM_HOLDDOWN_Q`, off) and its quantile window law; the `[HOLD]` and `[QCLK]` gauges |
+| `net/holddown.rs`, `net/recovery_clock.rs` | the quantile window law; the `[HOLD]` (hole outcomes, observation only) and `[QCLK]` gauges |
 | `net/store_cap.rs` | flow control: path-scaled, pooled, honest and three-term caps, the δ-cap setpoint, `delta_price`, `contract_stall_s` |
 | `net/shed.rs` | δ-honest shedding (sender deadline and budget, receiver hold) and the completion feed |
 | `net/sack.rs` | SACK gap inversion, per-path outstanding accounts, SACK-clocked release, window-ack emission |
