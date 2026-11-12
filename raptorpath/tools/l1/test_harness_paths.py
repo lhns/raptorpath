@@ -66,6 +66,6 @@ check("test_stubrun.py is documented as harness-changes-only in run_all and in i
       "belongs to harness changes only" in runall and "harness changes only" in open(os.path.join(HERE, "test_stubrun.py"), encoding="utf-8").read())
 man = re.search(r"src_manifest\(\) \{.*?\n\}", runall, re.S)
 check("the suite-reuse manifest covers src, tests, math / wasm src, vendor/, the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml (a dependency patch invalidates a reuse)",
-      man is not None and all(x in man.group(0) for x in ("raptorpath/src", "raptorpath/tests", "raptorpath-math/src", "raptorpath-wasm/src", "vendor", "Cargo.toml", "Cargo.lock", "./*/Cargo.toml")), man and man.group(0))
+      man is not None and all(x in man.group(0) for x in ("raptorpath/src", "raptorpath/tests", "raptorpath-math/src", "raptorpath-wasm/src", "gf256/src", "vendor", "Cargo.toml", "Cargo.lock", "./*/Cargo.toml")), man and man.group(0))
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
