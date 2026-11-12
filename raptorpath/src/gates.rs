@@ -141,6 +141,9 @@ pub struct RuntimeGates {
     pub cold_place: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (absent, arm): repair weight `fate_i·(p_BB,i − ε_i)+·srtt_i/ref`.
     pub place_wdiv_derived: bool,
+    /// `RWM_PLACE_WDIV` (unset, diagnostic parameter, f64 >= 0): overrides the repair diversity
+    /// weight `w_div` (1.0) at every use. Echoed on `[GATES]` ONLY when set.
+    pub place_wdiv: Option<f64>,
 
     // ── Generation stack (paper §5.8) ──
     /// `RWM_GEN` (default 384, min 1): generation size G.
@@ -309,6 +312,7 @@ impl RuntimeGates {
         let est_cadence = crate::control::estimator::resolve_est_cadence();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
         let place_wdiv_derived = crate::gates::scheduler_gates::resolve_place_wdiv_derived();
+        let place_wdiv = crate::gates::scheduler_gates::resolve_place_wdiv();
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
         RuntimeGates {
@@ -334,6 +338,7 @@ impl RuntimeGates {
             sidle_derived: crate::gates::scheduler_gates::resolve_sidle_derived(),
             cold_place,
             place_wdiv_derived,
+            place_wdiv,
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
@@ -449,7 +454,7 @@ impl RuntimeGates {
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
-             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
+             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}{}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor),
             b(self.honest_anchor),
@@ -485,6 +490,9 @@ impl RuntimeGates {
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             if self.rtobs_deep { "2" } else { b(self.rtobs) },
             b(self.fdiag), b(self.trace), b(self.pfrac),
+            // A diagnostic parameter, not an arm: named only when set, so the
+            // default line (and its byte pin) is unchanged.
+            self.place_wdiv.map_or(String::new(), |w| format!(" RWM_PLACE_WDIV={w}")),
         )
     }
 

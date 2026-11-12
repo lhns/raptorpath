@@ -49,6 +49,19 @@ fn the_rtobs_level_echoes_two_for_the_deep_gauge() {
     assert!(g.echo_line().contains(" RWM_RTOBS=0 "), "{}", g.echo_line());
 }
 
+/// `RWM_PLACE_WDIV` is named on `[GATES]` only when set (the default line is
+/// byte-pinned above) and ships unset.
+#[test]
+fn place_wdiv_echoes_only_when_set() {
+    let mut g = RuntimeGates::resolve();
+    assert_eq!(g.place_wdiv, None, "RWM_PLACE_WDIV ships UNSET");
+    assert!(!g.echo_line().contains("RWM_PLACE_WDIV="), "{}", g.echo_line());
+    g.place_wdiv = Some(0.0);
+    assert!(g.echo_line().ends_with(" RWM_PFRAC=0 RWM_PLACE_WDIV=0"), "{}", g.echo_line());
+    g.place_wdiv = Some(0.5);
+    assert!(g.echo_line().ends_with(" RWM_PLACE_WDIV=0.5"), "{}", g.echo_line());
+}
+
 const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
     "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 ",

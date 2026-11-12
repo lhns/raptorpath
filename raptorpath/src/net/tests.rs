@@ -106,6 +106,37 @@ fn disarmed_the_request_law_is_inert_at_every_configuration() {
 /// A shed hole was abandoned, not resolved, and must not feed the gauge's
 /// distribution. It is the one exclusion. A repaired hole is fed.
 #[test]
+/// `cx_leg=` splits `closed_retx` by the SEND leg of the retransmit that closed
+/// the hole. It must sum to `cx_n` (the existing total), count only the
+/// retransmits old enough to be credited (`>= srtt/2`), and stay `-` when none
+/// closed a hole. Holes 1..=6 flew on leg 0: 1-3 were retransmitted on leg 0,
+/// 4-5 on leg 1, 6 on leg 1 but resolved younger than srtt/2 (so `hy`, not `cx`).
+#[test]
+fn the_closed_retx_total_is_split_by_the_retransmit_send_leg() {
+    let mut g = HoldDownGauge::new("sender");
+    assert!(g.line(0).contains(" cx_leg=- fa_class="), "{}", g.line(0));
+    for s in 1..=6u64 {
+        g.on_reported(s, 0, 0, true, None);
+    }
+    for s in 1..=3u64 {
+        g.on_retx(s, 1_000, 0);
+    }
+    for s in 4..=5u64 {
+        g.on_retx(s, 1_000, 1);
+    }
+    g.on_retx(6, 9_500, 1);
+    // srtt/2 = 1000 us on every leg; the report lands at t = 10_000.
+    g.on_report(&[(10, 10)], 10_000, &Default::default(), 0, &|_| 1_000);
+    let l = g.line(0);
+    assert!(l.contains(" cx_n=5 "), "{l}");
+    assert!(l.contains(" hy_n=1 "), "{l}");
+    assert!(l.contains(" cx_leg=0:3,1:2 fa_class="), "{l}");
+    let tok = |k: &str| l.split_whitespace().find_map(|t| t.strip_prefix(k)).unwrap().to_string();
+    let cx: u64 = tok("cx_n=").parse().unwrap();
+    let split: u64 = tok("cx_leg=").split(',').map(|p| p.split(':').nth(1).unwrap().parse::<u64>().unwrap()).sum();
+    assert_eq!(split, cx, "the leg split must sum to closed_retx");
+}
+
 fn the_hold_gauge_excludes_only_the_shed() {
     let mut g = HoldDownGauge::new("sender");
     let mut shed: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();

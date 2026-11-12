@@ -2570,6 +2570,57 @@ fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
     );
 }
 
+/// `RWM_PLACE_WDIV` is a parameter of the one law. Two symmetric idle legs,
+/// a SACK-gap retransmit whose original went out on leg 0
+/// (`place_symbol(true, &[0])`):
+///
+/// * `w_div = 1.0` (the shipped weight, `None`): the covered leg costs
+///   exactly 1.0 more, so P(0) = 1 / (1 + e^(1/T)) with T = 0.15, i.e.
+///   0.0012710 -- the number behind "82 % of c8's fast-leg holes go to the
+///   slow leg". Pinned absolutely, not ordinally.
+/// * `w_div = 0`: no diversity term; the retransmit is placed with exactly a
+///   fresh source symbol's probabilities (0.5 / 0.5 here).
+/// * `w_div = 0.5`: the gap is exactly 0.5 -- the weight is a continuous
+///   dial, not a switch.
+#[test]
+fn place_wdiv_is_the_diversity_weight_of_a_sack_gap_retransmit() {
+    let mk = |w: Option<f64>| {
+        let mut s = cost_state(
+            ProtocolHint::Auto,
+            &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)],
+        );
+        s.set_place_wdiv(w);
+        s
+    };
+    let t = PLACE_TEMPERATURE;
+    let p0 = |gap: f64| 1.0 / (1.0 + (gap / t).exp());
+
+    // Unset: shipped, exactly 1.0 and today's numbers.
+    let shipped = mk(None);
+    assert_eq!(shipped.w_div(), 1.0, "unset must resolve to exactly the shipped w_div");
+    let d = shipped.place_probs(true, &[0]);
+    assert!((d[0].1 - 0.001_271_0).abs() < 1e-7, "shipped retransmit P(covered leg) = {}", d[0].1);
+    assert!((d[0].1 - p0(1.0)).abs() < 1e-12);
+    assert!((d[1].1 - (1.0 - p0(1.0))).abs() < 1e-12);
+
+    // Zero: the retransmit is placed as a fresh source symbol is.
+    let zero = mk(Some(0.0));
+    let src = zero.place_probs(false, &[]);
+    let rtx = zero.place_probs(true, &[0]);
+    assert_eq!(rtx, src, "w_div = 0 must remove the diversity term entirely");
+    assert!((rtx[0].1 - 0.5).abs() < 1e-12 && (rtx[1].1 - 0.5).abs() < 1e-12);
+
+    // Explicit 1.0 is the shipped law bit for bit.
+    assert_eq!(mk(Some(1.0)).place_probs(true, &[0]), shipped.place_probs(true, &[0]));
+
+    // Continuous in between.
+    let half = mk(Some(0.5)).place_probs(true, &[0]);
+    assert!((half[0].1 - p0(0.5)).abs() < 1e-12, "w_div = 0.5: {}", half[0].1);
+
+    // A source symbol never sees the weight (fate_i == 0).
+    assert_eq!(mk(Some(7.0)).place_probs(false, &[]), mk(None).place_probs(false, &[]));
+}
+
 /// The `N = 1` control, with every arm on. A softmax over a singleton
 /// is 1 at every temperature and every cost, so the law is the identity on
 /// a single path -- which is why single-path cells are controls for every
