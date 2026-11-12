@@ -969,33 +969,6 @@ fn derived_patience_off_is_bit_identical_to_the_legacy_threshold() {
     assert_eq!(mp_time_threshold_split(80_000, 0, 0).0, 90_000); // 9/8 exactly
 }
 
-/// The law: timer granularity + the path's own measured jitter,
-/// clamped at one srtt, with the fixed floor kept when there is no
-/// clock at all to derive from.
-#[test]
-fn patience_floor_is_granularity_plus_measured_jitter() {
-    // No clock yet ⇒ nothing to derive ⇒ the fixed floor.
-    assert_eq!(patience_floor_us(0, 0), NACK_RETX_COOLDOWN_FLOOR_US);
-    assert_eq!(patience_floor_us(5_000, 0), NACK_RETX_COOLDOWN_FLOOR_US);
-    // Zero measured jitter ⇒ pure timer granularity (RFC 9002's
-    // recommended kGranularity, and this engine's own 1 ms loop wake).
-    assert_eq!(patience_floor_us(0, 9_000), TIMER_GRANULARITY_US);
-    // The jitter term is additive and measured — it scales with the
-    // link.
-    assert_eq!(patience_floor_us(300, 9_000), 1_300);
-    assert_eq!(patience_floor_us(2_500, 9_000), 3_500);
-    // …and is clamped at one srtt so a pathological estimate cannot
-    // make patience unbounded.
-    assert_eq!(patience_floor_us(10_000_000, 9_000), 10_000);
-    // Monotone non-decreasing in jitter, at fixed srtt.
-    let mut prev = 0;
-    for j in (0..20_000).step_by(250) {
-        let f = patience_floor_us(j, 40_000);
-        assert!(f >= prev, "jitter={j}");
-        prev = f;
-    }
-}
-
 /// The tail-sweep SRTT fallback is inert with respect to this constant:
 /// every fallback value ≤ 12.5 ms — the fixed 10 ms and any derived floor
 /// alike — yields exactly `TAIL_SWEEP_MIN_US` after the
@@ -1118,77 +1091,6 @@ fn derived_stall_threshold_reproduces_the_legacy_3ms_where_they_coincide() {
             3_000,
             "evt={evt} µs must reproduce the legacy constant exactly"
         );
-    }
-}
-
-/// The derived round's mechanism-liveness echo separates "the site ran"
-/// from "the law bound", and it must, because the coincidence property
-/// makes those different claims: an arm that only ever evaluates inside
-/// the `[25, 100] ms` band is bit-identical to its control. Both echoes
-/// are one-shot — the two call sites sit in per-iteration hot loops, so a
-/// re-arming echo would flood the log.
-#[test]
-fn the_derived_round_echo_fires_once_per_claim_and_separates_ran_from_bound() {
-    // Inside the band: the site ran, the law did not bind.
-    let mut e = DerivedRoundEcho::default();
-    e.observe("t", 20_000, 100, tail_sweep_timeout_us(20_000), tail_sweep_timeout_us(20_000));
-    assert!(e.ran, "an evaluation inside the band must still prove execution");
-    assert!(!e.diverged, "identical values are NOT a divergence");
-
-    // Now the same site above the ceiling: the law binds, and only then.
-    let srtt = 376_000;
-    let derived = derived_recovery_round_us(srtt, 100);
-    let legacy = tail_sweep_timeout_us(srtt);
-    assert_ne!(derived, legacy, "the fixture must actually diverge");
-    e.observe("t", srtt, 100, derived, legacy);
-    assert!(e.diverged, "a departure from the clamped law must be echoed");
-
-    // Both claims are latched: further evaluations re-emit nothing.
-    let before = (e.ran, e.diverged);
-    for _ in 0..1_000 {
-        e.observe("t", srtt, 100, derived, legacy);
-    }
-    assert_eq!((e.ran, e.diverged), before, "both echoes are one-shot");
-
-    // A site that diverges on its first evaluation latches both at once.
-    let mut f = DerivedRoundEcho::default();
-    f.observe("t", srtt, 100, derived, legacy);
-    assert!(f.ran && f.diverged);
-}
-
-/// Neither echo's prose may contain the phrase the other echo is counted
-/// on, and neither may contain a bare `RWM_DERIVED_SWEEP=<n>` that a
-/// `[GATES]`-scoped grep could pick up: an echo whose own explanatory text
-/// matches the pattern a driver counts corrupts the separation of "the
-/// site ran" from "the law bound" with no other symptom.
-#[test]
-fn the_derived_round_echoes_do_not_match_each_others_grep_patterns() {
-    let ran = DerivedRoundEcho::ran_msg("s", 1, 2, 3, 4);
-    let div = DerivedRoundEcho::diverged_msg("s", 1, 2, 3, 4);
-
-    assert!(ran.starts_with(DS_ECHO_RAN));
-    assert!(div.starts_with(DS_ECHO_DIVERGED));
-    assert!(
-        !div.contains(DS_ECHO_RAN),
-        "the DIVERGED echo must not match the execution grep: {div}"
-    );
-    assert!(
-        !ran.contains(DS_ECHO_DIVERGED),
-        "the ACTIVE echo must not match the binding grep: {ran}"
-    );
-    // The gate's own name may appear, but never with a resolved value:
-    // that is the `[GATES]` line's job.
-    for m in [&ran, &div] {
-        assert!(
-            !m.contains("RWM_DERIVED_SWEEP=1"),
-            "echo prose must not carry a resolved gate value: {m}"
-        );
-    }
-    // Both carry the five fields the parser reads, in the same dialect.
-    for m in [&ran, &div] {
-        for f in ["site=", "srtt_us=", "jitter_us=", "derived_us=", "legacy_us="] {
-            assert!(m.contains(f), "{m} is missing {f}");
-        }
     }
 }
 
@@ -2264,7 +2166,6 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         // asserts the law's routing and not the machine it runs on. The
         // control is the `=0` arm explicitly, not the default.
         g.delta_cap = false;
-        g.derived_sweep = false;
         g.store_env_set = false;
         g.store_override = None;
         g
@@ -5928,7 +5829,6 @@ mod one_store_law_at_n1 {
         g.copa_feed = false;
         g.store_override = None;
         g.store_env_set = false;
-        g.derived_sweep = false;
         g.store_gain = GAIN;
         SenderPolicy::resolve(&g, 1200, hint, true, false, false, false)
     }

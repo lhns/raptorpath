@@ -51,10 +51,10 @@ use super::delivery::{WindowDelivery, delivered_prefix};
 use super::reorder::ReorderBuffer;
 use super::seq_bits::{ReceivedSeqs, SeqBits};
 use super::{
-    DerivedRoundEcho, SenderCmd,
+    SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, extract_window_packets,
-    hole_nack_refresh, hole_refresh, now_us, received_sack_ranges,
+    hole_nack_refresh, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::fec::{FecBackend, WindowDecoder};
@@ -197,18 +197,12 @@ pub(crate) async fn run_receiver(
     let mut recv_shed_holes: u64 = 0;
     let mut recv_shed_budget_open = true;
     let recv_shed_diag = recv_gates.diag;
-    // `RWM_DERIVED_SWEEP` (default off): the stalled-hole refresh cadence on
-    // the derived round.
-    let recv_derived_sweep = recv_gates.derived_sweep;
     // `[QCLK]` at the receiver — the hole-refresh cadence this site realizes.
     // The harness SIGKILLs the server, so a `Drop` never reaches a server log;
     // this gauge is therefore also emitted on the same 1 s cadence, last line
     // wins.
     let mut recv_qclk_echo = crate::net::QuantileClockGauge::new("receiver");
     let mut qclk_report_at = Instant::now();
-    // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
-    // DIVERGED). Observation only; emitted on the armed arm alone.
-    let mut recv_derived_echo = DerivedRoundEcho::default();
     // `[RACK]` / `[RFA]` fire accounting at the receiver site (paper §7.1).
     let mut recv_rack_echo = crate::net::RackClockGauge::new();
     // `[RFA]` is a PLAIN-WINDOW instrument (the same configuration scope the
@@ -732,41 +726,25 @@ pub(crate) async fn run_receiver(
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
             if waiting && pending {
-                let (srtt, srtt_jitter_us, sigma_us) = {
+                let (srtt, sigma_us) = {
                     let live = live_tx_views(&recv_stats);
-                    // Same path set for the clock and the DERIVED floor, so
-                    // the two can never come from different paths. σ feeds
-                    // only the `[QCLK]` readout.
+                    // σ feeds only the `[QCLK]` readout.
                     (
                         live.iter().map(|p| p.srtt).max(),
-                        live.iter().map(|p| p.rtt_jitter_us).max().unwrap_or(0),
                         live.iter().filter_map(|p| p.rtt_sigma_us).max(),
                     )
                 };
                 let deadline = if recv_window_reliable {
                     // Reliable policy: the hole is never given up on — this
                     // timer instead re-advertises the gap (SACK WindowAck) at
-                    // 2×SRTT cadence until recovered. Under
-                    // `RWM_DERIVED_SWEEP` the cadence is the derived round (no
-                    // ceiling); off ⇒ `hole_nack_refresh` unchanged.
-                    let refresh = hole_refresh(recv_derived_sweep, srtt, srtt_jitter_us);
+                    // 2×SRTT cadence until recovered.
+                    let refresh = hole_nack_refresh(srtt);
                     // Every arm, control included — see the sender's twin.
                     recv_qclk_echo.record(
                         refresh.as_micros() as u64,
                         srtt.map_or(0, |s| s.as_micros() as u64),
                         sigma_us,
                     );
-                    if recv_derived_sweep {
-                        if let Some(s) = srtt {
-                            recv_derived_echo.observe(
-                                "receiver-hole-refresh",
-                                s.as_micros() as u64,
-                                srtt_jitter_us,
-                                refresh.as_micros() as u64,
-                                hole_nack_refresh(srtt).as_micros() as u64,
-                            );
-                        }
-                    }
                     // ── Request arm (A): the deadline term (paper §7.6) ──
                     //
                     //     deadline = min( refresh ,  earliest A_hat + l* )

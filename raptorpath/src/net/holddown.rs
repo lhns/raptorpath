@@ -1,5 +1,4 @@
-//! The `[HOLD]` hole-outcome gauge (observation only), the sweep-timeout and
-//! hole-refresh laws, and the derived-round echo.
+//! The `[HOLD]` hole-outcome gauge (observation only).
 
 use super::*;
 
@@ -367,102 +366,6 @@ impl Drop for HoldDownGauge {
         paths.sort_unstable();
         for p in paths {
             crate::readout!("{}", self.line(p));
-        }
-    }
-}
-
-/// The tail-sweep timeout supplied to the sender loop: the clamped law, or
-/// the derived round under `RWM_DERIVED_SWEEP` (an env A/B arm, not a dial).
-pub fn sweep_timeout_us(derived: bool, srtt_us: u64, jitter_us: u64) -> u64 {
-    if derived {
-        derived_recovery_round_us(srtt_us, jitter_us)
-    } else {
-        tail_sweep_timeout_us(srtt_us)
-    }
-}
-
-/// The receiver's hole-refresh cadence supplied to the reliable window
-/// receiver: the clamped law, or the derived round under `RWM_DERIVED_SWEEP`.
-/// With no clock at all both arms fall back to `HOLE_NACK_REFRESH_MAX`
-/// (information availability, not a mode).
-pub fn hole_refresh(derived: bool, srtt: Option<Duration>, jitter_us: u64) -> Duration {
-    match (derived, srtt) {
-        (true, Some(s)) => {
-            Duration::from_micros(derived_recovery_round_us(s.as_micros() as u64, jitter_us))
-        }
-        (true, None) => HOLE_NACK_REFRESH_MAX,
-        (false, s) => hole_nack_refresh(s),
-    }
-}
-
-/// Liveness echo for the derived recovery round, one per site per process
-/// (`docs/measurement-discipline.md` rule 1: prove the site under test
-/// executed; the `[GATES]` value only proves the env var was read).
-///
-/// Two claims, kept separate because `derived_recovery_round_us` returns
-/// exactly `tail_sweep_timeout_us` wherever `2·srtt` already sits inside the
-/// `[25, 100] ms` clamp — so "the derived site ran" does not imply "the
-/// derived law bound", and an arm that only ran inside the clamp is
-/// bit-identical to its control:
-///
-/// * `ACTIVE` — first evaluation at this site, with the clock that drove it.
-///   Proves execution.
-/// * `DIVERGED` — first evaluation whose derived round differs from the
-///   clamped law. Proves the law bound, and carries both µs values.
-///
-/// Emitted only on the armed arm, so a battery asserts it present on
-/// `RWM_DERIVED_SWEEP=1` and absent on the controls. Observation only.
-#[derive(Default)]
-pub(crate) struct DerivedRoundEcho {
-    pub(crate) ran: bool,
-    pub(crate) diverged: bool,
-}
-
-/// The phrase drivers count to prove the derived site executed.
-pub(crate) const DS_ECHO_RAN: &str = "derived recovery round ACTIVE";
-/// The phrase drivers count to prove the derived law bound.
-pub(crate) const DS_ECHO_DIVERGED: &str = "derived recovery round DIVERGED";
-
-impl DerivedRoundEcho {
-    /// The execution echo's full text.
-    pub(crate) fn ran_msg(site: &str, srtt_us: u64, jitter_us: u64, d_us: u64, l_us: u64) -> String {
-        format!(
-            "{DS_ECHO_RAN} (RWM_DERIVED_SWEEP: \
-             round = max(2*srtt, patience_floor(jitter, srtt)), NO ceiling and zero new \
-             constants, replacing 2*srtt clamped to [25, 100] ms at both recovery-clock \
-             sites; RWM_DERIVED_SWEEP=0 = the shipped clamped control arm) site={site} \
-             srtt_us={srtt_us} jitter_us={jitter_us} derived_us={d_us} legacy_us={l_us}"
-        )
-    }
-
-    /// The binding echo's full text.
-    pub(crate) fn diverged_msg(site: &str, srtt_us: u64, jitter_us: u64, d_us: u64, l_us: u64) -> String {
-        format!(
-            "{DS_ECHO_DIVERGED} from the clamped law (coincidence property: the two laws agree wherever 2*srtt already lies \
-             inside [25, 100] ms, so this line, not the execution echo, is what proves the \
-             derived round BOUND at this site) site={site} srtt_us={srtt_us} \
-             jitter_us={jitter_us} derived_us={d_us} legacy_us={l_us}"
-        )
-    }
-
-    /// Record one evaluation of the derived round. `derived_us` is the value
-    /// the site is using; `legacy_us` is what the clamped law would return for
-    /// the same clock.
-    pub(crate) fn observe(
-        &mut self,
-        site: &str,
-        srtt_us: u64,
-        jitter_us: u64,
-        derived_us: u64,
-        legacy_us: u64,
-    ) {
-        if !self.ran {
-            self.ran = true;
-            info!("{}", Self::ran_msg(site, srtt_us, jitter_us, derived_us, legacy_us));
-        }
-        if !self.diverged && derived_us != legacy_us {
-            self.diverged = true;
-            info!("{}", Self::diverged_msg(site, srtt_us, jitter_us, derived_us, legacy_us));
         }
     }
 }

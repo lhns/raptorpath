@@ -1,21 +1,16 @@
-//! Recovery-plane laws: derived patience and stall definition, multipath
-//! recovery suppression, the laws extracted from the sender loop, and the
-//! derived recovery round. Re-exported from `net`.
+//! Recovery-plane laws: the derived stall definition, multipath recovery
+//! suppression, and the laws extracted from the sender loop. Re-exported from
+//! `net`.
 
 use super::*;
 
-// ── Derived patience + derived stall definition ───────────────────────────
+// ── Derived stall definition ──────────────────────────────────────────────
 //
-// Two fixed literals — the recovery plane's patience and the gauge that
-// measures its stalls — re-expressed as laws over measured inputs. Both
-// reproduce their literal exactly at the operating point where the literal's
-// own assumption holds. The patience floor survives as the floor of the
-// no-ceiling derived round (`derived_recovery_round_us`,
-// `RWM_DERIVED_SWEEP`), and the stall threshold as the `RWM_SIDLE_DERIVED`
-// gauge.
-//
-// Neither is a dial: neither selects a law, a code path or a constructor
-// argument on (δ, ρ, r), and nothing keys on a threshold in the triangle.
+// The fixed literal behind the gauge that measures recovery stalls,
+// re-expressed as a law over a measured input (the `RWM_SIDLE_DERIVED`
+// gauge). It reproduces its literal exactly at the operating point where the
+// literal's own assumption holds. It is not a dial: it selects no law, code
+// path or constructor argument on (δ, ρ, r).
 
 /// The engine's timer granularity (µs) — RFC 9002 §6.1.2 kGranularity,
 /// derived rather than borrowed.
@@ -32,37 +27,6 @@ pub const TIMER_GRANULARITY_US: u64 = 1_000;
 /// different role: `TIMER_GRANULARITY_US` floors a recovery clock,
 /// `LOOP_WAKE_US` bounds what the gauge can resolve.
 pub(crate) const LOOP_WAKE_US: u64 = 1_000;
-
-/// The derived recovery-patience floor (µs): timer granularity + the path's
-/// own measured RTT jitter.
-///
-/// This replaces `NACK_RETX_COOLDOWN_FLOOR_US`'s 10 ms (10× RFC 9002's
-/// kGranularity) where that literal is behavioural: the kGranularity analog
-/// inside `mp_time_threshold_split`, and the per-seq retransmit cooldown. At
-/// RTprop ≈ 8–10 ms the literal sits at or above the 9/8·srtt term it was
-/// meant to floor, so patience was a constant rather than a property of the
-/// path.
-///
-/// Both terms are measured in-tree: `TIMER_GRANULARITY_US` above, and
-/// `jitter_us` = the path's consecutive-difference RTT jitter
-/// (`PathState::rtt_jitter_us()`, Copa's RFC 3550-style EWMA widened by its
-/// window-level twin as the Copa backoff threshold does, with the loss
-/// estimator's interarrival jitter as the pre-Copa-sample fallback). The
-/// jitter term is clamped at one srtt so a pathological estimate cannot make
-/// patience unbounded.
-///
-/// With no clock at all (`srtt_us == 0`) the fixed floor is kept — an
-/// information-availability fallback, not a mode.
-///
-/// RFC 9002's kTimeThreshold (9/8, its empirical recommendation; RACK uses
-/// 5/4) and kPacketThreshold (3) are cited, not derived. Only the floor is
-/// derived.
-pub fn patience_floor_us(jitter_us: u64, srtt_us: u64) -> u64 {
-    if srtt_us == 0 {
-        return NACK_RETX_COOLDOWN_FLOOR_US;
-    }
-    TIMER_GRANULARITY_US.saturating_add(jitter_us.min(srtt_us))
-}
 
 /// The derived stall threshold (µs) for the emission-gap gauges — the
 /// definition `sidle`/`widle` count against.
@@ -332,42 +296,4 @@ pub fn tail_sweep_timeout_us(srtt_us: u64) -> u64 {
 pub fn hole_nack_refresh(srtt: Option<Duration>) -> Duration {
     srtt.map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
         .unwrap_or(HOLE_NACK_REFRESH_MAX)
-}
-
-// ── The derived recovery round (`RWM_DERIVED_SWEEP`, default OFF) ─────────
-//
-// Both recovery clocks above are `2·SRTT` clamped to [25 ms, 100 ms], and
-// neither literal has a derivation. The stated justification (on
-// `TAIL_SWEEP_MIN_US`) is that the clock must sit above the ack arrival time
-// (~1×SRTT + jitter) and below the receiver's reorder hold plus an inner-TCP
-// RTO. Both halves are re-derived here:
-//
-//   * The floor is redundant given the multiplier. Its job is
-//     `2·srtt ≥ srtt + jitter`, which holds whenever `jitter ≤ srtt` — true
-//     for jitter as a consecutive-difference statistic. The only case it
-//     covers is "no clock yet", which `patience_floor_us` (timer granularity
-//     + the path's measured jitter) already handles.
-//
-//   * The ceiling's two referents do not hold. The reorder hold belongs to
-//     the EVICT path; the reliable window (ρ = 1) receiver never
-//     force-delivers past a hole (`recv_window_reliable`, net/receiver.rs).
-//     And the L1 vehicle `perf.rs::run_object` carries no inner TCP stack.
-//     A ceiling with no referent is removed rather than re-fitted.
-//
-// What remains is the shipped form with the derived floor and no ceiling —
-// continuous in its argument, zero new constants (the `2` is the shipped
-// multiplier):
-//
-//     round(srtt, jitter) = max(2·srtt, patience_floor_us(jitter, srtt))
-//
-// An env A/B arm, never a dial: nothing here keys on δ, ρ or a hint.
-
-/// The derived recovery round (µs): `2·SRTT` floored by the derived patience
-/// floor, with no ceiling. See the block comment above.
-///
-/// Coincidence property (unit-tested): wherever `2·srtt` already lies inside
-/// the clamp and the derived floor is below it, this returns exactly
-/// `tail_sweep_timeout_us(srtt)`.
-pub fn derived_recovery_round_us(srtt_us: u64, jitter_us: u64) -> u64 {
-    srtt_us.saturating_mul(2).max(patience_floor_us(jitter_us, srtt_us))
 }

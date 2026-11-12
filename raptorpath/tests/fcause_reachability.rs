@@ -4,7 +4,7 @@
 //! whose `gaps` vector has two producers:
 //!
 //!   * `timer` — the sender's tail-sweep deadline arm, the only cause the
-//!     sender's recovery clock (`sweep_timeout_us`) times.
+//!     sender's recovery clock (`tail_sweep_timeout_us`) times.
 //!   * the `nack_rx` channel, fed by the SACK→gap inversion in the WindowAck
 //!     handler and clocked by the receiver. The timer-driven hole
 //!     re-advertisement broadcasts one message to every path and stamps

@@ -3,8 +3,8 @@
 //! discrete-event driver feeds synthetic arrival/loss patterns to the shipped
 //! recovery laws (`raptorpath::net::*`) and records, per hole, when and why it
 //! was served. It pins the plane's clock laws and measured behaviour at the
-//! c7 operating point, and the recovery-clock laws (the derived clamp, the
-//! quantile-native window law and the hold-down, paper §7.4) at their
+//! c7 operating point, and the recovery-clock laws (the shipped clamp and the
+//! quantile-native window law, paper §7.4) at their
 //! published anchor points. It serves `docs/measurement-discipline.md`
 //! rule 14: characterize the mechanism at component level before any L1
 //! battery.
@@ -479,8 +479,8 @@ const FIX_WIRE_P50_US: u64 = 14_328;
 // THE QUESTION, argument before constant: is the CEILING wrong, or is the ARGUMENT wrong? Both repairs
 // are evaluated here SEPARATELY and then composed:
 //
-//   REPAIR A — derive the clamp away.  `derived_recovery_round_us`:
-//              max(2·srtt, patience_floor_us(jitter, srtt)), no ceiling.
+//   REPAIR A — derive the clamp away.  (`RWM_DERIVED_SWEEP`: removed after
+//              its verdict, tag `archive/RWM_DERIVED_SWEEP`; paper §10.)
 //   REPAIR B — change the argument.    Feed the clock the WIRE RTT (Copa /
 //              `QuicTransport::wire_rtt`) instead of the store-dwell-
 //              inclusive app-echo RTT.
@@ -498,9 +498,9 @@ const FIX_WIRE_P50_US: u64 = 14_328;
 //
 //     spurious rounds per tail-blocked symbol = ceil(srtt_app / cadence) − 1
 //
-// and with the derived (unclamped) law `cadence = 2·srtt_app` that
-// expression is ZERO for every srtt > 0 — a theorem about the law, pinned
-// below rather than measured.
+// and with an unclamped `cadence = 2·srtt_app` that expression is ZERO for
+// every srtt > 0 — the argument that motivated the archived
+// `RWM_DERIVED_SWEEP` arm (paper §10); the shipped values are pinned below.
 //
 // WHAT THE WIRE SAYS, transcribed (medians over the L1 summary records).
 // `srtt_app = rtp_med + q_p50`, the records' own decomposition, re-composed.
@@ -514,11 +514,6 @@ const MEASURED: &[(&str, u64, u64, u64)] = &[
     ("c8-A", 38, 338, 77),
     ("c8-AU", 40, 424, 82),
 ];
-
-/// The measured RTT jitter fed to the derived floor: `RWM_RB_JITTER_MS`'s
-/// own default (1 ms), the same number the `pd` arm uses — not a constant
-/// introduced here.
-const JITTER_US: u64 = 1_000;
 
 fn measured(tag: &str) -> (u64, u64) {
     let &(_, rtp, q, w) = MEASURED.iter().find(|r| r.0 == tag).unwrap();
@@ -534,173 +529,24 @@ fn spurious_rounds(srtt_app_us: u64, cadence_us: u64) -> u64 {
     srtt_app_us.div_ceil(cadence_us).saturating_sub(1)
 }
 
-/// The c8 geometry as the driver sees it: RTprop 38 ms, wire queue = the
-/// ICMP p50 minus RTprop, dwell = the app-echo clock minus the ICMP p50.
-fn c8_calib(n_src: u64) -> Calib {
-    Calib {
-        n_src,
-        mbps: 100.0,
-        skew_us: 5_000,
-        wireq_us: 39_000,
-        dwell_us: 299_000,
-        jitter_us: JITTER_US,
-        shed: false,
-        budget: raptorpath::net::MAX_NACK_REPAIRS_PER_NACK,
-    }
-}
-
-fn c8_cell() -> Cell {
-    Cell {
-        rtprop_us: 38_000,
-        loss: 0.026,
-        pattern: Pattern::Ge,
-        n_paths: 2,
-        clock: Clock::App,
-        arm: ARMS[0],
-        seed: 42,
-    }
-}
-
-/// READOUT (not scored): the cadence and the spurious-round count of every
-/// candidate law at every measured geometry, plus the driver at c8.
-#[test]
-#[ignore = "readout"]
-fn derived_clamp_readout() {
-    use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
-    println!("\n=== THE DERIVED RECOVERY CLAMP — cadence at the MEASURED geometry ===");
-    println!(
-        "srtt_app = rtp_med + q_p50 (measured L1 medians) · wire = loaded ICMP p50 · jitter {} ms",
-        JITTER_US / 1_000
-    );
-    println!(
-        "{:<7} {:>9} {:>7} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5}",
-        "cell", "srtt_app", "wire", "SHIPPED", "spur", "A uncl", "spur", "B wire", "spur", "A+B",
-        "spur"
-    );
-    for &(tag, rtp_ms, q_ms, wire_ms) in MEASURED {
-        let s = (rtp_ms + q_ms) * 1_000;
-        let w = wire_ms * 1_000;
-        let shipped = tail_sweep_timeout_us(s);
-        let a = derived_recovery_round_us(s, JITTER_US);
-        let b = tail_sweep_timeout_us(w);
-        let ab = derived_recovery_round_us(w, JITTER_US);
-        println!(
-            "{:<7} {:>9} {:>7} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5}",
-            tag,
-            format!("{} ms", s / 1000),
-            format!("{} ms", w / 1000),
-            format!("{} ms", shipped / 1000),
-            spurious_rounds(s, shipped),
-            format!("{} ms", a / 1000),
-            spurious_rounds(s, a),
-            format!("{} ms", b / 1000),
-            spurious_rounds(s, b),
-            format!("{} ms", ab / 1000),
-            spurious_rounds(s, ab),
-        );
-    }
-
-    println!("\n--- the DRIVER at the c8 geometry (its dwell is a CLOCK, not a delay) ---");
-    let cal = c8_calib(6_000);
-    let base = c8_cell();
-    println!(
-        "{:<9} {:>5} | {:>9} {:>9} | {:>6} {:>6} {:>7} | {:>8} {:>8}",
-        "arm", "clk", "sweep", "refresh", "holes", "retx", "sweeps", "p50 ms", "p90 ms"
-    );
-    for (arm_ix, arm_tag) in [(0usize, "shipped"), (3usize, "ds")] {
-        for (clock, ctag) in [(Clock::App, "app"), (Clock::Wire, "wire")] {
-            let (mut retx, mut sweeps, mut holes) = (0u64, 0u64, 0usize);
-            let mut svc: Vec<u64> = Vec::new();
-            let (mut sw, mut rf) = (0u64, 0u64);
-            for seed in [42u64, 7] {
-                let o = run_cell(Cell { arm: ARMS[arm_ix], clock, seed, ..base }, cal);
-                retx += o.counts.retx;
-                sweeps += o.counts.sweeps;
-                holes += o.holes.len();
-                sw = raptorpath::net::sweep_timeout_us(
-                    ARMS[arm_ix].derived_sweep,
-                    o.pooled_us,
-                    JITTER_US,
-                );
-                rf = o.refresh_us;
-                svc.extend(
-                    o.holes.iter().filter_map(|h| h.first_service_us.map(|t| t - h.lost_at_us)),
-                );
-            }
-            svc.sort_unstable();
-            println!(
-                "{:<9} {:>5} | {:>9} {:>9} | {:>6} {:>6} {:>7} | {:>8.1} {:>8.1}",
-                arm_tag,
-                ctag,
-                format!("{} ms", sw / 1000),
-                format!("{} ms", rf / 1000),
-                holes,
-                retx,
-                sweeps,
-                ms(pct(&svc, 0.50)),
-                ms(pct(&svc, 0.90)),
-            );
-        }
-    }
-}
-
 // ───────────────── always-on pins (the claims, BOUNDED) ──────────────────
 
-/// PIN 1 — THE COINCIDENCE PROPERTY. The derived round reproduces the
-/// shipped law EXACTLY over the whole band on which the shipped law's own
-/// stated assumption holds (2·srtt inside [25, 100] ms), so the gate is a
-/// strict generalization and not a second machine. Outside that band it is
-/// the unclamped 2·srtt — which is the point. Also the ROUTING proof
-/// (CLAUDE.md discipline rule 1) and the ZERO-NEW-CONSTANTS identity.
+/// PIN 1 — THE SHIPPED CLOCKS, pinned absolutely: the tail sweep and the
+/// receiver's hole-refresh cadence are `2·srtt` clamped to [25, 100] ms, with
+/// the no-clock fallback at the ceiling (paper §7.4).
 #[test]
-fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
+fn the_shipped_recovery_clocks_are_pinned_absolutely() {
     use raptorpath::net::{
-        derived_recovery_round_us, hole_nack_refresh, hole_refresh,
-        patience_floor_us, sweep_timeout_us, tail_sweep_timeout_us,
-        HOLE_NACK_REFRESH_MAX, HOLE_NACK_REFRESH_MIN, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
+        hole_nack_refresh, tail_sweep_timeout_us, HOLE_NACK_REFRESH_MAX, HOLE_NACK_REFRESH_MIN,
+        TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
     };
-    // The band where the literal law is not clamping: 2·srtt in [25, 100] ms.
-    for srtt_us in (12_500..=50_000).step_by(250) {
-        assert_eq!(
-            derived_recovery_round_us(srtt_us, JITTER_US),
-            tail_sweep_timeout_us(srtt_us),
-            "inside the legacy band the derived law must be IDENTICAL (srtt {srtt_us})"
-        );
+    for srtt_us in [12_500u64, 30_000, 50_000] {
+        assert_eq!(tail_sweep_timeout_us(srtt_us), 2 * srtt_us, "inside the band (srtt {srtt_us})");
     }
-    // Above the ceiling the derived law tracks and the literal one does not.
     for srtt_us in [50_001u64, 87_000, 104_000, 376_000, 464_000] {
-        assert_eq!(tail_sweep_timeout_us(srtt_us), TAIL_SWEEP_MAX_US, "literal pins at 100 ms");
-        assert_eq!(derived_recovery_round_us(srtt_us, JITTER_US), 2 * srtt_us);
+        assert_eq!(tail_sweep_timeout_us(srtt_us), TAIL_SWEEP_MAX_US, "pins at 100 ms");
     }
-    // Below the floor the derived law is the DERIVED patience floor
-    // (`TIMER_GRANULARITY_US` + measured jitter), not the 25 ms literal.
     assert_eq!(tail_sweep_timeout_us(4_000), TAIL_SWEEP_MIN_US);
-    assert_eq!(derived_recovery_round_us(4_000, JITTER_US), 8_000);
-    assert_eq!(
-        derived_recovery_round_us(100, JITTER_US),
-        1_100,
-        "2·srtt below the derived floor ⇒ the floor (1 ms granularity + 100 µs jitter)"
-    );
-    // The GATE routes, and OFF is byte-identical to the shipped law.
-    for srtt_us in [0u64, 4_000, 30_000, 376_000] {
-        assert_eq!(sweep_timeout_us(false, srtt_us, JITTER_US), tail_sweep_timeout_us(srtt_us));
-        assert_eq!(
-            sweep_timeout_us(true, srtt_us, JITTER_US),
-            derived_recovery_round_us(srtt_us, JITTER_US)
-        );
-        let d = std::time::Duration::from_micros(srtt_us);
-        assert_eq!(hole_refresh(false, Some(d), JITTER_US), hole_nack_refresh(Some(d)));
-        assert_eq!(
-            hole_refresh(true, Some(d), JITTER_US).as_micros() as u64,
-            derived_recovery_round_us(srtt_us, JITTER_US)
-        );
-    }
-    // No clock at all ⇒ the legacy fallback in BOTH arms (an
-    // information-availability fallback, not a mode).
-    assert_eq!(hole_refresh(false, None, JITTER_US), HOLE_NACK_REFRESH_MAX);
-    assert_eq!(hole_refresh(true, None, JITTER_US), HOLE_NACK_REFRESH_MAX);
-    // The shipped refresh law, pinned absolutely over the input domain,
-    // including the no-clock fallback (paper §7.4).
     for srtt_us in [
         0u64, 1, 999, 1_000, 2_000, 4_000, 12_499, 12_500, 12_501, 20_000, 25_000, 49_999,
         50_000, 50_001, 100_000, 376_000, 1_000_000,
@@ -713,21 +559,14 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
     // The cadence the shipped law delivers at the transcribed operating
     // points: the cell's effective floor (lower rail at c1, upper rail at
     // c7 and sc2).
-    for (cell, srtt_us, shipped_us) in [("c1", 2_000u64, 25_000u64), ("c7", 50_000, 100_000), ("sc2", 50_000, 100_000)] {
+    for (cell, srtt_us, shipped_us) in
+        [("c1", 2_000u64, 25_000u64), ("c7", 50_000, 100_000), ("sc2", 50_000, 100_000)]
+    {
         let d = std::time::Duration::from_micros(srtt_us);
         assert_eq!(
             hole_nack_refresh(Some(d)).as_micros() as u64,
             shipped_us,
             "{cell}: the shipped cadence at this operating point must be {shipped_us} us"
-        );
-    }
-
-    // ZERO NEW CONSTANTS: the derived round is expressible with only the
-    // shipped multiplier and the already-derived patience floor.
-    for srtt_us in [0u64, 1, 999, 12_500, 376_000] {
-        assert_eq!(
-            derived_recovery_round_us(srtt_us, JITTER_US),
-            (2 * srtt_us).max(patience_floor_us(JITTER_US, srtt_us))
         );
     }
 }
@@ -739,9 +578,7 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
 /// c8 sits on the CEILING with three.
 #[test]
 fn the_shipped_ceiling_generates_the_spurious_rounds_and_c1_is_the_control() {
-    use raptorpath::net::{
-        derived_recovery_round_us, tail_sweep_timeout_us, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
-    };
+    use raptorpath::net::{tail_sweep_timeout_us, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US};
     // c1: 2·9 ms = 18 ms is BELOW the literal floor, so the shipped clock is
     // the 25 ms floor — and it is still ABOVE the 9 ms ack, so ZERO spurious
     // rounds. The dead wall is not a property of the law.
@@ -770,79 +607,39 @@ fn the_shipped_ceiling_generates_the_spurious_rounds_and_c1_is_the_control() {
         3,
         "three sweeps fire on a tail-blocked c8 symbol before its own ack is due"
     );
-    // And the derived law removes them ALL, at every geometry, by arithmetic
-    // — `ceil(s / 2s) − 1 == 0` for every s > 0.
-    for &(tag, rtp, q, _) in MEASURED {
-        let s = (rtp + q) * 1_000;
-        assert_eq!(
-            spurious_rounds(s, derived_recovery_round_us(s, JITTER_US)),
-            0,
-            "{tag}: the derived round can never fire before the ack is due"
-        );
-    }
-    for s in [1u64, 7, 1_000, 9_000, 376_000, 1_000_000, 1 << 30] {
-        assert_eq!(spurious_rounds(s, derived_recovery_round_us(s, JITTER_US)), 0);
-    }
 }
 
-/// PIN 3 — **REPAIR B IS REFUTED AT THIS CLOCK.** Feeding the tail sweep
-/// the WIRE RTT does not remove the spurious rounds, because the event the
-/// sweep waits for is the APP-ECHO ack — the same instant-to-instant
+/// PIN 3 — **REPAIR B IS NO-OP UNDER THE SHIPPED CEILING.** Feeding the tail
+/// sweep the WIRE RTT does not remove the spurious rounds, because the event
+/// the sweep waits for is the APP-ECHO ack — the same instant-to-instant
 /// difference `estimator.rtt()` measures. Wire-clocking under the shipped
 /// ceiling changes NOTHING at c8 (2·77 ms is still above 100 ms, still
-/// clamped); wire-clocking with the ceiling removed still leaves rounds
-/// firing early. Only the app-echo argument WITH the ceiling removed is
-/// spurious-free.
+/// clamped). (The removed `RWM_DERIVED_SWEEP` arm, which lifted the ceiling,
+/// is archived with its verdict; paper §10.)
 #[test]
 fn wire_clocking_the_tail_sweep_does_not_lift_the_c8_clamp() {
-    use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
+    use raptorpath::net::tail_sweep_timeout_us;
     let (s, w) = measured("c8-A"); // 376 ms when the ack is due; 77 ms wire
     assert!(w < s / 4, "the wire clock is <1/4 the app-echo clock at c8: {w} vs {s}");
-
-    // REPAIR B alone, under the shipped ceiling: identical to the shipped
-    // arm, to the microsecond. 2·77 = 154 ms is still clamped to 100.
     assert_eq!(
         tail_sweep_timeout_us(w),
         tail_sweep_timeout_us(s),
         "wire-clocking under the ceiling is a NO-OP at c8"
     );
     assert_eq!(spurious_rounds(s, tail_sweep_timeout_us(w)), 3);
-
-    // REPAIR A + B: better than shipped, still not zero.
-    let ab = derived_recovery_round_us(w, JITTER_US);
-    assert_eq!(ab, 154_000);
-    assert_eq!(spurious_rounds(s, ab), 2, "wire + unclamp still fires early at c8");
-
-    // REPAIR A on the APP-ECHO argument: zero, and it is the only one.
-    let a = derived_recovery_round_us(s, JITTER_US);
-    assert_eq!(a, 752_000);
-    assert_eq!(spurious_rounds(s, a), 0);
-
-    // The ORDERING is the verdict, stated as an absolute chain.
-    let shipped = spurious_rounds(s, tail_sweep_timeout_us(s));
-    let b_only = spurious_rounds(s, tail_sweep_timeout_us(w));
-    assert_eq!((shipped, b_only, spurious_rounds(s, ab), spurious_rounds(s, a)), (3, 3, 2, 0));
 }
 
-/// PIN 4 — **THE DELETION CHAIN'S LOAD-BEARING QUESTION.** The `U` arm
-/// (deeper pool) raises the store dwell, which raises the app-echo SRTT the
-/// clock reads — measured, c8-A 376 → c8-AU 464 ms. Under the SHIPPED
-/// ceiling the cadence cannot move (both pinned at 100 ms), so the deeper
-/// pool buys STRICTLY MORE spurious rounds: 3 → 4. Under the derived round
-/// the cadence tracks the pool (752 → 928 ms) and the spurious count is 0 at
-/// both. **In this model the repair removes the deeper-pool sensitivity of
-/// the recovery clock outright** — the property `AU`'s c8 arm needs before
-/// it can be considered safe.
+/// PIN 4 — The `U` arm (deeper pool) raises the store dwell, which raises
+/// the app-echo SRTT the clock reads — measured, c8-A 376 → c8-AU 464 ms.
+/// Under the SHIPPED ceiling the cadence cannot move (both pinned at 100 ms),
+/// so the deeper pool buys STRICTLY MORE spurious rounds: 3 → 4.
 #[test]
-fn the_derived_round_removes_the_deeper_pools_clock_penalty_and_the_ceiling_does_not() {
-    use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
+fn the_ceiling_is_blind_to_the_deeper_pool_so_it_buys_more_spurious_rounds() {
+    use raptorpath::net::tail_sweep_timeout_us;
     let (a, _) = measured("c8-A");
     let (au, _) = measured("c8-AU");
     assert_eq!((a, au), (376_000, 464_000));
     assert!(au > a, "the deeper pool raises the dwell-inclusive clock");
-
-    // SHIPPED: the cadence is IDENTICAL at both arms — the clock is blind to
-    // the pool — while the spurious count rises with it.
     assert_eq!(tail_sweep_timeout_us(a), tail_sweep_timeout_us(au));
     assert_eq!(spurious_rounds(a, tail_sweep_timeout_us(a)), 3);
     assert_eq!(
@@ -850,92 +647,23 @@ fn the_derived_round_removes_the_deeper_pools_clock_penalty_and_the_ceiling_does
         4,
         "the deeper pool buys one MORE spurious round under the ceiling"
     );
-
-    // DERIVED: the cadence tracks the pool exactly, and the penalty is gone.
-    let (da, dau) =
-        (derived_recovery_round_us(a, JITTER_US), derived_recovery_round_us(au, JITTER_US));
-    assert_eq!((da, dau), (752_000, 928_000));
-    assert!(dau > da, "the derived cadence MOVES with the pool");
-    assert_eq!(spurious_rounds(a, da), 0);
-    assert_eq!(spurious_rounds(au, dau), 0);
-    // Stated as the invariant rather than the two instances: for ANY dwell
-    // the derived clock's spurious count is 0, so no store-cap arm can move
-    // it. That is what makes the interaction safe rather than merely better.
-    for dwell_ms in (0u64..=1_000).step_by(7) {
-        let s = 38_000 + dwell_ms * 1_000;
-        assert_eq!(spurious_rounds(s, derived_recovery_round_us(s, JITTER_US)), 0);
-    }
-}
-
-/// PIN 5 — LIVENESS at the driver: the `ds` arm actually executes and
-/// actually moves the plane's two cadences at the c8 geometry, with the
-/// wire, the hole count and the clock argument held identical (CLAUDE.md
-/// discipline rule 1). This BOUNDS the model claim; it does not score it —
-/// the driver's dwell is a CLOCK, not a delay (see the header's boundary),
-/// so its ack turnaround is the wire RTT and the spurious-round arithmetic
-/// above is NOT reproduced here. Recorded as exactly that.
-#[test]
-fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
-    let cal = c8_calib(2_000);
-    let base = c8_cell();
-    let shipped = run_cell(base, cal);
-    let ds = run_cell(Cell { arm: ARMS[3], ..base }, cal);
-    assert_eq!(ARMS[3].name, "ds");
-    assert!(ARMS[3].derived_sweep && !ARMS[0].derived_sweep);
-
-    // Same wire: the A/B is over the LAWS, never over the losses.
-    assert_eq!(shipped.holes.len(), ds.holes.len());
-    assert!(!shipped.holes.is_empty(), "the plane must have holes to recover");
-    assert_eq!(shipped.pooled_us, ds.pooled_us, "the clock ARGUMENT is unchanged by this gate");
-
-    // The receiver's refresh reads the COPA (wire) clock; the sender's sweep
-    // reads the pooled app-echo one. Both pinned at the ceiling shipped.
-    assert_eq!(shipped.refresh_us, 100_000, "shipped refresh pinned at the ceiling");
-    assert!(ds.refresh_us > shipped.refresh_us, "derived refresh tracks the wire clock");
-    assert_eq!(
-        raptorpath::net::sweep_timeout_us(false, shipped.pooled_us, JITTER_US),
-        100_000
-    );
-    assert_eq!(
-        raptorpath::net::sweep_timeout_us(true, ds.pooled_us, JITTER_US),
-        2 * ds.pooled_us
-    );
-
-    // And the gate is NOT inert, which is worth pinning.
-    assert!(
-        ds.counts.sweeps < shipped.counts.sweeps,
-        "the derived arm must fire FEWER sweeps: {} vs {}",
-        ds.counts.sweeps,
-        shipped.counts.sweeps
-    );
-    // Every arm still recovers: no hole is abandoned by making the clock
-    // honest (the receiver's refresh, not the sweep, is the recovery engine).
-    for (tag, o) in [("shipped", &shipped), ("ds", &ds)] {
-        assert!(o.counts.retx > 0, "{tag}: no retransmit fired");
-        let served = o.holes.iter().filter(|h| h.first_service_us.is_some()).count();
-        assert!(
-            served * 100 >= o.holes.len() * 95,
-            "{tag}: only {served}/{} holes reached a channel",
-            o.holes.len()
-        );
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════
 // THE R AXIS, COMPONENT-VERIFIED — paper §7.1
 //
-// The shipped clamp and `RWM_DERIVED_SWEEP`, scored at the same five MEASURED
-// geometries on the same arithmetic, plus the FALSE-ALARM RATE each is
-// predicted to produce against RFC 8985 §6.2 Step 4's own published budget.
-// (The two rival arms this axis also scored — `RWM_RACK_CLOCKS` and
-// `RWM_QUANTILE_CLOCKS` — were refuted and removed with their gates; paper §10.)
+// The shipped clamp, scored at the five MEASURED geometries, plus the
+// FALSE-ALARM RATE it is predicted to produce against RFC 8985 §6.2 Step 4's
+// own published budget. (The rival arms this axis also scored —
+// `RWM_DERIVED_SWEEP`, `RWM_RACK_CLOCKS`, `RWM_QUANTILE_CLOCKS` — were refuted
+// and removed with their gates; paper §10.)
 //
 // The headline is about the CONTROL, not the successors: the shipped
 // `[25, 100] ms` clamp is predicted to violate RACK's own spurious budget by
 // 8–13× at three of five cells.
 // ════════════════════════════════════════════════════════════════════════
 
-use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us, RACK_SPURIOUS_BUDGET};
+use raptorpath::net::{tail_sweep_timeout_us, RACK_SPURIOUS_BUDGET};
 
 /// The predicted false-alarm FRACTION from the component model: a cadence that
 /// fires `n` extra times per ack round trip wastes `n` of the `n+1` fires.
@@ -945,24 +673,21 @@ fn false_alarm_frac(srtt_us: u64, cadence_us: u64) -> f64 {
 }
 
 /// The R axis at the five measured geometries, pinned: cadence, spurious
-/// rounds and the predicted false-alarm rate for the shipped clamp and
-/// `RWM_DERIVED_SWEEP`. If a law changes, the published numbers go red rather
+/// rounds and the predicted false-alarm rate for the shipped clamp. If a law changes, the published numbers go red rather
 /// than stale.
 #[test]
 fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
     // ── The SENDER site (app-echo clock). ──────────────────────────────
-    // (cell, srtt_app, shipped sp, derived sp)
-    for &(name, srtt, ship_sp, ds_sp) in &[
-        ("c1-A", 9_000u64, 0u64, 0u64),
-        ("c7-A", 87_000, 0, 0),
-        ("sc2-A", 104_000, 1, 0),
-        ("c8-A", 376_000, 3, 0),
-        ("c8-AU", 464_000, 4, 0),
+    // (cell, srtt_app, shipped sp)
+    for &(name, srtt, ship_sp) in &[
+        ("c1-A", 9_000u64, 0u64),
+        ("c7-A", 87_000, 0),
+        ("sc2-A", 104_000, 1),
+        ("c8-A", 376_000, 3),
+        ("c8-AU", 464_000, 4),
     ] {
         let ship = tail_sweep_timeout_us(srtt);
-        let ds = derived_recovery_round_us(srtt, JITTER_US);
         assert_eq!(spurious_rounds(srtt, ship), ship_sp, "{name}: shipped clamp");
-        assert_eq!(spurious_rounds(srtt, ds), ds_sp, "{name}: RWM_DERIVED_SWEEP");
     }
 
     // ── The FALSE-ALARM table, and the finding about the CONTROL. ──────
@@ -979,10 +704,6 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
         if fa_ship > RACK_SPURIOUS_BUDGET {
             control_violations += 1;
         }
-        // The derived arm clears the budget BY BEING SLOW — recorded so the
-        // trade L1 measured is visible in the arithmetic, not only in prose.
-        let fa_ds = false_alarm_frac(srtt, derived_recovery_round_us(srtt, JITTER_US));
-        assert!(fa_ds <= RACK_SPURIOUS_BUDGET, "{name}: DERIVED_SWEEP no longer clears the budget");
     }
     assert_eq!(
         control_violations, 3,
@@ -1075,7 +796,7 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
     );
     // AND THE GRANULARITY FLOOR IS ASSERTED AS ITSELF, ONCE, RATHER THAN
     // SMUGGLED INTO THE FIXTURE ABOVE. A window of sub-granularity samples
-    // floors, exactly as the RACK and derived rounds do.
+    // floors, exactly as the RACK rounds did.
     let tiny: Vec<u32> = vec![7u32; 200];
     assert_eq!(
         qnative_recovery_round_us(&tiny, 0.05),

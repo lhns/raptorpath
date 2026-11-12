@@ -209,8 +209,6 @@ pub struct RuntimeGates {
     pub late_brake: bool,
     /// `RWM_RECOV_SP` (off, arm): single-path RFC 9002 §6.1.2 time-threshold suppression.
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP` (off, arm): recovery clocks at `net::derived_recovery_round_us`.
-    pub derived_sweep: bool,
     /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
     /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
@@ -375,7 +373,6 @@ impl RuntimeGates {
             sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
-            derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             delta_cap: env_flag("RWM_DELTA_CAP", true),
             delta: resolve_delta(),
             copa_delta: resolve_copa_delta(),
@@ -449,7 +446,6 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
-             RWM_DERIVED_SWEEP={} \
              RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
@@ -480,7 +476,6 @@ impl RuntimeGates {
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_sp),
-            b(self.derived_sweep),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.
             o(&self.delta),
@@ -640,10 +635,6 @@ mod forwarding_audit {
         assert!(
             line.contains("RWM_ACK_MERGE=1"),
             "a default-ON gate must be named with its 1 value: {line}"
-        );
-        assert!(
-            line.contains("RWM_DERIVED_SWEEP=0"),
-            "RWM_DERIVED_SWEEP must print its OFF value: {line}"
         );
         // A receiver-law control row is void unless both arms read `=0`.
         assert!(
