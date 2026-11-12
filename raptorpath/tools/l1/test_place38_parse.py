@@ -402,6 +402,10 @@ for cell, d in (("c1d-400", "diag-tpd/c1d-400-MAIN-s42-r1-a1-"), ("c1s-400", "di
     check("status 49: a promoted main as BASE (LD_BASE_SHA past 4926822) prints wpl_us and the wire gauges like CAND: not a witness failure",
           not any(x.startswith(("wpl_us-numeric-on", "wire-gauges-on")) for x in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, [ln + "" for ln in cli_] + [diag(2.0, [(1, 8, 7, 7000)] * nl), eta()], srv_, 0, "x", store="def")["problems"]))
     del os.environ["LD_BASE_SHA"]
+    os.environ["LD_BASE_SHA"] = ""
+    check("status 49: an empty LD_BASE_SHA (run_all passes it through sudo when unset) is the historical BASE",
+          "wire-gauges-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, cli_ + [eta()], srv_, 0, "x", store="def")["problems"])
+    del os.environ["LD_BASE_SHA"]
     check("status 49: with LD_BASE_SHA unset BASE is the historical 4926822 and the gauges still void it",
           "wire-gauges-on-BASE" in pp.make_row(cell, "BASE", "42", 1, 0, 12.0, drv_, cli_ + [eta()], srv_, 0, "x", store="def")["problems"])
 
