@@ -82,33 +82,13 @@ pub(crate) fn resolve_copa_compete(wire_active: bool) -> bool {
     on
 }
 
-/// Whether the pool-anchor law is active (`RWM_POOL_ANCHOR`, experiment arm):
-/// at N ≥ 2 live paths the pooled store cap's rate input is each path's
-/// send-interval anchor ([`crate::control::SendRateAnchor`], burst-immune,
-/// clock-gap discard) instead of the ack-interval windowed max, whose burst
-/// peaks over-read under the estimator-cadence ack clock. Default OFF,
-/// independent of `RWM_EST_CADENCE`: it used to follow the cadence when
-/// unset, and Stage 3 (d) measured the cadence with it off (status.md §5), so
-/// shipping the cadence must not switch this law on. Consumers:
-/// `PathState::charge_in_flight` and the
-/// N ≥ 2 dynamic cap; the Copa cwnd feed is untouched.
-pub fn pool_anchor_active() -> bool {
-    crate::gates::get().pool_anchor
-}
-
-/// The resolve-time read behind [`pool_anchor_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_pool_anchor() -> bool {
-    crate::config::env_flag("RWM_POOL_ANCHOR", false)
-}
-
 /// Whether the O(1) windowed-max rate filter is active (`RWM_HONEST_ANCHOR`,
 /// anchor-hygiene family, default on; the `RWM_ANCHOR_HYGIENE` umbrella
 /// overrides either way).
 ///
 /// `CopaState`'s BtlBw windowed max (`max_bw`) used to be a full-window fold
 /// over `bw_samples` on every accepted sample: invisible when fed per ACK,
-/// O(window·rate) work when fed per delivered symbol (`RWM_PLAIN_RS`). On, it
+/// O(window·rate) work when fed per delivered symbol (`RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS)). On, it
 /// is read off a monotonic max-deque beside `bw_samples`: the same statistic to
 /// the bit (`bw_mono_front_equals_full_window_fold`), same [1 s, 10 s] window,
 /// amortized O(1). The gate selects cost, not behaviour; `=0` runs the fold.
@@ -267,25 +247,6 @@ pub(crate) fn resolve_cold_place() -> bool {
     on
 }
 
-/// Whether the raw-sample echo-ratio floor is active (`RWM_HONEST_K`,
-/// anchor-hygiene family, default off).
-///
-/// K_i (`EchoRatioMin`, the residence-clock ratio of the honest caps and the
-/// three-term law) is meant to be the smallest observed echoSRTT/RTprop but is
-/// fed the smoothed srtt at the 5 ms refresh clock. The minimum of an EWMA sits
-/// near the distribution's mean, so K reads high wherever delay is wide. On,
-/// the same tracker (same window, same ≥ 1 clamp) is fed the raw per-sample
-/// echo/RTprop ratio at `record_rtt`, making K min(raw)/min(raw).
-pub fn honest_k_active() -> bool {
-    crate::gates::get().honest_k
-}
-
-/// The resolve-time read behind [`honest_k_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_honest_k() -> bool {
-    crate::config::anchor_gate("RWM_HONEST_K")
-}
-
 /// Whether the window-mode control-datagram merge is active (`RWM_ACK_MERGE`,
 /// default on; `=0` is the opt-out arm; paper §9.5).
 ///
@@ -388,13 +349,13 @@ pub(crate) fn resolve_release_1to1() -> bool {
 /// retransmit and the NACK repair margin.
 ///
 /// Both build a `SymbolBatch` and call `transport.send_symbols` with no
-/// `charge_in_flight`, no `consume_pace_tokens` and no `PathStats::symbols_sent`
+/// `charge_in_flight` and no `PathStats::symbols_sent`
 /// increment, while every other wire channel (source, taper correction, the
-/// generation arms, block-ARQ repair) meters all three at the handoff. Recovery
+/// generation arms, block-ARQ repair) meters both at the handoff. Recovery
 /// is exempt from the ack-clocked admission target, not from the ledger, and
 /// charging cannot deadlock these sites because neither reads `available()` or
 /// `cwnd_full`; they are budgeted by `cached_nack_budget` and the NACK
-/// congestion multiplier. The three meters move together, as at the peer
+/// congestion multiplier. The meters move together, as at the peer
 /// sites, so a battery cannot attribute among them. Not a dial.
 pub fn charge_recovery_active() -> bool {
     crate::gates::get().charge_recovery

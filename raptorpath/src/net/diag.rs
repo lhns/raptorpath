@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::emit_source::SenderState;
 use super::sender_policy::SenderPolicy;
-use super::{CopaFeed, EchoRatioMin, LOOP_WAKE_US, now_us, stall_threshold_us};
+use super::{EchoRatioMin, LOOP_WAKE_US, now_us, stall_threshold_us};
 use crate::monitor::stats::SharedStats;
 use crate::transport::QuicTransport;
 
@@ -366,9 +366,6 @@ pub(crate) struct DiagInputs<'a> {
     /// Above `sack_released.len()` exactly when the received-above count
     /// carries the gate past the SACK prefix -- the term-bind gauge.
     pub gate_released: usize,
-    /// RWM_POOL_ANCHOR: honest dual-store engagement + Σ honest caps.
-    pub pa_engaged: bool,
-    pub pa_sum: f64,
     /// The live release frontier (the `wnd2=`/`relgap=` gauge's input).
     pub wnd2_frontier_last: u64,
     pub wnd2_frontier_change_us: u64,
@@ -391,7 +388,6 @@ pub(crate) struct DiagCtx<'a> {
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub window_ack_seq: &'a Arc<AtomicU64>,
-    pub copa_feed: &'a Option<Arc<CopaFeed>>,
 }
 
 /// Emit the periodic `[DIAG]` / `[C8CONV-S]` report.
@@ -416,7 +412,6 @@ pub(crate) fn report(
         transport,
         stats,
         window_ack_seq,
-        copa_feed,
     } = ctx;
     let DiagInputs {
         tx_paused,
@@ -426,8 +421,6 @@ pub(crate) fn report(
         sack_released,
         sack_released_total,
         gate_released,
-        pa_engaged,
-        pa_sum,
         wnd2_frontier_last,
         wnd2_frontier_change_us,
         cached_nack_budget,
@@ -620,14 +613,6 @@ pub(crate) fn report(
                     // windowed-min echoSRTT/RTprop ratio K_i feeding
                     // the honest cap laws (1.00 when not engaged).
                     let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
-                    // `RWM_HONEST_K`: kraw = the raw-sample windowed-min
-                    // ratio the K consumers substitute under the gate ("-"
-                    // when the gate is off). khr stays the smoothed read
-                    // either way, so khr − kraw is the smoothing bias.
-                    let kraw_s = p
-                        .k_raw()
-                        .map(|k| format!("{k:.2}"))
-                        .unwrap_or_else(|| "-".to_string());
                     // The RTT second moment (paper §7.4): the standard-
                     // deviation estimate `√(EWMA[(rtt−srtt)²])`
                     // (`Path::rtt_sigma_us`) and the number of samples folded
@@ -712,16 +697,9 @@ pub(crate) fn report(
                         .wire_rtt()
                         .map(|d| d.as_micros().to_string())
                         .unwrap_or_else(|| "-".to_string());
-                    // RWM_POOL_ANCHOR: the per-path send-
-                    // interval anchor rate (0 = no surviving bucket
-                    // / feed off) + its gap/discard hygiene gauges
-                    // — vs btlbw (the ack-interval read, which
-                    // feeds cwnd only).
-                    let sr_i = p.send_rate_anchor().unwrap_or(0.0);
-                    let (sa_g, sa_d) = p.send_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4} wpl_us={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4} wpl_us={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill, plu_i, plc_i, wpl_s
                     ));
                 }
@@ -808,13 +786,6 @@ pub(crate) fn report(
             }
             (s, ev)
         };
-        // Cross-path-history attributions and
-        // how many the flight witness credited to the previous
-        // flight (spurious-retransmit class). Zeros without a feed.
-        let (xat_c, xat_w) = copa_feed
-            .as_ref()
-            .map(|f| f.attr_diag())
-            .unwrap_or((0, 0));
         // RWM_STORE_SACK_RELEASE: currently released (retained
         // but uncounted) / cumulative slots released — the store-
         // dwell mechanism gauge (win= already shows the uncounted
@@ -828,15 +799,6 @@ pub(crate) fn report(
                 sack_released_total,
                 gate_released
             )
-        } else {
-            String::new()
-        };
-        // RWM_POOL_ANCHOR: the honest dual-store law's
-        // engagement + its Σ honest caps before clamping (the
-        // mechanism gauge — win=/cap shows the clamped result).
-        // Empty when not engaged (N = 1, warm-up, or gate off).
-        let padiag = if pa_engaged {
-            format!(" pa=on/{:.0}", pa_sum)
         } else {
             String::new()
         };
@@ -954,7 +916,7 @@ pub(crate) fn report(
             String::new()
         };
         crate::readout!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} {}{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -971,12 +933,10 @@ pub(crate) fn report(
             min_rtt_us as f64 / 1000.0,
             bdp_100m,
             dg.diag_sweeps, dg.diag_retx, dg.diag_gaps_dropped, cached_nack_budget,
-            xat_c, xat_w,
             mpr,
             sd2,
             wnd2diag,
             srdiag,
-            padiag,
             sheddiag,
             waitdiag,
             dgq,

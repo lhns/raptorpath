@@ -24,10 +24,8 @@ async fn three_term_reliable_window_loopback_completes() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     std::env::set_var("RWM_THREE_TERM", "1");
-    std::env::set_var("RWM_PLAIN_RS", "1");
     let g = raptorpath::gates::RuntimeGates::resolve();
     assert!(g.three_term, "gate must resolve ON for this test");
-    assert!(g.plain_rs, "the honest-anchor composition must resolve ON too");
     // The gate's two-sided echo, on the arm side (the default-OFF side is
     // asserted in `gates::tests`).
     assert!(

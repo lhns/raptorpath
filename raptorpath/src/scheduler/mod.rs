@@ -15,8 +15,6 @@
 //!     exceeds floor × {1.08 Realtime, 1.125 Auto, 1.25 Bulk}.
 //!   - Two-speed ramp: multiplicative ×1.5+1 per RTT until the first
 //!     backoff, then additive +2 / multiplicative ×0.92.
-//!   - Token-bucket pacing at cwnd/SRTT with burst allowance max(10, cwnd/8)
-//!     (state lives here; the drain in net/mod.rs consumes the tokens).
 //!
 //! Loss alone does not reduce the window — only a standing queue does.
 //! This prevents wireless random loss from collapsing throughput.
@@ -96,86 +94,6 @@ impl SchedulingWeights {
     }
 }
 
-/// Global correction deficit tracker.
-///
-/// Tracks `deficit = SUM(epsilon_s for un-ACKed symbols)` — the total expected
-/// corrections still needed across all paths (paper §5.9).
-///
-/// Each sent symbol adds `epsilon_i` (loss rate of its path) to the deficit.
-/// Each ACKed symbol removes its send-time `epsilon_s` (confirmed survived).
-/// Lost corrections add to the deficit, creating the geometric chain that
-/// produces `r = epsilon / (1 - epsilon)`.
-#[derive(Debug)]
-pub struct CorrectionDeficit {
-    /// Per-symbol tracking: (seq, path_id, epsilon_at_send)
-    pending: VecDeque<(u64, PathId, f64)>,
-    /// Running sum of epsilon_s for all pending symbols.
-    total: f64,
-}
-
-// on_ack / deficit / pending_count / path_deficit have only #[cfg(test)]
-// consumers (the deficit-chain law tests in this file); the live path uses
-// on_send + on_ack_cumulative.
-impl CorrectionDeficit {
-    pub fn new() -> Self {
-        Self {
-            pending: VecDeque::new(),
-            total: 0.0,
-        }
-    }
-
-    /// Record a symbol sent on a path with loss rate epsilon.
-    pub fn on_send(&mut self, seq: u64, path_id: PathId, epsilon: f64) {
-        self.pending.push_back((seq, path_id, epsilon));
-        self.total += epsilon;
-    }
-
-    /// Acknowledge a symbol (confirmed received). Removes its epsilon from deficit.
-    /// Returns true if the symbol was found and removed.
-    pub fn on_ack(&mut self, seq: u64) -> bool {
-        if let Some(pos) = self.pending.iter().position(|(s, _, _)| *s == seq) {
-            let (_, _, eps) = self.pending.remove(pos).unwrap();
-            self.total -= eps;
-            if self.total < 0.0 {
-                self.total = 0.0; // floating point guard
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Acknowledge all symbols up to and including `up_to_seq` (cumulative ACK).
-    pub fn on_ack_cumulative(&mut self, up_to_seq: u64) {
-        while self.pending.front().is_some_and(|(s, _, _)| *s <= up_to_seq) {
-            let (_, _, eps) = self.pending.pop_front().unwrap();
-            self.total -= eps;
-        }
-        if self.total < 0.0 {
-            self.total = 0.0;
-        }
-    }
-
-    /// Current total correction deficit.
-    pub fn deficit(&self) -> f64 {
-        self.total
-    }
-
-    /// Number of un-ACKed symbols being tracked.
-    pub fn pending_count(&self) -> usize {
-        self.pending.len()
-    }
-
-    /// Per-path deficit: sum of epsilon_s for un-ACKed symbols on a specific path.
-    pub fn path_deficit(&self, path_id: PathId) -> f64 {
-        self.pending
-            .iter()
-            .filter(|(_, pid, _)| *pid == path_id)
-            .map(|(_, _, eps)| eps)
-            .sum()
-    }
-}
-
 /// The multipath scheduler.
 ///
 /// Uses the interpolated objective function (paper §5.7):
@@ -223,8 +141,6 @@ pub struct Scheduler {
     /// fallback taken, the 1 ms floor of `ref` bound); drained with the others.
     place_wire_gauge: std::cell::Cell<(u64, u64, u64, u64)>,
     clock: Arc<dyn Clock>,
-    /// Global correction deficit tracker (paper §5.9).
-    pub deficit: CorrectionDeficit,
     /// Scheduling weights from protocol hint.
     weights: SchedulingWeights,
     /// `RWM_PLACE_T_DERIVED` (placement arm 1) as resolved for this scheduler.
@@ -266,7 +182,6 @@ impl Scheduler {
             place_hol: place_hol_active(),
             place_wdiv_derived: place_wdiv_derived_active(),
             clock,
-            deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
             hint,
             cold_place: cold_place_active(),
@@ -518,14 +433,12 @@ impl Scheduler {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
                 // Reset to startup on recovery (Copa reset keeps the hint's
-                // queue target; pacing restarts at the initial burst; the
-                // dead path's in-flight budget is gone with it).
+                // queue target; the dead path's in-flight budget is gone
+                // with it).
                 path.cwnd = PathState::INITIAL_CWND;
                 path.ssthresh = 64;
                 path.in_slow_start = true;
                 path.copa.reset();
-                path.pace_tokens = PathState::INITIAL_CWND as f64;
-                path.last_pace_refill = path.last_report;
                 path.in_flight = 0;
                 path.in_flight_log.clear();
             }

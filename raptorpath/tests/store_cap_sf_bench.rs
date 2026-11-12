@@ -2452,7 +2452,6 @@ fn simulate_place(
                             rate: p.btlbw_sym_per_s(),
                             srtt: p.srtt(),
                             rtprop: p.min_rtt(),
-                            k_raw: p.k_raw(),
                         })
                     })
                     .collect();

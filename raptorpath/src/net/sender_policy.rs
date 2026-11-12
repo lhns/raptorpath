@@ -168,8 +168,6 @@ pub(crate) struct SenderPolicy {
     pub no_reactive: bool,
     /// `RWM_XPATH_REPAIR` ∧ generation: repair to the max-spare path.
     pub xpath_repair: bool,
-    /// `RWM_PROACTIVE_PACER` ∧ systematic: present-at-stall proactive repair.
-    pub proactive_pacer: bool,
 
     // ── CC / pacing ──────────────────────────────────────────────────────
     /// `RWM_CC_PACE`: CC-rate pacing of the systematic source.
@@ -206,17 +204,10 @@ pub(crate) struct SenderPolicy {
     pub store_paths_on: bool,
     /// `RWM_STORE_PATH_POOL`: per-live-path pool knee.
     pub store_path_pool: usize,
-    /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
-    pub pool_anchor_on: bool,
     /// `RWM_THREE_TERM` (default off): the plain dynamic store cap is the
     /// composed three-term law (`net::three_term_store_cap`). Scoped to the
     /// plain dynamic cap.
     pub three_term_on: bool,
-    /// `RWM_COMPOSED_CAP` (default off; paper §10): the composition arm. Implies
-    /// [`Self::three_term_on`] (same pool law, same function) and additionally
-    /// arms the late-stage per-path brake with the path's own cwnd as its cap,
-    /// over `live_paths()` (with `active_paths()` the brake could never close).
-    pub composed_cap: bool,
     /// `RWM_SUM_CAP` (default on; paper §6.1): the pooled law's count
     /// multiplier is removed from the value and kept in the ceiling
     /// (`net::pooled_store_cap`'s `sum_cap` argument). The Σ's path set is
@@ -231,9 +222,8 @@ pub(crate) struct SenderPolicy {
     /// `cap = clamp((1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ, floor, N·knee)`.
     pub delta_cap: bool,
     /// `RWM_LATE_BRAKE` (default off): the late-stage per-path cwnd brake,
-    /// armed without the composed pool law — [`Self::composed_cap`]'s brake
-    /// alone: same code path, same per-path cap (the path's own cwnd), same
-    /// `live_paths()` set, no constant in the predicate. Off, `cwnd_full`
+    /// armed with no pool law: the path's own cwnd is the per-path cap, over
+    /// the `live_paths()` set, no constant in the predicate. Off, `cwnd_full`
     /// stays false on the plain seat.
     pub late_brake: bool,
     /// The δ dial's deadline budget b(δ) at this tunnel's named point
@@ -252,8 +242,6 @@ pub(crate) struct SenderPolicy {
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
 
-    /// `RWM_HONEST_CAP` (+ `RWM_PLAIN_RS`): honest floor-clock caps.
-    pub honest_cap_on: bool,
     /// `diag_on && plain_dyn_cap` — under `RWM_DIAG` the per-path store
     /// attribution maps behind `[DIAG] sout=` are maintained. A gauge only.
     pub percap_track: bool,
@@ -572,18 +560,6 @@ impl SenderPolicy {
         // `clamp(gain·Σ, floor, store_max)` control at every N.
         let store_paths_on = gates.store_paths;
         let store_path_pool: usize = gates.store_path_pool;
-        // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`). The
-        // pooled-store cap's rate input is the per-path send-interval
-        // anchor (`SendRateAnchor` fed at `charge_in_flight` — burst-immune by
-        // construction: Δt spans the send interval, so ack bursts cannot inflate
-        // it; clock-gap buckets discarded) instead of the ack-interval
-        // windowed-max, which over-reads. Law: pool = clamp(Σ_i
-        // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
-        // the capw shape (one shared pool, borrowing free), engaged only with
-        // all live send-anchors warm; until then the configured path-scaled law
-        // runs. The Copa cwnd feed is untouched. Default off, independent of
-        // `RWM_EST_CADENCE`.
-        let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
         // The store-cap path set is not a dial: the dyn-cap phase's Σ-anchor
         // base and honest per-path cap sum range over the channel's
         // membership (`net::channel_paths`), the set `n_live` is counted from.
@@ -593,14 +569,7 @@ impl SenderPolicy {
         // term is identically zero at a single path by arithmetic (max RTprop =
         // min RTprop), so there is no `if N == 1`. Scoped to the plain dynamic
         // cap: under Copa ownership cwnd is the operating point.
-        //
-        // The composed cap (`RWM_COMPOSED_CAP`, default off): the same pool law
-        // as `three_term_on` (`net::three_term_store_cap`), plus the unified live
-        // set at the brake, plus the late-stage per-path brake on the path's own
-        // cwnd. It introduces no law and no constant of its own; the three-term
-        // arm stays exactly what it was.
-        let composed_cap = gates.composed_cap && plain_dyn_cap;
-        let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;
+        let three_term_on = gates.three_term && plain_dyn_cap;
         // The `×N` deletion (`RWM_SUM_CAP`, default on; paper §6.1). The pooled
         // law's count multiplier is removed from the value and kept in the
         // ceiling:
@@ -665,19 +634,6 @@ impl SenderPolicy {
         // stays empty and the gate arithmetic is exactly `store_len`.
         let store_sack_release_on =
             reliable && !generation && !coded_only && gates.store_sack_release;
-        // Honest floor-clock store caps (`RWM_HONEST_CAP`, with `RWM_PLAIN_RS`).
-        // The ack-interval plain anchor over-reads, so a knee-clamped slow-path
-        // cap never engages the derived per-path differentiation. With the
-        // honest send-interval sampler (`RWM_PLAIN_RS`, default off) the anchor
-        // reads ≈1× truth, and the cap law is re-derived on it:
-        // cap_i = anchor_i·(K_i + gain − 1) + rate_i·(gain−1)·R — residence on
-        // the measured unloaded drain clock plus runway on the recovery
-        // engine's clock (R = the 100-ms hole-refresh/tail-sweep bound), see
-        // `honest_store_cap`. K supplies explicitly the headroom the over-read
-        // supplied by accident. Engaged only where the honest sampler is live
-        // (plain in-order, no Copa CC ownership — the Σcwnd and per-path cwnd
-        // laws are already honest). `RWM_HONEST_CAP=0` is the floor-law arm.
-        let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
         // Budget-conserving taper (`RWM_TAPER_R`, default = `RWM_UNIFIED`; paper
         // §3.3). A per-ack-cycle taper accrual sums to Σ τ(t) = r symbols per
         // ack cycle (taper_offset resets on cumulative-ack advancement), so the
@@ -717,22 +673,6 @@ impl SenderPolicy {
         // at the live (r, A*, σ²) operating point). Budget spent ⇒ serialize
         // (ρ wins over δ).
         let shed_on = shed_armed(gates.unified, reliable, gates.unified_shed);
-        // Proactive-repair pacer (`RWM_PROACTIVE_PACER`, systematic only) —
-        // present-at-stall. A dedicated proactive-repair emission on the
-        // generation grid, decoupled from both source availability and the
-        // ack-clock `target`. For each in-flight generation (still filling or
-        // recently sealed) it emits proactive repair over the retained contiguous
-        // prefix at the full generation width (`generate_repair_filling` → same
-        // (anchor, G) matrix, no cross-grid stranding), paced by the shared CC
-        // token bucket. It runs every main-loop iteration including tx_paused
-        // wakeups, so repair flows under backpressure, and it codes the
-        // generation grid, so a buffered filling equation combines directly with
-        // the reactive generation deficit. The covering equation reaches the
-        // receiver around when the hole is sent, so it is present when the
-        // frontier detects the hole → proactive decode, no round trip. Supersedes
-        // the sealed batched proactive path when on; the reactive deficit
-        // (`RWM_REACT_CAP` + `RWM_REPAIR_WAIT`) stays the bounded fallback.
-        let proactive_pacer = systematic && gates.proactive_pacer;
         // Cross-path repair placement (`RWM_XPATH_REPAIR`, generation only,
         // default off). Route proactive (and deficit) repair to the
         // max-spare-capacity path instead of the marginal-cost softmax (which
@@ -870,7 +810,6 @@ impl SenderPolicy {
             coded_src_clock,
             no_reactive,
             xpath_repair,
-            proactive_pacer,
             cc_pace,
             cc_pace_headroom,
             react_cap_cfg,
@@ -887,16 +826,13 @@ impl SenderPolicy {
             store_cap_floor,
             store_paths_on,
             store_path_pool,
-            pool_anchor_on,
             three_term_on,
-            composed_cap,
             sum_cap,
             delta_cap,
             late_brake,
             delta_b,
             contract_rho,
             store_sack_release_on,
-            honest_cap_on,
             percap_track,
             unified_span,
             astar_anchor_on,

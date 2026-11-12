@@ -34,7 +34,7 @@ and read everywhere through `gates::get()`; the default `[GATES]` echo is
 byte-pinned by `gates_echo_default_is_byte_pinned`): `RWM_UNIFIED`,
 `RWM_UNIFIED_SHED`, `RWM_TAPER_R`, `RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`,
 `RWM_HONEST_ANCHOR`, `RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
-`RWM_GEN_PIPE` (only reached when generation is on), `RWM_RS_ATTR`,
+`RWM_GEN_PIPE` (only reached when generation is on),
 `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`, `RWM_DELTA_CAP`,
 `RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`, `RWM_RSTAR_TAIL` (r* provisions the
 window loss-mass quantile, ADR-0063; `=0` is GE-only), `RWM_EST_CADENCE` (the loss
@@ -45,10 +45,10 @@ estimator's BOCD update batched: clean evidence accumulates and flushes every
 path count, Law 0; flipped in `bf3a636` on the §8 re-run; on `[GATES]` as
 `RWM_EMIT_BATCH=1` plus its own echo: `emission batching ACTIVE`, or `OFF`
 at `=0`, or `out of scope` where the policy excludes it: ρ < 1, Realtime
-packing, a coded wire). `RWM_POOL_ANCHOR` is
-independent of the cadence and ships off (it used to follow it when unset).
-`RWM_HONEST_CAP` resolves on but is inert
-without `RWM_PLAIN_RS`, so `[GATES]` echoes its effective value, 0.
+packing, a coded wire). `RWM_PLAIN_RS`, `RWM_RS_ATTR`, `RWM_HONEST_K`,
+`RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`, `RWM_REPAIR_WAIT`, `RWM_PROACTIVE_PACER`,
+`RWM_REASM_BDP` and `RWM_COMPOSED_CAP` are removed (§49, tags
+`archive/RWM_*`); set in the environment they are ignored.
 
 Placement prices every leg on its wire RTT (ADR-0073, promoted from
 `RWM_PLACE_WIRE` in `2d625fa`, merged to main in `85c2295`); there is no gate.

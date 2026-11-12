@@ -948,8 +948,6 @@ fn run_matrix_trial_window(
 
             for pkt in &delivered {
                 received_set.insert(pkt.seq);
-                // Update correction deficit: this symbol survived
-                scheduler.deficit.on_ack(pkt.seq);
                 for (seq, data) in decoder.add_symbol(&pkt.symbol) {
                     for (rseq, _, _) in reorder_buf.push_with_time(seq, data, $now) {
                         if recovered.insert(rseq) {
@@ -1021,11 +1019,6 @@ fn run_matrix_trial_window(
                     }
                 }
             }
-
-            // Track correction deficit for this source symbol
-            let send_path = if use_secondary { 1 } else { 0 };
-            let eps = live_estimator.loss_rate();
-            scheduler.deficit.on_send(sym_idx as u64 - 1, send_path, eps);
 
             sym_idx += 1;
         }

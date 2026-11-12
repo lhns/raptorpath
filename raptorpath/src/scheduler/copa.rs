@@ -135,8 +135,8 @@ pub(crate) const COMPETE_INV_DELTA_MAX: f64 = PathState::MAX_CWND as f64 / 2.0;
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
-///   - `copa_target_cwnd()` divides by dq; on a LAN where a sample can equal
-///     the floor exactly, dq → 0 would explode the target to infinity.
+///   - The Copa target `srtt/(δ·dq)` divides by dq; on a LAN where a sample
+///     can equal the floor exactly, dq → 0 would explode the target to infinity.
 ///   - The backoff threshold (queue_mult − 1) × floor collapses toward 0 on
 ///     sub-millisecond-RTT links; flooring both dq and the threshold at the
 ///     same 0.1 ms means jitter at the clamp boundary cannot trigger a
@@ -393,7 +393,7 @@ pub struct CopaState {
     pub(crate) bw_mono: VecDeque<BwSample>,
     /// `RWM_HONEST_ANCHOR` resolved at construction: `max_bw` = the mono
     /// deque's front (O(1)) instead of the per-sample full-window fold
-    /// (O(window), a CPU tax under `RWM_PLAIN_RS`). Value-identical either way.
+    /// (O(window), a CPU tax under `RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS)). Value-identical either way.
     bw_o1: bool,
     /// Sliding window of RTT samples.
     rtt_samples: VecDeque<RttSample>,
@@ -562,8 +562,7 @@ pub struct CopaState {
     /// ⇒ the application-echo law.
     wire_mode: bool,
     /// Copa δ (1/symbols): the hint-mapped latency price (`copa_delta`).
-    /// Outside wire mode this stays COPA_DELTA so the diagnostic
-    /// `copa_target_cwnd` is unchanged.
+    /// Outside wire mode this stays COPA_DELTA.
     pub(crate) delta: f64,
     /// Copa velocity v: the per-SRTT step is v/δ symbols; v doubles once
     /// per update while the direction has persisted ≥ 3 consecutive
@@ -602,18 +601,6 @@ pub struct CopaState {
     /// Cumulative congestion-event counter last seen from the pass-through
     /// shim (diffed, not reset — the shim counter is monotone).
     last_cong_events: u64,
-    // --- Raw-sample echo-ratio floor (`RWM_HONEST_K`) -------------------------
-    /// `RWM_HONEST_K` resolved at construction: feed the K tracker below the
-    /// raw per-sample ratio at the sample clock. False (default) ⇒ the
-    /// tracker is never fed and `k_raw_ratio()` is `None` — every K consumer
-    /// keeps the smoothed-at-refresh feed.
-    k_raw_on: bool,
-    /// The path's raw-fed windowed-min echo-ratio (`EchoRatioMin`, the same
-    /// window/clamp/guard as the net-side refresh-clock trackers): fed
-    /// rtt_raw/RTprop per sample in `record_rtt` under `k_raw_on`.
-    k_raw: crate::net::EchoRatioMin,
-    /// Monotonic µs epoch for `k_raw`'s window arithmetic.
-    k_raw_epoch: Instant,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
@@ -641,9 +628,6 @@ impl CopaState {
             compete_max_deque: VecDeque::new(),
             loss_since_update: false,
             last_cong_events: 0,
-            k_raw_on: honest_k_active(),
-            k_raw: crate::net::EchoRatioMin::new(crate::net::PERCAP_K_HALF_WINDOW_US),
-            k_raw_epoch: now,
             bw_samples: VecDeque::new(),
             bw_mono: VecDeque::new(),
             bw_o1: honest_anchor_active(),
@@ -736,7 +720,7 @@ impl CopaState {
     /// Recompute `max_bw` after a push/evict. `RWM_HONEST_ANCHOR` selects the
     /// cost of the same value: the mono deque's front (O(1) amortized) or
     /// the full-window fold (O(window) per accepted sample — a sender-CPU tax
-    /// once `RWM_PLAIN_RS` feeds this per delivered symbol instead of per ack).
+    /// once `RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS) feeds this per delivered symbol instead of per ack).
     fn bw_refresh_max(&mut self) {
         self.max_bw = if self.bw_o1 {
             self.bw_mono.front().map_or(0.0, |s| s.delivery_rate)
@@ -946,7 +930,7 @@ impl CopaState {
             .checked_sub(Duration::from_secs_f64(win))
             .unwrap_or(now);
         self.bw_evict_before(cutoff);
-        // Under RWM_PLAIN_RS this runs once per delivered source symbol, so
+        // Under the removed RWM_PLAIN_RS (tag archive/RWM_PLAIN_RS) this runs once per delivered source symbol, so
         // the full-window fold here is O(window·rate) per second, a real
         // sender-CPU tax. RWM_HONEST_ANCHOR reads the same value off the mono
         // deque in O(1).
@@ -1048,24 +1032,6 @@ impl CopaState {
                 self.rtt_tlag
                     .push_back((now, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32));
             }
-        }
-
-        // `RWM_HONEST_K`: feed the K tracker the raw sample's ratio at the
-        // sample clock, against the freshest floor. The windowed min then
-        // reads the delay distribution's floor — the quantity the
-        // honest-cap/three-term derivations assume — instead of the min of the
-        // smoothed series, which sits near the distribution's mean and reads
-        // high under heavy jitter. Same tracker type, same window, same ≥ 1 clamp,
-        // same seed-identity guard (which here also discards the exact
-        // floor-setting sample — the min then reads the second-lowest in
-        // window, a negligible upward bias under any dense sample stream,
-        // and the guard stays shared discipline rather than forking).
-        // Gated: off ⇒ nothing is fed and `k_raw_ratio()` is None — every
-        // consumer keeps the smoothed feed.
-        if self.k_raw_on {
-            let now_us = now.duration_since(self.k_raw_epoch).as_micros() as u64;
-            self.k_raw
-                .observe_srtt_over_rtprop(rtt, self.min_rtt, now_us);
         }
 
         // Copa §2.2 competitive-mode detector sampling: mark the instants at
@@ -1476,27 +1442,6 @@ impl CopaState {
         (cwnd as f64 * BACKOFF_MULT).round() as u32
     }
 
-    /// Classic Copa rate target — diagnostic only (the cwnd dynamics above
-    /// are the ramp/backoff scheme; this is the closed-form equilibrium).
-    ///
-    /// Units:
-    ///   dq   [s]         = SRTT − floor, clamped ≥ DQ_FLOOR_SECS
-    ///   rate [symbols/s] = 1 / (COPA_DELTA [1/symbols] × dq [s])
-    ///   cwnd [symbols]   = rate [symbols/s] × SRTT [s]
-    ///
-    /// (rate × SRTT is the pipe-plus-standing-queue the rate can keep full
-    /// over one feedback delay.)
-    pub(crate) fn copa_target_cwnd(&self) -> u32 {
-        let floor = self.min_rtt.unwrap_or(DEFAULT_SRTT).as_secs_f64();
-        let srtt = self.srtt().as_secs_f64();
-        let dq = (srtt - floor).max(DQ_FLOOR_SECS);
-        // `delta` == COPA_DELTA outside wire mode; in wire mode it is the
-        // hint-mapped δ the live law targets.
-        let rate = 1.0 / (self.delta * dq); // symbols per second
-        let cwnd = rate * srtt; // symbols
-        (cwnd.round() as u32).clamp(PathState::MIN_CWND, PathState::MAX_CWND)
-    }
-
     /// BtlBw×RTprop BDP estimate in symbols — the active recovery anchor
     /// (paper §8.3), or None until it is trustworthy.
     ///
@@ -1565,25 +1510,6 @@ impl CopaState {
             self.delta_base = self.delta;
             self.in_compete = false;
         }
-    }
-
-    /// The raw-fed windowed-min echo ratio (`RWM_HONEST_K`), or None with
-    /// the gate off (the smoothed-at-refresh feed stays the only K source).
-    /// 1.0 before the first raw sample — identical to a cold smoothed
-    /// tracker, so warm-up has no behavior cliff.
-    pub(crate) fn k_raw_ratio(&self) -> Option<f64> {
-        if self.k_raw_on {
-            Some(self.k_raw.k())
-        } else {
-            None
-        }
-    }
-
-    /// Test hook: force the raw-sample K feed on (bypasses the
-    /// process-global env cache, which other tests' env vars could race).
-    #[cfg(test)]
-    pub(crate) fn force_k_raw(&mut self) {
-        self.k_raw_on = true;
     }
 
     /// Test hook: force the O(1) max-filter read (bypasses the

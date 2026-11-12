@@ -9,14 +9,8 @@ use super::sender_policy::SenderPolicy;
 
 /// The dynamic store-cap refresh's state: every loop local the refresh block
 /// wrote. Other loop phases READ `dyn_store_cap` (the flow-control gate) and
-/// the DIAG report reads the pool-anchor and K_i gauges.
+/// the DIAG report reads the K_i gauges.
 pub(crate) struct StoreCapState {
-    /// Pool-anchor law state (`RWM_POOL_ANCHOR`, DIAG): whether the N ≥ 2
-    /// honest send-anchor pool computed the cap at the last refresh, and its
-    /// Σ before clamping (the cap gauge decides; the btlbw gauge may stay
-    /// inflated since the cwnd feed is untouched).
-    pub pa_engaged: bool,
-    pub pa_sum: f64,
     /// Three-term law state (`RWM_THREE_TERM`): `Some((window, slack, span))`
     /// at the last refresh where the law engaged, `None` where it did not. The
     /// mechanism gauge (`docs/measurement-discipline.md` rule 15): a battery
@@ -41,8 +35,6 @@ pub(crate) struct StoreCapState {
 impl StoreCapState {
     pub(crate) fn new(pol: &SenderPolicy) -> Self {
         Self {
-            pa_engaged: false,
-            pa_sum: 0.0,
             tt_terms_diag: None,
             tt_print_us: 0,
             percap_k: std::collections::HashMap::new(),
@@ -61,13 +53,12 @@ pub(crate) struct StoreCapCtx<'a> {
     pub copa_feed: &'a Option<Arc<CopaFeed>>,
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
-    pub ccap: &'a mut SenderTeardownGauges,
 }
 
 /// Plain-reliable delay-based window cap (paper §6), refreshed at
 /// most every 5 ms.
 pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
-    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap } = ctx;
+    let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap } = ctx;
     if pol.plain_dyn_cap {
         let dnow = now_us();
         if dnow.saturating_sub(scs.dyn_cap_refresh_us) >= 5_000 {
@@ -89,9 +80,9 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 );
             }
             // Σ-cwnd store law only when the feed owns the operating point
-            // (Copa-sole); the sampling-only feed (RWM_PLAIN_RS) keeps the
+            // (Copa-sole); the sampling-only feed (removed RWM_PLAIN_RS, tag archive/RWM_PLAIN_RS) keeps the
             // anchor-sum law, fed honest samples.
-            if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
+            if copa_feed.is_some() {
                 // Copa owns the operating point (ADR-0062), so the outstanding
                 // window is keyed to Σ cwnd (the probe state), not the BtlBw
                 // anchor. With the honest send-interval sampler a 2×anchor cap
@@ -115,7 +106,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                         .sum();
                     (cs, live.len().max(1))
                 };
-                scs.pa_engaged = false; // Copa-sole owns the store law (Σcwnd)
                 scs.dyn_store_cap = if let Some(cap) = pooled_store_cap(
                     pol.store_paths_on,
                     pol.sum_cap,
@@ -161,7 +151,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                                 rate: p.btlbw_sym_per_s(),
                                 srtt: p.srtt(),
                                 rtprop: p.min_rtt(),
-                                k_raw: p.k_raw(),
                             })
                         })
                         .collect()
@@ -169,12 +158,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     Vec::new()
                 };
                 let tt_terms = three_term_terms(&mut scs.percap_k, &tt_slots, dnow);
-                // Alongside the Σanchor base, accumulate the honest per-path
-                // cap sum Σ anchor_i·(K_i+gain−1) when the honest sampler is
-                // live (see `honest_store_cap`; K_i observed here at the
-                // refresh cadence). hsum = 0.0 whenever honest_cap_on is
-                // false, and the expressions below then run unchanged.
-                let (bdp, hsum, n_live): (f64, f64, usize) = {
+                let (bdp, n_live): (f64, usize) = {
                     let sched = &*scheduler;
                     let live = sched.live_paths();
                     let n = live.len().max(1);
@@ -188,63 +172,9 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // filter is short of membership at this refresh.
                     let act = sched.active_paths();
                     store_cap_sf_record(live.len(), act.len());
-                    // Warm-anchor slots for the honest per-path cap, in
-                    // path-set order — collected here, evaluated once by
-                    // `honest_cap_terms` below (the law lives there).
-                    let (bdp, slots) = store_cap_pool_inputs(&sched, pol.honest_cap_on);
-                    let terms =
-                        honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain);
-                    // hsum = 0.0 whenever honest_cap_on is false, and the
-                    // expressions below run unchanged.
-                    let hsum: f64 = if pol.honest_cap_on {
-                        terms.iter().flatten().sum()
-                    } else {
-                        0.0
-                    };
-                    (bdp, hsum, n)
+                    let bdp = store_cap_pool_inputs(&sched);
+                    (bdp, n)
                 };
-                // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`):
-                // per-live-path honest caps on the send-interval anchor.
-                // Collected at every N ≥ 1 (ADR-0072); a cold send anchor or RTprop
-                // yields a None term, so capw_store_cap's all-warm requirement
-                // falls back to the configured chain below. live_paths(), not
-                // active_paths(): the cwnd-saturation filter must not drop a
-                // saturated path's earned share.
-                let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on {
-                    // Rate source: the send-interval anchor (the ratcheted
-                    // send mean). Path set: live_paths().
-                    let slots: Vec<Option<HonestCapPath>> = {
-                        let sched = &*scheduler;
-                        sched
-                            .live_paths()
-                            .iter()
-                            .map(|id| {
-                                sched.path(*id).and_then(|p| {
-                                    // Cold send anchor or cold RTprop → no
-                                    // slot at all, before feeding the clock
-                                    // tracker.
-                                    let sr = p.send_rate_anchor().filter(|r| *r > 0.0)?;
-                                    let rtp = p
-                                        .min_rtt()
-                                        .map(|d| d.as_secs_f64())
-                                        .filter(|r| *r > 0.0)?;
-                                    Some(HonestCapPath {
-                                        id: *id,
-                                        anchor: Some(sr * rtp),
-                                        rate: Some(sr),
-                                        srtt: p.srtt(),
-                                        rtprop: p.min_rtt(),
-                                        k_raw: p.k_raw(),
-                                    })
-                                })
-                            })
-                            .collect()
-                    };
-                    honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain)
-                } else {
-                    Vec::new()
-                };
-                scs.pa_engaged = false;
                 scs.tt_terms_diag = None;
                 scs.dyn_store_cap = if let Some((cap, w, sl, sp)) = three_term_store_cap(
                     pol.three_term_on,
@@ -254,36 +184,9 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_cap_floor,
                 ) {
                     // The law under test takes precedence over every
-                    // pooled fallback, exactly as `capw_store_cap` does
-                    // for its own arm. Warm-up (any live path cold) ⇒
+                    // pooled fallback. Warm-up (any live path cold) ⇒
                     // `None` ⇒ the configured chain below runs verbatim.
                     scs.tt_terms_diag = Some((w, sl, sp));
-                    cap
-                } else if pol.honest_cap_on && hsum > 0.0 {
-                    // Honest law: the Σ is already per-path-composed (each
-                    // term carries its own K_i and runway), so no gain×
-                    // multiplier here. Ceiling: the N×knee pool when the
-                    // path-scaled pool is configured (every N ≥ 1), else the
-                    // store latch (the `RWM_STORE_PATHS=0` arm).
-                    let ceiling = if pol.store_paths_on {
-                        n_live.saturating_mul(pol.store_path_pool).max(pol.store_cap_floor)
-                    } else {
-                        pol.store_max
-                    };
-                    (hsum.ceil() as usize).clamp(pol.store_cap_floor, ceiling)
-                } else if let Some(cap) = capw_store_cap(
-                    pol.pool_anchor_on,
-                    &pa_terms,
-                    pol.store_cap_floor,
-                    pol.store_path_pool,
-                ) {
-                    // Pool-anchor law engaged (RWM_POOL_ANCHOR, all
-                    // send anchors warm): Σ honest per-path caps on the
-                    // burst-immune send-interval rate, clamped [floor, N·knee].
-                    // The explicit experiment arm (RWM_PLAIN_RS+RWM_HONEST_CAP)
-                    // takes precedence above.
-                    scs.pa_engaged = true;
-                    scs.pa_sum = pa_terms.iter().flatten().sum();
                     cap
                 } else if let Some(cap) = pooled_store_cap(
                     pol.store_paths_on,
@@ -308,36 +211,6 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 } else {
                     pol.store_boot_cap.min(pol.store_max)
                 };
-                // `[CCAP]` bind fractions, taken at the refresh that computed
-                // the cap. The unclamped law is `window + slack + span`,
-                // recorded separately from its bounds
-                // (`docs/measurement-discipline.md` rule 17).
-                if pol.composed_cap {
-                    ccap.refreshes += 1;
-                    ccap.cap_sum += scs.dyn_store_cap as f64;
-                    if let Some((w, sl, sp)) = scs.tt_terms_diag {
-                        ccap.engaged += 1;
-                        // TERM 3's geometry, folded in at the same refresh
-                        // that counted the engagement. `span_forms` returns
-                        // `Some` on exactly the ticks `three_term_store_cap`
-                        // did, so the means and `eng=` share one denominator.
-                        if let Some(sf) = span_forms(&tt_terms) {
-                            debug_assert!(
-                                (sf.shipped - sp).abs() <= 1e-9 * sp.abs().max(1.0),
-                                "the [CCAP] span gauge and the law's TERM 3 \
-                                 disagree — two computations of one geometry"
-                            );
-                            ccap.record_span(sf);
-                        }
-                        let unclamped = (w + sl + sp).ceil();
-                        if unclamped >= WIN_STORE_MAX as f64 {
-                            ccap.at_mem += 1;
-                        }
-                        if unclamped <= pol.store_cap_floor as f64 {
-                            ccap.at_floor += 1;
-                        }
-                    }
-                }
             }
             // `[3T]` readout — the three-term law's mechanism-liveness echo
             // (`docs/measurement-discipline.md` rule 15). It prints whenever
@@ -539,8 +412,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
         gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(gen_tok_cap);
         let burst_cap = if pol.cc_pace { 64u32 } else { 256u32 };
         let mut emitted = 0u32;
-        while !pol.proactive_pacer
-            && (gen_coded_total as f64) < target
+        while (gen_coded_total as f64) < target
             && emitted < burst_cap
             && gen_tokens >= 1.0
             && !cwnd_full
@@ -585,59 +457,6 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-        }
-
-        // Proactive pacer (`RWM_PROACTIVE_PACER`) — present-at-stall. Emit
-        // filling-generation proactive repair on the generation grid, paced by
-        // the same CC token bucket but without the ack-clock `target` gate
-        // (the cumulative ack is stalled exactly when the frontier needs
-        // repair) and without any source-availability gate (this block runs
-        // every loop iteration, including tx_paused wakeups). Bounded by each
-        // generation's ceil(len·r) budget (wants_filling_coding turns false at
-        // budget), the CC rate (gen_tokens) and congestion (cwnd_full).
-        // Supersedes the sealed batched proactive path above; the reactive
-        // deficit below remains the fallback.
-        if pol.proactive_pacer {
-            let mut fill_emitted = 0u32;
-            while fill_emitted < burst_cap
-                && gen_tokens >= 1.0
-                && !cwnd_full
-                && st.encoder.wants_filling_coding()
-            {
-                let path = {
-                    let sched = &*scheduler;
-                    if pol.xpath_repair {
-                        sched.place_repair_spare_path().unwrap_or(0)
-                    } else {
-                        sched.place_symbol(true, &[]).unwrap_or(0)
-                    }
-                };
-                let sym = st.encoder.generate_repair_filling();
-                fill_emitted += 1;
-                gen_tokens -= 1.0;
-                // Count against per-generation in-flight accounting so the
-                // deficit loop never double-sends what proactive covered.
-                if sym.data.len() >= 8 {
-                    let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
-                    *gen_emitted.entry(anchor).or_insert(0) += 1;
-                }
-                proactive_coded_total += 1;
-                let seqs = batch_counter.next(path);
-                let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
-                if let Err(e) = transport.send_symbols(&mut st.tx, path, batch) {
-                    warn!(path, ?e, "failed to send filling-generation repair");
-                }
-                {
-                    let sched = &mut *scheduler;
-                    if let Some(p) = sched.path_mut(path) {
-                        p.charge_in_flight(1);
-                    }
-                }
-                if let Some(ps) = stats.path_ref(path) {
-                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-                }
-                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-            }
         }
 
         // Deficit-driven recovery emission. Emit the residual coded symbols
@@ -1252,18 +1071,16 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 debug!(seq, nack_path, "SACK-gap retransmit");
                 // `RWM_CHARGE_RECOVERY` (default off): bypass channel 1 of 2.
                 // Without it this symbol reaches the link with no in-flight
-                // charge, no pacer debit and no `symbols_sent` increment,
-                // where every other channel meters all three at the handoff
+                // charge and no `symbols_sent` increment, where every
+                // other channel meters both at the handoff
                 // (see `send_arq_repair_batch`). Charging cannot deadlock
                 // recovery: this site reads neither `available()` nor
-                // `cwnd_full`; it is budgeted by `cached_nack_budget`. The
-                // pacer debit may go negative, as the block-ARQ repair's does.
+                // `cwnd_full`; it is budgeted by `cached_nack_budget`.
                 if crate::scheduler::charge_recovery_active() {
                     {
                         let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(nack_path) {
                             p.charge_in_flight(1);
-                            p.consume_pace_tokens(1);
                         }
                     }
                     if let Some(ps) = stats.path_ref(nack_path) {
@@ -1343,7 +1160,6 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(margin_path) {
                             p.charge_in_flight(1);
-                            p.consume_pace_tokens(1);
                         }
                     }
                     if let Some(ps) = stats.path_ref(margin_path) {
@@ -1636,11 +1452,6 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
                 let idx = v.partition_point(|&x| x <= ack);
                 v.drain(..idx);
             }
-        }
-        // Update correction deficit: ACKed symbols no longer need coverage
-        {
-            let sched = &mut *scheduler;
-            sched.deficit.on_ack_cumulative(ack);
         }
         // Reset taper offset on window advancement (new correction cycle)
         st.taper_offset = 0;
