@@ -2,6 +2,7 @@
 """Tests for place38_parse.py (status §38 with amendments 1-3). Run: python3 test_place38_parse.py"""
 import json
 import os
+os.environ.pop("LD_BASE_SHA", None)  # the historical-BASE checks assume 4926822; the session env sets it (status 49)
 import re
 import subprocess
 import sys

@@ -13491,3 +13491,9 @@ at every phase (share 0.75–0.85).
 - **Fix** (`simplify-2` `b1673419`, tests only): both tests set `RWM_STORE=4096` in place of the dead `RWM_PLAIN_RS=1`. Sigma passes 3 of 3; place_arms' other four tests pass. The frontier assertion is `#[ignore]` with its evidence: on the default path the frontier term moves the argmin in only some runs (2 of 3 at 4096, 5 of 6 at 16384, 1 of 2 on main). The arm `RWM_PLACE_HOL` is default off; INERT-AS-DERIVED is its reading.
 
 **§49 amendment 3 (before VM contact): re-pinned CAND** = `simplify-2` `b16734195caf5de56c3cc6b895aa9f77289705c7` (`raptorpath/src` unchanged; two test files differ from amendment 2's CAND). BASE stays `b3000701`.
+
+**§49 session 3 (CAND `b1673419`): suites PASS, then `ABORT-SMOKE`** (2026-11-12T07:37:54Z).
+- **Suites:** release 1132 passed / 0 failed, debug-witness 995 / 0, doc ok, wasm 35, every `tools/l1` python test ok.
+- **Smoke:** CAND LIVE (835.6 Mbit/s). BASE `WITNESS-FAIL` on `wpl_us-numeric-on-BASE wire-gauges-on-BASE`: a third harness assumption that BASE is the unpromoted `4926822`. The new main carries ADR-0073's promotion and prints those gauges, as CAND does. Fixed on main (`place38_parse.base_promoted()`: BASE counts as promoted when `LD_BASE_SHA` names a later main), with two tests. Dry run on this session's real smoke logs: both rows LIVE with `LD_BASE_SHA` set; the original failure reproduces with it unset.
+
+**§49 amendment 4 (before VM contact).** CAND = `simplify-2` `91625f3a7a8aced20d078f8d0ebe6be9c4fd448a` (`raptorpath/src` and `raptorpath/tests` byte-identical to session 3's CAND). Session 3's suites bind it, as in §41c amendment 6, so session 4 runs `LD_PLAN=41c` without `LD_P46_SUITES`: the smoke and the guard. BASE stays `b3000701`.
