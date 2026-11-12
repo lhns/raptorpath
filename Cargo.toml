@@ -1,6 +1,12 @@
 [workspace]
 members = ["raptorpath", "raptorpath-math", "raptorpath-wasm", "gf256"]
 resolver = "2"
+# vendor/ holds third-party crates patched in by path (ADR-0075); not members.
+exclude = ["vendor"]
+
+# quinn-proto 0.11.14 + an inert pacing-rate hook (ADR-0075). One copy in the tree.
+[patch.crates-io]
+quinn-proto = { path = "vendor/quinn-proto" }
 
 [profile.release]
 lto = true

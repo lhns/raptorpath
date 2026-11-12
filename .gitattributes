@@ -4,3 +4,6 @@
 *.sh  text eol=lf
 *.py  text eol=lf
 *.mjs text eol=lf
+
+# Vendored crates stay byte-identical to upstream (ADR-0075): no EOL conversion.
+vendor/** -text
