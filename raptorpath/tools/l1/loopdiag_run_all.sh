@@ -213,10 +213,6 @@ if [ "$P46" = 1 ]; then
   grep -aq -- "RWM_PLACE_WIRE" "$BIN" && fail_all "ABORT-CAND the CAND binary carries RWM_PLACE_WIRE: it does not contain the promotion"
   grep -aq -- "RWM_PLACE_WIRE" "$BIN_BASE" && fail_all "ABORT-CAND the BASE binary carries RWM_PLACE_WIRE: it is not main's"
 fi
-if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "${LD_P46_SUITES:-0}" = "1" ]; then
-  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
-  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
-fi
 
 # ── plan 27: the test suites, after the battery ledger is on disk ────────────
 # Same on-disk source tree (the workspace root, as threadr2_run_all.sh), its own
@@ -268,7 +264,7 @@ run_suites() {
   tst doc timeout 3600 "$CARGO" test --doc -p raptorpath --release || TFAIL=1
   tst wasm env -u GOLDEN_CAPTURE timeout 3600 "$CARGO" test -p raptorpath-wasm || TFAIL=1
   tst debug-witness timeout 7200 "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-  if [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ]; then
+  if [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
     # Status 41 / 47: "the tools/l1 python tests" are all of them.
     tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
   else
@@ -279,6 +275,11 @@ run_suites() {
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
+# Plans 46 / 41c with LD_P46_SUITES=1 (status 49): after run_suites is defined (it was called above its definition before).
+if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "${LD_P46_SUITES:-0}" = "1" ]; then
+  run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
+  era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
+fi
 if [ "$PLAN" = "41" ]; then
   run_suites || fail_all "ABORT-TESTS (TESTS.txt)"
   era "LD-ALL suites ok; before the smoke $(prec_samples | cut -d" " -f2-) io=$(grep '^full' /proc/pressure/io)"
