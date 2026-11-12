@@ -109,3 +109,14 @@ The status stays Proposed until the implementation passes its gates; these answe
 - **Q4 — the 10 ms lag probe: decided by measurement, rule fixed now.** Phase P1 measures its cost (ns bench + in-process CPU, metrics on vs off). If ≤ 0.1 % of a core and no §41c clause moves, it is always on at 10 ms; otherwise always on at 100 ms, with 10 ms enabled only together with the full-rate recorder.
 - **Q5 — collector tick 1 s, OTLP export 60 s** (the spec default `OTEL_METRIC_EXPORT_INTERVAL`, overridable by the standard variable). The harness reads the 1 s snapshot JSONL, never OTLP (battery rows are shorter than one export interval).
 - **Q6 — Prometheus through an OpenTelemetry Collector** (OTLP in, Prometheus out). No native `/metrics` renderer: OTLP is the single export path, so a second renderer would be one more rendering to keep consistent. ADR-0013's Layer 4 is superseded.
+
+### Amendments to Q3–Q5 (advisor review, same day)
+- **Q3.**
+  - **Variable gating:** `OTEL_TRACES_SAMPLER`'s spec default is `parentbased_always_on`. Unset here means 1/64 (a stated deviation), so a fleet-wide `always_on` must not silently switch on the full-rate ring. The variables are honoured only with the `otel` feature on; the resolved ratio is echoed at startup; the battery harness withholds `OTEL_*` (`env -u`).
+  - **Mask form:** the mask is a threshold on a mixed hash of the seq, not `seq mod 2^k` (`RWM_EMIT_BURST` is 64, so low bits would alias with burst position). A threshold nests, so ends with different ratios still share samples.
+  - **Registrations:** every pre-registration pins the ratio.
+- **Q4.** The probe gets its own period setting (default by the rule below), not keyed on "ratio = 1". The rule's test cannot be "no §41c clause moves": `lag_E` may come from this probe (check whether it is the existing `[LAG]` probe under `RWM_RTOBS`, on in both arms of every battery so far), and the guard is blind below ≈ 5 % CPU. The test becomes: park counts, the probe's own in-process CPU, and the goodput clauses, probe on vs off. The 100 ms fallback is the coordinator's addition to the user's "only with the full-rate recorder", labelled as such.
+- **Q5.**
+  - **Final flush:** OTLP is rendered in-process, so the exporter must flush on shutdown, or a 9–50 s run exports nothing.
+  - **Time-in-state counters:** share-of-time readouts (ProbeRtt, `paused`, qcwnd below BDP) are time-in-state counters, not tick-sampled gauges (a 9 s row gives ≈ 8 ticks). A joint condition such as R2b gets its own counter.
+- **Q1.** Before removing keys, grep all consumers beyond the `status` CLI and `monitoring_test.rs`.
