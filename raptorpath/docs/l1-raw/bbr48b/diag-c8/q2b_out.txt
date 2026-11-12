@@ -1,0 +1,12 @@
+c8-100@def-CAND-s42-r1-a run_end_t=49.3 UNDER lines=15 t from 10.5 to 49.3; first: (10.5, [0], {0: 0.42, 1: 1.02}, ['B', 'B']); last: (49.3, [0, 1], {0: 0.13, 1: 0.18}, ['B', 'B']); diag at last: (216.8, '0', '0')
+c8-100@def-CAND-s42-r2-a run_end_t=49.2 UNDER lines=12 t from 46.4 to 49.2; first: (46.4, [0, 1], {0: 0.06, 1: 0.17}, ['B', 'B']); last: (49.2, [0, 1], {0: 0.11, 1: 0.22}, ['B', 'B']); diag at last: (219.6, '0', '0')
+c8-100@def-CAND-s42-r3-a run_end_t=48.8 UNDER lines=12 t from 45.9 to 48.8; first: (45.9, [0], {0: 0.12, 1: 1.05}, ['B', 'B']); last: (48.8, [0, 1], {0: 0.1, 1: 0.28}, ['B', 'B']); diag at last: (169.2, '0', '0')
+c8-100@def-CAND-s42-r4-a run_end_t=48.8 UNDER lines=13 t from 45.6 to 48.8; first: (45.6, [0], {0: 0.08, 1: 1.04}, ['B', 'B']); last: (48.8, [0], {0: 0.11, 1: 1.04}, ['B', 'B']); diag at last: (250.5, '0', '0')
+c8-100@def-CAND-s42-r5-a run_end_t=49.3 UNDER lines=11 t from 41.1 to 49.3; first: (41.1, [0], {0: 0.41, 1: 1.04}, ['B', 'B']); last: (49.3, [0, 1], {0: 0.13, 1: 0.2}, ['B', 'B']); diag at last: (115.5, '0', '0')
+c8-100@def-CAND-s42-r6-a run_end_t=49.0 no UNDER lines
+c8-100@def-CAND-s7-r1-a1 run_end_t=50.0 UNDER lines=13 t from 46.9 to 50.0; first: (46.9, [1], {0: 1.06, 1: 0.09}, ['B', 'B']); last: (50.0, [0, 1], {0: 0.13, 1: 0.2}, ['B', 'B']); diag at last: (272.8, '0', '0')
+c8-100@def-CAND-s7-r2-a1 run_end_t=50.0 UNDER lines=18 t from 41.1 to 50.0; first: (41.1, [0], {0: 0.8, 1: 1.03}, ['B', 'B']); last: (50.0, [0, 1], {0: 0.1, 1: 0.26}, ['B', 'B']); diag at last: (198.9, '0', '0')
+c8-100@def-CAND-s7-r3-a1 run_end_t=49.8 UNDER lines=16 t from 45.9 to 49.8; first: (45.9, [0], {0: 0.14, 1: 1.02}, ['B', 'B']); last: (49.8, [0, 1], {0: 0.16, 1: 0.26}, ['B', 'B']); diag at last: (139.3, '0', '0')
+c8-100@def-CAND-s7-r4-a1 run_end_t=48.8 UNDER lines=14 t from 45.4 to 48.8; first: (45.4, [0], {0: 0.07, 1: 1.03}, ['B', 'B']); last: (48.8, [0], {0: 0.21, 1: 1.03}, ['B', 'B']); diag at last: (160.8, '0', '0')
+c8-100@def-CAND-s7-r5-a1 run_end_t=49.7 UNDER lines=18 t from 10.5 to 49.7; first: (10.5, [0], {0: 0.7, 1: 1.04}, ['B', 'R']); last: (49.7, [0, 1], {0: 0.16, 1: 0.21}, ['B', 'B']); diag at last: (132.4, '0', '0')
+c8-100@def-CAND-s7-r6-a1 run_end_t=49.8 UNDER lines=15 t from 30.8 to 49.8; first: (30.8, [0], {0: 0.26, 1: 1.03}, ['B', 'B']); last: (49.8, [0, 1], {0: 0.14, 1: 0.28}, ['B', 'B']); diag at last: (252.0, '0', '0')

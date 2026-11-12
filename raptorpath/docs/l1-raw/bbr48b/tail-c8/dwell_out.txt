@@ -1,0 +1,48 @@
+leg1 BASE
+   0- 4s B=hand-tx   17.3 dgrams  dwell=B/txrate     9ms  quinn srtt(wire)   nanms  app-echo rtt   230ms  app-dwell   221ms
+   4- 8s B=hand-tx    6.2 dgrams  dwell=B/txrate     3ms  quinn srtt(wire)   nanms  app-echo rtt   258ms  app-dwell   255ms
+   8-12s B=hand-tx   60.7 dgrams  dwell=B/txrate    27ms  quinn srtt(wire)   nanms  app-echo rtt   309ms  app-dwell   282ms
+  12-16s B=hand-tx   67.5 dgrams  dwell=B/txrate    38ms  quinn srtt(wire)   nanms  app-echo rtt   370ms  app-dwell   332ms
+  16-20s B=hand-tx   72.1 dgrams  dwell=B/txrate    36ms  quinn srtt(wire)   nanms  app-echo rtt   320ms  app-dwell   284ms
+  20-24s B=hand-tx   49.7 dgrams  dwell=B/txrate    36ms  quinn srtt(wire)   nanms  app-echo rtt   281ms  app-dwell   246ms
+  24-28s B=hand-tx   33.7 dgrams  dwell=B/txrate    21ms  quinn srtt(wire)   nanms  app-echo rtt   272ms  app-dwell   251ms
+  28-32s B=hand-tx   57.1 dgrams  dwell=B/txrate    33ms  quinn srtt(wire)   nanms  app-echo rtt   264ms  app-dwell   231ms
+  32-36s B=hand-tx   39.9 dgrams  dwell=B/txrate    17ms  quinn srtt(wire)   nanms  app-echo rtt   265ms  app-dwell   248ms
+  36-40s B=hand-tx   33.9 dgrams  dwell=B/txrate    24ms  quinn srtt(wire)   nanms  app-echo rtt   247ms  app-dwell   223ms
+  40-44s B=hand-tx   36.6 dgrams  dwell=B/txrate    17ms  quinn srtt(wire)   nanms  app-echo rtt   267ms  app-dwell   250ms
+leg1 CAND
+   0- 4s B=hand-tx  483.6 dgrams  dwell=B/txrate   259ms  quinn srtt(wire)   nanms  app-echo rtt   319ms  app-dwell    60ms
+   4- 8s B=hand-tx  740.9 dgrams  dwell=B/txrate   368ms  quinn srtt(wire)    86ms  app-echo rtt   446ms  app-dwell    78ms
+   8-12s B=hand-tx  828.9 dgrams  dwell=B/txrate   420ms  quinn srtt(wire)    85ms  app-echo rtt   490ms  app-dwell    70ms
+  12-16s B=hand-tx  938.8 dgrams  dwell=B/txrate   464ms  quinn srtt(wire)    91ms  app-echo rtt   566ms  app-dwell   102ms
+  16-20s B=hand-tx  548.7 dgrams  dwell=B/txrate   269ms  quinn srtt(wire)    89ms  app-echo rtt   386ms  app-dwell   118ms
+  20-24s B=hand-tx  249.6 dgrams  dwell=B/txrate   128ms  quinn srtt(wire)    86ms  app-echo rtt   215ms  app-dwell    87ms
+  24-28s B=hand-tx  248.8 dgrams  dwell=B/txrate   123ms  quinn srtt(wire)    87ms  app-echo rtt   208ms  app-dwell    85ms
+  28-32s B=hand-tx  335.9 dgrams  dwell=B/txrate   168ms  quinn srtt(wire)    86ms  app-echo rtt   252ms  app-dwell    84ms
+  32-36s B=hand-tx  304.8 dgrams  dwell=B/txrate   150ms  quinn srtt(wire)    90ms  app-echo rtt   242ms  app-dwell    91ms
+  36-40s B=hand-tx  201.3 dgrams  dwell=B/txrate   100ms  quinn srtt(wire)    85ms  app-echo rtt   185ms  app-dwell    86ms
+  40-44s B=hand-tx  160.4 dgrams  dwell=B/txrate    82ms  quinn srtt(wire)    82ms  app-echo rtt   164ms  app-dwell    81ms
+leg0 BASE
+   0- 4s B=hand-tx  123.9 dgrams  dwell=B/txrate    13ms  quinn srtt(wire)   nanms  app-echo rtt    83ms  app-dwell    71ms
+   4- 8s B=hand-tx  250.0 dgrams  dwell=B/txrate    25ms  quinn srtt(wire)   nanms  app-echo rtt   121ms  app-dwell    95ms
+   8-12s B=hand-tx  889.9 dgrams  dwell=B/txrate    98ms  quinn srtt(wire)   nanms  app-echo rtt   189ms  app-dwell    92ms
+  12-16s B=hand-tx 1285.5 dgrams  dwell=B/txrate   130ms  quinn srtt(wire)   nanms  app-echo rtt   252ms  app-dwell   122ms
+  16-20s B=hand-tx  850.8 dgrams  dwell=B/txrate    85ms  quinn srtt(wire)   nanms  app-echo rtt   207ms  app-dwell   122ms
+  20-24s B=hand-tx  847.9 dgrams  dwell=B/txrate    88ms  quinn srtt(wire)   nanms  app-echo rtt   200ms  app-dwell   112ms
+  24-28s B=hand-tx  830.6 dgrams  dwell=B/txrate    84ms  quinn srtt(wire)   nanms  app-echo rtt   212ms  app-dwell   128ms
+  28-32s B=hand-tx  873.0 dgrams  dwell=B/txrate    90ms  quinn srtt(wire)   nanms  app-echo rtt   214ms  app-dwell   124ms
+  32-36s B=hand-tx  769.5 dgrams  dwell=B/txrate    78ms  quinn srtt(wire)   nanms  app-echo rtt   206ms  app-dwell   128ms
+  36-40s B=hand-tx  595.6 dgrams  dwell=B/txrate    60ms  quinn srtt(wire)   nanms  app-echo rtt   187ms  app-dwell   126ms
+  40-44s B=hand-tx  528.3 dgrams  dwell=B/txrate    56ms  quinn srtt(wire)   nanms  app-echo rtt   178ms  app-dwell   122ms
+leg0 CAND
+   0- 4s B=hand-tx  689.1 dgrams  dwell=B/txrate    71ms  quinn srtt(wire)   nanms  app-echo rtt    90ms  app-dwell    19ms
+   4- 8s B=hand-tx  801.6 dgrams  dwell=B/txrate    81ms  quinn srtt(wire)    21ms  app-echo rtt   103ms  app-dwell    22ms
+   8-12s B=hand-tx 1130.2 dgrams  dwell=B/txrate   126ms  quinn srtt(wire)    21ms  app-echo rtt   139ms  app-dwell    14ms
+  12-16s B=hand-tx 1172.5 dgrams  dwell=B/txrate   119ms  quinn srtt(wire)    23ms  app-echo rtt   144ms  app-dwell    25ms
+  16-20s B=hand-tx  980.8 dgrams  dwell=B/txrate    99ms  quinn srtt(wire)    23ms  app-echo rtt   122ms  app-dwell    23ms
+  20-24s B=hand-tx 1001.0 dgrams  dwell=B/txrate   106ms  quinn srtt(wire)    22ms  app-echo rtt   129ms  app-dwell    23ms
+  24-28s B=hand-tx 1039.7 dgrams  dwell=B/txrate   105ms  quinn srtt(wire)    23ms  app-echo rtt   128ms  app-dwell    23ms
+  28-32s B=hand-tx 1004.4 dgrams  dwell=B/txrate   109ms  quinn srtt(wire)    23ms  app-echo rtt   131ms  app-dwell    22ms
+  32-36s B=hand-tx  999.1 dgrams  dwell=B/txrate   102ms  quinn srtt(wire)    23ms  app-echo rtt   128ms  app-dwell    26ms
+  36-40s B=hand-tx 1049.5 dgrams  dwell=B/txrate   107ms  quinn srtt(wire)    23ms  app-echo rtt   132ms  app-dwell    24ms
+  40-44s B=hand-tx 1159.3 dgrams  dwell=B/txrate   126ms  quinn srtt(wire)    23ms  app-echo rtt   146ms  app-dwell    20ms

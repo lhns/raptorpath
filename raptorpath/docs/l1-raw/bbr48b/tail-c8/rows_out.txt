@@ -1,0 +1,27 @@
+POST HOC. per-arm means (rows)
+c8-100   BASE n=12 tail=3.91s H0=1890 lag0=73179 H0/tail=483/s mu_retx=498/s drain=516/s cod=52/s on_leg1=0.11 flight_leg0=0.76 rtt_tail=147.5ms | main: rtt=270ms infl=758 win=4096 retx=297/s cumage=3634ms
+c8-100   CAND n=12 tail=4.73s H0=2246 lag0=83189 H0/tail=474/s mu_retx=501/s drain=500/s cod=53/s on_leg1=0.21 flight_leg0=0.76 rtt_tail=60.8ms | main: rtt=257ms infl=195 win=4096 retx=285/s cumage=5849ms
+  c8-100 BASE s42r3: tail 2.99 H0 1408 lag0 45714 mu 393 drain 540 on1 0.00 rtt 296 infl_main 949 cumage 3854
+  c8-100 BASE s7r1: tail 3.19 H0 1785 lag0 59717 mu 537 drain 582 on1 0.04 rtt 139 infl_main 925 cumage 4158
+  c8-100 BASE s42r1: tail 3.42 H0 1716 lag0 75028 mu 536 drain 514 on1 0.41 rtt 50 infl_main 1183 cumage 3274
+  c8-100 BASE s42r4: tail 3.57 H0 1769 lag0 76764 mu 562 drain 538 on1 0.02 rtt 54 infl_main 276 cumage 3654
+  c8-100 BASE s42r6: tail 3.59 H0 1808 lag0 86955 mu 535 drain 532 on1 0.01 rtt 69 infl_main 578 cumage 3698
+  c8-100 BASE s7r6: tail 4.00 H0 2196 lag0 77998 mu 540 drain 560 on1 0.05 rtt 91 infl_main 312 cumage 4128
+  c8-100 BASE s7r3: tail 4.06 H0 2049 lag0 74376 mu 533 drain 538 on1 0.01 rtt 50 infl_main 755 cumage 3329
+  c8-100 BASE s7r5: tail 4.12 H0 2382 lag0 70650 mu 456 drain 603 on1 0.00 rtt 644 infl_main 962 cumage 2987
+  c8-100 BASE s42r2: tail 4.17 H0 1808 lag0 75240 mu 481 drain 442 on1 0.36 rtt 49 infl_main 497 cumage 4340
+  c8-100 BASE s7r2: tail 4.20 H0 1872 lag0 71962 mu 496 drain 481 on1 0.00 rtt 233 infl_main 715 cumage 3536
+  c8-100 BASE s7r4: tail 4.51 H0 1800 lag0 73047 mu 454 drain 428 on1 0.15 rtt 47 infl_main 978 cumage 3494
+  c8-100 BASE s42r5: tail 5.14 H0 2083 lag0 90697 mu 446 drain 429 on1 0.21 rtt 48 infl_main 963 cumage 3150
+  c8-100 CAND s42r4: tail 4.15 H0 2034 lag0 85829 mu 518 drain 501 on1 0.02 rtt 166 infl_main 188 cumage 5190
+  c8-100 CAND s42r6: tail 4.15 H0 1922 lag0 82274 mu 491 drain 481 on1 0.18 rtt 48 infl_main 205 cumage 5927
+  c8-100 CAND s7r4: tail 4.15 H0 2233 lag0 79675 mu 558 drain 579 on1 0.02 rtt 70 infl_main 164 cumage 5243
+  c8-100 CAND s42r3: tail 4.23 H0 2113 lag0 82386 mu 508 drain 529 on1 0.30 rtt 49 infl_main 189 cumage 6626
+  c8-100 CAND s42r5: tail 4.45 H0 1976 lag0 80927 mu 468 drain 458 on1 0.29 rtt 49 infl_main 196 cumage 6039
+  c8-100 CAND s42r2: tail 4.66 H0 2401 lag0 96140 mu 540 drain 541 on1 0.25 rtt 49 infl_main 208 cumage 5688
+  c8-100 CAND s42r1: tail 4.83 H0 2449 lag0 86529 mu 491 drain 522 on1 0.13 rtt 57 infl_main 191 cumage 6383
+  c8-100 CAND s7r6: tail 4.93 H0 2164 lag0 75247 mu 464 drain 467 on1 0.28 rtt 47 infl_main 189 cumage 5837
+  c8-100 CAND s7r5: tail 5.09 H0 2418 lag0 85666 mu 519 drain 513 on1 0.26 rtt 48 infl_main 166 cumage 4986
+  c8-100 CAND s7r3: tail 5.27 H0 2383 lag0 83960 mu 501 drain 465 on1 0.21 rtt 49 infl_main 223 cumage 5860
+  c8-100 CAND s7r2: tail 5.32 H0 2352 lag0 78294 mu 474 drain 461 on1 0.32 rtt 49 infl_main 206 cumage 6258
+  c8-100 CAND s7r1: tail 5.57 H0 2502 lag0 81337 mu 478 drain 480 on1 0.28 rtt 50 infl_main 217 cumage 6149

@@ -1,0 +1,2 @@
+BASE f=0.25: H0=1359 tail=2.73s | f=0.5: H0=824 tail=1.65s | f=0.75: H0=437 tail=0.88s | f=1.0: H0=68 tail=0.15s
+CAND f=0.25: H0=1597 tail=3.19s | f=0.5: H0=946 tail=1.89s | f=0.75: H0=295 tail=0.59s | f=1.0: H0=0 tail=0.15s
