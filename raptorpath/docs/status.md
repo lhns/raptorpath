@@ -13516,3 +13516,16 @@ at every phase (share 0.75–0.85).
 - **Resolution (`resolution41c`, seed 0, reported only):** goodput d80 c1s 5 %, c1d 8 %, c2 2 %, c8 12 %; CPU/GB d80 3–12 % (power at +2.4 %: c1s client 0.73, server 0.70; c2 client 0.63; elsewhere ≤ 0.27).
 - **Decision (§49 rule): PASS → `simplify-2` merges to main**, with status §1's on-list edit. Ledgers: `docs/l1-raw/simplify49/` (scrubbed).
 - **Debt carried:** `RWM_PLACE_HOL`'s execution witness is `#[ignore]`d (archive the arm, or build a deterministic fixture: the user's call); 16 other tests still set the dead `RWM_PLAIN_RS=1` and need classifying (those with a regime assertion may now pass without reaching their case); status §2's verdict table is stale.
+
+**§48b amendment 1 (before VM contact): trees, harness, scoring choices, rehearsal.**
+- **BASE = main `0a1ddb88b9445d7dca16959dca07c66d48af57c3`** (after §49's merge; `LD_BASE_SHA`). **CAND = `bbr48cand` `e5d7ffbd3a6701cdab924ed9937c5a86877ad65c`** (`LD_CAND_SHA`): `bbrfix48b` + `harness48` + that main. `git diff --stat BASE CAND -- raptorpath/src raptorpath/tests` lists exactly the seven registered files (`net/diag.rs`, `transport/{bbr_rs,cc_sim,io_owner,mod,quic}.rs`, `tests/qcc_gauge_loopback.rs`).
+- **Host checks:** on `bbrfix48b` (`ab712e65`) debug lib 630 / 0 / 16, `cc_sim` 7 / 0 / 6 ignored by design, `qcc_gauge_loopback` 1 / 0. `recv_alloc_bound` reads 24.47 on this host, but unmodified main reads 24.57 here too: a host artifact; the VM suites decide. The last merge (main with §49) auto-merged `net/diag.rs` and was not compiled on the host (out of memory); the rehearsal builds it.
+- **Harness (`harness48`, plan 48, `bbr48_score.py`, 101 checks):** built without a red-first demonstration. Dry run on §41c session 2's real ledger reproduces its GATE-41c p = 0.2256 and min-p 0.01160 exactly; p_rest there is 0.2098. (Item 6's wording "as both arms' pool" is replaced by this: the scorer is fed the real 96-row ledger.)
+- **Scoring choices the registration left open, now fixed:**
+  1. A row's R2b is the max over its active legs; NOT-CONTROLLED reads the median over CAND rows of that, and the 0.25 row limit on it. The per-leg alternative is printed (`R2B-LEG-READING`), not scored.
+  2. A leg is active on a line when its `qlp` sent counter advanced since the previous `[DIAG]` line; R2 and R3 read lines at t ≥ 1 s.
+  3. R3's arm figures are the mean and p50 of per-row medians.
+  4. The tail clause's median is over completed CAND rows; a CAND DNF or crash counts as goodput 0 and fails it.
+  5. The ladder: NO VERDICT, then NOT-CONTROLLED, then the rest as registered. R1 PASS with a failed tail clause reads REGRESSION (PROMOTE-ELIGIBLE needs the tail; CONTROLLED-WITH-COST needs R1 to fail).
+  6. c8's slow leg is leg 1 (c3); its wrtt p50 is the median over rows of each row's median.
+- **Rehearsal first (`LD_REHEARSE=1`, unscored).** Every plan-48 path is unexecuted, and five of §49's six launches died on such paths. So a short session runs the two builds, the CAND and BASE smoke rows at c8 and `smoke48`, then stops (`LD-ALL-REHEARSAL-DONE`). Its rows are never scored. Only after `REHEARSAL-PASS` does the full session (suites, smoke, 96 rows) launch, on the same pins.
