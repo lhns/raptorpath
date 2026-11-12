@@ -63,6 +63,10 @@ GUARD_CELLS = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-1
 EXPECT_ROWS41C = len(GUARD_CELLS) * (12 + 12)                      # 96: BASE n = 12 and CAND n = 12 per cell (the registered design)
 SMOKE41C = [("c1s-400", "def", "BASE", "42", 1), ("c1s-400", "def", "CAND", "42", 1)]   # one row per binary
 BLOCKS41C = [(sd, rp) for rp in range(1, 7) for sd in ("42", "7")]   # 12 groups, rep-major, seed 42 before 7: 6 + 6 per seed per arm
+# ── status 48b: the bbr_rs battery (plan 48): the guard's 96 rows at §48's long sizes, cells in the order c2, c1s, c8, c1d; smoke = CAND then BASE at c8 ──
+CELLS48 = [("c2-100", "def"), ("c1s-400", "def"), ("c8-100", "def"), ("c1d-400", "def")]
+BYTES48 = {"c1s-400": 5000000000, "c1d-400": 5000000000, "c2-100": 600000000, "c8-100": 600000000}   # §48 Step 1 sizes (the cell names keep their scenario)
+SMOKE48 = [("c8-100", "def", "CAND", "42", 1), ("c8-100", "def", "BASE", "42", 1)]    # unscored check rows (§48b item 4)
 S3_REL = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065},
           "c2-100": {"gp": 0.014, "cpu": 0.063}, "c8-100": {"gp": 0.040, "cpu": 0.116}}
 DNF_THRESHOLD = 0.20
@@ -127,6 +131,19 @@ def plan41c(smoke=False):
     out = []
     for g, (seed, rep) in enumerate(BLOCKS41C):
         for cell, store in GUARD_CELLS:
+            for a in (["BASE", "CAND"] if g % 2 == 0 else ["CAND", "BASE"]):
+                out.append((cell, store, a, seed, rep))
+    return out
+
+
+def plan48(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 48b): plan 41c's twelve groups and pair rotation (BASE,CAND on even groups, CAND,BASE on odd),
+    cells in the order c2, c1s, c8, c1d; the smoke is one CAND row then one BASE row at c8."""
+    if smoke:
+        return list(SMOKE48)
+    out = []
+    for g, (seed, rep) in enumerate(BLOCKS41C):
+        for cell, store in CELLS48:
             for a in (["BASE", "CAND"] if g % 2 == 0 else ["CAND", "BASE"]):
                 out.append((cell, store, a, seed, rep))
     return out
@@ -317,6 +334,8 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant, absent_off=True)
     row["gates_absent"] = sorted(g for g in GATES_ABSENT_IS_OFF if lc.gate_tok(cli, g) is None or lc.gate_tok(srv, g) is None)
     row["bin_sha"], row["store"] = sha, store
+    if os.environ.get("LD_ROW_BYTES"):
+        row["bytes"] = int(os.environ["LD_ROW_BYTES"])           # plan 48: the row's own size (CPU/GB, scorer)
     nleg = sp.N_LEGS[cell]
     row["gate_wire_cli"], row["gate_wire_srv"] = lc.gate_tok(cli, "RWM_PLACE_WIRE"), lc.gate_tok(srv, "RWM_PLACE_WIRE")
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
@@ -400,6 +419,10 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             p.append(f"wpl_us-numeric-on-{arm}")
         if eta is not None and (eta["w_n"] or eta["w_calls"] or any(eta[k] != "-" for k in ("ref_fl", "w_cold", "w_mv"))):
             p.append(f"wire-gauges-on-{arm}")
+    if os.environ.get("LD_PLAN") == "48":
+        import bbr48_score          # lazy: bbr48_score imports this module
+        row["b48"], p48 = bbr48_score.row_readouts(cli, srv, cell, arm)
+        p.extend(p48)
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -797,7 +820,7 @@ def score41c(paths, out=print):
     rows_all, tokens = rows_of(paths)
     rows, rinfo = apply_replacements(rows_all)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
-    out("MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 4926822 (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
+    out(f"MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main {os.environ.get('LD_BASE_SHA', '4926822')[:8]} (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
     extra = f" (+{rinfo['n_extra']} replacement row{'s' if rinfo['n_extra'] != 1 else ''} in the ledger)" if rinfo["n_extra"] else ""
     out(f"ROWS {rinfo['n_slots']}/{EXPECT_ROWS41C}{extra}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
@@ -947,6 +970,10 @@ def main(argv):
     if cmd == "plan41c":
         for c, s, ar, seed, rep in plan41c(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "plan48":
+        for c, s_, ar, seed, rep in plan48(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
         return 0
     if cmd == "check41c":
         return check(a[0], plan41c=True)

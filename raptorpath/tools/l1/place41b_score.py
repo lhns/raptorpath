@@ -52,7 +52,7 @@ def value(r, cell, key):
     if r.get("dnf") or r.get(key) is None:
         return None
     if key in ("cpu_cli", "cpu_srv"):
-        b = sp.CELL_SPEC[cell][3]
+        b = r.get("bytes") or sp.CELL_SPEC[cell][3]       # plan 48 sizes its cells itself and records the row's bytes
         return r[key] / (b / 1e9)
     return r[key]
 
@@ -97,7 +97,8 @@ class Pool:
             self.ref_rows, self.test_rows = self.ref_rows + crash(rows, cell, ref_arm), self.test_rows + crash(rows, cell, test_arm)
         self.rows = self.ref_rows + self.test_rows
         self.true = list(range(len(self.ref_rows), len(self.rows)))
-        self.defs = [d for d in clause_defs(cell) if d[0] not in exclude]
+        # exclude: clause names (every cell) or (cell, clause) pairs (one cell: status 48b's p_rest drops only c2's and c8's goodput)
+        self.defs = [d for d in clause_defs(cell) if d[0] not in exclude and (cell, d[0]) not in exclude]
         # COLLAPSE (status 47) is harness 43's definition (place43_parse.py: "COLLAPSE is the DNF row only", amendment 2): a DNF row is the WORST
         # rank on every clause of its cell in the rank statistic. A completed row far below the cell's goodput is NOT forced: it ranks by
         # its own values and is listed as a slow row (goodput < SLOW_FRAC x the median of the cell's POOLED rows, BASE and CAND together,
@@ -380,7 +381,7 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
     out("RUN ORDER (ledger order; every row, any status): idx cell arm seed rep status mbps cpuC/GB cpuS/GB lagC lagS")
     for i, r in enumerate(rows):
         if r["cell"] in dict(cells):
-            b = sp.CELL_SPEC[r["cell"]][3] / 1e9
+            b = (r.get("bytes") or sp.CELL_SPEC[r["cell"]][3]) / 1e9
             f = lambda k, s=1.0: ("%.1f" % (r[k] / s)) if r.get(k) is not None else "-"  # noqa: E731
             out(f"  {i:>3} {r['cell']} {r['arm']:<4} s{r['seed']} r{r['rep']} {r['status']} {f('mbps')} {f('cpu_cli', b)} {f('cpu_srv', b)} {f('cli_lag_E')} {f('srv_lag_E')}")
     return {"gate": gate, "p": res["p"], "T_true": res["T_true"], "wire_p": wres["p"] if wres else None,

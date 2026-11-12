@@ -79,7 +79,7 @@ check("`event SLOW` = 1:1500 (RWM_EVENT=<leg>:<delta_ms>)", cp.stdout.strip() ==
 # ── the shell side ────────────────────────────────────────────────────────
 check("battery: plan 46 accepted, per-row binary (BASE -> BIN_BASE), CAND arm, the injector env set per row and withheld otherwise, "
       "check rows get the qdisc captures, the evt files are copied, a dead injection is ABORT-INJECT, c8-500 and c1d-3500 cells, 22-row table",
-      "|46) ;;" in bat and 'RBIN="$BIN_BASE"' in bat and "CAND)" in bat and "-u RWM_EVENT -u RWM_EVENT_QDISC -u RWM_EVENT_ONSET_S -u RWM_EVENT_HOLD_S" in bat
+      "|46|48) ;;" in bat and 'RBIN="$BIN_BASE"' in bat and "CAND)" in bat and "-u RWM_EVENT -u RWM_EVENT_QDISC -u RWM_EVENT_ONSET_S -u RWM_EVENT_HOLD_S" in bat
       and "RWM_EVENT_QDISC=1" in bat and "rwm-evt.txt" in bat and "rwm-evtq.txt" in bat and "ABORT-INJECT" in bat
       and 'c8-500)  echo "c2 c3 dual 500000000"' in bat and 'c1d-3500) echo "c1 c1 dual 3500000000"' in bat and "-eq 22" in bat and "place46_parse.py" in bat)
 check("battery: the CAND binary must lack RWM_PLACE_WIRE (the promotion), refused otherwise", 'ABORT-CAND the CAND binary' in bat and 'grep -aq -- "RWM_PLACE_WIRE" "$BIN"' in bat)
@@ -200,6 +200,10 @@ check("analyze: R = the last of the first 4 consecutive lines that START after t
       "lines suffice to pool to sigma/2, so R = 3.25 (the rule as written)", not m["R_cens"] and abs(m["R"] - 3.25) < 1e-6, m["R"])
 check("analyze: R0 = the first line after t_off with d_hit > 2 (back at +3.0 s -> 3.25); T_w finite", abs(m["R0"] - 3.25) < 0.3 and not m["R0_cens"] and not m["T_w_cens"], (m["R0"], m["T_w"]))
 check("analyze: the event witness bites (peak wrtt 1570 >= 70 + 750) and the exit witness holds (share collapses inside [t_on, t_off + 1 s])", m["event_ok"] and m["exit_ok"], (m["event_peak_wrtt"], m["exit_ok"]))
+m500 = q.analyze(gen(back_at=3.0, delta_w=300), T_ON, T_OFF, 1, delta_ms=500)
+check("analyze: a +500 ms event bites at Delta/2 = 250 ms (wrtt +300; session 3's SLOW500 rows peaked +290..+342 and were voided by a fixed 750)", m500["event_ok"], m500["event_peak_wrtt"])
+check("analyze: a +500 ms event that moved wrtt by only 200 ms does not bite", not q.analyze(gen(back_at=3.0, delta_w=200), T_ON, T_OFF, 1, delta_ms=500)["event_ok"])
+check("analyze: the scored Delta = 1500 still needs 750 ms (wrtt +700 does not bite)", not q.analyze(gen(back_at=3.0, delta_w=700), T_ON, T_OFF, 1)["event_ok"])
 check("analyze: gbar_pre 100, gbar_post 95, G = 1 - 95/100 = 5 %, gbar_hold between 40 and 50 (its last line is the post value)",
       abs(m["g_pre"] - 100) < 1e-6 and 40 <= m["g_hold"] < 50 and abs(m["g_post"] - 95) < 1e-6 and abs(m["G"] - 0.05) < 1e-6, m)
 mc = q.analyze(gen(back_at=None), T_ON, T_OFF, 1)

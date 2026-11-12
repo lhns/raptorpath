@@ -1565,6 +1565,16 @@ def main(argv):
         import place38_parse
         place38_parse.score41c(argv[2:])
         return 0
+    if cmd == "smoke48":
+        import bbr48_score
+        return bbr48_score.smoke48(argv[2])
+    if cmd == "check48":
+        import place38_parse
+        return place38_parse.check(argv[2], plan41c=True)       # the same 96-row design
+    if cmd == "score48":
+        import bbr48_score
+        bbr48_score.score(argv[2:])
+        return 0
     if cmd == "smoke46":
         import place46_parse
         return place46_parse.smoke(argv[2])
