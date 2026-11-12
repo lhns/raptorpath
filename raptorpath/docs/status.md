@@ -13579,3 +13579,17 @@ Session `LD_PLAN=48`, CAND `bbr48cand` `e5d7ffbd` (`RWM_QUIC_CC=bbr_rs`), BASE m
 **§48b user decision (2026-11-12): continue `bbr_rs`.** A new registration with the §48 ladder unchanged. First the δ-free fixes: ProbeRtt's goodput cost (≈ 0.8 % at c2/c8) and the unexplained c8 CPU cost (a host/VM ns bench of `bbr_rs`'s per-packet path against quinn's BBR decides it). Then δ on the store law (W1.2 candidate A). The `bbr_rs` code does not reach main before a passing registration.
 
 **§48b resolution readout** (`resolution41c`, seed 0, reported only, a lower bound): goodput d80 c1s **100 %** (power at 5 %: 0.07), c1d 8 %, c2 1 %, c8 2.4 %; CPU/GB d80 c1s 50 %, c1d 5 %, c2 5–8 %, c8 8 %. The c1s goodput and CPU clauses are blind in this session: BASE's own collapsed rows (3 of 12 below 0.5 × median) inflate the A/A spread. The c2 and c8 goodput clauses resolve 1–2.4 %, so their +1.5 % / +2.6 % readings are inside what this design can see.
+
+**§48b c8 diagnosis (post hoc, not registered; scripts and outputs in the session scratchpad `s48b/diag-c8/`, advisor-reviewed brief).** Supersedes the erratum's CPU hypothesis (per-packet controller bookkeeping): CPU/GB *fell* at c1s/c1d/c2 (c1d is two-leg), and the server, which runs no controller on data, rose more, so a per-packet controller cost is unlikely.
+- **Q1, c8 CPU (cli +0.75 s, srv +1.33 s per run): partly located, not priced.**
+  - **Leading candidate: finer I/O on c8's slow leg (20 Mbit),** the only leg in any cell whose batching gets finer under CAND: client tx datagrams per batch 6.80 → 5.18 (tx batches +34 %), server rx 4.46 → 3.77 (+21 %), off-owner `on_sent` share 0.343 → 0.526. Server tokio parks +6.7 % (parks follow server CPU's sign in all four cells); client sender wake cycles +3.1 % at flat cost per cycle (≈ 45 % of the client delta).
+  - **Reading (consistent, not proven):** quinn's pacer burst is W·2 ms/srtt clamped to 10–256 MTU. BASE's over-read window (≈ 12–14 × BDP) kept bursts at ≈ 25; `bbr_rs`'s correct window (≈ 2.2 × BDP) drops the slow leg to the 10-datagram floor.
+  - **Price:** the server's per-batch price fitted out of sample covers 25–58 % of its delta (unstable); the client's is not identified.
+  - **Ruled out:** decoder window and reorder as the carrier (≈ 9 %), coded share, retransmits, GSO (wrong sign), wall time, run order.
+  - **Unattributed by `RWM_RTOBS=1`:** ≈ 0.9 s server, ≈ 0.48 s client. The c8 `cpu_srv` A/A q95 is 4.7 % against the 5.3 % effect, so these fractions are soft.
+- **Q2, c8 goodput: not UNDER-READ, not the window.**
+  - **Main phase:** UNDER-READ ≈ 0 (qbw/link p10 1.01–1.02). The 0.72 points of deficit there match ProbeRtt's cost.
+  - **Tail:** **70 % of c8's deficit (1.66 of 2.39 points) sits in the completion tail**, which lasts 3.91 s in BASE and 4.73 s in CAND (≤ 0.23 s elsewhere, c2 0.15 s). The sender is idle there (in-flight ≈ 0, send buffer ≈ 1 datagram), waiting on recovery. UNDER-READ and R2a lines are almost all tail lines and follow the tail, not cause it.
+- **Consequences:**
+  - **c8's completion tail (≈ 3.9 s even on main, ≈ 8 % of a c8 run) is a model item in its own right** (plan W3): find what bounds it (likely last-symbol recovery on the slow leg) before any change.
+  - **No CPU engine change is justified yet.** Next: one instrumented c8 rerun (`RWM_RTOBS=2`, `RWM_CPUPROF=1`). Any later burst fix would be a continuous rate × RTT law in quinn's pacer (the W2 seam), never a threshold.
