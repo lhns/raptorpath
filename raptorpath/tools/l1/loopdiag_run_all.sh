@@ -287,8 +287,9 @@ run_suites() {
   tst wasm env -u GOLDEN_CAPTURE timeout 3600 "$CARGO" test -p raptorpath-wasm || TFAIL=1
   tst debug-witness timeout 7200 "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
   if [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
-    # Status 41 / 47 / 48 / 49: "the tools/l1 python tests" are all of them.
-    tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
+    # Status 41 / 47 / 48 / 49: "the tools/l1 python tests" are all of them, except test_stubrun.py: it re-runs this very script against stubs
+    # (minutes, even in its fast mode) and belongs to harness changes only, never to a measurement session.
+    tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do [ "$t" = test_stubrun.py ] && continue; python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
   else
     tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
   fi
@@ -298,10 +299,15 @@ run_suites() {
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
-# The identity of the engine tree the suites ran on: sha256 of every file under raptorpath/src and raptorpath/tests, in C-locale path order.
-src_manifest() { ( cd "$(cd "$HERE/../../.." && pwd)" && find raptorpath/src raptorpath/tests -type f 2>/dev/null | LC_ALL=C sort | xargs -r sha256sum ); }
-# LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of BYTE-IDENTICAL raptorpath/src + tests may stand in for
-# this session's suites. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
+# The identity of what the suites ran on: sha256 of every file under raptorpath/src, raptorpath/tests, raptorpath-math/src, raptorpath-wasm/src and vendor/
+# (a patched dependency), plus the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml, in C-locale path order. A dependency patch invalidates a reuse.
+src_manifest() {
+  ( cd "$(cd "$HERE/../../.." && pwd)" || exit 1
+    { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
+      find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-wasm/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
+}
+# LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of a BYTE-IDENTICAL tree (see src_manifest) may stand in for
+# this session's suites. "Same tree" is the src_manifest paths above. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
 # and the SRC-MANIFEST.sha256 recorded at suite time, and the manifest of this tree must equal it. Anything else is ABORT-TESTS.
 reuse_prior_tests() {
   local d="" c
@@ -310,10 +316,10 @@ reuse_prior_tests() {
   [ -s "$d/SRC-MANIFEST.sha256" ] || { era "LD-ALL prior suites: $d has no SRC-MANIFEST.sha256 (recorded at suite time since this change); cannot prove the same tree"; return 1; }
   src_manifest > "$SD/SRC-MANIFEST.now"
   if ! cmp -s "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now"; then
-    era "LD-ALL prior suites: raptorpath/src+tests differ from the tree $d ran on ($(diff "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now" | grep -c '^[<>]') manifest lines)"; return 1
+    era "LD-ALL prior suites: the manifest (src, tests, workspace and crate Cargo files, vendor/) differs from the tree $d ran on ($(diff "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.now" | grep -c '^[<>]') manifest lines)"; return 1
   fi
   cp "$d/TESTS.txt" "$SD/TESTS-prior.txt" && cp "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.sha256" && touch "$SD/TESTS-OK"
-  era "LD-ALL suites: reused TESTS-OK from $d (raptorpath/src+tests byte-identical, $(wc -l < "$SD/SRC-MANIFEST.sha256") files)"
+  era "LD-ALL suites: reused TESTS-OK from $d (manifest byte-identical, $(wc -l < "$SD/SRC-MANIFEST.sha256") files)"
 }
 # The suites step of the candidate plans: a verified reuse, else skipped by a rehearsal, else run.
 suites_stage() {

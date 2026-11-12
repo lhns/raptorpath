@@ -12,6 +12,10 @@ lost in `sudo -n env`) or session 1's ABORT-TESTS (a function called before it w
     from /tmp to the sandbox (LD_TMPD), so the test never touches the host's /tmp logs and two runs never clobber each other;
   * the tools/l1 test files are replaced by no-op stubs inside the sandbox (the gates still execute; the real tests run in this suite).
 
+Modes: the default is FAST (the sandbox's copy of the design tables and size checks is shrunk to 2 groups / 8 path-event rows, minutes); STUBRUN_FULL=1 runs the
+registered designs (96 + 22 rows, about an hour). Both assert the same paths and markers. Run it on harness changes only: loopdiag_run_all.sh's suites skip it,
+so a measurement session never pays for it.
+
 Every path in harness_paths.HARNESS_PATHS runs; the table must equal what ran. Not stubbable: the VM itself (netns, tc, tcpdump, a real cargo
 build, systemd), so those lines of the scripts are covered by the stubs' contract only."""
 import hashlib
@@ -103,10 +107,35 @@ exit 0
 CAND_SHA = "c" * 40
 BASE_SHA = "b3000701f440d11b1b5ad946c8b36c3623c770cd"
 HIST_BASE = "4926822" + "0" * 33
-EXPECT_ROWS = {("41c", False): 2, ("41c", True): 98, ("46", False): 2, ("46", True): 24, ("47", False): 4, ("47", True): 122, ("48", False): 2, ("48", True): 98}
+# FULL (STUBRUN_FULL=1): the registered designs, 96 guard rows / 22 path-event rows plus the smokes. FAST (the default): the sandbox's COPY of the tables and of
+# the design-size checks is shrunk (2 groups = 16 guard rows, 8 path-event rows), so every path and marker is exercised in minutes; the same code runs, on fewer rows.
+FULL = os.environ.get("STUBRUN_FULL") == "1"
+EXPECT_ROWS = ({("41c", False): 2, ("41c", True): 98, ("46", False): 2, ("46", True): 24, ("47", False): 4, ("47", True): 122, ("48", False): 2, ("48", True): 98} if FULL else
+               {("41c", False): 2, ("41c", True): 18, ("46", False): 2, ("46", True): 10, ("47", False): 4, ("47", True): 28, ("48", False): 2, ("48", True): 18})
+# (file, old, new, expected count): each must match, so a drift in the scripts fails here instead of silently running the full design
+FAST_PATCHES = [
+    ("loopdiag_run_all.sh", '[ "$nrows" != "96" ]', '[ "$nrows" != "16" ]', 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 96 ] || { echo "ABORT-PLAN41C', '[ "${#tbl[@]}" -eq 16 ] || { echo "ABORT-PLAN41C', 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 96 ] || { echo "ABORT-PLAN48', '[ "${#tbl[@]}" -eq 16 ] || { echo "ABORT-PLAN48', 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 22 ] || { echo "ABORT-PLAN46', '[ "${#tbl[@]}" -eq 8 ] || { echo "ABORT-PLAN46', 1),
+    ("place38_parse.py", "EXPECT_ROWS41C = len(GUARD_CELLS) * (12 + 12)", "EXPECT_ROWS41C = len(GUARD_CELLS) * (2 + 2)", 1),
+    ("place38_parse.py", "for rp in range(1, 7) for sd", "for rp in range(1, 2) for sd", 1),
+    ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
+    ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
+    ("place46_parse.py", "EXPECT_ROWS46 = 22 ", "EXPECT_ROWS46 = 8 ", 1),
+]
 
 
-def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n"):
+def shrink(tools):
+    for f, old, new, n in FAST_PATCHES:
+        path = os.path.join(tools, f)
+        txt = open(path, newline="").read()
+        assert txt.count(old) == n, (f, old, txt.count(old))
+        with open(path, "w", newline="") as fh:
+            fh.write(txt.replace(old, new))
+
+
+def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
     """-> dict of paths. The tools dir is a copy of this one with every test file stubbed and the driver replaced."""
     sb = {k: os.path.join(root, k) for k in ("bin", "repo", "root", "devshm", "proc", "locks", "logs", "tmpd")}
     for d in sb.values():
@@ -124,7 +153,15 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n"):
             shutil.copyfile(p, os.path.join(tools, f))
     with open(os.path.join(tools, "perf_rwm_c.sh"), "w", newline="\n") as fh:
         fh.write(PERF_STUB)
-    for rel, text in (("raptorpath/src/lib.rs", src_text), ("raptorpath/src/b.rs", "// b\n"), ("raptorpath/tests/t.rs", "// t\n")):
+    if not FULL:
+        shrink(tools)
+    tree = {"raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
+            "Cargo.toml": "[workspace]\n", "Cargo.lock": "# lock\n", "raptorpath-math/src/lib.rs": "// math\n", "raptorpath-wasm/src/lib.rs": "// wasm\n",
+            "vendor/quinn-proto/Cargo.toml": "[package]\n", "vendor/quinn-proto/src/lib.rs": "// vendored\n"}
+    for crate in ("gf256", "raptorpath", "raptorpath-math", "raptorpath-wasm"):
+        tree[crate + "/Cargo.toml"] = "[package]\nname = \"%s\"\n" % crate
+    tree.update(edits or {})
+    for rel, text in tree.items():
         os.makedirs(os.path.dirname(os.path.join(sb["repo"], rel)), exist_ok=True)
         with open(os.path.join(sb["repo"], rel), "w", newline="\n") as fh:
             fh.write(text)
@@ -183,13 +220,19 @@ def era(sb):
     return open(p, errors="replace").read() if os.path.exists(p) else ""
 
 
+MANIFEST_DIRS = ("raptorpath/src", "raptorpath/tests", "raptorpath-math/src", "raptorpath-wasm/src", "vendor")
+
+
 def manifest_py(repo):
+    """The manifest the scripts must record: the five source dirs, the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml."""
     out = []
-    for top in ("raptorpath/src", "raptorpath/tests"):
+    files = [f for f in ("Cargo.toml", "Cargo.lock") if os.path.exists(os.path.join(repo, f))]
+    files += [d + "/Cargo.toml" for d in sorted(os.listdir(repo)) if os.path.isfile(os.path.join(repo, d, "Cargo.toml"))]
+    for top in MANIFEST_DIRS:
         for dp, _, fns in os.walk(os.path.join(repo, top)):
-            for fn in fns:
-                rel = os.path.relpath(os.path.join(dp, fn), repo).replace("\\", "/")
-                out.append((rel, hashlib.sha256(open(os.path.join(dp, fn), "rb").read()).hexdigest()))
+            files += [os.path.relpath(os.path.join(dp, fn), repo).replace("\\", "/") for fn in fns]
+    for rel in set(files):
+        out.append((rel, hashlib.sha256(open(os.path.join(repo, rel), "rb").read()).hexdigest()))
     return "".join("%s  %s\n" % (h, rel) for rel, h in sorted(out))      # C-locale order == codepoint order for these ASCII names
 
 
@@ -198,6 +241,23 @@ def tail(s, n=25):
 
 
 EXECUTED = set()
+EXTRA_DONE = set()
+EXTRA_MISMATCH = ("Cargo.lock", "Cargo.toml", "raptorpath-math/Cargo.toml", "vendor/quinn-proto/src/lib.rs", "raptorpath-wasm/src/lib.rs", "raptorpath-math/src/lib.rs")
+
+
+def extra_mismatch(rel):
+    """A rehearsal of plan 48 reusing the 48 full run's suites, with ONE byte of `rel` changed: ABORT-TESTS, nothing measured."""
+    tag = "48/prior-tests-mismatch[%s]" % rel
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, "48", BASE_SHA, edits={rel: "// one byte differs\n"})
+        rc, out, rows, cargo = run_launch(sb, "48", BASE_SHA, rehearse=True, prior=SUITES_DIR["prior"])
+        check(f"{tag}: ABORT-TESTS, FAILED-ALL, rc 5, no smoke row measured",
+              rc == 5 and "ABORT-TESTS" in era(sb) and os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL")) and rows == [], (rc, tail(out)))
+        EXTRA_DONE.add(rel)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
 SUITES_DIR = {}          # plan -> persisted dir of the plan's full run (the green suite run the prior-tests cases reuse)
 
 
@@ -261,7 +321,7 @@ def case(plan, path):
             if plan == "48":
                 man = open(os.path.join(run_dir, "suites", "SRC-MANIFEST.sha256")).read()
                 norm = "".join(re.sub(r"^([0-9a-f]{64}) [ *]", r"\1  ", ln) + "\n" for ln in man.splitlines())      # sha256sum's text/binary marker differs by platform
-                check("48/full: the manifest recorded by the script equals an independent sha256 of every raptorpath/src + tests file", norm == manifest_py(sb["repo"]), man)
+                check("48/full: the manifest recorded by the script equals an independent sha256 of every file of the manifest (src, tests, math/wasm src, vendor/, workspace + crate Cargo files)", norm == manifest_py(sb["repo"]), man)
                 SUITES_DIR["prior"] = os.path.join(tempfile.gettempdir(), "stubrun-prior-%d" % os.getpid())
                 shutil.copytree(run_dir, SUITES_DIR["prior"])
         EXECUTED.add((plan, path))
@@ -281,20 +341,17 @@ if BASH is None:
     print("SKIP no MSYS/Linux bash found: the stub runs need one")
     sys.exit(0)
 
-# the 48 full run first: it leaves the green suite record the prior-tests cases reuse
-ORDER = [("48", "full")] + [(p, v) for p in ("41c", "46", "47", "48") for v in hp.HARNESS_PATHS[p] if (p, v) != ("48", "full")]
-only = os.environ.get("STUBRUN_ONLY")        # debugging: a comma-separated list of plan/path (and "mutation"); the full run leaves it unset
-for plan, path in ORDER:
-    if only and f"{plan}/{path}" not in only.split(","):
-        continue
-    t0 = time.time()
-    case(plan, path)
-    print(f"     ({plan}/{path}: {time.time() - t0:.0f} s)", flush=True)
-if SUITES_DIR.get("prior"):
-    shutil.rmtree(SUITES_DIR["prior"], ignore_errors=True)
+# Every sandbox is independent (its own tree, /dev/shm, /proc, locks and driver logs), so the cases run in parallel; STUBRUN_JOBS (default 4) bounds it.
+# Phase 1 holds everything that needs no suite record; phase 2 the prior-tests cases, which reuse the 48 full run's record (SUITES_DIR) -- 48/full is in phase 1.
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
 
-if not only or "mutation" in only.split(","):
-    # the test must catch §49 session 5: the same run with LD_BASE_SHA removed from the script's explicit `sudo -n env` arrays
+only = os.environ.get("STUBRUN_ONLY")        # debugging: a comma-separated list of plan/path (and "mutation", "mismatch:<rel>"); the full run leaves it unset
+JOBS = int(os.environ.get("STUBRUN_JOBS") or 4)
+sel = set(only.split(",")) if only else None
+
+
+def mutation():
+    # the test must catch status 49 session 5: the same run with LD_BASE_SHA removed from the script's explicit `sudo -n env` arrays
     root = tempfile.mkdtemp(prefix="stubrun-")
     try:
         sb = make_sandbox(root, "48", BASE_SHA)
@@ -310,9 +367,40 @@ if not only or "mutation" in only.split(","):
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
+
+def timed(plan, path):
+    t0 = time.time()
+    case(plan, path)
+    print(f"     ({plan}/{path}: {time.time() - t0:.0f} s)", flush=True)
+
+
+def want(name):
+    return sel is None or name in sel
+
+
+all_cases = [(p, v) for p in ("41c", "46", "47", "48") for v in hp.HARNESS_PATHS[p]]
+phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests")]
+phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests")]
+t_all = time.time()
+with ThreadPoolExecutor(max_workers=JOBS) as ex:
+    # the slow ones first (a full run is minutes; a rehearsal under a minute)
+    jobs = [ex.submit(timed, p, v) for p, v in sorted(phase1, key=lambda c: c[1] != "full") if want(f"{p}/{v}")]
+    if want("mutation"):
+        jobs.append(ex.submit(mutation))
+    for j in jobs:
+        j.result()
+    jobs = [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
+    jobs += [ex.submit(extra_mismatch, rel) for rel in EXTRA_MISMATCH if SUITES_DIR.get("prior") and want("mismatch:" + rel)]
+    for j in jobs:
+        j.result()
+if SUITES_DIR.get("prior"):
+    shutil.rmtree(SUITES_DIR["prior"], ignore_errors=True)
+print(f"     (all cases: {time.time() - t_all:.0f} s wall, {JOBS} jobs, {'FULL designs' if FULL else 'fast mode'})")
+
 if not only:
-    want = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
-    check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == want, (want ^ EXECUTED))
+    wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
+    check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
+    check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 46, 47, 48) -- the plans LD_REHEARSE and LD_PRIOR_TESTS are defined for",
           set(hp.HARNESS_PATHS) == {"41c", "46", "47", "48"})
 print("FAILED %d" % fails if fails else "ALL OK")

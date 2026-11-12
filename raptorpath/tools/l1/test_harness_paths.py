@@ -33,5 +33,39 @@ check("loopdiag_run_all.sh defines LD_REHEARSE for exactly the plans of the tabl
 check("every plan of the table is selectable in run_all's plan case", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in T))
 check("LD_PRIOR_TESTS is wired into the suites step of the table's plans (suites_stage) and records its manifest at suite time",
       "suites_stage() {" in runall and "reuse_prior_tests() {" in runall and 'src_manifest > "$SD/SRC-MANIFEST.sha256"' in runall)
+
+# test_stubrun.py must never run inside a session's `tst parsers` suite (it re-runs the harness against stubs). Run the script's own command for real.
+import shutil
+import subprocess
+import tempfile
+m = re.search(r"tst parsers bash -c '([^']*)'", runall)
+check("run_suites' parsers command is found", m is not None)
+bash = shutil.which("bash")
+if m and bash:
+    td = tempfile.mkdtemp()
+    try:
+        d = os.path.join(td, "raptorpath", "tools", "l1")
+        os.makedirs(d)
+        for name in ("test_a.py", "test_stubrun.py", "test_z.py"):
+            with open(os.path.join(d, name), "w") as fh:
+                fh.write("open('ran_%s', 'w').close()\n" % name[5:-3])
+        shim = os.path.join(td, "bin")
+        os.makedirs(shim)
+        with open(os.path.join(shim, "python3"), "w", newline="\n") as fh:      # the command says python3; run it with this interpreter
+            fh.write('#!/bin/sh\nexec "%s" "$@"\n' % sys.executable.replace("\\", "/"))
+        os.chmod(os.path.join(shim, "python3"), 0o755)
+        env = dict(os.environ, PATH=shim.replace("\\", "/") + os.pathsep + os.environ.get("PATH", ""))
+        cp = subprocess.run([bash, "-c", m.group(1)], cwd=td, env=env, capture_output=True, text=True)
+        ran = sorted(f for f in os.listdir(d) if f.startswith("ran_"))
+        check("the parsers suite runs every test_*.py except test_stubrun.py (explicit skip)", cp.returncode == 0 and ran == ["ran_a", "ran_z"], (cp.returncode, ran, cp.stderr[-300:]))
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+elif m:
+    print("SKIP no bash for the parsers-command check")
+check("test_stubrun.py is documented as harness-changes-only in run_all and in its own docstring",
+      "belongs to harness changes only" in runall and "harness changes only" in open(os.path.join(HERE, "test_stubrun.py"), encoding="utf-8").read())
+man = re.search(r"src_manifest\(\) \{.*?\n\}", runall, re.S)
+check("the suite-reuse manifest covers src, tests, math / wasm src, vendor/, the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml (a dependency patch invalidates a reuse)",
+      man is not None and all(x in man.group(0) for x in ("raptorpath/src", "raptorpath/tests", "raptorpath-math/src", "raptorpath-wasm/src", "vendor", "Cargo.toml", "Cargo.lock", "./*/Cargo.toml")), man and man.group(0))
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
