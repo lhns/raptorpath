@@ -26,9 +26,8 @@ mod loopback;
 use gauge::{f64_field, max_u64_token, require};
 
 /// The base arm. `RWM_DIAG` carries `[CHI]`, `[SHEDH]` and `[DIAG] cod=`.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

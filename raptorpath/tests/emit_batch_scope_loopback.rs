@@ -32,11 +32,10 @@ mod loopback;
 
 const BURST: u64 = 8;
 
-const ARM: [(&str, &str); 5] = [
+const ARM: [(&str, &str); 4] = [
     ("RWM_EMIT_BATCH", "1"),
     ("RWM_EMIT_BURST", "8"),
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

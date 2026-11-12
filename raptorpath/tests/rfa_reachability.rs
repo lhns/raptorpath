@@ -125,9 +125,8 @@ fn the_rfa_line_format_is_pinned() {
 /// The arm. `RWM_DIAG` carries the periodic `[RFA]` readout (the L1
 /// harnesses SIGKILL the server, so a `Drop`-only emission is unreachable
 /// there). No gate here changes a law.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

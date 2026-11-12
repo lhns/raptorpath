@@ -36,9 +36,8 @@ use gauge::{numeric_prefix, str_field, u64_field};
 /// The base arm. `RWM_DIAG` carries `[DIAG] … taper=` and the periodic
 /// `[SUCC]` readout; `RWM_FDIAG` the receiver-side decode trace. No gate here
 /// changes a law.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

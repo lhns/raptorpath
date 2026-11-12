@@ -87,9 +87,8 @@ fn the_fcause_line_format_is_pinned() {
 
 /// The arm. `RWM_DIAG` carries `[DIAG] retx=`, the independent witness. No
 /// gate here changes a law: the sender runs the shipped recovery clock.
-const ARM: [(&str, &str); 2] = [
+const ARM: [(&str, &str); 1] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
 ];
 
 /// Run one lossy loopback in the given configuration. Returns

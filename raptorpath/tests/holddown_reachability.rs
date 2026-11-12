@@ -32,9 +32,8 @@ use gauge::{require, str_field, u64_field};
 
 /// The base arm. `RWM_DIAG` carries `[DIAG] retx=` and the receiver's periodic
 /// `[QCLK]` readouts. No gate here changes a law.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

@@ -58,7 +58,7 @@ fn legs(line: &str) -> Vec<Leg> {
 /// prints rounded to a whole millisecond, hence the 0.5 ms print allowance).
 #[test]
 fn wire_srtt_mirrors_every_leg() {
-    let env = [("RWM_DIAG", "1"), ("RWM_PLAIN_RS", "1"), ("RUST_LOG", "raptorpath=info")];
+    let env = [("RWM_DIAG", "1"), ("RUST_LOG", "raptorpath=info")];
     let (cli, _srv) = loopback::transfer(loopback::Transfer {
         paths: 2,
         env: &env,

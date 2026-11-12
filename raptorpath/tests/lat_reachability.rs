@@ -27,9 +27,8 @@ mod loopback;
 #[cfg_attr(not(unix), allow(unused_imports))]
 use gauge::{f64_field, is_final, opt_field, slots, u64_field};
 
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

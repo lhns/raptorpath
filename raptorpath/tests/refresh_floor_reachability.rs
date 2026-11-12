@@ -34,9 +34,8 @@ use gauge::{require, u64_field};
 /// The base arm. `RWM_DIAG` carries the receiver's periodic `[QCLK]`
 /// readouts, which is where the realized cadence is read. No gate here
 /// changes a law.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 
