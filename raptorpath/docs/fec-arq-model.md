@@ -3942,7 +3942,7 @@ Measured at `754139c`, before the two flow-control flips:
 | result | numbers | commit |
 |---|---|---|
 | the refresh clamp is a constant | binds 92.4 % at c1 (floor), 95.9 / 96.6 % at c7 / c8, 99.7 / 99.5 % at c8L / sc2 (ceiling); false alarms 1.7–12× RACK's 1/16 budget | `18dbf10` |
-| every timing lever is inert on false alarms | hold-down suppressed 97.3–99.6 % of repair decisions and moved the realised false-alarm rate at most 1.66×; the refresh-floor lift found nothing below the floor | `5509e37`, `a8bcce0` |
+| every timing lever is inert on false alarms | hold-down suppressed 97.3–99.6 % of repair decisions and moved the realised false-alarm rate at most 1.66×; the refresh-floor lift (since removed) found nothing below the floor | `5509e37`, `a8bcce0` |
 | the clamp survives on merit | zero of three stable cells won by any successor | `f2e7144` |
 | the self-heal prior | π₀ = 0.0077 (c1), 0.0054 (sc2), 0.9606 (c7), 0.9233 (c8); an earlier "97.9 % of holes closed by their original" averaged the two mechanisms | `ca58e49` |
 | RTT dispersion at c8 | σ = 0.191 / 3.140 / 54.8 ms across three reps (287×) on the plain-window machine; the δ agreement it was meant to test is unresolved | `f6c8cbf` |
@@ -4116,7 +4116,7 @@ shipped.
 | Dispersion estimators (fixed-sample-lag, fixed-time-lag) | the 287× spread is the estimator; the time-lag form confirms rate invariance and still misses its bar | `89d7946` | open |
 | Quantile-native clock (`RWM_W_FORM`) | commanded false-alarm rate does not track α at 5 of 5 cells: the measurand is wrong | `6b3d3c3` | removed (the order statistic survives as `qnative_window_n` in `net/recovery_clock.rs`) |
 | Hold-down clock (`RWM_HOLDDOWN_Q`) | suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven | `5509e37` | removed (simplification batch 4; user ruling, status §45; tag `archive/RWM_HOLDDOWN_Q`; the `[HOLD]` gauge stays as an observation-only instrument; re-ask: once the store law sets H) |
-| Refresh-floor lift (`RWM_REFRESH_FLOOR_US`) | entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume | `a8bcce0` | off |
+| Refresh-floor lift (`RWM_REFRESH_FLOOR_US`) | entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume | `a8bcce0` | removed (simplification batch 4; user ruling, status §45; tag `archive/RWM_REFRESH_FLOOR_US`; `hole_nack_refresh` is the shipped clamp directly; re-ask: once the store law sets H) |
 | Receiver request law (`RWM_RECV_REQUEST_LAW`) | refuted at both duals on every arm: ℓ* = 0 on 48 of 48 dual rows, knee-bound by the store headroom; the receiver's π̂₀ was contaminated by retransmit copies (since fixed; not re-run); one arm DNF 12/12 | `0159290` | off |
 | **Honest store family** | | | |
 | Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`) | verdict: the honest-inputs family, old ledger GG ~23640, 2026-08-11, pre-wire-v9 substrate; not re-run on the current substrate; route: structural (status §23/§27: the arm only acts under the off-by-default sampler `RWM_PLAIN_RS`), plus the new test `honest_cap_is_inert_without_plain_rs` proving the default path bit-identical; removed 2026-11-10 (simplification batch 1, ADR-0073); tag `archive/RWM_HONEST_CAP` | `archive/RWM_HONEST_CAP` | removed |

@@ -69,7 +69,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_EMIT_BATCH=1 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
     "RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
-    "RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
+    "RWM_DELTA=unset ",
     "RWM_COPA_DELTA=unset ",
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
     "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
@@ -208,54 +208,6 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_DELTA_CAP ships default ON (paper §6.1); `=0` remains the \
          re-runnable A/B arm - the displaced gain = 2.0 law."
     );
-    // The refresh-band floor is absent by default, which is the shipped 25 ms
-    // (paper §7.4); both the field and the echo token are asserted.
-    assert!(
-        g.refresh_floor_us.is_none(),
-        "RWM_REFRESH_FLOOR_US is ABSENT by default - absent resolves to \
-         HOLE_NACK_REFRESH_MIN and the hole-refresh cadence is the \
-         shipped one byte-identically (paper §7.4)"
-    );
-    assert!(
-        g.echo_line().contains("RWM_REFRESH_FLOOR_US=unset"),
-        "the absent floor must echo `unset`: {}",
-        g.echo_line()
-    );
-    let mut armed = g.clone();
-    armed.refresh_floor_us = Some(6_150);
-    assert!(
-        armed.echo_line().contains("RWM_REFRESH_FLOOR_US=6150"),
-        "the armed floor must echo its RESOLVED us: {}",
-        armed.echo_line()
-    );
-    // The floor's domain, pinned on both sides: below the receiver loop's wake
-    // granularity the cadence cannot be expressed, and above the shipped upper
-    // rail the band leaves the shipped band. Every sweep arm must lie inside it.
-    for bad in [0u64, crate::net::LOOP_WAKE_US - 1, 100_001, u64::MAX] {
-        assert!(
-            bad < crate::net::LOOP_WAKE_US
-                || bad > crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-            "`{bad}` us must be OUTSIDE the refresh floor's domain (paper §7.4)"
-        );
-    }
-    for good in [
-        crate::net::LOOP_WAKE_US,
-        1_919,
-        3_838,
-        6_144,
-        6_150,
-        12_288,
-        12_300,
-        crate::net::HOLE_NACK_REFRESH_MIN.as_micros() as u64,
-        crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-    ] {
-        assert!(
-            good >= crate::net::LOOP_WAKE_US
-                && good <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-            "`{good}` us is an arm the (q, refresh) sweep commands and must \
-             be INSIDE the refresh floor's domain (paper §7.4)"
-        );
-    }
     // The echo is what a battery parses; assert these names with their resolved
     // values.
     let line = g.echo_line();

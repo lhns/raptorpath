@@ -384,21 +384,14 @@ pub fn sweep_timeout_us(derived: bool, srtt_us: u64, jitter_us: u64) -> u64 {
 /// The receiver's hole-refresh cadence supplied to the reliable window
 /// receiver: the clamped law, or the derived round under `RWM_DERIVED_SWEEP`.
 /// With no clock at all both arms fall back to `HOLE_NACK_REFRESH_MAX`
-/// (information availability, not a mode). `refresh_floor` is the clamped
-/// law's band floor, read only by that arm; `HOLE_NACK_REFRESH_MIN` gives the
-/// shipped cadence.
-pub fn hole_refresh(
-    derived: bool,
-    srtt: Option<Duration>,
-    jitter_us: u64,
-    refresh_floor: Duration,
-) -> Duration {
+/// (information availability, not a mode).
+pub fn hole_refresh(derived: bool, srtt: Option<Duration>, jitter_us: u64) -> Duration {
     match (derived, srtt) {
         (true, Some(s)) => {
             Duration::from_micros(derived_recovery_round_us(s.as_micros() as u64, jitter_us))
         }
         (true, None) => HOLE_NACK_REFRESH_MAX,
-        (false, s) => hole_nack_refresh_floored(s, refresh_floor),
+        (false, s) => hole_nack_refresh(s),
     }
 }
 

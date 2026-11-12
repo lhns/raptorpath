@@ -33,7 +33,7 @@ run_one() { # name scenA scenB mode bytes rep
   echo "RC=${PIPESTATUS[0]}" >> "$OUT"   # the engine's rc (was `|| true; $?`: always 0)
   local C=/tmp/rwm-c.log S=/tmp/rwm-s.log
   # Contamination witnesses: every rival clock must be absent on both ends.
-  for g in RWM_DERIVED_SWEEP RWM_REFRESH_FLOOR_US; do
+  for g in RWM_DERIVED_SWEEP; do
     echo "GATE $name r$rep $g cli=$(grep -c "$g=" $C 2>/dev/null || echo 0) srv=$(grep -c "$g=" $S 2>/dev/null || echo 0)" >> "$OUT"
   done
   # The sender gauge — every [HOLD] line, both ends.

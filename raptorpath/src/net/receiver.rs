@@ -54,7 +54,7 @@ use super::{
     DerivedRoundEcho, SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, extract_window_packets,
-    hole_nack_refresh_floored, hole_refresh, now_us, received_sack_ranges,
+    hole_nack_refresh, hole_refresh, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::fec::{FecBackend, WindowDecoder};
@@ -200,12 +200,6 @@ pub(crate) async fn run_receiver(
     // `RWM_DERIVED_SWEEP` (default off): the stalled-hole refresh cadence on
     // the derived round.
     let recv_derived_sweep = recv_gates.derived_sweep;
-    // The hole-refresh clamp band's floor (`RWM_REFRESH_FLOOR_US`), resolved
-    // once. Absent ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ `hole_nack_refresh` unchanged.
-    // Echoed on `[GATES]` at both endpoints.
-    let recv_refresh_floor = recv_gates
-        .refresh_floor_us
-        .map_or(crate::net::HOLE_NACK_REFRESH_MIN, Duration::from_micros);
     // `[QCLK]` at the receiver — the hole-refresh cadence this site realizes.
     // The harness SIGKILLs the server, so a `Drop` never reaches a server log;
     // this gauge is therefore also emitted on the same 1 s cadence, last line
@@ -755,12 +749,7 @@ pub(crate) async fn run_receiver(
                     // 2×SRTT cadence until recovered. Under
                     // `RWM_DERIVED_SWEEP` the cadence is the derived round (no
                     // ceiling); off ⇒ `hole_nack_refresh` unchanged.
-                    let refresh = hole_refresh(
-                        recv_derived_sweep,
-                        srtt,
-                        srtt_jitter_us,
-                        recv_refresh_floor,
-                    );
+                    let refresh = hole_refresh(recv_derived_sweep, srtt, srtt_jitter_us);
                     // Every arm, control included — see the sender's twin.
                     recv_qclk_echo.record(
                         refresh.as_micros() as u64,
@@ -774,7 +763,7 @@ pub(crate) async fn run_receiver(
                                 s.as_micros() as u64,
                                 srtt_jitter_us,
                                 refresh.as_micros() as u64,
-                                hole_nack_refresh_floored(srtt, recv_refresh_floor).as_micros() as u64,
+                                hole_nack_refresh(srtt).as_micros() as u64,
                             );
                         }
                     }

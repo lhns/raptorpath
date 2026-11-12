@@ -214,8 +214,6 @@ pub struct RuntimeGates {
     /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
     /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
-    /// `RWM_REFRESH_FLOOR_US` (absent = 25 ms, arm): hole-refresh band floor (paper §7.4).
-    pub refresh_floor_us: Option<u64>,
     /// `RWM_DELTA` (absent, arm): the contract's δ as a number (paper §4.1); `RWM_COPA_DELTA`
     /// outranks it for the CC.
     pub delta: Option<f64>,
@@ -379,12 +377,6 @@ impl RuntimeGates {
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             delta_cap: env_flag("RWM_DELTA_CAP", true),
-            // Below the receiver loop's wake granularity the cadence cannot be
-            // expressed; above the shipped upper rail it leaves the band.
-            refresh_floor_us: env_parse::<u64>("RWM_REFRESH_FLOOR_US").filter(|f| {
-                *f >= crate::net::LOOP_WAKE_US
-                    && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
-            }),
             delta: resolve_delta(),
             copa_delta: resolve_copa_delta(),
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
@@ -435,7 +427,6 @@ impl RuntimeGates {
         let b = |v: bool| if v { "1" } else { "0" };
         let o = |v: &Option<f64>| v.map_or("unset".to_string(), |x| x.to_string());
         let ou = |v: &Option<usize>| v.map_or("unset".to_string(), |x| x.to_string());
-        let o64 = |v: &Option<u64>| v.map_or("unset".to_string(), |x| x.to_string());
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} \
@@ -459,7 +450,7 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} \
-             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COPA_DELTA={} \
+             RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
@@ -492,7 +483,6 @@ impl RuntimeGates {
             b(self.derived_sweep),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.
-            o64(&self.refresh_floor_us),
             o(&self.delta),
             o(&self.copa_delta),
             b(self.completion_exposure),

@@ -324,46 +324,14 @@ pub fn tail_sweep_timeout_us(srtt_us: u64) -> u64 {
     (srtt_us.saturating_mul(2)).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US)
 }
 
-/// The shipped clamp's aspect ratio,
-/// `HOLE_NACK_REFRESH_MAX / HOLE_NACK_REFRESH_MIN` = 100 ms / 25 ms = 4
-/// (paper §7.4). Computed from the two literals rather than written down, so
-/// [`hole_nack_refresh_floored`] at `floor = HOLE_NACK_REFRESH_MIN`
-/// reproduces the shipped law for every input (unit-tested).
-pub const HOLE_NACK_REFRESH_BAND: u32 = (HOLE_NACK_REFRESH_MAX.as_micros()
-    / HOLE_NACK_REFRESH_MIN.as_micros()) as u32;
-
-/// Receiver hole-refresh cadence with the clamp band's floor supplied — the
-/// one law, with one of its two constants resolved from a value:
-///
-/// ```text
-///   refresh(srtt)  =  (2·srtt).clamp( floor , HOLE_NACK_REFRESH_BAND · floor )
-/// ```
-///
-/// The whole band scales, not the lower rail alone, because the binding rail
-/// differs by operating point: at a 2 ms-RTT cell `2·srtt ≈ 4 ms` and the
-/// lower rail binds; at a loaded 100 Mbit cell `2·srtt ≥ 100 ms` and the
-/// upper rail binds. Moving the lower rail alone is inert wherever the upper
-/// rail binds; one parameter scaling the band moves whichever rail binds.
-///
-/// Not a mode: no branch on `floor`, continuous in `floor` over the whole
-/// domain, and `floor = HOLE_NACK_REFRESH_MIN` is the shipped machine. The
-/// no-clock fallback is the band's ceiling, which at the shipped floor is
-/// `HOLE_NACK_REFRESH_MAX`.
-pub fn hole_nack_refresh_floored(srtt: Option<Duration>, floor: Duration) -> Duration {
-    let ceil = floor * HOLE_NACK_REFRESH_BAND;
-    srtt.map(|s| (s * 2).clamp(floor, ceil)).unwrap_or(ceil)
-}
-
 /// Receiver hole-refresh cadence: 2×SRTT clamped to
 /// [`HOLE_NACK_REFRESH_MIN`, `HOLE_NACK_REFRESH_MAX`], falling back to the
 /// max when no path clock exists yet. In reliable window mode this cadence —
 /// not any sender timer — re-presents a stalled hole to the sender, so it
 /// bounds every recovery channel's observable latency.
-///
-/// The shipped law: the `floor = HOLE_NACK_REFRESH_MIN` instance of
-/// [`hole_nack_refresh_floored`].
 pub fn hole_nack_refresh(srtt: Option<Duration>) -> Duration {
-    hole_nack_refresh_floored(srtt, HOLE_NACK_REFRESH_MIN)
+    srtt.map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
+        .unwrap_or(HOLE_NACK_REFRESH_MAX)
 }
 
 // ── The derived recovery round (`RWM_DERIVED_SWEEP`, default OFF) ─────────
