@@ -13738,3 +13738,9 @@ Session (`LD_PLAN=41c`, `LD_P46_SUITES=1`), CAND `simplify-5` `d5bd282a`, BASE m
 - **Before the full launch, the rehearsal must show:** every smoke row's `t52` complete (no `t52_error`, no None among the registered readouts, `cx_leg` summing to `cx_n` on the post-Group-C `[HOLD]` line); each W arm's env in `[GATES]` on both ends. The W rows' values are not read.
 - **Archive fixture fix:** plan 52's test reads `bbr48b/diag-ld-full.tgz`, which the ledger export-ignore (measured before `harness52`) dropped from archives. Keep lines added on main and merged into both trees; the tools tests are run inside an extracted archive of CAND, with `LD_BASE_SHA` set, before pinning.
 - **Debt at the merge:** `tests/common/recovery_model.rs` still models a 20-gap sender.
+
+**§52 amendment 2 (before VM contact): the trees.**
+- **BASE = `base52` `239897ef9948bb432dd3739d9dd7e6ebea982d05`** (`LD_BASE_SHA`). **CAND = `cand52` `ef26a2435212e07c7c920607d193462c7fa4ee8a`** (`LD_CAND_SHA`). `git diff BASE CAND -- raptorpath/src raptorpath/tests` = 3 files, +50 / −12 (lever B alone).
+- **Pre-flight (VM, fresh target per tree):** both compile (`--all-targets`); lib BASE 589 / 0, CAND 591 / 0 (the two gap-horizon tests); `holeclass_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability` pass in both.
+- **Archive check:** in an extracted `git archive` of CAND, all 31 `tools/l1` tests (`test_stubrun` excluded) pass with `LD_BASE_SHA` set, and `test_topo_netem` passes; the plan-52 fixtures are present.
+- **Order:** the rehearsal (`LD_REHEARSE=1`, unscored; amendment 1's checks), then the full session on the same pins.
