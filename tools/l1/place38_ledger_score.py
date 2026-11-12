@@ -1,7 +1,7 @@
 """Score candidate placement prices on the committed ledgers (paper 5.7,
 Table 5.7a; status 38).
 
-Usage (from raptorpath/docs/l1-raw/loop-diag):
+Usage (from docs/l1-raw/loop-diag):
   python3 ../../../tools/l1/place38_ledger_score.py \n    'p34/run/diag-ld/c1d-400-DEF*-c.log' 'p27/diag-ld/c8-100-DEF*-c.log'
 
 For every two-leg row (sender `-c.log`), per leg: post-warm-up (t >= 1 s)

@@ -4,7 +4,7 @@
 #
 #   SL_ROOT=/home/vibe/n1/sl setsid nohup bash storelaw_run_all.sh > $SL_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree ($SL_ROOT/src/raptorpath/tools/l1), started as
+# Run from the synced tree ($SL_ROOT/src/tools/l1), started as
 # `vibe`; `sudo -n` only for the measurement stages. WAITS for both operator
 # locks (never breaks them), then holds them for the whole session:
 #   1. fresh release build (fresh target dir) -> bin, sha256;

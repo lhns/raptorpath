@@ -6,7 +6,7 @@
 #
 #   SL_ROOT=/home/vibe/n1/sl19 setsid nohup bash storelaw19_run_all.sh > $SL_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from $SL_ROOT/src/raptorpath/tools/l1 as `vibe`; `sudo -n` only for the
+# Run from $SL_ROOT/src/tools/l1 as `vibe`; `sudo -n` only for the
 # measurement stages. WAITS for both operator locks (never breaks them), then
 # holds them for the whole session: build both -> smoke -> battery -> score19.
 set -u

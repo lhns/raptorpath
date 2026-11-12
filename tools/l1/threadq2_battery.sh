@@ -148,7 +148,7 @@ run_one() { # cell arm seed rep
 echo "=== V-Q2 BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' ackdiag=$ACKD $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary MAIN $BMAIN sha256 $TQ2_SHA_MAIN" >> "$OUT"
 echo "=== binary Q2 $BQ2 sha256 $TQ2_SHA_Q2" >> "$OUT"
-echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
+echo "=== source $(cat "$HERE/../../COMMIT" 2>/dev/null)" >> "$OUT"
 echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_RTOBS=1 RWM_PERF_TIMEOUT_S=150 runs=1 bulk --window-reliable; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_IO_RT (shipped default), then RWM_RTOBS=1$([ "$ACKD" = "1" ] && echo " RWM_ACKDIAG=1"); soft_deadline=${TQ2_SOFT_DEADLINE:-none} block_est=${TQ2_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
 

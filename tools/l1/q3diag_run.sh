@@ -7,7 +7,7 @@
 #   Q3_ROOT=/home/vibe/q3diag setsid nohup bash q3diag_run.sh \
 #       > $Q3_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree ($Q3_ROOT/src/raptorpath/tools/l1). Started as
+# Run from the synced tree ($Q3_ROOT/src/tools/l1). Started as
 # `vibe`; `sudo -n` only for the measurement stages. Both operator locks are
 # held for the whole session (build included). Sentinel: $RUN/DONE or
 # $RUN/FAILED (cause in era.txt).
@@ -18,7 +18,7 @@ source ./lib_battery.sh
 crlf_guard lib.sh lib_battery.sh perf_rwm_c.sh topo.sh topo_dual.sh q3diag_run.sh
 ROOT="${Q3_ROOT:?Q3_ROOT}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 BIN="$ROOT/bin/raptorpath"
 HARD=$(( $(date +%s) + ${Q3_BUDGET_S:-5400} ))
 mkdir -p "$RUN" "$ROOT/bin"

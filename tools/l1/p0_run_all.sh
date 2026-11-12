@@ -5,7 +5,7 @@
 #   P0_ROOT=/home/vibe/p0 setsid nohup bash p0_launch.sh > $P0_ROOT/waiter.out 2>&1 < /dev/null &
 #
 # (p0_launch.sh waits for both locks to be free, then runs this). Run from
-# the synced tree ($P0_ROOT/src/raptorpath/tools/l1); main's tree is
+# the synced tree ($P0_ROOT/src/tools/l1); main's tree is
 # $P0_ROOT/main-src (`git archive 8d7d8c1`). STARTED AS `vibe`, NOT ROOT;
 # `sudo -n` only for the measurement stages. Hard deadline = lock
 # acquisition + 4 h 50 min.
@@ -37,7 +37,7 @@ crlf_guard lib.sh lib_battery.sh p0_run_all.sh p0_battery.sh p0_parse.py \
     stage3_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${P0_ROOT:?P0_ROOT}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 MSRC="$ROOT/main-src"
 BIN="$ROOT/bin/raptorpath"
 MBIN="$ROOT/bin-main/raptorpath"

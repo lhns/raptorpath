@@ -6,7 +6,7 @@
 #   TR2_ROOT=/home/vibe/r2run TR2_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadr2_run_all.sh > $TR2_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced R2 tree ($TR2_ROOT/src/raptorpath/tools/l1); the MAIN
+# Run from the synced R2 tree ($TR2_ROOT/src/tools/l1); the MAIN
 # tree (archive of 4e50504) is at $TR2_ROOT/main-src, with a COMMIT file.
 # STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
 #
@@ -37,7 +37,7 @@ crlf_guard lib.sh lib_battery.sh threadr2_run_all.sh threadr2_battery.sh threadr
 ROOT="${TR2_ROOT:?TR2_ROOT}"
 : "${TR2_HARD_DEADLINE:?TR2_HARD_DEADLINE (epoch seconds) is required}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 MSRC="$ROOT/main-src"
 BR2="$ROOT/bin/r2/raptorpath"
 BMAIN="$ROOT/bin/main/raptorpath"
@@ -167,7 +167,7 @@ tst main "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 tst debug-witness "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py" || TFAIL=1
+tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py" || TFAIL=1
 # The P1 lock-order witness went with the scheduler mutex (threading R2);
 # the owner identity witness is the one left (its panic message counted).
 echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$RUN/test-debug-witness.log")" >> "$RUN/TESTS.txt"

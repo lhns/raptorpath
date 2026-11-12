@@ -32,7 +32,7 @@ wait_free() {
     sleep 600
   done
 }
-crlf_guard "$ROOT/wit/raptorpath/tools/l1/lib_battery.sh" "$ROOT/pd/raptorpath/tools/l1/suites_run.sh"
+crlf_guard "$ROOT/wit/tools/l1/lib_battery.sh" "$ROOT/pd/tools/l1/suites_run.sh"
 era "TPT start wit=$(cat "$ROOT/wit/COMMIT") pd=$(cat "$ROOT/pd/COMMIT")"
 
 stage() { # name tree
@@ -65,7 +65,7 @@ wait_free
 
 while :; do
   wait_free
-  SU_ROOT="$ROOT/suites" SU_SRC="$ROOT/pd" bash "$ROOT/pd/raptorpath/tools/l1/suites_run.sh"
+  SU_ROOT="$ROOT/suites" SU_SRC="$ROOT/pd" bash "$ROOT/pd/tools/l1/suites_run.sh"
   rc=$?
   [ "$rc" = 4 ] || [ "$rc" = 3 ] || break
   era "TPT suites refused rc=$rc (lock or cargo); waiting"

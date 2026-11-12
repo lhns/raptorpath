@@ -6,7 +6,7 @@
 #   TQ1_ROOT=/home/vibe/q1run TQ1_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadq1_run_all.sh > $TQ1_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced Q1 tree ($TQ1_ROOT/src/raptorpath/tools/l1); the D9
+# Run from the synced Q1 tree ($TQ1_ROOT/src/tools/l1); the D9
 # tree (archive of 95c750a) is at $TQ1_ROOT/d9-src, the MAIN tree (archive
 # of 69fd846) at $TQ1_ROOT/main-src, each with a COMMIT file. STARTED AS
 # `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
@@ -40,7 +40,7 @@ crlf_guard lib.sh lib_battery.sh threadq1_run_all.sh threadq1_battery.sh threadq
 ROOT="${TQ1_ROOT:?TQ1_ROOT}"
 : "${TQ1_HARD_DEADLINE:?TQ1_HARD_DEADLINE (epoch seconds) is required}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 DSRC="$ROOT/d9-src"
 MSRC="$ROOT/main-src"
 BQ1="$ROOT/bin/q1/raptorpath"
@@ -165,7 +165,7 @@ tst main "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 tst debug-witness "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py" || TFAIL=1
+tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py" || TFAIL=1
 echo "LOCKORDER-PANICS $(grep -ac 'lock order: quinn seam' "$RUN/test-debug-witness.log")" >> "$RUN/TESTS.txt"
 echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$RUN/test-debug-witness.log")" >> "$RUN/TESTS.txt"
 ( cd "$SRC" && stage "$CARGO" build --release --bin raptorpath ) >> "$RUN/build.log" 2>&1 \

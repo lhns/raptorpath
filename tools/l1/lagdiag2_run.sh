@@ -11,7 +11,7 @@
 #   LG2_ROOT=/home/vibe/lagdiag2 LG2_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash lagdiag2_run.sh > $LG2_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree $LG2_ROOT/src/raptorpath/tools/l1 (git archive of
+# Run from the synced tree $LG2_ROOT/src/tools/l1 (git archive of
 # the DIAG commit; $LG2_ROOT/src/COMMIT names it). Started as `vibe`;
 # `sudo -n` only to run.
 set -u
@@ -27,7 +27,7 @@ SOFT=$(( LG2_HARD_DEADLINE - 600 ))
 # the run dir is copied to disk ($ROOT/run) at exit.
 SHM="${LG2_SHM:-/dev/shm/lag26}"
 RUN="$SHM/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 BIN="$SHM/bin/raptorpath"
 mkdir -p "$RUN/diag" "$SHM/bin"
 persist() { mkdir -p "$ROOT/run" && cp -a "$RUN/." "$ROOT/run/" 2>/dev/null; }

@@ -5,7 +5,7 @@
 #
 #   AD_ROOT=/home/vibe/n1/ad setsid nohup bash anchordiag_run_all.sh > $AD_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from $AD_ROOT/src/raptorpath/tools/l1 as `vibe`; `sudo -n` only for the
+# Run from $AD_ROOT/src/tools/l1 as `vibe`; `sudo -n` only for the
 # measurement stages. WAITS for both operator locks (never breaks them), then
 # holds them for the whole session: build -> smoke -> battery -> score.
 set -u

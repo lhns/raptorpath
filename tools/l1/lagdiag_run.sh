@@ -7,7 +7,7 @@
 #   LGD_ROOT=/home/vibe/lagdiag LGD_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash lagdiag_run.sh > $LGD_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree $LGD_ROOT/src/raptorpath/tools/l1 (git archive of
+# Run from the synced tree $LGD_ROOT/src/tools/l1 (git archive of
 # the DIAG commit; $LGD_ROOT/src/COMMIT names it). Started as `vibe`;
 # `sudo -n` only to run.
 set -u
@@ -19,7 +19,7 @@ ROOT="${LGD_ROOT:?LGD_ROOT}"
 : "${LGD_HARD_DEADLINE:?LGD_HARD_DEADLINE (epoch seconds)}"
 SOFT=$(( LGD_HARD_DEADLINE - 600 ))
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 BIN="$ROOT/bin/raptorpath"
 mkdir -p "$RUN/diag" "$ROOT/bin"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$RUN/era.txt"; }

@@ -6,7 +6,7 @@
 #   TPD_ROOT=/home/vibe/pdrun TPD_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadpd_run_all.sh > $TPD_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced NEW tree ($TPD_ROOT/src/raptorpath/tools/l1); the MAIN
+# Run from the synced NEW tree ($TPD_ROOT/src/tools/l1); the MAIN
 # tree (archive of github/main) is at $TPD_ROOT/main-src, with a COMMIT file.
 # STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
 #
@@ -43,7 +43,7 @@ ROOT="${TPD_ROOT:?TPD_ROOT}"
 # run dir lives under $SHM/run; it is copied to $ROOT/run at exit.
 SHM="${TPD_SHM:-/dev/shm/tpd}"
 RUN="$SHM/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 MSRC="$ROOT/main-src"
 BNEW_D="$ROOT/bin/new/raptorpath"      # as built, on disk
 BMAIN_D="$ROOT/bin/main/raptorpath"
@@ -192,7 +192,7 @@ tst main "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 tst debug-witness "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py && python3 test_threadsk_parse.py && python3 test_threadpd_parse.py" || TFAIL=1
+tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py && python3 test_threadsk_parse.py && python3 test_threadpd_parse.py" || TFAIL=1
 # The decoder bench, once, on NEW (release): its exactly-once assert is the
 # only check; the [DECBENCH] lines are a readout (indicative, shared host).
 ( cd "$SRC" && stage "$CARGO" test -p raptorpath --release --lib -- --ignored --nocapture     bench_in_order_add_symbol_against_the_prune_cadence ) > "$RUN/bench.log" 2>&1

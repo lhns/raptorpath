@@ -37,7 +37,7 @@ check("contract: the engine's [OCAP] fixture parses into every field",
 empty = pp.parse_ocap("[OCAP] t=0.2s p0 law=shadow n=10 ask=0.00 h=0 rtprop_us=- tmin_us=- tp50_us=- s_us=0 brake_us=- "
                       "n_k=0 offered=0 r_k=- floor=1.000 pin=0.000 hold=0.000 wbind=0 nmin=10 nmax=10 refreshes=40 q=0.1000")
 check("contract: an empty window's `-` fields read as None", empty and empty["tmin"] is None and empty["r_k"] is None and empty["brake"] is None)
-RS = os.path.join(HERE, "..", "..", "src", "net", "oracle", "tests.rs")
+RS = os.path.join(HERE, "..", "..", "raptorpath", "src", "net", "oracle", "tests.rs")
 if os.path.exists(RS):
     src = open(RS, encoding="utf-8").read()
     m = re.search(r'OCAP_FIXTURE: &str = "(.*?)";', src, re.S)

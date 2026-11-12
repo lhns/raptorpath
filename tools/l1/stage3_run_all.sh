@@ -5,7 +5,7 @@
 #   S3_ROOT=/home/vibe/stage3 S3_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash stage3_run_all.sh > $S3_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree ($S3_ROOT/src/raptorpath/tools/l1). STARTED AS
+# Run from the synced tree ($S3_ROOT/src/tools/l1). STARTED AS
 # `vibe`, NOT ROOT: sentinels are proven writable and written by vibe; `sudo
 # -n` is used for the measurement stages only.
 #
@@ -49,7 +49,7 @@ crlf_guard lib.sh lib_battery.sh stage3_run_all.sh stage3_battery.sh stage3_pars
 ROOT="${S3_ROOT:?S3_ROOT}"
 : "${S3_HARD_DEADLINE:?S3_HARD_DEADLINE (epoch seconds) is required}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 BIN="$ROOT/bin/raptorpath"
 SOFT=$(( S3_HARD_DEADLINE - 600 ))
 R_PRIOR=1200

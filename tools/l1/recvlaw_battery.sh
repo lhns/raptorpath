@@ -97,7 +97,7 @@
 # (docs/measurement-discipline.md rule 13).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
-cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+cd /home/vibe/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard recvlaw_battery.sh lib.sh lib_battery.sh

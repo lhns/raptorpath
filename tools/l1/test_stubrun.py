@@ -146,7 +146,7 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
     sb = {k: os.path.join(root, k) for k in ("bin", "repo", "root", "devshm", "proc", "locks", "logs", "tmpd")}
     for d in sb.values():
         os.makedirs(d, exist_ok=True)
-    tools = os.path.join(sb["repo"], "raptorpath", "tools", "l1")
+    tools = os.path.join(sb["repo"], "tools", "l1")
     os.makedirs(tools)
     for f in os.listdir(HERE):
         p = os.path.join(HERE, f)
@@ -215,7 +215,7 @@ def run_launch(sb, plan, base_sha, rehearse=False, prior=None, p46_suites=False,
         env["LD_PRIOR_TESTS"] = px(prior)
     if p46_suites:
         env["LD_P46_SUITES"] = "1"
-    script = px(os.path.join(sb["repo"], "raptorpath", "tools", "l1", "loopdiag_run_all.sh"))
+    script = px(os.path.join(sb["repo"], "tools", "l1", "loopdiag_run_all.sh"))
     cp = subprocess.run([BASH, script], env=env, capture_output=True, text=True, errors="replace", timeout=timeout)
     rows = open(os.path.join(sb["logs"], "rows.log")).read().splitlines()
     cargo = open(os.path.join(sb["logs"], "cargo.log")).read().splitlines()
@@ -386,7 +386,7 @@ def mutation():
     root = tempfile.mkdtemp(prefix="stubrun-")
     try:
         sb = make_sandbox(root, "48", BASE_SHA)
-        ra = os.path.join(sb["repo"], "raptorpath", "tools", "l1", "loopdiag_run_all.sh")
+        ra = os.path.join(sb["repo"], "tools", "l1", "loopdiag_run_all.sh")
         txt = open(ra, newline="").read()
         n = txt.count(' LD_BASE_SHA="${LD_BASE_SHA:-}"')
         with open(ra, "w", newline="") as fh:

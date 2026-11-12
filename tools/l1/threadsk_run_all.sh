@@ -6,7 +6,7 @@
 #   TSK_ROOT=/home/vibe/skrun TSK_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadsk_run_all.sh > $TSK_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced NEW tree ($TSK_ROOT/src/raptorpath/tools/l1); the MAIN
+# Run from the synced NEW tree ($TSK_ROOT/src/tools/l1); the MAIN
 # tree (archive of github/main 92934a7) is at $TSK_ROOT/main-src, with a COMMIT file.
 # STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
 #
@@ -41,7 +41,7 @@ ROOT="${TSK_ROOT:?TSK_ROOT}"
 # run dir lives under $SHM/run; it is copied to $ROOT/run at exit.
 SHM="${TSK_SHM:-/dev/shm/tsk}"
 RUN="$SHM/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 MSRC="$ROOT/main-src"
 BNEW_D="$ROOT/bin/new/raptorpath"      # as built, on disk
 BMAIN_D="$ROOT/bin/main/raptorpath"
@@ -190,7 +190,7 @@ tst main "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 tst debug-witness "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py && python3 test_threadsk_parse.py" || TFAIL=1
+tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py && python3 test_threadr2_parse.py && python3 test_threadsk_parse.py" || TFAIL=1
 # The P1 lock-order witness went with the scheduler mutex (threading NEW);
 # the owner identity witness is the one left (its panic message counted).
 echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$RUN/test-debug-witness.log")" >> "$RUN/TESTS.txt"

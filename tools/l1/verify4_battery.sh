@@ -174,7 +174,7 @@ run_one() { # cell arm seed rep
 echo "=== V4 BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' no_emb=${V4_NO_EMB:-0} no_auto=${V4_NO_AUTO:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary NEW $BNEW sha256 $V4_SHA_NEW" >> "$OUT"
 echo "=== binary OLD $BOLD sha256 $V4_SHA_OLD" >> "$OUT"
-echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
+echo "=== source $(cat "$HERE/../../COMMIT" 2>/dev/null)" >> "$OUT"
 echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST; EMB: RWM_EMIT_BATCH=1, every other arm RWM_EMIT_BATCH=0; soft_deadline=${V4_SOFT_DEADLINE:-none} block_est=${V4_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 

@@ -44,7 +44,7 @@ bash = shutil.which("bash")
 if m and bash:
     td = tempfile.mkdtemp()
     try:
-        d = os.path.join(td, "raptorpath", "tools", "l1")
+        d = os.path.join(td, "tools", "l1")
         os.makedirs(d)
         for name in ("test_a.py", "test_stubrun.py", "test_z.py"):
             with open(os.path.join(d, name), "w") as fh:

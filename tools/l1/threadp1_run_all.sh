@@ -5,7 +5,7 @@
 #   TP1_ROOT=/home/vibe/tp1run TP1_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadp1_run_all.sh > $TP1_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced P1 tree ($TP1_ROOT/src/raptorpath/tools/l1); the MAIN
+# Run from the synced P1 tree ($TP1_ROOT/src/tools/l1); the MAIN
 # tree (archive of main 8d7d8c1) is at $TP1_ROOT/main-src. STARTED AS `vibe`,
 # NOT ROOT; `sudo -n` only for the measurement stages.
 #
@@ -39,7 +39,7 @@ crlf_guard lib.sh lib_battery.sh threadp1_run_all.sh threadp1_battery.sh threadp
 ROOT="${TP1_ROOT:?TP1_ROOT}"
 : "${TP1_HARD_DEADLINE:?TP1_HARD_DEADLINE (epoch seconds) is required}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 MSRC="$ROOT/main-src"
 BP1="$ROOT/bin/p1/raptorpath"
 BMAIN="$ROOT/bin/main/raptorpath"

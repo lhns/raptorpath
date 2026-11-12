@@ -13,6 +13,6 @@ __pycache__/
 
 # Generated artifacts — rebuilt on demand, never source.
 raptorpath-visualizer/wasm/
-raptorpath/docs/*.pdf
-raptorpath/docs/benchmark-results-*
-raptorpath/docs/benchmark-dashboard.html
+docs/*.pdf
+docs/benchmark-results-*
+docs/benchmark-dashboard.html

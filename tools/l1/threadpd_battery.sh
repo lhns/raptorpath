@@ -161,7 +161,7 @@ echo "=== V-PD BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS
 echo "=== binary MAIN $BMAIN sha256 $TPD_SHA_MAIN" >> "$OUT"
 echo "=== binary NEW $BNEW sha256 $TPD_SHA_NEW" >> "$OUT"
 echo "=== tmpfs outdir=$(stat -f -c %T "$OUTDIR" 2>/dev/null) bins main=$(stat -f -c %T "$BMAIN" 2>/dev/null) new=$(stat -f -c %T "$BNEW" 2>/dev/null) tmp=$(stat -f -c %T /tmp 2>/dev/null)" >> "$OUT"
-echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
+echo "=== source $(cat "$HERE/../../COMMIT" 2>/dev/null)" >> "$OUT"
 echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1 bulk --window-reliable; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_RDIAG RWM_ACKDIAG RWM_IO_RT (shipped default), then RWM_RTOBS=1 RWM_RDIAG=1; soft_deadline=${TPD_SOFT_DEADLINE:-none} block_est=${TPD_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
 

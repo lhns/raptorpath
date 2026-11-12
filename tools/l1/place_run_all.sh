@@ -43,7 +43,7 @@
 # process table: `pgrep -f place_battery.sh` matches the watcher's own shell
 # whenever its command line carries the string.
 set -u
-cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+cd /home/vibe/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard place_run_all.sh place_battery.sh lib_battery.sh

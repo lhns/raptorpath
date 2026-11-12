@@ -64,7 +64,7 @@
 # drop first if the estimate is exceeded is `c9h` (witness only: 54 min).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
-cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+cd /home/vibe/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard place_battery.sh lib_battery.sh

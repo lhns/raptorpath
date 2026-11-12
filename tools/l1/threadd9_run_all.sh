@@ -6,7 +6,7 @@
 #   TD9_ROOT=/home/vibe/d9run TD9_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadd9_run_all.sh > $TD9_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced harness tree ($TD9_ROOT/src/raptorpath/tools/l1). The
+# Run from the synced harness tree ($TD9_ROOT/src/tools/l1). The
 # two engine trees are $TD9_ROOT/main-src (git archive of 88476a4) and
 # $TD9_ROOT/nod9-src (git archive of measure/nod9), each with a COMMIT file.
 # STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.

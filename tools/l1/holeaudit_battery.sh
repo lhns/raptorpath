@@ -3,7 +3,7 @@
 # One arm: shipped defaults, RWM_GEN=0, RWM_DIAG=1 RWM_FDIAG=1, seed 42.
 #   usage: holeaudit_battery.sh <reps>
 set -u
-cd /home/vibe/raptorpath/raptorpath/tools/l1
+cd /home/vibe/raptorpath/tools/l1
 REPS="${1:-3}"
 SEED=42
 BIN=/home/vibe/raptorpath/target/release/raptorpath

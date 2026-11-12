@@ -5,7 +5,7 @@
 #   V4_ROOT=/home/vibe/v4 V4_HARD_DEADLINE=<epoch> V4_OLD_SHA=<sha> \
 #     setsid nohup bash verify4_run_all.sh > $V4_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree ($V4_ROOT/src/raptorpath/tools/l1). STARTED AS
+# Run from the synced tree ($V4_ROOT/src/tools/l1). STARTED AS
 # `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
@@ -42,7 +42,7 @@ ROOT="${V4_ROOT:?V4_ROOT}"
 : "${V4_OLD_SHA:?V4_OLD_SHA (the Stage-3 binary sha256) is required}"
 OLD_REUSE="${V4_OLD_REUSE:-/home/vibe/v3/new/raptorpath}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 BNEW="$ROOT/bin/new/raptorpath"
 BOLD="$ROOT/bin/old/raptorpath"
 SOFT=$(( V4_HARD_DEADLINE - 600 ))

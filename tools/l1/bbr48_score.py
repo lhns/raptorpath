@@ -410,7 +410,7 @@ def score(paths, out=print, dry=False):
         label = ladder(rows, res["gate"] == "PASS", pr["p"], complete, nc, tail_ok, out, no_verdict=reason)
     out("REGISTERED PREDICTION (status 48b item 7): CONTROLLED-WITH-COST (failing R1 on c2/c8 goodput, wrtt at c2 <= 0.3 x BASE)")
     out("RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger:  "
-        f"python3 raptorpath/tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
+        f"python3 tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
     out(f"VERDICT48 {label}")
     sys.stdout.flush()
     return {"label": label, "res": res, "p_rest": pr, "r2b": nc}

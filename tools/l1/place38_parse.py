@@ -925,7 +925,7 @@ def score41c(paths, out=print):
     # withhold or alter it.
     sys.stdout.flush()
     out("RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger, re-runnable and seeded:  "
-        f"python3 raptorpath/tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
+        f"python3 tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
     sys.stdout.flush()
     return res
 

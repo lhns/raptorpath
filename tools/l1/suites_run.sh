@@ -12,7 +12,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || exit 3
 source ./lib_battery.sh
 ROOT="${SU_ROOT:?SU_ROOT}"
-SRC="${SU_SRC:-$(cd "$HERE/../../.." && pwd)}"
+SRC="${SU_SRC:-$(cd "$HERE/../.." && pwd)}"
 mkdir -p "$ROOT"
 OUT="$ROOT/TESTS.txt"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$ROOT/era.txt"; }
@@ -74,7 +74,7 @@ tst release "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-f
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 tst debug "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
-tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_lagdiag_digest.py && python3 test_lagdiag2_digest.py && python3 test_threadpd_parse.py" || TFAIL=1
+tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_lagdiag_digest.py && python3 test_lagdiag2_digest.py && python3 test_threadpd_parse.py" || TFAIL=1
 echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$ROOT/test-debug.log")" >> "$OUT"
 rm -rf "$CARGO_TARGET_DIR"
 if [ "$TFAIL" = "0" ]; then touch "$ROOT/TESTS-OK"; era "SUITES OK"; exit 0; fi

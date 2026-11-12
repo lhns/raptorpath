@@ -180,7 +180,7 @@ run_one() { # cell arm seed rep
 
 echo "=== STAGE3 BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' no_pack=${S3_NO_PACK:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $SHA_NOW" >> "$OUT"
-echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
+echo "=== source $(cat "$HERE/../../COMMIT" 2>/dev/null)" >> "$OUT"
 echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; CTL env-unset (cadence ON by default); PACK: RWM_EST_CADENCE=0; soft_deadline=${S3_SOFT_DEADLINE:-none} block_est=${S3_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 

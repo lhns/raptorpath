@@ -5,7 +5,7 @@
 #   ES_ROOT=/home/vibe/es ES_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash emitscope_run_all.sh > $ES_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from the synced tree ($ES_ROOT/src/raptorpath/tools/l1). STARTED AS
+# Run from the synced tree ($ES_ROOT/src/tools/l1). STARTED AS
 # `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
@@ -40,7 +40,7 @@ crlf_guard lib.sh lib_battery.sh emitscope_run_all.sh emitscope_battery.sh emits
 ROOT="${ES_ROOT:?ES_ROOT}"
 : "${ES_HARD_DEADLINE:?ES_HARD_DEADLINE (epoch seconds) is required}"
 RUN="$ROOT/run"
-SRC="$(cd "$HERE/../../.." && pwd)"
+SRC="$(cd "$HERE/../.." && pwd)"
 BIN="$ROOT/bin/raptorpath"
 SOFT=$(( ES_HARD_DEADLINE - 600 ))
 R_PRIOR=120          # s per (rep, seed) block of 8 invocations (§8 budget)

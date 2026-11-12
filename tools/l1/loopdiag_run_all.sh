@@ -5,7 +5,7 @@
 #
 #   LD_ROOT=/home/vibe/n1/ld LD_SHM=/dev/shm/ld setsid nohup bash loopdiag_run_all.sh > $LD_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from $LD_ROOT/src/raptorpath/tools/l1 as `vibe`; `sudo -n` only for the
+# Run from $LD_ROOT/src/tools/l1 as `vibe`; `sudo -n` only for the
 # measurement stages. WAITS for both operator locks (never breaks them), then
 # holds them for the whole session: build -> smoke -> battery -> score.
 #
@@ -257,7 +257,7 @@ fi
 SD="$RUN"      # where the suite logs and TESTS.txt go (plan 47: $RUN/suites)
 run_suites() {
   local REPO TT TFAIL=0
-  REPO="$(cd "$HERE/../../.." && pwd)"
+  REPO="$(cd "$HERE/../.." && pwd)"
   TT="$ROOT/target-tests"
   : > "$SD/TESTS.txt"
   if [ -e "$TT" ]; then
@@ -303,9 +303,9 @@ run_suites() {
   if [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || [ "$PLAN" = "52" ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
     # Status 41 / 47 / 48 / 49: "the tools/l1 python tests" are all of them, except test_stubrun.py: it re-runs this very script against stubs
     # (minutes, even in its fast mode) and belongs to harness changes only, never to a measurement session.
-    tst parsers bash -c 'cd raptorpath/tools/l1 && for t in test_*.py; do [ "$t" = test_stubrun.py ] && continue; python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
+    tst parsers bash -c 'cd tools/l1 && for t in test_*.py; do [ "$t" = test_stubrun.py ] && continue; python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
   else
-    tst parsers bash -c "cd raptorpath/tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
+    tst parsers bash -c "cd tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
   fi
   echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$SD/test-debug-witness.log")" >> "$SD/TESTS.txt"
   src_manifest > "$SD/SRC-MANIFEST.sha256"       # what the run covered: LD_PRIOR_TESTS reuse compares against it
@@ -316,7 +316,7 @@ run_suites() {
 # The identity of what the suites ran on: sha256 of every file under raptorpath/src, raptorpath/tests, raptorpath-math/src, raptorpath-wasm/src, gf256/src and vendor/
 # (a patched dependency), plus the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml, in C-locale path order. A dependency patch invalidates a reuse.
 src_manifest() {
-  ( cd "$(cd "$HERE/../../.." && pwd)" || exit 1
+  ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
     { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
       find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
 }
@@ -425,7 +425,7 @@ if [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || [ "$PLAN" = "52" ]; then
     era "LD-ALL stage $name end ok=$ok $(grep -a '^VERDICT' "$dir/score.txt" | head -1)"
     if [ "$splan" = "41c" ] || [ "$splan" = "48" ]; then
       # Only the verdict is computed on the VM. The resolution table (reported only) is recomputed on the HOST from the kept ledger.
-      era "LD-ALL guard resolution NOT computed on the VM; on the host: python3 raptorpath/tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log"
+      era "LD-ALL guard resolution NOT computed on the VM; on the host: python3 tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log"
     fi
     [ "$ok" = "1" ] && touch "$dir/DONE" && return 0
     return 1

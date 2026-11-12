@@ -147,7 +147,7 @@ run_one() { # cell arm seed rep
 
 echo "=== ES BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' arms='$ARMS_ALL' $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary ES $BIN sha256 $ES_SHA" >> "$OUT"
-echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
+echo "=== source $(cat "$HERE/../../COMMIT" 2>/dev/null)" >> "$OUT"
 echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST; NEW: RWM_EMIT_BATCH=0; EB0: RWM_EMIT_BATCH=1; soft_deadline=${ES_SOFT_DEADLINE:-none} block_est=${ES_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 

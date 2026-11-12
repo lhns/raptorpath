@@ -29,7 +29,7 @@ wait_free() {
     sleep 600
   done
 }
-crlf_guard "$ROOT/new/raptorpath/tools/l1/suites_run.sh"
+crlf_guard "$ROOT/new/tools/l1/suites_run.sh"
 era "TPA start base=$(cat "$ROOT/base/COMMIT") pd=$(cat "$ROOT/pd/COMMIT") fix=$(cat "$ROOT/fix/COMMIT") new=$(cat "$ROOT/new/COMMIT")"
 
 arm() { # name
@@ -58,7 +58,7 @@ wait_free
 
 while :; do
   wait_free
-  SU_ROOT="$ROOT/suites" SU_SRC="$ROOT/new" bash "$ROOT/new/raptorpath/tools/l1/suites_run.sh"
+  SU_ROOT="$ROOT/suites" SU_SRC="$ROOT/new" bash "$ROOT/new/tools/l1/suites_run.sh"
   rc=$?
   [ "$rc" = 4 ] || [ "$rc" = 3 ] || break
   era "TPA suites refused rc=$rc (lock or cargo); waiting"
