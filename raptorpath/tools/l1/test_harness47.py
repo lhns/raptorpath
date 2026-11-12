@@ -39,6 +39,8 @@ OLD = ("[ETA] site=sender fhat_us=1 n=9 zero=0.0000 place_n=40 cold_r=0.0000 col
        "ref_fl=0.0000 w_cold=0.0100 w_mv=0.2000 w_n=500 w_calls=1000 p0:n=1/1 drop=0 tau_us=100 e_p50=900 e_p90=2000 e_mx=3000 late=0.0000 sig_us=5/n3")
 NEW = OLD.replace("w_mv=0.2000 ", "")
 e_old, e_new = pp.eta_last([OLD]), pp.eta_last([NEW])
+check("run_all: BASE's COMMIT pin is LD_BASE_SHA when set (new main as BASE), else the historical 4926822",
+      'BASE_PIN="${LD_BASE_SHA:-4926822}"' in runall and 'in "$BASE_PIN"*) ;;' in runall and "4926822*) ;;" not in runall)
 check("[ETA]: the promoted line (ends `ref_fl= w_cold= w_n= w_calls=`, no w_mv) parses: w_mv None, the rest as before",
       e_new is not None and e_new["w_mv"] is None and e_new["w_n"] == 500 and e_new["w_calls"] == 1000 and e_new["ref_fl"] == "0.0000" and e_new["w_cold"] == "0.0100"
       and e_new["e_p50"][0] == "900" and e_new["cold_ge"] == "0.2500", e_new)
