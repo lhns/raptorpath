@@ -13725,3 +13725,16 @@ Session (`LD_PLAN=41c`, `LD_P46_SUITES=1`), CAND `simplify-5` `d5bd282a`, BASE m
   - **What vouches for `wdiv-diag`'s default-path cost** (the `cx_leg` count per closed retransmit), which the guard does not cover (it is in both arms): the suites' allocation bounds (`recv_alloc_bound`, `alloc_per_symbol`) and its unit tests. If either allocation bound fails, it does not merge.
 - **Guard FAIL:** no merge; the failing clause, its size and the resolution table go to the user.
 - **The reported block decides nothing by itself.** A leg-choice change (w_div's value or form) is its own registration after this result.
+
+**§52 amendment 1 (before VM contact, advisor review).**
+- **W0's prediction, corrected:** `RWM_PLACE_WDIV=0` places a retransmit like a source symbol; it does not keep it on its original leg. Predicted send-leg-1 share ≈ the source split on leg 1 (≈ 0.18, from the rows' `shares`), not the original-leg share. Predicted tail bracketing both model scenarios: **1.2–1.9 s** (a knife edge).
+- **W05: a dose point, no numeric prediction.** At w = 0.5 the term is still ≈ 3 temperatures against the original leg; the idle-leg closed form cannot carry the loaded placement.
+- **WDER:** a null (share within BASE's row range) reads **"not executed or no effect"**, never "not executed" alone.
+- **Guard risk, corrected:** the live clause is **c1d CPU** (the horizon grows ×1.25–1.5 there; c1d CPU/GB d80 2.4–5 %), not c8.
+- **Decision rule, added:**
+  - If the reported stage does not complete, this session's guard verdict stands; a re-run's guard is not read.
+  - If the 600 MB block reads **CAND worse than BASE beyond BASE's row range** on tail, goodput or receiver duplicates, the merge goes to the user even on a guard PASS (the guard's ≈ 9 s rows cannot see the tail).
+  - NO VERDICT ⇒ re-run; ABORT-TESTS ⇒ fixed on the branch and re-run.
+- **Before the full launch, the rehearsal must show:** every smoke row's `t52` complete (no `t52_error`, no None among the registered readouts, `cx_leg` summing to `cx_n` on the post-Group-C `[HOLD]` line); each W arm's env in `[GATES]` on both ends. The W rows' values are not read.
+- **Archive fixture fix:** plan 52's test reads `bbr48b/diag-ld-full.tgz`, which the ledger export-ignore (measured before `harness52`) dropped from archives. Keep lines added on main and merged into both trees; the tools tests are run inside an extracted archive of CAND, with `LD_BASE_SHA` set, before pinning.
+- **Debt at the merge:** `tests/common/recovery_model.rs` still models a 20-gap sender.
