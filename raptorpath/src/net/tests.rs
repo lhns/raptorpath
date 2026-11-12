@@ -1653,6 +1653,44 @@ fn test_sack_to_gaps_caps_at_max_gaps() {
     assert_eq!(gaps.len(), MAX_NACK_GAPS);
 }
 
+/// The sender's gap horizon is the whole report: a report carrying
+/// `MAX_SACK_RANGES` isolated received runs names every hole between them,
+/// so a hole at gap index 40 (the only one ripe at the sender's cooldown)
+/// reaches `serve_gaps`. At the old 20-gap literal it was cut off.
+#[test]
+fn sack_to_gaps_horizon_is_every_range_the_report_carries() {
+    // Runs at 2, 4, 6, ...: holes (0,1) then one single-seq hole between
+    // each pair, MAX_SACK_RANGES ranges -> MAX_SACK_RANGES gaps.
+    let sack: Vec<(u64, u64)> = (0..MAX_SACK_RANGES as u64)
+        .map(|i| (2 + i * 2, 2 + i * 2))
+        .collect();
+    let gaps = sack_to_gaps(0, &sack);
+    assert_eq!(gaps.len(), MAX_SACK_RANGES, "every gap of a full report is acted on");
+    // Gap 40 is the hole just below run 40: seq 2 + 40*2 - 1.
+    let ripe = (2 + 40 * 2 - 1, 2 + 40 * 2 - 1);
+    assert_eq!(gaps[40], ripe);
+    assert!(gaps.contains(&ripe), "the hole at gap index 40 must be served");
+}
+
+/// Guard: where a report carries at most the old horizon of ranges the
+/// inversion is exactly the plain uncapped one (behaviour unchanged).
+#[test]
+fn sack_to_gaps_at_most_old_horizon_is_the_plain_inversion() {
+    for n in [1u64, 5, 19, 20] {
+        let sack: Vec<(u64, u64)> = (0..n).map(|i| (3 + i * 4, 4 + i * 4)).collect();
+        let mut want = Vec::new();
+        let mut expected = 0u64;
+        for &(s, e) in &sack {
+            if s > expected {
+                want.push((expected, s - 1));
+            }
+            expected = e + 1;
+        }
+        assert_eq!(sack_to_gaps(0, &sack), want, "n={n}");
+        assert_eq!(want.len() as u64, n);
+    }
+}
+
 #[test]
 fn test_received_sack_ranges_inverts_to_gaps() {
     // The extracted helper must produce exactly the data-arm WindowAck's
