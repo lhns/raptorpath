@@ -1,0 +1,14 @@
+== c8-100 BASE: per-row slope be = 0.86 +- 0.07 (se over 12 rows), positive in 12/12; rows: 0.35 0.79 1.00 0.83 0.63 0.99 1.02 0.89 0.63 1.18 0.82 1.15
+   cf retx on ORIGINAL leg k=0.6: H0 1890 -> 938 (rows min 6 max 1676); tail 3.91s -> 1.90s
+   cf retx on ORIGINAL leg k=0.8: H0 1890 -> 836 (rows min 0 max 1673); tail 3.91s -> 1.68s
+   cf retx on ORIGINAL leg k=1.0: H0 1890 -> 769 (rows min 0 max 1675); tail 3.91s -> 1.53s
+   cf retx on leg0 always  k=0.6: H0 1890 -> 715 (rows min 0 max 1621); tail 3.91s -> 1.42s
+   cf retx on leg0 always  k=0.8: H0 1890 -> 642 (rows min 0 max 1593); tail 3.91s -> 1.27s
+   cf retx on leg0 always  k=1.0: H0 1890 -> 585 (rows min 0 max 1564); tail 3.91s -> 1.16s
+== c8-100 CAND: per-row slope be = 1.06 +- 0.03 (se over 12 rows), positive in 12/12; rows: 1.17 1.28 1.11 1.15 0.96 1.00 1.05 1.06 1.17 0.94 0.97 0.90
+   cf retx on ORIGINAL leg k=0.6: H0 2246 -> 135 (rows min 0 max 493); tail 4.73s -> 0.33s
+   cf retx on ORIGINAL leg k=0.8: H0 2246 -> 91 (rows min 0 max 400); tail 4.73s -> 0.27s
+   cf retx on ORIGINAL leg k=1.0: H0 2246 -> 118 (rows min 0 max 574); tail 4.73s -> 0.32s
+   cf retx on leg0 always  k=0.6: H0 2246 -> 106 (rows min 0 max 427); tail 4.73s -> 0.30s
+   cf retx on leg0 always  k=0.8: H0 2246 -> 142 (rows min 0 max 649); tail 4.73s -> 0.38s
+   cf retx on leg0 always  k=1.0: H0 2246 -> 181 (rows min 0 max 872); tail 4.73s -> 0.46s
