@@ -75,12 +75,16 @@ names.
 | J2 | σ (second moment) | Copa `rtt_var_sq` (`copa.rs:432`, β = ¼) → `rtt_sigma_us` (`path.rs:718`) | `[QCLK]` and `[DIAG]` only | — |
 | J3 | dispersion candidates | `rtt_mdev`; `rtt_win` (256-sample FIFO, `copa.rs:477`); `rtt_tlag` (decimated at RTprop/8, `:491`) → `qsp`, `msd`, `tlag`, `rvar` (`path.rs:798–1038`) | `[DIAG]` only (`net/diag.rs:662–674`) | unread hot-path work (§45 Stage 1) |
 | J4 | interarrival jitter | `estimator.jitter_us` (RFC 3550, receiver side, mirrored by `sync_rx`) | A*'s Δ (`emit_source.rs:574`); `PathReport` | different direction and clock |
-| S | app-echo loop spread S = p50 − min | **no engine estimator.** The `[LOOPDIAG]` source is gone; `qsp` is P90 − P50, not S | — | gap (§3) |
-| B1 | delivery rate b̂ | Copa `max_bw` over `bw_samples` / `bw_mono` (`copa.rs:384–405`), ack-interval sampler (`:746`), refreshed only in `record_delivery`; gated at `ANCHOR_MIN_SAMPLES` = 8 (`effective_btlbw` `:1472`) | store cap Σ b̂·m̂ (`channel_set.rs:125–129`); cwnd anchor floor and recovery pull (`copa.rs:1483`, `:1327–1333`); `btlbw_sym_per_s` (THREE_TERM, `[DIAG]`); INFL_CAP per-leg cap (`net/mod.rs:2346`, off) | — |
+| S | app-echo loop spread S = p50 − min | **no engine estimator.** A grep of `src` for `LOOPDIAG`, `STORE_LAW` and `ORACLE_BRAKE` finds nothing at `fdad664e`. The only 250 ms literal (`diag.rs:469`) is the `[DIAG]` print cadence, not a window minimum, so §44's 250 ms Tmin is not on main. `qsp` is P90 − P50, not S | — | gap (§3) |
+| B1 | delivery rate b̂ | Copa `max_bw` over `bw_samples` / `bw_mono` (`copa.rs:384–405`), ack-interval sampler (`:746`), refreshed only in `record_delivery`; gated at `ANCHOR_MIN_SAMPLES` = 8 (`effective_btlbw` `:1472`). **Units on the default feed:** wire symbols per second, repairs included. The count is the receiver's per-leg `PathBatchTracker.total_received` delta (`net/mod.rs:3665`, `:3738`; `control_msg.rs:276`, `:565`), the same unit as I_i. Only the B2 sampler counts source symbols | store cap Σ b̂·m̂ (`channel_set.rs:125–129`); cwnd anchor floor and recovery pull (`copa.rs:1483`, `:1327–1333`); `btlbw_sym_per_s` (THREE_TERM, `[DIAG]`); INFL_CAP per-leg cap (`net/mod.rs:2346`, off) | — |
 | B2 | delivery rate | Copa send-interval rate sampler into the **same** filter (`copa.rs:815–930`, `RWM_COPA_FEED` only) | as B1 | **D feed** (gated) |
 | B3 | send rate | `estimator.throughput` (EWMA of the report task's local send rate) | rate law t_sym (`fec_rate.rs:465`); A* when the A* anchor is off | different quantity (offered, not delivered) |
 | B4 | implied rate W/s | Copa cwnd / s | placement queue term (`path.rs:441–445`); cc_pace (off) | **D with B1** (the anchor floor ties W to b̂·m̂) |
 | K | echo ratio K_i | `EchoRatioMin` (`net/store_cap.rs:208`) in `percap_k` | `three_term_terms` only (`store_cap.rs:399–411`, THREE_TERM, Group B, approved for deletion); `[DIAG]` (`diag.rs:615`) | **leaves with Group B; not moved** |
+
+§44 counts six delivery-rate estimators. Two of them are aggregate, not per
+leg, so they stay out of `LegState`: `SendRateAnchor` (`emit_source.rs:146`,
+`control/anchor.rs:185`) and `gen_rate_ewma` (`sender_phases.rs:370`).
 
 Notes on the duplicates:
 - **R1 and R2 are not bit-identical.** They differ in four ways:
@@ -156,8 +160,17 @@ LegState {
 }
 ```
 
-Units: durations in ns `Duration`; rates in source symbols per second;
-windows in symbols.
+Units: durations in ns `Duration`. Rates and windows are in **wire
+symbols** (source and repair), per second and in symbols respectively. That
+is b̂'s unit on the default feed (§1.2 B1), and it matches I_i, so Ŵ_i − I_i
+is unit-consistent.
+- Today's store cap compares this wire-unit Σ b̂·m̂ against an outstanding
+  count in source units, a factor of (1 + r) apart. That mismatch already
+  ships and is noted for W3.3.
+- Switching L to the source-counting send-interval sampler (the §3 L rule)
+  would move Ŵ into source units against I_i's coded units, a (1 + r)
+  mismatch exactly where B2 and B3 operate. Whichever sampler feeds L, Ŵ's
+  readout converts to I_i's unit.
 
 **Readouts.** Each is a pure function of the state and the dial. None
 holds state of its own.
@@ -174,18 +187,28 @@ holds state of its own.
 | `tau_lag()` | today's `tlag` σ̂_Δ(τ = m̂) on the ring | W1 τ candidate; `[DIAG]` |
 | `sigma()`, `jitter()` | J2, J1 | `[QCLK]`, `[DIAG]` |
 
-**Cold chain for Ŵ_i** (availability, not a mode, the `RWM_COLD_PLACE`
-pattern):
+**Cold chains: two, by consumer.** Both are availability fallbacks, not
+modes (the `RWM_COLD_PLACE` pattern). Optimism is safe for a price and
+unsafe for a cap. An optimistic price gets a leg sampled. An optimistic cap
+lets a cold or slow leg take on the fast leg's window.
 
 ```text
-Ŵ_i = window_i(δ)  ?:  max_{j warm} window_j(δ)  ?:  STORE_CAP_FLOOR
+price (B4, placement):          Ŵᵖ_i = window_i(δ)  ?:  max_{j warm} window_j(δ)  ?:  STORE_CAP_FLOOR
+caps (B1 backstop, B2 spare,    Ŵᶜ_i = window_i(δ)  ?:  STORE_CAP_FLOOR
+      B3 ρ<1 filter):
 ```
 
-STORE_CAP_FLOOR = 10 is the derived floor (`net/sender_policy.rs:67–79`:
-the max of ANCHOR_MIN_SAMPLES·1 and RFC 6928's IW 10). It equals Copa's
-INITIAL_CWND, so a cold leg starts where Copa starts. The optimistic middle
-link is hygiene rule 1: an unmeasured leg takes the best measured leg's
-value, so it gets sampled.
+- STORE_CAP_FLOOR = 10 is the derived floor (`net/sender_policy.rs:67–79`:
+  the max of ANCHOR_MIN_SAMPLES·1 and RFC 6928's IW 10). It equals Copa's
+  INITIAL_CWND, so a cold leg's cap starts where Copa starts.
+- Unlike Copa, it does not ramp ×1.5 per SRTT before the anchor warms. The
+  anchor warms after 8 delivery samples, so this is a warm-up-only
+  difference. A4's gauge measures how long it lasts.
+- The price chain's middle link is hygiene rule 1: an unmeasured leg takes
+  the best measured leg's value, so it gets sampled.
+- `window_i` is "warm" only when L_i is warm under §3's rule. So under that
+  rule an app-limited-only leg falls to the floor for caps and to the best
+  leg for the price.
 
 **Why Ŵ is the store law's term.**
 - The shipped pool is already (1 + q(δ))·Σ b̂_i·m̂_i
@@ -234,8 +257,8 @@ Load-dependent delay enters only multiplied by a live load counter.
 | ŵ | refreshes (quinn's 2 s report and ping) | none needed; placement's base |
 | s | frozen at the dwell that idled the leg (pessimistic) | read only times I_i (the placement queue term: already so) or by clocks where pessimism costs time, not exclusion (recovery clocks). **Hazard to note, not fix here:** the recovery clocks pool `max_i s_i`, so a leg frozen at a spike inflates every leg's clock until it carries again |
 | m̂ | frozen low envelope (never pessimistic for a price) | keep: evict on feed only (bit-identical) |
-| L = b̂ | frozen max; pessimistic when the window held only app-limited samples, because the ack-interval sampler has no app-limited mark | **proposed:** `L_i = max over non-app-limited samples ?: max_{j warm} L_j ?: cold`. A leg whose window holds only app-limited samples counts as unmeasured and takes the best leg's value. The only inputs are BBR's app-limited rule and hygiene rule 1, with no κ/ν and no decay constant. Today the app-limited mark exists only on the send-interval sampler (`RWM_COPA_FEED`), so the rule needs that sampler on the default path, which changes b̂ for the store law (a W3.3-class change). |
-| S | no estimator; status §5.7's "keep S when idle" keeps the dwell spike (127–140 ms on the locked rows, Table 5.7a) | placement never reads S. For the store law, **proposed:** S_i is read over the ring entries within one m̂-window horizon (10 s, `copa.rs:641`, an existing constant). An empty window means unmeasured, so S takes `min_j S_j ?: 0`, the optimistic chain. S must not keep the last window. |
+| L = b̂ | frozen max; pessimistic when the window held only app-limited samples, because the ack-interval sampler has no app-limited mark | **proposed:** `L_i = max over non-app-limited samples ?: unmeasured`. A leg whose window holds only app-limited samples counts as unmeasured, and the consumer's own cold chain then applies (§2): the best leg's value for the price, STORE_CAP_FLOOR for caps. The only inputs are BBR's app-limited rule and hygiene rule 1, with no κ/ν and no decay constant. Today the app-limited mark exists only on the send-interval sampler (`RWM_COPA_FEED`), so the rule needs that sampler on the default path, which changes b̂ for the store law (a W3.3-class change). |
+| S | no estimator; paper §5.7's "keep S when idle" keeps the dwell spike (127–140 ms on the locked rows, Table 5.7a) | placement never reads S. For the store law, **proposed:** S_i is read over the ring entries within one m̂-window horizon (10 s, `copa.rs:641`, an existing constant). An empty window means unmeasured, so S takes `min_j S_j ?: 0`, the optimistic chain. S must not keep the last window. |
 
 **Open question (W3.3).** The ring's span is 32·m̂ (decimation m̂/8 × 256).
 That is not m̂'s 10 s. A spread whose minimum sits on a different horizon
@@ -334,12 +357,19 @@ evidence from A4, first)**
     cwnd avoided this by probing up without delivery evidence. So B4 waits
     on the L rule, or on W3.3's L̂.
   - Tests: the existing placement-law tests (water-filling, spillover,
-    T → 0 argmin) must stay green. Absolute: b̂ in a 10:1 ratio at equal m̂
-    and I gives queue terms in a 1:10 ratio. Routing: cwnd poisoned.
+    T → 0 argmin) must stay green. Absolute: b̂ in a 10:1 ratio at equal m̂,
+    s and I gives queue terms in a 1:10 ratio. Routing: cwnd poisoned.
 - **B5. Copa's controller.** After B4, nothing on the default path reads
-  its dynamics. Removing the calls from `on_ack` / `on_loss` on the default
-  path is wire-identical: host ns before and after, and the trace pin minus
-  the cwnd column.
+  its dynamics, so removing the calls is wire-identical: host ns before and
+  after, and the trace pin minus the cwnd column.
+  - **Precondition, re-grepped at that time.** At `fdad664e` the facts are:
+    - Copa's dynamics state is read only by monitoring stats
+      (`control_msg.rs:365`, `:661`). That covers `in_slow_start` and
+      `ssthresh`, which are written at `scheduler/mod.rs:439–440`.
+    - `Scheduler::on_loss` (`scheduler/mod.rs:412`) has no caller outside
+      tests, so `PathState::on_loss` is already dead on the default path.
+    - The live call is `on_delivery_signal` inside `on_ack`.
+  - The b̂ feed (`record_delivery`) stays: it is `LegState`'s.
   - Its arms go to the user as one ADR-0073 question: passthrough,
     `COPA_FEED`, `COPA_WIRE` / compete, `CC_PACE`, and `LATE_BRAKE`'s cwnd
     face.
@@ -400,6 +430,12 @@ or the trace pin missed something.
 5. B1: retarget the leak backstop or delete it. A4's gauge decides.
 6. The recovery clocks' `max_i s_i` pool over idle-frozen legs (§3). It is
    noted here and belongs to W3.6.
+7. The cap consumers' cold chain ends at STORE_CAP_FLOOR, with no ×1.5
+   warm-up ramp (§2). Is a warm-up-only difference against Copa acceptable,
+   or must the cap chain reproduce a ramp? A4 measures the warm-up length.
+8. Units (§2): the shipped store cap already mixes wire-unit Σ b̂·m̂ with a
+   source-unit outstanding count, a factor of (1 + r). Whether W3.3
+   converts it.
 
 **NO-MODE-SWITCH debt seen and not fixed here** (for Stage 3.4):
 - `emit_source.rs:461`: `protocol_hint == Realtime` selects the duplicate.
