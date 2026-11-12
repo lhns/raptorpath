@@ -244,15 +244,6 @@ pub struct SenderEta {
     cold_r: u64,
     cold_ge: u64,
     place_n: u64,
-    /// Placement arm `RWM_PLACE_T_DERIVED`. `t_eff` is the temperature the
-    /// placement softmax last resolved — a level, so the last value is printed
-    /// rather than averaged. `t_cold` counts the resolutions in which no active
-    /// path had a dispersion sample and the law fell back to
-    /// `place_temperature()`, out of `t_n`. With the arm absent `t_n` stays 0
-    /// and all three print `-`.
-    t_eff: f64,
-    t_cold: u64,
-    t_n: u64,
     /// The wire base's bind gauges (paper §5.7). `w_cold` / `w_n`: leg
     /// evaluations whose `wire_i` was absent (the `min_j wire_j ?: s_i`
     /// fallback) out of all leg evaluations. `ref_fl` / `w_calls`: placements
@@ -348,18 +339,6 @@ impl SenderEta {
         self.place_n += n;
     }
 
-    /// Fold in the `RWM_PLACE_T_DERIVED` temperature reading: the `T_eff` last
-    /// resolved, the cold-rule count and its denominator. Observation only.
-    /// A drain with `n == 0` (the arm absent, or no placement since the last
-    /// report) leaves the level untouched rather than zeroing it.
-    pub fn add_place_t(&mut self, t_eff: f64, cold: u64, n: u64) {
-        if n > 0 {
-            self.t_eff = t_eff;
-        }
-        self.t_cold += cold;
-        self.t_n += n;
-    }
-
     /// Fold in the wire base's bind gauges: `cold` of `n` leg evaluations had
     /// no wire RTT, and the ref floor bound in `floor` of `calls` placements.
     /// Observation only.
@@ -375,11 +354,6 @@ impl SenderEta {
         (self.w_cold, self.w_n, self.w_calls, self.ref_fl)
     }
 
-    /// `T_eff` as last resolved, or `None` with the arm absent. Test seat.
-    pub fn t_eff(&self) -> Option<f64> {
-        (self.t_n > 0).then_some(self.t_eff)
-    }
-
     /// `F̂`, µs on the sender clock. No decision reads it.
     pub fn frontier_eta_us(&self) -> u64 {
         self.frontier_eta_us
@@ -389,12 +363,6 @@ impl SenderEta {
     /// never does and must stay silent.
     pub fn is_sender_site(&self) -> bool {
         self.stamped_n > 0
-    }
-
-    /// `σ̂_e` for one path, µs — the witness's left-hand side.
-    pub fn sigma_us(&self, path_id: u32) -> Option<u64> {
-        let p = self.paths.get(&path_id)?;
-        p.err_sig.sigma_us(Duration::from_micros(p.tau_us))
     }
 
     /// The exit-flush rendering: [`SenderEta::line`] plus the ` final=1`
@@ -408,13 +376,8 @@ impl SenderEta {
     /// The `[ETA] site=sender` line. Cumulative: the last line is the
     /// reading — the `[SUCC]` / `[RFA]` convention.
     pub fn line(&self) -> String {
-        // The arm readings ride the same line, `-` iff their own denominator
-        // is 0, so "the arm is absent" and "the arm ran and measured zero"
-        // read differently.
-        let lvl = |v: f64, n: u64| if n == 0 { "-".to_string() } else { format!("{v:.6}") };
         let mut s = format!(
             "[ETA] site=sender fhat_us={} n={} zero={} place_n={} cold_r={} cold_ge={} \
-             t_eff={} t_cold={} t_n={} \
              ref_fl={} w_cold={} w_n={} w_calls={}",
             self.frontier_eta_us,
             self.stamped_n,
@@ -422,9 +385,6 @@ impl SenderEta {
             self.place_n,
             optf(self.cold_r, self.place_n),
             optf(self.cold_ge, self.place_n),
-            lvl(self.t_eff, self.t_n),
-            optf(self.t_cold, self.t_n),
-            self.t_n,
             optf(self.ref_fl, self.w_calls),
             optf(self.w_cold, self.w_n),
             self.w_n,

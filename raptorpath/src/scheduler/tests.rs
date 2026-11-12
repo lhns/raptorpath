@@ -2440,7 +2440,6 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 #[test]
 fn every_arm_absent_leaves_the_probabilities_untouched() {
     for (name, mut sched, is_repair, covered) in cost_table_states() {
-        sched.set_place_t_derived(false);
         sched.set_place_wdiv_derived(false);
         let got = sched.place_probs(is_repair, &covered);
         let want =
@@ -2472,106 +2471,7 @@ fn a_garbage_arm_value_is_an_error_naming_the_gate() {
 #[test]
 fn the_placement_arms_are_absent_by_default() {
     let sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
-    assert!(!sched.place_t_derived(), "RWM_PLACE_T_DERIVED ships ABSENT");
     assert!(!sched.place_wdiv_derived(), "RWM_PLACE_WDIV_DERIVED ships ABSENT");
-}
-
-/// Arm 1, the `sigma -> 0` limit. A candidate set whose ETA-error
-/// dispersion is zero has `T = 0`, and the derived law must then be
-/// exactly the argmin -- the shipped degenerate branch, reached with
-/// `place_probs_with_temperature(.., 0.0)`. Same distribution, element by
-/// element.
-#[test]
-fn the_derived_temperature_at_zero_dispersion_is_the_argmin() {
-    let mut sched = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
-    );
-    sched.set_place_t_derived(true);
-    // A dispersion series that never moves: sigma = 0 at both paths. The
-    // tau-lag admits a pair only inside `[tau, 2*tau]` of real time, so the
-    // arrival instants are supplied rather than slept for.
-    let t0 = std::time::Instant::now();
-    for pid in [0u32, 1] {
-        for k in 0..40u64 {
-            let ts = 1_000 + k * 1_000 + u64::from(pid) * 1_000_000;
-            sched.eta_mut().stamp(pid, ts, 5_000);
-            sched.eta_mut().on_ack_at(
-                pid,
-                ts,
-                10_000,
-                10_000,
-                t0 + Duration::from_micros(1_250 * k),
-            );
-        }
-    }
-    assert_eq!(sched.eta().sigma_us(0), Some(0), "the fixture must be zero-dispersion");
-    let got = sched.place_probs(false, &[]);
-    let want = sched.place_probs_with_temperature(false, &[], 0.0);
-    assert_eq!(got, want, "sigma = 0 must resolve to the argmin exactly");
-    // And the gauge says the cold rule did not fire -- a measured zero and
-    // an absent measurement are different findings.
-    sched.drain_place_bind();
-    let l = sched.eta().line();
-    assert!(l.contains("t_cold=0.0000"), "{l}");
-    assert!(l.contains("t_eff=0.000000"), "{l}");
-}
-
-/// Arm 1's cold rule is stated and gauged, never a hidden constant.
-/// With no path carrying a dispersion sample the temperature is the
-/// shipped one and `t_cold` says so, so a reader can tell "the derived
-/// law ran" from "the derived law had nothing to run on".
-#[test]
-fn the_derived_temperature_falls_back_to_the_shipped_one_and_counts_it() {
-    let mut sched = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
-    );
-    sched.set_place_t_derived(true);
-    assert!((sched.place_temperature_eff() - PLACE_TEMPERATURE).abs() < 1e-15);
-    sched.drain_place_bind();
-    let l = sched.eta().line();
-    assert!(l.contains("t_cold=1.0000"), "the cold rule must be READ, not assumed: {l}");
-    assert!(l.contains("t_n=1"), "{l}");
-}
-
-/// Arm 1's own arithmetic, asserted absolutely and not ordinally: with
-/// one measured dispersion of `sigma` microseconds and a reference SRTT of
-/// `ref`, `T = (sqrt6/pi)*sigma/ref` to floating precision. The inverse is
-/// the falsifiable claim: `T = 0.15 <=> sigma = 0.19238*ref`.
-#[test]
-fn the_derived_temperature_is_the_gumbel_variance_match() {
-    let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0)]);
-    sched.set_place_t_derived(true);
-    // A ramp, so a tau-lag pair spans a real difference: the error rises
-    // 100 us per sample at 1.25 ms spacing, tau = 10 ms, exactly the
-    // fixture `net::eta`'s own band test uses.
-    let t0 = std::time::Instant::now();
-    for k in 0..40u64 {
-        let ts = 1_000 + k * 1_000;
-        sched.eta_mut().stamp(0, ts, 5_000);
-        sched.eta_mut().on_ack_at(
-            0,
-            ts,
-            10_000 + 100 * k,
-            10_000,
-            t0 + Duration::from_micros(1_250 * k),
-        );
-    }
-    let sig = sched.eta().sigma_us(0).expect("the fixture must measure a dispersion");
-    assert!(sig > 0, "the fixture must measure a NONZERO dispersion");
-    let ref_srtt = 0.010_f64;
-    let want = place_gumbel_scale() * (sig as f64 / 1e6) / ref_srtt;
-    assert!(
-        (sched.place_temperature_eff() - want).abs() < 1e-12,
-        "T must be (sqrt6/pi)*sigma/ref exactly"
-    );
-    // The inversion the paper states, checked as arithmetic: T = 0.15
-    // asserts sigma/ref = 0.19238.
-    assert!(
-        ((PLACE_TEMPERATURE / place_gumbel_scale()) - 0.192_38).abs() < 1e-5,
-        "the shipped T inverts to sigma_e = 0.19238*ref"
-    );
 }
 
 /// Arm 3 cannot move a source placement, by construction: `fate_i` is
@@ -2644,7 +2544,6 @@ fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
 #[test]
 fn a_single_path_is_the_identity_with_every_arm_armed() {
     let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 3)]);
-    sched.set_place_t_derived(true);
     sched.set_place_wdiv_derived(true);
     let dist = sched.place_probs(false, &[]);
     assert_eq!(dist.len(), 1);
@@ -2663,7 +2562,6 @@ fn the_tie_break_is_still_ascending_by_id_with_every_arm_armed() {
         sched.add_path(id);
         set_rtt(&mut sched, id, 10);
     }
-    sched.set_place_t_derived(true);
     sched.set_place_wdiv_derived(true);
     let ids: Vec<PathId> =
         sched.place_costs(false, &[]).into_iter().map(|(i, _)| i).collect();

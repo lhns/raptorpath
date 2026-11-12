@@ -103,43 +103,11 @@ pub(crate) fn resolve_honest_anchor() -> bool {
 }
 
 /// A placement arm's flag: [`crate::config::env_flag`], default absent. A
-/// value outside the strict boolean dialect (`RWM_PLACE_T_DERIVED=of`) is a startup
+/// value outside the strict boolean dialect (`RWM_PLACE_WDIV_DERIVED=of`) is a startup
 /// error naming the gate, so a typo can never run a control row labelled as
 /// a challenger.
 pub(crate) fn place_arm_flag(name: &str) -> bool {
     crate::config::env_flag(name, false)
-}
-
-/// Whether the derived placement temperature is active (`RWM_PLACE_T_DERIVED`,
-/// experiment arm, paper §5.7): the softmax temperature is the Luce/Gumbel
-/// scale of the scheduler's own ETA prediction error,
-///
-/// ```text
-///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt  =  0.77970 * sigma_e / ref
-/// ```
-///
-/// The softmax is `argmin` under i.i.d. Gumbel noise of scale `T`, so matching
-/// `Var(T*G) = pi^2 T^2/6` to `sigma_e^2` fixes `T` with no free parameter.
-/// `sigma_e` is the per-path dispersion of `realized - predicted` from the
-/// sender `[ETA]` gauge (`net::eta::SenderEta::sigma_us`), pooled as an RMS
-/// over the active set. The shipped `0.15` thus claims `sigma_e = 0.19238 *
-/// ref`. Off is `place_temperature()` verbatim.
-pub fn place_t_derived_active() -> bool {
-    crate::gates::get().place_t_derived
-}
-
-/// The resolve-time read behind [`place_t_derived_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_place_t_derived() -> bool {
-    let on = place_arm_flag("RWM_PLACE_T_DERIVED");
-    // Two-sided liveness echo (`docs/measurement-discipline.md` rule 1).
-    tracing::info!(
-        place_t_derived = on,
-        "placement temperature (RWM_PLACE_T_DERIVED, paper §5.7): \
-         T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
-         dispersion when ON; the shipped place_temperature() when OFF"
-    );
-    on
 }
 
 /// Whether the derived diversity weight is active (`RWM_PLACE_WDIV_DERIVED`,

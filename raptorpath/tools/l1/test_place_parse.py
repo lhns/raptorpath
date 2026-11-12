@@ -83,6 +83,8 @@ ETA_S_CTL = (
     "late=0.3333 sig_us=1668/n27"
     " p2:n=2000/4000 drop=1 tau_us=40000 e_p50=150 e_p90=250 e_p99=350 e_mx=450 "
     "late=0.5000 sig_us=2633/n31")
+# Current engine: no t_*/hol_* fields at all (both arms removed).
+ETA_S_NEW = ETA_S_CTL.replace("t_eff=- t_cold=- t_n=0 hol_sh=- hol_n=0 hol_mv=- hol_calls=0 hol_w=- ", "")
 # net/eta.rs, receiver line
 ETA_R = ("[ETA] site=receiver n=2000 p1:n=2000 bind=0.0100 tau_us=10000 srtt_src=wire "
          "l_p50=900 l_p90=1500 l_p95=1800 l_p99=2200 l_mx=3000 sig_us=3430/n13 minrst=0")
@@ -209,6 +211,12 @@ check(row["succ_det"] == 7.0 and row["succ_xp_n"] == 2.0 and row["succ_sp_n"] ==
       and approx(row["succ_xp_frac"], 0.6667) and approx(row["xp_over_det"], 0.2857, 1e-4),
       "[SUCC] fields (succ.rs:775)")
 check("control_violated" not in row, "a dual is not a control")
+
+# ── 1b. Current-engine line (no arm fields): absent keys read None ─
+assert "t_eff" not in ETA_S_NEW and "hol_" not in ETA_S_NEW, "fixture drift"
+row = pp.parse("c7", "CTL", "42", "2", cli_log(eta=ETA_S_NEW), srv_log())
+check(row["t_eff"] is None and row["t_n"] is None and row["hol_mv"] is None
+      and row["eta_stamped"] == 4000.0, "a line without the arm fields parses, arm keys None")
 
 # ── 2. CTL: the arm gauges are `-` and the S4 score falls back to tau_us ─
 row = pp.parse("c7", "CTL", "42", "2", cli_log(eta=ETA_S_CTL), srv_log())

@@ -323,6 +323,8 @@ def parse(cell, arm, seed, rep, cli, srv):
         # `hol_*` belong to the removed RWM_PLACE_HOL arm (tag
         # archive/RWM_PLACE_HOL): old ledgers carry them, current engines do
         # not print them, and an absent key reads as None.
+        # `t_eff/t_cold/t_n` belong to the removed RWM_PLACE_T_DERIVED arm (tag
+        # archive/RWM_PLACE_T_DERIVED): same rule, absent key -> None.
         row["t_eff"] = num(es, "t_eff=")
         row["t_cold"] = num(es, "t_cold=")
         row["t_n"] = num(es, "t_n=")

@@ -4,13 +4,6 @@
 
 use super::*;
 
-/// `(sqrt(6)/pi)` - the Gumbel scale-to-standard-deviation factor of the
-/// temperature's variance match. Not a tuning constant:
-/// `Var(Gumbel) = pi^2/6` is arithmetic.
-pub(crate) fn place_gumbel_scale() -> f64 {
-    6.0_f64.sqrt() / std::f64::consts::PI
-}
-
 /// Placement softmax temperature.
 ///
 /// The placement cost is measured in units of the fastest path's SRTT (the
@@ -20,7 +13,8 @@ pub(crate) fn place_gumbel_scale() -> f64 {
 /// 2.7:1. `T → 0` is the paper's strict best-path (argmin) limit; larger `T`
 /// dithers and pulls more traffic onto a slower path (more aggregation, more
 /// head-of-line risk on a reliable in-order stream). Underived
-/// (open-constants register, paper §11.2).
+/// (open-constants register, paper §11.2). A derived
+/// `T = (√6/π)·σ̂_e/ref` arm was removed (tag `archive/RWM_PLACE_T_DERIVED`).
 pub(crate) const PLACE_TEMPERATURE: f64 = 0.15;
 
 /// The effective placement temperature: `PLACE_TEMPERATURE`, overridable once
@@ -153,61 +147,12 @@ impl Scheduler {
         Some(candidates[idx.min(candidates.len() - 1)])
     }
 
-    /// The effective placement temperature - `place_temperature()` (the
-    /// shipped `0.15`, or `RWM_PLACE_T`) with the arm absent, and the
-    /// Luce/Gumbel scale with `RWM_PLACE_T_DERIVED` armed:
-    ///
-    /// ```text
-    ///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt
-    ///     sigma_e  =  pooled RMS, over the active candidate set, of the
-    ///                 per-path tau-lag dispersion of  e = realized - predicted
-    /// ```
-    ///
-    /// Cold rule: the pool is taken over the paths that have a dispersion
-    /// sample - a path with none contributes nothing rather than a fabricated
-    /// zero, which would drag `T` toward `argmin` on the strength of a missing
-    /// measurement. If no active path has one, `T_eff` is the shipped `T` and
-    /// the `t_cold` counter is bumped, so the fallback is read off
-    /// `[ETA] site=sender t_cold=` rather than assumed.
-    ///
-    /// `sigma_e -> 0` needs no branch here: `T = 0` reaches
-    /// `place_probs_with_temperature`'s degenerate handling and resolves to
-    /// the argmin, which is the law's own `T -> 0` limit.
-    ///
-    /// Observation is a `Cell` write, never a lock: this is on `&self` because
-    /// the law is.
-    pub(crate) fn place_temperature_eff(&self) -> f64 {
-        let shipped = place_temperature();
-        if !self.place_t_derived {
-            return shipped;
-        }
-        let cold_srtt = self.place_cold_srtt();
-        let ref_srtt = self.place_ref_srtt(cold_srtt);
-        let (sum_sq, n) = self
-            .paths
-            .values()
-            .filter(|p| p.active)
-            .filter_map(|p| self.eta.sigma_us(p.id))
-            .fold((0.0_f64, 0_u64), |(acc, k), sig_us| {
-                let x = sig_us as f64 / 1e6;
-                (acc + x * x, k + 1)
-            });
-        let t = if n > 0 {
-            place_gumbel_scale() * (sum_sq / n as f64).sqrt() / ref_srtt
-        } else {
-            shipped
-        };
-        let (_, cold, k) = self.place_t_gauge.get();
-        self.place_t_gauge.set((t, cold + u64::from(n == 0), k + 1));
-        t
-    }
-
     /// The softmax placement distribution over paths. Exposed for
     /// unit-testing the placement law (concentration, continuous spillover,
     /// water-filling, fate steering, T → 0 argmin) without sampling noise.
     /// Returns `(PathId, probability)` summing to 1 over the candidate set.
     pub fn place_probs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
-        self.place_probs_with_temperature(is_repair, covered_paths, self.place_temperature_eff())
+        self.place_probs_with_temperature(is_repair, covered_paths, place_temperature())
     }
 
     /// `place_probs` with an explicit temperature — the T dial exposed for
@@ -256,7 +201,7 @@ impl Scheduler {
     /// The cold price of the placement law's SRTT reference
     /// (`RWM_COLD_PLACE`): the active set's fastest measured srtt, or `None`
     /// with the gate off / nothing measured yet. Shared with
-    /// `place_temperature_eff` so it divides by exactly the same `ref` the
+    /// the temperature so it divides by exactly the same `ref` the
     /// costs are de-dimensionalised by - two `ref`s would make `c_i/T`
     /// meaningless.
     fn place_cold_srtt(&self) -> Option<f64> {
@@ -459,12 +404,6 @@ impl Scheduler {
     pub fn drain_place_bind(&mut self) {
         let (r, ge, n) = self.place_bind.replace((0, 0, 0));
         self.eta.add_place_bind(r, ge, n);
-        // Placement arm 1: the temperature actually used, and how often the
-        // cold rule fired. `T_eff` is a level, so the last value is the
-        // reading; the two counters are cumulative like every other bind
-        // gauge on this line.
-        let (t_eff, t_cold, t_n) = self.place_t_gauge.replace((0.0, 0, 0));
-        self.eta.add_place_t(t_eff, t_cold, t_n);
         // The wire base's bind gauges: fallback taken and ref floor bound.
         let (cold, n, calls, floor) = self.place_wire_gauge.replace((0, 0, 0, 0));
         self.eta.add_place_wire(cold, n, calls, floor);
