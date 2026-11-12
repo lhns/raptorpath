@@ -47,8 +47,11 @@
 //! - Startup grows only while W < T(2.885) + e (the port compared a gain
 //!   with a byte count); Drain's window and exit test are both T(1);
 //!   ProbeBw is min(T(2) + A, W + a).
-//! - ProbeRtt is entered when the min filter expires (and its stamp restarts
-//!   on exit), not on a 10 s timer.
+//! - ProbeRtt is entered when the min filter expires, not on a 10 s timer. Its
+//!   window is f x b-hat x the pre-expiry m-hat (f = 0.75); it holds one clean
+//!   round (`RWM_BBR_PROBERTT_ROUNDS` rounds), then m-hat := the min of that
+//!   round's loop times and the filter stamp restarts
+//!   (docs/derivations/w1-round2-probertt.md).
 
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -361,7 +364,26 @@ pub struct BbrRs {
     init_cwnd: u64,
     min_cwnd: u64,
     prev_in_flight_count: u64,
-    exit_probe_rtt_at: Option<Instant>,
+    /// ProbeRtt's clean-round state. m̃: the min of r_e over the events after
+    /// the drain moment (`None` until one carries a sample).
+    probe_rtt_min: Option<Duration>,
+    /// P_d: the largest sent packet number at the drain moment (`None`
+    /// before it).
+    probe_rtt_drain_pn: Option<u64>,
+    /// E: the largest sent packet number when the first packet past P_d was
+    /// acked (`None` before it).
+    probe_rtt_end_pn: Option<u64>,
+    /// Clean rounds completed in this ProbeRtt.
+    probe_rtt_rounds_done: u32,
+    /// When the current ProbeRtt was entered.
+    probe_rtt_entered_at: Option<Instant>,
+    /// `[QCC]` counters: entries, µs in ProbeRtt (completed episodes), bytes
+    /// acked in events that began in ProbeRtt.
+    probe_rtt_entries: u64,
+    probe_rtt_us_done: u64,
+    probe_rtt_bytes: u64,
+    /// a_e of the last ACK event (observation only: the filter age gauge).
+    last_event_at: Option<Instant>,
     /// m̂: the 10 s windowed minimum of the ack-event loop time r_e (ZERO
     /// until the first event).
     min_rtt: Duration,
@@ -374,7 +396,6 @@ pub struct BbrRs {
     /// quinn's own `rtt.min()` as last seen by `on_ack`: observation only
     /// (the `[QCC]` gauge reads it beside `min_rtt`), never read by the law.
     quinn_min_rtt: Duration,
-    exiting_quiescence: bool,
     pacing_rate: u64,
     max_acked_packet_number: u64,
     max_sent_packet_number: u64,
@@ -412,13 +433,20 @@ impl BbrRs {
             init_cwnd: initial_window,
             min_cwnd: calculate_min_window(current_mtu as u64),
             prev_in_flight_count: 0,
-            exit_probe_rtt_at: None,
+            probe_rtt_min: None,
+            probe_rtt_drain_pn: None,
+            probe_rtt_end_pn: None,
+            probe_rtt_rounds_done: 0,
+            probe_rtt_entered_at: None,
+            probe_rtt_entries: 0,
+            probe_rtt_us_done: 0,
+            probe_rtt_bytes: 0,
+            last_event_at: None,
             min_rtt: Default::default(),
             min_rtt_stamp: None,
             event: None,
             smoothed_loop: Default::default(),
             quinn_min_rtt: Default::default(),
-            exiting_quiescence: false,
             pacing_rate: 0,
             max_acked_packet_number: 0,
             max_sent_packet_number: 0,
@@ -481,11 +509,18 @@ impl BbrRs {
             sr_us: self.smoothed_loop.as_micros() as u64,
             bw: self.max_bandwidth.get_estimate(),
             quinn_min_us: self.quinn_min_rtt.as_micros() as u64,
-            qrn: 0,
-            qrus: 0,
-            qrb: 0,
-            qab: 0,
-            qage_us: 0,
+            qrn: self.probe_rtt_entries,
+            qrus: self.probe_rtt_us_done
+                + match (self.mode, self.probe_rtt_entered_at, self.last_event_at) {
+                    (Mode::ProbeRtt, Some(a), Some(b)) => b.saturating_duration_since(a).as_micros() as u64,
+                    _ => 0,
+                },
+            qrb: self.probe_rtt_bytes,
+            qab: self.acked_bytes,
+            qage_us: match (self.min_rtt_stamp, self.last_event_at) {
+                (Some(t), Some(a)) => a.saturating_duration_since(t).as_micros() as u64,
+                _ => 0,
+            },
         }
     }
 
@@ -612,47 +647,77 @@ impl BbrRs {
         }
     }
 
+    /// ProbeRtt: entered when the min filter expires, held for
+    /// `probe_rtt_rounds` clean rounds, then m̂ := m̃.
+    ///
+    /// A clean round is the span between P_d (the largest sent packet number at
+    /// the drain moment, the first event with in-flight below the ProbeRtt
+    /// window) and E (the largest sent packet number once a packet past P_d
+    /// has been acked): every packet in (P_d, E] was sent at the drained
+    /// window. The event that sets E does not also end the round.
     fn maybe_enter_or_exit_probe_rtt(
         &mut self,
         a_e: Instant,
-        is_round_start: bool,
         bytes_in_flight: u64,
         min_rtt_expired: bool,
+        r_e: Option<Duration>,
     ) {
-        if min_rtt_expired && !self.exiting_quiescence && self.mode != Mode::ProbeRtt {
+        if min_rtt_expired && self.mode != Mode::ProbeRtt {
             self.mode = Mode::ProbeRtt;
             self.pacing_gain = 1.0;
-            // Do not decide on the time to exit ProbeRtt until the
-            // |bytes_in_flight| is at the target small value.
-            self.exit_probe_rtt_at = None;
+            self.probe_rtt_min = None;
+            self.probe_rtt_drain_pn = None;
+            self.probe_rtt_end_pn = None;
+            self.probe_rtt_rounds_done = 0;
+            self.probe_rtt_entered_at = Some(a_e);
+            self.probe_rtt_entries += 1;
         }
-
-        if self.mode == Mode::ProbeRtt {
-            match self.exit_probe_rtt_at {
-                None => {
-                    // If the window has reached the appropriate size, schedule exiting
-                    // ProbeRtt.  The CWND during ProbeRtt is
-                    // kMinimumCongestionWindow, but we allow an extra packet since QUIC
-                    // checks CWND before sending a packet.
-                    if bytes_in_flight < self.get_probe_rtt_cwnd() + self.current_mtu {
-                        const K_PROBE_RTT_TIME: Duration = Duration::from_millis(200);
-                        self.exit_probe_rtt_at = Some(a_e + K_PROBE_RTT_TIME);
-                    }
-                }
-                Some(exit_time) if is_round_start && a_e >= exit_time => {
-                    // v1: the filter stamp restarts on exit.
-                    self.min_rtt_stamp = Some(a_e);
-                    if !self.is_at_full_bandwidth {
-                        self.enter_startup_mode();
-                    } else {
-                        self.enter_probe_bandwidth_mode(a_e);
-                    }
-                }
-                Some(_) => {}
+        if self.mode != Mode::ProbeRtt {
+            return;
+        }
+        let Some(p_d) = self.probe_rtt_drain_pn else {
+            // The window is kMinimumCongestionWindow-scaled, but we allow an
+            // extra packet since QUIC checks CWND before sending a packet. The
+            // drain-moment event's own sample is not taken: its packets were
+            // sent before the drain.
+            if bytes_in_flight < self.get_probe_rtt_cwnd() + self.current_mtu {
+                self.probe_rtt_drain_pn = Some(self.max_sent_packet_number);
             }
+            return;
+        };
+        if let Some(r) = r_e {
+            self.probe_rtt_min = Some(self.probe_rtt_min.map_or(r, |m| m.min(r)));
         }
-
-        self.exiting_quiescence = false;
+        match self.probe_rtt_end_pn {
+            None => {
+                if self.max_acked_packet_number > p_d {
+                    self.probe_rtt_end_pn = Some(self.max_sent_packet_number);
+                }
+            }
+            Some(e) if self.max_acked_packet_number >= e => {
+                self.probe_rtt_rounds_done += 1;
+                if self.probe_rtt_rounds_done < self.config.probe_rtt_rounds {
+                    self.probe_rtt_drain_pn = Some(e);
+                    self.probe_rtt_end_pn = None;
+                    return;
+                }
+                // The fresh minimum replaces whatever m̂ held; with no sample
+                // in the round the model is kept.
+                if let Some(m) = self.probe_rtt_min {
+                    self.min_rtt = m;
+                }
+                self.min_rtt_stamp = Some(a_e);
+                if let Some(entered) = self.probe_rtt_entered_at.take() {
+                    self.probe_rtt_us_done += a_e.saturating_duration_since(entered).as_micros() as u64;
+                }
+                if !self.is_at_full_bandwidth {
+                    self.enter_startup_mode();
+                } else {
+                    self.enter_probe_bandwidth_mode(a_e);
+                }
+            }
+            Some(_) => {}
+        }
     }
 
     fn get_target_cwnd(&self, gain: f32) -> u64 {
@@ -848,13 +913,18 @@ impl Controller for BbrRs {
                 // 7/8 old + 1/8 new
                 (self.smoothed_loop * 7 + r_e) / 8
             };
-            if self.min_rtt_stamp.is_none() || r_e <= self.min_rtt || min_rtt_expired {
+            // In ProbeRtt the minimum is m̃ alone; m̂ stays the pre-expiry model
+            // the window is built on.
+            if self.mode != Mode::ProbeRtt && (self.min_rtt_stamp.is_none() || r_e <= self.min_rtt) {
                 self.min_rtt = r_e;
                 self.min_rtt_stamp = Some(a_e);
             }
         }
 
         let bytes_acked = self.max_bandwidth.bytes_acked_this_window();
+        if self.mode == Mode::ProbeRtt {
+            self.probe_rtt_bytes += bytes_acked;
+        }
         let excess_acked = self.ack_aggregation.update_ack_aggregation_bytes(
             bytes_acked,
             a_e,
@@ -888,7 +958,13 @@ impl Controller for BbrRs {
 
         self.maybe_exit_startup_or_drain(a_e, in_flight);
 
-        self.maybe_enter_or_exit_probe_rtt(a_e, is_round_start, in_flight, min_rtt_expired);
+        self.maybe_enter_or_exit_probe_rtt(
+            a_e,
+            in_flight,
+            min_rtt_expired,
+            event.map(|e| a_e.saturating_duration_since(e.max_sent)),
+        );
+        self.last_event_at = Some(a_e);
 
         // After the model is updated, recalculate the pacing rate and congestion window.
         self.calculate_pacing_rate();
