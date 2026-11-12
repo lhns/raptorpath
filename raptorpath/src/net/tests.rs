@@ -491,44 +491,6 @@ fn receiver_tail_reports_all_deficits_in_one_round() {
     assert!(none.is_empty(), "decoded generations report no deficit");
 }
 
-/// Repair-coverage horizon: a hole covered by the in-flight proactive
-/// repair within the horizon fires no reactive NACK; a hole still uncovered
-/// when the horizon expires falls back to the NACK.
-#[test]
-fn horizon_withholds_nack_until_repair_window_then_falls_back() {
-    use std::time::{Duration, Instant};
-    let horizon = Duration::from_millis(5);
-    let mut armed: BTreeMap<u64, Instant> = BTreeMap::new();
-    let t0 = Instant::now();
-
-    // A frontier generation just went deficient. First sight → armed and
-    // withheld: no reactive NACK yet (give the proactive repair its horizon).
-    let d = vec![(0u64, 3u32)];
-    let ready = horizon_gate_deficits(&d, &mut armed, horizon, t0);
-    assert!(ready.is_empty(), "a fresh hole is withheld, not NACKed immediately");
-    assert_eq!(armed.len(), 1, "the fresh hole is armed");
-
-    // The proactive repair decodes it within the horizon → it drops out of
-    // the deficit set → disarmed, and no NACK ever fired (the proactive win).
-    let none: Vec<(u64, u32)> = vec![];
-    let ready = horizon_gate_deficits(&none, &mut armed, horizon, t0 + Duration::from_millis(2));
-    assert!(ready.is_empty());
-    assert!(armed.is_empty(), "decoded-within-horizon hole is disarmed with no NACK");
-
-    // A hole that proactive repair does not cover: still deficient after the
-    // horizon expires → the reactive NACK fires (the reliability fallback).
-    let d2 = vec![(384u64, 2u32)];
-    let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0);
-    assert!(ready.is_empty(), "still withheld before the horizon");
-    let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0 + Duration::from_millis(6));
-    assert_eq!(ready, vec![(384, 2)], "horizon expired uncovered → reactive fallback fires");
-
-    // horizon == 0 restores the immediate shipped path.
-    let mut armed0: BTreeMap<u64, Instant> = BTreeMap::new();
-    let ready = horizon_gate_deficits(&d, &mut armed0, Duration::ZERO, t0);
-    assert_eq!(ready, d, "horizon 0 reports immediately (shipped path)");
-}
-
 #[test]
 fn test_parse_cidr() {
     let (ip, prefix) = parse_cidr("10.99.0.1/24").unwrap();
@@ -622,7 +584,7 @@ fn c1_attribution_lock_blocking_bench() {
             p.record_rtt_sample(Duration::from_millis(2));
             p.force_honest_anchor_for_test(); // the DH arm's O(1) deque
         }
-        let feed = Arc::new(CopaFeed::new_sampling_only(true));
+        let feed = Arc::new(CopaFeed::new());
         let frontier = AU64::new(0); // seqs sent so far
         let stop = AtomicBool::new(false);
 
@@ -728,7 +690,7 @@ fn c1_attribution_lock_blocking_bench() {
                             let mut sched = scheduler.lock();
                             let w = tq.elapsed().as_nanos() as u64;
                             let th = Instant::now();
-                            copa_attribute_newly(&feed, 0, now_us(), &newly, &mut sched);
+                            copa_attribute_newly(&feed, 0, &newly, &mut sched);
                             drop(sched);
                             (w, th.elapsed().as_nanos() as u64)
                         } else {
@@ -828,87 +790,6 @@ fn c1_attribution_lock_blocking_bench() {
              concluding (one green run is not evidence; re-run per discipline)"
         );
     }
-}
-
-/// Mechanism side (always-on, deterministic): the DH arm's own store-cap
-/// law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1` — evaluated over the
-/// sender's own pool inputs (`store_cap_pool_inputs`, the channel's
-/// membership set) at the same warm path, unsaturated and then
-/// cwnd-saturated.
-///
-/// The chain mirrored here is `run_window_sender`'s dyn-cap block (the
-/// `honest_cap_on` branch and its fallbacks). Before plan 2b the Σ ranged
-/// over `active_paths()`, which a cwnd-full path leaves: the honest law's
-/// inputs vanished and the cap fell to the 128 boot value (the cliff). The
-/// invariant now: the saturated cap EQUALS the warm cap.
-#[test]
-fn dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation() {
-    let clock = Arc::new(crate::scheduler::MockClock::new());
-    let mut sched = Scheduler::new(clock.clone());
-    sched.add_path(0);
-    // Warm the honest (send-interval) anchor at the c1 shape: 24 k
-    // sym/s, RTprop 2 ms, deliveries lagging sends by ~3 ms.
-    {
-        let p = sched.path_mut(0).unwrap();
-        p.record_rtt_sample(Duration::from_millis(2));
-        let step = Duration::from_micros(41);
-        for seq in 0..4000u64 {
-            p.on_src_sent(seq, false);
-            if seq >= 72 {
-                p.on_src_delivered_seq(seq - 72);
-            }
-            clock.advance(step);
-        }
-        assert!(
-            p.copa_bdp_anchor().is_some(),
-            "honest anchor must be warm (samples accepted)"
-        );
-    }
-    // The DH law chain over the sender's pool inputs, exactly as the
-    // sender computes it (RWM_STORE_GAIN default 2.0; floor 64;
-    // N·knee ceiling (RWM_STORE_PATH_POOL 2048 per live path, every N >= 1
-    // since ADR-0072); store_boot_cap 128 — gates.rs defaults).
-    let now = now_us();
-    let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let mut cap_over = |sched: &Scheduler| -> usize {
-        let (bdp, slots) = store_cap_pool_inputs(sched, true);
-        let terms = honest_cap_terms(&mut ks, &slots, now, 2.0);
-        let hsum: f64 = terms.iter().flatten().sum();
-        let ceiling = sched.live_paths().len().max(1) * 2048;
-        if hsum > 0.0 {
-            (hsum.ceil() as usize).clamp(64, ceiling)
-        } else if bdp > 0.0 {
-            ((2.0 * bdp).ceil() as usize).clamp(64, ceiling)
-        } else {
-            128 // store_boot_cap fallback — the (former) cliff
-        }
-    };
-
-    // Unsaturated: the honest law computes its warm cap (runway term ≈
-    // rate·0.1 ⇒ the 1·knee ceiling at c1 rates).
-    let warm_cap = cap_over(&sched);
-    assert_eq!(
-        warm_cap, 2048,
-        "c1-class honest cap latches the one-path knee ceiling"
-    );
-
-    // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
-    // spare-capacity filter empties the placement set while the path is
-    // alive and its anchor is warm.
-    {
-        let p = sched.path_mut(0).unwrap();
-        let cw = p.cwnd;
-        p.charge_in_flight(cw);
-        assert_eq!(p.available(), 0);
-    }
-    assert!(sched.active_paths().is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
-    assert_eq!(sched.live_paths(), vec![0], "…while the path is fully live");
-    assert_eq!(
-        cap_over(&sched),
-        warm_cap,
-        "no cliff: the saturated path keeps its warm honest cap (was 128 on active_paths())"
-    );
 }
 
 /// Coupling side (always-on, deterministic): why the DH sender falls off
@@ -1161,9 +1042,7 @@ fn copa_feed_sack_dedupes_against_frontier() {
 }
 
 /// seq→path attribution: the seq is charged to the path it was (last)
-/// sent on; unknown seqs fall back to the ack path. A cross-path
-/// retransmit keeps the previous commitment as the flight-witness
-/// fallback.
+/// sent on; unknown seqs fall back to the ack path.
 #[test]
 fn copa_feed_seq_path_last_send_wins() {
     let feed = CopaFeed::new();
@@ -1171,49 +1050,7 @@ fn copa_feed_seq_path_last_send_wins() {
     feed.on_sent(10, 1); // retransmit on the other path
     let commit = feed.seq_path.remove(&10).map(|(_, c)| c).unwrap();
     assert_eq!(commit.last.0, 1);
-    assert_eq!(commit.prev.map(|(p, _)| p), Some(0));
     assert!(feed.seq_path.remove(&10).is_none());
-}
-
-/// The flight-time witness. An ack younger than the
-/// retransmit path's RTprop proves the original flight delivered the
-/// seq — the retransmit path's delivered counter must not advance. An
-/// ack older than RTprop credits the retransmit path (a genuine
-/// retransmit delivery). Unknown RTprop / single-path history keep
-/// last-sent attribution.
-#[test]
-fn flight_witness_credits_original_path_for_spurious_retransmit() {
-    // Original on fast (path 0) at t=0, retransmitted on slow (path 1,
-    // RTprop 60 ms) at t=1_000_000.
-    let commit = SendCommit {
-        last: (1, 1_000_000),
-        prev: Some((0, 0)),
-    };
-    let rtprop = |pid: u32| if pid == 1 { Some(60_000u64) } else { Some(8_000u64) };
-    // Ack 5 ms after the retransmit: the slow flight cannot have
-    // completed — the fast original delivered it.
-    assert_eq!(resolve_flight_path(&commit, 1_005_000, rtprop), 0);
-    // Ack 80 ms after the retransmit: the slow flight qualifies.
-    assert_eq!(resolve_flight_path(&commit, 1_080_000, rtprop), 1);
-    // Exactly RTprop old: qualifies (>=).
-    assert_eq!(resolve_flight_path(&commit, 1_060_000, rtprop), 1);
-    // Warm-up (no RTprop yet): last-sent attribution.
-    assert_eq!(resolve_flight_path(&commit, 1_005_000, |_| None), 1);
-    // Single-path history: always the last (= only) commitment.
-    let single = SendCommit {
-        last: (1, 1_000_000),
-        prev: None,
-    };
-    assert_eq!(resolve_flight_path(&single, 1_000_001, rtprop), 1);
-    // A→B→A bounce: prev is the previous distinct path (B), and a
-    // young ack after the same-path resend credits B's older flight.
-    let feed = CopaFeed::new();
-    feed.on_sent(7, 0);
-    feed.on_sent(7, 1);
-    feed.on_sent(7, 0);
-    let c = feed.seq_path.remove(&7).map(|(_, c)| c).unwrap();
-    assert_eq!(c.last.0, 0);
-    assert_eq!(c.prev.map(|(p, _)| p), Some(1));
 }
 
 // ----- The skew-aware hole law (paper §7.1) -----
@@ -2347,9 +2184,8 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 ///
 /// Compositions whose members do not compose are the failure mode: e.g.
 /// the retired `RWM_STORE_CAPW` made the (also retired, plan 2b)
-/// `RWM_STORE_CAP_UNIFIED` bit a no-op wherever capw engaged, because
-/// `capw_store_cap` sat above `path_scaled_store_cap` in the chain and read
-/// `live_paths()` unconditionally. The Σ's set is now membership everywhere.
+/// `RWM_STORE_CAP_UNIFIED` bit a no-op wherever capw engaged. The Σ's set is
+/// now membership everywhere.
 ///
 /// This test asserts the full arm's gate set resolves to the machine it is
 /// supposed to be, at the policy layer where the collapses happen:
@@ -2357,7 +2193,7 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 /// * every one of the five bits survives resolution (none is silently
 ///   ANDed away by a scope it does not satisfy);
 /// * the pool law reached is the pooled one, not the three-term law — i.e.
-///   `three_term_on` and `composed_cap` stay off (the composed pool law's
+///   `three_term_on` stays off (the composed pool law's
 ///   magnitude is refuted, paper §10);
 /// * the brake is armed without it;
 /// * and the control arm — every bit off, `RWM_SUM_CAP` explicitly off
@@ -2407,7 +2243,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
     assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
     assert!(!ctl.late_brake, "control: the brake must be OFF");
-    assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
+    assert!(!ctl.three_term_on, "control: pooled law only");
 
     // ── The full arm ──────────────────────────────────────────────────
     // Set by field rather than through the environment on purpose: an
@@ -2456,7 +2292,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     //    is refuted (WIN_STORE_MAX becomes the law at every dual), so the
     //    full arm carries the ×N deletion instead of it, not as well.
     assert!(
-        !arm.three_term_on && !arm.composed_cap,
+        !arm.three_term_on,
         "FULL: the composed/three-term pool law engaged — the arm is not \
          the ×N deletion any more"
     );
@@ -2464,7 +2300,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     // 3. The brake is armed without the composed law: `RWM_LATE_BRAKE`
     //    arms the cwnd brake without forcing `three_term_on`.
     assert!(
-        arm.late_brake && !arm.composed_cap,
+        arm.late_brake,
         "FULL: the brake is only reachable through the composed law — the \
          extraction did not take"
     );
@@ -3117,124 +2953,20 @@ mod law_shape {
     }
 }
 
-// ----- The composed cap law's report line --------------------------------
+// ----- The late-brake [CCAP] line ----------------------------------------
 
-/// The `[CCAP]` line's shape, pinned absolutely. An L1 parser is written
-/// against these keys, and the two that carry the argument are `eng=`
-/// (mechanism liveness — measurement-discipline rule 1) and `mem=` (the
-/// bind fraction of the only bound left above the law). A silent rename
-/// would leave a battery reading zeros and calling a warm-up failure a
-/// null result.
+/// The `[CCAP]` line's shape, pinned absolutely: an L1 parser scrapes
+/// `brake=<closed>/<ticks>` (`brake=0/N` armed and never closed, `brake=0/0`
+/// never armed).
 #[test]
-fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
-    // Engaged everywhere, nothing bound, brake closed a quarter of the
-    // time: the reading the composed arm is predicted to produce.
-    // A symmetric cell: span 0 at every refresh, so the span field reads
-    // exactly 0 and the ratio is the well-defined 0.000 that says
-    // "undefined — read `span=` first", never a NaN.
-    let line = ccap_report_line(
-        200,
-        200,
-        0,
-        0,
-        200.0 * 3020.0,
-        1_000,
-        250,
-        64,
-        0.0,
-        0.0,
-        200.0 * 9_400.0,
-        0.0,
-    );
-    assert_eq!(
-        line,
-        "[CCAP] eng=200/200 cap=3020.0 mem=0.0000 floor=0.0000 floor_val=64 \
-         brake=250/1000 brake_frac=0.2500 span=0.0 span_sigma=0.0 \
-         span_ratio=0.000 rate_fast=9400.0 spread_us=0.0"
-    );
-
-    // Configured but never engaged — a warm-up failure, and it must be
-    // distinguishable from a null result. `eng=0/200` is that signature;
-    // the bind fractions are 0/0 = 0.0 rather than NaN, so a parser reads
-    // "undefined" from `eng` and never from a poisoned float.
-    let cold = ccap_report_line(200, 0, 0, 0, 200.0 * 128.0, 1_000, 0, 64, 0.0, 0.0, 0.0, 0.0);
-    assert!(cold.contains("eng=0/200"), "{cold}");
-    assert!(cold.contains("mem=0.0000") && cold.contains("floor=0.0000"), "{cold}");
-    // The span block on a never-engaged run: zeros, not NaNs.
-    assert!(
-        cold.contains("span=0.0 span_sigma=0.0 span_ratio=0.000")
-            && cold.contains("rate_fast=0.0 spread_us=0.0"),
-        "{cold}"
-    );
-
-    // The stop condition: the memory bound has become the law.
-    let pinned = ccap_report_line(
-        100,
-        100,
-        100,
-        0,
-        100.0 * 4096.0,
-        500,
-        500,
-        64,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    );
-    assert!(pinned.contains("mem=1.0000"), "{pinned}");
-    assert!(pinned.contains("cap=4096.0"), "{pinned}");
-
-    // Zero refreshes must not divide by zero.
-    assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64, 0.0, 0.0, 0.0, 0.0).contains("cap=0.0"));
-}
-
-/// The c9h reading (two fast legs, two slow), rendered and pinned as a
-/// string so the L1 parser and the renderer agree. The numbers are the
-/// cell's anchors (`rate_fast` 9 400 sym/s, spread 29.88 ms ⇒ shipped
-/// ≈ 281 sym), and the Σ form at c9h's two min-RTprop legs is twice that.
-///
-/// This is why the field set is four numbers and not one: from this line
-/// alone a reader can (a) read the anchor-free ratio 2.000, (b) check the
-/// 281 against the `[265, 315]` band, and (c) if it lands outside both
-/// bands, attribute that to the anchors, because `rate_fast=` and
-/// `spread_us=` are right there.
-#[test]
-fn the_ccap_span_block_renders_the_c9h_discriminator() {
-    let n = 40u64;
-    let (rate_fast, spread_s) = (9_400.0, 0.029_88);
-    let shipped = rate_fast * spread_s; // ~= 280.9 sym
-    let line = ccap_report_line(
-        n,
-        n,
-        0,
-        0,
-        n as f64 * 3020.0,
-        100,
-        0,
-        64,
-        n as f64 * shipped,
-        n as f64 * 2.0 * shipped,
-        n as f64 * rate_fast,
-        n as f64 * spread_s,
-    );
-    assert!(line.contains("span=280.9"), "{line}");
-    assert!(line.contains("span_sigma=561.7"), "{line}");
-    // The ratio — anchor-free, predicted exactly 2.000.
-    assert!(line.contains("span_ratio=2.000"), "{line}");
-    // The anchors, so a both-bands miss is attributable.
-    assert!(line.contains("rate_fast=9400.0"), "{line}");
-    assert!(line.contains("spread_us=29880.0"), "{line}");
-    // And the absolute band is readable off `span=` directly.
-    let span: f64 = line
-        .split_whitespace()
-        .find_map(|t| t.strip_prefix("span="))
-        .and_then(|v| v.parse().ok())
-        .expect("span= must parse as f64");
-    assert!(
-        (265.0..=315.0).contains(&span),
-        "the anchors no longer land in C9-L3's own band: {line}"
-    );
+fn the_ccap_line_reports_the_brake_liveness() {
+    assert_eq!(ccap_report_line(1_000, 250), "[CCAP] brake=250/1000 brake_frac=0.2500");
+    assert_eq!(ccap_report_line(1_000, 0), "[CCAP] brake=0/1000 brake_frac=0.0000");
+    assert_eq!(ccap_report_line(0, 0), "[CCAP] brake=0/0 brake_frac=0.0000");
+    let mut g = SenderTeardownGauges::new(true);
+    g.brake_ticks = 40;
+    g.brake_closed = 10;
+    assert_eq!(g.ccap_line(), ccap_report_line(40, 10));
 }
 
 /// The two span forms, computed by one function, over the geometries that
@@ -3348,65 +3080,6 @@ fn the_span_gauge_is_the_laws_own_term_3() {
     }
 }
 
-/// The carrier and the renderer cannot drift apart.
-///
-/// `[CCAP]`'s tally lives in `SenderTeardownGauges` so that the counters
-/// and their emission site are one object. This pins that the carrier
-/// renders exactly what the pinned renderer renders for the same tally,
-/// field for field and in the same order.
-///
-/// Reachability — that the destructor actually fires under the harness's
-/// exit path — is asserted by `tests/gauge_reachability.rs`, which is the
-/// half no unit test can see.
-#[test]
-fn the_teardown_carrier_renders_exactly_the_pinned_ccap_line() {
-    let mut g = SenderTeardownGauges::new(true, 64);
-    g.refreshes = 200;
-    g.engaged = 190;
-    g.at_mem = 3;
-    g.at_floor = 7;
-    g.cap_sum = 200.0 * 3020.0;
-    g.brake_ticks = 1_000;
-    g.brake_closed = 250;
-    // The span block travels through the carrier too — and it is fed here
-    // by `record_span`, the same call the refresh site makes, so a drift
-    // between the accumulator and the renderer is visible.
-    g.record_span(SpanForms {
-        shipped: 190.0 * 280.9,
-        sigma: 190.0 * 561.8,
-        rate_fast: 190.0 * 9_400.0,
-        spread_s: 190.0 * 0.029_88,
-    });
-    assert_eq!(
-        g.ccap_line(),
-        ccap_report_line(
-            200,
-            190,
-            3,
-            7,
-            200.0 * 3020.0,
-            1_000,
-            250,
-            64,
-            190.0 * 280.9,
-            190.0 * 561.8,
-            190.0 * 9_400.0,
-            190.0 * 0.029_88,
-        ),
-        "the carrier and the renderer disagree — a positional-argument drift"
-    );
-    assert!(
-        g.ccap_line().contains("span_ratio=2.000"),
-        "the carrier must render the scored ratio: {}",
-        g.ccap_line()
-    );
-    // And the fresh carrier is the well-defined zero, not a NaN: a sender
-    // that ended before its first refresh must still print a readable line.
-    assert!(SenderTeardownGauges::new(true, 64)
-        .ccap_line()
-        .contains("eng=0/0"));
-}
-
 /// The brake's set is load-bearing (CLAUDE.md: every documented
 /// divergence carries a test that bounds it).
 ///
@@ -3446,123 +3119,6 @@ fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
     // Saturated beyond the window (a retransmit can overshoot) still
     // reads full — the predicate is `>=`, not `==`.
     assert!(infl_percap_full(&[(120, 100), (41, 40)]));
-}
-
-// ----- Capacity-weighted pool (RWM_STORE_CAPW) -----------------------------
-
-#[test]
-fn capw_store_cap_not_engaged_off_or_unwarm() {
-    // Flag off: never engaged.
-    assert_eq!(
-        capw_store_cap(false, &[Some(1000.0), Some(400.0)], 64, 2048),
-        None
-    );
-    // N = 1 engages (ADR-0072): one term, clamped [floor, 1·knee]. The
-    // pooled arms have no path-count branch.
-    assert_eq!(capw_store_cap(true, &[Some(1000.0)], 64, 2048), Some(1000));
-    assert_eq!(capw_store_cap(true, &[Some(5000.0)], 64, 2048), Some(2048));
-    // Anchors-not-warm fallback: any unwarm live path → None → the
-    // caller keeps the configured pooled law (path-scaled / single-path)
-    // until every anchor is live — a partial sum would under-provision
-    // the unwarm path's share of the shared pool.
-    assert_eq!(capw_store_cap(true, &[Some(1000.0), None], 64, 2048), None);
-    assert_eq!(capw_store_cap(true, &[None, None], 64, 2048), None);
-    assert_eq!(
-        capw_store_cap(true, &[Some(1000.0), Some(0.0)], 64, 2048),
-        None
-    );
-    assert_eq!(capw_store_cap(true, &[], 64, 2048), None);
-}
-
-#[test]
-fn capw_store_cap_symmetric_is_n_times_single() {
-    // The c7 degenerate: N identical paths → pool = N × the single-path
-    // honest term (≈ N×(single pool) — symmetric cells preserved).
-    let single = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap();
-    // 83.2·(1.5+1) + 10 400·1·0.1 = 208 + 1040 = 1248.
-    assert!((single - 1248.0).abs() < 1e-6);
-    assert_eq!(
-        capw_store_cap(true, &[Some(single), Some(single)], 64, 2048),
-        Some(2496)
-    );
-    // Three symmetric paths: 3× (ceiling 3×2048 not binding).
-    assert_eq!(
-        capw_store_cap(true, &[Some(single); 3].to_vec(), 64, 2048),
-        Some(3744)
-    );
-}
-
-#[test]
-fn capw_store_cap_asymmetric_weights_by_capacity_not_path_count() {
-    // The c8 shape (the law's target cell): a c2-class fast path
-    // (10 400 sym/s, RTprop 8 ms → anchor 83.2) + a c3-class slow path
-    // (2000 sym/s, RTprop 40 ms → anchor 80). Each earns its own pipe +
-    // recovery round — the slow path's 1/5 rate earns ~1/3 of the fast
-    // term (its longer RTprop partially offsets), not the equal ×knee
-    // share the path-count law grants.
-    let fast = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap(); // 1248
-    let slow = honest_store_cap(Some(80.0), Some(2_000.0), 1.5, 2.0).unwrap(); // 200+200=400
-    assert!((slow - 400.0).abs() < 1e-6);
-    let pool = capw_store_cap(true, &[Some(fast), Some(slow)], 64, 2048).unwrap();
-    assert_eq!(pool, 1648);
-    // Strictly between the single-path 1024 latch (fast path
-    // under-provisioned) and the
-    // path-scaled N×2048 = 4096 (slow path over-provisioned).
-    assert!(pool > 1024 && pool < 4096);
-    // Capacity weighting: the slow path's contribution is its own term,
-    // ~24% of the pool — not the 50% the count-scaled ceiling implies.
-    assert!((slow / (fast + slow) - 0.243).abs() < 0.01);
-}
-
-#[test]
-fn capw_store_cap_overread_anchors_clamp_to_the_path_scaled_ceiling() {
-    // The ack-interval anchor over-reads several-fold: inflated terms
-    // clamp at the N×knee ceiling — the path-scaled degenerate (without
-    // honest anchors, `RWM_PLAIN_RS=1`, the law cannot differentiate).
-    // Floor guards transiently-tiny terms.
-    assert_eq!(
-        capw_store_cap(true, &[Some(6.0 * 1248.0), Some(6.0 * 400.0)], 64, 2048),
-        Some(4096)
-    );
-    assert_eq!(
-        capw_store_cap(true, &[Some(1.0), Some(2.0)], 64, 2048),
-        Some(64)
-    );
-}
-
-// ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR) -----------------
-
-/// At the law level: with a c7-class true send rate (≈ 8.9k sym/s/path,
-/// RTprop 8 ms, K ≈ 2) the honest send-anchor pool sizes to the ~2.2k
-/// residence+runway class, while an inflated ack-interval anchor (the
-/// burst-peak over-read) drives the path-scaled law to its 4096 clamp —
-/// standing-queue headroom. Same pure functions the engine branch calls
-/// (honest_store_cap terms → capw_store_cap pool).
-#[test]
-fn pool_anchor_honest_terms_bound_the_dual_pool_where_the_legacy_law_clamps() {
-    let sr = 8_900.0; // true per-path send rate, sym/s (c7 ≈ 85 Mbit @1200B)
-    let rtp = 0.008; // c2-class RTprop
-    let term = honest_store_cap(Some(sr * rtp), Some(sr), 2.0, 2.0).unwrap();
-    // cap_i = 71.2·(2+1) + 8900·1·0.1 ≈ 1104 — the 1024-per-path class.
-    assert!((1000.0..1300.0).contains(&term), "cap_i class, got {term}");
-    let pool = capw_store_cap(true, &[Some(term), Some(term)], 64, 2048).unwrap();
-    assert!((1500..3000).contains(&pool), "Σ pool class, got {pool}");
-    // An inflated ack-interval anchor: Σ bdp ≈ 2 × 330k × 8 ms ⇒ the
-    // path-scaled law rails at the N×knee ceiling.
-    let inflated_bdp_sum = 2.0 * 330_000.0 * rtp;
-    assert_eq!(
-        path_scaled_store_cap(true, 2, inflated_bdp_sum, 2.0, 64, 2048),
-        Some(4096)
-    );
-    assert!(pool < 4096, "the honest pool removes the clamp headroom");
-    // N = 1 is the same law with one term (ADR-0072): N = 2 symmetric is
-    // exactly twice it (inert clamps).
-    assert_eq!(
-        capw_store_cap(true, &[Some(term)], 64, 2048),
-        Some(term.ceil() as usize)
-    );
-    // Warm-up: any unwarm live path defers to the configured fallback.
-    assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
 }
 
 // ----- Honest floor-clock caps --------------------------------------------
@@ -3608,36 +3164,6 @@ fn echo_ratio_seed_identity_sample_is_discarded_not_latched() {
     assert!(
         (e.observe_srtt_over_rtprop(ms(16), None, 3_000_000) - 2.0).abs() < 1e-9
     );
-}
-
-#[test]
-fn honest_store_cap_is_residence_plus_recovery_runway() {
-    // Derived, not tuned: cap_i = anchor_i·(K_i + gain − 1) +
-    // rate_i·(gain−1)·R — residence (Little's law on the unloaded
-    // drain clock) + (gain−1) recovery rounds on the recovery engine's
-    // clock (R = 100 ms, the hole-refresh/tail-sweep cadence bound)
-    // plus the retransmit flight (the anchor term's second round).
-    // c2-like at the measured cell clocks (rate 10 400 sym/s, RTprop
-    // 8 ms → anchor 83.2; K = 2): 83.2×3 + 10 400×0.1 = 1289.6.
-    let c = honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 2.0, 2.0)
-        .unwrap();
-    assert!((c - 1289.6).abs() < 1e-6);
-    // K clamps at 1 from below (K < 1 is clock noise).
-    assert_eq!(
-        honest_store_cap(Some(83.2), Some(10_400.0), 0.5, 2.0),
-        honest_store_cap(Some(83.2), Some(10_400.0), 1.0, 2.0)
-    );
-    // gain = 1: pure residence, zero runway — the R term vanishes with
-    // (gain−1), never a negative runway.
-    let g1 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 1.0).unwrap();
-    assert!((g1 - 83.2 * 1.5).abs() < 1e-9);
-    let g05 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 0.5).unwrap();
-    assert!((g05 - 83.2 * 1.5).abs() < 1e-9);
-    // Warm-up (no anchor / no rate): None — the caller keeps its
-    // warm-up share.
-    assert_eq!(honest_store_cap(None, Some(10_400.0), 2.0, 2.0), None);
-    assert_eq!(honest_store_cap(Some(83.2), None, 2.0, 2.0), None);
-    assert_eq!(honest_store_cap(Some(0.0), Some(10_400.0), 2.0, 2.0), None);
 }
 
 // ── The three-term law ────────────────────────────────────────────────
@@ -3949,7 +3475,6 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
         rate: Some(10_400.0),
         srtt: Duration::from_millis(12), // RTprop 8 ms + a 4 ms wire queue
         rtprop: Some(Duration::from_millis(8)),
-        k_raw: None,
     };
     let t0 = 1_000_000u64;
     let first = three_term_terms(&mut ks, &[Some(honest)], t0);
@@ -3983,128 +3508,6 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
     );
 }
 
-/// `RWM_HONEST_K`: the K override is one formula —
-/// `k_raw.unwrap_or(smoothed)` — so (a) `k_raw = None` (the shipped
-/// default: the gate resolves off and `PathState::k_raw()` returns None)
-/// is byte-identical to the smoothed law, (b) `Some(k)` substitutes the
-/// raw-fed floor into the unchanged law, and (c) the smoothed tracker's
-/// window state is observed identically either way (the A/B isolates the
-/// K source, nothing else).
-#[test]
-fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
-    let mk = |k_raw: Option<f64>| HonestCapPath {
-        id: 1,
-        anchor: Some(83.2),
-        rate: Some(10_400.0),
-        srtt: Duration::from_millis(12),
-        rtprop: Some(Duration::from_millis(8)),
-        k_raw,
-    };
-    // (a) Off ⇒ byte-identical to the smoothed law.
-    let mut ks_off: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let off = honest_cap_terms(&mut ks_off, &[Some(mk(None))], 1_000_000, 2.0);
-    let legacy_k = 12.0 / 8.0;
-    let expect_legacy = honest_store_cap(Some(83.2), Some(10_400.0), legacy_k, 2.0);
-    assert_eq!(off[0], expect_legacy, "None ⇒ the legacy K, bit-exactly");
-
-    // (b) On ⇒ the same law at the raw floor.
-    let mut ks_on: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let on = honest_cap_terms(&mut ks_on, &[Some(mk(Some(1.0)))], 1_000_000, 2.0);
-    let expect_raw = honest_store_cap(Some(83.2), Some(10_400.0), 1.0, 2.0);
-    assert_eq!(on[0], expect_raw, "Some(k) ⇒ the same law at the raw K");
-    assert!(on[0].unwrap() < off[0].unwrap(), "the floor is below the smoothed read");
-
-    // (c) The smoothed tracker was fed identically on both arms.
-    assert_eq!(ks_off.get(&1).map(|e| e.k()), ks_on.get(&1).map(|e| e.k()));
-
-    // Same law through the three-term collector: the window term's K.
-    let tt = |k_raw: Option<f64>| ThreeTermPath {
-        id: 2,
-        rate: Some(10_400.0),
-        srtt: Duration::from_millis(12),
-        rtprop: Some(Duration::from_millis(8)),
-        k_raw,
-    };
-    let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    let t_off = three_term_terms(&mut ks, &[Some(tt(None))], 1_000_000);
-    assert!((t_off[0].unwrap().k - legacy_k).abs() < 1e-12);
-    let t_on = three_term_terms(&mut ks, &[Some(tt(Some(1.0)))], 1_000_000);
-    assert!((t_on[0].unwrap().k - 1.0).abs() < 1e-12);
-}
-
-#[test]
-fn honest_caps_shallow_account_sits_at_recovery_budget_not_knee() {
-    // On honest anchors. Deep c2-like path (rate 10 400, RTprop 8 ms,
-    // K 1.5): cap = 1248 — differentiated, inside the knee (an over-read
-    // anchor knee-clamps to 2048).
-    let fast = (honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 1.5, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, 2048);
-    assert_eq!(fast, 1248);
-    assert!(fast < 2048, "fast cap must be derived, not knee-clamped");
-    // Shallow c8-slow-class path (rate 1 954, RTprop 60 ms → anchor
-    // 117.2; K 1.3): cap = 466 ≈ a measured good pin (508 outstanding,
-    // 0.26 s dwell) — its recovery budget, not the 2048 knee (≈1 s parked
-    // dwell). The own-pick parking channel is closed by construction.
-    let slow = (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, 2048);
-    assert_eq!(slow, 466);
-    assert!(slow < 2048 / 4, "slow cap must sit at its recovery budget, not the knee");
-    // Per-path independence still holds: deepening the fast pipe does
-    // not move the slow cap.
-    let fast2 = (honest_store_cap(Some(20_800.0 * 0.008), Some(20_800.0), 1.5, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, 2048);
-    assert!(fast2 > fast);
-    assert_eq!(
-        (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
-            .unwrap()
-            .ceil() as usize)
-            .clamp(64, 2048),
-        slow
-    );
-}
-
-#[test]
-fn honest_anchor_sum_cap_preserves_sc2_throughput_headroom() {
-    // At the law level: on honest anchors the floor law's cap falls from
-    // the 1024 latch to gain·anchor_honest ≈ 150–170 at a true 8-ms
-    // RTprop — a 100-Mbit pipe whose recovery round is ~12× its wire
-    // round trip.
-    let rate: f64 = 10_400.0;
-    let anchor: f64 = rate * 0.008;
-    let store_max = 1024usize;
-    // The floor law on honest anchors (the RWM_HONEST_CAP=0 control
-    // arm): gain·anchor = 167 ≪ 1024.
-    let floor_law = ((2.0 * anchor).ceil() as usize).clamp(64, store_max);
-    assert_eq!(floor_law, 167);
-    // The honest law at measured drain clocks (K ≈ 2): 1290 → latches
-    // the 1024 store — headroom supplied by the engine's own recovery
-    // cadence.
-    let honest = (honest_store_cap(Some(anchor), Some(rate), 2.0, 2.0)
-        .unwrap()
-        .ceil() as usize)
-        .clamp(64, store_max);
-    assert_eq!(honest, store_max);
-    // Monotone: for any measured K ≥ 1 the honest cap strictly exceeds
-    // the floor law — honest anchors can widen but never shrink
-    // the single-path window relative to the control.
-    for k in [1.0, 1.2, 1.7, 2.5, 4.0] {
-        let c = (honest_store_cap(Some(anchor), Some(rate), k, 2.0)
-            .unwrap()
-            .ceil() as usize)
-            .clamp(64, store_max);
-        assert!(c > floor_law);
-    }
-}
-
 /// The derived pipeline depth M* = ceil(rate·2·SRTT/G)+1 — A* =
 /// clamp(D·rate, 1, W) quantized to generations (paper §5.3) — covers
 /// BDP + one deficit round, clamps to the fixed 2 on cold start, and to
@@ -4125,16 +3528,6 @@ fn gen_pipe_depth_covers_bdp_plus_one_deficit_round() {
     assert_eq!(gen_pipe_depth(10_000.0, 0.200, 384), 12);
     // Monotone in rate·srtt, and hard-capped at GEN_PIPE_MAX_GENS.
     assert_eq!(gen_pipe_depth(1e9, 1.0, 384), GEN_PIPE_MAX_GENS);
-}
-
-// `RWM_PLAIN_RS`: the sampling-only feed must declare that it does not
-// own the CC operating point — everything the
-// Copa-sole feed switches (store-cap law, percap pipes, cwnd-dynamics
-// call site, pass-through window writes) keys on `owns_cc()`.
-#[test]
-fn sampling_only_feed_does_not_own_cc() {
-    assert!(CopaFeed::new().owns_cc());
-    assert!(!CopaFeed::new_sampling_only(true).owns_cc());
 }
 
 /// Per-path BDP in-flight cap. The sender is "full" only when no path is
@@ -4389,7 +3782,7 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
             highest_delivered_seq = highest_delivered_seq.max(dseq);
         }
         // The receiver periodically prunes its decoder/received-seq state.
-        // Invariant (RWM_REASM_BDP clamp): prune_before never exceeds the
+        // Invariant (removed RWM_REASM_BDP clamp): prune_before never exceeds the
         // delivered frontier, so no received-above-hole symbol is evicted.
         let prune_before = highest_delivered_seq
             .saturating_sub(recv_win_cap * 2)
@@ -5679,13 +5072,9 @@ fn read_both<T>(f: impl Fn(&Scheduler) -> T) -> (T, T) {
 
 #[test]
 fn saturated_channel_store_cap_sigma_has_no_boot_cliff() {
-    // (Σ anchor, number of honest-cap slots) — the plain dyn-cap's inputs
-    // (the sender's own collector).
-    let (un, sat) = read_both(|s| {
-        let (bdp, slots) = store_cap_pool_inputs(s, true);
-        (bdp, slots.len())
-    });
-    assert!(un.0 > 0.0 && un.1 == 2, "unsaturated: both anchors in the Σ ({un:?})");
+    // Σ anchor — the plain dyn-cap's input (the sender's own collector).
+    let (un, sat) = read_both(store_cap_pool_inputs);
+    assert!(un > 0.0, "unsaturated: both anchors in the Σ ({un:?})");
     assert_eq!(
         sat, un,
         "saturated: the store-cap Σ must not lose the cwnd-full paths (Σ = 0 is the boot-cap-128 cliff)"
@@ -6660,10 +6049,6 @@ mod one_store_law_at_n1 {
         g.sum_cap = true;
         g.delta_cap = true;
         g.three_term = false;
-        g.composed_cap = false;
-        g.pool_anchor = false;
-        g.honest_cap = false;
-        g.plain_rs = false;
         g.copa_feed = false;
         g.store_override = None;
         g.store_env_set = false;
@@ -6679,8 +6064,7 @@ mod one_store_law_at_n1 {
             pol.sum_cap, pol.store_cap_floor, pol.store_path_pool, pol.delta_cap, pol.delta_b);
         let mut dcap = DeltaCapGauge::new(
             pol.delta_cap, pol.store_cap_floor, pol.store_path_pool, pol.sum_cap, pol.delta_b);
-        let mut ccap = SenderTeardownGauges::new(false, pol.store_cap_floor);
-        let (bdp, _) = store_cap_pool_inputs(sched, false);
+        let bdp = store_cap_pool_inputs(sched);
         let copa_feed: Option<Arc<CopaFeed>> = None;
         crate::net::sender_phases::refresh_store_cap(
             &mut scs,
@@ -6691,7 +6075,6 @@ mod one_store_law_at_n1 {
                 copa_feed: &copa_feed,
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
-                ccap: &mut ccap,
             },
         );
         (scs.dyn_store_cap, sumcap.sumcap_line(), bdp)
@@ -6822,16 +6205,6 @@ mod one_store_law_at_n1 {
                     }
                 }
             }
-            // The capacity-weighted arm is unchanged at N >= 2 too.
-            let terms: Vec<Option<f64>> = (0..n).map(|i| Some(100.0 + 37.0 * i as f64)).collect();
-            let sum: f64 = terms.iter().flatten().sum();
-            assert_eq!(
-                capw_store_cap(true, &terms, 10, 2048),
-                Some((sum.ceil() as usize).clamp(10, n * 2048))
-            );
-            let mut cold = terms.clone();
-            cold[0] = None;
-            assert_eq!(capw_store_cap(true, &cold, 10, 2048), None);
         }
         assert!(checked > 1000);
     }

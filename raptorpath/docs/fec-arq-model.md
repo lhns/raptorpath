@@ -406,7 +406,7 @@ wire the floor rejects 81–94 % of calls, each accepted sample folds 5–28 ack
 and the windowed max over-reads the link by ×4.6–7.4. Because the anchor is
 used only to raise cwnd (Section 8.3) and the pool Σ is compared against a
 ceiling, the over-read was partly load-bearing: the honest send-interval
-sampler (`RWM_PLAIN_RS`: Δt = max(send elapsed, ack elapsed), windowed max,
+sampler (`RWM_PLAIN_RS`, since removed, tag `archive/RWM_PLAIN_RS`: Δt = max(send elapsed, ack elapsed), windowed max,
 app-limited exclusion, per-path attribution from each ack's frontier and SACK
 difference) reads 1.02× the known link rate, costs 20 % at the single-path c2 cell under
 the old cap, and ships off. The two anchor families
@@ -1500,7 +1500,7 @@ is decode-inert.
 | `next_expected` | the receiver's cumulative point (wire v9 count form: `next_expected − 1` is the last delivered seq) — measured, per message |
 | `W_cap` | the receiver's retained window `recv_win_cap` (`net/mod.rs`): 200 on the bulk window (`MAX_WINDOW_SIZE`), the coded-only window override clamped to [200, 4 096], the generation pipeline's span under generation — existing, unchanged |
 | 2 | one window for the sender's live span plus one for an ack in flight — the existing prune rule, unchanged |
-| clamp ≤ `next_expected − 1` | the `RWM_REASM_BDP` reliability clamp (never prune an undelivered seq) — existing; it never binds, since the subtraction already lands at or below it |
+| clamp ≤ `next_expected − 1` | the removed `RWM_REASM_BDP` reliability clamp (never prune an undelivered seq; tag `archive/RWM_REASM_BDP`) — it never bound, since the subtraction already lands at or below it |
 
 F is a law of the delivered frontier alone, with no new constant and no
 dependence on N, δ or ρ. What changes is only *when* it is evaluated: at
@@ -2152,8 +2152,8 @@ window, so a correction on any path can recover a loss on any other.
 * **Interleaving.** Source and corrections must not be separated by path: a
   burst on a source-only path has no interleaved corrections to survive it.
 
-The engine keeps a `CorrectionDeficit` counter, but its placement law does
-not read it.
+The deficit is analytic only: the engine keeps no deficit counter (the
+unread `CorrectionDeficit` tracker was removed, simplification batch 1).
 
 ### 5.10 One pipeline, not mode switching
 
@@ -2295,7 +2295,7 @@ mode switch the architecture forbids; the law above has none.
 **The c1 input.** At c1s the anchor reads bw = 0.60–0.76 M sym/s against
 82–93 k delivered (`[DIAG]`, status §16 r1; RTprop 2.8 ms), an over-read of
 ×7–9 (`RWM_HONEST_ANCHOR` is the value-identical O(1) max filter, not a
-different sampler; the send-interval sampler `RWM_PLAIN_RS` is off). At the
+different sampler; the send-interval sampler `RWM_PLAIN_RS` was removed, tag `archive/RWM_PLAIN_RS`). At the
 anchor it reads, the law asks 1.37–2.34 k symbols at c1s and the knee binds
 whenever a > knee/(1 + q) = 1862 (Bulk): 7 of the 15 post-warm-up windows
 of r1. At the delivered rate it would ask ≈ 250–285. That over-read is an
@@ -3305,7 +3305,7 @@ The 0.85 floor gain was set by one L1 measurement (at 1.0 the floor
 maintained a 16 ms standing queue); the 0.25 pull and 1.0 gain have no test.
 The sampler rejects calls closer than 1 ms apart (93–96 % at loopback,
 81–94 % on the wire), which is the mechanism of the ×4.6–7.4 anchor
-over-read the plain send-interval sampler (`RWM_PLAIN_RS`, off) removes.
+over-read the plain send-interval sampler (`RWM_PLAIN_RS`, since removed, tag `archive/RWM_PLAIN_RS`) removed.
 
 ### 8.4 The substrate is a controller
 
@@ -4063,9 +4063,9 @@ shipped.
 | FMTCP-class decode-on-total [Cui2015] | 0.48× at the heterogeneous dual; on the clean substrate c7 ×0.11, c8 ×0.20 of the default stack, a recovery flood (coded share > 1) at about 8× plain CPU | `f841757` | removed |
 | Leading-window taper emission | repairs coded over in-flight members are unsolvable on arrival: −22 pp delivered reliability; replaced by trailing-span emission | — | superseded |
 | **Proactive FEC timing** | | | |
-| Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`) | the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed) | `3a0ca0c` | off |
+| Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`) | the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed) | `3a0ca0c` | removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 2026-07-08; route: user ruling; re-test if the question returns; tag `archive/RWM_REPAIR_WAIT`) |
 | Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`) | repair anchored at the frontier loses to its own ARQ (4 useful of 718) | `bede4a3` | removed |
-| Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`) | presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip | `806c0f4` | off |
+| Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`) | presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip | `806c0f4` | removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 2026-07-08; route: user ruling; re-test if the question returns; tag `archive/RWM_PROACTIVE_PACER`) |
 | Funded proactive coding at r > 0 (the r > 0 battery) | at the lossy single path funding coding made the transfer slower (one seed, n = 4, direction only), and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the r* = 0 corner; funded r is capped at parity with ARQ on one saturated path, and the DoF ledger's gain is not shown, not refuted (status §39) | `91895dd` | refuted |
 | **Scheduling and placement** | | | |
 | DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) | their wins were measured in an era where the coded path was dead; the live ablation measured −17 to −30 % at the symmetric dual; the surviving ideas became the M* law and the anchor-hygiene laws | `9b48286` | removed |
@@ -4093,7 +4093,7 @@ shipped.
 | Floor-bound anchor (`RWM_FLOOR_BOUND`) | −14 % at c1; the ack-interval over-read is load-bearing at N = 1 | `8afd4dd` | removed |
 | Sender-truth loss estimator (`RWM_LOSS_SENT_TRUTH`) | moves ε̂ 20× in the wrong direction, including at N = 1 | `27e36e3` | off |
 | Composed estimator-cadence plus pool-anchor default | flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); the pool anchor was the binding cap at the duals | `e84ef1c` | reverted |
-| Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) | Stage 3 (d): not worse at any of five cells; dual c1 +41 % (193.9 → 274.1 Mbit/s), sender CPU −12 to −32 %, fed loss vs truth unchanged at every leg | Stage 3, `83462ae` | shipped; `RWM_POOL_ANCHOR` stays an off arm |
+| Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) | Stage 3 (d): not worse at any of five cells; dual c1 +41 % (193.9 → 274.1 Mbit/s), sender CPU −12 to −32 %, fed loss vs truth unchanged at every leg | Stage 3, `83462ae` | shipped; `RWM_POOL_ANCHOR` stayed an off arm (since removed, below) |
 | Emission batching as default (`RWM_EMIT_BATCH`), first attempt | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | superseded by the Law-0 form below |
 | Emission batching, Law 0 (`RWM_EMIT_BATCH`, burst bound 64 at every path count) | status §8 re-run on `927bb00` (with the §7 receive-buffer fix), n = 16 per cell and arm: BETTER at every cell and WORSE on no clause; `c1d-400` goodput +41.1 % and sender CPU −34.5 %, CPU −25.3 % (`c1s-400`), −11.8 % (`c2-100`), −20.5 % (`c8-100`); fed loss vs truth unchanged at every leg; 0 receive-buffer drops in 128/128 rows | §8, `bf3a636` | shipped; `=0` is the per-symbol control arm (own `OFF` echo) |
 | **Store-law candidates for the knee (Section 6.1 keeps the shipped law)** | | | |
@@ -4116,6 +4116,14 @@ shipped.
 | Hold-down clock (`RWM_HOLDDOWN_Q`) | suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven | `5509e37` | off |
 | Refresh-floor lift (`RWM_REFRESH_FLOOR_US`) | entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume | `a8bcce0` | off |
 | Receiver request law (`RWM_RECV_REQUEST_LAW`) | refuted at both duals on every arm: ℓ* = 0 on 48 of 48 dual rows, knee-bound by the store headroom; the receiver's π̂₀ was contaminated by retransmit copies (since fixed; not re-run); one arm DNF 12/12 | `0159290` | off |
+| **Honest store family** | | | |
+| Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`) | verdict: the honest-inputs family, old ledger GG ~23640, 2026-08-11, pre-wire-v9 substrate; not re-run on the current substrate; route: structural (status §23/§27: the arm only acts under the off-by-default sampler `RWM_PLAIN_RS`), plus the new test `honest_cap_is_inert_without_plain_rs` proving the default path bit-identical; removed 2026-11-10 (simplification batch 1, ADR-0073); tag `archive/RWM_HONEST_CAP` | `archive/RWM_HONEST_CAP` | removed |
+| Pool anchor (`RWM_POOL_ANCHOR`): pooled cap = Σᵢ honest_store_cap on each path's send-interval anchor | verdict: the composed cadence+pool-anchor flip `e84ef1c` failed its symmetric-dual (c7) clause, 2026-08-07 (paper row at diag36 §10:3828): send-side anchors cannot ratchet above the cap-limited carried rate, so the anchor became the binding cap; Stage 3 (d) then shipped the cadence alone with the arm off. Pre-wire-v9 substrate, not re-run; route: structural (the arm needs the off-by-default send-interval sampler to read honestly, status §23/§27); removed 2026-11-10 (simplification batch 1, ADR-0073); re-ask: if the store law needs a burst-immune send-side rate input; tag `archive/RWM_POOL_ANCHOR` | `archive/RWM_POOL_ANCHOR` | removed |
+| Plain-mode send-interval sampler (`RWM_PLAIN_RS`, sampling-only `CopaFeed`) | verdict: the PRS diagnostic (`RWM_PLAIN_RS=1`, n=3, not scored) collapsed the law to its floor (c1s −72 %, c2 −92 %), status §23, 2026-10-26, current wire-v9 substrate; route: structural (status §23/§27); removed 2026-11-10 (simplification batch 1, ADR-0073); re-ask: if the store law needs a burst-immune send-side rate input; tag `archive/RWM_PLAIN_RS` | `archive/RWM_PLAIN_RS` | removed |
+| Flight-time witness for cross-path ack attribution (`RWM_RS_ATTR`) | acted only under `RWM_PLAIN_RS` (the full Copa-sole feed always credited the last-sent path); the inventory's SHIPPED class was wrong; removed with PLAIN_RS 2026-11-10 (simplification batch 1, ADR-0073); route: supersession by PLAIN_RS removal; tag `archive/RWM_RS_ATTR` | `archive/RWM_RS_ATTR` | removed |
+| Raw-sample echo-ratio floor (`RWM_HONEST_K`) and the honest-cap law family it fed (`honest_store_cap`, `honest_cap_terms`, `k_raw`) | verdict: old ledger GG:23650, 2026-08-11, pre-wire-v9 substrate; not re-run on the current substrate; route: structural (status §23/§27: its only consumers were the honest-cap law and the `RWM_THREE_TERM` window term, and the honest-cap/pool-anchor arms were removed above); removed 2026-11-10 (simplification batch 1, ADR-0073); re-ask: if the joint store law needs a jitter-floor K; tag `archive/RWM_HONEST_K` | `archive/RWM_HONEST_K` | removed |
+| Never-evict-undelivered reassembly clamp (`RWM_REASM_BDP`) | refuted before the measurement discipline, 2026-07-08 (old ledger GG:8091); the clamp never binds (the prune already lands at or below the delivered frontier, §3 table); route: user ruling (ADR-0073); removed 2026-11-10 (simplification batch 1); re-test if the question returns; tag `archive/RWM_REASM_BDP` | `archive/RWM_REASM_BDP` | removed |
+| Composed cap (`RWM_COMPOSED_CAP`): three-term pool law plus the per-path cwnd brake | verdict: refuted, 2026-08-13 (diag36 paper row §10:3822): the composed pool law's magnitude hits the memory bound at every dual (WIN_STORE_MAX becomes the law), and it measured 43–48 % worse delivered latency at goodput parity (store-law discussion, §6); pre-wire-v9 substrate, not re-run; route: user ruling (ADR-0073). Removed 2026-11-10 (simplification batch 1) together with its [CCAP] law fields; the brake survives as `RWM_LATE_BRAKE` (no verdict, kept) and `RWM_THREE_TERM` is KEPT because `scheduler/place.rs` reads it (placement H term, fenced). Re-ask: if the joint store law needs the contract-stall term; the formula stays in paper §6.4. Tag `archive/RWM_COMPOSED_CAP` | `archive/RWM_COMPOSED_CAP` | removed |
 | **Earlier verdicts** | | | |
 | Generation-inert era | the harness never enabled generation coding, so the coded path was dead during a whole series of measurements; superseded by a re-baseline with a liveness guard | `161aff1` | superseded |
 | "Arc concluded" aggregation verdict | measured under three hidden binders (substrate Cubic, the PMTU wedge, the 1024-symbol pool); replaced by the measured regime map | `acefc47` | superseded |
@@ -4168,7 +4176,6 @@ decide it.
 | `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` | `net/mod.rs` | 10× RFC 9002's granularity | re-fire cost against F |
 | `RWM_STORE_GAIN = 2.0` | `gates.rs:361`; the single-path predecessor (Section 6.2) | no longer sets the shipped cap. The `n_live < 2` guard is gone (`net/store_cap.rs`, ADR-0072) and the default pooled cap multiplies by 1 + q(δ) at every N. The gain is still read by the `RWM_STORE_PATHS = 0` control, by `RWM_DELTA_CAP = 0`, by the default-off honest and pool-anchor arms, by the seats where `plain_dyn_cap` is false (generation coding, an explicit `RWM_STORE`; `net/sender_policy.rs`, where `delta_cap` is `gates.delta_cap && plain_dyn_cap`) and by the default-off placement frontier arm (`scheduler/place.rs:409`, H = (gain − 1)·RTprop). It is a shipped gate default with no live use on the default plain-reliable path | none needed on the default path; the `=0` control keeps it re-runnable |
 | `RELIABLE_STORE_MAX = 1024` | `net/mod.rs:442`; the former single-path ceiling | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"). It bound in every post-warm-up c1s window and 17/18 sc2 reps while it was the single-path ceiling, so every single-path goodput measured before ADR-0072 went through it. The shipped seat no longer uses it: the ceiling is N·knee at every N (ADR-0072). It stays the ceiling of the `RWM_STORE_PATHS = 0` arm (`net/sender_policy.rs:529`) and the `min` under the boot cap. Its successor at one path is the knee, which binds in 70 % of c1s windows (status §18) | the ADR-0072 battery ran (status §18, §19); the knee is the open constant now |
-| `HONEST_RECOVERY_ROUND_S = 100 ms` | honest per-path cap (`net/store_cap.rs`) | inert by default (needs `RWM_PLAIN_RS`) | — |
 | κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067; with the wire base (§5.7) X_i's arrival reads the shipped E_i against F̂ built from the stamp of the same E_i | an `s_i > H` bind fraction (`hol_sh=`) |
 | `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref`. the wire base keeps ref (min srtt), so T's unit is unchanged; the `[ETA]` stamp is the same wire-base E, so σ̂_e measures the predictor placement priced | σ̂_e on the ETA stream |
 | `w_div = 1.0` | `SchedulingWeights` | derived form `(p_BB − ε)⁺·srtt/ref` gives 0.475 (c2), 0.552 (c3). Its srtt_i is the frozen app-echo srtt on an idle leg (the §5.7 lock-out); the derived form should read ŵ_i | per-path p_BB beside placement |
@@ -4624,7 +4631,7 @@ engine.
    shed  ⇔  age > D(δ)  ∧  shed_total + 1 ≤ ε̂·(1 − P_fec(r, A*))·src_total     shed_allowed
 
    W_mp  ≳  Σᵢ gᵢ·(RTT_max + t_slack)                                      —
-   deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        CorrectionDeficit
+   deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        (analytic only)
 
    P(i) ∝ exp(−(c_i − c_min)/T) ,   T = 0.15                               place_probs_with_temperature
    c_i  =  (E_i − min(S, 9/8·srtt_i))⁺/ref + w_bw(δ)·r_i + w_div·fate_i      place_costs

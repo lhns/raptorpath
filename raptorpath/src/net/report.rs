@@ -654,104 +654,46 @@ impl Drop for RackClockGauge {
 /// early `return`, an unwind, and the task future being dropped at runtime
 /// shutdown. It also emits exactly once by construction.
 ///
-/// It carries the `[CCAP]` tally as fields so that the counters and their
+/// It carries the `[CCAP]` brake tally as fields so that the counters and their
 /// emission cannot drift apart again. `[WALL]`'s own state lives in
 /// `net::walldiag`'s process-global gauge; only its emission is carried here.
 ///
 /// Observation only, and on the shipped default a no-op: `RWM_WALLDIAG` is
-/// off so `report_at_teardown` returns on a `None` gauge, and `composed_cap`
-/// is `RWM_COMPOSED_CAP`, also off. Nothing here is read by the engine.
+/// off so `report_at_teardown` returns on a `None` gauge, and `enabled`
+/// is `RWM_LATE_BRAKE`, also off. Nothing here is read by the engine.
 pub(crate) struct SenderTeardownGauges {
-    /// `[CCAP]` tally — dyn-cap refresh ticks under the composed law.
-    pub(crate) refreshes: u64,
-    /// Refresh ticks at which the law actually produced a value (warm).
-    pub(crate) engaged: u64,
-    /// Engaged ticks clamped by the `WIN_STORE_MAX` memory bound.
-    pub(crate) at_mem: u64,
-    /// Engaged ticks clamped by the paroled `store_cap_floor`.
-    pub(crate) at_floor: u64,
-    /// Σ realized cap over refreshes (the mean is rendered).
-    pub(crate) cap_sum: f64,
     /// Late-stage cwnd brake: ticks armed.
     pub(crate) brake_ticks: u64,
     /// Late-stage cwnd brake: ticks closed.
     pub(crate) brake_closed: u64,
-    /// Σ over engaged refreshes of [`SpanForms::shipped`].
-    pub(crate) span_sum: f64,
-    /// Σ over engaged refreshes of [`SpanForms::sigma`] — the crosscheck form,
-    /// reported so its ratio to the shipped form is measured. Read by nothing.
-    pub(crate) span_sigma_sum: f64,
-    /// Σ over engaged refreshes of [`SpanForms::rate_fast`].
-    pub(crate) rate_fast_sum: f64,
-    /// Σ over engaged refreshes of [`SpanForms::spread_s`]. Rendered as µs.
-    pub(crate) spread_s_sum: f64,
-    /// `RWM_COMPOSED_CAP` — whether the `[CCAP]` line is emitted at all.
-    composed_cap: bool,
-    /// `store_cap_floor`, rendered as `floor_val=` (provenance, paper §6.1).
-    floor: usize,
+    /// `RWM_LATE_BRAKE` - whether the `[CCAP]` line is emitted at all.
+    enabled: bool,
 }
 
 impl SenderTeardownGauges {
-    pub(crate) fn new(composed_cap: bool, floor: usize) -> Self {
-        Self {
-            refreshes: 0,
-            engaged: 0,
-            at_mem: 0,
-            at_floor: 0,
-            cap_sum: 0.0,
-            brake_ticks: 0,
-            brake_closed: 0,
-            span_sum: 0.0,
-            span_sigma_sum: 0.0,
-            rate_fast_sum: 0.0,
-            spread_s_sum: 0.0,
-            composed_cap,
-            floor,
-        }
-    }
-
-    /// Fold one engaged refresh's span geometry into the tally. Called at the
-    /// same refresh that fed `engaged`, so every span mean's denominator is
-    /// `eng=`'s numerator and a parser needs no second liveness field.
-    pub(crate) fn record_span(&mut self, s: SpanForms) {
-        self.span_sum += s.shipped;
-        self.span_sigma_sum += s.sigma;
-        self.rate_fast_sum += s.rate_fast;
-        self.spread_s_sum += s.spread_s;
+    pub(crate) fn new(enabled: bool) -> Self {
+        Self { brake_ticks: 0, brake_closed: 0, enabled }
     }
 
     /// The `[CCAP]` line this carrier would emit right now. Split out so the
     /// reachability tests and the format pins share one renderer with the
     /// destructor.
     pub(crate) fn ccap_line(&self) -> String {
-        ccap_report_line(
-            self.refreshes,
-            self.engaged,
-            self.at_mem,
-            self.at_floor,
-            self.cap_sum,
-            self.brake_ticks,
-            self.brake_closed,
-            self.floor,
-            self.span_sum,
-            self.span_sigma_sum,
-            self.rate_fast_sum,
-            self.spread_s_sum,
-        )
+        ccap_report_line(self.brake_ticks, self.brake_closed)
     }
 }
 
 impl Drop for SenderTeardownGauges {
     fn drop(&mut self) {
         // The run's one `[WALL]` line (`RWM_WALLDIAG`), then its one
-        // `[CCAP]` line (`RWM_COMPOSED_CAP`), in the order L1 parsers expect.
+        // `[CCAP]` line (`RWM_LATE_BRAKE`), in the order L1 parsers expect.
         walldiag::report_at_teardown(now_us());
         // The run's one `[CPUPROF]` line (`RWM_CPUPROF`) — the sender CPU
         // decomposition. Same site and same reason as `[WALL]`: a destructor
         // is the only place on every exit path. Emitted unconditionally by the gauge's own
         // null check, so the shipped default prints nothing.
         cpuprof::report_at_teardown();
-        if self.composed_cap {
+        if self.enabled {
             crate::readout!("{}", self.ccap_line());
         }
     }

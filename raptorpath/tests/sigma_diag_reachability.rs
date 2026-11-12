@@ -37,7 +37,10 @@ const MIN_TICKS: usize = 8;
 /// here changes a law.
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
+    // A fixed open store (status §49): the path then runs into its own
+    // congestion window, the case these clauses need. `RWM_PLAIN_RS=1`
+    // reached it through the deleted honest-cap arm.
+    ("RWM_STORE", "4096"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

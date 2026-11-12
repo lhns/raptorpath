@@ -46,34 +46,12 @@ pub struct PathState {
     pub(crate) pending_touch: Option<Instant>,
     /// Copa delay-based congestion control state.
     pub(crate) copa: CopaState,
-    /// Token-bucket pacing: symbols sendable right now. Replenished at
-    /// cwnd/SRTT symbols per second, capped at the burst allowance
-    /// max(10, cwnd/8). May go negative: the drain in net/mod.rs is
-    /// batch-granular and lets the final batch overdraft; the debt is
-    /// repaid before the next drain, so the average rate stays cwnd/SRTT.
-    pub(crate) pace_tokens: f64,
-    /// Last time pacing tokens were replenished.
-    pub(crate) last_pace_refill: Instant,
     /// FIFO log of in_flight charges (charge instant, symbols) backing the
     /// time-based release in `expire_in_flight`. Invariant (best-effort):
     /// sum of counts == in_flight; direct writes to `in_flight` (tests,
     /// the leak-guard backstop) break it temporarily and all helpers
     /// saturate rather than trust it.
     pub(crate) in_flight_log: VecDeque<(Instant, u32)>,
-    /// Pool-anchor store law (`RWM_POOL_ANCHOR`): per-path hygiene-grade
-    /// send-interval rate anchor (ADR-0061 `SendRateAnchor`: ≈SRTT/2 buckets,
-    /// windowed-max ≈ 8·SRTT, clock-gap discard + quarantine), fed by this
-    /// path's own send events at `charge_in_flight` — every wire send on the
-    /// path (source, redundant, retransmit). Burst-immune by construction (Δt
-    /// spans the send interval on the sender's clock), it is the N ≥ 2
-    /// pooled-store cap's rate input and feeds nothing else (Copa cwnd
-    /// dynamics keep the `record_delivery` path).
-    send_anchor: crate::control::SendRateAnchor,
-    /// Whether the send-anchor feed is on (resolved once at construction
-    /// from `pool_anchor_active()`; test-forcible). Off ⇒ `charge_in_flight`
-    /// does no clock read and no bucket work, so the A/B arm stays
-    /// cost-honest.
-    pool_anchor_feed: bool,
     /// ack-merge (`RWM_ACK_MERGE`): the sender-side cursor for the
     /// `WindowAck` cumulative counters. The merged ack carries the receiver's
     /// per-path running `(total_expected, total_received)`; the sender diffs
@@ -166,11 +144,7 @@ impl PathState {
                 c.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)
                 c
             },
-            pace_tokens: Self::INITIAL_CWND as f64,
-            last_pace_refill: now,
             in_flight_log: VecDeque::new(),
-            send_anchor: crate::control::SendRateAnchor::new(),
-            pool_anchor_feed: pool_anchor_active(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
             loss_sent_cursor: 0,
@@ -548,7 +522,7 @@ impl PathState {
 
     // --- Per-path send-interval rate sampling (the CopaFeed's anchor) ---
     //
-    // The plain-mode Copa delivery feed (`RWM_PLAIN_RS`, ADR-0061)
+    // The plain-mode Copa delivery feed (`RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS), ADR-0061)
     // attributes each newly-acked source seq to the path that
     // carried it and drives that path's BBR-correct send-interval sampler,
     // so BtlBw_i / the per-path BDP anchor establish per path.
@@ -1085,12 +1059,6 @@ impl PathState {
         }
     }
 
-    /// Classic Copa equilibrium target, for diagnostics (see
-    /// `CopaState::copa_target_cwnd` for the units derivation).
-    pub fn copa_target_cwnd(&self) -> u32 {
-        self.copa.copa_target_cwnd()
-    }
-
     /// BtlBw×RTprop BDP anchor estimate in symbols, once established
     /// (paper §8.3). None during warm-up / before a min-RTT
     /// sample. Diagnostic/benchmarking accessor.
@@ -1101,16 +1069,6 @@ impl PathState {
     /// RTprop (Copa windowed-min RTT) for this path (None during warm-up).
     pub fn min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
-    }
-
-    /// `RWM_HONEST_K`: the raw-sample windowed-min echo-ratio for this path,
-    /// or None with the gate off. `Some` values are what the honest-cap /
-    /// three-term collectors substitute for the smoothed-at-refresh K
-    /// (`k_raw.unwrap_or(smoothed)` — one formula, the gate changes which
-    /// measured series feeds it); None ⇒ every consumer reads the smoothed
-    /// feed.
-    pub fn k_raw(&self) -> Option<f64> {
-        self.copa.k_raw_ratio()
     }
 
     /// BtlBw (bottleneck rate) for this path in symbols/second — the path's
@@ -1138,43 +1096,6 @@ impl PathState {
         }
     }
 
-    // --- Token-bucket pacing ---
-    //
-    // Units: tokens are symbols. Refill rate = cwnd [symbols] / SRTT [s]
-    // = symbols/second; burst allowance = max(10, cwnd/8) symbols.
-
-    /// Replenish pacing tokens for elapsed wall time.
-    pub fn pace_refill(&mut self) {
-        let now = self.clock.now();
-        let elapsed = now.duration_since(self.last_pace_refill).as_secs_f64();
-        self.last_pace_refill = now;
-        let srtt = self.srtt().as_secs_f64().max(1e-3);
-        let rate = self.cwnd as f64 / srtt; // symbols per second
-        let burst = (self.cwnd as f64 / 8.0).max(10.0);
-        self.pace_tokens = (self.pace_tokens + rate * elapsed).min(burst);
-    }
-
-    /// Current pacing token balance (symbols; may be negative — see field).
-    pub fn pace_tokens(&self) -> f64 {
-        self.pace_tokens
-    }
-
-    /// Consume tokens for `n` symbols just sent (may push balance negative).
-    pub fn consume_pace_tokens(&mut self, n: u32) {
-        self.pace_tokens -= n as f64;
-    }
-
-    /// Time until at least one pacing token is available at the current
-    /// refill rate (zero if a token is already available).
-    pub fn pace_delay(&self) -> Duration {
-        if self.pace_tokens >= 1.0 {
-            return Duration::ZERO;
-        }
-        let srtt = self.srtt().as_secs_f64().max(1e-3);
-        let rate = (self.cwnd as f64 / srtt).max(1.0); // symbols per second
-        Duration::from_secs_f64((1.0 - self.pace_tokens) / rate)
-    }
-
     // --- in_flight budget accounting ---
     //
     // in_flight is a budget gauge (symbols committed: interleaver + pacing
@@ -1196,42 +1117,7 @@ impl PathState {
         }
         self.in_flight = self.in_flight.saturating_add(n);
         let now = self.clock.now();
-        // Pool-anchor feed (RWM_POOL_ANCHOR): every wire send on this path
-        // is a send-process sample for the pooled-store anchor. O(1)
-        // amortized; gate resolved once at construction — the off arm skips
-        // entirely (cost-honest A/B).
-        if self.pool_anchor_feed {
-            let srtt = self.srtt();
-            self.send_anchor.on_send(now, n as u64, srtt);
-        }
         self.in_flight_log.push_back((now, n));
-    }
-
-    /// The pool-anchor send rate for this path (symbols/s) — the gap-robust
-    /// windowed mean (`SendRateAnchor::mean_rate`; an admission-gated
-    /// sender's refill bursts would latch a windowed max) — or None before
-    /// the first surviving bucket / with the feed off. The N ≥ 2 pooled-store
-    /// cap law's rate input (paper §6.1). Read-only: consumes no sample, owns
-    /// no cwnd dynamics.
-    pub fn send_rate_anchor(&self) -> Option<f64> {
-        if !self.pool_anchor_feed {
-            return None;
-        }
-        self.send_anchor.mean_rate(self.clock.now(), self.srtt())
-    }
-
-    /// (gaps detected, buckets discarded) for the pool-anchor sampler — the
-    /// DIAG hygiene gauges.
-    pub fn send_anchor_stats(&self) -> (u64, u64) {
-        self.send_anchor.stats()
-    }
-
-    /// Test hook: force the pool-anchor feed regardless of the process-global
-    /// env cache (unit tests must not depend on it — the `force_wire`
-    /// pattern).
-    #[cfg(test)]
-    pub fn force_pool_anchor_feed(&mut self, on: bool) {
-        self.pool_anchor_feed = on;
     }
 
     /// Test hook: force the 1:1 release (`RWM_RELEASE_1TO1`). Unit tests must

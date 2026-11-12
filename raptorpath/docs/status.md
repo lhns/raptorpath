@@ -34,7 +34,7 @@ and read everywhere through `gates::get()`; the default `[GATES]` echo is
 byte-pinned by `gates_echo_default_is_byte_pinned`): `RWM_UNIFIED`,
 `RWM_UNIFIED_SHED`, `RWM_TAPER_R`, `RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`,
 `RWM_HONEST_ANCHOR`, `RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
-`RWM_GEN_PIPE` (only reached when generation is on), `RWM_RS_ATTR`,
+`RWM_GEN_PIPE` (only reached when generation is on),
 `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`, `RWM_DELTA_CAP`,
 `RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`, `RWM_RSTAR_TAIL` (r* provisions the
 window loss-mass quantile, ADR-0063; `=0` is GE-only), `RWM_EST_CADENCE` (the loss
@@ -45,10 +45,10 @@ estimator's BOCD update batched: clean evidence accumulates and flushes every
 path count, Law 0; flipped in `bf3a636` on the §8 re-run; on `[GATES]` as
 `RWM_EMIT_BATCH=1` plus its own echo: `emission batching ACTIVE`, or `OFF`
 at `=0`, or `out of scope` where the policy excludes it: ρ < 1, Realtime
-packing, a coded wire). `RWM_POOL_ANCHOR` is
-independent of the cadence and ships off (it used to follow it when unset).
-`RWM_HONEST_CAP` resolves on but is inert
-without `RWM_PLAIN_RS`, so `[GATES]` echoes its effective value, 0.
+packing, a coded wire). `RWM_PLAIN_RS`, `RWM_RS_ATTR`, `RWM_HONEST_K`,
+`RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`, `RWM_REPAIR_WAIT`, `RWM_PROACTIVE_PACER`,
+`RWM_REASM_BDP` and `RWM_COMPOSED_CAP` are removed (§49, tags
+`archive/RWM_*`); set in the environment they are ignored.
 
 Placement prices every leg on its wire RTT (ADR-0073, promoted from
 `RWM_PLACE_WIRE` in `2d625fa`, merged to main in `85c2295`); there is no gate.
@@ -13505,3 +13505,14 @@ at every phase (share 0.75–0.85).
 **§49 session 5: `ABORT-SMOKE`** (2026-11-12T08:17:28Z). BASE again `WITNESS-FAIL` on the wire gauges: `loopdiag_run_all.sh` runs the battery under `sudo -n env`, which resets the environment, so the row parser never saw `LD_BASE_SHA`. Verified on the VM (a plain `sudo -n env` drops it; the explicit pass-through delivers it). Fixed on main: both battery env arrays pass `LD_BASE_SHA`, and an empty value reads as unset. CAND LIVE (798.1 Mbit/s).
 
 **§49 amendment 6 (before VM contact).** CAND = `simplify-2` `54600e5d75b7dfb772e2acdfdbede0ddbb647304` (`raptorpath/src` and `raptorpath/tests` byte-identical to session 3's). Session 3's suites carry; smoke and guard only. BASE stays `b3000701`.
+
+**§49 Result (session 6, CAND `54600e5d`, BASE `b3000701`, launched 2026-11-12T08:32Z, `LD-ALL-DONE` 08:46:51Z): `GATE-41c PASS`, p = 0.9566.** Suites: session 3's (release 1132 / 0, debug-witness 995 / 0, doc, wasm 35, every `tools/l1` test), on byte-identical `raptorpath/src` and `raptorpath/tests`.
+- **Design complete:** 96 / 96 rows LIVE, no witness voids, 0 replaced slots, no DNF or crash rows, ABORT-TOKENS none.
+- **Min-p (true)** 0.158 at c8 `cpu_srv/GB` (x = +5.7 %). No clause has p < 0.15. Worse-side readings above 3 %: c2 `rtp_floor_p0` +10.6 % (p 0.35), c1s `lag_E_cli` +10.4 % (p 0.68), c1d `lag_E_cli` +6.1 % (p 0.43), c8 `cpu_srv/GB` +5.7 %, c8 `lag_E_srv` +3.3 % (p 0.23). Goodput: c1s −0.8 %, c1d −2.4 %, c2 −0.1 %, c8 +1.4 %.
+- **§21 readings:** every clause WITHIN (c1s goodput WITHIN with the CAND range [148.5–849.3]).
+- **Slow row (reported only): 1 of 12 CAND rows against 0 of 12 BASE rows, unresolved at this n.** c1s CAND s42 r6 at 148.5 Mbit/s (0.178 × the cell median). It is §41b's quinn congestion-window collapse: from 2.5 s quinn's window sits at 11–16 kB (BDP 250 kB) on 89 % of lines, with ≈ 2 050 datagrams held in quinn (`hand − tx`), wire RTT 2 ms and app-echo RTT 435 ms. Simplify touches no `transport/` file. The row's `[DIAG]` lines are kept (`docs/l1-raw/simplify49/c1s-CAND-s42-r6-diag.log`). This is the defect §48b tests.
+- **Tail:** apart from that row, every arm's lowest row is ≥ 0.889 × its cell median.
+- **QCWND-BELOW-BDP:** c1s CAND range [0–0.890] (that row), BASE 0.
+- **Resolution (`resolution41c`, seed 0, reported only):** goodput d80 c1s 5 %, c1d 8 %, c2 2 %, c8 12 %; CPU/GB d80 3–12 % (power at +2.4 %: c1s client 0.73, server 0.70; c2 client 0.63; elsewhere ≤ 0.27).
+- **Decision (§49 rule): PASS → `simplify-2` merges to main**, with status §1's on-list edit. Ledgers: `docs/l1-raw/simplify49/` (scrubbed).
+- **Debt carried:** `RWM_PLACE_HOL`'s execution witness is `#[ignore]`d (archive the arm, or build a deterministic fixture: the user's call); 16 other tests still set the dead `RWM_PLAIN_RS=1` and need classifying (those with a regime assertion may now pass without reaching their case); status §2's verdict table is stale.
