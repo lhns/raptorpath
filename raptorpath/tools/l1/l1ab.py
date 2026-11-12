@@ -46,7 +46,7 @@ def per_byte(rows, key):
     out = []
     for r in rows:
         if r["dnf"] is False and r.get(key) is not None:
-            b = sp.CELL_SPEC[r["cell"]][3] if len(sp.CELL_SPEC[r["cell"]]) > 3 else None
+            b = r.get("bytes") or (sp.CELL_SPEC[r["cell"]][3] if len(sp.CELL_SPEC[r["cell"]]) > 3 else None)
             out.append(r[key] / (b / 1e9) if b else r[key])
     return out
 
