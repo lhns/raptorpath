@@ -13480,3 +13480,7 @@ at every phase (share 0.75–0.85).
 - **CAND = `simplify-2` `c634f3326254767d0fd03a99efb8078ca5e52fa3`** (`LD_CAND_SHA`): main merged in, so `git diff BASE CAND -- raptorpath/src` is the deletions alone (20 files, +142 / −2 665).
 - **Host checks at CAND:** `cargo check --all-targets` rc 0; all 28 `tools/l1` python tests pass. The host lib suites were not run: the host disk filled (os error 112). The session's suites are the test of record.
 - **Merge review:** `[DIAG]` per path loses `kraw=` and `sr=…/g…d…` (the deleted `RWM_HONEST_K` and `RWM_POOL_ANCHOR` gauges). No `tools/l1` parser reads either field; they appear only in test fixtures.
+
+**§49 session 1: `ABORT-TESTS` before any test ran** (2026-11-12T04:16:47Z). A harness defect: plan 41c's `LD_P46_SUITES` path called `run_suites` above its definition in `loopdiag_run_all.sh` (the path had never run; plan 47 calls the suites further down). Both binaries built (BASE `a3399061…`, identical to §41c session 2's CAND binary, as `raptorpath/src` is). Fixed on main `baa92d5` (the call moved below the definition, and that path now runs every `tools/l1` python test, as §49 registered), with two harness tests.
+
+**§49 amendment 2 (before VM contact): re-pinned CAND.** CAND = `simplify-2` `cd84a7f6a2feecc47cc522a2d0fbd3b900d505f4` (main `baa92d5` merged in; `raptorpath/src` unchanged from amendment 1's CAND). BASE stays `b3000701` (main's later commits touch no `raptorpath/src`).
