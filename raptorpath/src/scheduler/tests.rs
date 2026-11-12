@@ -2455,7 +2455,7 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 }
 
 // ===================================================================
-// The placement arms (paper §5.7, all three absent by default)
+// The placement arms (paper §5.7, all absent by default)
 //
 // The order of these tests is the order of the claims they defend:
 // (1) with every arm absent the shipped law is byte-identical, in costs
@@ -2473,8 +2473,6 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 #[test]
 fn every_arm_absent_leaves_the_probabilities_untouched() {
     for (name, mut sched, is_repair, covered) in cost_table_states() {
-        sched.set_place_t_derived(false);
-        sched.set_place_hol(false);
         sched.set_place_wdiv_derived(false);
         let got = sched.place_probs(is_repair, &covered);
         let want =
@@ -2501,278 +2499,12 @@ fn a_garbage_arm_value_is_an_error_naming_the_gate() {
 }
 
 /// The arms are absent by default. A fresh scheduler in a clean
-/// environment carries all three off, which is what makes the pinned
+/// environment carries them all off, which is what makes the pinned
 /// tables an oracle for every other test in this file.
 #[test]
 fn the_placement_arms_are_absent_by_default() {
     let sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
-    assert!(!sched.place_t_derived(), "RWM_PLACE_T_DERIVED ships ABSENT");
-    assert!(!sched.place_hol(), "RWM_PLACE_HOL ships ABSENT");
     assert!(!sched.place_wdiv_derived(), "RWM_PLACE_WDIV_DERIVED ships ABSENT");
-}
-
-/// Arm 1, the `sigma -> 0` limit. A candidate set whose ETA-error
-/// dispersion is zero has `T = 0`, and the derived law must then be
-/// exactly the argmin -- the shipped degenerate branch, reached with
-/// `place_probs_with_temperature(.., 0.0)`. Same distribution, element by
-/// element.
-#[test]
-fn the_derived_temperature_at_zero_dispersion_is_the_argmin() {
-    let mut sched = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
-    );
-    sched.set_place_t_derived(true);
-    // A dispersion series that never moves: sigma = 0 at both paths. The
-    // tau-lag admits a pair only inside `[tau, 2*tau]` of real time, so the
-    // arrival instants are supplied rather than slept for.
-    let t0 = std::time::Instant::now();
-    for pid in [0u32, 1] {
-        for k in 0..40u64 {
-            let ts = 1_000 + k * 1_000 + u64::from(pid) * 1_000_000;
-            sched.eta_mut().stamp(pid, ts, 5_000);
-            sched.eta_mut().on_ack_at(
-                pid,
-                ts,
-                10_000,
-                10_000,
-                t0 + Duration::from_micros(1_250 * k),
-            );
-        }
-    }
-    assert_eq!(sched.eta().sigma_us(0), Some(0), "the fixture must be zero-dispersion");
-    let got = sched.place_probs(false, &[]);
-    let want = sched.place_probs_with_temperature(false, &[], 0.0);
-    assert_eq!(got, want, "sigma = 0 must resolve to the argmin exactly");
-    // And the gauge says the cold rule did not fire -- a measured zero and
-    // an absent measurement are different findings.
-    sched.drain_place_bind();
-    let l = sched.eta().line();
-    assert!(l.contains("t_cold=0.0000"), "{l}");
-    assert!(l.contains("t_eff=0.000000"), "{l}");
-}
-
-/// Arm 1's cold rule is stated and gauged, never a hidden constant.
-/// With no path carrying a dispersion sample the temperature is the
-/// shipped one and `t_cold` says so, so a reader can tell "the derived
-/// law ran" from "the derived law had nothing to run on".
-#[test]
-fn the_derived_temperature_falls_back_to_the_shipped_one_and_counts_it() {
-    let mut sched = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
-    );
-    sched.set_place_t_derived(true);
-    assert!((sched.place_temperature_eff() - PLACE_TEMPERATURE).abs() < 1e-15);
-    sched.drain_place_bind();
-    let l = sched.eta().line();
-    assert!(l.contains("t_cold=1.0000"), "the cold rule must be READ, not assumed: {l}");
-    assert!(l.contains("t_n=1"), "{l}");
-}
-
-/// Arm 1's own arithmetic, asserted absolutely and not ordinally: with
-/// one measured dispersion of `sigma` microseconds and a reference SRTT of
-/// `ref`, `T = (sqrt6/pi)*sigma/ref` to floating precision. The inverse is
-/// the falsifiable claim: `T = 0.15 <=> sigma = 0.19238*ref`.
-#[test]
-fn the_derived_temperature_is_the_gumbel_variance_match() {
-    let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0)]);
-    sched.set_place_t_derived(true);
-    // A ramp, so a tau-lag pair spans a real difference: the error rises
-    // 100 us per sample at 1.25 ms spacing, tau = 10 ms, exactly the
-    // fixture `net::eta`'s own band test uses.
-    let t0 = std::time::Instant::now();
-    for k in 0..40u64 {
-        let ts = 1_000 + k * 1_000;
-        sched.eta_mut().stamp(0, ts, 5_000);
-        sched.eta_mut().on_ack_at(
-            0,
-            ts,
-            10_000 + 100 * k,
-            10_000,
-            t0 + Duration::from_micros(1_250 * k),
-        );
-    }
-    let sig = sched.eta().sigma_us(0).expect("the fixture must measure a dispersion");
-    assert!(sig > 0, "the fixture must measure a NONZERO dispersion");
-    let ref_srtt = 0.010_f64;
-    let want = place_gumbel_scale() * (sig as f64 / 1e6) / ref_srtt;
-    assert!(
-        (sched.place_temperature_eff() - want).abs() < 1e-12,
-        "T must be (sqrt6/pi)*sigma/ref exactly"
-    );
-    // The inversion the paper states, checked as arithmetic: T = 0.15
-    // asserts sigma/ref = 0.19238.
-    assert!(
-        ((PLACE_TEMPERATURE / place_gumbel_scale()) - 0.192_38).abs() < 1e-5,
-        "the shipped T inverts to sigma_e = 0.19238*ref"
-    );
-}
-
-/// Arm 2's own limit: a placement behind the frontier is free.
-/// `now + E_i <= F_hat` gives `push = 0` and therefore `X_i = 0` exactly
-/// -- not "small", zero -- which is the property that makes the term a
-/// water-filling incentive rather than a slow-path penalty. Only the
-/// wire price, three orders of magnitude down, remains.
-#[test]
-fn the_frontier_term_is_exactly_zero_behind_the_frontier() {
-    assert_eq!(place_frontier_cost(0.5, 0.0, 0.0, 0.010, 0.0, 0.010), 0.0);
-    // Any distance behind the frontier leaves the priced and the stall
-    // legs both at zero; the wire price is all that is left.
-    let only_wire = place_frontier_cost(50.0, 0.0, 0.030, 0.010, 1.12e-2, 0.010);
-    assert!((only_wire - 1.12e-2 * 0.030 / 0.010).abs() < 1e-15);
-    assert!(only_wire < 0.04, "the (a2) price is PREDICTED INERT against an O(1) load term");
-}
-
-/// Arm 2's knee is `C0` at `push = H`. The `(push - H)+` kink is a
-/// corner, not a step: nudging `push` by +/-eps around `H` moves the cost
-/// by O(eps), and the one-sided limits agree at the knee itself. A step
-/// here would be exactly the behaviour-across-a-point defect the
-/// no-mode-switch invariant forbids.
-#[test]
-fn the_frontier_knee_is_continuous_at_the_headroom() {
-    let (delta, h, w, refs) = (0.5_f64, 0.010_f64, 0.0_f64, 0.010_f64);
-    let at = place_frontier_cost(delta, h, 0.0, h, w, refs);
-    for eps in [1e-6_f64, 1e-9, 1e-12] {
-        let lo = place_frontier_cost(delta, h - eps, 0.0, h, w, refs);
-        let hi = place_frontier_cost(delta, h + eps, 0.0, h, w, refs);
-        // Both sides converge on the knee value, and the jump across it is
-        // bounded by (delta + kappa)*2eps/ref -- a slope, not a step.
-        let bound = (delta + PLACE_KAPPA) * 2.0 * eps / refs + 1e-15;
-        assert!((hi - lo).abs() <= bound, "step at the knee: {lo} -> {hi} (eps {eps})");
-        assert!((at - lo).abs() <= bound && (hi - at).abs() <= bound);
-    }
-}
-
-/// Arm 2 is monotone in the push. A bigger frontier push costs more,
-/// everywhere, on both sides of the knee. (And the slope beyond the knee
-/// is the steeper one, which is what `kappa` is for.)
-#[test]
-fn the_frontier_term_is_monotone_in_the_push() {
-    let (delta, h, refs) = (0.5_f64, 0.010_f64, 0.010_f64);
-    let mut prev = f64::NEG_INFINITY;
-    for i in 0..200 {
-        let push = i as f64 * 0.0002;
-        let c = place_frontier_cost(delta, push, 0.0, h, 0.0, refs);
-        assert!(c >= prev - 1e-15, "cost fell as the push grew at push={push}");
-        prev = c;
-    }
-    let below = place_frontier_cost(delta, h * 0.5, 0.0, h, 0.0, refs);
-    let just = place_frontier_cost(delta, h, 0.0, h, 0.0, refs);
-    let above = place_frontier_cost(delta, h * 1.5, 0.0, h, 0.0, refs);
-    assert!(
-        (above - just) > (just - below),
-        "the stall leg must be the STEEPER one beyond H"
-    );
-}
-
-/// The dial-continuity gate (CLAUDE.md). `delta` enters `X_i` as a
-/// multiplier and nothing else, so the term is continuous and
-/// non-decreasing in `delta` through each of the three named points --
-/// checked at +/-2 % around every one of them, plus a dense sweep of the
-/// whole dial. A behaviour step across a preset is a defect even if each
-/// side is individually correct.
-#[test]
-fn the_frontier_term_is_continuous_through_every_named_point_on_the_dial() {
-    let (push, h, refs) = (0.020_f64, 0.010_f64, 0.010_f64);
-    for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-        let d = crate::scheduler::hint_delta_price(hint);
-        let at = place_frontier_cost(d, push, 0.0, h, 0.0, refs);
-        for f in [0.98_f64, 1.02] {
-            let n = place_frontier_cost(d * f, push, 0.0, h, 0.0, refs);
-            let jump = (n - at).abs();
-            // The exact bound the form gives: |delta - delta'|*push/ref.
-            let bound = (d * (f - 1.0)).abs() * push / refs + 1e-12;
-            assert!(
-                jump <= bound,
-                "a 2 % nudge at {hint:?} (delta={d}) moved the term by {jump} > {bound}"
-            );
-        }
-    }
-    // Dense monotone sweep across the whole dial, presets included.
-    let mut prev = f64::NEG_INFINITY;
-    for i in 0..=400 {
-        let d = 0.001_f64 * 10f64.powf(i as f64 / 80.0);
-        let c = place_frontier_cost(d, push, 0.0, h, 0.0, refs);
-        assert!(c >= prev - 1e-12, "the dial sweep is not monotone at delta={d}");
-        prev = c;
-    }
-}
-
-/// Arm 2, end to end: the term reaches `place_costs` and its gauges
-/// fire. A pure-function test proves the form; this proves the wiring
-/// (docs/measurement-discipline.md rule 1). With `F_hat` set far in the past
-/// every candidate pushes the frontier hard, so the `s_i > H` bind is
-/// taken and the costs are strictly above the shipped ones.
-#[test]
-fn the_frontier_term_reaches_place_costs_and_gauges_its_bind() {
-    let mut sched = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
-    );
-    let shipped = sched.place_costs(false, &[]);
-    // A stamp in the distant past: `now` is far beyond it, so every
-    // candidate lands ahead of the frontier by more than any headroom.
-    sched.eta_mut().stamp(0, 1_000, 1);
-    sched.set_place_hol(true);
-    let armed = sched.place_costs(false, &[]);
-    for ((_, a), (_, b)) in armed.iter().zip(shipped.iter()) {
-        assert!(a > b, "the frontier term must CHARGE a frontier push: {a} vs {b}");
-    }
-    sched.drain_place_bind();
-    let l = sched.eta().line();
-    assert!(l.contains("hol_sh=1.0000"), "the s_i > H bind must be gauged: {l}");
-    assert!(l.contains("hol_n=2"), "{l}");
-    assert!(!l.contains("hol_w=-"), "W must print at its live value: {l}");
-}
-
-/// The execution witness itself. The `hol_mv` counter is what
-/// distinguishes "the term was computed" from "the term decided". It is
-/// zero for a symmetric pair (nothing to move) and nonzero when the
-/// frontier term genuinely reverses the argmin -- built here by giving the
-/// shipped-cheaper path a backlog large enough that its arrival, and only
-/// its arrival, clears the frontier.
-#[test]
-fn the_argmin_witness_counts_only_real_reversals() {
-    // Symmetric: no reversal is possible, and the witness says 0.
-    let mut sym = cost_state(
-        ProtocolHint::Auto,
-        &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)],
-    );
-    sym.eta_mut().stamp(0, 1_000, 1);
-    sym.set_place_hol(true);
-    let _ = sym.place_costs(false, &[]);
-    sym.drain_place_bind();
-    let (_, _, moved, calls, _) = sym.eta().hol_gauges();
-    assert_eq!((moved, calls), (0, 1), "a symmetric pair has no argmin to move");
-
-    // Asymmetric, with `F_hat` between the two arrivals: path 0 is the
-    // shipped argmin and lands ahead of the frontier; path 1 is dearer by
-    // the shipped law but lands behind it. The stall leg is worth more
-    // than the load gap, so the term reverses the pick.
-    let mut sched = cost_state(
-        ProtocolHint::Realtime,
-        &[(0, Some(10), 10, 9), (1, Some(11), 10, 0)],
-    );
-    let base = sched.place_costs(false, &[]);
-    let base_arg = if base[0].1 <= base[1].1 { 0 } else { 1 };
-    // `F_hat` a hair ahead of the cheaper path's arrival: path 0's own
-    // backlog pushes it past the frontier, path 1's idle propagation does
-    // not.
-    let now_us = place_wall_now_us();
-    sched.eta_mut().stamp(0, now_us, 6_000);
-    sched.set_place_hol(true);
-    let armed = sched.place_costs(false, &[]);
-    let armed_arg = if armed[0].1 <= armed[1].1 { 0 } else { 1 };
-    sched.drain_place_bind();
-    let (_, _, moved, calls, _) = sched.eta().hol_gauges();
-    assert_eq!(calls, 1);
-    assert_eq!(
-        moved,
-        u64::from(base_arg != armed_arg),
-        "the witness must count exactly the reversals that happened \
-         (base {base_arg} -> armed {armed_arg}; {base:?} -> {armed:?})"
-    );
 }
 
 /// Arm 3 cannot move a source placement, by construction: `fate_i` is
@@ -2845,10 +2577,7 @@ fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
 #[test]
 fn a_single_path_is_the_identity_with_every_arm_armed() {
     let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 3)]);
-    sched.set_place_t_derived(true);
-    sched.set_place_hol(true);
     sched.set_place_wdiv_derived(true);
-    sched.eta_mut().stamp(0, 1_000, 1);
     let dist = sched.place_probs(false, &[]);
     assert_eq!(dist.len(), 1);
     assert_eq!(dist[0].0, 0);
@@ -2866,10 +2595,7 @@ fn the_tie_break_is_still_ascending_by_id_with_every_arm_armed() {
         sched.add_path(id);
         set_rtt(&mut sched, id, 10);
     }
-    sched.set_place_t_derived(true);
-    sched.set_place_hol(true);
     sched.set_place_wdiv_derived(true);
-    sched.eta_mut().stamp(3, 1_000, 1);
     let ids: Vec<PathId> =
         sched.place_costs(false, &[]).into_iter().map(|(i, _)| i).collect();
     assert_eq!(ids, vec![1, 3, 5, 7, 9], "candidates must stay ascending by id");
@@ -3408,4 +3134,126 @@ fn the_wire_mirror_writes_every_leg() {
     sched.mirror_wire_rtts(|id| Some(Duration::from_micros(3_000 + 6_000 * id as u64)));
     assert_eq!(sched.path(0).unwrap().wire_rtt(), Some(Duration::from_micros(3_000)));
     assert_eq!(sched.path(1).unwrap().wire_rtt(), Some(Duration::from_micros(9_000)));
+}
+
+// ===================================================================
+// Bounds on the sensitivity of the placement constants T = 0.15 and
+// w_div = 1.0 (CLAUDE.md rule 17: absolute, continuous, no thresholds).
+//
+// T and w_div are in units of `ref`, the fastest leg's ECHO srtt, which
+// includes send-buffer dwell: in seconds they are load-dependent. This
+// test does not say 0.15 is right. It BOUNDS what the constant decides at
+// the two operating points that matter, over the whole range the open-
+// constants register allows for T and over `ref` x0.5 .. x2, so a change
+// that moves the placement outside the bounds fails here rather than in a
+// battery.
+//
+// Fixtures (declared, not measured here): idle legs (in_flight = 0,
+// cwnd = 100, no loss), so cost_i = (1/2)*wire_i/ref (+ w_div*fate_i for
+// a SACK-gap retransmit, `fate` = 1 on its original leg).
+//   c8  leg0: echo 100 ms, wire 21 ms | leg1: echo 300 ms, wire 88 ms
+//   c1d leg0: echo  20 ms, wire  2 ms | leg1: echo  20 ms, wire  2 ms
+// `ref` is scaled by scaling BOTH echo srtts (wire RTTs stay put).
+//
+// Bounds are the min/max of the closed form sigmoid(-dC/T) over the grid
+// below, widened by 1 %. The shipped point (T = 0.15, scale 1) is pinned.
+//
+// NEEDS THE COORDINATOR'S COMPILE CHECK: written without cargo.
+// ===================================================================
+
+const T_GRID: [f64; 9] = [0.03, 0.05, 0.08, 0.10, 0.15, 0.20, 0.30, 0.45, 0.68];
+const REF_SCALES: [f64; 3] = [0.5, 1.0, 2.0];
+
+/// `(echo0_ms, wire0_ms, echo1_ms, wire1_ms)`, idle, scaled in `ref`.
+fn two_leg_at(fx: (f64, f64, f64, f64), ref_scale: f64) -> Scheduler {
+    wire_state(
+        ProtocolHint::Auto,
+        &[wleg(0, fx.0 * ref_scale, Some(fx.1)), wleg(1, fx.2 * ref_scale, Some(fx.3))],
+    )
+}
+
+/// `rel` of the value plus a 1e-12 absolute floor (the values reach 1e-25).
+fn within(got: f64, want: f64, rel: f64) -> bool {
+    (got - want).abs() <= rel * want.abs() + 1e-12
+}
+
+/// One operating point's declared bounds: `(lo, hi)` for P(slow leg gets a
+/// source symbol), P(a retransmit stays on leg 0), P(... stays on leg 1);
+/// and the pinned shipped-point values `(T = 0.15, scale 1)`.
+struct SensBounds {
+    p_slow: (f64, f64),
+    stay0: (f64, f64),
+    stay1: (f64, f64),
+    shipped: (f64, f64, f64),
+}
+
+fn assert_sensitivity(name: &str, fx: (f64, f64, f64, f64), b: &SensBounds) {
+    for &scale in &REF_SCALES {
+        let sched = two_leg_at(fx, scale);
+        for &t in &T_GRID {
+            let src = sched.place_probs_with_temperature(false, &[], t);
+            let p_slow = prob_of(&src, 1);
+            let r0 = sched.place_probs_with_temperature(true, &[0], t);
+            let r1 = sched.place_probs_with_temperature(true, &[1], t);
+            let (stay0, stay1) = (prob_of(&r0, 0), prob_of(&r1, 1));
+            let at = format!("{name} T={t} ref x{scale}");
+            assert!(
+                (b.p_slow.0..=b.p_slow.1).contains(&p_slow),
+                "{at}: P_slow {p_slow:e} outside {:?}", b.p_slow
+            );
+            assert!(
+                (b.stay0.0..=b.stay0.1).contains(&stay0),
+                "{at}: P(retx stays on leg 0) {stay0:e} outside {:?}", b.stay0
+            );
+            assert!(
+                (b.stay1.0..=b.stay1.1).contains(&stay1),
+                "{at}: P(retx stays on leg 1) {stay1:e} outside {:?}", b.stay1
+            );
+        }
+    }
+    let sched = two_leg_at(fx, 1.0);
+    let shipped = |covered: Option<PathId>| match covered {
+        None => prob_of(&sched.place_probs(false, &[]), 1),
+        Some(o) => prob_of(&sched.place_probs(true, &[o]), o),
+    };
+    assert!(within(shipped(None), b.shipped.0, 0.01), "{name} shipped P_slow {:e}", shipped(None));
+    assert!(within(shipped(Some(0)), b.shipped.1, 0.01), "{name} shipped stay0 {:e}", shipped(Some(0)));
+    assert!(within(shipped(Some(1)), b.shipped.2, 0.01), "{name} shipped stay1 {:e}", shipped(Some(1)));
+}
+
+/// c8: dC = (1/2)(88-21)/(100 ms x scale) = 0.335/scale, so the slow leg
+/// takes 0.097 of the source symbols at the shipped T, at most 0.439 at
+/// T = 0.68 with ref x2 and 2e-10 at T = 0.03 with ref x0.5. A SACK-gap
+/// retransmit stays on the fast leg with 0.0117 at the shipped T (<= 0.381
+/// anywhere on the grid), on the slow leg with 1.4e-4.
+#[test]
+fn placement_sensitivity_to_t_and_ref_is_bounded_at_c8() {
+    assert_sensitivity(
+        "c8",
+        (100.0, 21.0, 300.0, 88.0),
+        &SensBounds {
+            p_slow: (1.978e-10, 0.4431),
+            stay0: (8.79e-13, 0.3848),
+            stay1: (6.6e-25, 0.1538),
+            shipped: (0.096797, 0.011735, 1.3637e-4),
+        },
+    );
+}
+
+/// c1d: identical legs, so a source symbol splits exactly 1/2 whatever T and
+/// ref are, and a retransmit's only price is w_div = 1.0 on its original
+/// leg: it stays with sigmoid(-1/T) = 0.00127 at the shipped T, at most
+/// 0.187 at T = 0.68 (the diversity charge is the only thing T decides here).
+#[test]
+fn placement_sensitivity_to_t_and_ref_is_bounded_at_c1d() {
+    assert_sensitivity(
+        "c1d",
+        (20.0, 2.0, 20.0, 2.0),
+        &SensBounds {
+            p_slow: (0.5 - 1e-9, 0.5 + 1e-9),
+            stay0: (3.30e-15, 0.1888),
+            stay1: (3.30e-15, 0.1888),
+            shipped: (0.5, 0.0012710, 0.0012710),
+        },
+    );
 }

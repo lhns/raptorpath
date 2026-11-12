@@ -121,21 +121,11 @@ pub struct Scheduler {
     /// Drained into `eta` at the report cadence by `drain_place_bind`; nothing
     /// on the placement path takes a lock or reads the gauge.
     place_bind: std::cell::Cell<(u64, u64, u64)>,
-    /// The placement-arm gauges, same `Cell` discipline and for the same
+    /// The placement-arm gauge, same `Cell` discipline and for the same
     /// reason: `place_costs` takes `&self`, and an observation may not need a
     /// write lock the law itself does not need. Drained by
     /// `drain_place_bind`.
     ///
-    /// `place_t_gauge` = `(last T_eff, t_cold, n)` - the temperature actually
-    /// used, how many resolutions had no measured dispersion anywhere in the
-    /// active set (and therefore fell back to the shipped `T`), and the
-    /// denominator.
-    place_t_gauge: std::cell::Cell<(f64, u64, u64)>,
-    /// `place_hol_gauge` = `(s_i > H binds, source cost evaluations,
-    /// argmin-moved count, place_costs calls, last W_live)` - the `kappa`
-    /// bind fraction and the execution witness that the term actually
-    /// changed a decision.
-    place_hol_gauge: std::cell::Cell<(u64, u64, u64, u64, f64)>,
     /// `place_wire_gauge` = `(w_cold, leg evaluations, place_costs calls,
     /// ref-floor binds)`: the wire base's two bind gauges (the `wire_i`
     /// fallback taken, the 1 ms floor of `ref` bound); drained with the others.
@@ -143,13 +133,9 @@ pub struct Scheduler {
     clock: Arc<dyn Clock>,
     /// Scheduling weights from protocol hint.
     weights: SchedulingWeights,
-    /// `RWM_PLACE_T_DERIVED` (placement arm 1) as resolved for this scheduler.
+    /// `RWM_PLACE_WDIV_DERIVED` (placement arm) as resolved for this scheduler.
     /// Defaults to the process gate; settable so a unit test can drive both
     /// sides of the arm in one process.
-    place_t_derived: bool,
-    /// `RWM_PLACE_HOL` (placement arm 2), same discipline.
-    place_hol: bool,
-    /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3), same discipline.
     place_wdiv_derived: bool,
     /// Protocol hint — also sets Copa-lite's queue target on each path
     /// (paper §8.2).
@@ -175,11 +161,7 @@ impl Scheduler {
             paths: HashMap::new(),
             eta: Default::default(),
             place_bind: std::cell::Cell::new((0, 0, 0)),
-            place_t_gauge: std::cell::Cell::new((0.0, 0, 0)),
-            place_hol_gauge: std::cell::Cell::new((0, 0, 0, 0, 0.0)),
             place_wire_gauge: std::cell::Cell::new((0, 0, 0, 0)),
-            place_t_derived: place_t_derived_active(),
-            place_hol: place_hol_active(),
             place_wdiv_derived: place_wdiv_derived_active(),
             clock,
             weights: SchedulingWeights::from_hint(hint),
@@ -194,26 +176,6 @@ impl Scheduler {
     /// this instead of racing the environment.
     pub fn set_cold_place(&mut self, enabled: bool) {
         self.cold_place = enabled;
-    }
-
-    /// `RWM_PLACE_T_DERIVED` (placement arm 1) for this scheduler.
-    pub fn set_place_t_derived(&mut self, enabled: bool) {
-        self.place_t_derived = enabled;
-    }
-
-    /// Is the derived temperature armed on this scheduler?
-    pub fn place_t_derived(&self) -> bool {
-        self.place_t_derived
-    }
-
-    /// `RWM_PLACE_HOL` (placement arm 2) for this scheduler.
-    pub fn set_place_hol(&mut self, enabled: bool) {
-        self.place_hol = enabled;
-    }
-
-    /// Is the frontier term armed on this scheduler?
-    pub fn place_hol(&self) -> bool {
-        self.place_hol
     }
 
     /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3) for this scheduler.

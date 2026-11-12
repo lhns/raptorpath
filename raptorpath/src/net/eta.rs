@@ -229,9 +229,9 @@ const ERR_BIAS: i64 = 1 << 40;
 #[derive(Default)]
 pub struct SenderEta {
     /// `F̂` — the sender's own expected frontier: the running max over every
-    /// stamped placement of `now + E_picked`, µs on the sender clock. The
-    /// placement frontier term (`s_i = [(now + E_i) − F̂]⁺`) is priced against
-    /// it; no decision reads this field.
+    /// stamped placement of `now + E_picked`, µs on the sender clock. No
+    /// decision reads this field (the placement frontier term that did is
+    /// archived, tag `archive/RWM_PLACE_HOL`).
     frontier_eta_us: u64,
     /// Every placement offered to the gauge, and how many carried the 0
     /// sentinel: the bind fraction of the wire field.
@@ -244,26 +244,6 @@ pub struct SenderEta {
     cold_r: u64,
     cold_ge: u64,
     place_n: u64,
-    /// Placement arm `RWM_PLACE_T_DERIVED`. `t_eff` is the temperature the
-    /// placement softmax last resolved — a level, so the last value is printed
-    /// rather than averaged. `t_cold` counts the resolutions in which no active
-    /// path had a dispersion sample and the law fell back to
-    /// `place_temperature()`, out of `t_n`. With the arm absent `t_n` stays 0
-    /// and all three print `-`.
-    t_eff: f64,
-    t_cold: u64,
-    t_n: u64,
-    /// Placement arm `RWM_PLACE_HOL`. `hol_sh` / `hol_n`: the `s_i > H` bind
-    /// fraction — how often `kappa`, a declared upper bound, was reachable at
-    /// all. `hol_moved` / `hol_calls`: the execution witness — how many
-    /// placements the frontier term changed the argmin of. `hol_w`: `W`, the
-    /// wire price, at its last live value. A term with `hol_moved = 0` has
-    /// been computed, not measured.
-    hol_sh: u64,
-    hol_n: u64,
-    hol_moved: u64,
-    hol_calls: u64,
-    hol_w: f64,
     /// The wire base's bind gauges (paper §5.7). `w_cold` / `w_n`: leg
     /// evaluations whose `wire_i` was absent (the `min_j wire_j ?: s_i`
     /// fallback) out of all leg evaluations. `ref_fl` / `w_calls`: placements
@@ -359,31 +339,6 @@ impl SenderEta {
         self.place_n += n;
     }
 
-    /// Fold in the `RWM_PLACE_T_DERIVED` temperature reading: the `T_eff` last
-    /// resolved, the cold-rule count and its denominator. Observation only.
-    /// A drain with `n == 0` (the arm absent, or no placement since the last
-    /// report) leaves the level untouched rather than zeroing it.
-    pub fn add_place_t(&mut self, t_eff: f64, cold: u64, n: u64) {
-        if n > 0 {
-            self.t_eff = t_eff;
-        }
-        self.t_cold += cold;
-        self.t_n += n;
-    }
-
-    /// Fold in the `RWM_PLACE_HOL` frontier-term gauges: the `s_i > H` binds out
-    /// of `n` source cost evaluations, the argmin-moved witness out of
-    /// `calls` placements, and `W` at its live value. Observation only.
-    pub fn add_place_hol(&mut self, sh: u64, n: u64, moved: u64, calls: u64, w: f64) {
-        self.hol_sh += sh;
-        self.hol_n += n;
-        self.hol_moved += moved;
-        self.hol_calls += calls;
-        if calls > 0 {
-            self.hol_w = w;
-        }
-    }
-
     /// Fold in the wire base's bind gauges: `cold` of `n` leg evaluations had
     /// no wire RTT, and the ref floor bound in `floor` of `calls` placements.
     /// Observation only.
@@ -399,17 +354,6 @@ impl SenderEta {
         (self.w_cold, self.w_n, self.w_calls, self.ref_fl)
     }
 
-    /// `T_eff` as last resolved, or `None` with the arm absent. Test seat.
-    pub fn t_eff(&self) -> Option<f64> {
-        (self.t_n > 0).then_some(self.t_eff)
-    }
-
-    /// `(s_i > H binds, source evaluations, argmin moved, placements, W)`.
-    /// Test seat for the reachability assertions.
-    pub fn hol_gauges(&self) -> (u64, u64, u64, u64, f64) {
-        (self.hol_sh, self.hol_n, self.hol_moved, self.hol_calls, self.hol_w)
-    }
-
     /// `F̂`, µs on the sender clock. No decision reads it.
     pub fn frontier_eta_us(&self) -> u64 {
         self.frontier_eta_us
@@ -419,12 +363,6 @@ impl SenderEta {
     /// never does and must stay silent.
     pub fn is_sender_site(&self) -> bool {
         self.stamped_n > 0
-    }
-
-    /// `σ̂_e` for one path, µs — the witness's left-hand side.
-    pub fn sigma_us(&self, path_id: u32) -> Option<u64> {
-        let p = self.paths.get(&path_id)?;
-        p.err_sig.sigma_us(Duration::from_micros(p.tau_us))
     }
 
     /// The exit-flush rendering: [`SenderEta::line`] plus the ` final=1`
@@ -438,13 +376,8 @@ impl SenderEta {
     /// The `[ETA] site=sender` line. Cumulative: the last line is the
     /// reading — the `[SUCC]` / `[RFA]` convention.
     pub fn line(&self) -> String {
-        // The arm readings ride the same line, `-` iff their own denominator
-        // is 0, so "the arm is absent" and "the arm ran and measured zero"
-        // read differently.
-        let lvl = |v: f64, n: u64| if n == 0 { "-".to_string() } else { format!("{v:.6}") };
         let mut s = format!(
             "[ETA] site=sender fhat_us={} n={} zero={} place_n={} cold_r={} cold_ge={} \
-             t_eff={} t_cold={} t_n={} hol_sh={} hol_n={} hol_mv={} hol_calls={} hol_w={} \
              ref_fl={} w_cold={} w_n={} w_calls={}",
             self.frontier_eta_us,
             self.stamped_n,
@@ -452,14 +385,6 @@ impl SenderEta {
             self.place_n,
             optf(self.cold_r, self.place_n),
             optf(self.cold_ge, self.place_n),
-            lvl(self.t_eff, self.t_n),
-            optf(self.t_cold, self.t_n),
-            self.t_n,
-            optf(self.hol_sh, self.hol_n),
-            self.hol_n,
-            optf(self.hol_moved, self.hol_calls),
-            self.hol_calls,
-            lvl(self.hol_w, self.hol_calls),
             optf(self.ref_fl, self.w_calls),
             optf(self.w_cold, self.w_n),
             self.w_n,

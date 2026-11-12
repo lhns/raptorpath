@@ -20,9 +20,9 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 use std::time::Duration;
 
 use raptorpath::net::{
-    cooldown_elapsed, hole_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
+    cooldown_elapsed, hole_nack_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
     mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us,
-    retx_cooldown_us, shed_allowed, shed_deadline_us, sweep_timeout_us, time_threshold_ripe,
+    retx_cooldown_us, shed_allowed, shed_deadline_us, tail_sweep_timeout_us, time_threshold_ripe,
     MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK, NACK_RETX_COOLDOWN_FLOOR_US,
 };
 
@@ -112,9 +112,6 @@ pub struct Arm {
     pub name: &'static str,
     pub recov_mp: bool,
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP`: the tail sweep + hole refresh on
-    /// `derived_recovery_round_us` instead of the [25, 100] ms clamped law.
-    pub derived_sweep: bool,
 }
 pub const ARMS: &[Arm] = &[
     // `RWM_RECOV_MP` default ON — the shipped stack.
@@ -122,28 +119,18 @@ pub const ARMS: &[Arm] = &[
         name: "shipped",
         recov_mp: true,
         recov_sp: false,
-        derived_sweep: false,
     },
     // Neither RFC channel: the legacy `srtt/2` age gate.
     Arm {
         name: "legacy",
         recov_mp: false,
         recov_sp: false,
-        derived_sweep: false,
     },
     // `RWM_RECOV_SP`: the RFC 9002 §6.1.2 time threshold at N = 1 too.
     Arm {
         name: "sp",
         recov_mp: true,
         recov_sp: true,
-        derived_sweep: false,
-    },
-    // `RWM_DERIVED_SWEEP` on top of the shipped stack.
-    Arm {
-        name: "ds",
-        recov_mp: true,
-        recov_sp: false,
-        derived_sweep: true,
     },
 ];
 
@@ -364,17 +351,14 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     // The receiver's refresh cadence reads the Copa clock (`PathState::srtt`),
     // not the estimator — so the clock argument does not move it. The engine
     // has the same asymmetry; keep it faithful.
-    let refresh_us = hole_refresh(
-        cell.arm.derived_sweep,
-        Some(Duration::from_micros(copa.iter().copied().max().unwrap_or(0))),
-        cal.jitter_us,
-        raptorpath::net::HOLE_NACK_REFRESH_MIN,
-    )
+    let refresh_us = hole_nack_refresh(Some(Duration::from_micros(
+        copa.iter().copied().max().unwrap_or(0),
+    )))
     .as_micros() as u64;
     // The sender's tail-sweep round: the pooled estimator clock (the
     // argument under test on the `clock` axis), through the shipped
-    // `sweep_timeout_us` — the legacy clamp with `derived_sweep` off.
-    let sweep_us = sweep_timeout_us(cell.arm.derived_sweep, pooled_us, cal.jitter_us);
+    // `tail_sweep_timeout_us`.
+    let sweep_us = tail_sweep_timeout_us(pooled_us);
     let shed_deadline = shed_deadline_us(0.5, cell.rtprop_us);
     // ρ budget: the residual the (δ,ρ,r) design already concedes — modelled
     // as the cell's own loss class (there is no FEC in the recovery plane).

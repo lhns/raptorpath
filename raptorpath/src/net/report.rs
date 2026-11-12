@@ -205,7 +205,7 @@ pub fn rfa_report_line(
 //
 //   * the sender's own tail-sweep deadline arm — `pending_gaps =
 //     Some(vec![(seq, seq)])` — the arm the sender's recovery clock
-//     actually clocks (`sweep_timeout_us` → `tail_deadline`). Only this is
+//     actually clocks (`tail_sweep_timeout_us` → `tail_deadline`). Only this is
 //     a timer-driven fire of the sender's clock.
 //   * the `nack_rx` channel, whose sole producer is the SACK→gap inversion
 //     in the WindowAck handler. These fires are clocked by the receiver, not
@@ -224,7 +224,7 @@ pub fn rfa_report_line(
 //
 // So the split costs no wire change and no behaviour change: it reads a
 // field the handler has in scope. The refresh arm is clocked by
-// `hole_refresh`, the receiver's twin of the sender's clock. A fire in
+// `hole_nack_refresh`, the receiver's twin of the sender's clock. A fire in
 // `gap_refresh` is timer-driven by the receiver's clock; a fire in
 // `gap_data` is driven by data arrival and by no clock at all.
 //
@@ -264,7 +264,7 @@ pub enum FireCause {
     /// analog): driven by data arrival, by no clock.
     GapData,
     /// A SACK-bearing WindowAck from the receiver's timer-driven hole
-    /// re-advertisement arm: clocked by `hole_refresh` at the receiver.
+    /// re-advertisement arm: clocked by `hole_nack_refresh` at the receiver.
     GapRefresh,
     /// A gap batch that reached the fire site carrying no cause tag. Counted,
     /// never guessed at.

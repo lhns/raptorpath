@@ -4,7 +4,7 @@
 //! whose `gaps` vector has two producers:
 //!
 //!   * `timer` — the sender's tail-sweep deadline arm, the only cause the
-//!     sender's recovery clock (`sweep_timeout_us`) times.
+//!     sender's recovery clock (`tail_sweep_timeout_us`) times.
 //!   * the `nack_rx` channel, fed by the SACK→gap inversion in the WindowAck
 //!     handler and clocked by the receiver. The timer-driven hole
 //!     re-advertisement broadcasts one message to every path and stamps
@@ -87,9 +87,8 @@ fn the_fcause_line_format_is_pinned() {
 
 /// The arm. `RWM_DIAG` carries `[DIAG] retx=`, the independent witness. No
 /// gate here changes a law: the sender runs the shipped recovery clock.
-const ARM: [(&str, &str); 2] = [
+const ARM: [(&str, &str); 1] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
 ];
 
 /// Run one lossy loopback in the given configuration. Returns

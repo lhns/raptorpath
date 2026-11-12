@@ -113,7 +113,6 @@ for c in CELLS:
     an = sum(i(l, 'age_n=') for l in hold[c])
     ar = sum(i(l, 'age_ripe=') for l in hold[c])
     ev = sum(i(l, 'evals=') for l in hold[c])
-    su = sum(i(l, 'sup=') for l in hold[c])
     det = sum(i(l, 'det=') for l in succ[c])
     res = sum(i(l, 'res=') for l in succ[c])
     on = sum(i(l, 'orig_n=') for l in succ[c])
@@ -164,5 +163,5 @@ for c in CELLS:
              'OK' if spS + xpS == res else 'VIOLATED'))
     print('  WASTE SPLIT: taper_copy=%d  gap-fire retx=%d  [FCAUSE] n=%d'
           % (taper, retx, fcn))
-    print('  GATE: evals=%d sup=%d (must be 0)' % (ev, su))
+    print('  GATE: evals=%d' % ev)
 

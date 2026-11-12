@@ -20,8 +20,6 @@
 //!    oldest un-acked seq, landing as `[RFA] dup_src`) is counted: the
 //!    ungated `[DIAG] taper=` equals the DIAG-gated `plost=` on every line.
 //!    Its value is printed, not asserted: over the `c3` loopback it is zero.
-//! 7. The audit suppresses nothing: with `RWM_HOLDDOWN_Q` absent every
-//!    `[HOLD]` line reads `sup=0`.
 //!
 //! No class fraction, ripeness fraction or goodput value is asserted. The
 //! audit adds no gate and edits no law.
@@ -36,9 +34,8 @@ use gauge::{numeric_prefix, str_field, u64_field};
 /// The base arm. `RWM_DIAG` carries `[DIAG] … taper=` and the periodic
 /// `[SUCC]` readout; `RWM_FDIAG` the receiver-side decode trace. No gate here
 /// changes a law.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 
@@ -95,19 +92,13 @@ const SUCC_FIELDS: [&str; 7] = [
     "xp_p90_us=",
 ];
 
-/// Clauses 1, 3 and 7 on every `[HOLD]` line of a run.
+/// Clauses 1 and 3 on every `[HOLD]` line of a run.
 fn assert_hold_lines(lines: &[&str]) {
     assert!(!lines.is_empty(), "the sender printed no `[HOLD]` line at all");
     for l in lines {
         for k in HOLD_FIELDS {
             assert!(l.contains(k), "`{k}` missing — pre-audit engine? {l}");
         }
-        // The inherited identity.
-        let (evals, sup, emit) =
-            (u64_field(l, "evals="), u64_field(l, "sup="), u64_field(l, "emit="));
-        assert_eq!(evals, sup + emit, "evals must equal sup + emit: {l}");
-        // Clause 7: the shipped arm holds nothing.
-        assert_eq!(sup, 0, "the audit must suppress no fire on the shipped arm: {l}");
         // Clause 3: the classes partition exactly the fed resolutions.
         let fed = u64_field(l, "fed=");
         let (hn, hy, cx) =

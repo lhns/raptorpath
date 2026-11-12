@@ -24,10 +24,6 @@ async fn sum_cap_and_late_brake_route_without_the_composed_law_and_the_loopback_
 
     std::env::set_var("RWM_SUM_CAP", "1");
     std::env::set_var("RWM_LATE_BRAKE", "1");
-    // The honest-anchor composition the pooled law consumes (default ON)
-    // plus the send-interval sampler, matching the composed arm's setup so
-    // the two loopbacks differ only in the mechanism under test.
-    std::env::set_var("RWM_PLAIN_RS", "1");
     let g = raptorpath::gates::RuntimeGates::resolve();
 
     // ── 1. The gates resolve, and are separately scrapeable ──────────────

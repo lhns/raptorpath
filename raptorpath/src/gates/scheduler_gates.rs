@@ -103,85 +103,11 @@ pub(crate) fn resolve_honest_anchor() -> bool {
 }
 
 /// A placement arm's flag: [`crate::config::env_flag`], default absent. A
-/// value outside the strict boolean dialect (`RWM_PLACE_HOL=of`) is a startup
+/// value outside the strict boolean dialect (`RWM_PLACE_WDIV_DERIVED=of`) is a startup
 /// error naming the gate, so a typo can never run a control row labelled as
 /// a challenger.
 pub(crate) fn place_arm_flag(name: &str) -> bool {
     crate::config::env_flag(name, false)
-}
-
-/// Whether the derived placement temperature is active (`RWM_PLACE_T_DERIVED`,
-/// experiment arm, paper §5.7): the softmax temperature is the Luce/Gumbel
-/// scale of the scheduler's own ETA prediction error,
-///
-/// ```text
-///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt  =  0.77970 * sigma_e / ref
-/// ```
-///
-/// The softmax is `argmin` under i.i.d. Gumbel noise of scale `T`, so matching
-/// `Var(T*G) = pi^2 T^2/6` to `sigma_e^2` fixes `T` with no free parameter.
-/// `sigma_e` is the per-path dispersion of `realized - predicted` from the
-/// sender `[ETA]` gauge (`net::eta::SenderEta::sigma_us`), pooled as an RMS
-/// over the active set. The shipped `0.15` thus claims `sigma_e = 0.19238 *
-/// ref`. Off is `place_temperature()` verbatim.
-pub fn place_t_derived_active() -> bool {
-    crate::gates::get().place_t_derived
-}
-
-/// The resolve-time read behind [`place_t_derived_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_place_t_derived() -> bool {
-    let on = place_arm_flag("RWM_PLACE_T_DERIVED");
-    // Two-sided liveness echo (`docs/measurement-discipline.md` rule 1).
-    tracing::info!(
-        place_t_derived = on,
-        "placement temperature (RWM_PLACE_T_DERIVED, paper §5.7): \
-         T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
-         dispersion when ON; the shipped place_temperature() when OFF"
-    );
-    on
-}
-
-/// Whether the placement frontier term is active (`RWM_PLACE_HOL`, experiment
-/// arm, paper §5.7): the head-of-line cost added to `cost_i` for source
-/// symbols,
-///
-/// ```text
-///     X_i  =  [ delta*s_i  +  kappa*(s_i - H)+ ] / ref
-///     s_i  =  [ (now + E_i) - F_hat ]+          the frontier push this placement adds
-///     F_hat  =  running max of the stamped ETAs of symbols already placed
-///     H      =  the free headroom of the LIVE store-cap law
-/// ```
-///
-/// plus the wire-price ordering term at its derived `W`, which prices the
-/// opposite sign of the same difference:
-///
-/// ```text
-///     O_i  =  W * [ F_hat - (now + E_i) ]+ / ref
-///     W    =  1 symbol / ( R_ref * tau_cool )        no literal; see place_hol_wire_price
-/// ```
-///
-/// A placement behind the frontier pushes nothing and is free (`s_i = 0`),
-/// which makes `X_i` a water-filling incentive rather than a slow-path penalty.
-/// `delta` comes from `net::delta_price`, continuous in the dial. `kappa = 1`
-/// is a declared upper bound, conservative against frontier-pushing
-/// placements; its bind is gauged (`s_i > H`). Off skips the frontier read.
-pub fn place_hol_active() -> bool {
-    crate::gates::get().place_hol
-}
-
-/// The resolve-time read behind [`place_hol_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_place_hol() -> bool {
-    let on = place_arm_flag("RWM_PLACE_HOL");
-    tracing::info!(
-        place_hol = on,
-        "placement frontier term (RWM_PLACE_HOL, paper §5.7): \
-         X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push \
-         against the sender's own F_hat, plus the (a2) wire-price ordering \
-         term at its derived W; ABSENT leaves the shipped cost untouched"
-    );
-    on
 }
 
 /// Whether the derived diversity weight is active (`RWM_PLACE_WDIV_DERIVED`,

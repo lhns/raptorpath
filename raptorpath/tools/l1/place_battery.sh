@@ -15,7 +15,7 @@
 # track (`INSTRUMENT-INDICTS-QUEUE`). Reading the decomposition after the arms
 # and choosing which to believe is the failure mode this order prevents.
 #
-# Arms — five, interleaved round-robin per rep (docs/measurement-discipline.md
+# Arms — interleaved round-robin per rep (docs/measurement-discipline.md
 # rule 3):
 #
 #   CTL      (unset)                      the shipped law; the pinned cost
@@ -23,11 +23,10 @@
 #   T0       RWM_PLACE_T=1e-6             the argmin limit — the T dial's own
 #                                         floor, an existing knob, so the
 #                                         temperature axis has two ends
-#   TSIG     RWM_PLACE_T_DERIVED=1        T = (√6/π)·σ̂_e/ref
-#   HOL      RWM_PLACE_HOL=1              the frontier term X_i
-#   HOLTSIG  both                         the composition
 #
-# A TSIG tie with CTL licenses σ̂_e/ref, never 0.15.
+# (The HOL / HOLTSIG / TSIG arms are removed: tags archive/RWM_PLACE_HOL and
+# archive/RWM_PLACE_T_DERIVED. The invocation arithmetic below is the original
+# five-arm one; committed ledgers keep their rows.)
 #
 # Cells: c7 (symmetric dual), c8L (het dual c2 || c3 at 100 MB — the
 # aggregation seat; named c8L because `c8` elsewhere is the same geometry at
@@ -72,7 +71,7 @@ crlf_guard place_battery.sh lib_battery.sh
 
 SEED_ARG="${1:?seed}"; REPS="${2:-4}"   # n = 4: the 5 h cap
 PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8L c1 c9h}"
-PLACE_ARMS="${RWM_PLACE_ARMS:-CTL T0 TSIG HOL HOLTSIG}"
+PLACE_ARMS="${RWM_PLACE_ARMS:-CTL T0}"
 TAG="${RWM_PLACE_TAG:-place}"
 # The run directory is `place_run_all.sh`'s (`RWM_PLACE_OUTDIR`, passed
 # through its `sudo env`), so the log the envelope reads for DONE-S<seed>
@@ -92,7 +91,7 @@ LB_LOG="$OUT"
 # The arms must exist in this binary. A run whose gate names are not in the
 # engine's own echo would silently score five copies of CTL — which is exactly
 # what an absent-by-default arm looks like from the outside.
-preflight_binary "$BIN" RWM_PLACE_T_DERIVED RWM_PLACE_HOL
+preflight_binary "$BIN" RWM_PLACE_WDIV_DERIVED
 # ── Both locks (docs/measurement-discipline.md, "The VM protocol"; the
 #    lib_battery.sh helpers, with INT/TERM handlers that exit) ─────────────
 # `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
@@ -119,16 +118,11 @@ arm_env() {
   case "$1" in
     CTL)     echo "" ;;
     T0)      echo "RWM_PLACE_T=1e-6" ;;
-    TSIG)    echo "RWM_PLACE_T_DERIVED=1" ;;
-    HOL)     echo "RWM_PLACE_HOL=1" ;;
-    HOLTSIG) echo "RWM_PLACE_T_DERIVED=1 RWM_PLACE_HOL=1" ;;
   esac
 }
-# The expected resolved value of each arm gate, for the two-sided liveness
-# check below. An arm that does not echo what it was configured for is a
+# No arm here sets RWM_PLACE_WDIV_DERIVED, so the liveness check below
+# expects it echoed 0 on both endpoints; an echo that differs is a
 # WIRING-FAILS row and contributes no datum.
-arm_td() { case "$1" in TSIG|HOLTSIG) echo 1 ;; *) echo 0 ;; esac; }
-arm_hl() { case "$1" in HOL|HOLTSIG)  echo 1 ;; *) echo 0 ;; esac; }
 
 # cell -> "scenA scenB mode bytes"
 cell_spec() {
@@ -151,8 +145,8 @@ run_one() { # cell arm
   case " $PLACE_ARMS " in *" $arm "*) ;; *) return 0 ;; esac
   [ "$REP" -le "$(cell_reps "$cell")" ] || return 0
   local name="$cell-$arm"
-  local envs etd ehl ca cb mode bytes
-  envs="$(arm_env "$arm")"; etd="$(arm_td "$arm")"; ehl="$(arm_hl "$arm")"
+  local envs ca cb mode bytes
+  envs="$(arm_env "$arm")"
   read -r ca cb mode bytes <<< "$(cell_spec "$cell")"
   [ -n "$ca" ] || { echo "UNKNOWN-CELL $cell" >> "$OUT"; return 0; }
 
@@ -180,11 +174,9 @@ run_one() { # cell arm
   # Scoped to the `[GATES]` line: the resolve-time liveness echoes carry the
   # gate names in their prose, and an unscoped grep reads the documentation
   # instead of the resolved value.
-  local gtc gts ghc ghs etan lat succ nfin sfin
-  gtc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
-  gts=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
-  ghc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
-  ghs=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
+  local gtc gts etan lat succ nfin sfin
+  gtc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_WDIV_DERIVED=[01]")
+  gts=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_WDIV_DERIVED=[01]")
   # `countlines` prints 0 for a missing log (a bare `grep -c ... || true`
   # prints nothing, and `[ "" -eq 0 ]` would then error silently instead of
   # emitting the INSTRUMENT-FAIL line below).
@@ -198,11 +190,9 @@ run_one() { # cell arm
   # client log. place_parse.py applies the cadence rule (final skipped).
   nfin=$(count_final /tmp/rwm-s.log '\[(LAT\] site=receiver|SUCC\]|ETA\] site=receiver)')
   sfin=$(count_final /tmp/rwm-c.log '\[ETA\] site=sender')
-  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin send_final_lines=$sfin (expect td=$etd hol=$ehl)" >> "$OUT"
-  [ "$gtc" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-CLI $name rep=$REP got='$gtc'" >> "$OUT"
-  [ "$gts" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-SRV $name rep=$REP got='$gts'" >> "$OUT"
-  [ "$ghc" != "RWM_PLACE_HOL=$ehl" ] && echo "ARM-LIVENESS-FAIL-HOL-CLI $name rep=$REP got='$ghc'" >> "$OUT"
-  [ "$ghs" != "RWM_PLACE_HOL=$ehl" ] && echo "ARM-LIVENESS-FAIL-HOL-SRV $name rep=$REP got='$ghs'" >> "$OUT"
+  echo "LIVENESS $name rep=$REP cli=[$gtc] srv=[$gts] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin send_final_lines=$sfin (expect wdiv=0)" >> "$OUT"
+  [ "$gtc" != "RWM_PLACE_WDIV_DERIVED=0" ] && echo "ARM-LIVENESS-FAIL-WD-CLI $name rep=$REP got='$gtc'" >> "$OUT"
+  [ "$gts" != "RWM_PLACE_WDIV_DERIVED=0" ] && echo "ARM-LIVENESS-FAIL-WD-SRV $name rep=$REP got='$gts'" >> "$OUT"
   # The instruments' own liveness. A battery whose gauges are absent has not
   # measured what it claims to measure.
   if [ -n "$gtc" ]; then

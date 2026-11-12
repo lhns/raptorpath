@@ -1805,9 +1805,6 @@ async fn run_window_sender(
     /// exhausted), or a past deadline keeps the timer arm permanently ready
     /// and the select! busy-spins, starving TUN reads.
     let mut last_tail_sweep_us: u64 = 0;
-    /// The derived recovery round's one-shot mechanism-liveness echo at the
-    /// sender site (ACTIVE + DIVERGED). Observation only.
-    let mut derived_round_echo = DerivedRoundEcho::default();
     // `[RACK]` (paper §9.1): the shipped clamp's recovery-fire false-alarm
     // accounting against RFC 8985's 1/16 spurious budget.
     let mut rack_echo = RackClockGauge::new();
@@ -1819,12 +1816,8 @@ async fn run_window_sender(
     // `[QCLK]` — the realized recovery clock as a distribution, at the site
     // that runs it; see the gauge's decl.
     let mut qclk_echo = QuantileClockGauge::new("sender");
-    // `[HOLD]` (paper §7.4) — the hold-down arm, on the path that takes most
-    // of the fires. Constructed on every arm, control included: with
-    // `RWM_HOLDDOWN_Q` absent it stamps nothing, allocates nothing,
-    // suppresses nothing, and prints `q=unset` — so an absent arm is read off
-    // the run's own output rather than inferred.
-    let mut hold_echo = HoldDownGauge::new("sender", pol.holddown_q);
+    // `[HOLD]` — hole outcomes and closure classes, observation only.
+    let mut hold_echo = HoldDownGauge::new("sender");
     hold_echo.set_send_generation(pol.generation);
 
 
@@ -2718,36 +2711,23 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                let (srtt_us, jitter_us, sigma_us) = {
+                let (srtt_us, sigma_us) = {
                     let sched = &*scheduler;
-                    // Three passes over the same path set (no per-iteration
+                    // Two passes over the same path set (no per-iteration
                     // `Vec`s: this block runs on every loop iteration).
                     let paths = || recovery_clock_paths_iter(&sched).map(|(_, p)| p);
                     let pooled = pooled_recovery_srtt_iter(
                         paths().map(|p| p.estimator.rtt().as_micros() as u64),
                     );
-                    // The jitter feeding the derived floor is pooled the same
-                    // way the clock is (max over the same path set), so floor
-                    // and clock can never come from different paths.
-                    let jit = paths().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
                     // The measured σ, max over the same set — read only by the
                     // `[QCLK]` readout below.
                     let sg = paths().filter_map(|p| p.rtt_sigma_us()).max();
-                    (pooled, jit, sg)
+                    (pooled, sg)
                 };
-                let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
+                let timeout_us = tail_sweep_timeout_us(srtt_us);
                 // `timeout_us` is what the engine will use — never recomputed
                 // here, so this gauge cannot report a clock that did not run.
                 qclk_echo.record(timeout_us, srtt_us, sigma_us);
-                if pol.derived_sweep {
-                    derived_round_echo.observe(
-                        "sender-tail-sweep",
-                        srtt_us,
-                        jitter_us,
-                        timeout_us,
-                        tail_sweep_timeout_us(srtt_us),
-                    );
-                }
                 let deadline_us = last_activity_us + timeout_us;
                 let remaining = Duration::from_micros(deadline_us.saturating_sub(pre_now_us));
                 (deadline_us, tokio::time::Instant::from_std(pre_now_i) + remaining)
@@ -2854,7 +2834,7 @@ async fn run_window_sender(
             }
             // `[FCAUSE]`: the tail-sweep arm below is the only producer the
             // sender's recovery clock clocks — `tail_deadline` is computed from
-            // `sweep_timeout_us`. Every other fire in this loop is clocked by
+            // `tail_sweep_timeout_us`. Every other fire in this loop is clocked by
             // the receiver or by data arrival.
             // Generation-deficit feedback (paper §5.8): the receiver reports how
             // many more coded symbols each frontier generation still needs.

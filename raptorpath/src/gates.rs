@@ -139,10 +139,6 @@ pub struct RuntimeGates {
     // ── Placement (paper §5.7) ──
     /// `RWM_COLD_PLACE` (off, arm): price an unmeasured leg at the fastest measured srtt.
     pub cold_place: bool,
-    /// `RWM_PLACE_T_DERIVED` (absent, arm): temperature `T = (√6/π)·σ_e/ref_srtt`.
-    pub place_t_derived: bool,
-    /// `RWM_PLACE_HOL` (absent, arm): source head-of-line cost `[δ·s_i + κ·(s_i − H)+]/ref`.
-    pub place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (absent, arm): repair weight `fate_i·(p_BB,i − ε_i)+·srtt_i/ref`.
     pub place_wdiv_derived: bool,
 
@@ -211,15 +207,9 @@ pub struct RuntimeGates {
     pub late_brake: bool,
     /// `RWM_RECOV_SP` (off, arm): single-path RFC 9002 §6.1.2 time-threshold suppression.
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP` (off, arm): recovery clocks at `net::derived_recovery_round_us`.
-    pub derived_sweep: bool,
     /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
     /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
-    /// `RWM_HOLDDOWN_Q` (absent, arm): hold a reported hole `T(q) = W_q(1 − q)` (paper §7.2).
-    pub holddown_q: Option<f64>,
-    /// `RWM_REFRESH_FLOOR_US` (absent = 25 ms, arm): hole-refresh band floor (paper §7.4).
-    pub refresh_floor_us: Option<u64>,
     /// `RWM_DELTA` (absent, arm): the contract's δ as a number (paper §4.1); `RWM_COPA_DELTA`
     /// outranks it for the CC.
     pub delta: Option<f64>,
@@ -318,8 +308,6 @@ impl RuntimeGates {
         let honest_anchor = crate::gates::scheduler_gates::resolve_honest_anchor();
         let est_cadence = crate::control::estimator::resolve_est_cadence();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
-        let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
-        let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
         let place_wdiv_derived = crate::gates::scheduler_gates::resolve_place_wdiv_derived();
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
@@ -345,8 +333,6 @@ impl RuntimeGates {
             charge_recovery: crate::gates::scheduler_gates::resolve_charge_recovery(),
             sidle_derived: crate::gates::scheduler_gates::resolve_sidle_derived(),
             cold_place,
-            place_t_derived,
-            place_hol,
             place_wdiv_derived,
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
@@ -383,18 +369,7 @@ impl RuntimeGates {
             sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
-            derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             delta_cap: env_flag("RWM_DELTA_CAP", true),
-            // Out-of-domain values resolve to absent (echo `unset`): q ≤ 0 is the
-            // shipped machine and the window law diverges at q ≥ 1.
-            holddown_q: env_parse::<f64>("RWM_HOLDDOWN_Q")
-                .filter(|q| q.is_finite() && *q > 0.0 && *q < 1.0),
-            // Below the receiver loop's wake granularity the cadence cannot be
-            // expressed; above the shipped upper rail it leaves the band.
-            refresh_floor_us: env_parse::<u64>("RWM_REFRESH_FLOOR_US").filter(|f| {
-                *f >= crate::net::LOOP_WAKE_US
-                    && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
-            }),
             delta: resolve_delta(),
             copa_delta: resolve_copa_delta(),
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
@@ -445,7 +420,6 @@ impl RuntimeGates {
         let b = |v: bool| if v { "1" } else { "0" };
         let o = |v: &Option<f64>| v.map_or("unset".to_string(), |x| x.to_string());
         let ou = |v: &Option<usize>| v.map_or("unset".to_string(), |x| x.to_string());
-        let o64 = |v: &Option<u64>| v.map_or("unset".to_string(), |x| x.to_string());
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} \
@@ -457,7 +431,7 @@ impl RuntimeGates {
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_SIDLE_DERIVED={} \
-             RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
+             RWM_COLD_PLACE={} \
              RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
@@ -468,8 +442,7 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
-             RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
-             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COPA_DELTA={} \
+             RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
@@ -487,7 +460,7 @@ impl RuntimeGates {
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.sidle_derived),
-            b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
+            b(self.cold_place),
             b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
@@ -499,11 +472,8 @@ impl RuntimeGates {
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_sp),
-            b(self.derived_sweep),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.
-            o(&self.holddown_q),
-            o64(&self.refresh_floor_us),
             o(&self.delta),
             o(&self.copa_delta),
             b(self.completion_exposure),
@@ -661,10 +631,6 @@ mod forwarding_audit {
         assert!(
             line.contains("RWM_ACK_MERGE=1"),
             "a default-ON gate must be named with its 1 value: {line}"
-        );
-        assert!(
-            line.contains("RWM_DERIVED_SWEEP=0"),
-            "RWM_DERIVED_SWEEP must print its OFF value: {line}"
         );
         // A receiver-law control row is void unless both arms read `=0`.
         assert!(

@@ -1,58 +1,34 @@
 use super::*;
 
-// ── The hold-down gauge (paper §7.4) — disarmed is inert, armed suppresses ──
+// ── The `[HOLD]` hole-outcome gauge: observation only ──
 
-/// Disarmed is inert, asserted at the gate itself. With `RWM_HOLDDOWN_Q`
-/// absent, `should_hold` is `false` on every call at every age, so every
-/// fire reaches `record_fire_cause`. No suppression, no `T`, no law.
-///
-/// The estimator nevertheless observes: the control reports
-/// `obs_p50/p90/p99` over its own window while commanding nothing, so the
-/// unforced outstanding-time distribution is measured on the arm that
-/// defines it.
+/// The gauge observes without deciding: it counts every fire it sees, times
+/// each hole from its first report to the report that stops listing it, and
+/// reports the distribution.
 #[test]
-fn disarmed_the_holddown_gate_is_inert_at_every_age() {
-    let mut g = HoldDownGauge::new("sender", None);
-    assert!(!g.armed(), "an absent level must not arm");
+fn the_hold_gauge_observes_resolutions_and_counts_fires() {
+    let mut g = HoldDownGauge::new("sender");
     for seq in 0..64u64 {
         g.on_reported(seq, 0, 1_000_000, true, None);
-        for age in [0u64, 1, 1_000, 1_000_000, u64::MAX / 2] {
-            assert!(
-                !g.should_hold(seq, 1_000_000 + age),
-                "disarmed must never hold (seq={seq} age={age})"
-            );
+        for _ in 0..5 {
+            g.on_fire(seq);
         }
     }
-    // The estimator observes: 64 holes resolve, at 1..=64 ms each.
+    // 64 holes resolve, at 1..=64 ms each.
     for seq in 0..64u64 {
         g.on_report(&[(seq + 1, 1_000)], 1_000_000 + (seq + 1) * 1_000, &Default::default(), 0, &|_| 0);
     }
     let l = g.line(0);
-    // The law is absent and the line says so.
-    assert!(l.contains("q=unset"), "the disarmed line must say so: {l}");
-    assert!(l.contains("n_req=-"), "no window law is in force: {l}");
-    assert!(l.contains("t_us=-"), "and therefore no T: {l}");
-    assert!(l.contains("sup=0"), "disarmed must suppress nothing: {l}");
-    assert!(l.contains("law_n=0"), "disarmed runs no law: {l}");
-    assert!(l.contains("hd_n=0"), "and holds nothing, so no realized delay: {l}");
-    // The observation is live.
-    assert!(l.contains("n_obs=1000"), "the control's declared window: {l}");
-    assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 64, "the control must OBSERVE");
-    assert!(!l.contains("obs_p50_us=-"), "the control must report a distribution: {l}");
+    assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 64, "the gauge must OBSERVE");
+    assert!(!l.contains("obs_p50_us=-"), "it must report a distribution: {l}");
     assert_eq!(g.obs_q(0, 0.50), Some(32_000), "and it must be the right one");
-    // Two-sided: the site counted every evaluation it saw.
-    assert!(
-        l.contains("evals=320"),
-        "the disarmed arm still counts its evaluations: {l}"
-    );
-    assert!(g.t_us.is_empty(), "no path may ever carry a T on the control");
+    assert!(l.contains("evals=320"), "it counts every fire it saw: {l}");
 }
-
 
 // ── The request law's arms (paper §7.6) — disarmed is inert, the seam is one `&&` ──
 
 /// Disarmed, nothing in the request law exists, asserted at the seam
-/// itself — the twin of [`disarmed_the_holddown_gate_is_inert_at_every_age`].
+/// itself.
 ///
 /// Three things are pinned, in the order they could break:
 ///
@@ -127,57 +103,11 @@ fn disarmed_the_request_law_is_inert_at_every_configuration() {
     }
     assert_eq!(FireCause::from_u8(200), FireCause::Other);
 }
-/// Armed, the gate suppresses exactly the holes younger than `T`, and
-/// the accounting closes: `evals = sup + emit` at every path, always —
-/// without which `[HOLD] sup=` is a number nobody can place.
+/// A shed hole was abandoned, not resolved, and must not feed the gauge's
+/// distribution. It is the one exclusion. A repaired hole is fed.
 #[test]
-fn armed_the_holddown_gate_holds_below_t_and_the_accounting_closes() {
-    const Q: f64 = 0.5; // N = 2K = 20, the derived floor arm
-    let n = holddown_window_n(Q).expect("H500 resolves");
-    assert_eq!(n, 20);
-    let mut g = HoldDownGauge::new("sender", Some(Q));
-    assert!(g.armed());
-
-    // Fill the estimator on path 0 with 20 known resolutions: 1..=20 ms.
-    // Every one retires without a repair having flown, so every one is an
-    // original resolution and the window is exactly 1_000..=20_000 µs.
-    let empty_shed = std::collections::BTreeSet::new();
-    for i in 1..=20u64 {
-        g.on_reported(i, 0, 0, true, None);
-        g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed, 0, &|_| 0);
-    }
-    // `T` is the K-th largest of the freshest 20 = the 11th smallest.
-    let t = g.t_us.get(&0).copied().expect("the law ran once the window filled");
-    assert_eq!(t, 11_000, "T must be the K-th largest of the window: {t}");
-
-    // A hole younger than `T` is held; one older is emitted. No threshold on
-    // any dial enters — the only number is `T`.
-    g.on_reported(100, 0, 0, true, None);
-    assert!(g.should_hold(100, t - 1), "younger than T must be held");
-    g.on_reported(101, 0, 0, true, None);
-    assert!(!g.should_hold(101, t), "at T exactly, the hold-down releases");
-    g.on_reported(102, 0, 0, true, None);
-    assert!(!g.should_hold(102, t + 1), "older than T must be emitted");
-
-    let c = g.ctr.get(&0).copied().expect("path 0 saw fires");
-    assert_eq!(c[0], 3, "evals");
-    assert_eq!(c[1], 3, "law_n — the window was full at every evaluation");
-    assert_eq!(c[2], 1, "sup");
-    assert_eq!(c[3], 2, "emit");
-    assert_eq!(c[0], c[2] + c[3], "evals must equal sup + emit, always");
-    let l = g.line(0);
-    assert!(l.contains("q=0.500000") && l.contains("n_req=20") && l.contains("t_us=11000"), "{l}");
-    assert!(l.contains("samp_n=20") && l.contains("fed=20"), "{l}");
-}
-
-/// A shed hole was abandoned, not resolved, and must not feed the
-/// estimator. It is the one exclusion: feeding a shed hole would push `T`
-/// upward exactly where the contract had already given up. A repaired hole
-/// is fed — see `on_retired` for why "no repair flew" is a fixed point at
-/// zero on this machine, and for the sign of the bias that buys.
-#[test]
-fn the_holddown_estimator_excludes_only_the_shed() {
-    let mut g = HoldDownGauge::new("sender", Some(0.5));
+fn the_hold_gauge_excludes_only_the_shed() {
+    let mut g = HoldDownGauge::new("sender");
     let mut shed: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     for i in 1..=30u64 {
         g.on_reported(i, 0, 0, true, None);
@@ -192,7 +122,7 @@ fn the_holddown_estimator_excludes_only_the_shed() {
     );
     // And the frontier is exclusive above: a hole the ack has not passed is
     // still outstanding and is not retired.
-    let mut g2 = HoldDownGauge::new("sender", Some(0.5));
+    let mut g2 = HoldDownGauge::new("sender");
     for i in 1..=30u64 {
         g2.on_reported(i, 0, 0, true, None);
     }
@@ -201,34 +131,7 @@ fn the_holddown_estimator_excludes_only_the_shed() {
     assert_eq!(g2.first.len(), 20, "11..=30 are still outstanding");
 }
 
-/// The estimator bootstraps from a cold start with no warm-up branch. Fed
-/// only holes for which no repair had flown, the window would never fill:
-/// with `T` unavailable the sender answers every report immediately, so
-/// that set is empty and `T` is a fixed point at zero. One rule, applied
-/// identically at every window occupancy, must reach an armed `T` from a
-/// completely cold gauge.
-#[test]
-fn the_holddown_estimator_bootstraps_from_cold_with_no_warmup_branch() {
-    let mut g = HoldDownGauge::new("sender", Some(0.5));
-    let n = holddown_window_n(0.5).expect("H500");
-    let empty = std::collections::BTreeSet::new();
-    // Cold: no T, so the gate falls through and every fire is emitted.
-    g.on_reported(1, 0, 0, true, None);
-    assert!(!g.should_hold(1, 10_000_000), "cold, the gate must fall through");
-    assert!(g.t_us.get(&0).is_none());
-    // Feed exactly N retirements, all of which would have been repaired on
-    // the shipped machine. The window fills and the law arms itself.
-    for i in 2..=(n as u64 + 1) {
-        g.on_reported(i, 0, 0, true, None);
-        g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty, 0, &|_| 0);
-    }
-    assert!(
-        g.t_us.get(&0).is_some(),
-        "the estimator must arm from a cold start on repaired holes alone"
-    );
-}
-
-/// The head-of-line defect, bounded by a test. The estimator must never
+/// The head-of-line defect, bounded by a test. The gauge must never
 /// take a sample whose length is another hole's timing:
 ///
 /// 1. `on_retired` — the cumulative-frontier sweep — feeds nothing, ever,
@@ -237,24 +140,23 @@ fn the_holddown_estimator_bootstraps_from_cold_with_no_warmup_branch() {
 ///    is still open and therefore still pinning the frontier far below it.
 ///
 /// Without (2) the sample for a late hole is a max-statistic over the whole
-/// outstanding set, and `T` inflates by orders of magnitude over the RTT.
+/// outstanding set, inflating the distribution by orders of magnitude.
 #[test]
-fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
+fn the_hold_gauge_never_takes_a_head_of_line_gated_sample() {
     let empty = std::collections::BTreeSet::new();
     // (1) The frontier sweep feeds nothing.
-    let mut g = HoldDownGauge::new("sender", Some(0.5));
+    let mut g = HoldDownGauge::new("sender");
     for i in 1..=50u64 {
         g.on_reported(i, 0, 0, true, None);
     }
     g.on_retired(50);
     assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 0, "on_retired must PRUNE, never feed");
-    assert!(g.t_us.get(&0).is_none(), "and therefore must never arm a T");
     assert!(g.first.is_empty(), "but it must still bound the map");
 
     // (2) A hole resolves while an earlier one is still open. seq 1 stays
     // missing for the whole test — the cumulative frontier can never pass
     // seq 2 — and seq 2..=21 must nevertheless be timed on their own.
-    let mut g2 = HoldDownGauge::new("sender", Some(0.5));
+    let mut g2 = HoldDownGauge::new("sender");
     for i in 1..=21u64 {
         g2.on_reported(i, 0, 0, true, None);
     }
@@ -268,20 +170,16 @@ fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
         "seqs 2..=21 must resolve on their own timing with seq 1 still open"
     );
     assert!(g2.first.contains_key(&1), "the still-missing hole must stay outstanding");
-    // Samples are 1_000..=20_000 us; the K-th largest of 20 is 11_000.
-    assert_eq!(
-        g2.t_us.get(&0).copied(),
-        Some(11_000),
-        "and T must be the order statistic of THOSE samples, not of the frontier's lag"
-    );
+    // Samples are 1_000..=20_000 us, not the frontier's lag.
+    assert_eq!(g2.obs_q(0, 1.0), Some(20_000));
 }
 
 /// The window is per path and the paths do not pool. Two paths with
-/// different reordering distributions must command different `T`, or the
-/// estimator is measuring a mixture nobody named.
+/// different reordering distributions must read different quantiles, or the
+/// gauge is measuring a mixture nobody named.
 #[test]
-fn the_holddown_estimator_is_per_path_and_paths_do_not_pool() {
-    let mut g = HoldDownGauge::new("sender", Some(0.5));
+fn the_hold_gauge_is_per_path_and_paths_do_not_pool() {
+    let mut g = HoldDownGauge::new("sender");
     let empty_shed = std::collections::BTreeSet::new();
     // Path 0: 1..=20 ms. Path 1: 100..=2000 ms, 100x slower.
     for i in 1..=20u64 {
@@ -292,34 +190,12 @@ fn the_holddown_estimator_is_per_path_and_paths_do_not_pool() {
         g.on_reported(i, 1, 0, true, None);
         g.on_report(&[(i + 1, i + 1)], (i - 100) * 100_000, &empty_shed, 0, &|_| 0);
     }
-    assert_eq!(g.t_us.get(&0).copied(), Some(11_000));
-    assert_eq!(g.t_us.get(&1).copied(), Some(1_100_000));
+    assert_eq!(g.obs_q(0, 0.50), Some(10_000));
+    assert_eq!(g.obs_q(1, 0.50), Some(1_000_000));
     assert_eq!(g.win.get(&0).map(|w| w.len()), Some(20));
     assert_eq!(g.win.get(&1).map(|w| w.len()), Some(20));
 }
 
-/// An unfilled window falls through to the shipped behaviour and says so
-/// in `law_n`. Information availability, never a mode: the arm's row is
-/// then read as partial rather than pooled with a full one.
-#[test]
-fn an_unfilled_holddown_window_falls_through_and_law_n_says_so() {
-    let mut g = HoldDownGauge::new("sender", Some(0.5));
-    let empty_shed = std::collections::BTreeSet::new();
-    for i in 1..=19u64 {
-        g.on_reported(i, 0, 0, true, None);
-        g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed, 0, &|_| 0);
-    }
-    assert_eq!(g.win.get(&0).map(|w| w.len()), Some(19), "one short of N");
-    assert!(g.t_us.get(&0).is_none(), "the law must not have run");
-    g.on_reported(100, 0, 0, true, None);
-    assert!(
-        !g.should_hold(100, 0),
-        "with no T the gate falls through to the shipped behaviour"
-    );
-    let c = g.ctr.get(&0).copied().expect("path 0 saw the fire");
-    assert_eq!((c[0], c[1], c[2], c[3]), (1, 0, 0, 1), "evals=1 law_n=0 sup=0 emit=1");
-    assert!(g.line(0).contains("t_us=-"), "an unavailable T renders `-`");
-}
 // The reorder buffer lives in `net/reorder.rs`.
 use super::reorder::ReorderBuffer;
 
@@ -1093,33 +969,6 @@ fn derived_patience_off_is_bit_identical_to_the_legacy_threshold() {
     assert_eq!(mp_time_threshold_split(80_000, 0, 0).0, 90_000); // 9/8 exactly
 }
 
-/// The law: timer granularity + the path's own measured jitter,
-/// clamped at one srtt, with the fixed floor kept when there is no
-/// clock at all to derive from.
-#[test]
-fn patience_floor_is_granularity_plus_measured_jitter() {
-    // No clock yet ⇒ nothing to derive ⇒ the fixed floor.
-    assert_eq!(patience_floor_us(0, 0), NACK_RETX_COOLDOWN_FLOOR_US);
-    assert_eq!(patience_floor_us(5_000, 0), NACK_RETX_COOLDOWN_FLOOR_US);
-    // Zero measured jitter ⇒ pure timer granularity (RFC 9002's
-    // recommended kGranularity, and this engine's own 1 ms loop wake).
-    assert_eq!(patience_floor_us(0, 9_000), TIMER_GRANULARITY_US);
-    // The jitter term is additive and measured — it scales with the
-    // link.
-    assert_eq!(patience_floor_us(300, 9_000), 1_300);
-    assert_eq!(patience_floor_us(2_500, 9_000), 3_500);
-    // …and is clamped at one srtt so a pathological estimate cannot
-    // make patience unbounded.
-    assert_eq!(patience_floor_us(10_000_000, 9_000), 10_000);
-    // Monotone non-decreasing in jitter, at fixed srtt.
-    let mut prev = 0;
-    for j in (0..20_000).step_by(250) {
-        let f = patience_floor_us(j, 40_000);
-        assert!(f >= prev, "jitter={j}");
-        prev = f;
-    }
-}
-
 /// The tail-sweep SRTT fallback is inert with respect to this constant:
 /// every fallback value ≤ 12.5 ms — the fixed 10 ms and any derived floor
 /// alike — yields exactly `TAIL_SWEEP_MIN_US` after the
@@ -1242,77 +1091,6 @@ fn derived_stall_threshold_reproduces_the_legacy_3ms_where_they_coincide() {
             3_000,
             "evt={evt} µs must reproduce the legacy constant exactly"
         );
-    }
-}
-
-/// The derived round's mechanism-liveness echo separates "the site ran"
-/// from "the law bound", and it must, because the coincidence property
-/// makes those different claims: an arm that only ever evaluates inside
-/// the `[25, 100] ms` band is bit-identical to its control. Both echoes
-/// are one-shot — the two call sites sit in per-iteration hot loops, so a
-/// re-arming echo would flood the log.
-#[test]
-fn the_derived_round_echo_fires_once_per_claim_and_separates_ran_from_bound() {
-    // Inside the band: the site ran, the law did not bind.
-    let mut e = DerivedRoundEcho::default();
-    e.observe("t", 20_000, 100, tail_sweep_timeout_us(20_000), tail_sweep_timeout_us(20_000));
-    assert!(e.ran, "an evaluation inside the band must still prove execution");
-    assert!(!e.diverged, "identical values are NOT a divergence");
-
-    // Now the same site above the ceiling: the law binds, and only then.
-    let srtt = 376_000;
-    let derived = derived_recovery_round_us(srtt, 100);
-    let legacy = tail_sweep_timeout_us(srtt);
-    assert_ne!(derived, legacy, "the fixture must actually diverge");
-    e.observe("t", srtt, 100, derived, legacy);
-    assert!(e.diverged, "a departure from the clamped law must be echoed");
-
-    // Both claims are latched: further evaluations re-emit nothing.
-    let before = (e.ran, e.diverged);
-    for _ in 0..1_000 {
-        e.observe("t", srtt, 100, derived, legacy);
-    }
-    assert_eq!((e.ran, e.diverged), before, "both echoes are one-shot");
-
-    // A site that diverges on its first evaluation latches both at once.
-    let mut f = DerivedRoundEcho::default();
-    f.observe("t", srtt, 100, derived, legacy);
-    assert!(f.ran && f.diverged);
-}
-
-/// Neither echo's prose may contain the phrase the other echo is counted
-/// on, and neither may contain a bare `RWM_DERIVED_SWEEP=<n>` that a
-/// `[GATES]`-scoped grep could pick up: an echo whose own explanatory text
-/// matches the pattern a driver counts corrupts the separation of "the
-/// site ran" from "the law bound" with no other symptom.
-#[test]
-fn the_derived_round_echoes_do_not_match_each_others_grep_patterns() {
-    let ran = DerivedRoundEcho::ran_msg("s", 1, 2, 3, 4);
-    let div = DerivedRoundEcho::diverged_msg("s", 1, 2, 3, 4);
-
-    assert!(ran.starts_with(DS_ECHO_RAN));
-    assert!(div.starts_with(DS_ECHO_DIVERGED));
-    assert!(
-        !div.contains(DS_ECHO_RAN),
-        "the DIVERGED echo must not match the execution grep: {div}"
-    );
-    assert!(
-        !ran.contains(DS_ECHO_DIVERGED),
-        "the ACTIVE echo must not match the binding grep: {ran}"
-    );
-    // The gate's own name may appear, but never with a resolved value:
-    // that is the `[GATES]` line's job.
-    for m in [&ran, &div] {
-        assert!(
-            !m.contains("RWM_DERIVED_SWEEP=1"),
-            "echo prose must not carry a resolved gate value: {m}"
-        );
-    }
-    // Both carry the five fields the parser reads, in the same dialect.
-    for m in [&ran, &div] {
-        for f in ["site=", "srtt_us=", "jitter_us=", "derived_us=", "legacy_us="] {
-            assert!(m.contains(f), "{m} is missing {f}");
-        }
     }
 }
 
@@ -2388,7 +2166,6 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         // asserts the law's routing and not the machine it runs on. The
         // control is the `=0` arm explicitly, not the default.
         g.delta_cap = false;
-        g.derived_sweep = false;
         g.store_env_set = false;
         g.store_override = None;
         g
@@ -6052,7 +5829,6 @@ mod one_store_law_at_n1 {
         g.copa_feed = false;
         g.store_override = None;
         g.store_env_set = false;
-        g.derived_sweep = false;
         g.store_gain = GAIN;
         SenderPolicy::resolve(&g, 1200, hint, true, false, false, false)
     }

@@ -579,7 +579,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
 
 /// What the NACK/gap repair loop (drain the receiver's gap reports and
 /// answer each hole with a targeted retransmit or a coded repair, under
-/// the cooldown, budget, recovery-suppression and hold-down laws) borrows
+/// the cooldown, budget and recovery-suppression laws) borrows
 /// from `run_window_sender`. `cell` fields are the loop's Copy scalars:
 /// copied in at entry, written back at the single exit.
 pub(crate) struct ServeGapsCtx<'a> {
@@ -609,7 +609,7 @@ pub(crate) struct ServeGapsCtx<'a> {
 }
 
 /// The NACK/gap repair phase: drain the receiver's gap reports and answer
-/// each hole under the cooldown, budget, suppression and hold-down laws.
+/// each hole under the cooldown, budget and suppression laws.
 pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
     let ServeGapsCtx {
         pol,
@@ -783,7 +783,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             }
         }
 
-        // The hold-down resolution signal (paper §7.4). Every stamped hole
+        // The `[HOLD]` resolution signal. Every stamped hole
         // this report no longer lists, inside the span this report covers, is
         // one the receiver has — feed its outstanding time. Placed here,
         // before the loop below stamps this batch's own seqs, or every hole
@@ -1005,15 +1005,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     st.encoder.get_source(seq).unwrap_or_else(|| st.encoder.generate_repair())
                 };
 
-                // The hold-down gate (`RWM_HOLDDOWN_Q`, paper §7.4). The sender
-                // does not answer a reported hole until it has been outstanding
-                // for at least `T(q) = W_q(1−q)` on the path its original flew
-                // — an order statistic on the hole-resolution stream. Placed
-                // after every other suppression `continue` and before
-                // `record_fire_cause`, so `[FCAUSE] n` keeps meaning "fires
-                // that reached the wire" and `[HOLD] sup=` is the only place
-                // the difference is accounted. With the gate absent
-                // `should_hold` is always false.
+                // `[HOLD]` counts the fire after every other suppression
+                // `continue`, so its `evals` matches `[FCAUSE] n`.
                 //
                 // `[FCAUSE]` then classifies this fire by the producer of the
                 // gap batch that drove it. It sits outside the `mp_flight`
@@ -1031,9 +1024,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // DIAG attribution below: live-flight age vs the per-path law
                 // threshold (young = the law would have suppressed it),
                 // per-flight-path and per-retx-path emission counts.
-                if hold_echo.should_hold(seq, now_repair_us) {
-                    continue;
-                }
+                hold_echo.on_fire(seq);
                 rack_echo.record_fire_cause(gap_cause);
                 if let Some((t, p)) = mp_flight {
                     let age = now_repair_us.saturating_sub(t);
@@ -1437,8 +1428,8 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         if pol.percap_track {
             percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, next_expected);
         }
-        // Hold-down (paper §7.4): drop the stamped holes the frontier has
-        // passed. Prune only — the estimator is fed off the receiver's own gap
+        // `[HOLD]`: drop the stamped holes the frontier has
+        // passed. Prune only — the gauge is fed off the receiver's own gap
         // report (`on_report`), never off the cumulative frontier, because the
         // frontier cannot pass a hole until every earlier hole is filled and
         // that sample is head-of-line lag rather than this hole's resolution.

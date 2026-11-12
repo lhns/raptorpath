@@ -3,8 +3,8 @@
 //! discrete-event driver feeds synthetic arrival/loss patterns to the shipped
 //! recovery laws (`raptorpath::net::*`) and records, per hole, when and why it
 //! was served. It pins the plane's clock laws and measured behaviour at the
-//! c7 operating point, and the recovery-clock laws (the derived clamp, the
-//! quantile-native window law and the hold-down, paper §7.4) at their
+//! c7 operating point, and the recovery-clock laws (the shipped clamp and the
+//! quantile-native window law, paper §7.4) at their
 //! published anchor points. It serves `docs/measurement-discipline.md`
 //! rule 14: characterize the mechanism at component level before any L1
 //! battery.
@@ -479,8 +479,8 @@ const FIX_WIRE_P50_US: u64 = 14_328;
 // THE QUESTION, argument before constant: is the CEILING wrong, or is the ARGUMENT wrong? Both repairs
 // are evaluated here SEPARATELY and then composed:
 //
-//   REPAIR A — derive the clamp away.  `derived_recovery_round_us`:
-//              max(2·srtt, patience_floor_us(jitter, srtt)), no ceiling.
+//   REPAIR A — derive the clamp away.  (`RWM_DERIVED_SWEEP`: removed after
+//              its verdict, tag `archive/RWM_DERIVED_SWEEP`; paper §10.)
 //   REPAIR B — change the argument.    Feed the clock the WIRE RTT (Copa /
 //              `QuicTransport::wire_rtt`) instead of the store-dwell-
 //              inclusive app-echo RTT.
@@ -498,9 +498,9 @@ const FIX_WIRE_P50_US: u64 = 14_328;
 //
 //     spurious rounds per tail-blocked symbol = ceil(srtt_app / cadence) − 1
 //
-// and with the derived (unclamped) law `cadence = 2·srtt_app` that
-// expression is ZERO for every srtt > 0 — a theorem about the law, pinned
-// below rather than measured.
+// and with an unclamped `cadence = 2·srtt_app` that expression is ZERO for
+// every srtt > 0 — the argument that motivated the archived
+// `RWM_DERIVED_SWEEP` arm (paper §10); the shipped values are pinned below.
 //
 // WHAT THE WIRE SAYS, transcribed (medians over the L1 summary records).
 // `srtt_app = rtp_med + q_p50`, the records' own decomposition, re-composed.
@@ -514,11 +514,6 @@ const MEASURED: &[(&str, u64, u64, u64)] = &[
     ("c8-A", 38, 338, 77),
     ("c8-AU", 40, 424, 82),
 ];
-
-/// The measured RTT jitter fed to the derived floor: `RWM_RB_JITTER_MS`'s
-/// own default (1 ms), the same number the `pd` arm uses — not a constant
-/// introduced here.
-const JITTER_US: u64 = 1_000;
 
 fn measured(tag: &str) -> (u64, u64) {
     let &(_, rtp, q, w) = MEASURED.iter().find(|r| r.0 == tag).unwrap();
@@ -534,323 +529,44 @@ fn spurious_rounds(srtt_app_us: u64, cadence_us: u64) -> u64 {
     srtt_app_us.div_ceil(cadence_us).saturating_sub(1)
 }
 
-/// The c8 geometry as the driver sees it: RTprop 38 ms, wire queue = the
-/// ICMP p50 minus RTprop, dwell = the app-echo clock minus the ICMP p50.
-fn c8_calib(n_src: u64) -> Calib {
-    Calib {
-        n_src,
-        mbps: 100.0,
-        skew_us: 5_000,
-        wireq_us: 39_000,
-        dwell_us: 299_000,
-        jitter_us: JITTER_US,
-        shed: false,
-        budget: raptorpath::net::MAX_NACK_REPAIRS_PER_NACK,
-    }
-}
-
-fn c8_cell() -> Cell {
-    Cell {
-        rtprop_us: 38_000,
-        loss: 0.026,
-        pattern: Pattern::Ge,
-        n_paths: 2,
-        clock: Clock::App,
-        arm: ARMS[0],
-        seed: 42,
-    }
-}
-
-/// READOUT (not scored): the cadence and the spurious-round count of every
-/// candidate law at every measured geometry, plus the driver at c8.
-#[test]
-#[ignore = "readout"]
-fn derived_clamp_readout() {
-    use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
-    println!("\n=== THE DERIVED RECOVERY CLAMP — cadence at the MEASURED geometry ===");
-    println!(
-        "srtt_app = rtp_med + q_p50 (measured L1 medians) · wire = loaded ICMP p50 · jitter {} ms",
-        JITTER_US / 1_000
-    );
-    println!(
-        "{:<7} {:>9} {:>7} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5}",
-        "cell", "srtt_app", "wire", "SHIPPED", "spur", "A uncl", "spur", "B wire", "spur", "A+B",
-        "spur"
-    );
-    for &(tag, rtp_ms, q_ms, wire_ms) in MEASURED {
-        let s = (rtp_ms + q_ms) * 1_000;
-        let w = wire_ms * 1_000;
-        let shipped = tail_sweep_timeout_us(s);
-        let a = derived_recovery_round_us(s, JITTER_US);
-        let b = tail_sweep_timeout_us(w);
-        let ab = derived_recovery_round_us(w, JITTER_US);
-        println!(
-            "{:<7} {:>9} {:>7} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5} | {:>9} {:>5}",
-            tag,
-            format!("{} ms", s / 1000),
-            format!("{} ms", w / 1000),
-            format!("{} ms", shipped / 1000),
-            spurious_rounds(s, shipped),
-            format!("{} ms", a / 1000),
-            spurious_rounds(s, a),
-            format!("{} ms", b / 1000),
-            spurious_rounds(s, b),
-            format!("{} ms", ab / 1000),
-            spurious_rounds(s, ab),
-        );
-    }
-
-    println!("\n--- the DRIVER at the c8 geometry (its dwell is a CLOCK, not a delay) ---");
-    let cal = c8_calib(6_000);
-    let base = c8_cell();
-    println!(
-        "{:<9} {:>5} | {:>9} {:>9} | {:>6} {:>6} {:>7} | {:>8} {:>8}",
-        "arm", "clk", "sweep", "refresh", "holes", "retx", "sweeps", "p50 ms", "p90 ms"
-    );
-    for (arm_ix, arm_tag) in [(0usize, "shipped"), (3usize, "ds")] {
-        for (clock, ctag) in [(Clock::App, "app"), (Clock::Wire, "wire")] {
-            let (mut retx, mut sweeps, mut holes) = (0u64, 0u64, 0usize);
-            let mut svc: Vec<u64> = Vec::new();
-            let (mut sw, mut rf) = (0u64, 0u64);
-            for seed in [42u64, 7] {
-                let o = run_cell(Cell { arm: ARMS[arm_ix], clock, seed, ..base }, cal);
-                retx += o.counts.retx;
-                sweeps += o.counts.sweeps;
-                holes += o.holes.len();
-                sw = raptorpath::net::sweep_timeout_us(
-                    ARMS[arm_ix].derived_sweep,
-                    o.pooled_us,
-                    JITTER_US,
-                );
-                rf = o.refresh_us;
-                svc.extend(
-                    o.holes.iter().filter_map(|h| h.first_service_us.map(|t| t - h.lost_at_us)),
-                );
-            }
-            svc.sort_unstable();
-            println!(
-                "{:<9} {:>5} | {:>9} {:>9} | {:>6} {:>6} {:>7} | {:>8.1} {:>8.1}",
-                arm_tag,
-                ctag,
-                format!("{} ms", sw / 1000),
-                format!("{} ms", rf / 1000),
-                holes,
-                retx,
-                sweeps,
-                ms(pct(&svc, 0.50)),
-                ms(pct(&svc, 0.90)),
-            );
-        }
-    }
-}
-
 // ───────────────── always-on pins (the claims, BOUNDED) ──────────────────
 
-/// PIN 1 — THE COINCIDENCE PROPERTY. The derived round reproduces the
-/// shipped law EXACTLY over the whole band on which the shipped law's own
-/// stated assumption holds (2·srtt inside [25, 100] ms), so the gate is a
-/// strict generalization and not a second machine. Outside that band it is
-/// the unclamped 2·srtt — which is the point. Also the ROUTING proof
-/// (CLAUDE.md discipline rule 1) and the ZERO-NEW-CONSTANTS identity.
+/// PIN 1 — THE SHIPPED CLOCKS, pinned absolutely: the tail sweep and the
+/// receiver's hole-refresh cadence are `2·srtt` clamped to [25, 100] ms, with
+/// the no-clock fallback at the ceiling (paper §7.4).
 #[test]
-fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
+fn the_shipped_recovery_clocks_are_pinned_absolutely() {
     use raptorpath::net::{
-        derived_recovery_round_us, hole_nack_refresh, hole_nack_refresh_floored, hole_refresh,
-        patience_floor_us, sweep_timeout_us, tail_sweep_timeout_us, HOLE_NACK_REFRESH_BAND,
-        HOLE_NACK_REFRESH_MAX, HOLE_NACK_REFRESH_MIN, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
+        hole_nack_refresh, tail_sweep_timeout_us, HOLE_NACK_REFRESH_MAX, HOLE_NACK_REFRESH_MIN,
+        TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
     };
-    // The band where the literal law is not clamping: 2·srtt in [25, 100] ms.
-    for srtt_us in (12_500..=50_000).step_by(250) {
-        assert_eq!(
-            derived_recovery_round_us(srtt_us, JITTER_US),
-            tail_sweep_timeout_us(srtt_us),
-            "inside the legacy band the derived law must be IDENTICAL (srtt {srtt_us})"
-        );
+    for srtt_us in [12_500u64, 30_000, 50_000] {
+        assert_eq!(tail_sweep_timeout_us(srtt_us), 2 * srtt_us, "inside the band (srtt {srtt_us})");
     }
-    // Above the ceiling the derived law tracks and the literal one does not.
     for srtt_us in [50_001u64, 87_000, 104_000, 376_000, 464_000] {
-        assert_eq!(tail_sweep_timeout_us(srtt_us), TAIL_SWEEP_MAX_US, "literal pins at 100 ms");
-        assert_eq!(derived_recovery_round_us(srtt_us, JITTER_US), 2 * srtt_us);
+        assert_eq!(tail_sweep_timeout_us(srtt_us), TAIL_SWEEP_MAX_US, "pins at 100 ms");
     }
-    // Below the floor the derived law is the DERIVED patience floor
-    // (`TIMER_GRANULARITY_US` + measured jitter), not the 25 ms literal.
     assert_eq!(tail_sweep_timeout_us(4_000), TAIL_SWEEP_MIN_US);
-    assert_eq!(derived_recovery_round_us(4_000, JITTER_US), 8_000);
-    assert_eq!(
-        derived_recovery_round_us(100, JITTER_US),
-        1_100,
-        "2·srtt below the derived floor ⇒ the floor (1 ms granularity + 100 µs jitter)"
-    );
-    // The GATE routes, and OFF is byte-identical to the shipped law.
-    for srtt_us in [0u64, 4_000, 30_000, 376_000] {
-        assert_eq!(sweep_timeout_us(false, srtt_us, JITTER_US), tail_sweep_timeout_us(srtt_us));
-        assert_eq!(
-            sweep_timeout_us(true, srtt_us, JITTER_US),
-            derived_recovery_round_us(srtt_us, JITTER_US)
-        );
-        let d = std::time::Duration::from_micros(srtt_us);
-        assert_eq!(hole_refresh(false, Some(d), JITTER_US, HOLE_NACK_REFRESH_MIN), hole_nack_refresh(Some(d)));
-        assert_eq!(
-            hole_refresh(true, Some(d), JITTER_US, HOLE_NACK_REFRESH_MIN).as_micros() as u64,
-            derived_recovery_round_us(srtt_us, JITTER_US)
-        );
-    }
-    // No clock at all ⇒ the legacy fallback in BOTH arms (an
-    // information-availability fallback, not a mode).
-    assert_eq!(hole_refresh(false, None, JITTER_US, HOLE_NACK_REFRESH_MIN), HOLE_NACK_REFRESH_MAX);
-    assert_eq!(hole_refresh(true, None, JITTER_US, HOLE_NACK_REFRESH_MIN), HOLE_NACK_REFRESH_MAX);
-    // -- paper §7.4: the re-expression is byte-identical at the shipped
-    //    floor, over the whole input domain. --------------------------------
-    //
-    // The refresh-floor lift re-expresses ONE law as
-    //
-    //     refresh(srtt) = (2*srtt).clamp(F, HOLE_NACK_REFRESH_BAND * F)
-    //
-    // and `HOLE_NACK_REFRESH_BAND` is COMPUTED from the two shipped literals
-    // (100 ms / 25 ms = 4) rather than written down, so it is not a new
-    // constant. This asserts the consequence that makes the whole gate safe:
-    // at `F = HOLE_NACK_REFRESH_MIN` the re-expressed law returns the SAME
-    // Duration as the shipped literal expression for every input, INCLUDING
-    // the no-clock fallback. Not approximately - identically. If this fails,
-    // 16.78 introduced a behaviour change on the default path and is
-    // withdrawn; it is discharged here, before any VM is touched.
-    assert_eq!(
-        HOLE_NACK_REFRESH_BAND, 4,
-        "the band ratio must be the shipped clamp's OWN aspect ratio \
-         (HOLE_NACK_REFRESH_MAX / HOLE_NACK_REFRESH_MIN = 100/25 = 4); a \
-         different value would make it a NEW constant with no provenance"
-    );
     for srtt_us in [
         0u64, 1, 999, 1_000, 2_000, 4_000, 12_499, 12_500, 12_501, 20_000, 25_000, 49_999,
         50_000, 50_001, 100_000, 376_000, 1_000_000,
     ] {
         let d = std::time::Duration::from_micros(srtt_us);
         let shipped = (d * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX);
-        assert_eq!(
-            hole_nack_refresh_floored(Some(d), HOLE_NACK_REFRESH_MIN),
-            shipped,
-            "the re-expressed refresh law must be BYTE-IDENTICAL to the \
-             shipped clamp at srtt = {srtt_us} us (paper §7.4)"
-        );
-        assert_eq!(hole_nack_refresh(Some(d)), shipped);
+        assert_eq!(hole_nack_refresh(Some(d)), shipped, "srtt = {srtt_us} us (paper §7.4)");
     }
-    assert_eq!(
-        hole_nack_refresh_floored(None, HOLE_NACK_REFRESH_MIN),
-        HOLE_NACK_REFRESH_MAX,
-        "the no-clock fallback is the band's own ceiling, which at the \
-         shipped floor IS HOLE_NACK_REFRESH_MAX verbatim (paper §7.4)"
-    );
-    // AND THE LIFT REACHES, AS ARITHMETIC, AT BOTH BINDING RAILS. This is the
-    // clause a sweep of `q` at fixed refresh could never satisfy: a commanded
-    // floor puts the DELIVERED cadence strictly below the shipped 25 ms rail
-    // for EVERY srtt - both where the lower rail binds (2*srtt small, c1-like)
-    // and where the upper rail binds (2*srtt >= 100 ms, c7/sc2-like). An
-    // override of the lower rail ALONE would be inert in the second case.
-    // Paper 16.78.0/16.78.3; the floors below are the derived grid's own.
-    //
-    // ABSOLUTE, AT THE ANCHOR POINTS. Paper 16.78.3's grid, verbatim: the
-    // cell, its measured srtt operating point, the commanded floor, and the
-    // cadence the law must then DELIVER. The last column is what the SHIPPED
-    // law delivers at the same srtt - the cell's effective floor, and the
-    // thing 16.77.8d found sitting on top of the self-heal median.
-    //
-    //   cell  arm  2*srtt     floor F    delivered   shipped    binding rail
-    //   c1    R2   ~4 ms      12 300     12 300      25 000     LOWER
-    //   c1    R4   ~4 ms       6 150      6 150      25 000     LOWER
-    //   c7    R2   >= 100 ms   3 838     15 352     100 000     UPPER
-    //   c7    R4   >= 100 ms   1 919      7 676     100 000     UPPER
-    //   sc2   R2   >= 100 ms  12 288     49 152     100 000     UPPER
-    //   sc2   R4   >= 100 ms   6 144     24 576     100 000     UPPER
-    //
-    // Note `sc2`-R2 at 49 152 us is ABOVE the 25 ms lower rail and still far
-    // BELOW that cell's 100 ms effective floor - which is exactly why the
-    // treatment is the DELIVERED CADENCE and not the floor, and why an
-    // override of the lower rail alone reaches neither `c7` nor `sc2`.
-    for (cell, arm, srtt_us, floor_us, want_us, shipped_us) in [
-        ("c1", "R2", 2_000u64, 12_300u64, 12_300u64, 25_000u64),
-        ("c1", "R4", 2_000, 6_150, 6_150, 25_000),
-        ("c7", "R2", 50_000, 3_838, 15_352, 100_000),
-        ("c7", "R4", 50_000, 1_919, 7_676, 100_000),
-        ("sc2", "R2", 50_000, 12_288, 49_152, 100_000),
-        ("sc2", "R4", 50_000, 6_144, 24_576, 100_000),
-    ] {
+    assert_eq!(hole_nack_refresh(None), HOLE_NACK_REFRESH_MAX);
+    // The cadence the shipped law delivers at the transcribed operating
+    // points: the cell's effective floor (lower rail at c1, upper rail at
+    // c7 and sc2).
+    for (cell, srtt_us, shipped_us) in
+        [("c1", 2_000u64, 25_000u64), ("c7", 50_000, 100_000), ("sc2", 50_000, 100_000)]
+    {
         let d = std::time::Duration::from_micros(srtt_us);
-        let f = std::time::Duration::from_micros(floor_us);
-        let got = hole_nack_refresh_floored(Some(d), f).as_micros() as u64;
-        assert_eq!(
-            got, want_us,
-            "{cell}-{arm}: a commanded floor of {floor_us} us at srtt = \
-             {srtt_us} us must DELIVER {want_us} us - the derived grid \
-             (paper §7.4), and the value the pre-registration scores against"
-        );
         assert_eq!(
             hole_nack_refresh(Some(d)).as_micros() as u64,
             shipped_us,
-            "{cell}: the SHIPPED cadence at this operating point is the \
-             cell's effective floor and must be {shipped_us} us"
-        );
-        assert!(
-            got < shipped_us,
-            "{cell}-{arm}: the whole point is that the delivered cadence gets \
-             BELOW the cell's effective floor - got {got} against {shipped_us} \
-             (paper §7.4)"
-        );
-    }
-    // AND THE LIFT NEVER RAISES THE CADENCE, at any srtt, for any floor at or
-    // below the shipped one: the commanded band is contained in the shipped
-    // band, so the clamp can only move the answer down. Asserted over the
-    // whole domain rather than at the grid, because an arm that RAISED the
-    // cadence somewhere would be measuring the opposite of the treatment.
-    for floor_us in [1_919u64, 3_838, 6_144, 6_150, 12_288, 12_300, 25_000] {
-        let f = std::time::Duration::from_micros(floor_us);
-        for srtt_us in [0u64, 1, 999, 1_000, 2_000, 5_000, 12_500, 20_000, 50_000, 100_000,
-                        376_000, 500_000] {
-            let d = std::time::Duration::from_micros(srtt_us);
-            let got = hole_nack_refresh_floored(Some(d), f);
-            assert!(
-                got <= hole_nack_refresh(Some(d)),
-                "a floor at or below the shipped one can only LOWER the \
-                 cadence - at floor {floor_us} us, srtt {srtt_us} us it \
-                 returned {got:?} against the shipped \
-                 {:?} (paper §7.4)",
-                hole_nack_refresh(Some(d))
-            );
-            assert!(
-                got >= f && got <= f * HOLE_NACK_REFRESH_BAND,
-                "the delivered cadence must stay inside the commanded band \
-                 at floor {floor_us} us - got {got:?}"
-            );
-        }
-    }
-    // AND IT IS ONE LAW, CONTINUOUS IN THE FLOOR - NO MODE BIT. Sweeping the
-    // floor across the shipped value must not step the delivered cadence: the
-    // 25 000 us point is an ordinary point of the function and not a boundary
-    // between two behaviours. CLAUDE.md's no-mode-switch invariant, asserted
-    // on the engine law rather than described in prose.
-    {
-        let d = std::time::Duration::from_micros(3_000);
-        let at = |f_us: u64| {
-            hole_nack_refresh_floored(Some(d), std::time::Duration::from_micros(f_us)).as_micros()
-                as u64
-        };
-        // 2*srtt = 6 ms <= floor at every point here, so the LOWER rail
-        // delivers and the cadence IS the floor: strictly increasing, with no
-        // step across the shipped value.
-        for f_us in [24_500u64, 24_750, 24_999, 25_000, 25_001, 25_250, 25_500] {
-            assert_eq!(
-                at(f_us), f_us,
-                "the cadence must be continuous in the floor at {f_us} us"
-            );
-        }
-        assert!(at(24_999) < at(25_000) && at(25_000) < at(25_001));
-    }
-
-    // ZERO NEW CONSTANTS: the derived round is expressible with only the
-    // shipped multiplier and the already-derived patience floor.
-    for srtt_us in [0u64, 1, 999, 12_500, 376_000] {
-        assert_eq!(
-            derived_recovery_round_us(srtt_us, JITTER_US),
-            (2 * srtt_us).max(patience_floor_us(JITTER_US, srtt_us))
+            "{cell}: the shipped cadence at this operating point must be {shipped_us} us"
         );
     }
 }
@@ -862,9 +578,7 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
 /// c8 sits on the CEILING with three.
 #[test]
 fn the_shipped_ceiling_generates_the_spurious_rounds_and_c1_is_the_control() {
-    use raptorpath::net::{
-        derived_recovery_round_us, tail_sweep_timeout_us, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
-    };
+    use raptorpath::net::{tail_sweep_timeout_us, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US};
     // c1: 2·9 ms = 18 ms is BELOW the literal floor, so the shipped clock is
     // the 25 ms floor — and it is still ABOVE the 9 ms ack, so ZERO spurious
     // rounds. The dead wall is not a property of the law.
@@ -893,79 +607,39 @@ fn the_shipped_ceiling_generates_the_spurious_rounds_and_c1_is_the_control() {
         3,
         "three sweeps fire on a tail-blocked c8 symbol before its own ack is due"
     );
-    // And the derived law removes them ALL, at every geometry, by arithmetic
-    // — `ceil(s / 2s) − 1 == 0` for every s > 0.
-    for &(tag, rtp, q, _) in MEASURED {
-        let s = (rtp + q) * 1_000;
-        assert_eq!(
-            spurious_rounds(s, derived_recovery_round_us(s, JITTER_US)),
-            0,
-            "{tag}: the derived round can never fire before the ack is due"
-        );
-    }
-    for s in [1u64, 7, 1_000, 9_000, 376_000, 1_000_000, 1 << 30] {
-        assert_eq!(spurious_rounds(s, derived_recovery_round_us(s, JITTER_US)), 0);
-    }
 }
 
-/// PIN 3 — **REPAIR B IS REFUTED AT THIS CLOCK.** Feeding the tail sweep
-/// the WIRE RTT does not remove the spurious rounds, because the event the
-/// sweep waits for is the APP-ECHO ack — the same instant-to-instant
+/// PIN 3 — **REPAIR B IS NO-OP UNDER THE SHIPPED CEILING.** Feeding the tail
+/// sweep the WIRE RTT does not remove the spurious rounds, because the event
+/// the sweep waits for is the APP-ECHO ack — the same instant-to-instant
 /// difference `estimator.rtt()` measures. Wire-clocking under the shipped
 /// ceiling changes NOTHING at c8 (2·77 ms is still above 100 ms, still
-/// clamped); wire-clocking with the ceiling removed still leaves rounds
-/// firing early. Only the app-echo argument WITH the ceiling removed is
-/// spurious-free.
+/// clamped). (The removed `RWM_DERIVED_SWEEP` arm, which lifted the ceiling,
+/// is archived with its verdict; paper §10.)
 #[test]
 fn wire_clocking_the_tail_sweep_does_not_lift_the_c8_clamp() {
-    use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
+    use raptorpath::net::tail_sweep_timeout_us;
     let (s, w) = measured("c8-A"); // 376 ms when the ack is due; 77 ms wire
     assert!(w < s / 4, "the wire clock is <1/4 the app-echo clock at c8: {w} vs {s}");
-
-    // REPAIR B alone, under the shipped ceiling: identical to the shipped
-    // arm, to the microsecond. 2·77 = 154 ms is still clamped to 100.
     assert_eq!(
         tail_sweep_timeout_us(w),
         tail_sweep_timeout_us(s),
         "wire-clocking under the ceiling is a NO-OP at c8"
     );
     assert_eq!(spurious_rounds(s, tail_sweep_timeout_us(w)), 3);
-
-    // REPAIR A + B: better than shipped, still not zero.
-    let ab = derived_recovery_round_us(w, JITTER_US);
-    assert_eq!(ab, 154_000);
-    assert_eq!(spurious_rounds(s, ab), 2, "wire + unclamp still fires early at c8");
-
-    // REPAIR A on the APP-ECHO argument: zero, and it is the only one.
-    let a = derived_recovery_round_us(s, JITTER_US);
-    assert_eq!(a, 752_000);
-    assert_eq!(spurious_rounds(s, a), 0);
-
-    // The ORDERING is the verdict, stated as an absolute chain.
-    let shipped = spurious_rounds(s, tail_sweep_timeout_us(s));
-    let b_only = spurious_rounds(s, tail_sweep_timeout_us(w));
-    assert_eq!((shipped, b_only, spurious_rounds(s, ab), spurious_rounds(s, a)), (3, 3, 2, 0));
 }
 
-/// PIN 4 — **THE DELETION CHAIN'S LOAD-BEARING QUESTION.** The `U` arm
-/// (deeper pool) raises the store dwell, which raises the app-echo SRTT the
-/// clock reads — measured, c8-A 376 → c8-AU 464 ms. Under the SHIPPED
-/// ceiling the cadence cannot move (both pinned at 100 ms), so the deeper
-/// pool buys STRICTLY MORE spurious rounds: 3 → 4. Under the derived round
-/// the cadence tracks the pool (752 → 928 ms) and the spurious count is 0 at
-/// both. **In this model the repair removes the deeper-pool sensitivity of
-/// the recovery clock outright** — the property `AU`'s c8 arm needs before
-/// it can be considered safe.
+/// PIN 4 — The `U` arm (deeper pool) raises the store dwell, which raises
+/// the app-echo SRTT the clock reads — measured, c8-A 376 → c8-AU 464 ms.
+/// Under the SHIPPED ceiling the cadence cannot move (both pinned at 100 ms),
+/// so the deeper pool buys STRICTLY MORE spurious rounds: 3 → 4.
 #[test]
-fn the_derived_round_removes_the_deeper_pools_clock_penalty_and_the_ceiling_does_not() {
-    use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
+fn the_ceiling_is_blind_to_the_deeper_pool_so_it_buys_more_spurious_rounds() {
+    use raptorpath::net::tail_sweep_timeout_us;
     let (a, _) = measured("c8-A");
     let (au, _) = measured("c8-AU");
     assert_eq!((a, au), (376_000, 464_000));
     assert!(au > a, "the deeper pool raises the dwell-inclusive clock");
-
-    // SHIPPED: the cadence is IDENTICAL at both arms — the clock is blind to
-    // the pool — while the spurious count rises with it.
     assert_eq!(tail_sweep_timeout_us(a), tail_sweep_timeout_us(au));
     assert_eq!(spurious_rounds(a, tail_sweep_timeout_us(a)), 3);
     assert_eq!(
@@ -973,92 +647,23 @@ fn the_derived_round_removes_the_deeper_pools_clock_penalty_and_the_ceiling_does
         4,
         "the deeper pool buys one MORE spurious round under the ceiling"
     );
-
-    // DERIVED: the cadence tracks the pool exactly, and the penalty is gone.
-    let (da, dau) =
-        (derived_recovery_round_us(a, JITTER_US), derived_recovery_round_us(au, JITTER_US));
-    assert_eq!((da, dau), (752_000, 928_000));
-    assert!(dau > da, "the derived cadence MOVES with the pool");
-    assert_eq!(spurious_rounds(a, da), 0);
-    assert_eq!(spurious_rounds(au, dau), 0);
-    // Stated as the invariant rather than the two instances: for ANY dwell
-    // the derived clock's spurious count is 0, so no store-cap arm can move
-    // it. That is what makes the interaction safe rather than merely better.
-    for dwell_ms in (0u64..=1_000).step_by(7) {
-        let s = 38_000 + dwell_ms * 1_000;
-        assert_eq!(spurious_rounds(s, derived_recovery_round_us(s, JITTER_US)), 0);
-    }
-}
-
-/// PIN 5 — LIVENESS at the driver: the `ds` arm actually executes and
-/// actually moves the plane's two cadences at the c8 geometry, with the
-/// wire, the hole count and the clock argument held identical (CLAUDE.md
-/// discipline rule 1). This BOUNDS the model claim; it does not score it —
-/// the driver's dwell is a CLOCK, not a delay (see the header's boundary),
-/// so its ack turnaround is the wire RTT and the spurious-round arithmetic
-/// above is NOT reproduced here. Recorded as exactly that.
-#[test]
-fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
-    let cal = c8_calib(2_000);
-    let base = c8_cell();
-    let shipped = run_cell(base, cal);
-    let ds = run_cell(Cell { arm: ARMS[3], ..base }, cal);
-    assert_eq!(ARMS[3].name, "ds");
-    assert!(ARMS[3].derived_sweep && !ARMS[0].derived_sweep);
-
-    // Same wire: the A/B is over the LAWS, never over the losses.
-    assert_eq!(shipped.holes.len(), ds.holes.len());
-    assert!(!shipped.holes.is_empty(), "the plane must have holes to recover");
-    assert_eq!(shipped.pooled_us, ds.pooled_us, "the clock ARGUMENT is unchanged by this gate");
-
-    // The receiver's refresh reads the COPA (wire) clock; the sender's sweep
-    // reads the pooled app-echo one. Both pinned at the ceiling shipped.
-    assert_eq!(shipped.refresh_us, 100_000, "shipped refresh pinned at the ceiling");
-    assert!(ds.refresh_us > shipped.refresh_us, "derived refresh tracks the wire clock");
-    assert_eq!(
-        raptorpath::net::sweep_timeout_us(false, shipped.pooled_us, JITTER_US),
-        100_000
-    );
-    assert_eq!(
-        raptorpath::net::sweep_timeout_us(true, ds.pooled_us, JITTER_US),
-        2 * ds.pooled_us
-    );
-
-    // And the gate is NOT inert, which is worth pinning.
-    assert!(
-        ds.counts.sweeps < shipped.counts.sweeps,
-        "the derived arm must fire FEWER sweeps: {} vs {}",
-        ds.counts.sweeps,
-        shipped.counts.sweeps
-    );
-    // Every arm still recovers: no hole is abandoned by making the clock
-    // honest (the receiver's refresh, not the sweep, is the recovery engine).
-    for (tag, o) in [("shipped", &shipped), ("ds", &ds)] {
-        assert!(o.counts.retx > 0, "{tag}: no retransmit fired");
-        let served = o.holes.iter().filter(|h| h.first_service_us.is_some()).count();
-        assert!(
-            served * 100 >= o.holes.len() * 95,
-            "{tag}: only {served}/{} holes reached a channel",
-            o.holes.len()
-        );
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════
 // THE R AXIS, COMPONENT-VERIFIED — paper §7.1
 //
-// The shipped clamp and `RWM_DERIVED_SWEEP`, scored at the same five MEASURED
-// geometries on the same arithmetic, plus the FALSE-ALARM RATE each is
-// predicted to produce against RFC 8985 §6.2 Step 4's own published budget.
-// (The two rival arms this axis also scored — `RWM_RACK_CLOCKS` and
-// `RWM_QUANTILE_CLOCKS` — were refuted and removed with their gates; paper §10.)
+// The shipped clamp, scored at the five MEASURED geometries, plus the
+// FALSE-ALARM RATE it is predicted to produce against RFC 8985 §6.2 Step 4's
+// own published budget. (The rival arms this axis also scored —
+// `RWM_DERIVED_SWEEP`, `RWM_RACK_CLOCKS`, `RWM_QUANTILE_CLOCKS` — were refuted
+// and removed with their gates; paper §10.)
 //
 // The headline is about the CONTROL, not the successors: the shipped
 // `[25, 100] ms` clamp is predicted to violate RACK's own spurious budget by
 // 8–13× at three of five cells.
 // ════════════════════════════════════════════════════════════════════════
 
-use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us, RACK_SPURIOUS_BUDGET};
+use raptorpath::net::{tail_sweep_timeout_us, RACK_SPURIOUS_BUDGET};
 
 /// The predicted false-alarm FRACTION from the component model: a cadence that
 /// fires `n` extra times per ack round trip wastes `n` of the `n+1` fires.
@@ -1068,24 +673,21 @@ fn false_alarm_frac(srtt_us: u64, cadence_us: u64) -> f64 {
 }
 
 /// The R axis at the five measured geometries, pinned: cadence, spurious
-/// rounds and the predicted false-alarm rate for the shipped clamp and
-/// `RWM_DERIVED_SWEEP`. If a law changes, the published numbers go red rather
+/// rounds and the predicted false-alarm rate for the shipped clamp. If a law changes, the published numbers go red rather
 /// than stale.
 #[test]
 fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
     // ── The SENDER site (app-echo clock). ──────────────────────────────
-    // (cell, srtt_app, shipped sp, derived sp)
-    for &(name, srtt, ship_sp, ds_sp) in &[
-        ("c1-A", 9_000u64, 0u64, 0u64),
-        ("c7-A", 87_000, 0, 0),
-        ("sc2-A", 104_000, 1, 0),
-        ("c8-A", 376_000, 3, 0),
-        ("c8-AU", 464_000, 4, 0),
+    // (cell, srtt_app, shipped sp)
+    for &(name, srtt, ship_sp) in &[
+        ("c1-A", 9_000u64, 0u64),
+        ("c7-A", 87_000, 0),
+        ("sc2-A", 104_000, 1),
+        ("c8-A", 376_000, 3),
+        ("c8-AU", 464_000, 4),
     ] {
         let ship = tail_sweep_timeout_us(srtt);
-        let ds = derived_recovery_round_us(srtt, JITTER_US);
         assert_eq!(spurious_rounds(srtt, ship), ship_sp, "{name}: shipped clamp");
-        assert_eq!(spurious_rounds(srtt, ds), ds_sp, "{name}: RWM_DERIVED_SWEEP");
     }
 
     // ── The FALSE-ALARM table, and the finding about the CONTROL. ──────
@@ -1102,10 +704,6 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
         if fa_ship > RACK_SPURIOUS_BUDGET {
             control_violations += 1;
         }
-        // The derived arm clears the budget BY BEING SLOW — recorded so the
-        // trade L1 measured is visible in the arithmetic, not only in prose.
-        let fa_ds = false_alarm_frac(srtt, derived_recovery_round_us(srtt, JITTER_US));
-        assert!(fa_ds <= RACK_SPURIOUS_BUDGET, "{name}: DERIVED_SWEEP no longer clears the budget");
     }
     assert_eq!(
         control_violations, 3,
@@ -1198,7 +796,7 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
     );
     // AND THE GRANULARITY FLOOR IS ASSERTED AS ITSELF, ONCE, RATHER THAN
     // SMUGGLED INTO THE FIXTURE ABOVE. A window of sub-granularity samples
-    // floors, exactly as the RACK and derived rounds do.
+    // floors, exactly as the RACK rounds did.
     let tiny: Vec<u32> = vec![7u32; 200];
     assert_eq!(
         qnative_recovery_round_us(&tiny, 0.05),
@@ -1232,177 +830,4 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
     // alpha = 1e-5 Cantelli asks for srtt + 316*sigma with no ceiling at all.
     let wmax = *long.iter().max().expect("non-empty") as u64;
     assert!(w002 <= wmax, "W_q must never exceed max(window): {w002} > {wmax}");
-}
-
-// ── THE HOLD-DOWN CLOCK (paper §7.4) — THE LAW, PINNED ABSOLUTELY ───────
-//
-// Ordinal tests do not catch routing bugs. These assert the law's ABSOLUTE
-// values at the arm grid's own points; `holddown_reachability.rs` asserts that
-// the ENGINE routes to them. Neither is sufficient alone — CLAUDE.md's testing
-// discipline, and the reason both exist.
-
-/// The hold-down's window law IS the quantile-native one, at the tail level
-/// `1 − q`. Pinned as an IDENTITY over the whole domain and then at the arm grid by absolute
-/// value, so a re-parameterisation cannot silently become a second law.
-#[test]
-fn the_holddown_window_law_is_the_qnative_window_law_at_one_minus_q() {
-    use raptorpath::net::{holddown_window_n, qnative_window_n};
-    for i in 1..1000u32 {
-        let q = i as f64 / 1000.0;
-        assert_eq!(
-            holddown_window_n(q),
-            qnative_window_n(1.0 - q),
-            "N(q) must be N_qnative(1-q) at q={q}"
-        );
-    }
-    // The arm grid, absolutely. These four numbers ARE the
-    // pre-registration's `n_req` column; a change here is a change to the
-    // battery's own arms.
-    assert_eq!(holddown_window_n(0.990), Some(1000), "H010");
-    assert_eq!(holddown_window_n(0.963), Some(271), "H037");
-    assert_eq!(holddown_window_n(0.864), Some(74), "H136");
-    assert_eq!(holddown_window_n(0.500), Some(20), "H500");
-}
-
-/// THE ARM GRID'S FLOOR IS DERIVED AND IT IS 0.5238 — the window law is flat at
-/// `2K = 20` for every `q ≤ 0.5`, so no level below `1 − K/(N+1) = 1 − 10/21` is
-/// expressible. The window law's `α → 1` degenerate limit read from the other end, and
-/// the reason the arm grid floors where it does.
-#[test]
-fn the_holddown_level_floor_is_derived_and_it_is_0_5238() {
-    use raptorpath::net::{holddown_window_n, QNATIVE_EXCEEDANCE_K};
-    for i in 1..=500u32 {
-        let q = i as f64 / 1000.0;
-        assert_eq!(
-            holddown_window_n(q),
-            Some(20),
-            "N must be flat at 2K below q=0.5 (q={q})"
-        );
-    }
-    let n = holddown_window_n(0.5).expect("floor arm resolves") as f64;
-    let realized = 1.0 - QNATIVE_EXCEEDANCE_K as f64 / (n + 1.0);
-    assert!(
-        (realized - 0.523_809_5).abs() < 1e-6,
-        "the floor arm's REALIZED level is 1 - 10/21, not the commanded 0.5: {realized}"
-    );
-}
-
-/// GARBAGE RESOLVES TO ABSENT, AND ABSENT IS THE SHIPPED MACHINE. The domain is
-/// the law's own: at `q ≤ 0` the hold-down is zero — expressed by the gate being
-/// ABSENT, never by an armed arm — and at `q ≥ 1` the window law diverges.
-#[test]
-fn an_out_of_domain_holddown_level_resolves_to_absent() {
-    use raptorpath::net::{holddown_us, holddown_window_n};
-    let w: Vec<u32> = (1..=4000u32).map(|i| i * 100).collect();
-    for q in [
-        0.0,
-        -0.5,
-        1.0,
-        1.5,
-        f64::NAN,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-    ] {
-        assert_eq!(holddown_window_n(q), None, "q={q} must be ABSENT");
-        assert_eq!(holddown_us(&w, q), None, "q={q} must yield NO hold-down");
-    }
-    // And just inside the domain it resolves, so the boundary is the boundary
-    // and not an off-by-one that silently disarms a legal arm.
-    assert!(
-        holddown_window_n(0.990).is_some(),
-        "the DERIVED level q=0.990 is inside the domain"
-    );
-    assert!(
-        holddown_window_n(0.001).is_some(),
-        "q=0.001 is inside the domain"
-    );
-    // THE CEILING IS THE DECLARED RESOURCE BOUND AND IT IS 0.998779, STATED
-    // OUTSIDE THE LAW. `N <= QNATIVE_WINDOW_MAX = 8192` ⇒ `1 - q >= 10/8192`.
-    // The cap does NOT bind anywhere on the arm grid (the derived arm needs
-    // 1 000), and past it the law declares itself unavailable rather than
-    // truncating — the window law's cap, inherited unchanged.
-    assert!(
-        holddown_window_n(0.9987).is_some(),
-        "q just inside the resource bound must resolve"
-    );
-    assert_eq!(
-        holddown_window_n(0.999),
-        None,
-        "q=0.999 needs N=10000, past the declared 8192 cap: UNAVAILABLE, not truncated"
-    );
-}
-
-/// `T(q)` IS THE K-TH LARGEST OF THE FRESHEST `N` — pinned by construction on a
-/// window whose order statistics are known exactly, and pinned MONOTONE in `q`
-/// on ONE stationary distribution. **The fixture is stationary and not a ramp**,
-/// for the reason the `W_q` pins state: on a monotone series the K-th largest of
-/// the last `n` is the same value for every `n`, so a ramp would report every arm
-/// identical and the monotonicity clause would be satisfied by nothing.
-#[test]
-fn the_holddown_reads_the_kth_largest_and_is_monotone_in_the_level() {
-    use raptorpath::net::{holddown_us, QNATIVE_EXCEEDANCE_K};
-    // 1..=1000 µs in a scrambled full-period order: at q = 0.99, N = 1000 is the
-    // whole window and the K-th largest is exactly `1000 - K + 1 = 991`.
-    let long: Vec<u32> = (0..1000u32)
-        .map(|i| ((i.wrapping_mul(7919) % 1000) + 1) * 1_000)
-        .collect();
-    let t = holddown_us(&long, 0.99).expect("N(0.99) = 1000 fits exactly");
-    assert_eq!(
-        t,
-        (1000 - QNATIVE_EXCEEDANCE_K as u64 + 1) * 1_000,
-        "T must be the K-th largest of the freshest N"
-    );
-    let big: Vec<u32> = (0..6000u32)
-        .map(|i| ((i.wrapping_mul(7919) % 1000) + 1) * 1_000)
-        .collect();
-    let t500 = holddown_us(&big, 0.500).expect("H500");
-    let t136 = holddown_us(&big, 0.864).expect("H136");
-    let t037 = holddown_us(&big, 0.963).expect("H037");
-    let t010 = holddown_us(&big, 0.990).expect("H010");
-    assert!(
-        t500 < t136 && t136 < t037 && t037 < t010,
-        "T must rise strictly with the level on one distribution: {t500} {t136} {t037} {t010}"
-    );
-    // BOUNDED ABOVE BY THE WINDOW'S OWN MAX, structurally, at every level: a
-    // hold-down cannot ask the sender to wait longer than the path has ever
-    // taken to close a hole.
-    let wmax = *big.iter().max().expect("non-empty") as u64;
-    assert!(t010 <= wmax, "T must never exceed max(window): {t010} > {wmax}");
-}
-
-/// THE UNSCOREABLE RULE: a window shorter than `N(1−q)` is a DIFFERENT LAW'S
-/// OUTPUT, so the construction returns nothing and the caller falls through to
-/// the shipped behaviour — information availability, never a mode.
-/// Pinned at the exact boundary, both sides.
-#[test]
-fn a_short_holddown_window_declares_itself_unavailable_rather_than_extrapolating() {
-    use raptorpath::net::{holddown_us, holddown_window_n, QNATIVE_WINDOW_MAX};
-    let n = holddown_window_n(0.963).expect("H037 resolves");
-    assert_eq!(n, 271);
-    let full: Vec<u32> = (0..n as u32).map(|i| (i + 1) * 1_000).collect();
-    assert!(
-        holddown_us(&full, 0.963).is_some(),
-        "exactly N samples must run the law"
-    );
-    assert_eq!(
-        holddown_us(&full[..n - 1], 0.963),
-        None,
-        "N-1 samples must declare the law UNAVAILABLE, not read a shorter window"
-    );
-    assert_eq!(holddown_us(&[], 0.963), None, "an empty window runs no law");
-    // The resource bound binds OUTSIDE the law, not inside it: a level whose
-    // window exceeds the declared cap is unavailable at every window length,
-    // rather than silently truncated to the cap.
-    let past_cap = 1.0 - 1.0 / (QNATIVE_WINDOW_MAX as f64 + 1.0);
-    assert_eq!(
-        holddown_window_n(past_cap),
-        None,
-        "a level past the declared resource bound is UNAVAILABLE, not truncated"
-    );
-    let w = vec![1_000u32; QNATIVE_WINDOW_MAX];
-    assert_eq!(
-        holddown_us(&w, past_cap),
-        None,
-        "and it stays unavailable even with a full cap-sized window"
-    );
 }

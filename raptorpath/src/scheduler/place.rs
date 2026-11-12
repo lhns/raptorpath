@@ -1,67 +1,8 @@
-//! Per-symbol placement (paper §5.7): the frontier term, the temperature, and
+//! Per-symbol placement (paper §5.7): the temperature and
 //! the `Scheduler` placement methods (`place_symbol`, `place_probs`,
 //! `place_costs`, ...).
 
 use super::*;
-
-/// `kappa` - the non-overlapped stall fraction (paper §7.3), as `X_i` uses it.
-///
-/// A declared upper bound, not a value: `kappa = 1` charges every second of
-/// frontier stall in full, over-charging the fitted non-overlap
-/// (0.0048-0.067) in the direction that discourages frontier-pushing
-/// placements. Open-constants register row (paper §11.2); its bind is gauged
-/// by `[ETA] site=sender hol_sh=`, the fraction of source cost evaluations in
-/// which `s_i > H`, i.e. in which `kappa` was reachable at all.
-pub(crate) const PLACE_KAPPA: f64 = 1.0;
-
-/// The frontier term, as a pure function of its inputs so its
-/// shape can be asserted without a scheduler:
-///
-/// ```text
-///     X_i + O_i  =  [ delta*push + kappa*(push - H)+ ] / ref  +  W*behind / ref
-/// ```
-///
-/// `push = [(now + E_i) - F_hat]+` and `behind = [F_hat - (now + E_i)]+` are
-/// the two signs of one difference, so at most one of them is nonzero and the
-/// sum is continuous through the crossing. It is `C0` at the knee `push = H`
-/// (the `(.)+` kink), non-decreasing in `push`, zero at `push = behind = 0`,
-/// and continuous and non-decreasing in `delta` - the properties the
-/// continuity gates assert at +/-2 % around each named point on the dial.
-///
-/// No branch reads a hint, a mode, or a threshold on the dial: the two `(.)+`
-/// operators act on measurement differences only.
-pub(crate) fn place_frontier_cost(
-    delta: f64,
-    push_s: f64,
-    behind_s: f64,
-    h_s: f64,
-    w: f64,
-    ref_srtt: f64,
-) -> f64 {
-    (delta * push_s + PLACE_KAPPA * (push_s - h_s).max(0.0)) / ref_srtt + w * behind_s / ref_srtt
-}
-
-/// `(sqrt(6)/pi)` - the Gumbel scale-to-standard-deviation factor of the
-/// temperature's variance match. Not a tuning constant:
-/// `Var(Gumbel) = pi^2/6` is arithmetic.
-pub(crate) fn place_gumbel_scale() -> f64 {
-    6.0_f64.sqrt() / std::f64::consts::PI
-}
-
-/// The two store-cap inputs `X_i`'s headroom `H` reads, taken from the one
-/// gate resolution so this law and the store-cap law can never disagree about
-/// which cap is live.
-pub(crate) fn place_store_terms() -> (f64, bool) {
-    let g = crate::gates::get();
-    (g.store_gain, g.three_term)
-}
-
-/// The engine clock (`net::now_us`, µs) - the same clock `net::emit_source`
-/// stamps `send_ts_us` with, which is what makes `F_hat` comparable with
-/// `now` here.
-pub(crate) fn place_wall_now_us() -> u64 {
-    crate::net::now_us()
-}
 
 /// Placement softmax temperature.
 ///
@@ -72,7 +13,8 @@ pub(crate) fn place_wall_now_us() -> u64 {
 /// 2.7:1. `T → 0` is the paper's strict best-path (argmin) limit; larger `T`
 /// dithers and pulls more traffic onto a slower path (more aggregation, more
 /// head-of-line risk on a reliable in-order stream). Underived
-/// (open-constants register, paper §11.2).
+/// (open-constants register, paper §11.2). A derived
+/// `T = (√6/π)·σ̂_e/ref` arm was removed (tag `archive/RWM_PLACE_T_DERIVED`).
 pub(crate) const PLACE_TEMPERATURE: f64 = 0.15;
 
 /// The effective placement temperature: `PLACE_TEMPERATURE`, overridable once
@@ -205,61 +147,12 @@ impl Scheduler {
         Some(candidates[idx.min(candidates.len() - 1)])
     }
 
-    /// The effective placement temperature - `place_temperature()` (the
-    /// shipped `0.15`, or `RWM_PLACE_T`) with the arm absent, and the
-    /// Luce/Gumbel scale with `RWM_PLACE_T_DERIVED` armed:
-    ///
-    /// ```text
-    ///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt
-    ///     sigma_e  =  pooled RMS, over the active candidate set, of the
-    ///                 per-path tau-lag dispersion of  e = realized - predicted
-    /// ```
-    ///
-    /// Cold rule: the pool is taken over the paths that have a dispersion
-    /// sample - a path with none contributes nothing rather than a fabricated
-    /// zero, which would drag `T` toward `argmin` on the strength of a missing
-    /// measurement. If no active path has one, `T_eff` is the shipped `T` and
-    /// the `t_cold` counter is bumped, so the fallback is read off
-    /// `[ETA] site=sender t_cold=` rather than assumed.
-    ///
-    /// `sigma_e -> 0` needs no branch here: `T = 0` reaches
-    /// `place_probs_with_temperature`'s degenerate handling and resolves to
-    /// the argmin, which is the law's own `T -> 0` limit.
-    ///
-    /// Observation is a `Cell` write, never a lock: this is on `&self` because
-    /// the law is.
-    pub(crate) fn place_temperature_eff(&self) -> f64 {
-        let shipped = place_temperature();
-        if !self.place_t_derived {
-            return shipped;
-        }
-        let cold_srtt = self.place_cold_srtt();
-        let ref_srtt = self.place_ref_srtt(cold_srtt);
-        let (sum_sq, n) = self
-            .paths
-            .values()
-            .filter(|p| p.active)
-            .filter_map(|p| self.eta.sigma_us(p.id))
-            .fold((0.0_f64, 0_u64), |(acc, k), sig_us| {
-                let x = sig_us as f64 / 1e6;
-                (acc + x * x, k + 1)
-            });
-        let t = if n > 0 {
-            place_gumbel_scale() * (sum_sq / n as f64).sqrt() / ref_srtt
-        } else {
-            shipped
-        };
-        let (_, cold, k) = self.place_t_gauge.get();
-        self.place_t_gauge.set((t, cold + u64::from(n == 0), k + 1));
-        t
-    }
-
     /// The softmax placement distribution over paths. Exposed for
     /// unit-testing the placement law (concentration, continuous spillover,
     /// water-filling, fate steering, T → 0 argmin) without sampling noise.
     /// Returns `(PathId, probability)` summing to 1 over the candidate set.
     pub fn place_probs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
-        self.place_probs_with_temperature(is_repair, covered_paths, self.place_temperature_eff())
+        self.place_probs_with_temperature(is_repair, covered_paths, place_temperature())
     }
 
     /// `place_probs` with an explicit temperature — the T dial exposed for
@@ -308,7 +201,7 @@ impl Scheduler {
     /// The cold price of the placement law's SRTT reference
     /// (`RWM_COLD_PLACE`): the active set's fastest measured srtt, or `None`
     /// with the gate off / nothing measured yet. Shared with
-    /// `place_temperature_eff` so it divides by exactly the same `ref` the
+    /// the temperature so it divides by exactly the same `ref` the
     /// costs are de-dimensionalised by - two `ref`s would make `c_i/T`
     /// meaningless.
     fn place_cold_srtt(&self) -> Option<f64> {
@@ -416,83 +309,7 @@ impl Scheduler {
 
         let covered_total = covered_paths.len() as f64;
 
-        // ── Placement arm 2 (`RWM_PLACE_HOL`): the frontier term's inputs ──
-        // Read once per placement, all from live state, and only when the arm
-        // is armed and the symbol is source (a repair does not extend the
-        // cumulative frontier - it fills behind it). `None` otherwise, and the
-        // closure below adds a literal `0.0`, so the shipped sum is returned
-        // unchanged - which is what the pinned cost table asserts.
-        let hol = (self.place_hol && !is_repair).then(|| {
-            // `F_hat` - the sender's running max of stamped ETAs, epoch us.
-            // Zero is the "nothing stamped yet" sentinel, not a time: pricing
-            // against it would charge every placement its whole distance from
-            // the epoch. No frontier => no push to price, and the arm is inert
-            // until the gauge has seen one placement.
-            let f_hat_us = self.eta.frontier_eta_us();
-            let f_hat_s = (f_hat_us > 0).then(|| f_hat_us as f64 / 1e6);
-            let now_s = place_wall_now_us() as f64 / 1e6;
-            // The contract's own price, continuous in the dial. `delta_price`
-            // is the one seat a hint names a delta, and `RWM_DELTA` moves it
-            // between the named points - nothing here compares a hint.
-            let delta = crate::net::delta_price(self.hint);
-            let (gain, three_term) = place_store_terms();
-            // RTprop reference: the fastest measured windowed-min over the
-            // active set. With none measured the law falls back to the SRTT
-            // reference it already holds - another leg's measurement, never a
-            // constant (anchor-hygiene rule 1).
-            let rtprop_ref_s = self
-                .paths
-                .values()
-                .filter(|p| p.active)
-                .filter_map(|p| p.min_rtt())
-                .map(|d| d.as_secs_f64())
-                .fold(f64::INFINITY, f64::min);
-            let rtprop_ref_s = if rtprop_ref_s.is_finite() { rtprop_ref_s } else { ref_srtt };
-            // `H` - the free headroom of the store-cap law that is actually in
-            // force: `(gain-1)*RTprop` for the shipped cap, the contract's own
-            // declared stall when `RWM_THREE_TERM` is the live cap. The read
-            // selects which cap law's headroom is quoted; it does not select a
-            // placement law, and both branches are the existing expressions.
-            let h_s = if three_term {
-                crate::net::contract_stall_s(
-                    1.0,
-                    crate::net::delta_budget_b_of(delta),
-                    rtprop_ref_s,
-                    ref_srtt,
-                )
-            } else {
-                (gain - 1.0).max(0.0) * rtprop_ref_s
-            };
-            // `W` - the wire price of one spurious fire, derived from live
-            // quantities with no literal of its own:
-            //
-            //     W = P_arq * (T_pay+h)*8 / (R_ref_bits * tau_cool)
-            //       = 1 symbol / (R_ref_symbols * tau_cool)
-            //
-            // - the object's byte size cancels because the scheduler's own
-            // state is denominated in symbols: `cwnd_i/srtt_i` is path i's
-            // delivery rate in symbols per second, and `R_ref` is the fastest
-            // mover among the active paths. `P_arq = 1` on the retain-until-
-            // acked seat (rho = 1), which is the only seat the plain window
-            // has. `tau_cool` is the shipped per-seq retransmit cooldown
-            // floor, an existing engine constant read rather than restated.
-            // At 10 ms srtt, ~89 symbols of cwnd and a 10 ms cooldown this is
-            // 1.1e-2 - small against an O(1) load term.
-            let r_ref = self
-                .paths
-                .values()
-                .filter(|p| p.active)
-                .map(|p| p.cwnd.max(1) as f64 / srtt_of(p).max(PLACE_REF_FLOOR_SECS))
-                .fold(0.0_f64, f64::max);
-            let tau_cool_s = crate::net::NACK_RETX_COOLDOWN_FLOOR_US as f64 / 1e6;
-            let w = if r_ref > 0.0 { 1.0 / (r_ref * tau_cool_s) } else { 0.0 };
-            (f_hat_s, now_s, delta, h_s, w)
-        });
-
-        // Returns `(cost, the frontier term's addition)`; with the frontier
-        // arm absent the addition is a literal `0.0` and `base + 0.0` is
-        // `base` exactly.
-        let cost_of = |p: &PathState| -> (f64, f64) {
+        let cost_of = |p: &PathState| -> f64 {
             // Frontier-completion-time — the always-on load term (unit weight),
             // de-dimensionalised by the fastest SRTT so it is O(1). This single
             // term carries both the congestion signal (queue drain at the pacing
@@ -552,30 +369,7 @@ impl Scheduler {
             } else {
                 w_div * fate
             };
-            // ── Placement arm 2's term, the only new addend ───────────────
-            //
-            //     X_i = [ delta*s_i + kappa*(s_i - H)+ ] / ref
-            //     s_i = [ (now + E_i) - F_hat ]+
-            //
-            // plus the ordering term `W*[F_hat - (now + E_i)]+/ref`, which
-            // prices the other sign of the same difference: a placement
-            // that lands behind the frontier pushes nothing (`s_i = 0`
-            // exactly - such a placement is free, which is what makes `X` a
-            // water-filling incentive rather than a slow-path penalty) but
-            // still costs the wire what a spurious re-serve of it would.
-            let x_i = hol.as_ref().map_or(0.0, |&(f_hat_s, now_s, delta, h_s, w)| {
-                let arrival = now_s + e_i;
-                let (push, behind) = f_hat_s
-                    .map_or((0.0, 0.0), |f| ((arrival - f).max(0.0), (f - arrival).max(0.0)));
-                let over = (push - h_s).max(0.0);
-                // The kappa bind gauge: `over > 0` is the only regime in which
-                // the declared bound `kappa = 1` is reachable at all.
-                let (sh, n, moved, calls, _) = self.place_hol_gauge.get();
-                self.place_hol_gauge
-                    .set((sh + u64::from(over > 0.0), n + 1, moved, calls, w));
-                place_frontier_cost(delta, push, behind, h_s, w, ref_srtt)
-            });
-            (load + w_bw * r + div, x_i)
+            load + w_bw * r + div
         };
 
         // Deterministic tie-break: `self.paths` is a `HashMap`, so its
@@ -584,24 +378,16 @@ impl Scheduler {
         // `place_probs_with_temperature` resolves an exact tie with `min_by`
         // (which keeps the first minimum) and `place_symbol`'s inverse-CDF
         // walk consumes the candidates in this order. Sorting by id makes both
-        // reproducible without moving any probability. The frontier arm's
-        // base-cost column is kept in a second vector that exists only while
-        // that arm is armed, so an absent arm costs neither an allocation nor a
-        // comparison. The ref-floor witness is a running minimum over the same
-        // pass, not a column.
-        let mut bases: Vec<(PathId, f64)> = Vec::new();
+        // reproducible without moving any probability. The ref-floor witness is
+        // a running minimum over the same pass, not a column.
         let mut raw_ref = f64::INFINITY;
         let mut out: Vec<(PathId, f64)> = self
             .paths
             .values()
             .filter(|p| p.active)
             .map(|p| {
-                let (base, x) = cost_of(p);
-                if hol.is_some() {
-                    bases.push((p.id, base));
-                }
                 raw_ref = raw_ref.min(srtt_of(p));
-                (p.id, base + x)
+                (p.id, cost_of(p))
             })
             .collect();
         out.sort_unstable_by_key(|(id, _)| *id);
@@ -610,24 +396,6 @@ impl Scheduler {
         let floor_now = raw_ref.is_finite() && raw_ref < PLACE_REF_FLOOR_SECS;
         let (c, n, calls, floor) = self.place_wire_gauge.get();
         self.place_wire_gauge.set((c, n, calls + 1, floor + u64::from(floor_now)));
-        // The frontier arm's execution witness (docs/measurement-discipline.md
-        // rule 1: prove the mechanism under test executed). A term whose
-        // magnitude is reported but which never changes a decision has not been
-        // measured. This asks the question `place_probs_with_temperature` will
-        // ask — first-minimum over the id-sorted candidates — with and without
-        // the arm's addition, and counts the disagreements.
-        if hol.is_some() {
-            bases.sort_unstable_by_key(|(id, _)| *id);
-            let arg = |v: &[(PathId, f64)]| -> Option<PathId> {
-                v.iter()
-                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(|(id, _)| *id)
-            };
-            let moved_now = arg(&bases) != arg(&out);
-            let (sh, n, moved, calls, w) = self.place_hol_gauge.get();
-            self.place_hol_gauge
-                .set((sh, n, moved + u64::from(moved_now), calls + 1, w));
-        }
         out
     }
 
@@ -636,16 +404,6 @@ impl Scheduler {
     pub fn drain_place_bind(&mut self) {
         let (r, ge, n) = self.place_bind.replace((0, 0, 0));
         self.eta.add_place_bind(r, ge, n);
-        // Placement arm 1: the temperature actually used, and how often the
-        // cold rule fired. `T_eff` is a level, so the last value is the
-        // reading; the two counters are cumulative like every other bind
-        // gauge on this line.
-        let (t_eff, t_cold, t_n) = self.place_t_gauge.replace((0.0, 0, 0));
-        self.eta.add_place_t(t_eff, t_cold, t_n);
-        // Placement arm 2: the kappa bind fraction, the argmin-moved witness,
-        // and `W` at its live value.
-        let (sh, sh_n, moved, calls, w) = self.place_hol_gauge.replace((0, 0, 0, 0, 0.0));
-        self.eta.add_place_hol(sh, sh_n, moved, calls, w);
         // The wire base's bind gauges: fallback taken and ref floor bound.
         let (cold, n, calls, floor) = self.place_wire_gauge.replace((0, 0, 0, 0));
         self.eta.add_place_wire(cold, n, calls, floor);
@@ -654,8 +412,7 @@ impl Scheduler {
     /// Stamp the sender's own prediction for a placement and return it, in
     /// µs (0 = no prediction). `E_picked` is the same `E_i` the law priced
     /// (`place_e`, one seat), so the receiver's residual `realized - predicted`
-    /// measures the quantity placement acted on, and the frontier `F_hat` is
-    /// built from the E that `X_i` compares against.
+    /// measures the quantity placement acted on.
     pub(crate) fn stamp_placement_eta(&mut self, path: PathId, send_ts_us: u64) -> u64 {
         let cold_srtt = self.place_cold_srtt();
         let wire_min = self.place_wire_min();

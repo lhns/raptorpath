@@ -265,14 +265,6 @@ pub(crate) struct SenderPolicy {
     pub recov_mp_law: bool,
     /// `RWM_RECOV_SP`: single-path hole-law suppression.
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP` (default off): the tail-sweep / hole-refresh round
-    /// on the derived law (2·SRTT floored by `patience_floor_us`, no ceiling)
-    /// instead of `2·SRTT` clamped to [25, 100] ms.
-    pub derived_sweep: bool,
-    /// `RWM_HOLDDOWN_Q` as resolved by the gate — `None` by default, where the
-    /// sender answers a reported hole immediately. A number, never a branch
-    /// (paper §7.4).
-    pub holddown_q: Option<f64>,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -842,8 +834,6 @@ impl SenderPolicy {
             recov_mp,
             recov_mp_law,
             recov_sp,
-            derived_sweep: gates.derived_sweep,
-            holddown_q: gates.holddown_q,
             sidle_derived,
             emit_batch_on,
             emit_burst,
