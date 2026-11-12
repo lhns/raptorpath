@@ -13628,3 +13628,33 @@ Session `LD_PLAN=48`, CAND `bbr48cand` `e5d7ffbd` (`RWM_QUIC_CC=bbr_rs`), BASE m
 - **Counterfactual (model, a knife edge since λ ≈ μ; relative to the measured mix):** retransmits kept on their original leg → BASE H0 1 890 → 770–940, tail 3.91 → 1.5–1.9 s; CAND H0 2 246 → ≈ 90–135, tail 4.73 → ≈ 0.3 s. This supersedes `price.py`'s variant-O line (H0 = 0). The interaction with lever B is not modelled (B raises the horizon's occupancy N_h; leg choice lowers the hold T_h).
 - **The leg choice is set by the placement diversity term** (w_div = 1.0 on the original leg, 786 : 1 against it at T = 0.15), so `RWM_PLACE_WDIV_DERIVED` (never measured) and w_div are levers on the c8 backlog, beside lever B.
 - **Next:** §52 registers the retransmit send-leg share as a readout, plus reported-only arms on the retransmit diversity weight (the derived form, and a fixed lower weight via a diagnostic env) at c8 600 MB, against the same BASE, before lever B merges (after B, main's c8 backlog may be gone). An instrument: a send-leg field on `[HOLD]`'s closed_retx histogram, or `RWM_SUCC_DUMP=1` for those rows.
+
+
+## 50. Simplify batches 1b–3 (`simplify-5`) against main — the guard session — pre-registration (before any VM contact)
+
+**What is tested.** On top of §49's merged batch 1, `simplify-5` stacks three commit series, each arm in its own commit with an `archive/RWM_*` tag:
+- **`simplify-3`:** `RWM_PLACE_HOL` archived; 16 dead `RWM_PLAIN_RS=1` test-env lines removed.
+- **`simplify-4` (Group C):** `RWM_HOLDDOWN_Q`, `RWM_REFRESH_FLOOR_US`, `RWM_DERIVED_SWEEP` removed.
+- **`simplify-5`:** `RWM_PLACE_T_DERIVED` archived (user ruling: archive the code, keep the formula open); paper corrections (`RWM_PLACE_WDIV_DERIVED` never ran; the SRC_BP re-test clause restored; units of T and w_div); a sensitivity bounding test for T = 0.15 over T ∈ [0.03, 0.68] and ref ×0.5–×2.
+- Every deleted gate resolved off on the default path. **The expected behaviour change is none.** `git diff BASE CAND -- raptorpath/src raptorpath/tests` = 36 files, +343 / −2 921. **The guard asks whether the deletions are free.**
+
+**Design: §49's exactly.**
+- **Plan:** `LD_PLAN=41c`, `LD_P46_SUITES=1`. Suites on CAND's tree first (REAL failure ⇒ `ABORT-TESTS`), then the §41c guard.
+- **Statistic:** `rank-minp`, N_PERM 10 000, seed 4141, one-sided, PASS iff p > 0.05.
+- **Clauses and design:** 26 clauses; BASE n = 12 and CAND n = 12 at c1s-400, c1d-400, c2-100 and c8-100 default (96 rows plus the 2-row smoke).
+- **Rules:** §41c's DNF and replacement rules; an incomplete design reads NO VERDICT. No §46 stage.
+
+**Readouts.** The verdict block, the §21 readings, the tail line, QCWND-BELOW-BDP, and on the host the resolution table.
+- **Reported:** the `[ETA]` sender line loses `t_eff`/`t_cold`/`t_n` (parsers read absent as None). The `[HOLD]` line loses the hold-down arm's fields; `evals` and the class fields stay.
+- **Known:** the §47 quinn collapse may appear in either arm's c1 rows (§49 had one in CAND, §48b three in BASE). Reported, never scored.
+
+**Prediction.** PASS.
+
+**Pre-flight (VM, fresh target):**
+- **`simplify-5` `07afc9b7`:** `cargo check --all-targets` 0 errors; lib gates 14/0, scheduler 88/0, net 275/0, transport 32/0; integration `place_arms`, `sigma_diag`, `sigma_candidates`, `tlag`, `holeclass`, `recovery_bench`, `eta_reachability` all pass.
+- **After merging main (`3ac3a209`, the bounding tests):** the full lib suite is re-checked before pinning (several bounds pin source text the simplify series edits).
+
+**Decision rule.**
+- **PASS:** `simplify-5` merges to main (`--no-ff`), with status §1's on-list and the `[GATES]` pin already updated in the branch.
+- **FAIL:** no merge; the failing clause, its size and the resolution table go to the user; bisect by arm commit.
+- **NO VERDICT:** re-run. **ABORT-TESTS:** fixed on the branch and re-run.
