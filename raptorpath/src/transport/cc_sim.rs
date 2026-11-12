@@ -24,7 +24,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
-use quinn_proto::congestion::{Bbr, BbrConfig, ControllerFactory};
+use quinn_proto::congestion::{Bbr, BbrConfig, Controller, ControllerFactory};
 use quinn_proto::{
     ClientConfig, Connection, ConnectionHandle, DatagramEvent, Endpoint, EndpointConfig, Event,
     ServerConfig,
@@ -44,6 +44,9 @@ type CcFactory = Arc<dyn ControllerFactory + Send + Sync + 'static>;
 enum Cc {
     BbrRs,
     QuinnBbr,
+    /// Quinn's BBR behind a wrapper that captures a real `RttEstimator`
+    /// (bench seam: the type has no public constructor).
+    Probe,
 }
 
 // ── the link ────────────────────────────────────────────────────────────
@@ -323,6 +326,7 @@ fn run(sc: &Sc) -> Run {
             }))
         }
         Cc::QuinnBbr => Arc::new(BbrConfig::default()),
+        Cc::Probe => Arc::new(RttProbe),
     };
     let (server_cfg, _) = QuicTransport::generate_self_signed_config(None).unwrap();
     let client_cfg: ClientConfig = QuicTransport::make_client_config(None, Some(cc));
@@ -462,6 +466,7 @@ fn run(sc: &Sc) -> Run {
                     }
                     q
                 }
+                Cc::Probe => None,
                 Cc::QuinnBbr => {
                     // another controller: the engine prints no [QCC] for it
                     assert!(qcc_of(conn.congestion_state().clone_box()).is_none());
@@ -530,7 +535,7 @@ fn c1_run(cc: Cc, stale: bool) -> &'static Run {
         (Cc::BbrRs, true) => 0,
         (Cc::QuinnBbr, true) => 1,
         (Cc::QuinnBbr, false) => 2,
-        (Cc::BbrRs, false) => unreachable!("not a registered scenario"),
+        (Cc::BbrRs, false) | (Cc::Probe, _) => unreachable!("not a registered scenario"),
     };
     RUNS[slot].get_or_init(|| run(&c1(cc, stale)))
 }
@@ -1073,4 +1078,230 @@ fn quinn_young_filter_burst_at_the_delivered_rate() {
             rows.join("\n")
         );
     }
+}
+
+// ── nsbench48: per-packet controller cost, quinn Bbr vs BbrRs ───────────
+
+/// Last `RttEstimator` a `Cc::Probe` connection handed to `on_ack`.
+static RTT_CAPTURE: std::sync::Mutex<Option<quinn_proto::RttEstimator>> = std::sync::Mutex::new(None);
+
+/// Quinn's `Bbr`, delegating everything, that copies the estimator it is given.
+#[derive(Debug)]
+struct RttProbe;
+
+impl ControllerFactory for RttProbe {
+    fn build(self: Arc<Self>, now: Instant, mtu: u16) -> Box<dyn Controller> {
+        Box::new(ProbeCc(Arc::new(BbrConfig::default()).build(now, mtu)))
+    }
+}
+
+#[derive(Debug)]
+struct ProbeCc(Box<dyn Controller>);
+
+impl Controller for ProbeCc {
+    fn on_sent(&mut self, now: Instant, bytes: u64, pn: u64) {
+        self.0.on_sent(now, bytes, pn)
+    }
+    fn on_ack(&mut self, now: Instant, sent: Instant, bytes: u64, app_limited: bool, rtt: &quinn_proto::RttEstimator) {
+        *RTT_CAPTURE.lock().unwrap() = Some(*rtt);
+        self.0.on_ack(now, sent, bytes, app_limited, rtt)
+    }
+    fn on_end_acks(&mut self, now: Instant, in_flight: u64, app_limited: bool, largest: Option<u64>) {
+        self.0.on_end_acks(now, in_flight, app_limited, largest)
+    }
+    fn on_congestion_event(&mut self, now: Instant, sent: Instant, persistent: bool, lost: u64) {
+        self.0.on_congestion_event(now, sent, persistent, lost)
+    }
+    fn on_mtu_update(&mut self, mtu: u16) {
+        self.0.on_mtu_update(mtu)
+    }
+    fn window(&self) -> u64 {
+        self.0.window()
+    }
+    fn clone_box(&self) -> Box<dyn Controller> {
+        Box::new(ProbeCc(self.0.clone_box()))
+    }
+    fn initial_window(&self) -> u64 {
+        self.0.initial_window()
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
+
+/// Driver-overhead baseline: a controller that does nothing.
+#[derive(Clone, Debug)]
+struct NoopCc;
+
+impl Controller for NoopCc {
+    fn on_congestion_event(&mut self, _: Instant, _: Instant, _: bool, _: u64) {}
+    fn on_mtu_update(&mut self, _: u16) {}
+    fn window(&self) -> u64 {
+        1 << 20
+    }
+    fn clone_box(&self) -> Box<dyn Controller> {
+        Box::new(self.clone())
+    }
+    fn initial_window(&self) -> u64 {
+        1 << 20
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
+
+/// One path's synthetic event stream: a packet every `rtt / NSB_INFLIGHT`,
+/// acked in pairs once `rtt` old (so ~NSB_INFLIGHT packets in flight), ~2.5 %
+/// never acked (reported as `on_congestion_event` when their pair is processed).
+struct BenchPath {
+    cc: Box<dyn Controller>,
+    q: std::collections::VecDeque<(u64, Instant, bool)>,
+    pn: u64,
+    rng: u64,
+}
+
+const NSB_INFLIGHT: u64 = 1000;
+const NSB_PKT: u64 = 1200;
+/// Loss probability numerator over 1000 (2.5 %).
+const NSB_LOSS_PER_MILLE: u64 = 25;
+
+struct NsBench {
+    paths: Vec<BenchPath>,
+    base: Instant,
+    clock: Arc<AtomicU64>,
+    rtt: Duration,
+    /// Global packet index (paths alternate).
+    i: u64,
+    sum: u64,
+    acks: u64,
+}
+
+impl NsBench {
+    fn new(kind: u8, rtt: Duration) -> Self {
+        let base = Instant::now();
+        let clock = Arc::new(AtomicU64::new(0));
+        let mut paths = Vec::new();
+        for k in 0..2u64 {
+            let cc: Box<dyn Controller> = match kind {
+                0 => Arc::new(BbrConfig::default()).build(base, 1350),
+                1 => {
+                    let c = clock.clone();
+                    Arc::new(BbrRsConfig::with_clock(move || base + Duration::from_nanos(c.load(Ordering::Relaxed))))
+                        .build(base, 1350)
+                }
+                _ => Box::new(NoopCc),
+            };
+            paths.push(BenchPath { cc, q: Default::default(), pn: 0, rng: 0x9E37_79B9_7F4A_7C15 ^ (k + 1) });
+        }
+        Self { paths, base, clock, rtt, i: 0, sum: 0, acks: 0 }
+    }
+
+    /// Drive `n` more sent packets (all paths together); the checksum
+    /// accumulates every `window()` read.
+    fn run(&mut self, n: u64, est: &quinn_proto::RttEstimator) {
+        // global spacing: two paths, each NSB_INFLIGHT packets per rtt
+        let dt_ns = (self.rtt.as_nanos() as u64 / (2 * NSB_INFLIGHT)).max(1);
+        for _ in 0..n {
+            let now = self.base + Duration::from_nanos(self.i * dt_ns);
+            let p = &mut self.paths[(self.i & 1) as usize];
+            self.i += 1;
+            p.pn += 1;
+            p.rng ^= p.rng << 13;
+            p.rng ^= p.rng >> 7;
+            p.rng ^= p.rng << 17;
+            let lost = (p.rng >> 11) % 1000 < NSB_LOSS_PER_MILLE;
+            p.cc.on_sent(now, NSB_PKT, p.pn);
+            p.q.push_back((p.pn, now, lost));
+            self.sum = self.sum.wrapping_add(std::hint::black_box(p.cc.window()));
+            // ack event: the two oldest packets, once the younger is rtt old
+            while p.q.len() >= 2 && p.q[1].1 + self.rtt <= now {
+                let (a, b) = (p.q.pop_front().unwrap(), p.q.pop_front().unwrap());
+                self.clock.store((now - self.base).as_nanos() as u64, Ordering::Relaxed);
+                let mut largest = None;
+                for (pn, sent, lost) in [a, b] {
+                    if lost {
+                        p.cc.on_congestion_event(now, sent, false, NSB_PKT);
+                    } else {
+                        p.cc.on_ack(now, sent, NSB_PKT, false, est);
+                        largest = Some(pn);
+                        self.acks += 1;
+                    }
+                }
+                if largest.is_some() {
+                    p.cc.on_end_acks(now, p.q.len() as u64 * NSB_PKT, false, largest);
+                }
+                self.sum = self.sum.wrapping_add(std::hint::black_box(p.cc.window()));
+            }
+        }
+    }
+}
+
+/// Status §48b readout: host ns per sent packet of the controller work
+/// (on_sent + on_ack + on_end_acks + on_congestion_event + window), quinn's
+/// `Bbr` vs the in-tree `BbrRs`, on one synthetic stream (2 paths, ack every 2
+/// packets, 2.5 % loss, ~1000 in flight per path). `noop` is the driver
+/// overhead; `net` = controller minus noop. Both controllers sit behind
+/// `Box<dyn Controller>` as in quinn. BbrRs reads its ack clock from an
+/// atomic here (tokio's clock in production); the driver stores it for every
+/// kind, so that cost is paid equally. The `RttEstimator` is a real one
+/// captured from a short in-process connection.
+/// Run: `cargo test --release -p raptorpath --lib nsbench48 -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn nsbench48_controller_ns_per_packet() {
+    let n: u64 = if cfg!(debug_assertions) { 100_000 } else { 2_000_000 };
+    let mut sc = c1(Cc::Probe, false);
+    sc.dur = Duration::from_millis(300);
+    sc.loss_burst = None;
+    sc.bulk_until = Duration::from_secs(10);
+    let _ = run(&sc);
+    let est = RTT_CAPTURE.lock().unwrap().expect("probe connection never reached on_ack");
+    let rtt = est.min();
+    assert!(rtt >= Duration::from_micros(500), "captured min rtt {rtt:?}");
+
+    let names = ["quinn", "bbr_rs", "noop"];
+    let mut ns = [Vec::new(), Vec::new(), Vec::new()];
+    let mut checks = [0u64; 3];
+    let mut last: Vec<NsBench> = Vec::new();
+    for pair in 0..5 {
+        // alternate the order within each pair: quinn,bbr_rs / bbr_rs,quinn
+        let order: [u8; 2] = if pair % 2 == 0 { [0, 1] } else { [1, 0] };
+        for kind in order.into_iter().chain([2]) {
+            let mut b = NsBench::new(kind, rtt);
+            b.run(n / 10, &est); // warm-up (Startup, first rounds)
+            let t0 = std::time::Instant::now();
+            b.run(n, &est);
+            let el = t0.elapsed();
+            ns[kind as usize].push(el.as_nanos() as f64 / n as f64);
+            checks[kind as usize] = checks[kind as usize].wrapping_add(b.sum);
+            if pair == 4 {
+                last.push(b);
+            }
+        }
+    }
+    // Mechanism proof: acks flowed, and BbrRs really holds ~in-flight records.
+    for b in &last {
+        assert!(b.acks > n / 2, "acks {}", b.acks);
+        if let Ok(rs) = b.paths[0].cc.clone_box().into_any().downcast::<BbrRs>() {
+            let (gen, rej, rej_app, tracked) = rs.max_bandwidth_diag();
+            assert!(tracked > 100, "sampler holds {tracked} records");
+            println!("NSBENCH48 bbr_rs sampler: samples_generated={gen} rejected_interval={rej} rejected_app_limited={rej_app} tracked_records={tracked}");
+        }
+    }
+    let med = |v: &Vec<f64>| {
+        let mut s = v.clone();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        s[s.len() / 2]
+    };
+    println!(
+        "NSBENCH48 n={n} pairs=5 rtt={rtt:?} inflight/path={NSB_INFLIGHT} loss={}% (ns per sent packet, median [min-max])",
+        NSB_LOSS_PER_MILLE as f64 / 10.0
+    );
+    for k in 0..3 {
+        let (mn, mx) = ns[k].iter().fold((f64::MAX, 0f64), |(a, b), &x| (a.min(x), b.max(x)));
+        println!("NSBENCH48 {:7} {:8.2} [{:.2}-{:.2}] checksum={}", names[k], med(&ns[k]), mn, mx, checks[k]);
+    }
+    let (q, r, z) = (med(&ns[0]), med(&ns[1]), med(&ns[2]));
+    println!("NSBENCH48 net quinn={:.2} bbr_rs={:.2} delta={:.2} ns/packet ratio={:.2}", q - z, r - z, r - q, (r - z) / (q - z).max(0.01));
+    assert!(checks[0] != 0 && checks[1] != 0);
 }

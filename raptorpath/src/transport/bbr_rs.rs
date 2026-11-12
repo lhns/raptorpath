@@ -490,6 +490,12 @@ impl BbrRs {
         self.max_bandwidth.sent.len()
     }
 
+    /// DIAG snapshot of the sampler (nsbench48).
+    #[cfg(test)]
+    pub(crate) fn max_bandwidth_diag(&self) -> (u64, u64, u64, usize) {
+        self.max_bandwidth.rs_diag()
+    }
+
     /// Test seam: plant the min-RTT model `d`, fresh as of the controller's
     /// clock. Pre-fix this sets `min_rtt` and the ProbeRtt stamp; post-fix it
     /// seeds the windowed filter. Tests using it are identical on both trees.
