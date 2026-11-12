@@ -47,8 +47,10 @@ path count, Law 0; flipped in `bf3a636` on the §8 re-run; on `[GATES]` as
 at `=0`, or `out of scope` where the policy excludes it: ρ < 1, Realtime
 packing, a coded wire). `RWM_PLAIN_RS`, `RWM_RS_ATTR`, `RWM_HONEST_K`,
 `RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`, `RWM_REPAIR_WAIT`, `RWM_PROACTIVE_PACER`,
-`RWM_REASM_BDP` and `RWM_COMPOSED_CAP` are removed (§49, tags
-`archive/RWM_*`); set in the environment they are ignored.
+`RWM_REASM_BDP` and `RWM_COMPOSED_CAP` are removed (§49), and `RWM_PLACE_HOL`,
+`RWM_PLACE_T_DERIVED`, `RWM_HOLDDOWN_Q`, `RWM_REFRESH_FLOOR_US` and
+`RWM_DERIVED_SWEEP` are removed (§50); tags `archive/RWM_*`; set in the
+environment they are ignored.
 
 Placement prices every leg on its wire RTT (ADR-0073, promoted from
 `RWM_PLACE_WIRE` in `2d625fa`, merged to main in `85c2295`); there is no gate.
@@ -74,6 +76,7 @@ and other arms (paper §11.2). *Corrected 2026-11-10.*
 
 | measurement | design | verdict |
 |---|---|---|
+| Simplify batches 1b–3 (§50) | `simplify-5` (Group C, `RWM_PLACE_HOL`, `RWM_PLACE_T_DERIVED` archived; −2 921 lines) vs main, suites + §41c guard, 12 + 12 | `GATE-41c PASS`, p = 0.172, 96/96 LIVE; **merged**. Closest clauses c1s `lag_E_cli` +15 % (p 0.009) and `rtp_floor_p0` +2.2 % (p 0.013), joint p 0.17; c1s client lag carried to §52 as a watch item |
 | `bbr_rs` as the substrate CC (§48b) | CAND `bbr48cand` (`RWM_QUIC_CC=bbr_rs`) vs BASE main `0a1ddb88`, c1s/c1d at 5 GB, c2/c8 at 600 MB, n = 12 + 12, §41c guard + p_rest, R2b collapse witness; rehearsal first | running (rehearsal `REHEARSAL-PASS`, both c8 smoke rows LIVE). Registered prediction `CONTROLLED-WITH-COST`; any label goes to the user |
 | Simplify batch 1 (§49) | `simplify-2` (nine default-off arms deleted, −2 665 lines of `raptorpath/src`) vs main `b3000701`, suites + §41c guard, 12 + 12 at c1s/c1d/c2/c8 | `GATE-41c PASS`, p = 0.957, 96/96 LIVE; **merged** (`0a1ddb88`). One CAND c1s row collapsed (148.5 Mbit/s): §41b's quinn window collapse, reported only. Five earlier launches died on harness paths, each fixed with a test |
 | Merge candidate `diag36` (§41c + §46) | suites + §41c guard (rank-minp, 12 + 12) on CAND `fb67a6c2`; §46 path event on `dffd8517` (same engine) | guard `PASS`, p = 0.226; §46 `NO-DIFFERENCE` (R and post-event goodput WITHIN in both variants); **merged** (`85c2295`) |
@@ -13665,3 +13668,14 @@ Session `LD_PLAN=48`, CAND `bbr48cand` `e5d7ffbd` (`RWM_QUIC_CC=bbr_rs`), BASE m
 - **Parser chain:** the post-simplify `[ETA] site=sender` line (no `t_*`/`hol_*`) parses through `place38_parse.eta_last` (cold_r, cold_ge, ref_fl, w_cold, w_n, w_calls, per-leg e_p50/e_p90; w_mv None). None of the removed `[ETA]`/`[HOLD]` fields are read anywhere in plan 41c's chain (grep).
 - **The one live-path refactor** (`1b00ede5`: `patience_floor_us` deleted; sender and receiver call `hole_nack_refresh` / `tail_sweep_timeout_us` directly): `the_shipped_recovery_clocks_are_pinned_absolutely` pins the shipped values (tail sweep 2·srtt clamped to [25, 100] ms incl. `TAIL_SWEEP_MIN_US` = 25 000 at c1's 2 ms srtt; the hole-refresh table at the same srtt points as the deleted test). The guard cannot resolve recovery at c8 (goodput d80 8–12 %), so this pin is the evidence for "unchanged".
 - **Correction:** "collapse rows are reported, never scored" is wrong. §41c ranks every LIVE row by its own values ("slow rows, reported only" means *listed*, not excluded). Registered reading: no row is dropped or relabelled; on a FAIL the user gets each c1 row's QCWND-below-BDP share beside the failing clause.
+
+### 50. Result — `GATE-41c PASS`, p = 0.1716; merged
+
+Session (`LD_PLAN=41c`, `LD_P46_SUITES=1`), CAND `simplify-5` `d5bd282a`, BASE main `318a8812`, launched 2026-11-12T17:32:35Z, `LD-ALL-DONE` 18:43:54Z. Ledgers: `docs/l1-raw/simplify50/` (scrubbed).
+- **Suites (CAND's tree):** release 1119 passed / 0 failed, debug-witness 978 / 0, doc ok, wasm 36, every `tools/l1` test ok. BASE's binary hashes to `6bcb46e8…`, identical to §48b's BASE (only test modules changed since).
+- **Guard:** 96/96 LIVE, 0 replaced slots, no DNF or crash rows, no slow rows, ABORT-TOKENS none. **min-p (true) 0.0089 at c1s `lag_E_cli` (x = +15.05 %); p = 0.1716 → PASS.**
+- **Worse-side clauses as printed:** c1s `lag_E_cli` +15.05 % (p 0.0089), c1s `rtp_floor_p0` +2.21 % (p 0.013), c2 `cpu_srv/GB` +1.25 % (p 0.14), c1d `lag_E_cli` +8.2 % (p 0.35); goodput within ±0.9 % in every cell. The c1s client-lag excess sits on 4–5 CAND rows (`lagC` 1 574–2 371 against BASE 855–1 273), not across all pairs; contention was low (io avg10 ≈ 0 on most rows). **Carried to §52 as a watch item**, reported only.
+- **Tail:** no row below 0.5 × its cell median; lowest CAND row c8 s7 r3 at 0.878 ×.
+- **Resolution (`resolution41c`, seed 0):** goodput d80 c1s 8 %, c1d 8 %, c2 2 %; CPU/GB d80 c1s 2–3 %, c1d 2.4–5 %, c2 5 %.
+- **Merge checks:** the merged tree's engine bytes (`raptorpath/src`, `tests`, math, wasm, `gf256`, `Cargo.*`) are identical to CAND's; `lib.sh` identical; all 30 `tools/l1` tests (with and without `LD_BASE_SHA`), `test_topo_netem` and the fast stub run pass on the merged tree. All five new `archive/RWM_*` tags are on github.
+- **Debt carried:** the kept hole-class `[HOLD]` gauge (`evals` + class fields; delete or keep: a later ruling); `qnative_recovery_round_us` may now have no non-test user; stale comments named by the workers (`recovery_clock.rs:8`, `docs/research/literature-crosscheck.md`).

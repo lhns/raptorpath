@@ -1,0 +1,277 @@
+MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main 318a8812 (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)
+ROWS 96/96; ABORT-TOKENS none
+STATUS-TABLE (every invocation row)
+  LIVE          96
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  VOID-ONDISK   0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+
+REPLACED SLOTS: 0 of at most 4 (slots voided by a witness: 0) - none
+§41c GUARD ON THE MERGE CANDIDATE (real scoring): N_PERM=10000 RNG seed 4141, one-sided, max over every clause of all four cells, PASS iff p > 0.05
+LIVE ROWS c1s-400 BASE=12  c1s-400 CAND=12  c1d-400 BASE=12  c1d-400 CAND=12  c2-100 BASE=12  c2-100 CAND=12  c8-100 BASE=12  c8-100 CAND=12
+
+RESOLUTION (computed from BASE rows alone, before CAND is read): per clause the q95 of |x_c| over the half-per-seed splits of BASE, beside the §21 tolerance
+  c1s-400 goodput        q95|x|=0.0526 (splits=400, nBASE=12)  §21 tol=0.0490  q95 > tol: the guard cannot see this clause below q95
+  c1s-400 cpu_cli/GB     q95|x|=0.0114 (splits=400, nBASE=12)  §21 tol=0.0240  q95 <= tol
+  c1s-400 cpu_srv/GB     q95|x|=0.0262 (splits=400, nBASE=12)  §21 tol=0.0240  q95 > tol: the guard cannot see this clause below q95
+  c1s-400 lag_E_cli      q95|x|=0.1084 (splits=400, nBASE=12)  §21 tol=0.1978  q95 <= tol
+  c1s-400 lag_E_srv      q95|x|=0.2932 (splits=400, nBASE=12)  §21 tol=0.7306  q95 <= tol
+  c1s-400 rtp_floor_p0   q95|x|=0.0283 (splits=400, nBASE=12)  §21 tol=0.0582  q95 <= tol
+  c1d-400 goodput        q95|x|=0.0514 (splits=400, nBASE=12)  §21 tol=0.0560  q95 <= tol
+  c1d-400 cpu_cli/GB     q95|x|=0.0174 (splits=400, nBASE=12)  §21 tol=0.0650  q95 <= tol
+  c1d-400 cpu_srv/GB     q95|x|=0.0135 (splits=400, nBASE=12)  §21 tol=0.0650  q95 <= tol
+  c1d-400 lag_E_cli      q95|x|=0.1505 (splits=400, nBASE=12)  §21 tol=0.4475  q95 <= tol
+  c1d-400 lag_E_srv      q95|x|=0.1646 (splits=400, nBASE=12)  §21 tol=0.3333  q95 <= tol
+  c1d-400 rtp_floor_p0   q95|x|=0.0416 (splits=400, nBASE=12)  §21 tol=0.0894  q95 <= tol
+  c1d-400 rtp_floor_p1   q95|x|=0.0968 (splits=400, nBASE=12)  §21 tol=0.1106  q95 <= tol
+  c2-100 goodput        q95|x|=0.0078 (splits=400, nBASE=12)  §21 tol=0.0140  q95 <= tol
+  c2-100 cpu_cli/GB     q95|x|=0.0349 (splits=400, nBASE=12)  §21 tol=0.0630  q95 <= tol
+  c2-100 cpu_srv/GB     q95|x|=0.0542 (splits=400, nBASE=12)  §21 tol=0.0630  q95 <= tol
+  c2-100 lag_E_cli      q95|x|=0.0605 (splits=400, nBASE=12)  §21 tol=0.4552  q95 <= tol
+  c2-100 lag_E_srv      q95|x|=0.2541 (splits=400, nBASE=12)  §21 tol=0.3594  q95 <= tol
+  c2-100 rtp_floor_p0   q95|x|=0.1136 (splits=400, nBASE=12)  §21 tol=0.2824  q95 <= tol
+  c8-100 goodput        q95|x|=0.0788 (splits=400, nBASE=12)  §21 tol=0.0400  q95 > tol: the guard cannot see this clause below q95
+  c8-100 cpu_cli/GB     q95|x|=0.0337 (splits=400, nBASE=12)  §21 tol=0.1160  q95 <= tol
+  c8-100 cpu_srv/GB     q95|x|=0.0611 (splits=400, nBASE=12)  §21 tol=0.1160  q95 <= tol
+  c8-100 lag_E_cli      q95|x|=0.0751 (splits=400, nBASE=12)  §21 tol=0.3314  q95 <= tol
+  c8-100 lag_E_srv      q95|x|=0.0809 (splits=400, nBASE=12)  §21 tol=0.1357  q95 <= tol
+  c8-100 rtp_floor_p0   q95|x|=0.1019 (splits=400, nBASE=12)  §21 tol=0.2623  q95 <= tol
+  c8-100 rtp_floor_p1   q95|x|=0.0831 (splits=400, nBASE=12)  §21 tol=0.1929  q95 <= tol
+
+CAND against BASE (stratified rank sums, min-p over the same joint relabellings)
+  c1s-400: pool 12 BASE + 12 CAND; relabelled CAND rows per seed s42:6 s7:6
+  c1d-400: pool 12 BASE + 12 CAND; relabelled CAND rows per seed s42:6 s7:6
+  c2-100: pool 12 BASE + 12 CAND; relabelled CAND rows per seed s42:6 s7:6
+  c8-100: pool 12 BASE + 12 CAND; relabelled CAND rows per seed s42:6 s7:6
+  clause: worse-signed relative median difference x, rank sum S (true / null mean), clause permutation p  (positive x = CAND worse)
+    c1s-400 goodput        x=  +0.56 %  S=  73.0 /  78.00  p=0.7290
+    c1s-400 cpu_cli/GB     x=  +1.21 %  S=  80.5 /  77.97  p=0.3954
+    c1s-400 cpu_srv/GB     x=  +0.48 %  S=  84.5 /  78.01  p=0.2427
+    c1s-400 lag_E_cli      x= +15.05 %  S=  99.0 /  77.92  p=0.0089
+    c1s-400 lag_E_srv      x=  +3.01 %  S=  80.0 /  77.98  p=0.4349
+    c1s-400 rtp_floor_p0   x=  +2.21 %  S=  98.0 /  78.06  p=0.0130
+    c1d-400 goodput        x=  -0.93 %  S=  74.0 /  78.04  p=0.6955
+    c1d-400 cpu_cli/GB     x=  -0.70 %  S=  75.5 /  78.07  p=0.6263
+    c1d-400 cpu_srv/GB     x=  +0.22 %  S=  75.0 /  78.05  p=0.6549
+    c1d-400 lag_E_cli      x=  +8.17 %  S=  82.0 /  78.21  p=0.3529
+    c1d-400 lag_E_srv      x=  -3.67 %  S=  72.5 /  78.04  p=0.7425
+    c1d-400 rtp_floor_p0   x=  +0.18 %  S=  77.0 /  77.94  p=0.5677
+    c1d-400 rtp_floor_p1   x=  -0.88 %  S=  74.0 /  78.00  p=0.6909
+    c2-100 goodput        x=  -0.05 %  S=  84.5 /  78.09  p=0.2479
+    c2-100 cpu_cli/GB     x=  +0.78 %  S=  84.0 /  77.99  p=0.2597
+    c2-100 cpu_srv/GB     x=  +1.25 %  S=  88.0 /  78.07  p=0.1395
+    c2-100 lag_E_cli      x=  +2.25 %  S=  85.5 /  78.10  p=0.2148
+    c2-100 lag_E_srv      x=  +0.47 %  S=  72.0 /  78.09  p=0.7668
+    c2-100 rtp_floor_p0   x=  +1.85 %  S=  76.0 /  77.99  p=0.6106
+    c8-100 goodput        x=  -0.22 %  S=  81.0 /  77.96  p=0.3886
+    c8-100 cpu_cli/GB     x=  +0.27 %  S=  82.5 /  78.12  p=0.3200
+    c8-100 cpu_srv/GB     x=  -2.46 %  S=  74.0 /  78.11  p=0.6892
+    c8-100 lag_E_cli      x=  +0.49 %  S=  85.5 /  78.01  p=0.2143
+    c8-100 lag_E_srv      x=  +0.81 %  S=  87.0 /  77.94  p=0.1723
+    c8-100 rtp_floor_p0   x=  -5.63 %  S=  69.5 /  78.03  p=0.8416
+    c8-100 rtp_floor_p1   x=  +2.35 %  S=  85.0 /  77.89  p=0.2312
+  neutral fills (an absent instrument value on a completed row gets the stratum's mean rank): none  (total 0)
+  worst-ranked rows (DNF = harness 43's COLLAPSE; the worst rank on every clause of the cell): none
+  slow rows (reported only, ranked by their own values): goodput < 0.5 x the POOLED (BASE + CAND) median of the cell: none
+  min-p (true) = 0.00890 at c1s-400 lag_E_cli
+  p = 0.1716  (share of the 10000 relabellings plus the true labelling whose min-p <= the true min-p)
+GATE-41c[rank-minp] PASS (p=0.1716; the candidate build may reach main)
+
+§21 READINGS of CAND against all BASE rows (reported beside the gate)
+    FEED 41b-c1s-400@def p0 plc/truth CAND=1.011 BASE=1.011 -> SAME
+    CLAUSE 41b-c1s-400@def goodput: WITHIN CAND=819.6 [800-854.1] BASE=824.2 [773.6-858.6] (-0.6%, rel=0.049)
+    CLAUSE 41b-c1s-400@def cpu_cli/GB: WITHIN CAND=15.65 [15.18-16.05] BASE=15.46 [15.32-15.95] (+1.2%, rel=0.024)
+    CLAUSE 41b-c1s-400@def cpu_srv/GB: WITHIN CAND=18.49 [18.1-18.77] BASE=18.4 [17.92-18.75] (+0.5%, rel=0.024)
+    CLAUSE 41b-c1s-400@def lag_E_cli: WITHIN CAND=1216 [911-2371] BASE=1056 [855-1273] (+15.0%, rel=0.198)
+    CLAUSE 41b-c1s-400@def lag_E_srv: WITHIN CAND=1010 [794-2263] BASE=980 [686-2118] (+3.0%, rel=0.731)
+    CLAUSE 41b-c1s-400@def rtp_floor_p0: WITHIN CAND=2590 [2410-2775] BASE=2534 [2326-2621] (+2.2%, rel=0.058)
+    FEED 41b-c1d-400@def p0 plc/truth CAND=1.034 BASE=1.038 -> SAME
+    FEED 41b-c1d-400@def p1 plc/truth CAND=1.001 BASE=1.070 -> SAME
+    CLAUSE 41b-c1d-400@def goodput: WITHIN CAND=813.4 [749.6-844.2] BASE=805.9 [737.1-851.7] (+0.9%, rel=0.056)
+    CLAUSE 41b-c1d-400@def cpu_cli/GB: WITHIN CAND=21.27 [20.8-22.52] BASE=21.43 [20.38-22.15] (-0.7%, rel=0.065)
+    CLAUSE 41b-c1d-400@def cpu_srv/GB: WITHIN CAND=23.26 [22.65-24.38] BASE=23.21 [22.6-23.72] (+0.2%, rel=0.065)
+    CLAUSE 41b-c1d-400@def lag_E_cli: WITHIN CAND=1510 [995-4152] BASE=1396 [946-2195] (+8.2%, rel=0.448)
+    CLAUSE 41b-c1d-400@def lag_E_srv: WITHIN CAND=972.5 [809-1666] BASE=1010 [778-1451] (-3.7%, rel=0.333)
+    CLAUSE 41b-c1d-400@def rtp_floor_p0: WITHIN CAND=2489 [2390-2807] BASE=2484 [2300-2744] (+0.2%, rel=0.089)
+    CLAUSE 41b-c1d-400@def rtp_floor_p1: WITHIN CAND=2468 [2322-2755] BASE=2490 [2329-2880] (-0.9%, rel=0.111)
+    FEED 41b-c2-100@def p0 plc/truth CAND=1.007 BASE=1.005 -> SAME
+    CLAUSE 41b-c2-100@def goodput: WITHIN CAND=89.88 [87.77-90.21] BASE=89.83 [88.06-90.32] (+0.1%, rel=0.014)
+    CLAUSE 41b-c2-100@def cpu_cli/GB: WITHIN CAND=32.35 [31.1-34.2] BASE=32.1 [30.8-34.5] (+0.8%, rel=0.063)
+    CLAUSE 41b-c2-100@def cpu_srv/GB: WITHIN CAND=36.4 [35-38.2] BASE=35.95 [32.6-37.5] (+1.3%, rel=0.063)
+    CLAUSE 41b-c2-100@def lag_E_cli: WITHIN CAND=1136 [1079-1686] BASE=1112 [1086-2098] (+2.2%, rel=0.455)
+    CLAUSE 41b-c2-100@def lag_E_srv: WITHIN CAND=971.5 [856-1917] BASE=967 [885-1580] (+0.5%, rel=0.359)
+    CLAUSE 41b-c2-100@def rtp_floor_p0: WITHIN CAND=1.128e+04 [7377-1.351e+04] BASE=1.108e+04 [7372-1.363e+04] (+1.9%, rel=0.282)
+    FEED 41b-c8-100@def p0 plc/truth CAND=1.002 BASE=1.001 -> SAME
+    FEED 41b-c8-100@def p1 plc/truth CAND=0.995 BASE=0.998 -> SAME
+    CLAUSE 41b-c8-100@def goodput: WITHIN CAND=97.1 [85.21-102.7] BASE=96.89 [91.2-104.7] (+0.2%, rel=0.040)
+    CLAUSE 41b-c8-100@def cpu_cli/GB: WITHIN CAND=36.9 [34.4-39.6] BASE=36.8 [35.1-39.1] (+0.3%, rel=0.116)
+    CLAUSE 41b-c8-100@def cpu_srv/GB: WITHIN CAND=43.7 [40.8-49.5] BASE=44.8 [38.8-47.1] (-2.5%, rel=0.116)
+    CLAUSE 41b-c8-100@def lag_E_cli: WITHIN CAND=1128 [1072-1983] BASE=1122 [1084-1828] (+0.5%, rel=0.331)
+    CLAUSE 41b-c8-100@def lag_E_srv: WITHIN CAND=1058 [864-2702] BASE=1050 [885-1170] (+0.8%, rel=0.136)
+    CLAUSE 41b-c8-100@def rtp_floor_p0: WITHIN CAND=9032 [7001-1.056e+04] BASE=9570 [6825-1.185e+04] (-5.6%, rel=0.262)
+    CLAUSE 41b-c8-100@def rtp_floor_p1: WITHIN CAND=4.111e+04 [3.736e+04-5.257e+04] BASE=4.016e+04 [3.407e+04-4.957e+04] (+2.4%, rel=0.193)
+
+TAIL (reported only): lowest goodput per arm and cell against the cell median (all live rows pooled), and the count below 0.5 x median
+  TAIL c1s-400 BASE lowest 773.6 Mbit/s (s42 r4) = 0.942 x cell median 821.1; rows below 0.5 x median: 0 of 12
+  TAIL c1s-400 CAND lowest 800.0 Mbit/s (s7 r3) = 0.974 x cell median 821.1; rows below 0.5 x median: 0 of 12
+  TAIL c1d-400 BASE lowest 737.1 Mbit/s (s7 r6) = 0.910 x cell median 810.3; rows below 0.5 x median: 0 of 12
+  TAIL c1d-400 CAND lowest 749.6 Mbit/s (s7 r2) = 0.925 x cell median 810.3; rows below 0.5 x median: 0 of 12
+  TAIL c2-100 BASE lowest 88.1 Mbit/s (s7 r3) = 0.980 x cell median 89.9; rows below 0.5 x median: 0 of 12
+  TAIL c2-100 CAND lowest 87.8 Mbit/s (s42 r1) = 0.977 x cell median 89.9; rows below 0.5 x median: 0 of 12
+  TAIL c8-100 BASE lowest 91.2 Mbit/s (s7 r4) = 0.939 x cell median 97.1; rows below 0.5 x median: 0 of 12
+  TAIL c8-100 CAND lowest 85.2 Mbit/s (s7 r3) = 0.878 x cell median 97.1; rows below 0.5 x median: 0 of 12
+
+RUN ORDER (ledger order; every row, any status): idx cell arm seed rep status mbps cpuC/GB cpuS/GB lagC lagS
+    0 c1s-400 BASE s42 r1 LIVE 826.4 15.3 18.1 1273.0 1121.0
+    1 c1s-400 CAND s42 r1 LIVE 838.3 15.7 18.3 1238.0 871.0
+    2 c1d-400 BASE s42 r1 LIVE 812.6 21.5 23.1 2195.0 1126.0
+    3 c1d-400 CAND s42 r1 LIVE 826.5 20.8 22.6 1732.0 943.0
+    4 c2-100 BASE s42 r1 LIVE 88.4 32.9 37.3 1137.0 1162.0
+    5 c2-100 CAND s42 r1 LIVE 87.8 32.2 36.0 1231.0 1043.0
+    6 c8-100 BASE s42 r1 LIVE 93.4 38.0 47.1 1128.0 1098.0
+    7 c8-100 CAND s42 r1 LIVE 96.0 37.0 43.9 1121.0 1251.0
+    8 c1s-400 CAND s7 r1 LIVE 819.0 15.9 18.8 1591.0 1022.0
+    9 c1s-400 BASE s7 r1 LIVE 788.5 15.9 18.8 990.0 2118.0
+   10 c1d-400 CAND s7 r1 LIVE 755.9 22.5 24.3 1680.0 940.0
+   11 c1d-400 BASE s7 r1 LIVE 803.2 21.3 23.1 1258.0 1141.0
+   12 c2-100 CAND s7 r1 LIVE 90.1 31.7 35.5 1097.0 979.0
+   13 c2-100 BASE s7 r1 LIVE 89.9 31.4 36.0 1112.0 1558.0
+   14 c8-100 CAND s7 r1 LIVE 92.4 36.0 43.5 1369.0 1056.0
+   15 c8-100 BASE s7 r1 LIVE 98.1 35.7 45.2 1164.0 1027.0
+   16 c1s-400 BASE s42 r2 LIVE 829.9 15.4 18.3 1068.0 686.0
+   17 c1s-400 CAND s42 r2 LIVE 818.0 15.3 18.5 1193.0 852.0
+   18 c1d-400 BASE s42 r2 LIVE 830.1 21.1 23.1 1503.0 1451.0
+   19 c1d-400 CAND s42 r2 LIVE 815.8 20.8 22.8 1637.0 1081.0
+   20 c2-100 BASE s42 r2 LIVE 90.2 34.5 37.3 1209.0 899.0
+   21 c2-100 CAND s42 r2 LIVE 88.1 33.1 37.1 1136.0 915.0
+   22 c8-100 BASE s42 r2 LIVE 94.3 35.9 44.4 1097.0 1093.0
+   23 c8-100 CAND s42 r2 LIVE 98.2 37.1 43.4 1072.0 946.0
+   24 c1s-400 CAND s7 r2 LIVE 820.1 15.8 18.2 1306.0 2263.0
+   25 c1s-400 BASE s7 r2 LIVE 840.2 15.5 18.1 1127.0 744.0
+   26 c1d-400 CAND s7 r2 LIVE 749.6 22.5 24.4 1209.0 833.0
+   27 c1d-400 BASE s7 r2 LIVE 837.7 21.5 23.5 1121.0 778.0
+   28 c2-100 CAND s7 r2 LIVE 90.2 31.7 35.0 1116.0 859.0
+   29 c2-100 BASE s7 r2 LIVE 90.1 33.2 36.5 2098.0 1580.0
+   30 c8-100 CAND s7 r2 LIVE 101.5 35.8 42.8 1729.0 1044.0
+   31 c8-100 BASE s7 r2 LIVE 102.7 37.3 43.1 1187.0 981.0
+   32 c1s-400 BASE s42 r3 LIVE 822.1 15.5 18.4 1045.0 955.0
+   33 c1s-400 CAND s42 r3 LIVE 816.8 15.2 18.6 1574.0 1078.0
+   34 c1d-400 BASE s42 r3 LIVE 761.0 22.1 23.7 1393.0 862.0
+   35 c1d-400 CAND s42 r3 LIVE 829.0 21.0 23.0 1326.0 960.0
+   36 c2-100 BASE s42 r3 LIVE 89.7 30.9 34.8 1086.0 929.0
+   37 c2-100 CAND s42 r3 LIVE 88.2 33.6 38.0 1201.0 964.0
+   38 c8-100 BASE s42 r3 LIVE 104.7 35.6 41.8 1117.0 1073.0
+   39 c8-100 CAND s42 r3 LIVE 102.7 34.4 40.8 1128.0 1081.0
+   40 c1s-400 CAND s7 r3 LIVE 800.0 15.5 18.7 1137.0 1684.0
+   41 c1s-400 BASE s7 r3 LIVE 792.5 15.7 18.8 1111.0 981.0
+   42 c1d-400 CAND s7 r3 LIVE 844.2 20.8 23.1 1518.0 870.0
+   43 c1d-400 BASE s7 r3 LIVE 784.1 21.7 23.6 946.0 1031.0
+   44 c2-100 CAND s7 r3 LIVE 89.9 31.1 36.8 1221.0 1064.0
+   45 c2-100 BASE s7 r3 LIVE 88.1 31.6 36.4 1088.0 994.0
+   46 c8-100 CAND s7 r3 LIVE 85.2 38.4 48.6 1983.0 2702.0
+   47 c8-100 BASE s7 r3 LIVE 92.3 37.1 46.3 1485.0 1131.0
+   48 c1s-400 BASE s42 r4 LIVE 773.6 15.3 18.5 999.0 1071.0
+   49 c1s-400 CAND s42 r4 LIVE 805.9 15.7 18.7 2371.0 937.0
+   50 c1d-400 BASE s42 r4 LIVE 812.0 21.4 23.2 1821.0 996.0
+   51 c1d-400 CAND s42 r4 LIVE 814.0 20.9 22.7 1107.0 985.0
+   52 c2-100 BASE s42 r4 LIVE 90.3 30.8 32.6 1909.0 1278.0
+   53 c2-100 CAND s42 r4 LIVE 87.9 32.5 36.5 1137.0 1074.0
+   54 c8-100 BASE s42 r4 LIVE 95.7 37.0 45.8 1105.0 1000.0
+   55 c8-100 CAND s42 r4 LIVE 97.9 37.1 44.7 1097.0 1809.0
+   56 c1s-400 CAND s7 r4 LIVE 842.0 16.0 18.6 1141.0 1597.0
+   57 c1s-400 BASE s7 r4 LIVE 831.1 15.6 18.6 1071.0 979.0
+   58 c1d-400 CAND s7 r4 LIVE 812.8 21.5 23.4 1698.0 809.0
+   59 c1d-400 BASE s7 r4 LIVE 795.8 21.8 23.7 1463.0 1019.0
+   60 c2-100 CAND s7 r4 LIVE 90.1 32.5 35.8 1079.0 873.0
+   61 c2-100 BASE s7 r4 LIVE 90.1 32.2 37.5 1087.0 885.0
+   62 c8-100 CAND s7 r4 LIVE 101.1 36.8 42.9 1128.0 864.0
+   63 c8-100 BASE s7 r4 LIVE 91.2 36.9 46.6 1183.0 1021.0
+   64 c1s-400 BASE s42 r5 LIVE 786.8 15.4 18.5 904.0 1785.0
+   65 c1s-400 CAND s42 r5 LIVE 814.6 15.2 18.2 1024.0 1046.0
+   66 c1d-400 BASE s42 r5 LIVE 808.6 21.4 23.2 1590.0 1130.0
+   67 c1d-400 CAND s42 r5 LIVE 766.9 21.8 23.4 1501.0 1105.0
+   68 c2-100 BASE s42 r5 LIVE 89.8 32.1 35.2 1123.0 1008.0
+   69 c2-100 CAND s42 r5 LIVE 90.2 34.2 38.2 1141.0 1221.0
+   70 c8-100 BASE s42 r5 LIVE 100.4 39.1 45.6 1828.0 1170.0
+   71 c8-100 CAND s42 r5 LIVE 86.1 39.6 49.5 1141.0 1079.0
+   72 c1s-400 CAND s7 r5 LIVE 824.3 15.6 18.4 943.0 997.0
+   73 c1s-400 BASE s7 r5 LIVE 794.0 15.6 18.1 1100.0 1301.0
+   74 c1d-400 CAND s7 r5 LIVE 824.1 21.0 22.9 995.0 1011.0
+   75 c1d-400 BASE s7 r5 LIVE 851.7 21.2 23.1 957.0 846.0
+   76 c2-100 CAND s7 r5 LIVE 89.1 31.3 35.9 1132.0 1917.0
+   77 c2-100 BASE s7 r5 LIVE 90.0 31.2 34.6 1105.0 891.0
+   78 c8-100 CAND s7 r5 LIVE 96.8 36.2 42.9 1127.0 1043.0
+   79 c8-100 BASE s7 r5 LIVE 104.5 35.1 38.8 1086.0 905.0
+   80 c1s-400 BASE s42 r6 LIVE 844.3 15.4 18.1 966.0 905.0
+   81 c1s-400 CAND s42 r6 LIVE 854.1 15.2 18.1 911.0 841.0
+   82 c1d-400 BASE s42 r6 LIVE 754.5 21.2 23.3 1398.0 1000.0
+   83 c1d-400 CAND s42 r6 LIVE 789.5 22.0 24.1 1124.0 1666.0
+   84 c2-100 BASE s42 r6 LIVE 89.8 32.3 35.9 1099.0 940.0
+   85 c2-100 CAND s42 r6 LIVE 90.2 33.1 36.3 1111.0 873.0
+   86 c8-100 BASE s42 r6 LIVE 95.2 36.6 43.0 1086.0 1074.0
+   87 c8-100 CAND s42 r6 LIVE 97.4 36.2 44.1 1105.0 1034.0
+   88 c1s-400 CAND s7 r6 LIVE 842.5 15.7 18.4 1775.0 794.0
+   89 c1s-400 BASE s7 r6 LIVE 858.6 15.3 17.9 855.0 790.0
+   90 c1d-400 CAND s7 r6 LIVE 783.3 22.0 23.5 4152.0 1443.0
+   91 c1d-400 BASE s7 r6 LIVE 737.1 20.4 22.6 1185.0 940.0
+   92 c2-100 CAND s7 r6 LIVE 89.9 31.8 36.6 1686.0 856.0
+   93 c2-100 BASE s7 r6 LIVE 88.9 32.1 34.4 1111.0 921.0
+   94 c8-100 CAND s7 r6 LIVE 92.3 38.7 47.8 1459.0 1061.0
+   95 c8-100 BASE s7 r6 LIVE 102.3 36.7 43.7 1084.0 885.0
+
+QCWND-BELOW-BDP (reported only): share of [DIAG] lines (measured run, t >= 1 s) whose per-path qcwnd < the cell's BDP; BDP per leg = link x 2 x one-way delay
+  c1s-400@def: BDP per leg = [250000] B
+    BASE  leg0: share below 0.000 [0.000-0.000] n=12
+    BASE  any leg: share below 0.000 [0.000-0.000] n=12
+    CAND  leg0: share below 0.000 [0.000-0.000] n=12
+    CAND  any leg: share below 0.000 [0.000-0.000] n=12
+  c1d-400@def: BDP per leg = [250000, 250000] B
+    BASE  leg0: share below 0.000 [0.000-0.714] n=12
+    BASE  leg1: share below 0.000 [0.000-0.083] n=12
+    BASE  any leg: share below 0.000 [0.000-0.714] n=12
+    CAND  leg0: share below 0.000 [0.000-0.083] n=12
+    CAND  leg1: share below 0.000 [0.000-0.000] n=12
+    CAND  any leg: share below 0.000 [0.000-0.083] n=12
+  c2-100@def: BDP per leg = [125000] B
+    BASE  leg0: share below 0.000 [0.000-0.000] n=12
+    BASE  any leg: share below 0.000 [0.000-0.000] n=12
+    CAND  leg0: share below 0.000 [0.000-0.000] n=12
+    CAND  any leg: share below 0.000 [0.000-0.000] n=12
+  c8-100@def: BDP per leg = [125000, 100000] B
+    BASE  leg0: share below 0.000 [0.000-0.000] n=12
+    BASE  leg1: share below 0.000 [0.000-0.000] n=12
+    BASE  any leg: share below 0.000 [0.000-0.000] n=12
+    CAND  leg0: share below 0.000 [0.000-0.029] n=12
+    CAND  leg1: share below 0.000 [0.000-0.032] n=12
+    CAND  any leg: share below 0.000 [0.000-0.032] n=12
+
+CONTENTION c1s-400@def, every row (status or not): arm seed rep status mbps | procs_running before/after | io full avg10 before/after
+  BASE s42 r1 LIVE mbps=826.4 | procs_running 1/1 | io 1.00/0.55
+  BASE s42 r2 LIVE mbps=829.9 | procs_running 1/1 | io 0.17/0.09
+  BASE s42 r3 LIVE mbps=822.1 | procs_running 2/1 | io 0.01/0.00
+  BASE s42 r4 LIVE mbps=773.6 | procs_running 1/1 | io 0.00/0.00
+  BASE s42 r5 LIVE mbps=786.8 | procs_running 1/1 | io 0.15/0.08
+  BASE s42 r6 LIVE mbps=844.3 | procs_running 1/1 | io 0.00/0.00
+  BASE s7 r1 LIVE mbps=788.5 | procs_running 1/1 | io 0.03/0.01
+  BASE s7 r2 LIVE mbps=840.2 | procs_running 1/1 | io 0.00/0.00
+  BASE s7 r3 LIVE mbps=792.5 | procs_running 1/1 | io 0.00/0.00
+  BASE s7 r4 LIVE mbps=831.1 | procs_running 1/1 | io 0.00/0.12
+  BASE s7 r5 LIVE mbps=794.0 | procs_running 1/1 | io 0.02/0.01
+  BASE s7 r6 LIVE mbps=858.6 | procs_running 1/1 | io 0.06/0.03
+  CAND s42 r1 LIVE mbps=838.3 | procs_running 1/1 | io 0.55/0.48
+  CAND s42 r2 LIVE mbps=818.0 | procs_running 1/1 | io 0.07/0.40
+  CAND s42 r3 LIVE mbps=816.8 | procs_running 1/1 | io 0.00/0.00
+  CAND s42 r4 LIVE mbps=805.9 | procs_running 1/1 | io 0.00/0.00
+  CAND s42 r5 LIVE mbps=814.6 | procs_running 1/1 | io 0.08/0.04
+  CAND s42 r6 LIVE mbps=854.1 | procs_running 1/1 | io 0.00/0.00
+  CAND s7 r1 LIVE mbps=819.0 | procs_running 1/1 | io 0.06/0.03
+  CAND s7 r2 LIVE mbps=820.1 | procs_running 1/1 | io 0.01/0.00
+  CAND s7 r3 LIVE mbps=800.0 | procs_running 1/1 | io 0.00/0.00
+  CAND s7 r4 LIVE mbps=842.0 | procs_running 1/1 | io 0.00/0.00
+  CAND s7 r5 LIVE mbps=824.3 | procs_running 1/1 | io 0.04/0.02
+  CAND s7 r6 LIVE mbps=842.5 | procs_running 1/1 | io 0.12/0.06
+VERDICT GATE-41c PASS
+RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger, re-runnable and seeded:  python3 raptorpath/tools/l1/place38_parse.py resolution41c /dev/shm/s50/run/ld.log
