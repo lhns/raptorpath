@@ -2235,15 +2235,17 @@ fn s10_sender_truth_loss_delta_carries_the_credit() {
 }
 
 // ===================================================================
-// The pinned placement cost table
+// The pinned placement cost tables
 //
 // The placement arms (derived temperature `T = (sqrt6/pi) sigma_e/ref`,
 // the HOL term, the derived `w_div`) are absent by default, and with the
 // arms off the shipped law must be unchanged. That is provable from a
 // table of hand-built states and the cost vectors the engine returns for
-// them, to 1e-12, captured with every gate absent: an edit that moves any
-// number in it has changed the shipped law. `place_costs` is `pub(crate)`
-// for this pin; nothing else reads it.
+// them, to 1e-12: an edit that moves any number in it has changed the
+// shipped law. Two tables pin the wire base (paper §5.7): the echo table
+// below (no wire RTT anywhere, so w^_i = s_i, the chain's last link) and
+// the wired table with the wire-clocked values (further down).
+// `place_costs` is `pub(crate)` for this pin; nothing else reads it.
 // ===================================================================
 
 /// Build one hand-specified scheduler state. `paths` is
@@ -2332,7 +2334,7 @@ fn cost_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
     ]
 }
 
-/// The capture harness. Ignored by default -- run it with
+/// The capture harness for the echo table. Ignored by default -- run it with
 /// `cargo test -p raptorpath --release -- --ignored capture_place_cost_table
 /// --nocapture` to print the table in the exact literal form the pin
 /// below expects. It is the only sanctioned way to move the table, and
@@ -2351,26 +2353,27 @@ fn capture_place_cost_table() {
     }
 }
 
-/// The pin: the engine's `place_costs`, to 1e-12, over the
-/// eight states above -- and the order, which the deterministic
+/// The echo pin: the engine's `place_costs`, to 1e-12, over the eight
+/// states above with no wire RTT mirrored (w^_i = s_i) -- and the order, which the deterministic
 /// tie-break makes reproducible (state 8 adds its paths 2, 0, 1 and
 /// must still return 0, 1, 2).
+const PINNED_ECHO_COST_TABLE: &[(&str, &[(PathId, f64)])] = &[
+    ("single-idle", &[(0, 5.00000000000000000e-1)]),
+    ("dual-symmetric-idle", &[(0, 5.00000000000000000e-1), (1, 5.00000000000000000e-1)]),
+    ("dual-asymmetric-rtt", &[(0, 5.00000000000000000e-1), (1, 2.50000000000000000e0)]),
+    ("dual-waterfill", &[(0, 9.00000000000000133e-1), (1, 9.00000000000000133e-1)]),
+    ("dual-overdraft", &[(0, 3.00000000000000000e0), (1, 5.00000000000000000e-1)]),
+    ("repair-fate", &[(0, 1.25000000000000000e0), (1, 7.50000000000000000e-1)]),
+    ("cold-path", &[(0, 5.00000000000000000e-1), (1, 2.50000000000000000e0)]),
+    ("triple-out-of-order", &[(0, 5.99999999999999978e-1), (1, 1.39999999999999991e0), (2, 2.39999999999999991e0)]),
+];
+
 #[test]
-fn place_costs_match_the_pinned_table() {
-    const PINNED: &[(&str, &[(PathId, f64)])] = &[
-        ("single-idle", &[(0, 5.00000000000000000e-1)]),
-        ("dual-symmetric-idle", &[(0, 5.00000000000000000e-1), (1, 5.00000000000000000e-1)]),
-        ("dual-asymmetric-rtt", &[(0, 5.00000000000000000e-1), (1, 2.50000000000000000e0)]),
-        ("dual-waterfill", &[(0, 9.00000000000000133e-1), (1, 9.00000000000000133e-1)]),
-        ("dual-overdraft", &[(0, 3.00000000000000000e0), (1, 5.00000000000000000e-1)]),
-        ("repair-fate", &[(0, 1.25000000000000000e0), (1, 7.50000000000000000e-1)]),
-        ("cold-path", &[(0, 5.00000000000000000e-1), (1, 2.50000000000000000e0)]),
-        ("triple-out-of-order", &[(0, 5.99999999999999978e-1), (1, 1.39999999999999991e0), (2, 2.39999999999999991e0)]),
-    ];
+fn place_costs_with_no_wire_rtt_price_the_echo_srtt() {
     let states = cost_table_states();
-    assert_eq!(states.len(), PINNED.len(), "the table lost a state");
+    assert_eq!(states.len(), PINNED_ECHO_COST_TABLE.len(), "the table lost a state");
     for ((name, sched, is_repair, covered), (pname, expect)) in
-        states.into_iter().zip(PINNED.iter())
+        states.into_iter().zip(PINNED_ECHO_COST_TABLE.iter())
     {
         assert_eq!(name, *pname, "the table was reordered");
         let got = sched.place_costs(is_repair, &covered);
@@ -2390,7 +2393,7 @@ fn place_costs_match_the_pinned_table() {
             assert!(
                 (gc - ec).abs() <= 1e-12,
                 "state `{name}` path {gid}: cost {gc:.17e} != pinned {ec:.17e} \
-                 (delta {:.3e}) -- THE SHIPPED PLACEMENT LAW MOVED",
+                 (delta {:.3e}) -- THE PLACEMENT LAW MOVED",
                 (gc - ec).abs()
             );
         }
@@ -2429,13 +2432,13 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 // controls (N = 1, the tie-break) still hold with everything armed.
 // ===================================================================
 
-/// Gate-off byte-identity, the probability side. The pinned table
-/// asserts the costs; this asserts that the softmax over them is
-/// untouched too, to 1e-12 -- because the arms enter through the
+/// Gate-off identity, the probability side. The pinned tables assert the
+/// costs; this asserts that the softmax over them is the plain softmax at
+/// the shipped temperature, to 1e-12 -- because the arms enter through the
 /// temperature as well as through the cost, and a temperature change
 /// leaves every cost fixed while moving every probability.
 #[test]
-fn every_arm_absent_leaves_the_probabilities_bit_identical() {
+fn every_arm_absent_leaves_the_probabilities_untouched() {
     for (name, mut sched, is_repair, covered) in cost_table_states() {
         sched.set_place_t_derived(false);
         sched.set_place_hol(false);
@@ -2466,7 +2469,7 @@ fn a_garbage_arm_value_is_an_error_naming_the_gate() {
 
 /// The arms are absent by default. A fresh scheduler in a clean
 /// environment carries all three off, which is what makes the pinned
-/// table an oracle for every other test in this file.
+/// tables an oracle for every other test in this file.
 #[test]
 fn the_placement_arms_are_absent_by_default() {
     let sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
@@ -2857,4 +2860,519 @@ fn the_cold_price_binds_are_counted_and_change_no_cost() {
     // Reading the gauge cannot have moved the law.
     let after = sched.place_costs(false, &[]);
     assert_eq!(before, after);
+}
+
+// ===================================================================
+// The wire-clocked placement base (paper §5.7 "The corrected price",
+// status §38/§41b: the shipped law)
+//
+//     E_i  =  (I_i/W_i)·s_i  +  (1/2 + eps_i)·w^_i
+//     w^_i =  wire_i  ?:  min_j wire_j  ?:  s_i
+//     cost_i = E_i/ref + w_bw·r_i + V_i      ref = max(min_j s_j, 1 ms)
+//
+// Every state feeds Copa through `record_rtt_sample` under a `MockClock`
+// (`set_rtt` feeds only the estimator and leaves Copa's EWMA empty, so it
+// cannot build the frozen-srtt state), and every assertion is an absolute
+// value from the formula above. The frozen-srtt base this law replaced
+// (`w^_i := s_i`, paper §10) survives only as a reference value in the
+// tests that bound the shift against it.
+// ===================================================================
+
+fn dur_ms(ms: f64) -> Duration {
+    Duration::from_secs_f64(ms * 1e-3)
+}
+
+/// One hand-built leg. `s_ms` is fed to Copa as 80 identical samples;
+/// `lost` of every 100 symbols is fed once to the loss estimator (the EWMA
+/// then reads `0.1 · lost/100`); `wire_ms` is the mirrored quinn RTT.
+#[derive(Clone, Copy)]
+struct WLeg {
+    id: PathId,
+    s_ms: f64,
+    wire_ms: Option<f64>,
+    lost: u32,
+    cwnd: u32,
+    in_flight: u32,
+}
+
+fn wleg(id: PathId, s_ms: f64, wire_ms: Option<f64>) -> WLeg {
+    WLeg { id, s_ms, wire_ms, lost: 0, cwnd: 100, in_flight: 0 }
+}
+
+fn wire_state(hint: ProtocolHint, legs: &[WLeg]) -> Scheduler {
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new_with_hint(clock, hint);
+    for l in legs {
+        sched.add_path(l.id);
+        let p = sched.path_mut(l.id).unwrap();
+        for _ in 0..80 {
+            p.record_rtt_sample(dur_ms(l.s_ms));
+        }
+        if let Some(w) = l.wire_ms {
+            p.set_wire_rtt(dur_ms(w));
+        }
+        if l.lost > 0 {
+            p.estimator.record_batch(100, 100 - l.lost);
+        }
+        p.cwnd = l.cwnd;
+        p.in_flight = l.in_flight;
+    }
+    sched
+}
+
+fn s_of(sched: &Scheduler, id: PathId) -> f64 {
+    sched.path(id).unwrap().srtt_measured().unwrap().as_secs_f64()
+}
+
+fn eps_of(sched: &Scheduler, id: PathId) -> f64 {
+    sched.path(id).unwrap().estimator.loss_rate()
+}
+
+fn cost_of_leg(sched: &Scheduler, id: PathId) -> f64 {
+    sched
+        .place_costs(false, &[])
+        .into_iter()
+        .find(|(p, _)| *p == id)
+        .unwrap()
+        .1
+}
+
+fn prob_of_leg(sched: &Scheduler, id: PathId) -> f64 {
+    sched
+        .place_probs(false, &[])
+        .into_iter()
+        .find(|(p, _)| *p == id)
+        .unwrap()
+        .1
+}
+
+/// The law's cost for one leg, straight from the paper's formula.
+fn wire_formula(w_bw: f64, i_over_w: f64, s: f64, w_hat: f64, eps: f64, ref_s: f64) -> f64 {
+    (i_over_w * s + (0.5 + eps) * w_hat) / ref_s + w_bw * (eps / (1.0 - eps))
+}
+
+/// The frozen-srtt base the wire base replaced (`w^_i := s_i`, paper §10),
+/// as a reference value only: the engine no longer computes it.
+fn frozen_formula(w_bw: f64, i_over_w: f64, s: f64, eps: f64, ref_s: f64) -> f64 {
+    wire_formula(w_bw, i_over_w, s, s, eps, ref_s)
+}
+
+fn sigmoid(x: f64) -> f64 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+/// The p34 c1d r2 shape: leg 1 gets 2.5 ms floor samples, then a spike
+/// to 156 ms (its own backlog dwell), then five seconds of silence on the
+/// mock clock. Leg 0 is active at 9 ms. Quinn's wire RTT: 3 ms and 9 ms.
+fn idle_leg_state(i0_over_w0: f64) -> Scheduler {
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Auto);
+    sched.add_path(0);
+    sched.add_path(1);
+    {
+        let p = sched.path_mut(1).unwrap();
+        for _ in 0..40 {
+            p.record_rtt_sample(dur_ms(2.5));
+        }
+        for _ in 0..30 {
+            p.record_rtt_sample(dur_ms(156.0));
+        }
+        p.set_wire_rtt(dur_ms(3.0));
+        p.cwnd = 10;
+        p.in_flight = 0;
+    }
+    clock.advance(Duration::from_secs(5));
+    {
+        let p = sched.path_mut(0).unwrap();
+        for _ in 0..40 {
+            p.record_rtt_sample(dur_ms(9.0));
+        }
+        p.set_wire_rtt(dur_ms(9.0));
+        p.cwnd = 10;
+        p.in_flight = (i0_over_w0 * 10.0).round() as u32;
+    }
+    sched
+}
+
+/// The wired pin: the engine's `place_costs` over the eight table states with
+/// every measured leg's wire RTT mirrored at 0.8·s_i (the unmeasured leg of
+/// `cold-path` has none, so it takes `min_j wire_j`). The numbers are the
+/// formula's, worked by hand (E_i = (I_i/W_i)·s_i + (1/2)·0.8·s_i, ref =
+/// fastest s_i, eps = 0, w_bw·r = 0), not captured from the engine; the
+/// repair row adds the flat `w_div·fate` of 0.75 / 0.25.
+const PINNED_WIRED_COST_TABLE: &[(&str, &[(PathId, f64)])] = &[
+    ("single-idle", &[(0, 0.4)]),
+    ("dual-symmetric-idle", &[(0, 0.4), (1, 0.4)]),
+    ("dual-asymmetric-rtt", &[(0, 0.4), (1, 2.0)]),
+    ("dual-waterfill", &[(0, 0.8), (1, 0.8)]),
+    ("dual-overdraft", &[(0, 2.9), (1, 0.4)]),
+    ("repair-fate", &[(0, 1.15), (1, 0.65)]),
+    ("cold-path", &[(0, 0.4), (1, 0.4)]),
+    ("triple-out-of-order", &[(0, 0.5), (1, 1.2), (2, 2.1)]),
+];
+
+fn wired_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
+    let mut states = cost_table_states();
+    for (_, sched, _, _) in &mut states {
+        for id in sched.all_path_ids() {
+            let p = sched.path_mut(id).unwrap();
+            if let Some(s) = p.srtt_measured() {
+                p.set_wire_rtt(s.mul_f64(0.8));
+            }
+        }
+    }
+    states
+}
+
+#[test]
+fn place_costs_match_the_pinned_wired_table() {
+    let states = wired_table_states();
+    assert_eq!(states.len(), PINNED_WIRED_COST_TABLE.len());
+    for ((name, sched, is_repair, covered), (pname, expect)) in
+        states.into_iter().zip(PINNED_WIRED_COST_TABLE.iter())
+    {
+        assert_eq!(name, *pname);
+        let got = sched.place_costs(is_repair, &covered);
+        assert_eq!(got.len(), expect.len(), "state `{name}`");
+        for ((gid, gc), (eid, ec)) in got.iter().zip(expect.iter()) {
+            assert_eq!(gid, eid, "state `{name}`: candidate order moved");
+            assert!(
+                (gc - ec).abs() <= 1e-12,
+                "state `{name}` path {gid}: cost {gc:.17e} != formula {ec:.17e}"
+            );
+        }
+    }
+}
+
+/// With `wire_i := s_i` on every leg the wire base is the echo-srtt price,
+/// the last link of the availability chain, so the table of
+/// `place_costs_with_no_wire_rtt_price_the_echo_srtt` holds again to 1e-12.
+#[test]
+fn wire_equal_to_echo_prices_the_echo_srtt() {
+    let states = cost_table_states();
+    assert_eq!(states.len(), PINNED_ECHO_COST_TABLE.len());
+    for ((name, mut sched, is_repair, covered), (pname, expect)) in
+        states.into_iter().zip(PINNED_ECHO_COST_TABLE.iter())
+    {
+        assert_eq!(name, *pname);
+        for id in sched.all_path_ids() {
+            let p = sched.path_mut(id).unwrap();
+            let s = p.srtt();
+            p.set_wire_rtt(s);
+        }
+        let got = sched.place_costs(is_repair, &covered);
+        assert_eq!(got.len(), expect.len(), "state `{name}`");
+        for ((gid, gc), (eid, ec)) in got.iter().zip(expect.iter()) {
+            assert_eq!(gid, eid, "state `{name}`: candidate order moved");
+            assert!(
+                (gc - ec).abs() <= 1e-12,
+                "state `{name}` path {gid}: cost {gc:.17e} != {ec:.17e} with wire_i = s_i"
+            );
+        }
+    }
+}
+
+/// Defect pinned and cured: an idle leg whose echo srtt froze at its own
+/// dwell is priced at its wire transit, not at the frozen dwell.
+#[test]
+fn idle_leg_price_is_its_wire_transit_not_its_frozen_srtt() {
+    let sched = idle_leg_state(0.0);
+    let (s0, s1) = (s_of(&sched, 0), s_of(&sched, 1));
+    assert!(s1 >= 0.100, "the fixture must freeze s_1 at the spike's dwell: {s1}");
+    assert!((s0 - 0.009).abs() < 1e-6, "leg 0 is active at 9 ms: {s0}");
+    let ref_s = s0; // min_j s_j, above the 1 ms floor
+    let eps1 = eps_of(&sched, 1);
+    assert_eq!(eps1, 0.0);
+
+    // (1/2 + eps_1)·3 ms / ref, to 1e-12; = 1/6 on these numbers.
+    let want = (0.5 + eps1) * 0.003 / ref_s;
+    let got = cost_of_leg(&sched, 1);
+    assert!((got - want).abs() < 1e-12, "idle leg: {got} != {want}");
+    assert!((want - 0.5 * 3.0 / 9.0).abs() < 1e-6, "= 1/6 on these numbers");
+
+    // The frozen-srtt reference price (the defect): (1/2)·s_1 / ref, > 5.
+    let frozen = frozen_formula(0.0, 0.0, s1, eps1, ref_s);
+    assert!(frozen > 5.0 && got < frozen / 25.0, "got {got}, frozen reference {frozen}");
+}
+
+/// The absorbing fixed point is gone: leg 0 carrying I/W = 0.6, leg 1 idle.
+/// Leg 1 takes at least half; the frozen-srtt reference puts it below 1e-15.
+#[test]
+fn idle_leg_is_not_absorbing_at_symmetric_legs() {
+    let sched = idle_leg_state(0.6);
+
+    // Absolute: c_0 = (0.6·s_0 + 1/2·9 ms)/s_0 = 1.1, c_1 = 1/6.
+    let ref_s = s_of(&sched, 0);
+    let c0 = (0.6 * ref_s + 0.5 * 0.009) / ref_s;
+    let c1 = 0.5 * 0.003 / ref_s;
+    let want = sigmoid((c0 - c1) / PLACE_TEMPERATURE);
+    let got = prob_of_leg(&sched, 1);
+    assert!(got >= 0.5, "P(leg 1) = {got} < 1/2");
+    assert!((got - want).abs() < 1e-12, "P(leg 1) {got} != sigma(gap/T) {want}");
+
+    let s1 = s_of(&sched, 1);
+    let frozen_gap = frozen_formula(1.0, 0.0, s1, 0.0, ref_s) - c0;
+    assert!(sigmoid(-frozen_gap / PLACE_TEMPERATURE) < 1e-15, "the frozen reference absorbs");
+}
+
+/// Equal state ⇒ exactly 1/N, at three loads, 2 and 3 legs.
+#[test]
+fn symmetric_legs_at_equal_state_split_exactly_half() {
+    for n in [2u32, 3] {
+        for (cwnd, infl) in [(10u32, 0u32), (10, 5), (10, 15)] {
+            let legs: Vec<WLeg> = (0..n as PathId)
+                .map(|id| WLeg { lost: 20, cwnd, in_flight: infl, ..wleg(id, 10.0, Some(4.0)) })
+                .collect();
+            let sched = wire_state(ProtocolHint::Auto, &legs);
+            for (id, p) in sched.place_probs(false, &[]) {
+                assert!(
+                    (p - 1.0 / n as f64).abs() < 1e-12,
+                    "N={n} I/W={}: p{id}={p}",
+                    infl as f64 / cwnd as f64
+                );
+            }
+        }
+    }
+}
+
+/// The p27 c8 DEF128 s42 state: s = 16/45 ms, w^ = 14/43 ms,
+/// eps = 0.026/0.017, I_0/W_0 = 0.38, I_1 = 0, Bulk. The wire base may move
+/// the slow leg's log-probability against the frozen-srtt reference by no
+/// more than the open-loop shift `dg` of paper §5.7, which is 0.007 nats here.
+#[test]
+fn c8_fresh_state_share_is_unchanged() {
+    let legs = [
+        WLeg { lost: 26, in_flight: 38, ..wleg(0, 16.0, Some(14.0)) },
+        WLeg { lost: 17, ..wleg(1, 45.0, Some(43.0)) },
+    ];
+    let sched = wire_state(ProtocolHint::Bulk, &legs);
+    let (s0, s1) = (s_of(&sched, 0), s_of(&sched, 1));
+    let (e0, e1) = (eps_of(&sched, 0), eps_of(&sched, 1));
+    assert!((e0 - 0.026).abs() < 1e-12 && (e1 - 0.017).abs() < 1e-12);
+    let ref_s = s0.min(s1);
+    let dg = ((0.5 + e1) * (0.043 - s1) - (0.5 + e0) * (0.014 - s0)) / (ref_s * PLACE_TEMPERATURE);
+    assert!((dg.abs() - 0.0075).abs() < 5e-4, "the paper's open-loop shift is 0.007: {dg}");
+    // P1 against the frozen reference: sigma(-(c1 - c0)/T) for each base.
+    let w_bw = 1.0; // Bulk
+    let p1 = |c0: f64, c1: f64| sigmoid(-(c1 - c0) / PLACE_TEMPERATURE);
+    let p_ref = p1(
+        frozen_formula(w_bw, 0.38, s0, e0, ref_s),
+        frozen_formula(w_bw, 0.0, s1, e1, ref_s),
+    );
+    let p_got = prob_of_leg(&sched, 1);
+    let p_want = p1(
+        wire_formula(w_bw, 0.38, s0, 0.014, e0, ref_s),
+        wire_formula(w_bw, 0.0, s1, 0.043, e1, ref_s),
+    );
+    assert!((p_got - p_want).abs() < 1e-12, "engine {p_got} != formula {p_want}");
+    let shift = (p_got / p_ref).ln().abs();
+    assert!(shift <= dg.abs() + 1e-9, "|ln(P1/P1_ref)| = {shift} > |dg| = {}", dg.abs());
+    // The shift is real, not a no-op of the base.
+    assert!(shift > 1e-4, "the wire base did not execute: {shift}");
+}
+
+/// The p27 c8 DEF256 s42 locked state: s = 24/390 ms, w^ = 23/45 ms,
+/// I_0 = I_1 = 0, eps = 0.026/0.017, Bulk. The slow leg is sampled again
+/// (P >= e^-4); the frozen-srtt reference keeps it out (P < 1e-20).
+///
+/// Spec note: status §38 amendment 1 quotes a gap of +3.8 nats here; the
+/// formula on exactly these inputs gives +3.04 (w_bw·(r_1 - r_0) = -0.063
+/// nats of it is the B term), asserted below from the formula.
+#[test]
+fn locked_c8_leg_is_sampled_again() {
+    let legs = [
+        WLeg { lost: 26, ..wleg(0, 24.0, Some(23.0)) },
+        WLeg { lost: 17, ..wleg(1, 390.0, Some(45.0)) },
+    ];
+    let sched = wire_state(ProtocolHint::Bulk, &legs);
+    let ref_s = s_of(&sched, 0);
+    let w_bw = 1.0; // Bulk
+    let gap = (wire_formula(w_bw, 0.0, s_of(&sched, 1), 0.045, eps_of(&sched, 1), ref_s)
+        - wire_formula(w_bw, 0.0, s_of(&sched, 0), 0.023, eps_of(&sched, 0), ref_s))
+        / PLACE_TEMPERATURE;
+    assert!((gap - 3.04).abs() < 0.01, "gap on these inputs: {gap}");
+    let p = prob_of_leg(&sched, 1);
+    assert!((p - sigmoid(-gap)).abs() < 1e-12, "P1 {p} != sigma(-gap) {}", sigmoid(-gap));
+    assert!(p >= (-4.0f64).exp(), "the locked leg is sampled again: {p}");
+    let gap_ref = (frozen_formula(w_bw, 0.0, s_of(&sched, 1), eps_of(&sched, 1), ref_s)
+        - frozen_formula(w_bw, 0.0, s_of(&sched, 0), eps_of(&sched, 0), ref_s))
+        / PLACE_TEMPERATURE;
+    assert!(sigmoid(-gap_ref) < 1e-20, "frozen-srtt reference: the locked leg stays out");
+}
+
+/// The fixed point's premise: c_i is strictly increasing in I_i (the other
+/// leg held), with slope s_i/(W_i·ref) exactly.
+#[test]
+fn own_cost_is_increasing_in_own_in_flight_with_the_wire_base() {
+    for target in [0 as PathId, 1] {
+        let mk = |infl: u32| {
+            let mut legs = [
+                WLeg { lost: 20, cwnd: 20, ..wleg(0, 10.0, Some(8.0)) },
+                WLeg { lost: 30, cwnd: 20, ..wleg(1, 30.0, Some(25.0)) },
+            ];
+            legs[target as usize].in_flight = infl;
+            wire_state(ProtocolHint::Auto, &legs)
+        };
+        let ref_s = 0.010;
+        let other = 1 - target;
+        let base = mk(0);
+        let s_t = s_of(&base, target);
+        let other_cost = cost_of_leg(&base, other);
+        let mut prev = cost_of_leg(&base, target);
+        for infl in 1..=40u32 {
+            let sched = mk(infl);
+            let c = cost_of_leg(&sched, target);
+            assert!(c > prev, "leg {target}: cost not strictly increasing at I={infl}");
+            let slope = s_t / (20.0 * ref_s);
+            assert!(
+                ((c - prev) - slope).abs() < 1e-9,
+                "leg {target} I={infl}: dc = {} != s/(W·ref) = {slope}",
+                c - prev
+            );
+            assert_eq!(cost_of_leg(&sched, other), other_cost, "the other leg's cost moved");
+            prev = c;
+        }
+    }
+}
+
+/// `w^_i` falls back to the best measured wire, then to `s_i`; `w_cold`
+/// counts each fallback.
+#[test]
+fn unmeasured_wire_takes_the_best_measured_wire() {
+    let legs = [
+        wleg(0, 20.0, Some(8.0)),
+        wleg(1, 20.0, None),
+        wleg(2, 20.0, Some(5.0)),
+    ];
+    let mut sched = wire_state(ProtocolHint::Auto, &legs);
+    let ref_s = s_of(&sched, 0);
+    let c1 = cost_of_leg(&sched, 1);
+    assert!(
+        (c1 - 0.5 * 0.005 / ref_s).abs() < 1e-12,
+        "wire_1 absent must price at min_j wire_j = 5 ms: {c1}"
+    );
+    assert!((cost_of_leg(&sched, 0) - 0.5 * 0.008 / ref_s).abs() < 1e-12);
+    assert!((cost_of_leg(&sched, 2) - 0.5 * 0.005 / ref_s).abs() < 1e-12);
+    sched.drain_place_bind();
+    // Three place_costs calls above, three legs each; leg 1 cold in each.
+    let l = sched.eta().line();
+    assert!(l.contains(" w_cold=0.3333 w_n=9 "), "w_cold counts the fallback per leg: {l}");
+
+    // Nothing measured anywhere: w^_i = s_i, the last link of the chain.
+    let none = [wleg(0, 20.0, None), wleg(1, 40.0, None)];
+    let mut sched = wire_state(ProtocolHint::Auto, &none);
+    let ref_s = s_of(&sched, 0);
+    for (id, c) in sched.place_costs(false, &[]) {
+        let want = 0.5 * s_of(&sched, id) / ref_s;
+        assert!((c - want).abs() < 1e-12, "no wire anywhere prices (1/2)·s_i: p{id} {c} != {want}");
+    }
+    sched.drain_place_bind();
+    let l = sched.eta().line();
+    assert!(l.contains(" w_cold=1.0000 w_n=2 "), "{l}");
+}
+
+/// The base adds no δ dependence of its own: every leg's cost is the formula
+/// with `w_bw(δ)` at every point of the dial, including ±2 % around each
+/// named point (the wire base only moves the `(1/2 + eps)` term).
+#[test]
+fn wire_base_is_independent_of_the_dial() {
+    let legs = [
+        WLeg { lost: 20, in_flight: 50, ..wleg(0, 12.0, Some(11.0)) },
+        WLeg { lost: 10, ..wleg(1, 40.0, Some(20.0)) },
+    ];
+    for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+        for f in [0.98f64, 1.0, 1.02] {
+            let mut sched = wire_state(ProtocolHint::Auto, &legs);
+            let w = SchedulingWeights::from_delta(hint_delta_price(h) * f);
+            sched.weights = w;
+            let ref_s = s_of(&sched, 0).min(s_of(&sched, 1));
+            for id in [0 as PathId, 1] {
+                let (i_over_w, w_hat) = if id == 0 { (0.5, 0.011) } else { (0.0, 0.020) };
+                let want = wire_formula(w.w_bw, i_over_w, s_of(&sched, id), w_hat, eps_of(&sched, id), ref_s);
+                let got = cost_of_leg(&sched, id);
+                assert!((got - want).abs() < 1e-12, "{h:?} x{f} leg {id}: {got} != {want}");
+            }
+        }
+    }
+}
+
+/// The stamped `E_picked` is the `E_i` the law priced: for the picked leg,
+/// `stamp/ref + w_bw·r_i` is exactly its cost (non-repair, V_i = 0), with a
+/// wire RTT that differs from the echo srtt so the two bases cannot agree
+/// by accident.
+#[test]
+fn eta_stamp_is_the_priced_e() {
+    let legs = [
+        WLeg { lost: 10, cwnd: 10, in_flight: 5, ..wleg(0, 40.0, Some(20.0)) },
+        wleg(1, 40.0, Some(5.0)),
+    ];
+    let mut sched = wire_state(ProtocolHint::Auto, &legs);
+    let stamp_us = sched.stamp_placement_eta(0, 1_000);
+    // E = (I/W)·s + (1/2 + eps)·w = 0.5·40 + 0.51·20 = 30.2 ms (1 µs trunc).
+    assert!(stamp_us.abs_diff(30_200) <= 1, "stamp = {stamp_us} µs, priced E = 30200 µs");
+    let ref_s = s_of(&sched, 0).min(s_of(&sched, 1));
+    let eps = eps_of(&sched, 0);
+    let w_bw = sched.weights.w_bw;
+    let cost = cost_of_leg(&sched, 0);
+    let from_stamp = stamp_us as f64 * 1e-6 / ref_s + w_bw * (eps / (1.0 - eps));
+    assert!((cost - from_stamp).abs() < 1e-4, "price {cost} != stamp-derived {from_stamp}");
+}
+
+/// The two bind gauges: `w_cold` (the `wire_i` fallback taken) and `ref_fl`
+/// (the 1 ms ref floor bound), read off the `[ETA]` line.
+#[test]
+fn wire_base_bind_gauges_count_the_fallback_and_the_ref_floor() {
+    // Fully wired, floor clear: both gauges 0 with real denominators.
+    let flip = [
+        WLeg { cwnd: 10, in_flight: 20, ..wleg(0, 20.0, Some(20.0)) },
+        wleg(1, 150.0, Some(5.0)),
+    ];
+    let mut sched = wire_state(ProtocolHint::Auto, &flip);
+    let _ = sched.place_costs(false, &[]);
+    sched.drain_place_bind();
+    let l = sched.eta().line();
+    assert!(
+        l.contains(" ref_fl=0.0000 w_cold=0.0000 w_n=2 w_calls=1"),
+        "wired, floor clear: {l}"
+    );
+
+    // One leg unwired: half the leg evaluations took the fallback.
+    let half = [wleg(0, 20.0, Some(20.0)), wleg(1, 20.0, None)];
+    let mut sched = wire_state(ProtocolHint::Auto, &half);
+    let _ = sched.place_costs(false, &[]);
+    sched.drain_place_bind();
+    assert!(sched.eta().line().contains(" w_cold=0.5000 w_n=2 "));
+
+    // min s_j = 0.5 ms: the 1 ms floor binds.
+    let fast = [wleg(0, 0.5, Some(0.5)), wleg(1, 4.0, Some(4.0))];
+    let mut sched = wire_state(ProtocolHint::Auto, &fast);
+    let _ = sched.place_costs(false, &[]);
+    sched.drain_place_bind();
+    assert!(sched.eta().line().contains(" ref_fl=1.0000 "), "ref floor bind");
+
+    // Before any placement both denominators are 0 and the fields print `-`.
+    let sched = wire_state(ProtocolHint::Auto, &flip);
+    let l = sched.eta().line();
+    assert!(l.contains(" ref_fl=- w_cold=- w_n=0 w_calls=0"), "{l}");
+    assert!(!l.contains("w_mv"), "the argmin-moved witness is gone with the old base: {l}");
+}
+
+/// `N = 1`: one candidate, nothing to move, and the leg is still counted.
+#[test]
+fn wire_base_at_one_leg_is_the_identity() {
+    let mut sched = wire_state(ProtocolHint::Auto, &[wleg(0, 30.0, Some(3.0))]);
+    assert_eq!(sched.place_probs(false, &[]), vec![(0, 1.0)]);
+    sched.drain_place_bind();
+    assert!(sched.eta().line().contains(" w_n=1 w_calls=1"));
+}
+
+/// The mirror: quinn's RTT is stored for every leg the read answers, and
+/// the read covers every leg - the idle ones included, which is what keeps an
+/// idle leg's wire RTT fresh from traffic on the others.
+#[test]
+fn the_wire_mirror_writes_every_leg() {
+    let mut sched = wire_state(ProtocolHint::Auto, &[wleg(0, 10.0, None), wleg(1, 10.0, None)]);
+    sched.mirror_wire_rtts(|id| Some(Duration::from_micros(3_000 + 6_000 * id as u64)));
+    assert_eq!(sched.path(0).unwrap().wire_rtt(), Some(Duration::from_micros(3_000)));
+    assert_eq!(sched.path(1).unwrap().wire_rtt(), Some(Duration::from_micros(9_000)));
 }

@@ -1,0 +1,74 @@
+PATH-EVENT TEST (status section 46 + amendment 1): BASE = main 4926822 (old price), CAND = the merge-candidate build (new price)
+ROWS 24 (scored 16, +500 ms 4, c1d 2, check 2); ABORT-TOKENS none
+STATUS-TABLE (every invocation row)
+  LIVE          20
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  VOID-ONDISK   0
+  CONTAMINATED  0
+  WITNESS-FAIL  4
+  NONLIVE SLOW500 BASE s42 rep1 WITNESS-FAIL rc=0 event-did-not-bite(peak wrtt 545 vs pre 253.0 + 750)
+  NONLIVE SLOW500 CAND s42 rep1 WITNESS-FAIL rc=0 event-did-not-bite(peak wrtt 546 vs pre 204.0 + 750)
+  NONLIVE SLOW500 CAND s7 rep1 WITNESS-FAIL rc=0 event-did-not-bite(peak wrtt 571 vs pre 261.0 + 750)
+  NONLIVE SLOW500 BASE s7 rep1 WITNESS-FAIL rc=0 event-did-not-bite(peak wrtt 590 vs pre 290.0 + 750)
+
+PER-ROW (variant arm seed rep status R R0 T_w gbar_post G gbar_hold sigma_pre event exit peaks idle refresh): R/R0/T_w in s from t_off, '>25' = censored
+  FAST    CAND s42 r0 LIVE         R=1.75 R0=0.45 T_w=1.75 gpost=81.9 G=3.0% ghold=27.4 sigma=0.834 event=Y exit=Y peak rtt/wpl/wrtt=2413/1519613/1520 idle_lines=0 refresh/2s=- 
+  SLOW    BASE s42 r0 LIVE         R=4.46 R0=3.96 T_w=4.26 gpost=112.0 G=-44.6% ghold=9.5 sigma=0.174 event=Y exit=Y peak rtt/wpl/wrtt=1803/None/1556 idle_lines=14 refresh/2s=2.42 
+  C1D     BASE s42 r1 LIVE         R=6.22 R0=0.92 T_w=5.92 gpost=876.4 G=9.9% ghold=348.0 sigma=0.501 event=Y exit=Y peak rtt/wpl/wrtt=2221/None/1499 idle_lines=0 refresh/2s=- 
+  C1D     CAND s42 r1 LIVE         R=2.40 R0=1.20 T_w=1.70 gpost=936.6 G=0.7% ghold=254.8 sigma=0.483 event=Y exit=Y peak rtt/wpl/wrtt=3087/1502327/1502 idle_lines=0 refresh/2s=- 
+  FAST    BASE s42 r1 LIVE         R=1.77 R0=0.47 T_w=1.77 gpost=97.5 G=-7.5% ghold=60.0 sigma=0.837 event=Y exit=Y peak rtt/wpl/wrtt=1514/None/1513 idle_lines=0 refresh/2s=- 
+  FAST    BASE s42 r2 LIVE         R=1.76 R0=0.46 T_w=1.76 gpost=86.6 G=-8.9% ghold=36.3 sigma=0.829 event=Y exit=Y peak rtt/wpl/wrtt=3196/None/1517 idle_lines=0 refresh/2s=- 
+  FAST    BASE s7 r1 LIVE         R=1.75 R0=0.45 T_w=1.75 gpost=85.0 G=10.3% ghold=20.1 sigma=0.835 event=Y exit=Y peak rtt/wpl/wrtt=2948/None/1515 idle_lines=0 refresh/2s=- 
+  FAST    BASE s7 r2 LIVE         R=1.74 R0=0.44 T_w=1.74 gpost=85.5 G=-30.9% ghold=43.8 sigma=0.833 event=Y exit=Y peak rtt/wpl/wrtt=2976/None/1523 idle_lines=0 refresh/2s=- 
+  FAST    CAND s42 r1 LIVE         R=1.77 R0=0.47 T_w=1.77 gpost=89.9 G=-1.8% ghold=27.4 sigma=0.830 event=Y exit=Y peak rtt/wpl/wrtt=2882/1520259/1520 idle_lines=0 refresh/2s=- 
+  FAST    CAND s42 r2 LIVE         R=1.77 R0=0.47 T_w=1.77 gpost=82.8 G=12.0% ghold=22.0 sigma=0.828 event=Y exit=Y peak rtt/wpl/wrtt=3306/1516395/1516 idle_lines=0 refresh/2s=- 
+  FAST    CAND s7 r1 LIVE         R=1.77 R0=0.97 T_w=1.77 gpost=77.6 G=25.3% ghold=28.4 sigma=0.833 event=Y exit=Y peak rtt/wpl/wrtt=3043/1516214/1516 idle_lines=2 refresh/2s=0.00 
+  FAST    CAND s7 r2 LIVE         R=1.78 R0=0.48 T_w=1.78 gpost=83.0 G=-23.8% ghold=58.6 sigma=0.823 event=Y exit=Y peak rtt/wpl/wrtt=3078/1518326/1518 idle_lines=0 refresh/2s=- 
+  SLOW    BASE s42 r1 LIVE         R=6.48 R0=6.28 T_w=6.28 gpost=106.1 G=-21.4% ghold=76.8 sigma=0.168 event=Y exit=Y peak rtt/wpl/wrtt=2164/None/1700 idle_lines=23 refresh/2s=2.55 
+  SLOW    BASE s42 r2 LIVE         R=1.95 R0=1.45 T_w=1.75 gpost=99.8 G=2.6% ghold=32.7 sigma=0.167 event=Y exit=Y peak rtt/wpl/wrtt=1572/None/1567 idle_lines=4 refresh/2s=2.50 
+  SLOW    BASE s7 r1 LIVE         R=4.27 R0=3.97 T_w=3.97 gpost=84.2 G=16.2% ghold=40.2 sigma=0.168 event=Y exit=Y peak rtt/wpl/wrtt=1548/None/1545 idle_lines=14 refresh/2s=3.64 
+  SLOW    BASE s7 r2 LIVE         R=4.75 R0=4.45 T_w=4.45 gpost=78.4 G=25.5% ghold=52.9 sigma=0.171 event=Y exit=Y peak rtt/wpl/wrtt=1750/None/1548 idle_lines=16 refresh/2s=2.63 
+  SLOW    CAND s42 r1 LIVE         R=1.97 R0=1.97 T_w=1.97 gpost=84.3 G=15.4% ghold=45.4 sigma=0.168 event=Y exit=Y peak rtt/wpl/wrtt=1548/1546153/1546 idle_lines=6 refresh/2s=6.15 
+  SLOW    CAND s42 r2 LIVE         R=4.74 R0=4.24 T_w=4.44 gpost=91.9 G=-34.7% ghold=4.8 sigma=0.175 event=Y exit=Y peak rtt/wpl/wrtt=1556/1552657/1553 idle_lines=15 refresh/2s=2.86 
+  SLOW    CAND s7 r1 LIVE         R=3.95 R0=3.45 T_w=3.75 gpost=88.0 G=7.8% ghold=37.1 sigma=0.167 event=Y exit=Y peak rtt/wpl/wrtt=1582/1570822/1571 idle_lines=12 refresh/2s=2.86 
+  SLOW    CAND s7 r2 LIVE         R=3.74 R0=3.24 T_w=3.24 gpost=88.3 G=14.8% ghold=56.1 sigma=0.168 event=Y exit=Y peak rtt/wpl/wrtt=1553/1549033/1549 idle_lines=11 refresh/2s=4.00 
+  SLOW500 BASE s42 r1 WITNESS-FAIL R=1.25 R0=0.45 T_w=0.75 gpost=109.7 G=-29.7% ghold=86.0 sigma=0.167 event=N exit=Y peak rtt/wpl/wrtt=1066/None/545 idle_lines=0 refresh/2s=- event-did-not-bite(peak wrtt 545 vs pre 253.0 + 750)
+  SLOW500 BASE s7 r1 WITNESS-FAIL R=1.27 R0=0.47 T_w=0.77 gpost=94.9 G=-5.4% ghold=37.3 sigma=0.170 event=N exit=Y peak rtt/wpl/wrtt=719/None/590 idle_lines=0 refresh/2s=- event-did-not-bite(peak wrtt 590 vs pre 290.0 + 750)
+  SLOW500 CAND s42 r1 WITNESS-FAIL R=1.25 R0=0.45 T_w=0.75 gpost=84.7 G=12.7% ghold=69.4 sigma=0.169 event=N exit=Y peak rtt/wpl/wrtt=570/546486/546 idle_lines=0 refresh/2s=- event-did-not-bite(peak wrtt 546 vs pre 204.0 + 750)
+  SLOW500 CAND s7 r1 WITNESS-FAIL R=1.26 R0=0.46 T_w=0.76 gpost=98.4 G=-9.2% ghold=55.7 sigma=0.173 event=N exit=Y peak rtt/wpl/wrtt=592/571451/571 idle_lines=0 refresh/2s=- event-did-not-bite(peak wrtt 571 vs pre 261.0 + 750)
+
+QCWND-BELOW-BDP (reported only): share of [DIAG] lines (measured run, t >= 1 s) whose per-path qcwnd < the cell's BDP; BDP per leg = link x 2 x one-way delay (c8: leg 0 = c2 125 000 B, leg 1 = c3 100 000 B; c1d: 250 000 B per leg)
+  SLOW    BASE BDP [125000, 100000] B: leg0 0.000 [0.000-0.006] n=4 leg1 0.003 [0.000-0.044] n=4; any leg 0.006 [0.000-0.044] n=4
+  SLOW    CAND BDP [125000, 100000] B: leg0 0.000 [0.000-0.000] n=4 leg1 0.003 [0.000-0.043] n=4; any leg 0.003 [0.000-0.043] n=4
+  FAST    BASE BDP [125000, 100000] B: leg0 0.003 [0.000-0.006] n=4 leg1 0.009 [0.006-0.012] n=4; any leg 0.012 [0.006-0.019] n=4
+  FAST    CAND BDP [125000, 100000] B: leg0 0.006 [0.000-0.018] n=4 leg1 0.000 [0.000-0.012] n=4; any leg 0.009 [0.000-0.024] n=4
+  C1D     BASE BDP [250000, 250000] B: leg0 0.208 [0.208-0.208] n=1 leg1 0.031 [0.031-0.031] n=1; any leg 0.215 [0.215-0.215] n=1
+  C1D     CAND BDP [250000, 250000] B: leg0 0.008 [0.008-0.008] n=1 leg1 0.016 [0.016-0.016] n=1; any leg 0.024 [0.024-0.024] n=1
+
+CHECK-ROW SLOW BASE: status=LIVE qdisc_ok=True backlog_peak=362 
+CHECK-ROW FAST CAND: status=LIVE qdisc_ok=True backlog_peak=276 
+[SLOW]  live CAND=4 BASE=4
+  R (s from t_off, scored, lower is better): WITHIN  CAND [1.97, 3.95, 4.74, 3.74] median 3.85 vs BASE [6.48, 4.27, 1.95, 4.75] median 4.51; floor 1.00; p(disjoint)=0.014 (n=4 vs 4)
+  gbar_post (Mbit/s over [t_off, t_off+25 s], scored, higher is better): WITHIN  CAND [84.26, 87.96, 91.91, 88.26] median 88.11 vs BASE [106.15, 84.15, 99.76, 78.43] median 91.96; floor 3.68; p(disjoint)=0.014 (n=4 vs 4)
+  G (%, reported): CAND median 11.31 ['15.4', '7.8', '-34.7', '14.8']; BASE median 9.41 ['-21.4', '16.2', '2.6', '25.5']
+  R0 (s, reported): CAND median 3.35 ['2.0', '3.5', '4.2', '3.2']; BASE median 4.21 ['6.3', '4.0', '1.5', '4.4']
+  T_w (s, reported): CAND median 3.50 ['2.0', '3.8', '4.4', '3.2']; BASE median 4.21 ['6.3', '4.0', '1.8', '4.4']
+  exit witness on BASE live rows: 4/4 -> PROVOKED
+[FAST]  live CAND=4 BASE=4
+  R (s from t_off, scored, lower is better): WITHIN  CAND [1.77, 1.77, 1.77, 1.78] median 1.77 vs BASE [1.77, 1.75, 1.76, 1.74] median 1.75; floor 1.00; p(disjoint)=0.014 (n=4 vs 4)
+  gbar_post (Mbit/s over [t_off, t_off+25 s], scored, higher is better): WITHIN  CAND [89.89, 77.65, 82.8, 83.03] median 82.92 vs BASE [97.53, 84.99, 86.6, 85.47] median 86.03; floor 3.44; p(disjoint)=0.014 (n=4 vs 4)
+  G (%, reported): CAND median 5.09 ['-1.8', '25.3', '12.0', '-23.8']; BASE median -8.21 ['-7.5', '10.3', '-8.9', '-30.9']
+  R0 (s, reported): CAND median 0.48 ['0.5', '1.0', '0.5', '0.5']; BASE median 0.45 ['0.5', '0.4', '0.5', '0.4']
+  T_w (s, reported): CAND median 1.77 ['1.8', '1.8', '1.8', '1.8']; BASE median 1.75 ['1.8', '1.7', '1.8', '1.7']
+  exit witness on BASE live rows: 4/4 -> PROVOKED
+
+[+500 ms at SLOW-HIT (reported only)]  live CAND=0 BASE=0
+[c1d, leg 1 hit (reported only, read on R)]  live CAND=1 BASE=1
+  C1D     BASE s42 r1 LIVE         R=6.22 R0=0.92 T_w=5.92 gpost=876.4 G=9.9% ghold=348.0 sigma=0.501 event=Y exit=Y peak rtt/wpl/wrtt=2221/None/1499 idle_lines=0 refresh/2s=- 
+  C1D     CAND s42 r1 LIVE         R=2.40 R0=1.20 T_w=1.70 gpost=936.6 G=0.7% ghold=254.8 sigma=0.483 event=Y exit=Y peak rtt/wpl/wrtt=3087/1502327/1502 idle_lines=0 refresh/2s=- 
+  R reading (not scored): BETTER  CAND [2.4] median 2.40 vs BASE [6.22] median 6.22; floor 1.00; p(disjoint)=0.500 (n=1 vs 1)
+
+VERDICT NO-DIFFERENCE
+RESULT {"variants": {"FAST": {"R": "WITHIN", "gpost": "WITHIN", "live": [4, 4], "provoked": true}, "SLOW": {"R": "WITHIN", "gpost": "WITHIN", "live": [4, 4], "provoked": true}}, "verdict": "NO-DIFFERENCE"}

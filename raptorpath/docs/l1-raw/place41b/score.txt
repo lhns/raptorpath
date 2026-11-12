@@ -1,0 +1,177 @@
+PLACE-WIRE GATE-OFF GUARD (status §41b): BASE = main 4926822 (n = 12 per cell), MAIN = diag36 gate off, WIRE = RWM_PLACE_WIRE=1 (reported only)
+ROWS 48/48; ABORT-TOKENS none
+STATUS-TABLE (every invocation row)
+  LIVE          48
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  VOID-ONDISK   0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+
+§41b GUARD (real scoring): N_PERM=10000 RNG seed 4141, one-sided, max over every clause of both cells, PASS iff p > 0.05
+LIVE ROWS c1s-400 BASE=12  c1s-400 MAIN=6  c1s-400 WIRE=6  c1d-400 BASE=12  c1d-400 MAIN=6  c1d-400 WIRE=6
+
+RESOLUTION (computed from BASE rows alone, before MAIN is read): per clause the q95 of |x_c| over the half-per-seed splits of BASE, beside the §21 tolerance
+  c1s-400 goodput        q95|x|=0.0377 (splits=400, nBASE=12)  §21 tol=0.0490  q95 <= tol
+  c1s-400 cpu_cli/GB     q95|x|=0.0121 (splits=400, nBASE=12)  §21 tol=0.0240  q95 <= tol
+  c1s-400 cpu_srv/GB     q95|x|=0.0153 (splits=400, nBASE=12)  §21 tol=0.0240  q95 <= tol
+  c1s-400 lag_E_cli      q95|x|=0.3112 (splits=400, nBASE=12)  §21 tol=0.6176  q95 <= tol
+  c1s-400 lag_E_srv      q95|x|=0.1971 (splits=400, nBASE=12)  §21 tol=0.5648  q95 <= tol
+  c1s-400 rtp_floor_p0   q95|x|=0.0164 (splits=400, nBASE=12)  §21 tol=0.0582  q95 <= tol
+  c1d-400 goodput        q95|x|=0.0640 (splits=400, nBASE=12)  §21 tol=0.0560  q95 > tol: the guard cannot see this clause below q95
+  c1d-400 cpu_cli/GB     q95|x|=0.0308 (splits=400, nBASE=12)  §21 tol=0.0650  q95 <= tol
+  c1d-400 cpu_srv/GB     q95|x|=0.0277 (splits=400, nBASE=12)  §21 tol=0.0650  q95 <= tol
+  c1d-400 lag_E_cli      q95|x|=0.5344 (splits=400, nBASE=12)  §21 tol=0.6577  q95 <= tol
+  c1d-400 lag_E_srv      q95|x|=0.5253 (splits=400, nBASE=12)  §21 tol=0.8530  q95 <= tol
+  c1d-400 rtp_floor_p0   q95|x|=0.0229 (splits=400, nBASE=12)  §21 tol=0.0519  q95 <= tol
+  c1d-400 rtp_floor_p1   q95|x|=0.0311 (splits=400, nBASE=12)  §21 tol=0.0500  q95 <= tol
+
+MAIN against BASE (pooled relabelling)
+  c1s-400: pool 12 BASE + 6 MAIN; relabelled MAIN rows per seed s42:3 s7:3
+  c1d-400: pool 12 BASE + 6 MAIN; relabelled MAIN rows per seed s42:3 s7:3
+  clause x_c(true), sd_c, z_c(true)  (x worse-signed: positive = MAIN worse)
+    c1s-400 goodput        x=  +1.21 %  sd=  1.85 %  z= +0.66
+    c1s-400 cpu_cli/GB     x=  -0.72 %  sd=  0.89 %  z= -0.80
+    c1s-400 cpu_srv/GB     x=  +0.13 %  sd=  0.81 %  z= +0.17
+    c1s-400 lag_E_cli      x=  -8.84 %  sd= 20.51 %  z= -0.43
+    c1s-400 lag_E_srv      x= +16.44 %  sd= 13.10 %  z= +1.26
+    c1s-400 rtp_floor_p0   x=  -0.33 %  sd=  0.92 %  z= -0.36
+    c1d-400 goodput        x=  -3.46 %  sd=  3.06 %  z= -1.13
+    c1d-400 cpu_cli/GB     x=  -0.57 %  sd=  1.04 %  z= -0.54
+    c1d-400 cpu_srv/GB     x=  +0.42 %  sd=  1.17 %  z= +0.36
+    c1d-400 lag_E_cli      x= +12.82 %  sd= 26.15 %  z= +0.49
+    c1d-400 lag_E_srv      x= -25.07 %  sd= 22.05 %  z= -1.14
+    c1d-400 rtp_floor_p0   x=  -2.12 %  sd=  1.63 %  z= -1.30
+    c1d-400 rtp_floor_p1   x=  -3.82 %  sd=  1.54 %  z= -2.48
+  T(true) = +1.256 at c1s-400 lag_E_srv
+  share of relabellings whose max is attained at each clause (top 8): c1d-400 lag_E_srv 0.120, c1s-400 lag_E_srv 0.118, c1s-400 rtp_floor_p0 0.107, c1d-400 lag_E_cli 0.103, c1s-400 lag_E_cli 0.099, c1s-400 cpu_srv/GB 0.096, c1d-400 goodput 0.087, c1d-400 cpu_srv/GB 0.059
+  p = 0.7195  (share of 10000 relabellings with T >= T(true))
+GATE-41b PASS (p=0.7195; the gate-off binary may reach main)
+
+§21 READINGS of MAIN against all BASE rows (reported beside the gate)
+    FEED 41b-c1s-400@def p0 plc/truth MAIN=1.028 BASE=1.026 -> SAME
+    CLAUSE 41b-c1s-400@def goodput: WITHIN MAIN=795.9 [68.32-829.8] BASE=805.7 [755.1-838.2] (-1.2%, rel=0.049)
+    CLAUSE 41b-c1s-400@def cpu_cli/GB: WITHIN MAIN=15.6 [15.32-29.77] BASE=15.71 [15.2-15.87] (-0.7%, rel=0.024)
+    CLAUSE 41b-c1s-400@def cpu_srv/GB: WITHIN MAIN=18.55 [18.3-30.45] BASE=18.52 [18.27-19.4] (+0.1%, rel=0.024)
+    CLAUSE 41b-c1s-400@def lag_E_cli: WITHIN MAIN=1304 [999-1818] BASE=1430 [685-2452] (-8.8%, rel=0.618)
+    CLAUSE 41b-c1s-400@def lag_E_srv: WITHIN MAIN=1222 [887-2216] BASE=1049 [749-1934] (+16.4%, rel=0.565)
+    CLAUSE 41b-c1s-400@def rtp_floor_p0: WITHIN MAIN=2562 [2363-2649] BASE=2570 [2385-2684] (-0.3%, rel=0.058)
+    FEED 41b-c1d-400@def p0 plc/truth MAIN=1.023 BASE=1.059 -> SAME
+    FEED 41b-c1d-400@def p1 plc/truth MAIN=1.019 BASE=1.024 -> SAME
+    CLAUSE 41b-c1d-400@def goodput: WITHIN MAIN=788.8 [702.9-793.5] BASE=762.4 [651.2-825.2] (+3.5%, rel=0.056)
+    CLAUSE 41b-c1d-400@def cpu_cli/GB: WITHIN MAIN=21.91 [21.47-22.43] BASE=22.04 [20.25-23.57] (-0.6%, rel=0.065)
+    CLAUSE 41b-c1d-400@def cpu_srv/GB: WITHIN MAIN=24.01 [23.65-24.62] BASE=23.91 [23.15-25.77] (+0.4%, rel=0.065)
+    CLAUSE 41b-c1d-400@def lag_E_cli: WITHIN MAIN=1734 [1110-2177] BASE=1536 [984-3005] (+12.8%, rel=0.658)
+    CLAUSE 41b-c1d-400@def lag_E_srv: WITHIN MAIN=1048 [844-1460] BASE=1398 [1021-3406] (-25.1%, rel=0.853)
+    CLAUSE 41b-c1d-400@def rtp_floor_p0: WITHIN MAIN=2423 [2328-2528] BASE=2476 [2343-2600] (-2.1%, rel=0.052)
+    CLAUSE 41b-c1d-400@def rtp_floor_p1: WITHIN MAIN=2390 [2312-2523] BASE=2484 [2388-2629] (-3.8%, rel=0.050)
+
+WIRE (RWM_PLACE_WIRE=1), reported only: its own pooled relabelling against BASE
+    c1s-400 goodput        x=  +1.26 %  sd=  2.40 %  z= +0.52
+    c1s-400 cpu_cli/GB     x=  +0.00 %  sd=  0.44 %  z= +0.00
+    c1s-400 cpu_srv/GB     x=  +0.40 %  sd=  0.64 %  z= +0.63
+    c1s-400 lag_E_cli      x= -24.50 %  sd= 29.34 %  z= -0.83
+    c1s-400 lag_E_srv      x= -10.63 %  sd= 11.24 %  z= -0.95
+    c1s-400 rtp_floor_p0   x=  -3.33 %  sd=  1.22 %  z= -2.72
+    c1d-400 goodput        x=  +2.31 %  sd=  3.46 %  z= +0.67
+    c1d-400 cpu_cli/GB     x=  +0.23 %  sd=  1.13 %  z= +0.20
+    c1d-400 cpu_srv/GB     x=  +0.26 %  sd=  0.80 %  z= +0.33
+    c1d-400 lag_E_cli      x= +10.15 %  sd= 22.27 %  z= +0.46
+    c1d-400 lag_E_srv      x=  -5.19 %  sd= 24.22 %  z= -0.21
+    c1d-400 rtp_floor_p0   x=  -1.37 %  sd=  1.31 %  z= -1.04
+    c1d-400 rtp_floor_p1   x=  -3.74 %  sd=  1.69 %  z= -2.21
+  T(true) = +0.667 at c1d-400 goodput;  p = 0.9316  (reported, not a gate)
+    FEED 41b-WIRE-c1s-400@def p0 plc/truth WIRE=1.013 BASE=1.026 -> SAME
+    CLAUSE 41b-WIRE-c1s-400@def goodput: WITHIN WIRE=795.5 [742.9-822.4] BASE=805.7 [755.1-838.2] (-1.3%, rel=0.049)
+    CLAUSE 41b-WIRE-c1s-400@def cpu_cli/GB: WITHIN WIRE=15.71 [15.6-16.02] BASE=15.71 [15.2-15.87] (+0.0%, rel=0.024)
+    CLAUSE 41b-WIRE-c1s-400@def cpu_srv/GB: WITHIN WIRE=18.6 [18.43-18.72] BASE=18.52 [18.27-19.4] (+0.4%, rel=0.024)
+    CLAUSE 41b-WIRE-c1s-400@def lag_E_cli: WITHIN WIRE=1080 [803-2019] BASE=1430 [685-2452] (-24.5%, rel=0.618)
+    CLAUSE 41b-WIRE-c1s-400@def lag_E_srv: WITHIN WIRE=937.5 [816-1594] BASE=1049 [749-1934] (-10.6%, rel=0.565)
+    CLAUSE 41b-WIRE-c1s-400@def rtp_floor_p0: WITHIN WIRE=2485 [2404-2655] BASE=2570 [2385-2684] (-3.3%, rel=0.058)
+    FEED 41b-WIRE-c1d-400@def p0 plc/truth WIRE=1.033 BASE=1.059 -> SAME
+    FEED 41b-WIRE-c1d-400@def p1 plc/truth WIRE=1.017 BASE=1.024 -> SAME
+    CLAUSE 41b-WIRE-c1d-400@def goodput: WITHIN WIRE=744.8 [700.2-835.5] BASE=762.4 [651.2-825.2] (-2.3%, rel=0.056)
+    CLAUSE 41b-WIRE-c1d-400@def cpu_cli/GB: WITHIN WIRE=22.09 [21.57-22.52] BASE=22.04 [20.25-23.57] (+0.2%, rel=0.065)
+    CLAUSE 41b-WIRE-c1d-400@def cpu_srv/GB: WITHIN WIRE=23.97 [23.48-24.02] BASE=23.91 [23.15-25.77] (+0.3%, rel=0.065)
+    CLAUSE 41b-WIRE-c1d-400@def lag_E_cli: WITHIN WIRE=1692 [1093-2472] BASE=1536 [984-3005] (+10.2%, rel=0.658)
+    CLAUSE 41b-WIRE-c1d-400@def lag_E_srv: WITHIN WIRE=1326 [915-2415] BASE=1398 [1021-3406] (-5.2%, rel=0.853)
+    CLAUSE 41b-WIRE-c1d-400@def rtp_floor_p0: WITHIN WIRE=2442 [2392-2514] BASE=2476 [2343-2600] (-1.4%, rel=0.052)
+    CLAUSE 41b-WIRE-c1d-400@def rtp_floor_p1: WITHIN WIRE=2392 [2264-3032] BASE=2484 [2388-2629] (-3.7%, rel=0.050)
+
+RUN ORDER (ledger order; every row, any status): idx cell arm seed rep status mbps cpuC/GB cpuS/GB lagC lagS
+    0 c1s-400 BASE s42 r1 LIVE 755.1 15.7 18.5 1866.0 1218.0
+    1 c1s-400 MAIN s42 r1 LIVE 791.3 15.8 18.6 1818.0 1350.0
+    2 c1s-400 BASE s42 r4 LIVE 769.8 15.7 18.4 1642.0 1099.0
+    3 c1s-400 WIRE s42 r1 LIVE 777.7 15.8 18.7 1071.0 816.0
+    4 c1d-400 BASE s42 r1 LIVE 752.7 22.0 23.8 2158.0 1530.0
+    5 c1d-400 MAIN s42 r1 LIVE 790.1 21.8 23.8 1139.0 1167.0
+    6 c1d-400 BASE s42 r4 LIVE 825.2 21.1 23.3 1589.0 1442.0
+    7 c1d-400 WIRE s42 r1 LIVE 748.7 22.0 23.8 2058.0 1386.0
+    8 c1s-400 MAIN s7 r1 LIVE 829.8 15.3 18.5 1043.0 2216.0
+    9 c1s-400 BASE s7 r1 LIVE 805.7 15.6 18.7 1291.0 1934.0
+   10 c1s-400 WIRE s7 r1 LIVE 742.9 15.7 18.7 1815.0 1594.0
+   11 c1s-400 BASE s7 r4 LIVE 821.5 15.9 18.8 990.0 1058.0
+   12 c1d-400 MAIN s7 r1 LIVE 793.5 21.7 23.7 1110.0 983.0
+   13 c1d-400 BASE s7 r1 LIVE 730.1 22.7 24.9 1281.0 1123.0
+   14 c1d-400 WIRE s7 r1 LIVE 700.2 22.5 24.0 2472.0 2415.0
+   15 c1d-400 BASE s7 r4 LIVE 711.8 22.2 24.0 3005.0 3406.0
+   16 c1s-400 BASE s42 r2 LIVE 791.6 15.7 19.4 1465.0 880.0
+   17 c1s-400 WIRE s42 r2 LIVE 820.8 15.7 18.5 803.0 893.0
+   18 c1s-400 BASE s42 r5 LIVE 833.7 15.2 18.3 2452.0 936.0
+   19 c1s-400 MAIN s42 r2 LIVE 787.5 15.9 18.8 1149.0 1498.0
+   20 c1d-400 BASE s42 r2 LIVE 688.6 23.6 25.8 1380.0 1072.0
+   21 c1d-400 WIRE s42 r2 LIVE 835.5 21.6 23.5 1409.0 1014.0
+   22 c1d-400 BASE s42 r5 LIVE 821.0 21.3 23.1 1367.0 1083.0
+   23 c1d-400 MAIN s42 r2 LIVE 788.1 21.5 23.9 2151.0 1000.0
+   24 c1s-400 WIRE s7 r2 LIVE 756.7 15.6 18.5 2019.0 1017.0
+   25 c1s-400 BASE s7 r2 LIVE 825.9 15.7 18.6 1080.0 749.0
+   26 c1s-400 MAIN s7 r2 LIVE 800.5 15.3 18.3 1684.0 995.0
+   27 c1s-400 BASE s7 r5 LIVE 818.0 15.7 18.3 1001.0 981.0
+   28 c1d-400 WIRE s7 r2 LIVE 811.4 21.9 24.0 1093.0 915.0
+   29 c1d-400 BASE s7 r2 LIVE 767.6 22.1 24.2 2189.0 2068.0
+   30 c1d-400 MAIN s7 r2 LIVE 759.3 22.0 24.1 2177.0 1460.0
+   31 c1d-400 BASE s7 r5 LIVE 651.2 20.2 23.3 2158.0 2087.0
+   32 c1s-400 BASE s42 r3 LIVE 802.7 15.4 18.5 1396.0 1075.0
+   33 c1s-400 MAIN s42 r3 LIVE 821.0 15.3 18.3 999.0 887.0
+   34 c1s-400 BASE s42 r6 LIVE 805.7 15.8 18.3 1678.0 1584.0
+   35 c1s-400 WIRE s42 r3 LIVE 813.4 16.0 18.4 1089.0 979.0
+   36 c1d-400 BASE s42 r3 LIVE 785.4 21.5 23.6 984.0 1021.0
+   37 c1d-400 MAIN s42 r3 LIVE 702.9 22.4 24.6 1544.0 1095.0
+   38 c1d-400 BASE s42 r6 LIVE 757.2 22.1 24.0 2063.0 1818.0
+   39 c1d-400 WIRE s42 r3 LIVE 721.4 22.3 24.0 1725.0 1898.0
+   40 c1s-400 MAIN s7 r3 LIVE 68.3 29.8 30.4 1459.0 1093.0
+   41 c1s-400 BASE s7 r3 LIVE 776.5 15.8 18.8 1800.0 793.0
+   42 c1s-400 WIRE s7 r3 LIVE 822.4 15.6 18.6 936.0 896.0
+   43 c1s-400 BASE s7 r6 LIVE 838.2 15.4 18.5 685.0 1040.0
+   44 c1d-400 MAIN s7 r3 LIVE 789.5 22.0 24.3 1923.0 844.0
+   45 c1d-400 BASE s7 r3 LIVE 779.3 22.4 24.3 1484.0 1354.0
+   46 c1d-400 WIRE s7 r3 LIVE 741.0 22.2 24.0 1660.0 1265.0
+   47 c1d-400 BASE s7 r6 LIVE 769.9 21.8 23.6 1371.0 1053.0
+
+CONTENTION c1s-400@def, every row (status or not): arm seed rep status mbps | procs_running before/after | io full avg10 before/after
+  BASE s42 r1 LIVE mbps=755.1 | procs_running 1/1 | io 0.33/0.18
+  BASE s42 r2 LIVE mbps=791.6 | procs_running 1/1 | io 0.01/0.00
+  BASE s42 r3 LIVE mbps=802.7 | procs_running 1/1 | io 0.00/0.00
+  BASE s42 r4 LIVE mbps=769.8 | procs_running 1/1 | io 0.08/0.04
+  BASE s42 r5 LIVE mbps=833.7 | procs_running 1/1 | io 0.00/0.12
+  BASE s42 r6 LIVE mbps=805.7 | procs_running 1/1 | io 0.14/0.08
+  BASE s7 r1 LIVE mbps=805.7 | procs_running 1/1 | io 0.00/0.00
+  BASE s7 r2 LIVE mbps=825.9 | procs_running 1/1 | io 0.03/0.01
+  BASE s7 r3 LIVE mbps=776.5 | procs_running 1/1 | io 0.19/0.22
+  BASE s7 r4 LIVE mbps=821.5 | procs_running 2/2 | io 0.00/0.00
+  BASE s7 r5 LIVE mbps=818.0 | procs_running 1/1 | io 0.00/0.00
+  BASE s7 r6 LIVE mbps=838.2 | procs_running 1/1 | io 0.24/0.13
+  MAIN s42 r1 LIVE mbps=791.3 | procs_running 1/1 | io 0.14/0.08
+  MAIN s42 r2 LIVE mbps=787.5 | procs_running 1/1 | io 0.12/0.06
+  MAIN s42 r3 LIVE mbps=821.0 | procs_running 1/1 | io 0.00/0.14
+  MAIN s7 r1 LIVE mbps=829.8 | procs_running 1/1 | io 0.01/0.00
+  MAIN s7 r2 LIVE mbps=800.5 | procs_running 1/2 | io 0.01/0.00
+  MAIN s7 r3 LIVE mbps=68.3 | procs_running 1/1 | io 0.00/0.19
+  WIRE s42 r1 LIVE mbps=777.7 | procs_running 1/1 | io 0.04/0.20
+  WIRE s42 r2 LIVE mbps=820.8 | procs_running 1/1 | io 0.00/0.00
+  WIRE s42 r3 LIVE mbps=813.4 | procs_running 1/1 | io 0.08/0.04
+  WIRE s7 r1 LIVE mbps=742.9 | procs_running 1/1 | io 0.00/0.00
+  WIRE s7 r2 LIVE mbps=756.7 | procs_running 1/1 | io 0.06/0.03
+  WIRE s7 r3 LIVE mbps=822.4 | procs_running 1/1 | io 0.22/0.24
+VERDICT GATE-41b PASS

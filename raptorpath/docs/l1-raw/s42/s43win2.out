@@ -1,0 +1,76 @@
+s43win follow-ups (offline, read-only). Usage: python -I s43win2.py <loop-diag dir> <worktree root>
+1. Closed-loop correction model at c2: T(n) = a + b·(n − 163), T = the law's time term RTprop + S (OCAP rtprop_us + s_us,
+   without τ/b0), fitted on oracle43 c2 SL / SL-G12 / SL-B0 rows (last third: windows with t >= 2/3 of the row's last
+   OCAP t). Closed-loop point n* solves n = G·L·(T(n) + τ):  n* = G·L·(a − 163·b + τ) / (1 − G·L·b).
+2. τ = b0 + c: c window per cell = s43win's window − b0, intersected over c2, c8 (thin), c1s (p34 lower / oracle43 upper).
+3. c1s at G = 0.9, τ ∈ {3.5, 5}: crossings of θ(n) = τ on oracle43's uncapped bins (fresh = live rtprop_us, expired =
+   row floor) and on p34's static map.
+4. qsp_us (P90 − P50 of the last 256 RTT samples) small-cap medians against b0 (Tmin_250ms − RTprop_10s).
+
+#### 1. Closed-loop correction model (c2, oracle43)
+  fit on row medians (9 rows): T(n) = 14.72 ms + 0.0624 ms/sym·(n − 163)
+  fit on all last-third windows (667): T(n) = 14.92 + 0.0570·(n − 163)   (advisor: 15.2 + 0.058)
+  row                       G     τ  n_end  T_end  T_fit  resid
+  SL s42 r1              1.10  0.00    168  15.56  15.03  +0.53
+  SL s7 r1               1.10  0.00    156  14.42  14.28  +0.14
+  SL s42 r2              1.10  0.00    163  15.05  14.72  +0.33
+  SL-G12 s42 r1          1.20  0.00    202  17.19  17.12  +0.07
+  SL-G12 s7 r1           1.20  0.00    206  17.47  17.40  +0.07
+  SL-G12 s42 r2          1.20  0.00    165  14.06  14.84  -0.78
+  SL-B0 s42 r1           1.10  2.47    207  16.76  17.46  -0.71
+  SL-B0 s7 r1            1.10  2.47    239  19.69  19.46  +0.23
+  SL-B0 s42 r2           1.10  2.47    234  19.23  19.12  +0.11
+  residual sd 0.42 ms, max |resid| 0.78 ms
+  predicted closed-loop point n* = G·L·(a − 163b + τ)/(1 − G·L·b) vs measured (median of the 3 rows' n_end):
+    SL      G=1.1 τ=0.0: row-median fit  148.4 | window fit  156.3 | advisor line  164.1 | measured 163.0 (rows 168.0, 156.0, 163.0)
+    SL-G12  G=1.2 τ=0.0: row-median fit  198.8 | window fit  199.2 | advisor line  210.7 | measured 201.5 (rows 201.5, 206.0, 165.0)
+    SL-B0   G=1.1 τ=2.47: row-median fit  229.1 | window fit  224.9 | advisor line  234.6 | measured 233.5 (rows 207.0, 239.0, 233.5)
+    PREDICTION G=0.9 τ=5.0: start-low n* = 186 (window fit 188; advisor line 193); loop slope G·L·b = 0.55
+    PREDICTION G=0.85 τ=5.0: start-low n* = 165 (window fit 168; advisor line 172); loop slope G·L·b = 0.52
+    PREDICTION G=0.9 τ=3.5: start-low n* = 157 (window fit 161; advisor line 166); loop slope G·L·b = 0.55
+  start-high at (0.9, 5): ask/n = 0.9·L·(T + 5 ms)/n on oracle43's c2 SH windows (G=1.1 rows; T = rtprop+S live,
+  i.e. with the anchor as it actually stood), by phase:
+    SH s42 r1: hold's last 2 s median 0.843 max 0.861 (n 1536-1562, 8 win) | after release median 0.843 max 0.894 (n 1525-1951, 153 win)
+    SH s42 r2: hold's last 2 s median 0.844 max 0.859 (n 1536-1567, 8 win) | after release median 0.845 max 0.974 (n 1530-1877, 153 win)
+    SH s7 r1: hold's last 2 s median 0.848 max 0.883 (n 1606-1696, 8 win) | after release median 0.841 max 0.893 (n 1611-1999, 153 win)
+  The offline expired map (s43tau, G=0.9 τ=5) has no upward crossing; ask/n 0.87 at 1 024. With ask/n < 1 at every
+  SH window, start-high descends; on the way down the anchor refreshes at the low point (brake ≈ 0 there, §42),
+  so it settles where start-low does, unless the closed loop holds a crossing between 288 and 1 500 the ledgers
+  do not sample (no oracle43 c2 window there outside transients).
+
+#### 2. τ = b0 + c: c window per cell (window − b0, ms)
+  G=0.85: c2 (b0 2.28) [-0.54, 8.67); c8 (b0 2.92) [1.39, 7.86); c1s (b0 0.30) [1.86, 4.54)  => common c: [1.86, 4.54)   (const τ for comparison: [4.31, 4.84))
+  G=0.90: c2 (b0 2.28) [-1.40, 6.96); c8 (b0 2.92) [-0.04, 5.01); c1s (b0 0.30) [1.40, 3.64)  => common c: [1.40, 3.64)   (const τ for comparison: [2.88, 3.94))
+  G=0.95: c2 (b0 2.28) [-2.16, 5.43); c8 (b0 2.92) [-1.31, 2.46); c1s (b0 0.30) [1.00, 2.83)  => common c: [1.00, 2.46)   (const τ for comparison: [1.61, 3.13))
+  G=1.00: c2 (b0 2.28) [-2.85, 4.05); c8 (b0 2.92) [-2.46, 0.16); c1s (b0 0.30) [0.63, 2.10)  => common c: NONE   (const τ for comparison: [0.93, 2.40))
+
+#### 3. c1s at G = 0.9: settling points for τ = 3.5 and 5 ms (crossings of θ(n) = τ; θ < τ means ask > n)
+  oracle43 bins (median n, θ_exp, θ_fresh): (569, 1.25, 1.18), (741, 1.72, 1.54), (1017, 2.54, 2.29), (1352, 3.94, 3.75), (2048, 8.05, 7.95)
+  p34 static caps (n, θ_exp, θ_fresh; truncated minima): (256, -0.83, -0.87), (384, 0.01, 0.19), (512, 0.29, 0.62), (768, 1.87, 2.24), (1024, 3.12, 3.75), (1536, 6.58, 8.14), (2048, 8.87, 10.52)
+  τ=3.5 oracle43: fresh map crossings ['1296 (stable)']; expired map crossings ['1248 (stable)']; top-cap θ_exp 8.05 (contracts)
+  τ=3.5 p34     : fresh map crossings ['981 (stable)']; expired map crossings ['1080 (stable)']; top-cap θ_exp 8.87 (contracts)
+  τ=5.0 oracle43: fresh map crossings ['1560 (stable)']; expired map crossings ['1532 (stable)']; top-cap θ_exp 8.05 (contracts)
+  τ=5.0 p34     : fresh map crossings ['1169 (stable)']; expired map crossings ['1302 (stable)']; top-cap θ_exp 8.87 (contracts)
+  Reading: start-low settles on the fresh-map crossing; start-high (from 2 048, anchor expired) on the expired-map
+  crossing. oracle43 has no window below n ≈ 490, so the lower part of either map is p34's.
+
+#### 4. qsp_us against b0
+  qsp_us = P90 − P50 (nearest rank) of the path's last L = 256 RTT samples, read at the [DIAG] tick:
+    src/scheduler/path.rs:821-823 cand_quantile = monitor::quantile::nearest_rank; :848-855 rtt_qspread_us =
+    cand_quantile(sorted rtt_win, 0.90) − cand_quantile(.., 0.50); :867-869 count = rtt_win.len();
+    src/scheduler/copa.rs:190 SIGMA_CAND_WINDOW = 256 (the rtt_win ring, :1003 pops the oldest);
+    src/net/diag.rs:679-680 reads it, :724 prints `qsp_us=<µs>/n<fill>` per path. No consumer.
+  b0 = Tmin(250 ms window) − RTprop(10 s min) at the smallest caps: a different statistic (a min-to-min gap, not a
+  P90−P50 spread). Per-row median over [DIAG] ticks t >= 1 s with a full window (n = 256), mean over rows:
+    p27 c2-100 cap 64: p0 qsp 1.96 ms (rows 2)
+    p27 c2-100 cap 96: p0 qsp 2.08 ms (rows 2)
+    c2-100: b0 (L-weighted) 2.28 ms
+    p27 c8-100 cap 128: p0 qsp 1.94 ms (rows 1), p1 qsp 4.90 ms (rows 1)
+    p27 c8-100 cap 192: p0 qsp 2.15 ms (rows 2), p1 qsp 5.01 ms (rows 2)
+    c8-100: b0 (L-weighted) 2.92 ms
+    p34 c1s-400 cap 256: p0 qsp 0.61 ms (rows 3)
+    p34 c1s-400 cap 384: p0 qsp 0.94 ms (rows 3)
+    c1s-400: b0 (L-weighted) 0.30 ms
+    oracle43 c2-100 SL (closed loop, uncapped era): qsp row medians 1.82, 1.77, 1.83 ms
+    oracle43 c2-100 SL-B0 (closed loop, uncapped era): qsp row medians 1.66, 1.71, 1.71 ms
+    oracle43 c1s-400 SL (closed loop, uncapped era): qsp row medians 0.52, 0.62 ms

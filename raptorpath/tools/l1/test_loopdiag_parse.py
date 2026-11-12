@@ -996,5 +996,100 @@ check("plan34_fields (amendment 2): a dual-cell leg with no samples is left out 
       len(fx2["lnpi34"]) == 12 and fx2["lnpi34"] == fx["lnpi34"], fx2["lnpi34"][:2])
 check("plan 34 constants", ld.EXPECT_ROWS34 == 39 and ld.MIN_LD_WINDOWS34 == 8 and ld.B_HOLD34 == 98.0)
 
+# ═══ plan 36 (receiver-side dispersion; status §36): the row witnesses key on LD_PLAN=36 ═══
+import struct  # noqa: E402
+import disp36  # noqa: E402
+
+check("plan 36: arm_n reads CAP<n> and NOCAP<n>", ld.arm_n("CAP256") == 256 and ld.arm_n("NOCAP1024") == 1024 and ld.arm_n("CAP") is None)
+cp36 = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "plan36"], capture_output=True, text=True)
+check("`plan36` subcommand prints the 58 `cell arm seed rep` lines of disp36.plan36",
+      cp36.stdout.splitlines() == [" ".join(map(str, r)) for r in disp36.plan36()] and len(disp36.plan36()) == 58, cp36.stdout[:60])
+check("`plan36 smoke` is c1s CAP256 and c8 CAP128", ld.plan36(smoke=True) == [("c1s-400", "CAP256", "42", 1), ("c8-100", "CAP128", "42", 1)])
+
+
+def pcap36(path, n=300, b=1242):
+    with open(path, "wb") as fh:
+        fh.write(struct.pack("<I", 0xA1B23C4D) + struct.pack("<HHiIII", 2, 4, 0, 0, 64, 1))
+        for i in range(n):
+            t = 1_700_000_000 * 10 ** 9 + i * 7_000_000
+            pay = b - 42
+            pkt = (bytes([2] * 6 + [4] * 6 + [8, 0]) + struct.pack(">BBHHHBBH4s4s", 0x45, 0, pay + 28, 0, 0, 64, 17, 0, bytes([10, 77, 0, 1]), bytes([10, 77, 0, 2]))
+                   + struct.pack(">HHHH", 1, 2, pay + 8, 0) + bytes(64))[:64]
+            fh.write(struct.pack("<IIII", t // 10 ** 9, t % 10 ** 9, 64, b) + pkt)
+
+
+def mk36(arm, n, kdrop=0, pdir=None, sent=None, cell="c1s-400"):
+    def snap(tag, sb, hit):
+        return (f"[SNAP] tag={tag} leg=0 dev=cli0 qdisc: qdisc netem 8039: root refcnt 11 limit 1000 delay 5ms rate 100Mbit  Sent {sb} bytes 9 pkt "
+                f"(dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0  filter: filter protocol all pref 49152 matchall chain 0 handle 0x1 "
+                f"not_in_hw (rule hit {hit}) Action statistics: Sent {sb} bytes 9 pkt (dropped 0, overlimits 0 requeues 0)")
+    drv = lc.read(C1S + "drv.out") + [snap("start", 678, 9), snap("stop", 678 + (sent if sent is not None else 300 * 1242), 9 + 300)]
+    if arm.startswith("CAP"):
+        drv.append(f"[CAPTURE] leg=0 dev=srv0 captured=300 kdrop={kdrop}")
+    cli = sub_gate(base_cli(), "RWM_STORE", str(n))
+    cli = set_den([ln for ln in cli if "[SUMCAP]" not in ln and "congestion controller" not in ln], n)
+    old = {k: os.environ.get(k) for k in ("LD_PLAN", "LD_PCAP_DIR", "LD_TABLE_DIR")}
+    os.environ["LD_PLAN"] = "36"
+    if pdir:
+        os.environ["LD_PCAP_DIR"] = pdir
+    try:
+        return ld.make_row(cell, arm, "42", "1", 0, 10, drv, cli, lc.read(C1S + "s.log"), 0, "x")
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+with tempfile.TemporaryDirectory() as td36:
+    pcap36(os.path.join(td36, "p0.pcap"))
+    r36 = mk36("CAP256", 256, pdir=td36)
+    check("plan 36 CAP row: no [ACKDIAG]/[LOOPDIAG] needed, capture witnesses pass -> LIVE with the d36 summary",
+          r36["status"] == "LIVE" and r36["problems"] == [] and r36["d36"]["legs"][0]["state"] == "live" and r36["d36"]["legs"][0]["skbs"] == 300
+          and r36["d36"]["m"] == 1200, (r36["status"], r36["problems"]))
+    check("plan 36 row: LDROW round-trips through JSON", json.loads(json.dumps(r36, sort_keys=True))["d36"]["legs"][0]["bytes"] == 300 * 1242)
+    check("plan 36 witness: kernel drops void the row", "p36-kdrop-p0=2" in mk36("CAP256", 256, kdrop=2, pdir=td36)["problems"])
+    check("plan 36 witness: bytes 2 % off netem Sent void the row",
+          any(x.startswith("p36-bytes-p0") for x in mk36("CAP256", 256, pdir=td36, sent=int(300 * 1242 * 1.02))["problems"]))
+    check("plan 36 CAP row without its pcaps is WITNESS-FAIL", mk36("CAP256", 256, pdir=os.path.join(td36, "x"))["status"] == "WITNESS-FAIL")
+    w = mk36("NOCAP256", 256)
+    check("plan 36 NOCAP row: LIVE without capture, store gate and denominators still witnessed", w["status"] == "LIVE" and w["problems"] == [], (w["status"], w["problems"]))
+    check("plan 36 NOCAP row: a wrong store gate still voids", "gate-store=512" in mk36("NOCAP256", 512)["problems"])
+    # the same NOCAP log under no plan is judged by the other plans' witnesses (red without the plan-36 gating)
+    ow = ld.make_row("c1s-400", "NOCAP256", "42", "1", 0, 10, lc.read(C1S + "drv.out"),
+                     set_den([ln for ln in sub_gate(base_cli(), "RWM_STORE", "256") if "[SUMCAP]" not in ln], 256), lc.read(C1S + "s.log"), 0, "x")
+    check("without LD_PLAN=36 the same log fails the ACKDIAG/LOOPDIAG witnesses", "no-ackdiag" in ow["problems"] and "loopdiag-p0-windows=0" in ow["problems"], ow["problems"])
+    with tempfile.TemporaryDirectory() as td2:
+        led = os.path.join(td2, "ld.log")
+        with open(led, "w") as fh:
+            fh.write("LDROW " + json.dumps(r36, sort_keys=True) + "\nLD-BATTERY-DONE\n")
+        cs = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "score36", led], capture_output=True, text=True)
+        check("`score36` runs on a ledger and ends in a RESULT line with a NOT-YET verdict (one row is not a result)",
+              cs.returncode == 0 and cs.stdout.strip().splitlines()[-1].startswith("RESULT {") and '"verdict": "NOT-YET"' in cs.stdout, cs.stdout[-300:] + cs.stderr[-300:])
+        check("`check36` wants all 58 rows", subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "check36", led], capture_output=True).returncode == 1)
+
+    import copy
+    with tempfile.TemporaryDirectory() as td3:
+        good8 = copy.deepcopy(r36)
+        good8["cell"], good8["arm"] = "c8-100", "CAP128"
+
+        def smoke_rc(r1):
+            pth = os.path.join(td3, "sm.log")
+            with open(pth, "w") as fh:
+                fh.write("LDROW " + json.dumps(r1) + "\nLDROW " + json.dumps(good8) + "\n")
+            return subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "smoke36", pth], capture_output=True, text=True)
+        ok1 = smoke_rc(r36)
+        bad1 = copy.deepcopy(r36)
+        del bad1["d36"]["legs"][0]["k"]
+        bad = smoke_rc(bad1)
+        check("smoke36 passes on two live rows whose live legs have an L-hat_4", ok1.returncode == 0 and "SMOKE-PASS" in ok1.stdout, ok1.stdout[-300:])
+        check("smoke36 fails when a live leg has no L-hat_4 (the estimator did not run)", bad.returncode == 1 and "has no L-hat_4" in bad.stdout, bad.stdout[-300:])
+
+# every arm the plan-36 table runs must be a known arm (the first launch lost c1s CAP768 to a KeyError in ARM_SPEC)
+check("plan 36: every (cell, arm) of the 58-row table and the smoke is registered in ARM_SPEC",
+      all(arm in ld.sp.ARM_SPEC for _, arm, _, _ in disp36.plan36() + disp36.plan36(smoke=True)),
+      [arm for _, arm, _, _ in disp36.plan36() if arm not in ld.sp.ARM_SPEC])
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

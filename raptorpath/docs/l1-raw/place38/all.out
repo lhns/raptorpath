@@ -1,0 +1,48 @@
+SENTINEL-WRITABLE /dev/shm/ld38/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-10T11:00:13Z user=VMUSER dir=/dev/shm/ld38/run launch=2026-11-10T11:00:13Z
+LD-ALL start plan=38 load=0.51 1.51 1.95 1/400 999035 2026-11-10T11:00:13Z
+ABORT-PRECONDITION procs_running=[1,1,1,12,12,] cargo=0 rustc=0; NOTHING WAS RUN 2026-11-10T11:00:21Z
+SENTINEL-WRITABLE /dev/shm/ld38/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld38/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-10T11:10:21Z user=VMUSER dir=/dev/shm/ld38/run launch=2026-11-10T11:10:21Z
+LD-ALL start plan=38 load=0.08 0.20 1.00 1/393 999629 2026-11-10T11:10:21Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.02 avg60=0.22 avg300=0.34 total=4452953676 2026-11-10T11:10:30Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.07 0.20 0.99; io=full avg10=0.02 avg60=0.22 avg300=0.34 total=4452953676 2026-11-10T11:10:30Z
+LD-ALL parser test ok 2026-11-10T11:10:34Z
+LD-ALL built wall=320s 2026-11-10T11:15:54Z
+LD-ALL binary 2b960cbd95bff346bf23703c133194e8abeb614b4b3a731bb5ad2196853a22ab 2026-11-10T11:15:54Z
+SMOKE38 c8-100@256 MAIN: status=LIVE mbps=95.865 share=[0.9201940990425025, 0.07980590095749751] locked=False w_mv=- w_calls=0 w_cold=- 
+SMOKE38 c8-100@256 WIRE: status=LIVE mbps=94.982 share=[0.923921900974608, 0.07607809902539196] locked=False w_mv=0.0065 w_calls=92906 w_cold=0.0000 
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-10T11:16:17Z
+LD-ALL battery start load=1.15 1.19 1.26; io=full avg10=0.08 avg60=0.06 avg300=0.19 total=4453871781 2026-11-10T11:16:17Z
+LD-ALL battery rc=0 wall=924s 2026-11-10T11:31:41Z
+CHECK38 done=True rows=96/96
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=1.08 1.64 1.54; io=full avg10=0.23 avg60=0.31 avg300=0.27 total=4456334853 2026-11-10T11:31:41Z

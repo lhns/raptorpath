@@ -47,7 +47,7 @@ fn bincode_options() -> impl Options {
 /// v8: two additions in one bump:
 ///   (a) `SymbolBatch.eta_rel_us: u32` -- the sender's own prediction of this
 ///       batch's remaining delivery time, in us, relative to
-///       `send_timestamp_us`. It is the `expected_delivery_load()` of the
+///       `send_timestamp_us`. It is the placement law's `E_i` (wire base) of the
 ///       path the placement law just picked, stamped at the placement lock,
 ///       so the receiver can read every arrival as "late against the
 ///       sender's own model" instead of "out of sequence" (the lateness
@@ -338,7 +338,7 @@ pub struct SymbolBatch {
     /// `path_seq` gap tracking and loss estimation off it).
     pub path_id: u32,
     /// **v8 -- the sender's own delivery prediction**, us, relative to
-    /// `send_timestamp_us`: the `expected_delivery_load()` of the path the
+    /// `send_timestamp_us`: the placement law's `E_i` (wire base) of the path the
     /// placement law just picked, stamped at the placement lock.
     ///
     /// **0 is the "no prediction" sentinel**, the `cum_received` convention.

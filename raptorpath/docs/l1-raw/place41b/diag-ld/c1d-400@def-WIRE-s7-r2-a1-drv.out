@@ -1,0 +1,23 @@
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=16:19:02
+[2m2026-11-10T15:19:02.699144Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_PLACE_WIRE=1 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset RWM_COPA_DELTA=unset RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 RWM_DIAG=1 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=1 RWM_RTOBS=1 RWM_FDIAG=0 RWM_TRACE=0 RWM_PFRAC=0
+{"seconds":0.019609,"warmup":true}
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":3.9436,"mean_mbps":811.445,"mean_s":3.9436,"median_s":3.9436,"min_s":3.9436,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=9.59s CPUCLI=8.75s (srv=decoder cli=sender; whole-invocation incl warmup)
+    [THR] sum phase=xfer side=client run=1 workers=10 busy_s=10.045 threads=11 cpu_s=8.650 cores=2.193 wall_s=3.944
+    [LAG] phase=xfer side=client run=1 tick_ms=10 n=395 p50_us=233 p99_us=1278 max_us=2921 min_us=185 dropped=0
+    [THR] sum phase=xfer side=server obj=0 workers=10 busy_s=0.001 threads=11 cpu_s=0.000 cores=0.000 wall_s=0.000
+    [LAG] phase=xfer side=server obj=0 tick_ms=10 n=0 p50_us=- p99_us=- max_us=- min_us=- dropped=0
+    [THR] sum phase=xfer side=server obj=1 workers=10 busy_s=11.365 threads=11 cpu_s=9.500 cores=2.412 wall_s=3.939
+    [LAG] phase=xfer side=server obj=1 tick_ms=10 n=393 p50_us=416 p99_us=1289 max_us=1702 min_us=374 dropped=0
+    done 16:19:06
+--- server log tail:
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+2026-11-10T15:19:06.714421Z  INFO raptorpath::net::sender_phases: [SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh ticks=4 live_sum=8 active_sum=8 short_ticks=0 zero_ticks=0
+    QDISC cli0: qdisc netem 873a: root refcnt 11 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 216774320 bytes 171176 pkt (dropped 19, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem 873b: root refcnt 11 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 1007  Sent 225142927 bytes 178272 pkt (dropped 35, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 873c: root refcnt 11 limit 1000 delay 1ms rate 1Gbit seed 7227719359365154354  Sent 31100666 bytes 37884 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem 873d: root refcnt 11 limit 1000 delay 1ms rate 1Gbit seed 15871266848812894191  Sent 40275616 bytes 45446 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    [TRUTH] leg=0 dev=cli0 egress_dgrams=171267 egress_skbs=23554 gso=7.27 netem_sent_dgrams=171176 netem_dropped_skbs=19 backlog=0 lost=91 loss=0.000531 rcvbuf_drops=0 rcvbuf_scope=netns
+    [TRUTH] leg=1 dev=cli1 egress_dgrams=178529 egress_skbs=24855 gso=7.18 netem_sent_dgrams=178274 netem_dropped_skbs=35 backlog=0 lost=255 loss=0.001428 rcvbuf_drops=0 rcvbuf_scope=netns
+    QCAP: /tmp/rwm-q.txt 21 lines

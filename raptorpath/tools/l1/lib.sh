@@ -204,6 +204,9 @@ scenario_params() {
         c4|sat)      echo "20mbit  100 10 3    30" ;;
         c5|badwifi)  echo "50mbit  5   3  5.3  30" ;;
         clean)       echo "100mbit 5   0  0    100" ;;
+        # Status section 40: c2 plus a real-link failure mode. The five fields are c2's; the extra netem
+        # options / child qdisc come from scenario_netem_extra / scenario_child_qdisc below.
+        c2slot|c2tbf) echo "100mbit 5   3  1.3  50" ;;
         # FEC-vs-ARQ crossover RTT sweep: c2 loss/bw
         # (100mbit, GE 1.3/50 ≈ 2.5% mean loss) with jitter=0 so RTT is the only
         # swept variable. one_way = RTT/2.  RTT ∈ {10,30,50,100,200} ms.
@@ -222,6 +225,49 @@ scenario_params() {
         c2r200l5)    echo "100mbit 100 0  2.63 50" ;;
         c2r200l10)   echo "100mbit 100 0  5.56 50" ;;
         *) echo "unknown scenario: $1" >&2; exit 1 ;;
+    esac
+}
+
+# Extra `tc qdisc ... netem` options of a scenario (appended after rate/loss/seed); empty for most.
+#   c2slot: release in bursts of <= 16 packets at 1-3 ms intervals (aggregation, as a Wi-Fi/DOCSIS/LTE link).
+# The one netem argument builder (status section 46). `shape` (topo_dual.sh) issues `tc qdisc add ... netem $(netem_args ...)` and
+# `reshape` issues `tc qdisc change ... netem $(netem_args ... <delay_ms>)`: the same words, so a path event changes the delay and
+# nothing else. Prints the argument words on one line; callers split it unquoted (no word contains whitespace or a glob character).
+#   netem_args <scenario> [seed] [delay_ms]    delay_ms overrides the scenario's one-way delay
+netem_args() {
+    local scenario="$1" seed="${2:-}" delay_ms="${3:-}"
+    local rate one_way jitter ge_p ge_q
+    read -r rate one_way jitter ge_p ge_q <<< "$(scenario_params "$scenario")"
+    [[ -n "$delay_ms" ]] && one_way="$delay_ms"
+    local jit="" loss="" sd="" extra
+    [[ "$jitter" != "0" ]] && jit="${jitter}ms"
+    [[ "$ge_p" != "0" ]] && loss="loss gemodel ${ge_p}% ${ge_q}%"
+    [[ -n "$seed" ]] && sd="seed $seed"
+    extra="$(scenario_netem_extra "$scenario")"
+    # shellcheck disable=SC2086
+    echo delay "${one_way}ms" $jit rate "$rate" $loss $sd $extra
+}
+
+# The scenario's own one-way delay in ms (what `reshape` restores).
+scenario_one_way_ms() { # scenario
+    local rate one_way jitter ge_p ge_q
+    read -r rate one_way jitter ge_p ge_q <<< "$(scenario_params "$1")"
+    echo "$one_way"
+}
+
+scenario_netem_extra() { # scenario
+    case "$1" in
+        c2slot) echo "slot 1ms 3ms packets 16" ;;
+        *) echo "" ;;
+    esac
+}
+
+# A child qdisc under the netem root (`tc qdisc add ... parent 1: handle 10: <this>`); empty for most.
+#   c2tbf: a token-bucket policer behind c2's 100 Mbit/s netem; its burst drains at the netem rate.
+scenario_child_qdisc() { # scenario
+    case "$1" in
+        c2tbf) echo "tbf rate 50mbit burst 125000 latency 50ms" ;;
+        *) echo "" ;;
     esac
 }
 

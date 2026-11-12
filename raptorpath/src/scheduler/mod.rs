@@ -136,6 +136,10 @@ pub struct Scheduler {
     /// bind fraction and the execution witness that the term actually
     /// changed a decision.
     place_hol_gauge: std::cell::Cell<(u64, u64, u64, u64, f64)>,
+    /// `place_wire_gauge` = `(w_cold, leg evaluations, place_costs calls,
+    /// ref-floor binds)`: the wire base's two bind gauges (the `wire_i`
+    /// fallback taken, the 1 ms floor of `ref` bound); drained with the others.
+    place_wire_gauge: std::cell::Cell<(u64, u64, u64, u64)>,
     clock: Arc<dyn Clock>,
     /// Scheduling weights from protocol hint.
     weights: SchedulingWeights,
@@ -173,6 +177,7 @@ impl Scheduler {
             place_bind: std::cell::Cell::new((0, 0, 0)),
             place_t_gauge: std::cell::Cell::new((0.0, 0, 0)),
             place_hol_gauge: std::cell::Cell::new((0, 0, 0, 0, 0.0)),
+            place_wire_gauge: std::cell::Cell::new((0, 0, 0, 0)),
             place_t_derived: place_t_derived_active(),
             place_hol: place_hol_active(),
             place_wdiv_derived: place_wdiv_derived_active(),
@@ -219,6 +224,19 @@ impl Scheduler {
     /// Is the derived diversity weight armed on this scheduler?
     pub fn place_wdiv_derived(&self) -> bool {
         self.place_wdiv_derived
+    }
+
+    /// Mirror quinn's packet-timed RTT into every leg (the placement base,
+    /// paper §5.7). `read` is the caller's transport read per leg id; a leg
+    /// it has no sample for is left as is. Called at every ack batch and path
+    /// report, so a leg that carries nothing is refreshed by traffic on the
+    /// others. Allocation-free: legs are independent, so map order is moot.
+    pub fn mirror_wire_rtts(&mut self, mut read: impl FnMut(PathId) -> Option<Duration>) {
+        for (id, p) in self.paths.iter_mut() {
+            if let Some(rtt) = read(*id) {
+                p.set_wire_rtt(rtt);
+            }
+        }
     }
 
     /// The cold-start placement price setting in force for this scheduler.
@@ -624,6 +642,8 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod place_alloc_tests;
 
 // ── The one-sided-clamp witness, process-wide (`[LCW]`) ───────────────
 //

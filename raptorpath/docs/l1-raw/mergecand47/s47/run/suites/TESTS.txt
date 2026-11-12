@@ -1,0 +1,12 @@
+TEST main rc=101 wall=1315s passed=1161 failed=1 ignored=53 binaries=101 cmd=[timeout 7200 ~/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+test allocations_per_source_symbol_stay_under_the_bound ... FAILED
+---- allocations_per_source_symbol_stay_under_the_bound stdout ----
+REAL-FAILURE main allocations_per_source_symbol_stay_under_the_bound
+TEST doc rc=0 wall=2s passed=0 failed=0 ignored=0 binaries=1 cmd=[timeout 3600 ~/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=120s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE timeout 3600 ~/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=101 wall=1161s passed=1024 failed=1 ignored=52 binaries=92 cmd=[timeout 7200 ~/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+test allocations_per_source_symbol_stay_under_the_bound ... FAILED
+---- allocations_per_source_symbol_stay_under_the_bound stdout ----
+REAL-FAILURE debug-witness allocations_per_source_symbol_stay_under_the_bound
+TEST parsers rc=0 wall=319s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done]
+IDENTITY-PANICS 0
