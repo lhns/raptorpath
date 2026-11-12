@@ -149,6 +149,57 @@ def plan48(smoke=False):
     return out
 
 
+# ── status 52: the c8 recovery levers (plan 52), REPORTED ONLY, after the guard. c8-100 at 600 MB; BASE / CAND / W0 / W05 / WDER, n = 6 each (seeds 42, 7 x 3 reps) ──
+REPORT_CELL52 = "c8-100"
+BYTES52 = 600000000
+ARMS52 = ("BASE", "CAND", "W0", "W05", "WDER")
+# The three diagnostic arms run BASE's binary: W0 = RWM_PLACE_WDIV=0, W05 = RWM_PLACE_WDIV=0.5, WDER = RWM_PLACE_WDIV_DERIVED=1 (nothing else set).
+W_ARMS = {"W0": ("0", None), "W05": ("0.5", None), "WDER": (None, "1")}       # arm -> (RWM_PLACE_WDIV value, RWM_PLACE_WDIV_DERIVED value)
+BLOCKS52 = [(sd, rp) for rp in range(1, 4) for sd in ("42", "7")]               # 6 groups, rep-major, seed 42 before 7
+EXPECT_ROWS52 = len(ARMS52) * len(BLOCKS52)                                    # 30
+SMOKE52 = [(REPORT_CELL52, "def", a, "42", 1) for a in ("W0", "W05", "WDER")]   # unscored witness rows: one per env arm (BASE / CAND witnesses ride the guard's smoke)
+for _a in W_ARMS:
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+
+
+def plan52(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 52): six groups (seed, rep), rep-major, seed 42 before 7; inside a group the five arms in a
+    rotation (group g starts at arm g mod 5), so every arm leads and none always follows the same neighbour."""
+    if smoke:
+        return list(SMOKE52)
+    out = []
+    for g, (seed, rep) in enumerate(BLOCKS52):
+        k = g % len(ARMS52)
+        out += [(REPORT_CELL52, "def", a, seed, rep) for a in ARMS52[k:] + ARMS52[:k]]
+    return out
+
+
+def wdiv_problems(arm, cli, srv):
+    """Witnesses of the placement-diversity diagnostics (status 52), on both endpoints' last `[GATES]` line: `RWM_PLACE_WDIV=<v>` is echoed only when set (so BASE,
+    CAND and WDER must NOT carry it; W0 must read 0 and W05 0.5, numerically: the engine prints 0 and 0.5), `RWM_PLACE_WDIV_DERIVED` reads 1 on WDER and is
+    absent or 0 on every other arm. A binary that predates the gate has neither token: fine for the arms that want it off."""
+    want_w, want_d = W_ARMS.get(arm, (None, None))
+    p = []
+    for side, lines in (("cli", cli), ("srv", srv)):
+        w, d = lc.gate_tok(lines, "RWM_PLACE_WDIV"), lc.gate_tok(lines, "RWM_PLACE_WDIV_DERIVED")
+        if want_w is None:
+            if w is not None:
+                p.append(f"gate-wdiv-{side}={w} on {arm} (want absent)")
+        else:
+            try:
+                ok = w is not None and float(w) == float(want_w)
+            except ValueError:
+                ok = False
+            if not ok:
+                p.append(f"gate-wdiv-{side}={w} (want {want_w})")
+        if want_d == "1":
+            if d != "1":
+                p.append(f"gate-wdiv-derived-{side}={d} (want 1)")
+        elif d not in (None, "0"):
+            p.append(f"gate-wdiv-derived-{side}={d} on {arm} (want absent or 0)")
+    return p
+
+
 def plan41b(smoke=False):
     """[(cell, store, arm, seed, rep)] in run order (status §41b). Six groups, one per (seed, rep) of the 3 reps x 2 seeds; per
     group and cell four rows in the pattern BASE, MAIN, BASE, WIRE rotated by g mod 4 (so each arm meets each position). MAIN and
@@ -344,6 +395,9 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         row["bytes"] = int(os.environ["LD_ROW_BYTES"])           # plan 48: the row's own size (CPU/GB, scorer)
     nleg = sp.N_LEGS[cell]
     row["gate_wire_cli"], row["gate_wire_srv"] = lc.gate_tok(cli, "RWM_PLACE_WIRE"), lc.gate_tok(srv, "RWM_PLACE_WIRE")
+    row["gate_wdiv_cli"], row["gate_wdiv_srv"] = lc.gate_tok(cli, "RWM_PLACE_WDIV"), lc.gate_tok(srv, "RWM_PLACE_WDIV")
+    row["gate_wdiv_derived_cli"], row["gate_wdiv_derived_srv"] = lc.gate_tok(cli, "RWM_PLACE_WDIV_DERIVED"), lc.gate_tok(srv, "RWM_PLACE_WDIV_DERIVED")
+    afam = "BASE" if arm in W_ARMS else arm            # W0 / W05 / WDER run BASE's binary: BASE's witnesses apply to them
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
     cap = [m for m in (sl._SUMCAP.search(ln) for ln in cli) if m]
     row["sumcap_eng"] = int(cap[-1].group(2)) if cap else None
@@ -384,7 +438,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     promoted = row["gate_wire_cli"] is None and row["gate_wire_srv"] is None
     if arm == "MAIN" and promoted:
         pass        # the gate is gone (promotion, ADR-0073): an absent token means "promoted", not a failed witness
-    elif arm in ("BASE", "CAND"):
+    elif afam in ("BASE", "CAND"):
         # Main's own binary (BASE, §41) and the promoted build (CAND, §46) have no RWM_PLACE_WIRE: the token must be absent.
         if row["gate_wire_cli"] is not None or row["gate_wire_srv"] is not None:
             p.append(f"gate-place-wire={row['gate_wire_cli']}/{row['gate_wire_srv']} on {arm} (want absent)")
@@ -418,7 +472,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                     p.append(f"wpl-within-1ms-of-wrtt={close}/{len(post)}")
             if eta is not None and eta["w_mv"] is not None and not (_f(eta["w_mv"]) or 0) > 0:
                 p.append(f"w_mv={eta['w_mv']}")
-    elif arm == "CAND" or (arm == "MAIN" and promoted) or (arm == "BASE" and base_promoted()):
+    elif arm == "CAND" or (arm == "MAIN" and promoted) or (afam == "BASE" and base_promoted()):
         pass        # the promoted build prints wpl_us and the bind gauges always: reported, not a witness
     else:
         if any(L[i][3] is not None for _, L in diag for i in L):
@@ -429,6 +483,14 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         import bbr48_score          # lazy: bbr48_score imports this module
         row["b48"], p48 = bbr48_score.row_readouts(cli, srv, cell, arm)
         p.extend(p48)
+    # Status 52: the placement-diversity env of each arm must be echoed as registered, on EVERY plan (BASE / CAND rows must not carry it).
+    p.extend(wdiv_problems(arm, cli, srv))
+    if os.environ.get("LD_PLAN") == "52":
+        import tail52_score         # lazy: tail52_score imports this module only on its ledger side
+        try:
+            row["t52"] = tail52_score.row_metrics(cli, srv, drv, row.get("bytes"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t52"], row["t52_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -943,6 +1005,53 @@ def smoke(path, plan41=False, plan41b=False, plan41c=False):
     return 0
 
 
+def check52(path):
+    """rc 0 iff the reported block's battery finished and the ledger holds its EXPECT_ROWS52 rows (a count check; the block is never scored)."""
+    rows, _ = rows_of([path])
+    t = open(path, errors="replace").read()
+    ok = "LD-BATTERY-DONE" in t and len(rows) == EXPECT_ROWS52
+    print(f"CHECK52 done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{EXPECT_ROWS52}")
+    return 0 if ok else 1
+
+
+def smoke52(path):
+    """rc 0 iff the three unscored env rows (W0, W05, WDER at c8-100) are LIVE (their witnesses hold: the arm's env is in the [GATES] echo) and carry the readouts
+    the reported scorer needs, `cx_leg=` included (all three run BASE's binary, which must carry the diagnostic); otherwise ABORT-SMOKE."""
+    rows, _ = rows_of([path])
+    got = {(r["cell"], r["arm"]): r for r in rows}
+    bad = []
+    for cell, store, arm, _, _ in SMOKE52:
+        r = got.get((cell, arm))
+        if r is None:
+            bad.append(f"{arm}: no row")
+            continue
+        miss = [] if r["status"] == "LIVE" else [r["status"]]
+        t = r.get("t52")
+        if not t:
+            miss.append("no-t52" + (f"({r['t52_error']})" if r.get("t52_error") else ""))
+        else:
+            for k in ("goodput_mbps", "tail_s", "H0", "lag_end", "send_leg1_share", "retx_per_gb", "rx_dup", "cpu_cli_s_per_gb"):
+                if t.get(k) is None:
+                    miss.append(f"no-{k}")
+            for pth in ("0", "1"):
+                h = (t.get("hold") or {}).get(pth) or (t.get("hold") or {}).get(int(pth)) or {}
+                if h.get("age_p50_us") is None or h.get("cx_p50_us") is None:
+                    miss.append(f"no-hold-p{pth}")
+                if h.get("cx_leg") is None:
+                    miss.append(f"no-cx_leg-p{pth}")
+            if not t.get("kbins"):
+                miss.append("no-K-bins")
+        print(f"SMOKE52 {cell} {arm}: status={r['status']} mbps={r.get('mbps')} wdiv={r.get('gate_wdiv_cli')}/{r.get('gate_wdiv_srv')} "
+              f"derived={r.get('gate_wdiv_derived_cli')}/{r.get('gate_wdiv_derived_srv')} {' '.join(r['problems'] + miss)}")
+        if miss:
+            bad.append(f"{arm}: {miss}")
+    if bad:
+        print("SMOKE-FAIL " + "; ".join(bad))
+        return 1
+    print("SMOKE-PASS")
+    return 0
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -977,6 +1086,14 @@ def main(argv):
         for c, s, ar, seed, rep in plan41c(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
         return 0
+    if cmd == "plan52":
+        for c, s_, ar, seed, rep in plan52(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
+        return 0
+    if cmd == "check52":
+        return check52(a[0])
+    if cmd == "smoke52":
+        return smoke52(a[0])
     if cmd == "plan48":
         for c, s_, ar, seed, rep in plan48(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s_} {ar} {seed} {rep}")

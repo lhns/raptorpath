@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stub runs of the candidate plans' launch paths (plans 41c, 46, 47, 48): loopdiag_run_all.sh EXECUTED end to end, against stubs.
+"""Stub runs of the candidate plans' launch paths (plans 41c, 46, 47, 48, 52): loopdiag_run_all.sh EXECUTED end to end, against stubs.
 
 The static checks in test_harness46/47 and test_bbr48_parse assert strings in the scripts; they did not catch §49 session 5's ABORT-SMOKE (LD_BASE_SHA
 lost in `sudo -n env`) or session 1's ABORT-TESTS (a function called before it was defined). Here the real scripts run in a sandbox:
@@ -84,7 +84,8 @@ case "$1" in
     T="${CARGO_TARGET_DIR:?}"; mkdir -p "$T/release"
     case "$PWD" in */base/src/raptorpath) kind=BASE ;; *) kind=CAND ;; esac
     { echo '#!/bin/sh'; echo "# stub engine binary $kind built from $PWD"; echo "# RWM_STORE"
-      [ "$kind" = CAND ] && echo "# [QCC] t= RWM_QUIC_CC"; echo 'exit 0'; } > "$T/release/raptorpath"
+      [ "$kind" = CAND ] && echo "# [QCC] t= RWM_QUIC_CC"
+      [ "$kind" = BASE ] && echo "# fmt  RWM_PLACE_WDIV= tail"; echo 'exit 0'; } > "$T/release/raptorpath"
     chmod +x "$T/release/raptorpath" ;;
   test) echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out" ;;
 esac
@@ -110,8 +111,11 @@ HIST_BASE = "4926822" + "0" * 33
 # FULL (STUBRUN_FULL=1): the registered designs, 96 guard rows / 22 path-event rows plus the smokes. FAST (the default): the sandbox's COPY of the tables and of
 # the design-size checks is shrunk (2 groups = 16 guard rows, 8 path-event rows), so every path and marker is exercised in minutes; the same code runs, on fewer rows.
 FULL = os.environ.get("STUBRUN_FULL") == "1"
-EXPECT_ROWS = ({("41c", False): 2, ("41c", True): 98, ("46", False): 2, ("46", True): 24, ("47", False): 4, ("47", True): 122, ("48", False): 2, ("48", True): 98} if FULL else
-               {("41c", False): 2, ("41c", True): 18, ("46", False): 2, ("46", True): 10, ("47", False): 4, ("47", True): 28, ("48", False): 2, ("48", True): 18})
+# plan 52: the guard's smoke (2) + the guard + the reported block's smoke (3) + the block (30 registered, 10 in fast mode)
+EXPECT_ROWS = ({("41c", False): 2, ("41c", True): 98, ("46", False): 2, ("46", True): 24, ("47", False): 4, ("47", True): 122, ("48", False): 2, ("48", True): 98,
+                ("52", False): 5, ("52", True): 131} if FULL else
+               {("41c", False): 2, ("41c", True): 18, ("46", False): 2, ("46", True): 10, ("47", False): 4, ("47", True): 28, ("48", False): 2, ("48", True): 18,
+                ("52", False): 5, ("52", True): 31})
 # (file, old, new, expected count): each must match, so a drift in the scripts fails here instead of silently running the full design
 FAST_PATCHES = [
     ("loopdiag_run_all.sh", '[ "$nrows" != "96" ]', '[ "$nrows" != "16" ]', 1),
@@ -120,6 +124,8 @@ FAST_PATCHES = [
     ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 22 ] || { echo "ABORT-PLAN46', '[ "${#tbl[@]}" -eq 8 ] || { echo "ABORT-PLAN46', 1),
     ("place38_parse.py", "EXPECT_ROWS41C = len(GUARD_CELLS) * (12 + 12)", "EXPECT_ROWS41C = len(GUARD_CELLS) * (2 + 2)", 1),
     ("place38_parse.py", "for rp in range(1, 7) for sd", "for rp in range(1, 2) for sd", 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 30 ] || { echo "ABORT-PLAN52', '[ "${#tbl[@]}" -eq 10 ] || { echo "ABORT-PLAN52', 1),
+    ("place38_parse.py", "for rp in range(1, 4) for sd", "for rp in range(1, 2) for sd", 1),
     ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
     ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
     ("place46_parse.py", "EXPECT_ROWS46 = 22 ", "EXPECT_ROWS46 = 8 ", 1),
@@ -295,7 +301,8 @@ def case(plan, path):
         check(f"{tag}: {n} row-parser calls, each with LD_BASE_SHA={want or '(empty)'} having passed `sudo -n env` and each under LD_PLAN of its stage",
               len(rows) == n and bases == {want}, (len(rows), bases))
         plans = {r.split("plan=")[1].split()[0] for r in rows}
-        check(f"{tag}: the row parser ran under the plan(s) {'41c+46' if plan == '47' else plan}", plans == ({"41c", "46"} if plan == "47" else {plan}), plans)
+        want_plans = {"47": {"41c", "46"}, "52": {"41c", "52"}}.get(plan, {plan})
+        check(f"{tag}: the row parser ran under the plan(s) {'+'.join(sorted(want_plans))}", plans == want_plans, plans)
         tests = [c for c in cargo if "|test " in c]
         builds = [c for c in cargo if "|build " in c]
         check(f"{tag}: two builds (CAND tree, BASE tree)", len(builds) == 2 and sum("/base/src/" in b for b in builds) == 1, builds)
@@ -304,13 +311,36 @@ def case(plan, path):
             check(f"{tag}: rehearsal ran no suites and no battery (no cargo test, no ld.log, REHEARSAL-PASS persisted)",
                   tests == [] and not any(f == "ld.log" for _, _, fs in os.walk(run_dir) for f in fs)
                   and any(f == "REHEARSAL-PASS" for _, _, fs in os.walk(run_dir) for f in fs), (tests, list(os.walk(run_dir))[:3]))
+        if plan == "52" and path == "rehearse":
+            passes = sorted(os.path.relpath(os.path.join(dp, f), run_dir).replace("\\", "/") for dp, _, fs in os.walk(run_dir) for f in fs if f == "REHEARSAL-PASS")
+            smoke = os.path.join(run_dir, "rep52", "smoke.log")
+            txt = open(smoke, errors="replace").read() if os.path.exists(smoke) else ""
+            check(f"{tag}: both stage smokes passed (guard/ and rep52/ REHEARSAL-PASS), the reported smoke ran the three env arms on BASE's binary, no battery",
+                  passes == ["guard/REHEARSAL-PASS", "rep52/REHEARSAL-PASS"] and all(f" arm={a} " in txt for a in ("W0", "W05", "WDER")) and txt.count("=== rep=") == 3, (passes, txt[:300]))
+        if plan == "52" and path == "full":
+            import json
+            rep, grd = os.path.join(run_dir, "rep52"), os.path.join(run_dir, "guard")
+            led = lambda d: [json.loads(ln[len("P38ROW "):]) for ln in open(os.path.join(d, "ld.log"), errors="replace") if ln.startswith("P38ROW ")]  # noqa: E731
+            rr, gr = led(rep), led(grd)
+            echo = {a: {(r["gate_wdiv_cli"], r["gate_wdiv_srv"], r["gate_wdiv_derived_cli"], r["gate_wdiv_derived_srv"]) for r in rr if r["arm"] == a} for a in ("BASE", "CAND", "W0", "W05", "WDER")}
+            want_echo = {"BASE": {(None, None, "0", "0")}, "CAND": {(None, None, "0", "0")}, "W0": {("0", "0", "0", "0")}, "W05": {("0.5", "0.5", "0", "0")}, "WDER": {(None, None, "1", "1")}}
+            check(f"{tag}: the reported ledger holds its rows (10 fast / 30 full), all LIVE, c8-100, 2 per arm in fast mode / 6 in full, each arm's env echoed in its [GATES] (BASE / CAND carry none)",
+                  len(rr) == EXPECT_ROWS[(plan, True)] - 5 - len(gr) and all(r["status"] == "LIVE" and r["cell"] == "c8-100" for r in rr) and echo == want_echo
+                  and len({sum(1 for r in rr if r["arm"] == a) for a in want_echo}) == 1, (len(rr), echo, [r["problems"] for r in rr if r["problems"]][:3]))
+            shas = {a: {r["bin_sha"] for r in rr if r["arm"] == a} for a in want_echo}
+            check(f"{tag}: W0 / W05 / WDER ran BASE's binary (same sha as BASE), CAND ran the other one; every reported row carries its t52 readouts and the 600 MB size",
+                  shas["W0"] == shas["W05"] == shas["WDER"] == shas["BASE"] and shas["CAND"].isdisjoint(shas["BASE"]) and len(shas["BASE"]) == 1
+                  and all(r.get("t52") and r["t52"]["tail_s"] is not None and r["t52"]["H0"] is not None and r["bytes"] == 600000000 for r in rr), shas)
+            check(f"{tag}: the guard's ledger holds only BASE / CAND (no reported row in it), its verdict line and the reported VERDICT52 line are separate",
+                  {r["arm"] for r in gr} == {"BASE", "CAND"} and any(ln.startswith("VERDICT") for ln in open(os.path.join(grd, "score.txt"), errors="replace"))
+                  and "VERDICT52 REPORTED-ONLY" in open(os.path.join(rep, "score.txt"), errors="replace").read(), None)
         if path == "historical-base":
             check(f"{tag}: BASE pinned to 4926822 (no LD_BASE_SHA anywhere): no cargo test, REHEARSAL-PASS", tests == [] and "REHEARSAL-PASS" in e)
         if path == "prior-tests":
             check(f"{tag}: the green suite run of the identical tree is reused: cargo test never runs, TESTS-OK and the manifest are carried over",
-                  tests == [] and "reused TESTS-OK" in e and os.path.exists(os.path.join(run_dir, "suites" if plan in ("47", "48") else "", "TESTS-OK")), (tests, tail(e, 12)))
+                  tests == [] and "reused TESTS-OK" in e and os.path.exists(os.path.join(run_dir, "suites" if plan in ("47", "48", "52") else "", "TESTS-OK")), (tests, tail(e, 12)))
         if path == "full":
-            sdir = os.path.join(run_dir, "suites") if plan in ("47", "48") else run_dir
+            sdir = os.path.join(run_dir, "suites") if plan in ("47", "48", "52") else run_dir
             recorded = [f for f in os.listdir(sdir) if f in ("TESTS-OK", "SRC-MANIFEST.sha256")] if os.path.isdir(sdir) else []
             if plan == "46":
                 check(f"{tag}: plan 46 without LD_P46_SUITES runs no suites (no cargo test, no TESTS-OK)", tests == [] and recorded == [], (len(tests), recorded))
@@ -378,7 +408,7 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "46", "47", "48") for v in hp.HARNESS_PATHS[p]]
+all_cases = [(p, v) for p in ("41c", "46", "47", "48", "52") for v in hp.HARNESS_PATHS[p]]
 phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests")]
 phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests")]
 t_all = time.time()
@@ -401,7 +431,7 @@ if not only:
     wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
     check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
-    check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 46, 47, 48) -- the plans LD_REHEARSE and LD_PRIOR_TESTS are defined for",
-          set(hp.HARNESS_PATHS) == {"41c", "46", "47", "48"})
+    check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 46, 47, 48, 52) -- the plans LD_REHEARSE and LD_PRIOR_TESTS are defined for",
+          set(hp.HARNESS_PATHS) == {"41c", "46", "47", "48", "52"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

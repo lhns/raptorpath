@@ -7,7 +7,8 @@ was not executed or an executed path is not listed, so this table cannot drift f
   prior-tests            LD_PRIOR_TESTS = a green suite run of byte-identical raptorpath/src+tests (rehearsal): reused, no cargo test
   prior-tests-mismatch   the same with one byte of raptorpath/src changed: ABORT-TESTS, nothing measured
   historical-base        LD_BASE_SHA unset (BASE = main 4926822): rehearsal passes, the row parser sees an empty LD_BASE_SHA (plans 41c / 46 / 47 only:
-                         plan 48 requires LD_BASE_SHA)
+                         plans 48 and 52 require LD_BASE_SHA; plan 52's BASE must carry the RWM_PLACE_WDIV echo)
+Plan 52 (the c8 recovery levers) is plan 47's shape: suites, the guard (41c), then the reported block (rep52: smoke = the three RWM_PLACE_WDIV arms, then 30 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
 HARNESS_PATHS = {
@@ -15,4 +16,5 @@ HARNESS_PATHS = {
     "46": ("rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base"),
     "47": ("rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base"),
     "48": ("rehearse", "full", "prior-tests", "prior-tests-mismatch"),
+    "52": ("rehearse", "full", "prior-tests", "prior-tests-mismatch"),
 }

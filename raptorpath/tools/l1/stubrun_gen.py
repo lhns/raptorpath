@@ -4,8 +4,8 @@ logs plus synthetic [DIAG] / [QCC] / event lines, so the REAL row parsers accept
 
     stubrun_gen.py <scenA> <scenB> <hint> <bytes> <n> <single|dual>      (the perf_rwm_c.sh argv)
 
-Reads RWM_BIN (BASE iff it is the bin-base binary), RWM_QUIC_CC (bbr_rs = the plan-48 CAND), RWM_EVENT / RWM_EVENT_QDISC (plan 46) and
-LD_PLAN from the environment; prints the driver output (the battery redirects it to /tmp/ld-drv.out) and writes /tmp/rwm-c.log, /tmp/rwm-s.log, and for plan 46 /tmp/rwm-evt.txt (+ /tmp/rwm-evtq.txt).
+Reads RWM_BIN (BASE iff it is the bin-base binary), RWM_QUIC_CC (bbr_rs = the plan-48 CAND), RWM_EVENT / RWM_EVENT_QDISC (plan 46),
+RWM_PLACE_WDIV / RWM_PLACE_WDIV_DERIVED (plan 52: echoed in both [GATES] lines as the engine does) and LD_PLAN from the environment; prints the driver output (the battery redirects it to /tmp/ld-drv.out) and writes /tmp/rwm-c.log, /tmp/rwm-s.log, and for plan 46 /tmp/rwm-evt.txt (+ /tmp/rwm-evtq.txt).
 The shapes are copies of the generators in test_bbr48_parse.py (run_lines) and test_harness46.py (gen, logs_for, qd): those files run their
 checks on import, so they cannot be imported."""
 import os
@@ -104,6 +104,33 @@ def diag46(s, wpl=True):
             f"dgq1[hand=1 tx={s['tx'][1]} full=0 err=0 sp=1]{legs} dgev0=0")
 
 
+# ── plan 52 (tail52_score.row_metrics): the sender's recovery fields on the [DIAG] lines, [HOLD], the receiver's [C8CONV-R] ──
+def extras52(k, n_src=16):
+    """The fields appended to the k-th plan-48-shaped [DIAG] line (t = 0.25 k): source until line n_src, then a tail."""
+    src = 1000 if k <= n_src else 0
+    s = 250 * min(k, n_src)
+    return (f" src={src}sym/s cod=0sym/s cum={s}/5/{s - 700} retx={100 * k} mpr[rep={10 * k} seqs={500 * k} fired={100 * k} supp=0/0/0] "
+            f"fp/on p0:{6 * k}/{4 * k} p1:{2 * k}/{4 * k}] wnd2=0/0")
+
+
+HOLD52 = ("[HOLD] site=sender path={p} gen=0 hn_n=10 fed=99 age_p50_us=3670016 age_p90_us=4718592 cx_n=7 cx_p50_us=229376 cx_p90_us=589824 "
+          "cx_leg=0:3,1:4 fa_class=0.0625")
+RX52 = "[C8CONV-R] p0:fst=2 dup=7 lead=0 unb=1/5ms p1:fst=2 dup=3 lead=0 unb=1/5ms"
+
+
+def gates52(lines):
+    """The engine's [GATES] tail: RWM_PLACE_WDIV_DERIVED always, RWM_PLACE_WDIV last and only when set."""
+    out = []
+    for ln in lines:
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_PLACE_WDIV(_DERIVED)?=\S+", "", ln)
+            ln += f" RWM_PLACE_WDIV_DERIVED={os.environ.get('RWM_PLACE_WDIV_DERIVED') or '0'}"
+            if os.environ.get("RWM_PLACE_WDIV"):
+                ln += f" RWM_PLACE_WDIV={os.environ['RWM_PLACE_WDIV']}"
+        out.append(ln)
+    return out
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -143,6 +170,15 @@ def main(argv):
                + "".join(f"[DIAGSEEN] t={s['t']} wall={1000 + s['t'] + 0.01:.3f}\n" for s in S))
         if os.environ.get("RWM_EVENT_QDISC") == "1":
             evtq = qcap(qd("20ms"), [qd("1.52s", 120), qd("1.52s", 340), qd("1.52s", 600)], qd("20ms", 0))
+    elif plan == "52":
+        rl = run_lines(fam, False, n=20)         # 5 s of [DIAG] (the fixture's run is 5.09 s): source to 4.0 s, a tail after it
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + extras52(k)
+        cli = gates52(cli) + rl + [HOLD52.format(p=0), HOLD52.format(p=1)]
+        srv = gates52(srv) + [RX52]
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
     sys.stdout.write("\n".join(drv) + "\n")            # the driver's stdout: the battery redirects it to /tmp/ld-drv.out

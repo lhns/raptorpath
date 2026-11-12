@@ -1575,6 +1575,16 @@ def main(argv):
         import bbr48_score
         bbr48_score.score(argv[2:])
         return 0
+    if cmd == "smoke52":
+        import place38_parse
+        return place38_parse.smoke52(argv[2])
+    if cmd == "check52":
+        import place38_parse
+        return place38_parse.check52(argv[2])
+    if cmd == "score52":
+        import tail52_score
+        tail52_score.score(argv[2:])
+        return 0
     if cmd == "smoke46":
         import place46_parse
         return place46_parse.smoke(argv[2])
