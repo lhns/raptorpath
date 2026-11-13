@@ -912,3 +912,102 @@ Evidence: `docs/derivations/law-ledger.md` / `.yaml` (branch `law-ledger` `4f84c
   - Appendix A.4's placement E_i line and A.2's taper density (superseded forms).
 
 **Consequences.** The tech tree's forward order (`docs/roadmap.md`) takes the ledger's rank. Every row whose verdict is not OK maps to one fix node. Item 1 is an open research problem, not an implementation task, and its node carries a fallback.
+
+## 54. The snapshot-order law against main (guard v2, scored) and the store-budget test (reported) — pre-registration (before any VM contact)
+
+**Why.**
+- **Guard:** §53 confirmed that stale gap reports drive spurious retransmits, and that judging only the newest snapshot removes them (CANDS duplicates 1 291 against CAND's 4 004). On main, the filter removes ≈ 1 160 stale-judged fires per c8 run (BASES).
+  - `snapver-law` makes the filter the shipped law: paper §7.1 first, no env arm (`docs/derivations/dup-diag.md`).
+  - Per the owner-approved order of 2026-11-13, it merges first and alone, behind the first guard v2 (§41d).
+- **Reported block:** §53 Erratum 1 found that lever B moves ≈ 1 400 store slots from old holes into quinn's p0 send buffer (+150–230 ms p0 first arrival; in-order delay ≈ 5.3 → 1.0 s).
+  - The store-budget block tests that mechanism by intervention, with the discriminating row on BASE (`docs/derivations/p0-dwell-diag.md` §8, Fable-reviewed).
+
+**Trees** (SHAs pinned by amendment after the VM pre-flight):
+- **BASE54** = main at launch (with guard v2 and the merged tools).
+- **CAND54** = BASE54 + `snapver-law` (head 8191b3de; engine diff = the law, its seam, the `[SNAPV]` gauge and tests).
+- **LEVB54** = CAND54 + `gaphorizon` (lever B) + the horizon-keyed `recovery_bench` fixture (cherry-pick of `b21421e6`; without it the suite fails as `cand53`'s did). Used only by the reported block. It is not a merge candidate here.
+- **Two launches, because the harness has two tree seats:**
+  - launch 1 (`LD_PLAN=54`): base BASE54, candidate CAND54 — the guard;
+  - launch 2 (`LD_PLAN=54b`): base CAND54, candidate LEVB54 — the block's B and L arms.
+- **Prerequisite:** plan 53's `[SNAPV]` parser and scorer (`snap53_score.py`, on unmerged `cand53`) are ported to main for both plans.
+
+**Session (`LD_PLAN=54`).**
+1. Suites on CAND54.
+2. **The guard, SCORED:** plan 41d's design (§41d, v2: 96 rows; c1s/c1d at guard size; c2/c8 at 600 MB; in-order delay mean scored at c2/c8; the start-up floor reported only). BASE54 vs CAND54, rank-minp, PASS iff p > 0.05.
+3. **The store-budget block, REPORTED ONLY:** c8-100 at 600 MB, `RWM_DIAG=1`, n = 6 per arm, rotated, no replacement, 36 rows.
+
+| arm | binary | `RWM_STORE_PATH_POOL` | ceiling W |
+|---|---|---|---|
+| B2048 | CAND54 (main + law) | default 2048 | 4 096 (control) |
+| B1024 | CAND54 | 1024 | 2 048 |
+| **B640** | CAND54 | 640 | **1 280 (the discriminating row)** |
+| L2048 | LEVB54 | default | 4 096 (control) |
+| L1024 | LEVB54 | 1024 | 2 048 |
+| L640 | LEVB54 | 640 | 1 280 |
+
+- "BASE′" in the design is CAND54 here: main + the law, so both block binaries carry the filter.
+- **The knob:** `RWM_STORE_PATH_POOL` exists (`gates.rs:323`, default 2048) and is in the `[GATES]` echo and the `lib.sh` forward list.
+  - The battery must add `-u RWM_STORE_PATH_POOL` to its env scrub; it is missing on main.
+  - Liveness compares the `[GATES]` echo and `pool_per_path` with the requested value (a garbled value silently falls back to 2048).
+
+**Guard predictions.**
+- **PASS.** The law is inert when reports arrive in order (c1s, c1d mostly, c2). At c8 it removes stale-judged fires (BASES vs BASE in §53: duplicates, retransmits/GB, goodput and tail inside BASE's range).
+- **Registered risk (from §53's 600 MB rows, BASES vs BASE, n = 6 + 6):**
+  - BASES leaned worse on what v2 scores at c8: goodput median −2.0 % (p = 0.33), tail 3.95 → 4.42 s, H0 1 743 → 1 835.
+  - v2's c8 goodput resolution is about 2 % (§41d), so a c8 goodput FAIL is possible.
+  - The v2 delay clause, computed post hoc on those logs (whole-run mean, `inorder_delay_stats`): BASE 4.41 → BASES 4.50 s median (+2 %, p = 0.29); CAND 0.96 → CANDS 1.02 s (+6 %, p = 0.22). Both are inside the clause's 20 % c8 resolution.
+- **What a c8 FAIL would mean:** the filter alone costs main. Then the law and lever B go to the owner as ONE candidate, and the law does not merge alone.
+- **Outcome witnesses** (there is no env arm, main has no `[SNAPV]` gauge, and no test executes `serve_gaps`):
+  - each row's `bin_sha` matches its arm's build;
+  - at c8, p0 `[HOLD] hn` collapses on CAND54 against BASE54 (§53: 11–409 with the filter, 9 557–10 659 without);
+  - `[SNAPV]` `pt_st + tt_st = 0` on every CAND54 row (by construction; it shows the gauge is present).
+  - A CAND54 c8 row without the `hn` collapse is VOID.
+
+**Block predictions** (late window: sending ticks at t ≥ 15 s; two-value cells read H-hold / H-elastic; from `p0-dwell-diag.md` §8):
+
+| readout | B2048 | B1024 | **B640** | L2048 | L1024 | L640 |
+|---|---|---|---|---|---|---|
+| goodput Mbit/s | 96–103 | 75–103 / 96–109 | **20–85 / ≥ 95** | 107–109 | 105–109 | 104–109 |
+| p0 send backlog (`dgq0` hand − tx) | 300–1 600 | 0–600 / 100–1 000 | 0–200 / 0–400 | 900–2 700 | 100–1 000 | 0–400 |
+| p0 app-echo RTT ms | 180–215 | 30–180 / 125–225 | 12–90 / 70–150 | 300–355 | 125–225 | 70–150 |
+| old holes | 1.0–1.55 k | 0.5–1.6 k / ≤ 300 | **≥ 700 / ≤ 300** | 0–10 | 0–10 | 0–10 |
+| tail s | 2.6–5.5 | 2–6 / ≤ 1 | 1.5–7 / ≤ 1 | 0.2–0.7 | 0.1–0.7 | 0.1–0.7 |
+| quinn evictions (`dgq0 full`) | 0 | 0 | 0 | 0–350 | 0 | 0 |
+| in-order delay, LATE-window mean s (`inorder_mean_late`) | 4.8–5.6 | ≥ 2.0 / ≤ 1.2 | **≥ 2.0 / ≤ 1.0** | 0.9–1.4 | 0.5–1.0 | 0.4–0.9 |
+
+**Falsifiers (block):**
+1. B640 goodput ≥ 0.95 × B2048 while its old holes stay ≥ 700: the mechanism is refuted.
+2. B640 goodput ≥ 0.95 × B2048 with old holes ≤ 300: H-elastic, reported as a finding (lever B's gain would come from the oversized pool, which changes the merge argument).
+3. L640 goodput < 0.97 × L2048: CAND's edge is above 1 280; read L1024 alone.
+4. A budget residual > 0.1·W on any LEVB row: the identity fails.
+- (The design's fifth falsifier is dropped: its direction differs between H-hold and H-elastic.)
+- **Re-basing:** if a control row (B2048 or L2048) lands outside its §53 reference range (BASES or CANDS), the reduced-W bands are re-based on the new control before reading, and that is reported.
+
+**Readouts (block):** goodput, tail, H0, receiver duplicates, retransmits/GB, CPU/GB, and per path:
+- quinn evictions (`full`) and `hand − tx` from the last `[DIAG]`;
+- in-order delay, two named statistics:
+  - `inorder_mean_run`: the scored clause's whole-run mean (`threadp1_parse.inorder_delay_stats`);
+  - `inorder_mean_late`: the block's late-window mean (sending ticks at t ≥ 15 s; `p0-dwell-diag/inorder.py`'s PIN-phase definition), plus p50, p95 and `lag_end`;
+- old holes (server `[RANK]` holes − `tail_overcount`; readouts ≥ 15, excluding the last 6);
+- the budget residual (each tick's own cap; per-path fields anchored on `pN:infl=`);
+- the cap bind fraction (reported, never voiding);
+- `[SNAPV]`.
+
+**Decision rule.**
+- **Guard PASS:** `snapver-law` merges to main (`--no-ff`). Its `[SNAPV]` gauge and paper §7.1 ship with it.
+- **Guard FAIL:** no merge; the failing clause and the resolution table go to the owner.
+- **The block decides nothing by itself.** Its outcome (mechanism confirmed / H-elastic / refuted) goes into the lever-B guard's registration and the store-law fix node (status §55 item F01).
+- NO VERDICT ⇒ re-run. ABORT-TESTS ⇒ fixed on the branch and re-run.
+
+**VM pre-flight (same session, before the pin; fresh target per tree):**
+- `cargo check --all-targets`; lib `net::` and `gates`;
+- the integration tests `holeclass_reachability`, `fcause_reachability`, `gauge_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability`, run on every tree (`snapver-law`'s were compiled but not run);
+- **carried over from §53 Erratum 2:** `build_visualizer.sh` on a fresh wasm build, the native golden test without `GOLDEN_CAPTURE`, and the `bound-tests` wasm pool test;
+- `df` on the VM. §52's directory took 20 GB, and this session builds three trees. s52, r52, post52, p53, r53 and s53 are removed after their ledgers are confirmed in `docs/l1-raw/`.
+- **Expected length:** three release builds (≈ 6 min each), the suites (≈ 50 min), the 41d guard (≈ 48 min of rows plus overheads) and 36 block rows (≈ 1 h). Total ≈ 3.5 h, so `LD_HARD` = 5 h per launch.
+
+**Rehearsal (`LD_REHEARSE=1`) must show:**
+- the guard smoke rows (41d's two plus the 600 MB c8 row) complete, with no `VOID-SHORT`;
+- one row per block arm with its pool in `[GATES]` and `pool_per_path` on both ends;
+- `[SNAPV]` parsed, and the in-order delay, evictions, old holes and budget residual computed with no None;
+- the c8 600 MB rows inside `RWM_PERF_TIMEOUT_S=200`.
