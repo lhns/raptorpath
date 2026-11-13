@@ -24,9 +24,11 @@ Evidence:
   **per-path evidence loop**.
 - The per-path app-echo RTT (E01) is the engine's estimator of that loop: the echo and the gap report
   ride the same `WindowAck` on the same path. quinn's wire RTT is not.
-- At c1d the loop is 18–25 ms on a 2–3 ms wire RTT. A wire-clocked threshold would sit at its 10 ms
-  floor, under the age at which holes are first reported (p50 16–33 ms), while 98 % of those holes
-  self-heal within about 1–2 ms of that report. That predicts a retransmit flood (§4.2).
+- At c1d the loop is about 19–23 ms on a 2–3 ms wire RTT.
+  - A wire-clocked threshold would sit at its 10 ms floor.
+  - Holes are first reported at a median age of 19–23 ms.
+  - 94–99.8 % of them self-heal, with a median heal time of 1.0–1.8 ms after that report.
+  - So essentially every reported hole would be ripe at its first report (§4.1).
 - Between §48b's two substrates, the c2 wire RTT falls 5× (116 → 22 ms) while the loop stays at
   206–207 ms. A wire clock would have moved 5× with the thing it must predict unchanged.
 
@@ -59,8 +61,9 @@ The fix is one law at every N on a per-path loop clock, with no pool and no cool
   −30 ms CANDS. CW0's p1 retransmits are −134 ms.
 - **N = 1:** re-fires are 12 % longer (c2 206 → 232 ms).
 - **N = 1, first fires:** they now depend on a fast channel that has **never executed at N = 1**
-  (`fast=0` on 48/48 single-path rows). The c2 prediction is therefore two-branch, and it hinges on
-  one wiring prerequisite (§3.3).
+  (`fast=0` on 48/48 single-path rows). The c2 prediction is therefore two-branch. It hinges on one
+  local wiring change: hand the SACK ranges, not only the gaps derived from them, to the evidence
+  ingest (§3.3).
 - **Refresh:** its clamps bind with or without the honest input, on every default-substrate cell.
   E10 is an input fix with no output effect; C07's defect is its clamps (§3.5).
 
@@ -92,9 +95,20 @@ origin.** This is the shape check that decides the measurand.
                    dwell        (wire + receiver ingest)
 ```
 
-The app-echo sample on path j measures `τ_j(echoed seq) + F_j + B_j`. Under ack-merge, the default
-(`receiver.rs:1948`), the echo rides the gap-bearing `WindowAck`, sent on the data's own path. **So
-for b = j the echo measures the loop, up to the dwell difference between the echoed seq and s.**
+The app-echo sample on path j measures `τ_j(echoed seq) + F_j + B_j`. The chain that makes it the
+loop's estimator:
+- **The send.** The receiver sends its `WindowAck` with `echo_send_timestamp_us: batch_send_ts` on
+  the data's own path: `send_control_datagram(…, path_id, ack_msg)` at `receiver.rs:2012`, where
+  `path_id` is the path the triggering batch arrived on. On an advertising ack the same message
+  carries the SACK ranges (`receiver.rs:1961–1974`).
+- **The receipt.** The sender's `WindowAck` handler credits the RTT sample to the path the ack
+  arrived on (`control_msg.rs:569–572`). It inverts the same message's SACK ranges into the gap report
+  (`control_msg.rs:728`), tagged with that same `path_id` (`:745–749`).
+- **The exception.** The receiver's timer re-advertisement (refresh) is broadcast on every live path
+  with echo 0 (`control_msg.rs:733–737`), so it never samples.
+
+**So for b = j the echo measures the loop, up to the dwell difference between the echoed seq and
+s.**
 - At N = 1, b = j always.
 - At N > 1 the return-leg mismatch `B_b − B_j` is what makes a report stale. The snapshot-order law
   (C03) owns that term (§6.1); the time threshold does not.
@@ -172,10 +186,11 @@ for b = j the echo measures the loop, up to the dwell difference between the ech
   | c1d BASE p0 / p1 | 21 / 22.5 | 3 / 2.5 | 0.9 / 1.0 | 17 / 19 |
 
   **The c1d residual (17–19 ms) is unlocated.**
-  - Its forward part is real latency: receiver `[LAT]` `ax_p50` is 15–16 ms, which is arrival minus
-    stamp, above the path floor.
-  - `[LAG]` p50 is 0.5–0.7 ms on both ends, and quinn's buffer holds about 1 ms. So it sits in engine
-    staging, in receive-side buffering before the arrival stamp, or in both. Not diagnosed here.
+  - Its forward part is real latency. On one row (s53 c1d BASE s42 r1), receiver `[LAT]` `ax_p50`
+    is 15–16 ms: arrival minus stamp, above the path floor.
+  - On that row `[LAG]` p50 is 0.5–0.7 ms on both ends, and quinn's buffer holds about 1 ms. So it
+    sits in engine staging, in receive-side buffering before the arrival stamp, or in both. Not
+    diagnosed here.
   - The echo form does not need it located: it measures it.
 - **Cadence.** One sample per data `WindowAck`. Retransmits, repairs and the tail sweep carry the 0
   sentinel and **never sample** (`control_msg.rs:569`; p0-dwell-diag §1's CW0 gap).
@@ -235,6 +250,8 @@ pool gone (§3.4) nothing would hide it.
   condition. It reads no dial and no N.
 - **Retransmit-only legs** keep their last measured `L_j`, frozen and pessimistic, because sentinel
   echoes never sample. A `[DIAG]` counter of judgements made on a frozen or cold clock is owed (§5).
+- **This is the only place a leg's clock reads another leg.** A never-measured leg keeps a pool,
+  bounded below by its own W_j. Path locality (§3.3, test 2) holds for measured legs.
 
 ### 3.3 The loss law, at every N
 
@@ -249,9 +266,9 @@ pool gone (§3.4) nothing would hide it.
 | `t_live(s)` | stamp of the live flight: the last retransmit's staging if any, else the original's placement | measured (`nack_retx_at`, `retransmit_buffer`) |
 | `p(s)` | the live flight's path | measured |
 | `κ` | kTimeThreshold = 9/8 | cited (RFC 9002 §6.1.2; empirical there) |
-| `g` | the floor | **kept at today's `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms** in this change (UNDERIVED: "10× kGranularity by choice"). The FORMULA-FIRST value is kGranularity = `TIMER_GRANULARITY_US` = 1 ms (derived, `recovery_laws.rs:23`). The floor binds 3.7–17 % of evaluations at c1d and 0–7 % at c1s (`pf=`), 0 at c2/c8, so its value is live at c1. Change it separately (§7 Q4) |
+| `g` | the floor | **kept at today's `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms** in this change (UNDERIVED: "10× kGranularity by choice"). The FORMULA-FIRST value is kGranularity = `TIMER_GRANULARITY_US` = 1 ms (derived, `recovery_laws.rs:23`). The floor binds 1.2–17 % of evaluations at c1d (median 8–9 % per arm) and 0–7 % at c1s (`pf=`), and 0 at c2/c8, so its value is live at c1. Change it separately (§7 Q4) |
 | `3` | kPacketThreshold | cited (RFC 9002 §6.1.1) |
-| "delivered above s" | from the report's implied intervals (`mp_delivered_intervals`), **plus the extent above the top gap** (below) | measured |
+| "delivered above s" | the report's received SACK ranges themselves (below), not the intervals re-inferred from the gaps | measured |
 
 **What changes against main.**
 - The `mp_n_paths > 1` gates are removed: the branch at `sender_phases.rs:898`, the evidence ingest
@@ -262,14 +279,17 @@ pool gone (§3.4) nothing would hide it.
   a flight is on a dead path, and the rule is never to suppress what cannot be clocked.
 
 **The wiring prerequisite: the extent above the top gap.**
-- Today the evidence proves only **one** delivered seq above the top gap (`mp_delivered_intervals`, `recovery_laws.rs:148`).
-  A new hole is usually the top gap of its first report.
-- The v9 `WindowAck` carries `received_above`. When the gap list is not truncated (fewer than
-  `MAX_NACK_GAPS` runs), the seqs above the top gap are contiguous and number exactly
-  `received_above − Σ(listed intervals)`. The extent is then known, and its paths follow from
-  `source_path_map` at every N.
-- `received_above` reaches `serve_gaps` on `github/snapver-law` (C03's V), not on main.
-- When the list is truncated, the extent stays 1, as today. That too is information availability.
+- **The loss today.** The sender has the receiver's received ranges where it builds the gap list:
+  `sack_to_gaps(next_expected, &sack_ranges)` at `control_msg.rs:728`. It sends only the gaps on
+  `nack_tx`. `serve_gaps` then re-infers the delivered intervals from the gaps, which proves only
+  **one** delivered seq above the top gap (`mp_delivered_intervals`, `recovery_laws.rs:148`). A new
+  hole is usually the top gap of its first report.
+- **The fix.** Send the SACK ranges, or at least the ranges above the listed gaps, with the gaps, and
+  ingest them as the delivered evidence. Each range's paths follow from `source_path_map` at every
+  N. The ranges are capped at `MAX_SACK_RANGES` (`sack.rs:552`); beyond the cap, evidence is simply
+  absent, which is information availability, not a mode.
+- **Scope.** This is local to the control handler and the channel item. It needs no wire change and
+  no C03 plumbing.
 
 **Shape check (sentence against expression).**
 - **Units:** µs against µs.
@@ -277,6 +297,7 @@ pool gone (§3.4) nothing would hide it.
 - **Order in N:** N⁰. The threshold for a flight on j reads path j only, so adding, removing or
   idling another path changes no term of it.
 - **N = 1 → 2:** no term steps. This removes C04's step.
+- **Locality:** for a measured leg j, the threshold reads path j only (§3.2 is the one exception).
 - **Origin:** both the age and L run from the engine stamp (§1).
 - **Return leg:** L carries B_j and not B_b; C03 owns B_b − B_j (§6.1).
 
@@ -384,17 +405,21 @@ only delays.
 
 **The rejected wire form,** `max(τ_j + 9/8·W_j, 10 ms)` with τ by Little:
 
-| cell | wire-form threshold | today | first-report age, `[HOLD]` p50 |
+| cell | wire-form threshold | today | first-report age, `[HOLD]` `age_p50` |
 |---|---|---|---|
-| c1d BASE, CAND, CANDS | **10 [10–10]**, floor at 100 % | 21–25 | 16–33 |
+| c1d BASE, CAND, CANDS | **10** on every arm: the floor (two rows with a standing quinn queue read 60–489) | 21–25 | median 19–23 ms per arm (rows 12–33 ms, one outlier row 98–328 ms) |
 | c2 BRS | 177 [176–179] | 233 | — |
 | c8 p0 | −14 to −43 against today | — | — |
 
-At c1d `[HOLD]` reads 98 % of holes self-healing (`hn` / `fed` = 122 476 / 125 319 on BASE s42 r1),
-`hn_p50` 0.9–2.3 ms after the first report, and `ripe_frac` 0.4–3.5 % at today's threshold. Under
-the wire form essentially every reported hole (`fed` 54 k–355 k per path per run) is ripe at its
-first report. Today a run fires 11–28 k. **The prediction is a several-fold rise in spurious
-retransmits at c1d.**
+All-row `[HOLD]` readings at c1d (s53, 30 rows, both paths):
+- 94–99.8 % of holes self-heal (`hn` / `fed`, median 98–99 % per arm);
+- median heal time 1.0–1.8 ms after the first report (rows 0.8–10 ms), p90 3–5 ms (rows 2.6–27 ms);
+- `ripe_frac` 0.2–4.6 % at today's threshold.
+
+Under the wire form essentially every reported hole (`fed` 45 k–462 k per path per run) is **ripe**
+at its first report. Fires are then bounded by the 10-per-report cap and the budgets (C09), not by
+the clock. Today a run fires 7.3 k–29 k. **The prediction is a large rise in spurious retransmits at
+c1d, up to the cap.**
 
 ### 4.2 Re-fire interval (C05 + E11): the change
 
@@ -442,7 +467,7 @@ threshold both apply. N = 1 uses `max(e, 10 ms)`, the cooldown alone. New is `9/
 
 | branch | condition | c2 prediction | c1s prediction |
 |---|---|---|---|
-| A | the extent above the top gap is wired (§3.3) | a new hole has ≥ 3 delivered same-path seqs above it at its first report (FIFO, 2 ms report cadence ≈ 19 seqs): **fast fires at first report as today**; retransmits/GB, duplicates and goodput unchanged within the v2 resolution (c2 goodput d80 1 %); `fast/fired` ≈ `y/fired` ≈ 0.94 | as c2; `fast/fired` ≈ 0.3–0.7 |
+| A | the SACK ranges reach the evidence ingest (§3.3) | a new hole has ≥ 3 delivered same-path seqs above it at its first report (FIFO, 2 ms report cadence ≈ 19 seqs): **fast fires at first report as today**; retransmits/GB, duplicates and goodput unchanged within the v2 resolution (c2 goodput d80 1 %); `fast/fired` 0.85–0.94. The upper end is `y/fired`; the lower allows for holes reported before 3 later seqs arrived and for burst losses, whose upper members have fewer delivered seqs above them | as c2; `fast/fired` 0.25–0.7 |
 | B | not wired | the top hole of each first report waits for a later report showing a new gap above it, bounded by θ − age ≈ 35 ms. At ε ≈ 2.5 % with GE bursts of about 2, a new gap arrives about every 80 seqs ≈ 8 ms: about +8–10 ms on most first fires, against a 206 ms loop. **c2 goodput at risk at the 1 % clause**; do not register B as no-regression | the top-hole wait is about one inter-loss interval (~1 000 seqs ≈ 12 ms at 85 k/s), bounded by θ − age; a large share is already ripe at first report |
 
 - **Spurious at N = 1:** unchanged in both branches. Netem is FIFO, so the fast channel cannot fire
@@ -463,14 +488,14 @@ c2 BRS goes to 42 ms.
 wiring executes (MD rule 1).
 1. **N-continuity:** the loss decision for a flight on path j is bit-identical with and without a
    second, idle path. This is the C04 step's regression test.
-2. **Path locality:** perturbing any path i ≠ j's clock leaves j's threshold unchanged. This is
-   E11's test.
+2. **Path locality:** for a measured leg j, perturbing any path i ≠ j's clock leaves j's threshold
+   unchanged. This is E11's test.
 3. **Anchor:** threshold = `max(9/8·L, g)` exactly at L ∈ {g·8/9, 10 ms, 200 ms}, and `L = max(s, l)`
    picks `l` when `l > s`.
 4. **Dominance (if C05 is kept for a release):** `ripe ⇒ cooldown_elapsed` for every reachable state.
-5. **N = 1 fast-channel wiring:** a single-path `serve_gaps` drive where the top gap has ≥ 3
-   delivered seqs above it fires through `fast` on its first report. This is red on main. It needs
-   the §3.3 extent.
+5. **N = 1 fast-channel wiring:** a single-path drive of the `WindowAck` handler and `serve_gaps`
+   where the top gap has ≥ 3 delivered seqs above it fires through `fast` on its first report. This
+   is red on main. It needs the §3.3 SACK-range hand-off.
 6. **Cold leg:** a retransmit on a leg with no echo is clocked by the §3.2 chain, never by the
    50 ms seed.
 7. **Receiver:** the refresh reads the receiving endpoint's own `PathView` RTT. A one-way transfer
@@ -480,7 +505,7 @@ wiring executes (MD rule 1).
 
 | clamp or gate | gauge | predicted |
 |---|---|---|
-| floor g on the threshold | `pf=` (exists) | 0 at c2/c8; 3.7–17 % c1d, 0–7 % c1s (unchanged while g = 10 ms) |
+| floor g on the threshold | `pf=` (exists) | 0 at c2/c8; 1.2–17 % c1d, 0–7 % c1s (unchanged while g = 10 ms) |
 | C05, if kept | new: cooldown-suppressed seqs the time channel would pass | 0 |
 | refresh clamps [25, 100] | new receiver counters `rf_floor` / `rf_ceil` | ceiling 100 % c2/c8; floor 100 % c1s/c1d; unclamped c2 BRS |
 | tail sweep [25, 100] | `[QCLK] w_us` (exists) | 100 ms at p05 = p95 on c8 (unchanged) |
@@ -490,8 +515,8 @@ wiring executes (MD rule 1).
 | C09 halving and the per-report cap | new | measured before any C09 change |
 
 **Guard v2 plan (§41d: c2/c8 at 600 MB, the in-order delay clause).**
-- **Prerequisite:** host tests 1–7 green, and branch A wired. Without the §3.3 extent, do not run the
-  guard: branch B predicts a c2 goodput risk at the 1 % clause.
+- **Prerequisite:** host tests 1–7 green, and branch A wired. Without the §3.3 SACK-range hand-off,
+  do not run the guard: branch B predicts a c2 goodput risk at the 1 % clause.
 - **Scored: CAND-wire against main,** with registered predictions:
   - c2 and c1s: goodput, retransmits/GB and duplicates inside main's row range; c1s CPU/GB inside
     its range, or the ingest cost reported;
@@ -521,8 +546,9 @@ wiring executes (MD rule 1).
   change does not touch these.
 - **Residual exposure with C03:** a report on b that is the newest one, while j sends no fresher
   reports. Gauge it as `tt_st` under C03.
-- **Dependency:** the branch also carries `received_above` into `serve_gaps`, which is §3.3's wiring
-  prerequisite. **The unified N = 1 law depends on C03's plumbing.**
+- **No dependency.** §3.3's wiring hands over the SACK ranges, which the handler already has. C03
+  carries `(next_expected, received_above)` for its own V; neither change needs the other. Both
+  change the `nack_tx` item, so land them in one order and rebase the other.
 
 ### 6.2 Lever B, the gap horizon (C02)
 
@@ -531,8 +557,8 @@ wiring executes (MD rule 1).
   threshold.
 - **Under lever B holes are judged young,** so the threshold and the re-fire interval govern. That
   is where §4.2's p0 changes act.
-- **The horizon also truncates the gap list.** That sets when §3.3's top-extent is available: the
-  20-run list truncates more often than the 64-run one.
+- **The horizon truncates the gap list, not the SACK ranges** (`MAX_SACK_RANGES` is a separate
+  cap). §3.3's evidence is therefore available under either horizon.
 
 ### 6.3 The store law's RTprop (E03, F01)
 
@@ -571,8 +597,8 @@ wiring executes (MD rule 1).
    - The roadmap chain would read: `rec-fix-pooled-clock` (E11, C05 deletion) ═
      `rec-fix-time-threshold` (C04 unification), both on the C03 plumbing.
 2. **Delete C05 outright, or keep it one release behind a dominance gauge?**
-3. **The N = 1 unification depends on `received_above` reaching `serve_gaps`,** which ships with C03
-   on `snapver-law`. Land C04's unification after C03, or plumb the field separately?
+3. **Order against C03.** The N = 1 unification needs the SACK ranges on the `nack_tx` item (§3.3),
+   and C03 changes the same item. Which lands first?
 4. **The floor g:** keep 10 ms (UNDERIVED, live at c1) or move to the derived 1 ms kGranularity as
    its own arm with a c1d prediction?
 5. **The c1d residual** (17–19 ms of the echo is neither quinn buffer nor wire). The echo form does
@@ -583,3 +609,44 @@ wiring executes (MD rule 1).
    T_e", and ripeness could be stated against T_e instead of `now`. That would remove `B_b` from the
    comparison altogether, but it needs the forward skew F_j − F_b, which is not separable from echoes
    when B_j ≠ B_b. Not derived.
+
+## 8. Paper text owed before any code (FORMULA-FIRST)
+
+Not edited here. The implementation item lands these first, in `docs/fec-arq-model.md`.
+
+**§7.1, the time-threshold block and the N = 1 sentence.** Today the block reads
+`age(live flight) ≥ max(9/8 · max(SRTT_path, EWMA_path), 10 ms)` and says "At one path the law does
+not suppress at all: every reported hole is answered at once."
+- That sentence is right in effect and wrong in mechanism. The N = 1 branch is the legacy age gate,
+  which suppressed nothing on 48/48 single-path rows (§4.3). After it, the cooldown suppresses
+  67–98 % of gap-seq evaluations.
+- Replace both with §3.3's three lines, their symbol table (§3.1–§3.3) and the sentence of §1's
+  first row.
+- State the origin rule: the age and L both run from the engine stamp.
+- State the return-leg ownership: C03's V owns `B_b − B_j`.
+- Say the law has no N term, and that at N = 1 the fast channel is what answers a hole at once.
+
+**§7.1, the refresh and cooldown sentences.**
+- The refresh line reads `(2·SRTT).clamp(…)`. Name its SRTT as the receiving endpoint's own quinn RTT,
+  max over live paths (§3.5), and record that the clamp binds on every default-substrate cell
+  (rule 18).
+- Delete "a per-sequence retransmit cooldown has a 10 ms floor" with C05. If C05 is kept, state its
+  dominance.
+- "The pooled SRTT these clocks and the cooldown read" survives only for the tail sweep.
+
+**A.6.**
+
+```text
+   time threshold    now − t_live ≥ max(9/8·max(s_p, l_p), g)        mp_time_threshold_split
+   packet threshold  ≥ 3 later same-path symbols delivered (SACK ranges)   MP_PACKET_THRESHOLD
+   loss              lost ⇔ time ∨ packet, every N                    mp_hole_ripe (no N bypass)
+   refresh           (2·max_j W^rx_j).clamp(25 ms, 100 ms)            hole_nack_refresh
+```
+
+**§11.2 register.**
+- The row `legacy age gate SRTT/2` ("runs only when per-path detection is off") is wrong: it is the
+  N = 1 law on main (ledger §5 finding 1). Mark it measured inert (`supp_age = 0` on 48/48 rows) and
+  deleted by the unification.
+- The row `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` keeps its "10× RFC 9002's granularity" provenance
+  gap. Add its `pf=` bind fraction: 1.2–17 % at c1d, 0–7 % at c1s, 0 at c2/c8. It becomes the floor
+  `g` alone once C05 is deleted.
