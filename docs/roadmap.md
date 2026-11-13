@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status: draft. Ratings are not yet confirmed by the owner, and the forward order is provisional until the law ledger lands.**
+**Status: draft. Ratings are not yet confirmed by the owner. The forward order follows the law ledger (status §55): correctness first, inputs before the laws that read them.**
 
 Tech tree of the Raptorpath work: what is done, what failed, what comes next. Everything between the
 `GENERATED` markers is rebuilt from `docs/roadmap/nodes.yaml`; do not edit it by hand.
@@ -124,7 +124,7 @@ flowchart TB
         store_power_law[/"Power-seeking store<br/>law D<br/>✖ dead end"/]
         store_defect_cap_constant>"Store cap constant<br/>at c8<br/>⚠ open defect"]
         store_engine_form_impl[/"Store-law engine<br/>form<br/>⛔ blocked"/]
-        store_fix_maxbw_minrtt[/"Honest rate and<br/>delay inputs<br/>○ next"/]
+        store_fix_maxbw_minrtt[/"Honest rate and<br/>delay inputs<br/>⛔ blocked"/]
         store_honest_cap_family ~~~ store_defect_cap_constant
         store_honest_cap_family ~~~ store_fix_maxbw_minrtt
         store_honest_cap_family ~~~ store_adr72_one_law
@@ -210,9 +210,10 @@ flowchart TB
     store_fix_maxbw_minrtt --> store_engine_form_impl
     cc_bbrrs_promote --> cc_hybrid
     model_law_ledger --> store_fix_maxbw_minrtt
+    cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     rec_leverb_guard -.->|then| meas_s51_session
     linkStyle 46,49,50 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 61 stroke:#999,stroke-width:1px,color:#777
+    linkStyle 62 stroke:#999,stroke-width:1px,color:#777
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -235,9 +236,8 @@ flowchart TB
     class cc_bbrrs_r1 bad
     class meas_guard_v2_impl inprog
     class model_law_ledger unrated
-    class rec_s54_session,rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote blocked
+    class rec_s54_session,rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
     class cc_hybrid parked
-    class store_fix_maxbw_minrtt next
 ```
 <!-- END GENERATED: overview -->
 
@@ -276,7 +276,7 @@ flowchart TB
 | Funded coding at r > 0 | ✖ dead end | Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand. |
 | DoF ledger feedback leg (§39) | ⏸ parked | An analysis found that feeding repair results back into the repair rate is sound in principle but cannot help measurably today, so it is on hold. |
 | P_fec truncation divergence | ⚠ open defect | Open problem: the code that estimates how often extra repair data helps jumps from zero to one half at one point, where the paper describes a smooth curve. |
-| Owner calls on rate law | ○ next | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
+| Owner calls on rate law | ⛔ blocked | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
 | Rate-law reconciliation (W22, W*) | ⛔ blocked | Making the paper and the code agree on how much repair data to send, with a test for every remaining difference. |
 | Rate-law term-win gauge | ⛔ blocked | Adding a readout that shows which part of the repair-rate formula is actually in control. |
 | Loss estimator approximations | ⛔ blocked | Checking and tightening three approximations inside the loss and delay estimators. |
@@ -294,7 +294,7 @@ flowchart TB
 | Owner calls U1–U3 | ○ next | Owner decision on three questions: whether the congestion controller or the in-flight limit is in charge, what sets the latency trade, and whether two percent less bulk speed is worth ten times less delay. |
 | Store-law engine form | ⛔ blocked | Rebuilding the in-flight data limit on measured link rate and delay, written as a derived formula first. |
 | δ seat on the store | ⛔ blocked | Making the in-flight data limit follow the latency dial smoothly, so lower-latency settings queue less. |
-| Honest rate and delay inputs | ○ next | Finding honest measurements of link speed and minimum delay for the in-flight data limit, which today reads both far too high. |
+| Honest rate and delay inputs | ⛔ blocked | An open research problem: nobody has yet found an honest way to measure link speed and minimum delay for the in-flight data limit, after seven failed attempts, so this node may end with a declared fallback instead of a fix. |
 | Derived diversity weight, leg choice | ⏳ waiting | A wiring change that lets retransmissions be spread across paths differently has been built but never fully measured. |
 | Wire-RTT placement price | ✔ done · successful | Fixed a bug where an idle path could stay priced too high and never be used again, by pricing each path on its measured network delay. |
 | One per-leg state design | ⏳ waiting | A design for keeping all of each path's measurements in one place instead of in several slightly different copies. |
@@ -319,7 +319,7 @@ flowchart TB
 | Threading P2a logic actor (§12) | ✖ dead end | Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted. |
 | Per-path I/O owner (Q1) | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | Decoder prune per drain (§32) | ✔ done · very-successful | Made the receiver clean up finished decoding work more often, which raised fast two-path throughput by about a fifth. |
-| bbr_rs send-record ring fix | ○ next | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
+| bbr_rs send-record ring fix | ▶ in progress | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
 | L1 measurement discipline (ADR-0052) | ✔ done · successful | Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run. |
 | Formula-first review (ADR-0070) | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
@@ -370,7 +370,6 @@ flowchart TB
 
 **host-cargo**
 
-- `perf-bbrrs-ring-fix`: bbr_rs send-record ring fix
 - `meas-guard-resolution`: Guard CPU and lag resolution
 - `meas-test-hygiene`: Test hygiene fixes
 - `rec-fix-wire-clock`: Honest per-path wire clock
@@ -381,7 +380,6 @@ flowchart TB
 - `infra-inventory-merges`: Inventory merges to main
 - `meas-adversarial-cells-build`: Adversarial cells: build and validate
 - `meas-harness-robustness`: Harness robustness for every plan
-- `store-fix-maxbw-minrtt`: Honest rate and delay inputs
 - `model-fix-paper-p2`: Paper text for placement and bbr_rs
 - `perf-fix-burst-bound`: Emission burst bound derivation
 <!-- END GENERATED: ready-now -->
@@ -389,6 +387,10 @@ flowchart TB
 ## Running
 
 <!-- BEGIN GENERATED: running -->
+**host-cargo**
+
+- `perf-bbrrs-ring-fix`: bbr_rs send-record ring fix
+
 **no-cargo**
 
 - `meas-guard-v2-impl`: Guard v2 implementation
@@ -616,6 +618,7 @@ gantt
     Decoder prune per drain (§32) :perf_decoder_prune, 2026-10-28, 2026-10-29
     Receiver follow-ups (§35) :perf_receiver_followups, 2026-11-01, 2026-11-02
     bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
+    bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-13
     section meas - measurement
     Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
     Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
@@ -678,7 +681,7 @@ gantt
     Recorded, not fixed (§3.7) :active, infra_defect_recorded_not_fixed, 2026-09-30, 2026-11-13
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-s54-session`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-wire-clock`, `rec-fix-pooled-clock`, `rec-fix-refresh-clock`, `rec-fix-cooldown`, `rec-fix-time-threshold`, `rec-fix-nack-throttle`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-bbrrs-ring-fix`, `perf-fix-burst-bound`, `meas-s51-design`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-user-wasm-calls`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-inventory-merges`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-s54-session`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-wire-clock`, `rec-fix-pooled-clock`, `rec-fix-refresh-clock`, `rec-fix-cooldown`, `rec-fix-time-threshold`, `rec-fix-nack-throttle`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-s51-design`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-user-wasm-calls`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-inventory-merges`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
@@ -1012,7 +1015,7 @@ flowchart TB
     rate_dof_ledger[/"DoF ledger feedback<br/>leg (#167;39)<br/>⏸ parked"/]
     rate_dials_made_real["The dials made real<br/>✔ done · successful"]
     rate_defect_pfec>"P_fec truncation<br/>divergence<br/>⚠ open defect"]
-    rate_user_rate_law{{"Owner calls on rate<br/>law<br/>○ next<br/>ext: model-paper-<br/>recon"}}
+    rate_user_rate_law{{"Owner calls on rate<br/>law<br/>⛔ blocked<br/>ext: model-paper-<br/>recon,<br/>meas-s51-session"}}
     rate_law_reconcile[/"Rate-law<br/>reconciliation (W22,<br/>W*)<br/>⛔ blocked<br/>ext:<br/>meas-s51-session"/]
     rate_fix_term_gauge["Rate-law term-win<br/>gauge<br/>⛔ blocked<br/>ext: rec-fix-wire-<br/>clock"]
     rate_fix_estimators[/"Loss estimator<br/>approximations<br/>⛔ blocked<br/>ext: rec-fix-wire-<br/>clock"/]
@@ -1083,8 +1086,10 @@ flowchart TB
     rate_dials_made_real --> rate_r_battery
     rate_r_battery --> rate_dof_ledger
     rate_defect_pfec --> rate_user_rate_law
+    rate_user_rate_law --> rate_law_reconcile
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
+    rate_fix_estimators --> rate_fix_rho_realtime
     linkStyle 58 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
@@ -1139,7 +1144,7 @@ flowchart TB
     store_user_u1u3{{"Owner calls U1–U3<br/>○ next"}}
     store_engine_form_impl[/"Store-law engine<br/>form<br/>⛔ blocked<br/>ext: place-per-leg-<br/>impl, model-law-<br/>ledger"/]
     store_delta_seat[/"δ seat on the store<br/>⛔ blocked"/]
-    store_fix_maxbw_minrtt[/"Honest rate and<br/>delay inputs<br/>○ next<br/>ext: model-law-<br/>ledger"/]
+    store_fix_maxbw_minrtt[/"Honest rate and<br/>delay inputs<br/>⛔ blocked<br/>ext: model-law-<br/>ledger, cc-bbrrs-r2"/]
     store_xn_pool ~~~ store_sack_prune
     store_xn_pool ~~~ store_sack_release
     store_xn_pool ~~~ store_sender_decoupling
@@ -1243,9 +1248,8 @@ flowchart TB
     class store_engine_form parked
     class store_w1_who_limits,store_s54_budget waiting
     class store_defect_cap_constant defect
-    class store_engine_form_guard,store_s48c_session,store_engine_form_impl,store_delta_seat blocked
+    class store_engine_form_guard,store_s48c_session,store_engine_form_impl,store_delta_seat,store_fix_maxbw_minrtt blocked
     class store_user_u1u3 userdec
-    class store_fix_maxbw_minrtt next
 ```
 <!-- END GENERATED: track-store -->
 
@@ -1493,7 +1497,7 @@ flowchart TB
     perf_decoder_prune["Decoder prune per<br/>drain (#167;32)<br/>✔ done · very-successful"]
     perf_receiver_followups["Receiver follow-ups<br/>(#167;35)<br/>✔ done · successful<br/>ext: cod-debug-stall"]
     perf_bbrrs_ns_cost["bbr_rs per-packet<br/>cost bench<br/>✔ done · unrated<br/>ext: cc-bbrrs-r1"]
-    perf_bbrrs_ring_fix["bbr_rs send-record<br/>ring fix<br/>○ next"]
+    perf_bbrrs_ring_fix["bbr_rs send-record<br/>ring fix<br/>▶ in progress"]
     perf_fix_burst_bound[/"Emission burst bound<br/>derivation<br/>○ next<br/>ext: model-law-<br/>ledger"/]
     perf_parallelisation ~~~ perf_quic_feeder
     perf_parallelisation ~~~ perf_threading_p0
@@ -1581,7 +1585,8 @@ flowchart TB
     class perf_ack_merge,perf_emit_batch_law0,perf_io_owner,perf_incremental_sack,perf_decoder_prune vsucc
     class perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_sched_split,perf_receiver_r2,perf_c8_lag,perf_receiver_followups succ
     class perf_bbrrs_ns_cost unrated
-    class perf_bbrrs_ring_fix,perf_fix_burst_bound next
+    class perf_bbrrs_ring_fix inprog
+    class perf_fix_burst_bound next
 ```
 <!-- END GENERATED: track-perf -->
 
@@ -1620,7 +1625,7 @@ flowchart TB
     meas_harness_robustness["Harness robustness<br/>for every plan<br/>○ next"]
     meas_guard_resolution["Guard CPU and lag<br/>resolution<br/>○ next"]
     meas_test_hygiene["Test hygiene fixes<br/>○ next"]
-    meas_s51_session["Off-Bulk baseline<br/>and δ sweep<br/>⛔ blocked<br/>ext: rate-fix-term-<br/>gauge, rate-user-<br/>rate-law"]
+    meas_s51_session["Off-Bulk baseline<br/>and δ sweep<br/>⛔ blocked"]
     meas_adversarial_cells_run["Adversarial cells<br/>measured<br/>⛔ blocked"]
     meas_competitor_battery["Competitor battery<br/>⛔ blocked<br/>ext: cc-bbrrs-<br/>promote"]
     meas_progress_baseline["Cumulative progress<br/>benchmark<br/>○ next"]
@@ -2087,7 +2092,7 @@ flowchart TB
 | `rate-dof-ledger` | DoF ledger feedback leg (§39) | parked | unrated |  | status §39 | rate-r-battery |
 | `rate-dials-made-real` | The dials made real | done | successful |  | branch THE DIALS MADE REAL |  |
 | `rate-defect-pfec` | P_fec truncation divergence | in-progress | unrated | 0.0267 at c2 and 0.0515 at c3 | status §3.10 item 2 |  |
-| `rate-user-rate-law` | Owner calls on rate law | next | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec |
+| `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
 | `rate-law-reconcile` | Rate-law reconciliation (W22, W*) | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators, rec-fix-wire-clock |
 | `rate-fix-estimators` | Loss estimator approximations | blocked | unrated |  | law ledger rows E07, E08, E09 | rec-fix-wire-clock |
@@ -2122,7 +2127,7 @@ flowchart TB
 | `store-user-u1u3` | Owner calls U1–U3 | next | n/a |  | plan user decisions 3 and 10 | store-w1-who-limits |
 | `store-engine-form-impl` | Store-law engine form | blocked | unrated |  | plan W3.3; CLAUDE.md FORMULA-FIRST | place-per-leg-impl, store-user-u1u3, store-fix-maxbw-minrtt, model-law-ledger |
 | `store-delta-seat` | δ seat on the store | blocked | unrated |  | plan W1.2 RESULT, W1.3, W1 round 2 (iii) | store-user-u1u3, store-engine-form-impl |
-| `store-fix-maxbw-minrtt` | Honest rate and delay inputs | next | unrated |  | law ledger rows E04, E03 | model-law-ledger |
+| `store-fix-maxbw-minrtt` | Honest rate and delay inputs | blocked | unrated |  | law ledger rows E04, E03; store-input-search (§23, §24, §27, §34); store-engine-form (§36, §40, §42, §43b) | model-law-ledger, cc-bbrrs-r2 |
 
 ### place - placement
 
@@ -2195,7 +2200,7 @@ flowchart TB
 | `perf-decoder-prune` | Decoder prune per drain (§32) | done | very-successful | +19.6 % | status §32 | perf-threading-r3 |
 | `perf-receiver-followups` | Receiver follow-ups (§35) | done | successful |  | status §35 | perf-decoder-prune, cod-debug-stall |
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | done | unrated |  | branch nsbench48; branch nsbench48-2 | cc-bbrrs-r1 |
-| `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | next | unrated |  | plan W3.6e | perf-bbrrs-ns-cost |
+| `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | in-progress | unrated |  | plan W3.6e | perf-bbrrs-ns-cost |
 | `perf-fix-burst-bound` | Emission burst bound derivation | next | unrated |  | law ledger rows F03 | model-law-ledger |
 
 ### meas - measurement
@@ -2232,7 +2237,7 @@ flowchart TB
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
 | `meas-guard-resolution` | Guard CPU and lag resolution | next | unrated |  | plan W5.4 |  |
 | `meas-test-hygiene` | Test hygiene fixes | next | unrated |  | plan W5.5 |  |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, rate-fix-term-gauge, rate-user-rate-law |
+| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design |
 | `meas-adversarial-cells-run` | Adversarial cells measured | blocked | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build |
 | `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
 | `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
@@ -2255,7 +2260,7 @@ flowchart TB
 | `model-defect-tcut` | T_cut give-up law pinned | in-progress | unrated |  | status §3.10 item 1 | model-wasm-audit |
 | `model-defect-dead-machine` | Wasm dead second machine | in-progress | unrated |  | status §3.10 item 3 | model-wasm-audit |
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | in-progress | unrated |  | status §53 Erratum 2 (cbe2be3f) |  |
-| `model-law-ledger` | Law ledger | done | unrated |  | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml |  |
+| `model-law-ledger` | Law ledger | done | unrated |  | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |  |
 | `model-user-wasm-calls` | Owner calls on wasm audit | next | n/a |  | status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md | model-wasm-audit |
 | `model-wasm-fixes` | Wasm model fixes | blocked | unrated |  | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 | model-user-wasm-calls, rate-law-reconcile, store-engine-form-impl |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | next | unrated |  | law ledger rows K05, K10 | model-law-ledger |
@@ -2366,7 +2371,7 @@ flowchart TB
 | `rate-r-battery` | Funded coding at r > 0 | Stage-2 Track B (2026-09-08), truncated at n = 4 by the 5 h cap. Folds §3.1 item 7 and the cod= counter note. Dates: paper §10 rows carry an end (removal) date only. | status §2 row "r > 0 battery (Track B)"; status §3.1 item 7; status §3.1 note (cod= counter) |
 | `rate-dof-ledger` | DoF ledger feedback leg (§39) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §39 |
 | `rate-dials-made-real` | The dials made real | RWM_DELTA, the χ arm, EVICT instruments; three invariant repairs bit-exact at every preset. Folds paper §11.1 open question 3. | branch THE DIALS MADE REAL |
-| `rate-user-rate-law` | Owner calls on rate law | Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |
+| `rate-user-rate-law` | Owner calls on rate law | Needs the off-Bulk session's reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |
 | `rate-law-reconcile` | Rate-law reconciliation (W22, W*) | Law ledger: R07, R03, R04, R05 (ranks 18-20, 24, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence. | plan W3.5, W3.7 |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | Law ledger: R02. Done when: an engine gauge reports which term or clamp of controller_rate wins, per tick, so the off-Bulk session can read it. | law ledger rows R02 |
 | `rate-fix-estimators` | Loss estimator approximations | Law ledger: E07, E08, E09. Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins. | law ledger rows E07, E08, E09 |
@@ -2401,7 +2406,7 @@ flowchart TB
 | `store-user-u1u3` | Owner calls U1–U3 | Done when: the owner answers U1 (substrate as controller or safety net), U2 (δ's authority: q's band or A(c) with a c_B source) and U3 (~2 % Bulk goodput for Tp50 19 vs 208 ms), recorded in status or the plan. | plan user decisions 3 and 10 |
 | `store-engine-form-impl` | Store-law engine form | Law ledger: F01 (rank 3, P0), the law change that ships with E03 and E04 in one change and battery: write the hole-population term and the no-queue offset b0 that the paper's Little's-law sentence omits, with [SUMCAP] pin= and ask= gauges. Done when: the store law reads an engine L̂ and time term from the per-leg state (formula and derivation in the paper first), with a bind-fraction gauge on its clamp and red-first law tests. | plan W3.3; CLAUDE.md FORMULA-FIRST |
 | `store-delta-seat` | δ seat on the store | Done when: the store time term carries δ (W1.2 candidate A) with absolute tests continuous and monotone through every preset (±2 %), in cc_sim. | plan W1.2 RESULT, W1.3, W1 round 2 (iii) |
-| `store-fix-maxbw-minrtt` | Honest rate and delay inputs | Law ledger: E04, E03. Ranks 1-2, ships with F01 (store-engine-form-impl). Replaces the former max_bw diagnosis node: the over-read mechanism (ack bunching, §23) is known, so the next step is a derivation, not more samplers. Done when: a derivation in the paper names a link-rate source the store cap does not itself set (or a law that needs none) and an RTprop from a wire clock (quinn rtt.min or the bbr_rs minimum), each with a test that the input reads the link at c8 within a stated bound; ships in one change and one battery with the store-law fix. | law ledger rows E04, E03 |
+| `store-fix-maxbw-minrtt` | Honest rate and delay inputs | Law ledger: E04, E03. Ranks 1-2, ships with F01 (store-engine-form-impl). OPEN RESEARCH PROBLEM. Seven failed attempts, all already in the tree: the send-interval sampler under-reads x0.1-0.5 (§23) and the quinn-rate and loop-time options fail (§24, both store-input-search); bbr_rs's delivered rate is circular at c2 (§27, store-input-search); the derivation from committed ledgers NONE-CLOSES (§34, store-input-search); receiver dispersion is NOT-YET (§36, §40, store-engine-form); the netem-oracle L converges only at c2 (§43b, store-engine-form); the power-seeking law is not viable (§29, store-power-law). Untested candidates: for RTprop, quinn's wire rtt.min() and bbr_rs's m-hat; for the rate, bbr_rs's b-hat or a law that needs no rate. The bbr_rs estimates come from the round-2 work, hence the edge to cc-bbrrs-r2. Fallback if no honest input is found: ship the law with the N·pool ceiling as a declared resource bound outside the law (FORMULA-FIRST provenance class), its bind fraction gauged and reported on every battery, and the inputs marked DISHONEST-INPUT in the ledger with the store law left open. Done when: a derivation in the paper names a link-rate source the store cap does not itself set (or a law that needs none) and an RTprop from a wire clock, each with a test that it reads the link at c8 within a stated bound; or, failing that, the fallback above is written into the paper and the ledger. Ships in one change and one battery with the store-law fix. | law ledger rows E04, E03; store-input-search (§23, §24, §27, §34); store-engine-form (§36, §40, §42, §43b) |
 
 #### Details per node: place - placement
 
@@ -2510,7 +2515,7 @@ flowchart TB
 | `meas-harness-robustness` | Harness robustness for every plan | Done when: LD_REHEARSE covers every plan, each plan path has an end-to-end stub-run test, the sudo env-propagation contract is pinned by a test, and one HARNESS_PATHS table ties plans to tested paths. | plan W5.2 |
 | `meas-guard-resolution` | Guard CPU and lag resolution | Done when: a per-row CPU instrument over the measured window only (per-thread getrusage or perf task-clock) with lower variance is in the harness, and lag questions are either raised in n or reported only, written into the guard rules. | plan W5.4 |
 | `meas-test-hygiene` | Test hygiene fixes | Done when: recv_alloc_bound uses a per-platform measured baseline (or is VM-only with a named reason), every reachability test asserts the regime it needs, and sigma_candidates/tlag are audited in a VM pre-flight. | plan W5.5 |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | Law ledger: R01 (rank 14, P1): the rate mix has never run off the Bulk corner; this session is that measurement. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. | plan W5.1 and VM queue 4 |
+| `meas-s51-session` | Off-Bulk baseline and δ sweep | Law ledger: R01 (rank 14, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. | plan W5.1 and VM queue 4 |
 | `meas-adversarial-cells-run` | Adversarial cells measured | Done when: BASE, bbr_rs and Copa-sole are measured on the jitter, shallow-buffer and policer cells on the current substrate, results in status. | plan W5.3, W2.3 |
 | `meas-competitor-battery` | Competitor battery | Done when: kernel BBRv1 and CUBIC are measured in the same session over the same cells and the result answers paper §11.1 open question 11. | plan W5.6 (at the W1 milestone) |
 | `meas-progress-baseline` | Cumulative progress benchmark | Owner request with no node; asked twice, answered only in conversation. Done when: one same-session battery of current main against an early-July baseline on the canonical cells reports, per readout (goodput, CPU per byte, delivered delay), how much each improved, written into status. | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |
@@ -2530,7 +2535,7 @@ flowchart TB
 | `model-paper-recon` | Paper versus engine reconciliation | Plan W3.7 marks it done (18 true, 8 stale, 3 fixed); the branch is unmerged and the rate-law questions wait on the owner (plan user decision 11). | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |
 | `model-wasm-audit` | Wasm mode-switch audit | Audit before ADR-0076 phase 6; 27 hint-keyed sites; fixes wait on owner calls. | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit |
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | No raw record. Status §53 Erratum 2 (cbe2be3f): the visualizer build, the native golden test and the bound-tests wasm pool test were registered for the pre-flight but not run; they move to the next VM session's pre-flight. | status §53 Erratum 2 (cbe2be3f) |
-| `model-law-ledger` | Law ledger | The correctness audit of every shipped law (70 rows, ranked fix order). Branch unmerged (inventory merge). Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml |
+| `model-law-ledger` | Law ledger | Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Branch unmerged (inventory merge). Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |
 | `model-user-wasm-calls` | Owner calls on wasm audit | Done when: the owner rules on the audit's five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status. | status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md |
 | `model-wasm-fixes` | Wasm model fixes | Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | Law ledger: K05, K10. Done when: the paper carries the placement cost lines (A.4) and the bbr_rs minimum-filter sign, checked against the code. | law ledger rows K05, K10 |
