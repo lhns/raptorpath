@@ -351,3 +351,210 @@ and a drained-tail reading on BASE.
   duplicate rise (status §53 open item 5) is not tested here.
 - **Not traced:** the shed law's clocks (`RWM_UNIFIED_SHED=1`), and whether retransmits carry the 0
   echo sentinel (the CW0 dwell gap in §1).
+
+## 8. §54 design and predictions (reported only; written before any measurement)
+
+Fable's correction to §6 applies. On CAND alone, a smaller pool only re-tests Little's law: the queue
+shrinks, and nothing about the holes is tested. The discriminating row is the **same reduced pool on
+BASE**. If about 1 400 of BASE's 4 096 slots are held by old holes, a ceiling near that number leaves
+BASE with too few slots in transit to fill the links, while CAND, whose old holes are 0, still fills
+them. So BASE loses goodput where CAND does not.
+
+### 8.1 The knob (verified in source on `github/main` a9090e99)
+
+- **Definition.** `RWM_STORE_PATH_POOL` is read once by `RuntimeGates::resolve` as
+  `env_parse::<usize>("RWM_STORE_PATH_POOL").unwrap_or(2048)` (`gates.rs:323`).
+  - Default 2048.
+  - **Parse:** decimal `usize` only. `-1`, `1e3`, `1024.0`, an empty string or any other unparsable
+    value falls back **silently** to 2048. `0` parses, and gives a ceiling equal to
+    `max(0, floor)` = `STORE_CAP_FLOOR`.
+  - So liveness must compare the echoed value with the requested one.
+- **The clamp is exactly N × pool and reaches the c8 sender.**
+  - `pol.store_path_pool = gates.store_path_pool` (`sender_policy.rs:554`). It feeds the shipped seat
+    `pooled_store_cap(…, n_live, bdp, gain, store_cap_floor, store_path_pool)`
+    (`sender_phases.rs:191-201`).
+  - There, `ceiling = n_live.saturating_mul(pool).max(floor)` and the cap is
+    `law.ceil().clamp(floor, ceiling)` (`store_cap.rs:90-94`).
+  - `n_live = live_paths().len().max(1)` = 2 at c8.
+  - This is the branch the c8 rows run: plain reliable, `RWM_STORE` unset, so `plain_dyn_cap`;
+    `RWM_STORE_PATHS=1`; `RWM_COPA_FEED=0`; `RWM_THREE_TERM=0`. `[DCAP]`/`[SUMCAP]` echo it.
+  - `tx_paused` ⇔ `store_len ≥ cap` (`mod.rs:2393`), and the in-flight brake is unarmed.
+  - The pool's only other uses are the two gauges' clamp bounds (`mod.rs:2022, 2034`).
+  - `RWM_STORE=<n>` must not be used as the dial. It sets `store_env_set`, which turns the dynamic
+    law off and moves the row to a different seat.
+- **Echo.**
+  - `[GATES] … RWM_STORE_PATH_POOL=<n>` (`gates.rs:427/456`, byte-pinned in `gates/tests.rs:56`).
+  - The INFO line `path-scaled outstanding pool ACTIVE … pool_per_path=<n>` (`mod.rs:1708`) prints
+    on the sender.
+  - The `[DIAG]` `win=a/b` denominator shows the realized cap.
+- **Forwarding.** `RWM_STORE_PATH_POOL` is in `tools/l1/lib.sh` `RWM_FORWARD`.
+- **Missing from the harness:**
+  1. Arm tokens. The plan-53 battery lives on `github/cand53`; plan 54 needs `BASE'P<n>` and
+     `CAND'P<n>` setting `RWM_STORE_PATH_POOL=<n>` on the respective binary.
+  2. **`-u RWM_STORE_PATH_POOL` in the battery's `env -u` scrub** (`loopdiag_battery.sh` `run_one`).
+     It is absent on `main` and on `cand53`, so a value left in the launching shell would leak into
+     every "default" row.
+  3. The readouts and liveness checks of §8.5.
+
+### 8.2 Arms
+
+Built on the parallel `snapver-law` tree, where the filter is the default law with no env arm. The
+branch is not yet on `github` when this is written, so its SHA is pinned by amendment.
+
+| arm | binary | env | ceiling W = 2·pool |
+|---|---|---|---|
+| BASE'P2048 | BASE' = main + filter law | none (shipped) | 4 096 (control) |
+| BASE'P1024 | BASE' | `RWM_STORE_PATH_POOL=1024` | 2 048 |
+| BASE'P640 | BASE' | `RWM_STORE_PATH_POOL=640` | 1 280 (**the discriminating row**) |
+| CAND'P2048 | CAND' = BASE' + lever B | none | 4 096 (control) |
+| CAND'P1024 | CAND' | `RWM_STORE_PATH_POOL=1024` | 2 048 |
+| CAND'P640 | CAND' | `RWM_STORE_PATH_POOL=640` | 1 280 |
+
+- **Setup:** c8-100 at 600 MB, `RWM_DIAG=1`, `RWM_RDIAG=1`, `RWM_PERF_TIMEOUT_S=200`.
+- **Scale:** n = 6 per arm, rotated per group, 36 rows.
+- **Why these sizes and not §6's 2 560 / 3 072.** Those two would sit above BASE's predicted
+  saturation edge and would only move CAND's queue.
+
+### 8.3 The model the predictions come from
+
+From §2.2, in the PIN phase (cap = W):
+
+    W  =  Σᵢ rᵢ · τᵢ  +  H        τᵢ = leg i's app-echo transit time; H = slots held by holes older than ~1 RTT
+
+The links are full iff `Σ rᵢ·τᵢ ≥ P_min`. P_min is the transit population needed to keep both links
+busy with no standing queue:
+
+    P_min ≈ r₀·τ₀,min + r₁·τ₁,min ≈ 9 855 × 0.012 s + 1 950 × 0.042 s ≈ 200     (× 1–3 for ack and emit-burst slack: 200–600)
+
+Here τ₀,min and τ₁,min are the start-up p0/p1 `rtp_us` (8.4–14.2 ms and about 40 ms, §6).
+Controls (§53 reference rows with the filter on: BASES, CANDS, PIN phase): BASES H = 1 089–1 510
+old holes, residual 1 257–1 733; CANDS H = 0–1.
+
+How H responds to W is the unknown the BASE rows test. Two bounding readings:
+- **(H1) H fixed in symbols:** the 20-gap horizon's backlog does not depend on W.
+- **(H2) H = p̄ · r · T_H with T_H fixed in seconds:** p̄ ≈ 0.030 pooled loss; T_H ≈ H/λ ≈
+  1 460 / 354 /s ≈ 4.1 s at the control.
+
+Then:
+- **BASE' saturation edge:** W* = H + P_min ≈ **1.3k–2.1k** under H1. Under H2 the edge is a little
+  lower, and below it r = W / (τ_min + p̄·T_H), e.g. W = 1 280 → r ≈ 7–8k/s, about −35 %.
+- **CAND' saturation edge:** W* ≈ P_min + the repair slots λ·T_repair (≈ 354 /s × 0.2 s ≈ 70) ≈
+  **300–700**.
+
+W = 1 280 is below BASE's edge under both readings and about 2× above CAND's. W = 2 048 is at BASE's
+edge and serves as the dose step.
+
+**(H3) The live alternative: holes are elastic.** BASE's old holes exist only because the oversized
+pool lets the RTT, and with it the number of open gaps per report, grow past the 20-gap horizon. At
+a small W the RTT drops, the horizon stops binding, and BASE behaves like CAND.
+- Its signature: BASE'P640 keeps goodput, its old holes fall to about 0 and its tail shortens to
+  CAND's.
+- A rough check argues against it: open gaps per report ≈ λ_loss × 2·rtt ≈ 354 × 0.1 s ≈ 35 > 20
+  even at a 50 ms RTT. It is not excluded.
+
+### 8.4 Predictions (per arm; PIN-phase medians of per-row values unless marked; bands are arm ranges)
+
+| readout | BASE'P2048 | BASE'P1024 | **BASE'P640** | CAND'P2048 | CAND'P1024 | **CAND'P640** |
+|---|---|---|---|---|---|---|
+| goodput Mbit/s (scorer, whole run) | 96–103 (BASES 96.3–102.1) | 75–103 | **20–85** | 107–109 (CANDS 107.2–108.3) | 105–109 | **104–109** |
+| Σ tx rate in the PIN phase, /s | 11.7k–11.9k | 9k–11.9k | **≤ 10k** | 11.8k–11.9k | 11.7k–11.9k | **11.6k–11.9k** |
+| p0 send backlog `q0` = `dgq0 hand − tx` | 300–1 600 (BASES 356–1 542) | 0–300 | 0–100 | 900–2 700 (CANDS 903–2 642) | 100–1 000 | 0–400 |
+| p0 app-echo `rtt0` ms | 180–215 | 30–110 | 12–60 | 300–355 | 125–225 | 70–150 |
+| `rtt0 − wrtt0` ms | 30–140 | 0–30 | 0–10 | 80–270 | 10–100 | 0–40 |
+| budget residual `W − Σ rᵢ·rttᵢ` | 1.25k–1.75k | 1.0k–1.8k | **≥ 900** | −60…+60 | −60…+60 | −60…+60 |
+| old holes (server `[RANK]` holes − tail_overcount) | 1.0k–1.55k | 0.9k–1.6k | **≥ 700** | 0–10 | 0–10 | 0–10 |
+| tail s | 2.6–5.5 | 2–6 | 1.5–6 | 0.2–0.7 | 0.1–0.7 | 0.1–0.7 |
+| quinn evictions (`dgq0 full`, last line) | 0 | 0 | 0 | 0–350 | 0 | 0 |
+| in-order delay, PIN mean s (`inorder.py`) | 4.8–5.6 | ≥ 2.5 | **≥ 2.5** | 0.9–1.4 | 0.5–1.0 | 0.4–0.9 |
+| in-order delay, PIN p95 s | 6.3–7.9 | ≥ 3.5 | ≥ 3.5 | 1.5–2.3 | 0.8–1.7 | 0.6–1.4 |
+| receiver duplicates | 1 230–1 810 (BASES) | reported | reported | 1 100–1 490 (CANDS) | reported | reported |
+
+Notes on the bands:
+- **The q0, rtt and delay bands at reduced W** take the population shares measured at 4096: p0
+  takes 0.84 of the population on CAND and about 0.8 of the transit population on BASE. They assume
+  quinn's window does not grow when its path goes app-limited.
+- **BASE'P640's goodput band** spans H1 (a stall toward the bottom) to H2 (about −35 %). The
+  prediction is the side, not the point: clearly outside CAND'P640's −3 %.
+- **Duplicates at reduced W:** no reading here predicts them. They are reported.
+- **H3's predicted row instead:** BASE'P640 goodput ≥ 95, old holes ≤ 300, tail ≤ 1 s, in-order
+  mean ≤ 1.5 s.
+
+**Falsifiers (each separates "old holes hold the slots" from an alternative):**
+1. **BASE'P640 goodput ≥ 0.95 × BASE'P2048** while its old holes stay ≥ 700. Holes then hold slots
+   without costing goodput, so the identity or P_min is wrong. This **refutes** the mechanism.
+2. **BASE'P640 goodput ≥ 0.95 × control and old holes ≤ 300:** H3, elastic holes. The bookkeeping
+   survives, but lever B's gain is then a property of the oversized pool, which changes the merge
+   argument. Reported as a finding, not a refutation.
+3. **CAND'P640 goodput < 0.97 × CAND'P2048, or Σ tx < 11.5k/s:** CAND's edge is above 1 280, so P_min
+   or the repair slots are underestimated. The contrast at W = 1 280 then loses its meaning; read
+   W = 2 048 alone.
+4. **On any lever-B row, `|W − Σ rᵢ·rttᵢ| > 0.1·W`:** the identity fails.
+5. **Dose:** BASE' goodput (arm medians) not non-increasing from W = 4 096 to 2 048 to 1 280.
+
+**Decision rule (reported only, nothing scored).**
+- Falsifiers 1 and 4 do not fire, and BASE'P640 sits below CAND'P640 on goodput by more than both
+  arms' ranges: **confirmed**. Old holes cost about H slots of the pool on main.
+- Falsifier 2 fires: **H3**.
+- Falsifier 1 or 4 fires: **refuted**; back to diagnosis.
+
+### 8.5 Readouts and liveness the harness must add
+
+All from the client `[DIAG]` lines unless marked. Every per-path field is anchored on
+`pN:infl=`, because ` pN:` alone first matches the `mpr[… fp/on p0:… p1:…]` token.
+
+- **PIN phase:** ticks with `win=(\d+)/(\d+)` whose denominator equals `2 × pool` (from the row's
+  `[GATES]`), and ` src=(\d+)sym/s` > 0. Liveness: after the first such tick, ≥ 95 % of sending ticks
+  are PIN, as at 4096 in §53 (4 206/4 209).
+- **Quinn evictions per path:** `dgq(\d)\[hand=(\d+) tx=(\d+) full=(\d+) err=(\d+) sp=(\d+)\]` on
+  the **last** `[DIAG]` line.
+  - The readout is `full` (the count of evicting handoffs, a lower bound on datagrams evicted).
+  - Beside it, `hand − tx`, an upper bound (it includes anything still queued).
+  - Both per path, summed per arm.
+- **Tail and in-order delay from `cum=src/cod/ack`:** ` cum=(\d+)/(\d+)/(\d+) ` with `t=([\d.]+)s`.
+  `src` = `stats.fec.total_source_symbols`, which counts unique source symbols (it ends at
+  507 616 = 600 MB / 1 182 B). `ack` = `window_ack_seq`, the `fetch_max` of the receiver's
+  `next_expected` (`control_msg.rs:490`), i.e. the in-order frontier as the sender last heard it.
+  - **In-order delay per tick:** `delay(t) = t − t_src(ack(t))`. `t_src(a)` is the time the `src`
+    curve reached `a`, linearly interpolated between the 250 ms ticks. Report the mean, p50 and p95
+    over PIN ticks and over all ticks with `ack > 0` (`p0-dwell-diag/inorder.py`).
+  - **Tail:** `t(ack = total) − t(src = total)`, from the first tick where each reaches the final
+    total. If `ack` never reaches it on a `[DIAG]` tick, keep the scorer's `tail_s` and flag the row.
+- **Old holes H (server):** median over readouts `[12 : −6]` of `[RANK] holes − tail_overcount`.
+  `[RANK]` lines are about 1 s apart from server start, so index 12 is past the 10.3 s step, and the
+  last 6 are tail.
+- **Budget residual:** per PIN tick, `win.a − (r₀·rtt₀ + r₁·rtt₁)/1000`. Here rᵢ = Δ`dgqi tx`/Δt over
+  the PIN phase, and `rttᵢ` comes from `pi:infl=…rtt=(\d+)/wrtt=(\d+)` (`p0-dwell-diag/budget2.py`).
+- **Kept from §53:** goodput, receiver duplicates, retransmits/GB, `[SNAPV]` and `[LAT]` (reported
+  with its coverage `Σ pN:n / n`, never as the delay readout).
+- **Liveness (a row counts only if):**
+  - the client `[GATES]` shows `RWM_STORE_PATH_POOL=<requested n>` (2048 on controls; no silent
+    fallback, §8.1), and the sender's INFO `pool_per_path=<n>` matches;
+  - the PIN-phase cap equals `2·n`;
+  - the filter law is live: `[SNAPV]` `pt_st + tt_st = 0` on every leg, and `stale > 0` on p1;
+  - the binary witness holds at W = 4096 only (BASE' tail ≥ 2 s, CAND' ≤ 0.8 s). At reduced W the
+    tail is an outcome, not a witness.
+
+### 8.6 Does the filter being on in both arms change anything?
+
+The §53 reference rows are BASES (filter on BASE) and CANDS (filter on CAND), and every control band
+above is taken from them. Against the filter-off rows, the quantities the model uses barely move:
+
+| quantity | BASE → BASES | CAND → CANDS |
+|---|---|---|
+| old holes (PIN) | 1 408 → 1 243 | 0 → 0 |
+| budget residual | 1 556 → 1 464 | −8 → 20 |
+| path₀ | 2 020 → 2 057 | 3 447 → 3 346 |
+| goodput | 99.3 → 98.6 | 107.1 → 107.8 |
+| tail | 3.95 → 4.42 s | 0.36 → 0.41 s |
+
+Two things do change:
+- **Duplicates and retransmits fall** on CAND to BASE's level, and the CAND' evictions band is
+  CANDS's 0–336.
+- **CANDS reads a lower `q0` than CAND** (1 747 against 2 316) at the same path₀, a quinn-window
+  difference (§2.2). The q0 bands therefore use CANDS's range.
+
+None of the predictions flips sign. The one premise to check is that the filter *law* on
+`snapver-law` behaves like the §53 arm. The control rows test this: BASE'P2048 and CAND'P2048 must
+land inside BASES's and CANDS's ranges on goodput, tail, old holes and duplicates. If they do not,
+the reduced-W bands are re-based on the new controls before reading, and that re-basing is
+reported.
