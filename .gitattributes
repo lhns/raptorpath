@@ -63,3 +63,8 @@ docs/l1-raw/thread-pd/battery/diag-tpd/c1d-400-MAIN-s42-r1-a1-s.log -export-igno
 # plan 52 (status §52): tail52_score.py / test_tail52.py read these (added after the read-set measurement)
 docs/l1-raw/bbr48b/diag-ld-full.tgz -export-ignore
 docs/l1-raw/bbr48b/tail-c8/*.* -export-ignore
+# guard v2 (status 41d / 54): test_guard_v2.py reads these two ledgers (it fails in an extracted archive without them, so the 41d / 54 parser gate would ABORT-TESTS on the VM).
+# docs/l1-raw/s53/rep53-diag-ld.tgz (9 MB; test_pool54.py's section-53 fixtures and pool54_score's re-basing reference) is deliberately NOT shipped: those checks skip / print
+# REBASE-CHECK UNAVAILABLE in an archive and run on the host.
+docs/l1-raw/s52/guard-ld.log -export-ignore
+docs/l1-raw/bbr48b/run/bbr48/ld.log -export-ignore

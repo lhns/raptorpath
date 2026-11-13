@@ -138,7 +138,7 @@ SV0 = "[SNAPV] site=sender p0:rep=900 stale=0 pt_st=0 tt_st=0 p1:rep=120 stale=1
 HOLD_HN = "[HOLD] site=sender path=0 gen=0 samp_n=1000 fed=99 hn_n={n} hy_n=3 cx_n=7"
 SHA_B, SHA_C = "b" * 64, "c" * 64
 p, rd = pl.guard_witness("CAND", "c8-100", [HOLD_HN.format(n=120), SV0], SHA_C, SHA_C, SHA_B)
-check("guard witnesses green: a CAND c8 row with the hn collapse (120 < 2000), [SNAPV] present with pt_st + tt_st = 0 and its own sha raises nothing", p == [] and rd == {"hn_p0": 120, "snapv_st": 0, "snapv_present": True}, (p, rd))
+check("guard witnesses green: a CAND c8 row with the hn collapse (120 < 2000), [SNAPV] present with pt_st + tt_st = 0 and its own sha raises nothing", p == [] and rd == {"hn_p0": 120, "snapv_st": 0, "snapv_present": True, "sha_checked": True}, (p, rd))
 p, _ = pl.guard_witness("CAND", "c8-100", [HOLD_HN.format(n=5000), SV0], SHA_C, SHA_C, SHA_B)
 check("red: a CAND c8 row WITHOUT the hn collapse (5 000 >= 2 000) is VOID", any(x.startswith("hn-no-collapse") for x in p), p)
 p, _ = pl.guard_witness("CAND", "c8-100", [HOLD_HN.format(n=1999), SV0], SHA_C, SHA_C, SHA_B)
@@ -159,7 +159,10 @@ check("red: a [SNAPV] line on a BASE row (the trees are mixed up) -> VOID", len(
 p, _ = pl.guard_witness("BASE", "c2-100", [], SHA_C, SHA_C, SHA_B)
 p2, _ = pl.guard_witness("CAND", "c2-100", [SV0], SHA_B, SHA_C, SHA_B)
 check("red: bin_sha matches the arm's seat -- a BASE row run on the CAND binary and a CAND row on the BASE binary are both VOID", len(p) == 1 and p[0].startswith("bin-sha=") and len(p2) == 1 and p2[0].startswith("bin-sha="), (p, p2))
-check("sha_problems: an unset seat is not checked (the battery's own start-of-run guard covers it)", pl.sha_problems("CAND", SHA_C, None, SHA_B) == [] and pl.sha_problems("PWR", "x", SHA_C, SHA_B) == [])
+check("red: a witness that cannot run is a problem, never a silent pass -- an unset seat sha (LD_SHA / LD_SHA_BASE not in the parser's env) or a row without a sha is bin-sha-uncheckable; arms of no seat are not checked",
+      pl.sha_problems("CAND", SHA_C, None, SHA_B)[0].startswith("bin-sha-uncheckable") and pl.sha_problems("BASE", SHA_B, SHA_C, None)[0].startswith("bin-sha-uncheckable")
+      and pl.sha_problems("CAND", None, SHA_C, SHA_B)[0].startswith("bin-sha-uncheckable") and pl.sha_problems("PWR", "x", SHA_C, SHA_B) == []
+      and pl.sha_checked("CAND", SHA_C, SHA_C, SHA_B) and not pl.sha_checked("CAND", SHA_C, None, SHA_B) and not pl.sha_checked("PWR", "x", SHA_C, SHA_B))
 
 # the row parser: witnesses apply to a LIVE completed row, never to a DNF row (it keeps its worst rank), never without LD_WITNESS54
 CELL = "c8-100"
@@ -187,7 +190,8 @@ def mk_row(arm, cli_extra, dnf=False, plan="41d", w54="1", sha=SHA_C):
 
 
 good = mk_row("CAND", [HOLD_HN.format(n=120), SV0])
-check("make_row, plan 41d + LD_WITNESS54=1: a CAND row with every witness holding stays LIVE and records its w54 readings", good["status"] in ("LIVE", "WITNESS-FAIL") and good.get("w54") == {"hn_p0": 120, "snapv_st": 0, "snapv_present": True}
+check("the comparison executed and is recorded on the row (w54.sha_checked)", good.get("w54", {}).get("sha_checked") is True and mk_row("BASE", [HOLD_HN.format(n=9786)], sha=SHA_B).get("w54", {}).get("sha_checked") is True, good.get("w54"))
+check("make_row, plan 41d + LD_WITNESS54=1: a CAND row with every witness holding stays LIVE and records its w54 readings", good["status"] in ("LIVE", "WITNESS-FAIL") and good.get("w54") == {"hn_p0": 120, "snapv_st": 0, "snapv_present": True, "sha_checked": True}
       and not any(x.startswith(("bin-sha", "no-[SNAPV]", "snapv-", "hn-")) for x in good["problems"]), (good["status"], good["problems"], good.get("w54")))
 bad = mk_row("CAND", [HOLD_HN.format(n=120)])
 check("red: make_row marks a completed CAND row without [SNAPV] WITNESS-FAIL (replaceable, re-run once by the replacement rule) when the gauge is absent",
@@ -307,6 +311,9 @@ with tempfile.TemporaryDirectory() as tmp:
     rows = [led_row(a, dnf=(a == "L2048")) for a in pp.ARMS54B]
     rc, txt = run_smoke(rows, tmp)
     check("red: a DNF L2048 row -> FAIL the 200 s criterion", rc == 1 and re.search(r"^FAIL the c8 600 MB rows finished inside", txt, re.M), txt[-400:])
+    rows = [led_row(a, dnf=(a == "B640"), rc=(1 if a == "B640" else 0)) for a in pp.ARMS54B]
+    rc, txt = run_smoke(rows, tmp)
+    check("red: the B640 exemption is for a CLEAN DNF only -- a B640 crash (rc 1) fails the 200 s criterion", rc == 1 and re.search(r"^FAIL the c8 600 MB rows finished inside", txt, re.M), txt[-400:])
     rows = [led_row(a, dnf=(a == "B640")) for a in pp.ARMS54B]
     rc, txt = run_smoke(rows, tmp)
     check("B640 may DNF in the smoke (the registered H-hold floor, 20 Mbit/s = 240 s for 600 MB, is past the 200 s timeout): printed as a NOTE, the 200 s criterion passes (the other criteria see its readouts)",
