@@ -292,8 +292,11 @@ Defect findings under FORMULA-FIRST and MEASUREMENT DISCIPLINE 17/18. Each one i
 2. **P_fec truncation: a code-vs-paper divergence, degenerate over the engine's measured range.**
    - `raptorpath-math::p_fec_normal` returns 0 when r(1−ε) − ε ≤ 0, and Φ(0) = ½ just above that point. That is a 0 → ½ step at r = ε/(1−ε).
    - Paper §4.2 (`fec-arq-model.md:699`) states the continuous Φ form. The cut has been in the code since `da837ee9`.
-   - Engine reach on the default path: `net/emit_source.rs:588` (`shed_budget_frac`, only when `shed_on`, i.e. ρ < 1).
-   - The engine's rate law sits at r ≈ 0 on every L1 cell, so P_fec ≡ 0 wherever the engine has been measured. No measured engine effect yet; the first exposure is §51.
+   - **Engine reach, on two default paths:**
+     - the shed budget, `net/emit_source.rs:588` (`shed_budget_frac`, only when `shed_on`, i.e. ρ < 1);
+     - the rate law's soft cap: `fec_rate.rs:161/:164` call `raptorpath_math::controller_rate`, which applies `soft_saturate(rate, r_saturation(...))` (math :825), and the engine sets `saturation_cap` by default.
+   - **Whether the engine has run on the P_fec > 0 side is unsettled.** The plan records r ≈ 0 on the L1 cells, but the fixture comment at `fec_rate/tests.rs:277` describes a consumed r ≈ 0.34 at ε ≈ 4.8 %, above the crossing.
+   - The crossing r is exactly ε/(1−ε): 0.0267 at c2 and 0.0515 at c3. The crossing δ is a model estimate between the Bulk and Auto presets, never at Bulk. §51 must read r per cell and settle this.
    - Conflict for the owner: the paper's form gives P_fec(0) > 0, against the engine pin `fec_rate/tests.rs:262–282`.
 3. **The wasm model carries a dead second machine.**
    - The classic per-hint constructor arms (W2, W4, W5, W6, W9) and V1 are reachable only from tests and the golden capture. The UI passes one hint, `'continuum'`, at every dial position (gate: `test_visualizer_ui.mjs`).
