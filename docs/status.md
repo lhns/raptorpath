@@ -302,12 +302,14 @@ Defect findings under FORMULA-FIRST and MEASUREMENT DISCIPLINE 17/18. Each one i
    - The classic per-hint constructor arms (W2, W4, W5, W6, W9) and V1 are reachable only from tests and the golden capture. The UI passes one hint, `'continuum'`, at every dial position (gate: `test_visualizer_ui.mjs`).
    - Their outputs equal the continuum at the presets on all six golden cells. ρ is dropped for auto and realtime on that path.
    - Fix: removal or `cfg(test)` (owner calls are listed in the audit).
-4. **`[QCLK] w_us` sits at the 100 ms clamp.** At c8 under CAND, p05 = p95 = 100 000 µs, while pooled srtt averages ≈ 443 ms (`docs/l1-raw/s52/`). This is a clamp that always binds. The emitting law is being identified by the duplicate diagnosis (`dup-diag`). With 3–8 timer fires per run, it is not the duplicate source.
+4. **`[QCLK] w_us` sits at the 100 ms clamp.** At c8 under CAND, p05 = p95 = 100 000 µs, while pooled srtt averages ≈ 443 ms (`docs/l1-raw/s52/`). This is a clamp that always binds. The emitting law is `tail_sweep_timeout_us` = clamp(2·pooled srtt, 25 ms, 100 ms) (`net/recovery_laws.rs`; identified by `dup-diag`): pooled srtt 258–468 ms in all 12 c8 rows puts 2·srtt far above the upper bound. With 3–8 timer fires per run, it is not the duplicate source.
 5. **The c8 hole law was never measured in its operating regime before §52.**
    - Under the 20-gap horizon, p0 holes reached the law at ≈ 3.5 s age.
-   - Under lever B the packet-threshold channel fires 3.7–6.6 k times per run (BASE 0–755), and the original lands about 5 ms later (`hy_p50` 5.1 ms) on a FIFO leg.
+   - Under lever B the packet-threshold channel fires 3.7–6.6 k times per run (BASE 0–755).
+   - ~~the original lands about 5 ms later on a FIFO leg~~ (withdrawn, `dup-diag`): `hy_p50` (5.1–5.6 ms p0, 2.8 ms p1) is the next fresh gap report at the ~2 ms ack cadence, not a flight time. The original had already been reported delivered when the channel fired.
    - Main already wastes about 12 % of its retransmits.
-   - Diagnosis is running (`dup-diag`); the result goes in §53.
+   - Diagnosis: `docs/derivations/dup-diag.md` (branch `dup-diag`), summarised under §52 Erratum; the measurement goes in §53.
+6. **The receiver's `hole_nack_refresh` clock reads a degenerate input (`dup-diag`).** `[QCLK]` receiver shows srtt = exactly 50 000 µs with sigma n = 0 in all 12 c8 rows, so the refresh cadence is a constant 100 ms. The law's input never takes a measured value; the source of the constant is not yet traced.
 
 ### 3.9 Harness rule: report the lock-out classifier (2026-11-10)
 
@@ -538,6 +540,12 @@ Each closed section lives in its own file under `docs/status/`; every `§N` cite
    - The stale-gap population (first reports without a live flight, `fed − age_n` on p0) does not grow with the horizon: 1.7–2.7 k per run on BASE, 1.0–2.1 k on CAND. It is not the source of the extra duplicates.
    - Client CPU/GB +6 % (overlapping ranges) is consistent with ×13.7 per-hole bookkeeping. Server CPU/GB −11 % likely reflects the shorter run (less tail-time polling); not measured.
    - Hypothesis (untested): the cost comes from the gap gate letting some young holes through, which the wider horizon now exposes, not from the horizon itself. A ripeness-gated retransmit on CAND would test it.
+   - **Erratum (2026-11-13, `dup-diag`, Fable-checked).** The ×13.7 `fed` is not a count of the slow leg's in-flight gaps, and `fed`, `hn` and `ripe_frac` are inflated on CAND:
+     - `[HOLD]` re-stamps a hole when a report re-lists it after resolution. Total sender `fed` exceeds the receiver's own hole count (`[SUCC] det`, server log) by 114–177 k in all six CAND rows, 10–15× the bound from retransmit re-listing (`cx` ≈ 10–12.5 k). On BASE, `fed` is 25–30 k against 194–238 k receiver holes (the 20-gap view).
+     - **Candidate mechanism (log-consistent, red-tested, not yet measured per report):** gap reports are applied out of the order the receiver made them. Each report returns on the leg the triggering data arrived on (`net/receiver.rs` ~2008), p1's return is ~15 ms slower, and nothing orders them (`control_msg.rs:708–745`; the `serve_gaps` coalescing keeps the last-arrived report). The packet-threshold evidence accumulates across reports while the judged seq comes from the current one, so a stale report fires the channel on seqs fresher reports had shown delivered.
+     - The original-path keying hypothesis is refuted (`source_path_map` is insert-once; in-leg FIFO measured, `[SUCC] sp_n` p50 0.43–5.2 s).
+     - The hypothesis above (gap gate letting young holes through) is superseded by this one.
+     - Not settled from the logs: the per-return-leg split of fires (`[FCAUSE]` is per run); BASE's 0.35 % duplicates (not explained, and the proposed filter does not predict touching them).
 3. **Debt found:**
    - the holeclass test premise (false on both trees);
    - `alloc_per_symbol` is not a suite test, though the registration relied on it;
