@@ -1,0 +1,23 @@
+failures:
+
+---- the_cross_path_class_is_populated_on_two_paths stdout ----
+
+thread 'the_cross_path_class_is_populated_on_two_paths' (2129731) panicked at raptorpath/tests/holeclass_reachability.rs:116:9:
+a resolution cannot precede its own first report: [HOLD] site=sender path=1 gen=0 samp_n=1000 fed=6160 obs_p50_us=23499 obs_p90_us=62249 obs_p99_us=121487 evals=362 hn_n=5807 hn_p50_us=28672 hn_p90_us=36864 hy_n=24 hy_p50_us=13312 hy_p90_us=16384 cx_n=329 cx_p50_us=65536 cx_p90_us=81920 sp_n=2586 xp_n=3574 up_n=0 xp_frac=0.5802 age_n=6154 age_ripe=28 ripe_frac=0.0045 age_p50_us=122880 age_p90_us=180224 thr_p50_us=163840 cx_leg=0:329 fa_class=0.0625
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_cross_path_class_is_populated_on_two_paths
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 77.28s
+
+error: test failed, to rerun pass `-p raptorpath --test holeclass_reachability`
+     Running tests/inbound_pool_reachability.rs (~/s52/target-tests/debug/deps/inbound_pool_reachability-0ff1ce2fbde9b8de)
+
+running 1 test
+test the_owner_reuses_the_inbound_vecs_the_receiver_returns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests/io_owner_topology.rs (~/s52/target-tests/debug/deps/io_owner_topology-2fc2e263c9c23388)

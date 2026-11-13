@@ -13744,3 +13744,104 @@ Session (`LD_PLAN=41c`, `LD_P46_SUITES=1`), CAND `simplify-5` `d5bd282a`, BASE m
 - **Pre-flight (VM, fresh target per tree):** both compile (`--all-targets`); lib BASE 589 / 0, CAND 591 / 0 (the two gap-horizon tests); `holeclass_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability` pass in both.
 - **Archive check:** in an extracted `git archive` of CAND, all 31 `tools/l1` tests (`test_stubrun` excluded) pass with `LD_BASE_SHA` set, and `test_topo_netem` passes; the plan-52 fixtures are present.
 - **Order:** the rehearsal (`LD_REHEARSE=1`, unscored; amendment 1's checks), then the full session on the same pins.
+
+### 52. Result (2026-11-12; session 21:23–23:04Z, ledger `docs/l1-raw/s52/`)
+
+**Labels.** Guard: **`VERDICT GATE-41c PASS`**, p = 0.2471 (min-p 0.0132 at c1s-400 `cpu_cli/GB`), 96/96 LIVE, 0 replaced slots. Block: `VERDICT52 REPORTED-ONLY rows=30/30 live=30`, every arm's witness echoed as registered. **Decision rule: the merge goes to the user.** The 600 MB block reads CAND worse than BASE beyond BASE's row range on **receiver duplicates** (CAND [2786–5169] vs BASE max 1974). Tail and goodput are better, outside BASE's range on the good side.
+- **One merge voucher is unmet as registered:** the rule named `alloc_per_symbol`, which the suites never run because it is `#[ignore]`. It was run afterwards with `--ignored` on both trees and passes: BASE 23.14 allocs/symbol (13 404 B), CAND 23.03 (13 100 B). The voucher is met post hoc.
+- **Open for the user:** lever B acts at c1d, three c1d clauses lean worse (p 0.035 / 0.063 / 0.056), and no long-transfer c1d block exists.
+
+**Suites.** main 1124 / 0 (47 ignored); doc 0 / 0; wasm 36 / 0; parsers ok; debug-witness 982 / **1** with 46 ignored. The failure was `holeclass_reachability::the_cross_path_class_is_populated_on_two_paths`, which the harness labelled `FLAKE` because it passed on the immediate solo re-run, so `tfail=0`.
+- **What failed:** the assertion `age_n >= fed` ("a resolution cannot precede its own first report") on sender path 1, with `fed=6160 age_n=6154` (`flake-holeclass.txt`).
+- **Cause:** a wrong test premise, not a race. `HoldObs::on_reported` (`net/holddown.rs`) adds to `age_n` only when the sender still holds a live flight for the seq (`flight: Some`). `fed` counts every resolution of a stamped hole. A hole first reported after its flight is gone is therefore fed without an age reading.
+- **What `flight: None` means** (call site `net/sender_phases.rs:836`): the seq is in neither `nack_retx_at` nor `retransmit_buffer`. The sender has already dropped it, so this is a stale gap entry.
+- **The test's premise is false on BOTH trees at c8.** In the 600 MB block, BASE's last `[HOLD]` lines already read `age_n < fed` (e.g. p0 `fed=18081 age_n=15353`). The test's own short scenario rarely reaches that state.
+- **No CAND link (post-hoc loop, VM, both locks, debug, `--test-threads=2`, pinned trees):** BASE failed run 1 of its loop with the same assertion (path 1, `fed=2305 age_n=2296`), and CAND passed every run it completed (counts in the post-hoc block). The flake is the test's, present on main.
+- **Fix (its own commit, after the merge decision, so the pinned `cand52` stays what was guarded):** count first reports separately (`first_n`) and assert `first_n >= fed` and `age_n <= first_n`.
+- **Allocation bounds** (the decision rule's vouchers for `wdiv-diag`): `recv_alloc_bound` passed. **`alloc_per_symbol` is `#[ignore]` (a microbench) and did not run.** The registration named a test that the suites never execute.
+
+**Guard clauses** (x = CAND worse, relative median difference; p is the clause permutation p):
+
+| cell | goodput | cpu_cli/GB | cpu_srv/GB | lag_E_cli | lag_E_srv | rtp_floor p0 / p1 |
+|---|---|---|---|---|---|---|
+| c1s-400 | +0.93 % (0.138) | +1.88 % (0.013) | +1.04 % (0.030) | +3.10 % (0.558) | −0.32 % (0.572) | −0.67 % (0.767) |
+| c1d-400 | −2.97 % (0.651) | +0.00 % (0.451) | −0.70 % (0.722) | **+33.99 % (0.035)** | +17.34 % (0.063) | +3.99 % (0.056) / −2.40 % (0.935) |
+| c2-100 | +0.07 % (0.653) | −2.10 % (0.797) | −2.17 % (0.705) | +0.18 % (0.609) | +1.81 % (0.211) | −0.41 % (0.614) |
+| c8-100 | −4.07 % (0.986) | +0.84 % (0.134) | −3.03 % (0.615) | +0.72 % (0.434) | −10.83 % (0.994) | +12.37 % (0.081) / −3.91 % (0.556) |
+
+- **Resolution:** three clauses are blind below their q95: c1d goodput (q95 0.060 > tol 0.056), c8 goodput (0.065 > 0.040), and c8 `rtp_floor_p1` (0.097 > 0.085).
+- **§50 watch item, c1s `lag_E_cli`:** +3.10 %, p 0.558. §50's +15 % (p 0.009) did not recur.
+- **c1s `cpu_cli` +1.9 % (p 0.013):** this sits at a cell where lever B was predicted behaviour-identical (reports there carry ≤ 20 ranges). It is the family min-p, not significant after the max-over-clauses correction. Read it as noise unless it recurs.
+- **c1d leans worse on three clauses:**
+  - `lag_E_cli` +34 % (p 0.035);
+  - `lag_E_srv` +17 % (p 0.063);
+  - `rtp_floor_p0` +4 % (p 0.056).
+
+  `lag_E_cli`'s +34 % exceeds that clause's BASE-only q95 of 0.32. c1d is one of the two cells where lever B acts (25–30 ranges). The registration named c1d CPU as the risk, not lag, so this lean is unregistered. None of the three is significant after the max-over-clauses correction. **Open item for the user:** no long-transfer c1d block exists to read lever B's effect there.
+
+**600 MB c8 block, per arm** (mean / median [row range], n = 6; `rep52-score.txt` has every field):
+
+| readout | BASE | CAND | W0 | W05 | WDER |
+|---|---|---|---|---|---|
+| goodput Mbit/s | 98.9 / 98.6 [96.8–101.1] | **107.2 / 107.1 [106.8–107.6]** | 98.2 / 98.5 [95.7–99.7] | 98.5 / 99.1 [95.8–99.6] | 98.7 / 99.0 [95.3–101.9] |
+| completion tail s | 4.19 / 4.31 [3.18–5.21] | **0.40 / 0.44 [0.19–0.63]** | 4.35 / 4.29 [3.52–5.56] | 4.31 / 4.10 [3.60–5.70] | 3.82 / 3.59 [2.73–5.97] |
+| H0 holes at source end | 1787 / 1909 [1334–2033] | 615 / 446 [67–1420] (n 5) | 2116 / 2159 | 1976 / 1894 | 1814 / 1812 |
+| frontier lag at source end | 74149 / 73771 | 10740 / 10980 | 81863 / 77898 | 79857 / 82247 | 74226 / 75032 |
+| retx send-leg-1 share | 0.641 / 0.640 [0.610–0.666] | 0.740 / 0.732 | **0.145** / 0.146 | 0.436 / 0.430 | **0.593** / 0.591 [0.524–0.638] |
+| retransmits / GB | 25136 [24388–25672] | **29900** [27393–33045] | 26300 | 24899 | 24939 |
+| receiver duplicates | 1764 [1583–1974] | **3729** [2786–5169] | 2243 | 1519 | 1614 |
+| client CPU s/GB | 34.03 [33.17–36.08] | 36.15 [34.73–37.95] | 34.97 | 34.79 | 34.46 |
+| server CPU s/GB | 45.33 [43.85–48.82] | 40.16 [38.53–45.15] | 45.11 | 45.92 | 45.64 |
+| [HOLD] p0 first-report age p50/p90 ms | 3539 / 6291 | **344 / 360** | 311 / 6291 | 3539 / 6291 | 3408 / 6029 |
+| [HOLD] p1 first-report age p50/p90 ms | 262 / 5243 | 360 / 590 | 147 / 5243 | 295 / 6029 | 360 / 5767 |
+| [HOLD] p0 closed-by-retx p50/p90 ms | 172 / 360 | 295 / 590 | 156 / 246 | 164 / 279 | 197 / 360 |
+| [HOLD] p1 closed-by-retx p50/p90 ms | 180 / 246 | 328 / 492 | 156 / 246 | 172 / 238 | 172 / 238 |
+| cx_leg, orig p0 (pooled, leg 0 : leg 1) | 6955 : 32106 | 1534 : 45448 | 50334 : 6421 | 23776 : 20267 | 11944 : 27995 |
+| cx_leg, orig p1 | 20903 : 13 | 20178 : 9 | 19963 : 2385 | 21392 : 183 | 20113 : 34 |
+| K = μ·C per 4 s bin (range over bins) | 65–97 | 92–187 (137–187 after 4 s) | 52–82 | 61–81 | 66–119 |
+| N_h seqs visited / report | 56–82 | 123–497 | 43–66 | 51–70 | 56–90 |
+
+**Predictions against outcomes.**
+- **Guard PASS:** hit. The c1d CPU risk was not realised (cpu_cli +0.00 %, cpu_srv −0.70 %). "c8 goodput worse": not seen (−4.07 %, i.e. better).
+- **Lever-B premise (K scales with the horizon):** **partly held.** Main-phase K rose about 2.1× (BASE ≈ 78 mean, CAND ≈ 170 after the first bin), short of the predicted ≈ 200–330 (×2.6–4.2). N_h rose 2–6×.
+- **CAND numbers:**
+  - tail median 0.44 s against 0.2–0.4 s: at the band's upper edge, just outside it;
+  - H0 median 446 against 100–200: **missed**. The row with no H0 is the shortest-tail row (0.194 s), so the n = 5 median is biased upward;
+  - first-report age p50 < 1 s: **hit** (p0 3.5 s → 0.34 s).
+  - The 64-range cap as the next limit was not instrumented directly; N_h up to ≈ 500 seqs per report is consistent with full 64-range reports.
+- **W0 (corrected prediction):** share 0.145 against ≈ 0.18 predicted. Tail 4.35 s against 1.2–1.9 s predicted: **refuted**; W0's tail sits inside BASE's range.
+- **W05:** a dose point (0.436); its tail is inside BASE's range.
+- **WDER:** its mean share is 0.593, against BASE's row range [0.610–0.666].
+  - Rows: 4 of 6 lie below BASE's minimum (0.524, 0.583, 0.586, 0.595), and 2 lie inside it (0.631, 0.638). By the registered outcome witness, the derived branch executed in at least those 4.
+  - Tail: 3.82 s [2.73–5.97], inside BASE's range. **Executed, no effect on the tail detected.**
+
+
+**Post-hoc readouts (not registered; from the committed logs, `docs/l1-raw/s52/rep52-diag-ld.tgz`, last sender `[HOLD]` line per path, summed over paths, mean of 6 rows):**
+
+| per run | BASE | CAND | W0 | W05 | WDER |
+|---|---|---|---|---|---|
+| resolutions fed | 27 508 | 376 950 | 39 164 | 26 662 | 25 648 |
+| healed without retransmit (`hn`) | 17 066 | 362 787 | 25 093 | 15 401 | 15 323 |
+| healed with a young retransmit (`hy`, spurious) | 447 | 2 968 | 888 | 324 | 310 |
+| closed by retransmit (`cx`) | 9 996 | 11 195 | 13 184 | 10 936 | 10 014 |
+| `ripe_frac`, p0 (row range) | 0.62–0.74 | 0.010–0.042 | 0.58–0.66 | 0.66–0.71 | 0.67–0.75 |
+
+- **Scale:** every row moved 507 616 source symbols (`cum=src`). Receiver duplicates are 0.35 % of source on BASE and 0.73 % on CAND.
+- **Goodput arithmetic:** 600 MB at 98.9 Mbit/s takes 48.5 s. Removing the 3.8 s of tail gives 107.3 Mbit/s, the CAND figure. **The whole +8.4 % is the tail; the main-phase rate is unchanged.** The percentage scales with 1 / transfer size.
+
+**Readings.**
+1. **Under the 20-gap horizon, leg choice does not move the tail.** On the BASE binary, moving the retransmit send-leg-1 share across 0.145–0.64 (W0, W05, WDER) leaves the tail at 3.8–4.4 s, inside BASE's range. Lever B alone takes it to 0.4 s.
+   - This does not show that leg choice is irrelevant once the horizon is 64. On CAND, 97 % of p0 closures go via leg 1, and closed-by-retransmit p50 rose 172 → 295 ms.
+   - §48b's leg counterfactual (3.9 → 1.5–1.9 s) is refuted only as a description of the 20-gap binary.
+   - The arms stay as levers until a W0-on-CAND row exists. That row is the natural test for lever B's duplicate cost.
+2. **Lever B's cost mechanism, measured post hoc:**
+   - The 64-gap horizon makes the sender see the slow leg's in-flight reorder gaps as holes: resolutions fed ×13.7, 96 % of them healing without a retransmit.
+   - Nearly none of those holes is ripe when first reported (`ripe_frac` 0.65 → 0.02).
+   - Retransmits fired on young holes that then healed rise ×6.6 (`hy` 447 → 2 968). These are likely spurious, and they track the duplicate increase (×2.1) and retransmits/GB +19 %.
+   - Client CPU/GB +6 % (overlapping ranges) is consistent with ×13.7 per-hole bookkeeping. Server CPU/GB −11 % likely reflects the shorter run (less tail-time polling); not measured.
+   - Hypothesis (untested): the cost comes from the gap gate letting some young holes through, which the wider horizon now exposes, not from the horizon itself. A ripeness-gated retransmit on CAND would test it.
+3. **Debt found:**
+   - the holeclass test premise (false on both trees);
+   - `alloc_per_symbol` is not a suite test, though the registration relied on it;
+   - `tests/common/recovery_model.rs` still models 20 gaps;
+   - c1d (open item, above).
