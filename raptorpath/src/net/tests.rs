@@ -6394,8 +6394,10 @@ fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64], bypass_law: bool
 /// test, so this cannot pass vacuously: with the p1 return leg 9 ms slower
 /// and the law bypassed, a p1-carried snapshot re-lists holes that fresher
 /// p0-carried snapshots already showed delivered, and the channel declares
-/// 182 seqs lost for 1 real loss (1 real, 88 false p0-original, 93 false
-/// p1-original). This was the red test `..._under_report_reordering` on
+/// delivered seqs lost. On main (20-gap `sack_to_gaps` horizon) it declares
+/// 182 for 1 real loss (1 real, 88 false p0-original, 93 false p1-original);
+/// the count depends on the horizon, so only "some delivered seq declared"
+/// is asserted. This was the red test `..._under_report_reordering` on
 /// branch dup-diag (12eafc33), RED on main before the law.
 #[test]
 fn the_law_declares_only_lost_seqs_under_report_reordering() {
@@ -6407,11 +6409,9 @@ fn the_law_declares_only_lost_seqs_under_report_reordering() {
         assert!(d.is_empty(), "rev {rev:?}, zero loss: declared {d:?}");
     }
     let (d, _) = packet_threshold_two_leg_sim([1_000, 10_000], &[5], true);
-    let p1 = d.iter().filter(|&&s| s % 4 == 3).count();
-    assert_eq!(
-        (d.len(), d.len() - p1, p1),
-        (182, 89, 93),
-        "control (law bypassed): the defect the law removes, declared {d:?}"
+    assert!(
+        d.iter().any(|&s| s != 5),
+        "control (law bypassed): the defect the law removes must reproduce, declared {d:?}"
     );
 }
 
@@ -6429,15 +6429,21 @@ fn the_law_is_inert_on_in_order_snapshots() {
 }
 
 /// Why main's 20-gap horizon hid most of the defect: the horizon keeps the
-/// OLDEST gaps, and with ≥ 20 older outstanding holes (c8's real losses
-/// awaiting their retransmit) every young cross-path hole lies past it, so
-/// no snapshot, stale or fresh, lists one. Law bypassed, 9 ms return skew:
-/// 31 single-seq p0 losses at 60, 62, …, 120 hold the frontier from 6 ms on;
-/// the stalls that make young p0 holes start at seq 400.
+/// OLDEST gaps, and with more older outstanding holes than the horizon
+/// holds (c8's real losses awaiting their retransmit) every young
+/// cross-path hole lies past it, so no snapshot, stale or fresh, lists one.
+/// Law bypassed, 9 ms return skew: `h + 11` single-seq p0 losses from seq 60
+/// (every second seq) hold the frontier; the stalls that make young p0
+/// holes start at seq 400. `h` is `sack_to_gaps`'s horizon as MEASURED on
+/// this tree (20 on main, 64 under lever B), so the test means the same on
+/// both.
 #[test]
-fn the_20_gap_horizon_hides_young_holes_behind_old_losses() {
-    assert_eq!(MAX_NACK_GAPS, 20, "the horizon this test reads");
-    let lose: Vec<u64> = (30..=60).map(|i| 2 * i).collect();
+fn the_gap_horizon_hides_young_holes_behind_old_losses() {
+    let many: Vec<(u64, u64)> = (0..100u64).map(|i| (2 * i + 1, 2 * i + 1)).collect();
+    let h = sack_to_gaps(0, &many).len() as u64;
+    assert!(h > 0 && h < 99, "precondition: sack_to_gaps truncates (horizon {h})");
+    assert!(60 + 2 * (h + 10) < 400, "the losses stay below the stalls (horizon {h})");
+    let lose: Vec<u64> = (30..=(30 + h + 10)).map(|i| 2 * i).collect();
     let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &lose, true);
     assert!(evals > 0);
     assert!(!d.is_empty(), "the old real losses are declared");
