@@ -81,7 +81,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py place43_parse.py place46_parse.py event_inject.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -93,7 +93,7 @@ PLAN="${LD_PLAN:-24}"
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"
 # TMPD: where the driver's per-row logs live. perf_rwm_c.sh itself writes /tmp, so a real run never sets it; only a stub driver may.
 TMPD="${LD_TMPD:-/tmp}"
-case "$PLAN" in 24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52)"; exit 3 ;; esac
+case "$PLAN" in 41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -108,9 +108,14 @@ P46=0; [ "$PLAN" = "46" ] && P46=1
 # Plan 41c (status 47) is the status-41b guard on the merge candidate: BASE (main 4926822) against CAND, no WIRE arm. PCAND=1 marks the
 # plans whose LD_BIN is the promoted candidate build (it must not carry RWM_PLACE_WIRE).
 PCAND=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ]; } && PCAND=1
+[ "$PLAN" = "41d" ] && PCAND=1
 # Plans 38, 41 and 41b share everything but the BASE arm (P38=1 is "the place-wire battery"; P41=1 has the BASE binary).
 P38=0; { [ "$PLAN" = "38" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$PLAN" = "41c" ]; } && P38=1
 P41=0; { [ "$PLAN" = "41" ] || [ "$PLAN" = "41b" ] || [ "$PLAN" = "41c" ]; } && P41=1
+[ "$PLAN" = "41d" ] && { P38=1; P41=1; }
+# Plan 41d (status 41d, the merge guard v2) is plan 41c's design and order with the clause set v2: c2 / c8 rows carry 600 MB (plan 48's sizes) and RWM_PERF_TIMEOUT_S=200,
+# c1s / c1d keep the guard size and plan 41c's timeout. The row parser (place38_parse, LD_PLAN=41d) reads the in-order delay of those rows; the scorer is score41d.
+P41D=0; [ "$PLAN" = "41d" ] && P41D=1
 # Plan 48 (status 48b, the bbr_rs battery) is plan 41c's design on two trees: BASE = main at launch, CAND = BASE + the section 48 commits run with
 # RWM_QUIC_CC=bbr_rs, at section 48's sizes (c1s / c1d 5 GB, c2 / c8 600 MB) and with RWM_PERF_TIMEOUT_S=200. Same row parser as 41c (place38_parse, LD_PLAN=48).
 P48=0; [ "$PLAN" = "48" ] && { P48=1; P38=1; P41=1; PCAND=1; }
@@ -141,6 +146,9 @@ fi
 { [ "$P48" = 1 ] || [ "$P52" = 1 ]; } && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)
 # Plan 48's per-cell sizes (status 48b / 48 Step 1); the cell names keep their scenario. bbr48_score / place38_parse.BYTES48 is the scorer's copy.
 p48_bytes() { case "$1" in c1s-400|c1d-400) echo 5000000000 ;; c2-100|c8-100) echo 600000000 ;; *) echo "" ;; esac; }
+# Plan 41d's long cells (place38_parse.BYTES41D / TIMEOUT41D are the scorer's copy; test_guard_v2.py asserts they agree). Empty = the cell keeps the guard size.
+p41d_bytes() { case "$1" in c2-100|c8-100) echo 600000000 ;; *) echo "" ;; esac; }
+p41d_timeout() { case "$1" in c2-100|c8-100) echo 200 ;; *) echo "" ;; esac; }
 # Plan 52's only cell (place38_parse.BYTES52 / REPORT_CELL52 are the scorer's copy; test_tail52.py asserts they agree).
 p52_bytes() { case "$1" in c8-100) echo 600000000 ;; *) echo "" ;; esac; }
 # Plan 43's per-cell constants (status section 43; place43_parse.CELLS is the scorer's copy, test_place43_parse.py asserts they agree).
@@ -218,6 +226,8 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
   [ "$P43" = 1 ] && bytes="$(p43_bytes "$cell")"
   local rowbytes=""
   [ "$P48" = 1 ] && { bytes="$(p48_bytes "$cell")"; rowbytes="$bytes"; }
+  local tmo_env=()
+  if [ "$P41D" = 1 ] && [ -n "$(p41d_bytes "$cell")" ]; then bytes="$(p41d_bytes "$cell")"; rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$(p41d_timeout "$cell")"); fi
   [ "$P52" = 1 ] && { bytes="$(p52_bytes "$cell")"; rowbytes="$bytes"; [ -n "$bytes" ] || { echo "UNKNOWN-CELL $cell (plan 52 runs c8-100 only)" >> "$OUT"; return 0; }; }
   local name="$cell-$arm"
   local arm_env=()
@@ -298,7 +308,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
         -u RWM_ORACLE_L_DGPS -u RWM_ORACLE_HOLD -u RWM_ORACLE_DIAG -u RWM_ORACLE_GAIN -u RWM_ORACLE_BRAKE_OFFSET_US \
         -u RWM_EVENT -u RWM_EVENT_QDISC -u RWM_EVENT_ONSET_S -u RWM_EVENT_HOLD_S \
         "${arm_env[@]}" "${evt_env[@]}" "${RDIAG_ENV[@]}" "${cap_env[@]}" \
-        SEED="$seed" RWM_GEN=0 RWM_DIAG=1 "${INSTR_ENV[@]}" \
+        SEED="$seed" RWM_GEN=0 RWM_DIAG=1 "${INSTR_ENV[@]}" "${tmo_env[@]}" \
         RWM_C_PIPELINE=window RWM_BIN="$RBIN" \
       bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" > "$TMPD/ld-drv.out" 2>&1
     rc=$?
@@ -577,10 +587,10 @@ plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
     mapfile -t tbl < "$LD_REPL_FILE"
     { [ "${#tbl[@]}" -ge 1 ] && [ "${#tbl[@]}" -le 4 ]; } || { echo "ABORT-PLAN41C replacement list has ${#tbl[@]} rows (1 to 4)" >> "$OUT"; exit 3; }
   elif [ "$1" = "1" ]; then
-    mapfile -t tbl < <(python3 ./place38_parse.py plan41c smoke)
-    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN41C smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
+    mapfile -t tbl < <(if [ "$PLAN" = "41d" ]; then python3 ./place38_parse.py plan41d smoke; else python3 ./place38_parse.py plan41c smoke; fi)        # plan 41d adds a 600 MB c8 row
+    [ "${#tbl[@]}" -eq "$([ "$PLAN" = "41d" ] && echo 3 || echo 2)" ] || { echo "ABORT-PLAN41C smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
   else
-    mapfile -t tbl < <(python3 ./place38_parse.py plan41c)
+    mapfile -t tbl < <(if [ "$PLAN" = "41d" ]; then python3 ./place38_parse.py plan41d; else python3 ./place38_parse.py plan41c; fi)
     [ "${#tbl[@]}" -eq 96 ] || { echo "ABORT-PLAN41C table has ${#tbl[@]} rows (96)" >> "$OUT"; exit 3; }
   fi
   for line in "${tbl[@]}"; do
@@ -593,7 +603,7 @@ plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
   fi
 }
 
-if [ "$PLAN" = "41c" ]; then
+if [ "$PLAN" = "41c" ] || [ "$PLAN" = "41d" ]; then
   if [ "${LD_SMOKE:-0}" = "1" ]; then
     plan41c 1
     echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
