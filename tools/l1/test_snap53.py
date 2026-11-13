@@ -337,13 +337,15 @@ if bash:
     got = {c: subprocess.run([bash, "-c", fns + f'\np53_bytes {c}'], capture_output=True, text=True).stdout.strip() for c in ("c8-100", "c1d-400", "c2-100")}
     check("battery p53_bytes (the shell) == place38_parse.BYTES53: 600 MB at c8-100, 5 GB at c1d-400 (plan 48's count), nothing else", got == {"c8-100": "600000000", "c1d-400": "5000000000", "c2-100": ""}
           and pp.BYTES53 == {"c8-100": 600000000, "c1d-400": 5000000000}, got)
-    out = subprocess.run([bash, "-c", f'cd "{HERE.replace(chr(92), "/")}" && source ./lib.sh >/dev/null 2>&1; RWM_RECOV_SNAPVER=1 RWM_PLACE_WDIV=0 rwm_forward_env'], capture_output=True, text=True).stdout
-    check("lib.sh's rwm_forward_env (what perf_rwm_c.sh hands both ends) carries RWM_RECOV_SNAPVER and RWM_PLACE_WDIV when set, and nothing when unset",
-          "RWM_RECOV_SNAPVER=1" in out and "RWM_PLACE_WDIV=0" in out, out)
+    # RWM_RECOV_SNAPVER / RWM_PLACE_WDIV are gone from the post-law engine (the law is shipped, status 54), so lib.sh no longer forwards them; the knob plan 54b needs is the store pool.
+    out = subprocess.run([bash, "-c", f'cd "{HERE.replace(chr(92), "/")}" && source ./lib.sh >/dev/null 2>&1; RWM_STORE_PATH_POOL=640 rwm_forward_env'], capture_output=True, text=True).stdout
+    out0 = subprocess.run([bash, "-c", f'cd "{HERE.replace(chr(92), "/")}" && source ./lib.sh >/dev/null 2>&1; env -u RWM_STORE_PATH_POOL bash -c "source ./lib.sh >/dev/null 2>&1; rwm_forward_env"'], capture_output=True, text=True).stdout
+    check("lib.sh's rwm_forward_env (what perf_rwm_c.sh hands both ends) carries RWM_STORE_PATH_POOL when set and nothing when unset",
+          "RWM_STORE_PATH_POOL=640" in out and "RWM_STORE_PATH_POOL" not in out0, (out, out0))
 else:
     print("SKIP no bash for the shell-side checks")
 check("battery: the env -u list clears RWM_RECOV_SNAPVER (an ambient value never leaks into a BASE / CAND row), INSTR_ENV for plan 53 carries RWM_PERF_TIMEOUT_S=200 like plan 48, RWM_DIAG=1 on every row",
-      "-u RWM_PLACE_WDIV -u RWM_PLACE_WDIV_DERIVED -u RWM_RECOV_SNAPVER" in bat and '[ "$P53" = 1 ] ) && INSTR_ENV' not in bat and '"$P53" = 1 ]; } && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)' in bat
+      "-u RWM_PLACE_WDIV -u RWM_PLACE_WDIV_DERIVED -u RWM_RECOV_SNAPVER" in bat and '[ "$P53" = 1 ] ) && INSTR_ENV' not in bat and '"$P53" = 1 ] || [ "$P54B" = 1 ]; } && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)' in bat
       and "RWM_GEN=0 RWM_DIAG=1" in bat)
 check("battery: plan 53's preflight pins both binaries to the RWM_RECOV_SNAPVER echo and the CAND binary to RWM_PLACE_WDIV (CW0 runs on it); the arm table has CANDS / BASES / CW0",
       'grep -aqF -- "RWM_RECOV_SNAPVER" "$b"' in bat and 'grep -aqF -- " RWM_PLACE_WDIV=" "$BIN"' in bat and "CANDS|BASES|CW0)" in bat and 'BASES) arm_env=(RWM_RECOV_SNAPVER=1); RBIN="$BIN_BASE"' in bat)

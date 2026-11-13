@@ -23,14 +23,16 @@ runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read(
 KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2"}
 T = hp.HARNESS_PATHS
 
-check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53 and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53"}, sorted(T))
+check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b"}, sorted(T))
 check("every path name is a known kind and none repeats", all(set(v) <= KINDS and len(set(v)) == len(v) for v in T.values()), T)
 check("every plan has the rehearse, full, prior-tests and prior-tests-mismatch paths", all({"rehearse", "full", "prior-tests", "prior-tests-mismatch"} <= set(v) for v in T.values()))
-check("historical-base (LD_BASE_SHA unset) is listed for every plan that allows it, and not for plans 41d, 48, 52 and 53, which require LD_BASE_SHA",
-      all(("historical-base" in v) == (p not in ("41d", "48", "52", "53")) for p, v in T.items()) and ': "${LD_BASE_SHA:?' in runall)
-m = re.search(r'case "\$PLAN" in 41c\|41d\|46\|47\|48\|52\|53\) ;; \*\) echo "ABORT-REHEARSE', runall)
+check("historical-base (LD_BASE_SHA unset) is listed for every plan that allows it, and not for plans 41d, 48, 52, 53, 54 and 54b, which require LD_BASE_SHA",
+      all(("historical-base" in v) == (p not in ("41d", "48", "52", "53", "54", "54b")) for p, v in T.items()) and ': "${LD_BASE_SHA:?' in runall)
+m = re.search(r'case "\$PLAN" in 41c\|41d\|46\|47\|48\|52\|53\|54b\) ;; \*\) echo "ABORT-REHEARSE', runall)
 check("loopdiag_run_all.sh defines LD_REHEARSE for exactly the plans of the table (other plans: ABORT-REHEARSE)", m is not None)
-check("every plan of the table is selectable in run_all's plan case", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in T))
+# plan 54 is plan 41d with LD_WITNESS54=1: run_all rewrites PLAN before the plan case, so it has no case line of its own, only the alias line
+check("every plan of the table is selectable in run_all's plan case (plan 54 through its alias to plan 41d)", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in T if p != "54")
+      and 'W54=0; [ "$PLAN" = "54" ] && { W54=1; PLAN=41d; }' in runall and "54" in T)
 check("LD_PRIOR_TESTS is wired into the suites step of the table's plans (suites_stage) and records its manifest at suite time",
       "suites_stage() {" in runall and "reuse_prior_tests() {" in runall and 'src_manifest > "$SD/SRC-MANIFEST.sha256"' in runall)
 

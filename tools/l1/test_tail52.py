@@ -141,8 +141,8 @@ check("the shell side agrees with the scorer: 600 MB for c8-100 only, 30-row and
       and 'P52=0; [ "$PLAN" = "52" ] && { P52=1; P38=1; P41=1; PCAND=1; }' in bat, None)
 check("run_all: plan 52 = suites, guard (41c, scored), rep52 (LD_PLAN=52) in its own dir; LD_BASE_SHA required; rehearsal ends after both smokes; reported block outside the guard's ledger",
       re.search(r"^  52\) P_SMOKE=smoke52", run, re.M) and 'P52=0; [ "$PLAN" = "52" ] && { P52=1; P46=1; P41=1; }' in run and "stage guard 41c; grc=$?" in run and "stage rep52 52" in run
-      and '[ "$P52" = 1 ] || [ "$P53" = 1 ]; then\n  : "${LD_BASE_SHA:?' in run and '52) smk=smoke52; scr=score52; chk=check52' in run and 'rep52_ok=$ROK' in run
-      and '[ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || [ "$PLAN" = "52" ] || [ "$PLAN" = "53" ]; then\n  SD="$RUN/suites"' in run and '[ "$PLAN" = "53" ] || {' in run, None)
+      and '[ "$P52" = 1 ] || [ "$P53" = 1 ] || [ "$P54B" = 1 ]; then\n  : "${LD_BASE_SHA:?' in run and '52) smk=smoke52; scr=score52; chk=check52' in run and 'rep52_ok=$ROK' in run
+      and '[ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || [ "$PLAN" = "52" ] || [ "$PLAN" = "53" ] || [ "$PLAN" = "54b" ]; then\n  SD="$RUN/suites"' in run and '[ "$PLAN" = "54b" ] || {' in run, None)
 check("run_all: the python gates for plan 52 include test_tail52.py", "test_bbr48_parse.py test_place38_parse.py test_tail52.py" in run)
 
 # ── the arm witnesses (red first) ──
