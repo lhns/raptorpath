@@ -216,12 +216,10 @@ const MAX_WINDOW_SIZE: usize = 200;
 /// EVICT (ρ < 1) in-order hold and the shed law (`net/shed.rs`).
 const REORDER_MIN_HOLD: Duration = Duration::from_millis(60);
 const REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
-/// Per-report gap cap: at most this many missing-seq gaps are acted on per
-/// report — the sender's [`sack_to_gaps`] inversion of one WindowAck's SACK
-/// ranges (the NACK repair loop's per-report work) and the receiver's
-/// `RepairRequest` hole list (`holes_at_least`). It does NOT bound the SACK
-/// encoding itself: that is [`MAX_SACK_RANGES`], derived from the control
-/// datagram size. (No `WindowNack` message exists on this wire.)
+/// Gap cap for [`compute_gap_ranges`] and the receiver's `RepairRequest`
+/// hole list (`holes_at_least`). It does NOT bound the sender's horizon over
+/// a SACK report ([`sack_to_gaps`]) nor the SACK encoding: both are
+/// [`MAX_SACK_RANGES`], derived from the control datagram size.
 pub const MAX_NACK_GAPS: usize = 20;
 /// Maximum repair symbols generated per NACK received.
 pub const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
