@@ -17,7 +17,7 @@ parts of the gap path:
 
 | test | arm | state | what it shows |
 |---|---|---|---|
-| `mp_packet_threshold_declares_only_lost_seqs_under_report_reordering` | off | known RED, `#[ignore]`; committed failing first (d60ea2d6 / 12eafc33) | p1 return 9 ms slower: **182** seqs declared lost for 1 real loss (§1 gives the leg split) |
+| `mp_packet_threshold_declares_only_lost_seqs_under_report_reordering` | off | known RED, `#[ignore]`; committed failing first (12eafc33) | p1 return 9 ms slower: **182** seqs declared lost for 1 real loss (§1 gives the leg split) |
 | `mp_packet_threshold_snapver_arm_declares_only_lost_seqs_under_report_reordering` | on | green | declared set = lost set at every skew |
 | `mp_packet_threshold_is_sound_with_in_order_snapshots` | off | green | in-order return: sound |
 | `mp_packet_threshold_20_gap_horizon_hides_young_holes_behind_old_losses` | off | green | why BASE is spared (§1) |
@@ -41,13 +41,13 @@ Nothing on the gap path orders them:
   with no version check. The only ordering guard in the handler is the
   cumulative point's `fetch_max` (`:490`, commented "acks arrive on multiple
   paths, out of order").
-- `serve_gaps` coalescing (`net/sender_phases.rs:646–667`) keeps the
+- `serve_gaps` coalescing (`net/sender_phases.rs`, the `while let Ok(n) = nack_rx.try_recv()` loop) keeps the
   last-DEQUEUED snapshot as "the newest". That is the last-arrived one, which
   is the stale one in exactly this case.
 - The packet-threshold evidence is a monotone accumulator over ALL processed
   snapshots (`mp_ingest_evidence`, `net/recovery_laws.rs`, called from
-  `sender_phases.rs:774`). The gap seq it judges comes from the CURRENT
-  snapshot (`sender_phases.rs:916`).
+  `serve_gaps`). The gap seq it judges comes from the CURRENT
+  snapshot (`mp_packet_threshold_fires` in the `'gaps` loop).
 - The stale skip does not catch it: under `RWM_STORE_SACK_RELEASE` a SACKed
   seq stays in `sent_store` until the cumulative point passes it
   (`net/sack.rs` §`sack_release_mark`), so `sent_store.get` succeeds and the
@@ -203,9 +203,14 @@ max):
   as a u32.
 
 **Why the order is monotone in receiver time.**
-- `next_expected` never moves back. A data arrival, a shed and a
-  force-deliver can only move it forward, and a forward move wins the
-  comparison whatever `received_above` does.
+- `next_expected` never moves back. Every receiver write is a `max`
+  (`receiver.rs` ~1019, 1066, 1544, 1628, 1759: `next_expected =
+  next_expected.max(..)`). A data arrival, a shed and a force-deliver can
+  only move it forward, and a forward move wins the comparison whatever
+  `received_above` does.
+  - `ReceivedAbove::sync`'s `next_expected < frontier` branch is defensive;
+    no caller lowers the point.
+  - `AboveReport` (the store gate) rests on the same premise.
 - At a fixed `next_expected` the received set above it only grows
   (`SeqBits::prune_below` is a prefix prune below the frontier,
   `receiver.rs:674`), so `received_above` only grows.
@@ -257,7 +262,7 @@ Per-symbol provenance:
 |---|---|
 | `G(R)` | measured: `sack_to_gaps(next_expected, sack_ranges)` of snapshot `R` |
 | `V(R)` | measured: two v9 wire fields, no new field; the order is `AboveReport`'s |
-| `E_j(t)` | measured: per-path delivered evidence, ingested from EVERY dequeued snapshot, stale ones included: their delivered facts are true, only their gap lists are out of date |
+| `E_j(t)` | measured: per-path delivered evidence, ingested from every PROCESSED batch, stale ones included: their delivered facts are true, only their gap lists are out of date. Batches that coalescing discards, or that a spent budget drops, are folded into `V*` but not ingested (unchanged from main) |
 | `π(s)` | measured: `source_path_map`, the original placement path |
 | `k_P = 3` | cited: RFC 9002 §6.1.1 kPacketThreshold |
 | `9/8` | cited: RFC 9002 §6.1.2 kTimeThreshold |
@@ -362,6 +367,20 @@ not of the horizon, so it should read the same on both binaries.
 
 BASE + arm: no reading should move beyond BASE's row spread, because BASE
 judges almost no young hole (§1, why BASE is spared).
+
+**Liveness condition (registered).** No test executes the arm's wiring
+inside `serve_gaps`; the sim calls `snapver_judges` directly. So an arm-on
+L1 row counts only if all three hold:
+- `[GATES]` shows `RWM_RECOV_SNAPVER=1`;
+- `[SNAPV]` shows p1 `stale` > 0, so the filter had something to act on;
+- `pt_st + tt_st = 0` on every leg, so it acted.
+
+A row failing any of these is VOID, not evidence.
+
+**N = 1.** With one return leg the arm is inert only because that leg is
+in order (netem `rate`, FIFO). The in-order arm of
+`mp_packet_threshold_is_sound_with_in_order_snapshots` asserts that arm on
+and arm off give identical declarations.
 
 Falsifiers:
 

@@ -1245,9 +1245,17 @@ fn mp_packet_threshold_evidence_and_decision() {
 /// cumulative frontier, as c8's real losses do, so short-lived holes above
 /// it stay above the frontier while stale snapshots re-list them.
 ///
+/// `horizon` truncates each report's gap list (the sender's per-report gap
+/// cap; `sack_to_gaps` also applies its own).
+///
 /// Returns (seqs the packet threshold declared lost, evaluations on
 /// p0-original gap seqs).
-fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64], arm: bool) -> (Vec<u64>, u64) {
+fn packet_threshold_two_leg_sim(
+    rev_us: [u64; 2],
+    lose: &[u64],
+    arm: bool,
+    horizon: usize,
+) -> (Vec<u64>, u64) {
     use super::seq_ring::SeqRing;
     const N: u64 = 4_000;
     const TAU_US: u64 = 100;
@@ -1312,7 +1320,10 @@ fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64], arm: bool) -> (V
             continue;
         }
         order.fold(*v);
-        let gaps = sack_to_gaps(ne, ranges);
+        // The sender's per-report gap horizon, explicit so a test means the
+        // same on a tree whose `sack_to_gaps` caps elsewhere (lever B: 64).
+        let mut gaps = sack_to_gaps(ne, ranges);
+        gaps.truncate(horizon);
         mp_ingest_evidence(&gaps, &map, &mut ev, &mut wm);
         if !snapver_judges(arm, &order, Some(*v)) {
             continue;
@@ -1344,12 +1355,21 @@ fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64], arm: bool) -> (V
 /// p0-original seqs in gap lists.
 #[test]
 fn mp_packet_threshold_is_sound_with_in_order_snapshots() {
-    let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[], false);
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[], false, 64);
     assert!(evals > 0, "the scenario must put p0-original seqs in gap lists");
     assert!(d.is_empty(), "in-order snapshots, zero loss: declared {d:?}");
-    let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[5], false);
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[5], false, 64);
     assert!(evals > 0);
     assert_eq!(d, vec![5], "in-order snapshots: the channel declares the real loss and only it");
+    // In-order return (the one-return-leg case): the arm never acts, so
+    // arm on and arm off give the same output.
+    for lose in [&[][..], &[5][..]] {
+        assert_eq!(
+            packet_threshold_two_leg_sim([1_000, 1_000], lose, true, 64),
+            packet_threshold_two_leg_sim([1_000, 1_000], lose, false, 64),
+            "in-order snapshots: arm on must equal arm off (lose {lose:?})"
+        );
+    }
 }
 
 /// RFC 9002 §6.1.1's soundness on a FIFO leg: the declared set equals the
@@ -1365,7 +1385,7 @@ fn mp_packet_threshold_is_sound_with_in_order_snapshots() {
 #[test]
 #[ignore = "known RED with RWM_RECOV_SNAPVER off: dup-diag defect (docs/derivations/dup-diag.md)"]
 fn mp_packet_threshold_declares_only_lost_seqs_under_report_reordering() {
-    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &[5], false);
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &[5], false, 64);
     assert!(evals > 0);
     let p1 = d.iter().filter(|&&s| s % 4 == 3).count();
     assert!(
@@ -1386,25 +1406,24 @@ fn mp_packet_threshold_declares_only_lost_seqs_under_report_reordering() {
 #[test]
 fn mp_packet_threshold_snapver_arm_declares_only_lost_seqs_under_report_reordering() {
     for rev in [[1_000, 1_000], [1_000, 10_000], [10_000, 1_000]] {
-        let (d, evals) = packet_threshold_two_leg_sim(rev, &[5], true);
+        let (d, evals) = packet_threshold_two_leg_sim(rev, &[5], true, 64);
         assert!(evals > 0, "rev {rev:?}: the channel must be reached");
         assert_eq!(d, vec![5], "rev {rev:?}: declared set must equal the lost set");
-        let (d, _) = packet_threshold_two_leg_sim(rev, &[], true);
+        let (d, _) = packet_threshold_two_leg_sim(rev, &[], true, 64);
         assert!(d.is_empty(), "rev {rev:?}, zero loss: declared {d:?}");
     }
 }
 
 /// Why BASE (the 20-gap sender horizon) is spared, filter off: the horizon
-/// keeps the OLDEST gaps, and with ≥ `MAX_NACK_GAPS` older outstanding holes
+/// keeps the OLDEST gaps, and with ≥ 20 older outstanding holes
 /// (c8's real losses awaiting their retransmit) every young cross-path hole
 /// lies past the horizon, so no snapshot, stale or fresh, ever lists one.
 /// 31 single-seq p0 losses at 60, 62, …, 120 hold the frontier from 6 ms on;
 /// the stalls that make young p0 holes start at seq 400.
 #[test]
 fn mp_packet_threshold_20_gap_horizon_hides_young_holes_behind_old_losses() {
-    assert_eq!(MAX_NACK_GAPS, 20, "the BASE horizon this test reads");
     let lose: Vec<u64> = (30..=60).map(|i| 2 * i).collect();
-    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &lose, false);
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &lose, false, 20);
     assert!(evals > 0);
     assert!(!d.is_empty(), "the old real losses are declared");
     assert!(
