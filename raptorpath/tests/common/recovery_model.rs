@@ -23,8 +23,21 @@ use raptorpath::net::{
     cooldown_elapsed, hole_nack_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
     mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us,
     retx_cooldown_us, shed_allowed, shed_deadline_us, tail_sweep_timeout_us, time_threshold_ripe,
-    MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK, NACK_RETX_COOLDOWN_FLOOR_US,
+    sack_to_gaps, MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK, MAX_SACK_RANGES,
+    NACK_RETX_COOLDOWN_FLOOR_US,
 };
+
+/// The sender's per-report gap horizon, read from the engine itself: how many
+/// gaps `sack_to_gaps` returns for a report with more isolated holes than any
+/// cap, so the model follows whichever constant the engine holds (no edit here).
+pub fn gap_horizon() -> usize {
+    static H: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *H.get_or_init(|| {
+        let n = MAX_NACK_GAPS.max(MAX_SACK_RANGES) as u64 + 1;
+        let ranges: Vec<(u64, u64)> = (1..=n).map(|i| (2 * i, 2 * i)).collect();
+        sack_to_gaps(0, &ranges).len()
+    })
+}
 
 // ───────────────────────────── env plumbing ─────────────────────────────
 
@@ -490,7 +503,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
                     obs_span.push((highest_seen + 1).saturating_sub(frontier));
                 }
                 if any_arrival && (arrived_since_ack > 0 || !missing.is_empty()) {
-                    // The first `MAX_NACK_GAPS` maximal missing runs — the
+                    // The first `gap_horizon()` maximal missing runs — the
                     // WindowAck's SACK payload.
                     let mut gaps: Vec<(u64, u64)> = Vec::new();
                     let mut it = missing.iter().copied();
@@ -501,14 +514,14 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
                                 hi = s;
                             } else {
                                 gaps.push((lo, hi));
-                                if gaps.len() >= MAX_NACK_GAPS {
+                                if gaps.len() >= gap_horizon() {
                                     break;
                                 }
                                 lo = s;
                                 hi = s;
                             }
                         }
-                        if gaps.len() < MAX_NACK_GAPS {
+                        if gaps.len() < gap_horizon() {
                             gaps.push((lo, hi));
                         }
                     }

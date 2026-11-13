@@ -111,12 +111,8 @@ fn assert_hold_lines(lines: &[&str]) {
         let (sp, xp, up) =
             (u64_field(l, "sp_n="), u64_field(l, "xp_n="), u64_field(l, "up_n="));
         assert_eq!(sp + xp + up, fed, "the same/cross/unattributed split must close: {l}");
-        // A ripeness reading is taken at every first report, of which there
-        // are at least as many as resolutions.
-        assert!(
-            u64_field(l, "age_n=") >= fed,
-            "a resolution cannot precede its own first report: {l}"
-        );
+        // No age_n-vs-fed relation holds: age_n counts only first reports that
+        // find a live flight, and unresolved holes also have readings.
         assert!(u64_field(l, "age_ripe=") <= u64_field(l, "age_n="), "{l}");
     }
 }
