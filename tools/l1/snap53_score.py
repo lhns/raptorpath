@@ -123,13 +123,15 @@ def snapv_problems(t, cell):
     return p
 
 
-def arm_on_problems(t, cell):
-    """The extra liveness of a CANDS / BASES row: the filter removed every stale judgement, stale reports exist on p1 (c8), and fed - det <= cx."""
+def arm_on_problems(t, cell, stale_ok=False):
+    """The extra liveness of a CANDS / BASES row: the filter removed every stale judgement, stale reports exist on p1 (c8), and fed - det <= cx.
+    `stale_ok` (see stale_absent) waives the p1 stale clause only: when the arm-off rows show no stale reports either, there is nothing for the arm to act on
+    and the arm-off falsifier (p1 stale/rep < 0.5) must be able to fire, so the arm rows are not voided for it."""
     sv, p = t.get("snapv") or {}, []
     for leg, d in sv.items():
         if d["pt_st"] + d["tt_st"]:
             p.append(f"pt_st+tt_st={d['pt_st'] + d['tt_st']}-on-p{leg}")
-    if cell == C8 and not (sv.get("1") or {}).get("stale"):
+    if cell == C8 and not stale_ok and not (sv.get("1") or {}).get("stale"):
         p.append("stale=0-on-p1")
     fmd, cx = t.get("fed_minus_det"), t.get("cx_sum")
     if fmd is None or cx is None:
@@ -139,7 +141,13 @@ def arm_on_problems(t, cell):
     return p
 
 
-def liveness(r):
+def stale_absent(rows, cell):
+    """True iff the block's arm-off rows (BASE and CAND at `cell`, otherwise LIVE: status LIVE and the [SNAPV] rules hold) all show p1 stale = 0 (and there is at least one)."""
+    off = [r for r in rows if r["cell"] == cell and r["arm"] in ("BASE", "CAND") and r.get("status") == "LIVE" and r.get("t53") and not snapv_problems(r["t53"], cell)]
+    return bool(off) and all(not _leg(r["t53"].get("snapv"), "1", "stale") for r in off)
+
+
+def liveness(r, stale_ok=False):
     """-> (verdict, reasons) of a ledger row: VOID when its status is not LIVE (an arm env missing from [GATES], a failed parse, a crash...) or a rule above fails."""
     t = r.get("t53")
     reasons = [] if r.get("status") == "LIVE" else [f"status={r.get('status')}"]
@@ -147,7 +155,7 @@ def liveness(r):
         return "VOID", reasons + ["no-t53" + (f"({r['t53_error']})" if r.get("t53_error") else "")]
     reasons += snapv_problems(t, r["cell"])
     if r["arm"] in ARMS_ON:
-        reasons += arm_on_problems(t, r["cell"])
+        reasons += arm_on_problems(t, r["cell"], stale_ok)
     return ("LIVE" if not reasons else "VOID"), reasons
 
 
@@ -265,16 +273,20 @@ def smoke(path, out=print):
          [f"{r['cell']} {r['arm']}: fed={(r.get('t53') or {}).get('fed_sum')} det={(r.get('t53') or {}).get('det')}" for r in rs if (r.get("t53") or {}).get("fed_minus_det") is None])
     crit("each arm's env in [GATES] on both ends (RWM_RECOV_SNAPVER: 1 on CANDS / BASES, 0 elsewhere; RWM_PLACE_WDIV=0 on CW0, absent elsewhere)",
          [f"{r['cell']} {r['arm']}: {' '.join(x for x in r['problems'] if x.startswith('gate-'))}" for r in rs if any(x.startswith("gate-") for x in r["problems"])])
-    crit("the filter arms' liveness (CANDS / BASES: pt_st + tt_st = 0 on every leg, stale > 0 on p1 at c8, fed - det <= cx)",
-         [f"{r['cell']} {r['arm']}: {' '.join(arm_on_problems(r.get('t53') or {}, r['cell']))}" for r in rs
-          if r["arm"] in ARMS_ON and arm_on_problems(r.get("t53") or {}, r["cell"])])
+    esc = {c: stale_absent(rs, c) for c in (C8, C1D)}      # the smoke's OWN BASE / CAND rows decide the p1 stale escape
+    for c in (C8, C1D):
+        if esc[c] and c == C8:
+            out(f"STALE-ABSENT block={c}: arm-off p1 stale = 0, the arm-off falsifier decides")
+    crit("the filter arms' liveness (CANDS / BASES: pt_st + tt_st = 0 on every leg, stale > 0 on p1 at c8 unless the smoke's BASE / CAND rows show none, fed - det <= cx)",
+         [f"{r['cell']} {r['arm']}: {' '.join(arm_on_problems(r.get('t53') or {}, r['cell'], esc[r['cell']]))}" for r in rs
+          if r["arm"] in ARMS_ON and arm_on_problems(r.get("t53") or {}, r["cell"], esc[r["cell"]])])
     crit(f"the c1d 5 GB row(s) finished inside RWM_PERF_TIMEOUT_S={PERF_TIMEOUT_S} (rc 0, a summary, not DNF)",
          [f"{r['cell']} {r['arm']}: rc={r.get('rc')} dnf={r.get('dnf')} status={r['status']} wall={r.get('wall_s')}" for r in rs
           if r["cell"] == C1D and (r.get("rc") != 0 or r.get("dnf") or not r.get("summary") or r.get("seconds") is None)])
     crit("no None among the registered readouts (hy_p50 without a hy and E without fast fires / stale reports are undefined, not missing)",
          [f"{r['cell']} {r['arm']}: {', '.join(missing(r))}" for r in rs if missing(r)])
     for r in rs:
-        v, why = liveness(r)
+        v, why = liveness(r, esc[r["cell"]])
         out(f"  LIVENESS {r['cell']} {r['arm']} s{r['seed']} rep{r['rep']}: {v} {' '.join(why)}")
     if bad:
         out("SMOKE-FAIL " + "; ".join(bad))
@@ -289,7 +301,8 @@ def _fmt(x, nd):
 
 
 def arm_stats(rows, fn, nd):
-    """-> 'median [min - max] (n)' of a readout over the rows, or '-' when no row has it."""
+    """-> 'mean M  median D  range [min - max]  (n)' of a readout over the rows, or '-' when no row has it. The registration's predictions and section 52's
+    reference figures are arm MEANS, so the mean is printed first, labelled, beside the median and the range."""
     v = []
     for r in rows:
         try:
@@ -300,7 +313,7 @@ def arm_stats(rows, fn, nd):
             v.append(x)
     if not v:
         return "-"
-    return f"median {_fmt(lc.med(v), nd)}  [{_fmt(min(v), nd)} - {_fmt(max(v), nd)}]  (n {len(v)})"
+    return f"mean {_fmt(sum(v) / len(v), nd)}  median {_fmt(lc.med(v), nd)}  range [{_fmt(min(v), nd)} - {_fmt(max(v), nd)}]  (n {len(v)})"
 
 
 def flatten(r):
@@ -336,13 +349,60 @@ def compare(rows, cell, ref, test, out, n_perm=None):
     return res["p_true"]
 
 
+def pooled(rows, label):
+    """The POOLED value of a ratio readout over an arm's LIVE rows: the sums first, then the ratio (never a mean of per-row ratios). Labels: `stale/rep` per leg,
+    the p1 share of rep, E. -> (value, n rows contributing) or None."""
+    sv = [(r.get("t53") or {}).get("snapv") for r in rows]
+    fires = [((r.get("t53") or {}).get("fires") or {}).get("fast") for r in rows]
+    ok = [(s_, f) for s_, f in zip(sv, fires) if s_]
+    if not ok:
+        return None
+    num = lambda g, k: sum(s_[g][k] for s_, _ in ok if g in s_)  # noqa: E731
+    leg_rep = lambda: sum(d["rep"] for s_, _ in ok for g, d in s_.items() if g != "-")  # noqa: E731
+    m = re.match(r"\[SNAPV\] p(\d) stale/rep", label)
+    if m:
+        g = m.group(1)
+        return (num(g, "stale") / num(g, "rep"), len(ok)) if num(g, "rep") else None
+    if label == "[SNAPV] p1 share of rep":
+        return (num("1", "rep") / leg_rep(), len(ok)) if leg_rep() else None
+    if label.startswith("E (enrichment"):
+        stale = sum(d["stale"] for s_, _ in ok for g, d in s_.items() if g != "-")
+        pt = sum(d["pt_st"] for s_, _ in ok for g, d in s_.items() if g != "-")
+        fast = sum(f for _, f in ok if f is not None)
+        return ((pt / fast) / (stale / leg_rep()), len(ok)) if fast and stale and leg_rep() else None
+    return None
+
+
+POOLED_LABELS = [f"[SNAPV] p{g} stale/rep" for g in "01"] + ["[SNAPV] p1 share of rep", "E (enrichment factor)"]
+
+
+def readout_line(rs, label, fn, nd):
+    if label in POOLED_LABELS:
+        pv = pooled(rs, label)
+        return "pooled " + ("-" if pv is None else f"{pv[0]:.{nd}f}  (sums over the arm's LIVE rows, then the ratio; n {pv[1]})")
+    return arm_stats(rs, fn, nd)
+
+
+def rows_table(rows, cell, out):
+    """Per-row values (the per-row ratios live here, never averaged): arm, seed, rep, stale/rep per return leg, E, fed - det, cx, duplicates, fires."""
+    out(f"  per-row table, {cell} (LIVE rows): arm seed rep | stale/rep p0 p1 | E | fed-det cx | dup p0/p1 | fired fast")
+    for r in sorted((x for x in rows if x["cell"] == cell), key=lambda x: (x["arm"], x["seed"], x["rep"])):
+        t = r.get("t53") or {}
+        sv = t.get("snapv") or {}
+        sr = [_fmt(_ratio(_leg(sv, g, "stale"), _leg(sv, g, "rep")), 3) for g in ("0", "1")]
+        dl = t.get("rx_dup_legs") or {}
+        f = t.get("fires") or {}
+        out(f"    {r['arm']:<6} s{r['seed']:<3} r{r['rep']} | {sr[0]} {sr[1]} | {_fmt(t.get('E'), 2)} | {t.get('fed_minus_det')} {t.get('cx_sum')} | {dl.get('0')}/{dl.get('1')} | {f.get('fired')} {f.get('fast')}")
+
+
 def report_cell(rows, cell, arms, out):
     out(f"== {cell}")
     for arm in arms:
         rs = [r for r in rows if r["cell"] == cell and r["arm"] == arm]
         out(f"-- {arm}: n = {len(rs)} counting rows")
         for label, fn, nd in READOUTS:
-            out(f"  {label:<36} " + arm_stats(rs, fn, nd))
+            out(f"  {label:<36} " + readout_line(rs, label.strip(), fn, nd))
+    rows_table(rows, cell, out)
 
 
 def score(paths, out=print):
@@ -354,7 +414,11 @@ def score(paths, out=print):
     out("STALE GAP REPORTS UNDER LEVER B (status 53), REPORTED ONLY: c8-100 at 600 MB (BASE, CAND, CANDS = CAND + RWM_RECOV_SNAPVER=1, BASES = BASE + RWM_RECOV_SNAPVER=1, "
         "CW0 = CAND + RWM_PLACE_WDIV=0) and c1d-400 at 5 GB (BASE, CAND, CANDS); nothing here is scored")
     out(f"ROWS {len(rows)}/{n_exp}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
-    verdicts = {id(r): liveness(r) for r in rows}
+    esc = {c: stale_absent(rows, c) for c in (pp.CELL53_C8, pp.CELL53_C1D)}
+    for c in (pp.CELL53_C8,):
+        if esc[c]:
+            out(f"STALE-ABSENT block={c}: arm-off p1 stale = 0, the arm-off falsifier decides")
+    verdicts = {id(r): liveness(r, esc[r["cell"]]) for r in rows}
     out("LIVENESS per row (VOID rows are listed and do not enter the readouts; a void row means that arm is re-run)")
     for cell in (pp.CELL53_C8, pp.CELL53_C1D):
         for arm in sorted({r["arm"] for r in rows if r["cell"] == cell}, key=lambda a: pp.ARMS53.index(a)):
@@ -388,11 +452,11 @@ def score(paths, out=print):
     out("== c1d: CANDS against CAND (n = 6 vs 12; not predicted numerically)")
     compare(live, pp.CELL53_C1D, "CAND", "CANDS", out)
     out("")
-    out("== direction check (no derived bound): stale/rep on the c1d legs against the c8 p1 leg, median per arm")
+    out("== direction check (no derived bound): stale/rep on the c1d legs against the c8 p1 leg, pooled per arm")
     for arm in pp.ARMS53_C1D:
         c8 = [r for r in live if r["cell"] == pp.CELL53_C8 and r["arm"] == arm]
         c1 = [r for r in live if r["cell"] == pp.CELL53_C1D and r["arm"] == arm]
-        sr = lambda rs, g: arm_stats(rs, lambda r, t: _ratio(_leg(t.get("snapv"), g, "stale"), _leg(t.get("snapv"), g, "rep")), 3)  # noqa: E731
+        sr = lambda rs, g: readout_line(rs, f"[SNAPV] p{g} stale/rep", None, 3)  # noqa: E731
         out(f"  {arm:<6} c8 p1 {sr(c8, '1')}\n         c1d p0 {sr(c1, '0')}\n         c1d p1 {sr(c1, '1')}")
     out(f"VERDICT53 REPORTED-ONLY rows={len(rows)}/{n_exp} live={len(live)} void={len(rows) - len(live)}")
 

@@ -402,6 +402,95 @@ with redirect_stdout(buf):
 check("score: a row whose y differs from fast is flagged (Y-NE-FAST)", "Y-NE-FAST" in buf.getvalue(), buf.getvalue()[:600])
 os.remove(lp)
 
+# ── review changes: means beside medians, pooled ratios, the stale = 0 escape ──
+check("arm_stats prints the labelled mean, median and range: [1, 2, 9] -> mean 4.0, median 2.0, range [1.0 - 9.0]",
+      sn.arm_stats([{"t53": {"x": v}} for v in (1.0, 2.0, 9.0)], lambda r, t: t["x"], 1) == "mean 4.0  median 2.0  range [1.0 - 9.0]  (n 3)", sn.arm_stats([{"t53": {"x": v}} for v in (1.0, 2.0, 9.0)], lambda r, t: t["x"], 1))
+
+
+def srow(arm, p0, p1, fast=1000, cell="c8-100", **kw):
+    c, s = logs(snap=snapv_line(p0=p0, p1=p1), snapver="1" if arm in sn.ARMS_ON else "0")
+    s = [x.replace("det=206359", "det=340000") for x in s]
+    m = sn.row_metrics(c, s, DRV, 600_000_000)
+    m["fires"]["fast"] = fast
+    return row(arm, cell, m, **kw)
+
+
+rA, rB = srow("CAND", (1000, 0, 0, 0), (100, 90, 40, 0), fast=1000), srow("CAND", (1000, 0, 0, 0), (900, 100, 10, 0), fast=3000)
+pv = sn.pooled([rA, rB], "[SNAPV] p1 stale/rep")
+check("pooled stale/rep is the ratio of sums (190 / 1000 = 0.19), not the mean of per-row ratios (0.5)", abs(pv[0] - 0.19) < 1e-12 and abs((0.9 + 100 / 900) / 2 - 0.5) > 0.0 and pv[1] == 2, pv)
+check("pooled p1 share of rep = (100 + 900) / (2000 + 1000) over the numeric legs", abs(sn.pooled([rA, rB], "[SNAPV] p1 share of rep")[0] - 1000 / 3000) < 1e-12)
+pe = sn.pooled([rA, rB], "E (enrichment factor)")
+check("pooled E = (sum pt_st / sum fast) / (sum stale / sum rep) = (50 / 4000) / (190 / 3000); the mean of the per-row E differs",
+      abs(pe[0] - (50 / 4000) / (190 / 3000)) < 1e-12 and abs(pe[0] - (sn.enrichment(sn.snapv([snapv_line(p0=(1000, 0, 0, 0), p1=(100, 90, 40, 0))]), 1000) + sn.enrichment(sn.snapv([snapv_line(p0=(1000, 0, 0, 0), p1=(900, 100, 10, 0))]), 3000)) / 2) > 0.05, pe)
+check("pooled is None without any [SNAPV] row", sn.pooled([row("CAND", "c8-100", {"snapv": None, "fires": {}})], "E (enrichment factor)") is None)
+ln = sn.readout_line([rA, rB], "[SNAPV] p1 stale/rep", None, 3)
+ln2 = sn.readout_line([rA, rB], "receiver duplicates", lambda r, t: t.get("rx_dup"), 0)
+check("the report labels each statistic: ratios read `pooled`, counts read `mean ... median ... range`", ln.startswith("pooled 0.190") and ln2.startswith("mean ") and " median " in ln2 and " range [" in ln2, (ln, ln2))
+buf = io.StringIO()
+sn.report_cell([rA, rB], "c8-100", ["CAND"], buf.write if False else (lambda x: buf.write(x + "\n")))
+tb = buf.getvalue()
+check("the per-row table keeps the per-row ratios (0.000 0.900 and 0.000 0.111), beside the pooled value", "per-row table, c8-100" in tb and "0.000 0.900" in tb and "0.000 0.111" in tb and "pooled 0.190" in tb, tb[-900:])
+
+# the stale = 0 escape
+Z0, Z1 = (9000, 0, 0, 0), (1000, 0, 0, 0)               # p0 / p1 with no stale report
+def zrow(arm, p1=Z1, **kw):
+    r = srow(arm, Z0, p1, **kw)
+    return r
+
+
+off_zero = [zrow("BASE"), zrow("CAND")]
+on_zero = zrow("CANDS")
+on_zero["t53"]["fed_minus_det"], on_zero["t53"]["cx_sum"] = 5, 10
+check("stale_absent: every LIVE arm-off row (BASE and CAND) with p1 stale = 0 -> True; one with stale > 0, no arm-off row, or only a void arm-off row -> False",
+      sn.stale_absent(off_zero, "c8-100") and not sn.stale_absent(off_zero + [zrow("CAND", p1=(1000, 5, 0, 0))], "c8-100") and not sn.stale_absent([on_zero], "c8-100")
+      and sn.stale_absent(off_zero + [zrow("BASE", p1=(1000, 5, 0, 0), status="WITNESS-FAIL")], "c8-100") and not sn.stale_absent([zrow("BASE", status="WITNESS-FAIL")], "c8-100")
+      and not sn.stale_absent(off_zero, "c1d-400"), None)
+check("escape: a CANDS row with p1 stale = 0 is VOID without the escape and LIVE with it", sn.liveness(on_zero)[0] == "VOID" and "stale=0-on-p1" in sn.liveness(on_zero)[1] and sn.liveness(on_zero, True) == ("LIVE", []), (sn.liveness(on_zero), sn.liveness(on_zero, True)))
+bad_pt = zrow("CANDS", p1=(1000, 0, 3, 0))
+bad_pt["t53"]["fed_minus_det"], bad_pt["t53"]["cx_sum"] = 5, 10
+bad_fd = zrow("BASES")
+bad_fd["t53"]["fed_minus_det"], bad_fd["t53"]["cx_sum"] = 500, 10
+check("escape: the other arm-row rules still apply (pt_st > 0 -> VOID, fed - det > cx -> VOID)",
+      sn.liveness(bad_pt, True)[0] == "VOID" and any("pt_st+tt_st=3" in x for x in sn.liveness(bad_pt, True)[1]) and sn.liveness(bad_fd, True)[0] == "VOID" and any("fed-det=500>cx=10" in x for x in sn.liveness(bad_fd, True)[1]))
+
+
+def score_text(rows_):
+    fd_, lp_ = tempfile.mkstemp(suffix=".log")
+    with os.fdopen(fd_, "w") as fh:
+        fh.write("".join("P38ROW " + json.dumps(r, sort_keys=True) + "\n" for r in rows_))
+    b = io.StringIO()
+    with redirect_stdout(b):
+        sn.score([lp_])
+    os.remove(lp_)
+    return b.getvalue()
+
+
+for i, r in enumerate(off_zero):
+    r["seed"], r["rep"] = "42", i + 1
+on_zero["seed"], on_zero["rep"] = "42", 3
+txt0 = score_text(off_zero + [on_zero])
+check("score: when the arm-off rows have p1 stale = 0 it prints `STALE-ABSENT block=c8-100: arm-off p1 stale = 0, the arm-off falsifier decides` and the CANDS row is not voided",
+      "STALE-ABSENT block=c8-100: arm-off p1 stale = 0, the arm-off falsifier decides" in txt0 and "VOID c8-100 CANDS" not in txt0, txt0[:900])
+txt1 = score_text([srow("BASE", Z0, (1000, 900, 0, 0), seed="42", rep=1), on_zero])
+check("score: with stale reports on the arm-off rows there is no escape: no STALE-ABSENT line, the CANDS row with p1 stale = 0 is VOID", "STALE-ABSENT" not in txt1 and "VOID c8-100 CANDS" in txt1 and "stale=0-on-p1" in txt1, txt1[:900])
+
+
+def zero_smoke(arm_zero):
+    def m(rows_):
+        for r in rows_:
+            if r["cell"] == "c8-100" and r["arm"] in arm_zero:
+                for g in ("1",):
+                    r["t53"]["snapv"][g]["stale"] = 0
+                if r["arm"] in sn.ARMS_ON:
+                    pass
+    return m
+
+
+rc, tx = run_smoke(smoke_rows(zero_smoke(("BASE", "CAND", "CANDS", "BASES"))))
+check("smoke: the smoke's own BASE / CAND rows show p1 stale = 0 -> the escape applies (STALE-ABSENT printed) and the filter arms pass", rc == 0 and "STALE-ABSENT block=c8-100" in tx and "SMOKE-PASS" in tx, tx[-900:])
+rc, tx = run_smoke(smoke_rows(zero_smoke(("CAND", "CANDS", "BASES"))))
+check("smoke: BASE still shows p1 stale > 0 -> no escape: a CANDS row with p1 stale = 0 fails `the filter arms' liveness`", rc == 1 and "STALE-ABSENT" not in tx and re.search(r"^FAIL the filter arms' liveness", tx, re.M) is not None, tx[-900:])
+
 # ── the dispatcher the shell calls ──
 fd, lp = tempfile.mkstemp(suffix=".log")
 with os.fdopen(fd, "w") as fh:
