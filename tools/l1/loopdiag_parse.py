@@ -1174,6 +1174,16 @@ for _g in GRID34.values():
 for _c, _spec in (("c2slot-100", ("c2slot", "c2slot", "single", 100000000)), ("c2tbf-100", ("c2tbf", "c2tbf", "single", 100000000))):
     sp.CELL_SPEC[_c] = _spec
     sp.N_LEGS[_c] = 1
+# Adversarial cells (adv_cells.sh; loopdiag_battery.sh cell_spec is the shell copy, harness_paths.ADV_CELLS the table; test_adv_cells.py asserts all agree).
+ADV_CELL_SPEC = {
+    "c2ctl-100": ("c2ctl", "c2ctl", "single", 100000000), "jit0-100": ("jit0", "jit0", "single", 100000000),
+    "jit5-100": ("jit5", "jit5", "single", 100000000), "jit15-100": ("jit15", "jit15", "single", 100000000),
+    "jit25-100": ("jit25", "jit25", "single", 100000000), "shal8-50": ("shal8", "shal8", "single", 50000000),
+    "pol100-25": ("pol100", "pol100", "single", 25000000),
+}
+for _c, _spec in ADV_CELL_SPEC.items():
+    sp.CELL_SPEC[_c] = _spec
+    sp.N_LEGS[_c] = 1
 # Plan 36 (disp36.py): CAP<n> = RWM_STORE=<n> + packet capture, NOCAP<n> = RWM_STORE=<n> alone.
 for _n in (16, 32, 64, 128, 256, 384, 512, 768, 1024, 2048):
     for _a in ("CAP", "NOCAP"):

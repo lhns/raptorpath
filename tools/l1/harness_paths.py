@@ -21,3 +21,18 @@ HARNESS_PATHS = {
     "52": ("rehearse", "full", "prior-tests", "prior-tests-mismatch", "guard-v2"),
     "41d": ("rehearse", "full", "prior-tests", "prior-tests-mismatch"),
 }
+
+# The adversarial cells (adv_cells.sh, ADR-0068 W5.3): scenario name (what perf_rwm_c.sh routes to adv_cells.sh instead of topo_dual.sh) ->
+# the loopdiag_battery.sh cell name that selects it. These are CELLS, not plans: they ride the existing battery rows (run_one ->
+# perf_rwm_c.sh), so no loopdiag_run_all.sh path is added above. The cell code path (perf_rwm_c.sh's topology routing) is NOT executed by
+# test_stubrun.py, whose driver stub replaces perf_rwm_c.sh; test_adv_cells.py executes that routing against a stub `ip`.
+# Asserted equal to lib.sh ADV_CELLS, loopdiag_battery.sh cell_spec, loopdiag_parse.ADV_CELL_SPEC and adv_cells_validate.CELLS.
+ADV_CELLS = {
+    "c2ctl": "c2ctl-100",
+    "jit0": "jit0-100",
+    "jit5": "jit5-100",
+    "jit15": "jit15-100",
+    "jit25": "jit25-100",
+    "shal8": "shal8-50",
+    "pol100": "pol100-25",
+}

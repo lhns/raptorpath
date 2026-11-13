@@ -105,8 +105,8 @@ case "$MODE" in
     single) CLI_LEGS=(cli0);                SRV_LEGS=(srv0) ;;
     *) echo "unknown mode '$MODE' (want single|dual|quad)" >&2; exit 2 ;;
 esac
-TOPO=./topo_dual.sh
-[[ "$MODE" == "quad" ]] && TOPO=./topo_quad.sh
+# Dual by default, quad for quad; the adversarial cells (adv_cells.sh) only as a single-mode cell (lib.sh topo_script).
+TOPO=$(topo_script "$MODE" "$SCENA" "$SCENB") || exit 2
 
 TCPD_PIDS=()   # capture PIDs (RWM_PCAP_DIR; empty otherwise)
 cleanup() {
@@ -122,6 +122,7 @@ cleanup() {
     # the namespaces, so the second call is a no-op.
     bash ./topo_dual.sh down >/dev/null 2>&1 || true
     bash ./topo_quad.sh down >/dev/null 2>&1 || true
+    bash ./adv_cells.sh down >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 # Arm the witness before the first thing that can fail — `cleanup` itself,
@@ -160,12 +161,9 @@ fi
 # SEED is a per-leg spec (see lib.sh): a bare `42` derives 42/1042/2042/3042
 # and gives every leg its own netem realization. It is passed through verbatim
 # so a caller can still pin the legs equal (`SEED=42,42`).
-if [[ "$MODE" == "quad" ]]; then
-    aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENA" "$SCENB" "$SCENB" \
-        --seed "${SEED:-42}"
-else
-    aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENB" --seed "${SEED:-42}"
-fi
+# (lib.sh topo_up_args: quad `A A B B`, dual `A B`, an adversarial cell `A` with leg 0's seed -- all followed by `--seed`.)
+# shellcheck disable=SC2046
+aw_step topo_up bash "$TOPO" up $(topo_up_args "$MODE" "$SCENA" "$SCENB" "${SEED:-42}")
 aw_state post_topo
 # The receiver netns's kernel UDP receive-buffer drops, baselined before the
 # server starts: the one local-loss term no engine token counts (read again

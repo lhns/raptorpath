@@ -210,6 +210,15 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
     c1d-3500) echo "c1 c1 dual 3500000000" ;;
     c2slot-100) echo "c2slot c2slot single 100000000" ;;
     c2tbf-100)  echo "c2tbf c2tbf single 100000000" ;;
+    # The adversarial cells (adv_cells.sh via perf_rwm_c.sh; harness_paths.ADV_CELLS, loopdiag_parse.ADV_CELL_SPEC). Sizes: the jitter
+    # family and its c2ctl control at 100 MB like c2-100; shal8 (~10 Mbit/s seen under Copa) 50 MB; pol100 (~8 Mbit/s seen) 25 MB.
+    c2ctl-100)  echo "c2ctl c2ctl single 100000000" ;;
+    jit0-100)   echo "jit0 jit0 single 100000000" ;;
+    jit5-100)   echo "jit5 jit5 single 100000000" ;;
+    jit15-100)  echo "jit15 jit15 single 100000000" ;;
+    jit25-100)  echo "jit25 jit25 single 100000000" ;;
+    shal8-50)   echo "shal8 shal8 single 50000000" ;;
+    pol100-25)  echo "pol100 pol100 single 25000000" ;;
     *) echo "" ;;
   esac
 }

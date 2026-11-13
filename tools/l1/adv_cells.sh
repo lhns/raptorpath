@@ -14,9 +14,19 @@
 #       jit25  netem delay 20ms 25ms 25%             (heavy cellular class)
 #     all at c2-class rate/loss (100mbit, GE 1.3% 50% data dir), jitter
 #     both directions (topo.sh convention), correlation 25%.
-#     Note: netem jitter re-orders in-flow packets; real aggregation mostly
-#     preserves order. Both attack the delay signal; the reorder excess makes
-#     this cell strictly harsher.
+#     NO REORDERING, by construction: every jitter cell sets `rate`, and with
+#     `rate` netem schedules each packet no earlier than the one before it
+#     (netem_enqueue's rate branch), so the queue is FIFO whatever the jitter
+#     (lib.sh: 0 out-of-order in 100 000 on jittered c2/c3; 82 920 with the
+#     same jitter and no `rate`). That is the intent: real aggregation
+#     (A-MPDU, in-order HARQ) preserves order and the dose here is DELAY
+#     VARIATION, not reordering. Consequence worth knowing: by the same rule a
+#     packet with a short draw behind one with a long draw is held to the
+#     earlier packet's release time, so at flow density (spacing << J) the
+#     delivered delays are a running maximum of the draws -- shifted up and
+#     bunched (ack-compression-like clumps), unlike the uniform [20-J, 20+J]
+#     a sparse probe sees. `check` proves both: sparse spacing measures the
+#     marginal draw, a dense stream must show 0 inversions in BOTH directions.
 #
 #   shallow-buffer:
 #       shal8  bottleneck queue = 8 packets (vs netem's default 1000-pkt
@@ -46,7 +56,20 @@
 #          (docs/measurement-discipline.md rule 1 applied to the substrate): idle ping RTT distribution, iperf3 UDP
 #          overload (120M > the 100M ceiling) loss%, and ping-under-load
 #          (the queue signature: deep cell inflates RTT under load, shallow
-#          caps it, the policer never builds it).
+#          caps it, the policer never builds it). Informational prints only.
+#        sudo bash adv_cells.sh check <cell> [--seed N]
+#          the PASS/FAIL mechanism validation (adv_cells_validate.py: delay
+#          floor + jitter distribution, FIFO (0 reorders), queue depth, policer
+#          drop pattern vs shaper queueing, the cells' own tc counters; no
+#          engine). Builds the cell, probes it, judges, ALWAYS tears down;
+#          exit 0 = every check PASS. ADV_MEASURE_FIXTURE=<json> judges a
+#          canned measurement instead of probing (stub/dry-run; tests).
+#        bash adv_cells.sh known <cell>             (exit 0 when it is a cell)
+#
+# SAFETY: this script creates and deletes ONLY the namespaces rp-cli / rp-srv
+# (guard_ns), shapes ONLY the veth ends cli0 / srv0 inside them, and never
+# touches ens18, the firewall, sysctls or sshd (test_adv_cells.py scans every
+# command it generates for exactly that).
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -54,9 +77,7 @@ source ./lib.sh
 
 IPERF_PORT=5210
 
-adv_known() {
-    case "$1" in c2ctl|jit0|jit5|jit15|jit25|shal8|pol100) return 0 ;; *) return 1 ;; esac
-}
+adv_known() { adv_cell_known "$1"; }   # lib.sh: the one list of cells
 
 down() {
     for ns in "$NS_CLI" "$NS_SRV"; do
@@ -220,12 +241,25 @@ EOF
     down >/dev/null
 }
 
+check() {
+    local cell="$1"; shift
+    local seed="" rc=0
+    [[ "${1:-}" == "--seed" ]] && seed="$2"
+    adv_known "$cell" || { echo "unknown adv cell: $cell" >&2; exit 1; }
+    if [[ -n "$seed" ]]; then up "$cell" --seed "$seed" >/dev/null; else up "$cell" >/dev/null; fi
+    python3 ./adv_cells_validate.py run "$cell" --fixture "${ADV_MEASURE_FIXTURE:-}" || rc=$?
+    down >/dev/null
+    return "$rc"
+}
+
 case "${1:-}" in
+    check)    shift; check "$@" ;;
+    known)    adv_known "${2:-}" ;;
     up)       shift; up "$@" ;;
     down)     down ;;
     status)   status ;;
     counters) counters ;;
     validate) shift; validate "$@" ;;
-    *) echo "usage: $0 up <cell> [--seed N] | down | status | counters | validate <cell> [--seed N]" >&2
+    *) echo "usage: $0 up <cell> [--seed N] | down | status | counters | validate <cell> [--seed N] | check <cell> [--seed N] | known <cell>" >&2
        echo "cells: c2ctl jit0 jit5 jit15 jit25 shal8 pol100" >&2; exit 1 ;;
 esac

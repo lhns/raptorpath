@@ -269,6 +269,42 @@ scenario_child_qdisc() { # scenario
     esac
 }
 
+# The adversarial cells (adv_cells.sh; ADR-0068 W5.3): single-leg topologies that are NOT rows of scenario_params, because they are not
+# one netem line (shal8 is tbf + netem, pol100 an ingress police). The one list: adv_cells.sh, perf_rwm_c.sh (topology routing) and
+# harness_paths.ADV_CELLS (asserted equal by test_adv_cells.py) all read it.
+ADV_CELLS="c2ctl jit0 jit5 jit15 jit25 shal8 pol100"
+adv_cell_known() { # name -> 0 when it is an adversarial cell
+    local c
+    for c in $ADV_CELLS; do [[ "$c" == "$1" ]] && return 0; done
+    return 1
+}
+
+# The topology script of a perf_rwm_c.sh invocation. An adversarial cell is a single-leg cell: single mode with both scenarios equal.
+topo_script() { # mode scenA scenB
+    if adv_cell_known "$2" || adv_cell_known "$3"; then
+        if [[ "$1" != "single" || "$2" != "$3" ]]; then
+            echo "adversarial cell '$2/$3' runs only as single mode with both scenarios equal (got mode '$1')" >&2
+            return 1
+        fi
+        echo ./adv_cells.sh
+    elif [[ "$1" == "quad" ]]; then
+        echo ./topo_quad.sh
+    else
+        echo ./topo_dual.sh
+    fi
+}
+
+# The words after `up` for that script (no word contains whitespace). adv_cells.sh takes ONE cell and ONE integer seed: leg 0's.
+topo_up_args() { # mode scenA scenB seed
+    if adv_cell_known "$2"; then
+        echo "$2" --seed "$(leg_seed "$4" 0)"
+    elif [[ "$1" == "quad" ]]; then
+        echo "$2" "$2" "$3" "$3" --seed "$4"
+    else
+        echo "$2" "$3" --seed "$4"
+    fi
+}
+
 # ── Datagram-level loss truth ────────────────────────────────────────────
 #
 # netem counts skbs, not datagrams (see the scenario table above), so the
