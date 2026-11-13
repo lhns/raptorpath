@@ -311,7 +311,7 @@ Defect findings under FORMULA-FIRST and MEASUREMENT DISCIPLINE 17/18. Each one i
    - Diagnosis: `docs/derivations/dup-diag.md` (branch `dup-diag`), summarised under §52 Erratum; the measurement goes in §53.
 6. **The receiver's `hole_nack_refresh` clock reads a degenerate input (`dup-diag`).** `[QCLK]` receiver shows srtt = exactly 50 000 µs with sigma n = 0 in all 12 c8 rows, so the refresh cadence is a constant 100 ms. The law's input never takes a measured value; the source of the constant is not yet traced.
 
-7. **The guard clause `rtp_floor_p0` measures the end-of-run drain, not the path** (§53 Erratum 1). At 600 MB the minimum is the end-of-run drain on 20-gap rows and the start-up sample on lever-B rows, so a tail fix reads worse there. At guard size (§52 guard c8 rows, ≈ 9 s), both arms mix the two: the minimum is the start-up sample on 6/12 BASE and 5/12 CAND rows, and the end-of-run sample (0.0–1.1 s after source end) on the rest. So the clause is a minimum over two unrelated moments, not a path reading, at either size. A replacement (the same floor over the source phase only, or a delivered-delay clause) is to be dry-run on the guard ledgers for spread and resolution before it goes to the owner.
+7. **The guard clause `rtp_floor_p0` measures the end-of-run drain, not the path** (§53 Erratum 1). At 600 MB the minimum is the end-of-run drain on 20-gap rows and the start-up sample on lever-B rows, so a tail fix reads worse there. At guard size (§52 guard c8 rows, ≈ 9 s), both arms mix the two: the minimum is the start-up sample on 6/12 BASE and 5/12 CAND rows, and the end-of-run sample (0.0–1.1 s after source end) on the rest. So the clause is a minimum over two unrelated moments, not a path reading, at either size. Dry run done (`guard-clause-dry`): the source-phase floor is degenerate on guard rows (the same start-up sample); in-order delay resolves only on long rows. Proposal: §41d (guard v2, PROPOSED).
 8. **The store cap is a constant at c8, on main too.** The pooled cap sits at its clamp N·pool = 4 096 for 0.74–0.98 of each run (`[SUMCAP] pin=`, §53, all five arms). The law under the clamp asks 12–43 k, because both inputs are over-read: `min_rtt` reads 7–33× the propagation delay (item 9), and `max_bw` 11–24× the link rate (not yet diagnosed). Over the c8 operating range the law's shape is hidden by its clamp.
 9. **Copa `min_rtt` reads the sender's own standing queue.** It is a 10 s minimum of the app-echo RTT (`RWM_COPA_WIRE` off), which includes quinn send-buffer dwell. On a 10 ms path it reads 95–129 ms on main and 163–319 ms under lever B, from t ≈ 10.3 s (when the start-up sample leaves the window) on 30 of 30 c8 rows. Consumers: the store cap (`max_bw × min_rtt`, a positive loop cut by the clamp) and Copa's cwnd anchor floor (gates nothing here, since the in-flight brake is off). Evidence: `docs/derivations/p0-dwell-diag.md`.
 
@@ -810,3 +810,54 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - **Ruled out:** placement (p0 share 0.82 on every arm), retransmit volume (CANDS carries the population at fewer p0 retransmits than BASE), and quinn draining slower (p0 tx rate equal).
   - **Status:** the mechanism is consistent with Little's law on a fixed slot budget. The causal test (a pool arm) is pending; occupancy = rate × RTT + holes closing on every row is consistency, not proof.
 - **Lever-B cost to report with the merge question:** quinn's send buffer evicts up to ≈ 1 000 datagrams per run on p0 under lever B (CW0 the most). These are counted per arm in `docs/derivations/p0-dwell-diag.md`. Their link to CW0's duplicate rise is untested.
+
+## 41d. Merge guard v2 (PROPOSED): the start-up RTT floor off at c2/c8, in-order delay scored on 600 MB c2/c8 rows — instrument change, no VM
+
+**Status: PROPOSED.** Two owner calls are open (below). The first guard to use v2 cannot be registered until the implementation prerequisites are met.
+
+**Why.**
+- `rtp_floor_pN` is the run minimum of Copa `min_rtt`, a 10 s windowed minimum of the app-echo RTT. On guard-length rows (≈ 9 s) the window never rolls:
+  - at c1s, c1d and c2 the clause reads the run's first non-zero sample on 89 of 96 (row, leg) pairs;
+  - at c8 it reads the start-up sample on about half the rows and the end-of-run sample on the rest (§3.10 item 7).
+  - At 600 MB it reads the end-of-run drain on 20-gap rows and the start-up sample on lever-B rows (§53 Erratum 1).
+- It entered at threading P1 (§11, `c765e3f3`, `a557afcf`) as a probe for sender-induced queueing and was copied into every later guard. No design rationale for it as a merge clause is recorded.
+- The guard has no delivered-delay clause. On §48b's ledger `bbr_rs` raised c8 in-order delay by 46 % (BASE 3 756–4 714 ms, CAND 5 456–6 587 ms, disjoint) while `rtp_floor_p0` read it as better (ratio 0.814).
+- Evidence: `docs/derivations/guard-clause-dry.md` (branch `guard-clause-dry` `5f73fc6b`).
+
+**Change (the statistic, rank-minp, 10 000 relabellings and PASS iff p > 0.05 are unchanged):**
+1. **Row size:** c2 and c8 guard rows carry 600 MB (§48b's sizes, 43–56 s rows) instead of the guard size. c1s and c1d keep the guard size.
+   - This changes EVERY c2 and c8 clause, not only the new one: longer rows can tighten goodput, CPU/GB and lag resolution, so v2 may fail a change v1 passed.
+   - **Owed before adoption:** the 600 MB d80 per c2/c8 clause from §48b's ledger, beside §41c's guard-size d80.
+2. **`rtp_floor_p0`/`p1`:** dropped from scoring at c2 and c8 (reported only). At c1s and c1d see owner call 1.
+3. **In-order delay mean (new, one-sided, higher is worse),** scored at c2 and c8:
+   - **definition:** `delay(t) = t − t_src(ack(t))`, with `ack` the receiver's cumulative in-order ack (`window_ack_seq`, the third `cum=` field of the sender's `[DIAG]`) and `t_src` the inverse of the cumulative source-sent curve, linearly interpolated; the mean over ticks with `ack > 0`;
+   - **edge cases:** ticks before the first ack are excluded, and an `ack` beyond the last source tick is excluded;
+   - **void rule:** a c2/c8 row with under 30 s of ticks is VOID (re-run), never neutral-rank filled;
+   - its p95 is never scored (quantised at 250 ms ticks), and it is never scored at c1 (A/A d80 20 % to over 100 %);
+   - **domain:** reliable delivery only. Under shed or force-deliver the frontier passes undelivered seqs, so off-Bulk rows (ρ < 1) need a different definition before this clause applies there.
+4. All other clauses are unchanged.
+
+**Dry run: a SPLICE of existing ledgers.** No ledger matches v2's design (c1 at guard size, c2/c8 at 600 MB). Old p values were reproduced exactly first.
+
+| ledger | what it can show | old p (min-p clause) | spliced p (min-p clause) | verdict |
+|---|---|---|---|---|
+| §52 guard | the dropped c2/c8 floor clauses; there are no long rows, so the new clause is absent | 0.2471 (c1s `cpu_cli/GB`) | 0.2206 (same) | PASS → PASS |
+| §48b | the new clause on long c2/c8 rows; its c1 rows are 5 GB, not guard size | 0.0020 (c2 goodput) | 0.0018 (same) | FAIL → FAIL |
+| place41b A/A | c1 only: unchanged by construction | 0.6920 | 0.6920 | PASS → PASS |
+
+- **New clause resolution (A/A d80, §48b 12 + 12 long rows):** c2 8 %, c8 20 %.
+- **Kept c1 floor clauses at guard size (§52 guard):** 5–8 %.
+- No ledger carries the new clause as its only failing clause, so a v2-only flip has not been observed.
+
+**Implementation prerequisites (before the first v2 guard is registered):**
+- a selectable clause-set version with v1 kept (`guard47_checks.py` asserts the exact key set, and `test_bbr48_parse` pins a v1 result by clause name, so renaming or removing clauses breaks both);
+- the `guard-clause-dry` functions merged; the guard plan's c2/c8 size and timeout; a stub-run path for v2; the void rule;
+- the 600 MB d80 table (item 1).
+
+**Owner calls (open):**
+1. **The start-up floor at c1s/c1d.**
+   - Option (a): keep it scored, under the honest name `startup_rtt_floor_pN`. It is live: c1d p0 read p = 0.056 in §52 and was the min-p clause on §47's ledger. No regression it would uniquely catch is recorded.
+   - Option (b): report it only, everywhere.
+2. **The cost:** the guard's row time rises from ≈ 13.6 to ≈ 48 min (+1 070 s at c2, +986 s at c8 per 24 rows), before per-block overheads.
+
+**§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
