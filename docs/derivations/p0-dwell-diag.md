@@ -5,7 +5,15 @@ item 1 (`rtp_floor_p0`) and the `cand52` merge question.
 Evidence: `docs/l1-raw/s53/rep53-diag-ld.tgz` (c8-100 at 600 MB; BASE, BASES, CAND, CANDS and CW0, 6 rows
 each), cross-checked on `docs/l1-raw/s52/rep52-diag-ld.tgz` (BASE, CAND, W0, W05 and WDER, 6 rows each).
 Scripts: `p0-dwell-diag/` next to this file. They are stdlib Python and take the extracted `diag-ld`
-directory as their argument.
+directory as their argument:
+- `budget.py` (all ticks) and `budget2.py` (PRE/PIN phases): the population budget and the §1 dwell
+  table;
+- `holes.py`: receiver holes, `[LAT]` and `[SUCC]`;
+- `little.py` and `inorder.py`: §5;
+- `rows.py`: per-row field medians.
+
+The `[DCAP]`, `rtp_us` step-time, `full`, `np_act`, `[QCLK]` and P38ROW-share numbers come from
+grep one-liners over the same logs, not from these scripts.
 
 ## 0. Answer in one paragraph
 
@@ -24,8 +32,8 @@ change is a *level* of the same pinned population moving from "holes" to "queue"
 not change because quinn's own window, which sets it, does not change. Retransmit volume, placement
 share and quinn's drain rate are all ruled out (§3). The inflated `min_rtt` feeds the store cap's law,
 which therefore asks 3–10× the ceiling. That is a positive loop, but the clamp cuts it (§4). The law
-pinned at its clamp is a defect finding (§4.1). In-order delivered delay *improves* about 6× under
-lever B, from a mean of about 5.2 s to about 0.9 s. Under the 20-gap horizon about 50k
+pinned at its clamp is a defect finding (§4.1). Measured in-order delivered delay *improves* about 5× under
+lever B, from a mean of about 5.3 s to about 1.0 s. Under the 20-gap horizon about 50k
 received seqs wait behind old holes, so the +200 ms of p0 transit is small beside it. `[LAT]`'s
 eviction bound hid this on the 20-gap arms (§5).
 
@@ -34,7 +42,7 @@ eviction bound hid this on the 20-gap arms (§5).
 | field | what it is | source |
 |---|---|---|
 | `dgqN[hand= tx= full= err= sp=]` | cumulative per path. `hand` = `send_datagram` calls quinn accepted (counted at the I/O owner); `tx` = quinn's `stats().frame_tx.datagram`, the DATAGRAM frames actually sent; `full` = handoffs that found the 4 MB send buffer full (eviction predicate); `sp` = buffer space at the last handoff, in bytes | `transport/io_owner.rs` `DatagramQueueAudit`, `send_one`; `transport/quic.rs:558` |
-| `hand − tx` (also `dgevN`) | datagrams accepted by quinn and not yet transmitted: queued in quinn's per-connection send buffer **plus** any evicted (cumulative). At the last `[DIAG]` line, with the buffer drained (`sp` ≈ 4 MB), the remainder is evictions, and it equals `full` to within a few. Evictions: **0 on all 12 20-gap rows** (`full = 0`, `err = 0`, end `hand − tx` ≤ 11, all on p0 and inside a buffer not yet drained). **Up to about 1 000 per run on lever-B p0**: CAND 0–299, CANDS 0–336, CW0 6–996 (`full`). That is ≤ 0.23 % of p0 handoffs, and against a standing `q0` of 1.7–2.9k it is small, so `hand − tx` reads as the **queue** to within a few percent. `sp` agrees: `4 194 304 − sp ≈ (hand − tx) × 1 233 B` (CAND s42 r1, t = 40.6 s: 2 633 queued, 3.25 MB used). The `tx` snapshot is refreshed every 1 ms of owner activity (`VIEW_REFRESH`), so staleness is ≤ about 10 datagrams | ″ |
+| `hand − tx` (also `dgevN`) | datagrams accepted by quinn and not yet transmitted: queued in quinn's per-connection send buffer **plus** any evicted (cumulative). `sp` is the space at the *last handoff*, not a drained flag. At the last `[DIAG]` line, `hand − tx` equals `full` on 13 of 18 lever-B rows; the other 5 last lines still hold a queue (e.g. CAND s42 r3, `sp` 900 KB). Evictions: **0 on all 12 20-gap rows** (`full = 0`, `err = 0` on the last line; end `hand − tx` ≤ 11, on p0 or p1, still queued). **Up to about 1 000 per run on lever-B p0**: CAND 0–299, CANDS 0–336, CW0 6–996 (`full`). That is ≤ 0.23 % of p0 handoffs, and against a standing `q0` of 1.7–2.9k it is small, so `hand − tx` reads as the **queue** to within a few percent. `sp` agrees: `4 194 304 − sp ≈ (hand − tx) × 1 233 B` (CAND s42 r1, t = 40.6 s: 2 633 queued, 3.25 MB used). The `tx` snapshot is refreshed every 1 ms of owner activity (`VIEW_REFRESH`), so staleness is ≤ about 10 datagrams | ″ |
 | `pN:rtt=` | the engine estimator's EWMA of the **app-echo** RTT: echo time minus `send_timestamp_us`, which `emit_source` stamps at the placement lock, *before* the owner channel and quinn's buffer (`net/lat.rs` header; `control_msg.rs:291/504`) | `diag.rs:549` |
 | `pN:wrtt=` | quinn's smoothed path RTT (`conn.stats().path.rtt`), the wire clock. It includes netem's queue but not quinn's send buffer | `diag.rs:499`, `io_owner::publish` |
 | `pN:rtp_us=` | Copa `min_rtt`: the windowed minimum over **10 s** (`window_duration`, `copa.rs:641`) of the samples fed to `record_rtt_sample`. With `RWM_COPA_WIRE` unset (`[GATES]`: `copa_wire=false`), those samples are the **app-echo** RTT (`control_msg.rs:575-581`) | `copa.rs:1008`, `path.rs:1070` |
@@ -223,27 +231,41 @@ cumulative, BASE's tail included. Records delivered (`p0:n + p1:n` over `n` = 50
 | CANDS | 0.78–0.99 | 12k–220k |
 | CW0 | 0.99–1.00 | 3.7k–9.8k |
 
-BASE's `ax_p50` (90–147 ms) and `tot_p50` (p0 655–1 180 ms) are therefore medians of the fastest
-fifth of deliveries, a survivor sample biased low. The §53 comparison "BASE `ax_p50` 105 ms against
+BASE's `ax_p50` (90–147 ms) and `tot_p50` (p0 655–1 180 ms) are therefore medians over the 11–24 %
+of deliveries that kept their record: a survivor sample, mostly start-up and tail (below), biased
+low. The §53 comparison "BASE `ax_p50` 105 ms against
 CAND 311 ms, `tot_p50` about equal" is not a like-for-like reading. Histogram resolution is also
 coarse: 8 sub-buckets per octave, so 65.5 ms steps at 0.5–1 s.
 
 **Little's law on the sender's own store** replaces it. Retained = `win + gate`, the sent store above
 the receiver's cumulative point (`sack.rs:391`: the store is pruned as a prefix at the cumulative
-ack). That is the seqs sent and not yet delivered in order, as the latest report saw them. Mean
-send-to-in-order delay ≈ retained / Σ tx rate, PIN-phase medians per row (`little.py`):
+ack). That is the seqs sent and not yet delivered in order, as the latest report saw them.
+Equivalently, it is `src − ack` from the `[DIAG]` `cum=src/cod/ack` totals (BASE s42 r1,
+t = 15 s: 173 034 − 122 845 = 50 189 = `win + gate`).
 
-| arm | retained | Σ tx /s | **mean in-order delay** |
-|---|---|---|---|
-| BASE | 61.6k [56.3–64.9k] | 11.8k | **5.2 s** [4.8–5.5] |
-| BASES | 60.1k [53.5–64.2k] | 11.8k | **5.1 s** [4.5–5.4] |
-| CAND | 10.6k [9.2–14.5k] | 11.9k | **0.89 s** [0.78–1.23] |
-| CANDS | 11.8k [10.2–15.3k] | 11.9k | **1.00 s** [0.86–1.29] |
-| CW0 | 10.5k [9.6–11.2k] | 11.9k | **0.89 s** [0.81–0.95] |
+**Measured in-order delay** is the horizontal distance between the cumulative source-sent and
+cumulative-ack curves: `delay(t) = t − t_src(ack(t))`, at 250 ms ticks, from the sender's view
+(`inorder.py`). Medians of per-row values [row range], in seconds:
 
-Three independent readings agree with this:
-- **`[LAT]` coverage:** on 20-gap rows 76–89 % of deliveries came more than about 1.4 s after
-  arrival, which is what a ~5 s mean requires. On lever B it is 0–22 %.
+| arm | PIN mean | PIN p50 | PIN p95 | whole-run mean | whole-run p95 |
+|---|---|---|---|---|---|
+| BASE | **5.30** [4.73–5.62] | 5.40 [4.94–5.75] | 6.74 [6.36–7.49] | 4.41 [4.02–4.79] | 6.76 [6.38–7.35] |
+| BASES | **5.23** [4.84–5.60] | 5.28 [4.61–5.62] | 6.84 [6.35–7.88] | 4.50 [4.14–4.94] | 6.75 [6.32–7.74] |
+| CAND | **0.97** [0.86–1.31] | 0.93 [0.80–1.27] | 1.47 [1.32–2.12] | 0.96 [0.87–1.29] | 1.46 [1.44–2.12] |
+| CANDS | **1.09** [0.94–1.39] | 1.03 [0.90–1.31] | 1.79 [1.50–2.27] | 1.02 [0.89–1.36] | 1.77 [1.43–2.27] |
+| CW0 | **0.96** [0.90–1.00] | 0.93 [0.85–1.00] | 1.31 [1.21–1.37] | 0.81 [0.77–0.85] | 1.27 [1.19–1.34] |
+
+The stock is not stationary: on BASE s42 r1, `gate` moves between 36k and 75k across the PIN phase.
+That is why the table reports the flow measurement rather than the retained/rate ratio
+(`little.py`, which gives 4.8–5.5 s on 20-gap rows and 0.78–1.29 s on lever B).
+
+`src − ack` first exceeds `[LAT]`'s 16 384 bound at t = 3.8–9.0 s on every 20-gap row. On lever-B
+rows that happens only transiently (2.0–35.3 s), and coverage stays 0.78–1.00. So the 20-gap
+`[LAT]` survivors are mostly start-up and tail deliveries, not a uniform sample.
+
+Three other readings agree:
+- **`[LAT]` coverage:** on 20-gap rows 76–89 % of deliveries lost their record, consistent with a
+  multi-second wait; on lever B, 0–22 %.
 - **`[SUCC]` hole lifetime** (from detection), holes closed by a repair: `rep_p90` is 5.2–6.8 s on
   20-gap arms against 0.52–1.18 s on lever B, and `orig_p99` is 5.2–6.8 s against 0.52–1.31 s.
 - **The tail:** BASE's tail of 2.6–5.4 s after source end is this backlog draining.
@@ -252,8 +274,8 @@ The counted store is pinned at 4096 on both binaries. The retained store is not 
 20-gap horizon, about 50k seqs already received sit behind old holes at the frontier.
 
 **Verdict.**
-- **In-order delivered delay is about 6× better under lever B** (mean about 0.9–1.0 s against about
-  5.1–5.2 s). The extra p0 transit (+150–230 ms) is part of a much smaller total: under the 20-gap
+- **In-order delivered delay is about 5× better under lever B** (PIN-phase mean about 1.0–1.1 s
+  against about 5.2–5.3 s; whole-run mean 0.8–1.0 s against 4.4–4.5 s). The extra p0 transit (+150–230 ms) is part of a much smaller total: under the 20-gap
   horizon, symbols wait seconds in the reorder buffer behind old holes; under lever B, they wait a
   fraction of a second in quinn's send buffer.
 - **Correction to §53's readout.** "Delivered `tot_p50` about the same, ~0.9 s" is an artefact of
@@ -273,25 +295,33 @@ forwarded by `tools/l1/lib.sh` (`RWM_FORWARD`). Do not use `RWM_STORE=<n>`: it s
 `store_env_set`, which turns the dynamic law off and so changes the seat. Run on CAND, c8-100 at
 600 MB, `RWM_DIAG=1`, n = 3 per value:
 
-- **P1 (identity):** at pool = 1 536 (W = 3 072) and pool = 2 560 (W = 5 120), in the PIN phase:
+- **P1 (identity):** at pool = 1 280 (W = 2 560) and pool = 1 536 (W = 3 072), against the
+  shipped W = 4 096, in the PIN phase:
   - `win − Σ rᵢ·rttᵢ` stays within ±150 of 0;
   - `tx0` and `tx1` rates stay within 1 % of 9 855 and 2 000 /s;
   - goodput stays within 2 %.
 - **P2 (the backlog follows W):** path₀ ≈ 0.84 · W (CAND's p0 share of the population):
-  - at W = 3 072: path₀ ≈ 2 600 ± 300, q₀ ≈ path₀ − qcwnd₀ ≈ 1 300 ± 400;
-  - at W = 5 120: path₀ ≈ 4 300 ± 400, q₀ ≈ 3 000 ± 500;
-  - `rtt0 − wrtt0` moves by ≈ ΔW·0.84 / 9 855 s (≈ ±90 ms);
-  - `rtp_us` p0 after 10.3 s moves the same way.
-- **P3 (reported, not discriminating):** BASE at pool = 2 560. The identity predicts residual = H
-  at the new W, but not how the extra 2 048 slots split between H and the queue; that depends on the
+  - at W = 2 560: path₀ ≈ 2 150 ± 300, q₀ ≈ path₀ − qcwnd₀ ≈ 870 ± 400;
+  - at W = 3 072: path₀ ≈ 2 600 ± 300, q₀ ≈ 1 300 ± 400 (against 2 316 measured at 4 096);
+  - `rtt0 − wrtt0` falls by ≈ ΔW·0.84 / 9 855 s (≈ 90 ms per 1 024 slots);
+  - `rtp_us` p0 after 10.3 s falls the same way;
+  - `full` (evictions) → 0 at both points.
+- **Why not above 4 096:** quinn's 4 MB datagram buffer holds about 3 400 datagrams. CW0 at q₀ ≈ 2 900
+  already evicts up to about 1 000 per run, and evictions become holes. A W that pushes q₀ toward
+  3 400 breaks P1 for a reason outside this mechanism; any point above 4 096 must predict `full` as
+  well.
+- **P3 (reported, not discriminating):** BASE at pool = 1 536. The identity predicts residual = H at
+  the new W, but not how the removed 1 024 slots split between H and the queue; that depends on the
   20-gap repair rate, which is not modelled here.
 - **Falsifiers:**
   - `|win − Σ rᵢ·rttᵢ| > 0.1·W` on any lever-B row;
-  - CAND `q0` changes by less than 300 between W = 3 072 and 5 120;
-  - CAND goodput falls by more than 2 % at W = 3 072 while the wire still carries its capacity
-    (that would mean the 4096 slots were not all transit plus holes).
+  - CAND `q0` at W = 2 560 above 1 500, or the change in `q0` from W = 2 560 to 4 096 less than
+    0.5 × (the change in W) × 0.84;
+  - CAND goodput falls by more than 2 % at W = 3 072, with `tx` rates still at link (that would mean
+    the 4096 slots were not all transit plus holes).
 - **Caveat:** keep W ≥ wire₀ + path₁ + about 500 (≈ 2 400). Below that, the population no longer
-  covers the pipe and throughput falls, which tests a different statement.
+  covers the pipe and throughput falls, which tests a different statement. W = 2 560 is close to
+  that edge; if its `tx` rates fall, read only W = 3 072.
 
 **Already observed in this data (not predictions):** on 30 of 30 rows, `rtp_us` p0 steps at
 t = 10.3–10.5 s. That is the 10 s window expiry of the start-up sample.
