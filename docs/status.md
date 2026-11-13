@@ -862,6 +862,18 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
    - Option (b): report it only, everywhere.
 2. **The cost:** the guard's row time rises from ≈ 13.6 to ≈ 48 min (+1 070 s at c2, +986 s at c8 per 24 rows), before per-block overheads.
 
+**§41d implementation (2026-11-13, branch `guard-v2` `9e687938`).**
+- **How to run it:** `LD_PLAN=41d` is §41c's 96-row design with clause set v2 (c2/c8 at 600 MB, `RWM_PERF_TIMEOUT_S=200`, scorer `score41d`).
+- **v1 is unchanged:** it stays the default and reproduces §52 p = 0.2471 and §48b p = 0.0020 bit for bit.
+- **VOID rule:** a live c2/c8 row whose last `[DIAG]` tick is earlier than 30 s is `VOID-SHORT` and re-run. A DNF keeps its worst rank.
+- **The accepted v2 set on §48b's ledger:** p = 0.0015, FAIL (min-p at c2 goodput).
+- **Owed d80 table** (a splice: §52 c1 rows plus §48b c2/c8 rows; 30 draws, seeds 0/1/2; `docs/derivations/guard-clause-dry.md` §11):
+  - **v2 is stricter on goodput:** c8 12 % → 2 %, c2 2.4 % → 1 %; c2 `cpu_cli/GB` 8 → 5 % and c8 `cpu_srv/GB` 12 → 8 % are one grid step each;
+  - **v2 is looser on `lag_E_srv`:** c2 50 → 100 %, c8 20 → 50 %;
+  - **unchanged:** the other lag and CPU clauses;
+  - **the new clause:** in-order delay mean, c2 5–8 %, c8 20 %.
+- **Status:** a real v2 guard ledger replaces this splice at its first use.
+
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
