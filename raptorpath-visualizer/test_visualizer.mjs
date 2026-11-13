@@ -319,13 +319,26 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
 // ±2% dial nudge around Bulk/Auto/Realtime.
 {
   let ok = true, worst = "";
+  // Tolerance = 1.5 × (the law's steepest analytic slope) × (the nudge
+  // width), per function. Slopes per decade of δ: t(δ) 1.8495 decades (the
+  // Auto→Bulk segment, (log₁₀0.05 + 5)/2), ζ 1 decade, b log₁₀2/2 decades,
+  // β 0.5 (linear). A flat 0.2-decade / 0.05 bound was ~6× the continuous
+  // change and let a ~1.47× step through.
+  const WIDTH = 2 * Math.log10(1.02);
+  const SLOPE = {
+    sim_tail_target_of_delta: (Math.log10(0.05) + 5) / 2,
+    zeta_of_delta: 1,
+    span_horizon_b: Math.log10(2) / 2,
+    bulkness_of_delta: 0.5,
+  };
   for (const dp of [0.005, 0.5, 50]) {
     for (const f of ["sim_tail_target_of_delta", "bulkness_of_delta",
                      "span_horizon_b", "zeta_of_delta"]) {
       const lo = api[f](dp / 1.02), mid = api[f](dp), hi = api[f](dp * 1.02);
+      const tol = 1.5 * SLOPE[f] * WIDTH;
       const cont = f === "bulkness_of_delta"
-        ? Math.abs(lo - hi) < 0.05
-        : Math.abs(Math.log10(Math.max(lo, 1e-12)) - Math.log10(Math.max(hi, 1e-12))) < 0.2;
+        ? Math.abs(lo - hi) <= tol
+        : Math.abs(Math.log10(Math.max(lo, 1e-12)) - Math.log10(Math.max(hi, 1e-12))) <= tol;
       const mono = Math.min(lo, hi) - 1e-12 <= mid && mid <= Math.max(lo, hi) + 1e-12;
       if (!cont || !mono) { ok = false; worst = `${f} @ δ=${dp}: ${lo} / ${mid} / ${hi}`; }
     }

@@ -7,7 +7,7 @@ invariant (`CLAUDE.md`)? Phase 6 moves closed-form laws into
 `raptorpath-math`, so every such site next to a moving formula has to be
 classified first.
 
-Base: `github/main` at `2d3b2069`. No code changed. Line numbers refer to that
+Base: `github/main` at `2d3b2069`. No model code changed; the only code change is a test tolerance (`test_visualizer.mjs` §7d3, see Coverage). Line numbers refer to that
 commit.
 
 ## Method and evidence
@@ -30,13 +30,26 @@ commit.
   `hint_bulk`/`fixed_r`.
 - Probes (`node`, read-only) ran on the **committed** `interactive-visualizer.html`,
   which embeds the wasm32 build. It was last built at `8f3fd7c5`
-  (2026-09-27). The later commits that touch `lib.rs`/`raptorpath-math` are
-  test-only, plus one bit-identical memoization (`b7b1da08`). The embedded
-  build reproduces all six golden rows of `test_multipath_n1_identical_golden`
-  bit for bit, so it is the current model era. The native build was not run
-  (the brief allows no cargo).
-- Reachability tags: **UI** means the visualizer page can reach the site
-  (`getParams` always passes `hint = 'continuum'`). **ABI** means it is reachable
+  (2026-09-27). The probes are current, because nothing changed since then
+  reaches the sim's executed laws:
+  - `git diff 8f3fd7c5..github/main -- raptorpath-wasm/src` is test-only: +31
+    lines, one pool test.
+  - In `raptorpath-math/src` (+852 lines) the changes are:
+    - `changepoint.rs`: one `#[test]`.
+    - The two `rstar_bitpin_table_*.in` files: test data.
+    - `lib.rs`: tests, plus one non-test change, `b7b1da08`. That change
+      memoizes the burst-tail fit inside `r_star_mass` and is declared
+      bit-identical.
+  - The sim never reaches `r_star_mass` at all. It feeds
+    `mass: MassStats::default()` (`lib.rs` :842), so `controller_rate`'s mass
+    term is gated off by `inp.mass.is_valid()` (math :786).
+  - The embedded build also reproduces all six golden rows of
+    `test_multipath_n1_identical_golden` bit for bit.
+  - No fresh build and no cargo.
+- Reachability tags: **UI** means the visualizer page can reach the site.
+  The shipped UI passes ONE hint, `'continuum'` (`interactive-visualizer.html`
+  :1987), and `test_visualizer_ui.mjs` :145–158 gates that at every dial
+  position, ρ < 1 included. **ABI** means it is reachable
   only by calling the wasm constructor directly (the native tests, the golden
   test, `test_visualizer.mjs` §1–§5). **native** means a field that is never
   exposed to JS (`legacy_*`).
@@ -56,7 +69,7 @@ commit.
 | W5 | 666 | `completion_chi`: `if !self.hint_bulk \|\| self.legacy_bulk_delta { return 0.0 }` | χ fed to the classic rate path | ABI / native | **B** for the `hint_bulk` term: χ is gated by the hint instead of weighted by β. The `legacy_bulk_delta` term is test-only (C). |
 | W6 | 706 | `completion_debt_increment`: `if self.hint_bulk \|\| self.legacy_tail_burst \|\| self.fixed_r.is_some() { return 0.0 }` | whether the source-position completion ramp runs | ABI / native | **B** for the `hint_bulk` term. The continuum gets the same zero from `·(1−β)` at β = 1 (W7). `legacy_tail_burst` is test-only (C). `fixed_r` is D. |
 | W7 | 725 | `r_tail * w * dchi * (1.0 - self.bulkness)` | completion budget cross-fade | UI | **A**: Δdebt = r_tail·W·dχ_trunc·(1−β), with χ_trunc = Φ̄((rem − W/2)/(W/4)). |
-| W8 | 735 | `continuum_tail`: `if self.bulkness <= 0.0 { return self.tail_target }` | fast path of the tail-domain blend | UI (display) | **C**: the only caller is `get_delta_eff` (:1678), which feeds the `δ_eff` readout. The value is the same on both sides, since 10^(log t) = t after the clamp. See the headline finding below. |
+| W8 | 735 | `continuum_tail`: `if self.bulkness <= 0.0 { return self.tail_target }` | β = 0 fast path of the tail-domain blend | UI (display) | **C** (β guard). The only caller is `get_delta_eff` (:1678), which feeds the `δ_eff` readout. No step: at β = 0⁺ the blend is 10^(1·log t + 0) = t up to an ulp. Measured δ_eff 9.999999999999999e-6 at δ = 0.5 and 1.0000000036e-5 at δ = 0.5·(1 − 1e-9). See the headline finding below. |
 | W9 | 784–788 | `rate_inputs`: `if legacy_bulk_delta && hint_bulk { (min(0.1, p̂), false) } else { (tail_target, hint_bulk) }` | **which rate law runs**: `bulk_late_is_fine = hint_bulk` | ABI / native | **B**: exactly the `bulk_late_is_fine = hint == Bulk` selection that paper §4.5 names as the retired mode switch. The legacy arm is test-only (C). |
 | W10 | 866 | `controller_rate_now`: `if let Some(r) = self.fixed_r { return r }` | the controller bypass | ABI | **D** (fixed r). |
 | W11 | 883 | `rate_now`: `if self.bulkness > 0.0 { mix } else { controller_rate(rate_inputs()) }` | a β = 0 fast path, and the router into W9 | UI + ABI | **B** (structural). §4.5: "There is no `if β == 0` fast path; that would be the mode switch again", and the engine's `RateSnapshot::rate` has none. On the continuum the value step is zero (W9 with `hint_bulk = false` is exactly the anchor term), and §7d3 of `test_visualizer.mjs` gates this at Auto ±2 %. The guard's real effect is to let `β = 0 ∧ hint_bulk` run a different law. |
@@ -65,8 +78,8 @@ commit.
 | W19 | 111 | JS export `controller_rate(…, bulk_late_is_fine: bool, …)` | which of the two mix terms | ABI (the HTML never calls it; `test_visualizer.mjs` §7 does) | **A**: a term selector for the two always-computed terms. For phase 6, prefer exporting a mix function (see order item 4). |
 | W13 | 1386–1394 | `legacy_burst = (legacy_bulk_delta && hint_bulk) \|\| (legacy_tail_burst && !hint_bulk)` → one-shot tail burst | ablation arm | native | **C** (test-only counterfactual, never exposed to JS). Keep it out of `raptorpath-math`; move both `legacy_*` fields behind `#[cfg(test)]`. |
 | W14 | 1401–1409 | `if self.rho < 1.0 { t_cut = find_t_cut(…); cut = max(t_cut, 2·RTT) … }` | T_cut give-up horizon | UI | **B**: see F4. The guard alone is redundant (`find_t_cut` returns ∞ at ρ ≥ 1); the step is in the law behind it, at a non-preset ρ*. |
-| W16 | 1673–1681 | `get_delta_eff`: `if hint_bulk {…} else if bulkness > 0 { continuum_tail } else { tail_target }` | readout | UI (display) | **C**. For "bulk" it differs from continuum@0.005 only by the clamp to [1e-9, 0.99]. |
-| W17 | 1689 | `get_completion_exposure`: `if bulkness > 0 { χ_raw } else { completion_chi() }` | accessor | ABI (the HTML does not read it) | **C**. |
+| W16 | 1673–1681 | `get_delta_eff`: `if hint_bulk {…} else if bulkness > 0 { continuum_tail } else { tail_target }` | readout | UI (display) | **C** (hint guard and β guard, display only). The β branch at :1676 does not step, for the same reason as W8. For "bulk" it differs from continuum@0.005 only by the clamp to [1e-9, 0.99]. |
+| W17 | 1689 | `get_completion_exposure`: `if bulkness > 0 { χ_raw } else { completion_chi() }` | accessor | ABI (the HTML does not read it) | **C** (β guard on an accessor no page reads), but it **steps**. At β = 0 the continuum gets `completion_chi()` = 0, since `hint_bulk` is false. At β = 0⁺ it gets χ_raw. Measured over a full run at .05/.5/50: the maximum is 0 at δ = 0.5 and 0.99865 at δ = 0.5·(1 − 1e-9). The accessor misreports the χ the bulk term actually reads. Fix: return χ_raw always (falls out of F1). |
 | W18 | 1727 | `get_saturation_pressure`: `if fixed_r.is_some() { return 0.0 }` | readout | UI (display) | **C** (follows the fixed-r decision). |
 
 ### `raptorpath-visualizer/interactive-visualizer.html`
@@ -91,7 +104,14 @@ commit.
 
 **Counts.** A: 11 (W1, W7, W12, W15, W19, W20, W21, V2, V3, V4, V14).
 B: 10 (W2, W4, W5, W6, W9, W11, W14, V1, V5, V6). C: 13 (W8, W13, W16, W17, W18, V7–V13, V15).
-D: 2 (W3, W10). W5, W6 and W9 are classed by their `hint_bulk` term;
+D: 2 (W3, W10).
+
+**B split by reachability:**
+
+| set | sites | what the measurements show |
+|---|---|---|
+| **live**: the UI reaches it | W11 (:883), W14 (F4), V5/V6 (F3) | behaviour steps in W14 and V5/V6. W11 has a zero value step but is the §4.5-banned fast path, and it routes the dead machine. |
+| **dead second machine**: reachable only from the native tests, the golden capture and `test_visualizer.mjs`'s classic-hint arms | W2, W5, W6, W9 (F1); W4 (F2); V1 | no behaviour step at any point the UI can reach. The fix is removal, not a new formula. | W5, W6 and W9 are classed by their `hint_bulk` term;
 their `legacy_*` terms are test-only C, and the `fixed_r` term of W6 is D.
 
 ## Headline finding: `continuum_tail` is not an executed law
@@ -101,9 +121,13 @@ law to move. The comments at :408–411 and :1017–1019 describe the per-tick
 effective tail as that log-blend. The sim does not run it:
 
 - the rate is the rate-domain mix (W12);
-- `continuum_tail` is read only by `get_delta_eff` (the `δ_eff` readout);
+- `continuum_tail` is read only by `get_delta_eff` (:1678, the `δ_eff` readout);
 - `rate_now`'s own comment (:879–881) says a tail-domain blend would step at
   the preset, because r*(δ) is near-binary against the cold-start ε̂.
+
+This does **not** make `test_continuum_one_law_across_the_dial` hollow. Its
+assertions are on the executed path: settled r*, full decode, tick and FEC
+counts, and the Bulk-nudge FEC delta. None of them reads `continuum_tail`.
 
 So moving it into `raptorpath-math` would put a display formula into the shared
 law crate as if it were a law, and that formula is the one the model rejected.
@@ -111,15 +135,157 @@ Recommendation: drop it from the phase 6 list. Correct the two comments. Either
 delete `get_delta_eff`'s blend or label the readout as "the tail the anchor
 term would need". No δ_eff exists for a rate-domain mix.
 
-## The B sites and their continuous replacements
+## The B sites and their fixes
 
-### F1: one constructor path (W2, W5, W6, W9, W11; and W16/W17 follow)
+### Live B sites
 
-The step. "bulk" and continuum@0.005 are the same dial point, built two ways
-(`β = 0 ∧ hint_bulk` against `β = 1`). Likewise "auto"/"realtime" against
-continuum@0.5/50. All 8 fingerprint fields agree at all six golden cells
-(wasm32). Model-output step: **zero, measured** on the bulk rows. On the
-auto/realtime rows it rests on algebra (see below):
+#### W11: the β = 0 fast path (:883)
+
+The UI reaches this path at every δ ≥ 0.5. The value step on the continuum is
+zero: with `hint_bulk = false`, the `else` arm is exactly the anchor term. §7d3
+gates this at Auto ±2 %. It is still the fast path §4.5 bans, and it is the
+router into the dead machine (W9).
+
+Fix: delete the guard, so that `rate_now` always returns
+(1−β)·r_anchor + β·r_late. On the UI path the result is unchanged by the
+identity below (F1, "Golden argument").
+
+#### F3 + F4: one give-up law (V5/V6 span budget, W14 T_cut)
+
+These two are the same object. Both answer one question: what fraction of
+symbols is allowed to stay unrecovered, and from what age. Both are functions
+of
+
+```text
+   R  = ε̂·(1 − P_fec(r, ε̂, A*, σ²))          residual past in-window FEC (§5.6)
+   x  = (1 − ρ) / R                           declared concession over that residual
+```
+
+**The law: the give-up profile u(t).** Let u(t) be the fraction of symbols
+still unrecovered at age t. Model ARQ as retransmit rounds, one per RTT, each
+lost with probability ε̂_retx:
+
+```text
+   u(t)        = R · ε̂_retx^(t/RTT)                                (u(0) = R, u(∞) = 0)
+
+   T_cut(ρ)    = u⁻¹(1 − ρ) = RTT · max( 0 , ln x / ln ε̂_retx )     ρ → 1 ⇒ x → 0 ⇒ T_cut → +∞
+   A(δ, ρ)     = max( D(δ) , T_cut(ρ) )                             give-up age; D(δ) is the δ-honest floor (§5.6)
+   budget(ρ)   = u(T_cut) = R · min(x, 1) = min( 1 − ρ , R )        = F3 candidate (b)
+   give up a hole  ⇔  age > A(δ, ρ)  ∧  shed_total + 1 ≤ budget · src_total
+```
+
+What this gives:
+
+- **The saturation points coincide.** Budget (b) stops being capped by 1−ρ
+  exactly at x = 1. At the same x, T_cut reaches 0. One condition,
+  1 − ρ ≥ ε̂(1−P_fec), saturates both, because the budget is u evaluated at
+  T_cut.
+- **No ρ = 1 branch.** At ρ = 1, x = 0 and ln 0 = −∞. Since ln ε̂_retx < 0,
+  IEEE gives T_cut = +∞ and budget = 0 with no `rho < 1.0` guard (W14) and no
+  `retain` flag (V6). RETAIN is the limit of the dial, not a mode.
+- **No δ step.** δ enters through D(δ) and through r (and so R). Both are
+  continuous. The `rStar ≤ 1e-6` threshold has nothing left to cut.
+
+**Clamps** (each needs a bind-fraction gauge, reported):
+
+| clamp | binds when | meaning |
+|---|---|---|
+| `max(0, ·)` in T_cut (the lower bound) | x ≥ 1, i.e. 1 − ρ ≥ ε̂(1−P_fec) | the contract concedes at least everything FEC misses, so no ARQ wait is owed. At Bulk (R ≈ ε̂) it binds for ρ ≤ 1 − ε̂: ρ ≤ 0.95 at ε 5 %, ρ ≤ 0.90 at ε 10 %. |
+| `max(D(δ), ·)` in A | T_cut < D(δ) | the δ-honest floor. It replaces the wasm's constant 2·RTT floor (:1409), which equals D at Bulk only. |
+| ε̂_retx ∈ (0, 1) | input domain | ε̂_retx → 1 makes ln → 0⁻ and T_cut → ∞ (ARQ never succeeds), which is the right limit. ε̂_retx = 0 gives T_cut = 0 (one round always succeeds). |
+
+**Provenance**, needed in §4.10/§5.6 before code:
+
+- R: the §5.6 shed budget as shipped (measured inputs ε̂, r, A*, σ²). One
+  window must be chosen for both uses. Today the cartoon uses A* and
+  `find_t_cut` uses W. I propose A*, since §5.6's engine budget reads it.
+- ε̂_retx: measured, the per-path loss estimate on the retransmit's path. This
+  assumes rounds are independent, i.e. RTT ≫ 1/q. Otherwise it is the GE
+  bad-to-bad transition probability over one RTT.
+- D(δ): shipped (§5.6).
+- RTT: measured.
+- x: a declared dial (ρ) over a measured quantity.
+
+**What it replaces.**
+
+- F3 (cartoon budget, V5/V6). The shipped cartoon has two steps:
+  - In δ at ρ = 1, where `rStar` crosses 1e-6: the budget jumps 0 → ε̂ at
+    δ* = 0.005615 (ε 5 %), 0.008207 (ε 2.5 %) and 0.0050002 (ε 10 %, i.e. at
+    the Bulk preset). On a 2 % grid the largest neighbour jump is 5e-2 and
+    1e-1.
+  - In ρ at ρ = 1: the budget is (1−ρ) → 0 from below, but the derived
+    residual (1.93e-5 at Auto, ε 5 %) at ρ = 1.
+  - Root cause: R is largest (= ε̂) at r = 0, the Bulk end, exactly where the
+    cartoon calls the law "compiled out", so a flag had to cut it.
+  - Shape of the shipped budget at ρ = 1 (q .5, RTT 50, cap 4, W auto):
+
+    | δ | .005 | .0055 | .006 | .0075 | .01 | .02 | .05 | .1 | .2 | .5 | 5 | 50 |
+    |---|---|---|---|---|---|---|---|---|---|---|---|---|
+    | ε 5 % | 0 | 0 | **5e-2** | 5e-2 | 5e-2 | 5e-2 | 2.3e-2 | 7.5e-3 | 1.1e-3 | 1.9e-5 | 2.7e-5 | 5.1e-5 |
+    | ε 10 % | 0 | **1e-1** | 1e-1 | 1e-1 | 1e-1 | 1e-1 | 1e-1 | 2.0e-2 | 2.5e-3 | 3.8e-5 | 6.1e-5 | 1.25e-4 |
+
+  - The rejected alternative, (a) max(1−ρ, (1−β)·R), is continuous but not
+    monotone in δ: 0 → 1.5e-2 → 1.9e-5 → 5.1e-5 across the dial at ε 5 %. Its
+    largest 2 %-neighbour jump is 0.24·ε̂, and its (1−β) has no provenance.
+  - Budget (b) = min(1−ρ, R) at the corners:
+
+    | corner | shipped | unified (b) |
+    |---|---|---|
+    | Bulk, ρ = 1 | 0 | 0 |
+    | Bulk, ρ = .95 | 5e-2 | 5e-2 |
+    | Bulk·1.02, ρ = 1, ε 10 % | **1e-1** | 0 |
+    | Realtime, ρ = 1 (ε 5 % / 10 %) | 5.1e-5 / 1.25e-4 | **0** |
+    | Realtime, ρ = .95 | 5e-2 | **5.1e-5 / 1.25e-4** |
+
+- F4 (sim T_cut, W14). Today `find_t_cut` + `max(·, 2·RTT)` is two-valued:
+  - At ε .05, W 64, r = 1e-3: about 0.01 ticks for ρ ≤ 0.95 (the 2·RTT floor
+    binds); 640 = 10·W for ρ ≥ 0.99 (the search cap binds); ∞ at ρ = 1.
+  - At r = 0.3: about 0.01 for every ρ < 1.
+  - **The floor or the cap binds at every one of the ten measured ρ < 1
+    points.** The behaviour step sits at a non-preset ρ*, bisected to 1e-6 on
+    continuum@0.005: 0.983332 at .05/.5/50 (given_up 2 → 0) and 0.988175 at
+    .10/.3/80 (6 → 0). Elsewhere `given_up` is flat in ρ.
+  - Cause: `p_recovered_within` models ARQ progress with the FEC rate r, so at
+    r ≈ 0 its supremum is about 1 − R, and any ρ above it returns the
+    bisection cap. In u(t) above, ARQ progress comes from retransmit rounds
+    instead.
+  - **`find_t_cut` has no engine caller** (no match in `raptorpath/src`), so
+    this is a model-only law finding. **Defect finding for the ledger** (the
+    coordinator writes the verdict): the T_cut law is pinned by its 2·RTT
+    floor or its 10·W cap over its whole measured operating range
+    (MEASUREMENT DISCIPLINE 17/18).
+
+**Gate change for the owner: `test_visualizer_ui.mjs` :181.** It asserts
+`lawBulk.retain && lawBulk.rStar === 0 && !lawRt.retain && lawRt.rStar > 0`.
+The term `!lawRt.retain` pins that **at ρ = 1 the Realtime end sheds**, up to
+the derived residual. The cartoon labels this "ρ = 1 target — sheds only the
+derived §5.6 residual". §5.6 says the opposite: "the retain (ρ = 1) seat never
+sheds; the law runs only on the evicting seat".
+
+Under the unified law, budget(ρ = 1) = 0 at every δ, so :181 fails. Replace it
+with:
+
+- budget = 0 at ρ = 1 at both ends;
+- budget = min(1−ρ, R) at ρ < 1;
+- r* > 0 at Realtime and r* = 0 at Bulk (unchanged).
+
+:205 ("sheds counted at rt-end with ρ < 1", ε 10 %, ρ .95) then runs with a
+budget of 1.25e-4 instead of 5e-2 and must be re-checked. :233 (budget 0.05 at
+Bulk, ρ .95, ε 10 %) still holds: min(0.05, 0.10).
+
+Both the law and the gate change are **the owner's call**. Golden impact: none
+for F3 (JS only). For F4: none on the golden rows (ρ = 1, and T_cut = ∞ either
+way), but `test_custom_rho_gives_up_late_losses` and
+`test_bulk_composes_with_rho` may move.
+
+### Dead second machine (reachable only from tests and the golden capture)
+
+#### F1: delete the classic-hint machine (W2, W5, W6, W9; W16/W17 follow)
+
+"bulk" is `β = 0 ∧ hint_bulk`, a second representation of continuum@0.005
+(β = 1), and the same holds for auto/realtime against 0.5/50.
+
+Measured: all 8 fingerprint fields agree at all six golden cells (wasm32).
 
 | hint, ε, q, RTT | classic = continuum@δ(hint) | path the continuum arm ran |
 |---|---|---|
@@ -130,188 +296,73 @@ auto/realtime rows it rests on algebra (see below):
 | realtime .05/.5/50 | [733,2000,710,3,101,2000,2713,2571] both | fast path |
 | realtime .10/.3/80 | [754,2000,1015,0,184,2000,3015,2734] both | fast path |
 
-The accessors still differ for "bulk". Measured after 300 steps at
-.05/.5/50: `get_r_star_auto` is 0.1512 against 0, and `get_derived_w` is
-200 against 26.4, because both read `tail_target` (1e-3 against 0.05).
-`get_delta_eff` differs by 1e-17 (its clamp); `get_completion_exposure` is
-equal. These are display only. The defect is structural: a second machine is
-reachable from the ABI and owns its own law selection (W9).
+Only accessors differ for "bulk": `get_r_star_auto` 0.1512 vs 0, and
+`get_derived_w` 200 vs 26.4, because they read `tail_target` 1e-3 vs 0.05.
+Nothing the UI reaches steps. **The fix is removal, not a new formula:**
 
-The formula, one path for every hint:
+- **The hint names become an alias table**: `"bulk" → δ 0.005`,
+  `"auto" → 0.5`, `"realtime" → 50`, all built by the one continuum path. Then
+  delete `hint_bulk` and with it W5, the `hint_bulk` term of W6, W9 and W16's
+  first branch. W17 becomes `χ_raw`. This keeps the names as "named points on
+  the dials" (CLAUDE.md).
+- `#[cfg(test)]` alone is not enough. `test_visualizer.mjs` runs on the
+  release wasm and constructs the classic hints about 20 times (:89–:131,
+  :167, :259, :274–:297, :374–:484). Behind `#[cfg(test)]` the native goldens
+  would still run, but every one of those mjs arms would have to be retargeted
+  to `"continuum"`. The alias table needs no retargeting.
+- **"custom"** (tail target given directly, β ≡ 0, anchor-only) is not a dial
+  point. With tail 0.05 it is an anchor-only machine at a Bulk-class tail that
+  no δ produces. Remove it from the ABI. Its three users:
+  - `test_visualizer.mjs` :121 and :259 test ρ < 1 give-up. Retarget them to
+    `"continuum"` with the same ρ.
+  - The β = 0 clause of `test_continuum_one_law_across_the_dial` compares
+    against it. Under the alias table that clause is tautological. Keep it, if
+    wanted, against a `#[cfg(test)]` anchor-only constructor.
+- `legacy_*` moves behind `#[cfg(test)]`. Fixed r stays D (owner's word).
 
-```text
-   δ(hint)  ∈ { bulk 0.005, auto 0.5, realtime 50 }        named points, nothing else
-   t = t(δ),  β = β(δ)                                      W1, bulkness_of_delta
-   r        = (1−β)·R(t, late=false) + β·R(·, late=true, χ_raw)    always both; delete the :883 guard and the :898 else
-   χ input  = χ_raw always                                  delete completion_chi's hint gate; the anchor term does not read χ
-   Δdebt    = r + r_tail·W·dχ_trunc·(1−β)                   delete the hint_bulk early return in :706
-```
+**Golden argument.** After the alias table, the golden rows run the mix at
+β ∈ {0, 1}. The rows stay identical iff r = (1−β)·a + β·b reproduces the term
+the classic path computed. That needs two conditions:
 
-After this, `hint_bulk` is gone. "custom" (tail target given directly, β ≡ 0)
-is the anchor term alone. It is the reference arm of
-`test_continuum_one_law_across_the_dial` clause 2, and the explainer's δ_FEC
-corner. Keep it only as a test-only constructor, or build it from δ = t⁻¹(tail)
-where W1 is invertible. **Owner's call.** `legacy_*` moves behind `#[cfg(test)]`.
+1. **β is exactly 0 or 1 at the presets.** `bulkness_of_delta` gives 0 at 50
+   (clamp), 0 at 0.5 ((a−a)/(a−b) = 0) and 1 at 0.005 (x/x). This is pinned
+   bit-exact by `test_dial_reexports_are_bit_identical_to_the_shipped_sim_forms`
+   (:2302–2304, native) and measured on wasm32 (`bulkness_of_delta(0.5) === 0`
+   in §7d3).
+2. **The zero-weighted term is finite.** Then 0·term = 0 and a + 0 = a,
+   bit-exact. Argued from the code:
+   - `controller_rate`: `random_rate` is computed under `if core > 0.0`, so a
+     NaN core (−∞·0) gives 0. `burst_rate` is computed under
+     `t_symbols > 0.0`. The mass term is inert (`MassStats::default()`).
+   - `f64::max` discards NaN, `soft_saturate` is applied to finite values, and
+     the result is `clamp(0, max_overhead)`.
+   - The completion term: `r_tail` comes from `compute_r_star_exact`, a
+     bisection in [0, 2], and dχ ∈ [0, 1].
 
-Golden impact:
+   Not measured: the mix cannot be made to run at β = 0 exactly today. A probe
+   at δ = 0.5·(1 − 1e-12) also moves the tail by 2e-12 relative, and `lost`
+   moved 101 → 103.
 
-- **Bulk rows: measured neutral.** The mix ran.
-- **Auto and realtime rows: neutral by the identity 1·a + 0·b = a** (§4.5;
-  bit-exact for finite terms, and `controller_rate` clamps). This is not a
-  measurement. The mix cannot run at β = 0 exactly today, because the guard
-  takes it.
-  - Probing at δ = 0.5·(1 − 1e-12) (β = 2.2e-13) does not isolate the mix
-    either. The tail also moves by about 2e-12 relative, and `lost` moved
-    101 → 103 and 185 → 186. That shows the fingerprint is sensitive below the
-    1e-11 level, and nothing about the identity.
-- **Ulp sensitivity.** On wasm32, W1 returns `t(0.5) = 9.999999999999999e-6`
-  (1 ulp below the classic `1e-5`) and `t(50) = 1e-7` (1 ulp below the classic
-  `1e-5·0.01 = 1.0000000000000001e-7`). The continuum arms ran with those
-  values and still matched all 8 fields, so the tail ulp is measured harmless at
-  these six cells on wasm32.
-- **Native is unverified** (libm differs by an ulp in places; `93d37909`). Run
-  `test_multipath_n1_identical_golden` **without** `GOLDEN_CAPTURE` after F1.
-  If a row moves, make W1 return the classic literals at the three anchors (no
-  golden pins the continuum there), or ask the owner for a re-capture.
+Measured: on the bulk rows the mix ran and matched. The tail ulps also match:
+on wasm32, t(0.5) = 9.999999999999999e-6 against the classic 1e-5, and
+t(50) = 1e-7 against 1e-5·0.01 = 1.0000000000000001e-7, and all 8 fields still
+agreed. Native is unverified. Run `test_multipath_n1_identical_golden`
+**without** `GOLDEN_CAPTURE` first, and re-capture only with the owner's word.
 
-### F2: ρ composes with every hint (W4)
+#### F2: ρ for every hint (W4)
 
-The step. At the same dial point (δ, ρ = 0.95), "auto"/"realtime" run ρ = 1
-(`get_rho()` = 1), while continuum@δ runs 0.95. At the golden cells nothing is
-ever given up, so there the step is routing-only. On harsher cells it is a
-behaviour step:
+ABI-only. "auto"/"realtime" drop `custom_rho`. On harsh cells this is a
+behaviour step, for example ε .20, q .1, RTT 100, ρ .95: realtime gives up 0
+symbols in 895 ticks, continuum@50 gives up 28 in 823. It disappears with F1's
+alias table, which needs no new formula: every name goes through the continuum
+constructor, which already honours ρ. Golden impact: none (the rows pass
+`None`).
 
-| cell ε/q/RTT | realtime, ρ .95 → given_up / ticks | continuum@50, ρ .95 |
-|---|---|---|
-| .15/.2/80 | 0 / 778 | 0 / 778 |
-| .20/.1/100 | 0 / 895 | **28 / 823** |
-| .25/.1/100 | 0 / 991 | **68 / 884** |
-| .30/.05/150 | 0 / 1111 | **179 / 1097** |
+#### V1
 
-"auto" against continuum@0.5 gives the same numbers.
-
-```text
-   ρ = clamp(custom_rho ?? 1, 0.9, 1)     for every hint
-```
-
-Golden impact: none (the golden rows pass `None`).
-
-### F3: span-cartoon shed budget (V5, V6)
-
-This feeds `spanStep`'s shed decision, so it is model, not presentation.
-
-**Root cause.** `derived = ε̂·(1 − P_fec(r))` is the residual past in-window
-FEC. It is largest, equal to ε̂, at r = 0, which is the Bulk end. That is
-exactly where the cartoon declares the law "compiled out", so the `retain` flag
-(V6) has to cut a formula that is maximal there. The cut is the step.
-
-The shape at ρ = 1 (default cell q .5, RTT 50, cap 4, W auto), shipped code:
-
-| δ | .005 | .0055 | .006 | .0075 | .01 | .02 | .05 | .1 | .2 | .5 | 5 | 50 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| ε 5 % | 0 | 0 | **5e-2** | 5e-2 | 5e-2 | 5e-2 | 2.3e-2 | 7.5e-3 | 1.1e-3 | 1.9e-5 | 2.7e-5 | 5.1e-5 |
-| ε 10 % | 0 | **1e-1** | 1e-1 | 1e-1 | 1e-1 | 1e-1 | 1e-1 | 2.0e-2 | 2.5e-3 | 3.8e-5 | 6.1e-5 | 1.25e-4 |
-
-There are two steps:
-
-- **In δ at ρ = 1**, where `rStar` crosses 1e-6. That is not a preset, so the
-  preset-nudge gates miss it. The budget jumps from 0 to ε̂, at δ* = 0.005615
-  (ε 5 %), 0.008207 (ε 2.5 %) and 0.0050002 (ε 10 %, i.e. at the Bulk preset).
-  On a 2 % grid over the whole dial, the largest jump between neighbours is
-  5e-2 (ε 5 %) and 1e-1 (ε 10 %).
-- **In ρ at ρ = 1**: lim ρ→1⁻ of the budget is (1−ρ) → 0, but at ρ = 1 it is
-  `derived` (1.93e-5 at Auto, ε 5 %).
-
-Candidates:
-
-```text
-   (a)  budget = max( 1−ρ , (1−β)·ε̂·(1 − P_fec(r_mix, ε̂, A*, σ²)) )
-   (b)  budget = min( 1−ρ , ε̂·(1 − P_fec(r_mix, ε̂, A*, σ²)) )      ← proposed
-   in both, retain := (budget = 0); the separate flag goes
-```
-
-Shape first:
-
-- (a) is continuous but **not monotone in δ** at ρ = 1. At ε 5 % it runs
-  0 (Bulk) → 7.5e-3 (δ .01) → 1.5e-2 (δ .02) → 1.9e-5 (Auto) → 5.1e-5
-  (Realtime). Its largest 2 %-neighbour jump is 1.2e-2 (ε 5 %) and 2.7e-2
-  (ε 10 %), i.e. 0.24·ε̂. The (1−β) weight has no provenance.
-- (b) is continuous in both dials and monotone in ρ. At ρ = 1 it is
-  identically 0 at every δ (2 %-grid jump 0). Below 1 it is capped by the
-  declared contract 1−ρ.
-
-| corner | shipped | (a) | (b) |
-|---|---|---|---|
-| Bulk, ρ = 1 | 0 | 0 | 0 |
-| Bulk, ρ = .95 | 5e-2 | 5e-2 | 5e-2 |
-| Bulk·1.02, ρ = 1, ε 10 % | **1e-1** | 4.3e-4 | 0 |
-| Realtime, ρ = 1 (ε 5 % / 10 %) | 5.1e-5 / 1.25e-4 | same | **0** |
-| Realtime, ρ = .9999 (ε 10 %) | 1e-4 | **1.25e-4** | 1e-4 |
-| Realtime, ρ = .95 | 5e-2 | 5e-2 | **5.1e-5 / 1.25e-4** |
-
-Proposed: **(b)**. It is §5.6's own law made continuous: the retain (ρ = 1)
-seat never sheds, the evicting seat sheds at most the derived residual, and the
-declared contract caps it.
-
-- It **fails `test_visualizer_ui.mjs` :181** outright. That gate asserts
-  `!lawRt.retain` at ρ = 1, which pins the cartoon's present non-§5.6 reading
-  ("ρ = 1 target — sheds only the derived residual"). The gate would have to
-  change with the fix.
-- It changes the Realtime ρ < 1 budget from 1−ρ to the derived residual, so
-  :205 ("sheds counted at rt-end with ρ < 1") must be re-checked.
-
-The cap by 1−ρ needs its line in §5.6 before the code (formula-first).
-**Owner's call.** Golden impact: none (JS only).
-
-### F4: the T_cut law (W14)
-
-The law: `t_cut = find_t_cut(ε̂, q, max(r, 1e-3), W, σ², ρ)`, then
-`cut = max(t_cut, 2·RTT)`. `find_t_cut` bisects on
-`p_recovered_within(t) = 1 − ε(1−P_fec)(1 − min(1, r(1−(1−q)^(t+1))(1−ε)/ε))`
-over [0, 10·W] and returns ∞ at ρ ≥ 1.
-
-`p_recovered_within` models ARQ progress with the FEC rate r. At r ≈ 0 (Bulk)
-its supremum is about 1 − ε̂(1−P_fec), and for ρ above that, the bisection
-returns its cap. So the law is two-valued:
-
-- at ε .05, W 64, r = 1e-3: t_cut ≈ 0.01 ticks for ρ ≤ 0.95, where the 2·RTT
-  floor binds; 640 = 10·W for ρ ≥ 0.99, where the search cap binds; ∞ at ρ = 1;
-- at r = 0.3: ≈ 0.01 for every ρ < 1, where the floor binds.
-
-**Every one of the ten measured ρ < 1 points binds one of the two clamps.**
-That is a law pinned over its operating range (MEASUREMENT DISCIPLINE 17/18),
-a defect finding for the coordinator's ledger.
-
-The behaviour step sits at a non-preset ρ*, bisected to 1e-6 on
-continuum@0.005:
-
-| cell | ρ* | given_up just below → just above ρ* |
-|---|---|---|
-| .05/.5/50 | 0.983332 | 2 → 0 |
-| .10/.3/80 | 0.988175 | 6 → 0 |
-
-At ρ* the give-up horizon jumps from 2·RTT to 10·W. Elsewhere `given_up` is
-flat in ρ: on .05/.5/50 it is 3 for ρ .9 to .95 and 0 for ρ .99 to 1. The Auto
-and Realtime cells give up 0 at every ρ, so those cells hide the law.
-
-Proposed continuous law (needs a §4.10 derivation): model ARQ as retransmit
-rounds, not as r.
-
-```text
-   u(t)    = ε̂·(1 − P_fec)·ε̂_retx^(t/RTT)                      P(still unrecovered at age t)
-   T_cut(ρ) = RTT · ln( (1−ρ) / (ε̂(1−P_fec)) ) / ln ε̂_retx ,    clamped at 0
-```
-
-This is continuous and monotone in ρ, and diverges (logarithmically) as ρ → 1,
-so the `rho < 1.0` guard becomes the limit, not a branch. It lives in
-`raptorpath-math` (`find_t_cut`/`p_recovered_within`), so it is an engine-crate
-change, governed by ADR-0076's amended scope rule. Golden impact: none (rows at
-ρ = 1). `test_custom_rho_gives_up_late_losses` and `test_bulk_composes_with_rho`
-may move.
-
-### V1
-
-Delete the ternary (see the table). No golden impact.
+`params.hint === 'fixed'` (HTML :1705) is the banned form verbatim. The UI
+cannot reach it (the hint is always `'continuum'`), and wasm ignores `fixed_r`
+unless the hint is `"fixed"`. Delete the ternary and pass `params.fixedR`.
 
 ## D sites: what settles them
 
@@ -339,64 +390,80 @@ Existing gates:
   - Sim at Auto ±2 % (the W11 guard).
 - `test_visualizer_ui.mjs`: one hint at every dial position, including ρ < 1.
 
-| B site | covered by | uncovered: the absolute test that would catch it |
-|---|---|---|
-| W11 | 7d3 Auto ±2 % (value only) | structural only; F1's test below makes it observable |
-| W2/W5/W6/W9 | nothing: the gates exercise only the continuum arm | **named point = dial point**: for h ∈ {auto, bulk, realtime} × the six golden cells, after N ∈ {300, end} steps, every public accessor of `Simulation(h)` equals the one of `Simulation("continuum", δ(h))`. That covers the 8 fingerprint fields plus `get_delta_eff`, `get_r_star_auto`, `get_derived_w` and `get_completion_exposure`. Red today on the "bulk" accessors (tail 1e-3 vs 0.05). |
-| W4 | `test_bulk_composes_with_rho` (bulk only) | anchor cell ε .20, q .1, RTT 100, ρ = 0.95. For every hint, `get_rho() == 0.95` and the fingerprint plus `get_given_up` equal continuum@δ(h) at the same ρ. Red today: realtime gives up 0 against 28, ticks 895 against 823. At the golden cells only `get_rho` is red (nothing is given up there). |
-| V5/V6 | :181 and :233 pin the two sides, not continuity | a 2 % grid over the whole dial (δ = 0.005·1.02^k up to 50) at ε ∈ {2.5, 5, 10} %, ρ ∈ {1, 0.9999, 0.95}: every pair of neighbours has \|Δbudget\| ≤ 0.05·ε̂. Today the largest is ε̂ (5e-2 / 1e-1), so it fails. Also \|budget(ρ = 1) − budget(ρ = 1 − 1e-9)\| ≤ 1e-6 at each preset (today 1.9e-5 at Auto, so it fails). A grid is needed, not a point, because the step is not at a preset and δ* moves with ε. Assert on `spanLaw()` through the stub DOM. |
-| W14 | nothing (`test_custom_rho_*` and `test_bulk_composes_with_rho` check a single ρ) | an absolute law test on `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64): on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02, t_cut is non-decreasing in ρ and \|ln t_cut(next) − ln t_cut(this)\| ≤ 0.1. Today the jump 0.01 → 640 (ln ratio 11) fails. Add a bind-fraction gauge of the 2·RTT floor and the 10·W cap over the same grid; today it binds at 10/10 points. At sim level: bisect ρ* on continuum@0.005 at .05/.5/50, then require \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ* (today 2 → 0 within 1e-6). |
-| V1 | nothing | a UI-gate grep: no `hint ===` in the script block |
+| B site | reach | covered by | uncovered: the absolute test that would catch it |
+|---|---|---|---|
+| W11 | live | 7d3 Auto ±2 % (value) | structural: after the fix, a source check that `rate_now` has no branch on `bulkness` |
+| V5/V6 (F3) | live | :181 and :233 pin the two sides, not continuity | a 2 % grid over the whole dial (δ = 0.005·1.02^k up to 50) at ε ∈ {2.5, 5, 10} % and ρ ∈ {1, 0.9999, 0.95}: every pair of neighbours has \|Δbudget\| ≤ 0.05·ε̂ (today ε̂, so it fails). Also \|budget(1) − budget(1 − 1e-9)\| ≤ 1e-6 (today 1.9e-5 at Auto, so it fails). Assert on `spanLaw()` through the stub DOM. A grid, because the step is not at a preset. |
+| W14 (F4) | live | nothing (single-ρ tests only) | `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64), on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02: non-decreasing in ρ, and \|ln T(next) − ln T(this)\| ≤ 0.1 wherever T > 0 (today the jump 0.01 → 640 has ln ratio 11, so it fails). Plus the clamp bind-fraction gauges above. At sim level: \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ* at ρ* = 0.983332, .05/.5/50 (today 2 → 0 within 1e-6, so it fails). |
+| W2/W5/W6/W9 (F1) | dead | nothing (the gates run only the continuum arm) | until the machine is removed: for h ∈ {auto, bulk, realtime} × the six golden cells, every public accessor equals continuum@δ(h). Red today: "bulk" `get_r_star_auto` and `get_derived_w`. |
+| W4 (F2) | dead | `test_bulk_composes_with_rho` (bulk only) | at ε .20, q .1, RTT 100, ρ .95: every hint has `get_rho() == 0.95`, and its fingerprint plus `get_given_up` equal continuum@δ(h). Red today: realtime 0 given up / 895 ticks vs 28 / 823. |
+| V1 | dead | nothing | a UI-gate grep: no `hint ===` in the script block |
 
-A weakness of the gates themselves: §7d3's law tolerances (0.2 decades for t,
-0.05 for β, at ±2 %) are about 6× the continuous change. The largest t slope is
-1.85 decades per decade of δ, so ±2 % moves t by 0.032 decades; for β it is
-0.0086. A step of up to about 1.47× in t would pass. Suggested tightening: allow
-1.5× the analytic slope times the nudge width.
+**§7d3 tolerance, tightened in this branch** (test-only, no model change):
+
+- Before: a flat 0.2 decades (t, b, ζ) and 0.05 (β) for the ±2 % nudge. That is
+  about 6× the continuous change, so a step of up to about 1.47× in t passed.
+- Now: per law, `tol = 1.5 × slope × 2·log₁₀(1.02)`. The slope is the law's
+  steepest analytic slope per decade of δ:
+
+  | law | slope | tolerance |
+  |---|---|---|
+  | t | (log₁₀0.05 + 5)/2 = 1.8495 | 0.0477 decades |
+  | ζ | 1 | 0.0258 decades |
+  | b | log₁₀2/2 | 0.0039 decades |
+  | β (linear) | 0.5 | 0.0129 |
+
+- The largest continuous change at the presets is 0.0245 decades (t at Auto),
+  so the gate passes with margin. A 1.12× step in t, or 1.07× in ζ, would now
+  fail.
+- `node raptorpath-visualizer/test_visualizer.mjs`: all checks pass (exit 0).
 
 ## Golden impact summary
 
 | fix | moves `test_multipath_n1_identical_golden`? |
 |---|---|
-| F1 | bulk rows: measured no (the mix ran). Auto and realtime rows: no by the identity 1·a + 0·b = a, which is not measured. The tail ulps (t(0.5), t(50)) are measured harmless on wasm32. Native is unverified: run the test without capture first. A re-capture needs the owner's word. |
-| F2 | no (the rows pass ρ = None) |
+| W11 (delete the guard) | no on the UI path, by the identity. The golden rows go through it only after F1. |
+| F1 (alias table) | bulk rows: measured no (the mix ran). Auto/realtime rows: no if β ∈ {0, 1} exactly (pinned) and the zero-weighted term is finite (argued). Tail ulps measured harmless on wasm32. Native unverified: run without capture first; a re-capture needs the owner's word. |
+| F2 | no (falls out of F1; the rows pass ρ = None) |
 | F3, V1 | no (JS only) |
-| legacy → `#[cfg(test)]` | no |
-| F4 (T_cut law) | no (rows run at ρ = 1); `test_custom_rho_*` / `test_bulk_composes_with_rho` may move |
+| F4 | no (rows at ρ = 1); the ρ < 1 native tests may move |
+| `legacy_*` → `#[cfg(test)]` | no |
 
 ADR-0076 already plans a deliberate re-capture for phase 6. F1 should land
 before it and separately, so that the re-capture records only the moved laws.
 
-Probe scripts (not committed): `probe.mjs`, `probe2.mjs`, `probe3.mjs` and
-`probe4.mjs` in the auditor's scratch directory. Each one reads the committed
-HTML and evaluates its engine block the way `test_visualizer.mjs` does.
+Probe scripts (not committed): `probe.mjs` to `probe5.mjs` in the auditor's
+scratch directory. Each one reads the committed HTML and evaluates its engine
+block the way `test_visualizer.mjs` does.
 
 ## Fix order, by what phase 6 moves first
 
 1. **The five closed forms** (`span_deadline_d`, `span_width_a_star`,
    `pipeline_depth_m_star`, `trailing_offset_delta`, `sim_tail_target_of_delta`):
-   class A, with no site blocking them. Move them first. Keep the realtime
-   1-ulp question (F1) in mind when moving W1.
-2. **χ_trunc and the completion budget** (`completion_debt_increment`, :705).
-   W6 blocks this. Do F1 first (with β = 1 the `·(1−β)` already gives 0, so the
-   `hint_bulk` return is redundant), move `legacy_tail_burst` to test-only, and
-   settle fixed r (D). Then the formula moves branch-free.
-3. **`continuum_tail`**: do not move it. It is display only (headline finding).
-   Fix the comments and drop it from the ADR's phase 6 list.
-4. **The rate mix itself** (W11/W12/W9; not in the ADR list yet): move
+   class A, with no site blocking them. Move them first.
+2. **F1 + W11 together** (the alias table, deleting `hint_bulk`, deleting the
+   :883 guard, `legacy_*` → `#[cfg(test)]`), with the golden check run without
+   capture. This unblocks item 3.
+3. **χ_trunc and the completion budget** (`completion_debt_increment`, :705):
+   after F1, its only remaining guard is `fixed_r`, which waits on the owner.
+   Then it moves branch-free.
+4. **`continuum_tail`: do not move it.** It is display only (headline
+   finding). Fix the comments at :408–411 and :1017–1019 and drop it from the
+   ADR's phase 6 list.
+5. **The rate mix itself** (not in the ADR list yet): move
    `(1−β)·R(late = false) + β·R(late = true)` from the engine's
    `RateSnapshot::rate` into `raptorpath-math`, and call it from both sides.
-   That deletes the W11 guard and the bool in the W19 export.
-5. **F2** (ρ for every hint): independent of the moves; no golden impact.
-6. **F4** (T_cut, W14): the law is already in `raptorpath-math`. It needs a
-   §4.10 derivation, and its pinned-clamp finding needs a ledger verdict. It
-   does not block the moves.
-7. **F3 and V1** (visualizer JS): independent of phase 6. F3 needs its §5.6
-   line and a change to gate :181.
+   That deletes the bool in the W19 export.
+6. **F3 + F4, the unified give-up law**: it needs its §4.10/§5.6 derivation and
+   the owner's call on the :181 gate change. `find_t_cut` is already in
+   `raptorpath-math` and has no engine caller. Independent of the moves.
+7. **V1**: any time.
 
-## Outside scope (noted, not audited)
+## Outside scope (linked, not a new item)
 
-§5.6 describes the engine's shed law as running "only on the evicting seat",
-with "the retain (ρ = 1) seat never sheds". That is a seat keyed on ρ = 1, so
-the engine may have the same ρ step as V5. It should be checked against
-`net/shed.rs` under the same invariant.
+The engine's ρ step (§5.6: "the retain (ρ = 1) seat never sheds; the law runs
+only on the evicting seat") is the existing `if reliable` debt, W3.6a in the
+plan: `raptorpath/src/net/emit_source.rs` :308 and :815, and
+`raptorpath/src/net/sender_phases.rs` :980 and :1131 (inside the
+`if reliable` block that opens at :1122). The unified give-up law above is the
+model-side form of the same fix: ρ = 1 as the limit x → 0, not a seat.
