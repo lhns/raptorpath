@@ -9,69 +9,39 @@ Scope: restructure, simplify batches, archived arms, early platform work (handsh
 <!-- BEGIN GENERATED: track-infra -->
 ```mermaid
 flowchart TB
-    infra_early_platform["Tunnel platform:<br/>handshake, TLS,<br/>migration<br/>✔ done · successful"]
-    infra_mtu_floor["MTU floor 1350 (PMTU<br/>wedge)<br/>✔ done · successful"]
-    infra_consolidation["Deprecation register<br/>and consolidation<br/>✔ done · successful"]
-    infra_net_seams["Net seams and dead-<br/>code refactor<br/>✔ done · successful"]
-    infra_cleanup_0927["Whole-project<br/>cleanup pass<br/>✔ done · successful"]
-    infra_fix_program["Defect fix program<br/>✔ done · successful ⚠"]
-    infra_simplify_review["Simplification<br/>review (#167;44–#167;45)<br/>✔ done · successful"]
-    infra_adr73{{"Promote or archive<br/>at verdict<br/>✔ done · n/a<br/>ext: meas-<br/>adr52-discipline"}}
-    infra_simplify_batch1["Simplify batch 1<br/>(#167;49)<br/>✔ done · successful<br/>ext: meas-guard-41c"]
-    infra_simplify_batch2["Simplify batches<br/>1b–3 (#167;50)<br/>✔ done · successful"]
-    infra_restructure["Workspace<br/>restructure<br/>(ADR-0076)<br/>⏳ waiting"]
-    infra_defect_recorded_not_fixed>"Recorded, not fixed<br/>(#167;3.7)<br/>⚠ open defect"]
-    infra_inventory_merges["Inventory merges<br/>(first batch)<br/>✔ done · unrated"]
-    infra_derivation_merges["Derivation branch<br/>merges<br/>○ next"]
-    infra_tech_tree_skill["tech-tree skill PR<br/>⛔ blocked<br/>ext: model-law-<br/>ledger"]
-    infra_early_platform ~~~ infra_cleanup_0927
-    infra_early_platform ~~~ infra_fix_program
-    infra_early_platform ~~~ infra_simplify_review
-    infra_early_platform ~~~ infra_restructure
+    infra_early_platform["✔ Tunnel platform:<br/>handshake, TLS,<br/>migration"]
+    infra_mtu_floor["✔ MTU floor 1350 (PMTU<br/>wedge)"]
+    infra_consolidation["✔ Deprecation register<br/>and consolidation"]
+    infra_net_seams["✔ Net seams and dead-<br/>code refactor"]
+    infra_cleanup_0927["✔ Whole-project<br/>cleanup pass"]
+    infra_fix_program["✔ Defect fix program"]
+    infra_defect_recorded_not_fixed>"⚠ Recorded, not fixed<br/>(#167;3.7)"]
+    infra_simplify_review["✔ Simplification<br/>review (#167;44–#167;45)"]
+    infra_simplify_batch1["✔ Simplify batch 1<br/>(#167;49)"]
+    infra_simplify_batch2["✔ Simplify batches<br/>1b–3 (#167;50)"]
+    infra_restructure["⏳ Workspace<br/>restructure (ADR-0076)"]
+    infra_inventory_merges["✔ Inventory merges<br/>(first batch)"]
+    infra_derivation_merges["○ Derivation branch<br/>merges"]
+    infra_tech_tree_skill["⛔ tech-tree skill PR"]
+    infra_early_platform ~~~ infra_net_seams
     infra_mtu_floor ~~~ infra_cleanup_0927
-    infra_mtu_floor ~~~ infra_fix_program
-    infra_mtu_floor ~~~ infra_simplify_review
-    infra_mtu_floor ~~~ infra_restructure
-    infra_consolidation ~~~ infra_cleanup_0927
     infra_consolidation ~~~ infra_fix_program
-    infra_consolidation ~~~ infra_simplify_review
-    infra_consolidation ~~~ infra_restructure
-    infra_net_seams ~~~ infra_cleanup_0927
-    infra_net_seams ~~~ infra_fix_program
-    infra_net_seams ~~~ infra_simplify_review
-    infra_net_seams ~~~ infra_restructure
-    infra_cleanup_0927 ~~~ infra_defect_recorded_not_fixed
-    infra_cleanup_0927 ~~~ infra_inventory_merges
-    infra_cleanup_0927 ~~~ infra_derivation_merges
-    infra_cleanup_0927 ~~~ infra_adr73
-    infra_fix_program ~~~ infra_defect_recorded_not_fixed
-    infra_fix_program ~~~ infra_inventory_merges
-    infra_fix_program ~~~ infra_derivation_merges
-    infra_fix_program ~~~ infra_adr73
-    infra_simplify_review ~~~ infra_defect_recorded_not_fixed
-    infra_simplify_review ~~~ infra_inventory_merges
-    infra_simplify_review ~~~ infra_derivation_merges
-    infra_simplify_review ~~~ infra_adr73
-    infra_restructure ~~~ infra_defect_recorded_not_fixed
-    infra_restructure ~~~ infra_inventory_merges
-    infra_restructure ~~~ infra_derivation_merges
-    infra_restructure ~~~ infra_adr73
-    infra_defect_recorded_not_fixed ~~~ infra_tech_tree_skill
+    infra_net_seams ~~~ infra_defect_recorded_not_fixed
+    infra_cleanup_0927 ~~~ infra_simplify_review
+    infra_fix_program ~~~ infra_simplify_review
     infra_defect_recorded_not_fixed ~~~ infra_simplify_batch1
-    infra_inventory_merges ~~~ infra_tech_tree_skill
-    infra_inventory_merges ~~~ infra_simplify_batch1
-    infra_derivation_merges ~~~ infra_tech_tree_skill
-    infra_derivation_merges ~~~ infra_simplify_batch1
-    infra_adr73 ~~~ infra_tech_tree_skill
-    infra_adr73 ~~~ infra_simplify_batch1
-    infra_tech_tree_skill ~~~ infra_simplify_batch2
+    infra_simplify_review ~~~ infra_simplify_batch1
     infra_simplify_batch1 ~~~ infra_simplify_batch2
-    infra_fix_program -.->|⚠ qualified by| infra_defect_recorded_not_fixed
-    infra_simplify_review --> infra_adr73
-    infra_adr73 --> infra_simplify_batch1
+    infra_simplify_batch1 ~~~ infra_restructure
+    infra_simplify_batch1 ~~~ infra_inventory_merges
+    infra_simplify_batch2 ~~~ infra_derivation_merges
+    infra_restructure ~~~ infra_tech_tree_skill
+    infra_inventory_merges ~~~ infra_tech_tree_skill
+    infra_fix_program -.-> infra_defect_recorded_not_fixed
+    infra_simplify_review --> infra_simplify_batch1
     infra_simplify_batch1 --> infra_simplify_batch2
     infra_inventory_merges --> infra_tech_tree_skill
-    linkStyle 42 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
+    linkStyle 14 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -86,9 +56,8 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class infra_early_platform,infra_mtu_floor,infra_consolidation,infra_net_seams,infra_cleanup_0927,infra_fix_program,infra_simplify_review,infra_simplify_batch1,infra_simplify_batch2 succ
-    class infra_adr73 userdec
-    class infra_restructure waiting
     class infra_defect_recorded_not_fixed defect
+    class infra_restructure waiting
     class infra_inventory_merges unrated
     class infra_derivation_merges next
     class infra_tech_tree_skill blocked

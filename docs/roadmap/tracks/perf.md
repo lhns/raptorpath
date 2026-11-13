@@ -9,93 +9,63 @@ Scope: threading and per-packet cost: threading redesign, I/O owner, receiver co
 <!-- BEGIN GENERATED: track-perf -->
 ```mermaid
 flowchart TB
-    perf_parallelisation["Engine or receiver<br/>parallelisation<br/>✖ dead end"]
-    perf_emit_batch_v1["Emission batching,<br/>first attempt<br/>↷ superseded"]
-    perf_ack_merge["One control datagram<br/>per message<br/>✔ done · very-successful"]
-    perf_rcvbuf["Receive-buffer fix<br/>F-A (#167;7)<br/>✔ done · successful<br/>ext:<br/>meas-v4-verification"]
-    perf_emit_batch_law0["Emission batching,<br/>Law 0 (#167;8)<br/>✔ done · very-successful<br/>ext: meas-gso-truth"]
-    perf_quic_feeder["Per-path datagram<br/>feeder (#167;10)<br/>↷ superseded"]
-    perf_threading_p0["Threading P0 thread<br/>budget (#167;9)<br/>✔ done · successful"]
-    perf_threading_p1["Threading P1 defect<br/>fixes (#167;11)<br/>✔ done · successful"]
-    perf_threading_p2a["Threading P2a logic<br/>actor (#167;12)<br/>✖ dead end"]
-    perf_io_owner["Per-path I/O owner<br/>(Q1)<br/>✔ done · very-successful"]
-    perf_sched_split["Scheduler split by<br/>direction (Q2)<br/>✔ done · successful"]
-    perf_q3_investigation["Threading Q3 lock-<br/>free send<br/>✖ dead end"]
-    perf_receiver_r1["Receiver per-<br/>datagram cost R1<br/>↷ superseded"]
-    perf_receiver_r2["Receiver cost R2<br/>with floor fix<br/>✔ done · successful"]
-    perf_threading_r3["Threading R3<br/>receiver re-profile<br/>↷ superseded"]
-    perf_c8_lag["c8 client lag<br/>diagnosis<br/>✔ done · successful"]
-    perf_incremental_sack["Incremental SACK<br/>marking (#167;28)<br/>✔ done · very-successful"]
-    perf_decoder_prune["Decoder prune per<br/>drain (#167;32)<br/>✔ done · very-successful"]
-    perf_receiver_followups["Receiver follow-ups<br/>(#167;35)<br/>✔ done · successful<br/>ext: cod-debug-stall"]
-    perf_bbrrs_ns_cost["bbr_rs per-packet<br/>cost bench<br/>✔ done · unrated<br/>ext: cc-bbrrs-r1"]
-    perf_bbrrs_ring_fix["bbr_rs send-record<br/>ring fix<br/>⏳ waiting"]
-    perf_fix_burst_bound[/"Emission burst bound<br/>derivation<br/>○ next<br/>ext: model-law-<br/>ledger"/]
-    perf_parallelisation ~~~ perf_quic_feeder
-    perf_parallelisation ~~~ perf_threading_p0
-    perf_parallelisation ~~~ perf_threading_p1
-    perf_parallelisation ~~~ perf_c8_lag
-    perf_emit_batch_v1 ~~~ perf_quic_feeder
-    perf_emit_batch_v1 ~~~ perf_threading_p0
-    perf_emit_batch_v1 ~~~ perf_threading_p1
-    perf_emit_batch_v1 ~~~ perf_c8_lag
-    perf_ack_merge ~~~ perf_quic_feeder
-    perf_ack_merge ~~~ perf_threading_p0
-    perf_ack_merge ~~~ perf_threading_p1
-    perf_ack_merge ~~~ perf_c8_lag
+    perf_parallelisation["✖ Engine or receiver<br/>parallelisation"]
+    perf_emit_batch_v1["↷ Emission batching,<br/>first attempt"]
+    perf_ack_merge["✔ One control datagram<br/>per message"]
+    perf_rcvbuf["✔ Receive-buffer fix<br/>F-A (#167;7)"]
+    perf_emit_batch_law0["✔ Emission batching,<br/>Law 0 (#167;8)"]
+    perf_quic_feeder["↷ Per-path datagram<br/>feeder (#167;10)"]
+    perf_threading_p0["✔ Threading P0 thread<br/>budget (#167;9)"]
+    perf_threading_p1["✔ Threading P1 defect<br/>fixes (#167;11)"]
+    perf_threading_p2a["✖ Threading P2a logic<br/>actor (#167;12)"]
+    perf_io_owner["✔ Per-path I/O owner<br/>(Q1)"]
+    perf_sched_split["✔ Scheduler split by<br/>direction (Q2)"]
+    perf_q3_investigation["✖ Threading Q3 lock-<br/>free send"]
+    perf_receiver_r1["↷ Receiver per-<br/>datagram cost R1"]
+    perf_receiver_r2["✔ Receiver cost R2<br/>with floor fix"]
+    perf_threading_r3["↷ Threading R3<br/>receiver re-profile"]
+    perf_c8_lag["✔ c8 client lag<br/>diagnosis"]
+    perf_incremental_sack["✔ Incremental SACK<br/>marking (#167;28)"]
+    perf_decoder_prune["✔ Decoder prune per<br/>drain (#167;32)"]
+    perf_receiver_followups["✔ Receiver follow-ups<br/>(#167;35)"]
+    perf_bbrrs_ns_cost["✔ bbr_rs per-packet<br/>cost bench"]
+    perf_bbrrs_ring_fix["⏳ bbr_rs send-record<br/>ring fix"]
+    perf_fix_burst_bound[/"○ Emission burst bound<br/>derivation"/]
+    perf_parallelisation ~~~ perf_rcvbuf
+    perf_emit_batch_v1 ~~~ perf_rcvbuf
+    perf_ack_merge ~~~ perf_rcvbuf
+    perf_rcvbuf ~~~ perf_emit_batch_law0
     perf_rcvbuf ~~~ perf_quic_feeder
     perf_rcvbuf ~~~ perf_threading_p0
-    perf_rcvbuf ~~~ perf_threading_p1
-    perf_rcvbuf ~~~ perf_c8_lag
-    perf_quic_feeder ~~~ perf_bbrrs_ns_cost
-    perf_quic_feeder ~~~ perf_fix_burst_bound
-    perf_quic_feeder ~~~ perf_emit_batch_law0
+    perf_emit_batch_law0 ~~~ perf_threading_p1
     perf_quic_feeder ~~~ perf_threading_p2a
-    perf_threading_p0 ~~~ perf_bbrrs_ns_cost
-    perf_threading_p0 ~~~ perf_fix_burst_bound
-    perf_threading_p0 ~~~ perf_emit_batch_law0
     perf_threading_p0 ~~~ perf_threading_p2a
-    perf_threading_p1 ~~~ perf_bbrrs_ns_cost
-    perf_threading_p1 ~~~ perf_fix_burst_bound
-    perf_threading_p1 ~~~ perf_emit_batch_law0
-    perf_threading_p1 ~~~ perf_threading_p2a
-    perf_c8_lag ~~~ perf_bbrrs_ns_cost
-    perf_c8_lag ~~~ perf_fix_burst_bound
-    perf_c8_lag ~~~ perf_emit_batch_law0
-    perf_c8_lag ~~~ perf_threading_p2a
-    perf_bbrrs_ns_cost ~~~ perf_io_owner
-    perf_bbrrs_ns_cost ~~~ perf_incremental_sack
-    perf_bbrrs_ns_cost ~~~ perf_bbrrs_ring_fix
-    perf_fix_burst_bound ~~~ perf_io_owner
-    perf_fix_burst_bound ~~~ perf_incremental_sack
-    perf_fix_burst_bound ~~~ perf_bbrrs_ring_fix
-    perf_emit_batch_law0 ~~~ perf_io_owner
-    perf_emit_batch_law0 ~~~ perf_incremental_sack
-    perf_emit_batch_law0 ~~~ perf_bbrrs_ring_fix
+    perf_threading_p1 ~~~ perf_io_owner
     perf_threading_p2a ~~~ perf_io_owner
-    perf_threading_p2a ~~~ perf_incremental_sack
-    perf_threading_p2a ~~~ perf_bbrrs_ring_fix
     perf_io_owner ~~~ perf_sched_split
-    perf_incremental_sack ~~~ perf_sched_split
-    perf_bbrrs_ring_fix ~~~ perf_sched_split
     perf_sched_split ~~~ perf_q3_investigation
     perf_q3_investigation ~~~ perf_receiver_r1
     perf_receiver_r1 ~~~ perf_receiver_r2
     perf_receiver_r2 ~~~ perf_threading_r3
-    perf_threading_r3 ~~~ perf_decoder_prune
-    perf_decoder_prune ~~~ perf_receiver_followups
-    perf_emit_batch_v1 -.->|replaced by| perf_emit_batch_law0
+    perf_receiver_r2 ~~~ perf_c8_lag
+    perf_threading_r3 ~~~ perf_incremental_sack
+    perf_c8_lag ~~~ perf_decoder_prune
+    perf_incremental_sack ~~~ perf_receiver_followups
+    perf_decoder_prune ~~~ perf_bbrrs_ns_cost
+    perf_receiver_followups ~~~ perf_bbrrs_ring_fix
+    perf_bbrrs_ns_cost ~~~ perf_fix_burst_bound
+    perf_emit_batch_v1 -.-> perf_emit_batch_law0
     perf_rcvbuf --> perf_emit_batch_law0
-    perf_quic_feeder -.->|replaced by| perf_io_owner
+    perf_quic_feeder -.-> perf_io_owner
     perf_threading_p0 --> perf_threading_p2a
     perf_threading_p1 --> perf_io_owner
     perf_io_owner --> perf_sched_split
     perf_sched_split --> perf_q3_investigation
     perf_q3_investigation --> perf_receiver_r1
-    perf_receiver_r1 -.->|replaced by| perf_receiver_r2
+    perf_receiver_r1 -.-> perf_receiver_r2
     perf_receiver_r1 --> perf_receiver_r2
     perf_receiver_r2 --> perf_threading_r3
-    perf_threading_r3 -.->|replaced by| perf_decoder_prune
+    perf_threading_r3 -.-> perf_decoder_prune
     perf_c8_lag --> perf_incremental_sack
     perf_threading_r3 --> perf_decoder_prune
     perf_decoder_prune --> perf_receiver_followups

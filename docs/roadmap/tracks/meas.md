@@ -9,177 +9,89 @@ Scope: measurement and harness: the L1 harness, guards, stub run, instruments, m
 <!-- BEGIN GENERATED: track-meas -->
 ```mermaid
 flowchart TB
-    meas_l0_sim_bench["Netsim harness and<br/>ablation benches<br/>✔ done · unrated"]
-    meas_adr51_scenarios["Canonical scenarios<br/>and goal gate<br/>✔ done · successful"]
-    meas_l1_harness["L1 netns harness and<br/>baselines<br/>✔ done · unrated"]
-    meas_l2_multipath["L2/L3 multipath and<br/>tail evaluation<br/>✔ done · unrated"]
-    meas_c8_aggregation_arc["C8 heterogeneous<br/>aggregation arc<br/>↷ superseded<br/>ext: place-marginal-<br/>cost"]
-    meas_gen_inert_era>"Generation-inert<br/>measurement era<br/>✔ fixed"]
-    meas_regime_map["Hardware-honest<br/>regime map<br/>✔ done · unrated"]
-    meas_adr52_discipline["L1 measurement<br/>discipline<br/>(ADR-0052)<br/>✔ done · successful"]
-    meas_formula_first["Formula-first review<br/>(ADR-0070)<br/>✔ done · successful"]
-    meas_pipeline_verification["Pipeline<br/>verification matrix<br/>✔ done · unrated"]
-    meas_goal_0819["Era, latency-truth<br/>and c9 batteries<br/>✔ done · unrated"]
-    meas_attribution_audit["Attribution audit D0<br/>✔ done · unrated"]
-    meas_wire_v8["Stage-2 instruments<br/>and owed findings<br/>✔ done · successful ⚠"]
-    meas_5h_cap{{"Owner rule: 5 h<br/>measurement cap<br/>✔ done · n/a"}}
-    meas_gso_truth>"Per-datagram loss<br/>truth (GSO)<br/>✔ fixed"]
-    meas_v4_verification["V4 verification of<br/>new main (#167;6)<br/>✔ done · successful<br/>ext: cod-one-<br/>pipeline"]
-    meas_guard_41c["Rank-minp merge<br/>guard (#167;41c)<br/>✔ done · successful ⚠"]
-    meas_harness_consolidation["Harness on main,<br/>rehearsal mode<br/>✔ done · successful"]
-    meas_defect_rtp_floor>"Guard clause<br/>rtp_floor_p0<br/>measures drain<br/>⚠ open defect<br/>ext: rec-snapver-<br/>filter"]
-    meas_guard_clause_dry["Guard clause dry run<br/>✔ done · successful"]
-    meas_guard_v2{{"Merge guard v2<br/>accepted (#167;41d)<br/>✔ done · n/a"}}
-    meas_defect_eta_witness>"ETA route and σ<br/>witness mismatch<br/>⚠ open defect"]
-    meas_defect_c8_bimodal>"c8 control bimodal<br/>collapse<br/>⚠ open defect"]
-    meas_defect_diag_rtp_ms>"#91;DIAG#93; rtp prints<br/>whole milliseconds<br/>⚠ open defect"]
-    meas_guard_v2_impl["Guard v2<br/>implementation<br/>✔ done · unrated"]
-    meas_s51_design["Off-Bulk benchmark<br/>design (#167;51)<br/>✔ done · unrated"]
-    meas_s51_harness["#167;51 harness and<br/>scorer<br/>⛔ blocked<br/>ext: rec-s54-session"]
-    meas_s51b_rho["Partial-reliability<br/>measurement block<br/>⛔ blocked"]
-    meas_adversarial_cells_build["Adversarial cells:<br/>build and validate<br/>○ next"]
-    meas_harness_robustness["Harness robustness<br/>for every plan<br/>○ next"]
-    meas_guard_resolution["Guard CPU and lag<br/>resolution<br/>○ next"]
-    meas_test_hygiene["Test hygiene fixes<br/>○ next"]
-    meas_s51_session["Off-Bulk baseline<br/>and δ sweep<br/>⛔ blocked"]
-    meas_adversarial_cells_run["Adversarial cells<br/>measured<br/>⛔ blocked"]
-    meas_competitor_battery["Competitor battery<br/>⛔ blocked<br/>ext: cc-bbrrs-<br/>promote"]
-    meas_progress_baseline["Cumulative progress<br/>benchmark<br/>○ next"]
-    meas_fix_gauges_p3["Gauges for the<br/>remaining constants<br/>⛔ blocked<br/>ext: rate-fix-<br/>estimators, model-<br/>fix-paper-p2 +1"]
-    meas_l0_sim_bench ~~~ meas_gen_inert_era
-    meas_l0_sim_bench ~~~ meas_regime_map
-    meas_l0_sim_bench ~~~ meas_adr52_discipline
-    meas_l0_sim_bench ~~~ meas_formula_first
-    meas_adr51_scenarios ~~~ meas_gen_inert_era
-    meas_adr51_scenarios ~~~ meas_regime_map
-    meas_adr51_scenarios ~~~ meas_adr52_discipline
-    meas_adr51_scenarios ~~~ meas_formula_first
-    meas_l2_multipath ~~~ meas_gen_inert_era
+    meas_l0_sim_bench["✔ Netsim harness and<br/>ablation benches"]
+    meas_adr51_scenarios["✔ Canonical scenarios<br/>and goal gate"]
+    meas_l1_harness["✔ L1 netns harness and<br/>baselines"]
+    meas_l2_multipath["✔ L2/L3 multipath and<br/>tail evaluation"]
+    meas_c8_aggregation_arc["↷ C8 heterogeneous<br/>aggregation arc"]
+    meas_gen_inert_era>"✔ Generation-inert<br/>measurement era"]
+    meas_regime_map["✔ Hardware-honest<br/>regime map"]
+    meas_adr52_discipline["✔ L1 measurement<br/>discipline (ADR-0052)"]
+    meas_pipeline_verification["✔ Pipeline<br/>verification matrix"]
+    meas_formula_first["✔ Formula-first review<br/>(ADR-0070)"]
+    meas_goal_0819["✔ Era, latency-truth<br/>and c9 batteries"]
+    meas_attribution_audit["✔ Attribution audit D0"]
+    meas_wire_v8["✔ Stage-2 instruments<br/>and owed findings"]
+    meas_defect_eta_witness>"⚠ ETA route and σ<br/>witness mismatch"]
+    meas_defect_c8_bimodal>"⚠ c8 control bimodal<br/>collapse"]
+    meas_defect_diag_rtp_ms>"⚠ #91;DIAG#93; rtp prints<br/>whole milliseconds"]
+    meas_gso_truth>"✔ Per-datagram loss<br/>truth (GSO)"]
+    meas_v4_verification["✔ V4 verification of<br/>new main (#167;6)"]
+    meas_guard_41c["✔ Rank-minp merge<br/>guard (#167;41c)"]
+    meas_harness_consolidation["✔ Harness on main,<br/>rehearsal mode"]
+    meas_defect_rtp_floor>"⚠ Guard clause<br/>rtp_floor_p0 measures<br/>drain"]
+    meas_guard_clause_dry["✔ Guard clause dry run"]
+    meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
+    meas_s51_design["✔ Off-Bulk benchmark<br/>design (#167;51)"]
+    meas_adversarial_cells_build["○ Adversarial cells:<br/>build and validate"]
+    meas_harness_robustness["○ Harness robustness<br/>for every plan"]
+    meas_guard_resolution["○ Guard CPU and lag<br/>resolution"]
+    meas_test_hygiene["○ Test hygiene fixes"]
+    meas_s51_harness["⛔ #167;51 harness and<br/>scorer"]
+    meas_s51_session["⛔ Off-Bulk baseline<br/>and δ sweep"]
+    meas_s51b_rho["⛔ Partial-reliability<br/>measurement block"]
+    meas_adversarial_cells_run["⛔ Adversarial cells<br/>measured"]
+    meas_competitor_battery["⛔ Competitor battery"]
+    meas_progress_baseline["○ Cumulative progress<br/>benchmark"]
+    meas_fix_gauges_p3["⛔ Gauges for the<br/>remaining constants"]
+    meas_l0_sim_bench ~~~ meas_l1_harness
+    meas_adr51_scenarios ~~~ meas_l2_multipath
+    meas_adr51_scenarios ~~~ meas_c8_aggregation_arc
+    meas_l1_harness ~~~ meas_gen_inert_era
     meas_l2_multipath ~~~ meas_regime_map
-    meas_l2_multipath ~~~ meas_adr52_discipline
-    meas_l2_multipath ~~~ meas_formula_first
-    meas_c8_aggregation_arc ~~~ meas_gen_inert_era
-    meas_c8_aggregation_arc ~~~ meas_regime_map
     meas_c8_aggregation_arc ~~~ meas_adr52_discipline
-    meas_c8_aggregation_arc ~~~ meas_formula_first
     meas_gen_inert_era ~~~ meas_pipeline_verification
-    meas_gen_inert_era ~~~ meas_goal_0819
-    meas_gen_inert_era ~~~ meas_attribution_audit
-    meas_gen_inert_era ~~~ meas_wire_v8
-    meas_regime_map ~~~ meas_pipeline_verification
-    meas_regime_map ~~~ meas_goal_0819
-    meas_regime_map ~~~ meas_attribution_audit
-    meas_regime_map ~~~ meas_wire_v8
-    meas_adr52_discipline ~~~ meas_pipeline_verification
+    meas_regime_map ~~~ meas_formula_first
     meas_adr52_discipline ~~~ meas_goal_0819
-    meas_adr52_discipline ~~~ meas_attribution_audit
-    meas_adr52_discipline ~~~ meas_wire_v8
-    meas_formula_first ~~~ meas_pipeline_verification
-    meas_formula_first ~~~ meas_goal_0819
-    meas_formula_first ~~~ meas_attribution_audit
+    meas_pipeline_verification ~~~ meas_attribution_audit
     meas_formula_first ~~~ meas_wire_v8
-    meas_pipeline_verification ~~~ meas_5h_cap
-    meas_pipeline_verification ~~~ meas_gso_truth
-    meas_pipeline_verification ~~~ meas_v4_verification
-    meas_pipeline_verification ~~~ meas_guard_41c
-    meas_goal_0819 ~~~ meas_5h_cap
-    meas_goal_0819 ~~~ meas_gso_truth
-    meas_goal_0819 ~~~ meas_v4_verification
-    meas_goal_0819 ~~~ meas_guard_41c
-    meas_attribution_audit ~~~ meas_5h_cap
-    meas_attribution_audit ~~~ meas_gso_truth
-    meas_attribution_audit ~~~ meas_v4_verification
-    meas_attribution_audit ~~~ meas_guard_41c
-    meas_wire_v8 ~~~ meas_5h_cap
-    meas_wire_v8 ~~~ meas_gso_truth
-    meas_wire_v8 ~~~ meas_v4_verification
-    meas_wire_v8 ~~~ meas_guard_41c
-    meas_5h_cap ~~~ meas_harness_consolidation
-    meas_5h_cap ~~~ meas_defect_rtp_floor
-    meas_5h_cap ~~~ meas_defect_eta_witness
-    meas_5h_cap ~~~ meas_defect_c8_bimodal
+    meas_goal_0819 ~~~ meas_defect_eta_witness
+    meas_attribution_audit ~~~ meas_defect_c8_bimodal
+    meas_wire_v8 ~~~ meas_defect_diag_rtp_ms
+    meas_defect_eta_witness ~~~ meas_gso_truth
+    meas_defect_c8_bimodal ~~~ meas_v4_verification
+    meas_defect_diag_rtp_ms ~~~ meas_guard_41c
     meas_gso_truth ~~~ meas_harness_consolidation
-    meas_gso_truth ~~~ meas_defect_rtp_floor
-    meas_gso_truth ~~~ meas_defect_eta_witness
-    meas_gso_truth ~~~ meas_defect_c8_bimodal
-    meas_v4_verification ~~~ meas_harness_consolidation
     meas_v4_verification ~~~ meas_defect_rtp_floor
-    meas_v4_verification ~~~ meas_defect_eta_witness
-    meas_v4_verification ~~~ meas_defect_c8_bimodal
-    meas_guard_41c ~~~ meas_harness_consolidation
     meas_guard_41c ~~~ meas_defect_rtp_floor
-    meas_guard_41c ~~~ meas_defect_eta_witness
-    meas_guard_41c ~~~ meas_defect_c8_bimodal
-    meas_harness_consolidation ~~~ meas_defect_diag_rtp_ms
-    meas_harness_consolidation ~~~ meas_s51_harness
-    meas_harness_consolidation ~~~ meas_adversarial_cells_build
-    meas_harness_consolidation ~~~ meas_harness_robustness
-    meas_defect_rtp_floor ~~~ meas_defect_diag_rtp_ms
-    meas_defect_rtp_floor ~~~ meas_s51_harness
-    meas_defect_rtp_floor ~~~ meas_adversarial_cells_build
-    meas_defect_rtp_floor ~~~ meas_harness_robustness
-    meas_defect_eta_witness ~~~ meas_defect_diag_rtp_ms
-    meas_defect_eta_witness ~~~ meas_s51_harness
-    meas_defect_eta_witness ~~~ meas_adversarial_cells_build
-    meas_defect_eta_witness ~~~ meas_harness_robustness
-    meas_defect_c8_bimodal ~~~ meas_defect_diag_rtp_ms
-    meas_defect_c8_bimodal ~~~ meas_s51_harness
-    meas_defect_c8_bimodal ~~~ meas_adversarial_cells_build
-    meas_defect_c8_bimodal ~~~ meas_harness_robustness
-    meas_defect_diag_rtp_ms ~~~ meas_guard_resolution
-    meas_defect_diag_rtp_ms ~~~ meas_test_hygiene
-    meas_defect_diag_rtp_ms ~~~ meas_competitor_battery
-    meas_defect_diag_rtp_ms ~~~ meas_progress_baseline
-    meas_s51_harness ~~~ meas_guard_resolution
-    meas_s51_harness ~~~ meas_test_hygiene
-    meas_s51_harness ~~~ meas_competitor_battery
-    meas_s51_harness ~~~ meas_progress_baseline
-    meas_adversarial_cells_build ~~~ meas_guard_resolution
+    meas_harness_consolidation ~~~ meas_defect_rtp_floor
+    meas_defect_rtp_floor ~~~ meas_guard_clause_dry
+    meas_guard_clause_dry ~~~ meas_guard_v2_impl
+    meas_guard_clause_dry ~~~ meas_s51_design
+    meas_guard_clause_dry ~~~ meas_adversarial_cells_build
+    meas_guard_v2_impl ~~~ meas_harness_robustness
+    meas_s51_design ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
-    meas_adversarial_cells_build ~~~ meas_competitor_battery
-    meas_adversarial_cells_build ~~~ meas_progress_baseline
-    meas_harness_robustness ~~~ meas_guard_resolution
-    meas_harness_robustness ~~~ meas_test_hygiene
-    meas_harness_robustness ~~~ meas_competitor_battery
-    meas_harness_robustness ~~~ meas_progress_baseline
-    meas_guard_resolution ~~~ meas_l1_harness
-    meas_guard_resolution ~~~ meas_guard_clause_dry
-    meas_guard_resolution ~~~ meas_adversarial_cells_run
-    meas_test_hygiene ~~~ meas_l1_harness
-    meas_test_hygiene ~~~ meas_guard_clause_dry
-    meas_test_hygiene ~~~ meas_adversarial_cells_run
-    meas_competitor_battery ~~~ meas_l1_harness
-    meas_competitor_battery ~~~ meas_guard_clause_dry
-    meas_competitor_battery ~~~ meas_adversarial_cells_run
-    meas_progress_baseline ~~~ meas_l1_harness
-    meas_progress_baseline ~~~ meas_guard_clause_dry
-    meas_progress_baseline ~~~ meas_adversarial_cells_run
-    meas_l1_harness ~~~ meas_guard_v2
-    meas_guard_clause_dry ~~~ meas_guard_v2
-    meas_adversarial_cells_run ~~~ meas_guard_v2
-    meas_guard_v2 ~~~ meas_guard_v2_impl
-    meas_guard_v2 ~~~ meas_s51_design
-    meas_guard_v2_impl ~~~ meas_s51_session
-    meas_s51_design ~~~ meas_s51_session
+    meas_harness_robustness ~~~ meas_s51_harness
+    meas_guard_resolution ~~~ meas_s51_harness
+    meas_test_hygiene ~~~ meas_s51_harness
+    meas_s51_harness ~~~ meas_s51_session
     meas_s51_session ~~~ meas_s51b_rho
-    meas_s51_session ~~~ meas_fix_gauges_p3
+    meas_s51_session ~~~ meas_adversarial_cells_run
+    meas_s51_session ~~~ meas_competitor_battery
+    meas_s51b_rho ~~~ meas_progress_baseline
+    meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
+    meas_competitor_battery ~~~ meas_fix_gauges_p3
     meas_adr51_scenarios --> meas_l1_harness
-    meas_c8_aggregation_arc -.->|replaced by| meas_regime_map
-    meas_wire_v8 -.->|⚠ qualified by| meas_defect_eta_witness
-    meas_guard_41c -.->|⚠ qualified by| meas_guard_v2
+    meas_c8_aggregation_arc -.-> meas_regime_map
     meas_defect_rtp_floor --> meas_guard_clause_dry
-    meas_guard_clause_dry --> meas_guard_v2
-    meas_guard_v2 --> meas_guard_v2_impl
-    meas_guard_v2 --> meas_s51_design
-    meas_s51_session --> meas_s51b_rho
+    meas_guard_clause_dry --> meas_guard_v2_impl
+    meas_guard_clause_dry --> meas_s51_design
     meas_s51_design --> meas_s51_session
     meas_s51_harness --> meas_s51_session
+    meas_s51_session --> meas_s51b_rho
     meas_adversarial_cells_build --> meas_adversarial_cells_run
     meas_s51_session --> meas_fix_gauges_p3
-    meas_competitor_battery -.->|then| meas_progress_baseline
-    meas_progress_baseline -.->|then| meas_s51b_rho
-    linkStyle 119,120 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 130,131 stroke:#999,stroke-width:1px,color:#777
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -196,10 +108,9 @@ flowchart TB
     class meas_l0_sim_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_pipeline_verification,meas_goal_0819,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design unrated
     class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry succ
     class meas_c8_aggregation_arc dead
-    class meas_5h_cap,meas_guard_v2 userdec
-    class meas_defect_rtp_floor,meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms defect
-    class meas_s51_harness,meas_s51b_rho,meas_s51_session,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
+    class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor defect
     class meas_adversarial_cells_build,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
+    class meas_s51_harness,meas_s51_session,meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
 ```
 <!-- END GENERATED: track-meas -->
 

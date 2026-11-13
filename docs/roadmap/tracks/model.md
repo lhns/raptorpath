@@ -9,94 +9,53 @@ Scope: the model, paper and visualizer: paper, wasm L0 model, NO-MODE-SWITCH aud
 <!-- BEGIN GENERATED: track-model -->
 ```mermaid
 flowchart TB
-    model_paper_v1["Unified FEC/ARQ<br/>model paper<br/>✔ done · unrated"]
-    model_math_verification["Mathematical<br/>verification of the<br/>model<br/>✔ done · unrated"]
-    model_wasm_l0["raptorpath-math and<br/>wasm L0 model<br/>✔ done · successful ⚠<br/>ext: rate-defect-<br/>pfec"]
-    model_vis_continuum["Visualizer as one<br/>continuum law<br/>✔ done · successful ⚠<br/>ext: cod-unified-<br/>span"]
-    model_mode_switch_debts>"Engine NO-MODE-<br/>SWITCH debts (#167;3.3)<br/>⚠ open defect"]
-    model_open_constants>"Open-constants<br/>register (#167;3.4)<br/>⚠ open defect"]
-    model_review_37["Model review (#167;37)<br/>✔ done · successful"]
-    model_paper_recon["Paper versus engine<br/>reconciliation<br/>⏳ waiting"]
-    model_bound_tests["Bounding tests for<br/>divergences<br/>✔ done · unrated ⚠"]
-    model_wasm_audit["Wasm mode-switch<br/>audit<br/>⏳ waiting<br/>ext: infra-<br/>restructure"]
-    model_defect_tcut>"T_cut give-up law<br/>pinned<br/>⚠ open defect"]
-    model_defect_dead_machine>"Wasm dead second<br/>machine<br/>⚠ open defect"]
-    model_bound_tests_unrun>"Erratum: pre-flight<br/>tests not run<br/>⚠ open defect"]
-    model_law_ledger["Law ledger<br/>✔ done · unrated ⚠<br/>ext: rec-wire-clock-<br/>derivation"]
-    model_fix_hint_keyed_paths["Hint-keyed engine<br/>paths made<br/>continuous<br/>⛔ blocked<br/>ext:<br/>meas-s51-session"]
-    model_user_wasm_calls{{"Owner calls on wasm<br/>audit<br/>○ next"}}
-    model_wasm_fixes["Wasm model fixes<br/>⛔ blocked<br/>ext: rate-law-<br/>reconcile, store-<br/>engine-form-impl"]
-    model_fix_paper_p2["Paper text for<br/>placement and bbr_rs<br/>○ next"]
-    model_fix_paper_p3["Paper-only law<br/>records<br/>⛔ blocked<br/>ext:<br/>meas-s51-session,<br/>store-fix-maxbw-<br/>minrtt"]
-    model_paper_v1 ~~~ model_open_constants
-    model_paper_v1 ~~~ model_review_37
-    model_paper_v1 ~~~ model_paper_recon
-    model_paper_v1 ~~~ model_bound_tests_unrun
+    model_paper_v1["✔ Unified FEC/ARQ<br/>model paper"]
+    model_wasm_l0["✔ raptorpath-math and<br/>wasm L0 model"]
+    model_math_verification["✔ Mathematical<br/>verification of the<br/>model"]
+    model_vis_continuum["✔ Visualizer as one<br/>continuum law"]
+    model_mode_switch_debts>"⚠ Engine NO-MODE-<br/>SWITCH debts (#167;3.3)"]
+    model_open_constants>"⚠ Open-constants<br/>register (#167;3.4)"]
+    model_review_37["✔ Model review (#167;37)"]
+    model_paper_recon["⏳ Paper versus engine<br/>reconciliation"]
+    model_bound_tests["✔ Bounding tests for<br/>divergences"]
+    model_wasm_audit["⏳ Wasm mode-switch<br/>audit"]
+    model_defect_tcut>"⚠ T_cut give-up law<br/>pinned"]
+    model_defect_dead_machine>"⚠ Wasm dead second<br/>machine"]
+    model_bound_tests_unrun>"⚠ Erratum: pre-flight<br/>tests not run"]
+    model_law_ledger["✔ Law ledger"]
+    model_fix_hint_keyed_paths["⛔ Hint-keyed engine<br/>paths made continuous"]
+    model_wasm_fixes["⛔ Wasm model fixes"]
+    model_fix_paper_p2["○ Paper text for<br/>placement and bbr_rs"]
+    model_fix_paper_p3["⛔ Paper-only law<br/>records"]
+    model_paper_v1 ~~~ model_vis_continuum
+    model_wasm_l0 ~~~ model_mode_switch_debts
     model_math_verification ~~~ model_open_constants
-    model_math_verification ~~~ model_review_37
-    model_math_verification ~~~ model_paper_recon
-    model_math_verification ~~~ model_bound_tests_unrun
-    model_wasm_l0 ~~~ model_open_constants
-    model_wasm_l0 ~~~ model_review_37
-    model_wasm_l0 ~~~ model_paper_recon
-    model_wasm_l0 ~~~ model_bound_tests_unrun
-    model_mode_switch_debts ~~~ model_open_constants
-    model_mode_switch_debts ~~~ model_review_37
+    model_vis_continuum ~~~ model_review_37
     model_mode_switch_debts ~~~ model_paper_recon
-    model_mode_switch_debts ~~~ model_bound_tests_unrun
-    model_open_constants ~~~ model_law_ledger
-    model_open_constants ~~~ model_fix_hint_keyed_paths
-    model_open_constants ~~~ model_fix_paper_p3
-    model_open_constants ~~~ model_vis_continuum
-    model_review_37 ~~~ model_law_ledger
-    model_review_37 ~~~ model_fix_hint_keyed_paths
-    model_review_37 ~~~ model_fix_paper_p3
-    model_review_37 ~~~ model_vis_continuum
-    model_paper_recon ~~~ model_law_ledger
-    model_paper_recon ~~~ model_fix_hint_keyed_paths
-    model_paper_recon ~~~ model_fix_paper_p3
-    model_paper_recon ~~~ model_vis_continuum
-    model_bound_tests_unrun ~~~ model_law_ledger
-    model_bound_tests_unrun ~~~ model_fix_hint_keyed_paths
-    model_bound_tests_unrun ~~~ model_fix_paper_p3
-    model_bound_tests_unrun ~~~ model_vis_continuum
-    model_law_ledger ~~~ model_bound_tests
-    model_law_ledger ~~~ model_fix_paper_p2
-    model_law_ledger ~~~ model_wasm_audit
-    model_fix_hint_keyed_paths ~~~ model_bound_tests
-    model_fix_hint_keyed_paths ~~~ model_fix_paper_p2
-    model_fix_hint_keyed_paths ~~~ model_wasm_audit
-    model_fix_paper_p3 ~~~ model_bound_tests
-    model_fix_paper_p3 ~~~ model_fix_paper_p2
-    model_fix_paper_p3 ~~~ model_wasm_audit
-    model_vis_continuum ~~~ model_bound_tests
-    model_vis_continuum ~~~ model_fix_paper_p2
-    model_vis_continuum ~~~ model_wasm_audit
+    model_open_constants ~~~ model_paper_recon
+    model_review_37 ~~~ model_bound_tests
+    model_paper_recon ~~~ model_wasm_audit
     model_bound_tests ~~~ model_defect_tcut
-    model_bound_tests ~~~ model_defect_dead_machine
-    model_bound_tests ~~~ model_user_wasm_calls
-    model_fix_paper_p2 ~~~ model_defect_tcut
-    model_fix_paper_p2 ~~~ model_defect_dead_machine
-    model_fix_paper_p2 ~~~ model_user_wasm_calls
-    model_wasm_audit ~~~ model_defect_tcut
     model_wasm_audit ~~~ model_defect_dead_machine
-    model_wasm_audit ~~~ model_user_wasm_calls
-    model_defect_tcut ~~~ model_wasm_fixes
-    model_defect_dead_machine ~~~ model_wasm_fixes
-    model_user_wasm_calls ~~~ model_wasm_fixes
-    model_wasm_l0 -.->|⚠ qualified by| model_defect_tcut
+    model_wasm_audit ~~~ model_bound_tests_unrun
+    model_defect_tcut ~~~ model_law_ledger
+    model_defect_dead_machine ~~~ model_fix_hint_keyed_paths
+    model_bound_tests_unrun ~~~ model_wasm_fixes
+    model_law_ledger ~~~ model_fix_paper_p2
+    model_fix_hint_keyed_paths ~~~ model_fix_paper_p3
+    model_wasm_fixes ~~~ model_fix_paper_p3
+    model_wasm_l0 -.-> model_defect_tcut
     model_wasm_l0 --> model_vis_continuum
-    model_vis_continuum -.->|⚠ qualified by| model_defect_dead_machine
-    model_vis_continuum -.->|⚠ qualified by| model_defect_tcut
+    model_vis_continuum -.-> model_defect_dead_machine
+    model_vis_continuum -.-> model_defect_tcut
     model_paper_recon --> model_bound_tests
-    model_bound_tests -.->|⚠ qualified by| model_bound_tests_unrun
+    model_bound_tests -.-> model_bound_tests_unrun
     model_vis_continuum --> model_wasm_audit
     model_wasm_audit --> model_defect_tcut
     model_wasm_audit --> model_defect_dead_machine
-    model_wasm_audit --> model_user_wasm_calls
-    model_user_wasm_calls --> model_wasm_fixes
+    model_wasm_audit --> model_wasm_fixes
     model_law_ledger --> model_fix_paper_p2
-    linkStyle 56,58,59,61 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
+    linkStyle 17,19,20,22 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -115,7 +74,6 @@ flowchart TB
     class model_mode_switch_debts,model_open_constants,model_defect_tcut,model_defect_dead_machine,model_bound_tests_unrun defect
     class model_paper_recon,model_wasm_audit waiting
     class model_fix_hint_keyed_paths,model_wasm_fixes,model_fix_paper_p3 blocked
-    class model_user_wasm_calls userdec
     class model_fix_paper_p2 next
 ```
 <!-- END GENERATED: track-model -->

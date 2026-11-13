@@ -9,110 +9,65 @@ Scope: substrate congestion control: quinn BBR, bbr_rs, Copa, the BBR/Copa hybri
 <!-- BEGIN GENERATED: track-cc -->
 ```mermaid
 flowchart TB
-    cc_early_delay_cc["Delay-based CC<br/>replaces AIMD<br/>✔ done · unrated"]
-    cc_copa_lite["Production Copa-lite<br/>port (P-series)<br/>✔ done · successful ⚠"]
-    cc_copa_sole_substrate["Copa per path as<br/>substrate<br/>↷ superseded"]
-    cc_cubic_substrate["Quinn stock Cubic<br/>substrate<br/>↷ superseded"]
-    cc_copa_wire_signal["Copa wire signal,<br/>compete mode<br/>✔ done · successful"]
-    cc_bbr_default["BBR as substrate<br/>default (ADR-0054)<br/>✔ done · successful ⚠"]
-    cc_bbrrs_v1["bbr_rs v1 on shal8<br/>✔ done · unrated"]
-    cc_adr68_fusion["Copa-BBR fusion<br/>(ADR-0068)<br/>⏸ parked"]
-    cc_quinn_bbr_collapse>"Quinn BBR window<br/>collapse (#167;47)<br/>⚠ open defect<br/>ext: store-engine-<br/>form"]
-    cc_bbrrs_r1["Fixed bbr_rs versus<br/>quinn BBR<br/>✔ done · bad ⚠<br/>ext: meas-guard-41c,<br/>meas-guard-v2"]
-    cc_user_continue_bbrrs{{"Owner call: continue<br/>bbr_rs<br/>✔ done · n/a"}}
-    cc_bbrrs_r2["bbr_rs round 2 fixes<br/>⏳ waiting"]
-    cc_pacing_audit["Pacing-seam audit<br/>(W2)<br/>⏳ waiting"]
-    cc_user_pacing_s3{{"Owner call: vendored<br/>pacing seam<br/>✔ done · n/a"}}
-    cc_pacing_seam["Vendored quinn-proto<br/>pacing hook<br/>⏳ waiting"]
-    cc_defect_copa_minrtt>"Copa min_rtt reads<br/>own queue<br/>⚠ open defect"]
-    cc_s48d_session["#167;48d bbr_rs round 2<br/>⛔ blocked<br/>ext: perf-bbrrs-<br/>ring-fix, meas-<br/>guard-v2-impl"]
-    cc_pacing_seam_reading["Pacing seam first<br/>reading<br/>⛔ blocked"]
-    cc_user_adr68_direction{{"Owner call: ADR-0068<br/>direction<br/>○ next"}}
-    cc_user_bbrrs_promotion{{"Owner call: bbr_rs<br/>promotion<br/>⛔ blocked"}}
-    cc_copa_consumers["Copa consumers onto<br/>per-leg state<br/>⛔ blocked<br/>ext: place-per-leg-<br/>impl,<br/>meas-s51-session +1"]
-    cc_bbrrs_promote["bbr_rs promotion<br/>(new ADR)<br/>⛔ blocked"]
-    cc_hybrid["BBR/Copa hybrid<br/>build (ADR-0068)<br/>⏸ parked<br/>ext: meas-<br/>adversarial-cells-<br/>run"]
-    cc_early_delay_cc ~~~ cc_bbr_default
-    cc_early_delay_cc ~~~ cc_bbrrs_v1
-    cc_early_delay_cc ~~~ cc_quinn_bbr_collapse
-    cc_early_delay_cc ~~~ cc_defect_copa_minrtt
-    cc_copa_lite ~~~ cc_bbr_default
-    cc_copa_lite ~~~ cc_bbrrs_v1
-    cc_copa_lite ~~~ cc_quinn_bbr_collapse
-    cc_copa_lite ~~~ cc_defect_copa_minrtt
+    cc_cubic_substrate["↷ Quinn stock Cubic<br/>substrate"]
+    cc_early_delay_cc["✔ Delay-based CC<br/>replaces AIMD"]
+    cc_copa_lite["✔ Production Copa-lite<br/>port (P-series)"]
+    cc_copa_sole_substrate["↷ Copa per path as<br/>substrate"]
+    cc_copa_wire_signal["✔ Copa wire signal,<br/>compete mode"]
+    cc_bbr_default["✔ BBR as substrate<br/>default (ADR-0054)"]
+    cc_adr68_fusion["⏸ Copa-BBR fusion<br/>(ADR-0068)"]
+    cc_bbrrs_v1["✔ bbr_rs v1 on shal8"]
+    cc_quinn_bbr_collapse>"⚠ Quinn BBR window<br/>collapse (#167;47)"]
+    cc_bbrrs_r1["✔ Fixed bbr_rs versus<br/>quinn BBR"]
+    cc_bbrrs_r2["⏳ bbr_rs round 2 fixes"]
+    cc_pacing_audit["⏳ Pacing-seam audit<br/>(W2)"]
+    cc_pacing_seam["⏳ Vendored quinn-proto<br/>pacing hook"]
+    cc_defect_copa_minrtt>"⚠ Copa min_rtt reads<br/>own queue"]
+    cc_s48d_session["⛔ #167;48d bbr_rs round 2"]
+    cc_pacing_seam_reading["⛔ Pacing seam first<br/>reading"]
+    cc_bbrrs_promote["⛔ bbr_rs promotion<br/>(new ADR)"]
+    cc_hybrid["⏸ BBR/Copa hybrid<br/>build (ADR-0068)"]
+    cc_copa_consumers["⛔ Copa consumers onto<br/>per-leg state"]
+    cc_cubic_substrate ~~~ cc_copa_sole_substrate
+    cc_early_delay_cc ~~~ cc_copa_wire_signal
+    cc_copa_lite ~~~ cc_copa_wire_signal
     cc_copa_sole_substrate ~~~ cc_bbr_default
-    cc_copa_sole_substrate ~~~ cc_bbrrs_v1
-    cc_copa_sole_substrate ~~~ cc_quinn_bbr_collapse
-    cc_copa_sole_substrate ~~~ cc_defect_copa_minrtt
-    cc_cubic_substrate ~~~ cc_bbr_default
-    cc_cubic_substrate ~~~ cc_bbrrs_v1
-    cc_cubic_substrate ~~~ cc_quinn_bbr_collapse
-    cc_cubic_substrate ~~~ cc_defect_copa_minrtt
-    cc_bbr_default ~~~ cc_copa_consumers
-    cc_bbr_default ~~~ cc_copa_wire_signal
-    cc_bbr_default ~~~ cc_bbrrs_r1
-    cc_bbrrs_v1 ~~~ cc_copa_consumers
-    cc_bbrrs_v1 ~~~ cc_copa_wire_signal
+    cc_copa_wire_signal ~~~ cc_bbr_default
+    cc_bbr_default ~~~ cc_adr68_fusion
+    cc_bbr_default ~~~ cc_bbrrs_v1
+    cc_bbr_default ~~~ cc_quinn_bbr_collapse
+    cc_adr68_fusion ~~~ cc_bbrrs_r1
     cc_bbrrs_v1 ~~~ cc_bbrrs_r1
-    cc_quinn_bbr_collapse ~~~ cc_copa_consumers
-    cc_quinn_bbr_collapse ~~~ cc_copa_wire_signal
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
-    cc_defect_copa_minrtt ~~~ cc_copa_consumers
-    cc_defect_copa_minrtt ~~~ cc_copa_wire_signal
-    cc_defect_copa_minrtt ~~~ cc_bbrrs_r1
-    cc_copa_consumers ~~~ cc_adr68_fusion
-    cc_copa_consumers ~~~ cc_user_continue_bbrrs
-    cc_copa_wire_signal ~~~ cc_adr68_fusion
-    cc_copa_wire_signal ~~~ cc_user_continue_bbrrs
-    cc_bbrrs_r1 ~~~ cc_adr68_fusion
-    cc_bbrrs_r1 ~~~ cc_user_continue_bbrrs
-    cc_adr68_fusion ~~~ cc_bbrrs_r2
-    cc_adr68_fusion ~~~ cc_pacing_audit
-    cc_user_continue_bbrrs ~~~ cc_bbrrs_r2
-    cc_user_continue_bbrrs ~~~ cc_pacing_audit
-    cc_bbrrs_r2 ~~~ cc_user_pacing_s3
-    cc_bbrrs_r2 ~~~ cc_s48d_session
-    cc_bbrrs_r2 ~~~ cc_user_adr68_direction
-    cc_pacing_audit ~~~ cc_user_pacing_s3
+    cc_bbrrs_r1 ~~~ cc_bbrrs_r2
+    cc_bbrrs_r1 ~~~ cc_pacing_audit
+    cc_bbrrs_r2 ~~~ cc_pacing_seam
+    cc_pacing_audit ~~~ cc_defect_copa_minrtt
     cc_pacing_audit ~~~ cc_s48d_session
-    cc_pacing_audit ~~~ cc_user_adr68_direction
-    cc_user_pacing_s3 ~~~ cc_pacing_seam
-    cc_user_pacing_s3 ~~~ cc_user_bbrrs_promotion
-    cc_s48d_session ~~~ cc_pacing_seam
-    cc_s48d_session ~~~ cc_user_bbrrs_promotion
-    cc_user_adr68_direction ~~~ cc_pacing_seam
-    cc_user_adr68_direction ~~~ cc_user_bbrrs_promotion
     cc_pacing_seam ~~~ cc_pacing_seam_reading
-    cc_pacing_seam ~~~ cc_bbrrs_promote
-    cc_user_bbrrs_promotion ~~~ cc_pacing_seam_reading
-    cc_user_bbrrs_promotion ~~~ cc_bbrrs_promote
+    cc_defect_copa_minrtt ~~~ cc_bbrrs_promote
+    cc_s48d_session ~~~ cc_bbrrs_promote
     cc_pacing_seam_reading ~~~ cc_hybrid
-    cc_bbrrs_promote ~~~ cc_hybrid
-    cc_copa_lite -.->|⚠ qualified by| cc_defect_copa_minrtt
-    cc_copa_sole_substrate -.->|replaced by| cc_bbr_default
-    cc_cubic_substrate -.->|replaced by| cc_bbr_default
+    cc_bbrrs_promote ~~~ cc_copa_consumers
+    cc_cubic_substrate -.-> cc_bbr_default
+    cc_copa_lite -.-> cc_defect_copa_minrtt
+    cc_copa_sole_substrate -.-> cc_bbr_default
     cc_copa_lite --> cc_copa_wire_signal
-    cc_bbr_default -.->|⚠ qualified by| cc_quinn_bbr_collapse
+    cc_bbr_default -.-> cc_quinn_bbr_collapse
     cc_bbr_default --> cc_adr68_fusion
     cc_copa_wire_signal --> cc_adr68_fusion
     cc_quinn_bbr_collapse --> cc_bbrrs_r1
     cc_bbrrs_v1 --> cc_bbrrs_r1
-    cc_bbrrs_r1 --> cc_user_continue_bbrrs
-    cc_user_continue_bbrrs --> cc_bbrrs_r2
+    cc_bbrrs_r1 --> cc_bbrrs_r2
     cc_adr68_fusion --> cc_pacing_audit
-    cc_pacing_audit --> cc_user_pacing_s3
-    cc_user_pacing_s3 --> cc_pacing_seam
+    cc_pacing_audit --> cc_pacing_seam
     cc_bbrrs_r2 --> cc_pacing_seam
     cc_bbrrs_r2 --> cc_s48d_session
     cc_pacing_seam --> cc_pacing_seam_reading
-    cc_pacing_audit --> cc_user_adr68_direction
-    cc_s48d_session --> cc_user_bbrrs_promotion
-    cc_user_bbrrs_promotion --> cc_bbrrs_promote
+    cc_s48d_session --> cc_bbrrs_promote
     cc_bbrrs_promote --> cc_hybrid
-    cc_user_adr68_direction --> cc_hybrid
-    cc_s48d_session -.->|then| cc_pacing_seam_reading
-    linkStyle 56,60 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 78 stroke:#999,stroke-width:1px,color:#777
+    cc_pacing_audit --> cc_hybrid
+    linkStyle 22,25 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -126,15 +81,14 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
+    class cc_cubic_substrate,cc_copa_sole_substrate dead
     class cc_early_delay_cc,cc_bbrrs_v1 unrated
     class cc_copa_lite,cc_copa_wire_signal,cc_bbr_default succ
-    class cc_copa_sole_substrate,cc_cubic_substrate dead
     class cc_adr68_fusion,cc_hybrid parked
     class cc_quinn_bbr_collapse,cc_defect_copa_minrtt defect
     class cc_bbrrs_r1 bad
-    class cc_user_continue_bbrrs,cc_user_pacing_s3,cc_user_adr68_direction,cc_user_bbrrs_promotion userdec
     class cc_bbrrs_r2,cc_pacing_audit,cc_pacing_seam waiting
-    class cc_s48d_session,cc_pacing_seam_reading,cc_copa_consumers,cc_bbrrs_promote blocked
+    class cc_s48d_session,cc_pacing_seam_reading,cc_bbrrs_promote,cc_copa_consumers blocked
 ```
 <!-- END GENERATED: track-cc -->
 

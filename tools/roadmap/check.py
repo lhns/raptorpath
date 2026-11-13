@@ -14,14 +14,15 @@ import build  # noqa: E402
 FIELDS = ["id", "title", "track", "kind", "state", "outcome", "evidence", "verdict_quote", "headline",
           "depends_on", "replaced_by", "lane", "start", "end", "folded", "overview"]
 LIST_FIELDS = ["evidence", "depends_on", "replaced_by", "folded"]
-OPTIONAL = ["qualified_by", "notes", "vm_order", "order_reason", "plain", "waiting_on"]  # absent == [] / "" / None
+OPTIONAL = ["qualified_by", "notes", "vm_order", "order_reason", "plain", "waiting_on", "diagram"]  # absent == [] / "" / None
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 # GitHub fails to render some Mermaid blocks ("Unable to render rich display") when one page holds too many;
 # which blocks fail varies per page load (2026-11-13: 14 blocks in one 231 KB file failed from block 6 to 10 on;
 # 3 and 8 per file rendered). The cause is not known; the cap is empirical and set to the most the shipped layout
-# was verified with (the main page's 3 blocks).
+# was verified with (3 blocks on the main page; it has 1 now, every other page has 1).
 MAX_MERMAID_PER_FILE = 3
-TODAY_RE = re.compile(r"^%% today: (\d{4}-\d{2}-\d{2})\r?$", re.M)
+# the build date, written as a visible sentence on the main page and on the timeline page
+TODAY_RE = re.compile(re.escape(build.GENERATED_ON).replace(re.escape("{}"), r"(\d{4}-\d{2}-\d{2})"))
 
 
 def _date(v):
@@ -36,15 +37,16 @@ def _date(v):
 
 
 def find_cycle(nodes):
-    """Return one cycle in depends_on as a list of ids (first == last), or None."""
-    deps = {n["id"]: n["depends_on"] for n in nodes}
+    """Return one cycle in depends_on + replaced_by as a list of ids (first == last), or None.
+
+    Edges run prerequisite -> dependant, and old node -> its replacement (the old one comes first).
+    """
+    pre = build.precedence(nodes)
     color = {}
 
     def visit(u, path):
         color[u] = 1
-        for v in deps[u]:
-            if v not in deps:
-                continue
+        for v in pre[u]:
             if color.get(v) == 1:
                 return path[path.index(v):] + [v]
             if v not in color:
@@ -54,11 +56,11 @@ def find_cycle(nodes):
         color[u] = 2
         return None
 
-    for u in deps:
+    for u in pre:
         if u not in color:
             found = visit(u, [u])
             if found:
-                return found
+                return list(reversed(found))
     return None
 
 
@@ -125,6 +127,8 @@ def validate_nodes(nodes):
         vo = n.get("vm_order")
         if vo is not None and (not isinstance(vo, int) or isinstance(vo, bool)):
             err("vm_order must be an integer")
+        if not isinstance(n.get("diagram", True), bool):
+            err("diagram must be true or false")
         if not isinstance(n["overview"], bool):
             err("overview must be true or false")
         dates = []
@@ -185,7 +189,13 @@ def validate_nodes(nodes):
 
     cyc = find_cycle(good)
     if cyc:
-        errors.append("cycle in depends_on: " + " -> ".join(cyc))
+        errors.append("cycle in depends_on/replaced_by: " + " -> ".join(cyc))
+    # the diagrams run in time order: a prerequisite that starts after its dependant is drawn as a forward arrow
+    pre = build.precedence(good)
+    for n in good:
+        for d in pre[n["id"]]:
+            if by[d]["start"] and n["start"] and str(by[d]["start"]) > str(n["start"]):
+                warnings.append(f"{n['id']}: prerequisite '{d}' starts after it ({by[d]['start']} > {n['start']})")
 
     size = sum(1 for n in good if n["overview"])
     if not 20 <= size <= 40:
@@ -193,22 +203,39 @@ def validate_nodes(nodes):
     return errors, warnings
 
 
+def parse_date(text):
+    m = TODAY_RE.search(text)
+    return m.group(1) if m else None
+
+
 def check_md(nodes, md_text):
     """Compare the generated regions in md_text with a fresh in-memory rebuild."""
-    m = TODAY_RE.search(md_text)
-    today = m.group(1) if m else None  # open bars end at the date the file was built with
-    regions = build.render_regions(nodes, today)
+    regions = build.render_regions(nodes, parse_date(md_text))
     try:
         build.apply_regions(md_text, regions)
     except ValueError as e:
         return [f"roadmap.md: {e}"], []
-    errors, warnings = [], []
+    errors = []
     for name, body in regions.items():
         if build.apply_regions(md_text, {name: body}) != md_text:
             errors.append(f"roadmap.md: generated region '{name}' is stale (run tools/roadmap/build.py)")
-    if m and m.group(1) != str(datetime.date.today()) and any(n["start"] and not n["end"] for n in build.normalize(nodes)):
-        warnings.append(f"roadmap.md: open timeline bars end at {m.group(1)}, not today")
-    return errors, warnings
+    return errors, []
+
+
+def check_timeline(nodes, md_path):
+    """timeline.md must equal a fresh rebuild (dated like the file); open bars should end today."""
+    p = Path(md_path).parent / build.TIMELINE_KEY
+    try:
+        text = p.read_bytes().decode("utf-8")
+    except OSError:
+        return [f"{p.name}: timeline file missing (run tools/roadmap/build.py)"], [], {}
+    day = parse_date(text)
+    errors, warnings = [], []
+    if text != build.render_timeline_file(nodes, day):
+        errors.append(f"{p.name}: generated timeline file is stale (run tools/roadmap/build.py)")
+    if day and day != str(datetime.date.today()) and any(n["start"] and not n["end"] for n in build.normalize(nodes)):
+        warnings.append(f"{p.name}: open timeline bars end at {day}, not today")
+    return errors, warnings, {p: text}
 
 
 def check_tracks(nodes, md_path):
@@ -250,8 +277,10 @@ def run(nodes_path, md_path):
         return [f"roadmap.md: {e}"], warnings
     e2, w2 = check_md(nodes, text)
     e3, texts = check_tracks(nodes, md_path)
+    e4, w4, tl = check_timeline(nodes, md_path)
+    texts.update(tl)
     texts[Path(md_path)] = text
-    return e2 + e3 + mermaid_errors(texts), warnings + w2
+    return e2 + e3 + e4 + mermaid_errors(texts), warnings + w2 + w4
 
 
 def main(argv=None):

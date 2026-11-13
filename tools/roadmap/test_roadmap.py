@@ -3,6 +3,7 @@
 import contextlib
 import copy
 import io
+import re
 import sys
 import tempfile
 import unittest
@@ -67,6 +68,74 @@ class Files:
         d.mkdir(parents=True, exist_ok=True)
         for code in build.TRACKS:
             (d / f"{code}.md").write_text(build.render_track_file(nodes, code, TODAY), encoding="utf-8", newline="")
+        (self.dir / build.TIMELINE_KEY).write_text(build.render_timeline_file(nodes, TODAY), encoding="utf-8", newline="")
+
+
+EDGE_RE = re.compile(r"^\s+(\w+) (?:-->|-\.->(?:\|[^|]*\|)?) (\w+)$", re.M)
+TIE_RE = re.compile(r"^\s+(\w+) ~~~ (\w+)$", re.M)
+
+
+def mermaid_blocks(text):
+    return re.findall(r"```mermaid\n(.*?)\n```", text, re.S)
+
+
+def row_levels(block):
+    """Row index of every node, read back from the invisible row ties (a ~~~ b puts b one row below a)."""
+    ties = TIE_RE.findall(block)
+    level = {}
+    for a, b in ties:
+        level.setdefault(a, 0)
+        level.setdefault(b, 0)
+    for _ in range(len(ties) + 1):  # relax: longest path from the first row
+        for a, b in ties:
+            level[b] = max(level[b], level[a] + 1)
+    return level
+
+
+def backward_edges(block):
+    lv = row_levels(block)
+    return [(a, b) for a, b in EDGE_RE.findall(block) if lv.get(a, 0) >= lv.get(b, 0)]
+
+
+class OneDirectionTests(unittest.TestCase):
+    """Complaint 1: arrows must all point down (= forward in time)."""
+
+    def real(self):
+        nodes = build.load_nodes(build.NODES)
+        return nodes
+
+    def test_every_edge_in_every_real_diagram_goes_down(self):
+        nodes = self.real()
+        outs = build.render_outputs(nodes, skeleton(), TODAY)
+        seen = 0
+        for key, text in outs.items():
+            for block in mermaid_blocks(text):
+                if block.startswith("flowchart"):
+                    seen += 1
+                    self.assertEqual(backward_edges(block), [], key)
+        self.assertEqual(seen, 1 + len(build.TRACKS))
+
+    def test_synthetic_all_edge_kinds_go_down(self):
+        nodes = [
+            node("rec-new", state="done", outcome="successful", evidence=["e"], start="2026-05-01", qualified_by=["rec-def"]),
+            node("rec-old", state="abandoned", outcome="superseded", replaced_by=["rec-new"], start="2026-06-01"),
+            node("rec-def", kind="defect-verdict", state="in-progress", start="2026-02-01"),
+            node("cc-x", depends_on=["rec-new"], start="2026-01-01"),
+            node("rec-und", depends_on=["cc-x"]),
+        ]
+        for text in build.render_outputs(nodes, skeleton(), TODAY).values():
+            for block in mermaid_blocks(text):
+                if block.startswith("flowchart"):
+                    self.assertEqual(backward_edges(block), [])
+
+    def test_global_order_is_topological_then_by_start_then_undated(self):
+        nodes = [node("rec-late", start="2026-09-01", depends_on=["rec-early"]),
+                 node("rec-early", start="2026-10-01"),
+                 node("rec-old", start="2026-01-01", state="abandoned", outcome="superseded", replaced_by=["rec-mid"]),
+                 node("rec-mid", start="2026-01-15"),
+                 node("rec-nodate"), node("rec-nodate2", depends_on=["rec-nodate"])]
+        order = build.time_order(build.normalize(nodes))
+        self.assertEqual(order, ["rec-old", "rec-mid", "rec-early", "rec-late", "rec-nodate", "rec-nodate2"])
 
 
 class ValidateTests(unittest.TestCase):
@@ -88,6 +157,26 @@ class ValidateTests(unittest.TestCase):
         bad = [node("rec-a", depends_on=["rec-b"]), node("rec-b", depends_on=["rec-c"]), node("rec-c", depends_on=["rec-a"])]
         e = self.errs(bad)
         self.assertTrue(any("cycle" in x and "rec-a" in x and "rec-b" in x for x in e), e)
+
+    def test_cycle_through_replaced_by(self):
+        bad = [node("rec-a", replaced_by=["rec-b"], state="abandoned", outcome="superseded"), node("rec-b", depends_on=["rec-c"]),
+               node("rec-c", depends_on=["rec-b"])]
+        self.assertTrue(any("cycle" in x for x in self.errs(bad)))
+        loop = [node("rec-a", replaced_by=["rec-b"], state="abandoned", outcome="superseded"),
+                node("rec-b", replaced_by=["rec-a"], state="abandoned", outcome="superseded")]
+        e = self.errs(loop)
+        self.assertTrue(any("cycle" in x and "replaced_by" in x for x in e), e)
+        old_depends_on_new = [node("rec-a", replaced_by=["rec-b"], depends_on=["rec-b"], state="abandoned", outcome="superseded"),
+                              node("rec-b")]
+        self.assertTrue(any("cycle" in x for x in self.errs(old_depends_on_new)))
+
+    def test_prerequisite_starting_later_is_a_warning(self):
+        nodes = [node("rec-a", start="2026-05-01"), node("rec-b", depends_on=["rec-a"], start="2026-02-01", state="in-progress")]
+        errs, warns = check.validate_nodes(nodes)
+        self.assertEqual(errs, [])
+        self.assertTrue(any("rec-b" in w and "rec-a" in w and "starts after" in w for w in warns), warns)
+        ok = [node("rec-a", start="2026-01-01"), node("rec-b", depends_on=["rec-a"], start="2026-02-01", state="in-progress")]
+        self.assertFalse(any("starts after" in w for w in check.validate_nodes(ok)[1]))
 
     def test_self_dependency(self):
         self.assertTrue(self.errs([node("rec-a", depends_on=["rec-a"])]))
@@ -179,38 +268,40 @@ class ValidateTests(unittest.TestCase):
 class BuildTests(unittest.TestCase):
     def test_label_escaping(self):
         t = 'Law §5 "x" [y] #z'
-        out = built([node("rec-a", title=t)])
-        self.assertIn('rec_a["Law #167;5 #quot;x#quot; #91;y#93; #35;z<br/>○ next"]', out)
-        self.assertNotIn(t, out.split("<!-- BEGIN GENERATED: overview -->")[1].split("<!-- END")[0])
-
+        out = tfile([node("rec-a", title=t)], "rec")
+        self.assertIn('rec_a["○ Law #167;5 #quot;x#quot; #91;y#93; #35;z"]', out)
+        self.assertNotIn(t, self.region(out, "track-rec"))
     def test_shapes_and_edges(self):
-        nodes = GOOD + [node("rec-d", kind="user-decision"), node("rec-e", kind="defect-verdict"),
+        nodes = GOOD + [node("rec-e", kind="defect-verdict"),
                         node("rec-f", state="abandoned", outcome="superseded", replaced_by=["rec-b"])]
-        out = built(nodes)
-        self.assertIn('rate_c[/"T rate-c<br/>○ next"/]', out)
-        self.assertIn('rec_d{{"T rec-d<br/>○ next"}}', out)
-        self.assertIn('rec_e>"T rec-e<br/>⚠ open defect"]', out)
-        self.assertIn("rec_a --> rec_b", out)
-        self.assertIn("rec_f -.->|replaced by| rec_b", out)
-        self.assertIn("✔ done · very-successful", out)
-        self.assertIn("▶ in progress", out)
-        self.assertIn("↷ superseded", out)
-
-    def test_track_diagram_external_stub(self):
+        rec = self.region(tfile(nodes, "rec"), "track-rec")
+        self.assertIn('rate_c[/"○ T rate-c"/]', self.region(tfile(nodes, "rate"), "track-rate"))
+        self.assertIn('rec_e>"⚠ T rec-e"]', rec)
+        self.assertIn("rec_a --> rec_b", rec)
+        self.assertIn("rec_f -.-> rec_b", rec)
+        self.assertIn('rec_a["✔ T rec-a"]', rec)
+        self.assertIn('rec_b["▶ T rec-b"]', rec)
+        self.assertIn('rec_f["↷ T rec-f"]', rec)
+        self.assertNotIn("|", rec.split("classDef")[0])  # no text on edges
+    def test_track_diagram_has_no_ext_lines_or_cross_track_edges(self):
         track_rate = self.region(tfile(GOOD, "rate"), "track-rate")
-        self.assertIn("ext: rec-a", track_rate)
+        self.assertNotIn("ext:", track_rate)
         self.assertNotIn("x_", track_rate)
         self.assertNotIn("-->", track_rate)
         self.assertNotIn("rec_b[", track_rate)
-
     def test_timeline_open_bar_and_undated(self):
-        out = built(GOOD)
-        tl = out.split("<!-- BEGIN GENERATED: timeline -->")[1].split("<!-- END")[0]
-        self.assertIn("%% today: " + TODAY, tl)
+        tl = build.render_timeline_file(GOOD, TODAY)
+        self.assertNotIn("%% today", tl)
+        self.assertIn("Generated from nodes.yaml on " + TODAY + ".", tl)
         self.assertIn("T rec-b :active, rec_b, 2026-03-01, " + TODAY, tl)
         self.assertIn("T rec-a :rec_a, 2026-01-01, 2026-02-01", tl)
         self.assertIn("Not shown (no `start`): `rate-c`", tl)
-
+        self.assertEqual(tl.count("```mermaid"), 1)
+        main = built(GOOD)
+        self.assertNotIn("gantt", main)
+        self.assertIn("(roadmap/timeline.md)", self.region(main, "timeline"))
+        self.assertEqual(check.TODAY_RE.search(main).group(1), TODAY)
+        self.assertEqual(check.TODAY_RE.search(tl).group(1), TODAY)
     def test_preservation_and_idempotence(self):
         text = skeleton(hand="keep § this\r\n\ttabs  and trailing spaces   \n\n")
         once = built(GOOD, text)
@@ -228,19 +319,29 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build.apply_regions("# nothing here\n", build.render_regions(GOOD, TODAY))
 
-    def test_portrait_layout(self):
-        nodes = [node(f"{t}-{k}", title="A fairly long title here ok") for t in ("rec", "rate", "cc") for k in "abcde"]
-        out = built(nodes)
-        ov = out.split("<!-- BEGIN GENERATED: overview -->")[1].split("<!-- END")[0]
+    def test_overview_bands_and_grid_rows(self):
+        nodes = [node(f"{t}-{k}", title="A fairly long title here ok", state="done", outcome="successful", evidence=["e"],
+                      start="2026-0%d-01" % (1 + "abcde".index(k)))
+                 for t in ("rec", "rate", "cc") for k in "abcde"]
+        nodes += [node("rec-p", state="in-progress"), node("rec-q"), node("rec-r", state="blocked")]
+        ov = self.region(built(nodes), "overview")
         self.assertIn("flowchart TB", ov)
-        self.assertEqual(ov.count("direction TB"), 3)
-        self.assertIn("sg_rec ~~~ sg_rate ~~~ sg_cc", ov)
-        self.assertIn("rec_a ~~~ rec_d", ov)  # 5 on one rank -> rows of 3
-        self.assertNotIn("rec_a ~~~ rec_c", ov)
-        self.assertIn("A fairly long title<br/>here ok<br/>", ov)
-        tr = self.region(tfile(nodes, "rec"), "track-rec")
-        self.assertIn("rec_a ~~~ rec_e", tr)  # rows of 4
-
+        self.assertNotIn("direction", ov)
+        self.assertNotIn("subgraph sg_", ov)  # time bands, not track boxes
+        for label in ('"Now (in progress)"', '"Next"', '"Later (blocked or parked)"'):
+            self.assertIn(label, ov)
+        self.assertRegex(ov, r'subgraph bd_0\["Jan 2026')  # past bands are months, merged until BAND_MIN nodes
+        self.assertIn("rec · ✔ A fairly long<br/>title here ok", ov)  # track prefix, one glyph, wrapped title
+        lv = row_levels(ov)
+        rows = {}
+        for i, k in lv.items():
+            rows.setdefault(k, []).append(i)
+        self.assertLessEqual(max(map(len, rows.values())), build.OVERVIEW_WIDTH)
+        tr = self.region(tfile([node(f"rec-{c}") for c in "abcdefg"], "rec"), "track-rec")
+        rows = {}
+        for i, k in row_levels(tr).items():
+            rows.setdefault(k, []).append(i)
+        self.assertEqual([len(rows[k]) for k in sorted(rows)], [3, 3, 1])
     def test_track_tree_packs_disconnected_nodes_into_rows(self):
         nodes = [node(f"rec-n{i:02d}") for i in range(13)] + [node("rec-z", depends_on=["rec-n00"], state="next")]
         nodes[0]["state"] = "done"
@@ -280,18 +381,18 @@ class BuildTests(unittest.TestCase):
         row_of = {x: i for i, r in enumerate(rows) for x in r}
         self.assertGreater(row_of["rec-k"], max(row_of["rec-a"], row_of["rec-b"]))
         links = build.row_links(rows)
-        # complete bipartite tie between consecutive rows keeps each row on one rank
-        self.assertEqual(len(links), sum(len(a) * len(b) for a, b in zip(rows, rows[1:])))
-
-    def test_external_refs_on_label(self):
-        deps = [node(f"cc-{i}") for i in range(9)]
-        mine = node("rec-a", depends_on=[d["id"] for d in deps], replaced_by=["cc-0"])
-        tr = self.region(tfile(deps + [mine], "rec"), "track-rec")
-        self.assertIn("ext: cc-0, cc-1 +7", tr)
-        self.assertNotIn("x_", tr)
-        self.assertNotIn("~~~", tr)  # a single node: nothing to stack
-        self.assertNotIn("ext:", self.region(tfile([node("rec-a"), node("rec-b", depends_on=["rec-a"])], "rec"), "track-rec"))
-
+        # every node has a tie into the next row and one from the previous row, so each row stays on one rank
+        tied_down = {ln.split()[0] for ln in links}
+        tied_up = {ln.split()[2] for ln in links}
+        self.assertEqual(tied_down, {build.sid(x) for r in rows[:-1] for x in r})
+        self.assertEqual(tied_up, {build.sid(x) for r in rows[1:] for x in r})
+    def test_replaced_by_is_a_precedence_edge(self):
+        old = node("rec-old", state="abandoned", outcome="superseded", replaced_by=["rec-new"], start="2026-09-01")
+        new = node("rec-new", start="2026-01-01")  # starts earlier, yet the old node comes first
+        self.assertEqual(build.time_order(build.normalize([new, old])), ["rec-old", "rec-new"])
+        tr = self.region(tfile([new, old], "rec"), "track-rec")
+        self.assertIn("rec_old -.-> rec_new", tr)
+        self.assertEqual(backward_edges(tr), [])
     def test_transitive_prerequisites_not_drawn(self):
         nodes = [node("rec-a"), node("rec-b", depends_on=["rec-a"]), node("rec-c", depends_on=["rec-a", "rec-b"])]
         out = tfile(nodes, "rec")
@@ -309,8 +410,8 @@ class BuildTests(unittest.TestCase):
                  node("rec-e", kind="defect-verdict", state="in-progress", waiting_on="x")]
         out = built(nodes)
         ov = self.region(out, "overview")
-        self.assertIn('rec_a["T rec-a<br/>⏳ waiting"]', ov)
-        self.assertIn('rec_d["T rec-d<br/>▶ in progress"]', ov)
+        self.assertIn('rec_a["rec · ⏳ T rec-a"]', ov)
+        self.assertIn('rec_d["rec · ▶ T rec-d"]', ov)
         self.assertIn("class rec_a,rec_b,rec_c waiting", ov)
         self.assertIn("classDef waiting fill:#e3f2fd", ov)
         running = self.region(out, "running")
@@ -332,33 +433,28 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(any("waiting_on" in w for w in warns))
 
     def test_gantt_title_truncated(self):
-        out = built([node("rec-a", title="x" * 60, start="2026-01-01")])
+        out = build.render_timeline_file([node("rec-a", title="x" * 60, start="2026-01-01")], TODAY)
         self.assertIn("x" * 39 + "… :rec_a", out)
-
     def test_qualified_by(self):
         nodes = [node("rec-a", state="done", outcome="successful", evidence=["e"], qualified_by=["rec-b"], title="Rated"),
                  node("rec-b", kind="defect-verdict", depends_on=["rec-a"]),
                  node("rate-c", state="done", outcome="mixed", evidence=["e"], qualified_by=["rec-b"])]
-        out = built(nodes)
-        ov = out.split("<!-- BEGIN GENERATED: overview -->")[1].split("<!-- END")[0]
-        self.assertIn("rec_a -.->|⚠ qualified by| rec_b", ov)
-        self.assertIn("✔ done · successful ⚠", ov)
-        self.assertNotIn("rec-b<br/>○ next ⚠", ov)
-        # links in order: row anchor (0), track chain (1), rec_a qualified (2), rec_a-->rec_b (3), rate_c qualified (4)
-        self.assertIn("linkStyle 2,4 stroke:#e69500", ov)
+        ov = self.region(built(nodes), "overview")
+        links = [ln.strip() for ln in ov.splitlines() if "~~~" in ln or "-->" in ln or "-.->" in ln]
+        self.assertIn("rec_a -.-> rec_b", links)
+        self.assertIn("rate_c -.-> rec_b", links)
+        want = sorted(links.index(x) for x in ("rec_a -.-> rec_b", "rate_c -.-> rec_b"))
+        self.assertIn("linkStyle " + ",".join(map(str, want)) + " stroke:#e69500,stroke-width:3px", ov)
+        self.assertNotIn("qualified", ov)  # no text on edges, no marker on labels
         tr = self.region(tfile(nodes, "rate"), "track-rate")
-        self.assertIn("ext: rec-b", tr)  # other-track target: named on the label, not drawn as a stub
-        self.assertNotIn("x_rec_b", tr)
-
+        self.assertNotIn("rec_b", tr)  # other-track target: not drawn
     def test_linkstyle_counts_invisible_links(self):
         nodes = [node(f"rec-{k}") for k in "abcd"] + [
             node("rec-q", state="done", outcome="successful", evidence=["e"], qualified_by=["rec-a"])]
-        ov = built(nodes).split("<!-- BEGIN GENERATED: overview -->")[1].split("<!-- END")[0]
-        lines = ov.splitlines()
-        links = [ln for ln in lines if "~~~" in ln or "-->" in ln or "-.->" in ln]
-        i = next(k for k, ln in enumerate(links) if "qualified by" in ln)
+        ov = self.region(built(nodes), "overview")
+        links = [ln for ln in ov.splitlines() if "~~~" in ln or "-->" in ln or "-.->" in ln]
+        i = next(k for k, ln in enumerate(links) if "rec_q -.-> rec_a" in ln)
         self.assertIn(f"linkStyle {i} ", ov)
-
     def test_notes_table(self):
         tb = self.region(tfile([node("rec-a", notes="why | so"), node("rec-b")], "rec"), "table-rec")
         self.assertLess(tb.index("| id | title | state"), tb.index("### Details per node"))
@@ -383,12 +479,12 @@ class BuildTests(unittest.TestCase):
                  node("rec-b", kind="defect-verdict", state="next"),
                  node("rec-c", kind="defect-verdict", state="done", evidence=["e"])]
         ov = self.region(built(nodes), "overview")
-        self.assertEqual(ov.count("⚠ open defect"), 2)
-        self.assertIn('rec_c>"T rec-c<br/>✔ fixed"]', ov)
-        self.assertNotIn("unrated", ov.split("classDef")[0])
-        self.assertNotIn("done ·", ov.split("classDef")[0])
-
-    def test_vm_queue_region_and_then_links(self):
+        head = ov.split("classDef")[0]
+        self.assertEqual(head.count("⚠ T rec-"), 2)
+        self.assertIn('rec_c>"rec · ✔ T rec-c"]', ov)
+        self.assertNotIn("unrated", head)
+        self.assertNotIn("done", head)
+    def test_vm_queue_region_and_no_then_links(self):
         nodes = [node("rec-c", lane="vm", vm_order=3, order_reason="last one"),
                  node("rec-a", lane="vm", vm_order=1, order_reason="first because X"),
                  node("rec-b", lane="vm", vm_order=2),
@@ -397,20 +493,9 @@ class BuildTests(unittest.TestCase):
         q = self.region(out, "vm-queue").strip().splitlines()
         self.assertEqual(q, ["1. `rec-a`: T rec-a. first because X", "2. `rec-b`: T rec-b", "3. `rec-c`: T rec-c. last one"])
         ov = self.region(out, "overview")
-        self.assertIn("rec_a -.->|then| rec_b", ov)
-        self.assertIn("rec_b -.->|then| rec_c", ov)
-        self.assertNotIn("rec_z -.->|then|", ov)
-        self.assertNotIn("rec_c -.->|then|", ov)
-        self.assertRegex(ov, r"linkStyle [\d,]+ stroke:#999,stroke-width:1px")
+        self.assertNotIn("then", ov)
+        self.assertNotIn("-.->", ov)  # the queue is a list, not edges
         self.assertIn("The VM queue is empty", self.region(built([node("rec-a")]), "vm-queue"))
-
-    def test_then_linkstyle_index(self):
-        nodes = [node("rec-a", lane="vm", vm_order=1), node("rec-b", lane="vm", vm_order=2)]
-        ov = self.region(built(nodes), "overview")
-        links = [ln for ln in ov.splitlines() if "~~~" in ln or "-->" in ln or "-.->" in ln]
-        i = next(k for k, ln in enumerate(links) if "|then|" in ln)
-        self.assertIn(f"linkStyle {i} stroke:#999", ov)
-
     def test_plain_words_region(self):
         nodes = [node("rec-a", plain="Does a thing, simply."),
                  node("rec-b", overview=False, state="done", outcome="successful", evidence=["e"]),
@@ -453,27 +538,80 @@ class BuildTests(unittest.TestCase):
         self.assertIn("| `rec-a` | T rec-a | next | unrated | a\\|b | x; y |  |", out)
 
 
+class HiddenNodeTests(unittest.TestCase):
+    """Owner decisions and `diagram: false` nodes are not drawn; their dependencies are rewired around them."""
+
+    NODES = [node("rec-a", state="done", outcome="successful", evidence=["e"], start="2026-01-01"),
+             node("rec-u", kind="user-decision", depends_on=["rec-a"], start="2026-02-01", lane="user"),
+             node("rec-h", depends_on=["rec-u"], diagram=False, start="2026-03-01", state="in-progress"),
+             node("rec-b", depends_on=["rec-h"], start="2026-04-01", state="in-progress"),
+             node("rec-c", depends_on=["rec-u"], start="2026-05-01", state="in-progress")]
+
+    def test_hidden_nodes_absent_from_diagrams_but_present_in_tables_and_lists(self):
+        out = built(self.NODES)
+        files = build.render_outputs(self.NODES, skeleton(), TODAY)
+        for text in (out, files["roadmap/tracks/rec.md"]):
+            for block in mermaid_blocks(text):
+                self.assertNotIn("rec_u", block)
+                self.assertNotIn("rec_h", block)
+        self.assertIn("`rec-u`", files["roadmap/tracks/rec.md"])  # node table
+        self.assertIn("`rec-h`", files["roadmap/tracks/rec.md"])
+        self.assertIn("`rec-u`", BuildTests.region(out, "waiting-on-owner"))
+        self.assertIn("`rec-h`", BuildTests.region(out, "running"))
+
+    def test_bypass_edges_connect_prerequisites_to_dependants(self):
+        tr = BuildTests.region(tfile(self.NODES, "rec"), "track-rec")
+        self.assertIn("rec_a --> rec_b", tr)
+        self.assertIn("rec_a --> rec_c", tr)
+        self.assertEqual(backward_edges(tr), [])
+        view = {n["id"]: n for n in build.diagram_view(build.normalize(self.NODES))}
+        self.assertEqual(view["rec-b"]["depends_on"], ["rec-a"])
+        self.assertEqual(sorted(view), ["rec-a", "rec-b", "rec-c"])
+
+    def test_check_accepts_diagram_field(self):
+        self.assertEqual(check.validate_nodes(self.NODES)[0], [])
+        self.assertTrue(check.validate_nodes([node("rec-a", diagram="no")])[0])
+
+
 class TrackFileTests(Files, unittest.TestCase):
     NODES = GOOD + [node("cc-x", state="done", outcome="successful", evidence=["e"], notes="n")]
 
     def outputs(self, nodes=None, text=None):
         return build.render_outputs(nodes or self.NODES, text or skeleton(), TODAY)
 
-    def test_main_has_exactly_three_mermaid_blocks(self):
-        self.assertEqual(self.outputs()[build.MD_KEY].count("```mermaid"), 3)
-        # even when the skeleton is built from real REGION_ORDER only: no track tree leaks into the main file
+    def test_main_page_is_light(self):
+        main = self.outputs()[build.MD_KEY]
+        self.assertEqual(main.count("```mermaid"), 1)  # the overview only: no legend diagram, no gantt
+        self.assertLessEqual(main.count("```mermaid"), check.MAX_MERMAID_PER_FILE)
+        self.assertNotIn("%% today", main)
+        self.assertNotIn("gantt", main)
+        self.assertIn("(roadmap/timeline.md)", main)
+        self.assertIn("Generated from nodes.yaml on " + TODAY + ".", main)
         self.assertNotIn("track-", "".join(build.REGION_ORDER))
 
+    def test_timeline_page_has_one_block(self):
+        tl = self.outputs()[build.TIMELINE_KEY]
+        self.assertEqual(tl.count("```mermaid"), 1)
+        self.assertIn("gantt", tl)
+
+    def test_labels_are_short(self):
+        outs = self.outputs([node(f"{c}-a", state="done", outcome="successful", evidence=["e"], start="2026-01-01",
+                                  depends_on=[], notes="n") for c in build.TRACKS] + [node("rec-z", depends_on=["cc-a"])])
+        for key, text in outs.items():
+            for block in mermaid_blocks(text):
+                if block.startswith("flowchart"):
+                    self.assertNotIn("ext:", block, key)
+                    for sentence in ("done ·", "in progress", "blocked", "superseded", "dead end", "qualified by", "|then|"):
+                        self.assertNotIn(sentence, block.split("classDef")[0], key)
     def test_each_track_file_has_one_block(self):
         outs = self.outputs([node(f"{c}-a") for c in build.TRACKS])  # every track non-empty
-        self.assertEqual(len(outs), 1 + len(build.TRACKS))
+        self.assertEqual(len(outs), 2 + len(build.TRACKS))
         for code in build.TRACKS:
             text = outs[f"roadmap/tracks/{code}.md"]
             self.assertEqual(text.count("```mermaid"), 1, code)
             self.assertTrue(text.startswith("<!-- Generated by"))
             self.assertIn(f"# {code} - {build.TRACKS[code][0]}", text)
             self.assertIn("(../../roadmap.md)", text)
-
     def test_tracks_region_links_every_track_file(self):
         reg = BuildTests.region(self.outputs()[build.MD_KEY], "tracks")
         for code, (name, _) in build.TRACKS.items():
@@ -513,6 +651,21 @@ class TrackFileTests(Files, unittest.TestCase):
         self.assertIn("gone.md: no such track", errs)
         build.main(["--nodes", str(n), "--md", str(m), "--today", TODAY])  # build repairs all three
         self.assertEqual(check.run(n, m)[0], [])
+
+    def test_check_flags_stale_timeline_and_old_date(self):
+        n, m = self.dir / "nodes.yaml", self.dir / "roadmap.md"
+        nodes = [node("rec-a", start="2026-01-01")]
+        n.write_text(yaml.safe_dump(nodes, allow_unicode=True), encoding="utf-8")
+        m.write_text(skeleton(), encoding="utf-8", newline="")
+        build.main(["--nodes", str(n), "--md", str(m), "--today", "2026-01-02"])
+        errs, warns = check.run(n, m)
+        self.assertEqual(errs, [])
+        self.assertTrue(any("open timeline bars end at 2026-01-02" in w for w in warns), warns)  # not the real today
+        tl = self.dir / build.TIMELINE_KEY
+        tl.write_text(tl.read_text(encoding="utf-8").replace("rec_a", "rec_X"), encoding="utf-8")
+        self.assertTrue(any("timeline file is stale" in e for e in check.run(n, m)[0]))
+        tl.unlink()
+        self.assertTrue(any("timeline file missing" in e for e in check.run(n, m)[0]))
 
     def test_mermaid_cap(self):
         block = "```mermaid\n"

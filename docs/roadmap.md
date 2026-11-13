@@ -17,72 +17,10 @@ Text outside the markers is hand-written and is preserved by the build.
 ## Legend
 
 <!-- BEGIN GENERATED: legend -->
-Colour is never the only signal: every node label carries a status tag on its second line.
-
-```mermaid
-flowchart LR
-    lg_vsucc["very successful"]
-    lg_succ["successful"]
-    lg_mixed["mixed"]
-    lg_bad["bad"]
-    lg_dead["dead end / superseded / abandoned"]
-    lg_inprog["in progress"]
-    lg_next["next"]
-    lg_blocked["blocked"]
-    lg_parked["parked"]
-    lg_unrated["done, unrated"]
-    lg_userdec["user decision pending"]
-    lg_defect["open defect"]
-    lg_waiting["built, waiting"]
-    lg_k1{{"user-decision"}}
-    lg_k2[/"law"/]
-    lg_k3>"defect-verdict"]
-    lg_k4["other kinds"]
-    lg_k1 --> lg_k2
-    lg_k3 -.->|replaced by| lg_k4
-    classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
-    classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
-    classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
-    classDef bad fill:#f28b82,stroke:#b3261e,color:#111
-    classDef dead fill:#e6e6e6,stroke:#777,stroke-dasharray:5 5,color:#555
-    classDef inprog fill:#a8cdf5,stroke:#1f6fc5,color:#111
-    classDef next fill:#fff,stroke:#333,color:#111
-    classDef blocked fill:#fff,stroke:#b3261e,stroke-dasharray:2 2,color:#111
-    classDef parked fill:#f3f3f3,stroke:#999,color:#555
-    classDef unrated fill:#fff,stroke:#333,stroke-dasharray:1 3,color:#111
-    classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
-    classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
-    classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class lg_vsucc vsucc
-    class lg_succ succ
-    class lg_mixed mixed
-    class lg_bad bad
-    class lg_dead dead
-    class lg_inprog inprog
-    class lg_next next
-    class lg_blocked blocked
-    class lg_parked parked
-    class lg_unrated unrated
-    class lg_userdec userdec
-    class lg_defect defect
-    class lg_waiting waiting
-```
-
-| Tag | Meaning |
+| | |
 |---|---|
-| `✔ done · <outcome>` | finished; outcome is the recorded verdict (green = very successful, light green = successful, amber = mixed, red = bad) |
-| `▶ in progress` | being worked on (blue) |
-| `○ next` | planned, not started (white) |
-| `⛔ blocked` | waiting on a prerequisite or an outside call (white, red dashed border) |
-| `⏸ parked` | deliberately set aside (light grey) |
-| `✖ dead end` | refuted or archived, nothing reused (grey, dashed border) |
-| `↷ superseded` | replaced by another node, drawn with a dashed `replaced by` arrow (grey, dashed border) |
-
-Shapes: hexagon = user decision (purple while pending), parallelogram = law, flag = defect verdict, rectangle = everything else.
-Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `replaced by`.
-Diagrams omit prerequisite arrows that are implied by a longer chain (the table keeps the full `depends_on`). A per-track tree draws only arrows inside its track; a node's references to other tracks are written on its label as `ext: ...`.
-Thin grey dotted arrow = `then`: VM queue order, not a dependency. A defect verdict reads `⚠ open defect` or `✔ fixed` and never shows an outcome.
-Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the rating of the done node it leaves; that node's label ends in `⚠`.
+| **Box** | one glyph and a title. Glyph: ✔ done, ▶ in progress, ⏳ built and waiting, ○ next, ⛔ blocked, ⏸ parked, ⚠ open defect, ↷ superseded, ✖ dead end. Colour: dark green very successful, light green successful, amber mixed, red bad, grey dead end or superseded, blue in progress, white next, purple owner call, orange defect. Shape: hexagon owner call, parallelogram law, flag defect. The prefix on an overview box is its track. |
+| **Arrow** | solid: depends on. Dotted: replaced by. Thick orange dotted: ⚠ qualified by (a later defect limits the rating). Arrows always point down, forward in time; a prerequisite implied by a longer chain is not drawn. |
 <!-- END GENERATED: legend -->
 
 ## Overview
@@ -90,130 +28,112 @@ Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the ra
 <!-- BEGIN GENERATED: overview -->
 ```mermaid
 flowchart TB
-    subgraph sg_cod["cod - coding core"]
-        direction TB
-        cod_block_pipeline["RaptorQ block FEC<br/>pipeline<br/>↷ superseded"]
-        cod_unified_span["Unified span machine<br/>(ADR-0064)<br/>✔ done · successful"]
-        cod_one_pipeline["One window pipeline<br/>(ADR-0069)<br/>✔ done · successful"]
-        cod_block_pipeline ~~~ cod_one_pipeline
-        cod_unified_span ~~~ cod_one_pipeline
+    subgraph bd_0["Mar 2026 to Jul 2026"]
+        cod_block_pipeline["cod · ↷ RaptorQ block<br/>FEC pipeline"]
+        rec_reliable_window["rec · ✔ Reliable<br/>window (RWM Phase A)"]
+        cc_bbr_default["cc · ✔ BBR as<br/>substrate default<br/>(ADR-0054)"]
+        cod_unified_span["cod · ✔ Unified span<br/>machine (ADR-0064)"]
+        store_honest_cap_family[/"store · ✖ Honest<br/>floor-clock cap family<br/>(6 arms)"/]
+        meas_adr52_discipline["meas · ✔ L1<br/>measurement discipline<br/>(ADR-0052)"]
+        model_vis_continuum["model · ✔ Visualizer<br/>as one continuum law"]
     end
-    subgraph sg_rec["rec - recovery"]
-        direction TB
-        rec_reliable_window["Reliable window (RWM<br/>Phase A)<br/>✔ done · successful"]
-        rec_goal101[/"Recovery clock law<br/>family (4 arms)<br/>✖ dead end"/]
-        rec_snapver_law[/"Snapshot-order<br/>filter as law<br/>⏳ waiting"/]
-        rec_s54_session["#167;54: filter guard,<br/>store budget<br/>⛔ blocked"]
-        rec_leverb_guard["Lever-B guard v2,<br/>then merge<br/>⛔ blocked"]
-        rec_reliable_window ~~~ rec_s54_session
-        rec_goal101 ~~~ rec_s54_session
-        rec_snapver_law ~~~ rec_s54_session
-        rec_s54_session ~~~ rec_leverb_guard
+    subgraph bd_1["Aug 2026"]
+        rate_est_cadence["rate · ✔ Batched BOCD<br/>estimator cadence"]
+        cod_one_pipeline["cod · ✔ One window<br/>pipeline (ADR-0069)"]
+        meas_formula_first["meas · ✔ Formula-first<br/>review (ADR-0070)"]
+        store_delta_cap[/"store · ✔ Derived<br/>setpoint 1 + q(δ)"/]
+        rec_goal101[/"rec · ✖ Recovery clock<br/>law family (4 arms)"/]
     end
-    subgraph sg_rate["rate - rate law"]
-        direction TB
-        rate_retention_is_rho{{"Retention is the ρ<br/>dial<br/>✔ done · n/a"}}
-        rate_est_cadence["Batched BOCD<br/>estimator cadence<br/>✔ done · very-successful ⚠"]
-        rate_r_battery["Funded coding at r #gt;<br/>0<br/>✖ dead end"]
+    subgraph bd_2["Sep 2026 to Oct 2026"]
+        rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
+        perf_emit_batch_law0["perf · ✔ Emission<br/>batching, Law 0 (#167;8)"]
+        perf_threading_p2a["perf · ✖ Threading P2a<br/>logic actor (#167;12)"]
+        perf_io_owner["perf · ✔ Per-path I/O<br/>owner (Q1)"]
+        store_adr72_one_law[/"store · ✔ One store<br/>law (ADR-0072)"/]
+        store_power_law[/"store · ✖ Power-<br/>seeking store law D"/]
+        perf_decoder_prune["perf · ✔ Decoder prune<br/>per drain (#167;32)"]
     end
-    subgraph sg_store["store - store law"]
-        direction TB
-        store_honest_cap_family[/"Honest floor-clock<br/>cap family (6 arms)<br/>✖ dead end"/]
-        store_delta_cap[/"Derived setpoint 1 +<br/>q(δ)<br/>✔ done · very-successful ⚠"/]
-        store_adr72_one_law[/"One store law<br/>(ADR-0072)<br/>✔ done · successful ⚠"/]
-        store_power_law[/"Power-seeking store<br/>law D<br/>✖ dead end"/]
-        store_defect_cap_constant>"Store cap constant<br/>at c8<br/>⚠ open defect"]
-        store_engine_form_impl[/"Store-law engine<br/>form<br/>⛔ blocked"/]
-        store_fix_maxbw_minrtt[/"Honest rate and<br/>delay inputs<br/>⛔ blocked"/]
-        store_honest_cap_family ~~~ store_defect_cap_constant
-        store_honest_cap_family ~~~ store_fix_maxbw_minrtt
-        store_honest_cap_family ~~~ store_adr72_one_law
-        store_delta_cap ~~~ store_defect_cap_constant
-        store_delta_cap ~~~ store_fix_maxbw_minrtt
-        store_delta_cap ~~~ store_adr72_one_law
-        store_power_law ~~~ store_defect_cap_constant
-        store_power_law ~~~ store_fix_maxbw_minrtt
-        store_power_law ~~~ store_adr72_one_law
-        store_defect_cap_constant ~~~ store_engine_form_impl
-        store_fix_maxbw_minrtt ~~~ store_engine_form_impl
-        store_adr72_one_law ~~~ store_engine_form_impl
+    subgraph bd_3["Nov 2026"]
+        meas_guard_41c["meas · ✔ Rank-minp<br/>merge guard (#167;41c)"]
+        place_wire_price["place · ✔ Wire-RTT<br/>placement price"]
+        meas_guard_v2_impl["meas · ✔ Guard v2<br/>implementation"]
+        model_law_ledger["model · ✔ Law ledger"]
     end
-    subgraph sg_place["place - placement"]
-        direction TB
-        place_wire_price["Wire-RTT placement<br/>price<br/>✔ done · successful"]
+    subgraph bd_4["Now (in progress)"]
+        cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse (#167;47)"]
+        cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
+        cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
+        rec_snapver_law[/"rec · ⏳ Snapshot-order<br/>filter as law"/]
+        store_defect_cap_constant>"store · ⚠ Store cap<br/>constant at c8"]
     end
-    subgraph sg_cc["cc - congestion control"]
-        direction TB
-        cc_bbr_default["BBR as substrate<br/>default (ADR-0054)<br/>✔ done · successful ⚠"]
-        cc_quinn_bbr_collapse>"Quinn BBR window<br/>collapse (#167;47)<br/>⚠ open defect"]
-        cc_bbrrs_r1["Fixed bbr_rs versus<br/>quinn BBR<br/>✔ done · bad ⚠"]
-        cc_bbrrs_r2["bbr_rs round 2 fixes<br/>⏳ waiting"]
-        cc_bbrrs_promote["bbr_rs promotion<br/>(new ADR)<br/>⛔ blocked"]
-        cc_hybrid["BBR/Copa hybrid<br/>build (ADR-0068)<br/>⏸ parked"]
-        cc_bbr_default ~~~ cc_bbrrs_promote
-        cc_bbr_default ~~~ cc_bbrrs_r1
-        cc_quinn_bbr_collapse ~~~ cc_bbrrs_promote
-        cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
-        cc_bbrrs_r2 ~~~ cc_bbrrs_promote
-        cc_bbrrs_r2 ~~~ cc_bbrrs_r1
-        cc_bbrrs_promote ~~~ cc_hybrid
-        cc_bbrrs_r1 ~~~ cc_hybrid
+    subgraph bd_5["Later (blocked or parked)"]
+        rec_s54_session["rec · ⛔ #167;54: filter<br/>guard, store budget"]
+        rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
+        meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
+        cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion (new ADR)"]
+        cc_hybrid["cc · ⏸ BBR/Copa hybrid<br/>build (ADR-0068)"]
+        store_fix_maxbw_minrtt[/"store · ⛔ Honest rate<br/>and delay inputs"/]
+        store_engine_form_impl[/"store · ⛔ Store-law<br/>engine form"/]
     end
-    subgraph sg_perf["perf - performance"]
-        direction TB
-        perf_emit_batch_law0["Emission batching,<br/>Law 0 (#167;8)<br/>✔ done · very-successful"]
-        perf_threading_p2a["Threading P2a logic<br/>actor (#167;12)<br/>✖ dead end"]
-        perf_io_owner["Per-path I/O owner<br/>(Q1)<br/>✔ done · very-successful"]
-        perf_decoder_prune["Decoder prune per<br/>drain (#167;32)<br/>✔ done · very-successful"]
-        perf_emit_batch_law0 ~~~ perf_decoder_prune
-        perf_threading_p2a ~~~ perf_decoder_prune
-        perf_io_owner ~~~ perf_decoder_prune
-    end
-    subgraph sg_meas["meas - measurement"]
-        direction TB
-        meas_adr52_discipline["L1 measurement<br/>discipline<br/>(ADR-0052)<br/>✔ done · successful"]
-        meas_formula_first["Formula-first review<br/>(ADR-0070)<br/>✔ done · successful"]
-        meas_guard_41c["Rank-minp merge<br/>guard (#167;41c)<br/>✔ done · successful ⚠"]
-        meas_guard_v2_impl["Guard v2<br/>implementation<br/>✔ done · unrated"]
-        meas_s51_session["Off-Bulk baseline<br/>and δ sweep<br/>⛔ blocked"]
-        meas_adr52_discipline ~~~ meas_guard_v2_impl
-        meas_adr52_discipline ~~~ meas_s51_session
-        meas_formula_first ~~~ meas_guard_v2_impl
-        meas_formula_first ~~~ meas_s51_session
-        meas_guard_41c ~~~ meas_guard_v2_impl
-        meas_guard_41c ~~~ meas_s51_session
-    end
-    subgraph sg_model["model - model and paper"]
-        direction TB
-        model_vis_continuum["Visualizer as one<br/>continuum law<br/>✔ done · successful ⚠"]
-        model_law_ledger["Law ledger<br/>✔ done · unrated ⚠"]
-    end
-    subgraph sg_infra["infra - repo and simplification"]
-        direction TB
-        infra_adr73{{"Promote or archive<br/>at verdict<br/>✔ done · n/a"}}
-    end
-    sg_cod ~~~ sg_rec ~~~ sg_rate ~~~ sg_store ~~~ sg_place ~~~ sg_cc ~~~ sg_perf ~~~ sg_meas ~~~ sg_model ~~~ sg_infra
-    cod_block_pipeline -.->|replaced by| cod_one_pipeline
+    cod_block_pipeline ~~~ cc_bbr_default
+    rec_reliable_window ~~~ cod_unified_span
+    cc_bbr_default ~~~ store_honest_cap_family
+    cod_unified_span ~~~ meas_adr52_discipline
+    store_honest_cap_family ~~~ model_vis_continuum
+    meas_adr52_discipline ~~~ model_vis_continuum
+    model_vis_continuum ~~~ rate_est_cadence
+    model_vis_continuum ~~~ cod_one_pipeline
+    rate_est_cadence ~~~ meas_formula_first
+    cod_one_pipeline ~~~ store_delta_cap
+    meas_formula_first ~~~ rec_goal101
+    store_delta_cap ~~~ rec_goal101
+    rec_goal101 ~~~ rate_r_battery
+    rec_goal101 ~~~ perf_emit_batch_law0
+    rate_r_battery ~~~ perf_threading_p2a
+    perf_emit_batch_law0 ~~~ perf_io_owner
+    perf_threading_p2a ~~~ store_adr72_one_law
+    perf_io_owner ~~~ store_power_law
+    store_adr72_one_law ~~~ perf_decoder_prune
+    store_power_law ~~~ perf_decoder_prune
+    perf_decoder_prune ~~~ meas_guard_41c
+    perf_decoder_prune ~~~ place_wire_price
+    meas_guard_41c ~~~ meas_guard_v2_impl
+    place_wire_price ~~~ model_law_ledger
+    meas_guard_v2_impl ~~~ cc_quinn_bbr_collapse
+    model_law_ledger ~~~ cc_quinn_bbr_collapse
+    cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
+    cc_bbrrs_r1 ~~~ cc_bbrrs_r2
+    cc_bbrrs_r1 ~~~ rec_snapver_law
+    cc_bbrrs_r2 ~~~ store_defect_cap_constant
+    rec_snapver_law ~~~ store_defect_cap_constant
+    store_defect_cap_constant ~~~ rec_s54_session
+    rec_s54_session ~~~ rec_leverb_guard
+    rec_s54_session ~~~ meas_s51_session
+    rec_leverb_guard ~~~ cc_bbrrs_promote
+    meas_s51_session ~~~ cc_bbrrs_promote
+    cc_bbrrs_promote ~~~ cc_hybrid
+    cc_bbrrs_promote ~~~ store_fix_maxbw_minrtt
+    cc_hybrid ~~~ store_engine_form_impl
+    store_fix_maxbw_minrtt ~~~ store_engine_form_impl
+    cod_block_pipeline -.-> cod_one_pipeline
+    cc_bbr_default -.-> cc_quinn_bbr_collapse
+    cod_unified_span --> model_vis_continuum
     cod_unified_span --> cod_one_pipeline
-    store_delta_cap -.->|⚠ qualified by| store_defect_cap_constant
+    store_delta_cap -.-> store_defect_cap_constant
     store_delta_cap --> store_adr72_one_law
     meas_formula_first --> store_adr72_one_law
-    store_adr72_one_law -.->|⚠ qualified by| store_defect_cap_constant
-    cc_bbr_default -.->|⚠ qualified by| cc_quinn_bbr_collapse
+    store_adr72_one_law -.-> store_defect_cap_constant
     cc_quinn_bbr_collapse --> cc_bbrrs_r1
     meas_guard_41c --> cc_bbrrs_r1
-    cod_unified_span --> model_vis_continuum
-    meas_adr52_discipline --> infra_adr73
+    cc_bbrrs_r1 --> cc_bbrrs_r2
     meas_guard_v2_impl --> rec_s54_session
     rec_snapver_law --> rec_s54_session
     rec_s54_session --> rec_leverb_guard
-    store_fix_maxbw_minrtt --> store_engine_form_impl
     cc_bbrrs_promote --> cc_hybrid
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
-    rec_leverb_guard -.->|then| meas_s51_session
-    linkStyle 46,49,50 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 62 stroke:#999,stroke-width:1px,color:#777
+    store_fix_maxbw_minrtt --> store_engine_form_impl
+    linkStyle 41,44,47 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -230,7 +150,6 @@ flowchart TB
     class cod_block_pipeline,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,perf_threading_p2a dead
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
     class rec_snapver_law,cc_bbrrs_r2 waiting
-    class rate_retention_is_rho,infra_adr73 userdec
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner,perf_decoder_prune vsucc
     class store_defect_cap_constant,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
@@ -483,208 +402,9 @@ _None._
 ## Timeline
 
 <!-- BEGIN GENERATED: timeline -->
-%% today: 2026-11-13
+[The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-```mermaid
-gantt
-    dateFormat YYYY-MM-DD
-    axisFormat %Y-%m-%d
-    section cod - coding core
-    RaptorQ block FEC pipeline :crit, cod_block_pipeline, 2026-03-12, 2026-10-04
-    METTLE swappable FEC backend :crit, cod_mettle, 2026-03-13, 2026-08-07
-    Mid-stream FEC backend switching :crit, cod_backend_switch, 2026-03-16, 2026-08-08
-    Streaming two-layer Realtime code :crit, cod_streaming_code, 2026-03-14, 2026-07-28
-    SIMD GF(2^8) and gf256 crate :cod_gf256_simd, 2026-03-17, 2026-03-18
-    Windowed RLC for every profile :crit, cod_rlc_all_profiles, 2026-07-04, 2026-07-06
-    Generation cross-path fungible coding :cod_generation_coding, 2026-07-07, 2026-07-13
-    Coded-only generation wire :crit, cod_coded_only_wire, 2026-07-07, 2026-07-13
-    Systematic wire, sparse decoder :cod_systematic_wire, 2026-07-13, 2026-07-13
-    Coded-only fungible window :crit, cod_fungible_window, 2026-07-07, 2026-07-07
-    FMTCP-class decode-on-total :crit, cod_fmtcp, 2026-07-08, 2026-07-28
-    Legacy sliding-window/generation decode… :crit, cod_legacy_rlc, 2026-03-14, 2026-07-21
-    Unified span machine (ADR-0064) :cod_unified_span, 2026-07-18, 2026-07-21
-    One window pipeline (ADR-0069) :cod_one_pipeline, 2026-08-10, 2026-10-04
-    Compact v5 DATA framing :cod_wire_compact, 2026-08-06, 2026-08-06
-    Decoder re-delivery stall fix (§31) :cod_debug_stall, 2026-10-28, 2026-10-28
-    section rec - recovery
-    Early ACK, NACK and repair :rec_early_arq, 2026-03-12, 2026-03-20
-    P_lost(t) mix and SACK WindowAck :rec_plost_sack, 2026-03-21, 2026-04-07
-    Bulk ARQ and batch acknowledgements :rec_bulk_arq, 2026-07-02, 2026-07-04
-    Reliable window (RWM Phase A) :rec_reliable_window, 2026-07-04, 2026-07-06
-    Proactive FEC versus ARQ frontier :rec_fec_vs_arq, 2026-07-07, 2026-07-08
-    Proactive repair timing (3 arms) :crit, rec_proactive_repair, 2026-07-08, 2026-07-27
-    Per-path recovery clocks (RECOV_MP) :rec_per_path_clocks, 2026-07-21, 2026-07-21
-    Global loss serials under striping :crit, rec_mp_serial, 2026-07-21, 2026-07-27
-    Derived recovery-timing candidates (4 a… :crit, rec_clock_candidates, 2026-08-07, 2026-08-19
-    Recovery primitives and σ (goal 100) :rec_goal100, 2026-08-20, 2026-08-21
-    Recovery clock law family (4 arms) :crit, rec_goal101, 2026-08-21, 2026-08-21
-    Receiver request law (Track C) :crit, rec_receiver_law, 2026-09-08, 2026-09-08
-    Cost-ratio decision (owner ruling) :rec_cost_ratio_decision, 2026-08-19, 2026-08-20
-    Wire v9 per-path sequence :rec_wire_v9, 2026-09-30, 2026-09-30
-    Gap horizon lever B (§52) :active, rec_gap_horizon, 2026-11-12, 2026-11-13
-    Stale gap reports, snapshot filter (§53) :rec_snapver_filter, 2026-11-12, 2026-11-13
-    Snapshot-order filter as law :active, rec_snapver_law, 2026-11-13, 2026-11-13
-    [QCLK] w_us pinned at clamp :active, rec_defect_qclk_clamp, 2026-11-13, 2026-11-13
-    c8 hole law never measured :active, rec_defect_hole_law, 2026-11-13, 2026-11-13
-    Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-13
-    Inner-feedback repair floor (P10a) :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
-    Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
-    Lever B c1d duplicate cost :active, rec_leverb_c1d_cost, 2026-11-13, 2026-11-13
-    Main's duplicates mostly unexplained :active, rec_defect_base_duplicates, 2026-11-13, 2026-11-13
-    Recovery-clock derivation (wire clock) :rec_wire_clock_derivation, 2026-11-13, 2026-11-13
-    section rate - rate law
-    Gilbert-Elliott loss model (ADR-0023) :rate_ge_hmm, 2026-03-14, 2026-07-07
-    BOCD FEC rate control (ADR-0050) :rate_fec_rate_v1, 2026-03-18, 2026-03-21
-    Saturation-aware r* and window :rate_saturation_rstar, 2026-07-02, 2026-07-07
-    r* window-mass provisioning (ADR-0063) :rate_rstar_window_mass, 2026-07-13, 2026-07-13
-    Taper emission budget law :rate_taper_r, 2026-07-18, 2026-07-18
-    Leading-window taper emission :crit, rate_leading_taper, 2026-07-18, 2026-07-19
-    Retention is the ρ dial :rate_retention_is_rho, 2026-07-06, 2026-07-06
-    δ-honest overload shedding :rate_unified_shed, 2026-07-21, 2026-07-21
-    Batched BOCD estimator cadence :rate_est_cadence, 2026-08-06, 2026-10-04
-    Sender-truth loss estimator :crit, rate_sender_truth_loss, 2026-08-18, 2026-08-19
-    Funded coding at r > 0 :crit, rate_r_battery, 2026-09-08, 2026-09-08
-    DoF ledger feedback leg (§39) :rate_dof_ledger, 2026-11-10, 2026-11-10
-    The dials made real :rate_dials_made_real, 2026-09-08, 2026-09-08
-    P_fec truncation divergence :active, rate_defect_pfec, 2026-11-13, 2026-11-13
-    section store - store law
-    Path-scaled pool ×N (STORE_PATHS) :crit, store_xn_pool, 2026-07-14, 2026-08-19
-    Per-path store accounts family (4 arms) :crit, store_percap_family, 2026-07-18, 2026-07-27
-    Honest floor-clock cap family (6 arms) :crit, store_honest_cap_family, 2026-07-19, 2026-08-07
-    Composed cadence and pool-anchor flip :store_pool_anchor_flip, 2026-08-07, 2026-08-07
-    SACK pruning of the store :crit, store_sack_prune, 2026-07-08, 2026-07-27
-    SACK-clocked store release (ADR-0060) :store_sack_release, 2026-07-21, 2026-07-21
-    Sender decoupling attempts (4 arms) :crit, store_sender_decoupling, 2026-07-07, 2026-08-06
-    Anchor hygiene laws (ADR-0061) :store_anchor_hygiene, 2026-07-19, 2026-07-21
-    Three-term and composed caps (5 arms) :crit, store_three_term, 2026-08-10, 2026-08-18
-    Store-cap unification over live paths :store_cap_unification, 2026-08-11, 2026-09-30
-    Honest inputs and O(1) anchor :store_honest_inputs, 2026-08-10, 2026-08-11
-    Sum cap - ×N deletion (SUM_CAP) :store_sum_cap, 2026-08-18, 2026-08-19
-    Derived setpoint 1 + q(δ) :store_delta_cap, 2026-08-19, 2026-08-19
-    One store law (ADR-0072) :store_adr72_one_law, 2026-10-26, 2026-10-26
-    Store-law input search (8 inputs) :crit, store_input_search, 2026-10-26, 2026-11-02
-    Power-seeking store law D :crit, store_power_law, 2026-10-26, 2026-10-28
-    Dispersion and oracle store law :store_engine_form, 2026-11-09, 2026-11-10
-    Who limits at each δ :active, store_w1_who_limits, 2026-11-12, 2026-11-13
-    Store-budget test design (§54) :active, store_s54_budget, 2026-11-13, 2026-11-13
-    Store cap constant at c8 :active, store_defect_cap_constant, 2026-11-13, 2026-11-13
-    section place - placement
-    Marginal-cost placement law (RWM B) :place_marginal_cost, 2026-07-04, 2026-07-06
-    DAPS and rate estimator (4 arms) :crit, place_daps, 2026-07-12, 2026-07-27
-    Place-slack :crit, place_slack, 2026-08-06, 2026-08-06
-    Placement battery (Track A) :place_stage2_battery, 2026-09-08, 2026-09-09
-    Placement frontier term (PLACE_HOL) :crit, place_hol, 2026-09-08, 2026-09-09
-    Derived placement temperature :crit, place_t_derived, 2026-09-08, 2026-09-09
-    Derived diversity weight, leg choice :active, place_wdiv, 2026-09-08, 2026-11-13
-    Frozen app-echo srtt price :crit, place_frozen_echo, 2026-07-06, 2026-11-10
-    Wire-RTT placement price :place_wire_price, 2026-11-10, 2026-11-12
-    One per-leg state design :active, place_per_leg_state, 2026-11-12, 2026-11-13
-    Sub-max quantile rate anchor :crit, place_submax_anchor, 2026-07-12, 2026-07-27
-    Path event after promotion (§46) :place_path_event, 2026-11-10, 2026-11-10
-    section cc - congestion control
-    Delay-based CC replaces AIMD :cc_early_delay_cc, 2026-03-13, 2026-03-22
-    Production Copa-lite port (P-series) :cc_copa_lite, 2026-07-02, 2026-07-04
-    Copa per path as substrate :crit, cc_copa_sole_substrate, 2026-07-13, 2026-07-27
-    Quinn stock Cubic substrate :crit, cc_cubic_substrate, 2026-03-12, 2026-07-21
-    Copa wire signal, compete mode :cc_copa_wire_signal, 2026-07-13, 2026-07-22
-    BBR as substrate default (ADR-0054) :cc_bbr_default, 2026-07-13, 2026-07-21
-    bbr_rs v1 on shal8 :cc_bbrrs_v1, 2026-08-07, 2026-08-07
-    Copa-BBR fusion (ADR-0068) :cc_adr68_fusion, 2026-07-22, 2026-11-13
-    Quinn BBR window collapse (§47) :active, cc_quinn_bbr_collapse, 2026-11-10, 2026-11-13
-    Fixed bbr_rs versus quinn BBR :cc_bbrrs_r1, 2026-11-10, 2026-11-12
-    Owner call - continue bbr_rs :cc_user_continue_bbrrs, 2026-11-12, 2026-11-12
-    bbr_rs round 2 fixes :active, cc_bbrrs_r2, 2026-11-12, 2026-11-13
-    Pacing-seam audit (W2) :active, cc_pacing_audit, 2026-11-12, 2026-11-13
-    Owner call - vendored pacing seam :cc_user_pacing_s3, 2026-11-12, 2026-11-12
-    Vendored quinn-proto pacing hook :active, cc_pacing_seam, 2026-11-12, 2026-11-13
-    Copa min_rtt reads own queue :active, cc_defect_copa_minrtt, 2026-11-13, 2026-11-13
-    section perf - performance
-    Engine or receiver parallelisation :crit, perf_parallelisation, 2026-07-08, 2026-07-21
-    Emission batching, first attempt :crit, perf_emit_batch_v1, 2026-07-27, 2026-07-27
-    One control datagram per message :perf_ack_merge, 2026-08-07, 2026-08-08
-    Receive-buffer fix F-A (§7) :perf_rcvbuf, 2026-10-05, 2026-10-05
-    Emission batching, Law 0 (§8) :perf_emit_batch_law0, 2026-10-05, 2026-10-05
-    Per-path datagram feeder (§10) :crit, perf_quic_feeder, 2026-10-05, 2026-10-05
-    Threading P0 thread budget (§9) :perf_threading_p0, 2026-10-05, 2026-10-05
-    Threading P1 defect fixes (§11) :perf_threading_p1, 2026-10-05, 2026-10-05
-    Threading P2a logic actor (§12) :crit, perf_threading_p2a, 2026-10-05, 2026-10-06
-    Per-path I/O owner (Q1) :perf_io_owner, 2026-10-06, 2026-10-06
-    Scheduler split by direction (Q2) :perf_sched_split, 2026-10-06, 2026-10-06
-    Threading Q3 lock-free send :crit, perf_q3_investigation, 2026-10-06, 2026-10-06
-    Receiver per-datagram cost R1 :crit, perf_receiver_r1, 2026-10-26, 2026-10-26
-    Receiver cost R2 with floor fix :perf_receiver_r2, 2026-10-26, 2026-10-26
-    Threading R3 receiver re-profile :crit, perf_threading_r3, 2026-10-26, 2026-10-27
-    c8 client lag diagnosis :perf_c8_lag, 2026-10-26, 2026-11-01
-    Incremental SACK marking (§28) :perf_incremental_sack, 2026-10-27, 2026-10-27
-    Decoder prune per drain (§32) :perf_decoder_prune, 2026-10-28, 2026-10-29
-    Receiver follow-ups (§35) :perf_receiver_followups, 2026-11-01, 2026-11-02
-    bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
-    bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-13
-    section meas - measurement
-    Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
-    Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
-    L1 netns harness and baselines :meas_l1_harness, 2026-07-03, 2026-07-04
-    L2/L3 multipath and tail evaluation :meas_l2_multipath, 2026-07-04, 2026-07-04
-    C8 heterogeneous aggregation arc :crit, meas_c8_aggregation_arc, 2026-07-06, 2026-07-19
-    Generation-inert measurement era :meas_gen_inert_era, 2026-07-07, 2026-07-13
-    Hardware-honest regime map :meas_regime_map, 2026-07-19, 2026-07-27
-    L1 measurement discipline (ADR-0052) :meas_adr52_discipline, 2026-07-21, 2026-08-08
-    Formula-first review (ADR-0070) :meas_formula_first, 2026-08-12, 2026-09-27
-    Pipeline verification matrix :meas_pipeline_verification, 2026-08-11, 2026-08-12
-    Era, latency-truth and c9 batteries :meas_goal_0819, 2026-08-19, 2026-08-19
-    Attribution audit D0 :meas_attribution_audit, 2026-09-07, 2026-09-07
-    Stage-2 instruments and owed findings :meas_wire_v8, 2026-09-08, 2026-09-09
-    Owner rule - 5 h measurement cap :meas_5h_cap, 2026-09-08, 2026-09-08
-    Per-datagram loss truth (GSO) :meas_gso_truth, 2026-09-30, 2026-09-30
-    V4 verification of new main (§6) :meas_v4_verification, 2026-10-04, 2026-10-05
-    Rank-minp merge guard (§41c) :meas_guard_41c, 2026-11-10, 2026-11-11
-    Harness on main, rehearsal mode :meas_harness_consolidation, 2026-11-12, 2026-11-12
-    Guard clause rtp_floor_p0 measures drain :active, meas_defect_rtp_floor, 2026-11-13, 2026-11-13
-    Guard clause dry run :meas_guard_clause_dry, 2026-11-13, 2026-11-13
-    Merge guard v2 accepted (§41d) :meas_guard_v2, 2026-11-13, 2026-11-13
-    ETA route and σ witness mismatch :active, meas_defect_eta_witness, 2026-09-09, 2026-11-13
-    c8 control bimodal collapse :active, meas_defect_c8_bimodal, 2026-09-09, 2026-11-13
-    [DIAG] rtp prints whole milliseconds :active, meas_defect_diag_rtp_ms, 2026-09-27, 2026-11-13
-    Guard v2 implementation :meas_guard_v2_impl, 2026-11-13, 2026-11-13
-    Off-Bulk benchmark design (§51) :meas_s51_design, 2026-11-13, 2026-11-13
-    section model - model and paper
-    Unified FEC/ARQ model paper :model_paper_v1, 2026-03-21, 2026-04-10
-    Mathematical verification of the model :model_math_verification, 2026-04-12, 2026-04-12
-    raptorpath-math and wasm L0 model :model_wasm_l0, 2026-04-08, 2026-07-06
-    Visualizer as one continuum law :model_vis_continuum, 2026-07-28, 2026-07-28
-    Engine NO-MODE-SWITCH debts (§3.3) :active, model_mode_switch_debts, 2026-09-27, 2026-11-13
-    Open-constants register (§3.4) :active, model_open_constants, 2026-09-27, 2026-11-13
-    Model review (§37) :model_review_37, 2026-11-10, 2026-11-10
-    Paper versus engine reconciliation :active, model_paper_recon, 2026-11-12, 2026-11-13
-    Bounding tests for divergences :model_bound_tests, 2026-11-12, 2026-11-12
-    Wasm mode-switch audit :active, model_wasm_audit, 2026-11-13, 2026-11-13
-    T_cut give-up law pinned :active, model_defect_tcut, 2026-11-13, 2026-11-13
-    Wasm dead second machine :active, model_defect_dead_machine, 2026-11-13, 2026-11-13
-    Erratum - pre-flight tests not run :active, model_bound_tests_unrun, 2026-11-13, 2026-11-13
-    Law ledger :model_law_ledger, 2026-11-13, 2026-11-13
-    section obs - observability
-    Runtime status endpoint (ADR-0013) :obs_status_endpoint, 2026-03-12, 2026-03-12
-    [GATES] liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09
-    Readouts as one write :obs_readout_macro, 2026-09-27, 2026-09-27
-    Metrics registry and OTel design :active, obs_otel_design, 2026-11-12, 2026-11-13
-    Owner answers on OTel Q1–Q6 :obs_user_otel_answers, 2026-11-12, 2026-11-12
-    section infra - repo and simplification
-    Tunnel platform - handshake, TLS, migra… :infra_early_platform, 2026-03-12, 2026-03-13
-    MTU floor 1350 (PMTU wedge) :infra_mtu_floor, 2026-07-13, 2026-07-13
-    Deprecation register and consolidation :infra_consolidation, 2026-07-21, 2026-07-28
-    Net seams and dead-code refactor :infra_net_seams, 2026-08-08, 2026-08-10
-    Whole-project cleanup pass :infra_cleanup_0927, 2026-09-27, 2026-09-27
-    Defect fix program :infra_fix_program, 2026-09-29, 2026-09-30
-    Simplification review (§44–§45) :infra_simplify_review, 2026-11-10, 2026-11-10
-    Promote or archive at verdict :infra_adr73, 2026-11-10, 2026-11-10
-    Simplify batch 1 (§49) :infra_simplify_batch1, 2026-11-10, 2026-11-12
-    Simplify batches 1b–3 (§50) :infra_simplify_batch2, 2026-11-12, 2026-11-12
-    Workspace restructure (ADR-0076) :active, infra_restructure, 2026-11-12, 2026-11-13
-    Recorded, not fixed (§3.7) :active, infra_defect_recorded_not_fixed, 2026-09-30, 2026-11-13
-    Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
-```
-
-Not shown (no `start`): `cod-user-generation-seat`, `rec-s54-session`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-wasm-calls`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
+Generated from nodes.yaml on 2026-11-13.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.

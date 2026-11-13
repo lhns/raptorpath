@@ -9,77 +9,42 @@ Scope: flow control and the store law: store cap, SACK-clocked release, the time
 <!-- BEGIN GENERATED: track-store -->
 ```mermaid
 flowchart TB
-    store_xn_pool[/"Path-scaled pool ×N<br/>(STORE_PATHS)<br/>↷ superseded"/]
-    store_percap_family["Per-path store<br/>accounts family (4<br/>arms)<br/>✖ dead end"]
-    store_honest_cap_family[/"Honest floor-clock<br/>cap family (6 arms)<br/>✖ dead end"/]
-    store_pool_anchor_flip["Composed cadence and<br/>pool-anchor flip<br/>✔ done · bad<br/>ext: rate-est-<br/>cadence"]
-    store_sack_prune["SACK pruning of the<br/>store<br/>↷ superseded"]
-    store_sack_release["SACK-clocked store<br/>release (ADR-0060)<br/>✔ done · successful"]
-    store_sender_decoupling["Sender decoupling<br/>attempts (4 arms)<br/>✖ dead end"]
-    store_anchor_hygiene[/"Anchor hygiene laws<br/>(ADR-0061)<br/>✔ done · successful ⚠<br/>ext: cc-defect-copa-<br/>minrtt"/]
-    store_three_term[/"Three-term and<br/>composed caps (5<br/>arms)<br/>✖ dead end"/]
-    store_cap_unification[/"Store-cap<br/>unification over<br/>live paths<br/>✔ done · mixed"/]
-    store_honest_inputs["Honest inputs and<br/>O(1) anchor<br/>✔ done · successful"]
-    store_sum_cap[/"Sum cap: ×N deletion<br/>(SUM_CAP)<br/>✔ done · successful ⚠"/]
-    store_delta_cap[/"Derived setpoint 1 +<br/>q(δ)<br/>✔ done · very-successful ⚠"/]
-    store_adr72_one_law[/"One store law<br/>(ADR-0072)<br/>✔ done · successful ⚠<br/>ext: meas-formula-<br/>first"/]
-    store_input_search["Store-law input<br/>search (8 inputs)<br/>✖ dead end"]
-    store_power_law[/"Power-seeking store<br/>law D<br/>✖ dead end"/]
-    store_engine_form["Dispersion and<br/>oracle store law<br/>⏸ parked"]
-    store_w1_who_limits[/"Who limits at each δ<br/>⏳ waiting<br/>ext: cc-bbrrs-r1"/]
-    store_s54_budget["Store-budget test<br/>design (#167;54)<br/>⏳ waiting<br/>ext: rec-snapver-<br/>filter"]
-    store_defect_cap_constant>"Store cap constant<br/>at c8<br/>⚠ open defect<br/>ext: rec-snapver-<br/>filter"]
-    store_engine_form_guard[/"Store-law engine<br/>form guard<br/>⛔ blocked<br/>ext: meas-<br/>guard-v2-impl"/]
-    store_s48c_session[/"δ seat diagnostic<br/>and guard (#167;48c)<br/>⛔ blocked<br/>ext:<br/>meas-s51-session,<br/>meas-guard-v2-impl"/]
-    store_user_u1u3{{"Owner calls U1–U3<br/>○ next"}}
-    store_engine_form_impl[/"Store-law engine<br/>form<br/>⛔ blocked<br/>ext: place-per-leg-<br/>impl, model-law-<br/>ledger"/]
-    store_delta_seat[/"δ seat on the store<br/>⛔ blocked"/]
-    store_fix_maxbw_minrtt[/"Honest rate and<br/>delay inputs<br/>⛔ blocked<br/>ext: model-law-<br/>ledger, cc-bbrrs-r2"/]
-    store_xn_pool ~~~ store_sack_prune
-    store_xn_pool ~~~ store_sack_release
-    store_xn_pool ~~~ store_sender_decoupling
+    store_sender_decoupling["✖ Sender decoupling<br/>attempts (4 arms)"]
+    store_sack_prune["↷ SACK pruning of the<br/>store"]
+    store_xn_pool[/"↷ Path-scaled pool ×N<br/>(STORE_PATHS)"/]
+    store_percap_family["✖ Per-path store<br/>accounts family (4<br/>arms)"]
+    store_honest_cap_family[/"✖ Honest floor-clock<br/>cap family (6 arms)"/]
+    store_anchor_hygiene[/"✔ Anchor hygiene laws<br/>(ADR-0061)"/]
+    store_sack_release["✔ SACK-clocked store<br/>release (ADR-0060)"]
+    store_pool_anchor_flip["✔ Composed cadence and<br/>pool-anchor flip"]
+    store_three_term[/"✖ Three-term and<br/>composed caps (5 arms)"/]
+    store_honest_inputs["✔ Honest inputs and<br/>O(1) anchor"]
+    store_cap_unification[/"✔ Store-cap<br/>unification over live<br/>paths"/]
+    store_sum_cap[/"✔ Sum cap: ×N deletion<br/>(SUM_CAP)"/]
+    store_delta_cap[/"✔ Derived setpoint 1 +<br/>q(δ)"/]
+    store_adr72_one_law[/"✔ One store law<br/>(ADR-0072)"/]
+    store_input_search["✖ Store-law input<br/>search (8 inputs)"]
+    store_power_law[/"✖ Power-seeking store<br/>law D"/]
+    store_engine_form["⏸ Dispersion and<br/>oracle store law"]
+    store_w1_who_limits[/"⏳ Who limits at each δ"/]
+    store_s54_budget["⏳ Store-budget test<br/>design (#167;54)"]
+    store_defect_cap_constant>"⚠ Store cap constant<br/>at c8"]
+    store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
+    store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
+    store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
+    store_delta_seat[/"⛔ δ seat on the store"/]
+    store_s48c_session[/"⛔ δ seat diagnostic<br/>and guard (#167;48c)"/]
+    store_sender_decoupling ~~~ store_percap_family
+    store_sack_prune ~~~ store_honest_cap_family
     store_xn_pool ~~~ store_anchor_hygiene
-    store_percap_family ~~~ store_sack_prune
     store_percap_family ~~~ store_sack_release
-    store_percap_family ~~~ store_sender_decoupling
-    store_percap_family ~~~ store_anchor_hygiene
-    store_honest_cap_family ~~~ store_sack_prune
-    store_honest_cap_family ~~~ store_sack_release
-    store_honest_cap_family ~~~ store_sender_decoupling
-    store_honest_cap_family ~~~ store_anchor_hygiene
-    store_pool_anchor_flip ~~~ store_sack_prune
-    store_pool_anchor_flip ~~~ store_sack_release
-    store_pool_anchor_flip ~~~ store_sender_decoupling
-    store_pool_anchor_flip ~~~ store_anchor_hygiene
-    store_sack_prune ~~~ store_three_term
-    store_sack_prune ~~~ store_honest_inputs
-    store_sack_prune ~~~ store_s54_budget
-    store_sack_prune ~~~ store_defect_cap_constant
-    store_sack_release ~~~ store_three_term
-    store_sack_release ~~~ store_honest_inputs
-    store_sack_release ~~~ store_s54_budget
-    store_sack_release ~~~ store_defect_cap_constant
-    store_sender_decoupling ~~~ store_three_term
-    store_sender_decoupling ~~~ store_honest_inputs
-    store_sender_decoupling ~~~ store_s54_budget
-    store_sender_decoupling ~~~ store_defect_cap_constant
+    store_honest_cap_family ~~~ store_pool_anchor_flip
     store_anchor_hygiene ~~~ store_three_term
-    store_anchor_hygiene ~~~ store_honest_inputs
-    store_anchor_hygiene ~~~ store_s54_budget
-    store_anchor_hygiene ~~~ store_defect_cap_constant
-    store_three_term ~~~ store_fix_maxbw_minrtt
-    store_three_term ~~~ store_cap_unification
-    store_three_term ~~~ store_sum_cap
-    store_honest_inputs ~~~ store_fix_maxbw_minrtt
+    store_sack_release ~~~ store_honest_inputs
+    store_pool_anchor_flip ~~~ store_honest_inputs
+    store_three_term ~~~ store_honest_inputs
     store_honest_inputs ~~~ store_cap_unification
     store_honest_inputs ~~~ store_sum_cap
-    store_s54_budget ~~~ store_fix_maxbw_minrtt
-    store_s54_budget ~~~ store_cap_unification
-    store_s54_budget ~~~ store_sum_cap
-    store_defect_cap_constant ~~~ store_fix_maxbw_minrtt
-    store_defect_cap_constant ~~~ store_cap_unification
-    store_defect_cap_constant ~~~ store_sum_cap
-    store_fix_maxbw_minrtt ~~~ store_delta_cap
     store_cap_unification ~~~ store_delta_cap
     store_sum_cap ~~~ store_delta_cap
     store_delta_cap ~~~ store_adr72_one_law
@@ -87,36 +52,36 @@ flowchart TB
     store_input_search ~~~ store_power_law
     store_input_search ~~~ store_engine_form
     store_power_law ~~~ store_w1_who_limits
-    store_engine_form ~~~ store_w1_who_limits
-    store_w1_who_limits ~~~ store_user_u1u3
-    store_user_u1u3 ~~~ store_engine_form_impl
+    store_engine_form ~~~ store_s54_budget
+    store_engine_form ~~~ store_defect_cap_constant
+    store_w1_who_limits ~~~ store_fix_maxbw_minrtt
+    store_s54_budget ~~~ store_fix_maxbw_minrtt
+    store_defect_cap_constant ~~~ store_fix_maxbw_minrtt
+    store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     store_engine_form_impl ~~~ store_engine_form_guard
     store_engine_form_impl ~~~ store_delta_seat
     store_engine_form_guard ~~~ store_s48c_session
     store_delta_seat ~~~ store_s48c_session
-    store_xn_pool -.->|replaced by| store_sum_cap
-    store_sack_prune -.->|replaced by| store_sack_release
-    store_sender_decoupling -.->|replaced by| store_percap_family
-    store_anchor_hygiene -.->|⚠ qualified by| store_defect_cap_constant
+    store_sender_decoupling -.-> store_percap_family
+    store_sack_prune -.-> store_sack_release
+    store_xn_pool -.-> store_sum_cap
+    store_anchor_hygiene -.-> store_defect_cap_constant
     store_honest_inputs --> store_cap_unification
     store_xn_pool --> store_sum_cap
-    store_sum_cap -.->|⚠ qualified by| store_defect_cap_constant
+    store_sum_cap -.-> store_defect_cap_constant
     store_sum_cap --> store_delta_cap
-    store_delta_cap -.->|⚠ qualified by| store_defect_cap_constant
+    store_delta_cap -.-> store_defect_cap_constant
     store_delta_cap --> store_adr72_one_law
-    store_adr72_one_law -.->|⚠ qualified by| store_defect_cap_constant
+    store_adr72_one_law -.-> store_defect_cap_constant
     store_adr72_one_law --> store_input_search
     store_input_search --> store_power_law
     store_input_search --> store_engine_form
-    store_engine_form_impl --> store_engine_form_guard
-    store_delta_seat --> store_s48c_session
-    store_w1_who_limits --> store_user_u1u3
-    store_user_u1u3 --> store_engine_form_impl
+    store_w1_who_limits --> store_engine_form_impl
     store_fix_maxbw_minrtt --> store_engine_form_impl
+    store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
-    store_engine_form_guard -.->|then| store_s48c_session
-    linkStyle 62,65,67,69 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 79 stroke:#999,stroke-width:1px,color:#777
+    store_delta_seat --> store_s48c_session
+    linkStyle 31,34,36,38 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -130,16 +95,15 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class store_xn_pool,store_percap_family,store_honest_cap_family,store_sack_prune,store_sender_decoupling,store_three_term,store_input_search,store_power_law dead
+    class store_sender_decoupling,store_sack_prune,store_xn_pool,store_percap_family,store_honest_cap_family,store_three_term,store_input_search,store_power_law dead
+    class store_anchor_hygiene,store_sack_release,store_honest_inputs,store_sum_cap,store_adr72_one_law succ
     class store_pool_anchor_flip bad
-    class store_sack_release,store_anchor_hygiene,store_honest_inputs,store_sum_cap,store_adr72_one_law succ
     class store_cap_unification mixed
     class store_delta_cap vsucc
     class store_engine_form parked
     class store_w1_who_limits,store_s54_budget waiting
     class store_defect_cap_constant defect
-    class store_engine_form_guard,store_s48c_session,store_engine_form_impl,store_delta_seat,store_fix_maxbw_minrtt blocked
-    class store_user_u1u3 userdec
+    class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
 

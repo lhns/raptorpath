@@ -9,64 +9,39 @@ Scope: multipath placement: placement price, idle-leg lock-out, diversity weight
 <!-- BEGIN GENERATED: track-place -->
 ```mermaid
 flowchart TB
-    place_marginal_cost[/"Marginal-cost<br/>placement law (RWM<br/>B)<br/>✔ done · successful<br/>ext: rec-reliable-<br/>window"/]
-    place_daps["DAPS and rate<br/>estimator (4 arms)<br/>↷ superseded<br/>ext: store-anchor-<br/>hygiene"]
-    place_slack["Place-slack<br/>✖ dead end"]
-    place_stage2_battery["Placement battery<br/>(Track A)<br/>✔ done · successful<br/>ext: meas-wire-v8"]
-    place_hol["Placement frontier<br/>term (PLACE_HOL)<br/>✖ dead end"]
-    place_t_derived["Derived placement<br/>temperature<br/>✖ dead end"]
-    place_wdiv["Derived diversity<br/>weight, leg choice<br/>⏳ waiting"]
-    place_frozen_echo["Frozen app-echo srtt<br/>price<br/>↷ superseded"]
-    place_wire_price["Wire-RTT placement<br/>price<br/>✔ done · successful<br/>ext: model-review-37"]
-    place_per_leg_state["One per-leg state<br/>design<br/>⏳ waiting<br/>ext: infra-simplify-<br/>review"]
-    place_submax_anchor["Sub-max quantile<br/>rate anchor<br/>✖ dead end"]
-    place_path_event["Path event after<br/>promotion (#167;46)<br/>✔ done · unrated"]
-    place_user_perleg_questions{{"Owner calls on per-<br/>leg design<br/>○ next"}}
-    place_per_leg_impl["Per-leg state<br/>implementation<br/>⛔ blocked"]
-    place_marginal_cost ~~~ place_wdiv
-    place_marginal_cost ~~~ place_frozen_echo
-    place_marginal_cost ~~~ place_wire_price
+    place_marginal_cost[/"✔ Marginal-cost<br/>placement law (RWM B)"/]
+    place_frozen_echo["↷ Frozen app-echo srtt<br/>price"]
+    place_daps["↷ DAPS and rate<br/>estimator (4 arms)"]
+    place_submax_anchor["✖ Sub-max quantile<br/>rate anchor"]
+    place_slack["✖ Place-slack"]
+    place_wdiv["⏳ Derived diversity<br/>weight, leg choice"]
+    place_stage2_battery["✔ Placement battery<br/>(Track A)"]
+    place_hol["✖ Placement frontier<br/>term (PLACE_HOL)"]
+    place_t_derived["✖ Derived placement<br/>temperature"]
+    place_wire_price["✔ Wire-RTT placement<br/>price"]
+    place_path_event["✔ Path event after<br/>promotion (#167;46)"]
+    place_per_leg_state["⏳ One per-leg state<br/>design"]
+    place_per_leg_impl["⛔ Per-leg state<br/>implementation"]
     place_marginal_cost ~~~ place_submax_anchor
+    place_frozen_echo ~~~ place_slack
     place_daps ~~~ place_wdiv
-    place_daps ~~~ place_frozen_echo
-    place_daps ~~~ place_wire_price
-    place_daps ~~~ place_submax_anchor
-    place_slack ~~~ place_wdiv
-    place_slack ~~~ place_frozen_echo
-    place_slack ~~~ place_wire_price
-    place_slack ~~~ place_submax_anchor
-    place_stage2_battery ~~~ place_wdiv
-    place_stage2_battery ~~~ place_frozen_echo
+    place_submax_anchor ~~~ place_stage2_battery
+    place_slack ~~~ place_stage2_battery
+    place_wdiv ~~~ place_stage2_battery
+    place_stage2_battery ~~~ place_hol
+    place_stage2_battery ~~~ place_t_derived
     place_stage2_battery ~~~ place_wire_price
-    place_stage2_battery ~~~ place_submax_anchor
-    place_wdiv ~~~ place_hol
-    place_wdiv ~~~ place_t_derived
-    place_wdiv ~~~ place_per_leg_state
-    place_wdiv ~~~ place_path_event
-    place_frozen_echo ~~~ place_hol
-    place_frozen_echo ~~~ place_t_derived
-    place_frozen_echo ~~~ place_per_leg_state
-    place_frozen_echo ~~~ place_path_event
-    place_wire_price ~~~ place_hol
-    place_wire_price ~~~ place_t_derived
+    place_hol ~~~ place_path_event
+    place_t_derived ~~~ place_per_leg_state
     place_wire_price ~~~ place_per_leg_state
-    place_wire_price ~~~ place_path_event
-    place_submax_anchor ~~~ place_hol
-    place_submax_anchor ~~~ place_t_derived
-    place_submax_anchor ~~~ place_per_leg_state
-    place_submax_anchor ~~~ place_path_event
-    place_hol ~~~ place_user_perleg_questions
-    place_t_derived ~~~ place_user_perleg_questions
-    place_per_leg_state ~~~ place_user_perleg_questions
-    place_path_event ~~~ place_user_perleg_questions
-    place_user_perleg_questions ~~~ place_per_leg_impl
+    place_path_event ~~~ place_per_leg_impl
+    place_per_leg_state ~~~ place_per_leg_impl
+    place_frozen_echo -.-> place_wire_price
     place_stage2_battery --> place_hol
     place_stage2_battery --> place_t_derived
-    place_frozen_echo -.->|replaced by| place_wire_price
-    place_wire_price --> place_per_leg_state
     place_wire_price --> place_path_event
-    place_per_leg_state --> place_user_perleg_questions
-    place_user_perleg_questions --> place_per_leg_impl
+    place_wire_price --> place_per_leg_state
+    place_per_leg_state --> place_per_leg_impl
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -81,10 +56,9 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class place_marginal_cost,place_stage2_battery,place_wire_price succ
-    class place_daps,place_slack,place_hol,place_t_derived,place_frozen_echo,place_submax_anchor dead
+    class place_frozen_echo,place_daps,place_submax_anchor,place_slack,place_hol,place_t_derived dead
     class place_wdiv,place_per_leg_state waiting
     class place_path_event unrated
-    class place_user_perleg_questions userdec
     class place_per_leg_impl blocked
 ```
 <!-- END GENERATED: track-place -->

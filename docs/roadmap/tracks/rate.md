@@ -9,102 +9,53 @@ Scope: the rate law and the (δ, ρ, r) triangle: FEC rate, P_fec, W*, hints as 
 <!-- BEGIN GENERATED: track-rate -->
 ```mermaid
 flowchart TB
-    rate_ge_hmm[/"Gilbert-Elliott loss<br/>model (ADR-0023)<br/>✔ done · successful"/]
-    rate_fec_rate_v1[/"BOCD FEC rate<br/>control (ADR-0050)<br/>✔ done · successful"/]
-    rate_saturation_rstar[/"Saturation-aware r*<br/>and window<br/>✔ done · successful ⚠"/]
-    rate_rstar_window_mass[/"r* window-mass<br/>provisioning<br/>(ADR-0063)<br/>✔ done · successful"/]
-    rate_taper_r[/"Taper emission<br/>budget law<br/>✔ done · successful"/]
-    rate_leading_taper["Leading-window taper<br/>emission<br/>↷ superseded<br/>ext: cod-unified-<br/>span"]
-    rate_retention_is_rho{{"Retention is the ρ<br/>dial<br/>✔ done · n/a"}}
-    rate_unified_shed[/"δ-honest overload<br/>shedding<br/>✔ done · successful<br/>ext: cod-unified-<br/>span"/]
-    rate_est_cadence["Batched BOCD<br/>estimator cadence<br/>✔ done · very-successful ⚠<br/>ext: infra-defect-<br/>recorded-not-fixed"]
-    rate_sender_truth_loss["Sender-truth loss<br/>estimator<br/>✖ dead end"]
-    rate_r_battery["Funded coding at r #gt;<br/>0<br/>✖ dead end"]
-    rate_dof_ledger[/"DoF ledger feedback<br/>leg (#167;39)<br/>⏸ parked"/]
-    rate_dials_made_real["The dials made real<br/>✔ done · successful"]
-    rate_defect_pfec>"P_fec truncation<br/>divergence<br/>⚠ open defect"]
-    rate_fix_rate_readout["Repair-rate readout<br/>○ next"]
-    rate_user_rate_law{{"Owner calls on rate<br/>law<br/>⛔ blocked<br/>ext: model-paper-<br/>recon,<br/>meas-s51-session"}}
-    rate_law_reconcile[/"Rate-law<br/>reconciliation (W22,<br/>W*)<br/>⛔ blocked<br/>ext:<br/>meas-s51-session"/]
-    rate_fix_term_gauge["Rate-law term-win<br/>gauge<br/>⛔ blocked"]
-    rate_fix_estimators[/"Loss estimator<br/>approximations<br/>⛔ blocked<br/>ext: place-per-leg-<br/>impl"/]
-    rate_fix_rho_realtime[/"Low-latency and<br/>partial-reliability<br/>laws<br/>⛔ blocked<br/>ext: store-engine-<br/>form-impl, rec-fix-<br/>refresh-clock +1"/]
-    rate_ge_hmm ~~~ rate_leading_taper
-    rate_ge_hmm ~~~ rate_retention_is_rho
-    rate_ge_hmm ~~~ rate_sender_truth_loss
-    rate_ge_hmm ~~~ rate_dials_made_real
-    rate_fec_rate_v1 ~~~ rate_leading_taper
-    rate_fec_rate_v1 ~~~ rate_retention_is_rho
-    rate_fec_rate_v1 ~~~ rate_sender_truth_loss
-    rate_fec_rate_v1 ~~~ rate_dials_made_real
+    rate_ge_hmm[/"✔ Gilbert-Elliott loss<br/>model (ADR-0023)"/]
+    rate_fec_rate_v1[/"✔ BOCD FEC rate<br/>control (ADR-0050)"/]
+    rate_saturation_rstar[/"✔ Saturation-aware r*<br/>and window"/]
+    rate_rstar_window_mass[/"✔ r* window-mass<br/>provisioning<br/>(ADR-0063)"/]
+    rate_taper_r[/"✔ Taper emission<br/>budget law"/]
+    rate_leading_taper["↷ Leading-window taper<br/>emission"]
+    rate_unified_shed[/"✔ δ-honest overload<br/>shedding"/]
+    rate_est_cadence["✔ Batched BOCD<br/>estimator cadence"]
+    rate_sender_truth_loss["✖ Sender-truth loss<br/>estimator"]
+    rate_dials_made_real["✔ The dials made real"]
+    rate_r_battery["✖ Funded coding at r #gt;<br/>0"]
+    rate_dof_ledger[/"⏸ DoF ledger feedback<br/>leg (#167;39)"/]
+    rate_defect_pfec>"⚠ P_fec truncation<br/>divergence"]
+    rate_fix_rate_readout["○ Repair-rate readout"]
+    rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation (W22,<br/>W*)"/]
+    rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
+    rate_fix_term_gauge["⛔ Rate-law term-win<br/>gauge"]
+    rate_fix_rho_realtime[/"⛔ Low-latency and<br/>partial-reliability<br/>laws"/]
+    rate_ge_hmm ~~~ rate_rstar_window_mass
+    rate_fec_rate_v1 ~~~ rate_taper_r
     rate_saturation_rstar ~~~ rate_leading_taper
-    rate_saturation_rstar ~~~ rate_retention_is_rho
-    rate_saturation_rstar ~~~ rate_sender_truth_loss
-    rate_saturation_rstar ~~~ rate_dials_made_real
-    rate_taper_r ~~~ rate_leading_taper
-    rate_taper_r ~~~ rate_retention_is_rho
-    rate_taper_r ~~~ rate_sender_truth_loss
-    rate_taper_r ~~~ rate_dials_made_real
-    rate_leading_taper ~~~ rate_defect_pfec
-    rate_leading_taper ~~~ rate_fix_rate_readout
-    rate_leading_taper ~~~ rate_fix_estimators
-    rate_leading_taper ~~~ rate_rstar_window_mass
-    rate_retention_is_rho ~~~ rate_defect_pfec
-    rate_retention_is_rho ~~~ rate_fix_rate_readout
-    rate_retention_is_rho ~~~ rate_fix_estimators
-    rate_retention_is_rho ~~~ rate_rstar_window_mass
-    rate_sender_truth_loss ~~~ rate_defect_pfec
-    rate_sender_truth_loss ~~~ rate_fix_rate_readout
-    rate_sender_truth_loss ~~~ rate_fix_estimators
-    rate_sender_truth_loss ~~~ rate_rstar_window_mass
-    rate_dials_made_real ~~~ rate_defect_pfec
-    rate_dials_made_real ~~~ rate_fix_rate_readout
-    rate_dials_made_real ~~~ rate_fix_estimators
-    rate_dials_made_real ~~~ rate_rstar_window_mass
-    rate_defect_pfec ~~~ rate_unified_shed
-    rate_defect_pfec ~~~ rate_est_cadence
-    rate_defect_pfec ~~~ rate_r_battery
-    rate_defect_pfec ~~~ rate_user_rate_law
-    rate_fix_rate_readout ~~~ rate_unified_shed
-    rate_fix_rate_readout ~~~ rate_est_cadence
-    rate_fix_rate_readout ~~~ rate_r_battery
-    rate_fix_rate_readout ~~~ rate_user_rate_law
-    rate_fix_estimators ~~~ rate_unified_shed
-    rate_fix_estimators ~~~ rate_est_cadence
-    rate_fix_estimators ~~~ rate_r_battery
-    rate_fix_estimators ~~~ rate_user_rate_law
     rate_rstar_window_mass ~~~ rate_unified_shed
-    rate_rstar_window_mass ~~~ rate_est_cadence
-    rate_rstar_window_mass ~~~ rate_r_battery
-    rate_rstar_window_mass ~~~ rate_user_rate_law
-    rate_unified_shed ~~~ rate_fix_term_gauge
-    rate_unified_shed ~~~ rate_dof_ledger
-    rate_unified_shed ~~~ rate_law_reconcile
-    rate_est_cadence ~~~ rate_fix_term_gauge
-    rate_est_cadence ~~~ rate_dof_ledger
-    rate_est_cadence ~~~ rate_law_reconcile
-    rate_r_battery ~~~ rate_fix_term_gauge
+    rate_taper_r ~~~ rate_est_cadence
+    rate_leading_taper ~~~ rate_sender_truth_loss
+    rate_unified_shed ~~~ rate_dials_made_real
+    rate_est_cadence ~~~ rate_dials_made_real
+    rate_sender_truth_loss ~~~ rate_dials_made_real
+    rate_dials_made_real ~~~ rate_r_battery
     rate_r_battery ~~~ rate_dof_ledger
-    rate_r_battery ~~~ rate_law_reconcile
-    rate_user_rate_law ~~~ rate_fix_term_gauge
-    rate_user_rate_law ~~~ rate_dof_ledger
-    rate_user_rate_law ~~~ rate_law_reconcile
-    rate_fix_term_gauge ~~~ rate_fix_rho_realtime
-    rate_dof_ledger ~~~ rate_fix_rho_realtime
-    rate_law_reconcile ~~~ rate_fix_rho_realtime
-    rate_saturation_rstar -.->|⚠ qualified by| rate_defect_pfec
+    rate_r_battery ~~~ rate_defect_pfec
+    rate_r_battery ~~~ rate_fix_rate_readout
+    rate_dof_ledger ~~~ rate_law_reconcile
+    rate_defect_pfec ~~~ rate_fix_estimators
+    rate_fix_rate_readout ~~~ rate_fix_estimators
+    rate_law_reconcile ~~~ rate_fix_term_gauge
+    rate_fix_estimators ~~~ rate_fix_rho_realtime
+    rate_saturation_rstar -.-> rate_defect_pfec
     rate_ge_hmm --> rate_rstar_window_mass
     rate_fec_rate_v1 --> rate_rstar_window_mass
-    rate_retention_is_rho --> rate_unified_shed
     rate_fec_rate_v1 --> rate_est_cadence
     rate_dials_made_real --> rate_r_battery
     rate_r_battery --> rate_dof_ledger
-    rate_defect_pfec --> rate_user_rate_law
-    rate_user_rate_law --> rate_law_reconcile
+    rate_defect_pfec --> rate_law_reconcile
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 63 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
+    linkStyle 18 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -120,12 +71,11 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_dials_made_real succ
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
-    class rate_retention_is_rho,rate_user_rate_law userdec
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
     class rate_defect_pfec defect
     class rate_fix_rate_readout next
-    class rate_law_reconcile,rate_fix_term_gauge,rate_fix_estimators,rate_fix_rho_realtime blocked
+    class rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
 ```
 <!-- END GENERATED: track-rate -->
 

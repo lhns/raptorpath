@@ -9,6 +9,7 @@ which is generated in full (GitHub fails to render a page with too many Mermaid 
 """
 import argparse
 import datetime
+import heapq
 import re
 import sys
 import textwrap
@@ -39,15 +40,17 @@ STATES = ["done", "in-progress", "next", "blocked", "parked", "abandoned"]
 OUTCOMES = ["very-successful", "successful", "mixed", "bad", "dead-end", "superseded", "unrated", "n/a"]
 LANES = ["vm", "host-cargo", "no-cargo", "user", "none"]
 
-WRAP = 20           # label line width in characters
-OVERVIEW_WIDTH = 3  # max nodes per row inside an overview track box
-TRACK_WIDTH = 4     # max nodes per rank in a per-track tree
-EXT_SHOWN = 2       # other-track references named in a node label before '+N'
+WRAP = 22           # label line width in characters
+OVERVIEW_WIDTH = 2  # max nodes per row in the overview
+TRACK_WIDTH = 3     # max nodes per row in a per-track tree
+BAND_MIN = 4        # past months are merged into one overview band until it holds this many nodes
 GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
 REGION_ORDER = ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting", "waiting-on-owner",
                 "vm-queue", "timeline", "tracks"]
 MD_KEY = "roadmap.md"
+TIMELINE_KEY = "roadmap/timeline.md"  # the Gantt page, generated in full
+GENERATED_ON = "Generated from nodes.yaml on {}."  # check.py parses the date back out of this sentence
 TRACK_DIR = "tracks"  # per-track files live in <md stem>/tracks/, i.e. docs/roadmap/tracks/
 FORWARD_STATES = ("in-progress", "next", "blocked", "parked")  # nodes that still have work ahead
 
@@ -105,6 +108,11 @@ def tag(n):
     return {"in-progress": "▶ in progress", "next": "○ next", "blocked": "⛔ blocked", "parked": "⏸ parked"}[s]
 
 
+def glyph(n):
+    """The one status glyph on a diagram label (the sentence form, tag(), is for the tables)."""
+    return tag(n).split()[0]
+
+
 def node_class(n):
     s, o = n["state"], n["outcome"]
     if n["kind"] == "user-decision" and s not in ("done", "abandoned"):
@@ -123,19 +131,11 @@ def node_class(n):
     return {"in-progress": "inprog", "next": "next", "blocked": "blocked", "parked": "parked"}[s]
 
 
-def external_refs(n, ids):
-    """Label line naming other-track nodes this node points at (prerequisites, replacement, qualifier)."""
-    ext = list(dict.fromkeys(t for f in ("depends_on", "replaced_by", "qualified_by") for t in n[f] if t not in ids))
-    if not ext:
-        return ""
-    return "ext: " + ", ".join(ext[:EXT_SHOWN]) + (f" +{len(ext) - EXT_SHOWN}" if len(ext) > EXT_SHOWN else "")
-
-
-def node_def(n, ident=None, extra=""):
-    title = "<br/>".join(esc(line) for line in textwrap.wrap(" ".join(n["title"].split()), WRAP) or [""])
-    label = f"{title}<br/>{esc(tag(n))}{' ⚠' if n['qualified_by'] else ''}"
-    if extra:
-        label += "<br/>" + "<br/>".join(esc(line) for line in textwrap.wrap(extra, WRAP))
+def node_def(n, ident=None, prefix=""):
+    """One box: [track prefix ·] glyph + title. Colour (classDef) carries state and outcome."""
+    text = f"{prefix} · " if prefix else ""
+    lines = textwrap.wrap(f"{text}{glyph(n)} " + " ".join(n["title"].split()), WRAP) or [""]
+    label = "<br/>".join(esc(line) for line in lines)
     i = ident or sid(n["id"])
     k = n["kind"]
     if k == "user-decision":
@@ -178,136 +178,253 @@ def reduced_deps(nodes):
             for n in nodes}
 
 
-def edges(nodes, keep):
-    """Yield (src, dst, kind) for edges where keep(src_node, dst_node) holds.
-
-    kind: "dep" (prerequisite -> dependant), "repl" (replaced by), "qual" (rated node -> qualifying defect).
-    """
-    by = {n["id"]: n for n in nodes}
-    direct = reduced_deps(nodes)
+def precedence(nodes):
+    """{id: ids that must come before it}: its depends_on, and the node it replaces (old before new)."""
+    ids = {n["id"] for n in nodes}
+    pre = {n["id"]: [d for d in n["depends_on"] if d in ids] for n in nodes}
     for n in nodes:
-        for d in direct[n["id"]]:
-            if keep(by[d], n):
-                yield d, n["id"], "dep"
         for r in n["replaced_by"]:
-            if keep(n, by[r]):
-                yield n["id"], r, "repl"
-        for q in n["qualified_by"]:
-            if keep(n, by[q]):
-                yield n["id"], q, "qual"
-    queue = vm_queue(nodes)
-    for a, b in zip(queue, queue[1:]):  # queue ORDER, not a dependency
-        if keep(a, b):
-            yield a["id"], b["id"], "then"
+            if r in ids and n["id"] not in pre[r]:
+                pre[r].append(n["id"])
+    return pre
 
 
-EDGE_ARROWS = {"dep": "-->", "repl": "-.->|replaced by|", "qual": "-.->|⚠ qualified by|", "then": "-.->|then|"}
-QUAL_STYLE = "stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400"
-THEN_STYLE = "stroke:#999,stroke-width:1px,color:#777"
-_LINK_RE = re.compile(r"^\s+\S+ (?:-->|-\.->\|[^|]*\||~~~)")
+def hidden(n):
+    """Owner decisions (and nodes with `diagram: false`) are not drawn; tables and lists still carry them."""
+    return n["kind"] == "user-decision" or not n["diagram"]
 
 
-def edge_line(a, b, kind, sa=None, sb=None):
-    a, b = sa or sid(a), sb or sid(b)
-    return f"    {a} {EDGE_ARROWS[kind]} {b}"
+def diagram_view(nodes):
+    """The nodes the diagrams draw: hidden ones removed, a dependency that ran through one rewired
+    from its prerequisites to its dependants. replaced_by / qualified_by into a hidden node are dropped."""
+    by = {n["id"]: n for n in nodes}
+    pre = precedence(nodes)
+
+    def visible_pre(i, seen=()):
+        out = []
+        for p in pre[i]:
+            if hidden(by[p]):
+                out += [q for q in visible_pre(p, seen + (i,)) if p not in seen]
+            else:
+                out.append(p)
+        return out
+
+    view = []
+    for n in nodes:
+        if hidden(n):
+            continue
+        m = dict(n)
+        m["depends_on"] = list(dict.fromkeys(d for x in n["depends_on"] for d in ([x] if not hidden(by[x]) else visible_pre(x))))
+        m["replaced_by"] = [r for r in n["replaced_by"] if not hidden(by[r])]
+        m["qualified_by"] = [q for q in n["qualified_by"] if not hidden(by[q])]
+        view.append(m)
+    return view
 
 
-def link_styles(lines):
-    """linkStyle lines for qualified_by and vm-queue 'then' links (Mermaid indexes links in order of appearance)."""
-    idx, hits = 0, {"qual": [], "then": []}
-    for line in lines:
-        if _LINK_RE.match(line):
-            if "⚠ qualified by" in line:
-                hits["qual"].append(idx)
-            elif "|then|" in line:
-                hits["then"].append(idx)
-            idx += line.count("~~~") or 1
-    return [f"    linkStyle {','.join(map(str, h))} {style}"
-            for h, style in ((hits["qual"], QUAL_STYLE), (hits["then"], THEN_STYLE)) if h]
+def time_order(nodes):
+    """ONE global order of node ids: topological on precedence(), ties by start date, undated last.
+
+    Every diagram fills its rows in this order, so every drawn edge points down = forward in time.
+    """
+    pre = precedence(nodes)
+    pos = {n["id"]: k for k, n in enumerate(nodes)}
+    start = {n["id"]: datestr(n.get("start")) for n in nodes}
+    waiting = {i: len(p) for i, p in pre.items()}
+    succ = {i: [] for i in pre}
+    for i, ps in pre.items():
+        for p in ps:
+            succ[p].append(i)
+
+    def key(i):
+        return (0 if start[i] else 1, start[i], pos[i])
+
+    ready = [(key(i), i) for i, w in waiting.items() if w == 0]
+    heapq.heapify(ready)
+    order = []
+    while ready:
+        _, i = heapq.heappop(ready)
+        order.append(i)
+        for j in succ[i]:
+            waiting[j] -= 1
+            if waiting[j] == 0:
+                heapq.heappush(ready, (key(j), j))
+    order += [i for i in pre if i not in set(order)]  # only on a cycle, which check.py rejects
+    return order
+
+
+EDGE_ARROWS = {"dep": "-->", "repl": "-.->", "qual": "-.->"}
+QUAL_STYLE = "stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3"
 
 
 def vm_queue(nodes):
     return sorted((n for n in nodes if n["vm_order"] is not None), key=lambda n: n["vm_order"])
 
 
-def pack_rows(group, width):
-    """Pack ALL nodes of `group` (connected or not) into rows of at most `width` node ids.
+def pack_rows(ordered, width):
+    """Pack the nodes, already in time order, into rows of at most `width` ids.
 
-    Nodes are taken in rank order (rank = longest depends_on path inside the group) and
-    filled greedily; a node never shares a row with one of its prerequisites.
+    A node starts a new row when the row is full or holds one of its prerequisites, so every
+    depends_on / replaced_by edge goes from a row to a LATER row.
     """
-    ids = {n["id"] for n in group}
-    by = {n["id"]: n for n in group}
-    rank = {}
-
-    def depth(i, seen=()):
-        if i not in rank:
-            rank[i] = 1 + max([depth(d, seen + (i,)) for d in by[i]["depends_on"] if d in ids and d not in seen], default=-1)
-        return rank[i]
-
+    ids = {n["id"] for n in ordered}
+    pre = precedence(ordered)
     rows = []
-    for n in sorted(group, key=lambda n: depth(n["id"])):
-        deps = set(n["depends_on"])
-        if rows and len(rows[-1]) < width and not deps & set(rows[-1]):
+    for n in ordered:
+        if rows and len(rows[-1]) < width and not set(pre[n["id"]]) & set(rows[-1]):
             rows[-1].append(n["id"])
         else:
             rows.append([n["id"]])
+    assert {i for r in rows for i in r} == ids
     return rows
 
 
 def row_links(rows, indent="    ", ident=sid):
-    """Invisible links from every node of a row to every node of the next row.
+    """Invisible links tying each row to the next, column by column (a short row's last node takes the spare columns).
 
     Mermaid puts nodes without edges on the first rank and lets edge-pulled nodes drift
-    between ranks; a complete bipartite tie between consecutive rows holds each row on
-    one rank, so rows stack vertically.
+    between ranks; a tie into and out of every node holds each row on one rank, and tying
+    columns keeps the rows aligned like a grid instead of spreading sideways.
     """
-    return [f"{indent}{ident(a)} ~~~ {ident(b)}" for prev, row in zip(rows, rows[1:]) for a in prev for b in row]
+    out = []
+    for prev, row in zip(rows, rows[1:]):
+        pairs = dict.fromkeys((prev[min(k, len(prev) - 1)], row[min(k, len(row) - 1)]) for k in range(max(len(prev), len(row))))
+        out += [f"{indent}{ident(a)} ~~~ {ident(b)}" for a, b in pairs]
+    return out
+
+
+def drawn_edges(nodes, rows):
+    """([(src, dst, kind)], dropped): edges among the nodes in `rows`, only those pointing to a later row.
+
+    dependency edges are transitively reduced (the tables keep the full depends_on). `dropped` counts
+    qualified_by edges that point to the same or an earlier row; they stay in the tables.
+    """
+    row_of = {i: k for k, r in enumerate(rows) for i in r}
+    by = {n["id"]: n for n in nodes}
+    direct = reduced_deps(nodes)
+    out, dropped = [], 0
+    for i in row_of:
+        n = by[i]
+        cand = [(d, i, "dep") for d in direct[i] if d in row_of] + [(i, r, "repl") for r in n["replaced_by"] if r in row_of]             + [(i, q, "qual") for q in n["qualified_by"] if q in row_of]
+        for a, b, kind in cand:
+            if row_of[a] < row_of[b]:
+                out.append((a, b, kind))
+            else:
+                dropped += 1
+    return out, dropped
+
+
+def edge_block(nodes, rows, indent="    "):
+    """Row ties, then edges, then the linkStyle for the qualified ones (links are indexed in order of appearance)."""
+    ties = row_links(rows, indent)
+    es, _ = drawn_edges(nodes, rows)
+    lines = ties + [f"{indent}{sid(a)} {EDGE_ARROWS[k]} {sid(b)}" for a, b, k in es]
+    qual = [len(ties) + j for j, (_, _, k) in enumerate(es) if k == "qual"]
+    if qual:
+        lines.append(f"{indent}linkStyle {','.join(map(str, qual))} {QUAL_STYLE}")
+    return lines
 
 
 def fence(lines):
     return "```mermaid\n" + "\n".join(lines) + "\n```"
 
 
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def month_name(ym):
+    return f"{MONTHS[int(ym[5:7]) - 1]} {ym[:4]}"
+
+
+def overview_bands(sel, order):
+    """[(label, [node ids])] in time order: past months (merged until a band holds BAND_MIN nodes), now, next, later.
+
+    A node never sits in an earlier band than one of its prerequisites (a done node that depends on
+    a blocked one moves down with it), so every edge still points down.
+    """
+    by = {n["id"]: n for n in sel}
+    pre = precedence(sel)
+
+    def base(n):
+        if n["state"] in ("done", "abandoned"):
+            return (0, n["start"][:7])
+        return {"in-progress": (1, ""), "next": (2, "")}.get(n["state"], (3, ""))
+
+    rank = {}
+    for i in order:  # `order` is topological, so prerequisites are ranked first
+        if i in by:
+            rank[i] = max([base(by[i])] + [rank[p] for p in pre[i]])
+    ordered = sorted(rank, key=lambda i: rank[i])  # stable: keeps the time order inside a rank
+    past = {}
+    for i in ordered:
+        if rank[i][0] == 0:
+            past.setdefault(rank[i][1], []).append(i)
+    bands, months, acc = [], [], []
+    for ym, ids in past.items():  # month order; "" (undated) comes first
+        acc += ids
+        months.append(ym)
+        if len(acc) >= BAND_MIN or ym == "":
+            bands.append((months, acc))
+            months, acc = [], []
+    if acc:
+        if bands and bands[-1][0] != [""]:
+            bands[-1] = (bands[-1][0] + months, bands[-1][1] + acc)
+        else:
+            bands.append((months, acc))
+    out = []
+    for months, ids in bands:
+        dated = [m for m in months if m]
+        if not dated:
+            label = "Earlier (no start date)"
+        elif len(dated) == 1:
+            label = month_name(dated[0])
+        else:
+            label = f"{month_name(dated[0])} to {month_name(dated[-1])}"
+        out.append((label, ids))
+    for r, label in ((1, "Now (in progress)"), (2, "Next"), (3, "Later (blocked or parked)")):
+        ids = [i for i in ordered if rank[i][0] == r]
+        if ids:
+            out.append((label, ids))
+    return out
+
+
 def r_overview(nodes, today):
+    nodes = diagram_view(nodes)
     sel = [n for n in nodes if n["overview"]]
     if not sel:
         return "_No nodes have `overview: true` yet._"
-    ids = {n["id"] for n in sel}
+    by = {n["id"]: n for n in sel}
+    bands = overview_bands(sel, time_order(nodes))
     out = ["flowchart TB"]
-    present = []
-    for code, (name, _) in TRACKS.items():
-        group = [n for n in sel if n["track"] == code]
-        if not group:
-            continue
-        present.append(f"sg_{code}")
-        out.append(f'    subgraph sg_{code}["{esc(code + " - " + name)}"]')
-        out.append("        direction TB")
-        out += [f"        {node_def(n)}" for n in group]
-        out += row_links(pack_rows(group, OVERVIEW_WIDTH), "        ")
+    rows = []
+    for k, (label, ids) in enumerate(bands):
+        out.append(f'    subgraph bd_{k}["{esc(label)}"]')
+        out += [f"        {node_def(by[i], prefix=by[i]['track'])}" for i in ids]
         out.append("    end")
-    if len(present) > 1:
-        out.append("    " + " ~~~ ".join(present))
-    out += [edge_line(a, b, d) for a, b, d in edges(nodes, lambda x, y: x["id"] in ids and y["id"] in ids)]
-    out += link_styles(out)
+        rows += pack_rows([by[i] for i in ids], OVERVIEW_WIDTH)
+    out += edge_block(nodes, rows)
     out += classdef_lines()
     out += class_lines([(sid(n["id"]), node_class(n)) for n in sel])
     return fence(out)
 
 
+def track_nodes(nodes, code):
+    """The track's nodes in the global time order."""
+    by = {n["id"]: n for n in nodes if n["track"] == code}
+    return [by[i] for i in time_order(nodes) if i in by]
+
+
 def r_track(code):
     def render(nodes, today):
-        sel = [n for n in nodes if n["track"] == code]
+        nodes = diagram_view(nodes)
+        sel = track_nodes(nodes, code)
         if not sel:
             return "_No nodes in this track yet._"
-        ids = {n["id"] for n in sel}
-        out = ["flowchart TB"]
-        out += [f"    {node_def(n, extra=external_refs(n, ids))}" for n in sel]
-        out += row_links(pack_rows(sel, TRACK_WIDTH))
+        rows = pack_rows(sel, TRACK_WIDTH)
         # edges to other tracks are not drawn (stub nodes made trees wide and unreadable);
-        # they appear as an "ext:" line in the node label and in that track's own tree
-        out += [edge_line(a, b, kind) for a, b, kind in edges(nodes, lambda x, y: x["id"] in ids and y["id"] in ids)]
-        out += link_styles(out)
+        # they stay in the node table's depends_on column and in the other track's own tree
+        out = ["flowchart TB"]
+        out += [f"    {node_def(n)}" for n in sel]
+        out += edge_block(nodes, rows)
         out += classdef_lines()
         out += class_lines([(sid(n["id"]), node_class(n)) for n in sel])
         return fence(out)
@@ -320,6 +437,7 @@ def gantt_text(s, limit=None):
 
 
 def r_timeline(nodes, today):
+    """The Gantt chart (timeline page)."""
     out = ["gantt", "    dateFormat YYYY-MM-DD", "    axisFormat %Y-%m-%d"]
     undated, any_task = [], False
     for code, (name, _) in TRACKS.items():
@@ -335,11 +453,16 @@ def r_timeline(nodes, today):
             any_task = True
             out.append(f"    section {code} - {gantt_text(name)}")
             out += rows
-    parts = [f"%% today: {today}"]
-    parts.append(fence(out) if any_task else "_No node has a start date yet._")
+    parts = [fence(out) if any_task else "_No node has a start date yet._"]
     if undated:
         parts.append("Not shown (no `start`): " + ", ".join(f"`{i}`" for i in undated))
     return "\n\n".join(parts)
+
+
+def r_timeline_link(nodes, today):
+    """Main page: a link to the timeline page, and the build date."""
+    return ("[The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.\n\n"
+            + GENERATED_ON.format(today))
 
 
 def cell(s):
@@ -383,41 +506,16 @@ def r_tracks(nodes, today):
 
 
 def r_legend(nodes, today):
-    samples = [
-        ("vsucc", "very successful"), ("succ", "successful"), ("mixed", "mixed"), ("bad", "bad"),
-        ("dead", "dead end / superseded / abandoned"), ("inprog", "in progress"), ("next", "next"),
-        ("blocked", "blocked"), ("parked", "parked"), ("unrated", "done, unrated"),
-        ("userdec", "user decision pending"), ("defect", "open defect"), ("waiting", "built, waiting"),
-    ]
-    out = ["flowchart LR"]
-    out += [f'    lg_{c}["{esc(t)}"]' for c, t in samples]
-    out += ['    lg_k1{{"user-decision"}}', '    lg_k2[/"law"/]', '    lg_k3>"defect-verdict"]', '    lg_k4["other kinds"]']
-    out += ["    lg_k1 --> lg_k2", "    lg_k3 -.->|replaced by| lg_k4"]
-    out += classdef_lines()
-    out += class_lines([(f"lg_{c}", c) for c, _ in samples])
-    text = [
-        "Colour is never the only signal: every node label carries a status tag on its second line.",
-        "",
-        fence(out),
-        "",
-        "| Tag | Meaning |",
+    return "\n".join([
+        "| | |",
         "|---|---|",
-        "| `✔ done · <outcome>` | finished; outcome is the recorded verdict (green = very successful, light green = successful, amber = mixed, red = bad) |",
-        "| `▶ in progress` | being worked on (blue) |",
-        "| `○ next` | planned, not started (white) |",
-        "| `⛔ blocked` | waiting on a prerequisite or an outside call (white, red dashed border) |",
-        "| `⏸ parked` | deliberately set aside (light grey) |",
-        "| `✖ dead end` | refuted or archived, nothing reused (grey, dashed border) |",
-        "| `↷ superseded` | replaced by another node, drawn with a dashed `replaced by` arrow (grey, dashed border) |",
-        "",
-        "Shapes: hexagon = user decision (purple while pending), parallelogram = law, flag = defect verdict, rectangle = everything else.",
-        "Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `replaced by`.",
-        "Diagrams omit prerequisite arrows that are implied by a longer chain (the table keeps the full `depends_on`). "
-        "A per-track tree draws only arrows inside its track; a node's references to other tracks are written on its label as `ext: ...`.",
-        "Thin grey dotted arrow = `then`: VM queue order, not a dependency. A defect verdict reads `⚠ open defect` or `✔ fixed` and never shows an outcome.",
-        "Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the rating of the done node it leaves; that node's label ends in `⚠`.",
-    ]
-    return "\n".join(text)
+        "| **Box** | one glyph and a title. Glyph: ✔ done, ▶ in progress, ⏳ built and waiting, ○ next, ⛔ blocked, ⏸ parked, "
+        "⚠ open defect, ↷ superseded, ✖ dead end. Colour: dark green very successful, light green successful, amber mixed, "
+        "red bad, grey dead end or superseded, blue in progress, white next, purple owner call, orange defect. "
+        "Shape: hexagon owner call, parallelogram law, flag defect. The prefix on an overview box is its track. |",
+        "| **Arrow** | solid: depends on. Dotted: replaced by. Thick orange dotted: ⚠ qualified by (a later defect limits the rating). "
+        "Arrows always point down, forward in time; a prerequisite implied by a longer chain is not drawn. |",
+    ])
 
 
 def r_plain(nodes, today):
@@ -473,7 +571,7 @@ def r_vmqueue(nodes, today):
         for i, n in enumerate(q, 1)) or "_The VM queue is empty._"
 
 
-RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline, "tracks": r_tracks,
+RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline_link, "tracks": r_tracks,
              "plain-words": r_plain, "ready-now": r_ready, "running": r_running, "built-waiting": r_built_waiting,
              "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue}
 TRACK_RENDERERS = {f"track-{c}": r_track(c) for c in TRACKS} | {f"table-{c}": r_table(c) for c in TRACKS}
@@ -487,6 +585,7 @@ def normalize(nodes):
         m["start"], m["end"] = datestr(n.get("start")), datestr(n.get("end"))
         m.setdefault("qualified_by", [])
         m["notes"] = m.get("notes") or ""
+        m["diagram"] = m.get("diagram", True)
         m["plain"] = m.get("plain") or ""
         m["waiting_on"] = m.get("waiting_on") or ""
         m["order_reason"] = m.get("order_reason") or ""
@@ -528,12 +627,31 @@ def render_track_file(nodes, code, today=None):
     ])
 
 
+def render_timeline_file(nodes, today=None):
+    """The whole text of the timeline page; every byte is generated."""
+    nodes = normalize(nodes)
+    today = str(today or datetime.date.today())
+    return "\n".join([
+        "<!-- Generated by tools/roadmap/build.py from docs/roadmap/nodes.yaml. Do not edit. -->",
+        "",
+        "# Timeline",
+        "",
+        "[Back to the roadmap](../roadmap.md)",
+        "",
+        GENERATED_ON.format(today) + " Open bars end on that date.",
+        "",
+        f"<!-- BEGIN GENERATED: timeline -->\n{r_timeline(nodes, today)}\n<!-- END GENERATED: timeline -->",
+        "",
+    ])
+
+
 def render_outputs(nodes, md_text, today=None):
     """All generated output as {path relative to the roadmap.md directory: text}; no disk I/O.
 
     The key of roadmap.md itself is MD_KEY.
     """
     out = {MD_KEY: apply_regions(md_text, render_regions(nodes, today))}
+    out[TIMELINE_KEY] = render_timeline_file(nodes, today)
     out.update({f"roadmap/{track_path(c)}": render_track_file(nodes, c, today) for c in TRACKS})
     return out
 

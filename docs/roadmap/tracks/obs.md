@@ -9,20 +9,17 @@ Scope: the metrics registry, OTel, the flight recorder.
 <!-- BEGIN GENERATED: track-obs -->
 ```mermaid
 flowchart TB
-    obs_status_endpoint["Runtime status<br/>endpoint (ADR-0013)<br/>✔ done · successful"]
-    obs_gates_echo["#91;GATES#93; liveness<br/>echo<br/>✔ done · unrated"]
-    obs_readout_macro["Readouts as one<br/>write<br/>✔ done · unrated"]
-    obs_otel_design["Metrics registry and<br/>OTel design<br/>⏳ waiting"]
-    obs_user_otel_answers{{"Owner answers on<br/>OTel Q1–Q6<br/>✔ done · n/a"}}
-    obs_impl["Observability<br/>implementation<br/>⛔ blocked<br/>ext: place-per-leg-<br/>impl, meas-harness-<br/>consolidation"]
+    obs_status_endpoint["✔ Runtime status<br/>endpoint (ADR-0013)"]
+    obs_gates_echo["✔ #91;GATES#93; liveness<br/>echo"]
+    obs_readout_macro["✔ Readouts as one<br/>write"]
+    obs_otel_design["⏳ Metrics registry and<br/>OTel design"]
+    obs_impl["⛔ Observability<br/>implementation"]
     obs_status_endpoint ~~~ obs_otel_design
     obs_gates_echo ~~~ obs_otel_design
     obs_readout_macro ~~~ obs_otel_design
-    obs_otel_design ~~~ obs_user_otel_answers
-    obs_user_otel_answers ~~~ obs_impl
+    obs_otel_design ~~~ obs_impl
     obs_status_endpoint --> obs_otel_design
-    obs_otel_design --> obs_user_otel_answers
-    obs_user_otel_answers --> obs_impl
+    obs_otel_design --> obs_impl
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -39,7 +36,6 @@ flowchart TB
     class obs_status_endpoint succ
     class obs_gates_echo,obs_readout_macro unrated
     class obs_otel_design waiting
-    class obs_user_otel_answers userdec
     class obs_impl blocked
 ```
 <!-- END GENERATED: track-obs -->

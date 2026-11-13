@@ -9,79 +9,43 @@ Scope: RaptorQ/FEC encoder and decoder, gf256, symbol framing, the generation se
 <!-- BEGIN GENERATED: track-cod -->
 ```mermaid
 flowchart TB
-    cod_block_pipeline["RaptorQ block FEC<br/>pipeline<br/>↷ superseded"]
-    cod_mettle["METTLE swappable FEC<br/>backend<br/>✖ dead end"]
-    cod_backend_switch["Mid-stream FEC<br/>backend switching<br/>✖ dead end"]
-    cod_streaming_code["Streaming two-layer<br/>Realtime code<br/>↷ superseded"]
-    cod_gf256_simd["SIMD GF(2^8) and<br/>gf256 crate<br/>✔ done · successful"]
-    cod_rlc_all_profiles["Windowed RLC for<br/>every profile<br/>↷ superseded<br/>ext: rec-reliable-<br/>window"]
-    cod_generation_coding["Generation cross-<br/>path fungible coding<br/>⏸ parked"]
-    cod_coded_only_wire["Coded-only<br/>generation wire<br/>↷ superseded"]
-    cod_systematic_wire["Systematic wire,<br/>sparse decoder<br/>✔ done · successful"]
-    cod_fungible_window["Coded-only fungible<br/>window<br/>✖ dead end"]
-    cod_fmtcp["FMTCP-class decode-<br/>on-total<br/>✖ dead end"]
-    cod_legacy_rlc["Legacy sliding-<br/>window/generation<br/>decoders<br/>↷ superseded"]
-    cod_unified_span["Unified span machine<br/>(ADR-0064)<br/>✔ done · successful"]
-    cod_one_pipeline["One window pipeline<br/>(ADR-0069)<br/>✔ done · successful"]
-    cod_wire_compact["Compact v5 DATA<br/>framing<br/>✔ done · very-successful"]
-    cod_debug_stall["Decoder re-delivery<br/>stall fix (#167;31)<br/>✔ done · successful"]
-    cod_user_generation_seat{{"Owner call: keep<br/>generation coding<br/>○ next"}}
-    cod_block_pipeline ~~~ cod_gf256_simd
-    cod_block_pipeline ~~~ cod_rlc_all_profiles
-    cod_block_pipeline ~~~ cod_generation_coding
-    cod_block_pipeline ~~~ cod_coded_only_wire
-    cod_mettle ~~~ cod_gf256_simd
-    cod_mettle ~~~ cod_rlc_all_profiles
-    cod_mettle ~~~ cod_generation_coding
-    cod_mettle ~~~ cod_coded_only_wire
-    cod_backend_switch ~~~ cod_gf256_simd
-    cod_backend_switch ~~~ cod_rlc_all_profiles
-    cod_backend_switch ~~~ cod_generation_coding
-    cod_backend_switch ~~~ cod_coded_only_wire
+    cod_block_pipeline["↷ RaptorQ block FEC<br/>pipeline"]
+    cod_mettle["✖ METTLE swappable FEC<br/>backend"]
+    cod_streaming_code["↷ Streaming two-layer<br/>Realtime code"]
+    cod_legacy_rlc["↷ Legacy sliding-<br/>window/generation<br/>decoders"]
+    cod_backend_switch["✖ Mid-stream FEC<br/>backend switching"]
+    cod_gf256_simd["✔ SIMD GF(2^8) and<br/>gf256 crate"]
+    cod_rlc_all_profiles["↷ Windowed RLC for<br/>every profile"]
+    cod_generation_coding["⏸ Generation cross-<br/>path fungible coding"]
+    cod_coded_only_wire["↷ Coded-only<br/>generation wire"]
+    cod_fungible_window["✖ Coded-only fungible<br/>window"]
+    cod_fmtcp["✖ FMTCP-class decode-<br/>on-total"]
+    cod_systematic_wire["✔ Systematic wire,<br/>sparse decoder"]
+    cod_unified_span["✔ Unified span machine<br/>(ADR-0064)"]
+    cod_wire_compact["✔ Compact v5 DATA<br/>framing"]
+    cod_one_pipeline["✔ One window pipeline<br/>(ADR-0069)"]
+    cod_debug_stall["✔ Decoder re-delivery<br/>stall fix (#167;31)"]
+    cod_block_pipeline ~~~ cod_legacy_rlc
+    cod_mettle ~~~ cod_backend_switch
     cod_streaming_code ~~~ cod_gf256_simd
-    cod_streaming_code ~~~ cod_rlc_all_profiles
-    cod_streaming_code ~~~ cod_generation_coding
-    cod_streaming_code ~~~ cod_coded_only_wire
-    cod_gf256_simd ~~~ cod_fungible_window
-    cod_gf256_simd ~~~ cod_fmtcp
-    cod_gf256_simd ~~~ cod_legacy_rlc
-    cod_gf256_simd ~~~ cod_wire_compact
+    cod_legacy_rlc ~~~ cod_rlc_all_profiles
+    cod_backend_switch ~~~ cod_generation_coding
+    cod_gf256_simd ~~~ cod_coded_only_wire
     cod_rlc_all_profiles ~~~ cod_fungible_window
-    cod_rlc_all_profiles ~~~ cod_fmtcp
-    cod_rlc_all_profiles ~~~ cod_legacy_rlc
-    cod_rlc_all_profiles ~~~ cod_wire_compact
-    cod_generation_coding ~~~ cod_fungible_window
     cod_generation_coding ~~~ cod_fmtcp
-    cod_generation_coding ~~~ cod_legacy_rlc
-    cod_generation_coding ~~~ cod_wire_compact
-    cod_coded_only_wire ~~~ cod_fungible_window
-    cod_coded_only_wire ~~~ cod_fmtcp
-    cod_coded_only_wire ~~~ cod_legacy_rlc
-    cod_coded_only_wire ~~~ cod_wire_compact
-    cod_fungible_window ~~~ cod_debug_stall
-    cod_fungible_window ~~~ cod_systematic_wire
-    cod_fungible_window ~~~ cod_user_generation_seat
-    cod_fmtcp ~~~ cod_debug_stall
-    cod_fmtcp ~~~ cod_systematic_wire
-    cod_fmtcp ~~~ cod_user_generation_seat
-    cod_legacy_rlc ~~~ cod_debug_stall
-    cod_legacy_rlc ~~~ cod_systematic_wire
-    cod_legacy_rlc ~~~ cod_user_generation_seat
-    cod_wire_compact ~~~ cod_debug_stall
-    cod_wire_compact ~~~ cod_systematic_wire
-    cod_wire_compact ~~~ cod_user_generation_seat
-    cod_debug_stall ~~~ cod_unified_span
-    cod_systematic_wire ~~~ cod_unified_span
-    cod_user_generation_seat ~~~ cod_unified_span
+    cod_coded_only_wire ~~~ cod_systematic_wire
+    cod_fungible_window ~~~ cod_unified_span
+    cod_fmtcp ~~~ cod_wire_compact
+    cod_systematic_wire ~~~ cod_wire_compact
     cod_unified_span ~~~ cod_one_pipeline
-    cod_block_pipeline -.->|replaced by| cod_one_pipeline
-    cod_streaming_code -.->|replaced by| cod_unified_span
-    cod_coded_only_wire -.->|replaced by| cod_systematic_wire
+    cod_wire_compact ~~~ cod_debug_stall
+    cod_block_pipeline -.-> cod_one_pipeline
+    cod_streaming_code -.-> cod_unified_span
+    cod_legacy_rlc -.-> cod_unified_span
+    cod_coded_only_wire -.-> cod_systematic_wire
     cod_generation_coding --> cod_systematic_wire
-    cod_legacy_rlc -.->|replaced by| cod_unified_span
     cod_systematic_wire --> cod_unified_span
     cod_unified_span --> cod_one_pipeline
-    cod_generation_coding --> cod_user_generation_seat
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -95,11 +59,10 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cod_block_pipeline,cod_mettle,cod_backend_switch,cod_streaming_code,cod_rlc_all_profiles,cod_coded_only_wire,cod_fungible_window,cod_fmtcp,cod_legacy_rlc dead
+    class cod_block_pipeline,cod_mettle,cod_streaming_code,cod_legacy_rlc,cod_backend_switch,cod_rlc_all_profiles,cod_coded_only_wire,cod_fungible_window,cod_fmtcp dead
     class cod_gf256_simd,cod_systematic_wire,cod_unified_span,cod_one_pipeline,cod_debug_stall succ
     class cod_generation_coding parked
     class cod_wire_compact vsucc
-    class cod_user_generation_seat userdec
 ```
 <!-- END GENERATED: track-cod -->
 

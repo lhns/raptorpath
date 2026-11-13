@@ -9,150 +9,78 @@ Scope: ARQ, SACK, the hole law, recovery clocks, gap horizon, snapshot order, ta
 <!-- BEGIN GENERATED: track-rec -->
 ```mermaid
 flowchart TB
-    rec_early_arq["Early ACK, NACK and<br/>repair<br/>✔ done · successful"]
-    rec_plost_sack["P_lost(t) mix and<br/>SACK WindowAck<br/>✔ done · unrated"]
-    rec_bulk_arq["Bulk ARQ and batch<br/>acknowledgements<br/>✔ done · successful"]
-    rec_reliable_window["Reliable window (RWM<br/>Phase A)<br/>✔ done · successful"]
-    rec_fec_vs_arq["Proactive FEC versus<br/>ARQ frontier<br/>✔ done · unrated"]
-    rec_proactive_repair["Proactive repair<br/>timing (3 arms)<br/>✖ dead end<br/>ext: cod-unified-<br/>span"]
-    rec_per_path_clocks["Per-path recovery<br/>clocks (RECOV_MP)<br/>✔ done · successful ⚠"]
-    rec_mp_serial["Global loss serials<br/>under striping<br/>↷ superseded"]
-    rec_clock_candidates[/"Derived recovery-<br/>timing candidates (4<br/>arms)<br/>✖ dead end"/]
-    rec_goal100["Recovery primitives<br/>and σ (goal #35;100)<br/>✔ done · successful"]
-    rec_goal101[/"Recovery clock law<br/>family (4 arms)<br/>✖ dead end"/]
-    rec_receiver_law[/"Receiver request law<br/>(Track C)<br/>✖ dead end<br/>ext: meas-wire-v8"/]
-    rec_cost_ratio_decision{{"Cost-ratio decision<br/>(owner ruling)<br/>✔ done · n/a"}}
-    rec_wire_v9["Wire v9 per-path<br/>sequence<br/>✔ done · successful"]
-    rec_gap_horizon["Gap horizon lever B<br/>(#167;52)<br/>⏳ waiting<br/>ext: meas-guard-41c,<br/>cc-bbrrs-r1"]
-    rec_snapver_filter["Stale gap reports,<br/>snapshot filter<br/>(#167;53)<br/>✔ done · successful ⚠"]
-    rec_snapver_law[/"Snapshot-order<br/>filter as law<br/>⏳ waiting"/]
-    rec_defect_qclk_clamp>"#91;QCLK#93; w_us pinned<br/>at clamp<br/>⚠ open defect"]
-    rec_defect_hole_law>"c8 hole law never<br/>measured<br/>⚠ open defect"]
-    rec_defect_refresh_input>"Hole refresh clock<br/>degenerate input<br/>⚠ open defect"]
-    rec_p10a_repair_floor["Inner-feedback<br/>repair floor (P10a)<br/>✖ dead end"]
-    rec_recov_sp["Singles hole<br/>suppression<br/>(RECOV_SP)<br/>⏸ parked"]
-    rec_leverb_c1d_cost>"Lever B c1d<br/>duplicate cost<br/>⚠ open defect"]
-    rec_defect_base_duplicates>"Main's duplicates<br/>mostly unexplained<br/>⚠ open defect"]
-    rec_s54_session["#167;54: filter guard,<br/>store budget<br/>⛔ blocked<br/>ext: meas-<br/>guard-v2-impl,<br/>store-s54-budget"]
-    rec_w0_leg_question["Retransmit leg<br/>choice with filter<br/>⛔ blocked<br/>ext: place-wdiv"]
-    rec_leverb_guard["Lever-B guard v2,<br/>then merge<br/>⛔ blocked<br/>ext: meas-<br/>guard-v2-impl"]
-    rec_recovery_timeouts[/"Recovery timeouts<br/>after store law<br/>⛔ blocked<br/>ext: store-engine-<br/>form-impl"/]
-    rec_wire_clock_derivation["Recovery-clock<br/>derivation (wire<br/>clock)<br/>✔ done · unrated<br/>ext: model-law-<br/>ledger"]
-    rec_fix_perleg_clock_n1[/"Per-leg recovery<br/>clock, one law<br/>⛔ blocked"/]
-    rec_fix_refresh_clock[/"Receiver refresh<br/>clock input<br/>⛔ blocked<br/>ext: store-engine-<br/>form-impl"/]
-    rec_fix_nack_throttle[/"NACK repair<br/>throttle: gauge,<br/>paper<br/>○ next"/]
-    rec_retx_behind_source["Retransmits queued<br/>behind source?<br/>○ next"]
-    rec_early_arq ~~~ rec_fec_vs_arq
-    rec_early_arq ~~~ rec_proactive_repair
-    rec_early_arq ~~~ rec_per_path_clocks
-    rec_early_arq ~~~ rec_mp_serial
-    rec_plost_sack ~~~ rec_fec_vs_arq
-    rec_plost_sack ~~~ rec_proactive_repair
-    rec_plost_sack ~~~ rec_per_path_clocks
-    rec_plost_sack ~~~ rec_mp_serial
+    rec_early_arq["✔ Early ACK, NACK and<br/>repair"]
+    rec_plost_sack["✔ P_lost(t) mix and<br/>SACK WindowAck"]
+    rec_bulk_arq["✔ Bulk ARQ and batch<br/>acknowledgements"]
+    rec_reliable_window["✔ Reliable window (RWM<br/>Phase A)"]
+    rec_p10a_repair_floor["✖ Inner-feedback<br/>repair floor (P10a)"]
+    rec_fec_vs_arq["✔ Proactive FEC versus<br/>ARQ frontier"]
+    rec_proactive_repair["✖ Proactive repair<br/>timing (3 arms)"]
+    rec_per_path_clocks["✔ Per-path recovery<br/>clocks (RECOV_MP)"]
+    rec_mp_serial["↷ Global loss serials<br/>under striping"]
+    rec_recov_sp["⏸ Singles hole<br/>suppression (RECOV_SP)"]
+    rec_clock_candidates[/"✖ Derived recovery-<br/>timing candidates (4<br/>arms)"/]
+    rec_goal100["✔ Recovery primitives<br/>and σ (goal #35;100)"]
+    rec_goal101[/"✖ Recovery clock law<br/>family (4 arms)"/]
+    rec_receiver_law[/"✖ Receiver request law<br/>(Track C)"/]
+    rec_wire_v9["✔ Wire v9 per-path<br/>sequence"]
+    rec_gap_horizon["⏳ Gap horizon lever B<br/>(#167;52)"]
+    rec_snapver_filter["✔ Stale gap reports,<br/>snapshot filter (#167;53)"]
+    rec_snapver_law[/"⏳ Snapshot-order<br/>filter as law"/]
+    rec_defect_qclk_clamp>"⚠ #91;QCLK#93; w_us pinned<br/>at clamp"]
+    rec_defect_hole_law>"⚠ c8 hole law never<br/>measured"]
+    rec_defect_refresh_input>"⚠ Hole refresh clock<br/>degenerate input"]
+    rec_leverb_c1d_cost>"⚠ Lever B c1d<br/>duplicate cost"]
+    rec_defect_base_duplicates>"⚠ Main's duplicates<br/>mostly unexplained"]
+    rec_wire_clock_derivation["✔ Recovery-clock<br/>derivation (wire<br/>clock)"]
+    rec_s54_session["⛔ #167;54: filter guard,<br/>store budget"]
+    rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
+    rec_leverb_guard["⛔ Lever-B guard v2,<br/>then merge"]
+    rec_fix_perleg_clock_n1[/"⛔ Per-leg recovery<br/>clock, one law"/]
+    rec_recovery_timeouts[/"⛔ Recovery timeouts<br/>after store law"/]
+    rec_fix_refresh_clock[/"⛔ Receiver refresh<br/>clock input"/]
+    rec_fix_nack_throttle[/"○ NACK repair<br/>throttle: gauge, paper"/]
+    rec_retx_behind_source["○ Retransmits queued<br/>behind source?"]
+    rec_early_arq ~~~ rec_reliable_window
+    rec_plost_sack ~~~ rec_p10a_repair_floor
     rec_bulk_arq ~~~ rec_fec_vs_arq
-    rec_bulk_arq ~~~ rec_proactive_repair
-    rec_bulk_arq ~~~ rec_per_path_clocks
-    rec_bulk_arq ~~~ rec_mp_serial
-    rec_reliable_window ~~~ rec_fec_vs_arq
     rec_reliable_window ~~~ rec_proactive_repair
-    rec_reliable_window ~~~ rec_per_path_clocks
-    rec_reliable_window ~~~ rec_mp_serial
-    rec_fec_vs_arq ~~~ rec_clock_candidates
-    rec_fec_vs_arq ~~~ rec_goal100
-    rec_fec_vs_arq ~~~ rec_receiver_law
-    rec_fec_vs_arq ~~~ rec_cost_ratio_decision
-    rec_proactive_repair ~~~ rec_clock_candidates
-    rec_proactive_repair ~~~ rec_goal100
-    rec_proactive_repair ~~~ rec_receiver_law
-    rec_proactive_repair ~~~ rec_cost_ratio_decision
+    rec_p10a_repair_floor ~~~ rec_per_path_clocks
+    rec_fec_vs_arq ~~~ rec_mp_serial
+    rec_proactive_repair ~~~ rec_recov_sp
     rec_per_path_clocks ~~~ rec_clock_candidates
-    rec_per_path_clocks ~~~ rec_goal100
-    rec_per_path_clocks ~~~ rec_receiver_law
-    rec_per_path_clocks ~~~ rec_cost_ratio_decision
-    rec_mp_serial ~~~ rec_clock_candidates
     rec_mp_serial ~~~ rec_goal100
-    rec_mp_serial ~~~ rec_receiver_law
-    rec_mp_serial ~~~ rec_cost_ratio_decision
-    rec_clock_candidates ~~~ rec_wire_v9
-    rec_clock_candidates ~~~ rec_gap_horizon
-    rec_clock_candidates ~~~ rec_p10a_repair_floor
-    rec_clock_candidates ~~~ rec_recov_sp
+    rec_recov_sp ~~~ rec_goal101
+    rec_clock_candidates ~~~ rec_receiver_law
     rec_goal100 ~~~ rec_wire_v9
-    rec_goal100 ~~~ rec_gap_horizon
-    rec_goal100 ~~~ rec_p10a_repair_floor
-    rec_goal100 ~~~ rec_recov_sp
-    rec_receiver_law ~~~ rec_wire_v9
+    rec_goal101 ~~~ rec_gap_horizon
     rec_receiver_law ~~~ rec_gap_horizon
-    rec_receiver_law ~~~ rec_p10a_repair_floor
-    rec_receiver_law ~~~ rec_recov_sp
-    rec_cost_ratio_decision ~~~ rec_wire_v9
-    rec_cost_ratio_decision ~~~ rec_gap_horizon
-    rec_cost_ratio_decision ~~~ rec_p10a_repair_floor
-    rec_cost_ratio_decision ~~~ rec_recov_sp
-    rec_wire_v9 ~~~ rec_wire_clock_derivation
-    rec_wire_v9 ~~~ rec_fix_refresh_clock
-    rec_wire_v9 ~~~ rec_fix_nack_throttle
-    rec_wire_v9 ~~~ rec_retx_behind_source
-    rec_gap_horizon ~~~ rec_wire_clock_derivation
-    rec_gap_horizon ~~~ rec_fix_refresh_clock
-    rec_gap_horizon ~~~ rec_fix_nack_throttle
-    rec_gap_horizon ~~~ rec_retx_behind_source
-    rec_p10a_repair_floor ~~~ rec_wire_clock_derivation
-    rec_p10a_repair_floor ~~~ rec_fix_refresh_clock
-    rec_p10a_repair_floor ~~~ rec_fix_nack_throttle
-    rec_p10a_repair_floor ~~~ rec_retx_behind_source
-    rec_recov_sp ~~~ rec_wire_clock_derivation
-    rec_recov_sp ~~~ rec_fix_refresh_clock
-    rec_recov_sp ~~~ rec_fix_nack_throttle
-    rec_recov_sp ~~~ rec_retx_behind_source
-    rec_wire_clock_derivation ~~~ rec_goal101
-    rec_wire_clock_derivation ~~~ rec_snapver_filter
-    rec_wire_clock_derivation ~~~ rec_defect_qclk_clamp
-    rec_fix_refresh_clock ~~~ rec_goal101
-    rec_fix_refresh_clock ~~~ rec_snapver_filter
-    rec_fix_refresh_clock ~~~ rec_defect_qclk_clamp
-    rec_fix_nack_throttle ~~~ rec_goal101
-    rec_fix_nack_throttle ~~~ rec_snapver_filter
-    rec_fix_nack_throttle ~~~ rec_defect_qclk_clamp
-    rec_retx_behind_source ~~~ rec_goal101
-    rec_retx_behind_source ~~~ rec_snapver_filter
-    rec_retx_behind_source ~~~ rec_defect_qclk_clamp
-    rec_goal101 ~~~ rec_snapver_law
-    rec_goal101 ~~~ rec_defect_hole_law
-    rec_goal101 ~~~ rec_defect_refresh_input
-    rec_goal101 ~~~ rec_leverb_c1d_cost
+    rec_wire_v9 ~~~ rec_gap_horizon
+    rec_gap_horizon ~~~ rec_snapver_filter
     rec_snapver_filter ~~~ rec_snapver_law
+    rec_snapver_filter ~~~ rec_defect_qclk_clamp
     rec_snapver_filter ~~~ rec_defect_hole_law
-    rec_snapver_filter ~~~ rec_defect_refresh_input
-    rec_snapver_filter ~~~ rec_leverb_c1d_cost
-    rec_defect_qclk_clamp ~~~ rec_snapver_law
-    rec_defect_qclk_clamp ~~~ rec_defect_hole_law
-    rec_defect_qclk_clamp ~~~ rec_defect_refresh_input
+    rec_snapver_law ~~~ rec_defect_refresh_input
     rec_defect_qclk_clamp ~~~ rec_leverb_c1d_cost
-    rec_snapver_law ~~~ rec_defect_base_duplicates
-    rec_snapver_law ~~~ rec_s54_session
     rec_defect_hole_law ~~~ rec_defect_base_duplicates
-    rec_defect_hole_law ~~~ rec_s54_session
-    rec_defect_refresh_input ~~~ rec_defect_base_duplicates
-    rec_defect_refresh_input ~~~ rec_s54_session
-    rec_leverb_c1d_cost ~~~ rec_defect_base_duplicates
+    rec_defect_refresh_input ~~~ rec_wire_clock_derivation
     rec_leverb_c1d_cost ~~~ rec_s54_session
-    rec_defect_base_duplicates ~~~ rec_w0_leg_question
-    rec_defect_base_duplicates ~~~ rec_leverb_guard
-    rec_defect_base_duplicates ~~~ rec_fix_perleg_clock_n1
-    rec_s54_session ~~~ rec_w0_leg_question
+    rec_defect_base_duplicates ~~~ rec_s54_session
+    rec_wire_clock_derivation ~~~ rec_w0_leg_question
     rec_s54_session ~~~ rec_leverb_guard
     rec_s54_session ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_recovery_timeouts
-    rec_leverb_guard ~~~ rec_recovery_timeouts
-    rec_fix_perleg_clock_n1 ~~~ rec_recovery_timeouts
-    rec_per_path_clocks -.->|⚠ qualified by| rec_defect_qclk_clamp
-    rec_per_path_clocks -.->|⚠ qualified by| rec_defect_hole_law
-    rec_mp_serial -.->|replaced by| rec_wire_v9
+    rec_leverb_guard ~~~ rec_fix_refresh_clock
+    rec_fix_perleg_clock_n1 ~~~ rec_fix_nack_throttle
+    rec_recovery_timeouts ~~~ rec_retx_behind_source
+    rec_fix_refresh_clock ~~~ rec_retx_behind_source
+    rec_fix_nack_throttle ~~~ rec_retx_behind_source
+    rec_per_path_clocks -.-> rec_defect_qclk_clamp
+    rec_per_path_clocks -.-> rec_defect_hole_law
+    rec_mp_serial -.-> rec_wire_v9
     rec_goal100 --> rec_goal101
     rec_gap_horizon --> rec_snapver_filter
-    rec_snapver_filter -.->|⚠ qualified by| rec_leverb_c1d_cost
+    rec_snapver_filter -.-> rec_leverb_c1d_cost
     rec_snapver_filter --> rec_snapver_law
     rec_gap_horizon --> rec_defect_qclk_clamp
     rec_snapver_filter --> rec_defect_hole_law
@@ -162,13 +90,10 @@ flowchart TB
     rec_snapver_law --> rec_s54_session
     rec_s54_session --> rec_w0_leg_question
     rec_s54_session --> rec_leverb_guard
-    rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
-    rec_s54_session -.->|then| rec_w0_leg_question
-    rec_w0_leg_question -.->|then| rec_leverb_guard
-    linkStyle 105,106,110 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 123,124 stroke:#999,stroke-width:1px,color:#777
+    rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
+    linkStyle 34,35,39 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -184,12 +109,11 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter succ
     class rec_plost_sack,rec_fec_vs_arq,rec_wire_clock_derivation unrated
-    class rec_proactive_repair,rec_mp_serial,rec_clock_candidates,rec_goal101,rec_receiver_law,rec_p10a_repair_floor dead
-    class rec_cost_ratio_decision userdec
+    class rec_p10a_repair_floor,rec_proactive_repair,rec_mp_serial,rec_clock_candidates,rec_goal101,rec_receiver_law dead
+    class rec_recov_sp parked
     class rec_gap_horizon,rec_snapver_law waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
-    class rec_recov_sp parked
-    class rec_s54_session,rec_w0_leg_question,rec_leverb_guard,rec_recovery_timeouts,rec_fix_perleg_clock_n1,rec_fix_refresh_clock blocked
+    class rec_s54_session,rec_w0_leg_question,rec_leverb_guard,rec_fix_perleg_clock_n1,rec_recovery_timeouts,rec_fix_refresh_clock blocked
     class rec_fix_nack_throttle,rec_retx_behind_source next
 ```
 <!-- END GENERATED: track-rec -->
