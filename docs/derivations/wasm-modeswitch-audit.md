@@ -179,7 +179,7 @@ which is where T_cut reaches 0, so one condition saturates both.
 
 **Its own bind fractions.** These were measured over the slider's ρ grid
 (0.900 to 0.999, step 0.001) × the presets × three cells, with
-ε̂_retx = ε, q .5 and cap 4:
+ε̂_retx = ε, cap 4, and q and RTT as in the cell column:
 
 | cell ε/q/RTT | δ | R | `max(0,·)` in T_cut binds | `max(D,·)` in A binds |
 |---|---|---|---|---|
@@ -201,6 +201,23 @@ form therefore reduces, on its whole operating range, to the proposal:
 
 This is §5.6's shed law with the declared contract as a cap. δ enters through
 D(δ) and r (in R). ρ enters only through the cap.
+
+**The third gauge: the R side of the min.** At Auto and Realtime x ≥ 1 at
+100/100 slider positions (the T_cut-≥-0 column above), so the budget is R for
+every ρ < 1.
+
+- **ρ is inert over the slider range there.** The law is still continuous in
+  ρ: it moves only for 1−ρ < R, which is about 2e-5 to 1e-4, below the slider's
+  1e-3 step.
+- On the mild cells R·2000 is under one symbol (0.04–0.2), so the sim would
+  give up nothing at any ρ.
+- Today continuum@50 at ρ .95 gives up 28–179 on the harsh cells (F2). F2's
+  anchor test therefore holds only **before** F3+F4; it must be re-derived
+  after.
+
+Whether a declared ρ should be able to concede more than the residual past FEC
+plus the δ deadline is exactly the CLAUDE.md requirement that ρ compose with δ
+everywhere. **Owner's call**, and it must be settled before F3+F4.
 
 - **No ρ = 1 branch.** At ρ = 1, min(0, R) = 0: nothing is given up, with no
   `rho < 1.0` guard (W14) and no `retain` flag (V6). The reduced form needs no
@@ -294,9 +311,12 @@ Found while locating the F3 grid jump. The site:
 - `if numerator <= 0.0 { return 0.0 }`, with `numerator = r(1−ε) − ε`.
 - At numerator = 0⁺, z = 0 and P_fec = 1 − Φ̄(0) = ½.
 - So P_fec steps 0 → ½ as r crosses the information-theoretic floor
-  ε/(1−ε): a step on the r leg of the triangle.
-- `if r <= 0.0 { return 0.0 }` adds a smaller step at r = 0: Φ(z(0)) is about
-  6e-4 at W 200, ε .05, σ² 1.
+  ε/(1−ε): a step on the r leg of the triangle. Measured on wasm32 at the
+  floor ×(1 ± 0.001): 0 → 0.5002–0.5008 for every (W, ε) tried.
+- Below the floor the shipped function is 0 throughout, so there is no second
+  step at r = 0.
+- On the cartoon's dial the floor is crossed near δ 0.045 (ε 5 %) and δ 0.058
+  (ε 10 %).
 
 It is **live**, through four readers:
 
@@ -307,20 +327,43 @@ It is **live**, through four readers:
 - the engine's §5.6 shed budget `residual_loss_after_fec`
   (`control/fec_rate.rs` :788).
 
-Continuous replacement (§4.2's normal approximation without the cut):
+**No formula proposed.** The obvious one, §4.2's normal approximation without
+the cut, Φ(√W·(r(1−ε) − ε)/√(ε(1−ε)(r + σ²))), fails at r = 0. With each
+cell's own σ² it gives P_fec(0) of:
 
-```text
-   P_fec(r) = Φ( √W · (r(1−ε) − ε) / √(ε(1−ε)(r + σ²)) ) ,   r ≥ 0
-```
+| W | ε | σ² | P_fec(0) |
+|---|---|---|---|
+| 200 | 5 % | 2.80 | 2.6e-2 |
+| 40 | 5 % | 2.80 | 0.19 |
+| 20 | 10 % | 2.60 | 0.18 |
+| 4 | 10 % | 2.60 | 0.34 |
+| 5 | 10 % | 2.60 | 0.32 |
 
-This is continuous and monotone in r, and tends to Φ(−√W·√ε/√((1−ε)σ²)) at
-r = 0, near the exact P(no loss in the window). It needs its line in §4.2.
+That is FEC recovery with zero repairs, and it would make R(Bulk) < ε̂.
+P_fec scales a lost symbol's residual, which is ε̂ at r = 0, so the right
+comparison is not P(no loss in the window).
 
-**Golden impact: assume it moves until measured.** It changes `r_saturation`'s
-cost below the floor, so the soft-cap argmin, and so the sim's rate. The
-engine's `controller_rate` bit-pin tables (`rstar_bitpin_table_*.in`) may move
-too. It is an engine-crate change, so the owner decides. Not measured here (no
-build).
+The engine pins the r = 0 end:
+
+- `residual_loss_after_fec_is_the_design_residual` (`fec_rate/tests.rs`
+  :262–282) asserts residual(ε, r = 0) = ε exactly ("P_fec=0 ⇒ residual=ε").
+- It also asserts the residual is monotone non-increasing in r.
+- It asserts a ~1 % class at r 0.34, A* 4.
+
+A replacement must satisfy all of these; the formula is left to §4.2:
+
+1. P_fec(0) = 0.
+2. Continuous at the floor ε/(1−ε), with no ½ jump.
+3. Monotone non-decreasing in r.
+4. → 1 as r → ∞.
+5. Equal to the shipped value far above the floor, where the normal
+   approximation is good.
+
+**Golden impact: assume it moves until measured.** Any replacement changes
+`r_saturation`'s cost around the floor, so the soft-cap argmin, and so the
+sim's rate. The engine's `controller_rate` bit-pin tables
+(`rstar_bitpin_table_*.in`) may move too. It is an engine-crate change, so the
+owner decides.
 
 **Gate change for the owner: `test_visualizer_ui.mjs` :181.** It asserts
 `lawBulk.retain && lawBulk.rStar === 0 && !lawRt.retain && lawRt.rStar > 0`.
@@ -465,8 +508,8 @@ Existing gates:
 |---|---|---|---|
 | W11 | live | 7d3 Auto ±2 % (value) | structural: after the fix, a source check that `rate_now` has no branch on `bulkness` |
 | V5/V6 (F3) | live | :181 and :233 pin the two sides, not continuity | a 2 % grid over the whole dial (δ = 0.005·1.02^k up to 50) at ε ∈ {2.5, 5, 10} % and ρ ∈ {1, 0.9999, 0.95}: every pair of neighbours has \|Δbudget\| ≤ 0.05·ε̂ (today ε̂, so it fails). Also \|budget(1) − budget(1 − 1e-9)\| ≤ 1e-6 (today 1.9e-5 at Auto, so it fails). Assert on `spanLaw()` through the stub DOM. A grid, because the step is not at a preset. |
-| W14 (F4) | live | nothing (single-ρ tests only) | **red today, on the shipped law**: `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64), on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02, is non-decreasing in ρ with \|ΔT\| ≤ 1.5·RTT·ln 1.02 / \|ln ε̂\| per step. That is the slope of a law linear in ln(1−ρ); a ln T bound would wrongly fail near T = 0. Today the jump 0.01 → 640 fails it. **On the proposal**: the sim's give-up is \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ at the former ρ* = 0.983332 (.05/.5/50); today 2 → 0 within 1e-6, so it fails. Also report the two bind gauges of the general form (table above). |
-| W22 | live | nothing (the `p_fec_normal` tests check single points) | on a grid r = ε/(1−ε)·(1 ± k·0.001), k ≤ 50, at ε ∈ {.025, .05, .10}, W ∈ {20, 64, 200}, σ² ∈ {1, 3}: \|ΔP_fec\| between neighbours ≤ 1.5 × the analytic slope × the step. Today the jump of ½ fails. Plus P_fec(0⁺) − P_fec(0) ≤ 1e-6. |
+| W14 (F4) | live | nothing (single-ρ tests only) | **red today, on the shipped law**: `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64), on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02, is non-decreasing in ρ with \|ΔT\| ≤ 1.5·L·ln 1.02 / \|ln ε̂\| per step. That is the slope of a law linear in ln(1−ρ); a ln T bound would wrongly fail near T = 0. `find_t_cut` takes no RTT; its t is in its own slot units, so L is the round length in those units: use L = W = 64, giving a bound of 0.63 per step. Today the jump 0.01 → 640 fails it. **On the proposal**: the sim's give-up is \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ at the former ρ* = 0.983332 (.05/.5/50); today 2 → 0 within 1e-6, so it fails. Also report the three gauges of the proposal (the two clamps, and the R side of the min). |
+| W22 | live | the engine pins P_fec(0) = 0 and monotonicity (`fec_rate/tests.rs` :262–282), not continuity | on a grid r = ε/(1−ε)·(1 ± k·0.001), k ≤ 50, at ε ∈ {.025, .05, .10}, W ∈ {5, 20, 64, 200}, σ² ∈ {1, 2.6, 3.76}: \|ΔP_fec\| ≤ 0.01 between neighbours. Today the jump of ½ fails. Keep the engine's r = 0 and monotonicity pins. |
 | W2/W5/W6/W9 (F1) | dead | nothing (the gates run only the continuum arm) | until the machine is removed: for h ∈ {auto, bulk, realtime} × the six golden cells, every public accessor equals continuum@δ(h). Red today: "bulk" `get_r_star_auto` and `get_derived_w`. |
 | W4 (F2) | dead | `test_bulk_composes_with_rho` (bulk only) | at ε .20, q .1, RTT 100, ρ .95: every hint has `get_rho() == 0.95`, and its fingerprint plus `get_given_up` equal continuum@δ(h). Red today: realtime 0 given up / 895 ticks vs 28 / 823. |
 | V1 | dead | nothing | a UI-gate grep: no `hint ===` in the script block |
@@ -533,8 +576,10 @@ block the way `test_visualizer.mjs` does.
    impact, and the owner's word.
 7. **F3 + F4, the proposed give-up law**: "shed past D(δ) within
    min(1−ρ, R)" for the cartoon and the sim. It needs its §5.6 line and the
-   owner's call on the :181 gate change. `find_t_cut` would lose its only
-   caller.
+   owner's call on the :181 gate change, after the ρ-inert gauge is settled.
+   The sim would stop calling `find_t_cut`. Its other callers remain: the
+   three `solve_*` triangle solvers (math :1270, :1277, :1291) behind the
+   explainer panel, and the JS export (wasm :93).
 8. **V1**: any time.
 
 ## Outside scope (linked, not a new item)
@@ -542,6 +587,6 @@ block the way `test_visualizer.mjs` does.
 The engine's ρ step (§5.6: "the retain (ρ = 1) seat never sheds; the law runs
 only on the evicting seat") is the existing `if reliable` debt, W3.6a in the
 plan: `raptorpath/src/net/emit_source.rs` :308 and :815, and
-`raptorpath/src/net/sender_phases.rs` :980 and :1131 (inside the
-`if reliable` block that opens at :1122). The unified give-up law above is the
+`raptorpath/src/net/sender_phases.rs` :980 and :1122 (the coordinator's
+:1131 is that block's closing brace). The unified give-up law above is the
 model-side form of the same fix: ρ = 1 as the limit x → 0, not a seat.

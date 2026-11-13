@@ -6,7 +6,7 @@ section it feeds.
 
 | file | question | feeds |
 |---|---|---|
-| `wasm-modeswitch-audit.md` | which hint-, δ- or ρ-keyed sites in the L0 model are mode switches, and what replaces each (open: owner calls on the unified give-up law and gate :181, fixed r) | ADR-0076 phase 6 |
+| `wasm-modeswitch-audit.md` | which hint-, δ- or ρ-keyed sites in the L0 model are mode switches, and what replaces each (open: owner calls on the give-up law and its ρ-inert gauge, gate :181, W22 p_fec_normal, fixed r) | ADR-0076 phase 6 |
 
 No derivation file is on `main` yet; the branches that add them (`derive-w1`,
 `adr68-amend`, `paper-recon`, `perleg-design`, `w1r2`, `otel-design`) each add
