@@ -79,10 +79,11 @@ Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `rep
 
 <!-- BEGIN GENERATED: overview -->
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph sg_infra["infra - repo and simplification"]
+        direction TB
         infra_example_done["Example done node<br/>✔ done · successful"]
-        infra_example_abandoned["Example abandoned node<br/>↷ superseded"]
+        infra_example_abandoned["Example abandoned<br/>node<br/>↷ superseded"]
         infra_example_next["Example next node<br/>○ next"]
     end
     infra_example_done --> infra_example_abandoned
@@ -191,7 +192,7 @@ _No nodes in this track yet._
 ```mermaid
 flowchart TB
     infra_example_done["Example done node<br/>✔ done · successful"]
-    infra_example_abandoned["Example abandoned node<br/>↷ superseded"]
+    infra_example_abandoned["Example abandoned<br/>node<br/>↷ superseded"]
     infra_example_next["Example next node<br/>○ next"]
     infra_example_done --> infra_example_abandoned
     infra_example_abandoned -.->|replaced by| infra_example_next

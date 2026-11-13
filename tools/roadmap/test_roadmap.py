@@ -160,6 +160,23 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build.apply_regions("# nothing here\n", build.render_regions(GOOD, TODAY))
 
+    def test_portrait_layout(self):
+        nodes = [node(f"{t}-{k}", title="A fairly long title here ok") for t in ("rec", "rate", "cc") for k in "abcde"]
+        out = built(nodes)
+        ov = out.split("<!-- BEGIN GENERATED: overview -->")[1].split("<!-- END")[0]
+        self.assertIn("flowchart TB", ov)
+        self.assertEqual(ov.count("direction TB"), 3)
+        self.assertIn("sg_rec ~~~ sg_rate ~~~ sg_cc", ov)
+        self.assertIn("rec_a ~~~ rec_d", ov)  # 5 on one rank -> rows of 3
+        self.assertNotIn("rec_a ~~~ rec_c", ov)
+        self.assertIn("A fairly long title<br/>here ok<br/>", ov)
+        tr = out.split("<!-- BEGIN GENERATED: track-rec -->")[1].split("<!-- END")[0]
+        self.assertIn("rec_a ~~~ rec_e", tr)  # rows of 4
+
+    def test_gantt_title_truncated(self):
+        out = built([node("rec-a", title="x" * 60, start="2026-01-01")])
+        self.assertIn("x" * 39 + "… :rec_a", out)
+
     def test_table_row(self):
         out = built([node("rec-a", headline="a|b", evidence=["x", "y"], depends_on=[])])
         self.assertIn("| `rec-a` | T rec-a | next | unrated | a\\|b | x; y |  |", out)

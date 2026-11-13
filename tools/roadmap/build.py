@@ -8,6 +8,7 @@ import argparse
 import datetime
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 import yaml
@@ -34,6 +35,11 @@ KINDS = ["law", "mechanism", "instrument", "infra", "research", "user-decision",
 STATES = ["done", "in-progress", "next", "blocked", "parked", "abandoned"]
 OUTCOMES = ["very-successful", "successful", "mixed", "bad", "dead-end", "superseded", "unrated"]
 LANES = ["vm", "host-cargo", "no-cargo", "user", "none"]
+
+WRAP = 20           # label line width in characters
+OVERVIEW_WIDTH = 3  # max nodes per row inside an overview track box
+TRACK_WIDTH = 4     # max nodes per rank in a per-track tree
+GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
 REGION_ORDER = ["legend", "overview", "timeline"] + [f"track-{c}" for c in TRACKS] + ["table"]
 
@@ -96,7 +102,8 @@ def node_class(n):
 
 
 def node_def(n, ident=None):
-    label = f"{esc(n['title'])}<br/>{esc(tag(n))}"
+    title = "<br/>".join(esc(line) for line in textwrap.wrap(" ".join(n["title"].split()), WRAP) or [""])
+    label = f"{title}<br/>{esc(tag(n))}"
     i = ident or sid(n["id"])
     k = n["kind"]
     if k == "user-decision":
@@ -136,6 +143,32 @@ def edge_line(a, b, dashed, sa=None, sb=None):
     return f"    {a} -.->|replaced by| {b}" if dashed else f"    {a} --> {b}"
 
 
+def row_links(group, width, indent="    "):
+    """Invisible links that break any over-wide rank of `group` into rows of at most `width`.
+
+    Rank = longest depends_on path inside the group. Within a rank, row r node i is tied to
+    row r+1 node i, so wide fan-outs stack instead of spreading sideways.
+    """
+    ids = {n["id"] for n in group}
+    by = {n["id"]: n for n in group}
+    rank = {}
+
+    def depth(i, seen=()):
+        if i not in rank:
+            rank[i] = 1 + max([depth(d, seen + (i,)) for d in by[i]["depends_on"] if d in ids and d not in seen], default=-1)
+        return rank[i]
+
+    ranks = {}
+    for n in group:
+        ranks.setdefault(depth(n["id"]), []).append(sid(n["id"]))
+    out = []
+    for members in ranks.values():
+        rows = [members[i:i + width] for i in range(0, len(members), width)]
+        for a, b in zip(rows, rows[1:]):
+            out += [f"{indent}{x} ~~~ {y}" for x, y in zip(a, b)]
+    return out
+
+
 def fence(lines):
     return "```mermaid\n" + "\n".join(lines) + "\n```"
 
@@ -145,14 +178,20 @@ def r_overview(nodes, today):
     if not sel:
         return "_No nodes have `overview: true` yet._"
     ids = {n["id"] for n in sel}
-    out = ["flowchart LR"]
+    out = ["flowchart TB"]
+    present = []
     for code, (name, _) in TRACKS.items():
         group = [n for n in sel if n["track"] == code]
         if not group:
             continue
+        present.append(f"sg_{code}")
         out.append(f'    subgraph sg_{code}["{esc(code + " - " + name)}"]')
+        out.append("        direction TB")
         out += [f"        {node_def(n)}" for n in group]
+        out += row_links(group, OVERVIEW_WIDTH, "        ")
         out.append("    end")
+    if len(present) > 1:
+        out.append("    " + " ~~~ ".join(present))
     out += [edge_line(a, b, d) for a, b, d in edges(nodes, lambda x, y: x["id"] in ids and y["id"] in ids)]
     out += classdef_lines()
     out += class_lines([(sid(n["id"]), node_class(n)) for n in sel])
@@ -167,6 +206,7 @@ def r_track(code):
         ids = {n["id"] for n in sel}
         out = ["flowchart TB"]
         out += [f"    {node_def(n)}" for n in sel]
+        out += row_links(sel, TRACK_WIDTH)
         es = list(edges(nodes, lambda x, y: x["id"] in ids or y["id"] in ids))
         stubs = sorted({e for a, b, _ in es for e in (a, b) if e not in ids})
         out += [f'    x_{sid(s)}["{esc(s)}"]' for s in stubs]
@@ -178,8 +218,9 @@ def r_track(code):
     return render
 
 
-def gantt_text(s):
-    return " ".join(str(s).replace(":", " -").replace(";", ",").replace("#", "").replace('"', "'").split())
+def gantt_text(s, limit=None):
+    t = " ".join(str(s).replace(":", " -").replace(";", ",").replace("#", "").replace('"', "'").split())
+    return t if limit is None or len(t) <= limit else t[: limit - 1].rstrip() + "…"
 
 
 def r_timeline(nodes, today):
@@ -193,7 +234,7 @@ def r_timeline(nodes, today):
                 continue
             mod = {"abandoned": "crit", "in-progress": "active"}.get(n["state"], "")
             end = datestr(n["end"]) or today
-            rows.append(f"    {gantt_text(n['title'])} :{mod + ', ' if mod else ''}{sid(n['id'])}, {datestr(n['start'])}, {end}")
+            rows.append(f"    {gantt_text(n['title'], GANTT_TITLE)} :{mod + ', ' if mod else ''}{sid(n['id'])}, {datestr(n['start'])}, {end}")
         if rows:
             any_task = True
             out.append(f"    section {code} - {gantt_text(name)}")
