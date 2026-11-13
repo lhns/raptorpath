@@ -168,6 +168,49 @@ pub fn mp_fast_lost(delivered_on_path: &[u64], s: u64) -> bool {
     above >= MP_PACKET_THRESHOLD
 }
 
+/// Fold one gap report's implied delivered intervals into the per-path
+/// packet-threshold evidence (sorted, ascending), keyed by each seq's
+/// ORIGINAL placement path (`source_path_map`). `mp_evid_max` is the
+/// ingestion watermark: each seq is ingested at most once over the
+/// transfer. Extracted verbatim from the sender's gap loop
+/// (`serve_gaps`), which calls it, so a unit test drives the shipped fold.
+pub(crate) fn mp_ingest_evidence(
+    gaps: &[(u64, u64)],
+    source_path_map: &super::seq_ring::SeqRing<u32>,
+    mp_delivered: &mut std::collections::HashMap<u32, Vec<u64>>,
+    mp_evid_max: &mut u64,
+) {
+    for (lo, hi) in mp_delivered_intervals(gaps) {
+        let start = lo.max(*mp_evid_max + 1);
+        if start > hi {
+            continue;
+        }
+        for (q, &pj) in source_path_map.range(start, hi) {
+            mp_delivered.entry(pj).or_default().push(q);
+        }
+        *mp_evid_max = (*mp_evid_max).max(hi);
+    }
+}
+
+/// The packet-threshold channel's decision for one reported gap seq whose
+/// live flight is still its original (`serve_gaps` evaluates it only when
+/// the time channel is not ripe and no retransmit exists): the seq's
+/// original path `orig` has ≥ [`MP_PACKET_THRESHOLD`] delivered successors.
+/// Extracted verbatim from `serve_gaps`, which calls it.
+///
+/// Known defect (docs/derivations/dup-diag.md): the gap seq comes from the
+/// report being processed, the evidence from every report processed so far.
+/// Reports cross the two return legs out of receiver order, so a stale
+/// report re-lists a hole that fresher evidence already shows delivered.
+pub(crate) fn mp_packet_threshold_fires(
+    seq: u64,
+    orig: Option<u32>,
+    mp_delivered: &std::collections::HashMap<u32, Vec<u64>>,
+) -> bool {
+    orig.and_then(|j| mp_delivered.get(&j))
+        .is_some_and(|v| mp_fast_lost(v, seq))
+}
+
 /// The skew-aware hole law (pure, unit-tested): may a reported gap seq be
 /// treated as a hole (targeted retransmit eligible) right now?
 ///

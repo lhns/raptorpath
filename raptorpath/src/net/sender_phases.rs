@@ -792,16 +792,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // per-path sorted evidence lists. Monotone watermark ⇒ each seq
         // ingested at most once over the transfer.
         if pol.recov_mp_law && mp_n_paths > 1 {
-            for (lo, hi) in mp_delivered_intervals(&gaps) {
-                let start = lo.max(mp_evid_max + 1);
-                if start > hi {
-                    continue;
-                }
-                for (q, &pj) in st.source_path_map.range(start, hi) {
-                    mp_delivered.entry(pj).or_default().push(q);
-                }
-                mp_evid_max = mp_evid_max.max(hi);
-            }
+            mp_ingest_evidence(&gaps, &st.source_path_map, mp_delivered, &mut mp_evid_max);
         }
 
         // The `[HOLD]` resolution signal. Every stamped hole
@@ -945,9 +936,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     let mut fast = false;
                     if !time_ripe && !st.nack_retx_at.contains_key(&seq) {
                         let orig = st.source_path_map.get(&seq).copied();
-                        fast = orig
-                            .and_then(|j| mp_delivered.get(&j))
-                            .is_some_and(|v| mp_fast_lost(v, seq));
+                        fast = mp_packet_threshold_fires(seq, orig, mp_delivered);
                     }
                     if !time_ripe && !fast {
                         if pol.diag_on {
