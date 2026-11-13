@@ -99,6 +99,94 @@ def rtp_floor(cli):
     return best
 
 
+# ── guard-clause candidates (docs/derivations/guard-clause-dry.md; DRY RUN ONLY, not wired into any row or gate) ──
+_DIAG_T = re.compile(r"\[DIAG\] t=([\d.]+)s")
+_DIAG_SRC = re.compile(r"\bsrc=(\d+)")
+_DIAG_CUM = re.compile(r"\bcum=(\d+)/\d+/(\d+)")
+SRC_PHASE_T_MIN = 1.0       # candidate (A): ticks before this are the start-up samples
+
+
+def _rtp_ticks(cli):
+    """Yield (t, src, {leg: rtp_us}) per client `[DIAG]` line; rtp_us == 0 (no sample yet) is left out of the dict."""
+    for ln in cli:
+        if "[DIAG] t=" not in ln:
+            continue
+        mt, ms = _DIAG_T.search(ln), _DIAG_SRC.search(ln)
+        if not mt or not ms:
+            continue
+        legs = {}
+        for m in _RTP.finditer(ln):
+            v = int(m.group(2))
+            if v > 0:
+                legs[int(m.group(1))] = v
+        yield float(mt.group(1)), int(ms.group(1)), legs
+
+
+def rtp_floor_source_phase(cli, t_min=SRC_PHASE_T_MIN, detail=False):
+    """Candidate (A): per leg, the `rtp_floor` minimum restricted to ticks with t >= `t_min` and the source still sending (`src=` > 0).
+    A leg with no such tick is absent (the caller sees a missing value, never a substitute). detail=True returns, per leg,
+    (min, t of its first occurrence, value at the leg's first in-window tick) so the caller can test whether the minimum is just the
+    window's first reading."""
+    best, first = {}, {}
+    for t, src, legs in _rtp_ticks(cli):
+        if t < t_min or src <= 0:
+            continue
+        for i, v in legs.items():
+            first.setdefault(i, v)
+            if i not in best or v < best[i][0]:
+                best[i] = (v, t)
+    if detail:
+        return {i: (v, t, first[i]) for i, (v, t) in best.items()}
+    return {i: v for i, (v, _) in best.items()}
+
+
+def inorder_delay(cli, source_only=False):
+    """Candidate (B): the delivered in-order delay series [(t, delay_s)] on the client `[DIAG]` ticks: delay(t) = t - t_src(ack(t)).
+    ack is the third `cum=` field (the receiver's cumulative in-order ack, window_ack_seq), t_src inverts the cumulative source-sent
+    curve (first `cum=` field) by linear interpolation between ticks; ticks with ack <= 0 or an ack beyond the sent curve are skipped.
+    source_only=True keeps only ticks with `src=` > 0 (drops the drained tail). Logic as in `inorder.py` of branch github/p0-dwell-diag
+    (docs/derivations/p0-dwell-diag/inorder.py), whose whole-run reading this is."""
+    import bisect
+    T, SRC, ACK, ON = [], [], [], []
+    for ln in cli:
+        if not ln.startswith("[DIAG]"):
+            continue
+        m, mt, ms = _DIAG_CUM.search(ln), _DIAG_T.search(ln), _DIAG_SRC.search(ln)
+        if not (m and mt and ms):
+            continue
+        T.append(float(mt.group(1)))
+        SRC.append(int(m.group(1)))
+        ACK.append(int(m.group(2)))
+        ON.append(int(ms.group(1)) > 0)
+
+    def t_src(a):
+        i = bisect.bisect_left(SRC, a)
+        if i == 0:
+            return T[0]
+        if i >= len(SRC):
+            return None
+        s0, s1 = SRC[i - 1], SRC[i]
+        return T[i - 1] + (T[i] - T[i - 1]) * ((a - s0) / (s1 - s0) if s1 > s0 else 0)
+
+    out = []
+    for t, a, on in zip(T, ACK, ON):
+        if a <= 0 or (source_only and not on):
+            continue
+        ts = t_src(a)
+        if ts is not None:
+            out.append((t, max(0.0, t - ts)))
+    return out
+
+
+def inorder_delay_stats(cli, source_only=False):
+    """-> {"mean": s, "p95": s, "n": ticks} of `inorder_delay`, or None if the log has no usable tick. p95 index as in inorder.py:
+    sorted[int(0.95 * (n - 1) + 0.5)]."""
+    d = sorted(x for _, x in inorder_delay(cli, source_only))
+    if not d:
+        return None
+    return {"mean": sum(d) / len(d), "p95": d[min(len(d) - 1, int(0.95 * (len(d) - 1) + 0.5))], "n": len(d)}
+
+
 # ── ROW ──────────────────────────────────────────────────────────────────
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, bin_sha=None):
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
