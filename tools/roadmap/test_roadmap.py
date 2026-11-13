@@ -117,9 +117,43 @@ class ValidateTests(unittest.TestCase):
     def test_na_outcome(self):
         self.assertIn("n/a", "\n".join(self.errs([node("rec-a", outcome="n/a")])))
         errs, warns = check.validate_nodes([node("rec-a", kind="user-decision", state="done", outcome="n/a", evidence=["e"])])
-        self.assertEqual((errs, [w for w in warns if "rec-a" in w]), ([], []))
+        self.assertEqual((errs, [w for w in warns if "unrated" in w]), ([], []))
         errs, warns = check.validate_nodes([node("rec-a", kind="user-decision", state="done", outcome="unrated", evidence=["e"])])
-        self.assertEqual((errs, [w for w in warns if "rec-a" in w]), ([], []))
+        self.assertEqual((errs, [w for w in warns if "unrated" in w]), ([], []))
+
+    def test_defect_outcome_rule(self):
+        e = "\n".join(self.errs([node("rec-a", kind="defect-verdict", state="done", outcome="successful", evidence=["e"])]))
+        self.assertIn("defect-verdict never carries an outcome", e)
+        errs, warns = check.validate_nodes([node("rec-a", kind="defect-verdict", state="done", evidence=["e"], plain="p")])
+        self.assertEqual((errs, [w for w in warns if "unrated" in w]), ([], []))
+
+    def test_readiness_rule(self):
+        done = node("rec-a", state="done", outcome="successful", evidence=["e"])
+        for st in ("in-progress", "next", "parked"):
+            blocked = node("rec-b", state=st if st != "next" else "next", depends_on=["rec-c"])
+            other = node("rec-c", state=st if st != "next" else "in-progress")
+            e = "\n".join(self.errs([done, blocked, other]))
+            self.assertEqual("depends_on 'rec-c'" in e, blocked["state"] == "next", (st, e))
+        ok = node("rec-b", depends_on=["rec-a"])
+        self.assertEqual(self.errs([done, ok]), [])
+        # user decisions and defect verdicts are exempt
+        for kind in ("user-decision", "defect-verdict"):
+            ex = node("rec-b", kind=kind, depends_on=["rec-c"])
+            self.assertEqual(self.errs([ex, node("rec-c")]), [])
+
+    def test_vm_order_validation(self):
+        a = node("rec-a", lane="vm", vm_order=1, plain="p")
+        b = node("rec-b", lane="vm", vm_order=1, plain="p")
+        self.assertIn("vm_order 1 already used", "\n".join(self.errs([a, b])))
+        self.assertTrue(self.errs([node("rec-a", vm_order="x")]))
+        self.assertTrue(any("vm lane" in w for w in check.validate_nodes([node("rec-a", vm_order=1, plain="p")])[1]))
+
+    def test_plain_warning(self):
+        warns = check.validate_nodes([node("rec-a", plain="ok"), node("rec-b"), node("rec-c", overview=False, state="done",
+                                      outcome="successful", evidence=["e"])])[1]
+        self.assertTrue(any("rec-b" in w and "plain" in w for w in warns))
+        self.assertFalse(any("rec-a" in w and "plain" in w for w in warns))
+        self.assertFalse(any("rec-c" in w and "plain" in w for w in warns))  # done, not in overview: no warning
 
     def test_overview_size_warning(self):
         self.assertTrue(any("overview has 3" in w for w in check.validate_nodes(GOOD)[1]))
@@ -138,7 +172,7 @@ class BuildTests(unittest.TestCase):
         out = built(nodes)
         self.assertIn('rate_c[/"T rate-c<br/>○ next"/]', out)
         self.assertIn('rec_d{{"T rec-d<br/>○ next"}}', out)
-        self.assertIn('rec_e>"T rec-e<br/>○ next"]', out)
+        self.assertIn('rec_e>"T rec-e<br/>⚠ open defect"]', out)
         self.assertIn("rec_a --> rec_b", out)
         self.assertIn("rec_f -.->|replaced by| rec_b", out)
         self.assertIn("✔ done · very-successful", out)
@@ -223,6 +257,88 @@ class BuildTests(unittest.TestCase):
         self.assertLess(tb.index("| id | title | state"), tb.index("#### Details per node: rec"))
         self.assertIn("| `rec-a` | T rec-a | why \\| so |  |", tb)
         self.assertNotIn("`rec-b` | T rec-b | ", tb.split("#### Details")[1])
+
+    @staticmethod
+    def region(out, name):
+        return out.split(f"<!-- BEGIN GENERATED: {name} -->")[1].split("<!-- END")[0]
+
+    def test_region_order(self):
+        order = build.REGION_ORDER
+        self.assertEqual(order[:8], ["legend", "overview", "plain-words", "ready-now", "running",
+                                     "waiting-on-owner", "vm-queue", "timeline"])
+        self.assertEqual(order[-1], "table")
+        out = built([node("rec-a")])
+        pos = [out.index(f"<!-- BEGIN GENERATED: {n} -->") for n in order]
+        self.assertEqual(pos, sorted(pos))
+
+    def test_defect_tags(self):
+        nodes = [node("rec-a", kind="defect-verdict", state="in-progress"),
+                 node("rec-b", kind="defect-verdict", state="next"),
+                 node("rec-c", kind="defect-verdict", state="done", evidence=["e"])]
+        ov = self.region(built(nodes), "overview")
+        self.assertEqual(ov.count("⚠ open defect"), 2)
+        self.assertIn('rec_c>"T rec-c<br/>✔ fixed"]', ov)
+        self.assertNotIn("unrated", ov.split("classDef")[0])
+        self.assertNotIn("done ·", ov.split("classDef")[0])
+
+    def test_vm_queue_region_and_then_links(self):
+        nodes = [node("rec-c", lane="vm", vm_order=3, order_reason="last one"),
+                 node("rec-a", lane="vm", vm_order=1, order_reason="first because X"),
+                 node("rec-b", lane="vm", vm_order=2),
+                 node("rec-z", lane="vm")]
+        out = built(nodes)
+        q = self.region(out, "vm-queue").strip().splitlines()
+        self.assertEqual(q, ["1. `rec-a`: T rec-a. first because X", "2. `rec-b`: T rec-b", "3. `rec-c`: T rec-c. last one"])
+        ov = self.region(out, "overview")
+        self.assertIn("rec_a -.->|then| rec_b", ov)
+        self.assertIn("rec_b -.->|then| rec_c", ov)
+        self.assertNotIn("rec_z -.->|then|", ov)
+        self.assertNotIn("rec_c -.->|then|", ov)
+        self.assertRegex(ov, r"linkStyle [\d,]+ stroke:#999,stroke-width:1px")
+        self.assertIn("The VM queue is empty", self.region(built([node("rec-a")]), "vm-queue"))
+
+    def test_then_linkstyle_index(self):
+        nodes = [node("rec-a", lane="vm", vm_order=1), node("rec-b", lane="vm", vm_order=2)]
+        ov = self.region(built(nodes), "overview")
+        links = [ln for ln in ov.splitlines() if "~~~" in ln or "-->" in ln or "-.->" in ln]
+        i = next(k for k, ln in enumerate(links) if "|then|" in ln)
+        self.assertIn(f"linkStyle {i} stroke:#999", ov)
+
+    def test_plain_words_region(self):
+        nodes = [node("rec-a", plain="Does a thing, simply."),
+                 node("rec-b", overview=False, state="done", outcome="successful", evidence=["e"]),
+                 node("rec-c", overview=False, state="parked", plain="Waiting."),
+                 node("rec-d", overview=False, plain="not forward? yes next")]
+        t = self.region(built(nodes), "plain-words")
+        self.assertIn("| T rec-a | ○ next | Does a thing, simply. |", t)
+        self.assertIn("| T rec-c | ⏸ parked | Waiting. |", t)
+        self.assertIn("| T rec-d | ○ next |", t)
+        self.assertNotIn("T rec-b", t)  # done and not in the overview
+        self.assertIn("| title | status | in plain words |", t)
+
+    def test_lane_lists(self):
+        nodes = [node("rec-a", lane="vm"), node("rec-b", lane="user"), node("rec-c", lane="vm", state="in-progress"),
+                 node("rec-d", lane="host-cargo", state="in-progress"),
+                 node("rec-e", kind="defect-verdict", state="in-progress", lane="vm"),
+                 node("rec-f", kind="user-decision", lane="user"),
+                 node("rec-g", kind="user-decision", state="done", outcome="n/a", evidence=["e"]),
+                 node("rec-h", kind="user-decision", state="abandoned", outcome="dead-end")]
+        out = built(nodes)
+        ready = self.region(out, "ready-now")
+        self.assertLess(ready.index("**vm**"), ready.index("**user**"))
+        self.assertIn("- `rec-a`: T rec-a", ready.split("**user**")[0])
+        self.assertIn("- `rec-b`: T rec-b", ready.split("**user**")[1])
+        self.assertNotIn("rec-c", ready)
+        running = self.region(out, "running")
+        self.assertIn("`rec-c`", running.split("**host-cargo**")[0])
+        self.assertIn("`rec-d`", running.split("**host-cargo**")[1])
+        self.assertNotIn("rec-e", running)  # defects are not "running"
+        waiting = self.region(out, "waiting-on-owner")
+        self.assertIn("`rec-f`", waiting)
+        self.assertNotIn("rec-g", waiting)
+        self.assertNotIn("rec-h", waiting)
+        self.assertEqual(self.region(built([node("rec-a", state="done", outcome="successful", evidence=["e"])]),
+                                     "running").strip(), "_None._")
 
     def test_table_row(self):
         out = built([node("rec-a", headline="a|b", evidence=["x", "y"], depends_on=[])])

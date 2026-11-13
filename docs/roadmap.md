@@ -212,6 +212,31 @@ flowchart TB
 ```
 <!-- END GENERATED: overview -->
 
+## In plain words
+
+<!-- BEGIN GENERATED: plain-words -->
+<!-- END GENERATED: plain-words -->
+
+## Ready now
+
+<!-- BEGIN GENERATED: ready-now -->
+<!-- END GENERATED: ready-now -->
+
+## Running
+
+<!-- BEGIN GENERATED: running -->
+<!-- END GENERATED: running -->
+
+## Waiting on the owner
+
+<!-- BEGIN GENERATED: waiting-on-owner -->
+<!-- END GENERATED: waiting-on-owner -->
+
+## VM queue
+
+<!-- BEGIN GENERATED: vm-queue -->
+<!-- END GENERATED: vm-queue -->
+
 ## Timeline
 
 <!-- BEGIN GENERATED: timeline -->
@@ -406,6 +431,8 @@ gantt
 
 Not shown (no `start`): `rec-s54-session`, `rec-leverb-guard`, `rate-leading-taper`, `rate-user-rate-law`, `rate-law-reconcile`, `store-maxbw-diag`, `store-user-u1u3`, `store-engine-form-impl`, `store-engine-form-guard`, `store-delta-seat`, `place-per-leg-impl`, `cc-s48d-session`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-bbrrs-ring-fix`, `meas-guard-v2-impl`, `meas-s51-design`, `meas-s51-session`, `meas-adversarial-cells`, `meas-competitor-battery`, `model-law-ledger`, `model-user-wasm-calls`, `model-wasm-fixes`, `obs-impl`, `infra-inventory-merges`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->
+
+History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
 
 ## Tracks
 

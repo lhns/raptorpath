@@ -14,7 +14,7 @@ import build  # noqa: E402
 FIELDS = ["id", "title", "track", "kind", "state", "outcome", "evidence", "verdict_quote", "headline",
           "depends_on", "replaced_by", "lane", "start", "end", "folded", "overview"]
 LIST_FIELDS = ["evidence", "depends_on", "replaced_by", "folded"]
-OPTIONAL = ["qualified_by", "notes"]  # absent == [] / ""
+OPTIONAL = ["qualified_by", "notes", "vm_order", "order_reason", "plain"]  # absent == [] / "" / None
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 TODAY_RE = re.compile(r"^%% today: (\d{4}-\d{2}-\d{2})\r?$", re.M)
 
@@ -112,6 +112,14 @@ def validate_nodes(nodes):
             err("notes must be a string")
         if n["outcome"] == "n/a" and n["kind"] != "user-decision":
             err("outcome n/a is only for kind user-decision")
+        if n["kind"] == "defect-verdict" and n["outcome"] != "unrated":
+            err(f"a defect-verdict never carries an outcome (got {n['outcome']}); use unrated")
+        for f in ("order_reason", "plain"):
+            if not isinstance(n.get(f, ""), str):
+                err(f"{f} must be a string")
+        vo = n.get("vm_order")
+        if vo is not None and (not isinstance(vo, int) or isinstance(vo, bool)):
+            err("vm_order must be an integer")
         if not isinstance(n["overview"], bool):
             err("overview must be true or false")
         dates = []
@@ -129,9 +137,23 @@ def validate_nodes(nodes):
             good.append(n)
 
     ids = {n["id"] for n in good}
+    by = {n["id"]: n for n in good}
+    orders = {}
     # drop nodes with a dangling edge from the graph, but report each
     for n in good:
         nid = n["id"]
+        if n.get("vm_order") is not None:
+            if n["vm_order"] in orders:
+                errors.append(f"{nid}: vm_order {n['vm_order']} already used by {orders[n['vm_order']]}")
+            orders.setdefault(n["vm_order"], nid)
+            if n["lane"] != "vm" or n["state"] not in build.FORWARD_STATES:
+                warnings.append(f"{nid}: vm_order on a node that is not a forward node in the vm lane")
+        if (n["overview"] or n["state"] in build.FORWARD_STATES) and not n.get("plain"):
+            warnings.append(f"{nid}: overview/forward node without a 'plain' sentence")
+        if n["state"] == "next" and n["kind"] not in ("user-decision", "defect-verdict"):
+            for d in n["depends_on"]:
+                if d in by and by[d]["state"] != "done":
+                    errors.append(f"{nid}: state next but depends_on '{d}' is {by[d]['state']}, not done")
         if n.get("qualified_by") and n["state"] != "done":
             warnings.append(f"{nid}: qualified_by on a node that is not done")
         for f in ("depends_on", "replaced_by", "qualified_by"):
@@ -144,7 +166,7 @@ def validate_nodes(nodes):
         if state == "done":
             if not n["evidence"]:
                 errors.append(f"{nid}: state done needs at least one evidence entry")
-            if outcome == "unrated" and n["kind"] != "user-decision":
+            if outcome == "unrated" and n["kind"] not in ("user-decision", "defect-verdict"):
                 # A quote may stay on an unrated node: the source sentence is kept as
                 # evidence even when no later node builds on it (rating rule).
                 warnings.append(f"{nid}: done but unrated" + (" (quote kept as evidence)" if n["verdict_quote"] else ""))

@@ -41,7 +41,9 @@ OVERVIEW_WIDTH = 3  # max nodes per row inside an overview track box
 TRACK_WIDTH = 4     # max nodes per rank in a per-track tree
 GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
-REGION_ORDER = ["legend", "overview", "timeline"] + [f"track-{c}" for c in TRACKS] + ["table"]
+REGION_ORDER = (["legend", "overview", "plain-words", "ready-now", "running", "waiting-on-owner", "vm-queue", "timeline"]
+                + [f"track-{c}" for c in TRACKS] + ["table"])
+FORWARD_STATES = ("in-progress", "next", "blocked", "parked")  # nodes that still have work ahead
 
 CLASSDEFS = [
     ("vsucc", "fill:#2e9e4f,stroke:#1b6b34,color:#fff"),
@@ -55,6 +57,7 @@ CLASSDEFS = [
     ("parked", "fill:#f3f3f3,stroke:#999,color:#555"),
     ("unrated", "fill:#fff,stroke:#333,stroke-dasharray:1 3,color:#111"),
     ("userdec", "fill:#d9c2f0,stroke:#7b3fb5,color:#111"),
+    ("defect", "fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111"),
     ("stub", "fill:#fff,stroke:#aaa,stroke-dasharray:2 2,color:#777,font-size:11px"),
 ]
 
@@ -82,6 +85,11 @@ def datestr(v):
 
 def tag(n):
     s, o = n["state"], n["outcome"]
+    if n["kind"] == "defect-verdict":  # a defect is open or fixed; it never carries an outcome word
+        if s in ("in-progress", "next"):
+            return "⚠ open defect"
+        if s == "done":
+            return "✔ fixed"
     if s == "done":
         return f"✔ done · {o}"
     if s == "abandoned":
@@ -93,6 +101,10 @@ def node_class(n):
     s, o = n["state"], n["outcome"]
     if n["kind"] == "user-decision" and s not in ("done", "abandoned"):
         return "userdec"
+    if n["kind"] == "defect-verdict" and s in ("in-progress", "next"):
+        return "defect"
+    if n["kind"] == "defect-verdict" and s == "done":
+        return "succ"
     if s == "abandoned":
         return "dead"
     if s == "done":
@@ -142,10 +154,15 @@ def edges(nodes, keep):
         for q in n["qualified_by"]:
             if keep(n, by[q]):
                 yield n["id"], q, "qual"
+    queue = vm_queue(nodes)
+    for a, b in zip(queue, queue[1:]):  # queue ORDER, not a dependency
+        if keep(a, b):
+            yield a["id"], b["id"], "then"
 
 
-EDGE_ARROWS = {"dep": "-->", "repl": "-.->|replaced by|", "qual": "-.->|⚠ qualified by|"}
+EDGE_ARROWS = {"dep": "-->", "repl": "-.->|replaced by|", "qual": "-.->|⚠ qualified by|", "then": "-.->|then|"}
 QUAL_STYLE = "stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400"
+THEN_STYLE = "stroke:#999,stroke-width:1px,color:#777"
 _LINK_RE = re.compile(r"^\s+\S+ (?:-->|-\.->\|[^|]*\||~~~)")
 
 
@@ -155,14 +172,21 @@ def edge_line(a, b, kind, sa=None, sb=None):
 
 
 def link_styles(lines):
-    """linkStyle lines colouring qualified_by links (Mermaid indexes links in order of appearance)."""
-    idx, hits = 0, []
+    """linkStyle lines for qualified_by and vm-queue 'then' links (Mermaid indexes links in order of appearance)."""
+    idx, hits = 0, {"qual": [], "then": []}
     for line in lines:
         if _LINK_RE.match(line):
             if "⚠ qualified by" in line:
-                hits.append(idx)
+                hits["qual"].append(idx)
+            elif "|then|" in line:
+                hits["then"].append(idx)
             idx += line.count("~~~") or 1
-    return [f"    linkStyle {','.join(map(str, hits))} {QUAL_STYLE}"] if hits else []
+    return [f"    linkStyle {','.join(map(str, h))} {style}"
+            for h, style in ((hits["qual"], QUAL_STYLE), (hits["then"], THEN_STYLE)) if h]
+
+
+def vm_queue(nodes):
+    return sorted((n for n in nodes if n["vm_order"] is not None), key=lambda n: n["vm_order"])
 
 
 def row_links(group, width, indent="    "):
@@ -303,7 +327,7 @@ def r_legend(nodes, today):
         ("vsucc", "very successful"), ("succ", "successful"), ("mixed", "mixed"), ("bad", "bad"),
         ("dead", "dead end / superseded / abandoned"), ("inprog", "in progress"), ("next", "next"),
         ("blocked", "blocked"), ("parked", "parked"), ("unrated", "done, unrated"),
-        ("userdec", "user decision pending"),
+        ("userdec", "user decision pending"), ("defect", "open defect"),
     ]
     out = ["flowchart LR"]
     out += [f'    lg_{c}["{esc(t)}"]' for c, t in samples]
@@ -328,12 +352,57 @@ def r_legend(nodes, today):
         "",
         "Shapes: hexagon = user decision (purple while pending), parallelogram = law, flag = defect verdict, rectangle = everything else.",
         "Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `replaced by`.",
+        "Thin grey dotted arrow = `then`: VM queue order, not a dependency. A defect verdict reads `⚠ open defect` or `✔ fixed` and never shows an outcome.",
         "Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the rating of the done node it leaves; that node's label ends in `⚠`.",
     ]
     return "\n".join(text)
 
 
-RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline, "table": r_table}
+def r_plain(nodes, today):
+    sel = [n for n in nodes if n["overview"] or n["state"] in FORWARD_STATES]
+    if not sel:
+        return "_No overview or forward nodes yet._"
+    rows = ["| title | status | in plain words |", "|---|---|---|"]
+    rows += [f"| {cell(n['title'])} | {cell(tag(n))}{' ⚠' if n['qualified_by'] else ''} | {cell(n['plain']) or '_(missing)_'} |"
+             for code in TRACKS for n in sel if n["track"] == code]
+    return "\n".join(rows)
+
+
+def by_lane(sel):
+    """Markdown bullet list of nodes grouped by lane (fixed lane order), or a 'none' note."""
+    if not sel:
+        return "_None._"
+    parts = []
+    for lane in LANES:
+        group = [n for n in sel if n["lane"] == lane]
+        if group:
+            parts.append(f"**{lane}**\n\n" + "\n".join(f"- `{n['id']}`: {cell(n['title'])}" for n in group))
+    return "\n\n".join(parts)
+
+
+def r_ready(nodes, today):
+    return by_lane([n for n in nodes if n["state"] == "next"])
+
+
+def r_running(nodes, today):
+    return by_lane([n for n in nodes if n["state"] == "in-progress" and n["kind"] != "defect-verdict"])
+
+
+def r_waiting(nodes, today):
+    sel = [n for n in nodes if n["kind"] == "user-decision" and n["state"] not in ("done", "abandoned")]
+    return "\n".join(f"- `{n['id']}`: {cell(n['title'])}" for n in sel) or "_None._"
+
+
+def r_vmqueue(nodes, today):
+    q = vm_queue(nodes)
+    return "\n".join(
+        f"{i}. `{n['id']}`: {cell(n['title'])}" + (f". {cell(n['order_reason'])}" if n["order_reason"] else "")
+        for i, n in enumerate(q, 1)) or "_The VM queue is empty._"
+
+
+RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline, "table": r_table,
+             "plain-words": r_plain, "ready-now": r_ready, "running": r_running,
+             "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue}
 RENDERERS.update({f"track-{c}": r_track(c) for c in TRACKS})
 
 
@@ -345,6 +414,9 @@ def normalize(nodes):
         m["start"], m["end"] = datestr(n.get("start")), datestr(n.get("end"))
         m.setdefault("qualified_by", [])
         m["notes"] = m.get("notes") or ""
+        m["plain"] = m.get("plain") or ""
+        m["order_reason"] = m.get("order_reason") or ""
+        m["vm_order"] = m.get("vm_order")
         out.append(m)
     return out
 
