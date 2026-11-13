@@ -199,12 +199,25 @@ def row_metrics(cli, srv, drv, nbytes=None, pool=None):
 
 
 # ── plan 54: the guard's liveness witnesses ──
+SEAT = {"BASE": "BASE", "CAND": "CAND"}
+
+
 def sha_problems(arm, sha, sha_cand, sha_base):
-    """The row's bin_sha against its arm's seat. Empty seats (an unset env) are not checked, they are reported by the battery's own start-of-run sha guard."""
-    want = {"BASE": sha_base, "CAND": sha_cand}.get(arm)
-    if want and sha != want:
+    """The row's bin_sha against its arm's seat (BASE = LD_SHA_BASE, CAND = LD_SHA). A comparison that cannot run (the row has no sha, or the seat's sha did not reach the parser) is
+    a PROBLEM, never a silent pass: a witness that can be skipped witnesses nothing. Arms of no seat (the other plans') are not checked."""
+    if arm not in SEAT:
+        return []
+    want = {"BASE": sha_base, "CAND": sha_cand}[arm]
+    if not want or not sha:
+        return [f"bin-sha-uncheckable (row sha {str(sha)[:12] or None}, {arm} seat {str(want)[:12] or None}: LD_SHA / LD_SHA_BASE did not reach the parser)"]
+    if sha != want:
         return [f"bin-sha={str(sha)[:12]} (want {want[:12]} for {arm})"]
     return []
+
+
+def sha_checked(arm, sha, sha_cand, sha_base):
+    """True iff the bin_sha comparison actually ran on this row (recorded in the ledger so a test can assert it executed on every row)."""
+    return arm in SEAT and bool(sha) and bool({"BASE": sha_base, "CAND": sha_cand}[arm])
 
 
 def guard_witness(arm, cell, cli, sha=None, sha_cand=None, sha_base=None):
@@ -213,7 +226,7 @@ def guard_witness(arm, cell, cli, sha=None, sha_cand=None, sha_base=None):
     st = sum(d["pt_st"] + d["tt_st"] for d in sv.values()) if sv else None
     hold = t52.hold_by_path(cli)
     hn = (hold.get(0) or {}).get("hn_n")
-    rd = {"hn_p0": hn, "snapv_st": st, "snapv_present": sv is not None}
+    rd = {"hn_p0": hn, "snapv_st": st, "snapv_present": sv is not None, "sha_checked": sha_checked(arm, sha, sha_cand, sha_base)}
     p = sha_problems(arm, sha, sha_cand, sha_base)
     if arm == "CAND":
         if sv is None:
@@ -398,15 +411,17 @@ def smoke(path, out=print):
     crit("[SNAPV] parsed on every row (the gauge is in both builds)", [f"{r['arm']}: no [SNAPV]" for r in rs if (r.get("t54") or {}).get("snapv") is None])
     crit("in-order delay (run and late), evictions, old holes and the budget residual computed (no None)", [f"{r['arm']}: {', '.join(missing(r))}" for r in rs if missing(r)])
     # A reduced pool can stall below the 200 s timeout (the registered H-hold floor, B640 at 20 Mbit/s = 240 s): a DNF there is data, not a harness fault.
+    # DEVIATION from the registered criterion ("rows inside RWM_PERF_TIMEOUT_S"): only B640, only a clean DNF (rc 0, summary present, dnf true) is a NOTE; a crash or a missing summary fails.
     late_fail = []
     for r in rs:
-        dnf = r.get("dnf") or r.get("rc") != 0 or not r.get("summary")
-        if dnf and r["arm"] != "B640":
-            late_fail.append(f"{r['arm']}: rc={r.get('rc')} dnf={r.get('dnf')} wall={r.get('wall_s')}")
-        elif not dnf and (r.get("seconds") or 0) >= PERF_TIMEOUT_S:
-            late_fail.append(f"{r['arm']}: {r.get('seconds')} s >= {PERF_TIMEOUT_S}")
-        elif dnf:
+        clean_dnf = r.get("dnf") is True and r.get("rc") == 0 and bool(r.get("summary"))
+        broken = r.get("dnf") or r.get("rc") != 0 or not r.get("summary")
+        if clean_dnf and r["arm"] == "B640":
             out(f"  NOTE {r['arm']}: DNF inside the smoke (the registered H-hold floor of 20 Mbit/s needs 240 s for 600 MB; a result, not a fault)")
+        elif broken:
+            late_fail.append(f"{r['arm']}: rc={r.get('rc')} dnf={r.get('dnf')} summary={r.get('summary')} wall={r.get('wall_s')}")
+        elif (r.get("seconds") or 0) >= PERF_TIMEOUT_S:
+            late_fail.append(f"{r['arm']}: {r.get('seconds')} s >= {PERF_TIMEOUT_S}")
         if r.get("bytes") != BYTES:
             late_fail.append(f"{r['arm']}: bytes={r.get('bytes')}")
     crit(f"the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S={PERF_TIMEOUT_S} (rc 0, a summary, not DNF; B640 may DNF)", late_fail)
