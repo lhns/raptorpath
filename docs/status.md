@@ -168,6 +168,11 @@ pipeline in `dacfd7c`.)
 | `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`) | Copa's TCP-competitive mode switching |
 | `reliable` boolean branches in the window sender/receiver | ρ = 1 vs ρ < 1 selecting code paths instead of composing with δ; since `bf3a636` this includes emission batching (`emit_batch_on` requires `reliable`); at the store-cap seat ρ < 1 has no outstanding gate at all (`tx_paused` and `plain_dyn_cap` require `reliable`, no `sent_store`; how ρ would enter the law: paper §6.1, status §23) |
 
+| `symbol_size_for_hint` | 512-byte symbols at Realtime vs 1 200 bytes otherwise; every limit counted in symbols halves in bytes at Realtime. Found by the §51 design (`s51-design`, `docs/derivations/s51-design.md`); not in the law ledger yet |
+| the CLI's ρ | ρ follows the hint: `--window-reliable` can only set ρ = 1, so ρ < 1 is reachable only at Realtime. ρ is not an independent dial on the engine CLI (§51 design) |
+
+**The engine's δ knob moves only half the machine** (§51 design, 2026-11-13). `RWM_DELTA` sets any δ and is echoed in `[GATES]`, but the five hint-keyed rows above (the symbol size, the duplicate send, packing/batching, `queue_target_mult` and the default ρ) stay keyed on the hint string. §51's T2 test (each named hint against the same δ as a number) is designed to measure the resulting step. It predicts a FAIL at Realtime in both c2 and c8.
+
 ### 3.4 Open-constants register
 
 All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
