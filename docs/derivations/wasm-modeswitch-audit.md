@@ -185,7 +185,7 @@ with probability ε̂_retx:
    u(t)       = R · ε̂_retx^(t/RTT)
    T_cut(ρ)   = u⁻¹(1 − ρ) = RTT · max( 0 , ln x / ln ε̂_retx )
    A(δ, ρ)    = max( D(δ) , T_cut(ρ) )                             give-up age
-   budget(ρ)  = u(T_cut) = min( 1 − ρ , R )                         (= F3 candidate (b))
+   budget(ρ)  = u(T_cut) = min( 1 − ρ , R )                         (= option (ii))
    give up a hole  ⇔  age > A  ∧  given_up + 1 ≤ budget · src_total
 ```
 
@@ -205,7 +205,8 @@ which is where T_cut reaches 0, so one condition saturates both.
 | .025/.5/13 | 0.005 | 2.5e-2 | 76/100 | **100/100** |
 | .025/.5/13 | 0.5, 50 | 1.6e-5, 3.2e-5 | 100/100 | **100/100** |
 
-So **A ≡ D(δ) everywhere the slider reaches**. The T_cut term exceeds D only
+So **A ≡ D(δ) at these mild cells** (cartoon inputs; the harsh Bulk cells
+below are the exception). The T_cut term exceeds D only
 when 1−ρ < R·ε̂_retx^(D/RTT): about 1.25e-4 at Bulk ε 5 %, below the
 slider's 1e-3 resolution, and smaller still at Auto and Realtime. The general
 form therefore reduces, on its whole operating range, to option (ii):
@@ -234,7 +235,8 @@ Whether a declared ρ should be able to concede more than the residual past FEC
 plus the δ deadline is exactly the CLAUDE.md requirement that ρ compose with δ
 everywhere. **Owner's call**, and it must be settled before F3+F4.
 
-**The gauges re-read with the paper's continuous P_fec** (`fec-arq-model.md`
+**The gauges re-read with the paper's continuous P_fec, on the cartoon's
+inputs** (true ε, uncapped r*, A*) (`fec-arq-model.md`
 :699, not W22's truncation). The table gives the R side of the min, i.e. how
 many of the 100 slider positions ρ ∈ [0.900, 0.999] have 1−ρ ≥ R.
 
@@ -255,9 +257,9 @@ many of the 100 slider positions ρ ∈ [0.900, 0.999] have 1−ρ ≥ R.
   inactive: code and paper agree, and **ρ is inert under (ii) with either
   P_fec**. The result is not an artifact of W22.
 - Only the Bulk rows move: the paper's P_fec(0) > 0 lowers R.
-- On the harsh cell, (ii) caps the realtime give-ups at R·2000 ≈ 0.5 symbols.
-  Today the sim gives up 28 there (ρ .95, δ 50). So **(ii) removes a ρ effect
-  the model has today.**
+- On the harsh cell, (ii) caps the cartoon's realtime give-ups at
+  R·2000 ≈ 0.5 symbols (cartoon inputs: uncapped r*, A*). The sim-input table
+  below confirms this for the sim itself.
 
 **Two options, both continuous, neither shipped:**
 
@@ -272,9 +274,44 @@ many of the 100 slider positions ρ ∈ [0.900, 0.999] have 1−ρ ≥ R.
 | ρ = 1 | budget 0, §5.6 "retain never sheds", no branch | same |
 | continuity in δ and ρ | yes; reads no P_fec, so it is **immune to W22** | yes only after W22 is fixed (it reads R) |
 | §5.6 agreement | departs from the engine's budget on the evicting seat (R, `emit_source.rs` :588) | matches it, with the declared cap added |
-| harsh cell, δ 50, ρ .95 | gives up as today or more: the age floor drops from 2·RTT to D(50) = RTT/2 | ≈ 0 |
+| harsh cell .20/.1/100, δ 50, ρ .95 (today 28) | up to 100 (cap 1−ρ; unmeasured), age floor D(50) = RTT/2 | 0 (sim-input R ≈ 2e-10) |
 | gate :233 (budget 0.05 at Bulk, ρ .95) | holds | holds |
 | gate :181 | fails (`!lawRt.retain` at ρ = 1) | fails |
+
+**The same gauges on the sim's own inputs.** R here is
+`shed_budget_residual(ε̂_est, r_live, W = 64, σ²_est)`, the median over ticks
+150–400 of a ρ .95 run. The sim clamps r at `MAX_OVERHEAD` = 0.5.
+
+| sim cell ε/q/RTT | δ | median r | R (code / paper) | R side binds | T_cut > D | given_up today, ρ .95 |
+|---|---|---|---|---|---|---|
+| .05/.5/50 | .005 | 0 | 2.6e-2 / 1.9e-2 | 75 / 81 | 0 | 3 |
+| .05/.5/50 | .5, 50 | .345, .354 | ≤ 2e-16 | 100 | 0 | 0 |
+| .10/.3/80 | .005 | 0 | 2.2e-2 / 1.5e-2 | 79 / 86 | 0 | 8 |
+| .10/.3/80 | .5, 50 | .5 | 0 | 100 | 0 | 0 |
+| .20/.1/100 | .005 | 0 | 2.2e-2 / 1.4e-2 | 79 / 87 | 0 | 41 |
+| .20/.1/100 | .5, 50 | .5 | 2.2e-10 | 100 | 0 | **28** |
+| .30/.05/150 | all three | .5 | 6.0e-4 | 100 | 0 | 142 / 179 / 179 |
+
+- On the sim's inputs R is even smaller than on the cartoon's. Today's
+  give-ups at Auto/Realtime come from GE bursts (q .1–.05) that the normal
+  P_fec with σ²_est does not see.
+- So under (ii) the sim's budget R·2000 is far below one symbol there, and the
+  28–179 give-ups go to 0. **(ii) does remove a ρ effect the sim has today.**
+- **T_cut never exceeds D on sim inputs** (0/100 at every cell). On the
+  cartoon's inputs it does at harsh Bulk: the condition is
+  1−ρ < R·ε̂^(D/RTT), which is 8e-3 at ε .2 (8/100 slider positions) and
+  2.7e-2 at ε .3 (26/100). The ε slider reaches .30.
+- So "A ≡ D(δ)" is not universal. **Dropping T_cut is a design choice in
+  both options, not a reduction.**
+
+**Option (i) in the sim, stated.**
+
+- D(50) = RTT/2 comes before the first retransmit can fire (one RTT,
+  :1337–1344). So under (i) holes are given up ahead of ARQ until 1−ρ is
+  spent.
+- At ρ .95 the cap is 0.05·2000 = 100 symbols, against 28 today on
+  .20/.1/100 at δ 50.
+- How many it actually gives up is **unmeasured** (that needs a model change).
 
 On CLAUDE.md's invariant, (i) is the stronger candidate. On paper agreement,
 (ii) is. Both reduce W14 and V5/V6 to the same rule, delete `find_t_cut` from
@@ -286,7 +323,7 @@ the sim, and make RETAIN the ρ = 1 point of the dial. **Owner's call.**
   Rust `f64::max(0, NaN)` gives 0, but JS `Math.max(0, NaN)` gives NaN. The
   reduced form avoids that corner.
 - **Rule change in the sim, stated.** Today's sim give-up (:1401–1420) is
-  age-only: any hole older than `max(t_cut, 2·RTT)` goes. Under the proposal
+  age-only: any hole older than `max(t_cut, 2·RTT)` goes. Under either option
   the sim gains the budget conjunct, and its age floor becomes D(δ) instead of
   the constant 2·RTT. Without the conjunct, a hole would be given up at
   RETAIN.
@@ -299,17 +336,18 @@ the sim, and make RETAIN the ρ = 1 point of the dial. **Owner's call.**
 - **Window, open.** The sim's FEC runs over W (`encoder.window_size()`); the
   cartoon's span law over A*. Each model keeps its own executed window in R.
   Unifying them is a separate model question.
-- **Shape in δ.** The proposed budget is not monotone in δ at ρ < 1, because R
+- **Shape in δ.** Option (ii)'s budget is not monotone in δ at ρ < 1, because R
   is not: it rises from Auto to Realtime (1.9e-5 → 5.1e-5 at ε 5 %), since
   smaller spans concede more. That is a legitimate shape, not a defect.
-- **(a) rejected.** The alternative max(1−ρ, (1−β)·R) is rejected because its
-  (1−β) weight has no provenance, and because it keeps a non-§5.6 reading
-  (shed at ρ = 1). Non-monotonicity is not the reason.
-- **The proposal inherits W22's step.** On a 2 % grid at ρ = 0.95, ε 5 %, the
-  largest neighbour jump of the proposed budget is 2.54e-2 at
+- **A third form was rejected.** max(1−ρ, (1−β)·R) has no provenance for its
+  (1−β) weight, and it keeps a non-§5.6 reading (shed at ρ = 1).
+  Non-monotonicity is not the reason. Its 0.24·ε̂ grid jump was W22's step
+  scaled by (1−β).
+- **Option (ii) inherits W22's step.** On a 2 % grid at ρ = 0.95, ε 5 %, the
+  largest neighbour jump of (ii)'s budget is 2.54e-2 at
   δ 0.04504 → 0.04594. It is exactly R's own jump, R = 5.0e-2 → 2.46e-2, as r
-  crosses ε/(1−ε) = 0.0526. (a)'s unexplained 0.24·ε̂ jump is the same step
-  scaled by (1−β). So **F3 is continuous only after W22** below. At ρ = 1 the
+  crosses ε/(1−ε) = 0.0526. So **(ii) is continuous only after W22** below.
+  Option (i) reads no R. At ρ = 1 the
   budget is identically 0 (2 %-grid jump 0). At ρ = 0.9999 the largest jump is
   8e-6.
 
@@ -330,9 +368,9 @@ the sim, and make RETAIN the ρ = 1 point of the dial. **Owner's call.**
     | ε 5 % | 0 | 0 | **5e-2** | 5e-2 | 5e-2 | 5e-2 | 2.3e-2 | 7.5e-3 | 1.1e-3 | 1.9e-5 | 2.7e-5 | 5.1e-5 |
     | ε 10 % | 0 | **1e-1** | 1e-1 | 1e-1 | 1e-1 | 1e-1 | 1e-1 | 2.0e-2 | 2.5e-3 | 3.8e-5 | 6.1e-5 | 1.25e-4 |
 
-  - At the corners:
+  - At the corners (cartoon inputs):
 
-    | corner | shipped | proposed |
+    | corner | shipped | option (ii) (option (i) = 1−ρ) |
     |---|---|---|
     | Bulk, ρ = 1 | 0 | 0 |
     | Bulk, ρ = .95 | 5e-2 | 5e-2 |
@@ -396,9 +434,16 @@ the sim, and make RETAIN the ρ = 1 point of the dial. **Owner's call.**
   `raptorpath/src`. It is reached inside `raptorpath_math::controller_rate`
   (math :825) whenever `saturation_cap` is set, and the engine sets it by
   default (`control/fec_rate.rs` :346, passed at :515).
-- *No measured engine effect yet.* The engine's measured rate sits at r ≈ 0 on
-  every L1 cell, below ε/(1−ε). So it has run only on the P_fec ≡ 0 side, and
-  `soft_saturate(0, ·) = 0` whatever r_sat is.
+- *Engine effect: conflicting sources.*
+  - The coordinator states that the engine's measured rate sits at r ≈ 0 on
+    every L1 cell, below ε/(1−ε). That puts the engine only on the
+    P_fec ≡ 0 side, with `soft_saturate(0, ·) = 0`, so no effect.
+  - `fec_rate/tests.rs` :277–280 describes a "lossy dual-path operating point
+    (ε≈4.8%, **consumed r≈0.34**, A*≈3–5, GE σ²≈3.76)". That is above the
+    floor of 0.0505, on the P_fec > 0 side. If that point is measured, the
+    shed budget at `emit_source.rs` :588 has run above the floor too.
+  - §51's registration should settle which is right before relying on
+    "no effect".
 
 **Where an engine run would cross the floor**, for §51's registration:
 
@@ -450,16 +495,17 @@ the derived residual. The cartoon labels this "ρ = 1 target — sheds only the
 derived §5.6 residual". §5.6 says the opposite: "the retain (ρ = 1) seat never
 sheds; the law runs only on the evicting seat".
 
-Under either option, budget(ρ = 1) = 0 at every δ, so :181 fails. Replace it
-with:
+Under either option, budget(ρ = 1) = 0 at every δ, so :181 fails. Replace its
+`!lawRt.retain` with "budget = 0 at ρ = 1 at both ends", and keep r* > 0 at
+Realtime and r* = 0 at Bulk.
 
-- budget = 0 at ρ = 1 at both ends;
-- budget = min(1−ρ, R) at ρ < 1;
-- r* > 0 at Realtime and r* = 0 at Bulk (unchanged).
-
-:205 ("sheds counted at rt-end with ρ < 1", ε 10 %, ρ .95) then runs with a
-budget of 1.25e-4 instead of 5e-2 and must be re-checked. :233 (budget 0.05 at
-Bulk, ρ .95, ε 10 %) still holds: min(0.05, 0.10).
+- **Option (i):** for the cartoon, this is the shipped ρ < 1 branch
+  (budget = 1−ρ) extended to ρ = 1. Only :181 changes; :205 and :233 are
+  untouched.
+- **Option (ii):** add "budget = min(1−ρ, R) at ρ < 1". :205 (ε 10 %, ρ .95,
+  Realtime) then runs with a budget of 1.25e-4 instead of 5e-2 and must be
+  re-checked. :233 (budget 0.05 at Bulk, ρ .95, ε 10 %) still holds:
+  min(0.05, 0.10).
 
 Both the law and the gate change are **the owner's call**. Golden impact: none
 for F3 (JS only). For F4: none on the golden rows (ρ = 1, and T_cut = ∞ either
@@ -586,7 +632,7 @@ Existing gates:
 |---|---|---|---|
 | W11 | live | 7d3 Auto ±2 % (value) | structural: after the fix, a source check that `rate_now` has no branch on `bulkness` |
 | V5/V6 (F3) | live | :181 and :233 pin the two sides, not continuity | a 2 % grid over the whole dial (δ = 0.005·1.02^k up to 50) at ε ∈ {2.5, 5, 10} % and ρ ∈ {1, 0.9999, 0.95}: every pair of neighbours has \|Δbudget\| ≤ 0.05·ε̂ (today ε̂, so it fails). Also \|budget(1) − budget(1 − 1e-9)\| ≤ 1e-6 (today 1.9e-5 at Auto, so it fails). Assert on `spanLaw()` through the stub DOM. A grid, because the step is not at a preset. |
-| W14 (F4) | live | nothing (single-ρ tests only) | **red today, on the shipped law**: `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64), on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02, is non-decreasing in ρ with \|ΔT\| ≤ 1.5·L·ln 1.02 / \|ln ε̂\| per step. That is the slope of a law linear in ln(1−ρ); a ln T bound would wrongly fail near T = 0. `find_t_cut` takes no RTT; its t is in its own slot units, so L is the round length in those units: use L = W = 64, giving a bound of 0.63 per step. Today the jump 0.01 → 640 fails it. **On the proposal**: the sim's give-up is \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ at the former ρ* = 0.983332 (.05/.5/50); today 2 → 0 within 1e-6, so it fails. Also report the three gauges of the proposal (the two clamps, and the R side of the min). |
+| W14 (F4) | live | nothing (single-ρ tests only); the "on the proposal" clause below means either option | **red today, on the shipped law**: `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64), on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02, is non-decreasing in ρ with \|ΔT\| ≤ 1.5·L·ln 1.02 / \|ln ε̂\| per step. That is the slope of a law linear in ln(1−ρ); a ln T bound would wrongly fail near T = 0. `find_t_cut` takes no RTT; its t is in its own slot units, so L is the round length in those units: use L = W = 64, giving a bound of 0.63 per step. Today the jump 0.01 → 640 fails it. **On the proposal**: the sim's give-up is \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ at the former ρ* = 0.983332 (.05/.5/50); today 2 → 0 within 1e-6, so it fails. Also report the three gauges of the proposal (the two clamps, and the R side of the min). |
 | W22 (divergence) | live | the engine pins P_fec(0) = 0 and monotonicity (`fec_rate/tests.rs` :262–282); nothing bounds the divergence from the paper's :699 law | on a grid r = ε/(1−ε)·(1 ± k·0.001), k ≤ 50, at ε ∈ {.025, .05, .10}, W ∈ {5, 20, 64, 200}, σ² ∈ {1, 2.6, 3.76}: \|ΔP_fec\| ≤ 0.01 between neighbours. Today the jump of ½ fails. Until the owner rules, the CLAUDE.md bounding test is: \|P_fec,code − P_fec,paper\| = P_fec,paper for r < ε/(1−ε), 0 above the floor, and ≤ ½ at the floor. That makes the divergence a pinned, bounded fact. Keep the engine's r = 0 and monotonicity pins. |
 | W17 | dead | nothing | `get_completion_exposure` at δ 0.5 and 0.5·(1 ± 0.02) over a full run: \|Δmax χ\| ≤ 0.05. Red today (0 vs 0.99865). |
 | W2/W5/W6/W9 (F1) | dead | nothing (the gates run only the continuum arm) | until the machine is removed: for h ∈ {auto, bulk, realtime} × the six golden cells, every public accessor equals continuum@δ(h). Red today: "bulk" `get_r_star_auto` and `get_derived_w`. |
