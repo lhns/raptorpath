@@ -264,9 +264,9 @@ with tempfile.TemporaryDirectory() as td:
 check("plan 46 smoke prints the qcwnd-below-BDP witness of each check row", rc_ == 0 and buf.getvalue().count("qcwnd_below_bdp=leg0") == 2, buf.getvalue()[:300])
 
 # ── the shell side: every plan still accepted, plan 41c, the combined plan 47 ──
-PLANS = ["24", "27", "29", "34", "36", "38", "40", "41", "41b", "41c", "41d", "43", "43b", "46", "48", "52"]       # 48: status 48b, tested in test_bbr48_parse.py; 52: test_tail52.py
+PLANS = ["24", "27", "29", "34", "36", "38", "40", "41", "41b", "41c", "41d", "43", "43b", "46", "48", "52", "53"]       # 48: status 48b, tested in test_bbr48_parse.py; 52: test_tail52.py; 53: test_snap53.py
 m_b = re.search(r'case "\$PLAN" in ([^)]*)\) ;;', bat)
-check("battery: every plan is accepted (24/27/29/34/36/38/40/41/41b/41c/43/43b/46/48/52)", m_b is not None and sorted(m_b.group(1).split("|")) == sorted(PLANS), m_b and m_b.group(1))
+check("battery: every plan is accepted (24/27/29/34/36/38/40/41/41b/41c/43/43b/46/48/52/53)", m_b is not None and sorted(m_b.group(1).split("|")) == sorted(PLANS), m_b and m_b.group(1))
 check("run_all: every plan is selectable (the plan case lists 24..46, 47 and 48)", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in PLANS + ["47"]))
 check("battery: plan 41c = 96-row table, smoke 2, the candidate must lack RWM_PLACE_WIRE (PCAND), CAND arm allowed for 41c and 46, parsed by place38_parse",
       '-eq 96' in bat and "ABORT-PLAN41C" in bat and 'PCAND=0; { [ "$PLAN" = "46" ] || [ "$PLAN" = "41c" ]; } && PCAND=1' in bat and 'elif [ "$PCAND" = 1 ]; then' in bat

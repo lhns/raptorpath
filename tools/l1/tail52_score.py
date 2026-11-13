@@ -51,7 +51,13 @@ _CPU = re.compile(r"CPUSRV=([0-9.]+)s CPUCLI=([0-9.]+)s")
 _HOLD_PATH = re.compile(r"site=sender path=(\d+)")
 _CXLEG = re.compile(r" cx_leg=(\S+)")
 _DUP = re.compile(r"\bdup=(\d+)")
-HOLD_FIELDS = ("age_p50_us", "age_p90_us", "cx_p50_us", "cx_p90_us", "cx_n", "hn_n", "fed")
+_DUP_LEG = re.compile(r"\bp(\d+):[^\]]*?\bdup=(\d+)")
+# Plan 53 additions: the sender's fire counters on the [DIAG] `mpr[...]` block (`fired = y + r`; `fast` = the packet-threshold fires, the same flag that feeds
+# [SNAPV] pt_st; `y` counts the fires whose live flight was younger than the time threshold, so y == fast unless a fire came through some other door). A binary
+# older than the `y= r= fast=` fields reads None for all three.
+_MPR_FIRES = re.compile(r"mpr\[rep=\d+ seqs=\d+ fired=(\d+)(?: y=(\d+) r=(\d+) fast=(\d+))?")
+_RIPE = re.compile(r" ripe_frac=([0-9.]+)")
+HOLD_FIELDS = ("age_p50_us", "age_p90_us", "cx_p50_us", "cx_p90_us", "cx_n", "hn_n", "fed", "hy_n", "hy_p50_us")
 
 
 def _i(pat, ln):
@@ -76,7 +82,9 @@ def diag_ticks(cli):
         cum = _CUM.search(ln)
         fp = _FPON.search(ln)
         g = [int(x) if x else 0 for x in fp.groups()] if fp else None
-        out.append((t, {"src": _i(_SRC, ln), "win": _i(_WIN, ln), "retx": _i(_RETX, ln), "rep": _i(_REP, ln), "seqs": _i(_SEQS, ln),
+        mf = _MPR_FIRES.search(ln)
+        fires = [int(x) if x is not None else None for x in mf.groups()] if mf else [None] * 4
+        out.append((t, {"fired": fires[0], "y": fires[1], "r": fires[2], "fast": fires[3], "src": _i(_SRC, ln), "win": _i(_WIN, ln), "retx": _i(_RETX, ln), "rep": _i(_REP, ln), "seqs": _i(_SEQS, ln),
                         "rtt": _f(_RTT, ln), "cum": tuple(int(x) for x in cum.groups()) if cum else None, "fpon": g}))
     return out
 
@@ -109,6 +117,8 @@ def hold_by_path(cli):
         for k in HOLD_FIELDS:
             mm = re.search(r" " + k + r"=(\d+)", ln)
             d[k] = int(mm.group(1)) if mm else None
+        mr = _RIPE.search(ln)
+        d["ripe_frac"] = float(mr.group(1)) if mr else None
         mx = _CXLEG.search(ln)
         d["cx_leg"] = parse_cx_leg(mx.group(1) if mx else None)
         out[int(m.group(1))] = d
@@ -179,6 +189,7 @@ def row_metrics(cli, srv, drv, nbytes=None):
     m["hold"] = hold_by_path(cli)
     dups = [ln for ln in srv or [] if ln.startswith("[C8CONV-R]")]
     m["rx_dup"] = sum(int(x) for x in _DUP.findall(dups[-1])) if dups else None
+    m["rx_dup_legs"] = {g: int(v) for g, v in _DUP_LEG.findall(dups[-1])} if dups else None     # {arrival leg: duplicates}
     cpu = [mm for mm in (_CPU.search(ln) for ln in drv or []) if mm]
     if cpu:
         m["cpu_srv_s_per_gb"] = float(cpu[-1].group(1)) / (nbytes / GB)

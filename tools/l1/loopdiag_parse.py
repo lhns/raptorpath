@@ -1595,6 +1595,16 @@ def main(argv):
         import tail52_score
         tail52_score.score(argv[2:])
         return 0
+    if cmd == "smoke53":
+        import snap53_score
+        return snap53_score.smoke(argv[2])
+    if cmd == "check53":
+        import place38_parse
+        return place38_parse.check53(argv[2])
+    if cmd == "score53":
+        import snap53_score
+        snap53_score.score(argv[2:])
+        return 0
     if cmd == "smoke46":
         import place46_parse
         return place46_parse.smoke(argv[2])

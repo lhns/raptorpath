@@ -131,6 +131,38 @@ def gates52(lines):
     return out
 
 
+# ── plan 53 (snap53_score.row_metrics): plan 52's fields plus the fire counters (y / r / fast), [HOLD] hy / ripe_frac, [FCAUSE], [SNAPV], the server's final [SUCC] ──
+def extras53(k, n_src=16):
+    """extras52 with the `y= r= fast=` block of the engine's mpr[..] (fired = y + r; y == fast, as on the s52 rows)."""
+    return extras52(k, n_src).replace(f"fired={100 * k} supp=", f"fired={100 * k} y={30 * k} r={70 * k} fast={30 * k} supp=")
+
+
+HOLD53 = ("[HOLD] site=sender path={p} gen=0 samp_n=1000 fed=99 hn_n=10 hy_n=3 hy_p50_us=5120 cx_n=7 cx_p50_us=229376 cx_p90_us=589824 age_n=50 age_ripe=2 ripe_frac=0.0400 "
+          "age_p50_us=3670016 age_p90_us=4718592 cx_leg=0:3,1:4 fa_class=0.0625")
+FCAUSE53 = "[FCAUSE] gen=0 n=2000 timer=3 gap_data=1980 gap_refresh=17 other=0 timer_frac=0.0015 gap_frac=0.9900 fired=2000 unattr=0 fa_class=0.0625"
+SUCC53 = "[SUCC] gen=0 det=190 res=190 orig_n=100 rep_n=5 final=1"       # the receiver's final line: det 190 against the two paths' fed 99 + 99 -> fed - det = 8 <= cx = 14
+BAD53 = {"nosnapv", "snapfire", "nofinal"}          # test_snap53 / test_stubrun red cases: STUB_BAD53 names the defect the stub injects
+
+
+def snapv53():
+    """The sender's [SNAPV] line as the engine prints it (snapv_line_format_is_pinned). Arm on (RWM_RECOV_SNAPVER=1): no stale judgement, as the arm guarantees."""
+    on = os.environ.get("RWM_RECOV_SNAPVER") == "1"
+    pt, tt = (0, 0) if on else (4, 1)
+    if os.environ.get("STUB_BAD53") == "snapfire":
+        pt = 3
+    return (f"[SNAPV] site=sender p0:rep=900 stale=0 pt_st=0 tt_st=0 p1:rep=120 stale=100 pt_st={pt} tt_st={tt} p-:rep=7 stale=0 pt_st=0 tt_st=0 fa_class=0.0625")
+
+
+def gates53(lines):
+    """The engine's [GATES] tail for plan 53: gates52's WDIV tokens plus RWM_RECOV_SNAPVER=<0|1> (always echoed), from the env the engine received."""
+    out = []
+    for ln in gates52(lines):
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_RECOV_SNAPVER=\S+", "", ln) + f" RWM_RECOV_SNAPVER={os.environ.get('RWM_RECOV_SNAPVER') or '0'}"
+        out.append(ln)
+    return out
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -194,6 +226,16 @@ def main(argv):
                 rl[i] = ln + extras52(k)
         cli = gates52(cli) + rl + [HOLD52.format(p=0), HOLD52.format(p=1)]
         srv = gates52(srv) + [RX52]
+    elif plan == "53":
+        rl = run_lines(fam, False, n=20)
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + extras53(k)
+        tail = [HOLD53.format(p=0), HOLD53.format(p=1), FCAUSE53] + ([] if os.environ.get("STUB_BAD53") == "nosnapv" else [snapv53()])
+        cli = gates53(cli) + rl + tail
+        srv = gates53([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]"))]) + [RX52] + ([] if os.environ.get("STUB_BAD53") == "nofinal" else [SUCC53])
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
     sys.stdout.write("\n".join(drv) + "\n")            # the driver's stdout: the battery redirects it to /tmp/ld-drv.out
