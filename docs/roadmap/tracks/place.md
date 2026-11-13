@@ -9,6 +9,7 @@ Scope: multipath placement: placement price, idle-leg lock-out, diversity weight
 <!-- BEGIN GENERATED: track-place -->
 ```mermaid
 flowchart TB
+    place_early_window_sched["↷ Loss-ranked<br/>multipath window<br/>scheduling"]
     place_marginal_cost[/"✔ Marginal-cost<br/>placement law (RWM B)"/]
     place_frozen_echo["↷ Frozen app-echo srtt<br/>price"]
     place_daps["↷ DAPS and rate<br/>estimator (4 arms)"]
@@ -22,6 +23,9 @@ flowchart TB
     place_path_event["✔ Path event after<br/>promotion (#167;46)"]
     place_per_leg_state["⏳ One per-leg state<br/>design"]
     place_per_leg_impl["⛔ Per-leg state<br/>implementation"]
+    place_early_window_sched ~~~ place_marginal_cost
+    place_early_window_sched ~~~ place_frozen_echo
+    place_early_window_sched ~~~ place_daps
     place_marginal_cost ~~~ place_submax_anchor
     place_frozen_echo ~~~ place_slack
     place_daps ~~~ place_wdiv
@@ -36,6 +40,7 @@ flowchart TB
     place_wire_price ~~~ place_per_leg_state
     place_path_event ~~~ place_per_leg_impl
     place_per_leg_state ~~~ place_per_leg_impl
+    place_early_window_sched -.-> place_marginal_cost
     place_frozen_echo -.-> place_wire_price
     place_stage2_battery --> place_hol
     place_stage2_battery --> place_t_derived
@@ -55,8 +60,8 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
+    class place_early_window_sched,place_frozen_echo,place_daps,place_submax_anchor,place_slack,place_hol,place_t_derived dead
     class place_marginal_cost,place_stage2_battery,place_wire_price succ
-    class place_frozen_echo,place_daps,place_submax_anchor,place_slack,place_hol,place_t_derived dead
     class place_wdiv,place_per_leg_state waiting
     class place_path_event unrated
     class place_per_leg_impl blocked
@@ -69,7 +74,7 @@ flowchart TB
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
 | `place-marginal-cost` | Marginal-cost placement law (RWM B) | done | successful |  | branch RWM Phase B | rec-reliable-window |
-| `place-daps` | DAPS and rate estimator (4 arms) | abandoned | superseded | −30 % | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) |  |
+| `place-daps` | DAPS and rate estimator (4 arms) | abandoned | superseded | −30 % | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |  |
 | `place-slack` | Place-slack | abandoned | dead-end | 6 % | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |  |
 | `place-stage2-battery` | Placement battery (Track A) | done | successful | 6 % of delivered latency | status §2 row "Placement battery (Track A)" | meas-wire-v8 |
 | `place-hol` | Placement frontier term (PLACE_HOL) | abandoned | dead-end | 6 % | tag archive/RWM_PLACE_HOL | place-stage2-battery |
@@ -82,13 +87,14 @@ flowchart TB
 | `place-path-event` | Path event after promotion (§46) | done | unrated |  | status §46 | place-wire-price |
 | `place-user-perleg-questions` | Owner calls on per-leg design | next | n/a |  | plan user decision 9 | place-per-leg-state |
 | `place-per-leg-impl` | Per-leg state implementation | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-state, place-user-perleg-questions |
+| `place-early-window-sched` | Loss-ranked multipath window scheduling | abandoned | superseded |  | ADR-0026 |  |
 
 ### Details per node
 
 | id | title | notes | evidence |
 |---|---|---|---|
 | `place-marginal-cost` | Marginal-cost placement law (RWM B) | Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06). | branch RWM Phase B |
-| `place-daps` | DAPS and rate estimator (4 arms) | 2026-07-12 arc, deleted 2026-07-27. Arms (4): DAPS queue management; DAPS read-ahead depth bound; pace-all at BtlBw_i (RWM_PACE_ALL); per-path rate-sample estimator (RWM_RATE_SAMPLE, RWM_PER_PATH_EST). The sub-max quantile anchor is now its own node (place-submax-anchor). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) |
+| `place-daps` | DAPS and rate estimator (4 arms) | 2026-07-12 arc, deleted 2026-07-27. Arms (4): DAPS queue management; DAPS read-ahead depth bound; pace-all at BtlBw_i (RWM_PACE_ALL); per-path rate-sample estimator (RWM_RATE_SAMPLE, RWM_PER_PATH_EST). The sub-max quantile anchor is now its own node (place-submax-anchor). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |
 | `place-slack` | Place-slack | G179 (feat/c8-conversion, 2026-08-06) is matched to this row by date and subject (slow-path conversion); uncertain. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |
 | `place-stage2-battery` | Placement battery (Track A) | Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed. | status §2 row "Placement battery (Track A)" |
 | `place-hol` | Placement frontier term (PLACE_HOL) | Archived 2026-11-12 (simplify batch 3) on the owner's housekeeping call. The archive tag's quote names another commit; the verdict is the paper row. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_HOL archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_HOL |
@@ -101,4 +107,5 @@ flowchart TB
 | `place-path-event` | Path event after promotion (§46) | Own verdict: NO-DIFFERENCE against the registered prediction CAND-RECOVERS-FASTER (result in the §41c file, session 3). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §46 |
 | `place-user-perleg-questions` | Owner calls on per-leg design | Done when: the owner answers the per-leg design questions (queue_target_mult for a kept Copa arm, the L sampler switch, S's horizon, revival reseed, the leak backstop). | plan user decision 9 |
 | `place-per-leg-impl` | Per-leg state implementation | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. | plan W3.2, W3.6a |
+| `place-early-window-sched` | Loss-ranked multipath window scheduling | ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it. | ADR-0026 |
 <!-- END GENERATED: table-place -->

@@ -65,9 +65,9 @@ flowchart TB
     subgraph bd_4["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         rec_snapver_law[/"rec · ⏳ Snapshot-order<br/>filter as law"/]
+        rec_s54_session["rec · ▶ #167;54: filter<br/>guard, store budget"]
     end
     subgraph bd_5["Later (blocked or parked)"]
-        rec_s54_session["rec · ⛔ #167;54: filter<br/>guard, store budget"]
         rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
         meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
         cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion (new ADR)"]
@@ -154,7 +154,8 @@ flowchart TB
     class store_defect_cap_constant,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class meas_guard_v2_impl,model_law_ledger unrated
-    class rec_s54_session,rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
+    class rec_s54_session inprog
+    class rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
     class cc_hybrid parked
 ```
 <!-- END GENERATED: overview -->
@@ -179,7 +180,7 @@ flowchart TB
 | Singles hole suppression (RECOV_SP) | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
 | Lever B c1d duplicate cost | ⚠ open defect | Open problem: the end-of-transfer fix adds about thirteen percent more duplicate packets on the fast two-path test, and the loss-report fix does not remove them. |
 | Main's duplicates mostly unexplained | ⚠ open defect | Open problem: even the current main version receives a thousand or more duplicate packets per run, and most of them are unexplained. |
-| §54: filter guard, store budget | ⛔ blocked | Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue. |
+| §54: filter guard, store budget | ▶ in progress | Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue. |
 | Retransmit leg choice with filter | ⛔ blocked | Checking, with the loss-report fix in place, whether retransmissions should be spread across paths like normal data. |
 | Lever-B guard v2, then merge | ⛔ blocked | Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait. |
 | Recovery timeouts after store law | ⛔ blocked | Re-deriving the retransmit timers from the new in-flight limit, so they stop sitting at a fixed hand-set ceiling. |
@@ -248,7 +249,6 @@ flowchart TB
 | Guard v2 implementation | ✔ done · unrated | Building the new merge check, which drops a misleading delay reading and adds a proper measure of how long data waits before delivery. |
 | §51 harness and scorer | ⛔ blocked | Building the scripts that run and score the off-Bulk test, after the next session's scripts merge, because they edit the same files. |
 | Partial-reliability measurement block | ⛔ blocked | A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own. |
-| Adversarial cells: build and validate | ○ next | Building harder network test conditions: variable delay, very small router buffers and a rate limiter, and checking each behaves as intended. |
 | Harness robustness for every plan | ○ next | Making sure every test plan can be rehearsed end to end without the real network, so a long test session does not die on a script bug. |
 | Guard CPU and lag resolution | ○ next | Making the merge check sensitive to smaller CPU and delay changes, which it currently cannot see. |
 | Test hygiene fixes | ○ next | Fixing tests that pass for the wrong reason or depend on which machine they run on. |
@@ -297,7 +297,6 @@ flowchart TB
 **no-cargo**
 
 - `infra-derivation-merges`: Derivation branch merges
-- `meas-adversarial-cells-build`: Adversarial cells: build and validate
 - `meas-harness-robustness`: Harness robustness for every plan
 - `rec-retx-behind-source`: Retransmits queued behind source?
 - `model-fix-paper-p2`: Paper text for placement and bbr_rs
@@ -307,7 +306,9 @@ flowchart TB
 ## Running
 
 <!-- BEGIN GENERATED: running -->
-_None._
+**vm**
+
+- `rec-s54-session`: §54: filter guard, store budget
 <!-- END GENERATED: running -->
 
 ## Built, waiting
@@ -414,14 +415,14 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 <!-- BEGIN GENERATED: tracks -->
 Each track has its own page with its tree, node table and per-node details.
 
-- [cod - coding core](roadmap/tracks/cod.md): 17 nodes (6 done, 1 next, 1 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 33 nodes (11 done, 7 in progress, 2 next, 6 blocked, 1 parked, 6 abandoned)
+- [cod - coding core](roadmap/tracks/cod.md): 18 nodes (7 done, 1 next, 1 parked, 9 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 34 nodes (12 done, 8 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 20 nodes (9 done, 1 in progress, 1 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 26 nodes (8 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
-- [place - placement](roadmap/tracks/place.md): 14 nodes (4 done, 2 in progress, 1 next, 1 blocked, 6 abandoned)
-- [cc - congestion control](roadmap/tracks/cc.md): 23 nodes (8 done, 5 in progress, 1 next, 5 blocked, 2 parked, 2 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 22 nodes (13 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 37 nodes (21 done, 4 in progress, 5 next, 6 blocked, 1 abandoned)
+- [place - placement](roadmap/tracks/place.md): 15 nodes (4 done, 2 in progress, 1 next, 1 blocked, 7 abandoned)
+- [cc - congestion control](roadmap/tracks/cc.md): 24 nodes (8 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 23 nodes (14 done, 1 in progress, 1 next, 7 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 54 nodes (39 done, 4 in progress, 4 next, 6 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 19 nodes (7 done, 7 in progress, 2 next, 3 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 1 next, 1 blocked)

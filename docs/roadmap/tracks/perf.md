@@ -11,6 +11,7 @@ Scope: threading and per-packet cost: threading redesign, I/O owner, receiver co
 flowchart TB
     perf_parallelisation["✖ Engine or receiver<br/>parallelisation"]
     perf_emit_batch_v1["↷ Emission batching,<br/>first attempt"]
+    perf_receiver_msg_wall["✔ Receiver per-message<br/>wall"]
     perf_ack_merge["✔ One control datagram<br/>per message"]
     perf_rcvbuf["✔ Receive-buffer fix<br/>F-A (#167;7)"]
     perf_emit_batch_law0["✔ Emission batching,<br/>Law 0 (#167;8)"]
@@ -31,10 +32,10 @@ flowchart TB
     perf_bbrrs_ns_cost["✔ bbr_rs per-packet<br/>cost bench"]
     perf_bbrrs_ring_fix["⏳ bbr_rs send-record<br/>ring fix"]
     perf_fix_burst_bound[/"○ Emission burst bound<br/>derivation"/]
-    perf_parallelisation ~~~ perf_rcvbuf
+    perf_parallelisation ~~~ perf_ack_merge
     perf_emit_batch_v1 ~~~ perf_rcvbuf
-    perf_ack_merge ~~~ perf_rcvbuf
-    perf_rcvbuf ~~~ perf_emit_batch_law0
+    perf_receiver_msg_wall ~~~ perf_rcvbuf
+    perf_ack_merge ~~~ perf_emit_batch_law0
     perf_rcvbuf ~~~ perf_quic_feeder
     perf_rcvbuf ~~~ perf_threading_p0
     perf_emit_batch_law0 ~~~ perf_threading_p1
@@ -84,6 +85,7 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class perf_parallelisation,perf_emit_batch_v1,perf_quic_feeder,perf_threading_p2a,perf_q3_investigation,perf_receiver_r1,perf_threading_r3 dead
+    class perf_receiver_msg_wall mixed
     class perf_ack_merge,perf_emit_batch_law0,perf_io_owner,perf_incremental_sack,perf_decoder_prune vsucc
     class perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_sched_split,perf_receiver_r2,perf_c8_lag,perf_receiver_followups succ
     class perf_bbrrs_ns_cost unrated
@@ -97,7 +99,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-perf -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `perf-parallelisation` | Engine or receiver parallelisation | abandoned | dead-end | 136–188 Mbit/s | paper §10 row Engine or receiver parallelisation |  |
+| `perf-parallelisation` | Engine or receiver parallelisation | abandoned | dead-end | 136–188 Mbit/s | paper §10 row Engine or receiver parallelisation; ADR-0057 |  |
 | `perf-emit-batch-v1` | Emission batching, first attempt | abandoned | superseded | +10–16 % | paper §10 row Emission batching as default (`RWM_EMIT_BATCH`), first attempt |  |
 | `perf-ack-merge` | One control datagram per message | done | very-successful | +12.7% | commit bdab7deb |  |
 | `perf-rcvbuf` | Receive-buffer fix F-A (§7) | done | successful |  | status §7 | meas-v4-verification |
@@ -119,12 +121,13 @@ flowchart TB
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | done | unrated |  | branch nsbench48; branch nsbench48-2 | cc-bbrrs-r1 |
 | `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | in-progress | unrated |  | plan W3.6e; branch bbrrs-r4 (fa9947dd) | perf-bbrrs-ns-cost |
 | `perf-fix-burst-bound` | Emission burst bound derivation | next | unrated |  | law ledger rows F03 | model-law-ledger |
+| `perf-receiver-msg-wall` | Receiver per-message wall | done | mixed |  | commit dc4fb783; commit 774e28a3; paper §16.35 |  |
 
 ### Details per node
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `perf-parallelisation` | Engine or receiver parallelisation | Refuted, never built (the third threading refutation, 2026-07-21). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Engine or receiver parallelisation |
+| `perf-parallelisation` | Engine or receiver parallelisation | Refuted, never built (the third threading refutation, 2026-07-21). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Engine or receiver parallelisation; ADR-0057 |
 | `perf-emit-batch-v1` | Emission batching, first attempt | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Emission batching as default (`RWM_EMIT_BATCH`), first attempt |
 | `perf-ack-merge` | One control datagram per message | First battery NO FLIP (2026-08-07); re-registered and flipped 2026-08-08. | commit bdab7deb |
 | `perf-rcvbuf` | Receive-buffer fix F-A (§7) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §7 |
@@ -146,4 +149,5 @@ flowchart TB
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | nsbench48 folded into its rebased successor nsbench48-2 (unmerged). Result recorded in status §48b (nm.txt fee4f580, 78156b46): bbr_rs +417 ns/packet net over quinn BBR (x4.9), +339 ns at 200 in flight, a fixed per-packet cost. | branch nsbench48; branch nsbench48-2 |
 | `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | Built on branch bbrrs-r4 (fa9947dd): the send-record map is a fixed-bound ring; the ns gate (db2cb4f4) went red at baseline (7.72x) and green after the fix (net ratio 7.7x -> 1.3-1.7x). Kept in-progress, not done, because it merges with the round-2 session. Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench. | plan W3.6e; branch bbrrs-r4 (fa9947dd) |
 | `perf-fix-burst-bound` | Emission burst bound derivation | Law ledger: F03. Done when: the 64-symbol burst bound is derived as a CPU/latency quantum in the paper, or swept and recorded as a declared constant with its bind fraction. | law ledger rows F03 |
+| `perf-receiver-msg-wall` | Receiver per-message wall | Large gain at c1 but NO FLIP on c7 clause: mixed. Folded: pre-registration, STEP0/1 profile. | commit dc4fb783; commit 774e28a3; paper §16.35 |
 <!-- END GENERATED: table-perf -->

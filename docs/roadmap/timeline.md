@@ -28,6 +28,7 @@ gantt
     One window pipeline (ADR-0069) :cod_one_pipeline, 2026-08-10, 2026-10-04
     Compact v5 DATA framing :cod_wire_compact, 2026-08-06, 2026-08-06
     Decoder re-delivery stall fix (§31) :cod_debug_stall, 2026-10-28, 2026-10-28
+    Overhead reduction (packing, repair ali… :cod_overhead_reduction, 2026-03-18, 2026-03-20
     section rec - recovery
     Early ACK, NACK and repair :rec_early_arq, 2026-03-12, 2026-03-20
     P_lost(t) mix and SACK WindowAck :rec_plost_sack, 2026-03-21, 2026-04-07
@@ -53,7 +54,9 @@ gantt
     Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
     Lever B c1d duplicate cost :active, rec_leverb_c1d_cost, 2026-11-13, 2026-11-13
     Main's duplicates mostly unexplained :active, rec_defect_base_duplicates, 2026-11-13, 2026-11-13
+    §54 - filter guard, store budget :active, rec_s54_session, 2026-11-13, 2026-11-13
     Recovery-clock derivation (wire clock) :rec_wire_clock_derivation, 2026-11-13, 2026-11-13
+    Congestion-aware NACK throttle (first f… :rec_nack_congestion, 2026-03-20, 2026-03-20
     section rate - rate law
     Gilbert-Elliott loss model (ADR-0023) :rate_ge_hmm, 2026-03-14, 2026-07-07
     BOCD FEC rate control (ADR-0050) :rate_fec_rate_v1, 2026-03-18, 2026-03-21
@@ -103,6 +106,7 @@ gantt
     One per-leg state design :active, place_per_leg_state, 2026-11-12, 2026-11-13
     Sub-max quantile rate anchor :crit, place_submax_anchor, 2026-07-12, 2026-07-27
     Path event after promotion (§46) :place_path_event, 2026-11-10, 2026-11-10
+    Loss-ranked multipath window scheduling :crit, place_early_window_sched, 2026-03-14, 2026-07-04
     section cc - congestion control
     Delay-based CC replaces AIMD :cc_early_delay_cc, 2026-03-13, 2026-03-22
     Production Copa-lite port (P-series) :cc_copa_lite, 2026-07-02, 2026-07-04
@@ -120,6 +124,7 @@ gantt
     Owner call - vendored pacing seam :cc_user_pacing_s3, 2026-11-12, 2026-11-12
     Vendored quinn-proto pacing hook :active, cc_pacing_seam, 2026-11-12, 2026-11-13
     Copa min_rtt reads own queue :active, cc_defect_copa_minrtt, 2026-11-13, 2026-11-13
+    AIMD congestion control (first CC) :crit, cc_aimd_v1, 2026-03-12, 2026-03-13
     section perf - performance
     Engine or receiver parallelisation :crit, perf_parallelisation, 2026-07-08, 2026-07-21
     Emission batching, first attempt :crit, perf_emit_batch_v1, 2026-07-27, 2026-07-27
@@ -142,6 +147,7 @@ gantt
     Receiver follow-ups (§35) :perf_receiver_followups, 2026-11-01, 2026-11-02
     bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
     bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-13
+    Receiver per-message wall :perf_receiver_msg_wall, 2026-08-06, 2026-08-07
     section meas - measurement
     Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
     Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
@@ -169,10 +175,27 @@ gantt
     [DIAG] rtp prints whole milliseconds :active, meas_defect_diag_rtp_ms, 2026-09-27, 2026-11-13
     Guard v2 implementation :meas_guard_v2_impl, 2026-11-13, 2026-11-13
     Off-Bulk benchmark design (§51) :meas_s51_design, 2026-11-13, 2026-11-13
+    QUIC/MPTCP comparison and overhead taxo… :meas_transport_comparison, 2026-03-17, 2026-03-18
+    Matrix benchmark, audit and dashboard :meas_matrix_bench, 2026-03-20, 2026-03-20
+    Ship The Wins battery :meas_ship_the_wins, 2026-08-07, 2026-08-07
+    Unlock The Default battery :meas_unlock_the_default, 2026-08-07, 2026-08-08
+    Latency Lever battery :meas_latency_lever, 2026-08-10, 2026-08-10
+    Alpha-sweep and quantile-native sweep :meas_alpha_sweep, 2026-08-20, 2026-08-21
+    Era battery :meas_era_battery, 2026-08-19, 2026-08-19
+    Mode-hunt battery :meas_mode_hunt, 2026-08-12, 2026-08-12
+    Verdict battery (paper 16.79) :meas_verdict_battery, 2026-08-21, 2026-08-21
+    (q, refresh) sweep :meas_q_refresh_sweep, 2026-08-21, 2026-08-21
+    Successor Arrival :meas_successor_arrival, 2026-08-21, 2026-08-21
+    Gap phases 1 and 2 :meas_gap_phases, 2026-08-19, 2026-08-19
+    Deadwall battery :meas_deadwall_battery, 2026-08-12, 2026-08-12
+    SF latency feedback :meas_sf_latency_feedback, 2026-08-12, 2026-08-12
+    Coupling model :meas_coupling_model, 2026-08-11, 2026-08-12
+    SF accounting axis :meas_sf_accounting_axis, 2026-08-11, 2026-08-11
+    Adversarial cells B1 :meas_adversarial_cells_b1, 2026-08-06, 2026-08-06
     section model - model and paper
     Unified FEC/ARQ model paper :model_paper_v1, 2026-03-21, 2026-04-10
     Mathematical verification of the model :model_math_verification, 2026-04-12, 2026-04-12
-    raptorpath-math and wasm L0 model :model_wasm_l0, 2026-04-08, 2026-07-06
+    raptorpath-math and wasm L0 model :model_wasm_l0, 2026-04-07, 2026-07-06
     Visualizer as one continuum law :model_vis_continuum, 2026-07-28, 2026-07-28
     Engine NO-MODE-SWITCH debts (§3.3) :active, model_mode_switch_debts, 2026-09-27, 2026-11-13
     Open-constants register (§3.4) :active, model_open_constants, 2026-09-27, 2026-11-13
@@ -206,5 +229,5 @@ gantt
     Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-s54-session`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-wasm-calls`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-wasm-calls`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->
