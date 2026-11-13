@@ -107,9 +107,9 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `model-paper-v1` | Unified FEC/ARQ model paper | Direct landings 2026-03-21 to 2026-04-10. Folded: the 2026-04-02 'Resolve #NN' spec commits. | commit fc5867a3 |
-| `model-math-verification` | Mathematical verification of the model | 23 tests, three paper errors found (2026-04-12). | commit 3a8fdfcb |
-| `model-wasm-l0` | raptorpath-math and wasm L0 model | Folds paper §11.1 open question 6 (do the three channel implementations agree). Folded: the April visualizer commits (2026-04-07..10); start moved to 2026-04-07 for the first of them. | branch multipath visualizer |
+| `model-paper-v1` | Unified FEC/ARQ model paper | Direct landings 2026-03-21 to 2026-04-10. Folded: the 2026-04-02 'Resolve #NN' spec commits. Folded the remaining April commits (2026-04-01..12), no separate development. | commit fc5867a3 |
+| `model-math-verification` | Mathematical verification of the model | 23 tests, three paper errors found (2026-04-12). Folded the remaining April commits (2026-04-01..12), no separate development. | commit 3a8fdfcb |
+| `model-wasm-l0` | raptorpath-math and wasm L0 model | Folds paper §11.1 open question 6 (do the three channel implementations agree). Folded: the April visualizer commits (2026-04-07..10); start moved to 2026-04-07 for the first of them. Folded the remaining April commits (2026-04-01..12), no separate development. | branch multipath visualizer |
 | `model-vis-continuum` | Visualizer as one continuum law | 2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434). | commit b0e16638 |
 | `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts (§3.3) | Five hint- or ρ-keyed engine sites; undated in the raw records (status §3 since 2026-09-27). Folds paper §11.1 open question 13. Open: none of the five sites is fixed. | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver |
 | `model-open-constants` | Open-constants register (§3.4) | 21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet. | status §3.4 |

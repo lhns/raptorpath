@@ -28,23 +28,30 @@ Text outside the markers is hand-written and is preserved by the build.
 <!-- BEGIN GENERATED: overview -->
 ```mermaid
 flowchart TB
-    subgraph bd_0["Mar 2026 to Jul 2026"]
+    subgraph bd_0["Mar 2026"]
         cod_block_pipeline["cod · ↷ RaptorQ block<br/>FEC pipeline"]
+        cc_aimd_v1["cc · ↷ AIMD congestion<br/>control (first CC)"]
+        cod_mettle["cod · ✖ METTLE<br/>swappable FEC backend"]
+        cod_legacy_rlc["cod · ↷ Legacy<br/>sliding-<br/>window/generation<br/>decoders"]
+        place_early_window_sched["place · ↷ Loss-ranked<br/>multipath window<br/>scheduling"]
+    end
+    subgraph bd_1["Jul 2026"]
         rec_reliable_window["rec · ✔ Reliable<br/>window (RWM Phase A)"]
+        place_daps["place · ↷ DAPS and<br/>rate estimator (4<br/>arms)"]
         cc_bbr_default["cc · ✔ BBR as<br/>substrate default<br/>(ADR-0054)"]
         cod_unified_span["cod · ✔ Unified span<br/>machine (ADR-0064)"]
         store_honest_cap_family[/"store · ✖ Honest<br/>floor-clock cap family<br/>(6 arms)"/]
         meas_adr52_discipline["meas · ✔ L1<br/>measurement discipline<br/>(ADR-0052)"]
         model_vis_continuum["model · ✔ Visualizer<br/>as one continuum law"]
     end
-    subgraph bd_1["Aug 2026"]
+    subgraph bd_2["Aug 2026"]
         rate_est_cadence["rate · ✔ Batched BOCD<br/>estimator cadence"]
         cod_one_pipeline["cod · ✔ One window<br/>pipeline (ADR-0069)"]
         meas_formula_first["meas · ✔ Formula-first<br/>review (ADR-0070)"]
         store_delta_cap[/"store · ✔ Derived<br/>setpoint 1 + q(δ)"/]
         rec_goal101[/"rec · ✖ Recovery clock<br/>law family (4 arms)"/]
     end
-    subgraph bd_2["Sep 2026 to Oct 2026"]
+    subgraph bd_3["Sep 2026 to Oct 2026"]
         rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
         perf_emit_batch_law0["perf · ✔ Emission<br/>batching, Law 0 (#167;8)"]
         perf_threading_p2a["perf · ✖ Threading P2a<br/>logic actor (#167;12)"]
@@ -53,7 +60,7 @@ flowchart TB
         store_power_law[/"store · ✖ Power-<br/>seeking store law D"/]
         perf_decoder_prune["perf · ✔ Decoder prune<br/>per drain (#167;32)"]
     end
-    subgraph bd_3["Nov 2026"]
+    subgraph bd_4["Nov 2026"]
         cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse (#167;47)"]
         meas_guard_41c["meas · ✔ Rank-minp<br/>merge guard (#167;41c)"]
         cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
@@ -62,12 +69,12 @@ flowchart TB
         meas_guard_v2_impl["meas · ✔ Guard v2<br/>implementation"]
         model_law_ledger["model · ✔ Law ledger"]
     end
-    subgraph bd_4["Now (in progress)"]
+    subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         rec_snapver_law[/"rec · ⏳ Snapshot-order<br/>filter as law"/]
         rec_s54_session["rec · ▶ #167;54: filter<br/>guard, store budget"]
     end
-    subgraph bd_5["Later (blocked or parked)"]
+    subgraph bd_6["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
         meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
         cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion (new ADR)"]
@@ -75,8 +82,14 @@ flowchart TB
         store_fix_maxbw_minrtt[/"store · ⛔ Honest rate<br/>and delay inputs"/]
         store_engine_form_impl[/"store · ⛔ Store-law<br/>engine form"/]
     end
-    cod_block_pipeline ~~~ cc_bbr_default
-    rec_reliable_window ~~~ cod_unified_span
+    cod_block_pipeline ~~~ cod_mettle
+    cc_aimd_v1 ~~~ cod_legacy_rlc
+    cod_mettle ~~~ place_early_window_sched
+    cod_legacy_rlc ~~~ place_early_window_sched
+    place_early_window_sched ~~~ rec_reliable_window
+    place_early_window_sched ~~~ place_daps
+    rec_reliable_window ~~~ cc_bbr_default
+    place_daps ~~~ cod_unified_span
     cc_bbr_default ~~~ store_honest_cap_family
     cod_unified_span ~~~ meas_adr52_discipline
     store_honest_cap_family ~~~ model_vis_continuum
@@ -116,6 +129,7 @@ flowchart TB
     cc_hybrid ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     cod_block_pipeline -.-> cod_one_pipeline
+    cod_legacy_rlc -.-> cod_unified_span
     cc_bbr_default -.-> cc_quinn_bbr_collapse
     cod_unified_span --> model_vis_continuum
     cod_unified_span --> cod_one_pipeline
@@ -133,7 +147,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 41,44,47 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 48,51,54 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -147,7 +161,7 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cod_block_pipeline,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,perf_threading_p2a dead
+    class cod_block_pipeline,cod_mettle,cod_legacy_rlc,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,place_daps,perf_threading_p2a,cc_aimd_v1,place_early_window_sched dead
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
     class rec_snapver_law,cc_bbrrs_r2 waiting
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner,perf_decoder_prune vsucc
@@ -166,7 +180,9 @@ flowchart TB
 | title | status | in plain words |
 |---|---|---|
 | RaptorQ block FEC pipeline | ↷ superseded | The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic. |
+| METTLE swappable FEC backend | ✖ dead end | An experimental lighter error-correcting code that needed more spare data than the standard one, so it was dropped. |
 | Generation cross-path fungible coding | ⏸ parked | An optional feature that codes data across paths in groups has never been switched on by default, and nobody has yet decided whether to keep it. |
+| Legacy sliding-window/generation decoders | ↷ superseded | The older decoders for the sliding-window code, replaced by one decoder that handles every case. |
 | Unified span machine (ADR-0064) | ✔ done · successful | Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes. |
 | One window pipeline (ADR-0069) | ✔ done · successful | Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere. |
 | Owner call: keep generation coding | ○ next | Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default. |
@@ -213,11 +229,13 @@ flowchart TB
 | Store-law engine form | ⛔ blocked | Rebuilding the in-flight data limit on measured link rate and delay, written as a derived formula first. |
 | δ seat on the store | ⛔ blocked | Making the in-flight data limit follow the latency dial smoothly, so lower-latency settings queue less. |
 | Honest rate and delay inputs | ⛔ blocked | An open research problem: nobody has yet found an honest way to measure link speed and minimum delay for the in-flight data limit, after seven failed attempts, so this node may end with a declared fallback instead of a fix. |
+| DAPS and rate estimator (4 arms) | ↷ superseded | A delay-aware way of picking which path carries each packet, which failed when retested. |
 | Derived diversity weight, leg choice | ⏳ waiting | A wiring change that lets retransmissions be spread across paths differently has been built but never fully measured. |
 | Wire-RTT placement price | ✔ done · successful | Fixed a bug where an idle path could stay priced too high and never be used again, by pricing each path on its measured network delay. |
 | One per-leg state design | ⏳ waiting | A design for keeping all of each path's measurements in one place instead of in several slightly different copies. |
 | Owner calls on per-leg design | ○ next | Owner decision on five open design questions for keeping each path's measurements in one place. |
 | Per-leg state implementation | ⛔ blocked | Keeping all of each path's measurements in one place instead of in several slightly different copies. |
+| Loss-ranked multipath window scheduling | ↷ superseded | An early way of picking paths that ranked them by loss rate, later replaced by pricing each path's marginal cost. |
 | BBR as substrate default (ADR-0054) | ✔ done · successful ⚠ | Switched the underlying congestion controller to BBR, which removed a hidden speed ceiling and raised throughput about four times. |
 | Copa-BBR fusion (ADR-0068) | ⏸ parked | A proposed design for a controller that blends the speed of BBR with the low queues of Copa; prerequisite measurements are done but nothing is built. |
 | Quinn BBR window collapse (§47) | ⚠ open defect | Open problem: the default congestion controller can shrink its sending window to almost nothing on fast links because it remembers one unrealistically low delay sample. |
@@ -233,6 +251,7 @@ flowchart TB
 | Copa consumers onto per-leg state | ⛔ blocked | Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule. |
 | bbr_rs promotion (new ADR) | ⛔ blocked | Making our BBR controller the default, recorded as a new architecture decision. |
 | BBR/Copa hybrid build (ADR-0068) | ⏸ parked | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. |
+| AIMD congestion control (first CC) | ↷ superseded | The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one. |
 | Emission batching, Law 0 (§8) | ✔ done · very-successful | Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere. |
 | Threading P2a logic actor (§12) | ✖ dead end | Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted. |
 | Per-path I/O owner (Q1) | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
@@ -418,16 +437,13 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 18 nodes (7 done, 1 next, 1 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 34 nodes (12 done, 8 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 20 nodes (9 done, 1 in progress, 1 next, 5 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 26 nodes (8 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
+- [store - store law](roadmap/tracks/store.md): 28 nodes (10 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
 - [place - placement](roadmap/tracks/place.md): 15 nodes (4 done, 2 in progress, 1 next, 1 blocked, 7 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 24 nodes (8 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 23 nodes (14 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 54 nodes (39 done, 4 in progress, 4 next, 6 blocked, 1 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 22 nodes (13 done, 1 in progress, 1 next, 7 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 39 nodes (24 done, 4 in progress, 4 next, 6 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 19 nodes (7 done, 7 in progress, 2 next, 3 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 1 next, 1 blocked)
 <!-- END GENERATED: tracks -->
 
-## Details per node
-
-_Hand-written section, to be filled in later._

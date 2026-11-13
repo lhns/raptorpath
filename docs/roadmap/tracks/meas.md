@@ -19,24 +19,9 @@ flowchart TB
     meas_gen_inert_era>"✔ Generation-inert<br/>measurement era"]
     meas_regime_map["✔ Hardware-honest<br/>regime map"]
     meas_adr52_discipline["✔ L1 measurement<br/>discipline (ADR-0052)"]
-    meas_adversarial_cells_b1["✔ Adversarial cells B1"]
-    meas_ship_the_wins["✔ Ship The Wins<br/>battery"]
-    meas_unlock_the_default["✔ Unlock The Default<br/>battery"]
-    meas_latency_lever["✔ Latency Lever<br/>battery"]
     meas_pipeline_verification["✔ Pipeline<br/>verification matrix"]
-    meas_coupling_model["✔ Coupling model"]
-    meas_sf_accounting_axis["✔ SF accounting axis"]
     meas_formula_first["✔ Formula-first review<br/>(ADR-0070)"]
-    meas_mode_hunt["✔ Mode-hunt battery"]
-    meas_deadwall_battery["✔ Deadwall battery"]
-    meas_sf_latency_feedback["✔ SF latency feedback"]
     meas_goal_0819["✔ Era, latency-truth<br/>and c9 batteries"]
-    meas_era_battery["✔ Era battery"]
-    meas_gap_phases["✔ Gap phases 1 and 2"]
-    meas_alpha_sweep["✔ Alpha-sweep and<br/>quantile-native sweep"]
-    meas_verdict_battery["✔ Verdict battery<br/>(paper 16.79)"]
-    meas_q_refresh_sweep["✔ (q, refresh) sweep"]
-    meas_successor_arrival["✔ Successor Arrival"]
     meas_attribution_audit["✔ Attribution audit D0"]
     meas_wire_v8["✔ Stage-2 instruments<br/>and owed findings"]
     meas_defect_eta_witness>"⚠ ETA route and σ<br/>witness mismatch"]
@@ -61,36 +46,21 @@ flowchart TB
     meas_competitor_battery["⛔ Competitor battery"]
     meas_progress_baseline["○ Cumulative progress<br/>benchmark"]
     meas_fix_gauges_p3["⛔ Gauges for the<br/>remaining constants"]
+    meas_l0_sim_bench ~~~ meas_transport_comparison
+    meas_l0_sim_bench ~~~ meas_matrix_bench
     meas_l0_sim_bench ~~~ meas_adr51_scenarios
-    meas_transport_comparison ~~~ meas_adr51_scenarios
-    meas_matrix_bench ~~~ meas_adr51_scenarios
-    meas_adr51_scenarios ~~~ meas_l1_harness
-    meas_adr51_scenarios ~~~ meas_l2_multipath
+    meas_transport_comparison ~~~ meas_l1_harness
+    meas_matrix_bench ~~~ meas_l2_multipath
     meas_adr51_scenarios ~~~ meas_c8_aggregation_arc
     meas_l1_harness ~~~ meas_gen_inert_era
     meas_l2_multipath ~~~ meas_regime_map
     meas_c8_aggregation_arc ~~~ meas_adr52_discipline
-    meas_gen_inert_era ~~~ meas_adversarial_cells_b1
-    meas_regime_map ~~~ meas_ship_the_wins
-    meas_adr52_discipline ~~~ meas_unlock_the_default
-    meas_adversarial_cells_b1 ~~~ meas_latency_lever
-    meas_ship_the_wins ~~~ meas_pipeline_verification
-    meas_unlock_the_default ~~~ meas_coupling_model
-    meas_latency_lever ~~~ meas_sf_accounting_axis
-    meas_pipeline_verification ~~~ meas_formula_first
-    meas_coupling_model ~~~ meas_mode_hunt
-    meas_sf_accounting_axis ~~~ meas_deadwall_battery
-    meas_formula_first ~~~ meas_sf_latency_feedback
-    meas_mode_hunt ~~~ meas_goal_0819
-    meas_deadwall_battery ~~~ meas_era_battery
-    meas_sf_latency_feedback ~~~ meas_gap_phases
-    meas_goal_0819 ~~~ meas_alpha_sweep
-    meas_era_battery ~~~ meas_verdict_battery
-    meas_gap_phases ~~~ meas_q_refresh_sweep
-    meas_alpha_sweep ~~~ meas_successor_arrival
-    meas_verdict_battery ~~~ meas_attribution_audit
-    meas_q_refresh_sweep ~~~ meas_wire_v8
-    meas_successor_arrival ~~~ meas_defect_eta_witness
+    meas_gen_inert_era ~~~ meas_pipeline_verification
+    meas_regime_map ~~~ meas_formula_first
+    meas_adr52_discipline ~~~ meas_goal_0819
+    meas_pipeline_verification ~~~ meas_attribution_audit
+    meas_formula_first ~~~ meas_wire_v8
+    meas_goal_0819 ~~~ meas_defect_eta_witness
     meas_attribution_audit ~~~ meas_defect_c8_bimodal
     meas_wire_v8 ~~~ meas_defect_diag_rtp_ms
     meas_defect_eta_witness ~~~ meas_gso_truth
@@ -116,6 +86,8 @@ flowchart TB
     meas_s51b_rho ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
     meas_competitor_battery ~~~ meas_fix_gauges_p3
+    meas_l0_sim_bench --> meas_transport_comparison
+    meas_l0_sim_bench --> meas_matrix_bench
     meas_adr51_scenarios --> meas_l1_harness
     meas_c8_aggregation_arc -.-> meas_regime_map
     meas_defect_rtp_floor --> meas_guard_clause_dry
@@ -139,10 +111,9 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_adversarial_cells_b1,meas_pipeline_verification,meas_goal_0819,meas_era_battery,meas_gap_phases,meas_successor_arrival,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design,meas_adversarial_cells_build unrated
-    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_verdict_battery,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry succ
-    class meas_c8_aggregation_arc,meas_ship_the_wins,meas_unlock_the_default,meas_coupling_model,meas_mode_hunt,meas_deadwall_battery,meas_sf_latency_feedback dead
-    class meas_latency_lever,meas_sf_accounting_axis,meas_alpha_sweep,meas_q_refresh_sweep mixed
+    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_pipeline_verification,meas_goal_0819,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design,meas_adversarial_cells_build unrated
+    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry succ
+    class meas_c8_aggregation_arc dead
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor defect
     class meas_s51_harness,meas_s51_session,meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
     class meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
@@ -191,23 +162,8 @@ flowchart TB
 | `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
 | `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | blocked | unrated |  | law ledger rows S03, S07, R06, K06, K07, C11, F04 | rate-fix-estimators, model-fix-paper-p2, meas-s51-session, store-engine-form-impl |
-| `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | done | unrated |  | ADR-0036; ADR-0038 |  |
-| `meas-matrix-bench` | Matrix benchmark, audit and dashboard | done | unrated |  | ADR-0044; ADR-0045; ADR-0049 |  |
-| `meas-ship-the-wins` | Ship The Wins battery | done | dead-end |  | commit 60f833a7; commit 2eb88de3; commit 8afd4dd7; paper §16.36 |  |
-| `meas-unlock-the-default` | Unlock The Default battery | done | dead-end |  | commit 65e92b3a; commit 4307a6cc; commit bdab7deb |  |
-| `meas-latency-lever` | Latency Lever battery | done | mixed |  | commit f6d95c99; commit ec6a5ec7 |  |
-| `meas-alpha-sweep` | Alpha-sweep and quantile-native sweep | done | mixed |  | commit e0334855; commit 6b3d3c38; commit a04300e3 |  |
-| `meas-era-battery` | Era battery | done | unrated |  | commit f605f925; commit 1d7094ef |  |
-| `meas-mode-hunt` | Mode-hunt battery | done | dead-end |  | commit cfc1793f; commit 2a3d82e8; paper §10 row The dead-wall and mode-hunt batteries |  |
-| `meas-verdict-battery` | Verdict battery (paper 16.79) | done | successful |  | commit f2e71443; commit a26696fb; paper §16.79 |  |
-| `meas-q-refresh-sweep` | (q, refresh) sweep | done | mixed |  | commit a8bcce05; commit 5be078d0; paper §16.78 |  |
-| `meas-successor-arrival` | Successor Arrival | done | unrated |  | commit 821de6ae; commit f497bdc4 |  |
-| `meas-gap-phases` | Gap phases 1 and 2 | done | unrated |  | commit 5bf1a346; commit b4be2489 |  |
-| `meas-deadwall-battery` | Deadwall battery | done | dead-end |  | commit 465c28ef; commit 5fce47cf; paper §10 row The dead-wall and mode-hunt batteries |  |
-| `meas-sf-latency-feedback` | SF latency feedback | done | dead-end |  | commit c0fb1d79; commit 4320fc48 |  |
-| `meas-coupling-model` | Coupling model | done | dead-end |  | commit 7ad65ef1; commit cb422e2d |  |
-| `meas-sf-accounting-axis` | SF accounting axis | done | mixed |  | commit 4f67ba7d; commit 4131d254 |  |
-| `meas-adversarial-cells-b1` | Adversarial cells B1 | done | unrated |  | commit 754139c3; commit 6c8c3d38 |  |
+| `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | done | unrated |  | ADR-0036; ADR-0038 | meas-l0-sim-bench |
+| `meas-matrix-bench` | Matrix benchmark, audit and dashboard | done | unrated |  | ADR-0044; ADR-0045; ADR-0049 | meas-l0-sim-bench |
 
 ### Details per node
 
@@ -222,8 +178,8 @@ flowchart TB
 | `meas-regime-map` | Hardware-honest regime map | Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read). | commit acefc473 |
 | `meas-adr52-discipline` | L1 measurement discipline (ADR-0052) | Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
 | `meas-formula-first` | Formula-first review (ADR-0070) | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
-| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". Folds the 2026-08-12 paper refresh. | branch PIPELINE VERIFICATION MATRIX |
-| `meas-goal-0819` | Era, latency-truth and c9 batteries | The 2026-08-19 goal (owner: "fix the ping probe in there. we cannot mislead ourselves"): latency truth, era ledger, c9 quad cell, gap battery, cpuprof, span run, σ at c8, Eppen at c8. | branch THE ERA LEDGER, SCORED |
+| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". Folds the 2026-08-12 paper refresh. Folded the Coupling model commits (2026-08 audit; mapped outcome there: dead-end). Folded the SF accounting axis commits (2026-08 audit; mapped outcome there: mixed). | branch PIPELINE VERIFICATION MATRIX |
+| `meas-goal-0819` | Era, latency-truth and c9 batteries | The 2026-08-19 goal (owner: "fix the ping probe in there. we cannot mislead ourselves"): latency truth, era ledger, c9 quad cell, gap battery, cpuprof, span run, σ at c8, Eppen at c8. Folded the Era battery commits (2026-08 audit; mapped outcome there: unrated). Folded the Gap phases 1 and 2 commits (2026-08 audit; mapped outcome there: unrated). | branch THE ERA LEDGER, SCORED |
 | `meas-attribution-audit` | Attribution audit D0 | §2 row is undated; dates from the 2026-09-07 merges. | status §2 row "Attribution audit (D0)" |
 | `meas-wire-v8` | Stage-2 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. | status §2 row "Crown no-regression spot (wire v8 merges)" |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: "continue your measurements but they cannot take over 5 hours". | commit 3eb28db6 |
@@ -252,19 +208,4 @@ flowchart TB
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | Law ledger: S03, S07, R06, K06, K07, C11, F04. Done when: each listed constant has a gauge or a derivation: the trailing offset, the taper-cache staleness, the burst-tail provisioning bind, the placement temperature, the diversity weight, the repair-debt reduction, and the store-cap control arm (deleted once the store-law fix lands). | law ledger rows S03, S07, R06, K06, K07, C11, F04 |
 | `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | ADR-0036 (Accepted) benchmark; ADR-0038 (Accepted) overhead taxonomy: five layers behind the 38-50% overhead. | ADR-0036; ADR-0038 |
 | `meas-matrix-bench` | Matrix benchmark, audit and dashboard | ADR-0044 methodology audit (LinkModel, CorrelatedFading); ADR-0045 matrix of 189 cells x 30 trials; ADR-0049 single-file HTML dashboard. Outcome unrated: no later node clearly replaced it. | ADR-0044; ADR-0045; ADR-0049 |
-| `meas-ship-the-wins` | Ship The Wins battery | Outcome from the RESULTS subjects: Ship The Wins 1 NO FLIP (c7 clause fails 0.968/0.959), 1b NO FLIP (c7 gets worse), 2 STRUCTURAL BOUND. Mapped to dead-end (no flip). | commit 60f833a7; commit 2eb88de3; commit 8afd4dd7; paper §16.36 |
-| `meas-unlock-the-default` | Unlock The Default battery | Part 2 (derived patience): premises refuted pre-battery, NO FLIP, mapped to dead-end. Part 1 (ack-merge) shipped default ON (bdab7deb, +12.7%/+13.0% at c1) as its own ack-merge-flip battery. | commit 65e92b3a; commit 4307a6cc; commit bdab7deb |
-| `meas-latency-lever` | Latency Lever battery | Pre-registration ec6a5ec7; scored by lat_report.py (fc860371). Mapped to mixed: works, no default. | commit f6d95c99; commit ec6a5ec7 |
-| `meas-alpha-sweep` | Alpha-sweep and quantile-native sweep | Alpha-sweep NO VERDICT / UNSEPARATED (mixed); the Quantile-Native re-run (6b3d3c38) separated the arms and refuted the measurand (F2 at 5 of 5; paper section 10 row RWM_W_FORM removed). One node, mapped to mixed per the NO VERDICT rule. | commit e0334855; commit 6b3d3c38; commit a04300e3 |
-| `meas-era-battery` | Era battery | RESULTS subject carries no verdict keyword: unrated. Follow-up Latency Truth (e57f3655) withdrew the battery's delivered-latency reading. | commit f605f925; commit 1d7094ef |
-| `meas-mode-hunt` | Mode-hunt battery | STOP RULE: dead-end. | commit cfc1793f; commit 2a3d82e8; paper §10 row The dead-wall and mode-hunt batteries |
-| `meas-verdict-battery` | Verdict battery (paper 16.79) | SURVIVES / DECIDED: successful. Formula decided in the paper first (a26696fb). | commit f2e71443; commit a26696fb; paper §16.79 |
-| `meas-q-refresh-sweep` | (q, refresh) sweep | FLAT: mixed. Paper 16.78 defines the censoring constant and the (q, refresh) surface; paper row RWM_REFRESH_FLOOR_US removed. | commit a8bcce05; commit 5be078d0; paper §16.78 |
-| `meas-successor-arrival` | Successor Arrival | No verdict keyword in the RESULTS subject: unrated. | commit 821de6ae; commit f497bdc4 |
-| `meas-gap-phases` | Gap phases 1 and 2 | Phase 1: D1 selected, drift real but cannot explain P1. Phase 2: no interaction to name. No keyword outcome: unrated. | commit 5bf1a346; commit b4be2489 |
-| `meas-deadwall-battery` | Deadwall battery | Verdict taken from the paper section 10 row ('both fired their own stop rules', unscored): dead-end under the STOP RULE mapping. | commit 465c28ef; commit 5fce47cf; paper §10 row The dead-wall and mode-hunt batteries |
-| `meas-sf-latency-feedback` | SF latency feedback | REFUTED: dead-end. | commit c0fb1d79; commit 4320fc48 |
-| `meas-coupling-model` | Coupling model | NOT VALIDATED: dead-end. Merge cb422e2d: frontier span real but neutralised at the gate by ADR-0060. | commit 7ad65ef1; commit cb422e2d |
-| `meas-sf-accounting-axis` | SF accounting axis | Half-reproduced (cell yes, level no); the keyword NOT REPRODUCED is not in the coordinator's list, so mapped to mixed. | commit 4f67ba7d; commit 4131d254 |
-| `meas-adversarial-cells-b1` | Adversarial cells B1 | No verdict keyword: unrated. The current rebuild is the separate node meas-adversarial-cells-build (not linked). | commit 754139c3; commit 6c8c3d38 |
 <!-- END GENERATED: table-meas -->

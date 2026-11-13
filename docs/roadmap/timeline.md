@@ -93,6 +93,8 @@ gantt
     Who limits at each δ :active, store_w1_who_limits, 2026-11-12, 2026-11-13
     Store-budget test design (§54) :active, store_s54_budget, 2026-11-13, 2026-11-13
     Store cap constant at c8 :active, store_defect_cap_constant, 2026-11-13, 2026-11-13
+    Latency Lever battery :store_latency_lever, 2026-08-10, 2026-08-10
+    SF latency feedback :store_sf_latency_feedback, 2026-08-12, 2026-08-12
     section place - placement
     Marginal-cost placement law (RWM B) :place_marginal_cost, 2026-07-04, 2026-07-06
     DAPS and rate estimator (4 arms) :crit, place_daps, 2026-07-12, 2026-07-27
@@ -147,7 +149,6 @@ gantt
     Receiver follow-ups (§35) :perf_receiver_followups, 2026-11-01, 2026-11-02
     bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
     bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-13
-    Receiver per-message wall :perf_receiver_msg_wall, 2026-08-06, 2026-08-07
     section meas - measurement
     Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
     Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
@@ -177,23 +178,8 @@ gantt
     Off-Bulk benchmark design (§51) :meas_s51_design, 2026-11-13, 2026-11-13
     QUIC/MPTCP comparison and overhead taxo… :meas_transport_comparison, 2026-03-17, 2026-03-18
     Matrix benchmark, audit and dashboard :meas_matrix_bench, 2026-03-20, 2026-03-20
-    Ship The Wins battery :meas_ship_the_wins, 2026-08-07, 2026-08-07
-    Unlock The Default battery :meas_unlock_the_default, 2026-08-07, 2026-08-08
-    Latency Lever battery :meas_latency_lever, 2026-08-10, 2026-08-10
-    Alpha-sweep and quantile-native sweep :meas_alpha_sweep, 2026-08-20, 2026-08-21
-    Era battery :meas_era_battery, 2026-08-19, 2026-08-19
-    Mode-hunt battery :meas_mode_hunt, 2026-08-12, 2026-08-12
-    Verdict battery (paper 16.79) :meas_verdict_battery, 2026-08-21, 2026-08-21
-    (q, refresh) sweep :meas_q_refresh_sweep, 2026-08-21, 2026-08-21
-    Successor Arrival :meas_successor_arrival, 2026-08-21, 2026-08-21
-    Gap phases 1 and 2 :meas_gap_phases, 2026-08-19, 2026-08-19
-    Deadwall battery :meas_deadwall_battery, 2026-08-12, 2026-08-12
-    SF latency feedback :meas_sf_latency_feedback, 2026-08-12, 2026-08-12
-    Coupling model :meas_coupling_model, 2026-08-11, 2026-08-12
-    SF accounting axis :meas_sf_accounting_axis, 2026-08-11, 2026-08-11
-    Adversarial cells B1 :meas_adversarial_cells_b1, 2026-08-06, 2026-08-06
     section model - model and paper
-    Unified FEC/ARQ model paper :model_paper_v1, 2026-03-21, 2026-04-10
+    Unified FEC/ARQ model paper :model_paper_v1, 2026-03-21, 2026-04-12
     Mathematical verification of the model :model_math_verification, 2026-04-12, 2026-04-12
     raptorpath-math and wasm L0 model :model_wasm_l0, 2026-04-07, 2026-07-06
     Visualizer as one continuum law :model_vis_continuum, 2026-07-28, 2026-07-28
