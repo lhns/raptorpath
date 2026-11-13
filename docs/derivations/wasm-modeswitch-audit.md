@@ -80,7 +80,7 @@ commit.
 | W13 | 1386–1394 | `legacy_burst = (legacy_bulk_delta && hint_bulk) \|\| (legacy_tail_burst && !hint_bulk)` → one-shot tail burst | ablation arm | native | **C** (test-only counterfactual, never exposed to JS). Keep it out of `raptorpath-math`; move both `legacy_*` fields behind `#[cfg(test)]`. |
 | W14 | 1401–1409 | `if self.rho < 1.0 { t_cut = find_t_cut(…); cut = max(t_cut, 2·RTT) … }` | T_cut give-up horizon | UI | **B**: see F4. The guard alone is redundant (`find_t_cut` returns ∞ at ρ ≥ 1); the step is in the law behind it, at a non-preset ρ*. |
 | W16 | 1673–1681 | `get_delta_eff`: `if hint_bulk {…} else if bulkness > 0 { continuum_tail } else { tail_target }` | readout | UI (display) | **C** (hint guard and β guard, display only). The β branch at :1676 does not step, for the same reason as W8. For "bulk" it differs from continuum@0.005 only by the clamp to [1e-9, 0.99]. |
-| W17 | 1689 | `get_completion_exposure`: `if bulkness > 0 { χ_raw } else { completion_chi() }` | accessor | ABI (the HTML does not read it) | **C** (β guard on an accessor no page reads), but it **steps**. At β = 0 the continuum gets `completion_chi()` = 0, since `hint_bulk` is false. At β = 0⁺ it gets χ_raw. Measured over a full run at .05/.5/50: the maximum is 0 at δ = 0.5 and 0.99865 at δ = 0.5·(1 − 1e-9). The accessor misreports the χ the bulk term actually reads. Fix: return χ_raw always (falls out of F1). |
+| W17 | 1689 | `get_completion_exposure`: `if bulkness > 0 { χ_raw } else { completion_chi() }` | accessor | ABI (the HTML does not read it) | **B, dead** (β guard): it **steps** across the Auto preset, which CLAUDE.md calls a defect whatever the reach. It is classed with V1, which is dead too. At β = 0 the continuum gets `completion_chi()` = 0, since `hint_bulk` is false. At β = 0⁺ it gets χ_raw. Measured over a full run at .05/.5/50: the maximum is 0 at δ = 0.5 and 0.99865 at δ = 0.5·(1 − 1e-9). The accessor misreports the χ the bulk term actually reads. Fix: return χ_raw always (falls out of F1). |
 | W18 | 1727 | `get_saturation_pressure`: `if fixed_r.is_some() { return 0.0 }` | readout | UI (display) | **C** (follows the fixed-r decision). |
 
 ### `raptorpath-visualizer/interactive-visualizer.html`
@@ -103,8 +103,8 @@ commit.
 | V13 | 2779–2805, 2859–2870 | `law.retain ? … : …`, `law.userRho < 1 ? …` | cartoon styling and budget text | UI | **C** (follows V6). |
 | V15 | 2051 | `dp >= 1 ? toFixed(1) : toFixed(3)` | number format | UI | **C**. |
 
-**Counts.** A: 11 (W1, W7, W12, W15, W19, W20, W21, V2, V3, V4, V14).
-B: 11 (W2, W4, W5, W6, W9, W11, W14, W22, V1, V5, V6). C: 13 (W8, W13, W16, W17, W18, V7–V13, V15).
+**Counts** (37 table rows: W1–W22 and V1–V15). A: 11 (W1, W7, W12, W15, W19, W20, W21, V2, V3, V4, V14).
+B: 12 (W2, W4, W5, W6, W9, W11, W14, W17, W22, V1, V5, V6). C: 12 (W8, W13, W16, W18, V7–V13, V15).
 D: 2 (W3, W10).
 
 **B split by reachability:**
@@ -112,7 +112,7 @@ D: 2 (W3, W10).
 | set | sites | what the measurements show |
 |---|---|---|
 | **live**: the UI reaches it | W11 (:883), W14 (F4), V5/V6 (F3), W22 (math `p_fec_normal`, also engine) | behaviour steps in W14, V5/V6 and W22. W11 has a zero value step but is the §4.5-banned fast path, and it routes the dead machine. |
-| **dead second machine**: reachable only from the native tests, the golden capture and `test_visualizer.mjs`'s classic-hint arms | W2, W5, W6, W9 (F1); W4 (F2); V1 | no behaviour step at any point the UI can reach. The fix is removal, not a new formula. | W5, W6 and W9 are classed by their `hint_bulk` term;
+| **dead second machine**: reachable only from the native tests, the golden capture and `test_visualizer.mjs`'s classic-hint arms | W2, W5, W6, W9 (F1); W4 (F2); W17; V1 | no behaviour step at any point the UI can reach. W17 steps, but in an accessor no page reads. The fix is removal, not a new formula. | W5, W6 and W9 are classed by their `hint_bulk` term;
 their `legacy_*` terms are test-only C, and the `fixed_r` term of W6 is D.
 
 ## Headline finding: `continuum_tail` is not an executed law
@@ -151,7 +151,22 @@ Fix: delete the guard, so that `rate_now` always returns
 (1−β)·r_anchor + β·r_late. On the UI path the result is unchanged by the
 identity below (F1, "Golden argument").
 
-#### F3 + F4: one give-up law (V5/V6 span budget, W14 T_cut)
+#### Step attribution: one site per measured step
+
+| measured step | where | owner site | removed by a JS-only V5/V6 fix? |
+|---|---|---|---|
+| cartoon budget 0 → ε̂ at ρ = 1 | δ* = 0.005615 (ε 5 %), 0.008207 (2.5 %), **0.0050002 (10 %, the Bulk preset)** | **V6**: the `retain = ρ ≥ 1 ∧ rStar ≤ 1e-6` flag cuts R where R = ε̂ | **yes**: the jump is the flag. W22 plays no part, since r* < ε/(1−ε) on both sides. |
+| cartoon budget (1−ρ → 0) vs R at ρ = 1 | ρ = 1, every δ | **V5**: the `ρ < 1 ? 1−ρ : derived` ternary | **yes** |
+| R halves, e.g. 5.0e-2 → 2.46e-2 | δ 0.04504 → 0.04594 (ε 5 %), 0.05826 → 0.05943 (ε 10 %), where r* crosses ε/(1−ε) | **W22**: the `p_fec_normal` truncation | **no**. It stays in R. At ρ = 1 the shipped cartoon reads R directly, so the step is visible there today (5e-2 → 2.5e-2). Under option (ii) below it is visible at ρ < 1. Option (i) never reads R. |
+| sim give-up horizon 2·RTT ↔ 10·W | ρ* 0.983332 / 0.988175 (Bulk cells) | **W14**: the `find_t_cut` cap and floor | n/a (wasm) |
+| `get_completion_exposure` 0 → ≈1 | Auto preset, δ 0.5 vs 0.5·(1−1e-9) | **W17** | n/a (wasm accessor) |
+| hint-gated ρ (0 vs 28 symbols given up) | ε .20, q .1, RTT 100, ρ .95 | **W4** | n/a (ABI only) |
+
+Earlier versions of this doc assigned the 2 %-grid maxima loosely. With this
+table, each number belongs to exactly one site. "(a)'s 0.24·ε̂ jump" and "the
+proposal's 2.54e-2 at ρ .95" are W22's. "0 → 0.10 at the Bulk preset" is V6's.
+
+#### F3 + F4: a PROPOSAL for one give-up law (V5/V6 span budget, W14 T_cut), not a shipped fix
 
 These two are the same object. Both answer one question: what fraction of
 symbols may stay unrecovered, and from what age. Both are functions of the
@@ -193,10 +208,10 @@ which is where T_cut reaches 0, so one condition saturates both.
 So **A ≡ D(δ) everywhere the slider reaches**. The T_cut term exceeds D only
 when 1−ρ < R·ε̂_retx^(D/RTT): about 1.25e-4 at Bulk ε 5 %, below the
 slider's 1e-3 resolution, and smaller still at Auto and Realtime. The general
-form therefore reduces, on its whole operating range, to the proposal:
+form therefore reduces, on its whole operating range, to option (ii):
 
 ```text
-   give up a hole  ⇔  age > D(δ)  ∧  given_up + 1 ≤ min(1 − ρ, R) · src_total        (proposed)
+   give up a hole  ⇔  age > D(δ)  ∧  given_up + 1 ≤ min(1 − ρ, R) · src_total        (option (ii))
 ```
 
 This is §5.6's shed law with the declared contract as a cap. δ enters through
@@ -218,6 +233,52 @@ every ρ < 1.
 Whether a declared ρ should be able to concede more than the residual past FEC
 plus the δ deadline is exactly the CLAUDE.md requirement that ρ compose with δ
 everywhere. **Owner's call**, and it must be settled before F3+F4.
+
+**The gauges re-read with the paper's continuous P_fec** (`fec-arq-model.md`
+:699, not W22's truncation). The table gives the R side of the min, i.e. how
+many of the 100 slider positions ρ ∈ [0.900, 0.999] have 1−ρ ≥ R.
+
+| cell ε/q/RTT | δ | r* | R (code) | R (paper) | R side binds, code / paper |
+|---|---|---|---|---|---|
+| .05/.5/50 | .005 | 0 | 5.0e-2 | 4.0e-2 | 51 / 60 |
+| .05/.5/50 | .5 / 50 | .149 / .178 | 1.9e-5 / 5.2e-5 | same | 100 / 100 |
+| .10/.3/80 | .005 | 0 | 1.0e-1 | 8.0e-2 | 0 / 20 |
+| .10/.3/80 | .5 / 50 | .266 / .309 | 2.9e-5 / 9.9e-5 | same | 100 / 100 |
+| .025/.5/13 | .005 | 0 | 2.5e-2 | 1.9e-2 | 76 / 82 |
+| .025/.5/13 | .5 / 50 | .152 / .194 | 1.6e-5 / 3.2e-5 | same | 100 / 100 |
+| .20/.1/100 (harsh) | .005 | 0 | 2.0e-1 | 2.0e-1 | 0 / 0 |
+| .20/.1/100 (harsh) | .5 / 50 | .627 / .724 | 6.5e-5 / 2.5e-4 | same | 100 / 100 |
+| .30/.05/150 (harsh) | .005 | 0 | 3.0e-1 | 3.0e-1 | 0 / 0 |
+| .30/.05/150 (harsh) | .5 / 50 | 1.03 / 1.18 | 5.9e-5 / 2.8e-4 | same | 100 / 100 |
+
+- At Auto and Realtime, r* is far above ε/(1−ε), so the truncation is
+  inactive: code and paper agree, and **ρ is inert under (ii) with either
+  P_fec**. The result is not an artifact of W22.
+- Only the Bulk rows move: the paper's P_fec(0) > 0 lowers R.
+- On the harsh cell, (ii) caps the realtime give-ups at R·2000 ≈ 0.5 symbols.
+  Today the sim gives up 28 there (ρ .95, δ 50). So **(ii) removes a ρ effect
+  the model has today.**
+
+**Two options, both continuous, neither shipped:**
+
+```text
+   (i)   give up a hole  ⇔  age > D(δ)  ∧  given_up + 1 ≤ (1 − ρ)·src_total
+   (ii)  give up a hole  ⇔  age > D(δ)  ∧  given_up + 1 ≤ min(1 − ρ, R)·src_total
+```
+
+| | (i) declared budget | (ii) §5.6 residual, capped by the contract |
+|---|---|---|
+| CLAUDE.md "ρ composes with δ everywhere" | **yes**: ρ acts at every δ | **no** at Auto/Realtime (inert on the whole slider) |
+| ρ = 1 | budget 0, §5.6 "retain never sheds", no branch | same |
+| continuity in δ and ρ | yes; reads no P_fec, so it is **immune to W22** | yes only after W22 is fixed (it reads R) |
+| §5.6 agreement | departs from the engine's budget on the evicting seat (R, `emit_source.rs` :588) | matches it, with the declared cap added |
+| harsh cell, δ 50, ρ .95 | gives up as today or more: the age floor drops from 2·RTT to D(50) = RTT/2 | ≈ 0 |
+| gate :233 (budget 0.05 at Bulk, ρ .95) | holds | holds |
+| gate :181 | fails (`!lawRt.retain` at ρ = 1) | fails |
+
+On CLAUDE.md's invariant, (i) is the stronger candidate. On paper agreement,
+(ii) is. Both reduce W14 and V5/V6 to the same rule, delete `find_t_cut` from
+the sim, and make RETAIN the ρ = 1 point of the dial. **Owner's call.**
 
 - **No ρ = 1 branch.** At ρ = 1, min(0, R) = 0: nothing is given up, with no
   `rho < 1.0` guard (W14) and no `retain` flag (V6). The reduced form needs no
@@ -304,66 +365,83 @@ everywhere. **Owner's call**, and it must be settled before F3+F4.
 - The general form's ε̂_retx: measured, the per-path ε̂; assumes independent
   rounds, i.e. RTT ≫ 1/q. It appears only in the derivation.
 
-#### W22: `p_fec_normal` steps 0 → ½ at r = ε/(1−ε) (raptorpath-math :886–888)
+#### W22: `p_fec_normal` truncates the paper's continuous P_fec (raptorpath-math :886–888)
 
-Found while locating the F3 grid jump. The site:
+**What it is: a code-vs-paper divergence, not a step in the paper's law.**
 
-- `if numerator <= 0.0 { return 0.0 }`, with `numerator = r(1−ε) − ε`.
-- At numerator = 0⁺, z = 0 and P_fec = 1 − Φ̄(0) = ½.
-- So P_fec steps 0 → ½ as r crosses the information-theoretic floor
-  ε/(1−ε): a step on the r leg of the triangle. Measured on wasm32 at the
-  floor ×(1 ± 0.001): 0 → 0.5002–0.5008 for every (W, ε) tried.
-- Below the floor the shipped function is 0 throughout, so there is no second
-  step at r = 0.
-- On the cartoon's dial the floor is crossed near δ 0.045 (ε 5 %) and δ 0.058
-  (ε 10 %).
+- The paper's law is continuous (`docs/fec-arq-model.md` :699):
+  P_fec(r) = Φ(√W·(r(1−ε) − ε)/√(ε(1−ε)(r + σ²))). At the floor
+  r = ε/(1−ε) the paper itself says "this is exactly ½".
+- The code adds `if numerator <= 0.0 { return 0.0 }`. That has been there since
+  `da837ee9`, the commit that created the crate.
+- The code's function therefore steps 0 → ½ at the floor. Measured on wasm32
+  at the floor ×(1 ± 0.001): 0 → 0.5002–0.5008 for every (W, ε) tried.
+- Below the floor the code is 0 throughout, so there is no second step at
+  r = 0.
+- On the cartoon's dial the floor is crossed near δ 0.045 (ε 5 %) and
+  δ 0.058 (ε 10 %).
+- CLAUDE.md requires every documented model-vs-engine divergence to carry a
+  test that bounds it; this one has none (see Coverage).
 
-It is **live**, through four readers:
+**Reach.**
 
-- the cartoon's R (above);
-- the sim's T_cut, via `p_recovered_within`;
-- the soft cap's `r_saturation` (math :935, the `tail_fec` term of its grid
-  argmin), which feeds `controller_rate` in the sim **and the engine**;
-- the engine's §5.6 shed budget `residual_loss_after_fec`
-  (`control/fec_rate.rs` :788).
+- *Model (live):* the cartoon's R (V5 at ρ = 1, and option (ii) below); the
+  sim's T_cut via `p_recovered_within`; the sim's soft cap via `r_saturation`
+  (math :935, the `tail_fec` term of its grid argmin).
+- *Engine, default path.* There is one direct caller,
+  `residual_loss_after_fec` at `net/emit_source.rs` :588. It sets
+  `shed_budget_frac` and runs only when `pol.shed_on`, the evicting seat
+  (ρ < 1).
+- *Engine, soft cap.* `r_saturation` has no direct caller in
+  `raptorpath/src`. It is reached inside `raptorpath_math::controller_rate`
+  (math :825) whenever `saturation_cap` is set, and the engine sets it by
+  default (`control/fec_rate.rs` :346, passed at :515).
+- *No measured engine effect yet.* The engine's measured rate sits at r ≈ 0 on
+  every L1 cell, below ε/(1−ε). So it has run only on the P_fec ≡ 0 side, and
+  `soft_saturate(0, ·) = 0` whatever r_sat is.
 
-**No formula proposed.** The obvious one, §4.2's normal approximation without
-the cut, Φ(√W·(r(1−ε) − ε)/√(ε(1−ε)(r + σ²))), fails at r = 0. With each
-cell's own σ² it gives P_fec(0) of:
+**Where an engine run would cross the floor**, for §51's registration:
 
-| W | ε | σ² | P_fec(0) |
-|---|---|---|---|
-| 200 | 5 % | 2.80 | 2.6e-2 |
-| 40 | 5 % | 2.80 | 0.19 |
-| 20 | 10 % | 2.60 | 0.18 |
-| 4 | 10 % | 2.60 | 0.34 |
-| 5 | 10 % | 2.60 | 0.32 |
+- The crossing r is exact: r = ε/(1−ε), so **c2 (ε ≈ 2.6 %): r = 0.0267**,
+  and **c3 (ε ≈ 4.9 %): r = 0.0515**.
+- The crossing δ depends on the window and σ², which I don't have for the
+  engine cells. The estimate below is the model's: the rate mix (1−β)·r*(t)
+  with the engine's tail map t = 1e-5·ζ(δ):
 
-That is FEC recovery with zero repairs, and it would make R(Bulk) < ε̂.
-P_fec scales a lost symbol's residual, which is ε̂ at r = 0, so the right
-comparison is not P(no loss in the window).
+  | cell | W 64, σ² 1 | W 64, σ² 3.76 | W 200, σ² 1 | W 200, σ² 3.76 |
+  |---|---|---|---|---|
+  | c2 | δ ≈ 0.025 (β .65) | 0.015 (.77) | 0.043 (.53) | 0.023 (.67) |
+  | c3 | δ ≈ 0.032 (β .60) | 0.017 (.73) | 0.056 (.48) | 0.029 (.62) |
 
-The engine pins the r = 0 end:
+  So it lies around δ ≈ 0.015–0.06, i.e. **between Bulk and Auto, never at the
+  Bulk preset** (β = 1 ⇒ r = 0). The registration should take W, σ² and the
+  spare-capped live rate from the engine run itself.
 
-- `residual_loss_after_fec_is_the_design_residual` (`fec_rate/tests.rs`
-  :262–282) asserts residual(ε, r = 0) = ε exactly ("P_fec=0 ⇒ residual=ε").
-- It also asserts the residual is monotone non-increasing in r.
-- It asserts a ~1 % class at r 0.34, A* 4.
+**The fix is the owner's: the paper and the engine pin conflict.**
 
-A replacement must satisfy all of these; the formula is left to §4.2:
+- My earlier replacement was exactly the paper's form. I withdrew it because
+  the paper's form gives P_fec(0) > 0 with each cell's own σ²:
 
-1. P_fec(0) = 0.
-2. Continuous at the floor ε/(1−ε), with no ½ jump.
-3. Monotone non-decreasing in r.
-4. → 1 as r → ∞.
-5. Equal to the shipped value far above the floor, where the normal
-   approximation is good.
+  | W | ε | σ² | P_fec(0) |
+  |---|---|---|---|
+  | 200 | 5 % | 2.80 | 2.6e-2 |
+  | 40 | 5 % | 2.80 | 0.19 |
+  | 20 | 10 % | 2.60 | 0.18 |
+  | 4–5 | 10 % | 2.60 | 0.32–0.34 |
 
-**Golden impact: assume it moves until measured.** Any replacement changes
-`r_saturation`'s cost around the floor, so the soft-cap argmin, and so the
-sim's rate. The engine's `controller_rate` bit-pin tables
-(`rstar_bitpin_table_*.in`) may move too. It is an engine-crate change, so the
-owner decides.
+- The engine pins P_fec(0) = 0: `residual_loss_after_fec_is_the_design_residual`
+  (`fec_rate/tests.rs` :262–282) asserts "P_fec=0 ⇒ residual=ε" at r = 0, plus
+  monotonicity, plus a ~1 % class at r 0.34, A* 4.
+- So the paper's law contradicts the engine pin at r = 0, and the code's
+  truncation contradicts the paper's law below the floor.
+- A replacement that satisfies both must have P_fec(0) = 0, be continuous at
+  the floor, be monotone in r, tend to 1, and agree with the paper far above
+  the floor. Formula left to §4.2.
+
+**Golden impact: assume it moves until measured.** Any change alters
+`r_saturation`'s cost around the floor, hence the sim's soft-cap argmin and
+rate. The engine's `rstar_bitpin_table_*.in` may move. It is an engine-crate
+change: the owner's word.
 
 **Gate change for the owner: `test_visualizer_ui.mjs` :181.** It asserts
 `lawBulk.retain && lawBulk.rStar === 0 && !lawRt.retain && lawRt.rStar > 0`.
@@ -372,7 +450,7 @@ the derived residual. The cartoon labels this "ρ = 1 target — sheds only the
 derived §5.6 residual". §5.6 says the opposite: "the retain (ρ = 1) seat never
 sheds; the law runs only on the evicting seat".
 
-Under the proposed law, budget(ρ = 1) = 0 at every δ, so :181 fails. Replace it
+Under either option, budget(ρ = 1) = 0 at every δ, so :181 fails. Replace it
 with:
 
 - budget = 0 at ρ = 1 at both ends;
@@ -509,7 +587,8 @@ Existing gates:
 | W11 | live | 7d3 Auto ±2 % (value) | structural: after the fix, a source check that `rate_now` has no branch on `bulkness` |
 | V5/V6 (F3) | live | :181 and :233 pin the two sides, not continuity | a 2 % grid over the whole dial (δ = 0.005·1.02^k up to 50) at ε ∈ {2.5, 5, 10} % and ρ ∈ {1, 0.9999, 0.95}: every pair of neighbours has \|Δbudget\| ≤ 0.05·ε̂ (today ε̂, so it fails). Also \|budget(1) − budget(1 − 1e-9)\| ≤ 1e-6 (today 1.9e-5 at Auto, so it fails). Assert on `spanLaw()` through the stub DOM. A grid, because the step is not at a preset. |
 | W14 (F4) | live | nothing (single-ρ tests only) | **red today, on the shipped law**: `find_t_cut` at fixed inputs (ε .05, q .5, r ∈ {1e-3, 0.3}, W 64), on a geometric grid of 1−ρ ∈ [1e-6, 0.1] with ratio 1.02, is non-decreasing in ρ with \|ΔT\| ≤ 1.5·L·ln 1.02 / \|ln ε̂\| per step. That is the slope of a law linear in ln(1−ρ); a ln T bound would wrongly fail near T = 0. `find_t_cut` takes no RTT; its t is in its own slot units, so L is the round length in those units: use L = W = 64, giving a bound of 0.63 per step. Today the jump 0.01 → 640 fails it. **On the proposal**: the sim's give-up is \|Δgiven_up\| ≤ 1 over ±2 % of 1−ρ at the former ρ* = 0.983332 (.05/.5/50); today 2 → 0 within 1e-6, so it fails. Also report the three gauges of the proposal (the two clamps, and the R side of the min). |
-| W22 | live | the engine pins P_fec(0) = 0 and monotonicity (`fec_rate/tests.rs` :262–282), not continuity | on a grid r = ε/(1−ε)·(1 ± k·0.001), k ≤ 50, at ε ∈ {.025, .05, .10}, W ∈ {5, 20, 64, 200}, σ² ∈ {1, 2.6, 3.76}: \|ΔP_fec\| ≤ 0.01 between neighbours. Today the jump of ½ fails. Keep the engine's r = 0 and monotonicity pins. |
+| W22 (divergence) | live | the engine pins P_fec(0) = 0 and monotonicity (`fec_rate/tests.rs` :262–282); nothing bounds the divergence from the paper's :699 law | on a grid r = ε/(1−ε)·(1 ± k·0.001), k ≤ 50, at ε ∈ {.025, .05, .10}, W ∈ {5, 20, 64, 200}, σ² ∈ {1, 2.6, 3.76}: \|ΔP_fec\| ≤ 0.01 between neighbours. Today the jump of ½ fails. Until the owner rules, the CLAUDE.md bounding test is: \|P_fec,code − P_fec,paper\| = P_fec,paper for r < ε/(1−ε), 0 above the floor, and ≤ ½ at the floor. That makes the divergence a pinned, bounded fact. Keep the engine's r = 0 and monotonicity pins. |
+| W17 | dead | nothing | `get_completion_exposure` at δ 0.5 and 0.5·(1 ± 0.02) over a full run: \|Δmax χ\| ≤ 0.05. Red today (0 vs 0.99865). |
 | W2/W5/W6/W9 (F1) | dead | nothing (the gates run only the continuum arm) | until the machine is removed: for h ∈ {auto, bulk, realtime} × the six golden cells, every public accessor equals continuum@δ(h). Red today: "bulk" `get_r_star_auto` and `get_derived_w`. |
 | W4 (F2) | dead | `test_bulk_composes_with_rho` (bulk only) | at ε .20, q .1, RTT 100, ρ .95: every hint has `get_rho() == 0.95`, and its fingerprint plus `get_given_up` equal continuum@δ(h). Red today: realtime 0 given up / 895 ticks vs 28 / 823. |
 | V1 | dead | nothing | a UI-gate grep: no `hint ===` in the script block |
@@ -532,6 +611,18 @@ Existing gates:
   so the gate passes with margin. A 1.12× step in t, or 1.07× in ζ, would now
   fail.
 - `node raptorpath-visualizer/test_visualizer.mjs`: all checks pass (exit 0).
+- **Injected, not argued.** In a scratch copy (not committed; the worktree was
+  untouched), I wrapped `sim_tail_target_of_delta` to multiply by 1/1.12 for
+  δ > 0.5. That is a 1.12× step at the Auto preset, in the law's own
+  direction, so monotonicity still holds.
+  - The new gate fails the law check: `FAIL … sim_tail_target_of_delta @
+    δ=0.5: 1.0373e-5 / 1e-5 / 8.7535e-6`, exit 1.
+  - The pre-branch gate (`2d3b2069` version) **passes** the same law check,
+    so the old tolerance missed the step.
+  - Both runs also fail the unrelated 7c preset-anchor check, because the
+    injection moves t(50) off 1e-7. A first injection ×1.12 (against the law's
+    direction) failed both versions through the monotonicity clause, so it did
+    not discriminate.
 
 ## Golden impact summary
 
@@ -570,12 +661,12 @@ block the way `test_visualizer.mjs` does.
    `(1−β)·R(late = false) + β·R(late = true)` from the engine's
    `RateSnapshot::rate` into `raptorpath-math`, and call it from both sides.
    That deletes the bool in the W19 export.
-6. **W22 (`p_fec_normal`)** before F3: F3's budget is continuous only after
-   it. It is an engine-crate law shared with the engine's shed budget and soft
+6. **W22 (`p_fec_normal`)**: before F3 if option (ii) is chosen; option (i)
+   does not depend on it. Add the bounding test for the divergence now. It is an engine-crate law shared with the engine's shed budget and soft
    cap, so it needs a §4.2 line, a measurement of its golden and bit-pin
    impact, and the owner's word.
-7. **F3 + F4, the proposed give-up law**: "shed past D(δ) within
-   min(1−ρ, R)" for the cartoon and the sim. It needs its §5.6 line and the
+7. **F3 + F4, a proposal**: option (i) (budget 1−ρ) or (ii) (min(1−ρ, R)) for
+   the cartoon and the sim. It needs its §5.6 line and the
    owner's call on the :181 gate change, after the ρ-inert gauge is settled.
    The sim would stop calling `find_t_cut`. Its other callers remain: the
    three `solve_*` triangle solvers (math :1270, :1277, :1291) behind the
