@@ -1016,3 +1016,24 @@ Evidence: `docs/derivations/law-ledger.md` / `.yaml` (branch `law-ledger` `4f84c
 - one row per block arm with its pool in `[GATES]` and `pool_per_path` on both ends;
 - `[SNAPV]` parsed, and the in-order delay, evictions, old holes and budget residual computed with no None;
 - the c8 600 MB rows inside `RWM_PERF_TIMEOUT_S=200`.
+
+**§55 Erratum 1 (2026-11-13, the recovery-clock derivation `wire-clock-derive` `17bfcefb`, `docs/derivations/wire-clock.md`; Fable-reviewed; rulings by the main session with Fable).**
+- **The ledger's item 7 is withdrawn for the recovery clocks.** It proposed swapping the app-echo RTT (E01) for a wire RTT.
+  - The time threshold (C01) and the cooldown (C05) compare a flight's age from the placement stamp. What they need is the per-path loop from placement to the gap report that would list the hole, and the app-echo estimates exactly that.
+  - Checked in code: the echo key is the flight stamp (`emit_source.rs:384–391` passes `src_send_ts_us` to `send_symbol`, the same value stored in `retransmit_buffer` at `:457`), so age and clock share an origin.
+  - Two cells reject a wire clock post hoc. At c1d the loop is ≈ 19–23 ms on a 2–3 ms wire RTT, so a wire threshold would sit at its floor and ripen nearly every self-healing hole. At c2 (§48b), `bbr_rs` drops the wire RTT 5× while the loop is unchanged.
+- **E01's verdict, split by consumer:**
+  - for the recovery clocks: consistent with its age origin, but inflated by the store defect, because the loop contains the sender's standing queue. It depends on the store fix (F01/E03/E04);
+  - for the store law and the other RTprop consumers (E03, S01, E12, R07): still dishonest input.
+- **The recovery-clock fix narrows to:**
+  - **E11:** each seq's clock reads its own leg, not the pooled max over legs;
+  - **C04:** one law at every path count, removing the N = 1 pre-RFC age gate, with "branch A" (hand the SACK ranges to the packet-threshold evidence ingest, `control_msg.rs:728`, so the fast channel executes at N = 1);
+  - **C05:** the cooldown is KEPT for one measured session, re-keyed per leg, with a bind counter predicted 0 and a host test that a seq with no flight record must not re-fire on every report. It is deleted when the counter reads 0 on the VM.
+- **Left out of the first change:**
+  - replacing the second EWMA with the latest sample (the logs cannot evaluate it; it belongs with the per-leg state);
+  - the receiver refresh (at c1 its 25 ms floor would bind and move the refresh from 100 to 25 ms where the CPU clause is tightest);
+  - C09 (it needs its gauge first).
+  - The 10 ms floor is kept; the derived 1 ms is its own arm later.
+- **Order:** the snapshot-order law (§54) goes first. This change is based on `cand54`, because both change the gap-batch tuple.
+- **Owed before registration:** the paper text first (§7.1, A.6, §11.2; drafted in the derivation's §8), a c2 goodput prediction (v2 resolves 1 % there) with branch B as the falsifier, and `fast/fired` at N = 1 as a readout.
+- **Consequence for c8:** the recovery lever there is the dwell, i.e. the store fix and whether retransmits queue behind source in quinn's per-path send buffer (plan item 6d, unanswered).
