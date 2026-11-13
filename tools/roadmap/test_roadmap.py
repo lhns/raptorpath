@@ -140,6 +140,10 @@ class ValidateTests(unittest.TestCase):
         for kind in ("user-decision", "defect-verdict"):
             ex = node("rec-b", kind=kind, depends_on=["rec-c"])
             self.assertEqual(self.errs([ex, node("rec-c")]), [])
+        # an open defect as prerequisite does not block (a diagnosis can start on it)
+        diag = node("rec-b", depends_on=["rec-d"])
+        defect = node("rec-d", kind="defect-verdict", state="in-progress")
+        self.assertEqual(self.errs([diag, defect]), [])
 
     def test_vm_order_validation(self):
         a = node("rec-a", lane="vm", vm_order=1, plain="p")

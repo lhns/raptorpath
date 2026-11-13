@@ -152,7 +152,8 @@ def validate_nodes(nodes):
             warnings.append(f"{nid}: overview/forward node without a 'plain' sentence")
         if n["state"] == "next" and n["kind"] not in ("user-decision", "defect-verdict"):
             for d in n["depends_on"]:
-                if d in by and by[d]["state"] != "done":
+                # A known defect does not block work on it (a diagnosis can start).
+                if d in by and by[d]["state"] != "done" and by[d]["kind"] != "defect-verdict":
                     errors.append(f"{nid}: state next but depends_on '{d}' is {by[d]['state']}, not done")
         if n.get("qualified_by") and n["state"] != "done":
             warnings.append(f"{nid}: qualified_by on a node that is not done")
