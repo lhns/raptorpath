@@ -1,0 +1,28 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+START 2026-11-13T00:39:20Z
+ALLOC base rc=0
+ALLOC cand rc=0
+HC base iter=1 rc=101 1
+HC cand iter=1 rc=0 0
+HC base iter=2 rc=0 0
+HC cand iter=2 rc=0 0
+HC base iter=3 rc=0 0
+HC cand iter=3 rc=0 0
+HC base iter=4 rc=0 0
+HC cand iter=4 rc=0 0
+HC base iter=5 rc=0 0
+HC cand iter=5 rc=0 0
+HC base iter=6 rc=0 0
+HC cand iter=6 rc=0 0
+HC base iter=7 rc=0 0
+HC cand iter=7 rc=0 0
+HC base iter=8 rc=0 0
+HC cand iter=8 rc=0 0
+HC base iter=9 rc=0 0
+HC cand iter=9 rc=0 0
+HC base iter=10 rc=0 0
+HC cand iter=10 rc=0 0
+POST52-DONE 2026-11-13T01:04:56Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

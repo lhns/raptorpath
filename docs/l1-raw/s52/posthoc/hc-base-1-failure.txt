@@ -1,0 +1,4 @@
+---- the_cross_path_class_is_populated_on_two_paths stdout ----
+
+thread 'the_cross_path_class_is_populated_on_two_paths' (2222277) panicked at raptorpath/tests/holeclass_reachability.rs:116:9:
+a resolution cannot precede its own first report: [HOLD] site=sender path=1 gen=0 samp_n=1000 fed=2305 obs_p50_us=6899 obs_p90_us=15128 obs_p99_us=43952 evals=344 hn_n=1972 hn_p50_us=6656 hn_p90_us=12288 hy_n=33 hy_p50_us=20480 hy_p90_us=22528 cx_n=300 cx_p50_us=24576 cx_p90_us=45056 sp_n=938 xp_n=1367 up_n=0 xp_frac=0.5931 age_n=2296 age_ripe=180 ripe_frac=0.0784 age_p50_us=81920 age_p90_us=163840 thr_p50_us=90112 cx_leg=0:300 fa_class=0.0625
