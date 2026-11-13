@@ -1,24 +1,28 @@
 # dup-diag: false packet-threshold fires from reordered gap snapshots
 
-Status: DIAGNOSIS + PROPOSED LAW. No engine fix ships with this file
-(FORMULA-FIRST). Feeds: status §52 (the c8 duplicate verdict), ADR-0059
+Status: DIAGNOSIS + PROPOSED LAW + instrument + diagnostic arm. The law is
+not shipped: the arm is default-off until §53 measures it (FORMULA-FIRST). Feeds: status §52 (the c8 duplicate verdict), ADR-0059
 (per-path hole law), paper §7.1.
 Evidence: `docs/l1-raw/s52/rep52-diag-ld.tgz`, 6 BASE + 6 CAND c8 rows.
-Red test: `net::tests::mp_packet_threshold_declares_only_lost_seqs_under_report_reordering`
-(`raptorpath/src/net/tests.rs`). It was committed failing (12eafc33) and is
-now `#[ignore = "known RED …"]` until the law ships. It runs with
-`--include-ignored`.
+Instrument: `[SNAPV]` (RWM_DIAG, `net/snapver.rs`), commit on branch
+`dup-diag-instr`. Diagnostic arm: `RWM_RECOV_SNAPVER=1` (default off).
 
-- **Scenario.** Two FIFO legs and one real loss that holds the frontier.
-  The test drives the shipped fold and decision: `mp_ingest_evidence` and
-  `mp_packet_threshold_fires`, extracted verbatim from `serve_gaps`, which
-  calls them.
-- **On main.** With in-order return, exactly the lost seq is declared. With
-  the p1 return leg 9 ms slower, the channel declares **182** seqs lost for
-  1 real loss.
-- **The law, test-locally.** `mp_snapshot_version_filter_restores_packet_threshold_soundness`
-  checks the §2 law on the same scenario and passes. It changes no engine
-  code.
+Tests (`raptorpath/src/net/tests.rs`). The scenario is two FIFO legs and
+one real loss that holds the frontier. The tests drive the shipped pure
+parts of the gap path:
+- `received_sack_ranges` and `sack_to_gaps`;
+- `mp_ingest_evidence` and `mp_packet_threshold_fires`, extracted verbatim
+  from `serve_gaps`;
+- `snapver_judges`, the arm's filter, which `serve_gaps` also calls.
+
+| test | arm | state | what it shows |
+|---|---|---|---|
+| `mp_packet_threshold_declares_only_lost_seqs_under_report_reordering` | off | known RED, `#[ignore]`; committed failing first (d60ea2d6 / 12eafc33) | p1 return 9 ms slower: **182** seqs declared lost for 1 real loss (§1 gives the leg split) |
+| `mp_packet_threshold_snapver_arm_declares_only_lost_seqs_under_report_reordering` | on | green | declared set = lost set at every skew |
+| `mp_packet_threshold_is_sound_with_in_order_snapshots` | off | green | in-order return: sound |
+| `mp_packet_threshold_20_gap_horizon_hides_young_holes_behind_old_losses` | off | green | why BASE is spared (§1) |
+| `snap_order_lives_with_the_transfer_and_the_tail_sweep_bypasses_it` | — | green | `V*` lifetime and the tail-sweep bypass |
+| `snapver_coalescing_keeps_the_newest_snapshot` | — | green | coalescing keeps the newest snapshot |
 
 ## 1. The defect
 
@@ -95,13 +99,12 @@ What the evidence channel itself gets right (checked, not the cause):
    receiver's received set above the frontier only grows (`SeqBits` prunes a
    prefix only, `receiver.rs:674`). So re-listing after resolution can only
    come from an OLDER snapshot processed later.
-   - CAND s7-r3: p0 `fed` = 445 858 > 435 285 p0 placements (`[C8CONV-S] sp`).
-     There are more resolutions than seqs, so at least 10.6 k re-stamps in
-     that row.
-   - Across CAND rows p0 `fed` runs 195 k–446 k. BASE runs 16.6 k–19.2 k.
-     Part of the CAND rise is first-time listings of young holes that the
-     64-gap horizon now exposes. `fed` alone does not split re-stamps from
-     first stamps; only `fed − sp` > 0 bounds the re-stamps from below.
+   - **Bound.** The sender's total `fed` (p0 + p1) exceeds the receiver's
+     `[SUCC] det` (holes the receiver ever had) by 114 052–176 958 in all six
+     CAND rows. A hole can be first-stamped at most once per receiver hole,
+     so that excess is a lower bound on re-stamps.
+   - **BASE.** All six BASE rows read `fed` < `det`, because the 20-gap
+     horizon lists only the oldest holes.
 2. **The heal time is report cadence, not flight time.** `hy_p50` on p0 is
    5.1–5.6 ms in all six CAND rows; p1's is 2.8 ms. That is the next fresh
    snapshot after the stale one (gap reports at ≥ 2 ms, `GAP_ACK_MIN_INTERVAL`).
@@ -155,6 +158,28 @@ Two parts make up Δy = +5 115:
   copy lands; `[RFA] fill_coded` ≈ 1.8 k per BASE run) and time-channel
   fires on stale-listed holes. They are not apportioned here.
 
+### Why BASE is spared
+
+BASE's sender horizon keeps the first `MAX_NACK_GAPS` = 20 gaps above the
+frontier. Those are the OLDEST holes, and in c8 they are mostly real losses
+awaiting their retransmit: BASE's p0 `age_p50` at first report is 1.2–3.9 s.
+A young cross-path hole lies past the 20th, so no snapshot ever lists it,
+stale or fresh, and the stale re-listing has nothing to fire on. CAND's 64
+gaps reach past the old losses to the young holes.
+
+`mp_packet_threshold_20_gap_horizon_hides_young_holes_behind_old_losses`
+checks this in the sim, with the filter off and the 9 ms return skew:
+- 31 old single-seq losses hold the frontier;
+- the packet threshold declares only real losses;
+- by contrast, with 1 loss the same skew gives 182 (the red test).
+
+### The red test's split
+
+The red test's 182 declarations are 1 real loss, 88 false p0-original and
+93 false p1-original. The p1 share is a property of the sim's fixed
+placement and stall pattern, so it does not predict c8's. In the logs the
+p1 increase is smaller: `hy` p1 +409 against p0 +2 113.
+
 The time channel shares the defect in kind: it also judges `G(R)` of a
 stale `R`. Its share is NOT measured. At first listing a p0 hole's flight
 age is `age_p50` ≈ 330 ms against `thr_p50` ≈ 393 ms, with `ripe_frac`
@@ -165,34 +190,59 @@ be counted in `r`, not `y`. The corrected law below removes both.
 ## 2. The corrected law
 
 Every snapshot `R` carries a receiver version that already exists on the
-wire (v9):
+wire (v9). The law reuses the order the store gate already folds for the
+same out-of-order acks (`net/sack.rs::AboveReport`, `fold` = lexicographic
+max):
 
-    V(R) = next_expected(R) + received_above(R)
+    V(R) = ( next_expected(R), received_above(R) )   ordered lexicographically
 
 - `next_expected`: the count of the delivered prefix. Received from the
   wire.
 - `received_above`: the exact count of received seqs ≥ `next_expected`
-  (`net/sack.rs::ReceivedAbove::sync/on_insert`). Received from the wire.
+  (`net/sack.rs::ReceivedAbove::sync/on_insert`). Received from the wire,
+  as a u32.
 
-`V` is non-decreasing in receiver time and strictly increases with every
-newly received seq:
+**Why the order is monotone in receiver time.**
+- `next_expected` never moves back. A data arrival, a shed and a
+  force-deliver can only move it forward, and a forward move wins the
+  comparison whatever `received_above` does.
+- At a fixed `next_expected` the received set above it only grows
+  (`SeqBits::prune_below` is a prefix prune below the frontier,
+  `receiver.rs:674`), so `received_above` only grows.
+- Equal pairs mean an identical received set.
+- The sum `ne + above` used in the first draft of this file is also
+  monotone. Across a shed or force-deliver the frontier moves at least as
+  far as `received_above` drops: it passes the received seqs it delivers
+  plus the holes it skips.
 
-- A new receipt adds 1.
-- A frontier advance over received seqs moves count from one term to the
-  other.
-- A shed or force-deliver jump adds the holes it skips (≥ 0).
+**The two orders agree.** They differ only on pairs with equal sums and
+different frontiers, `(ne, a)` against `(ne + k, a − k)`. That is a frontier
+advance over k received seqs: the same received set, and the same gaps above
+the newer frontier. The sum calls them a tie (accepted); the lexicographic
+order calls the older one stale (rejected, with nothing lost). The
+lexicographic order is used because it exists, it is tested
+(`snap_order_is_the_lexicographic_max_and_ties_are_fresh`), and the store
+gate already depends on it.
 
-Equal `V` means an identical received set, because the set above the
-frontier only grows (`SeqBits::prune_below` is a prefix prune). So `V(R') ≥
-V(R)` implies `recv(R) ⊆ recv(R') ∪ [0, ne(R'))`: an older snapshot carries
-no fact the newest does not.
+**Saturation.** `received_above` is a u32 saturated at `u32::MAX`
+(`ReceivedAbove::sync`). It cannot reach that: the receiver records at most
+`MAX_SPAN` = 2^24 seqs above its bitmap base (`seq_bits.rs`, refused and
+counted beyond), so the count is ≤ 2^24 ≪ 2^32.
+
+So `V(R') ≥ V(R)` implies `recv(R) ⊆ recv(R') ∪ [0, ne(R'))`: an older
+snapshot carries no fact the newest does not.
 
 The law judges only the newest snapshot:
 
-    V*_t = max{ V(R) : R processed by t }
+    V*_t = max{ V(R) : R dequeued by the gap path by t }
 
-    H(R, t) = G(R)   if V(R) ≥ V*_t
+    H(R, t) = G(R)   if V(R) ≥ V*_t, or R carries no snapshot (tail sweep)
             = ∅      otherwise
+
+`V*` folds over EVERY dequeued report, including the ones coalescing
+discards. Coalescing keeps the max-`V` batch (ties: the later one), not the
+last-arrived one. With both rules, the batch coalescing keeps is never older
+than one it threw away.
 
 The packet threshold and the time threshold are both evaluated on
 `H(R, t)` only, unchanged otherwise:
@@ -206,8 +256,8 @@ Per-symbol provenance:
 | symbol | provenance |
 |---|---|
 | `G(R)` | measured: `sack_to_gaps(next_expected, sack_ranges)` of snapshot `R` |
-| `V(R)` | measured: two v9 wire fields, no new field |
-| `E_j(t)` | measured: per-path delivered evidence, ingested from accepted snapshots only (a rejected one is a subset of the newest, so dropping it loses no fact) |
+| `V(R)` | measured: two v9 wire fields, no new field; the order is `AboveReport`'s |
+| `E_j(t)` | measured: per-path delivered evidence, ingested from EVERY dequeued snapshot, stale ones included: their delivered facts are true, only their gap lists are out of date |
 | `π(s)` | measured: `source_path_map`, the original placement path |
 | `k_P = 3` | cited: RFC 9002 §6.1.1 kPacketThreshold |
 | `9/8` | cited: RFC 9002 §6.1.2 kTimeThreshold |
@@ -218,8 +268,8 @@ Shape check (CLAUDE.md, design review on the formula):
 
 - **What it changes.** The sentence is "decide on the receiver's newest
   knowledge". The expression is a max-filter on a monotone version.
-- **Order.** O(1) state (one `u64`), O(1) per snapshot.
-- **Units.** `V` is in seqs.
+- **Order.** O(1) state (one `(u64, u32)` pair), O(1) per snapshot.
+- **Units.** Both components are seq counts.
 - **Monotonicity.** `H` shrinks only for snapshots strictly older than one
   already applied.
 - **No new constant.** There is no clamp, so no bind-fraction gauge is
@@ -262,39 +312,69 @@ nothing because it is a property of no dial.
   the cumulative blocker. That batch carries no receiver snapshot and so no
   `V`. It must bypass the filter. Plumbing it as `V = 0` would reject it and
   remove the backstop for a hole with no successors.
-- **Lifetime.** `V*` lives exactly as long as the seq space it versions: one
-  transfer, the same scope as `mp_evid_max` (`net/mod.rs` ~1897). A path
+- **Lifetime.** `V*` lives exactly as long as the seq space it versions,
+  one transfer. It is `SenderState::snap_order`, built in
+  `SenderState::new` beside the encoder that numbers the seqs. A path
   joining mid-transfer does not reset it; the version is the receiver's,
   not a path's.
-- **Shed and force-deliver.** That `V` stays monotone through a receiver
-  shed or force-deliver jump is argued from reading (`sack.rs::ReceivedAbove`,
-  `receiver.rs:674`) and is NOT pinned by a test. See §5.
+  - Pinned by `snap_order_lives_with_the_transfer_and_the_tail_sweep_bypasses_it`:
+    a fresh state judges a new receiver's first report.
+  - The same test shows that a `V*` from another seq space would reject
+    that report, so a reset can never be silent filtering of everything.
+    The tail sweep (no snapshot) is still judged, and the cumulative blocker
+    is still served.
+- **Shed and force-deliver.** Monotone by the frontier argument above. That
+  argument is read from the code; no receiver-side test pins it. See §5.
 
-## 3. Predicted effect on c8 (CAND + this law, before any measurement)
+## 3. Predicted effect on c8 (before any measurement)
 
 These are point predictions with a stated band. Each band is a row-to-row
 spread or a mechanism remainder, not a fitted quantity.
 
+### 3a. The instrument, arm off (`[SNAPV]` on BASE and CAND)
+
+This is the mechanism gauge. Staleness is a property of the return legs,
+not of the horizon, so it should read the same on both binaries.
+
+| reading | predicted | basis |
+|---|---|---|
+| p0 `stale/rep` | ≤ 0.01 | the p0 return leg is FIFO (netem `rate`), and no p1 report can overtake a p0 one (min p1 one-way 15 ms > max p0 8 ms) |
+| p1 `stale/rep` | ≥ 0.8 | every p1 report is preceded at the sender by p0 reports generated up to ~15 ms later, at a ≤ 2 ms gap-report cadence on the leg that carries ~83 % of the data |
+| p1 share of `rep` | 0.10–0.25 | gap reports ride the arriving data's leg (`ctrl_dg` p1 share 16.6 %) |
+| CAND `pt_st` (sum of legs) | 2 500 ± 1 000 | the spurious fast fires (Δhy = 2 522); the band is the row spread of `hy` |
+| BASE `pt_st` | ≤ 800 | BASE `y` is 0–755 in total |
+| `tt_st` | not predicted | the time channel's stale share is unmeasured (§1); this reading measures it |
+
+### 3b. CAND + `RWM_RECOV_SNAPVER=1` against CAND
+
 | reading | CAND now (mean) | predicted | basis |
 |---|---|---|---|
+| `[SNAPV]` `pt_st`, `tt_st` | — | 0 | by construction: stale batches are not judged |
 | hy on p0 | 2 272 | ≤ 300 | BASE level (160) plus time-channel young fires on the larger horizon |
 | hy on p1 | 696 | ≤ 350 | BASE level (287) |
 | fired (= y + r) | 17 940 | 15 400 ± 700 | −Δhy (2 522) |
 | y, r split | 5 445 / 12 495 | not predicted separately | stale-driven fires may sit in either channel (§1); only their sum is registered |
 | dup total | 3 729 | 1 800 ± 300 | −0.78·Δhy; the BASE population remains |
 | dup p1 | 2 329 | 700 ± 150 | BASE p1 level (684) |
-| p0 `[HOLD] fed` | 195 k–446 k | ≤ 1 × p0 placements; no row above `sp` | re-stamps vanish |
+| sender `fed` − receiver `det` | +114 k to +177 k | ≤ 0 in every row | re-stamps vanish (BASE reads −168 k to −210 k) |
 | goodput | 107.19 Mbit/s | +0.2 to +0.5 Mbit/s | ≈ 2 k fewer 1 275-B copies (2.5 MB of 600 MB, mostly on the 20 Mbit leg); below the CAND row SD (≈ 0.33), so not resolvable at n = 6 |
 | tail | 0.19–0.63 s | unchanged (same range) | the copies removed are not on the tail's critical path; the tail gain is the horizon's |
 
+BASE + arm: no reading should move beyond BASE's row spread, because BASE
+judges almost no young hole (§1, why BASE is spared).
+
 Falsifiers:
 
-- **The heal-at-report-cadence signature survives.** If `hy_p50` stays
-  ≈ 5 ms on p0 with p0 `hy` > 1 000, the mechanism is not (only) snapshot
-  order. `fed > sp` is a weak falsifier: it fired in only one row before
-  the fix.
-- **Δdup does not follow Δhy.** If dup p1 stays > 1 200, the duplicates
-  come from elsewhere.
+- **Arm off: the stale share is low.** If p1 `stale/rep` < 0.5, reports do
+  not cross in the modelled order and the mechanism is wrong.
+- **Arm off: stale reports do not drive the fast fires.** If CAND
+  `pt_st` < 1 000, the stale reports exist but are not what drives the
+  spurious fast fires.
+- **Arm on: the heal-at-report-cadence signature survives.** If p0
+  `hy_p50` stays ≈ 5 ms with p0 `hy` > 1 000, or `fed − det` > 0 in any
+  row, the mechanism is not (only) snapshot order.
+- **Arm on: Δdup does not follow Δhy.** If dup p1 stays > 1 200, the
+  duplicates come from elsewhere.
 
 ## 4. Other findings recorded here
 
@@ -334,17 +414,18 @@ Falsifiers:
 
 ## 5. Open
 
-- **Not measured on the wire.** Whether reports really cross in the order
-  modelled is not measured per report. A per-report `V` rejection counter
-  per return leg is the mechanism gauge to add with the fix. It should read
-  ≈ the p1 share of gap reports, ~1/6 of `rep`.
-- **Plumbing V to `serve_gaps`.** The gap channel's tuple
-  `(FireCause, path, gaps)` does not carry `V` today, so the
-  implementation must add it at `control_msg.rs:740`. The
-  `[HOLD]` `on_report`/`on_reported` calls need it too. Wire bytes do not
-  change.
-- **Pin V's monotonicity.** A unit test should pin it under receiver shed
-  and force-deliver before the law ships.
+- **Report crossing is not yet measured on the wire.** Whether reports
+  cross in the order modelled is not yet measured per report. `[SNAPV]` is
+  that measurement: per return leg, `rep` and `stale`. `[FCAUSE]` is per
+  run, so the split could not be read from the s52 logs. §3a registers the
+  readings.
+- **Instrument and arm are built, not measured.** `GapBatch` carries
+  `Option<AboveReport>`, with `None` for the tail sweep.
+  `RWM_RECOV_SNAPVER=1` filters the judged gaps and the `[HOLD]`
+  `on_report`/`on_reported` stamps. Neither has been run on the VM.
+- **V's monotonicity is not pinned on the receiver side.** It is read from
+  the code (§2), and the sender's order type is tested. A receiver-side test
+  across a shed or force-deliver would close it.
 - **BASE's ~1.77 k duplicates are unexplained.** They are not attributed by
   this diagnosis (see §1).
 - **The tail clamp needs its own derivation.** `TAIL_SWEEP_MAX_US` is
