@@ -1,0 +1,3141 @@
+generated_from:
+  nodes: docs/roadmap/nodes.yaml
+  main_ref: github/main
+  head: bf2988065892d1ff1d75852f5330e32383bab642
+summary:
+  nodes_total: 232
+  nodes_without_start: 50
+  commits_all_refs: 1871
+  adrs:
+    total: 76
+    uncited_strict: 34
+    uncited_even_broad: 33
+    uncited_and_deleted: 34
+  status_sections:
+    total: 56
+    uncited_strict: 0
+    uncited_even_broad: 0
+    uncited_and_gone_from_main: 0
+    cited_only_by_bare_section_sign: 1
+  archive_tags:
+    total: 20
+    uncited_strict: 0
+    uncited_even_broad: 0
+  unmerged_branches:
+    total: 37
+    uncited_strict: 1
+    uncited_even_broad: 1
+  uncovered_commit_clusters:
+    total: 29
+    months_examined:
+    - 2026-04
+    - 2026-08
+    uncovered_commits_in_clusters: 118
+  paper_s10_rows:
+    total: 70
+    uncited_strict: 15
+    uncited_even_broad: 0
+    cited_only_by_commit_hash: 0
+months:
+- month: 2026-03
+  nodes: 16
+  commits: 59
+  commits_per_node: 3.7
+- month: 2026-04
+  nodes: 2
+  commits: 49
+  commits_per_node: 24.5
+- month: 2026-07
+  nodes: 49
+  commits: 335
+  commits_per_node: 6.8
+- month: 2026-08
+  nodes: 22
+  commits: 454
+  commits_per_node: 20.6
+- month: 2026-09
+  nodes: 21
+  commits: 239
+  commits_per_node: 11.4
+- month: 2026-10
+  nodes: 20
+  commits: 271
+  commits_per_node: 13.6
+- month: 2026-11
+  nodes: 52
+  commits: 464
+  commits_per_node: 8.9
+adrs:
+- num: 1
+  title: Block Assembly Needs Flush Timeout
+  added: '2026-03-12'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved** — flush timeout implemented in `net/mod.rs` using `tokio::select!` with configurable `FLUSH_TIMEOUT` (10ms default)
+  summary: The sender in net/mod.rs accumulates IP packets into a 64KB block buffer before FEC encoding.
+  paths:
+  - docs/adr/0001-block-assembly-timeout.md
+  - raptorpath/docs/adr/0001-block-assembly-timeout.md
+  cited: false
+  cited_other_fields: false
+  possible_match: rec-recovery-timeouts (timeout)
+- num: 2
+  title: Packet Framing After FEC Decode
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The sender concatenates multiple IP packets into a single block buffer, then FEC-encodes the block.
+  paths:
+  - docs/adr/0002-packet-framing-after-decode.md
+  - raptorpath/docs/adr/0002-packet-framing-after-decode.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 3
+  title: Loss Estimation Is Currently Broken
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The FEC rate controller depends on accurate per-path loss estimates to compute the right amount of repair symbols.
+  paths:
+  - docs/adr/0003-loss-estimation-is-broken.md
+  - raptorpath/docs/adr/0003-loss-estimation-is-broken.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 4
+  title: Decoder Map Grows Without Bound
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: 'The receiver stores per-block decoders in active_decoders: Arc<DashMap<u64, Decoder>>.'
+  paths:
+  - docs/adr/0004-decoder-memory-leak.md
+  - raptorpath/docs/adr/0004-decoder-memory-leak.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 5
+  title: No ACK/Feedback Loop Between Receiver and Sender
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The protocol defines ControlMessage::Ack, BlockResult, and PathReport messages, but none of them are ever sent.
+  paths:
+  - docs/adr/0005-ack-mechanism-missing.md
+  - raptorpath/docs/adr/0005-ack-mechanism-missing.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 6
+  title: Protocol Hint Should Influence Block Size and Timing
+  added: '2026-03-12'
+  deleted: '2026-09-27'
+  on_main: false
+  status: 'Resolved** — BlockProfile derived from ProtocolHint controls max_block_size, flush_timeout, and symbol_size. Realtime: 4KB/2ms/512B. Bulk: 6'
+  summary: The --protocol-hint flag (realtime/bulk/auto) currently only affects the FEC repair multiplier in fec_rate.rs.
+  paths:
+  - docs/adr/0006-protocol-hint-block-sizing.md
+  - raptorpath/docs/adr/0006-protocol-hint-block-sizing.md
+  cited: false
+  cited_other_fields: false
+  possible_match: model-fix-hint-keyed-paths (hint)
+- num: 7
+  title: RTT Calculation Depends on Clock Synchronization
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: 'RTT is calculated in net/mod.rs as: rust let rtt_us = now.saturating_sub(recv_timestamp_us); '
+  paths:
+  - docs/adr/0007-rtt-calculation-broken.md
+  - raptorpath/docs/adr/0007-rtt-calculation-broken.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 8
+  title: Receiver Doesn't Handle BlockStart Messages
+  added: '2026-03-12'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved** — sender sends `BlockStart` before symbols via `encode_and_send_block()`. Receiver handles `BlockStart` in `handle_control_messag
+  summary: The sender is supposed to send a ControlMessage::BlockStart { params, transfer_length } before transmitting symbols for a new block.
+  paths:
+  - docs/adr/0008-blockstart-not-handled.md
+  - raptorpath/docs/adr/0008-blockstart-not-handled.md
+  cited: false
+  cited_other_fields: false
+  possible_match: ''
+- num: 9
+  title: No Congestion Control
+  added: '2026-03-12'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved** — AIMD congestion control with FEC-aware loss response. Slow start, congestion avoidance, multiplicative decrease on congestion l
+  summary: The scheduler tracks a per-path cwnd (congestion window) initialized to 10 symbols.
+  paths:
+  - docs/adr/0009-no-congestion-control.md
+  - raptorpath/docs/adr/0009-no-congestion-control.md
+  cited: false
+  cited_other_fields: false
+  possible_match: rate-fec-rate-v1 (control)
+- num: 10
+  title: No Handshake or Protocol Versioning
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: Peers connect via QUIC and immediately start sending symbol batches.
+  paths:
+  - docs/adr/0010-handshake-and-versioning.md
+  - raptorpath/docs/adr/0010-handshake-and-versioning.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 11
+  title: TUN and Message Channels Can Stall Under Load
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: 'The system uses bounded mpsc channels at several points: - TUN read → sender: capacity 256 - Receiver → TUN write: capacity 256 - All paths → receiver: capacity 512'
+  paths:
+  - docs/adr/0011-channel-backpressure.md
+  - raptorpath/docs/adr/0011-channel-backpressure.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 12
+  title: Platform Setup Is Too Complex and Error-Prone
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: Running raptorpath requires multiple manual steps that aren't documented, validated, or automated.
+  paths:
+  - docs/adr/0012-platform-setup-ux.md
+  - raptorpath/docs/adr/0012-platform-setup-ux.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 13
+  title: No Runtime Monitoring or Observability
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: A multipath FEC system has many moving parts.
+  paths:
+  - docs/adr/0013-monitoring-and-observability.md
+  - raptorpath/docs/adr/0013-monitoring-and-observability.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 14
+  title: No Duplicate Symbol Detection
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: With multipath transport, the same symbol could potentially arrive twice (retransmission, routing anomaly, or implementation bug).
+  paths:
+  - docs/adr/0014-duplicate-symbol-handling.md
+  - raptorpath/docs/adr/0014-duplicate-symbol-handling.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 15
+  title: No Graceful Shutdown
+  added: '2026-03-12'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The main loop uses tokio::select! on sender and receiver handles.
+  paths:
+  - docs/adr/0015-graceful-shutdown.md
+  - raptorpath/docs/adr/0015-graceful-shutdown.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 16
+  title: Block Interleaving
+  added: '2026-03-13'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: A burst loss event of duration D destroys all symbols in flight during that period.
+  paths:
+  - docs/adr/0016-block-interleaving.md
+  - raptorpath/docs/adr/0016-block-interleaving.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-block-pipeline (block)
+- num: 17
+  title: MTU-Aware Symbol Sizing
+  added: '2026-03-13'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: Symbols are sent as QUIC DATAGRAM frames.
+  paths:
+  - docs/adr/0017-mtu-aware-symbol-sizing.md
+  - raptorpath/docs/adr/0017-mtu-aware-symbol-sizing.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 18
+  title: Runtime Connection Migration
+  added: '2026-03-13'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: Raptorpath bonds multiple network paths, but all paths must be configured at startup.
+  paths:
+  - docs/adr/0018-connection-migration.md
+  - raptorpath/docs/adr/0018-connection-migration.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 19
+  title: BBR-Style Delay-Based Congestion Control
+  added: '2026-03-13'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: 'The original AIMD (Additive Increase, Multiplicative Decrease) congestion control is loss-based: every packet loss reduces the congestion window.'
+  paths:
+  - docs/adr/0019-bbr-delay-based-cc.md
+  - raptorpath/docs/adr/0019-bbr-delay-based-cc.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 20
+  title: Optional TLS Certificate Pinning
+  added: '2026-03-13'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: RaptorPath uses QUIC for transport, which requires TLS 1.3.
+  paths:
+  - docs/adr/0020-tls-cert-pinning.md
+  - raptorpath/docs/adr/0020-tls-cert-pinning.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 21
+  title: Swappable FEC Backend
+  added: '2026-03-13'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: RaptorPath's FEC layer was hardcoded to RaptorQ (RFC 6330) throughout.
+  paths:
+  - raptorpath/docs/adr/0021-swappable-fec-backend.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-mettle (backend, swappable)
+- num: 22
+  title: Sliding Window FEC Architecture
+  added: '2026-03-14'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: 'Raptorpath''s FEC layer is block-based: data accumulates in a buffer until a block is full or a timeout fires, then the entire block is encoded, interleaved, and transmitted.'
+  paths:
+  - raptorpath/docs/adr/0022-sliding-window-fec.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-legacy-rlc (sliding, window)
+- num: 23
+  title: Gilbert-Elliott HMM Loss Model
+  added: '2026-03-14'
+  deleted: null
+  on_main: true
+  status: Accepted (the burst multiplier was later superseded by ADR-0050)
+  summary: Raptorpath's FEC rate controller uses an i.i.d.
+  paths:
+  - docs/adr/0023-gilbert-elliott-loss-model.md
+  - raptorpath/docs/adr/0023-gilbert-elliott-loss-model.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 24
+  title: BBR ProbeRTT Phase
+  added: '2026-03-14'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: Raptorpath's BBR-style congestion controller (ADR-0019) tracks min_rtt in a 10-second sliding window to estimate the propagation delay baseline.
+  paths:
+  - raptorpath/docs/adr/0024-bbr-probe-rtt-phase.md
+  cited: false
+  cited_other_fields: false
+  possible_match: rec-reliable-window (phase)
+- num: 25
+  title: WindowNack Sender-Side Repair
+  added: '2026-03-14'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: In sliding-window FEC mode (ADR-0022), the receiver detects gaps in the received sequence and sends WindowNack control messages containing gap ranges back to the sender.
+  paths:
+  - raptorpath/docs/adr/0025-window-nack-sender-repair.md
+  cited: false
+  cited_other_fields: false
+  possible_match: rec-early-arq (nack, repair)
+- num: 26
+  title: Multipath Window Scheduling
+  added: '2026-03-14'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: The sliding-window sender (run_window_sender) used select_window_paths() which picked source and repair paths based solely on loss rate.
+  paths:
+  - raptorpath/docs/adr/0026-multipath-window-scheduling.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-l2-multipath (multipath)
+- num: 27
+  title: Streaming Codes (Badr/Martinian Delay-Optimal)
+  added: '2026-03-14'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: raptorpath's sliding-window FEC backends (RLC, METTLE) use random linear combinations or peeling decoders without awareness of the channel's burst structure.
+  paths:
+  - raptorpath/docs/adr/0027-streaming-codes.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-streaming-code (code, streaming)
+- num: 28
+  title: METTLE Performance Analysis — Edge Probability Bug + Integration Fixes
+  added: '2026-03-15'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: 'Real-world benchmarks (2026-03-14) showed METTLE severely underperforming all other FEC backends:'
+  paths:
+  - raptorpath/docs/adr/0028-mettle-performance-analysis.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-mettle (mettle)
+- num: 29
+  title: Tapered Repair Interleaving
+  added: '2026-03-15'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Implemented (Phase 1 + Phase 2)
+  summary: Repair symbols were previously sent either as a flat batch after sources (block mode) or at a constant rate (window mode).
+  paths:
+  - raptorpath/docs/adr/0029-tapered-repair-interleaving.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 30
+  title: Runtime FEC Backend Switching
+  added: '2026-03-16'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: The FEC backend was fixed at startup via config (--fec-backend / TOML).
+  paths:
+  - raptorpath/docs/adr/0030-runtime-backend-switching.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-backend-switch (backend, switching)
+- num: 31
+  title: Network Simulation Harness
+  added: '2026-03-17'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: Raptorpath has several network-dependent features (engine congestion control, reorder buffer, NACK repair) that only had isolated unit tests.
+  paths:
+  - docs/adr/0031-network-simulation-harness.md
+  - raptorpath/docs/adr/0031-network-simulation-harness.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 32
+  title: Ablation Benchmark Recommendations
+  added: '2026-03-17'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: 'The ablation benchmark (docs/ablation-results-2026-03-16.md) revealed three actionable findings:'
+  paths:
+  - raptorpath/docs/adr/0032-benchmark-recommendations.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-l0-sim-bench (ablation)
+- num: 33
+  title: Full-Pipeline Ablation Benchmark
+  added: '2026-03-17'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: The existing ablation_bench.rs (ADR-0032) measures FEC-only features (PI feedback, GE burst factor, realtime burst extra) in isolation using a channel model applied directly to symbol arrays.
+  paths:
+  - raptorpath/docs/adr/0033-pipeline-ablation-benchmark.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-l0-sim-bench (ablation)
+- num: 34
+  title: Per-Feature Tradeoff Ablation Benchmark
+  added: '2026-03-17'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: ADR-0033 introduced a full-pipeline ablation benchmark with one-feature-off analysis.
+  paths:
+  - raptorpath/docs/adr/0034-tradeoff-ablation-benchmark.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-l0-sim-bench (ablation)
+- num: 35
+  title: Algorithm Recommendations and Metric Architecture Review
+  added: '2026-03-17'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Resolved
+  summary: 'Three benchmark suites now provide comprehensive data on every major algorithm in the pipeline:'
+  paths:
+  - raptorpath/docs/adr/0035-algorithm-recommendations.md
+  cited: false
+  cited_other_fields: false
+  possible_match: obs-otel-design (metric)
+- num: 36
+  title: Raptorpath vs Reliable QUIC / MPTCP Transport Comparison Benchmark
+  added: '2026-03-17'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: All existing benchmarks compare raptorpath FEC backends against each other.
+  paths:
+  - raptorpath/docs/adr/0036-transport-comparison-benchmark.md
+  cited: false
+  cited_other_fields: false
+  possible_match: rec-reliable-window (reliable)
+- num: 37
+  title: NACK Source Retransmit, Cross-Path Repair, Fractional Repair Accumulator
+  added: '2026-03-18'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: The NACK repair path (ADR-0025) generates random repair symbols in response to receiver gap reports.
+  paths:
+  - raptorpath/docs/adr/0037-nack-source-retransmit.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 38
+  title: Benchmark Overhead Taxonomy and Methodology
+  added: '2026-03-18'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: The transport comparison benchmark (ADR-0036) shows raptorpath with 38-50% "overhead" across all scenarios.
+  paths:
+  - raptorpath/docs/adr/0038-benchmark-overhead-taxonomy.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-s51-design (benchmark)
+- num: 39
+  title: Overhead Reduction — Benchmark Fix and Symbol Packing
+  added: '2026-03-18'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: ADR-0038 identified five layers of overhead in the raptorpath protocol.
+  paths:
+  - raptorpath/docs/adr/0039-overhead-reduction.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-s51-design (benchmark)
+- num: 40
+  title: Benchmark Repair Alignment + Multi-Backend Comparison
+  added: '2026-03-18'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: The transport comparison benchmark (ADR-0036) showed raptorpath with 38-50% overhead across all scenarios, even on near-lossless datacenter links.
+  paths:
+  - raptorpath/docs/adr/0040-benchmark-repair-alignment.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cod-mettle (backend)
+- num: 41
+  title: SIMD-Accelerated GF(2^8) Multiply-Accumulate
+  added: '2026-03-18'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The RLC window decoder's hot loop is gf256::mul_acc_slice(coeff, src, dst), computing dst[i] ^= coeff src[i] via scalar log/exp table lookups.
+  paths:
+  - docs/adr/0041-simd-gf256.md
+  - raptorpath/docs/adr/0041-simd-gf256.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 42
+  title: Consolidate Benchmarks into Actionable Suite
+  added: '2026-03-20'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The project had 4 integration test benchmarks (transport_comparison_bench, pipeline_ablation_bench, tradeoff_ablation_bench, ablation_bench) that produced hundreds of lines across dozens of tables
+    but failed to answer basic questions like "
+  paths:
+  - docs/adr/0042-bench-suite-consolidation.md
+  - raptorpath/docs/adr/0042-bench-suite-consolidation.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 43
+  title: Information-Theoretic FEC Rate Controller
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: 'The bench suite (ADR-0042) revealed three problems with the FEC rate controller:'
+  paths:
+  - raptorpath/docs/adr/0043-information-theoretic-fec-rate.md
+  cited: false
+  cited_other_fields: false
+  possible_match: ''
+- num: 44
+  title: Benchmark Methodology Audit
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: 'An audit of the benchmark suite revealed several methodology issues that undermined the validity of reported results:'
+  paths:
+  - raptorpath/docs/adr/0044-benchmark-methodology.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-s51-design (benchmark)
+- num: 45
+  title: Comprehensive Matrix Benchmark
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: The benchmark suite output format changed multiple times across ADRs 0033–0044, making cross-commit comparison impossible.
+  paths:
+  - raptorpath/docs/adr/0045-matrix-benchmark.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-pipeline-verification (matrix)
+- num: 46
+  title: NACK Congestion Awareness + Simulation Realism
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: 'The ADR-0045 matrix benchmark (189 cells × 30 trials) exposed several issues:'
+  paths:
+  - raptorpath/docs/adr/0046-nack-congestion-sim-realism.md
+  cited: false
+  cited_other_fields: true
+  possible_match: rec-early-arq (nack)
+- num: 47
+  title: Test Accuracy + Protocol Optimization
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: Post-ADR-0046, the benchmark infrastructure had cwnd pacing, congestion-aware NACK, and realistic retransmit simulation.
+  paths:
+  - raptorpath/docs/adr/0047-test-accuracy-protocol-optimization.md
+  cited: false
+  cited_other_fields: false
+  possible_match: ''
+- num: 48
+  title: FEC Overhead Reduction
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: 'After ADR-0047 fixed LTE recovery (1%→100%) and reduced WiFi overhead (39.6%→21.4%), window backends still had excessive overhead:'
+  paths:
+  - raptorpath/docs/adr/0048-overhead-reduction.md
+  cited: false
+  cited_other_fields: false
+  possible_match: ''
+- num: 49
+  title: Benchmark Dashboard Generator
+  added: '2026-03-20'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted
+  summary: The matrix benchmark (ADR-0045) produces JSON files with 10 metrics across 168 cells per run, accumulating across commits.
+  paths:
+  - raptorpath/docs/adr/0049-benchmark-dashboard.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-s51-design (benchmark)
+- num: 50
+  title: FEC Rate Control Redesign — Principled Budget Architecture
+  added: '2026-03-21'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: 'The FEC rate controller used a formula rate = max(p/(1-p) + codec, B/T) × (1+margin) + PI + hint that accumulated unnecessary overhead through:'
+  paths:
+  - docs/adr/0050-fec-rate-control-redesign.md
+  - raptorpath/docs/adr/0050-fec-rate-control-redesign.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 51
+  title: Canonical Evaluation Scenarios and Win Conditions
+  added: '2026-07-02'
+  deleted: null
+  on_main: true
+  status: Accepted
+  summary: The project goal is to surpass TCP, MPTCP, and similar retransmission-based transports over (multiple) unreliable channels.
+  paths:
+  - docs/adr/0051-canonical-evaluation-scenarios.md
+  - raptorpath/docs/adr/0051-canonical-evaluation-scenarios.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 52
+  title: L1 Measurement Discipline (liveness proof, pre-registration, era honesty)
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (binding for every L1 verdict)
+  summary: 'Six mechanism verdicts were once merged on measurements in which the mechanism under test never executed (the "generation-inert era": the harness never checked that generation coding actually
+    coded).'
+  paths:
+  - docs/adr/0052-measurement-discipline.md
+  - raptorpath/docs/adr/0052-measurement-discipline.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 53
+  title: The Generation-Inert Era — audit, classification, and the hard guard
+  added: '2026-07-21'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted (methodology lesson; the era's verdicts are Void/Uncertain)
+  summary: The 2026-07-12 DAPS-era arc (paper §16.10–§16.14; seven ledger sections) merged mechanism verdicts for delay-aware scheduling, per-path pacing, source backpressure, rate-sample anchors and read-ahead
+    depth.
+  paths:
+  - raptorpath/docs/adr/0053-generation-inert-era-audit.md
+  cited: false
+  cited_other_fields: false
+  possible_match: meas-gen-inert-era (generation, inert)
+- num: 54
+  title: Substrate Congestion Control Is Policy — BBR Default (`RWM_QUIC_CC`)
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (BBR default; Cubic retained as explicit opt-out)
+  summary: 'Wall #1 of the substrate chain: every datagram send is gated on quinn''s own congestion window, and quinn''s default is loss-reactive Cubic.'
+  paths:
+  - docs/adr/0054-substrate-cc-policy-bbr-default.md
+  - raptorpath/docs/adr/0054-substrate-cc-policy-bbr-default.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 55
+  title: MTU Floor 1350 — defeat quinn's PMTU black-hole false positive
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (ships default ON)
+  summary: 'Wall #2: a cross-arm c3/C8 "collapse run" class (~60 s stalls at 2.2–3.3 Mbit/s, 7.6% of historic runs) was hypothesized as a receiver frontier wedge.'
+  paths:
+  - docs/adr/0055-mtu-floor-1350.md
+  - raptorpath/docs/adr/0055-mtu-floor-1350.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 56
+  title: Systematic-Repair Wire as the Generation Arm + Sparse-Aware Decoding
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (the sparse-aware decoder; the generation arm itself is opt-in with no disposition, see `docs/status.md`)
+  summary: 'Walls #3 and #4: the generation machine capped the whole gen transport at ~34 Mbit/s regardless of path count, attributed to the receiver''s dense per-generation Gauss–Jordan O(G²·S).'
+  paths:
+  - docs/adr/0056-systematic-wire-sparse-decoder.md
+  - raptorpath/docs/adr/0056-systematic-wire-sparse-decoder.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 57
+  title: Profile Before Parallelize — the crypto and threading refutations
+  added: '2026-07-21'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted (as method; three threading refutations + one crypto refutation on the record)
+  summary: 'Two standing hypotheses said the transport was compute-bound: (a) crypto — software AES-GCM on every packet in the qemu64 era; (b) the "single-thread receiver ceiling ~93–104 Mbit/s" — task
+    #84 shipped with a receiver-parallelization plan, '
+  paths:
+  - raptorpath/docs/adr/0057-profile-before-parallelize.md
+  cited: false
+  cited_other_fields: false
+  possible_match: perf-threading-r3 (profile, threading)
+- num: 58
+  title: Path-Scaled Outstanding Pool; the Per-Path Account Family Refuted for Asymmetric Cells
+  added: '2026-07-21'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted (`RWM_STORE_PATHS` default ON since 2026-07-21; percap/borrowing family Refuted for c8, retained gated for symmetric cells; c8 pool
+  summary: 'Wall #7, the actual multipath binder: the outstanding pool (RELIABLE_STORE_MAX = 1024) is a per-TRANSFER constant — a Little''s-law ~100–128 Mbit wall, CPU-invariant.'
+  paths:
+  - raptorpath/docs/adr/0058-path-scaled-outstanding-pool.md
+  cited: false
+  cited_other_fields: false
+  possible_match: store-xn-pool (path, pool, scaled)
+- num: 59
+  title: Per-Path Recovery Clocks — RFC 9002 loss detection generalized per path
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (`RWM_RECOV_MP` default ON; per-path SERIAL namespaces refuted as runtime and deleted)
+  summary: 'Wall #8: with the outstanding pool path-scaled (RWM_STORE_PATHS) and receiver threading refuted by profiling, the c7 wire was measured SATURATED by the recovery plane itself — retx share ×1.8
+    and repair share ×2.2–2.5 the same-config single'
+  paths:
+  - docs/adr/0059-per-path-recovery-clocks.md
+  - raptorpath/docs/adr/0059-per-path-recovery-clocks.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 60
+  title: SACK-Clocked Store Release (supersedes the SACK_PRUNE experiment)
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (`RWM_STORE_SACK_RELEASE` default ON). Supersedes the refuted `RWM_SACK_PRUNE` experiment (since deleted)
+  summary: 'Wall #9, the per-path-clock residual (paper §7.1): the retention store freed slots only on the CUMULATIVE frontier (sent_store.split_off(&(ack+1))), so SACKed-but-not-cumulative symbols held
+    flow-control slots a full frontier round — at c7 '
+  paths:
+  - docs/adr/0060-sack-clocked-store-release.md
+  - raptorpath/docs/adr/0060-sack-clocked-store-release.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 61
+  title: Anchor Hygiene — three laws for a measured anchor
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (M* pair and clock-gap default ON; A* anchor default ON under `RWM_UNIFIED`; `RWM_PLAIN_RS` retained gated, default OFF)
+  summary: 'Three independent investigations converged on one defect family: the unified-realtime collapse attribution (A span anchor pinned at 1 for ~10 s by a cold 2-s EWMA, and flood-poisonable), the
+    #61 knee battery (M unreachable behind a 50-ms RT'
+  paths:
+  - docs/adr/0061-anchor-hygiene.md
+  - raptorpath/docs/adr/0061-anchor-hygiene.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 62
+  title: Copa Wire-Signal + Competitive Mode; the CC-Independence Finding
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (Copa-sole = the queue/tail arm of the CC policy surface; `RWM_COPA_COMPETE` built, default OFF)
+  summary: With substrate CC a policy surface (ADR-0054), the engine's own per-path Copa-lite could BE quinn's window (RWM_QUIC_CC=passthrough) — fed for the first time with clean plain-mode delivery samples.
+  paths:
+  - docs/adr/0062-copa-wire-signal-competitive-mode.md
+  - raptorpath/docs/adr/0062-copa-wire-signal-competitive-mode.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 63
+  title: r* Window-Mass Provisioning and the Wire-Realization Chain
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: Accepted (`RWM_RSTAR_TAIL` default ON; realized at the wire through the unified machine)
+  summary: r was derived for GE-geometric bursts, but real traces carry burst-length tails 3.8–26× heavier than geometric AND burst clustering, so delivered window-failure missed the δ/ε target by 2–4×
+    (worst 12.8×) even at 55–100% overhead — breaking
+  paths:
+  - docs/adr/0063-rstar-window-mass-provisioning.md
+  - raptorpath/docs/adr/0063-rstar-window-mass-provisioning.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 64
+  title: One Machine Across the δ Axis — the Unified Span Machine + δ-Honest Shedding
+  added: '2026-07-21'
+  deleted: null
+  on_main: true
+  status: 'Accepted (`RWM_UNIFIED` default ON). The streaming machine was retired after its re-test (bccb32a); `RWM_UNIFIED=0` with Realtime now falls '
+  summary: 'The principle debt (paper §5.10 "One pipeline, not mode switching"): the transport shipped THREE receive machines — the streaming two-layer code (Realtime), RlcWindowDecoder (plain window),
+    and GenerationDecoder (gen wire) — selected by a h'
+  paths:
+  - docs/adr/0064-unified-span-machine.md
+  - raptorpath/docs/adr/0064-unified-span-machine.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 65
+  title: The DAPS-Era Refutations (delay-aware scheduling chain)
+  added: '2026-07-21'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Refuted / Void (era verdicts Void-or-Uncertain per audit; live re-test refuted the stack; gates deprecated-warned, retained pending the regi
+  summary: 'The 2026-07-12 arc built a delay-aware multipath stack for generation mode: RWM_DAPS (delay-aware path scheduling + right-sized FEC), RWM_DAPS_BDP (per-path BDP cap), RWM_DAPS_PACE/RWM_PACE_ALL
+    (per-path BtlBw pacing of source and repair), '
+  paths:
+  - raptorpath/docs/adr/0065-daps-era-refutations.md
+  cited: false
+  cited_other_fields: false
+  possible_match: rate-saturation-rstar (aware)
+- num: 66
+  title: The Deprecation Register — two-stage retirement for refuted mechanisms
+  added: '2026-07-21'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows del
+  summary: The consolidation pass had to decide what to do with a decade's worth (in project time) of refuted mechanisms.
+  paths:
+  - raptorpath/docs/adr/0066-deprecation-register.md
+  cited: false
+  cited_other_fields: false
+  possible_match: infra-consolidation (deprecation, register)
+- num: 67
+  title: The Consolidated Default Stack — the shipped default IS the best-measured configuration
+  added: '2026-07-21'
+  deleted: '2026-09-27'
+  on_main: false
+  status: Accepted (defaults landed 2026-07-21)
+  summary: 'The default-honesty scandal: by mid-July every measured winner sat default-OFF (each gated on a per-knob clean sweep while the features interact), so the shipped binary with env unset was the
+    WORST measured configuration — stock Cubic under'
+  paths:
+  - raptorpath/docs/adr/0067-consolidated-default-stack.md
+  cited: false
+  cited_other_fields: false
+  possible_match: cc-bbr-default (default)
+- num: 68
+  title: A better Copa — δ-priced probing over a measured rate model with ε̂-referenced loss discrimination
+  added: '2026-07-22'
+  deleted: null
+  on_main: true
+  status: Proposed (prerequisite battery complete — see the measured-baseline addendum; no build scheduled)
+  summary: 'The substrate-CC policy surface (ADR-0054) carries two measured controllers, and each one''s advantage over the other is STRUCTURAL, not incidental:'
+  paths:
+  - docs/adr/0068-copa-bbr-fusion.md
+  - raptorpath/docs/adr/0068-copa-bbr-fusion.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 69
+  title: Block mode is LEGACY — the last mode bit, deprecated with a re-test clause; the default does NOT flip without measurement
+  added: '2026-08-10'
+  deleted: null
+  on_main: true
+  status: Accepted, executed — the window pipeline is the default for every hint and the block pipeline is deleted (`dacfd7c`, 2026-10-04), on the Sta
+  summary: Block mode is LEGACY as of 2026-08-10. It is not a supported shipped configuration and it is not a measured one; it is a frozen implementation kept alive solely to be re-tested.
+  paths:
+  - docs/adr/0069-block-mode-disposition.md
+  - raptorpath/docs/adr/0069-block-mode-disposition.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 70
+  title: The store-cap law on trial — a term-by-term review of `clamp(gain·N·Σ, floor, N·knee)`, one defect, two fossils, one stale measurement, and the derived law that would replace the whole expression
+  added: '2026-08-12'
+  deleted: '2026-09-27'
+  on_main: false
+  status: 'Accepted (2026-08-12) — **a REVIEW, not a change.** Every verdict below is a finding about provenance; no engine file, no gate, no default, '
+  summary: '1. The verdicts stand as findings of record, one line each:'
+  paths:
+  - raptorpath/docs/adr/0070-store-cap-law-review.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 71
+  title: The two conceptual successors to the cap law, written FORMULA-FIRST as CANDIDATES — the slack magnitude (what replaces `17/8`-as-permanent) and the δ-priced queue bound (what replaces `knee`/`N·2048`
+    and `WIN_STORE_MAX`-as-law)
+  added: '2026-08-18'
+  deleted: '2026-09-27'
+  on_main: false
+  status: PROPOSED — NO DECISION TAKEN, AND NONE IS SOUGHT HERE.
+  summary: This document enumerates, derives and prices candidates.
+  paths:
+  - raptorpath/docs/adr/0071-successor-candidates.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 72
+  title: One store-cap law at every path count — the `n_live < 2` guard is removed
+  added: '2026-10-26'
+  deleted: null
+  on_main: true
+  status: 'Accepted (status §19: no N≥2 move at c1d/c8 against a same-session main; c1s PINNED, c2 INERT-AS-DERIVED; §18 read REFUTED against a cross-s'
+  summary: pooled_store_cap returns None below two live paths, so one path runs a different law, clamp(2.0·BtlBw·RTprop, 10, 1024) (paper §6.2).
+  paths:
+  - docs/adr/0072-one-store-law-at-every-path-count.md
+  - raptorpath/docs/adr/0072-one-store-law-at-every-path-count.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 73
+  title: An arm is promoted or archived at its verdict
+  added: '2026-11-10'
+  deleted: null
+  on_main: true
+  status: Accepted (user, 2026-11-10). Supersedes ADR-0052's two-stage retirement.
+  summary: 'ADR-0052 retired a refuted mechanism in two stages: deprecate (the gate warns on activation), re-test where the refuting substrate may have been broken, then delete.'
+  paths:
+  - docs/adr/0073-promote-or-archive-at-the-verdict.md
+  - raptorpath/docs/adr/0073-promote-or-archive-at-the-verdict.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 74
+  title: One metrics registry, rendered three ways; OTLP export and a flight recorder
+  added: '2026-11-12'
+  deleted: null
+  on_main: false
+  status: Proposed (draft for the user's decision). Supersedes ADR-0013's Layer 4 (Prometheus) only; ADR-0013's Layers 1–3 stand.
+  summary: The engine has two observability surfaces that share no source.
+  paths:
+  - raptorpath/docs/adr/0074-metrics-registry-and-otel-export.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 75
+  title: Vendored quinn-proto with a controller pacing-rate hook
+  added: '2026-11-12'
+  deleted: null
+  on_main: false
+  status: Accepted (user decision, 2026-11-12)
+  summary: quinn-proto's congestion::Controller trait lets a controller set only the window.
+  paths:
+  - docs/adr/0075-vendored-quinn-proto-pacing-hook.md
+  - raptorpath/docs/adr/0075-vendored-quinn-proto-pacing-hook.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 76
+  title: Workspace restructure — one docs tree, one tools tree, ledgers out of the build path
+  added: '2026-11-12'
+  deleted: null
+  on_main: true
+  status: 'Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Phase 0: done. Phase 2: lines committed on `restru'
+  summary: The workspace grew around one crate. docs/ and tools/ sit inside the engine crate (raptorpath/docs, raptorpath/tools) although the paper, the status ledger, the ADRs and the L1 harness cover
+    the whole workspace.
+  paths:
+  - docs/adr/0076-workspace-restructure.md
+  - raptorpath/docs/adr/0076-workspace-restructure.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+status_sections:
+- section: '1'
+  heading: The default stack (as the code resolves it)
+  first_seen: '2026-09-27'
+  first_sha: 22b56d9f60
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '2'
+  heading: Most recent verdicts
+  first_seen: '2026-09-27'
+  first_sha: 22b56d9f60
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '3'
+  heading: Open items and debts
+  first_seen: '2026-09-27'
+  first_sha: 22b56d9f60
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '4'
+  heading: Block default re-test — pre-registration
+  first_seen: '2026-09-27'
+  first_sha: 22b56d9f60
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '5'
+  heading: Stage-3 baseline — pre-registration
+  first_seen: '2026-09-30'
+  first_sha: b3c6923b3b
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '6'
+  heading: V4 verification — pre-registration
+  first_seen: '2026-10-04'
+  first_sha: 7d8cec2b97
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '7'
+  heading: Receive-buffer fix (F-A) — pre-registration
+  first_seen: '2026-10-05'
+  first_sha: 927bb00d96
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '8'
+  heading: Emission-batching scope (Law 0) — pre-registration
+  first_seen: '2026-10-05'
+  first_sha: 788d2efb88
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '9'
+  heading: Threading redesign P0 — per-thread core budget — pre-registration
+  first_seen: '2026-10-05'
+  first_sha: 08d93e5ea2
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '10'
+  heading: The per-path datagram feeder — evidence record (code not merged; superseded by the threading redesign)
+  first_seen: '2026-10-05'
+  first_sha: dc388014ad
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '12'
+  heading: Threading P2a — the logic actor — pre-registration
+  first_seen: '2026-10-05'
+  first_sha: 39a97f3ec2
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '13'
+  heading: Threading Q1 — the per-path I/O owner — pre-registration
+  first_seen: '2026-10-06'
+  first_sha: 272d001255
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '14'
+  heading: Threading Q2 — the scheduler split by direction — pre-registration
+  first_seen: '2026-10-06'
+  first_sha: dbdfefb5b0
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '15'
+  heading: D9 attribution and the c8 lag re-check — pre-registration
+  first_seen: '2026-10-06'
+  first_sha: fe4ee50bcb
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '16'
+  heading: Threading Q3 — the investigation (step 1) — pre-registration
+  first_seen: '2026-10-06'
+  first_sha: 81b5335261
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '17'
+  heading: Receiver per-datagram cost (R1) — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: a262511392
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '18'
+  heading: One store law at every path count (ADR-0072) — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: c12606f8aa
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '19'
+  heading: Same-session control for §18 — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: 523f9ef9f8
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '20'
+  heading: R1 c1s collapse — diagnosis — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: af0fc86cb4
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '21'
+  heading: Receiver per-datagram cost, R1 with the [LAT] floor fix (R2) — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: 73d868da09
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '22'
+  heading: Threading R3 step 0 — the c1d receiver re-profile — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: e4d078efd5
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '23'
+  heading: The c1 anchor over-read and the store law's input — diagnosis — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: 65348e4705
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '24'
+  heading: Which input can the store law read? — loop time, quinn's rate, jitter — diagnosis — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: de3e11a15e
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '25'
+  heading: The c8 client `[LAG]` spread — diagnosis — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: 733a675fd4
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '26'
+  heading: The c8 lag tail and the sender's long polls — the two deciding measurements — pre-registration
+  first_seen: '2026-10-26'
+  first_sha: 733a675fd4
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '27'
+  heading: The spread law's two premises — the L source and a cap-flat spread — diagnosis — pre-registration
+  first_seen: '2026-10-27'
+  first_sha: 317520f54c
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '28'
+  heading: Incremental SACK marking — ship battery (with a step-0 check of the per-wake bound) — pre-registration
+  first_seen: '2026-10-27'
+  first_sha: 12ec8d5b17
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '29'
+  heading: The power-seeking store law (candidate D) against main and the static knee — diagnosis — pre-registration
+  first_seen: '2026-10-27'
+  first_sha: 317520f54c
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '30'
+  heading: A noise-sized measurement window for the power-seeking law (D) — derivation, no VM — verdict
+  first_seen: '2026-10-28'
+  first_sha: 9677a3c996
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '32'
+  heading: The decoder prune per drain (the measured R3 subset) — ship battery — pre-registration
+  first_seen: '2026-10-28'
+  first_sha: d0d9072f18
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '33'
+  heading: The c8 lag tail's timer hand-off component on current main — offline reading — result
+  first_seen: '2026-11-01'
+  first_sha: 61128b84a7
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '34'
+  heading: The store law's missing input after the receiver change — derivation, no VM — verdict, and a diagnostic pre-registration (not run)
+  first_seen: '2026-11-01'
+  first_sha: bb08d6fd72
+  heading_variants: 2
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '35'
+  heading: Receiver-side follow-ups of §31/§32 — the `recv_alloc_bound` spread (diagnostic) and the test sessions — pre-registration
+  first_seen: '2026-11-02'
+  first_sha: d00a6371ef
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '36'
+  heading: Receiver-side dispersion as the store law's link-rate source — capture diagnostic — pre-registration
+  first_seen: '2026-11-09'
+  first_sha: 496a2a90c4
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '37'
+  heading: Model review — joint fixed point, internal audit, literature — no VM, record
+  first_seen: '2026-11-10'
+  first_sha: dee32e4954
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '38'
+  heading: The idle-leg lock-out — the wire-clocked placement base (`RWM_PLACE_WIRE`) — pre-registration
+  first_seen: '2026-11-10'
+  first_sha: f6c05a8bca
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '39'
+  heading: The DoF ledger, the rate law's feedback leg — derivation, no VM — verdict
+  first_seen: '2026-11-10'
+  first_sha: 19bf47e7db
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '40'
+  heading: The p90 dispersion estimator, fixed in advance, with aggregation and policer cells — capture diagnostic — pre-registration
+  first_seen: '2026-11-10'
+  first_sha: b3ec108b8b
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '41'
+  heading: '`RWM_PLACE_WIRE`, iteration once — an allocation-free witness — host gate, then battery — pre-registration'
+  first_seen: '2026-11-10'
+  first_sha: 9e3b79354a
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: 41b
+  heading: '`RWM_PLACE_WIRE` gate-off against main — an A/A-calibrated guard — pre-registration'
+  first_seen: '2026-11-10'
+  first_sha: a5d4f9cf58
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: 41c
+  heading: 'The merge guard: rank-minp, 12/12 at four cells — pre-registration'
+  first_seen: '2026-11-10'
+  first_sha: e08f518852
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: 41d
+  heading: 'Merge guard v2 (ACCEPTED): the start-up RTT floor off at c2/c8, in-order delay scored on 600 MB c2/c8 rows — instrument change, no VM'
+  first_seen: '2026-11-13'
+  first_sha: f73338f8ce
+  heading_variants: 2
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '42'
+  heading: The engine path for dispersion, and the store law's time term — derivation and feasibility, no VM — record
+  first_seen: '2026-11-10'
+  first_sha: af06313d08
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '43'
+  heading: 'The oracle store law in closed loop: one operating point or two? — diagnostic arm `RWM_STORE_LAW=oracle` at c2 and c1s — pre-registration'
+  first_seen: '2026-11-10'
+  first_sha: c6262d37cc
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '44'
+  heading: Is the model overcomplicated? — law inventory and simplification review — no VM, record
+  first_seen: '2026-11-10'
+  first_sha: '5100416924'
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '45'
+  heading: Simplification plan — reduce complexity, keep or improve performance — no VM, plan
+  first_seen: '2026-11-10'
+  first_sha: 1f430c1088
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '46'
+  heading: The path event — does the promoted placement price bring a leg back? — pre-registration
+  first_seen: '2026-11-10'
+  first_sha: 0f8f81a0ec
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '47'
+  heading: Quinn's BBR window collapse at c1s — diagnosis, no VM — record
+  first_seen: '2026-11-10'
+  first_sha: d3bca20962
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '48'
+  heading: 'A working substrate: the fixed `bbr_rs` against quinn''s BBR — host gate, then battery — pre-registration'
+  first_seen: '2026-11-10'
+  first_sha: b00bc7d006
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: 48b
+  heading: The `bbr_rs` battery on the VM — pre-registration (before any VM contact; advisor review)
+  first_seen: '2026-11-12'
+  first_sha: 86f879eb41
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '49'
+  heading: Simplify batch 1 (`simplify-2`) against main — the guard session — pre-registration (before any VM contact)
+  first_seen: '2026-11-12'
+  first_sha: b3000701f4
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '50'
+  heading: Simplify batches 1b–3 (`simplify-5`) against main — the guard session — pre-registration (before any VM contact)
+  first_seen: '2026-11-12'
+  first_sha: 318a881212
+  heading_variants: 1
+  on_main: false
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '52'
+  heading: The c8 recovery levers — gap horizon (scored) and retransmit leg choice (reported) — pre-registration (before any VM contact)
+  first_seen: '2026-11-12'
+  first_sha: 2e3c1b80b3
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '53'
+  heading: 'Stale gap reports under lever B: the snapshot-order instrument, the filter arm, W0-on-CAND and a long c1d block — pre-registration (before any VM contact)'
+  first_seen: '2026-11-13'
+  first_sha: 83fa8296ce
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '54'
+  heading: The snapshot-order law against main (guard v2, scored) and the store-budget test (reported) — pre-registration (before any VM contact)
+  first_seen: '2026-11-13'
+  first_sha: 7968c87041
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: bare section sign
+  cited_other_fields: false
+  possible_match: ''
+- section: '55'
+  heading: The law ledger — every shipped law and estimator audited — record, no VM
+  first_seen: '2026-11-13'
+  first_sha: af79fee5ae
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+archive_tags:
+- tag: archive/quic-feeder
+  type: lightweight
+  date: '2026-10-05'
+  subject: 'docs(status): §9 Result correction (not a prereg amendment): the feeder''s non-[q] sleeps are quinn''s mutex futex under QuinnSink::deliver (inlined); the wait mo'
+  commit: 1f08290dd8
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/quic-feeder-v2
+  type: lightweight
+  date: '2026-10-05'
+  subject: 'docs(status): §10 Result -- FDT WORSE-AT-c1s-400,c1d-400,c2-100; FDH WORSE-AT-c1s-400,c2-100 (c1d: FDT +18 % goodput / -17 % CPU, FDH +12 %); ledgers in docs/l1'
+  commit: e62b08d6b1
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/thread-p2a
+  type: lightweight
+  date: '2026-10-05'
+  subject: 'status §12 result: name the per-message budget unit (06837b7) as a confound; 3x / up to 11x, not 3-10x'
+  commit: faca7f84ac
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/thread-r1
+  type: lightweight
+  date: '2026-10-26'
+  subject: 'status 17: R1 result - REFUTED-WITH-RECORD (FAIL-AT-c1s-400: goodput 189 vs 621 Mbit/s, CPUSRV/GB +149 %); c8 CPUSRV BETTER; ledgers in docs/l1-raw/thread-r1'
+  commit: a5ef8b2d14
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/store-power
+  type: lightweight
+  date: '2026-10-27'
+  subject: 'status §29 result: power store law (D) NOT-VIABLE - NOISE-DOMINATED at all four cells (e-hat clamp binds 51-87 %, sign agreement at chance), GOODPUT WORSE at c2'
+  commit: 8718a0f0e3
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/thread-r3
+  type: lightweight
+  date: '2026-10-27'
+  subject: 'status §22 Amendment 5 result: H-alloc(a) UNREAD (ABORT-TEXT: release-prof .text differs from release); no fourth attempt, no design selected, R3 shelved; §22 c'
+  commit: b16cd0f014
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_COMPOSED_CAP
+  type: lightweight
+  date: '2026-11-10'
+  subject: Remove RWM_REPAIR_WAIT, RWM_PROACTIVE_PACER, RWM_REASM_BDP (Group A, ADR-0073)
+  commit: 769f023737
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_HONEST_CAP
+  type: lightweight
+  date: '2026-11-10'
+  subject: 'Test: RWM_HONEST_CAP is inert without RWM_PLAIN_RS (red-first guard)'
+  commit: 815cc62da4
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_HONEST_K
+  type: lightweight
+  date: '2026-11-10'
+  subject: Remove RWM_PLAIN_RS and RWM_RS_ATTR (sampling-only feed and flight witness)
+  commit: 8f03415670
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_PLAIN_RS
+  type: lightweight
+  date: '2026-11-10'
+  subject: 'Remove RWM_POOL_ANCHOR (off arm: pooled cap on the send-interval anchor)'
+  commit: 00dec5e088
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_POOL_ANCHOR
+  type: lightweight
+  date: '2026-11-10'
+  subject: Remove RWM_HONEST_CAP (resolved on, inert without RWM_PLAIN_RS)
+  commit: c8aaff2906
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_PROACTIVE_PACER
+  type: lightweight
+  date: '2026-11-10'
+  subject: Remove RWM_HONEST_K and the honest-cap law family (coordinator ruling)
+  commit: 632dd48dae
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_REASM_BDP
+  type: lightweight
+  date: '2026-11-10'
+  subject: Remove RWM_HONEST_K and the honest-cap law family (coordinator ruling)
+  commit: 632dd48dae
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_REPAIR_WAIT
+  type: lightweight
+  date: '2026-11-10'
+  subject: Remove RWM_HONEST_K and the honest-cap law family (coordinator ruling)
+  commit: 632dd48dae
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_RS_ATTR
+  type: lightweight
+  date: '2026-11-10'
+  subject: 'Remove RWM_POOL_ANCHOR (off arm: pooled cap on the send-interval anchor)'
+  commit: 00dec5e088
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_DERIVED_SWEEP
+  type: lightweight
+  date: '2026-11-12'
+  subject: Remove RWM_REFRESH_FLOOR_US (hole-refresh band floor, default off)
+  commit: a8f976b1b0
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_HOLDDOWN_Q
+  type: lightweight
+  date: '2026-11-12'
+  subject: 'tests: drop the dead RWM_PLAIN_RS env from 16 integration tests'
+  commit: b9b4da56bf
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_PLACE_HOL
+  type: lightweight
+  date: '2026-11-12'
+  subject: 'status §48b amendment 1: pins (BASE 0a1ddb88, CAND e5d7ffbd), harness, scoring choices fixed, rehearsal first'
+  commit: 272388b510
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_PLACE_T_DERIVED
+  type: lightweight
+  date: '2026-11-12'
+  subject: Remove RWM_DERIVED_SWEEP (derived recovery round, default off)
+  commit: 1b00ede52c
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+- tag: archive/RWM_REFRESH_FLOOR_US
+  type: lightweight
+  date: '2026-11-12'
+  subject: Remove RWM_HOLDDOWN_Q (hold-down clock, default off)
+  commit: 89fb0eb85b
+  cited: true
+  cited_how: full tag name
+  cited_other_fields: false
+  possible_match: ''
+unmerged_branches:
+- branch: archive/wt-status22-amend5
+  last_date: '2026-10-27'
+  last_subject: 'status §22 Amendment 5 result: H-alloc(a) UNREAD (ABORT-TEXT: release-prof .text differs from release); no fourth attempt, no design selected, R3 shel'
+  unique_commits: 22
+  first_date: '2026-10-26'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: archive/wt-status29-power
+  last_date: '2026-10-27'
+  last_subject: 'status §29 result: power store law (D) NOT-VIABLE - NOISE-DOMINATED at all four cells (e-hat clamp binds 51-87 %, sign agreement at chance), GOODPUT W'
+  unique_commits: 11
+  first_date: '2026-10-27'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: harness43
+  last_date: '2026-11-10'
+  last_subject: '§43 ledger: oracle store law in closed loop (run43 b2b75b7 + harness43 f6b06ff), check run + 24 rows + 2 smoke, scrubbed'
+  unique_commits: 3
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: run43
+  last_date: '2026-11-10'
+  last_subject: 'run43: RWM_ORACLE_BRAKE_OFFSET_US, a constant b0 added to the time term (RTprop + S + b0); an oracle input like L, not a law term; 0/unset is bit-iden'
+  unique_commits: 4
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: archive/nsbench41c
+  last_date: '2026-11-11'
+  last_subject: 'nsbench41c: ignored release-mode ns/stamp measurement test (CAND variant; BASE variant inlines the pre-place_e stamp)'
+  unique_commits: 1
+  first_date: '2026-11-11'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: bbrfix48-impl
+  last_date: '2026-11-11'
+  last_subject: 'bbrfix48: pre-fix phase sweep (50 and 10 us grids), in-vivo-shaped quinn run, tied-sample test, full debug lib at the tip'
+  unique_commits: 9
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: adr68-amend
+  last_date: '2026-11-12'
+  last_subject: 'docs: W2 audit/Addendum 3 consistency - (c) needs a handle not a rate, (d) window dip possible; verified app-limited, Startup-exit, eviction and ε̂ fe'
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: base52
+  last_date: '2026-11-12'
+  last_subject: 'merge: github/main (archive keep lines for plan 52 fixtures) into base52'
+  unique_commits: 5
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: bbr48cand
+  last_date: '2026-11-12'
+  last_subject: 'harness: plan 48 rehearsal (LD_REHEARSE=1: builds + the two c8 smoke rows + smoke48, no suites, no battery)'
+  unique_commits: 18
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: bbrfix48b
+  last_date: '2026-11-12'
+  last_subject: Merge github/main (85c22950) into bbrfix48b
+  unique_commits: 10
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: bbrrs-r2
+  last_date: '2026-11-12'
+  last_subject: 'bbr_rs W1r2: one-round delta-free ProbeRtt (green)'
+  unique_commits: 20
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: cand52
+  last_date: '2026-11-12'
+  last_subject: 'merge: github/main (archive keep lines for plan 52 fixtures) into cand52'
+  unique_commits: 8
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: derive-w1
+  last_date: '2026-11-12'
+  last_subject: 'derivation W1.2: review fixes - measured c2 trade, A(q)/A(c), QUINN-LIMITED readout, seam cost'
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: gaphorizon
+  last_date: '2026-11-12'
+  last_subject: 'fix(sack): the sender''s gap horizon is MAX_SACK_RANGES, not a 20-gap literal'
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: harness48
+  last_date: '2026-11-12'
+  last_subject: 'harness48: scorer header names LD_BASE_SHA; test_harness46 accepts plan 48 in the battery plan list'
+  unique_commits: 3
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: nsbench48
+  last_date: '2026-11-12'
+  last_subject: 'nsbench48: NSBENCH48_INFLIGHT overrides packets in flight per path (default 1000)'
+  unique_commits: 21
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: otel-design
+  last_date: '2026-11-12'
+  last_subject: 'ADR-0074: advisor amendments to Q3-Q5 (sampler gating and nested hash threshold; lag-probe test and own period; final flush; time-in-state counters)'
+  unique_commits: 4
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: pacing-seam
+  last_date: '2026-11-12'
+  last_subject: 'ADR-0075: vendored quinn-proto pacing hook'
+  unique_commits: 25
+  first_date: '2026-11-10'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: paper-recon
+  last_date: '2026-11-12'
+  last_subject: 'docs: W3.7 reconciliation record revised - every bounding test read for engine call and absolute assert; §11.2 verdicts; verdict/in-§11.3 columns spli'
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: perleg-design
+  last_date: '2026-11-12'
+  last_subject: 'docs: W3.2 per-leg design review fixes'
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: w1r2
+  last_date: '2026-11-12'
+  last_subject: 'derivations: W1r2 review fixes - contraction bound, t_gap term, exact H specs'
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: wdiv-diag
+  last_date: '2026-11-12'
+  last_subject: Wire RWM_PLACE_WDIV into placement; [HOLD] cx_leg= splits closed_retx by retransmit send leg
+  unique_commits: 2
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: adv-cells
+  last_date: '2026-11-13'
+  last_subject: 'l1 adv cells: review fixes - queue-depth check independent of burst speed, aw_ping + truth counter in up, EXIT-trap teardown in check, machinery-only '
+  unique_commits: 2
+  first_date: '2026-11-13'
+  cited: false
+  cited_how: ''
+  cited_other_fields: false
+  possible_match: cc-defect-copa-minrtt (queue)
+- branch: base53
+  last_date: '2026-11-13'
+  last_subject: 'merge: test-debts (6581d259: drops the false holeclass age_n >= fed assertion) onto base53 - §53 BASE; no conflicts'
+  unique_commits: 13
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: bbrrs-r3
+  last_date: '2026-11-13'
+  last_subject: 'cc_sim quinn-dump: write under ../docs (manifest dir is raptorpath/)'
+  unique_commits: 13
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: bbrrs-r4
+  last_date: '2026-11-13'
+  last_subject: 'bbr_rs: send-record map -> fixed-bound ring (no per-packet allocation)'
+  unique_commits: 18
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: cand53
+  last_date: '2026-11-13'
+  last_subject: 'recovery_bench: FIXTURE 2 is a function of the engine gap horizon (20 keeps its constants; 64 is a bench output captured at cand53), any other horizon'
+  unique_commits: 19
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: cand54
+  last_date: '2026-11-13'
+  last_subject: merge harness54 (54b timeout 300) into cand54
+  unique_commits: 11
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: dup-diag
+  last_date: '2026-11-13'
+  last_subject: 'dup-diag: sim gap horizon explicit (tests mean the same on cand52''s 64-cap tree); in-order arm-on == arm-off assertion; doc cites refreshed, ingestion'
+  unique_commits: 8
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: dup-diag-instr
+  last_date: '2026-11-13'
+  last_subject: 'dup-diag instrument: [SNAPV] gap-snapshot order per return leg (RWM_DIAG)'
+  unique_commits: 1
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: levb54
+  last_date: '2026-11-13'
+  last_subject: merge harness54 (54b timeout 300) into levb54
+  unique_commits: 15
+  first_date: '2026-11-12'
+  cited: true
+  cited_how: commit sha
+  cited_other_fields: false
+  possible_match: ''
+- branch: nsbench48-2
+  last_date: '2026-11-13'
+  last_subject: 'nsbench48: NSBENCH48_INFLIGHT overrides packets in flight per path (default 1000)'
+  unique_commits: 16
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: pacing-seam-2
+  last_date: '2026-11-13'
+  last_subject: 'ADR-0075: vendored quinn-proto pacing hook'
+  unique_commits: 18
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: s51-design
+  last_date: '2026-11-13'
+  last_subject: 's51-design: two-sided per-preset statistic with computed d80; consumed-r readout; H-R symbol-unit constants'
+  unique_commits: 2
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: snapver-law
+  last_date: '2026-11-13'
+  last_subject: 'paper/derivation: cite §53''s pinned trees (base53 5b605bb0, cand53 b21421e6), liveness names the real drop cases (spent budget, full gap channel), sea'
+  unique_commits: 7
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: wasm-modeswitch-audit
+  last_date: '2026-11-13'
+  last_subject: 'docs(derivations): mode-switch audit, sim-input gauges and option consistency'
+  unique_commits: 7
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: wire-clock-derive
+  last_date: '2026-11-13'
+  last_subject: 'wire-clock: review fixes - SACK-range hand-off (no C03 dependency), echo/report path cited, cold-leg locality scoped, all-row c1d ranges, paper text o'
+  unique_commits: 2
+  first_date: '2026-11-13'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+commit_clusters:
+- month: 2026-04
+  cluster: visualizer
+  commits: 6
+  uncovered: 6
+  first: '2026-04-07'
+  last: '2026-04-10'
+  examples:
+  - 'aa56ef51 Visualizer: pre-generated calibrated channel, 2000 source symbols'
+  - '4cd3abc3 Visualizer: connect triangle mode to simulation via FecRateController'
+  - '468b7580 Visualizer: adaptive r (BOCD) + real RLC codec in wasm'
+  possible_match: model-vis-continuum
+- month: 2026-04
+  cluster: phase
+  commits: 3
+  uncovered: 3
+  first: '2026-04-03'
+  last: '2026-04-03'
+  examples:
+  - '0c3bd4c5 Phase 2: SACK-extended WindowAck replaces NACK sending'
+  - 'ee867a1a Phase 1b: Wire P_lost into window sender for repair/retransmit mixing'
+  - '1a6a8154 Phase 1a: Add TaperFunction and p_lost to rate controller'
+  possible_match: rec-reliable-window
+- month: 2026-04
+  cluster: resolve and
+  commits: 3
+  uncovered: 3
+  first: '2026-04-02'
+  last: '2026-04-02'
+  examples:
+  - 'c25e36e6 Resolve #15 (SACK spec) and #19 (back-pressure mechanism)'
+  - '82fa398f Resolve #25 (GE model exact) and #17 (Copa d_copa rename)'
+  - 'bdf796ea Resolve #11 (T_cut algorithm) and #12 (Mode 3 convergence)'
+  possible_match: ''
+- month: 2026-08
+  cluster: ship the wins
+  commits: 11
+  uncovered: 11
+  first: '2026-08-07'
+  last: '2026-08-07'
+  examples:
+  - '8afd4dd7 Ship The Wins 1b: RESULTS + verdicts (both seeds) — arm A''s MECHANISM lands completely and c7 gets W'
+  - '2eb88de3 Ship The Wins 2 (shal8 anchor): RESULTS + STRUCTURAL BOUND (both seeds) - bbr_rs falsified x2 at 21-'
+  - '3a4a1ea6 Ship The Wins 1b: pre-battery MECHANISM SMOKE recorded — dr(17-34k) > sr(10-13k) with btlbw(125-418k'
+  possible_match: ''
+- month: 2026-08
+  cluster: alpha-sweep
+  commits: 8
+  uncovered: 8
+  first: '2026-08-20'
+  last: '2026-08-20'
+  examples:
+  - 'e0334855 alpha-sweep: THE SCORED RESULT - NO VERDICT, UNSEPARATED at 50 of 50 treatment pairs; item 2 CLOSES '
+  - '3980434c alpha-sweep: THE CALIBRATION AND SMOKE, DISCHARGED - 36 invocations, 0 aborts, 0 VOID, and three def'
+  - '9774219c alpha-sweep: CALIBRATION FIX - [QCLK] and [QALPHA] were selected by LOG, not by ROLE'
+  possible_match: ''
+- month: 2026-08
+  cluster: unlock the default
+  commits: 7
+  uncovered: 7
+  first: '2026-08-07'
+  last: '2026-08-08'
+  examples:
+  - '65e92b3a Unlock The Default 2: L1 BATTERY RESULTS + VERDICT - c7 fails both seeds with patience DEMONSTRABLY '
+  - '0f287553 Unlock The Default 2: battery log parser (goodput + same-session Sigma + the pf/sidle2/evt mechanism'
+  - '4307a6cc Unlock The Default 2: PRE-BATTERY MEASUREMENT - both premises refuted, recorded BEFORE the battery'
+  possible_match: cc-bbr-default
+- month: 2026-08
+  cluster: latency lever
+  commits: 6
+  uncovered: 6
+  first: '2026-08-10'
+  last: '2026-08-10'
+  examples:
+  - 'f6d95c99 Latency Lever: BATTERY RESULTS - the limit is a signed, predictable latency control at goodput parit'
+  - 'fc860371 Latency Lever: lat_report.py - scores the battery against the PRE-REGISTERED predictions'
+  - 'ec6a5ec7 Latency Lever: PRE-REGISTRATION + the calibration it is written against - committed BEFORE the score'
+  possible_match: meas-goal-0819, rec-gap-horizon, rec-leverb-c1d-cost
+- month: 2026-08
+  cluster: flip
+  commits: 5
+  uncovered: 5
+  first: '2026-08-06'
+  last: '2026-08-19'
+  examples:
+  - 'e9c6b242 flip: RWM_DELTA_CAP DEFAULT ON - the CoDel-derived setpoint ships'
+  - '6a653802 flip: RWM_SUM_CAP DEFAULT ON - the xN deletion ships'
+  - '9f6e56ba flip: RWM_HONEST_ANCHOR DEFAULT ON - the value-identical O(1) max filter ships'
+  possible_match: store-pool-anchor-flip
+- month: 2026-08
+  cluster: goal-gate
+  commits: 5
+  uncovered: 4
+  first: '2026-08-08'
+  last: '2026-08-12'
+  examples:
+  - '3d2a7907 goal-gate: Gauge Reachability -- the ledger entry, the audit of every other instrument, and the rule'
+  - '32c7f473 goal-gate: SF Anchor Suspect - REFUTED, and the L1 contrast that already said so'
+  - '91e74e2a goal-gate: record the dead-code batch-1 refactor (and drop the two imports the deletions orphaned)'
+  possible_match: meas-adr51-scenarios, meas-goal-0819, obs-gates-echo, rec-goal100
+- month: 2026-08
+  cluster: era battery
+  commits: 4
+  uncovered: 4
+  first: '2026-08-19'
+  last: '2026-08-19'
+  examples:
+  - 'f605f925 Era Battery: THE SCORED RESULT — ERA LEDGER item 1 closed, scored against the pre-registration and n'
+  - '6460ae73 Era Battery: THE CONTRACT''S COMPLETION — the calibration''s headroom table, filled, and the instrumen'
+  - 'a24d5a48 Era Battery: the drivers — the TWO-BINARY protocol, the PER-ERA echo tables, and the abort table tha'
+  possible_match: place-stage2-battery, rate-r-battery
+- month: 2026-08
+  cluster: rwm_sum_cap
+  commits: 4
+  uncovered: 4
+  first: '2026-08-18'
+  last: '2026-08-19'
+  examples:
+  - '923aa9dc merge: RWM_SUM_CAP DEFAULT ON - the xN deletion ships; the shipped store-cap law is now cap = clamp('
+  - '6a653802 flip: RWM_SUM_CAP DEFAULT ON - the xN deletion ships'
+  - '5ddf7f6b merge: ladder item 1 - RWM_SUM_CAP (the xN deletion, one expression both forms), boot DISSOLVES into'
+  possible_match: ''
+- month: 2026-08
+  cluster: ladder battery
+  commits: 4
+  uncovered: 4
+  first: '2026-08-18'
+  last: '2026-08-19'
+  examples:
+  - '27e36e3f Ladder Battery: RESULTS - the xN deletion DELIVERED and recommended for flip; the sender-truth loss '
+  - '2ee194b9 Ladder Battery: THE CONTRACT''S COMPLETION - the headroom table, filled by the same-session calibrati'
+  - '6323f3c3 Ladder Battery: the drivers — battery, all, top-up, the calibration pass, parser, scorer'
+  possible_match: place-stage2-battery, rate-r-battery
+- month: 2026-08
+  cluster: mode-hunt battery
+  commits: 4
+  uncovered: 4
+  first: '2026-08-12'
+  last: '2026-08-12'
+  examples:
+  - 'cfc1793f mode-hunt battery: RESULTS -- STOP RULE fired again (UNSCORED); the halving lead is INVERTED; the c8'
+  - '4569c6c2 mode-hunt battery: MAIN POOL ledgers + scorer; symmetric top-up LAUNCHED'
+  - '5d089d0a mode-hunt battery: the driver (modehunt_battery.sh + modehunt_all.sh)'
+  possible_match: place-stage2-battery, rate-r-battery
+- month: 2026-08
+  cluster: slack-bench
+  commits: 4
+  uncovered: 4
+  first: '2026-08-09'
+  last: '2026-08-10'
+  examples:
+  - '0e187521 slack-bench: METHOD CORRECTION - read idle AT the predicted S, not at the next grid point above it; '
+  - '7e03ef9b slack-bench: RESULTS - the three-term model SURVIVES; the CLOCK is what fails it, and the span term '
+  - '530bbaa2 slack-bench: PRE-REGISTRATION - the three terms DERIVED, the numbers written down BEFORE the sweep'
+  possible_match: meas-l0-sim-bench, perf-bbrrs-ns-cost, place-slack
+- month: 2026-08
+  cluster: verdict battery
+  commits: 3
+  uncovered: 3
+  first: '2026-08-21'
+  last: '2026-08-21'
+  examples:
+  - 'c0e221cc Verdict battery: CALIBRATION DISCHARGED + the pre-registration AMENDED, before the scored run'
+  - 'eb50cc59 Verdict battery: PRE-REGISTRATION + the two-arm driver, committed BEFORE the VM is touched'
+  - 'a26696fb Verdict battery: PAPER 16.79 - THE FORMULA IS DECIDED, in its own commit, before any engine change'
+  possible_match: infra-adr73, place-stage2-battery, rate-r-battery
+- month: 2026-08
+  cluster: sweep
+  commits: 3
+  uncovered: 3
+  first: '2026-08-21'
+  last: '2026-08-21'
+  examples:
+  - 'a8bcce05 (q, refresh) SWEEP: THE SCORED RESULT - FLAT. The floor lifts, the sub-floor region is ENTERED at 3/'
+  - 'a3f2e3f3 (q, refresh) SWEEP: CALIBRATION DISCHARGED - F1 SATISFIED 3/3, and a P-B specification failure REPAI'
+  - 'd7daceb5 (q, refresh) SWEEP: PRE-REGISTRATION + its harness - committed BEFORE the VM''s first number is read'
+  possible_match: ''
+- month: 2026-08
+  cluster: successor arrival
+  commits: 3
+  uncovered: 3
+  first: '2026-08-21'
+  last: '2026-08-21'
+  examples:
+  - '821de6ae Successor Arrival: THE SCORED RESULT - the pre-registered anchor DOES NOT EXIST; the original leads '
+  - 'f497bdc4 Successor Arrival: PRE-REGISTRATION + the battery it is written against - committed BEFORE the VM, i'
+  - '1064e8d1 Successor Arrival: [SUCC] - the instrument for the measurand the fire-cause pass NAMED and never mea'
+  possible_match: ''
+- month: 2026-08
+  cluster: quantile-native sweep
+  commits: 3
+  uncovered: 3
+  first: '2026-08-21'
+  last: '2026-08-21'
+  examples:
+  - '6b3d3c38 Quantile-Native α-Sweep: THE SCORED RESULT - the arms separate for the first time, and F2 fires at f'
+  - 'a3d35377 Quantile-Native α-Sweep: THE CALIBRATION AND SMOKE, DISCHARGED - and the pre-registered at-risk cell'
+  - 'ab545cfe Quantile-Native α-Sweep: PRE-REGISTRATION - goal #101 item 3''s re-run, written and committed BEFORE '
+  possible_match: place-submax-anchor
+- month: 2026-08
+  cluster: 'merge: gap phase'
+  commits: 3
+  uncovered: 3
+  first: '2026-08-19'
+  last: '2026-08-19'
+  examples:
+  - 'b4be2489 merge: gap phase 2 SCORED - no interaction to name; item 3 closes NEEDS-MORE-named'
+  - 'c2e20beb merge: gap phase 2 launched - amendment first, two instrument defects fixed'
+  - '5bf1a346 merge: gap phase 1 SCORED - D1 selected; the drift is real but cannot explain P1'
+  possible_match: infra-inventory-merges, meas-guard-41c, meas-guard-v2, perf-ack-merge
+- month: 2026-08
+  cluster: sched
+  commits: 3
+  uncovered: 3
+  first: '2026-08-10'
+  last: '2026-08-18'
+  examples:
+  - 'bea1e4fd sched: assert Copa''s srtt against RFC 6298 computed independently (matrix row 13)'
+  - '1d835478 sched: fix the EIGHTH HashMap-order flake - the cold-price inertness test compared two hashers, not '
+  - '21de95b5 sched: FIX the flaky replacement test - it asserted the HASHER, not the path sets'
+  possible_match: perf-sched-split
+- month: 2026-08
+  cluster: 'merge: sweep item'
+  commits: 3
+  uncovered: 3
+  first: '2026-08-18'
+  last: '2026-08-18'
+  examples:
+  - 'bee23f6f merge: sweep item 5 - both un-metered channels CHARGED; the release ledger FIXED 1:1 by construction'
+  - '0128bb5c merge: sweep item 6 REFUTED - the quad lock-in was the bench''s own pid<2 gauge guards; placement is '
+  - '346e6a0c merge: sweep item 3 FIXED - loss estimator rides sender truth; contamination was 37-93x, not 2-5.6x'
+  possible_match: infra-inventory-merges, meas-guard-41c, meas-guard-v2, perf-ack-merge
+- month: 2026-08
+  cluster: cap-law cluster
+  commits: 3
+  uncovered: 3
+  first: '2026-08-18'
+  last: '2026-08-18'
+  examples:
+  - '7e302e2a Cap-law cluster: the LEDGER — two FIXED, one REFUTED-with-record, the gate battery, and the wire que'
+  - '8bab64c3 Cap-law cluster: the derived floor, the AGREEMENT-TEST CLASS, and the refutation as an executable re'
+  - '6335e206 Cap-law cluster: THE FORMULAS AND THE ADJUDICATIONS, IN THE PAPER, BEFORE THE CODE'
+  possible_match: ''
+- month: 2026-08
+  cluster: deadwall battery
+  commits: 3
+  uncovered: 3
+  first: '2026-08-12'
+  last: '2026-08-12'
+  examples:
+  - '465c28ef deadwall battery: two instrument bugs the SMOKE caught (both would have read safe)'
+  - '5fce47cf deadwall battery: the drivers, the parser and the scorer (committed before any run)'
+  - '2dd7bb2d deadwall battery: the derived round''s MISSING liveness echo (instrument only, no behaviour)'
+  possible_match: place-stage2-battery, rate-r-battery
+- month: 2026-08
+  cluster: sf latency feedback
+  commits: 3
+  uncovered: 3
+  first: '2026-08-12'
+  last: '2026-08-12'
+  examples:
+  - 'c0fb1d79 sf latency feedback (3/3): RESULTS — the hypothesis is REFUTED on three independent legs, and the c8'
+  - '2b14cc60 sf latency feedback (2/3): the closed-loop Reno source + THE PRE-REGISTRATION (no scored number read'
+  - '4320fc48 sf latency feedback (1/3): the premise refuted by READING, and the c8 collapse mode NAMED from colum'
+  possible_match: meas-goal-0819, rate-dof-ledger, rec-p10a-repair-floor
+- month: 2026-08
+  cluster: coupling model
+  commits: 3
+  uncovered: 3
+  first: '2026-08-11'
+  last: '2026-08-12'
+  examples:
+  - '7ad65ef1 coupling model: RESULTS — NOT VALIDATED, and the refutation is arithmetic'
+  - '11db2992 coupling model: the readout, the chain walk, and five always-on pins'
+  - '82d84637 coupling model: the frontier-span store + PRE-REGISTRATION (no run taken)'
+  possible_match: model-bound-tests, model-bound-tests-unrun, model-defect-dead-machine, model-defect-tcut
+- month: 2026-08
+  cluster: sf accounting axis
+  commits: 3
+  uncovered: 3
+  first: '2026-08-11'
+  last: '2026-08-11'
+  examples:
+  - '4f67ba7d SF accounting axis (2/2): RESULTS — the U-fold''s CELL reproduces (c7 10.0x -> 1.0x, c8 2.7x -> 7.1x)'
+  - '8beb7ad1 SF accounting axis (1b/2): determinism of the ON arm — the max-loss estimator pick had the same Hash'
+  - '4b3910e3 SF accounting axis (1/2): the engine''s un-metered recovery ledger at the SF bench + the §12 bounding'
+  possible_match: ''
+- month: 2026-08
+  cluster: coverage
+  commits: 3
+  uncovered: 3
+  first: '2026-08-10'
+  last: '2026-08-10'
+  examples:
+  - 'e113c9ab coverage: VERDICT - the fourth term is REFUTED; goal-gate "Coverage: derivable or not" + paper 16.44'
+  - '2b55dbda coverage: the phase-1.3 instrument - Little''s law on the store, the CLOSED dwell loop, the delta cei'
+  - 'dda6670e coverage: DRIVER CORRECTION - the cold-start ack artifact that SET the measured backlog at c1/c2'
+  possible_match: ''
+- month: 2026-08
+  cluster: receiver per-message wall
+  commits: 3
+  uncovered: 3
+  first: '2026-08-06'
+  last: '2026-08-07'
+  examples:
+  - 'dc4fb783 Receiver Per-Message Wall: RESULTS + verdicts (both seeds) — c1 est +62/+63% and eb+est 446-505 (wal'
+  - '774e28a3 Receiver Per-Message Wall: STEP0 re-baseline + STEP1 profile RESULTS + pre-build AMENDMENT (RWM_EST_'
+  - '1ce8ba25 Receiver Per-Message Wall: pre-registration (discipline item 11) + STEP0/STEP1 drivers — committed B'
+  possible_match: perf-parallelisation, perf-receiver-followups, perf-receiver-r1, perf-receiver-r2
+- month: 2026-08
+  cluster: adversarial cells
+  commits: 3
+  uncovered: 3
+  first: '2026-08-06'
+  last: '2026-08-06'
+  examples:
+  - '9840854b Adversarial Cells (B1): ops-timeline correction - lock released 15:43:35Z, A1 took it 15:43:43Z (cle'
+  - '754139c3 Adversarial Cells (B1): RESULTS + verdicts (both seeds) - the breakage map inverts the shallow-buffe'
+  - '6c8c3d38 Adversarial Cells (B1): pre-registration (discipline item 11) + adv_cells/adv_battery harness + tail'
+  possible_match: ''
+paper_s10_rows:
+- group: Coding and decoding
+  mechanism: METTLE FEC backend
+  why: a sparse streaming code needing ~15 % decode overhead; reachable only by explicit opt-in, with the loss-threshold backend selector's high-loss tier routed to RLC
+  commit: 10ac80f
+  status: removed
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Mid-stream backend switching (loss-threshold selector)
+  why: 'no cross-code algebra: a switch strands every in-flight symbol or forces a drain; a threshold on ε̂ oscillates'
+  commit: 6948a64
+  status: removed
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Streaming two-layer code (Realtime machine)
+  why: 'displaced, not refuted: the unified span machine was at or below its p99 at all five historic crown cells on both seeds, 163/163 delivery-complete'
+  commit: bccb32a
+  status: removed
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Legacy RLC decoders (sliding-window, generation)
+  why: replaced by the unified global-RREF decoder; the keyed generation machine strands 2-loss bursts on a moving-span wire
+  commit: b849acb
+  status: superseded (RWM_UNIFIED=0 opt-out)
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ)
+  why: 'displaced: the Stage-3 re-test found the window not worse at every cell and hint and ahead beyond MDE at 7 of 10 (every Auto cell); a construction-time mode switch'
+  commit: dacfd7c
+  status: removed
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Coded-only generation wire
+  why: the O(G²·S) "decode ceiling" was the wire mode, not the solver; systematic-repair wire doubled single-path goodput (33.9 → 70.9 Mbit/s)
+  commit: '2122481'
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Coded-only fungible window (coded-object mode)
+  why: 'correct but slower on the real stack: 3.9 Mbit/s at the heterogeneous dual against 15.7 for the fast path alone; a striped combination lands after the window has moved'
+  commit: —
+  status: 'off'
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: FMTCP-class decode-on-total [Cui2015]
+  why: 0.48× at the heterogeneous dual; on the clean substrate c7 ×0.11, c8 ×0.20 of the default stack, a recovery flood (coded share > 1) at about 8× plain CPU
+  commit: f841757
+  status: removed
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Coding and decoding
+  mechanism: Leading-window taper emission
+  why: 'repairs coded over in-flight members are unsolvable on arrival: −22 pp delivered reliability; replaced by trailing-span emission'
+  commit: —
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Proactive FEC timing
+  mechanism: Repair-wait / FEC-before-ARQ (RWM_REPAIR_WAIT)
+  why: the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed)
+  commit: 3a0ca0c
+  status: removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 202
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Proactive FEC timing
+  mechanism: Inline / frontier-anchored repair (RWM_INLINE_REPAIR, RWM_FRONTIER)
+  why: repair anchored at the frontier loses to its own ARQ (4 useful of 718)
+  commit: bede4a3
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Proactive FEC timing
+  mechanism: Present-at-stall proactive pacer (RWM_PROACTIVE_PACER)
+  why: 'presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip'
+  commit: 806c0f4
+  status: removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 202
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Proactive FEC timing
+  mechanism: Funded proactive coding at r > 0 (the r > 0 battery)
+  why: at the lossy single path funding coding made the transfer slower (one seed, n = 4, direction only), and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the
+    r = 0
+  commit: 91895dd
+  status: refuted
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: DAPS chain, pace-all, per-path rate-sample estimator (RWM_DAPS, RWM_PACE_ALL, RWM_RATE_SAMPLE, RWM_PER_PATH_EST)
+  why: their wins were measured in an era where the coded path was dead; the live ablation measured −17 to −30 % at the symmetric dual; the surviving ideas became the M law and the anchor-hygiene laws
+  commit: 9b48286
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Sub-max quantile rate anchor (RWM_RATE_WIRE, RWM_RATE_Q)
+  why: decode-clocked samples make the windowed max the correct statistic; any sub-max quantile under-reads about 65× (heterogeneous dual 3–6× worse)
+  commit: f1f32c5
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Place-slack (RWM_PLACE_SLACK)
+  why: at the heterogeneous dual goodput falls monotonically as slow-path source share rises (6 % → 88.6 Mbit/s, 16–18 % → 70–83); the symmetric-dual clause failed (0.86–0.90×Σ)
+  commit: cc15b83
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Placement frontier term (RWM_PLACE_HOL)
+  why: inert on delivered latency, with goodput regressions under the guard; placement-manufactured wait is only ~6 % of delivered latency
+  commit: 5e6e3f5
+  status: 'removed (simplification batch 3; tag archive/RWM_PLACE_HOL; re-ask: when placement-manufactured wait'
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Derived placement temperature (RWM_PLACE_T_DERIVED)
+  why: 'not refuted: INERT-AS-DERIVED at c7/c8 (5e6e3f5, 2026-09-08, pre-ADR-0073 substrate; ledger at faa54afd^:raptorpath/docs/l1-raw/place/); expensive as implemented: σ̂_e re-sorted per leg per placement,'
+  commit: 5e6e3f5
+  status: removed 2026-11-12 (user ruling; tag archive/RWM_PLACE_T_DERIVED). Re-ask when σ̂_e is computed on t
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Derived diversity weight (RWM_PLACE_WDIV_DERIVED)
+  why: never in a battery (all 166 Track-A rows ran it =0); no verdict
+  commit: 5e6e3f5
+  status: kept, off; candidate lever on SACK-gap retransmit leg choice (status c8 tail diagnosis)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Frozen app-echo srtt as the placement base, (½ + ε̂)·s_i (the pre-§41b base; RWM_PLACE_WIRE unset)
+  why: on an idle leg the echo srtt freezes with the leg's own dwell, so its price stays +17 to +116 nats above the loaded leg's on 11 locked rows and the one-leg state is absorbing (10 of 24 static-cap
+    rows
+  commit: status §38, §41, §41b
+  status: superseded; code and gate removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Copa per path as the substrate default (the original design)
+  why: on the clean substrate Copa-sole is 0.57–0.97× BBR bulk; its earlier heterogeneous-dual win was a broken-substrate artefact; BBR-under is the default and Copa the queue/tail policy point
+  commit: 7652ccb, 519467e
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Quinn's stock Cubic under the engine
+  why: the hidden loss-reactive substrate controller was the 15–17 Mbit/s "link ceiling"
+  commit: 519467e
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Scheduling and placement
+  mechanism: Engine or receiver parallelisation
+  why: one core per side sustains 136–188 Mbit/s with an empty queue; the walls are per-symbol service time and recovery waste
+  commit: cee499c
+  status: refuted, never built
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Source backpressure (RWM_SRC_BP)
+  why: −53 % at the heterogeneous dual; source is the pipeline clock, not a holdable emitter
+  commit: 8902d24
+  status: 'removed. Re-test: YES in principle, LOW priority; the gen-mode re-test clause transfers to this row'''
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: SACK pruning of the store (RWM_SACK_PRUNE)
+  why: pruning destroys the only retransmittable copy (in-order duals wedged); flat on a single path; replaced by SACK-clocked release
+  commit: 3dcb39c
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: ×N pool multiplier clamp(gain·N·Σ, floor, N·knee)
+  why: quadratic in N under a linear ceiling, pinned at 4 096 in 121 of 126 dual reps; deleting the ×N cost nothing
+  commit: 6a65380
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Pool gain 2.0 (N ≥ 2)
+  why: 'no derivation; replaced by 1 + q(δ): goodput parity 6/6, queue −10 to −200 ms'
+  commit: e9c6b24
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Per-path store accounts (RWM_STORE_PERCAP, RWM_PERCAP_GUARD)
+  why: wins the symmetric dual (0.89–0.94×Σ) and loses the heterogeneous one (0.54–0.55 against pooled 0.62–0.69×Σ)
+  commit: 4bb5b28
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Bounded account borrowing (RWM_STORE_BORROW)
+  why: loans are identically zero at symmetric cells by construction; neutral at the heterogeneous dual and behind pooled
+  commit: 7c3343f
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Capacity-weighted pool (RWM_STORE_CAPW)
+  why: the heterogeneous binder is slow-path conversion, not pool size (0.74–0.79 against 0.87×Σ)
+  commit: 4fb5b15
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Store-cap unification over live paths (RWM_STORE_CAP_UNIFIED)
+  why: removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode
+  commit: 865112e
+  status: shipped unconditionally (plan 2b, gate removed; re-measure in Stage 3)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Three-term outstanding law (RWM_THREE_TERM)
+  why: 'the terms are right and the lever is wrong: the store is sized and occupied, throughput does not follow'
+  commit: 448a82e
+  status: 'off'
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Composed cap (RWM_COMPOSED_CAP)
+  why: 'shape confirmed, magnitude refuted: pinned at WIN_STORE_MAX at every dual; where interior, 2.4× the queue and 1.43–1.48× worse delivered latency at goodput parity'
+  commit: 161b4ea
+  status: 'off'
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Queue-free slack clock
+  why: removes 1.7 % of a 90 % overshoot at the heterogeneous dual, by its own arithmetic
+  commit: 7e302e2
+  status: refuted, never shipped
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Window decoupling (RWM_WIN_DECOUPLE)
+  why: the queue died (echo RTT 108 → 27 ms) and goodput did not follow; re-fires are re-serve-clocked. Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)
+  commit: 48f60c4
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Pool delivery-clocked anchor (RWM_POOL_DELIV)
+  why: worked exactly as specified and moved the symmetric dual the wrong way (0.931–0.958×Σ)
+  commit: 8afd4dd
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Floor-bound anchor (RWM_FLOOR_BOUND)
+  why: −14 % at c1; the ack-interval over-read is load-bearing at N = 1
+  commit: 8afd4dd
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Sender-truth loss estimator (RWM_LOSS_SENT_TRUTH)
+  why: moves ε̂ 20× in the wrong direction, including at N = 1
+  commit: 27e36e3
+  status: 'off'
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Composed estimator-cadence plus pool-anchor default
+  why: flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); the pool anchor was the binding cap at the duals
+  commit: e84ef1c
+  status: reverted
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Estimator cadence alone (RWM_EST_CADENCE, pool anchor decoupled)
+  why: 'Stage 3 (d): not worse at any of five cells; dual c1 +41 % (193.9 → 274.1 Mbit/s), sender CPU −12 to −32 %, fed loss vs truth unchanged at every leg'
+  commit: 83462ae
+  status: shipped; RWM_POOL_ANCHOR stayed an off arm (since removed, below)
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Emission batching as default (RWM_EMIT_BATCH), first attempt
+  why: +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed
+  commit: 52b4fff, 1313841
+  status: superseded by the Law-0 form below
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Flow control
+  mechanism: Emission batching, Law 0 (RWM_EMIT_BATCH, burst bound 64 at every path count)
+  why: 'status §8 re-run on 927bb00 (with the §7 receive-buffer fix), n = 16 per cell and arm: BETTER at every cell and WORSE on no clause; c1d-400 goodput +41.1 % and sender CPU −34.5 %, CPU −25.3 % (c1s-400'
+  commit: bf3a636
+  status: shipped; =0 is the per-symbol control arm (own OFF echo)
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(P) probe gain: cap'' = (1 + q + g)·D̂·τ'
+  why: with τ = RTprop the fixed point is the delay ratio T(n) = (1 + q + g)·RTprop, a constant that misses at least three of four cells' knee ratios (1.85, 4.1, 3.3, 2.7 / 1.68), and with τ = T̂ there
+    is no
+  commit: —
+  status: closed by derivation, never built (status §27–§29)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(D) power seeker: n = argmax D(n)^α(δ)/T(n), dithered extremum seeker'
+  why: 'built as specified and NOT-VIABLE: the ê clamp bound in 51–87 % of periods and successive ê agreed in sign only 34–55 %, so n̄ random-walked below the predicted point and cost goodput at c2 and
+    c1s (w'
+  commit: tag `archive/store-power
+  status: closed (status §29)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(D-W) noise-sized window: W(δ) = min W : σ²(W) ≤ (q/2)²'
+  why: c1's noise is red (γ 0.58–0.70), so W ≥ 579–765 rounds and a decision takes ≥ 6 s against a 4–5 s transfer; D-W reaches only ×1.71 (c2), ×1.17 (c8), ×1.01–1.02 (c1) in a third of a transfer, so no
+    see
+  commit: —
+  status: closed (status §30, §34)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(b1) quinn''s BBR window as the knee: cap = (1 + q)·K, K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W'
+  why: the gain 2 returns under BBR's name; the fixed point is ×5–15 above the knee at c2 and c8 (ack-compression over-read), and K is a ratchet that keeps the largest non-app-limited reading (c1s at cap
+    204
+  commit: —
+  status: closed (status §34, §37)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds'
+  why: 'the fixed point is the authority crossover (≈ 2048 at c1s, beyond 1 024 at c2 and c8), above every knee, because it is (b1)''s K read through a threshold; it survives as the authority gauge B (Section '
+  commit: —
+  status: closed as an input (status §34)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing)'
+  why: 'a seed, not an input: the first transfer still needs D-W''s finder (≈ 5.5 s of transfer per unit ln n at c2, ≈ 2 min at c1s), knee stationarity over the path''s lifetime is unmeasured, and §32 moved
+    the'
+  commit: —
+  status: closed at c1 (status §34)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
+  mechanism: '(b4) receiver capacity as a ceiling: Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))'
+  why: the ceiling's fixed point at c1d post-§32 is 457, below the knee band [512, 1 152], and μ_R is not flat in the cap (86.8 k → 110 k msgs/s, max/min 1.27); at c1s post-§32, c2 and c8 the receiver is
+    not
+  commit: —
+  status: closed (status §23, §34)
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Global loss serials under striping (RWM_RECOV_MP_SERIAL)
+  why: 'diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4'
+  commit: ade48ad
+  status: removed; the per-path sequence returns ungated as wire v9 path_seq (Section 2.2), so the cadence re-
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Singles hole suppression (RWM_RECOV_SP)
+  why: +0.3 Mbit/s at sc3, a tie at sc2; re-fires are re-serve-clocked
+  commit: db40d2f
+  status: off (kept; open)
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Derived patience (RWM_PATIENCE_DERIVED)
+  why: the literal it replaces wins 0 of 177 543 evaluations at the cell it was accused at; identical to shipped across 192 bench cells
+  commit: 65e92b3
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Derived recovery sweep (RWM_DERIVED_SWEEP)
+  why: the argument is vindicated, the lever inert where it should act and −23 %/−28 % goodput when armed
+  commit: 43b09fe
+  status: removed (simplification batch 4; user ruling, status §45; tag archive/RWM_DERIVED_SWEEP; sweep_timeo
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: RACK-shaped clocks (RWM_RACK_CLOCKS, RWM_RACK_REO_MULT)
+  why: fails RACK's own 6.25 % spurious budget at every arm and cell (0.21–0.78); its SRTT ceiling bound 0 times in 108 847 evaluations
+  commit: 18dbf10
+  status: removed
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Cantelli recovery clock (RWM_QUANTILE_CLOCKS, RWM_ALPHA_OVERRIDE)
+  why: needs 316σ and ~10⁵ samples at the contract's α; pricing α from the tail-loss target is a category error
+  commit: c249c20
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Dispersion estimators (fixed-sample-lag, fixed-time-lag)
+  why: the 287× spread is the estimator; the time-lag form confirms rate invariance and still misses its bar
+  commit: 89d7946
+  status: open
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Quantile-native clock (RWM_W_FORM)
+  why: 'commanded false-alarm rate does not track α at 5 of 5 cells: the measurand is wrong'
+  commit: 6b3d3c3
+  status: removed (the order statistic survives as qnative_window_n in net/recovery_clock.rs)
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Hold-down clock (RWM_HOLDDOWN_Q)
+  why: 'suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven'
+  commit: 5509e37
+  status: removed (simplification batch 4; user ruling, status §45; tag archive/RWM_HOLDDOWN_Q; the [HOLD] gau
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Refresh-floor lift (RWM_REFRESH_FLOOR_US)
+  why: entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume
+  commit: a8bcce0
+  status: removed (simplification batch 4; user ruling, status §45; tag archive/RWM_REFRESH_FLOOR_US; hole_nac
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Recovery clocks
+  mechanism: Receiver request law (RWM_RECV_REQUEST_LAW)
+  why: 'refuted at both duals on every arm: ℓ = 0 on 48 of 48 dual rows, knee-bound by the store headroom; the receiver''s π̂₀ was contaminated by retransmit copies (since fixed; not re-run); one arm DNF
+    12/12'
+  commit: 0159290
+  status: 'off'
+  cited: false
+  cited_how: ''
+  cited_other_fields: true
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: Honest floor-clock store cap (RWM_HONEST_CAP; resolved on, acted only with RWM_PLAIN_RS)
+  why: 'verdict: the honest-inputs family, old ledger GG ~23640, 2026-08-11, pre-wire-v9 substrate; not re-run on the current substrate; route: structural (status §23/§27: the arm only acts under the off-by-d'
+  commit: archive/RWM_HONEST_CAP
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: 'Pool anchor (RWM_POOL_ANCHOR): pooled cap = Σᵢ honest_store_cap on each path''s send-interval anchor'
+  why: 'verdict: the composed cadence+pool-anchor flip e84ef1c failed its symmetric-dual (c7) clause, 2026-08-07 (paper row at diag36 §10:3828): send-side anchors cannot ratchet above the cap-limited carried '
+  commit: archive/RWM_POOL_ANCHOR
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: Plain-mode send-interval sampler (RWM_PLAIN_RS, sampling-only CopaFeed)
+  why: 'verdict: the PRS diagnostic (RWM_PLAIN_RS=1, n=3, not scored) collapsed the law to its floor (c1s −72 %, c2 −92 %), status §23, 2026-10-26, current wire-v9 substrate; route: structural (status §23/§27'
+  commit: archive/RWM_PLAIN_RS
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: Flight-time witness for cross-path ack attribution (RWM_RS_ATTR)
+  why: acted only under RWM_PLAIN_RS (the full Copa-sole feed always credited the last-sent path); the inventory's SHIPPED class was wrong; removed with PLAIN_RS 2026-11-10 (simplification batch 1, ADR-0073)
+  commit: archive/RWM_RS_ATTR
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: Raw-sample echo-ratio floor (RWM_HONEST_K) and the honest-cap law family it fed (honest_store_cap, honest_cap_terms, k_raw)
+  why: 'verdict: old ledger GG:23650, 2026-08-11, pre-wire-v9 substrate; not re-run on the current substrate; route: structural (status §23/§27: its only consumers were the honest-cap law and the RWM_THREE_TE'
+  commit: archive/RWM_HONEST_K
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: Never-evict-undelivered reassembly clamp (RWM_REASM_BDP)
+  why: 'refuted before the measurement discipline, 2026-07-08 (old ledger GG:8091); the clamp never binds (the prune already lands at or below the delivered frontier, §3 table); route: user ruling (ADR-0073);'
+  commit: archive/RWM_REASM_BDP
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Honest store family
+  mechanism: 'Composed cap (RWM_COMPOSED_CAP): three-term pool law plus the per-path cwnd brake'
+  why: 'verdict: refuted, 2026-08-13 (diag36 paper row §10:3822): the composed pool law''s magnitude hits the memory bound at every dual (WIN_STORE_MAX becomes the law), and it measured 43–48 % worse delivered'
+  commit: archive/RWM_COMPOSED_CAP
+  status: removed
+  cited: true
+  cited_how: flag
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Earlier verdicts
+  mechanism: Generation-inert era
+  why: the harness never enabled generation coding, so the coded path was dead during a whole series of measurements; superseded by a re-baseline with a liveness guard
+  commit: 161aff1
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Earlier verdicts
+  mechanism: '"Arc concluded" aggregation verdict'
+  why: measured under three hidden binders (substrate Cubic, the PMTU wedge, the 1024-symbol pool); replaced by the measured regime map
+  commit: acefc47
+  status: superseded
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
+- group: Earlier verdicts
+  mechanism: The dead-wall and mode-hunt batteries
+  why: both fired their own stop rules; the dead-wall mode belongs to the store-cap-unification arm and vanishes at 8× the transfer size
+  commit: e6f68a7, 2a3d82e
+  status: unscored
+  cited: true
+  cited_how: name
+  cited_other_fields: false
+  cited_commit_only: false
+  possible_match: ''
