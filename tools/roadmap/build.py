@@ -39,9 +39,10 @@ LANES = ["vm", "host-cargo", "no-cargo", "user", "none"]
 WRAP = 20           # label line width in characters
 OVERVIEW_WIDTH = 3  # max nodes per row inside an overview track box
 TRACK_WIDTH = 4     # max nodes per rank in a per-track tree
+EXT_SHOWN = 2       # other-track references named in a node label before '+N'
 GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
-REGION_ORDER = (["legend", "overview", "plain-words", "ready-now", "running", "waiting-on-owner", "vm-queue", "timeline"]
+REGION_ORDER = (["legend", "overview", "plain-words", "ready-now", "running", "built-waiting", "waiting-on-owner", "vm-queue", "timeline"]
                 + [f"track-{c}" for c in TRACKS] + ["table"])
 FORWARD_STATES = ("in-progress", "next", "blocked", "parked")  # nodes that still have work ahead
 
@@ -58,7 +59,7 @@ CLASSDEFS = [
     ("unrated", "fill:#fff,stroke:#333,stroke-dasharray:1 3,color:#111"),
     ("userdec", "fill:#d9c2f0,stroke:#7b3fb5,color:#111"),
     ("defect", "fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111"),
-    ("stub", "fill:#fff,stroke:#aaa,stroke-dasharray:2 2,color:#777,font-size:11px"),
+    ("waiting", "fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111"),
 ]
 
 _ESC = {
@@ -94,6 +95,8 @@ def tag(n):
         return f"✔ done · {o}"
     if s == "abandoned":
         return "↷ superseded" if o == "superseded" else "✖ dead end"
+    if s == "in-progress" and n["waiting_on"]:  # built, waiting on something outside the work itself
+        return "⏳ waiting"
     return {"in-progress": "▶ in progress", "next": "○ next", "blocked": "⛔ blocked", "parked": "⏸ parked"}[s]
 
 
@@ -105,6 +108,8 @@ def node_class(n):
         return "defect"
     if n["kind"] == "defect-verdict" and s == "done":
         return "succ"
+    if s == "in-progress" and n["waiting_on"]:
+        return "waiting"
     if s == "abandoned":
         return "dead"
     if s == "done":
@@ -113,9 +118,19 @@ def node_class(n):
     return {"in-progress": "inprog", "next": "next", "blocked": "blocked", "parked": "parked"}[s]
 
 
-def node_def(n, ident=None):
+def external_refs(n, ids):
+    """Label line naming other-track nodes this node points at (prerequisites, replacement, qualifier)."""
+    ext = list(dict.fromkeys(t for f in ("depends_on", "replaced_by", "qualified_by") for t in n[f] if t not in ids))
+    if not ext:
+        return ""
+    return "ext: " + ", ".join(ext[:EXT_SHOWN]) + (f" +{len(ext) - EXT_SHOWN}" if len(ext) > EXT_SHOWN else "")
+
+
+def node_def(n, ident=None, extra=""):
     title = "<br/>".join(esc(line) for line in textwrap.wrap(" ".join(n["title"].split()), WRAP) or [""])
     label = f"{title}<br/>{esc(tag(n))}{' ⚠' if n['qualified_by'] else ''}"
+    if extra:
+        label += "<br/>" + "<br/>".join(esc(line) for line in textwrap.wrap(extra, WRAP))
     i = ident or sid(n["id"])
     k = n["kind"]
     if k == "user-decision":
@@ -138,14 +153,35 @@ def classdef_lines(indent="    "):
     return [f"{indent}classDef {name} {style}" for name, style in CLASSDEFS]
 
 
+def reduced_deps(nodes):
+    """depends_on with transitively implied edges dropped (a -> c is omitted when a -> b -> c exists).
+
+    The tables keep the full depends_on; diagrams draw only this reduction so long redundant
+    edges do not widen the layout. Assumes depends_on is acyclic (check.py enforces it).
+    """
+    by = {n["id"]: n for n in nodes}
+    memo = {}
+
+    def reach(i):  # every prerequisite of i, direct or not
+        if i not in memo:
+            memo[i] = set()
+            for d in by[i]["depends_on"]:
+                memo[i] |= {d} | reach(d)
+        return memo[i]
+
+    return {n["id"]: [d for d in n["depends_on"] if not any(d in reach(o) for o in n["depends_on"] if o != d)]
+            for n in nodes}
+
+
 def edges(nodes, keep):
     """Yield (src, dst, kind) for edges where keep(src_node, dst_node) holds.
 
     kind: "dep" (prerequisite -> dependant), "repl" (replaced by), "qual" (rated node -> qualifying defect).
     """
     by = {n["id"]: n for n in nodes}
+    direct = reduced_deps(nodes)
     for n in nodes:
-        for d in n["depends_on"]:
+        for d in direct[n["id"]]:
             if keep(by[d], n):
                 yield d, n["id"], "dep"
         for r in n["replaced_by"]:
@@ -189,11 +225,11 @@ def vm_queue(nodes):
     return sorted((n for n in nodes if n["vm_order"] is not None), key=lambda n: n["vm_order"])
 
 
-def row_links(group, width, indent="    "):
-    """Invisible links that break any over-wide rank of `group` into rows of at most `width`.
+def pack_rows(group, width):
+    """Pack ALL nodes of `group` (connected or not) into rows of at most `width` node ids.
 
-    Rank = longest depends_on path inside the group. Within a rank, row r node i is tied to
-    row r+1 node i, so wide fan-outs stack instead of spreading sideways.
+    Nodes are taken in rank order (rank = longest depends_on path inside the group) and
+    filled greedily; a node never shares a row with one of its prerequisites.
     """
     ids = {n["id"] for n in group}
     by = {n["id"]: n for n in group}
@@ -204,15 +240,24 @@ def row_links(group, width, indent="    "):
             rank[i] = 1 + max([depth(d, seen + (i,)) for d in by[i]["depends_on"] if d in ids and d not in seen], default=-1)
         return rank[i]
 
-    ranks = {}
-    for n in group:
-        ranks.setdefault(depth(n["id"]), []).append(sid(n["id"]))
-    out = []
-    for members in ranks.values():
-        rows = [members[i:i + width] for i in range(0, len(members), width)]
-        for a, b in zip(rows, rows[1:]):
-            out += [f"{indent}{x} ~~~ {y}" for x, y in zip(a, b)]
-    return out
+    rows = []
+    for n in sorted(group, key=lambda n: depth(n["id"])):
+        deps = set(n["depends_on"])
+        if rows and len(rows[-1]) < width and not deps & set(rows[-1]):
+            rows[-1].append(n["id"])
+        else:
+            rows.append([n["id"]])
+    return rows
+
+
+def row_links(rows, indent="    ", ident=sid):
+    """Invisible links from every node of a row to every node of the next row.
+
+    Mermaid puts nodes without edges on the first rank and lets edge-pulled nodes drift
+    between ranks; a complete bipartite tie between consecutive rows holds each row on
+    one rank, so rows stack vertically.
+    """
+    return [f"{indent}{ident(a)} ~~~ {ident(b)}" for prev, row in zip(rows, rows[1:]) for a in prev for b in row]
 
 
 def fence(lines):
@@ -234,7 +279,7 @@ def r_overview(nodes, today):
         out.append(f'    subgraph sg_{code}["{esc(code + " - " + name)}"]')
         out.append("        direction TB")
         out += [f"        {node_def(n)}" for n in group]
-        out += row_links(group, OVERVIEW_WIDTH, "        ")
+        out += row_links(pack_rows(group, OVERVIEW_WIDTH), "        ")
         out.append("    end")
     if len(present) > 1:
         out.append("    " + " ~~~ ".join(present))
@@ -252,16 +297,14 @@ def r_track(code):
             return "_No nodes in this track yet._"
         ids = {n["id"] for n in sel}
         out = ["flowchart TB"]
-        out += [f"    {node_def(n)}" for n in sel]
-        out += row_links(sel, TRACK_WIDTH)
-        es = list(edges(nodes, lambda x, y: x["id"] in ids or y["id"] in ids))
-        stubs = sorted({e for a, b, _ in es for e in (a, b) if e not in ids})
-        out += [f'    x_{sid(s)}["{esc(s)}"]' for s in stubs]
-        for a, b, kind in es:
-            out.append(edge_line(a, b, kind, None if a in ids else f"x_{sid(a)}", None if b in ids else f"x_{sid(b)}"))
+        out += [f"    {node_def(n, extra=external_refs(n, ids))}" for n in sel]
+        out += row_links(pack_rows(sel, TRACK_WIDTH))
+        # edges to other tracks are not drawn (stub nodes made trees wide and unreadable);
+        # they appear as an "ext:" line in the node label and in that track's own tree
+        out += [edge_line(a, b, kind) for a, b, kind in edges(nodes, lambda x, y: x["id"] in ids and y["id"] in ids)]
         out += link_styles(out)
         out += classdef_lines()
-        out += class_lines([(sid(n["id"]), node_class(n)) for n in sel] + [(f"x_{sid(s)}", "stub") for s in stubs])
+        out += class_lines([(sid(n["id"]), node_class(n)) for n in sel])
         return fence(out)
     return render
 
@@ -327,7 +370,7 @@ def r_legend(nodes, today):
         ("vsucc", "very successful"), ("succ", "successful"), ("mixed", "mixed"), ("bad", "bad"),
         ("dead", "dead end / superseded / abandoned"), ("inprog", "in progress"), ("next", "next"),
         ("blocked", "blocked"), ("parked", "parked"), ("unrated", "done, unrated"),
-        ("userdec", "user decision pending"), ("defect", "open defect"),
+        ("userdec", "user decision pending"), ("defect", "open defect"), ("waiting", "built, waiting"),
     ]
     out = ["flowchart LR"]
     out += [f'    lg_{c}["{esc(t)}"]' for c, t in samples]
@@ -352,6 +395,8 @@ def r_legend(nodes, today):
         "",
         "Shapes: hexagon = user decision (purple while pending), parallelogram = law, flag = defect verdict, rectangle = everything else.",
         "Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `replaced by`.",
+        "Diagrams omit prerequisite arrows that are implied by a longer chain (the table keeps the full `depends_on`). "
+        "A per-track tree draws only arrows inside its track; a node's references to other tracks are written on its label as `ext: ...`.",
         "Thin grey dotted arrow = `then`: VM queue order, not a dependency. A defect verdict reads `⚠ open defect` or `✔ fixed` and never shows an outcome.",
         "Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the rating of the done node it leaves; that node's label ends in `⚠`.",
     ]
@@ -381,11 +426,22 @@ def by_lane(sel):
 
 
 def r_ready(nodes, today):
-    return by_lane([n for n in nodes if n["state"] == "next"])
+    # the user lane is listed under "Waiting on the owner"
+    return by_lane([n for n in nodes if n["state"] == "next" and n["lane"] != "user"])
 
 
 def r_running(nodes, today):
-    return by_lane([n for n in nodes if n["state"] == "in-progress" and n["kind"] != "defect-verdict"])
+    return by_lane([n for n in nodes if n["state"] == "in-progress" and n["kind"] != "defect-verdict" and not n["waiting_on"]])
+
+
+def r_built_waiting(nodes, today):
+    sel = [n for n in nodes if n["state"] == "in-progress" and n["kind"] != "defect-verdict" and n["waiting_on"]]
+    if not sel:
+        return "_None._"
+    parts = []
+    for why in dict.fromkeys(n["waiting_on"] for n in sel):  # first-seen order
+        parts.append(f"**{cell(why)}**\n\n" + "\n".join(f"- `{n['id']}`: {cell(n['title'])}" for n in sel if n["waiting_on"] == why))
+    return "\n\n".join(parts)
 
 
 def r_waiting(nodes, today):
@@ -401,7 +457,7 @@ def r_vmqueue(nodes, today):
 
 
 RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline, "table": r_table,
-             "plain-words": r_plain, "ready-now": r_ready, "running": r_running,
+             "plain-words": r_plain, "ready-now": r_ready, "running": r_running, "built-waiting": r_built_waiting,
              "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue}
 RENDERERS.update({f"track-{c}": r_track(c) for c in TRACKS})
 
@@ -415,6 +471,7 @@ def normalize(nodes):
         m.setdefault("qualified_by", [])
         m["notes"] = m.get("notes") or ""
         m["plain"] = m.get("plain") or ""
+        m["waiting_on"] = m.get("waiting_on") or ""
         m["order_reason"] = m.get("order_reason") or ""
         m["vm_order"] = m.get("vm_order")
         out.append(m)

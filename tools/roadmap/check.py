@@ -14,7 +14,7 @@ import build  # noqa: E402
 FIELDS = ["id", "title", "track", "kind", "state", "outcome", "evidence", "verdict_quote", "headline",
           "depends_on", "replaced_by", "lane", "start", "end", "folded", "overview"]
 LIST_FIELDS = ["evidence", "depends_on", "replaced_by", "folded"]
-OPTIONAL = ["qualified_by", "notes", "vm_order", "order_reason", "plain"]  # absent == [] / "" / None
+OPTIONAL = ["qualified_by", "notes", "vm_order", "order_reason", "plain", "waiting_on"]  # absent == [] / "" / None
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 TODAY_RE = re.compile(r"^%% today: (\d{4}-\d{2}-\d{2})\r?$", re.M)
 
@@ -114,7 +114,7 @@ def validate_nodes(nodes):
             err("outcome n/a is only for kind user-decision")
         if n["kind"] == "defect-verdict" and n["outcome"] != "unrated":
             err(f"a defect-verdict never carries an outcome (got {n['outcome']}); use unrated")
-        for f in ("order_reason", "plain"):
+        for f in ("order_reason", "plain", "waiting_on"):
             if not isinstance(n.get(f, ""), str):
                 err(f"{f} must be a string")
         vo = n.get("vm_order")
@@ -155,6 +155,8 @@ def validate_nodes(nodes):
                 # A known defect does not block work on it (a diagnosis can start).
                 if d in by and by[d]["state"] != "done" and by[d]["kind"] != "defect-verdict":
                     errors.append(f"{nid}: state next but depends_on '{d}' is {by[d]['state']}, not done")
+        if n.get("waiting_on") and n["state"] != "in-progress":
+            warnings.append(f"{nid}: waiting_on on a node that is not in-progress")
         if n.get("qualified_by") and n["state"] != "done":
             warnings.append(f"{nid}: qualified_by on a node that is not done")
         for f in ("depends_on", "replaced_by", "qualified_by"):

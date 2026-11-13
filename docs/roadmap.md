@@ -1,5 +1,7 @@
 # Roadmap
 
+**Status: draft. Ratings are not yet confirmed by the owner, and the forward order is provisional until the law ledger lands.**
+
 Tech tree of the Raptorpath work: what is done, what failed, what comes next. Everything between the
 `GENERATED` markers is rebuilt from `docs/roadmap/nodes.yaml`; do not edit it by hand.
 
@@ -370,6 +372,11 @@ flowchart TB
 - `meas-guard-v2-impl`: Guard v2 implementation
 - `model-law-ledger`: Law ledger
 <!-- END GENERATED: running -->
+
+## Built, waiting
+
+<!-- BEGIN GENERATED: built-waiting -->
+<!-- END GENERATED: built-waiting -->
 
 ## Waiting on the owner
 

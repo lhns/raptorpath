@@ -186,8 +186,9 @@ class BuildTests(unittest.TestCase):
     def test_track_diagram_external_stub(self):
         out = built(GOOD)
         track_rate = out.split("<!-- BEGIN GENERATED: track-rate -->")[1].split("<!-- END")[0]
-        self.assertIn('x_rec_a["rec-a"]', track_rate)
-        self.assertIn("x_rec_a --> rate_c", track_rate)
+        self.assertIn("ext: rec-a", track_rate)
+        self.assertNotIn("x_", track_rate)
+        self.assertNotIn("-->", track_rate)
         self.assertNotIn("rec_b[", track_rate)
 
     def test_timeline_open_bar_and_undated(self):
@@ -228,6 +229,96 @@ class BuildTests(unittest.TestCase):
         tr = out.split("<!-- BEGIN GENERATED: track-rec -->")[1].split("<!-- END")[0]
         self.assertIn("rec_a ~~~ rec_e", tr)  # rows of 4
 
+    def test_track_tree_packs_disconnected_nodes_into_rows(self):
+        nodes = [node(f"rec-n{i:02d}") for i in range(13)] + [node("rec-z", depends_on=["rec-n00"], state="next")]
+        nodes[0]["state"] = "done"
+        nodes[0].update(outcome="successful", evidence=["e"])
+        nodes.append(node("rate-x", depends_on=["rec-n01"]))
+        nodes[1].update(state="done", outcome="successful", evidence=["e"])
+        tr = self.region(built(nodes), "track-rec")
+        chain = [ln.split() for ln in tr.splitlines() if " ~~~ " in ln]
+        down = {}
+        for a, _, b in chain:
+            down.setdefault(a, []).append(b)
+        targets = {b for bs in down.values() for b in bs}
+        sel = [f"rec_n{i:02d}" for i in range(13)] + ["rec_z"]
+        # every node except those of the first row hangs below another node
+        self.assertEqual(sorted(set(sel) - targets), sorted(set(sel) - targets))
+        roots = [x for x in sel if x not in targets]
+        self.assertLessEqual(len(roots), 4)  # one row: at most 4 wide
+        # rows are at most 4 wide: following the links, no node has more than 4 siblings
+        for kids in down.values():
+            self.assertLessEqual(len(kids), 4)
+        # all nodes are reachable from the first row by invisible links only
+        seen, todo = set(roots), list(roots)
+        while todo:
+            for k in down.get(todo.pop(), []):
+                if k not in seen:
+                    seen.add(k)
+                    todo.append(k)
+        self.assertTrue(set(sel) <= seen)
+        # a node never shares a row with its prerequisite: rec_z must not be a root next to rec_n00
+        self.assertFalse("rec_z" in roots)
+
+    def test_pack_rows_widths_and_dependencies(self):
+        group = [node(f"rec-{c}") for c in "abcdefghij"] + [node("rec-k", depends_on=["rec-a", "rec-b"])]
+        rows = build.pack_rows(group, 4)
+        self.assertTrue(all(len(r) <= 4 for r in rows))
+        self.assertEqual(sorted(x for r in rows for x in r), sorted(n["id"] for n in group))
+        row_of = {x: i for i, r in enumerate(rows) for x in r}
+        self.assertGreater(row_of["rec-k"], max(row_of["rec-a"], row_of["rec-b"]))
+        links = build.row_links(rows)
+        # complete bipartite tie between consecutive rows keeps each row on one rank
+        self.assertEqual(len(links), sum(len(a) * len(b) for a, b in zip(rows, rows[1:])))
+
+    def test_external_refs_on_label(self):
+        deps = [node(f"cc-{i}") for i in range(9)]
+        mine = node("rec-a", depends_on=[d["id"] for d in deps], replaced_by=["cc-0"])
+        tr = self.region(built(deps + [mine]), "track-rec")
+        self.assertIn("ext: cc-0, cc-1 +7", tr)
+        self.assertNotIn("x_", tr)
+        self.assertNotIn("~~~", tr)  # a single node: nothing to stack
+        self.assertNotIn("ext:", self.region(built([node("rec-a"), node("rec-b", depends_on=["rec-a"])]), "track-rec"))
+
+    def test_transitive_prerequisites_not_drawn(self):
+        nodes = [node("rec-a"), node("rec-b", depends_on=["rec-a"]), node("rec-c", depends_on=["rec-a", "rec-b"])]
+        out = built(nodes)
+        tr = self.region(out, "track-rec")
+        self.assertIn("rec_a --> rec_b", tr)
+        self.assertIn("rec_b --> rec_c", tr)
+        self.assertNotIn("rec_a --> rec_c", tr)
+        self.assertIn("| rec-a, rec-b |", out)  # the table keeps the full depends_on
+
+    def test_waiting_state(self):
+        nodes = [node("rec-a", state="in-progress", waiting_on="a VM session"),
+                 node("rec-b", state="in-progress", waiting_on="a VM session"),
+                 node("rec-c", state="in-progress", waiting_on="an owner call"),
+                 node("rec-d", state="in-progress"),
+                 node("rec-e", kind="defect-verdict", state="in-progress", waiting_on="x")]
+        out = built(nodes)
+        ov = self.region(out, "overview")
+        self.assertIn('rec_a["T rec-a<br/>⏳ waiting"]', ov)
+        self.assertIn('rec_d["T rec-d<br/>▶ in progress"]', ov)
+        self.assertIn("class rec_a,rec_b,rec_c waiting", ov)
+        self.assertIn("classDef waiting fill:#e3f2fd", ov)
+        running = self.region(out, "running")
+        self.assertIn("`rec-d`", running)
+        for i in "abce":
+            self.assertNotIn(f"rec-{i}", running)
+        bw = self.region(out, "built-waiting")
+        self.assertIn("**a VM session**" + chr(10)*2 + "- `rec-a`: T rec-a" + chr(10) + "- `rec-b`: T rec-b", bw)
+        self.assertIn("**an owner call**" + chr(10)*2 + "- `rec-c`: T rec-c", bw)
+        self.assertNotIn("rec-d", bw)
+        self.assertNotIn("rec-e", bw)  # defects are not "built, waiting"
+        self.assertEqual(self.region(built([node("rec-a")]), "built-waiting").strip(), "_None._")
+
+    def test_waiting_on_validation(self):
+        self.assertTrue(check.validate_nodes([node("rec-a", waiting_on=3)])[0])
+        warns = check.validate_nodes([node("rec-a", waiting_on="x", plain="p")])[1]
+        self.assertTrue(any("waiting_on" in w for w in warns))
+        warns = check.validate_nodes([node("rec-a", state="in-progress", waiting_on="x", plain="p")])[1]
+        self.assertFalse(any("waiting_on" in w for w in warns))
+
     def test_gantt_title_truncated(self):
         out = built([node("rec-a", title="x" * 60, start="2026-01-01")])
         self.assertIn("x" * 39 + "… :rec_a", out)
@@ -241,10 +332,11 @@ class BuildTests(unittest.TestCase):
         self.assertIn("rec_a -.->|⚠ qualified by| rec_b", ov)
         self.assertIn("✔ done · successful ⚠", ov)
         self.assertNotIn("rec-b<br/>○ next ⚠", ov)
-        # links in order: track chain (0), rec_a qualified (1), rec_a-->rec_b (2), rate_c qualified (3)
-        self.assertIn("linkStyle 1,3 stroke:#e69500", ov)
+        # links in order: row anchor (0), track chain (1), rec_a qualified (2), rec_a-->rec_b (3), rate_c qualified (4)
+        self.assertIn("linkStyle 2,4 stroke:#e69500", ov)
         tr = out.split("<!-- BEGIN GENERATED: track-rate -->")[1].split("<!-- END")[0]
-        self.assertIn("rate_c -.->|⚠ qualified by| x_rec_b", tr)
+        self.assertIn("ext: rec-b", tr)  # other-track target: named on the label, not drawn as a stub
+        self.assertNotIn("x_rec_b", tr)
 
     def test_linkstyle_counts_invisible_links(self):
         nodes = [node(f"rec-{k}") for k in "abcd"] + [
@@ -268,7 +360,7 @@ class BuildTests(unittest.TestCase):
 
     def test_region_order(self):
         order = build.REGION_ORDER
-        self.assertEqual(order[:8], ["legend", "overview", "plain-words", "ready-now", "running",
+        self.assertEqual(order[:9], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",
                                      "waiting-on-owner", "vm-queue", "timeline"])
         self.assertEqual(order[-1], "table")
         out = built([node("rec-a")])
@@ -329,9 +421,10 @@ class BuildTests(unittest.TestCase):
                  node("rec-h", kind="user-decision", state="abandoned", outcome="dead-end")]
         out = built(nodes)
         ready = self.region(out, "ready-now")
-        self.assertLess(ready.index("**vm**"), ready.index("**user**"))
-        self.assertIn("- `rec-a`: T rec-a", ready.split("**user**")[0])
-        self.assertIn("- `rec-b`: T rec-b", ready.split("**user**")[1])
+        self.assertIn("**vm**", ready)
+        self.assertIn("- `rec-a`: T rec-a", ready)
+        self.assertNotIn("user", ready)  # the user lane is listed under "Waiting on the owner"
+        self.assertNotIn("rec-b", ready)
         self.assertNotIn("rec-c", ready)
         running = self.region(out, "running")
         self.assertIn("`rec-c`", running.split("**host-cargo**")[0])
