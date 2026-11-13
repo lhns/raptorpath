@@ -33,7 +33,7 @@ TRACKS = {
 }
 KINDS = ["law", "mechanism", "instrument", "infra", "research", "user-decision", "defect-verdict", "simplification"]
 STATES = ["done", "in-progress", "next", "blocked", "parked", "abandoned"]
-OUTCOMES = ["very-successful", "successful", "mixed", "bad", "dead-end", "superseded", "unrated"]
+OUTCOMES = ["very-successful", "successful", "mixed", "bad", "dead-end", "superseded", "unrated", "n/a"]
 LANES = ["vm", "host-cargo", "no-cargo", "user", "none"]
 
 WRAP = 20           # label line width in characters
@@ -61,7 +61,7 @@ CLASSDEFS = [
 _ESC = {
     "#": "#35;", '"': "#quot;", "&": "#amp;", "<": "#lt;", ">": "#gt;",
     "[": "#91;", "]": "#93;", "{": "#123;", "}": "#125;", "|": "#124;",
-    "`": "#96;", "§": "#167;",
+    "`": "#96;", "§": "#167;", "~": "#126;",
 }
 _ESC_RE = re.compile("[" + re.escape("".join(_ESC)) + "]")
 
@@ -97,13 +97,13 @@ def node_class(n):
         return "dead"
     if s == "done":
         return {"very-successful": "vsucc", "successful": "succ", "mixed": "mixed", "bad": "bad",
-                "dead-end": "dead", "superseded": "dead", "unrated": "unrated"}[o]
+                "dead-end": "dead", "superseded": "dead", "unrated": "unrated", "n/a": "userdec"}[o]
     return {"in-progress": "inprog", "next": "next", "blocked": "blocked", "parked": "parked"}[s]
 
 
 def node_def(n, ident=None):
     title = "<br/>".join(esc(line) for line in textwrap.wrap(" ".join(n["title"].split()), WRAP) or [""])
-    label = f"{title}<br/>{esc(tag(n))}"
+    label = f"{title}<br/>{esc(tag(n))}{' ⚠' if n['qualified_by'] else ''}"
     i = ident or sid(n["id"])
     k = n["kind"]
     if k == "user-decision":
@@ -127,20 +127,42 @@ def classdef_lines(indent="    "):
 
 
 def edges(nodes, keep):
-    """Yield (src, dst, dashed) for edges where keep(src_node, dst_node) holds."""
+    """Yield (src, dst, kind) for edges where keep(src_node, dst_node) holds.
+
+    kind: "dep" (prerequisite -> dependant), "repl" (replaced by), "qual" (rated node -> qualifying defect).
+    """
     by = {n["id"]: n for n in nodes}
     for n in nodes:
         for d in n["depends_on"]:
             if keep(by[d], n):
-                yield d, n["id"], False
+                yield d, n["id"], "dep"
         for r in n["replaced_by"]:
             if keep(n, by[r]):
-                yield n["id"], r, True
+                yield n["id"], r, "repl"
+        for q in n["qualified_by"]:
+            if keep(n, by[q]):
+                yield n["id"], q, "qual"
 
 
-def edge_line(a, b, dashed, sa=None, sb=None):
+EDGE_ARROWS = {"dep": "-->", "repl": "-.->|replaced by|", "qual": "-.->|⚠ qualified by|"}
+QUAL_STYLE = "stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400"
+_LINK_RE = re.compile(r"^\s+\S+ (?:-->|-\.->\|[^|]*\||~~~)")
+
+
+def edge_line(a, b, kind, sa=None, sb=None):
     a, b = sa or sid(a), sb or sid(b)
-    return f"    {a} -.->|replaced by| {b}" if dashed else f"    {a} --> {b}"
+    return f"    {a} {EDGE_ARROWS[kind]} {b}"
+
+
+def link_styles(lines):
+    """linkStyle lines colouring qualified_by links (Mermaid indexes links in order of appearance)."""
+    idx, hits = 0, []
+    for line in lines:
+        if _LINK_RE.match(line):
+            if "⚠ qualified by" in line:
+                hits.append(idx)
+            idx += line.count("~~~") or 1
+    return [f"    linkStyle {','.join(map(str, hits))} {QUAL_STYLE}"] if hits else []
 
 
 def row_links(group, width, indent="    "):
@@ -193,6 +215,7 @@ def r_overview(nodes, today):
     if len(present) > 1:
         out.append("    " + " ~~~ ".join(present))
     out += [edge_line(a, b, d) for a, b, d in edges(nodes, lambda x, y: x["id"] in ids and y["id"] in ids)]
+    out += link_styles(out)
     out += classdef_lines()
     out += class_lines([(sid(n["id"]), node_class(n)) for n in sel])
     return fence(out)
@@ -210,8 +233,9 @@ def r_track(code):
         es = list(edges(nodes, lambda x, y: x["id"] in ids or y["id"] in ids))
         stubs = sorted({e for a, b, _ in es for e in (a, b) if e not in ids})
         out += [f'    x_{sid(s)}["{esc(s)}"]' for s in stubs]
-        for a, b, dashed in es:
-            out.append(edge_line(a, b, dashed, None if a in ids else f"x_{sid(a)}", None if b in ids else f"x_{sid(b)}"))
+        for a, b, kind in es:
+            out.append(edge_line(a, b, kind, None if a in ids else f"x_{sid(a)}", None if b in ids else f"x_{sid(b)}"))
+        out += link_styles(out)
         out += classdef_lines()
         out += class_lines([(sid(n["id"]), node_class(n)) for n in sel] + [(f"x_{sid(s)}", "stub") for s in stubs])
         return fence(out)
@@ -264,6 +288,13 @@ def r_table(nodes, today):
                 cell("; ".join(n["evidence"])), cell(", ".join(n["depends_on"])),
             ]) + " |")
         parts.append("\n".join(rows))
+    for code, (name, _) in TRACKS.items():
+        sel = [n for n in nodes if n["track"] == code and n["notes"]]
+        if sel:
+            parts.append(f"#### Details per node: {code} - {name}")
+            rows = ["| id | title | notes | evidence |", "|---|---|---|---|"]
+            rows += [f"| `{n['id']}` | {cell(n['title'])} | {cell(n['notes'])} | {cell('; '.join(n['evidence']))} |" for n in sel]
+            parts.append("\n".join(rows))
     return "\n\n".join(parts) if parts else "_No nodes yet._"
 
 
@@ -297,6 +328,7 @@ def r_legend(nodes, today):
         "",
         "Shapes: hexagon = user decision (purple while pending), parallelogram = law, flag = defect verdict, rectangle = everything else.",
         "Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `replaced by`.",
+        "Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the rating of the done node it leaves; that node's label ends in `⚠`.",
     ]
     return "\n".join(text)
 
@@ -311,6 +343,8 @@ def normalize(nodes):
     for n in nodes:
         m = dict(n)
         m["start"], m["end"] = datestr(n.get("start")), datestr(n.get("end"))
+        m.setdefault("qualified_by", [])
+        m["notes"] = m.get("notes") or ""
         out.append(m)
     return out
 
@@ -339,8 +373,16 @@ def apply_regions(text, regions):
 def load_nodes(path):
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
+    if isinstance(data, dict):
+        extra = set(data) - {"nodes", "dropped", "suspected_edges"}
+        if extra:
+            raise ValueError(f"{path}: unknown top-level key(s) {sorted(extra)}")
+        for k in ("dropped", "suspected_edges"):  # data only, never drawn
+            if data.get(k) is not None and not isinstance(data[k], list):
+                raise ValueError(f"{path}: '{k}' must be a list")
+        data = data.get("nodes")
     if not isinstance(data, list):
-        raise ValueError(f"{path}: top level must be a list of nodes")
+        raise ValueError(f"{path}: nodes must be a list (bare, or under a top-level 'nodes' key)")
     return data
 
 

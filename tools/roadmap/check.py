@@ -14,6 +14,7 @@ import build  # noqa: E402
 FIELDS = ["id", "title", "track", "kind", "state", "outcome", "evidence", "verdict_quote", "headline",
           "depends_on", "replaced_by", "lane", "start", "end", "folded", "overview"]
 LIST_FIELDS = ["evidence", "depends_on", "replaced_by", "folded"]
+OPTIONAL = ["qualified_by", "notes"]  # absent == [] / ""
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 TODAY_RE = re.compile(r"^%% today: (\d{4}-\d{2}-\d{2})\r?$", re.M)
 
@@ -76,7 +77,7 @@ def validate_nodes(nodes):
             if f not in n:
                 err(f"missing field '{f}'")
         for f in n:
-            if f not in FIELDS:
+            if f not in FIELDS and f not in OPTIONAL:
                 err(f"unknown field '{f}'")
         if len(errors) > e0:
             continue
@@ -104,6 +105,13 @@ def validate_nodes(nodes):
         for f in LIST_FIELDS:
             if not isinstance(n[f], list) or not all(isinstance(x, str) for x in n[f]):
                 err(f"{f} must be a list of strings")
+        q = n.get("qualified_by", [])
+        if not isinstance(q, list) or not all(isinstance(x, str) for x in q):
+            err("qualified_by must be a list of strings")
+        if not isinstance(n.get("notes", ""), str):
+            err("notes must be a string")
+        if n["outcome"] == "n/a" and n["kind"] != "user-decision":
+            err("outcome n/a is only for kind user-decision")
         if not isinstance(n["overview"], bool):
             err("overview must be true or false")
         dates = []
@@ -124,8 +132,10 @@ def validate_nodes(nodes):
     # drop nodes with a dangling edge from the graph, but report each
     for n in good:
         nid = n["id"]
-        for f in ("depends_on", "replaced_by"):
-            for t in n[f]:
+        if n.get("qualified_by") and n["state"] != "done":
+            warnings.append(f"{nid}: qualified_by on a node that is not done")
+        for f in ("depends_on", "replaced_by", "qualified_by"):
+            for t in n.get(f, []):
                 if t == nid:
                     errors.append(f"{nid}: {f} points at itself")
                 elif t not in ids:
@@ -134,7 +144,7 @@ def validate_nodes(nodes):
         if state == "done":
             if not n["evidence"]:
                 errors.append(f"{nid}: state done needs at least one evidence entry")
-            if outcome == "unrated":
+            if outcome == "unrated" and n["kind"] != "user-decision":
                 if n["verdict_quote"] != "":
                     errors.append(f"{nid}: done + unrated requires verdict_quote \"\" (a quote implies a verdict)")
                 else:

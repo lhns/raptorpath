@@ -73,6 +73,7 @@ flowchart LR
 
 Shapes: hexagon = user decision (purple while pending), parallelogram = law, flag = defect verdict, rectangle = everything else.
 Solid arrow = hard prerequisite (prerequisite to dependant). Dashed arrow = `replaced by`.
+Amber dotted arrow = `⚠ qualified by`: a later defect or verdict limits the rating of the done node it leaves; that node's label ends in `⚠`.
 <!-- END GENERATED: legend -->
 
 ## Overview
