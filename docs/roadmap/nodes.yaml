@@ -1,0 +1,52 @@
+# Tech-tree nodes: the single source of truth for docs/roadmap.md.
+# Schema: see tools/roadmap/check.py (fields, enums, tracks). PLACEHOLDER content; real nodes come later.
+- id: infra-example-done
+  title: "Example done node"
+  track: infra
+  kind: infra
+  state: done
+  outcome: successful
+  evidence: ["branch roadmap-tool"]
+  verdict_quote: "Placeholder: replace with a verbatim verdict."
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: none
+  start: 2026-11-13
+  end: 2026-11-13
+  folded: []
+  overview: true
+
+- id: infra-example-abandoned
+  title: "Example abandoned node"
+  track: infra
+  kind: mechanism
+  state: abandoned
+  outcome: superseded
+  evidence: ["branch example-archived"]
+  verdict_quote: "Placeholder: replace with a verbatim verdict."
+  headline: ""
+  depends_on: [infra-example-done]
+  replaced_by: [infra-example-next]
+  lane: none
+  start: 2026-11-13
+  end: 2026-11-13
+  folded: []
+  overview: true
+
+- id: infra-example-next
+  title: "Example next node"
+  track: infra
+  kind: research
+  state: next
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [infra-example-done]
+  replaced_by: []
+  lane: none
+  start: ""
+  end: ""
+  folded: []
+  overview: true
