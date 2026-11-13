@@ -79,7 +79,7 @@ check("`event SLOW` = 1:1500 (RWM_EVENT=<leg>:<delta_ms>)", cp.stdout.strip() ==
 # ── the shell side ────────────────────────────────────────────────────────
 check("battery: plan 46 accepted, per-row binary (BASE -> BIN_BASE), CAND arm, the injector env set per row and withheld otherwise, "
       "check rows get the qdisc captures, the evt files are copied, a dead injection is ABORT-INJECT, c8-500 and c1d-3500 cells, 22-row table",
-      "|46|48|52) ;;" in bat and 'RBIN="$BIN_BASE"' in bat and "CAND)" in bat and "-u RWM_EVENT -u RWM_EVENT_QDISC -u RWM_EVENT_ONSET_S -u RWM_EVENT_HOLD_S" in bat
+      "|46|48|52|53|54b) ;;" in bat and 'RBIN="$BIN_BASE"' in bat and "CAND)" in bat and "-u RWM_EVENT -u RWM_EVENT_QDISC -u RWM_EVENT_ONSET_S -u RWM_EVENT_HOLD_S" in bat
       and "RWM_EVENT_QDISC=1" in bat and "rwm-evt.txt" in bat and "rwm-evtq.txt" in bat and "ABORT-INJECT" in bat
       and 'c8-500)  echo "c2 c3 dual 500000000"' in bat and 'c1d-3500) echo "c1 c1 dual 3500000000"' in bat and "-eq 22" in bat and "place46_parse.py" in bat)
 check("battery: the CAND binary must lack RWM_PLACE_WIRE (the promotion), refused otherwise", 'ABORT-CAND the CAND binary' in bat and 'grep -aq -- "RWM_PLACE_WIRE" "$BIN"' in bat)

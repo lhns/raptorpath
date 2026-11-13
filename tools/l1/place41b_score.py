@@ -106,7 +106,7 @@ def crash(rows, cell, arm):
 class Pool:
     """One cell's pooled rows (reference arm first, tested arm after) and the true selection."""
 
-    def __init__(self, rows, cell, ref_arm, test_arm, exclude=(), with_crash=False, clause_set="v1"):
+    def __init__(self, rows, cell, ref_arm, test_arm, exclude=(), with_crash=False, clause_set="v1", extra_defs=()):
         self.cell = cell
         self.ref_rows, self.test_rows = live(rows, cell, ref_arm), live(rows, cell, test_arm)
         if with_crash:                          # crash rows fill their slots (and are the worst rank); only the rank statistic asks for them
@@ -114,7 +114,7 @@ class Pool:
         self.rows = self.ref_rows + self.test_rows
         self.true = list(range(len(self.ref_rows), len(self.rows)))
         # exclude: clause names (every cell) or (cell, clause) pairs (one cell: status 48b's p_rest drops only c2's and c8's goodput)
-        self.defs = [d for d in clause_defs(cell, clause_set) if d[0] not in exclude and (cell, d[0]) not in exclude]
+        self.defs = [d for d in clause_defs(cell, clause_set) if d[0] not in exclude and (cell, d[0]) not in exclude] + list(extra_defs)   # extra_defs: (name, row key, sign), status 53's duplicates
         # COLLAPSE (status 47) is harness 43's definition (place43_parse.py: "COLLAPSE is the DNF row only", amendment 2): a DNF row is the WORST
         # rank on every clause of its cell in the rank statistic. A completed row far below the cell's goodput is NOT forced: it ranks by
         # its own values and is listed as a slow row (goodput < SLOW_FRAC x the median of the cell's POOLED rows, BASE and CAND together,
@@ -215,14 +215,14 @@ def rank_scores(pool):
     return sc
 
 
-def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None, exclude=(), design=None, clause_set="v1"):
+def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None, exclude=(), design=None, clause_set="v1", extra_defs=()):
     """The stratified rank-sum min-p guard (status 47 candidate). Per clause: the worse-side rank sum of the tested rows, ranks taken
     within seed. The clause statistics share the SAME joint relabellings as `statistic` (same RNG stream, same draws); each clause's
     permutation p is the share of labellings (the draws plus the true one) with a rank sum >= the labelling's own (ties extreme); the
     labelling's score is the MIN of its clause p-values over every clause of every cell; the gate p is the share of labellings whose
     min-p <= the true min-p. -> dict(p, T_true (the true min-p), p_true {(cell, clause): p}, S_true, argmin, n_perm)"""
     import bisect
-    pools = [Pool(rows, cell, ref_arm, test_arm, exclude, with_crash=True, clause_set=clause_set) for cell, _ in (cells or CELLS)]
+    pools = [Pool(rows, cell, ref_arm, test_arm, exclude, with_crash=True, clause_set=clause_set, extra_defs=extra_defs) for cell, _ in (cells or CELLS)]
     sc = {p.cell: rank_scores(p) for p in pools}
     keys = [(p.cell, n) for p in pools for n, _, _ in p.defs]
     S = {k: [] for k in keys}
