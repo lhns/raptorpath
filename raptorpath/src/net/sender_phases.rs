@@ -596,13 +596,14 @@ pub(crate) struct ServeGapsCtx<'a> {
     pub mpd_pf_floor: &'a std::cell::Cell<u64>,
     pub mpd_pf_clock: &'a std::cell::Cell<u64>,
     pub mpd_pf_sum: &'a std::cell::Cell<u64>,
-    pub nack_rx: &'a mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
+    pub nack_rx: &'a mut tokio::sync::mpsc::Receiver<GapBatch>,
     pub st: &'a mut SenderState,
     pub dg: &'a mut DiagState,
     pub rack_echo: &'a mut RackClockGauge,
     pub hold_echo: &'a mut HoldDownGauge,
+    pub snap_echo: &'a mut SnapOrderGauge,
     pub mp_delivered: &'a mut std::collections::HashMap<u32, Vec<u64>>,
-    pub pending_gaps: &'a mut Option<(FireCause, u32, Vec<(u64, u64)>)>,
+    pub pending_gaps: &'a mut Option<GapBatch>,
     pub cached_nack_budget: &'a mut u64,
     pub nack_repairs_this_period: &'a mut u64,
     pub mp_evid_max: &'a mut u64,
@@ -630,6 +631,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         dg,
         rack_echo,
         hold_echo,
+        snap_echo,
         mp_delivered,
         pending_gaps,
         cached_nack_budget: cached_nack_budget_cell,
@@ -640,8 +642,16 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
     let mut nack_repairs_this_period = *nack_repairs_this_period_cell;
     let mut mp_evid_max = *mp_evid_max_cell;
     loop {
-        let (gap_cause, ack_path, gaps) = match pending_gaps.take() {
-            Some(g) => g,
+        // `[SNAPV]`: every dequeued batch folds its snapshot version into
+        // `V*`, the ones coalescing discards included (docs/derivations/
+        // dup-diag.md). Observation here; nothing below reads it but the gauge.
+        let (gap_cause, ack_path, gaps, snap_v) = match pending_gaps.take() {
+            Some(g) => {
+                if let Some(v) = g.3 {
+                    st.snap_order.fold(v);
+                }
+                g
+            }
             None => match nack_rx.try_recv() {
                 Ok(g) => {
                     // A gap report is a state snapshot of the receiver's
@@ -656,8 +666,14 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     // cause tag, so fires are attributed to the report that
                     // drove them.
                     let mut g = g;
+                    if let Some(v) = g.3 {
+                        st.snap_order.fold(v);
+                    }
                     if pol.recov_mp_law {
                         while let Ok(n) = nack_rx.try_recv() {
+                            if let Some(v) = n.3 {
+                                st.snap_order.fold(v);
+                            }
                             g = n;
                             if pol.diag_on {
                                 dg.mpd_coalesced += 1;
@@ -673,6 +689,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             // Fully suppressed or budget exhausted — drain NACK queue
             dg.diag_gaps_dropped += 1;
             continue;
+        }
+        // Was this batch's snapshot older than the newest dequeued one?
+        let snap_stale = st.snap_order.is_stale(snap_v);
+        if pol.diag_on {
+            snap_echo.on_report(ack_path, snap_stale);
         }
 
         // SRTT drives the per-seq retransmit cooldown and the age gate.
@@ -886,6 +907,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     .or_else(|| {
                         st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
                     });
+                // Which channel let this seq through (`[SNAPV]` split).
+                let mut fired_by_pt = false;
                 if pol.recov_mp_law && mp_n_paths > 1 {
                     // The skew-aware hole law (ADR-0059) — RFC 9002 loss detection
                     // generalized per path, BOTH channels:
@@ -924,6 +947,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     if fast && pol.diag_on {
                         dg.mpd_fired_fast += 1;
                     }
+                    fired_by_pt = fast;
                 } else if pol.recov_sp && mp_n_paths <= 1 {
                     // `RWM_RECOV_SP`: the same §6.1.2 time threshold applied
                     // at N = 1 — a gap seq whose live flight (last retransmit,
@@ -1014,6 +1038,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // threshold (young = the law would have suppressed it),
                 // per-flight-path and per-retx-path emission counts.
                 hold_echo.on_fire(seq);
+                if pol.diag_on {
+                    snap_echo.on_fire(ack_path, snap_stale, fired_by_pt);
+                }
                 rack_echo.record_fire_cause(gap_cause);
                 if let Some((t, p)) = mp_flight {
                     let age = now_repair_us.saturating_sub(t);

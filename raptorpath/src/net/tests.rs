@@ -5464,7 +5464,7 @@ struct Q2Sender {
     // Held so the sender's channels stay open.
     _keep: (
         tokio::sync::mpsc::Sender<super::SenderCmd>,
-        tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
+        tokio::sync::mpsc::Sender<GapBatch>,
         tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
         tokio::sync::mpsc::Sender<RepairRequestBatch>,
         tokio::sync::broadcast::Sender<()>,
@@ -6386,4 +6386,51 @@ mod paper_bounds {
             "the debit is no longer `if pol.cc_pace {{ st.src_tokens -= 1.0 }}`"
         );
     }
+}
+
+// ── `[SNAPV]`: gap-snapshot order per return leg (docs/derivations/dup-diag.md) ──
+
+/// `V*` is the lexicographic max of every folded `(next_expected,
+/// received_above)`; an older report is stale, an equal one is not (the
+/// receiver's timer re-advertisement re-sends an unchanged snapshot), and a
+/// batch with no snapshot (the tail sweep) never is.
+#[test]
+fn snap_order_is_the_lexicographic_max_and_ties_are_fresh() {
+    let v = |ne, a| AboveReport { next_expected: ne, received_above: a };
+    let mut o = SnapOrder::default();
+    assert!(!o.is_stale(Some(v(0, 1))), "a fresh order judges nothing stale");
+    o.fold(v(100, 7));
+    o.fold(v(90, 50)); // older frontier: loses whatever its count
+    assert_eq!(o.newest(), v(100, 7));
+    assert!(o.is_stale(Some(v(90, 50))));
+    assert!(o.is_stale(Some(v(100, 6))));
+    assert!(!o.is_stale(Some(v(100, 7))), "a tie is the same snapshot");
+    assert!(!o.is_stale(Some(v(101, 0))), "a frontier advance is newer");
+    assert!(!o.is_stale(None), "the tail sweep carries no snapshot");
+}
+
+/// Parser pin: the `[SNAPV]` line, byte for byte. Legs ascend, the tail-sweep
+/// leg prints `-` last, the trailing constant is the shared sacrificial field,
+/// and an unreached gauge prints nothing.
+#[test]
+fn snapv_line_format_is_pinned() {
+    let mut g = SnapOrderGauge::new();
+    assert_eq!(g.line(), None);
+    g.on_report(1, true);
+    g.on_report(0, false);
+    g.on_report(1, false);
+    g.on_report(u32::MAX, false);
+    g.on_fire(1, true, true);
+    g.on_fire(1, true, false);
+    g.on_fire(1, true, true);
+    g.on_fire(0, false, true); // fresh-report fire: not counted
+    assert_eq!(
+        g.line().as_deref(),
+        Some(
+            "[SNAPV] site=sender p0:rep=1 stale=0 pt_st=0 tt_st=0 \
+             p1:rep=2 stale=1 pt_st=2 tt_st=1 \
+             p-:rep=1 stale=0 pt_st=0 tt_st=0 fa_class=0.0625"
+        )
+    );
+    std::mem::forget(g); // keep the test's stderr clean
 }
