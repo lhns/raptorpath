@@ -1226,6 +1226,139 @@ fn mp_packet_threshold_evidence_and_decision() {
     assert!(!mp_fast_lost(&b_ev, 50));
 }
 
+/// A two-leg FIFO transfer driven through the shipped packet-threshold fold
+/// and decision (`mp_ingest_evidence`, `mp_packet_threshold_fires`, the
+/// receiver's `received_sack_ranges` and the sender's `sack_to_gaps`).
+///
+/// Forward legs are FIFO (each arrival no earlier than the previous one on
+/// its leg, the `rate` netem property): p0 1 ms with a 3 ms stall on every
+/// eighth 5 ms window (the stall makes p0 seqs late against p1 neighbours,
+/// the c8 cross-path hole shape), p1 3 ms flat. The receiver snapshots
+/// every 1 ms and sends the snapshot back on a leg (every third on p1, the
+/// data-arm rule "the ack rides the arriving data's path" reduced to a fixed
+/// pattern); `rev_us` is the per-leg return delay. The sender processes
+/// snapshots in ARRIVAL order, as `serve_gaps` does. `lose` drops seqs
+/// for good (no retransmit is modelled): a lost seq holds the cumulative
+/// frontier, as c8's real losses do, so short-lived holes above it stay
+/// above the frontier while stale snapshots re-list them.
+///
+/// Returns (seqs the packet threshold declared lost, how many evaluations
+/// were on p0-original gap seqs).
+fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64]) -> (Vec<u64>, u64) {
+    use super::seq_ring::SeqRing;
+    const N: u64 = 4_000;
+    const TAU_US: u64 = 100;
+    let path_of = |s: u64| -> u32 { if s % 4 == 3 { 1 } else { 0 } };
+    let mut map: SeqRing<u32> = SeqRing::new();
+    let mut arr: Vec<Option<u64>> = vec![None; N as usize];
+    let mut last = [0u64; 2];
+    for s in 0..N {
+        let p = path_of(s);
+        map.insert(s, p);
+        let t = s * TAU_US;
+        let d = if p == 0 {
+            1_000 + if (s / 50) % 8 == 0 { 3_000 } else { 0 }
+        } else {
+            3_000
+        };
+        let a = (t + d).max(last[p as usize]);
+        last[p as usize] = a;
+        if !lose.contains(&s) {
+            arr[s as usize] = Some(a);
+        }
+    }
+    let end_us = N * TAU_US + 10_000;
+    // (arrival at sender, generation tick, next_expected, sack ranges)
+    let mut reports: Vec<(u64, u64, u64, Vec<(u64, u64)>)> = Vec::new();
+    let mut k = 0u64;
+    let mut tick = 1_000u64;
+    while tick <= end_us {
+        let received: BTreeSet<u64> = (0..N)
+            .filter(|&s| arr[s as usize].is_some_and(|a| a <= tick))
+            .collect();
+        let ne = (0..N).find(|s| !received.contains(s)).unwrap_or(N);
+        if let Some(&seen) = received.iter().next_back() {
+            let ranges = received_sack_ranges(&received, ne, seen);
+            let leg = if k % 3 == 0 { 1 } else { 0 };
+            reports.push((tick + rev_us[leg], tick, ne, ranges));
+        }
+        k += 1;
+        tick += 1_000;
+    }
+    reports.sort_by_key(|r| (r.0, r.1));
+
+    let mut ev: std::collections::HashMap<u32, Vec<u64>> = std::collections::HashMap::new();
+    let mut wm = 0u64;
+    let mut ack_count = 0u64;
+    let mut declared: Vec<u64> = Vec::new();
+    let mut p0_evals = 0u64;
+    for (_, _, ne, ranges) in &reports {
+        // The cumulative point is fetch_max'ed (control_msg.rs) and the
+        // evidence pruned below it (sender_phases.rs), as shipped.
+        ack_count = ack_count.max(*ne);
+        for v in ev.values_mut() {
+            v.retain(|&x| x >= ack_count);
+        }
+        if ranges.is_empty() {
+            continue;
+        }
+        let gaps = sack_to_gaps(*ne, ranges);
+        mp_ingest_evidence(&gaps, &map, &mut ev, &mut wm);
+        for &(a, b) in &gaps {
+            for s in a..=b {
+                // The channel judges original flights only; a declared seq
+                // has a retransmit and leaves the channel.
+                if s < ack_count || declared.contains(&s) {
+                    continue;
+                }
+                let orig = map.get(&s).copied();
+                if orig == Some(0) {
+                    p0_evals += 1;
+                }
+                if mp_packet_threshold_fires(s, orig, &ev) {
+                    declared.push(s);
+                }
+            }
+        }
+    }
+    (declared, p0_evals)
+}
+
+/// RFC 9002 §6.1.1's soundness on a FIFO leg: a seq is declared lost by the
+/// packet threshold only if it IS lost: the declared set equals the lost set,
+/// whatever order the receiver's snapshots reach the sender in.
+///
+/// RED on main (docs/derivations/dup-diag.md): with the p1 return leg 9 ms
+/// slower than p0's, a p1-carried snapshot re-lists p0 holes that the
+/// fresher p0-carried snapshots already showed delivered, and the evidence
+/// those fresher snapshots contributed (≥ 3 later p0 seqs) fires the channel
+/// on them. A real loss holds the cumulative frontier, so those holes stay
+/// above it (as in c8). The in-order arms pin that the scenario reaches the
+/// channel, that it is sound when snapshots arrive in order, and that it
+/// fires on a real loss.
+#[test]
+fn mp_packet_threshold_declares_only_lost_seqs_under_report_reordering() {
+    // In-order return (equal legs), zero loss: nothing declared, and the
+    // scenario does put p0-original seqs in gap lists.
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[]);
+    assert!(evals > 0, "the scenario must put p0-original seqs in gap lists");
+    assert!(d.is_empty(), "in-order snapshots, zero loss: declared {d:?}");
+    // In-order return, one p0 original lost early (it holds the frontier for
+    // the whole run): exactly that seq is declared.
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[5]);
+    assert!(evals > 0);
+    assert_eq!(d, vec![5], "in-order snapshots: the channel declares the real loss and only it");
+    // Skewed return (p1 leg 9 ms slower), same single loss: still only it.
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &[5]);
+    assert!(evals > 0);
+    assert!(
+        d == vec![5],
+        "one real loss (seq 5), FIFO legs, snapshots reordered across the return legs: the packet threshold declared {} seqs lost (first {:?})",
+        d.len(),
+        &d[..d.len().min(8)]
+    );
+}
+
 // ----- Per-path batch serial namespaces -----
 
 /// The loss-serial defect, reproduced at the unit: a global batch_seq
