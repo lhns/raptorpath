@@ -551,3 +551,96 @@ Each closed section lives in its own file under `docs/status/`; every `§N` cite
    - `alloc_per_symbol` is not a suite test, though the registration relied on it;
    - `tests/common/recovery_model.rs` still models 20 gaps;
    - c1d (open item, above).
+
+## 53. Stale gap reports under lever B: the snapshot-order instrument, the filter arm, W0-on-CAND and a long c1d block — pre-registration (before any VM contact)
+
+**Why.** §52 left the `cand52` merge with the user: lever B removes the c8 tail (4.19 → 0.40 s) but doubles receiver duplicates (0.35 → 0.73 % of source).
+- `dup-diag` (`docs/derivations/dup-diag.md`, Fable-checked) names a candidate mechanism: gap reports are applied out of the order the receiver made them.
+  - Each report returns on the leg its triggering data used; p1's return is ≈ 15 ms slower, and nothing orders the reports.
+  - The packet threshold then fires on seqs a fresher report had shown delivered.
+- It is red-tested (`net::tests`: 182 declarations for 1 real loss) and consistent with the §52 logs (§52 Erratum: sender `fed` exceeds receiver holes by 114–177 k on every CAND row), but not measured per report.
+- This session measures it and tests the proposed filter. The user asked for W0-on-CAND and a long c1d block before the merge decision.
+
+**Trees** (SHAs pinned by amendment after the VM pre-flight):
+- **BASE53** = main `4a486dbe` + `wdiv-diag` (as in `base52`) + `dup-diag` at head `ae7f6c24` (instrument `5cd9790d`, arm `9617970d` default off, the verbatim fold/decision extraction `12eafc33`, tests and the derivation) + `test-debts` `6581d259` (removes the false holeclass `age_n >= fed` assertion, which failed 1/10 on BASE in §52 and would abort the suites).
+- **CAND53** = BASE53 + `gaphorizon` (lever B).
+- `git diff BASE53 CAND53 -- raptorpath/src raptorpath/tests` must be lever B alone (§52's 3 files).
+- Engine bytes differ from `base52`/`cand52` (instrument plus inert arm), so §52's numbers are context, not a control. Every comparison is within this session.
+- **Reviewed before pinning (main session):**
+  - the instrument folds `V*` over every dequeued batch, coalesced ones included, and only the `RWM_DIAG` gauge reads it;
+  - arm off, the coalescer keeps the last-arrived batch and every batch is judged (`snapver_coalesce_keeps`/`snapver_judges` return `true` when the arm is off);
+  - the extraction is verbatim.
+
+**Session (`LD_PLAN=53`, REPORTED ONLY, nothing scored).** Suites on CAND53. Then two blocks, rotated per group, no replacement, `RWM_DIAG` on as in §52's diag rows. A rehearsal (`LD_REHEARSE=1`) runs first.
+- **c8-100, 600 MB, n = 6 per arm (30 rows):**
+  - BASE;
+  - CAND;
+  - **CANDS** (CAND + `RWM_RECOV_SNAPVER=1`);
+  - **BASES** (BASE + `RWM_RECOV_SNAPVER=1`);
+  - **CW0** (CAND + `RWM_PLACE_WDIV=0`).
+- **c1d, 5 GB (§48's size): BASE n = 12, CAND n = 12, CANDS n = 6 (30 rows).** n = 12 because §52's c1d lean needed it.
+
+**Readouts (per arm; `tail52_score.py` extended, plus a `[SNAPV]` parser):**
+- goodput, tail, H0;
+- receiver duplicates, total and per arrival leg; retransmits/GB;
+- CPU/GB on both ends; `lag_E_cli`, `lag_E_srv`; `rtp_floor_p0` (an open §52 item, both cells);
+- `[HOLD]` per path: `fed`, `hn`, `hy`, `hy_p50`, `cx`, `ripe_frac`;
+- `fed − det`: sender `[HOLD]` `fed` summed over paths, minus `det` from the receiver's final `[SUCC]` in the server log (the client log's `[SUCC]` lines are zeros);
+- `[FCAUSE]`; packet-threshold fires (`y`) and time-threshold fires;
+- `[SNAPV]` per return leg: `rep`, `stale`, `pt_st`, `tt_st`;
+- the retransmit send-leg-1 share.
+
+**Liveness (a row counts only if):**
+- the arm's env appears in `[GATES]` on both ends (BASE/CAND rows show `RWM_RECOV_SNAPVER=0`);
+- `[SNAPV]` is present on the sender, with `rep > 0` on each active leg and `pt_st + tt_st ≤` the row's fires;
+- on CANDS/BASES rows, `pt_st + tt_st = 0` on every leg, `stale > 0` on p1 (c8), and `fed − det ≤ cx` (the arm skips `[HOLD]` stamps on stale batches, so the re-stamp excess must vanish by construction; `cx` bounds re-listing by retransmit).
+
+No test executes the arm's wiring inside `serve_gaps` (the sim calls the filter function directly), so these outcome witnesses are the only proof it ran. `fed`, `hn`, `ripe_frac` and `fed − det` are witnesses on arm rows, never outcomes.
+
+**Predictions (from `dup-diag.md` §3, amended, before any result).**
+- **c8, arm off (BASE and CAND), the mechanism readouts:**
+  - p0 `stale/rep` ≤ 0.01; p1 `stale/rep` ≥ 0.8; p1 share of `rep` 0.10–0.25.
+  - **The enrichment factor E** = (stale share of packet-threshold fires) ÷ (stale share of judged reports). Under the null (fires independent of report age), E ≈ 1. Predicted: CAND E ≥ 2, because about half of CAND's packet-threshold fires are spurious and the mechanism puts them all on stale reports. BASE E is not predicted (few fires).
+  - `tt_st` is not predicted; it measures the time channel's stale share.
+- **c8, CANDS against CAND; the outcomes are the receiver duplicates and retransmits/GB:**
+  - duplicates 1 800 ± 300 (CAND §52: 3 729), of which p1 700 ± 150 (2 329);
+  - retransmits/GB down by the cut in spurious fires (about 2 500 fires per 0.6 GB ⇒ about −4 000/GB);
+  - `hy` p0 ≤ 300 and p1 ≤ 350 (as `[HOLD]` reads them on judged batches);
+  - goodput +0.2–0.5 Mbit/s (below spread); tail unchanged (0.19–0.63 s).
+- **c8, BASES against BASE:** duplicates, retransmits/GB, goodput and tail within BASE's row range.
+  - BASES duplicates below BASE's range would mean part of BASE's unexplained 0.35 % is stale-report driven. That is reported as a finding; it is the only test here of BASE's duplicates.
+- **c8, CW0 (reported, not discriminating):** duplicates within CAND's range ± 20 % (both hypotheses predict an unchanged total); retransmit send-leg-1 share toward the source split (≈ 0.18); tail not predicted.
+- **c1d (equal legs, symmetric return):**
+  - direction only: `stale/rep` lower than c8's p1 on both legs, in every arm (no derived bound);
+  - CANDS against CAND not predicted numerically.
+  - **CAND vs BASE read rule:** per readout (`lag_E_cli`, `lag_E_srv`, `rtp_floor_p0`, CPU/GB both ends, duplicates), the rank-sum p at n = 12 + 12 and the median ratio are reported beside §41c's c1d resolution. The lag clauses are blind at 20–100 % (plan W5.4), so a lag null says nothing. A lean is reported; nothing is scored.
+- **Falsifiers:**
+  - arm off, c8: p1 `stale/rep` < 0.5, or CAND E < 1.5;
+  - arm on, c8: CANDS p1 duplicates > 1 200, or p0 `hy_p50` stays ≈ 5 ms with p0 `hy` > 1 000.
+
+**Decision rule.** Nothing merges from this session.
+- **Confirmed and effective:** no falsifier fires, and CANDS duplicates are in 1 800 ± 300 or below BASE's range upper bound.
+  - The filter becomes a law candidate (paper first, formula-first) and merges with lever B only after its own §41c guard.
+  - The `cand52` merge question goes to the user with CANDS's numbers.
+- **Confirmed, partial:** no arm-off falsifier fires, and CANDS duplicates fall between 2 100 and CAND's range lower bound.
+  - The filter is a partial fix. The remainder is diagnosed (time channel via `tt_st`, BASE's own duplicates) before any law step.
+- **Confirmed, ineffective:** no arm-off falsifier fires, and CANDS duplicates are inside CAND's range. Back to diagnosis; the user gets the counters.
+- **Refuted:** an arm-off falsifier fires and CANDS duplicates stay inside CAND's range. The §52 Erratum's candidate is withdrawn in status; `cand52` goes to the user on §52's numbers plus CW0's.
+- **Contradictory:** an arm-off falsifier fires, but CANDS duplicates still fall below CAND's range. The filter works through a mechanism other than the one registered. No law step; re-diagnose with the per-report counters before any claim.
+- c1d is reported in every case, beside the user's open c1d item.
+- A void row (liveness fails) ⇒ that arm is re-run. ABORT-TESTS ⇒ fixed on the branch and re-run.
+
+**Before the full launch, the rehearsal must show:**
+- `[SNAPV]` parsed on every smoke row, with `rep > 0` per active leg and `pt_st + tt_st ≤` fires;
+- `fed − det` computed from the server log's final `[SUCC]`;
+- each arm's env in `[GATES]` on both ends;
+- one c1d 5 GB row finishing inside `RWM_PERF_TIMEOUT_S`;
+- no None among the registered readouts.
+
+The rehearsal's values are not read. The plan-53 harness gets a stub-run test before pinning (plan W5.2 pattern).
+
+**VM pre-flight (same session, before the pin):**
+- fresh target per tree; `cargo check --all-targets`; lib `net::` and `gates`;
+- the integration tests `holeclass_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability`;
+- `build_visualizer.sh` on a fresh wasm build, plus the native golden test without `GOLDEN_CAPTURE` (for `wasm-modeswitch-audit`);
+- the `bound-tests` wasm pool test.
