@@ -54,7 +54,7 @@
 //!   (docs/derivations/w1-round2-probertt.md).
 
 use std::any::Any;
-use std::collections::BTreeMap;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -182,6 +182,87 @@ struct SendRecord {
 /// bounds the pathological no-ack case.
 const RS_MAX_TRACKED: usize = 8192;
 
+/// Send-state snapshots in send order: a ring (`VecDeque`) bounded at
+/// `RS_MAX_TRACKED`, replacing a `BTreeMap<Instant, _>` that allocated per
+/// record and on every `split_off`.
+///
+/// Quinn's `Controller::on_ack` carries the acked packet's send `Instant`,
+/// not its number, so lookup is by send time. Send times are monotone in
+/// packet number, so the ring is sorted by key and a lookup is a binary
+/// search; an out-of-order `on_sent` (not expected) is inserted in place.
+/// Sizing: `RS_MAX_TRACKED` packets is ~9.8 MB in flight at 1200 B (1 Gbit/s
+/// x 80 ms), above any window the controller is run with. Overflow drops the
+/// oldest record and counts it (`overflow_drops`); a later ack older than
+/// every kept record then yields no sample, as before. Never panics. The
+/// buffer grows by doubling up to the bound, so steady state does not
+/// allocate per packet.
+#[derive(Clone, Debug, Default)]
+struct SendRing {
+    buf: VecDeque<(Instant, SendRecord)>,
+    overflow_drops: u64,
+}
+
+impl SendRing {
+    fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
+    /// Record `rec` at `at`; the first record at an instant wins.
+    fn insert_if_absent(&mut self, at: Instant, rec: SendRecord) {
+        match self.buf.back() {
+            Some(&(k, _)) if k == at => return,
+            Some(&(k, _)) if k > at => {
+                let i = self.buf.partition_point(|e| e.0 < at);
+                if self.buf.get(i).is_some_and(|e| e.0 == at) {
+                    return;
+                }
+                self.buf.insert(i, (at, rec));
+            }
+            _ => self.buf.push_back((at, rec)),
+        }
+        while self.buf.len() > RS_MAX_TRACKED {
+            self.buf.pop_front();
+            self.overflow_drops += 1;
+        }
+    }
+
+    /// The latest record with key <= `at`.
+    fn floor(&self, at: Instant) -> Option<(Instant, SendRecord)> {
+        // Acks arrive close to the front (older records were just dropped),
+        // so gallop from the front, then binary-search the bracket.
+        let n = self.buf.len();
+        let (mut lo, mut hi) = (0usize, 1usize);
+        while hi < n && self.buf[hi].0 <= at {
+            lo = hi;
+            hi = hi.saturating_mul(2).min(n);
+        }
+        let hi = hi.min(n);
+        // Invariant: every index < lo has key <= at (when lo > 0); find the
+        // first index in [lo, hi) with key > at, else hi.
+        let (mut a, mut b) = (lo, hi);
+        while a < b {
+            let m = a + (b - a) / 2;
+            if self.buf[m].0 <= at {
+                a = m + 1;
+            } else {
+                b = m;
+            }
+        }
+        a.checked_sub(1).map(|j| self.buf[j])
+    }
+
+    /// Drop records with key strictly older than `key`.
+    fn drop_older_than(&mut self, key: Instant) {
+        while self.buf.front().is_some_and(|e| e.0 < key) {
+            self.buf.pop_front();
+        }
+    }
+}
+
 /// The engine rs_* sampler's absolute interval floor (1 ms) — used until a
 /// real RTprop sample exists (scheduler/mod.rs `rs_on_delivered`).
 const RS_MIN_INTERVAL: Duration = Duration::from_millis(1);
@@ -198,7 +279,7 @@ pub(crate) struct RsBandwidthEstimation {
     first_sent_time: Option<Instant>,
     /// Outstanding send-state snapshots keyed by packet send `Instant`
     /// (one record per transmit timestamp; a GSO batch shares one).
-    sent: BTreeMap<Instant, SendRecord>,
+    sent: SendRing,
     max_filter: MinMax,
     acked_at_last_window: u64,
     // DIAG counters (test/observability only — never gate control).
@@ -219,17 +300,14 @@ impl RsBandwidthEstimation {
         let first_sent_time = self.first_sent_time.unwrap_or(now);
         let delivered_time = self.delivered_time.unwrap_or(now);
         // First packet of a same-instant batch wins (shared send state).
-        self.sent.entry(now).or_insert(SendRecord {
-            delivered: self.delivered,
-            delivered_time,
-            first_sent_time,
-        });
-        while self.sent.len() > RS_MAX_TRACKED {
-            let Some(&k) = self.sent.keys().next() else {
-                break;
-            };
-            self.sent.remove(&k);
-        }
+        self.sent.insert_if_absent(
+            now,
+            SendRecord {
+                delivered: self.delivered,
+                delivered_time,
+                first_sent_time,
+            },
+        );
     }
 
     /// One acked packet (BBR `UpdateRateSample` + `GenerateRateSample`).
@@ -252,15 +330,14 @@ impl RsBandwidthEstimation {
         // earlier one (older shared/pruned records still carry valid —
         // strictly older — send state, making the sample span LONGER,
         // never shorter: safe for a max filter).
-        let Some((&key, rec)) = self.sent.range(..=sent).next_back() else {
+        let Some((key, rec)) = self.sent.floor(sent) else {
             return;
         };
-        let rec = *rec;
         // Advance the burst-window start (BBR: C.first_sent_time =
         // P.sent_time) and drop records strictly older than this packet's
         // (acked or presumed lost — a later ack proves the wire moved on).
         self.first_sent_time = Some(sent);
-        self.sent = self.sent.split_off(&key);
+        self.sent.drop_older_than(key);
 
         // send_elapsed spans the send spacing from the burst start to this
         // packet; ack_elapsed spans the same deliveries in wall time. The
@@ -1281,6 +1358,38 @@ const DRAIN_TO_TARGET: bool = true;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The send ring matches the old BTreeMap semantics (first-at-instant
+    /// wins, floor lookup, drop-older) and its overflow rule: drop the oldest,
+    /// count it, never panic.
+    #[test]
+    fn send_ring_semantics_and_overflow() {
+        let t0 = Instant::now();
+        let at = |i: u64| t0 + Duration::from_nanos(i);
+        let rec = |d: u64| SendRecord { delivered: d, delivered_time: t0, first_sent_time: t0 };
+        let mut r = SendRing::default();
+        r.insert_if_absent(at(10), rec(1));
+        r.insert_if_absent(at(10), rec(2)); // same instant: first wins
+        r.insert_if_absent(at(30), rec(3));
+        r.insert_if_absent(at(20), rec(4)); // out of order: placed in order
+        assert_eq!(r.len(), 3);
+        assert_eq!(r.floor(at(10)).unwrap().1.delivered, 1);
+        assert_eq!(r.floor(at(25)).unwrap().1.delivered, 4);
+        assert!(r.floor(at(9)).is_none());
+        r.drop_older_than(at(20));
+        assert_eq!(r.len(), 2);
+        assert!(r.floor(at(19)).is_none());
+
+        let mut r = SendRing::default();
+        for i in 0..(RS_MAX_TRACKED as u64 + 100) {
+            r.insert_if_absent(at(i + 1), rec(i));
+        }
+        assert_eq!(r.len(), RS_MAX_TRACKED);
+        assert_eq!(r.overflow_drops, 100);
+        assert_eq!(r.floor(at(RS_MAX_TRACKED as u64 + 100)).unwrap().1.delivered, RS_MAX_TRACKED as u64 + 99);
+        assert!(r.floor(at(100)).is_none(), "the oldest 100 were dropped");
+        assert!(r.floor(at(101)).is_some());
+    }
 
     const MS: Duration = Duration::from_millis(1);
 
