@@ -33,8 +33,8 @@ def check(rows):
         for v in r["verdicts"]:
             assert v.split("(")[0] in TAGS, f"{r['id']}: bad verdict {v}"
         assert r["priority"] in {"P0", "P1", "P2", "P3"}, r["id"]
-    ranks = [r["rank"] for r in rows if r.get("rank", 0) > 0]
-    assert len(ranks) == len(set(ranks)), "duplicate ranks"
+    ranks = sorted(r.get("rank", 0) for r in rows)
+    assert ranks == list(range(1, len(rows) + 1)), "ranks must be 1..N, each once"
 
 
 def distribution(rows):
@@ -58,7 +58,7 @@ def esc(s):
 
 def summary(rows):
     out = ["| id | law | verdicts | priority | rank | depends on |", "|---|---|---|---|---|---|"]
-    for r in sorted(rows, key=lambda r: (r.get("rank", 0) == 0, r.get("rank", 0), r["id"])):
+    for r in sorted(rows, key=lambda r: r["rank"]):
         out.append(f"| [{r['id']}](#{r['id'].lower()}) | {esc(r['name'])} | {esc(', '.join(r['verdicts']))} | "
                    f"{r['priority']} | {r.get('rank') or '-'} | {esc(', '.join(r['depends_on'])) or '-'} |")
     return "\n".join(out)

@@ -1,7 +1,9 @@
 # Law ledger, machine-readable. Rendered into law-ledger.md by law-ledger/render.py.
 # Base: github/main cbe2be3f. Branch-only rows say so in `loc`.
 # Required keys per row: id, name, verdicts, priority, depends_on, evidence.
-# Extra keys: rank (fix order; 0 = no fix owed), area, reach, fix_class, ships_with,
+# Extra keys: rank (fix order over every row; rows with fix_class "none" come last),
+# area, reach, fix_class, ships_with (same change and battery; overrides the order
+# that depends_on alone would suggest),
 # measured (yes|partial|no), gauge (yes|partial|no|n/a), and the ten audit columns
 # loc, formula, paper, derivation, regime, clamp, inputs, modeswitch.
 # Verdict tags: OK, DIVERGENT, UNDERIVED, PINNED(cells), DEGENERATE(cells),
@@ -23,7 +25,7 @@ rows:
 - id: E01
   name: app-echo RTT EWMA (est.rtt())
   area: estimator
-  rank: 9
+  rank: 7
   priority: P1
   reach: default, every cell
   loc: "control/estimator.rs:465 record_rtt, :523 rtt(); fed net/control_msg.rs:298 (Ack), :572 (WindowAck); seed 50 ms estimator.rs:281"
@@ -45,7 +47,7 @@ rows:
 - id: E02
   name: Copa srtt / PathState::srtt()
   area: estimator
-  rank: 0
+  rank: 45
   priority: P3
   reach: default, every cell
   loc: "scheduler/copa.rs:942-949 (7/8 EWMA of cc_rtt); scheduler/path.rs:690 srtt() = copa.srtt else est.rtt(); Copa DEFAULT_SRTT 50 ms copa.rs:248"
@@ -81,7 +83,7 @@ rows:
   verdicts: [DISHONEST-INPUT]
   measured: "yes"
   gauge: "yes"
-  fix_class: input (read the wire clock or bbr_rs m-hat; §3.10 item 9)
+  fix_class: "input: candidates are quinn's wire rtt.min() or bbr_rs m-hat (neither tested as the store's RTprop; §24 option 1, the min-filtered app-echo loop time, INFLATES); the §44 erratum's b0 offset needs a source too"
   depends_on: []
   ships_with: [F01, E04]
   evidence: "reads 95-319 ms on a 10 ms path at c8, 30/30 rows (§3.10 item 9; p0-dwell-diag §2.1, §4)"
@@ -94,24 +96,24 @@ rows:
   reach: default, every cell
   loc: "scheduler/copa.rs:746 record_delivery (ack-interval, the DEFAULT feeder via scheduler/path.rs:484 on_ack when no CopaFeed); copa.rs:850 rs_on_delivered (send-interval sampler) fed only from net/copa_feed.rs:172, i.e. only under RWM_COPA_FEED/passthrough; max filter copa.rs:723; gate effective_btlbw :1472 (>= 8 samples)"
   formula: "max_bw = max over the window of (delta_delivered / delta_t_ack), delta_t >= 1 ms ; window 10 s (ack-interval feeder) ; bdp_anchor = max_bw * min_rtt (copa.rs:1458)"
-  paper: "§2.7 rate samples; §6.1 symbol table says 'the ack-interval sampler over-reads at c1'"
-  derivation: "the send-interval sampler is cited (Cheng et al. delivery-rate draft / BBR) and pinned by rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue (scheduler/tests.rs:1245); the default path does not run it"
-  regime: "measured at c8 (p0-dwell-diag §4): 110k-240k sym/s against a 9.8k/s link (11-24x); c1 anchor over-reads x7-9 (§11.2 knee row); §24 option 3 over-read x7.6 at c2 (quinn's rate, not this one)"
+  paper: "§2.7 (fec-arq-model.md:400-416) documents it: the default ack-interval sampler over-reads x4.6-7.4 and the over-read is 'partly load-bearing'; the honest send-interval sampler (RWM_PLAIN_RS, removed §49) read 1.02x the link but cost c2 20 %; §6.1 symbol table"
+  derivation: "the send-interval sampler is cited (BBR delivery-rate sampling) and survives only on the Copa-feed seat; §23 showed that on a store-bound sender BOTH sampler families measure the rate the cap lets through, so neither can be the store law's input alone (paper §2.7)"
+  regime: "measured at c8 (p0-dwell-diag §4): 110k-240k sym/s against a 9.8k/s link (11-24x); c1 x8-29 (§23 Q1 MECHANISM-CONFIRMED at c1s and c2: ack-interval samples over bunched acks); the send-interval anchor UNDER-reads x0.1-0.5 on a store-bound sender and the shipped law on it collapses to its floor (§23 Q2)"
   clamp: "window 10 s; >= 8 samples"
-  inputs: "DISHONEST: an ack-interval rate over clustered/merged acks measures the ack burst rate, not the bottleneck. Likely cause of the 11-24x (not diagnosed in p0-dwell-diag §7): the honest send-interval sampler is wired only under the Copa feed"
+  inputs: "DISHONEST and circular: the ack-interval rate measures ack bunching (§23 Q1), and any delivered-rate sampler on a store-bound sender reads the cap's own throughput (§23). The c8 11-24x is presumably the same mechanism (p0-dwell-diag §7 left it undiagnosed; not confirmed here)"
   modeswitch: "RWM_COPA_FEED selects the sampler (an experiment gate)"
   verdicts: [DISHONEST-INPUT]
   measured: "yes"
   gauge: "yes"
-  fix_class: input (route the send-interval sampler on the default path, or read bbr_rs b-hat)
+  fix_class: "open input design: no candidate has passed - send-interval sampler under-reads (§23), min-filtered loop time INFLATES and quinn's rate OVER-READs x7.6 (§24), bbr_rs reads the delivered rate, CIRCULAR at c2 (§27), receiver dispersion NOT-YET (§36, §40), derivation NONE-CLOSES (§34), netem-oracle L converges only at c2 (§43b)"
   depends_on: []
   ships_with: [F01, E03]
-  evidence: "max_bw 11-24x the c8 link rate (p0-dwell-diag §4); code: on_src_delivered_seq has one caller, copa_feed.rs:172, so the honest sampler never runs by default"
+  evidence: "max_bw 11-24x the c8 link rate (p0-dwell-diag §4), x8-29 at c1 by the ack-bunching mechanism (§23 Q1); the honest send-interval sampler runs only on the Copa-feed seat (on_src_delivered_seq's one caller is copa_feed.rs:172) and under-reads a store-bound sender (§23 Q2)"
 
 - id: E05
   name: quinn wire SRTT (wire_rtt mirror)
   area: estimator
-  rank: 0
+  rank: 61
   priority: P3
   reach: default, every cell (placement base)
   loc: "transport/io_owner.rs:344 (published view, Connection::rtt()); scheduler/mod.rs:196 mirror_wire_rtts -> scheduler/path.rs:679, called unconditionally from net/control_msg.rs:236/419/510"
@@ -133,7 +135,7 @@ rows:
 - id: E06
   name: per-path loss estimate eps-hat (tx EWMA) and its feed
   area: estimator
-  rank: 0
+  rank: 62
   priority: P3
   reach: default, every cell
   loc: "control/estimator.rs:310 record_batch, :498 loss_rate() (alpha 0.1); credit LossCredit estimator.rs:35-57; tracker net/mod.rs:3698"
@@ -221,7 +223,7 @@ rows:
 - id: E10
   name: receiver's srtt for the refresh clock (published TX view)
   area: estimator
-  rank: 7
+  rank: 9
   priority: P1
   reach: default, every unidirectional reliable transfer (all L1 cells)
   loc: "net/receiver.rs:729-736 (max over live_tx_views(..).srtt), :2237 live_tx_views; published by scheduler/mod.rs:467-479 publish_tx_view = PathState::srtt() of the receiving endpoint's OWN sender"
@@ -235,15 +237,15 @@ rows:
   verdicts: [DEGENERATE(all one-way cells)]
   measured: "yes"
   gauge: "yes"
-  fix_class: input (publish the data sender's measured RTT to the receiver, or measure at the receiver)
-  depends_on: []
+  fix_class: input (publish the data sender's measured RTT to the receiver, or measure at the receiver); only useful once that RTT is honest (E01)
+  depends_on: [E01]
   ships_with: [C07]
   evidence: "50 000 us, n = 0, 12/12 c8 rows (§3.10 item 6); traced here to the 50 ms LossEstimator seed read through the receiver's own idle sender"
 
 - id: E11
   name: pooled recovery srtt (max over live paths of est.rtt())
   area: estimator
-  rank: 10
+  rank: 8
   priority: P1
   reach: default, multipath cells mostly
   loc: "net/recovery_laws.rs:267 pooled_recovery_srtt_iter (fallback 10 ms), :251; used net/mod.rs:2719, net/sender_phases.rs:708-716"
@@ -265,7 +267,7 @@ rows:
 - id: E12
   name: SendRateAnchor (the rate A* multiplies)
   area: estimator
-  rank: 0
+  rank: 57
   priority: P3
   reach: default (unified span)
   loc: "control/anchor.rs:185-335; bucket clamp(srtt/2, 5, 250 ms) :197; window clamp(8*srtt, 0.5, 10 s) :201; read net/emit_source.rs:563"
@@ -288,7 +290,7 @@ rows:
 - id: D01
   name: delta(hint) named points / delta_price
   area: dial
-  rank: 0
+  rank: 65
   priority: P3
   reach: default
   loc: "net/store_cap.rs:311 delta_price; scheduler/copa.rs:47 hint_delta_price; control/fec_rate.rs:70 tail_loss_scale"
@@ -310,7 +312,7 @@ rows:
 - id: D02
   name: b(delta) span horizon
   area: dial
-  rank: 0
+  rank: 66
   priority: P3
   reach: default
   loc: "raptorpath-math/src/lib.rs:183 span_horizon_b; net/store_cap.rs:294 delta_budget_b"
@@ -332,7 +334,7 @@ rows:
 - id: D03
   name: q(delta) CoDel setpoint
   area: dial
-  rank: 0
+  rank: 67
   priority: P3
   reach: default
   loc: "net/store_cap.rs:130 codel_setpoint_q, constants :141/:146"
@@ -354,7 +356,7 @@ rows:
 - id: D04
   name: beta(delta) bulkness
   area: dial
-  rank: 0
+  rank: 68
   priority: P3
   reach: default (rate mix)
   loc: "raptorpath-math/src/lib.rs:196 bulkness_of_delta; resolved once control/fec_rate.rs:340"
@@ -376,7 +378,7 @@ rows:
 - id: D05
   name: w_bw(delta) placement loss weight
   area: dial
-  rank: 0
+  rank: 69
   priority: P3
   reach: default (placement)
   loc: "scheduler/mod.rs:90-93 SchedulingWeights::from_delta"
@@ -398,7 +400,7 @@ rows:
 - id: D06
   name: t_tail(delta) tail target
   area: dial
-  rank: 0
+  rank: 70
   priority: P3
   reach: default (rate law, W*)
   loc: "control/fec_rate.rs:335-337; base config.rs:337 (1e-5)"
@@ -426,7 +428,7 @@ rows:
   reach: default, every reliable cell
   loc: "net/store_cap.rs:76 pooled_store_cap, :177 unclamped, :162 multiplier; seat net/sender_phases.rs:191 (5 ms refresh :64); input net/channel_set.rs:125 store_cap_pool_inputs; gate net/mod.rs:2393"
   formula: "cap = clamp( ceil( (1 + q(delta)) * sum_{i in live} max_bw_i * min_rtt_i ), 10, N*2048 ) ; boot 128 before any anchor"
-  paper: "A.5 line 1, §6.1. Shape check: units symbols (sym/s x s); order 1 in N; non-decreasing in every bw_i, RTprop_i; increasing in b. Paper and code agree. The code doc comment (store_cap.rs:55-57) says 'BDP + one recovery round of runway', which the expression does not compute (runway is q*RTprop = 5-10 % of RTprop): stale comment. §6.1 derives a hole-residence term + eps_i*bw_i*stall(delta,rho,i) and does not ship it"
+  paper: "A.5 line 1, §6.1. Shape check: units symbols (sym/s x s); order 1 in N; non-decreasing in every bw_i, RTprop_i; increasing in b. Paper and code agree. The code doc comment (store_cap.rs:55-57) says 'BDP + one recovery round of runway', which the expression does not compute (runway is q*RTprop = 5-10 % of RTprop): stale comment. §6.1 derives a hole-residence term + eps_i*bw_i*stall(delta,rho,i) and does not ship it. Stale: §11.2's knee row says the knee is 'inert at c7/c8 under the delta-cap', against pin = 0.74-0.98 at c8"
   derivation: "§6.1: q cited (RFC 8289), floor derived (resource bound), knee 2048 a resource bound with a stale measured value, boot 128 'a fit to one cell' (§11.2). The Little's-law sentence omits the hole population, which p0-dwell-diag §2.2 measures at 1 250-1 500 slots at c8 on main"
   regime: "c8: PINNED at N*pool = 4096 for 0.74-0.98 of each run, all five §53 arms (§3.10 item 8, §53 Erratum 1); c1s: knee binds in 70 % of windows (§19, paper §6.1); c2: reaches the knee only through the ack-interval over-read, and with an honest sampler contracts to its floor, 41 -> 10 in 3 s, 7.2 vs 89.9 Mbit/s (W1 §2 H1, §43)"
   clamp: "ceiling N*2048: gauge [SUMCAP] pin=, 0.74-0.98 (c8), ~0.7 (c1s); floor 10: [SUMCAP] floor=; boot 128: no gauge; law asks 12-43 k at c8 ([DCAP] ask=)"
@@ -487,7 +489,7 @@ rows:
 - id: F04
   name: store-cap control and off arms (RWM_STORE_PATHS=0, RWM_DELTA_CAP=0, RWM_SUM_CAP=0, RWM_THREE_TERM)
   area: flow control
-  rank: 0
+  rank: 58
   priority: P3
   reach: opt-in
   loc: "net/sender_phases.rs:179 (three-term), :210 (control chain clamp(2*bdp,10,1024)); store_cap.rs:162/:190; three_term_store_cap store_cap.rs:552"
@@ -509,7 +511,7 @@ rows:
 - id: F05
   name: generation pipeline depth M* (opt-in seat)
   area: flow control
-  rank: 0
+  rank: 59
   priority: P3
   reach: opt-in (--window-generation-coding)
   loc: "net/mod.rs:473 gen_pipe_depth, :448 GEN_PIPE_MAX_GENS = 32; refresh :2245-2271"
@@ -527,6 +529,28 @@ rows:
   depends_on: [E03]
   ships_with: []
   evidence: "opt-in seat with no keep-or-remove decision (§3.2)"
+
+- id: F06
+  name: SACK-clocked release (store_gate_released)
+  area: flow control
+  rank: 63
+  priority: P3
+  reach: default, every reliable cell (RWM_STORE_SACK_RELEASE on)
+  loc: "net/sack.rs:397 store_gate_released, :361 received_above_released, :387 store_released_for_gate; store_len net/mod.rs:2223 (sack_release_outstanding sack.rs:461)"
+  formula: "store_len = retained - released ; released = min(|S|, max(|M|, |S ∩ [0,F)| + (A - ((H+1-F) - |S ∩ [F,H]|))+))"
+  paper: "A.5 lines 3-4, §6.3; same shape (counts, order 1, no constant)"
+  derivation: "§6.3 derives it as a lower bound on |S ∩ received| from v9 wire fields; the outer min is a totality clamp that cannot bind"
+  regime: "c8: on 20-gap rows the gate's released count is 28-75 k against 4-26 k SACK marks, so the received-above count does the work (p0-dwell-diag §1, srel= gauge)"
+  clamp: "outer min cannot bind (derived)"
+  inputs: "honest (wire fields F, A); premise: the reliable receiver never evicts above its frontier (rho = 1 only)"
+  modeswitch: "none (rho < 1 has no store gate: F02)"
+  verdicts: [OK]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "bounded by store_gate_released_never_exceeds_the_retained_received_truth and stalled_frontier_store_gate_converges_past_the_sack_cap"
 
 # ---------------------------------------------------------------- rate law
 - id: R01
@@ -642,7 +666,7 @@ rows:
 - id: R06
   name: r*_mass burst-tail provisioning (RWM_RSTAR_TAIL)
   area: rate
-  rank: 0
+  rank: 49
   priority: P3
   reach: default anchor term (Auto)
   loc: "raptorpath-math/src/lib.rs:479 r_star_mass, :285 fit_burst_tail; mass stats gilbert_elliott.rs (block 64)"
@@ -686,7 +710,7 @@ rows:
 - id: R08
   name: rate cadence min(5 ms, SRTT/4)
   area: rate
-  rank: 0
+  rank: 64
   priority: P3
   reach: default
   loc: "control/fec_rate.rs:181 RATE_CADENCE_MAX_US, :234 period_us"
@@ -708,7 +732,7 @@ rows:
 - id: R09
   name: generation repair floor 0.15 / 0.20 (opt-in seat)
   area: rate
-  rank: 0
+  rank: 60
   priority: P3
   reach: opt-in
   loc: "net/sender_policy.rs:349 gen_repair_floor; net/emit_source.rs:686"
@@ -753,7 +777,7 @@ rows:
 - id: S02
   name: span width A*
   area: span
-  rank: 0
+  rank: 46
   priority: P3
   reach: default (trailing repair span)
   loc: "net/emit_source.rs:573"
@@ -775,7 +799,7 @@ rows:
 - id: S03
   name: trailing offset Delta
   area: span
-  rank: 0
+  rank: 47
   priority: P3
   reach: default (trailing repair span)
   loc: "net/emit_source.rs:575-577; jitter control/estimator.rs:550 (RFC 3550, receiver arrivals)"
@@ -863,7 +887,7 @@ rows:
 - id: S07
   name: taper-cache staleness 50 ms
   area: span
-  rank: 0
+  rank: 48
   priority: P3
   reach: default, rho = 1
   loc: "net/emit_source.rs:51 TAPER_CACHE_MAX_AGE_US; net/emit_burst.rs:38 taper_recompute_due"
@@ -925,6 +949,28 @@ rows:
   depends_on: []
   ships_with: []
   evidence: "§3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime"
+
+- id: S10
+  name: proactive repair emission (taper density and TaperBudget accrual)
+  area: span
+  rank: 35
+  priority: P3
+  reach: "default (RWM_TAPER_R on): how r reaches the wire"
+  loc: "control/fec_rate.rs:600-640 TaperFunction (q = p_bg clamped [0.01,1], default 0.5), :678-740 TaperBudget::accrue; called from net/emit_source.rs (repair_rate block, ~:680)"
+  formula: "owed <- min(owed + r, max(r*W, 1)) ; grant = min(owed, max(r*shape(t mod W), r), spare, 1) , shape(t) = W*q*(1-q)^t/(1-(1-q)^W) ; owed -= grant"
+  paper: "A.2 prints the raw density tau(t) = r*q*(1-q)^t (TaperFunction), the superseded per-ack-cycle emitter; §3.3 'Taper budget' says only 'banks owed += r per source symbol'. The grant expression is in the code doc comment, not the paper"
+  derivation: "doc comment argues conservation (sum of grants <= sum of rates up to the one-window expiry); q default 0.5 and the [0.01,1] clamp unprovenanced"
+  regime: "r ~ 0 on every measured cell, so grant ~ 0"
+  clamp: "spare and the 1.0-per-source cap: no gauge"
+  inputs: "r from R01, q from E08, spare from K04 (inflated cwnd)"
+  modeswitch: "RWM_TAPER_R experiment gate"
+  verdicts: [DIVERGENT, "DEGENERATE(r = 0)"]
+  measured: "no"
+  gauge: "no"
+  fix_class: paper (write the grant law on its own line; retire A.2's raw-density line)
+  depends_on: [R01]
+  ships_with: []
+  evidence: "A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code"
 
 # ---------------------------------------------------------------- recovery decision
 - id: C01
@@ -1062,7 +1108,7 @@ rows:
 - id: C07
   name: receiver hole refresh (hole_nack_refresh)
   area: recovery
-  rank: 8
+  rank: 10
   priority: P1
   reach: default, every reliable one-way transfer
   loc: "net/recovery_laws.rs:296 hole_nack_refresh; caller net/receiver.rs:741 (reliable only); HOLE_NACK_REFRESH_MIN/MAX net/mod.rs:239-240"
@@ -1076,15 +1122,15 @@ rows:
   verdicts: ["DEGENERATE(all one-way cells)", UNDERIVED]
   measured: "yes"
   gauge: "yes"
-  fix_class: input (E10), then derive the cadence
-  depends_on: [E10]
+  fix_class: input (E10 after E01), then derive the cadence
+  depends_on: [E10, E01]
   ships_with: [E10]
-  evidence: "a constant 100 ms on every c8 row because its input is the seed (§3.10 item 6); 'this cadence, not any sender timer, re-presents a stalled hole' (receiver.rs doc)"
+  evidence: "a constant 100 ms on every c8 row because its input is the seed (§3.10 item 6). Feeding it the data sender's current app-echo srtt (257-542 ms at c8) would still clamp to 100 ms (DEGENERATE -> PINNED, same output); the output moves only where an honest srtt < 50 ms (c1s, c2 propagation), so it needs E01 first"
 
 - id: C08
   name: gap-report minimum interval GAP_ACK_MIN_INTERVAL = 2 ms
   area: recovery
-  rank: 0
+  rank: 50
   priority: P3
   reach: default
   loc: "net/mod.rs:234; net/receiver.rs:1929-1932"
@@ -1111,7 +1157,7 @@ rows:
   reach: default, every reliable cell
   loc: "net/mod.rs:255-344 NackCongestionState, :225 MAX_NACK_REPAIRS_PER_NACK = 10, :350 IDLE_RECOVERY_FLOOR 0.1, :3190-3257 refresh every 5 ms; BudgetAllocator control/fec_rate.rs; enforced net/sender_phases.rs:672, :814"
   formula: "max retransmits per gap report = round(10*m) ; m halves when loss rose >10 %+0.001 AND rtt rose >1 ms for 2 periods, +0.1 when both flat, floor 0.1 when idle ; per-period cap = nack_cap(p_upper at 1 - t_tail)*source_symbols, at least 10"
-  paper: "absent: no symbol of it appears in fec-arq-model.md"
+  paper: "absent: no symbol and no prose (grepped NackCongestion, MAX_NACK_REPAIRS, BudgetAllocator, nack_cap, 'repair budget', 'per NACK', 'per gap report' in fec-arq-model.md); the snapver-law branch's §7.1 text mentions 'a spent repair budget' only as a liveness case"
   derivation: "none (thresholds 1.1, 0.001, 1 ms, 2, 0.5, 0.1, 10)"
   regime: "not measured; no gauge of how often the per-report cap or the multiplier binds. The snapver liveness note names 'a spent repair budget drops it' as a live case on main"
   clamp: "10 per report; m in [0,1]: no gauge found"
@@ -1123,12 +1169,12 @@ rows:
   fix_class: gauge first, then paper or delete
   depends_on: [E01]
   ships_with: []
-  evidence: "a default-path AIMD heuristic with seven constants and no paper entry; at c8 ~1 400 old holes compete for <= 10 retransmits per report"
+  evidence: "a default-path AIMD heuristic with seven constants and no paper entry. Inference, not measured: at c8 ~1 400 old holes (p0-dwell-diag §2.2) compete for <= 10 retransmits per report"
 
 - id: C10
   name: reactive repair margin ceil(retx*eps)
   area: recovery
-  rank: 0
+  rank: 51
   priority: P3
   reach: default
   loc: "net/sender_phases.rs:1108-1164"
@@ -1150,7 +1196,7 @@ rows:
 - id: C11
   name: repair debt reduction (debt -= nacked*r)
   area: recovery
-  rank: 0
+  rank: 52
   priority: P3
   reach: default
   loc: "net/sender_phases.rs:1166-1176, :1331; accrual net/emit_source.rs:680-694"
@@ -1172,7 +1218,7 @@ rows:
 - id: C12
   name: receiver request law (l*, request_bar, request_m; off)
   area: recovery
-  rank: 0
+  rank: 53
   priority: P3
   reach: opt-in (RWM_RECV_REQUEST_LAW, RWM_RANK_FEEDBACK off)
   loc: "net/late.rs:99 request_bar, :135 request_m, :241 pi0, :317-358 l*; net/succ.rs"
@@ -1194,7 +1240,7 @@ rows:
 - id: C13
   name: T_cut give-up horizon (wasm model)
   area: model
-  rank: 35
+  rank: 36
   priority: P3
   reach: model only (UI at rho < 1)
   loc: "raptorpath-math/src/lib.rs:1213 find_t_cut; raptorpath-wasm/src/lib.rs:1397-1420 (cut = max(t_cut, 2*RTT))"
@@ -1217,7 +1263,7 @@ rows:
 - id: K01
   name: Copa app-echo cwnd law (queue target, P10 floor, anchor floor and pull)
   area: congestion
-  rank: 0
+  rank: 41
   priority: P3
   reach: default, but the cwnd gates nothing (in-flight brake unarmed)
   loc: "scheduler/copa.rs:314 queue_target_mult, :1157 queue_floor (P10), :1227-1250 above-target, :1316-1338 update; anchor floor :1483 (0.85*bdp), clamp scheduler/path.rs:1092"
@@ -1239,7 +1285,7 @@ rows:
 - id: K02
   name: Copa delta off the wire signal (constant 0.5)
   area: congestion
-  rank: 0
+  rank: 42
   priority: P3
   reach: default (inert, see K01)
   loc: "scheduler/copa.rs:611 delta = wire_mode ? copa_delta_for_hint(hint) : 0.5"
@@ -1261,7 +1307,7 @@ rows:
 - id: K03
   name: Copa wire-mode law and TCP-compete mode (opt-in)
   area: congestion
-  rank: 0
+  rank: 43
   priority: P3
   reach: opt-in (RWM_COPA_WIRE, RWM_COPA_COMPETE, passthrough)
   loc: "scheduler/copa.rs:1191-1203 (dq, above), :1388-1428 (velocity), :1382 coupling cap, :1054-1140 compete"
@@ -1283,7 +1329,7 @@ rows:
 - id: K04
   name: spare capacity and the active_paths saturation filter
   area: placement
-  rank: 0
+  rank: 44
   priority: P3
   reach: default (repair cap, placement set)
   loc: "scheduler/path.rs:467 spare_capacity; scheduler/mod.rs:226 active_paths, :568; read net/emit_source.rs:526 (flat_rate = min(window_rate, spare))"
@@ -1327,7 +1373,7 @@ rows:
 - id: K06
   name: placement temperature T = 0.15
   area: placement
-  rank: 0
+  rank: 54
   priority: P3
   reach: default
   loc: "scheduler/place.rs:18 PLACE_TEMPERATURE, :160 softmax"
@@ -1349,7 +1395,7 @@ rows:
 - id: K07
   name: diversity weight w_div = 1.0
   area: placement
-  rank: 0
+  rank: 55
   priority: P3
   reach: default (repairs only; r ~ 0)
   loc: "scheduler/mod.rs:93; place.rs:366-371 derived arm RWM_PLACE_WDIV_DERIVED (off)"
@@ -1371,7 +1417,7 @@ rows:
 - id: K08
   name: repair spare near-tie band 0.8 / floor 0.25 (opt-in)
   area: placement
-  rank: 0
+  rank: 56
   priority: P3
   reach: opt-in (RWM_XPATH_REPAIR)
   loc: "scheduler/place.rs:119 place_repair_spare_path"
@@ -1438,7 +1484,7 @@ rows:
 - id: M01
   name: wasm store pool 512 per path
   area: model
-  rank: 0
+  rank: 39
   priority: P3
   reach: model only
   loc: "raptorpath-wasm/src/lib.rs:352 STORE_PER_PATH, :1303 stall"
@@ -1460,7 +1506,7 @@ rows:
 - id: M02
   name: wasm tail target interpolation (Bulk anchor 0.05)
   area: model
-  rank: 0
+  rank: 40
   priority: P3
   reach: model only (UI)
   loc: "raptorpath-wasm/src/lib.rs:247-261 sim_tail_target_of_delta"
@@ -1482,7 +1528,7 @@ rows:
 - id: M03
   name: wasm rate beta-guard and the dead classic-hint machine
   area: model
-  rank: 36
+  rank: 38
   priority: P3
   reach: model only (W11 live with zero value step; W2/W4/W5/W6/W9/W17 dead)
   loc: "raptorpath-wasm/src/lib.rs:883 rate_now if bulkness > 0; :1022-1044 classic arms; :1689 get_completion_exposure"
