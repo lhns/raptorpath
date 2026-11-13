@@ -293,6 +293,11 @@ def main(argv):
         drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(54.0)]
         cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":600000000,"hint":"bulk","mbps":88.889,"proto":"rp-native","run":1,"seconds":54.0}',
                                                                                     summary54(54.0)]      # the row's seconds / mbps / dnf read the CLIENT log's run line
+        if os.environ.get("STUB_DNF54") == ("B" if base else "L") + str(pool) and os.environ.get("SEED") == "7":
+            # STUB_DNF54=B640: that arm's seed-7 rows time out (the [DIAG] ticks above are what the run printed before the timeout): a DNF row with its readouts
+            dnf = '{"bytes":600000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}'
+            cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, '{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
+            drv = [ln for ln in drv if '"summary"' not in ln] + ['{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
     if plan == "41d" and os.environ.get("LD_WITNESS54") == "1":

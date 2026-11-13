@@ -249,8 +249,8 @@ if bash:
     fns = "\n".join(ln for ln in bat.splitlines() if re.match(r"p54b_bytes\(\)", ln))
     got = {c: subprocess.run([bash, "-c", fns + f"\np54b_bytes {c}"], capture_output=True, text=True).stdout.strip() for c in ("c8-100", "c1d-400")}
     check("battery p54b_bytes (the shell) == place38_parse's 600 MB at c8-100, nothing else", got == {"c8-100": "600000000", "c1d-400": ""} and pp.BYTES52 == 600000000, got)
-check("battery: INSTR_ENV for plan 54b = plan 52's (RWM_RTOBS RWM_RDIAG RWM_PERF_TIMEOUT_S=200) and RWM_DIAG=1 is on every row (the guard's rows too: the answer to the RWM_DIAG-in-guard question)",
-      '[ "$P54B" = 1 ]; } && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)' in bat and "RWM_GEN=0 RWM_DIAG=1" in bat)
+check("battery: INSTR_ENV for plan 54b = plan 52's with RWM_PERF_TIMEOUT_S=300 (plan 54 / 41d keep 200) and RWM_DIAG=1 is on every row (the guard's rows too: the answer to the RWM_DIAG-in-guard question)",
+      '[ "$P54B" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300)' in bat and "RWM_GEN=0 RWM_DIAG=1" in bat)
 check("battery: plan 54's [SNAPV] preflight (CAND has the gauge, BASE does not) and plan 54b's (both builds, and the pool knob); W54 outside the plan-41d stage aborts",
       'if [ "$W54" = 1 ]; then' in bat and "has no [SNAPV] gauge: it does not contain the snapshot-order law" in bat and 'if [ "$P54B" = 1 ]; then' in bat and "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only" in bat)
 check("run_all: LD_PLAN=54 IS plan 41d (PLAN rewritten before every branch) with W54=1 carried in SENV; plan 54b has its own stage rep54b",
@@ -291,10 +291,10 @@ def run_smoke(rows, tmp):
 with tempfile.TemporaryDirectory() as tmp:
     green = [led_row(a) for a in pp.ARMS54B]
     rc, txt = run_smoke(green, tmp)
-    check("smoke green: six arms, pools echoed, [SNAPV] present, nothing None, 600 MB rows inside 200 s -> SMOKE-PASS, every criterion a PASS line, none FAIL",
+    check("smoke green: six arms, pools echoed, [SNAPV] present, nothing None, 600 MB rows inside 300 s -> SMOKE-PASS, every criterion a PASS line, none FAIL",
           rc == 0 and "SMOKE-PASS" in txt and txt.count("\nPASS ") == 6 and "FAIL" not in txt, txt[-900:])
     check("smoke prints the registered criteria by name", all(x in txt for x in ("one row per block arm ran", "each arm's pool is in [GATES] on both ends", "[SNAPV] parsed on every row", "in-order delay (run and late), evictions, old holes and the budget residual",
-                                                                           "600 MB rows finished inside RWM_PERF_TIMEOUT_S=200")), txt[:500])
+                                                                           "600 MB rows finished inside RWM_PERF_TIMEOUT_S=300")), txt[:500])
     rc, txt = run_smoke(green[:5], tmp)
     check("red: a missing arm row -> FAIL one row per block arm ran, rc 1", rc == 1 and re.search(r"^FAIL one row per block arm ran: L640: no row", txt, re.M), txt[-400:])
     rows = [dict(r) for r in green]
@@ -310,14 +310,17 @@ with tempfile.TemporaryDirectory() as tmp:
         check(f"red: {fld} None on a row -> FAIL the no-None criterion naming it", rc == 1 and re.search(r"^FAIL in-order delay .*" + fld, txt, re.M), txt[-400:])
     rows = [led_row(a, dnf=(a == "L2048")) for a in pp.ARMS54B]
     rc, txt = run_smoke(rows, tmp)
-    check("red: a DNF L2048 row -> FAIL the 200 s criterion", rc == 1 and re.search(r"^FAIL the c8 600 MB rows finished inside", txt, re.M), txt[-400:])
+    check("red: a DNF L2048 row -> FAIL the 300 s criterion", rc == 1 and re.search(r"^FAIL the c8 600 MB rows finished inside", txt, re.M), txt[-400:])
     rows = [led_row(a, dnf=(a == "B640"), rc=(1 if a == "B640" else 0)) for a in pp.ARMS54B]
     rc, txt = run_smoke(rows, tmp)
-    check("red: the B640 exemption is for a CLEAN DNF only -- a B640 crash (rc 1) fails the 200 s criterion", rc == 1 and re.search(r"^FAIL the c8 600 MB rows finished inside", txt, re.M), txt[-400:])
+    check("red: a B640 crash (rc 1) fails the 300 s criterion", rc == 1 and re.search(r"^FAIL the c8 600 MB rows finished inside", txt, re.M), txt[-400:])
     rows = [led_row(a, dnf=(a == "B640")) for a in pp.ARMS54B]
     rc, txt = run_smoke(rows, tmp)
-    check("B640 may DNF in the smoke (the registered H-hold floor, 20 Mbit/s = 240 s for 600 MB, is past the 200 s timeout): printed as a NOTE, the 200 s criterion passes (the other criteria see its readouts)",
-          "NOTE B640: DNF inside the smoke" in txt and re.search(r"^PASS the c8 600 MB rows finished inside", txt, re.M), txt[-500:])
+    check("B640 gets no exemption at 300 s: a clean B640 DNF in the smoke FAILS the criterion (no NOTE)", rc == 1 and "NOTE" not in txt and re.search(r"^FAIL the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S=300", txt, re.M), txt[-500:])
+    rows = [led_row(a, gp=22.0) for a in pp.ARMS54B]
+    rows[2]["seconds"] = 218.0
+    rc, txt = run_smoke(rows, tmp)
+    check("B640 finishing at 218 s (20 Mbit/s floor, under the H-hold reading) passes inside 300 s", rc == 0 and "SMOKE-PASS" in txt, txt[-500:])
 
     # the report
     def arm_rows(gp, old, resid=50, dnf_n=0, cap=4096):
