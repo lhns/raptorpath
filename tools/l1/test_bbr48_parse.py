@@ -380,7 +380,7 @@ check("CPU/GB uses the row's own bytes (5 GB) when present and the cell table's 
 bat = open(os.path.join(HERE, "loopdiag_battery.sh"), encoding="utf-8").read()
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
 check("battery plan 48: accepted, 96-row table, 2-row smoke, p48 sizes 5 GB / 600 MB, timeout 200, CAND runs RWM_QUIC_CC=bbr_rs, BASE no env, replacement file allowed",
-      "|46|48|52)" in bat and '-eq 96' in bat and "ABORT-PLAN48" in bat and "place38_parse.py plan48" in bat and "c1s-400|c1d-400) echo 5000000000" in bat and "c2-100|c8-100) echo 600000000" in bat
+      "|46|48|52|53)" in bat and '-eq 96' in bat and "ABORT-PLAN48" in bat and "place38_parse.py plan48" in bat and "c1s-400|c1d-400) echo 5000000000" in bat and "c2-100|c8-100) echo 600000000" in bat
       and "RWM_PERF_TIMEOUT_S=200" in bat and "[ \"$P48\" = 1 ] && arm_env=(RWM_QUIC_CC=bbr_rs)" in bat and "LD_ROW_BYTES=" in bat and "plan48 0" in bat and "plan48 1" in bat)
 check("battery plan 48: the CAND binary must carry [QCC] and RWM_QUIC_CC, BASE must not carry [QCC] (grep -F)", 'grep -aqF -- "[QCC] t=" "$BIN"' in bat and 'grep -aqF -- "[QCC] t=" "$BIN_BASE"' in bat)
 check("battery: every row's env unsets RWM_QUIC_CC before the arm env (BASE never inherits it)", "-u RWM_QUIC_CC" in bat and bat.index("-u RWM_QUIC_CC") < bat.index('"${arm_env[@]}" "${evt_env[@]}"'))
