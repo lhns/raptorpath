@@ -41,7 +41,7 @@ Each row is a behaviour step at a preset (status §3.3; paper divergence row 13)
 
 | site | Realtime | Auto | Bulk | ledger |
 |---|---|---|---|---|
-| source-symbol size `symbol_size_for_hint` (`net/mod.rs:179`); perf chunk (`perf.rs:53`) | 512 B (494 B payload) | 1200 | 1200 | no row (new candidate; §8 P6) |
+| source-symbol size `symbol_size_for_hint` (`net/mod.rs:179`); perf chunk (`perf.rs:53`). Every law constant counted in symbols (pool 2048 per path, cap clamp N·pool, W ≤ 200, A*, store boot 128, emission burst 64) therefore covers 2.3× fewer bytes at Realtime. | 512 B (494 B payload) | 1200 | 1200 | no row (new candidate; §8 P6) |
 | duplicate source on the cheapest other path (`emit_source.rs:461`) | on | off | off | S08 |
 | symbol packing; emission batching requires `!use_packing` (`sender_policy.rs:678`, `:737`) | packing on, batching out of scope | batching ACTIVE | batching ACTIVE | S09 |
 | Copa queue target `queue_target_mult` (`scheduler/copa.rs:314`); it feeds cwnd, and cwnd feeds `spare_capacity` (the rate's clamp) and placement | 1.08 | 1.125 | 1.25 | K01 |
@@ -100,10 +100,11 @@ All arms run `--window-reliable` (ρ = 1), `RWM_GEN=0` (the plain window; `perf_
 | goodput | perf JSON `mbps` | T1, T2 |
 | in-order delay mean (whole run) | `threadp1_parse.inorder_delay_stats` (the guard v2 clause); B′ (source phase only) reported beside it | T1, T2 |
 | CPU/GB, client and server | driver `CPU:` / bytes | T1, T2 |
-| retransmits/GB | last `[DIAG] retx=` | T1, T2 |
+| retransmits/GB | last `[DIAG] retx=` | reported |
 | receiver duplicates | `rx_dup` (place38 row) | reported |
 | coded share | `cod/(src+cod)`, last `[DIAG] cum=` | reported |
-| **granted r** | `[SPAN] rr=` (2 Hz under `RWM_DIAG`, `emit_source.rs:657`): the per-symbol taper grant after the spare clamp and the TaperBudget. Mean, median and non-zero fraction over the source phase. | reported; witness W-ROUTE |
+| **consumed r (primary)** | `(cod + taper)/src` from the last `[DIAG]`, minus the same session's H-B share at that cell (H-B's `cod` is the NACK margin alone; see below). Approximate: the margin scales with retransmits, which r changes. | reported |
+| **granted r (secondary)** | `[SPAN] rr=` (2 Hz under `RWM_DIAG`, `emit_source.rs:657`). It prints the cached per-symbol TaperBudget grant from the last taper recompute: after the spare clamp, reused for up to one emission burst (`taper_recompute_due`, `:497`; per symbol at Realtime, where batching is out of scope). Each source symbol adds it to `repair_debt`, so its time mean tracks the proactive per-source rate. It has **three decimals**, so B+ (≈ 0.0005) reads 0.000 or 0.001, and I1 (0.007–0.015) resolves only to ≈ 10 %. Mean, median and non-zero fraction over the source phase. | reported; witness W-ROUTE |
 | W | `[SPAN] wsize=` (201 on the §53 c8 smoke row; R07's 200 clip) | reported |
 | ε̂ per leg | `[DIAG] pN: plu=` (the BOCD upper quantile the law reads) and `plc=` (cumulative) | reported |
 | P_fec side | per row: `rr_mean` against `plu/(1−plu)` and `plc/(1−plc)` of the leg the rate read | reported |
@@ -119,10 +120,10 @@ All arms run `--window-reliable` (ρ = 1), `RWM_GEN=0` (the plain window; `perf_
 - the **coded channel split**. `cod=` sums three emitters: the proactive slot (`emit_source.rs:768`), the NACK margin (`sender_phases.rs:1108-1162`) and request-law equations (`net/mod.rs:3402`, off by default). Until the split exists, the proactive consumed rate is not separable from the margin, and `[SPAN] rr` stands in for it.
 
 **Reconciling "r ≡ 0" with §53's ≈ 0.5 % coded share at c8.**
-- At β = 1 the proactive slot cannot fire. The granted rate is 0 (`TaperBudget::accrue`: `owed` stays 0 and the grant is `min(owed, …) = 0`), `repair_debt += 0`, and the emission loop needs `debt ≥ 1` (`emit_source.rs:692-695`). The §53 c8 smoke row confirms it: `[SPAN] rr=0.000 owed=0.00 debt=0.00` on all 88 lines.
+- At β = 1 the proactive slot cannot fire. The granted rate is 0 (`TaperBudget::accrue`: `owed` stays 0 and the grant is `min(owed, …) = 0`), `repair_debt += 0`, and the emission loop needs `debt ≥ 1` (`emit_source.rs:692-695`). The §53 c8 BASE smoke row (`rep53-diag-smoke.tgz`, `c8-100@def-BASE-s42-r1-a1-c.log`) confirms it: `owed=0.00 rr=0.000 debt=0.00` on 88 of its 88 `[SPAN]` lines (counted).
 - The request channel is off by default (`recv_request_tx = None`, `net/mod.rs:1051`).
 - That leaves the NACK repair margin: after each gap-serve pass with `retransmitted > 0`, it sends `ceil(retransmitted · ε̂_max)` coded symbols (`sender_phases.rs:1116`). The ceil makes it at least one per pass.
-- The same row reads `cum=507616/3073/…`, `retx=14391`, `rep=18083`: 3 073 coded symbols, about one per pass at ≈ 4.7 retransmits per pass. That is consistent with the ceil floor.
+- The same row reads `cum=507616/3073/…`, `retx=14391`, `rep=18083`: 3 073 coded symbols against 14 391 retransmits. *Inference, not counted:* if each pass carries ≈ 4.7 retransmits, that is one margin symbol per pass, which is what the ceil floor gives at ε̂ ≈ 5 %. The number of passes is not printed.
 - It is also consistent with the paper's corner reading: the "`ceil(retx·ε̂)` margin" closes `fill_coded` 0.56 % at c3hg CTL, `fec-arq-model.md` §4.13.
 - So the ledger's "r ≡ 0" is right about the rate law. The coded share is reactive insurance, not proactive r. Confirming this needs the channel split.
 
@@ -130,16 +131,21 @@ All arms run `--window-reliable` (ρ = 1), `RWM_GEN=0` (the plain window; `perf_
 
 Correctness comes first: under NO-MODE-SWITCH a resolved step is a defect, whatever its size. Each cell is scored on its own, since the cells run in different launches.
 
-- **The statistic.** It is the guard's rank-minp (`place41b_score`):
-  - each clause is scored by a two-sided rank-sum;
-  - the family p is the min-p over the family;
-  - its null comes from 10 000 joint relabellings within each comparison, where a row's clause vector moves as a unit.
-- **Scored clauses:** goodput, in-order delay mean, CPU/GB on the client, CPU/GB on the server, and retransmits/GB. They are the guard v2's c2/c8 clauses minus lag, plus retransmits/GB.
+- **The statistic is a variant of the guard's rank-minp, not the guard's own.** `place41b_score.statistic_rank` is **one-sided** (worse-signed) and **seed-stratified** (3 v 3 per seed). Both would break T1:
+  - a step has no "worse" direction;
+  - the stratified two-sided floor is 2/C(6,3)² = 2/400 = 0.005 per clause. Over a 15-clause family, a fully separated step at one preset would then reach a family p of only ≈ 0.015–0.07, so the gate could fail to reject a real step.
+- `score51` therefore uses:
+  - a **two-sided** rank-sum per clause;
+  - **no seed strata** (each arm has 3 rows per seed by construction, so the seed is balanced);
+  - the min-p over a **family of one preset** (4 clauses), with the null from exact or 10 000 joint relabellings of the 12 rows, where a row's clause vector moves as a unit;
+  - **Bonferroni over the three presets**: FAIL at P iff its family p ≤ 0.05/3.
+- **Attainable:** a fully separated 6 v 6 on one clause has a per-clause p of 2/924 = 0.0022, and a family p ≤ 4 × 0.0022 = 0.0087 < 0.0167. So the gate can reject. `score51`'s unit tests must show this on a synthetic ledger in the real block/seed layout (§6 item 4).
+- **Scored clauses:** goodput, in-order delay mean, CPU/GB on the client and CPU/GB on the server: the guard v2's c2/c8 clauses minus lag. Retransmits/GB is reported, not scored; it has no d80 yet.
 
 **T1, through-the-dial continuity (the engine twin of `test_visualizer.mjs`).**
-- At each preset P ∈ {Bulk, Auto, Realtime}, compare P/1.02 with P·1.02 on the Auto carrier, 6 v 6.
-- The family has 3 presets × 5 clauses = 15 clauses, and the relabellings run independently per preset.
-- **FAIL iff the family p ≤ 0.05.** The failing preset and clause are named, and the step is entered as a ledger defect.
+- At each preset P ∈ {Bulk, Auto, Realtime}, compare P/1.02 with P·1.02 on the Auto carrier, 6 v 6, per cell.
+- **FAIL at P iff its family p ≤ 0.05/3.** The failing preset and clause are named, and the step is entered as a ledger defect.
+- After both launches, a **cell-stratified** version (6 v 6 per cell, relabelled within cell) is reported as the joint reading. It does not override a per-cell FAIL.
 - What the smooth law moves across ±2 %, from the closed forms at W = 200:
   - r changes by ≤ 0.001 (§5);
   - b by ±0.3 %, w_bw by ±0.002 and q by ±0.1 %;
@@ -149,14 +155,26 @@ Correctness comes first: under NO-MODE-SWITCH a resolved step is a defect, whate
 **T2, the hint as a named point.** The named hint must equal the same δ as a number.
 - At Auto: H-A v N-A, 6 v 6 (identical laws).
 - At Bulk: H-B v (B− ∪ B+), 6 v 12. At Realtime: H-R v (R− ∪ R+), 6 v 12. The union stands for the dial at P only if T1 passes at P. If T1 fails at P, T2 at P is reported against each nudge separately and not scored.
-- There is one family per preset (5 clauses), and each is read on its own. It is a defect quantification, not a merge gate.
+- There is one family per preset (4 clauses), with the same statistic and the same 0.05/3 threshold. It is a defect quantification, not a merge gate.
+- **DNF rows.** An H-R row that hits the 200 s timeout is kept and ranked worst on every clause, the guard's convention; it is not VOID. A named hint that DNFs where the same δ as a number completes is the step itself. DNFs do not enter T1, which uses only Auto-carrier rows.
 
 **A/A noise and resolution.**
-- *Before registration:* d80 per clause at the exact design (6 v 6, and 6 v 12), from the existing 600 MB c2/c8 rows. These are §48b BASE (12 per cell) and §53 c8 BASE + BASES (12), with §54 BASE added once it lands. The method is `guard_power.py`'s bootstrap power (c). §41d's d80 (goodput c2 1 % and c8 2 %, delay c2 5–8 % and c8 20 %) is for 12 v 12. At 6 v 6 expect roughly √2 wider: goodput ≈ 1.5 % / 3 %, delay ≈ 8–11 % / 28 %. These are estimates; the computed table replaces them.
+- *Before registration (offline estimate, computed for this design).* The source is the §48b BASE 600 MB rows: 12 per cell, goodput and CPU from `run/bbr48/ld.log`, delay from `guard-clause-dry/rowvals-bbr48b.json`. The method is a bootstrap with replacement, 40 draws per grid point and 400 relabellings, with the shift applied to one clause on one side. The design is 6 v 6, family of 4, threshold 0.05/3. The resulting d80:
+
+| clause | c2 alone | c8 alone | stratified c2 + c8 |
+|---|---|---|---|
+| goodput | 1 % | 5 % | 2 % |
+| in-order delay mean | 20 % | 30 % | 12 % |
+| CPU/GB client | 8 % | 12 % | 8 % |
+| CPU/GB server | 12 % | 20 % | 8 % |
+
+  - It is coarse: the grid is 1/2/3/5/8/12/20/30/50 %, there are 40 draws, and resampling 12 rows with replacement understates the spread.
+  - Before registration, the harness worker recomputes it at 200 draws, adds the §53 c8 BASE + BASES rows, and adds the 6 v 12 T2 design (§6 item 5). The recomputed table replaces this one.
+  - Even this estimate is far above the smooth law's movement across a nudge (≤ 0.1 % goodput), so T1 cannot be failed by the slope.
 - *In session:* H-A v N-A is a same-session A/A at δ = 0.5. Its per-clause bootstrap d80 is reported next to the historical one. If the in-session A/A d80 exceeds the historical one by more than 2×, the session reports reduced resolution.
 - **Wording rule.** A non-rejection is reported as "no step above d80 = x % at P", never as "continuous".
 
-**Shape (reported).** The r(δ) table against §5's bands. The crossing δ* is read as the first sweep point where the granted r exceeds plu/(1−plu); it is reported with both ε readings. Goodput, delay and CPU/GB against δ are reported per point with median and range. A monotone non-increasing goodput in δ is the model's expectation (§5.3); a violation is reported, not scored.
+**Shape (reported).** The r(δ) table against §5's bands. The crossing δ* is read as the first sweep point where the consumed r (with `rr` beside it) exceeds plu/(1−plu); it is reported with both ε readings. Near δ* (I1, I2) r is 0.007–0.046, while the margin share subtracted from it is ≈ 0.35–0.6 % and varies with retransmits. Without P2's channel split the δ* reading is therefore **provisional**. The session does not wait for P2, but the δ* verdict that `rate-user-rate-law` consumes does (§8). Goodput, delay and CPU/GB against δ are reported per point with median and range. A monotone non-increasing goodput in δ is the model's expectation (§5.3); a violation is reported, not scored.
 
 **VOID and witnesses (per row, two-sided, before any number is read):**
 - `[GATES] RWM_DELTA=` equals the arm's value (or `unset`) on both ends;
@@ -196,6 +214,7 @@ Computed with `raptorpath-math::controller_rate` (the formula the engine and `ra
 
 - **What wins (prediction, no gauge).** At Auto the GE core term dominates: core 0.13–0.20 against burst 0.035 at c2, and 0.11–0.21 against 0.013 at c8. The soft cap is slack at c2, but at Realtime on c8 (plc) r sits at r_sat, so the cap is predicted to bind there. The mass term is unpredicted (above).
 - **Realtime carrier (H-R).** The 512-byte symbol halves t_sym and T_rtt, so r at H-R differs from R±. This is a table effect through a continuous law, and it is part of T2's Realtime step.
+- **The one prior off-corner reading.** Paper §4.13 has the r battery's MID arm at δ = 0.05, the same δ as I3. Its coded share (fill_coded + rep_redundant, which includes the margin) was ≈ 9.9 % of source at sc2 (c2 single) and ≈ 11.7 % at c3hg. The table predicts 0.054–0.081 at c2 and 0.114 for c3 single (W = 200, plc). Same order, coded share a little higher. Caveats: one seed, n = 4, 1.8 MB objects (completion-heavy), the September binary at ≈ 2 Mbit out-of-band on 69 of 72 rows, the CC pinned at Bulk by `RWM_COPA_DELTA`, and MID VOID by W7. It is context, not a baseline.
 - **Granted against law r.** `[SPAN] rr` reads after the spare clamp. Spare is expected slack, because Copa's cwnd is inflated by the anchor floor (K01, K04; np_act = 2 on nearly every c8 tick). If spare binds, rr < the table and R-INERT attribution applies.
 
 ### 5.2 Where the P_fec step should appear
@@ -215,7 +234,7 @@ P_fec has a 0 → ½ cut at r = ε/(1−ε) (R03). Every point with δ ≥ 0.015
 - **T2:**
   - **Auto: PASS** (identical laws).
   - **Bulk: PASS predicted.** The only table difference is `queue_target_mult` 1.25 against 1.125. A FAIL is a ledger verdict on K01's live hint table.
-  - **Realtime: FAIL predicted in both cells.** CPU/GB rises from 512-byte symbols (≈ 2.4× packets per byte) and from batching being out of scope (S09). Goodput and CPU change at c2 without S08. At c8, retransmits/GB, duplicates and goodput additionally change from S08. The c2/c8 contrast attributes S08. Each failing clause is entered in the ledger as the measured size of its §3.3 debt.
+  - **Realtime: FAIL predicted in both cells.** CPU/GB rises from 512-byte symbols (≈ 2.4× packets per byte) and from batching being out of scope (S09). Every constant counted in symbols halves in bytes on that carrier (§1.2): the per-path pool 2048, the c8 cap clamp 4 096 (≈ 4.9 MB → 2.1 MB), W = 200, A*, store boot 128 and the emission burst 64. At c8, where the cap is already pinned (F01), H-R is predicted store-bound: lower goodput and higher delay. That is also the DNF risk against the 200 s timeout. Goodput and CPU change at c2 without S08. At c8, retransmits/GB, duplicates and goodput additionally change from S08. The c2/c8 contrast attributes S08. Each failing clause is entered in the ledger as the measured size of its §3.3 debt.
 
 ## 6. Harness needs (a Sonnet worker, no cargo)
 
@@ -234,20 +253,20 @@ P_fec has a 0 → ½ cut at r = ε/(1−ε) (R03). Every point with δ ≥ 0.015
 3. **Row parser** (`place38_parse`, `LD_PLAN=51`):
    - `ARM_SPEC` per arm: the hint in the pipe witness (today it pins `bulk`, `:40`/`:172`), and the batching echo per carrier (`ACTIVE`, or `out of scope` at realtime);
    - the two-sided `RWM_DELTA` gate witness on both ends;
-   - new fields: `rr_mean`, `rr_p50` and `rr_nz_frac` from `[SPAN]` (source phase), `wsize_med`, `src_per_byte`, `sumcap_pin`, and `cwnd`/`infl` headroom;
+   - new fields: `r_consumed = (cod + taper)/src` (with the same-session H-B share subtracted in the scorer), `rr_mean`, `rr_p50` and `rr_nz_frac` from `[SPAN]` (source phase), `wsize_med`, `src_per_byte`, `sumcap_pin`, and `cwnd`/`infl` headroom;
    - existing fields reused: in-order delay, CPU/GB, retx/GB, `rx_dup`, `cod`, `taper`, `plu`/`plc`.
-4. **Scorer `score51`** (a new `tools/l1/s51_score.py` on `place41b_score`'s rank-minp):
+4. **Scorer `score51`** (a new `tools/l1/s51_score.py`). It reuses `place41b_score`'s rank machinery but not its statistic: it is **two-sided** and **not seed-stratified**, with a family per preset and Bonferroni over the presets (§4). It also carries the reported cell-stratified joint T1:
    - T1, T2 and the in-session A/A d80;
    - the W-ROUTE / R-INERT attribution;
    - the r(δ) table with §5.1's bands beside it, the P_fec-side reading and δ*;
    - the VOID rules of §4.
-   - Unit tests: a synthetic step at one preset FAILs T1; a smooth slope of Δ = 5·d80 across the full dial PASSes T1; N-A ≡ H-A PASSes T2; a missing `RWM_DELTA` echo VOIDs the row.
-5. **Pre-registration d80 table:** `guard_power.py c` adapted to the §51 clause set at 6 v 6 and 6 v 12, on the §48b and §53 600 MB c2/c8 rows. It is committed with the registration.
+   - Unit tests: a fully separated synthetic step on one clause at one preset, in the real block/seed layout, FAILs T1 (family p ≤ 0.0087); a step in the *better* direction FAILs too (two-sided); a smooth slope of Δ = 5·d80 across the full dial PASSes T1; N-A ≡ H-A PASSes T2; a missing `RWM_DELTA` echo VOIDs the row.
+5. **Pre-registration d80 table:** `guard_power.py c` adapted to `score51`'s statistic at 6 v 6 (T1) and 6 v 12 (T2), 200 draws, on the §48b BASE and §53 c8 BASE/BASES 600 MB rows. It replaces §4's 40-draw estimate and is committed with the registration.
 6. **Stub-run path:**
    - `stubrun_gen.py` emits `[SPAN] … rr=<x>` with x > 0 for β < 1 arms (today it emits `cod=0` and no `[SPAN]`), the realtime pipe echo and its batching echo, realtime-sized `src` counts, and `[GATES] RWM_DELTA=<v>`;
    - `HARNESS_PATHS["51"] = ("rehearse", "full")`;
    - `test_stubrun.py` executes both paths.
-7. **`LD_REHEARSE=1` must show:** one row per arm kind (H-B, H-R, B+, N-A) LIVE, with the `RWM_DELTA` echo on both ends, the hint pipe, `rr` parsed (0 on H-B, > 0 on B+ unless R-INERT), the in-order delay non-None, and the H-R row inside the 200 s timeout.
+7. **`LD_REHEARSE=1` must show:** one row per arm kind (H-B, H-R, B+, N-A) LIVE, with the `RWM_DELTA` echo on both ends, the hint pipe, `rr` parsed (exactly 0 on H-B; > 0 on N-A unless R-INERT. B+ is not a witness: its r ≈ 0.0005 prints as 0.000 at three decimals), the in-order delay non-None, and the H-R row inside the 200 s timeout.
 
 ## 7. Session length (`LD_HARD` = 5 h per launch)
 
@@ -263,7 +282,7 @@ P_fec has a 0 → ½ cut at r = ε/(1−ε) (R03). Every point with δ ≥ 0.015
 | id | node | gates §51? | lane |
 |---|---|---|---|
 | P1 | **`meas-s51-harness`**: §6 items 1–7 (plan 51, parser, `score51`, d80 table, stub path, rehearsal). | **yes** | no-cargo |
-| P2 | **`rate-fix-rate-readout`**: a `[RATE]` readout on the `[DIAG]` cadence, behaviour-neutral. It carries the cadenced law r (mean, p50), r_anchor, r_late and β; the tail target; the spare-clamped `flat_rate` mean with a per-leg spare-bind fraction; `soft_saturate` and `max_overhead` bind fractions; the W* = 200 clip bind (R07); the path the rate read; and the fraction of evaluations on the P_fec > 0 side. It also splits `cod=` into proactive, margin and request, and echoes the resolved dial (δ, β, b, t, w_bw, q, symbol size) once at start-up on both ends (rule 1). Without it §51 reads the granted r only (`[SPAN] rr`) and reports the law r, the clamps and the channel split as MISSING. | no (recommended before the session) | host-cargo |
+| P2 | **`rate-fix-rate-readout`**: a `[RATE]` readout on the `[DIAG]` cadence, behaviour-neutral. It carries the cadenced law r (mean, p50), r_anchor, r_late and β; the tail target; the spare-clamped `flat_rate` mean with a per-leg spare-bind fraction; `soft_saturate` and `max_overhead` bind fractions; the W* = 200 clip bind (R07); the path the rate read; and the fraction of evaluations on the P_fec > 0 side. It also splits `cod=` into proactive, margin and request, and echoes the resolved dial (δ, β, b, t, w_bw, q, symbol size) once at start-up on both ends (rule 1). Without it §51 reads the granted r only (`[SPAN] rr`) and reports the law r, the clamps and the channel split as MISSING. | not the session, but it **gates the δ\* verdict**: at I1/I2 r is 0.007–0.046 against a margin share of ≈ 0.35–0.6 % that the session can only subtract approximately. Recommended before the session. | host-cargo |
 | P3 | `rate-fix-term-gauge` (exists): which `max()` term of `controller_rate` wins, per evaluation. It can merge into P2 if `controller_rate` returns its argmax bit-identically (a wasm golden check). Otherwise §51 reports it MISSING. | no | host-cargo |
 | P4 | **`meas-s51b-rho`**: the ρ < 1 block. It needs a numeric or at least carrier-independent ρ on the CLI (today ρ < 1 is reachable only at Realtime), perf completion with declared loss (delivered fraction), a per-chunk send stamp, and the paired readout of §2.3 (resolution delay with the abandoned fraction). This is where R03's step becomes δ-visible (the shed budget). | no (follow-on session) | host-cargo, then vm |
 | P5 | **ns bench of span-repair encode and decode** at A* ≈ 220, 1200 B (the `nsbench41c` pattern), so CPU/GB against r can be predicted next time. | no | vm |
