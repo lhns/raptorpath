@@ -887,7 +887,7 @@ fn quinn_characterisation_dump() {
         )
         .unwrap();
     }
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/l1-raw/bbrfix48");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/l1-raw/bbrfix48");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("quinn-dump.txt"), &out).unwrap();
     println!("{out}");
