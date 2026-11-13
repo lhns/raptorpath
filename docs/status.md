@@ -279,6 +279,33 @@ What this voids or restates (each traced to its source):
 | D0 attribution audit (π0 heal share) | engine-side hole accounting (`holeaudit_*`) | not affected: never reads tc |
 | sender-truth estimator refuted (27e36e3) | fed ε̂ against the wire | not reversed: it feeds ≈ 0.94 in window mode (V3), wrong at any truth |
 
+### 3.10 Ledger verdicts, 2026-11-13 (wasm mode-switch audit, §52 post-hoc)
+
+Defect findings under FORMULA-FIRST and MEASUREMENT DISCIPLINE 17/18. Each one is a verdict, not a footnote. None is fixed yet, and every fix waits for an owner call or a derivation.
+
+1. **The T_cut give-up law is PINNED (model only).**
+   - `raptorpath-math::find_t_cut` is read through `max(t_cut, 2·RTT)` in `raptorpath-wasm` :1401.
+   - At all ten measured ρ < 1 points it is either the 2·RTT floor or the 10·W search cap, so the law is two-valued over its operating range.
+   - It steps at non-preset ρ* 0.983332 and 0.988175.
+   - No engine caller.
+   - Evidence: `docs/derivations/wasm-modeswitch-audit.md` (F4), branch `wasm-modeswitch-audit`.
+2. **P_fec truncation: a code-vs-paper divergence, degenerate over the engine's measured range.**
+   - `raptorpath-math::p_fec_normal` returns 0 when r(1−ε) − ε ≤ 0, and Φ(0) = ½ just above that point. That is a 0 → ½ step at r = ε/(1−ε).
+   - Paper §4.2 (`fec-arq-model.md:699`) states the continuous Φ form. The cut has been in the code since `da837ee9`.
+   - Engine reach on the default path: `net/emit_source.rs:588` (`shed_budget_frac`, only when `shed_on`, i.e. ρ < 1).
+   - The engine's rate law sits at r ≈ 0 on every L1 cell, so P_fec ≡ 0 wherever the engine has been measured. No measured engine effect yet; the first exposure is §51.
+   - Conflict for the owner: the paper's form gives P_fec(0) > 0, against the engine pin `fec_rate/tests.rs:262–282`.
+3. **The wasm model carries a dead second machine.**
+   - The classic per-hint constructor arms (W2, W4, W5, W6, W9) and V1 are reachable only from tests and the golden capture. The UI passes one hint, `'continuum'`, at every dial position (gate: `test_visualizer_ui.mjs`).
+   - Their outputs equal the continuum at the presets on all six golden cells. ρ is dropped for auto and realtime on that path.
+   - Fix: removal or `cfg(test)` (owner calls are listed in the audit).
+4. **`[QCLK] w_us` sits at the 100 ms clamp.** At c8 under CAND, p05 = p95 = 100 000 µs, while pooled srtt averages ≈ 443 ms (`docs/l1-raw/s52/`). This is a clamp that always binds. The emitting law is being identified by the duplicate diagnosis (`dup-diag`). With 3–8 timer fires per run, it is not the duplicate source.
+5. **The c8 hole law was never measured in its operating regime before §52.**
+   - Under the 20-gap horizon, p0 holes reached the law at ≈ 3.5 s age.
+   - Under lever B the packet-threshold channel fires 3.7–6.6 k times per run (BASE 0–755), and the original lands about 5 ms later (`hy_p50` 5.1 ms) on a FIFO leg.
+   - Main already wastes about 12 % of its retransmits.
+   - Diagnosis is running (`dup-diag`); the result goes in §53.
+
 ### 3.9 Harness rule: report the lock-out classifier (2026-11-10)
 
 Every multi-leg static-cap battery reports the §38 lock-out classifier per
