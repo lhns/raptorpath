@@ -644,3 +644,33 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - the integration tests `holeclass_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability`;
 - `build_visualizer.sh` on a fresh wasm build, plus the native golden test without `GOLDEN_CAPTURE` (for `wasm-modeswitch-audit`);
 - the `bound-tests` wasm pool test.
+
+**§53 amendment 1 (before VM contact): trees, harness, three premise corrections.**
+- **BASE = `base53` `5b605bb0f550f54a298b7f314b147424b0ad805b`** (`LD_BASE_SHA`). **CAND = `cand53` `def76c2350c5782d6e7303d078018d6c2d00eff7`** (`LD_CAND_SHA`).
+  - `base53` is built on main `83fa8296`, not `4a486dbe`; the two differ in `docs/status.md` only.
+  - `git diff base53 cand53 -- raptorpath/src raptorpath/tests` = 3 files (`net/mod.rs`, `net/sack.rs`, `net/tests.rs`), +50 / −12, lever B alone. CAND adds two harness commits (`tools/l1`).
+  - Two merge conflicts, both from `wdiv-diag`, resolved as in `base52`: `net/tests.rs` (main's removals kept, the `cx_leg` test adapted to the one-argument `HoldDownGauge::new`) and `tools/l1/lib.sh` (echo list).
+  - `RWM_RECOV_SNAPVER` and `RWM_PLACE_WDIV` are in `lib.sh` and the `[GATES]` byte pin.
+- **Host checks:**
+  - `cargo check --all-targets` exits 0 on both trees; `--lib gates` 15 / 0 on both; `--lib net::` BASE 295 / 0, CAND 297 / 0.
+  - The `tools/l1` tests pass on the host and inside an extracted `git archive` of CAND with `LD_BASE_SHA` set (32 / 32).
+  - The stub run executes plan 53's rehearse, full, prior-tests and mismatch paths end to end; three red launch cases (no `[SNAPV]`, a stale fire on an arm row, no final `[SUCC]`) fail as they must.
+- **Harness:** plan 53 in `loopdiag_battery.sh` / `loopdiag_run_all.sh`, scorer `tools/l1/snap53_score.py` (`test_snap53.py`).
+  - 60 rows: c8 5 arms × 6, then c1d 5 GB BASE 12 / CAND 12 / CANDS 6. `RWM_DIAG=1` and `RWM_PERF_TIMEOUT_S=200` on every row.
+  - c1d CAND vs BASE: one-sided rank-sum p (worse side) via `place41b_score.statistic_rank`, with the min-p gate not printed (nothing scored).
+  - On the §52 logs the parsers reproduce the Erratum (`fed − det` +114 052 to +176 958 on CAND, negative on BASE).
+- **Premise corrections:**
+  1. **The packet-threshold fire count is `fast=`, not `y=`.** In the sender's `mpr[…]` block, `y` counts fires whose live flight was younger than the time threshold. E uses `fast` (the counter whose flag also feeds `pt_st`). `y == fast` on all 30 §52 c8 rows and 24 c1d guard rows; any row where they differ is printed as `Y-NE-FAST`.
+  2. **"No None among the readouts" exempts readouts that are undefined, not missing:**
+     - H0 when the row's tail is shorter than one `[DIAG]` tick (1 of 6 §52 CAND rows; every c1d row) and `tail_s` is present;
+     - `hy_p50` when `hy_n` = 0;
+     - E when `fast` = 0 or Σ `stale` = 0.
+  3. **The tail-sweep pseudo-leg (`-`) carries no snapshot.** Σ `rep`, Σ `stale` and Σ `pt_st` in E run over the numeric return legs only. `rep > 0` is checked on every active leg, so a missing leg line fails rather than passing vacuously.
+- **Statistics (each band is read on these):**
+  - count readouts and their bands, falsifiers and decision bands (duplicates, retx/GB, fires, `hy`, goodput, tail, CPU/GB) are read on the **arm mean**, as §52's reference figures are means; "within range" is the arm's row range;
+  - E, `stale/rep` and the p1 share of `rep` are **pooled**: sums over the arm's LIVE rows, then the ratio;
+  - "within BASE's range on every readout" (BASES) means duplicates, retx/GB, goodput and tail only.
+- **The arm-row `[HOLD]` witness holds.** On a stale batch the arm passes an empty gap slice to `HoldDownGauge::on_report`, which returns before resolving anything (`max()` over no gaps is `None`). The stamped set is untouched, so `fed − det ≤ cx` is the right bound.
+- **Stale-absent escape.** If every LIVE arm-off row of a block shows p1 `stale` = 0, the arm rows of that block are not voided for p1 `stale` = 0 (the scorer prints `STALE-ABSENT`). The arm-off falsifier then decides, and Refuted stays reachable. The smoke applies the same rule to its own BASE/CAND rows.
+- **Binary witness.** `[GATES]` cannot tell the BASE binary from CAND's. The c8 tail is the witness: BASE and BASES about 4 s, CAND, CANDS and CW0 about 0.4 s (§52). An arm on the other side of that split is read as built on the wrong binary and voided by hand in the Result (the scorer does not apply this rule).
+- **Rehearsal, one criterion added:** the filter arms' liveness (CANDS/BASES: `pt_st + tt_st = 0` on every leg, `stale > 0` on p1 at c8, `fed − det ≤ cx`) is checked on the smoke rows too, so an arm that does not act aborts the smoke instead of voiding 12 rows later. Under `LD_PLAN=53` a missing `RWM_RECOV_SNAPVER` token in `[GATES]` is a failure, never read as off.
