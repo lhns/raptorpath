@@ -68,7 +68,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
     "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_EMIT_BATCH=1 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
-    "RWM_RECOV_SP=0 ",
+    "RWM_RECOV_SP=0 RWM_RECOV_SNAPVER=0 ",
     "RWM_DELTA=unset ",
     "RWM_COPA_DELTA=unset ",
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
@@ -188,6 +188,7 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(g.store_sack_release && g.store_paths);
     assert!(g.recov_mp && g.recov_mp_law);
     assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
+    assert!(!g.recov_snapver, "RWM_RECOV_SNAPVER ships default OFF (diagnostic arm)");
     // The receiver-law arms (paper §7.6) ship absent.
     assert!(
         !g.recv_request_law,

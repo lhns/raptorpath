@@ -50,6 +50,27 @@ impl SnapOrder {
     }
 }
 
+/// Coalescing under `RWM_RECOV_SNAPVER`: does a newly dequeued batch replace
+/// the one kept so far? Off (shipped): always, the last-dequeued wins. On:
+/// only when its snapshot is at least as new, so the coalescer keeps the
+/// newest snapshot and not the last to arrive.
+pub(crate) fn snapver_coalesce_keeps(
+    arm: bool,
+    kept: Option<AboveReport>,
+    candidate: Option<AboveReport>,
+) -> bool {
+    !arm || candidate >= kept
+}
+
+/// Does the gap path judge this batch's gaps (both loss channels, the shed
+/// and the `[HOLD]` stamps)? Off (shipped): always. On: only a snapshot at
+/// least as new as `V*`; a batch with no snapshot (the tail sweep) always.
+/// A stale snapshot's received set is a subset of the newest one's, so it
+/// names no hole the newest does not, only holes since filled.
+pub(crate) fn snapver_judges(arm: bool, order: &SnapOrder, v: Option<AboveReport>) -> bool {
+    !arm || !order.is_stale(v)
+}
+
 /// Per return leg: `[reports, stale, pt_fires_stale, tt_fires_stale]`.
 type LegCounts = [u64; 4];
 

@@ -674,7 +674,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             if let Some(v) = n.3 {
                                 st.snap_order.fold(v);
                             }
-                            g = n;
+                            if snapver_coalesce_keeps(pol.recov_snapver, g.3, n.3) {
+                                g = n;
+                            }
                             if pol.diag_on {
                                 dg.mpd_coalesced += 1;
                             }
@@ -800,14 +802,18 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // one the receiver has — feed its outstanding time. Placed here,
         // before the loop below stamps this batch's own seqs, or every hole
         // would be resolved by the report that first announced it.
+        // `RWM_RECOV_SNAPVER`: a snapshot older than the newest dequeued one
+        // is not judged (its evidence above is still true and was ingested).
+        let judged: &[(u64, u64)] =
+            if snapver_judges(pol.recov_snapver, &st.snap_order, snap_v) { &gaps } else { &[] };
         hold_echo.on_report(
-            &gaps,
+            judged,
             now_repair_us,
             &st.shed_seqs,
             ack_path,
             &half_srtt_of,
         );
-        'gaps: for &(gap_start, gap_end) in &gaps {
+        'gaps: for &(gap_start, gap_end) in judged {
             // EVICT: only the coding window can serve a gap — older
             // seqs are gone. RETAIN: the sent-data store serves ANY
             // un-acked seq (targeted ARQ for holes that aged out of

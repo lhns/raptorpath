@@ -1226,9 +1226,11 @@ fn mp_packet_threshold_evidence_and_decision() {
     assert!(!mp_fast_lost(&b_ev, 50));
 }
 
-/// A two-leg FIFO transfer driven through the shipped packet-threshold fold
-/// and decision (`mp_ingest_evidence`, `mp_packet_threshold_fires`, the
-/// receiver's `received_sack_ranges` and the sender's `sack_to_gaps`).
+/// A two-leg FIFO transfer driven through the shipped gap path's pure parts:
+/// the receiver's `received_sack_ranges`, the sender's `sack_to_gaps` (with
+/// its `MAX_NACK_GAPS` horizon), the packet-threshold fold and decision
+/// (`mp_ingest_evidence`, `mp_packet_threshold_fires`) and the snapshot-order
+/// filter (`SnapOrder`, `snapver_judges`, `RWM_RECOV_SNAPVER` = `arm`).
 ///
 /// Forward legs are FIFO (each arrival no earlier than the previous one on
 /// its leg, the `rate` netem property): p0 1 ms with a 3 ms stall on every
@@ -1237,18 +1239,15 @@ fn mp_packet_threshold_evidence_and_decision() {
 /// every 1 ms and sends the snapshot back on a leg (every third on p1, the
 /// data-arm rule "the ack rides the arriving data's path" reduced to a fixed
 /// pattern); `rev_us` is the per-leg return delay. The sender processes
-/// snapshots in ARRIVAL order, as `serve_gaps` does. `lose` drops seqs
-/// for good (no retransmit is modelled): a lost seq holds the cumulative
-/// frontier, as c8's real losses do, so short-lived holes above it stay
-/// above the frontier while stale snapshots re-list them.
+/// snapshots in ARRIVAL order, as `serve_gaps` does: fold the version, ingest
+/// the evidence, then judge the gaps if the filter lets it. `lose` drops
+/// seqs for good (no retransmit is modelled): a lost seq holds the
+/// cumulative frontier, as c8's real losses do, so short-lived holes above
+/// it stay above the frontier while stale snapshots re-list them.
 ///
-/// Returns (seqs the packet threshold declared lost, how many evaluations
-/// were on p0-original gap seqs).
-fn packet_threshold_two_leg_sim(
-    rev_us: [u64; 2],
-    lose: &[u64],
-    version_filter: bool,
-) -> (Vec<u64>, u64) {
+/// Returns (seqs the packet threshold declared lost, evaluations on
+/// p0-original gap seqs).
+fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64], arm: bool) -> (Vec<u64>, u64) {
     use super::seq_ring::SeqRing;
     const N: u64 = 4_000;
     const TAU_US: u64 = 100;
@@ -1272,8 +1271,8 @@ fn packet_threshold_two_leg_sim(
         }
     }
     let end_us = N * TAU_US + 10_000;
-    // (arrival at sender, generation tick, next_expected, sack ranges, V)
-    let mut reports: Vec<(u64, u64, u64, Vec<(u64, u64)>, u64)> = Vec::new();
+    // (arrival at sender, generation tick, sack ranges, snapshot version)
+    let mut reports: Vec<(u64, u64, Vec<(u64, u64)>, AboveReport)> = Vec::new();
     let mut k = 0u64;
     let mut tick = 1_000u64;
     while tick <= end_us {
@@ -1284,9 +1283,11 @@ fn packet_threshold_two_leg_sim(
         if let Some(&seen) = received.iter().next_back() {
             let ranges = received_sack_ranges(&received, ne, seen);
             let leg = if k % 3 == 0 { 1 } else { 0 };
-            // V = next_expected + received_above (both v9 wire fields).
-            let v = ne + received.range(ne..).count() as u64;
-            reports.push((tick + rev_us[leg], tick, ne, ranges, v));
+            let v = AboveReport {
+                next_expected: ne,
+                received_above: received.range(ne..).count() as u32,
+            };
+            reports.push((tick + rev_us[leg], tick, ranges, v));
         }
         k += 1;
         tick += 1_000;
@@ -1296,34 +1297,31 @@ fn packet_threshold_two_leg_sim(
     let mut ev: std::collections::HashMap<u32, Vec<u64>> = std::collections::HashMap::new();
     let mut wm = 0u64;
     let mut ack_count = 0u64;
+    let mut order = SnapOrder::default();
     let mut declared: Vec<u64> = Vec::new();
     let mut p0_evals = 0u64;
-    let mut v_max = 0u64;
-    for (_, _, ne, ranges, v) in &reports {
+    for (_, _, ranges, v) in &reports {
+        let ne = v.next_expected;
         // The cumulative point is fetch_max'ed (control_msg.rs) and the
         // evidence pruned below it (sender_phases.rs), as shipped.
-        ack_count = ack_count.max(*ne);
-        for v in ev.values_mut() {
-            v.retain(|&x| x >= ack_count);
+        ack_count = ack_count.max(ne);
+        for e in ev.values_mut() {
+            e.retain(|&x| x >= ack_count);
         }
         if ranges.is_empty() {
             continue;
         }
-        // The PROPOSED law (docs/derivations/dup-diag.md section 2),
-        // test-local: judge only a snapshot at least as new as the newest
-        // applied.
-        if version_filter {
-            if *v < v_max {
-                continue;
-            }
-            v_max = *v;
-        }
-        let gaps = sack_to_gaps(*ne, ranges);
+        order.fold(*v);
+        let gaps = sack_to_gaps(ne, ranges);
         mp_ingest_evidence(&gaps, &map, &mut ev, &mut wm);
+        if !snapver_judges(arm, &order, Some(*v)) {
+            continue;
+        }
         for &(a, b) in &gaps {
             for s in a..=b {
                 // The channel judges original flights only; a declared seq
-                // has a retransmit and leaves the channel.
+                // has a retransmit and leaves the channel. Below the
+                // frontier the store no longer holds the seq (`stale` skip).
                 if s < ack_count || declared.contains(&s) {
                     continue;
                 }
@@ -1340,49 +1338,53 @@ fn packet_threshold_two_leg_sim(
     (declared, p0_evals)
 }
 
-/// RFC 9002 §6.1.1's soundness on a FIFO leg: a seq is declared lost by the
-/// packet threshold only if it IS lost: the declared set equals the lost set,
-/// whatever order the receiver's snapshots reach the sender in.
-///
-/// RED on main (docs/derivations/dup-diag.md): with the p1 return leg 9 ms
-/// slower than p0's, a p1-carried snapshot re-lists p0 holes that the
-/// fresher p0-carried snapshots already showed delivered, and the evidence
-/// those fresher snapshots contributed (≥ 3 later p0 seqs) fires the channel
-/// on them. A real loss holds the cumulative frontier, so those holes stay
-/// above it (as in c8). The in-order arms pin that the scenario reaches the
-/// channel, that it is sound when snapshots arrive in order, and that it
-/// fires on a real loss.
+/// The scenario's preconditions, filter off: with snapshots applied in
+/// generation order the packet threshold is sound (zero loss ⇒ nothing
+/// declared; one real loss ⇒ exactly it), and the scenario does put
+/// p0-original seqs in gap lists.
 #[test]
-#[ignore = "known RED: dup-diag defect, fix pending docs/derivations/dup-diag.md (formula-first)"]
-fn mp_packet_threshold_declares_only_lost_seqs_under_report_reordering() {
-    // In-order return (equal legs), zero loss: nothing declared, and the
-    // scenario does put p0-original seqs in gap lists.
+fn mp_packet_threshold_is_sound_with_in_order_snapshots() {
     let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[], false);
     assert!(evals > 0, "the scenario must put p0-original seqs in gap lists");
     assert!(d.is_empty(), "in-order snapshots, zero loss: declared {d:?}");
-    // In-order return, one p0 original lost early (it holds the frontier for
-    // the whole run): exactly that seq is declared.
     let (d, evals) = packet_threshold_two_leg_sim([1_000, 1_000], &[5], false);
     assert!(evals > 0);
     assert_eq!(d, vec![5], "in-order snapshots: the channel declares the real loss and only it");
-    // Skewed return (p1 leg 9 ms slower), same single loss: still only it.
+}
+
+/// RFC 9002 §6.1.1's soundness on a FIFO leg: the declared set equals the
+/// lost set, whatever order the receiver's snapshots reach the sender in.
+///
+/// KNOWN RED with the filter OFF (the shipped default; docs/derivations/
+/// dup-diag.md). With the p1 return leg 9 ms slower, a p1-carried snapshot
+/// re-lists p0 holes that fresher p0-carried snapshots already showed
+/// delivered, and the evidence those snapshots contributed (≥ 3 later p0
+/// seqs) fires the channel on them. A real loss holds the cumulative
+/// frontier, so those holes stay above it (as in c8). The same assertion
+/// with the filter ON is the next test, which runs.
+#[test]
+#[ignore = "known RED with RWM_RECOV_SNAPVER off: dup-diag defect (docs/derivations/dup-diag.md)"]
+fn mp_packet_threshold_declares_only_lost_seqs_under_report_reordering() {
     let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &[5], false);
     assert!(evals > 0);
+    let p1 = d.iter().filter(|&&s| s % 4 == 3).count();
     assert!(
         d == vec![5],
-        "one real loss (seq 5), FIFO legs, snapshots reordered across the return legs: the packet threshold declared {} seqs lost (first {:?})",
+        "one real loss (seq 5), FIFO legs, snapshots reordered across the return legs: \
+         the packet threshold declared {} seqs lost ({} p0-original, {} p1-original; first {:?})",
         d.len(),
+        d.len() - p1,
+        p1,
         &d[..d.len().min(8)]
     );
 }
 
-/// The derivation's proposed law (docs/derivations/dup-diag.md section 2),
-/// applied test-locally on the same scenario: judging only snapshots whose
-/// receiver version `V = next_expected + received_above` is at least the
-/// newest applied restores the invariant the red test asserts and keeps the
-/// real loss. A check of the formula, not of the engine (unchanged).
+/// The arm-on twin of the red test: with `RWM_RECOV_SNAPVER` the gap path
+/// judges only snapshots at least as new as `V*`, and the declared set is
+/// the lost set at every return-leg skew (either leg slower), with and
+/// without a real loss.
 #[test]
-fn mp_snapshot_version_filter_restores_packet_threshold_soundness() {
+fn mp_packet_threshold_snapver_arm_declares_only_lost_seqs_under_report_reordering() {
     for rev in [[1_000, 1_000], [1_000, 10_000], [10_000, 1_000]] {
         let (d, evals) = packet_threshold_two_leg_sim(rev, &[5], true);
         assert!(evals > 0, "rev {rev:?}: the channel must be reached");
@@ -1390,6 +1392,66 @@ fn mp_snapshot_version_filter_restores_packet_threshold_soundness() {
         let (d, _) = packet_threshold_two_leg_sim(rev, &[], true);
         assert!(d.is_empty(), "rev {rev:?}, zero loss: declared {d:?}");
     }
+}
+
+/// Why BASE (the 20-gap sender horizon) is spared, filter off: the horizon
+/// keeps the OLDEST gaps, and with ≥ `MAX_NACK_GAPS` older outstanding holes
+/// (c8's real losses awaiting their retransmit) every young cross-path hole
+/// lies past the horizon, so no snapshot, stale or fresh, ever lists one.
+/// 31 single-seq p0 losses at 60, 62, …, 120 hold the frontier from 6 ms on;
+/// the stalls that make young p0 holes start at seq 400.
+#[test]
+fn mp_packet_threshold_20_gap_horizon_hides_young_holes_behind_old_losses() {
+    assert_eq!(MAX_NACK_GAPS, 20, "the BASE horizon this test reads");
+    let lose: Vec<u64> = (30..=60).map(|i| 2 * i).collect();
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &lose, false);
+    assert!(evals > 0);
+    assert!(!d.is_empty(), "the old real losses are declared");
+    assert!(
+        d.iter().all(|s| lose.contains(s)),
+        "behind {} old holes the horizon shows no young hole: declared {d:?}",
+        lose.len()
+    );
+}
+
+/// `V*` lives with the transfer. A fresh `SenderState` (built with the
+/// encoder, one per sender run) starts at the no-report version and judges a
+/// new receiver's first report. A `V*` carried over from another seq space
+/// would read that report as stale — but even then the gap path does not go
+/// silent: the tail sweep carries no snapshot and is always judged, so the
+/// cumulative blocker is still served.
+#[test]
+fn snap_order_lives_with_the_transfer_and_the_tail_sweep_bypasses_it() {
+    let st = super::emit_source::SenderState::new(
+        crate::fec::FecBackend::default(),
+        1200,
+        384,
+        2,
+        false,
+        false,
+        0.0,
+        0,
+        0,
+    );
+    assert_eq!(st.snap_order, SnapOrder::default());
+    let reset = Some(AboveReport { next_expected: 0, received_above: 1 });
+    assert!(snapver_judges(true, &st.snap_order, reset), "a fresh transfer judges its first report");
+    let mut carried = SnapOrder::default();
+    carried.fold(AboveReport { next_expected: 1_000_000, received_above: 5 });
+    assert!(!snapver_judges(true, &carried, reset), "a foreign V* reads the reset report as stale");
+    assert!(snapver_judges(true, &carried, None), "the tail sweep is never filtered");
+    assert!(snapver_judges(false, &carried, reset), "arm off: everything is judged");
+}
+
+/// Coalescing under the arm keeps the newest snapshot (ties: the later one);
+/// off, the last dequeued, as shipped.
+#[test]
+fn snapver_coalescing_keeps_the_newest_snapshot() {
+    let v = |ne, a| Some(AboveReport { next_expected: ne, received_above: a });
+    assert!(snapver_coalesce_keeps(false, v(10, 5), v(9, 0)), "off: last dequeued wins");
+    assert!(!snapver_coalesce_keeps(true, v(10, 5), v(9, 0)), "on: an older snapshot is dropped");
+    assert!(snapver_coalesce_keeps(true, v(10, 5), v(10, 5)), "on: a tie replaces");
+    assert!(snapver_coalesce_keeps(true, v(10, 5), v(10, 6)));
 }
 
 // ----- Per-path batch serial namespaces -----
