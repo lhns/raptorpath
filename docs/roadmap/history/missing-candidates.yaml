@@ -1,16 +1,16 @@
 generated_from:
   nodes: docs/roadmap/nodes.yaml
   main_ref: github/main
-  head: bf2988065892d1ff1d75852f5330e32383bab642
+  head: 9a14ebcd1416c50be0143b8f2f5b16b13f0a9545
 summary:
-  nodes_total: 232
-  nodes_without_start: 50
-  commits_all_refs: 1871
+  nodes_total: 254
+  nodes_without_start: 49
+  commits_all_refs: 1873
   adrs:
     total: 76
-    uncited_strict: 34
-    uncited_even_broad: 33
-    uncited_and_deleted: 34
+    uncited_strict: 0
+    uncited_even_broad: 0
+    uncited_and_deleted: 0
   status_sections:
     total: 56
     uncited_strict: 0
@@ -23,14 +23,13 @@ summary:
     uncited_even_broad: 0
   unmerged_branches:
     total: 37
-    uncited_strict: 1
-    uncited_even_broad: 1
+    uncited_strict: 0
+    uncited_even_broad: 0
   uncovered_commit_clusters:
-    total: 29
+    total: 3
     months_examined:
     - 2026-04
-    - 2026-08
-    uncovered_commits_in_clusters: 118
+    uncovered_commits_in_clusters: 12
   paper_s10_rows:
     total: 70
     uncited_strict: 15
@@ -38,9 +37,9 @@ summary:
     cited_only_by_commit_hash: 0
 months:
 - month: 2026-03
-  nodes: 16
+  nodes: 22
   commits: 59
-  commits_per_node: 3.7
+  commits_per_node: 2.7
 - month: 2026-04
   nodes: 2
   commits: 49
@@ -50,9 +49,9 @@ months:
   commits: 335
   commits_per_node: 6.8
 - month: 2026-08
-  nodes: 22
+  nodes: 38
   commits: 454
-  commits_per_node: 20.6
+  commits_per_node: 11.9
 - month: 2026-09
   nodes: 21
   commits: 239
@@ -62,9 +61,9 @@ months:
   commits: 271
   commits_per_node: 13.6
 - month: 2026-11
-  nodes: 52
-  commits: 464
-  commits_per_node: 8.9
+  nodes: 53
+  commits: 466
+  commits_per_node: 8.8
 adrs:
 - num: 1
   title: Block Assembly Needs Flush Timeout
@@ -76,9 +75,9 @@ adrs:
   paths:
   - docs/adr/0001-block-assembly-timeout.md
   - raptorpath/docs/adr/0001-block-assembly-timeout.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: rec-recovery-timeouts (timeout)
+  possible_match: ''
 - num: 2
   title: Packet Framing After FEC Decode
   added: '2026-03-12'
@@ -141,9 +140,9 @@ adrs:
   paths:
   - docs/adr/0006-protocol-hint-block-sizing.md
   - raptorpath/docs/adr/0006-protocol-hint-block-sizing.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: model-fix-hint-keyed-paths (hint)
+  possible_match: ''
 - num: 7
   title: RTT Calculation Depends on Clock Synchronization
   added: '2026-03-12'
@@ -167,7 +166,7 @@ adrs:
   paths:
   - docs/adr/0008-blockstart-not-handled.md
   - raptorpath/docs/adr/0008-blockstart-not-handled.md
-  cited: false
+  cited: true
   cited_other_fields: false
   possible_match: ''
 - num: 9
@@ -180,9 +179,9 @@ adrs:
   paths:
   - docs/adr/0009-no-congestion-control.md
   - raptorpath/docs/adr/0009-no-congestion-control.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: rate-fec-rate-v1 (control)
+  possible_match: ''
 - num: 10
   title: No Handshake or Protocol Versioning
   added: '2026-03-12'
@@ -271,9 +270,9 @@ adrs:
   paths:
   - docs/adr/0016-block-interleaving.md
   - raptorpath/docs/adr/0016-block-interleaving.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-block-pipeline (block)
+  possible_match: ''
 - num: 17
   title: MTU-Aware Symbol Sizing
   added: '2026-03-13'
@@ -335,9 +334,9 @@ adrs:
   summary: RaptorPath's FEC layer was hardcoded to RaptorQ (RFC 6330) throughout.
   paths:
   - raptorpath/docs/adr/0021-swappable-fec-backend.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-mettle (backend, swappable)
+  possible_match: ''
 - num: 22
   title: Sliding Window FEC Architecture
   added: '2026-03-14'
@@ -347,9 +346,9 @@ adrs:
   summary: 'Raptorpath''s FEC layer is block-based: data accumulates in a buffer until a block is full or a timeout fires, then the entire block is encoded, interleaved, and transmitted.'
   paths:
   - raptorpath/docs/adr/0022-sliding-window-fec.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-legacy-rlc (sliding, window)
+  possible_match: ''
 - num: 23
   title: Gilbert-Elliott HMM Loss Model
   added: '2026-03-14'
@@ -372,9 +371,9 @@ adrs:
   summary: Raptorpath's BBR-style congestion controller (ADR-0019) tracks min_rtt in a 10-second sliding window to estimate the propagation delay baseline.
   paths:
   - raptorpath/docs/adr/0024-bbr-probe-rtt-phase.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: rec-reliable-window (phase)
+  possible_match: ''
 - num: 25
   title: WindowNack Sender-Side Repair
   added: '2026-03-14'
@@ -384,9 +383,9 @@ adrs:
   summary: In sliding-window FEC mode (ADR-0022), the receiver detects gaps in the received sequence and sends WindowNack control messages containing gap ranges back to the sender.
   paths:
   - raptorpath/docs/adr/0025-window-nack-sender-repair.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: rec-early-arq (nack, repair)
+  possible_match: ''
 - num: 26
   title: Multipath Window Scheduling
   added: '2026-03-14'
@@ -396,9 +395,9 @@ adrs:
   summary: The sliding-window sender (run_window_sender) used select_window_paths() which picked source and repair paths based solely on loss rate.
   paths:
   - raptorpath/docs/adr/0026-multipath-window-scheduling.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-l2-multipath (multipath)
+  possible_match: ''
 - num: 27
   title: Streaming Codes (Badr/Martinian Delay-Optimal)
   added: '2026-03-14'
@@ -408,9 +407,9 @@ adrs:
   summary: raptorpath's sliding-window FEC backends (RLC, METTLE) use random linear combinations or peeling decoders without awareness of the channel's burst structure.
   paths:
   - raptorpath/docs/adr/0027-streaming-codes.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-streaming-code (code, streaming)
+  possible_match: ''
 - num: 28
   title: METTLE Performance Analysis — Edge Probability Bug + Integration Fixes
   added: '2026-03-15'
@@ -420,9 +419,9 @@ adrs:
   summary: 'Real-world benchmarks (2026-03-14) showed METTLE severely underperforming all other FEC backends:'
   paths:
   - raptorpath/docs/adr/0028-mettle-performance-analysis.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-mettle (mettle)
+  possible_match: ''
 - num: 29
   title: Tapered Repair Interleaving
   added: '2026-03-15'
@@ -444,9 +443,9 @@ adrs:
   summary: The FEC backend was fixed at startup via config (--fec-backend / TOML).
   paths:
   - raptorpath/docs/adr/0030-runtime-backend-switching.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-backend-switch (backend, switching)
+  possible_match: ''
 - num: 31
   title: Network Simulation Harness
   added: '2026-03-17'
@@ -469,9 +468,9 @@ adrs:
   summary: 'The ablation benchmark (docs/ablation-results-2026-03-16.md) revealed three actionable findings:'
   paths:
   - raptorpath/docs/adr/0032-benchmark-recommendations.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-l0-sim-bench (ablation)
+  possible_match: ''
 - num: 33
   title: Full-Pipeline Ablation Benchmark
   added: '2026-03-17'
@@ -481,9 +480,9 @@ adrs:
   summary: The existing ablation_bench.rs (ADR-0032) measures FEC-only features (PI feedback, GE burst factor, realtime burst extra) in isolation using a channel model applied directly to symbol arrays.
   paths:
   - raptorpath/docs/adr/0033-pipeline-ablation-benchmark.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-l0-sim-bench (ablation)
+  possible_match: ''
 - num: 34
   title: Per-Feature Tradeoff Ablation Benchmark
   added: '2026-03-17'
@@ -493,9 +492,9 @@ adrs:
   summary: ADR-0033 introduced a full-pipeline ablation benchmark with one-feature-off analysis.
   paths:
   - raptorpath/docs/adr/0034-tradeoff-ablation-benchmark.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-l0-sim-bench (ablation)
+  possible_match: ''
 - num: 35
   title: Algorithm Recommendations and Metric Architecture Review
   added: '2026-03-17'
@@ -505,9 +504,9 @@ adrs:
   summary: 'Three benchmark suites now provide comprehensive data on every major algorithm in the pipeline:'
   paths:
   - raptorpath/docs/adr/0035-algorithm-recommendations.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: obs-otel-design (metric)
+  possible_match: ''
 - num: 36
   title: Raptorpath vs Reliable QUIC / MPTCP Transport Comparison Benchmark
   added: '2026-03-17'
@@ -517,9 +516,9 @@ adrs:
   summary: All existing benchmarks compare raptorpath FEC backends against each other.
   paths:
   - raptorpath/docs/adr/0036-transport-comparison-benchmark.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: rec-reliable-window (reliable)
+  possible_match: ''
 - num: 37
   title: NACK Source Retransmit, Cross-Path Repair, Fractional Repair Accumulator
   added: '2026-03-18'
@@ -541,9 +540,9 @@ adrs:
   summary: The transport comparison benchmark (ADR-0036) shows raptorpath with 38-50% "overhead" across all scenarios.
   paths:
   - raptorpath/docs/adr/0038-benchmark-overhead-taxonomy.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-s51-design (benchmark)
+  possible_match: ''
 - num: 39
   title: Overhead Reduction — Benchmark Fix and Symbol Packing
   added: '2026-03-18'
@@ -553,9 +552,9 @@ adrs:
   summary: ADR-0038 identified five layers of overhead in the raptorpath protocol.
   paths:
   - raptorpath/docs/adr/0039-overhead-reduction.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-s51-design (benchmark)
+  possible_match: ''
 - num: 40
   title: Benchmark Repair Alignment + Multi-Backend Comparison
   added: '2026-03-18'
@@ -565,9 +564,9 @@ adrs:
   summary: The transport comparison benchmark (ADR-0036) showed raptorpath with 38-50% overhead across all scenarios, even on near-lossless datacenter links.
   paths:
   - raptorpath/docs/adr/0040-benchmark-repair-alignment.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cod-mettle (backend)
+  possible_match: ''
 - num: 41
   title: SIMD-Accelerated GF(2^8) Multiply-Accumulate
   added: '2026-03-18'
@@ -604,7 +603,7 @@ adrs:
   summary: 'The bench suite (ADR-0042) revealed three problems with the FEC rate controller:'
   paths:
   - raptorpath/docs/adr/0043-information-theoretic-fec-rate.md
-  cited: false
+  cited: true
   cited_other_fields: false
   possible_match: ''
 - num: 44
@@ -616,9 +615,9 @@ adrs:
   summary: 'An audit of the benchmark suite revealed several methodology issues that undermined the validity of reported results:'
   paths:
   - raptorpath/docs/adr/0044-benchmark-methodology.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-s51-design (benchmark)
+  possible_match: ''
 - num: 45
   title: Comprehensive Matrix Benchmark
   added: '2026-03-20'
@@ -628,9 +627,9 @@ adrs:
   summary: The benchmark suite output format changed multiple times across ADRs 0033–0044, making cross-commit comparison impossible.
   paths:
   - raptorpath/docs/adr/0045-matrix-benchmark.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-pipeline-verification (matrix)
+  possible_match: ''
 - num: 46
   title: NACK Congestion Awareness + Simulation Realism
   added: '2026-03-20'
@@ -640,9 +639,9 @@ adrs:
   summary: 'The ADR-0045 matrix benchmark (189 cells × 30 trials) exposed several issues:'
   paths:
   - raptorpath/docs/adr/0046-nack-congestion-sim-realism.md
-  cited: false
-  cited_other_fields: true
-  possible_match: rec-early-arq (nack)
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
 - num: 47
   title: Test Accuracy + Protocol Optimization
   added: '2026-03-20'
@@ -652,7 +651,7 @@ adrs:
   summary: Post-ADR-0046, the benchmark infrastructure had cwnd pacing, congestion-aware NACK, and realistic retransmit simulation.
   paths:
   - raptorpath/docs/adr/0047-test-accuracy-protocol-optimization.md
-  cited: false
+  cited: true
   cited_other_fields: false
   possible_match: ''
 - num: 48
@@ -664,7 +663,7 @@ adrs:
   summary: 'After ADR-0047 fixed LTE recovery (1%→100%) and reduced WiFi overhead (39.6%→21.4%), window backends still had excessive overhead:'
   paths:
   - raptorpath/docs/adr/0048-overhead-reduction.md
-  cited: false
+  cited: true
   cited_other_fields: false
   possible_match: ''
 - num: 49
@@ -676,9 +675,9 @@ adrs:
   summary: The matrix benchmark (ADR-0045) produces JSON files with 10 metrics across 168 cells per run, accumulating across commits.
   paths:
   - raptorpath/docs/adr/0049-benchmark-dashboard.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-s51-design (benchmark)
+  possible_match: ''
 - num: 50
   title: FEC Rate Control Redesign — Principled Budget Architecture
   added: '2026-03-21'
@@ -729,9 +728,9 @@ adrs:
     depth.
   paths:
   - raptorpath/docs/adr/0053-generation-inert-era-audit.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: meas-gen-inert-era (generation, inert)
+  possible_match: ''
 - num: 54
   title: Substrate Congestion Control Is Policy — BBR Default (`RWM_QUIC_CC`)
   added: '2026-07-21'
@@ -781,9 +780,9 @@ adrs:
     #84 shipped with a receiver-parallelization plan, '
   paths:
   - raptorpath/docs/adr/0057-profile-before-parallelize.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: perf-threading-r3 (profile, threading)
+  possible_match: ''
 - num: 58
   title: Path-Scaled Outstanding Pool; the Per-Path Account Family Refuted for Asymmetric Cells
   added: '2026-07-21'
@@ -793,9 +792,9 @@ adrs:
   summary: 'Wall #7, the actual multipath binder: the outstanding pool (RELIABLE_STORE_MAX = 1024) is a per-TRANSFER constant — a Little''s-law ~100–128 Mbit wall, CPU-invariant.'
   paths:
   - raptorpath/docs/adr/0058-path-scaled-outstanding-pool.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: store-xn-pool (path, pool, scaled)
+  possible_match: ''
 - num: 59
   title: Per-Path Recovery Clocks — RFC 9002 loss detection generalized per path
   added: '2026-07-21'
@@ -889,9 +888,9 @@ adrs:
     (per-path BtlBw pacing of source and repair), '
   paths:
   - raptorpath/docs/adr/0065-daps-era-refutations.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: rate-saturation-rstar (aware)
+  possible_match: ''
 - num: 66
   title: The Deprecation Register — two-stage retirement for refuted mechanisms
   added: '2026-07-21'
@@ -901,9 +900,9 @@ adrs:
   summary: The consolidation pass had to decide what to do with a decade's worth (in project time) of refuted mechanisms.
   paths:
   - raptorpath/docs/adr/0066-deprecation-register.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: infra-consolidation (deprecation, register)
+  possible_match: ''
 - num: 67
   title: The Consolidated Default Stack — the shipped default IS the best-measured configuration
   added: '2026-07-21'
@@ -914,9 +913,9 @@ adrs:
     WORST measured configuration — stock Cubic under'
   paths:
   - raptorpath/docs/adr/0067-consolidated-default-stack.md
-  cited: false
+  cited: true
   cited_other_fields: false
-  possible_match: cc-bbr-default (default)
+  possible_match: ''
 - num: 68
   title: A better Copa — δ-priced probing over a measured rate model with ε̂-referenced loss discrimination
   added: '2026-07-22'
@@ -1979,10 +1978,10 @@ unmerged_branches:
   last_subject: 'l1 adv cells: review fixes - queue-depth check independent of burst speed, aw_ping + truth counter in up, EXIT-trap teardown in check, machinery-only '
   unique_commits: 2
   first_date: '2026-11-13'
-  cited: false
-  cited_how: ''
+  cited: true
+  cited_how: branch name
   cited_other_fields: false
-  possible_match: cc-defect-copa-minrtt (queue)
+  possible_match: ''
 - branch: base53
   last_date: '2026-11-13'
   last_subject: 'merge: test-debts (6581d259: drops the false holeclass age_n >= fed assertion) onto base53 - §53 BASE; no conflicts'
@@ -2131,7 +2130,7 @@ commit_clusters:
   - '0c3bd4c5 Phase 2: SACK-extended WindowAck replaces NACK sending'
   - 'ee867a1a Phase 1b: Wire P_lost into window sender for repair/retransmit mixing'
   - '1a6a8154 Phase 1a: Add TaperFunction and p_lost to rate controller'
-  possible_match: rec-reliable-window
+  possible_match: meas-gap-phases, rec-reliable-window
 - month: 2026-04
   cluster: resolve and
   commits: 3
@@ -2142,292 +2141,6 @@ commit_clusters:
   - 'c25e36e6 Resolve #15 (SACK spec) and #19 (back-pressure mechanism)'
   - '82fa398f Resolve #25 (GE model exact) and #17 (Copa d_copa rename)'
   - 'bdf796ea Resolve #11 (T_cut algorithm) and #12 (Mode 3 convergence)'
-  possible_match: ''
-- month: 2026-08
-  cluster: ship the wins
-  commits: 11
-  uncovered: 11
-  first: '2026-08-07'
-  last: '2026-08-07'
-  examples:
-  - '8afd4dd7 Ship The Wins 1b: RESULTS + verdicts (both seeds) — arm A''s MECHANISM lands completely and c7 gets W'
-  - '2eb88de3 Ship The Wins 2 (shal8 anchor): RESULTS + STRUCTURAL BOUND (both seeds) - bbr_rs falsified x2 at 21-'
-  - '3a4a1ea6 Ship The Wins 1b: pre-battery MECHANISM SMOKE recorded — dr(17-34k) > sr(10-13k) with btlbw(125-418k'
-  possible_match: ''
-- month: 2026-08
-  cluster: alpha-sweep
-  commits: 8
-  uncovered: 8
-  first: '2026-08-20'
-  last: '2026-08-20'
-  examples:
-  - 'e0334855 alpha-sweep: THE SCORED RESULT - NO VERDICT, UNSEPARATED at 50 of 50 treatment pairs; item 2 CLOSES '
-  - '3980434c alpha-sweep: THE CALIBRATION AND SMOKE, DISCHARGED - 36 invocations, 0 aborts, 0 VOID, and three def'
-  - '9774219c alpha-sweep: CALIBRATION FIX - [QCLK] and [QALPHA] were selected by LOG, not by ROLE'
-  possible_match: ''
-- month: 2026-08
-  cluster: unlock the default
-  commits: 7
-  uncovered: 7
-  first: '2026-08-07'
-  last: '2026-08-08'
-  examples:
-  - '65e92b3a Unlock The Default 2: L1 BATTERY RESULTS + VERDICT - c7 fails both seeds with patience DEMONSTRABLY '
-  - '0f287553 Unlock The Default 2: battery log parser (goodput + same-session Sigma + the pf/sidle2/evt mechanism'
-  - '4307a6cc Unlock The Default 2: PRE-BATTERY MEASUREMENT - both premises refuted, recorded BEFORE the battery'
-  possible_match: cc-bbr-default
-- month: 2026-08
-  cluster: latency lever
-  commits: 6
-  uncovered: 6
-  first: '2026-08-10'
-  last: '2026-08-10'
-  examples:
-  - 'f6d95c99 Latency Lever: BATTERY RESULTS - the limit is a signed, predictable latency control at goodput parit'
-  - 'fc860371 Latency Lever: lat_report.py - scores the battery against the PRE-REGISTERED predictions'
-  - 'ec6a5ec7 Latency Lever: PRE-REGISTRATION + the calibration it is written against - committed BEFORE the score'
-  possible_match: meas-goal-0819, rec-gap-horizon, rec-leverb-c1d-cost
-- month: 2026-08
-  cluster: flip
-  commits: 5
-  uncovered: 5
-  first: '2026-08-06'
-  last: '2026-08-19'
-  examples:
-  - 'e9c6b242 flip: RWM_DELTA_CAP DEFAULT ON - the CoDel-derived setpoint ships'
-  - '6a653802 flip: RWM_SUM_CAP DEFAULT ON - the xN deletion ships'
-  - '9f6e56ba flip: RWM_HONEST_ANCHOR DEFAULT ON - the value-identical O(1) max filter ships'
-  possible_match: store-pool-anchor-flip
-- month: 2026-08
-  cluster: goal-gate
-  commits: 5
-  uncovered: 4
-  first: '2026-08-08'
-  last: '2026-08-12'
-  examples:
-  - '3d2a7907 goal-gate: Gauge Reachability -- the ledger entry, the audit of every other instrument, and the rule'
-  - '32c7f473 goal-gate: SF Anchor Suspect - REFUTED, and the L1 contrast that already said so'
-  - '91e74e2a goal-gate: record the dead-code batch-1 refactor (and drop the two imports the deletions orphaned)'
-  possible_match: meas-adr51-scenarios, meas-goal-0819, obs-gates-echo, rec-goal100
-- month: 2026-08
-  cluster: era battery
-  commits: 4
-  uncovered: 4
-  first: '2026-08-19'
-  last: '2026-08-19'
-  examples:
-  - 'f605f925 Era Battery: THE SCORED RESULT — ERA LEDGER item 1 closed, scored against the pre-registration and n'
-  - '6460ae73 Era Battery: THE CONTRACT''S COMPLETION — the calibration''s headroom table, filled, and the instrumen'
-  - 'a24d5a48 Era Battery: the drivers — the TWO-BINARY protocol, the PER-ERA echo tables, and the abort table tha'
-  possible_match: place-stage2-battery, rate-r-battery
-- month: 2026-08
-  cluster: rwm_sum_cap
-  commits: 4
-  uncovered: 4
-  first: '2026-08-18'
-  last: '2026-08-19'
-  examples:
-  - '923aa9dc merge: RWM_SUM_CAP DEFAULT ON - the xN deletion ships; the shipped store-cap law is now cap = clamp('
-  - '6a653802 flip: RWM_SUM_CAP DEFAULT ON - the xN deletion ships'
-  - '5ddf7f6b merge: ladder item 1 - RWM_SUM_CAP (the xN deletion, one expression both forms), boot DISSOLVES into'
-  possible_match: ''
-- month: 2026-08
-  cluster: ladder battery
-  commits: 4
-  uncovered: 4
-  first: '2026-08-18'
-  last: '2026-08-19'
-  examples:
-  - '27e36e3f Ladder Battery: RESULTS - the xN deletion DELIVERED and recommended for flip; the sender-truth loss '
-  - '2ee194b9 Ladder Battery: THE CONTRACT''S COMPLETION - the headroom table, filled by the same-session calibrati'
-  - '6323f3c3 Ladder Battery: the drivers — battery, all, top-up, the calibration pass, parser, scorer'
-  possible_match: place-stage2-battery, rate-r-battery
-- month: 2026-08
-  cluster: mode-hunt battery
-  commits: 4
-  uncovered: 4
-  first: '2026-08-12'
-  last: '2026-08-12'
-  examples:
-  - 'cfc1793f mode-hunt battery: RESULTS -- STOP RULE fired again (UNSCORED); the halving lead is INVERTED; the c8'
-  - '4569c6c2 mode-hunt battery: MAIN POOL ledgers + scorer; symmetric top-up LAUNCHED'
-  - '5d089d0a mode-hunt battery: the driver (modehunt_battery.sh + modehunt_all.sh)'
-  possible_match: place-stage2-battery, rate-r-battery
-- month: 2026-08
-  cluster: slack-bench
-  commits: 4
-  uncovered: 4
-  first: '2026-08-09'
-  last: '2026-08-10'
-  examples:
-  - '0e187521 slack-bench: METHOD CORRECTION - read idle AT the predicted S, not at the next grid point above it; '
-  - '7e03ef9b slack-bench: RESULTS - the three-term model SURVIVES; the CLOCK is what fails it, and the span term '
-  - '530bbaa2 slack-bench: PRE-REGISTRATION - the three terms DERIVED, the numbers written down BEFORE the sweep'
-  possible_match: meas-l0-sim-bench, perf-bbrrs-ns-cost, place-slack
-- month: 2026-08
-  cluster: verdict battery
-  commits: 3
-  uncovered: 3
-  first: '2026-08-21'
-  last: '2026-08-21'
-  examples:
-  - 'c0e221cc Verdict battery: CALIBRATION DISCHARGED + the pre-registration AMENDED, before the scored run'
-  - 'eb50cc59 Verdict battery: PRE-REGISTRATION + the two-arm driver, committed BEFORE the VM is touched'
-  - 'a26696fb Verdict battery: PAPER 16.79 - THE FORMULA IS DECIDED, in its own commit, before any engine change'
-  possible_match: infra-adr73, place-stage2-battery, rate-r-battery
-- month: 2026-08
-  cluster: sweep
-  commits: 3
-  uncovered: 3
-  first: '2026-08-21'
-  last: '2026-08-21'
-  examples:
-  - 'a8bcce05 (q, refresh) SWEEP: THE SCORED RESULT - FLAT. The floor lifts, the sub-floor region is ENTERED at 3/'
-  - 'a3f2e3f3 (q, refresh) SWEEP: CALIBRATION DISCHARGED - F1 SATISFIED 3/3, and a P-B specification failure REPAI'
-  - 'd7daceb5 (q, refresh) SWEEP: PRE-REGISTRATION + its harness - committed BEFORE the VM''s first number is read'
-  possible_match: ''
-- month: 2026-08
-  cluster: successor arrival
-  commits: 3
-  uncovered: 3
-  first: '2026-08-21'
-  last: '2026-08-21'
-  examples:
-  - '821de6ae Successor Arrival: THE SCORED RESULT - the pre-registered anchor DOES NOT EXIST; the original leads '
-  - 'f497bdc4 Successor Arrival: PRE-REGISTRATION + the battery it is written against - committed BEFORE the VM, i'
-  - '1064e8d1 Successor Arrival: [SUCC] - the instrument for the measurand the fire-cause pass NAMED and never mea'
-  possible_match: ''
-- month: 2026-08
-  cluster: quantile-native sweep
-  commits: 3
-  uncovered: 3
-  first: '2026-08-21'
-  last: '2026-08-21'
-  examples:
-  - '6b3d3c38 Quantile-Native α-Sweep: THE SCORED RESULT - the arms separate for the first time, and F2 fires at f'
-  - 'a3d35377 Quantile-Native α-Sweep: THE CALIBRATION AND SMOKE, DISCHARGED - and the pre-registered at-risk cell'
-  - 'ab545cfe Quantile-Native α-Sweep: PRE-REGISTRATION - goal #101 item 3''s re-run, written and committed BEFORE '
-  possible_match: place-submax-anchor
-- month: 2026-08
-  cluster: 'merge: gap phase'
-  commits: 3
-  uncovered: 3
-  first: '2026-08-19'
-  last: '2026-08-19'
-  examples:
-  - 'b4be2489 merge: gap phase 2 SCORED - no interaction to name; item 3 closes NEEDS-MORE-named'
-  - 'c2e20beb merge: gap phase 2 launched - amendment first, two instrument defects fixed'
-  - '5bf1a346 merge: gap phase 1 SCORED - D1 selected; the drift is real but cannot explain P1'
-  possible_match: infra-inventory-merges, meas-guard-41c, meas-guard-v2, perf-ack-merge
-- month: 2026-08
-  cluster: sched
-  commits: 3
-  uncovered: 3
-  first: '2026-08-10'
-  last: '2026-08-18'
-  examples:
-  - 'bea1e4fd sched: assert Copa''s srtt against RFC 6298 computed independently (matrix row 13)'
-  - '1d835478 sched: fix the EIGHTH HashMap-order flake - the cold-price inertness test compared two hashers, not '
-  - '21de95b5 sched: FIX the flaky replacement test - it asserted the HASHER, not the path sets'
-  possible_match: perf-sched-split
-- month: 2026-08
-  cluster: 'merge: sweep item'
-  commits: 3
-  uncovered: 3
-  first: '2026-08-18'
-  last: '2026-08-18'
-  examples:
-  - 'bee23f6f merge: sweep item 5 - both un-metered channels CHARGED; the release ledger FIXED 1:1 by construction'
-  - '0128bb5c merge: sweep item 6 REFUTED - the quad lock-in was the bench''s own pid<2 gauge guards; placement is '
-  - '346e6a0c merge: sweep item 3 FIXED - loss estimator rides sender truth; contamination was 37-93x, not 2-5.6x'
-  possible_match: infra-inventory-merges, meas-guard-41c, meas-guard-v2, perf-ack-merge
-- month: 2026-08
-  cluster: cap-law cluster
-  commits: 3
-  uncovered: 3
-  first: '2026-08-18'
-  last: '2026-08-18'
-  examples:
-  - '7e302e2a Cap-law cluster: the LEDGER — two FIXED, one REFUTED-with-record, the gate battery, and the wire que'
-  - '8bab64c3 Cap-law cluster: the derived floor, the AGREEMENT-TEST CLASS, and the refutation as an executable re'
-  - '6335e206 Cap-law cluster: THE FORMULAS AND THE ADJUDICATIONS, IN THE PAPER, BEFORE THE CODE'
-  possible_match: ''
-- month: 2026-08
-  cluster: deadwall battery
-  commits: 3
-  uncovered: 3
-  first: '2026-08-12'
-  last: '2026-08-12'
-  examples:
-  - '465c28ef deadwall battery: two instrument bugs the SMOKE caught (both would have read safe)'
-  - '5fce47cf deadwall battery: the drivers, the parser and the scorer (committed before any run)'
-  - '2dd7bb2d deadwall battery: the derived round''s MISSING liveness echo (instrument only, no behaviour)'
-  possible_match: place-stage2-battery, rate-r-battery
-- month: 2026-08
-  cluster: sf latency feedback
-  commits: 3
-  uncovered: 3
-  first: '2026-08-12'
-  last: '2026-08-12'
-  examples:
-  - 'c0fb1d79 sf latency feedback (3/3): RESULTS — the hypothesis is REFUTED on three independent legs, and the c8'
-  - '2b14cc60 sf latency feedback (2/3): the closed-loop Reno source + THE PRE-REGISTRATION (no scored number read'
-  - '4320fc48 sf latency feedback (1/3): the premise refuted by READING, and the c8 collapse mode NAMED from colum'
-  possible_match: meas-goal-0819, rate-dof-ledger, rec-p10a-repair-floor
-- month: 2026-08
-  cluster: coupling model
-  commits: 3
-  uncovered: 3
-  first: '2026-08-11'
-  last: '2026-08-12'
-  examples:
-  - '7ad65ef1 coupling model: RESULTS — NOT VALIDATED, and the refutation is arithmetic'
-  - '11db2992 coupling model: the readout, the chain walk, and five always-on pins'
-  - '82d84637 coupling model: the frontier-span store + PRE-REGISTRATION (no run taken)'
-  possible_match: model-bound-tests, model-bound-tests-unrun, model-defect-dead-machine, model-defect-tcut
-- month: 2026-08
-  cluster: sf accounting axis
-  commits: 3
-  uncovered: 3
-  first: '2026-08-11'
-  last: '2026-08-11'
-  examples:
-  - '4f67ba7d SF accounting axis (2/2): RESULTS — the U-fold''s CELL reproduces (c7 10.0x -> 1.0x, c8 2.7x -> 7.1x)'
-  - '8beb7ad1 SF accounting axis (1b/2): determinism of the ON arm — the max-loss estimator pick had the same Hash'
-  - '4b3910e3 SF accounting axis (1/2): the engine''s un-metered recovery ledger at the SF bench + the §12 bounding'
-  possible_match: ''
-- month: 2026-08
-  cluster: coverage
-  commits: 3
-  uncovered: 3
-  first: '2026-08-10'
-  last: '2026-08-10'
-  examples:
-  - 'e113c9ab coverage: VERDICT - the fourth term is REFUTED; goal-gate "Coverage: derivable or not" + paper 16.44'
-  - '2b55dbda coverage: the phase-1.3 instrument - Little''s law on the store, the CLOSED dwell loop, the delta cei'
-  - 'dda6670e coverage: DRIVER CORRECTION - the cold-start ack artifact that SET the measured backlog at c1/c2'
-  possible_match: ''
-- month: 2026-08
-  cluster: receiver per-message wall
-  commits: 3
-  uncovered: 3
-  first: '2026-08-06'
-  last: '2026-08-07'
-  examples:
-  - 'dc4fb783 Receiver Per-Message Wall: RESULTS + verdicts (both seeds) — c1 est +62/+63% and eb+est 446-505 (wal'
-  - '774e28a3 Receiver Per-Message Wall: STEP0 re-baseline + STEP1 profile RESULTS + pre-build AMENDMENT (RWM_EST_'
-  - '1ce8ba25 Receiver Per-Message Wall: pre-registration (discipline item 11) + STEP0/STEP1 drivers — committed B'
-  possible_match: perf-parallelisation, perf-receiver-followups, perf-receiver-r1, perf-receiver-r2
-- month: 2026-08
-  cluster: adversarial cells
-  commits: 3
-  uncovered: 3
-  first: '2026-08-06'
-  last: '2026-08-06'
-  examples:
-  - '9840854b Adversarial Cells (B1): ops-timeline correction - lock released 15:43:35Z, A1 took it 15:43:43Z (cle'
-  - '754139c3 Adversarial Cells (B1): RESULTS + verdicts (both seeds) - the breakage map inverts the shallow-buffe'
-  - '6c8c3d38 Adversarial Cells (B1): pre-registration (discipline item 11) + adv_cells/adv_battery harness + tail'
   possible_match: ''
 paper_s10_rows:
 - group: Coding and decoding

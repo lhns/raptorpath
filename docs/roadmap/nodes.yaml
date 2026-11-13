@@ -16,6 +16,10 @@ nodes:
   - status §4
   - status §3.7 row 236
   - status §3.7 row 238
+  - ADR-0001
+  - ADR-0006
+  - ADR-0008
+  - ADR-0016
   verdict_quote: 'displaced: the Stage-3 re-test found the window not worse at every cell and hint and ahead beyond MDE at 7 of 10 (every Auto cell); a construction-time mode switch'
   headline: ''
   depends_on: []
@@ -33,7 +37,7 @@ nodes:
   - branch cleanup/a4-block-retest
   overview: true
   plain: The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic.
-  notes: 'The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); §4 found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only.'
+  notes: 'The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); §4 found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13.'
 - id: cod-mettle
   title: METTLE swappable FEC backend
   track: cod
@@ -42,6 +46,8 @@ nodes:
   outcome: dead-end
   evidence:
   - paper §10 row METTLE FEC backend
+  - ADR-0021
+  - ADR-0028
   verdict_quote: a sparse streaming code needing ~15 % decode overhead; reachable only by explicit opt-in, with the loss-threshold backend selector's high-loss tier routed to RLC
   headline: ''
   depends_on: []
@@ -56,6 +62,7 @@ nodes:
   - commit 10ac80fc
   overview: false
   notes: 'Removal was the owner''s call (user 2026-08-07). Dates: paper §10 rows carry an end (removal) date only.'
+  plain: An experimental lighter error-correcting code that needed more spare data than the standard one, so it was dropped.
 - id: cod-backend-switch
   title: Mid-stream FEC backend switching
   track: cod
@@ -64,6 +71,7 @@ nodes:
   outcome: dead-end
   evidence:
   - paper §10 row Mid-stream backend switching (loss-threshold selector)
+  - ADR-0030
   verdict_quote: 'no cross-code algebra: a switch strands every in-flight symbol or forces a drain; a threshold on ε̂ oscillates'
   headline: ''
   depends_on: []
@@ -76,6 +84,7 @@ nodes:
   - commit cb99955d
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
+  plain: Switching the error-correcting code in the middle of a transfer, which strands the data already in flight.
 - id: cod-streaming-code
   title: Streaming two-layer Realtime code
   track: cod
@@ -84,6 +93,7 @@ nodes:
   outcome: superseded
   evidence:
   - paper §10 row Streaming two-layer code (Realtime machine)
+  - ADR-0027
   verdict_quote: 'displaced, not refuted: the unified span machine was at or below its p99 at all five historic crown cells on both seeds, 163/163 delivery-complete'
   headline: ''
   depends_on: []
@@ -100,6 +110,7 @@ nodes:
   - commit bccb32a2
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
+  plain: A two-layer code built for real-time traffic, made unnecessary by the single unified design.
 - id: cod-gf256-simd
   title: SIMD GF(2^8) and gf256 crate
   track: cod
@@ -259,6 +270,7 @@ nodes:
   outcome: superseded
   evidence:
   - paper §10 row Legacy RLC decoders (sliding-window, generation)
+  - ADR-0022
   verdict_quote: replaced by the unified global-RREF decoder; the keyed generation machine strands 2-loss bursts on a moving-span wire
   headline: ''
   depends_on: []
@@ -271,6 +283,7 @@ nodes:
   folded: []
   overview: false
   notes: 'Paper §10 row has an end date only; start taken from the sliding-window FEC commit 628fdb1c (2026-03-14). Dates: paper §10 rows carry an end (removal) date only.'
+  plain: The older decoders for the sliding-window code, replaced by one decoder that handles every case.
 - id: cod-unified-span
   title: Unified span machine (ADR-0064)
   track: cod
@@ -376,6 +389,7 @@ nodes:
   - ADR-0003
   - ADR-0005
   - ADR-0007
+  - ADR-0025
   verdict_quote: 'Implemented: ACKs, BlockResults, and Pong messages are now sent via `send_control_datagram()`. Uni-stream receiver added for reliable control. Echo-based RTT measurement works end-to-end.'
   headline: ''
   depends_on: []
@@ -393,6 +407,7 @@ nodes:
   - commit b255271c
   overview: false
   notes: 'March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
+  plain: The first ways to acknowledge packets and ask for the missing ones to be sent again.
 - id: rec-plost-sack
   title: P_lost(t) mix and SACK WindowAck
   track: rec
@@ -401,7 +416,7 @@ nodes:
   outcome: unrated
   evidence:
   - commit 5b9f6def
-  verdict_quote: ''
+  verdict_quote: 'Phase 2: SACK-extended WindowAck replaces NACK sending'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -417,6 +432,7 @@ nodes:
   - commit 27a7fcf0
   overview: false
   notes: Direct landings 2026-03-21 to 2026-04-07; no recorded verdict.
+  plain: Mixing repairs and resends by measured loss, plus selective acknowledgements.
 - id: rec-bulk-arq
   title: Bulk ARQ and batch acknowledgements
   track: rec
@@ -897,6 +913,7 @@ nodes:
   outcome: successful
   evidence:
   - ADR-0050
+  - ADR-0043
   verdict_quote: Accepted
   headline: 'DC (ε≈0.1%): 4.3% actual vs 0.1% optimal → 43x'
   depends_on: []
@@ -909,8 +926,10 @@ nodes:
   - commit 1e07bf79
   - commit 05b576a7
   - commit e508adf4
+  - commit f2cba2b7
   overview: false
   notes: 'Headline is the motivating inefficiency, not a gain. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
+  plain: The first automatic way to decide how much error-correcting data to send.
 - id: rate-saturation-rstar
   title: Saturation-aware r* and window
   track: rate
@@ -1181,6 +1200,7 @@ nodes:
   outcome: superseded
   evidence:
   - paper §10 row ×N pool multiplier `clamp(gain·N·Σ, floor, N·knee)`
+  - ADR-0058
   verdict_quote: quadratic in N under a linear ceiling, pinned at 4 096 in 121 of 126 dual reps; deleting the ×N cost nothing
   headline: ''
   depends_on: []
@@ -1195,8 +1215,10 @@ nodes:
   - commit a7ad963b
   - branch feat/c8-pool-law
   - branch fix/store-cap-triplication
+  - commit 7387ad9d
   overview: false
   notes: 'RWM_STORE_PATHS stays on; what was superseded is the ×N multiplier in its formula. Dates: paper §10 rows carry an end (removal) date only.'
+  plain: Scaling the in-flight data allowance with the number of paths, later replaced by a simpler rule.
 - id: store-percap-family
   title: Per-path store accounts family (4 arms)
   track: store
@@ -1408,8 +1430,11 @@ nodes:
   - branch the composed cap law lands INTERIOR everywhere on the bench; the [WALL] instrument; two catches by the new discipline
   - paper §10 row Composed cap (`RWM_COMPOSED_CAP`)
   - 'paper §10 row Composed cap (`RWM_COMPOSED_CAP`): three-term pool law plus the per-path cwnd brake'
+  - commit 0e187521
+  - commit 2b55dbda
   overview: false
-  notes: 'Three-term outstanding law (2026-08-10), its fourth-term coverage verdict, the latency battery, the queue-free slack clock and the composed cap (2026-08-12/13; archived 2026-11-10). Arms (5): three-term outstanding law RWM_THREE_TERM; the fourth (coverage) term; queue-free slack clock; the latency-battery lever (shipped default off); composed cap RWM_COMPOSED_CAP. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_COMPOSED_CAP archived 2026-11-10 (tag date not used for end).'
+  notes: 'Three-term outstanding law (2026-08-10), its fourth-term coverage verdict, the latency battery, the queue-free slack clock and the composed cap (2026-08-12/13; archived 2026-11-10). Arms (5): three-term outstanding law RWM_THREE_TERM; the fourth (coverage) term; queue-free slack clock; the latency-battery lever (shipped default off); composed cap RWM_COMPOSED_CAP. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_COMPOSED_CAP archived 2026-11-10 (tag date not used for end). Folded: the slack-bench (RESULTS 2026-08-10: the three-term model SURVIVES, the clock fails it) and coverage (VERDICT 2026-08-10: the fourth term REFUTED; paper 16.44) clusters.'
+  plain: Candidate formulas for the in-flight allowance that were tested and did not earn a place.
 - id: store-cap-unification
   title: Store-cap unification over live paths
   track: store
@@ -1436,8 +1461,12 @@ nodes:
   - branch mode-hunt battery UNSCORED by its own stop rule
   - branch dead-wall battery
   - branch dead-wall mitigations (nothing built
+  - commit 6335e206
+  - commit 8bab64c3
+  - commit 7e302e2a
   overview: false
-  notes: 'Shipped unconditionally; folds the dead-wall and mode-hunt batteries (the paper row places the dead-wall mode in this arm) and the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. Dates: paper §10 rows carry an end (removal) date only.'
+  notes: 'Shipped unconditionally; folds the dead-wall and mode-hunt batteries (the paper row places the dead-wall mode in this arm) and the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. Dates: paper §10 rows carry an end (removal) date only. Folded: the Cap-law cluster (2026-08-18: formulas in the paper first, derived floor, ledger with two FIXED and one REFUTED).'
+  plain: Using one in-flight allowance rule across all live paths.
 - id: store-honest-inputs
   title: Honest inputs and O(1) anchor
   track: store
@@ -1460,7 +1489,8 @@ nodes:
   - branch HONEST INPUTS battery
   - branch HONEST INPUTS phase 1
   overview: false
-  notes: 'HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped.'
+  notes: 'HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11).'
+  plain: Fixing a slow rate measurement so it stops holding up the sender; now on by default.
 - id: store-sum-cap
   title: 'Sum cap: ×N deletion (SUM_CAP)'
   track: store
@@ -1488,8 +1518,15 @@ nodes:
   - branch sweep item 5
   - branch sweep items 1+2+4
   - branch sweep item 6 REFUTED
+  - commit 85b4d1df
+  - commit 5ddf7f6b
+  - commit 91c00ddf
+  - commit 27e36e3f
+  - commit 6a653802
+  - commit 923aa9dc
   overview: false
-  notes: The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner's formula request 2026-08-18 (user-requests).
+  notes: 'The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner''s formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits.'
+  plain: Removing a multiplier from the in-flight allowance that grew with path count without reason.
 - id: store-delta-cap
   title: Derived setpoint 1 + q(δ)
   track: store
@@ -1515,9 +1552,10 @@ nodes:
   - branch Tier-1 re-scores
   - branch Tier-0 corrections
   - branch the literature cross-check
+  - commit e9c6b242
   overview: true
   plain: Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput.
-  notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only.'
+  notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19).'
 - id: store-adr72-one-law
   title: One store law (ADR-0072)
   track: store
@@ -1730,6 +1768,7 @@ nodes:
   outcome: superseded
   evidence:
   - paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`)
+  - ADR-0065
   verdict_quote: their wins were measured in an era where the coded path was dead; the live ablation measured −17 to −30 % at the symmetric dual; the surviving ideas became the M* law and the anchor-hygiene laws
   headline: −30 %
   depends_on: []
@@ -1747,8 +1786,10 @@ nodes:
   - commit 11e0f5eb
   - commit 68d6b6c5
   - commit 9b48286e
+  - commit 7387ad9d
   overview: false
   notes: '2026-07-12 arc, deleted 2026-07-27. Arms (4): DAPS queue management; DAPS read-ahead depth bound; pace-all at BtlBw_i (RWM_PACE_ALL); per-path rate-sample estimator (RWM_RATE_SAMPLE, RWM_PER_PATH_EST). The sub-max quantile anchor is now its own node (place-submax-anchor). Dates: paper §10 rows carry an end (removal) date only.'
+  plain: A delay-aware way of picking which path carries each packet, which failed when retested.
 - id: place-slack
   title: Place-slack
   track: place
@@ -1934,7 +1975,8 @@ nodes:
   outcome: unrated
   evidence:
   - commit cbbbfdbd
-  verdict_quote: ''
+  - ADR-0024
+  verdict_quote: Replace AIMD with BBR-style delay-based congestion control (ADR-0019)
   headline: ''
   depends_on: []
   replaced_by: []
@@ -1944,8 +1986,10 @@ nodes:
   end: '2026-03-22'
   folded:
   - commit 78aa7d4a
+  - commit 628fdb1c
   overview: false
   notes: Direct landings (ADR-0019 not in the raw set); paper §10 recommended Copa.
+  plain: The first congestion control was replaced by one that reacts to delay instead of waiting for loss.
 - id: cc-copa-lite
   title: Production Copa-lite port (P-series)
   track: cc
@@ -2293,6 +2337,7 @@ nodes:
   outcome: dead-end
   evidence:
   - paper §10 row Engine or receiver parallelisation
+  - ADR-0057
   verdict_quote: one core per side sustains 136–188 Mbit/s with an empty queue; the walls are per-symbol service time and recovery waste
   headline: 136–188 Mbit/s
   depends_on: []
@@ -2304,8 +2349,10 @@ nodes:
   folded:
   - branch receiver-tail parallelization
   - commit cee499ce
+  - commit 7387ad9d
   overview: false
   notes: 'Refuted, never built (the third threading refutation, 2026-07-21). Dates: paper §10 rows carry an end (removal) date only.'
+  plain: Trying more threads to go faster; measurement showed the limit was elsewhere.
 - id: perf-emit-batch-v1
   title: Emission batching, first attempt
   track: perf
@@ -2740,6 +2787,10 @@ nodes:
   evidence:
   - ADR-0031
   - ADR-0042
+  - ADR-0032
+  - ADR-0033
+  - ADR-0034
+  - ADR-0035
   verdict_quote: Accepted
   headline: ''
   depends_on: []
@@ -2756,6 +2807,7 @@ nodes:
   - commit 98d02dfb
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
+  plain: A simulated network and benchmarks that switch each feature off in turn to see what it is worth.
 - id: meas-adr51-scenarios
   title: Canonical scenarios and goal gate
   track: meas
@@ -2865,6 +2917,7 @@ nodes:
   outcome: unrated
   evidence:
   - paper §10 row Generation-inert era
+  - ADR-0053
   verdict_quote: the harness never enabled generation coding, so the coded path was dead during a whole series of measurements; superseded by a re-baseline with a liveness guard
   headline: ''
   depends_on: []
@@ -2875,8 +2928,10 @@ nodes:
   end: '2026-07-13'
   folded:
   - commit 161aff14
+  - commit 7387ad9d
   overview: false
   notes: 'The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only.'
+  plain: A period when tests silently ran with a key feature switched off, so those results cannot be trusted.
 - id: meas-regime-map
   title: Hardware-honest regime map
   track: meas
@@ -3210,7 +3265,7 @@ nodes:
   outcome: unrated
   evidence:
   - commit fc5867a3
-  verdict_quote: ''
+  verdict_quote: 'Resolve #15 (SACK spec) and #19 (back-pressure mechanism)'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -3223,8 +3278,13 @@ nodes:
   - commit 482f1ee0
   - commit adf7674c
   - commit a7a965f3
+  - commit 298e1c00
+  - commit bdf796ea
+  - commit 82fa398f
+  - commit c25e36e6
   overview: false
-  notes: Direct landings 2026-03-21 to 2026-04-10.
+  notes: 'Direct landings 2026-03-21 to 2026-04-10. Folded: the 2026-04-02 ''Resolve #NN'' spec commits.'
+  plain: The first full write-up of the error-correction and resend model.
 - id: model-math-verification
   title: Mathematical verification of the model
   track: model
@@ -3262,7 +3322,7 @@ nodes:
   - rate-defect-pfec
   - model-defect-tcut
   lane: host-cargo
-  start: '2026-04-08'
+  start: '2026-04-07'
   end: '2026-07-06'
   folded:
   - commit da837ee9
@@ -3270,8 +3330,15 @@ nodes:
   - branch vis UI polish
   - branch vis-semantics
   - paper §11.1 open question 6
+  - commit ec547074
+  - commit e49fbc80
+  - commit 4a0890ac
+  - commit 468b7580
+  - commit 4cd3abc3
+  - commit aa56ef51
   overview: false
-  notes: Folds paper §11.1 open question 6 (do the three channel implementations agree).
+  notes: 'Folds paper §11.1 open question 6 (do the three channel implementations agree). Folded: the April visualizer commits (2026-04-07..10); start moved to 2026-04-07 for the first of them.'
+  plain: A browser simulator that runs the same math as the real code.
 - id: model-vis-continuum
   title: Visualizer as one continuum law
   track: model
@@ -3632,6 +3699,8 @@ nodes:
   outcome: successful
   evidence:
   - commit be246605
+  - ADR-0066
+  - ADR-0067
   verdict_quote: 'Ledger + docs: DEPRECATION REGISTER executed - Code Consolidation (2026-07-27) note, per-row REMOVED commits, VISION-TRIAGE execution status, paper 17.8 code-status line'
   headline: ''
   depends_on: []
@@ -3647,6 +3716,7 @@ nodes:
   - commit 7a3aff69
   overview: false
   notes: 'Owner 2026-07-21: move the experiments into ADRs and decide what to keep. Two-stage deprecation register, ADR migration (ADR-0052..0067), gates.rs, consolidations 1 and 2.'
+  plain: A cleanup that retired refuted features and made the best-measured settings the default.
 - id: infra-net-seams
   title: Net seams and dead-code refactor
   track: infra
@@ -4310,11 +4380,12 @@ nodes:
   title: 'Adversarial cells: build and validate'
   track: meas
   kind: instrument
-  state: next
+  state: done
   outcome: unrated
   evidence:
   - plan W5.3
-  verdict_quote: ''
+  - branch adv-cells
+  verdict_quote: built on branch adv-cells, 106 checks off the VM; waits for its VM check of the 7 cells
   headline: ''
   depends_on: []
   replaced_by: []
@@ -4325,7 +4396,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Building harder network test conditions: variable delay, very small router buffers and a rate limiter, and checking each behaves as intended.'
-  notes: 'Done when: the netem cells (jitter 0/5/15/25 ms, an 8-packet shallow buffer, a 100 Mbit policer) exist in the harness, each mechanism-validated by a stub run and a check that the shaper does what it claims.'
+  notes: 'Done when: the netem cells (jitter 0/5/15/25 ms, an 8-packet shallow buffer, a 100 Mbit policer) exist in the harness, each mechanism-validated by a stub run and a check that the shaper does what it claims. Built on branch adv-cells (106 checks off the VM, 2026-11-13); still waiting on the VM check of the 7 cells (a waiting_on field would warn on a done node, so it is kept here).'
 - id: meas-harness-robustness
   title: Harness robustness for every plan
   track: meas
@@ -4390,7 +4461,7 @@ nodes:
   title: '§54: filter guard, store budget'
   track: rec
   kind: mechanism
-  state: blocked
+  state: in-progress
   outcome: unrated
   evidence:
   - plan Live state items 1-2
@@ -4404,7 +4475,7 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
+  start: '2026-11-13'
   end: ''
   folded: []
   overview: true
@@ -5351,6 +5422,547 @@ nodes:
   overview: false
   plain: Adding readouts or derivations for the last hand-set numbers, so none hides inside a formula.
   notes: 'Law ledger: S03, S07, R06, K06, K07, C11, F04. Done when: each listed constant has a gauge or a derivation: the trailing offset, the taper-cache staleness, the burst-tail provisioning bind, the placement temperature, the diversity weight, the repair-debt reduction, and the store-cap control arm (deleted once the store-law fix lands).'
+- id: cc-aimd-v1
+  title: AIMD congestion control (first CC)
+  track: cc
+  kind: mechanism
+  state: abandoned
+  outcome: superseded
+  evidence:
+  - ADR-0009
+  verdict_quote: AIMD congestion control with FEC-aware loss response. Slow start, congestion avoidance, multiplicative decrease on congestion
+  headline: ''
+  depends_on: []
+  replaced_by:
+  - cc-early-delay-cc
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-03-12'
+  end: '2026-03-13'
+  folded:
+  - commit dc672631
+  - commit 8857788d
+  - commit cbbbfdbd
+  overview: false
+  plain: The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one.
+  notes: ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start.
+- id: place-early-window-sched
+  title: Loss-ranked multipath window scheduling
+  track: place
+  kind: mechanism
+  state: abandoned
+  outcome: superseded
+  evidence:
+  - ADR-0026
+  verdict_quote: Replace the single select_window_paths() call (a fixed source/repair pair for all symbols in a loop iteration) with per-symbol path selection
+  headline: ''
+  depends_on: []
+  replaced_by:
+  - place-marginal-cost
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-03-14'
+  end: '2026-07-04'
+  folded:
+  - commit 86e1f0f3
+  - commit 628fdb1c
+  overview: false
+  plain: An early way of picking paths that ranked them by loss rate, later replaced by pricing each path's marginal cost.
+  notes: ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it.
+- id: meas-transport-comparison
+  title: QUIC/MPTCP comparison and overhead taxonomy
+  track: meas
+  kind: instrument
+  state: done
+  outcome: unrated
+  evidence:
+  - ADR-0036
+  - ADR-0038
+  verdict_quote: Introduce a ReliableSimChannel that models retransmission-based reliable transport (QUIC-like) by re-enqueuing dropped packets with an additional RTT delay
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-03-17'
+  end: '2026-03-18'
+  folded:
+  - commit ec62d02e
+  - commit e508adf4
+  overview: false
+  plain: A benchmark comparing the system with reliable QUIC and MPTCP, and a breakdown of where its 38-50% overhead came from.
+  notes: 'ADR-0036 (Accepted) benchmark; ADR-0038 (Accepted) overhead taxonomy: five layers behind the 38-50% overhead.'
+- id: cod-overhead-reduction
+  title: Overhead reduction (packing, repair alignment)
+  track: cod
+  kind: mechanism
+  state: done
+  outcome: unrated
+  evidence:
+  - ADR-0039
+  - ADR-0040
+  - ADR-0047
+  - ADR-0048
+  verdict_quote: 'ADR-0039 Accepted: Fix Benchmark Repair Floor (Decision 1) and symbol packing; ADR-0048: budget cap + hint reduction + recovered-set NACKs'
+  headline: ''
+  depends_on:
+  - meas-transport-comparison
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-03-18'
+  end: '2026-03-20'
+  folded:
+  - commit e508adf4
+  - commit 544f4d82
+  - commit b255271c
+  - commit 05b576a7
+  overview: false
+  plain: 'Cutting the extra data the protocol sent: a benchmark fix, packing symbols tighter, and a per-batch repair cap.'
+  notes: ADR-0047 raised timer resolution and fixed LTE recovery (1% to 100%) and WiFi overhead (39.6% to 21.4%); ADR-0048 reduced window-backend overhead further.
+- id: meas-matrix-bench
+  title: Matrix benchmark, audit and dashboard
+  track: meas
+  kind: instrument
+  state: done
+  outcome: unrated
+  evidence:
+  - ADR-0044
+  - ADR-0045
+  - ADR-0049
+  verdict_quote: Replace Tables 3/4/5 with a single matrix crossing backends, scenarios, and loss
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-03-20'
+  end: '2026-03-20'
+  folded:
+  - commit f2cba2b7
+  - commit 98d02dfb
+  overview: false
+  plain: One benchmark grid covering every backend and scenario, an audit of its methods, and a page to browse the results.
+  notes: 'ADR-0044 methodology audit (LinkModel, CorrelatedFading); ADR-0045 matrix of 189 cells x 30 trials; ADR-0049 single-file HTML dashboard. Outcome unrated: no later node clearly replaced it.'
+- id: rec-nack-congestion
+  title: Congestion-aware NACK throttle (first form)
+  track: rec
+  kind: mechanism
+  state: done
+  outcome: unrated
+  evidence:
+  - ADR-0046
+  verdict_quote: Added NackCongestionState to src/net/mod.rs that tracks loss rate trend (rising = congestion, stable = wireless)
+  headline: ''
+  depends_on:
+  - meas-matrix-bench
+  replaced_by: []
+  qualified_by:
+  - rec-fix-nack-throttle
+  lane: host-cargo
+  start: '2026-03-20'
+  end: '2026-03-20'
+  folded:
+  - commit f2cba2b7
+  - commit b255271c
+  overview: false
+  plain: The first version of slowing resend requests when the network looks congested.
+  notes: ADR-0046 (Accepted), prompted by the ADR-0045 matrix run. The ledger's defect on NackCongestionState is rec-fix-nack-throttle.
+- id: meas-ship-the-wins
+  title: Ship The Wins battery
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 60f833a7
+  - commit 2eb88de3
+  - commit 8afd4dd7
+  - paper §16.36
+  verdict_quote: bbr_rs falsified x2 at 21-22 Mbit (gate >=70, NO FLIP, default unchanged)
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-07'
+  end: '2026-08-07'
+  folded:
+  - commit 201ada44
+  - commit 60f833a7
+  - commit 8afd4dd7
+  overview: false
+  plain: Attempts to switch on three measured wins by default; none passed its pre-set bar, so nothing changed.
+  notes: 'Outcome from the RESULTS subjects: Ship The Wins 1 NO FLIP (c7 clause fails 0.968/0.959), 1b NO FLIP (c7 gets worse), 2 STRUCTURAL BOUND. Mapped to dead-end (no flip).'
+- id: meas-unlock-the-default
+  title: Unlock The Default battery
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 65e92b3a
+  - commit 4307a6cc
+  - commit bdab7deb
+  verdict_quote: L1 BATTERY RESULTS + VERDICT - c7 fails both seeds with patience DEMONSTRABLY derived; NO FLIP; the goal closes as a STRUCTURAL BOUND
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-07'
+  end: '2026-08-08'
+  folded:
+  - commit a29f0c44
+  - commit 4307a6cc
+  - commit 65e92b3a
+  - commit bdab7deb
+  overview: false
+  plain: Tried to make two slower-by-default features the default; derived patience failed, while ack-merge was flipped on.
+  notes: 'Part 2 (derived patience): premises refuted pre-battery, NO FLIP, mapped to dead-end. Part 1 (ack-merge) shipped default ON (bdab7deb, +12.7%/+13.0% at c1) as its own ack-merge-flip battery.'
+- id: meas-latency-lever
+  title: Latency Lever battery
+  track: meas
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
+  - commit f6d95c99
+  - commit ec6a5ec7
+  verdict_quote: BATTERY RESULTS - the limit is a signed, predictable latency control at goodput parity, and it still does not earn a default
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-10'
+  end: '2026-08-10'
+  folded:
+  - commit ec6a5ec7
+  - commit fc860371
+  - commit f6d95c99
+  overview: false
+  plain: Measured a way to trade delay for throughput; it works as predicted but was not worth turning on by default.
+  notes: 'Pre-registration ec6a5ec7; scored by lat_report.py (fc860371). Mapped to mixed: works, no default.'
+- id: meas-alpha-sweep
+  title: Alpha-sweep and quantile-native sweep
+  track: meas
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
+  - commit e0334855
+  - commit 6b3d3c38
+  - commit a04300e3
+  verdict_quote: THE SCORED RESULT - NO VERDICT, UNSEPARATED at 50 of 50 treatment pairs
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-20'
+  end: '2026-08-21'
+  folded:
+  - commit a04300e3
+  - commit e0334855
+  - commit ab545cfe
+  - commit 6b3d3c38
+  overview: false
+  plain: Two sweeps of the recovery-clock setting; the first could not tell the settings apart, the second showed it was measuring the wrong quantity.
+  notes: Alpha-sweep NO VERDICT / UNSEPARATED (mixed); the Quantile-Native re-run (6b3d3c38) separated the arms and refuted the measurand (F2 at 5 of 5; paper section 10 row RWM_W_FORM removed). One node, mapped to mixed per the NO VERDICT rule.
+- id: meas-era-battery
+  title: Era battery
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit f605f925
+  - commit 1d7094ef
+  verdict_quote: THE SCORED RESULT - ERA LEDGER item 1 closed, scored against the pre-registration and nothing else
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - commit 1d7094ef
+  - commit f605f925
+  - commit e57f3655
+  overview: false
+  plain: Measured the combined effect of everything shipped in the arc on two builds side by side.
+  notes: 'RESULTS subject carries no verdict keyword: unrated. Follow-up Latency Truth (e57f3655) withdrew the battery''s delivered-latency reading.'
+- id: meas-mode-hunt
+  title: Mode-hunt battery
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit cfc1793f
+  - commit 2a3d82e8
+  - paper §10 row The dead-wall and mode-hunt batteries
+  verdict_quote: RESULTS -- STOP RULE fired again (UNSCORED); the halving lead is INVERTED; the c8 dead wall VANISHES at 8x the transfer
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-12'
+  end: '2026-08-12'
+  folded:
+  - commit b8fd6d9c
+  - commit cfc1793f
+  - commit 2a3d82e8
+  overview: false
+  plain: A search for hidden modes in the results; its own stop rule fired, so the numbers could not be scored.
+  notes: 'STOP RULE: dead-end.'
+- id: meas-verdict-battery
+  title: Verdict battery (paper 16.79)
+  track: meas
+  kind: research
+  state: done
+  outcome: successful
+  evidence:
+  - commit f2e71443
+  - commit a26696fb
+  - paper §16.79
+  verdict_quote: 'GOAL #101 COMPLETE: item 4''s VERDICT BATTERY RAN - SURVIVE ON MERIT, 0 of 3 stable cells - and item 3 is DECIDED in 16.79'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - commit a26696fb
+  - commit eb50cc59
+  - commit f2e71443
+  overview: false
+  plain: A two-arm test settling whether the existing clamp earns its place; it does.
+  notes: 'SURVIVES / DECIDED: successful. Formula decided in the paper first (a26696fb).'
+- id: meas-q-refresh-sweep
+  title: (q, refresh) sweep
+  track: meas
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
+  - commit a8bcce05
+  - commit 5be078d0
+  - paper §16.78
+  verdict_quote: THE SCORED RESULT - FLAT. The floor lifts, the sub-floor region is ENTERED at 3/3 cells, and there is nothing in it
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - commit 5be078d0
+  - commit d7daceb5
+  - commit a8bcce05
+  overview: false
+  plain: Tested whether lowering a refresh floor helps; the surface is flat, so nothing to gain.
+  notes: 'FLAT: mixed. Paper 16.78 defines the censoring constant and the (q, refresh) surface; paper row RWM_REFRESH_FLOOR_US removed.'
+- id: meas-successor-arrival
+  title: Successor Arrival
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 821de6ae
+  - commit f497bdc4
+  verdict_quote: THE SCORED RESULT - the pre-registered anchor DOES NOT EXIST; the original leads at every horizon
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - commit 1064e8d1
+  - commit f497bdc4
+  - commit 821de6ae
+  overview: false
+  plain: Looked for a better anchor for the next-arrival estimate; the one predicted does not exist.
+  notes: 'No verdict keyword in the RESULTS subject: unrated.'
+- id: meas-gap-phases
+  title: Gap phases 1 and 2
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 5bf1a346
+  - commit b4be2489
+  verdict_quote: 'merge: gap phase 2 SCORED - no interaction to name; item 3 closes NEEDS-MORE-named'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - commit 5bf1a346
+  - commit c2e20beb
+  - commit b4be2489
+  overview: false
+  plain: Two measurement phases on the gap-detection drift; they found it real but unable to explain the effect.
+  notes: 'Phase 1: D1 selected, drift real but cannot explain P1. Phase 2: no interaction to name. No keyword outcome: unrated.'
+- id: meas-deadwall-battery
+  title: Deadwall battery
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 465c28ef
+  - commit 5fce47cf
+  - paper §10 row The dead-wall and mode-hunt batteries
+  verdict_quote: both fired their own stop rules; the dead-wall mode belongs to the store-cap-unification arm and vanishes at 8x the transfer size
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-12'
+  end: '2026-08-12'
+  folded:
+  - commit 5fce47cf
+  - commit 465c28ef
+  - commit 2dd7bb2d
+  overview: false
+  plain: Tested the idle-gap ('dead wall') slowdown; the battery stopped itself, leaving it unscored.
+  notes: 'Verdict taken from the paper section 10 row (''both fired their own stop rules'', unscored): dead-end under the STOP RULE mapping.'
+- id: meas-sf-latency-feedback
+  title: SF latency feedback
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit c0fb1d79
+  - commit 4320fc48
+  verdict_quote: RESULTS - the hypothesis is REFUTED on three independent legs, and the c8 collapse is RE-ATTRIBUTED to appended dead wall
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-12'
+  end: '2026-08-12'
+  folded:
+  - commit 4320fc48
+  - commit 2b14cc60
+  - commit c0fb1d79
+  overview: false
+  plain: Tested whether delay feedback explains a collapse; it does not, the cause is idle time at the end.
+  notes: 'REFUTED: dead-end.'
+- id: meas-coupling-model
+  title: Coupling model
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 7ad65ef1
+  - commit cb422e2d
+  verdict_quote: RESULTS - NOT VALIDATED, and the refutation is arithmetic
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-11'
+  end: '2026-08-12'
+  folded:
+  - commit 82d84637
+  - commit 11db2992
+  - commit 7ad65ef1
+  overview: false
+  plain: A model of how the in-flight store couples to the window; the arithmetic showed it does not hold.
+  notes: 'NOT VALIDATED: dead-end. Merge cb422e2d: frontier span real but neutralised at the gate by ADR-0060.'
+- id: meas-sf-accounting-axis
+  title: SF accounting axis
+  track: meas
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
+  - commit 4f67ba7d
+  - commit 4131d254
+  verdict_quote: RESULTS - the U-fold's CELL reproduces (c7 10.0x -> 1.0x, c8 2.7x -> 7.1x), the LEVEL at c7 does not; verdict NOT REPRODUCED, fallback triggered
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-11'
+  end: '2026-08-11'
+  folded:
+  - commit 4b3910e3
+  - commit 4f67ba7d
+  - commit 4131d254
+  overview: false
+  plain: Checked whether unmetered recovery accounting explains a slowdown; it explains where, but not how much.
+  notes: Half-reproduced (cell yes, level no); the keyword NOT REPRODUCED is not in the coordinator's list, so mapped to mixed.
+- id: perf-receiver-msg-wall
+  title: Receiver per-message wall
+  track: perf
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
+  - commit dc4fb783
+  - commit 774e28a3
+  - paper §16.35
+  verdict_quote: RESULTS + verdicts (both seeds) — c1 est +62/+63% and eb+est 446-505 (wall 22-23k -> 46-62k msgs/s), NO FLIP on the c7 anchor-interaction clause
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-06'
+  end: '2026-08-07'
+  folded:
+  - commit 1ce8ba25
+  - commit 774e28a3
+  - commit dc4fb783
+  overview: false
+  plain: Measured the receiver's per-message cost limit; a change raised throughput a lot but failed one safety clause.
+  notes: 'Large gain at c1 but NO FLIP on c7 clause: mixed. Folded: pre-registration, STEP0/1 profile.'
+- id: meas-adversarial-cells-b1
+  title: Adversarial cells B1
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 754139c3
+  - commit 6c8c3d38
+  verdict_quote: RESULTS + verdicts (both seeds) - the breakage map inverts the shallow-buffer story and de-scopes the policer off the CC surface
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-06'
+  end: '2026-08-06'
+  folded:
+  - commit 6c8c3d38
+  - commit 754139c3
+  - commit 9840854b
+  overview: false
+  plain: Stress-tested congestion control under hostile network shapes and mapped where it breaks.
+  notes: 'No verdict keyword: unrated. The current rebuild is the separate node meas-adversarial-cells-build (not linked).'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere
@@ -5360,4 +5972,10 @@ dropped:
   reason: routine cleanup pass after threading (stale comments, dead io_owner code), no verdict
 - src: branch gauge reachability
   reason: instrument repair (teardown gauges moved to a destructor), rule 6
+- src: commits 21de95b5, 1d835478, bea1e4fd (sched flake fixes)
+  reason: HashMap-order flaky-test fixes and one RFC 6298 assertion; test hygiene with no verdict and no nearest node
+- src: commits 346e6a0c, 0128bb5c, 10e693b8, bee23f6f (merge sweep items 1-6)
+  reason: per-item merges inside the 2026-08-18 cap-law ladder arc (K into formula, sender-truth loss estimator, un-metered channels, quad lock-in refuted); results are in the paper section 10 rows and the Ladder Battery on store-sum-cap, no node of their own
+- src: commits 6e386bf6, 91e74e2a, 32c7f473, 3d2a7907, d0ef8a3b (goal-gate ledger entries)
+  reason: goal-gate record keeping (suite results, dead-code refactor, SF anchor suspect refuted, gauge reachability, RFA note); same family as the existing 'branch gauge reachability' drop
 suspected_edges: []

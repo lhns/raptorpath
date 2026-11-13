@@ -33,7 +33,7 @@ flowchart TB
     rec_recov_sp["Singles hole<br/>suppression<br/>(RECOV_SP)<br/>⏸ parked"]
     rec_leverb_c1d_cost>"Lever B c1d<br/>duplicate cost<br/>⚠ open defect"]
     rec_defect_base_duplicates>"Main's duplicates<br/>mostly unexplained<br/>⚠ open defect"]
-    rec_s54_session["#167;54: filter guard,<br/>store budget<br/>⛔ blocked<br/>ext: meas-<br/>guard-v2-impl,<br/>store-s54-budget"]
+    rec_s54_session["#167;54: filter guard,<br/>store budget<br/>▶ in progress<br/>ext: meas-<br/>guard-v2-impl,<br/>store-s54-budget"]
     rec_w0_leg_question["Retransmit leg<br/>choice with filter<br/>⛔ blocked<br/>ext: place-wdiv"]
     rec_leverb_guard["Lever-B guard v2,<br/>then merge<br/>⛔ blocked<br/>ext: meas-<br/>guard-v2-impl"]
     rec_recovery_timeouts[/"Recovery timeouts<br/>after store law<br/>⛔ blocked<br/>ext: store-engine-<br/>form-impl"/]
@@ -42,6 +42,7 @@ flowchart TB
     rec_fix_refresh_clock[/"Receiver refresh<br/>clock input<br/>⛔ blocked<br/>ext: store-engine-<br/>form-impl"/]
     rec_fix_nack_throttle[/"NACK repair<br/>throttle: gauge,<br/>paper<br/>○ next"/]
     rec_retx_behind_source["Retransmits queued<br/>behind source?<br/>○ next"]
+    rec_nack_congestion["Congestion-aware<br/>NACK throttle (first<br/>form)<br/>✔ done · unrated ⚠<br/>ext: meas-matrix-<br/>bench"]
     rec_early_arq ~~~ rec_fec_vs_arq
     rec_early_arq ~~~ rec_proactive_repair
     rec_early_arq ~~~ rec_per_path_clocks
@@ -106,18 +107,26 @@ flowchart TB
     rec_recov_sp ~~~ rec_fix_refresh_clock
     rec_recov_sp ~~~ rec_fix_nack_throttle
     rec_recov_sp ~~~ rec_retx_behind_source
+    rec_wire_clock_derivation ~~~ rec_nack_congestion
     rec_wire_clock_derivation ~~~ rec_goal101
     rec_wire_clock_derivation ~~~ rec_snapver_filter
     rec_wire_clock_derivation ~~~ rec_defect_qclk_clamp
+    rec_fix_refresh_clock ~~~ rec_nack_congestion
     rec_fix_refresh_clock ~~~ rec_goal101
     rec_fix_refresh_clock ~~~ rec_snapver_filter
     rec_fix_refresh_clock ~~~ rec_defect_qclk_clamp
+    rec_fix_nack_throttle ~~~ rec_nack_congestion
     rec_fix_nack_throttle ~~~ rec_goal101
     rec_fix_nack_throttle ~~~ rec_snapver_filter
     rec_fix_nack_throttle ~~~ rec_defect_qclk_clamp
+    rec_retx_behind_source ~~~ rec_nack_congestion
     rec_retx_behind_source ~~~ rec_goal101
     rec_retx_behind_source ~~~ rec_snapver_filter
     rec_retx_behind_source ~~~ rec_defect_qclk_clamp
+    rec_nack_congestion ~~~ rec_snapver_law
+    rec_nack_congestion ~~~ rec_defect_hole_law
+    rec_nack_congestion ~~~ rec_defect_refresh_input
+    rec_nack_congestion ~~~ rec_leverb_c1d_cost
     rec_goal101 ~~~ rec_snapver_law
     rec_goal101 ~~~ rec_defect_hole_law
     rec_goal101 ~~~ rec_defect_refresh_input
@@ -165,10 +174,11 @@ flowchart TB
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
+    rec_nack_congestion -.->|⚠ qualified by| rec_fix_nack_throttle
     rec_s54_session -.->|then| rec_w0_leg_question
     rec_w0_leg_question -.->|then| rec_leverb_guard
-    linkStyle 105,106,110 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 123,124 stroke:#999,stroke-width:1px,color:#777
+    linkStyle 113,114,118,131 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
+    linkStyle 132,133 stroke:#999,stroke-width:1px,color:#777
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -183,13 +193,14 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter succ
-    class rec_plost_sack,rec_fec_vs_arq,rec_wire_clock_derivation unrated
+    class rec_plost_sack,rec_fec_vs_arq,rec_wire_clock_derivation,rec_nack_congestion unrated
     class rec_proactive_repair,rec_mp_serial,rec_clock_candidates,rec_goal101,rec_receiver_law,rec_p10a_repair_floor dead
     class rec_cost_ratio_decision userdec
     class rec_gap_horizon,rec_snapver_law waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
     class rec_recov_sp parked
-    class rec_s54_session,rec_w0_leg_question,rec_leverb_guard,rec_recovery_timeouts,rec_fix_perleg_clock_n1,rec_fix_refresh_clock blocked
+    class rec_s54_session inprog
+    class rec_w0_leg_question,rec_leverb_guard,rec_recovery_timeouts,rec_fix_perleg_clock_n1,rec_fix_refresh_clock blocked
     class rec_fix_nack_throttle,rec_retx_behind_source next
 ```
 <!-- END GENERATED: track-rec -->
@@ -199,7 +210,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-rec -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `rec-early-arq` | Early ACK, NACK and repair | done | successful |  | ADR-0003; ADR-0005; ADR-0007 |  |
+| `rec-early-arq` | Early ACK, NACK and repair | done | successful |  | ADR-0003; ADR-0005; ADR-0007; ADR-0025 |  |
 | `rec-plost-sack` | P_lost(t) mix and SACK WindowAck | done | unrated |  | commit 5b9f6def |  |
 | `rec-bulk-arq` | Bulk ARQ and batch acknowledgements | done | successful |  | branch P8 |  |
 | `rec-reliable-window` | Reliable window (RWM Phase A) | done | successful |  | branch RWM Phase A |  |
@@ -223,7 +234,7 @@ flowchart TB
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | in-progress | unrated | +13 % | status §53 open item 2 | rec-snapver-filter |
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | in-progress | unrated |  | status §53 open item 3 | rec-snapver-filter |
-| `rec-s54-session` | §54: filter guard, store budget | blocked | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
+| `rec-s54-session` | §54: filter guard, store budget | in-progress | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | blocked | unrated |  | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f | rec-s54-session, place-wdiv |
 | `rec-leverb-guard` | Lever-B guard v2, then merge | blocked | unrated |  | plan Live state item 4; status §53 "What follows" | rec-s54-session, meas-guard-v2-impl, rec-gap-horizon |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | blocked | unrated |  | plan W3.6; status §3.10 items 4 and 6 | store-engine-form-impl, rec-fix-perleg-clock-n1 |
@@ -232,12 +243,13 @@ flowchart TB
 | `rec-fix-refresh-clock` | Receiver refresh clock input | blocked | unrated |  | law ledger rows E10, C07 | store-engine-form-impl |
 | `rec-fix-nack-throttle` | NACK repair throttle: gauge, paper | next | unrated |  | law ledger rows C09 |  |
 | `rec-retx-behind-source` | Retransmits queued behind source? | next | unrated |  | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |  |
+| `rec-nack-congestion` | Congestion-aware NACK throttle (first form) | done | unrated |  | ADR-0046 | meas-matrix-bench |
 
 ### Details per node
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `rec-early-arq` | Early ACK, NACK and repair | March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0003; ADR-0005; ADR-0007 |
+| `rec-early-arq` | Early ACK, NACK and repair | March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0003; ADR-0005; ADR-0007; ADR-0025 |
 | `rec-plost-sack` | P_lost(t) mix and SACK WindowAck | Direct landings 2026-03-21 to 2026-04-07; no recorded verdict. | commit 5b9f6def |
 | `rec-bulk-arq` | Bulk ARQ and batch acknowledgements | P4/P6/P8/P10b of the July wave. P10a is its own node (rec-p10a-repair-floor). | branch P8 |
 | `rec-reliable-window` | Reliable window (RWM Phase A) | Paper §16 (fountain multipath aggregation, then Reliable Windowed Multipath) and Phase A: retain-until-acked window, auto-switch removed. | branch RWM Phase A |
@@ -268,4 +280,5 @@ flowchart TB
 | `rec-fix-refresh-clock` | Receiver refresh clock input | Law ledger: E10, C07. Blocked on the store fix: today the refresh clamps bind (at c1 the 25 ms floor would move the refresh from 100 to 25 ms where the CPU clause is tightest; at c8 2·srtt stays above the 100 ms ceiling), so the honest input only moves the output once the store defect is gone (§55 Erratum 1). Fixes the open defect rec-defect-refresh-input. Done when: the receiver reads the data sender's honest RTT (published or measured at the receiver) and the refresh cadence is derived in the paper, with a bind-fraction gauge; ships E10 and C07 together. | law ledger rows E10, C07 |
 | `rec-fix-nack-throttle` | NACK repair throttle: gauge, paper | Law ledger: C09. Gauge first: it needs no clock change to be measured (§55 Erratum 1 leaves it out of the clock fix). Done when: a gauge reports the per-report cap and multiplier bind fractions at c8, then the throttle gets a paper entry with provenance for its seven constants, or is deleted. | law ledger rows C09 |
 | `rec-retx-behind-source` | Retransmits queued behind source? | §55 Erratum 1: at c8 the recovery lever is the dwell, i.e. the store fix and this question. Done when: a diagnosis from the code path (transport.send_symbols to the per-path I/O owner) and the committed §48b/§53 ledgers says whether retransmits wait behind source symbols in quinn's per-path send buffer, with the measured dwell, and names the fix (a priority seam in the I/O owner) if they do. | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |
+| `rec-nack-congestion` | Congestion-aware NACK throttle (first form) | ADR-0046 (Accepted), prompted by the ADR-0045 matrix run. The ledger's defect on NackCongestionState is rec-fix-nack-throttle. | ADR-0046 |
 <!-- END GENERATED: table-rec -->

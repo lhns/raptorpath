@@ -23,6 +23,7 @@ flowchart TB
     place_path_event["Path event after<br/>promotion (#167;46)<br/>✔ done · unrated"]
     place_user_perleg_questions{{"Owner calls on per-<br/>leg design<br/>○ next"}}
     place_per_leg_impl["Per-leg state<br/>implementation<br/>⛔ blocked"]
+    place_early_window_sched["Loss-ranked<br/>multipath window<br/>scheduling<br/>↷ superseded"]
     place_marginal_cost ~~~ place_wdiv
     place_marginal_cost ~~~ place_frozen_echo
     place_marginal_cost ~~~ place_wire_price
@@ -39,26 +40,31 @@ flowchart TB
     place_stage2_battery ~~~ place_frozen_echo
     place_stage2_battery ~~~ place_wire_price
     place_stage2_battery ~~~ place_submax_anchor
+    place_wdiv ~~~ place_early_window_sched
     place_wdiv ~~~ place_hol
     place_wdiv ~~~ place_t_derived
     place_wdiv ~~~ place_per_leg_state
-    place_wdiv ~~~ place_path_event
+    place_frozen_echo ~~~ place_early_window_sched
     place_frozen_echo ~~~ place_hol
     place_frozen_echo ~~~ place_t_derived
     place_frozen_echo ~~~ place_per_leg_state
-    place_frozen_echo ~~~ place_path_event
+    place_wire_price ~~~ place_early_window_sched
     place_wire_price ~~~ place_hol
     place_wire_price ~~~ place_t_derived
     place_wire_price ~~~ place_per_leg_state
-    place_wire_price ~~~ place_path_event
+    place_submax_anchor ~~~ place_early_window_sched
     place_submax_anchor ~~~ place_hol
     place_submax_anchor ~~~ place_t_derived
     place_submax_anchor ~~~ place_per_leg_state
-    place_submax_anchor ~~~ place_path_event
+    place_early_window_sched ~~~ place_path_event
+    place_early_window_sched ~~~ place_user_perleg_questions
+    place_hol ~~~ place_path_event
     place_hol ~~~ place_user_perleg_questions
+    place_t_derived ~~~ place_path_event
     place_t_derived ~~~ place_user_perleg_questions
+    place_per_leg_state ~~~ place_path_event
     place_per_leg_state ~~~ place_user_perleg_questions
-    place_path_event ~~~ place_user_perleg_questions
+    place_path_event ~~~ place_per_leg_impl
     place_user_perleg_questions ~~~ place_per_leg_impl
     place_stage2_battery --> place_hol
     place_stage2_battery --> place_t_derived
@@ -67,6 +73,7 @@ flowchart TB
     place_wire_price --> place_path_event
     place_per_leg_state --> place_user_perleg_questions
     place_user_perleg_questions --> place_per_leg_impl
+    place_early_window_sched -.->|replaced by| place_marginal_cost
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -81,7 +88,7 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class place_marginal_cost,place_stage2_battery,place_wire_price succ
-    class place_daps,place_slack,place_hol,place_t_derived,place_frozen_echo,place_submax_anchor dead
+    class place_daps,place_slack,place_hol,place_t_derived,place_frozen_echo,place_submax_anchor,place_early_window_sched dead
     class place_wdiv,place_per_leg_state waiting
     class place_path_event unrated
     class place_user_perleg_questions userdec
@@ -95,7 +102,7 @@ flowchart TB
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
 | `place-marginal-cost` | Marginal-cost placement law (RWM B) | done | successful |  | branch RWM Phase B | rec-reliable-window |
-| `place-daps` | DAPS and rate estimator (4 arms) | abandoned | superseded | −30 % | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) |  |
+| `place-daps` | DAPS and rate estimator (4 arms) | abandoned | superseded | −30 % | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |  |
 | `place-slack` | Place-slack | abandoned | dead-end | 6 % | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |  |
 | `place-stage2-battery` | Placement battery (Track A) | done | successful | 6 % of delivered latency | status §2 row "Placement battery (Track A)" | meas-wire-v8 |
 | `place-hol` | Placement frontier term (PLACE_HOL) | abandoned | dead-end | 6 % | tag archive/RWM_PLACE_HOL | place-stage2-battery |
@@ -108,13 +115,14 @@ flowchart TB
 | `place-path-event` | Path event after promotion (§46) | done | unrated |  | status §46 | place-wire-price |
 | `place-user-perleg-questions` | Owner calls on per-leg design | next | n/a |  | plan user decision 9 | place-per-leg-state |
 | `place-per-leg-impl` | Per-leg state implementation | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-state, place-user-perleg-questions |
+| `place-early-window-sched` | Loss-ranked multipath window scheduling | abandoned | superseded |  | ADR-0026 |  |
 
 ### Details per node
 
 | id | title | notes | evidence |
 |---|---|---|---|
 | `place-marginal-cost` | Marginal-cost placement law (RWM B) | Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06). | branch RWM Phase B |
-| `place-daps` | DAPS and rate estimator (4 arms) | 2026-07-12 arc, deleted 2026-07-27. Arms (4): DAPS queue management; DAPS read-ahead depth bound; pace-all at BtlBw_i (RWM_PACE_ALL); per-path rate-sample estimator (RWM_RATE_SAMPLE, RWM_PER_PATH_EST). The sub-max quantile anchor is now its own node (place-submax-anchor). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`) |
+| `place-daps` | DAPS and rate estimator (4 arms) | 2026-07-12 arc, deleted 2026-07-27. Arms (4): DAPS queue management; DAPS read-ahead depth bound; pace-all at BtlBw_i (RWM_PACE_ALL); per-path rate-sample estimator (RWM_RATE_SAMPLE, RWM_PER_PATH_EST). The sub-max quantile anchor is now its own node (place-submax-anchor). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |
 | `place-slack` | Place-slack | G179 (feat/c8-conversion, 2026-08-06) is matched to this row by date and subject (slow-path conversion); uncertain. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |
 | `place-stage2-battery` | Placement battery (Track A) | Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed. | status §2 row "Placement battery (Track A)" |
 | `place-hol` | Placement frontier term (PLACE_HOL) | Archived 2026-11-12 (simplify batch 3) on the owner's housekeeping call. The archive tag's quote names another commit; the verdict is the paper row. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_HOL archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_HOL |
@@ -127,4 +135,5 @@ flowchart TB
 | `place-path-event` | Path event after promotion (§46) | Own verdict: NO-DIFFERENCE against the registered prediction CAND-RECOVERS-FASTER (result in the §41c file, session 3). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §46 |
 | `place-user-perleg-questions` | Owner calls on per-leg design | Done when: the owner answers the per-leg design questions (queue_target_mult for a kept Copa arm, the L sampler switch, S's horizon, revival reseed, the leak backstop). | plan user decision 9 |
 | `place-per-leg-impl` | Per-leg state implementation | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. | plan W3.2, W3.6a |
+| `place-early-window-sched` | Loss-ranked multipath window scheduling | ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it. | ADR-0026 |
 <!-- END GENERATED: table-place -->

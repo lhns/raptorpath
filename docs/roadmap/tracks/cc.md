@@ -32,6 +32,7 @@ flowchart TB
     cc_copa_consumers["Copa consumers onto<br/>per-leg state<br/>⛔ blocked<br/>ext: place-per-leg-<br/>impl,<br/>meas-s51-session +1"]
     cc_bbrrs_promote["bbr_rs promotion<br/>(new ADR)<br/>⛔ blocked"]
     cc_hybrid["BBR/Copa hybrid<br/>build (ADR-0068)<br/>⏸ parked<br/>ext: meas-<br/>adversarial-cells-<br/>run"]
+    cc_aimd_v1["AIMD congestion<br/>control (first CC)<br/>↷ superseded"]
     cc_early_delay_cc ~~~ cc_bbr_default
     cc_early_delay_cc ~~~ cc_bbrrs_v1
     cc_early_delay_cc ~~~ cc_quinn_bbr_collapse
@@ -49,19 +50,25 @@ flowchart TB
     cc_cubic_substrate ~~~ cc_quinn_bbr_collapse
     cc_cubic_substrate ~~~ cc_defect_copa_minrtt
     cc_bbr_default ~~~ cc_copa_consumers
+    cc_bbr_default ~~~ cc_aimd_v1
     cc_bbr_default ~~~ cc_copa_wire_signal
     cc_bbr_default ~~~ cc_bbrrs_r1
     cc_bbrrs_v1 ~~~ cc_copa_consumers
+    cc_bbrrs_v1 ~~~ cc_aimd_v1
     cc_bbrrs_v1 ~~~ cc_copa_wire_signal
     cc_bbrrs_v1 ~~~ cc_bbrrs_r1
     cc_quinn_bbr_collapse ~~~ cc_copa_consumers
+    cc_quinn_bbr_collapse ~~~ cc_aimd_v1
     cc_quinn_bbr_collapse ~~~ cc_copa_wire_signal
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
     cc_defect_copa_minrtt ~~~ cc_copa_consumers
+    cc_defect_copa_minrtt ~~~ cc_aimd_v1
     cc_defect_copa_minrtt ~~~ cc_copa_wire_signal
     cc_defect_copa_minrtt ~~~ cc_bbrrs_r1
     cc_copa_consumers ~~~ cc_adr68_fusion
     cc_copa_consumers ~~~ cc_user_continue_bbrrs
+    cc_aimd_v1 ~~~ cc_adr68_fusion
+    cc_aimd_v1 ~~~ cc_user_continue_bbrrs
     cc_copa_wire_signal ~~~ cc_adr68_fusion
     cc_copa_wire_signal ~~~ cc_user_continue_bbrrs
     cc_bbrrs_r1 ~~~ cc_adr68_fusion
@@ -110,9 +117,10 @@ flowchart TB
     cc_user_bbrrs_promotion --> cc_bbrrs_promote
     cc_bbrrs_promote --> cc_hybrid
     cc_user_adr68_direction --> cc_hybrid
+    cc_aimd_v1 -.->|replaced by| cc_early_delay_cc
     cc_s48d_session -.->|then| cc_pacing_seam_reading
-    linkStyle 56,60 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
-    linkStyle 78 stroke:#999,stroke-width:1px,color:#777
+    linkStyle 62,66 stroke:#e69500,stroke-width:2px,stroke-dasharray:2 3,color:#a86400
+    linkStyle 85 stroke:#999,stroke-width:1px,color:#777
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -128,7 +136,7 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cc_early_delay_cc,cc_bbrrs_v1 unrated
     class cc_copa_lite,cc_copa_wire_signal,cc_bbr_default succ
-    class cc_copa_sole_substrate,cc_cubic_substrate dead
+    class cc_copa_sole_substrate,cc_cubic_substrate,cc_aimd_v1 dead
     class cc_adr68_fusion,cc_hybrid parked
     class cc_quinn_bbr_collapse,cc_defect_copa_minrtt defect
     class cc_bbrrs_r1 bad
@@ -143,7 +151,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-cc -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `cc-early-delay-cc` | Delay-based CC replaces AIMD | done | unrated |  | commit cbbbfdbd |  |
+| `cc-early-delay-cc` | Delay-based CC replaces AIMD | done | unrated |  | commit cbbbfdbd; ADR-0024 |  |
 | `cc-copa-lite` | Production Copa-lite port (P-series) | done | successful |  | branch P7 |  |
 | `cc-copa-sole-substrate` | Copa per path as substrate | abandoned | superseded | 0.57–0.97× | paper §10 row Copa per path as the substrate default (the original design) |  |
 | `cc-cubic-substrate` | Quinn stock Cubic substrate | abandoned | superseded | 15–17 Mbit/s | paper §10 row Quinn's stock Cubic under the engine |  |
@@ -166,12 +174,13 @@ flowchart TB
 | `cc-copa-consumers` | Copa consumers onto per-leg state | blocked | unrated |  | plan W3.4, W3.6a; status §3.3 | place-per-leg-impl, meas-s51-session, store-fix-maxbw-minrtt |
 | `cc-bbrrs-promote` | bbr_rs promotion (new ADR) | blocked | unrated |  | plan W1.5 | cc-user-bbrrs-promotion |
 | `cc-hybrid` | BBR/Copa hybrid build (ADR-0068) | parked | unrated |  | plan W2.4 | cc-adr68-fusion, cc-bbrrs-promote, meas-adversarial-cells-run, cc-user-adr68-direction |
+| `cc-aimd-v1` | AIMD congestion control (first CC) | abandoned | superseded |  | ADR-0009 |  |
 
 ### Details per node
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `cc-early-delay-cc` | Delay-based CC replaces AIMD | Direct landings (ADR-0019 not in the raw set); paper §10 recommended Copa. | commit cbbbfdbd |
+| `cc-early-delay-cc` | Delay-based CC replaces AIMD | Direct landings (ADR-0019 not in the raw set); paper §10 recommended Copa. | commit cbbbfdbd; ADR-0024 |
 | `cc-copa-lite` | Production Copa-lite port (P-series) | P1 hint-coupled queue target, P2 honest floor, P7 Copa-lite with fixes, P-CC BtlBw-anchored recovery, the BBR-lessons note (2026-07-02 to 07-04). | branch P7 |
 | `cc-copa-sole-substrate` | Copa per path as substrate | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Copa per path as the substrate default (the original design) |
 | `cc-cubic-substrate` | Quinn stock Cubic substrate | Cubic was quinn's default from the start; named as the hidden ceiling 2026-07-13. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Quinn's stock Cubic under the engine |
@@ -193,4 +202,5 @@ flowchart TB
 | `cc-copa-consumers` | Copa consumers onto per-leg state | Law ledger: K01, K02, K03, K04, K08, E02 (P3): Copa's legacy controller and its readers, deleted or reduced; one clock. Done when: the four Copa cwnd consumers read the per-leg state and queue_target_mult is one continuous function of δ (no hint table), with continuity tests through every preset. | plan W3.4, W3.6a; status §3.3 |
 | `cc-bbrrs-promote` | bbr_rs promotion (new ADR) | Law ledger: K09 (rank 6, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054's default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS. | plan W1.5 |
 | `cc-hybrid` | BBR/Copa hybrid build (ADR-0068) | The forward build of the cc-adr68-fusion design. Done when: a registration with falsifiable per-cell targets (ADR-0068 bars: shal8 >= 75 Mbit, jit0-jit25 >= 0.9x without the standing queue) is committed before any build. | plan W2.4 |
+| `cc-aimd-v1` | AIMD congestion control (first CC) | ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start. | ADR-0009 |
 <!-- END GENERATED: table-cc -->
