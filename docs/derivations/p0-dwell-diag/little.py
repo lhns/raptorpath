@@ -1,6 +1,7 @@
-"""Little's-law delivered delay per row (PIN phase: cap == 4096, src > 0): retained = win + srel_cur
-(sent store above the cumulative ack), divided by the summed tx rate; and the [LAT] coverage
-(p0:n + p1:n over n)."""
+"""Little's-law delivered delay per row (PIN phase: cap == 4096, src > 0).
+retained = win + gate (store_len = retained - released_for_gate, and `gate=` prints released_for_gate),
+i.e. the sent store above the receiver's cumulative point, divided by the summed tx rate; plus the
+[LAT] coverage (p0:n + p1:n over n)."""
 import re, sys, glob, os, statistics as S
 d = sys.argv[1]; out = {}
 print('row\tretained\trate\tlittle_s\tlat_cov')
@@ -8,7 +9,7 @@ for f in sorted(glob.glob(os.path.join(d, 'c8-100@def-*-c.log'))):
     name = os.path.basename(f)[11:-6]; ret = []; cum = []
     for L in open(f, errors='replace'):
         if not L.startswith('[DIAG]'): continue
-        w = re.search(r'win=(\d+)/(\d+)', L); sr = re.search(r'srel=(\d+)/', L); src = re.search(r' src=(\d+)', L)
+        w = re.search(r'win=(\d+)/(\d+)', L); sr = re.search(r' gate=(\d+)', L); src = re.search(r' src=(\d+)', L)
         d0 = re.search(r'dgq0\[hand=\d+ tx=(\d+)', L); d1 = re.search(r'dgq1\[hand=\d+ tx=(\d+)', L)
         t = float(re.search(r't=([\d.]+)s', L).group(1))
         if not (w and sr and d0 and d1 and src) or int(src.group(1)) == 0 or int(w.group(2)) < 4096: continue
