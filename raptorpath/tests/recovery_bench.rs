@@ -392,15 +392,20 @@ fn recovery_bench_fixtures_pin_the_plane() {
 
     // ── FIXTURE 2: the SHIPPED plane's measured behaviour at that point.
     // Every number below is a bench output, not a derivation.
-    assert_eq!(a.holes.len(), FIX_HOLES);
-    assert_eq!(mix(&a), FIX_APP_MIX, "app-echo channel mix (time/fast/age/sweep/shed)");
-    assert_eq!(a.counts.retx, FIX_APP_RETX);
-    assert_eq!(a.counts.sweeps, FIX_APP_SWEEPS);
-    assert_eq!(p50(&a), FIX_APP_P50_US);
-    assert_eq!(mix(&w), FIX_WIRE_MIX, "wire channel mix");
-    assert_eq!(w.counts.retx, FIX_WIRE_RETX);
-    assert_eq!(w.counts.sweeps, FIX_WIRE_SWEEPS);
-    assert_eq!(p50(&w), FIX_WIRE_P50_US);
+    let fx = fixture_for_horizon(gap_horizon());
+    if std::env::var("RWM_FIX_PRINT").is_ok() {
+        eprintln!("FIXPRINT horizon={} holes={} app_mix={:?} app_retx={} app_sweeps={} app_p50={} wire_mix={:?} wire_retx={} wire_sweeps={} wire_p50={}",
+            gap_horizon(), a.holes.len(), mix(&a), a.counts.retx, a.counts.sweeps, p50(&a), mix(&w), w.counts.retx, w.counts.sweeps, p50(&w));
+    }
+    assert_eq!(a.holes.len(), fx.holes);
+    assert_eq!(mix(&a), fx.app_mix, "app-echo channel mix (time/fast/age/sweep/shed)");
+    assert_eq!(a.counts.retx, fx.app_retx);
+    assert_eq!(a.counts.sweeps, fx.app_sweeps);
+    assert_eq!(p50(&a), fx.app_p50_us);
+    assert_eq!(mix(&w), fx.wire_mix, "wire channel mix");
+    assert_eq!(w.counts.retx, fx.wire_retx);
+    assert_eq!(w.counts.sweeps, fx.wire_sweeps);
+    assert_eq!(p50(&w), fx.wire_p50_us);
     // Liveness: every arm must actually serve holes through a named channel.
     for (tag, o) in [("app", &a), ("wire", &w)] {
         assert!(mix(o).iter().sum::<u64>() > 0, "{tag}: no hole reached a channel");
@@ -450,6 +455,52 @@ fn recovery_bench_fixtures_pin_the_plane() {
 // The driver acks on arrival subject to the 2 ms `GAP_ACK_MIN_US` floor, as
 // the shipped receiver does; it does not defer the first advertisement by the
 // hole-refresh cadence before any hole was NACKed.
+/// One horizon's fixture: every value a bench output at that engine gap horizon.
+struct Fix {
+    holes: usize,
+    app_mix: [u64; 5],
+    app_retx: u64,
+    app_sweeps: u64,
+    app_p50_us: u64,
+    wire_mix: [u64; 5],
+    wire_retx: u64,
+    wire_sweeps: u64,
+    wire_p50_us: u64,
+}
+
+/// The fixture is a PIN of the model's plane, and the model reads the engine's
+/// gap horizon (`gap_horizon()`): the 20-gap set is the bench output captured
+/// on the 20-gap plane, the 64-gap set is a bench output captured at `cand53`
+/// (lever B: `sack_to_gaps` bounded by `MAX_SACK_RANGES`). A third horizon
+/// fails here instead of silently using one of the sets.
+fn fixture_for_horizon(h: usize) -> Fix {
+    match h {
+        20 => Fix {
+            holes: FIX_HOLES,
+            app_mix: FIX_APP_MIX,
+            app_retx: FIX_APP_RETX,
+            app_sweeps: FIX_APP_SWEEPS,
+            app_p50_us: FIX_APP_P50_US,
+            wire_mix: FIX_WIRE_MIX,
+            wire_retx: FIX_WIRE_RETX,
+            wire_sweeps: FIX_WIRE_SWEEPS,
+            wire_p50_us: FIX_WIRE_P50_US,
+        },
+        64 => Fix {
+            holes: 154,
+            app_mix: [70, 84, 0, 0, 0],
+            app_retx: 154,
+            app_sweeps: 2,
+            app_p50_us: 12_536,
+            wire_mix: [70, 84, 0, 0, 0],
+            wire_retx: 156,
+            wire_sweeps: 2,
+            wire_p50_us: 12_536,
+        },
+        other => panic!("recovery_bench fixture 2 has bench outputs for gap horizons 20 and 64 only, the engine reports {other}: capture a set"),
+    }
+}
+
 const FIX_HOLES: usize = 154;
 /// 100 % FAST: on the app-echo clock the §6.1.2 channel (177.75 ms) never
 /// ripens inside a hole's life, so the packet-threshold channel serves
