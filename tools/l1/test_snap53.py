@@ -89,7 +89,10 @@ check("[SNAPV]: the pinned line parses per leg (p0, p1 and the tail-sweep p-); a
 src = os.path.join(HERE, "..", "..", "raptorpath", "src", "net", "tests.rs")
 if os.path.exists(src):
     tx = open(src, encoding="utf-8").read()
-    check("the parser's pinned example is the engine's own: dup-diag's snapv_line_format_is_pinned carries the same per-leg text",
+    if "fn snapv_line_format_is_pinned" not in tx:
+        print("SKIP the engine tree has no snapv_line_format_is_pinned (harness54 is main's engine; cand54 / levb54 carry it)")
+    else:
+      check("the parser's pinned example is the engine's own: dup-diag's snapv_line_format_is_pinned carries the same per-leg text",
           "fn snapv_line_format_is_pinned" in tx and all(x in tx for x in ("p0:rep=1 stale=0 pt_st=0 tt_st=0", "p1:rep=2 stale=1 pt_st=2 tt_st=1", "p-:rep=1 stale=0 pt_st=0 tt_st=0 fa_class=0.0625")))
 check("fed, det, fed - det and cx on the real CAND s42-r1 lines: fed 257 845 + 83 255 = 341 100, det 206 359 (the server's FINAL [SUCC], not the running one, not the client's zeros), "
       "fed - det = 134 741 (inside the §52 Erratum's +114 k to +177 k), cx 7 034 + 3 067",

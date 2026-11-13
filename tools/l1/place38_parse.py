@@ -611,6 +611,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         # Status 54, the block: the pool witness on both ends and the binary seat void a row; the readouts are reported only.
         import pool54_score
         p.extend(pool54_score.row_problems54b(arm, cli, srv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
+        row["sha_checked"] = pool54_score.sha_checked(ARM_POOL54.get(arm, (None,))[0], sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE"))
         try:
             row["t54"] = pool54_score.row_metrics(cli, srv, drv, row.get("bytes"), ARM_POOL54.get(arm, (None, None))[1])
         except Exception as e:      # a reported readout never voids a row

@@ -352,7 +352,8 @@ def check54(tag, path, run_dir, sb):
           and all(r["w54"]["hn_p0"] == 9800 and not r["w54"]["snapv_present"] for r in base) and not [r for r in gl + rl if r["status"] == "WITNESS-FAIL"],
           ([(r["cell"], r["arm"], r.get("w54")) for r in gl][:4], [r["problems"] for r in gl if r["problems"]][:3]))
     shas = {a: {r["bin_sha"] for r in gl if r["arm"] == a} for a in ("BASE", "CAND")}
-    check(f"{tag}: bin_sha is one value per arm and the two differ (the witness compares each with its own seat)", len(shas["BASE"]) == len(shas["CAND"]) == 1 and shas["BASE"] != shas["CAND"], shas)
+    check(f"{tag}: bin_sha is one value per arm and the two differ, and the comparison with the arm's seat EXECUTED on every row (w54.sha_checked), not skipped",
+          len(shas["BASE"]) == len(shas["CAND"]) == 1 and shas["BASE"] != shas["CAND"] and all(r["w54"]["sha_checked"] is True for r in gl + rl), (shas, [r["w54"] for r in gl][:2]))
     sc = open(os.path.join(gdir, "score.txt"), errors="replace").read()
     env = dict(os.environ, LD_BASE_SHA=BASE_SHA)
     ref = subprocess.run([sys.executable, os.path.join(sb["repo"], "tools", "l1", "place38_parse.py"), "score41d", os.path.join(gdir, "ld.log").replace("\\", "/"), os.path.join(gdir, "repl.log").replace("\\", "/")], capture_output=True, text=True, errors="replace", env=env).stdout
@@ -390,7 +391,8 @@ def check54b(tag, path, run_dir, sb):
           and all((r["gate_pool_cli"], r["gate_pool_srv"], r["pool_info_cli"], r["pool_info_srv"]) == (str(pool),) * 4 for r in led for pool in [int(r["arm"][1:])]),
           (len(led), [(r["arm"], r["status"], r["problems"], pl_missing(r)) for r in led if r["status"] != "LIVE" or pl_missing(r)][:3]))
     shas = {a: {r["bin_sha"] for r in led if r["arm"] == a} for a in want_env}
-    check(f"{tag}: B* ran the BASE seat's binary and L* the CAND seat's (one sha each, the two differ)", len(set().union(*shas.values())) == 2 and all(len(v) == 1 for v in shas.values())
+    check(f"{tag}: B* ran the BASE seat's binary and L* the CAND seat's (one sha each, the two differ), the comparison executed on every row (sha_checked)",
+          all(r["sha_checked"] is True for r in led) and len(set().union(*shas.values())) == 2 and all(len(v) == 1 for v in shas.values())
           and shas["B2048"] == shas["B640"] and shas["L2048"] == shas["L640"] and shas["B2048"] != shas["L2048"], shas)
     check(f"{tag}: every row's cap is 2 x its pool (bind fraction 1.0), the instrument env is plan 52's with RWM_PERF_TIMEOUT_S=200, and the env scrub withholds RWM_STORE_PATH_POOL",
           all(r["t54"]["bind_frac"] == 1.0 and r["t54"]["cap_med"] == 2 * int(r["arm"][1:]) for r in led) and "RWM_PERF_TIMEOUT_S=200" in open(os.path.join(rep, "ld.log"), errors="replace").read()
@@ -416,6 +418,26 @@ def red54(kind, want):
         ctxt = open(chk, errors="replace").read() if os.path.exists(chk) else ""
         check(f"54/red:{kind}: the stub's defect fails the smoke (ABORT-SMOKE, rc 5, no REHEARSAL-PASS) and the criterion that must catch it prints FAIL",
               rc == 5 and "ABORT-SMOKE" in era(sb) and "LD-ALL-REHEARSAL-DONE" not in out and re.search(r"^FAIL " + re.escape(want), ctxt, re.M) is not None, (rc, ctxt[-700:], tail(out, 8)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def red54sha(plan, stage, want):
+    """The sha witness failing once in a stub run: the sandbox's battery hands the row parser a wrong sha, the rehearsal's smoke must FAIL on the bin_sha criterion."""
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, plan, BASE_SHA)
+        bt = os.path.join(sb["repo"], "tools", "l1", "loopdiag_battery.sh")
+        txt = open(bt, newline="").read()
+        old = '"$TMPD/rwm-s.log" "$cot" "$sha" >> "$OUT" 2>&1'
+        assert txt.count(old) == 1, txt.count(old)
+        with open(bt, "w", newline="") as fh:
+            fh.write(txt.replace(old, '"$TMPD/rwm-s.log" "$cot" "0000deadbeef" >> "$OUT" 2>&1'))
+        rc, out, rows, cargo = run_launch(sb, plan, BASE_SHA, rehearse=True)
+        chk = os.path.join(sb["root"], "run", stage, "smoke-check.txt")
+        ctxt = open(chk, errors="replace").read() if os.path.exists(chk) else ""
+        check(f"{plan}/red:sha: a row whose bin_sha is not its seat's build fails the smoke (ABORT-SMOKE, rc 5) on the criterion '{want}'",
+              rc == 5 and "ABORT-SMOKE" in era(sb) and re.search(r"^FAIL " + re.escape(want), ctxt, re.M) is not None, (rc, ctxt[-600:], tail(out, 6)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -638,6 +660,10 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
     for kind, crit in (("nosnapv", "[SNAPV] present on every CAND row"), ("snapfire", "[SNAPV] present on every CAND row"), ("nohn", "CAND c8 row: p0 [HOLD] hn_n collapsed")):
         if want("red54:" + kind):
             jobs.append(ex.submit(red54, kind, crit))
+    if want("red54sha:54"):
+        jobs.append(ex.submit(red54sha, "54", "guard", "bin_sha matches the row's arm"))
+    if want("red54sha:54b"):
+        jobs.append(ex.submit(red54sha, "54b", "rep54b", "each row ran the build of its seat"))
     for kind, crit in (("poolfallback", "each arm's pool is in [GATES] on both ends"), ("nopoolinfo", "each arm's pool is in [GATES] on both ends")):
         if want("red54b:" + kind):
             jobs.append(ex.submit(red54b, kind, crit))
