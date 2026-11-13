@@ -301,7 +301,7 @@ impl Scheduler {
         let ref_srtt = self.place_ref_srtt(cold_srtt);
 
         let w_bw = self.weights.w_bw;
-        let w_div = self.weights.w_div;
+        let w_div = self.w_div();
 
         // The wire-clocked base (paper §5.7): see `place_e`. `wire_min` is the
         // second link of its availability chain, read once per placement.
