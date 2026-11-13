@@ -3,7 +3,10 @@
 import contextlib
 import copy
 import io
+import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -95,6 +98,41 @@ def row_levels(block):
 def backward_edges(block):
     lv = row_levels(block)
     return [(a, b) for a, b in EDGE_RE.findall(block) if lv.get(a, 0) >= lv.get(b, 0)]
+
+
+def svg_upward_edges(svg):
+    """Edges of a Mermaid SVG whose end is higher than its start (equal height is allowed).
+
+    Checks the node centres and the path itself, for every link including the invisible row ties.
+    """
+    pos = {m.group(1): float(m.group(3)) for m in
+           re.finditer(r'data-id="([^"]+)" transform="translate\(([-\d.e]+), ([-\d.e]+)\)"', svg)}
+    bad = []
+    for m in re.finditer(r'<path d="([^"]+)" id="L-[^"]*" class="([^"]*flowchart-link[^"]*)"', svg):
+        d, cls = m.groups()
+        a, b = re.search(r"LS-(\S+) LE-(\S+)", cls).groups()
+        ys = [float(x) for x in re.findall(r"-?\d+\.?\d*", d)][1::2]
+        if pos[b] < pos[a] - 1 or ys[-1] < ys[0] - 1:
+            bad.append((a, b))
+    return bad
+
+
+@unittest.skipUnless(shutil.which("mmdc") or os.environ.get("MMDC"), "mermaid-cli (mmdc) not installed; set MMDC to its path")
+class RenderedDirectionTests(unittest.TestCase):
+    """Renders the real diagrams with mmdc and reads the SVG back: no edge may point up."""
+
+    def test_no_rendered_edge_points_up(self):
+        mmdc = os.environ.get("MMDC") or shutil.which("mmdc")
+        cfg = os.environ.get("MMDC_PUPPETEER_CONFIG")
+        outs = build.render_outputs(build.load_nodes(build.NODES), skeleton(), TODAY)
+        with tempfile.TemporaryDirectory() as tmp:
+            for key, text in outs.items():
+                for k, block in enumerate(b for b in mermaid_blocks(text) if b.startswith("flowchart")):
+                    src, dst = Path(tmp) / "x.mmd", Path(tmp) / "x.svg"
+                    src.write_text(block, encoding="utf-8")
+                    cmd = [mmdc, "-i", str(src), "-o", str(dst)] + (["-p", cfg] if cfg else [])
+                    subprocess.run(cmd, check=True, capture_output=True)
+                    self.assertEqual(svg_upward_edges(dst.read_text(encoding="utf-8")), [], key)
 
 
 class OneDirectionTests(unittest.TestCase):
@@ -532,6 +570,23 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("rec-h", waiting)
         self.assertEqual(self.region(built([node("rec-a", state="done", outcome="successful", evidence=["e"])]),
                                      "running").strip(), "_None._")
+
+    def test_band_follows_own_state_and_date(self):
+        nodes = [node("rec-d", kind="defect-verdict", state="in-progress", start="2026-07-05"),
+                 node("rec-fixed", state="done", outcome="bad", evidence=["e"], depends_on=["rec-d"], start="2026-08-05"),
+                 node("rec-run", state="in-progress", start="2026-09-01", depends_on=["rec-fixed"]),
+                 node("rec-late", state="blocked", depends_on=["rec-run"])]
+        bands = dict((i, label) for label, ids in build.overview_bands(build.normalize(nodes), build.time_order(build.normalize(nodes)))
+                     for i in ids)
+        self.assertNotIn("Now", bands["rec-d"])  # an open defect sits in the month it was found
+        self.assertIn("2026", bands["rec-d"])
+        self.assertIn("2026", bands["rec-fixed"])
+        self.assertIn("Now", bands["rec-run"])
+        self.assertIn("Later", bands["rec-late"])
+        # an edge that would point up is dropped from the diagram, never drawn upward
+        up = [node("rec-a", state="done", outcome="successful", evidence=["e"], start="2026-02-01", depends_on=["rec-b"]),
+              node("rec-b", state="blocked")]
+        self.assertEqual(backward_edges(self.region(built(up), "overview")), [])
 
     def test_table_row(self):
         out = tfile([node("rec-a", headline="a|b", evidence=["x", "y"], depends_on=[])], "rec")

@@ -54,17 +54,17 @@ flowchart TB
         perf_decoder_prune["perf · ✔ Decoder prune<br/>per drain (#167;32)"]
     end
     subgraph bd_3["Nov 2026"]
+        cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse (#167;47)"]
         meas_guard_41c["meas · ✔ Rank-minp<br/>merge guard (#167;41c)"]
+        cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
         place_wire_price["place · ✔ Wire-RTT<br/>placement price"]
+        store_defect_cap_constant>"store · ⚠ Store cap<br/>constant at c8"]
         meas_guard_v2_impl["meas · ✔ Guard v2<br/>implementation"]
         model_law_ledger["model · ✔ Law ledger"]
     end
     subgraph bd_4["Now (in progress)"]
-        cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse (#167;47)"]
-        cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         rec_snapver_law[/"rec · ⏳ Snapshot-order<br/>filter as law"/]
-        store_defect_cap_constant>"store · ⚠ Store cap<br/>constant at c8"]
     end
     subgraph bd_5["Later (blocked or parked)"]
         rec_s54_session["rec · ⛔ #167;54: filter<br/>guard, store budget"]
@@ -95,18 +95,18 @@ flowchart TB
     perf_io_owner ~~~ store_power_law
     store_adr72_one_law ~~~ perf_decoder_prune
     store_power_law ~~~ perf_decoder_prune
+    perf_decoder_prune ~~~ cc_quinn_bbr_collapse
     perf_decoder_prune ~~~ meas_guard_41c
-    perf_decoder_prune ~~~ place_wire_price
-    meas_guard_41c ~~~ meas_guard_v2_impl
-    place_wire_price ~~~ model_law_ledger
-    meas_guard_v2_impl ~~~ cc_quinn_bbr_collapse
-    model_law_ledger ~~~ cc_quinn_bbr_collapse
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
-    cc_bbrrs_r1 ~~~ cc_bbrrs_r2
-    cc_bbrrs_r1 ~~~ rec_snapver_law
-    cc_bbrrs_r2 ~~~ store_defect_cap_constant
-    rec_snapver_law ~~~ store_defect_cap_constant
-    store_defect_cap_constant ~~~ rec_s54_session
+    meas_guard_41c ~~~ place_wire_price
+    cc_bbrrs_r1 ~~~ store_defect_cap_constant
+    place_wire_price ~~~ meas_guard_v2_impl
+    store_defect_cap_constant ~~~ model_law_ledger
+    meas_guard_v2_impl ~~~ model_law_ledger
+    model_law_ledger ~~~ cc_bbrrs_r2
+    model_law_ledger ~~~ rec_snapver_law
+    cc_bbrrs_r2 ~~~ rec_s54_session
+    rec_snapver_law ~~~ rec_s54_session
     rec_s54_session ~~~ rec_leverb_guard
     rec_s54_session ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote

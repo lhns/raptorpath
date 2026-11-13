@@ -338,21 +338,18 @@ def month_name(ym):
 def overview_bands(sel, order):
     """[(label, [node ids])] in time order: past months (merged until a band holds BAND_MIN nodes), now, next, later.
 
-    A node never sits in an earlier band than one of its prerequisites (a done node that depends on
-    a blocked one moves down with it), so every edge still points down.
+    A node's band follows its own state and date: done, abandoned and open defect nodes go to the month of
+    their start; in-progress to Now, next to Next, blocked and parked to Later. An edge that would then point
+    up is not drawn (drawn_edges drops it); the tables keep it.
     """
     by = {n["id"]: n for n in sel}
-    pre = precedence(sel)
 
     def base(n):
-        if n["state"] in ("done", "abandoned"):
+        if n["state"] in ("done", "abandoned") or (n["kind"] == "defect-verdict" and n["start"]):
             return (0, n["start"][:7])
         return {"in-progress": (1, ""), "next": (2, "")}.get(n["state"], (3, ""))
 
-    rank = {}
-    for i in order:  # `order` is topological, so prerequisites are ranked first
-        if i in by:
-            rank[i] = max([base(by[i])] + [rank[p] for p in pre[i]])
+    rank = {i: base(by[i]) for i in order if i in by}
     ordered = sorted(rank, key=lambda i: rank[i])  # stable: keeps the time order inside a rank
     past = {}
     for i in ordered:
