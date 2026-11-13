@@ -98,6 +98,10 @@ pub(crate) struct SenderState {
     /// allocation per insert or a tree rebuild per ack. The retransmit
     /// buffer's individual removals (shed, NACK) leave holes the ring handles.
     pub source_path_map: SeqRing<u32>,
+    /// The newest receiver gap-snapshot version the gap path has dequeued
+    /// (`V*`, `net/snapver.rs`). Here, beside the encoder, because the
+    /// version counts this transfer's seq space and must die with it.
+    pub snap_order: super::SnapOrder,
     /// seq → last NACK-retransmit time (µs). Repeated gap acks for the same
     /// hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists) must
     /// not resend the symbol more than once per SRTT — but may resend after
@@ -231,6 +235,7 @@ impl SenderState {
             sent_store: SeqRing::new(),
             retransmit_buffer: SeqRing::new(),
             source_path_map: SeqRing::new(),
+            snap_order: super::SnapOrder::default(),
             nack_retx_at: std::collections::HashMap::new(),
             last_source_path: 0,
             last_source_send_us,
