@@ -288,6 +288,8 @@ The counted store is pinned at 4096 on both binaries. The retained store is not 
 
 ## 6. What would confirm it on the VM (falsifiable; not a fix)
 
+**Superseded by §8:** the CAND-only dial below re-tests only Little's law; §8 adds the reduced pool on BASE.
+
 The mechanism says the p0 backlog is `W − wire₀ − path₁ − H`, where W is the binding ceiling.
 Dial W through `RWM_STORE_PATH_POOL`. The ceiling is 2·pool, and the ask stays above it at every
 value below. The variable is read from the environment (`gates.rs:323`), echoed in `[GATES]` and
@@ -430,61 +432,78 @@ Here τ₀,min and τ₁,min are the start-up p0/p1 `rtp_us` (8.4–14.2 ms and 
 Controls (§53 reference rows with the filter on: BASES, CANDS, PIN phase): BASES H = 1 089–1 510
 old holes, residual 1 257–1 733; CANDS H = 0–1.
 
-How H responds to W is the unknown the BASE rows test. Two bounding readings:
-- **(H1) H fixed in symbols:** the 20-gap horizon's backlog does not depend on W.
-- **(H2) H = p̄ · r · T_H with T_H fixed in seconds:** p̄ ≈ 0.030 pooled loss; T_H ≈ H/λ ≈
-  1 460 / 354 /s ≈ 4.1 s at the control.
+How H responds to W is the unknown the BASE rows test. Two hypotheses are registered **co-equal**;
+the run decides between them.
 
-Then:
-- **BASE' saturation edge:** W* = H + P_min ≈ **1.3k–2.1k** under H1. Under H2 the edge is a little
-  lower, and below it r = W / (τ_min + p̄·T_H), e.g. W = 1 280 → r ≈ 7–8k/s, about −35 %.
-- **CAND' saturation edge:** W* ≈ P_min + the repair slots λ·T_repair (≈ 354 /s × 0.2 s ≈ 70) ≈
-  **300–700**.
+- **(H-hold) Old holes hold slots regardless of W.** Two bounding forms:
+  - (H1) H fixed in symbols;
+  - (H2) H = p̄ · r · T_H with T_H fixed in seconds, where p̄ ≈ 0.030 pooled loss and
+    T_H ≈ H/λ ≈ 1 460 / 354 /s ≈ 4.1 s at the control.
 
-W = 1 280 is below BASE's edge under both readings and about 2× above CAND's. W = 2 048 is at BASE's
-edge and serves as the dose step.
+  Then BASE' saturates only while W ≥ W* = H + P_min ≈ **1.3k–2.1k** under H1. Under H2 the edge is
+  a little lower, and below it r = W / (τ_min + p̄·T_H): W = 1 280 gives r ≈ 7–8k/s, about −35 %.
+- **(H-elastic) The backlog exists only because the oversized pool lets it.** The 20-gap horizon
+  binds when the open gaps per report exceed 20, roughly λ_loss × 2·rtt. At W = 1 280 the transit
+  RTT falls, and with it the gap count. At BASE'P640's own predicted rtt0 of 12–60 ms the count is
+  354 × (0.024–0.12) ≈ 8–42, which straddles 20. If the horizon stops binding, BASE behaves like
+  CAND.
 
-**(H3) The live alternative: holes are elastic.** BASE's old holes exist only because the oversized
-pool lets the RTT, and with it the number of open gaps per report, grow past the 20-gap horizon. At
-a small W the RTT drops, the horizon stops binding, and BASE behaves like CAND.
-- Its signature: BASE'P640 keeps goodput, its old holes fall to about 0 and its tail shortens to
-  CAND's.
-- A rough check argues against it: open gaps per report ≈ λ_loss × 2·rtt ≈ 354 × 0.1 s ≈ 35 > 20
-  even at a 50 ms RTT. It is not excluded.
+**CAND' saturation edge:** W* ≈ P_min + repair slots (λ·T_repair ≈ 354 /s × 0.2 s ≈ 70). The one
+measured point: CW0 s42 r2 ran its PRE phase at cap 1 185 with r₀ 9 882 /s, r₁ 1 982 /s and residual
+−18, i.e. a lever-B binary at link rate on fewer than 1 280 slots. That is one row; P_min's 200–600
+has no data beyond it.
 
-### 8.4 Predictions (per arm; PIN-phase medians of per-row values unless marked; bands are arm ranges)
+**What the existing PRE phase says (checked on the §53 logs before writing).**
+- On 20-gap rows, the PRE phase (caps 1.5k–3.3k for about 8 s) is itself a reduced-pool observation:
+  - tx at link rate on 12 of 12 rows;
+  - old holes 0–472, against 1.1k–1.5k in PIN.
+- It does **not** show the backlog is elastic. Old holes appear at t ≈ 4–5 s on every 20-gap row and
+  grow by about 70–200 per second whether the cap is 2.1k, 2.8k or 4.1k. For instance:
+  - BASE s42 r1 at cap 2 138: 0 → 21 → 97 → 118 over 7–9 s;
+  - BASES s42 r3 at cap 2 773: 111 → 517 over 4–8 s;
+  - BASES s7 r1, which steps to 4 096 at 5.3 s: 85 → 1 262 over 4–11 s.
+- The frontier lag (`src − ack`, in seconds) climbs the same way, from 0.6 to 1.5–3.0 s before the
+  step. The backlog follows **run time**, not the step, and was still building when the step came.
+- So PRE is the pre-backlog transient at RTTs of 115–180 ms. It neither tests H-elastic (its RTTs
+  are too high) nor contradicts H-hold.
+- A reduced-W run reaches the regime the prediction is about only after about 10–15 s, which is why
+  §8.5 reads the late window. On CAND rows, PRE old holes are 0 at caps 1.2k–3.8k.
 
-| readout | BASE'P2048 | BASE'P1024 | **BASE'P640** | CAND'P2048 | CAND'P1024 | **CAND'P640** |
+### 8.4 Predictions (per arm; LATE-window medians of per-row values unless marked; bands are arm ranges)
+
+The LATE window is sending ticks with t ≥ 15 s (§8.5), where the 20-gap backlog has built. BASE'
+reduced-W columns are given under both hypotheses.
+
+| readout | BASE'P2048 | BASE'P1024 H-hold / H-elastic | **BASE'P640 H-hold / H-elastic** | CAND'P2048 | CAND'P1024 | **CAND'P640** |
 |---|---|---|---|---|---|---|
-| goodput Mbit/s (scorer, whole run) | 96–103 (BASES 96.3–102.1) | 75–103 | **20–85** | 107–109 (CANDS 107.2–108.3) | 105–109 | **104–109** |
-| Σ tx rate in the PIN phase, /s | 11.7k–11.9k | 9k–11.9k | **≤ 10k** | 11.8k–11.9k | 11.7k–11.9k | **11.6k–11.9k** |
-| p0 send backlog `q0` = `dgq0 hand − tx` | 300–1 600 (BASES 356–1 542) | 0–300 | 0–100 | 900–2 700 (CANDS 903–2 642) | 100–1 000 | 0–400 |
-| p0 app-echo `rtt0` ms | 180–215 | 30–110 | 12–60 | 300–355 | 125–225 | 70–150 |
-| `rtt0 − wrtt0` ms | 30–140 | 0–30 | 0–10 | 80–270 | 10–100 | 0–40 |
-| budget residual `W − Σ rᵢ·rttᵢ` | 1.25k–1.75k | 1.0k–1.8k | **≥ 900** | −60…+60 | −60…+60 | −60…+60 |
-| old holes (server `[RANK]` holes − tail_overcount) | 1.0k–1.55k | 0.9k–1.6k | **≥ 700** | 0–10 | 0–10 | 0–10 |
-| tail s | 2.6–5.5 | 2–6 | 1.5–6 | 0.2–0.7 | 0.1–0.7 | 0.1–0.7 |
-| quinn evictions (`dgq0 full`, last line) | 0 | 0 | 0 | 0–350 | 0 | 0 |
-| in-order delay, PIN mean s (`inorder.py`) | 4.8–5.6 | ≥ 2.5 | **≥ 2.5** | 0.9–1.4 | 0.5–1.0 | 0.4–0.9 |
-| in-order delay, PIN p95 s | 6.3–7.9 | ≥ 3.5 | ≥ 3.5 | 1.5–2.3 | 0.8–1.7 | 0.6–1.4 |
-| receiver duplicates | 1 230–1 810 (BASES) | reported | reported | 1 100–1 490 (CANDS) | reported | reported |
+| goodput Mbit/s (scorer `goodput_mbps`) | 96–103 (BASES 96.3–102.1) | 75–103 / 96–109 | **20–85 / ≥ 95** | 107–109 (CANDS 107.2–108.3) | 105–109 | **104–109** |
+| Σ tx rate, LATE, /s | 11.7k–11.9k | 9k–11.9k / 11.7k–11.9k | **≤ 10k / ≥ 11.6k** | 11.8k–11.9k | 11.7k–11.9k | **11.6k–11.9k** |
+| p0 backlog `q0` = `dgq0 hand − tx` | 300–1 600 (BASES 356–1 542) | 0–600 / 100–1 000 | 0–200 / 0–400 | 900–2 700 (CANDS 903–2 642) | 100–1 000 | 0–400 |
+| p0 app-echo `rtt0` ms | 180–215 | 30–180 / 125–225 | 12–90 / 70–150 | 300–355 | 125–225 | 70–150 |
+| `rtt0 − wrtt0` ms | 30–140 | 0–60 / 10–100 | 0–20 / 0–40 | 80–270 | 10–100 | 0–40 |
+| residual `W − Σ rᵢ·rttᵢ` (W = the tick's own cap) | 1.25k–1.75k | 0.5k–1.8k / ≤ 300 | **≥ 700 / ≤ 300** | −60…+60 | −60…+60 | −60…+60 |
+| old holes (server, LATE readouts) | 1.0k–1.55k | 0.5k–1.6k / ≤ 300 | **≥ 700 / ≤ 300** | 0–10 | 0–10 | 0–10 |
+| H0 = `win` at the first tick after source end (scorer) | 1.2k–2.2k (BASES 1 188–2 185) | 0.7k–2.05k / ≤ 800 | 0.6k–1.28k / ≤ 700 | 250–820 (CANDS, n 4) | 100–900 | 100–700 |
+| tail s (scorer `tail_s` = run s − t(last tick with src > 0)) | 2.6–5.5 (BASES 2.63–5.44) | 2–6 / ≤ 1 | 1.5–7 / ≤ 1 | 0.2–0.7 (CANDS 0.23–0.68) | 0.1–0.7 | 0.1–0.7 |
+| quinn evictions (`dgq0 full`, last line) | 0 | 0 | 0 | 0–350 (CANDS 0–336) | 0 | 0 |
+| in-order delay, LATE mean s (`inorder.py`) | 4.8–5.6 | ≥ 2.0 / ≤ 1.2 | **≥ 2.0 / ≤ 1.0** | 0.9–1.4 (CANDS 0.94–1.39) | 0.5–1.0 | 0.4–0.9 |
+| in-order delay, LATE p95 s | 6.3–7.9 | ≥ 3.0 / ≤ 2.0 | ≥ 3.0 / ≤ 1.6 | 1.5–2.3 | 0.8–1.7 | 0.6–1.4 |
+| receiver duplicates (**non-discriminating**, 0.5–2 × control) | 1 230–1 810 (BASES) | 600–3 600 | 600–3 600 | 1 100–1 490 (CANDS) | 550–3 000 | 550–3 000 |
 
 Notes on the bands:
 - **The q0, rtt and delay bands at reduced W** take the population shares measured at 4096: p0
   takes 0.84 of the population on CAND and about 0.8 of the transit population on BASE. They assume
   quinn's window does not grow when its path goes app-limited.
-- **BASE'P640's goodput band** spans H1 (a stall toward the bottom) to H2 (about −35 %). The
+- **BASE'P640's H-hold goodput band** spans H1 (a stall toward the bottom) to H2 (about −35 %). The
   prediction is the side, not the point: clearly outside CAND'P640's −3 %.
-- **Duplicates at reduced W:** no reading here predicts them. They are reported.
-- **H3's predicted row instead:** BASE'P640 goodput ≥ 95, old holes ≤ 300, tail ≤ 1 s, in-order
-  mean ≤ 1.5 s.
+- **Duplicates** follow from neither hypothesis. The band is only a sanity range.
 
 **Falsifiers (each separates "old holes hold the slots" from an alternative):**
 1. **BASE'P640 goodput ≥ 0.95 × BASE'P2048** while its old holes stay ≥ 700. Holes then hold slots
    without costing goodput, so the identity or P_min is wrong. This **refutes** the mechanism.
-2. **BASE'P640 goodput ≥ 0.95 × control and old holes ≤ 300:** H3, elastic holes. The bookkeeping
+2. **BASE'P640 goodput ≥ 0.95 × control and old holes ≤ 300:** H-elastic. The bookkeeping
    survives, but lever B's gain is then a property of the oversized pool, which changes the merge
-   argument. Reported as a finding, not a refutation.
+   argument. Reported as a finding, not a refutation of the budget.
 3. **CAND'P640 goodput < 0.97 × CAND'P2048, or Σ tx < 11.5k/s:** CAND's edge is above 1 280, so P_min
    or the repair slots are underestimated. The contrast at W = 1 280 then loses its meaning; read
    W = 2 048 alone.
@@ -494,7 +513,7 @@ Notes on the bands:
 **Decision rule (reported only, nothing scored).**
 - Falsifiers 1 and 4 do not fire, and BASE'P640 sits below CAND'P640 on goodput by more than both
   arms' ranges: **confirmed**. Old holes cost about H slots of the pool on main.
-- Falsifier 2 fires: **H3**.
+- Falsifier 2 fires: **H-elastic**.
 - Falsifier 1 or 4 fires: **refuted**; back to diagnosis.
 
 ### 8.5 Readouts and liveness the harness must add
@@ -502,9 +521,13 @@ Notes on the bands:
 All from the client `[DIAG]` lines unless marked. Every per-path field is anchored on
 `pN:infl=`, because ` pN:` alone first matches the `mpr[… fp/on p0:… p1:…]` token.
 
-- **PIN phase:** ticks with `win=(\d+)/(\d+)` whose denominator equals `2 × pool` (from the row's
-  `[GATES]`), and ` src=(\d+)sym/s` > 0. Liveness: after the first such tick, ≥ 95 % of sending ticks
-  are PIN, as at 4096 in §53 (4 206/4 209).
+- **LATE window:** ticks with `t=([\d.]+)s` ≥ 15 and ` src=(\d+)sym/s` > 0. It is chosen by time,
+  not by cap. The law's ask with the start-up RTprop (PRE values 1 185–3 815) straddles W = 2 048,
+  and the 20-gap backlog builds with run time (§8.3).
+  - Wherever the residual needs W, use each tick's own `win=a/b` denominator `b`.
+  - **Bind fraction** per arm, reported and never voiding: the share of LATE ticks with
+    `b = 2·pool`. It is predicted ≥ 0.95, since the ask exceeds 4096 after the 10.3 s step on every
+    §53 row.
 - **Quinn evictions per path:** `dgq(\d)\[hand=(\d+) tx=(\d+) full=(\d+) err=(\d+) sp=(\d+)\]` on
   the **last** `[DIAG]` line.
   - The readout is `full` (the count of evicting handoffs, a lower bound on datagrams evicted).
@@ -516,21 +539,31 @@ All from the client `[DIAG]` lines unless marked. Every per-path field is anchor
   `next_expected` (`control_msg.rs:490`), i.e. the in-order frontier as the sender last heard it.
   - **In-order delay per tick:** `delay(t) = t − t_src(ack(t))`. `t_src(a)` is the time the `src`
     curve reached `a`, linearly interpolated between the 250 ms ticks. Report the mean, p50 and p95
-    over PIN ticks and over all ticks with `ack > 0` (`p0-dwell-diag/inorder.py`).
-  - **Tail:** `t(ack = total) − t(src = total)`, from the first tick where each reaches the final
-    total. If `ack` never reaches it on a `[DIAG]` tick, keep the scorer's `tail_s` and flag the row.
-- **Old holes H (server):** median over readouts `[12 : −6]` of `[RANK] holes − tail_overcount`.
-  `[RANK]` lines are about 1 s apart from server start, so index 12 is past the 10.3 s step, and the
-  last 6 are tail.
-- **Budget residual:** per PIN tick, `win.a − (r₀·rtt₀ + r₁·rtt₁)/1000`. Here rᵢ = Δ`dgqi tx`/Δt over
-  the PIN phase, and `rttᵢ` comes from `pi:infl=…rtt=(\d+)/wrtt=(\d+)` (`p0-dwell-diag/budget2.py`).
+    over LATE ticks and over all ticks with `ack > 0`. `p0-dwell-diag/inorder.py` uses the cap-pinned
+    selector; switch it to the LATE selector.
+  - **Also report `lag_end`** = `src − ack` at the last sending tick (tail52's definition).
+- **Tail and H0:** keep the §52/§53 scorer's definitions (`tail52_score.py` on `github/cand53`), not a
+  new parse.
+  - `ise` = the last `[DIAG]` line with src > 0 at t ≥ 1 s.
+  - `tail_s` = run seconds (the driver's `median_s`) − t(ise).
+  - `H0` = `win=` at the first `[DIAG]` line after `ise` with t ≤ run seconds. H0 is undefined when
+    the tail is shorter than one tick, which happens on some lever-B rows.
+  - A `cum` ack-crossing parse does not work: `ack` on the last `[DIAG]` line is 497k–503k of
+    507 616 on the rows checked, because the final lines come before the frontier reaches the total.
+- **Old holes H (server):** median of `[RANK] holes − tail_overcount` over readouts with index
+  ≥ 15 (about t ≥ 15 s; lines are about 1 s apart from server start), excluding the last 6 (tail).
+- **Budget residual:** per LATE tick, `b − (r₀·rtt₀ + r₁·rtt₁)/1000`, with `b` the tick's cap. Here
+  rᵢ = Δ`dgqi tx`/Δt over the LATE window, and `rttᵢ` comes from `pi:infl=…rtt=(\d+)/wrtt=(\d+)`
+  (`p0-dwell-diag/budget2.py`, with the selector changed as above).
 - **Kept from §53:** goodput, receiver duplicates, retransmits/GB, `[SNAPV]` and `[LAT]` (reported
   with its coverage `Σ pN:n / n`, never as the delay readout).
 - **Liveness (a row counts only if):**
   - the client `[GATES]` shows `RWM_STORE_PATH_POOL=<requested n>` (2048 on controls; no silent
-    fallback, §8.1), and the sender's INFO `pool_per_path=<n>` matches;
-  - the PIN-phase cap equals `2·n`;
-  - the filter law is live: `[SNAPV]` `pt_st + tt_st = 0` on every leg, and `stale > 0` on p1;
+    fallback, §8.1), and the sender's INFO `pool_per_path=<n>` matches. This is the only check that
+    voids a row on the knob;
+  - the filter law is live: `[SNAPV]` `pt_st + tt_st = 0` on every leg, and `stale > 0` on p1.
+    **Confirm at pin**: whether `snapver-law` keeps the `[SNAPV]` counters and their names under the
+    default law;
   - the binary witness holds at W = 4096 only (BASE' tail ≥ 2 s, CAND' ≤ 0.8 s). At reduced W the
     tail is an outcome, not a witness.
 
