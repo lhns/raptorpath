@@ -54,6 +54,8 @@ pub use store_cap::*;
 mod report;
 pub use report::*;
 mod sack;
+mod snapver;
+pub use snapver::*;
 // Threading Q2: the sender's TX ownership (`TxCore`) and its input channels.
 mod tx_inputs;
 pub(crate) use tx_inputs::{
@@ -831,7 +833,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // attribution counters exactly as `FireCause` is; nothing in the repair
     // loop branches on it.
     let (nack_tx, nack_rx) =
-        tokio::sync::mpsc::channel::<(FireCause, u32, Vec<(u64, u64)>)>(16);
+        tokio::sync::mpsc::channel::<GapBatch>(16);
 
     // Generation-deficit channel (paper §5.8): the data-arm's control handler parses
     // inbound GenerationDeficit messages and forwards the (anchor, deficit)
@@ -1038,7 +1040,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         gates.rank_feedback,
     );
     let sender_nack_tx: Option<
-        tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
+        tokio::sync::mpsc::Sender<GapBatch>,
     > =
         if !window_generation && !recv_request_law {
             Some(nack_tx)
@@ -1430,7 +1432,7 @@ async fn run_window_sender(
     // input — acks, PathReport, Ping — and the cold tasks' commands) and the
     // ack handling's channel seats.
     inputs: SenderInputs<'_>,
-    nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
+    nack_rx: &mut tokio::sync::mpsc::Receiver<GapBatch>,
     // Generation-deficit feedback (paper §5.8): each element is the
     // receiver's reported (generation_anchor, residual_deficit) vector.
     // Drives the bounded, targeted recovery emission.
@@ -1818,6 +1820,8 @@ async fn run_window_sender(
     let mut qclk_echo = QuantileClockGauge::new("sender");
     // `[HOLD]` — hole outcomes and closure classes, observation only.
     let mut hold_echo = HoldDownGauge::new("sender");
+    // `[SNAPV]` — gap-snapshot order per return leg, observation only.
+    let mut snap_echo = SnapOrderGauge::new();
     hold_echo.set_send_generation(pol.generation);
 
 
@@ -2697,7 +2701,7 @@ async fn run_window_sender(
         // fire can be attributed to the sender's own tail-sweep timer or to
         // one of the receiver's two arms. Label only — the loop below reads
         // it for counters and for nothing else.
-        let mut pending_gaps: Option<(FireCause, u32, Vec<(u64, u64)>)> = None;
+        let mut pending_gaps: Option<GapBatch> = None;
 
         // Tail sweep: the last symbols of a burst have no successors,
         // so the receiver can never SACK a gap behind them — the sender must
@@ -2959,7 +2963,7 @@ async fn run_window_sender(
                     // so no arrival path. `u32::MAX` is the gauge's existing
                     // unattributed sentinel and reads as cross-path by
                     // construction, which is what "no receiver said so" means.
-                    pending_gaps = Some((FireCause::Timer, u32::MAX, vec![(seq, seq)]));
+                    pending_gaps = Some((FireCause::Timer, u32::MAX, vec![(seq, seq)], None));
                 }
                 None
             }
@@ -3464,6 +3468,7 @@ async fn run_window_sender(
             dg: &mut dg,
             rack_echo: &mut rack_echo,
             hold_echo: &mut hold_echo,
+            snap_echo: &mut snap_echo,
             mp_delivered: &mut mp_delivered,
             pending_gaps: &mut pending_gaps,
             cached_nack_budget: &mut cached_nack_budget,

@@ -596,13 +596,14 @@ pub(crate) struct ServeGapsCtx<'a> {
     pub mpd_pf_floor: &'a std::cell::Cell<u64>,
     pub mpd_pf_clock: &'a std::cell::Cell<u64>,
     pub mpd_pf_sum: &'a std::cell::Cell<u64>,
-    pub nack_rx: &'a mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
+    pub nack_rx: &'a mut tokio::sync::mpsc::Receiver<GapBatch>,
     pub st: &'a mut SenderState,
     pub dg: &'a mut DiagState,
     pub rack_echo: &'a mut RackClockGauge,
     pub hold_echo: &'a mut HoldDownGauge,
+    pub snap_echo: &'a mut SnapOrderGauge,
     pub mp_delivered: &'a mut std::collections::HashMap<u32, Vec<u64>>,
-    pub pending_gaps: &'a mut Option<(FireCause, u32, Vec<(u64, u64)>)>,
+    pub pending_gaps: &'a mut Option<GapBatch>,
     pub cached_nack_budget: &'a mut u64,
     pub nack_repairs_this_period: &'a mut u64,
     pub mp_evid_max: &'a mut u64,
@@ -630,6 +631,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         dg,
         rack_echo,
         hold_echo,
+        snap_echo,
         mp_delivered,
         pending_gaps,
         cached_nack_budget: cached_nack_budget_cell,
@@ -640,39 +642,34 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
     let mut nack_repairs_this_period = *nack_repairs_this_period_cell;
     let mut mp_evid_max = *mp_evid_max_cell;
     loop {
-        let (gap_cause, ack_path, gaps) = match pending_gaps.take() {
-            Some(g) => g,
-            None => match nack_rx.try_recv() {
-                Ok(g) => {
-                    // A gap report is a state snapshot of the receiver's
-                    // current holes (frontier + inverted SACK), not a delta,
-                    // so a queued backlog is stale by construction and only
-                    // the newest snapshot needs processing. Under the mp law
-                    // holes legitimately outlive their reports (suppressed
-                    // until a loss channel fires), so the gap-ack cadence
-                    // queues snapshots faster than they change; coalescing
-                    // removes that walk tax. With the gate off every report
-                    // is processed. The newest snapshot keeps its `[FCAUSE]`
-                    // cause tag, so fires are attributed to the report that
-                    // drove them.
-                    let mut g = g;
-                    if pol.recov_mp_law {
-                        while let Ok(n) = nack_rx.try_recv() {
-                            g = n;
-                            if pol.diag_on {
-                                dg.mpd_coalesced += 1;
-                            }
-                        }
-                    }
-                    g
-                }
-                Err(_) => break,
-            },
+        // A gap report is a state snapshot of the receiver's current holes
+        // (frontier + inverted SACK), not a delta, so a queued backlog is
+        // stale by construction and only the newest snapshot needs
+        // processing. Under the mp law holes legitimately outlive their
+        // reports (suppressed until a loss channel fires), so the gap-ack
+        // cadence queues snapshots faster than they change; coalescing
+        // removes that walk tax. With the gate off every report is
+        // processed. "Newest" is the snapshot-order law's (paper §7.1,
+        // `net/snapver.rs`): the batch of highest receiver version, not the
+        // last to arrive, and every dequeued batch folds `V*`. The kept batch
+        // keeps its `[FCAUSE]` cause tag.
+        let Some(((gap_cause, ack_path, gaps, snap_v), coalesced)) =
+            take_gap_batch(pending_gaps, nack_rx, pol.recov_mp_law, &mut st.snap_order)
+        else {
+            break;
         };
+        if pol.diag_on {
+            dg.mpd_coalesced += coalesced;
+        }
         if cached_max_repairs == 0 || cached_nack_budget == 0 {
             // Fully suppressed or budget exhausted — drain NACK queue
             dg.diag_gaps_dropped += 1;
             continue;
+        }
+        // Was this batch's snapshot older than the newest dequeued one?
+        let snap_stale = st.snap_order.is_stale(snap_v);
+        if pol.diag_on {
+            snap_echo.on_report(ack_path, snap_stale);
         }
 
         // SRTT drives the per-seq retransmit cooldown and the age gate.
@@ -771,16 +768,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // per-path sorted evidence lists. Monotone watermark ⇒ each seq
         // ingested at most once over the transfer.
         if pol.recov_mp_law && mp_n_paths > 1 {
-            for (lo, hi) in mp_delivered_intervals(&gaps) {
-                let start = lo.max(mp_evid_max + 1);
-                if start > hi {
-                    continue;
-                }
-                for (q, &pj) in st.source_path_map.range(start, hi) {
-                    mp_delivered.entry(pj).or_default().push(q);
-                }
-                mp_evid_max = mp_evid_max.max(hi);
-            }
+            mp_ingest_evidence(&gaps, &st.source_path_map, mp_delivered, &mut mp_evid_max);
         }
 
         // The `[HOLD]` resolution signal. Every stamped hole
@@ -788,14 +776,18 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // one the receiver has — feed its outstanding time. Placed here,
         // before the loop below stamps this batch's own seqs, or every hole
         // would be resolved by the report that first announced it.
+        // The snapshot-order law: a snapshot older than the newest dequeued
+        // one is not judged by either loss channel, the shed or the `[HOLD]`
+        // stamps (its delivered facts above were still ingested).
+        let judged = judged_gaps(&st.snap_order, snap_v, &gaps);
         hold_echo.on_report(
-            &gaps,
+            judged,
             now_repair_us,
             &st.shed_seqs,
             ack_path,
             &half_srtt_of,
         );
-        'gaps: for &(gap_start, gap_end) in &gaps {
+        'gaps: for &(gap_start, gap_end) in judged {
             // EVICT: only the coding window can serve a gap — older
             // seqs are gone. RETAIN: the sent-data store serves ANY
             // un-acked seq (targeted ARQ for holes that aged out of
@@ -895,6 +887,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     .or_else(|| {
                         st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
                     });
+                // Which channel let this seq through (`[SNAPV]` split).
+                let mut fired_by_pt = false;
                 if pol.recov_mp_law && mp_n_paths > 1 {
                     // The skew-aware hole law (ADR-0059) — RFC 9002 loss detection
                     // generalized per path, BOTH channels:
@@ -922,9 +916,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     let mut fast = false;
                     if !time_ripe && !st.nack_retx_at.contains_key(&seq) {
                         let orig = st.source_path_map.get(&seq).copied();
-                        fast = orig
-                            .and_then(|j| mp_delivered.get(&j))
-                            .is_some_and(|v| mp_fast_lost(v, seq));
+                        fast = mp_packet_threshold_fires(seq, orig, mp_delivered);
                     }
                     if !time_ripe && !fast {
                         if pol.diag_on {
@@ -935,6 +927,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     if fast && pol.diag_on {
                         dg.mpd_fired_fast += 1;
                     }
+                    fired_by_pt = fast;
                 } else if pol.recov_sp && mp_n_paths <= 1 {
                     // `RWM_RECOV_SP`: the same §6.1.2 time threshold applied
                     // at N = 1 — a gap seq whose live flight (last retransmit,
@@ -1025,6 +1018,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // threshold (young = the law would have suppressed it),
                 // per-flight-path and per-retx-path emission counts.
                 hold_echo.on_fire(seq);
+                if pol.diag_on {
+                    snap_echo.on_fire(ack_path, snap_stale, fired_by_pt);
+                }
                 rack_echo.record_fire_cause(gap_cause);
                 if let Some((t, p)) = mp_flight {
                     let age = now_repair_us.saturating_sub(t);

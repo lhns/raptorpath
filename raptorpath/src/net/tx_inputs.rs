@@ -32,7 +32,7 @@ use std::sync::atomic::AtomicU64;
 use tokio::sync::{mpsc, oneshot};
 
 use super::control_msg::{ControlCtx, handle_control_message};
-use super::{CopaFeed, FireCause, SackReport};
+use super::{CopaFeed, GapBatch, SackReport};
 use crate::control::FecRateController;
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::{PathId, Scheduler};
@@ -106,7 +106,7 @@ pub(crate) enum SenderCmd {
 pub(crate) struct SenderInputs<'a> {
     pub acks: &'a mut mpsc::Receiver<InboundBatch>,
     pub cmds: &'a mut mpsc::Receiver<SenderCmd>,
-    pub nack_tx: Option<&'a mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>>,
+    pub nack_tx: Option<&'a mpsc::Sender<GapBatch>>,
     pub sack_tx: Option<&'a mpsc::Sender<SackReport>>,
 }
 
@@ -115,7 +115,7 @@ pub(crate) struct InputCtx<'a> {
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub peer_window_ack: &'a Arc<AtomicU64>,
-    pub nack_tx: Option<&'a mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>>,
+    pub nack_tx: Option<&'a mpsc::Sender<GapBatch>>,
     pub sack_tx: Option<&'a mpsc::Sender<SackReport>>,
     pub copa_feed: Option<&'a Arc<CopaFeed>>,
     pub mstar_anchor: bool,
