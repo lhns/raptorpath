@@ -1,0 +1,40 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+START 2026-11-13T16:51:56Z
+/dev/vda3        98G   52G   44G  54% /home
+TREE base a1908f619f78cd270603719503743b01a2d06c67
+CHECK base rc=0
+LIB base rc=0 test result: ok. 299 passed; 0 failed; 2 ignored; 0 measured; 299 filtered out; finished in 1.08s 
+IT base holeclass_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 61.32s 
+IT base fcause_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.06s 
+IT base gauge_reachability rc=0 test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.08s 
+IT base recovery_bench rc=0 test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s 
+IT base sim_nack_test rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+IT base place_arms_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.88s 
+WASM base rc=0 test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 102.45s test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+  test_multipath_n1_identical_golden: test tests::test_multipath_n1_identical_golden ... ok
+  wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp: test tests::wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp ... ok
+/dev/vda3        98G   54G   42G  56% /home
+TREE cand 7fd92dd5757b12a68d29400b6f99414e4191f35f
+CHECK cand rc=0
+LIB cand rc=0 test result: ok. 308 passed; 0 failed; 2 ignored; 0 measured; 299 filtered out; finished in 1.11s 
+IT cand holeclass_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 62.87s 
+IT cand fcause_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.87s 
+IT cand gauge_reachability rc=0 test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.08s 
+IT cand recovery_bench rc=0 test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s 
+IT cand sim_nack_test rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+IT cand place_arms_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.88s 
+/dev/vda3        98G   55G   41G  58% /home
+TREE levb 2ab104f4c8f14954a8bfc69f0c9b52ce98a1d5b1
+CHECK levb rc=0
+LIB levb rc=0 test result: ok. 310 passed; 0 failed; 2 ignored; 0 measured; 299 filtered out; finished in 1.14s 
+IT levb holeclass_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 68.06s 
+IT levb fcause_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.84s 
+IT levb gauge_reachability rc=0 test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.09s 
+IT levb recovery_bench rc=0 test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.07s 
+IT levb sim_nack_test rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+IT levb place_arms_reachability rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.07s 
+/dev/vda3        98G   57G   39G  60% /home
+PF54-DONE 2026-11-13T17:16:40Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

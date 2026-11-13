@@ -1,0 +1,44 @@
+ok    sourcing does not set -e
+ok    field n= is not read out of mean= (120)
+ok    field frac_gt_half (0.3100)
+ok    field rtt reads the head, not wrtt= (41.2ms)
+ok    field stops at '|' (3)
+ok    field '-' is empty ()
+ok    field absent key is empty ()
+ok    field on an empty line is empty ()
+ok    lastline strips colour and CR ([RFA] fires=2)
+ok    lastline on a missing file is empty ()
+ok    countlines (2)
+ok    countlines on a missing file is 0, not empty (0)
+ok    count_final: plain, prefixed, glued-timestamp flushes; not final=10/xfinal=1 (3)
+ok    count_final: the sender's [ETA] is its own kind (1)
+ok    count_final on a missing file is 0 (0)
+ok    crlf_guard passes an LF file
+ok    crlf_guard refuses a CR file (exit 3) (3)
+ok    prove_sentinels writes the proof line
+ok    probes leave nothing behind (0)
+ok    seed_done: an EMPTY ledger fails (FAILED-S42)
+ok    seed_done: the terminal line EARNS DONE (DONE-S42)
+ok    release_locks removes the lock
+ok    a held lock is refused (exit 4) (4)
+ok    a refused lock is not removed (999 other)
+ok    the EXIT trap releases the lock
+ok    TERM exits 143 (143)
+ok    TERM releases the lock
+ok    TERM does not resume the script
+ok    take_lock writes the owner token through its fd
+ok    a flock(1) user finds the lock held
+ok    an 'exec 8>; flock -n 8' user finds the lock held
+ok    a noclobber creator finds the lock held
+ok    a second take_lock is refused (exit 4) (4)
+ok    release removes the file
+ok    release closes the flock fd (0)
+ok    after release the path's flock is free
+ok    a file held by a foreign flock is refused (exit 4) (rc=4)
+ok    the foreign holder's file is untouched (foreign)
+ok    two locks hold two fds (2)
+ok    both released
+ok    preflight passes a binary carrying the gate
+ok    preflight refuses a missing gate (exit 5) (5)
+ok    preflight refuses a missing binary (exit 4) (4)
+test_lib_battery.sh: ALL CHECKS PASS

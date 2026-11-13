@@ -1037,3 +1037,86 @@ Evidence: `docs/derivations/law-ledger.md` / `.yaml` (branch `law-ledger` `4f84c
 - **Order:** the snapshot-order law (§54) goes first. This change is based on `cand54`, because both change the gap-batch tuple.
 - **Owed before registration:** the paper text first (§7.1, A.6, §11.2; drafted in the derivation's §8), a c2 goodput prediction (v2 resolves 1 % there) with branch B as the falsifier, and `fast/fired` at N = 1 as a readout.
 - **Consequence for c8:** the recovery lever there is the dwell, i.e. the store fix and whether retransmits queue behind source in quinn's per-path send buffer (plan item 6d, unanswered).
+
+**§54 Amendment 1 — harness as built, candidate heads, five deviations (before any row runs). The SHAs are pinned by Amendment 2 after a green VM pre-flight.**
+
+*Candidate trees* (heads on `github`; the VM pre-flight runs on exactly these):
+- **BASE54** = main `a1908f61`. It includes `harness54` (`0eb3892b`, tools and `.gitattributes` only), merged so that the registered prerequisite "the plan-53 parser and scorer ported to main" holds. `git diff 7968c870 BASE54 -- raptorpath Cargo.lock Cargo.toml` is empty. Main may later gain docs- or roadmap-only commits (`8a937b18`, the roadmap layout); the seat stays at `a1908f61`.
+- **CAND54** = `cand54` `7fd92dd5`: the pin `7968c870`, plus `snapver-law` (`8191b3de`, `--no-ff`), plus `harness54`.
+  - Engine diff against BASE54 (`raptorpath/src`, `raptorpath/tests`): 8 files, +637/−56. That is the law, its seam, the `[SNAPV]` gauge and tests.
+- **LEVB54** = `levb54` `2ab104f4`: CAND54's law merge, plus `gaphorizon` (`--no-ff`), plus the cherry-pick of `b21421e6`, plus `harness54`.
+  - Engine diff against CAND54: 4 files, +110/−21 (lever B and the `recovery_bench` fixture).
+- `git diff cand54 levb54 -- tools .gitattributes` is empty: both launches run one harness.
+- Host checks, run on the engine trees before the harness merges (the merges touch only `tools/` and `.gitattributes`, so the engine is unchanged since):
+  - `cargo check --all-targets` is clean on both trees;
+  - `--lib net:: gates`: 308 passed on CAND54, 310 on LEVB54;
+  - `recovery_bench` on LEVB54: 7 passed, 1 ignored.
+
+*Harness as built (`tools/l1`, stub-tested):*
+- **Plan 54 is plan 41d unchanged.** `run_all` maps `LD_PLAN=54` to `41d` before any branch, so the scored rows, order, sizes, timeouts and scoring are 41d's (`score54` prints `score41d`'s output byte for byte, and a stub test asserts it).
+  - The three outcome witnesses run behind `LD_WITNESS54=1`.
+  - Re-run and NO VERDICT follow 41d's existing replacement rule (`place38_parse.py` `MAX_REPLACEMENTS = 4`, status §47); nothing new.
+- **Plan 54b:** 36 rows (B arms on the BASE seat = CAND54, L arms on the CAND seat = LEVB54), a Latin-square rotation per group, a 6-row smoke.
+  - `-u RWM_STORE_PATH_POOL` is in the env scrub, and the knob is forwarded to both ends.
+  - Scorer: `pool54_score.py`, calibrated on the §53 logs. With the reference selector it reproduces the registered BASES old holes 1 089–1 510 and residual 1 257–1 733 exactly. Whole-run in-order medians: 4.54 s (BASES) and 1.03 s (CANDS), against the registered 4.50 / 1.02.
+
+- **Binary pre-check (an abort path the registration does not name):** before any row, the battery checks the built binaries for the `[SNAPV]` gauge. For plan 54 it must be present in CAND and absent in BASE; for 54b it must be present in both seats.
+- **`[SNAPV]` witness coverage** (the line prints only if a gap report was counted; a CAND row without it is VOID):
+  - the rehearsal's smoke rows are c1s BASE, c1s CAND and c8 CAND (`place38_parse.py plan41d smoke`);
+  - c1d: every one of §53's 30 c1d rows (`rep53-diag-ld.tgz`: 12 BASE, 12 CAND, 6 CANDS; all filter-off except CANDS, so `pt_st`/`tt_st` are non-zero there) prints the line, with thousands of reports per path;
+  - c2: §52's 24 c2 guard rows (`s52/guard-diag-ld.tgz`, pre-gauge builds) count 1 820–2 767 gap reports each (`mpr[rep=`).
+
+*Deviations from the registration (each decided here, before VM contact):*
+1. **Plan 54b timeout `RWM_PERF_TIMEOUT_S=300`** (plan 54 stays at 200).
+   - Why: under H-hold, B640's registered floor of 20 Mbit/s needs 240 s for 600 MB, so the discriminating row would be censored in exactly the outcome it tests.
+   - Cost: about +10 min worst case.
+   - A DNF still counts as goodput 0 in the falsifier medians. Its old holes, in-order delay, residual and q0 are still computed from its `[DIAG]` lines (stub-tested).
+   - The rehearsal criterion is now "the c8 600 MB rows finish inside their plan's timeout".
+2. **The hn witness threshold is `hn_n` < 2 000** on path 0. The registration names the ranges (11–409 with the filter, 9 557–10 659 without) but no threshold; 2 000 sits between them.
+   - It applies to plan 54's CAND c8 rows only. It is never applied in 54b: lever-B rows read 47 000–196 000 with the filter on.
+3. **Witnesses are never applied to a DNF row**, like v2's VOID-SHORT.
+   - A witness that cannot run (the seat's sha did not reach the parser) is a harness fault, not a pass.
+   - A row failing a witness is VOID and is replaced under 41d's rule.
+4. **§8.5 liveness conditions not in §54** (p1 `stale>0`; the tail witness at W = 4 096) are printed per row and never void.
+5. **The §53 re-basing check runs on the host.** `docs/l1-raw/s53/rep53-diag-ld.tgz` (9 MB) stays out of the VM archive. On the VM, `score54b` prints `REBASE-CHECK UNAVAILABLE`, and the check is run on the host on the copied ledger (`pool54_score.py score <ledger> --s53 …`) before the block is read.
+
+*Also fixed:* `.gitattributes` now ships `docs/l1-raw/s52/guard-ld.log` and `bbr48b/run/bbr48/ld.log`, about 0.7 MB in all. Without them, `test_guard_v2.py` fails in any extracted archive, the pristine pin included, so 41d's and 54's parser gate would have hit ABORT-TESTS on the VM.
+
+*Test evidence:*
+- worker, at heads `0eb3892b`/`7fd92dd5`/`2ab104f4`: `STUBRUN_FULL=1` 54/full and 54b/full ALL OK, and the 54b DNF case. Fast mode (240 checks) ran at the previous heads.
+- merged main `a1908f61`: `test_guard_v2` (v1 bit-identical: p 0.2471 / 0.0020), `test_guard_clause_dry`, `test_pool54`, `test_snap53`, `test_harness_paths`, `test_harness46`, `test_harness47`, `test_tail52` and `test_bbr48_parse` ALL OK.
+- `git archive levb54` extract (what the VM receives; tools identical on all three trees): all 36 python test files pass (rc 0), including `test_stubrun` fast mode, `test_pool54`, `test_snap53` and `test_guard_v2`; the two bash tests (`test_lib_battery.sh`, `test_abort_witness.sh`) are the known Windows failures and run on the VM.
+
+**§54 Amendment 2 — the pin, after a green VM pre-flight (2026-11-13, 16:51–17:16Z, both locks held).**
+
+| seat | tree | SHA |
+|---|---|---|
+| launch 1 (`LD_PLAN=54`) BASE | main | `a1908f619f78cd270603719503743b01a2d06c67` |
+| launch 1 CAND, launch 2 BASE | `cand54` | `7fd92dd5757b12a68d29400b6f99414e4191f35f` |
+| launch 2 (`LD_PLAN=54b`) CAND | `levb54` | `2ab104f4c8f14954a8bfc69f0c9b52ce98a1d5b1` |
+
+Pre-flight (fresh target per tree, `docs/l1-raw/s54/pf54.out`):
+
+| check | BASE | CAND54 | LEVB54 |
+|---|---|---|---|
+| `cargo check --all-targets` | ok | ok | ok |
+| `--lib net:: gates` | 299 | 308 | 310 |
+| `holeclass_reachability` | 3 | 3 | 3 |
+| `fcause_reachability` | 3 | 3 | 3 |
+| `gauge_reachability` | 2 (+1 ignored) | 2 (+1) | 2 (+1) |
+| `recovery_bench` | 7 (+1) | 7 (+1) | 7 (+1) |
+| `sim_nack_test` | 4 | 4 | 4 |
+| `place_arms_reachability` | 3 | 3 | 3 |
+
+All tests passed, with 0 failures. The other checks:
+- **Native wasm (BASE, `GOLDEN_CAPTURE` unset):** 36 passed, including `test_multipath_n1_identical_golden` (a sanity check of main) and the `bound-tests` wasm pool test `wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp` (on main; §53 Erratum 2's third item).
+- **The bash tool tests on the VM** (CAND54 tree): `test_lib_battery.sh` all pass; `test_abort_witness.sh` 12 passed.
+- **§53 Erratum 2's first two items ran on the host,** because the VM has no `wasm-pack`, Node or wasm32 target. Both ran on a fresh build of `wasm-modeswitch-audit` `f2e7b2f6`, the tree they were registered for:
+  - `build_visualizer.sh`: rc 0; `test_visualizer.mjs` ("All visualizer engine checks passed") and `test_visualizer_ui.mjs` ("All visualizer UI checks passed"), 76 PASS, 0 FAIL;
+  - `cargo test -p raptorpath-wasm` with `GOLDEN_CAPTURE` unset: 36 passed, including `test_multipath_n1_identical_golden` and `test_continuum_one_law_across_the_dial`.
+  - §54's engine trees do not touch the visualizer or the wasm crate.
+- **VM disk:** 44 GB free before the pre-flight. Only the `target*` build directories of s52, s53, r52, r53, p53 and post52 were removed; no logs, and the s52/s53 ledgers are in `docs/l1-raw/`.
+
+Disk plan: the pre-flight targets are removed; each rehearsal's targets are removed before its full run; launch 1's targets are removed after its ledger copy, before launch 2.
+
+Launch order: launch 1 (`LD_PLAN=54`), rehearsal then full; then launch 2 (`LD_PLAN=54b`), rehearsal then full. Each has its own `LD_ROOT` and fresh targets, with `LD_HARD` = launch + 5 h.
