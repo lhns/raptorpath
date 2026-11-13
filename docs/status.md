@@ -811,9 +811,9 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - **Status:** the mechanism is consistent with Little's law on a fixed slot budget. The causal test (a pool arm) is pending; occupancy = rate × RTT + holes closing on every row is consistency, not proof.
 - **Lever-B cost to report with the merge question:** quinn's send buffer evicts up to ≈ 1 000 datagrams per run on p0 under lever B (CW0 the most). These are counted per arm in `docs/derivations/p0-dwell-diag.md`. Their link to CW0's duplicate rise is untested.
 
-## 41d. Merge guard v2 (PROPOSED): the start-up RTT floor off at c2/c8, in-order delay scored on 600 MB c2/c8 rows — instrument change, no VM
+## 41d. Merge guard v2 (ACCEPTED): the start-up RTT floor off at c2/c8, in-order delay scored on 600 MB c2/c8 rows — instrument change, no VM
 
-**Status: PROPOSED.** Two owner calls are open (below). The first guard to use v2 cannot be registered until the implementation prerequisites are met.
+**Status: ACCEPTED (owner, 2026-11-13).** Owner calls: (1) the start-up floor is REPORTED ONLY everywhere (option b); (2) the +34 min per guard is accepted. The first guard to use v2 cannot be registered until the implementation prerequisites are met.
 
 **Why.**
 - `rtp_floor_pN` is the run minimum of Copa `min_rtt`, a 10 s windowed minimum of the app-echo RTT. On guard-length rows (≈ 9 s) the window never rolls:
@@ -828,7 +828,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 1. **Row size:** c2 and c8 guard rows carry 600 MB (§48b's sizes, 43–56 s rows) instead of the guard size. c1s and c1d keep the guard size.
    - This changes EVERY c2 and c8 clause, not only the new one: longer rows can tighten goodput, CPU/GB and lag resolution, so v2 may fail a change v1 passed.
    - **Owed before adoption:** the 600 MB d80 per c2/c8 clause from §48b's ledger, beside §41c's guard-size d80.
-2. **`rtp_floor_p0`/`p1`:** dropped from scoring at c2 and c8 (reported only). At c1s and c1d see owner call 1.
+2. **`rtp_floor_p0`/`p1`:** dropped from scoring everywhere (reported only; owner call 1).
 3. **In-order delay mean (new, one-sided, higher is worse),** scored at c2 and c8:
    - **definition:** `delay(t) = t − t_src(ack(t))`, with `ack` the receiver's cumulative in-order ack (`window_ack_seq`, the third `cum=` field of the sender's `[DIAG]`) and `t_src` the inverse of the cumulative source-sent curve, linearly interpolated; the mean over ticks with `ack > 0`;
    - **edge cases:** ticks before the first ack are excluded, and an `ack` beyond the last source tick is excluded;
