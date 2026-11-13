@@ -2825,6 +2825,114 @@ cut the waste and cost throughput (on a frontier-serialised store, recovery
 latency buys back every megabit the waste had cost); the packet threshold is
 the fast channel that makes the law pay.
 
+**Snapshot order.** Both thresholds judge holes named by a gap report. A
+gap report is a snapshot of the receiver's received set. The sentence is:
+judge reported holes only from the receiver's newest snapshot.
+
+```text
+   judge(R)  ⇔  V(R) ≥ V* ,     V(R) = (next_expected(R), received_above(R)) ,  ordered lexicographically
+                                V* = max V over every gap batch dequeued in this sender run
+   coalescing keeps the batch of highest V (ties: the later one), not the last to arrive
+   a batch that carries no snapshot (the sender's own tail sweep) is always judged
+```
+
+`snapver_judges`, `snapver_coalesce_keeps`, `SnapOrder` (`net/snapver.rs`),
+called from `serve_gaps`.
+
+The sentence and the expression agree in shape: "no newer snapshot seen" is
+a max-filter on a monotone version.
+- State: O(1), one pair per sender run.
+- Units: both components count sequence numbers.
+- It rejects only reports strictly older than one already seen.
+
+There is no constant.
+
+The symbols:
+
+| symbol | meaning | provenance |
+|---|---|---|
+| `next_expected` | the count of the delivered prefix | v9 wire field of `WindowAck` |
+| `received_above` | the exact number of received sequence numbers at or above `next_expected` | v9 wire field of `WindowAck` (`ReceivedAbove`, Section 6.3) |
+| lexicographic order | — | `AboveReport`'s, which the store gate folds over the same out-of-order acks (Section 6.3) |
+| `V*` | the newest version seen | the gap channel's own fold over every dequeued batch: judged ones, those coalescing discards, and those a spent repair budget drops. It is not Section 6.3's `(F, A)`, which folds the SACK channel; `V*` is the fold §53 measured. It lives in `SenderState` beside the encoder, so it lasts one sender run (`run_window_sender`), the lifetime of the sequence space it counts. |
+| `≥` (ties judged) | — | required: the receiver's timer re-advertisement re-sends an unchanged snapshot, and an equal pair is the same received set. Rejecting ties would suppress the only re-presentation of a hole with no later arrivals. |
+| tail-sweep bypass | — | the tail sweep inverts no snapshot and carries none; filtering it would remove the backstop for a hole with no successors |
+
+**Why the version is monotone (safety).**
+- The receiver writes `next_expected` only through `max`, so a shed or a
+  force-deliver only moves it forward, and a forward move wins the
+  comparison.
+- At a fixed `next_expected` the received set above it only grows (the
+  receiver prunes only below its frontier), so `received_above` only grows.
+- `received_above` saturates at 2³² − 1. The receiver records at most 2²⁴
+  sequence numbers above its bitmap base, so it never saturates.
+- Hence a report of lower version names a subset of the newest report's
+  received set. Each of its gaps is still a gap or has since been filled,
+  and it carries no hole the newest report lacks.
+- Its delivered facts stay true, so the packet-threshold evidence is still
+  ingested from it.
+
+**Liveness.**
+- The newest snapshot is always judged, or the batch that carries it was
+  dropped by coalescing or by a spent budget, as on main.
+- A hole the newest snapshot names is therefore judged by the next
+  advertisement at the latest: a later data-arm report, or the receiver's
+  refresh, whose equal version the `≥` admits. The tail sweep serves the
+  cumulative blocker whatever the filter does.
+- A rejected report costs at most one re-advertisement interval.
+
+**Why it is needed.** The receiver sends a gap report on the leg the
+triggering data arrived on. When the return legs differ in delay, a report
+from the slow leg reaches the sender after fresher reports from the fast
+leg. Without the filter, that stale report re-lists holes the fresher ones
+have already shown filled. The packet threshold then counts the later
+same-path deliveries those fresher reports supplied, and fires on a
+sequence number the sender has already been told was delivered. The time
+threshold fires on such holes too. Derivation: `docs/derivations/dup-diag.md`.
+
+**Evidence (§53).** The filter ran as an env arm (`dup-diag` 9617970d) on
+the plain reliable window. Cell c8: a 100 Mbit/5 ms leg and a 20 Mbit/20 ms
+leg, 600 MB, n = 6 per arm.
+- 98.4–99.7 % of the gap reports carried on the slow leg are stale
+  (`[SNAPV]` `stale/rep`), on main and under lever B (the 64-gap sender
+  horizon of `cand52`, not on main) alike.
+- **Under lever B:**
+  - 5 950 fires per run are judged from stale reports (3 469 packet
+    threshold, 2 481 time threshold). The filter cuts net fires from
+    18 396 to 15 094.
+  - Receiver duplicates fall from 4 004 to 1 291, and retransmits/GB from
+    30 661 to 25 157. Main reads 1 546 and 25 298.
+  - The tail stays inside lever B's row range (0.36 → 0.41 s).
+- **On main:** the 20-gap horizon lists mostly old holes. ≈ 1 160 fires
+  per run are still judged from stale reports, and the filter cuts net
+  fires from 15 179 to 14 963. The duplicates move by less than main's row
+  spread.
+- **At c1d** (5 GB), 7–16 % of reports are stale. The filter does not remove
+  lever B's +13 % duplicate cost there.
+- `[SNAPV]` (RWM_DIAG, per return leg: `rep`, `stale`, and the fires judged
+  from stale reports `pt_st`/`tt_st`) is the law's standing gauge. Under the
+  law `pt_st` and `tt_st` are 0 by construction, and `stale/rep` is the
+  measured reorder rate.
+
+**Domain.**
+- **Where it is inert.** With one return leg, or any return path that
+  delivers reports in generation order, `V(R) ≥ V*` always holds. That is
+  a property of the transport, not a path-count branch.
+- **No dial or gate.** The law reads no dial (δ, ρ, the protocol hint) and
+  no gate, and selects no code path. It runs wherever the gap path runs.
+- **Untested domain.** At ρ < 1 (EVICT) the same filter applies but §53 has
+  no row; that domain is untested.
+- **Shared premises.**
+  - The receiver-side monotonicity of the pair is read from the code, not
+    pinned by a receiver test.
+  - "One sender run equals one sequence space" is the premise the
+    cumulative ack's `fetch_max` and the store gate's `(F, A)` already
+    rest on. The dialing side ends the run when every path's connection is
+    lost.
+  - The law adds no failure mode those do not share.
+- **What it does not touch.** It narrows which reported holes are judged;
+  the store still serves every hole the newest report names.
+
 Unresolved holes are re-probed on a refresh cadence and a tail sweep:
 
 ```text
@@ -4667,6 +4775,7 @@ engine.
 ```text
    time threshold    age(live flight) ≥ max(9/8·max(SRTT, EWMA), 10 ms)     mp_time_threshold_split
    packet threshold  ≥ 3 later same-path symbols delivered                   MP_PACKET_THRESHOLD
+   snapshot order    judge(R) ⇔ V(R) ≥ V* ,  V = (next_expected, received_above) lex  snapver_judges
    refresh           (2·SRTT).clamp(25 ms, 100 ms)                          hole_nack_refresh
 
    Λ(ℓ) = 1/S(ℓ) ;   declare loss  ⇔  ℓ ≥ F⁻¹(1 − α)                         —
