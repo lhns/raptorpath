@@ -198,10 +198,11 @@ pub(crate) fn mp_ingest_evidence(
 /// original path `orig` has ≥ [`MP_PACKET_THRESHOLD`] delivered successors.
 /// Extracted verbatim from `serve_gaps`, which calls it.
 ///
-/// Known defect (docs/derivations/dup-diag.md): the gap seq comes from the
-/// report being processed, the evidence from every report processed so far.
-/// Reports cross the two return legs out of receiver order, so a stale
-/// report re-lists a hole that fresher evidence already shows delivered.
+/// The gap seq comes from the report being processed, the evidence from
+/// every report processed so far. Reports cross the return legs out of
+/// receiver order, so this is sound only on the newest snapshot: the
+/// snapshot-order law (`net/snapver.rs`, paper §7.1) is what keeps a stale
+/// report's re-listed holes from reaching it (docs/derivations/dup-diag.md).
 pub(crate) fn mp_packet_threshold_fires(
     seq: u64,
     orig: Option<u32>,

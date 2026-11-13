@@ -642,49 +642,25 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
     let mut nack_repairs_this_period = *nack_repairs_this_period_cell;
     let mut mp_evid_max = *mp_evid_max_cell;
     loop {
-        // `[SNAPV]`: every dequeued batch folds its snapshot version into
-        // `V*`, the ones coalescing discards included (docs/derivations/
-        // dup-diag.md). Observation here; nothing below reads it but the gauge.
-        let (gap_cause, ack_path, gaps, snap_v) = match pending_gaps.take() {
-            Some(g) => {
-                if let Some(v) = g.3 {
-                    st.snap_order.fold(v);
-                }
-                g
-            }
-            None => match nack_rx.try_recv() {
-                Ok(g) => {
-                    // A gap report is a state snapshot of the receiver's
-                    // current holes (frontier + inverted SACK), not a delta,
-                    // so a queued backlog is stale by construction and only
-                    // the newest snapshot needs processing. Under the mp law
-                    // holes legitimately outlive their reports (suppressed
-                    // until a loss channel fires), so the gap-ack cadence
-                    // queues snapshots faster than they change; coalescing
-                    // removes that walk tax. With the gate off every report
-                    // is processed. The newest snapshot keeps its `[FCAUSE]`
-                    // cause tag, so fires are attributed to the report that
-                    // drove them.
-                    let mut g = g;
-                    if let Some(v) = g.3 {
-                        st.snap_order.fold(v);
-                    }
-                    if pol.recov_mp_law {
-                        while let Ok(n) = nack_rx.try_recv() {
-                            if let Some(v) = n.3 {
-                                st.snap_order.fold(v);
-                            }
-                            g = n;
-                            if pol.diag_on {
-                                dg.mpd_coalesced += 1;
-                            }
-                        }
-                    }
-                    g
-                }
-                Err(_) => break,
-            },
+        // A gap report is a state snapshot of the receiver's current holes
+        // (frontier + inverted SACK), not a delta, so a queued backlog is
+        // stale by construction and only the newest snapshot needs
+        // processing. Under the mp law holes legitimately outlive their
+        // reports (suppressed until a loss channel fires), so the gap-ack
+        // cadence queues snapshots faster than they change; coalescing
+        // removes that walk tax. With the gate off every report is
+        // processed. "Newest" is the snapshot-order law's (paper §7.1,
+        // `net/snapver.rs`): the batch of highest receiver version, not the
+        // last to arrive, and every dequeued batch folds `V*`. The kept batch
+        // keeps its `[FCAUSE]` cause tag.
+        let Some(((gap_cause, ack_path, gaps, snap_v), coalesced)) =
+            take_gap_batch(pending_gaps, nack_rx, pol.recov_mp_law, &mut st.snap_order)
+        else {
+            break;
         };
+        if pol.diag_on {
+            dg.mpd_coalesced += coalesced;
+        }
         if cached_max_repairs == 0 || cached_nack_budget == 0 {
             // Fully suppressed or budget exhausted — drain NACK queue
             dg.diag_gaps_dropped += 1;
@@ -800,14 +776,18 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // one the receiver has — feed its outstanding time. Placed here,
         // before the loop below stamps this batch's own seqs, or every hole
         // would be resolved by the report that first announced it.
+        // The snapshot-order law: a snapshot older than the newest dequeued
+        // one is not judged by either loss channel, the shed or the `[HOLD]`
+        // stamps (its delivered facts above were still ingested).
+        let judged = judged_gaps(&st.snap_order, snap_v, &gaps);
         hold_echo.on_report(
-            &gaps,
+            judged,
             now_repair_us,
             &st.shed_seqs,
             ack_path,
             &half_srtt_of,
         );
-        'gaps: for &(gap_start, gap_end) in &gaps {
+        'gaps: for &(gap_start, gap_end) in judged {
             // EVICT: only the coding window can serve a gap — older
             // seqs are gone. RETAIN: the sent-data store serves ANY
             // un-acked seq (targeted ARQ for holes that aged out of

@@ -6268,3 +6268,282 @@ fn snapv_line_format_is_pinned() {
     );
     std::mem::forget(g); // keep the test's stderr clean
 }
+
+// ── The snapshot-order law (paper §7.1 "Snapshot order"; docs/derivations/dup-diag.md) ──
+
+/// A two-leg FIFO transfer driven through the shipped gap path's pure parts:
+/// the receiver's `received_sack_ranges`, the sender's `sack_to_gaps`, the
+/// packet-threshold fold and decision (`mp_ingest_evidence`,
+/// `mp_packet_threshold_fires`) and the snapshot-order law (`SnapOrder`,
+/// `judged_gaps`).
+///
+/// Forward legs are FIFO (each arrival no earlier than the previous one on
+/// its leg, the `rate` netem property): p0 1 ms with a 3 ms stall on every
+/// eighth 5 ms window (the stall makes p0 seqs late against p1 neighbours,
+/// the c8 cross-path hole shape), p1 3 ms flat. The receiver snapshots
+/// every 1 ms and sends the snapshot back on a leg (every third on p1, the
+/// data-arm rule "the ack rides the arriving data's path" reduced to a fixed
+/// pattern); `rev_us` is the per-leg return delay. The sender processes
+/// snapshots in ARRIVAL order, as `serve_gaps` does: fold the version, ingest
+/// the evidence, then judge the gaps the law lets through. `lose` drops seqs
+/// for good (no retransmit is modelled): a lost seq holds the cumulative
+/// frontier, as c8's real losses do, so short-lived holes above it stay
+/// above the frontier while stale snapshots re-list them.
+///
+/// `bypass_law` is the TEST-LOCAL control: it judges every snapshot, the
+/// pre-law machine, so the law's tests cannot pass vacuously.
+///
+/// Returns (seqs the packet threshold declared lost, evaluations on
+/// p0-original gap seqs).
+fn packet_threshold_two_leg_sim(rev_us: [u64; 2], lose: &[u64], bypass_law: bool) -> (Vec<u64>, u64) {
+    use super::seq_ring::SeqRing;
+    const N: u64 = 4_000;
+    const TAU_US: u64 = 100;
+    let path_of = |s: u64| -> u32 { if s % 4 == 3 { 1 } else { 0 } };
+    let mut map: SeqRing<u32> = SeqRing::new();
+    let mut arr: Vec<Option<u64>> = vec![None; N as usize];
+    let mut last = [0u64; 2];
+    for s in 0..N {
+        let p = path_of(s);
+        map.insert(s, p);
+        let t = s * TAU_US;
+        let d = if p == 0 {
+            1_000 + if (s / 50) % 8 == 0 { 3_000 } else { 0 }
+        } else {
+            3_000
+        };
+        let a = (t + d).max(last[p as usize]);
+        last[p as usize] = a;
+        if !lose.contains(&s) {
+            arr[s as usize] = Some(a);
+        }
+    }
+    let end_us = N * TAU_US + 10_000;
+    // (arrival at sender, generation tick, sack ranges, snapshot version)
+    let mut reports: Vec<(u64, u64, Vec<(u64, u64)>, AboveReport)> = Vec::new();
+    let mut k = 0u64;
+    let mut tick = 1_000u64;
+    while tick <= end_us {
+        let received: BTreeSet<u64> = (0..N)
+            .filter(|&s| arr[s as usize].is_some_and(|a| a <= tick))
+            .collect();
+        let ne = (0..N).find(|s| !received.contains(s)).unwrap_or(N);
+        if let Some(&seen) = received.iter().next_back() {
+            let ranges = received_sack_ranges(&received, ne, seen);
+            let leg = if k % 3 == 0 { 1 } else { 0 };
+            let v = AboveReport {
+                next_expected: ne,
+                received_above: received.range(ne..).count() as u32,
+            };
+            reports.push((tick + rev_us[leg], tick, ranges, v));
+        }
+        k += 1;
+        tick += 1_000;
+    }
+    reports.sort_by_key(|r| (r.0, r.1));
+
+    let mut ev: std::collections::HashMap<u32, Vec<u64>> = std::collections::HashMap::new();
+    let mut wm = 0u64;
+    let mut ack_count = 0u64;
+    let mut order = SnapOrder::default();
+    let mut declared: Vec<u64> = Vec::new();
+    let mut p0_evals = 0u64;
+    for (_, _, ranges, v) in &reports {
+        let ne = v.next_expected;
+        // The cumulative point is fetch_max'ed (control_msg.rs) and the
+        // evidence pruned below it (sender_phases.rs), as shipped.
+        ack_count = ack_count.max(ne);
+        for e in ev.values_mut() {
+            e.retain(|&x| x >= ack_count);
+        }
+        if ranges.is_empty() {
+            continue;
+        }
+        order.fold(*v);
+        let gaps = sack_to_gaps(ne, ranges);
+        mp_ingest_evidence(&gaps, &map, &mut ev, &mut wm);
+        let judged: &[(u64, u64)] =
+            if bypass_law { &gaps } else { judged_gaps(&order, Some(*v), &gaps) };
+        for &(a, b) in judged {
+            for s in a..=b {
+                // The channel judges original flights only; a declared seq
+                // has a retransmit and leaves the channel. Below the
+                // frontier the store no longer holds the seq (`stale` skip).
+                if s < ack_count || declared.contains(&s) {
+                    continue;
+                }
+                let orig = map.get(&s).copied();
+                if orig == Some(0) {
+                    p0_evals += 1;
+                }
+                if mp_packet_threshold_fires(s, orig, &ev) {
+                    declared.push(s);
+                }
+            }
+        }
+    }
+    (declared, p0_evals)
+}
+
+/// RFC 9002 §6.1.1's soundness on a FIFO leg under the snapshot-order law:
+/// the declared set equals the lost set, whatever order the receiver's
+/// snapshots reach the sender in (either return leg slower), with and
+/// without a real loss.
+///
+/// The control (`bypass_law`, the pre-law machine) is asserted in the same
+/// test, so this cannot pass vacuously: with the p1 return leg 9 ms slower
+/// and the law bypassed, a p1-carried snapshot re-lists holes that fresher
+/// p0-carried snapshots already showed delivered, and the channel declares
+/// 182 seqs lost for 1 real loss (1 real, 88 false p0-original, 93 false
+/// p1-original). This was the red test `..._under_report_reordering` on
+/// branch dup-diag (12eafc33), RED on main before the law.
+#[test]
+fn the_law_declares_only_lost_seqs_under_report_reordering() {
+    for rev in [[1_000, 1_000], [1_000, 10_000], [10_000, 1_000]] {
+        let (d, evals) = packet_threshold_two_leg_sim(rev, &[5], false);
+        assert!(evals > 0, "rev {rev:?}: the channel must be reached");
+        assert_eq!(d, vec![5], "rev {rev:?}: declared set must equal the lost set");
+        let (d, _) = packet_threshold_two_leg_sim(rev, &[], false);
+        assert!(d.is_empty(), "rev {rev:?}, zero loss: declared {d:?}");
+    }
+    let (d, _) = packet_threshold_two_leg_sim([1_000, 10_000], &[5], true);
+    let p1 = d.iter().filter(|&&s| s % 4 == 3).count();
+    assert_eq!(
+        (d.len(), d.len() - p1, p1),
+        (182, 89, 93),
+        "control (law bypassed): the defect the law removes, declared {d:?}"
+    );
+}
+
+/// With snapshots arriving in generation order (one return leg, or equal
+/// legs) the law never acts: law and bypass declare the same seqs.
+#[test]
+fn the_law_is_inert_on_in_order_snapshots() {
+    for lose in [&[][..], &[5][..]] {
+        let law = packet_threshold_two_leg_sim([1_000, 1_000], lose, false);
+        let bypass = packet_threshold_two_leg_sim([1_000, 1_000], lose, true);
+        assert!(law.1 > 0, "the scenario must put p0-original seqs in gap lists");
+        assert_eq!(law, bypass, "in-order snapshots: the law must not act (lose {lose:?})");
+        assert_eq!(law.0, lose.to_vec(), "in-order snapshots are sound");
+    }
+}
+
+/// Why main's 20-gap horizon hid most of the defect: the horizon keeps the
+/// OLDEST gaps, and with ≥ 20 older outstanding holes (c8's real losses
+/// awaiting their retransmit) every young cross-path hole lies past it, so
+/// no snapshot, stale or fresh, lists one. Law bypassed, 9 ms return skew:
+/// 31 single-seq p0 losses at 60, 62, …, 120 hold the frontier from 6 ms on;
+/// the stalls that make young p0 holes start at seq 400.
+#[test]
+fn the_20_gap_horizon_hides_young_holes_behind_old_losses() {
+    assert_eq!(MAX_NACK_GAPS, 20, "the horizon this test reads");
+    let lose: Vec<u64> = (30..=60).map(|i| 2 * i).collect();
+    let (d, evals) = packet_threshold_two_leg_sim([1_000, 10_000], &lose, true);
+    assert!(evals > 0);
+    assert!(!d.is_empty(), "the old real losses are declared");
+    assert!(
+        d.iter().all(|s| lose.contains(s)),
+        "behind {} old holes the horizon shows no young hole: declared {d:?}",
+        lose.len()
+    );
+}
+
+/// `V*` lives with the transfer. A fresh `SenderState` (built with the
+/// encoder, one per sender run) starts at the no-report version and judges a
+/// new receiver's first report. A `V*` carried over from another seq space
+/// would read that report as stale; even then the gap path does not go
+/// silent: the tail sweep carries no snapshot and is always judged.
+#[test]
+fn snap_order_lives_with_the_transfer_and_the_tail_sweep_bypasses_it() {
+    let st = super::emit_source::SenderState::new(
+        crate::fec::FecBackend::default(),
+        1200,
+        384,
+        2,
+        false,
+        false,
+        0.0,
+        0,
+        0,
+    );
+    assert_eq!(st.snap_order, SnapOrder::default());
+    let reset = Some(AboveReport { next_expected: 0, received_above: 1 });
+    assert!(snapver_judges(&st.snap_order, reset), "a fresh transfer judges its first report");
+    let mut carried = SnapOrder::default();
+    carried.fold(AboveReport { next_expected: 1_000_000, received_above: 5 });
+    assert!(!snapver_judges(&carried, reset), "a foreign V* reads the reset report as stale");
+    assert!(snapver_judges(&carried, None), "the tail sweep is never filtered");
+}
+
+/// The coalescing rule: keep the newest snapshot (ties: the later one).
+#[test]
+fn snapver_coalescing_keeps_the_newest_snapshot() {
+    let v = |ne, a| Some(AboveReport { next_expected: ne, received_above: a });
+    assert!(!snapver_coalesce_keeps(v(10, 5), v(9, 0)), "an older snapshot is dropped");
+    assert!(snapver_coalesce_keeps(v(10, 5), v(10, 5)), "a tie replaces");
+    assert!(snapver_coalesce_keeps(v(10, 5), v(10, 6)));
+    assert!(snapver_coalesce_keeps(v(10, 5), v(11, 0)));
+}
+
+/// WIRING (the seam `serve_gaps` dequeues and judges through): over a real
+/// gap channel, `take_gap_batch` folds every dequeued batch into `V*`,
+/// coalesces to the batch of highest version, and `judged_gaps` withholds a
+/// stale batch's gaps while a fresh or tied one is judged in full.
+///
+/// Fails if the filter is removed from either: a stale batch would be
+/// judged, or coalescing would keep the last-arrived batch.
+#[test]
+fn serve_gaps_seam_judges_only_the_newest_snapshot_and_coalesces_to_it() {
+    let v = |ne, a| AboveReport { next_expected: ne, received_above: a };
+    let b = |gaps: Vec<(u64, u64)>, ver: Option<AboveReport>| (FireCause::GapData, 0u32, gaps, ver);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<GapBatch>(16);
+    let mut pending: Option<GapBatch> = None;
+    let mut order = SnapOrder::default();
+
+    // A fresh batch: judged in full.
+    tx.try_send(b(vec![(3, 3)], Some(v(0, 10)))).unwrap();
+    let (g, n) = take_gap_batch(&mut pending, &mut rx, true, &mut order).unwrap();
+    assert_eq!((n, judged_gaps(&order, g.3, &g.2)), (0, &[(3, 3)][..]));
+
+    // A stale batch (older version, as a slow-leg report arrives): not judged.
+    tx.try_send(b(vec![(5, 5)], Some(v(0, 5)))).unwrap();
+    let (g, _) = take_gap_batch(&mut pending, &mut rx, true, &mut order).unwrap();
+    assert!(judged_gaps(&order, g.3, &g.2).is_empty(), "a stale snapshot must not be judged");
+
+    // The same gaps at the newest version (a tie): judged. Only the filter
+    // held them back above.
+    tx.try_send(b(vec![(5, 5)], Some(v(0, 10)))).unwrap();
+    let (g, _) = take_gap_batch(&mut pending, &mut rx, true, &mut order).unwrap();
+    assert_eq!(judged_gaps(&order, g.3, &g.2), &[(5, 5)][..]);
+
+    // Coalescing: three queued, the newest in the MIDDLE. The kept batch is
+    // the newest, not the last to arrive, and V* advanced over all three.
+    tx.try_send(b(vec![(7, 7)], Some(v(0, 11)))).unwrap();
+    tx.try_send(b(vec![(8, 8)], Some(v(0, 20)))).unwrap();
+    tx.try_send(b(vec![(9, 9)], Some(v(0, 12)))).unwrap();
+    let (g, n) = take_gap_batch(&mut pending, &mut rx, true, &mut order).unwrap();
+    assert_eq!(n, 2, "two batches coalesced away");
+    assert_eq!(g.2, vec![(8, 8)], "coalescing keeps the newest snapshot");
+    assert_eq!(order.newest(), v(0, 20));
+    assert_eq!(judged_gaps(&order, g.3, &g.2), &[(8, 8)][..]);
+
+    // The pending batch (the sender's `select!` took it) folds too, and the
+    // tail sweep's snapshot-less batch is always judged.
+    pending = Some((FireCause::Timer, u32::MAX, vec![(4, 4)], None));
+    let (g, _) = take_gap_batch(&mut pending, &mut rx, true, &mut order).unwrap();
+    assert_eq!(judged_gaps(&order, g.3, &g.2), &[(4, 4)][..]);
+    assert!(take_gap_batch(&mut pending, &mut rx, true, &mut order).is_none());
+}
+
+/// WIRING, the other half: `serve_gaps` dequeues through `take_gap_batch`
+/// and iterates (and stamps `[HOLD]` from) the `judged_gaps` slice, not the
+/// raw batch. A source pin, the repo's form for a call-site invariant.
+#[test]
+fn serve_gaps_routes_through_the_snapshot_order_seam() {
+    let s = p1_squashed_src("net/sender_phases.rs");
+    assert!(s.contains("take_gap_batch(pending_gaps,nack_rx,pol.recov_mp_law,&mutst.snap_order)"));
+    assert!(s.contains("letjudged=judged_gaps(&st.snap_order,snap_v,&gaps);"));
+    assert!(s.contains("hold_echo.on_report(judged,"));
+    assert!(s.contains("'gaps:for&(gap_start,gap_end)injudged{"));
+    assert!(!s.contains("'gaps:for&(gap_start,gap_end)in&gaps{"), "the loop must not iterate the raw batch");
+}

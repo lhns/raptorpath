@@ -5,9 +5,20 @@
 //! on, so reports cross the return legs out of generation order. The sender
 //! cannot tell by arrival which report is newest. The order already exists:
 //! the v9 `(next_expected, received_above)` pair, compared lexicographically
-//! ([`AboveReport`], which the store gate folds the same way). This module
-//! holds the newest pair the gap path has seen and the per-return-leg
-//! counters that measure how often the gap path judged an older one.
+//! ([`AboveReport`], which the store gate folds the same way).
+//!
+//! The snapshot-order law (paper §7.1 "Snapshot order", Appendix A.6):
+//!
+//! ```text
+//!   judge(R)  ⇔  V(R) ≥ V* ,   V = (next_expected, received_above) lexicographic ,
+//!                              V* = max V over every gap batch dequeued in this sender run
+//!   coalescing keeps the batch of highest V (ties: the later one)
+//!   a batch with no snapshot (the tail sweep) is always judged
+//! ```
+//!
+//! This module holds `V*` ([`SnapOrder`]), the law ([`snapver_judges`],
+//! [`snapver_coalesce_keeps`]), the gap path's dequeue seam that applies it
+//! ([`take_gap_batch`], [`judged_gaps`]), and the `[SNAPV]` gauge.
 
 use super::*;
 
@@ -48,6 +59,70 @@ impl SnapOrder {
     pub fn is_stale(&self, v: Option<AboveReport>) -> bool {
         v.is_some_and(|v| v < self.newest)
     }
+}
+
+/// The snapshot-order law: is a batch with snapshot version `v` judged?
+/// Only if no newer snapshot has been dequeued; ties are judged (the
+/// receiver's timer re-advertisement re-sends an unchanged snapshot), and a
+/// batch with no snapshot (the tail sweep) always is. A stale snapshot's
+/// received set is a subset of the newest one's, so it names no hole the
+/// newest does not, only holes since filled.
+pub fn snapver_judges(order: &SnapOrder, v: Option<AboveReport>) -> bool {
+    !order.is_stale(v)
+}
+
+/// Coalescing under the law: does a newly dequeued batch replace the one
+/// kept so far? Only when its snapshot is at least as new, so the coalescer
+/// keeps the newest snapshot and not the last to arrive.
+pub fn snapver_coalesce_keeps(kept: Option<AboveReport>, candidate: Option<AboveReport>) -> bool {
+    candidate >= kept
+}
+
+/// The gap path's dequeue: the pending batch (taken by the sender's
+/// `select!`) if any, else the channel's next batch, coalescing the rest of
+/// the queue when `coalesce` (the hole law's gate) to the batch of highest
+/// version. Every dequeued batch's version is folded into `order` (`V*`),
+/// the discarded ones included. Returns the batch and how many were
+/// discarded; `None` when nothing is queued.
+pub(crate) fn take_gap_batch(
+    pending: &mut Option<GapBatch>,
+    rx: &mut tokio::sync::mpsc::Receiver<GapBatch>,
+    coalesce: bool,
+    order: &mut SnapOrder,
+) -> Option<(GapBatch, u64)> {
+    let mut fold = |b: &GapBatch| {
+        if let Some(v) = b.3 {
+            order.fold(v);
+        }
+    };
+    if let Some(g) = pending.take() {
+        fold(&g);
+        return Some((g, 0));
+    }
+    let mut g = rx.try_recv().ok()?;
+    fold(&g);
+    let mut coalesced = 0;
+    if coalesce {
+        while let Ok(n) = rx.try_recv() {
+            fold(&n);
+            if snapver_coalesce_keeps(g.3, n.3) {
+                g = n;
+            }
+            coalesced += 1;
+        }
+    }
+    Some((g, coalesced))
+}
+
+/// The gaps the loss channels judge for a batch of version `v`: all of them
+/// under the law, or none for a stale snapshot. `serve_gaps` iterates this
+/// slice, and the `[HOLD]` stamps read it.
+pub(crate) fn judged_gaps<'a>(
+    order: &SnapOrder,
+    v: Option<AboveReport>,
+    gaps: &'a [(u64, u64)],
+) -> &'a [(u64, u64)] {
+    if snapver_judges(order, v) { gaps } else { &[] }
 }
 
 /// Per return leg: `[reports, stale, pt_fires_stale, tt_fires_stale]`.
