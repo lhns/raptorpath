@@ -8,7 +8,8 @@ measurement), ADR-0059 (per-path hole law).
 - **Evidence.** `docs/l1-raw/s52/rep52-diag-ld.tgz` (6 BASE + 6 CAND c8
   rows, the diagnosis) and `docs/l1-raw/s53` (the measurement).
 - **History.** Diagnosed and measured on branch `dup-diag`. §53 ran the
-  filter there as a default-off env arm, `RWM_RECOV_SNAPVER` (9617970d).
+  filter there as a default-off env arm, `RWM_RECOV_SNAPVER`, built into §53's
+  pinned trees (`base53` `5b605bb0`, `cand53` `b21421e6`).
   The law now ships with no env arm: one machine. Sections 2–3 below keep
   the arm-era wording and the predictions as registered before §53. §53's
   Result scores them.
@@ -27,15 +28,16 @@ parts of the gap path:
 |---|---|---|
 | `the_law_declares_only_lost_seqs_under_report_reordering` | green | declared set = lost set at every skew. Its test-local "law bypassed" control reproduces the defect: **182** declared for 1 real loss (1 real, 88 false p0-original, 93 false p1-original). This was the red test on main, committed failing in `dup-diag` 12eafc33. |
 | `the_law_is_inert_on_in_order_snapshots` | green | in-order return: law and bypass declare the same seqs |
-| `the_20_gap_horizon_hides_young_holes_behind_old_losses` | green | why main's 20-gap horizon hid most of the defect (§1) |
+| `the_gap_horizon_hides_young_holes_behind_old_losses` | green | why main's 20-gap horizon hid most of the defect (§1); the horizon is measured on the tree, so the test means the same under lever B |
 | `serve_gaps_seam_judges_only_the_newest_snapshot_and_coalesces_to_it` | green; red with the filter calls commented out | the wiring: a stale batch is not judged, coalescing keeps the max version |
-| `serve_gaps_routes_through_the_snapshot_order_seam` | green | source pin: `serve_gaps` dequeues and judges through the seam |
+| `serve_gaps_routes_through_the_snapshot_order_seam` | green; red with the loop over the raw batch | source pin: `serve_gaps` dequeues and judges through the seam. No test executes `serve_gaps` itself; the seam test and this pin together hold the call site. |
 | `snap_order_lives_with_the_transfer_and_the_tail_sweep_bypasses_it` | green | `V*` lifetime and the tail-sweep bypass |
 | `snapver_coalescing_keeps_the_newest_snapshot` | green | the coalescing rule |
 
 The external recovery model (`tests/common/recovery_model.rs`) has no
 snapshot order. It applies reports in a single order, so on its own inputs
-the law would never act and the divergence is vacuous.
+the law would never act and the divergence is vacuous. The bounding test
+is `the_law_is_inert_on_in_order_snapshots`.
 
 ## 1. The defect
 
@@ -180,7 +182,7 @@ A young cross-path hole lies past the 20th, so no snapshot ever lists it,
 stale or fresh, and the stale re-listing has nothing to fire on. CAND's 64
 gaps reach past the old losses to the young holes.
 
-`the_20_gap_horizon_hides_young_holes_behind_old_losses` checks this in
+`the_gap_horizon_hides_young_holes_behind_old_losses` checks this in
 the sim, with the law bypassed and the 9 ms return skew:
 - 31 old single-seq losses hold the frontier;
 - the packet threshold declares only real losses;

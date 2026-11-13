@@ -2837,7 +2837,8 @@ judge reported holes only from the receiver's newest snapshot.
 ```
 
 `snapver_judges`, `snapver_coalesce_keeps`, `SnapOrder` (`net/snapver.rs`),
-called from `serve_gaps`.
+reached from `serve_gaps` through its dequeue seam `take_gap_batch` and the
+`judged_gaps` slice it iterates.
 
 The sentence and the expression agree in shape: "no newer snapshot seen" is
 a max-filter on a monotone version.
@@ -2873,8 +2874,10 @@ The symbols:
   ingested from it.
 
 **Liveness.**
-- The newest snapshot is always judged, or the batch that carries it was
-  dropped by coalescing or by a spent budget, as on main.
+- Coalescing never drops the newest batch. The newest snapshot is
+  therefore judged, unless its batch never reaches the judgement: either
+  a spent repair budget drops it (as on main), or the gap channel was full
+  (`try_send`, depth 16).
 - A hole the newest snapshot names is therefore judged by the next
   advertisement at the latest: a later data-arm report, or the receiver's
   refresh, whose equal version the `≥` admits. The tail sweep serves the
@@ -2890,8 +2893,9 @@ same-path deliveries those fresher reports supplied, and fires on a
 sequence number the sender has already been told was delivered. The time
 threshold fires on such holes too. Derivation: `docs/derivations/dup-diag.md`.
 
-**Evidence (§53).** The filter ran as an env arm (`dup-diag` 9617970d) on
-the plain reliable window. Cell c8: a 100 Mbit/5 ms leg and a 20 Mbit/20 ms
+**Evidence (§53).** The filter ran as a default-off env arm on the plain
+reliable window, built into §53's pinned trees (`base53` `5b605bb0`,
+`cand53` `b21421e6`; §53 amendments 1–2). Cell c8: a 100 Mbit/5 ms leg and a 20 Mbit/20 ms
 leg, 600 MB, n = 6 per arm.
 - 98.4–99.7 % of the gap reports carried on the slow leg are stale
   (`[SNAPV]` `stale/rep`), on main and under lever B (the 64-gap sender
