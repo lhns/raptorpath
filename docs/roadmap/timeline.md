@@ -46,7 +46,7 @@ gantt
     Wire v9 per-path sequence :rec_wire_v9, 2026-09-30, 2026-09-30
     Gap horizon lever B (§52) :active, rec_gap_horizon, 2026-11-12, 2026-11-13
     Stale gap reports, snapshot filter (§53) :rec_snapver_filter, 2026-11-12, 2026-11-13
-    Snapshot-order filter as law :active, rec_snapver_law, 2026-11-13, 2026-11-13
+    Snapshot-order filter as law :rec_snapver_law, 2026-11-13, 2026-11-13
     [QCLK] w_us pinned at clamp :active, rec_defect_qclk_clamp, 2026-11-13, 2026-11-13
     c8 hole law never measured :active, rec_defect_hole_law, 2026-11-13, 2026-11-13
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-13
@@ -54,7 +54,7 @@ gantt
     Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
     Lever B c1d duplicate cost :active, rec_leverb_c1d_cost, 2026-11-13, 2026-11-13
     Main's duplicates mostly unexplained :active, rec_defect_base_duplicates, 2026-11-13, 2026-11-13
-    §54 - filter guard, store budget :active, rec_s54_session, 2026-11-13, 2026-11-13
+    §54 - filter guard, store budget :rec_s54_session, 2026-11-13, 2026-11-13
     Recovery-clock derivation (wire clock) :rec_wire_clock_derivation, 2026-11-13, 2026-11-13
     Congestion-aware NACK throttle (first f… :rec_nack_congestion, 2026-03-20, 2026-03-20
     section rate - rate law

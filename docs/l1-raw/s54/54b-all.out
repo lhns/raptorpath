@@ -1,0 +1,58 @@
+SENTINEL-WRITABLE /dev/shm/s54b/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54b/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-13T19:45:06Z user=VMUSER dir=/dev/shm/s54b/run launch=2026-11-13T19:45:06Z
+LD-ALL start plan=54b load=0.32 1.07 1.52 1/393 2540873 2026-11-13T19:45:06Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.20 avg60=0.27 avg300=0.14 total=4937163955 2026-11-13T19:45:14Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.27 1.04 1.51; io=full avg10=0.20 avg60=0.27 avg300=0.14 total=4937163955 2026-11-13T19:45:14Z
+LD-ALL parser test ok 2026-11-13T19:46:24Z
+LD-ALL built wall=285s 2026-11-13T19:51:09Z
+LD-ALL binary 159e4ca9066f20b9de843fc1dd4c5e8934b570263f01e7d01e8447d5a96021f7 2026-11-13T19:51:09Z
+LD-ALL built BASE wall=285s binary 8f313616b31ac6f4d6346cf03bfcf6246983c426fec4e08951d09d3faf921cbf 2026-11-13T19:55:54Z
+LD-ALL test main rc=0 passed=1130 failed=0 ignored=47 binaries=96 2026-11-13T20:15:08Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-13T20:15:10Z
+LD-ALL test wasm rc=0 passed=36 failed=0 ignored=0 binaries=2 2026-11-13T20:17:09Z
+LD-ALL test debug-witness rc=0 passed=989 failed=0 ignored=46 binaries=87 2026-11-13T20:34:18Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-13T20:39:50Z
+LD-ALL suites done tfail=0 2026-11-13T20:39:50Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.33 avg60=0.11 avg300=0.07 total=4943528926 2026-11-13T20:39:58Z
+LD-ALL stage rep54b (plan 54b) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.12 avg60=0.09 avg300=0.06 total=4943528990 2026-11-13T20:40:06Z
+SMOKE54B rows=6/6 (one row per block arm, unscored; the values are not read, only the criteria below)
+PASS one row per block arm ran
+  ROW B2048: status=LIVE mbps=98.476 wall=51.0 gates=2048/2048 pool_per_path=2048/2048 W=4096.0 bind=1.0 q0=1401.0 resid=1421.120481099657 old_holes=1139.0 tail_witness=True
+  ROW B1024: status=LIVE mbps=107.086 wall=47.0 gates=1024/1024 pool_per_path=1024/1024 W=2048.0 bind=1.0 q0=897.0 resid=113.42689189189218 old_holes=0.0 tail_witness=None
+  ROW B640: status=LIVE mbps=106.663 wall=47.0 gates=640/640 pool_per_path=640/640 W=1280.0 bind=1.0 q0=8.5 resid=62.4357692307691 old_holes=0.0 tail_witness=None
+  ROW L2048: status=LIVE mbps=107.755 wall=47.0 gates=2048/2048 pool_per_path=2048/2048 W=4096.0 bind=1.0 q0=2475.0 resid=41.34432989690731 old_holes=0.0 tail_witness=True
+  ROW L1024: status=LIVE mbps=107.195 wall=47.0 gates=1024/1024 pool_per_path=1024/1024 W=2048.0 bind=1.0 q0=86.0 resid=44.42155405405447 old_holes=0.0 tail_witness=None
+  ROW L640: status=LIVE mbps=107.397 wall=47.0 gates=640/640 pool_per_path=640/640 W=1280.0 bind=1.0 q0=23.0 resid=29.11925675675684 old_holes=0.0 tail_witness=None
+PASS each arm's pool is in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)
+PASS each row ran the build of its seat (B = BASE tree, L = CAND tree)
+PASS [SNAPV] parsed on every row (the gauge is in both builds)
+PASS in-order delay (run and late), evictions, old holes and the budget residual computed (no None)
+PASS the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S=300 (rc 0, a summary, not DNF)
+  LIVENESS B2048 s42 rep1: LIVE  | p1 stale=5025 tail-witness@W4096=True
+  LIVENESS B1024 s42 rep1: LIVE  | p1 stale=5443 tail-witness@W4096=None
+  LIVENESS B640 s42 rep1: LIVE  | p1 stale=4163 tail-witness@W4096=None
+  LIVENESS L2048 s42 rep1: LIVE  | p1 stale=5069 tail-witness@W4096=True
+  LIVENESS L1024 s42 rep1: LIVE  | p1 stale=3833 tail-witness@W4096=None
+  LIVENESS L640 s42 rep1: LIVE  | p1 stale=4262 tail-witness@W4096=None
+SMOKE-PASS
+LD-ALL stage rep54b SMOKE-PASS 2026-11-13T20:44:56Z
+LD-ALL stage rep54b battery rc=0 wall=1742s 2026-11-13T21:13:58Z
+CHECK54B done=True rows=36/36
+LD-ALL stage rep54b end ok=1 VERDICT54B REPORTED-ONLY rows=36/36 live=36 dnf=0 falsifiers=F1:NOT-FIRED,F2:FIRES,F3:NOT-FIRED,F4:NOT-FIRED 2026-11-13T21:13:59Z
+LD-ALL end plan 54b rep54b_ok=1 raptorpath=0 netns=0 2026-11-13T21:13:59Z

@@ -818,7 +818,7 @@ nodes:
   title: Snapshot-order filter as law
   track: rec
   kind: law
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - branch snapver-law (head 8191b3de)
@@ -832,7 +832,7 @@ nodes:
   qualified_by: []
   lane: host-cargo
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-13'
   folded: []
   overview: true
   plain: Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes.
@@ -4533,7 +4533,7 @@ nodes:
   title: '§54: filter guard, store budget'
   track: rec
   kind: mechanism
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - plan Live state items 1-2
@@ -4548,7 +4548,7 @@ nodes:
   qualified_by: []
   lane: vm
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-13'
   folded: []
   overview: true
   vm_order: 1

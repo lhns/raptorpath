@@ -63,14 +63,14 @@ flowchart TB
         meas_guard_41c["meas · ✔ Rank-minp<br/>merge guard (#167;41c)"]
         cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
         place_wire_price["place · ✔ Wire-RTT<br/>placement price"]
+        rec_snapver_law[/"rec · ✔ Snapshot-order<br/>filter as law"/]
         store_defect_cap_constant>"store · ⚠ Store cap<br/>constant at c8"]
         meas_guard_v2_impl["meas · ✔ Guard v2<br/>implementation"]
         model_law_ledger["model · ✔ Law ledger"]
+        rec_s54_session["rec · ✔ #167;54: filter<br/>guard, store budget"]
     end
     subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
-        rec_snapver_law[/"rec · ⏳ Snapshot-order<br/>filter as law"/]
-        rec_s54_session["rec · ▶ #167;54: filter<br/>guard, store budget"]
     end
     subgraph bd_6["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
@@ -108,16 +108,15 @@ flowchart TB
     store_power_law ~~~ meas_guard_41c
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
     meas_guard_41c ~~~ place_wire_price
-    cc_bbrrs_r1 ~~~ store_defect_cap_constant
-    place_wire_price ~~~ meas_guard_v2_impl
+    cc_bbrrs_r1 ~~~ rec_snapver_law
+    place_wire_price ~~~ store_defect_cap_constant
+    rec_snapver_law ~~~ meas_guard_v2_impl
     store_defect_cap_constant ~~~ model_law_ledger
-    meas_guard_v2_impl ~~~ model_law_ledger
-    model_law_ledger ~~~ cc_bbrrs_r2
-    model_law_ledger ~~~ rec_snapver_law
-    cc_bbrrs_r2 ~~~ rec_s54_session
-    rec_snapver_law ~~~ rec_s54_session
-    rec_s54_session ~~~ rec_leverb_guard
-    rec_s54_session ~~~ meas_s51_session
+    meas_guard_v2_impl ~~~ rec_s54_session
+    model_law_ledger ~~~ rec_s54_session
+    rec_s54_session ~~~ cc_bbrrs_r2
+    cc_bbrrs_r2 ~~~ rec_leverb_guard
+    cc_bbrrs_r2 ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote
     meas_s51_session ~~~ cc_bbrrs_promote
     cc_bbrrs_promote ~~~ cc_hybrid
@@ -135,15 +134,15 @@ flowchart TB
     store_adr72_one_law -.-> store_defect_cap_constant
     cc_quinn_bbr_collapse --> cc_bbrrs_r1
     meas_guard_41c --> cc_bbrrs_r1
-    cc_bbrrs_r1 --> cc_bbrrs_r2
     meas_guard_v2_impl --> rec_s54_session
     rec_snapver_law --> rec_s54_session
+    cc_bbrrs_r1 --> cc_bbrrs_r2
     rec_s54_session --> rec_leverb_guard
     cc_bbrrs_promote --> cc_hybrid
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 46,49,52 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 45,48,51 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -159,12 +158,11 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,cod_mettle,cod_legacy_rlc,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,place_daps,cc_aimd_v1,place_early_window_sched dead
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
-    class rec_snapver_law,cc_bbrrs_r2 waiting
+    class rec_snapver_law,meas_guard_v2_impl,model_law_ledger,rec_s54_session unrated
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
     class store_defect_cap_constant,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
-    class meas_guard_v2_impl,model_law_ledger unrated
-    class rec_s54_session inprog
+    class cc_bbrrs_r2 waiting
     class rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
     class cc_hybrid parked
 ```
@@ -185,14 +183,14 @@ flowchart TB
 | Reliable window (RWM Phase A) | ✔ done · successful | Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode. |
 | Recovery clock law family (4 arms) | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
 | Gap horizon lever B (§52) | ⏳ waiting | Letting the sender hear about many more missing packets at once removed most of the end-of-transfer wait on the hardest test, but raised duplicate packets; the merge is still pending. |
-| Snapshot-order filter as law | ⏳ waiting | Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes. |
+| Snapshot-order filter as law | ✔ done · unrated | Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes. |
 | [QCLK] w_us pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |
 | c8 hole law never measured | ⚠ open defect | Open problem: the rule that decides when a missing packet is lost had never been measured in the conditions where it matters most. |
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
 | Singles hole suppression (RECOV_SP) | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
 | Lever B c1d duplicate cost | ⚠ open defect | Open problem: the end-of-transfer fix adds about thirteen percent more duplicate packets on the fast two-path test, and the loss-report fix does not remove them. |
 | Main's duplicates mostly unexplained | ⚠ open defect | Open problem: even the current main version receives a thousand or more duplicate packets per run, and most of them are unexplained. |
-| §54: filter guard, store budget | ▶ in progress | Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue. |
+| §54: filter guard, store budget | ✔ done · unrated | Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue. |
 | Retransmit leg choice with filter | ⛔ blocked | Checking, with the loss-report fix in place, whether retransmissions should be spread across paths like normal data. |
 | Lever-B guard v2, then merge | ⛔ blocked | Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait. |
 | Recovery timeouts after store law | ⛔ blocked | Re-deriving the retransmit timers from the new in-flight limit, so they stop sitting at a fixed hand-set ceiling. |
@@ -319,9 +317,7 @@ flowchart TB
 ## Running
 
 <!-- BEGIN GENERATED: running -->
-**vm**
-
-- `rec-s54-session`: §54: filter guard, store budget
+_None._
 <!-- END GENERATED: running -->
 
 ## Built, waiting
@@ -330,10 +326,6 @@ flowchart TB
 **the lever-B guard on the new main**
 
 - `rec-gap-horizon`: Gap horizon lever B (§52)
-
-**its guard in the next VM session**
-
-- `rec-snapver-law`: Snapshot-order filter as law
 
 **the owner's answers to the three latency-setting questions, then merge to main**
 
@@ -429,7 +421,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 18 nodes (7 done, 1 next, 1 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 34 nodes (12 done, 8 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 34 nodes (14 done, 6 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 20 nodes (9 done, 1 in progress, 1 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 28 nodes (10 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
 - [place - placement](roadmap/tracks/place.md): 15 nodes (4 done, 2 in progress, 1 next, 1 blocked, 7 abandoned)

@@ -27,13 +27,13 @@ flowchart TB
     rec_wire_v9["✔ Wire v9 per-path<br/>sequence"]
     rec_gap_horizon["⏳ Gap horizon lever B<br/>(#167;52)"]
     rec_snapver_filter["✔ Stale gap reports,<br/>snapshot filter (#167;53)"]
-    rec_snapver_law[/"⏳ Snapshot-order<br/>filter as law"/]
+    rec_snapver_law[/"✔ Snapshot-order<br/>filter as law"/]
     rec_defect_qclk_clamp>"⚠ #91;QCLK#93; w_us pinned<br/>at clamp"]
     rec_defect_hole_law>"⚠ c8 hole law never<br/>measured"]
     rec_defect_refresh_input>"⚠ Hole refresh clock<br/>degenerate input"]
     rec_leverb_c1d_cost>"⚠ Lever B c1d<br/>duplicate cost"]
     rec_defect_base_duplicates>"⚠ Main's duplicates<br/>mostly unexplained"]
-    rec_s54_session["▶ #167;54: filter guard,<br/>store budget"]
+    rec_s54_session["✔ #167;54: filter guard,<br/>store budget"]
     rec_wire_clock_derivation["✔ Recovery-clock<br/>derivation (wire<br/>clock)"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⛔ Lever-B guard v2,<br/>then merge"]
@@ -113,12 +113,11 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter succ
-    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_wire_clock_derivation unrated
+    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation unrated
     class rec_p10a_repair_floor,rec_proactive_repair,rec_mp_serial,rec_clock_candidates,rec_goal101,rec_receiver_law dead
     class rec_recov_sp parked
-    class rec_gap_horizon,rec_snapver_law waiting
+    class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
-    class rec_s54_session inprog
     class rec_w0_leg_question,rec_leverb_guard,rec_fix_perleg_clock_n1,rec_recovery_timeouts,rec_fix_refresh_clock blocked
     class rec_fix_nack_throttle,rec_retx_behind_source next
 ```
@@ -145,7 +144,7 @@ flowchart TB
 | `rec-wire-v9` | Wire v9 per-path sequence | done | successful |  | status §3.5 item 2 |  |
 | `rec-gap-horizon` | Gap horizon lever B (§52) | in-progress | mixed | p = 0.2471 | status §52; branch gaphorizon; branch cand52; branch base52 | meas-guard-41c, cc-bbrrs-r1 |
 | `rec-snapver-filter` | Stale gap reports, snapshot filter (§53) | done | successful | CANDS duplicates (mean 1 291) | status §53; derivation dup-diag.md (branch dup-diag); branch dup-diag; branch dup-diag-instr; branch cand53; branch base53; branch test-debts | rec-gap-horizon |
-| `rec-snapver-law` | Snapshot-order filter as law | in-progress | unrated |  | branch snapver-law (head 8191b3de); paper §7.1 "Snapshot order"; plan Live state 2026-11-13 item 1 | rec-snapver-filter |
+| `rec-snapver-law` | Snapshot-order filter as law | done | unrated |  | branch snapver-law (head 8191b3de); paper §7.1 "Snapshot order"; plan Live state 2026-11-13 item 1 | rec-snapver-filter |
 | `rec-defect-qclk-clamp` | [QCLK] w_us pinned at clamp | in-progress | unrated | p05 = p95 = 100 000 µs | status §3.10 item 4; status §3.5 item 5 | rec-gap-horizon |
 | `rec-defect-hole-law` | c8 hole law never measured | in-progress | unrated | 3.7–6.6 k times per run | status §3.10 item 5 | rec-gap-horizon, rec-snapver-filter |
 | `rec-defect-refresh-input` | Hole refresh clock degenerate input | in-progress | unrated | srtt = exactly 50 000 µs | status §3.10 item 6 | rec-snapver-filter |
@@ -153,7 +152,7 @@ flowchart TB
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | in-progress | unrated | +13 % | status §53 open item 2 | rec-snapver-filter |
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | in-progress | unrated |  | status §53 open item 3 | rec-snapver-filter |
-| `rec-s54-session` | §54: filter guard, store budget | in-progress | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
+| `rec-s54-session` | §54: filter guard, store budget | done | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | blocked | unrated |  | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f | rec-s54-session, place-wdiv |
 | `rec-leverb-guard` | Lever-B guard v2, then merge | blocked | unrated |  | plan Live state item 4; status §53 "What follows" | rec-s54-session, meas-guard-v2-impl, rec-gap-horizon |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | blocked | unrated |  | plan W3.6; status §3.10 items 4 and 6 | store-engine-form-impl, rec-fix-perleg-clock-n1 |

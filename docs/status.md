@@ -1151,3 +1151,70 @@ Launch order: launch 1 (`LD_PLAN=54`), rehearsal then full; then launch 2 (`LD_P
 **Decision (registered rule): `snapver-law` merges to main (`--no-ff`)**, with its `[SNAPV]` gauge and paper §7.1. CAND54 was main's tree `7968c870` plus the law plus the harness; main has since gained only `harness54` (identical tools), docs and the roadmap. Check: the merged tree differs from the guarded CAND `7fd92dd5` only in files main gained after `a1908f61` (`docs/status.md`, `docs/roadmap*`, `tools/roadmap/`, `docs/l1-raw/s54/`); the README row conflict was resolved by taking CAND54's resolved file. No new cargo run is needed.
 
 **Launch 2 (54b, the store-budget block, reported only) follows** with its own ledger. It decides nothing by itself.
+
+**§54 Result, launch 2 (`LD_PLAN=54b`, the store-budget block, REPORTED ONLY): H-elastic. Falsifier 2 fires; F1, F3 and F4 do not.** (2026-11-13; rows 20:45–21:14Z. Ledger: `docs/l1-raw/s54/rep54b-*`, `54b-*`.)
+
+**Integrity.**
+- Builds: B seat = CAND54 `8f313616…` (the same binary as launch 1's CAND); L seat = LEVB54 `159e4ca9…`.
+- Suites passed on LEVB54. Smoke: SMOKE54B, every line PASS.
+- 36/36 rows LIVE, 0 DNF. Every row's pool echo matches on both ends.
+
+**Medians per arm** (n = 6 each, c8-100, 600 MB):
+
+| arm | pool | goodput Mbit/s | tail s | in-order run / late s | p0 RTT ms | p0 backlog q0 | old holes | srv CPU s/GB | resid/W |
+|---|---|---|---|---|---|---|---|---|---|
+| B2048 | 2048 | 98.5 | 4.31 | 4.44 / 5.63 | 198 | 873 | 1 289 | 46.2 | 0.39 |
+| B1024 | 1024 | 106.9 | 0.55 | 0.92 / 0.84 | 152 | 153 | 0 | 36.4 | 0.06 |
+| **B640** | 640 | **106.9** | **0.12** | **0.38 / 0.35** | **96** | 18 | **0** | **34.8** | 0.04 |
+| L2048 | 2048 | 108.0 | 0.33 | 0.90 / 0.93 | 354 | 2 374 | 0 | 36.8 | 0.01 |
+| L1024 | 1024 | 107.6 | 0.17 | 0.52 / 0.49 | 162 | 343 | 0 | 36.1 | 0.01 |
+| L640 | 640 | 107.3 | 0.12 | 0.32 / 0.30 | 98 | 22 | 0 | 35.3 | 0.02 |
+
+- Every B640 row (106.5–107.6) and every B1024 row (105.3–107.3) is above every B2048 row (95.8–99.2). There is no overlap.
+- Quinn evictions occur only on L2048 (median 60, max 460); every other arm has 0.
+- Duplicates and retransmits/GB are flat across arms (median duplicates 1 210–1 406; median retransmits/GB 24 756–25 969).
+- The knob reaches only the sender's store cap (`sender_phases.rs:118`, `:200`; `mod.rs` echoes it), so the server CPU change is an indirect effect.
+- The cap binds on every row of every arm (bind fraction 0.997–1.000).
+
+**Falsifiers.**
+- **F2 fires:** B640 goodput 106.9 ≥ 0.95 × B2048 (93.6), with old holes 0 ≤ 300. The registration's reading is H-elastic: lever B's gain comes from the oversized pool.
+- **F1 does not fire:** old holes are 0, not ≥ 700.
+- **F3 does not fire:** L640 is 107.3 ≥ 0.97 × L2048.
+- **F4 does not fire:** no LEVB row has a budget residual above 0.1·W.
+
+**Registered predictions (`p0-dwell-diag.md` §8; for B1024/B640 the H-elastic value applies).**
+- Hits: goodput, p0 backlog, p0 RTT, old holes and tail are inside the predicted band on all six arms.
+- Misses:
+  - in-order late: B2048 5.63 (band 4.8–5.6); L1024 0.49 (band 0.5–1.0); L640 0.30 (band 0.4–0.9), lower than predicted;
+  - L2048 evictions: median 60, but rows reach 460 (band 0–350).
+
+**Re-basing (registered; run on the host against §53's logs, `rep54b-rebase.txt`).** The check says YES: some control rows land just outside their §53 ranges.
+- B2048:
+  - old holes 1 076 against a lower bound of 1 077;
+  - goodput 95.8 against 96.3–102.1;
+  - tails 5.44 and 5.71 against an upper bound of 5.44.
+- L2048: three goodputs and tails at the range edges, and one duplicate count.
+- The check compares with the min–max of six rows, so it nearly always fires.
+- **The reduced-W bands were not recomputed.** The reading cannot flip: B640's in-order delay (0.34–0.39 s) and old holes (0) sit far inside H-elastic's band (≤ 1.0 s, ≤ 300) and far from H-hold's (≥ 2.0 s, ≥ 700). The falsifiers read the in-run control.
+
+**What it means.**
+- **The goodput gain is the completion tail, not a faster sender.** The late-window send rate is 11 690–11 830 /s in all six arms. The B2048 → B640 gap of 98.5 → 106.9 Mbit/s is the 4.2 s tail on a 600 MB transfer. The lasting gains of a smaller W are latency and CPU:
+  - in-order delay 4.44 → 0.38 s;
+  - p0 RTT 198 → 96 ms;
+  - p0 backlog 873 → 18;
+  - server CPU −25 % per GB.
+- **Two interventions each clear the old holes:** a smaller W (B640) and a longer gap horizon (L2048, lever B). They trade differently:
+  - the smaller W also removes quinn's backlog and halves RTT;
+  - the longer horizon keeps the highest goodput of all arms (108.0, 1 % above B640), at 354 ms RTT and with some evictions.
+
+  §55 lists both as defects (F01 store cap, C02 horizon); the block shows them as a mismatch between the store's size and the horizon over which recovery can see holes.
+- **On the L arms, the send rate falls as W shrinks** (11 826 → 11 745 /s, ranges not overlapping). That is a delay-against-goodput trade, δ's seat on the store law and the owner's open question U3. It is not a free win.
+- **Lever B's increment shrinks as W falls, but is not zero:**
+  - at 1 024: tail 0.17 against 0.55 s; in-order delay 0.52 against 0.92 s;
+  - at 640: in-order delay 0.30–0.35 against 0.36–0.40 s, with no overlap.
+- **Scale.** c8's base BDP is 225 000 B, about 190 symbols at 1 200 B (`place46_parse.py`: leg 0 125 000 B, leg 1 100 000 B). The arms' W is about 21.8×, 10.9× and 6.8× that.
+- **The clamp binds on every row at every W:** the store law is pinned at its clamp (§55 F01, PINNED), and the clamp's value sets the outcome.
+- **A fixed smaller constant would be a pin, not a law** (formula-first). It would also likely cost c1s, where §55 has the clamp binding about 70 % of the time at 2 048.
+- **Next step:** the store-law derivation (F01, with C02's horizon in the same derivation), with this block as its measured anchor at c8. Per the registration, this outcome also goes into the lever-B guard's registration.
+
+**Erratum to launch 1 (above).** `[HOLD] hn_n` counts holes that resolved with no retransmit ever emitted (`holddown.rs`, the self-heal class). It tracks the store regime: under the same law it reads 168 (B2048), 11 994 (B1024) and 55 038 (B640). Launch 1's c8 reading of what the law does holds only at the default pool.
