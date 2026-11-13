@@ -74,6 +74,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
+source ./abort_witness.sh      # aw_ping: the retried sanity ping (see up)
 
 IPERF_PORT=5210
 
@@ -170,8 +171,17 @@ up() {
             ;;
     esac
 
+    # Loss truth (lib.sh truth_line / the row parsers' truth_* columns): the egress counter ahead of the data-direction root qdisc,
+    # as topo_dual.sh's shape() installs it. Not on pol100: its loss happens at the srv0 ingress police, AFTER this counter, so the
+    # counter would read ~0 loss; the police drops are in the SRV0-INGRESS section of the tc capture, and `-` is the honest value
+    # for the truth columns there.
+    [[ "$cell" == "pol100" ]] || truth_counter_install "$NS_CLI" cli0
+
     echo "adv topology up: $cell (${seed:-unseeded})"
-    ip netns exec "$NS_CLI" ping -c 2 -i 0.2 -W 2 10.77.0.2 | tail -1
+    # aw_ping, not a bare `ping -c 2 | tail -1`: two ICMPs with no retry across a GE-lossy leg false-abort under pipefail
+    # (topo_dual.sh documents the arithmetic: up to 26 draws, 2e-5 per leg).
+    # Label pathA: the abort witness reads the same ping_pathA_* columns as for topo_dual.sh's leg 0.
+    aw_ping "$NS_CLI" 10.77.0.2 pathA
 }
 
 status() {
@@ -246,9 +256,10 @@ check() {
     local seed="" rc=0
     [[ "${1:-}" == "--seed" ]] && seed="$2"
     adv_known "$cell" || { echo "unknown adv cell: $cell" >&2; exit 1; }
+    # The EXIT trap tears the namespaces down even when `up` itself fails under set -e.
+    trap 'down >/dev/null 2>&1 || true' EXIT
     if [[ -n "$seed" ]]; then up "$cell" --seed "$seed" >/dev/null; else up "$cell" >/dev/null; fi
     python3 ./adv_cells_validate.py run "$cell" --fixture "${ADV_MEASURE_FIXTURE:-}" || rc=$?
-    down >/dev/null
     return "$rc"
 }
 

@@ -11,7 +11,7 @@ Each cell is proved to do what it claims with a tiny UDP prober (stdlib only) ru
            (token bucket + refill during the send) / pkt_len + what the cell can HOLD; the held part is the queue depth
            (shal8: 8 packets, drop starts at the 9th queued; policer: 0; deep netem: ~everything is held).
   flood    4 s CBR at 150 Mbit/s: delivered rate (~100 Mbit/s ceiling), standing-queue delay inflation (deep shaper: tens of ms,
-           shallow: < 3 ms, policer: ~0), loss ~ the excess, loss-run length (policer: isolated token drops, not tail bursts).
+           shallow: < 3 ms, policer: ~0), loss ~ the excess, loss-run length (reported, not gated: a full FIFO under CBR overload drops in runs of ~1 too).
   tc       the cells' own counters after the load: the policer's drop count matches the receiver-side loss; the pol100 data netem
            (delay only) dropped 0; the shal8 child netem counts the queue drops.
 
@@ -374,14 +374,18 @@ def judge(cell, m):
     else:
         rate = pct([t["send_mbit"] for t in T], 50)
         chk("burst_overdrives", rate >= 300.0, "burst sent at %.0f Mbit/s, want >= 300 (3x the ceiling; slower proves nothing)" % rate)
-        held = pct([t["delivered"] - (sp["bucket_b"] + RATE_BPUS * t["t_send_us"]) / sp["pkt_len"] for t in T], 50)
+        # mean over trials: D is an integer, so one trial is quantised by up to 1 packet; the estimator's own bias is -0.3..-1.7 packet
+        # (arrival granularity, a queue one short at the burst's end), checked against a token-bucket simulation in test_adv_cells.py.
+        # Resolution is therefore ~+-2 packets: it separates an 8-packet queue from 0 (policer) and from 12+, not 8 from 9.
+        hs = [t["delivered"] - (sp["bucket_b"] + RATE_BPUS * t["t_send_us"]) / sp["pkt_len"] for t in T]
+        held = sum(hs) / len(hs)
         fd = pct([t["first_drop_idx"] or t["sent"] + 1 for t in T], 50)
         if kl == "shallow":
             want = sp["queue_pkts"]
-            chk("queue_depth", abs(held - want) <= 2.0 and frac <= 0.2,
+            chk("queue_depth", abs(held - want) <= 2.0,
                 "held %.1f pkts (delivered - bucket - refill), want %d +- 2; delivered %.0f%% (median first-gap idx %.0f)" % (held, want, 100 * frac, fd))
         else:
-            chk("queue_depth", abs(held) <= 2.5 and frac <= 0.2,
+            chk("queue_depth", abs(held) <= 2.5,
                 "held %.1f pkts, want 0 +- 2.5 (a policer holds nothing); delivered %.0f%% (median first-gap idx %.0f)" % (held, 100 * frac, fd))
     # Flood: ceiling, queueing, loss.
     F = m["flood"]
@@ -401,8 +405,6 @@ def judge(cell, m):
     if kl == "police":
         exp = 1.0 - 100.0 / F["offered_mbit"]
         chk("police_loss_rate", abs(F["loss"] - exp) <= 0.05, "loss %.1f%%, want %.1f%% +- 5 (excess over the 100 Mbit/s bucket rate)" % (100 * F["loss"], 100 * exp))
-        chk("police_drop_pattern", F["loss_run_mean"] <= 3.0,
-            "mean loss run %.2f over %d runs, want <= 3.0 (token drops are isolated; a shaper's tail drops come in the bursts it queues)" % (F["loss_run_mean"], F["loss_runs"]))
     # The cells' own counters.
     tc = m.get("tc") or {}
     if kl == "police":

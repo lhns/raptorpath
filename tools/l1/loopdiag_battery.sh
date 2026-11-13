@@ -81,7 +81,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py adv_cells.sh adv_cells_validate.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
