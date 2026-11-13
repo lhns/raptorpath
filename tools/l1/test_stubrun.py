@@ -342,11 +342,14 @@ def check54(tag, path, run_dir, sb):
           os.path.isdir(gdir) and not os.path.exists(os.path.join(run_dir, "rep54b"))
           and all(re.search(r"^PASS " + re.escape(x), ctxt, re.M) for x in ("every smoke row ran", "no row is VOID-SHORT", "bin_sha matches the row's arm", "CAND c8 row: p0 [HOLD] hn_n collapsed", "[SNAPV] present on every CAND row"))
           and "FAIL " not in ctxt and "SMOKE-PASS" in ctxt, ctxt[-900:])
+    rd = lambda p: open(os.path.join(sb["devshm"], "ld", p, "raptorpath"), errors="replace").read()  # noqa: E731
+    check(f"{tag}: the pre-check's two sides: plan 54's CAND binary carries the [SNAPV] gauge and its BASE (main) binary does not",
+          "[SNAPV] site=" in rd("bin") and "[SNAPV] site=" not in rd("bin-base"), None)
     if path != "full":
         return
     led = lambda f: [json.loads(ln[len("P38ROW "):]) for ln in open(os.path.join(gdir, f), errors="replace") if ln.startswith("P38ROW ")]  # noqa: E731
     gl, rl = led("ld.log"), led("repl.log")
-    cand, base = [r for r in gl if r["arm"] == "CAND"], [r for r in gl if r["arm"] == "BASE"]
+    cand, base =[r for r in gl if r["arm"] == "CAND"], [r for r in gl if r["arm"] == "BASE"]
     check(f"{tag}: every CAND row carries its witness readings (hn collapsed at c8, [SNAPV] pt_st + tt_st = 0), every BASE row hn ~9 800 and no [SNAPV]; all witnesses held (no WITNESS-FAIL)",
           cand and base and all(r["w54"]["snapv_present"] and r["w54"]["snapv_st"] == 0 for r in cand) and all(r["w54"]["hn_p0"] == 120 for r in cand if r["cell"] == "c8-100")
           and all(r["w54"]["hn_p0"] == 9800 and not r["w54"]["snapv_present"] for r in base) and not [r for r in gl + rl if r["status"] == "WITNESS-FAIL"],
@@ -380,8 +383,14 @@ def check54b(tag, path, run_dir, sb):
           and all(c == "c8-100" and by == "600000000" and env == want_env[a] and (b.endswith("bin-base/raptorpath") == a.startswith("B")) for c, a, by, env, b in heads), heads)
     check(f"{tag}: the rehearsal criteria are printed as PASS lines (the pool on both ends, [SNAPV], no None, the 200 s timeout) and SMOKE-PASS",
           all(re.search(r"^PASS " + re.escape(x), ctxt, re.M) for x in ("one row per block arm ran", "each arm's pool is in [GATES] on both ends", "each row ran the build of its seat", "[SNAPV] parsed on every row",
-                                                                         "in-order delay (run and late), evictions, old holes and the budget residual computed (no None)", "the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S=200"))
+                                                                         "in-order delay (run and late), evictions, old holes and the budget residual computed (no None)", "the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S=300"))
           and "FAIL " not in ctxt and "SMOKE-PASS" in ctxt, ctxt[-1200:])
+    # [SNAPV] pre-check gating: plan 54b's BASE seat is cand54, which carries the gauge, so BOTH binaries have it (the battery refuses a BASE binary with the gauge only for plan 54)
+    bb = os.path.join(sb["devshm"], "ld", "bin-base", "raptorpath")
+    check(f"{tag}: the BASE-seat binary carries the [SNAPV] gauge and the battery did not refuse it (the 'BASE has no [SNAPV]' pre-check is plan 54's only)",
+          os.path.exists(bb) and "[SNAPV] site=" in open(bb, errors="replace").read() and "ABORT-SHA BASE binary" not in open(os.path.join(rep, "smoke.log"), errors="replace").read(), None)
+    drv = [ln.split() for ln in open(os.path.join(sb["logs"], "drv.log")).read().splitlines()]
+    check(f"{tag}: every driver call ran with RWM_PERF_TIMEOUT_S=300", drv and all(d[3] == "timeout=300" for d in drv), drv[:3])
     if path != "full":
         return
     led = [json.loads(ln[len("P38ROW "):]) for ln in open(os.path.join(rep, "ld.log"), errors="replace") if ln.startswith("P38ROW ")]
@@ -394,8 +403,9 @@ def check54b(tag, path, run_dir, sb):
     check(f"{tag}: B* ran the BASE seat's binary and L* the CAND seat's (one sha each, the two differ), the comparison executed on every row (sha_checked)",
           all(r["sha_checked"] is True for r in led) and len(set().union(*shas.values())) == 2 and all(len(v) == 1 for v in shas.values())
           and shas["B2048"] == shas["B640"] and shas["L2048"] == shas["L640"] and shas["B2048"] != shas["L2048"], shas)
-    check(f"{tag}: every row's cap is 2 x its pool (bind fraction 1.0), the instrument env is plan 52's with RWM_PERF_TIMEOUT_S=200, and the env scrub withholds RWM_STORE_PATH_POOL",
-          all(r["t54"]["bind_frac"] == 1.0 and r["t54"]["cap_med"] == 2 * int(r["arm"][1:]) for r in led) and "RWM_PERF_TIMEOUT_S=200" in open(os.path.join(rep, "ld.log"), errors="replace").read()
+    check(f"{tag}: every row's cap is 2 x its pool (bind fraction 1.0), the instrument env is plan 52's with RWM_PERF_TIMEOUT_S=300 (plan 54b only), and the env scrub withholds RWM_STORE_PATH_POOL",
+          all(r["t54"]["bind_frac"] == 1.0 and r["t54"]["cap_med"] == 2 * int(r["arm"][1:]) for r in led) and "RWM_PERF_TIMEOUT_S=300" in open(os.path.join(rep, "ld.log"), errors="replace").read()
+          and "RWM_PERF_TIMEOUT_S=200" not in open(os.path.join(rep, "ld.log"), errors="replace").read().split("=== env ")[-1].split("\n")[0]
           and "RWM_STORE_PATH_POOL;" in open(os.path.join(rep, "ld.log"), errors="replace").read(), None)
     sc = open(os.path.join(rep, "score.txt"), errors="replace").read()
     check(f"{tag}: the report prints the readouts per arm, the four falsifiers, the decision-rule reading, the re-basing line and VERDICT54B REPORTED-ONLY with every row LIVE",
@@ -418,6 +428,29 @@ def red54(kind, want):
         ctxt = open(chk, errors="replace").read() if os.path.exists(chk) else ""
         check(f"54/red:{kind}: the stub's defect fails the smoke (ABORT-SMOKE, rc 5, no REHEARSAL-PASS) and the criterion that must catch it prints FAIL",
               rc == 5 and "ABORT-SMOKE" in era(sb) and "LD-ALL-REHEARSAL-DONE" not in out and re.search(r"^FAIL " + re.escape(want), ctxt, re.M) is not None, (rc, ctxt[-700:], tail(out, 8)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def dnf54b():
+    """A B640 row that times out (seed 7): the row is LIVE with dnf true, keeps its [DIAG]-derived readouts (old holes, inorder_mean_late, residual, q0), is counted in the report
+    (goodput 0 in the falsifiers) and the battery finishes."""
+    import json
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, "54b", BASE_SHA)
+        rc, out, rows, cargo = run_launch(sb, "54b", BASE_SHA, extra_env={"STUB_DNF54": "B640"})
+        rep = os.path.join(sb["root"], "run", "rep54b")
+        led = [json.loads(ln[len("P38ROW "):]) for ln in open(os.path.join(rep, "ld.log"), errors="replace") if ln.startswith("P38ROW ")] if os.path.exists(os.path.join(rep, "ld.log")) else []
+        d = [r for r in led if r["arm"] == "B640" and r["seed"] == "7"]
+        t = (d[0].get("t54") or {}) if d else {}
+        sc = open(os.path.join(rep, "score.txt"), errors="replace").read() if os.path.exists(os.path.join(rep, "score.txt")) else ""
+        check("54b/dnf: the session finishes (rc 0, LD-ALL-DONE) with a B640 DNF at seed 7: the row is LIVE, dnf true, no goodput",
+              rc == 0 and "LD-ALL-DONE" in out and len(d) == 1 and d[0]["status"] == "LIVE" and d[0]["dnf"] is True and d[0].get("mbps") is None, (rc, tail(out, 6), [(r["arm"], r["status"], r["dnf"]) for r in led][:4]))
+        check("54b/dnf: the DNF row keeps old holes, inorder_mean_late, the budget residual and q0 computed from its [DIAG] / [RANK] lines (none None)",
+              all(t.get(k) is not None for k in ("old_holes", "inorder_mean_late", "inorder_mean_run", "resid_late", "resid_rel", "q0_late", "rtt0_late")), t)
+        check("54b/dnf: the report counts it (dnf=1 in the verdict line, 'DNF 1' for B640) and the falsifiers still evaluate",
+              "dnf=1" in sc and re.search(r"B640\s+rows \d+.*DNF 1", sc) is not None and "F1 " in sc, sc[-700:])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -660,6 +693,8 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
     for kind, crit in (("nosnapv", "[SNAPV] present on every CAND row"), ("snapfire", "[SNAPV] present on every CAND row"), ("nohn", "CAND c8 row: p0 [HOLD] hn_n collapsed")):
         if want("red54:" + kind):
             jobs.append(ex.submit(red54, kind, crit))
+    if want("dnf54b"):
+        jobs.append(ex.submit(dnf54b))
     if want("red54sha:54"):
         jobs.append(ex.submit(red54sha, "54", "guard", "bin_sha matches the row's arm"))
     if want("red54sha:54b"):

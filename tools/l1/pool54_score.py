@@ -51,7 +51,7 @@ C8 = "c8-100"
 LATE_T = 15.0
 RANK_HEAD, RANK_TAIL = 15, 6
 HN_COLLAPSE = 2000                     # plan 54: a CAND c8 row's p0 [HOLD] hn_n must be below this (status 54)
-PERF_TIMEOUT_S = 200
+PERF_TIMEOUT_S = 300                               # plan 54b only (loopdiag_battery.sh INSTR_ENV): B640 under H-hold needs 240 s
 BYTES = 600_000_000
 DEFAULT_POOL = 2048
 
@@ -410,21 +410,16 @@ def smoke(path, out=print):
     crit("each row ran the build of its seat (B = BASE tree, L = CAND tree)", [f"{r['arm']}: {x}" for r in rs for x in r["problems"] if x.startswith("bin-sha")])
     crit("[SNAPV] parsed on every row (the gauge is in both builds)", [f"{r['arm']}: no [SNAPV]" for r in rs if (r.get("t54") or {}).get("snapv") is None])
     crit("in-order delay (run and late), evictions, old holes and the budget residual computed (no None)", [f"{r['arm']}: {', '.join(missing(r))}" for r in rs if missing(r)])
-    # A reduced pool can stall below the 200 s timeout (the registered H-hold floor, B640 at 20 Mbit/s = 240 s): a DNF there is data, not a harness fault.
-    # DEVIATION from the registered criterion ("rows inside RWM_PERF_TIMEOUT_S"): only B640, only a clean DNF (rc 0, summary present, dnf true) is a NOTE; a crash or a missing summary fails.
+    # RWM_PERF_TIMEOUT_S is 300 for plan 54b (B640's H-hold floor of 20 Mbit/s needs 240 s for 600 MB): every row, B640 included, must finish inside it, no exemption.
     late_fail = []
     for r in rs:
-        clean_dnf = r.get("dnf") is True and r.get("rc") == 0 and bool(r.get("summary"))
-        broken = r.get("dnf") or r.get("rc") != 0 or not r.get("summary")
-        if clean_dnf and r["arm"] == "B640":
-            out(f"  NOTE {r['arm']}: DNF inside the smoke (the registered H-hold floor of 20 Mbit/s needs 240 s for 600 MB; a result, not a fault)")
-        elif broken:
+        if r.get("dnf") or r.get("rc") != 0 or not r.get("summary"):
             late_fail.append(f"{r['arm']}: rc={r.get('rc')} dnf={r.get('dnf')} summary={r.get('summary')} wall={r.get('wall_s')}")
         elif (r.get("seconds") or 0) >= PERF_TIMEOUT_S:
             late_fail.append(f"{r['arm']}: {r.get('seconds')} s >= {PERF_TIMEOUT_S}")
         if r.get("bytes") != BYTES:
             late_fail.append(f"{r['arm']}: bytes={r.get('bytes')}")
-    crit(f"the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S={PERF_TIMEOUT_S} (rc 0, a summary, not DNF; B640 may DNF)", late_fail)
+    crit(f"the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S={PERF_TIMEOUT_S} (rc 0, a summary, not DNF)", late_fail)
     for r in rs:
         out(f"  LIVENESS {r['arm']} s{r['seed']} rep{r['rep']}: {'LIVE' if r['status'] == 'LIVE' else 'VOID'} {' '.join(r['problems'])}"
             f" | p1 stale={s53._leg((r.get('t54') or {}).get('snapv'), '1', 'stale')} tail-witness@W4096={tail_witness(r['arm'], r.get('t54'))}")
