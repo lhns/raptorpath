@@ -170,6 +170,21 @@ def main(argv):
                + "".join(f"[DIAGSEEN] t={s['t']} wall={1000 + s['t'] + 0.01:.3f}\n" for s in S))
         if os.environ.get("RWM_EVENT_QDISC") == "1":
             evtq = qcap(qd("20ms"), [qd("1.52s", 120), qd("1.52s", 340), qd("1.52s", 600)], qd("20ms", 0))
+    elif plan == "41d" and nbytes == "600000000":
+        # Status 41d: a 600 MB row (c2 / c8) carries 50 s of [DIAG] ticks with src= and cum= (the in-order delay reads them). With STUB_SHORT_ONCE=1 the FIRST
+        # BASE invocation at seed 7 of each long cell leaves a 10 s row (the VOID rule's input); the replacement run of the same slot finds the marker and is full length.
+        n_ticks = 200
+        marker = os.path.join(TMP, "short-done-%s-%s" % (fam, os.environ.get("SEED", "")))
+        if os.environ.get("STUB_SHORT_ONCE") == "1" and base and os.environ.get("SEED") == "7" and not os.path.exists(marker):
+            open(marker, "w").close()
+            n_ticks = 40
+        rl = run_lines(fam, False, n=n_ticks)
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + extras52(k, n_src=n_ticks - 20)
+        cli = cli + rl
     elif plan == "52":
         rl = run_lines(fam, False, n=20)         # 5 s of [DIAG] (the fixture's run is 5.09 s): source to 4.0 s, a tail after it
         k = 0

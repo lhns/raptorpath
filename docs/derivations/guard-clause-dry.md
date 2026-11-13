@@ -410,3 +410,40 @@ Proposed set (dry run, `newset.py`; `place41b_score.clause_defs` is patched in t
 (Sections 1-9 are produced by the scripts below; follow-ups 1 and 2 add `facts48b.py` and `newset.py`: `NEWSET=1 NEWSET_ADD=c2-100,c8-100 python -I newset.py score ...` and `... d80 ...`, results `set-*.json`.)
 
 `python -I rowvals.py out.json ld.log diag-dir ...` (per-row values), `python -I score.py ...` (statistics, `res-*.json/.tsv`), `python -I resolution.py ...` (`d80-*.json`; `d80s-*.json` for B'), `python -X utf8 -I make_tables.py`, `python -I where.py rowvals-*.json BASE,CAND`; the directory `docs/derivations/guard-clause-dry/` holds the scripts, per-row values and results. Archives were extracted into fresh directories outside the repository and treated as data.
+
+## 11. Merge guard v2 (status 41d item 1): the 600 MB A/A d80 beside the guard-size d80
+
+Implementation: `tools/l1` clause-set version (`place41b_score.GUARD_SETS`, `v1` default), plan 41d, `test_guard_v2.py`. Script: `guard-clause-dry/v2_d80.py` (result `v2-d80.json`).
+
+**Recipe.** `place41b_score.session_resolution` (the code behind `resolution41c`): BASE rows resampled with replacement to the 12 + 12 design, balanced per seed, CAND shifted worse by delta (goodput x (1 - delta), the rest x (1 + delta)), 30 draws, 1 000 relabellings, the gate p <= 0.05 over ALL clauses of the four cells; grid 1, 2, 2.4, 3, 5, 8, 12, 20, 50, 100 %. Same draws and relabellings in every column; resampling seeds 0, 1, 2 shown as `a / b / c`. Only the c2 and c8 clauses are evaluated.
+
+**Columns (the clause family moves d80 on its own: more clauses means a lower power, so each is stated).**
+- *guard size, v1 (26 clauses)*: S52 guard ledger, `resolution41c`'s family.
+- *guard size, 20 clauses*: the same rows, floor dropped, no in-order clause: separates the row-size effect from the family effect.
+- *600 MB, v2 (22 clauses)*: a SPLICE, the only design possible without a VM: c1s / c1d BASE rows of the S52 guard ledger (guard size) + c2 / c8 BASE rows of the S48b ledger (600 MB; in-order means from `rowvals-bbr48b.json`). Its c1 rows are not S48b's 5 GB rows.
+
+| cell | clause | guard size, v1 (26) | guard size (20) | 600 MB, v2 (22) |
+|---|---|---|---|---|
+| c2 | goodput | 2.4 / 2.4 / 2.4 % | 2 / 2.4 / 2.4 % | **1 / 1 / 1 %** |
+| c2 | cpu_cli/GB | 8 / 8 / 8 % | 8 / 8 / 5 % | 5 / 5 / 5 % |
+| c2 | cpu_srv/GB | 8 / 8 / 8 % | 8 / 8 / 8 % | 8 / 8 / 8 % |
+| c2 | lag_E_cli | 20 / 50 / 50 % | 20 / 50 / 50 % | 50 / 50 / 50 % |
+| c2 | lag_E_srv | 50 / 50 / 50 % | 50 / 50 / 8 % | **100 / 100 / 100 %** |
+| c2 | inorder_delay_mean (new) | n/a | n/a | 8 / 5 / 5 % |
+| c8 | goodput | 12 / 12 / 12 % | 8 / 12 / 12 % | **2.4 / 2 / 2 %** |
+| c8 | cpu_cli/GB | 8 / 8 / 8 % | 8 / 8 / 8 % | 8 / 8 / 8 % |
+| c8 | cpu_srv/GB | 12 / 12 / 12 % | 12 / 12 / 12 % | 8 / 8 / 8 % |
+| c8 | lag_E_cli | 50 / 50 / 50 % | 50 / 50 / 50 % | 50 / 50 / 50 % |
+| c8 | lag_E_srv | 20 / 20 / 50 % | 20 / 20 / 50 % | 50 / 50 / 50 % |
+| c8 | inorder_delay_mean (new) | n/a | n/a | 20 / 20 / 20 % |
+| c2, c8 | rtp_floor (v1 only; reported under v2) | c2 p0 50 %; c8 p0 20 %, p1 12 % | | not scored |
+
+**Reading (a tightening needs more than one grid step, or stability over the three seeds).**
+- **Tighter at 600 MB (v2 is stricter):** c8 goodput 12 % to 2-2.4 % (several grid steps, all seeds); c2 goodput 2.4 % to 1 % (the grid floor: possibly finer than 1 %). c8 `cpu_srv/GB` 12 % to 8 % and c2 `cpu_cli/GB` 8 % to 5 % are one step each (stable over the three seeds, but one step: weak).
+- **Looser:** c2 `lag_E_srv` 50 % to 100 % and c8 `lag_E_srv` 20 % to 50 % (the 600 MB rows' lag clause is noisier); c2 `lag_E_cli` 20-50 % to 50 % is within seed noise.
+- **Unchanged:** c2 `cpu_srv/GB`, c8 `cpu_cli/GB`, c8 `lag_E_cli`.
+- **New clause:** `inorder_delay_mean` d80 5-8 % at c2 and 20 % at c8 (§9's 8 % and 20 % on the 12 + 12 long rows alone agree).
+- **Consequence.** v2 can fail a change that v1 passed through goodput (mostly c8) and, weakly, CPU/GB; it is blinder on `lag_E_srv` at c2 and c8, which v1 already resolved only at 20-50 %.
+- **Caveat.** 30 draws and a coarse grid: one step is noise. The 20-clause column is the family control: it moves c8 goodput 12 % to 8-12 % and c2 `cpu_cli/GB` once, far less than the row-size effect.
+
+**Accepted v2 set on the S48b ledger (a new number; the dry run kept the c1 floor).** Floor off everywhere, `inorder_delay_mean` at c2 / c8, 22 clauses, 10 000 relabellings: p = 0.0015 (min-p 0.00010 at c2 `goodput`), FAIL, as the dry run's splice (0.0018). S52's guard cannot be v2-scored: it has no 600 MB rows, so every c2 / c8 row lacks the clause (the scorer reads NO VERDICT, never PASS). `test_guard_v2.py` pins all of these.

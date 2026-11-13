@@ -39,12 +39,28 @@ CELLS = [("c1s-400", "def"), ("c1d-400", "def")]
 # Status 47: the guard on the merge candidate runs at four cells (BASE n = 12, CAND n = 6 each), the same statistic over all their clauses.
 CELLS_GUARD = [("c1s-400", "def"), ("c1d-400", "def"), ("c2-100", "def"), ("c8-100", "def")]
 
+# Status 41d: the guard's clause-set version. v1 (the default, every existing plan) is status 47's set; v2 drops the start-up RTT floor from scoring
+# everywhere (it stays on the rows, reported) and scores the in-order delay mean at the cells that carry 600 MB rows. A set is data: "floor" = the
+# cells that score rtp_floor_p<i> (None = every cell), "inorder" = the cells that score inorder_delay_mean. A dict in this shape may be passed instead
+# of a name (the dry run's splice is one). The version rides as a parameter (and in the resolution tasks), never as ambient state.
+LONG_CELLS = ("c2-100", "c8-100")
+MIN_TICK_S = 30.0                # v2: a long-cell row whose last [DIAG] tick is earlier than this is VOID (re-run), never neutral-rank filled
+GUARD_SETS = {"v1": {"floor": None, "inorder": ()}, "v2": {"floor": (), "inorder": LONG_CELLS}}
 
-def clause_defs(cell):
+
+def clause_set_of(clause_set):
+    return GUARD_SETS[clause_set] if isinstance(clause_set, str) else clause_set
+
+
+def clause_defs(cell, clause_set="v1"):
     """[(name, row key, worse sign)]: sign +1 = higher is worse."""
+    cs = clause_set_of(clause_set)
     d = [("goodput", "mbps", -1), ("cpu_cli/GB", "cpu_cli", 1), ("cpu_srv/GB", "cpu_srv", 1),
          ("lag_E_cli", "cli_lag_E", 1), ("lag_E_srv", "srv_lag_E", 1)]
-    d += [(f"rtp_floor_p{i}", f"rtp_floor_p{i}", 1) for i in range(sp.N_LEGS[cell])]
+    if cs["floor"] is None or cell in cs["floor"]:
+        d += [(f"rtp_floor_p{i}", f"rtp_floor_p{i}", 1) for i in range(sp.N_LEGS[cell])]
+    if cell in cs["inorder"]:
+        d.append(("inorder_delay_mean", "inorder_mean", 1))
     return d
 
 
@@ -90,7 +106,7 @@ def crash(rows, cell, arm):
 class Pool:
     """One cell's pooled rows (reference arm first, tested arm after) and the true selection."""
 
-    def __init__(self, rows, cell, ref_arm, test_arm, exclude=(), with_crash=False):
+    def __init__(self, rows, cell, ref_arm, test_arm, exclude=(), with_crash=False, clause_set="v1"):
         self.cell = cell
         self.ref_rows, self.test_rows = live(rows, cell, ref_arm), live(rows, cell, test_arm)
         if with_crash:                          # crash rows fill their slots (and are the worst rank); only the rank statistic asks for them
@@ -98,7 +114,7 @@ class Pool:
         self.rows = self.ref_rows + self.test_rows
         self.true = list(range(len(self.ref_rows), len(self.rows)))
         # exclude: clause names (every cell) or (cell, clause) pairs (one cell: status 48b's p_rest drops only c2's and c8's goodput)
-        self.defs = [d for d in clause_defs(cell) if d[0] not in exclude and (cell, d[0]) not in exclude]
+        self.defs = [d for d in clause_defs(cell, clause_set) if d[0] not in exclude and (cell, d[0]) not in exclude]
         # COLLAPSE (status 47) is harness 43's definition (place43_parse.py: "COLLAPSE is the DNF row only", amendment 2): a DNF row is the WORST
         # rank on every clause of its cell in the rank statistic. A completed row far below the cell's goodput is NOT forced: it ranks by
         # its own values and is listed as a slow row (goodput < SLOW_FRAC x the median of the cell's POOLED rows, BASE and CAND together,
@@ -199,14 +215,14 @@ def rank_scores(pool):
     return sc
 
 
-def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None, exclude=(), design=None):
+def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=None, exclude=(), design=None, clause_set="v1"):
     """The stratified rank-sum min-p guard (status 47 candidate). Per clause: the worse-side rank sum of the tested rows, ranks taken
     within seed. The clause statistics share the SAME joint relabellings as `statistic` (same RNG stream, same draws); each clause's
     permutation p is the share of labellings (the draws plus the true one) with a rank sum >= the labelling's own (ties extreme); the
     labelling's score is the MIN of its clause p-values over every clause of every cell; the gate p is the share of labellings whose
     min-p <= the true min-p. -> dict(p, T_true (the true min-p), p_true {(cell, clause): p}, S_true, argmin, n_perm)"""
     import bisect
-    pools = [Pool(rows, cell, ref_arm, test_arm, exclude, with_crash=True) for cell, _ in (cells or CELLS)]
+    pools = [Pool(rows, cell, ref_arm, test_arm, exclude, with_crash=True, clause_set=clause_set) for cell, _ in (cells or CELLS)]
     sc = {p.cell: rank_scores(p) for p in pools}
     keys = [(p.cell, n) for p in pools for n, _, _ in p.defs]
     S = {k: [] for k in keys}
@@ -249,13 +265,13 @@ def statistic_rank(rows, ref_arm, test_arm, n_perm=N_PERM, seed=RNG_SEED, cells=
             "incomplete": incomplete}
 
 
-def resolution(rows, arm="BASE", cells=None):
+def resolution(rows, arm="BASE", cells=None, clause_set="v1"):
     """BASE alone: per cell and clause the q95 of |x_c| over the half-per-seed splits, beside the §21 tolerance."""
     from place38_parse import S3_REL
     out = []
     for cell, _ in (cells or CELLS):
         base = live(rows, cell, arm)
-        defs = clause_defs(cell)
+        defs = clause_defs(cell, clause_set)
         vals = {n: [value(r, cell, k) for r in base] for n, k, _ in defs}
         seeds = sorted({r["seed"] for r in base})
         groups = {s: [i for i, r in enumerate(base) if r["seed"] == s] for s in seeds}
@@ -293,7 +309,7 @@ def tail_lines(rows, out, cells=None, arms=("BASE", "MAIN", "WIRE")):
 
 
 def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=True, title="§41b GUARD", gate_name="GATE-41b",
-           subject="the gate-off binary", method="relabel-max", exclude=(), design=None, no_verdict_reason=None):
+           subject="the gate-off binary", method="relabel-max", exclude=(), design=None, no_verdict_reason=None, clause_set="v1"):
     """The registered guard. Defaults reproduce status 41b (BASE against MAIN, WIRE reported, c1s and c1d); the merge-candidate guard
     (status 47) passes cells=CELLS_GUARD, test_arm="CAND", with_wire=False."""
     cells = cells or CELLS
@@ -306,13 +322,13 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
     out("LIVE ROWS " + "  ".join(f"{c} {a}={cnt[(c, a)]}" for c, _ in cells for a in arms_all))
     out("")
     out(f"RESOLUTION (computed from BASE rows alone, before {ta} is read): per clause the q95 of |x_c| over the half-per-seed splits of BASE, beside the §21 tolerance")
-    for r in resolution(rows, cells=cells):
+    for r in resolution(rows, cells=cells, clause_set=clause_set):
         q = r["q95"]
         out(f"  {r['cell']} {r['clause']:<14} q95|x|={('%.4f' % q) if q is not None else '-'} (splits={r['splits']}, nBASE={r['n_base']})  §21 tol={r['tol']:.4f}  "
             + ("" if q is None else ("q95 > tol: the guard cannot see this clause below q95" if q > r["tol"] else "q95 <= tol")))
     out("")
     if method == "rank-minp":
-        res = statistic_rank(rows, "BASE", ta, cells=cells, exclude=exclude, design=design)
+        res = statistic_rank(rows, "BASE", ta, cells=cells, exclude=exclude, design=design, clause_set=clause_set)
         pools = res["pools"]
         out(f"{ta} against BASE (stratified rank sums, min-p over the same joint relabellings)")
         for p in pools:
@@ -392,13 +408,53 @@ def report(rows, out=print, dry=False, cells=None, test_arm="MAIN", with_wire=Tr
 GUARD_DESIGN = {cell: (12, 12) for cell, _ in CELLS_GUARD}
 
 
-def report_guard(rows, out, design, no_verdict_reason=None):
+def report_guard(rows, out, design, no_verdict_reason=None, clause_set="v1"):
     """The merge-candidate guard: rank-minp over the four guard cells, CAND against BASE, WITH A MANDATORY DESIGN. A missing, empty or partial
-    design is an error (never a silent PASS); a design with missing live rows reads `NO VERDICT, re-run`."""
+    design is an error (never a silent PASS); a design with missing live rows reads `NO VERDICT, re-run`. clause_set "v2" (status 41d) prints under
+    its own title and gate name, GATE-41d."""
     if not design or set(design) != {c for c, _ in CELLS_GUARD}:
         raise ValueError(f"the guard's design= is mandatory and must name every guard cell {[c for c, _ in CELLS_GUARD]}, got {design!r}")
+    v2 = clause_set != "v1"
     return report(rows, out, cells=CELLS_GUARD, test_arm="CAND", with_wire=False, method="rank-minp", design=design,
-                  title="§41c GUARD ON THE MERGE CANDIDATE", gate_name="GATE-41c", subject="the candidate build", no_verdict_reason=no_verdict_reason)
+                  title="§41d GUARD v2 ON THE MERGE CANDIDATE" if v2 else "§41c GUARD ON THE MERGE CANDIDATE", gate_name="GATE-41d" if v2 else "GATE-41c",
+                  subject="the candidate build", no_verdict_reason=no_verdict_reason, clause_set=clause_set)
+
+
+def long_row_problems(rows, clause_set="v1", cells=None):
+    """Rows that would make the in-order delay clause a neutral rank fill: a LIVE, completed row at a cell that scores it, whose mean is absent
+    or whose last [DIAG] tick is earlier than MIN_TICK_S. [] under v1. The row parser already voids such a row (VOID-SHORT, re-run); this is the
+    scorer's own check, so a ledger from any other source cannot read PASS on a fill."""
+    cs = clause_set_of(clause_set)
+    out = []
+    for cell in (cells or [c for c, _ in CELLS_GUARD]):
+        if cell not in cs["inorder"]:
+            continue
+        for r in rows:
+            if r["cell"] == cell and r["status"] == "LIVE" and not r.get("dnf") and (r.get("inorder_mean") is None or (r.get("tick_span_s") or 0.0) < MIN_TICK_S):
+                out.append(f"{cell} {r['arm']} s{r['seed']} r{r['rep']} (last tick {r.get('tick_span_s')}, in-order mean {r.get('inorder_mean')})")
+    return out
+
+
+def reported_only_lines(rows, out, clause_set="v1", cells=None, arms=("BASE", "CAND")):
+    """Reported only, never scored: what the clause set leaves off the gate. Per cell and arm the median [min-max] of each rtp_floor_p<i> that
+    is not a scored clause of the set, and (where the row carries it) the in-order delay p95 (quantised at the 250 ms tick: never scored)."""
+    out("REPORTED ONLY (not scored under this clause set): start-up RTT floor per leg (us) and in-order delay p95 (ms), median [min-max] per cell and arm")
+    for cell in (cells or [c for c, _ in CELLS_GUARD]):
+        scored = {n for n, _, _ in clause_defs(cell, clause_set)}
+        for a in arms:
+            rs = live(rows, cell, a)
+            parts = []
+            for i in range(sp.N_LEGS[cell]):
+                if f"rtp_floor_p{i}" in scored:
+                    continue
+                v = [r[f"rtp_floor_p{i}"] for r in rs if r.get(f"rtp_floor_p{i}") is not None]
+                if v:
+                    parts.append(f"rtp_floor_p{i} {lc.med(v):.0f} [{min(v):.0f}-{max(v):.0f}]")
+            v = [r["inorder_p95"] for r in rs if r.get("inorder_p95") is not None]
+            if v:
+                parts.append(f"inorder_p95 {lc.med(v):.0f} [{min(v):.0f}-{max(v):.0f}]")
+            if parts:
+                out(f"  {cell} {a:<4} " + "; ".join(parts))
 
 
 # ── the guard's resolution, recomputed from THIS session's BASE rows (reported only; status 47) ─────────────────────────────────
@@ -410,6 +466,7 @@ RES_GRID = [0.01, 0.02, 0.024, 0.03, 0.05, 0.08, 0.12, 0.20, 0.50, 1.00]
 RES_DRAWS = 30
 RES_NPERM = 1000                 # must be >= 1000: with 26 clauses the gate p cannot reach 0.05 at a few hundred relabellings (floor about 26 / (N + 1))
 RES_POWER = 0.8
+RES_MAX_PROCS = 2                # the cap on resolution workers (a host-side script may raise it)
 RES_SEED_DEFAULT = 0             # resolution41c's seed when none is given (printed in its header)
 NAMED_SHIFTS = {"cpu_cli/GB": 0.024, "cpu_srv/GB": 0.024, "goodput": 0.05}
 _RES = {}
@@ -434,20 +491,23 @@ def _res_dataset(rng, data, cells, design):
 
 
 def _res_eval(task):
-    cell, clause, delta, draw, cells, design = task
+    cell, clause, delta, draw, cells, design, *cs = task
+    clause_set = cs[0] if cs else "v1"                     # v1 tasks stay the six-tuple they always were
     rng = random.Random(1009 * draw + int(delta * 10000) + sum(map(ord, cell + clause)))
     rows = _res_dataset(rng, _RES["data"], cells, design)
-    key = {n: k for n, k, _ in clause_defs(cell)}[clause]
+    key = {n: k for n, k, _ in clause_defs(cell, clause_set)}[clause]
     for r in rows:
         if r["cell"] == cell and r["arm"] == "CAND" and r.get(key) is not None:
             r[key] = r[key] * (1 - delta) if clause == "goodput" else r[key] * (1 + delta)
-    return statistic_rank(rows, "BASE", "CAND", n_perm=RES_NPERM, cells=cells)["p"] <= P_PASS
+    return statistic_rank(rows, "BASE", "CAND", n_perm=RES_NPERM, cells=cells, clause_set=clause_set)["p"] <= P_PASS
 
 
-def session_resolution(rows, cells=None, design=None, draws=None, grid=None, procs=None, seed=0):
+def session_resolution(rows, cells=None, design=None, draws=None, grid=None, procs=None, seed=0, clause_set="v1", only_cells=None):
     """-> {(cell, clause): {"d80": smallest grid delta with power >= RES_POWER or None, "power": {delta: power}}} from this ledger's BASE rows,
-    or None if a (cell, seed) has fewer than 2 BASE rows."""
+    or None if a (cell, seed) has fewer than 2 BASE rows. clause_set: the guard's clause-set version (the whole family is relabelled, as in the
+    verdict); only_cells: evaluate the clauses of these cells only (the statistic still runs over every cell)."""
     cells = cells or CELLS_GUARD
+    scored = [(c, s_) for c, s_ in cells if only_cells is None or c in only_cells]
     design = design or GUARD_DESIGN
     draws, grid = draws or RES_DRAWS, grid or RES_GRID
     if RES_NPERM < 1000:
@@ -459,8 +519,10 @@ def session_resolution(rows, cells=None, design=None, draws=None, grid=None, pro
             data[cell][sd] = [r for r in live(rows, cell, "BASE") if r["seed"] == sd and not r.get("dnf")]
         if len(data[cell]) < 2 or any(len(v) < 2 for v in data[cell].values()):
             return None
-    tasks = [(cell, n, d, k + 100000 * seed, tuple(cells), dict(design)) for cell, _ in cells for n, _, _ in clause_defs(cell) for d in grid for k in range(draws)]
-    procs = min(procs or 2, 2, os.cpu_count() or 1)          # at most 2 workers: the step must not push the host into the memory reaper
+    xt = () if clause_set == "v1" else (clause_set,)
+    tasks = [(cell, n, d, k + 100000 * seed, tuple(cells), dict(design)) + xt
+             for cell, _ in scored for n, _, _ in clause_defs(cell, clause_set) for d in grid for k in range(draws)]
+    procs = min(procs or 2, RES_MAX_PROCS, os.cpu_count() or 1)          # at most 2 workers by default: the step must not push the host into the memory reaper
     res = None
     if procs > 1:
         try:
@@ -476,8 +538,8 @@ def session_resolution(rows, cells=None, design=None, draws=None, grid=None, pro
     for t, hit in zip(tasks, res):
         caught.setdefault((t[0], t[1], t[2]), []).append(hit)
     out = {}
-    for cell, _ in cells:
-        for n, _, _ in clause_defs(cell):
+    for cell, _ in scored:
+        for n, _, _ in clause_defs(cell, clause_set):
             pw = {d: sum(caught[(cell, n, d)]) / len(caught[(cell, n, d)]) for d in grid}
             ok = [d for d in grid if pw[d] >= RES_POWER]
             out[(cell, n)] = {"d80": min(ok) if ok else None, "power": pw}

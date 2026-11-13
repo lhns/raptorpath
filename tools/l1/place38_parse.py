@@ -33,7 +33,7 @@ import storelaw_parse as sl  # noqa: E402  (regexes only)
 from l1ab import (  # noqa: E402
     sel, vals, per_byte, reading, spread_rel, blockers, mmm, MIN_LIVE, WITNESS_FAIL_LIMIT,
 )
-from threadp1_parse import rtp_floor  # noqa: E402
+from threadp1_parse import rtp_floor, inorder_delay_stats, last_tick_s  # noqa: E402
 from threadpd_parse import lag_E, lag_max  # noqa: E402
 
 for _a in ("MAIN", "WIRE", "BASE", "CAND"):
@@ -67,6 +67,10 @@ BLOCKS41C = [(sd, rp) for rp in range(1, 7) for sd in ("42", "7")]   # 12 groups
 CELLS48 = [("c2-100", "def"), ("c1s-400", "def"), ("c8-100", "def"), ("c1d-400", "def")]
 BYTES48 = {"c1s-400": 5000000000, "c1d-400": 5000000000, "c2-100": 600000000, "c8-100": 600000000}   # §48 Step 1 sizes (the cell names keep their scenario)
 SMOKE48 = [("c8-100", "def", "CAND", "42", 1), ("c8-100", "def", "BASE", "42", 1)]    # unscored check rows (§48b item 4)
+# ── status 41d: the merge guard v2 (plan 41d) = plan 41c's design and order, clause set v2; c2 / c8 rows carry 600 MB (§48b's sizes), c1s / c1d keep the guard size ──
+BYTES41D = {c: BYTES48[c] for c in ("c2-100", "c8-100")}          # the loopdiag_battery.sh copy is p41d_bytes (test_guard_v2.py asserts they agree)
+TIMEOUT41D = {"c2-100": 200, "c8-100": 200}                       # RWM_PERF_TIMEOUT_S of those rows (§48b's); c1 rows keep plan 41c's 150
+SMOKE41D = SMOKE41C + [("c8-100", "def", "CAND", "42", 1)]        # + one 600 MB row: the in-order delay instrument must read end to end before the battery
 S3_REL = {"c1s-400": {"gp": 0.049, "cpu": 0.024}, "c1d-400": {"gp": 0.056, "cpu": 0.065},
           "c2-100": {"gp": 0.014, "cpu": 0.063}, "c8-100": {"gp": 0.040, "cpu": 0.116}}
 DNF_THRESHOLD = 0.20
@@ -134,6 +138,12 @@ def plan41c(smoke=False):
             for a in (["BASE", "CAND"] if g % 2 == 0 else ["CAND", "BASE"]):
                 out.append((cell, store, a, seed, rep))
     return out
+
+
+def plan41d(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 41d): plan 41c's 96 rows in plan 41c's order (the sizes and the clause set differ, not the design);
+    the smoke is plan 41c's two rows plus one 600 MB CAND row at c8."""
+    return list(SMOKE41D) if smoke else plan41c()
 
 
 def plan48(smoke=False):
@@ -485,6 +495,20 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         p.extend(p48)
     # Status 52: the placement-diversity env of each arm must be echoed as registered, on EVERY plan (BASE / CAND rows must not carry it).
     p.extend(wdiv_problems(arm, cli, srv))
+    v2_void = None
+    if os.environ.get("LD_PLAN") == "41d" and cell in BYTES41D:
+        # Status 41d: the in-order delay readouts of a 600 MB row (c2 / c8). A completed row with under MIN_TICK_S of ticks, or with no usable tick, is VOID
+        # (replaceable, re-run once); a DNF or a crash keeps its worst rank (below), so a candidate that dies early gets no free re-run.
+        import place41b_score
+        st = inorder_delay_stats(cli)
+        row["inorder_mean"] = st["mean"] * 1e3 if st else None
+        row["inorder_p95"] = st["p95"] * 1e3 if st else None             # reported only: quantised at the 250 ms tick, never scored
+        row["inorder_n"] = st["n"] if st else 0
+        row["tick_span_s"] = last_tick_s(cli)
+        if row["tick_span_s"] < place41b_score.MIN_TICK_S:
+            v2_void = f"short-row last-tick={row['tick_span_s']}s (< {place41b_score.MIN_TICK_S:g} s)"
+        elif st is None:
+            v2_void = "no-inorder-delay-tick"
     if os.environ.get("LD_PLAN") == "52":
         import tail52_score         # lazy: tail52_score imports this module only on its ledger side
         try:
@@ -494,6 +518,9 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
+    if v2_void and row["status"] == "LIVE" and not row.get("dnf"):
+        row["status"] = "VOID-SHORT"
+        row["problems"].append(v2_void)
     if os.environ.get("LD_ONDISK", "0") == "1":
         row["status"] = "VOID-ONDISK"
     io = os.environ.get("LD_IO_FULL10")
@@ -830,7 +857,7 @@ def score(paths, out=print, plan41=False):
 # A slot (cell, arm, seed, rep) voided by a WITNESS (not a DNF, not a crash) is re-run once at the end of the battery with the same slot key; the
 # replacement row takes the slot. DNF rows (LIVE, dnf true) and crash rows (VOID-RC, NO_DATA) are never replaced: they are the worst rank.
 # At most MAX_REPLACEMENTS slots may be replaced in a session; more voided slots than that is NO VERDICT (and no replacement runs).
-REPLACEABLE = ("WITNESS-FAIL", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK")
+REPLACEABLE = ("WITNESS-FAIL", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "VOID-SHORT")      # VOID-SHORT: guard v2's short 600 MB row (status 41d)
 MAX_REPLACEMENTS = 4
 
 
@@ -884,15 +911,29 @@ def replacements41c(path):
 def score41c(paths, out=print):
     """Status 47: the merge-candidate guard (rank-minp; BASE n = 12 and CAND n = 12 at c1s, c1d, c2, c8 default), no WIRE arm, the design MANDATORY
     (a cell short of its design reads `NO VERDICT, re-run`, never PASS); with the tail line and the qcwnd-below-BDP witness (reported only)."""
+    return _score_guard(paths, out, "v1")
+
+
+def score41d(paths, out=print):
+    """Status 41d: the same guard with the clause set v2 (rtp_floor reported only; inorder_delay_mean scored at c2 / c8 on 600 MB rows; a short or
+    instrument-less c2 / c8 row is VOID, never a neutral fill) and its own gate name, GATE-41d."""
+    return _score_guard(paths, out, "v2")
+
+
+def _score_guard(paths, out, clause_set):
     import place41b_score
+    v2 = clause_set != "v1"
     rows_all, tokens = rows_of(paths)
     rows, rinfo = apply_replacements(rows_all)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
-    out(f"MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main {os.environ.get('LD_BASE_SHA', '4926822')[:8]} (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
+    if v2:
+        out(f"MERGE-CANDIDATE GUARD v2 (status 41b rule, status 41d clause set v2; c2 / c8 rows at 600 MB): BASE = main {os.environ.get('LD_BASE_SHA', '4926822')[:8]} (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
+    else:
+        out(f"MERGE-CANDIDATE GUARD (status 41b rule, status 47 harness): BASE = main {os.environ.get('LD_BASE_SHA', '4926822')[:8]} (n = 12 per cell), CAND = the merge-candidate build (n = 12 per cell)")
     extra = f" (+{rinfo['n_extra']} replacement row{'s' if rinfo['n_extra'] != 1 else ''} in the ledger)" if rinfo["n_extra"] else ""
     out(f"ROWS {rinfo['n_slots']}/{EXPECT_ROWS41C}{extra}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     out("STATUS-TABLE (every invocation row)")
-    for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL"):
+    for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED", "WITNESS-FAIL") + (("VOID-SHORT",) if v2 else ()):
         out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
     for r in rows_all:
         if r["status"] != "LIVE" or r.get("io_high"):
@@ -910,8 +951,16 @@ def score41c(paths, out=print):
     for k, st in rinfo["ignored"]:
         out(f"  IGNORED EXTRA ROW {sl(k)} (status {st}): the slot's first row is not voided by a witness (LIVE, DNF or crash), so it is never replaced")
     reason = (f"more than {MAX_REPLACEMENTS} voided slots ({len(rinfo['void_slots'])}): beyond the replacement cap" if rinfo["too_many"] else None)
-    res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN, no_verdict_reason=reason)
+    if v2:
+        # A LIVE long-cell row without a usable in-order mean would be a neutral rank fill of the new clause: never a PASS (the row parser voids such a row first).
+        fills = place41b_score.long_row_problems(rows, clause_set)
+        if fills:
+            reason = (reason + "; " if reason else "") + f"{len(fills)} c2 / c8 row(s) without 30 s of ticks or an in-order delay mean: " + ", ".join(fills[:6])
+    res = place41b_score.report_guard(rows, out, place41b_score.GUARD_DESIGN, no_verdict_reason=reason, clause_set=clause_set)
     out("")
+    if v2:
+        place41b_score.reported_only_lines(rows, out, clause_set)
+        out("")
     qcwnd_report(rows, ("BASE", "CAND"), GUARD_CELLS, out)
     out("")
     contention(rows, out)
@@ -920,17 +969,22 @@ def score41c(paths, out=print):
     elif res["gate"] == "NO VERDICT":
         out("VERDICT NO VERDICT, re-run (" + (reason or "the design is incomplete: a voided or missing slot") + ")")
     else:
-        out(f"VERDICT GATE-41c {res['gate']}")
+        out(f"VERDICT GATE-41{'d' if v2 else 'c'} {res['gate']}")
     # The verdict is complete and flushed BEFORE anything else: the resolution table is a separate, host-side command (below) and can never
     # withhold or alter it.
     sys.stdout.flush()
     out("RESOLUTION (reported only) is NOT computed here. On the host, from the kept ledger, re-runnable and seeded:  "
-        f"python3 tools/l1/place38_parse.py resolution41c {' '.join(paths)}")
+        f"python3 tools/l1/place38_parse.py resolution41{'d' if v2 else 'c'} {' '.join(paths)}")
     sys.stdout.flush()
     return res
 
 
-def resolution41c(paths, out=print, seed=None, **kw):
+def resolution41d(paths, out=print, seed=None, **kw):
+    """Status 41d, host side: resolution41c for the clause set v2 (needs a plan-41d ledger: the rows carry inorder_mean)."""
+    return resolution41c(paths, out, seed, clause_set="v2", **kw)
+
+
+def resolution41c(paths, out=print, seed=None, clause_set="v1", **kw):
     """Status 47, host side: the session resolution of the merge-candidate guard, recomputed from the kept ledger's BASE rows. Reported only;
     seeded (the same ledger and seed give the same table); a separate command, so it cannot touch the verdict that score41c has already printed."""
     import place41b_score
@@ -938,8 +992,8 @@ def resolution41c(paths, out=print, seed=None, **kw):
     rows, _info = apply_replacements(rows)
     given = seed is not None
     seed = seed if given else place41b_score.RES_SEED_DEFAULT
-    out(f"SESSION RESOLUTION of the status-41c guard from {len(rows)} ledger slots ({' '.join(paths)}), seed {seed} ({'given' if given else 'default'})")
-    sr = place41b_score.resolution_report(rows, out, seed=seed, **kw)
+    out(f"SESSION RESOLUTION of the status-41{'c' if clause_set == 'v1' else 'd'} guard from {len(rows)} ledger slots ({' '.join(paths)}), seed {seed} ({'given' if given else 'default'})")
+    sr = place41b_score.resolution_report(rows, out, seed=seed, **({"clause_set": clause_set} if clause_set != "v1" else {}), **kw)
     sys.stdout.flush()
     return sr
 
@@ -975,13 +1029,13 @@ def check(path, plan41=False, plan41b=False, plan41c=False):
     return 0 if ok else 1
 
 
-def smoke(path, plan41=False, plan41b=False, plan41c=False):
+def smoke(path, plan41=False, plan41b=False, plan41c=False, plan41d=False):
     """rc 0 iff both smoke rows (MAIN and WIRE at c8-100@256) are LIVE with the gauges the scorer reads and WIRE has w_calls > 0.
     Plan 41 adds one BASE row (c1s-400 default): LIVE with the one-leg clause inputs."""
     rows, _ = rows_of([path])
     bad = []
     got = {(r["cell"], r["store"], r["arm"]): r for r in rows}
-    for cell, store, arm, _, _ in (SMOKE41C if plan41c else SMOKE41B if plan41b else SMOKE41 if plan41 else SMOKE38):
+    for cell, store, arm, _, _ in (SMOKE41D if plan41d else SMOKE41C if plan41c else SMOKE41B if plan41b else SMOKE41 if plan41 else SMOKE38):
         r = got.get((cell, store, arm))
         if r is None:
             bad.append(f"{arm}: no row")
@@ -991,6 +1045,11 @@ def smoke(path, plan41=False, plan41b=False, plan41c=False):
         for k in ["cpu_cli", "cpu_srv", "mbps", "cli_lag_E", "srv_lag_E"] + [f"feed_ratio_p{i}" for i in legs] + [f"rtp_floor_p{i}" for i in legs]:
             if r.get(k) is None:
                 miss.append(f"no-{k}")
+        if plan41d and cell in BYTES41D:      # status 41d: the 600 MB row must carry its size and the in-order delay readout end to end
+            if r.get("bytes") != BYTES41D[cell]:
+                miss.append(f"bytes={r.get('bytes')} (want {BYTES41D[cell]})")
+            if r.get("inorder_mean") is None or (r.get("tick_span_s") or 0.0) < 30.0:
+                miss.append(f"no-inorder-mean (last tick {r.get('tick_span_s')} s)")
         if arm == "WIRE" and not ((r.get("eta") or {}).get("w_calls") or 0) > 0:
             miss.append("w_calls=0")
         e = r.get("eta") or {}
@@ -1082,9 +1141,25 @@ def main(argv):
         paths = [x for i, x in enumerate(a) if x != "--seed" and (i == 0 or a[i - 1] != "--seed")]
         resolution41c(paths, seed=seed)
         return 0
+    if cmd == "resolution41d":
+        seed = int(a[a.index("--seed") + 1]) if "--seed" in a else None
+        paths = [x for i, x in enumerate(a) if x != "--seed" and (i == 0 or a[i - 1] != "--seed")]
+        resolution41d(paths, seed=seed)
+        return 0
     if cmd == "plan41c":
         for c, s, ar, seed, rep in plan41c(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "plan41d":
+        for c, s, ar, seed, rep in plan41d(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s} {ar} {seed} {rep}")
+        return 0
+    if cmd == "check41d":
+        return check(a[0], plan41c=True)
+    if cmd == "smoke41d":
+        return smoke(a[0], plan41c=True, plan41d=True)
+    if cmd == "score41d":
+        score41d(a)
         return 0
     if cmd == "plan52":
         for c, s_, ar, seed, rep in plan52(smoke=bool(a) and a[0] == "smoke"):

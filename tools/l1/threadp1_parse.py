@@ -187,6 +187,18 @@ def inorder_delay_stats(cli, source_only=False):
     return {"mean": sum(d) / len(d), "p95": d[min(len(d) - 1, int(0.95 * (len(d) - 1) + 0.5))], "n": len(d)}
 
 
+def last_tick_s(cli):
+    """The time `t` of the last client `[DIAG]` tick (0.0 if there is none). The guard v2's "under 30 s of ticks" is this value (the derivation
+    measured rows by their last tick; ticks start at t = 0.3 s and the 600 MB ledgers have no warm-up segment among them)."""
+    last = 0.0
+    for ln in cli:
+        if ln.startswith("[DIAG]"):
+            mt = _DIAG_T.search(ln)
+            if mt:
+                last = float(mt.group(1))
+    return last
+
+
 # ── ROW ──────────────────────────────────────────────────────────────────
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, bin_sha=None):
     row = sp.make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant)
