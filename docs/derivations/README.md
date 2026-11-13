@@ -7,6 +7,7 @@ section it feeds.
 | file | question | feeds |
 |---|---|---|
 | `guard-clause-dry.md` | Do a source-phase rtp floor or a delivered in-order delay behave better than `rtp_floor` as a merge-guard clause, on the existing guard ledgers? (dry run, facts only) | status §3.10 item 7, §53 Erratum 1 |
+| [law-ledger.md](law-ledger.md) (+ `law-ledger.yaml`, `law-ledger/render.py`) | is every shipped law derived, measured in its regime, unclamped, fed honest inputs and free of mode switches; what to fix first | AUDIT (no engine change); status §3.10, the roadmap |
 
 No derivation file is on `main` yet; the branches that add them (`derive-w1`,
 `adr68-amend`, `paper-recon`, `perleg-design`, `w1r2`, `otel-design`) each add

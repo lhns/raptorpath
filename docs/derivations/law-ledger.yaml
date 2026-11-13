@@ -1,0 +1,1570 @@
+# Law ledger, machine-readable. Rendered into law-ledger.md by law-ledger/render.py.
+# Base: github/main cbe2be3f. Branch-only rows say so in `loc`.
+# Required keys per row: id, name, verdicts, priority, depends_on, evidence.
+# Extra keys: rank (fix order over every row; rows with fix_class "none" come last),
+# area, reach, fix_class, ships_with (same change and battery; overrides the order
+# that depends_on alone would suggest),
+# measured (yes|partial|no), gauge (yes|partial|no|n/a), and the ten audit columns
+# loc, formula, paper, derivation, regime, clamp, inputs, modeswitch.
+# Verdict tags: OK, DIVERGENT, UNDERIVED, PINNED(cells), DEGENERATE(cells),
+# DISHONEST-INPUT, MODE-SWITCH(live|dead). Criteria: law-ledger.md section 1.
+
+meta:
+  base: cbe2be3f
+  date: 2026-11-13
+  pinned_threshold: "a clamp binding >= 0.5 of the operating range at a measured cell (declared here; measurement-discipline rule 18 names no number)"
+  priorities:
+    P0: "the decision is wrong by a large factor on the default path at a measured cell, with a user-visible cost"
+    P1: "default path; wrong or unverifiable, with a plausible material cost"
+    P2: "bounded cost, or narrow reach (rho < 1, Realtime, one cell, a candidate branch)"
+    P3: "opt-in arm, model only, dead code, or cosmetic"
+
+rows:
+
+# ---------------------------------------------------------------- estimators
+- id: E01
+  name: app-echo RTT EWMA (est.rtt())
+  area: estimator
+  rank: 7
+  priority: P1
+  reach: default, every cell
+  loc: "control/estimator.rs:465 record_rtt, :523 rtt(); fed net/control_msg.rs:298 (Ack), :572 (WindowAck); seed 50 ms estimator.rs:281"
+  formula: "ewma <- 0.125*(now - echo_send_ts) + 0.875*ewma ; first sample replaces the 50 ms seed (RWM_MSTAR_ANCHOR, on)"
+  paper: "§2.6 / §3.2 call it SRTT; §11.3 row 'span deadline' notes it is used where the model says RTprop"
+  derivation: "cited (RFC 6298 gain 1/8). The sample is stamped at the placement lock, before the owner channel and quinn's send buffer (net/lat.rs header), so it is RTprop + network queue + sender dwell"
+  regime: "measured as a gauge (`rtt=` on [DIAG]); p0-dwell-diag §1: rtt0 - wrtt0 = quinn send-buffer dwell within 6 ms on 24/30 c8 rows (64 ms BASE, 222 ms CAND)"
+  clamp: "none"
+  inputs: "honest as an app-echo round trip; DISHONEST wherever a law reads it as a path RTT or RTprop (S01, S02, S06, E11, C01, C04, C05, C06, R07)"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: input
+  depends_on: []
+  ships_with: []
+  evidence: "c8: app-echo excess over the wire RTT equals quinn's p0 send-buffer dwell (64-282 ms on a 10 ms leg), p0-dwell-diag §1"
+
+- id: E02
+  name: Copa srtt / PathState::srtt()
+  area: estimator
+  rank: 45
+  priority: P3
+  reach: default, every cell
+  loc: "scheduler/copa.rs:942-949 (7/8 EWMA of cc_rtt); scheduler/path.rs:690 srtt() = copa.srtt else est.rtt(); Copa DEFAULT_SRTT 50 ms copa.rs:248"
+  formula: "srtt <- 7/8*srtt + 1/8*cc_rtt ; cc_rtt = wire RTT if copa_wire_active() else app-echo (control_msg.rs:298-308, :572-582)"
+  paper: "§8.2; §44 item 3 notes it equals est.rtt() bit for bit while RWM_COPA_WIRE is off"
+  derivation: "cited (RFC 6298). A duplicate of E01 on the default path"
+  regime: "as E01"
+  clamp: "none"
+  inputs: "same samples as E01 off-wire, so the same dwell; when the wire gate is on it smooths quinn's already-smoothed srtt (double smoothing)"
+  modeswitch: "RWM_COPA_WIRE gate selects the sample source (an experiment gate, not a dial)"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: delete (keep one clock, §44 item 3)
+  depends_on: [E01]
+  ships_with: []
+  evidence: "duplicate of E01 off-wire (§44 item 3); C01 takes max(srtt, ewma) of two copies of one stream"
+
+- id: E03
+  name: Copa min_rtt (RTprop)
+  area: estimator
+  rank: 2
+  priority: P0
+  reach: default, every cell
+  loc: "scheduler/copa.rs:1000-1008 (monotone min-deque), window 10 s copa.rs:641, expiry :1490; accessor scheduler/path.rs:1070"
+  formula: "min_rtt = min{ cc_rtt(t) : t > now - 10 s } ; cc_rtt = app-echo while RWM_COPA_WIRE is off (default)"
+  paper: "§6.1 symbol table: 'windowed-min RTT, measured anchor'; §8.3; A.7 BtlBw anchor"
+  derivation: "cited (BBR's 10 s RTprop filter), but applied to the app-echo clock, which carries the sender's own standing queue"
+  regime: "measured at c8 (§3.10 item 9, p0-dwell-diag §2.1): 95-129 ms on main, 163-319 ms under lever B, on a 10 ms leg, from t = 10.3 s (start-up sample leaves the window) on 30/30 rows; §44 erratum: c2 250 ms min sits 1.7-2.5 ms above the 10 s min under jitter"
+  clamp: "window 10 s"
+  inputs: "DISHONEST: a min of a dwell-inclusive clock never reads propagation once the sender's queue persists > 10 s; 7-33x propagation at c8"
+  modeswitch: "none (gate selects sample source)"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: "input: candidates are quinn's wire rtt.min() or bbr_rs m-hat (neither tested as the store's RTprop; §24 option 1, the min-filtered app-echo loop time, INFLATES); the §44 erratum's b0 offset needs a source too"
+  depends_on: []
+  ships_with: [F01, E04]
+  evidence: "reads 95-319 ms on a 10 ms path at c8, 30/30 rows (§3.10 item 9; p0-dwell-diag §2.1, §4)"
+
+- id: E04
+  name: Copa max_bw / btlbw (delivery-rate max)
+  area: estimator
+  rank: 1
+  priority: P0
+  reach: default, every cell
+  loc: "scheduler/copa.rs:746 record_delivery (ack-interval, the DEFAULT feeder via scheduler/path.rs:484 on_ack when no CopaFeed); copa.rs:850 rs_on_delivered (send-interval sampler) fed only from net/copa_feed.rs:172, i.e. only under RWM_COPA_FEED/passthrough; max filter copa.rs:723; gate effective_btlbw :1472 (>= 8 samples)"
+  formula: "max_bw = max over the window of (delta_delivered / delta_t_ack), delta_t >= 1 ms ; window 10 s (ack-interval feeder) ; bdp_anchor = max_bw * min_rtt (copa.rs:1458)"
+  paper: "§2.7 (fec-arq-model.md:400-416) documents it: the default ack-interval sampler over-reads x4.6-7.4 and the over-read is 'partly load-bearing'; the honest send-interval sampler (RWM_PLAIN_RS, removed §49) read 1.02x the link but cost c2 20 %; §6.1 symbol table"
+  derivation: "the send-interval sampler is cited (BBR delivery-rate sampling) and survives only on the Copa-feed seat; §23 showed that on a store-bound sender BOTH sampler families measure the rate the cap lets through, so neither can be the store law's input alone (paper §2.7)"
+  regime: "measured at c8 (p0-dwell-diag §4): 110k-240k sym/s against a 9.8k/s link (11-24x); c1 x8-29 (§23 Q1 MECHANISM-CONFIRMED at c1s and c2: ack-interval samples over bunched acks); the send-interval anchor UNDER-reads x0.1-0.5 on a store-bound sender and the shipped law on it collapses to its floor (§23 Q2)"
+  clamp: "window 10 s; >= 8 samples"
+  inputs: "DISHONEST and circular: the ack-interval rate measures ack bunching (§23 Q1), and any delivered-rate sampler on a store-bound sender reads the cap's own throughput (§23). The c8 11-24x is presumably the same mechanism (p0-dwell-diag §7 left it undiagnosed; not confirmed here)"
+  modeswitch: "RWM_COPA_FEED selects the sampler (an experiment gate)"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: "open input design: no candidate has passed - send-interval sampler under-reads (§23), min-filtered loop time INFLATES and quinn's rate OVER-READs x7.6 (§24), bbr_rs reads the delivered rate, CIRCULAR at c2 (§27), receiver dispersion NOT-YET (§36, §40), derivation NONE-CLOSES (§34), netem-oracle L converges only at c2 (§43b)"
+  depends_on: []
+  ships_with: [F01, E03]
+  evidence: "max_bw 11-24x the c8 link rate (p0-dwell-diag §4), x8-29 at c1 by the ack-bunching mechanism (§23 Q1); the honest send-interval sampler runs only on the Copa-feed seat (on_src_delivered_seq's one caller is copa_feed.rs:172) and under-reads a store-bound sender (§23 Q2)"
+
+- id: E05
+  name: quinn wire SRTT (wire_rtt mirror)
+  area: estimator
+  rank: 61
+  priority: P3
+  reach: default, every cell (placement base)
+  loc: "transport/io_owner.rs:344 (published view, Connection::rtt()); scheduler/mod.rs:196 mirror_wire_rtts -> scheduler/path.rs:679, called unconditionally from net/control_msg.rs:236/419/510"
+  formula: "wire_rtt_i = quinn smoothed path RTT (packet-timed; includes the network queue, excludes quinn's send buffer)"
+  paper: "§5.7 placement base (ADR-0073); §8.4"
+  derivation: "cited (quinn / RFC 9002 smoothed_rtt)"
+  regime: "measured (`wrtt=`): c8 p1 181-445 ms on a 40 ms leg is netem queue (p0-dwell-diag §1)"
+  clamp: "none"
+  inputs: "honest for what placement prices (wire transit); blind to quinn's send buffer, so placement cannot see p0's 1.5-3k datagram backlog (p0-dwell-diag §4)"
+  modeswitch: "none. Code nit: the path.rs:28-35 field doc says 'written only while the arm is on', the code writes unconditionally"
+  verdicts: [OK]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: none (stale field doc)
+  depends_on: []
+  ships_with: []
+  evidence: "the honest wire clock; the candidate replacement source for E03 and E11"
+
+- id: E06
+  name: per-path loss estimate eps-hat (tx EWMA) and its feed
+  area: estimator
+  rank: 62
+  priority: P3
+  reach: default, every cell
+  loc: "control/estimator.rs:310 record_batch, :498 loss_rate() (alpha 0.1); credit LossCredit estimator.rs:35-57; tracker net/mod.rs:3698"
+  formula: "eps <- 0.1*(lost/sent)_batch + 0.9*eps ; fed = max(0, raw - c), c carried (late-arrival credit)"
+  paper: "§2.6, §11.3 per-path loss feed rows (tracker and credit laws written out)"
+  derivation: "declared EWMA gain; credit law derived in §11.3 and bounded by s10_tracker_true_loss_plus_reorder_reads_exactly_the_true_loss, loss_credit_law_anchor_points"
+  regime: "measured against per-datagram truth: plc/truth 0.95-1.03 at c2, c3 and both c8 legs (§3.6, §3.8); reorder credit never exercised on L1 (netem FIFO, §3.8)"
+  clamp: "none"
+  inputs: "honest (datagram-level truth match)"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "fed loss matches per-datagram truth 0.95-1.03x (§3.6, §3.8); reorder branch tested only in unit tests"
+
+- id: E07
+  name: BOCD predictive_loss_upper (eps upper quantile)
+  area: estimator
+  rank: 21
+  priority: P2
+  reach: default (rate law, W*, NACK budget)
+  loc: "raptorpath-math/src/changepoint.rs:203 predictive_quantile; control/estimator.rs:515 (Beta fallback < 5 updates); confidences 0.95 (fec_rate.rs:491, :543) and 1 - t_tail (net/mod.rs:3235)"
+  formula: "q_c = sum_l w_l * Q_l(c) / sum_l w_l, Q_l = clamp(mean_l + Phi^-1(c)*sd_l, 0, 1) (run-length-weighted AVERAGE of quantiles)"
+  paper: "§2.6; §11.3 BOCD row: model = mixture quantile, engine = average of quantiles"
+  derivation: "cited (Adams & MacKay 2007) for BOCD; the averaging is an approximation with no derivation of its error"
+  regime: "plu reads ~0.0354 on clean links, a floor from the prior and run-length mix, unverified (§3.7)"
+  clamp: "[0,1]; MAX_RUN_LENGTH 200, hazard 0.01"
+  inputs: "fed by E06"
+  modeswitch: "none"
+  verdicts: [DIVERGENT]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: paper or law (bounded)
+  depends_on: [E06]
+  ships_with: []
+  evidence: "divergence bounded by bocd_quantile_is_the_weighted_average_of_quantiles_not_the_mixture_quantile (gap 0.003-0.0045); clean-link floor 0.0354 unexplained (§3.7)"
+
+- id: E08
+  name: Gilbert-Elliott estimator (sigma2_burst, mean burst, mass stats)
+  area: estimator
+  rank: 22
+  priority: P2
+  reach: default (rate law, W*, r_sat)
+  loc: "raptorpath-math/src/gilbert_elliott.rs (decay 0.999, valid >= 30 transitions); fed by control/estimator.rs:310 record_batch (lost Bad then received Good)"
+  formula: "p_gb, p_bg from decayed transition counts ; sigma2 = max(1, 1 + 2(1-p-q)/(p+q)) ; B = 1/p_bg"
+  paper: "§2.3-2.4, A.1; §11.3 GE estimator row: model per-symbol sequence, engine per-batch counts with losses first"
+  derivation: "cited (Gilbert-Elliott); the batch lumping is an undeclared approximation"
+  regime: "GE adequacy against real traces checked offline (§2.5); burst length on L1 is GSO-inflated by the datagrams-per-skb factor (§3.8)"
+  clamp: "sigma2 >= 1"
+  inputs: "lumped batch order biases burst length upward when a batch mixes losses and receives; window batches carry one symbol (§11.3), so the bias is small on the window path"
+  modeswitch: "none"
+  verdicts: [DIVERGENT]
+  measured: "partial"
+  gauge: "no"
+  fix_class: test (bound) then paper
+  depends_on: [E06]
+  ships_with: []
+  evidence: "per-batch lumping is unbounded: the specified ge_batch_feed_orders_losses_before_receives test (paper-recon §7) was not landed by bound-tests"
+
+- id: E09
+  name: RTTVAR stand-ins (0.1*SRTT for P_lost, 0.125*SRTT for chi)
+  area: estimator
+  rank: 23
+  priority: P2
+  reach: default (P_lost taper); chi opt-in
+  loc: "net/channel_set.rs:69 (rttvar = 0.1*srtt); net/sender_phases.rs:1316 (0.125*srtt); measured variants unused by any law: copa.rs:970 rtt_var_sq, :979 rtt_mdev, path.rs:798 qsp_us, :943 tlag_us"
+  formula: "rttvar_Plost = 0.1*est.rtt() ; rttvar_chi = 0.125*est.rtt()"
+  paper: "§11.3 P_lost row (0.1); paper-recon N2 (two stand-ins, undocumented in §11.3)"
+  derivation: "none (two different constants for one symbol)"
+  regime: "not measured; the measured dispersions exist only as [DIAG] gauges"
+  clamp: "P_lost floors rttvar at 1 ms"
+  inputs: "a fixed fraction of a dwell-inclusive clock, not a variance"
+  modeswitch: "none"
+  verdicts: [UNDERIVED, DIVERGENT]
+  measured: "no"
+  gauge: "n/a"
+  fix_class: input (one measured RTTVAR per leg)
+  depends_on: [E01]
+  ships_with: []
+  evidence: "bounded by p_lost_rttvar_is_a_tenth_of_srtt and chi_and_p_lost_rttvar_stand_ins_differ_by_the_declared_ratio; no provenance for either constant"
+
+- id: E10
+  name: receiver's srtt for the refresh clock (published TX view)
+  area: estimator
+  rank: 9
+  priority: P1
+  reach: default, every unidirectional reliable transfer (all L1 cells)
+  loc: "net/receiver.rs:729-736 (max over live_tx_views(..).srtt), :2237 live_tx_views; published by scheduler/mod.rs:467-479 publish_tx_view = PathState::srtt() of the receiving endpoint's OWN sender"
+  formula: "srtt_recv = max_i TxPublished_i.srtt = local sender's p.srtt(), else est.rtt(), else the 50 ms seed"
+  paper: "§7.1 refresh row reads 'SRTT' with no source"
+  derivation: "none: the receiver borrows its own sender's clock, which measures nothing when that sender sends no data"
+  regime: "[QCLK] site=receiver: srtt = exactly 50 000 us with sigma n = 0 on 12/12 c8 rows (§3.10 item 6); source now traced (below)"
+  clamp: "none"
+  inputs: "DEGENERATE: on a one-way transfer the receiving endpoint's sender gets no echoes (PathReport avg_rtt is not recorded under RWM_MSTAR_ANCHOR, control_msg.rs:429-436), so the value is the constructor seed estimator.rs:281"
+  modeswitch: "none"
+  verdicts: [DEGENERATE(all one-way cells)]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: input (publish the data sender's measured RTT to the receiver, or measure at the receiver); only useful once that RTT is honest (E01)
+  depends_on: [E01]
+  ships_with: [C07]
+  evidence: "50 000 us, n = 0, 12/12 c8 rows (§3.10 item 6); traced here to the 50 ms LossEstimator seed read through the receiver's own idle sender"
+
+- id: E11
+  name: pooled recovery srtt (max over live paths of est.rtt())
+  area: estimator
+  rank: 8
+  priority: P1
+  reach: default, multipath cells mostly
+  loc: "net/recovery_laws.rs:267 pooled_recovery_srtt_iter (fallback 10 ms), :251; used net/mod.rs:2719, net/sender_phases.rs:708-716"
+  formula: "srtt_pool = max_{i in live} est_i.rtt()  (10 ms if no path)"
+  paper: "A.6 / §7.1 write 'SRTT'; §11.2 legacy age row notes 'a max over live paths' and the dwell"
+  derivation: "none for the max: a per-sequence clock is set by the slowest leg's dwell-inclusive RTT"
+  regime: "[QCLK] srtt_us_mean 257-375 ms (20-gap rows), 375-542 ms (lever B) at c8 on 10/40 ms legs (p0-dwell-diag §4)"
+  clamp: "none"
+  inputs: "DISHONEST: max of E01 across legs, so a hole on the 10 ms leg is clocked by the 40 ms leg's queue plus p0's own send-buffer dwell"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: input (per-path wire clock; per-seq clock of the seq's own path)
+  depends_on: [E01]
+  ships_with: []
+  evidence: "257-542 ms at c8 where the legs' propagation RTTs are 10/40 ms (p0-dwell-diag §4)"
+
+- id: E12
+  name: SendRateAnchor (the rate A* multiplies)
+  area: estimator
+  rank: 57
+  priority: P3
+  reach: default (unified span)
+  loc: "control/anchor.rs:185-335; bucket clamp(srtt/2, 5, 250 ms) :197; window clamp(8*srtt, 0.5, 10 s) :201; read net/emit_source.rs:563"
+  formula: "rate = windowed max of (count/dt) over send buckets"
+  paper: "§5.3 (A* = ceil(rate*D))"
+  derivation: "window and bucket constants declared, not derived"
+  regime: "not measured on its own"
+  clamp: "the two clamps above; no gauge"
+  inputs: "srtt argument is est.rtt() (E01)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: paper
+  depends_on: [E01]
+  ships_with: []
+  evidence: "four window/bucket constants with no provenance; feeds only A* (S02), which acts only through repairs (r ~ 0 on the measured cells)"
+
+# ---------------------------------------------------------------- delta maps
+- id: D01
+  name: delta(hint) named points / delta_price
+  area: dial
+  rank: 65
+  priority: P3
+  reach: default
+  loc: "net/store_cap.rs:311 delta_price; scheduler/copa.rs:47 hint_delta_price; control/fec_rate.rs:70 tail_loss_scale"
+  formula: "delta = RWM_DELTA if set else 0.5/zeta(hint), zeta in {0.01, 1, 100} -> {50, 0.5, 0.005}"
+  paper: "A.3 line 1, §4.1"
+  derivation: "declared dial: named points"
+  regime: "only the Bulk point is measured on L1 (perf_rwm_c.sh HINT default bulk)"
+  clamp: "none"
+  inputs: "n/a"
+  modeswitch: "the one sanctioned hint read; everything downstream reads delta"
+  verdicts: [OK]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "delta_budget_b_is_the_dial_not_a_mode pins 50/0.5/0.005 bit-exactly"
+
+- id: D02
+  name: b(delta) span horizon
+  area: dial
+  rank: 66
+  priority: P3
+  reach: default
+  loc: "raptorpath-math/src/lib.rs:183 span_horizon_b; net/store_cap.rs:294 delta_budget_b"
+  formula: "b = clamp(2^(-0.5*log10(delta/0.5)), 0.5, 2)"
+  paper: "A.4 line 1, §5.4; same shape"
+  derivation: "declared dial map (§5.4)"
+  regime: "b = 2 (Bulk) only, on L1"
+  clamp: "[0.5, 2] = the dial's own range; binds outside the presets only"
+  inputs: "D01"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial (formula_agreement.rs:556)"
+
+- id: D03
+  name: q(delta) CoDel setpoint
+  area: dial
+  rank: 67
+  priority: P3
+  reach: default
+  loc: "net/store_cap.rs:130 codel_setpoint_q, constants :141/:146"
+  formula: "q = 0.05 + 0.05*(clamp(b,0.5,2) - 0.5)/1.5 = (b+1)/30"
+  paper: "A.5, §6.1 symbol table; same shape (affine in b, increasing in b, units: a ratio of RTprop)"
+  derivation: "cited endpoints (RFC 8289 §3.2), declared affine map between them"
+  regime: "[DCAP] q = 0.1 at Bulk; the law it scales (F01) is pinned at c8 and c1s, so q's effect is unmeasured; §44 erratum: knees need ~1.2 where q stops at 0.10"
+  clamp: "b clamp = the dial's range"
+  inputs: "D02"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "no"
+  gauge: "yes"
+  fix_class: none (see F01)
+  depends_on: []
+  ships_with: []
+  evidence: "formula provenanced and pinned (published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band); unverified because F01 is pinned"
+
+- id: D04
+  name: beta(delta) bulkness
+  area: dial
+  rank: 68
+  priority: P3
+  reach: default (rate mix)
+  loc: "raptorpath-math/src/lib.rs:196 bulkness_of_delta; resolved once control/fec_rate.rs:340"
+  formula: "beta = clamp((log10 0.5 - log10 delta)/2, 0, 1)"
+  paper: "A.3; same shape"
+  derivation: "declared dial map"
+  regime: "beta = 1 (Bulk) only, on L1"
+  clamp: "[0,1]; flat (beta = 0) across the whole Realtime half (§44 item 1)"
+  inputs: "D01"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "partial"
+  gauge: "no"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "the_bulkness_weight_is_exact_at_the_presets_and_the_ablation_zeroes_it; flat over [Auto, Realtime] by construction"
+
+- id: D05
+  name: w_bw(delta) placement loss weight
+  area: dial
+  rank: 69
+  priority: P3
+  reach: default (placement)
+  loc: "scheduler/mod.rs:90-93 SchedulingWeights::from_delta"
+  formula: "w_bw = clamp(0.5 - 0.25*log10(delta/0.5), 0, 1)"
+  paper: "A.4; same shape"
+  derivation: "declared dial map"
+  regime: "w_bw = 1 (Bulk) only; Track A placement battery INERT-AS-DERIVED on latency"
+  clamp: "[0,1]"
+  inputs: "D01"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "partial"
+  gauge: "no"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "scheduling_weights_are_the_dial_not_a_mode pins {0, 0.5, 1}"
+
+- id: D06
+  name: t_tail(delta) tail target
+  area: dial
+  rank: 70
+  priority: P3
+  reach: default (rate law, W*)
+  loc: "control/fec_rate.rs:335-337; base config.rs:337 (1e-5)"
+  formula: "t_tail = clamp(1e-5 * zeta(delta), 1e-9, 0.1) -> 1e-7 / 1e-5 / 1e-3"
+  paper: "A.3 line 2, §4.1; same shape"
+  derivation: "declared dial (base 1e-5 declared)"
+  regime: "Bulk point only; at Bulk with chi = 0 the anchor term is weighted 0 (R01), so t_tail is never exercised on L1"
+  clamp: "[1e-9, 0.1]"
+  inputs: "D01"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "no"
+  gauge: "no"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "continuous and pinned; never exercised on a measured cell"
+
+# ---------------------------------------------------------------- flow control
+- id: F01
+  name: pooled store cap
+  area: flow control
+  rank: 3
+  priority: P0
+  reach: default, every reliable cell
+  loc: "net/store_cap.rs:76 pooled_store_cap, :177 unclamped, :162 multiplier; seat net/sender_phases.rs:191 (5 ms refresh :64); input net/channel_set.rs:125 store_cap_pool_inputs; gate net/mod.rs:2393"
+  formula: "cap = clamp( ceil( (1 + q(delta)) * sum_{i in live} max_bw_i * min_rtt_i ), 10, N*2048 ) ; boot 128 before any anchor"
+  paper: "A.5 line 1, §6.1. Shape check: units symbols (sym/s x s); order 1 in N; non-decreasing in every bw_i, RTprop_i; increasing in b. Paper and code agree. The code doc comment (store_cap.rs:55-57) says 'BDP + one recovery round of runway', which the expression does not compute (runway is q*RTprop = 5-10 % of RTprop): stale comment. §6.1 derives a hole-residence term + eps_i*bw_i*stall(delta,rho,i) and does not ship it. Stale: §11.2's knee row says the knee is 'inert at c7/c8 under the delta-cap', against pin = 0.74-0.98 at c8"
+  derivation: "§6.1: q cited (RFC 8289), floor derived (resource bound), knee 2048 a resource bound with a stale measured value, boot 128 'a fit to one cell' (§11.2). The Little's-law sentence omits the hole population, which p0-dwell-diag §2.2 measures at 1 250-1 500 slots at c8 on main"
+  regime: "c8: PINNED at N*pool = 4096 for 0.74-0.98 of each run, all five §53 arms (§3.10 item 8, §53 Erratum 1); c1s: knee binds in 70 % of windows (§19, paper §6.1); c2: reaches the knee only through the ack-interval over-read, and with an honest sampler contracts to its floor, 41 -> 10 in 3 s, 7.2 vs 89.9 Mbit/s (W1 §2 H1, §43)"
+  clamp: "ceiling N*2048: gauge [SUMCAP] pin=, 0.74-0.98 (c8), ~0.7 (c1s); floor 10: [SUMCAP] floor=; boot 128: no gauge; law asks 12-43 k at c8 ([DCAP] ask=)"
+  inputs: "both inputs DISHONEST (E03 min_rtt 7-33x, E04 max_bw 11-24x), so ask = 3-10x the ceiling and a positive loop queue -> min_rtt -> ask is cut only by the clamp (p0-dwell-diag §4). With honest inputs the law undershoots (no hole/dwell term): W1 H1, §44 erratum (b0 offset has no engine source)"
+  modeswitch: "none on the default seat. Path-count: none (ADR-0072). rho: see F02"
+  verdicts: ["PINNED(c8,c1s)", DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: law change needing a battery, shipped with the input fixes
+  depends_on: [E03, E04]
+  ships_with: [E03, E04]
+  evidence: "pin = 0.74-0.98 at c8 on main (§53 Erratum 1); ask 12-43 k vs 4096; honest-input form collapses to the floor at c2 (W1 H1) - the law needs its hole/dwell term in the same change as honest inputs"
+
+- id: F02
+  name: store gate scope (tx_paused / plain_dyn_cap require reliable)
+  area: flow control
+  rank: 25
+  priority: P2
+  reach: rho < 1 (Realtime default)
+  loc: "net/mod.rs:2393 tx_paused = reliable && (...); net/sender_policy.rs:521 plain_dyn_cap = reliable && ..."
+  formula: "gate(rho=1) = store_len >= cap ; gate(rho<1) = none"
+  paper: "§6.1 'where rho enters' derives the rho term and states the engine has no rho < 1 seat; §3.3 row 'reliable boolean branches'"
+  derivation: "the composing form is derived in §6.1 (stall = (1-rho)*D + rho*17/8*SRTT); not shipped"
+  regime: "rho < 1 not measured except the crown spot (Realtime, §2 row)"
+  clamp: "n/a"
+  inputs: "n/a"
+  modeswitch: "MODE-SWITCH(live): the reliable bool selects whether any outstanding gate exists"
+  verdicts: ["MODE-SWITCH(live)"]
+  measured: "no"
+  gauge: "no"
+  fix_class: law change (rho term from §6.1)
+  depends_on: [F01]
+  ships_with: []
+  evidence: "§3.3 last row; at rho < 1 there is no sent_store and no store gate (paper §6.1)"
+
+- id: F03
+  name: emission burst bound (Law 0, RWM_EMIT_BURST = 64)
+  area: flow control
+  rank: 26
+  priority: P2
+  reach: default, rho = 1, non-Realtime
+  loc: "net/emit_burst.rs:28 emit_burst_bound(q) = q; gates.rs:363-365 (default 64, clamp [2,512]); loop net/mod.rs:3135"
+  formula: "burst <= 64 symbols per pacer quantum"
+  paper: "A.5 last line, §11.2 row"
+  derivation: "none ('~64 KB', not swept; §11.2)"
+  regime: "measured at the §8 re-run: binds 0.838 (c1s), 0.831 (c1d), 0.005 (c2), 0.118 (c8)"
+  clamp: "the law is a constant; gauge eb_end cap: on [DIAG]"
+  inputs: "none"
+  modeswitch: "scope excludes rho < 1 and Realtime packing (S09)"
+  verdicts: ["PINNED(c1s,c1d)", UNDERIVED]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: sweep or derive (a CPU/latency quantum, not a correctness law)
+  depends_on: []
+  ships_with: []
+  evidence: "the cap ends 0.83-0.84 of bursts at c1s/c1d (§11.2); 64 never swept"
+
+- id: F04
+  name: store-cap control and off arms (RWM_STORE_PATHS=0, RWM_DELTA_CAP=0, RWM_SUM_CAP=0, RWM_THREE_TERM)
+  area: flow control
+  rank: 58
+  priority: P3
+  reach: opt-in
+  loc: "net/sender_phases.rs:179 (three-term), :210 (control chain clamp(2*bdp,10,1024)); store_cap.rs:162/:190; three_term_store_cap store_cap.rs:552"
+  formula: "control: clamp(ceil(2.0*bdp), 10, 1024) ; DELTA_CAP=0: gain 2.0 ; SUM_CAP=0: N*Sigma (quadratic) ; three-term: Sigma rate*K*RTprop + Sigma rate*stall + 2*rate_fast*skew, clamp to 4096"
+  paper: "§6.2 (control), §6.4/§10 (three-term refuted)"
+  derivation: "gain 2.0 and RELIABLE_STORE_MAX 1024 unprovenanced (§11.2)"
+  regime: "control measured as the comparison arm (§18/§19)"
+  clamp: "1024 bound in every post-warm-up c1s window while it was the shipped single-path ceiling (§11.2)"
+  inputs: "as F01"
+  modeswitch: "experiment gates, not dials"
+  verdicts: [UNDERIVED]
+  measured: "partial"
+  gauge: "partial"
+  fix_class: delete when the F01 fix lands (keep one control)
+  depends_on: [F01]
+  ships_with: []
+  evidence: "kept as A/B arms; the quadratic SUM_CAP=0 arm is pinned as a documented defect (path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect)"
+
+- id: F05
+  name: generation pipeline depth M* (opt-in seat)
+  area: flow control
+  rank: 59
+  priority: P3
+  reach: opt-in (--window-generation-coding)
+  loc: "net/mod.rs:473 gen_pipe_depth, :448 GEN_PIPE_MAX_GENS = 32; refresh :2245-2271"
+  formula: "M* = clamp(ceil(rate_max*2*RTprop/G) + 1, 2, 32) ; cap = min(M*G, store_max)"
+  paper: "A.4 line 4; §11.2 M* row"
+  derivation: "2 = cold-start pipeline, 32 a declared memory backstop"
+  regime: "not measured (seat opt-in, §3.2)"
+  clamp: "[2,32]: no bind gauge ([GPIPE] prints changes only)"
+  inputs: "RTprop = max over live of Copa min_rtt (E03)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: decide the seat's disposition (§3.2) first
+  depends_on: [E03]
+  ships_with: []
+  evidence: "opt-in seat with no keep-or-remove decision (§3.2)"
+
+- id: F06
+  name: SACK-clocked release (store_gate_released)
+  area: flow control
+  rank: 63
+  priority: P3
+  reach: default, every reliable cell (RWM_STORE_SACK_RELEASE on)
+  loc: "net/sack.rs:397 store_gate_released, :361 received_above_released, :387 store_released_for_gate; store_len net/mod.rs:2223 (sack_release_outstanding sack.rs:461)"
+  formula: "store_len = retained - released ; released = min(|S|, max(|M|, |S ∩ [0,F)| + (A - ((H+1-F) - |S ∩ [F,H]|))+))"
+  paper: "A.5 lines 3-4, §6.3; same shape (counts, order 1, no constant)"
+  derivation: "§6.3 derives it as a lower bound on |S ∩ received| from v9 wire fields; the outer min is a totality clamp that cannot bind"
+  regime: "c8: on 20-gap rows the gate's released count is 28-75 k against 4-26 k SACK marks, so the received-above count does the work (p0-dwell-diag §1, srel= gauge)"
+  clamp: "outer min cannot bind (derived)"
+  inputs: "honest (wire fields F, A); premise: the reliable receiver never evicts above its frontier (rho = 1 only)"
+  modeswitch: "none (rho < 1 has no store gate: F02)"
+  verdicts: [OK]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "bounded by store_gate_released_never_exceeds_the_retained_received_truth and stalled_frontier_store_gate_converges_past_the_sack_cap"
+
+# ---------------------------------------------------------------- rate law
+- id: R01
+  name: rate mix r(beta)
+  area: rate
+  rank: 14
+  priority: P1
+  reach: default, every cell
+  loc: "control/fec_rate.rs RateSnapshot::rate (~:130); evaluated via net/emit_source.rs:871 cadenced_repair_rate"
+  formula: "r = (1 - beta)*r_anchor + beta*r_late-is-fine ; both terms always computed"
+  paper: "A.3, §4.5; same shape; continuity bound |r(beta) - r_bulk| <= (1-beta)*r_max"
+  derivation: "§4.5 (declared mix, beta from D04)"
+  regime: "r ~ 0 on every measured cell (§37, §44 item 5, paper-recon §4). L1 runs --protocol-hint bulk (tools/l1/perf_rwm_c.sh:38), beta = 1, chi = 0 on the tunnel, so r = r_late = 0 identically. The default hint (Auto, beta = 0) has never been measured; the off-Bulk which-term-wins row (§44 item 5, §45) does not exist"
+  clamp: "via R02"
+  inputs: "R02's inputs"
+  modeswitch: "none in the engine (no beta = 0 fast path); the wasm has one (M03)"
+  verdicts: ["DEGENERATE(L1 cells: Bulk with chi = 0)"]
+  measured: "no"
+  gauge: "partial"
+  fix_class: measurement (one off-Bulk row with a which-term-wins tally)
+  depends_on: [R02, R05]
+  ships_with: []
+  evidence: "the_rate_mix_is_byte_identical_at_the_presets and the no-step test pin the shape; on every measured cell it computes exactly 0 (bulk_rate_is_exactly_zero_through_the_controller)"
+
+- id: R02
+  name: controller_rate (anchor term body)
+  area: rate
+  rank: 15
+  priority: P1
+  reach: default (Auto anchor term)
+  loc: "raptorpath-math/src/lib.rs:735 controller_rate; inputs control/fec_rate.rs:451-530 rate_snapshot"
+  formula: "r = clamp( soft_sat( max(r_core + codec_eff, r_burst, r_mass), r_sat ), 0, 0.5 ) ; r_core = max(0, p/(1-p) + Phi^-1(1 - t/p)*sqrt(p*sigma2/(W(1-p)))) ; r_burst = (B/T_rtt)*(1 - t/p)+"
+  paper: "A.3 lines 4-7, §4.2-4.4; same shape. Code drops codec_eff when r_core = 0; paper does not say"
+  derivation: "r_core derived (§4.2); r_burst and the max of three terms declared (§4.4); max_overhead 0.5 declared"
+  regime: "never off the corner on a measured cell (R01)"
+  clamp: "max_overhead 0.5 and soft_sat: no engine gauge of either bind or of which max() term wins (the wasm has get_saturation_pressure)"
+  inputs: "p = E07 upper quantile, sigma2/B = E08, srtt = E01, t_symbols = srtt*tput/sym"
+  modeswitch: "bulk_late_is_fine bool selects the term inside R01's always-computed mix (a term selector, not a mode)"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: gauge (term-win tally) then measurement
+  depends_on: [E07, E08, E01]
+  ships_with: []
+  evidence: "the composition max(core, burst, mass) has no derivation of why max (§4.4 'partial' in §9.10); no gauge of which term or clamp binds"
+
+- id: R03
+  name: P_fec normal approximation (truncated)
+  area: rate
+  rank: 19
+  priority: P2
+  reach: default via r_sat (R04) and rho < 1 via the shed budget (S04)
+  loc: "raptorpath-math/src/lib.rs:885 p_fec_normal (cut :886-888); callers r_saturation lib.rs:917 and residual_loss_after_fec (net/emit_source.rs:588)"
+  formula: "P_fec = 0 if r(1-eps) - eps <= 0 else Phi( sqrt(W)*(r(1-eps) - eps)/sqrt(eps(1-eps)(r + sigma2)) )"
+  paper: "§4.2 (fec-arq-model.md:699) and A.3: continuous Phi with no cut. DIVERGENT: a 0 -> 1/2 step at r = eps/(1-eps)"
+  derivation: "§4.2 derives the Phi form; the cut has none (since da837ee9)"
+  regime: "whether the engine ever ran on the P_fec > 0 side is unsettled (§3.10 item 2: plan says r ~ 0; fec_rate/tests.rs:277 fixture says r ~ 0.34 at eps ~ 4.8 %)"
+  clamp: "the cut; no gauge"
+  inputs: "eps = E06/E07, sigma2 = E08, W = A* (shed) or encoder window"
+  modeswitch: "a threshold on r that selects a branch (not a dial threshold; a step in the law)"
+  verdicts: [DIVERGENT, "DEGENERATE(below r = eps/(1-eps))"]
+  measured: "no"
+  gauge: "no"
+  fix_class: owner call (paper form vs engine pin fec_rate/tests.rs:262-282), then law fix
+  depends_on: []
+  ships_with: [M04]
+  evidence: "0 -> 1/2 step at r = eps/(1-eps), 0.0267 at c2 (§3.10 item 2; wasm audit W22)"
+
+- id: R04
+  name: r_saturation soft cap
+  area: rate
+  rank: 20
+  priority: P2
+  reach: default (saturation_cap on)
+  loc: "raptorpath-math/src/lib.rs:917 r_saturation; soft_saturate lib.rs:1058 (s = 0.1*r_sat)"
+  formula: "r_sat = argmin_{r in 0.01..1.0 step 0.005} (1 - P_fec(r))*1.5*srtt + B*t_sym*(1+r)/(r(1-eps)) + 0.5*(1+r)*W*t_sym"
+  paper: "§4.4"
+  derivation: "cost terms declared; 1.5*srtt, C_DILUTION 0.5, the grid and SAT_SOFTNESS 0.1 have no provenance"
+  regime: "not measured (r ~ 0)"
+  clamp: "grid [0.01, 1]; no engine gauge"
+  inputs: "inherits R03's step through P_fec; srtt = E01"
+  modeswitch: "none"
+  verdicts: [UNDERIVED, DIVERGENT]
+  measured: "no"
+  gauge: "no"
+  fix_class: paper + gauge
+  depends_on: [R03, E01]
+  ships_with: []
+  evidence: "four constants with no provenance; its cost curve carries the P_fec cut (R03)"
+
+- id: R05
+  name: completion exposure chi and BULK_TAIL_BUDGET
+  area: rate
+  rank: 24
+  priority: P2
+  reach: default at Bulk (chi = 0 on the tunnel)
+  loc: "raptorpath-math/src/lib.rs:564 completion_exposure, :123 BULK_TAIL_BUDGET = 0.05; engine net/sender_phases.rs:1316 (only under RWM_COMPLETION_EXPOSURE)"
+  formula: "chi = PhiBar((T_rem - 1.5*srtt)/max(4*rttvar, srtt/4)) ; t_eff,bulk = p + (0.05 - p)*chi"
+  paper: "A.3, §4.6; same shape"
+  derivation: "1.5, 4*RTTVAR, SRTT/4 and 0.05 unprovenanced (§11.2: '0.05 an e.g. promoted to a constant')"
+  regime: "chi = 0 identically on the tunnel (paper-recon N1; tests/chi_reachability.rs), so the Bulk glide never runs"
+  clamp: "[0,1]"
+  inputs: "T_rem unavailable on the tunnel; rttvar = 0.125*srtt (E09)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED, "DEGENERATE(tunnel)"]
+  measured: "no"
+  gauge: "yes"
+  fix_class: "owner call (paper-recon Q3: is chi = 0 the tunnel contract?)"
+  depends_on: [E09]
+  ships_with: []
+  evidence: "chi never evaluated on the tunnel (without_the_arm_chi_is_never_evaluated_and_the_gauge_says_so)"
+
+- id: R06
+  name: r*_mass burst-tail provisioning (RWM_RSTAR_TAIL)
+  area: rate
+  rank: 49
+  priority: P3
+  reach: default anchor term (Auto)
+  loc: "raptorpath-math/src/lib.rs:479 r_star_mass, :285 fit_burst_tail; mass stats gilbert_elliott.rs (block 64)"
+  formula: "r*_mass = min{ r in [0,2] : (1-f)*T_lo(R) + f*T_hi(R) <= t/p } , S_m(x) = theta^(x^k)"
+  paper: "A.3, §4.3; same shape; doc admits 'not a distribution-free bound'"
+  derivation: "§4.3 (Weibull tail fit); w0 = 64, k in [0.2, 8], 8 scales declared"
+  regime: "not measured (r ~ 0); needs >= 30 nonzero blocks"
+  clamp: "ceiling 2.0: no gauge"
+  inputs: "E08 mass stats"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "no"
+  gauge: "no"
+  fix_class: gauge (ceiling bind) with the R01 measurement
+  depends_on: [E08]
+  ships_with: []
+  evidence: "derived and bit-pinned (rstar_bitpin_solver_is_bit_identical); never active on a measured cell"
+
+- id: R07
+  name: W* derived window and the keep-behind clip
+  area: rate
+  rank: 18
+  priority: P2
+  reach: default
+  loc: "raptorpath-math/src/lib.rs:1000 derive_window; control/fec_rate.rs:531-553 (budget 0.0); net/sender_phases.rs:1375 keep_behind = W*.clamp(16, win_cap=200)"
+  formula: "W* = clamp( clamp(W_over, min(W_bur, W_lat), W_lat), 16, 512 ), W_lat = srtt*rate (budget 0 -> 1 RTT) ; keep_behind = clamp(W*, 16, 200)"
+  paper: "A.3, §4.8: budgets b(delta) = 1/2, 1, 2 RTT. DIVERGENT: engine runs 1 RTT at every delta (paper-recon N3); the table's 512/429/214 are clipped to 200 on the seat (N4)"
+  derivation: "W_over/W_bur derived (§4.8); alpha 0.25, [16, 512] and MAX_WINDOW_SIZE 200 declared (§11.2: 200 is below W_mp at the heterogeneous cell)"
+  regime: "not measured; no gauge of which term or the 200 clip binds"
+  clamp: "[16,512] then [16,200]: no gauge"
+  inputs: "eps = E07 upper (0.95), srtt = E01, rate = est tput"
+  modeswitch: "none (b(delta)*SRTT would be continuous; paper-recon Q1)"
+  verdicts: [DIVERGENT, UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: owner call (paper-recon Q1/Q2), then gauge
+  depends_on: [E07, E01]
+  ships_with: []
+  evidence: "bounded by derived_window_runs_one_rtt_budget_at_every_delta and keep_behind_is_w_star_clipped_to_the_seat_cap; 200 unprovenanced"
+
+- id: R08
+  name: rate cadence min(5 ms, SRTT/4)
+  area: rate
+  rank: 64
+  priority: P3
+  reach: default
+  loc: "control/fec_rate.rs:181 RATE_CADENCE_MAX_US, :234 period_us"
+  formula: "re-evaluate r when now - t_last >= min(5 ms, srtt/4)"
+  paper: "§11.2 row"
+  derivation: "5 ms a resource bound (CPU), SRTT/4 declared"
+  regime: "staleness cost not measured; gauge rce= exists"
+  clamp: "5 ms"
+  inputs: "srtt = E01"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: none
+  depends_on: []
+  ships_with: []
+  evidence: "rate_cadence_is_one_period_stale_and_bounded; r ~ 0 so staleness is moot on L1"
+
+- id: R09
+  name: generation repair floor 0.15 / 0.20 (opt-in seat)
+  area: rate
+  rank: 60
+  priority: P3
+  reach: opt-in
+  loc: "net/sender_policy.rs:349 gen_repair_floor; net/emit_source.rs:686"
+  formula: "r_gen = RWM_GEN_R or (0.15 systematic | 0.20 coded), clamp [0,2]"
+  paper: "§11.2, §11.3 'r* to the generation encoder'"
+  derivation: "none (a constant prior where r(beta) is derived)"
+  regime: "not measured"
+  clamp: "[0,2]"
+  inputs: "none"
+  modeswitch: "none"
+  verdicts: [UNDERIVED, DIVERGENT]
+  measured: "no"
+  gauge: "no"
+  fix_class: decide the seat (§3.2)
+  depends_on: []
+  ships_with: []
+  evidence: "generation_repair_floor_is_the_constant_prior bounds it; seat has no disposition"
+
+# ---------------------------------------------------------------- span, shed, emission
+- id: S01
+  name: span deadline D
+  area: span
+  rank: 27
+  priority: P2
+  reach: default (feeds A*); shed at rho < 1
+  loc: "net/shed.rs:31 shed_deadline_us; net/emit_source.rs:567-583 (rtprop := est.rtt())"
+  formula: "D = min(b*rtt, 2*rtt), rtt = est.rtt() of the worst-eps path"
+  paper: "A.4 line 2, §5.3: min(b*RTprop, 2*RTprop). DIVERGENT input (§11.3 row 1)"
+  derivation: "§5.3 (declared via b)"
+  regime: "not measured; refreshed only on a taper-cache miss (S07)"
+  clamp: "b capped at 2"
+  inputs: "DISHONEST: an EWMA of E01 named rtprop (§44 item 3)"
+  modeswitch: "none"
+  verdicts: [DIVERGENT, DISHONEST-INPUT]
+  measured: "no"
+  gauge: "yes"
+  fix_class: input (read RTprop from a wire clock)
+  depends_on: [E01, E03]
+  ships_with: []
+  evidence: "bounded by span_deadline_reads_the_ewma_rtt_not_rtprop; reads the dwell-inclusive EWMA, not RTprop"
+
+- id: S02
+  name: span width A*
+  area: span
+  rank: 46
+  priority: P3
+  reach: default (trailing repair span)
+  loc: "net/emit_source.rs:573"
+  formula: "A* = clamp(ceil(rate_sym*D), 1, window_size)"
+  paper: "A.4 line 3, §5.3; same shape"
+  derivation: "§5.3"
+  regime: "not measured; acts only through repairs (r ~ 0 on L1)"
+  clamp: "[1, W]: [SPAN] a_star= gauge, no bind fraction"
+  inputs: "D from S01, rate from E12"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT]
+  measured: "no"
+  gauge: "partial"
+  fix_class: follows S01
+  depends_on: [S01, E12]
+  ships_with: []
+  evidence: "inherits S01's dwell-inclusive D"
+
+- id: S03
+  name: trailing offset Delta
+  area: span
+  rank: 47
+  priority: P3
+  reach: default (trailing repair span)
+  loc: "net/emit_source.rs:575-577; jitter control/estimator.rs:550 (RFC 3550, receiver arrivals)"
+  formula: "Delta = clamp(ceil(rate_sym*jitter), 1, 64)"
+  paper: "A.4, §5.3, §11.2 'Delta cap 64'"
+  derivation: "floor 1 structural; 64 none"
+  regime: "not measured"
+  clamp: "64: no gauge"
+  inputs: "jitter of the worst-eps path (cited RFC 3550)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: gauge
+  depends_on: []
+  ships_with: []
+  evidence: "the 64 has no provenance and no bind gauge (§11.2)"
+
+- id: S04
+  name: shed budget
+  area: shed
+  rank: 28
+  priority: P2
+  reach: rho < 1 (Realtime default)
+  loc: "net/emit_source.rs:587 shed_budget_frac = residual_loss_after_fec (control/fec_rate.rs:784); shed_allowed net/shed.rs:39"
+  formula: "shed iff age > D and shed_total + 1 <= eps*(1 - P_fec(r, eps, A*, sigma2))*src_total"
+  paper: "A.4, §5.6; same shape but inherits R03's cut"
+  derivation: "§5.6"
+  regime: "crown spot only (Realtime, §2 row)"
+  clamp: "[0,1]"
+  inputs: "eps = E06, D = S01 (dwell), A* = S02; cached with the taper cache (S07)"
+  modeswitch: "armed only at rho < 1 (shed_armed); itself continuous"
+  verdicts: [DIVERGENT, DISHONEST-INPUT]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: follows R03 and S01
+  depends_on: [R03, S01]
+  ships_with: []
+  evidence: "budget halves where r* crosses eps/(1-eps) (wasm audit step table, W22)"
+
+- id: S05
+  name: receiver shed hold
+  area: shed
+  rank: 29
+  priority: P2
+  reach: rho < 1 receiver
+  loc: "net/shed.rs:58 shed_recv_hold; budget shed.rs:389; constants net/mod.rs:215-216"
+  formula: "H = srtt/2 if shed_on and given_up < eps_recv*frontier else clamp(4*srtt, 60, 300 ms) ; srtt = max over live of the sender-published srtt"
+  paper: "§5.6, §11.3 row 2: model b(delta)*SRTT, engine hard-codes 1/2; §11.2 receiver hold row"
+  derivation: "60, 300 and 4 unprovenanced; 1/2 equals b(Realtime) by seat, not by evaluation"
+  regime: "[SHEDH] gauge exists (floor/cap fractions); bind not reported in a status section"
+  clamp: "[60, 300] ms: [SHEDH] floor_frac / cap_frac"
+  inputs: "srtt from E10's published view (seed-prone on one-way flows)"
+  modeswitch: "the budget_ok test switches between two formulas (a loss-budget threshold, not delta/rho); 1/2 is a Realtime constant rather than b(delta)"
+  verdicts: [DIVERGENT, UNDERIVED]
+  measured: "no"
+  gauge: "yes"
+  fix_class: law (b(delta)*SRTT) + read the [SHEDH] bind
+  depends_on: [E10]
+  ships_with: []
+  evidence: "bounded by shed_recv_hold_delta_dial_and_legacy_fallback; three unprovenanced constants"
+
+- id: S06
+  name: taper copy decision (P_lost)
+  area: span
+  rank: 30
+  priority: P2
+  reach: default (correction slots)
+  loc: "net/emit_source.rs:703-757; p_lost raptorpath-math/src/lib.rs:64; inputs net/channel_set.rs:65-73"
+  formula: "copy oldest unacked with probability P = eps/(eps + (1-eps)*Q((age - srtt)/max(0.1*srtt, 1 ms)))"
+  paper: "A.2 P_lost, §3.2-3.3; §11.3 P_lost row"
+  derivation: "§3.2; rttvar stand-in E09"
+  regime: "measured waste is zero; why it never fires is undecided (§11.2 taper row)"
+  clamp: "[0,1]"
+  inputs: "srtt = E01 of the worst-eps path (dwell-inclusive), rttvar = 0.1*srtt"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT, "DEGENERATE(L1: never fires)"]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: diagnose (why zero) after E01/E09
+  depends_on: [E01, E09]
+  ships_with: []
+  evidence: "taper_copy reads 0 on the measured cells; correction slots exist only when r > 0"
+
+- id: S07
+  name: taper-cache staleness 50 ms
+  area: span
+  rank: 48
+  priority: P3
+  reach: default, rho = 1
+  loc: "net/emit_source.rs:51 TAPER_CACHE_MAX_AGE_US; net/emit_burst.rs:38 taper_recompute_due"
+  formula: "recompute iff !batching or !cached or syms >= burst bound or age > 50 ms"
+  paper: "§11.2 row"
+  derivation: "none"
+  regime: "shipped inside the measured EB0 arm (§8); no refresh-cause tally"
+  clamp: "50 ms: no gauge"
+  inputs: "n/a. Note: D and the shed budget are cached with it, and the NACK path reads the cached values"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "partial"
+  gauge: "no"
+  fix_class: gauge
+  depends_on: []
+  ships_with: []
+  evidence: "no derivation, no gauge (§11.2)"
+
+- id: S08
+  name: Realtime duplicate source send
+  area: emission
+  rank: 31
+  priority: P2
+  reach: Realtime only
+  loc: "net/emit_source.rs:461 if pol.protocol_hint == Realtime; scheduler/mod.rs:552 redundant_source_path"
+  formula: "at Realtime: send every source symbol twice (second on the cheapest other active path)"
+  paper: "§11.1 q13; §3.3"
+  derivation: "none (a redundancy decision priced by nothing)"
+  regime: "crown spot only"
+  clamp: "n/a"
+  inputs: "n/a"
+  modeswitch: "MODE-SWITCH(live): hint equality"
+  verdicts: ["MODE-SWITCH(live)", UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: law (price the duplicate on the rate law) or delete
+  depends_on: []
+  ships_with: []
+  evidence: "§3.3 row 1; no test, no gauge"
+
+- id: S09
+  name: symbol packing and emission-batching scope (use_packing, emit_batch_on)
+  area: emission
+  rank: 32
+  priority: P2
+  reach: Realtime and rho < 1
+  loc: "net/sender_policy.rs:678 use_packing = hint == Realtime; :737 emit_batch_on = emit_batch && reliable && !coded_wire && !use_packing"
+  formula: "packing on iff Realtime ; batching on iff reliable and not packing"
+  paper: "§3.3 rows 2 and 5; §11.2 use_packing row"
+  derivation: "none (declared corner)"
+  regime: "not measured at Realtime"
+  clamp: "n/a"
+  inputs: "n/a"
+  modeswitch: "MODE-SWITCH(live): hint equality and the reliable bool"
+  verdicts: ["MODE-SWITCH(live)", UNDERIVED]
+  measured: "no"
+  gauge: "yes"
+  fix_class: law (a continuous packing/batching quantum) or owner call
+  depends_on: []
+  ships_with: []
+  evidence: "§3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime"
+
+- id: S10
+  name: proactive repair emission (taper density and TaperBudget accrual)
+  area: span
+  rank: 35
+  priority: P3
+  reach: "default (RWM_TAPER_R on): how r reaches the wire"
+  loc: "control/fec_rate.rs:600-640 TaperFunction (q = p_bg clamped [0.01,1], default 0.5), :678-740 TaperBudget::accrue; called from net/emit_source.rs (repair_rate block, ~:680)"
+  formula: "owed <- min(owed + r, max(r*W, 1)) ; grant = min(owed, max(r*shape(t mod W), r), spare, 1) , shape(t) = W*q*(1-q)^t/(1-(1-q)^W) ; owed -= grant"
+  paper: "A.2 prints the raw density tau(t) = r*q*(1-q)^t (TaperFunction), the superseded per-ack-cycle emitter; §3.3 'Taper budget' says only 'banks owed += r per source symbol'. The grant expression is in the code doc comment, not the paper"
+  derivation: "doc comment argues conservation (sum of grants <= sum of rates up to the one-window expiry); q default 0.5 and the [0.01,1] clamp unprovenanced"
+  regime: "r ~ 0 on every measured cell, so grant ~ 0"
+  clamp: "spare and the 1.0-per-source cap: no gauge"
+  inputs: "r from R01, q from E08, spare from K04 (inflated cwnd)"
+  modeswitch: "RWM_TAPER_R experiment gate"
+  verdicts: [DIVERGENT, "DEGENERATE(r = 0)"]
+  measured: "no"
+  gauge: "no"
+  fix_class: paper (write the grant law on its own line; retire A.2's raw-density line)
+  depends_on: [R01]
+  ships_with: []
+  evidence: "A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code"
+
+# ---------------------------------------------------------------- recovery decision
+- id: C01
+  name: per-path time threshold 9/8 * max(srtt, ewma)
+  area: recovery
+  rank: 12
+  priority: P1
+  reach: default, N >= 2
+  loc: "net/recovery_laws.rs:118 mp_time_threshold_split; net/sender_phases.rs:683-748 (mp_clocks = (p.srtt(), est.rtt()))"
+  formula: "ripe iff now - t_flight >= max(9/8*max(srtt_i, ewma_i), 10 ms)"
+  paper: "A.6 line 1, §7.1; same shape"
+  derivation: "cited (RFC 9002 §6.1.2; 9/8 is empirical); floor 10 ms (10x kGranularity, §11.2)"
+  regime: "c8 measured in regime only from §52 (lever B); p0 threshold ~390 ms (CAND) vs ~215 ms (BASE) on a 10 ms leg (p0-dwell-diag §4); it also fires on stale reports (tt_st 999 BASE, 2 481 CAND, §53)"
+  clamp: "10 ms floor: pf= gauge on [DIAG]"
+  inputs: "DISHONEST: srtt and ewma are both E01 copies (dwell-inclusive) and age runs from the original send, so the RFC constant is applied to a coordinate that includes sender dwell (§11.2 thresholds row)"
+  modeswitch: "path-count: applies at N >= 2 only; N = 1 runs C04 (a law step at N = 1 -> 2, column-8 note)"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: input (wire clock; age from the wire send)
+  depends_on: [E01, E11]
+  ships_with: []
+  evidence: "threshold ~215-390 ms on a 10 ms leg at c8 (p0-dwell-diag §4); RFC 9002 assumes a wire-timed age"
+
+- id: C02
+  name: packet threshold 3 and the 20-gap report horizon
+  area: recovery
+  rank: 4
+  priority: P0
+  reach: default, N >= 2
+  loc: "net/recovery_laws.rs:142 MP_PACKET_THRESHOLD = 3, :166 mp_fast_lost; net/mod.rs:223 MAX_NACK_GAPS = 20; net/sack.rs:52-91 sack_to_gaps truncates to the 20 oldest runs"
+  formula: "lost(s) iff #{delivered seqs on s's original path above s} >= 3 ; a report names only the 20 oldest gap runs"
+  paper: "A.6 line 2, §7.1; MAX_NACK_GAPS is not in the paper"
+  derivation: "3 cited (RFC 9002 kPacketThreshold); 20 none (a report-size choice)"
+  regime: "NOT measured in regime before §52 (§3.10 item 5): under the 20-gap horizon p0 holes reach the law at ~3.5 s age; the channel fires 0-755 times per run on main vs 3.7-6.6 k under lever B. Mean in-order delay at c8 ~5.3 s on main vs ~1.0 s under lever B (§53 Erratum 1); tail 3.95 s vs 0.36 s (§53)"
+  clamp: "the 20-run horizon is a clamp on which holes the law can see: no gauge on main (the snapver branch's horizon test measures it)"
+  inputs: "fed gap reports; stale reports from the slow return leg feed it false evidence (C03)"
+  modeswitch: "N >= 2 only (as C01)"
+  verdicts: [UNDERIVED, "DEGENERATE(c8: the law sees only old holes)"]
+  measured: "yes"
+  gauge: "partial"
+  fix_class: law change needing a battery (lever B horizon), shipped with C03
+  depends_on: []
+  ships_with: [C03]
+  evidence: "c8 on main: holes judged at ~3.5 s, tail 3.95 s, in-order delay ~5.3 s; lever B (64-gap) cuts the tail to 0.36 s (§53)"
+
+- id: C03
+  name: snapshot-order filter (branch github/snapver-law, not on main)
+  area: recovery
+  rank: 5
+  priority: P0
+  reach: candidate (branch), default path once merged
+  loc: "github/snapver-law 8191b3de: net/snapver.rs snapver_judges, snapver_coalesce_keeps, SnapOrder; seam serve_gaps -> take_gap_batch / judged_gaps. Main: last-arrival-wins coalescing net/sender_phases.rs:658-666"
+  formula: "judge(R) iff V(R) >= V*, V = (next_expected, received_above) lexicographic, V* = max V over every dequeued batch this run; tail sweep always judged"
+  paper: "§7.1 'Snapshot order' and A.6 on the branch (formula-first, symbol table, safety and liveness argued)"
+  derivation: "complete on the branch: every symbol is a wire field or the gap channel's own fold; no constant"
+  regime: "measured at c8 and c1d in §53 as an env arm: stale/rep 0.984-0.997 on the slow leg; under lever B duplicates 4 004 -> 1 291, retransmits/GB 30 661 -> 25 157; c1d 7-16 % stale, lever B's +13 % duplicates not removed. rho < 1 untested"
+  clamp: "none"
+  inputs: "honest (wire fields)"
+  modeswitch: "none: reads no dial, no gate"
+  verdicts: [OK]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: merge (with C02's horizon, §41c guard first)
+  depends_on: []
+  ships_with: [C02]
+  evidence: "§53 CONFIRMED AND EFFECTIVE at c8; derivation docs/derivations/dup-diag.md on the branch"
+
+- id: C04
+  name: legacy age gate srtt/2 (the shipped N = 1 recovery law)
+  area: recovery
+  rank: 16
+  priority: P2
+  reach: default, every single-path cell (c1s, c2, c3)
+  loc: "net/recovery_laws.rs:222 legacy_age_ripe; net/sender_phases.rs:958-964 (the else branch when !(recov_mp_law && N > 1) and !(recov_sp && N <= 1); RWM_RECOV_SP default off)"
+  formula: "ripe iff now - t_send_original >= srtt_pool/2"
+  paper: "§11.2 says it 'runs only when per-path detection is off' and status §3.4 says 'inert at c1'. DIVERGENT: with RWM_RECOV_MP_LAW on, it is the law at every N = 1 cell, since the per-path branch needs N > 1"
+  derivation: "none (pre-RFC; §3.4)"
+  regime: "not measured as the N = 1 law. §3.4 calls it inert at c1, which is plausible (a single FIFO path reports a gap about one RTT after the send, so age > srtt/2 and it rarely suppresses) but unread: the mpd_supp_age gauge is not reported for a single-path cell"
+  clamp: "none (10 ms only via the pool fallback)"
+  inputs: "DISHONEST: srtt_pool = E11 (dwell-inclusive) against an age from the original send"
+  modeswitch: "path-count switch: N = 1 runs this, N >= 2 runs C01/C02 (column-8 note; a step at N = 1 -> 2, like the guard ADR-0072 removed from the store)"
+  verdicts: [DIVERGENT, UNDERIVED, DISHONEST-INPUT]
+  measured: "no"
+  gauge: "yes"
+  fix_class: paper correction now; law (C01 at N = 1, RWM_RECOV_SP exists as the off arm) with a battery
+  depends_on: [E11]
+  ships_with: []
+  evidence: "code: sender_phases.rs:898 needs mp_n_paths > 1 and :937 needs RWM_RECOV_SP (off), so :958 is the N = 1 law; paper §11.2 says it runs only with per-path detection off. Likely inert in effect, never gauged"
+
+- id: C05
+  name: per-sequence retransmit cooldown
+  area: recovery
+  rank: 11
+  priority: P1
+  reach: default, every reliable cell (largest at N >= 2)
+  loc: "net/recovery_laws.rs:273 retx_cooldown_us, :279 cooldown_elapsed; net/sender_phases.rs:716, :882"
+  formula: "resend seq only if now - last_retx >= max(srtt_pool, 10 ms)"
+  paper: "§7.1 ('once per SRTT'); §11.2 NACK_RETX_COOLDOWN_FLOOR_US row"
+  derivation: "'once per SRTT' declared; the 10 ms floor '10x kGranularity by choice', moves W by 6.8x across its range (§3.4)"
+  regime: "[QCLK] srtt 257-542 ms at c8 (p0-dwell-diag §4): a retransmit on the 10 ms leg is held ~0.5 s"
+  clamp: "10 ms floor: mpd_supp_cool counts suppressions, no bind fraction"
+  inputs: "DISHONEST: E11, the slowest leg's dwell-inclusive clock, applied to every seq"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT, UNDERIVED]
+  measured: "yes"
+  gauge: "partial"
+  fix_class: input (per-path wire clock of the retransmit's leg)
+  depends_on: [E11]
+  ships_with: []
+  evidence: "cooldown = 257-542 ms at c8 for seqs whose leg RTT is 10 ms (p0-dwell-diag §4)"
+
+- id: C06
+  name: tail-sweep timeout
+  area: recovery
+  rank: 17
+  priority: P2
+  reach: default, every reliable cell
+  loc: "net/recovery_laws.rs:287 tail_sweep_timeout_us; net/mod.rs:2708-2734, fire :2951-2963; TAIL_SWEEP_MIN/MAX net/mod.rs:248-249"
+  formula: "T = clamp(2*srtt_pool, 25 ms, 100 ms)"
+  paper: "A.6 refresh row covers the clamp; §7.1; §11.2 refresh clamp row"
+  derivation: "none ('undefeated, not derived'; §3.4)"
+  regime: "c8: w_us p05 = p95 = 100 000 us on 30/30 rows (§3.10 item 4; p0-dwell-diag §4); earlier 92.4-99.7 % bind was measured on the saturation-filtered set and not re-measured (§3.5 item 5)"
+  clamp: "100 ms upper: [QCLK] site=sender w_us distribution (no explicit bind counter)"
+  inputs: "E11 (dwell-inclusive); the clamp hides it"
+  modeswitch: "none"
+  verdicts: ["PINNED(c8)", UNDERIVED, DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "partial"
+  fix_class: law (derive from self-heal lateness F, §11.2) after E11
+  depends_on: [E11]
+  ships_with: []
+  evidence: "100 ms at p05 and p95 on 30/30 c8 rows; 3-8 fires per run (§3.10 item 4)"
+
+- id: C07
+  name: receiver hole refresh (hole_nack_refresh)
+  area: recovery
+  rank: 10
+  priority: P1
+  reach: default, every reliable one-way transfer
+  loc: "net/recovery_laws.rs:296 hole_nack_refresh; caller net/receiver.rs:741 (reliable only); HOLE_NACK_REFRESH_MIN/MAX net/mod.rs:239-240"
+  formula: "refresh = clamp(2*srtt_recv, 25 ms, 100 ms), 100 ms if srtt_recv is None"
+  paper: "A.6 line 4, §7.1; same shape"
+  derivation: "none (§3.4 tail-sweep / refresh clamp row)"
+  regime: "c8: srtt_recv = the 50 ms seed on 12/12 rows, so refresh = 100 ms constant (§3.10 item 6)"
+  clamp: "[25,100] ms: [QCLK] site=receiver"
+  inputs: "DEGENERATE: E10 (seed); the seed gives exactly the None fallback"
+  modeswitch: "reliable only; rho < 1 uses S05"
+  verdicts: ["DEGENERATE(all one-way cells)", UNDERIVED]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: input (E10 after E01), then derive the cadence
+  depends_on: [E10, E01]
+  ships_with: [E10]
+  evidence: "a constant 100 ms on every c8 row because its input is the seed (§3.10 item 6). Feeding it the data sender's current app-echo srtt (257-542 ms at c8) would still clamp to 100 ms (DEGENERATE -> PINNED, same output); the output moves only where an honest srtt < 50 ms (c1s, c2 propagation), so it needs E01 first"
+
+- id: C08
+  name: gap-report minimum interval GAP_ACK_MIN_INTERVAL = 2 ms
+  area: recovery
+  rank: 50
+  priority: P3
+  reach: default
+  loc: "net/mod.rs:234; net/receiver.rs:1929-1932"
+  formula: "advertise gaps iff new data above the frontier and >= 2 ms since the last gap report"
+  paper: "§7.1 (fec-arq-model.md:2803), §11.2 row"
+  derivation: "none (a rate limit that is also the hole sampler)"
+  regime: "manufactures no holes on a lossless wire (holeclass_reachability.rs)"
+  clamp: "2 ms: [LATE] sampler_bind"
+  inputs: "n/a"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: paper
+  depends_on: []
+  ships_with: []
+  evidence: "§11.2: 'none yet; it sets the alpha ~ 1 corner'"
+
+- id: C09
+  name: NACK repair throttle (NackCongestionState x MAX_NACK_REPAIRS_PER_NACK, per-period nack cap)
+  area: recovery
+  rank: 13
+  priority: P1
+  reach: default, every reliable cell
+  loc: "net/mod.rs:255-344 NackCongestionState, :225 MAX_NACK_REPAIRS_PER_NACK = 10, :350 IDLE_RECOVERY_FLOOR 0.1, :3190-3257 refresh every 5 ms; BudgetAllocator control/fec_rate.rs; enforced net/sender_phases.rs:672, :814"
+  formula: "max retransmits per gap report = round(10*m) ; m halves when loss rose >10 %+0.001 AND rtt rose >1 ms for 2 periods, +0.1 when both flat, floor 0.1 when idle ; per-period cap = nack_cap(p_upper at 1 - t_tail)*source_symbols, at least 10"
+  paper: "absent: no symbol and no prose (grepped NackCongestion, MAX_NACK_REPAIRS, BudgetAllocator, nack_cap, 'repair budget', 'per NACK', 'per gap report' in fec-arq-model.md); the snapver-law branch's §7.1 text mentions 'a spent repair budget' only as a liveness case"
+  derivation: "none (thresholds 1.1, 0.001, 1 ms, 2, 0.5, 0.1, 10)"
+  regime: "not measured; no gauge of how often the per-report cap or the multiplier binds. The snapver liveness note names 'a spent repair budget drops it' as a live case on main"
+  clamp: "10 per report; m in [0,1]: no gauge found"
+  inputs: "rising-RTT input is E01-class (dwell-inclusive), so a growing sender queue reads as congestion"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: gauge first, then paper or delete
+  depends_on: [E01]
+  ships_with: []
+  evidence: "a default-path AIMD heuristic with seven constants and no paper entry. Inference, not measured: at c8 ~1 400 old holes (p0-dwell-diag §2.2) compete for <= 10 retransmits per report"
+
+- id: C10
+  name: reactive repair margin ceil(retx*eps)
+  area: recovery
+  rank: 51
+  priority: P3
+  reach: default
+  loc: "net/sender_phases.rs:1108-1164"
+  formula: "margin = ceil(retransmitted * max_i eps_i) coded repairs per gap report"
+  paper: "§11.2 row ('a step, not a law'), §11.3 feedback-leg row"
+  derivation: "none; the derived replacement is the DoF ledger (§4.13; §39 CONTINUOUS-BUT-CANNOT-HELP-MEASURABLY)"
+  regime: "bounded by the r > 0 battery's [RFA] counters"
+  clamp: "budget/window"
+  inputs: "E06 (max over channel paths)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "partial"
+  gauge: "partial"
+  fix_class: paper (record as declared) or ledger arm
+  depends_on: []
+  ships_with: []
+  evidence: "bounded by rate_law_feedback_leg_is_the_open_loop_budget"
+
+- id: C11
+  name: repair debt reduction (debt -= nacked*r)
+  area: recovery
+  rank: 52
+  priority: P3
+  reach: default
+  loc: "net/sender_phases.rs:1166-1176, :1331; accrual net/emit_source.rs:680-694"
+  formula: "debt += max(r, floors) per source ; debt -= nacked*r per report ; debt -= newly_acked*r per ack"
+  paper: "§11.2 row"
+  derivation: "none ('a proxy'); subsumed by the ledger's a_c (§4.13)"
+  regime: "r ~ 0 on L1, so debt ~ 0"
+  clamp: "floor 0"
+  inputs: "nacked counts suppressed seqs too"
+  modeswitch: "none"
+  verdicts: [UNDERIVED, "DEGENERATE(r = 0)"]
+  measured: "no"
+  gauge: "yes"
+  fix_class: with the DoF ledger
+  depends_on: [R01]
+  ships_with: []
+  evidence: "inert while r = 0; bounded by rate_law_feedback_leg_is_the_open_loop_budget"
+
+- id: C12
+  name: receiver request law (l*, request_bar, request_m; off)
+  area: recovery
+  rank: 53
+  priority: P3
+  reach: opt-in (RWM_RECV_REQUEST_LAW, RWM_RANK_FEEDBACK off)
+  loc: "net/late.rs:99 request_bar, :135 request_m, :241 pi0, :317-358 l*; net/succ.rs"
+  formula: "request iff rho_heal(l) <= c/(1+c), c = delta/0.5 ; m = clamp(ceil(ln2/(-ln pi0)), 1, A*)"
+  paper: "A.6 last lines, §7.6"
+  derivation: "§7.6"
+  regime: "refuted on every arm at both duals (receiver-law battery, Track C); pi0 estimator fixed since (§3.1 item 1), not re-run"
+  clamp: "l* capped by (H - d)+"
+  inputs: "pi0 from sender-stamp order"
+  modeswitch: "none"
+  verdicts: [OK]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: none (off arm; re-run or retire)
+  depends_on: []
+  ships_with: []
+  evidence: "REFUTED-WITH-RECORD on the pre-fix estimator; not re-run"
+
+- id: C13
+  name: T_cut give-up horizon (wasm model)
+  area: model
+  rank: 36
+  priority: P3
+  reach: model only (UI at rho < 1)
+  loc: "raptorpath-math/src/lib.rs:1213 find_t_cut; raptorpath-wasm/src/lib.rs:1397-1420 (cut = max(t_cut, 2*RTT))"
+  formula: "T_cut = min{t in [0, 10W] : 1 - eps(1-P_fec)(1-P_arq(t)) >= rho} ; cut = max(T_cut, 2*RTT)"
+  paper: "A.3 'rho < 1' line, §4.10"
+  derivation: "§4.10; the 2*RTT floor and the 10W search cap have none"
+  regime: "at all ten measured rho < 1 points it is the floor or the cap (§3.10 item 1)"
+  clamp: "2*RTT floor and 10W cap"
+  inputs: "uses the TRUE q (agg_q), not an estimate"
+  modeswitch: "steps at non-preset rho* 0.983332 and 0.988175 (wasm audit F4)"
+  verdicts: ["PINNED(every measured rho < 1 point)"]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: law (wasm audit F3+F4 proposal)
+  depends_on: [R03]
+  ships_with: [M04]
+  evidence: "two-valued over its range (§3.10 item 1); no engine caller"
+
+# ---------------------------------------------------------------- scheduler and CC
+- id: K01
+  name: Copa app-echo cwnd law (queue target, P10 floor, anchor floor and pull)
+  area: congestion
+  rank: 41
+  priority: P3
+  reach: default, but the cwnd gates nothing (in-flight brake unarmed)
+  loc: "scheduler/copa.rs:314 queue_target_mult, :1157 queue_floor (P10), :1227-1250 above-target, :1316-1338 update; anchor floor :1483 (0.85*bdp), clamp scheduler/path.rs:1092"
+  formula: "above iff (winmin - P10floor) > (mult(hint) - 1)*floor + 2*jitter ; c <- 0.92c | 1.5c+1 | c + max(0.25(bdp - c), 2) ; c >= 0.85*bdp"
+  paper: "A.7, §8.2; §11.2 rows (queue_target_mult, anchor 0.85/0.25/1.0)"
+  derivation: "mult a declared corner; 0.85 set by one measurement; 0.25, 1.0 untested"
+  regime: "c8: cwnd 10-20 k vs in-flight 0.1-1 k (p0-dwell-diag §4): inflated by the anchor floor from E03/E04"
+  clamp: "[8, 10000], floor 0.85*bdp: no gauge"
+  inputs: "app-echo (E01-class) and bdp from E03 x E04"
+  modeswitch: "MODE-SWITCH(live): queue_target_mult 1.08/1.125/1.25 by hint (§3.3)"
+  verdicts: ["MODE-SWITCH(live)", UNDERIVED, DISHONEST-INPUT]
+  measured: "partial"
+  gauge: "partial"
+  fix_class: "delete or reduce (§44 item 4: a controller that supplies one denominator)"
+  depends_on: [E03, E04]
+  ships_with: []
+  evidence: "cwnd reaches only placement's queue term and the active_paths filter; the hint table is a §3.3 debt"
+
+- id: K02
+  name: Copa delta off the wire signal (constant 0.5)
+  area: congestion
+  rank: 42
+  priority: P3
+  reach: default (inert, see K01)
+  loc: "scheduler/copa.rs:611 delta = wire_mode ? copa_delta_for_hint(hint) : 0.5"
+  formula: "delta_copa = 0.5 at every hint unless RWM_COPA_WIRE"
+  paper: "A.7 / §8.2: delta(hint); §11.3 Copa price row"
+  derivation: "n/a"
+  regime: "inert by default"
+  clamp: "n/a"
+  inputs: "n/a"
+  modeswitch: "experiment gate selects the delta source"
+  verdicts: [DIVERGENT]
+  measured: "no"
+  gauge: "yes"
+  fix_class: follows K01
+  depends_on: [K01]
+  ships_with: []
+  evidence: "bounded by copa_delta_is_half_at_every_hint_off_the_wire_signal"
+
+- id: K03
+  name: Copa wire-mode law and TCP-compete mode (opt-in)
+  area: congestion
+  rank: 43
+  priority: P3
+  reach: opt-in (RWM_COPA_WIRE, RWM_COPA_COMPETE, passthrough)
+  loc: "scheduler/copa.rs:1191-1203 (dq, above), :1388-1428 (velocity), :1382 coupling cap, :1054-1140 compete"
+  formula: "above iff cwnd*delta*dq > srtt ; step = max(v/delta, 1) ; cwnd <= bdp + 2/delta ; compete: 1/delta AIMD on quinn congestion events"
+  paper: "A.7, §8.2"
+  derivation: "cited (Copa, Arun & Balakrishnan 2018)"
+  regime: "not on any default path"
+  clamp: "velocity cap delta*10000; coupling cap: no gauges"
+  inputs: "quinn wire srtt (E05) smoothed again"
+  modeswitch: "MODE-SWITCH(live, opt-in): compete mode (§3.3 row 4)"
+  verdicts: ["MODE-SWITCH(live)"]
+  measured: "no"
+  gauge: "partial"
+  fix_class: delete with K01 or keep as arm
+  depends_on: []
+  ships_with: []
+  evidence: "§3.3 row 4; the anchor floor is applied after the coupling cap, so the floor can exceed the cap"
+
+- id: K04
+  name: spare capacity and the active_paths saturation filter
+  area: placement
+  rank: 44
+  priority: P3
+  reach: default (repair cap, placement set)
+  loc: "scheduler/path.rs:467 spare_capacity; scheduler/mod.rs:226 active_paths, :568; read net/emit_source.rs:526 (flat_rate = min(window_rate, spare))"
+  formula: "spare_i = (cwnd_i - inflight_i)/inflight_i ; active iff cwnd_i > inflight_i"
+  paper: "§5.7, §11.3 path-set rows"
+  derivation: "declared"
+  regime: "np_act = 2 on nearly every pinned c8 tick: the filter almost never excludes a leg (p0-dwell-diag §4)"
+  clamp: "n/a"
+  inputs: "Copa cwnd inflated by the anchor floor (K01), so 'saturated' rarely fires; in-flight expiry max(4*srtt, 250 ms) on E02"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: follows K01
+  depends_on: [K01]
+  ships_with: []
+  evidence: "cwnd 10-20 k against in-flight 0.1-1 k at c8 (p0-dwell-diag §4)"
+
+- id: K05
+  name: placement cost (place_costs)
+  area: placement
+  rank: 33
+  priority: P2
+  reach: default
+  loc: "scheduler/place.rs:288 place_costs; E_i scheduler/path.rs:441; cold r = 10.0 place.rs:347; ref floor place.rs:38"
+  formula: "c_i = E_i/ref + w_bw*r_i + div_i , E_i = (I_i/W_i)*s_i + (0.5 + eps_i)*wire_i , r_i = eps/(1-eps) (10.0 when infinite)"
+  paper: "§5.7 matches the code (its '(E_i - min(S, 9/8*srtt_i))+' with S = 0 is E_i). A.4's E_i line is stale: 'srtt_i/2 + eps_i*srtt_i' (the pre-ADR-0073 echo price) where the code prices (0.5+eps_i)*wire_i. DIVERGENT paper text (appendix only)"
+  derivation: "base term derived (ADR-0073 wire price); 10.0 and the 50 ms cold seed unprovenanced (§11.2)"
+  regime: "Track A battery: INERT-AS-DERIVED on latency; §41/§41b wire price cured the idle-leg lock-out"
+  clamp: "10.0 cold r: [ETA] cold_r = 0 on 31 807 lines (§11.2)"
+  inputs: "wire_i honest (E05), blind to quinn's send buffer; s_i = E02 times I/W ~ 0.01-0.1"
+  modeswitch: "none"
+  verdicts: [DIVERGENT, UNDERIVED]
+  measured: "yes"
+  gauge: "yes"
+  fix_class: paper (A.4 lines), then derive the cold price
+  depends_on: []
+  ships_with: []
+  evidence: "place_costs_match_the_pinned_wired_table pins the code; A.4's c_i and E_i lines describe superseded forms"
+
+- id: K06
+  name: placement temperature T = 0.15
+  area: placement
+  rank: 54
+  priority: P3
+  reach: default
+  loc: "scheduler/place.rs:18 PLACE_TEMPERATURE, :160 softmax"
+  formula: "P_i proportional to exp(-(c_i - min c)/0.15)"
+  paper: "A.4, §5.7, §11.2"
+  derivation: "none: the argmax of a four-point sweep whose verdict failed; derived form (sqrt6/pi)*sigma_e/ref exists (removed arm)"
+  regime: "Track A: '0.15 is not a stable quantile'"
+  clamp: "n/a"
+  inputs: "c_i (K05)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "partial"
+  gauge: "no"
+  fix_class: derive (sigma_e on the [ETA] stream)
+  depends_on: [K05]
+  ships_with: []
+  evidence: "§11.2 PLACE_TEMPERATURE row"
+
+- id: K07
+  name: diversity weight w_div = 1.0
+  area: placement
+  rank: 55
+  priority: P3
+  reach: default (repairs only; r ~ 0)
+  loc: "scheduler/mod.rs:93; place.rs:366-371 derived arm RWM_PLACE_WDIV_DERIVED (off)"
+  formula: "div_i = 1.0*fate_i for repairs"
+  paper: "A.4, §5.7, §11.2"
+  derivation: "none; derived form (p_BB - eps)+*srtt/ref gives 0.475 (c2), 0.552 (c3)"
+  regime: "repairs are rare on L1"
+  clamp: "n/a"
+  inputs: "n/a"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: derive (flip the derived arm after a battery)
+  depends_on: [K05]
+  ships_with: []
+  evidence: "§11.2 w_div row"
+
+- id: K08
+  name: repair spare near-tie band 0.8 / floor 0.25 (opt-in)
+  area: placement
+  rank: 56
+  priority: P3
+  reach: opt-in (RWM_XPATH_REPAIR)
+  loc: "scheduler/place.rs:119 place_repair_spare_path"
+  formula: "pick uniformly among s >= min(0.8*max, max - 0.25)"
+  paper: "§11.2 row"
+  derivation: "none ('a missing scale')"
+  regime: "not measured"
+  clamp: "n/a"
+  inputs: "spare (K04)"
+  modeswitch: "none"
+  verdicts: [UNDERIVED]
+  measured: "no"
+  gauge: "no"
+  fix_class: derive or delete
+  depends_on: [K04]
+  ships_with: []
+  evidence: "§11.2 near-tie row"
+
+- id: K09
+  name: quinn BBR (the default substrate CC)
+  area: substrate
+  rank: 6
+  priority: P1
+  reach: default, every cell
+  loc: "transport/quic.rs:79 quic_cc_mode, :192-196 BbrConfig (RWM_QUIC_CC unset = bbr); quinn-proto 0.11.14 (not in repo)"
+  formula: "W = 2*b-hat*m-hat (ProbeBw) ; b-hat = 10-round max of min(send_rate, ack_rate) ; m-hat = lifetime rtt.min() ; quinn paces at 1.25*W/srtt and ignores pacing_rate"
+  paper: "§8.4 (substrate is a controller), §47"
+  derivation: "cited (BBR v1); quinn's sampler differs from BBR's"
+  regime: "c1s: window collapse from a latched-low min_rtt (§47); c2: window over-reads ~180-600 KB against ~125 KB and never binds (W1 §2); §48 reproduces the collapse on a 10 us grid (share 0.81)"
+  clamp: "none relevant"
+  inputs: "DISHONEST: m-hat never expires (lifetime min), b-hat over-reads under ack clusters (bbr_rs.rs module doc)"
+  modeswitch: "none"
+  verdicts: [DISHONEST-INPUT]
+  measured: "yes"
+  gauge: "partial"
+  fix_class: replace (bbr_rs, §48b running)
+  depends_on: []
+  ships_with: []
+  evidence: "latched min_rtt collapses the c1s window (§47); c2 window 1.4-4.8x the BDP (W1 §2)"
+
+- id: K10
+  name: bbr_rs (branch github/bbrrs-r3, not default)
+  area: substrate
+  rank: 34
+  priority: P2
+  reach: candidate (RWM_QUIC_CC=bbr_rs)
+  loc: "github/bbrrs-r3 d1fadd7c transport/bbr_rs.rs: estimator :190-340, max filter 10 rounds :75-160, m-hat :906-915, ProbeRtt :658-720, target cwnd :723, pacing :750-773"
+  formula: "W = max(4 mtu, 2*b-hat*m-hat) + max_ack_height (ProbeBw) ; b-hat = 10-round max of delivered/max(send_elapsed, ack_elapsed), interval >= m-hat ; m-hat <- r_e if r_e <= m-hat ; expiry 10 s -> ProbeRtt at 0.75*target"
+  paper: "§8.4: law line says 'if r_e < m-hat' while the code uses <= (paper-recon N5, paper stale); §8.4 'reads no delta, rho or hint'"
+  derivation: "cited (BBR v1); gains 2.885, 1.25, 0.75 cited; RWM_BBR_PROBERTT_ROUNDS = 1 declared"
+  regime: "§48 host gate on cc_sim; §48b VM battery running (REHEARSAL-PASS)"
+  clamp: "min_cwnd 4 mtu"
+  inputs: "honest by construction (send-interval sampler, own ack clock); qrt_us/qbw on [QCC]"
+  modeswitch: "none"
+  verdicts: [DIVERGENT]
+  measured: "partial"
+  gauge: "yes"
+  fix_class: paper (the <= sign) and the §48b verdict
+  depends_on: []
+  ships_with: []
+  evidence: "tied_min_rtt_samples_keep_the_filter_fresh_under_le_and_would_fire_probe_rtt_under_lt; paper §8.4 still prints <"
+
+# ---------------------------------------------------------------- wasm model
+- id: M01
+  name: wasm store pool 512 per path
+  area: model
+  rank: 39
+  priority: P3
+  reach: model only
+  loc: "raptorpath-wasm/src/lib.rs:352 STORE_PER_PATH, :1303 stall"
+  formula: "stall source iff occupancy >= 512*n_paths"
+  paper: "§11.3 store-cap row (wasm clause), understated per paper-recon 4b"
+  derivation: "none (the engine law is §6.1)"
+  regime: "model"
+  clamp: "the whole law is a constant"
+  inputs: "none"
+  modeswitch: "none"
+  verdicts: [DIVERGENT, UNDERIVED]
+  measured: "n/a"
+  gauge: "yes"
+  fix_class: model (adopt §6.1 after F01 settles; golden re-capture)
+  depends_on: [F01]
+  ships_with: []
+  evidence: "bounded by wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp"
+
+- id: M02
+  name: wasm tail target interpolation (Bulk anchor 0.05)
+  area: model
+  rank: 40
+  priority: P3
+  reach: model only (UI)
+  loc: "raptorpath-wasm/src/lib.rs:247-261 sim_tail_target_of_delta"
+  formula: "log t piecewise linear in log delta through (50,1e-7), (0.5,1e-5), (0.005,0.05)"
+  paper: "§11.3 visualizer row: engine Bulk t_tail = 1e-3"
+  derivation: "none for 0.05 (BULK_TAIL_BUDGET)"
+  regime: "model"
+  clamp: "flat outside [0.005, 50] (never reached from the UI)"
+  inputs: "n/a"
+  modeswitch: "continuous; slope kink at Auto (wasm audit W1, class A)"
+  verdicts: [DIVERGENT]
+  measured: "n/a"
+  gauge: "n/a"
+  fix_class: model
+  depends_on: []
+  ships_with: []
+  evidence: "bounded by test_sim_engine_tail_anchor_divergence_is_bounded (log10 50)"
+
+- id: M03
+  name: wasm rate beta-guard and the dead classic-hint machine
+  area: model
+  rank: 38
+  priority: P3
+  reach: model only (W11 live with zero value step; W2/W4/W5/W6/W9/W17 dead)
+  loc: "raptorpath-wasm/src/lib.rs:883 rate_now if bulkness > 0; :1022-1044 classic arms; :1689 get_completion_exposure"
+  formula: "rate = beta > 0 ? mix : controller_rate(rate_inputs) (bulk_late_is_fine = hint_bulk)"
+  paper: "§4.5: 'There is no if beta == 0 fast path; that would be the mode switch again'"
+  derivation: "n/a"
+  regime: "wasm audit: classic outputs equal the continuum at the presets on all six golden cells"
+  clamp: "n/a"
+  inputs: "ρ dropped for auto/realtime on the classic path (W4)"
+  modeswitch: "MODE-SWITCH(live: W11 fast path, zero step; dead: classic machine; W17 steps at Auto in an unread accessor)"
+  verdicts: ["MODE-SWITCH(live)", "MODE-SWITCH(dead)"]
+  measured: "n/a"
+  gauge: "n/a"
+  fix_class: delete (wasm audit F1/F2)
+  depends_on: []
+  ships_with: []
+  evidence: "§3.10 item 3; wasm audit site table"
+
+- id: M04
+  name: wasm cartoon shed budget (V5/V6)
+  area: model
+  rank: 37
+  priority: P3
+  reach: model only (UI)
+  loc: "raptorpath-visualizer/interactive-visualizer.html:2643-2644 (budget = rho < 1 ? 1 - rho : derived ; retain = rho >= 1 && r* <= 1e-6)"
+  formula: "two shed laws selected by rho < 1 and a threshold on r*"
+  paper: "§5.6"
+  derivation: "n/a"
+  regime: "steps measured at delta* 0.005615 / 0.008207 / 0.0050002 (wasm audit step table)"
+  clamp: "n/a"
+  inputs: "n/a"
+  modeswitch: "MODE-SWITCH(live): rho threshold and an r* threshold select the law"
+  verdicts: ["MODE-SWITCH(live)"]
+  measured: "n/a"
+  gauge: "n/a"
+  fix_class: model (wasm audit F3)
+  depends_on: [R03]
+  ships_with: [C13]
+  evidence: "cartoon budget 0 -> eps at the Bulk preset (wasm audit V6)"
