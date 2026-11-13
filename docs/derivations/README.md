@@ -6,6 +6,7 @@ section it feeds.
 
 | file | question | feeds |
 |---|---|---|
+| `wasm-modeswitch-audit.md` | which hint-, δ- or ρ-keyed sites in the L0 model are mode switches, and what continuous law replaces each (open: owner calls on F1 "custom", F3, fixed r) | ADR-0076 phase 6 |
 
 No derivation file is on `main` yet; the branches that add them (`derive-w1`,
 `adr68-amend`, `paper-recon`, `perleg-design`, `w1r2`, `otel-design`) each add
