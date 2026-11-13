@@ -1458,9 +1458,8 @@ impl NsBench {
 /// kind, so that cost is paid equally. The `RttEstimator` is a real one
 /// captured from a short in-process connection.
 /// Run: `cargo test --release -p raptorpath --lib nsbench48 -- --ignored --nocapture`.
-#[test]
-#[ignore]
-fn nsbench48_controller_ns_per_packet() {
+/// Median ns/packet `[quinn, bbr_rs, noop]` over 5 alternating pairs; prints the readout.
+fn nsbench48_measure() -> [f64; 3] {
     let n: u64 = if cfg!(debug_assertions) { 100_000 } else { 2_000_000 };
     let mut sc = c1(Cc::Probe, false);
     sc.dur = Duration::from_millis(300);
@@ -1517,4 +1516,25 @@ fn nsbench48_controller_ns_per_packet() {
     let (q, r, z) = (med(&ns[0]), med(&ns[1]), med(&ns[2]));
     println!("NSBENCH48 net quinn={:.2} bbr_rs={:.2} delta={:.2} ns/packet ratio={:.2}", q - z, r - z, r - q, (r - z) / (q - z).max(0.01));
     assert!(checks[0] != 0 && checks[1] != 0);
+    [q, r, z]
+}
+
+#[test]
+#[ignore]
+fn nsbench48_controller_ns_per_packet() {
+    nsbench48_measure();
+}
+
+/// Gate (status 48b item 6e): `bbr_rs`'s per-packet controller cost, net of
+/// the driver overhead (`noop`), is at most 2.0x quinn Bbr's on the same
+/// scenario. Needs release mode (the ratio is meaningless in debug).
+/// Run: `cargo test --release -p raptorpath --lib nsbench48_gate -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn nsbench48_gate_bbr_rs_within_2x_quinn() {
+    assert!(!cfg!(debug_assertions), "run with --release");
+    let [q, r, z] = nsbench48_measure();
+    let ratio = (r - z) / (q - z).max(0.01);
+    println!("NSBENCH48 GATE net ratio bbr_rs/quinn = {ratio:.2} (limit 2.00)");
+    assert!(ratio <= 2.0, "bbr_rs net {:.1} ns/packet vs quinn net {:.1}: ratio {ratio:.2} > 2.0", r - z, q - z);
 }
