@@ -131,6 +131,78 @@ def gates52(lines):
     return out
 
 
+# ── plan 53 (snap53_score.row_metrics): plan 52's fields plus the fire counters (y / r / fast), [HOLD] hy / ripe_frac, [FCAUSE], [SNAPV], the server's final [SUCC] ──
+def extras53(k, n_src=16):
+    """extras52 with the `y= r= fast=` block of the engine's mpr[..] (fired = y + r; y == fast, as on the s52 rows)."""
+    return extras52(k, n_src).replace(f"fired={100 * k} supp=", f"fired={100 * k} y={30 * k} r={70 * k} fast={30 * k} supp=")
+
+
+HOLD53 = ("[HOLD] site=sender path={p} gen=0 samp_n=1000 fed=99 hn_n=10 hy_n=3 hy_p50_us=5120 cx_n=7 cx_p50_us=229376 cx_p90_us=589824 age_n=50 age_ripe=2 ripe_frac=0.0400 "
+          "age_p50_us=3670016 age_p90_us=4718592 cx_leg=0:3,1:4 fa_class=0.0625")
+FCAUSE53 = "[FCAUSE] gen=0 n=2000 timer=3 gap_data=1980 gap_refresh=17 other=0 timer_frac=0.0015 gap_frac=0.9900 fired=2000 unattr=0 fa_class=0.0625"
+SUCC53 = "[SUCC] gen=0 det=190 res=190 orig_n=100 rep_n=5 final=1"       # the receiver's final line: det 190 against the two paths' fed 99 + 99 -> fed - det = 8 <= cx = 14
+BAD53 = {"nosnapv", "snapfire", "nofinal"}          # test_snap53 / test_stubrun red cases: STUB_BAD53 names the defect the stub injects
+
+
+def snapv53():
+    """The sender's [SNAPV] line as the engine prints it (snapv_line_format_is_pinned). Arm on (RWM_RECOV_SNAPVER=1): no stale judgement, as the arm guarantees."""
+    on = os.environ.get("RWM_RECOV_SNAPVER") == "1"
+    pt, tt = (0, 0) if on else (4, 1)
+    if os.environ.get("STUB_BAD53") == "snapfire":
+        pt = 3
+    return (f"[SNAPV] site=sender p0:rep=900 stale=0 pt_st=0 tt_st=0 p1:rep=120 stale=100 pt_st={pt} tt_st={tt} p-:rep=7 stale=0 pt_st=0 tt_st=0 fa_class=0.0625")
+
+
+def gates53(lines):
+    """The engine's [GATES] tail for plan 53: gates52's WDIV tokens plus RWM_RECOV_SNAPVER=<0|1> (always echoed), from the env the engine received."""
+    out = []
+    for ln in gates52(lines):
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_RECOV_SNAPVER=\S+", "", ln) + f" RWM_RECOV_SNAPVER={os.environ.get('RWM_RECOV_SNAPVER') or '0'}"
+        out.append(ln)
+    return out
+
+
+# ── plan 54 (pool54_score): the guard's three witnesses (LD_WITNESS54=1 on a plan-41d stage) and the block (plan 54b) ──
+BAD54 = {"nosnapv", "snapfire", "nohn", "poolfallback", "nopoolinfo"}          # test_pool54 / test_stubrun red cases: STUB_BAD54 names the defect the stub injects
+POOL_INFO = "\x1b[2m2026-11-13T08:20:48Z\x1b[0m INFO raptorpath::net: path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*bdp, floor, n_live*pool)) pool_per_path={n}"
+
+
+def snapv54():
+    """The sender's [SNAPV] line of a post-law build: the law judges only the newest snapshot, so pt_st = tt_st = 0 on every leg (STUB_BAD54=snapfire breaks it)."""
+    pt = 2 if os.environ.get("STUB_BAD54") == "snapfire" else 0
+    return f"[SNAPV] site=sender p0:rep=900 stale=0 pt_st=0 tt_st=0 p1:rep=120 stale=100 pt_st={pt} tt_st=0 p-:rep=7 stale=0 pt_st=0 tt_st=0 fa_class=0.0625"
+
+
+def hold54(cand):
+    """[HOLD] lines with the p0 hn_n of the arm: collapsed with the law (CAND), main's ~10 000 without (BASE); STUB_BAD54=nohn leaves CAND uncollapsed."""
+    hn = 120 if cand else 9800
+    if cand and os.environ.get("STUB_BAD54") == "nohn":
+        hn = 5000
+    return [HOLD53.format(p=0).replace("hn_n=10", f"hn_n={hn}"), HOLD53.format(p=1)]
+
+
+def witness54(cand):
+    """Appended to a plan-41d row's client log when LD_WITNESS54=1: the [HOLD] lines on every row, [SNAPV] on CAND rows only (main has no gauge)."""
+    return hold54(cand) + ([snapv54()] if cand and os.environ.get("STUB_BAD54") != "nosnapv" else [])
+
+
+def gates54(lines, pool):
+    """The engine's [GATES] RWM_STORE_PATH_POOL echo: the value it parsed (STUB_BAD54=poolfallback = an unparsable request, silently 2048)."""
+    echo = 2048 if os.environ.get("STUB_BAD54") == "poolfallback" else pool
+    return [re.sub(r"\sRWM_STORE_PATH_POOL=\S+", "", ln) + f" RWM_STORE_PATH_POOL={echo}" if "[GATES]" in ln else ln for ln in lines]
+
+
+def rank54(old):
+    """The server's [RANK] readouts (about 1 s apart): holes = old + the tail's overcount; 40 of them so readouts 15..-6 exist."""
+    return [f"[RANK] holes={old + 100} pivots=2 deficit={old} tail_overcount=100 max_deficit={old} empty=0 reports={i}" for i in range(1, 41)]
+
+
+def summary54(secs, nbytes=600000000):
+    return ('{"bytes":%d,"dnf":0,"hint":"bulk","max_s":%s,"mean_mbps":%.3f,"mean_s":%s,"median_s":%s,"min_s":%s,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}'
+            % (nbytes, secs, nbytes * 8 / secs / 1e6, secs, secs, secs))
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -194,8 +266,42 @@ def main(argv):
                 rl[i] = ln + extras52(k)
         cli = gates52(cli) + rl + [HOLD52.format(p=0), HOLD52.format(p=1)]
         srv = gates52(srv) + [RX52]
+    elif plan == "53":
+        rl = run_lines(fam, False, n=20)
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + extras53(k)
+        tail = [HOLD53.format(p=0), HOLD53.format(p=1), FCAUSE53] + ([] if os.environ.get("STUB_BAD53") == "nosnapv" else [snapv53()])
+        cli = gates53(cli) + rl + tail
+        srv = gates53([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]"))]) + [RX52] + ([] if os.environ.get("STUB_BAD53") == "nofinal" else [SUCC53])
+    elif plan == "54b":
+        # Status 54, the block: 55 s of [DIAG] (source until 50 s, a tail after it) whose cap is 2 x the requested pool, the pool's [GATES] echo and INFO line on both ends, the server's
+        # [RANK] readouts, a driver summary matching the run. The B arms leave old holes (1 200), the L arms none, as the registration predicts at W = 4096.
+        pool = int(os.environ.get("RWM_STORE_PATH_POOL") or 2048)
+        rl = [ln.replace("win=838/838", f"win=800/{2 * pool}") for ln in run_lines(fam, False, n=220)]
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + extras53(k, n_src=200)
+        info = [] if os.environ.get("STUB_BAD54") == "nopoolinfo" else [POOL_INFO.format(n=2048 if os.environ.get("STUB_BAD54") == "poolfallback" else pool)]
+        cli = gates54(cli, pool) + info + rl + hold54(cand) + [FCAUSE53, snapv54()]
+        srv = (gates54([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]", "[RANK]"))], pool)
+               + [POOL_INFO.format(n=2048 if os.environ.get("STUB_BAD54") == "poolfallback" else pool)] + [RX52, SUCC53] + rank54(0 if cand else 1200))
+        drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(54.0)]
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":600000000,"hint":"bulk","mbps":88.889,"proto":"rp-native","run":1,"seconds":54.0}',
+                                                                                    summary54(54.0)]      # the row's seconds / mbps / dnf read the CLIENT log's run line
+        if os.environ.get("STUB_DNF54") == ("B" if base else "L") + str(pool) and os.environ.get("SEED") == "7":
+            # STUB_DNF54=B640: that arm's seed-7 rows time out (the [DIAG] ticks above are what the run printed before the timeout): a DNF row with its readouts
+            dnf = '{"bytes":600000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}'
+            cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, '{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
+            drv = [ln for ln in drv if '"summary"' not in ln] + ['{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
+    if plan == "41d" and os.environ.get("LD_WITNESS54") == "1":
+        cli = cli + witness54(cand)         # plan 54 = plan 41d + the three witnesses: the stub carries what a post-law (CAND) / pre-law (BASE) build prints
     sys.stdout.write("\n".join(drv) + "\n")            # the driver's stdout: the battery redirects it to /tmp/ld-drv.out
     for name, lines in (("rwm-c.log", cli), ("rwm-s.log", srv)):
         path = os.path.join(TMP, name)

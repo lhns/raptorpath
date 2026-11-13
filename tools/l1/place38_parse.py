@@ -184,11 +184,87 @@ def plan52(smoke=False):
     return out
 
 
+# ── status 53: stale gap reports under lever B (plan 53), REPORTED ONLY, no guard. Two blocks in one ledger, each rotated per group. ──
+# c8-100 at 600 MB: BASE, CAND, CANDS (CAND + RWM_RECOV_SNAPVER=1), BASES (BASE + RWM_RECOV_SNAPVER=1), CW0 (CAND + RWM_PLACE_WDIV=0), n = 6 each.
+# c1d-400 at 5 GB (section 48's size): BASE 12, CAND 12, CANDS 6.
+CELL53_C8, CELL53_C1D = REPORT_CELL52, "c1d-400"
+BYTES53 = {CELL53_C8: BYTES52, CELL53_C1D: 5000000000}
+ARMS53_C8 = ("BASE", "CAND", "CANDS", "BASES", "CW0")
+ARMS53_C1D = ("BASE", "CAND", "CANDS")
+ARMS53 = ARMS53_C8
+# arm -> (binary: BASE | CAND, RWM_RECOV_SNAPVER value or None, RWM_PLACE_WDIV value or None); the battery's arm table is the shell copy (test_snap53 asserts it).
+ARM_ENV53 = {"BASE": ("BASE", None, None), "CAND": ("CAND", None, None), "CANDS": ("CAND", "1", None), "BASES": ("BASE", "1", None), "CW0": ("CAND", None, "0")}
+CANDS_REPS = (1, 3, 5)                                             # the c1d groups that carry a CANDS row: 3 per seed
+SMOKE53 = [(CELL53_C8, "def", a, "42", 1) for a in ARMS53_C8] + [(CELL53_C1D, "def", a, "42", 1) for a in ARMS53_C1D]
+for _a in ("CANDS", "BASES", "CW0"):
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+# ── status 54: the store-budget block (plan 54b), REPORTED ONLY. c8-100 at 600 MB; B2048 / B1024 / B640 on the BASE seat (cand54 = main + the snapshot-order law) and
+# L2048 / L1024 / L640 on the CAND seat (levb54 = cand54 + lever B), RWM_STORE_PATH_POOL = default / 1024 / 640; n = 6 per arm, rotated per group, no replacement. ──
+CELL54B = REPORT_CELL52
+ARMS54B = ("B2048", "B1024", "B640", "L2048", "L1024", "L640")
+# arm -> (binary seat BASE | CAND, the requested RWM_STORE_PATH_POOL); the controls set nothing (the default 2048). The battery's arm table is the shell copy (test_pool54 asserts it).
+ARM_POOL54 = {"B2048": ("BASE", 2048), "B1024": ("BASE", 1024), "B640": ("BASE", 640), "L2048": ("CAND", 2048), "L1024": ("CAND", 1024), "L640": ("CAND", 640)}
+SMOKE54B = [(CELL54B, "def", a, "42", 1) for a in ARMS54B]
+for _a in ARMS54B:
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+# the binary family whose witnesses apply to an arm: W0 / W05 / WDER / BASES run BASE's binary, CANDS / CW0 run CAND's; the block's B* arms are the BASE seat, L* the CAND seat
+AFAM = {**{a: "BASE" for a in W_ARMS}, "BASES": "BASE", "CANDS": "CAND", "CW0": "CAND", **{a: v[0] for a, v in ARM_POOL54.items()}}
+
+
+def _rotate(arms, g):
+    k = g % len(arms)
+    return list(arms[k:]) + list(arms[:k])
+
+
+def plan53(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 53): the c8 block (plan 52's six groups, the five arms rotated by group) then the c1d block (plan 41c's twelve
+    groups, rep-major, seed 42 before 7; each group holds BASE and CAND, plus CANDS where rep is in CANDS_REPS, rotated by group)."""
+    if smoke:
+        return list(SMOKE53)
+    out = []
+    for g, (seed, rep) in enumerate(BLOCKS52):
+        out += [(CELL53_C8, "def", a, seed, rep) for a in _rotate(ARMS53_C8, g)]
+    for g, (seed, rep) in enumerate(BLOCKS41C):
+        arms = ARMS53_C1D if rep in CANDS_REPS else ARMS53_C1D[:2]
+        out += [(CELL53_C1D, "def", a, seed, rep) for a in _rotate(arms, g)]
+    return out
+
+
+def expect_rows53():
+    return len(plan53())
+
+
+def plan54b(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 54, the block): six groups (seed, rep), rep-major, seed 42 before 7; inside a group the six arms in a rotation
+    (group g starts at arm g mod 6), so every arm leads once and no arm always follows the same neighbour. 36 rows, no replacement."""
+    if smoke:
+        return list(SMOKE54B)
+    out = []
+    for g, (seed, rep) in enumerate(BLOCKS52):
+        out += [(CELL54B, "def", a, seed, rep) for a in _rotate(ARMS54B, g)]
+    return out
+
+
+def expect_rows54b():
+    return len(plan54b())
+
+
+def snapver_problems(arm, cli, srv):
+    """Plan 53 witness: `RWM_RECOV_SNAPVER=<0|1>` is always echoed by a plan-53 binary, so an ABSENT token is a failure, not "off". CANDS / BASES read 1 on both ends, every other arm 0."""
+    want = "1" if ARM_ENV53.get(arm, (None, None, None))[1] == "1" else "0"
+    p = []
+    for side, lines in (("cli", cli), ("srv", srv)):
+        v = lc.gate_tok(lines, "RWM_RECOV_SNAPVER")
+        if v != want:
+            p.append(f"gate-snapver-{side}={v} (want {want})")
+    return p
+
+
 def wdiv_problems(arm, cli, srv):
     """Witnesses of the placement-diversity diagnostics (status 52), on both endpoints' last `[GATES]` line: `RWM_PLACE_WDIV=<v>` is echoed only when set (so BASE,
     CAND and WDER must NOT carry it; W0 must read 0 and W05 0.5, numerically: the engine prints 0 and 0.5), `RWM_PLACE_WDIV_DERIVED` reads 1 on WDER and is
     absent or 0 on every other arm. A binary that predates the gate has neither token: fine for the arms that want it off."""
-    want_w, want_d = W_ARMS.get(arm, (None, None))
+    want_w, want_d = {**W_ARMS, "CW0": ("0", None)}.get(arm, (None, None))      # CW0 (status 53) = CAND's binary with RWM_PLACE_WDIV=0
     p = []
     for side, lines in (("cli", cli), ("srv", srv)):
         w, d = lc.gate_tok(lines, "RWM_PLACE_WDIV"), lc.gate_tok(lines, "RWM_PLACE_WDIV_DERIVED")
@@ -407,7 +483,10 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     row["gate_wire_cli"], row["gate_wire_srv"] = lc.gate_tok(cli, "RWM_PLACE_WIRE"), lc.gate_tok(srv, "RWM_PLACE_WIRE")
     row["gate_wdiv_cli"], row["gate_wdiv_srv"] = lc.gate_tok(cli, "RWM_PLACE_WDIV"), lc.gate_tok(srv, "RWM_PLACE_WDIV")
     row["gate_wdiv_derived_cli"], row["gate_wdiv_derived_srv"] = lc.gate_tok(cli, "RWM_PLACE_WDIV_DERIVED"), lc.gate_tok(srv, "RWM_PLACE_WDIV_DERIVED")
-    afam = "BASE" if arm in W_ARMS else arm            # W0 / W05 / WDER run BASE's binary: BASE's witnesses apply to them
+    row["gate_snapver_cli"], row["gate_snapver_srv"] = lc.gate_tok(cli, "RWM_RECOV_SNAPVER"), lc.gate_tok(srv, "RWM_RECOV_SNAPVER")      # status 53
+    row["gate_pool_cli"], row["gate_pool_srv"] = lc.gate_tok(cli, "RWM_STORE_PATH_POOL"), lc.gate_tok(srv, "RWM_STORE_PATH_POOL")        # status 54: the store knob's echo
+    row["pool_info_cli"], row["pool_info_srv"] = (re.findall(r"pool_per_path=(\d+)", "\n".join(cli)) or [None])[-1], (re.findall(r"pool_per_path=(\d+)", "\n".join(srv)) or [None])[-1]
+    afam = AFAM.get(arm, arm)                          # W0 / W05 / WDER / BASES run BASE's binary, CANDS / CW0 run CAND's: that family's witnesses apply to them
     row["gate_store"] = lc.gate_tok(cli, "RWM_STORE")
     cap = [m for m in (sl._SUMCAP.search(ln) for ln in cli) if m]
     row["sumcap_eng"] = int(cap[-1].group(2)) if cap else None
@@ -482,7 +561,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                     p.append(f"wpl-within-1ms-of-wrtt={close}/{len(post)}")
             if eta is not None and eta["w_mv"] is not None and not (_f(eta["w_mv"]) or 0) > 0:
                 p.append(f"w_mv={eta['w_mv']}")
-    elif arm == "CAND" or (arm == "MAIN" and promoted) or (afam == "BASE" and base_promoted()):
+    elif afam == "CAND" or (arm == "MAIN" and promoted) or (afam == "BASE" and base_promoted()):
         pass        # the promoted build prints wpl_us and the bind gauges always: reported, not a witness
     else:
         if any(L[i][3] is not None for _, L in diag for i in L):
@@ -515,12 +594,37 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t52"] = tail52_score.row_metrics(cli, srv, drv, row.get("bytes"))
         except Exception as e:      # a reported readout never voids a row
             row["t52"], row["t52_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "53":
+        p.extend(snapver_problems(arm, cli, srv))
+        import snap53_score         # lazy, like tail52_score
+        try:
+            row["t53"] = snap53_score.row_metrics(cli, srv, drv, row.get("bytes"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t53"], row["t53_error"] = None, f"{type(e).__name__}: {e}"
+    w54 = []
+    if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS54") == "1":
+        # Status 54: the guard is plan 41d unchanged plus three liveness witnesses (bin_sha, the c8 hn collapse, [SNAPV] pt_st + tt_st = 0). Like the v2 VOID rule they never
+        # apply to a DNF row, which keeps its worst rank.
+        import pool54_score
+        w54, row["w54"] = pool54_score.guard_witness(arm, cell, cli, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE"))
+    if os.environ.get("LD_PLAN") == "54b":
+        # Status 54, the block: the pool witness on both ends and the binary seat void a row; the readouts are reported only.
+        import pool54_score
+        p.extend(pool54_score.row_problems54b(arm, cli, srv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
+        row["sha_checked"] = pool54_score.sha_checked(ARM_POOL54.get(arm, (None,))[0], sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE"))
+        try:
+            row["t54"] = pool54_score.row_metrics(cli, srv, drv, row.get("bytes"), ARM_POOL54.get(arm, (None, None))[1])
+        except Exception as e:      # a reported readout never voids a row
+            row["t54"], row["t54_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
     if v2_void and row["status"] == "LIVE" and not row.get("dnf"):
         row["status"] = "VOID-SHORT"
         row["problems"].append(v2_void)
+    if w54 and row["status"] == "LIVE" and not row.get("dnf"):
+        row["status"] = "WITNESS-FAIL"
+        row["problems"].extend(w54)
     if os.environ.get("LD_ONDISK", "0") == "1":
         row["status"] = "VOID-ONDISK"
     io = os.environ.get("LD_IO_FULL10")
@@ -1073,6 +1177,26 @@ def check52(path):
     return 0 if ok else 1
 
 
+def check53(path):
+    """rc 0 iff the reported session's battery finished and the ledger holds its rows (a count check; nothing is scored)."""
+    rows, _ = rows_of([path])
+    t = open(path, errors="replace").read()
+    n = expect_rows53()
+    ok = "LD-BATTERY-DONE" in t and len(rows) == n
+    print(f"CHECK53 done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{n}")
+    return 0 if ok else 1
+
+
+def check54b(path):
+    """rc 0 iff the block's battery finished and the ledger holds its 36 rows (a count check; nothing is scored)."""
+    rows, _ = rows_of([path])
+    t = open(path, errors="replace").read()
+    n = expect_rows54b()
+    ok = "LD-BATTERY-DONE" in t and len(rows) == n
+    print(f"CHECK54B done={'LD-BATTERY-DONE' in t} rows={len(rows)}/{n}")
+    return 0 if ok else 1
+
+
 def smoke52(path):
     """rc 0 iff the three unscored env rows (W0, W05, WDER at c8-100) are LIVE (their witnesses hold: the arm's env is in the [GATES] echo) and carry the readouts
     the reported scorer needs, `cx_leg=` included (all three run BASE's binary, which must carry the diagnostic); otherwise ABORT-SMOKE."""
@@ -1165,6 +1289,18 @@ def main(argv):
         for c, s_, ar, seed, rep in plan52(smoke=bool(a) and a[0] == "smoke"):
             print(f"{c} {s_} {ar} {seed} {rep}")
         return 0
+    if cmd == "plan53":
+        for c, s_, ar, seed, rep in plan53(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
+        return 0
+    if cmd == "check53":
+        return check53(a[0])
+    if cmd == "plan54b":
+        for c, s_, ar, seed, rep in plan54b(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
+        return 0
+    if cmd == "check54b":
+        return check54b(a[0])
     if cmd == "check52":
         return check52(a[0])
     if cmd == "smoke52":

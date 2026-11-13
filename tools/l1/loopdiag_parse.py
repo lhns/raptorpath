@@ -1575,6 +1575,26 @@ def main(argv):
         import place38_parse
         place38_parse.score41d(argv[2:])
         return 0
+    if cmd == "smoke54":
+        import pool54_score
+        return pool54_score.smoke54(argv[2])
+    if cmd == "score54":
+        # Plan 54 = plan 41d's verdict (score41d, unchanged and first) followed by plan 54's witness table, which never changes it.
+        import place38_parse
+        import pool54_score
+        place38_parse.score41d(argv[2:])
+        pool54_score.guard_report(argv[2:])
+        return 0
+    if cmd == "smoke54b":
+        import pool54_score
+        return pool54_score.smoke(argv[2])
+    if cmd == "check54b":
+        import place38_parse
+        return place38_parse.check54b(argv[2])
+    if cmd == "score54b":
+        import pool54_score
+        pool54_score.score(argv[2:])
+        return 0
     if cmd == "smoke48":
         import bbr48_score
         return bbr48_score.smoke48(argv[2])
@@ -1594,6 +1614,16 @@ def main(argv):
     if cmd == "score52":
         import tail52_score
         tail52_score.score(argv[2:])
+        return 0
+    if cmd == "smoke53":
+        import snap53_score
+        return snap53_score.smoke(argv[2])
+    if cmd == "check53":
+        import place38_parse
+        return place38_parse.check53(argv[2])
+    if cmd == "score53":
+        import snap53_score
+        snap53_score.score(argv[2:])
         return 0
     if cmd == "smoke46":
         import place46_parse
