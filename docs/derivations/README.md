@@ -9,6 +9,7 @@ section it feeds.
 | `guard-clause-dry.md` | Do a source-phase rtp floor or a delivered in-order delay behave better than `rtp_floor` as a merge-guard clause, on the existing guard ledgers? (dry run, facts only) | status §3.10 item 7, §53 Erratum 1 |
 | [law-ledger.md](law-ledger.md) (+ `law-ledger.yaml`, `law-ledger/render.py`) | is every shipped law derived, measured in its regime, unclamped, fed honest inputs and free of mode switches; what to fix first | AUDIT (no engine change); status §3.10, the roadmap |
 | `p0-dwell-diag.md` | why lever B triples p0's quinn send backlog at c8 (diagnosis; a pinned store population rebalanced from holes to queue) | status §53 open item 1, `cand52` merge question |
+| `dup-diag.md` | why c8 duplicates doubled under the 64-gap horizon: packet-threshold fires on gap snapshots applied out of receiver order; the snapshot-order law, shipped (paper §7.1) | status §52, §53, ADR-0059 |
 
 No derivation file is on `main` yet; the branches that add them (`derive-w1`,
 `adr68-amend`, `paper-recon`, `perleg-design`, `w1r2`, `otel-design`) each add

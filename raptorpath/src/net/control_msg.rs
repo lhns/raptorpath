@@ -40,7 +40,7 @@ pub(crate) struct ControlCtx<'a> {
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
     /// tag so the sender's `[FCAUSE]` gauge can say which receiver arm
     /// caused each fire. Label only — no arm branches on it.
-    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
+    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<super::GapBatch>>,
     /// Some(..) in window mode: the peer's cumulative WindowAck point, read
     /// by the local window sender (ack-driven advance, retransmit-buffer and
     /// sent-store pruning). It must be the peer's ack, not the local
@@ -747,7 +747,15 @@ fn on_window_ack(
                 // the batch so the sender can say whether a hole was
                 // resolved by a report from the path its original flew
                 // on or from another. A label, like `cause`.
-                let _ = tx.try_send((cause, path_id, gaps));
+                // The snapshot's version rides with its gaps (`[SNAPV]`,
+                // docs/derivations/dup-diag.md): the gap path orders reports by
+                // it, never by arrival.
+                let _ = tx.try_send((
+                    cause,
+                    path_id,
+                    gaps,
+                    Some(super::AboveReport { next_expected, received_above }),
+                ));
             }
         }
     }
