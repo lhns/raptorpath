@@ -863,3 +863,40 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 2. **The cost:** the guard's row time rises from ≈ 13.6 to ≈ 48 min (+1 070 s at c2, +986 s at c8 per 24 rows), before per-block overheads.
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
+
+## 55. The law ledger — every shipped law and estimator audited — record, no VM
+
+**What.** One row per law and per estimator that feeds a law: 70 rows (12 estimators, 6 δ maps, 6 flow-control, 9 rate, 10 span/shed/emission, 13 recovery, 10 scheduler/CC, 4 wasm). Each row records:
+- the formula as the code computes it;
+- whether the paper carries it in the same shape;
+- the derivation and the provenance of each symbol;
+- whether it was measured in its operating regime;
+- the clamp bind fraction;
+- whether its inputs are honest;
+- any mode switch;
+- a verdict and a ranked fix priority.
+
+Evidence: `docs/derivations/law-ledger.md` / `.yaml` (branch `law-ledger` `4f84ce63`; criteria and the finished ledger Fable-reviewed).
+
+**Verdicts (a row can carry several):** OK 13, DIVERGENT 17, UNDERIVED 30, PINNED 4, DEGENERATE 9, DISHONEST-INPUT 17, MODE-SWITCH 8.
+- 9 of the 13 OK rows were never measured in their regime.
+- Priorities: P0 5, P1 10, P2 19, P3 36.
+- The PINNED threshold (bind fraction ≥ 0.5 at a measured cell) is the ledger's declared number; discipline 18 names none.
+
+**Fix order (top, correctness first):**
+1. **`max_bw` (E04), 11–24× the link at c8.** An open input design: on a store-bound sender every delivered-rate sampler reads the cap's own throughput, and every candidate so far failed (§23, §24, §27, §34, §36, §40, §43b).
+2. **Copa `min_rtt` (E03), 7–33× propagation.** It reads the sender's own queue (§3.10 item 9). Quinn's wire `rtt.min()` and `bbr_rs`'s m̂ are untested as the store's RTprop.
+3. **The store cap (F01).** PINNED at c8 (0.74–0.98) and c1s (≈ 0.7). It ships with items 1–2: with honest inputs the shipped law collapses to its floor at c2.
+4. **The packet threshold plus the 20-gap horizon (C02).** At c8 it sees holes only at ≈ 3.5 s age. It ships with the snapshot-order law (C03).
+5. **Then:** quinn BBR as the default substrate (K09, §47), the app-echo RTT feeding every recovery clock (E01), the pooled recovery srtt (E11), the receiver srtt seed (E10, which closes §3.10 item 6's trace: the 50 ms is the `LossEstimator` constructor seed), and the hole refresh (C07).
+
+**Findings new to the record:**
+- **Single-path loss detection is the pre-RFC `srtt/2` age gate** (C04): `legacy_age_ripe`, `net/sender_phases.rs:964`, whenever `RWM_RECOV_SP` is off and N ≤ 1. This is a law step at N = 1 → 2.
+- **The default-path NACK repair throttle** (`NackCongestionState`, `net/mod.rs:256`; at most 10 retransmits per gap report, seven constants) has no paper entry and no gauge (C09).
+- **The rate mix r(β) has run only on its r ≡ 0 corner:** every L1 cell runs the Bulk hint with χ ≡ 0 on the tunnel (R01). The default hint, Auto, was never measured. *Reconcile before citing:* §53's c8 rows carry a coded share of ≈ 0.5 %, so repair symbols come from a source other than the proactive rate. Which one is open.
+- **Stale texts:**
+  - the `pooled_store_cap` doc comment ("BDP + one recovery round of runway"; the code computes q·RTprop);
+  - paper §11.2 ("knee inert at c7/c8"; it is pinned);
+  - Appendix A.4's placement E_i line and A.2's taper density (superseded forms).
+
+**Consequences.** The tech tree's forward order (`docs/roadmap.md`) takes the ledger's rank. Every row whose verdict is not OK maps to one fix node. Item 1 is an open research problem, not an implementation task, and its node carries a fallback.
