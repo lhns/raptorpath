@@ -1,0 +1,14 @@
+SMOKE54 rows=3/3 (plan 41d's smoke: its two rows + the 600 MB c8 CAND row; the values are not read, only the criteria below)
+PASS every smoke row ran
+  ROW c1s-400 BASE: status=LIVE mbps=849.758 wall=6.0 bytes=None last-tick=None inorder_mean_ms=None w54={'hn_p0': 0, 'sha_checked': True, 'snapv_present': False, 'snapv_st': None}
+  ROW c1s-400 CAND: status=LIVE mbps=828.237 wall=6.0 bytes=None last-tick=None inorder_mean_ms=None w54={'hn_p0': 0, 'sha_checked': True, 'snapv_present': True, 'snapv_st': 0}
+  ROW c8-100 CAND: status=LIVE mbps=100.715 wall=50.0 bytes=600000000 last-tick=47.6 inorder_mean_ms=4628.404976478048 w54={'hn_p0': 277, 'sha_checked': True, 'snapv_present': True, 'snapv_st': 0}
+PASS no row is VOID-SHORT (a 600 MB c8 row carries >= 30 s of [DIAG] ticks with src= and cum=)
+  SMOKE38 c1s-400@def BASE: status=LIVE mbps=849.758 share=[1.0] locked=False w_mv=None w_calls=338841 w_cold=0.0000 
+  SMOKE38 c1s-400@def CAND: status=LIVE mbps=828.237 share=[1.0] locked=False w_mv=None w_calls=338917 w_cold=0.0000 
+  SMOKE38 c8-100@def CAND: status=LIVE mbps=100.715 share=[0.8284952650809038, 0.17150473491909626] locked=False w_mv=None w_calls=524834 w_cold=0.0000 
+PASS every smoke row is LIVE with the readouts the guard reads, and the 600 MB c8 row carries its size and the in-order delay end to end (plan 41d's own smoke check)
+PASS bin_sha matches the row's arm (BASE rows the BASE build, CAND rows the CAND build)
+PASS CAND c8 row: p0 [HOLD] hn_n collapsed (< 2000); BASE c8 row: hn reported
+PASS [SNAPV] present on every CAND row with pt_st + tt_st = 0 (and absent on BASE)
+SMOKE-PASS

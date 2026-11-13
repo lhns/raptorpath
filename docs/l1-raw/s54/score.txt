@@ -1,0 +1,2 @@
+MERGE GUARD v2 (status 41d): suites/TESTS.txt, guard/score.txt
+VERDICT GATE-41d PASS

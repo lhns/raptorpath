@@ -1120,3 +1120,34 @@ All tests passed, with 0 failures. The other checks:
 Disk plan: the pre-flight targets are removed; each rehearsal's targets are removed before its full run; launch 1's targets are removed after its ledger copy, before launch 2.
 
 Launch order: launch 1 (`LD_PLAN=54`), rehearsal then full; then launch 2 (`LD_PLAN=54b`), rehearsal then full. Each has its own `LD_ROOT` and fresh targets, with `LD_HARD` = launch + 5 h.
+
+**§54 Result, launch 1 (`LD_PLAN=54`, the guard): GATE-41d PASS, p = 0.6897.** (2026-11-13; launch 17:40Z, guard rows 18:38–19:26Z. Ledger: `docs/l1-raw/s54/`.)
+
+**Integrity.**
+- Builds: CAND `8f313616…`, BASE `2053a52c…`.
+- Suites passed on CAND54 (`tfail=0`).
+- Smoke: SMOKE54, every criterion PASS.
+- Rows: 96/96 LIVE. No VOID of any kind, no WITNESS-FAIL, no VOID-SHORT, 0 slots replaced.
+- Split check (BASE alone, before CAND was read): every clause's q95 is inside its §21 tolerance except c8 `lag_E_cli` (q95 0.274 against tol 0.264). That clause stays in the scored min-p set (p 0.33), but the guard is blind on it below its q95.
+- **Session resolution** (host, `place38_parse.py resolution41d`; d80 = the smallest shift caught in ≥ 80 % of draws):
+  - goodput: c1s 5 %, c1d 8 %, c2 1 %, c8 2 %;
+  - client CPU/GB: c1s 2.4 %, c1d 8 %, c2 5 %, c8 5 %;
+  - in-order delay mean: c2 8 %, c8 20 %;
+  - lag: 20–100 %.
+
+**The guard (v2 clauses, CAND against BASE, positive x = CAND worse).**
+- **Minimum.** The min-p is 0.066, at c1s `cpu_cli/GB` (x = +0.81 %).
+- **Goodput.** No goodput clause moves by more than 1.9 %: c1s +0.17 %, c1d −1.88 %, c2 0.00 %, c8 +0.22 %.
+- **In-order delay mean.** c2 +0.34 % (p 0.17); c8 +2.93 % (p 0.43).
+- **The registered c8 risk did not materialise.** §53's BASES leaned −2.0 % on c8 goodput; here it is −0.2 % (99.45 against 99.68 Mbit/s), against this session's c8 goodput d80 of 2 %. The c8 in-order delay moves +2.9 %, against the registered post-hoc +2 % (BASES) and this session's d80 of 20 %.
+- **Tails.** No row in either arm fell below 0.5 × its cell median. The lowest c8 rows are 96.2 (CAND) and 96.9 (BASE).
+
+**Outcome witnesses (plan 54's, applied to the guard's own rows).**
+- **The c8 `hn` witness holds:** every CAND c8 row is below the amended threshold `hn_n` < 2 000. p0 `[HOLD] hn_n` (holes that healed with no retransmit) median at c8: CAND 174 [22–417] against BASE 10 848 [9 147–12 854]. Both ranges overlap the §53 references (11–409 with the filter, 9 557–10 659 without).
+- `bin_sha`: all 96 rows `sha_checked` true, each with its arm's build (`BINSHA.txt`).
+- `[SNAPV]` `pt_st + tt_st = 0` on all 48 CAND rows; the gauge is absent on all 48 BASE rows.
+- **Reported (not a witness):** at c1d, `hn_n` does not collapse (CAND 14 630 against BASE 13 251). The law is not inert at c1d, though: on CAND's 12 c1d rows `[SNAPV]` counts 56–223 stale reports per path per row, all set aside unjudged (`pt_st + tt_st = 0`). The registration's "inert … c1d mostly" is therefore wrong as worded. Why the hn count does not move at c1d is open.
+
+**Decision (registered rule): `snapver-law` merges to main (`--no-ff`)**, with its `[SNAPV]` gauge and paper §7.1. CAND54 was main's tree `7968c870` plus the law plus the harness; main has since gained only `harness54` (identical tools), docs and the roadmap. Check: the merged tree differs from the guarded CAND `7fd92dd5` only in files main gained after `a1908f61` (`docs/status.md`, `docs/roadmap*`, `tools/roadmap/`, `docs/l1-raw/s54/`); the README row conflict was resolved by taking CAND54's resolved file. No new cargo run is needed.
+
+**Launch 2 (54b, the store-budget block, reported only) follows** with its own ledger. It decides nothing by itself.

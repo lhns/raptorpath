@@ -1,0 +1,53 @@
+SENTINEL-WRITABLE /dev/shm/s54/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s54/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-13T17:40:29Z user=VMUSER dir=/dev/shm/s54/run launch=2026-11-13T17:40:29Z
+LD-ALL start plan=41d load=0.62 1.31 1.93 1/398 2415216 2026-11-13T17:40:29Z
+LD-ALL precondition met procs_running=[2,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.39 avg60=1.24 avg300=0.63 total=4924756518 2026-11-13T17:40:37Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.57 1.29 1.92; io=full avg10=0.39 avg60=1.24 avg300=0.63 total=4924756518 2026-11-13T17:40:38Z
+LD-ALL parser test ok 2026-11-13T17:42:43Z
+LD-ALL built wall=305s 2026-11-13T17:47:48Z
+LD-ALL binary 8f313616b31ac6f4d6346cf03bfcf6246983c426fec4e08951d09d3faf921cbf 2026-11-13T17:47:49Z
+LD-ALL built BASE wall=298s binary 2053a52c8f9ae5da2527790242a16dabba516373427aa925abd46cd3dc5ad4ce 2026-11-13T17:52:47Z
+LD-ALL test main rc=0 passed=1128 failed=0 ignored=47 binaries=96 2026-11-13T18:12:12Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-13T18:12:15Z
+LD-ALL test wasm rc=0 passed=36 failed=0 ignored=0 binaries=2 2026-11-13T18:14:16Z
+LD-ALL test debug-witness rc=0 passed=987 failed=0 ignored=46 binaries=87 2026-11-13T18:31:46Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-13T18:37:29Z
+LD-ALL suites done tfail=0 2026-11-13T18:37:29Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.09 avg60=0.04 avg300=0.05 total=4931138362 2026-11-13T18:37:37Z
+LD-ALL stage guard (plan 41d) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.04 avg60=0.03 avg300=0.05 total=4931156569 2026-11-13T18:37:45Z
+SMOKE54 rows=3/3 (plan 41d's smoke: its two rows + the 600 MB c8 CAND row; the values are not read, only the criteria below)
+PASS every smoke row ran
+  ROW c1s-400 BASE: status=LIVE mbps=849.758 wall=6.0 bytes=None last-tick=None inorder_mean_ms=None w54={'hn_p0': 0, 'sha_checked': True, 'snapv_present': False, 'snapv_st': None}
+  ROW c1s-400 CAND: status=LIVE mbps=828.237 wall=6.0 bytes=None last-tick=None inorder_mean_ms=None w54={'hn_p0': 0, 'sha_checked': True, 'snapv_present': True, 'snapv_st': 0}
+  ROW c8-100 CAND: status=LIVE mbps=100.715 wall=50.0 bytes=600000000 last-tick=47.6 inorder_mean_ms=4628.404976478048 w54={'hn_p0': 277, 'sha_checked': True, 'snapv_present': True, 'snapv_st': 0}
+PASS no row is VOID-SHORT (a 600 MB c8 row carries >= 30 s of [DIAG] ticks with src= and cum=)
+  SMOKE38 c1s-400@def BASE: status=LIVE mbps=849.758 share=[1.0] locked=False w_mv=None w_calls=338841 w_cold=0.0000 
+  SMOKE38 c1s-400@def CAND: status=LIVE mbps=828.237 share=[1.0] locked=False w_mv=None w_calls=338917 w_cold=0.0000 
+  SMOKE38 c8-100@def CAND: status=LIVE mbps=100.715 share=[0.8284952650809038, 0.17150473491909626] locked=False w_mv=None w_calls=524834 w_cold=0.0000 
+PASS every smoke row is LIVE with the readouts the guard reads, and the 600 MB c8 row carries its size and the in-order delay end to end (plan 41d's own smoke check)
+PASS bin_sha matches the row's arm (BASE rows the BASE build, CAND rows the CAND build)
+PASS CAND c8 row: p0 [HOLD] hn_n collapsed (< 2000); BASE c8 row: hn reported
+PASS [SNAPV] present on every CAND row with pt_st + tt_st = 0 (and absent on BASE)
+SMOKE-PASS
+LD-ALL stage guard SMOKE-PASS 2026-11-13T18:38:48Z
+LD-ALL stage guard battery rc=0 wall=2864s 2026-11-13T19:26:32Z
+CHECK41c done=True rows=96/96
+LD-ALL stage guard end ok=1 VERDICT GATE-41d PASS 2026-11-13T19:26:34Z
+LD-ALL guard resolution NOT computed on the VM; on the host: python3 tools/l1/place38_parse.py resolution41d <pulled run dir>/guard/ld.log 2026-11-13T19:26:34Z
+LD-ALL end plan 41d (LD_PLAN=54: witnesses on) guard_ok=1 raptorpath=0 netns=0 2026-11-13T19:26:34Z
