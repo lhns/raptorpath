@@ -265,6 +265,9 @@ pub(crate) struct SenderPolicy {
     pub recov_mp_law: bool,
     /// `RWM_RECOV_SP`: single-path hole-law suppression.
     pub recov_sp: bool,
+    /// `RWM_RECOV_SNAPVER`: judge gaps only from the newest snapshot
+    /// (`net/snapver.rs`).
+    pub recov_snapver: bool,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -703,6 +706,10 @@ impl SenderPolicy {
         // Suppression-only: the receiver's hole-refresh re-advertises until the
         // flight ripens, so real holes still recover.
         let recov_sp = gates.recov_sp && reliable && !generation;
+        // Snapshot-order filter (`RWM_RECOV_SNAPVER`, default off): the gap
+        // path exists only on the plain reliable window. No path-count term:
+        // with one return leg snapshots arrive in order and it never acts.
+        let recov_snapver = gates.recov_snapver && reliable && !generation;
         // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
         // beside the unchanged one). Default off.
         let sidle_derived = gates.sidle_derived && diag_on;
@@ -834,6 +841,7 @@ impl SenderPolicy {
             recov_mp,
             recov_mp_law,
             recov_sp,
+            recov_snapver,
             sidle_derived,
             emit_batch_on,
             emit_burst,

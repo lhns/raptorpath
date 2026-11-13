@@ -210,6 +210,9 @@ pub struct RuntimeGates {
     pub late_brake: bool,
     /// `RWM_RECOV_SP` (off, arm): single-path RFC 9002 §6.1.2 time-threshold suppression.
     pub recov_sp: bool,
+    /// `RWM_RECOV_SNAPVER` (off, diagnostic arm; docs/derivations/dup-diag.md): both loss
+    /// channels judge only gap snapshots at least as new as the newest dequeued one.
+    pub recov_snapver: bool,
     /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
     /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
@@ -374,6 +377,7 @@ impl RuntimeGates {
             sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
+            recov_snapver: env_flag("RWM_RECOV_SNAPVER", false),
             delta_cap: env_flag("RWM_DELTA_CAP", true),
             delta: resolve_delta(),
             copa_delta: resolve_copa_delta(),
@@ -446,7 +450,7 @@ impl RuntimeGates {
              RWM_MIN_R={} RWM_CC_PACE={} RWM_CC_PACE_HR={} RWM_REACT_CAP={} \
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
-             RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
+             RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} RWM_RECOV_SNAPVER={} \
              RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
@@ -476,7 +480,7 @@ impl RuntimeGates {
             self.min_r, b(self.cc_pace), self.cc_pace_headroom, o(&self.react_cap),
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
-            b(self.recov_mp_law), b(self.recov_sp),
+            b(self.recov_mp_law), b(self.recov_sp), b(self.recov_snapver),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.
             o(&self.delta),
