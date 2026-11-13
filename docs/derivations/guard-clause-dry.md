@@ -339,6 +339,74 @@ BASE to CAND across the tail change at c8 p0 (ratio test/ref, one-sided p):
 
 At c8 p1 the three-way readings are C 1.048 (p 0.023) / A 1.045 (p 0.050) at §53 600 MB, C 1.159 (p 0.0030) / A 1.069 (p 0.051) at rep52, and C 0.961 / A 0.961 (identical, p 0.556) in the §52 guard. In §48b the bbr_rs candidate reads B mean 1.461 and B p95 1.194 at c8 (p 0.0001 each) and B mean 1.019 at c2 (p 0.017), where C reads c8 p0 0.814 (p 0.995) and A reads 1.111 (p 0.040). At c1s, c1d and c2 of the §52 guard C and A give identical p; B gives p between 0.14 and 0.94.
 
-## 8. Reproduce
+## 8. Follow-up 1: the §48b reading (C 0.814, p 0.995 against B mean 1.461, p 0.0001)
+
+**Arm mapping (ledger `docs/l1-raw/bbr48b/run/bbr48/ld.log`; `facts48b.py`).**
+
+| arm | `=== rep=` header lines | arm_env | binary | sha (header = P38ROW `bin_sha`) | rows |
+|---|---|---|---|---|---|
+| BASE | 48 | none (`RWM_QUIC_CC` is `env -u` cleared on every arm) | `/dev/shm/s48b/bin-base/raptorpath`, `BINSHA.txt`: commit `0a1ddb88` (BASE) | `6bcb46e83c1fcdfb...` | 48 |
+| CAND | 48 | `RWM_QUIC_CC=bbr_rs` | `/dev/shm/s48b/bin/raptorpath`, commit `e5d7ffbd` | `943680f1d5dae1f3...` | 48 |
+
+So BASE is the main binary with its default (quinn BBR) and CAND is the `bbr_rs` build with `RWM_QUIC_CC=bbr_rs`. Every row's `bin_sha` matches its arm's binary. (The `[GATES]` line was not needed: the header line, `arm_env` and the sha identify the arm. The 12 + 12 rows per cell are the guard design; c2 and c8 rows carry 600 MB, c1s and c1d 5 GB, hence 43-151 s rows.)
+
+**What §48b's own Result says about delivered delay** (`docs/status/49-simplify-batch-1-simplify-2-against-main.md`, which holds the §48b Result; `48b-the-bbr-rs-battery-on-the-vm.md` is the pre-registration and has no delay statement). Verbatim:
+- R3: "App-echo A_x at c2 206.2 → 206.8 ms (unchanged: the queue moved into quinn, B 840 → 1804); c8 fast leg 187.8 → 122.5 ms, slow leg 247.7 → 251.5 ms. c1s B 1335 → 715, A_x 37.4 → 17.6 ms."
+- "What doing nothing costs": "Delivered delay at c2 is ≈ 206 ms in both arms."
+- Completion tail: "70 % of c8's deficit (1.66 of 2.39 points) sits in the completion tail, which lasts 3.91 s in BASE and 4.73 s in CAND (≤ 0.23 s elsewhere, c2 0.15 s)."
+
+So "delivered delay unchanged" is stated for **c2 only**, and the quantity named there (206 ms) is the app-echo RTT `A_x`, not the in-order delay of this note. For c8 the Result gives RTTs (fast leg 187.8 → 122.5 ms, slow leg 247.7 → 251.5 ms) and a completion tail that is 0.82 s longer in CAND; it makes no statement about in-order delay.
+
+**B mean and B′ mean (ms) per row** (s42 reps 1-6 / s7 reps 1-6):
+
+| cell | arm | clause | median | rows |
+|---|---|---|---|---|
+| c2-100 | BASE | B mean | 344 | 338 344 341 328 309 342 / 357 344 349 352 344 348 |
+| c2-100 | BASE | B′ mean (src>0) | 344 | 338 344 341 328 309 342 / 357 344 349 352 344 348 |
+| c2-100 | CAND | B mean | 350 | 356 341 342 343 352 359 / 363 347 348 366 353 344 |
+| c2-100 | CAND | B′ mean (src>0) | 350 | 356 341 342 343 352 359 / 357 347 348 366 353 344 |
+| c8-100 | BASE | B mean | 4203 | 3908 4714 4185 4221 3970 4339 / 4523 4098 3873 4245 3756 4525 |
+| c8-100 | BASE | B′ mean (src>0) | 4144 | 3827 4627 4228 4168 3771 4248 / 4565 3989 3743 4120 3595 4435 |
+| c8-100 | CAND | B mean | 6141 | 6518 6039 6587 5600 6140 6063 / 6327 6565 6236 5464 5456 6142 |
+| c8-100 | CAND | B′ mean (src>0) | 6118 | 6511 5976 6645 5572 6126 6083 / 6281 6571 6218 5438 5346 6110 |
+
+At c2 B moves +1.9 % (344 → 350 ms; ranges 309-357 and 341-366 overlap; rank-sum p 0.017), consistent with "unchanged" at the level the Result states. At c8 B mean moves +46 % (4.20 → 6.14 s); the ranges are disjoint (BASE max 4714, CAND min 5456); B′ (source phase only) gives the same (4.14 → 6.12 s), so the c8 difference is not the drained tail but the in-order frontier lag during sending. The difference B is larger (1.94 s) than the 0.82 s difference of the completion tail the Result quotes. C and A, which read RTT floors, do not see it at c8 p0 (C 0.814, A 1.111).
+
+## 9. Follow-up 2: the proposed clause set, re-scored
+
+Proposed set (dry run, `newset.py`; `place41b_score.clause_defs` is patched in the process only, nothing in `tools/l1` gates changed): `rtp_floor_p0/p1` scored at c1s and c1d only and dropped at c2 and c8; the one-sided clause `inorder_delay_mean` (B mean, higher is worse, ms, rank within seed like every clause) scored at c2 and c8 only on long rows (> 30 s); B p95 never scored; every other clause unchanged. Same machinery (`statistic_rank`, N_PERM 10 000, RNG seed 4141, PASS iff p > 0.05).
+
+| ledger | cells and design | rows long enough for B | old set: family p (min-p, clause) | new set: family p (min-p, clause) | verdict old → new |
+|---|---|---|---|---|---|
+| §52 guard | 4 cells, 12 + 12 | none (last tick ≤ 9.1 s): B absent; rtp dropped at c2, c8 (3 clauses) | 0.2471 (0.01320, c1s `cpu_cli/GB`) | 0.2206 (0.01320, c1s `cpu_cli/GB`) | PASS → PASS |
+| §48b | 4 cells, 12 + 12 | c2 and c8 (51-56 s mean rows) | 0.0020 (0.00010, c2 `goodput`) | 0.0018 (0.00010, c2 `goodput`) | FAIL → FAIL |
+| place41b (BASE vs MAIN) | c1s, c1d, 12 + 6 | not applicable | 0.6920 (0.12349, c1s `lag_E_srv`) | 0.6920 (0.12349, c1s `lag_E_srv`) | PASS → PASS (set identical: no c2 or c8) |
+
+- The old §52 p 0.2471 and the old §48b p 0.0020 are reproduced first (the committed guard-score value and the §49 Result's R1 p).
+- No verdict flips on these three ledgers. §52's family p moves 0.2471 → 0.2206 only because three clauses leave the min-p family (c2 p0 0.614, c8 p0 0.081, c8 p1 0.556 in the old set); the min-p clause is unchanged.
+- §48b: the dropped rtp clauses were c2 p0 (old p 0.937), c8 p0 (0.995) and c8 p1 (0.148); the added B mean clauses read c2 p 0.0169 and c8 p 0.0001 (the min-p of the family stays the c2 goodput clause at 0.0001, so the family p is dominated by clauses that already failed).
+- Not tested here: a ledger on which B mean is the only failing clause; the three ledgers cannot show a flip.
+
+**A/A d80 of B mean on the §48b ledger (12 + 12, long rows, new set, `session_resolution`-style as validated in §4; 30 draws, 1 000 relabellings):**
+
+| clause | d80 |
+|---|---|
+| c2 `inorder_delay_mean` | 8 % |
+| c8 `inorder_delay_mean` | 20 % |
+| c1s / c1d `rtp_floor` (kept, same run) | 12 % (c1s p0); 8 % and 12 % (c1d p0, p1) |
+
+(Section 5's slot-based B mean readings, which kept the other rtp clauses in the family, gave 5 % and 20 %; the difference at c2 is one grid step of resampling noise.)
+
+**Added VM time per guard if c2 and c8 had to be long** (mean `wall_s` of the invocation rows, `facts48b.py`):
+
+| cell | §52 guard mean row (12 + 12) | §48b mean row (600 MB) | added per guard |
+|---|---|---|---|
+| c2-100 | 11.4 s | 56.0 s | 24 × 44.6 s = 1 070 s |
+| c8-100 | 10.5 s | 51.6 s | 24 × 41.1 s = 986 s |
+| total | | | 2 056 s ≈ 34 min on top of the guard's 813 s ≈ 13.6 min of row wall time (to about 48 min), before per-block overheads; the all-long §48b ledger's rows total 5 144 s ≈ 85.7 min |
+
+## 10. Reproduce
+
+(Sections 1-9 are produced by the scripts below; follow-ups 1 and 2 add `facts48b.py` and `newset.py`: `NEWSET=1 NEWSET_ADD=c2-100,c8-100 python -I newset.py score ...` and `... d80 ...`, results `set-*.json`.)
 
 `python -I rowvals.py out.json ld.log diag-dir ...` (per-row values), `python -I score.py ...` (statistics, `res-*.json/.tsv`), `python -I resolution.py ...` (`d80-*.json`; `d80s-*.json` for B'), `python -X utf8 -I make_tables.py`, `python -I where.py rowvals-*.json BASE,CAND`; the directory `docs/derivations/guard-clause-dry/` holds the scripts, per-row values and results. Archives were extracted into fresh directories outside the repository and treated as data.
