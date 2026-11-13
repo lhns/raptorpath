@@ -145,10 +145,9 @@ def validate_nodes(nodes):
             if not n["evidence"]:
                 errors.append(f"{nid}: state done needs at least one evidence entry")
             if outcome == "unrated" and n["kind"] != "user-decision":
-                if n["verdict_quote"] != "":
-                    errors.append(f"{nid}: done + unrated requires verdict_quote \"\" (a quote implies a verdict)")
-                else:
-                    warnings.append(f"{nid}: done but unrated (explicit empty verdict_quote)")
+                # A quote may stay on an unrated node: the source sentence is kept as
+                # evidence even when no later node builds on it (rating rule).
+                warnings.append(f"{nid}: done but unrated" + (" (quote kept as evidence)" if n["verdict_quote"] else ""))
         if outcome == "superseded" and not n["replaced_by"]:
             errors.append(f"{nid}: outcome superseded needs a non-empty replaced_by")
         if state == "abandoned" and outcome not in ("dead-end", "superseded"):

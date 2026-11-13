@@ -96,8 +96,10 @@ class ValidateTests(unittest.TestCase):
         errs, warns = check.validate_nodes([node("rec-a", state="done", outcome="unrated", evidence=["x"])])
         self.assertEqual(errs, [])
         self.assertTrue(any("unrated" in w for w in warns))
-        e = "\n".join(self.errs([node("rec-a", state="done", outcome="unrated", evidence=["x"], verdict_quote="q")]))
-        self.assertIn("verdict_quote", e)
+        # an unrated node may keep its source quote as evidence: a warning, not an error
+        errs, warns = check.validate_nodes([node("rec-a", state="done", outcome="unrated", evidence=["x"], verdict_quote="q")])
+        self.assertEqual(errs, [])
+        self.assertTrue(any("quote kept as evidence" in w for w in warns))
 
     def test_superseded_and_abandoned(self):
         self.assertIn("replaced_by", "\n".join(self.errs([node("rec-a", state="abandoned", outcome="superseded")])))
