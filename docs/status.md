@@ -311,6 +311,10 @@ Defect findings under FORMULA-FIRST and MEASUREMENT DISCIPLINE 17/18. Each one i
    - Diagnosis: `docs/derivations/dup-diag.md` (branch `dup-diag`), summarised under §52 Erratum; the measurement goes in §53.
 6. **The receiver's `hole_nack_refresh` clock reads a degenerate input (`dup-diag`).** `[QCLK]` receiver shows srtt = exactly 50 000 µs with sigma n = 0 in all 12 c8 rows, so the refresh cadence is a constant 100 ms. The law's input never takes a measured value; the source of the constant is not yet traced.
 
+7. **The guard clause `rtp_floor_p0` measures the end-of-run drain, not the path** (§53 Erratum 1). A one-sided "worse" reading on it is expected for any change that shortens the completion tail. The clause change goes to the owner before the next guard that carries a tail fix is registered.
+8. **The store cap is a constant at c8, on main too.** The pooled cap sits at its clamp N·pool = 4 096 for 0.74–0.98 of each run (`[SUMCAP] pin=`, §53, all five arms). The law under the clamp asks 12–43 k, because both inputs are over-read: `min_rtt` reads 7–33× the propagation delay (item 9), and `max_bw` 11–24× the link rate (not yet diagnosed). Over the c8 operating range the law's shape is hidden by its clamp.
+9. **Copa `min_rtt` reads the sender's own standing queue.** It is a 10 s minimum of the app-echo RTT (`RWM_COPA_WIRE` off), which includes quinn send-buffer dwell. On a 10 ms path it reads 95–129 ms on main and 163–319 ms under lever B, from t ≈ 10.3 s (when the start-up sample leaves the window) on 30 of 30 c8 rows. Consumers: the store cap (`max_bw × min_rtt`, a positive loop cut by the clamp) and Copa's cwnd anchor floor (gates nothing here, since the in-flight brake is off). Evidence: `docs/derivations/p0-dwell-diag.md`.
+
 ### 3.9 Harness rule: report the lock-out classifier (2026-11-10)
 
 Every multi-leg static-cap battery reports the §38 lock-out classifier per
@@ -786,3 +790,23 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **The `cand52` merge question goes to the user, with:**
   - CANDS's c8 numbers: the tail gain (+8.5 % goodput at 600 MB c8), with duplicates and retransmits/GB at or below BASE's;
   - the costs that remain: c8 `rtp_floor_p0` +29 % and c1d duplicates +13 %.
+
+**§53 Erratum 1 (2026-11-13, post hoc, `p0-dwell-diag` `a916359e`, Fable-checked).**
+- **`rtp_floor_p0` is a run-minimum artefact.**
+  - It is the lowest p0 Copa `min_rtt` (`rtp_us`) over the run's `[DIAG]` ticks.
+  - On BASE/BASES that minimum falls 0.2–3.7 s after source end, in the drained tail. On every lever-B row (17 of 18; one CANDS row at source end) it is the t = 0.3 s start-up sample.
+  - The clause therefore reads "did the run end with an idle drain" and scores any tail fix as worse (§3.10 item 7).
+- **Delivered delay: the Result's "about the same (~0.9 s)" is withdrawn.**
+  - `[LAT]` keeps at most 16 384 pending arrivals (`net/lat.rs` `PENDING_MAX`) and drops the rest (`over=`).
+  - At c8 it recorded 11–24 % of deliveries on BASE/BASES (`over` 0.77–0.90 M), against 78–99.9 % on lever-B rows. Its BASE medians come from a biased subset.
+  - No replacement figure is adopted yet. `p0-dwell-diag` reads ≈ 5.3 s against ≈ 1.0 s mean in-order delay from the sender's counters; that script is not yet checked.
+  - Earlier c8 delivered-delay readings from `[LAT]` must be checked for `over` before they are cited.
+- **The real effect behind the floor: lever B moves store slots from old holes into quinn's p0 send buffer.**
+  - **Store at its clamp:** the c8 sender is store-gated (`paused` ≈ 80 %). The store sits at its clamp N·pool = 4 096 for 0.74–0.98 of the run (`[SUMCAP] pin=`), on every arm, main included.
+  - **Links saturated:** both legs send at link rate on every arm (p0 ≈ 9 855/s).
+  - **Where the slots go:** lever B repairs holes before they age, so about 1 400 slots that held holes older than one RTT refill with source. p0's population rises from ≈ 2 020 to 3 350–3 660.
+  - **Where it waits:** quinn's window caps p0 on the wire at ≈ 1 100–1 600, so the rest waits in quinn's send buffer (`dgq0` hand − tx ≈ 700–870 → 1 560–3 000).
+  - **What it costs:** the p0 app-echo RTT and per-symbol first-arrival latency rise by ≈ 150–230 ms. The wire RTT is unchanged.
+  - **Ruled out:** placement (p0 share 0.82 on every arm), retransmit volume (CANDS carries the population at fewer p0 retransmits than BASE), and quinn draining slower (p0 tx rate equal).
+  - **Status:** the mechanism is consistent with Little's law on a fixed slot budget. The causal test (a pool arm) is pending; occupancy = rate × RTT + holes closing on every row is consistency, not proof.
+- **Lever-B cost to report with the merge question:** quinn's send buffer evicts up to ≈ 1 000 datagrams per run on p0 under lever B (CW0 the most). These are counted per arm in `docs/derivations/p0-dwell-diag.md`. Their link to CW0's duplicate rise is untested.
