@@ -674,3 +674,17 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Stale-absent escape.** If every LIVE arm-off row of a block shows p1 `stale` = 0, the arm rows of that block are not voided for p1 `stale` = 0 (the scorer prints `STALE-ABSENT`). The arm-off falsifier then decides, and Refuted stays reachable. The smoke applies the same rule to its own BASE/CAND rows.
 - **Binary witness.** `[GATES]` cannot tell the BASE binary from CAND's. The c8 tail is the witness: BASE and BASES about 4 s, CAND, CANDS and CW0 about 0.4 s (§52). An arm on the other side of that split is read as built on the wrong binary and voided by hand in the Result (the scorer does not apply this rule).
 - **Rehearsal, one criterion added:** the filter arms' liveness (CANDS/BASES: `pt_st + tt_st = 0` on every leg, `stale > 0` on p1 at c8, `fed − det ≤ cx`) is checked on the smoke rows too, so an arm that does not act aborts the smoke instead of voiding 12 rows later. Under `LD_PLAN=53` a missing `RWM_RECOV_SNAPVER` token in `[GATES]` is a failure, never read as off.
+
+**§53 amendment 2 (before the rehearsal): VM pre-flight, CAND re-pinned.**
+- **VM pre-flight** (fresh target per tree, 06:16–06:31Z):
+  - **BASE53 `5b605bb0`:** `check --all-targets` rc 0; lib `net::` + `gates` 308 / 0; `holeclass_reachability` 3 / 0, `recovery_bench` 7 / 0, `sim_nack_test` 4 / 0, `place_arms_reachability` 3 / 0.
+  - **CAND53 `def76c23`:** `check` rc 0; lib 310 / 0; the same integration tests pass except `recovery_bench_fixtures_pin_the_plane`, which fails at FIXTURE 2's channel-mix pin.
+- **Cause: a pin, not the engine.**
+  - Since `test-debts`, `tests/common/recovery_model.rs` reads the engine's gap horizon (64 on CAND). FIXTURE 2's constants are bench outputs captured on the 20-gap plane, and `cand52` passed only because its model was still hard-coded to 20.
+  - **Fix (tests only):** FIXTURE 2 selects its expected set by `gap_horizon()`, either 20 (unchanged) or 64 (captured on `cand53`); any other horizon panics.
+- **CAND = `cand53` `b21421e6ca6062c7235394a8ec07a8c0f63062f3`** (`LD_CAND_SHA`; supersedes `def76c23`). BASE unchanged.
+  - On the VM, `recovery_bench` 7 / 0 and `slack_bench` 8 / 0 on the new tree.
+  - `git diff base53 cand53 -- raptorpath/src raptorpath/tests` is now lever B's 3 files plus `tests/recovery_bench.rs` (the horizon-keyed fixture).
+- **Finding (model, reported; it predicts nothing for this session).** On the test-side recovery model at the c7 fixture point, the 64-gap horizon moves 70 of 154 app-echo-clock holes from the fast channel to the time channel:
+  - app-echo mix (time/fast) [0, 154] → [70, 84]; p50 to first service 14 776 → 12 536 µs; sweeps 1 → 2; retransmits unchanged at 154;
+  - the wire-clock mix stays [70, 84] at both horizons.
