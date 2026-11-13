@@ -791,6 +791,8 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - CANDS's c8 numbers: the tail gain (+8.5 % goodput at 600 MB c8), with duplicates and retransmits/GB at or below BASE's;
   - the costs that remain: c8 `rtp_floor_p0` +29 % and c1d duplicates +13 %.
 
+**§53 Erratum 2 (pre-flight scope).** The registered VM pre-flight listed `build_visualizer.sh` on a fresh wasm build, the native golden test without `GOLDEN_CAPTURE` (for `wasm-modeswitch-audit`), and the `bound-tests` wasm pool test. The pre-flight script ran only the trees' check, lib and integration tests; those three were NOT run. They move to the next VM session's pre-flight.
+
 **§53 Erratum 1 (2026-11-13, post hoc, `p0-dwell-diag` `a916359e`, Fable-checked).**
 - **`rtp_floor_p0` is a run-minimum artefact.**
   - It is the lowest p0 Copa `min_rtt` (`rtp_us`) over the run's `[DIAG]` ticks.
