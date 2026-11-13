@@ -2564,7 +2564,7 @@ nodes:
   - commit 39a97f3e
   - commit 52da7db0
   - commit 69fd846b
-  overview: true
+  overview: false
   plain: Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted.
   notes: 'Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: "i rather think your impl is shit... rethink". Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end).'
 - id: perf-io-owner
@@ -2765,7 +2765,7 @@ nodes:
   end: '2026-10-29'
   folded:
   - branch §32 per-drain receiver prune SHIPS
-  overview: true
+  overview: false
   plain: Made the receiver clean up finished decoding work more often, which raised fast two-path throughput by about a fifth.
   notes: 'End 2026-11-01 was a placeholder (status §32: last edit or migration date); date from merge bb29595e. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-receiver-followups

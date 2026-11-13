@@ -54,11 +54,9 @@ flowchart TB
     subgraph bd_3["Sep 2026 to Oct 2026"]
         rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
         perf_emit_batch_law0["perf · ✔ Emission<br/>batching, Law 0 (#167;8)"]
-        perf_threading_p2a["perf · ✖ Threading P2a<br/>logic actor (#167;12)"]
         perf_io_owner["perf · ✔ Per-path I/O<br/>owner (Q1)"]
         store_adr72_one_law[/"store · ✔ One store<br/>law (ADR-0072)"/]
         store_power_law[/"store · ✖ Power-<br/>seeking store law D"/]
-        perf_decoder_prune["perf · ✔ Decoder prune<br/>per drain (#167;32)"]
     end
     subgraph bd_4["Nov 2026"]
         cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse (#167;47)"]
@@ -102,14 +100,12 @@ flowchart TB
     store_delta_cap ~~~ rec_goal101
     rec_goal101 ~~~ rate_r_battery
     rec_goal101 ~~~ perf_emit_batch_law0
-    rate_r_battery ~~~ perf_threading_p2a
-    perf_emit_batch_law0 ~~~ perf_io_owner
-    perf_threading_p2a ~~~ store_adr72_one_law
+    rate_r_battery ~~~ perf_io_owner
+    perf_emit_batch_law0 ~~~ store_adr72_one_law
     perf_io_owner ~~~ store_power_law
-    store_adr72_one_law ~~~ perf_decoder_prune
-    store_power_law ~~~ perf_decoder_prune
-    perf_decoder_prune ~~~ cc_quinn_bbr_collapse
-    perf_decoder_prune ~~~ meas_guard_41c
+    store_adr72_one_law ~~~ store_power_law
+    store_power_law ~~~ cc_quinn_bbr_collapse
+    store_power_law ~~~ meas_guard_41c
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
     meas_guard_41c ~~~ place_wire_price
     cc_bbrrs_r1 ~~~ store_defect_cap_constant
@@ -147,7 +143,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 48,51,54 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 46,49,52 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -161,10 +157,10 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cod_block_pipeline,cod_mettle,cod_legacy_rlc,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,place_daps,perf_threading_p2a,cc_aimd_v1,place_early_window_sched dead
+    class cod_block_pipeline,cod_mettle,cod_legacy_rlc,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,place_daps,cc_aimd_v1,place_early_window_sched dead
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
     class rec_snapver_law,cc_bbrrs_r2 waiting
-    class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner,perf_decoder_prune vsucc
+    class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
     class store_defect_cap_constant,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class meas_guard_v2_impl,model_law_ledger unrated
@@ -253,9 +249,7 @@ flowchart TB
 | BBR/Copa hybrid build (ADR-0068) | ⏸ parked | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. |
 | AIMD congestion control (first CC) | ↷ superseded | The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one. |
 | Emission batching, Law 0 (§8) | ✔ done · very-successful | Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere. |
-| Threading P2a logic actor (§12) | ✖ dead end | Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted. |
 | Per-path I/O owner (Q1) | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
-| Decoder prune per drain (§32) | ✔ done · very-successful | Made the receiver clean up finished decoding work more often, which raised fast two-path throughput by about a fifth. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
 | L1 measurement discipline (ADR-0052) | ✔ done · successful | Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run. |
