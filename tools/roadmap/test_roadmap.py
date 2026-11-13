@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for build.py and check.py. Run: python tools/roadmap/test_roadmap.py"""
+import contextlib
 import copy
+import io
 import sys
 import tempfile
 import unittest
@@ -34,6 +36,10 @@ def built(nodes, text=None):
     return build.apply_regions(text or skeleton(), build.render_regions(nodes, TODAY))
 
 
+def tfile(nodes, code):
+    return build.render_track_file(nodes, code, TODAY)
+
+
 GOOD = [
     node("rec-a", state="done", outcome="very-successful", evidence=["status §1"], start="2026-01-01", end="2026-02-01"),
     node("rec-b", depends_on=["rec-a"], start="2026-03-01", state="in-progress"),
@@ -53,7 +59,14 @@ class Files:
         n, m = self.dir / "nodes.yaml", self.dir / "roadmap.md"
         n.write_text(yaml.safe_dump(nodes, allow_unicode=True), encoding="utf-8")
         m.write_text(md, encoding="utf-8", newline="")
+        self.write_tracks(nodes)
         return check.run(n, m)
+
+    def write_tracks(self, nodes):
+        d = self.dir / "roadmap" / "tracks"
+        d.mkdir(parents=True, exist_ok=True)
+        for code in build.TRACKS:
+            (d / f"{code}.md").write_text(build.render_track_file(nodes, code, TODAY), encoding="utf-8", newline="")
 
 
 class ValidateTests(unittest.TestCase):
@@ -184,8 +197,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("↷ superseded", out)
 
     def test_track_diagram_external_stub(self):
-        out = built(GOOD)
-        track_rate = out.split("<!-- BEGIN GENERATED: track-rate -->")[1].split("<!-- END")[0]
+        track_rate = self.region(tfile(GOOD, "rate"), "track-rate")
         self.assertIn("ext: rec-a", track_rate)
         self.assertNotIn("x_", track_rate)
         self.assertNotIn("-->", track_rate)
@@ -226,7 +238,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("rec_a ~~~ rec_d", ov)  # 5 on one rank -> rows of 3
         self.assertNotIn("rec_a ~~~ rec_c", ov)
         self.assertIn("A fairly long title<br/>here ok<br/>", ov)
-        tr = out.split("<!-- BEGIN GENERATED: track-rec -->")[1].split("<!-- END")[0]
+        tr = self.region(tfile(nodes, "rec"), "track-rec")
         self.assertIn("rec_a ~~~ rec_e", tr)  # rows of 4
 
     def test_track_tree_packs_disconnected_nodes_into_rows(self):
@@ -235,7 +247,7 @@ class BuildTests(unittest.TestCase):
         nodes[0].update(outcome="successful", evidence=["e"])
         nodes.append(node("rate-x", depends_on=["rec-n01"]))
         nodes[1].update(state="done", outcome="successful", evidence=["e"])
-        tr = self.region(built(nodes), "track-rec")
+        tr = self.region(tfile(nodes, "rec"), "track-rec")
         chain = [ln.split() for ln in tr.splitlines() if " ~~~ " in ln]
         down = {}
         for a, _, b in chain:
@@ -274,15 +286,15 @@ class BuildTests(unittest.TestCase):
     def test_external_refs_on_label(self):
         deps = [node(f"cc-{i}") for i in range(9)]
         mine = node("rec-a", depends_on=[d["id"] for d in deps], replaced_by=["cc-0"])
-        tr = self.region(built(deps + [mine]), "track-rec")
+        tr = self.region(tfile(deps + [mine], "rec"), "track-rec")
         self.assertIn("ext: cc-0, cc-1 +7", tr)
         self.assertNotIn("x_", tr)
         self.assertNotIn("~~~", tr)  # a single node: nothing to stack
-        self.assertNotIn("ext:", self.region(built([node("rec-a"), node("rec-b", depends_on=["rec-a"])]), "track-rec"))
+        self.assertNotIn("ext:", self.region(tfile([node("rec-a"), node("rec-b", depends_on=["rec-a"])], "rec"), "track-rec"))
 
     def test_transitive_prerequisites_not_drawn(self):
         nodes = [node("rec-a"), node("rec-b", depends_on=["rec-a"]), node("rec-c", depends_on=["rec-a", "rec-b"])]
-        out = built(nodes)
+        out = tfile(nodes, "rec")
         tr = self.region(out, "track-rec")
         self.assertIn("rec_a --> rec_b", tr)
         self.assertIn("rec_b --> rec_c", tr)
@@ -334,7 +346,7 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("rec-b<br/>○ next ⚠", ov)
         # links in order: row anchor (0), track chain (1), rec_a qualified (2), rec_a-->rec_b (3), rate_c qualified (4)
         self.assertIn("linkStyle 2,4 stroke:#e69500", ov)
-        tr = out.split("<!-- BEGIN GENERATED: track-rate -->")[1].split("<!-- END")[0]
+        tr = self.region(tfile(nodes, "rate"), "track-rate")
         self.assertIn("ext: rec-b", tr)  # other-track target: named on the label, not drawn as a stub
         self.assertNotIn("x_rec_b", tr)
 
@@ -348,11 +360,10 @@ class BuildTests(unittest.TestCase):
         self.assertIn(f"linkStyle {i} ", ov)
 
     def test_notes_table(self):
-        out = built([node("rec-a", notes="why | so"), node("rec-b")])
-        tb = out.split("<!-- BEGIN GENERATED: table -->")[1].split("<!-- END")[0]
-        self.assertLess(tb.index("| id | title | state"), tb.index("#### Details per node: rec"))
+        tb = self.region(tfile([node("rec-a", notes="why | so"), node("rec-b")], "rec"), "table-rec")
+        self.assertLess(tb.index("| id | title | state"), tb.index("### Details per node"))
         self.assertIn("| `rec-a` | T rec-a | why \\| so |  |", tb)
-        self.assertNotIn("`rec-b` | T rec-b | ", tb.split("#### Details")[1])
+        self.assertNotIn("`rec-b` | T rec-b | ", tb.split("### Details")[1])
 
     @staticmethod
     def region(out, name):
@@ -362,7 +373,7 @@ class BuildTests(unittest.TestCase):
         order = build.REGION_ORDER
         self.assertEqual(order[:9], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",
                                      "waiting-on-owner", "vm-queue", "timeline"])
-        self.assertEqual(order[-1], "table")
+        self.assertEqual(order[-1], "tracks")
         out = built([node("rec-a")])
         pos = [out.index(f"<!-- BEGIN GENERATED: {n} -->") for n in order]
         self.assertEqual(pos, sorted(pos))
@@ -438,8 +449,75 @@ class BuildTests(unittest.TestCase):
                                      "running").strip(), "_None._")
 
     def test_table_row(self):
-        out = built([node("rec-a", headline="a|b", evidence=["x", "y"], depends_on=[])])
+        out = tfile([node("rec-a", headline="a|b", evidence=["x", "y"], depends_on=[])], "rec")
         self.assertIn("| `rec-a` | T rec-a | next | unrated | a\\|b | x; y |  |", out)
+
+
+class TrackFileTests(Files, unittest.TestCase):
+    NODES = GOOD + [node("cc-x", state="done", outcome="successful", evidence=["e"], notes="n")]
+
+    def outputs(self, nodes=None, text=None):
+        return build.render_outputs(nodes or self.NODES, text or skeleton(), TODAY)
+
+    def test_main_has_exactly_three_mermaid_blocks(self):
+        self.assertEqual(self.outputs()[build.MD_KEY].count("```mermaid"), 3)
+        # even when the skeleton is built from real REGION_ORDER only: no track tree leaks into the main file
+        self.assertNotIn("track-", "".join(build.REGION_ORDER))
+
+    def test_each_track_file_has_one_block(self):
+        outs = self.outputs([node(f"{c}-a") for c in build.TRACKS])  # every track non-empty
+        self.assertEqual(len(outs), 1 + len(build.TRACKS))
+        for code in build.TRACKS:
+            text = outs[f"roadmap/tracks/{code}.md"]
+            self.assertEqual(text.count("```mermaid"), 1, code)
+            self.assertTrue(text.startswith("<!-- Generated by"))
+            self.assertIn(f"# {code} - {build.TRACKS[code][0]}", text)
+            self.assertIn("(../../roadmap.md)", text)
+
+    def test_tracks_region_links_every_track_file(self):
+        reg = BuildTests.region(self.outputs()[build.MD_KEY], "tracks")
+        for code, (name, _) in build.TRACKS.items():
+            self.assertIn(f"[{code} - {name}](roadmap/tracks/{code}.md)", reg)
+        self.assertIn("[rec - recovery](roadmap/tracks/rec.md): 2 nodes (1 done, 1 in progress)", reg)
+        self.assertIn("[obs - observability](roadmap/tracks/obs.md): 0 nodes", reg)
+
+    def test_empty_track_file(self):
+        self.assertIn("_No nodes in this track yet._", self.outputs()["roadmap/tracks/obs.md"])
+
+    def test_rebuild_is_idempotent_on_disk(self):
+        n, m = self.dir / "nodes.yaml", self.dir / "roadmap.md"
+        n.write_text(yaml.safe_dump(self.NODES, allow_unicode=True), encoding="utf-8")
+        m.write_text(skeleton(), encoding="utf-8", newline="")
+        args = ["--nodes", str(n), "--md", str(m), "--today", TODAY]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(build.main(args), 0)
+            self.assertEqual(build.main(args), 0)
+        self.assertIn("updated", buf.getvalue().splitlines()[0])
+        self.assertIn("already up to date", buf.getvalue().splitlines()[1])
+        self.assertTrue((self.dir / "roadmap" / "tracks" / "rec.md").exists())
+
+    def test_check_flags_stale_missing_and_extra_track_files(self):
+        n, m = self.dir / "nodes.yaml", self.dir / "roadmap.md"
+        n.write_text(yaml.safe_dump(self.NODES, allow_unicode=True), encoding="utf-8")
+        m.write_text(skeleton(), encoding="utf-8", newline="")
+        build.main(["--nodes", str(n), "--md", str(m), "--today", TODAY])
+        self.assertEqual(check.run(n, m)[0], [])
+        rec = self.dir / "roadmap" / "tracks" / "rec.md"
+        rec.write_text(rec.read_text(encoding="utf-8").replace("T rec-a", "T rec-X"), encoding="utf-8")
+        (self.dir / "roadmap" / "tracks" / "cod.md").unlink()
+        (self.dir / "roadmap" / "tracks" / "gone.md").write_text("x", encoding="utf-8")
+        errs = "\n".join(check.run(n, m)[0])
+        self.assertIn("rec.md: generated track file is stale", errs)
+        self.assertIn("cod.md: track file missing", errs)
+        self.assertIn("gone.md: no such track", errs)
+        build.main(["--nodes", str(n), "--md", str(m), "--today", TODAY])  # build repairs all three
+        self.assertEqual(check.run(n, m)[0], [])
+
+    def test_mermaid_cap(self):
+        block = "```mermaid\n"
+        self.assertEqual(check.mermaid_errors({"a.md": block * check.MAX_MERMAID_PER_FILE}), [])
+        self.assertEqual(len(check.mermaid_errors({"b.md": block * (check.MAX_MERMAID_PER_FILE + 1)})), 1)
 
 
 class StaleTests(Files, unittest.TestCase):
@@ -492,6 +570,7 @@ class StaleTests(Files, unittest.TestCase):
         n, m = self.dir / "nodes.yaml", self.dir / "roadmap.md"
         n.write_text(yaml.safe_dump({"nodes": GOOD, "dropped": []}, allow_unicode=True), encoding="utf-8")
         m.write_text(md, encoding="utf-8", newline="")
+        self.write_tracks(GOOD)
         self.assertEqual(check.run(n, m)[0], [])
 
     def test_bad_yaml(self):

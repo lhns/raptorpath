@@ -16,6 +16,11 @@ FIELDS = ["id", "title", "track", "kind", "state", "outcome", "evidence", "verdi
 LIST_FIELDS = ["evidence", "depends_on", "replaced_by", "folded"]
 OPTIONAL = ["qualified_by", "notes", "vm_order", "order_reason", "plain", "waiting_on"]  # absent == [] / "" / None
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+# GitHub fails to render some Mermaid blocks ("Unable to render rich display") when one page holds too many;
+# which blocks fail varies per page load (2026-11-13: 14 blocks in one 231 KB file failed from block 6 to 10 on;
+# 3 and 8 per file rendered). The cause is not known; the cap is empirical and set to the most the shipped layout
+# was verified with (the main page's 3 blocks).
+MAX_MERMAID_PER_FILE = 3
 TODAY_RE = re.compile(r"^%% today: (\d{4}-\d{2}-\d{2})\r?$", re.M)
 
 
@@ -206,6 +211,31 @@ def check_md(nodes, md_text):
     return errors, warnings
 
 
+def check_tracks(nodes, md_path):
+    """Per-track files must equal a fresh rebuild; no file for a code outside TRACKS; Mermaid cap per file."""
+    errors = []
+    md_path = Path(md_path)
+    texts = {}
+    for code in build.TRACKS:
+        p = md_path.parent / "roadmap" / build.track_path(code)
+        try:
+            texts[p] = p.read_bytes().decode("utf-8")
+        except OSError:
+            errors.append(f"{p.name}: track file missing (run tools/roadmap/build.py)")
+            continue
+        if texts[p] != build.render_track_file(nodes, code):
+            errors.append(f"tracks/{p.name}: generated track file is stale (run tools/roadmap/build.py)")
+    errors += [f"tracks/{p.name}: no such track in TRACKS (run tools/roadmap/build.py to delete it)"
+               for p in build.stale_track_files(md_path)]
+    return errors, texts
+
+
+def mermaid_errors(texts):
+    """texts: {path: text} of generated Markdown files."""
+    return [f"{Path(p).name}: {t.count('```mermaid')} Mermaid blocks, max {MAX_MERMAID_PER_FILE} per file"
+            for p, t in texts.items() if t.count("```mermaid") > MAX_MERMAID_PER_FILE]
+
+
 def run(nodes_path, md_path):
     try:
         nodes = build.load_nodes(nodes_path)
@@ -219,7 +249,9 @@ def run(nodes_path, md_path):
     except OSError as e:
         return [f"roadmap.md: {e}"], warnings
     e2, w2 = check_md(nodes, text)
-    return e2, warnings + w2
+    e3, texts = check_tracks(nodes, md_path)
+    texts[Path(md_path)] = text
+    return e2 + e3 + mermaid_errors(texts), warnings + w2
 
 
 def main(argv=None):

@@ -4093,10 +4093,11 @@ nodes:
   title: Guard v2 implementation
   track: meas
   kind: instrument
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - status §41d implementation prerequisites
+  - merge 9e687938 (guard v2), main 0ed6d383
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -4105,11 +4106,11 @@ nodes:
   qualified_by: []
   lane: no-cargo
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-13'
   folded: []
   overview: true
   plain: Building the new merge check, which drops a misleading delay reading and adds a proper measure of how long data waits before delivery.
-  notes: 'Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it.'
+  notes: 'Merged to main (9e687938 "Merge guard v2 (status 41d)", batch ending 0ed6d383): selectable clause set, plan 41d, v1 bit-identical, VOID rule, 600 MB d80 table. Unrated by the non-merge rule until a done node builds on it. Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it.'
 - id: model-law-ledger
   title: Law ledger
   track: model
@@ -4125,28 +4126,50 @@ nodes:
   headline: ''
   depends_on: []
   replaced_by: []
-  qualified_by: []
+  qualified_by:
+  - rec-wire-clock-derivation
   lane: no-cargo
   start: '2026-11-13'
   end: '2026-11-13'
   folded: []
   overview: true
   plain: Audited every formula in the system for where it comes from and whether it has been checked in real conditions, and ranked the fixes.
-  notes: 'Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Branch unmerged (inventory merge). Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire).'
+  notes: 'Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire).'
 - id: meas-s51-design
   title: Off-Bulk benchmark design (§51)
   track: meas
   kind: research
-  state: next
+  state: done
   outcome: unrated
   evidence:
-  - plan W5.1
-  - status §3.10 item 2 (crossing r per cell for §51)
-  - status §41d domain note
-  verdict_quote: ''
+  - branch s51-design (5a9dc401)
+  - docs/derivations/s51-design.md
+  - status §3.3 additions (github/main 695c7f4f)
+  verdict_quote: Five behaviours stay keyed on the hint *string*, so a sweep on one carrier hint cannot see a step at a preset.
   headline: ''
   depends_on:
   - meas-guard-v2
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-13'
+  end: '2026-11-13'
+  folded: []
+  overview: false
+  plain: Planning the first real-network test of the low-latency and default settings, to check the system behaves smoothly across the latency dial.
+  notes: 'No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it).'
+- id: meas-s51-harness
+  title: §51 harness and scorer
+  track: meas
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/s51-design.md §8 P1
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rec-s54-session
   replaced_by: []
   qualified_by: []
   lane: no-cargo
@@ -4154,16 +4177,100 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: Planning the first real-network test of the low-latency and default settings, to check the system behaves smoothly across the latency dial.
-  notes: 'Done when: the §51 pre-registration is committed (Realtime and Auto rows at c2/c8, a 5-point δ sweep through the presets, an in-order delay definition valid for ρ < 1, reading r per cell for the W22 crossing) and its harness path passes a stub run and LD_REHEARSE.'
+  plain: Building the scripts that run and score the off-Bulk test, after the next session's scripts merge, because they edit the same files.
+  notes: 'Gates §51. Blocked on the §54 harness merge (same files). Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7).'
+- id: rate-fix-rate-readout
+  title: Repair-rate readout
+  track: rate
+  kind: instrument
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/s51-design.md §8 P2
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour.
+  notes: 'Without it §51 reads only the granted r and reports the law''s r, the clamps and the channel split as missing. rate-fix-term-gauge (R02) can merge into it if controller_rate returns its argmax bit-identically. Done when: a behaviour-neutral [RATE] readout on the [DIAG] cadence carries the law''s r (mean, p50), r_anchor, r_late and β, the tail target, the spare-clamped rate with a per-leg bind fraction, the soft-saturation, overhead and W* clip bind fractions, the fraction of evaluations on the P_fec > 0 side, cod split by channel (proactive, margin, request), and a one-time echo of the resolved dial on both ends; a bit-identical test shows behaviour unchanged.'
+- id: meas-s51b-rho
+  title: Partial-reliability measurement block
+  track: meas
+  kind: research
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/s51-design.md §2.3, §8 P4
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-s51-session
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  vm_order: 12
+  order_reason: A follow-on to the off-Bulk session; it first needs the drop setting to be adjustable on its own.
+  plain: A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own.
+  notes: 'This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction.'
+- id: model-fix-hint-keyed-paths
+  title: Hint-keyed engine paths made continuous
+  track: model
+  kind: mechanism
+  state: blocked
+  outcome: unrated
+  evidence:
+  - status §3.3 additions (695c7f4f)
+  - docs/derivations/s51-design.md §1.2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-s51-session
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Removing the five places where the engine still changes behaviour by the name of the preset instead of following the latency dial smoothly.
+  notes: 'Law ledger: S08, S09 (moved from rate-fix-rho-realtime). queue_target_mult is K01''s, which cc-copa-consumers deletes or reduces; whichever lands first removes the table. The symbol-size row has no ledger row yet (s51-design P6). Covers model-mode-switch-debts. Done when: the five hint-keyed behaviours (source-symbol size, the Realtime duplicate send, packing and batching scope, queue_target_mult, the default ρ) are each one formula continuous in δ (or ρ an independent dial), with continuity tests through every preset (±2 %), after §51 has measured the step.'
 - id: infra-inventory-merges
-  title: Inventory merges to main
+  title: Inventory merges (first batch)
+  track: infra
+  kind: infra
+  state: done
+  outcome: unrated
+  evidence:
+  - merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-13'
+  end: '2026-11-13'
+  folded: []
+  overview: false
+  plain: Merging the finished design documents and small test fixes that are still sitting on side branches.
+  notes: 'Merged to main 2026-11-13: guard-v2, law-ledger, p0-dwell-diag, roadmap, test-debts (docs/tools/tests only). The derivation-branch merges are infra-derivation-merges.'
+- id: infra-derivation-merges
+  title: Derivation branch merges
   track: infra
   kind: infra
   state: next
   outcome: unrated
-  evidence:
-  - git branch -r --no-merged github/main (2026-11-13)
+  evidence: []
   verdict_quote: ''
   headline: ''
   depends_on: []
@@ -4174,8 +4281,8 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: Merging the finished design documents and small test fixes that are still sitting on side branches.
-  notes: 'Done when: the docs-only derivation branches (derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wasm-modeswitch-audit, p0-dwell-diag, guard-clause-dry, dup-diag docs), test-debts and roadmap-tool are merged into main or recorded as kept-unmerged with a reason.'
+  plain: Merging the finished design documents that are still on side branches.
+  notes: 'Done when: the docs-only derivation branches (derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wasm-modeswitch-audit, dup-diag docs, guard-clause-dry, wire-clock-derive, s51-design) are merged into main or recorded as kept-unmerged with a reason.'
 - id: perf-bbrrs-ring-fix
   title: bbr_rs send-record ring fix
   track: perf
@@ -4184,6 +4291,7 @@ nodes:
   outcome: unrated
   evidence:
   - plan W3.6e
+  - branch bbrrs-r4 (fa9947dd)
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -4196,7 +4304,8 @@ nodes:
   folded: []
   overview: false
   plain: Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one.
-  notes: 'Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench.'
+  notes: 'Built on branch bbrrs-r4 (fa9947dd): the send-record map is a fixed-bound ring; the ns gate (db2cb4f4) went red at baseline (7.72x) and green after the fix (net ratio 7.7x -> 1.3-1.7x). Kept in-progress, not done, because it merges with the round-2 session. Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench.'
+  waiting_on: the bbr_rs round-2 session on the VM
 - id: meas-adversarial-cells-build
   title: 'Adversarial cells: build and validate'
   track: meas
@@ -4366,6 +4475,7 @@ nodes:
   headline: ''
   depends_on:
   - meas-s51-design
+  - meas-s51-harness
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -4766,7 +4876,7 @@ nodes:
   folded: []
   overview: false
   plain: Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule.
-  notes: 'Law ledger: K01, K02, K03, K04, K08, E02 (P3): Copa''s legacy controller and its readers, deleted or reduced; one clock. Done when: the four Copa cwnd consumers read the per-leg state and queue_target_mult is one continuous function of δ (no hint table), with continuity tests through every preset; the §3.3 hint- and ρ-keyed sites are each one continuous formula.'
+  notes: 'Law ledger: K01, K02, K03, K04, K08, E02 (P3): Copa''s legacy controller and its readers, deleted or reduced; one clock. Done when: the four Copa cwnd consumers read the per-leg state and queue_target_mult is one continuous function of δ (no hint table), with continuity tests through every preset.'
 - id: rec-recovery-timeouts
   title: Recovery timeouts after store law
   track: rec
@@ -4780,7 +4890,7 @@ nodes:
   headline: ''
   depends_on:
   - store-engine-form-impl
-  - rec-fix-pooled-clock
+  - rec-fix-perleg-clock-n1
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -4976,39 +5086,44 @@ nodes:
   plain: 'An open research problem: nobody has yet found an honest way to measure link speed and minimum delay for the in-flight data limit, after seven failed attempts, so this node may end with a declared fallback instead of a fix.'
   notes: 'Law ledger: E04, E03. Ranks 1-2, ships with F01 (store-engine-form-impl). OPEN RESEARCH PROBLEM. Seven failed attempts, all already in the tree: the send-interval sampler under-reads x0.1-0.5 (§23) and the quinn-rate and loop-time options fail (§24, both store-input-search); bbr_rs''s delivered rate is circular at c2 (§27, store-input-search); the derivation from committed ledgers NONE-CLOSES (§34, store-input-search); receiver dispersion is NOT-YET (§36, §40, store-engine-form); the netem-oracle L converges only at c2 (§43b, store-engine-form); the power-seeking law is not viable (§29, store-power-law). Untested candidates: for RTprop, quinn''s wire rtt.min() and bbr_rs''s m-hat; for the rate, bbr_rs''s b-hat or a law that needs no rate. The bbr_rs estimates come from the round-2 work, hence the edge to cc-bbrrs-r2. Fallback if no honest input is found: ship the law with the N·pool ceiling as a declared resource bound outside the law (FORMULA-FIRST provenance class), its bind
     fraction gauged and reported on every battery, and the inputs marked DISHONEST-INPUT in the ledger with the store law left open. Done when: a derivation in the paper names a link-rate source the store cap does not itself set (or a law that needs none) and an RTprop from a wire clock, each with a test that it reads the link at c8 within a stated bound; or, failing that, the fallback above is written into the paper and the ledger. Ships in one change and one battery with the store-law fix.'
-- id: rec-fix-wire-clock
-  title: Honest per-path wire clock
+- id: rec-wire-clock-derivation
+  title: Recovery-clock derivation (wire clock)
   track: rec
-  kind: law
-  state: next
+  kind: research
+  state: done
   outcome: unrated
   evidence:
-  - law ledger rows E01
-  verdict_quote: ''
+  - branch wire-clock-derive (17bfcefb)
+  - docs/derivations/wire-clock.md
+  - status §55 Erratum 1 (github/main 5e28791b)
+  verdict_quote: '**The ledger''s item 7 is withdrawn for the recovery clocks.**'
   headline: ''
   depends_on:
   - model-law-ledger
   replaced_by: []
   qualified_by: []
-  lane: host-cargo
-  start: ''
-  end: ''
+  lane: no-cargo
+  start: '2026-11-13'
+  end: '2026-11-13'
   folded: []
   overview: false
-  plain: Giving every recovery timer a delay measured on the network itself, instead of one that includes time waiting in the sender's own queue.
-  notes: 'Law ledger: E01. Done when: a per-path wire RTT (and an age measured from the wire send) is in the paper with provenance, every recovery law reads it instead of the app-echo EWMA, and red-first tests show the clock excludes the sender''s send-buffer dwell.'
-- id: rec-fix-pooled-clock
-  title: Per-path recovery clock, not pooled
+  plain: Worked out which delay the retransmit timers need, and found they should keep the round trip the sender already measures, read per path, instead of switching to the network-only delay.
+  notes: 'No raw record (newer than the extract). The app-echo clock shares the flight stamp with the age it is compared against, and two cells reject a wire clock post hoc (c1d: loop 19-23 ms on a 2-3 ms wire RTT; c2: bbr_rs drops the wire RTT 5x with the loop unchanged). E01 stays dishonest for the store law and the other RTprop consumers (E03, S01, E12, R07), and for the recovery clocks it is inflated by the store defect, so it waits on the store fix. Unrated by the non-merge rule: recorded in status, but so far only forward nodes build on it.'
+- id: rec-fix-perleg-clock-n1
+  title: Per-leg recovery clock, one law
   track: rec
   kind: law
   state: blocked
   outcome: unrated
   evidence:
-  - law ledger rows E11
+  - status §55 Erratum 1
+  - docs/derivations/wire-clock.md §8
+  - law ledger rows E11, C01, C04, C05
   verdict_quote: ''
   headline: ''
   depends_on:
-  - rec-fix-wire-clock
+  - rec-s54-session
+  - rec-wire-clock-derivation
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -5016,8 +5131,9 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: Making each missing packet's timer follow the delay of the path it was sent on, instead of the slowest path.
-  notes: 'Law ledger: E11. Done when: the pooled recovery srtt (max over live paths) is replaced by each sequence''s own path clock, in the paper first, with tests.'
+  plain: Making each missing packet's timer follow its own path, using the same loss rule on one path as on many, and keeping the re-send cooldown only until a counter proves it never acts.
+  notes: 'Law ledger: E11, C01, C04, C05. Replaces rec-fix-wire-clock (dissolved by §55 Erratum 1), and folds the former rec-fix-pooled-clock (E11), rec-fix-time-threshold (C01, C04) and rec-fix-cooldown (C05). Based on cand54 (both change the gap-batch tuple), so it waits for the §54 session; next once that session is done. Left out of this change: the latest-sample clock (with the per-leg state), the receiver refresh (rec-fix-refresh-clock) and the NACK throttle (rec-fix-nack-throttle, gauge first). The 10 ms floor is kept. Done when: the paper text is written first (§7.1, A.6, §11.2; drafted in the derivation''s §8); red-first host tests show each seq''s clock reads its own leg, the N = 1 age gate is gone with the SACK ranges handed to the packet-threshold evidence ingest (branch A), and a seq with no flight record does not re-fire on every report; then a guard v2 passes with a registered c2 goodput prediction (branch B as the falsifier) and fast/fired at N = 1 as a readout. The cooldown
+    stays one session behind a bind counter predicted 0 and is deleted when the VM reads 0.'
 - id: rec-fix-refresh-clock
   title: Receiver refresh clock input
   track: rec
@@ -5029,7 +5145,7 @@ nodes:
   verdict_quote: ''
   headline: ''
   depends_on:
-  - rec-fix-wire-clock
+  - store-engine-form-impl
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -5037,63 +5153,19 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: Giving the receiver a real delay for its re-report timer, which today runs on a fixed default.
-  notes: 'Law ledger: E10, C07. Fixes the open defect rec-defect-refresh-input. Done when: the receiver reads the data sender''s honest RTT (published or measured at the receiver) and the refresh cadence is derived in the paper, with a bind-fraction gauge; ships E10 and C07 together.'
-- id: rec-fix-cooldown
-  title: Retransmit cooldown on its leg
-  track: rec
-  kind: law
-  state: blocked
-  outcome: unrated
-  evidence:
-  - law ledger rows C05
-  verdict_quote: ''
-  headline: ''
-  depends_on:
-  - rec-fix-pooled-clock
-  replaced_by: []
-  qualified_by: []
-  lane: host-cargo
-  start: ''
-  end: ''
-  folded: []
-  overview: false
-  plain: Making the wait before re-sending a packet follow the path it travels on.
-  notes: 'Law ledger: C05. Done when: the per-sequence retransmit cooldown reads the wire clock of the retransmit''s own leg and is derived in the paper, with tests.'
-- id: rec-fix-time-threshold
-  title: Loss time threshold and age gate
-  track: rec
-  kind: law
-  state: blocked
-  outcome: unrated
-  evidence:
-  - law ledger rows C01, C04
-  verdict_quote: ''
-  headline: ''
-  depends_on:
-  - rec-fix-wire-clock
-  - rec-fix-pooled-clock
-  replaced_by: []
-  qualified_by: []
-  lane: host-cargo
-  start: ''
-  end: ''
-  folded: []
-  overview: false
-  plain: Making the rule that declares a packet lost use the network delay, and use the same rule on one path as on many.
-  notes: 'Law ledger: C01, C04. C04 (P2): the shipped single-path recovery law is the pre-RFC srtt/2 age gate; covered here because C01 at N = 1 replaces it. Done when: the per-path time threshold reads the wire clock with an age from the wire send, the paper''s single-path age-gate text is corrected now, and one law across any number of paths (the RECOV_SP arm at N = 1) passes a battery.'
+  plain: Giving the receiver a real delay for its re-report timer; it waits for the in-flight limit fix, because until then the timer's limits decide its value anyway.
+  notes: 'Law ledger: E10, C07. Blocked on the store fix: today the refresh clamps bind (at c1 the 25 ms floor would move the refresh from 100 to 25 ms where the CPU clause is tightest; at c8 2·srtt stays above the 100 ms ceiling), so the honest input only moves the output once the store defect is gone (§55 Erratum 1). Fixes the open defect rec-defect-refresh-input. Done when: the receiver reads the data sender''s honest RTT (published or measured at the receiver) and the refresh cadence is derived in the paper, with a bind-fraction gauge; ships E10 and C07 together.'
 - id: rec-fix-nack-throttle
   title: 'NACK repair throttle: gauge, paper'
   track: rec
   kind: law
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - law ledger rows C09
   verdict_quote: ''
   headline: ''
-  depends_on:
-  - rec-fix-wire-clock
+  depends_on: []
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -5101,8 +5173,29 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: Measuring, then justifying or removing, a hidden rule that limits how many packets one loss report may ask to re-send.
-  notes: 'Law ledger: C09. New in the ledger: a default-path AIMD heuristic with no paper entry. Done when: a gauge reports the per-report cap and multiplier bind fractions at c8, then the throttle gets a paper entry with provenance for its seven constants, or is deleted.'
+  plain: First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it.
+  notes: 'Law ledger: C09. Gauge first: it needs no clock change to be measured (§55 Erratum 1 leaves it out of the clock fix). Done when: a gauge reports the per-report cap and multiplier bind fractions at c8, then the throttle gets a paper entry with provenance for its seven constants, or is deleted.'
+- id: rec-retx-behind-source
+  title: Retransmits queued behind source?
+  track: rec
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - plan W3.6d (unanswered)
+  - status §55 Erratum 1 ("plan item 6d, unanswered")
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets.
+  notes: '§55 Erratum 1: at c8 the recovery lever is the dwell, i.e. the store fix and this question. Done when: a diagnosis from the code path (transport.send_symbols to the per-path I/O owner) and the committed §48b/§53 ledgers says whether retransmits wait behind source symbols in quinn''s per-path send buffer, with the measured dwell, and names the fix (a priority seam in the I/O owner) if they do.'
 - id: rate-fix-term-gauge
   title: Rate-law term-win gauge
   track: rate
@@ -5115,7 +5208,6 @@ nodes:
   headline: ''
   depends_on:
   - rate-fix-estimators
-  - rec-fix-wire-clock
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -5136,7 +5228,7 @@ nodes:
   verdict_quote: ''
   headline: ''
   depends_on:
-  - rec-fix-wire-clock
+  - place-per-leg-impl
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -5145,7 +5237,7 @@ nodes:
   folded: []
   overview: false
   plain: Checking and tightening three approximations inside the loss and delay estimators.
-  notes: 'Law ledger: E07, E08, E09. Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins.'
+  notes: 'Law ledger: E07, E08, E09. The measured RTTVAR per leg (E09) lives in the per-leg state, hence that prerequisite (the wire-clock node it used to wait on is dissolved). Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins.'
 - id: rate-fix-rho-realtime
   title: Low-latency and partial-reliability laws
   track: rate
@@ -5158,10 +5250,10 @@ nodes:
   headline: ''
   depends_on:
   - store-engine-form-impl
-  - rec-fix-wire-clock
   - rate-law-reconcile
   - rec-fix-refresh-clock
   - rate-fix-estimators
+  - store-fix-maxbw-minrtt
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -5169,8 +5261,8 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: Fixing the rules that only act when data may be dropped or latency is preferred, so they follow the dials smoothly instead of switching on a preset.
-  notes: 'Law ledger: F02, S01, S02, S04, S05, S06, S08, S09. Done when: the store gate carries the ρ term derived in the paper, the span deadline and shed budget read a wire clock, the receiver hold is b(δ)·SRTT, the taper-copy decision is diagnosed, and the two live hint equalities become continuous laws (or are deleted), each with continuity tests through every preset.'
+  plain: Fixing the rules that only act when data may be dropped, so they follow the dials smoothly and read honest delays.
+  notes: 'Law ledger: F02, S01, S02, S04, S05, S06. S01 and S02 read RTprop, which waits on the honest-input fix (E03), not on a recovery clock. The two hint equalities (S08, S09) moved to model-fix-hint-keyed-paths. Done when: the store gate carries the ρ term derived in the paper, the span deadline and shed budget read a wire clock, the receiver hold is b(δ)·SRTT, the taper-copy decision is diagnosed, each with continuity tests through every preset.'
 - id: model-fix-paper-p2
   title: Paper text for placement and bbr_rs
   track: model
@@ -5225,7 +5317,7 @@ nodes:
   headline: ''
   depends_on:
   - meas-s51-session
-  - rec-fix-wire-clock
+  - store-fix-maxbw-minrtt
   replaced_by: []
   qualified_by: []
   lane: no-cargo
