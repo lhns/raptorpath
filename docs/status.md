@@ -688,3 +688,101 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Finding (model, reported; it predicts nothing for this session).** On the test-side recovery model at the c7 fixture point, the 64-gap horizon moves 70 of 154 app-echo-clock holes from the fast channel to the time channel:
   - app-echo mix (time/fast) [0, 154] → [70, 84]; p50 to first service 14 776 → 12 536 µs; sweeps 1 → 2; retransmits unchanged at 154;
   - the wire-clock mix stays [70, 84] at both horizons.
+
+### 53. Result (2026-11-13; session 07:12–09:11Z, ledger `docs/l1-raw/s53/`, Fable-checked)
+
+**Verdict at c8: CONFIRMED AND EFFECTIVE** (the decision rule's first branch).
+- No falsifier fires.
+- CANDS duplicates (mean 1 291) are below BASE's range upper bound (1 733) and below the registered band 1 800 ± 300.
+- Session: 60 / 60 rows LIVE, 0 VOID; suites on CAND53 `tfail=0`; rehearsal and smoke PASS.
+- Binary witness holds: c8 tail BASE/BASES 2.63–5.44 s, CAND/CANDS/CW0 0.14–0.68 s.
+
+**c8-100, 600 MB (arm means unless marked; ratios pooled; n = 6 per arm):**
+
+| readout | BASE | CAND | CANDS | BASES | CW0 |
+|---|---|---|---|---|---|
+| goodput Mbit/s | 99.3 | 107.1 | 107.8 | 98.6 | 106.4 |
+| tail s | 3.95 | 0.36 | 0.41 | 4.42 | 0.30 |
+| receiver duplicates | 1 546 | 4 004 | **1 291** | 1 427 | 6 691 |
+| duplicates, range | 1 391–1 733 | 2 799–5 242 | 1 101–1 487 | 1 234–1 802 | 5 858–7 807 |
+| duplicates p0 / p1 arrival | 908 / 638 | 1 496 / 2 509 | 746 / 545 | 816 / 611 | 5 332 / 1 359 |
+| retransmits / GB | 25 298 | 30 661 | 25 157 | 24 938 | 36 940 |
+| fires (y + r) | 15 179 | 18 396 | 15 094 | 14 963 | 22 164 |
+| `[HOLD]` `hy` p0 / p1 | 212 / 200 | 2 704 / 682 | 93 / 34 | 163 / 17 | 6 309 / 352 |
+| p0 `hy_p50` | 54 ms | 5.3 ms | 100 ms | 60 ms | 4.9 ms |
+| `[SNAPV]` p1 `stale/rep` (pooled) | 0.986 | 0.993 | 0.993 | 0.984 | 0.997 |
+| p1 share of `rep` (pooled) | 0.248 | 0.289 | 0.272 | 0.263 | 0.337 |
+| p1 `pt_st` / `tt_st` | 158 / 999 | 3 469 / 2 481 | 0 / 0 | 0 / 0 | 6 376 / 2 416 |
+| E (pooled) | 2.91 | 2.03 | — | — | 1.87 |
+| `fed − det` | −165 k | +147 k | −58 k | −197 k | +40 k |
+| retx send-leg-1 share | 0.59 | 0.74 | 0.73 | 0.60 | 0.17 |
+| client / server CPU s/GB | 36.3 / 48.3 | 37.4 / 42.7 | 36.6 / 42.0 | 36.2 / 48.9 | 36.7 / 41.4 |
+| `rtp_floor_p0` µs | 8 967 | 10 256 | 11 536 | 8 145 | 10 855 |
+| `rtp_floor_p0`, range | 7 863–10 235 | 8 395–12 028 | 9 750–12 656 | 7 039–10 174 | 9 060–12 590 |
+
+**Against the predictions.**
+- **Arm off, the mechanism readouts:**
+  - p0 `stale/rep` 0.000 (≤ 0.01 ✓); p1 0.986/0.993 (≥ 0.8 ✓); CAND `pt_st` 3 469 (2 500 ± 1 000 ✓, at the edge); BASE `pt_st` 158 (≤ 800 ✓).
+  - CAND E 2.03 (≥ 2 ✓, at the edge; falsifier < 1.5 not met).
+  - **Missed:** CAND's p1 share of reports, 0.289 against 0.10–0.25 (BASE's 0.248 is inside).
+- **CANDS against CAND:**
+  - duplicates 1 291 (registered 1 800 ± 300: better than the band, below BASE's mean); on p1 545 (registered 700 ± 150: just below the band);
+  - retransmits/GB −5 504 (registered ≈ −4 000), back to BASE's level;
+  - `hy` p0 93 (≤ 300 ✓), p1 34 (≤ 350 ✓); fires 15 094 (15 400 ± 700 ✓);
+  - tail 0.41 s, inside CAND's range ✓;
+  - **missed:** goodput +0.7 Mbit/s against the registered +0.2–0.5;
+  - arm-on falsifiers: p1 duplicates 545 < 1 200; p0 `hy_p50` 100 ms, not ≈ 5 ms; `fed − det` < 0 on every row. None fires.
+- **BASES against BASE:**
+  - duplicates, retransmits/GB, goodput and tail are inside BASE's row range ✓.
+  - Duplicates read −119 on the mean, and BASES's median (1 326) is below BASE's row minimum (1 391). BASE has ≈ 1 160 stale-judged fires per run, and BASES fires 216 fewer.
+  - Supportable: no shift beyond BASE's range at n = 6. A stale-driven share of BASE's 0.35 % of order 10 % is not excluded; the rest is unexplained.
+- **CW0 (reported, not discriminating): the prediction failed.**
+  - Duplicates are 6 691, +67 % on CAND, outside the registered ± 20 %; 5 332 of them arrive on p0.
+  - The send-leg-1 share fell to 0.17 as predicted (≈ 0.18).
+  - The registered account predicted an unchanged total, but `pt_st` rose 3 469 → 6 376 and receiver holes `det` 258 k → 346 k. The duplicate account is incomplete for this arm.
+  - *Hypothesis, untested:* with the defect present, placing retransmits like source moves spurious copies onto the fast leg and adds more.
+  - Goodput −0.7 % against CAND (p = 0.003); tail 0.30 s.
+  - CW0 ran with the defect, so **the leg question under the 64-gap horizon is still open**; W0 with the filter is the row that answers it.
+
+**c1d-400, 5 GB (BASE n = 12, CAND n = 12, CANDS n = 6; median unless marked):**
+
+| readout | BASE | CAND | CANDS |
+|---|---|---|---|
+| goodput Mbit/s | 824.5 | 805.7 | 807.8 |
+| receiver duplicates | 3 011 | 3 413 | 3 253 |
+| retransmits / GB | 4 850 | 5 081 | 5 145 |
+| client / server CPU s/GB | 21.31 / 22.89 | 21.45 / 22.92 | 21.77 / 23.41 |
+| `lag_E_cli` µs | 1 898 | 1 655 | 1 669 |
+| `stale/rep` p0 / p1 (pooled) | 0.073 / 0.089 | 0.158 / 0.091 | 0.112 / 0.072 |
+| E (pooled) | 5.61 | 3.29 | — |
+
+- **Direction check ✓:** c1d `stale/rep` is 0.07–0.16, against c8 p1's 0.99.
+- **CAND vs BASE at c1d (rank-sum, one-sided worse side, n = 12 + 12; median ratios):**
+  - **duplicates +13 % (p = 0.033)**; retransmits/GB +5 % (p = 0.12); goodput −2.3 % (p = 0.24); CPU/GB both ends +0.2 to +0.6 % (p = 0.36, 0.49); `rtp_floor_p0` +1 % (p = 0.21).
+  - `lag_E_cli` −13 % (p = 0.98), `lag_E_srv` −13 % (p = 0.94).
+- **CANDS against CAND at c1d:** duplicates −5 % (p = 0.54); arm means inside CAND's range (its row ranges exceed CAND's on both lag readouts). **The filter does not remove lever B's c1d duplicate cost** at this resolution.
+- **§52's c1d lean** (`lag_E_cli` +34 %, at the guard's 400 MB size) **is not seen at 5 GB**; the guard-size reading was not re-run. The lag clauses are blind at 20–100 %, so this is a null, not a clearance.
+- **Stale reports occur at c1d too:** 7–16 %, about 1.5–1.6 k stale-judged fires per run (`pt_st + tt_st`), enriched (E 3.3–5.6), against ≈ 23–25 k fires per run.
+- **One low row:** BASE s42 r6 reads 365 Mbit/s, with 705 duplicates and 7 300 fires (leg shares 0.24 / 0.76). The §38 lock-out classifier does not flag it (no leg below 10 % share); the cause is unexplained. It drags BASE's means, which is why this table reads medians.
+
+**Open items (reported, not ruled):**
+1. **c8 `rtp_floor_p0` rises on every lever-B arm** (§52 open item).
+   - Means: BASE 8 967, BASES 8 145; CAND 10 256, CANDS 11 536, CW0 10 855.
+   - CANDS against BASE is +29 % on the mean, +35 % on the median, with ranges overlapping only between 9 750 and 10 235.
+   - CANDS against CAND (+15 %, median ratio, p = 0.091) is not established, since BASES reads lower than BASE.
+   - Mechanism unknown. It belongs beside the duplicate numbers in the merge question.
+2. **Lever B's c1d duplicate cost** (+13 %, p = 0.033) is not removed by the filter.
+3. **BASE's duplicates** (≈ 1 500 per c8 run, ≈ 3 000 per c1d run) are mostly unexplained (above).
+4. **The time channel also fires on stale reports:** CAND p1 `tt_st` 2 481, BASE 999. The filter removes both channels' stale fires.
+5. **CW0's duplicate rise** (above), and the open leg question.
+6. **`[HOLD]` is skewed on main too** (extends the §52 Erratum): BASES p0 `hn` 244 against BASE 10 044, `ripe_frac` 0.98 against 0.70. Main's `hn`/`ripe_frac` readings are mostly re-stamps from stale reports. §3.10 item 5's "12 % wasted" must be re-checked if it came from this gauge.
+
+**What follows (no merge from this session).**
+- **The filter becomes a law candidate:**
+  - formula and derivation into the paper first (FORMULA-FIRST);
+  - a test that executes the `serve_gaps` wiring (this session proved it by outcome only);
+  - then the arm becomes the default law with no env;
+  - then a §41c guard of CAND + filter against main.
+- **The `cand52` merge question goes to the user, with:**
+  - CANDS's c8 numbers: the tail gain (+8.5 % goodput at 600 MB c8), with duplicates and retransmits/GB at or below BASE's;
+  - the costs that remain: c8 `rtp_floor_p0` +29 % and c1d duplicates +13 %.
