@@ -893,6 +893,17 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - **So no form ships.** The path is to derive the sliding per-loss law against an executed decoder, with Fable.
   - **Correction to my message to the owner:** the block law's r* under-provisioning does not carry to the engine. The sliding check has the shipped r* meeting the Auto target at c2 and c3, and Realtime is unresolved.
   - **On L1** (Bulk, `--window-reliable`), r* stays bit-identical 0 under any form.
+- **Correction to the P_fec bullet above (2026-11-14, later the same day; `pfec-derive` `b252933b`, round 6).** Two readings in that bullet treated a one-sided bound as a value, and both are withdrawn: "its tail is ≈ 100× off" and "the sliding check has the shipped r* meeting the Auto target".
+  - **The Python sliding decode has no deadline,** so it is only an *upper* bound on recovery. Its premises are uniform repair spacing (the engine's `TaperBudget` front-loads), one GE chain and Δ ≤ 8.
+  - **What stands, in bracket language:**
+    - C6 does not ship. It lies above the bound at W 201 (c3, at half the cut-off rate), needs a second resource bound, and would multiply the shed budget 6–11× unverified.
+    - Under the bound's premises, the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, so its R is too small there. At the engine pin (ε 0.048, r 0.34, A* 4, σ² 3.76), P ≤ 0.458 against the shipped 0.90.
+    - The engine's r* adequacy at Auto and Realtime is **unknown either way**. The tail sample cannot resolve the target (c2: 0 / 4 101 holes; c3: 2 / 7 472).
+    - The one executed datum (an L0 decode share of 0.71–0.84, one rep, inputs unrecorded) cannot be placed.
+  - **Next:** an executed sliding oracle (`pfec-continuous.md` §8.2, design only). It must call engine code, not copy it. The trailing-span seat is inline in `emit_source.rs`, so it is either extracted as a pure move, which also gives `decision_trace_pin` its missing seat, or a copy is witnessed against `[SPAN]` lines.
+    - Known answers come first: P = 0 at r = 0; the block oracle reproduced in a block configuration; P(∞) matching the Python bound.
+    - Each caller's deadline is fixed with Fable.
+    - The registration comes before the run.
 - **Visualizer fixes merged (`viz-fix`, main `0857a0cd`):**
   - the dead classic-hint machine is removed, and the named hints are now an alias table onto the one continuum constructor;
   - the W11 β = 0 guard is gone;
