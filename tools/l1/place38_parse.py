@@ -249,6 +249,118 @@ def expect_rows54b():
     return len(plan54b())
 
 
+# ── status 56: the store-pool sweep (plan 56), REPORTED ONLY, no build, ONE seat (current main is both the pin and the candidate). Three cells in blocks c8 -> c2 -> c1s, each
+# a Latin-square rotation of its pools per replicate (replicate k: seed 42 for even k, 7 for odd; rep = k + 1), then the one RWM_SUCC_DUMP row. Arm "P<pool>" sets
+# RWM_STORE_PATH_POOL=<pool> (nothing at the shipped 2048); "P<pool>D" is the same pool plus RWM_SUCC_DUMP=1. pool56_score.py reads these constants. ──
+CELLS56 = ("c8-100", "c2-100", "c1s-400")
+POOLS56 = {"c8-100": (640, 384, 256, 160, 112, 80), "c2-100": (2048, 384, 256, 192, 160, 128), "c1s-400": (2048, 512, 1024, 768, 384)}
+CONTROL56 = {"c8-100": 640, "c2-100": 2048, "c1s-400": 2048}               # the c8 control is the pool of section 54b's B640; c2 / c1s the shipped pool
+N56 = {"c8-100": {p: 4 for p in POOLS56["c8-100"]}, "c2-100": {p: 3 for p in POOLS56["c2-100"]},
+       "c1s-400": {2048: 6, 512: 6, 1024: 3, 768: 3, 384: 3}}
+NLIVE56 = {"c8-100": 2, "c2-100": 1, "c1s-400": 1}                          # live paths = the ceiling's N: the realised cap is max(N * pool, floor)
+BYTES56 = {"c8-100": 600000000, "c2-100": 600000000, "c1s-400": 5000000000}
+DUMP_ARM56, DUMP_CELL56, DUMP_REP56, DUMP_MIN_RECORDS56 = "P640D", "c8-100", 5, 100000
+REPS_CAP56 = None                                                            # test_stubrun's fast mode caps the replicates per cell (None = the registered design)
+SMOKE56 = [(c, "def", "P%d" % min(POOLS56[c]), "42", 1) for c in CELLS56] + [(DUMP_CELL56, "def", DUMP_ARM56, "42", 1)]
+for _c in CELLS56:
+    for _p in POOLS56[_c]:
+        sp.ARM_SPEC["P%d" % _p] = ("window", "Rlc", "bulk", "ACTIVE")
+        AFAM["P%d" % _p] = "CAND"
+sp.ARM_SPEC[DUMP_ARM56] = ("window", "Rlc", "bulk", "ACTIVE")
+AFAM[DUMP_ARM56] = "CAND"
+
+
+def arm_pool56(arm):
+    """-> (pool, dump) of an arm name `P<pool>` / `P<pool>D`; (None, False) for any other."""
+    m = re.fullmatch(r"P(\d+)(D?)", arm or "")
+    return (int(m.group(1)), m.group(2) == "D") if m else (None, False)
+
+
+def plan56(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 56): per cell, replicate k = 0.. holds every pool with n > k, rotated by k (a cyclic Latin square), seed 42 / 7 alternating;
+    the pools with the larger n (c1s 2048 and 512) therefore take the extra replicates at the block's end, rotated; the SUCC_DUMP row last. 64 rows. A VOID pool echo or a short dump
+    is replaced once by the battery (replace56), which adds a row to the ledger, not to this table."""
+    if smoke:
+        return list(SMOKE56)
+    out = []
+    for cell in CELLS56:
+        nmax = max(N56[cell].values())
+        for k in range(nmax if REPS_CAP56 is None else min(nmax, REPS_CAP56)):
+            act = ["P%d" % p for p in POOLS56[cell] if N56[cell][p] > k]
+            j = k % len(act)
+            out += [(cell, "def", a, "42" if k % 2 == 0 else "7", k + 1) for a in act[j:] + act[:j]]
+    out.append((DUMP_CELL56, "def", DUMP_ARM56, "42", DUMP_REP56))
+    return out
+
+
+def expect_rows56():
+    return len(plan56())
+
+
+def is_pool_void56(row):
+    """A VOID by the pool witness (the [GATES] echo or pool_per_path disagrees with the request): the only echo failure the plan replaces."""
+    return any(x.startswith(("gate-pool", "pool_per_path")) for x in row.get("problems") or [])
+
+
+def replace56(ledger, cell, arm, seed, rep):
+    """Battery helper (`place38_parse.py replace56 <ledger> <cell> <arm> <seed> <rep>`): prints the reason ('pool-echo' / 'dump-short') and returns 0 iff the slot's rows so far are
+    exactly one and that row is replaceable (status 56: VOID pool echo, or the SUCC_DUMP row under DUMP_MIN_RECORDS56 records); prints nothing and returns 1 otherwise (once only)."""
+    rows, _ = rows_of([ledger])
+    mine = [r for r in rows if (r.get("cell"), r.get("arm"), str(r.get("seed")), str(r.get("rep"))) == (cell, arm, str(seed), str(rep))]
+    if len(mine) != 1:
+        return 1
+    r = mine[0]
+    if is_pool_void56(r):
+        print("pool-echo")
+        return 0
+    if arm_pool56(arm)[1] and r.get("status") != "VOID-ONDISK" and ((r.get("succdump") or {}).get("records") or 0) < DUMP_MIN_RECORDS56:
+        print("dump-short")
+        return 0
+    return 1
+
+
+def row_problems56(arm, cell, cli, srv, sha=None, sha_cand=None):
+    """Plan 56's row witnesses: the pool on both ends (a reduced pool echoing 2048 is a failure; the shipped 2048 arms echo 2048), the dump gate (RWM_SUCC_DUMP=1 on both ends of
+    the dump arm and nowhere else), and the one seat's binary (LD_SHA)."""
+    import pool54_score
+    pool, dump = arm_pool56(arm)
+    if pool is None or pool not in POOLS56.get(cell, ()):
+        return [f"unknown-arm-{arm}-at-{cell}"]
+    p = []
+    for side, lines in (("cli", cli), ("srv", srv)):
+        tok, info = pool_echo56(lines)
+        if tok != str(pool):
+            p.append(f"gate-pool-{side}={tok} (want {pool})")
+        if side == "cli" and info != pool:
+            p.append(f"pool_per_path-{side}={info} (want {pool})")
+        if side == "srv" and info is not None and info != pool:
+            p.append(f"pool_per_path-{side}={info} (want {pool})")
+        g = lc.gate_tok(lines, "RWM_SUCC_DUMP")
+        if (dump and g != "1") or (not dump and g not in (None, "0")):
+            p.append(f"gate-succ-dump-{side}={g} (want {'1' if dump else 'absent or 0'})")
+    return p + pool54_score.sha_problems("CAND", sha, sha_cand, None)
+
+
+def pool_echo56(lines):
+    import pool54_score
+    return pool54_score.pool_of(lines)
+
+
+def succdump_stats(lines):
+    """The raw successor dump of a log: {records: sum of the `[SUCCDUMP] n=` batches, bytes: the lines' size, capped: the `[SUCCDUMP-CAP] dumped=` value or None}."""
+    rec = byt = 0
+    capped = None
+    for ln in lines or []:
+        m = re.search(r"\[SUCCDUMP\] n=(\d+) d=", ln)
+        if m:
+            rec += int(m.group(1))
+            byt += len(ln.encode("utf-8", "replace")) + 1
+        m = re.search(r"\[SUCCDUMP-CAP\] dumped=(\d+)", ln)
+        if m:
+            capped = int(m.group(1))
+    return {"records": rec, "bytes": byt, "capped": capped}
+
+
 def snapver_problems(arm, cli, srv):
     """Plan 53 witness: `RWM_RECOV_SNAPVER=<0|1>` is always echoed by a plan-53 binary, so an ABSENT token is a failure, not "off". CANDS / BASES read 1 on both ends, every other arm 0."""
     want = "1" if ARM_ENV53.get(arm, (None, None, None))[1] == "1" else "0"
@@ -616,6 +728,17 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t54"] = pool54_score.row_metrics(cli, srv, drv, row.get("bytes"), ARM_POOL54.get(arm, (None, None))[1])
         except Exception as e:      # a reported readout never voids a row
             row["t54"], row["t54_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "56":
+        # Status 56, the sweep: the pool / dump witnesses and the seat's binary void a row (the pool echo is replaced once, by the battery); the readouts are reported only.
+        import pool56_score
+        p.extend(row_problems56(arm, cell, cli, srv, sha, os.environ.get("LD_SHA")))
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        row["succdump"] = {"cli": succdump_stats(cli), "srv": succdump_stats(srv)}
+        row["succdump"].update({k: max(row["succdump"]["cli"][k] or 0, row["succdump"]["srv"][k] or 0) for k in ("records", "bytes")})
+        try:
+            row["t56"] = pool56_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm_pool56(arm)[0])
+        except Exception as e:      # a reported readout never voids a row
+            row["t56"], row["t56_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -1197,6 +1320,18 @@ def check54b(path):
     return 0 if ok else 1
 
 
+def check56(path):
+    """rc 0 iff the sweep's battery finished and the ledger holds a row for every slot of the table (64; a replaced slot has two rows, only the first of which is VOID)."""
+    rows, _ = rows_of([path])
+    t = open(path, errors="replace").read()
+    n = expect_rows56()
+    slots = {(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in rows}
+    want = {(c, a, sd, str(rp)) for c, _, a, sd, rp in plan56()}
+    ok = "LD-BATTERY-DONE" in t and slots == want
+    print(f"CHECK56 done={'LD-BATTERY-DONE' in t} slots={len(slots & want)}/{n} rows={len(rows)} extra={len(slots - want)}")
+    return 0 if ok else 1
+
+
 def smoke52(path):
     """rc 0 iff the three unscored env rows (W0, W05, WDER at c8-100) are LIVE (their witnesses hold: the arm's env is in the [GATES] echo) and carry the readouts
     the reported scorer needs, `cx_leg=` included (all three run BASE's binary, which must carry the diagnostic); otherwise ABORT-SMOKE."""
@@ -1301,6 +1436,14 @@ def main(argv):
         return 0
     if cmd == "check54b":
         return check54b(a[0])
+    if cmd == "plan56":
+        for c, s_, ar, seed, rep in plan56(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
+        return 0
+    if cmd == "replace56":
+        return replace56(*a[:5])
+    if cmd == "check56":
+        return check56(a[0])
     if cmd == "check52":
         return check52(a[0])
     if cmd == "smoke52":
