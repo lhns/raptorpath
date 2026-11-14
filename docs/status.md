@@ -904,6 +904,16 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
     - Known answers come first: P = 0 at r = 0; the block oracle reproduced in a block configuration; P(∞) matching the Python bound.
     - Each caller's deadline is fixed with Fable.
     - The registration comes before the run.
+- **Second correction (same day; `pfec-oracle-design` `2a622525`).** The caveat "the engine's `TaperBudget` front-loads repairs after each ack" is withdrawn.
+  - `TaperBudget::accrue` has one production call site (`emit_source.rs:543–549`). It is passed `flat_rate = window_rate.min(spare)` and the same `spare`, so grant == rate on every call; the taper shape is inert as wired. Checked by reading and a 10⁵-call Python port; `taper_emission_l0.rs` asserts nothing.
+  - The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust.
+  - **The open premise is now the emitted share W1,** not the spacing. Acks cancel repair debt once per sender-loop iteration (`net/mod.rs:3481–3482`), so the share depends on m̄, the sources acked per advance, which no gauge has settled.
+  - **Oracle spec (open):**
+    - It calls the engine's RLC encoder/decoder, `TaperBudget`, D(δ) and the span seat. The span seat is extracted once, after phase 6, under the VM release-sha proof.
+    - The debt loop is copied, and K4 witnesses it against engine W1 on a recorded row.
+    - Known answers K0–K4 come before any reading.
+    - It is decidable at A* 3–7 (shed budget), report-only in the W 201 body. The tail rule is in miss counts (T = 310 at c2, 171 at c3, per 10⁵ holes).
+    - **Needs:** one VM evicting-seat row with `RWM_DIAG` (c2/c3 Realtime, not `--window-reliable`) to read m̄.
 - **Visualizer fixes merged (`viz-fix`, main `0857a0cd`):**
   - the dead classic-hint machine is removed, and the named hints are now an alias table onto the one continuum constructor;
   - the W11 β = 0 guard is gone;
