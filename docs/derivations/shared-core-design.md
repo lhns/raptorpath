@@ -79,9 +79,15 @@ its idealisation, with a bounding test (§5.4).
 ## 1. Inventory of engine decision logic
 
 Blocker key:
-- **I**: `Instant::now()` or a stored `Instant`. `Instant` compiles on
-  `wasm32-unknown-unknown`, but `now()` panics at run time (std's
-  unsupported-time backend).
+- **I**: a clock read or a stored `Instant`: `Instant::now()`,
+  `.elapsed()` (`control/anchor.rs:94`), or the scheduler's injectable
+  `Clock::now()` (`scheduler/clock.rs:11`, read at `copa.rs:616`, `:748`,
+  `:820`, `:852`, `:943`, `:1264`, `:1436`, `path.rs:127`, `:497`, `:1119`,
+  `:1186`, `scheduler/mod.rs:382`, `:413`, `:443`).
+  - *Unverified here:* `Instant` compiles on `wasm32-unknown-unknown`, and
+    `now()` panics at run time (std's unsupported-time backend). This is
+    std's documented behaviour; step 0.1's wasm32 check does not catch it,
+    and the deny-list does.
 - **E**: env or gate read at call time (`gates::get()` is a process
   `OnceLock`, `gates.rs:86`).
 - **T**: tokio. **Q**: a quinn/transport handle. **A**: atomics or `static`
@@ -103,18 +109,22 @@ Class key (from the wasm audit, plus P):
 | D3 | store-cap selection chain | `net/sender_phases.rs:60–236` (`refresh_store_cap`) | no | `Scheduler` (live paths, b̂·m̂, cwnd), `pol`, `now_us()` | **O** (`[SF]`, `[3T]`, `SumCapGauge`, `DeltaCapGauge`), time | C: `copa_feed.is_some()` picks Σcwnd (`:85`), the `three_term_on` arm (`:179`) and the `store_paths=0` chain (`:209`) | extract the shipped chain only (3.2); Σcwnd and three-term stay in the engine (both are slated to leave, w3 §4 B5 and Group B) |
 | D4 | flow-control gate | `net/mod.rs:2388–2397` (`tx_paused = reliable && (store_len >= cap \|\| cwnd_full)`) | inline expression | the loop locals | none | **B** (`reliable` is a ρ = 1 bit) | stays until the ρ-keyed split is resolved (Stage 3.4 debt) |
 | D5 | snapshot order | `net/snapver.rs:39–77` (`SnapOrder`, `snapver_judges`, `snapver_coalesce_keeps`), `:120` (`judged_gaps`) | yes | `AboveReport` (`net/sack.rs:327`) | none; `take_gap_batch` (`:87`) takes a **T** `mpsc::Receiver` | A | move the law; the dequeue stays in the engine. **Engine-only** under the stop rule (the model has no out-of-order reports) |
-| D6 | time threshold | `net/recovery_laws.rs:118` (`mp_time_threshold_split`), `:225` (`mp_hole_ripe`), `:249` (`time_threshold_ripe`) | yes (µs `u64` in, already a seam) | values | none | A, with a **P** bypass at N ≤ 1 (`:229`) | move (2.1) |
+| D6 | time threshold | `net/recovery_laws.rs:118` (`mp_time_threshold_split`), `:225` (`mp_hole_ripe`), `:249` (`time_threshold_ripe`) | yes (µs `u64` in, already a seam) | values | none | A; `mp_hole_ripe` carries a **P** bypass at N ≤ 1 (`:229`) | move `mp_time_threshold_split` and `time_threshold_ripe` (2.1); `mp_hole_ripe` and its N bypass stay in the engine until owner question 1 |
 | D7 | packet threshold | `recovery_laws.rs:148`, `:166`, `:177` (`mp_ingest_evidence`), `:206` (`mp_packet_threshold_fires`) | yes | `SeqRing<u32>` (`net/seq_ring.rs:29`), `HashMap` | none | A | move with `SeqRing` (2.1) |
 | D8 | age gate, pooled clocks, cooldown, tail sweep, hole refresh | `recovery_laws.rs:266`, `:277`, `:308`, `:317`, `:323`, `:331`, `:340`; constants `net/mod.rs:241–251` | yes | values | none | A; the age gate is the shipped N = 1 law (F5) | move (2.1) |
-| D9 | per-seq gap verdict | `sender_phases.rs:804–961` inside `serve_gaps` (`:614`) | no | `SenderState` maps, the scheduler's clocks, `stats.fec.total_source_symbols` (**A**; one writer, `emit_source.rs:425`, same task, so a per-report snapshot is bit-identical) | **T** (`nack_rx`), **Q** (`transport.send_symbols` `:1051`; its result feeds only `record_correction`, no decision), **O** (`mpd_*`, `mp_thr_of` bumps `mpd_pf_*` `:726–730`), **E** (`charge_recovery_active` `:1066`) | A + **P** (`mp_n_paths > 1` `:892`, `recov_sp && n ≤ 1` `:931`) + C (`recov_sp`) + **B** (`if reliable` clamp `:795`, path choice `:974`) | extract `gap_seq_verdict(..) -> Verdict` (3.1); the I/O stays in the engine; the B and C branches stay in the engine wrapper |
+| D9 | per-seq gap verdict | `sender_phases.rs:804–961` inside `serve_gaps` (`:614`) | no | `SenderState` maps, the scheduler's clocks, `stats.fec.total_source_symbols` (**A**; one writer, `emit_source.rs:425`, same task, so a per-report snapshot is bit-identical) | **T** (`nack_rx`), **Q** (`transport.send_symbols` `:1051`; its result feeds only `record_correction`, no decision), **O** (`mpd_*`, `mp_thr_of` bumps `mpd_pf_*` `:726–730`), **E** (`charge_recovery_active` `:1066`) | A + **P** (`mp_n_paths > 1` `:892`, `recov_sp && n ≤ 1` `:931`) + C (`recov_sp`) + **B** (`if reliable` clamp `:795`, path choice `:974`) | extract the per-channel verdicts (cooldown, shed, time threshold, packet threshold, age gate) as core functions returning a cause (3.1). The channel **selection** (the N split, the `recov_sp` arm, the `reliable` arms) and the I/O stay in the engine wrapper until owner question 1 |
 | D10 | NACK repair margin | `sender_phases.rs:1106–1112` (`ceil(retx · max ε̂)`) | inline | the scheduler | none | A | extract (3.1) |
-| D11 | δ-honest shed | `net/shed.rs:31` (`shed_deadline_us`), `:39` (`shed_allowed`); `control/fec_rate.rs:784` (`residual_loss_after_fec`) | yes | values | none | A, but it inherits R03's step (F6) | move (2.2), after the R03 bounding test exists |
+| D11 | δ-honest shed | `net/shed.rs:31` (`shed_deadline_us`), `:39` (`shed_allowed`); `control/fec_rate.rs:784` (`residual_loss_after_fec`) | yes | values | none | A, but it inherits R03's step (F6) | move the engine side (2.2: the same code, so the same defect); the model adopts it only after R03's verdict (5.2) |
 | D12 | span parameters A\*, D, Δ | `net/emit_source.rs:562–600` inline | no (inline in the emit block) | `est.rtt()` (misnamed `rtprop`, w3 R5), the A\* anchor (**I**, `control/anchor.rs`) | **I** through the anchor | A | engine calls the phase-6 forms (step 1.2) |
 | D13 | generation pipeline depth M\* | `net/mod.rs:475–482` (`gen_pipe_depth`) | yes, private | values | none | A | engine calls the phase-6 form (1.2) |
 | D14 | rate law snapshot | `control/fec_rate.rs:451–528` (`rate_snapshot`), the mix in `RateSnapshot::rate` | the evaluation is shared already (`raptorpath_math::controller_rate`); the snapshot reads a `LossEstimator` | estimator state, `effective_bulkness` (`:379`) | the estimator is **I**, **E** | A (r(β) mix, both terms always computed) | already level 1; it becomes a level-2 decision once the estimator is shared (4.2) |
 | D15 | placement softmax | `scheduler/place.rs:85–100` (`place_symbol`), `:154` (`place_probs`), `:273` (`place_e`), `:288` (`place_costs`) | no | `Scheduler` paths, `place_temperature()` (**E**, `:22`) | **R** (`:90`, `:146`), **E** | A; `place_repair_spare_path` (`:119`) is C (`RWM_XPATH_REPAIR`, Group A) | extract with `u: f64` and `T` as inputs (3.3) |
 | D16 | ρ < 1 path picks, Realtime duplicate | `net/mod.rs:1382–1393`; `emit_source.rs:466` (`protocol_hint == Realtime`) | — | — | — | **B** | never moved as is (Stage 3.4 debt, w3 §6) |
 | D17 | per-path estimators | Copa `scheduler/copa.rs` (19 `Instant` sites; `queue_target_mult` `:314` is a hint table), `LossEstimator` `control/estimator.rs` (`Instant::now()` at `:296`, `:299`, `:311`, `:337`), `SendRateAnchor` `control/anchor.rs` (atomics, `Instant`) | stateful | samples and the clock | **I**, **E**, **A** | Copa's queue target is B (hint table) | `LegState` is born seam-clean in the core (4.1, W3.2); the Copa controller is not moved (W3.2 B5 removes it) |
+| D21 | proactive repair budget | `control/fec_rate.rs:678–735` (`TaperBudget::accrue`: grant = min(owed, max(desire, rate), spare, 1), owed ≤ max(r·W, 1)); its seat `net/emit_source.rs:529–560` (flat rate = min(r, spare), `spare_capacity` `scheduler/mod.rs:568`) | `accrue` is pure state + values; the seat is not | rate, taper (q, decay) from the estimator, W, spare (Copa cwnd, w3 B2) | none in `accrue`; the seat reads **I** through the estimator | A; `RWM_TAPER_R=0` density arm (`:550`) is C | move `TaperBudget` and `TaperFunction` (2.2); `spare` stays an input (W3.2 B2 retargets it) |
+| D22 | repair-rate cadence, debt reduction | `net/emit_source.rs:878` (`cadenced_repair_rate`, `RepairRateCache` `fec_rate.rs:211`); debt reduction `sender_phases.rs:1172`, `:1328` | the cache is keyed on `now_us` | the worst-ε̂ path, `now_us` | **I** (`Instant::now()` `:895` for the eval-ns gauge, **O**) | A | move the cache (2.2); the ns gauge stays outside |
+| D23 | cumulative-ack advance | `sender_phases.rs:1225` (`on_ack_advance`): pruning, χ publication, W\* target via `raptorpath_math::derive_window` | bookkeeping plus shared laws | `SenderState` maps | **O**, **E** | the `if generation` pruning (`:1338`) is C (the generation pipeline) | not moved: bookkeeping, not a decision. W\* and χ are already level 1 |
+| D24 | generation emission | `sender_phases.rs:273` (`emit_generation_coded`) | no | generation maps, transport | **Q**, **A** | C (the generation pipeline, `RWM_GEN_PIPE`, paper §5.8) | out of scope: the model runs the window pipeline only. M\* (D13) is the one generation law the model reads |
 | D18 | gates and env | `gates.rs:86` (`get`), `RuntimeGates::resolve`; `net/sender_policy.rs:297` (`SenderPolicy::resolve`, already resolve-once) | — | env | **E** | — | stays in the engine; it builds `CoreConfig` (§3) |
 | D19 | `[HOLD]` | `net/holddown.rs` | — | — | — | the gauge only ("observation only", `:1`); no decision | stays in the engine |
 | D20 | `[QCLK]` quantile clock | `net/recovery_clock.rs:47`, `:70` | yes | values | none | A (a gauge law, not on the default path) | optional, with D8 |
@@ -155,7 +165,9 @@ are cited as drift A–E.
 | per-path RTT hole clock (`:1454`, "wall #8"), P_lost-gated retransmit with RNG (`:1205–1229`) | D6–D9: 9/8 time threshold at N > 1, srtt/2 at N = 1 (F5); packet threshold; cooldown | the model uses its own clock at every N and a P_lost coin; the engine uses neither. The time threshold is shareable. The packet threshold needs per-path delivered seqs, which the model has in its feedback queues. The coin is an idealisation (owner question 3) |
 | goodput-proportional WRR (`:628`), best-goodput correction path (`:608`) | D15 placement softmax | the model's own law; sharing needs `place_e`'s inputs (s_i, ŵ, I_i, the drain term), all model state. Owner question 4 |
 | T_cut age eviction at ρ < 1 (`:1401–1420`) | D11 shed at D(δ) within the 1 − ρ residual | different laws for the same job. Shareable (inputs: age, D, ε̂, r, A\*) |
-| `math::LossEstimator` (tick) | `control/estimator.rs` (`Instant`) | fork (F3); unify in 4.2 |
+| `math::LossEstimator` (tick) | `control/estimator.rs` (`Instant`) | fork (F3); unify in 4.2 and 5.3 |
+| repair debt: `debt = min(debt + r + completion, 8)` (`:1358`), with `completion_debt_increment` (`:705`) and a repair when `debt ≥ 1` (`:1289`) | D21 `TaperBudget::accrue` | different laws for the same job: the cap 8 against max(r·W, 1), and no spare or taper shape in the model. Shareable (inputs r, q, W, capacity). The completion term is the phase-6 candidate in ADR-0076 |
+| per-slot priority in `step()` (`:1186–1300`): retransmit, then repair, then source | the engine loop's phase order (`net/mod.rs:1420` `run_window_sender`: store cap, gaps, emission) | **model-only**: the loop is the engine's I/O schedule, which the stop rule excludes |
 
 ## 3. Proposed crate boundary
 
@@ -170,8 +182,8 @@ Why a new crate rather than `raptorpath-math`:
 - Keeping the two apart keeps math's "only closed forms" rule checkable.
 
 **What moves.** Every row marked move or extract in §1: D1, D2, the shipped
-arm of D3, D5's law, D6–D8, D9's verdict, D10, D11, D15's law, and D17 as
-`LegState` (with W3.2). The engine re-exports them under their current paths
+arm of D3, D5's law, D6–D8 minus `mp_hole_ripe`, D9's per-channel verdicts,
+D10, D11, D15's law, D21, D22's cache, and D17 as `LegState` (with W3.2). The engine re-exports them under their current paths
 (`pub use raptorpath_core::recovery::*;` in `net`), so
 `raptorpath::net::*` callers such as `tests/recovery_bench.rs`,
 `tests/formula_agreement.rs` and `net::tests::law_shape` compile unchanged.
@@ -191,12 +203,17 @@ arm of D3, D5's law, D6–D8, D9's verdict, D10, D11, D15's law, and D17 as
   - No `now()` exists in the core. Constructors take `now: T`, which
     replaces `estimator.rs:296` and `:299`. `record_batch` without `_at`
     (`:311`, `:337`) stays an engine wrapper.
+  - The existing `Clock` trait (`scheduler/clock.rs:11`, `WallClock` and
+    `MockClock`) stays in the engine. `Scheduler` and `PathState` read it
+    once per entry, as they do today, and pass `now` into the core. The core
+    never holds a `Clock`. The model's tick is its clock.
   - Converting to µs instead would not be bit-identical: the ns `Duration`
     arithmetic in Copa, the estimator and the anchor would round.
 - **Config.**
   - `CoreConfig` is a plain struct: the dial values δ and ρ as numbers, the
-    factor-valued gates (`sum_cap`, `delta_cap`, `store_bdp_gain`), the
-    knee, floor and temperature, and `recov_mp_law`.
+    factor-valued gates (`sum_cap`, `delta_cap`, `store_bdp_gain`), and the
+    knee, floor and temperature. Gates that select a code path, such as
+    `recov_mp_law` and `recov_sp`, are not in it.
   - The engine builds it inside `SenderPolicy::resolve`
     (`sender_policy.rs:297`), the existing resolve-once seat.
   - `CoreConfig::shipped()` is the single source of defaults. An engine test
@@ -219,9 +236,9 @@ arm of D3, D5's law, D6–D8, D9's verdict, D10, D11, D15's law, and D17 as
   twin such as `mp_thr_pure` (`sender_phases.rs:740`) is then not needed.
 - **std, not `no_std`.** `wasm32-unknown-unknown` has std (alloc,
   collections, `Duration`, f64 math). `no_std` would add `alloc` and `libm`
-  plumbing for no gain. Forbidden in the core: `Instant::now`, `SystemTime`,
-  `std::env`, `std::thread`, `tokio`, `quinn`, `tracing`, `rand`, statics
-  and atomics.
+  plumbing for no gain. Forbidden in the core: `Instant::now`, `.elapsed()`,
+  `SystemTime`, `std::env`, `std::thread`, `tokio`, `quinn`, `tracing`,
+  `rand`, statics and atomics.
 - **Enforcement** (Phase 0), three gates:
   - `cargo check -p raptorpath-core --target wasm32-unknown-unknown` in
     `build_visualizer.sh`.
@@ -234,7 +251,8 @@ arm of D3, D5's law, D6–D8, D9's verdict, D10, D11, D15's law, and D17 as
 **How the engine calls it.** The call sites are unchanged apart from the
 argument plumbing: values out of `Scheduler` and `SenderState` in, a verdict
 out, and the engine executes the verdict (send, stats, gauges). `serve_gaps`
-keeps its I/O loop and calls `gap_seq_verdict` per seq.
+keeps its I/O loop and its channel selection, and calls the core's
+per-channel verdicts per seq.
 
 **How wasm calls it.**
 - `Simulation` owns `CoreConfig::shipped()` with its dials applied, plus the
@@ -256,9 +274,14 @@ Each step is one small refactor and one commit.
 **Proof ladder for E steps** (cheapest first, stopping at the first that
 settles it):
 1. **Release `.text` hash identical** before and after (status §22
-   Amendment 5's method). Then no guard is needed. Release is `lto = true`
-   with `codegen-units = 1`, so a pure cross-crate move often keeps the
-   bytes; function layout may still move them.
+   Amendment 5's method). Release is `lto = true` with `codegen-units = 1`,
+   so a pure cross-crate move often keeps the bytes, although function
+   layout may still move them. `.text` does not cover constants in the data
+   sections (`.rodata`), so the check hashes those too.
+   - ADR-0076 requires the §41c guard and the ns bench for **any**
+     engine-byte change. Whether byte identity may waive the guard is
+     owner question 9. Until the owner rules, every batch below runs its
+     guard.
 2. **Pins green.** These pins exist today:
    - `recovery_bench_fixtures_pin_the_plane` and
      `the_shipped_recovery_clocks_are_pinned_absolutely`
@@ -274,35 +297,35 @@ settles it):
    of every output. It is captured on the untouched tree in step 0.3, and
    W3.2's A0 `leg_state_trace_pin` is its estimator half.
 3. **Host ns bench** for the hot paths: `place_costs_ns`
-   (`scheduler/place_alloc_tests.rs:78`); a new per-seq `gap_seq_verdict` ns
+   (`scheduler/place_alloc_tests.rs:78`); a new per-seq channel-verdict ns
    bench; the estimator per-sample cost.
-4. **§41c guard** (12 + 12 rows at c1s, c1d, c2 and c8): required when 1
-   fails. As in W3.2 Phase A, one guard covers a batch of steps whose pins
-   all held, expected WITHIN. A step whose pin moved gets its own guard.
+4. **§41c guard** (12 + 12 rows at c1s, c1d, c2 and c8). As in W3.2
+   Phase A, one guard covers a batch of steps whose pins all held,
+   expected WITHIN. A step whose pin moved gets its own guard.
 
 | step | kind | what | proof | guard | depends on |
 |---|---|---|---|---|---|
-| 0.1 | infra | empty `raptorpath-core` crate, the wasm32 check, the deny-list test; add it to `src_manifest` (`loopdiag_run_all.sh:304–308`), `test_harness_paths.py:68–69` and `test_stubrun.py:223,245` | builds | none (no engine bytes) | — |
-| 0.2 | infra | make the source-walk tests non-vacuous and extend them to the core (ADR-0076 phase 5.1: `gates.rs:567`, `readout.rs:89`, `transport/quic.rs:1326`, `net/emit_burst.rs:271`, `net/tests.rs:5307`, `:6413`) | tests | none (`cfg(test)`) | — |
+| 0.1 | infra | empty `raptorpath-core` crate, the wasm32 check, the deny-list test; add it to `src_manifest` (`tools/l1/loopdiag_run_all.sh:435–440`), `tools/l1/test_harness_paths.py:77` and `tools/l1/test_stubrun.py:179`, `:248`, `:270` | builds | none (no engine bytes) | — |
+| 0.2 | infra | make the source-walk tests non-vacuous and extend them to the core (ADR-0076 phase 5.1; the walks at this base: `raptorpath/src/gates.rs:526`, `readout.rs:68`, `transport/quic.rs:1296`, `net/emit_burst.rs:271`, `net/tests.rs:5075`, `:6193`) | tests | none (`cfg(test)`) | — |
 | 0.3 | test | capture `decision_trace_pin` on the untouched tree | — | none | — |
 | 0.4 | doc | the owner accepts the §1 class column (the audit precondition) | — | — | — |
-| 1.1 | M | ADR-0076 phase 6: the span forms into math, the model calls them; A\* takes the engine's `ceil` | goldens re-captured | none | phase 6 |
-| 1.2 | E | the engine calls the math forms at `emit_source.rs:576–580`, `net/mod.rs:475` and `shed.rs:31` (keeping the µs truncation as a named µs wrapper) | ladder 1–2 | batch α | 1.1 |
-| 2.1 | E | move D6–D8 (+ `SeqRing`, the recovery constants) into `core::recovery`; the engine re-exports | ladder 1–2 (recovery_bench fixtures) | batch α | 0.x |
-| 2.2 | E | move D11 (`shed_deadline_us`, `shed_allowed`, `residual_loss_after_fec`) | ladder 1–2 | batch α | 1.2 |
-| 2.3 | E | move D1, D2 with δ as a number: `codel_setpoint_q(b, b_lo, b_hi)` with `b_lo`, `b_hi` from the hint **table** constants. Unset `RWM_DELTA` gives the same value | ladder 1–2 (law_shape, formula_agreement) | batch α | 0.x |
-| 2.4 | E, **behaviour** | F1 fix: a red-first test with `RWM_DELTA` set, then q(δ) finite; only `RWM_DELTA` runs change | its test | none on default cells (bytes on the default path unchanged; ladder 1 decides) | 2.3 |
+| 1.1 | M | ADR-0076 phase 6 as approved: the span forms move into math **unchanged** (A\* unrounded), and the model calls them | goldens re-captured (expected unchanged; a pure move) | none | phase 6 |
+| 1.2 | E | the engine calls the math forms at `emit_source.rs:576–580`, `net/mod.rs:475` and `shed.rs:31`. Each engine seat keeps its own rounding: A\* = `(math::span_width_a_star(r, D, W).ceil() as u64).clamp(1, W)`, which equals today's `clamp(ceil(r·D), 1, W)`. Both give 1 for NaN (`NaN as u64 = 0`, then clamped). The seat keeps today's `Ord::clamp` panic at W = 0. The µs D stays a named µs wrapper | ladder 1–3 | batch α | 1.1 |
+| 2.1 | E | move D6–D8 except `mp_hole_ripe` (+ `SeqRing`, the recovery constants) into `core::recovery`; the engine re-exports | ladder 1–2 (recovery_bench fixtures) | batch α | 0.x |
+| 2.2 | E | move D11 (`shed_deadline_us`, `shed_allowed`, `residual_loss_after_fec`), D21 (`TaperBudget`, `TaperFunction`) and D22's cache | ladder 1–3 | batch α | 1.2 |
+| 2.3 | E | move D1, D2 with δ as a number: `codel_setpoint_q(b, b_lo, b_hi)`. The engine still passes `delta_budget_b(Realtime)` and `delta_budget_b(Bulk)`, override included, so the values are identical, the F1 NaN included | ladder 1–2 (law_shape, formula_agreement) | batch α | 0.x |
+| 2.4 | E, **behaviour** | the F1 fix: the engine passes `b_lo`, `b_hi` from the hint **table** (`span_horizon_b(50)`, `span_horizon_b(0.005)`); red-first test with `RWM_DELTA` set. The default-cell values are unchanged by construction (law_shape stays green); the bytes change | its test + law_shape | batch α's guard | 2.3 |
 | 2.5 | E | move D5's law (`SnapOrder`, `snapver_*`, `judged_gaps`, `AboveReport`); `take_gap_batch` stays | ladder 1–2 | batch α | 0.x |
-| — | VM | **guard α** (one §41c run for 1.2–2.5 if ladder 1 failed anywhere) | | **α** | |
-| 3.1 | E | extract `gap_seq_verdict` + `nack_margin` from `serve_gaps` **inside the engine** first, gauges fed from the verdict, then move to the core | pins + new verdict ns bench | batch β | 2.1, 2.5 |
+| — | VM | **guard α**: one §41c run for 1.2–2.5 (waived only if owner question 9 allows it and ladder 1 held for every step) | | **α** | |
+| 3.1 | E | extract the per-channel verdicts + `nack_margin` from `serve_gaps` **inside the engine** first, gauges fed from the verdicts, then move them to the core. The channel selection (N split, `recov_sp`, `reliable`) stays in `serve_gaps` | pins + new verdict ns bench | batch β | 2.1, 2.5 |
 | 3.2 | E | extract the shipped store-cap chain from `refresh_store_cap` (the gauges stay outside), then move | pins (law_shape, `store_cap_bench`) | batch β | 2.3 |
 | 3.3 | E | placement: `place_costs`, `place_probs` and the sampler with `u` and `T` as arguments, over a slice of per-path inputs instead of `&Scheduler`, then move | `place_costs_match_the_pinned_wired_table`, `place_costs_ns` | batch β | 4.1 for the s_i, ŵ inputs, or a temporary input struct |
 | — | VM | **guard β** | | **β** | |
 | 4.1 | E | `LegState<T: Time>` born in the core: W3.2 A1–A2 land there directly instead of in `scheduler/`, so the estimators move once | W3.2's `leg_state_trace_pin` | W3.2's Phase-A guard (one, expected WITHIN) | W3.2 A0 |
-| 4.2 | E | `LossEstimator<T>` into the core; the engine instantiates `Instant`; the tick fork in math is retired, which moves the model (4.2-M below) | trace pin, estimator ns bench | batch γ | 4.1 |
+| 4.2 | E | `LossEstimator<T>` into the core; the engine instantiates `Instant`. The math tick fork stays until 5.3 | trace pin, estimator ns bench | batch γ (guard γ) | 4.1 |
 | 5.1 | M | the model's store gate calls the core's store law, whichever one F01's verdict ships, over its b̂·m̂ (replacing `STORE_PER_PATH`); the 78a898a5 bound test becomes an agreement test | goldens, mjs | none | 2.3, the F01 verdict |
-| 5.2 | M | the model's hole ripeness calls D6/D8 on its per-path clocks; T_cut is replaced by D11 | goldens, mjs; the continuity gates through ρ | none | 2.1, 2.2, owner questions 3 and 5 |
-| 5.3 | M | 4.2-M: the model runs the shared `LossEstimator<SimTime>` | goldens | none | 4.2 |
+| 5.2 | M | the model's hole ripeness calls the core's channel verdicts on its per-path clocks; T_cut is replaced by D11; the model's debt by D21 | goldens, mjs; the continuity gates through ρ | none | 2.1, 2.2, the R03 verdict, owner questions 1, 3 and 5 |
+| 5.3 | M | the model runs the shared `LossEstimator<SimTime>`; the math tick fork is deleted | goldens | none | 4.2 |
 | 5.4 | M | placement softmax in the model (only if the owner says yes) | goldens, mjs | none | 3.3, owner question 4 |
 
 Dependencies:
@@ -327,7 +350,7 @@ Dependencies:
 2. **A mode switch hidden in shared code.**
    - Only class-A code moves. B sites (D4, D9's `reliable` arms, D16,
      Copa's queue target) never move as they are. C arms stay in
-     engine-side wrappers. P sites (D6's N ≤ 1 bypass, D9's N > 1 split,
+     engine-side wrappers. P sites (`mp_hole_ripe`'s N ≤ 1 bypass, D9's N > 1 split,
      F5) wait for the owner (question 1).
    - A P branch moved into the core becomes something the model reaches at
      N = 1. It would then carry, at the path count, the same step the
@@ -374,8 +397,8 @@ drafted bullet, which covers phase 6 only.
 >   (b) a per-tick decision the model takes moves to `raptorpath-core`
 >   (`docs/derivations/shared-core-design.md`), I/O-free and wasm32-clean.
 >   An engine-side step of either kind is a zero-behaviour-change refactor,
->   proven by an identical release `.text` hash, or by the decision pins
->   plus the host ns bench plus a §41c guard. A model-side step is a
+>   proven by the decision pins, the host ns bench and a §41c guard. A
+>   model-side step is a
 >   deliberate model change with a `GOLDEN_CAPTURE=1` re-capture.
 >   Only class-A code moves (`shared-core-design.md` §1): no hint type, no
 >   δ/ρ- or path-count-selected branch, and no env read enters either
@@ -405,9 +428,18 @@ Add to "Enforcement":
    WRR as a declared idealisation?
 5. **T_cut versus shed.** At ρ < 1 the model gives up at T_cut and the
    engine sheds at D(δ) within 1 − ρ. Should the model take the engine's
-   law?
+   law? This is the same call the drift audit's item 5 already has pending
+   (W14 together with V5/V6), so one ruling covers both.
 6. **F1.** Fix it as step 2.4, or before this work?
 7. **F2, dead code.** Delete `raptorpath_math::FecRateController`
    (ADR-0073 route)?
 8. **ADR.** The crate boundary is a hard-to-reverse decision. Should an ADR
    (next free number) record it once this design is accepted?
+9. **Byte identity as a proof.** ADR-0076 requires the §41c guard and the
+   ns bench for every engine-byte change. May an identical release `.text`
+   and `.rodata` hash waive the guard for a pure move? This design assumes
+   it may not until the owner rules (§4 ladder 1).
+10. **The shed residual at ε = 1.** The model gives ε·(1 − P_fec) and the
+    engine gives 0 (§2 B). Which form does the shared function take? Phase 6
+    moves the model's form unchanged, and 1.2 keeps the engine's at its
+    seat until this is ruled.
