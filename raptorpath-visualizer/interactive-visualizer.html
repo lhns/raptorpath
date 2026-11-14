@@ -1702,7 +1702,7 @@ const BASELINE_CACHE = new Map();
 
 class SimWrapper {
   constructor(params) {
-    const fixedR = params.hint === 'fixed' ? params.fixedR : undefined;
+    const fixedR = params.fixedR;
     // Accept both shapes: params.paths array (new) or flat single-path
     // params (compat shim for any old caller).
     const paths = params.paths && params.paths.length
