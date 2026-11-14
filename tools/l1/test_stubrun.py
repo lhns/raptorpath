@@ -626,7 +626,7 @@ def repl56():
         shutil.rmtree(root, ignore_errors=True)
 
 
-def refused56(name, extra, want_rc, want_in_era, no_build=True):
+def refused56(name, extra, want_rc, want_in_era, no_build=True, failed=True):
     """Plan 56 refusals (a rehearsal in which nothing may be measured): too little /dev/shm, LD_PRIOR_TESTS."""
     root = tempfile.mkdtemp(prefix="stubrun-")
     try:
@@ -637,7 +637,7 @@ def refused56(name, extra, want_rc, want_in_era, no_build=True):
         rc, out, rows, cargo = run_launch(sb, "56", None, rehearse=True, extra_env=extra_env)
         e = era(sb)
         check(f"56/{name}: refused (rc {want_rc}, FAILED-ALL, '{want_in_era}'), no row measured{', no build' if no_build else ''}",
-              rc == want_rc and want_in_era in e + out and os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL")) and rows == [] and (not no_build or not [c for c in cargo if "|build " in c]), (rc, tail(e, 6), tail(out, 6)))
+              rc == want_rc and want_in_era in e + out and (os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL")) or not failed) and rows == [] and (not no_build or not [c for c in cargo if "|build " in c]), (rc, tail(e, 6), tail(out, 6)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -879,6 +879,8 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
         jobs.append(ex.submit(repl56))
     if want("shm56"):
         jobs.append(ex.submit(refused56, "shm", {"LD_SHM_MIN_KB": "999999999999"}, 5, "ABORT-SHM-SPACE"))
+    if want("budget56"):
+        jobs.append(ex.submit(refused56, "budget", {"LD_HARD_MIN_S": "99999999"}, 3, "ABORT-BUDGET plan 56", True, False))
     if want("prior56"):
         jobs.append(ex.submit(refused56, "prior", {"LD_PRIOR_TESTS": "x"}, 5, "ABORT-TESTS plan 56 reuses the engine suites by the reference manifest", False))
     for j in jobs:

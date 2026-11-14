@@ -222,6 +222,13 @@ if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] 
   fi
   era "LD-ALL precondition met ${PREC#* } io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
+if [ "$P56" = 1 ]; then
+  # Plan 56 is launched with LD_HARD = launch + 4 h: a reference-manifest hit needs about 1 h 40 (2 h worst case), a miss adds the 44-54 min engine suites (2 h 25 typical, 2 h 50 worst).
+  # Under 3 h left cannot hold a miss session, so it is refused before anything runs (LD_HARD_MIN_S is a test seam).
+  P56_LEFT=$(( LD_HARD - $(date +%s) ))
+  era "LD-ALL plan 56 budget: ${P56_LEFT}s to LD_HARD (launch + 4 h expected; at least ${LD_HARD_MIN_S:-10800}s required)"
+  [ "$P56_LEFT" -ge "${LD_HARD_MIN_S:-10800}" ] || { era "ABORT-BUDGET plan 56: ${P56_LEFT}s before LD_HARD, need at least ${LD_HARD_MIN_S:-10800}s; NOTHING WAS RUN"; exit 3; }
+fi
 take_lock "$LOCK_VM"
 take_lock "$LOCK_RP"
 era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"

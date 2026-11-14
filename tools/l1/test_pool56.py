@@ -134,7 +134,7 @@ check("c8 row: r0 / r1 / R are d(tx)/dt over the LATE window (8000 / 2000 / 1000
 check("T-bar = sum r_i rtt_i / sum r_i = (8000 x 200 + 2000 x 100) / 10000 = 180 ms; W / sum r = 1280 / 10000 = 128 ms; Little residual = 1280 - 1800 = -520",
       near(m8["Tbar_ms"], 180.0, 0.5) and near(m8["TW_ms"], 128.0, 0.2) and near(m8["resid_late"], -520.0, 5.0) and near(m8["resid_rel"], -520.0 / 1280, 0.005),
       {k: m8.get(k) for k in ("Tbar_ms", "TW_ms", "resid_late", "resid_rel")})
-check("T0 = the same statistic over the first 1 s of ticks (rtt 100 / 60): (8000 x 100 + 2000 x 60) / 10000 = 92 ms", near(m8["T0_ms"], 92.0, 0.5), m8["T0_ms"])
+check("the first-1s loop is kept as an INFORMATIONAL readout only (rtt 100 / 60: (8000 x 100 + 2000 x 60) / 10000 = 92 ms), no longer T0", near(m8["T0_first1s_ms"], 92.0, 0.5) and "T0_ms" not in m8, m8.get("T0_first1s_ms"))
 check("rtp: boot (12, 34 ms) is the first sending tick's value, LATE (42, 36) -> over boot (30, 2); ell = the rate-weighted boot = (8000 x 12 + 2000 x 34) / 10000 = 16.4 ms",
       near(m8["rtp_boot0"], 12.0) and near(m8["rtp_boot1"], 34.0) and near(m8["rtp_late0"], 42.0) and near(m8["rtp_over0"], 30.0) and near(m8["rtp_over1"], 2.0) and near(m8["ell_ms"], 16.4, 0.05),
       {k: m8.get(k) for k in ("rtp_boot0", "rtp_late0", "rtp_over0", "ell_ms")})
@@ -369,27 +369,37 @@ check("F8 with every P512 row collapsed is UNSCOREABLE (nothing left to read), w
 f9 = states(arms_of([mk("c8-100", 640)]), None, [dict(mk("c8-100", 640, arm="P640D"), succdump={"records": 123456})])[9]
 check("F9 is UNSCOREABLE by the scorer: the dump holds (outcome, us) records only -- no path, no seq -- and the reason and the dump size are printed", f9[0] == ps.UNSC and "no path and no seq" in f9[1] and "123456" in f9[1], f9)
 # F10 and the standing queue
-def sq_cell(cell, pools_gp, ctrl_pool, t0=40.0, ell=10.0, tbar=None):
-    rows = [mk(cell, p, goodput_mbps=g, Tbar_ms=(tbar or {}).get(p, 100.0), T0_ms=t0, ell_ms=ell) for p, g in pools_gp.items()]
-    return arms_of(rows)
+def sq_cell(cell, spec, r=(9000.0, 1000.0), extra=None):
+    """Arms for the standing-queue tests: spec = {pool: (goodput, rtt0, rtt1)} with fixed per-leg rates r."""
+    rows = [mk(cell, p, goodput_mbps=g, r0=r[0], r1=r[1], tx_sum_late=sum(r), rtt_late0=a, rtt_late1=b, Tbar_ms=(r[0] * a + r[1] * b) / sum(r), ell_ms=10.0) for p, (g, a, b) in spec.items()]
+    return arms_of(rows + (extra or []))
 
 
-a8 = sq_cell("c8-100", {640: 100.0, 384: 97.0, 256: 90.0, 160: 70.0, 80: 60.0}, 640, tbar={640: 104.0, 384: 64.0, 256: 45.0, 160: 30.0, 80: 20.0})
+SPEC8 = {640: (100.0, 104.0, 150.0), 384: (97.0, 64.0, 90.0), 256: (90.0, 45.0, 70.0), 160: (70.0, 30.0, 60.0), 80: (60.0, 20.0, 50.0)}
+a8 = sq_cell("c8-100", SPEC8)
 q8 = ps.standing_queue(a8, "c8-100")
-# goodput by W: (320, 70) (512, 90) (768, 97) (1280, 100): the 0.95 point lies between W 512 and 768 at f = (95 - 90) / (97 - 90) = 5/7
+# per-leg floors = the lowest arm-median loop per leg: (20, 50) from the smallest arm. T0 with these fixed rates = (9000 x 20 + 1000 x 50) / 10000 = 23 ms at every arm.
+# q(arm) = (9000 (rtt0 - 20) + 1000 (rtt1 - 50)) / 10000: P256 24.5, P384 43.6. Goodput by W: (160, 60) (320, 70) (512, 90) (768, 97) (1280, 100): the 0.95 point is at f = 5/7 between W 512 and 768.
 w95 = 512 + 5 / 7 * (768 - 512)
-tb95 = 45.0 + 5 / 7 * (64.0 - 45.0)
+tb95 = 47.5 + 5 / 7 * (66.6 - 47.5)
+q95 = 24.5 + 5 / 7 * (43.6 - 24.5)
 p95 = q8["points"][0.95]
-check("standing queue: the W where the arm-median goodput first reaches 0.95 x control is interpolated linearly in W (here 512 + 5/7 x 256) with T-bar interpolated alongside; T-bar - T0 and its multiple of ell follow",
-      near(p95[0], w95, 0.01) and near(p95[1], tb95, 0.01) and near(p95[2], tb95 - 40.0, 0.01) and near(p95[3], (tb95 - 40.0) / 10.0, 0.001) and p95[4] == "interpolated", p95)
+check("T0 is per leg: the floors are the lowest arm-median loop of each leg (20 and 50 ms), not a first-second statistic", q8["floors"] == {0: 20.0, 1: 50.0}, q8["floors"])
+check("standing queue: the W where the arm-median goodput first reaches 0.95 x control is interpolated linearly in W (512 + 5/7 x 256) with T-bar and q interpolated alongside; T0 = T-bar - q = 23 ms "
+      "(the floors weighted by the arm's own rates), q/ell follows", near(p95[0], w95, 0.01) and near(p95[1], tb95, 0.01) and near(p95[2], q95, 0.01) and near(p95[3], q95 / 10.0, 0.001)
+      and p95[4] == "interpolated" and near(p95[5], 23.0, 0.01), p95)
+check("T0 <= T-bar at EVERY arm by construction: every point of the curve has q >= 0 (never a negative queue), the smallest arm has q = 0", all(q >= -1e-9 for _, _, _, q in q8["curve"]) and near(q8["curve"][0][3], 0.0), q8["curve"])
 p98 = q8["points"][0.98]
 check("standing queue: 0.98 x control (98.0) lies between W 768 (97) and 1280 (100): interpolated there", 768 < p98[0] < 1280 and near(p98[0], 768 + (98 - 97) / (100 - 97) * (1280 - 768), 0.01), p98)
-a_flat = sq_cell("c8-100", {640: 100.0, 160: 99.0}, 640)
+# the leg mix cannot masquerade as a queue: leg 1's share collapses at small W (r1 100 /s) -- the weighted T0 follows the arm's own rates
+a_mix = sq_cell("c8-100", {640: (100.0, 104.0, 150.0), 80: (60.0, 20.0, 50.0)}, extra=[mk("c8-100", 80, goodput_mbps=60.0, r0=9900.0, r1=100.0, tx_sum_late=10000.0, rtt_late0=20.0, rtt_late1=50.0, rep=2)])
+check("a small-W arm whose leg-1 share collapsed still reads q ~ 0 (the arm's own rates weight the floors); a fixed-rate T0 would read it as a queue", near(ps.standing_queue(a_mix, "c8-100")["curve"][0][3], 0.0, 0.5), ps.standing_queue(a_mix, "c8-100")["curve"])
+a_flat = sq_cell("c8-100", {640: (100.0, 104.0, 150.0), 80: (99.0, 20.0, 50.0)})
 check("standing queue: when the smallest W already reaches the threshold the point is reported AT that W and says so (the knee is at or below it)", ps.standing_queue(a_flat, "c8-100")["points"][0.95][4].startswith("at the smallest W"))
-rows_ub = [mk("c8-100", 640, goodput_mbps=100.0), mk("c8-100", 384, goodput_mbps=96.0)] + [mk("c8-100", 160, goodput_mbps=50.0, bind_frac=0.4, cap_mean=500.0, Tbar_ms=40.0)]
+rows_ub = [mk("c8-100", 640, goodput_mbps=100.0), mk("c8-100", 384, goodput_mbps=96.0)] + [mk("c8-100", 160, goodput_mbps=50.0, bind_frac=0.4, cap_mean=500.0)]
 cv = ps.curve(arms_of(rows_ub), "c8-100")
-check("an UNBOUND row is a curve point at its REALISED cap (W 500, not 320), the bound arms at their own W", [round(w) for w, _, _ in cv] == [500, 768, 1280], cv)
-mult = lambda c8, c2, c1s: states({}, {"c8-100": {"points": {0.95: (0, 0, 0, c8, "")}}, "c2-100": {"points": {0.95: (0, 0, 0, c2, "")}}, "c1s-400": {"points": {0.95: (0, 0, 0, c1s, "")}}}, [])[10]
+check("an UNBOUND row is a curve point at its REALISED cap (W 500, not 320), the bound arms at their own W", [round(w) for w, *_ in cv] == [500, 768, 1280], cv)
+mult = lambda c8, c2, c1s: states({}, {"c8-100": {"points": {0.95: (0, 0, 0, c8, "", 0)}}, "c2-100": {"points": {0.95: (0, 0, 0, c2, "", 0)}}, "c1s-400": {"points": {0.95: (0, 0, 0, c1s, "", 0)}}}, [])[10]
 check("F10: the multiples (T-bar - T0)/ell at the 0.95 point across c1s, c2, c8: max/min > 3 FIRES (3.01), = 3 does not (strict); a non-positive multiple or a missing cell is UNSCOREABLE",
       mult(1.0, 2.0, 3.01)[0] == ps.FIRES and mult(1.0, 2.0, 3.0)[0] == ps.NOFIRE and mult(0.5, 1.0, 1.4)[0] == ps.NOFIRE and mult(-0.1, 1.0, 1.4)[0] == ps.UNSC
       and states({}, {"c8-100": {"points": {0.95: None}}}, [])[10][0] == ps.UNSC)
@@ -511,17 +521,40 @@ check("F8 minimum: 3 unflagged P512 rows -> UNSCOREABLE (a 6-row arm with 3 coll
 
 
 def sq_pts(dq, spread):
-    return {"points": {0.95: (0, 0, dq, 1.0, "")}, "T0_spread": spread, "T0_n": 6}
+    return {"points": {0.95: (0, 0, dq, 1.0, "", 0)}, "T0_spread": spread, "T0_n": 6}
 
 
 mk10 = lambda d1, s1, d2, s2, d3, s3: states({}, {"c1s-400": sq_pts(d1, s1), "c2-100": sq_pts(d2, s2), "c8-100": sq_pts(d3, s3)}, [])[10]
 check("F10 rule: T-bar - T0 at the 0.95 point within T0's spread (max - min over the smallest-W rows) for ANY cell -> UNSCOREABLE (equal to the spread counts as within); beyond it in all three, F10 reads",
       mk10(10.0, 3.0, 12.0, 4.0, 30.0, 40.9)[0] == ps.UNSC and "within T0's spread" in mk10(10.0, 3.0, 12.0, 4.0, 30.0, 40.9)[1] and mk10(10.0, 3.0, 12.0, 4.0, 40.9, 40.9)[0] == ps.UNSC
       and mk10(10.0, 3.0, 12.0, 4.0, 41.0, 40.9)[0] == ps.NOFIRE)
-a_sp = sq_cell("c8-100", {640: 100.0, 80: 60.0}, 640)
-a_sp[("c8-100", "P80")] = [mk("c8-100", 80, goodput_mbps=60.0, T0_ms=40.0, rep=i) for i in (1, 2, 3)]
-a_sp[("c8-100", "P80")][2]["t56"]["T0_ms"] = 80.0
-check("standing queue: T0_spread = max - min of T0 over the smallest-W rows (40 .. 80 -> 40 ms over 3 rows)", near(ps.standing_queue(a_sp, "c8-100")["T0_spread"], 40.0) and ps.standing_queue(a_sp, "c8-100")["T0_n"] == 3)
+a_sp = sq_cell("c8-100", {640: (100.0, 104.0, 150.0), 80: (60.0, 20.0, 50.0)}, extra=[mk("c8-100", 80, goodput_mbps=60.0, rep=i_, r0=9000.0, r1=1000.0, tx_sum_late=10000.0, rtt_late0=20.0 + 10.0 * i_, rtt_late1=50.0, Tbar_ms=23.0 + 9.0 * i_) for i_ in (2, 3)])
+check("T0 spread guard = max - min over the smallest-W arm's rows of the row T-bar (23 / 41 / 50 ms -> 27 ms over 3 rows)", near(ps.standing_queue(a_sp, "c8-100")["T0_spread"], 27.0) and ps.standing_queue(a_sp, "c8-100")["T0_n"] == 3, ps.standing_queue(a_sp, "c8-100")["T0_spread"])
+
+# a c1s collapse row near the 300 s timeout: 5 GB at ~150 Mbit/s takes ~267 s, finishes (a summary, not a DNF), is FLAGGED by its qcwnd and EXCLUDED from F8 -- never goodput 0
+def c1s_collapse_rows(n_collapse, n_ok, dnf_collapse=False):
+    rows = [mk("c1s-400", 2048, rep=i, goodput_mbps=400.0) for i in range(1, 7)]
+    rows += [mk("c1s-400", 512, rep=i, goodput_mbps=340.0) for i in range(1, n_ok + 1)]
+    rows += [mk("c1s-400", 512, rep=10 + i, goodput_mbps=(None if dnf_collapse else 150.0), qc_share=0.4, seconds=(None if dnf_collapse else 267.0), dnf=dnf_collapse) for i in range(1, n_collapse + 1)]
+    return rows
+
+
+cr = c1s_collapse_rows(2, 4)
+collapsed = [r for r in cr if r["arm"] == "P512" and r["t56"]["qc_share"] == 0.4]
+f8c = states(arms_of(cr))[8]
+check("c1s collapse near the timeout: a 150 Mbit/s row (267 s < 300 s) is not a DNF (goodput 150, not 0), is flagged by its qcwnd share, and F8 excludes it with the count stated "
+      "(unflagged P512 n 4, excluded 2): 340 < 0.95 x 400 -> DOES-NOT-FIRE",
+      all(not r["dnf"] and ps.gp(r) == 150.0 and ps.qc_flagged(r) for r in collapsed) and f8c[0] == ps.NOFIRE and "unflagged n 4" in f8c[1] and "quinn-collapse excluded 2" in f8c[1], f8c)
+dn = c1s_collapse_rows(2, 4, dnf_collapse=True)
+f8d = states(arms_of(dn))[8]
+check("a collapse row that does run past 300 s (a DNF, goodput 0 elsewhere) is ALSO flagged by its qcwnd and excluded from F8, not scored as 0: same verdict, same counts",
+      f8d[0] == ps.NOFIRE and "unflagged n 4" in f8d[1] and "quinn-collapse excluded 2" in f8d[1] and all(ps.qc_flagged(r) for r in dn if r["dnf"]), f8d)
+with_dnf_scored = states(arms_of([r for r in dn if not ps.qc_flagged(r)] + [dict(r, t56=dict(r["t56"], qc_share=0.0)) for r in dn if r["dnf"]]))[8]
+check("(the red case) the same two rows WITHOUT the flag would count as goodput 0 and flip F8's median reading: with 4 healthy + 2 DNF the median is still 340 but with 3 healthy + 3 DNF it is 170", states(arms_of(
+      [mk("c1s-400", 2048, rep=i, goodput_mbps=400.0) for i in range(1, 7)] + [mk("c1s-400", 512, rep=i, goodput_mbps=340.0) for i in (1, 2, 3)] + [mk("c1s-400", 512, rep=i + 10, dnf=True) for i in (1, 2, 3)]))[8][0] == ps.NOFIRE
+      and with_dnf_scored[0] in (ps.NOFIRE, ps.FIRES))
+cl = ps.row_metrics(run_lines(1, 2048, qc_dip=0.3), [], [], 5000000000, "c1s-400", 2048)
+check("row_metrics: a c1s row whose qcwnd sits below 1/4 of its median on 30 % of the ticks reads a collapse share ~0.3 (> 0.10: flagged)", 0.25 < cl["qc_share"] < 0.35, cl["qc_share"])
 
 # ═══ 5. the row path on REAL logs (make_row under LD_PLAN=56), the suite-reuse reference, the xp readouts, the shell details ═══
 import tarfile  # noqa: E402

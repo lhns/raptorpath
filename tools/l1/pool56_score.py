@@ -13,8 +13,11 @@ Definitions (status 56; `docs/derivations/store-law/little54b.py` and `pool54_sc
   * LATE window = client [DIAG] ticks after the last `"warmup":true` marker with t >= LATE_T[cell] (15 s; c1s 5 s) and `src=` > 0 (chosen by time, not by cap).
   * r_i = d(dgq_i tx)/dt between the first and last LATE tick; rtt_i / wrtt_i / q_i = (hand - tx) / rtp_us_i / qcwnd_i = LATE medians; boot rtp_us_i = the value on the first
     sending tick; P_i = median over LATE ticks of r_i * rtt_i / 1000 (Little's population of leg i); R = sum r_i (the Sigma send rate).
-  * T-bar = 1000 * sum P_i / R (the rate-weighted LATE echo loop, little54b's Tbar_ms = sum r_i rtt_i / sum r_i); T0 = the same statistic over the sending ticks of the first 1 s
-    (t <= 1.0 s, at least 2 of them) of a row; ell = sum r_i * boot rtp_us_i / R (the rate-weighted boot rtp, ms).
+  * T-bar = 1000 * sum P_i / R (the rate-weighted LATE echo loop, little54b's Tbar_ms = sum r_i rtt_i / sum r_i); ell = sum r_i * boot rtp_us_i / R (the rate-weighted boot rtp, ms).
+  * T0 (the no-queue loop) is NOT read from the first second (that carries start-up queue: 62-103 ms at c8 against ell ~ 15 ms). It is PER LEG: floor_i = the lowest arm-median LATE echo
+    loop of leg i over the cell's arms (where goodput has broken the store holds no standing queue), and an arm's T0 = sum r_i floor_i / sum r_i with THAT arm's rates, so T0 <= T-bar at
+    every arm and the leg mix never reads as a queue. The standing queue q = T-bar - T0 = sum r_i (rtt_i - floor_i) / sum r_i. At the knee (goodput 0.95 / 0.98 x control) q and T-bar are
+    interpolated in W. T0_spread = max - min over the smallest-W arm's rows of the row T-bar (the noise of the floor); F10 is UNSCOREABLE when q at the 0.95 point is within it.
   * resid = median over LATE ticks of (cap - sum r_i * rtt_i / 1000) with cap = the tick's OWN `win=a/b` denominator; resid_rel = resid / median cap (the Little residual).
   * bind fraction = the share of LATE ticks with cap >= N * pool (the ceiling max(N * pool, floor) is the bind); the realised cap = the LATE-window mean of b.
   * old holes = median of the server [RANK] holes - tail_overcount over readouts[15:-6]; in-order delay late = the sending ticks at t >= LATE_T (inorder_delay(source_only=True)).
@@ -218,7 +221,7 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=C8, pool=None):
     m["ell_ms"] = (sum(w["r"][i] * boot[i] for i in legs if i in boot) / w["R"]) if (w and w["R"] > 0 and all(i in boot for i in legs)) else None
     first = [d for d in tk if d["t"] <= T0_END_S and (d["src"] or 0) > 0]
     f0 = window_stat(first, legs, 2)
-    m["T0_ms"] = (sum(f0["r"][i] * f0["rtt"][i] for i in legs) / f0["R"]) if (f0 and f0["R"] > 0) else None
+    m["T0_first1s_ms"] = (sum(f0["r"][i] * f0["rtt"][i] for i in legs) / f0["R"]) if (f0 and f0["R"] > 0) else None
     m["old_holes"], m["rank_readouts"] = old_holes(srv), len([ln for ln in srv or [] if ln.startswith("[RANK]")])
     il = inorder_late(cli, LATE_T[cell])
     m["inorder_mean_late"], m["inorder_p50_late"], m["inorder_p95_late"] = (il["mean"], il["p50"], il["p95"]) if il else (None, None, None)
@@ -256,7 +259,11 @@ READOUTS = [
     ("q1 = dgq1 hand - tx", lambda r, t: t.get("q_late1"), 0),
     ("placement share p0 (egress)", lambda r, t: (r.get("shares") or [None])[0], 3),
     ("T-bar ms (sum r_i rtt_i / sum r_i)", lambda r, t: t.get("Tbar_ms"), 1),
-    ("T0 ms (first 1 s)", lambda r, t: t.get("T0_ms"), 1),
+    ("first-1s loop ms (start-up queue; NOT T0)", lambda r, t: t.get("T0_first1s_ms"), 1),
+    ("T-bar / ell", lambda r, t: (t["Tbar_ms"] / t["ell_ms"]) if (t.get("Tbar_ms") is not None and t.get("ell_ms")) else None, 2),
+    ("T0 ms (per-leg floors x this row's rates)", lambda r, t: t.get("T0b_ms"), 1),
+    ("standing queue q = T-bar - T0 ms", lambda r, t: t.get("queue_ms"), 1),
+    ("q / ell", lambda r, t: (t["queue_ms"] / t["ell_ms"]) if (t.get("queue_ms") is not None and t.get("ell_ms")) else None, 2),
     ("ell ms (rate-weighted boot rtp)", lambda r, t: t.get("ell_ms"), 1),
     ("W / sum r ms", lambda r, t: t.get("TW_ms"), 1),
     ("inorder_mean_late s", lambda r, t: t.get("inorder_mean_late"), 2),
@@ -284,7 +291,7 @@ READOUTS = [
     ("qcwnd collapse share", lambda r, t: t.get("qc_share"), 3),
 ]
 # the readouts every smoke row must carry (no None); leg-1 fields are required at c8 only
-REQUIRED = ["goodput_mbps", "tx_sum_late", "r0", "rtt_late0", "rtp_late0", "rtp_boot0", "q_late0", "Tbar_ms", "T0_ms", "ell_ms", "resid_late", "resid_rel", "old_holes",
+REQUIRED = ["goodput_mbps", "tx_sum_late", "r0", "rtt_late0", "rtp_late0", "rtp_boot0", "q_late0", "Tbar_ms", "ell_ms", "resid_late", "resid_rel", "old_holes",
             "inorder_mean_late", "cap_mean", "bind_frac", "rx_dup", "retx_per_gb", "cpu_cli_s_per_gb", "qc_share"]
 REQUIRED_C8 = ["r1", "rtt_late1", "rtp_late1"]
 
@@ -377,9 +384,55 @@ def mval(rs, fn):
 
 
 # ── the standing-queue readout ──
-def curve(arms, cell):
-    """The cell's (W, goodput, T-bar) points: each control / bound arm at its medians, each UNBOUND row on its own at its realised cap; sorted by W. -> [(W, gp, Tbar)]"""
+def _legs_of(rd):
+    """The legs a quantity dict carries: {0: x} at a single-path cell, {0: x, 1: y} at c8 (a leg whose value is None is absent)."""
+    return {i: v for i, v in rd.items() if v is not None}
+
+
+def loop_and_queue(r, rtt, floors):
+    """T-bar = sum r_i rtt_i / sum r_i and the standing queue q = sum r_i (rtt_i - floor_i) / sum r_i, from per-leg rates r, LATE echo loops rtt and per-leg floors (ms); (None, None) without a rate.
+    Because a floor is the per-leg MINIMUM over arms, q >= 0 at every arm by construction (a negative q is a VOID, never printed as a queue)."""
+    legs = [i for i in r if r[i] is not None and rtt.get(i) is not None and floors.get(i) is not None]
+    tot = sum(r[i] for i in legs)
+    if not legs or tot <= 0:
+        return None, None
+    return sum(r[i] * rtt[i] for i in legs) / tot, sum(r[i] * (rtt[i] - floors[i]) for i in legs) / tot
+
+
+def arm_quantities(rs):
+    """Arm medians of the per-leg LATE rate and echo loop: ({leg: r}, {leg: rtt})."""
+    r = {i: mval(rs, lambda x, t, i=i: t.get("r%d" % i)) for i in (0, 1)}
+    rtt = {i: mval(rs, lambda x, t, i=i: t.get("rtt_late%d" % i)) for i in (0, 1)}
+    return _legs_of(r), _legs_of(rtt)
+
+
+def leg_floors(arms, cell):
+    """T0, per leg: the lowest arm-median LATE echo loop of the leg over the cell's arms (where goodput has already broken the store holds no standing queue: the loop there is propagation +
+    the leg's fixed service). No start-up ticks are read. -> {leg: ms}"""
     pp = _pp()
+    fl = {}
+    for pool in pp.POOLS56[cell]:
+        rs = arms.get((cell, "P%d" % pool), [])
+        if not rs:
+            continue
+        r, rtt = arm_quantities(rs)
+        for i in rtt:
+            if (r.get(i) or 0) > 0 and (i not in fl or rtt[i] < fl[i]):
+                fl[i] = rtt[i]
+    return fl
+
+
+def row_queue(row, floors):
+    """One row's standing queue q = sum r_i (rtt_i - floor_i) / sum r_i against the cell's per-leg floors (ms); None when undefined."""
+    t = row.get("t56") or {}
+    return loop_and_queue({i: t.get("r%d" % i) for i in (0, 1)}, {i: t.get("rtt_late%d" % i) for i in (0, 1)}, floors)[1]
+
+
+def curve(arms, cell, floors=None):
+    """The cell's (W, goodput, T-bar, q) points: each control / bound arm at its arm medians, each UNBOUND row on its own at its realised cap; sorted by W. T-bar and q are computed from
+    the per-leg rates and echo loops (loop_and_queue). -> [(W, gp, Tbar, q)]"""
+    pp = _pp()
+    floors = floors if floors is not None else leg_floors(arms, cell)
     pts = []
     for pool in pp.POOLS56[cell]:
         rs = [r for r in arms.get((cell, "P%d" % pool), [])]
@@ -387,39 +440,44 @@ def curve(arms, cell):
         if bound:
             w = mval(bound, lambda r, t: t.get("cap_mean"))
             g = med([gp(r) for r in bound])
-            tb = mval(bound, lambda r, t: t.get("Tbar_ms"))
-            if w is not None and g is not None and tb is not None:
-                pts.append((w, g, tb))
+            r_, rtt_ = arm_quantities(bound)
+            tb, q = loop_and_queue(r_, rtt_, floors)
+            if None not in (w, g, tb, q):
+                pts.append((w, g, tb, q))
         for r in rs:
-            if is_unbound(r) and tv(r, "cap_mean") is not None and gp(r) is not None and tv(r, "Tbar_ms") is not None:
-                pts.append((tv(r, "cap_mean"), gp(r), tv(r, "Tbar_ms")))
+            if is_unbound(r) and tv(r, "cap_mean") is not None and gp(r) is not None:
+                t = r["t56"]
+                tb, q = loop_and_queue({i: t.get("r%d" % i) for i in (0, 1)}, {i: t.get("rtt_late%d" % i) for i in (0, 1)}, floors)
+                if tb is not None:
+                    pts.append((tv(r, "cap_mean"), gp(r), tb, q))
     return sorted(pts)
 
 
 def knee_point(pts, thr):
-    """The W where goodput first reaches `thr` scanning upward in W, linearly interpolated from the point below it; -> (W, Tbar, note). A first point already at/above thr is reported as-is."""
-    for i, (w, g, tb) in enumerate(pts):
+    """The W where goodput first reaches `thr` scanning upward in W, linearly interpolated from the point below it; -> (W, Tbar, q, note). A first point already at/above thr is reported as-is."""
+    for i, (w, g, tb, q) in enumerate(pts):
         if g >= thr:
             if i == 0:
-                return w, tb, "at the smallest W measured (the knee is at or below it)"
-            w0, g0, tb0 = pts[i - 1]
+                return w, tb, q, "at the smallest W measured (the knee is at or below it)"
+            w0, g0, tb0, q0 = pts[i - 1]
             f = (thr - g0) / (g - g0) if g > g0 else 1.0
-            return w0 + f * (w - w0), tb0 + f * (tb - tb0), "interpolated"
+            return w0 + f * (w - w0), tb0 + f * (tb - tb0), q0 + f * (q - q0), "interpolated"
     return None
 
 
 def standing_queue(arms, cell):
-    """-> {cell stats, points: {thr: (W, Tbar, Tbar - T0 ms, multiple of ell, note)}} or None; T0 = median over the smallest-pool arm's rows, ell = median over all the cell's rows."""
+    """-> {control_gp, floors, ell, T0_spread, T0_n, curve, points: {thr: (W, Tbar, q, q / ell, note, T0)}}. q = T-bar - T0 with T0 the per-leg floors weighted by the arm's OWN rates
+    (so T0 <= T-bar at every arm, the mix of legs cannot masquerade as a queue); ell = median over the cell's rows. T0_spread = max - min over the smallest-W arm's rows of the row T-bar:
+    the row-to-row noise of the statistic that defines the floors (0 with one row) -- F10 is UNSCOREABLE when q at the 0.95 point is not above it."""
     pp = _pp()
     ctrl = [r for r in arms.get((cell, "P%d" % pp.CONTROL56[cell]), [])]
     cg = med([gp(r) for r in ctrl])
     small = arms.get((cell, "P%d" % min(pp.POOLS56[cell])), [])
-    t0 = mval(small, lambda r, t: t.get("T0_ms"))
     ell = med([tv(r, "ell_ms") for rs in arms.values() for r in rs if r["cell"] == cell])
-    pts = curve(arms, cell)
-    t0v = [x for x in (tv(r, "T0_ms") for r in small) if x is not None]
-    # T0's row-to-row spread (max - min over the smallest-W rows): the first second carries start-up queue, so T0 is only as good as this spread (0 with a single row)
-    out = {"control_gp": cg, "T0": t0, "T0_spread": (max(t0v) - min(t0v)) if t0v else None, "T0_n": len(t0v), "ell": ell, "points": {}, "curve": pts}
+    floors = leg_floors(arms, cell)
+    pts = curve(arms, cell, floors)
+    tbv = [x for x in (tv(r, "Tbar_ms") for r in small) if x is not None]
+    out = {"control_gp": cg, "floors": floors, "T0": None, "T0_spread": (max(tbv) - min(tbv)) if tbv else None, "T0_n": len(tbv), "ell": ell, "points": {}, "curve": pts}
     if cg is None or not pts:
         return out
     for thr in KNEE_POINTS:
@@ -427,9 +485,8 @@ def standing_queue(arms, cell):
         if k is None:
             out["points"][thr] = None
             continue
-        w, tb, note = k
-        dq = tb - t0 if t0 is not None else None
-        out["points"][thr] = (w, tb, dq, (dq / ell) if (dq is not None and ell) else None, note)
+        w, tb, q, note = k
+        out["points"][thr] = (w, tb, q, (q / ell) if ell else None, note, tb - q)
     return out
 
 
@@ -548,7 +605,7 @@ def falsifiers(arms, sq=None, dump_rows=()):
                 noisy.append(f"{cell} (T-bar - T0 = {p95[2]:.1f} ms within T0's spread {sp_:.1f} ms over {s_.get('T0_n')} smallest-W rows)")
     if noisy:
         rec(10, "the standing-queue multiple (T-bar - T0)/ell at the 0.95 point differs across c1s, c2, c8 by more than x3: the q*ell form is wrong",
-            UNSC, "T-bar - T0 at the 0.95 point is not distinguishable from T0's own row-to-row spread (the first second carries start-up queue): " + "; ".join(noisy)
+            UNSC, "T-bar - T0 at the 0.95 point is not distinguishable from T0's own row-to-row spread (per-leg floors are only as good as this spread): " + "; ".join(noisy)
             + (f"; not computable for {miss}" if miss else "") + "; multiples read: " + ", ".join(f"{c} {v:.2f}" for c, v in mult.items()))
     elif miss:
         rec(10, "the standing-queue multiple (T-bar - T0)/ell at the 0.95 point differs across c1s, c2, c8 by more than x3: the q*ell form is wrong",
@@ -719,12 +776,12 @@ def smoke(path, out=print):
         t = r.get("t56") or {}
         out(f"  ROW {r['cell']} {r['arm']}: status={r['status']} mbps={r.get('mbps')} wall={r.get('wall_s')} gates={r.get('gate_pool_cli')}/{r.get('gate_pool_srv')} "
             f"pool_per_path={r.get('pool_info_cli')}/{r.get('pool_info_srv')} W={t.get('cap_mean')} bind={t.get('bind_frac')} late_n={t.get('late_n')} "
-            f"R={t.get('tx_sum_late')} Tbar={t.get('Tbar_ms')} T0={t.get('T0_ms')} old_holes={t.get('old_holes')} qc={t.get('qc_share')} succdump={(r.get('succdump') or {}).get('records')}")
+            f"R={t.get('tx_sum_late')} Tbar={t.get('Tbar_ms')} T0first1s={t.get('T0_first1s_ms')} old_holes={t.get('old_holes')} qc={t.get('qc_share')} succdump={(r.get('succdump') or {}).get('records')}")
     crit("each row's pool is in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)",
          [f"{r['cell']} {r['arm']}: {' '.join(x for x in r['problems'] if x.startswith(('gate-pool', 'pool_per_path')))}" for r in rs if pp.is_pool_void56(r)])
     crit("the dump gate reads RWM_SUCC_DUMP=1 on both ends of the dump row and 0 / absent on every other row", [f"{r['cell']} {r['arm']}: {x}" for r in rs for x in r["problems"] if x.startswith("gate-succ-dump")])
     crit("every row ran the one seat's binary (LD_SHA)", [f"{r['cell']} {r['arm']}: {x}" for r in rs for x in r["problems"] if x.startswith("bin-sha")])
-    crit("the LATE-window readouts (rates, rtt, rtp and its boot, T-bar, T0, ell, Little residual, old holes, in-order late, bind, collapse share) computed on every row (no None)",
+    crit("the LATE-window readouts (rates, rtt, rtp and its boot, T-bar, ell, Little residual, old holes, in-order late, bind, collapse share) computed on every row (no None)",
          [f"{r['cell']} {r['arm']}: {', '.join(missing(r))}" for r in rs if missing(r)])
     late = []
     for r in rs:
@@ -781,6 +838,13 @@ def score(paths, out=print, s54b_src=S54B_DEFAULT):
     voids = [r for r in cnt if is_void(r)]
     live = [r for r in cnt if not is_void(r)]
     arms = by_arm(live)
+    for cell_ in pp.CELLS56:                # per-row T0 (per-leg floors x the row's own rates) and standing queue, for the tables
+        fl_ = leg_floors(arms, cell_)
+        for r_ in live:
+            t_ = r_.get("t56")
+            if r_["cell"] == cell_ and t_:
+                tb_, q_ = loop_and_queue({i: t_.get("r%d" % i) for i in (0, 1)}, {i: t_.get("rtt_late%d" % i) for i in (0, 1)}, fl_)
+                t_["queue_ms"], t_["T0b_ms"] = q_, (tb_ - q_ if tb_ is not None else None)
     out("STORE-POOL SWEEP (status 56), REPORTED ONLY: one seat (current main), RWM_STORE_PATH_POOL by arm; c8-100 and c2-100 at 600 MB, c1s-400 at 5 GB, RWM_DIAG=1 RWM_RDIAG=1 "
         f"RWM_PERF_TIMEOUT_S={PERF_TIMEOUT_S}; nothing here is scored")
     out(f"SLOTS {len(slots(rows_all))}/{n_exp}  ROWS {len(rows_all)} (replaced {len(replaced)})  ABORT-TOKENS {' '.join(aborted) or 'none'}")
@@ -832,20 +896,21 @@ def score(paths, out=print, s54b_src=S54B_DEFAULT):
                                          f"p0 hn_n {tv(r, 'hn_p0')}, [SUCC] det {tv(r, 'det')}" for r in dump_rows) or "none"))
     out("")
     sq = {c: standing_queue(arms, c) for c in pp.CELLS56}
-    out("STANDING QUEUE AT THE KNEE (T-bar - T0 at the W where the arm-median goodput first reaches 0.95 / 0.98 of the control, interpolated in W; UNBOUND rows are points at their realised cap)")
+    out("STANDING QUEUE AT THE KNEE (q = T-bar - T0, T0 = per-leg echo floors weighted by the arm's own rates; at the W where the arm-median goodput first reaches 0.95 / 0.98 of the control, "
+        "interpolated in W; UNBOUND rows are points at their realised cap)")
     for cell in pp.CELLS56:
         s = sq[cell]
-        out(f"  {cell}: control goodput {_fmt(s['control_gp'], 1)}  T0 {_fmt(s['T0'], 1)} ms (first 1 s of the smallest-W rows)  ell {_fmt(s['ell'], 1)} ms (rate-weighted boot rtp)  "
-            f"curve (W, goodput, T-bar): " + ", ".join(f"({w:.0f}, {g:.1f}, {tb:.1f})" for w, g, tb in s["curve"]))
+        out(f"  {cell}: control goodput {_fmt(s['control_gp'], 1)}  per-leg floors (ms) {({i: round(v, 1) for i, v in s['floors'].items()} or '-')}  ell {_fmt(s['ell'], 1)} ms  "
+            f"T0 spread {_fmt(s['T0_spread'], 1)} ms over {s['T0_n']} smallest-W rows  curve (W, goodput, T-bar, q): " + ", ".join(f"({w:.0f}, {g:.1f}, {tb:.1f}, {q:.1f})" for w, g, tb, q in s["curve"]))
         for thr in KNEE_POINTS:
             p = s["points"].get(thr)
             if p is None:
                 out(f"    {thr:.2f} x control: not reached / not computable")
             else:
-                w, tb, dq, mult, note = p
-                out(f"    {thr:.2f} x control: W {w:.0f}  T-bar {tb:.1f} ms  T-bar - T0 = {_fmt(dq, 1)} ms = {_fmt(mult, 2)} x ell  ({note})")
-    c8p = (sq[C8]["points"].get(0.95) or (None,) * 5)
-    out(f"  C8 prediction: knee at W ~ 500-700, T-bar - T0 ~ 25-35 ms: measured W {_fmt(c8p[0], 0)}, {_fmt(c8p[2], 1)} ms")
+                w, tb, dq, mult, note, t0k = p
+                out(f"    {thr:.2f} x control: W {w:.0f}  T-bar {tb:.1f} ms  T0 {t0k:.1f} ms  q = {_fmt(dq, 1)} ms = {_fmt(mult, 2)} x ell  ({note})")
+    c8p = (sq[C8]["points"].get(0.95) or (None,) * 6)
+    out(f"  C8 prediction: knee at W ~ 500-700, q ~ 25-35 ms: measured W {_fmt(c8p[0], 0)}, {_fmt(c8p[2], 1)} ms")
     out("")
     ctrl_rows = arms.get((C8, "P%d" % pp.CONTROL56[C8]), [])
     ref = ref_stats(s54b_rows(s54b_src))
