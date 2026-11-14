@@ -2234,6 +2234,72 @@ mod tests {
         }
     }
 
+    /// W22 (docs/derivations/wasm-modeswitch-audit.md, ledger R03): the
+    /// documented code-vs-paper divergence of `raptorpath_math::p_fec_normal`,
+    /// BOUNDED (CLAUDE.md: a documented divergence carries a test that bounds
+    /// it). The paper's law (§4.2) is continuous,
+    ///   P_paper(r) = Φ( √W·(r(1−ε) − ε) / √(ε(1−ε)(r + σ²)) ),
+    /// exactly ½ at the floor r = ε/(1−ε). The code adds a truncation, so it
+    /// is 0 below the floor and steps to ≈ ½ at it. This pins that shape:
+    ///   - below the floor: |P_code − P_paper| = P_paper (code is 0), and
+    ///     P_paper < ½, so the gap is < ½;
+    ///   - above the floor: code = paper;
+    ///   - at the floor: code ≤ ½ (and paper = ½).
+    /// It bounds the divergence; it does not fix it (the fix is an
+    /// engine-crate change and the owner's call).
+    #[test]
+    fn test_p_fec_normal_vs_paper_phi_divergence_is_bounded() {
+        // The paper's Φ, evaluated independently of `p_fec_normal`'s early
+        // returns: Φ(z) = 1 − Q(z).
+        let paper = |r: f64, eps: f64, w: f64, s2: f64| -> f64 {
+            let z = w.sqrt() * (r * (1.0 - eps) - eps) / (eps * (1.0 - eps) * (r + s2)).sqrt();
+            1.0 - math::normal_survival(z)
+        };
+        let mut worst_gap_below = 0.0f64;
+        let mut jump_above = 0.0f64;
+        for eps in [0.025, 0.05, 0.10] {
+            let floor = eps / (1.0 - eps);
+            for w in [5.0, 20.0, 64.0, 200.0] {
+                for s2 in [1.0, 2.6, 3.76] {
+                    let code = |r: f64| math::p_fec_normal(r, eps, w, s2);
+                    // Below the floor: the code is 0, so the gap IS the paper's value.
+                    for f in [0.01, 0.25, 0.5, 0.9, 0.99, 0.999] {
+                        let r = floor * f;
+                        let (c, p) = (code(r), paper(r, eps, w, s2));
+                        assert_eq!(c, 0.0, "code is 0 below the floor (eps {eps} W {w} σ² {s2} r {r})");
+                        assert!(p < 0.5, "paper < ½ below the floor: {p}");
+                        assert!(
+                            ((c - p).abs() - p).abs() < 1e-12,
+                            "|P_code − P_paper| = P_paper below the floor (eps {eps} W {w} σ² {s2} f {f})"
+                        );
+                        worst_gap_below = worst_gap_below.max((c - p).abs());
+                    }
+                    // Above the floor: the code IS the paper's law.
+                    for f in [1.001, 1.01, 1.5, 2.0, 5.0, 20.0] {
+                        let r = floor * f;
+                        let (c, p) = (code(r), paper(r, eps, w, s2));
+                        assert!(
+                            (c - p).abs() < 1e-12,
+                            "code = paper above the floor (eps {eps} W {w} σ² {s2} f {f}): {c} vs {p}"
+                        );
+                    }
+                    // At the floor: the paper says exactly ½; the code is 0 or ½.
+                    let (c, p) = (code(floor), paper(floor, eps, w, s2));
+                    assert!((p - 0.5).abs() < 1e-9, "paper is ½ at the floor: {p}");
+                    assert!(c <= 0.5 + 1e-9, "code ≤ ½ at the floor: {c}");
+                    // The step across the floor (the divergence's size): ≈ ½.
+                    jump_above = jump_above.max(code(floor * 1.001) - code(floor * 0.999));
+                }
+            }
+        }
+        // The divergence is bounded by ½ everywhere and attains ≈ ½ at the floor.
+        assert!(worst_gap_below < 0.5, "gap below the floor < ½: {worst_gap_below}");
+        assert!(
+            (0.45..=0.51).contains(&jump_above),
+            "the code's step across the floor is ≈ ½ (documented, not fixed): {jump_above}"
+        );
+    }
+
     /// The sim/engine tail-anchor divergence, bounded (CLAUDE.md: every
     /// documented model-vs-engine divergence carries a test that bounds it,
     /// not prose that describes it). §11.3.
