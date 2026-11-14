@@ -1209,6 +1209,34 @@ The derivation's "c8 −3 to −5 %, fails the guard" is to be re-checked agains
 - **c1s:** per-tick attribution of who limits. A closed-loop c1s test waits for the controller question (owner).
 - **Not offered:** an interim smaller fixed pool. It would be a pin, not a law.
 
+**§56 Addendum (post hoc, 2026-11-14; from `docs/derivations/store-law.md` §R3–§R5 on the §56 ledger; nothing
+registered is re-scored).**
+- **F5 is resolved as a parser artefact.** Recomputed per tick with means (`store-law/s56.py`), |W − Σrᵢ·rttᵢ| is
+  ≤ 0.06·W on every arm, c1s included. The scored medians used integer-millisecond echo values. A small time
+  outside the echo loop remains: 0.3–0.9 ms at c2/c8 for W ≤ 512, growing with W at c1s. It changes the store size,
+  not the ratio law's fixed point.
+- **c1s is store-bound.** One class rule across cells (store full iff a ≥ 0.95·W; quinn backlogged iff B ≥ 98;
+  `store-law/s56cls.py`):
+  - c1s's mean occupancy is 0.85–0.90 of W, with a 10–15 % ack-batch sawtooth that a per-tick threshold misses;
+  - ticks with quinn's backlog carry the higher send rate, and the rate falls with W in every class;
+  - so quinn's backlog is an effect of W, not a limiter. Checked on three rows by the coordinator: occupancy
+    0.85–0.88, backlogged rate ≥ the other ticks.
+  - **Hypothesis only, under review:** c1s's goodput curve may be utilisation–delay-like rather than a knee. The reported flat product q·(1 − u)·C ≈ 12.5–21 symbols at W 384–1 024 appears to mix two capacity definitions, and with a single one it may rise with W. It is not a finding.
+- **The held-out c1d prediction missed** (`store-law.md` R4.1, committed `bcafa8c3` before the evaluation).
+  - At the s53 pin, c1d's σ reads 1.1–1.3 ms and its quinn backlog dwell 0.9 ms, so the decomposition's inputs do
+    not transfer.
+  - On p34 (contaminated: seen in rev 2), the knee queue is ×2.7 the decomposition's.
+  - One variant (U, R5.1, committed `441f5def`) is registered for a clean c1d sweep.
+- **c8's ½ comes from symmetric shaping.** `topo_dual.sh` shapes both directions (5 + 5 ms, 20 + 20 ms), so the
+  legs' forward arrivals equalise at a leg-0 queue of ½ the loop gap. That is ≈ 15 ms, a leg-0 loop of ≈ 30 ms, at
+  W ≈ 320–340, where the knee is. Asymmetric cells c8a/c8b are its falsifier (Part B-2).
+- **Withdrawn derivation claims:**
+  - rev 2's "c8 −3 to −5 %, fails the guard" (p27's 8 s rows; on §56 the coupled point reads within 0.5 %);
+  - rev 3's "c1s 2 048 → 768 is a substrate cost" and its quinn-backlog knee term;
+  - rev 3's boot-latched σ̂⁺ (one start-up transient becomes a lifetime queue: one c2 row at 133 ms);
+  - rev 3's close matches of a three-term knee model (fitted post hoc; it holds only at c2 and c8);
+  - rev 4's two-variant c1d registration (replaced by one variant, U).
+
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
 
 **What.** One row per law and per estimator that feeds a law: 70 rows (12 estimators, 6 δ maps, 6 flow-control, 9 rate, 10 span/shed/emission, 13 recovery, 10 scheduler/CC, 4 wasm). Each row records:
