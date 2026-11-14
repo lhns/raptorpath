@@ -1,0 +1,22 @@
+== c2-100 BASE   [late median (boot)] per leg, arm median of rows
+  rtp   p0  191.2 (11.4)  rows 12
+  wrtt  p0  120.0 (14.0)  rows 12
+== c2-100 CAND   [late median (boot)] per leg, arm median of rows
+  qmin  p0  6.2 (8.0)  rows 12
+  qrt   p0  7.8 (8.0)  rows 12
+  rtp   p0  189.8 (11.1)  rows 12
+  wrtt  p0  22.0 (33.5)  rows 12
+== c8-100 BASE   [late median (boot)] per leg, arm median of rows
+  rtp   p0  109.6 (10.9)  rows 12
+  rtp   p1  40.7 (38.1)  rows 12
+  wrtt  p0  131.0 (18.5)  rows 12
+  wrtt  p1  242.8 (51.5)  rows 12
+== c8-100 CAND   [late median (boot)] per leg, arm median of rows
+  qmin  p0  6.9 (7.1)  rows 12
+  qmin  p1  36.8 (37.8)  rows 12
+  qrt   p0  8.2 (7.4)  rows 12
+  qrt   p1  39.6 (37.9)  rows 12
+  rtp   p0  80.8 (12.1)  rows 12
+  rtp   p1  121.2 (40.7)  rows 12
+  wrtt  p0  21.5 (36.5)  rows 12
+  wrtt  p1  87.2 (62.5)  rows 12
