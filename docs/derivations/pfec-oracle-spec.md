@@ -9,6 +9,30 @@ per-loss law against an executed decoder).
 - Advisor (Fable) round 7 settled: the deadline per caller, the extraction
   order, the emission readings E1 (confirmed) and E2 (cadence-dependent), the per-seat clock, and the registration tolerances.
 
+**Header entry 8 (main-session Fable review of `2aa40a98`, round 8).** It
+found three problems:
+- m̄ decides the outcome, so a fixed m̄ = 1 pre-refuted every form.
+- The copied debt and ack lines set W1, and string pins hold text, not
+  behaviour.
+- The refutation rule was never applied to the frozen predictions.
+
+It also asked for E1 to be re-verified, and for the span seat to land once,
+after phase 6.
+
+Round 8 changes (my advisor pass, `pfec_decide.py` → `.out`):
+- W1 is a known-answer test against engine output (K4). The engine already
+  reads 0.67 at a realtime c1s row, so 0.055 is withdrawn as a prediction.
+- m̄ is read per wake, and its gauge range is reported.
+- A per-cell decidability table: A\* separates shipped/Φ from the block law;
+  W 201 body separates nothing.
+- A tail rule in miss counts.
+- The asserted lower sides of K2 and K3 are dropped.
+- The extraction lands after phase 6.
+- A timing plan comes before the sample sizes.
+
+§6 below holds every round-8 change. Where it conflicts with §0–§5, **§6
+governs**.
+
 ## 0. Two findings the build must witness first
 
 **E1. `TaperBudget`'s taper shape is inert as wired.**
@@ -309,3 +333,181 @@ pin (`emission_witness.out`).
 **Run cost.** Rust, no I/O. The body grid is ≈ 30 cells × 5 seeds × 10⁴
 sources; the tail is ≈ 8·10⁶ sources. Both are within a CI-scale minute
 budget, as an estimate. The tail runs `#[ignore]`d and on demand.
+
+## 6. Round 8: revisions (these govern over §0–§5)
+
+### 6.1 m̄: what the debt cancellation sees, and the gauges
+
+**Reading.**
+- The cancellation runs **per sender-loop iteration**, not per ack frame.
+- `on_ack_advance` (`sender_phases.rs:1225`) is called once per iteration
+  from `net/mod.rs:3482`. It reads `next_expected = window_ack_seq.load(..)`
+  (`mod.rs:3481`) and acts if the cumulative ack moved since the last
+  iteration (`cumulative_advance`, `sender_phases.rs:1220`).
+- So m̄ = sources acked per **advance-observing iteration**. It lies between
+  Δcum/Δ(all iterations) and the release batch Δcum/Δwake[ack]
+  (`tools/l1/pool57_score.py:14`, `:160`).
+
+**Gauge readings on existing rows.** The token semantics are as read; this is
+not a calibration.
+
+| rows | Δcum / Δwake[ack] | Δcum / Δ`wait n` | note |
+|---|---|---|---|
+| anchor-diag MAIN client rows (`docs/l1-raw/anchor-diag/diag-ad/*-MAIN-s42-r1-a1-c.log`): c1s / c1d / c2 / c8 | 13.9 / 3.6 / 0.7 / 0.7 | 38 / 20 / 6.5 / 7.3 | — |
+| §57a and §57b c1 pool rows (`docs/status.md`, the §57a/§57b tables) | 60–195 | — | large pools |
+| store-law-n1 realtime smoke, c1s (`.../diag-smoke/c1s-400-LAW-realtime-s42-r1-a1-c.log`) | 0.8 | — | — |
+
+So m̄ is **cell- and era-dependent and not settled.**
+
+**Registration consequence.**
+- A cell is read only at an m̄ that a gauge has shown for that caller's seat.
+- W 201 rows are read at the gauge range of their reliable-seat rows. A\*
+  rows (the evicting seat) are a **reported m̄ sweep** {1, 4, 16, 64, 256}
+  until an evicting-seat row exists.
+- **The VM row that settles the evicting seat:**
+  - c3 (or c2), `--protocol-hint realtime`, **no** `--window-reliable`
+    (evicting), `RWM_UNIFIED=1`, `RWM_DIAG=1`;
+  - tokens `[DIAG] cum=`, `wake[… ack=]`, `wait[… n=]`, `src=`, `cod=`, and
+    `[SPAN] rr= debt= a_star= delta= shed= bud=`;
+  - m̄ and engine W1 are both read from it.
+
+### 6.2 W1 is a witness on engine output: known-answer test K4
+
+**What the tokens count.**
+- `cod=` is `total_repair_symbols`: all coded repair, i.e. proactive, margin
+  and request-law equations (`diag.rs:220–223`). `src=` is source symbols.
+  Both are DIAG rates.
+- `[SPAN] rr=` is the handed `repair_rate` (the grant, `emit_source.rs:662–672`).
+
+**Engine W1 on record.**
+- **store-law-n1 realtime smoke, c1s client:** mean `rr` 0.119 (48 SPAN
+  lines), cod/src 0.080 (94 DIAG lines with src > 1 000/s). That gives
+  W1 ≲ 0.67. It is an upper bound, because `cod` includes margin and
+  deficit coded repair.
+- **Unified flip battery** (`c3a9d768`, L1 c3 realtime perf cell,
+  `--window-reliable`): cod/src 0.38–0.50 consumed, under the same
+  cancellation code. The code dates from `f2cba2b7`, 2026-03-20, so it was
+  in place.
+- **L0 evicting rep** (`8e77ba67`): "ru/rf ≈ 15.5 % (435/69)". If 435 is
+  repairs fired over ≈ 95 sym/s × 20 s of sources, cod/src ≈ 0.23 at
+  r 0.2–0.5, i.e. W1 ≳ 0.45. This is a reading, and the token meaning is
+  unconfirmed.
+- So the per-slot-ack model's 0.055 is **withdrawn as a prediction** for
+  either seat. The copied clock at m̄ = 1 is what was wrong.
+
+**K4.** Before any P reading, the oracle must reproduce engine W1 at a
+recorded row's inputs (ε, σ², r = mean `rr`, A\*, Δ, m̄ from that row's
+gauge): |W1_oracle − W1_engine| ≤ 3·SE_seeds. Here W1_engine = cod/(rr·src),
+an upper bound. Until K4 passes, the copied debt and ack clock are
+unvalidated and no P reading is taken.
+
+Why a witness and not an extraction:
+- Extracting the debt arithmetic (three lines) would not pin its call order
+  or cadence (per iteration, against the ack atomic), and those set W1.
+- The string pins (§1.1) stay as drift guards only.
+
+### 6.3 E1, verified
+
+- `TaperBudget::accrue` has one production call site, `emit_source.rs:543–549`.
+  It is passed `rate = flat_rate = window_rate.min(spare.max(0.0))`
+  (`:537`) and the same `spare`.
+- Shaping needs owed > 0, which needs a call with spare < rate. The seat's
+  `min` excludes that. With spare < 0, `flat_rate` = 0 and the grant is 0.
+- `max_overhead` ≤ 0.5 < 1, so the `1.0` cap never binds. Hence
+  grant ≡ rate at this seat, for any offset or shape.
+- The shaped behaviour is exercised only in unit tests that drive
+  spare = 0 and then ∞ (`control/fec_rate/tests.rs:957–1008`), and in
+  `decision_trace_pin.rs:336`.
+- `taper_emission_l0.rs` asserts nothing on emission. It is a measurement
+  instrument that scrapes cod/src (`:16–20`).
+- So E1 holds at the only production seat.
+
+### 6.4 The refutation rule applied to the frozen predictions
+
+Source: `pfec_decide.out`.
+- A form f is refuted iff |P_oracle − P_f| > B, with B = 3·SE + τ.
+- Forms a and b are **separable** iff |P_a − P_b| > 2B, i.e. every oracle
+  value refutes at least one of them.
+- SE comes from 5 seeds × 10³ holes, burst-inflated by the GE mean burst
+  1/q.
+
+| window | cells | shipped/Φ vs C6/C5 | C6 vs C5 | shipped vs Φ | verdict |
+|---|---|---|---|---|---|
+| A\* 3–7, r 0.2–0.5 (shed budget; τ 0.021, B ≈ 0.05) | 20 | gap 0.30–0.63 > 2B ≈ 0.10–0.11 at **20/20** | gap 0.03–0.07 < 2B at 20/20 | equal (above r_c) | **decidable:** the block law against shipped/Φ. **Undecidable:** C6 vs C5 |
+| A\* 4, r = 0.5·r_c | 1 | shipped–block 0.02–0.03: no; Φ–block 0.43: yes | no | 0.45: yes | Φ decidable; shipped vs block not |
+| W 201 body, c2/c3 at 0.5, 1.5, 2·r_c (τ 0.005·L_r = 0.064–0.10) | 6 | gap 0.08–0.17 < 2B ≈ 0.18–0.26 at 6/6 | no | separable only at c3 0.5·r_c | **reported only.** τ = 0.005·L_r was the wrong unit: it is the change of P over one grid step, not the P error that moves r_sat's argmin. The follow-up rule compares r_sat in grid steps and is sized after the §6.7 timing |
+
+### 6.5 The tail rule, in miss counts
+
+At W 201, the Auto r\*, d = L_arq and N = 10⁵ holes, there is one threshold
+per cell at the geometric midpoint of the shipped and C6 expectations:
+- **c2:** shipped/Φ μ 47, C6 μ 2 041. T = √(47·2 041) = **310**.
+- **c3:** shipped/Φ μ 27, C6 μ 1 084. T = √(27·1 084) = **171**.
+
+The rule, with no unassigned range:
+- k < T refutes C6 and C5;
+- k ≥ T refutes shipped and Φ.
+
+**Clustering tolerance.** The threshold holds at 3σ for miss clusters up to
+c ≈ 164 holes (c2) and 85 (c3): (μ ± 3√(μ·c)) stays on its side of T.
+Observed cluster sizes are recorded as a witness. If the largest exceeds
+that bound, the tail reading is void.
+
+**Not separable by the tail:**
+- shipped from the target, with μ 39 (c2) and 21 (c3);
+- C6 from C5.
+
+### 6.6 Known-answer tests and outcomes, restated
+
+- **K2:** the asserted lower side is dropped. K2 instead reports the
+  per-block **mismatch count**: blocks where the decoder's outcome differs
+  from `surv ≥ nlost`. Each block knows both. The upper side, P ≤ C5 + 3·SE,
+  is kept.
+- **K3:** the asserted lower side is dropped. Only P_rust(∞) ≤ P_py + 3·SE
+  is asserted.
+- **K4** (§6.2) is added and runs before any P reading.
+- **Outcomes replace O1 and O2 with per-window verdicts:**
+  - **shed budget:** at each A\* cell the oracle refutes either shipped/Φ or
+    both block forms. C6 vs C5 is not decided.
+  - **r_sat body:** reported only.
+  - **tail:** the §6.5 rule.
+- If K3 passes and W1 ≈ 1 at the read m̄, the old O1 follows from K3. It is
+  not a separate outcome.
+- O3 is replaced by K4. O4 and O4′ are replaced by §6.5. The outcome "any
+  K0–K4 failure ⇒ no reading" stands.
+
+### 6.7 One extraction, after phase 6
+
+- `span_seat` rewrites the same lines as shared-core step 1.2. It therefore
+  lands **after phase 6** (branch `phase6-forms`, in progress; not on github
+  at this writing, so the signatures below are **provisional**).
+- It calls the moved `raptorpath-math` forms and re-clamps in u64, so NaN
+  still gives 1:
+  ```rust
+  let a_star = (raptorpath_math::span_width_a_star(rate_sym, d, window as f64).ceil() as u64).clamp(1, window as u64);
+  let delta  = (raptorpath_math::trailing_offset_delta(rate_sym, jitter_s) as u64).clamp(1, 64);
+  ```
+  - `span_width_a_star` clamps before the ceil while the inline code ceils
+    first. The two agree for every finite input, because W is an integer.
+  - `trailing_offset_delta` returns NaN for a NaN rate. `as u64` gives 0 and
+    the u64 clamp gives 1, which preserves today's value.
+- `trailing_span` is unchanged.
+- **Step 1.2's other two seats** (`net/mod.rs:475`, `shed.rs:31`) change in
+  the same commit and ride the same proof.
+- **The sha proof is the VM's Linux release build of both trees.** The host
+  comparison is evidence only.
+  - Identical sha: the guard is waived.
+  - Otherwise: guard batch α.
+- The `decision_trace_pin` digests of §2 are captured on the extracted tree.
+
+### 6.8 Timing, before any sample size is fixed
+
+- Time one W 201 cell: c3 nominal, r 0.158, A\* = W = 201, Δ 11,
+  10⁵ sources, primary arm.
+- Use `cargo test` (debug profile) and `cargo test --release`.
+- Use the smallest symbol size `RlcWindowEncoder::new` accepts. Codec cost is
+  linear in symbol size and the decode does not read payload bytes.
+- Report µs per source and per hole. Then set:
+  - the body N, at 10³ holes per seed;
+  - the tail N, at 10⁵ holes: ≈ 2·10⁶ (c3) to 4·10⁶ (c2) sources. It runs
+    `#[ignore]` if it takes over a minute at the release profile.
