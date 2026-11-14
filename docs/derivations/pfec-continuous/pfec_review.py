@@ -62,7 +62,7 @@ def palm_joint_exact(r, e, s2, W, layout="interleaved"):
     return a if f == 0 else (1 - f) * a + f * palm_joint_exact_n(e, s2, W, n0 + 1, layout)
 
 # ------------------------------------------------------------ sliding decode
-def sliding_decode(e, s2, r, A, delta=1, T=60_000, seed=7, tol=1e-8):
+def sliding_decode(e, s2, r, A, delta=1, T=60_000, seed=7, tol=1e-8, rep_erased=True):
     """Engine trailing span (emit_source.rs:784-806): after source t, while
     debt >= 1 emit a repair over [max(0, end-A), end), end = t+1-delta, debt += r
     per source (debt accrual, :738-741). One GE chain over the wire. Decode
@@ -86,7 +86,9 @@ def sliding_decode(e, s2, r, A, delta=1, T=60_000, seed=7, tol=1e-8):
         while debt >= 1.0:
             debt -= 1.0
             end = t + 1 - delta; start = max(0, end - A)
-            l = step()
+            # rep_erased=False: repairs ride a loss-free path (dual-path
+            # placement bound) and do not step the source path's chain.
+            l = step() if rep_erased else False
             if end > start and not l:
                 reps.append((start, end))
     # unknowns and components (union-find over unknowns sharing a repair)

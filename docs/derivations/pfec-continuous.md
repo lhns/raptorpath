@@ -56,6 +56,24 @@ this doc, and paper sections are named "paper §". Base: `db012f16`.
      `RATE_CADENCE_MAX_US`";
    - fixed the R1d table, the 20–53 % range and the "later ledgers" sentence,
      and removed the stale sentences in §1 and §2.
+6. *Main-session Fable review of `82acbd00`* (the owner chose path (b); C6
+   does not ship). It required:
+   - the bracket wording, with one table against the sliding decode by caller
+     window, including the engine pin point;
+   - the oracle as executed code, with a harness search and a design;
+   - the r\* item restated as a paper-text erratum;
+   - §0 to say plainly that no form is recommended.
+
+   My advisor rounds for it added several checks:
+   - the bound is conditional on its spacing and chain premises (the
+     `TaperBudget` front-loading, and the loss-free-placement rerun T2);
+   - the tail sample cannot resolve the Auto target, and is only a lower bound
+     on the miss;
+   - main's `7c5872f5` erratum carries the same over-reading;
+   - the harness candidates were checked per criterion, not by their headers;
+   - the verdict column and a sweep of the retracted phrases.
+
+   This gave §8 and the rewritten §0.
 
 ## 0. Result
 
@@ -84,35 +102,51 @@ p + q = 2/(σ² + 1) and p = ε·(p + q).
 - It passes every assertion of the engine pin.
 - It matches the repo's executed **block** oracle (`temporal_oracle.rs:1476`,
   ported) within 1 %, where the shipped form is off by 20–53 % (§7 R1).
-- **One status at every caller: C6 is the exact block law, not the executed
-  decoder's law.** Every caller that executes, i.e. the engine (A\* 4–7 on the
-  evicting seat, W 201 on L1) and the wasm sim (whose `send_repair` codes over
-  the whole sliding window, `raptorpath-wasm/src/lib.rs:903–904`), runs a
-  **sliding** decoder.
-  - Against a no-deadline sliding-decode simulation, C6 reads P low by
-    0.04–0.15 at every window tested.
-  - In the tail it is far worse. At W 201 and the closed-form Auto r\* the
-    sliding miss is 0 (c2) and 2.7e-4 (c3), against C6's 2.0e-2 and 1.1e-2.
-    The shipped Φ (4.7e-4, 2.8e-4) is nearer there.
-  - Low P is the unsafe direction for ρ (larger shed budget) and makes r_sat
-    looser.
-- **Owner's choice:**
-  - (a) ship C6 everywhere now (continuous, pin-correct, block-exact), with a
-    bounding test of its divergence from a sliding-decode oracle; or
-  - (b) derive the sliding per-loss law first. Meanwhile the W22 step stays
-    in R, which decision 3's option (ii) reads.
+**No form is recommended. The owner's path is (b): derive the sliding
+per-loss law first. C6 does not ship.** Until that law exists, the W22 step
+stays in R, which decision 3's option (ii) reads.
 
-  §5 lists the change for (a).
-- On c1s, c1d, c2 and c8, r\* stays bit-identical 0 under either choice (proof
-  in §4). The law still **executes** there, because `r_saturation` runs on
-  every rate evaluation, so the only L1-visible change is CPU (§7 R2: a second
-  resource bound for the owner, an estimate to bench).
-- The block event error also sits in paper §4.2's r\* inversion. On the block
-  law the per-loss exact r\* is 31–47 % above paper §4.7's window-event r\*.
-  But the sliding-decode tail check at L1 inputs meets the target at the
-  shipped closed-form r\* (within SE), so the off-Bulk "52× to 10³×
-  under-provisioning" is a **block-law figure only** and not an engine finding
-  (§7 R3).
+- Every caller that executes decodes a **sliding** window: the engine (A\* 4–7
+  on the evicting seat, W 201 on L1) and the wasm sim (`send_repair` over the
+  whole window, `raptorpath-wasm/src/lib.rs:903–904`). C6 is the exact law of
+  a **block** window only.
+- **The bracket we have is one-sided** (§8.3):
+  - The Python sliding decode has no deadline and decodes by generic rank, so
+    it is an **upper bound** on per-loss FEC recovery. That holds under its
+    model premises: uniform repair spacing and one GE chain. The engine's
+    `TaperBudget` front-loads repairs after each ack (§8.1).
+  - No lower bound is derived.
+  - **Above the bound means refuted.** The shipped form and plain Φ sit above
+    it at every A\* 3–7 cell (20 of 20). C6 sits above it at one cell (A\* 3,
+    r 0.2, by 0.005).
+  - **Below the bound means not ordered.** That is C6 and C5 elsewhere, and
+    every form at W 201.
+  - In the W 201 tail the sliding miss is only a **lower** bound on the miss,
+    and its sample cannot resolve the target, so no form is refuted there.
+- **Engine pin point** (ε 0.048, r 0.34, A\* 4, σ² 3.76):
+  - the bound gives P ≤ 0.416 (SE 0.002); repairs on a loss-free second path
+    give ≤ 0.399;
+  - so R ≥ 2.8 %. The shipped form gives P ≈ 0.90, i.e. R = 0.49 %.
+  - The shipped form is **outside the bracket on the budget-starving side**,
+    under the bound's premises.
+- **Next deliverable:** the test-only Rust oracle of §8.2. It runs the
+  engine's real `RlcWindowEncoder`/`RlcWindowDecoder`, the engine's
+  `TaperBudget` emission and trailing span, a GE channel, no ARQ, and a
+  deadline D(δ). It reports P(D) and P(∞) at A\* 3–7 and at W 201, against
+  per-form predictions frozen before the run. The sliding law is derived
+  against it, with Fable.
+- On c1s, c1d, c2 and c8, r\* stays bit-identical 0 under any form (proof in
+  §4). Any future law executes there through `r_saturation`, so it must meet
+  the evaluation-scheme requirement of §8.4.
+- **Paper-text erratum, not a rate-law finding:** paper §4.2 (`:693–704`)
+  derives the window event, which includes K = 0, instead of the per-loss
+  event that `:205` defines.
+  - On the block law, the per-loss r\* is 31–47 % above §4.7's.
+  - For the executed sliding decoder this under-provisioning is **not
+    established**. The sliding check at c2/c3 W 201 cannot resolve the Auto
+    target: 0/4 101 and 2/7 472 misses, 95 % upper limits 9e-4 against
+    targets 2–4e-4. Its miss is also only a lower bound.
+  - Realtime is unresolved and out of reach by counting.
 
 ## 1. What P_fec must mean
 
@@ -470,10 +504,9 @@ Only its output is annihilated (step 3).
 
 ## 5. What the code change would touch (not done)
 
-This is the change for **owner choice (a)**: C6 at every caller, plus a
-bounding test of C6 against a sliding-decode oracle at A\* 4–7 and W 64/201.
-The test must bound both the P gap (≤ 0.15) and the tail gap. Under choice
-(b) the same list applies with the sliding law in place of C6.
+The owner chose path (b), so C6 does not ship. This list is what **any**
+replacement of `p_fec_normal` touches; the future sliding law takes C6's
+place in it. Its bounding test is the §8.2 oracle.
 
 **`raptorpath-math`.**
 - `p_fec_normal` (`lib.rs:885–893`) becomes the C6 form under a new name. The
@@ -577,6 +610,13 @@ the cap's role at C4 is lost.
 
 Numbers: `pfec-continuous/pfec_review.py` → `pfec_review.out`, cited as
 **out-r§Rn**.
+
+> **Superseded in part by §8 (round 6).** Wherever this section compares C6
+> or the shipped form with the sliding decode as a point value, the reading is
+> retracted: "reads low", "unsafe direction", "nearer", "overstated", "meets
+> the Auto target". The sliding decode is a one-sided bound (an upper bound on
+> recovery, a lower bound on the miss). §8.3 holds the corrected bracket and
+> §0 the corrected status. The numbers below stand; their verdicts do not.
 
 ### R1. The decoder at the A* windows
 
@@ -829,3 +869,138 @@ battery's input range, but C6 and C5 reach it nowhere. The rep's
   δ ≈ 0.045–0.058, between presets. The R check therefore needs a **dial
   sweep** (e.g. every 1 % of log δ over [0.005, 50]) with the same tol_R per
   step, not only the preset nudges.
+
+## 8. Round 6: path (b), the executed oracle
+
+### 8.1 What exists (an executed oracle for P_fec at the engine's windows)
+
+I checked each candidate against five criteria: real engine codec, trailing
+span A\*, the engine's own emission law, deadline D(δ), and no I/O. Every
+caller of `generate_repair_range` was grepped. Outside unit tests, the only
+production caller is `net/emit_source.rs:798`; the rest are `net/mod.rs:3319`
+(deficit repair), `net/hotpath_pin.rs:133` (a pin), and tests in `fec/`.
+
+| candidate | real codec | trailing span A\* | engine emission (`TaperBudget`) | deadline D(δ) | no I/O | P_fec isolated (no ARQ race) |
+|---|---|---|---|---|---|---|
+| `tests/common/gate_harness.rs` `run_fec` (:477) | yes: `RlcWindowDecoder` (:561) | **no**: `generate_repair()` over the leading window (:722–731) | **no**: its own per-path `debt` | no | **yes**: mock clock, GE channel | **no**: the P_lost-gated retransmit runs (:746+) |
+| `tests/unified_stream_l0.rs`, `unified_l0.rs`, `taper_emission_l0.rs` | yes | yes | yes | yes | **no**: memory TUNs plus real QUIC on 127.0.0.1 plus the L0 netem shim | **no**: ARQ races; FDIAG attributes after the fact (the 51 vs 10–21 datum) |
+| wasm sim (`raptorpath-wasm`) | **no**: `raptorpath-math/src/rlc.rs`, a separate simplified codec (`rlc.rs:1–4`) | **no**: whole-window `generate_repair` (`lib.rs:903–904`) | **no**: its own debt (`:1358`) | via ARQ ticks | yes | no |
+| `tests/fec_window_test.rs`, `sim_pipeline_test.rs` | yes | no | no (scripted losses) | no | yes | yes, but no emission law |
+| `fec/prune_contract_tests.rs` | yes | range repairs, test-scripted | no | no | yes | — |
+
+**Finding: nothing executes the engine's trailing-span emission with the real
+decoder, without I/O, with P_fec isolated from ARQ.** The L0 tests execute
+the whole engine but cannot isolate P_fec. The gate harness is I/O-free but
+uses the wrong span and races ARQ.
+
+Two premises of the Python sliding bound are model inputs:
+- **Emission spacing.** `TaperBudget::accrue` (`fec_rate.rs:703–736`) re-times
+  the grant with the GE taper shape W·q·(1−q)^t/(1 − (1−q)^W), so repairs are
+  **front-loaded after each ack advance**, not uniform.
+- **One GE chain over the wire.** Dual-path placement breaks this
+  (§8.2, T2).
+
+So the sliding bound is proven only for uniform spacing on one chain.
+
+### 8.2 Next deliverable: a test-only Rust harness (design only, no code)
+
+`raptorpath/tests/pfec_sliding_oracle.rs`: test-only, with no engine edit
+(ADR-0077 scope).
+
+- **Drives:** the engine's real `RlcWindowEncoder` / `RlcWindowDecoder`
+  (`fec/rlc_window.rs:31`, `:248`). Emission goes through the engine's own code:
+  `TaperBudget::accrue` and the span placement `[max(ws, end − A*), end)`,
+  end = newest + 1 − Δ (`emit_source.rs:784–806`).
+  - If that placement is not callable from a test, the harness re-states it
+    behind a pin test that asserts byte-identity with `emit_source`'s range
+    arguments on a recorded trace.
+  - Under shared-core-0 (`raptorpath-core`, empty at main `e9188e01`), the
+    span decision is a candidate to move there first, so the harness and the
+    engine share it.
+- **Channel:** `tests/common/mod.rs` `GilbertElliottChannel` (:29), loss iff
+  Bad, stepped per wire symbol. Each repair is either on the same chain or on
+  a second independent chain (the dual-path premise). (p, q) come from
+  (ε, σ²) by §1's inversion.
+- **No ARQ:** recovery is FEC only, so P_fec(D) is well defined.
+- **Deadline:** a lost source s counts as recovered at D iff the decoder
+  outputs it before the wire clock passes send(s) + D(δ). D(δ) =
+  min(b(δ)·RTT, 2·RTT) is converted to source slots at the harness's send
+  rate. P(∞) is also reported.
+- **Counts:**
+  - lost sources;
+  - recovered by D;
+  - recovered at all;
+  - range repairs emitted;
+  - leading-window fallbacks (the `emit_source` fallback when the window is
+    too young to trail). This is a witness that the range path fired.
+  - the grant trace (Σ grants against Σ r, `owed`).
+- **Mapping:**
+  - **shed budget:** span A\* ∈ {3..7}, encoder window 200, r ∈ {0.2, 0.29,
+    0.34, 0.5}, σ² ∈ {1, 2, 3.76}, ε 0.048, D at b(Realtime). This gives
+    R = ε·(1 − P(D)).
+  - **r_sat:** A\* = W = 201, the nominal c1/c2/c3 (ε, σ²), r on
+    `r_saturation`'s grid. The p99 model's tail_fec reads 1 − P(D).
+- **Cross-checks:**
+  - P(∞) must match the Python sliding bound (`pfec_review.py`
+    `sliding_decode` with the same spacing) within SE, once its spacing is
+    switched to the taper shape.
+  - P(D) ≤ P(∞) must hold on every row.
+- **Sample size:**
+  - The body needs about 10³ holes per row (SE about 0.015).
+  - The Auto tail at W 201 needs about **10⁵ holes**: t/ε ≈ 2–4e-4, and
+    resolving that to ±30 % takes ~10⁵. That is ≈ 4·10⁶ sources at c2, a
+    few seconds in Rust.
+  - Realtime (t/ε ≈ 2–4e-6) needs ~10⁷ holes. It is **out of reach by
+    counting** and needs the derived law plus a bound, not a count.
+- **Registration:** before the run, freeze per-form predictions from the §8.3
+  table (shipped, Φ, C6, C5, sliding bound) in the test file. The harness then
+  becomes the bounding test the sliding law will be held to.
+
+### 8.3 The bracket: every candidate against the sliding decode
+
+Source: `pfec-continuous/pfec_bracket.py` → `pfec_bracket.out`, tables T1–T4.
+
+**Premises of the bound.**
+- The sliding decode has no deadline and decodes by generic rank. That makes
+  it an **upper** bound on per-loss FEC recovery, for its spacing (uniform
+  debt accrual) and its channel (one GE chain over sources and repairs).
+- The bound value per cell is the larger of Δ ∈ {1, 2}: the 3-seed mean, with
+  its SE.
+- **Verdict:** a form is **refuted** when P > bound + 3 SE. Below that it is
+  **not ordered**, because no lower bound exists.
+
+| caller window | inputs | shipped / Φ | C6 | C5 (exact joint, block) | sliding bound | verdict |
+|---|---|---|---|---|---|---|
+| **A\* 3–7, body** (shed budget) | ε .048, σ² 3.76, r 0.2–0.5, 20 cells | 0.72–0.995 | 0.18–0.70 | 0.14–0.65 | 0.17–0.86 | shipped/Φ **refuted at 20/20**; C6 refuted at 1/20 (A\* 3, r 0.2: 0.180 > 0.168 + 0.007); C5 not ordered |
+| A\* 4, r 0.34, **engine pin** | as above | **0.899** (R 0.49 %) | 0.357 | 0.305 | **0.416** (SE 0.002); loss-free repair path 0.399 | shipped **refuted, budget-starving side**: R ≥ 2.8 % under the premises |
+| A\* 7, r 0.5 | as above | 0.995 | 0.696 | 0.654 | 0.855; loss-free repair path 0.889 | shipped refuted even with placement |
+| **W 201, body** (r_sat) | c2 at 1.5 / 2 r_c | 0.748 / 0.908 | 0.580 / 0.770 | 0.579 / 0.768 | 0.753 (SE 0.029) / 0.943 (0.011) | all not ordered |
+| W 201, body | c3 at 1.5 / 2 r_c | 0.791 / 0.947 | 0.650 / 0.850 | 0.647 / 0.844 | 0.869 (0.013) / 0.987 (0.009) | all not ordered |
+| **W 201, tail** (miss 1 − P), Auto r\* | c2 r 0.091 | 4.7e-4 | 2.0e-2 | 2.2e-2 | miss ≥ 0/4 101 (95 % upper 9.0e-4) | target 3.9e-4 unresolved; no form refuted |
+| W 201, tail | c3 r 0.158 | 2.7e-4 | 1.1e-2 | 1.3e-2 | miss ≥ 2/7 472 (95 % upper 9.7e-4) | target 2.1e-4 unresolved; no form refuted |
+
+**Reading.**
+- The only established statement is the shipped and Φ forms overstating
+  recovery at the shed budget's windows. That under-states R and starves
+  ρ < 1 shedding, under the bound's premises.
+- The placement check (T2) does not close the gap: repairs on a loss-free
+  path still give 0.399 at the pin.
+- The spacing premise is open. `TaperBudget` front-loads repairs after an
+  ack, and the §8.2 oracle runs that law.
+- **Retracted** from rounds 4–5: "C6 reads P low", "the unsafe direction", "the
+  shipped Φ is nearer", "r_sat is overstated", and "the shipped r\* meets the
+  Auto target". Each compared a form with a one-sided bound as if it were the
+  truth. Main's status erratum (`7c5872f5`, "its tail is ≈ 100× off", "the
+  sliding check has the shipped r\* meeting the Auto target") carries the same
+  over-reading and needs the same correction.
+
+### 8.4 Evaluation-scheme requirement carried to the sliding law
+
+Any future law at the `r_saturation` caller must meet the §2 scheme:
+- computed once per `RateSnapshot`;
+- cached by **age only**, with no quantised key;
+- a declared resource bound T_sat = max(rate period, cost/budget), stated as
+  a second bound next to `RATE_CADENCE_MAX_US`, with the `rce=` gauge.
+
+Its cost must be stated at W 201 against the measured 2.2–93 µs per
+evaluation.
