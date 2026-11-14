@@ -881,6 +881,20 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+## Engine defect F1 (2026-11-14): `RWM_DELTA` pins the store cap at its floor
+
+**Found by** the shared-core design (`docs/derivations/shared-core-design.md` F1), from reading only. It was then confirmed red first.
+
+- **The defect.** `codel_setpoint_q` read both band ends through `delta_budget_b(hint)` → `delta_price`, which returns the `RWM_DELTA` override when set. Under the override, b_lo = b_hi, so q(δ) = 0/0 = NaN. The shipped value multiplier 1 + q (`RWM_DELTA_CAP`, on) is then NaN, and `pooled_store_cap` clamps to `STORE_CAP_FLOOR` = 10 symbols.
+- **Red test:** `raptorpath/tests/delta_override_store_cap.rs` fails on main with "q(delta) is NaN".
+- **Fix:** branch `f1-delta-nan` `39008a01`. The band ends come from the hint table; the override moves only the operating point.
+  - Without `RWM_DELTA`, the values are identical: `formula_agreement`, `law_shape` and the store-cap tests are green on the host.
+  - It is one site; no other law reads its band ends through the override (grep).
+- **Who is affected:** every row run with `RWM_DELTA` set since the δ-cap law landed (`70777c78`, `d60f3ab0`, 2026-08/09).
+  - `tools/l1/r_battery.sh`'s MID arm sets it. Whether any ledger row of it postdates the defect is still to be checked.
+  - The planned §51 δ sweep depends on `RWM_DELTA`, so **F1 merges before §51**.
+- **Merge path:** the engine suites on the VM (it changes `raptorpath/src`), with the next engine session. It is not batched into the shared-core zero-change steps.
+
 ## 57. Amendment 1 to §57a and §57b: the harness as built (before any VM contact)
 
 **Harness.** Branch `harness57` (`2550768c`, `19dc65d7`), fast-forwarded onto main as tools only (`tools/l1`; `raptorpath/src` and `raptorpath/tests` unchanged, so HEAD still equals `ref56-manifest.sha256` and the engine suites are expected to be reused).
