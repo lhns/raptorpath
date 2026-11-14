@@ -74,6 +74,23 @@ this doc, and paper sections are named "paper §". Base: `db012f16`; the branch 
    - the verdict column and a sweep of the retracted phrases.
 
    This gave §8 and the rewritten §0.
+7. *Round 7 (oracle design, branch `pfec-oracle-design`).* The coordinator
+   asked for the build spec, now `pfec-oracle-spec.md`. Fable settled:
+   - the deadline per caller: d = rate·D(δ) from the send for the shed
+     budget, reported at A\* − 1, A\* and A\* + Δ; d = L_arq·rate for
+     `r_saturation`, with A\* = W only where it is W-clamped;
+   - the extraction order: same-file pure functions, identical sha or guard
+     α, then new pin digests;
+   - a recovery-lag record that turns every deadline into a readout;
+   - caller-unit tolerances with provenance.
+
+   It also flagged, and I confirmed:
+   - **E1:** `TaperBudget`'s shape is inert as wired (grant ≡ rate). This
+     withdraws round 6's "front-loaded" caveat, which main also carries;
+   - **E2:** the repair debt is cancelled per ack. The model predicts only
+     ≈ 5.5 % of the handed r reaches the wire at the pin inputs.
+
+   Both are ledger findings to be witnessed by the oracle.
 
 ## 0. Result
 
@@ -927,9 +944,13 @@ the whole engine but cannot isolate P_fec. The gate harness is I/O-free but
 uses the wrong span and races ARQ.
 
 Two premises of the Python sliding bound are model inputs:
-- **Emission spacing.** `TaperBudget::accrue` (`fec_rate.rs:703–736`) re-times
-  the grant with the GE taper shape W·q·(1−q)^t/(1 − (1−q)^W), so repairs are
-  **front-loaded after each ack advance**, not uniform.
+- **Emission spacing.** ~~`TaperBudget::accrue` front-loads repairs after
+  each ack advance.~~ This is **withdrawn in round 7**: as wired, rate ≤ spare,
+  so grant ≡ rate and the shape is inert (E1 in `pfec-oracle-spec.md`).
+  Emission is uniform accrual. **But** the repair debt is cancelled by acks
+  (`sender_phases.rs:1278–1328`, E2), so repairs are emitted mainly during
+  ack stalls. That is a different spacing from the Python bound's, and it is
+  witnessed first by the oracle.
 - **One GE chain over the wire.** Dual-path placement breaks this (§8.3,
   T2).
 - **Δ.** The bound rises with the trailing offset Δ, because a no-deadline
@@ -941,6 +962,12 @@ So the sliding bound holds only for uniform spacing on one chain, for the Δ
 range computed.
 
 ### 8.2 Next deliverable: a test-only Rust harness (design only, no code)
+
+> **Superseded by `pfec-oracle-spec.md` (round 7).** That file is the build
+> spec: an in-crate `#[cfg(test)]` module rather than `tests/`, a
+> called-vs-copied table, the span-seat extraction, the deadline per caller,
+> known-answer tests K0–K3, and the registration draft. The text below is
+> round 6's sketch, kept for the record.
 
 `raptorpath/tests/pfec_sliding_oracle.rs`: test-only, with no engine edit
 (ADR-0077 scope).
