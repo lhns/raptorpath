@@ -3,7 +3,7 @@
 Status: DERIVATION, revision 3. No engine change and no VM contact. Revisions 1–2: `store-law-derive` on
 `fd81f408`. Revision 3: `store-law-rev3` on main `e195c8c0`, on status §56's maps.
 
-**Read §R5, then §R4 and §R3.** It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
+**Read §R6, then §R5–§R3.** R6 withdraws R5.1, R5.2, R5.4 and R5.8. It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
 The rest stands as the derivation's record.
 
 Scope: law ledger §4 items 1–2, rows F01, E03, E04 and C02. The owner paused the lever-B guard on 2026-11-14 to
@@ -28,9 +28,228 @@ Helper scripts (stdlib Python, run with `-I`; each output is committed beside it
 | `store-law/wire48b.py` | `bbr48b/c2c8-diag-qcc.tgz`, extracted | `wire48b.out` | the wire-clock anchor candidates (`bbr_rs` m̂, quinn `rtt.min()`) |
 | `store-law/s56.py` | `s56/rep56-diag-ld.tgz`, extracted | `s56.out` | rev 3: the per-tick Little residual with means, the W1.1 who-limits classes, the knee-scaling candidates |
 
+## R6. Revision 6: the curve hypothesis fails, the oracle is removed, one δ seat, and a registration that can lose
+
+What this revision withdraws:
+- R5.2's utilisation–delay curve "U" and R5.4's power formula;
+- R5.1's c1d registration;
+- R5.8.
+
+What stands: the time law of R3/R4 with σ at load (R5.5); R5.3's burst arm, in its R6.5 redesign; R5.6's B-1/B-2 split; and
+R5.7, the §56 addendum now in status.
+
+### R6.1 One capacity, control arm included: the product rises
+
+`s56curve.py` → `s56curve.out` uses one rate definition for every row: R = Δtx / Δt over the LATE window (the §56
+score's "sum tx rate"). q is the mean of the 0.1 ms top-level rtt minus T₀ = 4.0 ms, over unflagged rows.
+
+| c1s W | R /s | q ms | q·(C − R), C = control R 92 992 | C = 96 836 (rev 5) | C = 1 Gbit/s wire 101 379 |
+|---|---|---|---|---|---|
+| 384 | 73 156 | 0.61 | 12.0 | 14.4 | 17.1 |
+| 512 | 82 708 | 1.16 | 11.9 | 16.4 | 21.7 |
+| 768 | 86 525 | 3.18 | 20.6 | 32.8 | 47.2 |
+| 1 024 | 89 457 | 5.29 | 18.7 | 39.1 | 63.1 |
+| 2 048 (control) | 92 992 | 14.19 | **0 (u = 1 by construction)** | 54.5 | 119.0 |
+
+Fable's arithmetic is verified: 14 / 16 / 33 / 39 / 54 symbols at C = 96.8 k.
+
+**Where rev 5's flatness came from.** Rev 5's C (96 836) was the control's median of *per-tick-mean* rates, a
+different average from the score's lap rate (92 992). Its u came from the same per-tick means, which made it
+effectively the C = R_ctl column. That column is flat only because the control is left out: the control sits at
+u = 1 with a finite 14 ms queue, where a K/(1 − u) curve must diverge.
+
+**Under any one fixed capacity above every row's rate, the product rises monotonically with W**, ×3.8 (rev 5's C) to
+×7 (the wire rate).
+
+**The curve hypothesis fails as stated.** c1s's goodput keeps rising with standing queue, all the way to the control.
+That is the §23 and §16 reading (receiver batching), and it gives no capacity at which a curve diverges. R5.2's U,
+R5.4's formula and the c1d registration built on U (R5.1) are withdrawn.
+
+### R6.2 The formula line reads only engine quantities; R5.4 was an oracle
+
+**R5.4 was an oracle.**
+- n·T₀/T̄ is the store's *current* delivered rate times T₀, not C·T₀. Steering to a u* needs the capacity C, which
+  is E04, the input every candidate failed.
+- K had no engine source.
+- R5.4 is labelled **ORACLE** and withdrawn. It no longer bears on the law.
+
+**The law that stands** (R3.1's line, with R4/R5's amendments):
+
+```text
+   n_{k+1} = clamp( n_k · Σᵢ wᵢ( Fᵢ + σᵢ + q(δ)·ℓ̂ᵢ + Ŝᵢ ) / Σᵢ wᵢ T̂ᵢ , floor , N·knee )
+   Fᵢ = min(m̂ᵢ, ℓ̂ᵢ + b̂₀ᵢ⁺) + b̂₀ᵢ⁺ + ½·max(0, maxⱼ(ℓ̂ⱼ + b̂₀ⱼ⁺) − (ℓ̂ᵢ + b̂₀ᵢ⁺))
+```
+
+Each input and its source:
+
+| input | engine source | status |
+|---|---|---|
+| wᵢ, T̂ᵢ, T̂minᵢ, Ŝᵢ | the per-leg window sampler of `record_rtt_sample` | to be built (archived on the oracle branch) |
+| m̂ᵢ | Copa `min_rtt` | present |
+| ℓ̂ᵢ | a running minimum of the same series | one field |
+| b̂₀ᵢ⁺ | the sampler's first K windows | with the sampler |
+| σᵢ (at load) | `qsp_us`, P90 − P50 of the leg's last 256 echo samples | present (`path.rs:848–855`) |
+| q(δ) | `codel_setpoint_q` | present |
+| floor, N·knee | resource bounds | present |
+
+**No rate and no capacity appear.** n is the store's own state.
+
+**Uniqueness of the fixed point.** R − 1 = Σwᵢ·(targetfloorᵢ − T̂minᵢ)/Σwᵢ·T̂ᵢ, where targetfloor =
+F + σ_load + q·ℓ. The fixed point is unique iff, on the leg set carrying the weight, the window minimum grows with n
+faster than σ_load does: d(T̂min − σ_load)/dn > 0.
+
+On §56:
+- c2: σ is flat at 1.7–1.95 while T̂min rises.
+- c8 leg 0: σ 2.0–2.7 against T̂min rising 16 → 92 ms.
+- c1s: σ *falls*, 0.64 → 0.44, as W rises.
+- So R crosses 1 once at every cell: one crossing on each §56 map.
+
+The exception is c8 leg 1, where σ rises 4.9 → 31.6 ms. It carries ≤ 16 % of the weight, and leg 0 dominates the
+sum. **Gauge:** the number of R = 1 crossings per row in Part B (B-1), predicted to be 1.
+
+### R6.3 One δ seat: q(δ)·ℓ̂ only
+
+With R5.4 withdrawn, α = b(δ) does not enter the law, so **q(δ)·ℓ̂ is δ's only seat**.
+
+**Reconciling q's provenance with §29.**
+- q(δ) is RFC 8289's cited 5–10 % setpoint band. It comes from Kleinrock's power argument, used *once, offline*, to
+  fix a ratio (`store_cap.rs`, `codel_setpoint_q`).
+- §29's candidate D, the roadmap node `store-power-law`, *sought* the power argmax online from measured delivery and
+  loop time. It failed on noise: §30's window needed ≫ a transfer.
+- The two do not conflict. This law seeks nothing online: it holds a cited setpoint. It inherits RFC 8289's power
+  derivation as provenance, and none of §29's estimator.
+
+### R6.4 c1d: a registration that can lose informatively (replaces R5.1)
+
+**Data already seen** (disclosed, so excluded from the evaluation):
+- p34's static table, contaminated (R4.1);
+- the s53 pin readouts (`c1dpin.out`);
+- §53's c1d per-row `qcwnd` and goodput (`c1dflag.out`, R6.5).
+
+None is a W sweep.
+
+**Registered: T, the receiver-queue transfer.** On a receiver-bound cell, goodput depends on the standing queue at
+the receiver's batching, a property of the receiver host and code. So c1d's goodput relative to its own control is
+the same function of the standing queue q as c1s's.
+
+The c1s relation (`s56curve.out`; goodput/control from §56):
+
+| c1s q ms | 0.61 | 1.16 | 3.18 | 5.29 | 14.2 |
+|---|---|---|---|---|---|
+| goodput / control | 0.79 | 0.89 | 0.94 | 0.96 | 1 |
+
+**Predictions** for the c1d sweep (R6.5), interpolated in q on c1d's arm medians:
+- (a) c1d goodput/control at q = 1.2, 3.2 and 5.3 ms equals **0.89, 0.94 and 0.96, within ±0.03 each**;
+- (b) c1d's q at the 0.95 point lies in **3.5–5.0 ms** (c1s: 4.3).
+
+**Falsifiers and what each outcome means** (stated before any data):
+- **(a) and (b) pass:** the goodput–queue relation is a receiver property. It transfers across path counts, and is
+  measured once per receiver class.
+- **(b) fires high** (q₉₅ > 5.0) with (a) failing at q ≤ 3.2: two connections need more standing queue for the same
+  utilisation. The relation depends on the number of connections, and does not transfer.
+- **(b) fires low** (< 3.5): c1d needs less queue; the receiver batches across two connections more efficiently.
+  Reported; it does not transfer either.
+- **W is not a falsifier.** W = R·(T₀ + q) by Little, and c1d's R and T₀ are c1d's own. If q passes and W₉₅ differs
+  from a Little-scaled c1s value, the difference is c1d's rate or floor, not the queue mechanism. This is the stated
+  meaning of "W differs, q passes".
+- **Disclosed:** on p34 (contaminated, older era, truncated windows), q₉₅ ≈ 5.6 ms would fire (b) high, marginally.
+
+### R6.5 Registration: the burst arm and the c1d pool sweep (reported only, no build; copyable into status)
+
+**Why.**
+- At c1s the standing queue keeps buying goodput (R6.1). Whether the sender's emission burst (F03's `RWM_EMIT_BURST`,
+  pinned at 64 on c1s/c1d) or the receiver's batching sets that queue is undecided (R5.2).
+- If the sender burst sets it, the cost is F03's to fix, not δ's to price.
+- The c1d sweep is the held-out map for R6.4's T.
+- No build: both knobs exist on main. The session runs before the gauge build (B-1).
+
+**Tree, knobs, suites.**
+- Tree: current main, SHA pinned by amendment after the pre-flight.
+- `RWM_STORE_PATH_POOL` as §56: the ceiling is max(N·pool, floor), boot min(128, store_max), and every W here is
+  ≥ 384 > 128.
+- `RWM_EMIT_BURST` (`gates.rs:194/363`, default 64, clamped to [2, 512]), echoed in `[GATES]` (`gates.rs:443`).
+- The battery scrubs `-u RWM_STORE_PATH_POOL -u RWM_EMIT_BURST`.
+- Engine suites are skipped only on a byte-identical reuse-manifest hit against §56's tree. The tools tests and a
+  rehearsal (`LD_REHEARSE=1`) always run.
+
+**Arms** (Bulk, `--window-reliable`, `RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300`, 5 GB):
+
+| block | arms | n | rows |
+|---|---|---|---|
+| **Burst** (c1s-400, pool 1 024, W = 1 024) | `RWM_EMIT_BURST` = **64 (control)**, 256, 16 | 9 | 27 |
+| **c1d sweep** (c1d-400) | pools 2 048 (**W 4 096, control = shipped**), 1 024 (2 048), 768 (1 536), 512 (1 024), 384 (768), 256 (512), 192 (384) | 5 | 35 |
+
+- **Total:** 62 rows, plus a 3-row smoke (c1s burst 256, c1d pools 192 and 2 048).
+- **Order:** burst block first, then c1d. Latin-square rotation within each block, seeds 42 / 7 alternating.
+- **Length:**
+
+  | | typical | worst |
+  |---|---|---|
+  | rows | ≈ 62 × 75 s ≈ 78 min | + ≈ 9 collapsed c1s rows at up to 300 s ≈ +35 min |
+  | with tools tests, rehearsal and overheads | **≈ 2 h 10** | **≈ 3 h** |
+
+  `LD_HARD` = launch + 3.5 h.
+
+**Liveness (voiding, replaced once) and flags (never voiding).**
+- **Echo:** `[GATES]` shows the requested `RWM_STORE_PATH_POOL` and `RWM_EMIT_BURST` on both ends.
+- **Bind:** a non-control row binds if its bind fraction is ≥ 0.95. If not, it is reported at its realised cap and not
+  replaced; the controls are exempt.
+- **Knob action (burst arms):** the realised mean burst (Δ`eb_syms`/Δ`eb_bursts` over LATE) must move with the knob.
+  It must be ≤ 16 under cap 16, and > 64 under cap 256 (predicted 70–200; it reads 43–53 under 64 today). An arm that
+  fails is `INERT`, reported, and read no further.
+- **c1s collapse flag:** §56 Amendment 2's (leg-0 `qcwnd` below BDP in > 0.10 of windows).
+- **c1d collapse flag: both legs** below BDP in > 0.10 of windows (`c1dflag.py`, validated post hoc on §53's 30 c1d
+  5 GB rows).
+  - c1s's single-leg rule flags 17 of 30 c1d rows, including rows at 828–863 Mbit/s: one leg's window dips while the
+    other carries the aggregate.
+  - The both-legs rule flags 5 rows (365, 683, 729, 753, 807 Mbit/s), against unflagged rows at 740–863.
+  - Flagged rows enter no arm median.
+- **CPU:** client and server CPU/GB on every row. **Burst 16 is the CPU-confounded arm** (more wakes on a CPU-bound
+  sender). **Burst 256 is the clean arm.**
+
+**Readouts.**
+- **Burst block, primary:** the standing queue in symbols at W = 1 024, Q = q·R. q is the mean over LATE ticks of the
+  0.1 ms top-level rtt minus §56's c1s floor T₀ = 4.0 ms (ΔQ between arms does not depend on T₀). R is the lap rate.
+- **Burst block, secondary:** goodput (c1s resolution ≈ 5 %), the realised mean burst, ack wakes per second, and CPU/GB.
+- **c1d:** per arm, goodput/control, q (per-leg rate-weighted mean echo loop minus T₀, with T₀ = §56's scorer definition: per-leg echo floors from the smallest-W rows, weighted by the row's rates), R, quinn backlog/W, mean a/W, the both-leg
+  and one-leg flag shares, and CPU/GB.
+
+**Predictions.**
+
+The burst block, ΔQ against the burst-64 arm:
+
+| hypothesis | Q from the burst | burst 16 | burst 256 |
+|---|---|---|---|
+| sender burst sets the queue | (b − 1)/2 = 7.5 / 31.5 / 127.5 symbols for 16 / 64 / 256, with b the realised mean burst | ΔQ ≈ −24 | ΔQ ≈ **+96** (≈ +1.07 ms at 89.5 k/s) |
+| receiver sets it | — | ΔQ = 0 ± 30 | ΔQ = 0 ± 30 |
+
+Q at the control is ≈ 473 symbols (q 5.29 ms × 89.5 k/s, §56 P1024). With n = 9 and a per-row q spread of ≈ 0.5 ms,
+the standard error is ≈ 0.17 ms ≈ 15 symbols, so +96 is ≈ 6 SE.
+
+The c1d sweep: R6.4's (a) and (b).
+
+**Falsifiers:**
+
+| # | arm | what fires it | what it means |
+|---|---|---|---|
+| E1 | burst 256 (clean) | ΔQ ≥ +60 | the sender burst sets c1s's queue: F03's cost |
+| E2 | burst 256 | \|ΔQ\| ≤ 30 | the receiver sets it |
+| E3 | burst 256 | 30 < ΔQ < 60 | mixed, reported as such |
+| E4 | burst 16 | ΔQ ≈ −24 | read only if its CPU/GB is within 5 % of the control; otherwise CPU-confounded and reported |
+| T(a), T(b) | c1d | R6.4 | as R6.4 |
+
+**Decision rule.** None; reported only. E1/E2 decide whether F03 or the receiver owns c1s's queue. T decides whether
+the receiver-bound relation is measured once per receiver class. Neither changes the time law. B-1 follows.
+
+### R6.6 Removed: R5.8
+
+R5.8 is removed and not forwarded. On a K/(1 − u) curve, "Bulk = full rate" has no finite point: it is the clamp,
+today's defect. If E1 fires, the c1s cost belongs to F03 (the emission-burst law), not to δ. The derivation carries no
+owner question at this revision.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
-### R5.1 c1d: ONE registered variant (committed before any further c1d data)
+### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]
 
 **Registered: U, the utilisation–delay curve of R5.2.** M and Mb (R4.1) are retired:
 - **M is retired** because both its inputs fail at c1d.
@@ -70,7 +289,7 @@ Its inputs:
 
 Any one of them refutes U at c1d.
 
-### R5.2 Is the receiver-bound "knee" a utilisation–delay curve? (post hoc test on §56)
+### R5.2 Is the receiver-bound "knee" a utilisation–delay curve? (post hoc test on §56) [WITHDRAWN by R6.1: the product rises under one capacity]
 
 `s56util.py` → `s56util.out`.
 
@@ -133,7 +352,7 @@ Any one of them refutes U at c1d.
 - **Confound, stated:** a smaller burst means more wakes on a CPU-bound sender. A loss at cap 16 together with a rise
   in client CPU/GB is reported as CPU, not as either hypothesis.
 
-### R5.4 How δ would pick the utilisation: one formula, continuous
+### R5.4 How δ would pick the utilisation: one formula, continuous [WITHDRAWN by R6.2: an oracle, it needs capacity C (E04) and K]
 
 On the curve T(u) = T₀ + K/(C·(1 − u)), maximise the generalised power Π_α = u^α/T. α(δ) = b(δ) is paper §6.1's
 power exponent: ½ Realtime, 1 Auto, 2 Bulk. With x = 1 − u and k = K/(C·T₀):
@@ -247,7 +466,7 @@ B-2 carries R4.1's dose-response falsifier (B4) and R4.5's asymmetric-delay fals
 >   - rev 3's close matches of a three-term knee model (fitted post hoc; it holds only at c2 and c8);
 >   - rev 4's two-variant c1d registration (replaced by one variant, U).
 
-### R5.8 Owner question (one; R4.7's Q2 is dropped)
+### R5.8 Owner question (one; R4.7's Q2 is dropped) [REMOVED by R6.6]
 
 R4.7's Q2 is dropped: −11 % at c1s would fail the guard, so the store law is held until the c1s mechanism is known
 (R5.3, R5.6).
