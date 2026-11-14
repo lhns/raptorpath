@@ -3,7 +3,7 @@
 Status: DERIVATION, revision 3. No engine change and no VM contact. Revisions 1–2: `store-law-derive` on
 `fd81f408`. Revision 3: `store-law-rev3` on main `e195c8c0`, on status §56's maps.
 
-**Read §R4, then §R3.** It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
+**Read §R5, then §R4 and §R3.** It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
 The rest stands as the derivation's record.
 
 Scope: law ledger §4 items 1–2, rows F01, E03, E04 and C02. The owner paused the lever-B guard on 2026-11-14 to
@@ -27,6 +27,48 @@ Helper scripts (stdlib Python, run with `-I`; each output is committed beside it
 | `store-law/b0bound.py` | the same two ledgers | `b0bound.out` | one-sided b₀ bounds against each row's no-queue brake |
 | `store-law/wire48b.py` | `bbr48b/c2c8-diag-qcc.tgz`, extracted | `wire48b.out` | the wire-clock anchor candidates (`bbr_rs` m̂, quinn `rtt.min()`) |
 | `store-law/s56.py` | `s56/rep56-diag-ld.tgz`, extracted | `s56.out` | rev 3: the per-tick Little residual with means, the W1.1 who-limits classes, the knee-scaling candidates |
+
+## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
+
+### R5.1 c1d: ONE registered variant (committed before any further c1d data)
+
+**Registered: U, the utilisation–delay curve of R5.2.** M and Mb (R4.1) are retired:
+- **M is retired** because both its inputs fail at c1d.
+  - Its σ input (c1s load σ, 0.5 ms) reads 1.1–1.3 ms at the c1d pin.
+  - Its backlog term is withdrawn as a cause (R4.3).
+- **Mb is retired** because its input, the boot σ̂⁺, is rejected (R4.4). Its fit to the contaminated p34 map is
+  therefore not evidence.
+
+That leaves one model for a receiver-bound cell, and it is the one under test.
+
+**c1d data already seen**, and so not part of the held-out evaluation:
+- p34's static table (contaminated, R4.1);
+- the s53 pin readouts (`c1dpin.out`: σ, quinn backlog dwell, a/W).
+
+Neither is a W sweep.
+
+**U at c1d.** The model is q·(1 − u) = K/C on the receiver-bound curve, so q = K/(C·(1 − u)) and, by Little,
+W ≈ C·u·(T₀ + q).
+
+Its inputs:
+- K = the constant measured at c1s (R5.2): 12.5–21 symbols at W 384–1 024. It is carried unchanged, because the
+  receiver host, the receiver code and the emission-burst cap (64) are the same.
+- T₀ = 4.0 ms, c1s's floor; c1d's boot ℓ is 2.5 ms on both legs, as at c1s.
+- C = the c1d control arm's own LATE send rate, read from the sweep itself. The bands below use C = 92 k/s.
+  - Rescale linearly if the measured C differs.
+  - The prediction is the *shape*: q at given u. W is secondary.
+
+| point | u | q = K/(C·(1 − u)) | W ≈ C·u·(T₀ + q) |
+|---|---|---|---|
+| 0.95 of control | 0.95 | 2.7–4.6 ms | **590–750** |
+| 0.98 of control | 0.98 | 6.8–11.4 ms | **975–1 390** |
+
+**Falsifiers** (on the R5.4 c1d sweep):
+- q·(1 − u)·C at W 384–1 024 outside 8–32 symbols (c1s's 12.5–21, widened ×1.5);
+- or not flat within ×2 across those W;
+- or W₉₅ outside 550–800.
+
+Any one of them refutes U at c1d.
 
 ## R4. Revision 4: held-out test, one class rule, per-row spread (review of rev 3)
 
