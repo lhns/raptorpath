@@ -229,6 +229,31 @@ def succdump56(records, batch=5000):
     return out
 
 
+# ── plans 57a / 57b (pool57_score): c1s-400 (57a) / c1d-400 (57b) rows at 5 GB. STUB_BAD57: poolfallback (every row echoes pool 2048), burstfallback (every row echoes the shipped burst 64),
+# burstinert (the knob does not act: the realised mean burst stays 48 whatever RWM_EMIT_BURST says), poolonce (the FIRST B64_448 (57a) / P384 (57b) seed-42 row echoes pool 2048, its replacement is right);
+# a comma list combines them. STUB_DNF57=<arm>:<seed>: that arm's rows at that seed time out. ──
+BAD57 = {"poolfallback", "burstfallback", "burstinert", "poolonce"}
+
+
+def gates57(lines, pool, burst):
+    """The engine's [GATES] echo of the knobs plans 57a / 57b vary: RWM_STORE_PATH_POOL and RWM_EMIT_BURST (the values the engine parsed), the dump off."""
+    out = []
+    for ln in lines:
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_(STORE_PATH_POOL|EMIT_BURST|SUCC_DUMP)=\S+", "", ln) + f" RWM_STORE_PATH_POOL={pool} RWM_EMIT_BURST={burst} RWM_SUCC_DUMP=0"
+        out.append(ln)
+    return out
+
+
+def diag57(ln, k, n_src, burst_real, rtt_top, rtt_leg, release=100):
+    """The plan-57 fields of the k-th plan-48-shaped [DIAG] line (extras53 has added src / cum): the top-level and per-leg echo rtt, the ack wakes (one per `release` symbols sent), wait[]
+    and the emission-burst gauges (eb_syms follows the cumulative symbols sent, eb_bursts = eb_syms / burst_real)."""
+    cum = 250 * min(k, n_src)
+    ln = ln.replace("rtt=15.8ms", f"rtt={rtt_top:.1f}ms").replace("rtt=20/wrtt=3", f"rtt={rtt_leg}/wrtt=3")
+    ln = re.sub(r"eb_bursts=\d+", f"eb_bursts={int(cum / burst_real)} eb_syms={cum}", ln)
+    return ln + f" wait[tun=1% ack=82% cmd=0% busy=45%] wake[tun=1 ack={int(cum / release)}]"
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -364,6 +389,50 @@ def main(argv):
         cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":%s,"hint":"bulk","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs),
                                                                                     summary54(secs, int(nbytes))]
         if os.environ.get("STUB_DNF56") == "P%d:%s" % (pool, os.environ.get("SEED")):
+            dnf = '{"bytes":%s,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}' % nbytes
+            tail = '{"bytes":%s,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}' % nbytes
+            cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
+            drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
+    elif plan in ("57a", "57b"):
+        # Status 57a / 57b: 55 s of [DIAG] (source until 50 s) whose cap is n_live x the requested pool, the two knobs' [GATES] echo and the pool INFO line on both ends, the burst / ack-wake /
+        # wait gauges (realised mean burst 0.75 x RWM_EMIT_BURST, 100 symbols per ack wake), a per-leg echo rtt that grows with the pool (q_l ~ pool / 60 ms at c1d), the server's [RANK]
+        # readouts and a driver summary whose rate falls with a small pool.
+        pool = int(os.environ.get("RWM_STORE_PATH_POOL") or 2048)
+        burst = int(os.environ.get("RWM_EMIT_BURST") or 64)
+        nlive = 2 if fam == "c1d" else 1
+        bad = set(x for x in os.environ.get("STUB_BAD57", "").split(",") if x)
+        echo_pool, echo_burst = pool, burst
+        if "poolfallback" in bad:
+            echo_pool = 2048
+        if "burstfallback" in bad:
+            echo_burst = 64
+        if "poolonce" in bad and ((fam == "c1s" and pool == 448) or (fam == "c1d" and pool == 384)) and os.environ.get("SEED") == "42":
+            marker = os.path.join(TMP, "pool-once-done")
+            if not os.path.exists(marker):
+                open(marker, "w").close()
+                echo_pool = 2048
+        burst_real = 48.0 if "burstinert" in bad else 0.75 * burst
+        cap = nlive * pool
+        rtt_leg = max(3, int(round(2.4 + pool / 60.0)))
+        rtt_top = (4.0 + pool / 400.0) if fam == "c1s" else float(rtt_leg)
+        rl = [ln.replace("win=838/838", f"win={int(0.85 * cap)}/{cap}") for ln in run_lines(fam, False, n=220)]
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = diag57(ln + extras53(k, n_src=200), k, 200, burst_real, rtt_top, rtt_leg)
+        info = [POOL_INFO.format(n=echo_pool)]
+        secs = 100.0 + 25.0 * max(0, 600 - pool) / 600.0 + (os.getpid() % 7) * 0.3
+        cli = gates57(cli, echo_pool, echo_burst) + info + rl + [HOLD53.format(p=i) for i in range(nlive)] + [FCAUSE53, snapv54()]
+        srv = (gates57([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]", "[RANK]"))], echo_pool, echo_burst)
+               + [POOL_INFO.format(n=echo_pool)] + [RX52, SUCC53] + rank54(0))
+        drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":%s,"hint":"bulk","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs),
+                                                                                    summary54(secs, int(nbytes))]
+        armtag = {512: "B64_512", 448: "B64_448"}.get(pool) if fam == "c1s" else "P%d" % pool
+        if fam == "c1s" and burst == 256:
+            armtag = "B256_512"
+        if os.environ.get("STUB_DNF57") == "%s:%s" % (armtag, os.environ.get("SEED")):
             dnf = '{"bytes":%s,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}' % nbytes
             tail = '{"bytes":%s,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}' % nbytes
             cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]

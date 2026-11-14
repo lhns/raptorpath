@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stub runs of the candidate plans' launch paths (plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56): loopdiag_run_all.sh EXECUTED end to end, against stubs.
+"""Stub runs of the candidate plans' launch paths (plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b): loopdiag_run_all.sh EXECUTED end to end, against stubs.
 
 The static checks in test_harness46/47 and test_bbr48_parse assert strings in the scripts; they did not catch §49 session 5's ABORT-SMOKE (LD_BASE_SHA
 lost in `sudo -n env`) or session 1's ABORT-TESTS (a function called before it was defined). Here the real scripts run in a sandbox:
@@ -87,6 +87,7 @@ case "$1" in
       [ "$kind" = CAND ] && echo "# [QCC] t= RWM_QUIC_CC"
       echo "# RWM_STORE_PATH_POOL"                                          # plan 54b: the knob is in both trees
       echo "# RWM_SUCC_DUMP"                                                # plan 56: the raw successor dump is in main
+      echo "# RWM_EMIT_BURST"                                               # plans 57a / 57b: the emission-burst knob is in main
       { [ "$kind" = CAND ] || [ "$LD_PLAN" = 54b ]; } && echo "# [SNAPV] site= tail"       # plan 54: only CAND (main + the law) has the gauge; plan 54b: both trees (cand54, levb54)
       echo "# fmt  RWM_PLACE_WDIV= RWM_RECOV_SNAPVER= tail"       # plan 53: both trees carry the WDIV and SNAPVER echoes (CW0 runs on CAND's, BASES on BASE's)
       echo 'exit 0'; } > "$T/release/raptorpath"
@@ -113,14 +114,15 @@ exit 0
 CAND_SHA = "c" * 40
 BASE_SHA = "b3000701f440d11b1b5ad946c8b36c3623c770cd"
 HIST_BASE = "4926822" + "0" * 33
+SINGLE = ("56", "57a", "57b")        # the single-seat plans: one build, no LD_BASE_SHA, suite reuse by the reference manifest
 # FULL (STUBRUN_FULL=1): the registered designs, 96 guard rows / 22 path-event rows plus the smokes. FAST (the default): the sandbox's COPY of the tables and of
 # the design-size checks is shrunk (2 groups = 16 guard rows, 8 path-event rows), so every path and marker is exercised in minutes; the same code runs, on fewer rows.
 FULL = os.environ.get("STUBRUN_FULL") == "1"
 # plan 52: the guard's smoke (2) + the guard + the reported block's smoke (3) + the block (30 registered, 10 in fast mode)
 EXPECT_ROWS = ({("41c", False): 2, ("41c", True): 98, ("46", False): 2, ("46", True): 24, ("47", False): 4, ("47", True): 122, ("48", False): 2, ("48", True): 98,
-                ("52", False): 5, ("52", True): 131, ("41d", False): 3, ("41d", True): 99, ("53", False): 8, ("53", True): 68, ("54", False): 3, ("54", True): 99, ("54b", False): 6, ("54b", True): 42, ("56", False): 4, ("56", True): 74} if FULL else
+                ("52", False): 5, ("52", True): 131, ("41d", False): 3, ("41d", True): 99, ("53", False): 8, ("53", True): 68, ("54", False): 3, ("54", True): 99, ("54b", False): 6, ("54b", True): 42, ("56", False): 4, ("56", True): 74, ("57a", False): 1, ("57a", True): 64, ("57b", False): 2, ("57b", True): 32} if FULL else
                {("41c", False): 2, ("41c", True): 18, ("46", False): 2, ("46", True): 10, ("47", False): 4, ("47", True): 28, ("48", False): 2, ("48", True): 18,
-                ("52", False): 5, ("52", True): 31, ("41d", False): 3, ("41d", True): 19, ("53", False): 8, ("53", True): 24, ("54", False): 3, ("54", True): 19, ("54b", False): 6, ("54b", True): 18, ("56", False): 4, ("56", True): 22})
+                ("52", False): 5, ("52", True): 31, ("41d", False): 3, ("41d", True): 19, ("53", False): 8, ("53", True): 24, ("54", False): 3, ("54", True): 19, ("54b", False): 6, ("54b", True): 18, ("56", False): 4, ("56", True): 22, ("57a", False): 1, ("57a", True): 7, ("57b", False): 2, ("57b", True): 14})
 # (file, old, new, expected count): each must match, so a drift in the scripts fails here instead of silently running the full design
 FAST_PATCHES = [
     ("loopdiag_run_all.sh", '[ "$nrows" != "96" ]', '[ "$nrows" != "16" ]', 1),
@@ -135,6 +137,9 @@ FAST_PATCHES = [
     ("place38_parse.py", "for rp in range(1, 4) for sd", "for rp in range(1, 2) for sd", 1),
     ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 70 ] || { echo "ABORT-PLAN56 table', '[ "${#tbl[@]}" -eq 18 ] || { echo "ABORT-PLAN56 table', 1),
     ("place38_parse.py", "REPS_CAP56 = None  ", "REPS_CAP56 = 1  ", 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 63 ] || { echo "ABORT-PLAN57A table', '[ "${#tbl[@]}" -eq 6 ] || { echo "ABORT-PLAN57A table', 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 30 ] || { echo "ABORT-PLAN57B table', '[ "${#tbl[@]}" -eq 12 ] || { echo "ABORT-PLAN57B table', 1),
+    ("place38_parse.py", "REPS_CAP57 = None  ", "REPS_CAP57 = 2  ", 1),
     ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
     ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
     ("place46_parse.py", "EXPECT_ROWS46 = 22 ", "EXPECT_ROWS46 = 8 ", 1),
@@ -462,14 +467,14 @@ def red54sha(plan, stage, want):
     """The sha witness failing once in a stub run: the sandbox's battery hands the row parser a wrong sha, the rehearsal's smoke must FAIL on the bin_sha criterion."""
     root = tempfile.mkdtemp(prefix="stubrun-")
     try:
-        sb = make_sandbox(root, plan, None if plan == "56" else BASE_SHA)
+        sb = make_sandbox(root, plan, None if plan in SINGLE else BASE_SHA)
         bt = os.path.join(sb["repo"], "tools", "l1", "loopdiag_battery.sh")
         txt = open(bt, newline="").read()
         old = '"$TMPD/rwm-s.log" "$cot" "$sha" >> "$OUT" 2>&1'
         assert txt.count(old) == 1, txt.count(old)
         with open(bt, "w", newline="") as fh:
             fh.write(txt.replace(old, '"$TMPD/rwm-s.log" "$cot" "0000deadbeef" >> "$OUT" 2>&1'))
-        rc, out, rows, cargo = run_launch(sb, plan, None if plan == "56" else BASE_SHA, rehearse=True)
+        rc, out, rows, cargo = run_launch(sb, plan, None if plan in SINGLE else BASE_SHA, rehearse=True)
         chk = os.path.join(sb["root"], "run", stage, "smoke-check.txt")
         ctxt = open(chk, errors="replace").read() if os.path.exists(chk) else ""
         check(f"{plan}/red:sha: a row whose bin_sha is not its seat's build fails the smoke (ABORT-SMOKE, rc 5) on the criterion '{want}'",
@@ -642,11 +647,148 @@ def refused56(name, extra, want_rc, want_in_era, no_build=True, failed=True):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def check57(tag, path, run_dir, sb, plan):
+    """Plans 57a / 57b's own assertions: ONE stage rep57a / rep57b (no guard, one seat), the smoke rows (57a: the B256-512 row; 57b: pools 192 and 2048) with the pool AND burst echoed and the
+    rehearsal criteria printed, the 300 s timeout at 5 GB, and (a full session) the ledger: every slot of the table, the knobs echoed on both ends, every readout computed, the report."""
+    import place38_parse as pp
+    import pool57_score as p57
+    rep = os.path.join(run_dir, "rep" + plan)
+    stxt = open(os.path.join(rep, "smoke.log"), errors="replace").read() if os.path.exists(os.path.join(rep, "smoke.log")) else ""
+    ctxt = open(os.path.join(rep, "smoke-check.txt"), errors="replace").read() if os.path.exists(os.path.join(rep, "smoke-check.txt")) else ""
+    heads = re.findall(r"^=== rep=\d+ seed=\d+ cell=(\S+) arm=(\S+) attempt=\d+ .*? bytes=(\d+) arm_env='([^']*)' bin=(\S+) sha=", stxt, re.M)
+    if plan == "57a":
+        want = {("c1s-400", "B256_512"): ("5000000000", "RWM_STORE_PATH_POOL=512 RWM_EMIT_BURST=256")}
+    else:
+        want = {("c1d-400", "P192"): ("5000000000", "RWM_STORE_PATH_POOL=192"), ("c1d-400", "P2048"): ("5000000000", "")}
+    check(f"{tag}: no guard stage, no BASE tree; the smoke is {len(want)} row(s) of the table, each with its arm env (pool AND burst at 57a) at 5 GB on the ONE binary (bin/, never bin-base)",
+          not os.path.exists(os.path.join(run_dir, "guard")) and not os.path.exists(os.path.join(sb["devshm"], "ld", "bin-base", "raptorpath")) and len(heads) == len(want)
+          and {(c, a) for c, a, _, _, _ in heads} == set(want) and all(want[(c, a)] == (by, env) and b.endswith("/bin/raptorpath") for c, a, by, env, b in heads), heads)
+    crits = ["one row per smoke slot ran", "each row's pool AND burst are in [GATES] on both ends", "the successor dump is off", "every row ran the one seat's binary", "the LATE-window readouts",
+             "every smoke row finished inside RWM_PERF_TIMEOUT_S=300"] + (["the knob acts"] if plan == "57a" else [])
+    check(f"{tag}: the rehearsal criteria are printed as PASS lines (pool and burst gates, the sha, the LATE readouts, the 300 s timeout{', the burst > 64' if plan == '57a' else ''}) and SMOKE-PASS",
+          all(re.search(r"^PASS " + re.escape(x), ctxt, re.M) for x in crits) and "FAIL " not in ctxt and "SMOKE-PASS" in ctxt, ctxt[-1400:])
+    drv = [ln.split() for ln in open(os.path.join(sb["logs"], "drv.log")).read().splitlines()]
+    check(f"{tag}: every driver call ran with RWM_PERF_TIMEOUT_S=300 at 5 GB on the cell's scenario", drv and all(d[3] == "timeout=300" and d[2] == "5000000000" and d[0] == "c1" for d in drv), drv[:3])
+    if path == "rehearse":
+        sdir = os.path.join(run_dir, "suites")
+        check(f"{tag}: a rehearsal runs the tools tests (python and bash) but no engine suites, and leaves NO suite record (no TESTS-OK, no SRC-MANIFEST.sha256)",
+              os.path.exists(os.path.join(sdir, "TOOLS-TESTS-OK")) and not os.path.exists(os.path.join(sdir, "TESTS-OK")) and not os.path.exists(os.path.join(sdir, "SRC-MANIFEST.sha256"))
+              and "TEST bashtests rc=0" in open(os.path.join(sdir, "TESTS.txt"), errors="replace").read(), os.listdir(sdir) if os.path.isdir(sdir) else None)
+        return
+    led = led56(rep)
+    table = pp.plan57(plan) if FULL else [x for x in pp.plan57(plan) if x[4] <= 2]      # fast mode: the sandbox caps the replicates at 2 (REPS_CAP57)
+    want_slots = [(c, a, sd, str(rp)) for c, _, a, sd, rp in table]
+    got_slots = [(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in led]
+    check(f"{tag}: the ledger holds exactly the table's slots in the table's order ({len(want_slots)}), one row each, every row LIVE with its t56 / t57 readouts none of them None",
+          got_slots == want_slots and all(r["status"] == "LIVE" and r.get("t56") and r.get("t57") and not p57.missing57(plan, r) for r in led),
+          (len(led), [(r["cell"], r["arm"], r["status"], r["problems"], p57.missing57(plan, r)) for r in led if r["status"] != "LIVE" or p57.missing57(plan, r)][:3], got_slots[:3], want_slots[:3]))
+    check(f"{tag}: the pool is echoed on both ends and in pool_per_path for every row; every non-control row's cap is n_live x its pool and binds (bind fraction 1.0)",
+          all((r["gate_pool_cli"], r["gate_pool_srv"], r["pool_info_cli"], r["pool_info_srv"]) == (str(pp.arm_knobs57(plan, r["arm"])[0]),) * 4 for r in led)
+          and all(r["t56"]["bind_frac"] == 1.0 and r["t56"]["cap_mean"] == pp.NLIVE57[r["cell"]] * pp.arm_knobs57(plan, r["arm"])[0] for r in led), None)
+    burst_ok = True
+    for r in led:
+        # the burst echo rides in the ledger only through the problems list (gate-burst-*): a row that echoed the wrong burst would be a WITNESS-FAIL / VOID
+        burst_ok &= not any(x.startswith("gate-burst") for x in r["problems"])
+    check(f"{tag}: no row carries a gate-burst problem (RWM_EMIT_BURST echoed on both ends as requested: 64 / 64 / 256 at 57a, the shipped 64 at 57b)", burst_ok, [r["problems"] for r in led if r["problems"]][:3])
+    shas = {r["bin_sha"] for r in led}
+    check(f"{tag}: one binary ran every row (one sha) and the seat comparison executed on every row (sha_checked)", len(shas) == 1 and all(r["sha_checked"] is True for r in led), shas)
+    ldtxt = open(os.path.join(rep, "ld.log"), errors="replace").read()
+    check(f"{tag}: the instrument env is RWM_RTOBS RWM_RDIAG with RWM_PERF_TIMEOUT_S=300, and the env scrub withholds RWM_EMIT_BURST and RWM_STORE_PATH_POOL",
+          "RWM_PERF_TIMEOUT_S=300" in ldtxt and "RWM_PERF_TIMEOUT_S=200" not in ldtxt.split("=== env ")[-1].split("\n")[0] and "RWM_EMIT_BURST" in ldtxt.split("=== env ")[-1].split("\n")[0]
+          and "RWM_STORE_PATH_POOL;" in ldtxt.split("=== env ")[-1].split("\n")[0], None)
+    sc = open(os.path.join(rep, "score.txt"), errors="replace").read()
+    m = re.search(r"^VERDICT57%s REPORTED-ONLY slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+) dnf=(\d+)" % plan[-1].upper(), sc, re.M)
+    check(f"{tag}: the report prints the per-{'arm' if plan == '57a' else 'pool'} readouts, the {'OUTCOME block (z_null, z_hyp, S, the gates, the re-base, E5)' if plan == '57a' else 'transfer test T (control queue, offsets, (a), (b))'} and a VERDICT57{plan[-1].upper()} line counting every slot",
+          m is not None and int(m.group(1)) == len(want_slots) and int(m.group(3)) == len(led) and ("OUTCOME" in sc and "READING" in sc and "E5" in sc if plan == "57a" else "(c) THE C1D CONTROL" in sc and "T = " in sc), sc[-900:])
+    tests_txt = open(os.path.join(run_dir, "suites", "TESTS.txt"), errors="replace").read()
+    check(f"{tag}: the tools tests ran in the suites step (TEST parsers and TEST bashtests lines), whether or not the engine suites did", "TEST parsers " in tests_txt and "TEST bashtests " in tests_txt, tests_txt)
+
+
+def red57(plan, kind, want):
+    """A defect injected by the stub into a plan-57 rehearsal: the smoke must FAIL on the criterion that catches it (ABORT-SMOKE, rc 5, no REHEARSAL-PASS)."""
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, plan, None)
+        rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=True, extra_env={"STUB_BAD57": kind})
+        chk = os.path.join(sb["root"], "run", "rep" + plan, "smoke-check.txt")
+        ctxt = open(chk, errors="replace").read() if os.path.exists(chk) else ""
+        check(f"{plan}/red:{kind}: the stub's defect fails the smoke (ABORT-SMOKE, rc 5, no REHEARSAL-PASS) and the criterion that must catch it prints FAIL",
+              rc == 5 and "ABORT-SMOKE" in era(sb) and "LD-ALL-REHEARSAL-DONE" not in out and re.search(r"^FAIL " + re.escape(want), ctxt, re.M) is not None, (rc, ctxt[-700:], tail(out, 8)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def repl57(plan):
+    """A full plan-57 session in which the stub makes the first B64-448 (57a) / P384 (57b) seed-42 row echo the wrong pool (VOID -> replaced once) and another arm's seed-42 rows time out (a DNF is
+    LIVE, goodput 0, its readouts kept): every replacement is a second row of the same slot, only once, and the session completes."""
+    import place38_parse as pp
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, plan, None)
+        cell, repl_arm, dnf_arm = ("c1s-400", "B64_448", "B64_512") if plan == "57a" else ("c1d-400", "P384", "P256")
+        rc, out, rows, cargo = run_launch(sb, plan, None, extra_env={"STUB_BAD57": "poolonce", "STUB_DNF57": "%s:42" % dnf_arm})
+        rep = os.path.join(sb["root"], "run", "rep" + plan)
+        led = led56(rep)
+        ldtxt = open(os.path.join(rep, "ld.log"), errors="replace").read() if os.path.exists(os.path.join(rep, "ld.log")) else ""
+        sc = open(os.path.join(rep, "score.txt"), errors="replace").read() if os.path.exists(os.path.join(rep, "score.txt")) else ""
+        per = {}
+        for r in led:
+            per.setdefault((r["cell"], r["arm"], r["seed"], r["rep"]), []).append(r)
+        nslots = len(pp.plan57(plan)) if FULL else len([x for x in pp.plan57(plan) if x[4] <= 2])
+        check(f"{plan}/repl: the session completes (rc 0, LD-ALL-DONE) with ONE replaced slot: one slot with 2 ledger rows, none with more",
+              rc == 0 and "LD-ALL-DONE" in out and len(per) == nslots and len(led) == nslots + 1 and max(len(v) for v in per.values()) == 2, (rc, len(led), len(per), tail(out, 6)))
+        first = [r for r in led if (r["cell"], r["arm"], r["seed"], r["rep"]) == (cell, repl_arm, "42", 1)]
+        pool = pp.arm_knobs57(plan, repl_arm)[0]
+        check(f"{plan}/repl: the VOID pool echo is replaced once: the first {repl_arm} row is WITNESS-FAIL on gate-pool (echo 2048), the replacement LIVE with pool {pool}, 'REPLACE57 ... reason=echo' in the ledger",
+              len(first) == 2 and first[0]["status"] == "WITNESS-FAIL" and pp.is_echo_void57(first[0]) and first[1]["status"] == "LIVE" and first[1]["gate_pool_cli"] == str(pool)
+              and re.search(r"^REPLACE57 %s %s s42 rep=1 reason=echo" % (cell, repl_arm), ldtxt, re.M) is not None, [(r["status"], r["problems"]) for r in first])
+        d = [r for r in led if (r["cell"], r["arm"], r["seed"]) == (cell, dnf_arm, "42") and r["status"] == "LIVE"]
+        t = (d[0].get("t56") or {}) if d else {}
+        check(f"{plan}/repl: the DNF row(s) ({dnf_arm} at seed 42) are LIVE with dnf true and no goodput, keeping rates and gauges from the [DIAG] lines (none None); the report counts them",
+              len(d) >= 1 and all(x["dnf"] is True and x.get("mbps") is None for x in d) and all(t.get(k) is not None for k in ("tx_sum_late", "r0", "Tbar_ms", "old_holes")) and ("dnf=%d" % len(d)) in sc,
+              (len(d), t.get("r0"), sc[-300:]))
+        check(f"{plan}/repl: the score lists the replaced row and prints its VERDICT line", sc.count("  REPLACED ") == 1 and ("VERDICT57%s REPORTED-ONLY" % plan[-1].upper()) in sc, sc[:700])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def refused57(plan, name, extra, want_rc, want_in_era, no_build=True, failed=True):
+    """Plan 57 refusals (a rehearsal in which nothing may be measured): too little /dev/shm, the budget guard (worst case of the status), LD_PRIOR_TESTS."""
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, plan, None)
+        extra_env = dict(extra)
+        if "LD_PRIOR_TESTS" in extra_env:
+            extra_env["LD_PRIOR_TESTS"] = px(sb["root"])
+        rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=True, extra_env=extra_env)
+        e = era(sb)
+        check(f"{plan}/{name}: refused (rc {want_rc}, '{want_in_era}'), no row measured{', no build' if no_build else ''}",
+              rc == want_rc and want_in_era in e + out and (os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL")) or not failed) and rows == [] and (not no_build or not [c for c in cargo if "|build " in c]), (rc, tail(e, 6), tail(out, 6)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def budget57(plan, left_s, ok):
+    """The budget guard: LD_HARD with `left_s` seconds left is refused below the worst case of the status (57a 13 200 s, 57b 5 400 s) and accepted at it."""
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, plan, None)
+        rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=True, extra_env={"LD_HARD": str(int(time.time()) + left_s)})
+        e = era(sb)
+        if ok:
+            check(f"{plan}/budget: {left_s} s left (just above the {13200 if plan == '57a' else 5400} s worst case) is accepted: the rehearsal completes", rc == 0 and "ABORT-BUDGET" not in e and "LD-ALL-REHEARSAL-DONE" in out, (rc, tail(e, 4)))
+        else:
+            check(f"{plan}/budget: {left_s} s left (below the {13200 if plan == '57a' else 5400} s worst case) is refused before anything runs (ABORT-BUDGET plan 57a/57b, rc 3)",
+                  rc == 3 and "ABORT-BUDGET plan 57a/57b" in e + out and rows == [] and not [c for c in cargo if "|build " in c], (rc, tail(e, 4)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 SUITES_DIR = {}          # plan -> persisted dir of the plan's full run (the green suite run the prior-tests cases reuse)
 
 
 def case(plan, path):
-    base_sha = None if (path == "historical-base" or plan == "56") else BASE_SHA
+    base_sha = None if (path == "historical-base" or plan in SINGLE) else BASE_SHA
     rehearse = path not in ("full", "reuse-hit", "reuse-miss")
     tag = "%s/%s" % (plan, path)
     root = tempfile.mkdtemp(prefix="stubrun-")
@@ -662,7 +804,7 @@ def case(plan, path):
                 src = "fn main() { /* one byte differs */ }\n"
         sb = make_sandbox(root, plan, base_sha, src_text=src)
         # plan 41c runs with LD_P46_SUITES=1 (a merge-candidate session: suites on request), plan 46 without it (no suites); plans 47 / 48 always run them
-        ref_env = {"LD_REF_MANIFEST": ref56_file(sb, miss=(path == "reuse-miss"))} if (plan == "56" and path in ("reuse-hit", "reuse-miss")) else None
+        ref_env = {"LD_REF_MANIFEST": ref56_file(sb, miss=(path == "reuse-miss"))} if (plan in SINGLE and path in ("reuse-hit", "reuse-miss")) else None
         rc, out, rows, cargo = run_launch(sb, plan, base_sha, rehearse=rehearse, prior=prior, p46_suites=(plan == "41c"), guard_set="v2" if path == "guard-v2" else None, extra_env=ref_env)
         e = era(sb)
         failed = os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL"))
@@ -684,7 +826,7 @@ def case(plan, path):
         check(f"{tag}: the row parser ran under the plan(s) {'+'.join(sorted(want_plans))}", plans == want_plans, plans)
         tests = [c for c in cargo if "|test " in c]
         builds = [c for c in cargo if "|build " in c]
-        if plan == "56":
+        if plan in SINGLE:
             check(f"{tag}: ONE build (the single seat: current main) and no BASE tree built", len(builds) == 1 and "/base/src/" not in builds[0], builds)
         else:
             check(f"{tag}: two builds (CAND tree, BASE tree)", len(builds) == 2 and sum("/base/src/" in b for b in builds) == 1, builds)
@@ -711,6 +853,8 @@ def case(plan, path):
             check54b(tag, path, run_dir, sb)
         if plan == "56":
             check56(tag, path, run_dir, sb)
+        if plan in ("57a", "57b"):
+            check57(tag, path, run_dir, sb, plan)
             reuse_line = re.search(r"suite-reuse (HIT|MISS)", e)
             check(f"{tag}: the suite-reuse decision is on record ({'HIT for the reuse-hit path, MISS otherwise' if not rehearse else 'a rehearsal records what the engine suites would have done'})",
                   reuse_line is not None and (reuse_line.group(1) == "HIT") == (path == "reuse-hit"), (reuse_line and reuse_line.group(0), tail(e, 8)))
@@ -773,7 +917,7 @@ def case(plan, path):
             check(f"{tag}: the green suite run of the identical tree is reused: cargo test never runs, TESTS-OK and the manifest are carried over",
                   tests == [] and "reused TESTS-OK" in e and os.path.exists(os.path.join(run_dir, "suites" if plan in ("47", "48", "52", "41d", "53", "54", "54b") else "", "TESTS-OK")), (tests, tail(e, 12)))
         if path in ("full", "reuse-hit", "reuse-miss"):
-            sdir = os.path.join(run_dir, "suites") if plan in ("47", "48", "52", "41d", "53", "54", "54b", "56") else run_dir
+            sdir = os.path.join(run_dir, "suites") if plan in ("47", "48", "52", "41d", "53", "54", "54b", "56", "57a", "57b") else run_dir
             recorded = [f for f in os.listdir(sdir) if f in ("TESTS-OK", "SRC-MANIFEST.sha256")] if os.path.isdir(sdir) else []
             if plan == "46":
                 check(f"{tag}: plan 46 without LD_P46_SUITES runs no suites (no cargo test, no TESTS-OK)", tests == [] and recorded == [], (len(tests), recorded))
@@ -783,7 +927,7 @@ def case(plan, path):
                       tests == [] and "ENGINE-SUITES-REUSED" in tt and "TEST parsers rc=0" in tt and "TEST bashtests rc=0" in tt and "TEST main" not in tt and not os.path.exists(os.path.join(sdir, "TESTS-OK")) and not os.path.exists(os.path.join(sdir, "SRC-MANIFEST.sha256"))
                       and os.path.exists(os.path.join(sdir, "TOOLS-TESTS-OK")), (len(tests), tt, os.listdir(sdir)))
             else:
-                check(f"{tag}: the suites ran (cargo test x4{', the reference manifest MISSED' if plan == '56' else ''}) and TESTS-OK + SRC-MANIFEST.sha256 were recorded at suite time",
+                check(f"{tag}: the suites ran (cargo test x4{', the reference manifest MISSED' if plan in SINGLE else ''}) and TESTS-OK + SRC-MANIFEST.sha256 were recorded at suite time",
                       len(tests) == 4 and sorted(recorded) == ["SRC-MANIFEST.sha256", "TESTS-OK"], (len(tests), recorded))
             check(f"{tag}: DONE-ALL, score.txt with a VERDICT line", os.path.exists(os.path.join(run_dir, "DONE-ALL")) and os.path.exists(os.path.join(run_dir, "score.txt")), tail(e, 15))
             if plan == "48":
@@ -846,7 +990,7 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56") for v in hp.HARNESS_PATHS[p]]
+all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b") for v in hp.HARNESS_PATHS[p]]
 phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests")]
 phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests")]
 t_all = time.time()
@@ -883,6 +1027,23 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
         jobs.append(ex.submit(refused56, "budget", {"LD_HARD_MIN_S": "99999999"}, 3, "ABORT-BUDGET plan 56", True, False))
     if want("prior56"):
         jobs.append(ex.submit(refused56, "prior", {"LD_PRIOR_TESTS": "x"}, 5, "ABORT-TESTS plan 56 reuses the engine suites by the reference manifest", False))
+    for plan57 in ("57a", "57b"):
+        kinds = (("poolfallback", "each row's pool AND burst are in [GATES]"), ("burstfallback", "each row's pool AND burst are in [GATES]")) if plan57 == "57a" else (("poolfallback", "each row's pool AND burst are in [GATES]"),)
+        for kind, crit in kinds + ((("burstinert", "the knob acts"),) if plan57 == "57a" else ()):
+            if want(f"red{plan57}:" + kind):
+                jobs.append(ex.submit(red57, plan57, kind, crit))
+        if want(f"red{plan57}sha:{plan57}"):
+            jobs.append(ex.submit(red54sha, plan57, "rep" + plan57, "every row ran the one seat's binary"))
+        if want(f"repl{plan57}"):
+            jobs.append(ex.submit(repl57, plan57))
+        if want(f"shm{plan57}"):
+            jobs.append(ex.submit(refused57, plan57, "shm", {"LD_SHM_MIN_KB": "999999999999"}, 5, "ABORT-SHM-SPACE"))
+        if want(f"prior{plan57}"):
+            jobs.append(ex.submit(refused57, plan57, "prior", {"LD_PRIOR_TESTS": "x"}, 5, "ABORT-TESTS plan 56 reuses the engine suites by the reference manifest", False))
+        need = 13200 if plan57 == "57a" else 5400
+        if want(f"budget{plan57}"):
+            jobs.append(ex.submit(budget57, plan57, need - 600, False))
+            jobs.append(ex.submit(budget57, plan57, need + 900, True))
     for j in jobs:
         j.result()
     jobs = [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
@@ -897,7 +1058,7 @@ if not only:
     wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
     check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
-    check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, whose reuse is the reference manifest)",
-          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56"})
+    check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, whose reuse is the reference manifest)",
+          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

@@ -361,6 +361,124 @@ def succdump_stats(lines):
     return {"records": rec, "bytes": byt, "capped": capped}
 
 
+# ── status 57a / 57b: the emission-burst block at c1s (plan 57a) and the c1d pool sweep (plan 57b), REPORTED ONLY, no build, ONE seat (plan 56's shape). pool57_score.py reads these. ──
+# 57a arm tokens are hyphen-free (the arm rides in file names and ledger headers); pool57_score.LABEL57A gives the registered display names B64-512 / B64-448 / B256-512.
+CELL57A, CELL57B = "c1s-400", "c1d-400"
+ARM57A = {"B64_512": (512, 64), "B64_448": (448, 64), "B256_512": (512, 256)}      # arm -> (RWM_STORE_PATH_POOL, RWM_EMIT_BURST); both are set on every 57a row
+ORDER57A = ("B64_512", "B64_448", "B256_512")
+CONTROL57A, TEST57A = "B64_512", "B256_512"
+N57A = 21
+# 57b: arm P<pool> is the per-path pool (the shipped 2048 sets nothing); W = 2 x pool at np = 2. The registered W list is 4096 (control) 1536 1024 768 512 384.
+POOLS57B = (2048, 768, 512, 384, 256, 192)
+CONTROL57B = 2048
+N57B = 5
+BURST57B = 64                                                          # RWM_EMIT_BURST is not varied in 57b: the [GATES] echo must read the shipped 64 on both ends
+NLIVE57 = {"c1s-400": 1, "c1d-400": 2}
+BYTES57 = {"c1s-400": 5000000000, "c1d-400": 5000000000}
+REPS_CAP57 = None                                                      # test_stubrun's fast mode caps the replicates (None = the registered design)
+SMOKE57A = [(CELL57A, "def", "B256_512", "42", 1)]
+SMOKE57B = [(CELL57B, "def", "P192", "42", 1), (CELL57B, "def", "P2048", "42", 1)]
+for _a in ARM57A:
+    sp.ARM_SPEC[_a] = ("window", "Rlc", "bulk", "ACTIVE")
+    AFAM[_a] = "CAND"
+for _p in POOLS57B:
+    sp.ARM_SPEC["P%d" % _p] = ("window", "Rlc", "bulk", "ACTIVE")
+    AFAM["P%d" % _p] = "CAND"
+
+
+def arm_knobs57(plan, arm):
+    """-> (pool, burst) an arm requests under plan 57a / 57b; (None, None) for an arm the plan does not run."""
+    if plan == "57a":
+        return ARM57A.get(arm, (None, None))
+    pool = arm_pool56(arm)[0] if not arm_pool56(arm)[1] else None
+    return (pool, BURST57B) if pool in POOLS57B else (None, None)
+
+
+def plan57a(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 57a): n = 21 replicates, each holding the three arms rotated by the replicate (a cyclic Latin square), seed 42 / 7 alternating
+    (rep = k + 1). 63 rows."""
+    if smoke:
+        return list(SMOKE57A)
+    out = []
+    for k in range(N57A if REPS_CAP57 is None else min(N57A, REPS_CAP57)):
+        j = k % len(ORDER57A)
+        out += [(CELL57A, "def", a, "42" if k % 2 == 0 else "7", k + 1) for a in ORDER57A[j:] + ORDER57A[:j]]
+    return out
+
+
+def plan57b(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 57b): n = 5 replicates of the six pools (control first), rotated by the replicate, seed 42 / 7 alternating. 30 rows."""
+    if smoke:
+        return list(SMOKE57B)
+    arms = ["P%d" % p for p in POOLS57B]
+    out = []
+    for k in range(N57B if REPS_CAP57 is None else min(N57B, REPS_CAP57)):
+        j = k % len(arms)
+        out += [(CELL57B, "def", a, "42" if k % 2 == 0 else "7", k + 1) for a in arms[j:] + arms[:j]]
+    return out
+
+
+def plan57(plan, smoke=False):
+    return plan57a(smoke) if plan == "57a" else plan57b(smoke)
+
+
+def expect_rows57(plan):
+    return len(plan57(plan))
+
+
+def echo57_problems(plan, arm, cell, cli, srv, sha=None, sha_cand=None):
+    """Plan 57's row witnesses: the pool AND the burst in [GATES] on both ends (a reduced pool echoing 2048 or a burst echoing 64 on the test arm is a failure), pool_per_path as plan 56,
+    no successor dump, and the one seat's binary."""
+    import pool54_score
+    pool, burst = arm_knobs57(plan, arm)
+    if pool is None:
+        return [f"unknown-arm-{arm}-at-{cell}"]
+    p = []
+    for side, lines in (("cli", cli), ("srv", srv)):
+        tok, info = pool_echo56(lines)
+        if tok != str(pool):
+            p.append(f"gate-pool-{side}={tok} (want {pool})")
+        if side == "cli" and info != pool:
+            p.append(f"pool_per_path-{side}={info} (want {pool})")
+        if side == "srv" and info is not None and info != pool:
+            p.append(f"pool_per_path-{side}={info} (want {pool})")
+        g = lc.gate_tok(lines, "RWM_EMIT_BURST")
+        if g != str(burst):
+            p.append(f"gate-burst-{side}={g} (want {burst})")
+        g = lc.gate_tok(lines, "RWM_SUCC_DUMP")
+        if g not in (None, "0"):
+            p.append(f"gate-succ-dump-{side}={g} (want absent or 0)")
+    return p + pool54_score.sha_problems("CAND", sha, sha_cand, None)
+
+
+def is_echo_void57(row):
+    """A VOID by the pool or burst witness: the only failure plan 57 replaces (once)."""
+    return any(x.startswith(("gate-pool", "pool_per_path", "gate-burst")) for x in row.get("problems") or [])
+
+
+def replace57(ledger, cell, arm, seed, rep):
+    """Battery helper (`place38_parse.py replace57 <ledger> <cell> <arm> <seed> <rep>`): prints 'echo' and returns 0 iff the slot's rows so far are exactly one and that row is VOID by the
+    pool / burst echo (status 57a: otherwise VOID and replaced once); returns 1 (prints nothing) otherwise."""
+    rows, _ = rows_of([ledger])
+    mine = [r for r in rows if (r.get("cell"), r.get("arm"), str(r.get("seed")), str(r.get("rep"))) == (cell, arm, str(seed), str(rep))]
+    if len(mine) == 1 and is_echo_void57(mine[0]):
+        print("echo")
+        return 0
+    return 1
+
+
+def check57(plan, path):
+    """rc 0 iff the battery finished and the ledger holds a row for every slot of the plan's table (a replaced slot has two rows, only the first of which is VOID)."""
+    rows, _ = rows_of([path])
+    t = open(path, errors="replace").read()
+    n = expect_rows57(plan)
+    slots = {(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in rows}
+    want = {(c, a, sd, str(rp)) for c, _, a, sd, rp in plan57(plan)}
+    ok = "LD-BATTERY-DONE" in t and slots == want
+    print(f"CHECK{plan.upper()} done={'LD-BATTERY-DONE' in t} slots={len(slots & want)}/{n} rows={len(rows)} extra={len(slots - want)}")
+    return 0 if ok else 1
+
+
 def snapver_problems(arm, cli, srv):
     """Plan 53 witness: `RWM_RECOV_SNAPVER=<0|1>` is always echoed by a plan-53 binary, so an ABSENT token is a failure, not "off". CANDS / BASES read 1 on both ends, every other arm 0."""
     want = "1" if ARM_ENV53.get(arm, (None, None, None))[1] == "1" else "0"
@@ -739,6 +857,16 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t56"] = pool56_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm_pool56(arm)[0])
         except Exception as e:      # a reported readout never voids a row
             row["t56"], row["t56_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") in ("57a", "57b"):
+        # Status 57a / 57b: the pool and burst echo (replaced once) and the seat's binary void a row; the readouts (pool56_score's t56 + pool57_score's t57) are reported only.
+        import pool57_score
+        plan57_ = os.environ["LD_PLAN"]
+        p.extend(echo57_problems(plan57_, arm, cell, cli, srv, sha, os.environ.get("LD_SHA")))
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        try:
+            row["t56"], row["t57"] = pool57_score.row_metrics57(cli, srv, drv, row.get("bytes"), cell, arm_knobs57(plan57_, arm)[0])
+        except Exception as e:      # a reported readout never voids a row
+            row["t56"], row["t57"], row["t57_error"] = None, None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -1442,6 +1570,14 @@ def main(argv):
         return 0
     if cmd == "replace56":
         return replace56(*a[:5])
+    if cmd in ("plan57a", "plan57b"):
+        for c, s_, ar, seed, rep in plan57(cmd[-3:], smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
+        return 0
+    if cmd == "replace57":
+        return replace57(*a[:5])
+    if cmd in ("check57a", "check57b"):
+        return check57(cmd[-3:], a[0])
     if cmd == "check56":
         return check56(a[0])
     if cmd == "check52":
