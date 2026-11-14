@@ -1,0 +1,5 @@
+c1d rows 30
+l0 median 2.52 range 2.29-3.19 ms
+l1 median 2.53 range 2.37-3.00 ms
+s0 median 4.52 range 2.05-47.52 ms
+s1 median 6.17 range 1.26-70.85 ms

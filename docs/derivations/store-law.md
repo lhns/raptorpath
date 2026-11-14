@@ -3,7 +3,7 @@
 Status: DERIVATION, revision 3. No engine change and no VM contact. Revisions 1–2: `store-law-derive` on
 `fd81f408`. Revision 3: `store-law-rev3` on main `e195c8c0`, on status §56's maps.
 
-**Read §R3 first.** It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
+**Read §R4, then §R3.** It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
 The rest stands as the derivation's record.
 
 Scope: law ledger §4 items 1–2, rows F01, E03, E04 and C02. The owner paused the lever-B guard on 2026-11-14 to
@@ -27,6 +27,82 @@ Helper scripts (stdlib Python, run with `-I`; each output is committed beside it
 | `store-law/b0bound.py` | the same two ledgers | `b0bound.out` | one-sided b₀ bounds against each row's no-queue brake |
 | `store-law/wire48b.py` | `bbr48b/c2c8-diag-qcc.tgz`, extracted | `wire48b.out` | the wire-clock anchor candidates (`bbr_rs` m̂, quinn `rtt.min()`) |
 | `store-law/s56.py` | `s56/rep56-diag-ld.tgz`, extracted | `s56.out` | rev 3: the per-tick Little residual with means, the W1.1 who-limits classes, the knee-scaling candidates |
+
+## R4. Revision 4: held-out test, one class rule, per-row spread (review of rev 3)
+
+Revision 3's three knee terms were fitted post hoc to the three cells they explain, so its close matches test
+nothing. This revision adds a held-out cell first.
+
+### R4.1 Held-out prediction: c1d, from boot inputs only (committed before any c1d map is read)
+
+**Disclosure.** p34's c1d static table was printed and committed during revision 2 (`map27-p34.out`), before this
+test was designed. **p34 is therefore not a held-out map for this prediction.** It is reported in R4.2 as
+contaminated. The s53 c1d block has not been read beyond its boot ticks (`c1dboot.py`: the first 8 `[DIAG]` ticks
+of each of its 30 rows).
+
+**Boot inputs** (`c1dboot.out`):
+
+| input | median | range |
+|---|---|---|
+| ℓ₀, ℓ₁ | 2.52, 2.53 ms | 2.29–3.19 |
+| σ⁺₀, σ⁺₁ (boot `qsp_us` maximum) | 4.52, 6.17 ms | 1.26–70.9 |
+| Δ = ℓ₁ − ℓ₀ | ≈ 0 | — |
+
+**The model under test** is revision 3's knee cause, with no estimator terms (R4.4): q_knee = σ + ½Δ + B/r.
+- σ is the release-jitter cover.
+- ½Δ is forward-delay equalisation: 0 here.
+- B/r is quinn's backlog dwell, which has no boot input. It is carried from c1s, the same substrate on the same link
+  class, as a per-connection dwell of q − σ at c1s: 3.8 ms at the 0.95 point and 9.3 ms at the 0.98 point.
+- **σ at load has no boot input either.** c1d's boot σ⁺ (4.5–6.2 ms) is start-up spread: it is ×9–12 c1s's load σ
+  of 0.5 ms.
+- Two variants are therefore registered. The prediction is the *model*; the variant tells which σ input survives.
+
+**Rate.** c1d is receiver-bound, so the receiver ceiling is taken as c1s's §56 control (875 Mbit/s ≈ 92.5 k
+symbols/s at 1 182 B). T₀ is c1s's §56 floor of 4.0 ms.
+
+| | σ = c1s load value 0.5 ms (model M) | σ = c1d boot σ⁺ 4.5–6.2 ms (variant Mb) |
+|---|---|---|
+| q at the 0.95 point | 4.3 ms | 8.3–10.0 ms |
+| **W at the 0.95 point** = μ·(T₀ + q₉₅) | **≈ 770, band 600–950** | **≈ 1 140–1 290** |
+| q at the 0.98 point | 9.8 ms | 13.8–15.5 ms |
+| **W at the 0.98 point** | **≈ 1 280, band 1 050–1 550** | **≈ 1 650–1 800** |
+
+**Falsifiers:**
+- the measured W₉₅ outside 600–950 refutes M;
+- W₉₅ outside 1 050–1 400 refutes Mb;
+- both outside refutes the decomposition at c1d.
+
+**Where the law would land** (estimators included, R4.4): b̂₀⁺ over-read ≈ 0.2 + σ̂⁺ (boot) 4.5–6.2 + q·ℓ
+0.13–0.25 = 4.8–6.7 ms, so W ≈ 92.5 × (4 + 4.8–6.7) ≈ 810–990. That is near M's knee only because the boot σ̂⁺ is
+start-up-contaminated. The near-miss is an accident of the estimator, not support for the law.
+
+**What a c1d map can and cannot test:**
+- *s53 c1d block* (30 rows, long, at the shipped pin): it can test only the pin's loop, backlog and σ at load. It
+  cannot test a knee, because it has no W sweep.
+  - Readable without any law: whether c1d's load σ is ≈ 0.5 ms, deciding M against Mb's input.
+  - Readable without any law: whether quinn's backlog dwell at the pin matches c1s's.
+- *p34 c1d* (static caps 384–2 048, older era, truncated windows): a knee, but contaminated as disclosed above.
+- *A clean held-out map* needs §56's sweep run at c1d (a §56b row block). It is registered in R4.6.
+
+**σ's dose-response falsifier: the `adv-cells` jitter cells** (branch `adv-cells` `5f2a29ad`, `tools/l1/adv_cells.sh`).
+The cells are jit0 / jit5 / jit15 / jit25: netem delay 20 ms ± J ms (correlation 25 %) on both directions, at
+c2-class rate and loss. The model's knee queue is q₉₈ ≈ σ (no leg gap, small backlog at 100 Mbit/s).
+
+Predicted σ (the echo P90 − P50 at load), scaled from c2's 1.8 ms at J = 3 ms each way (σ ≈ 0.6·J), and q₉₈ ≈ 1.3·σ
+(c2's ratio):
+
+| cell | J | σ predicted | q₉₈ predicted | W₉₈ ≈ 9.6 k·(40 + q₉₈ ms) |
+|---|---|---|---|---|
+| jit0 | 0 | 0.1–0.5 ms | ≤ 1 ms | ≈ 390–400 |
+| jit5 | 5 | 2–4 | 3–5 | ≈ 410–435 |
+| jit15 | 15 | 6–12 | 8–15 | ≈ 460–530 |
+| jit25 | 25 | 10–20 | 13–26 | ≈ 510–635 |
+
+**Falsifier:** q₉₈ not monotone in J, or q₉₈/σ outside 0.8–2.0 on any jitter cell. Either means the knee is not
+release-jitter cover.
+
+Caveat: under `rate` the forward draws become a running maximum at flow density. That shrinks the forward spread,
+so the low halves of the σ bands are the likelier.
 
 ## R3. Revision 3: the law on §56's maps (supersedes §0's formula, §4, §5.1 and §5.2's numbers)
 
