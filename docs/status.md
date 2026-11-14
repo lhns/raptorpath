@@ -927,6 +927,16 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **Tree pin.** The commit and the binary sha are recorded by the launch (`BINSHA.txt`, `COMMIT`) and copied into the Result.
 
+**§57a note (2026-11-14, after the rehearsal smoke row, before any battery row; no rule changes).**
+- **Seen data: the rehearsal's one B256-512 row** (main `ef3d5e0e`, c1s-400, 5 GB, LIVE, unflagged at share 0.049):
+  - realised mean burst 66.9 (registered expectation 90–105);
+  - release batch 84.7 per ack wake (release/W 0.165, below E5's 0.17–0.24);
+  - R 81.06 k/s; a/W 0.89; q_ℓ 2.94 ms; bind 1.0.
+- **Bursts per ack wake ≈ 1.3** (57 281 bursts over ≈ 45 k wakes), against ≈ 2.2 on §56's P512 rows (48 per burst, ≈ 107 per wake). At burst 256 one burst is already about one wake's release, so a larger knob value would not raise it.
+- **Expected outcome: UNDERPOWERED.** With b̄₂₅₆ ≈ 67, ΔQ_b ≈ 9.5 and k ≈ 0.15, so the predicted shift is ≈ 0.3–0.7 k/s. At the registered row sd (≈ 1.1 k) and n_u ≈ 12 per arm, S ≈ 0.5–1.3, and S ≥ 2 would need about 30 unflagged rows per arm. The block still returns RISING (no S condition), the in-session 448/512 chord at n = 21, b̄ and the release batch per arm, and 63 rows of collapse statistics. It runs as registered.
+- **The smoke margin is thin** (2.9 above 64). If the full launch's own unflagged smoke row reads ≤ 64, that is the registered ABORT-SMOKE with no relaunch, read as "practically inert". It is not loosened.
+- What sets the release batch is a different question, for a new registration after the Result.
+
 ## 57b. The c1d pool sweep and the transfer test T (reported only, no build) — pre-registration (before any VM contact)
 
 **Bind check, from §53's 30 c1d 5 GB rows at the shipped law** (`c1dcap.py` → `c1dcap.out`):
