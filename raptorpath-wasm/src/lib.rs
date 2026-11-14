@@ -177,14 +177,14 @@ pub fn span_horizon_b(delta_price: f64) -> f64 {
 /// fired at age > D lands after the receiver's own δ-horizon give-up.
 #[wasm_bindgen]
 pub fn span_deadline_d(delta_price: f64, rtprop: f64) -> f64 {
-    (span_horizon_b(delta_price) * rtprop).min(2.0 * rtprop)
+    math::span_deadline_d(delta_price, rtprop)
 }
 
 /// §5.3: the coding quantum / span width A* = clamp(rate·D, 1, W) —
 /// the recovery budget in symbols N_δ = rate·D, clamped into the window.
 #[wasm_bindgen]
 pub fn span_width_a_star(rate: f64, d: f64, w: f64) -> f64 {
-    (rate * d).clamp(1.0, w.max(1.0))
+    math::span_width_a_star(rate, d, w)
 }
 
 /// §5.3: pipeline depth M* = ceil(rate·2·RTprop / A*_q) + 1 (A*_q =
@@ -193,7 +193,7 @@ pub fn span_width_a_star(rate: f64, d: f64, w: f64) -> f64 {
 /// depth is the large-δ limit.
 #[wasm_bindgen]
 pub fn pipeline_depth_m_star(rate: f64, rtprop: f64, a_star_q: f64) -> f64 {
-    ((rate * 2.0 * rtprop / a_star_q.max(1.0)).ceil() + 1.0).clamp(2.0, 32.0)
+    math::pipeline_depth_m_star(rate, rtprop, a_star_q)
 }
 
 /// §5.3 / ADR-0064: the trailing offset Δ = clamp(⌈rate·J⌉, 1, 64)
@@ -203,7 +203,7 @@ pub fn pipeline_depth_m_star(rate: f64, rtprop: f64, a_star_q: f64) -> f64 {
 /// not). Floor 1 = the FIFO-per-path minimum.
 #[wasm_bindgen]
 pub fn trailing_offset_delta(rate: f64, jitter: f64) -> f64 {
-    (rate * jitter.max(0.0)).ceil().clamp(1.0, 64.0)
+    math::trailing_offset_delta(rate, jitter)
 }
 
 /// §5.6: the residual R after in-window FEC at the live operating point:
@@ -254,19 +254,7 @@ pub fn bulkness_of_delta(delta_price: f64) -> f64 {
 
 #[wasm_bindgen]
 pub fn sim_tail_target_of_delta(delta_price: f64) -> f64 {
-    let x = delta_price.max(1e-12).log10();
-    let (x_rt, x_auto, x_bulk) = (50.0f64.log10(), 0.5f64.log10(), 0.005f64.log10());
-    let (y_rt, y_auto, y_bulk) = (-7.0f64, -5.0f64, 0.05f64.log10());
-    let y = if x >= x_rt {
-        y_rt
-    } else if x >= x_auto {
-        y_auto + (x - x_auto) * (y_rt - y_auto) / (x_rt - x_auto)
-    } else if x >= x_bulk {
-        y_auto + (x - x_auto) * (y_bulk - y_auto) / (x_bulk - x_auto)
-    } else {
-        y_bulk
-    };
-    10.0f64.powf(y)
+    math::sim_tail_target_of_delta(delta_price)
 }
 
 // =========================================================================
@@ -483,6 +471,17 @@ pub struct Simulation {
     /// Last completion-exposure chi (§4.6): the Stieltjes metering of
     /// the completion-tail budget accrues B_tail x (chi - prev_chi).
     prev_completion_chi: f64,
+    /// One-entry memo of the tail-rate solve, keyed on the exact bits of
+    /// (pg, qg, W, tail_target): the aggregate GE estimate only moves per
+    /// tick, so the several source symbols of a tick share one solve.
+    /// Pure: the same inputs always give the same r_tail.
+    r_tail_cache: Option<([u64; 4], f64)>,
+    #[cfg(test)]
+    r_tail_log: Vec<[u64; 4]>,
+    #[cfg(test)]
+    r_tail_solves: u32,
+    #[cfg(test)]
+    verify_r_tail_cache: bool,
 
     // Counters
     total_src: u32, total_fec: u32, total_arq: u32, total_lost: u32,
@@ -730,7 +729,7 @@ impl Simulation {
             return 0.0;
         }
         let (pg, qg) = self.agg_ge_params();
-        let r_tail = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
+        let r_tail = self.r_tail_exact(pg, qg);
         // On the continuum the two completion mechanisms cross-fade
         // continuously: the source-position ramp (the FEC side's completion
         // law) scales by (1 − β) as the §4.6 χ-glide — which lives inside
@@ -738,6 +737,32 @@ impl Simulation {
         // β = 1 the glide alone covers the tail (no double-pay); at β = 0
         // the ramp is whole.
         r_tail * w * dchi * (1.0 - self.bulkness)
+    }
+
+    /// `compute_r_star_exact(pg, qg, W, tail_target)`, memoised on the exact
+    /// input bits (no tolerance, no β-keyed shortcut: every call that
+    /// differs in any input bit solves afresh).
+    fn r_tail_exact(&mut self, pg: f64, qg: f64) -> f64 {
+        let key = [pg.to_bits(), qg.to_bits(), self.w as u64, self.tail_target.to_bits()];
+        #[cfg(test)]
+        self.r_tail_log.push(key);
+        if let Some((k, v)) = self.r_tail_cache {
+            if k == key {
+                #[cfg(test)]
+                if self.verify_r_tail_cache {
+                    let fresh = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
+                    assert_eq!(fresh.to_bits(), v.to_bits());
+                }
+                return v;
+            }
+        }
+        #[cfg(test)]
+        {
+            self.r_tail_solves += 1;
+        }
+        let v = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
+        self.r_tail_cache = Some((key, v));
+        v
     }
 
     /// The continuum's effective tail target — ONE law, no branch:
@@ -1126,6 +1151,13 @@ impl Simulation {
             rate: 0.0,
             debt: 0.0,
             prev_completion_chi: 0.0,
+            r_tail_cache: None,
+            #[cfg(test)]
+            r_tail_log: Vec::new(),
+            #[cfg(test)]
+            r_tail_solves: 0,
+            #[cfg(test)]
+            verify_r_tail_cache: false,
             total_src: 0, total_fec: 0, total_arq: 0, total_lost: 0,
             cum_sent: 0, cum_arrived: 0, cum_decoded: 0,
             lost_pending: 0,
@@ -1884,6 +1916,27 @@ mod tests {
                      the pre-multipath engine"
                 ); }
             }
+        }
+    }
+
+    /// The tail-rate memo is pure: every cache hit equals a fresh solve to
+    /// the bit, and solves = runs of identical consecutive keys (a solve
+    /// happens at least once per key change, never per source symbol).
+    #[test]
+    fn test_r_tail_cache_is_pure_and_bounds_solves() {
+        for (w, d) in [(64u32, 0.005), (64, 0.5), (64, 50.0), (25, 0.5)] {
+            let mut s = Simulation::multipath(
+                vec![0.05], vec![0.5], vec![50], vec![4], w, "continuum".into(),
+                None, Some(d), Some(1.0),
+            );
+            s.verify_r_tail_cache = true;
+            while !s.is_finished() && s.get_tick() < 20_000 { s.step(); }
+            let calls = s.r_tail_log.len();
+            let runs = 1 + s.r_tail_log.windows(2).filter(|p| p[0] != p[1]).count();
+            assert!(calls > 0, "W={w} d={d}: tail never solved");
+            assert_eq!(s.r_tail_solves as usize, runs, "W={w} d={d}");
+            assert!(s.r_tail_solves as usize <= calls);
+            println!("W={w} d={d}: {calls} calls -> {} solves", s.r_tail_solves);
         }
     }
 
