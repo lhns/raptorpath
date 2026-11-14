@@ -319,9 +319,10 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 //     RTT from send (no speculative pre-report firing); retransmits inherit
 //     the clock of the path they ride; the phantom_held/phantom_avoided
 //     counters show the spurious candidates a global clock would have fired
-//   - the path-scaled outstanding pool (wall #7, §6.1): the retention
-//     store is STORE_PER_PATH × n_paths; a full pool stalls new source
-//     (the Little's-law wall, visible when cap·RTT is cranked past it)
+//   - a constant per-path outstanding pool (wall #7): the retention store is
+//     STORE_PER_PATH × n_paths, an underived model constant (law ledger M01),
+//     NOT the engine's §6.1 cap; a full pool stalls new source (the
+//     Little's-law wall, visible when cap·RTT is cranked past it)
 //   - SACK-clocked store release (wall #9, §6.3): slots free on the
 //     selective ack (or on recovery of a loss), NOT on the cumulative
 //     frontier — the frontier-clocked occupancy is kept as a live
@@ -329,7 +330,8 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 //   - the δ continuum (§5.3/§5.6/§4.1): the span-law formulas
 //     (A*, M*, D, Δ, shed budget) are exported above as pure functions;
 //     the sim itself is driven along the continuum via the "continuum" hint
-//     with sim_tail_target_of_delta(δ) — no mode bit anywhere
+//     (custom_delta = the δ price; sim_tail_target_of_delta(δ) and the β
+//     rate mix) — no mode bit anywhere
 //
 // Simplifications vs the L0 gate (documented): fixed wire capacity
 // (slots/tick) instead of a queue+Copa model, no jitter (so no encoder lag
@@ -343,12 +345,14 @@ const BASE_TAIL_TARGET: f64 = 1e-5;
 const CODEC_OVERHEAD_RLC: f64 = 0.004;
 const MAX_OVERHEAD: f64 = 0.5;
 const TICK_SECS: f64 = 0.001;
-/// Path-scaled retention-store pool (wall #7, §6.1): the
-/// outstanding pool is a Little's-law wall when it is a per-TRANSFER
-/// constant; the shipped law scales it per path (production knee ≈ 2048
-/// symbols/path). Sim scale: 512/path against the 2000-symbol transfer —
-/// slack at the standard cells (cap·RTT ≤ ~400), binding when the BDP is
-/// cranked past it (the wall made visible on the RTT slider).
+/// Retention-store pool per path (wall #7): a CONSTANT, not the engine's
+/// §6.1 law. 512/path is an underived model constant (law ledger M01): no
+/// BDP or δ input. The engine's cap is clamp(law, floor, max(n_live·2048,
+/// floor)), and 2048/path is a clamp measured pinned (ledger F01: the law's
+/// value sat at it for 0.74–0.98 of c8 ticks), not a knee. Here the pool is
+/// slack at the standard cells (cap·RTT ≤ ~400; stall fraction 0.000 at the
+/// c8 preset) and binds only when the BDP is cranked past it (1 path, RTT
+/// ≥ 200 at cap 8). The derived store law is unshipped and NOT modeled.
 const STORE_PER_PATH: u32 = 512;
 
 /// Per-path state (§5.5): an independent GE channel with its own
@@ -2868,12 +2872,19 @@ mod tests {
         assert_eq!(dual.get_pool_cap(), 2 * STORE_PER_PATH);
     }
 
-    /// Paper §6.1 / reconciliation 4b (divergence, bounded): the engine's
-    /// retention-store cap is the law `ceil((1+q(delta))*bdp)` (it moves with the
-    /// BDP and with delta); the model's pool is the CONSTANT 512 per path. This pins the model:
-    /// exactly 512 x n_paths at every delta, hint, RTT and capacity, before and
-    /// after stepping, until the model adopts the law (a deliberate model change
-    /// that moves the golden fingerprints).
+    /// Paper §6.1 / reconciliation 4b (divergence, bounded): the model's pool
+    /// is the CONSTANT 512 per path (law ledger M01: an underived constant).
+    /// The engine's cap is `clamp(law, floor, max(n_live·2048, floor))`
+    /// (`net/store_cap.rs`), and at c8 the law's value sits at that clamp for
+    /// 0.74–0.98 of ticks (ledger F01, measured pinned) — a constant 2048 per
+    /// path in effect, not a cap that moves with the BDP; 2048 is a clamp,
+    /// not a knee (§56: c2 flat down to a total store W ≈ 192–256, c8 to
+    /// ≈ 512, c1s loses at every cut). The model's pool does not bind at its
+    /// c8 preset (stall fraction 0.000) while the engine's does. This test
+    /// pins the MODEL side only: exactly 512 x n_paths at every delta, hint,
+    /// RTT and capacity, before and after stepping, until the model changes
+    /// deliberately (that moves the golden fingerprints). The derived store
+    /// law is unshipped and is not modeled.
     #[test]
     fn wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp() {
         assert_eq!(STORE_PER_PATH, 512, "the model's per-path pool constant");
@@ -2888,7 +2899,7 @@ mod tests {
                     let want = 512 * n as u32;
                     assert_eq!(
                         sim.get_pool_cap(), want,
-                        "pool = 512 x {n} paths at rtt {rtt} cap {cap} delta {delta:?}                          (paper §6.1 law is ceil((1+q(delta))*BDP); this pins the divergence)"
+                        "pool = 512 x {n} paths at rtt {rtt} cap {cap} delta {delta:?}                          (the model pool is a constant; this pins the divergence from the engine's §6.1 cap)"
                     );
                     for _ in 0..50 {
                         sim.step();

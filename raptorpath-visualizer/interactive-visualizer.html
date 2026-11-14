@@ -162,9 +162,11 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
     <b>This is not a toy model.</b> Each tick calls the production rate formula
     (shared <code>raptorpath-math::controller_rate</code>) with correction
     preemption, P<sub>lost</sub> repair/retransmit mixing, the completion
-    ramp (&sect;14.29) and the saturation cap; the multipath model carries the
-    current laws &mdash; per-path RFC&nbsp;9002 recovery clocks (&sect;16.24), the
-    path-scaled pool (&sect;16.19) and SACK-clocked store release (&sect;16.25).
+    ramp (&sect;3.3, &sect;4.6) and the saturation cap; the multipath model
+    carries per-path own-RTT recovery clocks (&sect;7.1) and SACK-clocked store
+    release (&sect;6.3). Its retention pool is a <b>constant 512 slots/path</b>
+    (an underived model constant), <b>not</b> the engine&rsquo;s pooled cap
+    (&sect;6.1).
     The estimator learns outcomes <b>one RTT late</b> &mdash; watch
     &epsilon;&#770; lag the channel after a loss burst. Channel and &delta;
     changes apply to the simulation on Reset; the span-machine panel morphs
@@ -266,8 +268,8 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
       <dt data-tip="Simulation time step. One tick = one symbol slot of channel capacity; the channel state, sender and estimator all advance once per tick.">Tick</dt><dd id="m-tick">0</dd>
     </dl>
     <div class="separator"></div>
-    <h3 data-tip="The flow-control walls, live (walls #7 and #9 of the measured chain): the retention store holds a slot per outstanding source symbol. The pool is PATH-SCALED (§6.1: 512/path at sim scale — the per-transfer constant pool was the Little's-law multipath binder), and slots free on the SELECTIVE ack (§6.3 SACK-clocked release, the shipped law) — not on the cumulative frontier.">Retention store &mdash; walls #7 / #9</h3>
-    <div class="sat-gauge-wrap" data-tip="SACK-clocked store occupancy vs the path-scaled pool. Crank RTT (or capacity) until cap·RTT outgrows the pool and watch it bind: new source stalls (wall #7's Little's-law signature). Add a second path and the pool doubles — the path-scaled law.">
+    <h3 data-tip="The flow-control walls, live (walls #7 and #9 of the measured chain): the retention store holds a slot per outstanding source symbol. The model's pool is a CONSTANT 512 slots per path (an underived model constant — NOT the engine's §6.1 law, which is a measured-pinned clamp at 2048/path), and slots free on the SELECTIVE ack (§6.3 SACK-clocked release, the shipped law) — not on the cumulative frontier.">Retention store &mdash; walls #7 / #9</h3>
+    <div class="sat-gauge-wrap" data-tip="SACK-clocked store occupancy vs the model's pool (a constant 512 per path; adding a path adds 512). The pool does NOT bind at this model's c8 preset (stall fraction 0.000); the engine's does. Crank RTT (or capacity) until cap·RTT outgrows the pool and it binds: new source stalls (wall #7's Little's-law signature).">
       <span>store</span>
       <div class="sat-gauge"><div class="sat-gauge-fill" id="store-fill"></div></div>
       <span class="sat-gauge-pct" id="store-pct" style="min-width:76px">0 / 512</span>
@@ -418,8 +420,8 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
           <td style="text-align:left; font-weight:normal">real one-way flight; receiver reorder across paths; striping gaps are the wall-#8 hazard</td>
           <td style="text-align:left; font-weight:normal">forward flight instantaneous (one-way delay added in accounting); cross-path gaps exist only as losses, so the per-path-clock demo runs on loss holes</td></tr>
       <tr><td>store / pool</td>
-          <td style="text-align:left; font-weight:normal">knee &asymp; 2048 symbols/path (&sect;16.19); SACK release keeps payload + ARQ maps until the frontier (&sect;16.25)</td>
-          <td style="text-align:left; font-weight:normal">512/path scaled to the 2000-symbol transfer; slot accounting only (payload retention not modeled)</td></tr>
+          <td style="text-align:left; font-weight:normal">pooled cap (&sect;6.1) = clamp(law, floor, max(n&middot;2048, floor)). 2048/path is a <b>clamp</b>, not a knee: the law&rsquo;s value sat at it for 0.74&ndash;0.98 of c8 ticks (ledger F01, measured pinned). Measured (&sect;56, W = total store): c2 is flat down to W &asymp; 192&ndash;256; c8 is flat to W &asymp; 512 (in-order delay 0.37 &rarr; 0.09 s); c1s loses at every cut (goodput/control 0.96, 0.94, 0.89, 0.79 at W 1024, 768, 512, 384). SACK release keeps payload + ARQ maps until the frontier (&sect;6.3)</td>
+          <td style="text-align:left; font-weight:normal">a constant 512 slots/path (ledger M01: an underived constant, not a law); slot accounting only (payload retention not modeled). It does <b>not</b> bind at the model&rsquo;s c8 preset (stall fraction 0.000, peak occupancy 0.08&ndash;0.09) while the engine&rsquo;s store gates the c8 sender. The derived store law is not shipped and is not modeled</td></tr>
       <tr><td>loss detection</td>
           <td style="text-align:left; font-weight:normal">RFC 9002 per path: 9/8 time threshold + kPacketThreshold = 3 same-path fast channel (&sect;16.24)</td>
           <td style="text-align:left; font-weight:normal">per-path clock = 1 own-RTT from send (per-symbol acks make the packet-threshold channel no faster here)</td></tr>
@@ -2467,7 +2469,7 @@ function updateReadouts() {
     'SACK-clocked (§6.3, shipped): <b>' + occ + '</b> slots held · ' +
     'frontier-clocked (wall #9, legacy) would hold <b>' + sim.storeOccupancyFrontier +
     '</b> · pool = 512 × ' + sim.numPaths + ' path' + (sim.numPaths > 1 ? 's' : '') +
-    ' (path-scaled, §6.1)' +
+    ' (model constant per path; the engine’s §6.1 cap is a different, pinned law)' +
     (stalls > 0
       ? ' · <b style="color:var(--bad)">source stalled ' + stalls +
         ' slots — the wall-#7 Little’s-law bind</b>'
