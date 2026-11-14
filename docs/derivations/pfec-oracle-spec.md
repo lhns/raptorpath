@@ -7,7 +7,7 @@ per-loss law against an executed decoder).
 - Base: main `59a65af8`. Every `file:line` below was re-grepped on it.
 - Supporting numbers: `pfec-continuous/emission_witness.py` → `.out`.
 - Advisor (Fable) round 7 settled: the deadline per caller, the extraction
-  order, the emission findings E1/E2, and the registration tolerances.
+  order, the emission readings E1 (confirmed) and E2 (cadence-dependent), the per-seat clock, and the registration tolerances.
 
 ## 0. Two findings the build must witness first
 
@@ -24,27 +24,38 @@ per-loss law against an executed decoder).
 - A law that is degenerate as wired is a **law-ledger finding**: the `taper`
   and `offset` inputs of the budget law are dead on this path.
 
-**E2. The repair debt is cancelled by acks.**
+**E2. The repair debt is reduced by acks.** This is a code reading plus a
+**cadence-dependent prediction**, not a confirmed finding.
 - `emit_source.rs:696–700` adds `grant` per source and emits while debt ≥ 1.
 - `sender_phases.rs:1278–1328` subtracts `newly_acked × rate` on every
   cumulative-ack advance (clamped at 0). `:1162–1172` does the same per
   NACKed seq.
-- So in a lossless steady state the debt is invariant: after the start-up
-  r·F, emission is **exactly 0**. Repairs are emitted mainly while the
-  cumulative ack is stalled behind a hole.
-- Model prediction of the witness emitted/(r·sources), with no ARQ, give-up
-  at D, and feedback delay F (an upper bound, since FEC recovery shortens
-  stalls):
-
-  | inputs | emitted / (r·sources) |
-  |---|---|
-  | pin inputs: ε .048, σ² 3.76, r 0.34, D 4 | **0.055** |
-  | ε .048, σ² 3.76, r 0.5, D 7 | 0.143 |
-  | W 201 rows | 0.85–0.90 |
-
-- Consequence: the r handed to `residual_loss_after_fec` (`flat_rate`,
-  `emit_source.rs:593–598`) is not the wire rate. That is an input-honesty
-  finding for ledger R03/S04, whatever P_fec form is chosen.
+- After the emission loop the debt is < 1, so one ack advance of m sources
+  cancels at most one repair's worth, out of the r·m accrued.
+- With m̄ the mean sources per ack advance, the witness W1 = emitted/(r·sources)
+  therefore obeys
+  ```text
+  W1 ≥ max(0, 1 − 1/(r·m̄))
+  ```
+  - m̄ = 1 makes the bound vacuous. That is the regime of my
+    per-slot-ack model (`emission_witness.out`: 0.055 at the pin inputs,
+    0.143 at A\* 7, r 0.5, 0.85–0.90 at the W 201 rows, all with give-up at
+    D and no ARQ).
+  - At m̄ ≥ 10 and r 0.34, W1 ≥ 0.71.
+  - "Lossless ⇒ emission exactly 0 after start-up" holds only when m̄·r < 1.
+- **m̄ is not settled by reading.**
+  - `RWM_ACK_MERGE` emits one control datagram per data message
+    (`sender_policy.rs:30–42`, `[CTLD]` ≈ 1.0), which points to m̄ ≈ 1.
+  - But `TaperBudget`'s own doc calls an ack cycle "hundreds of symbols"
+    (`fec_rate.rs:648–651`).
+  - The pin comment's "consumed r ≈ 0.34" under `max_overhead` 0.5 would
+    need W1 ≥ 0.68.
+  - `taper_emission_l0.rs` (the "wire consumes r\*" rung) reads cod/src from
+    DIAG and asserts nothing (`:16–18`).
+  - So m̄ is an oracle input, swept {1, 4, 16, 64}. W1 is reported per cell.
+- If W1 ≪ 1 on the engine, the r handed to `residual_loss_after_fec`
+  (`flat_rate`, `emit_source.rs:593–598`) is not the wire rate. That would be
+  an input-honesty finding for ledger R03/S04, whatever P_fec form is chosen.
 - The oracle's x-axis is the **handed** r, because that is what the law is
   evaluated at. The consumed r is witness W1.
 
@@ -62,18 +73,18 @@ The oracle is an **in-crate `#[cfg(test)]` module**,
 | decoder | **called** | `fec::RlcWindowDecoder` (`fec/rlc_window.rs:248`) | — |
 | decoder prune | **called** | `receiver::decode_inert_floor(next_expected, recv_win_cap)` (`receiver.rs:2215`), then `window_decoder.advance(floor)`, as `receiver.rs:669–675` does | — |
 | coefficients | called (inside the codec) | `gf256::generate_window_coefficients` (`gf256/src/lib.rs:236`): nonzero pseudo-random GF(256) | — |
-| `TaperBudget::accrue` | **called** | `control::TaperBudget` (`fec_rate.rs:704`) | `spare` is a harness input, default `rate + 1` (non-binding); one arm at a binding spare |
+| `TaperBudget::accrue` | **called** | `control::TaperBudget` (`fec_rate.rs:704`) | `spare` = `rate + 1` (non-binding). By E1 a binding spare is just a lower r, so it gets no arm |
 | `TaperFunction` | **called** | `TaperFunction::from_estimator(&LossEstimator::new(), rate)` (`fec_rate.rs:617`; an invalid GE gives q = 0.5) | inert by E1 |
 | repair-debt loop | copied | `emit_source.rs:696–700` (`+= grant`, emit while ≥ 1, `−= 1`) | a string pin (§1.1) |
-| ack and NACK debt cancellation | copied | `sender_phases.rs:1278–1328` (`newly_acked × rate`), `:1162–1172` (NACK) | a string pin; the NACK arm is off (no NACKs without ARQ) |
-| taper-copy slot | copied, **two arms** | `emit_source.rs:702–757`: P_lost of the oldest un-acked symbol (`control::fec_rate::p_lost`, called) against a seeded draw (the engine uses `rand::random`, `:722`) | arm C0 (primary): copies off, so P_fec is coded recovery, the quantity R's formula claims. Arm C1: copies on, counted separately |
+| ack and NACK debt cancellation | copied | `sender_phases.rs:1278–1328` (`newly_acked × rate`), `:1162–1172` (NACK) | a string pin. Switch `ack_cancel`: **on** in every registered reading; off only in K1 and K3. NACK cancellation is off (no NACKs without ARQ) |
+| taper-copy slot | **out of the first build** | `emit_source.rs:702–757` (P_lost-gated copy of the oldest un-acked symbol, `rand::random` at `:722`) | Copies off: P_fec is coded recovery, the quantity R's formula claims. A copies-on arm needs `p_lost`'s srtt, rttvar, age in seconds and the copied clock's "oldest un-acked". It is specified in a later round |
 | span seat A\*, Δ | **called after extraction** (§2) | today inline at `emit_source.rs:559–600` | — |
 | span placement | **called after extraction** (§2) | today inline at `emit_source.rs:784–806` | — |
 | D(δ) | **called** | `net::shed_deadline_us(b, rtprop_us)` (`shed.rs:31`), `net::delta_budget_b_of(δ)` (`store_cap.rs:318`) | — |
-| receiver hold | **called** (secondary readout) | `shed::shed_recv_hold(srtt, true, true)` (`shed.rs:58`, `pub(crate)`) = srtt/2 | — |
-| GE channel | copied (6 lines) | loss iff Bad; p, q from (ε, σ²) by p + q = 2/(σ² + 1), p = ε(p+q); stationary start; stepped per wire symbol; one chain, or a second chain for repairs (arm P1, dual path) | `tests/common/mod.rs:29` is not visible in-crate |
-| ack clock | copied | the cumulative ack is the highest contiguous seq that is arrived, decoded, or given up; it is delivered F slots later; `taper_offset = 0` on each advance (`sender_phases.rs:1444`) | F is a harness input |
-| receiver give-up | copied | a hole is given up at age D from its send (shed deadline) | without give-up, one hole stalls the ack for the rest of the run |
+| receiver hold | **called** | `shed::shed_recv_hold(srtt, true, true)` (`shed.rs:58`, `pub(crate)`) = srtt/2, the evicting-seat resolution rule | — |
+| GE channel | copied (6 lines) | loss iff Bad; p, q from (ε, σ²) by p + q = 2/(σ² + 1), p = ε(p+q); stationary start; stepped per wire symbol; **one chain** over sources and repairs | `tests/common/mod.rs:29` is not visible in-crate; the dual-path arm is out of the first build |
+| ack clock | copied | the cumulative ack is the highest contiguous **resolved** seq (arrived, decoded, or resolved by the seat's rule below). It is reported every m̄ sources and delivered F slots later; `taper_offset = 0` on each advance (`sender_phases.rs:1444`) | F derived per cell (§3 table); m̄ ∈ {1, 4, 16, 64}, primary 1 |
+| resolution rule (a simulation input, separate from the readout deadline) | copied | **Evicting seat (A\* rows):** a hole is given up at the executed receiver hold H = srtt/2 from its **detection** (the slot a higher seq arrives). **Reliable seat (W 201 rows):** the receiver never gives up; an unrecovered hole is resolved by ARQ landing L_arq after detection. That is a clock event only, never counted as FEC | without a rule, one hole stalls the ack for the rest of the run |
 | receiver-request arm | **out** | `net/mod.rs:3319`; `RWM_RECV_REQUEST_LAW` and `RWM_RANK_FEEDBACK` default off (`gates.rs:376–377`) | — |
 
 ### 1.1 String pins for the copied engine lines
@@ -181,6 +192,22 @@ ARQ round would land". The registered deadline is d = L_arq·rate.
 - Per-cell srtt and rate are cited from the nominal cells: c2 srtt 10 ms at
   100 Mbit/s and 1 200 B; c3 40 ms at 20 Mbit/s. Labelled nominal.
 
+**Per-cell clock in slots** (rate = link/9 600 bit; F = rate·RTT;
+H = srtt/2; Δ = ⌈rate·J⌉):
+
+| cell | rate (sym/s) | RTT | F | Δ (J) | resolution rule | primary readout d |
+|---|---|---|---|---|---|---|
+| A\* rows (L0 c3, Realtime b = ½, measured A\* 4–7 at ≈ 95 sym/s, `8e77ba67`) | ≈ 95 | from A\* | **F = A\*/b = 2·A\***, because A\* = ⌈rate·b·RTT⌉ | 1 (J 5 ms, 0.48) | give-up at H = srtt/2 = F/2 ≈ A\* slots from detection | **d = A\* − 1** |
+| W 201, c2 nominal | 10 417 | 10 ms | 104 | 32 (J 3 ms) | ARQ resolution at L_arq after detection | **d = L_arq = 156** |
+| W 201, c3 nominal | 2 083 | 40 ms | 83 | 11 (J 5 ms) | as c2 | **d = L_arq = 125** |
+
+**Why d = A\* − 1 on the shed rows.**
+- Lags are integers and the convention is lag ≤ d.
+- With rate·D ∈ (A\* − 1, A\*], ⌊rate·D⌋ = A\* − 1 unless rate·D is an integer.
+  So d = A\* − 1 is the shed deadline in slots.
+- A\* and A\* + Δ are reported alongside as readouts, never used for
+  refutation.
+
 **Recorded per recovered hole**, so any other deadline is a readout:
 - lag from its send, in slots;
 - lag from its detection, i.e. the slot the receiver first sees a higher seq.
@@ -190,7 +217,7 @@ ARQ round would land". The registered deadline is d = L_arq·rate.
 1. **K0, r = 0.** No repair is emitted, so recovered = 0 exactly; R = ε.
    Also assert grant == rate exactly on every `accrue` call (E1).
 2. **K1, scripted single loss.** Lossless except source s; rate 1, spare 1,
-   F > run length (no ack cancellation).
+   switch `ack_cancel = off`.
    - The first covering repair is emitted at send slot s + Δ (end > s ⇔
      t ≥ s + Δ).
    - Assert lag = Δ for Δ ∈ {1, 2, 5}, and that `trailing_span` returned
@@ -208,8 +235,8 @@ ARQ round would land". The registered deadline is d = L_arq·rate.
      coefficients, an upper bound on the per-window rank deficit. One-sided,
      since the codec can only fall short of the generic rank.
 4. **K3, P(∞) against the Python bound at matching premises.**
-   - Arm C0, F = ∞ (no ack cancellation), so emission is uniform debt
-     accrual, the Python premise. Same Δ.
+   - Switch `ack_cancel = off`, so emission is uniform debt accrual, the
+     Python premise. Copies off, same Δ, decode without a deadline.
    - Compare per Δ (not T1's maximum) with `pfec_review.py` R1b, e.g. the pin
      cell: Δ 1 0.4022, Δ 2 0.4187.
    - Expected: P_rust(∞) ≤ P_py + 3·SE, because the real decoder prunes and
@@ -221,19 +248,32 @@ ARQ round would land". The registered deadline is d = L_arq·rate.
 ## 5. Registration draft (for status, before the run)
 
 **Cells.**
-- **A\* grid:** A\* ∈ {3..7} × r ∈ {0.2, 0.29, 0.34, 0.5}, ε 0.048, σ² 3.76,
-  Δ ∈ {1, 2}, F = 4 slots (the L0 c3 RTT of 40 ms at ≈ 95 sym/s,
-  `8e77ba67`). Plus the pin cell (A\* 4, r 0.34) and the r = 0.5·r_c rows.
+- **A\* grid:** A\* ∈ {3..7} × r ∈ {0.2, 0.29, 0.34, 0.5}, ε 0.048, σ² 3.76.
+  Plus the pin cell (A\* 4, r 0.34) and the r = 0.5·r_c rows. Clock per the
+  §3 table.
 - **W 201:** the c2/c3 nominal rows at 1.5 and 2·r_c, the two Auto-r\* tail
   rows, and the 0.5·r_c rows.
-- **Arms:** primary C0 / single chain P0; secondary C1 (copies on) and P1
-  (dual chain).
+- **The single primary reading per cell, the only one the refutation rule
+  reads:**
+  - `ack_cancel` on; m̄ = 1 (ACK_MERGE: one ack per data message); copies
+    off; one GE chain;
+  - Δ per the §3 table;
+  - d = A\* − 1 (A\* rows) or d = L_arq (W 201 rows).
+- **Readouts reported, not used for refutation:** d ∈ {A\*, A\* + Δ, ∞},
+  m̄ ∈ {4, 16, 64}, and W1.
 
 **Frozen predictions.** Per form, per cell, the values in
 `pfec-continuous.md` §8.3 and `pfec_bracket.out` / `pfec_delta.out`
 (shipped, Φ, C6, C5, sliding bound), copied as constants into
-`pfec_oracle.rs`. Witness W1 (consumed / handed r) uses
-`emission_witness.out`'s values as upper bounds.
+`pfec_oracle.rs`.
+
+The sliding-bound rows were computed at Δ 1–2 (and at Δ 8 for two cells).
+At W 201 the engine's Δ is 11–32, so those bound rows are not frozen as
+predictions there; only the forms are.
+
+Witness W1 (consumed / handed r) is predicted to be in
+[max(0, 1 − 1/(r·m̄)), 1]. At m̄ = 1 the per-slot model gives 0.055 at the
+pin (`emission_witness.out`).
 
 **Refutation rule.**
 - A form is refuted at a cell iff |P_oracle(d) − P_form| > 3·SE_seeds + τ.
@@ -261,7 +301,7 @@ ARQ round would land". The registered deadline is d = L_arq·rate.
 |---|---|
 | O1: P_oracle(d) at the A\* cells ≤ the sliding bound, near C5/C6 | the shipped form is refuted at the shed budget: R ≥ ≈ 2.6 % against 0.49 % (budget-starving). The sliding law is fitted to nothing; it is derived and then held to these values |
 | O2: P_oracle(d) ≥ 0.71 at the pin (the L0 datum's band) | a premise of the Python bound fails (emission, ack cancellation, Δ, copies). The bound is withdrawn; the datum stands; the shipped form is not refuted there |
-| O3: W1 ≈ 0.05 at the pin | E2 is confirmed: the proactive rate is ack-cancelled, and R is evaluated at a rate the wire does not carry. This is a ledger input-honesty finding, independent of the P_fec form |
+| O3: W1 ≪ 1 at the pin at m̄ = 1 | the proactive rate is ack-cancelled, and R is evaluated at a rate the wire does not carry. This is a ledger input-honesty finding, independent of the P_fec form. W1 near 1 instead means E2 is inert at the engine's cadence. Either way, the engine's actual m̄ must still be read from a gauge (sources per ack advance) |
 | O4: W 201 Auto-tail miss ≥ 1e-3 | the closed-form r\* under-provisions on the executed decoder, and the rate-law finding reopens |
 | O4′: W 201 Auto-tail miss ≤ a few e-4 | the block-law figure stays a paper erratum only |
 | any K0–K3 failure | the harness is invalid; no reading is taken |

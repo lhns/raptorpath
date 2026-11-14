@@ -84,11 +84,23 @@ this doc, and paper sections are named "paper §". Base: `db012f16`; the branch 
    - a recovery-lag record that turns every deadline into a readout;
    - caller-unit tolerances with provenance.
 
-   It also flagged, and I confirmed:
-   - **E1:** `TaperBudget`'s shape is inert as wired (grant ≡ rate). This
-     withdraws round 6's "front-loaded" caveat, which main also carries;
-   - **E2:** the repair debt is cancelled per ack. The model predicts only
-     ≈ 5.5 % of the handed r reaches the wire at the pin inputs.
+   It also flagged two emission readings:
+   - **E1** (confirmed by reading and a check): `TaperBudget`'s shape is
+     inert as wired (grant ≡ rate). This withdraws round 6's "front-loaded"
+     caveat, which main also carries;
+   - **E2** (a code reading plus a cadence-dependent prediction, **not**
+     confirmed): acks reduce the repair debt. The witness obeys
+     W1 ≥ 1 − 1/(r·m̄). It is ≈ 5.5 % at the pin only if one source is acked
+     per advance (m̄ = 1); m̄ is an oracle input.
+
+   A second Fable pass made the spec fully specified:
+   - the ack cadence m̄;
+   - the resolution rule per seat (evicting: give-up at srtt/2 from
+     detection; reliable: ARQ resolution at L_arq);
+   - F derived per cell;
+   - one primary (d, Δ, arm) per cell;
+   - the copies-on, dual-path and binding-spare arms cut from the first
+     build.
 
    Both are ledger findings to be witnessed by the oracle.
 
@@ -947,10 +959,10 @@ Two premises of the Python sliding bound are model inputs:
 - **Emission spacing.** ~~`TaperBudget::accrue` front-loads repairs after
   each ack advance.~~ This is **withdrawn in round 7**: as wired, rate ≤ spare,
   so grant ≡ rate and the shape is inert (E1 in `pfec-oracle-spec.md`).
-  Emission is uniform accrual. **But** the repair debt is cancelled by acks
-  (`sender_phases.rs:1278–1328`, E2), so repairs are emitted mainly during
-  ack stalls. That is a different spacing from the Python bound's, and it is
-  witnessed first by the oracle.
+  Emission is uniform accrual. **But** acks reduce the repair debt
+  (`sender_phases.rs:1278–1328`, E2). Depending on the ack cadence m̄, that
+  may concentrate emission in ack stalls, a different spacing from the Python
+  bound's. The oracle witnesses it first.
 - **One GE chain over the wire.** Dual-path placement breaks this (§8.3,
   T2).
 - **Δ.** The bound rises with the trailing offset Δ, because a no-deadline
