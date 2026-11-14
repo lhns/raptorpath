@@ -363,7 +363,7 @@ check("F8: c1s goodput at 512 >= 0.95 x control FIRES at equality (95.0 vs 95.0)
 f8_flag = states(arms_of(c1s_arms(6, flagged=2, g512=96.0, gflag=10.0)))[8]
 check("F8 excludes the quinn-collapsed rows and states the count: two collapsed P512 rows at 10 Mbit/s would drag the median under 0.95 x control, excluded they leave 96 -> FIRES, 'excluded 2' printed",
       f8_flag[0] == ps.FIRES and "quinn-collapse excluded 2" in f8_flag[1] and states(arms_of(c1s_arms(6, flagged=0, g512=96.0)))[8][0] == ps.FIRES and
-      sorted(ps.gp(r) for r in arms_of(c1s_arms(6, flagged=2, g512=96.0))[("c1s-400", "P512")])[:2] == [10.0, 10.0], f8_flag)
+      sorted(ps.gp(r) for r in arms_of(c1s_arms(6, flagged=2, g512=96.0))[("c1s-400", "FLAGGED:P512")]) == [10.0, 10.0] and len(arms_of(c1s_arms(6, flagged=2, g512=96.0))[("c1s-400", "P512")]) == 4, f8_flag)
 check("F8 with every P512 row collapsed is UNSCOREABLE (nothing left to read), with the exclusion count", states(arms_of(c1s_arms(3, flagged=3)))[8][0] == ps.UNSC and "excluded 3" in states(arms_of(c1s_arms(3, flagged=3)))[8][1])
 # F9
 f9 = states(arms_of([mk("c8-100", 640)]), None, [dict(mk("c8-100", 640, arm="P640D"), succdump={"records": 123456})])[9]
@@ -634,6 +634,96 @@ check("suite reuse: engine suites are guarded by ENGINE_SUITES, a skipped run wr
       and "ref56-manifest.sha256" in re.search(r"^crlf_guard [^\n]*(?:\\\n[^\n]*)*", runall2, re.M).group(0))
 check("the replacement run keeps the VOID row's per-row logs: ATTEMPT_OFF (a11 / a12) is initialised for every plan and set only around run_slot56's second run",
       shell.count("ATTEMPT_OFF=0") >= 2 and "ATTEMPT_OFF=10" in shell and shell.index("ATTEMPT_OFF=0") < shell.index("run_one() {") and "a$(( attempt + ATTEMPT_OFF ))" in shell)
+
+# ═══ 6. the quinn-collapse flag in its absolute form (VM rehearsal 2026-11-14: c1s P384 DNF at 300 s, qcwnd below the BDP in 94 % of the windows, flag read 0.0) ═══
+FIX = os.path.join(HERE, "testdata", "smoke56-c1s-p384.log")
+fx_rows = [json.loads(ln[len("P38ROW "):]) for ln in open(FIX, encoding="utf-8", errors="replace") if ln.startswith("P38ROW ")] if os.path.exists(FIX) else []
+if fx_rows:
+    fx = {(r["cell"], r["arm"]): r for r in fx_rows}
+    c1 = fx[("c1s-400", "P384")]
+    check("fixture (the VM's smoke row): c1s P384 is a DNF at 300 s with qcwnd below the BDP in 94 % of the windows -- the OLD relative form read qc_share 0.0 on it", c1["dnf"] is True and c1["qcwnd_below"]["any"] > 0.9
+          and c1["t56"]["qc_share"] == 0.0 and c1["t56"]["q_late0"] == 372.0, (c1["qcwnd_below"], c1["t56"]["qc_share"]))
+    check("fixture: the absolute flag (qcwnd below the BDP in > 10 % of the windows) FIRES on it; the healthy c8 / c2 rows (0.19-0.24 under the old form) and the c8 dump row do NOT",
+          ps.qc_flagged(c1) and not any(ps.qc_flagged(r) for k, r in fx.items() if k != ("c1s-400", "P384")), [(k, ps.qc_value(r)) for k, r in fx.items()])
+    ledger_fx = fx_rows
+    arms_fx = ps.by_arm(ps.counting(ledger_fx)[0])
+    check("fixture: the flagged DNF row is in NO arm (every median and falsifier skips it) and sits under FLAGGED:P384; it would otherwise have scored as an unflagged DNF at goodput 0",
+          ("c1s-400", "P384") not in arms_fx and len(arms_fx[("c1s-400", "FLAGGED:P384")]) == 1 and ps.gp(c1) == 0.0)
+    with tempfile.TemporaryDirectory() as td_:
+        buf = []
+        rc_fx = ps.smoke(os.path.join(td_, "none"), out=buf.append) if False else None
+        shutil_ = __import__("shutil")
+        shutil_.copy(FIX, os.path.join(td_, "smoke.log"))
+        rc_s, txt_s = capture(ps.smoke, os.path.join(td_, "smoke.log"))
+        check("fixture: the VM's smoke ledger PASSES the smoke check now (a DNF on a flagged row is not a smoke failure), and the flagged row is still listed", rc_s == 0 and "SMOKE-PASS" in txt_s and "c1s-400 P384" in txt_s, txt_s[-900:])
+        unfl = [dict(r, qcwnd_below=dict(r["qcwnd_below"], per_leg=[0.0], any=0.0), t56=dict(r["t56"], qc_share=0.0)) if r["cell"] == "c1s-400" else r for r in fx_rows]
+        with open(os.path.join(td_, "smoke2.log"), "w") as fh:
+            for r in unfl:
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+        rc_u, txt_u = capture(ps.smoke, os.path.join(td_, "smoke2.log"))
+        check("red: the same DNF row WITHOUT a collapse (unflagged) still fails the smoke on the timeout criterion", rc_u == 1 and re.search(r"^FAIL every smoke row finished inside RWM_PERF_TIMEOUT_S=300", txt_u, re.M) is not None, txt_u[-600:])
+    # the c1s row's rows in a whole report: excluded from F6 / F5-style readings and listed apart
+    big = [mk("c1s-400", 2048, rep=i, goodput_mbps=400.0) for i in range(1, 7)] + [dict(c1, seed="42", rep=9)]
+    big[-1]["t56"] = dict(c1["t56"], old_holes=900.0, resid_late=-400.0, cap_med=384.0)
+    st_ = states(ps.by_arm(ps.counting(big)[0]))
+    check("a flagged row with huge old holes does not fire F6 (excluded from EVERY falsifier): c1s old holes 900 at W 384 would be > 50", st_[6][0] == ps.UNSC, st_[6])
+    with tempfile.TemporaryDirectory() as td_:
+        led_ = os.path.join(td_, "ld.log")
+        with open(led_, "w") as fh:
+            for r in big:
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+        buf = []
+        ps.score([led_], out=buf.append, s54b_src=os.path.join(td_, "absent.tgz"))
+        sc_ = "\n".join(buf)
+        check("report: the collapsed row is listed in COLLAPSED ROWS (DNF, below-BDP share 0.94, quinn backlog q0 / W 0.97) and in the per-pool collapse table; qcollapse=1 in the verdict; no arm column for P384",
+              "COLLAPSED ROWS" in sc_ and re.search(r"c1s-400 P384 s42 r9 \| DNF \(timeout\) \| 0\.942 \|", sc_) and "0.969" in sc_ and "collapsed 1" in sc_ and "qcollapse=1" in sc_
+              and not re.search(r"^  readout.*P384\(W384\)", sc_, re.M), sc_[sc_.index("COLLAPSED ROWS"):][:1200] if "COLLAPSED ROWS" in sc_ else sc_[-600:])
+else:
+    print("SKIP fixture checks: tools/l1/testdata/smoke56-c1s-p384.log missing")
+
+# onset and the pre-onset map point on synthetic lines: qcwnd 1 MB until 15 s, then 60 kB (< the 250 kB BDP) to the end
+def collapse_lines(t_on, t_end=60.0):
+    out = ['{"seconds":0.01,"warmup":true}']
+    for k in range(1, int(t_end / 0.25) + 1):
+        t = 0.25 * k
+        qc = 1000000 if t < t_on else 60000
+        out.append(diag(t, 2048, 800, 1, (9000,), (50 if t < t_on else 90,), (3000,), (qc,), 1000, int(1000 * t), max(0, int(1000 * (t - 2)))))
+    return out
+
+
+mc = ps.row_metrics(collapse_lines(15.0), [], [], 5000000000, "c1s-400", 2048)
+check("collapse onset: the first 4 s window below the BDP that stays below (qcwnd drops at 15 s -> windows start at 1, 5, 9, 13, 17: onset 17 s with a 13-17 s window half-below), share ~0.75, pre-onset map point from t in [1, onset)",
+      mc["qc_onset_s"] == 17.0 and 0.7 < mc["qc_share"] < 0.8 and near(mc["pre_r"], 9000, 20) and near(mc["pre_Tbar_ms"], 50.0, 1.0), (mc["qc_onset_s"], mc["qc_share"], mc["pre_r"], mc["pre_Tbar_ms"]))
+mh = ps.row_metrics(run_lines(1, 2048), [], [], 5000000000, "c1s-400", 2048)
+check("a healthy c1s row (qcwnd 1 MB throughout) has share 0.0, no onset, no pre-onset point", mh["qc_share"] == 0.0 and mh["qc_onset_s"] is None and mh["pre_r"] is None)
+check("onset needs the collapse to STAY: a dip that recovers (qcwnd below the BDP only 20-24 s) is not an onset", ps.qc_onset([{"t": 1.0 + 0.25 * k, "qcw": {0: 60000 if 20 <= 1.0 + 0.25 * k < 24 else 1000000}} for k in range(200)], 250000)[0] is None)
+check("who limits: quinn's backlog as a share of W, per leg and summed (q0 18 / W 1280 and q1 1 / W 1280 on the synthetic c8 row)", near(m8["qshare0"], 18 / 1280, 1e-3) and near(m8["qshare1"], 1 / 1280, 1e-3) and near(m8["qshare_sum"], 19 / 1280, 1e-3), (m8["qshare0"], m8["qshare1"], m8["qshare_sum"]))
+
+# committed rows: the absolute flag separates the collapsed c1s rows from the healthy ones
+def committed_share(tgz, stem):
+    path = os.path.join(RAW, tgz)
+    if not os.path.exists(path):
+        return None
+    with tarfile.open(path) as tf:
+        for mem in tf.getmembers():
+            if mem.isfile() and os.path.basename(mem.name) == stem + "-c.log":
+                return pp.qcwnd_below_bdp(tf.extractfile(mem).read().decode("utf-8", "replace").splitlines(), "c1s-400")["per_leg"][0]
+    return None
+
+
+sh_ok = [committed_share("bbr48b/diag-ld-full.tgz", "c1s-400@def-%s-s%d-r%d-a1" % (a_, sd, rp)) for a_, sd, rp in (("BASE", 42, 2), ("BASE", 42, 4), ("BASE", 42, 5), ("BASE", 7, 1), ("CAND", 42, 1), ("CAND", 7, 6))]
+sh_bad = [committed_share("bbr48b/diag-ld-full.tgz", "c1s-400@def-BASE-s%d-r%d-a1" % (sd, rp)) for sd, rp in ((42, 1), (42, 3), (7, 2), (7, 3))]
+if sh_ok[0] is not None:
+    check("committed 5 GB c1s rows (section 48b): healthy rows (845-885 Mbit/s) read 0.006-0.023, the four collapsed BASE rows (265, 431, 407, 488 Mbit/s) read 0.58-0.94 -- the 0.10 threshold separates them",
+          all(x is not None and x < 0.03 for x in sh_ok) and all(x is not None and x > 0.5 for x in sh_bad), (sh_ok, sh_bad))
+sf = os.path.join(RAW, "simplify49", "c1s-CAND-s42-r6-diag.log")
+if os.path.exists(sf):
+    x49 = pp.qcwnd_below_bdp(lc.read(sf), "c1s-400")["per_leg"][0]
+    check("section 49's collapsed CAND c1s row (148.5 Mbit/s) reads 0.89 and is flagged", 0.85 < x49 < 0.95 and x49 > ps.QC_SHARE, x49)
+p27f = os.path.join(RAW, "loop-diag", "p27", "diag-ld", "c1s-400-DEF192-s42-r1-a1-c.log")
+if os.path.exists(p27f):
+    x27 = pp.qcwnd_below_bdp(lc.read(p27f), "c1s-400")["per_leg"][0]
+    check("the DEF192 c1s row of the p27 map (45 Mbit/s) reads 0.996 and is flagged", x27 > 0.99, x27)
 
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
