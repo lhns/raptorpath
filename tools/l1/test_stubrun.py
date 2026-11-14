@@ -118,7 +118,7 @@ HIST_BASE = "4926822" + "0" * 33
 FULL = os.environ.get("STUBRUN_FULL") == "1"
 # plan 52: the guard's smoke (2) + the guard + the reported block's smoke (3) + the block (30 registered, 10 in fast mode)
 EXPECT_ROWS = ({("41c", False): 2, ("41c", True): 98, ("46", False): 2, ("46", True): 24, ("47", False): 4, ("47", True): 122, ("48", False): 2, ("48", True): 98,
-                ("52", False): 5, ("52", True): 131, ("41d", False): 3, ("41d", True): 99, ("53", False): 8, ("53", True): 68, ("54", False): 3, ("54", True): 99, ("54b", False): 6, ("54b", True): 42, ("56", False): 4, ("56", True): 68} if FULL else
+                ("52", False): 5, ("52", True): 131, ("41d", False): 3, ("41d", True): 99, ("53", False): 8, ("53", True): 68, ("54", False): 3, ("54", True): 99, ("54b", False): 6, ("54b", True): 42, ("56", False): 4, ("56", True): 74} if FULL else
                {("41c", False): 2, ("41c", True): 18, ("46", False): 2, ("46", True): 10, ("47", False): 4, ("47", True): 28, ("48", False): 2, ("48", True): 18,
                 ("52", False): 5, ("52", True): 31, ("41d", False): 3, ("41d", True): 19, ("53", False): 8, ("53", True): 24, ("54", False): 3, ("54", True): 19, ("54b", False): 6, ("54b", True): 18, ("56", False): 4, ("56", True): 22})
 # (file, old, new, expected count): each must match, so a drift in the scripts fails here instead of silently running the full design
@@ -133,7 +133,7 @@ FAST_PATCHES = [
     ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 60 ] || { echo "ABORT-PLAN53', '[ "${#tbl[@]}" -eq 16 ] || { echo "ABORT-PLAN53', 1),
     ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 36 ] || { echo "ABORT-PLAN54B', '[ "${#tbl[@]}" -eq 12 ] || { echo "ABORT-PLAN54B', 1),
     ("place38_parse.py", "for rp in range(1, 4) for sd", "for rp in range(1, 2) for sd", 1),
-    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 64 ] || { echo "ABORT-PLAN56 table', '[ "${#tbl[@]}" -eq 18 ] || { echo "ABORT-PLAN56 table', 1),
+    ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 70 ] || { echo "ABORT-PLAN56 table', '[ "${#tbl[@]}" -eq 18 ] || { echo "ABORT-PLAN56 table', 1),
     ("place38_parse.py", "REPS_CAP56 = None  ", "REPS_CAP56 = 1  ", 1),
     ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
     ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
@@ -608,7 +608,7 @@ def repl56():
         for r in led:
             per.setdefault((r["cell"], r["arm"], r["seed"], r["rep"]), []).append(r)
         check("56/repl: the session completes (rc 0, LD-ALL-DONE) with 2 replaced slots: 20 ledger rows for 18 slots, no slot with more than 2 rows",
-              rc == 0 and "LD-ALL-DONE" in out and len(led) == (66 if FULL else 20) and len(per) == (64 if FULL else 18) and max(len(v) for v in per.values()) == 2, (rc, len(led), len(per), tail(out, 6)))
+              rc == 0 and "LD-ALL-DONE" in out and len(led) == (72 if FULL else 20) and len(per) == (70 if FULL else 18) and max(len(v) for v in per.values()) == 2, (rc, len(led), len(per), tail(out, 6)))
         check("56/repl: the VOID pool echo is replaced once: P384's first row is WITNESS-FAIL on gate-pool (echo 2048), its replacement LIVE with the pool echoed, 'REPLACE56 ... reason=pool-echo' in the ledger",
               len(p384) == 2 and p384[0]["status"] == "WITNESS-FAIL" and pp.is_pool_void56(p384[0]) and p384[1]["status"] == "LIVE" and p384[1]["gate_pool_cli"] == "384"
               and re.search(r"^REPLACE56 c8-100 P384 s42 rep=1 reason=pool-echo", ldtxt, re.M) is not None, [(r["status"], r["problems"]) for r in p384])

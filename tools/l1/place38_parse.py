@@ -256,7 +256,7 @@ CELLS56 = ("c8-100", "c2-100", "c1s-400")
 POOLS56 = {"c8-100": (640, 384, 256, 160, 112, 80), "c2-100": (2048, 384, 256, 192, 160, 128), "c1s-400": (2048, 512, 1024, 768, 384)}
 CONTROL56 = {"c8-100": 640, "c2-100": 2048, "c1s-400": 2048}               # the c8 control is the pool of section 54b's B640; c2 / c1s the shipped pool
 N56 = {"c8-100": {p: 4 for p in POOLS56["c8-100"]}, "c2-100": {p: 3 for p in POOLS56["c2-100"]},
-       "c1s-400": {2048: 6, 512: 6, 1024: 3, 768: 3, 384: 3}}
+       "c1s-400": {2048: 9, 512: 9, 1024: 3, 768: 3, 384: 3}}
 NLIVE56 = {"c8-100": 2, "c2-100": 1, "c1s-400": 1}                          # live paths = the ceiling's N: the realised cap is max(N * pool, floor)
 BYTES56 = {"c8-100": 600000000, "c2-100": 600000000, "c1s-400": 5000000000}
 DUMP_ARM56, DUMP_CELL56, DUMP_REP56, DUMP_MIN_RECORDS56 = "P640D", "c8-100", 5, 100000
@@ -278,7 +278,7 @@ def arm_pool56(arm):
 
 def plan56(smoke=False):
     """[(cell, store, arm, seed, rep)] in run order (status 56): per cell, replicate k = 0.. holds every pool with n > k, rotated by k (a cyclic Latin square), seed 42 / 7 alternating;
-    the pools with the larger n (c1s 2048 and 512) therefore take the extra replicates at the block's end, rotated; the SUCC_DUMP row last. 64 rows. A VOID pool echo or a short dump
+    the pools with the larger n (c1s 2048 and 512) therefore take the extra replicates at the block's end, rotated; the SUCC_DUMP row last. 70 rows. A VOID pool echo or a short dump
     is replaced once by the battery (replace56), which adds a row to the ledger, not to this table."""
     if smoke:
         return list(SMOKE56)
@@ -1321,7 +1321,7 @@ def check54b(path):
 
 
 def check56(path):
-    """rc 0 iff the sweep's battery finished and the ledger holds a row for every slot of the table (64; a replaced slot has two rows, only the first of which is VOID)."""
+    """rc 0 iff the sweep's battery finished and the ledger holds a row for every slot of the table (70; a replaced slot has two rows, only the first of which is VOID)."""
     rows, _ = rows_of([path])
     t = open(path, errors="replace").read()
     n = expect_rows56()

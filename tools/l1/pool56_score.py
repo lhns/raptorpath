@@ -53,7 +53,7 @@ PERF_TIMEOUT_S = 300
 TOL_FLOOR = 0.01                                # re-basing tolerance floor, a share of the B640 median
 F3_R0_REF = 9800.0
 F10_RATIO = 3.0
-F8_MIN_ROWS = 4                                 # unflagged rows needed in each n = 6 arm (P512, P2048) for F8 to be read
+F8_MIN_ROWS = 5                                 # unflagged rows needed in each n = 9 arm (P512, P2048) for F8 to be read (collapse p ~ 1/3: UNSCOREABLE ~ 0.15 per arm)
 S54B_DEFAULT = os.path.join(HERE, "..", "..", "docs", "l1-raw", "s54", "rep54b-diag-ld.tgz")
 
 _PP = (r" p%d:infl=\d+/sinfl=\d+/bdp\d+\S* sout=\d+ khr=\S+ btlbw=\d+.*?rtt=(\d+)/wrtt=(\d+)/rtp\d+ms rtp_us=(\d+).*?qcwnd=(\d+)")

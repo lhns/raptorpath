@@ -2,7 +2,7 @@
 """Tests for the status 56 harness (plan 56, the store-pool sweep, REPORTED ONLY: tools/l1/pool56_score.py, the place38_parse parts, the battery / run_all wiring).
 
 Four layers, each with its red case beside the green one:
-  1. the plan table (64 slots, blocks, rotation, seeds, the c1s extras at the end, the dump row last) and the shell side (arm env, sizes, scrub, counts);
+  1. the plan table (70 slots, blocks, rotation, seeds, the c1s extras at the end, the dump row last) and the shell side (arm env, sizes, scrub, counts);
   2. row readouts on synthetic [DIAG] lines with KNOWN answers (rates, rtt, T-bar, T0, ell, the Little residual, bind fraction, rtp over boot, the late window at 15 s / 5 s at c1s,
      single-path cells) and the row witnesses (pool echo, dump gate, seat sha);
   3. CALIBRATION on section 54b's committed B640 rows (docs/l1-raw/s54/rep54b-diag-ld.tgz): the scorer's definitions reproduce `docs/derivations/store-law/little54b.out` and the
@@ -47,15 +47,15 @@ def capture(fn, *a, **k):
 
 # ═══ 1. the plan table and the shell side ═══
 T = pp.plan56()
-check("the table has 64 slots, all distinct (cell, arm, seed, rep)", len(T) == 64 and len({(c, a, s, r) for c, _, a, s, r in T}) == 64, len(T))
+check("the table has 70 slots, all distinct (cell, arm, seed, rep)", len(T) == 70 and len({(c, a, s, r) for c, _, a, s, r in T}) == 70, len(T))
 cnt = {}
 for c, _, a, s, r in T:
     cnt[(c, a)] = cnt.get((c, a), 0) + 1
 want_cnt = {**{("c8-100", "P%d" % p): 4 for p in (640, 384, 256, 160, 112, 80)}, **{("c2-100", "P%d" % p): 3 for p in (2048, 384, 256, 192, 160, 128)},
-            ("c1s-400", "P2048"): 6, ("c1s-400", "P512"): 6, ("c1s-400", "P1024"): 3, ("c1s-400", "P768"): 3, ("c1s-400", "P384"): 3, ("c8-100", "P640D"): 1}
-check("n per arm: c8 4 x 6 pools, c2 3 x 6, c1s 6 (2048, 512) and 3 (1024, 768, 384), the dump row 1 -- 24 + 18 + 21 + 1", cnt == want_cnt, {k: v for k, v in cnt.items() if want_cnt.get(k) != v})
+            ("c1s-400", "P2048"): 9, ("c1s-400", "P512"): 9, ("c1s-400", "P1024"): 3, ("c1s-400", "P768"): 3, ("c1s-400", "P384"): 3, ("c8-100", "P640D"): 1}
+check("n per arm: c8 4 x 6 pools, c2 3 x 6, c1s 9 (2048, 512) and 3 (1024, 768, 384), the dump row 1 -- 24 + 18 + 27 + 1", cnt == want_cnt, {k: v for k, v in cnt.items() if want_cnt.get(k) != v})
 order = [c for c, *_ in T]
-check("cells in blocks c8 -> c2 -> c1s, the dump row (a c8 row) last", order == ["c8-100"] * 24 + ["c2-100"] * 18 + ["c1s-400"] * 21 + ["c8-100"] and T[-1][2] == "P640D", order[:3])
+check("cells in blocks c8 -> c2 -> c1s, the dump row (a c8 row) last", order == ["c8-100"] * 24 + ["c2-100"] * 18 + ["c1s-400"] * 27 + ["c8-100"] and T[-1][2] == "P640D", order[:3])
 ok_rot = True
 for cell in ("c8-100", "c2-100", "c1s-400"):
     rows = [x for x in T[:-1] if x[0] == cell]
@@ -71,8 +71,8 @@ for cell in ("c8-100", "c2-100", "c1s-400"):
     ok_rot &= len(set(lead)) == len(lead)                                                    # no pool leads twice
 check("per cell: every pool once per replicate, seeds 42 / 7 alternating, a cyclic Latin rotation, no pool leads twice", ok_rot)
 c1s = [x for x in T if x[0] == "c1s-400"]
-check("c1s: replicates 1-3 hold all five pools (15 rows), the extras (replicates 4-6) hold 2048 and 512 only (6 rows) at the block's end, rotated",
-      [x[4] for x in c1s] == [1] * 5 + [2] * 5 + [3] * 5 + [4, 4, 5, 5, 6, 6] and {x[2] for x in c1s[15:]} == {"P2048", "P512"} and c1s[15][2] != c1s[17][2], [(x[2], x[4]) for x in c1s][15:])
+check("c1s: replicates 1-3 hold all five pools (15 rows), the extras (replicates 4-9) hold 2048 and 512 only (12 rows) at the block's end, rotated",
+      [x[4] for x in c1s] == [1] * 5 + [2] * 5 + [3] * 5 + [4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9] and {x[2] for x in c1s[15:]} == {"P2048", "P512"} and c1s[15][2] != c1s[17][2], [(x[2], x[4]) for x in c1s][15:])
 check("smoke: one row per cell at its smallest pool (c8 P80, c2 P128, c1s P384) and the dump row", [(c, a) for c, _, a, _, _ in pp.plan56(smoke=True)] ==
       [("c8-100", "P80"), ("c2-100", "P128"), ("c1s-400", "P384"), ("c8-100", "P640D")], pp.plan56(smoke=True))
 check("arm names parse to (pool, dump)", pp.arm_pool56("P640") == (640, False) and pp.arm_pool56("P640D") == (640, True) and pp.arm_pool56("B640") == (None, False) and pp.arm_pool56("P") == (None, False))
@@ -84,9 +84,9 @@ check("the battery's p56_bytes is the scorer's BYTES56", m is not None and int(m
 check("the battery: P56 is single-seat (P41 stays 0), the arm env sets RWM_STORE_PATH_POOL at every pool but 2048 and RWM_SUCC_DUMP=1 on the D arm",
       'P56=0; [ "$PLAN" = "56" ] && { P56=1; P38=1; PCAND=1; }' in shell and '[ "$p56pool" = "2048" ] || arm_env=(RWM_STORE_PATH_POOL="$p56pool")' in shell
       and '[ "$p56dump" = 1 ] && arm_env+=(RWM_SUCC_DUMP=1)' in shell)
-check("the battery: instrument env RWM_RTOBS RWM_RDIAG with RWM_PERF_TIMEOUT_S=300, the scrub withholds RWM_STORE_PATH_POOL / RWM_SUCC_DUMP / RWM_SUCC_DUMP_MAX, 4 smoke rows, 64 slots",
+check("the battery: instrument env RWM_RTOBS RWM_RDIAG with RWM_PERF_TIMEOUT_S=300, the scrub withholds RWM_STORE_PATH_POOL / RWM_SUCC_DUMP / RWM_SUCC_DUMP_MAX, 4 smoke rows, 70 slots",
       '[ "$P56" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300)' in shell and "-u RWM_STORE_PATH_POOL -u RWM_SUCC_DUMP -u RWM_SUCC_DUMP_MAX" in shell
-      and '-eq 4 ] || { echo "ABORT-PLAN56 smoke' in shell and '-eq 64 ] || { echo "ABORT-PLAN56 table' in shell)
+      and '-eq 4 ] || { echo "ABORT-PLAN56 smoke' in shell and '-eq 70 ] || { echo "ABORT-PLAN56 table' in shell)
 check("the battery replaces once: run_slot56 reruns the slot when place38_parse.replace56 says so, and only the full battery uses it (the smoke runs each row once)",
       'replace56 "$OUT"' in shell and "run_slot56()" in shell and 'if [ "$1" = "1" ]; then run_one' in shell)
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
@@ -94,8 +94,8 @@ check("run_all: plan 56 is a candidate plan without a BASE tree (P46 yes, P41 no
       'P56=0; [ "$PLAN" = "56" ] && { P56=1; P46=1; }' in runall and "LD_SHM_MIN_KB:-1048576" in runall and "stage rep56 56" in runall and "ABORT-SHM-SPACE" in runall)
 rc = subprocess.run([sys.executable, os.path.join(HERE, "place38_parse.py"), "plan56"], capture_output=True, text=True)
 lines = [x for x in rc.stdout.replace("\r", "").split("\n") if x]
-check("place38_parse plan56 prints the 64-row table the battery reads (first row c8-100 def P640 42 1) and plan56 smoke 4 rows",
-      len(lines) == 64 and lines[0] == "c8-100 def P640 42 1" and len([x for x in subprocess.run([sys.executable, os.path.join(HERE, "place38_parse.py"), "plan56", "smoke"], capture_output=True, text=True).stdout.split("\n") if x.strip()]) == 4, lines[:2])
+check("place38_parse plan56 prints the 70-row table the battery reads (first row c8-100 def P640 42 1) and plan56 smoke 4 rows",
+      len(lines) == 70 and lines[0] == "c8-100 def P640 42 1" and len([x for x in subprocess.run([sys.executable, os.path.join(HERE, "place38_parse.py"), "plan56", "smoke"], capture_output=True, text=True).stdout.split("\n") if x.strip()]) == 4, lines[:2])
 
 
 # ═══ 2. row readouts on synthetic [DIAG] lines ═══
@@ -353,17 +353,17 @@ check("F7: c2 goodput at 192 < 0.95 x control: 95.0 does not fire (strict), 94.9
 
 
 def c1s_arms(n512, flagged=0, g512=94.0, g2048=100.0, gflag=10.0):
-    rows = [mk("c1s-400", 2048, rep=i, goodput_mbps=g2048) for i in range(1, 7)]
+    rows = [mk("c1s-400", 2048, rep=i, goodput_mbps=g2048) for i in range(1, 10)]
     rows += [mk("c1s-400", 512, rep=i, goodput_mbps=(gflag if i <= flagged else g512), qc_share=(0.5 if i <= flagged else 0.0)) for i in range(1, n512 + 1)]
     return rows
 
 
-s8 = states(arms_of(c1s_arms(6)))[8]
-check("F8: c1s goodput at 512 >= 0.95 x control FIRES at equality (95.0 vs 95.0), 94.9 does not", states(arms_of(c1s_arms(6, g512=95.0)))[8][0] == ps.FIRES and states(arms_of(c1s_arms(6, g512=94.9)))[8][0] == ps.NOFIRE)
-f8_flag = states(arms_of(c1s_arms(6, flagged=2, g512=96.0, gflag=10.0)))[8]
+s8 = states(arms_of(c1s_arms(9)))[8]
+check("F8: c1s goodput at 512 >= 0.95 x control FIRES at equality (95.0 vs 95.0), 94.9 does not", states(arms_of(c1s_arms(9, g512=95.0)))[8][0] == ps.FIRES and states(arms_of(c1s_arms(9, g512=94.9)))[8][0] == ps.NOFIRE)
+f8_flag = states(arms_of(c1s_arms(9, flagged=4, g512=96.0, gflag=10.0)))[8]
 check("F8 excludes the quinn-collapsed rows and states the count: two collapsed P512 rows at 10 Mbit/s would drag the median under 0.95 x control, excluded they leave 96 -> FIRES, 'excluded 2' printed",
-      f8_flag[0] == ps.FIRES and "quinn-collapse excluded 2" in f8_flag[1] and states(arms_of(c1s_arms(6, flagged=0, g512=96.0)))[8][0] == ps.FIRES and
-      sorted(ps.gp(r) for r in arms_of(c1s_arms(6, flagged=2, g512=96.0))[("c1s-400", "FLAGGED:P512")]) == [10.0, 10.0] and len(arms_of(c1s_arms(6, flagged=2, g512=96.0))[("c1s-400", "P512")]) == 4, f8_flag)
+      f8_flag[0] == ps.FIRES and "quinn-collapse excluded 4" in f8_flag[1] and states(arms_of(c1s_arms(9, flagged=0, g512=96.0)))[8][0] == ps.FIRES and
+      sorted(ps.gp(r) for r in arms_of(c1s_arms(9, flagged=4, g512=96.0))[("c1s-400", "FLAGGED:P512")]) == [10.0] * 4 and len(arms_of(c1s_arms(9, flagged=4, g512=96.0))[("c1s-400", "P512")]) == 5, f8_flag)
 check("F8 with every P512 row collapsed is UNSCOREABLE (nothing left to read), with the exclusion count", states(arms_of(c1s_arms(3, flagged=3)))[8][0] == ps.UNSC and "excluded 3" in states(arms_of(c1s_arms(3, flagged=3)))[8][1])
 # F9
 f9 = states(arms_of([mk("c8-100", 640)]), None, [dict(mk("c8-100", 640, arm="P640D"), succdump={"records": 123456})])[9]
@@ -458,7 +458,7 @@ with tempfile.TemporaryDirectory() as td:
     ps.score([led], out=buf.append, s54b_src=os.path.join(td, "absent.tgz"))
     sc = "\n".join(buf)
     check("report: VERDICT56 counts the slots, the replaced row, the DNF, the UNBOUND rows (P384 at c1s) and the collapse flag; the dump row's records and bytes are printed",
-          re.search(r"^VERDICT56 REPORTED-ONLY slots=\d+/64 live=\d+ void=0 replaced=1 dnf=1 unbound=1 qcollapse=1 falsifiers=F1:\S+,F2:\S+", sc, re.M) is not None
+          re.search(r"^VERDICT56 REPORTED-ONLY slots=\d+/70 live=\d+ void=0 replaced=1 dnf=1 unbound=1 qcollapse=1 falsifiers=F1:\S+,F2:\S+", sc, re.M) is not None
           and "records 150000" in sc and "1234567 bytes" in sc, [ln for ln in buf if ln.startswith("VERDICT56")])
     check("report: the replaced row and the UNBOUND / QCOLLAPSE / DNF tags are listed, the control is exempt from UNBOUND (c1s P2048 binds 0.7: not tagged), F9 is UNSCOREABLE",
           "REPLACED c8-100 P384 s7 rep2 WITNESS-FAIL" in sc and re.search(r"c1s-400\s+P384\s+s42\s+r1 .*UNBOUND", sc) and re.search(r"c1s-400\s+P512\s+s42\s+r2 .*QCOLLAPSE", sc) and re.search(r"c8-100\s+P112\s+s7\s+r2 .*DNF", sc)
@@ -487,7 +487,7 @@ with tempfile.TemporaryDirectory() as td:
         for c, _, a, sd, rp in slots56:
             fh.write("P38ROW " + json.dumps({"cell": c, "arm": a, "seed": sd, "rep": rp, "status": "LIVE", "problems": []}) + "\n")
     ok_nodone = pp.check56(led)
-check("check56: rc 0 iff the battery finished and every slot of the table has a row; 63 of 64 slots, or no LD-BATTERY-DONE, is rc 1", ok_all == 0 and ok_short == 1 and ok_nodone == 1, (ok_all, ok_short, ok_nodone))
+check("check56: rc 0 iff the battery finished and every slot of the table has a row; 69 of 70 slots, or no LD-BATTERY-DONE, is rc 1", ok_all == 0 and ok_short == 1 and ok_nodone == 1, (ok_all, ok_short, ok_nodone))
 
 # ═══ 4b. review additions: the tick's own n_live, F8's minimum, F10's T0-spread rule ═══
 def drop_to_one_leg(lines, t_from):
@@ -515,9 +515,9 @@ def c1s_n(n512, n2048, flagged=0):
     return rows
 
 
-check("F8 minimum: 3 unflagged P512 rows -> UNSCOREABLE (a 6-row arm with 3 collapsed), 4 unflagged -> read; 3 unflagged control rows -> UNSCOREABLE too",
-      states(arms_of(c1s_n(6, 6, flagged=3)))[8][0] == ps.UNSC and states(arms_of(c1s_n(6, 6, flagged=2)))[8][0] == ps.FIRES and states(arms_of(c1s_n(6, 3)))[8][0] == ps.UNSC
-      and states(arms_of(c1s_n(3, 6)))[8][0] == ps.UNSC and "needs >= 4 unflagged" in states(arms_of(c1s_n(6, 6, flagged=3)))[8][1])
+check("F8 minimum: 4 unflagged P512 rows -> UNSCOREABLE (an n = 9 arm with 5 collapsed), 5 unflagged -> read; 4 unflagged control rows -> UNSCOREABLE too",
+      states(arms_of(c1s_n(9, 9, flagged=5)))[8][0] == ps.UNSC and states(arms_of(c1s_n(9, 9, flagged=4)))[8][0] == ps.FIRES and states(arms_of(c1s_n(9, 4)))[8][0] == ps.UNSC
+      and states(arms_of(c1s_n(4, 9)))[8][0] == ps.UNSC and "needs >= 5 unflagged" in states(arms_of(c1s_n(9, 9, flagged=5)))[8][1])
 
 
 def sq_pts(dq, spread):
@@ -533,22 +533,22 @@ check("T0 spread guard = max - min over the smallest-W arm's rows of the row T-b
 
 # a c1s collapse row near the 300 s timeout: 5 GB at ~150 Mbit/s takes ~267 s, finishes (a summary, not a DNF), is FLAGGED by its qcwnd and EXCLUDED from F8 -- never goodput 0
 def c1s_collapse_rows(n_collapse, n_ok, dnf_collapse=False):
-    rows = [mk("c1s-400", 2048, rep=i, goodput_mbps=400.0) for i in range(1, 7)]
+    rows = [mk("c1s-400", 2048, rep=i, goodput_mbps=400.0) for i in range(1, 10)]
     rows += [mk("c1s-400", 512, rep=i, goodput_mbps=340.0) for i in range(1, n_ok + 1)]
     rows += [mk("c1s-400", 512, rep=10 + i, goodput_mbps=(None if dnf_collapse else 150.0), qc_share=0.4, seconds=(None if dnf_collapse else 267.0), dnf=dnf_collapse) for i in range(1, n_collapse + 1)]
     return rows
 
 
-cr = c1s_collapse_rows(2, 4)
+cr = c1s_collapse_rows(2, 5)
 collapsed = [r for r in cr if r["arm"] == "P512" and r["t56"]["qc_share"] == 0.4]
 f8c = states(arms_of(cr))[8]
 check("c1s collapse near the timeout: a 150 Mbit/s row (267 s < 300 s) is not a DNF (goodput 150, not 0), is flagged by its qcwnd share, and F8 excludes it with the count stated "
-      "(unflagged P512 n 4, excluded 2): 340 < 0.95 x 400 -> DOES-NOT-FIRE",
-      all(not r["dnf"] and ps.gp(r) == 150.0 and ps.qc_flagged(r) for r in collapsed) and f8c[0] == ps.NOFIRE and "unflagged n 4" in f8c[1] and "quinn-collapse excluded 2" in f8c[1], f8c)
-dn = c1s_collapse_rows(2, 4, dnf_collapse=True)
+      "(unflagged P512 n 5, excluded 2): 340 < 0.95 x 400 -> DOES-NOT-FIRE",
+      all(not r["dnf"] and ps.gp(r) == 150.0 and ps.qc_flagged(r) for r in collapsed) and f8c[0] == ps.NOFIRE and "unflagged n 5" in f8c[1] and "quinn-collapse excluded 2" in f8c[1], f8c)
+dn = c1s_collapse_rows(2, 5, dnf_collapse=True)
 f8d = states(arms_of(dn))[8]
 check("a collapse row that does run past 300 s (a DNF, goodput 0 elsewhere) is ALSO flagged by its qcwnd and excluded from F8, not scored as 0: same verdict, same counts",
-      f8d[0] == ps.NOFIRE and "unflagged n 4" in f8d[1] and "quinn-collapse excluded 2" in f8d[1] and all(ps.qc_flagged(r) for r in dn if r["dnf"]), f8d)
+      f8d[0] == ps.NOFIRE and "unflagged n 5" in f8d[1] and "quinn-collapse excluded 2" in f8d[1] and all(ps.qc_flagged(r) for r in dn if r["dnf"]), f8d)
 with_dnf_scored = states(arms_of([r for r in dn if not ps.qc_flagged(r)] + [dict(r, t56=dict(r["t56"], qc_share=0.0)) for r in dn if r["dnf"]]))[8]
 check("(the red case) the same two rows WITHOUT the flag would count as goodput 0 and flip F8's median reading: with 4 healthy + 2 DNF the median is still 340 but with 3 healthy + 3 DNF it is 170", states(arms_of(
       [mk("c1s-400", 2048, rep=i, goodput_mbps=400.0) for i in range(1, 7)] + [mk("c1s-400", 512, rep=i, goodput_mbps=340.0) for i in (1, 2, 3)] + [mk("c1s-400", 512, rep=i + 10, dnf=True) for i in (1, 2, 3)]))[8][0] == ps.NOFIRE

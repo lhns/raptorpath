@@ -130,7 +130,7 @@ P53=0; [ "$PLAN" = "53" ] && { P53=1; P38=1; P41=1; PCAND=1; }
 P54B=0; [ "$PLAN" = "54b" ] && { P54B=1; P38=1; P41=1; PCAND=1; }
 # Plan 56 (status 56, the store-pool sweep; REPORTED ONLY, no build): ONE seat. LD_BIN (current main, pinned by LD_CAND_SHA in the envelope) runs every row; there is no BASE binary
 # (P41 stays 0: no LD_BIN_BASE, no second tree, no "BASE differs from CAND" check -- the A/B does not exist here). c8-100 / c2-100 at 600 MB and c1s-400 at 5 GB, arm P<pool> =
-# RWM_STORE_PATH_POOL=<pool> (nothing at the shipped 2048), P640D = pool 640 + RWM_SUCC_DUMP=1; 64 rows in blocks c8 -> c2 -> c1s -> the dump row, RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300.
+# RWM_STORE_PATH_POOL=<pool> (nothing at the shipped 2048), P640D = pool 640 + RWM_SUCC_DUMP=1; 70 rows in blocks c8 -> c2 -> c1s -> the dump row, RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300.
 P56=0; [ "$PLAN" = "56" ] && { P56=1; P38=1; PCAND=1; }
 # Plan 54 (the guard) is plan 41d unchanged; LD_WITNESS54=1 (run_all carries it for LD_PLAN=54) adds the row witnesses in the parser and the [SNAPV] preflight below.
 W54="${LD_WITNESS54:-0}"; [ "$W54" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
@@ -821,7 +821,7 @@ if [ "$PLAN" = "54b" ]; then
   exit 0
 fi
 
-# ── plan 56 (status 56, the store-pool sweep): 64 rows = c8-100 (6 pools x 4) -> c2-100 (6 x 3) -> c1s-400 (2048 and 512 x 6, 1024 / 768 / 384 x 3) -> the c8 RWM_SUCC_DUMP row; smoke = 4 ──
+# ── plan 56 (status 56, the store-pool sweep): 70 rows = c8-100 (6 pools x 4) -> c2-100 (6 x 3) -> c1s-400 (2048 and 512 x 9, 1024 / 768 / 384 x 3) -> the c8 RWM_SUCC_DUMP row; smoke = 4 ──
 # A slot whose pool echo is VOID, or whose dump row wrote under 100 000 records, is re-run ONCE (place38_parse.replace56 decides from the ledger); the replacement is a second row of the same slot.
 run_slot56() { # cell arm seed rep store
   local why
@@ -842,7 +842,7 @@ plan56() { # smoke -> the whole plan (0), or the four smoke rows (1)
     [ "${#tbl[@]}" -eq 4 ] || { echo "ABORT-PLAN56 smoke table has ${#tbl[@]} rows" >> "$OUT"; exit 3; }
   else
     mapfile -t tbl < <(python3 ./place38_parse.py plan56)
-    [ "${#tbl[@]}" -eq 64 ] || { echo "ABORT-PLAN56 table has ${#tbl[@]} rows (64)" >> "$OUT"; exit 3; }
+    [ "${#tbl[@]}" -eq 70 ] || { echo "ABORT-PLAN56 table has ${#tbl[@]} rows (70)" >> "$OUT"; exit 3; }
   fi
   for line in "${tbl[@]}"; do
     read -r cell store arm seed rep <<< "$line"

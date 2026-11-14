@@ -68,7 +68,7 @@
 # LD_PLAN=56 (status 56, the store-pool sweep, REPORTED ONLY, no build): ONE seat -- current main (LD_CAND_SHA = $LD_ROOT/COMMIT) runs every row; there is no BASE tree, no second build, no LD_BASE_SHA (ignored with a
 # note). Pre-flight: >= 1 GB free on /dev/shm (the RWM_SUCC_DUMP row). Suites: the engine suites are skipped only if a per-file sha256 manifest of raptorpath/src + raptorpath/tests equals tools/l1/ref56-manifest.sha256
 # (git at cand54 7fd92dd5; regenerate with ref_manifest.sh; LD_REF_MANIFEST overrides), else the full suites run as plan 54 did; the tools tests (python and bash) always run; LD_PRIOR_TESTS is refused. Then ONE stage
-# in $RUN/rep56: smoke = 4 rows (c8 P80, c2 P128, c1s P384, the c8 P640D dump row), then 64 slots (c8 6 pools x 4, c2 6 x 3, c1s 2048 / 512 x 6 and 1024 / 768 / 384 x 3, the dump row), RWM_PERF_TIMEOUT_S=300;
+# in $RUN/rep56: smoke = 4 rows (c8 P80, c2 P128, c1s P384, the c8 P640D dump row), then 70 slots (c8 6 pools x 4, c2 6 x 3, c1s 2048 / 512 x 9 and 1024 / 768 / 384 x 3, the dump row), RWM_PERF_TIMEOUT_S=300;
 # a VOID pool echo and a dump under 100 000 records are re-run once (pool56_score.py; LD_REHEARSE=1 and LD_HARD as plan 54b).
 # LD_PLAN=53 (status 53, stale gap reports under lever B): plan 52's envelope without the guard. The suites on CAND's tree first (a REAL failure is ABORT-TESTS and nothing runs; LD_PRIOR_TESTS and
 # LD_REHEARSE are supported), then ONE REPORTED-ONLY stage in $RUN/rep53 (LD_PLAN=53: c8-100 at 600 MB with BASE / CAND / CANDS / BASES / CW0 n = 6, then c1d-400 at 5 GB with BASE 12 / CAND 12 / CANDS 6;
@@ -223,8 +223,8 @@ if [ "$PLAN" = "34" ] || [ "$PLAN" = "36" ] || [ "$P38" = 1 ] || [ "$P46" = 1 ] 
   era "LD-ALL precondition met ${PREC#* } io=$(grep '^full' "$PROCFS"/pressure/io)"
 fi
 if [ "$P56" = 1 ]; then
-  # Plan 56 is launched with LD_HARD = launch + 4 h: a reference-manifest hit needs about 1 h 40 (2 h worst case), a miss adds the 44-54 min engine suites (2 h 25 typical, 2 h 50 worst).
-  # Under 3 h left cannot hold a miss session, so it is refused before anything runs (LD_HARD_MIN_S is a test seam).
+  # Plan 56 (70 slots) is launched with LD_HARD = launch + 4 h: a reference-manifest hit needs about 2 h 05 typical and 3 h 20 worst case (every non-control c1s row at its 300 s timeout); a miss adds the
+  # 44-54 min engine suites (about 2 h 50 typical, 4 h 10 in the double worst case). Under 3 h left cannot hold even a typical miss session, so it is refused before anything runs (LD_HARD_MIN_S is a test seam).
   P56_LEFT=$(( LD_HARD - $(date +%s) ))
   era "LD-ALL plan 56 budget: ${P56_LEFT}s to LD_HARD (launch + 4 h expected; at least ${LD_HARD_MIN_S:-10800}s required)"
   [ "$P56_LEFT" -ge "${LD_HARD_MIN_S:-10800}" ] || { era "ABORT-BUDGET plan 56: ${P56_LEFT}s before LD_HARD, need at least ${LD_HARD_MIN_S:-10800}s; NOTHING WAS RUN"; exit 3; }
@@ -592,7 +592,7 @@ if [ "$PLAN" = "56" ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "47" ] || [ "$PLAN" 
     fail_all "stage rep54b did not complete (rep54b/)"
   fi
   if [ "$PLAN" = "56" ]; then
-    # Status 56, the store-pool sweep: no guard, one seat; ONE reported-only stage in its own ledger dir (smoke with the rehearsal criteria -> 64 slots -> score -> slot check).
+    # Status 56, the store-pool sweep: no guard, one seat; ONE reported-only stage in its own ledger dir (smoke with the rehearsal criteria -> 70 slots -> score -> slot check).
     ROK=0
     stage rep56 56; rrc=$?
     if [ "$rrc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
