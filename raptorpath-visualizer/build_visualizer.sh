@@ -10,6 +10,10 @@ cd "$(dirname "$0")/.."
 echo "Building WASM..."
 wasm-pack build raptorpath-wasm --target web --out-dir ../raptorpath-visualizer/wasm 2>&1 | tail -3
 
+# ADR-0077: the core crate must stay wasm-clean and pass its deny list.
+echo "Checking raptorpath-core on wasm32 + deny list (ADR-0077)..."
+cargo check -p raptorpath-core --target wasm32-unknown-unknown
+cargo test -p raptorpath-core --test deny_list
 echo "Base64-encoding WASM binary..."
 WASM_B64=$(base64 -w0 raptorpath-visualizer/wasm/raptorpath_wasm_bg.wasm)
 echo "  WASM size: $(wc -c < raptorpath-visualizer/wasm/raptorpath_wasm_bg.wasm) bytes"
