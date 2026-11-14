@@ -21,7 +21,8 @@ Definitions (status 56; `docs/derivations/store-law/little54b.py` and `pool54_sc
   * resid = median over LATE ticks of (cap - sum r_i * rtt_i / 1000) with cap = the tick's OWN `win=a/b` denominator; resid_rel = resid / median cap (the Little residual).
   * bind fraction = the share of LATE ticks with cap >= N * pool (the ceiling max(N * pool, floor) is the bind); the realised cap = the LATE-window mean of b.
   * old holes = median of the server [RANK] holes - tail_overcount over readouts[15:-6]; in-order delay late = the sending ticks at t >= LATE_T (inorder_delay(source_only=True)).
-  * quinn-window collapse (c1s flag) = the share of [DIAG] ticks (t >= 1 s) with path 0's qcwnd below 1/4 of the row median > 0.1 (place43_parse.qcwnd_series; section 43b).
+  * quinn-window collapse (c1s flag) = the share of [DIAG] windows (t >= 1 s) whose leg-0 qcwnd is below the leg's BDP (place38_parse.qcwnd_below_bdp) > 0.1: absolute, so a row that collapsed for its whole
+    run is flagged (a relative-to-median form reads 0 on it). Flagged rows (a DNF included) are excluded from every arm median and falsifier and listed apart; onset = the first 4 s window below the BDP that stays below.
 Row treatment: pool-echo mismatch (or the dump gate, or a foreign binary) = VOID, replaced once by the battery; control arms are exempt from the bind rule; a non-control row with bind
 fraction < 0.95 is UNBOUND (kept, reported at its realised cap, plotted at that W, never replaced); a DNF row is LIVE with goodput 0 and every other readout from its [DIAG] lines.
 Nothing here is a verdict: the falsifiers F1-F10 are evaluated and printed (FIRES / DOES-NOT-FIRE / UNSCOREABLE) and the sweep decides nothing by itself."""
@@ -52,7 +53,7 @@ PERF_TIMEOUT_S = 300
 TOL_FLOOR = 0.01                                # re-basing tolerance floor, a share of the B640 median
 F3_R0_REF = 9800.0
 F10_RATIO = 3.0
-F8_MIN_ROWS = 4                                 # unflagged rows needed in each n = 6 arm (P512, P2048) for F8 to be read
+F8_MIN_ROWS = 5                                 # unflagged rows needed in each n = 9 arm (P512, P2048) for F8 to be read (collapse p ~ 1/3: UNSCOREABLE ~ 0.15 per arm)
 S54B_DEFAULT = os.path.join(HERE, "..", "..", "docs", "l1-raw", "s54", "rep54b-diag-ld.tgz")
 
 _PP = (r" p%d:infl=\d+/sinfl=\d+/bdp\d+\S* sout=\d+ khr=\S+ btlbw=\d+.*?rtt=(\d+)/wrtt=(\d+)/rtp\d+ms rtp_us=(\d+).*?qcwnd=(\d+)")
@@ -174,14 +175,22 @@ def succ_xp(srv):
         return None
 
 
-def qc_collapse(cli):
-    """-> (share of windows with path 0's qcwnd < 1/4 of the row median, n windows); (None, 0) without a series (place43_parse.qcwnd_series: ticks with t >= 1 s)."""
-    import place43_parse as p43
-    qc = p43.qcwnd_series(cli)
-    if not qc:
-        return None, 0
-    m = lc.med(qc)
-    return sum(1 for x in qc if x < QC_FRAC * m) / len(qc), len(qc)
+ONSET_WINDOW_S = 4.0
+
+
+def qc_onset(tk, bdp0):
+    """The collapse onset of a row: the start (s) of the first 4 s window (windows from t = 1 s) whose median qcwnd of leg 0 is below the leg's BDP AND stays below in every later window
+    (windows with fewer than 2 ticks are ignored); None when there is no such window. -> (onset_s or None, n windows)"""
+    wins = {}
+    for d in tk:
+        if d["t"] >= 1.0 and d["qcw"].get(0) is not None:
+            wins.setdefault(int((d["t"] - 1.0) // ONSET_WINDOW_S), []).append(d["qcw"][0])
+    keys = sorted(k for k, v in wins.items() if len(v) >= 2)
+    below = [lc.med(wins[k]) < bdp0 for k in keys]
+    for n, k in enumerate(keys):
+        if all(below[n:]):
+            return 1.0 + k * ONSET_WINDOW_S, len(keys)
+    return None, len(keys)
 
 
 def row_metrics(cli, srv, drv, nbytes=None, cell=C8, pool=None):
@@ -225,7 +234,25 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=C8, pool=None):
     m["old_holes"], m["rank_readouts"] = old_holes(srv), len([ln for ln in srv or [] if ln.startswith("[RANK]")])
     il = inorder_late(cli, LATE_T[cell])
     m["inorder_mean_late"], m["inorder_p50_late"], m["inorder_p95_late"] = (il["mean"], il["p50"], il["p95"]) if il else (None, None, None)
-    m["qc_share"], m["qc_n"] = qc_collapse(cli)
+    # quinn-window collapse (absolute form, section 47 / 43b): the share of [DIAG] windows (t >= 1 s) whose leg-0 qcwnd is BELOW the leg's BDP (place38_parse.qcwnd_below_bdp, already a row
+    # field); a relative-to-median form reads 0 on a row that collapsed for its whole run. The pre-onset window (t from 1 s to the onset) is the collapse row's map point.
+    qb = _pp().qcwnd_below_bdp(cli, cell)
+    m["qc_share"], m["qc_n"] = (qb["per_leg"][0], qb["n"]) if qb else (None, 0)
+    m["qc_onset_s"], m["pre_r"], m["pre_Tbar_ms"] = None, None, None
+    if qb and m["qc_share"] > QC_SHARE:
+        on, _ = qc_onset(tk, qb["bdp"][0])
+        m["qc_onset_s"] = on
+        if on is not None:
+            pre = window_stat([d for d in tk if 1.0 <= d["t"] < on and (d["src"] or 0) > 0], legs, 4)
+            if pre:
+                m["pre_r"], m["pre_Tbar_ms"] = pre["R"], pre["Tbar_ms"]
+    # who limits: quinn's send-buffer backlog (dgq hand - tx) as a share of the cap W, per leg and summed
+    capw = m["cap_med"]
+    for i in (0, 1):
+        q_ = m.get("q_late%d" % i)
+        m["qshare%d" % i] = (q_ / capw) if (q_ is not None and capw) else None
+    qs = [m["qshare%d" % i] for i in legs if m.get("qshare%d" % i) is not None]
+    m["qshare_sum"] = sum(qs) if len(qs) == len(legs) and qs else None
     hx = hold_xp(cli)
     for i in (0, 1):
         m[f"hold_sp{i}"], m[f"hold_xp{i}"], m[f"hold_xpf{i}"] = hx.get(i, (None, None, None))
@@ -288,7 +315,10 @@ READOUTS = [
     ("cap bind fraction (cap >= n_live x pool)", lambda r, t: t.get("bind_frac"), 3),
     ("n_live (LATE median of np=)", lambda r, t: t.get("nlive_med"), 1),
     ("share of LATE ticks with n_live < N", lambda r, t: t.get("nlive_lt_share"), 3),
-    ("qcwnd collapse share", lambda r, t: t.get("qc_share"), 3),
+    ("qcwnd below BDP share (collapse if > 0.10, c1s)", lambda r, t: t.get("qc_share"), 3),
+    ("quinn backlog q0 / W", lambda r, t: t.get("qshare0"), 3),
+    ("quinn backlog q1 / W", lambda r, t: t.get("qshare1"), 3),
+    ("quinn backlog (q0 + q1) / W", lambda r, t: t.get("qshare_sum"), 3),
 ]
 # the readouts every smoke row must carry (no None); leg-1 fields are required at c8 only
 REQUIRED = ["goodput_mbps", "tx_sum_late", "r0", "rtt_late0", "rtp_late0", "rtp_boot0", "q_late0", "Tbar_ms", "ell_ms", "resid_late", "resid_rel", "old_holes",
@@ -307,11 +337,16 @@ def tv(r, k):
     return (r.get("t56") or {}).get(k)
 
 
+COLLAPSE_EXEMPT = ("goodput_mbps", "rx_dup", "retx_per_gb", "cpu_cli_s_per_gb")      # a collapse row that hit the timeout has no summary: these four need one
+
+
 def missing(r):
     t = r.get("t56") or {}
     need = REQUIRED + (REQUIRED_C8 if r["cell"] == C8 else [])
+    if qc_flagged(r) and r.get("dnf"):
+        need = [k for k in need if k not in COLLAPSE_EXEMPT]
     out = [k for k in need if t.get(k) is None]
-    if t.get("H0") is None and t.get("tail_s") is None:
+    if t.get("H0") is None and t.get("tail_s") is None and not (qc_flagged(r) and r.get("dnf")):
         out.append("H0")
     return out
 
@@ -341,9 +376,18 @@ def is_unbound(row):
     return b is None or b < BIND_MIN
 
 
+def qc_value(row):
+    """The share of windows with leg-0 qcwnd below the leg's BDP: the row's own `qcwnd_below` field (place38_parse.qcwnd_below_bdp) when it has one, else t56's copy of it."""
+    qb = row.get("qcwnd_below")
+    if qb and qb.get("per_leg"):
+        return qb["per_leg"][0]
+    return tv(row, "qc_share")
+
+
 def qc_flagged(row):
-    """The c1s quinn-window collapse flag (reported in every table, excluded from F8)."""
-    s = tv(row, "qc_share")
+    """The c1s quinn-window collapse flag: more than QC_SHARE of the windows with qcwnd below the BDP. A flagged row (a DNF included) is excluded from every arm median and every
+    falsifier and reported separately; it is never scored as goodput 0."""
+    s = qc_value(row)
     return row["cell"] == C1S and s is not None and s > QC_SHARE
 
 
@@ -364,12 +408,15 @@ def counting(rows):
     return cnt, rep
 
 
+FLAG_PREFIX = "FLAGGED:"
+
+
 def by_arm(rows):
-    """{(cell, arm): [counting non-VOID rows]}."""
+    """{(cell, arm): [counting non-VOID, UNFLAGGED rows]}; the quinn-collapse rows of an arm sit apart under (cell, "FLAGGED:" + arm), so no median or falsifier reads them."""
     out = {}
     for r in rows:
         if not is_void(r):
-            out.setdefault((r["cell"], r["arm"]), []).append(r)
+            out.setdefault((r["cell"], (FLAG_PREFIX if qc_flagged(r) else "") + r["arm"]), []).append(r)
     return out
 
 
@@ -473,7 +520,7 @@ def standing_queue(arms, cell):
     ctrl = [r for r in arms.get((cell, "P%d" % pp.CONTROL56[cell]), [])]
     cg = med([gp(r) for r in ctrl])
     small = arms.get((cell, "P%d" % min(pp.POOLS56[cell])), [])
-    ell = med([tv(r, "ell_ms") for rs in arms.values() for r in rs if r["cell"] == cell])
+    ell = med([tv(r, "ell_ms") for (c_, a_), rs in arms.items() if c_ == cell and not a_.startswith(FLAG_PREFIX) for r in rs])
     floors = leg_floors(arms, cell)
     pts = curve(arms, cell, floors)
     tbv = [x for x in (tv(r, "Tbar_ms") for r in small) if x is not None]
@@ -500,10 +547,7 @@ def test_rows(arms, cell, pool, drop_flagged=False):
     rs = arms.get((cell, "P%d" % pool), [])
     ub = [r for r in rs if is_unbound(r)]
     rs = [r for r in rs if not is_unbound(r)]
-    fl = [r for r in rs if qc_flagged(r)]
-    if drop_flagged:
-        rs = [r for r in rs if not qc_flagged(r)]
-    return rs, len(ub), len(fl)
+    return rs, len(ub), len(arms.get((cell, FLAG_PREFIX + "P%d" % pool), []))      # flagged rows are not in `arms` (by_arm); the third value is how many were set aside
 
 
 def falsifiers(arms, sq=None, dump_rows=()):
@@ -785,6 +829,8 @@ def smoke(path, out=print):
          [f"{r['cell']} {r['arm']}: {', '.join(missing(r))}" for r in rs if missing(r)])
     late = []
     for r in rs:
+        if qc_flagged(r):
+            continue            # a quinn-collapse row may run into the timeout (a DNF) without failing the smoke; an UNFLAGGED DNF still does
         if r.get("dnf") or r.get("rc") != 0 or not r.get("summary"):
             late.append(f"{r['cell']} {r['arm']}: rc={r.get('rc')} dnf={r.get('dnf')} summary={r.get('summary')} wall={r.get('wall_s')}")
         elif (r.get("seconds") or 0) >= PERF_TIMEOUT_S:
@@ -845,6 +891,9 @@ def score(paths, out=print, s54b_src=S54B_DEFAULT):
             if r_["cell"] == cell_ and t_:
                 tb_, q_ = loop_and_queue({i: t_.get("r%d" % i) for i in (0, 1)}, {i: t_.get("rtt_late%d" % i) for i in (0, 1)}, fl_)
                 t_["queue_ms"], t_["T0b_ms"] = q_, (tb_ - q_ if tb_ is not None else None)
+                for i_ in (0, 1):               # rows written before the backlog share existed (e.g. the VM smoke fixture) get it from q_late / W
+                    if t_.get("qshare%d" % i_) is None and t_.get("q_late%d" % i_) is not None and t_.get("cap_med"):
+                        t_["qshare%d" % i_] = t_["q_late%d" % i_] / t_["cap_med"]
     out("STORE-POOL SWEEP (status 56), REPORTED ONLY: one seat (current main), RWM_STORE_PATH_POOL by arm; c8-100 and c2-100 at 600 MB, c1s-400 at 5 GB, RWM_DIAG=1 RWM_RDIAG=1 "
         f"RWM_PERF_TIMEOUT_S={PERF_TIMEOUT_S}; nothing here is scored")
     out(f"SLOTS {len(slots(rows_all))}/{n_exp}  ROWS {len(rows_all)} (replaced {len(replaced)})  ABORT-TOKENS {' '.join(aborted) or 'none'}")
@@ -860,13 +909,14 @@ def score(paths, out=print, s54b_src=S54B_DEFAULT):
         for pool in pp.POOLS56[cell]:
             arm = "P%d" % pool
             rs = [r for r in cnt if r["cell"] == cell and r["arm"] == arm]
-            lv = [r for r in rs if not is_void(r)]
+            lv = [r for r in rs if not is_void(r) and not qc_flagged(r)]      # the liveness line counts the unflagged rows; the collapsed ones are the QCOLLAPSE count and the COLLAPSED ROWS table
             bf = mval(lv, lambda r, t: t.get("bind_frac"))
             out(f"  {cell:<8} {arm_label(cell, arm):<12} rows {len(rs):>2}/{pp.N56[cell][pool]}  live {len(lv)}  void {len(rs) - len(lv)}  DNF {sum(1 for r in lv if r.get('dnf'))}  "
-                f"UNBOUND {sum(1 for r in lv if is_unbound(r))}{' (control, exempt)' if pool == pp.CONTROL56[cell] else ''}  QCOLLAPSE {sum(1 for r in lv if qc_flagged(r))}  "
+                f"UNBOUND {sum(1 for r in lv if is_unbound(r))}{' (control, exempt)' if pool == pp.CONTROL56[cell] else ''}  QCOLLAPSE {sum(1 for r in rs if not is_void(r) and qc_flagged(r))}  "
                 f"LOCKOUT {sum(1 for r in lv if cell == C8 and r.get('locked'))}  ONE-LEG {sum(1 for r in lv if cell == C8 and r.get('one_leg') and not r.get('locked'))}  bind {_fmt(bf, 3)}  realised cap {_fmt(mval(lv, lambda r, t: t.get('cap_mean')), 0)}")
-    nqc = sum(1 for r in live if qc_flagged(r))
-    out(f"QUINN-COLLAPSE flagged c1s rows: {nqc} (reported in every table, excluded from F8)")
+    flagged = [r for r in live if qc_flagged(r)]
+    nqc = len(flagged)
+    out(f"QUINN-COLLAPSE flagged c1s rows: {nqc} (qcwnd below the BDP in > {QC_SHARE:.0%} of the windows; excluded from EVERY arm median and falsifier, listed in COLLAPSED ROWS below)")
     out("")
     for cell in pp.CELLS56:
         out(f"== {cell}: arm medians (LATE window t >= {LATE_T[cell]:g} s); rows UNBOUND are in the arm and reported at their realised cap (W row)")
@@ -881,12 +931,25 @@ def score(paths, out=print, s54b_src=S54B_DEFAULT):
                 continue
             out("  " + f"{label:<38}" + "".join(f"{_fmt(v, nd):>13}" for v in vals))
         out("")
+    out("COLLAPSED ROWS (c1s; a DNF here is a collapse, not goodput 0): arm seed rep | outcome | below-BDP share | onset s | pre-onset send rate /s and T-bar ms (the map point) | quinn backlog q0 / W | rtt0 | wrtt0")
+    for r in sorted(flagged, key=lambda x: (x["arm"], x["seed"], x["rep"])):
+        t = r.get("t56") or {}
+        out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']} | {'DNF (timeout)' if r.get('dnf') else _fmt(t.get('goodput_mbps'), 1) + ' Mbit/s'} | {_fmt(qc_value(r), 3)} | {_fmt(t.get('qc_onset_s'), 1)} | "
+            f"{_fmt(t.get('pre_r'), 0)} / {_fmt(t.get('pre_Tbar_ms'), 1)} | {_fmt(t.get('qshare0'), 3)} | {_fmt(t.get('rtt_late0'), 0)} | {_fmt(t.get('wrtt_late0'), 0)}")
+    if not flagged:
+        out("  none")
+    out("C1S COLLAPSE BY POOL (rows counting / collapsed / onset s of the collapsed / below-BDP shares):")
+    for pool in pp.POOLS56[C1S]:
+        allr = [r for r in live if r["cell"] == C1S and r["arm"] == "P%d" % pool]
+        fl_ = [r for r in allr if qc_flagged(r)]
+        out(f"  P{pool} (W {pool}): rows {len(allr)}, collapsed {len(fl_)}, onsets {[tv(r, 'qc_onset_s') for r in fl_]}, shares {[round(qc_value(r), 2) for r in allr if qc_value(r) is not None]}")
+    out("")
     out("PER-ROW TABLE (LIVE rows): cell arm seed rep | goodput | R | r0 | r1 | T-bar | W realised | bind | old holes | inorder late | qcollapse share | tags")
     for r in sorted(live, key=lambda x: (pp.CELLS56.index(x["cell"]), x["arm"], x["seed"], x["rep"])):
         t = r.get("t56") or {}
         out(f"  {r['cell']:<8} {r['arm']:<6} s{r['seed']:<3} r{r['rep']} | {'DNF' if r.get('dnf') else _fmt(t.get('goodput_mbps'), 1)} | {_fmt(t.get('tx_sum_late'), 0)} | {_fmt(t.get('r0'), 0)} | "
             f"{_fmt(t.get('r1'), 0)} | {_fmt(t.get('Tbar_ms'), 1)} | {_fmt(t.get('cap_mean'), 0)} | {_fmt(t.get('bind_frac'), 2)} | {_fmt(t.get('old_holes'), 0)} | "
-            f"{_fmt(t.get('inorder_mean_late'), 2)} | {_fmt(t.get('qc_share'), 3)} | {' '.join(row_tags(r))}")
+            f"{_fmt(t.get('inorder_mean_late'), 2)} | {_fmt(qc_value(r), 3)} | {' '.join(row_tags(r))}")
     out("")
     dump_rows = [r for r in live if pp.arm_pool56(r["arm"])[1]]
     out("SUCC_DUMP row(s): " + ("; ".join(f"{r['cell']} {r['arm']} s{r['seed']} rep{r['rep']}: records {(r.get('succdump') or {}).get('records')} "
