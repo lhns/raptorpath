@@ -92,7 +92,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
 </head>
 <body>
 <div class="page-title">Raptorpath &mdash; the Unified (&delta;, &rho;, r) Machine, Visualized
-  <small>&mdash; ONE pipeline, no mode switch (&sect;16.20/&sect;16.26): the &delta; dial morphs it from Bulk to Realtime. The simulation runs the <b>same</b> rate-controller code as the production transport (shared <code>raptorpath-math::controller_rate</code>); the span/shed laws are ported verbatim from the paper.</small>
+  <small>&mdash; ONE pipeline, no mode switch (&sect;5.10, &sect;4.5): the &delta; dial morphs it from Bulk to Realtime. The simulation runs the <b>same</b> rate-controller code as the production transport (shared <code>raptorpath-math::controller_rate</code>); the span/shed laws are ported verbatim from the paper.</small>
 </div>
 <div class="grid">
 
@@ -292,7 +292,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
     <div class="note" id="rho-readout" style="display:none; margin-top:6px" data-tip="Shown when the ρ dial is below 1: the reliability achieved so far versus the declared target, and how many symbols were deliberately given up once they aged past the derived cutoff T_cut (§3.5) — reliability bends instead of latency. The Decoded % line in the main chart plateaus below 100% on purpose."></div>
     <div id="mp-panel" style="display:none">
       <div class="separator"></div>
-      <h3 data-tip="Reliable Windowed Multipath (§5.5): per-path live state and the aggregation readout. Each path has its own channel, capacity, RTT and estimator; all pour into ONE shared window.">Multipath (&sect;16)</h3>
+      <h3 data-tip="Reliable Windowed Multipath (§5.5): per-path live state and the aggregation readout. Each path has its own channel, capacity, RTT and estimator; all pour into ONE shared window.">Multipath (&sect;5.5)</h3>
       <table class="cmp" id="mp-table">
         <tr><th></th>
             <th data-tip="Estimated per-path goodput gᵢ = capᵢ·(1−ε̂ᵢ) in symbols/tick — the live striping weight: source symbols are distributed across paths in proportion to it, and repairs/retransmits prefer the highest-gᵢ path with a spare slot (cf. the §5.7 placement law).">g&#770;&#7522;</th>
@@ -361,7 +361,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
 
 <!-- THE WALL CHAIN (story overlay) -->
 <div class="panel">
-  <h3 data-tip="The paper's spine (§8.6): the transport's measured history is a chain of nine walls, each named with a mechanism before it was fixed — or refuted. Every 'architecture limit' so far turned out to be an unscaled constant or a hidden substrate controller. Step through them in the order they were found.">The Wall Chain &mdash; nine measured walls (&sect;17.1)</h3>
+  <h3 data-tip="The paper's spine (§8.6): the transport's measured history is a chain of nine walls, each named with a mechanism before it was fixed — or refuted. Every 'architecture limit' so far turned out to be an unscaled constant or a hidden substrate controller. Step through them in the order they were found.">The Wall Chain &mdash; nine measured walls (&sect;8.6)</h3>
   <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
     <div class="btn-row" style="flex:0 0 120px; margin-top:0">
       <button id="wall-prev">&#9664;</button>
@@ -381,8 +381,8 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
 <!-- HONESTY FOOTER -->
 <div style="max-width:1400px; margin:12px auto 0">
   <div class="note" style="border-top:1px solid var(--border); padding-top:8px">
-    <b>L0 interactive model &middot; era 2026-07-28 &middot; main 7a3aff6 &middot;
-    models the laws of &sect;16.20/&sect;16.26, not the engine binary.</b>
+    <b>L0 interactive model &middot; era 2026-11-14 &middot; base main 766d9906 &middot;
+    models the laws of &sect;5.10 and &sect;4.5, not the engine binary.</b>
     The span/shed formulas are ported verbatim from the paper into the embedded
     wasm crate (formula-fidelity is build-gated by <code>test_visualizer.mjs</code>);
     the simulation is the L0 RWM model, not the shipped transport. Where the
@@ -393,17 +393,17 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
     <table class="cmp" style="margin-top:6px">
       <tr><th style="text-align:left">quantity</th><th style="text-align:left">engine (shipped default)</th><th style="text-align:left">this model</th></tr>
       <tr><td>rate / RTprop / J anchors</td>
-          <td style="text-align:left; font-weight:normal">windowed-MAX delivered rate, min-filtered RTprop, measured jitter (&sect;16.21 anchor hygiene &mdash; anchor defects were a named wall)</td>
+          <td style="text-align:left; font-weight:normal">windowed-MAX delivered rate, min-filtered RTprop, measured jitter (&sect;5.3 anchor hygiene &mdash; anchor defects were a named wall)</td>
           <td style="text-align:left; font-weight:normal">&Sigma; cap&#7522;&middot;(1&minus;&epsilon;&#770;&#7522;), the configured RTT, J = RTT/8; no anchor-defect dynamics</td></tr>
       <tr><td>&delta; continuum between presets</td>
-          <td style="text-align:left; font-weight:normal">the hint declares one of three &zeta; points (&sect;12.4); b(hint) = &frac12;/1/2 (&sect;16.26); Bulk = late is fine (target tracks p&#770; with the &chi;-glide, &sect;14.26)</td>
+          <td style="text-align:left; font-weight:normal">the hint declares one of three &zeta; points (&sect;4.1); b(hint) = &frac12;/1/2 (&sect;5.4); Bulk = late is fine (target tracks p&#770; with the &chi;-glide, &sect;4.5, &sect;4.6)</td>
           <td style="text-align:left; font-weight:normal">AT the Bulk preset the sim runs the engine's late-is-fine law verbatim (pure ARQ mid-stream at any &epsilon;); the log-interpolated tail anchor applies strictly BETWEEN presets (exact at Realtime/Auto); b(&delta;) interpolation as documented</td></tr>
       <tr><td>RETAIN vs EVICT</td>
           <td style="text-align:left; font-weight:normal">the app's retention contract (the &rho; dial); shed law compiled out on &rho; = 1</td>
-          <td style="text-align:left; font-weight:normal">the &rho; dial is live (default 1 = RETAIN; &lt; 1 = &sect;6.1 T_cut give-up in the sim); the span cartoon additionally marks the shed law compiled out at the Bulk r* = 0 limit</td></tr>
+          <td style="text-align:left; font-weight:normal">the &rho; dial is live (default 1 = RETAIN; &lt; 1 = &sect;3.5 / &sect;4.10 T_cut give-up in the sim); the span cartoon additionally marks the shed law compiled out at the Bulk r* = 0 limit</td></tr>
       <tr><td>shed law</td>
           <td style="text-align:left; font-weight:normal">sender arm at ALL recovery decision points + receiver arm; EVENTUAL P_fec budget (&sect;5.6). The receiver&rsquo;s hold is a hard-coded SRTT/2 (equal to b&middot;SRTT only at Realtime, the one seat that reaches it) when the shed law is armed and the budget is open, else a clamped 4&middot;SRTT fallback (60&ndash;300 ms) &mdash; not read from the &delta; dial (ledger S05)</td>
-          <td style="text-align:left; font-weight:normal">sender-side cartoon in the span panel only; budget = 1&minus;&rho; when the dial is below 1, else the derived &sect;16.26 residual; the delivery sim sheds via &sect;6.1 T_cut, not the span law</td></tr>
+          <td style="text-align:left; font-weight:normal">sender-side cartoon in the span panel only; budget = 1&minus;&rho; when the dial is below 1, else the derived &sect;5.6 residual; the delivery sim sheds via &sect;3.5 / &sect;4.10 T_cut, not the span law</td></tr>
       <tr><td>decoder</td>
           <td style="text-align:left; font-weight:normal">UnifiedDecoder: global sparse-aware RREF, interval-span rows, k = 0 fast path (src/fec/unified.rs)</td>
           <td style="text-align:left; font-weight:normal">raptorpath-math RLC over the shared window; repairs span the whole window (no per-span A* emission in the sim; A*/M*/&Delta; live in the law panel)</td></tr>
@@ -411,10 +411,10 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
           <td style="text-align:left; font-weight:normal">quantized to the retained generation grid G (fungible cross-path DoF)</td>
           <td style="text-align:left; font-weight:normal">rounded to the nearest symbol (the sim has no generation grid)</td></tr>
       <tr><td>transfer length vs the &chi; horizon</td>
-          <td style="text-align:left; font-weight:normal">engine Bulk moves MB-scale objects: the &sect;14.26 completion-exposure horizon (~5.5&middot;SRTT) is a negligible tail of the stream — &chi; = 0 for essentially the whole transfer</td>
+          <td style="text-align:left; font-weight:normal">engine Bulk moves MB-scale objects: the &sect;4.6 completion-exposure horizon (~5.5&middot;SRTT) is a negligible tail of the stream — &chi; = 0 for essentially the whole transfer</td>
           <td style="text-align:left; font-weight:normal">the sim's transfer is 2000 toy symbols (~0.25&ndash;1 s); at high total capacity (2 paths) a large fraction of the run sits inside the &chi; horizon, so the Bulk end shows visible late-run FEC — the &chi;-glide compressed onto a toy-length transfer, not steady-state FEC</td></tr>
       <tr><td>wire / CC</td>
-          <td style="text-align:left; font-weight:normal">QUIC substrate, BBR-under default / Copa policy surface (&sect;17.2), 1279-B symbols</td>
+          <td style="text-align:left; font-weight:normal">QUIC substrate, BBR-under default / Copa policy surface (&sect;8.2), 1279-B symbols</td>
           <td style="text-align:left; font-weight:normal">fixed capacity in slots/tick, no congestion controller, 8-B toy symbols</td></tr>
       <tr><td>propagation / reorder</td>
           <td style="text-align:left; font-weight:normal">real one-way flight; receiver reorder across paths; striping gaps are the wall-#8 hazard</td>
@@ -425,6 +425,9 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
       <tr><td>loss detection</td>
           <td style="text-align:left; font-weight:normal">at N = 1: the pre-RFC srtt/2 age gate (ledger C04; <code>RWM_RECOV_SP</code> is default off). At N &ge; 2: per-path clocks (&sect;7.1), 9/8 time threshold + kPacketThreshold = 3 same-path fast channel; c8 holes were seen only at &asymp; 3.5 s age (C02, measured before the snapshot-order law)</td>
           <td style="text-align:left; font-weight:normal">per-path clock = 1 own-RTT from send at every N, including N = 1 (per-symbol acks make the packet-threshold channel no faster here); no srtt/2 age gate</td></tr>
+      <tr><td>snapshot order</td>
+          <td style="text-align:left; font-weight:normal">the sender judges reported holes only from the receiver&rsquo;s newest snapshot (&sect;7.1, A.6)</td>
+          <td style="text-align:left; font-weight:normal">vacuous here: the model has per-symbol acks with instantaneous forward flight and no gap reports, so no report can arrive out of receiver order</td></tr>
     </table>
   </details>
 </div>
@@ -2506,7 +2509,7 @@ function updateReadouts() {
     const agg = sim.aggGoodput, best = sim.bestSingleGoodput;
     $id('mp-agg').innerHTML = !sim.baselineReady
       ? 'aggregate <b>' + agg.toFixed(2) + '</b> sym/tick &middot; ' +
-        'measuring the hidden single-path baseline runs (&sect;16.6, chunked)&hellip;'
+        'measuring the hidden single-path baseline runs (&sect;9.3, chunked)&hellip;'
       : 'aggregate <b>' + agg.toFixed(2) + '</b> sym/tick vs best single-path run ' +
         sim.bestSingleMeasured.toFixed(2) + ' sym/tick &rarr; aggregation factor <b style="color:' +
         (af > 1.0 ? 'var(--good)' : 'var(--muted)') + '">&times;' + af.toFixed(2) +
