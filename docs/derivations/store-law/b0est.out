@@ -1,4 +1,4 @@
-## C:/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-af4cf9003d7bcec17/docs/l1-raw/loop-diag/p27/diag-ld
+## ../../l1-raw/loop-diag/p27/diag-ld
 == c1d-400  cap leg: b0_hat [rows]  measured brake [rows]
     384 p0  b0_hat 0.78 0.50   brake 0.19 0.05
     384 p1  b0_hat 1.10 0.48   brake 0.24 0.22
@@ -50,7 +50,7 @@
    1024 p1  b0_hat 126.03 112.17   brake 7.25 6.49
    2048 p0  b0_hat 99.68 20.47   brake 92.30 91.65
    2048 p1  b0_hat 201.40 353.88   brake 211.28 159.77
-## C:/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-af4cf9003d7bcec17/docs/l1-raw/loop-diag/p34/run/diag-ld
+## ../../l1-raw/loop-diag/p34/run/diag-ld
 == c1d-400  cap leg: b0_hat [rows]  measured brake [rows]
     384 p0  b0_hat 0.36 1.13 0.80   brake 0.27 0.36 0.13
     384 p1  b0_hat 0.39 0.85 0.36   brake 0.26 0.22 0.33

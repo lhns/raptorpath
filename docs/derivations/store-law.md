@@ -51,6 +51,13 @@ within the anchor's 10 s window, so its honesty is a property of the fixed point
 - The allowance sits on the lifetime minimum ℓ, never on the anchor. Any anchor creep is therefore at most
   linear, bounded by b₀ + qℓ − f per 10 s (f is the floor's fluctuation), not exponential (§3.3).
 - b₀ has no engine source and blocks an engine law. Without it c2 collapses again (§3.5).
+- **The no-collapse condition is b̂₀ ≥ b₀ − q(δ)·ℓ̂.** T* > T₀ holds only inside a margin of q·ℓ:
+  - the margin is ≈ 0.35–1.0 ms at c2 and 0.12–0.26 ms at c1s;
+  - c2's per-row no-queue brakes already spread 1.27–2.82 ms (`b0est.out`), wider than the margin;
+  - below it R < 1 at no queue, with no restoring force, so the store decays to the floor.
+  - **This is the law's sharpest risk** (§3.5, falsifier B1).
+- **The law has memory.** Its start n₀ is the shipped boot 128, which the record calls "a fit to one cell"
+  (§11.2). n₀ sets the ramp times and the b̂₀ calibration interval (Q7).
 
 **Predictions** (static maps on the inputs the law reads; §4):
 
@@ -156,7 +163,7 @@ target above T₀, not a rate.**
 
 | candidate (status) | same form? | what killed it | does this law escape it? |
 |---|---|---|---|
-| shipped law on the send-interval sampler (§23 Q2) | yes, with T* = (1 + q)·RTprop | T* < T₀ (table above) | yes: T* = m̂ + b̂₀ + Ŝ + q·ℓ̂ > T₀ by construction, since T₀ = m + b₀ + S |
+| shipped law on the send-interval sampler (§23 Q2) | yes, with T* = (1 + q)·RTprop | T* < T₀ (table above) | conditionally: T* = m̂ + b̂₀ + Ŝ + q·ℓ̂ exceeds T₀ = m + b₀ + S iff b̂₀ > b₀ − q·ℓ̂. The margin is only q·ℓ (≈ 0.35–1.0 ms at c2), so b̂₀ is load-bearing (§3.5) |
 | min-filtered loop time 1.1·D·Tmin (§24 O1, `INFLATES`) | yes, with T* = 1.1·Tmin | the allowance 0.1·Tmin < S, so the map is below 1 at every cap | yes: S is in T* (it cancels in the fixed point; only the floor error q·ℓ − (β − b₀) remains) |
 | quinn's BBR rate (§24, `OVER-READ` ×3–20) | no: an exogenous rate | ack compression at c2 jitter | no rate is read |
 | (b1)/(b2) quinn's window K (§34) | no: a window as the store | over-reads ×5–15 at c2/c8; Spearman(K, n) 0.90 | not read |
@@ -187,7 +194,9 @@ target above T₀, not a rate.**
 | ℓ̂ᵢ | lifetime minimum of the same echo series | measured; never expires. Used only as the scale of the allowance, so an under-read only shrinks the allowance by q·Δ (safe side) |
 | b̂₀ᵢ | E[T̂minᵢ,ₖ − m̂ᵢ] at no own queue (window-against-filter minimum gap) | **no engine source (blocking).** Ledger values: c2 2.28, c8 2.85 / 3.91, c1s 0.19 (p27) / 0.29 (p34), c1d 0.24–0.38 ms. The spread estimator fails at load (§3.5) |
 | q(δ) | CoDel setpoint (b + 1)/30 ∈ [0.05, 0.10] | cited, RFC 8289 §3.2; shipped `codel_setpoint_q`. **The only δ seat** |
-| window T_w | Tp50/q(δ) | derived: paper §6.1's own lower bound (a stale share ≤ q), the named "scale-free successor". It sits below the 10 s filter at every cell (c2 ≈ 170–380 ms, c1s ≈ 40–80 ms). Its noise is unmeasured below 250 ms |
+| window T_w | 250 ms, tumbling | **declared**, as paper §6.1's oracle arm: inside its derived range only near Bulk, with the `wbind=` gauge. Every number in this document (b₀, Ŝ, T̂min, all `map27` crossings) is a 250 ms statistic, so the evaluated law is the 250 ms law. The scale-free Tp50/q(δ) is not adopted (Q8): it depends on n (seconds at today's pin, where the brake vanishes), it would put q in a second place, and at N = 2 it leaves open which leg's Tp50 applies |
+| n₀ (start) | 128 | shipped `RWM_STORE_BOOT`. "A fit to one cell" (§11.2); no provenance (Q7) |
+| empty window | a leg with no samples drops out of both sums (wᵢ = 0); with no samples on any leg, R := 1 | a statistic of an empty set does not exist (§6.1's oracle boot rule); not a threshold |
 | floor | 10 | resource bound (shipped) |
 | N·knee | 2 048 per live path | resource bound (shipped), not a law term. Bind gauge `[SUMCAP] pin=` |
 
@@ -226,16 +235,15 @@ the static maps (`map27` column "Little"). That gives one-window convergence wit
 stable while the gain is < 2.
 
 **Unsaturated leg.** Here β ≈ b₀ and R ≈ 1 + q·ℓ/T₀ ≈ 1.06 per window at Bulk, at every cell (the ratio is
-scale-free). With T_w = Tp50/q, ln(n*/128) is reached in:
-- c2: ≈ 7 windows ≈ 1.2 s;
-- c1s: ≈ 28 windows ≈ 1.1 s.
+scale-free). At T_w = 250 ms the climb from n₀ = 128 to n* takes:
+- c2: ≈ 7 windows ≈ 1.7 s;
+- c1s: ≈ 24 windows ≈ 6 s.
 
-With a fixed T_w of 250 ms the same climb takes 1.7 s at c2 and ≈ 7 s at c1s. Most c1s guard rows are shorter
-than that (14 ticks), so T_w = 250 ms would put the guard's c1s rows in start-up.
+**This ramp is a stated cost.** Most c1s guard rows are shorter than 6 s (14 `[DIAG]` ticks), so they would run
+in start-up. A faster ramp needs either a shorter window or a different n₀; both are open (Q7, Q8).
 
 **Noise.** At gain ≈ 1, sd(ln n) ≈ the per-window coefficient of variation of (β − b₀)/T̂. §42 measured the
-oracle form at T_w = 250 ms: 0.08 at c2, 0.11 at c1s. **Open:** the noise at T_w = Tp50/q (40–80 ms at c1),
-which is a registered readout (§10).
+oracle form at T_w = 250 ms: 0.08 at c2, 0.11 at c1s. **Open:** the noise of this R (§10 Part B).
 
 **The anchor (m̂ = Copa's 10 s minimum).**
 - *Drain condition.* m̂ is honest iff the leg's queue floor fluctuates by at least f ≥ b₀ + q·ℓ within each
@@ -251,14 +259,19 @@ which is a registered readout (§10).
   an expired anchor that variant has an upper trap at Bulk: c2 U765, c1d (p34) U914. The ℓ form has none at c2
   and c8, and at c1d (p34) only a touch of 1.00 at 1 020–1 025.
 - **Departure from W1 (G < 1 required).**
-  - W1's requirement came from (a) the oracle form with q·RTprop, and (b) a trap edge of 3.08 ms at G = 1 at c8
-    with τ = 5 ms.
-  - Here the allowance does not scale with the anchor, and both static expired maps are trap-free at G = 1.
+  - W1's requirement came from (a) the oracle form with q·RTprop, and (b) c8's trap edge at G = 1 for a
+    constant τ: τ < 3.08 ms.
+  - This law's τ on leg 0 is b₀ + q·ℓ ≈ 2.85 + 0.4–1.2 ≈ 3.3–4.0 ms, above that edge at every δ.
+  - The `map27` c8 expired map shows no upper crossing at G = 1, but both readings rest on the thin p27 c8 grid
+    (two rows per cap, a lock-out row at 768). **c8 start-high is undecided**, and today's c8 start is the pin
+    (Q1).
+  - At c2 the allowance does not scale with the anchor, and the expired map is trap-free at G = 1.
   - G < 1 is incompatible with a q-sized allowance: a leg saturates only if G·(1 + q·ℓ/T₀) > 1. On every map,
     G = 0.9 gives no crossing at all (`map27-*.out`): it collapses.
   - What G = 1 cannot be shown to do from the logs is leave today's start-high state. §43's start-high hold ratios
     (1.006 / 1.059 / 1.005 at gain 1.1) transfer to R ≈ 0.98–1.03 at H = 1 536, using the c2 Little factor 1.05.
     That is marginal. **c2 does not collapse; it is not shown to leave the pin** (owner question Q1).
+  - So at G = 1 neither c2 nor c8 is shown to leave today's start-high state.
 
 ### 3.4 The hole term H and the C02 coupling
 
@@ -275,20 +288,23 @@ sign of the slope.
 | 20 (B) | (1 601 − 118)/2 048 = **0.72** | (118 − 48)/768 = 0.09 | between transit 1.9 k (B1024: 0) and 2.5 k (B2048: 1 289) |
 | 64 (L) | (35 − 17)/2 048 ≈ 0.01 | ≈ 0 | none up to transit 4.1 k |
 
-**The coupling, as a condition.** The 20-run horizon binds when the open gap runs at the receiver exceed 20. That
-count is ε_run·c·transit, so it binds above a transit P_h ∝ G_h:
+**The coupling, as a condition.** Here "binds" means **old holes accumulate**, not that reports are truncated.
+Reports are truncated at every arm (visibility 0.30 even at W = 1 280, §6) while H' ≈ 0.09. Old holes accumulate
+when the 20 oldest runs are all long-lived holes. That happens once the open runs ε_run·c·transit exceed what
+repair clears per horizon, so it sets in above a transit P_h ∝ G_h:
 - P_h(20) ∈ (1.9 k, 2.5 k) at c8;
 - predicted P_h(64) ≈ 3.2 × that, about 6–8 k. That is consistent with L2048, which shows no old holes at 4.1 k.
 
 Above P_h, H' → 0.72 and the store law loses most of its authority. Its slots go to holes.
 
 **At the law's c8 point (≤ 600) transit is ≥ 3 × below P_h(20).** So:
-- the horizon does not bind there;
+- old holes do not accumulate there (the horizon truncates reports, but at H' ≈ 0.09);
 - lever B is not required for the store's sake. Its residual at W = 1 280 is in-order 0.30 against 0.35 s, which
   does not overlap.
 
 The store size and the gap horizon are one question, as the brief says. With a time law the answer is the
-inequality transit* < P_h(G_h), and one gauge (§8) checks it.
+inequality transit* < P_h(G_h). The gauges (§8) are old holes and `[HOLD]` `ripe_frac` = `age_ripe/age_n` (p0
+0.98 at B2048 against 0.13 at B640), both of which exist.
 
 ### 3.5 b₀: load-bearing and without a source
 
@@ -313,6 +329,11 @@ That is §23's mechanism through the other symbol.
 - It is an estimator with a declared calibration interval, not a δ/ρ mode.
 - Risk: b₀ is not stationary (receiver load at c1).
 - **Blocking until §10 Part B measures it against the ledger values.**
+
+**The condition any b̂₀ must meet** is one-sided and absolute: b̂₀ ≥ b₀ − q(δ)·ℓ̂. An under-read larger than the
+margin q·ℓ (≈ 0.35–1.0 ms at c2, 0.12–0.26 ms at c1s) collapses the law at no queue, which is §23's failure.
+The ledger b₀ values were fitted on the same rows the maps test, so the maps cannot test this condition. A
+symmetric band such as ×[0.5, 2] would admit the collapse.
 
 ## 4. Per-cell predictions (static maps, the inputs the law reads)
 
@@ -365,7 +386,10 @@ descends. The §43 hold transfer reads 0.98–1.03, which is marginal (§3.3).
 n* = 518 / 555 / 622 (fresh), 514 / 565 / 654 (expired). At Bulk with an expired anchor there is a touch at
 1 020–1 025.
 
-Goodput is 0.87–0.90 of Gmax 818. The bind fraction is predicted 0.
+Goodput is 0.87–0.90 of Gmax 818. Today c1d is already interior (guard CAND row: `pin` 0.00, cap ≈ 1 230), so
+"bind 0" tests nothing.
+
+**Falsifiers:** a law cap outside 400–800, or goodput < 0.85 × main.
 
 ### 4.4 c8 (N = 2)
 
@@ -376,6 +400,12 @@ p27 goodput at 128–256 is 0.66–0.88 of Gmax 100.9 on 8 s rows. The current-e
 9.6–10.0 k/s against 11.7 k/s (−15 %).
 
 The in-order delay falls accordingly: ≈ 3 × T̄ ≈ 50–70 ms against 0.30–0.35 s at W = 1 280.
+
+**Falsifiers:**
+- a law cap outside 120–320 in the LATE window (O1 off);
+- Σ send rate outside 9.4–10.6 k/s with leg 1 starved (r₁ < 600 /s);
+- r₁ ≥ 1 500 /s at a law cap ≤ 320, which means placement feeds leg 1 without a fast-leg queue, and O1 is moot
+  (§10 F1).
 
 ## 5. c8: why §54b does not bracket the knee, and where it breaks (check 2)
 
@@ -514,7 +544,8 @@ larger than q at c8 is O1 (§5.3), which is not δ-keyed. Two ways to widen it, 
 | `[SUMCAP] pin=` / `floor=` (exists) | clamp bind fractions, whole row and last third | rule 18; predicted 0 / 0 at every cell |
 | **`[SLAW]` (new)**, per window close | n, R, T_w; per leg: wᵢ, T̂, T̂min, m̂, ℓ̂, b̂₀, the error (β − b̂₀ − q·ℓ̂) | the law's own trace; routing witness: the `[DIAG] win=` denominator = `[SLAW] n` on ≥ 99 % of ticks |
 | **anchor creep (new)**, in `[SLAW]` | (m̂ᵢ − ℓ̂ᵢ) per leg: median and last-third max | the drain condition. Predicted ≤ b₀ + q·ℓ + 2 ms; a linear rise is the failure |
-| **horizon bind (new)**, counter in `sack_to_gaps` | share of gap reports truncated at `MAX_NACK_GAPS` | C02's clamp has no gauge today (ledger C02 column 6). It decides whether transit < P_h |
+| old holes (exists, server `[RANK]`) and `ripe_frac` (exists, `[HOLD]`) | holes older than one readout; share of holes already ripe at first report | the horizon binding as §3.4 defines it (old holes accumulate) |
+| **truncation share (new)**, counter in `sack_to_gaps` | share of gap reports truncated at `MAX_NACK_GAPS` | C02's clamp has no gauge (ledger C02 column 6). It measures visibility (§6), not binding |
 | **C09 cap bind (new)** | share of reports whose loop broke on `cached_max_repairs` / budget | it gates which holes get stamped (§6). C09's own gauge, owed by the ledger |
 | per-leg placement share (exists, P38ROW) | shares[i] | reads K₁ |
 | quinn backlog B = Σ`dgq[hand − tx]` (exists) | authority gauge (paper §6.1) | must stay ≈ 0 at the law's point |
@@ -528,7 +559,8 @@ larger than q at c8 is O1 (§5.3), which is not δ-keyed. Two ways to widen it, 
 | ℓ̂ᵢ | running minimum of the same echo series | missing (one field). quinn's `rtt.min()` is the wire clock, not the echo, so it is not a substitute |
 | b̂₀ᵢ | — | **missing, blocking.** The spread estimator fails (§3.5); boot calibration is untested |
 | q(δ) | `codel_setpoint_q` | present |
-| T_w = Tp50/q | the sampler's window close | missing (with the sampler) |
+| T_w = 250 ms | the sampler's window close | missing (with the sampler) |
+| n₀ = 128 | `RWM_STORE_BOOT` | present; unprovenanced (Q7) |
 | a rate | — | **none needed.** E04 (`max_bw`) leaves the store law; its other readers (Copa's anchor floor, K01) are out of scope |
 
 ## 10. Diagnostic design (reported only; nothing scored)
@@ -583,13 +615,14 @@ Rows: Part A's arms.
 - R per window → its crossing W per cell, predicted c2 174–192, c8 148–212, c1s 370–509 (fresh);
 - b̂₀ at boot against the ledger values (2.28 / 2.85 / 3.91 / 0.29);
 - the anchor creep m̂ − ℓ̂;
-- sd(ln R) per window at T_w = Tp50/q and at 250 ms (the noise item of §3.3);
+- sd(ln R) per window at T_w = 250 ms (the noise item of §3.3);
 - the horizon bind and C09 bind fractions.
 
 **Falsifiers:**
 - the crossing outside ±30 % of prediction;
-- b̂₀ at boot outside ×[0.5, 2] of the ledger value;
-- sd(ln R) at T_w = Tp50/q > 0.25.
+- **B1 (collapse condition):** on any row, b̂₀ < (that row's no-queue median brake) − q·ℓ̂, or R < 1 in the
+  boot windows while n ≤ 128. It is one-sided and absolute;
+- sd(ln R) at T_w = 250 ms > 0.15 (§42's oracle form read 0.08–0.11).
 
 Part B decides whether an engine law can be registered. Nothing ships from either part.
 
@@ -626,7 +659,8 @@ Part B decides whether an engine law can be registered. Nothing ships from eithe
 > | ℓ̂ᵢ | measured: lifetime echo minimum; scales the allowance only |
 > | b̂₀ᵢ | measured offset with no engine source yet (ledger: c2 2.28, c8 2.85 / 3.91, c1 0.2–0.4 ms) |
 > | q(δ) | cited: RFC 8289 §3.2, (b(δ) + 1)/30 |
-> | window | derived: Tp50/q(δ), the bound below which a window's stale share exceeds q |
+> | window | 250 ms, declared (as the oracle arm), with the `wbind=` gauge |
+> | n₀ | the shipped boot cap 128; no provenance (open) |
 > | floor, knee | resource bounds; bind gauges `[SUMCAP] floor=` / `pin=` |
 >
 > Shape: order 0 in N for the update and order 1 for the fixed point; dimensionless in rates, so in the store's
@@ -640,8 +674,10 @@ Part B decides whether an engine law can be registered. Nothing ships from eithe
 ## 12. Open questions for the owner
 
 - **Q1. G = 1 and the start-high margin.**
-  - The ℓ form is trap-free on every static expired map at G = 1.
+  - The ℓ form is trap-free on the c2 and c1s static expired maps at G = 1. c8's grid is too thin to decide, and
+    W1's c8 edge (3.08 ms) sits below this law's τ.
   - The §43 hold transfer at c2 reads 0.98–1.03: not shown to leave today's pin within a filter length.
+  - c8 start-high is undecided; today's c8 start is the pin.
   - G < 1 is not an option with a q-sized allowance: it collapses on every map.
   - Do you accept G = 1 with Part B's start-high readout as the test? The alternative is a larger allowance,
     i.e. U2.
@@ -658,3 +694,7 @@ Part B decides whether an engine law can be registered. Nothing ships from eithe
   - an explicit periodic drain (a time-indexed probe, BBR-style, not a δ/ρ mode);
   - accepting a linear creep bounded by the transfer length.
 - **Q6. U2 unchanged:** is q's 5–10 % band δ's intended authority? (§7)
+- **Q7. n₀.** The law has memory, so its start matters. The boot 128 has no provenance, sets the c1s ramp
+  (≈ 6 s at 250 ms) and the b̂₀ calibration interval. Keep it, derive it, or accept the ramp?
+- **Q8. The window.** Keep 250 ms (declared, the evaluated law)? The alternative is a scale-free window, which
+  needs its own derivation: n-dependence, q's second seat, and which leg's loop applies at N = 2.

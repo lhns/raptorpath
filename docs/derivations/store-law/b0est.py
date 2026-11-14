@@ -27,7 +27,7 @@ for D in sys.argv[1:]:
                 continue
             S = [b - a for a, b, _ in xs]
             est[c][(int(cap), p)].append((max(S) - St.mean(S), St.median([a - r for a, _, r in xs])))
-    print('##', D)
+    print('##', os.path.relpath(D).replace(os.sep, '/'))
     for c in sorted(est):
         print('==', c, ' cap leg: b0_hat [rows]  measured brake [rows]')
         for (cap, p) in sorted(est[c]):
