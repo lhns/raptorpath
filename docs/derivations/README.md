@@ -11,6 +11,7 @@ section it feeds.
 | `p0-dwell-diag.md` | why lever B triples p0's quinn send backlog at c8 (diagnosis; a pinned store population rebalanced from holes to queue) | status §53 open item 1, `cand52` merge question |
 | `dup-diag.md` | why c8 duplicates doubled under the 64-gap horizon: packet-threshold fires on gap snapshots applied out of receiver order; the snapshot-order law, shipped (paper §7.1) | status §52, §53, ADR-0059 |
 | `store-law.md` (+ `store-law/`) | what size the sender store should be: a time law (no rate input), its anchor and b₀ sources, the C02 horizon coupling, per-cell predictions and a reported-only diagnostic (derivation, for review) | status §54b, §55 F01/E03/E04/C02 |
+| `wasm-modeswitch-audit.md` | which hint-, δ- or ρ-keyed sites in the L0 model are mode switches, and what replaces each (open: owner calls on give-up options (i) vs (ii), gate :181, W22 code-vs-paper divergence and its paper-vs-pin conflict, fixed r) | ADR-0076 phase 6 |
 
 No derivation file is on `main` yet; the branches that add them (`derive-w1`,
 `adr68-amend`, `paper-recon`, `perleg-design`, `w1r2`, `otel-design`) each add
