@@ -73,6 +73,7 @@ TFAIL=0
 tst release "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2 || TFAIL=1
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
+tst core "$CARGO" test -p raptorpath-core || TFAIL=1
 tst debug "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
 tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_lagdiag_digest.py && python3 test_lagdiag2_digest.py && python3 test_threadpd_parse.py" || TFAIL=1
 echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$ROOT/test-debug.log")" >> "$OUT"
