@@ -1,7 +1,10 @@
 # store-law: the sender store size as a time law (F01 + E03 + E04 + C02)
 
-Status: DERIVATION. No engine change and no VM contact. Base: `github/main` `fd81f408` (2026-11-14), branch
-`store-law-derive`. It goes to review before any code.
+Status: DERIVATION, revision 3. No engine change and no VM contact. Revisions 1–2: `store-law-derive` on
+`fd81f408`. Revision 3: `store-law-rev3` on main `e195c8c0`, on status §56's maps.
+
+**Read §R3 first.** It supersedes §0's formula, the static points of §4, §5.1 and §5.2, and §12's open decisions.
+The rest stands as the derivation's record.
 
 Scope: law ledger §4 items 1–2, rows F01, E03, E04 and C02. The owner paused the lever-B guard on 2026-11-14 to
 derive this law first.
@@ -23,8 +26,197 @@ Helper scripts (stdlib Python, run with `-I`; each output is committed beside it
 | `store-law/b0est.py` | the same two ledgers | `b0est.out` | the test of a b₀ estimator |
 | `store-law/b0bound.py` | the same two ledgers | `b0bound.out` | one-sided b₀ bounds against each row's no-queue brake |
 | `store-law/wire48b.py` | `bbr48b/c2c8-diag-qcc.tgz`, extracted | `wire48b.out` | the wire-clock anchor candidates (`bbr_rs` m̂, quinn `rtt.min()`) |
+| `store-law/s56.py` | `s56/rep56-diag-ld.tgz`, extracted | `s56.out` | rev 3: the per-tick Little residual with means, the W1.1 who-limits classes, the knee-scaling candidates |
+
+## R3. Revision 3: the law on §56's maps (supersedes §0's formula, §4, §5.1 and §5.2's numbers)
+
+**Sources.** Status §56 Result (main `e195c8c0`), its ledger `docs/l1-raw/s56/rep56-*`, and `store-law/s56.py` →
+`s56.out` (per-tick readouts on the raw `[DIAG]`). The p27/p34 maps are kept only as the record of revisions 1–2.
+Every prediction and fixed point below is read on §56's 600 MB / 5 GB current-era maps. **They are still static
+crossings, and still not registrable** (§43).
+
+### R3.1 What the knee queue scales with
+
+Below, q₉₈ is the standing queue T̄ − T₀ at the W where goodput first reaches 0.98 of control (§56 score,
+interpolated). All candidate values are measured at that W, from the §56 rows (`s56.out`; §56 score lines 259–268):
+
+| cell | q₉₈ ms | ℓ (q/ℓ) | echo spread σ = P90 − P50 (`qsp_us`), leg 0 (q/σ) | BDP μ·T₀ in symbols (q·μ/BDP) | quinn backlog time B/r (q/that) | leg-floor gap Δ = T₀,₁ − T₀,₀ (q/Δ) |
+|---|---|---|---|---|---|---|
+| c2 | 2.4 | 10.0 (0.24) | 1.8 (1.3) | 154 (0.15) | ≈ 1.0 (2.4) | — |
+| c8 | 18.2 | 14.4 (1.26) | 2.5 (7.3); leg 1 15.5 | ≈ 247 (0.9) | ≈ 0.9 (20) | 29.5 (0.62) |
+| c1s | 9.8 | 2.6 (3.85) | 0.5 (19) | ≈ 352 (2.4) | ≈ 6.6 (1.5) | — |
+
+**No single quantity scales.** The table rejects ℓ (×16 across the cells), σ (×15), the BDP (×16), quinn's backlog
+(×13) and the wire RTT. (The wire RTT at the knee is 18 / 25–37 / 3–4 ms, and the wire loop is not where the c1s
+queue sits.)
+
+The knee queue is a sum of three measured mechanisms, one per cell type:
+
+| cell | decomposition of q₉₈ | sum | measured q₉₈ |
+|---|---|---|---|
+| c2 (one jittered FIFO leg) | σ (release jitter: the bottleneck idles unless its queue covers the report spread) + the b̂₀⁺ over-read 0.4–0.9 | 2.2–2.7 | 2.4 |
+| c8 (two legs, delivery-time placement) | ½·Δ (forward-delay equalisation, R3.3) + σ₀ + b̂₀⁺ excess ≈ 14.75 + 2.5 + 1.0 | 18.3 | 18.2 |
+| c1s (receiver/substrate-bound) | σ + quinn's backlog dwell B/r ≈ 0.5 + 6.6 | 7.1 | 9.8 (rest unexplained, R3.5) |
+
+**The allowance's form changes accordingly.** The δ term is a margin above the measured mechanisms, not the knee
+itself:
+
+```text
+   target_i  =  Fᵢ  +  σ̂ᵢ⁺  +  q(δ)·ℓ̂ᵢ  +  Ŝᵢ                         (replaces Fᵢ + q(δ)·ℓ̂ᵢ + Ŝᵢ)
+
+   Fᵢ    =  m̃ᵢ + b̂₀ᵢ⁺  +  ½ · max( 0 ,  maxⱼ (ℓ̂ⱼ + b̂₀ⱼ⁺) − (ℓ̂ᵢ + b̂₀ᵢ⁺) )        (half the floor gap: R3.3)
+   σ̂ᵢ⁺   =  max over the K boot windows of the leg's echo spread P90 − P50            (one-sided, like b̂₀⁺)
+```
+
+- **σ̂ᵢ⁺** is the release-jitter cover.
+  - *Sentence:* the bottleneck stays busy only if its queue floor covers the spread of the report times that
+    release the store's slots.
+  - Measured: the engine already computes `qsp_us`, P90 − P50 of the leg's last 256 echo samples
+    (`path.rs:848–855`).
+  - It is taken at boot, as b̂₀⁺ is, because the spread inflates with load on a placement-bursty leg (c8 leg 1:
+    4.9 ms at W 160, 31.6 ms at 1 280). A load-read σ would close §2's max-form loop again.
+  - It is δ-free.
+- **q(δ)·ℓ̂ᵢ** stays the one δ seat, continuous in δ. It is now an explicit margin above the knee.
+- **c1s's backlog term is not added.** R3.5 shows c1s is QUINN-LIMITED on most ticks. Funding quinn's backlog
+  would remove the store's only signal there and run to the clamp. That is owner question R3-Q1.
+
+### R3.2 Static points on §56's maps
+
+Each cell's target queue is the sum of its terms. The point is read off the cell's (W, q) curve in §56 score lines
+260–266.
+
+| cell | target queue (Realtime → Bulk) | law's point W | goodput / control | loop T̄ | in-order late mean | knee (0.95) | margin above the knee |
+|---|---|---|---|---|---|---|---|
+| c2 | 0.4–0.9 + 1.8 + 0.5 → 1.0 = 2.7–3.7 ms | ≈ 187–196 | 0.985–0.99 (88.8–89.6 / 90.2) | ≈ 19–20 ms (shipped: 208) | 0.02 s (shipped: 0.41) | 169 | +18–29 symbols, ≈ +2–3 ms of loop |
+| c8 | 14.75 + 2.5 + 1.0 + 0.7 → 1.4 = 18.9–19.7 ms (leg 0) | ≈ 460–475 | 0.98–0.99 | ≈ 38–40 ms (shipped W 4 096: 343) | ≈ 0.08 s (shipped 1 280: 0.37) | 340 | +120–135 symbols, ≈ +10 ms of loop, ≈ +0.03 s in order |
+| c1s | 0.15 + 0.5 + 0.13 → 0.26 = 0.8–0.9 ms | ≈ 485–500 | **0.87–0.88** (763–772 / 875) | ≈ 5 ms (shipped 19) | — | 903 | **below the knee**: R3.5 |
+
+On the revision-2 forms, with Fable's first read confirmed on the score's curves:
+
+| cell | form | §56 reading |
+|---|---|---|
+| c2 | per-leg | 174–192 → 0.96–0.99; "expired" 140–164 → 0.84–0.94, on the cliff |
+| c8 | coupled, full floor gap | ≈ 550 → within 0.5 % of control |
+| c8 | per-leg | 148–212 → ≈ 0.75–0.85 (W 160: 0.75; 224: 0.87) |
+| c1s | — | 370–509 → 0.79–0.89 |
+
+**The guard claim is withdrawn.** Revision 2's "c8 −3 to −5 %, fails the guard" came from p27's 8 s rows.
+- On §56's maps the coupled point reads within 0.5 % (full gap), and 0.98–0.99 with the half-gap F. That is inside
+  c8's 2 % d80 at the full gap, and at its edge at the half gap.
+- c2 reads −0.6 to −0.9 %, inside its 1 % resolution.
+- **Only c1s fails** (−12 to −13 % at Bulk, against a 5 % d80), and its cost is the substrate's (R3.5).
+- The trade at c8 between the half and the full floor gap: the full gap costs ≈ +15 ms of p0 first arrival and
+  ≈ +80 symbols of store, for ≈ +1 % goodput. Neither is picked here; see R3.3.
+
+### R3.3 The c8 knee miss: forward delays equalise, not loops
+
+**Measured knee W ≈ 340 against a predicted 500–700.** The shoulder is leg 1 starving: r₁ 1 853 → 1 718 → 1 113 →
+405 → 188 at W 1 280 → 512 → 320 → 224 → 160.
+
+**What the prediction assumed.** Leg 1 is fed once leg 0's *loop* reaches leg 1's no-queue loop (T₀,₁ ≈ 46 ms),
+i.e. a leg-0 queue of Δ ≈ 29.5 ms.
+
+**What placement prices.** Placement prices expected *arrival*: E_i = (I/W)·s + (½ + ε)·wire (K05). Half the wire
+RTT stands in for the forward delay. The c8 legs are symmetric: netem holds 5 + 5 ms on leg 0 and 20 + 20 ms on
+leg 1, and the queue sits on the forward direction only. So the legs' arrivals equalise when leg 0's forward delay
+reaches leg 1's, i.e. at a leg-0 queue of ≈ Δ/2 ≈ 15 ms. That is a leg-0 loop of ≈ 30 ms.
+
+On §56 that loop is W ≈ 320–340 (rtt₀ 26 ms at 320, 39 at 512), which is where the knee is. The prediction confused
+loop with forward delay by a factor of 2 in the gap. The softmax temperature (K06) rounds the shoulder: leg 1 still
+carries 405 /s at W = 224.
+
+**The same correction applies to the law's coupling.**
+- The in-order frontier waits for the slowest leg's *arrival*, so the coupled floor term should fund half the
+  floor gap, not all of it. That is R3.1's ½·max(0, …), continuous, and 0 at N = 1.
+- **Domain:** per-leg symmetric delay. An asymmetric leg (a long return path) breaks the ½.
+- **Gauge:** the receiver's reorder-hole lifetime (`[SUCC] orig_p50`), which measures the forward-arrival gap
+  directly (49–106 ms on the §54b arms). It must read ≈ 0 at the law's point.
+- The full-gap form of revision 2 over-funds leg 0 by the return-delay gap. It is kept as the alternative with its
+  cost in R3.2.
+
+### R3.4 F5: the per-tick Little residual
+
+Recomputed per tick with means (`s56.py`): a − Σᵢ rᵢ(t)·rttᵢ(t), averaged over the LATE window. At N = 1 it was
+cross-checked with the 0.1 ms top-level `rtt`; both agree within 0.05 ms.
+
+| cell | resid / W (unflagged arm medians) | resid ÷ Σr, ms (store time outside the echo loop) |
+|---|---|---|
+| c1s | −0.058 … +0.027 | −0.08 (W 384), 0.16, 0.57, 0.72, 1.28 (W 2 048) |
+| c2 | −0.042 … −0.010 | 0.33–0.57 at W ≤ 384; −0.13 at 2 048 |
+| c8 | −0.032 … +0.011 | 0.27–0.91 at W ≤ 512; 1.9, 5.1 at 768, 1 280 |
+
+- **F5's firing was the integer-millisecond median, not Little.** With per-tick means, |resid| ≤ 0.06·W on every
+  arm. That includes c1s, where the scored medians read 0.15–0.24.
+- **A small out-of-loop store time remains:** ≈ 0.3–0.9 ms at c2 and c8 up to W 512 (the ACK→SACK release lag, W1's
+  λ). It is not fixed: it grows with W at c1s (with quinn's backlog) and at c8.
+- **It does not enter the reference.** In the ratio law the fixed point is a condition on the echo loop (R = 1).
+  Store time outside the loop changes the store size n* = Σλᵢ(T*ᵢ + τ_out) and the loop gain, as H does (§3.4), but
+  not the fixed point. It is ≤ b̂₀⁺'s over-read at every cell, so no separate term is added.
+
+### R3.5 c1s: who limits, per tick (W1.1 classes)
+
+The classes are those of status §48b and W1 §5, computed per tick on unflagged rows:
+- QUINN-LIMITED: quinn's backlog B ≥ 98 datagrams.
+- STORE-LIMITED: paused ≥ 50 % and B < 98.
+- The pause test never fires at c1s, because the sender wakes on every ack batch even with the store at its cap.
+  A second split uses the store itself: FULL is a ≥ 0.95·W with B < 98; OPEN is a < 0.95·W with B < 98.
+
+| c1s W | 2 048 | 1 024 | 768 | 512 | 384 |
+|---|---|---|---|---|---|
+| QUINN-LIMITED | **0.89** | **0.82** | **0.73** | 0.39 | 0.25 |
+| store FULL, B < 98 | 0.05 | 0.07 | 0.10 | 0.13 | 0.18 |
+| OPEN (neither) | 0.04 | 0.12 | 0.18 | **0.49** | **0.58** |
+| quinn backlog / W | 0.43 | 0.36 | 0.26 | 0.13 | 0.14 |
+| goodput / control | 1 | 0.96 | 0.94 | 0.89 | 0.79 |
+
+c2 and c8 at reduced W: STORE-LIMITED 0.97–1.00 and FULL 0.65–0.89, QUINN-LIMITED ≤ 0.03 (c8 1 280: 0.33).
+
+**Reading: the c1s slope is not a store cost at W ≥ 768, and only partly one below it.**
+- **2 048 → 768 (−6 %): substrate.** Quinn holds 73–89 % of ticks with ≥ 98 datagrams queued, and 26–43 % of the
+  store sits in quinn's send buffer. The store's transit is W·(1 − B/W) ≈ 1 160 → 567. Shrinking W shrinks quinn's
+  backlog first.
+- **768 → 384 (−15 %): neither limiter.** The store is not full and quinn has no backlog on 49–58 % of ticks, so the
+  pipe empties between ack batches. That is the release granularity at 1 Gbit/s (§23: acks arrive in bursts of
+  ≈ 400 symbols), and it is a store-size cost.
+- A store law cannot see quinn's buffer as anything but standing queue (the echo includes it). So at c1s it
+  shrinks W into the OPEN regime. The c1s cost is quinn's window (K09) plus the release burst. The allowance cannot
+  close it without funding quinn's backlog (R3-Q1).
+
+### R3.6 Quinn collapse at c1s, and any closed-loop c1s test
+
+- Collapses hit 9 of 27 c1s rows, flat in W (P2048 3/9, P512 4/9).
+- Post hoc, onsets come earlier at pools ≤ 512: 1–25 s, against 29–49 s.
+- On flagged rows, quinn's backlog is 0.63–0.97 of W, against 0.13–0.43 on unflagged rows (`s56.out`).
+
+What this means for a closed-loop test:
+1. The law's c1s point (≈ 500) sits in the region of early onsets, so closed-loop c1s rows will carry more
+   collapse time than the shipped pin does. A collapse flag and exclusion (§56 Amendment 2's absolute flag), and
+   n ≥ 9 per arm, are prerequisites.
+2. During a collapse the echo loop jumps (rtt 7–80 ms against a wire 2–5 ms), so the law reads it as standing queue
+   and shrinks W. That is the right direction for delay, but the shrink is driven by the substrate, not the
+   network. The test must report W and R across each onset, and must not score goodput on collapsed spans.
+3. Since §43's c1s "runaway" was a collapse under an oracle L, the time law's failure mode at c1s is the opposite: a
+   collapse-driven contraction. Its gauge is the share of collapsed windows with R < 1.
+4. **A closed-loop c1s test waits** for R3-Q1 and, likely, for K09/K10 (quinn's BBR against `bbr_rs`).
+
+### R3.7 Owner questions (revision 3; these replace §12 for decisions now open)
+
+1. **c1s.** At c1s the substrate (quinn's window), not the store, sets the knee.
+   - Option (a): accept ≈ −12 % at c1s until the substrate question (K09/K10) is settled.
+   - Option (b): let the store also fund quinn's own send backlog. That recovers goodput, but it ties the store's
+     size to the substrate's queue and can run to the clamp.
+2. **δ's authority.** Moving from Realtime to Bulk changes the law's point by only a few symbols (q·ℓ ≤ 1 ms at c2,
+   ≤ 1.4 ms at c8).
+   - Is that the intended authority?
+   - Or should δ scale a larger quantity, for example the whole margin above the knee?
+3. **The two-leg term** assumes each leg's delay is the same in both directions, so it funds half the floor gap.
+   - Accept that domain, with the receiver's reorder-hole lifetime as its gauge? Or require a measured forward
+     delay?
+   - Separately, half gap or full gap at c8: ≈ −1 % goodput against ≈ +15 ms of fast-leg first arrival.
 
 ## 0. Answer
+
+*Superseded in its formula and predictions by §R3; kept as revision 2's record.*
 
 *Revision 2 (after review).* Three blockers are closed in this revision:
 - b₀ is now a one-sided upper bound (§3.5);
@@ -714,8 +906,11 @@ Part B decides whether an engine law can be registered. Nothing ships from eithe
 > rate-weighted echo loop of 343 / 171 / 107 ms). The store's size therefore needs a target *time*, not a rate:
 >
 > ```text
->    n_{k+1}  =  clamp( n_k · Σᵢ wᵢ( Fᵢ + q(δ)·ℓ̂ᵢ + Ŝᵢ ) / Σᵢ wᵢ T̂ᵢ ,  floor ,  N·knee )
->    Fᵢ = max( min(m̂ᵢ, ℓ̂ᵢ + b̂₀ᵢ⁺) + b̂₀ᵢ⁺ ,  maxⱼ (ℓ̂ⱼ + b̂₀ⱼ⁺) ) ,   b̂₀ᵢ⁺ = max over the first K windows of (T̂minᵢ − m̂ᵢ)
+>    n_{k+1}  =  clamp( n_k · Σᵢ wᵢ( Fᵢ + σ̂ᵢ⁺ + q(δ)·ℓ̂ᵢ + Ŝᵢ ) / Σᵢ wᵢ T̂ᵢ ,  floor ,  N·knee )
+>    Fᵢ = min(m̂ᵢ, ℓ̂ᵢ + b̂₀ᵢ⁺) + b̂₀ᵢ⁺ + ½·max(0, maxⱼ(ℓ̂ⱼ + b̂₀ⱼ⁺) − (ℓ̂ᵢ + b̂₀ᵢ⁺)) ,   b̂₀ᵢ⁺, σ̂ᵢ⁺ = boot maxima over K windows
+>
+> (Revision 3: σ̂⁺, the release-jitter cover, and the half floor gap, the forward-delay equalisation of symmetric
+> legs. Both are measured on status §56's maps; see store-law §R3.)
 > ```
 >
 > b₀ enters as a one-sided bound because an under-read collapses the store while an over-read costs only that many
