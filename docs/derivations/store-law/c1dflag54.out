@@ -1,0 +1,24 @@
+BASE-s42-r1-a1                           goodput  839.0  abs share 0.000 0.000  rel share 0.000 0.000  
+BASE-s42-r2-a1                           goodput  886.1  abs share 0.000 0.000  rel share 0.000 0.000  
+BASE-s42-r3-a1                           goodput  825.8  abs share 0.000 0.000  rel share 0.000 0.000  
+BASE-s42-r4-a1                           goodput  810.6  abs share 1.000 0.000  rel share 0.917 0.000  FLAG
+BASE-s42-r5-a1                           goodput  879.9  abs share 0.091 0.000  rel share 0.091 0.000  
+BASE-s42-r6-a1                           goodput  911.8  abs share 0.091 0.000  rel share 0.091 0.000  
+BASE-s7-r1-a1                            goodput  870.3  abs share 0.091 0.000  rel share 0.091 0.000  
+BASE-s7-r2-a1                            goodput  915.1  abs share 0.000 0.000  rel share 0.000 0.000  
+BASE-s7-r3-a1                            goodput  870.2  abs share 0.273 0.000  rel share 0.182 0.000  FLAG
+BASE-s7-r4-a1                            goodput  867.7  abs share 0.091 0.273  rel share 0.091 0.273  FLAG
+BASE-s7-r5-a1                            goodput  822.2  abs share 0.000 0.000  rel share 0.000 0.000  
+BASE-s7-r6-a1                            goodput  860.9  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s42-r1-a1                           goodput  910.4  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s42-r2-a1                           goodput  867.6  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s42-r3-a1                           goodput  936.4  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s42-r4-a1                           goodput  832.9  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s42-r5-a1                           goodput  887.3  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s42-r6-a1                           goodput  883.2  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s7-r1-a1                            goodput  830.9  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s7-r2-a1                            goodput  922.4  abs share 0.000 0.100  rel share 0.000 0.100  
+CAND-s7-r3-a1                            goodput  817.0  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s7-r4-a1                            goodput  875.2  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s7-r5-a1                            goodput  919.9  abs share 0.000 0.000  rel share 0.000 0.000  
+CAND-s7-r6-a1                            goodput  935.8  abs share 0.000 0.000  rel share 0.000 0.000  
