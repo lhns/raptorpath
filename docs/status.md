@@ -966,6 +966,16 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - otherwise guard α.
 - **One attempt only.** A miss means the line-shift explanation is incomplete for the math crate.
 
+**Amendment 3 result (22:39–22:54Z).**
+- control = main `504c4ea6`: `0ec95258…`, equal to the predicted answer, with 190 tests passing.
+- The re-laid candidate `endspeed-relaid` `e5cef8ce` (phase 6's forms in `raptorpath-math/src/span_forms.rs`, declared below the non-test code, plus endspeed's speed-ups): **`0ec95258…`, identical**, with 198 tests passing.
+- It merges on ADR-0077's literal waiver. The line-shift explanation holds for the math crate too.
+- **Tree Y** (base with `raptorpath/src` reverted, the workspace changes kept): `8f313616…`, 190 passed. That confirms the workspace member `raptorpath-core` does not touch the engine binary.
+- `phase6-forms` and `viz-endspeed` are superseded by `endspeed-relaid`.
+- **§58 is closed.**
+  - Deviation: host builds of two unrelated projects ran during Part A.
+  - Correction: Part B run 1 used the wrong build directory and was not read; this is recorded above.
+
 **Not in this session.** The oracle's evicting-seat diagnostic row (m̄; `pfec-oracle-spec.md` §6) needs a harness path, a stub test and a rehearsal. It gets its own registration.
 
 **Order and length.** Part A, about 50–60 min, then Part B, four builds, each followed by the math and wasm tests: about 4 × 15–20 min. No netns and no battery; nothing runs raptorpath. `LD_HARD` does not apply; the locks are held by the runner for each part.
