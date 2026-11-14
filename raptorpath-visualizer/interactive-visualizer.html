@@ -402,7 +402,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
           <td style="text-align:left; font-weight:normal">the app's retention contract (the &rho; dial); shed law compiled out on &rho; = 1</td>
           <td style="text-align:left; font-weight:normal">the &rho; dial is live (default 1 = RETAIN; &lt; 1 = &sect;6.1 T_cut give-up in the sim); the span cartoon additionally marks the shed law compiled out at the Bulk r* = 0 limit</td></tr>
       <tr><td>shed law</td>
-          <td style="text-align:left; font-weight:normal">sender arm at ALL recovery decision points + receiver arm (&delta;-derived hold, &epsilon;&#770;<sub>recv</sub> bound); EVENTUAL P_fec budget (&sect;16.26)</td>
+          <td style="text-align:left; font-weight:normal">sender arm at ALL recovery decision points + receiver arm; EVENTUAL P_fec budget (&sect;5.6). The receiver&rsquo;s hold is a hard-coded SRTT/2 (equal to b&middot;SRTT only at Realtime, the one seat that reaches it) when the shed law is armed and the budget is open, else a clamped 4&middot;SRTT fallback (60&ndash;300 ms) &mdash; not read from the &delta; dial (ledger S05)</td>
           <td style="text-align:left; font-weight:normal">sender-side cartoon in the span panel only; budget = 1&minus;&rho; when the dial is below 1, else the derived &sect;16.26 residual; the delivery sim sheds via &sect;6.1 T_cut, not the span law</td></tr>
       <tr><td>decoder</td>
           <td style="text-align:left; font-weight:normal">UnifiedDecoder: global sparse-aware RREF, interval-span rows, k = 0 fast path (src/fec/unified.rs)</td>
@@ -423,8 +423,8 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
           <td style="text-align:left; font-weight:normal">pooled cap (&sect;6.1) = clamp(law, floor, max(n&middot;2048, floor)). 2048/path is a <b>clamp</b>, not a knee: the law&rsquo;s value sat at it for 0.74&ndash;0.98 of c8 ticks (ledger F01, measured pinned). Measured (&sect;56, W = total store): c2 is flat down to W &asymp; 192&ndash;256; c8 is flat to W &asymp; 512 (in-order delay 0.37 &rarr; 0.09 s); c1s loses at every cut (goodput/control 0.96, 0.94, 0.89, 0.79 at W 1024, 768, 512, 384). SACK release keeps payload + ARQ maps until the frontier (&sect;6.3)</td>
           <td style="text-align:left; font-weight:normal">a constant 512 slots/path (ledger M01: an underived constant, not a law); slot accounting only (payload retention not modeled). It does <b>not</b> bind at the model&rsquo;s c8 preset (stall fraction 0.000, peak occupancy 0.08&ndash;0.09) while the engine&rsquo;s store gates the c8 sender. The derived store law is not shipped and is not modeled</td></tr>
       <tr><td>loss detection</td>
-          <td style="text-align:left; font-weight:normal">RFC 9002 per path: 9/8 time threshold + kPacketThreshold = 3 same-path fast channel (&sect;16.24)</td>
-          <td style="text-align:left; font-weight:normal">per-path clock = 1 own-RTT from send (per-symbol acks make the packet-threshold channel no faster here)</td></tr>
+          <td style="text-align:left; font-weight:normal">at N = 1: the pre-RFC srtt/2 age gate (ledger C04; <code>RWM_RECOV_SP</code> is default off). At N &ge; 2: per-path clocks (&sect;7.1), 9/8 time threshold + kPacketThreshold = 3 same-path fast channel; c8 holes were seen only at &asymp; 3.5 s age (C02, measured before the snapshot-order law)</td>
+          <td style="text-align:left; font-weight:normal">per-path clock = 1 own-RTT from send at every N, including N = 1 (per-symbol acks make the packet-threshold channel no faster here); no srtt/2 age gate</td></tr>
     </table>
   </details>
 </div>
