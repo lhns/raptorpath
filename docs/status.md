@@ -938,6 +938,34 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - **Reported from run 1, not read:** phase6 and endspeed built the same sha (`3c03b2b3…`). Every finished tree's math and wasm tests are green (182, 190 and 195 passed).
 - **Part B run 2:** the same five trees with the fixed runner, after `test_binid.py` passes on the VM. The registered reading applies unchanged.
 
+**Part B result (run 2, 21:34–22:13Z, the fixed runner).**
+
+| tree | release sha256 | math + wasm tests |
+|---|---|---|
+| control (`main57b.tgz`, main `02ecbdd7`) | `8f313616…` = the known answer | 182 passed |
+| base (main `ba6637d7`) | `b68d709d…` ≠ control | 190 passed |
+| phase6 (`cca84f53`) | `62bc7dd8…` ≠ base | 195 passed |
+| endspeed (`e5d04df4`) | `62bc7dd8…` = phase6 | 198 passed |
+| treeA (`b7e1f06f`, main + F1) | `0ec95258…` | 190 passed |
+
+- **The method is valid:** the control equals the known sha.
+- **base ≠ control is diagnosed.** Tree X = base minus only the two-line `#[cfg(test)] mod decision_trace_pin;` declaration in `net/mod.rs` builds **`8f313616…`, exactly the control**, with 190 tests passing.
+  - So main's engine is byte-identical to the control apart from the line numbers that shift below that declaration. The binary embeds location data. shared-core-0 changed no engine behaviour.
+  - Tree Y (base with all of `raptorpath/src` reverted to the control's, keeping the workspace changes) is still building. It is recorded when done.
+- **Read as registered:** phase6 ≠ base, so phase6 and endspeed ride guard batch α. The line-shift mechanism is shown for main only. For phase6 it is consistent but untested: phase6 inserts 77 lines at `raptorpath-math/src/lib.rs:202`, above endspeed's first edit at :1208.
+- **The sha chain for later re-basing:** `0ec95258…` (main with F1) = `8f313616…` + the `net/mod.rs` line shift (X) + F1's two files.
+- **Consequence for ADR-0077's waiver** (an identical release sha): only edits that move no existing line can meet it. Step 1.2, the span-seat extraction and every move into `raptorpath-core` rewrite lines, so they fail it by construction and ride guard α. The oracle spec's "identical sha waives the guard" branch is dead. A weaker identity (the same code section, with differences confined to location data) would change ADR-0077, so it is the owner's call. It would be calibrated on the base/X pair first.
+
+**Amendment 3 (before the build): one re-laid candidate for the visualizer fix.**
+- **Candidate** = current main (with F1) + endspeed's content, laid out so that no line of `raptorpath-math/src/lib.rs` above endspeed's first edit changes its number:
+  - phase 6's five functions move to a new module file, declared and re-exported below that point;
+  - new tests go inside test modules.
+- **Control:** current main, known answer `0ec95258…`.
+- **Reading:**
+  - candidate = control, with its tests green, merges on ADR-0077's literal waiver;
+  - otherwise guard α.
+- **One attempt only.** A miss means the line-shift explanation is incomplete for the math crate.
+
 **Not in this session.** The oracle's evicting-seat diagnostic row (m̄; `pfec-oracle-spec.md` §6) needs a harness path, a stub test and a rehearsal. It gets its own registration.
 
 **Order and length.** Part A, about 50–60 min, then Part B, four builds, each followed by the math and wasm tests: about 4 × 15–20 min. No netns and no battery; nothing runs raptorpath. `LD_HARD` does not apply; the locks are held by the runner for each part.
