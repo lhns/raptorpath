@@ -434,8 +434,8 @@ pub struct Simulation {
     /// taper-truncation remedy. Compiled out of the shipped wasm.
     #[cfg(test)]
     legacy_tail_burst: bool,
-    /// Reliability target (rho). Below 1.0, losses older than T_cut are
-    /// given up (§3.5 age-based give-up) — the third triangle corner.
+    /// Reliability target (rho): the give-up budget is min(1 − ρ, R)
+    /// (§3.5, §5.6) — the third triangle corner.
     rho: f64,
     given_up: u32,
     /// The δ price (the dial), kept for the give-up deadline D(δ).
@@ -992,9 +992,9 @@ impl Simulation {
     /// hint: "continuum" (custom_delta = the δ price; the dial's one path) |
     /// "bulk" | "auto" | "realtime" (NAMED POINTS on that dial: δ = 0.005 /
     /// 0.5 / 50, built by the same code) | "fixed" (uses fixed_r as r).
-    /// custom_rho (every hint) sets the retention contract; rho < 1.0
-    /// enables T_cut age eviction (losses older than T_cut are given up;
-    /// reliability becomes the emergent third variable).
+    /// custom_rho (every hint) sets the retention contract: holes older than
+    /// D(δ) are given up within the budget min(1 − ρ, R)·src_total (0 at
+    /// ρ = 1); reliability becomes the emergent third variable.
     #[wasm_bindgen(constructor)]
     pub fn new(
         eps: f64, q: f64, rtt_ms: u32, w: u32, hint: String,
@@ -1045,7 +1045,7 @@ impl Simulation {
         let fixed_r = if hint == "fixed" { Some(fixed_r.unwrap_or(0.1)) } else { None };
         // The ρ dial composes with the δ price — the triangle's two dials
         // are independent (§1.2), so EVERY hint honours custom_rho: a
-        // Bulk-priced transfer may declare ρ < 1 (§3.5 T_cut give-up), and
+        // Bulk-priced transfer may declare ρ < 1 (§3.5 give-up), and
         // so may Realtime. Gating ρ on the hint would be a hidden mode
         // switch. None defaults to 1.0 (the shipped engine hints carry
         // ρ = 1).
@@ -1407,37 +1407,34 @@ impl Simulation {
             }
         }
 
-        // T_cut age eviction (§3.5, §4.10): for rho < 1.0, losses older than
-        // T_cut are given up — reliability bends instead of latency.
-        if self.rho < 1.0 {
-            let p_up = self.agg_loss_est().clamp(1e-4, 0.99);
-            let sig = self.get_sigma2_est();
-            let t_cut = math::find_t_cut(
-                p_up, self.agg_q(), self.rate.max(1e-3),
-                self.encoder.window_size().max(1) as f64, sig, self.rho,
-            );
-            if t_cut.is_finite() {
-                let cut_ticks = (t_cut as u32).max(self.agg_rtt_ticks() * 2);
-                let now = self.tick;
-                #[cfg(test)]
-                let log_cap = giveup_budget(self.rho, self.get_giveup_residual())
-                    * self.total_src as f64;
-                for sym in &mut self.symbols {
-                    if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) > cut_ticks {
-                        sym.recovered = true; // given up
-                        self.given_up += 1;
-                        #[cfg(test)]
-                        self.giveup_log.push((
-                            now - sym.tick,
-                            sym.last_retx_tick != sym.tick as i64,
-                            self.given_up,
-                            log_cap,
-                        ));
-                        self.given_up_seqs.insert(sym.seq);
-                        self.lost_pending = self.lost_pending.saturating_sub(1);
-                        // Give-up resolves the slot too (§6.3 semantics).
-                        self.store_occupancy = self.store_occupancy.saturating_sub(1);
-                    }
+        // Give-up law (§3.5, §5.6; docs/derivations/giveup-law-model.md):
+        // a lost, unrecovered hole is given up iff
+        //   age > D(δ)  ∧  given_up + 1 <= min(1 − ρ, R) · src_total,
+        // oldest first. One formula, no ρ guard: at ρ = 1 the budget is 0
+        // and nothing is given up (RETAIN is the ρ = 1 point of the dial).
+        // R is the residual after in-window FEC over this sim's own window W.
+        {
+            let cap = self.get_giveup_budget() * self.total_src as f64;
+            let deadline = self.get_giveup_deadline();
+            let now = self.tick;
+            for sym in &mut self.symbols {
+                if (self.given_up + 1) as f64 > cap {
+                    break;
+                }
+                if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) as f64 > deadline {
+                    sym.recovered = true; // given up
+                    self.given_up += 1;
+                    #[cfg(test)]
+                    self.giveup_log.push((
+                        now - sym.tick,
+                        sym.last_retx_tick != sym.tick as i64,
+                        self.given_up,
+                        cap,
+                    ));
+                    self.given_up_seqs.insert(sym.seq);
+                    self.lost_pending = self.lost_pending.saturating_sub(1);
+                    // Give-up resolves the slot too (§6.3 semantics).
+                    self.store_occupancy = self.store_occupancy.saturating_sub(1);
                 }
             }
         }
@@ -1937,7 +1934,7 @@ mod tests {
     }
 
     /// The reliability contract is CONFIGURABLE via rho on multipath too
-    /// (§3.5): rho < 1 gives up losses older than T_cut (counted,
+    /// (§3.5): rho < 1 gives up losses older than D(δ) within min(1-rho, R) (counted,
     /// receiver-pruned), rho = 1 retains until acked — same triangle
     /// semantics as single-path, now across N paths.
     #[test]
@@ -2457,7 +2454,7 @@ mod tests {
 
     /// The ρ dial composes with the Bulk price (no hidden mode switch
     /// keyed on ρ): 'bulk' + ρ < 1 keeps the late-is-fine controller
-    /// (r = 0 mid-stream) and the §3.5 T_cut give-up semantics.
+    /// (r = 0 mid-stream) and the §3.5 give-up semantics.
     #[test]
     fn test_bulk_composes_with_rho() {
         let mut sim = Simulation::new(
@@ -2492,6 +2489,8 @@ mod tests {
         // Budget min(1−ρ, R) admits >= 1 symbol here, so give-up happens.
         assert!(sim.get_giveup_budget() * sim.get_total_src() as f64 >= 1.0);
         assert!(sim.get_given_up() > 0, "budget admits a symbol: ρ<1 gives up");
+        println!("MOVED given_up={} budget*src={:.2}", sim.get_given_up(),
+            sim.get_giveup_budget() * sim.get_total_src() as f64);
         // ρ = 1 (None) remains byte-identical bulk (the golden contract).
         let mut plain = Simulation::new(0.10, 0.3, 80, 64, "bulk".into(), None, None, None);
         run_to_end(&mut plain);
@@ -2500,7 +2499,7 @@ mod tests {
 
     #[test]
     fn test_custom_rho_gives_up_late_losses() {
-        // Custom triangle mode: rho < 1 -> T_cut eviction; some symbols are
+        // Custom triangle mode: rho < 1 -> budgeted give-up; some symbols are
         // given up instead of retransmitted forever.
         let mut sim = Simulation::new(
             0.10, 0.3, 80, 64, "continuum".into(), None, Some(0.005), Some(0.95),
@@ -2516,6 +2515,8 @@ mod tests {
         // and then something IS given up (age > D(δ) within the budget).
         assert!(sim.get_giveup_budget() * sim.get_total_src() as f64 >= 1.0);
         assert!(sim.get_given_up() > 0, "budget admits a symbol: ρ<1 gives up");
+        println!("MOVED given_up={} budget*src={:.2}", sim.get_given_up(),
+            sim.get_giveup_budget() * sim.get_total_src() as f64);
     }
 
     #[test]
