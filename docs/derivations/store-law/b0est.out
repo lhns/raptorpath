@@ -1,0 +1,74 @@
+## C:/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-af4cf9003d7bcec17/docs/l1-raw/loop-diag/p27/diag-ld
+== c1d-400  cap leg: b0_hat [rows]  measured brake [rows]
+    384 p0  b0_hat 0.78 0.50   brake 0.19 0.05
+    384 p1  b0_hat 1.10 0.48   brake 0.24 0.22
+    512 p0  b0_hat 2.03 74.88   brake 0.24 0.49
+    512 p1  b0_hat 1.84   brake 0.29
+    768 p0  b0_hat 1.62   brake 1.04
+    768 p1  b0_hat 0.84 1.63   brake 1.44 0.55
+   1024 p0  b0_hat 5.62 2.16   brake 1.19 3.53
+   1024 p1  b0_hat 6.49 1.84   brake 1.96 3.80
+   1536 p0  b0_hat 5.42 4.17   brake 8.37 6.11
+   1536 p1  b0_hat 5.15 7.11   brake 6.67 6.31
+   2048 p0  b0_hat 9.37 9.45   brake 11.41 13.30
+   2048 p1  b0_hat 9.36 9.91   brake 11.92 13.93
+   3072 p0  b0_hat 24.08 7.90   brake 21.47 23.13
+   3072 p1  b0_hat 63.59 10.21   brake 21.00 26.73
+   4096 p0  b0_hat 7.95 10.64   brake 30.83 32.20
+   4096 p1  b0_hat 12.67 12.51   brake 29.55 34.09
+== c1s-400  cap leg: b0_hat [rows]  measured brake [rows]
+    192 p0  b0_hat 29.35 0.43   brake 26.37 0.19
+    256 p0  b0_hat 1.12 0.50   brake 0.26 0.15
+    384 p0  b0_hat 0.88 0.36   brake 0.51 0.44
+    512 p0  b0_hat 0.70 0.71   brake 0.72 0.70
+    768 p0  b0_hat 2.20 1.90   brake 1.14 1.72
+   1024 p0  b0_hat 4.19 1.26   brake 2.49 2.30
+   1536 p0  b0_hat 8.58 3.22   brake 5.87 4.90
+   2048 p0  b0_hat 27.60 6.31   brake 10.07 8.80
+== c2-100  cap leg: b0_hat [rows]  measured brake [rows]
+     64 p0  b0_hat 2.27 3.03   brake 1.81 2.82
+     96 p0  b0_hat 2.25 2.00   brake 2.11 1.98
+    128 p0  b0_hat 2.44 2.02   brake 1.27 2.23
+    192 p0  b0_hat 3.03 4.12   brake 2.42 4.19
+    256 p0  b0_hat 4.45 6.40   brake 9.13 9.06
+    384 p0  b0_hat 16.96 7.49   brake 24.30 18.70
+    512 p0  b0_hat 5.36 7.22   brake 34.85 32.28
+   1024 p0  b0_hat 7.40 4.68   brake 88.48 81.85
+== c8-100  cap leg: b0_hat [rows]  measured brake [rows]
+    128 p0  b0_hat 1.86 2.85   brake 1.87 2.82
+    128 p1  b0_hat 8.38 7.95   brake 4.94 4.01
+    192 p0  b0_hat 512.46 3.65   brake 4.29 2.17
+    192 p1  b0_hat 24.86 4.78   brake 4.73 3.49
+    256 p0  b0_hat 4.05 5.69   brake 4.08 7.39
+    384 p0  b0_hat 8.85 15.46   brake 7.75 18.82
+    384 p1  b0_hat 19.82   brake 2.74
+    512 p0  b0_hat 12.67 5.10   brake 33.23 13.62
+    512 p1  b0_hat 26.00   brake 4.31
+    768 p0  b0_hat 21.54 28.91   brake 55.60 22.67
+    768 p1  b0_hat 71.62   brake 6.51
+   1024 p0  b0_hat 25.90 33.85   brake 34.76 31.54
+   1024 p1  b0_hat 126.03 112.17   brake 7.25 6.49
+   2048 p0  b0_hat 99.68 20.47   brake 92.30 91.65
+   2048 p1  b0_hat 201.40 353.88   brake 211.28 159.77
+## C:/Users/pierr/Documents/claude/raptorpath/.claude/worktrees/agent-af4cf9003d7bcec17/docs/l1-raw/loop-diag/p34/run/diag-ld
+== c1d-400  cap leg: b0_hat [rows]  measured brake [rows]
+    384 p0  b0_hat 0.36 1.13 0.80   brake 0.27 0.36 0.13
+    384 p1  b0_hat 0.39 0.85 0.36   brake 0.26 0.22 0.33
+    512 p0  b0_hat 0.77 0.89 0.49   brake 0.50 0.42 0.58
+    512 p1  b0_hat 0.87 0.53   brake 0.51 0.32
+    768 p0  b0_hat 1.12 1.83   brake 0.99 0.72
+    768 p1  b0_hat 0.54 1.86   brake 1.20 0.59
+   1024 p0  b0_hat 1.16 1.86 2.62   brake 1.15 1.86 0.80
+   1024 p1  b0_hat 2.86   brake 0.88
+   1536 p0  b0_hat 5.14   brake 1.14
+   1536 p1  b0_hat 2.30 2.48 4.07   brake 2.10 1.29 5.66
+   2048 p0  b0_hat 4.87 4.41   brake 1.25 0.95
+   2048 p1  b0_hat 4.56 5.04 4.94   brake 1.52 1.81 7.42
+== c1s-400  cap leg: b0_hat [rows]  measured brake [rows]
+    256 p0  b0_hat 0.45 0.59 0.43   brake 0.09 0.22 0.14
+    384 p0  b0_hat 17.97 0.44 0.69   brake 12.08 0.43 0.49
+    512 p0  b0_hat 0.56 0.50 0.73   brake 0.51 0.74 0.71
+    768 p0  b0_hat 2.54 0.97 0.86   brake 1.14 1.05 0.75
+   1024 p0  b0_hat 1.42 3.39 1.54   brake 1.78 2.02 1.41
+   1536 p0  b0_hat 1.72 2.63 4.31   brake 4.59 4.86 5.05
+   2048 p0  b0_hat 5.40 6.15 3.36   brake 7.32 6.09 4.99
