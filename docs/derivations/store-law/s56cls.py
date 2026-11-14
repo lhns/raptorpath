@@ -11,6 +11,8 @@ Usage: python -I s56cls.py <extracted .../run/rep56/diag-ld>
 (2) Per-row law point from the row's own boot inputs (first 8 [DIAG] ticks, i.e. 2 s):
       l_i   = the lowest rtp_us over those ticks (the lifetime echo minimum so far)
       sig_i = the highest qsp_us over those ticks (P90 - P50 of the leg's last 256 echo samples): sigma-hat+
+              (rejected in R4.4; kept for the record) and, the surviving candidate, sigma at load = the median
+              qsp_us over the row's LATE ticks (labelled '/sigma@load')
     [DIAG] has no window minimum, so b0+ cannot be read per row: the cell's ledger over-read (b0bound.out
     medians: c2 0.41, c8 1.0, c1s 0.12 ms) stands in, and the count is repeated with the ledger max (0.90, 48.8, 0.20).
     target queue (Bulk q = 0.10, Realtime 0.05): b0x + sig_0 + q*l_0 (+ 1/2 * max(0, l_1 + b0_1 - l_0 - b0_0) at c8,
@@ -76,8 +78,16 @@ for f in sorted(glob.glob(os.path.join(D, '*-c.log'))):
     l = {i: min(x['rtp%d' % i] for x in boot if x.get('rtp%d' % i, 0) > 0) for i in legs
          if any(x.get('rtp%d' % i, 0) > 0 for x in boot)}
     sg = {i: max(x.get('qsp%d' % i, 0) for x in boot) for i in legs}
+    lt0 = 5.0 if cell.startswith('c1s') else 15.0
+    sgl = {i: St.median([x['qsp%d' % i] for x in allt if x['t'] >= lt0 and x['src'] > 0 and 'qsp%d' % i in x] or [0.0])
+           for i in legs}
     if cell in CURVE and 0 in l:
         for q in (0.05, 0.10):
+            for which, b0x in (('med', B0X[cell][0]), ('max', B0X[cell][1])):
+                tq = b0x + sgl[0] + q * l[0]
+                if cell == 'c8-100' and 1 in l:
+                    tq += 0.5 * max(0.0, l[1] + B0[1] - l[0] - B0[0])
+                pts[(cell, q, which + '/sigma@load')].append((w_at(cell, tq), tq, key[1:], key in COLLAPSED))
             for which, b0x in (('med', B0X[cell][0]), ('max', B0X[cell][1])):
                 tq = b0x + sg[0] + q * l[0]
                 if cell == 'c8-100' and 1 in l:

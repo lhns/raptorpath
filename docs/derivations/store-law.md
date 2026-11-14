@@ -70,6 +70,197 @@ Its inputs:
 
 Any one of them refutes U at c1d.
 
+### R5.2 Is the receiver-bound "knee" a utilisation–delay curve? (post hoc test on §56)
+
+`s56util.py` → `s56util.out`.
+
+**Definitions.**
+- Capacity C is the control arm's median LATE send rate over unflagged rows: c1s 96 836 /s, c2 10 224 /s, c8
+  12 141 /s.
+- u = R/C.
+- q = T̄ − T₀ (rate-weighted echo loop minus the §56 floor).
+- At N = 1 the 0.1 ms top-level rtt replaces the integer per-leg value.
+- The table gives the row-level product q·(1 − u). The per-tick mean is printed beside it in the output.
+
+| c1s W | 384 | 512 | 768 | 1 024 | 2 048 (ctl) |
+|---|---|---|---|---|---|
+| u | 0.79 | 0.89 | 0.93 | 0.96 | 1 (by definition) |
+| q ms | 0.61 | 1.17 | 3.19 | 5.29 | 14.2 |
+| **q·(1 − u)·C, symbols** | **12.5** | **12.7** | **21.3** | **19.8** | — |
+| mean emission burst (`eb_syms/eb_bursts`; cap 64) | 42.6 | 47.9 | 52.4 | 52.6 | 57.2 |
+| release batch (symbols per ack wake) | 72 | 105 | 151 | 158 | 246 |
+
+**c1s: the product is flat within ×1.7 over W 384–1 024.**
+- That is 4 points, two of them at n = 2. A knee would have the product rise then fall to 0, as c2 and c8 do here
+  (c2 −1…0.3 symbols; c8 0.8 → 6.8 → 0.6).
+- So c1s behaves as a utilisation–delay curve q ≈ K/(C·(1 − u)), with K ≈ 12.5–21 symbols. c2 and c8 are knees.
+- The per-tick product is not flat. A 250 ms rate is too noisy for 1 − u at the per-tick scale.
+
+**Batch match.** Kingman's batch term gives q·(1 − u)·C ≈ (b − 1)/2, i.e. b_eq = 26–44.
+- The **emission burst** (mean 43–53, cap 64) is the same order: (b − 1)/2 = 21–26 against 12.5–21 measured.
+- The **release batch** grows with W (72 → 246), so it is not the constant.
+- **But the emission-burst term fails at c2.** There it predicts (11–15 − 1)/2 ≈ 5–7 symbols, against ≈ 0.1–0.4
+  measured.
+- So the variability is not the sender's burst alone. The other candidate is the **receiver's** batched service: c1s
+  is receiver-bound, c2 is not.
+- The mechanism stays undetermined between those two. The `RWM_EMIT_BURST` arm (R5.3) decides between them.
+
+**Against p34 c1d (contaminated, R4.1).**
+- The product reads 10.4 / 21.5 / 26 symbols at W 512 / 768 / 1 024. That is inside U's 8–32 band, and flat within
+  ×2.5.
+- W₉₅ ≈ 1 080 lies outside U's 550–800.
+- On contaminated data, U's shape holds and its W does not. The clean c1d sweep (R5.6, B-1) decides.
+
+### R5.3 The build-free falsifier: an `RWM_EMIT_BURST` arm at c1s
+
+`RWM_EMIT_BURST` is live on main: `gates.rs:194/363`, default 64, clamped to [2, 512]. F03 pins it on c1s/c1d.
+
+**Arms.** c1s-400, 5 GB, pools giving W = 768 and 1 024, `RWM_EMIT_BURST` ∈ {16, 64 (control), 256}, n = 6 each,
+36 rows.
+- The quinn-collapse flag (§56 Amendment 2) applies, with flagged rows excluded.
+- Client CPU/GB and the mean emission burst are readouts.
+
+**Predictions, at W = 768** (u = 0.93 at the control):
+
+| hypothesis | what it says | burst cap 16 | burst cap 256 |
+|---|---|---|---|
+| U-sender | K ∝ the mean emission burst | K ÷ ≈ 3.5, u ≈ 0.985: +5–6 % goodput | K × ≈ 2.3, u ≈ 0.89: −4 % |
+| U-receiver | K is set by the receiver | within ±1.5 % | within ±1.5 % |
+
+**Reading.**
+- |Δgoodput| ≥ 3 % in the U-sender direction, with q·(1 − u)·C moving in proportion to the mean burst: U-sender.
+- ≤ 1.5 %: U-receiver.
+- **Confound, stated:** a smaller burst means more wakes on a CPU-bound sender. A loss at cap 16 together with a rise
+  in client CPU/GB is reported as CPU, not as either hypothesis.
+
+### R5.4 How δ would pick the utilisation: one formula, continuous
+
+On the curve T(u) = T₀ + K/(C·(1 − u)), maximise the generalised power Π_α = u^α/T. α(δ) = b(δ) is paper §6.1's
+power exponent: ½ Realtime, 1 Auto, 2 Bulk. With x = 1 − u and k = K/(C·T₀):
+
+```text
+   α · x · (x + k)  =  k · (1 − x)
+   x*  =  [ −(α + 1)·k  +  √( (α + 1)²·k²  +  4·α·k ) ] / (2α) ,   u* = 1 − x* ,   q* = T₀ · k / x*
+```
+
+- **k is a symbol ratio:** the curve's batch constant ÷ the no-queue BDP in symbols. By Little, C·T₀ = n·T₀/T̄, so k
+  needs no rate.
+- **Continuous and monotone in δ** through α = b(δ). There is no branch.
+- **Hard knees fall out of the same formula.** As k → 0 (c2, c8: K ≈ 0), x* → 0, i.e. the knee itself. One formula
+  covers knees and curves, and the knee terms σ and ½Δ stay additive in the target.
+
+| c1s, k ≈ 0.04 (0.032–0.054) | Realtime (α ½) | Auto (1) | Bulk (2) |
+|---|---|---|---|
+| u* | 0.77 | 0.84 | 0.885 |
+| q* | 0.7 ms | 1.0 ms | 1.4 ms |
+| goodput against control | −23 % | −16 % | −11.5 % |
+
+This is the power point the paper already accepted. **At Bulk it would still fail the guard at c1s** (5 % d80).
+That is the owner question R5.8.
+
+### R5.5 The landing, redone with σ at load (replaces R4.4's void boot-σ̂⁺ table)
+
+σ at load is each row's median `qsp_us` over its LATE ticks, read at that row's static W. In closed loop it would be
+read at the law's own point. c2's σ is invariant across W (1.7–1.95), and c8 leg 0's is stable (2.0–2.7). b̂₀⁺'s
+over-read is the ledger value (`s56cls.out`, `/sigma@load` lines).
+
+| cell (0.95 knee) | rows | law's W per row, median over-read | below the knee | ledger-max over-read |
+|---|---|---|---|---|
+| c2 (169) | 18 | 186–202 | **0 / 18** | 191–202, 0 / 18 |
+| c8 (340) | 24 | 417–551 | **0 / 24** | 1 029–1 141: the b̂₀⁺ tail, 0 / 24 |
+| c1s (903) | 27 | 467–550 | **27 / 27** | 477–550, 27 / 27 |
+
+At c2 the spread across rows is ≈ 16 slots, against a margin of 17–33 above the knee. The counts are tight, but the
+margin is only about one 32-slot step from the 6 % loss below the knee.
+
+### R5.6 Part B, split into two sessions
+
+**B-1: the gauge build on §56's cells, plus the c1d sweep and the R5.3 burst arm.**
+- Gauge build: print-only, no law change.
+- Rows: §56's c8/c2/c1s arms.
+- **The c1d sweep:** W = 4 096 (control), 2 048, 1 536, 1 024, 768, 512, 384, n = 4. It scores R5.1.
+- The R5.3 burst arm. This is build-free and can also run without the gauge.
+
+**What the engine prints: raw window statistics** (estimators are then chosen offline), as `[WSTAT]` per 250 ms
+window and live leg:
+- echo samples: count, min, p10, p50, p90, mean;
+- the release batches: count, and size p50/p90/max (symbols released per SACK-release event);
+- the emission bursts: count, and size p50/p90/max;
+- ack-wake count;
+- a/W mean and minimum over the window;
+- quinn backlog p50/max;
+- Copa `min_rtt`, the lifetime echo minimum, and `qsp_us`.
+
+The law's counterfactual R (`[SLAW]`, R4.8) is printed beside it and is never applied.
+
+**"Bit-identical cap sequence" needs a test:**
+- **Host unit test:** drive the store-cap seat from a recorded input trace with the gauge on and off, and assert
+  equal cap sequences.
+- **VM witness:** the gauge logs (inputs, cap) per refresh. An offline replay through the pure `pooled_store_cap`
+  must reproduce every logged cap.
+- Runs are not deterministic across rows, so no cross-row comparison is claimed.
+
+**Re-base before reading.** The sampler sits on a CPU-bound cell's ack path, so the c1s control is re-based against
+§56's control (goodput 875 Mbit/s; client and server CPU/GB) first.
+- If c1s goodput falls outside §56's control range, or client CPU/GB rises more than 5 %, the gauge perturbs c1s.
+- Its c1s readings are then reported as perturbed and not used to choose an estimator.
+- c2 and c8 are re-based the same way (B640 for c8).
+
+**What the open-loop ratio can do.** It can **refute** the law (a crossing below the knee, B2), but never confirm it.
+A ratio that crosses 1 at a good W on static rows says nothing about the closed loop (§43).
+
+**B-2: the jitter cells and c8a/c8b**, after three prerequisites:
+- `adv-cells` is merged and rehearsed;
+- the harness has a separate server-side delay option;
+- B-1 has been read.
+
+B-2 carries R4.1's dose-response falsifier (B4) and R4.5's asymmetric-delay falsifier (B5).
+
+### R5.7 §56 Addendum (POST HOC; a stand-alone block for status)
+
+> **§56 Addendum (post hoc, 2026-11-14; from `docs/derivations/store-law.md` §R3–§R5 on the §56 ledger; nothing
+> registered is re-scored).**
+> - **F5 is resolved as a parser artefact.** Recomputed per tick with means (`store-law/s56.py`), |W − Σrᵢ·rttᵢ| is
+>   ≤ 0.06·W on every arm, c1s included. The scored medians used integer-millisecond echo values. A small time
+>   outside the echo loop remains: 0.3–0.9 ms at c2/c8 for W ≤ 512, growing with W at c1s. It changes the store size,
+>   not the ratio law's fixed point.
+> - **c1s is store-bound.** One class rule across cells (store full iff a ≥ 0.95·W; quinn backlogged iff B ≥ 98;
+>   `store-law/s56cls.py`):
+>   - c1s's mean occupancy is 0.85–0.90 of W, with a 10–15 % ack-batch sawtooth that a per-tick threshold misses;
+>   - ticks with quinn's backlog carry the higher send rate, and the rate falls with W in every class;
+>   - so quinn's backlog is an effect of W, not a limiter. Checked on three rows by the coordinator: occupancy
+>     0.85–0.88, backlogged rate ≥ the other ticks.
+>   - Post hoc, c1s's goodput curve is utilisation–delay-like: q·(1 − u)·C ≈ 12.5–21 symbols at W 384–1 024, unlike
+>     c2's and c8's knees.
+> - **The held-out c1d prediction missed** (`store-law.md` R4.1, committed `bcafa8c3` before the evaluation).
+>   - At the s53 pin, c1d's σ reads 1.1–1.3 ms and its quinn backlog dwell 0.9 ms, so the decomposition's inputs do
+>     not transfer.
+>   - On p34 (contaminated: seen in rev 2), the knee queue is ×2.7 the decomposition's.
+>   - One variant (U, R5.1, committed `441f5def`) is registered for a clean c1d sweep.
+> - **c8's ½ comes from symmetric shaping.** `topo_dual.sh` shapes both directions (5 + 5 ms, 20 + 20 ms), so the
+>   legs' forward arrivals equalise at a leg-0 queue of ½ the loop gap. That is ≈ 15 ms, a leg-0 loop of ≈ 30 ms, at
+>   W ≈ 320–340, where the knee is. Asymmetric cells c8a/c8b are its falsifier (Part B-2).
+> - **Withdrawn derivation claims:**
+>   - rev 2's "c8 −3 to −5 %, fails the guard" (p27's 8 s rows; on §56 the coupled point reads within 0.5 %);
+>   - rev 3's "c1s 2 048 → 768 is a substrate cost" and its quinn-backlog knee term;
+>   - rev 3's boot-latched σ̂⁺ (one start-up transient becomes a lifetime queue: one c2 row at 133 ms);
+>   - rev 3's close matches of a three-term knee model (fitted post hoc; it holds only at c2 and c8);
+>   - rev 4's two-variant c1d registration (replaced by one variant, U).
+
+### R5.8 Owner question (one; R4.7's Q2 is dropped)
+
+R4.7's Q2 is dropped: −11 % at c1s would fail the guard, so the store law is held until the c1s mechanism is known
+(R5.3, R5.6).
+
+**Q1. What should Bulk mean at a receiver-bound cell?**
+- On c1s's measured curve, the paper's power criterion with α = b(δ) puts Bulk at ≈ 88 % utilisation (−11.5 %
+  goodput) and a 1.4 ms queue, and Realtime at 77 %.
+- The guard demands no goodput loss, which on a curve means utilisation → 1 at any delay: today's 19 ms loop at
+  2 048.
+- Should Bulk keep the power criterion, accepting a c1s goodput cost for a ≈ ×3.5 shorter loop (19 → 5.4 ms) and a ×10 smaller queue? Or should Bulk's α grow
+  without bound so that Bulk means "full rate", leaving δ's delay authority to Auto and Realtime?
+- One formula (R5.4) serves either answer. Only α(δ)'s Bulk end differs.
+
 ## R4. Revision 4: held-out test, one class rule, per-row spread (review of rev 3)
 
 Revision 3's three knee terms were fitted post hoc to the three cells they explain, so its close matches test
@@ -232,7 +423,7 @@ b̂₀⁺ and σ̂⁺ are latched at boot, and both measure echo jitter from the
 - They are not the same statistic, but **they are contaminated by the same start-up transient**, so their errors
   add rather than cancel.
 
-`s56cls.out` §(2) gives each row's point from its own boot ℓ and σ̂⁺, with the ledger b̂₀⁺ over-read (median and max):
+**VOID (R5.5 replaces this table; it used the boot σ̂⁺ rejected just below).** `s56cls.out` §(2) gives each row's point from its own boot ℓ and σ̂⁺, with the ledger b̂₀⁺ over-read (median and max):
 
 | cell | rows | law's W per row (median) | below the 0.95 knee | upper tail |
 |---|---|---|---|---|
