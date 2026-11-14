@@ -449,11 +449,11 @@ def dnf54b():
         t = (d[0].get("t54") or {}) if d else {}
         sc = open(os.path.join(rep, "score.txt"), errors="replace").read() if os.path.exists(os.path.join(rep, "score.txt")) else ""
         check("54b/dnf: the session finishes (rc 0, LD-ALL-DONE) with a B640 DNF at seed 7: the row is LIVE, dnf true, no goodput",
-              rc == 0 and "LD-ALL-DONE" in out and len(d) == 1 and d[0]["status"] == "LIVE" and d[0]["dnf"] is True and d[0].get("mbps") is None, (rc, tail(out, 6), [(r["arm"], r["status"], r["dnf"]) for r in led][:4]))
+              rc == 0 and "LD-ALL-DONE" in out and len(d) == (3 if FULL else 1) and all(x["status"] == "LIVE" and x["dnf"] is True and x.get("mbps") is None for x in d), (rc, tail(out, 6), [(r["arm"], r["status"], r["dnf"]) for r in led][:4]))
         check("54b/dnf: the DNF row keeps old holes, inorder_mean_late, the budget residual and q0 computed from its [DIAG] / [RANK] lines (none None)",
               all(t.get(k) is not None for k in ("old_holes", "inorder_mean_late", "inorder_mean_run", "resid_late", "resid_rel", "q0_late", "rtt0_late")), t)
         check("54b/dnf: the report counts it (dnf=1 in the verdict line, 'DNF 1' for B640) and the falsifiers still evaluate",
-              "dnf=1" in sc and re.search(r"B640\s+rows \d+.*DNF 1", sc) is not None and "F1 " in sc, sc[-700:])
+              ("dnf=%d" % len(d)) in sc and re.search(r"B640\s+rows \d+.*DNF %d" % len(d), sc) is not None and "F1 " in sc, sc[-700:])      # FULL runs three seed-7 B640 rows, fast mode one
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
