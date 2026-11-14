@@ -18,13 +18,14 @@ flowchart TB
     model_review_37["✔ Model review (#167;37)"]
     model_paper_recon["⏳ Paper versus engine<br/>reconciliation"]
     model_bound_tests["✔ Bounding tests for<br/>divergences"]
-    model_wasm_audit["⏳ Wasm mode-switch<br/>audit"]
+    model_wasm_audit["✔ Wasm mode-switch<br/>audit"]
     model_defect_tcut>"⚠ T_cut give-up law<br/>pinned"]
     model_defect_dead_machine>"⚠ Wasm dead second<br/>machine"]
     model_bound_tests_unrun>"⚠ Erratum: pre-flight<br/>tests not run"]
     model_law_ledger["✔ Law ledger"]
+    model_shared_core["▶ Model shares engine<br/>laws and decisions<br/>(ADR-0077)"]
     model_fix_hint_keyed_paths["⛔ Hint-keyed engine<br/>paths made continuous"]
-    model_wasm_fixes["⛔ Wasm model fixes"]
+    model_wasm_fixes["▶ Wasm model fixes"]
     model_fix_paper_p2["○ Paper text for<br/>placement and bbr_rs"]
     model_fix_paper_p3["⛔ Paper-only law<br/>records"]
     model_paper_v1 ~~~ model_vis_continuum
@@ -39,11 +40,11 @@ flowchart TB
     model_wasm_audit ~~~ model_defect_dead_machine
     model_wasm_audit ~~~ model_bound_tests_unrun
     model_defect_tcut ~~~ model_law_ledger
-    model_defect_dead_machine ~~~ model_fix_hint_keyed_paths
-    model_bound_tests_unrun ~~~ model_wasm_fixes
-    model_law_ledger ~~~ model_fix_paper_p2
+    model_defect_dead_machine ~~~ model_shared_core
+    model_bound_tests_unrun ~~~ model_fix_hint_keyed_paths
+    model_law_ledger ~~~ model_wasm_fixes
+    model_shared_core ~~~ model_fix_paper_p2
     model_fix_hint_keyed_paths ~~~ model_fix_paper_p3
-    model_wasm_fixes ~~~ model_fix_paper_p3
     model_wasm_l0 -.-> model_defect_tcut
     model_wasm_l0 --> model_vis_continuum
     model_vis_continuum -.-> model_defect_dead_machine
@@ -53,6 +54,7 @@ flowchart TB
     model_vis_continuum --> model_wasm_audit
     model_wasm_audit --> model_defect_tcut
     model_wasm_audit --> model_defect_dead_machine
+    model_wasm_audit --> model_shared_core
     model_wasm_audit --> model_wasm_fixes
     model_law_ledger --> model_fix_paper_p2
     linkStyle 17,19,20,22 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
@@ -70,10 +72,11 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class model_paper_v1,model_math_verification,model_bound_tests,model_law_ledger unrated
-    class model_wasm_l0,model_vis_continuum,model_review_37 succ
+    class model_wasm_l0,model_vis_continuum,model_review_37,model_wasm_audit succ
     class model_mode_switch_debts,model_open_constants,model_defect_tcut,model_defect_dead_machine,model_bound_tests_unrun defect
-    class model_paper_recon,model_wasm_audit waiting
-    class model_fix_hint_keyed_paths,model_wasm_fixes,model_fix_paper_p3 blocked
+    class model_paper_recon waiting
+    class model_shared_core,model_wasm_fixes inprog
+    class model_fix_hint_keyed_paths,model_fix_paper_p3 blocked
     class model_fix_paper_p2 next
 ```
 <!-- END GENERATED: track-model -->
@@ -83,6 +86,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-model -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
+| `model-shared-core` | Model shares engine laws and decisions (ADR-0077) | in-progress | unrated | steps 0.1-0.3 running | ADR-0077; derivation shared-core-design.md; derivation visualizer-drift-2026-11.md | model-wasm-audit, infra-restructure |
 | `model-paper-v1` | Unified FEC/ARQ model paper | done | unrated |  | commit fc5867a3 |  |
 | `model-math-verification` | Mathematical verification of the model | done | unrated |  | commit 3a8fdfcb |  |
 | `model-wasm-l0` | raptorpath-math and wasm L0 model | done | successful |  | branch multipath visualizer |  |
@@ -92,14 +96,14 @@ flowchart TB
 | `model-review-37` | Model review (§37) | done | successful |  | status §37 |  |
 | `model-paper-recon` | Paper versus engine reconciliation | in-progress | unrated |  | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |  |
 | `model-bound-tests` | Bounding tests for divergences | done | unrated |  | branch bound-tests | model-paper-recon |
-| `model-wasm-audit` | Wasm mode-switch audit | in-progress | successful |  | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit | model-vis-continuum, infra-restructure |
+| `model-wasm-audit` | Wasm mode-switch audit | done | successful |  | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit | model-vis-continuum, infra-restructure |
 | `model-defect-tcut` | T_cut give-up law pinned | in-progress | unrated |  | status §3.10 item 1 | model-wasm-audit |
 | `model-defect-dead-machine` | Wasm dead second machine | in-progress | unrated |  | status §3.10 item 3 | model-wasm-audit |
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | in-progress | unrated |  | status §53 Erratum 2 (cbe2be3f) |  |
 | `model-law-ledger` | Law ledger | done | unrated |  | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |  |
 | `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | blocked | unrated |  | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2 | meas-s51-session |
-| `model-user-wasm-calls` | Owner calls on wasm audit | next | n/a |  | status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md | model-wasm-audit |
-| `model-wasm-fixes` | Wasm model fixes | blocked | unrated |  | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 | model-user-wasm-calls, rate-law-reconcile, store-engine-form-impl |
+| `model-user-wasm-calls` | Owner calls on wasm audit | done | n/a |  | status "Owner decisions (2026-11-14)"; status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md | model-wasm-audit |
+| `model-wasm-fixes` | Wasm model fixes | in-progress | unrated |  | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 | model-user-wasm-calls, rate-law-reconcile, store-engine-form-impl |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | next | unrated |  | law ledger rows K05, K10 | model-law-ledger |
 | `model-fix-paper-p3` | Paper-only law records | blocked | unrated |  | law ledger rows S10, C08, C10, E12 | meas-s51-session, store-fix-maxbw-minrtt |
 
@@ -107,6 +111,7 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
+| `model-shared-core` | Model shares engine laws and decisions (ADR-0077) | Owner decision 2026-11-14. Engine moves are zero-behaviour-change (pins, ns bench, guard). Store, recovery and placement stay unshared until the model has a queue and gap reports. | ADR-0077; derivation shared-core-design.md; derivation visualizer-drift-2026-11.md |
 | `model-paper-v1` | Unified FEC/ARQ model paper | Direct landings 2026-03-21 to 2026-04-10. Folded: the 2026-04-02 'Resolve #NN' spec commits. Folded the remaining April commits (2026-04-01..12), no separate development. | commit fc5867a3 |
 | `model-math-verification` | Mathematical verification of the model | 23 tests, three paper errors found (2026-04-12). Folded the remaining April commits (2026-04-01..12), no separate development. | commit 3a8fdfcb |
 | `model-wasm-l0` | raptorpath-math and wasm L0 model | Folds paper §11.1 open question 6 (do the three channel implementations agree). Folded: the April visualizer commits (2026-04-07..10); start moved to 2026-04-07 for the first of them. Folded the remaining April commits (2026-04-01..12), no separate development. | branch multipath visualizer |
@@ -119,7 +124,7 @@ flowchart TB
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | No raw record. Status §53 Erratum 2 (cbe2be3f): the visualizer build, the native golden test and the bound-tests wasm pool test were registered for the pre-flight but not run; they move to the next VM session's pre-flight. | status §53 Erratum 2 (cbe2be3f) |
 | `model-law-ledger` | Law ledger | Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |
 | `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | Law ledger: S08, S09 (moved from rate-fix-rho-realtime). queue_target_mult is K01's, which cc-copa-consumers deletes or reduces; whichever lands first removes the table. The symbol-size row has no ledger row yet (s51-design P6). Covers model-mode-switch-debts. Done when: the five hint-keyed behaviours (source-symbol size, the Realtime duplicate send, packing and batching scope, queue_target_mult, the default ρ) are each one formula continuous in δ (or ρ an independent dial), with continuity tests through every preset (±2 %), after §51 has measured the step. | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2 |
-| `model-user-wasm-calls` | Owner calls on wasm audit | Done when: the owner rules on the audit's five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status. | status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md |
+| `model-user-wasm-calls` | Owner calls on wasm audit | Done when: the owner rules on the audit's five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status. | status "Owner decisions (2026-11-14)"; status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md |
 | `model-wasm-fixes` | Wasm model fixes | Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | Law ledger: K05, K10. Done when: the paper carries the placement cost lines (A.4) and the bbr_rs minimum-filter sign, checked against the code. | law ledger rows K05, K10 |
 | `model-fix-paper-p3` | Paper-only law records | Law ledger: S10, C08, C10, E12. Done when: the taper grant law, the gap-report minimum interval, the reactive repair margin and the send-rate anchor each have a paper line with provenance. | law ledger rows S10, C08, C10, E12 |
