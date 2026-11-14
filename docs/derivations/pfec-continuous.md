@@ -2,7 +2,25 @@
 
 Derivation only: no code changes. Mandate: `docs/status.md` "Owner decisions
 (2026-11-14)" item 2. Numbers: `pfec-continuous/pfec_check.py` →
-`pfec_check.out` (section numbers § below refer to that file). Base: `db012f16`.
+`pfec_check.out`. Sections of that file are cited as **out§N**; plain §N is
+this doc, and paper sections are named "paper §". Base: `db012f16`.
+
+**Done with Fable (advisor), per the owner rule.**
+1. *Before the candidate set:* Fable set the event (per-loss, size-biased,
+   not the window event). It also proposed the debt-accrual dither in place of
+   a smoothing constant and the exact (ε, σ²) → GE inversion, and asked that
+   item 4 be a proof rather than a band.
+2. *After the numerics and the first commit:* Fable flagged five things, all
+   adopted below:
+   - the cartoon's fractional A*, which gives the real-W extension in §1;
+   - a possible r_sat staircase (checked in out§19: none beyond R04's own
+     0.005 grid);
+   - the gate's relative ±2 % reading (out§17);
+   - the dropped σ² = 0 point (out§16);
+   - the missing premises of the L1 proof.
+
+   It also fixed three number slips.
+3. *Before the final commit:* see the last commit's message.
 
 ## 0. Result
 
@@ -68,9 +86,16 @@ P_fec = P(recovered | lost) = E[K·1{C ≥ K}] / E[K],     E[K] = W·ε
   with loss iff Bad (netem `gemodel … 1-h 100% 1-k 0%`, `tools/l1/test_topo.sh:416`).
   §2.4's identity σ² = 1 + 2(1−p−q)/(p+q) (`raptorpath-math/src/lib.rs:82–92`)
   inverts exactly: p + q = 2/(σ² + 1), p = ε(p + q), q = (1 − ε)(p + q).
-  Every caller floors σ² at 1, the iid case (`lib.rs:91`, `fec_rate.rs:772`,
-  wasm `:1659–1667`), so σ² = 0 is outside the domain. The grid uses σ² = 1
-  for "no burst".
+  The inversion gives a valid GE (p, q ≤ 1) iff σ² ≥ |1 − 2ε|.
+  - Every engine and sim estimator path floors σ² at 1, the iid case
+    (`lib.rs:91`, `fec_rate.rs:772`, wasm `:1659–1667`).
+  - The raw wasm exports (`p_fec_normal` :83, `shed_budget_residual` :217)
+    take σ² from JS unfloored. A code change must project σ² to max(σ², 1)
+    there. That projection is continuous; it is the `burst_variance_factor`
+    floor, not a new threshold.
+  - The task's σ² = 0 point is therefore evaluated for C0 and C1 only
+    (out§16). At r = 0 both give P = 0, because z = −∞ when the variance is 0.
+    C0 still steps by 0.500 at r_c.
 
 **Required properties.**
 - P(0) = 0 exactly.
@@ -82,22 +107,34 @@ P_fec = P(recovered | lost) = E[K·1{C ≥ K}] / E[K],     E[K] = W·ε
   burst. That is min(1, rW) for iid, not Φ's 1 at any r > 0.
 - More burst (σ²) ⇒ lower P.
 
-W is an integer in every caller (A* is a ceil, `window_size()` is a usize), so
-continuity in W is not defined. Monotonicity in W is checked instead.
+**Real-valued W.** The engine's windows are integers: A* is a ceil, and
+`window_size()` is a usize. The cartoon's A* is not: it is
+`span_width_a_star` = clamp(rate·D, 1, W) (wasm `:186–188`), which is
+fractional and continuous in δ. Rounding it would put a step on the δ dial, so
+the same phase argument extends C6. A span of real length W at uniform phase
+covers m₀ = ⌊W⌋ slots w.p. 1 − g and m₀ + 1 w.p. g, where g = W − m₀:
+
+```text
+P_fec(r; W) = (1−g)·P_fec(r; m₀) + g·P_fec(r; m₀+1)
+```
+
+This equals C6 at integer W, and it is continuous across integers: the jump
+at W = 3, 4, 5, 64 ± 1e-9 is ≤ 4.9e-10 (out§18). Monotonicity in W is checked
+in out§11.
 
 ## 2. Candidates
 
 Each candidate is graded against the event in §1. Numbers are at the pin
-(ε 0.048, W 5, σ² 3) unless noted (pfec_check.out §1–2).
+(ε 0.048, W 5, σ² 3) unless noted (out§1–2).
 
 | # | form | P(0) | verdict |
 |---|---|---|---|
-| C0 | shipped: Φ(·), cut to 0 when r(1−ε) ≤ ε (`lib.rs:885–893`) | 0 | **reject**: a 0 → ½ step at r = ε/(1−ε) (§3: 0.500 jump at h = 1e-6). A threshold selects a branch |
+| C0 | shipped: Φ(·), cut to 0 when r(1−ε) ≤ ε (`lib.rs:885–893`) | 0 | **reject**: a 0 → ½ step at r = ε/(1−ε) (out§12: 0.500 jump at h = 1e-6). A threshold selects a branch |
 | C1 | paper's Φ form (`fec-arq-model.md:699`) | **0.386** | **reject**: fails the pin (R(0) = 0.0295 ≠ ε) |
 | C2 | per-loss event, continuity-corrected normal: Φ((rW(1−ε) − (W−1)ε − ½)/√(rWε(1−ε) + (W−1)ε(1−ε)σ²)) | **0.175** | **reject**: any continuous two-moment law of C − K puts mass on C ≥ K when C ≡ 0 |
 | C3 | the paper's window event computed exactly: P(C ≥ K) | **0.864** = P(K = 0) | **reject**: wrong event. It counts loss-free windows as "recovered" |
 | C4 | product hybrid P(C ≥ 1)·Φ(·) | 0 | **reject**, not computed: the factorisation assumes independence with no basis, and the Φ factor keeps C1's error |
-| C5 | per-loss event, exact joint GE DP (repair erasures GE-correlated) | 0 | the oracle, not the law: it needs the joint of (K, C) per r, O(W³) per evaluation × 199 grid points in `r_saturation`. Used as a Monte Carlo oracle (§8) |
+| C5 | per-loss event, exact joint GE DP (repair erasures GE-correlated) | 0 | the oracle, not the law: it needs the joint of (K, C) per r, O(W³) per evaluation × 199 grid points in `r_saturation`. Used as a Monte Carlo oracle (out§8) |
 | **C6** | **recommended (formula in §0)** | **0** | below |
 
 **C6, term by term.** Each line is next to the sentence it implements.
@@ -106,7 +143,7 @@ Each candidate is graded against the event in §1. Numbers are at the pin
   ```text
   weight(k) = k·π_W(k) / (W·ε)
   ```
-  The weights sum to 1 because E[K] = Wε exactly (checked: 3.2000 at W 64,
+  The weights sum to 1 because E[K] = Wε exactly (out§15: 3.2000 at W 64,
   ε .05).
 - "Recovered iff C ≥ K, with C ~ Bin(N, 1−ε)":
   ```text
@@ -128,7 +165,8 @@ Each candidate is graded against the event in §1. Numbers are at the pin
 | (p, q) | derived: exact inversion of §2.4 |
 | π_W | derived: the exact GE count DP, which needs no family assumption |
 | U ~ U[0,1) | derived from the executed emission mechanism. Uniformity of the phase is an assumption (§6) |
-| iid repair erasure | §4.2's stated assumption. Error bounded by C5 (§8) |
+| iid repair erasure | paper §4.2's stated assumption. Error bounded by C5 (out§8) |
+| domain guards ε ∈ (0, 1), W ≥ 1 | the domain, not a threshold. ε ≤ 0 returns 0 although the limit is ≈ min(1, rW); that is harmless because every caller multiplies by ε (R = ε·(1 − P)) |
 
 No constant appears, and nothing is tuned.
 
@@ -149,16 +187,16 @@ No constant appears, and nothing is tuned.
   rate.
 
 **Where C6 departs from the shipped code.** Everywhere, not just below the
-floor (§7):
+floor (out§7):
 
 - At r = ε/(1−ε), C6 gives 0.29–0.41, not ½ (W 64–200).
 - The per-loss miss 1 − P at r = r_c + 4 sd is 3.4e-3 to 1.3e-2, where Φ gives
   4–6e-5. Monte Carlo agrees with C6 (1.7e-2 against C6's 1.33e-2 at W 64,
-  §14).
-- Cause: K's GE count tail is far heavier than the normal (P(K ≥ 13) = 1.07e-2
-  at W 64, where the normal gives ≈ 5e-4), and the size bias weights exactly
-  those windows.
-- The difference shrinks as 1.5/√W (§13: 0.198, 0.111, 0.049, 0.022 at
+  out§14).
+- Cause: K's GE count tail is far heavier than the normal (out§15:
+  P(K ≥ 13) = 1.07e-2 at W 64, where a normal with the paper's variance gives
+  1.0e-3), and the size bias weights exactly those windows.
+- The difference shrinks as 1.5/√W (out§13: 0.198, 0.111, 0.049, 0.022 at
   W = 64, 200, 1000, 5000), so C6 → Φ asymptotically. At the operating windows
   the Φ form is not in its regime.
 - This is §4.2's own "known limitation" (`:739–744`), seen through the event
@@ -177,10 +215,11 @@ Grid:
 | metric | cur (C0) | phi (C1) | ccn (C2) | **palm (C6)** |
 |---|---|---|---|---|
 | jump at r_c (±1e-9), worst | **0.500** | 1.6e-7 | 1.4e-7 | 1.5e-7 |
-| max jump at h = 1e-6, worst (§12) | **0.500** | 7.9e-5 | 7.1e-5 | 7.3e-5 |
+| max jump at h = 1e-6, worst (out§12) | **0.500** | 7.9e-5 | 7.1e-5 | 7.3e-5 |
 | max jump at h = 0.02, worst | 1.000 | 0.840 | 0.927 | 0.980 |
 | max jump at h = 0.02, W 3/4/5 | 0.69/0.71/0.73 | 0.19/0.22/0.24 | — | **0.059/0.078/0.098** |
 | jump at h = 0.01 / 0.005, worst | 0.976 / 0.840 | 0.680 / 0.340 | 0.623 / 0.382 | 0.734 / **0.367** (halves) |
+| relative ±2 % nudge, max \|P(1.02r) − P(r/1.02)\| (out§17) | **0.607** | 0.122 | 0.123 | 0.123 |
 | worst decrease in r (h 0.005) | 0 | 0 | 0 | 0 |
 | engine pin, all three asserts | PASS | FAIL | FAIL | **PASS** |
 
@@ -191,9 +230,17 @@ Grid:
   halves with h, while C0's stays at ½.
 - At the A* windows, where the shed budget reads P_fec, C6's 2 % jump is
   0.06–0.10. That is its true slope, ≤ 0.02·W.
-- **Continuity in ε and σ² (§5):** a 0.1 % nudge moves C6 by ≤ 4.2e-3 (ε) and
+- **The gate's reading.** The relative ±2 % nudge is what
+  `test_visualizer.mjs:319–341` uses. Its tolerance is 1.5 × the law's analytic
+  slope × the nudge width.
+  - The worst case for C1 and C6 alike is 0.12, at ε .3 and W 200, which is
+    Φ's own steepness. It sits inside C6's Lipschitz bound W·r·0.04.
+  - C0's 0.61 is the step.
+  - So C6 passes a slope-scaled gate. It does not read ~0 under any fixed
+    absolute tolerance.
+- **Continuity in ε and σ² (out§5):** a 0.1 % nudge moves C6 by ≤ 4.2e-3 (ε) and
   ≤ 7.7e-4 (σ²).
-- **Limits (§6):** at ε → 0 and σ² 1, P = min(1, rW) to 4 digits. At σ² 3.76 it
+- **Limits (out§6):** at ε → 0 and σ² 1, P = min(1, rW) to 4 digits. At σ² 3.76 it
   is lower (a burst needs several repairs). At ε → 1, P ≈ 1e-25. P falls
   monotonically with σ² (0.898 → 0.473 at ε .05, W 64, r .1).
 
@@ -202,15 +249,19 @@ Grid:
 - The ladder at σ² 3.76 is monotone (0.0452 … 0.0015).
 - R(0.34, A* 4, σ² 3.76) = **0.0309**, inside (0.001, 0.048). The shipped
   value is 0.0049.
-- Monte Carlo with GE-correlated repairs gives 0.033 (§8: P 0.308).
+- Monte Carlo with GE-correlated repairs gives 0.033 (out§8: P 0.308).
 - So the pin's "~1 % class" becomes "~3 % class". The assertion still passes,
   but its comment is wrong under C6.
 
-**Monte Carlo oracle (C5, §8).**
+**Monte Carlo oracle (C5, out§8).**
 - C6 is within 0.002–0.012 of the oracle at W 64–200.
 - At W 4–5 it is optimistic by 0.03–0.05 (0.357 against 0.308): with W 4, a
-  burst also kills the repairs. That error is the sign §4.2 already states.
-- Φ and the shipped form are off by 0.13–0.59 at the same points.
+  burst also kills the repairs. That error is the sign paper §4.2 already
+  states.
+- At r > 0, Φ is off by 0.12–0.59 at the same points.
+- The shipped form matches Φ above r_c. Below r_c it reads 0: at ε .05,
+  W 200 and r 0.0526 (just under r_c) the oracle gives 0.377. It is exact only
+  at r = 0.
 
 ## 4. Reach and predicted engine effect
 
@@ -224,7 +275,7 @@ Grid:
 | wasm `shed_budget_residual` (`:217–219`), the cartoon R, sim `get_r_sat` (`:1697`), sim rate via `controller_rate` (`:844`, `:884–898`) | A* / sim window | per-loss | the cartoon R becomes continuous through δ 0.045 / 0.058 (the W22 rows of the audit) |
 | §4.2's r* inversion (`compute_r_star_with_z`, `lib.rs:110`) | — | window event | **untouched**: it does not call `p_fec_normal`. Its constraint (`:704–706`) has the same event error (see §6) |
 
-**`r_saturation` shifts (§9).** r_sat moves from the current value to C6's:
+**`r_saturation` shifts (out§9).** r_sat moves from the current value to C6's:
 
 | inputs | current | C6 | note |
 |---|---|---|---|
@@ -239,8 +290,32 @@ The nominal rows use netem's GE (ε, σ²), 2× one-way delay and the link t_sym
 They are **not** estimator readings: the GSO burst factor g (`tools/l1/lib.sh:150–170`)
 makes the estimator's σ² differ.
 
+**No new r_sat staircase (out§19).** I swept ε in 0.1 % relative steps
+(W 64 and 16, and the C4 inputs). The largest step of r_sat is 0.005 under C0
+and C6 alike: the grid resolution of `r_saturation`'s argmin. C6's kinks at
+r = n/W add no step beyond it.
+
+The argmin grid is itself a 0.005 staircase in every input. It reaches the
+rate through `soft_saturate`. That is a pre-existing R04 finding, independent
+of P_fec, and is recorded here for R04.
+
 **Registered prediction for the L1 cells (c1s, c1d, c2, c8): r\* UNCHANGED,
 bit-identical 0, and no shed-budget change. This is a proof, not a band.**
+
+**Premises.** These are the default arms the L1 batteries run:
+- `bulk_pure_arq` is true (`fec_rate.rs:347`; its setter is called only from
+  tests), so β = bulkness.
+- `inner_feedback` is 0, so the floor is applied before the cap with w = 0
+  (`config.rs:355–358`, math `:814–817`).
+- `RWM_COMPLETION_EXPOSURE` is unset (`gates.rs:375`), so χ = 0.
+- `RWM_DELTA` is unset, so the dial sits at the Bulk point.
+- The r_battery GLIDE arms (`tools/l1/r_battery.sh:162–163`) set χ > 0. There
+  r_bulk > 0, and C6 can act.
+
+The `bulk_rate_is_exactly_zero_through_the_controller` pin is the witness for
+the default configuration. My broad grep also matched `net/channel_set.rs:65`
+(`p_lost_inputs`) and `net/mod.rs:1023` (a comment). Neither calls a P_fec
+function.
 
 1. The L1 harness runs `--protocol-hint bulk` (`tools/l1/perf_rwm_c.sh:38`), so
    β = 1, and χ = 0 on the tunnel (ledger R01, `law-ledger.md:919`).
@@ -250,7 +325,7 @@ bit-identical 0, and no shed-budget change. This is a proof, not a band.**
    pre-cap rate is 0. Pinned by `bulk_rate_is_exactly_zero_through_the_controller`
    (`fec_rate/tests.rs:428`).
 3. `soft_saturate(0, r_sat)` = max(0, r_sat − 0.1·r_sat·softplus(10)) = 0 for
-   every r_sat > 0 (`lib.rs:1082–1093`; §10: 0.0 over the whole grid
+   every r_sat > 0 (`lib.rs:1082–1093`; out§10: 0.0 over the whole grid
    [0.01, 1]). So r_sat, the only place P_fec enters the rate, cannot reach
    r*.
 4. Shed: L1 runs `--window-reliable` (ρ = 1, `perf_rwm_c.sh:81–85`), and
@@ -307,6 +382,8 @@ the soft cap acts) or ρ < 1 (shed). Neither has been measured
 - `test_custom_rho_gives_up_late_losses` and `test_bulk_composes_with_rho` may
   move, as the audit says.
 - The W22 exclusion in the continuity gate (owner decision 3) is deleted.
+- `shed_budget_residual` (`:217–219`) passes the cartoon's fractional A*. It
+  takes the real-W extension of §1, and σ² is floored at 1 there.
 
 **Paper.**
 - §4.2 `:693–700`: the Setup becomes the per-loss event and the C6 line. "This
@@ -335,7 +412,7 @@ the cap's role at C4 is lost.
   and t_sym per cell are not in the ledgers (ε̂ under-reads 3–5×,
   `docs/status.md` §3.8 :282). The rows are labelled nominal.
 - **§4.2's r\* inversion.** It uses the window event and the normal tail. By
-  §7's tail numbers it under-provisions more than §4.2's "30–50 %" note says.
+  out§7's tail numbers it under-provisions more than §4.2's "30–50 %" note says.
   That is a separate finding for the r* rows of the ledger and §4.3, not part of this change.
 - **The Rust cost.** About 8·10⁴ flops per `r_saturation` at W 200 is an
   operation count, not a bench.

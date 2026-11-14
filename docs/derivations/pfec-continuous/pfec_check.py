@@ -27,6 +27,8 @@ def p_cur(r, e, W, s2):  # raptorpath-math/src/lib.rs:885-893, verbatim logic
     if num <= 0:
         return 0.0
     den = math.sqrt(e * (1 - e) * (r + s2))
+    if den < 1e-300:
+        return 1.0
     return 1.0 - nsurv(math.sqrt(W) * num / den)
 
 def p_phi(r, e, W, s2):  # paper sec 4.2 (fec-arq-model.md:699), no cut
@@ -34,6 +36,8 @@ def p_phi(r, e, W, s2):  # paper sec 4.2 (fec-arq-model.md:699), no cut
         return 0.0
     num = r * (1 - e) - e
     den = math.sqrt(e * (1 - e) * (r + s2))
+    if den == 0.0:  # s2 = 0, r = 0: z = num/0 -> -inf
+        return 1.0 if num > 0 else 0.0
     return 1.0 - nsurv(math.sqrt(W) * num / den)
 
 def p_ccn(r, e, W, s2):
@@ -69,6 +73,8 @@ def k_pmf(e, s2, W):
     _kcache[key] = pmf
     return pmf
 
+from functools import lru_cache
+@lru_cache(maxsize=None)
 def G(n, e, s2, W):
     """Per-loss recovery with exactly n repairs: E[K 1{Bin(n,1-e) >= K}] / E[K]."""
     pmf = k_pmf(e, s2, W)
@@ -84,6 +90,14 @@ def p_palm(r, e, W, s2):
     x = r * W
     n0 = math.floor(x); f = x - n0
     return (1 - f) * G(n0, e, s2, W) + f * G(n0 + 1, e, s2, W)
+
+def p_palm_realW(r, e, Wr, s2):
+    """Real-valued window (the cartoon's A* = clamp(rate*D, 1, W), wasm :186):
+    a span of real length Wr at uniform phase covers m0 = floor(Wr) slots
+    w.p. 1-g and m0+1 w.p. g (g = Wr - m0) -- the same phase argument as the
+    repair count. Reduces to p_palm at integer Wr."""
+    m0 = math.floor(Wr); g = Wr - m0
+    return (1 - g) * p_palm(r, e, m0, s2) + (g * p_palm(r, e, m0 + 1, s2) if g > 0 else 0.0)
 
 def p_win(r, e, W, s2):
     """The paper's WINDOW event P(C >= K), exact iid, same dithered count."""
@@ -333,3 +347,50 @@ print(f"   1-MC {1-mc:.2e}  1-palm {1-p_palm(0.251,0.05,64,3.0):.2e}  1-phi {1-p
 print(f"   wasm lib.rs:2707-2708 shed_budget_residual(.05, 0/.30, 64, 2.9): palm "
       f"{0.05*(1-p_palm(0,0.05,64,2.9)):.5f} / {0.05*(1-p_palm(0.30,0.05,64,2.9)):.2e}  "
       f"cur {0.05*(1-p_cur(0,0.05,64,2.9)):.5f} / {0.05*(1-p_cur(0.30,0.05,64,2.9)):.2e}")
+
+print("\n== 15. Count-law facts quoted in the doc (eps .05, s2 3, W 64)")
+pm = k_pmf(0.05, 3.0, 64); kk = np.arange(65)
+mK = (kk * pm).sum(); vK = (kk * kk * pm).sum() - mK ** 2
+print(f"   E[K] {mK:.4f} (W eps = 3.2)  Var K {vK:.3f} (paper W e(1-e) s2 = {64*.05*.95*3:.3f})")
+print(f"   P(K >= 13) GE {pm[13:].sum():.3e}   normal(mean, paper var) {nsurv((12.5 - 3.2)/math.sqrt(64*.05*.95*3)):.1e}")
+
+print("\n== 16. The task's s2 = 0 point (cur / phi only; C6's GE inversion needs s2 >= 1 - 2 eps for q <= 1)")
+for e, W in [(0.048, 5), (0.05, 64), (0.1, 200)]:
+    print(f"   eps {e} W {W}: P(0) cur {p_cur(0,e,W,0):.4f} phi {p_phi(0,e,W,0):.4f} | "
+          f"jump at r_c: cur {p_cur(e/(1-e)+1e-9,e,W,0)-p_cur(e/(1-e)-1e-9,e,W,0):.3f} "
+          f"phi {p_phi(e/(1-e)+1e-9,e,W,0)-p_phi(e/(1-e)-1e-9,e,W,0):.1e}")
+
+print("\n== 17. Relative +-2 % nudge (the visualizer gate's reading): max |P(1.02 r) - P(r/1.02)| over r in (0, 1]")
+for name, pf in FORMS.items():
+    m, arg = 0.0, None
+    for e in EPS:
+        for W in WS:
+            for s2 in S2:
+                for r in [x for x in grid(0.005) if x > 0] + [e / (1 - e)]:
+                    d = abs(pf(min(r * 1.02, 1), e, W, s2) - pf(r / 1.02, e, W, s2))
+                    if d > m:
+                        m, arg = d, (e, W, s2, round(r, 4))
+    print(f"   {name:>5}: {m:.4f} at (eps,W,s2,r)={arg}")
+print("   C6 bound: |dP| <= W |dr| = W r (1.02 - 1/1.02)")
+
+print("\n== 18. Real-valued window (cartoon A*): continuity in W across integers (palm_realW)")
+m = 0.0
+for e in EPS:
+    for s2 in S2:
+        for r in grid(0.05):
+            for Wi in (3, 4, 5, 64):
+                m = max(m, abs(p_palm_realW(r, e, Wi - 1e-9, s2) - p_palm_realW(r, e, Wi + 1e-9, s2)))
+print(f"   max |P(W-1e-9) - P(W+1e-9)| at W in {{3,4,5,64}}: {m:.1e}; at integer W equals p_palm: "
+      f"{abs(p_palm_realW(0.34,0.048,4.0,3.76)-p_palm(0.34,0.048,4,3.76)):.1e}")
+
+print("\n== 19. r_sat quantisation: eps swept in 0.1 % relative steps, max |r_sat(eps_i+1) - r_sat(eps_i)|")
+for W, s2, srtt, tsym, lo, hi in [(64, 3.0, 0.05, 2.5e-4, 0.02, 0.10), (16, 3.0, 0.05, 2.5e-4, 0.02, 0.10),
+                                  (64, 5.0, 0.21, 4.9e-4, 0.06, 0.12)]:
+    es = []; e = lo
+    while e <= hi:
+        es.append(e); e *= 1.001
+    for name, pf in (("cur", p_cur), ("palm", p_palm)):
+        rs = [r_sat(e, s2, W, srtt, tsym, pf) for e in es]
+        st = max(abs(b - a) for a, b in zip(rs, rs[1:]))
+        print(f"   W {W} s2 {s2} srtt {srtt} eps [{lo},{hi}] ({len(es)} pts): {name:>4} max step {st:.3f}, "
+              f"distinct values {len(set(round(x, 4) for x in rs))}")

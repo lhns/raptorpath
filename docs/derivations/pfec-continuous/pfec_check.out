@@ -113,3 +113,30 @@
 == 14. Monte Carlo at the tail point (eps .05, s2 3, W 64, r .251): 1-P
    1-MC 1.70e-02  1-palm 1.33e-02  1-phi 6.24e-05
    wasm lib.rs:2707-2708 shed_budget_residual(.05, 0/.30, 64, 2.9): palm 0.05000 / 1.43e-04  cur 0.05000 / 3.55e-08
+
+== 15. Count-law facts quoted in the doc (eps .05, s2 3, W 64)
+   E[K] 3.2000 (W eps = 3.2)  Var K 8.930 (paper W e(1-e) s2 = 9.120)
+   P(K >= 13) GE 1.073e-02   normal(mean, paper var) 1.0e-03
+
+== 16. The task's s2 = 0 point (cur / phi only; C6's GE inversion needs s2 >= 1 - 2 eps for q <= 1)
+   eps 0.048 W 5: P(0) cur 0.0000 phi 0.0000 | jump at r_c: cur 0.500 phi 3.5e-08
+   eps 0.05 W 64: P(0) cur 0.0000 phi 0.0000 | jump at r_c: cur 0.500 phi 1.2e-07
+   eps 0.1 W 200: P(0) cur 0.0000 phi 0.0000 | jump at r_c: cur 0.500 phi 1.0e-07
+
+== 17. Relative +-2 % nudge (the visualizer gate's reading): max |P(1.02 r) - P(r/1.02)| over r in (0, 1]
+     cur: 0.6072 at (eps,W,s2,r)=(0.3, 200, 1.0, 0.435)
+     phi: 0.1223 at (eps,W,s2,r)=(0.3, 200, 1.0, 0.435)
+     ccn: 0.1229 at (eps,W,s2,r)=(0.3, 200, 1.0, 0.435)
+    palm: 0.1225 at (eps,W,s2,r)=(0.3, 200, 1.0, 0.435)
+   C6 bound: |dP| <= W |dr| = W r (1.02 - 1/1.02)
+
+== 18. Real-valued window (cartoon A*): continuity in W across integers (palm_realW)
+   max |P(W-1e-9) - P(W+1e-9)| at W in {3,4,5,64}: 4.9e-10; at integer W equals p_palm: 0.0e+00
+
+== 19. r_sat quantisation: eps swept in 0.1 % relative steps, max |r_sat(eps_i+1) - r_sat(eps_i)|
+   W 64 s2 3.0 srtt 0.05 eps [0.02,0.1] (1611 pts):  cur max step 0.005, distinct values 19
+   W 64 s2 3.0 srtt 0.05 eps [0.02,0.1] (1611 pts): palm max step 0.005, distinct values 30
+   W 16 s2 3.0 srtt 0.05 eps [0.02,0.1] (1611 pts):  cur max step 0.005, distinct values 29
+   W 16 s2 3.0 srtt 0.05 eps [0.02,0.1] (1611 pts): palm max step 0.005, distinct values 38
+   W 64 s2 5.0 srtt 0.21 eps [0.06,0.12] (694 pts):  cur max step 0.005, distinct values 29
+   W 64 s2 5.0 srtt 0.21 eps [0.06,0.12] (694 pts): palm max step 0.005, distinct values 26
