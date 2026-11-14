@@ -47,7 +47,9 @@ for arg in "$@"; do
     echo "BINID $label BUILD-FAIL (unpack $tgz)" >> "$OUT"; era "BINID $label unpack-fail"; FAIL=1; continue
   fi
   blog="$ROOT/build-$n-$label.log"
-  if ( cd "$WORK/src" && CARGO_TARGET_DIR="$WORK/tgt" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$blog" 2>&1 \
+  # Build from the crate dir, exactly as loopdiag_run_all.sh does (SRC=$ROOT/src/raptorpath): from the workspace root
+  # cargo unifies features across every member (raptorpath-wasm included) and the binary differs (status §58 Part B).
+  if ( cd "$WORK/src/raptorpath" && CARGO_TARGET_DIR="$WORK/tgt" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$blog" 2>&1 \
       && [ -f "$WORK/tgt/release/raptorpath" ]; then
     sha=$(sha256sum "$WORK/tgt/release/raptorpath" | cut -d' ' -f1)
     echo "BINID $label sha256=$sha commit=$(cat "$WORK/src/COMMIT" 2>/dev/null)" >> "$OUT"

@@ -928,6 +928,16 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Bit-identity:** the outputs are bit-identical against `#[cfg(test)]` copies of the old functions, and the goldens are unchanged with no capture.
 - **Reading:** the same rules as phase6. It is compared with base. Since it contains phase6, endspeed = base implies phase6 = base for the engine; each is still recorded.
 
+**Amendment 2 (after Part B's first run, before any re-run; the method is fixed, and no tree is read from run 1).**
+- **Part A: PASS** (20:08–20:51Z). Every suite is green with no flakes: release 1136/0, debug 995/0, wasm 44, core 2, doc, parsers. `decision_trace_pin` is 7/7 in both release and debug on Linux.
+  - **F1 merged** to main `9b8b42ca` under the owner's waiver.
+  - **Deviation:** host builds of two unrelated projects (not raptorpath) ran during the session. Raptorpath's host cargo was paused. No reading here depends on timing.
+- **Part B run 1:** the control (`main57b.tgz`) built `1ebe26e7…`, not the known `8f313616…`. By the registered rule the method is wrong, and no tree is read.
+  - **Cause, found by reading:** `binid_run.sh` built from the workspace root, while the harness builds from the crate dir (`SRC=$ROOT/src/raptorpath`, `loopdiag_run_all.sh:195/326`). From the root, cargo unifies dependency features across every workspace member.
+  - **Fix:** `binid_run.sh` now `cd`s into `src/raptorpath`. `test_binid.py` puts its fake tree under `raptorpath/`, so a root build fails the test.
+  - **Reported from run 1, not read:** phase6 and endspeed built the same sha (`3c03b2b3…`). Every finished tree's math and wasm tests are green (182, 190 and 195 passed).
+- **Part B run 2:** the same five trees with the fixed runner, after `test_binid.py` passes on the VM. The registered reading applies unchanged.
+
 **Not in this session.** The oracle's evicting-seat diagnostic row (m̄; `pfec-oracle-spec.md` §6) needs a harness path, a stub test and a rehearsal. It gets its own registration.
 
 **Order and length.** Part A, about 50–60 min, then Part B, four builds, each followed by the math and wasm tests: about 4 × 15–20 min. No netns and no battery; nothing runs raptorpath. `LD_HARD` does not apply; the locks are held by the runner for each part.

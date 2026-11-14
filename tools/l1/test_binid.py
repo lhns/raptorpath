@@ -48,8 +48,10 @@ class BinId(unittest.TestCase):
                 f.write("x")
         tgz = os.path.join(self.td, name + ".tgz")
         with tarfile.open(tgz, "w:gz") as t:
+            # The tree's files sit under raptorpath/: the runner must build from the crate dir, as
+            # loopdiag_run_all.sh does (a workspace-root build finds no *.txt and fails the test).
             for f in os.listdir(d):
-                t.add(os.path.join(d, f), arcname=f)
+                t.add(os.path.join(d, f), arcname="raptorpath/" + f)
         return tgz
 
     def run_binid(self, *args):
