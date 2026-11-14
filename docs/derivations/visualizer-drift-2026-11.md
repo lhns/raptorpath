@@ -50,7 +50,7 @@ Status key:
 |---|---|---|---|
 | snapshot-order law, `87c2135d` (paper §7.1, A.6). Ungated, so on by default | no | **current**: no parity claim, and the law is vacuous in the model | the sim has per-symbol acks with instantaneous forward flight (`lib.rs:335–339`). It has no gap reports, so no report can arrive out of receiver order. The page names no snapshot or gap channel |
 | removed default-off arms `RWM_PLACE_HOL`, `HOLDDOWN_Q`, `REFRESH_FLOOR_US`, `DERIVED_SWEEP`, `PLACE_T_DERIVED` | no | **current** | no match in the wasm or the html. The model's placement is a declared simplification ("highest-goodput path with a spare slot", `lib.rs:308`, `:604–607`, `:1198`) with no claim to match any placement arm |
-| `00a42e38`, `f5fdbf64`, `07afc9b7`, `d12fcd41` | — | n/a | an extraction, tests and path moves; no law the model reads |
+| `00a42e38`, `f5fdbf64`, `07afc9b7`, `d12fcd41`, `1b5b0b94` (`[SNAPV]` diag), `d5bd282a` (merge) | — | n/a | an extraction, tests and path moves; no law the model reads |
 | side effect: paper §11.3 "store headroom" row still cites "the default-off placement frontier arm (`scheduler/place.rs:409`)" | — | **stale (paper)** | the arm was removed in `57955ea4`. Paper-layer, not model |
 
 ### C. Store and pool
@@ -58,9 +58,9 @@ Status key:
 | item | where | status | evidence |
 |---|---|---|---|
 | what the model's pool is | `lib.rs:352` `STORE_PER_PATH = 512`; stall at `:1303` | current as code; **underived** (ledger M01) | a constant 512·N slot count with no BDP or δ input. "Scaled to the 2000-symbol transfer" (html `:422`) has no derivation |
-| its bounding test | `lib.rs:2780` `wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp` | **holds** (the model is unchanged since; the native run was not executed here) and **misdescribes the engine** | it pins the model side only; it measures no gap to the engine. Its comment says the engine cap is `ceil((1+q(δ))·bdp)`, "moves with the BDP". The shipped cap is `clamp(·, floor, max(n_live·2048, floor))` (`net/store_cap.rs:90`), and that clamp binds: c8 0.74–0.98, c1s ≈ 0.7 (status §55 F01 PINNED), and on every c8 row at every W (§54 launch 2). Measured, the engine also runs a per-path constant there, at 2048 and not 512 |
-| model regime against the engine's at c8 | probe on the committed html (script below) | **divergent in regime, undocumented** | the model's pool **never binds** on its own c8 preset (bind 0.000, peak occupancy 0.08–0.09 of 1024) or on c7, the default cell or RTT 100. It binds only at 1 path with RTT ≥ 200 and cap 8 (0.57–0.86). The engine is pinned at c8. Cause: the model has fixed capacity and no queue, so it cannot reproduce the queue-inflated inputs (E03 `min_rtt` 7–33×, E04 `max_bw` 11–24×) that pin the engine |
-| page: "knee ≈ 2048 symbols/path" | html `:421` | **stale (now known false)** | §56: c2 is flat down to W ≈ 192–256, c8 flat to ≈ 512 (knee ≈ 340), and c1s gains goodput all the way to the 2048 control. 2048 is a pinned clamp constant, not a measured knee |
+| its bounding test | `lib.rs:2780` `wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp` | **holds** (the model is unchanged since; the native run was not executed here) and **misdescribes the engine** | it pins the model side only; it measures no gap to the engine. Its comment says the engine cap is `ceil((1+q(δ))·bdp)`, "moves with the BDP". The shipped cap is `clamp(·, floor, max(n_live·2048, floor))` (`net/store_cap.rs:90`). The law's value sits at that clamp for 0.74–0.98 of each c8 run and ≈ 0.7 at c1s (`[SUMCAP] pin=`, status §53 Result, §55 F01 PINNED), and on every c8 row at every W (§54 launch 2). Measured, the engine at c8 also runs a per-path constant, but at 2048, not 512 |
+| model regime against the engine's at c8 | probe on the committed html (script below) | **divergent in regime, undocumented** | two different gauges. The model's pin fraction is 1 by construction (a constant). Its **stall fraction** (ticks with occupancy ≥ pool) is 0.000 on its own c8 preset (peak occupancy 0.08–0.09 of 1024), and also on c7, the default cell and RTT 100. It is non-zero only at 1 path with RTT ≥ 200 and cap 8 (0.57–0.86). The engine's c8 sender is store-gated, `paused` ≈ 80 % (status §53 Result), which is the comparable quantity. *Inference, not tested:* the model has fixed capacity and no queue, so it cannot reproduce the queue-inflated inputs (E03 `min_rtt` 7–33×, E04 `max_bw` 11–24×) that push the engine's law to its clamp |
+| page: "knee ≈ 2048 symbols/path" | html `:421` | **stale (now known false)** | §56, where W is the total store (N·pool): c2 (1 path) is flat down to W ≈ 192–256, c8 (2 paths) flat to W ≈ 512, i.e. 256 per path (knee 0.95 of control at W ≈ 340), and c1s gains goodput all the way to the 2048 control. 2048 per path is a pinned clamp constant, not a measured knee |
 | page: the pool as a "current law" | html `:166–167` ("carries the current laws … the path-scaled pool"), `:270` ("the path-scaled law"), `:269`, `:2469–2470` ("path-scaled, §6.1") | **stale (now known false)** | the model's pool is a constant (M01). The engine's §6.1 law is measured pinned at its clamp (F01). The store law that would replace it (`store-law.md` rev 6) is derived, not shipped |
 | page: the binding mechanism "crank RTT … until cap·RTT outgrows the pool" | html `:270` | current for the model, **misleading for the engine** | the engine binds at c8 with a BDP of ≈ 190 symbols against a 4096 ceiling (§54 launch 2 "Scale"). Its binder is the inputs, not the BDP |
 | paper §11.3 store row, wasm clause: "scales its pool per path with no guard" | `fec-arq-model.md` §11.3 | **stale (paper)**, understated | paper-recon 4b: the pool is a constant per path and does not implement §6.1 |
@@ -77,8 +77,11 @@ the page's own "model vs engine" table (html `:389–426`).
 | pool constant 512·N (recon 4b, M01) | `lib.rs:2780` | bounded as a model pin; its comment needs correcting (C above) |
 | W22 `p_fec_normal` vs the paper's Φ (R03) | none | **missing-test** (CLAUDE.md) |
 | W* latency budget 0 = 1 SRTT at every δ, in both the engine and the model (recon N3) | the math pins the function (`raptorpath-math` `derive_window_zero_budget_is_one_rtt…`) | model = engine; **missing-test** at the model's call sites (`lib.rs:1709–1716`, html `:2021`) |
-| page "loss detection" row: engine = "RFC 9002 per path, 9/8 + kPacketThreshold 3" vs model = 1 own-RTT clock | `test_per_path_clock_phantom_counter` and §7f (ordinal and phantom counts) | **stale + missing-test**. At N = 1 the engine runs the pre-RFC `srtt/2` age gate (`legacy_age_ripe`; `RWM_RECOV_SP` is default off, `gates.rs:371`; ledger C04). At c8 its holes are seen only at ≈ 3.5 s age (C02, now with the snapshot-order law). No test asserts the model's clock is exactly 1·RTT_i from send |
-| page "shed law" row: engine receiver arm has a "δ-derived hold" | — | **stale**: the engine hard-codes SRTT/2 (`net/shed.rs:58–62`, paper §11.3 row 2, ledger S05) |
+| page "loss detection" row: engine = "RFC 9002 per path, 9/8 + kPacketThreshold 3" vs model = 1 own-RTT clock | `test_per_path_clock_phantom_counter` and §7f (ordinal and phantom counts) | **stale + missing-test**. At N = 1 the engine runs the pre-RFC `srtt/2` age gate (`legacy_age_ripe`, `net/recovery_laws.rs:266`, called at `sender_phases.rs:957`; `RWM_RECOV_SP` is default off, `gates.rs:371`; ledger C04). At c8 its holes were seen only at ≈ 3.5 s age (C02, measured before the snapshot-order law shipped in `87c2135d`). No test asserts that the model's clock is exactly 1·RTT_i from send |
+| page "shed law" row: engine receiver arm has a "δ-derived hold" | — | **imprecise**. The engine's hold is two laws behind one signature (`net/shed.rs:51–70`): SRTT/2 when the shed law is armed and the budget is open, otherwise `(4·SRTT).clamp(60, 300 ms)`. SRTT/2 equals b(δ)·SRTT only at Realtime, the one seat that reaches it. It is hard-coded, not read from the dial (paper §11.3 row 2, ledger S05) |
+| page row: decoder (no per-span A* emission in the sim) | — | declared structural simplification; no number to bound |
+| page row: A*_q rounded, no generation grid | — | declared; the bound would be ≤ ½ symbol by construction. Untested, low value |
+| page row: χ horizon on a 2000-symbol transfer vs the engine's MB-scale objects | — | declared and current. The engine tunnel's χ ≡ 0 (recon N1) makes the page's engine cell ("a negligible tail") an understatement: on the tunnel χ is never evaluated |
 | page rows: anchors (J = RTT/8, configured RTT), no CC, instantaneous flight, 8-B symbols | — | structural simplifications, declared. No number to bound; acceptable as is |
 
 ### E. Stale page text (no behaviour)
@@ -92,14 +95,21 @@ the page's own "model vs engine" table (html `:389–426`).
 
 ## (b) Recommended updates, in priority order
 
+The order is by what can ship now. Items 5 and 6 are the live behaviour
+defects (V5/V6, W14, W22), and they are blocked on the owner's calls.
+
+Page text lives directly in `interactive-visualizer.html`. `build_visualizer.sh`
+only replaces the embedded wasm block. So text-only fixes need no wasm rebuild,
+and the gates run on the edited file as is.
+
 Must fix (invariant or parity defects):
 
 | # | change | layer | GOLDEN_CAPTURE=1? | unshipped law? |
 |---|---|---|---|---|
 | 1 | Delete the W11 guard and the dead classic machine (audit F1 alias table + F2; W17 → χ_raw; V1). The fix is removal, not a new formula | wasm model (+ html V1) | no expected. Run the golden test **without** capture first; the audit argues bit-identity and measured it on wasm32. Native is unverified | no |
-| 2 | Add the W22 bounding test: \|P_code − P_paper\| = P_paper below ε/(1−ε), 0 above it, ≤ ½ at the floor (audit Coverage row) | tests only (`raptorpath-math`) | no | no |
+| 2 | Add the W22 bounding test: \|P_code − P_paper\| = P_paper below ε/(1−ε), 0 above it, ≤ ½ at the floor (audit Coverage row) | tests only. Put it in `raptorpath-wasm` (calling `raptorpath_math::p_fec_normal` against the paper's Φ form) to stay in visualizer scope; a test inside `raptorpath-math` touches an engine crate and needs the owner's word | no | no |
 | 3 | Correct the store text: 2048 is the engine's **clamp**, measured pinned (F01), not a knee. The model's 512·N is an underived constant, not a law. Fix the `wasm_pool_…` comment to state the clamp and the F01 bind fractions. Add a page/§11.3 line saying the model's pool does not bind at its c8 preset while the engine's does | page + test comment (+ paper §11.3 wasm clause) | no | the store law (`store-law.md` rev 6) is **unshipped: do not model it**. M01 waits on F01 |
-| 4 | Correct the "model vs engine" table: the receiver hold is SRTT/2, not δ-derived (S05); the N = 1 loss detection is the `srtt/2` age gate, not RFC 9002 (C04) | page | no | no |
+| 4 | Correct the "model vs engine" table. N = 1 loss detection is the `srtt/2` age gate, not RFC 9002 (C04). The receiver hold is a hard-coded SRTT/2 that equals b·SRTT only at Realtime, with a clamped 4·SRTT fallback (S05) | page | no | no |
 | 5 | V5/V6 + W14 as one give-up law (audit F3+F4, option (i) or (ii)), with the `test_visualizer_ui.mjs:181` gate change | wasm model + page + gates | F3: no (JS only). F4: no on the golden rows (ρ = 1); `test_custom_rho_gives_up_late_losses` and `test_bulk_composes_with_rho` may move | **owner's call pending**. Option (ii) depends on the W22/R03 fix, which is the owner's call (paper form vs the engine pin `fec_rate/tests.rs:262–282`). Do not code it before the §5.6 line exists |
 | 6 | W22 law fix itself | `raptorpath-math` (an engine crate, shared with the engine shed budget and soft cap) | **assume yes**: `r_saturation` feeds the sim's soft cap, and the engine bit-pin tables may move | no new law, but the owner's call and a §4.2 line first. It is not a visualizer-scoped change |
 
@@ -112,7 +122,7 @@ Nice to have:
 | 9 | Bound the per-path clock: assert the model fires a retransmit exactly at 1·RTT_i from send | tests only | no | no |
 | 10 | Bound the W* call sites: the model passes budget 0 (1 SRTT) at every δ, matching the engine | tests only | no | no; recon question 1 (b(δ)·SRTT) would be a deliberate change with a capture |
 | 11 | A page-table row "snapshot order: engine judges only the newest receiver snapshot; model has no gap reports (vacuous)" | page | no | no |
-| 12 | A bind-fraction readout for the pool (ticks at cap / ticks), beside the stall count | page | no | no |
+| 12 | A stall-fraction readout for the pool (ticks with occupancy ≥ pool / ticks), beside the stall count. The pin fraction is trivially 1 for a constant, so it is not worth showing | page | no | no |
 
 ## Probe
 
@@ -121,9 +131,9 @@ block the way `test_visualizer.mjs` does. It runs
 `Simulation.multipath(…, "continuum", δ)` at δ ∈ {0.005, 0.5, 50} on these
 cells: the default cell, c7, c8, and 1 path at RTT 100 / cap 4, RTT 200 /
 cap 8 and RTT 500 / cap 8. It counts the ticks with `get_store_occupancy() ≥
-get_pool_cap()`.
+get_pool_cap()` (the stall fraction).
 
-| cell | bind | peak occupancy / cap |
+| cell | stall fraction | peak occupancy / cap |
 |---|---|---|
 | c8 | 0.000 at every δ | 0.08–0.09 |
 | c7 | 0.000 | 0.09–0.11 |
@@ -137,3 +147,8 @@ get_pool_cap()`.
 - Native wasm tests: the golden test, `wasm_pool_…` and the continuum test.
 - Whether the engine's measured rate ever crosses ε/(1−ε) (audit W22 "conflicting sources").
 - The engine-side line numbers beyond those listed above.
+- Engine drift before `78a898a5`: the html stamps era `7a3aff6` and was built
+  at `8f3fd7c5`. The window before `78a898a5` is covered only through paper
+  §11.3, paper-recon and the law ledger, not by a commit-by-commit read.
+- The inference that the model cannot reproduce the engine's pinned store
+  because it has no queue (C, "model regime").
