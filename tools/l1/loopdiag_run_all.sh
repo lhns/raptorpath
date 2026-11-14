@@ -432,12 +432,12 @@ run_suites() {
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
-# The identity of what the suites ran on: sha256 of every file under raptorpath/src, raptorpath/tests, raptorpath-math/src, raptorpath-wasm/src, gf256/src and vendor/
+# The identity of what the suites ran on: sha256 of every file under raptorpath/src, raptorpath/tests, raptorpath-math/src, raptorpath-core/src, raptorpath-wasm/src, gf256/src and vendor/
 # (a patched dependency), plus the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml, in C-locale path order. A dependency patch invalidates a reuse.
 src_manifest() {
   ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
     { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
-      find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
+      find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
 }
 # LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of a BYTE-IDENTICAL tree (see src_manifest) may stand in for
 # this session's suites. "Same tree" is the src_manifest paths above. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
