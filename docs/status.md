@@ -881,6 +881,160 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+## 56. The store-pool sweep (reported only, no build): current-era static maps at c8, c2 and c1s — pre-registration (before any VM contact)
+
+**Context.** Owner decision of 2026-11-14 (§54, after launch 2): the store law first, the lever-B guard paused. The derivation (`docs/derivations/store-law.md`, merged as docs only) gives a rate-free time law,
+
+`n_{k+1} = clamp( n_k · Σᵢ wᵢ Fᵢ / Σᵢ wᵢ T̂ᵢ , floor, N·knee )`,  Fᵢ = max(m̃ᵢ + b̂₀ᵢ⁺, maxⱼ(ℓ̂ⱼ + b̂₀ⱼ⁺)) + q(δ)·ℓ̂ᵢ.
+
+It needs no link-rate input: the rate cancels out of the ratio. The derivation closes Fable's three blockers on static maps:
+- b₀ is a one-sided upper bound;
+- the anchor is bounded by m̃ = min(m̂, ℓ̂ + b̂₀⁺);
+- the leg coupling has one attractor.
+
+**Not registrable as a law:**
+- its predictions are static crossings on p27/p34-era ledgers;
+- its Bulk costs (c1s −10 to −20 %, c1d ≈ −10 %, c8 ≈ −3 to −5 %) would fail guard v2;
+- δ's term (q·ℓ) is smaller than the estimator slack, so δ has almost no authority (U2).
+
+This block measures the maps the law's closed-loop registration (Part B) needs. It is derivation §13, copied here, and is Fable-reviewed twice.
+
+**Why.**
+- §54b measured three pools at 6.8–21.8 × the c8 BDP and does not bracket the knee.
+- The store-law derivation (`docs/derivations/store-law.md`) predicts two shoulders at c8 and a single-leg knee at
+  c2. Its inputs are static maps of an older era (p27: 100 MB, 2 rows per cap; p34 for c1).
+- This block measures current-era static maps with the existing knob. It decides nothing by itself. It feeds the
+  store law's closed-loop registration (Part B), the δ-authority question U2, and the lever-B guard.
+- It is independent of the law's open blockers, because no law is built.
+
+**Tree, knob and suites.**
+- **Tree:** current main. The SHA is pinned by amendment after the VM pre-flight.
+- **Knob:** `RWM_STORE_PATH_POOL=<pool>` (`gates.rs:323`).
+  - The realised ceiling is `max(N·pool, floor)` (`store_cap.rs:90`). The boot cap is `min(128, store_max)`.
+  - Every arm's W is ≥ 160 > 128, so neither bound inverts against the boot cap.
+  - W binds only while the shipped ask exceeds it; see Liveness.
+  - `RWM_STORE=<n>` is not used: it switches the law off and moves the seat.
+  - The battery scrubs `-u RWM_STORE_PATH_POOL` (as plan 54b).
+- **Engine suites** are skipped only if `raptorpath/src` and `raptorpath/tests` are byte-identical to the tree that
+  passed §54's suites (`cand54` `7fd92dd5` / its merge on main). This is checked by a reuse manifest: a per-file
+  sha256 list, diffed on the VM.
+  - Any difference runs the full suites as in §54.
+  - The tools tests (`tools/l1` python and bash tests) and a rehearsal (`LD_REHEARSE=1`) always run, because the
+    sweep is a new harness path.
+- **`RWM_SUCC_DUMP`** exists on main (default `RWM_SUCC_DUMP_MAX` = 200 000 records). The dump is written under
+  the run tree on `/dev/shm`. The pre-flight checks that `/dev/shm` has ≥ 1 GB free, and the rehearsal records the
+  dump's actual size.
+
+**Arms** (Bulk, `--window-reliable`, `RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300`):
+
+| cell, size | pools (W) | n per pool | rows |
+|---|---|---|---|
+| c8-100, 600 MB | **640 (W 1 280, control = §54b B640)**, 384 (768), 256 (512), 160 (320), 112 (224), 80 (160) | 4 | 24 |
+| c2-100, 600 MB | **2 048 (control, the shipped pool)**, 384, 256, 192, 160, 128 | 3 | 18 |
+| c1s-400, 5 GB | **2 048 (control)** and 512: n = 6; 1 024, 768 and 384: n = 3 | 6 / 3 | 21 |
+| c8-100, 600 MB, `RWM_SUCC_DUMP=1` | 640 | 1 | 1 (the hn_n anomaly, §6) |
+
+- **Total:** 64 rows.
+- **Order:** cells in blocks, c8 → c2 → c1s. Within a block, a Latin-square rotation of pools per replicate, seeds
+  42 / 7 alternating. The c1s n = 6 arms take the extra replicates at the block's end, rotated.
+- **Smoke:** one row per cell at its smallest pool.
+- **Length:** about 24 + 18 + 22 + 1 min of rows. With the tools tests, the rehearsal and overheads that is about
+  1.5 h. `LD_HARD` = launch + 3 h.
+
+**Liveness and row treatment.**
+- **Pool echo.** `[GATES]` and `pool_per_path` echo the requested pool on both ends. If they do not, the row is
+  VOID and is replaced once.
+- **Binding.**
+  - **Control arms are exempt.** They are the shipped behaviour: c1s binds ≈ 0.7 at 2 048, and c2 is not pinned
+    at 2 048.
+  - A **non-control** row binds if its LATE-window bind fraction is ≥ 0.95. The LATE window is sending ticks at
+    t ≥ 15 s (c1s: t ≥ 5 s).
+  - An unbound non-control row is **not replaced**, since a rerun would repeat the miss. It is reported at its
+    realised cap: the LATE-window mean of `win=…/b`. It is plotted at that W, and labelled `UNBOUND`.
+- **DNF** (as 54b): goodput counts as 0, and every other readout comes from the row's `[DIAG]` lines.
+- **Flags** (reported, never voiding):
+  - **c1s quinn-window collapse:** the share of windows with `qcwnd` < ¼ of the row median exceeds 0.1 (§43b's
+    duration measure).
+    - Flagged rows are reported in every table.
+    - They are **excluded from F8**, and the count is stated.
+  - **c8:** the lock-out classifier (§3.9).
+- **The SUCC_DUMP row** must write a dump with ≥ 100 000 records. Otherwise it is re-run once.
+
+**Readouts per row** (LATE window; `store-law/little54b.py` and `pool54_score.py` definitions):
+- per leg: tx rate rᵢ, app-echo rtt and wire rtt, `rtp_us` against its boot value, q₀ (`dgq hand − tx`), and the
+  placement share;
+- Σ send rate, goodput, tail, H0;
+- in-order delay, late mean and p95;
+- old holes (server `[RANK]`), `[HOLD]` `hn_n`, `fed` and `ripe_frac` per path, `[SUCC]` `det`;
+- the Little residual (W − Σrᵢ·rttᵢ)/W;
+- duplicates, retransmits/GB, client and server CPU/GB;
+- the realised cap and the bind fraction.
+
+**Readout per cell (new): the standing-queue time at the knee.**
+- **Definitions:**
+  - T̄(W) = the rate-weighted LATE echo loop Σrᵢ·rttᵢ/Σrᵢ.
+  - T₀ = the same statistic over the first 1 s of ticks of the cell's smallest-W rows (no queue).
+  - ℓ = the rate-weighted boot `rtp_us`.
+- **Readout:** from the arm medians, interpolated in W, the W where goodput first reaches 0.95 and 0.98 of the
+  control. At those two points, report T̄ − T₀ in ms and as a multiple of ℓ.
+- **Why.** The derived law puts the standing queue at (b̂₀⁺ − b₀) + q(δ)·ℓ.
+  - The estimator slack (0.4–3.7 ms) already exceeds δ's whole term (q·ℓ ≈ 0.12–4 ms).
+  - The static-map points move only 174 → 192 (c2) and 370 → 509 (c1s) from Realtime to Bulk.
+  - So δ has almost no authority. That is U2, which goes to the owner with this readout after Part A.
+
+**Predictions** (bands; these are static-cap measurements, so registrable here).
+
+c8, every control band from the §54b **B640** rows (`docs/l1-raw/s54/rep54b-*`, main's 20-run horizon;
+`little54b.out`):
+
+| c8 W | 1 280 (control) | 768 | 512 | 320 | 224 | 160 |
+|---|---|---|---|---|---|---|
+| Σ send rate /s | 11 629–11 732 (B640) | 11 400–11 650 | 11 050–11 600 | 10 300–10 900 | 9 700–10 100 | ≤ 9 300 |
+| r₀ /s | 9 776–9 840 | ≥ 9 750 | ≥ 9 700 | ≥ 9 600 | 9 400–9 800 | ≤ 9 300 |
+| r₁ /s | 1 839–1 913 | 1 650–1 900 | 1 400–1 800 | ≤ 1 000 | ≤ 400 | ≤ 300 |
+| T̄ ms (≈ W/Σr) | 103–107 | 60–70 | 42–48 | 28–32 | ≈ 22 | ≈ 17 |
+| rtt₀ / rtt₁ ms | 96 / 138–161 | — | — | — | — | — |
+| goodput Mbit/s | 106.5–107.6 | — | — | — | — | — |
+| in-order late mean s | 0.34–0.39 | 0.18–0.26 | 0.13–0.18 | 0.08–0.12 | 0.06–0.08 | — |
+| old holes | 0 | 0 | 0 | 0 | 0 | 0 |
+
+The c8 standing-queue readout is predicted to sit at W ≈ 500–700 (leg-1 shoulder), with T̄ − T₀ ≈ 25–35 ms
+(the coupled floor, §5.2).
+
+- **c2:** goodput ≥ 0.97 × control at W ≥ 192; 0.88–0.95 at 160; 0.72–0.82 at 128. T̄ ≈ W/9.6 k.
+- **c1s:** goodput / control ≈ 0.94 (1 024), 0.92 (768), 0.84 (512), 0.80 (384), ± 0.05 (p34 era). Flagged rows
+  are excluded.
+- **Anchor:** `rtp_us` on c8 p0 falls toward boot as W shrinks, ≤ boot + 10 ms at W ≤ 320. On leg 1 it stays within
+  boot + 8 ms at every W.
+
+**Re-basing (control drift).**
+- The c8 control is compared with B640 by **medians**, not by six-row min–max (that check nearly always fires,
+  §54 launch 2).
+- A readout is re-based iff |control median − B640 median| > tol, where tol = the B640 rows' full range for that
+  readout, floored at 1 % of the B640 median. For example: Σ send rate tol = 103 /s; r₁ tol = 74 /s; in-order
+  late tol = 0.05 s.
+- If a readout re-bases, that readout's bands at the other W shift by the same median offset, and the shift is
+  reported.
+- The c2 and c1s controls have no prior bands. They set their cell's reference directly.
+
+**Falsifiers (reported; each changes the derivation, not a ship decision):**
+
+| # | what fires it | what it means |
+|---|---|---|
+| F1 | c8 r₁ at W = 320 ≥ 0.8 × r₁ at 1 280 | leg 1 is fed without a fast-leg queue; the coupled F is not needed at c8 |
+| F2 | c8 Σ rate at 768 < 0.97 × control | the knee is above 768 |
+| F3 | c8 r₀ < 0.97 × 9 800 at W = 224 | the leg-0 shoulder is above prediction |
+| F4 | c8 `rtp0` at W ≤ 320 > boot + 10 ms | E03's queue persists even at small W; the bound m̃ is load-bearing at c8 |
+| F5 | \|W − Σrᵢ·rttᵢ − old holes\| > 0.1·W at any bound W ≥ 320 | Little fails |
+| F6 | old holes > 50 at any W ≤ 1 280 | P_h is lower than the derivation says |
+| F7 | c2 goodput median at 192 < 0.95 × control | the c2 knee moved up in this era |
+| F8 | c1s goodput median at 512 ≥ 0.95 × control, over unflagged rows of n = 6 (excluded count stated) | the c1s cost in the derivation is overstated |
+| F9 | the SUCC_DUMP row shows p0 holes overtaken by later-placed p1 seqs | the hn_n anomaly is a real delay inversion, not a counter rule |
+| F10 | the standing-queue multiple (T̄ − T₀)/ℓ at the 0.95 point differs across c1s, c2 and c8 by more than ×3 (max/min) | **the q·ℓ form is wrong**, not just its band: the knee's queue does not scale with the lifetime loop |
+
+**Decision rule.** None; reported only. The maps replace p27/p34 as the inputs of Part B. F9's reading goes to the
+guard-witness note (§6). F10 and the standing-queue readout go to the owner with U2.
+
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
 
 **What.** One row per law and per estimator that feeds a law: 70 rows (12 estimators, 6 δ maps, 6 flow-control, 9 rate, 10 span/shed/emission, 13 recovery, 10 scheduler/CC, 4 wasm). Each row records:

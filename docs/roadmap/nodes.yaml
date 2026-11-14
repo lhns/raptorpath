@@ -836,7 +836,6 @@ nodes:
   folded: []
   overview: true
   plain: Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes.
-  waiting_on: its guard in the next VM session
   notes: 'Law ledger: C03 (rank 5, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main''s duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges.'
 - id: rec-defect-qclk-clamp
   title: '[QCLK] w_us pinned at clamp'
@@ -1744,7 +1743,7 @@ nodes:
   plain: Designed a test of whether a smaller in-flight budget stops data from piling up in the send queue after the end-of-transfer fix.
   notes: 'p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE'' and CAND''), plan item 2 of 2026-11-13.'
 - id: store-law-derivation
-  title: Store-law derivation (F01 + inputs + C02)
+  title: Store-law derivation
   track: store
   kind: research
   state: in-progress
@@ -1767,6 +1766,31 @@ nodes:
   overview: true
   plain: Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big.
   notes: 'Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code.'
+- id: store-s56-sweep
+  title: Store-pool sweep (§56)
+  track: store
+  kind: instrument
+  state: next
+  outcome: unrated
+  evidence:
+  - status §56
+  - derivation store-law.md §13
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-s54-budget
+  - store-defect-cap-constant
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  vm_order: 1
+  order_reason: Owner decision 2026-11-14, the store law first; no build needed.
+  plain: Measuring how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop.
+  notes: 'Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law''s Part B and the owner''s U2.'
 - id: store-defect-cap-constant
   title: Store cap constant at c8
   track: store
@@ -4574,7 +4598,6 @@ nodes:
   end: '2026-11-13'
   folded: []
   overview: true
-  vm_order: 1
   order_reason: First, because the owner approved shipping the loss-report fix before anything else, and every later session should run on that new main version.
   plain: Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue.
   notes: 'Done when: the §54 Result is in status: the filter-only guard v2 against main PASSes and snapver-law merges, and the store-budget block (reduced RWM_STORE_PATH_POOL on BASE'' and CAND'', quinn evictions, tail/H0, in-order delay, the pool-arm causal test of §53 Erratum 1) is reported.'

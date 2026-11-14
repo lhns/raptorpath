@@ -70,7 +70,7 @@ flowchart TB
     end
     subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
-        store_law_derivation["store · ▶ Store-law<br/>derivation (F01 +<br/>inputs + C02)"]
+        store_law_derivation["store · ▶ Store-law<br/>derivation"]
     end
     subgraph bd_6["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
@@ -215,7 +215,8 @@ flowchart TB
 | Power-seeking store law D | ✖ dead end | Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work. |
 | Dispersion and oracle store law | ⏸ parked | Tests of how the in-flight data limit could read the real link rate and delay found no reliable source yet, so the work is on hold until better measurements exist. |
 | Who limits at each δ | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
-| Store-law derivation (F01 + inputs + C02) | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
+| Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
+| Store-pool sweep (§56) | ○ next | Measuring how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
 | δ seat diagnostic and guard (§48c) | ⛔ blocked | Real-network test of tying the in-flight limit to the latency dial, including one low-latency row. |
@@ -296,6 +297,7 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
+- `store-s56-sweep`: Store-pool sweep (§56)
 - `meas-progress-baseline`: Cumulative progress benchmark
 
 **host-cargo**
@@ -319,7 +321,7 @@ flowchart TB
 <!-- BEGIN GENERATED: running -->
 **no-cargo**
 
-- `store-law-derivation`: Store-law derivation (F01 + inputs + C02)
+- `store-law-derivation`: Store-law derivation
 <!-- END GENERATED: running -->
 
 ## Built, waiting
@@ -389,7 +391,7 @@ flowchart TB
 ## VM queue
 
 <!-- BEGIN GENERATED: vm-queue -->
-1. `rec-s54-session`: §54: filter guard, store budget. First, because the owner approved shipping the loss-report fix before anything else, and every later session should run on that new main version.
+1. `store-s56-sweep`: Store-pool sweep (§56). Owner decision 2026-11-14, the store law first; no build needed.
 2. `rec-w0-leg-question`: Retransmit leg choice with filter. Before the lever-B merge, so the question of which path should carry retransmissions is answered first. It could instead ride the lever-B session as an extra reported block rather than take a session of its own.
 3. `rec-leverb-guard`: Lever-B guard v2, then merge. Runs on the main version the first session produces, in the order the owner approved.
 4. `meas-s51-session`: Off-Bulk baseline and δ sweep. After the recovery fixes land so the baseline describes the current system; it does not need them to run.
@@ -421,7 +423,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 18 nodes (7 done, 1 next, 1 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 34 nodes (14 done, 6 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 20 nodes (9 done, 1 in progress, 1 next, 5 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 29 nodes (11 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
+- [store - store law](roadmap/tracks/store.md): 30 nodes (11 done, 3 in progress, 2 next, 5 blocked, 1 parked, 8 abandoned)
 - [place - placement](roadmap/tracks/place.md): 15 nodes (4 done, 2 in progress, 1 next, 1 blocked, 7 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 24 nodes (8 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 22 nodes (13 done, 1 in progress, 1 next, 7 abandoned)

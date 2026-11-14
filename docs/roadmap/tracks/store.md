@@ -31,7 +31,8 @@ flowchart TB
     store_w1_who_limits[/"⏳ Who limits at each δ"/]
     store_s54_budget["✔ Store-budget test<br/>design (#167;54)"]
     store_defect_cap_constant>"⚠ Store cap constant<br/>at c8"]
-    store_law_derivation["▶ Store-law derivation<br/>(F01 + inputs + C02)"]
+    store_law_derivation["▶ Store-law derivation"]
+    store_s56_sweep["○ Store-pool sweep<br/>(#167;56)"]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
@@ -60,9 +61,10 @@ flowchart TB
     store_engine_form ~~~ store_s54_budget
     store_engine_form ~~~ store_defect_cap_constant
     store_w1_who_limits ~~~ store_law_derivation
-    store_s54_budget ~~~ store_fix_maxbw_minrtt
+    store_s54_budget ~~~ store_s56_sweep
     store_defect_cap_constant ~~~ store_fix_maxbw_minrtt
     store_law_derivation ~~~ store_engine_form_impl
+    store_s56_sweep ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     store_engine_form_impl ~~~ store_engine_form_guard
     store_engine_form_impl ~~~ store_delta_seat
@@ -86,12 +88,14 @@ flowchart TB
     store_input_search --> store_engine_form
     store_s54_budget --> store_law_derivation
     store_defect_cap_constant --> store_law_derivation
+    store_s54_budget --> store_s56_sweep
+    store_defect_cap_constant --> store_s56_sweep
     store_w1_who_limits --> store_engine_form_impl
     store_fix_maxbw_minrtt --> store_engine_form_impl
     store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
     store_delta_seat --> store_s48c_session
-    linkStyle 34,39,41,43 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 35,40,42,44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -115,6 +119,7 @@ flowchart TB
     class store_s54_budget unrated
     class store_defect_cap_constant defect
     class store_law_derivation inprog
+    class store_s56_sweep next
     class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
@@ -143,7 +148,8 @@ flowchart TB
 | `store-engine-form` | Dispersion and oracle store law | parked | successful |  | status §36; status §40; status §42; status §43; branch harness43; branch run43 | store-input-search |
 | `store-w1-who-limits` | Who limits at each δ | in-progress | unrated |  | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 | cc-bbrrs-r1, store-engine-form |
 | `store-s54-budget` | Store-budget test design (§54) | done | unrated | from a mean of about 5.3 s to about 1.0 s | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag | rec-snapver-filter |
-| `store-law-derivation` | Store-law derivation (F01 + inputs + C02) | in-progress | unrated |  | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 | store-s54-budget, store-defect-cap-constant, model-law-ledger |
+| `store-law-derivation` | Store-law derivation | in-progress | unrated |  | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 | store-s54-budget, store-defect-cap-constant, model-law-ledger |
+| `store-s56-sweep` | Store-pool sweep (§56) | next | unrated |  | status §56; derivation store-law.md §13 | store-s54-budget, store-defect-cap-constant |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
 | `store-engine-form-guard` | Store-law engine form guard | blocked | unrated |  | plan VM queue 8 | store-engine-form-impl, meas-guard-v2-impl |
 | `store-s48c-session` | δ seat diagnostic and guard (§48c) | blocked | unrated |  | plan W1.4 | store-delta-seat, meas-s51-session, meas-guard-v2-impl |
@@ -177,7 +183,8 @@ flowchart TB
 | `store-engine-form` | Dispersion and oracle store law | §36/§40 receiver dispersion as link rate (NOT-YET), §42 kernel timestamps FEASIBLE-IN-TREE, §43 oracle law (c2 BISTABLE, c1s UNSTABLE) and §43b (CONVERGES-ONE-POINT, in the §43 file). Continues as plan W3.3. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §36; status §40; status §42; status §43; branch harness43; branch run43 |
 | `store-w1-who-limits` | Who limits at each δ | Derivation (derive-w1, w1r2): δ's seat on the store, bbr_rs window δ-free; waits on owner questions U1-U3 (plan user decision 10). | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 |
 | `store-s54-budget` | Store-budget test design (§54) | p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE' and CAND'), plan item 2 of 2026-11-13. | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag |
-| `store-law-derivation` | Store-law derivation (F01 + inputs + C02) | Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 |
+| `store-law-derivation` | Store-law derivation | Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 |
+| `store-s56-sweep` | Store-pool sweep (§56) | Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law's Part B and the owner's U2. | status §56; derivation store-law.md §13 |
 | `store-defect-cap-constant` | Store cap constant at c8 | Plan 2026-11-13: the store law becomes its own track (items 8-9). | status §3.10 item 8 |
 | `store-engine-form-guard` | Store-law engine form guard | Law ledger: F01 battery (with E03, E04). Done when: guard v2 against main PASSes and the c8 clamp bind fraction is reported below 1 (the law is not pinned over its operating range). | plan VM queue 8 |
 | `store-s48c-session` | δ seat diagnostic and guard (§48c) | Done when: the §48c (a) reported-only fixed-gain/fixed-τ rows and the (b) guard v2 battery of the derived δ seat (c1s, c2, c8 and a Realtime row at c2) are in status. | plan W1.4 |
