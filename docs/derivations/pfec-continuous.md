@@ -20,7 +20,15 @@ this doc, and paper sections are named "paper §". Base: `db012f16`.
    - the missing premises of the L1 proof.
 
    It also fixed three number slips.
-3. *Before the final commit:* see the last commit's message.
+3. *Before the final commit:* Fable corrected my claim that "a guard cannot
+   execute the changed law". `r_saturation` runs on every evaluation whenever
+   the cap is on, so the law executes and only its output is annihilated; this
+   gave the CPU prediction in §4. It also had me:
+   - check the generation and coded-only window caps (> 200);
+   - recount the cost;
+   - soften the claims I had not read (gate `SLOPE` entry, goldens, JS σ²,
+     `RWM_DELTA`) and list them in §6;
+   - add the ⌊A*⌋/⌈A*⌉ vs ceil divergence to §5.
 
 ## 0. Result
 
@@ -47,16 +55,25 @@ p + q = 2/(σ² + 1) and p = ε·(p + q).
 - It tends to the Φ form as O(W^−½). That limit is not reached at any
   operating window.
 - It passes every assertion of the engine pin.
-- It changes **no** L1 cell (proof in §4): r* stays bit-identical 0 on c1s,
-  c1d, c2 and c8.
+- On c1s, c1d, c2 and c8, r* stays bit-identical 0 (proof in §4). The law
+  still **executes** there, because `r_saturation` runs on every rate
+  evaluation. Its CPU cost is about 10× the shipped Φ's, which puts the
+  per-evaluation resource bound at risk (§4). That is the change L1 would see.
 
 ## 1. What P_fec must mean
 
 **Coding model as executed.**
 - Engine: sliding-window RLC (`FecBackend::Rlc`). Each repair combines the
   last A* source symbols, with A* = clamp(⌈rate·D⌉, 1, encoder.window_size())
-  (`net/emit_source.rs:578–580`). The encoder window is ≤ `MAX_WINDOW_SIZE` =
-  200 (`net/mod.rs:205`).
+  (`net/emit_source.rs:578–580`). The encoder window cap is mode-dependent
+  (`net/sender_policy.rs:443–464`):
+  - systematic: `MAX_WINDOW_SIZE` = 200 (`net/mod.rs:205`);
+  - coded-only: 640 by default, up to 4096;
+  - generation: G·(M+1), at least 200.
+
+  The L1 harness passes `--window-generation-coding` by default
+  (`tools/l1/perf_rwm_c.sh:71`). So the W that `r_saturation` reads on L1 is
+  ≥ 200, and I have not determined its value (§6). The grid stops at 200.
 - Repairs come from deterministic debt accrual. The engine banks r per source
   symbol (`TaperBudget`, `control/fec_rate.rs:678–703`); the sim does the same
   (`raptorpath-wasm/src/lib.rs:1358`, emitted at `debt ≥ 1`, `:1289`).
@@ -181,10 +198,21 @@ No constant appears, and nothing is tuned.
 - r = 0 gives n₀ = 0 and f = 0. S(k; 0) = 0 for k ≥ 1, and the k = 0 term has
   weight 0. So P = 0 is the formula's value, not a branch. The shipped
   `r <= 0` guard can stay as the domain projection of r < 0 only.
-- Cost: π_W once per (ε, σ², W) is O(W²). G(n) for all n ∈ [0, W+1] is
-  O(W²). Each of `r_saturation`'s 199 points is then O(1). That is about
-  8·10⁴ flops at W = 200 per call, and `controller_rate` makes two calls per
-  rate.
+- **Cost (an operation count, not a bench).**
+  - The π_W DP is W steps × W counts × 2 states × about 4 ops, i.e. ≈ 8W²
+    (3.2·10⁵ at W 200).
+  - G(n) for n ∈ [0, W+1] takes the binomial survival plus a weighted sum,
+    ≈ 6W² (2.4·10⁵).
+  - The 199 grid points are then O(1) each.
+  - Total: ≈ 6·10⁵ flops per `r_saturation` call at W 200, and ×2 per rate
+    (both mix terms, `fec_rate.rs:157–170`).
+  - That is 1.2·10⁶ flops per evaluation. The stated resource bound is
+    ~0.1 ms per evaluation and ≤ 1 per 5 ms (`RATE_CADENCE_MAX_US`,
+    `fec_rate.rs:172–180`). Scalar code would land about 10× over the ~0.1 ms,
+    more at W 640 (×10 again), so the code change must address the cost.
+    Options: π_W and G cached per (ε̂, σ², W) between estimator updates, or
+    `r_saturation`'s grid re-derived (R04).
+  - The shipped Φ is O(1) per point.
 
 **Where C6 departs from the shipped code.** Everywhere, not just below the
 floor (out§7):
@@ -236,8 +264,11 @@ Grid:
   - The worst case for C1 and C6 alike is 0.12, at ε .3 and W 200, which is
     Φ's own steepness. It sits inside C6's Lipschitz bound W·r·0.04.
   - C0's 0.61 is the step.
-  - So C6 passes a slope-scaled gate. It does not read ~0 under any fixed
-    absolute tolerance.
+  - A slope-scaled gate can therefore separate C6 from C0. The gate nudges δ
+    over a `SLOPE` table of named laws (`:322–338`). P_fec, or R through
+    A*(δ), has no entry there yet, so whether the actual gate passes is
+    untested (§6).
+  - C6 does not read ~0 under any fixed absolute tolerance.
 - **Continuity in ε and σ² (out§5):** a 0.1 % nudge moves C6 by ≤ 4.2e-3 (ε) and
   ≤ 7.7e-4 (σ²).
 - **Limits (out§6):** at ε → 0 and σ² 1, P = min(1, rW) to 4 digits. At σ² 3.76 it
@@ -290,7 +321,8 @@ The nominal rows use netem's GE (ε, σ²), 2× one-way delay and the link t_sym
 They are **not** estimator readings: the GSO burst factor g (`tools/l1/lib.sh:150–170`)
 makes the estimator's σ² differ.
 
-**No new r_sat staircase (out§19).** I swept ε in 0.1 % relative steps
+**No new r_sat staircase in ε (out§19; srtt and σ² were not swept).** I swept
+ε in 0.1 % relative steps
 (W 64 and 16, and the C4 inputs). The largest step of r_sat is 0.005 under C0
 and C6 alike: the grid resolution of `r_saturation`'s argmin. C6's kinks at
 r = n/W add no step beyond it.
@@ -308,7 +340,9 @@ bit-identical 0, and no shed-budget change. This is a proof, not a band.**
 - `inner_feedback` is 0, so the floor is applied before the cap with w = 0
   (`config.rs:355–358`, math `:814–817`).
 - `RWM_COMPLETION_EXPOSURE` is unset (`gates.rs:375`), so χ = 0.
-- `RWM_DELTA` is unset, so the dial sits at the Bulk point.
+- `RWM_DELTA` is assumed unset, so the dial sits at the Bulk point. It is
+  forwarded by `tools/l1/lib.sh:71`; I did not read which batteries set it
+  (§6).
 - The r_battery GLIDE arms (`tools/l1/r_battery.sh:162–163`) set χ > 0. There
   r_bulk > 0, and C6 can act.
 
@@ -332,11 +366,24 @@ function.
    `shed_armed` requires `!reliable` (`net/shed.rs:23`). It is also moot: at
    r = 0, C0 and C6 both give R = ε̂.
 
-So **a guard on these four cells cannot execute the changed law**. It can only
-witness a no-op: an identical spare-capped rate trace, or the §41c guard as a
-zero-change check. The first measurable cells are off-Bulk (Auto, β = 0, where
-the soft cap acts) or ρ < 1 (shed). Neither has been measured
-(`law-ledger.md:919`).
+**The law still executes on these cells.** `controller_rate` calls
+`r_saturation` whenever `saturation_cap && t_sym > 0 && srtt > 0`
+(math `:824–826`), whatever the pre-cap rate. `RateSnapshot::rate` evaluates
+both terms, so P_fec runs 2 × 199 times per rate evaluation on every L1 cell.
+Only its output is annihilated (step 3).
+
+**Registered per-cell prediction (c1s, c1d, c2, c8).**
+- r* = 0, bit-identical.
+- Shed unarmed.
+- Sender CPU up by about 1.2·10⁶ flops per rate evaluation, against the Φ
+  form's ~2·10³. That is an op count, not a bench: at ≤ 1 evaluation per 5 ms
+  it is of order 10–20 % of a core at scalar speed, more at W > 200.
+- So the guard's CPU/GB clauses are where L1 would see this change, unless the
+  code change caches π_W and G (§2 cost).
+- Rate and goodput clauses should read a no-op.
+- The first cells where the rate itself moves are off-Bulk (Auto, β = 0, where
+  the soft cap acts) or ρ < 1 (shed). Neither has been measured
+  (`law-ledger.md:919`).
 
 ## 5. What the code change would touch (not done)
 
@@ -373,17 +420,24 @@ the soft cap acts) or ρ < 1 (shed). Neither has been measured
 
 **wasm and visualizer.**
 - The six goldens of `test_multipath_n1_identical_golden`
-  (`raptorpath-wasm/src/lib.rs:1840–1866`) need `GOLDEN_CAPTURE=1`. The four
-  auto/realtime rows move for certain: their rates of 0.33–0.51 sit at or above
-  r_sat (0.255/0.42 → 0.315/0.56), so the soft cap binds. Bulk ε .05 (fec 0)
-  should not move. Bulk ε .10 (fec 85, a non-zero rate through the soft cap)
-  may move.
+  (`raptorpath-wasm/src/lib.rs:1840–1866`) need `GOLDEN_CAPTURE=1`.
+  - The four auto/realtime rows are expected to move. Their fec/src ratios of
+    0.33–0.51 sit near or above the nominal r_sat (0.255/0.42 → 0.315/0.56).
+    Both figures are nominal, not read from the sim's estimator.
+  - Bulk ε .05 (fec 0) should not move.
+  - Bulk ε .10 (fec 85, a non-zero rate through the soft cap) may move.
 - `shed_budget_residual` test `:2706–2708` holds (0.05 and 1.4e-4).
 - `test_custom_rho_gives_up_late_losses` and `test_bulk_composes_with_rho` may
   move, as the audit says.
 - The W22 exclusion in the continuity gate (owner decision 3) is deleted.
 - `shed_budget_residual` (`:217–219`) passes the cartoon's fractional A*. It
   takes the real-W extension of §1, and σ² is floored at 1 there.
+- **New model-vs-engine divergence.** The cartoon mixes ⌊A*⌋ and ⌈A*⌉,
+  while the engine uses ⌈rate·D⌉ (`emit_source.rs:578`). Per CLAUDE.md it needs
+  a bounding test: |R_cartoon − R(⌈A*⌉)| ≤ the one-slot difference of C6.
+- Add a `SLOPE` entry for the shed budget R(δ) to the ±2 % nudge gate
+  (`test_visualizer.mjs:319–341`). That way the gate covers the law this fix
+  makes continuous.
 
 **Paper.**
 - §4.2 `:693–700`: the Setup becomes the per-loss event and the C6 line. "This
@@ -414,5 +468,14 @@ the cap's role at C4 is lost.
 - **§4.2's r\* inversion.** It uses the window event and the normal tail. By
   out§7's tail numbers it under-provisions more than §4.2's "30–50 %" note says.
   That is a separate finding for the r* rows of the ledger and §4.3, not part of this change.
-- **The Rust cost.** About 8·10⁴ flops per `r_saturation` at W 200 is an
-  operation count, not a bench.
+- **The Rust cost.** About 6·10⁵ flops per `r_saturation` call at W 200
+  (×2 per rate) is an operation count, not a bench. The ~10× over the
+  0.1 ms evaluation budget is an estimate.
+- **The W `r_saturation` reads on L1.** The generation-coding window
+  (G·(M+1) ≥ 200) and the coded-only 640 were not grid-checked. The cost
+  scales as W².
+- **The visualizer gate.** Whether `test_visualizer.mjs`'s `SLOPE`-scaled
+  nudge passes C6 is untested, because R has no `SLOPE` entry.
+- **Unread premises.** Which batteries set `RWM_DELTA`, and whether the JS UI
+  can pass σ² < 1 to the raw wasm exports. The UI derives σ² from (ε, q)
+  (`interactive-visualizer.html:129`), but its slider ranges were not read.
