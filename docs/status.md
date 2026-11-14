@@ -881,6 +881,28 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+## Owner decisions (2026-11-14): the visualizer, shared code and two model laws
+
+All three were decided as recommended after Fable's review.
+
+1. **Scope rule: amended (ADR-0077, CLAUDE.md).**
+   - Formulas move to `raptorpath-math` and decisions to a new `raptorpath-core`.
+   - Engine-side moves are zero-behaviour-change, proven by pins, an ns bench and a §41c guard. The guard is waived only for an identical release-binary sha.
+   - Only class-A code moves from now on. The existing debt in `raptorpath-math` (W22, W14) is named and carries bounding tests.
+   - A decision is shared only when the model holds its inputs, with an "executes" witness. Store, recovery and placement stay engine-only for now.
+2. **FEC formula jump (`p_fec_normal`, W22 / ledger R03): a derivation is opened.**
+   - The paper's Φ form fails the engine's r = 0 pin (`residual_loss_after_fec_is_the_design_residual`). With no repair symbols it still predicts ≈ 39 % recovery in that test's setting.
+   - The shipped cut to 0 at r ≤ ε/(1−ε) is the step. Neither form is kept as is.
+   - The derivation looks for a form that is continuous and exactly 0 at r = 0. Route: rate-law track (Opus derivation, paper line, a registered r per cell, then a guard).
+   - It changes the engine's rate law, because `r_saturation` is on the default path.
+3. **Give-up rule in the model: option (ii), landing before decision 2's fix.**
+   - Rule: give up a hole iff age > D(δ) and given_up + 1 ≤ min(1 − ρ, R)·src_total. It replaces V5/V6 (the cartoon's budget choice) and W14 (the sim's T_cut horizon).
+   - **The basis is corrected:** the engine's shed budget is R alone, and ρ enters it only as the seat (`shed_on`). So the 1 − ρ cap is a model law the engine lacks. It needs its paper §5.6 line and a bounding test.
+   - **Two consequences are recorded:**
+     - At Auto and Realtime, R is below the ρ slider's step, so ρ is inert over the slider there. This is a degenerate-law finding for the law ledger.
+     - Dropping T_cut diverges at harsh Bulk (8–26 of 100 slider positions at ε 0.2–0.3), so it gets a bounding test.
+   - Until decision 2 lands, the continuity gate excludes only the one W22 step its bounding test covers.
+
 **§57a Result (`LD_PLAN=57a`, the emission-burst block at c1s, REPORTED ONLY): UNDERPOWERED.** (2026-11-14; rows 14:08–15:38Z on main `ef3d5e0e`. Ledger: `docs/l1-raw/s57/rep57a-*`, `57a-*`.)
 
 **Integrity.**
