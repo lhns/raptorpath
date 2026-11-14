@@ -117,8 +117,8 @@ check("jitter finite and non-negative",
   Number.isFinite(rt.jitter) && rt.jitter >= 0,
   `rt jitter=${rt.jitter.toFixed(2)}ms`);
 
-// --- 4. Custom triangle mode: rho < 1 gives up cleanly ---
-const custom = runSim("custom", { delta: 0.05, rho: 0.95 });
+// --- 4. The ρ dial on the δ continuum: rho < 1 gives up cleanly ---
+const custom = runSim("continuum", { delta: 0.005, rho: 0.95 });
 check(
   "custom rho: decoded + given_up == num_source",
   custom.decoded + custom.givenUp === custom.numSource,
@@ -236,8 +236,8 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   `tails=[${api.sim_tail_target_of_delta(50).toExponential(2)}, ${api.sim_tail_target_of_delta(0.5).toExponential(2)}, ${api.sim_tail_target_of_delta(0.005).toExponential(2)}]`);
 
 // --- 7d. The δ continuum drives the SIM continuously (the UI path:
-// 'custom' + derived tail strictly BETWEEN presets; AT the Bulk preset
-// the engine's late-is-fine 'bulk' law verbatim): the Realtime end pays
+// 'continuum' + the δ price, one rate mix at every position (β = 1 at the Bulk preset:
+// the engine's late-is-fine law verbatim): the Realtime end pays
 // FEC, the Bulk end is pure ARQ and completes faster.
 {
   // The UI path end-to-end: ONE hint ('continuum', taking the δ PRICE)
@@ -256,8 +256,8 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   // The ρ dial stays a thing (the triangle's second corner): the UI path
   // with ρ < 1 gives up cleanly via §3.5 T_cut toward the declared target.
   const lossyRho = new api.Simulation(
-    0.10, 0.3, 80, 64, "custom",
-    undefined, api.sim_tail_target_of_delta(0.5), 0.95);
+    0.10, 0.3, 80, 64, "continuum",
+    undefined, 0.5, 0.95);
   let t = 0;
   while (!lossyRho.is_finished() && t++ < 20000) lossyRho.step();
   check("ρ dial on the continuum: decoded + given_up == num_source, reliability ≥ 0.90",
