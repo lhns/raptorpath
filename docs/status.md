@@ -881,6 +881,27 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+**Erratum and progress to "Owner decisions (2026-11-14)" (same day).**
+- **Item 3, "ρ is inert at Auto and Realtime":** this holds under the shipped R (the cut form) only.
+  - Under the block-exact candidate C6 (`docs/derivations/pfec-continuous.md`), R exceeds the slider's 1e-3 step at Realtime on all five audit cells (1.2e-3 to 4.1e-3) and at Auto on one cell. So ρ would act on 1–4 of 100 positions there.
+  - The T_cut numbers (8 and 26 of 100 positions at harsh Bulk) are unchanged under either form, because R = ε at r* = 0.
+  - (ii) lands first, as decided. Its R values are provisional until item 2 lands.
+- **Item 2, the P_fec derivation (branch `pfec-derive`, open):**
+  - **Root cause confirmed.** The paper defines P_fec per lost symbol (`fec-arq-model.md:205`), but §4.2 (`:693–699`) derives the window event, which includes zero losses. That is a paper-text erratum.
+  - **C6 is the exact per-loss law for a block window.** It matches the repo's block oracle (ratio 0.99–1.01), is exactly 0 at r = 0, and is continuous.
+  - **Neither the engine nor the sim decodes a block.** Both decode a sliding window. Against a sliding decode with no deadline, an upper bound on recovery, C6 sits 0.04–0.15 below at A* 4–7. At W 201, where `r_saturation` runs on L1 (`wsize=201` in §57b's client logs), its tail is ≈ 100× off.
+  - **So no form ships.** The path is to derive the sliding per-loss law against an executed decoder, with Fable.
+  - **Correction to my message to the owner:** the block law's r* under-provisioning does not carry to the engine. The sliding check has the shipped r* meeting the Auto target at c2 and c3, and Realtime is unresolved.
+  - **On L1** (Bulk, `--window-reliable`), r* stays bit-identical 0 under any form.
+- **Visualizer fixes merged (`viz-fix`, main `0857a0cd`):**
+  - the dead classic-hint machine is removed, and the named hints are now an alias table onto the one continuum constructor;
+  - the W11 β = 0 guard is gone;
+  - a W22 bounding test is added;
+  - the store text is corrected per cell (2048 is a clamp measured pinned; 512·N is an underived constant);
+  - the model-vs-engine table rows (C04, S05) and the stale references are fixed;
+  - the goldens are unchanged, with no re-capture; 39 native wasm tests and both mjs gates pass.
+- **The shared-core steps 0.1–0.3 are merged (main `e9188e01`).** The engine edits are test-only. `decision_trace_pin` was captured on Windows; the next VM suites check it on Linux.
+
 **§57b Result (`LD_PLAN=57b`, the c1d pool sweep and the transfer test T, REPORTED ONLY): T = UNSCOREABLE.** Every scoreable (a) point passes, but c1d's smallest store-bound pool does not reach q_ℓ = 2.1 ms. (2026-11-14; rows 16:30–17:01Z on main `02ecbdd7`. Host cargo was paused throughout. Ledger: `docs/l1-raw/s57/rep57b-*`, `57b-*`.)
 
 **Integrity.**
