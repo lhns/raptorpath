@@ -45,6 +45,17 @@ this doc, and paper sections are named "paper §". Base: `db012f16`.
    `temporal_oracle` port and its self-check, the sliding-sim seeds and
    tolerances, the input sweep for the measured band, `generation=false` on
    L1, the `rce=` baseline, and the dial-sweep requirement for the gate.
+5. *Fable, before the round-4 final commit* (after `314e0676`). It rejected
+   the "block callers" scope, because every executing caller decodes a
+   sliding window, the wasm sim included. That gave one status at every
+   caller and the owner's choice (a)/(b) in §0. It also:
+   - had the r\* tail checked with the sliding decoder (`pfec_tail.py`). That
+     check overturned the "52× to 10³×" engine claim, now a block-law figure
+     only;
+   - had the r_sat cache declared as a second resource bound, not "meets
+     `RATE_CADENCE_MAX_US`";
+   - fixed the R1d table, the 20–53 % range and the "later ledgers" sentence,
+     and removed the stale sentences in §1 and §2.
 
 ## 0. Result
 
@@ -56,8 +67,8 @@ reads it that way: R = ε·(1 − P_fec) (§3.5 `:573–576`, §5.6 `:1723`). Bu
 includes K = 0, and then approximates it by a two-moment normal. On the
 correct per-loss event (the size-biased or Palm event), the r = 0 pin is a fact
 about support: C ≤ N_R = 0 < K. No normal form of C − K can carry that. The
-recommended form keeps the paper's assumptions and replaces the normal with the
-exact counts:
+candidate C6 keeps the paper's block-window assumptions and replaces the normal
+with the exact counts:
 
 ```text
 P_fec(r) = Σ_{k=1..W} [k·π_W(k)/(W·ε)] · [ (1−f)·S(k; n₀) + f·S(k; n₀+1) ],   n₀ = ⌊rW⌋,  f = rW − n₀,  S(k; n) = P(Bin(n, 1−ε) ≥ k)
@@ -71,20 +82,37 @@ p + q = 2/(σ² + 1) and p = ε·(p + q).
 - It tends to the Φ form as O(W^−½). That limit is not reached at any
   operating window.
 - It passes every assertion of the engine pin.
-- It matches the repo's executed oracle (`temporal_oracle.rs:1476`, ported)
-  within 1 %, where the shipped form is off by 21–53 % (§7 R1).
-- **Scope.** C6 is recommended for the block callers (sim and cartoon windows,
-  `r_saturation`). At the shed budget's A* 4–7 it is a candidate only: the
-  sliding-window decoder recovers up to 0.15 more than the block law (a
-  no-deadline bound), and that sliding per-loss law is open (§7 R1).
-- On c1s, c1d, c2 and c8, r* stays bit-identical 0 (proof in §4). The law
-  still **executes** there, because `r_saturation` runs on every rate
-  evaluation, so the only L1-visible change is CPU. With the §2 evaluation
-  scheme it is bounded by the existing 2 % budget (§7 R2, an estimate to
-  bench).
-- The same event error sits in paper §4.2's r\* inversion. Off-Bulk, the
-  random term under-provisions by 52× (Auto) to ~10³× (Realtime) of the tail
-  target on the C6 law (§7 R3). This is flagged for the ledger and §51.
+- It matches the repo's executed **block** oracle (`temporal_oracle.rs:1476`,
+  ported) within 1 %, where the shipped form is off by 20–53 % (§7 R1).
+- **One status at every caller: C6 is the exact block law, not the executed
+  decoder's law.** Every caller that executes, i.e. the engine (A\* 4–7 on the
+  evicting seat, W 201 on L1) and the wasm sim (whose `send_repair` codes over
+  the whole sliding window, `raptorpath-wasm/src/lib.rs:903–904`), runs a
+  **sliding** decoder.
+  - Against a no-deadline sliding-decode simulation, C6 reads P low by
+    0.04–0.15 at every window tested.
+  - In the tail it is far worse. At W 201 and the closed-form Auto r\* the
+    sliding miss is 0 (c2) and 2.7e-4 (c3), against C6's 2.0e-2 and 1.1e-2.
+    The shipped Φ (4.7e-4, 2.8e-4) is nearer there.
+  - Low P is the unsafe direction for ρ (larger shed budget) and makes r_sat
+    looser.
+- **Owner's choice:**
+  - (a) ship C6 everywhere now (continuous, pin-correct, block-exact), with a
+    bounding test of its divergence from a sliding-decode oracle; or
+  - (b) derive the sliding per-loss law first. Meanwhile the W22 step stays
+    in R, which decision 3's option (ii) reads.
+
+  §5 lists the change for (a).
+- On c1s, c1d, c2 and c8, r\* stays bit-identical 0 under either choice (proof
+  in §4). The law still **executes** there, because `r_saturation` runs on
+  every rate evaluation, so the only L1-visible change is CPU (§7 R2: a second
+  resource bound for the owner, an estimate to bench).
+- The block event error also sits in paper §4.2's r\* inversion. On the block
+  law the per-loss exact r\* is 31–47 % above paper §4.7's window-event r\*.
+  But the sliding-decode tail check at L1 inputs meets the target at the
+  shipped closed-form r\* (within SE), so the off-Bulk "52× to 10³×
+  under-provisioning" is a **block-law figure only** and not an engine finding
+  (§7 R3).
 
 ## 1. What P_fec must mean
 
@@ -103,9 +131,10 @@ p + q = 2/(σ² + 1) and p = ε·(p + q).
   systematic cap applies. **Measured W:** the `[SPAN] wsize=` gauge (the
   `encoder.window_size()` that `cadenced_repair_rate` passes,
   `emit_source.rs:522–528`, `:662`) reads p50 **201**, max 213–247 at c1s,
-  c1d, c2 and c8 (anchor-diag MAIN rows). The same holds in the later
-  loop-diag, store-law-n1 and thread-sk rows. A* there is 201–263, i.e.
-  W-clamped. The grid's W 200 is therefore the L1 window.
+  c1d, c2 and c8 (anchor-diag MAIN rows). A* there is 201–263, i.e.
+  W-clamped. The grid's W 200 is therefore the L1 window. The later ledgers I
+  sampled (loop-diag, store-law-n1, thread-sk) were all c1d rows, and they
+  read the same.
 - Span geometry (`emit_source.rs:784–806`): a repair codes over
   [max(ws, end − A*), end) with end = newest + 1 − Δ and
   Δ = clamp(⌈rate·J⌉, 1, 64). Some repair slots carry a source **copy** of a
@@ -127,7 +156,9 @@ P_fec = P(recovered | lost) = E[K·1{C ≥ K}] / E[K],     E[K] = W·ε
 
 - This is the block-equivalent reading the paper uses (§4.2, §4.7).
 - A sliding-window decoder can also use overlapping spans. That makes this a
-  model of the decoder, not a bound on it (not verified here, see §6).
+  model of the decoder, not a bound on it. §7 R1 and R3 measure the gap by
+  simulation: up to 0.15 in P, and two orders of magnitude in the tail miss at
+  W 201.
 
 **Counts.**
 - Repair count: with debt accrual, the number of repairs falling in a span of
@@ -189,7 +220,7 @@ Each candidate is graded against the event in §1. Numbers are at the pin
 | C3 | the paper's window event computed exactly: P(C ≥ K) | **0.864** = P(K = 0) | **reject**: wrong event. It counts loss-free windows as "recovered" |
 | C4 | product hybrid P(C ≥ 1)·Φ(·) | 0 | **reject**, not computed: the factorisation assumes independence with no basis, and the Φ factor keeps C1's error |
 | C5 | per-loss event, exact joint GE DP (repair erasures GE-correlated) | 0 | the oracle, not the law: it needs the joint of (K, C) per r, O(W³) per evaluation × 199 grid points in `r_saturation`. Used as a Monte Carlo oracle (out§8) |
-| **C6** | **recommended (formula in §0)** | **0** | below |
+| **C6** | **the exact block law (formula in §0)**: the candidate, under the owner's choice in §0 | **0** | below |
 
 **C6, term by term.** Each line is next to the sentence it implements.
 
@@ -439,6 +470,11 @@ Only its output is annihilated (step 3).
 
 ## 5. What the code change would touch (not done)
 
+This is the change for **owner choice (a)**: C6 at every caller, plus a
+bounding test of C6 against a sliding-decode oracle at A\* 4–7 and W 64/201.
+The test must bound both the P gap (≤ 0.15) and the tail gap. Under choice
+(b) the same list applies with the sliding law in place of C6.
+
 **`raptorpath-math`.**
 - `p_fec_normal` (`lib.rs:885–893`) becomes the C6 form under a new name. The
   cut at `:888` goes.
@@ -566,7 +602,7 @@ Numbers: `pfec-continuous/pfec_review.py` → `pfec_review.out`, cited as
 | .08, .03 | 1.416 | 1.416 | **1.003** | 1.003 |
 
 The ratio is oracle tail / (ε·(1 − P)), out-r§R1c. **C6 sits closest: within
-1 % on all five scenarios. Shipped and Φ are off by 21–53 %.**
+1 % on all five scenarios. Shipped and Φ are off by 20–53 %.**
 
 **(b) The "~1 % class" in the pin comment.**
 - It is the streaming machine's measured shed share, not a measured FEC
@@ -601,29 +637,35 @@ The ratio is oracle tail / (ε·(1 − P)), out-r§R1c. **C6 sits closest: withi
 
 | form | in-band cells (σ², A*, r) |
 |---|---|
-| shipped | (3.76, 4–7, 0.2) and (2, 4, 0.2) |
-| C6 | none at σ² 3.76; at σ² 2: (4, 0.5) and (7, 0.34); at σ² 1: (7, 0.2) |
-| C5 | same as C6 |
-| sliding | (3.76, 7, 0.5) and (2, 4, 0.5) |
+| shipped | (3.76, 4, 0.2), (3.76, 7, 0.2), (2, 4, 0.2) |
+| C6 | (1, 7, 0.2), (2, 4, 0.5), (2, 7, 0.34); none at the nominal σ² 3.76 |
+| C5 | same cells as C6 |
+| sliding | (3.76, 7, 0.5) only |
 
-So the datum does not separate the forms. It is reachable by every form at
-some point of the battery's own input range, and its rep's (σ²_est, r, A*)
-are unrecorded.
+So the datum does not separate the forms. At the nominal σ² 3.76, the
+shipped form and the sliding bound each reach the band somewhere in the
+battery's input range, but C6 and C5 reach it nowhere. The rep's
+(σ²_est, r, A\*) are unrecorded.
 
-**Verdict for R1.**
-- **C6 is the exact block law under iid repair erasure**, and it is
-  confirmed against the repo's own executed oracle.
-- The **sliding per-loss law is the open derivation.** At A* 4–7, C6 reads
-  low by up to 0.15 against the no-deadline sliding bound, and up to 0.14 at
-  W 64. Low P is the unsafe direction: the shed budget R is larger
-  (non-conservative for ρ) and r_sat is looser.
-- Scope of the recommendation:
-  - **recommended:** the block callers, i.e. the sim and cartoon windows, and
-    `r_saturation`, whose W ≈ A* on L1;
-  - **candidate, not recommended:** the A* shed budget until the sliding law
-    is derived.
+**Verdict for R1: one status at every caller.**
+- **C6 is the exact block law under iid repair erasure.** It is confirmed
+  against the repo's executed block oracle.
+- **Every executing caller decodes a sliding window:**
+  - the engine: the trailing span at A\* 4–7 on the evicting seat, and A\* ≈ W
+    201 on L1;
+  - the wasm sim: `send_repair` → `generate_repair` over the whole current
+    window, `raptorpath-wasm/src/lib.rs:903–904`, `raptorpath-math/src/rlc.rs:41`;
+  - the cartoon, which uses the same span law.
+- Against the no-deadline sliding bound, C6 reads low at **every** window
+  tested. In P it is 0.04–0.15 low at A\* 4–7, 0.14 at W 64 and 0.06 at
+  W 200 (≈ 2.5 SE). In the tail at W 201 it is two orders of magnitude low
+  (R3).
+- Low P is the unsafe direction: the shed budget R is larger (non-conservative
+  for ρ), and the r_sat shift of §4 is overstated in the same direction.
+- The **sliding per-loss law is the open derivation.** The owner's choice
+  between (a) and (b) is stated in §0.
 - The shipped form is excluded at every caller: it is the step, and it is
-  21–53 % off the oracle.
+  20–53 % off the block oracle.
 - **Gauges that settle the A* question.** In one evicting-seat rep, record
   together:
   - `[SPAN] a_star=`, `rr=` and `shed=/bud=`;
@@ -657,8 +699,12 @@ are unrecorded.
 - **Evaluation scheme** (§2 cost):
   1. r_sat is computed once per snapshot, not twice. This is exact.
   2. It is cached by age only, with period T_sat = max(rate period,
-     C_sat/0.02). At about 0.15–0.3 ms per evaluation, T_sat ≈ 8–15 ms, which
-     meets the 2 % budget that `RATE_CADENCE_MAX_US` states.
+     C_sat/0.02). At about 0.15–0.3 ms per evaluation, T_sat ≈ 8–15 ms.
+- **This is a second resource bound for the owner. It does not meet
+  `RATE_CADENCE_MAX_US`.** That constant bounds the rate's staleness at 5 ms,
+  while r_sat would be up to 8–15 ms stale.
+- The 2 % is **additional**: c2 and c8 already spend 1.0–1.4 % of a core on the
+  rate (93 µs × 155/s, 68 µs × 154/s).
 - **Prediction on `rce=`:** µs per evaluation stays at the baseline
   2.2 / 3.2 / 93 / 68. An additional +150–300 µs appears only on the r_sat
   refresh (≤ 1 per T_sat), so the amortised added load is ≤ 2 % of a core.
@@ -696,13 +742,29 @@ are unrecorded.
   | c3 | 0.158 → 0.226 | 0.191 → 0.295 |
 
   - All values stay below `max_overhead` 0.5.
-  - At the shipped closed-form r\*, C6's tail is **52–53× the target at Auto
-    and 850–3 300× at Realtime**. The oracle port already reads 1.2–1.5× at
-    W 64 with mild targets.
-  - The composed rate (max with the burst term and the §4.3 mass term) is
-    **not** computed, so this is the random term's shortfall, not the
-    engine's.
-  - It is unmeasured on L1, which runs Bulk only.
+  - At the shipped closed-form r\*, C6's tail is 52–53× the target at Auto and
+    850–3 300× at Realtime. The block oracle port reads 1.2–1.5× at W 64 with
+    mild targets.
+- **The sliding-decode check does not reproduce this**
+  (`pfec-continuous/pfec_tail.py` → `pfec_tail.out`).
+  - Setup: span A 201, the closed-form Auto r\*, nominal (ε, σ²), no
+    deadline, 2 seeds × 80 k sources.
+  - The per-loss miss is **0 at c2** (4 101 holes, target t/ε 3.9e-4) and
+    **2.7e-4 ± 1.9e-4 at c3** (7 472 holes, target 2.1e-4).
+  - C6 predicts 2.0e-2 and 1.1e-2; the shipped Φ predicts 4.7e-4 and 2.8e-4.
+  - So under the executed (sliding) decoder, the closed-form r\* meets the
+    Auto target within SE at these inputs.
+  - Realtime (t 1e-7) is below what 10⁴ holes can resolve, and is not
+    checked.
+- **Finding, relabelled.** "The §4.2 inversion under-provisions by 52× to
+  10³×" holds for the **block** law only. It is **not** an engine finding.
+  - The event error at :703–704 is real.
+  - Its size for the executed decoder depends on the sliding per-loss law,
+    which is open.
+  - For the law ledger and §51: record the event error and the block-law
+    figures, with the sliding check as the bound on their engine relevance.
+- The composed rate (max with the burst term and the §4.3 mass term) is not
+  computed. Off-Bulk is unmeasured on L1, which runs Bulk only.
 
 **Status "Owner decisions (2026-11-14)" item 3, recomputed** (out-r§R3c):
 - *Cartoon inputs* (`interactive-visualizer.html:2617–2642`): rate = 4(1−ε),
