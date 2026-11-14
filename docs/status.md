@@ -881,6 +881,52 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+## 57. Amendment 1 to §57a and §57b: the harness as built (before any VM contact)
+
+**Harness.** Branch `harness57` (`2550768c`, `19dc65d7`), fast-forwarded onto main as tools only (`tools/l1`; `raptorpath/src` and `raptorpath/tests` unchanged, so HEAD still equals `ref56-manifest.sha256` and the engine suites are expected to be reused).
+- `LD_PLAN=57a` / `57b`: plan 56's single-seat shape; stages `rep57a` / `rep57b`; scorer `pool57_score.py`, tests `test_pool57.py`.
+- No row sets `RWM_STORE` (the plan table's store column is `def`, so the law stays on). 57a sets both `RWM_STORE_PATH_POOL` and `RWM_EMIT_BURST` on every arm; 57b sets the pool per path and nothing at 2048. Both knobs are scrubbed (`env -u`).
+- The realised burst is Δ`eb_syms`/Δ`eb_bursts` from the first to the last LATE client tick. The `[GATES]` echo of pool and burst is checked on both ends.
+- Stub run (`STUBRUN_FULL=1 test_stubrun.py`): 465 ok, 0 FAIL, including the 57a/57b rehearse, full, reuse-hit and reuse-miss paths. Every other `tools/l1` python test passes.
+- The bash tests (`test_lib_battery.sh`, `test_abort_witness.sh`) cannot run on the Windows host (no `flock`); they fail the same way on 29fb7c8f. The rehearsal is their first run on this tree.
+
+**Rules the registration did not state, fixed now (before any row exists).**
+1. **c1d flag.** "Both legs below BDP in > 0.10 of windows" means min over the two legs of the per-leg below-BDP share > 0.10. This reproduces the registered 5 of 30 (§53, goodput 729 against 827) and 0 of 24 (§54). The one-leg share (max over legs > 0.10) is the registered second readout (11 of 30 on §53).
+   - **Erratum to `docs/derivations/store-law/c1dflag.py`:** its `FLAG` column is the any-leg rule (16 of 30), not the registered one. The registered numbers come from the both-leg reading.
+2. **c1d T̄.** The top-level `rtt=` is the max over live paths, so at two legs T̄ uses the per-leg echo rtt (printed `{:.0}`, rounded to 1 ms), per-tick values rate-weighted over LATE. The top-level form is reported as Ttop.
+   - **Resolution, measured where it matters only at one path.** On §56's 18 unflagged single-path c1s rows, P384 and P512 included (q_ℓ ≈ 2–3 ms), the integer per-leg form and the 0.1 ms top-level form differ by ≤ 0.036 ms. (§53's c1d rows show 36–327 distinct per-leg values per row, but they are control rows at ≈ 20 ms of queue, the wrong regime.)
+   - **No two-leg small-pool row exists yet.** The 57b smoke's P192 row is read in the rehearsal: per leg, the number of distinct LATE rtt values and their tick sd. The rule is calibrated on §56's unflagged P384/P512 rows, where the 0.036 ms bound holds: tick sd 1.02–1.44 ms, 7–10 distinct values. If either leg reads a tick sd below 0.5 ms or fewer than 5 distinct values, de-quantisation is not shown, and the full 57b launch waits for a re-sourced T̄ by a further amendment. If the P192 smoke row is c1d-flagged, it is no reading, and the rehearsal is relaunched under the same cap as 57a's smoke.
+   - ℓ̂ is the lowest `rtp_us` in a row's first 2 s, rate-weighted over the legs.
+3. **LATE at c1d** is t ≥ 5 s, as at c1s.
+4. **57a statistics.** sd is the sample sd (n − 1). SE_pred² = SE₂₅₆² + (1 − k)²·SE₅₁₂² + k²·SE₄₄₈², k = ΔQ_b/64, not clamped. b̄ is the arm median of the realised burst over unflagged rows.
+5. **57a outcome precedence** (the first that applies): UNREAD (an arm with < 8 unflagged bound rows, or no SE, or no realised burst) → INERT (b̄₂₅₆ ≤ 64) → RISING → UNDERPOWERED → E1 → E2 → PARTIAL → INCONCLUSIVE. RISING has no S condition, so it is read before UNDERPOWERED. CPU-CONFOUNDED and BIASED annotate the reading; they never replace it.
+6. **Bind (57a).** All three arms are reduced pools, so the bind rule applies to each. An UNBOUND row is reported and enters no median, as in §56. In 57b the shipped-pool control is exempt.
+7. **E5** fires on the two W 512 arms. B64-448 is reported against the same band but does not fire it.
+8. **T (57b).**
+   - The control gives only the denominator and readout (c).
+   - A pool is read with ≥ 3 unflagged bound rows, in both readings. Unbound rows are dropped in both readings. The a/W gate (≥ 0.80, inclusive) is the median of per-row a/W over each reading's own rows, so a pool can be read in one reading and NOT-STORE-BOUND in the other.
+   - A point passes at |d| < 0.08 and fires at |d| ≥ 0.08. Any fire among the scoreable points is reported as LOW, HIGH or MIXED.
+   - One point outside c1d's measured q_ℓ range with the other passing: UNSCOREABLE. No c1d arm at q_ℓ ≤ 3.0 ms: UNSCOREABLE.
+   - **Offset estimator, corrected.** The registration takes δ₀(c1s) = 1.5 ms from echo floors (T₀ − ℓ̂), but δ₀(c1d) from the q_ℓ of the smallest store-bound pool. By c1d's rule c1s itself gives 2.1 ms, and c1s read against its own points returns OFFSET DIFFERS (checked with `read_a`). Both offsets now use the same estimator: **δ₀(c1s) = 2.1 ms**, the q_ℓ of c1s's smallest reference point. The scorer constant (`DELTA0_C1S`) and its test change before the 57b rehearsal, with a test that c1s read against itself passes on both axes. This is fixed before any c1d row of this block exists.
+   - Offset axis (read when |δ₀(c1d) − δ₀(c1s)| > 0.5 ms): c1d is read at x_ref + (δ₀(c1d) − δ₀(c1s)), with δ₀(c1d) = the q_ℓ of the smallest read pool. Both axes must be scoreable. Equal states stand; PASS on one and a fire on the other is OFFSET DIFFERS; two different fires are MIXED.
+   - T is the all-rows reading if it equals the unflagged reading, and UNSCOREABLE on any disagreement (for example LOW against MIXED), not only pass against fail.
+   - Readout (c), the control's queue, is the median q_ℓ over all live control rows.
+   - A control q_ℓ below 10 ms prints CONTROL-QUEUE-LOW before (a).
+9. **Replacement.** A VOID pool or burst echo is replaced once in both launches (the registration said so for 57a only).
+10. **57b arm tokens** are `P<per-path pool>`, W = 2 × pool.
+
+**Smoke abort on a collapsed row (57a).** §56's heavily collapsed c1s rows (flag share ≥ 0.68) send short bursts (LATE mean 15.8–26.7 against ≈ 47 healthy); the three lightly flagged rows (0.19–0.32) read 44–48. So a collapse-flagged B256-512 smoke row can read ≤ 64 even when the knob works. On §56's 9 collapsed rows, the burst before onset is 45–59 where readable, but 2 of the 4 P512 rows collapse at t = 1 s, so a pre-onset reading is often absent.
+- The registered abort rule stands, and no code changes.
+- **The trigger is mechanical:** the smoke check's FAIL line contains "the row is collapse-flagged". That row is "no reading", not a knob failure, and the launch is relaunched.
+- **The cap is two relaunches per launch kind** (the rehearsal and the full launch each). A third collapse-flagged smoke stops the block until a further amendment. Every relaunch is reported in the Result.
+- **An unflagged smoke row that reads ≤ 64 is a real ABORT-SMOKE.** Nothing is relaunched.
+
+**Budget.** 57a's worst case (3 h 40) leaves no room for the engine suites (44–54 min). The rehearsal evaluates the reuse manifest. If its `launch.out` does not print `LD-ALL suite-reuse HIT`, 57a is not launched until a further amendment. 57b has room.
+
+**Constants checked against the registration text:** re-base 82.7 k ± max(3.0 k, 1 %), CPU gate 5 %, collapse-rate gate 0.25, row minimums 8 (57a) and 3 (57b), band 0.08, a/W ≥ 0.80, q_ℓ ≤ 3.0 ms, control range 13–21 ms and low mark 10 ms, E5 0.17–0.24, SE factor 1.253. §56's P384 and P512 c1s rows all bind (bind fraction 1.0), so the bind rule does not reduce the n = 21 calculation.
+
+**Tree pin.** The commit and the binary sha are recorded by the launch (`BINSHA.txt`, `COMMIT`) and copied into the Result.
+
 ## 57b. The c1d pool sweep and the transfer test T (reported only, no build) — pre-registration (before any VM contact)
 
 **Bind check, from §53's 30 c1d 5 GB rows at the shipped law** (`c1dcap.py` → `c1dcap.out`):
