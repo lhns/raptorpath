@@ -1035,6 +1035,62 @@ The c8 standing-queue readout is predicted to sit at W ≈ 500–700 (leg-1 shou
 **Decision rule.** None; reported only. The maps replace p27/p34 as the inputs of Part B. F9's reading goes to the
 guard-witness note (§6). F10 and the standing-queue readout go to the owner with U2.
 
+**§56 Amendment 1: the harness as built, with ledger checks and deviations (before any VM contact).** The harness is `harness56` (`8157cbf2`, tools only), merged to main. `git diff` against the registration commit touches no file under `raptorpath/` and no `Cargo.*`.
+
+*Ledger checks on committed rows (host):*
+- **c2 is single-path.** All 211 `[DIAG]` ticks of the §54 guard c2 rows read `np=1 np_act=1`, so at c2 W = pool. (My plain-language summaries to the owner called c2 two-path. That was wrong.)
+- **c2 is pinned at the shipped pool,** contrary to §56's "c2 not pinned at 2048".
+  - The late `win=…/b` is 2 048 on 100 % of ticks in 24 of 26 rows (the other two: at least 92 %).
+  - `[SUMCAP]` pin is 0.66–0.81, and the ask is 8 500–13 300.
+  - This is a law-ledger note for F01, which is pinned at c2 as well as c8 and c1s.
+  - The control exemption from the bind check stays: the controls are the shipped behaviour.
+- **Every non-control pool binds** (proxy: the shipped pool's late cap as a lower bound on the ask):
+  - c2 asks 8 500–13 300;
+  - c1s 5 GB caps at 2 048 on every late tick, asking 3 200–8 000;
+  - c8 B2048 sits at 4 096 on 99–100 % of ticks.
+- **The live path count equals N on every late tick** of all committed rows read (the B640 and B2048 rows, 24 c2 rows, 24 c1s rows).
+
+*Deviations from §56 (each decided here):*
+1. **T₀ is redefined.** The first 1 s carries start-up queue: 62–103 ms at c8 against ℓ ≈ 15 ms, with a spread of 41 ms.
+   - floorᵢ is the lowest arm-median LATE echo loop of leg i over the cell's arms.
+   - An arm's T₀ is Σrᵢ·floorᵢ / Σrᵢ, with that arm's own rates, so q = T̄ − T₀ = Σrᵢ(rttᵢ − floorᵢ)/Σrᵢ ≥ 0 at every arm by construction.
+   - A fixed knee-weighted T₀ was tested and rejected: on p27 it reads T₀ > T̄ at c2 cap 64 and c8 caps 128/192, because leg 1's share collapses.
+   - On p27 the new q reads ≈ 3.8 ms at the c2 knee and 25 ms at c8 W 512, with a seed spread ≤ 0.5 ms.
+   - F10 is UNSCOREABLE when q at the 0.95 point is not above the spread of T̄ over the smallest-W arm's rows.
+   - T̄/ℓ is printed per arm, and it needs no T₀.
+2. **Bind** is judged per tick against that tick's live path count × pool, not a fixed N·pool. The scorer prints `nlive_med` and `nlive_lt_share`.
+3. **F8** is UNSCOREABLE unless each n = 6 arm has at least 4 unflagged rows. Collapse rows, whether they finish or DNF, are flagged and excluded, with the counts printed.
+4. **F9 cannot be scored by this instrument.** The dump records (outcome, µs) with no path and no sequence number, so the dump row settles nothing.
+   - The row is kept for its size and the `[HOLD]`/`[SUCC]` path-split counters (p0 `xp_frac` < 0.1 on the B640 row: a pointer, not a settlement).
+   - The path and sequence fields go to Part B's gauge build. This block gets no engine change.
+5. **Single seat:** a candidate plan with no BASE tree.
+6. **`RWM_RTOBS=1`** is kept from 54b's instrument env, so the c8 control stays comparable to B640. The CPU readouts carry it.
+7. **The smoke has 4 rows:** one per cell at its smallest pool, plus the dump row, which needs only ≥ 1 record. The 100 000 rule applies to the scored row.
+8. **The Σ-rate re-basing tolerance is 117 /s** (B640 range 103, floored at 1 % of the median), not the quoted 103.
+9. **c2 P128 has W = 128,** equal to the boot cap, not above it. Nothing inverts.
+10. **F5 and F6 are read on arm medians.** UNBOUND rows stay in the tables at their realised cap and are excluded from the falsifiers.
+11. **Length and budget.**
+    - From real row durations, the c1s block is ≈ 41 min (54 min worst case), not 22.
+    - The session takes ≈ 1 h 40 with suite reuse (2 h worst case) and ≈ 2 h 25 without (2 h 50 worst case).
+    - **`LD_HARD` = launch + 4 h.** The run refuses with `ABORT-BUDGET` before any lock if less than 3 h remain.
+12. **Suite reuse:** a per-file sha256 manifest of `raptorpath/src` and `raptorpath/tests` against `ref56-manifest.sha256`, generated at `cand54` `7fd92dd5`. It is byte-identical to main's.
+    - On a hit, the engine suites are skipped, and the run writes `TOOLS-TESTS-OK`, never `TESTS-OK`.
+    - The tools tests (all python plus §54's two bash tests) always run. `LD_PRIOR_TESTS` is refused.
+
+*Test evidence (worker, `8157cbf2`):*
+- `STUBRUN_FULL=1` unfiltered, all plans: ALL OK, 325 checks, including the 56 paths (rehearse, full, reuse-hit, reuse-miss, replacements, the budget refusal) and `HARNESS_PATHS` equal to the executed set.
+- All 36 `tools/l1` python tests pass. `test_pool56` covers VOID, UNBOUND, DNF, flag exclusion, re-basing, F1–F10 at their boundaries, the T₀ floors and the q ≥ 0 invariant.
+- Calibration: the scorer reproduces the §54b B640 ranges from `rep54b-diag-ld.tgz`.
+- The bash tests run on the VM (pre-flight).
+
+*Pre-flight additions:*
+- the two bash tests;
+- `[GATES]` printing `RWM_SUCC_DUMP`;
+- `/dev/shm` ≥ 1 GB free;
+- the release binary's sha against §54's CAND `8f313616…`. The engine is the same, so a match ties the c8 control to B640; a difference is explained before any control drift is read.
+
+**Erratum to §54 Amendment 1 (test evidence).** "`STUBRUN_FULL=1` … and the 54b DNF case" was wrong for full mode. On a clean `906eed2c` the full-mode `dnf54b` stub test fails (`dnf=3`): the registered design has three seed-7 B640 rows, and the test expected one. Only fast mode passed. The test now expects 3 in full mode and 1 in fast mode. §54's real rows had 0 DNF, so no result changes.
+
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
 
 **What.** One row per law and per estimator that feeds a law: 70 rows (12 estimators, 6 δ maps, 6 flow-control, 9 rate, 10 span/shed/emission, 13 recovery, 10 scheduler/CC, 4 wasm). Each row records:
