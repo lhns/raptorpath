@@ -666,7 +666,7 @@ def score_b_report(paths, out=print):
         + ("UNREADABLE" if S["ctrl_q_state"] is None else ("CONTROL-QUEUE-LOW: below 10 ms the sweep's reference is a different operating point" if S["ctrl_q_state"] == "LOW" else S["ctrl_q_state"])))
     out(f"  control mean a/W {fmt(ctl['aW'], 3)}; control goodput median {fmt(ctl['gp'], 1)} Mbit/s (n_u {ctl['n_u']}); control {'readable' if S['unf']['control_ok'] else 'UNREAD (< 3 unflagged rows)'}")
     out("")
-    out("OFFSETS d0 = q_l of the smallest reference point / store-bound pool: c1s " + f"{DELTA0_C1S:.1f} ms (registered)" + "; c1d (the smallest store-bound pool's q_l): "
+    out("OFFSETS d0 = q_l of the smallest reference point / store-bound pool: c1s " + f"{DELTA0_C1S:.1f} ms (Amendment 1)" + "; c1d (the smallest store-bound pool's q_l): "
         + ", ".join(f"{tag} {fmt(S[tag]['delta0'], 2)} ms (P{S[tag]['smallest']})" for tag in ("unf", "all")))
     for tag, key in (("unflagged rows", "a_unf"), ("all rows", "a_all")):
         a = S[key]
