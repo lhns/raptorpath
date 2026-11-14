@@ -3,7 +3,7 @@
 Derivation only: no code changes. Mandate: `docs/status.md` "Owner decisions
 (2026-11-14)" item 2. Numbers: `pfec-continuous/pfec_check.py` →
 `pfec_check.out`. Sections of that file are cited as **out§N**; plain §N is
-this doc, and paper sections are named "paper §". Base: `db012f16`.
+this doc, and paper sections are named "paper §". Base: `db012f16`; the branch merged main at `72c42721` (commit `ab9c6246`).
 
 **Done with Fable (advisor), per the owner rule.**
 1. *Before the candidate set:* Fable set the event (per-loss, size-biased,
@@ -108,27 +108,34 @@ stays in R, which decision 3's option (ii) reads.
 
 - Every caller that executes decodes a **sliding** window: the engine (A\* 4–7
   on the evicting seat, W 201 on L1) and the wasm sim (`send_repair` over the
-  whole window, `raptorpath-wasm/src/lib.rs:903–904`). C6 is the exact law of
+  whole window, `raptorpath-wasm/src/lib.rs:899–900`). C6 is the exact law of
   a **block** window only.
 - **The bracket we have is one-sided** (§8.3):
   - The Python sliding decode has no deadline and decodes by generic rank, so
     it is an **upper bound** on per-loss FEC recovery. That holds under its
-    model premises: uniform repair spacing and one GE chain. The engine's
-    `TaperBudget` front-loads repairs after each ack (§8.1).
+    model premises: uniform repair spacing, one GE chain, and Δ ≤ 8. The
+    engine's `TaperBudget` front-loads repairs after each ack, and its Δ
+    reaches 64 (§8.1).
   - No lower bound is derived.
-  - **Above the bound means refuted.** The shipped form and plain Φ sit above
-    it at every A\* 3–7 cell (20 of 20). C6 sits above it at one cell (A\* 3,
-    r 0.2, by 0.005).
-  - **Below the bound means not ordered.** That is C6 and C5 elsewhere, and
-    every form at W 201.
+  - **Above the bound means refuted:**
+    - the shipped form and plain Φ above r_c at every A\* 3–7 cell (20 of 20);
+    - Φ below r_c at every window;
+    - C6 and C5 below r_c at W 201, c3.
+
+    C6 sits at the bound at one A\* cell (A\* 3, r 0.2).
+  - **Below the bound means not ordered:** C6 and C5 elsewhere, and every
+    form in the W 201 body above r_c.
   - In the W 201 tail the sliding miss is only a **lower** bound on the miss,
     and its sample cannot resolve the target, so no form is refuted there.
 - **Engine pin point** (ε 0.048, r 0.34, A\* 4, σ² 3.76):
-  - the bound gives P ≤ 0.416 (SE 0.002); repairs on a loss-free second path
-    give ≤ 0.399;
-  - so R ≥ 2.8 %. The shipped form gives P ≈ 0.90, i.e. R = 0.49 %.
+  - the bound gives P ≤ 0.416 at Δ 2 and ≤ 0.458 at Δ 8; repairs on a
+    loss-free second path give ≤ 0.399;
+  - so R ≥ 2.6 %. The shipped form gives P ≈ 0.90, i.e. R = 0.49 %.
   - The shipped form is **outside the bracket on the budget-starving side**,
     under the bound's premises.
+  - The one executed datum (decode share 0.71–0.84, one L0 rep) sits on the
+    same side as the shipped form. Only the §8.2 oracle can say whether the
+    datum is P_fec, or whether a premise of the bound fails.
 - **Next deliverable:** the test-only Rust oracle of §8.2. It runs the
   engine's real `RlcWindowEncoder`/`RlcWindowDecoder`, the engine's
   `TaperBudget` emission and trailing span, a GE channel, no ARQ, and a
@@ -166,9 +173,11 @@ stays in R, which decision 3's option (ii) reads.
   `encoder.window_size()` that `cadenced_repair_rate` passes,
   `emit_source.rs:522–528`, `:662`) reads p50 **201**, max 213–247 at c1s,
   c1d, c2 and c8 (anchor-diag MAIN rows). A* there is 201–263, i.e.
-  W-clamped. The grid's W 200 is therefore the L1 window. The later ledgers I
-  sampled (loop-diag, store-law-n1, thread-sk) were all c1d rows, and they
-  read the same.
+  W-clamped. The grid's W 200 is therefore the L1 window.
+  - The later ledgers I sampled (loop-diag, store-law-n1, thread-sk) were all
+    c1d rows, and they read the same.
+  - The §57b archive on main `7c5872f5` (`docs/l1-raw/s57/rep57b-diag-ld.tgz`,
+    c1d P192 client rows) reads p50 201, max 260–264.
 - Span geometry (`emit_source.rs:784–806`): a repair codes over
   [max(ws, end − A*), end) with end = newest + 1 − Δ and
   Δ = clamp(⌈rate·J⌉, 1, 64). Some repair slots carry a source **copy** of a
@@ -176,8 +185,8 @@ stays in R, which decision 3's option (ii) reads.
   `:760–783`). That targeted path is not in any model here.
 - Repairs come from deterministic debt accrual. The engine banks r per source
   symbol (`TaperBudget`, `control/fec_rate.rs:678–703`); the sim does the same
-  (`raptorpath-wasm/src/lib.rs:1358`, emitted at `debt ≥ 1`, `:1289`).
-- The sim's window slides to its slider W (`:1314`, golden W = 64).
+  (`raptorpath-wasm/src/lib.rs:1348`, emitted at `debt ≥ 1`, `:1279`).
+- The sim's window slides to its slider W (`:1304`, golden W = 64).
 
 **The event.** Take a tagged source symbol that is lost. It is FEC-recovered
 iff, over the W source slots that protect it, the surviving repairs C reach
@@ -401,14 +410,19 @@ Grid:
 
 ## 4. Reach and predicted engine effect
 
+> **Block-law figures (round 6).** C6 does not ship. Every "effect of C6"
+> below is a block-law figure, kept for the §8.2 oracle's registration, not a
+> live prediction: the r_sat shifts, the ρ < 1 budget rise of 6–11×, and the
+> CPU estimate. The L1 proof (r\* bit-identical 0) holds under any form.
+
 **Callers.**
 
-| caller | window | event read | effect of C6 |
+| caller | window | event read | effect of C6 (block law) |
 |---|---|---|---|
 | `r_saturation` `tail_fec` (`raptorpath-math/src/lib.rs:935`) → `controller_rate` soft cap (`:825`), on by default (`control/fec_rate.rs:346`, passed `:515`) | encoder `window_size()` (`fec_rate.rs:499`) | per-loss (cost of a loss that falls to ARQ) | r_sat rises: P_fec is lower, so more FEC is worth more |
 | engine shed budget `residual_loss_after_fec` (`fec_rate.rs:784–790`, `net/emit_source.rs:587–598`), only when `shed_on` (ρ < 1; `net/shed.rs:23`) | A* | per-loss | R is higher at every r > 0 (e.g. 0.0049 → 0.0309 at the fixture) |
-| `compute_delta`, `p_recovered_within`, `find_t_cut` (`lib.rs:1188`, `:1198`, `:1213`) → sim T_cut (wasm `:1404`) | sim window | per-loss | moves. T_cut (W14) is retired by owner decision 3 |
-| wasm `shed_budget_residual` (`:217–219`), the cartoon R, sim `get_r_sat` (`:1697`), sim rate via `controller_rate` (`:844`, `:884–898`) | A* / sim window | per-loss | the cartoon R becomes continuous through δ 0.045 / 0.058 (the W22 rows of the audit) |
+| `compute_delta`, `p_recovered_within`, `find_t_cut` (`lib.rs:1188`, `:1198`, `:1213`) → sim T_cut (wasm `:1396`) | sim window | per-loss | moves. T_cut (W14) is retired by owner decision 3 |
+| wasm `shed_budget_residual` (`:217–219`), the cartoon R, sim `get_r_sat` (`:1676`), sim rate via `controller_rate` (`:833`, `:870–890`) | A* / sim window | per-loss | the cartoon R becomes continuous through δ 0.045 / 0.058 (the W22 rows of the audit) |
 | §4.2's r* inversion (`compute_r_star_with_z`, `lib.rs:110`) | — | window event | **untouched**: it does not call `p_fec_normal`. Its constraint (`:704–706`) has the same event error (see §6) |
 
 **`r_saturation` shifts (out§9).** r_sat moves from the current value to C6's:
@@ -513,7 +527,12 @@ place in it. Its bounding test is the §8.2 oracle.
   cut at `:888` goes.
 - `r_saturation` (`:917–944`) precomputes G(n) once per call.
 - The doc comments at `:883–884` and `:895–916` change.
-- Expectations that move:
+- Main's W22 bounding test (`ac3ecd13`,
+  `raptorpath-wasm/src/lib.rs:2241–2268`
+  `test_p_fec_normal_vs_paper_phi_divergence_is_bounded`) bounds the cut
+  against Φ. It is retired, or re-targeted to the new law vs the §8.2 oracle,
+  when `p_fec_normal` is replaced.
+- Expectations that move (values are C6's, the block-law placeholder):
   - `engine_fold_pins.rs:39–48`: three of the four bit pins (0.779 → 0.734,
     0.679 → 0.512, 0.571 → 0.524; the W 384 pin stays 1.0). Engine-fold pin:
     a re-pin needs the owner's word.
@@ -542,13 +561,13 @@ place in it. Its bounding test is the §8.2 oracle.
 
 **wasm and visualizer.**
 - The six goldens of `test_multipath_n1_identical_golden`
-  (`raptorpath-wasm/src/lib.rs:1840–1866`) need `GOLDEN_CAPTURE=1`.
+  (`raptorpath-wasm/src/lib.rs:1815–1845`) need `GOLDEN_CAPTURE=1`.
   - The four auto/realtime rows are expected to move. Their fec/src ratios of
     0.33–0.51 sit near or above the nominal r_sat (0.255/0.42 → 0.315/0.56).
     Both figures are nominal, not read from the sim's estimator.
   - Bulk ε .05 (fec 0) should not move.
   - Bulk ε .10 (fec 85, a non-zero rate through the soft cap) may move.
-- `shed_budget_residual` test `:2706–2708` holds (0.05 and 1.4e-4).
+- `shed_budget_residual` test `:2808–2810` holds (0.05 and 1.4e-4).
 - `test_custom_rho_gives_up_late_losses` and `test_bulk_composes_with_rho` may
   move, as the audit says.
 - The W22 exclusion in the continuity gate (owner decision 3) is deleted.
@@ -578,7 +597,7 @@ the cap's role at C4 is lost.
 
 - **Uniform accumulator phase U.** It is assumed, not measured, in the engine
   `TaperBudget` (its offset re-timing, `fec_rate.rs:698–700`) and in the sim's
-  `min(8.0)`-capped debt (`:1358`).
+  `min(8.0)`-capped debt (`:1348`).
 - **Block-equivalent vs sliding-window decoding.** Simulated in §7 R1:
   sliding is +0.04–0.15 over C6 with no deadline. Under the engine's ARQ race
   and the taper-copy slots it is not measured. The sliding per-loss law is not
@@ -694,7 +713,7 @@ battery's input range, but C6 and C5 reach it nowhere. The rep's
   - the engine: the trailing span at A\* 4–7 on the evicting seat, and A\* ≈ W
     201 on L1;
   - the wasm sim: `send_repair` → `generate_repair` over the whole current
-    window, `raptorpath-wasm/src/lib.rs:903–904`, `raptorpath-math/src/rlc.rs:41`;
+    window, `raptorpath-wasm/src/lib.rs:899–900`, `raptorpath-math/src/rlc.rs:41`;
   - the cartoon, which uses the same span law.
 - Against the no-deadline sliding bound, C6 reads low at **every** window
   tested. In P it is 0.04–0.15 low at A\* 4–7, 0.14 at W 64 and 0.06 at
@@ -807,7 +826,7 @@ battery's input range, but C6 and C5 reach it nowhere. The rep's
   computed. Off-Bulk is unmeasured on L1, which runs Bulk only.
 
 **Status "Owner decisions (2026-11-14)" item 3, recomputed** (out-r§R3c):
-- *Cartoon inputs* (`interactive-visualizer.html:2617–2642`): rate = 4(1−ε),
+- *Cartoon inputs* (`interactive-visualizer.html:2625–2650`): rate = 4(1−ε),
   D = min(b·RTT, 2·RTT), A\* = rate·D. These reproduce the audit's R(code) on
   all ten rows (e.g. 1.9e-5, 5.1e-5 against 1.9e-5, 5.2e-5), which validates
   them.
@@ -876,15 +895,29 @@ battery's input range, but C6 and C5 reach it nowhere. The rep's
 
 I checked each candidate against five criteria: real engine codec, trailing
 span A\*, the engine's own emission law, deadline D(δ), and no I/O. Every
-caller of `generate_repair_range` was grepped. Outside unit tests, the only
-production caller is `net/emit_source.rs:798`; the rest are `net/mod.rs:3319`
-(deficit repair), `net/hotpath_pin.rs:133` (a pin), and tests in `fec/`.
+caller of `generate_repair_range` was grepped.
+
+There are **two production callers**:
+- `net/emit_source.rs:798`: the proactive trailing span, the path the law
+  models.
+- `net/mod.rs:3319`: the paper §7.6 receiver-request arm. It answers a
+  receiver-requested span `[a, a+m)` with one coded equation (`m > 1`), and
+  falls back to copies on refusal (`:3262–3325`). This is a second FEC path:
+  if armed, its decodes would count as DECODE in an FDIAG attribution. It is
+  armed only by `RWM_RECV_REQUEST_LAW` or `RWM_RANK_FEEDBACK`, both default
+  off (`gates.rs:376–377`, `mod.rs:1676–1678`). So it is out of the default
+  machine and out of the oracle, unless a run arms it; then it must be
+  counted separately.
+
+The remaining callers are a pin (`net/hotpath_pin.rs:133`) and tests in
+`fec/`.
 
 | candidate | real codec | trailing span A\* | engine emission (`TaperBudget`) | deadline D(δ) | no I/O | P_fec isolated (no ARQ race) |
 |---|---|---|---|---|---|---|
-| `tests/common/gate_harness.rs` `run_fec` (:477) | yes: `RlcWindowDecoder` (:561) | **no**: `generate_repair()` over the leading window (:722–731) | **no**: its own per-path `debt` | no | **yes**: mock clock, GE channel | **no**: the P_lost-gated retransmit runs (:746+) |
-| `tests/unified_stream_l0.rs`, `unified_l0.rs`, `taper_emission_l0.rs` | yes | yes | yes | yes | **no**: memory TUNs plus real QUIC on 127.0.0.1 plus the L0 netem shim | **no**: ARQ races; FDIAG attributes after the fact (the 51 vs 10–21 datum) |
-| wasm sim (`raptorpath-wasm`) | **no**: `raptorpath-math/src/rlc.rs`, a separate simplified codec (`rlc.rs:1–4`) | **no**: whole-window `generate_repair` (`lib.rs:903–904`) | **no**: its own debt (`:1358`) | via ARQ ticks | yes | no |
+| `tests/common/gate_harness.rs` `run_fec` (:477) | yes: `RlcWindowDecoder` (:561) | **no**: `generate_repair()` over the leading window (:722–731) | **no**: its own per-path `debt`; `TaperBudget` does not occur in the file | no | **yes**: mock clock, GE channel | **no**: the P_lost-gated retransmit runs (:746+) |
+| `tests/unified_stream_l0.rs`, `unified_l0.rs` (`RWM_UNIFIED` arms) | yes | yes | yes | yes, the shed D(δ) on the evicting arm | **no**: memory TUNs plus real QUIC on 127.0.0.1 plus the L0 netem shim | **no**: ARQ races; FDIAG attributes after the fact (the 51 vs 10–21 datum came from `unified_stream_l0`) |
+| `tests/taper_emission_l0.rs` | yes | yes | yes | **no**: "plain window-reliable mode" (its header, :4–5), so there is no shed deadline | no (same loopback stack) | no |
+| wasm sim (`raptorpath-wasm`) | **no**: `raptorpath-math/src/rlc.rs`, a separate simplified codec (`rlc.rs:1–4`) | **no**: whole-window `generate_repair` (`lib.rs:899–900`) | **no**: its own debt (`:1348`) | via ARQ ticks | yes | no |
 | `tests/fec_window_test.rs`, `sim_pipeline_test.rs` | yes | no | no (scripted losses) | no | yes | yes, but no emission law |
 | `fec/prune_contract_tests.rs` | yes | range repairs, test-scripted | no | no | yes | — |
 
@@ -897,10 +930,15 @@ Two premises of the Python sliding bound are model inputs:
 - **Emission spacing.** `TaperBudget::accrue` (`fec_rate.rs:703–736`) re-times
   the grant with the GE taper shape W·q·(1−q)^t/(1 − (1−q)^W), so repairs are
   **front-loaded after each ack advance**, not uniform.
-- **One GE chain over the wire.** Dual-path placement breaks this
-  (§8.2, T2).
+- **One GE chain over the wire.** Dual-path placement breaks this (§8.3,
+  T2).
+- **Δ.** The bound rises with the trailing offset Δ, because a no-deadline
+  decode gains from later spans. The engine's Δ is clamp(⌈rate·J⌉, 1, 64).
+  §8.3 reports the bound over Δ ∈ {1, 2, 3, 4, 8}; beyond 8 it is not
+  computed.
 
-So the sliding bound is proven only for uniform spacing on one chain.
+So the sliding bound holds only for uniform spacing on one chain, for the Δ
+range computed.
 
 ### 8.2 Next deliverable: a test-only Rust harness (design only, no code)
 
@@ -922,15 +960,31 @@ So the sliding bound is proven only for uniform spacing on one chain.
   a second independent chain (the dual-path premise). (p, q) come from
   (ε, σ²) by §1's inversion.
 - **No ARQ:** recovery is FEC only, so P_fec(D) is well defined.
-- **Deadline:** a lost source s counts as recovered at D iff the decoder
-  outputs it before the wire clock passes send(s) + D(δ). D(δ) =
-  min(b(δ)·RTT, 2·RTT) is converted to source slots at the harness's send
-  rate. P(∞) is also reported.
+- **Feedback clock.** `TaperBudget::accrue(rate, offset, taper, span, spare)`
+  needs `offset` (sources since the last cumulative-ack advance) and `spare`.
+  So the harness carries:
+  - a feedback delay F in slots, set from the RTT at the send rate;
+  - the cumulative-ack rule: ack = highest contiguous delivered-or-given-up
+    seq, reported F slots later;
+  - the receiver's give-up at D. A hole older than D is declared lost and the
+    ack passes it. Without this, one unrecovered hole stalls the ack, and
+    `offset` grows for the rest of the run;
+  - `spare` as a declared input. Default: non-binding, i.e. ≥ the grant.
+    Swept once at a binding value.
+- **Deadline:**
+  - A\* and D are not independent: A\* = ⌈rate·D⌉ (`emit_source.rs:578–580`).
+    So D in slots is A\*, and the harness takes A\* as the input. D(δ) =
+    min(b(δ)·RTT, 2·RTT) is reported alongside.
+  - A lost source s counts as recovered at D iff the decoder outputs it before
+    send slot s + A\*. P(∞) is also reported.
+  - `r_saturation` has no δ input. Its tail_fec term charges a miss with
+    L_arq = 1.5·srtt (`raptorpath-math/src/lib.rs:926`), so at W 201 the harness reports P at
+    D = L_arq in slots as well as at D = A\*.
 - **Counts:**
   - lost sources;
   - recovered by D;
   - recovered at all;
-  - range repairs emitted;
+  - range repairs emitted, with `delta=` and `a_star=` logged per repair;
   - leading-window fallbacks (the `emit_source` fallback when the window is
     too young to trail). This is a witness that the range path fired.
   - the grant trace (Σ grants against Σ r, `owed`).
@@ -958,31 +1012,44 @@ So the sliding bound is proven only for uniform spacing on one chain.
 
 ### 8.3 The bracket: every candidate against the sliding decode
 
-Source: `pfec-continuous/pfec_bracket.py` → `pfec_bracket.out`, tables T1–T4.
+Sources: `pfec-continuous/pfec_bracket.py` → `pfec_bracket.out` (T1–T4), and
+`pfec_delta.py` → `pfec_delta.out` (D1: the Δ sweep; D2: the rows below r_c).
 
 **Premises of the bound.**
 - The sliding decode has no deadline and decodes by generic rank. That makes
   it an **upper** bound on per-loss FEC recovery, for its spacing (uniform
   debt accrual) and its channel (one GE chain over sources and repairs).
 - The bound value per cell is the larger of Δ ∈ {1, 2}: the 3-seed mean, with
-  its SE.
+  its SE. At the two checked cells it keeps rising with Δ, so those rows give
+  the Δ ≤ 8 value (`pfec_delta.out` D1).
 - **Verdict:** a form is **refuted** when P > bound + 3 SE. Below that it is
   **not ordered**, because no lower bound exists.
+- The binomial 95 % limits in the tail rows are optimistic, because holes
+  cluster in bursts. A real limit is wider.
 
 | caller window | inputs | shipped / Φ | C6 | C5 (exact joint, block) | sliding bound | verdict |
 |---|---|---|---|---|---|---|
-| **A\* 3–7, body** (shed budget) | ε .048, σ² 3.76, r 0.2–0.5, 20 cells | 0.72–0.995 | 0.18–0.70 | 0.14–0.65 | 0.17–0.86 | shipped/Φ **refuted at 20/20**; C6 refuted at 1/20 (A\* 3, r 0.2: 0.180 > 0.168 + 0.007); C5 not ordered |
-| A\* 4, r 0.34, **engine pin** | as above | **0.899** (R 0.49 %) | 0.357 | 0.305 | **0.416** (SE 0.002); loss-free repair path 0.399 | shipped **refuted, budget-starving side**: R ≥ 2.8 % under the premises |
-| A\* 7, r 0.5 | as above | 0.995 | 0.696 | 0.654 | 0.855; loss-free repair path 0.889 | shipped refuted even with placement |
+| **A\* 3–7, body** (shed budget) | ε .048, σ² 3.76, r 0.2–0.5, 20 cells | 0.72–0.995 | 0.18–0.70 | 0.14–0.65 | 0.17–0.86 (Δ ≤ 2) | shipped/Φ **refuted at 20/20**; C6 **at the bound** at A\* 3, r 0.2 (0.180 against 0.168 + 0.007; a 3-seed SE, with C5 below), not ordered elsewhere; C5 not ordered |
+| A\* 4, r 0.34, **engine pin** | as above | **0.899** (R 0.49 %) | 0.357 | 0.305 | **0.416** at Δ 2; 0.458 (SE 0.002) at Δ 8; loss-free repair path 0.399 | shipped **refuted, budget-starving side**: P ≤ 0.46 ⇒ R ≥ 2.6 % against 0.49 %, under the premises |
+| A\* 7, r 0.5 | as above | 0.995 | 0.696 | 0.654 | 0.855 at Δ 2; 0.940 (SE 0.004) at Δ 8; loss-free repair path 0.889 | shipped refuted at every Δ ≤ 8 and with placement |
+| A\* 4, **r = 0.5 r_c** (0.025) | as above | **0** / 0.454 | 0.026 | 0.021 | 0.025 (0.002) | Φ refuted; shipped and C6 not ordered |
+| W 201, **r = 0.5 r_c** | c2 r 0.013 / c3 r 0.025 | **0** / 0.252, 0.208 | 0.102 / 0.082 | 0.103 / 0.084 | 0.086 (0.010) / 0.050 (0.001) | Φ refuted at both; **C6 and C5 refuted at c3**; not ordered at c2 |
 | **W 201, body** (r_sat) | c2 at 1.5 / 2 r_c | 0.748 / 0.908 | 0.580 / 0.770 | 0.579 / 0.768 | 0.753 (SE 0.029) / 0.943 (0.011) | all not ordered |
 | W 201, body | c3 at 1.5 / 2 r_c | 0.791 / 0.947 | 0.650 / 0.850 | 0.647 / 0.844 | 0.869 (0.013) / 0.987 (0.009) | all not ordered |
 | **W 201, tail** (miss 1 − P), Auto r\* | c2 r 0.091 | 4.7e-4 | 2.0e-2 | 2.2e-2 | miss ≥ 0/4 101 (95 % upper 9.0e-4) | target 3.9e-4 unresolved; no form refuted |
 | W 201, tail | c3 r 0.158 | 2.7e-4 | 1.1e-2 | 1.3e-2 | miss ≥ 2/7 472 (95 % upper 9.7e-4) | target 2.1e-4 unresolved; no form refuted |
 
 **Reading.**
-- The only established statement is the shipped and Φ forms overstating
-  recovery at the shed budget's windows. That under-states R and starves
-  ρ < 1 shedding, under the bound's premises.
+- **The established statements, all under the bound's premises:**
+  - the shipped and Φ forms overstate recovery at the shed budget's windows
+    above r_c, which under-states R and starves ρ < 1 shedding;
+  - Φ overstates recovery below r_c at every window;
+  - the block law (C6, C5) overstates it at W 201 below r_c at c3.
+- **The one executed datum sits on the shipped side of the bound.** Its
+  decode share 0.71–0.84 (§7 R1b) is above the bound at σ² 3.76 at every
+  r ≤ 0.34. So either the datum is not P_fec (the attribution counts decode
+  wins in an ARQ race, with unrecorded inputs), or a premise of the bound
+  fails (spacing, chain, Δ > 8). The §8.2 oracle separates the two.
 - The placement check (T2) does not close the gap: repairs on a loss-free
   path still give 0.399 at the pin.
 - The spacing premise is open. `TaperBudget` front-loads repairs after an
