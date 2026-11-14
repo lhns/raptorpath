@@ -1007,6 +1007,14 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **The smoke margin is thin** (2.9 above 64). If the full launch's own unflagged smoke row reads ≤ 64, that is the registered ABORT-SMOKE with no relaunch, read as "practically inert". It is not loosened.
 - What sets the release batch is a different question, for a new registration after the Result.
 
+**§57b note (2026-11-14, after the rehearsal, before any battery row; no rule changes).**
+- **Rehearsal** (main `02ecbdd7`, 15:40–15:57Z): suite-reuse HIT, tools tests green, SMOKE-PASS on both rows.
+- **Amendment 1's T̄ resolution check on the P192 smoke row** (unflagged): per-leg LATE tick sd 0.98 / 0.93 ms, 6 / 6 distinct values (3–8 ms). That is above the 0.5 ms and 5-value thresholds, so the full launch goes ahead.
+- **Seen data (two rows):**
+  - P192: a/W 0.86, q_ℓ 2.05 ms, R 66.8 k/s, 627 Mbit/s.
+  - P2048 (control): bind 0.19, a/W 0.66, q_ℓ 25.7 ms, 764 Mbit/s. One row reads the control's queue above the registered 13–21 ms band, reported as is.
+- **Run conditions:** host cargo is held paused (the host build mutex is taken) for the whole battery, as §57a's Result committed.
+
 ## 57b. The c1d pool sweep and the transfer test T (reported only, no build) — pre-registration (before any VM contact)
 
 **Bind check, from §53's 30 c1d 5 GB rows at the shipped law** (`c1dcap.py` → `c1dcap.out`):
