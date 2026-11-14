@@ -30,7 +30,7 @@ INTERPRETATIONS (the spec's text underdetermines these; each is pinned by a boun
   6. c1d T-bar: the top-level `rtt=` is the MAX over the live paths (diag.rs), not a rate-weighted loop, so at np = 2 T-bar uses the legs' integer-ms echo rtt, per-tick means,
      rate-weighted; the top-level form is reported as Ttop. The legs' integer print limits the resolution (the mean of ~400 ticks recovers part of it).
   7. T: (a) is read on the pools with mean a/W >= 0.80 and >= 3 unflagged bound rows; the control only supplies the denominator and the (c) readout. A scoreable point passes iff |d| < 0.08
-     (fires at d <= -0.08 / >= +0.08). The two points: any fire is reported (LOW, HIGH, or MIXED when both directions); all pass = PASS; otherwise UNSCOREABLE. Offset axis (|d0(c1d) - 1.5| > 0.5):
+     (fires at d <= -0.08 / >= +0.08). The two points: any fire is reported (LOW, HIGH, or MIXED when both directions); all pass = PASS; otherwise UNSCOREABLE. Offset axis (|d0(c1d) - d0(c1s)| > 0.5, d0(c1s) = 2.1 = the q_l of the smallest c1s reference point):
      c1d is interpolated at x_ref + (d0(c1d) - d0(c1s)); both axes must be scoreable; PASS on one and a fire on the other = OFFSET DIFFERS. The all-rows and unflagged-rows readings must agree,
      otherwise UNSCOREABLE.
   8. 57a with a replaced slot: the replacement (a second row of the same slot) counts, the VOID row does not (pool56 `counting`). Both plans replace a VOID pool / burst echo once.
@@ -53,8 +53,8 @@ ps.LEGS.setdefault(C1D, (0, 1))
 ps.NLIVE.setdefault(C1D, 2)
 
 T0_MS = 4.0                      # 57a: the c1s no-queue loop (section 56)
-DELTA0_C1S = 1.5                 # the registered c1s floor offset T0 - l-hat (4.0 - 2.5)
 C1S_REF = ((2.1, 0.79), (2.7, 0.89), (4.7, 0.94), (6.8, 0.96), (15.7, 1.0))      # c1s q_l -> goodput / control (section 56's ledger; test_pool57 recomputes it from the tgz)
+DELTA0_C1S = C1S_REF[0][0]   # c1s floor offset d0, estimated like c1d's: the q_l of the smallest reference point (status 57 Amendment 1: 2.1 ms)
 A_POINTS = C1S_REF[:2]           # (a) falsifying: q_l = 2.1 and 2.7
 B_POINTS = C1S_REF[2:4]          # (b) reported only
 BAND = 0.08
@@ -666,7 +666,7 @@ def score_b_report(paths, out=print):
         + ("UNREADABLE" if S["ctrl_q_state"] is None else ("CONTROL-QUEUE-LOW: below 10 ms the sweep's reference is a different operating point" if S["ctrl_q_state"] == "LOW" else S["ctrl_q_state"])))
     out(f"  control mean a/W {fmt(ctl['aW'], 3)}; control goodput median {fmt(ctl['gp'], 1)} Mbit/s (n_u {ctl['n_u']}); control {'readable' if S['unf']['control_ok'] else 'UNREAD (< 3 unflagged rows)'}")
     out("")
-    out("OFFSETS d0 = T0 - l-hat: c1s " + f"{DELTA0_C1S:.1f} ms (registered)" + "; c1d (the smallest store-bound pool's q_l): "
+    out("OFFSETS d0 = q_l of the smallest reference point / store-bound pool: c1s " + f"{DELTA0_C1S:.1f} ms (registered)" + "; c1d (the smallest store-bound pool's q_l): "
         + ", ".join(f"{tag} {fmt(S[tag]['delta0'], 2)} ms (P{S[tag]['smallest']})" for tag in ("unf", "all")))
     for tag, key in (("unflagged rows", "a_unf"), ("all rows", "a_all")):
         a = S[key]

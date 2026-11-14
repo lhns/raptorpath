@@ -288,8 +288,9 @@ if os.path.exists(S56):
     check("a collapsed c1s row sends short bursts over LATE (P512 s42 r1: 26.7) but its burst before the collapse onset is the healthy one (47.4): burst_pre is kept as a reported readout and is None on an unflagged row",
           near(pre[("P512", "42", "1")]["burst"], 26.7, 0.2) and near(pre[("P512", "42", "1")]["burst_pre"], 47.4, 0.5) and all(r["t57"]["burst_pre"] is None for r in unfl56), pre[("P512", "42", "1")])
     ells = [r["t57"]["ell_hat_ms"] for r in rows56 if r["t57"]["ell_hat_ms"] and not ps.qc_flagged(r)]
-    check("c1s l-hat (the lowest rtp_us of the first 2 s) is 2.3 - 2.9 ms on every unflagged section-56 row (registered 2.4 - 2.6) and the floor offset T0 - l-hat is ~1.5 ms (registered DELTA0_C1S)",
-          len(ells) == 18 and 2.3 < min(ells) and max(ells) < 2.9 and near(p57.T0_MS - lc.med(ells), p57.DELTA0_C1S, 0.15), (min(ells), max(ells), lc.med(ells)))
+    check("c1s l-hat (the lowest rtp_us of the first 2 s) is 2.3 - 2.9 ms on every unflagged section-56 row (registered 2.4 - 2.6)", len(ells) == 18 and 2.3 < min(ells) and max(ells) < 2.9, (min(ells), max(ells)))
+    ref_pts = sorted((q, g) for _, n, q, g in p57.c1s_reference(rows56))
+    check("c1s's delta0 is estimated like c1d's: the q_l of the smallest reference point, recomputed from the section-56 rows = 2.1 ms (= DELTA0_C1S)", near(ref_pts[0][0], 2.1, 0.15) and near(ref_pts[0][0], p57.DELTA0_C1S, 0.15), ref_pts[0])
 else:
     print("skip the section-56 calibration (docs/l1-raw/s56 not present)")
 if os.path.exists(S53):
@@ -568,12 +569,15 @@ pl = S11["unf"]["pools"][384]
 check("the c1d flag in the sweep: a row with ONE leg above 0.10 stays unflagged (counted as one-leg-only), a row with BOTH legs flagged leaves the unflagged reading; shares reported per pool",
       pl["both"] == 1 and pl["one_leg"] == 1 and pl["flagged"] == 1 and pl["n_u"] == 4 and S11["all"]["pools"][384]["n"] == 5, pl)
 # the offset rule
+check("c1s against itself: DELTA0_C1S is the q_l of c1s's smallest reference point (2.1), and read_a on c1s's own points C1S_REF[:4] at that delta0 is PASS on the raw axis (no corrected axis: shift 0)",
+      p57.DELTA0_C1S == p57.C1S_REF[0][0] == 2.1 and p57.read_a(list(p57.C1S_REF[:4]), p57.C1S_REF[0][0])["state"] == "PASS" and p57.read_a(list(p57.C1S_REF[:4]), p57.C1S_REF[0][0])["raw"] == "PASS"
+      and p57.read_a(list(p57.C1S_REF[:4]), p57.C1S_REF[0][0])["corrected"] is None, p57.read_a(list(p57.C1S_REF[:4]), p57.C1S_REF[0][0]))
 OFFSET_CURVE = {192: (0.8, 0.50), 256: (3.0, 0.90), 384: (4.5, 0.94), 512: (7.0, 0.96), 768: (12.0, 0.99)}
 S12 = sb(ledger_b(curve=OFFSET_CURVE))
-check("OFFSET DIFFERS: d0(c1d) = the smallest pool's q_l = 0.8 ms (|0.8 - 1.5| = 0.7 > 0.5): raw axis PASSes (0.736 / 0.845 against 0.79 / 0.89) but the offset-corrected axis (c1d read at 2.1 - 0.7 = 1.4 and 2.0) FIRES LOW -> OFFSET DIFFERS, "
+check("OFFSET DIFFERS: d0(c1d) = the smallest pool's q_l = 0.8 ms (|0.8 - 2.1| = 1.3 > 0.5): raw axis PASSes (0.736 / 0.845 against 0.79 / 0.89) but the offset-corrected axis (c1d read at 2.1 - 1.3 = 0.8 and 1.4) FIRES LOW -> OFFSET DIFFERS, "
       "the queue relation is not tested", near(S12["unf"]["delta0"], 0.8) and S12["a_unf"]["raw"] == "PASS" and S12["a_unf"]["corrected"] == "LOW" and S12["T"] == "OFFSET DIFFERS", (S12["a_unf"], S12["T"]))
-S13 = sb(ledger_b(curve={**CURVE, 192: (2.0, 0.74)}))
-check("offsets within 0.5 ms (d0 = 2.0, |2.0 - 1.5| = 0.5 is not > 0.5): no corrected axis is read, T is the raw axis", near(S13["unf"]["delta0"], 2.0) and S13["a_unf"]["corrected"] is None and S13["a_unf"]["shift"] is not None, S13["a_unf"])
+S13 = sb(ledger_b(curve={**CURVE, 192: (2.55, 0.74)}))
+check("offsets within 0.5 ms (d0 = 2.55, |2.55 - 2.1| = 0.45 is not > 0.5): no corrected axis is read, T is the raw axis", near(S13["unf"]["delta0"], 2.55) and S13["a_unf"]["corrected"] is None and S13["a_unf"]["shift"] is not None, S13["a_unf"])
 check("read_a combination: raw PASS + corrected PASS = PASS; raw LOW + corrected LOW = LOW; either axis UNSCOREABLE = UNSCOREABLE; raw LOW + corrected HIGH = MIXED",
       p57.read_a([(0.8, 0.79), (2.7, 0.89), (5.0, 0.95)], 0.8)["state"] in ("PASS", "OFFSET DIFFERS", "LOW", "HIGH", "MIXED")
       and p57.read_a([(0.5, 0.50), (6.0, 0.95)], 0.8)["raw"] != "PASS" and p57.read_a([(2.0, 0.78), (6.0, 0.95)], 0.2)["state"] == "UNSCOREABLE")
