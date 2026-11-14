@@ -881,6 +881,62 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+**§57a Result (`LD_PLAN=57a`, the emission-burst block at c1s, REPORTED ONLY): UNDERPOWERED.** (2026-11-14; rows 14:08–15:38Z on main `ef3d5e0e`. Ledger: `docs/l1-raw/s57/rep57a-*`, `57a-*`.)
+
+**Integrity.**
+- **Binary:** `8f313616…`, §54's CAND, which §56 also ran (`bin_sha` in every row).
+- **Suites and tests:**
+  - Engine suites reused (`LD-ALL suite-reuse HIT`, 182 files).
+  - Tools tests: parsers rc 0. The bash tests rc 0, their first run on this tree (Amendment 1).
+- **Smoke:** one B256-512 row, unflagged (share 0.019), with a realised burst of 75.3 > 64. SMOKE-PASS, with no relaunch.
+- **Rows:**
+  - 63/63 counting, all LIVE; 0 VOID, 0 replaced, 0 UNBOUND.
+  - 2 DNF, both collapse rows. 23 rows are collapse-flagged.
+  - Bind fraction 1.000 on every arm.
+- **Host score:** equals the VM's byte for byte (`rep57a-score-host.txt`).
+
+**Arm readouts** (R = lap rate over LATE, on unflagged bound rows; goodput is over all rows, DNF = 0):
+
+| arm | n_u / 21 | collapse share | b̄ | R /s (SE) | goodput, all rows | release batch | client CPU s/GB |
+|---|---|---|---|---|---|---|---|
+| B64-512 (control) | 15 | 0.29 | 48.9 | 79 161 (819) | 733.4 | 111.5 | 17.20 |
+| B64-448 | 14 | 0.33 | 46.7 | 75 221 (848) | 686.5 | 94.1 | 17.72 |
+| B256-512 | 11 | 0.48 | 78.9 | 75 524 (1 249) | 643.2 | 105.6 | 16.96 |
+
+**Reading: UNDERPOWERED** (S = 0.62 < 2). E1/E2 are not read, and the arms are reported.
+- z_null = −2.43 and z_hyp = −1.92. ΔQ_b = 15.0 slots (k = 0.234). The chord is 3 940 /s, so R_pred = 78 239 /s.
+- **Gates:**
+  - CPU: not confounded (16.96–17.72 s/GB).
+  - Collapse: 0.29 against 0.48, a gap of 0.19 ≤ 0.25, so not BIASED.
+  - E5: does not fire (release/W 0.218 and 0.206).
+- **RISING did not occur.**
+
+**Scorecard against the registered expectation.**
+- **b̄₂₅₆ = 78.9,** against the expected 90–105. So ΔQ_b = 15, against 21–29.
+- **Row sd = 2.5–3.3 k/s,** against the expected ≈ 1.1 k. This, not ΔQ_b, is what put S at 0.62.
+- **The chord (3.9 k) falls inside** the expected 2–4.8 k.
+- **Re-basing:** the control median of 79.2 k lies outside §56's 82.7 k ± 3.0 k (RE-BASED, drift −3.5 k). This is a position effect, not a level shift (below). The control's unflagged rows in replicates 1–8 have a median of 80.7 k (n 6), inside §56's band. From replicate 9 on, the median is 77.5 k (n 9).
+
+**Post hoc (labelled, not registered readings).**
+- **Session position.** Every arm is slower in replicates 9–21 (from 14:42Z) than in 1–8:
+
+  | arm | 1–8 | 9–21 |
+  |---|---|---|
+  | B64-512 | 80.7 k | 77.5 k |
+  | B64-448 | 75.6 k | 73.5 k |
+  | B256-512 | 77.9 k | 73.6 k |
+
+  - The unflagged subsets sit at different positions: B256-512's three lowest rows are r19–r21, where the control has no unflagged row.
+  - A likely cause is not ruled out. Host cargo builds ran almost continuously from ≈ 14:20Z. The host is itself a KVM guest, so it may share hardware with the VM.
+- **Within-replicate pairs** (both rows unflagged), which remove position:
+  - B256-512 − B64-512: n = 6, all negative, median −2.2 k/s (−2.7 %), range −4.9 to −0.1 k.
+  - B64-448 − B64-512: n = 11, median −5.3 k.
+- **Hypothesis for a new registration:** a larger emission burst lowers c1s's rate, by the order of the store-holding prediction (−0.9 k) or more. The paired n is 6 and not powered.
+
+**Consequences for §57b**, committed before its battery:
+- Host cargo is paused during the battery.
+- Goodput against slot order, and the within-replicate ratios, are reported-only readouts.
+
 ## Engine defect F1 (2026-11-14): `RWM_DELTA` pins the store cap at its floor
 
 **Found by** the shared-core design (`docs/derivations/shared-core-design.md` F1), from reading only. It was then confirmed red first.
