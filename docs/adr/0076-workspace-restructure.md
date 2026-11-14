@@ -1,6 +1,6 @@
 # ADR-0076: Workspace restructure — one docs tree, one tools tree, ledgers out of the build path
 
-## Status: Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Phase 0: done. Phase 2: lines committed on `restructure` (not yet merged). Phases 1, 3–6: Proposed, not executed.
+## Status: Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Done on main: phase 0, phase 1 (`56f78584`), phase 2 option (a) (`225e0a08`), phase 3 (`f6224fa9`, `e458850e`, `d12fcd41`), phase 4 (`183333c6`) and the status split (decision 2, `84b9d4af`). Not done: phase 2 option (b) (ledger read set copied to `tools/l1/fixtures/`), phase 5 (source and crate structure; waits on W3.2 and W5.7), phase 6 (laws shared by engine and model; decided, not executed). Status line updated 2026-11-14.
 
 Number: 0076 is the next free number across every local and remote branch
 (0074 is `otel-design`, 0075 is `pacing-seam`). Drafts that exist only
