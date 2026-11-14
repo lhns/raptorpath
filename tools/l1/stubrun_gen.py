@@ -203,6 +203,32 @@ def summary54(secs, nbytes=600000000):
             % (nbytes, secs, nbytes * 8 / secs / 1e6, secs, secs, secs))
 
 
+# ── plan 56 (pool56_score): the sweep's single-seat rows. STUB_BAD56: poolfallback (every row echoes 2048), poolonce (the FIRST c8 seed-42 P384 row echoes 2048, its replacement is right),
+# dumpshort (the FIRST dump row writes 50 000 records, the re-run 120 000), nodump (the dump row writes no record at all); a comma list combines them. STUB_DNF56=P<pool>:<seed>: that arm's rows at that seed time out. ──
+BAD56 = {"poolfallback", "poolonce", "dumpshort", "nodump", "poolinfo"}
+POOL_INFO56 = POOL_INFO
+
+
+def gates56(lines, pool, dump):
+    """The engine's [GATES] echo of the two knobs this sweep varies: RWM_STORE_PATH_POOL and RWM_SUCC_DUMP (the value the engine parsed)."""
+    out = []
+    for ln in lines:
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_(STORE_PATH_POOL|SUCC_DUMP)=\S+", "", ln) + f" RWM_STORE_PATH_POOL={pool} RWM_SUCC_DUMP={1 if dump else 0}"
+        out.append(ln)
+    return out
+
+
+def succdump56(records, batch=5000):
+    """The receiver's raw successor dump: `[SUCCDUMP] n=<k> d=<tag>,<us>;...` batches (tags o / x / r / a, as the engine prints them)."""
+    out, left = [], records
+    while left > 0:
+        k = min(batch, left)
+        out.append(f"[SUCCDUMP] n={k} d=" + ";".join("o,%d" % (20000 + (i * 37) % 90000) for i in range(k)))
+        left -= k
+    return out
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -298,6 +324,50 @@ def main(argv):
             dnf = '{"bytes":600000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}'
             cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, '{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
             drv = [ln for ln in drv if '"summary"' not in ln] + ['{"bytes":600000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}']
+    elif plan == "56":
+        # Status 56, the sweep: 55 s of [DIAG] (source until 50 s) whose cap is N x the requested pool (N = 2 live paths at c8, 1 at c2 / c1s), the two knobs' [GATES] echo and the pool INFO line on
+        # both ends, the server's [RANK] readouts (no old holes), a driver summary for the cell's size. The dump row (RWM_SUCC_DUMP=1) leaves its [SUCCDUMP] records in the server log.
+        pool = int(os.environ.get("RWM_STORE_PATH_POOL") or 2048)
+        dump = os.environ.get("RWM_SUCC_DUMP") == "1"
+        nlive = 2 if fam == "c8" else 1
+        bad = set(x for x in os.environ.get("STUB_BAD56", "").split(",") if x)
+        echo = pool
+        if "poolfallback" in bad:
+            echo = 2048
+        elif "poolonce" in bad and fam == "c8" and pool == 384 and os.environ.get("SEED") == "42":
+            marker = os.path.join(TMP, "pool-once-done")
+            if not os.path.exists(marker):
+                open(marker, "w").close()
+                echo = 2048
+        rl = [ln.replace("win=838/838", f"win=800/{nlive * pool}") for ln in run_lines(fam, False, n=220)]
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + extras53(k, n_src=200)
+        info = [] if "poolinfo" in bad else [POOL_INFO56.format(n=echo)]
+        nrec = 0
+        if dump and "nodump" not in bad:
+            nrec = 120000
+            if "dumpshort" in bad:
+                # the smoke's dump row is invocation 0 (full), the scored row invocation 1 (short), its replacement invocation 2 (full)
+                marker = os.path.join(TMP, "dump-count")
+                seen = len(open(marker).read()) if os.path.exists(marker) else 0
+                open(marker, "a").write("x")
+                if seen == 1:
+                    nrec = 50000
+        secs = 54.0 if nbytes == "600000000" else 100.0
+        cli = gates56(cli, echo, dump) + info + rl + hold54(True) + [FCAUSE53, snapv54()]
+        srv = (gates56([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]", "[RANK]"))], echo, dump)
+               + [POOL_INFO56.format(n=echo)] + [RX52, SUCC53] + rank54(0) + succdump56(nrec))
+        drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":%s,"hint":"bulk","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs),
+                                                                                    summary54(secs, int(nbytes))]
+        if os.environ.get("STUB_DNF56") == "P%d:%s" % (pool, os.environ.get("SEED")):
+            dnf = '{"bytes":%s,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}' % nbytes
+            tail = '{"bytes":%s,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}' % nbytes
+            cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
+            drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
     if plan == "41d" and os.environ.get("LD_WITNESS54") == "1":

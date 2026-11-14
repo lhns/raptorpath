@@ -1595,6 +1595,16 @@ def main(argv):
         import pool54_score
         pool54_score.score(argv[2:])
         return 0
+    if cmd == "smoke56":
+        import pool56_score
+        return pool56_score.smoke(argv[2])
+    if cmd == "check56":
+        import place38_parse
+        return place38_parse.check56(argv[2])
+    if cmd == "score56":
+        import pool56_score
+        pool56_score.score(argv[2:])
+        return 0
     if cmd == "smoke48":
         import bbr48_score
         return bbr48_score.smoke48(argv[2])
