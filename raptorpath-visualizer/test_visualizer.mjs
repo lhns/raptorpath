@@ -117,8 +117,8 @@ check("jitter finite and non-negative",
   Number.isFinite(rt.jitter) && rt.jitter >= 0,
   `rt jitter=${rt.jitter.toFixed(2)}ms`);
 
-// --- 4. Custom triangle mode: rho < 1 gives up cleanly ---
-const custom = runSim("custom", { delta: 0.05, rho: 0.95 });
+// --- 4. The ρ dial on the δ continuum: rho < 1 gives up cleanly ---
+const custom = runSim("continuum", { delta: 0.005, rho: 0.95 });
 check(
   "custom rho: decoded + given_up == num_source",
   custom.decoded + custom.givenUp === custom.numSource,
@@ -236,8 +236,8 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   `tails=[${api.sim_tail_target_of_delta(50).toExponential(2)}, ${api.sim_tail_target_of_delta(0.5).toExponential(2)}, ${api.sim_tail_target_of_delta(0.005).toExponential(2)}]`);
 
 // --- 7d. The δ continuum drives the SIM continuously (the UI path:
-// 'custom' + derived tail strictly BETWEEN presets; AT the Bulk preset
-// the engine's late-is-fine 'bulk' law verbatim): the Realtime end pays
+// 'continuum' + the δ price, one rate mix at every position (β = 1 at the Bulk preset:
+// the engine's late-is-fine law verbatim): the Realtime end pays
 // FEC, the Bulk end is pure ARQ and completes faster.
 {
   // The UI path end-to-end: ONE hint ('continuum', taking the δ PRICE)
@@ -256,8 +256,8 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   // The ρ dial stays a thing (the triangle's second corner): the UI path
   // with ρ < 1 gives up cleanly via §3.5 T_cut toward the declared target.
   const lossyRho = new api.Simulation(
-    0.10, 0.3, 80, 64, "custom",
-    undefined, api.sim_tail_target_of_delta(0.5), 0.95);
+    0.10, 0.3, 80, 64, "continuum",
+    undefined, 0.5, 0.95);
   let t = 0;
   while (!lossyRho.is_finished() && t++ < 20000) lossyRho.step();
   check("ρ dial on the continuum: decoded + given_up == num_source, reliability ≥ 0.90",
@@ -319,13 +319,26 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
 // ±2% dial nudge around Bulk/Auto/Realtime.
 {
   let ok = true, worst = "";
+  // Tolerance = 1.5 × (the law's steepest analytic slope) × (the nudge
+  // width), per function. Slopes per decade of δ: t(δ) 1.8495 decades (the
+  // Auto→Bulk segment, (log₁₀0.05 + 5)/2), ζ 1 decade, b log₁₀2/2 decades,
+  // β 0.5 (linear). A flat 0.2-decade / 0.05 bound was ~6× the continuous
+  // change and let a ~1.47× step through.
+  const WIDTH = 2 * Math.log10(1.02);
+  const SLOPE = {
+    sim_tail_target_of_delta: (Math.log10(0.05) + 5) / 2,
+    zeta_of_delta: 1,
+    span_horizon_b: Math.log10(2) / 2,
+    bulkness_of_delta: 0.5,
+  };
   for (const dp of [0.005, 0.5, 50]) {
     for (const f of ["sim_tail_target_of_delta", "bulkness_of_delta",
                      "span_horizon_b", "zeta_of_delta"]) {
       const lo = api[f](dp / 1.02), mid = api[f](dp), hi = api[f](dp * 1.02);
+      const tol = 1.5 * SLOPE[f] * WIDTH;
       const cont = f === "bulkness_of_delta"
-        ? Math.abs(lo - hi) < 0.05
-        : Math.abs(Math.log10(Math.max(lo, 1e-12)) - Math.log10(Math.max(hi, 1e-12))) < 0.2;
+        ? Math.abs(lo - hi) <= tol
+        : Math.abs(Math.log10(Math.max(lo, 1e-12)) - Math.log10(Math.max(hi, 1e-12))) <= tol;
       const mono = Math.min(lo, hi) - 1e-12 <= mid && mid <= Math.max(lo, hi) + 1e-12;
       if (!cont || !mono) { ok = false; worst = `${f} @ δ=${dp}: ${lo} / ${mid} / ${hi}`; }
     }
@@ -365,6 +378,36 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
       Math.abs(a.ticks - a0.ticks) <= 2 &&
       a.done) && a0.done,
     `fec@300 ${aLo.fec300}/${a0.fec300}/${aHi.fec300}, fec_end ${aLo.fecEnd}/${a0.fecEnd}/${aHi.fecEnd}, ticks ${aLo.ticks}/${a0.ticks}/${aHi.ticks}`);
+}
+
+// --- 7d4. The give-up law, option (ii) (docs/derivations/giveup-law-model.md):
+// give up a hole iff age > D(δ) and given_up + 1 <= min(1 − ρ, R)·src_total.
+// ρ = 1 is the retain point of the dial (budget 0, no branch). Checked at
+// Auto and Realtime on harsh cells where budget·src_total >= 1, through the
+// sim's own readouts; given_up counts are REPORTED, the law is asserted.
+{
+  for (const [name, dp] of [["auto", 0.5], ["realtime", 50]]) {
+    for (const eps of [0.20, 0.30]) {
+      const run = (rho) => {
+        const s = new api.Simulation(eps, 0.1, 100, 64, "continuum", undefined, dp, rho);
+        let maxCap = 0, t = 0, formOk = true;
+        while (!s.is_finished() && t++ < 20000) {
+          s.step();
+          maxCap = Math.max(maxCap, s.get_giveup_budget() * s.get_total_src());
+          formOk = formOk && s.get_giveup_budget() ===
+            Math.min(Math.max(1 - rho, 0), s.get_giveup_residual());
+        }
+        return { s, maxCap, formOk };
+      };
+      const lo = run(0.95), hi = run(1.0);
+      check(`give-up law ${name} ε=${eps}: ρ<1 gives up within min(1−ρ,R)·src, ρ=1 never`,
+        lo.maxCap >= 1 && lo.s.get_given_up() > 0 &&
+        lo.s.get_given_up() <= Math.ceil(lo.maxCap) &&
+        hi.s.get_given_up() === 0 && hi.s.get_giveup_budget() === 0 &&
+        lo.formOk && hi.formOk,
+        `given_up=${lo.s.get_given_up()} (max budget·src ${lo.maxCap.toFixed(2)}), ρ=1: ${hi.s.get_given_up()}`);
+    }
+  }
 }
 
 // --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the

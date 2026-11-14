@@ -881,6 +881,224 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+**Erratum and progress to "Owner decisions (2026-11-14)" (same day).**
+- **Item 3, "ρ is inert at Auto and Realtime":** this holds under the shipped R (the cut form) only.
+  - Under the block-exact candidate C6 (`docs/derivations/pfec-continuous.md`), R exceeds the slider's 1e-3 step at Realtime on all five audit cells (1.2e-3 to 4.1e-3) and at Auto on one cell. So ρ would act on 1–4 of 100 positions there.
+  - The T_cut numbers (8 and 26 of 100 positions at harsh Bulk) are unchanged under either form, because R = ε at r* = 0.
+  - (ii) lands first, as decided. Its R values are provisional until item 2 lands.
+- **Item 2, the P_fec derivation (branch `pfec-derive`, open):**
+  - **Root cause confirmed.** The paper defines P_fec per lost symbol (`fec-arq-model.md:205`), but §4.2 (`:693–699`) derives the window event, which includes zero losses. That is a paper-text erratum.
+  - **C6 is the exact per-loss law for a block window.** It matches the repo's block oracle (ratio 0.99–1.01), is exactly 0 at r = 0, and is continuous.
+  - **Neither the engine nor the sim decodes a block.** Both decode a sliding window. Against a sliding decode with no deadline, an upper bound on recovery, C6 sits 0.04–0.15 below at A* 4–7. At W 201, where `r_saturation` runs on L1 (`wsize=201` in §57b's client logs), its tail is ≈ 100× off.
+  - **So no form ships.** The path is to derive the sliding per-loss law against an executed decoder, with Fable.
+  - **Correction to my message to the owner:** the block law's r* under-provisioning does not carry to the engine. The sliding check has the shipped r* meeting the Auto target at c2 and c3, and Realtime is unresolved.
+  - **On L1** (Bulk, `--window-reliable`), r* stays bit-identical 0 under any form.
+- **Correction to the P_fec bullet above (2026-11-14, later the same day; `pfec-derive` `b252933b`, round 6).** Two readings in that bullet treated a one-sided bound as a value, and both are withdrawn: "its tail is ≈ 100× off" and "the sliding check has the shipped r* meeting the Auto target".
+  - **The Python sliding decode has no deadline,** so it is only an *upper* bound on recovery. Its premises are uniform repair spacing (the engine's `TaperBudget` front-loads), one GE chain and Δ ≤ 8.
+  - **What stands, in bracket language:**
+    - C6 does not ship. It lies above the bound at W 201 (c3, at half the cut-off rate), needs a second resource bound, and would multiply the shed budget 6–11× unverified.
+    - Under the bound's premises, the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, so its R is too small there. At the engine pin (ε 0.048, r 0.34, A* 4, σ² 3.76), P ≤ 0.458 against the shipped 0.90.
+    - The engine's r* adequacy at Auto and Realtime is **unknown either way**. The tail sample cannot resolve the target (c2: 0 / 4 101 holes; c3: 2 / 7 472).
+    - The one executed datum (an L0 decode share of 0.71–0.84, one rep, inputs unrecorded) cannot be placed.
+  - **Next:** an executed sliding oracle (`pfec-continuous.md` §8.2, design only). It must call engine code, not copy it. The trailing-span seat is inline in `emit_source.rs`, so it is either extracted as a pure move, which also gives `decision_trace_pin` its missing seat, or a copy is witnessed against `[SPAN]` lines.
+    - Known answers come first: P = 0 at r = 0; the block oracle reproduced in a block configuration; P(∞) matching the Python bound.
+    - Each caller's deadline is fixed with Fable.
+    - The registration comes before the run.
+- **Second correction (same day; `pfec-oracle-design` `2a622525`).** The caveat "the engine's `TaperBudget` front-loads repairs after each ack" is withdrawn.
+  - `TaperBudget::accrue` has one production call site (`emit_source.rs:543–549`). It is passed `flat_rate = window_rate.min(spare)` and the same `spare`, so grant == rate on every call; the taper shape is inert as wired. Checked by reading and a 10⁵-call Python port; `taper_emission_l0.rs` asserts nothing.
+  - The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust.
+  - **The open premise is now the emitted share W1,** not the spacing. Acks cancel repair debt once per sender-loop iteration (`net/mod.rs:3481–3482`), so the share depends on m̄, the sources acked per advance, which no gauge has settled.
+  - **Oracle spec (open):**
+    - It calls the engine's RLC encoder/decoder, `TaperBudget`, D(δ) and the span seat. The span seat is extracted once, after phase 6, under the VM release-sha proof.
+    - The debt loop is copied, and K4 witnesses it against engine W1 on a recorded row.
+    - Known answers K0–K4 come before any reading.
+    - It is decidable at A* 3–7 (shed budget), report-only in the W 201 body. The tail rule is in miss counts (T = 310 at c2, 171 at c3, per 10⁵ holes).
+    - **Needs:** one VM evicting-seat row with `RWM_DIAG` (c2/c3 Realtime, not `--window-reliable`) to read m̄.
+- **Visualizer fixes merged (`viz-fix`, main `0857a0cd`):**
+  - the dead classic-hint machine is removed, and the named hints are now an alias table onto the one continuum constructor;
+  - the W11 β = 0 guard is gone;
+  - a W22 bounding test is added;
+  - the store text is corrected per cell (2048 is a clamp measured pinned; 512·N is an underived constant);
+  - the model-vs-engine table rows (C04, S05) and the stale references are fixed;
+  - the goldens are unchanged, with no re-capture; 39 native wasm tests and both mjs gates pass.
+- **The shared-core steps 0.1–0.3 are merged (main `e9188e01`).** The engine edits are test-only. `decision_trace_pin` was captured on Windows; the next VM suites check it on Linux.
+
+**§57b Result (`LD_PLAN=57b`, the c1d pool sweep and the transfer test T, REPORTED ONLY): T = UNSCOREABLE.** Every scoreable (a) point passes, but c1d's smallest store-bound pool does not reach q_ℓ = 2.1 ms. (2026-11-14; rows 16:30–17:01Z on main `02ecbdd7`. Host cargo was paused throughout. Ledger: `docs/l1-raw/s57/rep57b-*`, `57b-*`.)
+
+**Integrity.**
+- **Binary:** `8f313616…`, the same binary as §54's CAND, §56 and §57a.
+- **Suites and tests:** suite-reuse HIT; parsers and bash tests rc 0.
+- **Smoke:** SMOKE-PASS on P192 and P2048.
+- **Rows:** 30/30 counting, all LIVE; 0 VOID, 0 replaced, 0 DNF, 0 UNBOUND.
+- **Flags:** both-leg flag on 3/30 rows (two of them control rows); one-leg-only on 14/30.
+- **Host score:** equals the VM's (`rep57b-score-host.txt`).
+
+**Per pool** (medians; ratio = goodput/control; the within-replicate ratio pairs each row with the same replicate's control, all rows):
+
+| pool (W) | a/W | status | q_ℓ ms (unf) | goodput unf / all | ratio unf / all | within-replicate ratio | release batch |
+|---|---|---|---|---|---|---|---|
+| 2048 (4 096), control | 0.67 | READ (n_u 3) | 31.5 | 765.8 / 729.4 | 1 / 1 | 1 | 195 |
+| 768 (1 536) | 0.72 | NOT-STORE-BOUND | 10.7 | 741.5 | 0.968 / 1.017 | 1.027 | 151 |
+| 512 (1 024) | 0.76 | NOT-STORE-BOUND | 7.3 | 731.0 | 0.954 / 1.002 | 0.980 | 130 |
+| 384 (768) | 0.77 | NOT-STORE-BOUND | 4.8 | 727.3 | 0.950 / 0.997 | 0.997 | 109 |
+| 256 (512) | 0.81 | READ (n_u 4) | 3.0 | 680.4 / 677.8 | 0.888 / 0.929 | 0.899 | 80 |
+| 192 (384) | 0.84 | READ (n_u 5) | 2.6 | 611.2 | 0.798 / 0.838 | 0.848 | 60 |
+
+**T, as registered.**
+- **(c) The control's own queue** is q_ℓ = 31.5 ms, against the predicted 13–21: OUT, above the band and not below 10 ms. Its unflagged median rests on 3 rows, because 2 of the 5 control rows are both-leg collapses.
+- **(a) Offsets:**
+  - δ₀(c1d) = 2.64 ms (P192) against δ₀(c1s) = 2.1 ms, a shift of +0.54 > 0.5. So (a) is read on both axes.
+- **Raw axis:**
+  - 2.1 ms lies below c1d's measured range (2.64–3.01 unflagged; 2.64–3.25 all rows): UNSCOREABLE.
+  - 2.7 ms: 0.813 (unf) and 0.847 (all) against 0.89 ± 0.08: PASS. The unflagged value is d = −0.077, at the band's edge.
+- **Corrected axis:**
+  - 2.64 ms: 0.798 / 0.838 against 0.79: PASS.
+  - 3.24 ms: out of range for unflagged rows (UNSCOREABLE); 0.928 for all rows (PASS).
+- **Readings:** unflagged = UNSCOREABLE, all rows = UNSCOREABLE (raw) / PASS (corrected), so **T = UNSCOREABLE.**
+- **(b)** is not readable: no store-bound pool lies at q_ℓ 4.7 or 6.8 ms.
+
+**What it means (registered).**
+- T is not tested. The registration's no-extrapolation rule applies: the c1d sweep's store-bound range (q_ℓ 2.6–3.3 ms) does not reach the first falsifying point.
+- No scoreable point fires.
+- **(c):** the control's queue (median over all 5 control rows) is 31.5 ms, above the predicted 13–21. Only the goodput denominator rests on the 3 unflagged control rows.
+
+**Registration misses.**
+- **W 1 536 was registered as the first store-bound candidate.** The first pool to clear the a/W ≥ 0.80 gate is W 512, and only by 0.005.
+- **The design could not return PASS** unless the smallest read pool sat at q_ℓ ≤ 2.1 ms (`eval_a` / `read_a`). The registration asked only for one arm at ≤ 3.0 ms. Fix this in the next registration.
+- **Resolution:** P192's q_ℓ rows span 1.83–3.88 ms (sample sd 0.78 ms), so its median is good to about ±0.35 ms. The falsifying region is 0.6 ms wide.
+
+**Reported readouts (post hoc where marked).**
+- **The store acts below the gate.**
+  - Occupancy follows W: ≈ 1 100, 780 and 590 symbols at W 1 536, 1 024 and 768.
+  - q_ℓ falls with it, from 31.5 to 10.7, 7.3 and 4.8 ms.
+  - Those pools sit at a/W 0.72–0.77, under the registered 0.80 gate (rule 3), so T excludes them.
+- **Goodput against the control depends on the denominator.**
+  - The 5 control rows span 704–768 Mbit/s, and 2 are both-leg collapses. Their unflagged median (765.8) is 5 % above the all-rows median (729.4), which is the whole difference between ≈ 0.95 and ≈ 1.00 at W 1 536–768.
+  - Within-replicate ratio ranges:
+
+    | W | within-replicate ratio range |
+    |---|---|
+    | 1 536 | 0.885–1.066 |
+    | 1 024 | 0.942–1.034 |
+    | 768 | 0.915–1.039 |
+    | 512 | 0.764–0.963 |
+    | 384 | 0.793–0.859 |
+
+    Replicates 3 and 4 divide by collapsed control rows.
+- **Post hoc: c1d at the same total W reads like c1s.**
+  - c1d's unflagged ratios at W 1 024 / 768 / 512 / 384 are 0.954 / 0.950 / 0.888 / 0.798. §56's c1s reads 0.96 / 0.94 / 0.89 / 0.79.
+  - The q_ℓ values are close too: c1d 7.3 / 4.8 / 3.0 / 2.6 ms; c1s 6.8 / 4.7 / 2.7 / 2.1 ms.
+  - Rule 3 excludes three of those four c1d pools from T, and the unflagged ratios carry the denominator's ±5 %. So this is a coincidence to register, not a transfer result.
+- **Release batch / W** is 0.05 at the control and rises from 0.10 (W 1 536) to 0.16 (W 512 and 384). Ack wakes per loop fall from 14.1 (control) to 5–7. At c1s, §56 read ≈ 0.2.
+- **Session position (the committed readout):** goodput over each pool's median is 1.013 in slots 1–15 and 1.000 in slots 16–30.
+  - The battery lasted 31 minutes, and §57a's slowdown began about 34 minutes into its rows.
+  - So this readout cannot separate host builds from elapsed time.
+- **Collapse:** the both-leg flag fires on 3/30 rows (0.10, against §53's 5/30). One-leg-only fires on 14/30, at every pool.
+
+**Next.** T needs a c1d pool with q_ℓ ≤ 2.1 ms. Three cases are open:
+1. A smaller pool (W < 384) lowers q_ℓ further.
+2. c1d's no-queue floor sits near 2.6 ms, so its offset, not its queue, fills the gap.
+3. The one-leg flag (4 of 5 P192 rows) inflates q_ℓ. P192's one clean row reads 1.83 ms.
+
+A next registration must:
+- require the smallest pool at q_ℓ ≤ 2.1 ms;
+- size n from the 0.78 ms row sd;
+- fix the control denominator, for example as a within-replicate ratio.
+
+This goes to the derivation's open list with §57a's burst hypothesis. Nothing is launched without a registration. B-1 (the gauge build) is next on the store-law track.
+
+## Owner decisions (2026-11-14): the visualizer, shared code and two model laws
+
+All three were decided as recommended after Fable's review.
+
+1. **Scope rule: amended (ADR-0077, CLAUDE.md).**
+   - Formulas move to `raptorpath-math` and decisions to a new `raptorpath-core`.
+   - Engine-side moves are zero-behaviour-change, proven by pins, an ns bench and a §41c guard. The guard is waived only for an identical release-binary sha.
+   - Only class-A code moves from now on. The existing debt in `raptorpath-math` (W22, W14) is named and carries bounding tests.
+   - A decision is shared only when the model holds its inputs, with an "executes" witness. Store, recovery and placement stay engine-only for now.
+2. **FEC formula jump (`p_fec_normal`, W22 / ledger R03): a derivation is opened.**
+   - The paper's Φ form fails the engine's r = 0 pin (`residual_loss_after_fec_is_the_design_residual`). With no repair symbols it still predicts ≈ 39 % recovery in that test's setting.
+   - The shipped cut to 0 at r ≤ ε/(1−ε) is the step. Neither form is kept as is.
+   - The derivation looks for a form that is continuous and exactly 0 at r = 0. Route: rate-law track (Opus derivation, paper line, a registered r per cell, then a guard).
+   - It changes the engine's rate law, because `r_saturation` is on the default path.
+3. **Give-up rule in the model: option (ii), landing before decision 2's fix.**
+   - Rule: give up a hole iff age > D(δ) and given_up + 1 ≤ min(1 − ρ, R)·src_total. It replaces V5/V6 (the cartoon's budget choice) and W14 (the sim's T_cut horizon).
+   - **The basis is corrected:** the engine's shed budget is R alone, and ρ enters it only as the seat (`shed_on`). So the 1 − ρ cap is a model law the engine lacks. It needs its paper §5.6 line and a bounding test.
+   - **Two consequences are recorded:**
+     - At Auto and Realtime, R is below the ρ slider's step, so ρ is inert over the slider there. This is a degenerate-law finding for the law ledger.
+     - Dropping T_cut diverges at harsh Bulk (8–26 of 100 slider positions at ε 0.2–0.3), so it gets a bounding test.
+   - Until decision 2 lands, the continuity gate excludes only the one W22 step its bounding test covers.
+
+**§57a Result (`LD_PLAN=57a`, the emission-burst block at c1s, REPORTED ONLY): UNDERPOWERED.** (2026-11-14; rows 14:08–15:38Z on main `ef3d5e0e`. Ledger: `docs/l1-raw/s57/rep57a-*`, `57a-*`.)
+
+**Integrity.**
+- **Binary:** `8f313616…`, §54's CAND, which §56 also ran (`bin_sha` in every row).
+- **Suites and tests:**
+  - Engine suites reused (`LD-ALL suite-reuse HIT`, 182 files).
+  - Tools tests: parsers rc 0. The bash tests rc 0, their first run on this tree (Amendment 1).
+- **Smoke:** one B256-512 row, unflagged (share 0.019), with a realised burst of 75.3 > 64. SMOKE-PASS, with no relaunch.
+- **Rows:**
+  - 63/63 counting, all LIVE; 0 VOID, 0 replaced, 0 UNBOUND.
+  - 2 DNF, both collapse rows. 23 rows are collapse-flagged.
+  - Bind fraction 1.000 on every arm.
+- **Host score:** equals the VM's byte for byte (`rep57a-score-host.txt`).
+
+**Arm readouts** (R = lap rate over LATE, on unflagged bound rows; goodput is over all rows, DNF = 0):
+
+| arm | n_u / 21 | collapse share | b̄ | R /s (SE) | goodput, all rows | release batch | client CPU s/GB |
+|---|---|---|---|---|---|---|---|
+| B64-512 (control) | 15 | 0.29 | 48.9 | 79 161 (819) | 733.4 | 111.5 | 17.20 |
+| B64-448 | 14 | 0.33 | 46.7 | 75 221 (848) | 686.5 | 94.1 | 17.72 |
+| B256-512 | 11 | 0.48 | 78.9 | 75 524 (1 249) | 643.2 | 105.6 | 16.96 |
+
+**Reading: UNDERPOWERED** (S = 0.62 < 2). E1/E2 are not read, and the arms are reported.
+- z_null = −2.43 and z_hyp = −1.92. ΔQ_b = 15.0 slots (k = 0.234). The chord is 3 940 /s, so R_pred = 78 239 /s.
+- **Gates:**
+  - CPU: not confounded (16.96–17.72 s/GB).
+  - Collapse: 0.29 against 0.48, a gap of 0.19 ≤ 0.25, so not BIASED.
+  - E5: does not fire (release/W 0.218 and 0.206).
+- **RISING did not occur.**
+
+**Scorecard against the registered expectation.**
+- **b̄₂₅₆ = 78.9,** against the expected 90–105. So ΔQ_b = 15, against 21–29.
+- **Row sd = 2.5–3.3 k/s,** against the expected ≈ 1.1 k. This, not ΔQ_b, is what put S at 0.62.
+- **The chord (3.9 k) falls inside** the expected 2–4.8 k.
+- **Re-basing:** the control median of 79.2 k lies outside §56's 82.7 k ± 3.0 k (RE-BASED, drift −3.5 k). This is a position effect, not a level shift (below). The control's unflagged rows in replicates 1–8 have a median of 80.7 k (n 6), inside §56's band. From replicate 9 on, the median is 77.5 k (n 9).
+
+**Post hoc (labelled, not registered readings).**
+- **Session position.** Every arm is slower in replicates 9–21 (from 14:42Z) than in 1–8:
+
+  | arm | 1–8 | 9–21 |
+  |---|---|---|
+  | B64-512 | 80.7 k | 77.5 k |
+  | B64-448 | 75.6 k | 73.5 k |
+  | B256-512 | 77.9 k | 73.6 k |
+
+  - The unflagged subsets sit at different positions: B256-512's three lowest rows are r19–r21, where the control has no unflagged row.
+  - A likely cause is not ruled out. Host cargo builds ran almost continuously from ≈ 14:20Z. The host is itself a KVM guest, so it may share hardware with the VM.
+- **Within-replicate pairs** (both rows unflagged), which remove position:
+  - B256-512 − B64-512: n = 6, all negative, median −2.2 k/s (−2.7 %), range −4.9 to −0.1 k.
+  - B64-448 − B64-512: n = 11, median −5.3 k.
+- **Hypothesis for a new registration:** a larger emission burst lowers c1s's rate, by the order of the store-holding prediction (−0.9 k) or more. The paired n is 6 and not powered.
+
+**Consequences for §57b**, committed before its battery:
+- Host cargo is paused during the battery.
+- Goodput against slot order, and the within-replicate ratios, are reported-only readouts.
+
+## Engine defect F1 (2026-11-14): `RWM_DELTA` pins the store cap at its floor
+
+**Found by** the shared-core design (`docs/derivations/shared-core-design.md` F1), from reading only. It was then confirmed red first.
+
+- **The defect.** `codel_setpoint_q` read both band ends through `delta_budget_b(hint)` → `delta_price`, which returns the `RWM_DELTA` override when set. Under the override, b_lo = b_hi, so q(δ) = 0/0 = NaN. The shipped value multiplier 1 + q (`RWM_DELTA_CAP`, on) is then NaN, and `pooled_store_cap` clamps to `STORE_CAP_FLOOR` = 10 symbols.
+- **Red test:** `raptorpath/tests/delta_override_store_cap.rs` fails on main with "q(delta) is NaN".
+- **Fix:** branch `f1-delta-nan` `39008a01`. The band ends come from the hint table; the override moves only the operating point.
+  - Without `RWM_DELTA`, the values are identical: `formula_agreement`, `law_shape` and the store-cap tests are green on the host.
+  - It is one site; no other law reads its band ends through the override (grep).
+- **Who is affected:** every row run with `RWM_DELTA` set since the δ-cap law landed (`70777c78`, `d60f3ab0`, 2026-08/09).
+  - `tools/l1/r_battery.sh`'s MID arm sets it. Whether any ledger row of it postdates the defect is still to be checked.
+  - The planned §51 δ sweep depends on `RWM_DELTA`, so **F1 merges before §51**.
+- **Merge path:** the engine suites on the VM (it changes `raptorpath/src`), with the next engine session. It is not batched into the shared-core zero-change steps.
+
 ## 57. Amendment 1 to §57a and §57b: the harness as built (before any VM contact)
 
 **Harness.** Branch `harness57` (`2550768c`, `19dc65d7`), fast-forwarded onto main as tools only (`tools/l1`; `raptorpath/src` and `raptorpath/tests` unchanged, so HEAD still equals `ref56-manifest.sha256` and the engine suites are expected to be reused).
@@ -936,6 +1154,14 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Expected outcome: UNDERPOWERED.** With b̄₂₅₆ ≈ 67, ΔQ_b ≈ 9.5 and k ≈ 0.15, so the predicted shift is ≈ 0.3–0.7 k/s. At the registered row sd (≈ 1.1 k) and n_u ≈ 12 per arm, S ≈ 0.5–1.3, and S ≥ 2 would need about 30 unflagged rows per arm. The block still returns RISING (no S condition), the in-session 448/512 chord at n = 21, b̄ and the release batch per arm, and 63 rows of collapse statistics. It runs as registered.
 - **The smoke margin is thin** (2.9 above 64). If the full launch's own unflagged smoke row reads ≤ 64, that is the registered ABORT-SMOKE with no relaunch, read as "practically inert". It is not loosened.
 - What sets the release batch is a different question, for a new registration after the Result.
+
+**§57b note (2026-11-14, after the rehearsal, before any battery row; no rule changes).**
+- **Rehearsal** (main `02ecbdd7`, 15:40–15:57Z): suite-reuse HIT, tools tests green, SMOKE-PASS on both rows.
+- **Amendment 1's T̄ resolution check on the P192 smoke row** (unflagged): per-leg LATE tick sd 0.98 / 0.93 ms, 6 / 6 distinct values (3–8 ms). That is above the 0.5 ms and 5-value thresholds, so the full launch goes ahead.
+- **Seen data (two rows):**
+  - P192: a/W 0.86, q_ℓ 2.05 ms, R 66.8 k/s, 627 Mbit/s.
+  - P2048 (control): bind 0.19, a/W 0.66, q_ℓ 25.7 ms, 764 Mbit/s. One row reads the control's queue above the registered 13–21 ms band, reported as is.
+- **Run conditions:** host cargo is held paused (the host build mutex is taken) for the whole battery, as §57a's Result committed.
 
 ## 57b. The c1d pool sweep and the transfer test T (reported only, no build) — pre-registration (before any VM contact)
 

@@ -5085,6 +5085,7 @@ fn q2_engine_sources() -> Vec<(std::path::PathBuf, String)> {
     let mut files = Vec::new();
     walk(&root, &mut files);
     files.sort();
+    assert!(!files.is_empty(), "the Q2 source walk found no .rs file under {}", root.display());
     files
         .into_iter()
         .filter(|f| {
@@ -6188,6 +6189,7 @@ mod paper_bounds {
         assert_eq!(g.cc_pace, g.copa_wire, "RWM_CC_PACE defaults to the wire-signal gate");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut sites = Vec::new();
+        let mut visited = 0usize;
         let mut stack = vec![root];
         while let Some(d) = stack.pop() {
             for e in std::fs::read_dir(&d).unwrap() {
@@ -6197,6 +6199,7 @@ mod paper_bounds {
                 } else if p.extension().is_some_and(|x| x == "rs")
                     && p.file_name().is_some_and(|n| n != "tests.rs")
                 {
+                    visited += 1;
                     let t = std::fs::read_to_string(&p).unwrap();
                     for (i, l) in t.lines().enumerate() {
                         let l = l.trim();
@@ -6207,6 +6210,7 @@ mod paper_bounds {
                 }
             }
         }
+        assert!(visited >= 1, "the pacer-debit walk found no .rs file");
         assert_eq!(
             sites.len(),
             1,

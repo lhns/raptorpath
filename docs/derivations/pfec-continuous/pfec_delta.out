@@ -1,0 +1,9 @@
+== D1. Sliding bound vs Delta (eps .048, s2 3.76; 3 seeds, 40k sources)
+   A* 4 r 0.34: D1 0.4007 (0.0082)  D2 0.4160 (0.0024)  D3 0.4400 (0.0075)  D4 0.4490 (0.0053)  D8 0.4575 (0.0019)  | shipped 0.8986
+   A* 7 r 0.5: D1 0.8052 (0.0140)  D2 0.8552 (0.0090)  D3 0.8746 (0.0102)  D4 0.9151 (0.0108)  D8 0.9401 (0.0043)  | shipped 0.9949
+
+== D2. One row below r_c per window (r = 0.5 r_c): shipped = 0 by the cut, Phi > 0
+   A* 4 pin inputs: r 0.0252 shipped 0.0000 phi 0.4541 C6 0.0260 C5 0.0211 | sliding 0.0252 (SE 0.0024) | phi REFUTED
+   W 201 c2: r 0.0130 shipped 0.0000 phi 0.2515 C6 0.1015 C5 0.1025 | sliding 0.0855 (SE 0.0102) | phi REFUTED
+   W 201 c3: r 0.0250 shipped 0.0000 phi 0.2077 C6 0.0821 C5 0.0844 | sliding 0.0496 (SE 0.0007) | phi REFUTED
+rc=0

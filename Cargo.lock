@@ -1533,6 +1533,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "raptorpath-core"
+version = "0.1.0"
+dependencies = [
+ "raptorpath-math",
+]
+
+[[package]]
 name = "raptorpath-math"
 version = "0.1.0"
 dependencies = [

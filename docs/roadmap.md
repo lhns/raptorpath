@@ -216,6 +216,7 @@ flowchart TB
 | Dispersion and oracle store law | ⏸ parked | Tests of how the in-flight data limit could read the real link rate and delay found no reliable source yet, so the work is on hold until better measurements exist. |
 | Who limits at each δ | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
 | Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
+| RWM_DELTA pins the store cap at its floor (F1) | ⚠ open defect | Fixing a bug where setting the delay dial by number made the in-flight data limit collapse to its minimum. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
 | δ seat diagnostic and guard (§48c) | ⛔ blocked | Real-network test of tying the in-flight limit to the latency dial, including one low-latency row. |
@@ -268,18 +269,17 @@ flowchart TB
 | Competitor battery | ⛔ blocked | Measuring standard Linux BBR and CUBIC on the same tests, to compare against outside protocols. |
 | Cumulative progress benchmark | ○ next | One measurement of the current system against the early-July version, showing how much each result has improved since. |
 | Gauges for the remaining constants | ⛔ blocked | Adding readouts or derivations for the last hand-set numbers, so none hides inside a formula. |
+| Model shares engine laws and decisions (ADR-0077) | ▶ in progress | Letting the visualizer call the same code as the engine, so the model cannot drift from it. |
 | Visualizer as one continuum law | ✔ done · successful ⚠ | Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch. |
 | Engine NO-MODE-SWITCH debts (§3.3) | ⚠ open defect | Open problem: five places in the engine still switch behaviour on the chosen preset instead of following one smooth rule. |
 | Open-constants register (§3.4) | ⚠ open defect | Open problem: about twenty numbers in the code were picked by hand and have no derivation behind them. |
 | Paper versus engine reconciliation | ⏳ waiting | Compared every claim in the paper with what the code actually does and listed the mismatches; a few questions wait on the owner. |
-| Wasm mode-switch audit | ⏳ waiting | Checked the visualizer's model for hidden mode switches before its formulas move into the shared library. |
 | T_cut give-up law pinned | ⚠ open defect | Open problem: the visualizer's rule for when to give up on a missing packet only ever takes one of two fixed values and jumps at unexpected points. |
 | Wasm dead second machine | ⚠ open defect | Open problem: the visualizer still carries an older second copy of the machine that only the tests use. |
 | Erratum: pre-flight tests not run | ⚠ open defect | Open problem: three checks planned for the last test session, including the visualizer build, were never run and move to the next session. |
 | Law ledger | ✔ done · unrated ⚠ | Audited every formula in the system for where it comes from and whether it has been checked in real conditions, and ranked the fixes. |
 | Hint-keyed engine paths made continuous | ⛔ blocked | Removing the five places where the engine still changes behaviour by the name of the preset instead of following the latency dial smoothly. |
-| Owner calls on wasm audit | ○ next | Owner decision on how to clean up the visualizer's model, including removing a second, unused copy of the machine. |
-| Wasm model fixes | ⛔ blocked | Applying the owner's calls to the visualizer's model and proving it stays smooth across the dial. |
+| Wasm model fixes | ▶ in progress | Applying the owner's calls to the visualizer's model and proving it stays smooth across the dial. |
 | Paper text for placement and bbr_rs | ○ next | Correcting two places where the paper does not match the code. |
 | Paper-only law records | ⛔ blocked | Writing four small rules into the paper that the code uses but the paper never states. |
 | Metrics registry and OTel design | ⏳ waiting | A design for one metrics system that feeds the status page, the logs and standard monitoring tools, including a packet-level recorder. |
@@ -317,6 +317,11 @@ flowchart TB
 ## Running
 
 <!-- BEGIN GENERATED: running -->
+**host-cargo**
+
+- `model-shared-core`: Model shares engine laws and decisions (ADR-0077)
+- `model-wasm-fixes`: Wasm model fixes
+
 **no-cargo**
 
 - `store-law-derivation`: Store-law derivation
@@ -357,10 +362,6 @@ flowchart TB
 
 - `model-paper-recon`: Paper versus engine reconciliation
 
-**the owner's five calls**
-
-- `model-wasm-audit`: Wasm mode-switch audit
-
 **merge to main, then the per-path state work it builds on**
 
 - `obs-otel-design`: Metrics registry and OTel design
@@ -378,7 +379,6 @@ flowchart TB
 
 <!-- BEGIN GENERATED: waiting-on-owner -->
 - `store-user-u1u3`: Owner calls U1–U3
-- `model-user-wasm-calls`: Owner calls on wasm audit
 - `rate-user-rate-law`: Owner calls on rate law
 - `cc-user-adr68-direction`: Owner call: ADR-0068 direction
 - `cc-user-bbrrs-promotion`: Owner call: bbr_rs promotion
@@ -420,12 +420,12 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 18 nodes (7 done, 1 next, 1 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 34 nodes (14 done, 6 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 20 nodes (9 done, 1 in progress, 1 next, 5 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 30 nodes (12 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
+- [store - store law](roadmap/tracks/store.md): 33 nodes (14 done, 4 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
 - [place - placement](roadmap/tracks/place.md): 15 nodes (4 done, 2 in progress, 1 next, 1 blocked, 7 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 24 nodes (8 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 22 nodes (13 done, 1 in progress, 1 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 39 nodes (24 done, 4 in progress, 4 next, 6 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 19 nodes (7 done, 7 in progress, 2 next, 3 blocked)
+- [model - model and paper](roadmap/tracks/model.md): 20 nodes (9 done, 8 in progress, 1 next, 2 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 1 next, 1 blocked)
 <!-- END GENERATED: tracks -->

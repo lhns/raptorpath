@@ -522,21 +522,25 @@ mod forwarding_audit {
     /// Every `RWM_*` string literal in the crate source, so an inline
     /// `env::var` at a new site is caught too.
     fn engine_gate_surface() -> BTreeSet<String> {
-        fn walk(dir: &std::path::Path, out: &mut String) {
+        fn walk(dir: &std::path::Path, out: &mut String, files: &mut usize) {
             for e in std::fs::read_dir(dir).expect("read src dir").flatten() {
                 let p = e.path();
                 if p.is_dir() {
-                    walk(&p, out);
+                    walk(&p, out, files);
                 } else if p.extension().is_some_and(|x| x == "rs") {
-                    out.push_str(&std::fs::read_to_string(&p).unwrap_or_default());
+                    *files += 1;
+                    out.push_str(&std::fs::read_to_string(&p).expect("read source"));
                 }
             }
         }
         let mut src = String::new();
+        let mut files = 0usize;
         walk(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
             &mut src,
+            &mut files,
         );
+        assert!(files >= 1, "the gate scrape walk found no .rs file");
         let mut out = BTreeSet::new();
         // Match the `"RWM_..."` literal form every gate read uses.
         let bytes = src.as_bytes();

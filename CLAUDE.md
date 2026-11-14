@@ -33,6 +33,10 @@ Enforcement (do not weaken these; extend them when touching this area):
 - `raptorpath-visualizer/test_visualizer_ui.mjs` — ONE hint string at every
   dial position including ρ < 1 (stub-DOM routing gate).
 - `raptorpath-wasm` `test_continuum_one_law_across_the_dial`.
+- `raptorpath-core` (ADR-0077, once the crate exists): builds for `wasm32-unknown-unknown` and
+  passes its source deny-list test in `build_visualizer.sh`; every core
+  function taking δ or ρ carries the preset ±2 % continuity test, every
+  function taking N an absolute test at N = 1 and N = 2.
 Both mjs gates run in `build_visualizer.sh`; a failure fails the build.
 
 ## Testing discipline (the lesson behind the gates)
@@ -73,8 +77,22 @@ the model; none asked whether the model was right.
 
 ## Scope rules
 
-- The visualizer (`raptorpath-visualizer/` + `raptorpath-wasm/`) is a
-  self-contained L0 model: never change engine crates (`raptorpath`,
-  `raptorpath-math`, ...) for a visualizer feature.
+- The visualizer (`raptorpath-visualizer/` + `raptorpath-wasm/`) is an L0
+  model: never change engine *behaviour* for a visualizer feature
+  (ADR-0077). Two things may cross the boundary, each in its own commit:
+  (a) a closed-form law the model evaluates moves to `raptorpath-math` with
+  its paper derivation (ADR-0076 phase 6); (b) a per-tick decision the
+  model takes moves to `raptorpath-core`, I/O-free and wasm32-clean
+  (`docs/derivations/shared-core-design.md`). An engine-side step is a
+  zero-behaviour-change refactor, proven by the decision pins, the host ns
+  bench and a §41c guard (waived only for an identical release-binary
+  sha). A model-side step is a deliberate model change with a
+  `GOLDEN_CAPTURE=1` re-capture. Code that moves from now on is class A
+  only: no hint type, no δ/ρ- or path-count-selected branch, no env read.
+  Known debt already in `raptorpath-math` (`p_fec_normal`'s cut, W22;
+  `find_t_cut`'s cap, W14) keeps a bounding test until it is fixed.
+  A decision is shared only when the model holds all its inputs, with an
+  "executes" witness. Simulation plumbing (link, RNG, stepping, hint
+  selection) stays in `raptorpath-wasm`.
 - The wasm sim's golden fingerprints pin the model era; re-capture them
   (`GOLDEN_CAPTURE=1`) only for a DELIBERATE model change, and say so.

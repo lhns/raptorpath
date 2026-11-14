@@ -1,0 +1,8 @@
+accrue with rate <= spare: max |grant - rate|, max owed over 1e5 random calls = 0.0e+00
+emitted / (r * sources), ack-cancelled debt, give-up at D (upper bound on stalls):
+   eps 0.048 s2 3.76 r 0.34 D 4 F 4: 0.055
+   eps 0.048 s2 3.76 r 0.34 D 4 F 1: 0.055
+   eps 0.048 s2 3.76 r 0.5 D 7 F 4: 0.143
+   eps 0 (lossless), r 0.34, F 4: startup only, r*F = 1.36 repairs total, then exactly 0
+   eps 0.025 s2 2.9 r 0.1 D 201 F 20: 0.854
+   eps 0.048 s2 3.76 r 0.16 D 201 F 40: 0.899

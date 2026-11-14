@@ -206,17 +206,26 @@ pub fn trailing_offset_delta(rate: f64, jitter: f64) -> f64 {
     (rate * jitter.max(0.0)).ceil().clamp(1.0, 64.0)
 }
 
-/// §5.6: the derived shed budget — the residual the design already
-/// concedes past in-window FEC at the live operating point:
-///   1−ρ = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)).
-/// A hole is sheddable iff its projected delivery exceeds D(δ) and
-/// cumulative shed stays within this budget; past-budget candidates are
-/// served — ρ wins over δ. On the ρ = 1 retain contract the law is
-/// compiled out entirely.
+/// §5.6: the residual R after in-window FEC at the live operating point:
+///   R = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)).
+/// It is one input of the give-up budget min(1 − ρ, R) (`giveup_budget`);
+/// ρ is the declared dial, not derived from R. A hole is sheddable iff its
+/// age exceeds D(δ) and cumulative shed stays within the budget;
+/// past-budget candidates are served — ρ wins over δ.
 #[wasm_bindgen]
 pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst: f64) -> f64 {
     let e = eps_hat.clamp(0.0, 1.0);
     e * (1.0 - math::p_fec_normal(r_live.max(0.0), e, a_star.max(1.0), sigma2_burst))
+}
+
+/// The give-up budget, as a fraction of src_total (option (ii), docs/derivations/
+/// giveup-law-model.md): budget = min(1 − ρ, R). ρ is the declared contract
+/// dial, R the residual after in-window FEC (`shed_budget_residual`). At
+/// ρ = 1 the budget is 0 at every δ: RETAIN is the ρ = 1 point of the dial,
+/// reached with no branch. Both the sim and the span cartoon call this.
+#[wasm_bindgen]
+pub fn giveup_budget(rho: f64, residual: f64) -> f64 {
+    (1.0 - rho).max(0.0).min(residual.max(0.0))
 }
 
 /// The visualizer's δ-continuum → r*-margin tail-target mapping: a
@@ -319,17 +328,19 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 //     RTT from send (no speculative pre-report firing); retransmits inherit
 //     the clock of the path they ride; the phantom_held/phantom_avoided
 //     counters show the spurious candidates a global clock would have fired
-//   - the path-scaled outstanding pool (wall #7, §6.1): the retention
-//     store is STORE_PER_PATH × n_paths; a full pool stalls new source
-//     (the Little's-law wall, visible when cap·RTT is cranked past it)
+//   - a constant per-path outstanding pool (wall #7): the retention store is
+//     STORE_PER_PATH × n_paths, an underived model constant (law ledger M01),
+//     NOT the engine's §6.1 cap; a full pool stalls new source (the
+//     Little's-law wall, visible when cap·RTT is cranked past it)
 //   - SACK-clocked store release (wall #9, §6.3): slots free on the
 //     selective ack (or on recovery of a loss), NOT on the cumulative
 //     frontier — the frontier-clocked occupancy is kept as a live
 //     counterfactual readout
 //   - the δ continuum (§5.3/§5.6/§4.1): the span-law formulas
 //     (A*, M*, D, Δ, shed budget) are exported above as pure functions;
-//     the sim itself is driven along the continuum via the "custom" hint
-//     with sim_tail_target_of_delta(δ) — no mode bit anywhere
+//     the sim itself is driven along the continuum via the "continuum" hint
+//     (custom_delta = the δ price; sim_tail_target_of_delta(δ) and the β
+//     rate mix) — no mode bit anywhere
 //
 // Simplifications vs the L0 gate (documented): fixed wire capacity
 // (slots/tick) instead of a queue+Copa model, no jitter (so no encoder lag
@@ -343,12 +354,14 @@ const BASE_TAIL_TARGET: f64 = 1e-5;
 const CODEC_OVERHEAD_RLC: f64 = 0.004;
 const MAX_OVERHEAD: f64 = 0.5;
 const TICK_SECS: f64 = 0.001;
-/// Path-scaled retention-store pool (wall #7, §6.1): the
-/// outstanding pool is a Little's-law wall when it is a per-TRANSFER
-/// constant; the shipped law scales it per path (production knee ≈ 2048
-/// symbols/path). Sim scale: 512/path against the 2000-symbol transfer —
-/// slack at the standard cells (cap·RTT ≤ ~400), binding when the BDP is
-/// cranked past it (the wall made visible on the RTT slider).
+/// Retention-store pool per path (wall #7): a CONSTANT, not the engine's
+/// §6.1 law. 512/path is an underived model constant (law ledger M01): no
+/// BDP or δ input. The engine's cap is clamp(law, floor, max(n_live·2048,
+/// floor)), and 2048/path is a clamp measured pinned (ledger F01: the law's
+/// value sat at it for 0.74–0.98 of c8 ticks), not a knee. Here the pool is
+/// slack at the standard cells (cap·RTT ≤ ~400; stall fraction 0.000 at the
+/// c8 preset) and binds only when the BDP is cranked past it (1 path, RTT
+/// ≥ 200 at cap 8). The derived store law is unshipped and NOT modeled.
 const STORE_PER_PATH: u32 = 512;
 
 /// Per-path state (§5.5): an independent GE channel with its own
@@ -403,26 +416,33 @@ pub struct Simulation {
     paths: Vec<PathState>,
     /// Capacity-weighted true burst variance factor (aggregate).
     sigma2_true: f64,
-    hint_bulk: bool,
     tail_target: f64,
-    /// Continuum bulkness β ∈ [0, 1] (0 for every non-"continuum" hint):
-    /// the per-tick effective tail target log-blends from `tail_target`
-    /// (β = 0) into §4.5's late-is-fine form p̂ + (0.05 − p̂)·χ (β = 1)
-    /// — see `continuum_tail`. One law, continuous in δ, no mode bit.
+    /// Continuum bulkness β = bulkness_of_delta(δ) ∈ [0, 1]: the rate is
+    /// the mix (1−β)·r_anchor + β·r_late-is-fine (`rate_now`), and the
+    /// `δ_eff` readout log-blends the tail the same way (`continuum_tail`).
+    /// One law, continuous in δ, no mode bit.
     bulkness: f64,
     fixed_r: Option<f64>,
-    /// Ablation-only: revert Bulk to the earlier mapping (delta_eff =
-    /// min(0.1, p_hat) + one-shot tail burst). Never exposed to JS; set
-    /// directly by native tests to isolate the completion-exposure change.
+    /// Test-only ablation: revert the Bulk end to the earlier mapping
+    /// (delta_eff = min(0.1, p_hat) + one-shot tail burst), to isolate the
+    /// completion-exposure change. Compiled out of the shipped wasm.
+    #[cfg(test)]
     legacy_bulk_delta: bool,
-    /// Ablation-only (§4.6): revert non-Bulk hints to the one-shot
-    /// end-of-stream burst (disabling the continuous completion ramp), to
-    /// isolate the taper-truncation remedy. Never exposed to JS.
+    /// Test-only ablation (§4.6): revert to the one-shot end-of-stream burst
+    /// (disabling the continuous completion ramp), to isolate the
+    /// taper-truncation remedy. Compiled out of the shipped wasm.
+    #[cfg(test)]
     legacy_tail_burst: bool,
-    /// Reliability target (rho). Below 1.0, losses older than T_cut are
-    /// given up (§3.5 age-based give-up) — the third triangle corner.
+    /// Reliability target (rho): the give-up budget is min(1 − ρ, R)
+    /// (§3.5, §5.6) — the third triangle corner.
     rho: f64,
     given_up: u32,
+    /// The δ price (the dial), kept for the give-up deadline D(δ).
+    dprice: f64,
+    /// Test log of every give-up: (age at give-up in ticks, had a
+    /// retransmit fired, given_up count after, budget·src_total then).
+    #[cfg(test)]
+    giveup_log: Vec<(u32, bool, u32, f64)>,
     /// Seqs the receiver has pruned: late data for them is
     /// discarded, not delivered.
     given_up_seqs: std::collections::BTreeSet<u64>,
@@ -582,9 +602,6 @@ impl Simulation {
     fn agg_eps(&self) -> f64 {
         self.agg(|p| p.eps)
     }
-    fn agg_q(&self) -> f64 {
-        self.agg(|p| p.q)
-    }
     fn agg_srtt(&self) -> f64 {
         self.agg(|p| p.srtt_secs)
     }
@@ -660,15 +677,6 @@ impl Simulation {
         math::completion_exposure(t_rem_secs, self.agg_srtt(), self.agg_rttvar())
     }
 
-    /// Bulk's chi for the delta glide (§4.6): only Bulk maps chi into
-    /// delta_eff. The legacy-ablation arm keeps chi = 0 (old one-shot burst).
-    fn completion_chi(&self) -> f64 {
-        if !self.hint_bulk || self.legacy_bulk_delta {
-            return 0.0;
-        }
-        self.completion_chi_raw()
-    }
-
     /// Completion-tail debt increment for non-Bulk hints (the
     /// taper-truncation completion term, §3.3 / §4.6). Near a known
     /// end-of-stream the final window's symbols never receive their future
@@ -700,10 +708,17 @@ impl Simulation {
     /// kernel becomes a step at remaining = W/2 and the whole budget releases
     /// at once: the one-shot burst is the limiting case.
     ///
-    /// Bulk uses its delta glide instead (returns 0); fixed-r and the legacy
-    /// ablation keep the one-shot burst (return 0).
+    /// The Bulk end uses its delta glide instead: the (1 − β) weight below
+    /// is 0 there. Fixed-r and the test-only ablations keep the one-shot
+    /// burst (return 0).
     fn completion_debt_increment(&mut self) -> f64 {
-        if self.hint_bulk || self.legacy_tail_burst || self.fixed_r.is_some() {
+        #[cfg(test)]
+        {
+            if self.legacy_tail_burst {
+                return 0.0;
+            }
+        }
+        if self.fixed_r.is_some() {
             return 0.0;
         }
         let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
@@ -773,25 +788,11 @@ impl Simulation {
     }
 
     /// Build the shared production `RateInputs` from the live estimator
-    /// state (identical to the real transport's FecRateController path).
+    /// state (identical to the real transport's FecRateController path),
+    /// with EXPLICIT semantics (tail target, bulk flag, completion χ) — the
+    /// plumbing for the mix's two always-computed law terms.
     /// `saturation_cap` is a parameter so the pressure accessor can request
     /// the UNCAPPED rate.
-    fn rate_inputs(&self, saturation_cap: bool) -> math::RateInputs {
-        // Semantics selection for the classic hints (the continuum path
-        // never comes through here — it builds BOTH laws' inputs
-        // explicitly via `rate_inputs_for` and mixes the rates).
-        let p_upper_sel = self.agg_p_upper();
-        let (tail_target, bulk_late_is_fine) = if self.legacy_bulk_delta && self.hint_bulk {
-            ((0.1f64).min(p_upper_sel), false)
-        } else {
-            (self.tail_target, self.hint_bulk)
-        };
-        self.rate_inputs_for(saturation_cap, tail_target, bulk_late_is_fine, self.completion_chi())
-    }
-
-    /// Build `RateInputs` with EXPLICIT semantics (tail target, bulk flag,
-    /// completion χ) — the shared plumbing for both the classic hints and
-    /// the continuum's two always-computed law terms.
     fn rate_inputs_for(
         &self,
         saturation_cap: bool,
@@ -869,34 +870,41 @@ impl Simulation {
         self.rate_now(true)
     }
 
-    /// The rate law, one path for every hint. For the continuum (β > 0)
-    /// the rate is a convex mix of the two laws' outputs (§4.5) — both
-    /// terms computed every tick at every dial position, no branch, no
-    /// mode bit:  r(β) = (1−β)·r_anchor + β·r_late-is-fine.
-    /// β = 0 is exactly the custom/anchor arm; β = 1 exactly the bulk
-    /// late-is-fine arm (χ-gated, r = 0 mid-stream at any ε — including
-    /// the cold start, which the anchor side pays and the mix therefore
-    /// fades out continuously toward Bulk). A tail-domain blend would step
-    /// at the preset instead: r*(δ) is near-binary in δ against the
-    /// cold-start ε̂.
+    /// The rate law, one path at every dial position: a convex mix of the
+    /// two laws' outputs (§4.5), both terms computed every tick, no branch
+    /// (not even at β = 0), no mode bit:  r(β) = (1−β)·r_anchor + β·r_late.
+    /// β = 0 is exactly the anchor term; β = 1 exactly the late-is-fine
+    /// term (χ-gated, r = 0 mid-stream at any ε — including the cold start,
+    /// which the anchor side pays and the mix therefore fades out
+    /// continuously toward Bulk). A tail-domain blend would step at the
+    /// preset instead: r*(δ) is near-binary in δ against the cold-start ε̂.
     fn rate_now(&self, saturation_cap: bool) -> f64 {
-        if self.bulkness > 0.0 {
-            let anchor = math::controller_rate(&self.rate_inputs_for(
-                saturation_cap,
-                self.tail_target,
-                false,
-                0.0,
-            ));
-            let bulk = math::controller_rate(&self.rate_inputs_for(
-                saturation_cap,
-                (BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1),
-                true,
-                self.completion_chi_raw(),
-            ));
-            (1.0 - self.bulkness) * anchor + self.bulkness * bulk
-        } else {
-            math::controller_rate(&self.rate_inputs(saturation_cap))
+        #[cfg(test)]
+        {
+            if self.legacy_bulk_delta {
+                // Test-only ablation (see the field): the earlier Bulk mapping.
+                let tail = (0.1f64).min(self.agg_p_upper());
+                return math::controller_rate(&self.rate_inputs_for(
+                    saturation_cap,
+                    tail,
+                    false,
+                    0.0,
+                ));
+            }
         }
+        let anchor = math::controller_rate(&self.rate_inputs_for(
+            saturation_cap,
+            self.tail_target,
+            false,
+            0.0,
+        ));
+        let late = math::controller_rate(&self.rate_inputs_for(
+            saturation_cap,
+            (BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1),
+            true,
+            self.completion_chi_raw(),
+        ));
+        (1.0 - self.bulkness) * anchor + self.bulkness * late
     }
 
     /// Send one repair symbol on path `pi`. Returns whether it survived.
@@ -977,10 +985,12 @@ impl Simulation {
 
 #[wasm_bindgen]
 impl Simulation {
-    /// hint: "bulk" | "auto" | "realtime" | "fixed" (uses fixed_r as r) |
-    /// "custom" (uses custom_delta + custom_rho — the full triangle).
-    /// rho < 1.0 enables T_cut age eviction (losses older than T_cut are
-    /// given up; reliability becomes the emergent third variable).
+    /// hint: "continuum" (custom_delta = the δ price; the dial's one path) |
+    /// "bulk" | "auto" | "realtime" (NAMED POINTS on that dial: δ = 0.005 /
+    /// 0.5 / 50, built by the same code) | "fixed" (uses fixed_r as r).
+    /// custom_rho (every hint) sets the retention contract: holes older than
+    /// D(δ) are given up within the budget min(1 − ρ, R)·src_total (0 at
+    /// ρ = 1); reliability becomes the emergent third variable.
     #[wasm_bindgen(constructor)]
     pub fn new(
         eps: f64, q: f64, rtt_ms: u32, w: u32, hint: String,
@@ -1010,42 +1020,32 @@ impl Simulation {
             "per-path parameter arrays must have equal length"
         );
 
-        // Hint -> tail target, mirroring the production constructor.
+        // Hint -> δ price, then ONE construction path for every hint.
         //
-        // "continuum" is the visualizer dial's ONE code path for the whole
-        // δ range: `custom_delta` carries the δ PRICE (0.005..50), the base
-        // tail is the anchor interpolation, and β = bulkness_of_delta(δ)
-        // cross-fades the effective tail per tick into §4.5's
-        // late-is-fine form (`continuum_tail`). No hint branch exists
-        // downstream of construction: a threshold-keyed hint flip at a
-        // preset would be a hidden mode switch.
-        let (tail_target, hint_bulk, bulkness) = match hint.as_str() {
-            "bulk" => ((BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1), true, 0.0),
-            "realtime" => ((BASE_TAIL_TARGET * 0.01).clamp(1e-9, 0.1), false, 0.0),
-            "custom" => (custom_delta.unwrap_or(BASE_TAIL_TARGET).clamp(1e-9, 0.1), false, 0.0),
-            "continuum" => {
-                let dp = custom_delta.unwrap_or(0.5);
-                (
-                    sim_tail_target_of_delta(dp).clamp(1e-9, 0.1),
-                    false,
-                    bulkness_of_delta(dp),
-                )
-            }
-            _ => (BASE_TAIL_TARGET, false, 0.0), // auto / fixed
+        // The named hints are an ALIAS TABLE onto the δ dial (§4.1: Bulk
+        // 0.005, Auto 0.5, Realtime 50), not machines: each goes through the
+        // same tail map t(δ) and bulkness β(δ) as "continuum", whose
+        // `custom_delta` carries the δ PRICE. The rate is the (1−β) mix in
+        // `rate_now`. No hint branch exists downstream of construction: a
+        // threshold-keyed hint flip at a preset would be a hidden mode
+        // switch. ("fixed" and unknown strings take the Auto point; "fixed"
+        // then overrides r, see below.)
+        let dp = match hint.as_str() {
+            "bulk" => 0.005,
+            "realtime" => 50.0,
+            "continuum" => custom_delta.unwrap_or(0.5),
+            _ => 0.5, // "auto", "fixed"
         };
+        let tail_target = sim_tail_target_of_delta(dp).clamp(1e-9, 0.1);
+        let bulkness = bulkness_of_delta(dp);
         let fixed_r = if hint == "fixed" { Some(fixed_r.unwrap_or(0.1)) } else { None };
         // The ρ dial composes with the δ price — the triangle's two dials
-        // are independent (§1.2): 'bulk' honors custom_rho exactly like
-        // 'custom', so a Bulk-priced transfer may still declare ρ < 1
-        // (§3.5 T_cut give-up) with the late-is-fine controller unchanged.
-        // Gating ρ on the hint would be a hidden mode switch keyed on ρ.
-        // None defaults to 1.0 — behavior-identical for every existing
-        // caller (the shipped engine Bulk hint carries ρ = 1).
-        let rho = if hint == "custom" || hint == "bulk" || hint == "continuum" {
-            custom_rho.unwrap_or(1.0).clamp(0.9, 1.0)
-        } else {
-            1.0
-        };
+        // are independent (§1.2), so EVERY hint honours custom_rho: a
+        // Bulk-priced transfer may declare ρ < 1 (§3.5 give-up), and
+        // so may Realtime. Gating ρ on the hint would be a hidden mode
+        // switch. None defaults to 1.0 (the shipped engine hints carry
+        // ρ = 1).
+        let rho = custom_rho.unwrap_or(1.0).clamp(0.9, 1.0);
 
         let num_source = 2000u32;
         let mut paths = Vec::with_capacity(n);
@@ -1096,11 +1096,16 @@ impl Simulation {
         Self {
             paths,
             sigma2_true,
-            hint_bulk, tail_target, bulkness, fixed_r,
+            tail_target, bulkness, fixed_r,
+            #[cfg(test)]
             legacy_bulk_delta: false,
+            #[cfg(test)]
             legacy_tail_burst: false,
             rho,
             given_up: 0,
+            dprice: dp,
+            #[cfg(test)]
+            giveup_log: Vec::new(),
             given_up_seqs: std::collections::BTreeSet::new(),
             send_tick: Vec::new(),
             delivered_lat_ms: Vec::new(),
@@ -1375,16 +1380,18 @@ impl Simulation {
                 if self.next_seq >= self.num_source {
                     self.source_done = true;
                     // One-shot completion-tail burst (the limiting case of
-                    // §4.6's ramp): kept only for the ablation arms (legacy
-                    // Bulk delta, or legacy non-Bulk tail burst) used for A/B
-                    // comparison. Every live hint uses the continuous
-                    // chi-driven completion term instead — Bulk via its delta
-                    // glide (§4.6), the others via the
-                    // `completion_debt_increment` folded into the debt accrual
-                    // above (§3.3). Firing the burst on top of either would
-                    // double-pay the tail budget.
-                    let legacy_burst = (self.legacy_bulk_delta && self.hint_bulk)
-                        || (self.legacy_tail_burst && !self.hint_bulk);
+                    // §4.6's ramp): kept only for the test-only ablation arms
+                    // (legacy Bulk delta, legacy tail burst) used for A/B
+                    // comparison. The live law is the continuous chi-driven
+                    // completion term — the Bulk end via its delta glide
+                    // (§4.6), the rest via the `completion_debt_increment`
+                    // folded into the debt accrual above (§3.3), cross-faded
+                    // by β. Firing the burst on top would double-pay the
+                    // tail budget.
+                    #[cfg(test)]
+                    let legacy_burst = self.legacy_bulk_delta || self.legacy_tail_burst;
+                    #[cfg(not(test))]
+                    let legacy_burst = false;
                     if !self.tail_flushed && legacy_burst {
                         self.tail_flushed = true;
                         let (pg, qg) = self.agg_ge_params();
@@ -1396,27 +1403,34 @@ impl Simulation {
             }
         }
 
-        // T_cut age eviction (§3.5, §4.10): for rho < 1.0, losses older than
-        // T_cut are given up — reliability bends instead of latency.
-        if self.rho < 1.0 {
-            let p_up = self.agg_loss_est().clamp(1e-4, 0.99);
-            let sig = self.get_sigma2_est();
-            let t_cut = math::find_t_cut(
-                p_up, self.agg_q(), self.rate.max(1e-3),
-                self.encoder.window_size().max(1) as f64, sig, self.rho,
-            );
-            if t_cut.is_finite() {
-                let cut_ticks = (t_cut as u32).max(self.agg_rtt_ticks() * 2);
-                let now = self.tick;
-                for sym in &mut self.symbols {
-                    if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) > cut_ticks {
-                        sym.recovered = true; // given up
-                        self.given_up += 1;
-                        self.given_up_seqs.insert(sym.seq);
-                        self.lost_pending = self.lost_pending.saturating_sub(1);
-                        // Give-up resolves the slot too (§6.3 semantics).
-                        self.store_occupancy = self.store_occupancy.saturating_sub(1);
-                    }
+        // Give-up law (§3.5, §5.6; docs/derivations/giveup-law-model.md):
+        // a lost, unrecovered hole is given up iff
+        //   age > D(δ)  ∧  given_up + 1 <= min(1 − ρ, R) · src_total,
+        // oldest first. One formula, no ρ guard: at ρ = 1 the budget is 0
+        // and nothing is given up (RETAIN is the ρ = 1 point of the dial).
+        // R is the residual after in-window FEC over this sim's own window W.
+        {
+            let cap = self.get_giveup_budget() * self.total_src as f64;
+            let deadline = self.get_giveup_deadline();
+            let now = self.tick;
+            for sym in &mut self.symbols {
+                if (self.given_up + 1) as f64 > cap {
+                    break;
+                }
+                if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) as f64 > deadline {
+                    sym.recovered = true; // given up
+                    self.given_up += 1;
+                    #[cfg(test)]
+                    self.giveup_log.push((
+                        now - sym.tick,
+                        sym.last_retx_tick != sym.tick as i64,
+                        self.given_up,
+                        cap,
+                    ));
+                    self.given_up_seqs.insert(sym.seq);
+                    self.lost_pending = self.lost_pending.saturating_sub(1);
+                    // Give-up resolves the slot too (§6.3 semantics).
+                    self.store_occupancy = self.store_occupancy.saturating_sub(1);
                 }
             }
         }
@@ -1666,31 +1680,19 @@ impl Simulation {
             }
         })
     }
-    /// Effective tail target after the hint mapping. Bulk (§4.5, §4.6):
-    /// the completion-exposure glide p̂ + (0.05 − p̂)·χ — equals p̂
-    /// mid-stream (pure ARQ) and BULK_TAIL_BUDGET as χ → 1.
+    /// Effective tail target readout (display only; the executed law is the
+    /// rate-domain mix): the log-blend of the anchor tail with §4.5's
+    /// late-is-fine glide p̂ + (0.05 − p̂)·χ, weighted by β.
     pub fn get_delta_eff(&self) -> f64 {
-        if self.hint_bulk {
-            let p = self.get_p_upper();
-            p + (math::BULK_TAIL_BUDGET - p) * self.completion_chi()
-        } else if self.bulkness > 0.0 {
-            // the continuum's live effective target (the blend, per tick)
-            self.continuum_tail(self.get_p_upper())
-        } else {
-            self.tail_target
-        }
+        self.continuum_tail(self.get_p_upper())
     }
     /// Live completion exposure chi (§4.6): 0 mid-stream, ramps to 1
-    /// over the final ~1.5 SRTT of the transfer. This is Bulk's wall-time
-    /// glide kernel (delta_eff); non-Bulk hints refill the truncated taper
-    /// via the source-position completion term (§3.3), a separate
-    /// metering, so this display stays 0 for them.
+    /// over the final ~1.5 SRTT of the transfer. This is the raw χ the
+    /// late-is-fine term of the mix reads at every dial position (weighted
+    /// by β inside the rate); the source-position completion term (§3.3) is
+    /// a separate metering.
     pub fn get_completion_exposure(&self) -> f64 {
-        if self.bulkness > 0.0 {
-            // the continuum: χ is live inside the blended tail target
-            return self.completion_chi_raw();
-        }
-        self.completion_chi()
+        self.completion_chi_raw()
     }
     /// Saturation cap for the current estimator state (§4.4).
     pub fn get_r_sat(&self) -> f64 {
@@ -1761,6 +1763,23 @@ impl Simulation {
     }
     /// Configured reliability target rho.
     pub fn get_rho(&self) -> f64 { self.rho }
+    /// The residual R after in-window FEC at the live operating point, over
+    /// the sim's own window W (`shed_budget_residual`; provisional until the
+    /// sliding per-loss P_fec lands, W22).
+    pub fn get_giveup_residual(&self) -> f64 {
+        shed_budget_residual(
+            self.agg_loss_est().clamp(0.0, 0.99), self.rate,
+            self.encoder.window_size().max(1) as f64, self.get_sigma2_est(),
+        )
+    }
+    /// The give-up budget min(1 − ρ, R), a fraction of src_total.
+    pub fn get_giveup_budget(&self) -> f64 {
+        giveup_budget(self.rho, self.get_giveup_residual())
+    }
+    /// The give-up deadline D(δ) = min(b(δ)·RTT, 2·RTT), in ticks.
+    pub fn get_giveup_deadline(&self) -> f64 {
+        span_deadline_d(self.dprice, self.agg_rtt_ticks() as f64)
+    }
     /// The channel's information-theoretic overhead floor: with loss rate
     /// eps, EVERY reliable scheme must send at least 1/(1-eps) symbols per
     /// delivered symbol -- a floor of eps/(1-eps) extra, no matter how
@@ -1911,7 +1930,7 @@ mod tests {
     }
 
     /// The reliability contract is CONFIGURABLE via rho on multipath too
-    /// (§3.5): rho < 1 gives up losses older than T_cut (counted,
+    /// (§3.5): rho < 1 gives up losses older than D(δ) within min(1-rho, R) (counted,
     /// receiver-pruned), rho = 1 retains until acked — same triangle
     /// semantics as single-path, now across N paths.
     #[test]
@@ -1919,7 +1938,7 @@ mod tests {
         // rho < 1: bounded retention — give-ups counted, reliability >= target.
         let mut lossy = Simulation::multipath(
             vec![0.10, 0.10], vec![0.3, 0.3], vec![80, 80], vec![4, 4],
-            64, "custom".into(), None, Some(0.05), Some(0.95),
+            64, "continuum".into(), None, Some(0.005), Some(0.95),
         );
         run_to_end(&mut lossy);
         assert_eq!(
@@ -1935,7 +1954,7 @@ mod tests {
         // rho = 1 (same channels): ack-only retention — NEVER gives up.
         let mut full = Simulation::multipath(
             vec![0.10, 0.10], vec![0.3, 0.3], vec![80, 80], vec![4, 4],
-            64, "custom".into(), None, Some(0.05), Some(1.0),
+            64, "continuum".into(), None, Some(0.005), Some(1.0),
         );
         run_to_end(&mut full);
         assert_eq!(full.get_given_up(), 0, "rho=1 must never give up");
@@ -2126,8 +2145,8 @@ mod tests {
 
     /// The "continuum" hint: one law across the whole dial, no mode bit.
     /// The Bulk end (β = 1) reproduces late-is-fine (r = 0 mid-stream at
-    /// any ε); the Realtime end (β = 0) is bit-identical to the custom
-    /// arm at the same tail; ρ composes at every position; and the law is
+    /// any ε); the Realtime end (β = 0) is bit-identical to the "realtime"
+    /// alias of the same dial point; ρ composes at every position; and the law is
     /// continuous across the Bulk preset (no behavior step at δ = 0.005
     /// vs δ just above it).
     #[test]
@@ -2164,17 +2183,16 @@ mod tests {
             run_to_end(&mut s);
             assert_eq!(s.get_cum_decoded(), s.get_num_source());
         }
-        // Realtime end (β = 0): identical to the custom arm at the same tail.
+        // Realtime end (β = 0): the named hint is the same point of the dial
+        // (alias table; the full accessor-level check is
+        // `test_named_hints_are_points_on_the_continuum`).
         let mut rt = Simulation::new(
             0.05, 0.5, 50, 64, "continuum".into(), None, Some(50.0), None,
         );
-        let mut cu = Simulation::new(
-            0.05, 0.5, 50, 64, "custom".into(), None,
-            Some(sim_tail_target_of_delta(50.0)), None,
-        );
+        let mut cu = Simulation::new(0.05, 0.5, 50, 64, "realtime".into(), None, None, None);
         run_to_end(&mut rt);
         run_to_end(&mut cu);
-        assert_eq!(rt.get_tick(), cu.get_tick(), "β = 0 must equal the custom arm");
+        assert_eq!(rt.get_tick(), cu.get_tick(), "β = 0 must equal the realtime alias");
         assert_eq!(rt.get_total_fec(), cu.get_total_fec());
         // Continuity across the Bulk preset: a 5% dial nudge off the
         // preset must not step the early behavior (β 1.0 → ~0.989).
@@ -2200,6 +2218,129 @@ mod tests {
         run_to_end(&mut br);
         assert_eq!(br.get_cum_decoded() + br.get_given_up(), br.get_num_source());
         assert!(br.get_reliability() >= 0.90);
+    }
+
+    /// F1/F2 (docs/derivations/wasm-modeswitch-audit.md): the classic hint
+    /// names are an ALIAS TABLE onto the one continuum constructor (bulk →
+    /// δ 0.005, auto → 0.5, realtime → 50), not machines. For every alias and
+    /// every golden cell, every public accessor the UI or the gates read
+    /// equals `continuum@δ(hint)`'s; and EVERY hint honours the ρ dial (the
+    /// old hint-gated ρ dropped it for auto/realtime/fixed).
+    #[test]
+    fn test_named_hints_are_points_on_the_continuum() {
+        fn fp(s: &mut Simulation) -> Vec<f64> {
+            while !s.is_finished() && s.get_tick() < 20_000 { s.step(); }
+            vec![
+                s.get_tick() as f64, s.get_total_src() as f64, s.get_total_fec() as f64,
+                s.get_total_arq() as f64, s.get_total_lost() as f64,
+                s.get_cum_decoded() as f64, s.get_cum_sent() as f64,
+                s.get_cum_arrived() as f64, s.get_given_up() as f64,
+                s.get_rho(), s.get_r_star_auto(), s.get_derived_w(),
+                s.get_delta_eff(), s.get_completion_exposure(),
+            ]
+        }
+        for (hint, dp) in [("auto", 0.5), ("bulk", 0.005), ("realtime", 50.0)] {
+            for (eps, q, rtt) in [(0.05, 0.5, 50u32), (0.10, 0.3, 80)] {
+                let mut named = Simulation::new(eps, q, rtt, 64, hint.into(), None, None, None);
+                let mut dial =
+                    Simulation::new(eps, q, rtt, 64, "continuum".into(), None, Some(dp), None);
+                assert_eq!(fp(&mut named), fp(&mut dial), "{hint} eps={eps} q={q} rtt={rtt}");
+            }
+            // F2: harsh cell with ρ = 0.95 — the declared ρ reaches every
+            // alias and the run is the continuum's, give-ups included.
+            let mut named =
+                Simulation::new(0.20, 0.1, 100, 64, hint.into(), None, None, Some(0.95));
+            let mut dial =
+                Simulation::new(0.20, 0.1, 100, 64, "continuum".into(), None, Some(dp), Some(0.95));
+            assert_eq!(named.get_rho(), 0.95, "{hint}: ρ dial honoured");
+            assert_eq!(fp(&mut named), fp(&mut dial), "{hint} at rho=0.95");
+        }
+        // The nameless path composes ρ too ("fixed" keeps its own r override).
+        let fixed = Simulation::new(0.05, 0.5, 50, 64, "fixed".into(), Some(0.1), None, Some(0.95));
+        assert_eq!(fixed.get_rho(), 0.95);
+    }
+
+    /// W11 (audit Coverage): `rate_now` is the mix with no branch on β --
+    /// §4.5: "There is no `if β == 0` fast path". A source check, because the
+    /// value step of such a guard is zero by identity and no ordinal test
+    /// can see it.
+    #[test]
+    fn test_rate_now_has_no_beta_branch() {
+        let src = include_str!("lib.rs").replace("\r\n", "\n");
+        let start = src.find("fn rate_now(").expect("rate_now");
+        let body = &src[start..];
+        let body = &body[..body.find("
+    }
+").expect("end of rate_now")];
+        for needle in ["bulkness >", "bulkness <", "bulkness ==", "bulkness !=", "hint"] {
+            assert!(!body.contains(needle), "rate_now branches on `{needle}`");
+        }
+    }
+
+    /// W22 (docs/derivations/wasm-modeswitch-audit.md, ledger R03): the
+    /// documented code-vs-paper divergence of `raptorpath_math::p_fec_normal`,
+    /// BOUNDED (CLAUDE.md: a documented divergence carries a test that bounds
+    /// it). The paper's law (§4.2) is continuous,
+    ///   P_paper(r) = Φ( √W·(r(1−ε) − ε) / √(ε(1−ε)(r + σ²)) ),
+    /// exactly ½ at the floor r = ε/(1−ε). The code adds a truncation, so it
+    /// is 0 below the floor and steps to ≈ ½ at it. This pins that shape:
+    ///   - below the floor: |P_code − P_paper| = P_paper (code is 0), and
+    ///     P_paper < ½, so the gap is < ½;
+    ///   - above the floor: code = paper;
+    ///   - at the floor: code ≤ ½ (and paper = ½).
+    /// It bounds the divergence; it does not fix it (the fix is an
+    /// engine-crate change and the owner's call).
+    #[test]
+    fn test_p_fec_normal_vs_paper_phi_divergence_is_bounded() {
+        // The paper's Φ, evaluated independently of `p_fec_normal`'s early
+        // returns: Φ(z) = 1 − Q(z).
+        let paper = |r: f64, eps: f64, w: f64, s2: f64| -> f64 {
+            let z = w.sqrt() * (r * (1.0 - eps) - eps) / (eps * (1.0 - eps) * (r + s2)).sqrt();
+            1.0 - math::normal_survival(z)
+        };
+        let mut worst_gap_below = 0.0f64;
+        let mut jump_above = 0.0f64;
+        for eps in [0.025, 0.05, 0.10] {
+            let floor = eps / (1.0 - eps);
+            for w in [5.0, 20.0, 64.0, 200.0] {
+                for s2 in [1.0, 2.6, 3.76] {
+                    let code = |r: f64| math::p_fec_normal(r, eps, w, s2);
+                    // Below the floor: the code is 0, so the gap IS the paper's value.
+                    for f in [0.01, 0.25, 0.5, 0.9, 0.99, 0.999] {
+                        let r = floor * f;
+                        let (c, p) = (code(r), paper(r, eps, w, s2));
+                        assert_eq!(c, 0.0, "code is 0 below the floor (eps {eps} W {w} σ² {s2} r {r})");
+                        assert!(p < 0.5, "paper < ½ below the floor: {p}");
+                        assert!(
+                            ((c - p).abs() - p).abs() < 1e-12,
+                            "|P_code − P_paper| = P_paper below the floor (eps {eps} W {w} σ² {s2} f {f})"
+                        );
+                        worst_gap_below = worst_gap_below.max((c - p).abs());
+                    }
+                    // Above the floor: the code IS the paper's law.
+                    for f in [1.001, 1.01, 1.5, 2.0, 5.0, 20.0] {
+                        let r = floor * f;
+                        let (c, p) = (code(r), paper(r, eps, w, s2));
+                        assert!(
+                            (c - p).abs() < 1e-12,
+                            "code = paper above the floor (eps {eps} W {w} σ² {s2} f {f}): {c} vs {p}"
+                        );
+                    }
+                    // At the floor: the paper says exactly ½; the code is 0 or ½.
+                    let (c, p) = (code(floor), paper(floor, eps, w, s2));
+                    assert!((p - 0.5).abs() < 1e-9, "paper is ½ at the floor: {p}");
+                    assert!(c <= 0.5 + 1e-9, "code ≤ ½ at the floor: {c}");
+                    // The step across the floor (the divergence's size): ≈ ½.
+                    jump_above = jump_above.max(code(floor * 1.001) - code(floor * 0.999));
+                }
+            }
+        }
+        // The divergence is bounded by ½ everywhere and attains ≈ ½ at the floor.
+        assert!(worst_gap_below < 0.5, "gap below the floor < ½: {worst_gap_below}");
+        assert!(
+            (0.45..=0.51).contains(&jump_above),
+            "the code's step across the floor is ≈ ½ (documented, not fixed): {jump_above}"
+        );
     }
 
     /// The sim/engine tail-anchor divergence, bounded (CLAUDE.md: every
@@ -2309,7 +2450,7 @@ mod tests {
 
     /// The ρ dial composes with the Bulk price (no hidden mode switch
     /// keyed on ρ): 'bulk' + ρ < 1 keeps the late-is-fine controller
-    /// (r = 0 mid-stream) and the §3.5 T_cut give-up semantics.
+    /// (r = 0 mid-stream) and the §3.5 give-up semantics.
     #[test]
     fn test_bulk_composes_with_rho() {
         let mut sim = Simulation::new(
@@ -2341,6 +2482,11 @@ mod tests {
         );
         assert!(sim.get_reliability() >= 0.90, "reliability {}", sim.get_reliability());
         assert!((sim.get_rho() - 0.95).abs() < 1e-12, "rho dial honored");
+        // Budget min(1−ρ, R) admits >= 1 symbol here, so give-up happens.
+        assert!(sim.get_giveup_budget() * sim.get_total_src() as f64 >= 1.0);
+        assert!(sim.get_given_up() > 0, "budget admits a symbol: ρ<1 gives up");
+        println!("MOVED given_up={} budget*src={:.2}", sim.get_given_up(),
+            sim.get_giveup_budget() * sim.get_total_src() as f64);
         // ρ = 1 (None) remains byte-identical bulk (the golden contract).
         let mut plain = Simulation::new(0.10, 0.3, 80, 64, "bulk".into(), None, None, None);
         run_to_end(&mut plain);
@@ -2349,10 +2495,10 @@ mod tests {
 
     #[test]
     fn test_custom_rho_gives_up_late_losses() {
-        // Custom triangle mode: rho < 1 -> T_cut eviction; some symbols are
+        // Custom triangle mode: rho < 1 -> budgeted give-up; some symbols are
         // given up instead of retransmitted forever.
         let mut sim = Simulation::new(
-            0.10, 0.3, 80, 64, "custom".into(), None, Some(0.05), Some(0.95),
+            0.10, 0.3, 80, 64, "continuum".into(), None, Some(0.005), Some(0.95),
         );
         while !sim.is_finished() && sim.get_tick() < 20_000 { sim.step(); }
         assert!(sim.is_finished());
@@ -2361,6 +2507,12 @@ mod tests {
             sim.get_cum_decoded() + sim.get_given_up(),
             sim.get_num_source()
         );
+        // The law's budget min(1−ρ, R) must admit >= 1 symbol on this cell,
+        // and then something IS given up (age > D(δ) within the budget).
+        assert!(sim.get_giveup_budget() * sim.get_total_src() as f64 >= 1.0);
+        assert!(sim.get_given_up() > 0, "budget admits a symbol: ρ<1 gives up");
+        println!("MOVED given_up={} budget*src={:.2}", sim.get_given_up(),
+            sim.get_giveup_budget() * sim.get_total_src() as f64);
     }
 
     #[test]
@@ -2770,12 +2922,19 @@ mod tests {
         assert_eq!(dual.get_pool_cap(), 2 * STORE_PER_PATH);
     }
 
-    /// Paper §6.1 / reconciliation 4b (divergence, bounded): the engine's
-    /// retention-store cap is the law `ceil((1+q(delta))*bdp)` (it moves with the
-    /// BDP and with delta); the model's pool is the CONSTANT 512 per path. This pins the model:
-    /// exactly 512 x n_paths at every delta, hint, RTT and capacity, before and
-    /// after stepping, until the model adopts the law (a deliberate model change
-    /// that moves the golden fingerprints).
+    /// Paper §6.1 / reconciliation 4b (divergence, bounded): the model's pool
+    /// is the CONSTANT 512 per path (law ledger M01: an underived constant).
+    /// The engine's cap is `clamp(law, floor, max(n_live·2048, floor))`
+    /// (`net/store_cap.rs`), and at c8 the law's value sits at that clamp for
+    /// 0.74–0.98 of ticks (ledger F01, measured pinned) — a constant 2048 per
+    /// path in effect, not a cap that moves with the BDP; 2048 is a clamp,
+    /// not a knee (§56: c2 flat down to a total store W ≈ 192–256, c8 to
+    /// ≈ 512, c1s loses at every cut). The model's pool does not bind at its
+    /// c8 preset (stall fraction 0.000) while the engine's does. This test
+    /// pins the MODEL side only: exactly 512 x n_paths at every delta, hint,
+    /// RTT and capacity, before and after stepping, until the model changes
+    /// deliberately (that moves the golden fingerprints). The derived store
+    /// law is unshipped and is not modeled.
     #[test]
     fn wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp() {
         assert_eq!(STORE_PER_PATH, 512, "the model's per-path pool constant");
@@ -2790,7 +2949,7 @@ mod tests {
                     let want = 512 * n as u32;
                     assert_eq!(
                         sim.get_pool_cap(), want,
-                        "pool = 512 x {n} paths at rtt {rtt} cap {cap} delta {delta:?}                          (paper §6.1 law is ceil((1+q(delta))*BDP); this pins the divergence)"
+                        "pool = 512 x {n} paths at rtt {rtt} cap {cap} delta {delta:?}                          (the model pool is a constant; this pins the divergence from the engine's §6.1 cap)"
                     );
                     for _ in 0..50 {
                         sim.step();
@@ -2876,6 +3035,185 @@ mod tests {
                     "eps={eps} rtt={rtt} {hint}: ramp overhead {:.2}% vs burst {:.2}%",
                     ramp.get_overhead(), burst.get_overhead()
                 );
+            }
+        }
+    }
+}
+
+/// The give-up law, option (ii) (docs/derivations/giveup-law-model.md):
+/// give up a hole iff age > D(δ) and given_up + 1 <= min(1 − ρ, R)·src_total.
+/// ρ = 1 is the retain point of the dial: budget 0, with no branch.
+#[cfg(test)]
+mod giveup_law_tests {
+    use super::*;
+
+    /// The cartoon's R at a cell and a δ price (what `spanLaw()` computes in
+    /// the page: A* over the derived window, r* = (1−β)·r*(tail(δ))).
+    fn cartoon_residual(eps: f64, q: f64, rtt: f64, dp: f64, w: f64) -> f64 {
+        let p = eps * q / (1.0 - eps);
+        let s2 = burst_variance_factor(p, q);
+        let rate = 4.0 * (1.0 - eps);
+        let d = span_deadline_d(dp, rtt.max(2.0));
+        let a_star = span_width_a_star(rate, d, w);
+        let r_star = (1.0 - bulkness_of_delta(dp))
+            * compute_r_star_continuous(eps, s2, w, sim_tail_target_of_delta(dp));
+        shed_budget_residual(eps, r_star, a_star, s2)
+    }
+
+    const PRESETS: [(&str, f64); 3] = [("bulk", 0.005), ("auto", 0.5), ("realtime", 50.0)];
+    const CELLS: [(f64, f64, f64); 5] = [
+        (0.05, 0.5, 50.0), (0.10, 0.3, 80.0), (0.20, 0.1, 100.0),
+        (0.30, 0.1, 100.0), (0.20, 0.5, 50.0),
+    ];
+
+    /// Test 1: anchors.
+    #[test]
+    fn giveup_budget_anchors() {
+        for r in [0.0, 1e-9, 1e-4, 0.01, 0.05, 0.1, 0.3] {
+            assert_eq!(giveup_budget(1.0, r), 0.0, "budget(ρ=1) = 0 at R={r}");
+            for k in 0..=100 {
+                let rho = 0.9 + 0.001 * k as f64;
+                let b = giveup_budget(rho, r);
+                if 1.0 - rho >= r {
+                    assert_eq!(b, r, "1−ρ ≥ R ⇒ budget = R exactly (ρ={rho}, R={r})");
+                } else {
+                    assert_eq!(b, 1.0 - rho, "1−ρ < R ⇒ budget = 1−ρ exactly (ρ={rho}, R={r})");
+                }
+            }
+        }
+        // At every δ preset, through the sim's own readout: ρ = 1 ⇒ 0.
+        for (name, dp) in PRESETS {
+            let mut s = Simulation::new(
+                0.10, 0.3, 80, 64, "continuum".into(), None, Some(dp), Some(1.0));
+            for _ in 0..300 { s.step(); }
+            assert_eq!(s.get_giveup_budget(), 0.0, "{name}: budget(ρ=1) = 0");
+            assert!(s.get_giveup_residual() >= 0.0);
+        }
+    }
+
+    /// Test 2: monotone non-increasing in ρ (including ρ → 1) and continuous
+    /// under ±2 % nudges of the dial, at R from the cartoon's law at every
+    /// preset and cell.
+    #[test]
+    fn giveup_budget_monotone_and_continuous_in_rho() {
+        for (name, dp) in PRESETS {
+            for (eps, q, rtt) in CELLS {
+                let r = cartoon_residual(eps, q, rtt, dp, 64.0);
+                let mut prev = f64::INFINITY;
+                let mut rhos: Vec<f64> = (0..=100).map(|k| 0.9 + 0.001 * k as f64).collect();
+                rhos.extend([1.0 - 1e-6, 1.0 - 1e-9, 1.0]);
+                rhos.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                for rho in rhos {
+                    let b = giveup_budget(rho, r);
+                    assert!(b <= prev + 1e-15, "{name} {eps}: budget rose in ρ at {rho}");
+                    prev = b;
+                }
+                for rho in [0.9, 0.95, 0.99, 0.999] {
+                    // ±2 % nudge of the contract's slack (1−ρ).
+                    let lo = giveup_budget(1.0 - (1.0 - rho) * 0.98, r);
+                    let hi = giveup_budget(1.0 - (1.0 - rho) * 1.02, r);
+                    assert!(
+                        (hi - lo).abs() <= 0.04 * (1.0 - rho) + 1e-15,
+                        "{name} {eps} ρ={rho}: ±2% nudge stepped the budget: {lo} {hi}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Test 3: law-form bound at equal R. The engine's two seats are
+    /// R_seat(ρ) = R (evicting, ρ < 1) and 0 (retain, ρ = 1); the model
+    /// agrees at ρ = 1 and wherever 1−ρ ≥ R, and is tighter by at most
+    /// R − (1−ρ) otherwise. (The real agreement test waits for D11 in
+    /// raptorpath-core; this crate cannot call the engine's residual.)
+    #[test]
+    fn giveup_budget_vs_engine_seats_at_equal_r_is_bounded() {
+        for r in [0.0, 1e-5, 1e-3, 0.02, 0.05, 0.2] {
+            for k in 0..=100 {
+                let rho = 0.9 + 0.001 * k as f64;
+                let seat = if rho >= 1.0 { 0.0 } else { r };
+                let gap = (giveup_budget(rho, r) - seat).abs();
+                if rho >= 1.0 || 1.0 - rho >= r {
+                    assert!(gap < 1e-15, "ρ={rho} R={r}: model must equal the seat, gap {gap}");
+                } else {
+                    assert!(gap <= r - (1.0 - rho) + 1e-15, "ρ={rho} R={r}: gap {gap}");
+                }
+            }
+        }
+    }
+
+    /// Tests 4 + 8: the reduced form (give up after D(δ)) against the general
+    /// form (give up after T_cut = RTT·max(0, ln x / ln ε̂), x = (1−ρ)/R),
+    /// over the slider grid ρ = 0.900 .. 0.999 (100 positions) × presets ×
+    /// cells. REPORTS where T_cut > D; asserts only the analytic bound
+    /// (T_cut − D)⁺/RTT <= ln(1e-3/ε̂)/ln ε̂ (the supremum at x = 1e-3/ε̂).
+    /// Also reports the bind fraction of each side of the min (FORMULA-FIRST
+    /// clamp gauge): the share of positions where 1−ρ < R.
+    #[test]
+    fn giveup_reduced_vs_general_tcut_bound_and_bind_gauge() {
+        for (name, dp) in PRESETS {
+            for (eps, q, rtt) in CELLS {
+                let r = cartoon_residual(eps, q, rtt, dp, 64.0);
+                let d = span_deadline_d(dp, rtt);
+                let bound = (1e-3 / eps).ln() / eps.ln();
+                let (mut over, mut worst, mut rho_binds) = (0, 0.0f64, 0);
+                for k in 0..100 {
+                    let rho = 0.9 + 0.001 * k as f64;
+                    let x = (1.0 - rho) / r.max(1e-300);
+                    let t_cut = rtt * (x.ln() / eps.ln()).max(0.0);
+                    let excess = ((t_cut - d) / rtt).max(0.0);
+                    if excess > 0.0 { over += 1; }
+                    worst = worst.max(excess);
+                    if 1.0 - rho < r { rho_binds += 1; }
+                }
+                assert!(worst <= bound + 1e-9, "{name} ε={eps}: excess {worst} > bound {bound}");
+                println!(
+                    "GAUGE {name:8} cell ε={eps} q={q} rtt={rtt}: R={r:.3e} \
+                     1-rho binds {rho_binds}/100, R binds {}/100 | T_cut>D at {over}/100, \
+                     worst (T_cut-D)+/RTT = {worst:.3} (bound {bound:.3})",
+                    100 - rho_binds
+                );
+            }
+        }
+    }
+
+    /// Test 5: the sim's rule change at Auto and Realtime, on cells where
+    /// budget·src_total >= 1: given_up > 0 at ρ < 1, 0 at ρ = 1; every
+    /// give-up is older than D(δ) and within the budget at that moment.
+    /// Reports how many were given up before their first retransmit.
+    #[test]
+    fn sim_gives_up_by_the_law_at_auto_and_realtime() {
+        for (name, dp) in [("auto", 0.5), ("realtime", 50.0)] {
+            for (eps, q, rtt) in [(0.20, 0.1, 100u32), (0.30, 0.1, 100)] {
+                let run = |rho: f64| {
+                    let mut s = Simulation::new(
+                        eps, q, rtt, 64, "continuum".into(), None, Some(dp), Some(rho));
+                    let mut maxcap = 0.0f64;
+                    while !s.is_finished() && s.get_tick() < 20_000 {
+                        s.step();
+                        maxcap = maxcap.max(s.get_giveup_budget() * s.get_total_src() as f64);
+                    }
+                    assert!(s.is_finished());
+                    (s, maxcap)
+                };
+                let (s, maxcap) = run(0.95);
+                assert!(maxcap >= 1.0, "{name} ε={eps}: cell must admit a symbol (cap {maxcap})");
+                assert!(s.get_given_up() > 0, "{name} ε={eps}: ρ<1 must give up");
+                let d = s.get_giveup_deadline();
+                let mut before_retx = 0;
+                for &(age, retxd, count, cap) in &s.giveup_log {
+                    assert!(age as f64 > d, "{name}: gave up at age {age} <= D {d}");
+                    assert!(count as f64 <= cap + 1e-9, "{name}: count {count} over budget {cap}");
+                    if !retxd { before_retx += 1; }
+                }
+                assert_eq!(s.giveup_log.len() as u32, s.get_given_up());
+                println!(
+                    "GIVEUP {name} eps={eps} q={q} rtt={rtt}: given_up={} (max cap {maxcap:.2}), \
+                     before first retransmit {before_retx}, D={d}",
+                    s.get_given_up()
+                );
+                let (s1, _) = run(1.0);
+                assert_eq!(s1.get_given_up(), 0, "{name} ε={eps}: ρ = 1 must never give up");
             }
         }
     }
