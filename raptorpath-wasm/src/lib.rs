@@ -219,6 +219,16 @@ pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst
     e * (1.0 - math::p_fec_normal(r_live.max(0.0), e, a_star.max(1.0), sigma2_burst))
 }
 
+/// The give-up budget, as a fraction of src_total (option (ii), docs/derivations/
+/// giveup-law-model.md): budget = min(1 − ρ, R). ρ is the declared contract
+/// dial, R the residual after in-window FEC (`shed_budget_residual`). At
+/// ρ = 1 the budget is 0 at every δ: RETAIN is the ρ = 1 point of the dial,
+/// reached with no branch. Both the sim and the span cartoon call this.
+#[wasm_bindgen]
+pub fn giveup_budget(rho: f64, residual: f64) -> f64 {
+    (1.0 - rho).max(0.0).min(residual.max(0.0))
+}
+
 /// The visualizer's δ-continuum → r*-margin tail-target mapping: a
 /// monotone log-log interpolation through three hint anchor points
 /// (δ_price, tail target): Realtime (50, 1e-7), Auto (0.5, 1e-5),
@@ -428,6 +438,12 @@ pub struct Simulation {
     /// given up (§3.5 age-based give-up) — the third triangle corner.
     rho: f64,
     given_up: u32,
+    /// The δ price (the dial), kept for the give-up deadline D(δ).
+    dprice: f64,
+    /// Test log of every give-up: (age at give-up in ticks, had a
+    /// retransmit fired, given_up count after, budget·src_total then).
+    #[cfg(test)]
+    giveup_log: Vec<(u32, bool, u32, f64)>,
     /// Seqs the receiver has pruned: late data for them is
     /// discarded, not delivered.
     given_up_seqs: std::collections::BTreeSet<u64>,
@@ -1091,6 +1107,9 @@ impl Simulation {
             legacy_tail_burst: false,
             rho,
             given_up: 0,
+            dprice: dp,
+            #[cfg(test)]
+            giveup_log: Vec::new(),
             given_up_seqs: std::collections::BTreeSet::new(),
             send_tick: Vec::new(),
             delivered_lat_ms: Vec::new(),
@@ -1400,10 +1419,20 @@ impl Simulation {
             if t_cut.is_finite() {
                 let cut_ticks = (t_cut as u32).max(self.agg_rtt_ticks() * 2);
                 let now = self.tick;
+                #[cfg(test)]
+                let log_cap = giveup_budget(self.rho, self.get_giveup_residual())
+                    * self.total_src as f64;
                 for sym in &mut self.symbols {
                     if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) > cut_ticks {
                         sym.recovered = true; // given up
                         self.given_up += 1;
+                        #[cfg(test)]
+                        self.giveup_log.push((
+                            now - sym.tick,
+                            sym.last_retx_tick != sym.tick as i64,
+                            self.given_up,
+                            log_cap,
+                        ));
                         self.given_up_seqs.insert(sym.seq);
                         self.lost_pending = self.lost_pending.saturating_sub(1);
                         // Give-up resolves the slot too (§6.3 semantics).
@@ -1741,6 +1770,23 @@ impl Simulation {
     }
     /// Configured reliability target rho.
     pub fn get_rho(&self) -> f64 { self.rho }
+    /// The residual R after in-window FEC at the live operating point, over
+    /// the sim's own window W (`shed_budget_residual`; provisional until the
+    /// sliding per-loss P_fec lands, W22).
+    pub fn get_giveup_residual(&self) -> f64 {
+        shed_budget_residual(
+            self.agg_loss_est().clamp(0.0, 0.99), self.rate,
+            self.encoder.window_size().max(1) as f64, self.get_sigma2_est(),
+        )
+    }
+    /// The give-up budget min(1 − ρ, R), a fraction of src_total.
+    pub fn get_giveup_budget(&self) -> f64 {
+        giveup_budget(self.rho, self.get_giveup_residual())
+    }
+    /// The give-up deadline D(δ) = min(b(δ)·RTT, 2·RTT), in ticks.
+    pub fn get_giveup_deadline(&self) -> f64 {
+        span_deadline_d(self.dprice, self.agg_rtt_ticks() as f64)
+    }
     /// The channel's information-theoretic overhead floor: with loss rate
     /// eps, EVERY reliable scheme must send at least 1/(1-eps) symbols per
     /// delivered symbol -- a floor of eps/(1-eps) extra, no matter how
@@ -2443,6 +2489,9 @@ mod tests {
         );
         assert!(sim.get_reliability() >= 0.90, "reliability {}", sim.get_reliability());
         assert!((sim.get_rho() - 0.95).abs() < 1e-12, "rho dial honored");
+        // Budget min(1−ρ, R) admits >= 1 symbol here, so give-up happens.
+        assert!(sim.get_giveup_budget() * sim.get_total_src() as f64 >= 1.0);
+        assert!(sim.get_given_up() > 0, "budget admits a symbol: ρ<1 gives up");
         // ρ = 1 (None) remains byte-identical bulk (the golden contract).
         let mut plain = Simulation::new(0.10, 0.3, 80, 64, "bulk".into(), None, None, None);
         run_to_end(&mut plain);
@@ -2463,6 +2512,10 @@ mod tests {
             sim.get_cum_decoded() + sim.get_given_up(),
             sim.get_num_source()
         );
+        // The law's budget min(1−ρ, R) must admit >= 1 symbol on this cell,
+        // and then something IS given up (age > D(δ) within the budget).
+        assert!(sim.get_giveup_budget() * sim.get_total_src() as f64 >= 1.0);
+        assert!(sim.get_given_up() > 0, "budget admits a symbol: ρ<1 gives up");
     }
 
     #[test]
@@ -2985,6 +3038,185 @@ mod tests {
                     "eps={eps} rtt={rtt} {hint}: ramp overhead {:.2}% vs burst {:.2}%",
                     ramp.get_overhead(), burst.get_overhead()
                 );
+            }
+        }
+    }
+}
+
+/// The give-up law, option (ii) (docs/derivations/giveup-law-model.md):
+/// give up a hole iff age > D(δ) and given_up + 1 <= min(1 − ρ, R)·src_total.
+/// ρ = 1 is the retain point of the dial: budget 0, with no branch.
+#[cfg(test)]
+mod giveup_law_tests {
+    use super::*;
+
+    /// The cartoon's R at a cell and a δ price (what `spanLaw()` computes in
+    /// the page: A* over the derived window, r* = (1−β)·r*(tail(δ))).
+    fn cartoon_residual(eps: f64, q: f64, rtt: f64, dp: f64, w: f64) -> f64 {
+        let p = eps * q / (1.0 - eps);
+        let s2 = burst_variance_factor(p, q);
+        let rate = 4.0 * (1.0 - eps);
+        let d = span_deadline_d(dp, rtt.max(2.0));
+        let a_star = span_width_a_star(rate, d, w);
+        let r_star = (1.0 - bulkness_of_delta(dp))
+            * compute_r_star_continuous(eps, s2, w, sim_tail_target_of_delta(dp));
+        shed_budget_residual(eps, r_star, a_star, s2)
+    }
+
+    const PRESETS: [(&str, f64); 3] = [("bulk", 0.005), ("auto", 0.5), ("realtime", 50.0)];
+    const CELLS: [(f64, f64, f64); 5] = [
+        (0.05, 0.5, 50.0), (0.10, 0.3, 80.0), (0.20, 0.1, 100.0),
+        (0.30, 0.1, 100.0), (0.20, 0.5, 50.0),
+    ];
+
+    /// Test 1: anchors.
+    #[test]
+    fn giveup_budget_anchors() {
+        for r in [0.0, 1e-9, 1e-4, 0.01, 0.05, 0.1, 0.3] {
+            assert_eq!(giveup_budget(1.0, r), 0.0, "budget(ρ=1) = 0 at R={r}");
+            for k in 0..=100 {
+                let rho = 0.9 + 0.001 * k as f64;
+                let b = giveup_budget(rho, r);
+                if 1.0 - rho >= r {
+                    assert_eq!(b, r, "1−ρ ≥ R ⇒ budget = R exactly (ρ={rho}, R={r})");
+                } else {
+                    assert_eq!(b, 1.0 - rho, "1−ρ < R ⇒ budget = 1−ρ exactly (ρ={rho}, R={r})");
+                }
+            }
+        }
+        // At every δ preset, through the sim's own readout: ρ = 1 ⇒ 0.
+        for (name, dp) in PRESETS {
+            let mut s = Simulation::new(
+                0.10, 0.3, 80, 64, "continuum".into(), None, Some(dp), Some(1.0));
+            for _ in 0..300 { s.step(); }
+            assert_eq!(s.get_giveup_budget(), 0.0, "{name}: budget(ρ=1) = 0");
+            assert!(s.get_giveup_residual() >= 0.0);
+        }
+    }
+
+    /// Test 2: monotone non-increasing in ρ (including ρ → 1) and continuous
+    /// under ±2 % nudges of the dial, at R from the cartoon's law at every
+    /// preset and cell.
+    #[test]
+    fn giveup_budget_monotone_and_continuous_in_rho() {
+        for (name, dp) in PRESETS {
+            for (eps, q, rtt) in CELLS {
+                let r = cartoon_residual(eps, q, rtt, dp, 64.0);
+                let mut prev = f64::INFINITY;
+                let mut rhos: Vec<f64> = (0..=100).map(|k| 0.9 + 0.001 * k as f64).collect();
+                rhos.extend([1.0 - 1e-6, 1.0 - 1e-9, 1.0]);
+                rhos.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                for rho in rhos {
+                    let b = giveup_budget(rho, r);
+                    assert!(b <= prev + 1e-15, "{name} {eps}: budget rose in ρ at {rho}");
+                    prev = b;
+                }
+                for rho in [0.9, 0.95, 0.99, 0.999] {
+                    // ±2 % nudge of the contract's slack (1−ρ).
+                    let lo = giveup_budget(1.0 - (1.0 - rho) * 0.98, r);
+                    let hi = giveup_budget(1.0 - (1.0 - rho) * 1.02, r);
+                    assert!(
+                        (hi - lo).abs() <= 0.04 * (1.0 - rho) + 1e-15,
+                        "{name} {eps} ρ={rho}: ±2% nudge stepped the budget: {lo} {hi}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Test 3: law-form bound at equal R. The engine's two seats are
+    /// R_seat(ρ) = R (evicting, ρ < 1) and 0 (retain, ρ = 1); the model
+    /// agrees at ρ = 1 and wherever 1−ρ ≥ R, and is tighter by at most
+    /// R − (1−ρ) otherwise. (The real agreement test waits for D11 in
+    /// raptorpath-core; this crate cannot call the engine's residual.)
+    #[test]
+    fn giveup_budget_vs_engine_seats_at_equal_r_is_bounded() {
+        for r in [0.0, 1e-5, 1e-3, 0.02, 0.05, 0.2] {
+            for k in 0..=100 {
+                let rho = 0.9 + 0.001 * k as f64;
+                let seat = if rho >= 1.0 { 0.0 } else { r };
+                let gap = (giveup_budget(rho, r) - seat).abs();
+                if rho >= 1.0 || 1.0 - rho >= r {
+                    assert!(gap < 1e-15, "ρ={rho} R={r}: model must equal the seat, gap {gap}");
+                } else {
+                    assert!(gap <= r - (1.0 - rho) + 1e-15, "ρ={rho} R={r}: gap {gap}");
+                }
+            }
+        }
+    }
+
+    /// Tests 4 + 8: the reduced form (give up after D(δ)) against the general
+    /// form (give up after T_cut = RTT·max(0, ln x / ln ε̂), x = (1−ρ)/R),
+    /// over the slider grid ρ = 0.900 .. 0.999 (100 positions) × presets ×
+    /// cells. REPORTS where T_cut > D; asserts only the analytic bound
+    /// (T_cut − D)⁺/RTT <= ln(1e-3/ε̂)/ln ε̂ (the supremum at x = 1e-3/ε̂).
+    /// Also reports the bind fraction of each side of the min (FORMULA-FIRST
+    /// clamp gauge): the share of positions where 1−ρ < R.
+    #[test]
+    fn giveup_reduced_vs_general_tcut_bound_and_bind_gauge() {
+        for (name, dp) in PRESETS {
+            for (eps, q, rtt) in CELLS {
+                let r = cartoon_residual(eps, q, rtt, dp, 64.0);
+                let d = span_deadline_d(dp, rtt);
+                let bound = (1e-3 / eps).ln() / eps.ln();
+                let (mut over, mut worst, mut rho_binds) = (0, 0.0f64, 0);
+                for k in 0..100 {
+                    let rho = 0.9 + 0.001 * k as f64;
+                    let x = (1.0 - rho) / r.max(1e-300);
+                    let t_cut = rtt * (x.ln() / eps.ln()).max(0.0);
+                    let excess = ((t_cut - d) / rtt).max(0.0);
+                    if excess > 0.0 { over += 1; }
+                    worst = worst.max(excess);
+                    if 1.0 - rho < r { rho_binds += 1; }
+                }
+                assert!(worst <= bound + 1e-9, "{name} ε={eps}: excess {worst} > bound {bound}");
+                println!(
+                    "GAUGE {name:8} cell ε={eps} q={q} rtt={rtt}: R={r:.3e} \
+                     1-rho binds {rho_binds}/100, R binds {}/100 | T_cut>D at {over}/100, \
+                     worst (T_cut-D)+/RTT = {worst:.3} (bound {bound:.3})",
+                    100 - rho_binds
+                );
+            }
+        }
+    }
+
+    /// Test 5: the sim's rule change at Auto and Realtime, on cells where
+    /// budget·src_total >= 1: given_up > 0 at ρ < 1, 0 at ρ = 1; every
+    /// give-up is older than D(δ) and within the budget at that moment.
+    /// Reports how many were given up before their first retransmit.
+    #[test]
+    fn sim_gives_up_by_the_law_at_auto_and_realtime() {
+        for (name, dp) in [("auto", 0.5), ("realtime", 50.0)] {
+            for (eps, q, rtt) in [(0.20, 0.1, 100u32), (0.30, 0.1, 100)] {
+                let run = |rho: f64| {
+                    let mut s = Simulation::new(
+                        eps, q, rtt, 64, "continuum".into(), None, Some(dp), Some(rho));
+                    let mut maxcap = 0.0f64;
+                    while !s.is_finished() && s.get_tick() < 20_000 {
+                        s.step();
+                        maxcap = maxcap.max(s.get_giveup_budget() * s.get_total_src() as f64);
+                    }
+                    assert!(s.is_finished());
+                    (s, maxcap)
+                };
+                let (s, maxcap) = run(0.95);
+                assert!(maxcap >= 1.0, "{name} ε={eps}: cell must admit a symbol (cap {maxcap})");
+                assert!(s.get_given_up() > 0, "{name} ε={eps}: ρ<1 must give up");
+                let d = s.get_giveup_deadline();
+                let mut before_retx = 0;
+                for &(age, retxd, count, cap) in &s.giveup_log {
+                    assert!(age as f64 > d, "{name}: gave up at age {age} <= D {d}");
+                    assert!(count as f64 <= cap + 1e-9, "{name}: count {count} over budget {cap}");
+                    if !retxd { before_retx += 1; }
+                }
+                assert_eq!(s.giveup_log.len() as u32, s.get_given_up());
+                println!(
+                    "GIVEUP {name} eps={eps} q={q} rtt={rtt}: given_up={} (max cap {maxcap:.2}), \
+                     before first retransmit {before_retx}, D={d}",
+                    s.get_given_up()
+                );
+                let (s1, _) = run(1.0);
+                assert_eq!(s1.get_given_up(), 0, "{name} ε={eps}: ρ = 1 must never give up");
             }
         }
     }
