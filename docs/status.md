@@ -1089,6 +1089,43 @@ guard-witness note (§6). F10 and the standing-queue readout go to the owner wit
 - `/dev/shm` ≥ 1 GB free;
 - the release binary's sha against §54's CAND `8f313616…`. The engine is the same, so a match ties the c8 control to B640; a difference is explained before any control drift is read.
 
+**§56 Amendment 2: rehearsal 1, ABORT-SMOKE on c1s, and the collapse flag (POST HOC, decided after seeing one smoke row; the predictions stay as registered).** Rehearsal 1 ran on 2026-11-14 at 06:21–06:42Z on main `558b7f87`. Ledger: `docs/l1-raw/s56/rehearsal1.tgz`.
+
+*The harness held:*
+- 4/4 smoke rows LIVE, and every witness passed.
+- `bin_sha` `8f313616…` = §54's CAND (same engine), so the c8 control is tied to B640. P640D lands inside every B640 band (one row).
+- Suite reuse HIT (182 files). The two bash tests ran: 43 `ok`, abort-witness 12 passed. The python tests are green.
+- The dump row wrote 188 281 records (1.5 MB).
+
+*What failed: c1s P384 DNF at 300 s.* This was a quinn window collapse (§47 shape), not a store-map point:
+- `qcwnd` sat below the 250 kB BDP in 94 % of windows (18.6 kB late);
+- 372 of the 384 slots sat in quinn's send buffer;
+- the wire RTT was 2 ms against a 69 ms echo, and the Little residual −1.02.
+
+The registered flag, `qcwnd` below ¼ of the row median, read 0.0 on it and 0.19–0.24 on the healthy c8/c2 rows. It is inverted for a whole-row collapse.
+
+*Changes (harness56 rev 2, `12e362d9`, merged):*
+1. **Collapse flag.** Now the share of `[DIAG]` windows (t ≥ 1 s) with leg-0 `qcwnd` below the leg's BDP, above 0.10, at c1s.
+   - Validated on committed 5 GB rows: healthy §48b rows read 0.006–0.023; the four collapsed BASE rows read 0.58–0.94. §49's 148.5 Mbit/s row reads 0.89, and p27 DEF192 0.996.
+   - On 400 MB rows, start-up windows dilute the share, so the 0.10 threshold holds for 5 GB rows only.
+2. **Flagged rows enter no arm,** no median and no falsifier (F5/F6 included). They are reported in a collapse table per pool, with onset time (the first 4 s window that stays below BDP) and a pre-onset map point (send rate, T̄).
+3. **Quinn's backlog as a share of W,** per leg, on every row: bind alone does not show who limits.
+4. **Smoke:** a DNF on a flagged row is not a smoke failure. An unflagged DNF still is.
+5. **c1s P2048 and P512 run at n = 9,** and F8 needs ≥ 5 unflagged rows per arm.
+   - Stock quinn collapsed in 4 of 12 BASE c1s 5 GB rows at the shipped pool in §48b (`bbr_rs` 0/12), so P(F8 UNSCOREABLE) ≈ 0.15 per arm.
+   - The block is now 70 slots (c1s 27).
+6. **`LD_HARD` = launch + 4.5 h.** The worst case with every non-control c1s row at 300 s is ≈ 3 h 18 on a reuse hit; typical is ≈ 2 h 05.
+
+*What the flag says about the derivation's c1s inputs:*
+- **p34:** only DEF384 s42 r1 collapsed (0.81). The DEF256 rows read 0.00–0.095, so the p34 c1s cost is a store-cap cost, not a substrate artefact.
+- **p27:** DEF192 collapsed. **§43:** SL s42 r2 collapsed.
+- **Onset mechanism** (BASE §48b s42 r3, `[DIAG]` only; main prints no `[QCC]`): qcwnd ≈ 2 × the delivered rate × the 2 ms wire min-RTT. That is a falling bandwidth estimate holding the rate its own window allows, a low fixed point. A latched-low min-RTT is not excluded; quinn's own `rtt.min` is not visible.
+- Whether a small W raises the collapse rate is a reported c1s readout, n = 1 today, carried to Part B and K09.
+
+*Weakened:* Amendment 1's `xp_frac` pointer for F9. On the dump row `[HOLD]` p0 reads 0.015 and `[SUCC]` 0.97, over different populations. It settles nothing.
+
+Rehearsal 2 runs on the merged tree before the full block.
+
 **Erratum to §54 Amendment 1 (test evidence).** "`STUBRUN_FULL=1` … and the 54b DNF case" was wrong for full mode. On a clean `906eed2c` the full-mode `dnf54b` stub test fails (`dnf=3`): the registered design has three seed-7 B640 rows, and the test expected one. Only fast mode passed. The test now expects 3 in full mode and 1 in fast mode. §54's real rows had 0 DNF, so no result changes.
 
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
