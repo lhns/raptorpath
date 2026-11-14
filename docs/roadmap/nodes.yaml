@@ -1725,7 +1725,7 @@ nodes:
   title: Store-budget test design (§54)
   track: store
   kind: research
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - derivation p0-dwell-diag.md (branch p0-dwell-diag)
@@ -1738,12 +1738,35 @@ nodes:
   qualified_by: []
   lane: no-cargo
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-13'
   folded: []
   overview: false
   plain: Designed a test of whether a smaller in-flight budget stops data from piling up in the send queue after the end-of-transfer fix.
-  waiting_on: the next VM session
   notes: 'p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE'' and CAND''), plan item 2 of 2026-11-13.'
+- id: store-law-derivation
+  title: Store-law derivation (F01 + inputs + C02)
+  track: store
+  kind: research
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status §54 Result, launch 2, owner decision
+  - law ledger §4 items 1-2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-s54-budget
+  - store-defect-cap-constant
+  - model-law-ledger
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-14'
+  end: ''
+  folded: []
+  overview: true
+  plain: Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big.
+  notes: 'Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code.'
 - id: store-defect-cap-constant
   title: Store cap constant at c8
   track: store
@@ -1762,7 +1785,7 @@ nodes:
   start: '2026-11-13'
   end: ''
   folded: []
-  overview: true
+  overview: false
   plain: 'Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high.'
   notes: 'Plan 2026-11-13: the store law becomes its own track (items 8-9).'
 - id: place-marginal-cost
@@ -4595,6 +4618,7 @@ nodes:
   - rec-s54-session
   - meas-guard-v2-impl
   - rec-gap-horizon
+  - store-law-derivation
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -4605,7 +4629,7 @@ nodes:
   vm_order: 3
   order_reason: Runs on the main version the first session produces, in the order the owner approved.
   plain: Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait.
-  notes: 'Law ledger: C02 (rank 4, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded).'
+  notes: 'Law ledger: C02 (rank 4, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation.'
 - id: meas-s51-session
   title: Off-Bulk baseline and δ sweep
   track: meas

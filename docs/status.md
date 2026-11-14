@@ -1218,3 +1218,5 @@ Launch order: launch 1 (`LD_PLAN=54`), rehearsal then full; then launch 2 (`LD_P
 - **Next step:** the store-law derivation (F01, with C02's horizon in the same derivation), with this block as its measured anchor at c8. Per the registration, this outcome also goes into the lever-B guard's registration.
 
 **Erratum to launch 1 (above).** `[HOLD] hn_n` counts holes that resolved with no retransmit ever emitted (`holddown.rs`, the self-heal class). It tracks the store regime: under the same law it reads 168 (B2048), 11 994 (B1024) and 55 038 (B640). Launch 1's c8 reading of what the law does holds only at the default pool.
+
+**Owner decision (2026-11-14).** The lever-B guard (approved step 4) is paused. Its premise, that lever B is the c8 speed-up, does not hold after this block. The store law comes first: E04 + E03 + F01 + C02 in one derivation (law ledger §4 items 1–2), with this block as its measured c8 anchor. The anchor gives a slope, not the optimum, since B640 does not reach the goodput knee. Fable reviews the derivation before any code. Lever B is re-decided on that result.

@@ -64,13 +64,13 @@ flowchart TB
         cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
         place_wire_price["place · ✔ Wire-RTT<br/>placement price"]
         rec_snapver_law[/"rec · ✔ Snapshot-order<br/>filter as law"/]
-        store_defect_cap_constant>"store · ⚠ Store cap<br/>constant at c8"]
         meas_guard_v2_impl["meas · ✔ Guard v2<br/>implementation"]
         model_law_ledger["model · ✔ Law ledger"]
         rec_s54_session["rec · ✔ #167;54: filter<br/>guard, store budget"]
     end
     subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
+        store_law_derivation["store · ▶ Store-law<br/>derivation (F01 +<br/>inputs + C02)"]
     end
     subgraph bd_6["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
@@ -109,14 +109,13 @@ flowchart TB
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
     meas_guard_41c ~~~ place_wire_price
     cc_bbrrs_r1 ~~~ rec_snapver_law
-    place_wire_price ~~~ store_defect_cap_constant
-    rec_snapver_law ~~~ meas_guard_v2_impl
-    store_defect_cap_constant ~~~ model_law_ledger
+    place_wire_price ~~~ meas_guard_v2_impl
+    rec_snapver_law ~~~ model_law_ledger
     meas_guard_v2_impl ~~~ rec_s54_session
-    model_law_ledger ~~~ rec_s54_session
-    rec_s54_session ~~~ cc_bbrrs_r2
+    model_law_ledger ~~~ cc_bbrrs_r2
+    rec_s54_session ~~~ store_law_derivation
     cc_bbrrs_r2 ~~~ rec_leverb_guard
-    cc_bbrrs_r2 ~~~ meas_s51_session
+    store_law_derivation ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote
     meas_s51_session ~~~ cc_bbrrs_promote
     cc_bbrrs_promote ~~~ cc_hybrid
@@ -128,21 +127,21 @@ flowchart TB
     cc_bbr_default -.-> cc_quinn_bbr_collapse
     cod_unified_span --> model_vis_continuum
     cod_unified_span --> cod_one_pipeline
-    store_delta_cap -.-> store_defect_cap_constant
     store_delta_cap --> store_adr72_one_law
     meas_formula_first --> store_adr72_one_law
-    store_adr72_one_law -.-> store_defect_cap_constant
     cc_quinn_bbr_collapse --> cc_bbrrs_r1
     meas_guard_41c --> cc_bbrrs_r1
     meas_guard_v2_impl --> rec_s54_session
     rec_snapver_law --> rec_s54_session
     cc_bbrrs_r1 --> cc_bbrrs_r2
+    model_law_ledger --> store_law_derivation
     rec_s54_session --> rec_leverb_guard
+    store_law_derivation --> rec_leverb_guard
     cc_bbrrs_promote --> cc_hybrid
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 45,48,51 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -160,7 +159,8 @@ flowchart TB
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
     class rec_snapver_law,meas_guard_v2_impl,model_law_ledger,rec_s54_session unrated
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
-    class store_defect_cap_constant,cc_quinn_bbr_collapse defect
+    class store_law_derivation inprog
+    class cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
     class rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
@@ -215,7 +215,7 @@ flowchart TB
 | Power-seeking store law D | ✖ dead end | Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work. |
 | Dispersion and oracle store law | ⏸ parked | Tests of how the in-flight data limit could read the real link rate and delay found no reliable source yet, so the work is on hold until better measurements exist. |
 | Who limits at each δ | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
-| Store-budget test design (§54) | ⏳ waiting | Designed a test of whether a smaller in-flight budget stops data from piling up in the send queue after the end-of-transfer fix. |
+| Store-law derivation (F01 + inputs + C02) | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
 | δ seat diagnostic and guard (§48c) | ⛔ blocked | Real-network test of tying the in-flight limit to the latency dial, including one low-latency row. |
@@ -317,7 +317,9 @@ flowchart TB
 ## Running
 
 <!-- BEGIN GENERATED: running -->
-_None._
+**no-cargo**
+
+- `store-law-derivation`: Store-law derivation (F01 + inputs + C02)
 <!-- END GENERATED: running -->
 
 ## Built, waiting
@@ -330,10 +332,6 @@ _None._
 **the owner's answers to the three latency-setting questions, then merge to main**
 
 - `store-w1-who-limits`: Who limits at each δ
-
-**the next VM session**
-
-- `store-s54-budget`: Store-budget test design (§54)
 
 **the leg-choice row in a VM session, then merge to main**
 
@@ -410,7 +408,7 @@ _None._
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated from nodes.yaml on 2026-11-13.
+Generated from nodes.yaml on 2026-11-14.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
@@ -423,7 +421,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 18 nodes (7 done, 1 next, 1 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 34 nodes (14 done, 6 in progress, 2 next, 5 blocked, 1 parked, 6 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 20 nodes (9 done, 1 in progress, 1 next, 5 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 28 nodes (10 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
+- [store - store law](roadmap/tracks/store.md): 29 nodes (11 done, 3 in progress, 1 next, 5 blocked, 1 parked, 8 abandoned)
 - [place - placement](roadmap/tracks/place.md): 15 nodes (4 done, 2 in progress, 1 next, 1 blocked, 7 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 24 nodes (8 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 22 nodes (13 done, 1 in progress, 1 next, 7 abandoned)
