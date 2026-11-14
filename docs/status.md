@@ -923,6 +923,11 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - **phase6's tests fail:** phase6 does not merge.
   - **treeA:** its sha is recorded as the post-F1 reference.
 
+**Amendment 1 (before any VM contact).** `viz-endspeed` was pushed and green before the archive, so it joins Part B as tree **endspeed** = `e5d04df4`: `viz-endspeed` with `phase6-forms` (and main) merged in.
+- **What it is:** the visualizer's end-of-run speed fix. `compute_r_star_exact` memoises the DP by repair count and visits only the live deficit band. The sim memoises the tail solve on exact input bits. The page gets a 12 ms frame budget.
+- **Bit-identity:** the outputs are bit-identical against `#[cfg(test)]` copies of the old functions, and the goldens are unchanged with no capture.
+- **Reading:** the same rules as phase6. It is compared with base. Since it contains phase6, endspeed = base implies phase6 = base for the engine; each is still recorded.
+
 **Not in this session.** The oracle's evicting-seat diagnostic row (m̄; `pfec-oracle-spec.md` §6) needs a harness path, a stub test and a rehearsal. It gets its own registration.
 
 **Order and length.** Part A, about 50–60 min, then Part B, four builds, each followed by the math and wasm tests: about 4 × 15–20 min. No netns and no battery; nothing runs raptorpath. `LD_HARD` does not apply; the locks are held by the runner for each part.
