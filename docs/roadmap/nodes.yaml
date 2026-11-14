@@ -1770,25 +1770,23 @@ nodes:
   title: Store-pool sweep (§56)
   track: store
   kind: instrument
-  state: next
+  state: done
   outcome: unrated
   evidence:
   - status §56
   - derivation store-law.md §13
-  verdict_quote: ''
-  headline: ''
+  verdict_quote: 'c2 and c8 have a wide flat region; c1s pays at every cut.'
+  headline: c2 flat to W 192, c8 to 512
   depends_on:
   - store-s54-budget
   - store-defect-cap-constant
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-14'
+  end: '2026-11-14'
   folded: []
   overview: false
-  vm_order: 1
-  order_reason: Owner decision 2026-11-14, the store law first; no build needed.
   plain: Measuring how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop.
   notes: 'Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law''s Part B and the owner''s U2.'
 - id: store-defect-cap-constant

@@ -32,7 +32,7 @@ flowchart TB
     store_s54_budget["✔ Store-budget test<br/>design (#167;54)"]
     store_defect_cap_constant>"⚠ Store cap constant<br/>at c8"]
     store_law_derivation["▶ Store-law derivation"]
-    store_s56_sweep["○ Store-pool sweep<br/>(#167;56)"]
+    store_s56_sweep["✔ Store-pool sweep<br/>(#167;56)"]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
@@ -116,10 +116,9 @@ flowchart TB
     class store_delta_cap vsucc
     class store_engine_form parked
     class store_w1_who_limits waiting
-    class store_s54_budget unrated
+    class store_s54_budget,store_s56_sweep unrated
     class store_defect_cap_constant defect
     class store_law_derivation inprog
-    class store_s56_sweep next
     class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
@@ -149,7 +148,7 @@ flowchart TB
 | `store-w1-who-limits` | Who limits at each δ | in-progress | unrated |  | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 | cc-bbrrs-r1, store-engine-form |
 | `store-s54-budget` | Store-budget test design (§54) | done | unrated | from a mean of about 5.3 s to about 1.0 s | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag | rec-snapver-filter |
 | `store-law-derivation` | Store-law derivation | in-progress | unrated |  | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 | store-s54-budget, store-defect-cap-constant, model-law-ledger |
-| `store-s56-sweep` | Store-pool sweep (§56) | next | unrated |  | status §56; derivation store-law.md §13 | store-s54-budget, store-defect-cap-constant |
+| `store-s56-sweep` | Store-pool sweep (§56) | done | unrated | c2 flat to W 192, c8 to 512 | status §56; derivation store-law.md §13 | store-s54-budget, store-defect-cap-constant |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
 | `store-engine-form-guard` | Store-law engine form guard | blocked | unrated |  | plan VM queue 8 | store-engine-form-impl, meas-guard-v2-impl |
 | `store-s48c-session` | δ seat diagnostic and guard (§48c) | blocked | unrated |  | plan W1.4 | store-delta-seat, meas-s51-session, meas-guard-v2-impl |

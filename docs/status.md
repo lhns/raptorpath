@@ -1128,6 +1128,87 @@ Rehearsal 2 runs on the merged tree before the full block.
 
 **Erratum to §54 Amendment 1 (test evidence).** "`STUBRUN_FULL=1` … and the 54b DNF case" was wrong for full mode. On a clean `906eed2c` the full-mode `dnf54b` stub test fails (`dnf=3`): the registered design has three seed-7 B640 rows, and the test expected one. Only fast mode passed. The test now expects 3 in full mode and 1 in fast mode. §54's real rows had 0 DNF, so no result changes.
 
+**§56 Result (REPORTED ONLY): current-era static maps. c2 and c8 have a wide flat region; c1s pays at every cut.** (2026-11-14; full run 08:59–10:25Z on main `5fdfca30`; rehearsal 2 passed at 08:45Z. Ledger: `docs/l1-raw/s56/rep56-*`. The host score `rep56-score.txt`, with the §54b re-basing, is the ledger's score; the VM's copy is `rep56-score-vm.txt`.)
+
+**Integrity.**
+- 70/70 slots LIVE: 0 void, 0 replaced, 0 DNF, 0 UNBOUND.
+- The per-arm "void" counts on c1s are the 9 quinn-collapse-flagged rows. They are set aside, not voided.
+- Every bound row has bind 1.000 with n_live = N on every LATE tick. `bin_sha` = §54's CAND.
+- **Re-basing (host, against §54b B640): NO.** Every c8 control readout is within tolerance.
+- Suite reuse hit; the bash and python tests are green.
+
+**Maps** (arm medians; goodput relative to the cell's control):
+
+| c8 W | 1280 (ctl) | 768 | 512 | 320 | 224 | 160 |
+|---|---|---|---|---|---|---|
+| goodput Mbit/s | 106.5 | 106.7 | 106.0 | 100.7 | 92.8 | 79.6 |
+| r₁ /s | 1 853 | 1 831 | 1 718 | 1 113 | 405 | 188 |
+| app-echo rtt₀ / rtt₁ ms | 96 / 150 | 57 / 92 | 39 / 61 | 26 / 47 | 20 / 46 | 16 / 46 |
+| in-order late mean s | 0.37 | 0.16 | 0.09 | 0.05 | 0.04 | 0.03 |
+
+| c2 W | 2048 (ctl) | 384 | 256 | 192 | 160 | 128 |
+|---|---|---|---|---|---|---|
+| goodput Mbit/s | 90.2 | 90.4 | 90.4 | 89.6 | 84.3 | 70.9 |
+| app-echo rtt ms | 208 | 38 | 25 | 19 | 16 | 16 |
+| in-order late mean s | 0.41 | 0.05 | 0.03 | 0.02 | 0.02 | 0.02 |
+
+| c1s W | 2048 (ctl) | 1024 | 768 | 512 | 384 |
+|---|---|---|---|---|---|
+| unflagged n | 6 | 2 | 3 | 5 | 2 |
+| goodput Mbit/s, median [range] | 875 [727–887] | 843 [832–854] | 819 [813–830] | 782 [750–785] | 689 [688–691] |
+| / control | 1 | 0.96 | 0.94 | 0.89 | 0.79 |
+| quinn backlog / W | 0.43 | 0.36 | 0.26 | 0.13 | 0.14 |
+
+**Reading.**
+- **c2:** flat down to W 192–256, at −0.7 % goodput or less.
+  - The app-echo RTT falls 208 → 19–25 ms, and the in-order delay 0.41 → 0.02–0.03 s.
+  - Below the knee, 32 slots cost 6 % and 64 cost 21 %.
+  - Every c2 prediction is in band.
+- **c8:** flat to W 512 (−0.5 %), with the in-order delay falling 0.37 → 0.09 s.
+  - **The knee (0.95 of control) is at W ≈ 340, not the predicted 500–700.** The in-order bands miss on the low side.
+  - The shoulder is leg 1 starving (r₁ 1 853 → 188), so F1 does not fire. This supports the derivation's leg coupling.
+  - The c8 control is pool 640. The comparison with the shipped pool (W 4 096) comes from §54b, on the same 600 MB rows.
+- **c1s:** no plateau (0.96 / 0.94 / 0.89 / 0.79) on small unflagged n. Within the derivation's band.
+  - **The slope is not yet a store cost.** Quinn's send-buffer backlog is 0.13–0.43 of W on unflagged c1s rows, against ≤ 0.06 at reduced c2 pools and ≤ 0.02 at c8. Who limits per tick (the W1.1 attribution classes) is not yet computed.
+  - One unflagged control row (726.7) sits next to a flagged one (725.9).
+- **Quinn collapses in 9/27 c1s rows,** with no dependence on W (P2048 3/9, P512 4/9).
+  - Post hoc: onsets are earlier at pools ≤ 512 (1–25 s, against 29–49 s).
+
+**Falsifiers.**
+- F1–F4 and F6–F8 do not fire.
+- **F5 FIRES, but that is not "Little fails".**
+  - W/ΣR − T̄ is 1.2–3.0 ms at c1s, 0.6–1.4 at c2 and 1.0–5.1 at c8.
+  - It passes 10 % of W only where the loop is 4–19 ms (c1s). There T̄ is a median of integer-millisecond echo samples, while Little needs the mean.
+  - Open: recompute per tick. A fixed residual that survives is store time outside the echo loop, and belongs in the law's reference.
+- **F9 is UNSCOREABLE** (Amendment 2): the dump row has 190 028 records.
+- **F10 is UNSCOREABLE, not passed.** At the 0.95 point c2's q (0.8 ms) is inside T₀'s spread (1.0 ms).
+  - Post hoc, at the 0.98 points all three cells clear the spread and read q/ℓ = 0.24 (c2), 1.26 (c8) and 3.85 (c1s). That is a factor 16, so the knee queue does not scale with ℓ.
+  - The allowance's form is therefore unsettled, and U2 (δ's band) is not askable yet.
+
+**The derivation's static points on these maps:**
+
+| cell | law's point | reads |
+|---|---|---|
+| c2 | 174–192 | 0.96–0.99 |
+| c2 ("expired") | 140–164 | 0.84–0.94, on the cliff |
+| c8 (coupled) | ≈ 550 | within 0.5 % of control |
+| c8 (per-leg) | 148–212 | ≈ 0.75–0.85 |
+| c1s | 370–509 | 0.79–0.89, as predicted |
+
+The derivation's "c8 −3 to −5 %, fails the guard" is to be re-checked against this.
+
+**Decision rule.** None; reported only.
+
+**Next:**
+- **Store-law derivation rev 3:**
+  - swap in these maps;
+  - find which measured quantity the knee queue scales with, since ℓ fails;
+  - explain the c8 knee miss;
+  - put the margin above the knee, sized by the estimator bound;
+  - redo the F5 residual per tick.
+- **c1s:** per-tick attribution of who limits. A closed-loop c1s test waits for the controller question (owner).
+- **Not offered:** an interim smaller fixed pool. It would be a pin, not a law.
+
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
 
 **What.** One row per law and per estimator that feeds a law: 70 rows (12 estimators, 6 δ maps, 6 flow-control, 9 rate, 10 span/shed/emission, 13 recovery, 10 scheduler/CC, 4 wasm). Each row records:
