@@ -128,8 +128,13 @@ pub fn pooled_store_cap(
 ///
 /// Shape pinned by `formula_agreement::published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band`.
 pub fn codel_setpoint_q(b_hint: f64) -> f64 {
-    let b_lo = delta_budget_b(ProtocolHint::Realtime);
-    let b_hi = delta_budget_b(ProtocolHint::Bulk);
+    // The band ends are the dial's two named points, read from the hint table
+    // and never from `RWM_DELTA`: the override moves the operating point
+    // `b_hint`, not the band. Reading both ends through `delta_price` made
+    // them equal under the override, so `t` was 0/0 and the store cap NaN,
+    // pinned at its floor (tests/delta_override_store_cap.rs).
+    let b_lo = delta_budget_b_of(crate::scheduler::hint_delta_price(ProtocolHint::Realtime));
+    let b_hi = delta_budget_b_of(crate::scheduler::hint_delta_price(ProtocolHint::Bulk));
     let t = (b_hint.clamp(b_lo, b_hi) - b_lo) / (b_hi - b_lo);
     CODEL_TARGET_LO + (CODEL_TARGET_HI - CODEL_TARGET_LO) * t
 }
