@@ -206,13 +206,12 @@ pub fn trailing_offset_delta(rate: f64, jitter: f64) -> f64 {
     (rate * jitter.max(0.0)).ceil().clamp(1.0, 64.0)
 }
 
-/// §5.6: the derived shed budget — the residual the design already
-/// concedes past in-window FEC at the live operating point:
-///   1−ρ = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)).
-/// A hole is sheddable iff its projected delivery exceeds D(δ) and
-/// cumulative shed stays within this budget; past-budget candidates are
-/// served — ρ wins over δ. On the ρ = 1 retain contract the law is
-/// compiled out entirely.
+/// §5.6: the residual R after in-window FEC at the live operating point:
+///   R = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)).
+/// It is one input of the give-up budget min(1 − ρ, R) (`giveup_budget`);
+/// ρ is the declared dial, not derived from R. A hole is sheddable iff its
+/// age exceeds D(δ) and cumulative shed stays within the budget;
+/// past-budget candidates are served — ρ wins over δ.
 #[wasm_bindgen]
 pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst: f64) -> f64 {
     let e = eps_hat.clamp(0.0, 1.0);
