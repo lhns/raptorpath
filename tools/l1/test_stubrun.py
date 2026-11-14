@@ -176,10 +176,10 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
     if not FULL:
         shrink(tools)
     tree = {"raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
-            "Cargo.toml": "[workspace]\n", "Cargo.lock": "# lock\n", "raptorpath-math/src/lib.rs": "// math\n", "raptorpath-wasm/src/lib.rs": "// wasm\n",
+            "Cargo.toml": "[workspace]\n", "Cargo.lock": "# lock\n", "raptorpath-math/src/lib.rs": "// math\n", "raptorpath-core/src/lib.rs": "// core\n", "raptorpath-wasm/src/lib.rs": "// wasm\n",
             "gf256/src/lib.rs": "// gf",
             "vendor/quinn-proto/Cargo.toml": "[package]\n", "vendor/quinn-proto/src/lib.rs": "// vendored\n"}
-    for crate in ("gf256", "raptorpath", "raptorpath-math", "raptorpath-wasm"):
+    for crate in ("gf256", "raptorpath", "raptorpath-math", "raptorpath-core", "raptorpath-wasm"):
         tree[crate + "/Cargo.toml"] = "[package]\nname = \"%s\"\n" % crate
     tree.update(edits or {})
     for rel, text in tree.items():
@@ -245,7 +245,7 @@ def era(sb):
     return open(p, errors="replace").read() if os.path.exists(p) else ""
 
 
-MANIFEST_DIRS = ("raptorpath/src", "raptorpath/tests", "raptorpath-math/src", "raptorpath-wasm/src", "gf256/src", "vendor")
+MANIFEST_DIRS = ("raptorpath/src", "raptorpath/tests", "raptorpath-math/src", "raptorpath-core/src", "raptorpath-wasm/src", "gf256/src", "vendor")
 
 
 def manifest_py(repo):
@@ -267,7 +267,7 @@ def tail(s, n=25):
 
 EXECUTED = set()
 EXTRA_DONE = set()
-EXTRA_MISMATCH = ("Cargo.lock", "Cargo.toml", "raptorpath-math/Cargo.toml", "vendor/quinn-proto/src/lib.rs", "raptorpath-wasm/src/lib.rs", "raptorpath-math/src/lib.rs", "gf256/src/lib.rs")
+EXTRA_MISMATCH = ("Cargo.lock", "Cargo.toml", "raptorpath-math/Cargo.toml", "raptorpath-core/Cargo.toml", "vendor/quinn-proto/src/lib.rs", "raptorpath-wasm/src/lib.rs", "raptorpath-math/src/lib.rs", "raptorpath-core/src/lib.rs", "gf256/src/lib.rs")
 
 
 def extra_mismatch(rel):

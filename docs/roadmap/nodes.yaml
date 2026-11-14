@@ -1789,6 +1789,93 @@ nodes:
   overview: false
   plain: Measuring how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop.
   notes: 'Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law''s Part B and the owner''s U2.'
+- id: store-s57a-burst
+  title: Emission-burst block at c1s (§57a)
+  track: store
+  kind: instrument
+  state: done
+  outcome: unrated
+  evidence:
+  - status §57a Result
+  verdict_quote: 'UNDERPOWERED.'
+  headline: burst knob reaches 79 at 256; S 0.62
+  depends_on:
+  - store-s56-sweep
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded: []
+  overview: false
+  plain: Testing whether the number of packets the sender releases at once holds extra queue on the fast single-path link.
+  notes: 'Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds.'
+- id: store-s57b-c1d
+  title: c1d pool sweep and transfer test T (§57b)
+  track: store
+  kind: instrument
+  state: done
+  outcome: unrated
+  evidence:
+  - status §57b Result
+  verdict_quote: 'T = UNSCOREABLE.'
+  headline: c1d store-bound only at W <= 512; T not reached
+  depends_on:
+  - store-s56-sweep
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded: []
+  overview: false
+  plain: Measuring the two-path link at six store sizes to see whether its throughput depends on standing queue the way the fast link's does.
+  notes: 'Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms.'
+- id: store-defect-delta-nan
+  title: RWM_DELTA pins the store cap at its floor (F1)
+  track: store
+  kind: defect-verdict
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status "Engine defect F1"
+  - derivation shared-core-design.md F1
+  verdict_quote: 'With RWM_DELTA set, q(delta) = 0/0 = NaN.'
+  headline: fix on f1-delta-nan, red test green
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-14'
+  end: null
+  folded: []
+  overview: false
+  plain: Fixing a bug where setting the delay dial by number made the in-flight data limit collapse to its minimum.
+  notes: 'Fix 39008a01 awaits the VM engine suites; must merge before §51 (the delta sweep).'
+- id: model-shared-core
+  title: Model shares engine laws and decisions (ADR-0077)
+  track: model
+  kind: infra
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - ADR-0077
+  - derivation shared-core-design.md
+  - derivation visualizer-drift-2026-11.md
+  verdict_quote: 'Formulas move to raptorpath-math, decisions to raptorpath-core.'
+  headline: steps 0.1-0.3 running
+  depends_on:
+  - model-wasm-audit
+  - infra-restructure
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-14'
+  end: null
+  folded: []
+  overview: false
+  plain: Letting the visualizer call the same code as the engine, so the model cannot drift from it.
+  notes: 'Owner decision 2026-11-14. Engine moves are zero-behaviour-change (pins, ns bench, guard). Store, recovery and placement stay unshared until the model has a queue and gap reports.'
 - id: store-defect-cap-constant
   title: Store cap constant at c8
   track: store
@@ -3596,7 +3683,7 @@ nodes:
   title: Wasm mode-switch audit
   track: model
   kind: research
-  state: in-progress
+  state: done
   outcome: successful
   evidence:
   - derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit)
@@ -3610,7 +3697,7 @@ nodes:
   qualified_by: []
   lane: no-cargo
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-14'
   folded: []
   overview: false
   plain: Checked the visualizer's model for hidden mode switches before its formulas move into the shared library.
@@ -4844,20 +4931,21 @@ nodes:
   title: Owner calls on wasm audit
   track: model
   kind: user-decision
-  state: next
+  state: done
   outcome: n/a
   evidence:
+  - status "Owner decisions (2026-11-14)"
   - status §3.10 items 1 and 3
   - docs/derivations/wasm-modeswitch-audit.md
-  verdict_quote: ''
+  verdict_quote: 'All three were decided as recommended after Fable''s review.'
   headline: ''
   depends_on:
   - model-wasm-audit
   replaced_by: []
   qualified_by: []
   lane: user
-  start: ''
-  end: ''
+  start: '2026-11-14'
+  end: '2026-11-14'
   folded: []
   overview: false
   plain: Owner decision on how to clean up the visualizer's model, including removing a second, unused copy of the machine.
@@ -5092,7 +5180,7 @@ nodes:
   title: Wasm model fixes
   track: model
   kind: mechanism
-  state: blocked
+  state: in-progress
   outcome: unrated
   evidence:
   - CLAUDE.md NO-MODE-SWITCH

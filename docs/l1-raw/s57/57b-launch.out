@@ -1,0 +1,54 @@
+SENTINEL-WRITABLE /dev/shm/s57b/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s57b/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-14T16:12:10Z user=VMUSER dir=/dev/shm/s57b/run launch=2026-11-14T16:12:10Z
+LD-ALL start plan=57b load=0.09 0.19 1.03 1/379 2760927 2026-11-14T16:12:10Z
+LD-ALL precondition met procs_running=[1,2,1,1,1,] cargo=0 rustc=0 io=full avg10=2.73 avg60=1.08 avg300=0.25 total=5022896374 2026-11-14T16:12:18Z
+LD-ALL plan 57b budget: 8992s to LD_HARD (at least 5400s required: the worst case of the status) 2026-11-14T16:12:18Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.08 0.18 1.02; io=full avg10=2.73 avg60=1.08 avg300=0.25 total=5022896374 2026-11-14T16:12:18Z
+LD-ALL plan 57b pre-flight: 5599396 KB free on /dev/shm (need 1048576) 2026-11-14T16:12:18Z
+LD-ALL parser test ok 2026-11-14T16:13:58Z
+LD-ALL built wall=389s 2026-11-14T16:20:27Z
+LD-ALL binary 8f313616b31ac6f4d6346cf03bfcf6246983c426fec4e08951d09d3faf921cbf 2026-11-14T16:20:27Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s57b/src/tools/l1/ref56-manifest.sha256, 182 files) 2026-11-14T16:20:27Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-14T16:28:05Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-14T16:28:06Z
+LD-ALL suites done tfail=0 2026-11-14T16:28:06Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.03 avg60=0.06 avg300=0.08 total=5025164797 2026-11-14T16:28:14Z
+LD-ALL stage rep57b (plan 57b) smoke; procs_running=[1,1,3,1,10,] cargo=0 rustc=0 io=full avg10=0.50 avg60=0.17 avg300=0.11 total=5025248972 2026-11-14T16:28:22Z
+SMOKE57B rows=2/2 (pools 192 and 2048 per path; the values are not read, only the criteria below)
+PASS one row per smoke slot ran
+  ROW c1d-400 P192: status=LIVE mbps=552.369 wall=75.0 gates pool=192/192 pool_per_path=192/192 W=384.0 bind=1.0 late_n=270 R=58062.270029673586 burst=45.44067520372526 (d_bursts 85900, d_syms 3903354) release=63.45678891923527 aW=0.8338541666666667 q_ell=3.1322087523486157 ell=2.5410284415304654 qc=0.006993006993006993
+  ROW c1d-400 P2048: status=LIVE mbps=711.402 wall=58.0 gates pool=2048/2048 pool_per_path=2048/2048 W=3867.990243902439 bind=0.3463414634146341 late_n=205 R=76215.85127201566 burst=62.34647506557456 (d_bursts 62143, d_syms 3874397) release=201.9492832942403 aW=0.7475342959633372 q_ell=35.12568278544009 ell=2.826298802967162 qc=0.02262443438914027
+PASS each row's pool AND burst are in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)
+PASS the successor dump is off on both ends
+PASS every row ran the one seat's binary (LD_SHA)
+PASS the LATE-window readouts (rates, rtt, rtp and its lifetime minimum, T-bar, q_l, burst gauges, release batch, ack wakes, a/W, busy, ack-wait, collapse share) computed on every row (no None)
+PASS every smoke row finished inside RWM_PERF_TIMEOUT_S=300 (rc 0, a summary, not DNF) at 5 GB
+  LIVENESS c1d-400 P192 s42 rep1: LIVE 
+  LIVENESS c1d-400 P2048 s42 rep1: LIVE 
+SMOKE-PASS
+LD-ALL stage rep57b SMOKE-PASS 2026-11-14T16:30:38Z
+LD-ALL stage rep57b battery rc=0 wall=1834s 2026-11-14T17:01:12Z
+CHECK57B done=True slots=30/30 rows=30 extra=0
+LD-ALL stage rep57b end ok=1 VERDICT57B REPORTED-ONLY slots=30/30 live=30 void=0 replaced=0 dnf=0 unbound=0 collapse=3 T=UNSCOREABLE a_all=UNSCOREABLE a_unf=UNSCOREABLE control_q=31.5 d0=2.64 2026-11-14T17:01:12Z
+LD-ALL end plan 57b rep57b_ok=1 raptorpath=0 netns=0 2026-11-14T17:01:12Z
+PERSISTED /dev/shm/s57b/run -> ~/s57b/run 2026-11-14T17:01:13Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

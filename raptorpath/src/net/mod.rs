@@ -3752,6 +3752,8 @@ mod tests;
 mod sack_memo_tests;
 #[cfg(test)]
 mod hotpath_pin;
+#[cfg(test)]
+mod decision_trace_pin;
 
 /// Resolves when the process is asked to stop: SIGINT (`ctrl_c`, every
 /// platform) or SIGTERM (unix). Returns `true` when a signal arrived and

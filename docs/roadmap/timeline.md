@@ -94,6 +94,9 @@ gantt
     Store-budget test design (§54) :store_s54_budget, 2026-11-13, 2026-11-13
     Store-law derivation :active, store_law_derivation, 2026-11-14, 2026-11-14
     Store-pool sweep (§56) :store_s56_sweep, 2026-11-14, 2026-11-14
+    Emission-burst block at c1s (§57a) :store_s57a_burst, 2026-11-14, 2026-11-14
+    c1d pool sweep and transfer test T (§57… :store_s57b_c1d, 2026-11-14, 2026-11-14
+    RWM_DELTA pins the store cap at its flo… :active, store_defect_delta_nan, 2026-11-14, 2026-11-14
     Store cap constant at c8 :active, store_defect_cap_constant, 2026-11-13, 2026-11-14
     Latency Lever battery :store_latency_lever, 2026-08-10, 2026-08-10
     SF latency feedback :store_sf_latency_feedback, 2026-08-12, 2026-08-12
@@ -181,6 +184,7 @@ gantt
     QUIC/MPTCP comparison and overhead taxo… :meas_transport_comparison, 2026-03-17, 2026-03-18
     Matrix benchmark, audit and dashboard :meas_matrix_bench, 2026-03-20, 2026-03-20
     section model - model and paper
+    Model shares engine laws and decisions… :active, model_shared_core, 2026-11-14, 2026-11-14
     Unified FEC/ARQ model paper :model_paper_v1, 2026-03-21, 2026-04-12
     Mathematical verification of the model :model_math_verification, 2026-04-12, 2026-04-12
     raptorpath-math and wasm L0 model :model_wasm_l0, 2026-04-07, 2026-07-06
@@ -190,11 +194,12 @@ gantt
     Model review (§37) :model_review_37, 2026-11-10, 2026-11-10
     Paper versus engine reconciliation :active, model_paper_recon, 2026-11-12, 2026-11-14
     Bounding tests for divergences :model_bound_tests, 2026-11-12, 2026-11-12
-    Wasm mode-switch audit :active, model_wasm_audit, 2026-11-13, 2026-11-14
+    Wasm mode-switch audit :model_wasm_audit, 2026-11-13, 2026-11-14
     T_cut give-up law pinned :active, model_defect_tcut, 2026-11-13, 2026-11-14
     Wasm dead second machine :active, model_defect_dead_machine, 2026-11-13, 2026-11-14
     Erratum - pre-flight tests not run :active, model_bound_tests_unrun, 2026-11-13, 2026-11-14
     Law ledger :model_law_ledger, 2026-11-13, 2026-11-13
+    Owner calls on wasm audit :model_user_wasm_calls, 2026-11-14, 2026-11-14
     section obs - observability
     Runtime status endpoint (ADR-0013) :obs_status_endpoint, 2026-03-12, 2026-03-12
     [GATES] liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09
@@ -217,5 +222,5 @@ gantt
     Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-wasm-calls`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->
