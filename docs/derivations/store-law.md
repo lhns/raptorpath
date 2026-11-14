@@ -175,17 +175,35 @@ ms). Above that it is flat (≈ 0.01 per ms), where ±0.08 spans ±8 ms of q and
 - **Disclosed:** p34's contaminated c1d, re-read in q_ℓ from its window medians, sits inside (a)'s band at 384 and
   512 (q_ℓ ≈ 2.2 and 3.0; 0.76 and 0.87 against c1s's 0.80 and 0.90). It is not counted.
 
-### R6.5 Registration: the burst arm and the c1d pool sweep (reported only, no build; copyable into status; amended after review)
+**Amendment (after the second review).** Three rules are added; the band is unchanged.
+
+**1. Floor offset.** T's x-axis carries each cell's no-queue offset, δ₀ = T₀ − ℓ̂: the no-queue echo loop above the
+lifetime echo minimum. At c1s it is 4.0 − 2.5 ≈ 1.5 ms, while the falsifying region is only 0.6 ms wide.
+- **Measurement:** c1d's offset is its smallest store-bound pool's q_ℓ, which is predicted to be at or near no queue.
+  Both offsets are reported.
+- **"Offset differs" reading:** if |δ₀(c1d) − δ₀(c1s)| > 0.5 ms, (a) is also read on the offset-corrected axis
+  q_ℓ − δ₀. If (a) passes on one axis and fails on the other, the reading is **OFFSET DIFFERS**: the cells' no-queue
+  floors differ, and the queue relation is not tested.
+- **No extrapolation:** an (a) point outside c1d's measured q_ℓ range (its arm medians' min to max) is **UNSCOREABLE**.
+
+**2. Flagged rows.** T is read twice: on all rows, and on unflagged rows only. The c1d flag flagged nothing on today's
+engine at guard size (R6.5). If the two readings disagree (one passes (a), the other fails), T is **UNSCOREABLE**.
+
+**3. Store-bound pools.** T is read only on c1d pools whose mean a/W is ≥ 0.80 (see R6.5's bind check). A pool below
+0.80 is not store-bound, and reads a different regime.
+
+
+### R6.5 Registration: two launches, §57a (the burst block) and §57b (the c1d pool sweep) (reported only, no build; copyable into status; amended after the second review)
 
 **Why.**
 - At c1s, more standing queue keeps buying goodput (R6.1). Two sender-side mechanisms could size that queue: the
   emission burst (F03's `RWM_EMIT_BURST`, pinned at 64 on c1s/c1d) and the ack-driven release batch.
-- **A null burst result means only "not the emission burst"**, not "the receiver". The release batch is the other
-  sender-side candidate, and it is a readout here.
-- The c1d sweep is the held-out map for R6.4's T.
-- No build: both knobs exist on main. The session runs before the gauge build (B-1).
+- **A null burst result means only "not the emission burst"**, not "the receiver".
+- §57b is the held-out c1d map for R6.4's T.
+- No build: both knobs exist on main. Both launches run before the gauge build (B-1).
+- **The block is split into two launches**, because the burst block alone has a worst case of ≈ 3.7 h (below).
 
-**What §56 already shows about the release batch** (`c1srows.py` → `c1srows.out`, unflagged c1s rows, free):
+**What §56 already shows about the release batch** (`c1srows.py` → `c1srows.out`, unflagged c1s rows):
 
 | c1s W | 384 | 512 | 768 | 1 024 | 2 048 |
 |---|---|---|---|---|---|
@@ -195,115 +213,189 @@ ms). Above that it is flat (≈ 0.01 per ms), where ±0.08 spans ±8 ms of q and
 | mean a/W | 0.85 | 0.85–0.86 | 0.85–0.87 | 0.86–0.88 | 0.87–0.92 |
 | sender busy % / ack-wait % | 41–43 / 90–91 | 45 / 81–84 | 48 / 61–68 | 48–50 / 57–66 | 45–57 / 45–61 |
 
-- **The store is released in ≈ 4–5 batches per echo loop at W ≤ 768,** each ≈ 0.2·W. The batch therefore scales with
-  W, not with the burst cap. That fits the 0.85 mean occupancy: a sawtooth of about one batch.
-- At small W the sender waits on acks 81–91 % of its waits.
-- **This is the release granularity:** a fixed fraction of the window per report, so a per-loop cadence. It is
-  registered as a readout on every arm.
+At W ≤ 768 the store is released in ≈ 4–5 batches per loop, each ≈ 0.2·W. This is registered as a readout in both
+launches.
 
-**The burst hypothesis, restated against Little.** With bind 1.0, a ≈ 0.85·W, and Q = a − R·T₀. At W 1 024 that is
-Q ≈ 890 − 89.5 k/s × 4 ms ≈ 532 symbols.
-- So a ΔQ of +96 at fixed W needs either R to fall by ≈ 24 k/s (−27 %), or the occupancy to rise from 0.87 to 0.96
-  of W. Neither is what the burst hypothesis says. **Revision 6's ΔQ = +96 prediction was ill-posed**, and it is
-  withdrawn.
-- **The hypothesis as a shift of §56's R(W) map:** if the emission burst holds ΔQ_b = (b̄ − b̄₆₄)/2 extra symbols of
-  store that buy no transit, then R_b(W) = R₆₄(W − ΔQ_b). Here b̄ is the realised mean burst, not the cap.
-- §56's local slopes are ≈ 75 /s per slot between 384 and 512, ≈ 15.6 between 512 and 768, and ≈ 11.5 between 768 and
-  1 024 (from 86 525 → 89 457).
-- At W 1 024 a 96-slot shift is ≈ −1.2 %, below resolution. At W 512 the same shift lands on the steep side.
+**Common to both launches.**
+- **Tree:** current main, pinned by amendment.
+- **Pool knob:** `RWM_STORE_PATH_POOL` as §56. The ceiling is max(N·pool, floor), boot min(128, store_max), and every
+  W ≥ 384 > 128.
+- **Burst knob:** `RWM_EMIT_BURST` (`gates.rs:194/363`, default 64, clamped [2, 512], echoed at `gates.rs:443`).
+- **Scrub:** `-u RWM_STORE_PATH_POOL -u RWM_EMIT_BURST`.
+- **Suites:** engine suites are skipped only on a byte-identical reuse-manifest hit against §56's tree. The tools
+  tests and `LD_REHEARSE=1` always run.
+- **Run settings:** Bulk, `--window-reliable`, `RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300`, 5 GB.
+- **Liveness:** `[GATES]` echoes the requested pool and burst on both ends. Otherwise the row is VOID and replaced
+  once.
+- **Bind:** a non-control row binds if its bind fraction is ≥ 0.95. Otherwise it is reported at its realised cap and
+  not replaced.
 
-**Primary burst W: 512 (pool 512).**
-- The left slope is steep (75 /s per slot).
-- The row spread is tight: R 80.3–83.3 k (sd ≈ 1.3 %), q 1.11–1.28 ms, n = 5 (`c1srows.out`). At 1 024 the two rows
-  read q 4.8 against 5.8 ms.
-- The realised burst at W 512 is bounded by the release batch (≈ 105 symbols per wake), so under cap 256 the
-  predicted b̄ is ≈ 90–105, against 48 under cap 64. That gives ΔQ_b ≈ +21 to +29 slots.
-- **Predicted:** R₂₅₆(512) ≈ R₆₄(487) ≈ 80.8 k/s, i.e. **−1.9 k/s, −2.3 %**. By Little at fixed occupancy,
-  ΔQ = −T₀·ΔR ≈ **+8 symbols**.
-- **Power:** with n = 12 and a per-row R sd of ≈ 1.1 k/s, the arm-median difference has SE ≈ 0.65 k/s. So −1.9 k is
-  ≈ 2.9 SE: a marginal but scoreable test. W 1 024 would give ≈ 0.6 SE, so it is not run.
-- **The collapse rate is high at pools ≤ 512** (§56: 4/9 at P512), which is why n = 12.
+---
 
-**Tree, knobs, suites.**
-- Tree: current main, pinned by amendment.
-- `RWM_STORE_PATH_POOL` as §56: the ceiling is max(N·pool, floor), boot min(128, store_max), and every W ≥ 384 > 128.
-- `RWM_EMIT_BURST`: `gates.rs:194/363`, default 64, clamped [2, 512], echoed at `gates.rs:443`.
-- The battery scrubs `-u RWM_STORE_PATH_POOL -u RWM_EMIT_BURST`.
-- Engine suites are skipped only on a byte-identical reuse-manifest hit against §56's tree. The tools tests and
-  `LD_REHEARSE=1` always run.
+#### §57a. The burst block (c1s)
 
-**Arms** (Bulk, `--window-reliable`, `RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300`, 5 GB):
+**Arms** (c1s-400, n = 21 each, 63 rows):
 
-| block | arms | n | rows |
+| arm | pool (W) | `RWM_EMIT_BURST` | role |
 |---|---|---|---|
-| **Burst** (c1s-400, pool 512, W = 512) | `RWM_EMIT_BURST` = **64 (control)** and **256 (the clean arm)** | 12 each | 24 |
-| | `RWM_EMIT_BURST` = 16 (CPU-confounded, secondary) | 6 | 6 |
-| **c1d sweep** (c1d-400) | pools 2 048 (**W 4 096, control = shipped**), 1 024, 768, 512, 384, 256, 192 (W 2 048 … 384) | 5 | 35 |
+| **B64-512** | 512 (512) | 64 (shipped) | control, re-based against §56's P512 |
+| **B64-448** | 448 (448) | 64 | the in-session map: the R₆₄ chord from 448 to 512 |
+| **B256-512** | 512 (512) | 256 | the test arm |
 
-- **Total:** 65 rows, plus a 3-row smoke (c1s burst 256; c1d pools 192 and 2 048).
-- **Order:** burst block, then c1d. Latin-square rotation within a block, seeds 42 / 7 alternating.
-- **Length:**
+- The burst-16 arm is dropped.
+- **Order:** Latin-square rotation over the three arms per replicate, seeds 42 / 7 alternating.
+- **Smoke:** one B256-512 row. It must read a realised mean burst > 64 (Δ`eb_syms`/Δ`eb_bursts` over LATE);
+  otherwise **ABORT-SMOKE**, because the knob does not act.
 
-  | | typical | worst |
-  |---|---|---|
-  | rows | ≈ 65 × 75 s ≈ 81 min | + ≈ 13 collapsed c1s rows at up to 300 s ≈ +50 min |
-  | with tools tests, rehearsal and overheads | **≈ 2 h 15** | **≈ 2 h 55** |
+**Why n = 21.**
+- Every arm needs ≥ 8 unflagged rows: the interpolation uses all three arms.
+- §56 collapsed 4/9 rows at P512; pooled over c1s it was 9/27 = 1/3.
+- With X ~ Binomial(n, 1 − f), P(X ≥ 8):
 
-  `LD_HARD` = launch + 3.5 h.
+  | f | n 12 | 14 | 16 | 18 | 20 | **21** | 24 |
+  |---|---|---|---|---|---|---|---|
+  | 1/3 | 0.632 | 0.851 | 0.950 | 0.986 | 0.996 | **0.998** | 1.000 |
+  | 4/9 | 0.318 | 0.563 | 0.759 | 0.882 | 0.948 | **0.966** | 0.992 |
 
-**Liveness (voiding, replaced once).**
-- `[GATES]` echoes the requested pool and burst on both ends.
-- A non-control row binds if its bind fraction is ≥ 0.95; otherwise it is reported at its realised cap and not
-  replaced. Controls are exempt.
-- **Knob action:** the realised mean burst (Δ`eb_syms`/Δ`eb_bursts`, LATE) must be ≤ 16 under cap 16 and > 64 under
-  cap 256. Otherwise the arm is `INERT`, reported, and read no further.
+- At n = 21, all three arms clear 8 with p = 0.966³ ≈ **0.90** at f = 4/9, and 0.998³ ≈ 0.99 at f = 1/3.
+- At n = 16, the three arms would clear together with only 0.76³ ≈ 0.44 at f = 4/9.
 
-**Flags (never voiding; flagged rows enter no median):**
-- **c1s:** §56 Amendment 2's collapse flag.
-- **c1d: both legs below BDP in > 0.10 of windows** (`c1dflag.py`). Its validation:
-  - **§53's 30 c1d 5 GB rows (pre-law engine):** it flags 5 rows, with goodput median 729 Mbit/s (365–807), against
-    unflagged rows at median 827 (741–863). The gap is **−12 %**. c1s's single-leg rule would flag 17/30, including
-    rows at 828–863.
-  - **§54's 24 guard c1d rows (today's engine, `c1dflag54.out`):** it flags 0. These are 400 MB, 3.8 s rows with ≈ 11
-    windows each, where start-up dilutes the share (Amendment 2: the threshold holds for 5 GB rows only).
-    - The single-leg rule flags 3 rows (810–870 Mbit/s, against 817–936 unflagged), so today's engine shows no
-      measurable flagged gap at guard size.
-    - **The validation on today's engine is therefore at 5 GB only, in this session.** Each row's both-leg and
-      one-leg shares are reported, and the flagged-against-unflagged goodput gap is a readout.
-  - **Minimum per pool:** at least **3 unflagged rows** per c1d pool for any c1d reading. With n = 5 and §53's flag rate
-    of 5/30, P(< 3) ≈ 0.04 per pool. A pool below the minimum is `UNREAD`.
-- **Burst block:** at least **8 unflagged rows** per arm for the burst-64 and burst-256 arms. Below that, the
-  primary readout is `UNSCOREABLE`.
-- **CPU:** client and server CPU/GB on every row. Burst 16 is read only if its client CPU/GB is within 5 % of the
-  control.
+**The hypothesis, read directly from the session.** Let b̄₆₄ and b̄₂₅₆ be the realised mean bursts at W 512. If the
+emission burst holds ΔQ_b = (b̄₂₅₆ − b̄₆₄)/2 slots of store that buy no transit, then:
+
+```text
+   R_pred  =  R₆₄(512)  −  (ΔQ_b / 64) · ( R₆₄(512) − R₆₄(448) )
+```
+
+Burst 256 at W 512 then sits ΔQ_b/64 of the way from the 512 control down to the 448 arm. All three terms are
+in-session, so neither §56's map nor any drift enters. The chord is linear between two in-session points; §56's
+384–512 chord (75 /s per slot, its 384 end on 2 rows, and the map concave there) is no longer used.
+
+**Scoring.** Every R is the per-arm median lap rate over unflagged rows. Each arm's SE = 1.253·sd/√n_u, from that
+arm's own realised unflagged row count and sd.
+- z_null = (R₂₅₆ − R₆₄(512)) / √(SE₂₅₆² + SE₅₁₂²).
+- z_hyp = (R₂₅₆ − R_pred) / SE_pred, where SE_pred combines all three arms' SEs.
+- Separation S = (ΔQ_b/64)·(R₆₄(512) − R₆₄(448)) / √(SE₂₅₆² + SE₅₁₂²): the predicted shift in SE units.
+
+**Pre-registered expectation.**
+- b̄₂₅₆ ≈ 90–105, because the release batch (≈ 105 per wake at W 512) caps the burst, against b̄₆₄ ≈ 48. So
+  ΔQ_b ≈ 21–29 slots.
+- The chord R₆₄(512) − R₆₄(448) is ≈ 2–4.8 k/s; 4.8 k is §56's upper bound, which concavity lowers.
+- So the predicted shift is ≈ −0.7 to −2.2 k/s. At n_u ≈ 12 per arm (row sd ≈ 1.1 k) the separation is S ≈ 1.2–3.9.
+
+**Outcome table** (every reading uses the realised b̄ and the in-session chord):
+
+| reading | condition | what it means (stated now) |
+|---|---|---|
+| **UNDERPOWERED** | S < 2 | the burst's predicted shift is below resolution at this chord. E1/E2 are not read; the arms are reported |
+| **E1: BURST HOLDS STORE** | S ≥ 2, z_null ≤ −2 and \|z_hyp\| < 2 | the emission burst holds wasted store at c1s, sized as predicted: F03's cost |
+| **E2: NOT THE BURST** | S ≥ 2, \|z_null\| < 1 and z_hyp ≥ +2 | the predicted shift is absent; the receiver and the release batch remain |
+| **RISING** | z_null ≥ +2 | a larger burst *raises* c1s's rate, through fewer wakes (CPU) or larger receiver batches. F03's cap of 64 then costs goodput rather than holding store; read with the CPU gate |
+| **PARTIAL** | S ≥ 2, z_null ≤ −2 and z_hyp ≤ −2 or ≥ +2 | a burst effect exists but is not (b − 1)/2-sized; reported with its ratio to the prediction |
+| **INCONCLUSIVE** | any other combination | reported |
+
+How a realised burst outside the expected band is treated:
+- **b̄₂₅₆ between 64 and 90:** scored with that b̄. The shift is smaller, and UNDERPOWERED is likelier.
+- **b̄₂₅₆ above 105:** scored with that b̄. The release batch is then not the burst's bound, and that is reported.
+- **b̄₂₅₆ ≤ 64:** the arm is INERT; the smoke already aborts on this.
+
+**Gates on the reading (reported, never voiding).**
+- **CPU on both test arms.** The client CPU/GB of B256-512 and of B64-448 must each be within 5 % of B64-512's.
+  Otherwise that arm's reading is labelled **CPU-CONFOUNDED**. Burst 256 is not assumed clean: larger bursts can help
+  CPU or receiver batching (RISING).
+- **Collapse rate per arm.** It is the share of rows flagged by §56 Amendment 2's c1s rule, registered per arm. If
+  B256-512's rate differs from B64-512's by more than 0.25 (absolute), the unflagged subsets are differently selected,
+  and the reading is labelled **BIASED**.
+- **Re-basing of B64-512 against §56's P512,** with the same lap-rate definition: §56's unflagged median is 82.7 k/s,
+  range 80.3–83.3 k. It is re-based if the in-session median lies outside 82.7 k ± 3.0 k (the §56 range, floored at
+  1 %). The scoring uses only in-session arms, so re-basing reports drift; it changes no reading.
 
 **Readouts.**
-- **Burst block, primary:** R (lap rate) at W 512, from per-tick-mean based statistics.
-- **Burst block, secondary:**
-  - Q = a − R·T₀, from the mean counted store and per-tick-mean rates, with T₀ fixed at §56's c1s value of 4.0 ms
-    (not a floor over the burst arms);
+- **Primary:** R per arm.
+- **Secondary:**
+  - Q = a − R·T₀, from the mean counted store and per-tick-mean rates, with T₀ fixed at §56's c1s 4.0 ms;
   - q from 0.1 ms per-tick means;
   - the realised mean burst;
-  - the release batch, ack wakes per loop and mean a/W (as the table above);
+  - the release batch and its share of W, ack wakes per loop, and mean a/W;
   - sender busy and ack-wait %;
-  - goodput and CPU/GB.
-- **c1d:** per pool, goodput/control and q_ℓ (R6.4's definition), R, a/W, the release batch and ack wakes per loop,
-  the both-leg and one-leg flag shares, and CPU/GB.
+  - goodput, client and server CPU/GB, and the collapse share per arm.
+- **E5:** release batch / W at W 512 outside 0.17–0.24 in any arm. That means the release is not per-loop as §56 read
+  it.
 
-**Falsifiers.**
+**Length.**
 
-| # | what fires it | what it means |
+| | rows | estimate |
 |---|---|---|
-| E1 | burst 256 R ≤ R₆₄ − 1.3 k/s (2 SE), with the realised b̄ 90–105 | the emission burst holds wasted store at c1s: F03's cost |
-| E2 | burst 256 \|ΔR\| < 0.65 k/s (1 SE) | **not the emission burst.** The receiver and the release batch remain |
-| E3 | burst 256 ΔR between those | inconclusive, reported |
-| E4 | burst 16 ΔR | reported only (predicted +0.3 %, below resolution; CPU-confounded) |
-| E5 | release batch / W at W 512 outside 0.17–0.24 in any arm | the release granularity is not per-loop as §56 read it |
-| T(a) | R6.4 | as R6.4 |
+| unflagged | ≈ 35–42 | × 75 s ≈ 44–53 min |
+| collapsed, typical | ≈ 21–28 | × ≈ 120 s (§56's collapsed rows ran 237–800 Mbit/s, ≈ 50–170 s) ≈ 42–56 min |
+| plus tools tests, rehearsal and smoke | — | ≈ 30 min |
 
-**Decision rule.** None; reported only.
-- E1/E2 decide only whether F03's burst owns any of c1s's queue.
-- T decides whether the steep part of the receiver-bound relation transfers across path counts.
+- Typical ≈ **2 h 10**.
+- Worst with every collapsed row at §56's slowest (170 s): ≈ 2 h 45.
+- Worst with every collapsed row at the 300 s timeout: ≈ 3 h 40.
+- `LD_HARD` = launch + 4 h.
+
+---
+
+#### §57b. The c1d pool sweep
+
+**Bind check, from §53's 30 c1d 5 GB rows at the shipped law** (`c1dcap.py` → `c1dcap.out`):
+- np = 2 on every row.
+- The late cap has a median of 3 568 (row medians 3 206–4 096); its p10 is 2 052–4 096, median 2 850.
+- The mean a/W is 0.42–0.69 on 29 rows (0.97 and 0.86 on the two collapse rows), i.e. ≈ 1 700–2 300 symbols of
+  occupancy.
+- So **any pool W ≤ 2 048 binds the cap** (the law's ask exceeds 2 052 on ≥ 90 % of ticks on every row).
+- But the store fills only where W drops below the occupancy the receiver-bound pair holds, ≈ 1 700–2 300 symbols.
+- **W 2 048 would be cap-bound but likely store-open**, the same regime as the control. It is dropped.
+- **W 1 536 is the first store-bound candidate.** Each pool's mean a/W is reported, and T reads only pools at
+  a/W ≥ 0.80 (R6.4 amendment).
+
+**Arms** (c1d-400, n = 5 each, 30 rows):
+
+| arm | pool (W) |
+|---|---|
+| **control** (shipped) | 2 048 (4 096) |
+| | 768 (1 536) |
+| | 512 (1 024) |
+| | 384 (768) |
+| | 256 (512) |
+| | 192 (384) |
+
+- **Order:** Latin-square rotation, seeds 42 / 7 alternating.
+- **Smoke:** pools 192 and 2 048.
+
+**Flags (never voiding; flagged rows enter no median).**
+- **c1d collapse: both legs below BDP in > 0.10 of windows** (`c1dflag.py`). Its validation:
+  - **§53's 5 GB rows (pre-law engine):** it flags 5 of 30, goodput median 729 against unflagged 827 (−12 %).
+  - **§54's 24 guard rows (today's engine, 400 MB):** it flags 0 (`c1dflag54.out`).
+  - **So validation on today's engine is in-session:** the flagged-against-unflagged goodput gap is a readout, and T
+    is read on all rows and on unflagged rows (R6.4 amendment).
+- **Minimum:** ≥ 3 unflagged rows per pool for any reading. P(< 3 of 5) ≈ 0.04 per pool at §53's 5/30 rate. A pool
+  below the minimum is `UNREAD`.
+- CPU/GB is reported per pool.
+
+**Readouts** (per pool): goodput/control; q_ℓ and c1d's floor offset δ₀ (R6.4); R; a/W; the release batch and ack
+wakes per loop; both-leg and one-leg flag shares; CPU/GB.
+
+**Predictions:** R6.4 (a), (b) and (c), with the amendment's offset, range and flag rules.
+
+**Length.**
+
+| | rows | estimate |
+|---|---|---|
+| all rows | 30 | × 75 s ≈ 38 min |
+| collapses, typical | ≈ 5 | + ≈ 4 min |
+| collapses, worst (5 rows at 300 s) | ≈ 5 | + ≈ 19 min |
+| plus tools tests, rehearsal and smoke | — | ≈ 30 min |
+
+- Typical ≈ **1 h 15**; worst ≈ 1 h 30.
+- `LD_HARD` = launch + 2.5 h.
+
+---
+
+**Decision rule (both launches).** None; reported only.
+- §57a decides only whether F03's burst holds, or costs, any of c1s's queue.
+- §57b decides whether the steep part of the receiver-bound relation transfers across path counts.
 - Neither changes the time law. B-1 follows.
 
 ### R6.6 Removed: R5.8
