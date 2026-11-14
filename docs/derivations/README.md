@@ -12,6 +12,7 @@ section it feeds.
 | `dup-diag.md` | why c8 duplicates doubled under the 64-gap horizon: packet-threshold fires on gap snapshots applied out of receiver order; the snapshot-order law, shipped (paper §7.1) | status §52, §53, ADR-0059 |
 | `visualizer-drift-2026-11.md` | is the L0 model (wasm + page) current against the engine and the measured findings; which audit defects still stand; what to update, in order (audit, no model change) | law ledger M01–M04, C13, R03; `wasm-modeswitch-audit` |
 | `shared-core-design.md` | which engine decisions can move into an I/O-free, wasm32-clean `raptorpath-core` shared with the L0 model; seams, phased zero-behaviour-change order, CLAUDE.md scope amendment (design, for the owner) | ADR-0076 phase 6, W3.2 |
+| `giveup-law-model.md` | the model's give-up law at ρ < 1: budget = min(1 − ρ, R) after the deadline D(δ), replacing V5/V6 and W14 (owner decision 2026-11-14 item 3) | derivation, Fable round 1; implementation next |
 | `store-law.md` (+ `store-law/`) | what size the sender store should be: a time law (no rate input), its anchor and b₀ sources, the C02 horizon coupling, per-cell predictions and a reported-only diagnostic (derivation, for review) | status §54b, §55 F01/E03/E04/C02 |
 | `wasm-modeswitch-audit.md` | which hint-, δ- or ρ-keyed sites in the L0 model are mode switches, and what replaces each (open: owner calls on give-up options (i) vs (ii), gate :181, W22 code-vs-paper divergence and its paper-vs-pin conflict, fixed r) | ADR-0076 phase 6 |
 
