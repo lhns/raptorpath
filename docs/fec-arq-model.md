@@ -1720,9 +1720,14 @@ shed law derives both ends from the triangle:
 
 ```text
    D(δ)    =  min( b(δ)·RTT , 2·RTT )                             shed deadline
-   1 − ρ   =  ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst))            shed budget
-   shed  ⇔  age > D(δ)   ∧   shed_total + 1 ≤ (1 − ρ)·src_total
+   R       =  ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst))            residual after in-window FEC
+   budget  =  min( 1 − ρ , R )                                    ρ = the declared contract dial
+   shed  ⇔  age > D(δ)   ∧   shed_total + 1 ≤ budget·src_total
 ```
+
+R is derived; ρ is declared and independent of it. The engine evaluates the
+law at two seats only: the evicting seat runs budget = R, the retain seat
+budget = 0; the model agrees at ρ = 1 and wherever 1 − ρ ≥ R (Section 11.3).
 
 `shed_deadline_us`, `shed_allowed` (`net/shed.rs`),
 `control/fec_rate.rs::residual_loss_after_fec`; gate `RWM_UNIFIED_SHED`,
@@ -4347,6 +4352,7 @@ decide it.
 | per-path loss feed | wire loss of the path's own direction | the sender's own ack deltas only (`WindowAck` counters, or the per-batch `Ack` with `RWM_ACK_MERGE=0`), reorder credited back by the tracker and carried by the sender, never negative; the peer's `PathReport` loss is monitoring only, and the receiver's incoming loss feeds the RX slot. Window batches carry one symbol, so the tracker's `gap × received` charge is exact (`test_path_batch_tracker_with_gap`); datagrams dropped in quinn's buffers count as loss and are named by `[DIAG] dgev` / `[CTLD] dgrx` |
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
+| give-up budget (Section 5.6) | `min(1 − ρ, R)` after D(δ); ρ = 1 is the retain seat at every δ (budget 0) | seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R, the retain seat 0. Agrees at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`) |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
 
 The per-path loss feed's two laws (the row above). Tracker, per arriving

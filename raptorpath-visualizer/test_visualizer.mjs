@@ -380,6 +380,36 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     `fec@300 ${aLo.fec300}/${a0.fec300}/${aHi.fec300}, fec_end ${aLo.fecEnd}/${a0.fecEnd}/${aHi.fecEnd}, ticks ${aLo.ticks}/${a0.ticks}/${aHi.ticks}`);
 }
 
+// --- 7d4. The give-up law, option (ii) (docs/derivations/giveup-law-model.md):
+// give up a hole iff age > D(δ) and given_up + 1 <= min(1 − ρ, R)·src_total.
+// ρ = 1 is the retain point of the dial (budget 0, no branch). Checked at
+// Auto and Realtime on harsh cells where budget·src_total >= 1, through the
+// sim's own readouts; given_up counts are REPORTED, the law is asserted.
+{
+  for (const [name, dp] of [["auto", 0.5], ["realtime", 50]]) {
+    for (const eps of [0.20, 0.30]) {
+      const run = (rho) => {
+        const s = new api.Simulation(eps, 0.1, 100, 64, "continuum", undefined, dp, rho);
+        let maxCap = 0, t = 0, formOk = true;
+        while (!s.is_finished() && t++ < 20000) {
+          s.step();
+          maxCap = Math.max(maxCap, s.get_giveup_budget() * s.get_total_src());
+          formOk = formOk && s.get_giveup_budget() ===
+            Math.min(Math.max(1 - rho, 0), s.get_giveup_residual());
+        }
+        return { s, maxCap, formOk };
+      };
+      const lo = run(0.95), hi = run(1.0);
+      check(`give-up law ${name} ε=${eps}: ρ<1 gives up within min(1−ρ,R)·src, ρ=1 never`,
+        lo.maxCap >= 1 && lo.s.get_given_up() > 0 &&
+        lo.s.get_given_up() <= Math.ceil(lo.maxCap) &&
+        hi.s.get_given_up() === 0 && hi.s.get_giveup_budget() === 0 &&
+        lo.formOk && hi.formOk,
+        `given_up=${lo.s.get_given_up()} (max budget·src ${lo.maxCap.toFixed(2)}), ρ=1: ${hi.s.get_given_up()}`);
+    }
+  }
+}
+
 // --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the
 // path-scaled pool and ≤ the frontier-clocked counterfactual; the pool
 // BINDS when cap·RTT outgrows it.
