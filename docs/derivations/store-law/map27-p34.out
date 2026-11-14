@@ -30,30 +30,54 @@ n	rows	good	g/Gmax	Little n/sum(lam*srtt)	p0: lam/s m Tmin Tp50 S brake srtt	p1:
   ratioL G=0.9 H=eps expired q=0.0500  ask/n: 384:0.93 512:0.90 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
   ratioL G=0.9 H=eps expired q=0.0667  ask/n: 384:0.94 512:0.91 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
   ratioL G=0.9 H=eps expired q=0.1000  ask/n: 384:0.95 512:0.92 768:0.88 1024:0.90 1536:0.78 2048:0.86  crossings: none
-  ratioX G=1.0 H=0   fresh   q=0.0500  ask/n: 384:1.06 512:1.00 768:0.95 1024:0.95 1536:0.85 2048:0.94  crossings: S531
-  ratioX G=1.0 H=0   fresh   q=0.0667  ask/n: 384:1.07 512:1.01 768:0.96 1024:0.95 1536:0.85 2048:0.95  crossings: S566
-  ratioX G=1.0 H=0   fresh   q=0.1000  ask/n: 384:1.09 512:1.03 768:0.97 1024:0.96 1536:0.85 2048:0.95  crossings: S631
-  ratioX G=1.0 H=0   expired q=0.0500  ask/n: 384:1.06 512:1.00 768:0.96 1024:0.99 1536:0.86 2048:0.94  crossings: S537
-  ratioX G=1.0 H=0   expired q=0.0667  ask/n: 384:1.07 512:1.01 768:0.97 1024:0.99 1536:0.87 2048:0.95  crossings: S582
-  ratioX G=1.0 H=0   expired q=0.1000  ask/n: 384:1.09 512:1.03 768:0.98 1024:1.00 1536:0.87 2048:0.95  crossings: S664 U1020 S1025
-  ratioX G=1.0 H=eps fresh   q=0.0500  ask/n: 384:1.06 512:1.00 768:0.95 1024:0.95 1536:0.85 2048:0.94  crossings: S531
-  ratioX G=1.0 H=eps fresh   q=0.0667  ask/n: 384:1.07 512:1.01 768:0.96 1024:0.95 1536:0.85 2048:0.95  crossings: S566
-  ratioX G=1.0 H=eps fresh   q=0.1000  ask/n: 384:1.09 512:1.03 768:0.97 1024:0.96 1536:0.85 2048:0.95  crossings: S631
-  ratioX G=1.0 H=eps expired q=0.0500  ask/n: 384:1.06 512:1.00 768:0.96 1024:0.99 1536:0.86 2048:0.94  crossings: S537
-  ratioX G=1.0 H=eps expired q=0.0667  ask/n: 384:1.07 512:1.01 768:0.97 1024:0.99 1536:0.87 2048:0.95  crossings: S582
-  ratioX G=1.0 H=eps expired q=0.1000  ask/n: 384:1.09 512:1.03 768:0.98 1024:1.00 1536:0.87 2048:0.95  crossings: S664 U1020 S1025
-  ratioX G=0.9 H=0   fresh   q=0.0500  ask/n: 384:0.96 512:0.90 768:0.86 1024:0.85 1536:0.76 2048:0.85  crossings: none
-  ratioX G=0.9 H=0   fresh   q=0.0667  ask/n: 384:0.96 512:0.91 768:0.86 1024:0.86 1536:0.76 2048:0.85  crossings: none
-  ratioX G=0.9 H=0   fresh   q=0.1000  ask/n: 384:0.98 512:0.92 768:0.87 1024:0.87 1536:0.77 2048:0.86  crossings: none
-  ratioX G=0.9 H=0   expired q=0.0500  ask/n: 384:0.96 512:0.90 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
-  ratioX G=0.9 H=0   expired q=0.0667  ask/n: 384:0.96 512:0.91 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
-  ratioX G=0.9 H=0   expired q=0.1000  ask/n: 384:0.98 512:0.92 768:0.88 1024:0.90 1536:0.78 2048:0.86  crossings: none
-  ratioX G=0.9 H=eps fresh   q=0.0500  ask/n: 384:0.96 512:0.90 768:0.86 1024:0.85 1536:0.76 2048:0.85  crossings: none
-  ratioX G=0.9 H=eps fresh   q=0.0667  ask/n: 384:0.96 512:0.91 768:0.86 1024:0.86 1536:0.76 2048:0.85  crossings: none
-  ratioX G=0.9 H=eps fresh   q=0.1000  ask/n: 384:0.98 512:0.92 768:0.87 1024:0.87 1536:0.77 2048:0.86  crossings: none
-  ratioX G=0.9 H=eps expired q=0.0500  ask/n: 384:0.96 512:0.90 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
-  ratioX G=0.9 H=eps expired q=0.0667  ask/n: 384:0.96 512:0.91 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
-  ratioX G=0.9 H=eps expired q=0.1000  ask/n: 384:0.98 512:0.92 768:0.88 1024:0.90 1536:0.78 2048:0.86  crossings: none
+  ratioX G=1.0 H=0   fresh   q=0.0500  ask/n: 384:1.05 512:1.00 768:0.95 1024:0.94 1536:0.84 2048:0.94  crossings: S518
+  ratioX G=1.0 H=0   fresh   q=0.0667  ask/n: 384:1.06 512:1.01 768:0.96 1024:0.94 1536:0.85 2048:0.94  crossings: S555
+  ratioX G=1.0 H=0   fresh   q=0.1000  ask/n: 384:1.08 512:1.02 768:0.97 1024:0.95 1536:0.85 2048:0.95  crossings: S622
+  ratioX G=1.0 H=0   expired q=0.0500  ask/n: 384:1.04 512:1.00 768:0.96 1024:0.99 1536:0.86 2048:0.94  crossings: S514
+  ratioX G=1.0 H=0   expired q=0.0667  ask/n: 384:1.05 512:1.01 768:0.97 1024:0.99 1536:0.87 2048:0.95  crossings: S565
+  ratioX G=1.0 H=0   expired q=0.1000  ask/n: 384:1.07 512:1.02 768:0.98 1024:1.00 1536:0.87 2048:0.95  crossings: S654 U1020 S1025
+  ratioX G=1.0 H=eps fresh   q=0.0500  ask/n: 384:1.05 512:1.00 768:0.95 1024:0.94 1536:0.85 2048:0.94  crossings: S518
+  ratioX G=1.0 H=eps fresh   q=0.0667  ask/n: 384:1.06 512:1.01 768:0.96 1024:0.94 1536:0.85 2048:0.94  crossings: S555
+  ratioX G=1.0 H=eps fresh   q=0.1000  ask/n: 384:1.08 512:1.02 768:0.97 1024:0.95 1536:0.85 2048:0.95  crossings: S622
+  ratioX G=1.0 H=eps expired q=0.0500  ask/n: 384:1.04 512:1.00 768:0.96 1024:0.99 1536:0.86 2048:0.94  crossings: S514
+  ratioX G=1.0 H=eps expired q=0.0667  ask/n: 384:1.05 512:1.01 768:0.97 1024:0.99 1536:0.87 2048:0.95  crossings: S565
+  ratioX G=1.0 H=eps expired q=0.1000  ask/n: 384:1.07 512:1.02 768:0.98 1024:1.00 1536:0.87 2048:0.95  crossings: S655 U1020 S1025
+  ratioX G=0.9 H=0   fresh   q=0.0500  ask/n: 384:0.95 512:0.90 768:0.85 1024:0.85 1536:0.76 2048:0.85  crossings: none
+  ratioX G=0.9 H=0   fresh   q=0.0667  ask/n: 384:0.95 512:0.91 768:0.86 1024:0.85 1536:0.76 2048:0.85  crossings: none
+  ratioX G=0.9 H=0   fresh   q=0.1000  ask/n: 384:0.97 512:0.92 768:0.87 1024:0.86 1536:0.77 2048:0.85  crossings: none
+  ratioX G=0.9 H=0   expired q=0.0500  ask/n: 384:0.94 512:0.90 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
+  ratioX G=0.9 H=0   expired q=0.0667  ask/n: 384:0.94 512:0.91 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
+  ratioX G=0.9 H=0   expired q=0.1000  ask/n: 384:0.96 512:0.92 768:0.88 1024:0.90 1536:0.78 2048:0.86  crossings: none
+  ratioX G=0.9 H=eps fresh   q=0.0500  ask/n: 384:0.95 512:0.90 768:0.86 1024:0.85 1536:0.76 2048:0.85  crossings: none
+  ratioX G=0.9 H=eps fresh   q=0.0667  ask/n: 384:0.95 512:0.91 768:0.86 1024:0.85 1536:0.76 2048:0.85  crossings: none
+  ratioX G=0.9 H=eps fresh   q=0.1000  ask/n: 384:0.97 512:0.92 768:0.87 1024:0.86 1536:0.77 2048:0.85  crossings: none
+  ratioX G=0.9 H=eps expired q=0.0500  ask/n: 384:0.94 512:0.90 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
+  ratioX G=0.9 H=eps expired q=0.0667  ask/n: 384:0.94 512:0.91 768:0.87 1024:0.89 1536:0.78 2048:0.85  crossings: none
+  ratioX G=0.9 H=eps expired q=0.1000  ask/n: 384:0.96 512:0.92 768:0.88 1024:0.90 1536:0.78 2048:0.86  crossings: none
+  ratioE G=1.0 H=0   fresh   q=0.0500  ask/n: 384:1.05 512:1.00 768:0.95 1024:0.94 1536:0.88 2048:0.95  crossings: S517
+  ratioE G=1.0 H=0   fresh   q=0.0667  ask/n: 384:1.06 512:1.01 768:0.96 1024:0.95 1536:0.88 2048:0.95  crossings: S553
+  ratioE G=1.0 H=0   fresh   q=0.1000  ask/n: 384:1.08 512:1.02 768:0.97 1024:0.96 1536:0.89 2048:0.96  crossings: S621
+  ratioE G=1.0 H=0   expired q=0.0500  ask/n: 384:1.03 512:1.00 768:0.96 1024:1.00 1536:0.90 2048:0.95  crossings: S511
+  ratioE G=1.0 H=0   expired q=0.0667  ask/n: 384:1.04 512:1.01 768:0.97 1024:1.00 1536:0.90 2048:0.95  crossings: S562 U1018 S1028
+  ratioE G=1.0 H=0   expired q=0.1000  ask/n: 384:1.06 512:1.02 768:0.98 1024:1.01 1536:0.91 2048:0.96  crossings: S653 U936 S1073
+  ratioE G=1.0 H=eps fresh   q=0.0500  ask/n: 384:1.05 512:1.00 768:0.95 1024:0.94 1536:0.88 2048:0.95  crossings: S517
+  ratioE G=1.0 H=eps fresh   q=0.0667  ask/n: 384:1.06 512:1.01 768:0.96 1024:0.95 1536:0.88 2048:0.95  crossings: S553
+  ratioE G=1.0 H=eps fresh   q=0.1000  ask/n: 384:1.08 512:1.02 768:0.97 1024:0.96 1536:0.89 2048:0.96  crossings: S621
+  ratioE G=1.0 H=eps expired q=0.0500  ask/n: 384:1.03 512:1.00 768:0.96 1024:1.00 1536:0.90 2048:0.95  crossings: S511
+  ratioE G=1.0 H=eps expired q=0.0667  ask/n: 384:1.04 512:1.01 768:0.97 1024:1.00 1536:0.90 2048:0.95  crossings: S562 U1018 S1028
+  ratioE G=1.0 H=eps expired q=0.1000  ask/n: 384:1.06 512:1.02 768:0.98 1024:1.01 1536:0.91 2048:0.96  crossings: S653 U936 S1073
+  ratioE G=0.9 H=0   fresh   q=0.0500  ask/n: 384:0.95 512:0.90 768:0.86 1024:0.85 1536:0.79 2048:0.85  crossings: none
+  ratioE G=0.9 H=0   fresh   q=0.0667  ask/n: 384:0.95 512:0.91 768:0.86 1024:0.85 1536:0.79 2048:0.86  crossings: none
+  ratioE G=0.9 H=0   fresh   q=0.1000  ask/n: 384:0.97 512:0.92 768:0.87 1024:0.86 1536:0.80 2048:0.86  crossings: none
+  ratioE G=0.9 H=0   expired q=0.0500  ask/n: 384:0.93 512:0.90 768:0.87 1024:0.90 1536:0.81 2048:0.86  crossings: none
+  ratioE G=0.9 H=0   expired q=0.0667  ask/n: 384:0.94 512:0.91 768:0.87 1024:0.90 1536:0.81 2048:0.86  crossings: none
+  ratioE G=0.9 H=0   expired q=0.1000  ask/n: 384:0.96 512:0.92 768:0.88 1024:0.91 1536:0.82 2048:0.86  crossings: none
+  ratioE G=0.9 H=eps fresh   q=0.0500  ask/n: 384:0.95 512:0.90 768:0.86 1024:0.85 1536:0.79 2048:0.85  crossings: none
+  ratioE G=0.9 H=eps fresh   q=0.0667  ask/n: 384:0.95 512:0.91 768:0.86 1024:0.85 1536:0.79 2048:0.86  crossings: none
+  ratioE G=0.9 H=eps fresh   q=0.1000  ask/n: 384:0.97 512:0.92 768:0.87 1024:0.86 1536:0.80 2048:0.86  crossings: none
+  ratioE G=0.9 H=eps expired q=0.0500  ask/n: 384:0.93 512:0.90 768:0.87 1024:0.90 1536:0.81 2048:0.86  crossings: none
+  ratioE G=0.9 H=eps expired q=0.0667  ask/n: 384:0.94 512:0.91 768:0.87 1024:0.90 1536:0.81 2048:0.86  crossings: none
+  ratioE G=0.9 H=eps expired q=0.1000  ask/n: 384:0.96 512:0.92 768:0.88 1024:0.91 1536:0.82 2048:0.86  crossings: none
   ratio G=1.0 H=0   fresh   q=0.0500  ask/n: 384:1.06 512:1.00 768:0.95 1024:0.94 1536:0.85 2048:0.94  crossings: S535
   ratio G=1.0 H=0   fresh   q=0.0667  ask/n: 384:1.07 512:1.01 768:0.96 1024:0.95 1536:0.85 2048:0.94  crossings: S575
   ratio G=1.0 H=0   fresh   q=0.1000  ask/n: 384:1.09 512:1.03 768:0.97 1024:0.96 1536:0.86 2048:0.95  crossings: S648
@@ -138,27 +162,51 @@ n	rows	good	g/Gmax	Little n/sum(lam*srtt)	p0: lam/s m Tmin Tp50 S brake srtt
   ratioX G=1.0 H=0   fresh   q=0.0500  ask/n: 256:1.08 384:0.99 512:0.98 768:0.92 1024:0.86 1536:0.68 2048:0.70  crossings: S370
   ratioX G=1.0 H=0   fresh   q=0.0667  ask/n: 256:1.09 384:1.00 512:0.98 768:0.92 1024:0.87 1536:0.69 2048:0.70  crossings: S385
   ratioX G=1.0 H=0   fresh   q=0.1000  ask/n: 256:1.11 384:1.02 512:1.00 768:0.94 1024:0.88 1536:0.69 2048:0.70  crossings: S509
-  ratioX G=1.0 H=0   expired q=0.0500  ask/n: 256:1.08 384:1.02 512:1.01 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S561
-  ratioX G=1.0 H=0   expired q=0.0667  ask/n: 256:1.09 384:1.03 512:1.02 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S590
-  ratioX G=1.0 H=0   expired q=0.1000  ask/n: 256:1.11 384:1.05 512:1.03 768:0.97 1024:0.92 1536:0.79 2048:0.73  crossings: S645
+  ratioX G=1.0 H=0   expired q=0.0500  ask/n: 256:1.06 384:1.02 512:1.01 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S561
+  ratioX G=1.0 H=0   expired q=0.0667  ask/n: 256:1.08 384:1.03 512:1.02 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S590
+  ratioX G=1.0 H=0   expired q=0.1000  ask/n: 256:1.10 384:1.05 512:1.03 768:0.97 1024:0.92 1536:0.79 2048:0.73  crossings: S645
   ratioX G=1.0 H=eps fresh   q=0.0500  ask/n: 256:1.08 384:0.99 512:0.98 768:0.92 1024:0.86 1536:0.69 2048:0.70  crossings: S370
   ratioX G=1.0 H=eps fresh   q=0.0667  ask/n: 256:1.09 384:1.00 512:0.98 768:0.92 1024:0.87 1536:0.69 2048:0.70  crossings: S385
   ratioX G=1.0 H=eps fresh   q=0.1000  ask/n: 256:1.11 384:1.02 512:1.00 768:0.94 1024:0.88 1536:0.69 2048:0.71  crossings: S509
-  ratioX G=1.0 H=eps expired q=0.0500  ask/n: 256:1.08 384:1.02 512:1.01 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S561
-  ratioX G=1.0 H=eps expired q=0.0667  ask/n: 256:1.09 384:1.03 512:1.02 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S590
-  ratioX G=1.0 H=eps expired q=0.1000  ask/n: 256:1.11 384:1.05 512:1.03 768:0.97 1024:0.92 1536:0.79 2048:0.73  crossings: S645
+  ratioX G=1.0 H=eps expired q=0.0500  ask/n: 256:1.06 384:1.02 512:1.01 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S561
+  ratioX G=1.0 H=eps expired q=0.0667  ask/n: 256:1.08 384:1.03 512:1.02 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S590
+  ratioX G=1.0 H=eps expired q=0.1000  ask/n: 256:1.10 384:1.05 512:1.03 768:0.97 1024:0.92 1536:0.79 2048:0.73  crossings: S645
   ratioX G=0.9 H=0   fresh   q=0.0500  ask/n: 256:0.97 384:0.89 512:0.88 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
   ratioX G=0.9 H=0   fresh   q=0.0667  ask/n: 256:0.98 384:0.90 512:0.89 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
   ratioX G=0.9 H=0   fresh   q=0.1000  ask/n: 256:1.00 384:0.92 512:0.90 768:0.84 1024:0.79 1536:0.62 2048:0.63  crossings: none
-  ratioX G=0.9 H=0   expired q=0.0500  ask/n: 256:0.97 384:0.92 512:0.91 768:0.85 1024:0.82 1536:0.70 2048:0.65  crossings: none
-  ratioX G=0.9 H=0   expired q=0.0667  ask/n: 256:0.98 384:0.93 512:0.92 768:0.86 1024:0.82 1536:0.70 2048:0.65  crossings: none
-  ratioX G=0.9 H=0   expired q=0.1000  ask/n: 256:1.00 384:0.95 512:0.93 768:0.87 1024:0.83 1536:0.71 2048:0.66  crossings: none
+  ratioX G=0.9 H=0   expired q=0.0500  ask/n: 256:0.96 384:0.92 512:0.91 768:0.85 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioX G=0.9 H=0   expired q=0.0667  ask/n: 256:0.97 384:0.93 512:0.92 768:0.86 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioX G=0.9 H=0   expired q=0.1000  ask/n: 256:0.99 384:0.95 512:0.93 768:0.87 1024:0.83 1536:0.71 2048:0.66  crossings: none
   ratioX G=0.9 H=eps fresh   q=0.0500  ask/n: 256:0.97 384:0.89 512:0.88 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
   ratioX G=0.9 H=eps fresh   q=0.0667  ask/n: 256:0.98 384:0.90 512:0.89 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
   ratioX G=0.9 H=eps fresh   q=0.1000  ask/n: 256:1.00 384:0.92 512:0.90 768:0.84 1024:0.79 1536:0.62 2048:0.63  crossings: none
-  ratioX G=0.9 H=eps expired q=0.0500  ask/n: 256:0.97 384:0.92 512:0.91 768:0.85 1024:0.82 1536:0.70 2048:0.65  crossings: none
-  ratioX G=0.9 H=eps expired q=0.0667  ask/n: 256:0.98 384:0.93 512:0.92 768:0.86 1024:0.82 1536:0.70 2048:0.65  crossings: none
-  ratioX G=0.9 H=eps expired q=0.1000  ask/n: 256:1.00 384:0.95 512:0.93 768:0.87 1024:0.83 1536:0.71 2048:0.66  crossings: none
+  ratioX G=0.9 H=eps expired q=0.0500  ask/n: 256:0.96 384:0.92 512:0.91 768:0.85 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioX G=0.9 H=eps expired q=0.0667  ask/n: 256:0.97 384:0.93 512:0.92 768:0.86 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioX G=0.9 H=eps expired q=0.1000  ask/n: 256:0.99 384:0.95 512:0.93 768:0.87 1024:0.83 1536:0.71 2048:0.66  crossings: none
+  ratioE G=1.0 H=0   fresh   q=0.0500  ask/n: 256:1.08 384:0.99 512:0.98 768:0.92 1024:0.86 1536:0.68 2048:0.70  crossings: S370
+  ratioE G=1.0 H=0   fresh   q=0.0667  ask/n: 256:1.09 384:1.00 512:0.98 768:0.92 1024:0.87 1536:0.69 2048:0.70  crossings: S385
+  ratioE G=1.0 H=0   fresh   q=0.1000  ask/n: 256:1.11 384:1.02 512:1.00 768:0.94 1024:0.88 1536:0.69 2048:0.70  crossings: S509
+  ratioE G=1.0 H=0   expired q=0.0500  ask/n: 256:1.06 384:1.02 512:1.01 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S561
+  ratioE G=1.0 H=0   expired q=0.0667  ask/n: 256:1.07 384:1.03 512:1.02 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S590
+  ratioE G=1.0 H=0   expired q=0.1000  ask/n: 256:1.09 384:1.05 512:1.03 768:0.97 1024:0.92 1536:0.79 2048:0.73  crossings: S645
+  ratioE G=1.0 H=eps fresh   q=0.0500  ask/n: 256:1.08 384:0.99 512:0.98 768:0.92 1024:0.86 1536:0.69 2048:0.70  crossings: S370
+  ratioE G=1.0 H=eps fresh   q=0.0667  ask/n: 256:1.09 384:1.00 512:0.98 768:0.92 1024:0.87 1536:0.69 2048:0.70  crossings: S385
+  ratioE G=1.0 H=eps fresh   q=0.1000  ask/n: 256:1.11 384:1.02 512:1.00 768:0.94 1024:0.88 1536:0.69 2048:0.71  crossings: S509
+  ratioE G=1.0 H=eps expired q=0.0500  ask/n: 256:1.06 384:1.02 512:1.01 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S561
+  ratioE G=1.0 H=eps expired q=0.0667  ask/n: 256:1.07 384:1.03 512:1.02 768:0.95 1024:0.91 1536:0.78 2048:0.72  crossings: S590
+  ratioE G=1.0 H=eps expired q=0.1000  ask/n: 256:1.09 384:1.05 512:1.03 768:0.97 1024:0.92 1536:0.79 2048:0.73  crossings: S645
+  ratioE G=0.9 H=0   fresh   q=0.0500  ask/n: 256:0.97 384:0.89 512:0.88 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
+  ratioE G=0.9 H=0   fresh   q=0.0667  ask/n: 256:0.98 384:0.90 512:0.89 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
+  ratioE G=0.9 H=0   fresh   q=0.1000  ask/n: 256:1.00 384:0.92 512:0.90 768:0.84 1024:0.79 1536:0.62 2048:0.63  crossings: none
+  ratioE G=0.9 H=0   expired q=0.0500  ask/n: 256:0.95 384:0.92 512:0.91 768:0.85 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioE G=0.9 H=0   expired q=0.0667  ask/n: 256:0.96 384:0.93 512:0.92 768:0.86 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioE G=0.9 H=0   expired q=0.1000  ask/n: 256:0.98 384:0.95 512:0.93 768:0.87 1024:0.83 1536:0.71 2048:0.66  crossings: none
+  ratioE G=0.9 H=eps fresh   q=0.0500  ask/n: 256:0.97 384:0.89 512:0.88 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
+  ratioE G=0.9 H=eps fresh   q=0.0667  ask/n: 256:0.98 384:0.90 512:0.89 768:0.83 1024:0.78 1536:0.62 2048:0.63  crossings: none
+  ratioE G=0.9 H=eps fresh   q=0.1000  ask/n: 256:1.00 384:0.92 512:0.90 768:0.84 1024:0.79 1536:0.62 2048:0.63  crossings: none
+  ratioE G=0.9 H=eps expired q=0.0500  ask/n: 256:0.95 384:0.92 512:0.91 768:0.85 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioE G=0.9 H=eps expired q=0.0667  ask/n: 256:0.96 384:0.93 512:0.92 768:0.86 1024:0.82 1536:0.70 2048:0.65  crossings: none
+  ratioE G=0.9 H=eps expired q=0.1000  ask/n: 256:0.98 384:0.95 512:0.93 768:0.87 1024:0.83 1536:0.71 2048:0.66  crossings: none
   ratio G=1.0 H=0   fresh   q=0.0500  ask/n: 256:1.08 384:0.99 512:0.98 768:0.92 1024:0.86 1536:0.69 2048:0.70  crossings: S375
   ratio G=1.0 H=0   fresh   q=0.0667  ask/n: 256:1.09 384:1.00 512:0.99 768:0.93 1024:0.87 1536:0.69 2048:0.70  crossings: S417
   ratio G=1.0 H=0   fresh   q=0.1000  ask/n: 256:1.12 384:1.02 512:1.00 768:0.94 1024:0.88 1536:0.70 2048:0.71  crossings: S530

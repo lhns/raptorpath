@@ -17,6 +17,9 @@ Two forms of one sentence (G = 1 is the derived form; G < 1 is shown because the
   of q*(m_i + b0_i):  sum_i lam_i*(m_i + b0_i + q*l_i + S_i) / sum_i lam_i*Tp50_i   (the derived form, doc sec. 3)
   'ratioX' as 'ratioL' with each leg's floor target raised to the slowest leg's lifetime floor (the in-order
   coupling, owner option O1): target_i = max(m_i + b0_i, max_j (l_j + b0_j)) + q*l_i
+  'ratioE' as 'ratioL' with equal leg weights (the mean of each leg's own ratio) instead of delivered share.
+  ratioX takes each leg's lifetime floor from the cell (min boot anchor over all caps), so a leg idle at one cap
+  still sets F there, as in the engine, where every live leg has a boot anchor.
   The ratio form is the rate form with lam_i := (n - H) * w_i / Tp50-weighted (Little); it reads no absolute rate and
   is immune to the store-vs-echo accounting offset (the release lag; column 'Little' = n / sum lam*srtt).
   H0 = 0 ;  H1 = sum_i eps_i * lam_i * 2 * srtt_i   (a lost symbol holds its slot ~ two loops: detect + repair)
@@ -84,12 +87,19 @@ def ask(n, a, q, G, b0, anchor, hole, eps, form):
     for p, L in a['legs'].items():
         mm = L['m'] if anchor == 'fresh' else L['floor']
         if form == 'ratioX':
-            F = max(LL['m'] + b0.get(pp, 0.0) for pp, LL in a['legs'].items())
+            # the slowest live leg's lifetime floor, from the cell (every live leg has a boot anchor,
+            # even at a cap where placement leaves it idle)
+            F = max(LIFE[pp] + b0.get(pp, 0.0) for pp in LIFE)
             s += L['lam'] * (max(mm + b0.get(p, 0.0), F) + q * L['m'] + (L['Tp50'] - L['Tmin'])) / 1e3
-        elif form == 'ratioL':
+        elif form in ('ratioL', 'ratioE'):
             s += L['lam'] * (mm + b0.get(p, 0.0) + q * L['m'] + (L['Tp50'] - L['Tmin'])) / 1e3
         else:
             s += L['lam'] * ((1 + q) * (mm + b0.get(p, 0.0)) + (L['Tp50'] - L['Tmin'])) / 1e3
+    if form == 'ratioE':
+        # equal leg weights instead of delivered share: each live leg's own target/measured ratio, averaged
+        rs = [(mm_ + b0.get(p, 0.0) + q * L['m'] + (L['Tp50'] - L['Tmin'])) / L['Tp50']
+              for p, L in a['legs'].items() for mm_ in [(L['m'] if anchor == 'fresh' else L['floor'])]]
+        return H + G * max(n - H, 0.0) * sum(rs) / len(rs)
     if form in ('ratio', 'ratioL', 'ratioX'):
         return H + G * max(n - H, 0.0) * s / (sum(L['lam'] * L['Tp50'] for L in a['legs'].values()) / 1e3)
     return H + G * s
@@ -98,6 +108,10 @@ def ask(n, a, q, G, b0, anchor, hole, eps, form):
 for c in sorted(cells):
     caps = sorted(cells[c])
     A = {n: agg(cells[c][n]) for n in caps}
+    LIFE = {}
+    for n in caps:
+        for p_, L_ in A[n]['legs'].items():
+            LIFE[p_] = min(LIFE.get(p_, 1e9), L_['m'])
     gmax = max(A[n]['g'] for n in caps)
     legs = sorted({p for n in caps for p in A[n]['legs']})
     b0 = {p: med([A[n]['legs'][p]['Tmin'] - A[n]['legs'][p]['m'] for n in caps[:2] if p in A[n]['legs']]) for p in legs}
@@ -111,7 +125,7 @@ for c in sorted(cells):
             '%.0f %.1f %.1f %.1f %.1f %.1f %.1f' % (L['lam'], L['m'], L['Tmin'], L['Tp50'], L['Tp50'] - L['Tmin'],
                                                      L['Tmin'] - L['m'], L['srtt'])
             for p, L in sorted(a['legs'].items())))
-    for form, G, hole, anchor, q in [(f, G, h, an, q) for f in ('ratioL', 'ratioX', 'ratio', 'rate') for G in (1.0, 0.9)
+    for form, G, hole, anchor, q in [(f, G, h, an, q) for f in ('ratioL', 'ratioX', 'ratioE', 'ratio', 'rate') for G in (1.0, 0.9)
                                      for h in (False, True) for an in ('fresh', 'expired')
                                      for q in (0.05, 0.0667, 0.10)]:
                     r = [ask(n, A[n], q, G, b0, anchor, hole, EPS.get(c, {}), form) / n for n in caps]
