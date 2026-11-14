@@ -881,6 +881,90 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+**§57b Result (`LD_PLAN=57b`, the c1d pool sweep and the transfer test T, REPORTED ONLY): T = UNSCOREABLE.** Every scoreable (a) point passes, but c1d's smallest store-bound pool does not reach q_ℓ = 2.1 ms. (2026-11-14; rows 16:30–17:01Z on main `02ecbdd7`. Host cargo was paused throughout. Ledger: `docs/l1-raw/s57/rep57b-*`, `57b-*`.)
+
+**Integrity.**
+- **Binary:** `8f313616…`, the same binary as §54's CAND, §56 and §57a.
+- **Suites and tests:** suite-reuse HIT; parsers and bash tests rc 0.
+- **Smoke:** SMOKE-PASS on P192 and P2048.
+- **Rows:** 30/30 counting, all LIVE; 0 VOID, 0 replaced, 0 DNF, 0 UNBOUND.
+- **Flags:** both-leg flag on 3/30 rows (two of them control rows); one-leg-only on 14/30.
+- **Host score:** equals the VM's (`rep57b-score-host.txt`).
+
+**Per pool** (medians; ratio = goodput/control; the within-replicate ratio pairs each row with the same replicate's control, all rows):
+
+| pool (W) | a/W | status | q_ℓ ms (unf) | goodput unf / all | ratio unf / all | within-replicate ratio | release batch |
+|---|---|---|---|---|---|---|---|
+| 2048 (4 096), control | 0.67 | READ (n_u 3) | 31.5 | 765.8 / 729.4 | 1 / 1 | 1 | 195 |
+| 768 (1 536) | 0.72 | NOT-STORE-BOUND | 10.7 | 741.5 | 0.968 / 1.017 | 1.027 | 151 |
+| 512 (1 024) | 0.76 | NOT-STORE-BOUND | 7.3 | 731.0 | 0.954 / 1.002 | 0.980 | 130 |
+| 384 (768) | 0.77 | NOT-STORE-BOUND | 4.8 | 727.3 | 0.950 / 0.997 | 0.997 | 109 |
+| 256 (512) | 0.81 | READ (n_u 4) | 3.0 | 680.4 / 677.8 | 0.888 / 0.929 | 0.899 | 80 |
+| 192 (384) | 0.84 | READ (n_u 5) | 2.6 | 611.2 | 0.798 / 0.838 | 0.848 | 60 |
+
+**T, as registered.**
+- **(c) The control's own queue** is q_ℓ = 31.5 ms, against the predicted 13–21: OUT, above the band and not below 10 ms. Its unflagged median rests on 3 rows, because 2 of the 5 control rows are both-leg collapses.
+- **(a) Offsets:**
+  - δ₀(c1d) = 2.64 ms (P192) against δ₀(c1s) = 2.1 ms, a shift of +0.54 > 0.5. So (a) is read on both axes.
+- **Raw axis:**
+  - 2.1 ms lies below c1d's measured range (2.64–3.01 unflagged; 2.64–3.25 all rows): UNSCOREABLE.
+  - 2.7 ms: 0.813 (unf) and 0.847 (all) against 0.89 ± 0.08: PASS. The unflagged value is d = −0.077, at the band's edge.
+- **Corrected axis:**
+  - 2.64 ms: 0.798 / 0.838 against 0.79: PASS.
+  - 3.24 ms: out of range for unflagged rows (UNSCOREABLE); 0.928 for all rows (PASS).
+- **Readings:** unflagged = UNSCOREABLE, all rows = UNSCOREABLE (raw) / PASS (corrected), so **T = UNSCOREABLE.**
+- **(b)** is not readable: no store-bound pool lies at q_ℓ 4.7 or 6.8 ms.
+
+**What it means (registered).**
+- T is not tested. The registration's no-extrapolation rule applies: the c1d sweep's store-bound range (q_ℓ 2.6–3.3 ms) does not reach the first falsifying point.
+- No scoreable point fires.
+- **(c):** the control's queue (median over all 5 control rows) is 31.5 ms, above the predicted 13–21. Only the goodput denominator rests on the 3 unflagged control rows.
+
+**Registration misses.**
+- **W 1 536 was registered as the first store-bound candidate.** The first pool to clear the a/W ≥ 0.80 gate is W 512, and only by 0.005.
+- **The design could not return PASS** unless the smallest read pool sat at q_ℓ ≤ 2.1 ms (`eval_a` / `read_a`). The registration asked only for one arm at ≤ 3.0 ms. Fix this in the next registration.
+- **Resolution:** P192's q_ℓ rows span 1.83–3.88 ms (sample sd 0.78 ms), so its median is good to about ±0.35 ms. The falsifying region is 0.6 ms wide.
+
+**Reported readouts (post hoc where marked).**
+- **The store acts below the gate.**
+  - Occupancy follows W: ≈ 1 100, 780 and 590 symbols at W 1 536, 1 024 and 768.
+  - q_ℓ falls with it, from 31.5 to 10.7, 7.3 and 4.8 ms.
+  - Those pools sit at a/W 0.72–0.77, under the registered 0.80 gate (rule 3), so T excludes them.
+- **Goodput against the control depends on the denominator.**
+  - The 5 control rows span 704–768 Mbit/s, and 2 are both-leg collapses. Their unflagged median (765.8) is 5 % above the all-rows median (729.4), which is the whole difference between ≈ 0.95 and ≈ 1.00 at W 1 536–768.
+  - Within-replicate ratio ranges:
+
+    | W | within-replicate ratio range |
+    |---|---|
+    | 1 536 | 0.885–1.066 |
+    | 1 024 | 0.942–1.034 |
+    | 768 | 0.915–1.039 |
+    | 512 | 0.764–0.963 |
+    | 384 | 0.793–0.859 |
+
+    Replicates 3 and 4 divide by collapsed control rows.
+- **Post hoc: c1d at the same total W reads like c1s.**
+  - c1d's unflagged ratios at W 1 024 / 768 / 512 / 384 are 0.954 / 0.950 / 0.888 / 0.798. §56's c1s reads 0.96 / 0.94 / 0.89 / 0.79.
+  - The q_ℓ values are close too: c1d 7.3 / 4.8 / 3.0 / 2.6 ms; c1s 6.8 / 4.7 / 2.7 / 2.1 ms.
+  - Rule 3 excludes three of those four c1d pools from T, and the unflagged ratios carry the denominator's ±5 %. So this is a coincidence to register, not a transfer result.
+- **Release batch / W** is 0.05 at the control and rises from 0.10 (W 1 536) to 0.16 (W 512 and 384). Ack wakes per loop fall from 14.1 (control) to 5–7. At c1s, §56 read ≈ 0.2.
+- **Session position (the committed readout):** goodput over each pool's median is 1.013 in slots 1–15 and 1.000 in slots 16–30.
+  - The battery lasted 31 minutes, and §57a's slowdown began about 34 minutes into its rows.
+  - So this readout cannot separate host builds from elapsed time.
+- **Collapse:** the both-leg flag fires on 3/30 rows (0.10, against §53's 5/30). One-leg-only fires on 14/30, at every pool.
+
+**Next.** T needs a c1d pool with q_ℓ ≤ 2.1 ms. Three cases are open:
+1. A smaller pool (W < 384) lowers q_ℓ further.
+2. c1d's no-queue floor sits near 2.6 ms, so its offset, not its queue, fills the gap.
+3. The one-leg flag (4 of 5 P192 rows) inflates q_ℓ. P192's one clean row reads 1.83 ms.
+
+A next registration must:
+- require the smallest pool at q_ℓ ≤ 2.1 ms;
+- size n from the 0.78 ms row sd;
+- fix the control denominator, for example as a within-replicate ratio.
+
+This goes to the derivation's open list with §57a's burst hypothesis. Nothing is launched without a registration. B-1 (the gauge build) is next on the store-law track.
+
 ## Owner decisions (2026-11-14): the visualizer, shared code and two model laws
 
 All three were decided as recommended after Fable's review.
