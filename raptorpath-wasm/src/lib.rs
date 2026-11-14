@@ -602,9 +602,6 @@ impl Simulation {
     fn agg_eps(&self) -> f64 {
         self.agg(|p| p.eps)
     }
-    fn agg_q(&self) -> f64 {
-        self.agg(|p| p.q)
-    }
     fn agg_srtt(&self) -> f64 {
         self.agg(|p| p.srtt_secs)
     }
