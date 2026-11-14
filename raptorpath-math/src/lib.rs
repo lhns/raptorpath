@@ -1205,10 +1205,22 @@ pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
 /// See paper §4.7.
 pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     if window_size == 0 || p_gb <= 0.0 { return 1.0; }
+    p_fec_exact_repairs(p_gb, q_bg, repair_count(r, window_size), window_size)
+}
+
+/// The integer repair count `p_fec_exact` uses: R = round(r × W).
+fn repair_count(r: f64, window_size: usize) -> usize {
+    (r.max(0.0) * window_size as f64).round() as usize
+}
+
+/// `p_fec_exact` at an integer repair count (the only way r enters the DP).
+/// Only deficit rows inside the live band [lo, hi] are visited or cleared;
+/// every skipped row is exactly zero, so each cell receives the same
+/// additions in the same order as a full sweep (bit-identical results).
+fn p_fec_exact_repairs(p_gb: f64, q_bg: f64, repairs: usize, w: usize) -> f64 {
+    if w == 0 || p_gb <= 0.0 { return 1.0; }
     let p = p_gb.min(1.0);
     let q = q_bg.clamp(1e-9, 1.0);
-    let w = window_size;
-    let repairs = (r.max(0.0) * w as f64).round() as usize;
     let n = w + repairs;
     // Deficit index: d ∈ [−repairs, w] stored at d + repairs ∈ [0, w+repairs].
     let dmax = w + repairs + 1;
@@ -1218,10 +1230,15 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     f[off][0] = 1.0 - pi_b;
     f[off][1] = pi_b;
     let mut next = vec![[0.0f64; 2]; dmax];
+    // Bands only grow, so `next` (the state two steps ago) lies inside the
+    // new band: clearing the new band is enough.
+    let (mut lo, mut hi) = (off, off);
     for i in 0..n {
         let is_repair = (i + 1) * repairs / n > i * repairs / n;
-        for row in next.iter_mut() { *row = [0.0, 0.0]; }
-        for d in 0..dmax {
+        let nlo = lo.saturating_sub(1);
+        let nhi = (hi + 1).min(dmax - 1);
+        for row in next[nlo..=nhi].iter_mut() { *row = [0.0, 0.0]; }
+        for d in lo..=hi {
             let [fg, fb] = f[d];
             if fg == 0.0 && fb == 0.0 { continue; }
             let to_good = fg * (1.0 - p) + fb * q;
@@ -1235,6 +1252,8 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
             }
         }
         std::mem::swap(&mut f, &mut next);
+        lo = nlo;
+        hi = nhi;
     }
     let p_fail: f64 = f[off + 1..].iter().map(|row| row[0] + row[1]).sum();
     (1.0 - p_fail).clamp(0.0, 1.0)
@@ -1248,7 +1267,29 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
 /// target. See paper §4.7.
 pub fn compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
     if window_size == 0 || p_gb <= 0.0 { return 0.0; }
-    let fail = |r: f64| 1.0 - p_fec_exact(p_gb, q_bg, r, window_size);
+    r_star_bisect(window_size, delta, |repairs| {
+        1.0 - p_fec_exact_repairs(p_gb, q_bg, repairs, window_size)
+    })
+}
+
+/// The bisection of `compute_r_star_exact` over an evaluator of the failure
+/// probability at an integer repair count. p_fec_exact depends on r only via
+/// round(r·W), so each distinct count is evaluated once (40 steps visit only
+/// ~log2(2W) distinct counts); the bisection itself, and so the returned
+/// value, is unchanged.
+fn r_star_bisect(window_size: usize, delta: f64, mut fail_at: impl FnMut(usize) -> f64) -> f64 {
+    let mut memo: Vec<Option<f64>> = vec![None; 2 * window_size + 2];
+    let mut fail = |r: f64| {
+        let k = repair_count(r, window_size);
+        match memo.get(k).copied().flatten() {
+            Some(v) => v,
+            None => {
+                let v = fail_at(k);
+                if let Some(slot) = memo.get_mut(k) { *slot = Some(v); }
+                v
+            }
+        }
+    };
     let mut hi = 2.0f64;
     if fail(hi) > delta { return hi; }
     let mut lo = 0.0f64;
@@ -1996,6 +2037,98 @@ mod tests {
         // valid, lighter-tailed model (k > 1).
         let (theta, k) = fit_burst_tail(3.0, 9.5);
         assert!(theta > 0.0 && theta < 1.0 && k > 1.0, "theta={theta} k={k}");
+    }
+
+    /// Verbatim pre-optimisation copies (full-sweep DP, un-memoised bisection).
+    fn old_p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
+        if window_size == 0 || p_gb <= 0.0 { return 1.0; }
+        let p = p_gb.min(1.0);
+        let q = q_bg.clamp(1e-9, 1.0);
+        let w = window_size;
+        let repairs = (r.max(0.0) * w as f64).round() as usize;
+        let n = w + repairs;
+        let dmax = w + repairs + 1;
+        let off = repairs;
+        let pi_b = p / (p + q);
+        let mut f = vec![[0.0f64; 2]; dmax];
+        f[off][0] = 1.0 - pi_b;
+        f[off][1] = pi_b;
+        let mut next = vec![[0.0f64; 2]; dmax];
+        for i in 0..n {
+            let is_repair = (i + 1) * repairs / n > i * repairs / n;
+            for row in next.iter_mut() { *row = [0.0, 0.0]; }
+            for d in 0..dmax {
+                let [fg, fb] = f[d];
+                if fg == 0.0 && fb == 0.0 { continue; }
+                let to_good = fg * (1.0 - p) + fb * q;
+                let to_bad = fg * p + fb * (1.0 - q);
+                if is_repair {
+                    next[d.saturating_sub(1)][0] += to_good;
+                    next[d][1] += to_bad;
+                } else {
+                    next[d][0] += to_good;
+                    next[(d + 1).min(dmax - 1)][1] += to_bad;
+                }
+            }
+            std::mem::swap(&mut f, &mut next);
+        }
+        let p_fail: f64 = f[off + 1..].iter().map(|row| row[0] + row[1]).sum();
+        (1.0 - p_fail).clamp(0.0, 1.0)
+    }
+
+    fn old_compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
+        if window_size == 0 || p_gb <= 0.0 { return 0.0; }
+        let fail = |r: f64| 1.0 - old_p_fec_exact(p_gb, q_bg, r, window_size);
+        let mut hi = 2.0f64;
+        if fail(hi) > delta { return hi; }
+        let mut lo = 0.0f64;
+        for _ in 0..40 {
+            let mid = (lo + hi) / 2.0;
+            if fail(mid) > delta { lo = mid; } else { hi = mid; }
+        }
+        hi
+    }
+
+    const PERF_GRID_PQ: [(f64, f64); 6] =
+        [(0.001, 0.9), (0.013, 0.5), (0.05, 0.5), (0.1, 0.3), (0.3, 0.2), (0.9, 0.05)];
+
+    /// The speed-ups are PURE: new == old to the bit over the grid.
+    #[test]
+    fn test_exact_dp_and_bisection_bit_identical_to_old() {
+        for &(p, q) in &PERF_GRID_PQ {
+            for &w in &[1usize, 5, 25, 64, 200, 400] {
+                for &d in &[1e-9, 1e-6, 1e-3, 0.005, 0.05, 0.5] {
+                    let (a, b) = (compute_r_star_exact(p, q, w, d), old_compute_r_star_exact(p, q, w, d));
+                    assert_eq!(a.to_bits(), b.to_bits(), "r* p={p} q={q} W={w} d={d}: {a} vs {b}");
+                }
+                if w <= 64 {
+                    for &r in &[0.0, 0.03, 0.1, 0.5, 1.0, 2.0] {
+                        let (a, b) = (p_fec_exact(p, q, r, w), old_p_fec_exact(p, q, r, w));
+                        assert_eq!(a.to_bits(), b.to_bits(), "p_fec p={p} q={q} W={w} r={r}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// DP runs per r* solve = distinct repair counts visited, no repeats,
+    /// and far below the 41 raw evaluations.
+    #[test]
+    fn test_r_star_bisect_dp_runs_bounded_by_distinct_repair_counts() {
+        for &w in &[5usize, 64, 200, 400] {
+            for &d in &[1e-6, 0.005, 0.05, 0.5] {
+                let mut seen: Vec<usize> = Vec::new();
+                let r = r_star_bisect(w, d, |k| {
+                    assert!(!seen.contains(&k), "repair count {k} evaluated twice");
+                    seen.push(k);
+                    1.0 - p_fec_exact_repairs(0.05, 0.5, k, w)
+                });
+                assert_eq!(r.to_bits(), old_compute_r_star_exact(0.05, 0.5, w, d).to_bits());
+                // ceiling + one new count per halving down to 1/W resolution.
+                let bound = 2 + (2.0 * w as f64).log2().ceil() as usize + 2;
+                assert!(seen.len() <= bound, "W={w} d={d}: {} DP runs > {bound}", seen.len());
+            }
+        }
     }
 
     #[test]
