@@ -614,10 +614,10 @@ rows:
   verdicts: [DIVERGENT, "DEGENERATE(below r = eps/(1-eps))"]
   measured: "no"
   gauge: "no"
-  fix_class: owner call (paper form vs engine pin fec_rate/tests.rs:262-282), then law fix
+  fix_class: "derivation open (docs/derivations/pfec-continuous.md): the §4.2 event is the window event; block-exact C6 does not ship; next = an executed sliding oracle"
   depends_on: []
   ships_with: [M04]
-  evidence: "0 -> 1/2 step at r = eps/(1-eps), 0.0267 at c2 (§3.10 item 2; wasm audit W22)"
+  evidence: "0 -> 1/2 step at r = eps/(1-eps) (wasm audit W22), bounded by test_p_fec_normal_vs_paper_phi_divergence_is_bounded; under the sliding bound premises the shipped form over-predicts recovery at A* 3-7 (20/20 cells)"
 
 - id: R04
   name: r_saturation soft cap
@@ -1548,23 +1548,23 @@ rows:
   evidence: "§3.10 item 3; wasm audit site table"
 
 - id: M04
-  name: wasm cartoon shed budget (V5/V6)
+  name: wasm give-up law (cartoon + sim; was V5/V6 and W14)
   area: model
   rank: 37
   priority: P3
   reach: model only (UI)
-  loc: "raptorpath-visualizer/interactive-visualizer.html:2643-2644 (budget = rho < 1 ? 1 - rho : derived ; retain = rho >= 1 && r* <= 1e-6)"
-  formula: "two shed laws selected by rho < 1 and a threshold on r*"
-  paper: "§5.6"
-  derivation: "n/a"
-  regime: "steps measured at delta* 0.005615 / 0.008207 / 0.0050002 (wasm audit step table)"
-  clamp: "n/a"
-  inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): rho threshold and an r* threshold select the law"
-  verdicts: ["MODE-SWITCH(live)"]
+  loc: "raptorpath-wasm/src/lib.rs giveup_budget (JS export) and the sim give-up loop; interactive-visualizer.html cartoon law (merge 56388aee)"
+  formula: "give up iff age > D(delta) and given_up + 1 <= min(1 - rho, R)*src_total; R = eps*(1 - P_fec(r, eps, W_site, sigma2))"
+  paper: "§5.6 (symbols separated: R residual, rho the declared dial) and the §11.3 give-up row"
+  derivation: "docs/derivations/giveup-law-model.md (owner decision 2026-11-14 item 3, Fable round 1)"
+  regime: "bind gauge, rho 0.900-0.999: Bulk 1-rho binds 50/100 (eps .05), 100/100 (eps >= .1); Auto and Realtime R binds 100/100 on every audit cell"
+  clamp: "the min; bind fraction reported by giveup_law_tests and the UI gate"
+  inputs: "R inherits R03 (provisional until the sliding per-loss P_fec lands)"
+  modeswitch: "none (one formula; rho = 1 is the retain point; the engine still switches seats on reliable)"
+  verdicts: ["DEGENERATE(rho inert at Auto and Realtime under the shipped R)", DIVERGENT]
   measured: "n/a"
-  gauge: "n/a"
-  fix_class: model (wasm audit F3)
+  gauge: "yes"
+  fix_class: "done (model); the engine seat switch stays (W3.2 if-reliable debt); rho-inert reading conditional on R03"
   depends_on: [R03]
   ships_with: [C13]
-  evidence: "cartoon budget 0 -> eps at the Bulk preset (wasm audit V6)"
+  evidence: "giveup_law_tests + UI gate; sim gives up 4-10 (was 23-28) on the harsh cells, 0 at rho = 1; diverges from the engine only for 0 < 1 - rho < R"
