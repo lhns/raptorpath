@@ -881,6 +881,54 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **§48b addendum (reported; nothing changes retroactively).** `bbr_rs` raised c8 in-order delay by 46 %. It is frontier lag while the source is still sending, not the drained tail: B′, over the source phase only, reads the same. §48b's Result spoke of delivered delay at c2 only (the app-echo A_x ≈ 206 ms in both arms). §48d must register in-order delay as a readout and carry this as a known cost.
 
+## 58. Engine suites for F1 and Linux release-binary identity for the model-crate moves (no battery) — pre-registration (before any VM contact)
+
+**Why.**
+- **F1** (`f1-delta-nan` `39008a01`) changes `raptorpath/src`. It merges only after the engine suites pass on the VM, and before §51.
+- **The test-only engine edits of shared-core-0** (`decision_trace_pin`, the non-vacuous walks) have never run on Linux. `decision_trace_pin`'s digests were captured on Windows.
+- **Phase 6** (`phase6-forms` `71ad6b72`) and the end-of-run speed fix (`viz-endspeed`) edit `raptorpath-math` only. The engine calls none of the changed functions. ADR-0077 waives the §41c guard for such a step only on an identical **Linux** release-binary sha. The host build differed: base `0abc299a…` against head `70ca90c5…`.
+
+**Part A — suites on the F1 tree.**
+- **Tree A** = `f1-delta-nan` `b7e1f06f`: main `ba6637d7` with F1 merged. Its diff against main is F1's two files.
+- **On the host** before archiving, all green:
+  - `decision_trace_pin` 7/7, including the store digest that covers `codel_setpoint_q`. So F1 leaves the default-path values bit-identical at the pinned inputs.
+  - `delta_override_store_cap` 1/1.
+- **Run:** `tools/l1/suites_run.sh`, which holds both locks, checks the precondition, uses a fresh target and applies the §8/§11/§12 flake rule.
+  - It runs release, doc, wasm (`env -u GOLDEN_CAPTURE`) and debug, the same four cargo suites as `run_suites` in `loopdiag_run_all.sh` that §54 ran. It also runs core, and a parsers line of four older parser tests (all present), not the full tools/l1 test set.
+  - It now also runs `tst core cargo test -p raptorpath-core` (main `ba6637d7`).
+- **Reading, per suite:**
+  - **TESTS-OK:** the suites pass.
+  - **A REAL failure in `decision_trace_pin`:** record which digest failed and under which profile (release or debug). Then run the same pin on the base tree on Linux (`cargo test -p raptorpath --lib -- decision_trace_pin`, in both profiles). F1 merges only if the store digest passes and every failing digest fails identically on base. That would be a platform difference, which then gets per-platform digests before any shared-core move.
+  - **Any other REAL failure in the release, doc or debug engine suites:** blocks F1, and is diagnosed.
+  - **A failure in the wasm, core or parsers suites:** cannot come from F1, whose diff is two engine files. It is a finding about today's merges on main. F1 still merges. `phase6-forms` (Part B) is held until it is diagnosed.
+- **Merge rule:** F1 changes engine bytes, so the standing rule is suites, then a §41c guard. **Owner waiver, 2026-11-14:** F1 merges once Part A passes, with no guard. The evidence is the unchanged store digest on the host (default path bit-identical at the pinned inputs), plus `formula_agreement` and `law_shape` green. A store-digest failure on Linux withdraws the waiver.
+
+**Part B — release-binary identity (Linux, same path, same toolchain).**
+- **Runner:** `tools/l1/binid_run.sh` (main `ba6637d7`; both locks through `lib_battery.sh`'s `take_lock`), run from tree A's tools.
+  - Its stub test `test_binid.py` skips on the Windows host (no `flock`), so it runs on the VM first. If it fails, Part B is not run.
+- **Trees** (each a plain `git archive`, as in §56 and §57; the commit rides in the label, not inside the tree):
+  1. **control** = `~/p57/main57b.tgz` (main `02ecbdd7`), the archive that built `8f313616…` on the VM today;
+  2. **base** = main `ba6637d7`;
+  3. **phase6** = `phase6-forms` `cca84f53` (main merged in; its diff against main touches only `raptorpath-math`, `raptorpath-wasm` and the visualizer page);
+  4. **treeA** = `f1-delta-nan` `b7e1f06f`, reported only. It is the new reference sha once F1 merges.
+  - `viz-endspeed` is not ready, so it waits for the next session.
+- **For each tree,** at the same path `~/s58b/src` with a fresh target dir at the same path:
+  - the harness's own build command, `CARGO_BUILD_JOBS=4 cargo build --release --bin raptorpath`, then the sha256 of `target/release/raptorpath`;
+  - then `cargo test -p raptorpath-math -p raptorpath-wasm` (no capture).
+- **Reading:**
+  - **control ≠ `8f313616…`:** the method is wrong, and no tree is read.
+  - **control = `8f313616…`, base ≠ control:** a finding about main itself (shared-core-0 was merged as test-only). base is then rebuilt once to rule out a one-off, and the cause is diagnosed before anything merges.
+  - **base = control, phase6 = base, with its tests green:** the guard is waived (ADR-0077) and phase6 merges, unless Part A held it.
+  - **phase6 ≠ base:** phase6 rides guard batch α.
+  - **phase6's tests fail:** phase6 does not merge.
+  - **treeA:** its sha is recorded as the post-F1 reference.
+
+**Not in this session.** The oracle's evicting-seat diagnostic row (m̄; `pfec-oracle-spec.md` §6) needs a harness path, a stub test and a rehearsal. It gets its own registration.
+
+**Order and length.** Part A, about 50–60 min, then Part B, four builds, each followed by the math and wasm tests: about 4 × 15–20 min. No netns and no battery; nothing runs raptorpath. `LD_HARD` does not apply; the locks are held by the runner for each part.
+- **Before launch:** `df` on the VM home. Stale run trees go first: the §56/§57 run dirs, whose ledgers are in the repo.
+- **Host builds:** host cargo is paused, with the build lock held by the main session, throughout both parts.
+
 **Erratum and progress to "Owner decisions (2026-11-14)" (same day).**
 - **Item 3, "ρ is inert at Auto and Realtime":** this holds under the shipped R (the cut form) only.
   - Under the block-exact candidate C6 (`docs/derivations/pfec-continuous.md`), R exceeds the slider's 1e-3 step at Realtime on all five audit cells (1.2e-3 to 4.1e-3) and at Auto on one cell. So ρ would act on 1–4 of 100 positions there.
