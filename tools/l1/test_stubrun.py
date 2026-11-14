@@ -602,13 +602,13 @@ def repl56():
         led = led56(rep)
         ldtxt = open(os.path.join(rep, "ld.log"), errors="replace").read() if os.path.exists(os.path.join(rep, "ld.log")) else ""
         sc = open(os.path.join(rep, "score.txt"), errors="replace").read() if os.path.exists(os.path.join(rep, "score.txt")) else ""
-        p384 = [r for r in led if (r["cell"], r["arm"], r["seed"]) == ("c8-100", "P384", "42")]
+        p384 = [r for r in led if (r["cell"], r["arm"], r["seed"], r["rep"]) == ("c8-100", "P384", "42", 1)]
         dmp = [r for r in led if r["arm"] == pp.DUMP_ARM56]
         per = {}
         for r in led:
             per.setdefault((r["cell"], r["arm"], r["seed"], r["rep"]), []).append(r)
         check("56/repl: the session completes (rc 0, LD-ALL-DONE) with 2 replaced slots: 20 ledger rows for 18 slots, no slot with more than 2 rows",
-              rc == 0 and "LD-ALL-DONE" in out and len(led) == 20 and len(per) == 18 and max(len(v) for v in per.values()) == 2, (rc, len(led), len(per), tail(out, 6)))
+              rc == 0 and "LD-ALL-DONE" in out and len(led) == (66 if FULL else 20) and len(per) == (64 if FULL else 18) and max(len(v) for v in per.values()) == 2, (rc, len(led), len(per), tail(out, 6)))
         check("56/repl: the VOID pool echo is replaced once: P384's first row is WITNESS-FAIL on gate-pool (echo 2048), its replacement LIVE with the pool echoed, 'REPLACE56 ... reason=pool-echo' in the ledger",
               len(p384) == 2 and p384[0]["status"] == "WITNESS-FAIL" and pp.is_pool_void56(p384[0]) and p384[1]["status"] == "LIVE" and p384[1]["gate_pool_cli"] == "384"
               and re.search(r"^REPLACE56 c8-100 P384 s42 rep=1 reason=pool-echo", ldtxt, re.M) is not None, [(r["status"], r["problems"]) for r in p384])
@@ -618,8 +618,8 @@ def repl56():
         d = [r for r in led if (r["cell"], r["arm"], r["seed"]) == ("c8-100", "P112", "42")]
         t = (d[0].get("t56") or {}) if d else {}
         check("56/repl: the DNF row (c8 P112) is LIVE with dnf true and no goodput, and keeps rates, Tbar, old holes and the Little residual from its [DIAG] / [RANK] lines (none None); the report counts it",
-              len(d) == 1 and d[0]["status"] == "LIVE" and d[0]["dnf"] is True and d[0].get("mbps") is None
-              and all(t.get(k) is not None for k in ("tx_sum_late", "r0", "r1", "Tbar_ms", "old_holes", "resid_late", "inorder_mean_late")) and "dnf=1" in sc and "replaced=2" in sc, (t, sc[-300:]))
+              len(d) == (2 if FULL else 1) and all(x["status"] == "LIVE" and x["dnf"] is True and x.get("mbps") is None for x in d)       # the registered design runs P112 at seed 42 twice (replicates 1 and 3)
+              and all(t.get(k) is not None for k in ("tx_sum_late", "r0", "r1", "Tbar_ms", "old_holes", "resid_late", "inorder_mean_late")) and ("dnf=%d" % len(d)) in sc and "replaced=2" in sc, (t, sc[-300:]))
         check("56/repl: the score lists both replaced rows and the F-lines still evaluate",
               sc.count("  REPLACED ") == 2 and all(re.search(r"^  F%d (FIRES|DOES-NOT-FIRE|UNSCOREABLE) " % i, sc, re.M) for i in range(1, 11)), sc[:900])
     finally:

@@ -155,7 +155,7 @@ fi
 if [ "$P43" = 1 ]; then
   INSTR_ENV=(RWM_ORACLE_DIAG=1 RWM_PERF_TIMEOUT_S=200)
 fi
-{ [ "$P48" = 1 ] || [ "$P52" = 1 ] || [ "$P53" = 1 ] || [ "$P54B" = 1 ] || [ "$P56" = 1 ]; } && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)
+{ [ "$P48" = 1 ] || [ "$P52" = 1 ] || [ "$P53" = 1 ] || [ "$P54B" = 1 ]; } && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)
 # Plan 54b only: 300 s. Under H-hold B640's floor of 20 Mbit/s needs 240 s for 600 MB (status 54 amendment); plan 54 / 41d keep 200.
 [ "$P54B" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300)
 # Plan 56: 300 s as plan 54b (the small-pool c8 rows run at the H-hold floor). RWM_RTOBS=1 is kept from plan 54b's instrument env so the c8 control stays comparable with the section-54b B640 rows it is re-based on.

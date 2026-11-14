@@ -790,13 +790,13 @@ def score(paths, out=print, s54b_src=S54B_DEFAULT):
         cols = [("P%d" % p) for p in pp.POOLS56[cell] if arms.get((cell, "P%d" % p))]
         if cell == pp.DUMP_CELL56 and arms.get((cell, pp.DUMP_ARM56)):
             cols.append(pp.DUMP_ARM56)
-        out("  " + f"{'readout':<38}" + "".join(f"{c:>11}" for c in cols))
-        out("  " + f"{'n (live rows)':<38}" + "".join(f"{len(arms[(cell, c)]):>11}" for c in cols))
+        out("  " + f"{'readout (arm, nominal W)':<38}" + "".join(f"{(arm_label(cell, c) if c != pp.DUMP_ARM56 else c + '(dump)'):>13}" for c in cols))
+        out("  " + f"{'n (live rows)':<38}" + "".join(f"{len(arms[(cell, c)]):>13}" for c in cols))
         for label, fn, nd in READOUTS:
             vals = [mval(arms[(cell, c)], fn) for c in cols]
             if all(v is None for v in vals):
                 continue
-            out("  " + f"{label:<38}" + "".join(f"{_fmt(v, nd):>11}" for v in vals))
+            out("  " + f"{label:<38}" + "".join(f"{_fmt(v, nd):>13}" for v in vals))
         out("")
     out("PER-ROW TABLE (LIVE rows): cell arm seed rep | goodput | R | r0 | r1 | T-bar | W realised | bind | old holes | inorder late | qcollapse share | tags")
     for r in sorted(live, key=lambda x: (pp.CELLS56.index(x["cell"]), x["arm"], x["seed"], x["rep"])):
