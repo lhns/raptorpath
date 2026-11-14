@@ -177,14 +177,14 @@ pub fn span_horizon_b(delta_price: f64) -> f64 {
 /// fired at age > D lands after the receiver's own δ-horizon give-up.
 #[wasm_bindgen]
 pub fn span_deadline_d(delta_price: f64, rtprop: f64) -> f64 {
-    (span_horizon_b(delta_price) * rtprop).min(2.0 * rtprop)
+    math::span_deadline_d(delta_price, rtprop)
 }
 
 /// §5.3: the coding quantum / span width A* = clamp(rate·D, 1, W) —
 /// the recovery budget in symbols N_δ = rate·D, clamped into the window.
 #[wasm_bindgen]
 pub fn span_width_a_star(rate: f64, d: f64, w: f64) -> f64 {
-    (rate * d).clamp(1.0, w.max(1.0))
+    math::span_width_a_star(rate, d, w)
 }
 
 /// §5.3: pipeline depth M* = ceil(rate·2·RTprop / A*_q) + 1 (A*_q =
@@ -193,7 +193,7 @@ pub fn span_width_a_star(rate: f64, d: f64, w: f64) -> f64 {
 /// depth is the large-δ limit.
 #[wasm_bindgen]
 pub fn pipeline_depth_m_star(rate: f64, rtprop: f64, a_star_q: f64) -> f64 {
-    ((rate * 2.0 * rtprop / a_star_q.max(1.0)).ceil() + 1.0).clamp(2.0, 32.0)
+    math::pipeline_depth_m_star(rate, rtprop, a_star_q)
 }
 
 /// §5.3 / ADR-0064: the trailing offset Δ = clamp(⌈rate·J⌉, 1, 64)
@@ -203,7 +203,7 @@ pub fn pipeline_depth_m_star(rate: f64, rtprop: f64, a_star_q: f64) -> f64 {
 /// not). Floor 1 = the FIFO-per-path minimum.
 #[wasm_bindgen]
 pub fn trailing_offset_delta(rate: f64, jitter: f64) -> f64 {
-    (rate * jitter.max(0.0)).ceil().clamp(1.0, 64.0)
+    math::trailing_offset_delta(rate, jitter)
 }
 
 /// §5.6: the residual R after in-window FEC at the live operating point:
@@ -254,19 +254,7 @@ pub fn bulkness_of_delta(delta_price: f64) -> f64 {
 
 #[wasm_bindgen]
 pub fn sim_tail_target_of_delta(delta_price: f64) -> f64 {
-    let x = delta_price.max(1e-12).log10();
-    let (x_rt, x_auto, x_bulk) = (50.0f64.log10(), 0.5f64.log10(), 0.005f64.log10());
-    let (y_rt, y_auto, y_bulk) = (-7.0f64, -5.0f64, 0.05f64.log10());
-    let y = if x >= x_rt {
-        y_rt
-    } else if x >= x_auto {
-        y_auto + (x - x_auto) * (y_rt - y_auto) / (x_rt - x_auto)
-    } else if x >= x_bulk {
-        y_auto + (x - x_auto) * (y_bulk - y_auto) / (x_bulk - x_auto)
-    } else {
-        y_bulk
-    };
-    10.0f64.powf(y)
+    math::sim_tail_target_of_delta(delta_price)
 }
 
 // =========================================================================
