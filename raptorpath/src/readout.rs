@@ -64,17 +64,18 @@ mod tests {
     /// is the test harness's, not a readout.
     #[test]
     fn no_eprintln_in_engine_source() {
-        fn walk(dir: &std::path::Path, hits: &mut Vec<String>) {
+        fn walk(dir: &std::path::Path, hits: &mut Vec<String>, files: &mut usize) {
             for e in std::fs::read_dir(dir).expect("read src dir").flatten() {
                 let p = e.path();
                 if p.is_dir() {
                     if p.file_name().is_some_and(|n| n == "tests") {
                         continue;
                     }
-                    walk(&p, hits);
+                    walk(&p, hits, files);
                 } else if p.extension().is_some_and(|x| x == "rs")
                     && !p.file_name().is_some_and(|n| n == "tests.rs")
                 {
+                    *files += 1;
                     let src = std::fs::read_to_string(&p).unwrap_or_default();
                     for (i, l) in src.lines().enumerate() {
                         let code = l.split("//").next().unwrap_or("");
@@ -86,7 +87,9 @@ mod tests {
             }
         }
         let mut hits = Vec::new();
-        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut hits);
+        let mut files = 0usize;
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut hits, &mut files);
+        assert!(files >= 1, "the eprintln walk found no .rs file, so it proves nothing");
         assert!(
             hits.is_empty(),
             "readouts must go through `crate::readout!` (one write per line), \
