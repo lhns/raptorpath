@@ -1237,6 +1237,15 @@ registered is re-scored).**
   - rev 3's close matches of a three-term knee model (fitted post hoc; it holds only at c2 and c8);
   - rev 4's two-variant c1d registration (replaced by one variant, U).
 
+**Erratum to the §56 Addendum (2026-11-14, derivation rev 6).**
+- **The utilisation–delay hypothesis fails.** With one capacity definition and the control arm included, q·(C − R) rises with W at c1s: 14 → 55 symbols at C = 96.8 k, and the control sits at u = 1 with a finite 14 ms queue. Rev 5's flat product mixed two rate definitions and left out the control.
+- **Withdrawn:**
+  - variant U (R5.1, "registered" in the Addendum);
+  - the power-criterion formula R5.4, an oracle: it needs capacity, which is E04, and a burst constant with no engine source.
+- R6.4 replaces them.
+- **Open design item, not settled:** δ's authority in the standing law is q(δ)·ℓ̂ ≈ 1 ms, its one seat. "No owner question" in rev 6 does not mean settled.
+- **Frozen.** The derivation is frozen until new data comes in: two models were fitted to four c1s points and withdrawn.
+
 ## 55. The law ledger — every shipped law and estimator audited — record, no VM
 
 **What.** One row per law and per estimator that feeds a law: 70 rows (12 estimators, 6 δ maps, 6 flow-control, 9 rate, 10 span/shed/emission, 13 recovery, 10 scheduler/CC, 4 wasm). Each row records:
