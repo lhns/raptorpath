@@ -1,0 +1,115 @@
+== 1. Values at r = 0 (the engine pin: P_fec(0) = 0 => residual = eps)
+   eps    W    s2 |      cur      phi      ccn      win     palm
+ 0.048    5  3.00 |   0.0000   0.3860   0.1750   0.8638   0.0000
+ 0.048    4  3.76 |   0.0000   0.4084   0.1849   0.8956   0.0000
+ 0.025   64  2.90 |   0.0000   0.2260   0.1627   0.4325   0.0000
+ 0.050  200  3.00 |   0.0000   0.0305   0.0249   0.0062   0.0000
+ 0.100   64  1.00 |   0.0000   0.0038   0.0021   0.0012   0.0000
+
+== 2. The engine pin, every assertion (fec_rate/tests.rs:262-282), residual = eps(1-P)
+  cur: R(0)=0.048000 (want 0.048) ladder=[0.048, 0.01924, 0.0109, 0.00371, 0.00072, 0.0] mono=True R(0.34,A*4)=0.00487 in (0.001,0.048) -> PASS
+  phi: R(0)=0.029474 (want 0.048) ladder=[0.02404, 0.01924, 0.0109, 0.00371, 0.00072, 0.0] mono=True R(0.34,A*4)=0.00487 in (0.001,0.048) -> FAIL
+  ccn: R(0)=0.039599 (want 0.048) ladder=[0.03391, 0.02886, 0.01827, 0.00695, 0.00142, 0.0] mono=True R(0.34,A*4)=0.00941 in (0.001,0.048) -> FAIL
+ palm: R(0)=0.048000 (want 0.048) ladder=[0.04523, 0.04246, 0.03691, 0.02837, 0.0197, 0.00151] mono=True R(0.34,A*4)=0.03088 in (0.001,0.048) -> PASS
+
+== 3. Max neighbour jump |P(r+h)-P(r)| over r in [0,1], all (eps, W, s2) in the grid
+   (a law continuous in r has jump -> 0 linearly in h: ratio h=0.02/h=0.01 ~ 2; a step keeps ratio ~ 1)
+  cur: h=0.02: 1.0000 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.005025)  h=0.01: 0.9762 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.005025)  h=0.005: 0.8395 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.005025)  ratio(.02/.01)=1.02
+  phi: h=0.02: 0.8404 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.0)  h=0.01: 0.6803 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.0)  h=0.005: 0.3403 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.005)  ratio(.02/.01)=1.24
+  ccn: h=0.02: 0.9268 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.0)  h=0.01: 0.6232 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.0)  h=0.005: 0.3816 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.005)  ratio(.02/.01)=1.49
+ palm: h=0.02: 0.9804 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.0)  h=0.01: 0.7339 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.0)  h=0.005: 0.3670 at (eps,W,s2,r)=(0.005, 200, 1.0, 0.005)  ratio(.02/.01)=1.34
+
+   per-W max jump at h = 0.02 (palm | cur | phi)
+   W=   3: palm 0.0591 | cur 0.6853 | phi 0.1903
+   W=   4: palm 0.0784 | cur 0.7114 | phi 0.2185
+   W=   5: palm 0.0975 | cur 0.7334 | phi 0.2430
+   W=  64: palm 0.7906 | cur 0.9871 | phi 0.6675
+   W= 200: palm 0.9804 | cur 1.0000 | phi 0.8404
+
+   jump across the crossing r_c = e/(1-e), P(r_c+1e-9) - P(r_c-1e-9), worst over the grid
+     cur: 5.00e-01
+     phi: 1.59e-07
+     ccn: 1.41e-07
+    palm: 1.47e-07
+
+== 4. Monotone non-decreasing in r on the h = 0.005 grid (worst decrease)
+     cur: 0.00e+00
+     phi: 0.00e+00
+     ccn: 0.00e+00
+    palm: 0.00e+00
+
+== 5. Continuity in eps and s2 (palm): max |dP| for a 0.1 % relative nudge, over the grid
+   eps nudge: 4.18e-03   s2 nudge: 7.74e-04
+
+== 6. Limits (palm)
+   eps -> 0 (1e-6), s2 1, W 4: r=0.005: 0.0200 (min(1,rW)=0.0200) r=0.01: 0.0400 (min(1,rW)=0.0400) r=0.1: 0.4000 (min(1,rW)=0.4000) r=0.5: 1.0000 (min(1,rW)=1.0000)
+   eps -> 0 (1e-6), s2 1, W 64: r=0.005: 0.3200 (min(1,rW)=0.3200) r=0.01: 0.6400 (min(1,rW)=0.6400) r=0.1: 1.0000 (min(1,rW)=1.0000) r=0.5: 1.0000 (min(1,rW)=1.0000)
+   eps -> 0 (1e-6), s2 3.76, W 64: r=0.01: 0.1179 r=0.02: 0.2430 r=0.05: 0.6021 r=0.1: 0.8945
+   eps -> 1 (0.999), W 64, s2 3: r=0.5: 1.27e-25 r=1.0: 2.70e-25
+   s2 dependence (eps .05, W 64, r .1): s2=1.0: 0.8975 s2=2.9: 0.6349 s2=3.0: 0.6251 s2=3.76: 0.5584 s2=5.0: 0.4726
+
+== 7. Agreement with the normal form where it is valid (large W r), |palm - phi|
+   eps 0.025 W 200 s2 2.9: r=0.026: palm 0.3279 phi 0.5000 | r=0.038: palm 0.5754 phi 0.7455 | r=0.051: palm 0.7661 phi 0.9063 | r=0.077: palm 0.9479 phi 0.9957
+   eps 0.05 W 200 s2 3.0: r=0.053: palm 0.3752 phi 0.5000 | r=0.079: palm 0.7093 phi 0.8224 | r=0.105: palm 0.9019 phi 0.9672 | r=0.158: palm 0.9945 phi 0.9999
+   eps 0.1 W 200 s2 3.0: r=0.111: palm 0.4133 phi 0.5000 | r=0.167: palm 0.8460 phi 0.9073 | r=0.222: palm 0.9816 phi 0.9957 | r=0.333: palm 1.0000 phi 1.0000
+   eps 0.05 W 64 s2 3.0: r=0.053: palm 0.2862 phi 0.5000 | r=0.079: palm 0.4852 phi 0.6995 | r=0.105: palm 0.6567 phi 0.8512 | r=0.158: palm 0.8748 phi 0.9806
+   eps 0.1 W 64 s2 5.0: r=0.111: palm 0.2865 phi 0.5000 | r=0.167: palm 0.5126 phi 0.7213 | r=0.222: palm 0.7041 phi 0.8784 | r=0.333: palm 0.9185 phi 0.9895
+   tail 1-P at r = rc + 4 sd (sd = sqrt(e s2/(W(1-e)))):
+     eps 0.025 W 200 s2 2.9 r 0.103: 1-palm 8.42e-03  1-phi 4.23e-05
+     eps 0.05 W 200 s2 3.0 r 0.165: 1-palm 3.44e-03  1-phi 4.92e-05
+     eps 0.05 W 64 s2 3.0 r 0.251: 1-palm 1.32e-02  1-phi 6.09e-05
+
+== 8. Monte Carlo oracle (GE-correlated repair erasures; 2e5 windows) vs palm / phi / cur
+   eps 0.048 s2 3.76 W 4 r 0.34: MC 0.3080  palm 0.3566  phi 0.8986  cur 0.8986
+   eps 0.048 s2 3.76 W 5 r 0.2: MC 0.1974  palm 0.2310  phi 0.7729  cur 0.7729
+   eps 0.048 s2 3.0 W 5 r 0.0: MC 0.0000  palm 0.0000  phi 0.3860  cur 0.0000
+   eps 0.025 s2 2.9 W 64 r 0.0267: MC 0.2283  palm 0.2279  phi 0.5123  cur 0.5123
+   eps 0.025 s2 2.9 W 64 r 0.06: MC 0.5561  palm 0.5611  phi 0.8408  cur 0.8408
+   eps 0.05 s2 3.0 W 64 r 0.1: MC 0.6186  palm 0.6251  phi 0.8259  cur 0.8259
+   eps 0.05 s2 3.0 W 200 r 0.0526: MC 0.3765  palm 0.3747  phi 0.4996  cur 0.0000
+   eps 0.1 s2 5.0 W 64 r 0.2: MC 0.6223  palm 0.6341  phi 0.8252  cur 0.8252
+
+== 9. r_saturation argmin under cur vs palm (lib.rs:917; tests lib.rs:1449-1471)
+   C4 fixture (band [0.2,0.45]): eps 0.0900 s2 5.000 W 64: r_sat cur 0.400  palm 0.550
+   C2 fixture (> 0.2): eps 0.0250 s2 3.000 W 64: r_sat cur 0.255  palm 0.280
+   fec_rate test :410 style, eps .05 s2 3 W 64: eps 0.0500 s2 3.000 W 64: r_sat cur 0.255  palm 0.295
+   c1s nominal: eps 0.0010 s2 2.996 W 200: r_sat cur 0.140  palm 0.140
+   c2 nominal: eps 0.0253 s2 2.899 W 200: r_sat cur 0.140  palm 0.145
+   c3 (c8 slow leg) nominal: eps 0.0476 s2 3.762 W 200: r_sat cur 0.160  palm 0.180
+   sim golden eps .05 q .5 rtt 50: eps 0.0500 s2 2.800 W 64: r_sat cur 0.255  palm 0.315
+   sim golden eps .10 q .3 rtt 80: eps 0.1000 s2 5.000 W 64: r_sat cur 0.420  palm 0.560
+
+== 10. L1 cells run Bulk (beta = 1, chi = 0): pre-cap rate = 0 => soft_saturate(0, r_sat) for every r_sat
+   max over r_sat in [0.01, 1] of soft_saturate(0, r_sat): 0.0e+00
+
+== 11. Tests whose expectations read p_fec_normal (values under cur / palm)
+   engine_fold_pins.rs:41 bit pin: cur 0.779136 palm 0.733605
+   engine_fold_pins.rs:42 bit pin: cur 0.678967 palm 0.511658
+   engine_fold_pins.rs:43 bit pin; fec_rate/tests.rs:1143 (0 < p2 < p): cur 0.570707 palm 0.524436
+   engine_fold_pins.rs:44 bit pin (== 1.0): cur 1.000000 palm 1.000000
+   formula_verification.rs:143 (0.4 < p < 0.7): cur 0.504797 palm 0.335345
+   formula_verification.rs:147 (> 0.99): cur 0.999995 palm 0.998370
+   formula_verification.rs:151 (< 0.1): cur 0.000000 palm 0.084541
+   fec_rate/tests.rs:1139 (> 0.9): cur 0.957404 palm 0.933411
+   fec_rate/tests.rs:1147 (< 0.01): cur 0.000000 palm 0.063778
+   fec_rate/tests.rs:1101 iid > burst at (0.15,0.1,50): palm 0.7336 > 0.5117
+   fec_rate/tests.rs:1154 W 20 < W 200 at (0.15,0.1,s2 1): palm 0.6200 < 0.9231
+   formula_verification.rs:264 monotone in W (r .15 eps .1 s2 3): palm [0.1782, 0.2535, 0.3593, 0.5117, 0.6297, 0.749] -> monotone
+   formula_verification.rs:251 monotone in r: yes
+
+== 12. Continuity proper: max |P(r+h)-P(r)| at h = 1e-6 over r on the 0.005 grid and the crossings
+   (the 2 % grid jump above mixes steepness with steps; at h -> 0 a continuous law's jump -> 0)
+     cur: 5.00e-01   (palm bound W*h = 2.0e-04 at W 200)
+     phi: 7.94e-05   (palm bound W*h = 2.0e-04 at W 200)
+     ccn: 7.05e-05   (palm bound W*h = 2.0e-04 at W 200)
+    palm: 7.34e-05   (palm bound W*h = 2.0e-04 at W 200)
+
+== 13. Convergence of palm to phi as W grows (eps .05, s2 3, r = rc + 1 sd)
+   W    64: r 0.1023 palm 0.6389 phi 0.8373 |diff| 0.1984  |diff|*sqrt(W) 1.59
+   W   200: r 0.0807 palm 0.7275 phi 0.8381 |diff| 0.1107  |diff|*sqrt(W) 1.56
+   W  1000: r 0.0652 palm 0.7902 phi 0.8387 |diff| 0.0486  |diff|*sqrt(W) 1.54
+   W  5000: r 0.0583 palm 0.8176 phi 0.8390 |diff| 0.0215  |diff|*sqrt(W) 1.52
+
+== 14. Monte Carlo at the tail point (eps .05, s2 3, W 64, r .251): 1-P
+   1-MC 1.70e-02  1-palm 1.33e-02  1-phi 6.24e-05
+   wasm lib.rs:2707-2708 shed_budget_residual(.05, 0/.30, 64, 2.9): palm 0.05000 / 1.43e-04  cur 0.05000 / 3.55e-08
