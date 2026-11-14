@@ -479,6 +479,50 @@ with tempfile.TemporaryDirectory() as td:
     ok_nodone = pp.check56(led)
 check("check56: rc 0 iff the battery finished and every slot of the table has a row; 63 of 64 slots, or no LD-BATTERY-DONE, is rc 1", ok_all == 0 and ok_short == 1 and ok_nodone == 1, (ok_all, ok_short, ok_nodone))
 
+# ═══ 4b. review additions: the tick's own n_live, F8's minimum, F10's T0-spread rule ═══
+def drop_to_one_leg(lines, t_from):
+    """The same c8 lines with one live path (np=1, cap = 1 x pool = 640) from t_from on."""
+    out = []
+    for ln in lines:
+        mt = re.match(r"\[DIAG\] t=([0-9.]+)s ", ln)
+        if mt and float(mt.group(1)) >= t_from:
+            ln = ln.replace(" np=2 np_act=2", " np=1 np_act=1").replace("/1280 ", "/640 ")
+        out.append(ln)
+    return out
+
+
+mnl = ps.row_metrics(drop_to_one_leg(C8L, 28.0), [], [], 600000000, "c8-100", 640)
+check("n_live per tick: with one live path from 28 s on (cap 640 = 1 x pool) the LATE share with n_live < N is read (~ 49 of 100 sending ticks), and the row still BINDS (bind judged against the tick's n_live x pool, "
+      "where a fixed N x pool = 1280 would read ~0.5)", 0.4 < mnl["nlive_lt_share"] < 0.6 and mnl["bind_frac"] == 1.0, (mnl["nlive_lt_share"], mnl["bind_frac"], mnl["nlive_med"]))
+check("n_live: a row at two live paths throughout reads median 2 and share 0; a single-path cell reads 1 and 0", m8["nlive_med"] == 2 and m8["nlive_lt_share"] == 0.0
+      and ps.row_metrics(run_lines(1, 603), [], [], 600000000, "c2-100", 603)["nlive_med"] == 1 and ps.row_metrics(run_lines(1, 603), [], [], 600000000, "c2-100", 603)["nlive_lt_share"] == 0.0)
+check("n_live: a cap BELOW n_live x pool on every LATE tick is not a bind (0.0), two live paths", ps.row_metrics(run_lines(bound=False), [], [], 600000000, "c8-100", 640)["bind_frac"] == 0.0)
+
+
+def c1s_n(n512, n2048, flagged=0):
+    rows = [mk("c1s-400", 2048, rep=i, goodput_mbps=100.0) for i in range(1, n2048 + 1)]
+    rows += [mk("c1s-400", 512, rep=i, goodput_mbps=96.0, qc_share=(0.5 if i <= flagged else 0.0)) for i in range(1, n512 + 1)]
+    return rows
+
+
+check("F8 minimum: 3 unflagged P512 rows -> UNSCOREABLE (a 6-row arm with 3 collapsed), 4 unflagged -> read; 3 unflagged control rows -> UNSCOREABLE too",
+      states(arms_of(c1s_n(6, 6, flagged=3)))[8][0] == ps.UNSC and states(arms_of(c1s_n(6, 6, flagged=2)))[8][0] == ps.FIRES and states(arms_of(c1s_n(6, 3)))[8][0] == ps.UNSC
+      and states(arms_of(c1s_n(3, 6)))[8][0] == ps.UNSC and "needs >= 4 unflagged" in states(arms_of(c1s_n(6, 6, flagged=3)))[8][1])
+
+
+def sq_pts(dq, spread):
+    return {"points": {0.95: (0, 0, dq, 1.0, "")}, "T0_spread": spread, "T0_n": 6}
+
+
+mk10 = lambda d1, s1, d2, s2, d3, s3: states({}, {"c1s-400": sq_pts(d1, s1), "c2-100": sq_pts(d2, s2), "c8-100": sq_pts(d3, s3)}, [])[10]
+check("F10 rule: T-bar - T0 at the 0.95 point within T0's spread (max - min over the smallest-W rows) for ANY cell -> UNSCOREABLE (equal to the spread counts as within); beyond it in all three, F10 reads",
+      mk10(10.0, 3.0, 12.0, 4.0, 30.0, 40.9)[0] == ps.UNSC and "within T0's spread" in mk10(10.0, 3.0, 12.0, 4.0, 30.0, 40.9)[1] and mk10(10.0, 3.0, 12.0, 4.0, 40.9, 40.9)[0] == ps.UNSC
+      and mk10(10.0, 3.0, 12.0, 4.0, 41.0, 40.9)[0] == ps.NOFIRE)
+a_sp = sq_cell("c8-100", {640: 100.0, 80: 60.0}, 640)
+a_sp[("c8-100", "P80")] = [mk("c8-100", 80, goodput_mbps=60.0, T0_ms=40.0, rep=i) for i in (1, 2, 3)]
+a_sp[("c8-100", "P80")][2]["t56"]["T0_ms"] = 80.0
+check("standing queue: T0_spread = max - min of T0 over the smallest-W rows (40 .. 80 -> 40 ms over 3 rows)", near(ps.standing_queue(a_sp, "c8-100")["T0_spread"], 40.0) and ps.standing_queue(a_sp, "c8-100")["T0_n"] == 3)
+
 # ═══ 5. the row path on REAL logs (make_row under LD_PLAN=56), the suite-reuse reference, the xp readouts, the shell details ═══
 import tarfile  # noqa: E402
 
@@ -525,6 +569,7 @@ if r54 is not None:
     t = r54["t56"]
     check("real logs: the B640 row's [HOLD] path-split counters and the receiver's [SUCC] xp_frac are read (p0 holes are overwhelmingly same-path: xp_frac < 0.1)",
           t["hold_sp0"] and t["hold_xp0"] is not None and t["hold_xpf0"] is not None and t["hold_xpf0"] < 0.1 and t["succ_xpf"] is not None, {k: t.get(k) for k in ("hold_sp0", "hold_xp0", "hold_xpf0", "succ_sp", "succ_xp", "succ_xpf")})
+    check("real logs: the B640 row's late n_live is 2 on every tick (share with n_live < N = 0.0) and it binds against n_live x pool", t["nlive_med"] == 2 and t["nlive_lt_share"] == 0.0 and t["bind_frac"] == 1.0, (t["nlive_med"], t["nlive_lt_share"]))
     f9 = {i: (s_, d) for i, _, s_, d in ps.falsifiers({("c8-100", "P640"): [r54]}, None, [dict(r54, arm="P640D", succdump={"records": 150000})])}[9]
     check("F9 stays UNSCOREABLE and prints the [HOLD] p0 / [SUCC] cross-path counters beside it for the reader", f9[0] == ps.UNSC and "xp_frac" in f9[1] and "[HOLD] p0" in f9[1], f9)
 mm = ps.hold_xp(["[HOLD] site=sender path=0 gen=0 fed=1 sp_n=61692 xp_n=1461 up_n=0 xp_frac=0.0231 age_n=1", "[HOLD] site=sender path=1 gen=0 sp_n=5 xp_n=7 up_n=0 xp_frac=-", "[HOLD] site=sender path=- sp_n=1 xp_n=1 up_n=0 xp_frac=0.5"])

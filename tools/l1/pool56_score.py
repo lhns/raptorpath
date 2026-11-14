@@ -49,6 +49,7 @@ PERF_TIMEOUT_S = 300
 TOL_FLOOR = 0.01                                # re-basing tolerance floor, a share of the B640 median
 F3_R0_REF = 9800.0
 F10_RATIO = 3.0
+F8_MIN_ROWS = 4                                 # unflagged rows needed in each n = 6 arm (P512, P2048) for F8 to be read
 S54B_DEFAULT = os.path.join(HERE, "..", "..", "docs", "l1-raw", "s54", "rep54b-diag-ld.tgz")
 
 _PP = (r" p%d:infl=\d+/sinfl=\d+/bdp\d+\S* sout=\d+ khr=\S+ btlbw=\d+.*?rtt=(\d+)/wrtt=(\d+)/rtp\d+ms rtp_us=(\d+).*?qcwnd=(\d+)")
@@ -83,7 +84,8 @@ def ticks56(cli):
         if not mt:
             continue
         ms, mw = p54._SRC.search(ln), p54._WIN.search(ln)
-        d = {"t": float(mt.group(1)), "src": int(ms.group(1)) if ms else None, "win": int(mw.group(1)) if mw else None, "cap": int(mw.group(2)) if mw else None,
+        mn = re.search(r" np=(\d+) np_act=", ln)
+        d = {"np": int(mn.group(1)) if mn else None, "t": float(mt.group(1)), "src": int(ms.group(1)) if ms else None, "win": int(mw.group(1)) if mw else None, "cap": int(mw.group(2)) if mw else None,
              "dgq": {int(i): (int(h), int(x), int(f)) for i, h, x, f, _, _ in p54._DGQ.findall(ln)}, "rtt": {}, "wrtt": {}, "rtp": {}, "qcw": {}}
         for i, rx in _PP_RE.items():
             m = rx.search(ln)
@@ -191,7 +193,12 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=C8, pool=None):
     capvals = [d["cap"] for d in lt if d["cap"] is not None]
     m["cap_mean"] = sum(capvals) / len(capvals) if capvals else None
     m["cap_med"] = w["cap"] if w else med(capvals)
-    m["bind_frac"] = (sum(1 for c in capvals if c >= NLIVE[cell] * pool) / len(capvals)) if (capvals and pool) else None
+    # the ceiling is n_live * pool (store_cap.rs: max(n_live * pool, floor)) with the TICK's own live count (`np=`), the cell's N only when a tick prints none
+    capn = [(d["cap"], d["np"] if d.get("np") else NLIVE[cell]) for d in lt if d["cap"] is not None]
+    m["bind_frac"] = (sum(1 for c, n in capn if c >= n * pool) / len(capn)) if (capn and pool) else None
+    npv = [d["np"] for d in lt if d.get("np")]
+    m["nlive_med"] = med(npv)
+    m["nlive_lt_share"] = (sum(1 for n in npv if n < NLIVE[cell]) / len(npv)) if npv else None      # share of LATE ticks with fewer live paths than the cell's N
     boot = boot_rtp(tk, legs)
     for i in (0, 1):
         for k in ("r", "rtt_late", "wrtt_late", "q_late", "rtp_late", "rtp_boot", "rtp_over", "qcw_late", "P"):
@@ -271,7 +278,9 @@ READOUTS = [
     ("client CPU s/GB", lambda r, t: t.get("cpu_cli_s_per_gb"), 2),
     ("server CPU s/GB", lambda r, t: t.get("cpu_srv_s_per_gb"), 2),
     ("realised cap W (LATE mean of b)", lambda r, t: t.get("cap_mean"), 0),
-    ("cap bind fraction", lambda r, t: t.get("bind_frac"), 3),
+    ("cap bind fraction (cap >= n_live x pool)", lambda r, t: t.get("bind_frac"), 3),
+    ("n_live (LATE median of np=)", lambda r, t: t.get("nlive_med"), 1),
+    ("share of LATE ticks with n_live < N", lambda r, t: t.get("nlive_lt_share"), 3),
     ("qcwnd collapse share", lambda r, t: t.get("qc_share"), 3),
 ]
 # the readouts every smoke row must carry (no None); leg-1 fields are required at c8 only
@@ -408,7 +417,9 @@ def standing_queue(arms, cell):
     t0 = mval(small, lambda r, t: t.get("T0_ms"))
     ell = med([tv(r, "ell_ms") for rs in arms.values() for r in rs if r["cell"] == cell])
     pts = curve(arms, cell)
-    out = {"control_gp": cg, "T0": t0, "ell": ell, "points": {}, "curve": pts}
+    t0v = [x for x in (tv(r, "T0_ms") for r in small) if x is not None]
+    # T0's row-to-row spread (max - min over the smallest-W rows): the first second carries start-up queue, so T0 is only as good as this spread (0 with a single row)
+    out = {"control_gp": cg, "T0": t0, "T0_spread": (max(t0v) - min(t0v)) if t0v else None, "T0_n": len(t0v), "ell": ell, "points": {}, "curve": pts}
     if cg is None or not pts:
         return out
     for thr in KNEE_POINTS:
@@ -512,8 +523,8 @@ def falsifiers(arms, sq=None, dump_rows=()):
     a, na, ua, fa = m(C1S, 512, lambda r, t: gp(r), drop_flagged=True)
     b, nb, ub, fb = m(C1S, 2048, lambda r, t: gp(r), drop_flagged=True)
     rec(8, "c1s goodput median at 512 >= 0.95 x control over the unflagged rows: the c1s cost is overstated",
-        UNSC if None in (a, b) else (FIRES if a >= 0.95 * b else NOFIRE),
-        f"P512 {fmt(a)} (unflagged n {na}, unbound {ua}, quinn-collapse excluded {fa}) vs 0.95 x P2048 {fmt(None if b is None else 0.95 * b)} (unflagged n {nb}, excluded {fb})")
+        UNSC if (None in (a, b) or na < F8_MIN_ROWS or nb < F8_MIN_ROWS) else (FIRES if a >= 0.95 * b else NOFIRE),
+        f"(needs >= {F8_MIN_ROWS} unflagged rows in each arm) P512 {fmt(a)} (unflagged n {na}, unbound {ua}, quinn-collapse excluded {fa}) vs 0.95 x P2048 {fmt(None if b is None else 0.95 * b)} (unflagged n {nb}, excluded {fb})")
     # F9: the dump's records are (outcome, us): no path, no seq
     dn = [(r.get("succdump") or {}).get("records") for r in dump_rows]
     ctl = arms.get((C8, "P%d" % _pp().CONTROL56[C8]), [])
@@ -524,14 +535,22 @@ def falsifiers(arms, sq=None, dump_rows=()):
         UNSC, "the dump holds (outcome, us) records only -- no path and no seq -- so 'p0 holes overtaken by p1 seqs' cannot be computed from it (a path-tagged dump needs an engine change "
         f"this block excludes). Dump rows read: {len(dump_rows)}, records {dn or '-'}" + (side if dump_rows or ctl else ""))
     # F10
-    mult, miss = {}, []
+    mult, miss, noisy = {}, [], []
     for cell in (C1S, C2, C8):
-        p95 = ((sq or {}).get(cell) or {}).get("points", {}).get(0.95)
+        s_ = (sq or {}).get(cell) or {}
+        p95 = s_.get("points", {}).get(0.95)
         if p95 is None or p95[3] is None:
             miss.append(cell)
         else:
             mult[cell] = p95[3]
-    if miss:
+            sp_ = s_.get("T0_spread")
+            if p95[2] is not None and sp_ is not None and abs(p95[2]) <= sp_:
+                noisy.append(f"{cell} (T-bar - T0 = {p95[2]:.1f} ms within T0's spread {sp_:.1f} ms over {s_.get('T0_n')} smallest-W rows)")
+    if noisy:
+        rec(10, "the standing-queue multiple (T-bar - T0)/ell at the 0.95 point differs across c1s, c2, c8 by more than x3: the q*ell form is wrong",
+            UNSC, "T-bar - T0 at the 0.95 point is not distinguishable from T0's own row-to-row spread (the first second carries start-up queue): " + "; ".join(noisy)
+            + (f"; not computable for {miss}" if miss else "") + "; multiples read: " + ", ".join(f"{c} {v:.2f}" for c, v in mult.items()))
+    elif miss:
         rec(10, "the standing-queue multiple (T-bar - T0)/ell at the 0.95 point differs across c1s, c2, c8 by more than x3: the q*ell form is wrong",
             UNSC, f"the 0.95 point is not computable for {miss}; read: " + ", ".join(f"{c} {v:.2f}" for c, v in mult.items()))
     else:
