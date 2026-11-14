@@ -29,6 +29,22 @@ this doc, and paper sections are named "paper §". Base: `db012f16`.
    - soften the claims I had not read (gate `SLOPE` entry, goldens, JS σ²,
      `RWM_DELTA`) and list them in §6;
    - add the ⌊A*⌋/⌈A*⌉ vs ceil divergence to §5.
+4. *Main-session Fable review of c397d297* ("strong candidate, not yet a
+   result"). It changed §7 and the scope of §0:
+   - it required an arbiter and a decoder bound at A*. That gave the oracle
+     port (C6 within 1 %) and the sliding decode, which narrowed the
+     recommendation to the block callers;
+   - it required the measured L1 W and an evaluation scheme. That gave
+     W = 201 from `[SPAN] wsize=` and the once-per-snapshot plus age-cache
+     scheme in §2;
+   - it required the root-cause quotes, the r\* finding and the item-3
+     numbers. ρ-inert is no longer total; T_cut is unchanged by identity;
+   - it required the slope bound and the recorded change of criterion (§7 R4).
+
+   My own advisor rounds for this review added several checks: the
+   `temporal_oracle` port and its self-check, the sliding-sim seeds and
+   tolerances, the input sweep for the measured band, `generation=false` on
+   L1, the `rce=` baseline, and the dial-sweep requirement for the gate.
 
 ## 0. Result
 
@@ -55,10 +71,20 @@ p + q = 2/(σ² + 1) and p = ε·(p + q).
 - It tends to the Φ form as O(W^−½). That limit is not reached at any
   operating window.
 - It passes every assertion of the engine pin.
+- It matches the repo's executed oracle (`temporal_oracle.rs:1476`, ported)
+  within 1 %, where the shipped form is off by 21–53 % (§7 R1).
+- **Scope.** C6 is recommended for the block callers (sim and cartoon windows,
+  `r_saturation`). At the shed budget's A* 4–7 it is a candidate only: the
+  sliding-window decoder recovers up to 0.15 more than the block law (a
+  no-deadline bound), and that sliding per-loss law is open (§7 R1).
 - On c1s, c1d, c2 and c8, r* stays bit-identical 0 (proof in §4). The law
   still **executes** there, because `r_saturation` runs on every rate
-  evaluation. Its CPU cost is about 10× the shipped Φ's, which puts the
-  per-evaluation resource bound at risk (§4). That is the change L1 would see.
+  evaluation, so the only L1-visible change is CPU. With the §2 evaluation
+  scheme it is bounded by the existing 2 % budget (§7 R2, an estimate to
+  bench).
+- The same event error sits in paper §4.2's r\* inversion. Off-Bulk, the
+  random term under-provisions by 52× (Auto) to ~10³× (Realtime) of the tail
+  target on the C6 law (§7 R3). This is flagged for the ledger and §51.
 
 ## 1. What P_fec must mean
 
@@ -71,9 +97,20 @@ p + q = 2/(σ² + 1) and p = ε·(p + q).
   - coded-only: 640 by default, up to 4096;
   - generation: G·(M+1), at least 200.
 
-  The L1 harness passes `--window-generation-coding` by default
-  (`tools/l1/perf_rwm_c.sh:71`). So the W that `r_saturation` reads on L1 is
-  ≥ 200, and I have not determined its value (§6). The grid stops at 200.
+  The L1 harness passes `--window-generation-coding` (`tools/l1/perf_rwm_c.sh:71`),
+  but the L1 rows log `generation=false` in their gate banner (e.g.
+  `docs/l1-raw/anchor-diag/diag-ad/c1s-400-MAIN-s42-r1-a1-c.log`), so the
+  systematic cap applies. **Measured W:** the `[SPAN] wsize=` gauge (the
+  `encoder.window_size()` that `cadenced_repair_rate` passes,
+  `emit_source.rs:522–528`, `:662`) reads p50 **201**, max 213–247 at c1s,
+  c1d, c2 and c8 (anchor-diag MAIN rows). The same holds in the later
+  loop-diag, store-law-n1 and thread-sk rows. A* there is 201–263, i.e.
+  W-clamped. The grid's W 200 is therefore the L1 window.
+- Span geometry (`emit_source.rs:784–806`): a repair codes over
+  [max(ws, end − A*), end) with end = newest + 1 − Δ and
+  Δ = clamp(⌈rate·J⌉, 1, 64). Some repair slots carry a source **copy** of a
+  P_lost-branch retransmit instead of a coded symbol (`use_retransmit`,
+  `:760–783`). That targeted path is not in any model here.
 - Repairs come from deterministic debt accrual. The engine banks r per source
   symbol (`TaperBudget`, `control/fec_rate.rs:678–703`); the sim does the same
   (`raptorpath-wasm/src/lib.rs:1358`, emitted at `debt ≥ 1`, `:1289`).
@@ -198,21 +235,24 @@ No constant appears, and nothing is tuned.
 - r = 0 gives n₀ = 0 and f = 0. S(k; 0) = 0 for k ≥ 1, and the k = 0 term has
   weight 0. So P = 0 is the formula's value, not a branch. The shipped
   `r <= 0` guard can stay as the domain projection of r < 0 only.
-- **Cost (an operation count, not a bench).**
-  - The π_W DP is W steps × W counts × 2 states × about 4 ops, i.e. ≈ 8W²
-    (3.2·10⁵ at W 200).
-  - G(n) for n ∈ [0, W+1] takes the binomial survival plus a weighted sum,
-    ≈ 6W² (2.4·10⁵).
-  - The 199 grid points are then O(1) each.
-  - Total: ≈ 6·10⁵ flops per `r_saturation` call at W 200, and ×2 per rate
-    (both mix terms, `fec_rate.rs:157–170`).
-  - That is 1.2·10⁶ flops per evaluation. The stated resource bound is
-    ~0.1 ms per evaluation and ≤ 1 per 5 ms (`RATE_CADENCE_MAX_US`,
-    `fec_rate.rs:172–180`). Scalar code would land about 10× over the ~0.1 ms,
-    more at W 640 (×10 again), so the code change must address the cost.
-    Options: π_W and G cached per (ε̂, σ², W) between estimator updates, or
-    `r_saturation`'s grid re-derived (R04).
-  - The shipped Φ is O(1) per point.
+- **Cost and evaluation scheme.** See §7 R2 for the measured baseline.
+  - The π_W DP is ≈ 8·W·k_max ops. G(n) for the ≤ 2·199 needed n is
+    ≈ 6·199·k_max.
+  - k_max is the largest k with tail mass > 1e-17 (out-r§R2). The dropped
+    mass is ≤ 1e-17, so the error in P is ≤ 1e-17/ε: below f64 resolution of
+    every caller, so not a step.
+
+  The scheme (no quantised key, which would be a step):
+  1. `r_saturation` does not read the mix term (`bulk_late_is_fine`), so it
+     is evaluated **once per `RateSnapshot`** and passed to both
+     `controller_rate` calls. This is exact and halves the cost.
+  2. Its result is cached by **age only**, on the `RepairRateCache` precedent
+     (`fec_rate.rs:233–245`, "Age only: W and the path are inputs, not
+     keys"). The period T_sat is set so that the amortised cost meets the
+     existing ~2 % core budget (`RATE_CADENCE_MAX_US` provenance,
+     `fec_rate.rs:172–180`): T_sat = max(rate period, C_sat/0.02).
+  3. Staleness is ≤ T_sat. This is a resource bound stated outside the law,
+     like the rate cadence, with a gauge (evaluations, µs) in `rce=`.
 
 **Where C6 departs from the shipped code.** Everywhere, not just below the
 floor (out§7):
@@ -375,15 +415,27 @@ Only its output is annihilated (step 3).
 **Registered per-cell prediction (c1s, c1d, c2, c8).**
 - r* = 0, bit-identical.
 - Shed unarmed.
-- Sender CPU up by about 1.2·10⁶ flops per rate evaluation, against the Φ
-  form's ~2·10³. That is an op count, not a bench: at ≤ 1 evaluation per 5 ms
-  it is of order 10–20 % of a core at scalar speed, more at W > 200.
-- So the guard's CPU/GB clauses are where L1 would see this change, unless the
-  code change caches π_W and G (§2 cost).
+- CPU on the `rce=` gauge. Today it reads 2.2 / 3.2 / 93 / 68 µs per
+  evaluation at c1s / c1d / c2 / c8, at about 150–245 evaluations per second
+  (§7 R2).
+  - Without the §2 scheme, each evaluation would add one `r_saturation` at
+    W 201: 1.5–3.1·10⁵ ops (truncated, out-r§R2), i.e. of order +0.2–0.3 ms.
+    That is 5–7 % of a core at 200 evaluations per second.
+  - With the scheme, the amortised cost meets the 2 % budget by
+    construction, and `rce=` µs per evaluation rises only on the evaluations
+    that refresh r_sat.
+  - This is an **estimate that needs a bench**. The guard's CPU/GB clauses are
+    where it would show.
 - Rate and goodput clauses should read a no-op.
-- The first cells where the rate itself moves are off-Bulk (Auto, β = 0, where
-  the soft cap acts) or ρ < 1 (shed). Neither has been measured
-  (`law-ledger.md:919`).
+- The rate itself moves only off-Bulk (Auto, β = 0, where the soft cap acts),
+  which L1 has not measured (`law-ledger.md:919`).
+- **ρ < 1 has been measured:** the paper §5.6 battery on the evicting seat
+  (L0 c3-1200B, ledger `8e77ba67`). There the sender budget read
+  bud = 0.000–0.002 at A* 4–7, r 0.2–0.5, and it bound: shed 0–25 against
+  52–773 refused per rep. Under C6 the fixture's budget goes 0.49 % → 3.1 %
+  (A* 4) and 0.22 % → 2.4 % (A* 7) (out-r§R3d). **Prediction:** at that cell
+  the budget rises 6–11×, and with it the number of past-deadline holes the
+  sender may shed, up to the budget, against 0.25 % measured shed today.
 
 ## 5. What the code change would touch (not done)
 
@@ -404,7 +456,8 @@ Only its output is annihilated (step 3).
   - `lib.rs:1449` C4 band fails (0.55).
   - `monte_carlo_validation.rs:89` and `:940` (tolerances vs Φ), `:899–918`
     (r_sat argmin re-implementation, which must use the new form) and
-    `temporal_oracle.rs:1504`, `:1743`: re-check.
+    `temporal_oracle.rs:1504`, `:1743`: re-check. The ported `:1504` band
+    (0.6, 1.7) holds under C6, at 0.99–1.01 (§7 R1).
 
 **Engine (`raptorpath`).**
 - `residual_loss_after_fec` (`fec_rate.rs:784`) is unchanged in shape.
@@ -435,9 +488,9 @@ Only its output is annihilated (step 3).
 - **New model-vs-engine divergence.** The cartoon mixes ⌊A*⌋ and ⌈A*⌉,
   while the engine uses ⌈rate·D⌉ (`emit_source.rs:578`). Per CLAUDE.md it needs
   a bounding test: |R_cartoon − R(⌈A*⌉)| ≤ the one-slot difference of C6.
-- Add a `SLOPE` entry for the shed budget R(δ) to the ±2 % nudge gate
-  (`test_visualizer.mjs:319–341`). That way the gate covers the law this fix
-  makes continuous.
+- Add an R(δ) check to `test_visualizer.mjs` with the derived tolerance tol_R
+  of §7 R4. It runs in linear space, has no monotonicity clause, and covers a
+  dial sweep that includes δ 0.045–0.058, not only the three preset nudges.
 
 **Paper.**
 - §4.2 `:693–700`: the Setup becomes the per-loss event and the C6 line. "This
@@ -457,8 +510,10 @@ the cap's role at C4 is lost.
 - **Uniform accumulator phase U.** It is assumed, not measured, in the engine
   `TaperBudget` (its offset re-timing, `fec_rate.rs:698–700`) and in the sim's
   `min(8.0)`-capped debt (`:1358`).
-- **Block-equivalent vs sliding-window decoding.** Whether the overlapping
-  spans make the true per-loss recovery higher than C6 is not measured.
+- **Block-equivalent vs sliding-window decoding.** Simulated in §7 R1:
+  sliding is +0.04–0.15 over C6 with no deadline. Under the engine's ARQ race
+  and the taper-copy slots it is not measured. The sliding per-loss law is not
+  derived.
 - **Whether the engine ever ran on the P_fec > 0 side.** The "consumed r ≈ 0.34
   at ε ≈ 4.8 %" fixture comment (`fec_rate/tests.rs:277–279`) is unsourced.
   §4's proof needs only the Bulk configuration, not this.
@@ -468,14 +523,247 @@ the cap's role at C4 is lost.
 - **§4.2's r\* inversion.** It uses the window event and the normal tail. By
   out§7's tail numbers it under-provisions more than §4.2's "30–50 %" note says.
   That is a separate finding for the r* rows of the ledger and §4.3, not part of this change.
-- **The Rust cost.** About 6·10⁵ flops per `r_saturation` call at W 200
-  (×2 per rate) is an operation count, not a bench. The ~10× over the
-  0.1 ms evaluation budget is an estimate.
-- **The W `r_saturation` reads on L1.** The generation-coding window
-  (G·(M+1) ≥ 200) and the coded-only 640 were not grid-checked. The cost
-  scales as W².
-- **The visualizer gate.** Whether `test_visualizer.mjs`'s `SLOPE`-scaled
-  nudge passes C6 is untested, because R has no `SLOPE` entry.
+- **The Rust cost.** 1.5–3.1·10⁵ ops per `r_saturation` at W 201 (§7 R2) is an
+  operation count, not a bench. The 0.15–0.3 ms per call and the T_sat that
+  follows from it are estimates.
+- **The coded-only and generation windows** (640 and G·(M+1)) are not on L1
+  (`generation=false`) and were not grid-checked. The cost scales as W·k_max.
+- **The visualizer gate.** The tol_R check of §7 R4 is specified but not run.
+- **The measured A\* datum (0.71–0.84).** Its per-rep inputs are unrecorded,
+  so it does not separate the forms (§7 R1d).
+- **The `temporal_oracle` port** is Python. The cargo test itself was not run
+  (no-cargo brief).
 - **Unread premises.** Which batteries set `RWM_DELTA`, and whether the JS UI
   can pass σ² < 1 to the raw wasm exports. The UI derives σ² from (ε, q)
   (`interactive-visualizer.html:129`), but its slider ranges were not read.
+
+## 7. Main-session review (round 4): decoder, cost, reach, gate
+
+Numbers: `pfec-continuous/pfec_review.py` → `pfec_review.out`, cited as
+**out-r§Rn**.
+
+### R1. The decoder at the A* windows
+
+**(a) Arbiter.**
+- `raptorpath-math/tests/formula_verification.rs:143` is analytic: it puts
+  bands on `p_fec_normal` itself. It is not an arbiter.
+- The only executed-process check of P_fec in the repo is
+  `temporal_oracle.rs:1476` `unified_rstar_n1_reduces_to_84`. Its process
+  (`:1361–1423`) is a block window of W 64, GE-correlated repairs after the
+  sources, and probabilistic rounding of rW. It counts per-symbol misses
+  (`fec_miss`), which is the per-loss event. So it arbitrates the **count law
+  and the event**, not the sliding decoder.
+- I ported it to Python (a port, not a cargo run). The port passes its
+  self-check: the shipped form's ratios lie inside the test's green band
+  (0.6, 1.7).
+
+| ε, δ (W 64, q .5) | shipped | plain Φ | **C6** | C5 (exact joint) |
+|---|---|---|---|---|
+| .05, .02 | 1.528 | 1.528 | **1.010** | 1.010 |
+| .05, .03 | 0.799 | 1.334 | **1.004** | 1.006 |
+| .10, .04 | 1.322 | 1.322 | **0.991** | 0.993 |
+| .10, .06 | 0.724 | 1.210 | **0.990** | 0.997 |
+| .08, .03 | 1.416 | 1.416 | **1.003** | 1.003 |
+
+The ratio is oracle tail / (ε·(1 − P)), out-r§R1c. **C6 sits closest: within
+1 % on all five scenarios. Shipped and Φ are off by 21–53 %.**
+
+**(b) The "~1 % class" in the pin comment.**
+- It is the streaming machine's measured shed share, not a measured FEC
+  residual. Its source is commit `6568822c` ("the residual sits in the ~1 %
+  class the streaming machine sheds") and ledger `8e77ba67` (streaming lost
+  140/14 000 ≈ 1.0 %).
+- The same battery's measured inputs are A* 4–7 and r 0.2–0.5 (L0 c3-1200B,
+  GE 2/40, so σ² 3.76 per datagram, `transport/l0_netem.rs:76`). They give
+  one attribution datum: data-direction holes resolved by DECODE 51 against
+  SOURCE/ARQ 10–21, a share of 0.71–0.84.
+- That is one FDIAG rep with ≈ 65 holes, and its r and A* were not recorded
+  per hole.
+
+**(c) Exact joint GE and a sliding decode.**
+- **C5, the exact joint GE per-loss block value at W 3–7** (out-r§R1a), at
+  ε .048, σ² 3.76, r 0.29–0.34: 0.20–0.47. C6 gives 0.26–0.50. C6 is above
+  C5 by 0.03–0.06, because correlated repair erasure is ignored.
+- **Sliding-window decode simulation** (out-r§R1b):
+  - It uses the engine's trailing span [end − A*, end), end = newest + 1 − Δ,
+    with debt-accrual emission and one GE chain over the wire.
+  - It decodes by generic rank with no deadline, so it is an **upper bound**:
+    in the engine, ARQ races it.
+  - Runs: 3 seeds × 2 rank tolerances, standard error ≤ 0.006.
+  - Result: 0.34–0.62 at A* 4–7. That is 0.04–0.15 **above** C6. The A* 5,
+    r .34 jump from Δ 1 to Δ 2 (0.452 → 0.555) is reproduced across seeds
+    (SE .003), so it is real.
+  - At W 64, r .1 the sliding value is 0.768, C6 0.625 and shipped 0.826, so
+    the shipped form is nearer there. At W 200, r_c: sliding 0.434, C6 0.375,
+    shipped 0.
+
+**(d) Which inputs reach the measured band** (out-r§R1d, ε .048):
+
+| form | in-band cells (σ², A*, r) |
+|---|---|
+| shipped | (3.76, 4–7, 0.2) and (2, 4, 0.2) |
+| C6 | none at σ² 3.76; at σ² 2: (4, 0.5) and (7, 0.34); at σ² 1: (7, 0.2) |
+| C5 | same as C6 |
+| sliding | (3.76, 7, 0.5) and (2, 4, 0.5) |
+
+So the datum does not separate the forms. It is reachable by every form at
+some point of the battery's own input range, and its rep's (σ²_est, r, A*)
+are unrecorded.
+
+**Verdict for R1.**
+- **C6 is the exact block law under iid repair erasure**, and it is
+  confirmed against the repo's own executed oracle.
+- The **sliding per-loss law is the open derivation.** At A* 4–7, C6 reads
+  low by up to 0.15 against the no-deadline sliding bound, and up to 0.14 at
+  W 64. Low P is the unsafe direction: the shed budget R is larger
+  (non-conservative for ρ) and r_sat is looser.
+- Scope of the recommendation:
+  - **recommended:** the block callers, i.e. the sim and cartoon windows, and
+    `r_saturation`, whose W ≈ A* on L1;
+  - **candidate, not recommended:** the A* shed budget until the sliding law
+    is derived.
+- The shipped form is excluded at every caller: it is the step, and it is
+  21–53 % off the oracle.
+- **Gauges that settle the A* question.** In one evicting-seat rep, record
+  together:
+  - `[SPAN] a_star=`, `rr=` and `shed=/bud=`;
+  - ε̂ and σ²_est;
+  - the FDIAG decode-vs-SOURCE/ARQ attribution.
+
+  Register the prediction per form before the run.
+
+### R2. W and cost on L1
+
+- **The W `r_saturation` receives on L1 is 201.** This is the `[SPAN] wsize=`
+  p50 at c1s, c1d, c2 and c8 (max 213–247), with `generation=false` in the
+  gate banner (§1). The generation and coded-only caps do not apply on L1.
+- **Measured baseline** (`rce=` gauge, anchor-diag MAIN client rows,
+  evaluations / µs total):
+
+  | cell | evaluations / µs | µs per evaluation | evaluations per second |
+  |---|---|---|---|
+  | c1s | 925 / 2078 | 2.2 | ≈ 190 |
+  | c1d | 1423 / 4576 | 3.2 | ≈ 245 |
+  | c2 | 1362 / 126 064 | 93 | ≈ 155 |
+  | c8 | 1153 / 78 994 | 68 | ≈ 154 |
+
+  The period is min(5 ms, srtt/4) (`fec_rate.rs:233–235`). W changes on about
+  half of the evaluations at c1s and c1d (`w447/925`, `w679/1423`), so a key
+  on W would miss. A quantised key would be a step.
+- **C6 cost at W 201** (out-r§R2), truncated at tail mass 1e-17, error
+  ≤ 1e-17/ε: k_max is 55 / 79 / 109 at c1 / c2 / c3 nominal, giving
+  1.5–3.1·10⁵ ops per `r_saturation` call. The full un-truncated cost is
+  5.7·10⁵.
+- **Evaluation scheme** (§2 cost):
+  1. r_sat is computed once per snapshot, not twice. This is exact.
+  2. It is cached by age only, with period T_sat = max(rate period,
+     C_sat/0.02). At about 0.15–0.3 ms per evaluation, T_sat ≈ 8–15 ms, which
+     meets the 2 % budget that `RATE_CADENCE_MAX_US` states.
+- **Prediction on `rce=`:** µs per evaluation stays at the baseline
+  2.2 / 3.2 / 93 / 68. An additional +150–300 µs appears only on the r_sat
+  refresh (≤ 1 per T_sat), so the amortised added load is ≤ 2 % of a core.
+  This is an estimate that needs a Rust bench.
+
+### R3. Root cause reach
+
+**Quotes and confirmation.**
+- `fec-arq-model.md:205`: "| P_fec | probability a lost symbol is
+  FEC-recovered | probability |".
+- `:693–699`: "Loss count K in the window is approximately Normal(Wε,
+  Wε(1−ε)σ²_burst); surviving repairs are approximately Normal(rW(1−ε),
+  rWε(1−ε)). FEC recovers the window iff surviving repairs ≥ K, so
+  P_fec(r) = Φ(…)".
+- `:703–704`: "A symbol is late only if it was lost, so the per-window
+  constraint that meets tail target t_tail is `P(repairs < K) ≤ t_tail/ε`."
+- **Confirmed: the §4.2 event includes K = 0.** It is "the window recovers";
+  at r = 0 its exact value is P(K = 0) (0.864 at the pin, out§1).
+- :703–704 is where the two events are conflated. Dividing a window-event
+  probability by ε treats "window fails" as "a given lost symbol is late". It
+  ignores that a failing window holds K > 1 losses (size bias).
+
+**Rate-law finding (flagged for the law ledger, the r\* rows, and §51).**
+- The machinery first reproduces paper §4.7's exact r\* on the window event
+  (WiFi / LTE / Sat 0.170 / 0.270 / 0.450, out-r§R3a, exact match).
+- On the per-loss event the exact r\* is **0.250 / 0.370 / 0.590**, +47 / +37 /
+  +31 %. C6 gives 0.239 / 0.346 / 0.523.
+- **Off-Bulk at the engine targets** (W 201, nominal L1 (ε, σ²), random term
+  only, out-r§R3b):
+
+  | cell | Auto (t 1e-5): closed → C6 | Realtime (t 1e-7): closed → C6 |
+  |---|---|---|
+  | c1 | 0.010 → 0.049 | 0.015 → 0.087 |
+  | c2 | 0.091 → 0.141 | 0.113 → 0.191 |
+  | c3 | 0.158 → 0.226 | 0.191 → 0.295 |
+
+  - All values stay below `max_overhead` 0.5.
+  - At the shipped closed-form r\*, C6's tail is **52–53× the target at Auto
+    and 850–3 300× at Realtime**. The oracle port already reads 1.2–1.5× at
+    W 64 with mild targets.
+  - The composed rate (max with the burst term and the §4.3 mass term) is
+    **not** computed, so this is the random term's shortfall, not the
+    engine's.
+  - It is unmeasured on L1, which runs Bulk only.
+
+**Status "Owner decisions (2026-11-14)" item 3, recomputed** (out-r§R3c):
+- *Cartoon inputs* (`interactive-visualizer.html:2617–2642`): rate = 4(1−ε),
+  D = min(b·RTT, 2·RTT), A\* = rate·D. These reproduce the audit's R(code) on
+  all ten rows (e.g. 1.9e-5, 5.1e-5 against 1.9e-5, 5.2e-5), which validates
+  them.
+- **ρ-inert at Auto/Realtime changes.**
+  - Under C6, R is 3.5e-4 to 4.1e-3.
+  - At Realtime R exceeds the slider's 1e-3 step on all five cells
+    (1.2e-3 to 4.1e-3), and at Auto on .025/.5/13 (2.0e-3).
+  - The R side binds at 96–99 of 100 positions there, instead of 100. So ρ
+    acts on 1–4 positions per cell.
+  - R·2000 is 0.7–8 symbols, no longer under one.
+  - The recorded owner consequence "ρ is inert over the slider at Auto and
+    Realtime" becomes "ρ acts only at the 1–4 lowest-ρ positions". This is
+    still a degenerate-law finding, but it is no longer total.
+  - Auto on the other four cells stays inert: R 3.5e-4 to 7.9e-4.
+- **T_cut at harsh Bulk is unchanged, by identity.** At Bulk r\* = 0, so
+  R = ε·(1 − P(0)) = ε under the shipped form and C6 alike. The condition
+  1 − ρ < R·ε^(D/RTT) = ε³ (D = 2·RTT) is the same expression. So the audit's
+  8/100 (ε .2, threshold 8e-3, where the count sits on a float tie at the
+  0.008 grid point) and 26/100 (ε .3, 2.7e-2) stand. They are not a recount.
+- The sim-input rows of the audit need the sim itself and were **not
+  recomputed**.
+
+### R4. Gate and the change of criterion
+
+**Change of criterion, recorded.**
+- The brief asked for "≈ 0 neighbour jump on a 2 % grid". That criterion was
+  **replaced** by the h → 0 rows (§3: the jump at h = 1e-6 and at r_c ± 1e-9,
+  plus halving with h).
+- Reason: a 2 % absolute grid jump cannot separate a step from a steep slope.
+  The continuous Φ itself jumps 0.84 there, and C6 jumps 0.98, because the
+  law's true slope at ε .005, W 200 is ≈ W·ΔG.
+- Only a criterion that shrinks with h tests continuity, which is what the
+  NO-MODE-SWITCH invariant asks.
+
+**The derived slope bound (out-r§R4).**
+
+```text
+∂P/∂r = W·(G(n₀+1) − G(n₀)) ≤ L_r := W·max_n (G(n+1) − G(n))        (exact on each piece, tight)
+```
+
+- Verified: the finite-difference slope over L_r is ≤ 1.0000 on the grid.
+- Values: 1.1 at A\* 4, 8.0 at W 64, 9.4 at A\* 51 (.025/.5/13) and 20.1 at
+  W 201.
+- In W (real-W extension), on each piece:
+  ```text
+  ∂P/∂W = P(r; m₀+1) − P(r; m₀)
+  ```
+- For the gate's δ nudge, R(δ) = ε·(1 − P(r\*(δ), A\*(δ))). Compare it in
+  **linear** space with
+  ```text
+  tol_R = 1.5 · ε · ( L_r·|Δr*| + max_m |P(m+1) − P(m)|·|ΔA*| )
+  ```
+  where Δr\* and ΔA\* are the nudge's own changes. dA\*/d log₁₀δ =
+  −A\*·(ln 2)/2 where unclamped, from b(δ) = 2^(−log₁₀(δ/δ_Auto)/2).
+- Log space is unusable: d log R = −dP/(1 − P) is unbounded as P → 1.
+- R is not monotone in δ (audit "Shape in δ"), so the gate's monotonicity
+  clause must not be applied to it.
+- **A `SLOPE` entry at the three presets cannot see W22.** The step sits at
+  δ ≈ 0.045–0.058, between presets. The R check therefore needs a **dial
+  sweep** (e.g. every 1 % of log δ over [0.005, 50]) with the same tol_R per
+  step, not only the preset nudges.
