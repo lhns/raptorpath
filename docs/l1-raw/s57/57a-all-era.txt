@@ -1,0 +1,20 @@
+LD-ALL start plan=57a load=0.17 0.84 1.01 2/390 2707480 2026-11-14T13:52:59Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.08 avg60=0.10 avg300=0.21 total=5012311942 2026-11-14T13:53:07Z
+LD-ALL plan 57a budget: 14391s to LD_HARD (at least 13200s required: the worst case of the status) 2026-11-14T13:53:07Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.15 0.83 1.00; io=full avg10=0.08 avg60=0.10 avg300=0.21 total=5012311942 2026-11-14T13:53:07Z
+LD-ALL plan 57a pre-flight: 5676892 KB free on /dev/shm (need 1048576) 2026-11-14T13:53:07Z
+LD-ALL parser test ok 2026-11-14T13:54:34Z
+LD-ALL built wall=334s 2026-11-14T14:00:08Z
+LD-ALL binary 8f313616b31ac6f4d6346cf03bfcf6246983c426fec4e08951d09d3faf921cbf 2026-11-14T14:00:08Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s57a/src/tools/l1/ref56-manifest.sha256, 182 files) 2026-11-14T14:00:08Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-14T14:06:54Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-14T14:06:55Z
+LD-ALL suites done tfail=0 2026-11-14T14:06:55Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.03 avg300=0.02 total=5013313529 2026-11-14T14:07:03Z
+LD-ALL stage rep57a (plan 57a) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.02 avg300=0.01 total=5013313625 2026-11-14T14:07:11Z
+LD-ALL stage rep57a SMOKE-PASS 2026-11-14T14:08:07Z
+LD-ALL stage rep57a battery rc=0 wall=5367s 2026-11-14T15:37:35Z
+LD-ALL stage rep57a end ok=1 VERDICT57A REPORTED-ONLY slots=63/63 live=63 void=0 replaced=0 dnf=2 unbound=0 collapse=23 outcome=UNDERPOWERED label=UNDERPOWERED z_null=-2.43 z_hyp=-1.92 S=0.62 b256=78.9 e5=NO 2026-11-14T15:37:35Z
+LD-ALL end plan 57a rep57a_ok=1 raptorpath=0 netns=0 2026-11-14T15:37:35Z
