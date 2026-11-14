@@ -142,7 +142,7 @@ def row_metrics57(cli, srv, drv, nbytes=None, cell=C1S, pool=None):
     L, X = [tk[i] for i in keep], [ex[i] for i in keep]
     t57 = {"n_late": len(L)}
     keys = ("burst", "eb_bursts_d", "eb_syms_d", "release", "wakes_s", "wakes_loop", "aW", "a_mean", "busy", "ackw", "R_tick", "Q", "q_top", "Ttop_ms", "Tbar57_ms", "ell_hat_ms", "q_ell", "q_ell_top",
-            "ell_c1", "r_i")
+            "Tleg_ms", "burst_pre", "r_i")
     t57.update({k: None for k in keys})
     if len(L) < 4:
         return t56, t57
@@ -151,6 +151,11 @@ def row_metrics57(cli, srv, drv, nbytes=None, cell=C1S, pool=None):
     if a["eb"] and b["eb"] and b["eb"][0] > a["eb"][0]:
         t57["eb_bursts_d"], t57["eb_syms_d"] = b["eb"][0] - a["eb"][0], b["eb"][1] - a["eb"][1]
         t57["burst"] = t57["eb_syms_d"] / t57["eb_bursts_d"]
+    onset = t56.get("qc_onset_s")
+    if onset is not None:       # a collapse row: the burst before the collapse starts (reported only; the registered burst is the LATE one above)
+        pre = [x for d, x in zip(L, X) if d["t"] < onset and x["eb"]]
+        if len(pre) >= 2 and pre[-1]["eb"][0] > pre[0]["eb"][0]:
+            t57["burst_pre"] = (pre[-1]["eb"][1] - pre[0]["eb"][1]) / (pre[-1]["eb"][0] - pre[0]["eb"][0])
     if a["cum"] is not None and b["cum"] is not None and a["wack"] is not None and b["wack"] is not None and b["wack"] > a["wack"]:
         t57["release"] = (b["cum"] - a["cum"]) / (b["wack"] - a["wack"])
         t57["wakes_s"] = (b["wack"] - a["wack"]) / span if span > 0 else None
@@ -171,12 +176,10 @@ def row_metrics57(cli, srv, drv, nbytes=None, cell=C1S, pool=None):
         floors = lifetime_min_rtp(tk, legs)
         if all(i in floors for i in legs) and w["R"] > 0:
             t57["ell_hat_ms"] = sum(w["r"][i] * floors[i] for i in legs) / w["R"]
-        if len(legs) == 1:
-            t57["Tbar57_ms"] = t57["Ttop_ms"]
-        elif w["R"] > 0:
-            leg_means = {i: mean([d["rtt"].get(i) for d in L]) for i in legs}
-            if all(v is not None for v in leg_means.values()):
-                t57["Tbar57_ms"] = sum(w["r"][i] * leg_means[i] for i in legs) / w["R"]
+        leg_means = {i: mean([d["rtt"].get(i) for d in L]) for i in legs}
+        if w["R"] > 0 and all(v is not None for v in leg_means.values()):
+            t57["Tleg_ms"] = sum(w["r"][i] * leg_means[i] for i in legs) / w["R"]       # the legs' integer-ms echo rtt, per-tick means, rate-weighted (the only form with two legs)
+        t57["Tbar57_ms"] = t57["Ttop_ms"] if len(legs) == 1 else t57["Tleg_ms"]
     if t57["Tbar57_ms"] is not None and t57["ell_hat_ms"] is not None:
         t57["q_ell"] = t57["Tbar57_ms"] - t57["ell_hat_ms"]
     if t57["Ttop_ms"] is not None and t57["ell_hat_ms"] is not None:
@@ -487,6 +490,8 @@ def missing57(plan, r):
     if r["cell"] == C1D:
         t = r.get("t56") or {}
         miss += [k for k in ps.REQUIRED_C8 if t.get(k) is None]
+        if is_flagged(r) and r.get("dnf"):        # pool56's exemption of a collapsed row that hit the timeout (no summary) is c1s-only; the c1d flag is the both-leg one
+            miss = [k for k in miss if k not in ps.COLLAPSE_EXEMPT and k != "H0"]
     t57 = r.get("t57") or {}
     return miss + [k for k in _need57(plan) if t57.get(k) is None]
 
@@ -531,8 +536,12 @@ def smoke(plan, path, out=print):
     if plan == "57a":
         r = got.get((pp.CELL57A, "B256_512"))
         b = v57(r, "burst") if r else None
+        why = ""
+        if r and is_flagged(r):
+            why = (f" -- NOTE the row is collapse-flagged (below-BDP share {fmt(ps.qc_value(r), 3)}, onset {fmt(ps.tv(r, 'qc_onset_s'), 1)} s): a collapsed c1s row sends short bursts (section 56's collapsed P512 rows read 17.8 - 26.7 against 47.6 - 48.8), "
+                   f"so this may be the collapse and not the knob; burst before the onset {fmt(v57(r, 'burst_pre'), 1)}. The registered rule still aborts; re-run the smoke")
         crit("the knob acts: the B256-512 row's realised mean burst (d eb_syms / d eb_bursts over LATE) exceeds 64",
-             [] if (b is not None and b > 64) else [f"realised mean burst {b} <= 64 or unreadable (RWM_EMIT_BURST=256 does not act)"])
+             [] if (b is not None and b > 64) else [f"realised mean burst {b} <= 64 or unreadable (RWM_EMIT_BURST=256 does not act){why}"])
     for r in rs:
         out(f"  LIVENESS {r['cell']} {r['arm']} s{r['seed']} rep{r['rep']}: {'LIVE' if r['status'] == 'LIVE' else 'VOID'} {' '.join(r['problems'])}")
     if bad:

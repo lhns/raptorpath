@@ -105,12 +105,15 @@ check("run_all: the budget guard refuses with less than the worst case left: 57a
       "13200" in runall and "5400" in runall and "ABORT-BUDGET plan 57" in runall and "LD_HARD_MIN_S" in runall)
 check("run_all: the engine suites are reused only on the reference-manifest hit (the SAME ref56-manifest.sha256: main's engine still equals it), the tools tests always run",
       'if [ "$PLAN" = "56" ] || [ "$P57" = 1 ]; then suites_stage56; return; fi' in runall and "ref56-manifest.sha256" in runall)
-refm = subprocess.run(["bash", os.path.join(HERE, "ref_manifest.sh"), "HEAD"], capture_output=True, text=True, cwd=HERE)
-if refm.returncode == 0:
+# NOT a check: this file runs in the session's `tst parsers` suite, and a later engine commit would fail it there (ABORT-TESTS on exactly the reuse-miss path). The run_all reuse decision is the gate.
+import shutil  # noqa: E402
+_bash = shutil.which("bash")
+refm = subprocess.run([_bash, os.path.join(HERE, "ref_manifest.sh"), "HEAD"], capture_output=True, text=True, cwd=HERE) if _bash else None
+if refm is not None and refm.returncode == 0:
     same = refm.stdout.replace("\r", "") == open(os.path.join(HERE, "ref56-manifest.sha256"), newline="").read().replace("\r", "")
-    check("the committed reference manifest (ref56) still equals this tree's raptorpath/src + raptorpath/tests (no ref57 needed)", same)
+    print("note: the committed reference manifest (ref56) " + ("still equals" if same else "DIFFERS from") + " this tree's raptorpath/src + raptorpath/tests (equal at the time of writing: no ref57 needed; a difference means the engine suites run)")
 else:
-    print("skip the live manifest comparison (no git/bash here):", refm.stderr[:100])
+    print("note: live manifest comparison skipped (no git/bash here)")
 import harness_paths as hp  # noqa: E402
 check("HARNESS_PATHS lists 57a and 57b: rehearse, full, reuse-hit, reuse-miss (plan 56's shape: no prior-tests, no historical-base)",
       hp.HARNESS_PATHS.get("57a") == ("rehearse", "full", "reuse-hit", "reuse-miss") and hp.HARNESS_PATHS.get("57b") == ("rehearse", "full", "reuse-hit", "reuse-miss"))
@@ -277,6 +280,13 @@ if os.path.exists(S56):
           "on 2 / 5 / 3 / 2 / 6 unflagged rows", all(a in ref and ref[a][0] == n and near(ref[a][1], q, 0.15) and near(ref[a][2], g, 0.02) for a, (n, q, g) in want_ref.items()), ref)
     check("the registered constants C1S_REF are those reference points (the scorer scores against the constants, the test recomputes them)",
           [(round(q, 1), g) for q, g in p57.C1S_REF] == [(2.1, 0.79), (2.7, 0.89), (4.7, 0.94), (6.8, 0.96), (15.7, 1.0)] and p57.A_POINTS == p57.C1S_REF[:2] and p57.B_POINTS == p57.C1S_REF[2:4])
+    unfl56 = [r for r in rows56 if not ps.qc_flagged(r)]
+    dq = [abs(r["t57"]["Ttop_ms"] - r["t57"]["Tleg_ms"]) for r in unfl56]
+    check("BOUND on the c1d T-bar quantisation: at np = 1 the leg's integer-ms echo rtt (per-tick MEAN, the only form available at two legs) and the top-level 0.1 ms rtt print the same estimator; on the 18 unflagged "
+          f"section-56 rows their LATE means differ by at most {max(dq):.3f} ms (< 0.06 ms), against the 0.6 ms width of the steep region of T (the quantisation moves q_l by under a tenth of it)", len(dq) == 18 and max(dq) < 0.06, sorted(dq)[-3:])
+    pre = {(r["arm"], r["seed"], r["rep"]): r["t57"] for r in rows56 if ps.qc_flagged(r)}
+    check("a collapsed c1s row sends short bursts over LATE (P512 s42 r1: 26.7) but its burst before the collapse onset is the healthy one (47.4): burst_pre is kept as a reported readout and is None on an unflagged row",
+          near(pre[("P512", "42", "1")]["burst"], 26.7, 0.2) and near(pre[("P512", "42", "1")]["burst_pre"], 47.4, 0.5) and all(r["t57"]["burst_pre"] is None for r in unfl56), pre[("P512", "42", "1")])
     ells = [r["t57"]["ell_hat_ms"] for r in rows56 if r["t57"]["ell_hat_ms"] and not ps.qc_flagged(r)]
     check("c1s l-hat (the lowest rtp_us of the first 2 s) is 2.3 - 2.9 ms on every unflagged section-56 row (registered 2.4 - 2.6) and the floor offset T0 - l-hat is ~1.5 ms (registered DELTA0_C1S)",
           len(ells) == 18 and 2.3 < min(ells) and max(ells) < 2.9 and near(p57.T0_MS - lc.med(ells), p57.DELTA0_C1S, 0.15), (min(ells), max(ells), lc.med(ells)))
@@ -623,6 +633,10 @@ inert = real_row("57a", "B256_512", bad="burstinert")
 rc_, txt = smoke_text([inert], "57a")
 check("57a smoke ABORT: the B256-512 row with a realised mean burst of 48 (<= 64: RWM_EMIT_BURST does not act) FAILS the 'knob acts' criterion (SMOKE-FAIL, rc 1: the stage prints ABORT-SMOKE)",
       inert["status"] == "LIVE" and rc_ == 1 and re.search(r"^FAIL the knob acts", txt, re.M) and "SMOKE-FAIL" in txt and near(inert["t57"]["burst"], 48.0, 1.0), (rc_, txt[-900:], inert["problems"]))
+coll = dict(good, qcwnd_below={"per_leg": [0.6]}, t56=dict(good["t56"], qc_share=0.6, qc_onset_s=12.0), t57=dict(good["t57"], burst=22.0, burst_pre=47.0))
+rc_, txt = smoke_text([coll], "57a")
+check("57a smoke on a COLLAPSE-flagged B256-512 row (burst 22 over LATE, 47 before the onset): the registered rule still ABORTS (rc 1, no retry), and the FAIL line carries the collapse share, the onset and the pre-onset burst "
+      "(section 56 collapsed 4 of 9 P512 rows: the abort probability of the smoke is of that order)", rc_ == 1 and "collapse-flagged (below-BDP share 0.600, onset 12.0 s)" in txt and "burst before the onset 47.0" in txt and "re-run the smoke" in txt, txt[-900:])
 edge = dict(good, t57=dict(good["t57"], burst=64.0))
 edge2 = dict(good, t57=dict(good["t57"], burst=64.01))
 check("the burst criterion is strict: a realised burst of exactly 64.0 fails, 64.01 passes (> 64 required)", smoke_text([edge], "57a")[0] == 1 and smoke_text([edge2], "57a")[0] == 0)
@@ -643,6 +657,10 @@ check("57b smoke: one row missing -> FAIL 'one row per smoke slot ran'", rc_ == 
 dnf_row = dict(good_b[0], dnf=True)
 rc_, txt = smoke_text([dnf_row, good_b[1]], "57b")
 check("57b smoke: an unflagged DNF row FAILS the 300 s criterion (a collapse-flagged one would not)", rc_ == 1 and re.search(r"^FAIL every smoke row finished", txt, re.M) is not None, txt[-500:])
+cdnf = dict(good_b[0], dnf=True, qcwnd_below={"per_leg": [0.5, 0.5]}, t56=dict(good_b[0]["t56"], goodput_mbps=None, rx_dup=None, retx_per_gb=None, cpu_cli_s_per_gb=None, H0=None, tail_s=None))
+odnf = dict(cdnf, qcwnd_below={"per_leg": [0.0, 0.0]})
+check("a both-leg-collapsed c1d row that hit the timeout (a DNF: no summary, so no goodput / duplicates / retransmits / CPU) misses nothing in the smoke's readout check; an UNFLAGGED DNF row still does",
+      p57.missing57("57b", cdnf) == [] and "goodput_mbps" in p57.missing57("57b", odnf), (p57.missing57("57b", cdnf), p57.missing57("57b", odnf)))
 leak = real_row("57b", "P192", bad="burstfallback")
 check("57b: the stub's burst fallback leaves the shipped 64 echoed (what 57b requires), so no gate-burst problem; a leaked RWM_EMIT_BURST=256 would fail it (witness tests above)", not any(x.startswith("gate-burst") for x in leak["problems"]))
 # the whole T report on rows from the stub driver: the pipeline row parser -> t56 / t57 -> score_b

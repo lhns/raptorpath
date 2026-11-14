@@ -255,7 +255,7 @@ check("battery: plan 54's [SNAPV] preflight (CAND has the gauge, BASE does not) 
       'if [ "$W54" = 1 ]; then' in bat and "has no [SNAPV] gauge: it does not contain the snapshot-order law" in bat and 'if [ "$P54B" = 1 ]; then' in bat and "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only" in bat)
 check("run_all: LD_PLAN=54 IS plan 41d (PLAN rewritten before every branch) with W54=1 carried in SENV; plan 54b has its own stage rep54b",
       'W54=0; [ "$PLAN" = "54" ] && { W54=1; PLAN=41d; }' in ra and 'LD_WITNESS54="$W54"' in ra and "stage rep54b 54b" in ra and "smk=smoke54; scr=score54;" in ra)
-check("run_all: plans 54 / 54b are accepted by the plan case, the rehearsal case and the harness table", "54b) P_SMOKE=smoke54b" in ra and "41c|41d|46|47|48|52|53|54b|56)" in ra and {"54", "54b"} <= set(__import__("harness_paths").HARNESS_PATHS))
+check("run_all: plans 54 / 54b are accepted by the plan case, the rehearsal case and the harness table", "54b) P_SMOKE=smoke54b" in ra and "41c|41d|46|47|48|52|53|54b|56|57a|57b)" in ra and {"54", "54b"} <= set(__import__("harness_paths").HARNESS_PATHS))
 
 # ── the rehearsal criteria and the report, on synthetic ledgers ──
 def led_row(arm, seed=42, rep=1, status="LIVE", dnf=False, gp=100.0, tail=3.0, old=1200, resid=100, cap=4096, snapv=True, pool=None, mutate=None, rc=0, extra_problems=()):
