@@ -95,3 +95,11 @@ if caps8:
     l0 = [r[0]['l'] for c in caps8 for r in rows[('c8-100', c)]]
     print('c8 leg 1 at the two smallest caps: b0p median %.2f [%.2f-%.2f], l1 median %.2f, l0 median %.2f'
           % (St.median(b1), min(b1), max(b1), St.median(l1), St.median(l0)))
+
+print()
+print('per row: b0p per leg (ms), and l (leg 0), by cap')
+for (cell, cap) in sorted(rows, key=lambda k: (k[0], k[1])):
+    v = rows[(cell, cap)]
+    print('%s %d | b0p0 %s | b0p1 %s | l0 %s' % (cell, cap, ' '.join('%.2f' % r[0]['b0p'] for r in v),
+                                               ' '.join('%.2f' % r[1]['b0p'] for r in v if 1 in r) or '-',
+                                               ' '.join('%.2f' % r[0]['l'] for r in v)))

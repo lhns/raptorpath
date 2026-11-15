@@ -415,6 +415,27 @@ The derivation carries no owner question at this revision. That does not mean se
 
 The derivation is frozen; the next input must be data.
 
+### R6.7 Erratum to R5.5, and an open item: the boot hold and n₀ (from the s60 registration; no number changes)
+
+`docs/derivations/s60-registration.md` §1.2 found, on the p27 window minima, that b̂₀⁺ taken as "the max brake of
+the first K windows" latches whatever queue those windows carry. Under a static pool above the queue-free sizes,
+b0p tracks the standing queue (c2: 2.2 → 23.5 ms from W 128 to 384).
+
+**Erratum to R5.5.** R5.5's landing table is unchanged. It holds only for a law whose boot keeps the store at a
+queue-free n₀ until its K boot windows close: its b̂₀⁺ over-read is the ledger's no-queue value. R6.2's line contains
+no such hold. Without one, a boot that fills the store latches start-up queue into the target, as rev 3's
+boot-latched σ̂⁺ did (one c2 row at 133 ms). In that case R5.5's "0 / 18 below the knee" at c2 is not a prediction for
+the law as written.
+
+**Open derivation item.** The boot hold (store held at n₀ until K windows close) and n₀ itself are terms of the law.
+Neither has provenance yet: n₀ = 128 was an assumption about where the closed loop starts (§13.1 already lists K
+and n₀). They are to be derived, with:
+- s60's P1 (does b0p rise with W);
+- the calibration latch rate (max-of-8 transients at queue-free pools);
+- the flatness gate between two small pools per cell.
+
+The registered R̃ of s60 feeds a calibration row's b̂₀⁺, so it tests the target's form, not this input.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
 ### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]

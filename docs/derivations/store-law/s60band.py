@@ -1,14 +1,14 @@
-"""s60 registration: the frozen crossing BANDS for the replayed R~ (one b0 and one l-hat per cell and leg, taken on
-the cell's calibration arm; s60-registration.md section 1), by propagating each fixed input of the gauge's
+"""s60 registration: the frozen crossing BANDS for the replayed R~ (b0 per leg from the replicate's own calibration
+row at n0 = 128; every other input the row's own: s60-registration.md section 1.4, the ruling of entry 4), by propagating each fixed input of the gauge's
 known-answer test (slaw.rs known_answer_r_on_the_s56_maps) over its measured range. Bulk only: q = 0.10.
 
 Usage: python -I s60band.py      (no input: every number below is copied from a committed .out or status line, cited)
 
 R~ crosses 1 where, on the weight-carrying leg 0,
-    T_min(W)  =  F + sig + q*l_c + gap + shift1
-    F = l_c + b0        (anc = 0: m-hat <= l_c + b0; the KA premise m-hat = l)
-      = l_c + 2*b0      (anc = 1: m-hat >= l_c + b0; on 600 MB rows m-hat tracks the standing queue, s60boot.out lm)
-l_c and b0 are the calibration arm's (the law boots at n0 = 128, at or below the BDP); shift1 = (w1/w0)*D1 is leg
+    T_min(W)  =  F + sig + q*l + gap + shift1
+    F = l + b0        (anc = 0: m-hat <= l + b0; the KA premise m-hat = l)
+      = l + 2*b0      (anc = 1: m-hat >= l + b0; on 600 MB rows m-hat tracks the standing queue, s60boot.out lm)
+b0 is the calibration row's b0p (one max-of-8 per replicate, so its ROW range enters); l is the row's own; shift1 = (w1/w0)*D1 is leg
 1's pull at c8 (zero in the KA test, where leg 1 had weight 1e-9).
 Two readings of T_min(W), both carried into the band:
   A  the s56 central curve (rep56-score.txt 'STANDING QUEUE AT THE KNEE': arm-median T-bar - T0, integer-ms ticks),
@@ -31,10 +31,9 @@ CELLS = {
         # (W, T_min - l, l) per p27 cap, s60p27.out
         B={'p27': [(64, 2.59, 6.86), (96, 2.17, 7.92), (128, 2.41, 8.77), (192, 3.76, 10.18), (256, 8.96, 10.07),
                    (384, 21.47, 10.75), (512, 33.76, 11.44), (1024, 84.60, 11.17)]},
-        lc=(8.07, 8.77),                 # l on the calibration arm W 128: s60boot.out P128 / s60p27.out cap 128
         lA=(8.07, 10.0),                 # s60boot.out c2 P128 l / rep56 'ell 10.0' (q*l in method A)
         sig=(1.72, 1.95),                # s60boot.out sig, c2 arms
-        b0=(2.18, 2.87),                 # s60p27.out b0p medians at caps 64-128
+        b0=(1.27, 3.09),                 # s60p27.out b0p ROW range at cap 128 (one row per replicate feeds R~)
         over=(0.41, 0.90),               # b0bound.out p27 c2 max8 cost median / max (the KA's B0X)
         gap=(0.0,), shift1=(0.0,), ka=194.2),
     'c8': dict(
@@ -42,14 +41,14 @@ CELLS = {
         Ares=0.5,
         B={'p27': [(128, 2.43, 8.10), (192, 3.25, 9.33), (256, 5.80, 11.80), (384, 15.58, 9.96), (512, 23.60, 10.88),
                    (768, 39.31, 11.23)]},
-        lc=(8.10, 8.62),                 # p27 leg-0 l at caps 128 / the two-cap median (s60p27.out)
         lA=(8.22, 14.4),                 # s60boot.out c8 P80 leg-0 l / rep56 'ell 14.4'
         sig=(2.00, 2.67),                # s60boot.out sig, c8 leg 0
-        b0=(2.49, 3.43),                 # s60p27.out c8 cap-128 b0p median / the two-cap median
+        b0=(2.07, 2.90),                 # s60p27.out c8 cap-128 b0p row range
         over=(1.0, 1.8),                 # b0bound.out p27 c8 p0 max8 / max_row cost medians
         # 1/2*((l1 + b0_1) - (l0 + b0_0)) on calibration values: l1 - l0 = 23.4..23.9 (s60boot P80; s60p27 caps
         # 128-192), b0_1 - b0_0 = 3.6..5.4 (s60p27 leg-1 b0p 6.12..7.87 against leg 0 2.49): 13.5..14.7; KA 14.75
-        gap=(13.5, 14.8),
+        # with the row's own l: l1 - l0 = 22.3..25.6 (s60boot l per arm), b0_1 - b0_0 = 3.2..5.8: 12.8..15.7
+        gap=(12.8, 15.7),
         # leg 1's pull: w1/w0 0.11..0.18 (s56 r1/r0 at W 320-512) x D1 = b0_1 + sig1 + q*l1 + min(m1-l1, b0_1) - x1
         # ~ 13..18 ms (s60boot sig1 4.9..15.5, m1-l1 1.1..2.0, x1 0..12.6): 1.4..3.2 ms
         shift1=(1.4, 3.2), ka=478.2),
@@ -61,10 +60,9 @@ CELLS = {
                    (1536, 2.94, 2.59), (2048, 4.81, 2.85)],
            'p27': [(256, 0.24, 2.38), (384, 0.57, 2.44), (512, 0.71, 2.53), (768, 1.78, 2.57), (1024, 2.19, 2.44),
                    (1536, 4.69, 2.52), (2048, 5.53, 2.56)]},
-        lc=(2.38, 2.50),                 # l at cap 256 (s60p27.out / s60p34.out)
         lA=(2.43, 2.6),                  # s60boot.out c1s l / rep56 'ell 2.6'
         sig=(0.46, 0.67),                # s60boot.out sig, c1s
-        b0=(0.29, 0.40),                 # b0p at cap 256 (s60p34.out 0.29; p34 two-cap median 0.40)
+        b0=(0.21, 0.37),                 # b0p row range at cap 256 (s60p27/p34.out); cap 128 is unmeasured at c1s
         over=(0.12, 0.20),               # b0bound.out p34 c1s max8 / max_row cost medians
         gap=(0.0,), shift1=(0.0,), ka=495.4),
 }
@@ -93,18 +91,12 @@ for name, c in CELLS.items():
                                                                          c['shift1'], c['lA'])]
                 rows.append(('A%s res%+.1f' % ('' if ai == 0 else '0.1ms', res), anc, ws))
     for led, pts in c['B'].items():
-        for lmode in ('sub', 'row'):
-            for anc in (0, 1):
-                ws = []
-                for sig, b0, gap, s1, lc in itertools.product(c['sig'], c['b0'], c['gap'], c['shift1'], c['lc']):
-                    if lmode == 'sub':
-                        cv = [(w, l + x) for w, x, l in pts]
-                        t = lc + (2 if anc else 1) * b0 + sig + Q * lc + gap + s1
-                    else:
-                        cv = [(w, x) for w, x, l in pts]
-                        t = (2 if anc else 1) * b0 + sig + Q * lc + gap + s1
-                    ws.append(first_w(cv, t))
-                rows.append(('B %s l=%s' % (led, lmode), anc, ws))
+        for anc in (0, 1):
+            ws = []
+            for sig, b0, gap, s1, l in itertools.product(c['sig'], c['b0'], c['gap'], c['shift1'], c['lA']):
+                cv = [(w, x) for w, x, _ in pts]
+                ws.append(first_w(cv, (2 if anc else 1) * b0 + sig + Q * l + gap + s1))
+            rows.append(('B %s' % led, anc, ws))
     for lab, anc, ws in rows:
         allw += ws
         print('%s | %s anc=%d | %.0f-%.0f | %.1f' % (name, lab, anc, min(ws), max(ws), c['ka']))

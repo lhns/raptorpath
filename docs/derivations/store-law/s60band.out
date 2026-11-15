@@ -1,36 +1,28 @@
 cell | method corner anc | W range over corners | KA point (fixed inputs)
 c2 | A res-0.5 anc=0 | 197-206 | 194.2
-c2 | A res-0.5 anc=1 | 220-237 | 194.2
+c2 | A res-0.5 anc=1 | 210-239 | 194.2
 c2 | A res+0.0 anc=0 | 191-201 | 194.2
-c2 | A res+0.0 anc=1 | 215-232 | 194.2
+c2 | A res+0.0 anc=1 | 205-234 | 194.2
 c2 | A res+0.5 anc=0 | 186-196 | 194.2
-c2 | A res+0.5 anc=1 | 209-226 | 194.2
-c2 | B p27 l=sub anc=0 | 165-199 | 194.2
-c2 | B p27 l=sub anc=1 | 205-235 | 194.2
-c2 | B p27 l=row anc=0 | 204-216 | 194.2
-c2 | B p27 l=row anc=1 | 230-251 | 194.2
-c2 | BAND | 165-251 |
-c8 | A res-0.5 anc=0 | 472-544 | 478.2
-c8 | A res-0.5 anc=1 | 509-589 | 478.2
-c8 | A res+0.0 anc=0 | 464-538 | 478.2
-c8 | A res+0.0 anc=1 | 502-582 | 478.2
-c8 | A res+0.5 anc=0 | 457-532 | 478.2
-c8 | A res+0.5 anc=1 | 494-576 | 478.2
-c8 | B p27 l=sub anc=0 | 424-499 | 478.2
-c8 | B p27 l=sub anc=1 | 459-552 | 478.2
-c8 | B p27 l=row anc=0 | 458-534 | 478.2
-c8 | B p27 l=row anc=1 | 497-590 | 478.2
-c8 | BAND | 424-590 |
+c2 | A res+0.5 anc=1 | 200-229 | 194.2
+c2 | B p27 anc=0 | 192-220 | 194.2
+c2 | B p27 anc=1 | 208-258 | 194.2
+c2 | BAND | 186-258 |
+c8 | A res-0.5 anc=0 | 461-556 | 478.2
+c8 | A res-0.5 anc=1 | 492-594 | 478.2
+c8 | A res+0.0 anc=0 | 454-550 | 478.2
+c8 | A res+0.0 anc=1 | 485-587 | 478.2
+c8 | A res+0.5 anc=0 | 446-543 | 478.2
+c8 | A res+0.5 anc=1 | 477-581 | 478.2
+c8 | B p27 anc=0 | 440-550 | 478.2
+c8 | B p27 anc=1 | 473-597 | 478.2
+c8 | BAND | 440-597 |
 c1s | A res-0.0 anc=0 | 489-529 | 495.4
-c1s | A res-0.0 anc=1 | 526-580 | 495.4
+c1s | A res-0.0 anc=1 | 516-576 | 495.4
 c1s | A0.1ms res-0.0 anc=0 | 434-505 | 495.4
-c1s | A0.1ms res-0.0 anc=1 | 501-559 | 495.4
-c1s | B p34 l=sub anc=0 | 451-875 | 495.4
-c1s | B p34 l=sub anc=1 | 841-959 | 495.4
-c1s | B p34 l=row anc=0 | 858-918 | 495.4
-c1s | B p34 l=row anc=1 | 910-990 | 495.4
-c1s | B p27 l=sub anc=0 | 542-646 | 495.4
-c1s | B p27 l=sub anc=1 | 608-738 | 495.4
-c1s | B p27 l=row anc=0 | 579-658 | 495.4
-c1s | B p27 l=row anc=1 | 648-754 | 495.4
-c1s | BAND | 434-990 |
+c1s | A0.1ms res-0.0 anc=1 | 482-555 | 495.4
+c1s | B p34 anc=0 | 493-914 | 495.4
+c1s | B p34 anc=1 | 882-981 | 495.4
+c1s | B p27 anc=0 | 561-653 | 495.4
+c1s | B p27 anc=1 | 611-742 | 495.4
+c1s | BAND | 434-981 |

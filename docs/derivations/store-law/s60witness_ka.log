@@ -1,0 +1,6 @@
+{"warmup":true,"note":"a warm-up run: its window below must be cut"}
+[SLAW] t=2.00 k=9 p=0 n=100 W=50 aw=0.5000 nk=100 tmin=18.000 tp50=20.000 tmean=20.000 m=10.000 l=9.000 b0p=2.000 b0run=2.000 b0k=- b0kn=- kw=9 sig=1.500 sigw=1.500 sigb=1.500 gap=0.000 anc=0 ancf=0/1 err=- R=0.82000 Rb=0.82000 used=1 xs=0 xb=0 ra=1/0 q=0.100000 qb=- qbt=- qcol=0/0
+{"warmup":true}
+[SLAW] t=2.00 k=9 p=0 n=100 W=50 aw=0.5000 nk=100 tmin=18.000 tp50=20.000 tmean=20.000 m=10.000 l=9.000 b0p=2.000 b0run=2.000 b0k=- b0kn=- kw=9 sig=1.500 sigw=1.500 sigb=1.500 gap=8.500 anc=0 ancf=0/1 err=- R=1.11625 Rb=1.11625 used=2 xs=0 xb=0 ra=1/0 q=0.100000 qb=- qbt=- qcol=0/0
+[SLAW] t=2.00 k=9 p=1 n=100 W=50 aw=0.5000 nk=50 tmin=36.000 tp50=40.000 tmean=40.000 m=30.000 l=25.000 b0p=3.000 b0run=3.000 b0k=- b0kn=- kw=9 sig=2.000 sigw=2.000 sigb=2.000 gap=0.000 anc=1 ancf=1/1 err=- R=1.11625 Rb=1.11625 used=2 xs=0 xb=0 ra=1/0 q=0.100000 qb=- qbt=- qcol=0/0
+[SLAW] t=2.00 k=9 p=2 n=100 W=50 nk=0 aw=0.5000 qb=- qbt=- qcol=0/0

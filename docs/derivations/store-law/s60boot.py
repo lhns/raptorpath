@@ -71,3 +71,10 @@ for k in sorted(out):
     print('%s P%d p%d n%d | %.2f | %s (%.2f) | %.2f | %.2f [%s] | %.2f [%s] | %.2f [%s] | %.2f'
           % (k[0], k[1], k[2], len(v), md(0), rng(1), md(1), md(2), md(3), rng(3), md(4), rng(4), md(5), rng(5),
              md(6)))
+
+print()
+print('per row: l and bootq (max over the first 8 ticks of echo mean - l), per arm and leg')
+for k in sorted(out):
+    v = out[k]
+    print('%s P%d p%d | l %s | bootq %s' % (k[0], k[1], k[2], ' '.join('%.2f' % r[0] for r in v),
+                                           ' '.join('%.1f' % r[1] for r in v)))
