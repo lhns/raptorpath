@@ -74,6 +74,7 @@ for (cell, cap), vs in rows.items():
     if cap == SMALL[cell]:
         LSMALL[cell] = St.median([min(x[1] for x in v) for v in vs])
 BELOW = ['flat']
+CLAMP = defaultdict(lambda: [0, 0])   # (cell) -> [windows below the smallest pool, of which the l clamp binds]
 
 
 def stat(cell, n, rng, first):
@@ -82,7 +83,10 @@ def stat(cell, n, rng, first):
         tm, tp, cap = pts[0][1], pts[0][2], pts[0][0]
         if BELOW[0] == 'slope':
             d = (n - pts[0][0]) * (pts[1][1] - pts[0][1]) / (pts[1][0] - pts[0][0])
-            d = max(d, LSMALL[cell] - tm)
+            CLAMP[cell][0] += 1
+            if d < LSMALL[cell] - tm:
+                CLAMP[cell][1] += 1
+                d = LSMALL[cell] - tm
             tm, tp = tm + d, tp + d
     elif n >= pts[-1][0]:
         tm, tp, cap = pts[-1][1] + (n - pts[-1][0]) * (pts[-1][1] - pts[-2][1]) / (pts[-1][0] - pts[-2][0]), \
@@ -154,6 +158,9 @@ for mode in ('flat', 'slope'):
                 cell, n0, est, St.median(Fs), min(Fs), max(Fs), St.median(ns), min(ns), max(ns),
                 St.median(ns) - CELLS[cell]['knee'], St.median(ramp), St.median(mx), St.median(mq)))
 
+  if mode == 'slope':
+    print(' l-clamp bind fraction among windows below the smallest pool: %s' % ', '.join(
+        '%s %.2f (%d windows)' % (c, CLAMP[c][1] / max(1, CLAMP[c][0]), CLAMP[c][0]) for c in sorted(CLAMP)))
   print()
   print('A (R6.2 as written) swept over K, BELOW = %s: landing n* median [min-max] and the anc bind fraction'
         ' (m >= l + b) over the last 80 windows; s60flip (github/s60-design@f8ea7d6c) is the static counterpart' % mode)

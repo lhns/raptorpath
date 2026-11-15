@@ -9,9 +9,13 @@ on main. s60 files are cited as `github/s60-design@<sha>:path`.
   every cell's queue-free region within 1–2 windows. Its max-of-K brake then ratchets on its own queue: in the replay,
   c2 latches +29 ms and c1s pins at the 2 048 clamp.
 - The two-extreme decomposition ℓ̂ + b̂₀⁺, measured against Copa's still-falling running minimum, is what makes b̂₀⁺
-  depend on K. Under its own standing queue the anchor min(m̂, ℓ̂ + b̂₀⁺) sits at its bound (anc bind fraction 1.00 at
-  c2 for every K). So the line's attractor is ℓ̂ + 2·b̂₀⁺(K), and its landing is set by an extreme-value statistic of
-  an unprovenanced K.
+  depend on K (§2.2).
+- Which anchor branch the line settles on also depends on K and n₀:
+  - from n₀ = 10 at c2 the anchor binds (anc 1.00 for K ≥ 3), so F = ℓ̂ + 2·b̂₀⁺(K);
+  - from n₀ = 128, or at c1s with large K, it mostly does not.
+- So the line's landing is set by an extreme-value statistic of an unprovenanced K. **The double-count question stays
+  open per K and n₀.** What is established is the size of the second b̂₀⁺ where it binds: +55 / +93 / +146 slots at
+  c2 / c8 / c1s.
 - The honest replacement is one quantity: **F̂ᵢ = the median absolute window minimum over the K windows of lowest store
   size seen so far**. It reads no m̂, no b̂₀⁺ and no time index. It starts at the engine's already-derived boot value
   n₀ = 10, needs no boot hold, and K becomes a smoothing length with derived bounds.
@@ -41,6 +45,19 @@ on main. s60 files are cited as `github/s60-design@<sha>:path`.
    - Other fixes: the c1s W 192 collapse pool is excluded from the fits, and c1d's fit is flagged. B = C is stated
      wherever no window is revisited. C is shown to refresh only by collapsing to the floor, so it is not
      route-following. K = 4 is stated as provisional within derived bounds, not as swept.
+4. **Before the push.**
+   - The anchor claim is weakened. "The only attractor is ℓ̂ + 2·b̂₀⁺" is withdrawn: from n₀ = 128 the anc bind
+     fraction is 0.00–0.27 at c2 K 3–7, with finite landings. The window-minimum spread grows with W, so an anc 0
+     landing exists. The branch depends on K and n₀.
+   - E2 in `r67floor.py` is labelled a static stand-in (occupancy key, ties to the earliest). C's only evidence is the
+     replay.
+   - The c1s "slope" column is mostly the ℓ clamp (bind fraction 0.64), i.e. F ≈ ℓ̂.
+   - Other fixes:
+     - c8 under C is unexamined (leg 1's thin low-n windows), and its result is session-only;
+     - s57 carries no `[LOOPDIAG]`;
+     - the K upper bound is conditional on the sub-64 map;
+     - the c2 shortfall is given against both knees;
+     - n₀ = 10's unshipped status is quoted from source.
 
 **Scripts** (stdlib, `python -I`, outputs beside them):
 
@@ -54,6 +71,8 @@ on main. s60 files are cited as `github/s60-design@<sha>:path`.
   window-minimum estimator. Its numbers here (ℓ scatter, late m̂, σ at load) are cited from
   `github/s60-design@8536f053:docs/derivations/store-law/s60boot.out` and `s60abs.out`.
 - p27 rows are about 9 s with n = 2 per pool; p34 c1s/c1d rows are about 6 s, n = 3.
+- **§57 (`l1-raw/s57`, rep57a/b) carries no `[LOOPDIAG]`**, so it has no window minima either (checked on
+  rep57b-diag-ld). It is not used.
 - Nothing is measured below W 64 at c2, below 128 at c8, or below 256 at c1s.
 - **Static rows cannot replay a closed loop.** `r67loop.py` is a model on the static map, and it does not model
   c8's coupling.
@@ -140,18 +159,37 @@ At anc 0 (m̂ < ℓ̂ + b̂₀⁺) the line's per-leg condition reads:
 - **The sentence:** at anc 0 the target tracks the 10 s minimum.
 - **Shape:** the bracket is window k's excess over the 10 s minimum of the same series. That is a *fluctuation*,
   independent of the queue *level*.
-- **Consequence:** b̂₀⁺ is itself the maximum of such excesses over K windows, so at anc 0 R > 1 at every level. The
-  anc 0 branch has no fixed point while the queue stands. n grows until m̂ ≥ ℓ̂ + b̂₀⁺, and the anchor binds:
+- **Consequence:** an anc 0 fixed point exists only where the typical within-10 s excess of (β + Q) reaches
+  b̂₀⁺ + σ + q·ℓ̂. b̂₀⁺ is itself a maximum of such excesses over K boot windows, but the excess grows with the
+  queue's own fluctuation: the late window-minimum sd at c2 is 0.7–0.8 ms at W 128, 2.2–2.3 at 256 and 2.6–5.9 at 384
+  (`r67floor.out` §1). So:
+  - where b̂₀⁺ + σ + q·ℓ̂ exceeds the spread at the knee, there is no anc 0 point, n grows until m̂ ≥ ℓ̂ + b̂₀⁺, and
+    the anchor binds:
 
-```text
-   F  =  ℓ̂ + 2·b̂₀⁺          (the line's only attractor under a standing queue)
-```
+    ```text
+       F  =  ℓ̂ + 2·b̂₀⁺          (anc 1; the second b̂₀⁺ is the operating point, not a bound on drift)
+    ```
 
-So the second b̂₀⁺ is not a bound on drift, as §3.3 read it. It is the operating point. The replay confirms this: at
-c2 the anc bind fraction over the last 80 windows is **1.00 at every K = 1…8** from n₀ = 10, under both map
-extrapolations (`r67loop.out`, "A swept over K").
+  - where the spread is larger, an anc 0 landing exists further up, at a larger queue.
 
-**Is that a double count?** Yes, by the sentence. F's job is "the upper reach of the queue-free window minimum".
+**Which branch is reached depends on K and n₀** (`r67loop.out`, "A swept over K", anc bind fraction over the last 80
+windows):
+
+| | K = 1–2 | K = 3–6 | K = 7–8 |
+|---|---|---|---|
+| c2, n₀ = 10 | 1.00 (trivial: b̂ ≈ 0, so the bind is m̂ ≥ ℓ̂) | **1.00** | **1.00** |
+| c2, n₀ = 128 | 1.00 (trivial) | 0.00–0.27 (the ratchet's large b̂₀⁺; anc 0 landings 219–290) | 0.00 / 0.86 |
+| c1s, n₀ = 10 | 1.00 | 0.78–1.00 | 0.77–1.00 |
+| c1s, n₀ = 128 | 1.00 | 0.56–0.93 | 0.04–0.10 → 0.00 (clamp at 2 048) |
+
+**What is established:**
+- from n₀ = 10 at c2 (K ≥ 3) the attractor is the anc 1 state ℓ̂ + 2·b̂₀⁺;
+- the second b̂₀⁺ is worth the slot shifts below wherever it binds.
+
+**What is not established:** that the line always reaches anc 1. Its branch is a function of K and n₀, neither of
+which has provenance.
+
+**Where it binds, is that a double count?** Yes, by the sentence. F's job is "the upper reach of the queue-free window minimum".
 - One b̂₀⁺ covers window-to-window β above the floor.
 - The second covers m̂'s rise above ℓ̂. Under the law's own queue that rise is its own queue (E03), not a no-queue
   quantity, and the clamp stops it only at its bound.
@@ -219,7 +257,8 @@ terms:
 | **E0a** | ℓ̂ + 2·b̂₀⁺ (the attractor, §2.1) | phase | — | c2 −1.85 → +3.16 |
 | **E1 = B** | median_{k≤K} T̂min,k (absolute, first K) | **phase** (a predicate on k: freezes after K) | none | c2 +0.69 → +0.64; c8 leg 0 −0.02 → −0.04; c1s +0.10 → +0.06 |
 | E1x | max_{k≤K} T̂min,k (absolute, one-sided) | phase | none | c2 +2.98 at every K: it carries window 1's transient |
-| **E2 = C** | median of T̂min over the **K windows of lowest store size n seen so far** (ties: most recent) | **none**: an order statistic over the history keyed on the law's own state, like ℓ̂ itself | none | c2 +0.30 → +0.27; c8 leg 0 −0.09 → −0.41; c1s +0.01 → +0.01 |
+| **C** (recommended) | median of T̂min over the **K windows of lowest store size n seen so far** (ties: most recent) | **none**: an order statistic over the history keyed on the law's own state, like ℓ̂ itself | none | **not evaluable on static rows**: n is constant there, so C reads the last K windows. Its only evidence is the replay (§4.3) |
+| E2 (C's static stand-in) | the same, keyed on `[DIAG] win=` occupancy a, ties to the earliest | none | none | c2 +0.30 → +0.27; c8 leg 0 −0.09 → −0.41; c1s +0.01 → +0.01. The ordering by a is arbitrary on static rows |
 | occupancy weight | weight windows by (BDP̂ − aₖ)/BDP̂ | none | **oracle**: BDP̂ needs capacity (E04, the R5.4 trap) | not evaluated |
 | a/W as the key | key on `[DIAG] win=a/W` | none | none | **does not separate**: a/W ≈ 1 and paused ≈ 60–65 % at both W 96 and W 512 (c2), so on static rows a carries no queue information |
 | drain probe | a periodic reduced target (the law's fixed point at q → 0) | **schedule**: a period and depth are new constants, and a time-periodic target is a mode in disguise unless both are derived | none | not evaluated: no ledger has a drain |
@@ -235,8 +274,8 @@ terms:
   - no δ or ρ input;
   - no threshold, no phase, no time index.
 - The start is an initial state (n₀), not a mode.
-- **On static rows C equals B wherever no store size is revisited**, which is every no-revisit row, and §4's numbers
-  are identical for them. C differs only when the loop revisits a lower n (§4.3).
+- **In the replay C equals B from n₀ = 10**, because the ramp visits each n once in increasing order. They differ from
+  n₀ = 128 (c1s: 580 against 571 flat, 489 against 351 slope) and on revisits (§4.3).
 
 **K's provenance in C: derived bounds, with insensitivity measured inside them.**
 - **Lower bound K ≥ 3** (median rejects ⌊(K − 1)/2⌋ ≥ 1 transient window; K = 4 averages the middle two and also
@@ -249,17 +288,22 @@ terms:
 ```
 
   Here n_qf is the largest store at which T̂min is within the collapse margin of its limit, and R₀ is the no-queue
-  ratio. With n₀ = 10, R₀ ≈ 1.17–1.21 (`r67floor.out` §5 at the smallest pools) and n_qf ≥ 64 (c2's smallest
-  measured pool), **K ≤ 11**. The replay's windows 1–8 reach n 34–38 from n₀ = 10.
-- **Inside [3, 11]:** E1/E2's bias is flat on every cell (c2 +0.25 to +0.74 ms; c1s −0.00 to +0.10). That is
-  insensitivity, not a selected value.
+  ratio. With n₀ = 10 and R₀ ≈ 1.17–1.21 (`r67floor.out` §5 at the smallest pools), n_qf = 64 would give
+  **K ≤ 11**.
+  - **This bound is conditional.** §1.2 shows W 64 is not itself queue-free at c2: it reads about +0.5 ms above the slope
+    limit at W ≈ 40. n_qf is set by the sub-64 map, which is unmeasured.
+  - The replay's windows 1–8 reach n 34–38 from n₀ = 10.
+- **Inside the band:** E1's bias varies by under 0.3 ms for K ≥ 3 on every cell and leg except c8 leg 1 (c2 +0.44 to
+  +0.74 ms; c1s +0.03 to +0.10; c8 leg 0 −0.11 to −0.02). E2 is looser: c2 K 3 −0.29, and c8 leg 0 −0.41 to −0.48 at
+  K 6–12, on two rows each. This is insensitivity on thin data, not a selected value.
 - **K = 4 is provisional.** The two rows per pool at c2 and c8, and E2's arbitrary ordering on static rows, cannot
   select within the band. The registered s60 rows can settle it (§6).
 
 **n₀'s provenance.** The engine already carries a derived boot value: `STORE_BOOT_DERIVED` = max(ANCHOR_MIN_SAMPLES ·
 MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC 6928 initial window) = max(8, 10) = 10 = `STORE_CAP_FLOOR` (`sender_policy.rs`).
 - It cites RFC 6928 and is derived from "the outstanding bound when the law has no measurement".
-- It is not shipped, for a reason that no longer applies (the mid-transfer cliff, per its doc comment).
+- It is not shipped. Its doc comment says the cliff that blocked it is closed and that boot is now reachable only at
+  genuine cold start, "not yet re-measured, so it still does not ship". Its floor reading is unmeasured (§4.3).
 - Under C, n₀ = 10 needs no hold: queue-freeness of the selected windows is the derived inequality above. It is a
   **domain condition**, BDP ≫ n₀·R₀^(K−1) ≈ 15–17 symbols for K = 4, with the gauge "max n over the K selected windows
   against the n at which T̂min first rises".
@@ -302,7 +346,9 @@ The figures in brackets are slots against the §56 goodput knee and against this
 - **c2 sign: unresolved, with no demonstrated margin.** The honest crossings (148–164) are interpolated inside the
   same 128–192 bracket as the knee, on two rows per pool, and the two knees differ by 12 slots.
 - **c8:** honest floors land 80–106 slots above the knee (the coupling half-gap), consistent with s60's band of
-  433–586.
+  433–586. This is a **session-value result only**. C's own leg-1 floor is unexamined: leg 1 delivers 100–120
+  samples/s at W 128, so its lowest-n windows are near-empty, and F₁ sets leg 0's coupling term. It needs a
+  per-window sample-count eligibility rule, which is open item 4.
 - **c1s:** below the knee under every form. That is the known receiver-bound result (R5.5).
 
 ### 4.3 Closed-loop replay (`r67loop.out`; c2 and c1s; 20 seeds, 240 windows)
@@ -322,6 +368,9 @@ The figures in brackets are slots against the §56 goodput knee and against this
 - **BELOW = flat** holds the W 64 / 256 statistics down to n = 10, which makes a low start honest by construction.
 - **BELOW = slope** extends the measured secant (c2 0.020 ms/slot) down to the lifetime minimum. With C, the floor read
   at n ≈ 10–40 then lies 0.7 ms *below* the W 64 reading, and c2's landing drops to 130.
+  - At c2 the ℓ clamp never binds (bind fraction 0.00).
+  - **At c1s it binds on 64 % of the below-pool windows.** The c1s slope column is therefore mostly F ≈ ℓ̂ (−0.2 ms),
+    not a measured slope.
 - **The landing under C is therefore set by the unmeasured sub-64 map.** That is the decisive missing data.
 
 **Route step** (+D ms on the path floor at window 120, n₀ = 10; `r67loop.out` last block):
@@ -362,8 +411,14 @@ The figures in brackets are slots against the §56 goodput knee and against this
 - replay 130–160.
 
 The old form's c2 margin came from estimator bias. R3.1's c2 decomposition even names it: q₉₈ = σ + "the b̂₀⁺
-over-read". The knee needs about 3.4 ms above the queue-free limit (T̂min(169) ≈ 12.9 against 9.45), and σ + q·ℓ̂
-supplies 2.3–2.6 ms. That shortfall is the partial-load queue of §1.2.
+over-read".
+
+The knee needs this much window-minimum rise above the W 64 reading of 9.45 ms:
+- about 3.5 ms at knee 169 (T̂min ≈ 12.95, interpolated on p27);
+- about 4.0 ms at knee 181 (T̂min ≈ 13.47).
+
+σ + q·ℓ̂ supplies 2.3–2.6 ms, so the shortfall is **0.9–1.2 ms (169) or 1.4–1.7 ms (181)**. It grows if the true limit
+is below 9.45 (BELOW = slope). The shortfall is the partial-load queue of §1.2.
 - It is an **allowance-form** item, not a floor item.
 - It must not be "fixed" by biasing the floor (that is the defect this derivation removes), nor by a capacity input
   (E04).
@@ -404,11 +459,13 @@ s60 runs W 96 / 128 calibration rows (plus the arms) at c2 / c8 / c1s, with `[SL
 ## 7. Open items
 
 1. The sub-floor map (c2 < 64, c8 < 128, c1s < 256) decides C's floor at n₀ = 10, and therefore the landing.
-2. The allowance form at c2: the partial-load queue (≈ 0.8–1.1 ms short of the knee under honest floors) is not
-   covered by σ + q·ℓ̂. This is a new form item, outside this derivation's floors question.
+2. The allowance form at c2: the partial-load queue (0.9–1.7 ms short of the knee under honest floors, depending on
+   which knee) is not covered by σ + q·ℓ̂. This is a new form item, outside this derivation's floors question.
 3. Route following: C refreshes only through collapse to the floor. A drain-based floor needs a derived schedule, or
    an explicit domain condition plus gauge (as ℓ̂ has today).
-4. c8's leg-1 floor at small K is noisy (E2 K 3: −1.04 ± 1.95 ms on two rows). Check the queue-free-span bound per leg:
-   leg 1's thin delivery gives few samples per window.
+4. c8 under C is unexamined. Leg 1's low-n windows are near-empty (100–120 samples/s at W 128; E2 K 3 reads −1.04 ±
+   1.95 ms on two rows), and F₁ feeds leg 0's coupling. C needs a per-window sample-count eligibility rule, derived
+   and not declared, and a replay with the coupling.
 5. K = 4 within [3, 11] awaits s60's per-window `tmin` (§6).
 6. The replay omits c8 (the coupling) and models m̂ as the minimum of window minima over 40 windows.
+7. The anchor double-count stays open per K and n₀ (§2.1). Only its size where it binds is established.

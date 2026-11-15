@@ -46,6 +46,7 @@ cell n0 est | F latched - truth (ms), median [min-max] | landing n* median [min-
  c2-100 128 Ah | +3.48 [+0.49 +5.48] |  214 [ 169- 240] (+45) |  15 |  128, +2.96
  c2-100 128 B  | +3.56 [+2.61 +5.04] |  218 [ 206- 234] (+49) |   4 |  235, +8.85
  c2-100 128 C  | +3.56 [+2.46 +5.31] |  218 [ 204- 238] (+49) |   4 |  235, +8.85
+ l-clamp bind fraction among windows below the smallest pool: c1s-400 0.64 (7026 windows), c2-100 0.00 (1121 windows)
 
 A (R6.2 as written) swept over K, BELOW = slope: landing n* median [min-max] and the anc bind fraction (m >= l + b) over the last 80 windows; s60flip (github/s60-design@f8ea7d6c) is the static counterpart
  c1s-400 n0  10 (knee 903) | K1  276 [ 253- 308] anc 1.00 | K2  489 [ 255- 632] anc 1.00 | K3  534 [ 255- 637] anc 0.78 | K4  581 [ 277- 691] anc 0.85 | K5  595 [ 277- 691] anc 1.00 | K6  611 [ 294- 691] anc 1.00 | K7  619 [ 442- 705] anc 1.00 | K8  619 [ 442- 705] anc 1.00

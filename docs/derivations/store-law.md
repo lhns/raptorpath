@@ -419,7 +419,8 @@ The derivation is frozen; the next input must be data.
 
 R6.7 (boot hold, n₀, ℓ̂'s source) is on `s60-design`; this pointer belongs under it on merge.
 `docs/derivations/store-law-r67.md` derives that:
-- the line's attractor under its own queue is ℓ̂ + 2·b̂₀⁺(K) (anc bind fraction 1.00);
+- the line's anchor branch depends on K and n₀ (from n₀ = 10 at c2 it binds, F = ℓ̂ + 2·b̂₀⁺(K); from 128 it
+  mostly does not), so the double count stays open per K and n₀;
 - b̂₀⁺(K) traces the running anchor's convergence, so K has no provenance in this form;
 - a boot at 128 ratchets the latch.
 
