@@ -103,3 +103,16 @@ for (cell, cap) in sorted(rows, key=lambda k: (k[0], k[1])):
     print('%s %d | b0p0 %s | b0p1 %s | l0 %s' % (cell, cap, ' '.join('%.2f' % r[0]['b0p'] for r in v),
                                                ' '.join('%.2f' % r[1]['b0p'] for r in v if 1 in r) or '-',
                                                ' '.join('%.2f' % r[0]['l'] for r in v)))
+
+# Row-level R noise for s60's B2 margin: each row's Rcom (q = 0.10, the cell's one b0), so the spread between rows
+# of one cap is the row-to-row R noise at a fixed W; its slope across caps converts it to slots.
+print()
+print('per row: Rcom at q = 0.10 (one b0 per cell), by cap')
+for (cell, cap) in sorted(rows, key=lambda k: (k[0], k[1])):
+    v = rows[(cell, cap)]
+    vals = []
+    for r in v:
+        g = r[0]
+        gapc = 0.5 * max(0.0, r[1]['l'] - g['l']) if (cell == 'c8-100' and 1 in r) else 0.0
+        vals.append(rr(cell, g, com[cell], 0.10, False, gapc))
+    print('%s %d | Rcom %s' % (cell, cap, ' '.join('%.3f' % x for x in vals)))

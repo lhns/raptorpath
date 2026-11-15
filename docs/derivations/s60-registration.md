@@ -42,9 +42,8 @@ where they differ.
        - c1s is flat on s56 (+0.03, p 0.43).
      - So at c2 and c8, ℓ̂ also comes from the same calibration row, and own-ℓ̂ R̃ is a reported sensitivity. At c1s
        the row's own `l` is kept.
-     - **This is a reading of the ruling's clause and needs the coordinator's confirmation.**
-     - The scored c2 band is 158–242, which reaches below the 169 knee. The own-ℓ̂ sensitivity is 182–258. The
-       previous report's "reaches the knee" stands, for a different reason.
+     - The coordinator confirmed this reading in entry 5.
+     - The c2 band quoted here (158–242) is superseded by entry 5's anchor-consistent 180–242.
    - **The second calibration pool lies BELOW n₀** at every cell, because a pool above n₀ tests the next pool. The
      flatness tolerance is q·ℓ̂ on the n₀ rows' `l`, beyond noise.
    - **One calibration row feeds each replicate**, so every b0, ℓ̂ and coupling corner is a row range.
@@ -57,6 +56,27 @@ where they differ.
    - **G/C:** the gauge's cost is predicted from its benches, and 60c shrinks to a gross-error check.
    - **Out-of-band meanings** are stated at c2 and c8.
    - The rows and launches are recounted.
+5. **Main-session ruling on `0eb08d97`: calibration-ℓ̂ at c2 and c8 is ACCEPTED, and that recipe carries B2's verdict
+   alone.** Worked with the advisor.
+   - The ℓ-DEPENDENT veto is dropped. The own-ℓ̂ result is reported beside the verdict, and its masking outcome is
+     named (§1.4). The rule is idle at c8.
+   - The contamination is sized in ms per arm (§1.2). The statistic is identified as the printed field's lifetime
+     minimum, with a witness (`m` = `l` for t < 10 s).
+   - **P3** (printed `l` rises by more than q·ℓ̂ beyond noise) is registered, and goes to R6.7. `[DIAG] rtp_us` is
+     the gauge's `m` (`diag.rs:579`, `p.min_rtt()` = `copa.min_rtt()`).
+   - **The anchor, checked row by row:**
+     - At c8 W ≥ 320 it binds under substitution. F is all calibration there, and the row supplies only T̂min, T̂, σ
+       and w. The c8 band holds the anchor fixed at **433–586**.
+     - At c2 it does not bind row by row. A W 192 row's m̂ can fall below the calibration row's ℓ̂, so c2 keeps both
+       states at **158–242**.
+     - An advisor check overturned an arm-median version that read c2 as bound at W ≥ 192.
+   - **c8's leg 1 has boot windows with 0 or 1 echo sample** at P80. Its b0 is therefore taken from the printed
+     `b0k` brakes whose `b0kn` ≥ 10.
+   - **B2 resolution is in R units** (§1.6). At c2 the slot equivalent of the margin lies below the calibration arm,
+     so B2 at c2 is ill-conditioned **(needs the coordinator's ruling)**.
+   - **c8 gets a third n₀ row:** P(scoreable) goes from 0.76 to 0.85 at 0.9 validity, or from 0.90 to 0.97 at 0.97,
+     for +6 rows.
+   - 205 rows in total.
 
 Helper scripts (stdlib Python, run with `-I`; each output is committed beside its script in `store-law/`):
 
@@ -157,6 +177,47 @@ pools, the boot windows therefore carry that row's standing queue.
   scored as a **sensitivity**.
 - Per-arm `l` medians and this rank test are re-run on s60's rows and reported.
 
+**The size of the contamination, in ms** (arm medians of `l`, leg 0 unless noted):
+
+| cell, ledger | W: `l` (ms) |
+|---|---|
+| c2, §56 | 128: 8.07 · 160: 8.87 · 192: 9.66 · 256: 9.52 · 384: 10.21 · 2 048: 10.13 |
+| c2, p27 | 64: 6.86 · 96: 7.92 · 128: 8.77 · 192: 10.18 · 256: 10.07 · 384: 10.75 · 512: 11.44 · 1 024: 11.17 |
+| c8 leg 0, §56 | 160: 8.22 · 224: 9.42 · 320: 11.12 · 512: 10.87 · 768: 10.31 · 1 280: 11.13 |
+| c8 leg 1, §56 | 160: 31.64 · 224: 31.46 · 320: 34.38 · 512: 34.71 · 768: 35.88 · 1 280: 35.33 |
+| c8, p27 | 128: 8.10 · 192: 9.33 · 256: 11.80 · 384: 9.96 · 512: 10.88 · 768: 11.23 |
+
+**Which statistic this is, and whether it is the printed field.**
+- §56: the minimum over the row's 250 ms `[DIAG]` ticks of `rtp_us`, i.e. Copa's `min_rtt`, a 10 s windowed minimum
+  of the echo samples. The minimum over all ticks is the lifetime minimum of the series Copa sees, the first tick
+  included.
+- p27: the minimum over the row's `[LOOPDIAG]` windows of `rtt_min_us`, the window echo minima.
+- Both are lifetime minima from the first sample, not boot-tick or first-2-s values. The gauge's `l` is the same
+  quantity: `WinSampler::life_min`, a running minimum from the first sample.
+  - The sampler is attached on the first sender-loop pass under `RWM_DIAG`, so it starts with the row.
+  - Read at the LATE windows, it equals the row-end minimum, since the minimum is reached early.
+- The test therefore touches the printed field's definition. One assumption remains: Copa's series and the
+  sampler's are the same echo samples.
+  - **Witness:** on every G row, printed `m` = printed `l` on every window with t < 10 s (Copa's window has not yet
+    expired). The mismatch fraction is reported, and a non-zero one voids the §56 transfer of this argument.
+
+**P3 (registered prediction on printed `l`).**
+- **Quantity:** Δℓ = (median printed `l` at the arm) − (median at the W 128 calibration rows), per leg.
+  - SE_Δ = 1.253·√(s²_arm/n_arm + s²_cal/n_cal), from the row sds. They reach 1.4 ms (c2 P128: 6.30–9.09).
+  - The threshold is the leg's q·ℓ̂_c, the law's allowance: ≈ 0.8–0.9 ms at c2 and c8 leg 0, ≈ 3.2 at c8 leg 1.
+- **Verdicts:**
+  - **RISES** iff Δℓ − 2·SE_Δ > q·ℓ̂_c;
+  - **FLAT** iff Δℓ + 2·SE_Δ < q·ℓ̂_c;
+  - **UNRESOLVED** otherwise.
+- **Predicted:**
+  - c2 at W 384: Δℓ ≈ +2.1 ms (§56 10.21 − 8.07; p27 10.75 − 8.77) and 2·SE ≈ 1.7, so RISES or UNRESOLVED.
+  - c8 leg 0 at W 512: ≈ +2.7, so RISES. Note §56's c8 baseline is W 160 (P80); W 128 is unmeasured.
+  - c8 leg 1 at W 512: ≈ +3, which is under that leg's own allowance (3.2), so FLAT or UNRESOLVED.
+- **Meaning of RISES:** the law's ℓ̂ source (the lifetime minimum) fails when a flow starts into queue, the same class
+  as P1's b̂₀⁺. It goes to `store-law.md` R6.7.
+- **If FLAT at a cell,** the two recipes coincide there within the allowance. The scored and own-ℓ̂ R̃ are then
+  reported as one reading.
+
 ### 1.3 The anchor bind adds one b̂₀⁺ to the target
 
 F = min(m̂, ℓ̂ + b̂₀⁺) + b̂₀⁺. With m̂ ≥ ℓ̂ + b̂₀⁺ (`anc = 1`), the target gains a full b̂₀⁺, not the over-read.
@@ -166,7 +227,8 @@ On 600 MB rows, Copa's 10 s minimum tracks the queue (`s60boot.out` `lm`):
 - c8 leg 0: 1.9 at 320 and 10.5 at 512;
 - c1s: 0.27–0.96 at 512–2 048.
 
-So the bind is marginal at c2 W 192 and at c1s. The bands span both states; `anc` and `ancf` decide in-session.
+So the bind is marginal at c2 W 192 and at c1s. Under the scored recipe, c8's band holds the anchor fixed, while c2's
+spans both states (§1.4). `anc` and `ancf` decide in-session.
 
 Shift anc 0 → 1 (`s60band.out`, method B, scored recipe):
 - c2: 158–203 → 188–242 (+30 to +39);
@@ -187,10 +249,33 @@ Shift anc 0 → 1 (`s60band.out`, method B, scored recipe):
 - **The row's own printed fields** supply every other input: `nk` (w), `tp50` (T̂), `tmin` (T̂min), `m` (m̂), `sig`
   (σ at load) and `q`.
 - The coupling term is recomputed from the inputs in use.
-- **Sensitivity at c2 and c8:** R̃ with the row's own `l` (the ruling's default) is computed and reported beside the
-  scored R̃.
-  - If B2's verdict differs between the two, B2 is reported as **ℓ-DEPENDENT** and no verdict is taken. The
-    refutation would then depend on whether ℓ̂ carries boot queue, which goes to R6.7.
+- **The calibration-ℓ̂ recipe carries B2's verdict alone** (ruling entry 5).
+  - R̃ with the row's own `l` is computed and reported beside the verdict. It does not veto it.
+  - A veto would remove the falsifier: at c2 the own-ℓ̂ band (182–258) starts above the 169 knee, so the two recipes
+    could only ever agree on a pass.
+  - **The named outcome:** if the scored recipe fires B2 and the own-ℓ̂ R̃ does not, then **"the form fails on honest
+    floor inputs, and the flow's own ℓ̂ masks it"**. That outcome goes to R6.7 as evidence on the ℓ̂ source.
+  - At c8 neither band reaches the knee (W₉₅ 340, against low edges of 433 and 462), so this rule is idle there.
+
+**What the row still supplies (the anchor term).**
+- Under substitution, F = min(m̂_row, ℓ̂_c + b0_c) + b0_c. If ℓ̂ is contaminated, m̂ is at least as much, since
+  m̂_row ≥ ℓ̂_row.
+- The row's m̂ is selected only if m̂_row − ℓ̂_c < b0_c, where m̂_row − ℓ̂_c = (ℓ̂_row − ℓ̂_c) + μ_row. One calibration
+  row feeds each replicate, so this is checked **row by row** (`s60boot.out` per-row `l` and `lm` ranges):
+  - **c2:** ℓ̂_c can be 9.09 ms (a P128 row), while a W 192 row reads `l` 7.35 with a lift of 1.21. That gives −0.53 ms,
+    below b0_c (1.27–3.09). So **the row's m̂ can enter at c2**, even below ℓ̂_c.
+    - On arm medians the lift reads 4.3 ms at W 192, which a previous pass took as binding. That was wrong.
+  - **c8 leg 0:** ℓ̂_c ≤ 8.49 (P80 rows; P64 is unmeasured). At W 320 the rows read `l` ≥ 10.72 with a lift ≥ 1.05,
+    giving ≥ 3.28 ms, above b0_c ≤ 2.90. At W 512 the margin is ≥ 7.9.
+- **So the anchor is fixed (anc = 1) only at c8, over its band region (W ≥ 320), and only thinly** (a 0.4 ms margin
+  at W 320).
+  - There F = ℓ̂_c + 2·b0_c is **all calibration**, and the row supplies only T̂min (`tmin`), T̂ (`tp50`), σ (`sig`)
+    and w (`nk`).
+  - At c2 the row's m̂ still enters, and the band keeps both anchor states.
+- **Reported:** the replay's per-window anc bind fraction under substitution, per arm.
+  - Predicted: ≥ 0.9 at c8 W ≥ 320.
+  - If it is below 0.9 at a replicate's crossing bracket, that replicate is read against the anc 0 corners and
+    flagged.
 - `slaw_r` is transcribed in `s60replay.py`. **`Rb` is not scored**: its σ is the max over the same boot windows,
   so it carries the same latch.
 - Per row, R̃_row is the median over LATE windows (t ≥ 15 s at c2 and c8, ≥ 5 s at c1s).
@@ -254,11 +339,37 @@ at every cell**.
   b0p − median_LATE(brake) > q·ℓ̂ + ō, where brake = `err` + b0p + q·ℓ̂ (printed `err`).
   - ō is the cell's declared no-queue over-read bound (`b0bound.out` max_row cost medians): c2 0.90 ms, c8 leg 0
     1.8 and leg 1 6.3, c1s 0.20.
-- **Two W 128 rows per replicate.**
+- **W 128 rows per replicate: two at c2 and c1s, three at c8.**
   - The replicate's calibration is the first non-LATCHED one, in run order.
-  - If both latch, the replicate has no R̃. It is counted as LATCHED, not VOID.
-  - At a 25 % latch rate, P(a replicate has a calibration) ≈ 0.94. With a 0.9 bracketing validity,
-    P(≥ 5 of 6 replicates scoreable) ≈ 0.75 at c8; it is higher at c2.
+  - If all latch, the replicate has no R̃. It is counted as LATCHED, not VOID.
+  - **Why c8 gets a third row** (ruling entry 5, item 5). The earlier 0.75 assumed two rows and a 0.9 bracketing
+    validity. §56 suggests 0.97 (0 of 24 c8 rows flagged). At a 25 % latch rate, P(≥ 5 of 6 replicates scoreable)
+    is:
+
+    | n₀ rows | P(calibration) | at validity 0.9 | at validity 0.97 |
+    |---|---|---|---|
+    | 2 | 0.94 | 0.76 | 0.90 |
+    | 3 | 0.98 | 0.85 | 0.97 |
+
+    The third row costs 6 rows (≈ 9 min worst) and is bought.
+  - At c2 (latch ≈ 1 in 12) two rows give P(calibration) ≈ 0.99.
+- **c8 leg 1 at the calibration pools.** c8's coupling term now comes from leg 1's calibration values.
+  - **Leg 1's boot windows are sometimes empty.** On §56's four P80 rows (W 160), differencing the cumulative `n` of
+    `[DIAG]` p1 `sig_us/n` gives per-window counts mostly of 14–137 samples, against ≈ 2 000 for leg 0.
+    - The last boot window held **1 sample** on `s7-r2` and **0** on `s7-r4`.
+    - W 128 and 96 will be thinner still.
+  - **What that does to the gauge's leg-1 `b0p`.**
+    - The gauge counts K over windows *with* samples, so a 0-sample window stretches K past 2 s, into windows that
+      may already carry queue.
+    - A 1-sample window counts, and its "minimum" is one sample, which can latch high.
+    - A thin window's minimum over-reads in general, consistent with leg 1's larger `b0p` (6.1–9.4 ms against leg 0's
+      2.1–2.9).
+  - **Registered source of leg 1's calibration values.**
+    - b0₁ is the maximum of the printed `b0k` brakes whose `b0kn` ≥ 10, and needs ≥ 4 such windows of the K.
+    - ℓ̂₁ is the row's printed leg-1 `l`, a lifetime minimum over all samples and robust to thin windows.
+    - A row with fewer than 4 qualifying windows is THIN for leg 1. The replicate's next calibration row is used; if
+      all are THIN, the replicate has no R̃ (counted THIN).
+    - Leg 1's `b0kn` and the THIN count are reported.
 - **c1s validity is boot-only.** A c1s calibration row is valid for b0 if its `[WSTAT]` windows with t < 2 s show no
   qcwnd below the cell's BDP. The parser's absolute collapse rule (`slaw_parse.py --bdp-bytes`) is restricted to
   those windows, because `qcol` only counts from t ≥ 1 s and b0p uses the first 2 s.
@@ -292,10 +403,47 @@ at every cell**.
 
 The b0 and ℓ̂ corners rest on 2 rows per cap.
 
-| cell | KA point | **band (scored)** | own-ℓ̂ sensitivity | in-session knee (§56) | B2 |
-|---|---|---|---|---|---|
-| c2 | 194.2 | **158–242** | 182–258 | W₉₅ 169 | **live**: the band's low edge is 11 slots below the knee |
-| c8 | 478.2 | **403–586** | 431–605 | W₉₅ 340 | needs the engine to land ≥ 63 slots below the low edge (≈ 138 below the KA point) |
+**The anchor state, checked row by row (§1.4; `s60band.out`, "FROZEN").**
+- c8 is anc = 1 over its band region, so its band is the anc 1 corners.
+- c2 keeps both states, because a row's m̂ can enter.
+
+| cell | KA point | **band (frozen)** | own-ℓ̂ sensitivity, like for like | in-session knee (§56) |
+|---|---|---|---|---|
+| c2 | 194.2 | **158–242** (both anchor states) | 182–258 (both states) | W₉₅ 169: inside the band, 11 slots above its low edge |
+| c8 | 478.2 | **433–586** (anc 1) | 462–605 (anc 1) | W₉₅ 340: 93 slots below the band's low edge |
+
+The recipes differ by 24 slots (c2) and 29 slots (c8) at the low edges, and by 16–19 at the tops.
+
+**B2's resolution, in R units, and why not in slots.**
+- **The event:** "the crossing lies below the knee", with both interpolated per replicate. It is equivalent to R̃ < 1 at
+  the replicate's own knee.
+- **Registered per replicate:** replicate r counts iff R̃_r(W₉₅,r) < 1 − 2·σ_R.
+  - R̃_r(W) is interpolated linearly between that replicate's arms bracketing W₉₅,r.
+  - W₉₅,r is interpolated from each row's goodput against the same replicate's control.
+  - σ_R is the in-session sd over replicates of R̃_row at those bracketing arms.
+  - B2 fires on ≥ 2 of the 5 or 6 scoreable replicates. One rule holds at both cells.
+- **Why R units.** A slot margin is ill-conditioned wherever R̃ is flat in W, and below the c2 knee it is nearly flat.
+  - p27's Rcom falls only 0.0015 per slot from W 128 to 192 (1.183 → 1.090; `s60p27.out`), against 0.0036 per slot
+    from 192 to 256.
+  - The knee's own error is small: §56's goodput row sd of 0.24–0.30 % gives σ_W95 ≈ 3 slots at c2 and ≈ 4 at c8.
+- **A priori σ_R at c2.**
+  - From p27's row pairs (Rcom, which uses each row's own `l`): sd 0.018 at W 128 and 0.046 at 192, pooled ≈ 0.035.
+  - Under the scored recipe, the floor scatter does not cancel. ℓ̂_c − ℓ̂_row varies by ≈ √2 × 1.4 ms across rows,
+    which is ≈ 0.10 in R at T̂ ≈ 19 ms.
+  - So **σ_R ≈ 0.04–0.11**, and the per-replicate threshold is R̃ < 0.78–0.92.
+- **The slot equivalent (ruling item 4):** 2·σ_R / slope = **55–150 slots at c2**.
+  - A replicate would have to cross below ≈ 114 or lower. That is below the W 128 calibration arm, where R̃ > 1 by
+    construction (§1.5).
+  - **So B2 at c2, as a per-replicate count, is ill-conditioned: it cannot fire on the a priori σ_R.**
+  - The cause is not the veto the ruling removed. It is that R̃ hardly moves with W below the knee, while the
+    calibration-ℓ̂ recipe adds floor scatter.
+  - **Coordinator's ruling needed.** The alternative, registered as a REPORTED readout: the median over replicates of
+    R̃_r(W₉₅,r) below 1 − 2·1.253·σ_R/√n_s. At n_s = 6 that is 0.041–0.11 in R, or 28–77 slots, i.e. a crossing below
+    ≈ 92–141.
+    - It is decidable at c2 only if σ_R is near its low end. It would replace the count rule if ruled so.
+- **c8:** p27's 9 s rows cannot size σ_R. Their row pairs differ by 0.2–0.6 in R at W 256–768, being shorter than
+  Copa's 10 s window and leg 1's settling. σ_R is in-session only.
+  - B2 at c8 additionally needs the crossing ≥ 93 slots below the band.
 
 c1s carries no crossing band (§2.4). Its corners (406–981) are kept in `s60band.out` as context.
 
@@ -313,7 +461,7 @@ c1s carries no crossing band (§2.4). Its corners (406–981) are kept in `s60ba
     against q₉₈.
   - It is an over-allowance finding against R5.5's frozen landing (R5.5: a margin of 17–33 slots above the knee),
     not a refutation.
-- **c8 below 403.**
+- **c8 below 433.**
   - Leg 0's coupling ½Δ or leg 1's pull is smaller than measured, which bears on the ½ form's magnitude under
     symmetric shaping (B5's subject in B-2).
   - B2 fires only if it is also below W₉₅ (≈ 340).
@@ -333,12 +481,12 @@ All arms are static pools through `RWM_STORE_PATH_POOL` (per path; c8's P = W/2)
 | cell | rows per replicate (total W) | replicates |
 |---|---|---|
 | c2 (600 MB) | **128 ×2** (cal n₀), 96 (flatness), 160, 176, 192, 224, 256, 320, 384, **2 048** (ctl) | 6 |
-| c8 (600 MB) | **128 ×2** (cal n₀, P64), 96 (flatness, P48), 256, 320, 384, 448, 512, 576, 640, **1 280** (ctl, P640) | 6 |
+| c8 (600 MB) | **128 ×3** (cal n₀, P64), 96 (flatness, P48), 256, 320, 384, 448, 512, 576, 640, **1 280** (ctl, P640) | 6 |
 | c1s | **128 ×2** (cal n₀, 1 GB), 96 (flatness, 1 GB), **2 048** (ctl, 5 GB) | 12 |
 
 - **c2:** the knee arms are 160–192, with 16-slot steps where 32 slots cost 6 %. The band arms (158–242) are
   160–256, and 320 brackets the sensitivity's top.
-- **c8:** the knee arms are 256–384, and the band (403–586) is covered by 384–640 at 64-slot steps. B2 at c8 needs a
+- **c8:** the knee arms are 256–384, and the band (433–586) is covered by 384–640 at 64-slot steps. B2 at c8 needs a
   gross miss (§1.6), and the arms read either outcome without extrapolation.
 
 ### 2.2 Crossing per replicate
@@ -350,14 +498,14 @@ All arms are static pools through `RWM_STORE_PATH_POOL` (per path; c8's P = W/2)
   crossing. R6.2's uniqueness prediction is one sign change per replicate. Per-row `xs`/`xb` count window flicker on
   a static pool and are reported only.
 - **Scoreable cell:** ≥ 5 of 6 replicates.
-- **Knee in-session:** W₉₅ and W₉₈ from the arm-median goodput against the control (§56 definitions).
+- **Knee in-session:** W₉₅ and W₉₈ from the arm-median goodput against the control (§56 definitions), reported per cell. For B2 the knee is taken **per replicate** (W₉₅,r: each row's goodput against the same replicate's control, interpolated in W), and B2 reads R̃ at it in R units (§1.6).
 
 ### 2.3 Falsifiers
 
 | # | what fires it (printed fields only) | what it means |
 |---|---|---|
 | B1 | on a calibration (W 128) row: median LATE `err` > 0 | the collapse condition: b̂₀⁺ + q·ℓ̂ below the row's own later no-queue brake |
-| B2 | at c2 or c8: W_r < in-session W₉₅ on ≥ 2 of the 5 or 6 scoreable replicates (R4.8's "more than 1 in 6") | the target FORM lands below the knee, given a queue-free b̂₀⁺ (§1.4) |
+| B2 | at c2 or c8: R̃_r(W₉₅,r) < 1 − 2·σ_R (per-replicate knee, in-session σ_R; §1.6) on ≥ 2 of the 5 or 6 scoreable replicates, read on the scored (calibration-ℓ̂) recipe alone; at c2 ill-conditioned a priori, see §1.6 (R4.8's "more than 1 in 6") | the target FORM lands below the knee, given a queue-free b̂₀⁺ (§1.4) |
 
 - **B1 off the calibration arm** is not evaluated: later windows carry queue there, and m̂ tracks it.
 - **B6 is dropped and replaced by a readout.** On §56, c8 leg 1's σ at load over its boot value is 0.24–0.72, so it
@@ -518,21 +666,21 @@ R̃ − 1 at the control** (W 2 048):
 | | smoke (c2 W 192, C + G) | 2 | 3 min | 3 min |
 | | c2: 11 rows × 6 replicates | 66 | 83 min | 99 min |
 | | **total** | **68** | **≈ 2.4 h** | **≈ 2.9 h** |
-| **60b** | c8: 11 rows × 6 replicates | 66 | 83 min | 99 min |
+| **60b** | c8: 12 rows × 6 replicates (three n₀ rows) | 72 | 90 min | 108 min |
 | | evicting rows (plan 59 on the gauge) | 5 (+ ≤ 5) | 12 min | 32 min |
-| | **total** | **71 (+ ≤ 5)** | **≈ 1.6 h** | **≈ 2.2 h** |
+| | **total** | **77 (+ ≤ 5)** | **≈ 1.7 h** | **≈ 2.3 h** |
 | **60c** | smoke (c1s W 128 G, c1s W 2 048 C) | 2 | 4 min | 10 min |
 | | c1s: 4 rows × 12 replicates (24 cal + 12 flatness at 1 GB; 12 control) | 48 | 45 min | 168 min |
 | | G/C: 10 C rows paired with 10 control G rows | 10 | 15 min | 35 min |
 | | **total** | **60** | **≈ 1.1 h** | **≈ 3.6 h** |
 
-- **Total:** 199 rows (+ ≤ 5 evicting re-runs), down from 219. The C rows at c2 and c8 are dropped: the smoke
+- **Total:** 205 rows (+ ≤ 5 evicting re-runs). The C rows at c2 and c8 are dropped: the smoke
   witnesses tag absence, and their G controls re-base against §56.
-- **`LD_HARD`:** launch + 3.5 h (60a), + 2.5 h (60b) and + 4 h (60c).
-- **The budget guard** refuses with less than the worst case left: 2.9 / 2.2 / 3.6 h.
+- **`LD_HARD`:** launch + 3.5 h (60a), + 3 h (60b) and + 4 h (60c).
+- **The budget guard** refuses with less than the worst case left: 2.9 / 2.3 / 3.6 h.
 - **Three launches, with the reason.** Every two-launch split exceeds 4 h worst case in one launch:
-  - 60a + 60b = 2.9 + 2.2 − the shared build ≈ 5.1 h;
-  - 60b + 60c ≈ 5.8 h.
+  - 60a + 60b ≈ 5.2 h;
+  - 60b + 60c ≈ 5.9 h.
   - Three launches also keep each cell's gate and calibration read (§4.5, §1.5) ahead of the next cell.
 - **Order and reuse.** Each launch runs only after the previous launch's smoke, witnesses, gates and (60a/60b)
   calibration validity are read. 60b and 60c reuse 60a's binary.
@@ -543,15 +691,16 @@ R̃ − 1 at the control** (W 2 048):
 
 1. **The boot hold and n₀ are now law terms with no derivation** (P1's meaning). This is recorded as `store-law.md`
    R6.7, with the R5.5 erratum. It is read against P1 and the latch rate.
-2. **ℓ̂ is substituted at c2 and c8 under the ruling's exception clause** (§1.2, rank test). The coordinator
-   confirms or reverses this. Either way the other reading is reported, as the sensitivity or the scored recipe.
-3. **The K4 print (§5) is a gauge-code change** that is specified but not made. It must land on `slaw-gauge` before
+2. **ℓ̂'s source joins R6.7 if P3 passes**, alongside b̂₀⁺: the lifetime minimum also latches start-up queue. (The
+   calibration-ℓ̂ recipe itself was accepted in entry 5.)
+3. **B2 at c2 is ill-conditioned a priori** (§1.6): R̃ is nearly flat below the knee, and the scored recipe adds floor scatter, so the per-replicate count cannot fire unless the in-session σ_R is far below 0.04. **The coordinator rules** between the count rule and the pooled-median form. c8's σ_R is in-session only.
+4. **The K4 print (§5) is a gauge-code change** that is specified but not made. It must land on `slaw-gauge` before
    the build.
-4. **The renderer-generated witness sample** (anchor-bound leg plus empty leg) is a pre-launch item (§1.4).
-5. **c1s and c8 at n₀ = 128 have no measured flatness pool.** If a flatness gate fails, that cell has no R̃ (c1s: no control-sign verdict; c8: no B2).
-6. **The harness (`harness60`) does not exist.** It needs:
+5. **The renderer-generated witness sample** (anchor-bound leg plus empty leg) is a pre-launch item (§1.4).
+6. **c1s and c8 at n₀ = 128 have no measured flatness pool.** If a flatness gate fails, that cell has no R̃ (c1s: no control-sign verdict; c8: no B2).
+7. **The harness (`harness60`) does not exist.** It needs:
    - the arm tables for 60a / 60b / 60c, with per-arm bytes;
-   - the two-n₀-row calibration rule and the LATCHED test;
+   - the two- or three-n₀-row calibration rule, the LATCHED and thin-leg-1 tests;
    - the scrub and per-arm `RWM_SLAW`;
    - the smokes;
    - the per-row witness, the sign gate and the validity gate in the scorer;

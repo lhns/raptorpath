@@ -436,6 +436,10 @@ and n₀). They are to be derived, with:
 
 The registered R̃ of s60 feeds a calibration row's b̂₀⁺, so it tests the target's form, not this input.
 
+The same class covers ℓ̂. The lifetime echo minimum rises with the static pool row by row at c2 and c8: §56 c2 goes
+8.07 → 10.13 ms over W 128 → 2 048 (`store-law/s60ell.out`). s60's P3 tests the printed `l`. If it passes, ℓ̂'s
+source (a running minimum from the first sample) needs the same boot hold.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
 ### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]

@@ -111,5 +111,21 @@ for name, c in CELLS.items():
         for lab, anc, ws in corners(c, mode):
             allw += ws
             print('%s | %s | %s anc=%d | %.0f-%.0f | %.1f' % (name, mode, lab, anc, min(ws), max(ws), c['ka']))
-        tag = 'BAND (scored recipe)' if (mode == 'sub') == c['sub'] else 'SENSITIVITY (row l)'
+        tag = 'all corners (scored recipe)' if (mode == 'sub') == c['sub'] else 'SENSITIVITY (row l), all corners'
         print('%s | %s | %s | %.0f-%.0f |' % (name, mode, tag, min(allw), max(allw)))
+
+# The FROZEN bands (ruling entry 5, item 3), anchor state checked ROW BY ROW, since one calibration row feeds each
+# replicate. Under substitution the row's m-hat enters F iff m_row - l_c < b0_c, with m_row - l_c = (l_row - l_c) + mu.
+# c2 (s60boot.out per-row l and lm): l_c up to 9.09 (a P128 row), a W 192 row at l 7.35 and lift 1.21 give -0.53 ms,
+#   below b0_c 1.27-3.09: the row's m-hat CAN enter, so c2 keeps both anchor states (all corners).
+# c8 leg 0: l_c <= 8.49 (P80 rows; P64 is unmeasured), W 320 rows l >= 10.72 and lift >= 1.05 give >= 3.28 ms, above
+#   b0_c <= 2.90 (thinly); W 512: >= 7.9. So c8 is anc = 1 over its band region and its band is the anc 1 corners.
+print()
+print('FROZEN bands (scored recipe, anchor state checked row by row):')
+c2all = [w for lab, anc, ws in corners(CELLS['c2'], 'sub') for w in ws]
+print('c2 | both anchor states | BAND %.0f-%.0f' % (min(c2all), max(c2all)))
+c8a1 = [w for lab, anc, ws in corners(CELLS['c8'], 'sub') if anc == 1 for w in ws]
+print('c8 | anc fixed at 1 | BAND %.0f-%.0f' % (min(c8a1), max(c8a1)))
+c8own = [w for lab, anc, ws in corners(CELLS['c8'], 'own') if anc == 1 for w in ws]
+print('c8 | own-l sensitivity, anc 1 (like for like) | %.0f-%.0f' % (min(c8own), max(c8own)))
+
