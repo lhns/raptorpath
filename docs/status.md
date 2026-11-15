@@ -982,6 +982,26 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Before launch:** `df` on the VM home. Stale run trees go first: the §56/§57 run dirs, whose ledgers are in the repo.
 - **Host builds:** host cargo is paused, with the build lock held by the main session, throughout both parts.
 
+## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
+
+**Why.**
+- The §60 session (B-1; registration on `s60-design`, entered into status before 60a) runs on main + the store-law gauge (`slaw-gauge` `d416d59b`). That tree misses `ref56-manifest.sha256`, so every launch would otherwise run the full engine suites, and a rehearsal runs none.
+- This step runs the suites once, and pins the binary and a reference manifest that the rehearsal, 60a and 60b reuse.
+
+**Tree.** `s60-tree` `cb88df3a`: main `aefe6d97` + `slaw-gauge` `d416d59b`. The merge is clean, and `raptorpath-math`, `raptorpath-wasm` and `raptorpath-core` are unchanged against main. Later tools-only commits keep the manifest HIT.
+
+**Run.**
+1. `tools/l1/suites_run.sh` on the tree, under both locks: release, doc, wasm, core, debug and parsers. This is the first full engine suite run since the math-crate merges and the first Linux run of the gauge's tests.
+2. On TESTS-OK, `tools/l1/binid_run.sh` (crate-directory build, as the harness does) on the same archive. Its sha is the registered `bin_sha` that the rehearsal, 60a and 60b must each match.
+3. Then `ref60-manifest.sha256` is generated with `ref_manifest.sh` from the same tree, committed (tools only), and passed as `LD_REF_MANIFEST` to every later launch. A suite-reuse MISS stops a launch.
+
+**Failure rule.**
+- A REAL failure inside the gauge's own tests (`slaw*`, `gates::` RWM_SLAW, `slaw_reachability`) blocks §60.
+- A failure outside them is a finding about main. It is re-run on main alone (base tree). If it fails identically there, it is recorded as main's defect and waits for diagnosis or an owner ruling. If it fails only with the gauge, it blocks.
+- `decision_trace_pin` must stay 7/7; any digest change blocks.
+
+**Length.** About 50–60 min of suites plus about 10 min of build. Host raptorpath cargo is paused; the builds of other projects on the host are recorded, not controlled.
+
 **Erratum and progress to "Owner decisions (2026-11-14)" (same day).**
 - **Item 3, "ρ is inert at Auto and Realtime":** this holds under the shipped R (the cut form) only.
   - Under the block-exact candidate C6 (`docs/derivations/pfec-continuous.md`), R exceeds the slider's 1e-3 step at Realtime on all five audit cells (1.2e-3 to 4.1e-3) and at Auto on one cell. So ρ would act on 1–4 of 100 positions there.
