@@ -480,7 +480,7 @@ def check57(plan, path):
 
 
 # ── status 59: the evicting-seat m-bar readout (plan 59), REPORTED ONLY, no build, ONE seat (plan 56 / 57's shape). mbar59_score.py reads these. ──
-# c2-100 at 600 MB, arm EVICT = the Realtime hint with NO --window-reliable (RWM_C_RELIABLE=0 in perf_rwm_c.sh) and RWM_UNIFIED=1, n = 5 (seeds 42 / 7 / 42 / 7 / 42). There is no c3 cell:
+# c2-100 at 600 MB, arm EVICT = the Realtime hint with NO --window-reliable (RWM_C_RELIABLE=0 in perf_rwm_c.sh) on the shipped-default unified machine (RWM_UNIFIED defaults on: nothing set), n = 5 (seeds 42 / 7 / 42 / 7 / 42). There is no c3 cell:
 # the L1 cells are c1s / c1d / c2 / c8 (c8 = c2 + c3 on TWO paths); a single-path c3 cell would be new and unsized (20 Mbit: 600 MB is 240 s before repair overhead).
 CELL59, ARM59 = "c2-100", "EVICT"
 BYTES59 = {"c2-100": 600000000}

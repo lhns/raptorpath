@@ -797,17 +797,17 @@ def check59(tag, path, run_dir, sb):
     stxt = open(os.path.join(rep, "smoke.log"), errors="replace").read() if os.path.exists(os.path.join(rep, "smoke.log")) else ""
     ctxt = open(os.path.join(rep, "smoke-check.txt"), errors="replace").read() if os.path.exists(os.path.join(rep, "smoke-check.txt")) else ""
     heads = re.findall(r"^=== rep=\d+ seed=\d+ cell=(\S+) arm=(\S+) attempt=\d+ pipeline=window hint=(\S+) .*? bytes=(\d+) arm_env='([^']*)' bin=(\S+) sha=", stxt, re.M)
-    check(f"{tag}: no guard stage, no BASE tree; the smoke is ONE c2-100 EVICT row at 600 MB, hint realtime, arm env RWM_UNIFIED=1 RWM_C_RELIABLE=0, on the ONE binary (bin/, never bin-base)",
+    check(f"{tag}: no guard stage, no BASE tree; the smoke is ONE c2-100 EVICT row at 600 MB, hint realtime, arm env RWM_C_RELIABLE=0 only (RWM_UNIFIED is the shipped default), on the ONE binary (bin/, never bin-base)",
           not os.path.exists(os.path.join(run_dir, "guard")) and not os.path.exists(os.path.join(sb["devshm"], "ld", "bin-base", "raptorpath")) and len(heads) == 1
-          and heads[0][:5] == ("c2-100", "EVICT", "realtime", "600000000", "RWM_UNIFIED=1 RWM_C_RELIABLE=0") and heads[0][5].endswith("/bin/raptorpath"), heads)
+          and heads[0][:5] == ("c2-100", "EVICT", "realtime", "600000000", "RWM_C_RELIABLE=0") and heads[0][5].endswith("/bin/raptorpath"), heads)
     crits = ["one row per smoke slot ran", "the evicting seat is armed on every row", "every row ran the one seat's binary", "the Realtime hint reached both ends", "every [DIAG] / [SPAN] readout computed",
              "every smoke row returned"]
     check(f"{tag}: the rehearsal criteria are printed as PASS lines (evicting seat armed, the sha, the Realtime hint, every readout, the return) and SMOKE-PASS",
           all(re.search(r"^PASS " + re.escape(x), ctxt, re.M) for x in crits) and "FAIL " not in ctxt and "SMOKE-PASS" in ctxt and "SMOKE-PASS" in ctxt, ctxt[-1400:])
     drv = [ln.split() for ln in open(os.path.join(sb["logs"], "drv.log")).read().splitlines()]
     drv2 = open(os.path.join(sb["logs"], "drv2.log")).read().splitlines()
-    check(f"{tag}: every driver call ran at 600 MB on the c2 scenario with RWM_PERF_TIMEOUT_S=150, the Realtime hint, RWM_C_RELIABLE=0, RWM_UNIFIED=1 and RWM_GEN=0 (a retaining or generation-coded row would not be this seat)",
-          drv and all(d[3] == "timeout=150" and d[2] == "600000000" and d[0] == "c2" and d[1] == "c2" for d in drv) and drv2 and set(drv2) == {"realtime reliable=0 unified=1 gen=0"}, (drv[:2], drv2[:2]))
+    check(f"{tag}: every driver call ran at 600 MB on the c2 scenario with RWM_PERF_TIMEOUT_S=150, the Realtime hint, RWM_C_RELIABLE=0, RWM_UNIFIED unset (default on) and RWM_GEN=0 (a retaining or generation-coded row would not be this seat)",
+          drv and all(d[3] == "timeout=150" and d[2] == "600000000" and d[0] == "c2" and d[1] == "c2" for d in drv) and drv2 and set(drv2) == {"realtime reliable=0 unified=unset gen=0"}, (drv[:2], drv2[:2]))
     if path == "rehearse":
         sdir = os.path.join(run_dir, "suites")
         check(f"{tag}: a rehearsal runs the tools tests (python and bash) but no engine suites, and leaves NO suite record (no TESTS-OK, no SRC-MANIFEST.sha256)",
@@ -823,17 +823,17 @@ def check59(tag, path, run_dir, sb):
           (len(led), [(r["cell"], r["arm"], r["status"], r["problems"], m59.missing(r)) for r in led if r["status"] != "LIVE" or m59.missing(r) or r["problems"]][:3], got_slots[:3], want_slots[:3]))
     t = led[0]["t59"]
     check(f"{tag}: the readouts are the stub's known deltas (per tick 250 src / 240 acked / 20 ack wakes, n = 100 + k % 5): release batch 12.5 (src) / 12.0 (ack), the shed counted from [SPAN], the seat armed",
-          abs(t["rel_src"] - 12.5) < 1e-9 and abs(t["rel_ack"] - 12.0) < 1e-9 and t["shed_total"] > 0 and t["shed_armed_span"] and t["sender_shed_echo"] and t["receiver_shed_echo"], t)
+          abs(t["rel_src"] - 12.5) < 1e-9 and abs(t["rel_ack"] - 12.0) < 1e-9 and t["mbar_lo"] is not None and t["w1_hi"] is not None and t["shed_total"] > 0 and t["shed_armed_span"] and t["sender_shed_echo"] and t["receiver_shed_echo"], t)
     shas = {r["bin_sha"] for r in led}
     check(f"{tag}: one binary ran every row (one sha) and the seat comparison executed on every row (sha_checked)", len(shas) == 1 and all(r["sha_checked"] is True for r in led), shas)
     ldtxt = open(os.path.join(rep, "ld.log"), errors="replace").read()
     envl = ldtxt.split("=== env ")[-1].split("\n")[0]
     check(f"{tag}: the instrument env is RWM_RDIAG=1 with RWM_PERF_TIMEOUT_S=150 (no RTOBS), and the env scrub withholds RWM_UNIFIED, RWM_UNIFIED_SHED and RWM_C_RELIABLE",
-          "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0] and "RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_STORE_PATH_POOL;" in envl, envl[:300])
+          "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0] and "RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_STORE_PATH_POOL;" in envl, envl[:300])
     sc = open(os.path.join(rep, "score.txt"), errors="replace").read()
     m = re.search(r"^VERDICT59 REPORTED-ONLY slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+) dnf=(\d+)", sc, re.M)
     check(f"{tag}: the report prints the readouts, the m-bar band and a VERDICT59 line counting every slot", m is not None and int(m.group(1)) == len(want_slots) and int(m.group(3)) == len(led)
-          and "m-bar BAND" in sc and "release batch" in sc, sc[-900:])
+          and "m-bar LOWER BOUND" in sc and "W1 BRACKET" in sc and "release batch" in sc, sc[-900:])
     tests_txt = open(os.path.join(run_dir, "suites", "TESTS.txt"), errors="replace").read()
     check(f"{tag}: the tools tests ran in the suites step (TEST parsers and TEST bashtests lines), whether or not the engine suites did", "TEST parsers " in tests_txt and "TEST bashtests " in tests_txt, tests_txt)
 
@@ -1166,6 +1166,8 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
             jobs.append(ex.submit(budget57, plan57, need + 900, True))
     if want("red59:noshed"):
         jobs.append(ex.submit(red59, "noshed", "the evicting seat is armed on every row"))
+    if want("red59:norr"):
+        jobs.append(ex.submit(red59, "norr", "the debt loop runs"))
     if want("red59sha:59"):
         jobs.append(ex.submit(red54sha, "59", "rep59", "every row ran the one seat's binary"))
     if want("repl59"):

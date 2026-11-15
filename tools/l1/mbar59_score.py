@@ -7,10 +7,17 @@
 What is read (client = the bulk sender, `[DIAG]` ticks after the last warm-up marker, LATE = t >= 5 s with src > 0; `[SPAN]` lines on their own clock, t >= 5 s):
   * cum= is `src/cod/ack`, CUMULATIVE totals (diag.rs). wake[.. ack=] is CUMULATIVE (wakes of the sender loop's ack arm). wait[.. n=] is PER PERIOD (loop iterations of the tick's period,
     reset every tick), so the iteration count over LATE is the SUM of n over the ticks after the first LATE tick, never last minus first.
-  * release batch   = d(cum) / d(wake ack)         first LATE tick -> last LATE tick. m-bar's upper bound (the cancellation runs once per advance-observing iteration).
-  * per loop        = d(cum) / sum(wait n)         m-bar's lower bound (all iterations).
-    Both are read on the SRC field (the registered form, pool57_score) and on the ACK field (sources actually acked; they differ under shedding). The per-tick range of the ACK release
-    batch and of the ACK per-loop value (median / min / max over consecutive LATE ticks) is the gauge range the spec asks for.
+  * m-bar is sources per ADVANCE: the debt is cancelled once per sender-loop iteration, and only when the cumulative ack advanced (`cumulative_advance` in `on_ack_advance`,
+    sender_phases.rs). So
+      m-bar LOWER bound  mbar_lo = d(cum) / sum(wait n)      every loop iteration is counted, including those without an advance, so this is <= m-bar.
+      release batch      = d(cum) / d(wake ack)              sources per ACK-ARM wake. It bounds NOTHING: an advance can land on a non-ack wake, and an ack wake need not advance.
+                                                              Reported because pool57_score registered it (the 195 / 60 c1d values), not as a bracket of m-bar.
+    The cum field is the ACK field (sources actually acked; they differ from sent under shedding) for mbar_lo, and the SRC field (the registered form) is reported beside it. The per-tick
+    range (median / min / max over consecutive LATE ticks) is the gauge range the spec asks for.
+  * W1 bracket (spec 6.2, W1 = emitted / (r x sources)): lower W1 >= max(0, 1 - 1/(rr x mbar_lo)) with rr the median [SPAN] rr and the LOWER-bound m-bar (a larger m-bar only raises it);
+    upper W1 <= (cod/src) / rr, cod including margin and request repairs, so it over-counts the proactive share.
+  * eps_hat = the median per-path `pl=` of [DIAG] (loss_rate(), the per-ack EWMA) over LATE. The engine prints NO sigma^2 token (burst_variance_factor is computed in emit_source.rs and
+    not echoed). [FDIAG] (the receiver's rf= ru= counts) needs RWM_FDIAG=1 on the server, which this plan does not set (it times every symbol); its last rf / ru are read when present.
   * cod/src         = sum(cod rate) / sum(src rate) over LATE ticks with src > 1000 sym/s (the DIAG rates); the cumulative form d(cum cod) / d(cum src) is reported beside it.
   * [SPAN]          = medians of rr, debt, a_star, delta, bud over LATE; the last cumulative shed total / budget-refused count; goodput = the summary's mbps (None on a DNF) and the median
     [DIAG] good= over LATE (a DNF row has no summary).
@@ -30,7 +37,7 @@ LATE_T = 5.0                     # status 59: LATE is t >= 5 s (pool56's per-cel
 SRC_MIN = 1000.0                 # cod/src is read over ticks with src above this (sym/s), as the registered 0.080 reading
 GRID = (1, 4, 16, 64, 256)       # the spec's m-bar sweep
 PERF_TIMEOUT_S = 150
-LIVE_TOKENS = ("cum_src_d", "cum_ack_d", "wake_ack_d", "loop_n", "rel_src", "rel_ack", "loop_src", "loop_ack", "cod_src_rate", "cod_src_cum")
+LIVE_TOKENS = ("mbar_lo", "cum_src_d", "cum_ack_d", "wake_ack_d", "loop_n", "rel_src", "rel_ack", "loop_src", "loop_ack", "cod_src_rate", "cod_src_cum")
 SPAN_TOKENS = ("rr", "debt", "a_star", "delta", "bud", "shed_total")      # the [SPAN] readouts the smoke requires
 
 _CUM = re.compile(r" cum=(\d+)/(\d+)/(\d+)")
@@ -38,6 +45,8 @@ _WAKE_ACK = re.compile(r"wake\[[^\]]*? ack=(\d+)")
 _WAIT_N = re.compile(r"wait\[[^\]]*? n=(\d+) ")
 _SRC = re.compile(r" src=([\d.]+)sym/s")
 _COD = re.compile(r" cod=([\d.]+)sym/s")
+_PL0 = re.compile(r" p0:infl=\S+ .*? pl=([\d.]+)")
+_FDIAG = re.compile(r"\[FDIAG\].* rf=(\d+) ru=(\d+)")
 _GOOD = re.compile(r" good=([\d.]+)Mbit")
 _SHED = re.compile(r" shed=(\d+)/(\d+)")
 _OPT = r"(?:Some\(([-+\d.eE]+)\)|None)"
@@ -74,7 +83,7 @@ def diag_ticks(cli):
         if not mt:
             continue
         cum, wk, wn, sr, cd, gd, sh = _CUM.search(ln), _WAKE_ACK.search(ln), _WAIT_N.search(ln), _SRC.search(ln), _COD.search(ln), _GOOD.search(ln), _SHED.search(ln)
-        out.append({"t": float(mt.group(1)), "src": _f(sr, 1), "cod": _f(cd, 1), "good": _f(gd, 1),
+        out.append({"t": float(mt.group(1)), "src": _f(sr, 1), "cod": _f(cd, 1), "good": _f(gd, 1), "pl": _f(_PL0.search(ln), 1),
                     "cum": tuple(int(x) for x in cum.groups()) if cum else None,
                     "wack": int(wk.group(1)) if wk else None, "n": int(wn.group(1)) if wn else None,
                     "shed": (int(sh.group(1)), int(sh.group(2))) if sh else None})
@@ -105,12 +114,15 @@ def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", mbps=None):
     sp_ = [s for s in span_lines(cli) if s["t"] >= LATE_T]
     m = {k: None for k in LIVE_TOKENS + ("rel_ack_med", "rel_ack_min", "rel_ack_max", "loop_ack_med", "loop_ack_min", "loop_ack_max", "good_med", "src_med", "cod_med", "eff_src_s",
                                          "grid_between", "late_n", "span_n")}
-    m.update({k: None for k in ("rr", "debt", "a_star", "delta", "bud", "shed_total", "shed_denied", "shed_diag_total")})
+    m.update({k: None for k in ("rr", "debt", "a_star", "delta", "bud", "shed_total", "shed_denied", "shed_diag_total", "mbar_lo", "mbar_lo_src", "w1_lo", "w1_hi", "grid_above", "eps_hat")})
     m["late_n"], m["span_n"] = len(late), len(sp_)
     m["goodput_summary"] = mbps
     m["goodput_diag"] = med([d["good"] for d in late])
     m["good_med"] = m["goodput_diag"]
     m["src_med"], m["cod_med"] = med([d["src"] for d in late]), med([d["cod"] for d in late])
+    m["eps_hat"] = med([d["pl"] for d in late])
+    fd = [x for x in (_FDIAG.search(ln) for ln in srv or []) if x]
+    m["fdiag_rf"], m["fdiag_ru"] = (int(fd[-1].group(1)), int(fd[-1].group(2))) if fd else (None, None)
     m["shed_armed_span"] = any(s["shed"] is not None for s in span_lines(cli))
     m["shed_armed_diag"] = any(d["shed"] is not None for d in tk)
     m["sender_shed_echo"] = any(SHED_ECHO_SENDER in ln for ln in cli or [])
@@ -147,10 +159,11 @@ def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", mbps=None):
         m["shed_total"], m["shed_denied"] = shed[-1]["shed"], shed[-1]["denied"]
     dsh = [d["shed"] for d in tk if d["shed"] is not None]
     m["shed_diag_total"] = dsh[-1][0] if dsh else None
-    lo, hi_ = m["loop_ack_med"], m["rel_ack_med"]
-    if lo is not None and hi_ is not None:
-        lo, hi_ = min(lo, hi_), max(lo, hi_)
-        m["grid_between"] = [g for g in GRID if lo <= g <= hi_]
+    m["mbar_lo"], m["mbar_lo_src"] = m["loop_ack"], m["loop_src"]
+    rr = m["rr"]
+    m["w1_lo"] = max(0.0, 1.0 - 1.0 / (rr * m["mbar_lo"])) if (rr and m["mbar_lo"]) else None
+    m["w1_hi"] = m["cod_src_rate"] / rr if (rr and m["cod_src_rate"] is not None) else None
+    m["grid_above"] = [g for g in GRID if m["mbar_lo"] is not None and g >= m["mbar_lo"]]      # the sweep points not excluded by the lower bound
     return m
 
 
@@ -198,6 +211,10 @@ def smoke(path, out=print):
          [f"{r['cell']} {r['arm']}: {x}" for r in rs for x in r["problems"] if x.startswith(("pipe-echo", "header=", "no-pipe-echo", "window-line-missing"))])
     crit("every [DIAG] / [SPAN] readout computed on every row (cum=, wake[ack=], wait[n=], src=, cod=, rr, debt, a_star, delta, shed, bud: no None)",
          [f"{r['cell']} {r['arm']}: {', '.join(missing(r))}" for r in rs if missing(r)])
+    for r in rs:
+        out(f"  GO/NO-GO {r['cell']} {r['arm']}: rr median {fmt(tv(r, 'rr'), 3)}  a_star median {fmt(tv(r, 'a_star'), 1)}  mbar_lo {fmt(tv(r, 'mbar_lo'), 3)}  eps_hat {fmt(tv(r, 'eps_hat'), 4)}")
+    crit("the debt loop runs: the median [SPAN] rr over LATE is > 0 (a seat with rr <= 0 never reaches the cancellation; nothing to read)",
+         [f"{r['cell']} {r['arm']}: rr median {tv(r, 'rr')}" for r in rs if not (tv(r, "rr") is not None and tv(r, "rr") > 0)])
     late = []
     for r in rs:
         if r.get("rc") != 0:
@@ -222,10 +239,12 @@ def _rng(rs, k, nd):
 
 
 READOUTS = [
-    ("release batch  d(cum src)/d(wake ack)", "rel_src", 2), ("release batch  d(cum ack)/d(wake ack)", "rel_ack", 2),
-    ("per loop       d(cum src)/sum(wait n)", "loop_src", 2), ("per loop       d(cum ack)/sum(wait n)", "loop_ack", 2),
-    ("per-tick release batch (ack): median", "rel_ack_med", 2), ("   min over ticks", "rel_ack_min", 2), ("   max over ticks", "rel_ack_max", 2),
-    ("per-tick per-loop (ack): median", "loop_ack_med", 2), ("   min over ticks", "loop_ack_min", 2), ("   max over ticks", "loop_ack_max", 2),
+    ("mbar_lo  d(cum ack)/sum(wait n)  [<= m-bar]", "mbar_lo", 3), ("mbar_lo  d(cum src)/sum(wait n)  [<= m-bar]", "mbar_lo_src", 3),
+    ("W1 lower  1-1/(rr x mbar_lo)", "w1_lo", 3), ("W1 upper  (cod/src)/rr", "w1_hi", 3),
+    ("per-tick mbar_lo (ack): median", "loop_ack_med", 3), ("   min over ticks", "loop_ack_min", 3), ("   max over ticks", "loop_ack_max", 3),
+    ("release batch d(cum src)/d(wake ack) [no bound]", "rel_src", 2), ("release batch d(cum ack)/d(wake ack) [no bound]", "rel_ack", 2),
+    ("per-tick release batch (ack): median [no bound]", "rel_ack_med", 2), ("   min over ticks", "rel_ack_min", 2), ("   max over ticks", "rel_ack_max", 2),
+    ("eps_hat (median p0 pl=)", "eps_hat", 4), ("FDIAG rf (server, needs RWM_FDIAG=1)", "fdiag_rf", 0), ("FDIAG ru", "fdiag_ru", 0),
     ("cod/src (DIAG rates, src > 1000/s)", "cod_src_rate", 3), ("cod/src (cumulative d cod / d src)", "cod_src_cum", 3),
     ("[SPAN] rr", "rr", 3), ("[SPAN] debt", "debt", 3), ("[SPAN] a_star", "a_star", 1), ("[SPAN] delta", "delta", 3), ("[SPAN] bud", "bud", 4),
     ("shed total (last [SPAN])", "shed_total", 0), ("shed budget-refused (last [SPAN])", "shed_denied", 0),
@@ -259,15 +278,16 @@ def score(paths, out=print):
     out(f"READOUTS over the {len(live)} live row(s): median [min-max] n")
     for label, k, nd in READOUTS:
         out(f"  {label:<42} {_rng(live, k, nd)}")
-    lo, hi = med([tv(r, "loop_ack") for r in live]), med([tv(r, "rel_ack") for r in live])
-    if lo is not None and hi is not None:
-        a, b = min(lo, hi), max(lo, hi)
-        out(f"m-bar BAND (ack field, medians over rows): per-loop {lo:.2f} <= m-bar <= release batch {hi:.2f}; sweep points {{1, 4, 16, 64, 256}} inside the band: "
-            f"{', '.join(str(g) for g in GRID if a <= g <= b) or 'none'}")
+    lo, hi = med([tv(r, "mbar_lo") for r in live]), med([tv(r, "rel_ack") for r in live])
+    wl, wh = med([tv(r, "w1_lo") for r in live]), med([tv(r, "w1_hi") for r in live])
+    if lo is not None:
+        out(f"m-bar LOWER BOUND (ack field, median over rows): m-bar >= {lo:.3f} (sources per loop iteration; only an upper limit is missing: no token bounds m-bar from above); "
+            f"sweep points {{1, 4, 16, 64, 256}} not excluded by it: {', '.join(str(g) for g in GRID if g >= lo) or 'none'}")
+        out(f"W1 BRACKET (medians over rows): {fmt(wl, 3)} <= W1 <= {fmt(wh, 3)}  (lower = max(0, 1 - 1/(rr x mbar_lo)); upper = (cod/src)/rr, cod includes margin and request repairs)")
     else:
-        out("m-bar BAND: not computable (no live row with both the release batch and the per-loop value)")
+        out("m-bar LOWER BOUND: not computable (no live row with the per-loop value)")
     n_dnf = sum(1 for r in live if r.get("dnf"))
-    out(f"VERDICT59 REPORTED-ONLY slots={len(ps.slots(rows_all))}/{n_exp} live={len(live)} void={len(voids)} replaced={len(replaced)} dnf={n_dnf} rel_ack_med={fmt(hi, 2)} loop_ack_med={fmt(lo, 2)}")
+    out(f"VERDICT59 REPORTED-ONLY slots={len(ps.slots(rows_all))}/{n_exp} live={len(live)} void={len(voids)} replaced={len(replaced)} dnf={n_dnf} mbar_lo_med={fmt(lo, 3)} w1_lo_med={fmt(wl, 3)} w1_hi_med={fmt(wh, 3)} release_ack_med={fmt(hi, 2)}")
     return 0
 
 

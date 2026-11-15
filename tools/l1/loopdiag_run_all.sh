@@ -76,7 +76,7 @@
 # 5 GB, six pools, n = 5); RWM_PERF_TIMEOUT_S=300; a VOID pool / burst echo is re-run once (pool57_score.py). LD_HARD = launch + 4 h (57a) / launch + 2.5 h (57b); the budget guard refuses with
 # less than the worst case left (13 200 s / 5 400 s; LD_HARD_MIN_S is a test seam).
 # LD_PLAN=59 (status 59, the evicting-seat m-bar readout, REPORTED ONLY, no build): plan 57b's single-seat shape (LD_CAND_SHA = $LD_ROOT/COMMIT, no BASE tree, no LD_BASE_SHA, >= 1 GB free on /dev/shm, the
-# reference-manifest suite reuse, the tools tests). ONE stage in $RUN/rep59: smoke = ONE evicting-seat row (c2-100 at 600 MB, --protocol-hint realtime, NO --window-reliable, RWM_UNIFIED=1; the
+# reference-manifest suite reuse, the tools tests). ONE stage in $RUN/rep59: smoke = ONE evicting-seat row (c2-100 at 600 MB, --protocol-hint realtime, NO --window-reliable, the shipped-default unified machine (RWM_UNIFIED defaults on: the arm sets nothing for it); the
 # sender must echo the shed law armed), then 5 slots (seeds 42 / 7 / 42 / 7 / 42); RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150 (a DNF is expected, not a failure). A slot whose liveness witnesses
 # fail is VOID and re-run once (mbar59_score.py / place38_parse.replace59). The budget guard refuses with under 7 200 s to LD_HARD (worst case: 5 + 5 replaced rows at the 150 s timeout, ~40 s bring-up
 # each, plus the tools tests, a reference-manifest MISS -- the engine suites, 44-54 min -- and the build; LD_HARD_MIN_S is a test seam). Launch with LD_HARD = launch + 2.5 h.

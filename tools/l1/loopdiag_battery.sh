@@ -138,7 +138,7 @@ P56=0; [ "$PLAN" = "56" ] && { P56=1; P38=1; PCAND=1; }
 P57=0; P57A=0; P57B=0
 case "$PLAN" in 57a) P57=1; P57A=1; P38=1; PCAND=1 ;; 57b) P57=1; P57B=1; P38=1; PCAND=1 ;; esac
 # Plan 59 (status 59, the evicting-seat m-bar readout; REPORTED ONLY, no build): plan 56 / 57's single-seat shape (P41 stays 0). c2-100 at 600 MB, ONE arm EVICT = --protocol-hint realtime with NO
-# --window-reliable (perf_rwm_c.sh RWM_C_RELIABLE=0) and RWM_UNIFIED=1, n = 5 (seeds 42 / 7 / 42 / 7 / 42), 5 rows + a 1-row smoke. RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150 (an evicting
+# --window-reliable (perf_rwm_c.sh RWM_C_RELIABLE=0) on the SHIPPED-DEFAULT unified machine (RWM_UNIFIED is on by default; nothing is set for it), n = 5 (seeds 42 / 7 / 42 / 7 / 42), 5 rows + a 1-row smoke. RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150 (an evicting
 # seat may never complete the object: a DNF is an expected datum, as perf.rs documents for the realtime profile). RWM_GEN=0 stays (generation coding bails without retention).
 P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime
@@ -327,9 +327,9 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
       *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
     esac
   elif [ "$P59" = 1 ]; then
-    # Plan 59 (place38_parse.ARM59 is the scorer's copy): the evicting seat = RWM_UNIFIED=1 + RWM_C_RELIABLE=0 (perf_rwm_c.sh drops --window-reliable) at the Realtime hint ($HINT).
+    # Plan 59 (place38_parse.ARM59 is the scorer's copy): the evicting seat = RWM_C_RELIABLE=0 (perf_rwm_c.sh drops --window-reliable) on the shipped-default unified machine (RWM_UNIFIED is on by default: nothing is set) at the Realtime hint ($HINT).
     case "$arm" in
-      EVICT) arm_env=(RWM_UNIFIED=1 RWM_C_RELIABLE=0) ;;
+      EVICT) arm_env=(RWM_C_RELIABLE=0) ;;      # RWM_UNIFIED / RWM_UNIFIED_SHED are on by default (gates.rs env_flag(.., true)): the arm sets NOTHING for them (an ambient value is scrubbed); the [GATES] echo is the witness
       *) echo "UNKNOWN-ARM $arm (plan 59: EVICT)" >> "$OUT"; return 0 ;;
     esac
   else
@@ -480,7 +480,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
 echo "=== LOOP-DIAG BATTERY tag=$TAG smoke=${LD_SMOKE:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $WANT" >> "$OUT"
 { [ "$P41" = 1 ] || [ "$P46" = 1 ]; } && echo "=== binary-base $BIN_BASE sha256 $WANT_BASE" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 ${INSTR_ENV[*]} bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_STORE RWM_QUIC_CC RWM_STORE_LAW RWM_RDIAG RWM_PCAP_DIR RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_STORE_PATH_POOL; plan=$PLAN witness54=$W54 (plan 36: no ACKDIAG/LOOPDIAG; CAP<n> sets RWM_PCAP_DIR=<pcap dir>) (plan 34 adds RWM_RDIAG=1); S<n>/DEF<n> set RWM_STORE=<n>, BRS<n> sets RWM_QUIC_CC=bbr_rs RWM_STORE=<n>, PWR sets RWM_STORE_LAW=power, KNEE sets RWM_STORE=<cell knee>" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 ${INSTR_ENV[*]} bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_STORE RWM_QUIC_CC RWM_STORE_LAW RWM_RDIAG RWM_PCAP_DIR RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_STORE_PATH_POOL; plan=$PLAN witness54=$W54 (plan 36: no ACKDIAG/LOOPDIAG; CAP<n> sets RWM_PCAP_DIR=<pcap dir>) (plan 34 adds RWM_RDIAG=1); S<n>/DEF<n> set RWM_STORE=<n>, BRS<n> sets RWM_QUIC_CC=bbr_rs RWM_STORE=<n>, PWR sets RWM_STORE_LAW=power, KNEE sets RWM_STORE=<cell knee>" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
 
 # ── plan 27 ───────────────────────────────────────────────────────────────

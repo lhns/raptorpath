@@ -53,7 +53,9 @@ check("HARNESS_PATHS lists plan 59 with rehearse / full / reuse-hit / reuse-miss
 check("battery: plan 59 is an accepted plan, P59 is single-seat (P38 + PCAND, no P41), HINT is realtime only under P59",
       "59|57a|57b|56|41d" in battery and 'P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }' in battery and 'HINT=bulk; [ "$P59" = 1 ] && HINT=realtime' in battery)
 check("battery: the driver gets $HINT (never a hardcoded bulk) and the header echo reads it", 'bash perf_rwm_c.sh "$ca" "$cb" "$HINT"' in battery and "hint=$HINT spec=" in battery and " bulk \"$bytes\"" not in battery)
-check("battery: arm EVICT = RWM_UNIFIED=1 RWM_C_RELIABLE=0, any other arm refused under plan 59", "EVICT) arm_env=(RWM_UNIFIED=1 RWM_C_RELIABLE=0) ;;" in battery and "UNKNOWN-ARM $arm (plan 59: EVICT)" in battery)
+check("battery: arm EVICT = RWM_C_RELIABLE=0 ONLY (RWM_UNIFIED / RWM_UNIFIED_SHED default on in gates.rs, so the arm sets nothing for them), any other arm refused under plan 59",
+      "EVICT) arm_env=(RWM_C_RELIABLE=0) ;;" in battery and 'env_flag("RWM_UNIFIED", true)' in open(os.path.join(HERE, "..", "..", "raptorpath", "src", "gates.rs"), encoding="utf-8").read()
+      and 'env_flag("RWM_UNIFIED_SHED", true)' in open(os.path.join(HERE, "..", "..", "raptorpath", "src", "gates.rs"), encoding="utf-8").read() and "UNKNOWN-ARM $arm (plan 59: EVICT)" in battery)
 check("battery: the env scrub withholds RWM_UNIFIED, RWM_UNIFIED_SHED and RWM_C_RELIABLE (an ambient value reaches no row), the instrument env is RWM_RDIAG=1 with a 150 s timeout",
       "-u RWM_UNIFIED -u RWM_UNIFIED_SHED -u RWM_C_RELIABLE" in battery and "[ \"$P59\" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)" in battery and m59.PERF_TIMEOUT_S == 150)
 check("battery: the size is p59_bytes (600 MB at c2-100 only) = BYTES59, the binary must carry the shed gate, the table sizes are 5 / 1, the replacement is replace59",
@@ -66,6 +68,21 @@ check("run_all: the budget guard for plan 59 is 7 200 s (the worst case with a r
       'P57_NEED=7200; P57_TAG="59"' in runall and "ABORT-BUDGET plan $P57_TAG" in runall and ': "${LD_BASE_SHA:?' in runall and '"$PLAN" = "59"' not in runall.split(': "${LD_BASE_SHA:?')[0].split("if [ \"$P41D\" = 1 ]")[-1])
 for f in ("mbar59_score.py", "test_mbar59.py"):
     check(f"the CRLF guard lists {f} in run_all and battery", f in runall.split("crlf_guard", 1)[1].split("ROOT=")[0] and f in battery.split("crlf_guard", 1)[1].split("BIN=")[0])
+
+
+def drv_default(gen, reliable=None):
+    """Run the REAL flag construction of perf_rwm_c.sh (the RWM_GEN gating through the RWM_C_RELIABLE block, with lib.sh sourced) -> (rc, WR_FLAG, GEN_FLAG)."""
+    i = driver.index('GEN_GATE="${RWM_GEN:-1}"')
+    j = driver.index("esac\n", driver.index('RELIABLE="${RWM_C_RELIABLE:-1}"')) + 5
+    env = {"PATH": os.environ.get("PATH", ""), "SYSTEMROOT": os.environ.get("SYSTEMROOT", "")}
+    if gen is not None:
+        env["RWM_GEN"] = gen
+    if reliable is not None:
+        env["RWM_C_RELIABLE"] = reliable
+    script = 'set -uo pipefail; source ./lib.sh; PLACE_T=""; TENV=""\n' + driver[i:j] + '\necho "WR=[$WR_FLAG] GEN=[$GEN_FLAG]"'
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env, cwd=HERE)
+    w = re.search(r"WR=\[(.*)\] GEN=\[(.*)\]", r.stdout)
+    return (r.returncode,) + (w.groups() if w else (None, None))
 
 
 def drv_switch(reliable, gen_flag):
@@ -89,6 +106,14 @@ try:
     check("driver: =0 with generation coding on is refused (rc 2), as is any other value", drv_switch("0", "--window-generation-coding")[0] == 2 and drv_switch("2", "")[0] == 2)
 except FileNotFoundError:
     print("SKIP the driver switch execution: no bash on PATH")
+try:
+    dflt = {g: drv_default(g) for g in (None, "0", "1")}
+    check("driver DEFAULT branch (RWM_C_RELIABLE unset): --window-reliable is still passed for RWM_GEN unset, 0 and 1 (generation flag on for unset/1, off for 0)",
+          all(v[0] == 0 and v[1] == "--window-reliable" for v in dflt.values()) and dflt[None][2] == "--window-generation-coding" and dflt["1"][2] == "--window-generation-coding" and dflt["0"][2] == "", dflt)
+    check("driver: RWM_C_RELIABLE=0 with RWM_GEN=0 (the only legal pairing) drops the flag in the full flag construction; with RWM_GEN unset/1 it is refused (rc 2)",
+          drv_default("0", "0") == (0, "", "") and drv_default(None, "0")[0] == 2 and drv_default("1", "0")[0] == 2, (drv_default("0", "0"), drv_default(None, "0")))
+except FileNotFoundError:
+    print("SKIP the driver default-branch execution: no bash on PATH")
 check("driver: the header echo ends with reliable=$RELIABLE and the new variable is not an engine gate (not in lib.sh's forward list)", 'start=$(date +%T) reliable=$RELIABLE"' in driver and "RWM_C_RELIABLE" not in rd("lib.sh"))
 
 # ═══ 2. readouts on a synthetic log with known answers ═══
@@ -110,6 +135,7 @@ def diag_line(k):
     src = 2000 if k <= SRC_UNTIL else 0
     return (f"[DIAG] t={t:.1f}s win=800/1000 paused=0% good={80.0 + k:.1f}Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src={src}sym/s cod={320 if src else 0}sym/s cum={250 * kk}/{40 * kk}/{ack} "
             f"sidle=0ms/0/mx0ms cwnd=1 infl=1 np=1 np_act=1 rtt=5.0ms bdp100=165sym sweeps=0 retx=0 gapdrop=0 nbud=0 "
+            f"p0:infl=1/sinfl=0/bdp1(cap0) sout=0 khr=1.00/kraw=- btlbw=1 sr=0/g0d0 est=Y pl=0.0150 cmp=- rtt=5/wrtt=3/rtp2ms rtp_us=1 "
             + (f"shed={3 * kk}/{kk} bud=0.0500 D=40ms " if SHED else "")
             + f"wait[tun=1% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=82% cmd=0% n={n_loop(k)} us=250000 busy=45% busy_us=112500] "
               f"wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack={20 * k} cmd=1 timer_acked=0]")
@@ -146,15 +172,21 @@ N_SUM = sum(n_loop(k) for k in range(21, 49))
 check("LATE ticks: t >= 5 s with src > 0 (29), the stale line before the warm-up marker is ignored", m["late_n"] == 29, m["late_n"])
 check("cum deltas over LATE: src +7000, cod +1120, ack +6720; wake ack +560", (m["cum_src_d"], m["cum_cod_d"], m["cum_ack_d"], m["wake_ack_d"]) == (7000, 1120, ACK_D, WAKE_D) and ACK_D == 6720, (m["cum_src_d"], m["cum_ack_d"], m["wake_ack_d"]))
 check("loop iterations = the SUM of the per-period wait n over the ticks after the first LATE tick (2 800), not last minus first (which would read 40)", m["loop_n"] == N_SUM == 2800, m["loop_n"])
-check("release batch d(cum)/d(wake ack): 12.5 on the src field, 12.0 on the ack field", near(m["rel_src"], 12.5) and near(m["rel_ack"], 12.0), (m["rel_src"], m["rel_ack"]))
-check("per loop d(cum)/sum(wait n): 2.5 on the src field, 2.4 on the ack field", near(m["loop_src"], 2.5) and near(m["loop_ack"], 2.4), (m["loop_src"], m["loop_ack"]))
+check("release batch d(cum)/d(wake ack) (bounds nothing): 12.5 on the src field, 12.0 on the ack field", near(m["rel_src"], 12.5) and near(m["rel_ack"], 12.0), (m["rel_src"], m["rel_ack"]))
+check("mbar_lo = d(cum)/sum(wait n), the LOWER bound on sources per advance: 2.5 on the src field, 2.4 on the ack field", near(m["loop_src"], 2.5) and near(m["loop_ack"], 2.4) and near(m["mbar_lo"], 2.4) and near(m["mbar_lo_src"], 2.5), (m["loop_src"], m["loop_ack"]))
+check("W1 bracket: upper = (cod/src)/rr = 0.16/0.12; lower = max(0, 1 - 1/(0.12 x 2.4)) = 0 (vacuous at m-bar_lo 2.4: negative, clamped)", near(m["w1_hi"], 0.16 / 0.12) and m["w1_lo"] == 0.0, (m["w1_lo"], m["w1_hi"]))
+m10 = m59.row_metrics([re.sub(r" n=\d+ ", " n=10 ", ln) for ln in cli_log()], [], [])
+check("W1 lower bound with a per-loop count of 10 (mbar_lo = 6720/280 = 24): 1 - 1/(0.12 x 24) = 0.65278", near(m10["mbar_lo"], 24.0) and near(m10["w1_lo"], 1 - 1 / (0.12 * 24.0), 1e-9), (m10["mbar_lo"], m10["w1_lo"]))
+check("eps_hat = the median per-path pl= over LATE (0.015); no FDIAG on this log -> None", near(m["eps_hat"], 0.015) and m["fdiag_rf"] is None, m["eps_hat"])
+mf = m59.row_metrics(cli_log(), ["[FDIAG] frontier=1 seen=2 | rf=7 ru=3 x"], [])
+check("FDIAG rf / ru are read from the server log when RWM_FDIAG=1 printed them", (mf["fdiag_rf"], mf["fdiag_ru"]) == (7, 3))
 check("per-tick range of the ack release batch: median 12, min 10, max 14; of the ack per-loop value: median 2.41667, min 2.33333, max 2.5",
       near(m["rel_ack_med"], 12.0) and near(m["rel_ack_min"], 10.0) and near(m["rel_ack_max"], 14.0)
       and near(m["loop_ack_med"], (7 / 3 + 2.5) / 2, 1e-9) and near(m["loop_ack_min"], 7 / 3) and near(m["loop_ack_max"], 2.5),
       (m["rel_ack_med"], m["rel_ack_min"], m["rel_ack_max"], m["loop_ack_med"], m["loop_ack_min"], m["loop_ack_max"]))
 check("cod/src: 0.16 on the DIAG rates (320 / 2000 over the 29 LATE ticks, src > 1000 sym/s) and 0.16 cumulative (+1120 / +7000)", near(m["cod_src_rate"], 0.16) and m["cod_src_n"] == 29 and near(m["cod_src_cum"], 0.16),
       (m["cod_src_rate"], m["cod_src_n"], m["cod_src_cum"]))
-check("the m-bar band: the sweep points between the per-loop (2.4166) and release (12.0) medians are {4}", m["grid_between"] == [4], m["grid_between"])
+check("the sweep points not excluded by mbar_lo = 2.4 are {4, 16, 64, 256}", m["grid_above"] == [4, 16, 64, 256], m["grid_above"])
 check("[SPAN] medians over t >= 5 s only (the 0.9 early lines are cut, the None line is skipped): rr 0.12 (median of 0.110..0.130 less the None line's neighbours), debt 0.3, a_star 12, delta 0.5, bud 0.05",
       near(m["rr"], 0.12, 1e-9) and near(m["debt"], 0.3) and near(m["a_star"], 12.0) and near(m["delta"], 0.5) and near(m["bud"], 0.05), (m["rr"], m["debt"], m["a_star"], m["delta"], m["bud"]))
 check("the shed counts are the LAST cumulative [SPAN] value (90 shed, 30 budget-refused) and the DIAG shed token reads the last tick's (144)", (m["shed_total"], m["shed_denied"], m["shed_diag_total"]) == (90, 30, 144), (m["shed_total"], m["shed_denied"], m["shed_diag_total"]))
@@ -250,6 +282,12 @@ check("smoke59: an unarmed row fails the evicting-seat criterion", rc == 1 and r
 rc, out = smoke_of([row("42", 1, t59=dict(mu))])
 check("smoke59: a row whose [SPAN] shed / bud tokens did not print fails the readout criterion, naming them", rc == 1 and re.search(r"^FAIL every \[DIAG\] / \[SPAN\] readout computed.*shed_total", out, re.M) is not None, out[-700:])
 rc, out = smoke_of([row("42", 1, rc=1, status="VOID-RC")])
+rc, out = smoke_of([row("42", 1, t59=dict(m, rr=0.0))])
+check("smoke59 go/no-go: a row whose median rr is <= 0 (the debt loop never runs) fails the smoke (-> ABORT-SMOKE in the stage), and the GO/NO-GO line prints rr and a_star medians",
+      rc == 1 and re.search(r"^FAIL the debt loop runs", out, re.M) is not None, out[-600:])
+rc, out = smoke_of([row("42", 1)])
+check("smoke59: the GO/NO-GO line prints the rr median (0.12) and the a_star median (12.0)", "rr median 0.120" in out and "a_star median 12.0" in out, out[-500:])
+rc, out = smoke_of([row("42", 1, rc=1, status="VOID-RC")])
 check("smoke59: a crash (rc != 0) is a failure, not a DNF", rc == 1 and re.search(r"^FAIL every smoke row returned", out, re.M) is not None, out[-700:])
 rc, out = smoke_of([])
 check("smoke59: no row at all fails", rc == 1 and "no row" in out)
@@ -257,12 +295,12 @@ check("smoke59: no row at all fails", rc == 1 and "no row" in out)
 rows = [row(s, i + 1) for i, s in enumerate(("42", "7", "42", "7", "42"))]
 rows[1] = row("7", 2, dnf=True)
 rep = subprocess.run([sys.executable, os.path.join(HERE, "loopdiag_parse.py"), "score59", ledger([void1] + [row("42", 1)] + rows[1:], ["LD-BATTERY-DONE"])], capture_output=True, text=True, cwd=HERE).stdout
-mv = re.search(r"^VERDICT59 REPORTED-ONLY slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+) dnf=(\d+) rel_ack_med=(\S+) loop_ack_med=(\S+)", rep, re.M)
-check("score59: one VERDICT59 line counts the slots (5/5), live rows (5), replaced (1), DNF (1) and carries the medians 12.00 / 2.40; the replaced row is listed", mv is not None and mv.groups() == ("5", "5", "5", "0", "1", "1", "12.00", "2.40")
+mv = re.search(r"^VERDICT59 REPORTED-ONLY slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+) dnf=(\d+) mbar_lo_med=(\S+) w1_lo_med=(\S+) w1_hi_med=(\S+) release_ack_med=(\S+)", rep, re.M)
+check("score59: one VERDICT59 line counts the slots (5/5), live rows (5), replaced (1), DNF (1) and carries mbar_lo 2.400, W1 0.000 .. 1.333, release 12.00; the replaced row is listed", mv is not None and mv.groups() == ("5", "5", "5", "0", "1", "1", "2.400", "0.000", "1.333", "12.00")
       and rep.count("  REPLACED ") == 1, rep[-900:])
-check("score59: the readout table has every registered line (release batch, per loop, cod/src, [SPAN] rr / debt / a_star / delta / bud, shed, goodput) and the m-bar band with the grid points", all(x in rep for x in
-      ("release batch  d(cum src)/d(wake ack)", "per loop       d(cum ack)/sum(wait n)", "cod/src (DIAG rates", "[SPAN] rr", "[SPAN] debt", "[SPAN] a_star", "[SPAN] delta", "[SPAN] bud", "shed total", "goodput Mbit/s"))
-      and "sweep points {1, 4, 16, 64, 256} inside the band: 4" in rep, rep[-1500:])
+check("score59: the readout table has every registered line (mbar_lo, W1 bracket, release batch, eps_hat, cod/src, [SPAN] rr / debt / a_star / delta / bud, shed, goodput) and the m-bar lower bound with the W1 bracket", all(x in rep for x in
+      ("release batch d(cum src)/d(wake ack) [no bound]", "mbar_lo  d(cum ack)/sum(wait n)", "W1 lower", "W1 upper", "eps_hat", "cod/src (DIAG rates", "[SPAN] rr", "[SPAN] debt", "[SPAN] a_star", "[SPAN] delta", "[SPAN] bud", "shed total", "goodput Mbit/s"))
+      and "m-bar >= 2.400" in rep and "not excluded by it: 4, 16, 64, 256" in rep and "0.000 <= W1 <= 1.333" in rep, rep[-1500:])
 check("score59 states what it is: reported only, nothing scored", "REPORTED ONLY" in rep and "nothing here is scored" in rep)
 
 # ═══ END ═══

@@ -257,7 +257,7 @@ def diag57(ln, k, n_src, burst_real, rtt_top, rtt_leg, release=100):
 # ── plan 59 (mbar59_score): the evicting seat at c2-100, 600 MB. STUB_BAD59: noshed (every row is NOT armed: it keeps the retain-until-acked echo, no shed echo, no shed= token), shedonce (the first SCORED slot
 # slot is not armed, its replacement is); a comma list combines them. STUB_DNF59=<seed>: that seed's rows time out (an evicting seat's expected outcome). The per-tick deltas are known:
 # 250 src / 40 cod / 240 acked symbols and 20 ack wakes per 0.25 s tick, wait n = 100 + k % 5 loop iterations per tick (a non-constant per-period count). ──
-BAD59 = {"noshed", "shedonce"}
+BAD59 = {"noshed", "shedonce", "norr"}
 SHED_ECHO59 = "unified overload shedding ACTIVE (RWM_UNIFIED_SHED: past-deadline holes shed within the derived 1-rho budget; =0 = serializing arm)"
 SHED_ECHO59_RX = "unified overload shedding ACTIVE at receiver (RWM_UNIFIED_SHED: in-order hold = delta-derived b*SRTT within the eps-class give-up budget)"
 REALTIME_ECHO59 = "RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)"
@@ -290,9 +290,9 @@ def diag59(ln, k, armed, n_src=200):
             f"wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack={20 * k} cmd=1 timer_acked=0]")
 
 
-def span59(k, armed):
+def span59(k, armed, rr_zero=False):
     sh = f" shed={3 * k}/{k} bud=0.0500 D=40ms" if armed else ""
-    return (f"[SPAN] t={0.5 * k:.1f}s ack={240 * k} win=[{240 * k},{240 * k + 64}] wsize=64 a_star=Some(12) delta=Some(0.5) owed=0.10 rr={0.1 + 0.001 * k:.3f} debt={0.3:.2f} retx_buf=5{sh}")
+    return (f"[SPAN] t={0.5 * k:.1f}s ack={240 * k} win=[{240 * k},{240 * k + 64}] wsize=64 a_star=Some(12) delta=Some(0.5) owed=0.10 rr={0.0 if rr_zero else 0.1 + 0.001 * k:.3f} debt={0.3:.2f} retx_buf=5{sh}")
 
 
 def qd(delay, backlog=3):
@@ -497,7 +497,7 @@ def main(argv):
                 k += 1
                 rl[i] = diag59(ln, k, armed)
                 if k % 2 == 0:
-                    rl[i] = rl[i] + "\n" + span59(k // 2, armed)
+                    rl[i] = rl[i] + "\n" + span59(k // 2, armed, "norr" in bad)
         rl = "\n".join(rl).split("\n")
         cli = seat59(cli, armed, "cli") + rl
         srv = seat59(srv, armed, "srv")
