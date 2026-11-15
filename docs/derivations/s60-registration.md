@@ -19,10 +19,13 @@
   - In the anc 0 zone, R̃ − 1 ≥ σ/T̂ > 0 whenever the late brake is ≤ b̂₀⁺_c + q·ℓ̂_c. So R̃ cannot reach 1 below the
     W where m̂ lifts b̂₀⁺ above the floor. That **anchor flip** lies at ≈ 160–192, around the knee (169), and R̃ just
     past it is still ≈ 1.1–1.2.
-- **So at c2 the form lands above its knee by construction.** It needs a standing 10 s minimum queue of ≈ b̂₀⁺ (≈ 2.2
-  ms), where c2's knee queue is ≈ 0.8 ms. B2 cannot fire there.
-- As ruled, it is **not scored**. It is replaced by the **anchor-flip and conditioning readout** of §3.1, whose
-  verdict is fixed now.
+- **So at c2 the form needs a standing 10 s minimum queue of ≈ b̂₀⁺ (≈ 2.2–2.7 ms) before it can cross.** c2's
+  knee queue is ≈ 0.8 ms.
+  - Whether the flip lands above the knee depends on K, the number of boot windows b̂₀⁺ is maxed over (`s60flip.out`).
+  - At the gauge's K = 8 it is a coin flip: P(flip ≥ knee) ≈ 0.58, with pooled flip − knee at −27 / +4 / +26 slots.
+  - At K ≤ 4 the flip falls at or below the calibration arm.
+- As ruled, B2 is **not scored**. It is replaced by a **pooled flip − knee readout for each K** (§3.1), with
+  conditioning as the fallback.
 - This revision's first push had claimed a session-calibrated c2 B2 at 6–26 slots. That claim is withdrawn: it left
   out the row's m̂.
 
@@ -66,6 +69,17 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
      result at the top of the doc.
    - Restored as Appendix A: the stand-in statistic, the anchor shift, the bands, B6, the 5 % G/C sizing, and the
      out-of-band meanings.
+7. **Check of `8536f053` (structure sound).** Settled before the harness brief:
+   - **Suites:** a pre-flight runs `suites_run.sh` on the pinned tree, then a reference manifest generated from that
+     tree is passed as `LD_REF_MANIFEST`, so both launches hit suite reuse (§7).
+   - **c2's verdict probabilities** are computed from §56's rows for each K = 1..8 (`s60flip.py`). At K = 8 the 5-of-6
+     vote is a coin flip: STRUCTURAL 0.47, NOT 0.34, MIXED 0.20.
+     - It is replaced by a POOLED flip − knee readout per K.
+     - The verdict changes with K. At K ≤ 4 the flip falls at or below the calibration arm, which is a finding about
+       K.
+     - Conditioning becomes the fallback.
+   - **The collapse flag does not gate calibration rows** (pools below c1s's BDP). A go/no-go on the rehearsal's c1s
+     W 128 row is registered (§2, §5).
 
 **Helper scripts** (stdlib Python, run with `-I`; outputs committed beside them in `store-law/`).
 
@@ -77,6 +91,7 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
 | `s60abs.py` | per arm: row sd of `l` against the row sd of the ABSOLUTE late floor, and corr(`l`, floor − `l`) |
 | `s60drift.py` | §56 small pools: do `l` and the boot-queue proxy drift with row order? |
 | `s60cond.py` | the conditioning arithmetic per cell (slope of R̃ in W, σ_R, 2σ_R in slots), and c1s verdict probabilities per reading |
+| `s60flip.py` | the c2 anchor flip against the knee from §56's rows, per K = 1..8: verdict probabilities and the pooled flip − knee |
 | `s60band.py` | the crossing bands (reported context) |
 | `s60size.py` | row times; G/C pair sds and n |
 | `s60replay.py`, `s60witness_ka.log` | `slaw_r` transcribed: R̃, the per-row witness, and its negative control |
@@ -196,7 +211,21 @@ replicate order).
 - **Flatness gate:** PASS unless |Δb0p(96 − 128)| − 2·SE > q·ℓ̂_c, per leg. A cell failing it has no R̃.
 - **LATCHED:** b0p − median_LATE(brake) > q·ℓ̂ + ō, where ō is c2 0.90, c8 leg 0 1.8 and leg 1 6.3, c1s 0.20 ms.
 - **Minimum:** ≥ 3 non-latched W 128 rows per cell. With 6 rows at c8's ≈ 25 % latch rate, P ≈ 0.96.
-- **c1s boot validity:** no qcwnd below the BDP for t < 2 s. Its latch test runs up to collapse onset, with ≥ 8 windows.
+- **The collapse flag does NOT gate calibration rows** (ruling entry 7, item 3).
+  - The §56 flag fires when quinn's qcwnd sits below the cell's BDP on > 10 % of windows. The calibration pools (96,
+    128) lie below c1s's BDP (≈ 208–243), so a store-limited flow may hold quinn's window under the BDP by
+    construction. That is the flag's own condition, not collapse: §57b's c1d P192 rows carried a one-leg flag on 4
+    of 5.
+  - The flag share is reported on calibration rows. The earlier "no qcwnd below the BDP for t < 2 s" rule is
+    withdrawn, because it would fail by construction.
+- **A calibration row is valid** iff all three hold:
+  - (a) its boot is complete: `b0k` holds K = 8 brakes, with leg-0 `b0kn` ≥ 10 on each (leg 1 as above);
+  - (b) it is not LATCHED;
+  - (c) it is **not rate-collapsed**: its LATE median send rate (`[DIAG] src=`) is ≥ 0.8 × the median over the
+    cell's same-pool rows, and its second-half LATE rate is ≥ 0.8 × its first half.
+    - Quinn collapse shows as a 3–30× rate fall (§57a: 7–48 k against 79 k sym/s) and a standing queue. A
+      store-limited row has neither.
+- **B1** is evaluated only on valid rows, so a collapse's queue cannot pose as `err` > 0.
 - **c1s calibration rows run 1 GB.**
 
 **B1** fires iff a calibration row's median LATE `err` > 0. Predicted not to fire (`b0bound.out` margins +0.43 / +0.46 /
@@ -223,7 +252,7 @@ The conditioning arithmetic (`s60cond.py`):
 
 | cell | slope \|dR̃/dW\| on anc 1 arms (per slot) | σ_R, per-replicate calibration | σ_R, session calibration | B2 fires iff R̃(knee) < 1 − 2σ_R, i.e. the crossing lies below |
 |---|---|---|---|---|
-| c2 (knee 169, anchor flip ≈ 160–192) | 0.0012–0.0026 | 0.149 (114–256 slots) | 0.008–0.015 | **never**: the knee lies at or below the anchor flip, where R̃ − 1 ≥ σ/T̂ ≈ +0.1 |
+| c2 (knee 169; anchor flip depends on K, `s60flip.out`) | 0.0012–0.0026 | 0.149 (114–256 slots) | 0.008–0.015 | **at K = 5–8 the flip sits at the knee** (pooled flip − knee −3 to +4 slots), so R̃ ≈ R̃_flip > 1 there; **at K ≤ 4** the flip is at or below 128, and the conditioning fallback applies |
 | c8 (knee 340, anchor flip ≈ 224–320) | 0.0017–0.0020 | 0.039 (39–47 slots) | 0.008–0.015 (8–19 slots) | per-replicate 293–301; **session 321–332**, i.e. ≥ 101–112 slots below the band's low edge (433) |
 
 The scatter inputs are each measured and cited in `s60cond.py`:
@@ -234,23 +263,42 @@ The scatter inputs are each measured and cited in `s60cond.py`:
 
 ### 3.1 c2: anchor-flip and conditioning readout (B2 not scored, as ruled)
 
-- **Registered readouts, per replicate.**
-  - **W_flip,r:** the W at which the replay's per-row anc bind fraction under session calibration crosses 0.5,
-    interpolated over the arms 128 / 160 / 176 / 192 / 256. Predicted ≈ 160–192.
-  - **R̃ − 1 at the knee arms** (160 / 176). Predicted ≥ σ/T̂ ≈ +0.1 on anc 0 rows.
-  - **Above the flip:** the slope of R̃_row over 192–256 (predicted 0.0012–0.0026 per slot) and σ_R per arm (0.008–0.015
-    under session calibration, 0.15 per-replicate). Their ratio 2σ_R/|slope| is reported in slots.
-  - The replicate's own crossing W_r is reported against the band (Appendix A).
-- **Verdict, fixed now.**
-  - **STRUCTURAL** iff W_flip,r ≥ W₉₅,r on ≥ 5 of the 6 replicates (or all scoreable ones, if fewer). The form cannot
-    land below the c2 knee, because it needs a standing 10 s minimum queue of ≈ b̂₀⁺ (≈ 2.2 ms) against a knee
-    queue of ≈ 0.8 ms.
-  - **NOT STRUCTURAL** iff W_flip,r < W₉₅,r on ≥ 5. The conditioning ratio then decides: ILL-CONDITIONED if
-    2σ_R/|slope| > W₉₅ − 128, CONDITIONED if < W₉₅ − 158, otherwise MARGINAL.
-  - Otherwise **MIXED**.
-  - **If the slope's 95 % interval at the knee includes 0, the readout reports FLAT-AT-KNEE.** That is the expected
-    signature of anc 0.
-  - The verdict goes to the law ledger and R6.7.
+**Verdict probabilities from §56's rows** (`s60flip.py`: three replicates of late m̂ at W 128 / 160 / 192 / 256,
+the per-replicate knee at 168.7–169.1, b̂₀⁺_c(K) from p27's six queue-free c2 rows).
+- The Monte Carlo is over the session threshold T = ℓ̂_c + b̂₀⁺_c(K), which is one draw per session and common to all
+  replicates, and over the replicates resampled to 6.
+
+| K | b̂₀⁺_c(K) (ms) | T (ms) | flips on §56 replicates | P(STRUCTURAL) | P(NOT) | P(MIXED) | P(FLAT-AT-KNEE) | pooled median(flip − knee), 10 / 50 / 90 % |
+|---|---|---|---|---|---|---|---|---|
+| 1–2 | 0.00 | 8.07 ± 0.8 | ≤ 128 | 0.00 | 1.00 | 0.00 | 0.00 | −41 / −41 / −41 |
+| 3 | 0.75 | 8.82 ± 0.8 | ≤ 128 | 0.01 | 0.98 | 0.01 | 0.01 | −41 / −41 / −23 |
+| 4 | 1.01 | 9.08 ± 0.8 | ≤ 128 | 0.02 | 0.95 | 0.03 | 0.03 | −41 / −41 / −11 |
+| 5 | 2.38 | 10.45 ± 0.9 | 160 / 167 / 173 | 0.35 | 0.48 | 0.17 | 0.45 | −41 / −3 / +23 |
+| 6–7 | 2.46 | 10.53 ± 0.85 | 161 / 169 / 175 | 0.37 | 0.45 | 0.19 | 0.47 | −37 / −1 / +24 |
+| 8 (the gauge's) | 2.67 | 10.74 ± 0.8 | 165 / 173 / 181 | 0.47 | 0.34 | 0.20 | 0.58 | −27 / +4 / +26 |
+
+FLAT-AT-KNEE means the pooled flip is at or above the knee, so the knee arms sit at anc 0, where R̃ is flat in W.
+
+- **At the gauge's K = 8 the 5-of-6 vote is a coin flip, so the vote is dropped.**
+- **Registered instead: a POOLED readout for each K = 1..8.**
+  - D_K = the median over replicates of (W_flip,r(K) − W₉₅,r).
+  - W_flip,r(K) is where the replicate's late `m` (per-arm median) crosses ℓ̂_c + b̂₀⁺_c(K).
+  - b̂₀⁺_c(K) is the session median over valid W 128 rows of max(first K printed `b0k` brakes). The raw brakes are
+    printed, so every K is computable from one session.
+  - The 90 % interval comes from a bootstrap over calibration rows and replicates (2 000 resamples, seed 60).
+  - Each D_K reads: **ABOVE** if the interval lies > 0 (at that K the anchor keeps the form at or above the knee);
+    **BELOW** if < 0; otherwise **UNRESOLVED**.
+  - **Predicted:** BELOW at K ≤ 4 (D ≈ −41 slots, the flip at the calibration arm); UNRESOLVED at K 5–8 (−3 to +4,
+    interval about −35 to +25).
+- **A verdict that changes with K is a finding about K.** K has no provenance (R6.2, §13.1). The K at which D_K turns
+  goes to R6.7 beside n₀.
+- **The fallback, conditioning,** is read only for K values whose D_K is BELOW:
+  - R̃_r(W₉₅,r) is replayed at that K;
+  - the anc-1 slope and σ_R per arm are reported;
+  - ILL-CONDITIONED iff 2σ_R/|slope| > W₉₅ − 128, CONDITIONED iff < W₉₅ − 158, otherwise MARGINAL.
+- **Reported:** R̃ − 1 at the knee arms (160 / 176) per K, and each replicate's crossing W_r against the band
+  (Appendix A).
+- All of this goes to the law ledger and R6.7.
 - **Reported, not scored:** the pooled median over replicates of R̃_r(W₉₅,r) − 1, with its minimum detectable miss
   2·1.253·σ_R/√n_s.
 - **Pools:**
@@ -325,6 +373,18 @@ UNDERPOWERED is 0.06 throughout.
   - launch 1: c2 W 192, one C row (no gauge tags) and one G row (all tags, witness PASS, CAPLOG replay PASS, `kw`/`b0k`
     after the warm-up cut);
   - launch 2: one c1s W 128 G row (1 GB) and one W 2 048 C row.
+- **Go/no-go on the rehearsal's c1s W 128 row** (registered now; this is the first c1s measurement at n₀).
+  - **GO** iff all of these hold:
+    - (a) `b0k` holds 8 brakes, each with leg-0 `b0kn` ≥ 10;
+    - (b) `b0p` ≤ 1.0 ms. p27/p34 read 0.21–0.37 at cap 256, and above 1 ms a queue-free boot is not credible at c1s.
+    - (c) the row is not LATCHED;
+    - (d) it is not rate-collapsed: its second-half LATE rate is ≥ 0.8 × the first half;
+    - (e) its median LATE `tmin − l` is ≤ 1.0 ms, so the store is queue-free in LATE as well.
+  - **Reported, not gating:** the §56 collapse-flag share (it may exceed 0.10 by construction, §2), and `b0p` and the
+    latch state themselves.
+  - **NO-GO** drops c1s's calibration rows and its control-sign verdict before 60b. 60b then runs only the G/C pairs
+    and the evicting rows: 22 + 5 rows. P1 at c1s is reported against printed `b0p` alone.
+  - The decision and its numbers are recorded in the launch log.
 - **`[SLAW] q`:** 0.100000 on Bulk G rows, and 0.050000 on Realtime rows.
 - **`[CAPLOG]`:** every logged cap is reproduced by `caplog_replay.py` (seat `plain`, branch `pooled`/`boot`; `tt`
   is impossible), and the bind fraction is reported.
@@ -347,25 +407,45 @@ UNDERPOWERED is 0.06 throughout.
 
 ## 7. Rows and launches
 
+**Suites pre-flight (ruling entry 7, item 1).**
+- **The problem.** The gauge tree's engine sources differ from `tools/l1/ref56-manifest.sha256`, so every launch would
+  miss suite reuse and run the full engine suites (≈ 1 h). That does not fit in 60b. A rehearsal skips them
+  altogether.
+- **60-pre** (no battery, no netns; as §58 Part A): `tools/l1/suites_run.sh` on the **pinned tree**: `harness60`
+  with `slaw-gauge` `d416d59b` merged, recorded by sha.
+  - It runs release, doc, wasm (`env -u GOLDEN_CAPTURE`), debug, core and parsers, with the flake rule.
+  - ≈ 50–60 min. Both locks are held by the runner, and host cargo is paused.
+- **On TESTS-OK:**
+  - generate `bash tools/l1/ref_manifest.sh <pinned sha> > tools/l1/ref60-manifest.sha256`;
+  - commit it on the pinned tree, as a tools-only commit that leaves the engine manifest unchanged;
+  - pass it to both launches as `LD_REF_MANIFEST`.
+- **Each launch must log `LD-ALL suite-reuse HIT`.** A MISS stops the launch.
+- **Harness work:** `harness_paths.py` admits reuse-hit only for plans 56 / 57a / 57b. Plan 60 must be added.
+- **Any REAL failure in 60-pre** blocks the session and is diagnosed (§58's rules).
+
+**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes and the c1s W 128 row of §5's go/no-go.
+
 | launch | block | rows | typical | worst |
 |---|---|---|---|---|
-| **60a** | build + engine suites (new tree) | — | 60 min | 70 min |
+| **60-pre** | engine suites on the pinned tree, then the reference manifest | — | 50–60 min | 70 min |
+| **60a** | release build (suite reuse HIT) | — | 6 min | 10 min |
 | | smoke (c2 W 192, C + G) | 2 | 3 min | 3 min |
 | | c2: 96, 128, 160, 176, 192, 256, 2 048 × 6 | 42 | 53 min | 63 min |
 | | c8: 96, 128, 256, 320, 384, 512, 1 280 × 6 | 42 | 53 min | 63 min |
-| | **total** | **86** | **≈ 2.8 h** | **≈ 3.3 h** |
-| **60b** | smoke (c1s W 128 G 1 GB, W 2 048 C) | 2 | 3 min | 7 min |
+| | **total** | **86** | **≈ 1.9 h** | **≈ 2.3 h** |
+| **60b** | release build (suite reuse HIT) | — | 6 min | 10 min |
+| | smoke (c1s W 128 G 1 GB, W 2 048 C) | 2 | 3 min | 7 min |
 | | c1s: 96 and 128 (1 GB) × 6; 2 048 G × 12; C × 10 | 34 | 45 min | 119 min |
 | | evicting rows (plan 59) | 5 (+ ≤ 5) | 12 min | 32 min |
-| | **total** | **41 (+ ≤ 5)** | **≈ 1.0 h** | **≈ 2.6 h** |
+| | **total** | **41 (+ ≤ 5)** | **≈ 1.1 h** | **≈ 2.8 h** |
 
-- **Total:** 127 rows (+ ≤ 5), down from 205 in three launches.
+- **Total:** 127 rows (+ ≤ 5), down from 205 in three launches, plus the 60-pre suites.
 - **Row times:** c2/c8 600 MB rows take 75–90 s. c1s rows take 45 s (1 GB) or 90 s (5 GB) typical, and 210 s worst
   (§57a's convention). Evicting rows take ≤ 150 s + 40 s.
-- **Why two launches:** together they exceed 4 h worst case (5.9 h).
-- **`LD_HARD`:** launch + 4 h (60a) and + 3 h (60b). The budget guard refuses with less than 3.3 / 2.6 h left.
-- **Order:** 60b runs after 60a's smoke, witnesses, R-sign gate and calibration validity are read. It reuses 60a's
-  binary.
+- **Why two launches:** together they exceed 4 h worst case (5.1 h).
+- **`LD_HARD`:** launch + 3 h (60a) and + 3.5 h (60b). The budget guard refuses with less than 2.3 / 2.8 h left. 60-pre holds the locks through `suites_run.sh`; `LD_HARD` does not apply to it (as §58).
+- **Order:** 60-pre, then the rehearsal (with the c1s go/no-go), then 60a, then 60b. 60b runs after 60a's smoke, witnesses, R-sign gate and calibration validity are read. It reuses 60a's
+  binary (sha recorded), in which case its build row is 0 min.
 - **What was cut:** the c2 B2 grid; c8's band arms (448, 576, 640); the band IN/OUT scoring; the second and third
   per-replicate calibration rows; and the c2/c8 C rows.
 
