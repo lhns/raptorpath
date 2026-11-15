@@ -42,19 +42,19 @@ for f in sorted(glob.glob(os.path.join(D, '*-c.log'))):
     if not late:
         continue
     xs = [x[2] - l for x in late]
-    sh = {X: sum(v > X for v in xs) / len(xs) for X in (2, 5, 10)}
+    sh = {X: sum(v > X for v in xs) / len(xs) for X in (2, 5, 6.1, 10)}
     qcw = St.median([x[4] for x in late if x[4] is not None] or [0])
     rows.append((m.groups(), tag.get(m.groups(), None), St.median(xs), sh, qcw))
 
-print('arm seed rep | registered collapse | median excess ms | share > 2 / 5 / 10 ms | median qcwnd B')
+print('arm seed rep | registered collapse | median excess ms | share > 2 / 5 / 6.1 / 10 ms | median qcwnd B')
 for k, tg, mx, sh, q in rows:
-    print('%s s%s r%s | %s | %.2f | %.2f / %.2f / %.2f | %d' % (k[0], k[1], k[2], 'COLLAPSE' if tg else '-', mx,
-                                                               sh[2], sh[5], sh[10], q))
+    print('%s s%s r%s | %s | %.2f | %.2f / %.2f / %.2f / %.2f | %d' % (k[0], k[1], k[2], 'COLLAPSE' if tg else '-', mx,
+                                                               sh[2], sh[5], sh[6.1], sh[10], q))
 print()
-for X in (2, 5, 10):
+for X in (2, 5, 6.1, 10):
     for S in (0.10, 0.25):
         tp = sum(1 for r in rows if r[1] and r[3][X] > S)
         fp = sum(1 for r in rows if r[1] is False and r[3][X] > S)
-        print('rule: share of LATE ticks with excess > %d ms above %.2f -> flags %d of %d registered-collapse rows, '
+        print('rule: share of LATE ticks with excess > %g ms above %.2f -> flags %d of %d registered-collapse rows, '
               '%d of %d unflagged rows' % (X, S, tp, sum(1 for r in rows if r[1]), fp,
                                            sum(1 for r in rows if r[1] is False)))

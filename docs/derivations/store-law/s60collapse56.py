@@ -49,17 +49,23 @@ for f in sorted(glob.glob(os.path.join(D, '*-c.log'))):
         rows.append((cell, P, m.group(3), m.group(4), i, e))
 
 
-def p90(v):
+def pq(v, p):
     v = sorted(v)
-    return v[int(0.9 * (len(v) - 1))]
+    return v[int(p * (len(v) - 1))]
 
 
-e_c1s = p90(ex[('c1s-400', 0)])
-delta = 5.0 - e_c1s
-X = {k: p90(v) + delta for k, v in ex.items()}
-print('c1s E90 %.2f ms -> delta = 5 - E90 = %.2f ms (the margin validated on s57a)' % (e_c1s, delta))
+def p90(v):
+    return pq(v, 0.9)
+
+
+# Ruling entry 9 (advisor): the margin from each cell's OWN tick spread, not c1s's: X = E90 + 2*(E90 - E50), i.e.
+# the queue-free 90th percentile plus twice its upper half-spread. It must reproduce the s57a-validated 5 ms at c1s
+# (printed; s60collapse.py re-checks the c1s value on s57a's rows).
+X = {k: p90(v) + 2 * (p90(v) - pq(v, 0.5)) for k, v in ex.items()}
 for k in sorted(X):
-    print('%s leg %d: E90 %.2f ms -> X = %.2f ms' % (k[0], k[1], p90(ex[k]), X[k]))
+    v = ex[k]
+    print('%s leg %d: E50 %.2f E90 %.2f E99 %.2f ms -> X = E90 + 2(E90 - E50) = %.2f ms'
+          % (k[0], k[1], pq(v, 0.5), p90(v), pq(v, 0.99), X[k]))
 print()
 print('s56 small-pool rows: share of LATE ticks above X (flag at > 0.10); and above the c1s-fitted 5 ms')
 for cell, P, s, r, i, e in rows:
