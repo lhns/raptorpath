@@ -22,7 +22,15 @@ branch `slaw-gauge` `2547fc07`, and `harness59` `b1af3fa4` (plan 59).
    - Registered: when the sign gate is read; the calibration-arm minimum and its fallback; the c1s
      bracketing rule; the realised-n rule for G/C; and the build and suites in launch 1's budget.
    - The K4 print uses window aggregates.
-3. **Before commit:** see the end of §7.
+3. **Before the push** (after the first commit, `46475df5`).
+   - The c1s band's top is OPEN. On §56's exact Copa minima, R̃ ≥ 1 at the c1s control is a legitimate law outcome,
+     so the c1s control no longer stops the session. Added a W 1 536 arm.
+   - CPU gate: 24 launched pairs, with P(resolved) registered.
+   - B2 is scoreable at 5 replicates.
+   - Verified that every C-row gauge site is gated by `slaw`.
+   - Recomputed 60b's worst case at 210 s per c1s row (§57a's guard convention), which needed a third launch.
+   - Smaller fixes: the replay's warm-up cut; the deferral rule for the sign gate; the per-cell P2 switch;
+     §1.3's corners for R̃'s "sub" reading; K4's rr from an accrual count, with a minimum of steady windows.
 
 Helper scripts (stdlib Python, run with `-I`; each output is committed beside its script in `store-law/`):
 
@@ -108,8 +116,10 @@ standing queue.
   - So the R-sign gate, applied to printed R, would stop the session by prediction at c8 and c1s.
 - **P2 (b0p rises with W; per-arm medians are registered as readouts).**
   - Predicted b0p(arm)/b0p(calibration) is ≥ 3 at c2 W 384 (≈ 10), c8 W 512 (≈ 10) and c1s W 1 024 (≈ 10–20).
-  - **If P2 fails at c2 W 384** (ratio < 3), the boot windows were not queued. Printed R and R̃ then share their
-    inputs up to the ℓ̂ term, and printed R becomes the scored R as the brief asked (R̃ is reported).
+  - **If P2 fails at a cell** (ratio < 3 at that cell's named arm), the boot windows were not queued. Printed R and R̃
+    then share their inputs up to the ℓ̂ term, and printed R becomes that cell's scored R as the brief asked (R̃ is
+    reported).
+  - P2 is read per cell, over all of the cell's unflagged rows, before any crossing is read.
 - **ℓ̂ rises too.**
   - Column `l` climbs with W at c2 (8.1 → 10.1 ms, `s60boot.out`; p27 8.8 → 11.2) and at c8 leg 0 (8.2 → 11.1).
   - It is flat at c1s (2.4–2.6).
@@ -127,13 +137,13 @@ On 600 MB rows Copa's 10 s minimum tracks the standing queue (`s60boot.out` `lm`
 So the bind is marginal at c2 W 192 (μ ≈ b0 ≈ 2.7) and holds above it. At c1s it is marginal (μ ≈ b0 ≈ 0.3–0.4).
 The band therefore spans both states.
 
-**Crossing shift anc 0 → 1, per cell** (`s60band.out`, same method and corners):
+**Crossing shift anc 0 → 1, per cell** (`s60band.out`, same method and corners; method B in R̃'s "sub" reading):
 
-| cell | method A (central) | method B (minima) | shift in slots |
+| cell | method A (central, res 0) | method B (minima, "sub") | shift in slots |
 |---|---|---|---|
-| c2 | 191–201 → 215–232 | 204–216 → 230–251 | +25 to +35 |
-| c8 | 464–538 → 502–582 | 458–534 → 497–590 | +37 to +56 |
-| c1s | 489–529 → 526–580 | p27 579–658 → 648–754 | +37 to +100 |
+| c2 | 191–201 → 215–232 | 165–199 → 205–235 | +24 to +40 |
+| c8 | 464–538 → 502–582 | 424–499 → 459–552 | +35 to +53 |
+| c1s | 489–529 → 526–580 | p27 542–646 → 608–738 | +37 to +92 |
 
 `anc` and the `ancf` bind share are printed per window and leg. They decide in-session which state a row is in.
 
@@ -205,17 +215,27 @@ The KA test has none of the last row, because its leg 1 carried weight 10⁻⁹.
 |---|---|---|---|---|
 | c2 | 194.2 | **165–251** | low: B "sub", anc 0, low σ and b0; high: B "row", anc 1 | `anc` share at W 192–224 |
 | c8 | 478.2 | **424–590** | low: B "sub", anc 0, no leg-1 pull; high: B "row", anc 1 | `anc` share at W 448–576; leg-1 `sig` |
-| c1s | 495.4 | **434–990** | low: A at 0.1 ms; high: B p34, anc 1 | per-arm median `tmin − l` at W 512 / 768 / 1 024 |
+| c1s | 495.4 | **434 – OPEN** (`s60band.py` corners: 434–990) | low: A at 0.1 ms; the top is open, see below | per-arm median `tmin − l` at W 512 / 768 / 1 024 / 1 536 |
 
-**The c1s band covers most of the sweep (384–1 024), so it is not a prediction that can miss.** What discriminates
-is the c1s per-arm median `tmin − l` (exact in the gauge):
-- if it reads ≤ 2.0 ms at W 1 024, the window-minimum reading (B) holds and the crossing lies in its upper part
-  (≈ 580–990);
+**The c1s top is open, and R̃ ≥ 1 at the c1s control is a legitimate law outcome.**
+- p34's c1s minima are minima of a **prefix** of each window: the ACKDIAG sample cap refused samples (`ov` > 0) on
+  348 of p34's 397 c1s windows. They over-read T̂min, so B's 990 is a lower edge for the minima reading, not a top.
+- §56 has one exact current-era minimum, Copa's 10 s m̂. At c1s its late lift is μ = 0.48 ms at W 1 024 and 0.96 ms at
+  2 048 (`s60boot.out` `lm`), and T̂min − ℓ̂ ≥ μ.
+- With the anchor bound (μ > b0 ≈ 0.35), R̃'s target is 2·b0 + σ + q·ℓ̂ ≈ 1.4–1.7 ms. R̃ < 1 at 2 048 therefore needs a
+  late brake (T̂min − m̂) above ≈ 0.5–0.8 ms, which no ledger reads.
+- So the c1s crossing may lie above 1 024, or not inside the sweep at all. Such a law would grow the c1s store to the
+  control, consistent with §56's c1s goodput rising to the control.
+- A W 1 536 arm is added so that 1 024–2 048 is bracketed. NO-CROSSING (R̃ > 1 at every c1s arm) is a registered
+  outcome, not a failure.
+
+**The c1s band covers the sweep, so it is not a prediction that can miss.** What discriminates is the c1s per-arm
+median `tmin − l`, which is exact in the gauge:
+- if it reads ≤ 2.0 ms at W 1 024, the window-minimum reading (B) holds and the crossing lies at ≥ 580, possibly
+  outside the sweep;
 - if it reads ≥ 4.0 ms, the central reading (A) holds and the crossing lies at ≈ 434–580.
 
-p34's c1s minima are minima of a **prefix** of each window: the ACKDIAG sample cap refused samples (`ov` > 0) on 348
-of p34's 397 c1s windows. They over-read T̂min, so B's c1s corners are a lower edge for that reading. The gauge's
-`WinSampler` minimum is exact over every sample.
+The gauge's `WinSampler` minimum is exact over every sample.
 
 **Scoring rule.** A cell's prediction is IN if the median over scoreable replicates of R̃'s crossing lies in its
 band.
@@ -232,7 +252,7 @@ All arms are static pools through `RWM_STORE_PATH_POOL` (per path; c8's P = W/2)
 |---|---|---|
 | c2 (600 MB) | **128** (cal), 160, 176, 192, 208, 224, 256, 384, **2 048** (ctl) | in-session knee: §56 W₉₅ 169, W₉₈ 185, with 16-slot steps where 32 slots cost 6 %; the band is 165–251 |
 | c8 (600 MB) | **160** (cal, P80), 256, 320, 384, 448, 512, 576, 640, **1 280** (ctl, P640) | the knee (§56 W₉₅ 340): 256–384; the band 424–590: 384–640 |
-| c1s (5 GB) | **256** (cal, new), 384, 448, 512, 640, 768, 1 024, **2 048** (ctl) | the brief's 448, plus 640, between the A and B readings; the knee (§56 903) lies between 768 and 1 024 |
+| c1s (5 GB) | **256** (cal, new), 384, 448, 512, 640, 768, 1 024, 1 536, **2 048** (ctl) | the brief's 448; 640 between the A and B readings; the knee (§56 903) between 768 and 1 024; 1 536 brackets the open top (§1.5) |
 
 **c8 and B2.** The frozen band's low edge (424) is 84 slots above c8's knee (≈ 340), and 138 slots above it at
 the KA point (478). B2 can fire at c8 only if the engine lands roughly 85–140 slots lower than registered. The arms
@@ -254,8 +274,10 @@ bracket both the knee (256 / 320 / 384) and the band (448–640), so either outc
   be 1.
   - The per-row `xs`/`xb` counts are reported only. On a static pool they count window-to-window flicker of R near 1,
     not crossings along n.
-- **n:** 6 replicates per cell. A cell's crossing is scoreable with ≥ 6 bracketed replicates at c2 and c8.
-  - c1s's collapse share (0.29–0.48) will not give 6.
+- **n:** 6 replicates per cell. A cell's crossing is scoreable with ≥ 5 bracketed replicates at c2 and c8, so one void
+  row does not unscore a cell.
+  - At a 0.95 per-row validity, P(≥ 5 of 6 bracketed) ≈ 0.89, against 0.54 for 6 of 6.
+  - c1s's collapse share (0.29–0.48) will not give 5.
   - c1s is scored with ≥ 4 bracketed replicates, and is otherwise UNDERPOWERED: per-arm R̃ medians are reported.
   - No falsifier sits at c1s.
 
@@ -267,7 +289,7 @@ definitions.
 | # | what fires it (printed fields only) | what it means |
 |---|---|---|
 | B1 | on a **calibration-arm** row, the median over LATE windows of the printed `err` (= brake − b0p − q·ℓ̂) is > 0 | the collapse condition: b̂₀⁺ + q·ℓ̂ below the row's own later no-queue brake |
-| B2 | at c2 or c8, R̃'s W_r is below the in-session W₉₅ on more than 1 of every 6 scoreable replicates | the law lands below the knee |
+| B2 | at c2 or c8, R̃'s W_r is below the in-session W₉₅ on ≥ 2 of the cell's 5 or 6 scoreable replicates (R4.8's "more than 1 in 6") | the law lands below the knee |
 
 - **B1 is read on the calibration arm only, with the reason.** On larger pools every later window carries queue, and
   m̂ tracks it, so `err` there is not a no-queue brake and would fire on every control row.
@@ -292,8 +314,15 @@ definitions.
 
 - **The binary:** the gauge build (one sha, recorded in every row).
   - **G** = `RWM_SLAW=1`; **C** = `RWM_SLAW=0`. Both set `RWM_DIAG=1`, so `[DIAG]` is on in both.
-  - The gauge's state, counters, `[CAPLOG]` recorder and debt hooks exist only under `pol.slaw_on` = `RWM_DIAG && RWM_SLAW`
-    (`sender_policy.rs:283`, `sender_phases.rs:41`, `emit_source.rs`), so C runs none of it.
+  - Every gauge site on `2547fc07` is gated by `slaw` (checked on each call site):
+    - `note_gap_report` / `sack_gaps_truncated`: `gates.diag && gates.slaw`, `control_msg.rs:732`;
+    - `note_c09_report` / `note_c09_bind` and the three `note_debt_*`: `pol.slaw_on` = `RWM_DIAG && RWM_SLAW`
+      (`sender_phases.rs:816, 862, 1234, 1401`; `emit_source.rs:697, 704`);
+    - `note_adv` / `note_release`: `dg.slaw` is `Some`, armed only under `pol.slaw_on`
+      (`sender_phases.rs:1346`, `mod.rs:2195`);
+    - the `[CAPLOG]` recorder and the per-leg `WinSampler`: constructed only under `pol.slaw_on`.
+  - What C rows still execute is the flag and `Option` checks themselves, which include one `Option` test per echo
+    sample in `record_rtt_sample`. G/C does not bound those. They are identical with `RWM_DIAG` off in production.
 - **Placement:** at each cell's control, interleaved per replicate, with order alternating (G first in odd pairs, C
   first in even), to cancel the §57a position effect.
 - **Sizing** (`s60size.out`, from §57a's c1s 5 GB rows, t quantiles). sd_d is the larger of the measured cross-arm
@@ -307,13 +336,15 @@ definitions.
 
   A pair counts only if both rows are unflagged. The collapse share is 0.33 at §56's c1s control (3/9).
 - **Registered:**
-  - **c1s: 18 launched pairs at W 2 048.** Six are the sweep's control rows, each paired with a C row; 12 are extra,
-    2 per replicate.
+  - **c1s: 24 launched pairs at W 2 048.** Six are the sweep's control rows in 60b, each paired with a C row; 18 are
+    extra pairs in 60c.
+  - **The probability that the CPU gate resolves** is P(≥ 8 unflagged pairs of 24), binomial with p = (1 − c)²:
+    0.97 at c = 0.29, 0.91 at 0.33 and 0.31 at 0.48. With 18 launched pairs it would be 0.77 / 0.60 / 0.09.
   - **CPU gate:** the median over unflagged pairs of log(G/C), client and server CPU s/GB. The gauge PERTURBS c1s iff
     it exceeds +5 %, the R5.6 criterion. If there are fewer than 8 unflagged pairs, the gate reads UNRESOLVED,
     with its realised MDD.
-  - **Goodput:** UNRESOLVABLE at 5 %, because 29–48 launched pairs, 58–96 c1s rows, is too costly. The G/C goodput
-    ratio is reported with its MDD (≈ 6.5 % at 8 pairs), and is not a gate.
+  - **Goodput:** UNRESOLVABLE at 5 %. It would need 26–48 launched pairs (52–96 c1s rows) to resolve, which is too
+    costly. The G/C goodput ratio is reported with its MDD (≈ 6.5 % at 8 pairs), and is not a gate.
   - **c2 and c8:** 3 C rows each at the control (replicates 1, 3 and 5), reported only. They are wire-bound cells, and
     the rows serve as the re-base and the tag-absence witness.
 - **Re-base C** against the old controls:
@@ -333,11 +364,13 @@ definitions.
    then sets `RWM_SLAW=1` or `=0` explicitly per arm.
    - `[GATES]` echoes it on **both** ends of every row (`gates.rs:453`).
    - A row whose echo differs from its arm on either end is VOID and re-run once.
-2. **The smoke is two rows at c2 W 192:** one C row and one G row, same binary, in launch 1. Launch 2 re-smokes the
-   same pair at c1s W 512.
+2. **The smoke is two rows at c2 W 192:** one C row and one G row, same binary, in 60a. 60b re-smokes the same pair
+   at c1s W 512. 60c's first G/C pair is checked as its smoke.
    - The C row must carry `[DIAG]` and **none** of `[WSTAT]`, `[WSTORE]`, `[SLAW]`, `[SLAWC]`, `[CAPLOG]`.
    - The G row must carry all five, `R` defined from window K = 8 on, the R̃ witness PASS (§1.4), and the CAPLOG
      replay PASS (item 4).
+   - The measured run's `kw` must count from 1, and its `b0k` must print after the last `"warmup":true` marker. That
+     shows the gauge's windows, and the replay's cut, start with the measured run.
    - A smoke failure stops the launch.
 3. **`[SLAW] q` reads `0.100000` on every Bulk G row** (the Bulk hint, b = 2: `codel_setpoint_q` = 0.10). Plan 59's
    Realtime rows read `0.050000`. Any other value voids the row.
@@ -350,16 +383,24 @@ definitions.
    - On static-pool rows the pooled cap binds at N·pool (§56: bind 1.000), so the replay mostly reproduces a clamp.
      Its **bind fraction** (the share of pooled refreshes with cap = N·pool, FORMULA-FIRST) is reported per arm,
      beside the unclamped gain·Σbdp replayed from the same logged inputs.
-5. **The R-sign gate (on R̃).** At each cell, R̃_row > 1 at the calibration arm and < 1 at the control.
+5. **The R-sign gate (on R̃).** At c2 and c8, R̃_row > 1 at the calibration arm and < 1 at the control. At c1s, only
+   the calibration end (R̃ > 1) is gated: R̃ ≥ 1 at the c1s control is a registered law outcome (§1.5).
    - It is evaluated by the scorer after that cell's replicate 2. The cell b0 and ℓ̂ are then the median of the ≤ 2
      calibration rows so far.
-   - It fails only if the median over unflagged rows so far violates it, at either end.
-   - Predicted margins, R̃ − 1: c2 ≈ +0.17 / −0.9; c8 ≈ +1.0 / −0.6; c1s ≈ +0.2 / −0.2. c1s is the thin end.
+   - It fails only if the median over unflagged rows so far violates it, at either gated end.
+   - **Deferral:** if either gated end has no unflagged row yet, the gate is read at the first later replicate that has
+     one. If it is still unread after replicate 4, it is recorded as UNREAD, and the session continues with that
+     cell's R̃ readings flagged.
+   - Predicted margins, R̃ − 1:
+     - c2 ≈ +0.17 / −0.9;
+     - c8 ≈ +1.0 / −0.2 to −0.6 (leg 0's Copa minimum at the control lifts only 33 ms, against window minima up to
+       ≈ 85, so the control margin is thinner than the central curve suggests);
+     - c1s ≈ +0.2 at calibration.
    - **A failed gate stops the session (ABORT-RGATE) and is amended** before any further row.
    - P1's printed-R signs are recorded at the same point and stop nothing.
 6. **Bit-identity.** The gauge's host test (cap sequences equal with the gauge on and off) and the native golden test
    with `GOLDEN_CAPTURE` unset pass on the built tree before launch 1, as `slaw-gauge` records.
-7. **Host and order.** Host cargo is paused, with the build lock held by the main session through both launches.
+7. **Host and order.** Host cargo is paused, with the build lock held by the main session through all three launches.
    Arm order rotates per replicate (replicate r starts at arm index r mod A), and seeds alternate 42 / 7 as in §56.
    The session-position readout (first- against second-half medians per arm) is reported.
 
@@ -385,6 +426,7 @@ definitions.
   row, so a row mean is not an operating point.
   - K4 compares the oracle's W1 at each window's own (ε̂, σ², rr, A\*, Δ, m̄) with that window's `dbt_share`.
   - It is restricted to **steady windows**: at least one refresh, A\* min = max, Δ min = max.
+  - A row with fewer than 30 steady LATE windows is K4-UNSCOREABLE.
 - **K4 needs σ²:** the GE channel's p and q come from (ε, σ²) (`pfec-oracle-spec.md` §3).
   - The engine computes σ² only at the shed-refresh site, `burst_variance_factor(est)` (`emit_source.rs:597`), and
     prints it nowhere.
@@ -392,12 +434,16 @@ definitions.
   - **So one print is added to the gauge now, before the build, so that no second build is needed:**
 
     ```text
-    [WSTORE] … fec=<nref>/<eps_mean>/<sig2_mean>/<astar_min>-<astar_max>/<delta_min>-<delta_max>/<rr_mean>
+    [WSTORE] … fec=<nref>/<eps_mean>/<sig2_mean>/<astar_min>-<astar_max>/<delta_min>-<delta_max> nacc=<n>
     ```
+
+    - `nacc` counts the window's debt accruals (`note_debt_accrued` calls), so the window's mean rr is
+      `dbt_acc / nacc`. The refresh site runs on the taper-cache cadence, not once per symbol, so rr is not taken
+      from it.
 
     - It is accumulated in gauge atomics at the shed-refresh site (`emit_source.rs` ≈ 583–598) under
       `pol.shed_on && pol.slaw_on`, from the same `est.loss_rate()`, `burst_variance_factor(est)`, `a_star`, `delta`
-      and `flat_rate` that the site already computes.
+      that the site already computes.
     - It is reset at each window close, like the `dbt_*` deltas.
     - `nref` = refreshes in the window; `fec=-` when `nref` = 0.
   - It is print-only and adds no engine read. The gauge's bit-identity host test and goldens are re-run on the amended
@@ -419,6 +465,9 @@ definitions.
   - c1s rows up to 302 s;
   - plan 59's evicting rows ≤ 150 s, plus ≈ 40 s of bring-up.
 
+The worst case for c1s rows is 210 s per row, §57a's budget-guard convention (13 200 s for 63 rows: the 300 s timeout
+on the collapse share).
+
 | block | rows | typical | worst |
 |---|---|---|---|
 | build + engine suites (new gauge tree: no reuse hit) | — | ≈ 60 min | 70 min |
@@ -426,17 +475,20 @@ definitions.
 | c2: 9 arms × 6 + 3 C | 57 | 71 min (75 s) | 86 min (90 s) |
 | c8: 9 arms × 6 + 3 C | 57 | 71 min | 86 min |
 | **launch 1 (`LD_PLAN=60a`)** | **116** | **≈ 3.4 h** | **≈ 4.1 h** |
-| smoke (c1s W 512, C + G) | 2 | 3 min | 6 min |
-| c1s: 8 arms × 6 G | 48 | 60 min (75 s) | 136 min (170 s) |
-| c1s G/C extra: 6 C + 12 pairs | 30 | 38 min | 85 min |
+| smoke (c1s W 512, C + G) | 2 | 3 min | 7 min |
+| c1s: 9 arms × 6 G + 6 C paired at the control | 60 | 75–100 min (75–100 s) | 210 min (210 s) |
+| **launch 2 (`LD_PLAN=60b`)** | **62** | **≈ 1.3–1.7 h** | **≈ 3.6 h** |
+| c1s G/C: 18 extra pairs at W 2 048 (the first pair is the launch's smoke) | 36 | 45–60 min | 126 min |
 | evicting rows (plan 59 on the gauge) | 5 (+ ≤ 5 re-runs) | 12 min | 32 min |
-| **launch 2 (`LD_PLAN=60b`)** | **85 (+ ≤ 5)** | **≈ 1.9 h** | **≈ 4.3 h** |
+| **launch 3 (`LD_PLAN=60c`)** | **41 (+ ≤ 5)** | **≈ 1.0–1.2 h** | **≈ 2.6 h** |
 
-- **Total:** 201 rows (+ ≤ 5 evicting re-runs). The session exceeds 4 h, so it splits into two launches.
-- **`LD_HARD`:** launch + 4.5 h for **60a**, and launch + 4.5 h for **60b**.
-- **The budget guard** refuses with less than the worst case left: 4.1 h for 60a and 4.3 h for 60b.
-- **Order:** 60a's R-sign gate (§4.5) is read at c2 and c8 replicate 2. 60b runs only after 60a's smoke, witnesses and
-  gates are read.
+- **Total:** 219 rows (+ ≤ 5 evicting re-runs).
+- **Three launches, with the reason.** At the 210 s convention, the c1s rows alone (98) take 5.7 h worst case, so any
+  two-launch split puts more than 4 h in one launch.
+- **`LD_HARD`:** launch + 4.5 h (60a), launch + 4 h (60b) and launch + 3 h (60c).
+- **The budget guard** refuses with less than the worst case left: 4.1 h, 3.6 h and 2.6 h.
+- **Order:** each launch's R-sign gate (§4.5) is read at replicate 2. A later launch runs only after the previous
+  launch's smoke, witnesses and gates are read. 60b and 60c reuse 60a's binary (same sha) with no rebuild.
 
 ---
 
@@ -449,15 +501,19 @@ definitions.
    - **This needs the coordinator's ruling before the harness is written.**
 2. **The K4 print (§5) is a gauge-code change.** It is specified here and not made: no engine code in this task. It
    must land on `slaw-gauge` before the VM build, or K4 moves to a later session.
-3. **The c1s band (434–990) is not a prediction that can miss.** Its discriminator is per-arm `tmin − l` (§1.5).
-4. **The c1s per-replicate crossing will be UNDERPOWERED** at the observed collapse share, unless ≥ 4 replicates
+3. **The c1s band (434 – OPEN) is not a prediction that can miss.** Its discriminator is per-arm `tmin − l` (§1.5).
+   - R̃ ≥ 1 at the c1s control is a law outcome, so the brief's stop rule ("opposite signs at the smallest pool and
+     the control") would wrongly abort there. It is gated at c1s's calibration end only.
+4. **R5.5's margin above the c2 knee is no longer a prediction.** c2's band (165–251) reaches the knee (169), so B2
+   is live at c2. At c8 it fires only on a gross miss (§2.1).
+5. **The c1s per-replicate crossing will be UNDERPOWERED** at the observed collapse share, unless ≥ 4 replicates
    bracket.
-5. **The harness (`harness60`) does not exist yet.** It needs:
-   - arm tables for 60a and 60b;
+6. **The harness (`harness60`) does not exist yet.** It needs:
+   - arm tables for 60a, 60b and 60c;
    - the `RWM_SLAW` scrub and per-arm set;
    - the smoke checks;
    - the replay witness and sign gate in the scorer;
    - the CAPLOG replay call;
    - plan 59's evicting rows behind `RWM_SLAW=1`.
    It needs stub tests and a rehearsal before any battery row, as in §56/§57.
-6. **Advisor, before commit:** (filled in at the commit below.)
+7. **Advisor log:** the header lists what each of the three calls changed.

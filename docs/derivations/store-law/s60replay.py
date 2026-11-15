@@ -10,7 +10,7 @@ Usage:
     R = sum_i w_i (F_i + sig_i + q*l_i + T_i - Tmin_i) / sum_i w_i T_i
     F_i = min(m_i, l_i + b0_i) + b0_i + 1/2 * max(0, max_j (l_j + b0_j) - (l_i + b0_i))
 w = nk, T = tp50, Tmin = tmin, m = m, sig = sig (load; Rb uses sigb). A window's legs are the [SLAW] lines with the
-same k and nk > 0; R exists only when every such leg has b0p, m and sigb (slaw.rs render_window's `ready`).
+same k and nk > 0, after the last '"warmup":true' marker; R exists only when every such leg has b0p, m and sigb (slaw.rs render_window's `ready`).
 """
 import re
 import sys
@@ -37,6 +37,9 @@ def windows(path):
     """{k: [fields of each [SLAW] line with nk > 0]} in file order."""
     out = {}
     for L in open(path, errors='replace'):
+        if '"warmup":true' in L:
+            out = {}                 # a warm-up run precedes the measured one in the same log (plan 59's cut)
+            continue
         if not L.startswith('[SLAW]'):
             continue
         d = dict(TOK.findall(L))
