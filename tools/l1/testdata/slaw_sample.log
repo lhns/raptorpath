@@ -2,59 +2,59 @@
 [SLAW] t=2.00 k=1 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=1 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=1/1
 [WSTAT] t=2.00 k=1 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=2.00 k=1 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=1 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=1/1
-[WSTORE] t=2.00 k=1 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=2.00 k=1 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=0 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=2.00 k=1 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=2.25 k=2 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=2.25 k=2 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=2 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=2/2
 [WSTAT] t=2.25 k=2 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=2.25 k=2 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=2 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=2/2
-[WSTORE] t=2.25 k=2 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=2.25 k=2 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=2.25 k=2 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=2.50 k=3 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=2.50 k=3 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=3 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=3/3
 [WSTAT] t=2.50 k=3 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=2.50 k=3 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=3 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=3/3
-[WSTORE] t=2.50 k=3 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=2.50 k=3 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=2.50 k=3 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=2.75 k=4 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=2.75 k=4 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=4 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=4/4
 [WSTAT] t=2.75 k=4 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=2.75 k=4 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=4 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=4/4
-[WSTORE] t=2.75 k=4 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=2.75 k=4 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=2.75 k=4 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=3.00 k=5 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=3.00 k=5 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=5 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=5/5
 [WSTAT] t=3.00 k=5 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=3.00 k=5 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=5 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=5/5
-[WSTORE] t=3.00 k=5 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=3.00 k=5 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=3.00 k=5 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=3.25 k=6 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=3.25 k=6 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=6 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=6/6
 [WSTAT] t=3.25 k=6 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=3.25 k=6 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=6 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=6/6
-[WSTORE] t=3.25 k=6 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=3.25 k=6 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=3.25 k=6 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=3.50 k=7 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=3.50 k=7 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=- b0run=0.100 b0k=- b0kn=- kw=7 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=7 qbt=7.000 qcol=7/7
 [WSTAT] t=3.50 k=7 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=3.50 k=7 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=- b0run=0.200 b0k=- b0kn=- kw=7 sig=0.100 sigw=0.140 sigb=- gap=- anc=- ancf=0/0 err=- R=- Rb=- used=- xs=0 xb=0 ra=0/0 q=0.100000 qb=- qbt=- qcol=7/7
-[WSTORE] t=3.50 k=7 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=3.50 k=7 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=3.50 k=7 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=3.75 k=8 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=3.75 k=8 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=0.100 b0run=0.100 b0k=0.100,0.100,0.100,0.100,0.100,0.100,0.100,0.100 b0kn=20,20,20,20,20,20,20,20 kw=8 sig=0.100 sigw=0.140 sigb=0.100 gap=1.550 anc=0 ancf=0/1 err=-0.300 R=1.28191 Rb=1.28191 used=2 xs=0 xb=0 ra=1/0 q=0.100000 qb=7 qbt=7.000 qcol=8/8
 [WSTAT] t=3.75 k=8 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=3.75 k=8 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=0.200 b0run=0.200 b0k=0.200,0.200,0.200,0.200,0.200,0.200,0.200,0.200 b0kn=20,20,20,20,20,20,20,20 kw=8 sig=0.100 sigw=0.140 sigb=0.100 gap=0.000 anc=0 ancf=0/1 err=-0.600 R=1.28191 Rb=1.28191 used=2 xs=0 xb=0 ra=1/0 q=0.100000 qb=- qbt=- qcol=8/8
-[WSTORE] t=3.75 k=8 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=3.75 k=8 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=3.75 k=8 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=4.00 k=9 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=4.00 k=9 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=0.100 b0run=0.100 b0k=- b0kn=- kw=9 sig=0.100 sigw=0.140 sigb=0.100 gap=1.550 anc=0 ancf=0/2 err=-0.300 R=1.28191 Rb=1.28191 used=2 xs=0 xb=0 ra=2/0 q=0.100000 qb=7 qbt=7.000 qcol=9/9
 [WSTAT] t=4.00 k=9 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=4.00 k=9 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=0.200 b0run=0.200 b0k=- b0kn=- kw=9 sig=0.100 sigw=0.140 sigb=0.100 gap=0.000 anc=0 ancf=0/2 err=-0.600 R=1.28191 Rb=1.28191 used=2 xs=0 xb=0 ra=2/0 q=0.100000 qb=- qbt=- qcol=9/9
-[WSTORE] t=4.00 k=9 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=4.00 k=9 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=4.00 k=9 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-
 [WSTAT] t=4.25 k=10 p=0 nk=20 nkq=20 tmin=3.000 p10=3.040 p50=3.200 p90=3.340 tmean=3.190 m=2.900 l=3.000 qb50=7 qbmax=7 qcwnd=5000 bdpb=8000
 [SLAW] t=4.25 k=10 p=0 n=100 W=50 aw=0.5000 nk=20 tmin=3.000 tp50=3.200 tmean=3.190 m=2.900 l=3.000 b0p=0.100 b0run=0.100 b0k=- b0kn=- kw=10 sig=0.100 sigw=0.140 sigb=0.100 gap=1.550 anc=0 ancf=0/3 err=-0.300 R=1.28191 Rb=1.28191 used=2 xs=0 xb=0 ra=3/0 q=0.100000 qb=7 qbt=7.000 qcol=10/10
 [WSTAT] t=4.25 k=10 p=1 nk=20 nkq=20 tmin=6.000 p10=6.040 p50=6.200 p90=6.340 tmean=6.190 m=5.800 l=6.000 qb50=- qbmax=- qcwnd=5000 bdpb=8000
 [SLAW] t=4.25 k=10 p=1 n=100 W=50 aw=0.5000 nk=20 tmin=6.000 tp50=6.200 tmean=6.190 m=5.800 l=6.000 b0p=0.200 b0run=0.200 b0k=- b0kn=- kw=10 sig=0.100 sigw=0.140 sigb=0.100 gap=0.000 anc=0 ancf=0/3 err=-0.600 R=1.28191 Rb=1.28191 used=2 xs=0 xb=0 ra=3/0 q=0.100000 qb=- qbt=- qcol=10/10
-[WSTORE] t=4.25 k=10 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
+[WSTORE] t=4.25 k=10 tw=250.0 n=100 W=50 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=2/30/30/30 ackw=1 fec=-/-/-/-/0 dbt_acc=0.00 dbt_em=0 dbt_share=- dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00
 [SLAWC] t=4.25 k=10 gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-

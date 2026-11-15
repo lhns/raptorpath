@@ -532,6 +532,13 @@ pub(crate) fn emit_source(
             let path_estimator = super::worst_eps_estimator(&sched);
             match path_estimator {
                 Some(est) => {
+                    if pol.slaw_on {
+                        // [WSTORE] fec= (gauge): the inputs of this recompute.
+                        super::slaw::note_fec_inputs(
+                            est.loss_rate(),
+                            crate::control::fec_rate::burst_variance_factor(est),
+                        );
+                    }
                     // `compute_repair_rate_capped`'s spare-capacity clamp,
                     // applied per symbol to the cadenced rate.
                     let flat_rate = window_rate.min(spare.max(0.0));
@@ -695,7 +702,8 @@ pub(crate) fn emit_source(
         };
         st.repair_debt += repair_rate;
         if pol.slaw_on {
-            super::slaw::note_debt_accrued(repair_rate); // [WSTORE] dbt_acc (gauge)
+            // [WSTORE] dbt_acc and fec= (gauge)
+            super::slaw::note_debt_accrued(repair_rate, span_params.map(|(a, _)| a as f64));
         }
         st.taper_offset += 1;
 

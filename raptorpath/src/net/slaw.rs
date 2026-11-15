@@ -328,9 +328,38 @@ fn micro(x: f64) -> u64 {
     (x.max(0.0) * 1e6) as u64
 }
 
-/// Debt accrued at one emission (call only with the gauge on).
-pub fn note_debt_accrued(rate: f64) {
+/// The FEC estimator inputs the rate seat last used (set on each recompute,
+/// i.e. each taper-cache miss, where `est` is read) and the per-accrual
+/// window sums: n accruals, Σε̂ (x1e9), Σσ² (x1e6), Σr (x1e6), ΣA* (x1e3) and
+/// the number of accruals that had an A* (the span law may be off).
+pub static FEC_EPS_BITS: AtomicU64 = AtomicU64::new(0);
+pub static FEC_S2_BITS: AtomicU64 = AtomicU64::new(0);
+static FEC_N: AtomicU64 = AtomicU64::new(0);
+static FEC_SUM_EPS: AtomicU64 = AtomicU64::new(0);
+static FEC_SUM_S2: AtomicU64 = AtomicU64::new(0);
+static FEC_SUM_R: AtomicU64 = AtomicU64::new(0);
+static FEC_SUM_A: AtomicU64 = AtomicU64::new(0);
+static FEC_NA: AtomicU64 = AtomicU64::new(0);
+
+/// The estimator inputs read at a rate-seat recompute: `loss_rate()` and
+/// `burst_variance_factor(est)` (call only with the gauge on).
+pub fn note_fec_inputs(eps: f64, sigma2: f64) {
+    FEC_EPS_BITS.store(eps.to_bits(), Relaxed);
+    FEC_S2_BITS.store(sigma2.to_bits(), Relaxed);
+}
+
+/// Debt accrued at one emission (call only with the gauge on): the handed
+/// rate, the span law's A* (if any) and the last-read estimator inputs.
+pub fn note_debt_accrued(rate: f64, astar: Option<f64>) {
     DEBT_ACC.fetch_add(micro(rate), Relaxed);
+    FEC_N.fetch_add(1, Relaxed);
+    FEC_SUM_EPS.fetch_add((f64::from_bits(FEC_EPS_BITS.load(Relaxed)).max(0.0) * 1e9) as u64, Relaxed);
+    FEC_SUM_S2.fetch_add(micro(f64::from_bits(FEC_S2_BITS.load(Relaxed))), Relaxed);
+    FEC_SUM_R.fetch_add(micro(rate), Relaxed);
+    if let Some(a) = astar {
+        FEC_SUM_A.fetch_add((a.max(0.0) * 1e3) as u64, Relaxed);
+        FEC_NA.fetch_add(1, Relaxed);
+    }
 }
 
 /// One unit of debt spent on a correction slot (gauge on only).
@@ -371,6 +400,7 @@ pub struct SlawState {
     rel: Vec<u32>,
     adv: Vec<u32>,
     debt_last: [u64; 6],
+    fec_last: [u64; 6],
     qb: HashMap<u32, Vec<u64>>,
     last_aux_us: u64,
     ackw_last: u64,
@@ -382,7 +412,12 @@ pub struct SlawState {
 
 impl SlawState {
     pub fn new(now_us: u64) -> Self {
-        Self { last_close_us: now_us, aw_min: f64::INFINITY, ..Default::default() }
+        // The cumulative atomics are process-global: baseline them at arming,
+        // so the first window counts only what happened after it.
+        let debt_last = [&DEBT_ACC, &DEBT_EM, &DEBT_RM_ACK, &DEBT_ASK_ACK, &DEBT_RM_NACK, &DEBT_ASK_NACK]
+            .map(|a| a.load(Relaxed));
+        let fec_last = [&FEC_N, &FEC_SUM_EPS, &FEC_SUM_S2, &FEC_SUM_R, &FEC_SUM_A, &FEC_NA].map(|a| a.load(Relaxed));
+        Self { last_close_us: now_us, aw_min: f64::INFINITY, debt_last, fec_last, ..Default::default() }
     }
 
     /// One a/W sample (`store_len / effective_store_cap`), every loop pass.
@@ -616,8 +651,25 @@ pub fn render_window(
     let d: Vec<f64> = (0..6).map(|i| dn[i].saturating_sub(s.debt_last[i]) as f64 / 1e6).collect();
     s.debt_last = dn;
     let share = if d[0] > 0.0 { format!("{:.4}", d[1] / d[0]) } else { "-".to_string() };
+    // K4: the FEC estimator inputs behind the accruals, window means.
+    let fl = [&FEC_N, &FEC_SUM_EPS, &FEC_SUM_S2, &FEC_SUM_R, &FEC_SUM_A, &FEC_NA].map(|a| a.load(Relaxed));
+    let fd: Vec<u64> = (0..6).map(|i| fl[i].saturating_sub(s.fec_last[i])).collect();
+    s.fec_last = fl;
+    let fec_s = if fd[0] == 0 {
+        "fec=-/-/-/-/0".to_string()
+    } else {
+        let n = fd[0] as f64;
+        let a = if fd[5] > 0 { format!("{:.2}", fd[4] as f64 / 1e3 / fd[5] as f64) } else { "-".to_string() };
+        format!(
+            "fec={:.6}/{:.4}/{:.5}/{a}/{}",
+            fd[1] as f64 / 1e9 / n,
+            fd[2] as f64 / 1e6 / n,
+            fd[3] as f64 / 1e6 / n,
+            fd[0]
+        )
+    };
     let debt_s = format!(
-        "dbt_acc={:.2} dbt_em={:.0} dbt_share={share} dbt_rm_ack={:.2} dbt_ask_ack={:.2} dbt_rm_nack={:.2} dbt_ask_nack={:.2}",
+        "{fec_s} dbt_acc={:.2} dbt_em={:.0} dbt_share={share} dbt_rm_ack={:.2} dbt_ask_ack={:.2} dbt_rm_nack={:.2} dbt_ask_nack={:.2}",
         d[0], d[1], d[2], d[3], d[4], d[5]
     );
 
@@ -743,6 +795,10 @@ impl CapLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The gauge's cumulative counters are process-global: the two tests that
+    /// render a window (and one accrues) must not interleave.
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn leg(w: f64, t: f64, tmin: f64, m: f64, l: f64, b0: f64, sig: f64) -> LegIn {
         LegIn { w, t_hat: t, t_min: tmin, m_hat: m, l_hat: l, b0, sigma: sig }
@@ -890,6 +946,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// K4: the `fec=eps/sigma2/r/astar/n` token is the window MEAN of what the
+    /// rate seat used at each accrual (this is the only test that accrues).
+    #[test]
+    fn fec_token_is_the_window_mean_of_the_accrual_inputs() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let mut st = SlawState::new(0);
+        note_fec_inputs(0.02, 4.0);
+        note_debt_accrued(0.1, Some(10.0));
+        note_debt_accrued(0.3, Some(20.0));
+        note_debt_accrued(0.2, None);
+        let lines = render_window(&mut st, vec![], 0.1, 2.0, 250_000, 5, 10, 0, vec![]);
+        let ws = lines.iter().find(|l| l.starts_with("[WSTORE]")).unwrap();
+        assert!(ws.contains(" fec=0.020000/4.0000/0.20000/15.00/3 "), "{ws}");
+        assert!(ws.contains(" dbt_acc=0.60 "), "{ws}");
+        // The next window sees only new accruals.
+        let lines = render_window(&mut st, vec![], 0.1, 2.25, 500_000, 5, 10, 0, vec![]);
+        assert!(lines.iter().any(|l| l.starts_with("[WSTORE]") && l.contains(" fec=-/-/-/-/0 ")), "{lines:?}");
     }
 
     /// The crossing counter: sign changes only; ties count as at-or-below.
@@ -1058,6 +1133,7 @@ mod tests {
     /// before K windows and defined after, counters line present.
     #[test]
     fn render_window_two_legs() {
+        let _g = TEST_LOCK.lock().unwrap();
         let mut st = SlawState::new(0);
         let mut ss = [WinSampler::default(), WinSampler::default()];
         let mut lines = Vec::new();

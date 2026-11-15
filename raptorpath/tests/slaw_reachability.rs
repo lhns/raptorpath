@@ -81,7 +81,7 @@ fn the_gauge_prints_under_diag_and_only_under_diag() {
 
     // 5. W1 debt flows ride [WSTORE] (names are the contract with the parser).
     let ws = on.lines().rev().find(|l| l.starts_with("[WSTORE] ")).expect("a [WSTORE] line");
-    for k in ["dbt_acc=", "dbt_em=", "dbt_share=", "dbt_rm_ack=", "dbt_ask_ack=", "dbt_rm_nack=", "dbt_ask_nack=", "adv="] {
+    for k in ["fec=", "dbt_acc=", "dbt_em=", "dbt_share=", "dbt_rm_ack=", "dbt_ask_ack=", "dbt_rm_nack=", "dbt_ask_nack=", "adv="] {
         assert!(tok(ws, k).is_some() || ws.contains(&format!(" {k}-")), "{k} missing: {ws}");
     }
     assert!(on.contains("RWM_SLAW=1"), "[GATES] must echo RWM_SLAW=1");
