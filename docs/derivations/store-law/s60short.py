@@ -41,3 +41,20 @@ for case, j in (('low', 0), ('high', 1)):
               % (lab, d, d - 1.645 * se))
 print('COVERED would need the pooled D <= -(half-width); a floor read too high biases D DOWN (toward COVERED), so')
 print('SHORT stands as a lower bound without floor convergence and COVERED needs a converged floor.')
+
+# The floor CONVERGENCE gate's resolution (entry 10, advisor). Two forms on 6 rows per pool, row sd s of median LATE
+# `tmin` (0.10-0.25 ms at c2, s60abs.out; 0.25-0.50 at c8 leg 0):
+#  (a) adjacent pools: Delta = tmin(next) - tmin(floor), SE = 1.253 * s * sqrt(2/6);
+#  (b) a least-squares slope over the three floor pools (W1, W1+d, W1+2d): se_b = s / sqrt(6 * 2 * d^2), and the
+#      floor's excess over the W -> 0 limit E = b * W1, se_E = W1 * se_b.
+print()
+print('convergence gate resolution:')
+for cell, W1, d, slopes, sds, tau in (('c2', 16, 16, (0.020, 0.027), (0.10, 0.25), 0.3),
+                                     ('c8 leg 0', 32, 32, (0.020, 0.027), (0.25, 0.50), 1.0)):
+    for s in sds:
+        se_adj = MED * s * sqrt(2 / 6)
+        se_b = s / sqrt(6 * 2 * d * d)
+        for b in (0.0,) + slopes:
+            E, seE = b * W1, W1 * se_b
+            print('   %s s %.2f slope %.3f: adjacent Delta %.2f +- 2SE %.2f | fit slope se %.4f, E = %.2f +- 2se %.2f ms'
+                  ' (tau %.1f)' % (cell, s, b, b * d, 2 * se_adj, se_b, E, 2 * seE, tau))

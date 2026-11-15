@@ -11,3 +11,17 @@ high: per-replicate sd 0.41 ms -> pooled se 0.25 ms, 90 % half-width 0.42 ms
    predicted D at knee 169, floor on the secant to W 16: +1.9 ms -> interval lower edge +1.48 (SHORT iff > 0)
 COVERED would need the pooled D <= -(half-width); a floor read too high biases D DOWN (toward COVERED), so
 SHORT stands as a lower bound without floor convergence and COVERED needs a converged floor.
+
+convergence gate resolution:
+   c2 s 0.10 slope 0.000: adjacent Delta 0.00 +- 2SE 0.14 | fit slope se 0.0018, E = 0.00 +- 2se 0.06 ms (tau 0.3)
+   c2 s 0.10 slope 0.020: adjacent Delta 0.32 +- 2SE 0.14 | fit slope se 0.0018, E = 0.32 +- 2se 0.06 ms (tau 0.3)
+   c2 s 0.10 slope 0.027: adjacent Delta 0.43 +- 2SE 0.14 | fit slope se 0.0018, E = 0.43 +- 2se 0.06 ms (tau 0.3)
+   c2 s 0.25 slope 0.000: adjacent Delta 0.00 +- 2SE 0.36 | fit slope se 0.0045, E = 0.00 +- 2se 0.14 ms (tau 0.3)
+   c2 s 0.25 slope 0.020: adjacent Delta 0.32 +- 2SE 0.36 | fit slope se 0.0045, E = 0.32 +- 2se 0.14 ms (tau 0.3)
+   c2 s 0.25 slope 0.027: adjacent Delta 0.43 +- 2SE 0.36 | fit slope se 0.0045, E = 0.43 +- 2se 0.14 ms (tau 0.3)
+   c8 leg 0 s 0.25 slope 0.000: adjacent Delta 0.00 +- 2SE 0.36 | fit slope se 0.0023, E = 0.00 +- 2se 0.14 ms (tau 1.0)
+   c8 leg 0 s 0.25 slope 0.020: adjacent Delta 0.64 +- 2SE 0.36 | fit slope se 0.0023, E = 0.64 +- 2se 0.14 ms (tau 1.0)
+   c8 leg 0 s 0.25 slope 0.027: adjacent Delta 0.86 +- 2SE 0.36 | fit slope se 0.0023, E = 0.86 +- 2se 0.14 ms (tau 1.0)
+   c8 leg 0 s 0.50 slope 0.000: adjacent Delta 0.00 +- 2SE 0.72 | fit slope se 0.0045, E = 0.00 +- 2se 0.29 ms (tau 1.0)
+   c8 leg 0 s 0.50 slope 0.020: adjacent Delta 0.64 +- 2SE 0.72 | fit slope se 0.0045, E = 0.64 +- 2se 0.29 ms (tau 1.0)
+   c8 leg 0 s 0.50 slope 0.027: adjacent Delta 0.86 +- 2SE 0.72 | fit slope se 0.0045, E = 0.86 +- 2se 0.29 ms (tau 1.0)

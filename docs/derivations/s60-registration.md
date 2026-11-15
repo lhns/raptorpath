@@ -124,7 +124,18 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
     - **The b0k[0] / `m` = `l` witness and c8 leg 1's sampler attachment** become rehearsal checks, since the host
       `slaw_reachability` run prints no lines. A failing row is reported, not voided.
     - **No new engine print.**
-    - Rows: 145 (+ ≤ 5), plus 9 rehearsal rows, in two launches.
+    - Rows: 145 (+ ≤ 5), plus 10 rehearsal rows, in two launches.
+    - **Advisor, before the push** (`86039f95` was corrected):
+      - The adjacent-pool gate could not separate flat from slope. It is now a slope fit over the three floor pools
+        (se 0.002–0.005 ms/slot against 0.020–0.027), with a three-way convergence reading that has to be shown.
+        At c1s the gate does not cover the scored sign.
+      - b0p rises as the pool shrinks (p27 c2: 2.87 / 2.46 / 2.18 at W 64 / 96 / 128). So P1 at c2 is predicted
+        ≈ 4.4 or less. A P1 fail no longer swaps the scored quantity, and the absolute b0p go/no-go limits are now
+        reported only.
+      - A c8 W 96 rehearsal row reads leg 1's attachment, with an unattached-vs-starved test from `[DIAG]` counts.
+      - Bytes are sized for the faster rate: c8 200 / 400 / 600 MB, c1s 1 / 1.5 / 2 GB.
+      - D and R̃₆₇ are one reading at c2, with a sign witness. The c8 crossing is predicted ≈ 25–30 slots lower.
+      - `s60replay.py replay` takes `l` as well as `b0`.
 
 **Helper scripts** (stdlib Python, run with `-I`; outputs committed beside them in `store-law/`).
 
@@ -180,7 +191,10 @@ self-tested in `s60replay.py r67_r`: hand values 1.02 and 1.16625):
   - Fᵢ = the session floor F_c,i (§2: the median LATE `tmin` at the floor pool; r67floor's "truth" row);
   - ℓ̂_c,i = the session `l` at the floor pool (r67floor's `lF`); q = the printed `q`.
 - R̃₆₇ is computed per window and taken as the median over LATE windows per row, as for R̃.
-- It reads no m̂ and no b̂₀⁺. Its crossing is reported beside R̃'s at every cell. It decides nothing.
+- It reads no m̂ and no b̂₀⁺. Its crossing is reported beside R̃'s at every cell.
+  - **At c2 it IS the scored reading in R units.** On one leg, with the same F_c, σ and ℓ̂_c, R̃₆₇(W₉₅,r) − 1 = −D_r / T̂. So SHORT means that the honest-floor form crosses below the knee, the B2 event for the R6.7 form.
+  - **Scorer witness:** sign(R̃₆₇,r(W₉₅,r) − 1) = −sign(D_r) on every replicate. A mismatch is a scorer bug.
+  - **Elsewhere (c8, c1s) it decides nothing.**
 
 **What it tests.**
 - R̃ is the law fed floors the flow did not measure itself. R5.4 was withdrawn as an oracle for exactly that.
@@ -206,12 +220,19 @@ self-tested in `s60replay.py r67_r`: hand values 1.02 and 1.16625):
   - c2: 2.2 / 4.2 / 12.6 / 23.5 ms at W 128 / 192 / 256 / 384;
   - c8 leg 0: 2.5 / 8.1 / 26.7 ms at 128 / 256 / 512;
   - c1s: 0.30 / 1.45 / 18.8 ms at 256 / 512 / 2 048.
-- **Registered:** b0p(arm)/b0p(floor pool) ≥ 3 at c2 W 256, c8 W 512 (leg 0) and c1s W 2 048. Predicted ≈ 5.7 / ≈ 10 /
-  ≈ 60. These predictions are on a cap-128 (c1s: cap-256) base; the floor-pool base is expected to be no larger (less boot queue), which would raise the ratios.
+- **Registered:** b0p(arm)/b0p(floor pool) ≥ 3 at c2 W 256, c8 W 512 (leg 0) and c1s W 2 048.
+  - **b0p RISES as the pool shrinks.** p27 c2 reads 2.87 / 2.46 / 2.18 ms at W 64 / 96 / 128, because the running
+    anchor converges later (R6.7 §2.2). So the floor-pool base is larger than the cap-128 one.
+  - Predicted: c2 ≈ 12.6 / 2.87 ≈ **4.4** on a W 64 base, and possibly below 3 on a W 16 base. c8 ≈ 10 and c1s ≈ 60
+    on their measured bases, which may also fall.
+  - P1 can therefore fail at c2 by its base alone. That is reported as such.
 - **Meaning.** "The first K windows" is a valid b̂₀⁺ source only under a boot held at a queue-free store. Otherwise the
   start-up queue is latched into the target, as rev 3's σ̂⁺ was. That makes the boot hold and n₀ terms of the law:
   `store-law.md` R6.7.
-- **If P1 fails at a cell,** printed R becomes that cell's scored R.
+- **If P1 fails at a cell,** that is reported: printed b0p did not latch the arm's queue by the ratio rule. **It no
+  longer changes the scored quantity.** R̃ is fed the floor-pool calibration regardless, since R6.7 showed the latch
+  independently. The old consequence ("printed R becomes the scored R") is withdrawn; it would have displaced R̃ at
+  c8.
 
 **P2 (reported, decides nothing).** Printed R stays above 1 until the late queue outgrows twice the 2 s boot queue.
 It is predicted to be > 1 at every c8 and c1s arm, and at c2 up to W 384.
@@ -258,21 +279,35 @@ withdrawn. A brake is a difference, so it stays flat while `tmin` and Copa's min
   windows with `nk` ≥ 10). That is R6.7's "truth (small-pool late T̂min)" row.
   - ℓ̂_c,i is the median `l` there.
   - b̂₀⁺_c,i is the median `b0p` there, and T_c,i the median of `l` + `b0p`. These are R̃'s inputs.
-- **The convergence gate**, replacing the b0p flatness gate, decides whether the floor pool reads the limit u → 0:
-  - Δ = median LATE `tmin`(next pool) − median LATE `tmin`(floor pool), per leg;
-  - CONVERGED iff |Δ| − 2·SE ≤ τ, otherwise NOT-CONVERGED;
-  - τ = 0.3 ms at c2, a third of the smallest predicted shortfall (0.9 ms), so a floor error cannot flip D's sign;
-  - τ = 1.0 ms on c8 leg 0 and 2.5 ms on leg 1 (the R̃ sensitivities of §5);
-  - τ = 0.3 ms at c1s (the δ tolerance of §5).
-- **The gate is itself a two-way reading, and it measures R6.7's open item 1 directly.**
-  - Under R6.7's BELOW = slope (0.020–0.027 ms/slot at c2), adjacent 16-slot pools differ by 0.32–0.43 ms, so c2
-    predicts NOT-CONVERGED, or borderline.
-  - Under BELOW = flat, the difference is ≈ 0, so CONVERGED.
-  - c8 and c1s are unmeasured below 128 / 256.
-- **What NOT-CONVERGED does.** A floor read too high under-reads the rise.
-  - **c2's SHORT stands as a lower bound; COVERED is not admissible** (§3.1).
-  - **c8's B2:** a floor too high raises R̃ at the knee, so a B2 fire stands and a pass is weakened. Reported.
-  - **c1s:** a floor too high raises R̃ − 1 at the control, so CROSSES stands and PINNED / SPLIT are weakened.
+- **The floor gate** replaces the b0p flatness gate. It is a fit, not an adjacent difference (`s60short.py`, gate
+  section):
+  - Per leg, b is the least-squares slope of the per-row median LATE `tmin` against W over the three floor pools
+    (18 rows).
+  - E = b·W₁ is the floor pool's excess over the W → 0 limit, extrapolated linearly.
+  - **The adjacent difference is rejected.** It cannot separate flat from slope: at c2, Δ(16 → 32) is 0.32–0.43 ms
+    under R6.7's slope, against 2·SE of 0.14–0.36 ms.
+- **Reading 1, the sub-floor slope (R6.7 open item 1), two-way:**
+  - FLAT iff b + 2·se_b < 0.010 ms/slot (half the low end of R6.7's secant);
+  - SLOPED iff b − 2·se_b > 0.010;
+  - otherwise UNRESOLVED.
+  - se_b is 0.0018–0.0045 ms/slot at c2 and 0.0023–0.0045 at c8 leg 0, against a secant of 0.020–0.027. So
+    flat-against-slope **resolves**, marginally at the high-noise end.
+- **Reading 2, floor convergence, three-way, with convergence having to be shown:**
+  - CONVERGED iff E + 2·se_E ≤ τ;
+  - NOT-CONVERGED iff E − 2·se_E > τ;
+  - otherwise UNRESOLVED.
+  - τ is 0.3 ms at c2 (a third of the smallest predicted shortfall), 1.0 ms on c8 leg 0 and 2.5 ms on c8 leg 1 (the
+    R̃ sensitivities, §5).
+  - **Predicted:**
+    - c2: under the slope E = 0.32–0.43 ± 0.06–0.14, so NOT-CONVERGED or UNRESOLVED; flat gives CONVERGED;
+    - c8 leg 0: under a c2-like slope E = 0.64–0.86 ± 0.14–0.29, so CONVERGED or UNRESOLVED.
+  - The extrapolated floor F_c − E is **reported** beside F_c, not scored.
+- **What anything short of CONVERGED does.** A floor read too high under-reads the rise.
+  - **c2:** SHORT stands as a lower bound; **COVERED is admissible only if CONVERGED** (§3.1).
+  - **c8's B2:** a floor too high raises T_c and R̃ at the knee, so a B2 fire stands and a pass is weakened.
+    Reported.
+  - **c1s: the gate does not cover c1s's scored sign.** R̃ at c1s is fed b̂₀⁺_c and the row's own `l`, which a `tmin`
+    gate does not constrain. The gate is reported there, and it bears only on R̃₆₇ at c1s, which uses F_c.
 
 **The choice of a session value, and its reason.**
 - Per cell and leg, the calibration is **one session value** over the floor pool's valid, non-latched rows, as above
@@ -306,14 +341,17 @@ replicate order).
 
 **Pools and bytes.**
 - Every floor pool binds (`STORE_CAP_FLOOR` = 10; the ceiling is max(N·pool, floor)).
-- A store-limited row delivers ≈ W/T̂, so bytes are sized so that every row clears LATE (t ≥ 15 s at c2 and c8,
-  ≥ 5 s at c1s) with ≥ 30 s of LATE windows. The basis is c2 W 16 ≈ 1 700 sym/s (main session), and c8 ≈ 50 sym/s
-  per total slot (§56 W 160: 79.6 Mbit/s):
+- A store-limited row delivers ≈ W/T̂. Bytes are sized for the **faster** plausible rate, so that every row clears
+  LATE (t ≥ 15 s at c2 and c8, ≥ 5 s at c1s) with ≥ 30 s of LATE windows. The 150 s timeout covers the slower rate.
+  - c2: W 16 ≈ 1 700 sym/s (main session), i.e. ≈ 106 sym/s per slot.
+  - c8: its leg-0 loop is like c2's, so sized at ≈ 106 per slot. §56's W 160 basis (≈ 50 per slot, u ≈ 0.75) would
+    make the rows ≈ 2× longer, still within the timeout.
+  - c1s: ≈ 182 sym/s per slot (§56 W 384).
 
-  | pool | c2 | c8 | c1s |
+  | pool | c2 | c8 (fast / slow basis) | c1s |
   |---|---|---|---|
-  | rate | W 16 / 32 / 48: ≈ 1.7 / 3.4 / 5.1 k sym/s | W 32 / 64 / 96: ≈ 1.6 / 3.2 / 4.8 k | W 64 / 128 / 192: ≈ 12 / 23 / 35 k (182 sym/s per slot at W 384) |
-  | bytes | 100 / 200 / 300 MB | 100 / 200 / 300 MB | 1 GB each (≈ 70 / 35 / 23 s) |
+  | rate | W 16 / 32 / 48: ≈ 1.7 / 3.4 / 5.1 k sym/s | W 32 / 64 / 96: ≈ 3.4 / 6.8 / 10 k (1.6 / 3.2 / 4.8 k) | W 64 / 128 / 192: ≈ 12 / 23 / 35 k |
+  | bytes | 100 / 200 / 300 MB (≈ 48 s) | 200 / 400 / 600 MB (≈ 48 s fast, ≈ 100 s slow) | 1 / 1.5 / 2 GB (≈ 70 / 53 / 46 s) |
 
   - Every other arm keeps 600 MB (c2, c8) or 5 GB (c1s control).
   - The per-row timeout is RWM_PERF_TIMEOUT_S = 150 s on every floor-pool row. A DNF is a datum, and the row is
@@ -476,10 +514,16 @@ replicates and floor-pool rows.
   falls below 320, the 256 arm may still be anc 0, and that replicate is then reported, not counted.
 - **It can fire.** Leg 0's window minimum climbs 0.063–0.076 ms per slot between the knee and the band. B2 fires for a
   crossing below ≈ 321–332 under session calibration, which is ≥ 101–112 slots below the band's low edge (433).
+- **The direction of the floor-pool change.** Floors read below W 128 lower T_c, and so the target, which moves the
+  crossing **down, toward the knee**.
+  - Rough size: with a c2-like slope of ≈ 0.02 ms/slot on leg 0 over 128 → 32, T_c falls ≈ 1.9 ms. R̃ at the knee
+    falls ≈ 0.87·1.9/33 ≈ 0.05, and the crossing moves ≈ 25–30 slots lower, to ≈ 405.
+  - That is still ≈ 65 slots above the knee, so B2 remains a gross-miss detector.
+  - The firing threshold, set relative to the in-session knee, is unchanged.
 - **The band (reported context; cap-128-based):** 433–586, anc 1, from single-row corners, beside R6.7's honest-floor crossing 440–446. A session value narrows it. The own-ℓ̂
   sensitivity is 462–605.
 - **Pools:**
-  - 32 / 64 / 96 (P16 / 32 / 48; floor pools, at 100 / 200 / 300 MB);
+  - 32 / 64 / 96 (P16 / 32 / 48; floor pools, at 200 / 400 / 600 MB);
   - 256 / 320 / 384 (the knee at ≈ 340 and R̃ at it);
   - 512 (P1, P3);
   - 1 280 (control).
@@ -509,7 +553,7 @@ UNDERPOWERED is 0.06 throughout.
   - All three go to R6.7.
 - **Marginal cost over the G/C pairs:** 2 extra control G rows. The 18 floor-pool rows are needed anyway for c1s's
   P1, B1 and convergence gate.
-- **Pools:** 64 / 128 / 192 (1 GB each; floor pools), and 2 048 (5 GB; 12 G rows, 10 of them paired with C).
+- **Pools:** 64 / 128 / 192 (1 / 1.5 / 2 GB; floor pools), and 2 048 (5 GB; 12 G rows, 10 of them paired with C).
 
 ---
 
@@ -534,28 +578,41 @@ UNDERPOWERED is 0.06 throughout.
     - C carries no gauge tags.
     - G carries all tags, the witness PASS, the CAPLOG replay PASS, and `kw` / `b0k` after the warm-up cut.
   - launch 2: one c1s W 64 G row (1 GB) and one W 2 048 C row.
-- **Rehearsal checks on the floor pools** (entry 10; the floor pools are unmeasured at all three cells). The rehearsal
-  runs one c2 W 16 row (100 MB), two c8 W 32 rows (100 MB) and two c1s W 64 rows (1 GB), all G.
+- **Rehearsal checks on the floor pools** (entry 10; the floor pools are unmeasured at all three cells). All rows are
+  G:
+  - one c2 W 16 row (sized as in §2);
+  - two c8 W 32 rows, plus **one c8 W 96 row**, the pool leg 1 is expected to calibrate on;
+  - two c1s W 64 rows.
+  - **The coordinator named W 128 rows for the witness check; it moves to these floor-pool rows,** because W 128 is no
+    longer a calibration pool.
   - **Witness check (UNVERIFIED until here).** On every rehearsal G row, per leg, read:
     - `b0k[0]` (expected 0);
     - the first windows' `m` against `l` (expected equal while t < 10 s);
-    - whether **c8 leg 1 gets a sampler attached**, i.e. prints `[SLAW]` lines with `nk` > 0.
+    - **whether c8 leg 1 gets a sampler attached**, read on the W 96 row.
+      - `render_window` prints a `[SLAW] … nk=0` line for a leg whether or not a sampler exists, so an all-zero leg is
+        ambiguous.
+      - The test is therefore: `[DIAG]`'s leg-1 echo count (`sig_us=…/n`, cumulative) grows while `[SLAW]` leg 1 reads
+        `nk=0` on every window ⇒ **unattached**. Both growing ⇒ attached. Neither ⇒ starved, which is not a sampler
+        fault.
     - **Basis.** `record_rtt_sample` (`path.rs:606`) feeds the leg's `WinSampler` (`:616`) and Copa (`:619`) the same
       sample. The sampler is attached by `Scheduler::enable_slaw` from `diag::report`'s first pass (`diag.rs:449`),
       so a sample before that pass would sit in Copa's minimum only.
     - The host `slaw_reachability` run (main session, `d416d59b`: 1/1 pass) asserts its lines internally and prints
       none, so this rehearsal is the first engine reading.
     - **A failing row is reported, not voided.** Its b0p over-reads by the offset, the latch rule sees it, and K = 1
-      becomes a finding. A c8 leg 1 with no sampler leaves c8 without a leg-1 floor, so B2 is NOT scored and the
-      cause is diagnosed.
-  - **Go/no-go per cell**, GO iff at least one of the cell's rehearsal rows passes all of these:
+      becomes a finding.
+    - An **unattached** c8 leg 1 leaves c8 without a leg-1 floor, so B2 is not scored and the cause is diagnosed.
+    - A **starved** leg 1 at 32 / 64 / 96 takes its floor pool from the smallest arm where it qualifies (256 at the
+      latest: 0.008 ms/slot × 160 slots ≈ 1.3 ms, within its 2.5 ms τ). If it qualifies nowhere, B2 is not scored.
+  - **Go/no-go per cell**, GO iff at least one of the cell's floor-pool rehearsal rows passes all of these:
     - (a) the row completes within its 150 s timeout (no DNF);
     - (b) it is not COLLAPSED (§2; X is lenient at these pools);
-    - (c) leg 0 has ≥ 80 % of its LATE windows with `nk` ≥ 10 (c8 leg 1 is reported, since its floor pool may be
-      larger, §2);
+    - (c) leg 0 has ≥ 80 % of its LATE windows with `nk` ≥ 10;
     - (d) `b0k` holds 8 brakes with leg-0 `b0kn` ≥ 10;
-    - (e) it is not LATCHED, and its b0p is within R̃'s tolerance: c1s ≤ 0.6 ms and c8 leg 0 ≤ 3.9 ms (the δ-derivations
-      of entry 8; their bases were caps 256 and 128 and are expected to be no smaller at the floor pools).
+    - (e) it is not LATCHED.
+  - **The absolute b0p limits of entry 8** (c1s ≤ 0.6 ms, c8 leg 0 ≤ 3.9 ms) were derived on cap-256 / cap-128 bases.
+    b0p rises as the pool shrinks (§1.2), so a valid floor-pool row may exceed them. They are now **reported, not
+    gating**. R̃'s sensitivity to the session b̂₀⁺_c is reported instead: 2/T̂ per ms at c1s, and 2·w₀/T̂ at c8.
   - Two rows each at c8 and c1s bound the chance NO-GO: at c8's ≈ 25 % latch rate it is ≈ 6 %, and at c1s's collapse
     share 0.29–0.48 it is ≈ 8–23 %. c2's single row checks timing and samples.
   - **NO-GO:**
@@ -563,6 +620,7 @@ UNDERPOWERED is 0.06 throughout.
     - c8: B2 is not scored. c8's rows still run, for P1, P3, the gate and the reported R̃ / R̃₆₇.
     - c1s: the control sign is dropped. 60b then runs only the G/C pairs and the evicting rows.
   - The decisions and their numbers are recorded in the launch log.
+
 
 - **`[SLAW] q`:** 0.100000 on Bulk G rows, and 0.050000 on Realtime rows.
 - **`[CAPLOG]`:** every logged cap is reproduced by `caplog_replay.py` (seat `plain`, branch `pooled`/`boot`; `tt`
@@ -608,14 +666,14 @@ UNDERPOWERED is 0.06 throughout.
 - **Harness work:** `harness_paths.py` admits reuse-hit only for plans 56 / 57a / 57b. Plan 60 must be added.
 - **Any REAL failure in 60-pre** blocks the session and is diagnosed (§58's rules).
 
-**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus one c2 W 16, two c8 W 32 and two c1s
-W 64 floor-pool rows for §5's witness check and go/no-go. That is 9 rows. Its release binary must equal 60-pre's
+**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus one c2 W 16, two c8 W 32, one c8 W 96 and two c1s
+W 64 floor-pool rows for §5's witness check and go/no-go. That is 10 rows. Its release binary must equal 60-pre's
 `bin_sha`.
 
 **Row times.**
-- Floor-pool rows are sized to ≈ 45–60 s (§2): ≈ 75 s typical with overhead, and 150 s worst (the timeout).
+- Floor-pool rows are sized for ≈ 48 s at the faster rate (§2): ≈ 65–75 s typical with overhead, up to ≈ 115 s at c8's slow basis, and 150 s worst (the timeout).
 - c2 / c8 600 MB rows take 75–90 s.
-- c1s 1 GB floor rows take ≈ 25–70 s (210 s worst), and 5 GB rows 90 s (210 s worst, §57a's convention).
+- c1s floor rows (1 / 1.5 / 2 GB) take ≈ 46–70 s (150 s worst); 5 GB rows take 90 s (210 s worst, §57a's convention).
 - Evicting rows take ≤ 150 s + 40 s.
 
 | launch | block | rows | typical | worst |
@@ -628,16 +686,16 @@ W 64 floor-pool rows for §5's witness check and go/no-go. That is 9 rows. Its r
 | | **total** | **98** | **≈ 2.2 h** | **≈ 3.2 h** |
 | **60b** | release build, or 60a's binary reused | — | 0–6 min | 10 min |
 | | smoke (c1s W 64 G 1 GB, W 2 048 C) | 2 | 3 min | 7 min |
-| | c1s: 64, 128, 192 (1 GB) × 6; 2 048 G × 12; C × 10 | 40 | 50 min | 140 min |
+| | c1s: 64, 128, 192 (1 / 1.5 / 2 GB) × 6; 2 048 G × 12; C × 10 | 40 | 54 min | 122 min |
 | | evicting rows (plan 59) | 5 (+ ≤ 5) | 12 min | 32 min |
-| | **total** | **47 (+ ≤ 5)** | **≈ 1.2 h** | **≈ 3.2 h** |
+| | **total** | **47 (+ ≤ 5)** | **≈ 1.25 h** | **≈ 2.9 h** |
 
-- **Total:** 145 rows (+ ≤ 5) in 60a and 60b, plus the 9 rehearsal rows and the 60-pre suites. Before entry 10 it
+- **Total:** 145 rows (+ ≤ 5) in 60a and 60b, plus the 10 rehearsal rows and the 60-pre suites. Before entry 10 it
   was 127.
-  - The withdrawn W 96 / 128 calibration rows (42) are replaced by 54 floor-pool rows.
+  - The withdrawn W 96 / 128 calibration rows are replaced by 54 floor-pool rows (18 per cell).
   - The c2 B2 / flip arms were already cut.
-- **Why two launches:** together they exceed 4 h worst case (6.4 h).
-- **`LD_HARD`:** launch + 4 h (60a) and + 4 h (60b). The budget guard refuses with less than 3.2 h left in either.
+- **Why two launches:** together they exceed 4 h worst case (6.1 h).
+- **`LD_HARD`:** launch + 4 h (60a) and + 4 h (60b). The budget guard refuses with less than 3.2 / 2.9 h left.
   60-pre holds the locks through `suites_run.sh`, and `LD_HARD` does not apply to it (as §58).
 
 - **Order:** 60-pre, then the rehearsal (the floor-pool witness check and go/no-go), then 60a, then 60b. 60b runs after 60a's smoke, witnesses, R-sign gate and floor convergence gates are read. It reuses 60a's

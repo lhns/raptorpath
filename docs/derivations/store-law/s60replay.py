@@ -5,8 +5,8 @@ Usage:
   python -I s60replay.py witness <client.log>           PER-ROW gate: replay with the row's OWN b0p must equal printed
                                                         R and Rb on every defined window (rc 1 on any mismatch)
   python -I s60replay.py negcontrol <client.log>        the same with every tmin raised by 1 us: must FAIL (rc 0 iff it does)
-  python -I s60replay.py replay <client.log> <cal>      R~ per window: b0 per leg from the replicate's own calibration
-                                                        row, cal = 'p:b0,p:b0' in ms; every other input the row's own
+  python -I s60replay.py replay <client.log> <cal>      R~ per window: cal = 'p:b0[:l],...' in ms per leg, the session
+                                                        calibration (b0 always; l at c2 / c8 = T_c - b0_c; omitted at c1s)
 
     R = sum_i w_i (F_i + sig_i + q*l_i + T_i - Tmin_i) / sum_i w_i T_i
     F_i = min(m_i, l_i + b0_i) + b0_i + 1/2 * max(0, max_j (l_j + b0_j) - (l_i + b0_i))
@@ -81,9 +81,11 @@ def ready(ls):
 def legs_of(ls, cal=None, boot=False, dtmin=0.0):
     out = []
     for d in ls:
-        b0 = cal[int(d['p'])] if cal is not None else num(d, 'b0p')
-        out.append((num(d, 'nk'), num(d, 'tp50'), num(d, 'tmin') + dtmin, num(d, 'm'), num(d, 'l'), b0,
-                    num(d, 'sigb' if boot else 'sig')))
+        # cal[p] = (b0_c, l_c or None): b0 substituted; l substituted when given (c2 / c8: l_c = T_c - b0_c),
+        # the row's own `l` otherwise (c1s). s60-registration.md section 1.1.
+        b0, l = (cal[int(d['p'])] if cal is not None else (num(d, 'b0p'), None))
+        out.append((num(d, 'nk'), num(d, 'tp50'), num(d, 'tmin') + dtmin, num(d, 'm'),
+                    l if l is not None else num(d, 'l'), b0, num(d, 'sigb' if boot else 'sig')))
     return out
 
 
@@ -136,4 +138,8 @@ if __name__ == '__main__':
     elif cmd == 'negcontrol':
         sys.exit(1 if witness(sys.argv[2], dtmin=0.001) else 0)
     elif cmd == 'replay':
-        replay(sys.argv[2], {int(p): float(b) for p, b in (x.split(':') for x in sys.argv[3].split(','))})
+        cal = {}
+        for x in sys.argv[3].split(','):
+            f = x.split(':')
+            cal[int(f[0])] = (float(f[1]), float(f[2]) if len(f) > 2 else None)
+        replay(sys.argv[2], cal)
