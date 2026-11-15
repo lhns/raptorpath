@@ -560,6 +560,14 @@ def check59(path):
     return 0 if ok else 1
 
 
+# ── status 60: the store law's gauge session (plans 60a / 60b), tables and witnesses in plan60.py, readouts in s60_score.py. The arms G<W> / C<W> (bulk) ride the candidate binary family;
+# EVICT (plan 59's evicting seat, registered above) is shared. ──
+import plan60  # noqa: E402  (plan60 imports this module lazily, inside functions)
+for _a60 in plan60.all_arms():
+    sp.ARM_SPEC.setdefault(_a60, ("window", "Rlc", "realtime" if _a60 == plan60.EVICT_ARM else "bulk", "ACTIVE"))
+    AFAM.setdefault(_a60, "CAND")
+
+
 def snapver_problems(arm, cli, srv):
     """Plan 53 witness: `RWM_RECOV_SNAPVER=<0|1>` is always echoed by a plan-53 binary, so an ABSENT token is a failure, not "off". CANDS / BASES read 1 on both ends, every other arm 0."""
     want = "1" if ARM_ENV53.get(arm, (None, None, None))[1] == "1" else "0"
@@ -963,6 +971,21 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t59"] = mbar59_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, row.get("mbps"))
         except Exception as e:      # a reported readout never voids a row
             row["t59"], row["t59_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") in ("60a", "60b"):
+        # Status 60: the RWM_SLAW / RWM_DIAG echo on both ends, the pool echo, the evicting seat's liveness and the seat's binary void a row (replaced once, by the battery); the gauge's readouts
+        # (s60_score.row_metrics) are reported / scored later and never void a row. An EVICT row is Realtime and never prints the reliable-window line (as plan 59 above).
+        import s60_score
+        p.extend(plan60.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA")))
+        if arm == plan60.EVICT_ARM and (row.get("pipe_cli") == ["window", "Rlc", "realtime"] and row.get("pipe_srv") == ["window", "Rlc", "realtime"]
+                and any(REALTIME_ECHO59 in ln for ln in cli) and any(REALTIME_ECHO59 in ln for ln in srv) and "window-line-missing-on-window" in row["problems"]):
+            row["problems"].remove("window-line-missing-on-window")
+            if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+                row["status"] = "LIVE"
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        try:
+            row["t60"] = s60_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t60"], row["t60_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"

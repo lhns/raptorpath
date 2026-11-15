@@ -62,7 +62,7 @@ check("battery: the size is p59_bytes (600 MB at c2-100 only) = BYTES59, the bin
       'p59_bytes() { case "$1" in c2-100) echo 600000000 ;;' in battery and 'preflight_binary "$BIN" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE"' in battery
       and '-eq 5 ] || { echo "ABORT-PLAN59 table' in battery and '-eq 1 ] || { echo "ABORT-PLAN59 smoke' in battery and "place38_parse.py replace59" in battery)
 check("run_all: plan 59 is selectable, rehearsable, single-seat (rides P57's gates), has its stage rep59 with smoke59 / score59 / check59 and its own tests",
-      "  59) P_SMOKE=smoke59; P_SCORE=score59; P_CHECK=check59" in runall and "57a|57b|59) ;; *) echo \"ABORT-REHEARSE" in runall and 'P59=0; [ "$PLAN" = "59" ] && { P59=1; P46=1; P57=1; }' in runall
+      "  59) P_SMOKE=smoke59; P_SCORE=score59; P_CHECK=check59" in runall and "57a|57b|59|60a|60b) ;; *) echo \"ABORT-REHEARSE" in runall and 'P59=0; [ "$PLAN" = "59" ] && { P59=1; P46=1; P57=1; }' in runall
       and "59) smk=smoke59; scr=score59; chk=check59 ;;" in runall and "stage rep59 59" in runall and "./test_mbar59.py" in runall)
 check("run_all: the budget guard for plan 59 is 7 200 s (the worst case with a reference-manifest MISS) and names the plan; LD_BASE_SHA is not required",
       'P57_NEED=7200; P57_TAG="59"' in runall and "ABORT-BUDGET plan $P57_TAG" in runall and ': "${LD_BASE_SHA:?' in runall and '"$PLAN" = "59"' not in runall.split(': "${LD_BASE_SHA:?')[0].split("if [ \"$P41D\" = 1 ]")[-1])

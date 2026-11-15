@@ -102,7 +102,7 @@ check("the battery: 1 smoke row + 63 slots (57a), 2 smoke rows + 30 slots (57b),
 check("run_all: plans 57a / 57b are candidate plans without a BASE tree (P46 yes, P41 no), pre-flight /dev/shm like plan 56, stages rep57a / rep57b",
       'P57A=0; [ "$PLAN" = "57a" ]' in runall and 'P57B=0; [ "$PLAN" = "57b" ]' in runall and "LD_SHM_MIN_KB:-1048576" in runall and "stage rep57a 57a" in runall and "stage rep57b 57b" in runall)
 check("run_all: the budget guard refuses with less than the worst case left: 57a 13 200 s (3 h 40 of the status, LD_HARD = launch + 4 h), 57b 5 400 s (1 h 30, LD_HARD = launch + 2.5 h)",
-      "13200" in runall and "5400" in runall and "ABORT-BUDGET plan 57" in runall and "LD_HARD_MIN_S" in runall)
+      "13200" in runall and "5400" in runall and "ABORT-BUDGET plan $P57_TAG" in runall and "LD_HARD_MIN_S" in runall)      # harness59 renamed the token's tag (P57_TAG); the stale literal failed since b1af3fa4
 check("run_all: the engine suites are reused only on the reference-manifest hit (the SAME ref56-manifest.sha256: main's engine still equals it), the tools tests always run",
       'if [ "$PLAN" = "56" ] || [ "$P57" = 1 ]; then suites_stage56; return; fi' in runall and "ref56-manifest.sha256" in runall)
 # NOT a check: this file runs in the session's `tst parsers` suite, and a later engine commit would fail it there (ABORT-TESTS on exactly the reuse-miss path). The run_all reuse decision is the gate.

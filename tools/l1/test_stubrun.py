@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stub runs of the candidate plans' launch paths (plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59): loopdiag_run_all.sh EXECUTED end to end, against stubs.
+"""Stub runs of the candidate plans' launch paths (plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b): loopdiag_run_all.sh EXECUTED end to end, against stubs.
 
 The static checks in test_harness46/47 and test_bbr48_parse assert strings in the scripts; they did not catch §49 session 5's ABORT-SMOKE (LD_BASE_SHA
 lost in `sudo -n env`) or session 1's ABORT-TESTS (a function called before it was defined). Here the real scripts run in a sandbox:
@@ -82,6 +82,7 @@ echo "$PWD|$*" >> "$STUB_CARGO_LOG"
 case "$1" in
   build)
     T="${CARGO_TARGET_DIR:?}"; mkdir -p "$T/release"
+    if [ -n "${STUB_BIN_FILE:-}" ]; then cp "$STUB_BIN_FILE" "$T/release/raptorpath"; chmod +x "$T/release/raptorpath"; exit 0; fi      # plans 60a / 60b: the test knows the sha it registers
     case "$PWD" in */base/src/raptorpath) kind=BASE ;; *) kind=CAND ;; esac
     { echo '#!/bin/sh'; echo "# stub engine binary $kind built from $PWD"; echo "# RWM_STORE"
       [ "$kind" = CAND ] && echo "# [QCC] t= RWM_QUIC_CC"
@@ -89,6 +90,7 @@ case "$1" in
       echo "# RWM_SUCC_DUMP"                                                # plan 56: the raw successor dump is in main
       echo "# RWM_EMIT_BURST"                                               # plans 57a / 57b: the emission-burst knob is in main
       echo "# RWM_UNIFIED_SHED unified overload shedding ACTIVE"            # plan 59: the shed gate and its liveness echo are in main
+      echo "# RWM_SLAW [SLAW] t="                                           # plans 60a / 60b: the gauge
       { [ "$kind" = CAND ] || [ "$LD_PLAN" = 54b ]; } && echo "# [SNAPV] site= tail"       # plan 54: only CAND (main + the law) has the gauge; plan 54b: both trees (cand54, levb54)
       echo "# fmt  RWM_PLACE_WDIV= RWM_RECOV_SNAPVER= tail"       # plan 53: both trees carry the WDIV and SNAPVER echoes (CW0 runs on CAND's, BASES on BASE's)
       echo 'exit 0'; } > "$T/release/raptorpath"
@@ -109,6 +111,7 @@ PERF_STUB = '''#!/bin/bash
 # stub measurement driver: leaves the logs a perf_rwm_c.sh run leaves in /tmp (stubrun_gen.py)
 export STUB_TMP="$(cygpath -m "${LD_TMPD:?}" 2>/dev/null || echo "$LD_TMPD")"
 [ -n "${STUB_DRVLOG:-}" ] && echo "$1 $2 $4 timeout=${RWM_PERF_TIMEOUT_S-unset}" >> "$STUB_DRVLOG"
+[ -n "${STUB_DRVLOG3:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} slaw=${RWM_SLAW-unset} pool=${RWM_STORE_PATH_POOL-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bin=$(basename "${RWM_BIN:-?}")" >> "$STUB_DRVLOG3"      # plans 60a / 60b: the whole per-row run spec
 [ -n "${STUB_DRVLOG2:-}" ] && echo "$3 reliable=${RWM_C_RELIABLE-unset} unified=${RWM_UNIFIED-unset} gen=${RWM_GEN-unset}" >> "$STUB_DRVLOG2"      # plan 59: hint + the evicting-seat env (a separate log: drv.log's lines are compared whole)
 python3 ./stubrun_gen.py "$@" || { echo "stub driver failed"; exit 1; }
 exit 0
@@ -116,7 +119,8 @@ exit 0
 CAND_SHA = "c" * 40
 BASE_SHA = "b3000701f440d11b1b5ad946c8b36c3623c770cd"
 HIST_BASE = "4926822" + "0" * 33
-SINGLE = ("56", "57a", "57b", "59")        # the single-seat plans: one build, no LD_BASE_SHA, suite reuse by the reference manifest
+SINGLE = ("56", "57a", "57b", "59", "60a", "60b")        # the single-seat plans: one build, no LD_BASE_SHA, suite reuse by the reference manifest
+S60 = ("60a", "60b")
 # FULL (STUBRUN_FULL=1): the registered designs, 96 guard rows / 22 path-event rows plus the smokes. FAST (the default): the sandbox's COPY of the tables and of
 # the design-size checks is shrunk (2 groups = 16 guard rows, 8 path-event rows), so every path and marker is exercised in minutes; the same code runs, on fewer rows.
 FULL = os.environ.get("STUBRUN_FULL") == "1"
@@ -144,6 +148,8 @@ FAST_PATCHES = [
     ("place38_parse.py", "REPS_CAP57 = None  ", "REPS_CAP57 = 2  ", 1),
     ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 5 ] || { echo "ABORT-PLAN59 table', '[ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN59 table', 1),
     ("place38_parse.py", "REPS_CAP59 = None  ", "REPS_CAP59 = 2  ", 1),
+    ("loopdiag_battery.sh", 'want=96; [ "$PLAN" = "60b" ] && want=45', 'want=32; [ "$PLAN" = "60b" ] && want=12', 1),
+    ("plan60.py", "REPS_CAP60 = None  ", "REPS_CAP60 = 2  ", 1),
     ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
     ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
     ("place46_parse.py", "EXPECT_ROWS46 = 22 ", "EXPECT_ROWS46 = 8 ", 1),
@@ -177,6 +183,11 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
             shutil.copyfile(p, os.path.join(tools, f))
     with open(os.path.join(tools, "perf_rwm_c.sh"), "w", newline="\n") as fh:
         fh.write(PERF_STUB)
+    sl_src, sl_dst = os.path.join(HERE, "..", "..", "docs", "derivations", "store-law"), os.path.join(sb["repo"], "docs", "derivations", "store-law")
+    os.makedirs(sl_dst, exist_ok=True)      # plans 60a / 60b: s60_score.py imports s60replay / caplog_replay from here
+    for f in os.listdir(sl_src):
+        if f.endswith((".py", ".log")):
+            shutil.copyfile(os.path.join(sl_src, f), os.path.join(sl_dst, f))
     if not FULL:
         shrink(tools)
     tree = {"raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
@@ -212,7 +223,7 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
 
 def run_launch(sb, plan, base_sha, rehearse=False, prior=None, p46_suites=False, timeout=3600, guard_set=None, extra_env=None):
     """Run loopdiag_run_all.sh in the sandbox; -> (rc, stdout, rowlog lines, cargo log lines)."""
-    for n in ("rows.log", "cargo.log", "drv.log", "drv2.log"):
+    for n in ("rows.log", "cargo.log", "drv.log", "drv2.log", "drv3.log"):
         open(os.path.join(sb["logs"], n), "w").close()
     env = dict(os.environ)
     for k in [k for k in env if k.startswith(("LD_", "RWM_", "STUB_"))]:
@@ -222,7 +233,7 @@ def run_launch(sb, plan, base_sha, rehearse=False, prior=None, p46_suites=False,
         "LD_ROOT": px(sb["root"]), "LD_SHM": px(sb["devshm"]) + "/ld", "LD_DEVSHM": px(sb["devshm"]), "LD_PROCFS": px(sb["proc"]), "LD_TMPD": px(sb["tmpd"]),
         "LD_LOCK_VM": px(sb["locks"]) + "/vm.lock", "LD_LOCK_RP": px(sb["locks"]) + "/rp.lock",
         "LD_PLAN": plan, "LD_CAND_SHA": CAND_SHA, "LD_HARD": str(int(time.time()) + 4 * 3600),
-        "STUB_ROWLOG": px(sb["logs"]) + "/rows.log", "STUB_CARGO_LOG": px(sb["logs"]) + "/cargo.log", "STUB_DRVLOG": px(sb["logs"]) + "/drv.log", "STUB_DRVLOG2": px(sb["logs"]) + "/drv2.log",
+        "STUB_ROWLOG": px(sb["logs"]) + "/rows.log", "STUB_CARGO_LOG": px(sb["logs"]) + "/cargo.log", "STUB_DRVLOG": px(sb["logs"]) + "/drv.log", "STUB_DRVLOG2": px(sb["logs"]) + "/drv2.log", "STUB_DRVLOG3": px(sb["logs"]) + "/drv3.log",
         "STUB_SHORT_ONCE": "1",       # plan 41d: the first BASE row of each long cell at seed 7 is a 10 s row (the VOID rule + the replacement run)
         "STUB_PYTHON": px(sys.executable), "STUB_PYSITE": os.path.abspath(sb["bin"]), "STUB_RAW": os.environ.get("STUBRUN_RAW") or os.path.abspath(os.path.join(HERE, "..", "..", "docs", "l1-raw")),
     })
@@ -901,10 +912,174 @@ def budget59(left_s, ok):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def stub_bin_file(sb):
+    """The prepared stub engine binary of the plan-60 cases: -> (path, sha256). It carries every token the battery's preflight asks for, so the test KNOWS the sha it registers as LD_BIN_SHA_EXPECT."""
+    path = os.path.join(sb["logs"], "stub-engine-bin")
+    body = ("#!/bin/sh\n# stub engine binary for plans 60a / 60b\n# RWM_STORE\n# RWM_STORE_PATH_POOL\n# RWM_UNIFIED_SHED unified overload shedding ACTIVE\n# RWM_SLAW\n# [SLAW] t=\n"
+            "# RWM_SUCC_DUMP RWM_EMIT_BURST\nexit 0\n")
+    with open(path, "w", newline="\n") as fh:
+        fh.write(body)
+    return path, hashlib.sha256(body.encode()).hexdigest()
+
+
+def spec60(cell, arm):
+    import plan60
+    return plan60.arm_bytes(cell, arm), plan60.arm_timeout(cell, arm), plan60.arm_hint(arm), plan60.arm_env(cell, arm)
+
+
+def table60(plan):
+    """The ledger table of the sandbox: the registered table in full mode, the replicate cap of the fast mode (REPS_CAP60 = 2: replicates / pairs / evicting rows 1..2) otherwise."""
+    import plan60
+    return plan60.plan(plan) if FULL else [x for x in plan60.plan(plan) if x[4] <= 2]
+
+
+def driver_lines60(sb):
+    return [ln.split() for ln in open(os.path.join(sb["logs"], "drv3.log")).read().splitlines()]
+
+
+def expect_calls60(rows):
+    """The driver lines (drv3.log) the rows must leave: scenario a, b, hint, bytes, mode, timeout, RWM_SLAW, pool, RWM_C_RELIABLE, RWM_RDIAG, RWM_DIAG, the binary's name."""
+    out = []
+    for cell, _, arm, _, _ in rows:
+        b, tmo, hint, env = spec60(cell, arm)
+        e = dict(x.split("=", 1) for x in env)
+        sc = {"c2-100": ("c2", "c2", "single"), "c8-100": ("c2", "c3", "dual"), "c1s-400": ("c1", "c1", "single")}[cell]
+        out.append([sc[0], sc[1], hint, str(b), sc[2], "timeout=%d" % tmo, "slaw=" + e["RWM_SLAW"], "pool=" + e.get("RWM_STORE_PATH_POOL", "unset"), "reliable=" + e.get("RWM_C_RELIABLE", "unset"),
+                    "rdiag=" + e.get("RWM_RDIAG", "unset"), "diag=1", "bin=raptorpath"])
+    return out
+
+
+def case60(plan, path):
+    """Plans 60a / 60b (the store law's gauge session) on the stubs: the strict suite rule (a reference-manifest MISS aborts), the registered bin_sha check, the per-row run spec at the driver, the 10-row rehearsal and its
+    go/no-go, the RWM_SLAW echo VOID + replacement, the NO-GO decision, the prebuilt binary, and a whole session through the scorer."""
+    import json
+    import plan60
+    tag = "%s/%s" % (plan, path)
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, plan, None)
+        binf, sha = stub_bin_file(sb)
+        extra = {"LD_REF_MANIFEST": ref56_file(sb, miss=(path == "reuse-miss")), "LD_BIN_SHA_EXPECT": ("0" * 64 if path == "bin-sha-mismatch" else sha), "STUB_BIN_FILE": px(binf)}
+        if path == "slaw-echo-void":
+            extra["STUB_BAD60"] = "slawonce"
+        if path == "nogo-rehearse":
+            extra["STUB_BAD60"] = "nogo8"
+        if path == "prebuilt":
+            extra["LD_BIN_PREBUILT"] = px(binf)
+        rehearse = path in ("rehearse", "nogo-rehearse")
+        rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=rehearse, extra_env=extra)
+        e = era(sb)
+        run_dir = os.path.join(sb["root"], "run")
+        failed = os.path.exists(os.path.join(run_dir, "FAILED-ALL"))
+        builds = [c for c in cargo if "|build " in c]
+        tests = [c for c in cargo if "|test " in c]
+        if path in ("reuse-miss", "bin-sha-mismatch"):
+            token = "ABORT-SUITES plan %s suite-reuse MISS" % plan if path == "reuse-miss" else "ABORT-BIN-SHA plan %s" % plan
+            check(f"{tag}: {token.split(' plan')[0]} -> FAILED-ALL, rc 5, NOTHING measured (no row-parser call, no driver call, no ld.log) and no terminal marker",
+                  rc == 5 and token in e and failed and rows == [] and driver_lines60(sb) == [] and "LD-ALL-DONE" not in out and "LD-ALL-REHEARSAL-DONE" not in out
+                  and not any(f in ("ld.log", "smoke.log") for _, _, fs in os.walk(run_dir) for f in fs), (rc, tail(e, 6), rows[:2]))
+            if path == "reuse-miss":
+                check(f"{tag}: the MISS is on record as the suite-reuse decision and no engine suite ran (no cargo test)", re.search(r"suite-reuse MISS", e) is not None and tests == [], tail(e, 8))
+            else:
+                check(f"{tag}: the registered value and the built sha are both on record, and the binary was built (the check follows the build)", sha != "0" * 64 and ("registered " + "0" * 64) in e and len(builds) == 1, tail(e, 6))
+            EXECUTED.add((plan, path))
+            return
+        marker = "LD-ALL-REHEARSAL-DONE" if rehearse else "LD-ALL-DONE"
+        check(f"{tag}: rc 0 and the terminal marker {marker}", rc == 0 and marker in out and not failed, (rc, tail(out, 30), tail(e, 15)))
+        stage = os.path.join(run_dir, "rep" + plan)
+        smoke_txt = open(os.path.join(stage, "smoke.log"), errors="replace").read() if os.path.exists(os.path.join(stage, "smoke.log")) else ""
+        chk = open(os.path.join(stage, "smoke-check.txt"), errors="replace").read() if os.path.exists(os.path.join(stage, "smoke-check.txt")) else ""
+        check(f"{tag}: ONE stage rep{plan} (no guard, no BASE tree, ONE build unless prebuilt), the registered bin_sha equals the built binary and is on record, the smoke check printed SMOKE-PASS",
+              not os.path.exists(os.path.join(run_dir, "guard")) and not os.path.exists(os.path.join(sb["devshm"], "ld", "bin-base", "raptorpath")) and len(builds) == (0 if path == "prebuilt" else 1)
+              and ("equals the registered value " + sha) in e and sha in open(os.path.join(run_dir, "BINSHA.txt")).read() and "SMOKE-PASS" in chk, (builds, tail(e, 6), chk[-600:]))
+        sdir = os.path.join(run_dir, "suites")
+        tt = open(os.path.join(sdir, "TESTS.txt"), errors="replace").read() if os.path.isdir(sdir) and os.path.exists(os.path.join(sdir, "TESTS.txt")) else ""
+        hit = re.search(r"suite-reuse (HIT|MISS)", e)
+        check(f"{tag}: the suite-reuse HIT is on record and the engine suites were skipped (no cargo test; ENGINE-SUITES-REUSED; the tools tests ran; no false suite record)",
+              hit is not None and hit.group(1) == "HIT" and tests == [] and "ENGINE-SUITES-REUSED" in tt and "TEST parsers rc=0" in tt and "TEST bashtests rc=0" in tt
+              and not os.path.exists(os.path.join(sdir, "TESTS-OK")) and os.path.exists(os.path.join(sdir, "TOOLS-TESTS-OK")), (hit and hit.group(0), tests, tt[:300]))
+        calls = driver_lines60(sb)
+        plans_seen = {r.split("plan=")[1].split()[0] for r in rows}
+        check(f"{tag}: every row-parser call ran under LD_PLAN={plan}, with LD_BASE_SHA empty", plans_seen == {plan} and {re.search(r"base_sha=(\S*)", r).group(1) for r in rows} == {""}, (plans_seen, rows[:1]))
+        if rehearse:
+            want_rows = list(plan60.SMOKE[plan]) if plan == "60b" else plan60.plan("60a", rehearsal=True)
+            check(f"{tag}: the rehearsal ran {len(want_rows)} rows ({'both smokes and the 6 floor-pool rows' if plan == '60a' else 'the 2-row smoke'}), no battery (no ld.log), no suites, REHEARSAL-PASS persisted",
+                  len(rows) == len(want_rows) and tests == [] and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")), (len(rows), want_rows[:2]))
+            check(f"{tag}: the driver saw each smoke / rehearsal row's run spec (bytes, timeout, hint, RWM_SLAW, pool) in table order", calls == expect_calls60(want_rows), (calls[:2], expect_calls60(want_rows)[:2]))
+            heads = re.findall(r"^=== rep=(\d+) seed=(\d+) cell=(\S+) arm=(\S+) attempt=\d+ pipeline=window hint=(\S+) .*? bytes=(\d+) arm_env='([^']*)'", smoke_txt, re.M)
+            check(f"{tag}: the smoke ledger heads carry the arm env (RWM_SLAW first) and the per-row hint / bytes",
+                  [(h[2], h[3], h[4], h[5], h[6]) for h in heads] == [(c, a, plan60.arm_hint(a), str(plan60.arm_bytes(c, a)), " ".join(plan60.arm_env(c, a))) for c, _, a, _, _ in want_rows], heads[:2])
+            if plan == "60a":
+                gng = dict(re.findall(r"GO-NOGO\s+(c2|c8|c1s)\S*\s+(GO|NO-GO)", chk))
+                want_go = {"c2": "GO", "c8": "NO-GO" if path == "nogo-rehearse" else "GO", "c1s": "GO"}
+                check(f"{tag}: the go/no-go is printed per cell ({want_go}): " + ("c8's starved leg 0 reads NO-GO (a decision, the rehearsal still passes)" if path == "nogo-rehearse" else "all three cells GO on the stub's healthy rows"),
+                      gng == want_go and "SMOKE-FAIL" not in chk, (gng, chk[-900:]))
+            EXECUTED.add((plan, path))
+            return
+        # a whole session
+        led = led56(stage)
+        table = table60(plan)
+        want_slots = [(c, a, sd, str(rp)) for c, _, a, sd, rp in table]
+        got_slots = [(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in led]
+        if path == "slaw-echo-void":
+            first = [r for r in led if (r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) == want_slots[0]]
+            others = [r for r in led if (r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) != want_slots[0]]
+            ldtxt = open(os.path.join(stage, "ld.log"), errors="replace").read()
+            check(f"{tag}: the first scored slot echoed RWM_SLAW wrongly: its first row is WITNESS-FAIL on gate-slaw, 'REPLACE60 ... reason=slaw-echo' is in the ledger, the replacement row is LIVE and clean; every other slot has one row",
+                  len(first) == 2 and first[0]["status"] == "WITNESS-FAIL" and any(x.startswith("gate-slaw") for x in first[0]["problems"]) and first[1]["status"] == "LIVE" and first[1]["problems"] == []
+                  and re.search(r"^REPLACE60 %s %s s%s rep=%s reason=slaw-echo" % (want_slots[0][0], want_slots[0][1], want_slots[0][2], want_slots[0][3]), ldtxt, re.M) is not None
+                  and len(others) == len(want_slots) - 1 and [(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in led if r not in first] == want_slots[1:], [(r["status"], r["problems"]) for r in first])
+            check(f"{tag}: the replacement ran the same arm: the driver was called {len(want_slots) + 3} times (2 smoke rows, the VOID row, its replacement, the rest)", len(calls) == len(want_slots) + 3 and calls[2] == calls[3], len(calls))
+            sc = open(os.path.join(stage, "score.txt"), errors="replace").read()
+            check(f"{tag}: the score reports the replaced slot and a VERDICT60 line", "VERDICT60" in sc and re.search(r"REPLACED.*G16", sc) is not None, sc[:600])
+            EXECUTED.add((plan, path))
+            return
+        check(f"{tag}: the ledger holds exactly the table's slots in the table's order ({len(want_slots)}), one row each, every row LIVE with its t60 readouts, no t60 error, no problem on any row",
+              got_slots == want_slots and all(r["status"] == "LIVE" and r.get("t60") and not r.get("t60_error") and r["problems"] == [] for r in led),
+              (len(led), [(r["cell"], r["arm"], r["status"], r["problems"], r.get("t60_error")) for r in led if r["status"] != "LIVE" or r["problems"] or r.get("t60_error")][:3], got_slots[:3], want_slots[:3]))
+        smoke_rows = list(plan60.SMOKE[plan])
+        check(f"{tag}: the driver saw every row's run spec in order: the 2 smoke rows, then the table (bytes, timeout, hint, RWM_SLAW, RWM_STORE_PATH_POOL, RWM_C_RELIABLE, RWM_RDIAG, RWM_DIAG=1, the one binary)",
+              calls == expect_calls60(smoke_rows + table), (len(calls), calls[:3], expect_calls60(smoke_rows + table)[:3]))
+        logs = {}
+        ddir = os.path.join(stage, "diag-ld")
+        for fn in os.listdir(ddir) if os.path.isdir(ddir) else []:
+            m = re.match(r"(\S+?)@def-(\S+?)-s(\d+)-r(\d+)-a1-c\.log$", fn)
+            if m:
+                logs[(m.group(1), m.group(2), m.group(3), m.group(4))] = open(os.path.join(ddir, fn), errors="replace").read()
+        gauge_ok = bool(logs) and all((txt.count("\n[SLAW] ") > 0 or txt.startswith("[SLAW] ")) == plan60.gauge_on(k[1]) for k, txt in logs.items())
+        check(f"{tag}: the per-row logs agree with the arms: every G / EVICT row printed [SLAW] windows, every C row none ({len(logs)} logs)", gauge_ok and len(logs) == len(want_slots), (len(logs), [k for k in logs][:3]))
+        shas = {r["bin_sha"] for r in led}
+        check(f"{tag}: one binary ran every row, its sha is the registered one, and the seat comparison executed on every row", shas == {sha} and all(r["sha_checked"] is True for r in led), shas)
+        ldtxt = open(os.path.join(stage, "ld.log"), errors="replace").read()
+        envl = ldtxt.split("=== env ")[-1].split("\n")[0]
+        check(f"{tag}: the env scrub withholds RWM_SLAW and RWM_THREE_TERM (and the rest), the instrument env is the timeout alone", " RWM_SLAW RWM_THREE_TERM " in envl and "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0], envl[:400])
+        if plan == "60b":
+            ev = [r for r in led if r["arm"] == "EVICT"]
+            ctl = [r for r in led if r["arm"] in ("G2048", "C2048")]
+            check(f"{tag}: the evicting rows ran plan 59's arm (Realtime, RWM_C_RELIABLE=0) LIVE with the gauge on; the c1s control interleaves G and C at 5 GB / 210 s",
+                  ev and all(r["status"] == "LIVE" for r in ev) and sum(1 for c in calls if c[2] == "realtime") == len(ev) + 0 and all(c[8] == "reliable=0" for c in calls if c[2] == "realtime")
+                  and ctl and all(r["bytes"] == 5_000_000_000 for r in ctl) and {c[5] for c in calls if c[3] == "5000000000"} == {"timeout=210"}, (len(ev), len(ctl)))
+        sc = open(os.path.join(stage, "score.txt"), errors="replace").read()
+        m = re.search(r"^VERDICT60 \S+ slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+)", sc, re.M)
+        check(f"{tag}: the score prints a VERDICT60 line counting every slot, with every row live and none replaced, and the labelled readouts (LABEL60 lines)",
+              m is not None and int(m.group(1)) == len(want_slots) and int(m.group(3)) == len(led) and int(m.group(4)) == 0 and int(m.group(5)) == 0 and "LABEL60 " in sc, sc[-1200:])
+        check(f"{tag}: DONE-ALL and score.txt", os.path.exists(os.path.join(run_dir, "DONE-ALL")) and os.path.exists(os.path.join(run_dir, "score.txt")), tail(e, 12))
+        if path == "prebuilt":
+            check(f"{tag}: LD_BIN_PREBUILT installed the prior launch's binary (no cargo build) and its sha was still checked against the registered one", builds == [] and "binary prebuilt from" in e and ("equals the registered value " + sha) in e, tail(e, 8))
+        EXECUTED.add((plan, path))
+    finally:
+        if os.environ.get("STUBRUN_KEEP"):
+            print("     kept sandbox", root)
+        else:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 SUITES_DIR = {}          # plan -> persisted dir of the plan's full run (the green suite run the prior-tests cases reuse)
 
 
 def case(plan, path):
+    if plan in S60:
+        return case60(plan, path)
     base_sha = None if (path == "historical-base" or plan in SINGLE) else BASE_SHA
     rehearse = path not in ("full", "reuse-hit", "reuse-miss")
     tag = "%s/%s" % (plan, path)
@@ -1110,7 +1285,7 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59") for v in hp.HARNESS_PATHS[p]]
+all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b") for v in hp.HARNESS_PATHS[p]]
 phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests")]
 phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests")]
 t_all = time.time()
@@ -1193,7 +1368,7 @@ if not only:
     wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
     check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
-    check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, whose reuse is the reference manifest)",
-          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59"})
+    check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, whose reuse is the reference manifest)",
+          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

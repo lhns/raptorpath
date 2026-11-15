@@ -295,6 +295,182 @@ def span59(k, armed, rr_zero=False):
     return (f"[SPAN] t={0.5 * k:.1f}s ack={240 * k} win=[{240 * k},{240 * k + 64}] wsize=64 a_star=Some(12) delta=Some(0.5) owed=0.10 rr={0.0 if rr_zero else 0.1 + 0.001 * k:.3f} debt={0.3:.2f} retx_buf=5{sh}")
 
 
+# ── plans 60a / 60b (s60_score.row_metrics): the store law's gauge rows at c2-100 / c8-100 / c1s-400. A G / EVICT row (RWM_SLAW=1) prints the per-window [WSTAT] / [SLAW] / [WSTORE] / [SLAWC] lines of the
+# engine's render_window format (R / Rb computed with the replay's slaw_r, so the per-row witness holds); a C row (RWM_SLAW=0) prints none. The loop dynamics are KNOWN: leg floor + 0.02 ms per slot of window
+# (capped), brakes 0 then 0.1 + 0.01 k ms (so b0k[0] = 0 and b0p = 0.18), m = l = tmin - 0.18 afterwards. STUB_BAD60 (comma list): slawonce (the first scored slot echoes RWM_SLAW on the wrong value: its replacement is
+# right), nogo8 (every c8 row starves: leg 0 nk = 4, so the rehearsal's c8 go/no-go reads NO-GO), unattached (c8 leg 1 never gets a sampler: nk = 0 on every window while [DIAG]'s echo count grows).
+# STUB_DNF60=<arm>:<seed>: that arm's rows at that seed time out. ──
+BAD60 = {"slawonce", "nogo8", "unattached"}
+FLOOR60 = {"c2": (9.0,), "c8": (9.0, 14.0), "c1s": (2.0,)}
+
+
+def _s60replay():
+    d = os.path.join(HERE, "..", "..", "docs", "derivations", "store-law")
+    if d not in sys.path:
+        sys.path.insert(0, d)
+    import s60replay
+    return s60replay
+
+
+def gates60(lines, slaw, pool):
+    """The engine's [GATES] echo of the knobs the s60 rows vary: RWM_SLAW (appended: the fixture predates it) and RWM_STORE_PATH_POOL; RWM_DIAG=1 and RWM_THREE_TERM=0 are already in the fixture's echo."""
+    out = []
+    for ln in lines:
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_(STORE_PATH_POOL|SLAW)=\S+", "", ln) + f" RWM_STORE_PATH_POOL={pool} RWM_SLAW={slaw}"
+        out.append(ln)
+    return out
+
+
+def qf60(w):
+    return min(0.02 * w, 10.0)
+
+
+def gauge60(fam, w, n, bad, evict):
+    pool60 = w // len(FLOOR60[fam])
+    """-> {k: [lines]}: window k's [WSTAT] / [SLAW] / [WSTORE] / [SLAWC] lines (all legs), k = 1..n."""
+    sr = _s60replay()
+    floors = FLOOR60[fam]
+    nleg = len(floors)
+    q = 0.1
+    brakes = {p: [] for p in range(nleg)}
+    out = {}
+    anc_bind = [0, 0]
+    for k in range(1, n + 1):
+        t = 0.25 * k
+        legs = []
+        for p in range(nleg):
+            nk = 20
+            if fam == "c8" and p == 1 and "unattached" in bad:
+                nk = 0
+            if fam == "c8" and p == 0 and "nogo8" in bad:
+                nk = 4
+            tmin = floors[p] + qf60(w) * (0.6 if p else 1.0)
+            tp50, tmean = tmin + 1.2, tmin + 1.25
+            brake = 0.0 if k == 1 else 0.1 + 0.01 * k
+            if k <= 8:
+                brakes[p].append(brake)
+            else:
+                brake = 0.15
+            m = tmin - (max(brakes[p][:8]) if k > 8 else brake)
+            legs.append(dict(p=p, nk=nk, tmin=tmin, tp50=tp50, tmean=tmean, m=m, l=m, brake=brake, ready=k >= 8))
+        lines = []
+        live = [d for d in legs if d["nk"] > 0]
+        ready = k >= 8 and all(d["ready"] for d in live)
+        r = rb = None
+        if ready and live:
+            for boot in (False, True):
+                inp = [(d["nk"], d["tp50"], d["tmin"], d["m"], d["l"], round(max(brakes[d["p"]][:8]), 3), 0.3 if boot else 0.3) for d in live]
+                v = sr.slaw_r(inp, q)
+                if boot:
+                    rb = v
+                else:
+                    r = v
+        for d in legs:
+            p = d["p"]
+            if d["nk"] == 0:
+                lines.append(f"[WSTAT] t={t:.2f} k={k} p={p} nk=0 qb50=- qbmax=- qcwnd=5000 bdpb=8000")
+                lines.append(f"[SLAW] t={t:.2f} k={k} p={p} n={w} W={w} nk=0 aw=0.5000 qb=- qbt=- qcol=1/{k}")
+                continue
+            b0 = round(max(brakes[p][:8]), 3) if k >= 8 else None
+            lines.append(f"[WSTAT] t={t:.2f} k={k} p={p} nk={d['nk']} nkq={d['nk']} tmin={d['tmin']:.3f} p10={d['tmin'] + .04:.3f} p50={d['tp50']:.3f} p90={d['tp50'] + .14:.3f} "
+                         f"tmean={d['tmean']:.3f} m={d['m']:.3f} l={d['l']:.3f} qb50=7 qbmax=7 qcwnd=125000 bdpb=250000")
+            b0k = ",".join(f"{x:.3f}" for x in brakes[p][:8]) if k == 8 else "-"
+            b0kn = ",".join(["20"] * 8) if k == 8 else "-"
+            err = f"{d['brake'] - b0 - q * d['l']:.3f}" if b0 is not None else "-"
+            lines.append(f"[SLAW] t={t:.2f} k={k} p={p} n={w} W={w} aw=0.5000 nk={d['nk']} tmin={d['tmin']:.3f} tp50={d['tp50']:.3f} tmean={d['tmean']:.3f} m={d['m']:.3f} l={d['l']:.3f} "
+                         f"b0p={'-' if b0 is None else f'{b0:.3f}'} b0run={b0 if b0 is not None else 0.1:.3f} b0k={b0k} b0kn={b0kn} kw={k} sig=0.300 sigw=0.140 "
+                         f"sigb={'-' if b0 is None else '0.300'} gap={'-' if b0 is None else '0.000'} anc={'-' if b0 is None else '0'} ancf=0/{max(0, k - 7)} err={err} "
+                         f"R={'-' if r is None else f'{r:.5f}'} Rb={'-' if rb is None else f'{rb:.5f}'} used={'-' if r is None else len(live)} xs=0 xb=0 ra=0/0 q={q:.6f} qb=7 qbt=7.000 qcol=1/{k}")
+        rr = 0.1 + 0.001 * (k // 2)
+        fec = f"fec=0.010000/1.2000/{rr:.5f}/12.00/20" if evict else "fec=-/-/-/-/0"
+        lines.append(f"[WSTORE] t={t:.2f} k={k} tw=250.0 n={w} W={w} aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=20/50/60/70 ackw=1 {fec} dbt_acc=10.00 dbt_em=5 dbt_share=0.5000 "
+                     f"dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00")
+        if k % 4 == 0:
+            import math
+            nl = len(floors)
+            psum = 400.0 + k
+            ceiling = max(nl * pool60, 10)
+            cap = min(max(math.ceil(2.0 * psum), 10), ceiling)      # caplog_replay's pooled branch
+            lines.append(f"[CAPLOG] i={k // 4} t={k * 250000} seat=plain br=pooled on=1 sum=1 dc=0 b=1.0 q={0.05 + 0.05 * (0.5 / 1.5):.9f} n={nl} psum={psum} gain=2.0 floor=10 pool={pool60} smax=4096 boot=128 cap={cap} rep=0")
+        lines.append(f"[SLAWC] t={t:.2f} k={k} gaprep=0 gaptrunc=0 gaptrunc_frac=- c09rep=0 c09bind=0 c09_frac=-")
+        out[k] = lines
+    return out
+
+
+def plan60_cli(cli, fam, w, nbytes, slaw, evict, bad):
+    """-> the client log lines of an s60 row: the fixture's non-[DIAG] lines, then 220 ticks of [DIAG] (known loop dynamics) interleaved with the gauge's window lines (G / EVICT rows) and, for EVICT, plan 59's
+    per-tick src / cod / cum / wait / wake fields and a [SPAN] line every 0.5 s."""
+    n = 220
+    floors = FLOOR60[fam]
+    rl = run_lines(fam, False, n=n)
+    g = gauge60(fam, w, n, bad, evict) if slaw else {}
+    out, k = [], 0
+    for ln in rl:
+        if not ln.startswith("[DIAG]"):
+            out.append(ln)
+            continue
+        k += 1
+        legs = [(1000 + 100 * k, 125000, int(round(floors[i] + qf60(w) * (0.6 if i else 1.0) + 1.0)), 3) for i in range(len(floors))]
+        d = diag48(0.25 * k, legs, [(5000 + 100 * k, 5000 + 100 * k) for _ in floors])
+        d = d.replace("rtt=15.8ms", f"rtt={floors[0] + qf60(w) + 1.0:.1f}ms").replace("win=838/838", f"win={int(0.85 * w)}/{w}")
+        parts = d.split(" rtp_us=2392")
+        d = "".join(parts[i] + (f" rtp_us={int(floors[i] * 1000)}" if i < len(floors) else "") for i in range(len(parts)))
+        d = re.sub(r"sig_us=38/n1", f"sig_us=38/n{20 * k}", d)
+        if evict:
+            d = diag59(d, k, True)
+        else:
+            d = d + extras53(k, n_src=200)
+        out.append(d)
+        if evict and k % 2 == 0:
+            out.append(span59(k // 2, True))
+        out.extend(g.get(k, []))
+    return out
+
+
+def gen60(cli, srv, drv, nbytes, fam, hint):
+    bad = set(x for x in os.environ.get("STUB_BAD60", "").split(",") if x)
+    slaw_env = os.environ.get("RWM_SLAW", "1")
+    evict = os.environ.get("RWM_C_RELIABLE") == "0"
+    nlive = 2 if fam == "c8" else 1
+    pool = int(os.environ.get("RWM_STORE_PATH_POOL") or 2048)
+    w = nlive * pool
+    echo_slaw = slaw_env
+    if "slawonce" in bad:
+        # the smoke is invocations 0 and 1 (right), the first scored slot invocation 2 (the wrong RWM_SLAW on the client end), its replacement invocation 3 (right)
+        marker = os.path.join(TMP, "slaw-count")
+        seen = len(open(marker).read()) if os.path.exists(marker) else 0
+        open(marker, "a").write("x")
+        if seen == 2:
+            echo_slaw = "0" if slaw_env == "1" else "1"
+    rl = plan60_cli(cli, fam, w, nbytes, slaw_env == "1", evict, bad)
+    info = [POOL_INFO.format(n=pool)]
+    cli = gates60(cli, echo_slaw, pool)
+    srv = gates60([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]", "[RANK]"))], slaw_env, pool)
+    if evict:
+        cli = seat59(cli, True, "cli")
+        srv = seat59(srv, True, "srv")
+        drv = [re.sub(r"hint=bulk( .*)$", r"hint=realtime\1 reliable=0", ln) if "--- RWM-C perf" in ln else ln for ln in drv]
+    else:
+        cli = cli + info
+        srv = srv + info
+    cli = cli + rl + hold54(True)[:nlive]
+    srv = srv + [RX52, SUCC53] + rank54(0)
+    mbps = 100.0 * w / (w + 100.0)
+    secs = max(20.0, int(nbytes) * 8 / 1e6 / mbps)
+    hnt = "realtime" if evict else "bulk"
+    drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
+    cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":%s,"hint":"%s","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, hnt, int(nbytes) * 8 / secs / 1e6, secs),
+                                                                                summary54(secs, int(nbytes))]
+    arm = ("G" if slaw_env == "1" else "C") + str(w)
+    if os.environ.get("STUB_DNF60") == "%s:%s" % ("EVICT" if evict else arm, os.environ.get("SEED")):
+        dnf = '{"bytes":%s,"dnf":true,"hint":"%s","proto":"rp-native","run":1}' % (nbytes, hnt)
+        tail = '{"bytes":%s,"dnf":1,"hint":"%s","proto":"rp-native","runs":1,"summary":true}' % (nbytes, hnt)
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
+        drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
+    return cli, srv, drv
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -511,6 +687,8 @@ def main(argv):
             tail = '{"bytes":%s,"dnf":1,"hint":"realtime","proto":"rp-native","runs":1,"summary":true}' % nbytes
             cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
+    elif plan in ("60a", "60b"):
+        cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
     if plan == "41d" and os.environ.get("LD_WITNESS54") == "1":
