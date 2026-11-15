@@ -1,0 +1,24 @@
+BASE
+   0- 4s lag=  8727 retx= 360/s cod= 66/s on_leg1=0.63 pooled_rtt= 234ms fires/rep=0.85 cool_supp=0.813
+   4- 8s lag= 13575 retx= 327/s cod= 70/s on_leg1=0.73 pooled_rtt= 261ms fires/rep=0.79 cool_supp=0.948
+   8-12s lag= 27750 retx= 256/s cod= 60/s on_leg1=0.72 pooled_rtt= 259ms fires/rep=0.61 cool_supp=0.969
+  12-16s lag= 49275 retx= 184/s cod= 47/s on_leg1=0.66 pooled_rtt= 377ms fires/rep=0.46 cool_supp=0.979
+  16-20s lag= 57918 retx= 270/s cod= 53/s on_leg1=0.54 pooled_rtt= 321ms fires/rep=0.72 cool_supp=0.974
+  20-24s lag= 59225 retx= 364/s cod= 61/s on_leg1=0.65 pooled_rtt= 280ms fires/rep=1.01 cool_supp=0.970
+  24-28s lag= 59395 retx= 357/s cod= 63/s on_leg1=0.69 pooled_rtt= 286ms fires/rep=0.97 cool_supp=0.970
+  28-32s lag= 61575 retx= 321/s cod= 62/s on_leg1=0.65 pooled_rtt= 277ms fires/rep=0.85 cool_supp=0.969
+  32-36s lag= 64054 retx= 300/s cod= 64/s on_leg1=0.66 pooled_rtt= 273ms fires/rep=0.76 cool_supp=0.968
+  36-40s lag= 69851 retx= 284/s cod= 69/s on_leg1=0.60 pooled_rtt= 246ms fires/rep=0.71 cool_supp=0.968
+  40-44s lag= 73355 retx= 330/s cod= 63/s on_leg1=0.65 pooled_rtt= 265ms fires/rep=0.87 cool_supp=0.967
+CAND
+   0- 4s lag= 14017 retx= 312/s cod= 60/s on_leg1=0.64 pooled_rtt= 316ms fires/rep=0.72 cool_supp=0.876
+   4- 8s lag= 29244 retx= 229/s cod= 55/s on_leg1=0.76 pooled_rtt= 451ms fires/rep=0.54 cool_supp=0.978
+   8-12s lag= 51062 retx= 189/s cod= 50/s on_leg1=0.74 pooled_rtt= 462ms fires/rep=0.45 cool_supp=0.976
+  12-16s lag= 74452 retx= 162/s cod= 46/s on_leg1=0.72 pooled_rtt= 571ms fires/rep=0.38 cool_supp=0.983
+  16-20s lag= 88308 retx= 239/s cod= 62/s on_leg1=0.74 pooled_rtt= 386ms fires/rep=0.56 cool_supp=0.975
+  20-24s lag= 86139 retx= 314/s cod= 80/s on_leg1=0.70 pooled_rtt= 215ms fires/rep=0.76 cool_supp=0.962
+  24-28s lag= 89100 retx= 351/s cod= 83/s on_leg1=0.75 pooled_rtt= 218ms fires/rep=0.83 cool_supp=0.965
+  28-32s lag= 90197 retx= 329/s cod= 73/s on_leg1=0.79 pooled_rtt= 253ms fires/rep=0.77 cool_supp=0.966
+  32-36s lag= 92013 retx= 326/s cod= 77/s on_leg1=0.76 pooled_rtt= 242ms fires/rep=0.74 cool_supp=0.963
+  36-40s lag= 87896 retx= 360/s cod= 86/s on_leg1=0.71 pooled_rtt= 200ms fires/rep=0.88 cool_supp=0.955
+  40-44s lag= 83461 retx= 320/s cod= 83/s on_leg1=0.68 pooled_rtt= 197ms fires/rep=0.79 cool_supp=0.956

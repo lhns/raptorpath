@@ -20,11 +20,24 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 use std::time::Duration;
 
 use raptorpath::net::{
-    cooldown_elapsed, hole_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
+    cooldown_elapsed, hole_nack_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
     mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us,
-    retx_cooldown_us, shed_allowed, shed_deadline_us, sweep_timeout_us, time_threshold_ripe,
-    MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK, NACK_RETX_COOLDOWN_FLOOR_US,
+    retx_cooldown_us, shed_allowed, shed_deadline_us, tail_sweep_timeout_us, time_threshold_ripe,
+    sack_to_gaps, MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK, MAX_SACK_RANGES,
+    NACK_RETX_COOLDOWN_FLOOR_US,
 };
+
+/// The sender's per-report gap horizon, read from the engine itself: how many
+/// gaps `sack_to_gaps` returns for a report with more isolated holes than any
+/// cap, so the model follows whichever constant the engine holds (no edit here).
+pub fn gap_horizon() -> usize {
+    static H: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *H.get_or_init(|| {
+        let n = MAX_NACK_GAPS.max(MAX_SACK_RANGES) as u64 + 1;
+        let ranges: Vec<(u64, u64)> = (1..=n).map(|i| (2 * i, 2 * i)).collect();
+        sack_to_gaps(0, &ranges).len()
+    })
+}
 
 // ───────────────────────────── env plumbing ─────────────────────────────
 
@@ -112,9 +125,6 @@ pub struct Arm {
     pub name: &'static str,
     pub recov_mp: bool,
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP`: the tail sweep + hole refresh on
-    /// `derived_recovery_round_us` instead of the [25, 100] ms clamped law.
-    pub derived_sweep: bool,
 }
 pub const ARMS: &[Arm] = &[
     // `RWM_RECOV_MP` default ON — the shipped stack.
@@ -122,28 +132,18 @@ pub const ARMS: &[Arm] = &[
         name: "shipped",
         recov_mp: true,
         recov_sp: false,
-        derived_sweep: false,
     },
     // Neither RFC channel: the legacy `srtt/2` age gate.
     Arm {
         name: "legacy",
         recov_mp: false,
         recov_sp: false,
-        derived_sweep: false,
     },
     // `RWM_RECOV_SP`: the RFC 9002 §6.1.2 time threshold at N = 1 too.
     Arm {
         name: "sp",
         recov_mp: true,
         recov_sp: true,
-        derived_sweep: false,
-    },
-    // `RWM_DERIVED_SWEEP` on top of the shipped stack.
-    Arm {
-        name: "ds",
-        recov_mp: true,
-        recov_sp: false,
-        derived_sweep: true,
     },
 ];
 
@@ -364,17 +364,14 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     // The receiver's refresh cadence reads the Copa clock (`PathState::srtt`),
     // not the estimator — so the clock argument does not move it. The engine
     // has the same asymmetry; keep it faithful.
-    let refresh_us = hole_refresh(
-        cell.arm.derived_sweep,
-        Some(Duration::from_micros(copa.iter().copied().max().unwrap_or(0))),
-        cal.jitter_us,
-        raptorpath::net::HOLE_NACK_REFRESH_MIN,
-    )
+    let refresh_us = hole_nack_refresh(Some(Duration::from_micros(
+        copa.iter().copied().max().unwrap_or(0),
+    )))
     .as_micros() as u64;
     // The sender's tail-sweep round: the pooled estimator clock (the
     // argument under test on the `clock` axis), through the shipped
-    // `sweep_timeout_us` — the legacy clamp with `derived_sweep` off.
-    let sweep_us = sweep_timeout_us(cell.arm.derived_sweep, pooled_us, cal.jitter_us);
+    // `tail_sweep_timeout_us`.
+    let sweep_us = tail_sweep_timeout_us(pooled_us);
     let shed_deadline = shed_deadline_us(0.5, cell.rtprop_us);
     // ρ budget: the residual the (δ,ρ,r) design already concedes — modelled
     // as the cell's own loss class (there is no FEC in the recovery plane).
@@ -506,7 +503,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
                     obs_span.push((highest_seen + 1).saturating_sub(frontier));
                 }
                 if any_arrival && (arrived_since_ack > 0 || !missing.is_empty()) {
-                    // The first `MAX_NACK_GAPS` maximal missing runs — the
+                    // The first `gap_horizon()` maximal missing runs — the
                     // WindowAck's SACK payload.
                     let mut gaps: Vec<(u64, u64)> = Vec::new();
                     let mut it = missing.iter().copied();
@@ -517,14 +514,14 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
                                 hi = s;
                             } else {
                                 gaps.push((lo, hi));
-                                if gaps.len() >= MAX_NACK_GAPS {
+                                if gaps.len() >= gap_horizon() {
                                     break;
                                 }
                                 lo = s;
                                 hi = s;
                             }
                         }
-                        if gaps.len() < MAX_NACK_GAPS {
+                        if gaps.len() < gap_horizon() {
                             gaps.push((lo, hi));
                         }
                     }

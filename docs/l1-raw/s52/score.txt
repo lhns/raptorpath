@@ -1,0 +1,5 @@
+C8 RECOVERY LEVERS SESSION (status 52): suites/TESTS.txt, guard/score.txt (scored), rep52/score.txt (REPORTED ONLY)
+== guard
+VERDICT GATE-41c PASS
+== rep52
+VERDICT52 REPORTED-ONLY rows=30/30 live=30

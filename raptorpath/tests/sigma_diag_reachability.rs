@@ -33,11 +33,15 @@ mod loopback;
 /// late by each tick's loop latency, so the floor keeps a margin of 4).
 const MIN_TICKS: usize = 8;
 
-/// The arm: the DIAG surface on, as every L1 battery arm runs it. No gate
-/// here changes a law.
+/// The arm: the DIAG surface on, as every L1 battery arm runs it. Only
+/// `RWM_STORE=4096` changes a law (it fixes the store size, see below); the
+/// other entries are diagnostics and logging.
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
+    // A fixed open store (status §49): the path then runs into its own
+    // congestion window, the case these clauses need. `RWM_PLAIN_RS=1`
+    // reached it through the deleted honest-cap arm.
+    ("RWM_STORE", "4096"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

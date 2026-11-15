@@ -46,9 +46,8 @@ const MIN_TICKS: usize = 8;
 
 /// The arm: the DIAG surface on, as every L1 battery arm runs it. The
 /// candidate gauges have no gate of their own.
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

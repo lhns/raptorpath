@@ -1,0 +1,38 @@
+== Shed budget rows (tau = 1e-3/eps = 0.021 at eps .048), A* = W of the block forms
+   A* 3 r 0.2: B 0.051 (2B 0.102) | shipped-C6 0.539:SEP  shipped-C5 0.579:SEP  phi-C6 0.539:SEP  phi-C5 0.579:SEP  C6-C5 0.040:no  shipped-phi 0.000:no
+   A* 3 r 0.29: B 0.050 (2B 0.101) | shipped-C6 0.560:SEP  shipped-C5 0.618:SEP  phi-C6 0.560:SEP  phi-C5 0.618:SEP  C6-C5 0.058:no  shipped-phi 0.000:no
+   A* 3 r 0.34: B 0.052 (2B 0.103) | shipped-C6 0.559:SEP  shipped-C5 0.627:SEP  phi-C6 0.559:SEP  phi-C5 0.627:SEP  C6-C5 0.067:no  shipped-phi 0.000:no
+   A* 3 r 0.5: B 0.054 (2B 0.108) | shipped-C6 0.499:SEP  shipped-C5 0.573:SEP  phi-C6 0.499:SEP  phi-C5 0.573:SEP  C6-C5 0.074:no  shipped-phi 0.000:no
+   A* 4 r 0.2: B 0.050 (2B 0.100) | shipped-C6 0.542:SEP  shipped-C5 0.581:SEP  phi-C6 0.542:SEP  phi-C5 0.581:SEP  C6-C5 0.039:no  shipped-phi 0.000:no
+   A* 4 r 0.29: B 0.052 (2B 0.103) | shipped-C6 0.554:SEP  shipped-C5 0.604:SEP  phi-C6 0.554:SEP  phi-C5 0.604:SEP  C6-C5 0.050:no  shipped-phi 0.000:no
+   A* 4 r 0.34: B 0.053 (2B 0.106) | shipped-C6 0.542:SEP  shipped-C5 0.594:SEP  phi-C6 0.542:SEP  phi-C5 0.594:SEP  C6-C5 0.051:no  shipped-phi 0.000:no
+   A* 4 r 0.5: B 0.054 (2B 0.109) | shipped-C6 0.441:SEP  shipped-C5 0.498:SEP  phi-C6 0.441:SEP  phi-C5 0.498:SEP  C6-C5 0.057:no  shipped-phi 0.000:no
+   A* 5 r 0.2: B 0.049 (2B 0.098) | shipped-C6 0.542:SEP  shipped-C5 0.579:SEP  phi-C6 0.542:SEP  phi-C5 0.579:SEP  C6-C5 0.037:no  shipped-phi 0.000:no
+   A* 5 r 0.29: B 0.053 (2B 0.105) | shipped-C6 0.537:SEP  shipped-C5 0.577:SEP  phi-C6 0.537:SEP  phi-C5 0.577:SEP  C6-C5 0.040:no  shipped-phi 0.000:no
+   A* 5 r 0.34: B 0.054 (2B 0.108) | shipped-C6 0.514:SEP  shipped-C5 0.556:SEP  phi-C6 0.514:SEP  phi-C5 0.556:SEP  C6-C5 0.042:no  shipped-phi 0.000:no
+   A* 5 r 0.5: B 0.054 (2B 0.109) | shipped-C6 0.395:SEP  shipped-C5 0.455:SEP  phi-C6 0.395:SEP  phi-C5 0.455:SEP  C6-C5 0.059:no  shipped-phi 0.000:no
+   A* 6 r 0.2: B 0.050 (2B 0.101) | shipped-C6 0.534:SEP  shipped-C5 0.564:SEP  phi-C6 0.534:SEP  phi-C5 0.564:SEP  C6-C5 0.031:no  shipped-phi 0.000:no
+   A* 6 r 0.29: B 0.054 (2B 0.107) | shipped-C6 0.513:SEP  shipped-C5 0.547:SEP  phi-C6 0.513:SEP  phi-C5 0.547:SEP  C6-C5 0.033:no  shipped-phi 0.000:no
+   A* 6 r 0.34: B 0.054 (2B 0.109) | shipped-C6 0.481:SEP  shipped-C5 0.516:SEP  phi-C6 0.481:SEP  phi-C5 0.516:SEP  C6-C5 0.035:no  shipped-phi 0.000:no
+   A* 6 r 0.5: B 0.054 (2B 0.107) | shipped-C6 0.338:SEP  shipped-C5 0.386:SEP  phi-C6 0.338:SEP  phi-C5 0.386:SEP  C6-C5 0.048:no  shipped-phi 0.000:no
+   A* 7 r 0.2: B 0.051 (2B 0.103) | shipped-C6 0.522:SEP  shipped-C5 0.548:SEP  phi-C6 0.522:SEP  phi-C5 0.548:SEP  C6-C5 0.026:no  shipped-phi 0.000:no
+   A* 7 r 0.29: B 0.054 (2B 0.108) | shipped-C6 0.487:SEP  shipped-C5 0.516:SEP  phi-C6 0.487:SEP  phi-C5 0.516:SEP  C6-C5 0.028:no  shipped-phi 0.000:no
+   A* 7 r 0.34: B 0.054 (2B 0.109) | shipped-C6 0.453:SEP  shipped-C5 0.482:SEP  phi-C6 0.453:SEP  phi-C5 0.482:SEP  C6-C5 0.029:no  shipped-phi 0.000:no
+   A* 7 r 0.5: B 0.053 (2B 0.105) | shipped-C6 0.298:SEP  shipped-C5 0.341:SEP  phi-C6 0.298:SEP  phi-C5 0.341:SEP  C6-C5 0.042:no  shipped-phi 0.000:no
+   A* 4 r 0.5 r_c: B 0.054 (2B 0.108) | shipped-C6 0.026:no  shipped-C5 0.021:no  phi-C6 0.428:SEP  phi-C5 0.433:SEP  C6-C5 0.005:no  shipped-phi 0.454:SEP
+
+== r_sat rows, W 201 (tau = 0.005 * L_r)
+   c2: L_r 20.01  tau 0.100
+   c2 0.5 r_c: B 0.126 (2B 0.252) | shipped-C6 0.101:no  shipped-C5 0.102:no  phi-C6 0.150:no  phi-C5 0.149:no  C6-C5 0.001:no  shipped-phi 0.251:no
+   c2 1.5 r_c: B 0.130 (2B 0.259) | shipped-C6 0.168:no  shipped-C5 0.169:no  phi-C6 0.168:no  phi-C5 0.169:no  C6-C5 0.001:no  shipped-phi 0.000:no
+   c2 2.0 r_c: B 0.125 (2B 0.251) | shipped-C6 0.138:no  shipped-C5 0.141:no  phi-C6 0.138:no  phi-C5 0.141:no  C6-C5 0.003:no  shipped-phi 0.000:no
+   c3: L_r 12.74  tau 0.064
+   c3 0.5 r_c: B 0.091 (2B 0.182) | shipped-C6 0.082:no  shipped-C5 0.084:no  phi-C6 0.126:no  phi-C5 0.123:no  C6-C5 0.002:no  shipped-phi 0.208:SEP
+   c3 1.5 r_c: B 0.096 (2B 0.192) | shipped-C6 0.141:no  shipped-C5 0.144:no  phi-C6 0.141:no  phi-C5 0.144:no  C6-C5 0.003:no  shipped-phi 0.000:no
+   c3 2.0 r_c: B 0.088 (2B 0.176) | shipped-C6 0.096:no  shipped-C5 0.103:no  phi-C6 0.096:no  phi-C5 0.103:no  C6-C5 0.006:no  shipped-phi 0.000:no
+
+== Tail rule in miss counts (N = 1e5 holes at the Auto r*, d = L_arq)
+   a form f is refuted iff |k - mu_f| > 3*sqrt(mu_f * bbar)  (burst-inflated Poisson); no unassigned range:
+   every k either refutes or keeps each form, independently
+   c2 (bbar 2.00): shipped/phi mu 47, kept iff k in [19, 76] | C6 mu 2041, kept iff k in [1850, 2232] | C5 mu 2231, kept iff k in [2031, 2431] | target mu 39, kept iff k in [13, 66]
+   c3 (bbar 2.50): shipped/phi mu 27, kept iff k in [3, 52] | C6 mu 1084, kept iff k in [929, 1240] | C5 mu 1340, kept iff k in [1167, 1513] | target mu 21, kept iff k in [0, 42]

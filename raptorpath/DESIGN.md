@@ -5,9 +5,9 @@ interface (or objects, in `raptorpath perf`) over one QUIC connection per path,
 protecting them with a sliding-window random linear code (RLC) and repairing
 what the code does not cover with SACK-driven retransmission.
 
-The theory lives in the paper, [`docs/fec-arq-model.md`](docs/fec-arq-model.md).
+The theory lives in the paper, [`../docs/fec-arq-model.md`](../docs/fec-arq-model.md).
 This file maps it onto the code. What ships by default, and the open debts, are
-in [`docs/status.md`](docs/status.md), which is authoritative where the two
+in [`../docs/status.md`](../docs/status.md), which is authoritative where the two
 differ.
 
 ## One machine, three dials
@@ -92,7 +92,7 @@ legacy `RlcWindowDecoder`.
 Every hint runs the window pipeline above. The block pipeline (RaptorQ /
 Reed-Solomon / block RLC, interleaving, block ARQ) was the last architectural
 mode bit; ADR-0069 deleted it in `dacfd7c` after the Stage-3 re-test
-(`docs/status.md` §5, `WINDOW-NOT-WORSE`). `net::pipeline_backend` accepts only
+(`../docs/status.md` §5, `WINDOW-NOT-WORSE`). `net::pipeline_backend` accepts only
 the streaming RLC codec; a block-only setting is a startup error naming the
 ADR. ρ (`window_reliable`) is the named point's preset — retain-until-acked
 at Bulk/Auto, EVICT at Realtime — and composes with δ; it selects no pipeline.
@@ -109,7 +109,7 @@ at Bulk/Auto, EVICT at Realtime — and composes with δ; it selects no pipeline
 | `net/mod.rs` | orchestration (`run_impl`), pipeline routing (`is_window_mode`), the window sender loop (`run_window_sender`), the monotonic engine clock `now_us` |
 | `net/sender_phases.rs` | the window sender's loop phases: store-cap refresh, generation emission, gap serving, ack advance |
 | `net/recovery_laws.rs` | per-path loss detection (`mp_time_threshold_split`, `mp_hole_ripe`), refresh and tail-sweep clocks, `recovery_clock_paths` |
-| `net/holddown.rs`, `net/recovery_clock.rs` | the hold-down arm (`RWM_HOLDDOWN_Q`, off) and its quantile window law; the `[HOLD]` and `[QCLK]` gauges |
+| `net/holddown.rs`, `net/recovery_clock.rs` | the quantile window law; the `[HOLD]` (hole outcomes, observation only) and `[QCLK]` gauges |
 | `net/store_cap.rs` | flow control: path-scaled, pooled, honest and three-term caps, the δ-cap setpoint, `delta_price`, `contract_stall_s` |
 | `net/shed.rs` | δ-honest shedding (sender deadline and budget, receiver hold) and the completion feed |
 | `net/sack.rs` | SACK gap inversion, per-path outstanding accounts, SACK-clocked release, window-ack emission |
@@ -133,7 +133,7 @@ The workspace also holds `gf256/` (SIMD GF(2^8) arithmetic, ADR-0041),
 
 ## Default stack
 
-`docs/status.md` §1 lists the defaults as the code resolves them: routing per
+`../docs/status.md` §1 lists the defaults as the code resolves them: routing per
 hint, wire v8 with compact DATA framing, quinn BBR underneath, and the `RWM_*`
 gates that are on by default (unified machine and shedding, taper, anchor
 hygiene, SACK-clocked release, path-scaled and δ-priced store caps, per-path
@@ -153,5 +153,5 @@ The paper sections:
 - **§8 Congestion control and substrate**: Copa-lite, quinn BBR, `RWM_QUIC_CC`.
 - **§10 Refuted and superseded designs**: what was tried and removed, and why.
 
-Decisions are indexed in [`docs/adr/README.md`](docs/adr/README.md). Measurement
-rules are in [`docs/measurement-discipline.md`](docs/measurement-discipline.md).
+Decisions are indexed in [`../docs/adr/README.md`](../docs/adr/README.md). Measurement
+rules are in [`../docs/measurement-discipline.md`](../docs/measurement-discipline.md).

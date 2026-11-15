@@ -278,6 +278,7 @@ mod tests {
                 .join("\n")
         };
         let m = code("mod.rs");
+        assert!(!m.trim().is_empty() && !code("emit_source.rs").trim().is_empty(), "the scanned sources are empty");
         let raw = std::fs::read_to_string(root.join("mod.rs")).unwrap();
         let a = raw.find("[EMIT-BURST-BEGIN]").expect("begin marker");
         let b = raw.find("[EMIT-BURST-END]").expect("end marker");
@@ -287,6 +288,7 @@ mod tests {
             .map(|l| l.split("//").next().unwrap_or(""))
             .collect::<Vec<_>>()
             .join("\n");
+        assert!(!block.trim().is_empty(), "the burst block between the markers is empty");
         assert!(block.contains("emit_burst_bound"), "the burst loop must take Law 0's bound");
         assert!(!block.contains("live_paths"), "the burst block reads a path count");
         assert!(!code("emit_source.rs").contains("live_paths"), "the emission step reads a path count");

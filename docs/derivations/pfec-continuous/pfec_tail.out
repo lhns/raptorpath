@@ -1,0 +1,2 @@
+c2: eps 0.0253 s2 2.899 A 201 r 0.091: sliding per-loss miss 0.00e+00 (binomial SE 1.6e-08, 4101 holes)  C6 miss 2.04e-02  shipped miss 4.74e-04  target t/eps 3.9e-04
+c3: eps 0.0476 s2 3.762 A 201 r 0.1579: sliding per-loss miss 2.69e-04 (binomial SE 1.9e-04, 7472 holes)  C6 miss 1.08e-02  shipped miss 2.75e-04  target t/eps 2.1e-04

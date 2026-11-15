@@ -1,0 +1,24 @@
+BASE
+   0- 4s leg0 rtt=   81ms (rtprop  10)  leg1 rtt=  221ms (rtprop  39)  share leg1 sets max=0.99
+   4- 8s leg0 rtt=  121ms (rtprop  10)  leg1 rtt=  258ms (rtprop  39)  share leg1 sets max=1.00
+   8-12s leg0 rtt=  189ms (rtprop  29)  leg1 rtt=  309ms (rtprop  75)  share leg1 sets max=0.95
+  12-16s leg0 rtt=  252ms (rtprop  90)  leg1 rtt=  370ms (rtprop 101)  share leg1 sets max=0.73
+  16-20s leg0 rtt=  207ms (rtprop 108)  leg1 rtt=  320ms (rtprop  53)  share leg1 sets max=0.65
+  20-24s leg0 rtt=  200ms (rtprop 124)  leg1 rtt=  281ms (rtprop  39)  share leg1 sets max=0.59
+  24-28s leg0 rtt=  212ms (rtprop 125)  leg1 rtt=  272ms (rtprop  40)  share leg1 sets max=0.51
+  28-32s leg0 rtt=  214ms (rtprop 131)  leg1 rtt=  264ms (rtprop  44)  share leg1 sets max=0.53
+  32-36s leg0 rtt=  206ms (rtprop 128)  leg1 rtt=  265ms (rtprop  47)  share leg1 sets max=0.60
+  36-40s leg0 rtt=  187ms (rtprop 123)  leg1 rtt=  247ms (rtprop  55)  share leg1 sets max=0.65
+  40-44s leg0 rtt=  178ms (rtprop 115)  leg1 rtt=  267ms (rtprop  49)  share leg1 sets max=0.67
+CAND
+   0- 4s leg0 rtt=   87ms (rtprop  12)  leg1 rtt=  303ms (rtprop  40)  share leg1 sets max=0.99
+   4- 8s leg0 rtt=  103ms (rtprop  12)  leg1 rtt=  446ms (rtprop  40)  share leg1 sets max=1.00
+   8-12s leg0 rtt=  139ms (rtprop  29)  leg1 rtt=  490ms (rtprop 103)  share leg1 sets max=1.00
+  12-16s leg0 rtt=  144ms (rtprop  60)  leg1 rtt=  566ms (rtprop 283)  share leg1 sets max=1.00
+  16-20s leg0 rtt=  122ms (rtprop  76)  leg1 rtt=  386ms (rtprop 244)  share leg1 sets max=0.95
+  20-24s leg0 rtt=  129ms (rtprop  84)  leg1 rtt=  215ms (rtprop 153)  share leg1 sets max=0.85
+  24-28s leg0 rtt=  128ms (rtprop  84)  leg1 rtt=  208ms (rtprop 124)  share leg1 sets max=0.88
+  28-32s leg0 rtt=  131ms (rtprop  86)  leg1 rtt=  252ms (rtprop 122)  share leg1 sets max=0.95
+  32-36s leg0 rtt=  128ms (rtprop  86)  leg1 rtt=  242ms (rtprop 119)  share leg1 sets max=0.96
+  36-40s leg0 rtt=  132ms (rtprop  87)  leg1 rtt=  185ms (rtprop  92)  share leg1 sets max=0.72
+  40-44s leg0 rtt=  146ms (rtprop  94)  leg1 rtt=  164ms (rtprop  60)  share leg1 sets max=0.64

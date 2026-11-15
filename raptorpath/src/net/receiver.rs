@@ -51,10 +51,10 @@ use super::delivery::{WindowDelivery, delivered_prefix};
 use super::reorder::ReorderBuffer;
 use super::seq_bits::{ReceivedSeqs, SeqBits};
 use super::{
-    DerivedRoundEcho, SenderCmd,
+    SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, extract_window_packets,
-    hole_nack_refresh_floored, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
+    hole_nack_refresh, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::fec::{FecBackend, WindowDecoder};
@@ -100,7 +100,6 @@ pub(crate) async fn run_receiver(
     // Arm (B): the request carries the derived `m` instead of `m = 1`.
     // Composes with (A); alone it is the vocabulary-only wiring test.
     recv_rank_feedback: bool,
-    reasm_bdp_on: bool,
     ack_merge_recv: bool,
     recv_diag_on: bool,
     rdiag_probe: tokio::sync::mpsc::WeakSender<crate::transport::InboundBatch>,
@@ -198,24 +197,12 @@ pub(crate) async fn run_receiver(
     let mut recv_shed_holes: u64 = 0;
     let mut recv_shed_budget_open = true;
     let recv_shed_diag = recv_gates.diag;
-    // `RWM_DERIVED_SWEEP` (default off): the stalled-hole refresh cadence on
-    // the derived round.
-    let recv_derived_sweep = recv_gates.derived_sweep;
-    // The hole-refresh clamp band's floor (`RWM_REFRESH_FLOOR_US`), resolved
-    // once. Absent ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ `hole_nack_refresh` unchanged.
-    // Echoed on `[GATES]` at both endpoints.
-    let recv_refresh_floor = recv_gates
-        .refresh_floor_us
-        .map_or(crate::net::HOLE_NACK_REFRESH_MIN, Duration::from_micros);
     // `[QCLK]` at the receiver — the hole-refresh cadence this site realizes.
     // The harness SIGKILLs the server, so a `Drop` never reaches a server log;
     // this gauge is therefore also emitted on the same 1 s cadence, last line
     // wins.
     let mut recv_qclk_echo = crate::net::QuantileClockGauge::new("receiver");
     let mut qclk_report_at = Instant::now();
-    // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
-    // DIVERGED). Observation only; emitted on the armed arm alone.
-    let mut recv_derived_echo = DerivedRoundEcho::default();
     // `[RACK]` / `[RFA]` fire accounting at the receiver site (paper §7.1).
     let mut recv_rack_echo = crate::net::RackClockGauge::new();
     // `[RFA]` is a PLAIN-WINDOW instrument (the same configuration scope the
@@ -320,15 +307,6 @@ pub(crate) async fn run_receiver(
     // maintained incrementally (every WindowAck carries it, including one per
     // data message under the ack merge).
     let mut recv_above = crate::net::ReceivedAbove::new();
-    // `RWM_REASM_BDP` occupancy probe: the maximum reassembly buffer
-    // occupancy observed = received-but-not-yet-delivered symbols held behind
-    // the in-order frontier. The reliability invariant bounds it — it must
-    // stay ~BDP (the sender's outstanding cap), never grow to the whole
-    // object. `reasm_max_pending` = peak held symbols; `reasm_max_span` = peak
-    // (highest_seen − frontier) seq gap. Reported via `[REASM]`.
-    let mut reasm_max_pending: usize = 0;
-    let mut reasm_max_span: u64 = 0;
-    let mut reasm_last_report = Instant::now();
     // Ack-merge control-datagram density gauge (RWM_DIAG only). `[CTLD]
     // p<id> tx=<n> rx=<n>` = quinn's own `frame_tx.datagram` /
     // `frame_rx.datagram` for the path, read at the receiver: a window-mode
@@ -384,21 +362,6 @@ pub(crate) async fn run_receiver(
         .report_gens
         .unwrap_or(if recv_gates.gen_pipe { GEN_PIPE_MAX_GENS + 1 } else { 6 })
         .clamp(1, 2000);
-    // Repair-coverage horizon (`RWM_REPAIR_WAIT`). Base wait, in
-    // milliseconds, before a frontier hole's deficit may fire a reactive
-    // NACK — the time for the in-flight proactive repair covering it to
-    // arrive + decode (~a generation-span at the send rate, not an RTT).
-    // Unset / 0 = report immediately. Made δ-aware at use: clamped to
-    // ≤ ½·SRTT so low-RTT / latency-tight paths never over-wait, and it can
-    // never exceed the round trip it is trying to save.
-    let repair_wait_base: Duration = recv_gates
-        .repair_wait_ms
-        .map(Duration::from_millis)
-        .unwrap_or(Duration::ZERO);
-    // Per-anchor first-armed instants for the horizon gate (see
-    // `horizon_gate_deficits`). Persists across reports so the wait
-    // accumulates; an anchor decoded within the horizon is disarmed there.
-    let mut deficit_armed: BTreeMap<u64, Instant> = BTreeMap::new();
     let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
     let mut highest_seen_seq: u64 = 0;
     // One past the highest seq seen (0 = nothing seen): the exclusive twin of
@@ -543,35 +506,14 @@ pub(crate) async fn run_receiver(
                 let raw_deficits = collect_gen_deficits(&gen_widths, report_gens, |anchor, k| {
                     $dec.rank_in(anchor, k)
                 });
-                // Repair-coverage horizon: give the in-flight proactive repair
-                // a chance to decode each hole before its deficit fires a
-                // reactive NACK. δ-aware — clamped to ≤ ½·SRTT so low-RTT /
-                // latency-tight paths never over-wait and the wait can never
-                // exceed the round trip it would save.
-                let horizon = if repair_wait_base.is_zero() {
-                    Duration::ZERO
-                } else {
-                    let srtt = live_tx_views(&recv_stats).iter().map(|v| v.srtt).max();
-                    match srtt {
-                        Some(s) => repair_wait_base.min(s / 2),
-                        None => repair_wait_base,
-                    }
-                };
-                let deficits = horizon_gate_deficits(
-                    &raw_deficits,
-                    &mut deficit_armed,
-                    horizon,
-                    Instant::now(),
-                );
+                let deficits = raw_deficits;
                 if !deficits.is_empty() || $force {
                     last_deficit_send = Instant::now();
                     if recv_gates.trace {
                         let total: u32 = deficits.iter().map(|(_, d)| d).sum();
-                        let withheld = raw_deficits.len().saturating_sub(deficits.len());
                         crate::readout!(
-                            "[RCV] frontier={} gens_tracked={} deficits={:?} total_deficit={} withheld_by_horizon={} horizon_ms={}",
-                            ooo_frontier, gen_widths.len(), deficits, total,
-                            withheld, horizon.as_millis()
+                            "[RCV] frontier={} gens_tracked={} deficits={:?} total_deficit={}",
+                            ooo_frontier, gen_widths.len(), deficits, total
                         );
                     }
                     let msg = ControlMessage::GenerationDeficit { deficits };
@@ -724,20 +666,7 @@ pub(crate) async fn run_receiver(
             // prune itself never reads these).
             let rdiag_prune_t = rdiag_on.then(Instant::now);
             let delivered_last = next_expected.saturating_sub(1);
-            let mut prune_before = decode_inert_floor(next_expected, recv_win_cap);
-            // Reliability invariant (RWM_REASM_BDP): never evict a
-            // received symbol before it is delivered. Under SACK the
-            // sender races ahead of the frozen in-order frontier, so
-            // `highest_seen_seq` runs far above the cumulative point
-            // (the hole). The prune is keyed on the delivered frontier
-            // (so `prune_before ≤ delivered_last` already), but
-            // clamp it explicitly so a received-above-hole symbol the
-            // sender has pruned is never dropped. The reorder buffer is
-            // separately non-evicting (usize::MAX), so held source
-            // symbols survive to delivery regardless.
-            if reasm_bdp_on {
-                prune_before = prune_before.min(delivered_last);
-            }
+            let prune_before = decode_inert_floor(next_expected, recv_win_cap);
             // Sync the `received_above` counter first: the prune
             // removes only seqs below the cumulative point, which
             // a synced counter no longer counts.
@@ -797,46 +726,25 @@ pub(crate) async fn run_receiver(
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
             if waiting && pending {
-                let (srtt, srtt_jitter_us, sigma_us) = {
+                let (srtt, sigma_us) = {
                     let live = live_tx_views(&recv_stats);
-                    // Same path set for the clock and the DERIVED floor, so
-                    // the two can never come from different paths. σ feeds
-                    // only the `[QCLK]` readout.
+                    // σ feeds only the `[QCLK]` readout.
                     (
                         live.iter().map(|p| p.srtt).max(),
-                        live.iter().map(|p| p.rtt_jitter_us).max().unwrap_or(0),
                         live.iter().filter_map(|p| p.rtt_sigma_us).max(),
                     )
                 };
                 let deadline = if recv_window_reliable {
                     // Reliable policy: the hole is never given up on — this
                     // timer instead re-advertises the gap (SACK WindowAck) at
-                    // 2×SRTT cadence until recovered. Under
-                    // `RWM_DERIVED_SWEEP` the cadence is the derived round (no
-                    // ceiling); off ⇒ `hole_nack_refresh` unchanged.
-                    let refresh = hole_refresh(
-                        recv_derived_sweep,
-                        srtt,
-                        srtt_jitter_us,
-                        recv_refresh_floor,
-                    );
+                    // 2×SRTT cadence until recovered.
+                    let refresh = hole_nack_refresh(srtt);
                     // Every arm, control included — see the sender's twin.
                     recv_qclk_echo.record(
                         refresh.as_micros() as u64,
                         srtt.map_or(0, |s| s.as_micros() as u64),
                         sigma_us,
                     );
-                    if recv_derived_sweep {
-                        if let Some(s) = srtt {
-                            recv_derived_echo.observe(
-                                "receiver-hole-refresh",
-                                s.as_micros() as u64,
-                                srtt_jitter_us,
-                                refresh.as_micros() as u64,
-                                hole_nack_refresh_floored(srtt, recv_refresh_floor).as_micros() as u64,
-                            );
-                        }
-                    }
                     // ── Request arm (A): the deadline term (paper §7.6) ──
                     //
                     //     deadline = min( refresh ,  earliest A_hat + l* )
@@ -2194,28 +2102,6 @@ pub(crate) async fn run_receiver(
 
                         // (The prune of `received_seqs` and the window decoder
                         // moved to the loop's wait point — see there.)
-                        // Occupancy probe: peak reassembly held behind the frontier.
-                        if reasm_bdp_on {
-                            let pending = reorder_buf
-                                .as_ref()
-                                .map(|rb| rb.pending_count())
-                                .unwrap_or_else(|| {
-                                    // OOO mode: no reorder buffer; the held state
-                                    // is the received-seq set above the frontier.
-                                    received_seqs.count_in(ooo_frontier, u64::MAX) as usize
-                                });
-                            reasm_max_pending = reasm_max_pending.max(pending);
-                            let span = seen_end.saturating_sub(next_expected);
-                            reasm_max_span = reasm_max_span.max(span);
-                            if reasm_last_report.elapsed() >= Duration::from_millis(500) {
-                                reasm_last_report = Instant::now();
-                                crate::readout!(
-                                    "[REASM] frontier={} highest_seen={} span={} pending={} max_pending={} max_span={}",
-                                    next_expected, highest_seen_seq, span,
-                                    pending, reasm_max_pending, reasm_max_span,
-                                );
-                            }
-                        }
                     }
                 }
 

@@ -1,0 +1,321 @@
+STORE-POOL SWEEP (status 56), REPORTED ONLY: one seat (current main), RWM_STORE_PATH_POOL by arm; c8-100 and c2-100 at 600 MB, c1s-400 at 5 GB, RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300; nothing here is scored
+SLOTS 70/70  ROWS 70 (replaced 0)  ABORT-TOKENS none
+LIVENESS per arm (rows counting / DNF / UNBOUND / quinn-collapse flagged / c8 lock-out (section 3.9) / one-leg (informational); the bind fraction is the LATE share with cap >= N x pool, controls exempt)
+  c8-100   P640(W1280)  rows  4/4  live 4  void 0  DNF 0  UNBOUND 0 (control, exempt)  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 1280
+  c8-100   P384(W768)   rows  4/4  live 4  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 768
+  c8-100   P256(W512)   rows  4/4  live 4  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 512
+  c8-100   P160(W320)   rows  4/4  live 4  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 320
+  c8-100   P112(W224)   rows  4/4  live 4  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 4  bind 1.000  realised cap 224
+  c8-100   P80(W160)    rows  4/4  live 4  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 4  bind 1.000  realised cap 160
+  c2-100   P2048(W2048) rows  3/3  live 3  void 0  DNF 0  UNBOUND 0 (control, exempt)  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 2048
+  c2-100   P384(W384)   rows  3/3  live 3  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 384
+  c2-100   P256(W256)   rows  3/3  live 3  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 256
+  c2-100   P192(W192)   rows  3/3  live 3  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 192
+  c2-100   P160(W160)   rows  3/3  live 3  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 160
+  c2-100   P128(W128)   rows  3/3  live 3  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 128
+  c1s-400  P2048(W2048) rows  9/9  live 6  void 3  DNF 0  UNBOUND 0 (control, exempt)  QCOLLAPSE 3  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 2048
+  c1s-400  P512(W512)   rows  9/9  live 5  void 4  DNF 0  UNBOUND 0  QCOLLAPSE 4  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 512
+  c1s-400  P1024(W1024) rows  3/3  live 2  void 1  DNF 0  UNBOUND 0  QCOLLAPSE 1  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 1024
+  c1s-400  P768(W768)   rows  3/3  live 3  void 0  DNF 0  UNBOUND 0  QCOLLAPSE 0  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 768
+  c1s-400  P384(W384)   rows  3/3  live 2  void 1  DNF 0  UNBOUND 0  QCOLLAPSE 1  LOCKOUT 0  ONE-LEG 0  bind 1.000  realised cap 384
+QUINN-COLLAPSE flagged c1s rows: 9 (qcwnd below the BDP in > 10% of the windows; excluded from EVERY arm median and falsifier, listed in COLLAPSED ROWS below)
+
+== c8-100: arm medians (LATE window t >= 15 s); rows UNBOUND are in the arm and reported at their realised cap (W row)
+  readout (arm, nominal W)                P640(W1280)   P384(W768)   P256(W512)   P160(W320)   P112(W224)    P80(W160)  P640D(dump)
+  n (live rows)                                     4            4            4            4            4            4            1
+  goodput Mbit/s (DNF = 0)                      106.5        106.7        106.0        100.7         92.8         79.6        106.8
+  completion tail s                              0.08         0.10         0.17         0.15        -0.01         0.10         0.04
+  sum tx rate R, LATE, /s                       11643        11653        11559        10956        10113         8671        11645
+  tx rate r0 /s                                  9789         9826         9842         9848         9710         8483         9769
+  tx rate r1 /s                                  1853         1831         1718         1113          405          188         1876
+  app-echo rtt0 ms (LATE median)                   96           57           39           26           20           16           96
+  app-echo rtt1 ms                                150           92           61           47           46           46          142
+  wire rtt0 ms                                     92           54           37           25           19           15           92
+  wire rtt1 ms                                    134           80           58           46           43           43          130
+  rtp0 ms (LATE median)                          44.1         31.6         21.4         13.5         11.0          9.0         53.6
+  rtp0 boot ms                                   11.1         10.3         10.9         12.1         10.5         10.1         10.4
+  rtp0 - boot ms                                 32.9         22.0         10.5          1.3          0.6         -1.0         43.3
+  rtp1 ms                                        35.9         36.6         36.9         35.5         32.4         32.2         37.9
+  rtp1 - boot ms                                 -3.9         -4.8         -0.6         -5.6         -7.7         -8.0         -2.5
+  q0 = dgq0 hand - tx                              18            9            4            0            0            0           22
+  q1 = dgq1 hand - tx                               1            1            1            1            1            1            0
+  placement share p0 (egress)                   0.835        0.834        0.839        0.885        0.951        0.975        0.834
+  T-bar ms (sum r_i rtt_i / sum r_i)            104.8         62.4         42.4         28.2         21.0         16.6        103.8
+  first-1s loop ms (start-up queue; NOT T0)         72.6         59.3         41.6         26.7         20.5         18.0         85.1
+  T-bar / ell                                    6.85         4.21         2.84         1.89         1.78         1.55         6.82
+  T0 ms (per-leg floors x this row's rates)         20.7         20.6         20.4         19.0         17.2         16.6         20.8
+  standing queue q = T-bar - T0 ms               84.1         41.8         22.1          9.2          3.8          0.0         83.0
+  q / ell                                        5.50         2.83         1.48         0.62         0.32        -0.00         5.46
+  ell ms (rate-weighted boot rtp)                15.4         14.8         14.9         14.9         11.6         10.7         15.2
+  W / sum r ms                                  109.9         65.9         44.3         29.2         22.2         18.5        109.9
+  inorder_mean_late s                            0.37         0.16         0.09         0.05         0.04         0.03         0.35
+  inorder_p95_late s                             0.59         0.28         0.15         0.10         0.08         0.06         0.57
+  old holes (server [RANK])                         0            0            0            0            0            0            0
+  [HOLD] hn_n p0                                54834        82324        94958         8852          124           86        57462
+  [HOLD] fed p0                                 60308        87159        98215        11320         4202         5898        62504
+  [HOLD] ripe_frac p0                           0.135        0.087        0.069        0.311        0.605        0.657        0.129
+  [HOLD] hn_n p1                                26810        33262        29014        17894         3802          513        28694
+  [HOLD] fed p1                                 30076        36643        32103        19564         4158          580        31913
+  [HOLD] ripe_frac p1                           0.049        0.021        0.009        0.001        0.000        0.000        0.048
+  [SUCC] det                                   187388       193350       196470        70235        22404        14849       190028
+  [SUCC] xp_frac (cross-path closes)           0.9670       0.9682       0.9710       0.9609       0.8703       0.6575       0.9671
+  [HOLD] p0 xp_frac (cross-path closes)        0.0155       0.0195       0.0079       0.0030       0.0077       0.0080       0.0139
+  Little residual cap - sum r_i rtt_i              58           31           13            8           12           16           53
+  Little residual / W                           0.045        0.041        0.025        0.025        0.055        0.098        0.042
+  receiver duplicates                            1336         1650         1410          854          886         1008         1450
+  retransmits per GB                            25208        25945        25225        23968        22492        21758        25038
+  client CPU s/GB                               32.75        32.94        34.07        34.14        32.91        32.31        35.97
+  server CPU s/GB                               36.38        35.31        35.66        35.21        34.31        34.41        39.90
+  realised cap W (LATE mean of b)                1280          768          512          320          224          160         1280
+  cap bind fraction (cap >= n_live x pool)        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+  n_live (LATE median of np=)                     2.0          2.0          2.0          2.0          2.0          2.0          2.0
+  share of LATE ticks with n_live < N           0.000        0.000        0.000        0.000        0.000        0.000        0.000
+  qcwnd below BDP share (collapse if > 0.10, c1s)        0.000        0.000        0.000        0.000        0.000        0.008        0.000
+  quinn backlog q0 / W                          0.014        0.012        0.007        0.000        0.000        0.000        0.017
+  quinn backlog q1 / W                          0.001        0.001        0.002        0.003        0.004        0.006        0.000
+  quinn backlog (q0 + q1) / W                   0.014        0.013        0.009        0.003        0.004        0.006        0.017
+
+== c2-100: arm medians (LATE window t >= 15 s); rows UNBOUND are in the arm and reported at their realised cap (W row)
+  readout (arm, nominal W)               P2048(W2048)   P384(W384)   P256(W256)   P192(W192)   P160(W160)   P128(W128)
+  n (live rows)                                     3            3            3            3            3            3
+  goodput Mbit/s (DNF = 0)                       90.2         90.4         90.4         89.6         84.3         70.9
+  completion tail s                              0.03         0.18         0.17        -0.02         0.05         0.07
+  sum tx rate R, LATE, /s                        9814         9844         9852         9769         9173         7726
+  tx rate r0 /s                                  9814         9844         9852         9769         9173         7726
+  app-echo rtt0 ms (LATE median)                  208           38           25           19           16           16
+  wire rtt0 ms                                    109           37           24           18           15           15
+  rtp0 ms (LATE median)                         191.4         27.5         15.9         11.6         10.1          9.4
+  rtp0 boot ms                                   10.1         10.2          9.5          9.7         12.5          9.5
+  rtp0 - boot ms                                181.3         17.2          6.5          2.6         -2.5         -0.1
+  q0 = dgq0 hand - tx                             966           10           10           10            9            8
+  placement share p0 (egress)                   1.000        1.000        1.000        1.000        1.000        1.000
+  T-bar ms (sum r_i rtt_i / sum r_i)            208.0         38.0         25.0         19.0         16.0         16.0
+  first-1s loop ms (start-up queue; NOT T0)         44.5         37.0         25.0         18.5         16.5         16.0
+  T-bar / ell                                   20.53         3.72         2.63         1.97         1.28         1.69
+  T0 ms (per-leg floors x this row's rates)         16.0         16.0         16.0         16.0         16.0         16.0
+  standing queue q = T-bar - T0 ms              192.0         22.0          9.0          3.0          0.0          0.0
+  q / ell                                       18.95         2.16         0.95         0.31         0.00         0.00
+  ell ms (rate-weighted boot rtp)                10.1         10.2          9.5          9.7         12.5          9.5
+  W / sum r ms                                  208.7         39.0         26.0         19.7         17.4         16.6
+  inorder_mean_late s                            0.41         0.05         0.03         0.02         0.02         0.02
+  inorder_p95_late s                             0.56         0.09         0.06         0.04         0.04         0.03
+  old holes (server [RANK])                         0            0            0            0            0            0
+  [HOLD] hn_n p0                                    0            0            0            0            0            0
+  [HOLD] fed p0                                 11897        10725        10419        10223         9860        10502
+  [HOLD] ripe_frac p0                           0.080        0.412        0.639        0.780        0.785        0.763
+  [SUCC] det                                    12642        12314        12542        12813        12343        12931
+  [SUCC] xp_frac (cross-path closes)           0.0000       0.0000       0.0000       0.0000       0.0000       0.0000
+  [HOLD] p0 xp_frac (cross-path closes)        0.0000       0.0000       0.0000       0.0000       0.0000       0.0000
+  Little residual cap - sum r_i rtt_i               7           10           10            6           13            4
+  Little residual / W                           0.003        0.026        0.038        0.033        0.083        0.034
+  receiver duplicates                             563          675          809         1313         1540         1495
+  retransmits per GB                            22950        22032        22477        22738        22378        23110
+  client CPU s/GB                               31.03        30.43        30.10        31.00        31.78        35.07
+  server CPU s/GB                               34.02        32.53        32.03        32.48        33.47        36.62
+  realised cap W (LATE mean of b)                2048          384          256          192          160          128
+  cap bind fraction (cap >= n_live x pool)        1.000        1.000        1.000        1.000        1.000        1.000
+  n_live (LATE median of np=)                     1.0          1.0          1.0          1.0          1.0          1.0
+  share of LATE ticks with n_live < N           0.000        0.000        0.000        0.000        0.000        0.000
+  qcwnd below BDP share (collapse if > 0.10, c1s)        0.000        0.000        0.000        0.000        0.000        0.034
+  quinn backlog q0 / W                          0.472        0.026        0.039        0.052        0.056        0.062
+  quinn backlog (q0 + q1) / W                   0.472        0.026        0.039        0.052        0.056        0.062
+
+== c1s-400: arm medians (LATE window t >= 5 s); rows UNBOUND are in the arm and reported at their realised cap (W row)
+  readout (arm, nominal W)               P2048(W2048)   P512(W512) P1024(W1024)   P768(W768)   P384(W384)
+  n (live rows)                                     6            5            2            3            2
+  goodput Mbit/s (DNF = 0)                      875.2        781.6        843.0        818.5        689.3
+  completion tail s                              0.17         0.17         0.20         0.12         0.08
+  sum tx rate R, LATE, /s                       92992        82708        89457        86525        73156
+  tx rate r0 /s                                 92992        82708        89457        86525        73156
+  app-echo rtt0 ms (LATE median)                   19            5           10            7            4
+  wire rtt0 ms                                      5            3            4            3            3
+  rtp0 ms (LATE median)                           3.5          2.7          3.0          2.8          2.6
+  rtp0 boot ms                                    2.5          2.6          2.6          2.4          2.6
+  rtp0 - boot ms                                  1.0          0.1          0.4          0.4         -0.0
+  q0 = dgq0 hand - tx                             887           64          370          201           54
+  placement share p0 (egress)                   1.000        1.000        1.000        1.000        1.000
+  T-bar ms (sum r_i rtt_i / sum r_i)             19.0          5.0          9.5          7.0          4.0
+  first-1s loop ms (start-up queue; NOT T0)         14.0          5.0          9.8          6.5          4.0
+  T-bar / ell                                    7.77         1.93         3.68         2.88         1.53
+  T0 ms (per-leg floors x this row's rates)          4.0          4.0          4.0          4.0          4.0
+  standing queue q = T-bar - T0 ms               15.0          1.0          5.5          3.0          0.0
+  q / ell                                        6.14         0.39         2.13         1.24         0.00
+  ell ms (rate-weighted boot rtp)                 2.5          2.6          2.6          2.4          2.6
+  W / sum r ms                                   22.0          6.2         11.4          8.9          5.2
+  inorder_mean_late s                            0.02         0.01         0.01         0.01         0.00
+  inorder_p95_late s                             0.04         0.01         0.01         0.01         0.01
+  old holes (server [RANK])                         0            0            0            0            0
+  [HOLD] hn_n p0                                    0            2            0            1            2
+  [HOLD] fed p0                                  3155         2438         2690         2628         2150
+  [HOLD] ripe_frac p0                           0.765        0.429        0.857        0.691        0.341
+  [SUCC] det                                     4416         4468         4272         4451         4628
+  [SUCC] xp_frac (cross-path closes)           0.0000       0.0000       0.0000       0.0000       0.0000
+  [HOLD] p0 xp_frac (cross-path closes)        0.0000       0.0000       0.0000       0.0000       0.0000
+  Little residual cap - sum r_i rtt_i             301           98          175          162           91
+  Little residual / W                           0.147        0.192        0.171        0.211        0.238
+  receiver duplicates                              66           21           20           26          116
+  retransmits per GB                              944          855          856          836          846
+  client CPU s/GB                               15.79        16.95        16.39        16.57        17.92
+  server CPU s/GB                               18.47        19.30        18.82        19.04        20.11
+  realised cap W (LATE mean of b)                2048          512         1024          768          384
+  cap bind fraction (cap >= n_live x pool)        1.000        1.000        1.000        1.000        1.000
+  n_live (LATE median of np=)                     1.0          1.0          1.0          1.0          1.0
+  share of LATE ticks with n_live < N           0.000        0.000        0.000        0.000        0.000
+  qcwnd below BDP share (collapse if > 0.10, c1s)        0.022        0.020        0.016        0.016        0.042
+  quinn backlog q0 / W                          0.433        0.125        0.361        0.262        0.142
+  quinn backlog (q0 + q1) / W                   0.433        0.125        0.361        0.262        0.142
+
+COLLAPSED ROWS (c1s; a DNF here is a collapse, not goodput 0): arm seed rep | outcome | below-BDP share | onset s | pre-onset send rate /s and T-bar ms (the map point) | quinn backlog q0 / W | rtt0 | wrtt0
+  c1s-400 P1024 s7 r2 | 791.7 Mbit/s | 0.187 | 49.0 | 84565 / 11.0 | 0.628 | 11 | 2
+  c1s-400 P2048 s42 r3 | 725.9 Mbit/s | 0.324 | 37.0 | 90367 / 17.0 | 0.477 | 20 | 4
+  c1s-400 P2048 s42 r9 | 441.3 Mbit/s | 0.684 | 29.0 | 93855 / 19.0 | 0.965 | 80 | 2
+  c1s-400 P2048 s7 r8 | 800.6 Mbit/s | 0.209 | 41.0 | 93142 / 19.0 | 0.496 | 20 | 5
+  c1s-400 P384 s42 r1 | 237.8 Mbit/s | 0.957 | 13.0 | 70778 / 4.0 | 0.846 | 18 | 2
+  c1s-400 P512 s42 r1 | 495.2 Mbit/s | 0.790 | 13.0 | 83878 / 5.0 | 0.676 | 7 | 2
+  c1s-400 P512 s42 r5 | 432.8 Mbit/s | 0.970 | 1.0 | - / - | 0.740 | 11 | 2
+  c1s-400 P512 s42 r9 | 443.0 Mbit/s | 0.751 | 25.0 | 78331 / 5.0 | 0.791 | 13 | 2
+  c1s-400 P512 s7 r2 | 371.5 Mbit/s | 0.988 | 1.0 | - / - | 0.801 | 14 | 2
+C1S COLLAPSE BY POOL (rows counting / collapsed / onset s of the collapsed / below-BDP shares):
+  P2048 (W 2048): rows 9, collapsed 3, onsets [37.0, 41.0, 29.0], shares [0.02, 0.03, 0.32, 0.02, 0.02, 0.02, 0.02, 0.21, 0.68]
+  P512 (W 512): rows 9, collapsed 4, onsets [13.0, 1.0, 1.0, 25.0], shares [0.79, 0.99, 0.02, 0.01, 0.97, 0.02, 0.02, 0.02, 0.75]
+  P1024 (W 1024): rows 3, collapsed 1, onsets [49.0], shares [0.02, 0.19, 0.02]
+  P768 (W 768): rows 3, collapsed 0, onsets [], shares [0.02, 0.02, 0.02]
+  P384 (W 384): rows 3, collapsed 1, onsets [13.0], shares [0.96, 0.02, 0.06]
+
+PER-ROW TABLE (LIVE rows): cell arm seed rep | goodput | R | r0 | r1 | T-bar | W realised | bind | old holes | inorder late | qcollapse share | tags
+  c8-100   P112   s42  r1 | 92.5 | 10106 | 9708 | 398 | 21.0 | 224 | 1.00 | 0 | 0.04 | 0.000 | ONE-LEG
+  c8-100   P112   s42  r3 | 92.9 | 10098 | 9692 | 406 | 21.0 | 224 | 1.00 | 0 | 0.04 | 0.000 | ONE-LEG
+  c8-100   P112   s7   r2 | 92.8 | 10125 | 9713 | 412 | 21.0 | 224 | 1.00 | 0 | 0.04 | 0.000 | ONE-LEG
+  c8-100   P112   s7   r4 | 92.8 | 10120 | 9717 | 403 | 20.1 | 224 | 1.00 | 0 | 0.04 | 0.000 | ONE-LEG
+  c8-100   P160   s42  r1 | 100.5 | 10937 | 9846 | 1092 | 29.0 | 320 | 1.00 | 0 | 0.05 | 0.000 | 
+  c8-100   P160   s42  r3 | 100.8 | 10954 | 9836 | 1118 | 28.1 | 320 | 1.00 | 0 | 0.05 | 0.000 | 
+  c8-100   P160   s7   r2 | 100.8 | 10977 | 9851 | 1126 | 28.3 | 320 | 1.00 | 0 | 0.05 | 0.000 | 
+  c8-100   P160   s7   r4 | 100.6 | 10958 | 9851 | 1107 | 28.1 | 320 | 1.00 | 0 | 0.05 | 0.000 | 
+  c8-100   P256   s42  r1 | 106.0 | 11584 | 9848 | 1737 | 42.3 | 512 | 1.00 | 0 | 0.09 | 0.000 | 
+  c8-100   P256   s42  r3 | 106.0 | 11542 | 9835 | 1707 | 42.3 | 512 | 1.00 | 0 | 0.09 | 0.000 | 
+  c8-100   P256   s7   r2 | 105.4 | 11526 | 9837 | 1689 | 42.6 | 512 | 1.00 | 0 | 0.09 | 0.000 | 
+  c8-100   P256   s7   r4 | 106.1 | 11576 | 9846 | 1730 | 42.9 | 512 | 1.00 | 0 | 0.09 | 0.000 | 
+  c8-100   P384   s42  r1 | 106.7 | 11645 | 9819 | 1825 | 62.7 | 768 | 1.00 | 0 | 0.17 | 0.000 | 
+  c8-100   P384   s42  r3 | 106.6 | 11631 | 9826 | 1805 | 62.2 | 768 | 1.00 | 0 | 0.16 | 0.000 | 
+  c8-100   P384   s7   r2 | 106.6 | 11662 | 9825 | 1837 | 61.6 | 768 | 1.00 | 0 | 0.16 | 0.000 | 
+  c8-100   P384   s7   r4 | 106.8 | 11693 | 9850 | 1843 | 63.9 | 768 | 1.00 | 0 | 0.17 | 0.000 | 
+  c8-100   P640   s42  r1 | 106.2 | 11630 | 9812 | 1818 | 103.9 | 1280 | 1.00 | 0 | 0.39 | 0.006 | 
+  c8-100   P640   s42  r3 | 106.8 | 11655 | 9767 | 1888 | 105.1 | 1280 | 1.00 | 0 | 0.36 | 0.000 | 
+  c8-100   P640   s7   r2 | 106.3 | 11542 | 9765 | 1777 | 104.5 | 1280 | 1.00 | 0 | 0.38 | 0.000 | 
+  c8-100   P640   s7   r4 | 107.2 | 11747 | 9851 | 1896 | 106.1 | 1280 | 1.00 | 0 | 0.34 | 0.000 | 
+  c8-100   P640D  s42  r5 | 106.8 | 11645 | 9769 | 1876 | 103.8 | 1280 | 1.00 | 0 | 0.35 | 0.000 | 
+  c8-100   P80    s42  r1 | 79.8 | 8687 | 8501 | 185 | 16.6 | 160 | 1.00 | 0 | 0.03 | 0.008 | ONE-LEG
+  c8-100   P80    s42  r3 | 79.7 | 8675 | 8489 | 186 | 16.6 | 160 | 1.00 | 0 | 0.03 | 0.008 | ONE-LEG
+  c8-100   P80    s7   r2 | 79.5 | 8666 | 8476 | 190 | 16.6 | 160 | 1.00 | 0 | 0.03 | 0.021 | ONE-LEG
+  c8-100   P80    s7   r4 | 79.5 | 8655 | 8457 | 198 | 16.7 | 160 | 1.00 | 0 | 0.03 | 0.008 | ONE-LEG
+  c2-100   P128   s42  r1 | 70.9 | 7726 | 7726 | - | 16.0 | 128 | 1.00 | 0 | 0.02 | 0.045 | 
+  c2-100   P128   s42  r3 | 70.8 | 7724 | 7724 | - | 16.0 | 128 | 1.00 | 0 | 0.02 | 0.030 | 
+  c2-100   P128   s7   r2 | 71.0 | 7731 | 7731 | - | 15.0 | 128 | 1.00 | 0 | 0.02 | 0.034 | 
+  c2-100   P160   s42  r1 | 84.4 | 9189 | 9189 | - | 17.0 | 160 | 1.00 | 0 | 0.02 | 0.000 | 
+  c2-100   P160   s42  r3 | 84.3 | 9170 | 9170 | - | 16.0 | 160 | 1.00 | 0 | 0.02 | 0.009 | 
+  c2-100   P160   s7   r2 | 83.9 | 9173 | 9173 | - | 16.0 | 160 | 1.00 | 0 | 0.02 | 0.000 | 
+  c2-100   P192   s42  r1 | 89.6 | 9769 | 9769 | - | 19.0 | 192 | 1.00 | 0 | 0.02 | 0.000 | 
+  c2-100   P192   s42  r3 | 89.6 | 9774 | 9774 | - | 19.0 | 192 | 1.00 | 0 | 0.02 | 0.000 | 
+  c2-100   P192   s7   r2 | 89.1 | 9764 | 9764 | - | 19.0 | 192 | 1.00 | 0 | 0.02 | 0.000 | 
+  c2-100   P2048  s42  r1 | 90.3 | 9814 | 9814 | - | 208.0 | 2048 | 1.00 | 0 | 0.40 | 0.000 | 
+  c2-100   P2048  s42  r3 | 90.2 | 9839 | 9839 | - | 208.0 | 2048 | 1.00 | 0 | 0.41 | 0.000 | 
+  c2-100   P2048  s7   r2 | 89.9 | 9814 | 9814 | - | 207.0 | 2048 | 1.00 | 0 | 0.41 | 0.000 | 
+  c2-100   P256   s42  r1 | 90.1 | 9840 | 9840 | - | 25.0 | 256 | 1.00 | 0 | 0.03 | 0.000 | 
+  c2-100   P256   s42  r3 | 90.4 | 9852 | 9852 | - | 25.0 | 256 | 1.00 | 0 | 0.03 | 0.000 | 
+  c2-100   P256   s7   r2 | 90.5 | 9861 | 9861 | - | 25.0 | 256 | 1.00 | 0 | 0.03 | 0.000 | 
+  c2-100   P384   s42  r1 | 90.3 | 9844 | 9844 | - | 38.0 | 384 | 1.00 | 0 | 0.05 | 0.000 | 
+  c2-100   P384   s42  r3 | 90.4 | 9838 | 9838 | - | 38.0 | 384 | 1.00 | 0 | 0.05 | 0.000 | 
+  c2-100   P384   s7   r2 | 90.4 | 9850 | 9850 | - | 38.0 | 384 | 1.00 | 0 | 0.05 | 0.000 | 
+  c1s-400  P1024  s42  r1 | 832.2 | 88317 | 88317 | - | 10.0 | 1024 | 1.00 | 0 | 0.01 | 0.016 | 
+  c1s-400  P1024  s42  r3 | 853.9 | 90597 | 90597 | - | 9.0 | 1024 | 1.00 | 0 | 0.01 | 0.016 | 
+  c1s-400  P1024  s7   r2 | 791.7 | 83834 | 83834 | - | 11.0 | 1024 | 1.00 | 0 | 0.01 | 0.187 | QCOLLAPSE
+  c1s-400  P2048  s42  r1 | 873.9 | 92758 | 92758 | - | 18.0 | 2048 | 1.00 | 0 | 0.02 | 0.022 | 
+  c1s-400  P2048  s42  r3 | 725.9 | 76261 | 76261 | - | 20.0 | 2048 | 1.00 | 0 | 0.03 | 0.324 | QCOLLAPSE
+  c1s-400  P2048  s42  r5 | 880.9 | 93592 | 93592 | - | 18.0 | 2048 | 1.00 | 0 | 0.02 | 0.017 | 
+  c1s-400  P2048  s42  r7 | 876.5 | 93227 | 93227 | - | 19.0 | 2048 | 1.00 | 0 | 0.02 | 0.017 | 
+  c1s-400  P2048  s42  r9 | 441.3 | 44382 | 44382 | - | 80.5 | 2048 | 1.00 | 0 | 0.07 | 0.684 | QCOLLAPSE
+  c1s-400  P2048  s7   r2 | 726.7 | 76540 | 76540 | - | 22.5 | 2048 | 1.00 | 0 | 0.03 | 0.028 | 
+  c1s-400  P2048  s7   r4 | 886.9 | 94680 | 94680 | - | 19.0 | 2048 | 1.00 | 0 | 0.02 | 0.023 | 
+  c1s-400  P2048  s7   r6 | 833.8 | 88368 | 88368 | - | 21.0 | 2048 | 1.00 | 0 | 0.02 | 0.021 | 
+  c1s-400  P2048  s7   r8 | 800.6 | 84179 | 84179 | - | 20.0 | 2048 | 1.00 | 0 | 0.02 | 0.209 | QCOLLAPSE
+  c1s-400  P384   s42  r1 | 237.8 | 23733 | 23733 | - | 18.0 | 384 | 1.00 | 0 | 0.02 | 0.957 | QCOLLAPSE
+  c1s-400  P384   s42  r3 | 688.0 | 72800 | 72800 | - | 4.0 | 384 | 1.00 | 0 | 0.00 | 0.061 | 
+  c1s-400  P384   s7   r2 | 690.7 | 73513 | 73513 | - | 4.0 | 384 | 1.00 | 0 | 0.00 | 0.022 | 
+  c1s-400  P512   s42  r1 | 495.2 | 50710 | 50710 | - | 7.0 | 512 | 1.00 | 0 | 0.01 | 0.790 | QCOLLAPSE
+  c1s-400  P512   s42  r3 | 784.7 | 83257 | 83257 | - | 5.0 | 512 | 1.00 | 0 | 0.01 | 0.020 | 
+  c1s-400  P512   s42  r5 | 432.8 | 45278 | 45278 | - | 11.0 | 512 | 1.00 | 0 | 0.01 | 0.970 | QCOLLAPSE
+  c1s-400  P512   s42  r7 | 771.6 | 82075 | 82075 | - | 5.0 | 512 | 1.00 | 0 | 0.01 | 0.025 | 
+  c1s-400  P512   s42  r9 | 443.0 | 45107 | 45107 | - | 13.0 | 512 | 1.00 | 0 | 0.01 | 0.751 | QCOLLAPSE
+  c1s-400  P512   s7   r2 | 371.5 | 38550 | 38550 | - | 14.0 | 512 | 1.00 | 0 | 0.01 | 0.988 | QCOLLAPSE
+  c1s-400  P512   s7   r4 | 781.6 | 82749 | 82749 | - | 5.0 | 512 | 1.00 | 0 | 0.01 | 0.015 | 
+  c1s-400  P512   s7   r6 | 782.1 | 82708 | 82708 | - | 5.0 | 512 | 1.00 | 0 | 0.01 | 0.025 | 
+  c1s-400  P512   s7   r8 | 750.2 | 80262 | 80262 | - | 5.0 | 512 | 1.00 | 0 | 0.01 | 0.019 | 
+  c1s-400  P768   s42  r1 | 818.5 | 86525 | 86525 | - | 7.0 | 768 | 1.00 | 0 | 0.01 | 0.016 | 
+  c1s-400  P768   s42  r3 | 812.6 | 86100 | 86100 | - | 7.0 | 768 | 1.00 | 0 | 0.01 | 0.016 | 
+  c1s-400  P768   s7   r2 | 829.5 | 87967 | 87967 | - | 7.0 | 768 | 1.00 | 0 | 0.01 | 0.016 | 
+
+SUCC_DUMP row(s): c8-100 P640D s42 rep5: records 190028 (cli 0, srv 190028), 1544727 bytes of [SUCCDUMP] lines, capped None, >= 100000 records; p0 hn_n 57462, [SUCC] det 190028
+
+STANDING QUEUE AT THE KNEE (q = T-bar - T0, T0 = per-leg echo floors weighted by the arm's own rates; at the W where the arm-median goodput first reaches 0.95 / 0.98 of the control, interpolated in W; UNBOUND rows are points at their realised cap)
+  c8-100: control goodput 106.5  per-leg floors (ms) {0: 16.0, 1: 45.5}  ell 14.4 ms  T0 spread 0.1 ms over 4 smallest-W rows  curve (W, goodput, T-bar, q): (160, 79.6, 16.6, 0.0), (224, 92.8, 21.0, 3.9), (320, 100.7, 28.1, 9.1), (512, 106.0, 42.3, 21.9), (768, 106.7, 62.4, 41.7), (1280, 106.5, 104.9, 84.2)
+    0.95 x control: W 340  T-bar 29.6 ms  T0 19.1 ms  q = 10.4 ms = 0.73 x ell  (interpolated)
+    0.98 x control: W 456  T-bar 38.1 ms  T0 20.0 ms  q = 18.2 ms = 1.26 x ell  (interpolated)
+  c2-100: control goodput 90.2  per-leg floors (ms) {0: 16.0}  ell 10.0 ms  T0 spread 1.0 ms over 3 smallest-W rows  curve (W, goodput, T-bar, q): (128, 70.9, 16.0, 0.0), (160, 84.3, 16.0, 0.0), (192, 89.6, 19.0, 3.0), (256, 90.4, 25.0, 9.0), (384, 90.4, 38.0, 22.0), (2048, 90.2, 208.0, 192.0)
+    0.95 x control: W 169  T-bar 16.8 ms  T0 16.0 ms  q = 0.8 ms = 0.08 x ell  (interpolated)
+    0.98 x control: W 185  T-bar 18.4 ms  T0 16.0 ms  q = 2.4 ms = 0.24 x ell  (interpolated)
+  c1s-400: control goodput 875.2  per-leg floors (ms) {0: 4.0}  ell 2.6 ms  T0 spread 0.0 ms over 2 smallest-W rows  curve (W, goodput, T-bar, q): (384, 689.3, 4.0, 0.0), (512, 781.6, 5.0, 1.0), (768, 818.5, 7.0, 3.0), (1024, 843.0, 9.5, 5.5), (2048, 875.2, 19.0, 15.0)
+    0.95 x control: W 903  T-bar 8.3 ms  T0 4.0 ms  q = 4.3 ms = 1.69 x ell  (interpolated)
+    0.98 x control: W 1491  T-bar 13.8 ms  T0 4.0 ms  q = 9.8 ms = 3.85 x ell  (interpolated)
+  C8 prediction: knee at W ~ 500-700, q ~ 25-35 ms: measured W 340, 10.4 ms
+
+RE-BASING (c8 control P640 against section 54b's B640 medians; tol = the B640 full range floored at 1% of its median)
+  REBASE sum rate R       control 1.164e+04 vs B640 1.17e+04 [1.163e+04 - 1.173e+04]  tol 117  within tol
+  REBASE r0               control 9789 vs B640 9811 [9776 - 9840]  tol 98.11  within tol
+  REBASE r1               control 1853 vs B640 1882 [1839 - 1913]  tol 74.45  within tol
+  REBASE T-bar ms         control 104.8 vs B640 103.7 [102.7 - 106.9]  tol 4.164  within tol
+  REBASE rtt0 ms          control 96.5 vs B640 96 [95.5 - 96.5]  tol 1  within tol
+  REBASE rtt1 ms          control 149.5 vs B640 145.5 [138 - 161]  tol 23  within tol
+  REBASE goodput          control 106.5 vs B640 106.9 [106.5 - 107.6]  tol 1.097  within tol
+  REBASE in-order late s  control 0.3699 vs B640 0.3521 [0.3421 - 0.3879]  tol 0.04579  within tol
+  REBASE old holes        control 0 vs B640 0 [0 - 0]  tol 0  within tol
+REBASE-NEEDED: NO (every readout within tol)
+C8 BANDS (pre-registered; the control column is B640's own range, the other columns shift by the control's re-basing offset where the readout re-based):
+  sum rate R /s          W1280: 1.164e+04 IN [1.163e+04 .. 1.173e+04] | W768: 1.165e+04 OUT [1.14e+04 .. 1.165e+04] | W512: 1.156e+04 IN [1.105e+04 .. 1.16e+04] | W320: 1.096e+04 OUT [1.03e+04 .. 1.09e+04] | W224: 1.011e+04 OUT [9700 .. 1.01e+04] | W160: 8671 IN [- .. 9300]
+  r0 /s                  W1280: 9789 IN [9776 .. 9840] | W768: 9826 IN [9750 .. -] | W512: 9842 IN [9700 .. -] | W320: 9848 IN [9600 .. -] | W224: 9710 IN [9400 .. 9800] | W160: 8483 IN [- .. 9300]
+  r1 /s                  W1280: 1853 IN [1839 .. 1913] | W768: 1831 IN [1650 .. 1900] | W512: 1718 IN [1400 .. 1800] | W320: 1113 OUT [- .. 1000] | W224: 404.6 OUT [- .. 400] | W160: 188.1 IN [- .. 300]
+  T-bar ms               W1280: 104.8 IN [103 .. 107] | W768: 62.45 IN [60 .. 70] | W512: 42.44 IN [42 .. 48] | W320: 28.2 IN [28 .. 32]
+  goodput Mbit/s         W1280: 106.5 IN [106.5 .. 107.6]
+  in-order late mean s   W1280: 0.3699 IN [0.34 .. 0.39] | W768: 0.164 OUT [0.18 .. 0.26] | W512: 0.08896 OUT [0.13 .. 0.18] | W320: 0.0514 OUT [0.08 .. 0.12] | W224: 0.03845 OUT [0.06 .. 0.08]
+  old holes              W1280: 0 IN [0 .. 0] | W768: 0 IN [0 .. 0] | W512: 0 IN [0 .. 0] | W320: 0 IN [0 .. 0] | W224: 0 IN [0 .. 0] | W160: 0 IN [0 .. 0]
+  rtt1 ms                W1280: 149.5 IN [138 .. 161]
+C2 PREDICTIONS (goodput / control): >= 0.97 at W >= 192; 0.88-0.95 at 160; 0.72-0.82 at 128; T-bar ~ W / 9.6k
+  W384: goodput/control 1.002 IN [0.97 .. -]; T-bar 38.0 ms vs W/9.6k = 40.0
+  W256: goodput/control 1.002 IN [0.97 .. -]; T-bar 25.0 ms vs W/9.6k = 26.7
+  W192: goodput/control 0.993 IN [0.97 .. -]; T-bar 19.0 ms vs W/9.6k = 20.0
+  W160: goodput/control 0.934 IN [0.88 .. 0.95]; T-bar 16.0 ms vs W/9.6k = 16.7
+  W128: goodput/control 0.786 IN [0.72 .. 0.82]; T-bar 16.0 ms vs W/9.6k = 13.3
+C1S PREDICTIONS (goodput / control, +- 0.05, flagged rows excluded): 0.94 (1024), 0.92 (768), 0.84 (512), 0.80 (384)
+  W1024: goodput/control 0.963 IN [0.89 .. 0.99] (n 2, collapse-excluded 1)
+  W768: goodput/control 0.935 IN [0.87 .. 0.97] (n 3, collapse-excluded 0)
+  W512: goodput/control 0.893 OUT [0.79 .. 0.89] (n 5, collapse-excluded 4)
+  W384: goodput/control 0.788 IN [0.75 .. 0.85] (n 2, collapse-excluded 1)
+ANCHOR (rtp_us - boot): c8 p0 <= 10 ms at W <= 320; c8 p1 <= 8 ms at every W
+  W160: rtp0-boot -1.0 ms IN; rtp1-boot -8.0 ms IN
+  W224: rtp0-boot 0.6 ms IN; rtp1-boot -7.7 ms IN
+  W320: rtp0-boot 1.3 ms IN; rtp1-boot -5.6 ms IN
+  W512: rtp0-boot 10.5 ms ; rtp1-boot -0.6 ms IN
+  W768: rtp0-boot 22.0 ms ; rtp1-boot -4.8 ms IN
+  W1280: rtp0-boot 32.9 ms ; rtp1-boot -3.9 ms IN
+
+FALSIFIERS (registered; goodput medians read a DNF as 0; an UNBOUND arm is read on its bound rows only; FIRES / DOES-NOT-FIRE / UNSCOREABLE):
+  F1 DOES-NOT-FIRE c8 r1 at W = 320 >= 0.8 x r1 at 1280: leg 1 is fed without a fast-leg queue -- r1 at W 320 (P160, n 4, unbound 0) 1113 vs 0.8 x r1 at 1280 (P640, n 4) 1483
+  F2 DOES-NOT-FIRE c8 sum rate at W = 768 < 0.97 x control: the knee is above 768 -- sum rate at 768 (P384, n 4, unbound 0) 11653 vs 0.97 x control 11293 (n 4)
+  F3 DOES-NOT-FIRE c8 r0 < 0.97 x 9 800 at W = 224: the leg-0 shoulder is above prediction -- r0 at W 224 (P112, n 4, unbound 0) 9710 vs 0.97 x 9800 = 9506
+  F4 DOES-NOT-FIRE c8 rtp0 at W <= 320 > boot + 10 ms: E03's queue persists even at small W -- rtp0 - boot at W 320 / 224 / 160 read for pools [160, 112, 80]: none above 10 ms
+  F5 FIRES         |W - sum r_i rtt_i - old holes| > 0.1 W at any bound W >= 320: Little fails -- 11 arm medians read (bound rows, W >= 320); c1s-400 P1024 W 1024 |resid - old holes|/W 0.171; c1s-400 P2048 W 2048 |resid - old holes|/W 0.147; c1s-400 P384 W 384 |resid - old holes|/W 0.238; c1s-400 P512 W 512 |resid - old holes|/W 0.192; c1s-400 P768 W 768 |resid - old holes|/W 0.211
+  F6 DOES-NOT-FIRE old holes > 50 at any W <= 1 280: P_h is lower than the derivation says -- 15 arm medians read (W <= 1280); none above 50
+  F7 DOES-NOT-FIRE c2 goodput median at 192 < 0.95 x control: the c2 knee moved up in this era -- P192 89.6 (n 3, unbound 0) vs 0.95 x P2048 85.7 (n 3)
+  F8 DOES-NOT-FIRE c1s goodput median at 512 >= 0.95 x control over the unflagged rows: the c1s cost is overstated -- (needs >= 5 unflagged rows in each arm) P512 781.6 (unflagged n 5, unbound 0, quinn-collapse excluded 4) vs 0.95 x P2048 831.4 (unflagged n 6, excluded 3)
+  F9 UNSCOREABLE   the SUCC_DUMP row shows p0 holes overtaken by later-placed p1 seqs: a real delay inversion -- the dump holds (outcome, us) records only -- no path and no seq -- so 'p0 holes overtaken by p1 seqs' cannot be computed from it (a path-tagged dump needs an engine change this block excludes). Dump rows read: 1, records [190028]; beside it, the counters that DO carry the path split: [HOLD] p0 (holes closed by an arrival on the same path that exposed them / on a different one) dump row sp 61634 xp 870 xp_frac 0.0139 ([SUCC] all holes xp_frac 0.9671); control P640 medians p0 xp_frac 0.0155, [SUCC] xp_frac 0.9670 (n 4)
+  F10 UNSCOREABLE   the standing-queue multiple (T-bar - T0)/ell at the 0.95 point differs across c1s, c2, c8 by more than x3: the q*ell form is wrong -- T-bar - T0 at the 0.95 point is not distinguishable from T0's own row-to-row spread (per-leg floors are only as good as this spread): c2-100 (T-bar - T0 = 0.8 ms within T0's spread 1.0 ms over 3 smallest-W rows); multiples read: c1s-400 1.69, c2-100 0.08, c8-100 0.73
+VERDICT56 REPORTED-ONLY slots=70/70 live=70 void=0 replaced=0 dnf=0 unbound=0 qcollapse=9 falsifiers=F1:DOES-NOT-FIRE,F2:DOES-NOT-FIRE,F3:DOES-NOT-FIRE,F4:DOES-NOT-FIRE,F5:FIRES,F6:DOES-NOT-FIRE,F7:DOES-NOT-FIRE,F8:DOES-NOT-FIRE,F9:UNSCOREABLE,F10:UNSCOREABLE

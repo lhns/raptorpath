@@ -1,0 +1,12 @@
+POST HOC / NOT REGISTERED. Phase split: main = t <= t_src_end (last [DIAG] line with src>0), tail = after it; lines t >= 1 s
+
+== c2-100 wall (MEANS): BASE seconds 53.26 = main 53.12 + tail 0.15;  CAND 54.10 = 53.92 + 0.18
+   delta seconds +0.832 = main +0.800 (96%) + tail +0.032 (4%);  goodput deficit -1.54% of which tail 0.06 pts, main 1.48 pts
+   per seed tails: BASE 0.25,0.04,0.10,0.29,0.12,0.17,0.30,0.07,0.13,0.26,0.01,0.03; CAND 0.03,0.05,0.19,0.03,0.19,0.03,0.82,0.15,0.18,0.11,0.19,0.19
+   CAND MAIN-PHASE non-R lines leg0: n=2494 UNDER share 0.0048  UNDER&R2a 0
+
+== c8-100 wall (MEANS): BASE seconds 48.26 = main 44.34 + tail 3.91;  CAND 49.43 = 44.70 + 4.73
+   delta seconds +1.179 = main +0.358 (30%) + tail +0.821 (70%);  goodput deficit -2.39% of which tail 1.66 pts, main 0.72 pts
+   per seed tails: BASE 3.42,4.17,2.99,3.57,5.14,3.59,3.19,4.20,4.06,4.51,4.12,4.00; CAND 4.83,4.66,4.23,4.15,4.45,4.15,5.57,5.32,5.27,4.15,5.09,4.93
+   CAND MAIN-PHASE non-R lines leg0: n=2028 UNDER share 0.0020  UNDER&R2a 0
+   CAND MAIN-PHASE non-R lines leg1: n=2028 UNDER share 0.0000  UNDER&R2a 0

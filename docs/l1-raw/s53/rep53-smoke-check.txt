@@ -1,0 +1,25 @@
+SMOKE53 rows=8/8 (one row of each arm per block, unscored; the values are not read, only the criteria below)
+PASS every smoke row of the table ran
+  ROW c8-100 BASE: status=LIVE mbps=98.087 wall=52.0 fires={'fast': 88, 'fired': 14391, 'r': 14303, 'y': 88} snapv={'-': (402, 0, 0, 0), '0': (12784, 0, 0, 0), '1': (4902, 4865, 50, 448)} fed-det=-186536 cx=9425 E=2.0655423712977674
+  ROW c8-100 CAND: status=LIVE mbps=107.218 wall=47.0 fires={'fast': 6662, 'fired': 18526, 'r': 11864, 'y': 6662} snapv={'-': (372, 0, 0, 0), '0': (10056, 0, 0, 0), '1': (4970, 4941, 4188, 2556)} fed-det=196664 cx=11136 E=1.9117476951534562
+  ROW c8-100 CANDS: status=LIVE mbps=108.112 wall=47.0 fires={'fast': 1897, 'fired': 14608, 'r': 12711, 'y': 1897} snapv={'-': (389, 0, 0, 0), '0': (12427, 0, 0, 0), '1': (4290, 4268, 0, 0)} fed-det=-49204 cx=10553 E=0.0
+  ROW c8-100 BASES: status=LIVE mbps=99.833 wall=50.0 fires={'fast': 30, 'fired': 14424, 'r': 14394, 'y': 30} snapv={'-': (389, 0, 0, 0), '0': (12434, 0, 0, 0), '1': (4857, 4834, 0, 0)} fed-det=-216241 cx=9506 E=0.0
+  ROW c8-100 CW0: status=LIVE mbps=106.541 wall=47.0 fires={'fast': 10366, 'fired': 21584, 'r': 11218, 'y': 10366} snapv={'-': (367, 0, 0, 0), '0': (10515, 0, 0, 0), '1': (5421, 5398, 6644, 2112)} fed-det=102363 cx=13821 E=1.8921905105305865
+  ROW c1d-400 BASE: status=LIVE mbps=790.218 wall=53.0 fires={'fast': 1172, 'fired': 28971, 'r': 27799, 'y': 1172} snapv={'-': (9, 0, 0, 0), '0': (14794, 1183, 290, 549), '1': (21277, 1484, 296, 496)} fed-det=-1833512 cx=3141 E=6.76246719160105
+  ROW c1d-400 CAND: status=LIVE mbps=798.787 wall=52.0 fires={'fast': 1266, 'fired': 30174, 'r': 28908, 'y': 1266} snapv={'-': (6, 0, 0, 0), '0': (21372, 1491, 276, 484), '1': (14312, 1274, 226, 530)} fed-det=-1763848 cx=2941 E=5.117388708437962
+  ROW c1d-400 CANDS: status=LIVE mbps=818.662 wall=51.0 fires={'fast': 925, 'fired': 25314, 'r': 24389, 'y': 925} snapv={'-': (6, 0, 0, 0), '0': (21597, 1219, 0, 0), '1': (15211, 2259, 0, 0)} fed-det=-1903295 cx=3010 E=0.0
+PASS [SNAPV] parsed on every smoke row, rep > 0 per active leg, pt_st + tt_st <= fires
+PASS fed - det computed (sender [HOLD] fed over paths, receiver's final [SUCC] det)
+PASS each arm's env in [GATES] on both ends (RWM_RECOV_SNAPVER: 1 on CANDS / BASES, 0 elsewhere; RWM_PLACE_WDIV=0 on CW0, absent elsewhere)
+PASS the filter arms' liveness (CANDS / BASES: pt_st + tt_st = 0 on every leg, stale > 0 on p1 at c8 unless the smoke's BASE / CAND rows show none, fed - det <= cx)
+PASS the c1d 5 GB row(s) finished inside RWM_PERF_TIMEOUT_S=200 (rc 0, a summary, not DNF)
+PASS no None among the registered readouts (hy_p50 without a hy and E without fast fires / stale reports are undefined, not missing)
+  LIVENESS c8-100 BASE s42 rep1: LIVE 
+  LIVENESS c8-100 CAND s42 rep1: LIVE 
+  LIVENESS c8-100 CANDS s42 rep1: LIVE 
+  LIVENESS c8-100 BASES s42 rep1: LIVE 
+  LIVENESS c8-100 CW0 s42 rep1: LIVE 
+  LIVENESS c1d-400 BASE s42 rep1: LIVE 
+  LIVENESS c1d-400 CAND s42 rep1: LIVE 
+  LIVENESS c1d-400 CANDS s42 rep1: LIVE 
+SMOKE-PASS

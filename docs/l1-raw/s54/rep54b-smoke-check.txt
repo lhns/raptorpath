@@ -1,0 +1,20 @@
+SMOKE54B rows=6/6 (one row per block arm, unscored; the values are not read, only the criteria below)
+PASS one row per block arm ran
+  ROW B2048: status=LIVE mbps=98.476 wall=51.0 gates=2048/2048 pool_per_path=2048/2048 W=4096.0 bind=1.0 q0=1401.0 resid=1421.120481099657 old_holes=1139.0 tail_witness=True
+  ROW B1024: status=LIVE mbps=107.086 wall=47.0 gates=1024/1024 pool_per_path=1024/1024 W=2048.0 bind=1.0 q0=897.0 resid=113.42689189189218 old_holes=0.0 tail_witness=None
+  ROW B640: status=LIVE mbps=106.663 wall=47.0 gates=640/640 pool_per_path=640/640 W=1280.0 bind=1.0 q0=8.5 resid=62.4357692307691 old_holes=0.0 tail_witness=None
+  ROW L2048: status=LIVE mbps=107.755 wall=47.0 gates=2048/2048 pool_per_path=2048/2048 W=4096.0 bind=1.0 q0=2475.0 resid=41.34432989690731 old_holes=0.0 tail_witness=True
+  ROW L1024: status=LIVE mbps=107.195 wall=47.0 gates=1024/1024 pool_per_path=1024/1024 W=2048.0 bind=1.0 q0=86.0 resid=44.42155405405447 old_holes=0.0 tail_witness=None
+  ROW L640: status=LIVE mbps=107.397 wall=47.0 gates=640/640 pool_per_path=640/640 W=1280.0 bind=1.0 q0=23.0 resid=29.11925675675684 old_holes=0.0 tail_witness=None
+PASS each arm's pool is in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)
+PASS each row ran the build of its seat (B = BASE tree, L = CAND tree)
+PASS [SNAPV] parsed on every row (the gauge is in both builds)
+PASS in-order delay (run and late), evictions, old holes and the budget residual computed (no None)
+PASS the c8 600 MB rows finished inside RWM_PERF_TIMEOUT_S=300 (rc 0, a summary, not DNF)
+  LIVENESS B2048 s42 rep1: LIVE  | p1 stale=5025 tail-witness@W4096=True
+  LIVENESS B1024 s42 rep1: LIVE  | p1 stale=5443 tail-witness@W4096=None
+  LIVENESS B640 s42 rep1: LIVE  | p1 stale=4163 tail-witness@W4096=None
+  LIVENESS L2048 s42 rep1: LIVE  | p1 stale=5069 tail-witness@W4096=True
+  LIVENESS L1024 s42 rep1: LIVE  | p1 stale=3833 tail-witness@W4096=None
+  LIVENESS L640 s42 rep1: LIVE  | p1 stale=4262 tail-witness@W4096=None
+SMOKE-PASS

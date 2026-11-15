@@ -1,0 +1,6 @@
+TEST main rc=0 wall=1182s passed=1119 failed=0 ignored=47 binaries=96 cmd=[timeout 7200 ~/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[timeout 3600 ~/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=125s passed=36 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE timeout 3600 ~/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=0 wall=1082s passed=978 failed=0 ignored=46 binaries=87 cmd=[timeout 7200 ~/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+TEST parsers rc=0 wall=327s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && for t in test_*.py; do python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done]
+IDENTITY-PANICS 0

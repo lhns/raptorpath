@@ -385,7 +385,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 /// Per-fix anchor-hygiene gate (ADR-0061) with the `RWM_ANCHOR_HYGIENE`
 /// umbrella as its default — `RWM_ANCHOR_HYGIENE=1` turns the whole anchor-repair
 /// family on for a battery, while each fix stays individually A/B-able
-/// (`RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_PLAIN_RS`, `RWM_CLOCK_GAP`).
+/// (`RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_CLOCK_GAP`).
 /// Everything defaults off: the shipped path is byte-identical unset.
 pub fn anchor_gate(name: &str) -> bool {
     anchor_gate_default(name, false)

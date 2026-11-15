@@ -1,0 +1,4 @@
+MERGE-CANDIDATE SESSION (status 47): suites/TESTS.txt, guard/score.txt, p46/score.txt
+== guard
+VERDICT GATE-41c PASS
+== p46

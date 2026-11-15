@@ -1,4 +1,4 @@
-//! The teardown gauges `[CCAP]` (`RWM_COMPOSED_CAP`) and `[WALL]`
+//! The teardown gauges `[CCAP]` (`RWM_LATE_BRAKE`) and `[WALL]`
 //! (`RWM_WALLDIAG`) fire exactly once, fed with real numbers, under a
 //! `perf`-shaped exit. `perf::client` returns without signalling shutdown,
 //! and the memory TUN closes only when its handle drops, racing process
@@ -23,13 +23,9 @@ use std::time::Duration;
 /// runtime-drop child (see the second test).
 const CHILD_PEER: &str = "RWM_GAUGE_CHILD_PEER";
 
-/// The composed arm as the battery configures it: the composed pool law and
-/// its late-stage brake, on honest anchors, with both gauges' gates on.
-/// `RWM_THREE_TERM` stays off — the composed gate reaches the pool seat on its
-/// own (see `composed_cap_loopback`).
-const ARM: [(&str, &str); 4] = [
-    ("RWM_COMPOSED_CAP", "1"),
-    ("RWM_PLAIN_RS", "1"),
+/// The late-brake arm as the battery configures it, with both gauges' gates on.
+const ARM: [(&str, &str); 3] = [
+    ("RWM_LATE_BRAKE", "1"),
     ("RWM_WALLDIAG", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
@@ -66,18 +62,8 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
     // Mechanism liveness first: a missing line must be readable as an
     // unreachable emission site and never as an unset gate.
     assert!(
-        log.contains("RWM_COMPOSED_CAP=1"),
-        "{what}: the [GATES] echo does not carry RWM_COMPOSED_CAP=1:\n{log}"
-    );
-    // Two-sided echo (measurement-discipline rule 15): the default echo with
-    // the 0 value is pinned in `gates.rs`
-    // (`gate_defaults_are_the_shipped_values`); this is the on side, and it
-    // asserts the absence of the off string as well, so an arm's
-    // control/treatment split stays readable from its log.
-    assert!(
-        !log.contains("RWM_COMPOSED_CAP=0"),
-        "{what}: the [GATES] echo carries BOTH sides of RWM_COMPOSED_CAP — an \
-         arm's gate state is then unreadable from its log:\n{log}"
+        log.contains("RWM_LATE_BRAKE=1") && !log.contains("RWM_LATE_BRAKE=0"),
+        "{what}: the [GATES] echo does not carry RWM_LATE_BRAKE=1 two-sidedly:\n{log}"
     );
     assert!(
         log.contains("RWM_WALLDIAG=1"),
@@ -105,75 +91,23 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
     println!("[gauge-reachability/{what}] {ccap}");
     println!("[gauge-reachability/{what}] {wall}");
 
-    let eng = ccap
+    let brake = ccap
         .split_whitespace()
-        .find_map(|t| t.strip_prefix("eng="))
-        .unwrap_or_else(|| panic!("{what}: [CCAP] must carry eng=<engaged>/<refreshes> — {ccap}"));
-    let (engaged, refreshes) = eng.split_once('/').expect("eng=<a>/<b>");
-    let refreshes: u64 = refreshes.parse().expect("eng= denominator");
-    let engaged: u64 = engaged.parse().expect("eng= numerator");
+        .find_map(|t| t.strip_prefix("brake="))
+        .unwrap_or_else(|| panic!("{what}: [CCAP] must carry brake=<closed>/<ticks> - {ccap}"));
+    let (closed, ticks) = brake.split_once('/').expect("brake=<a>/<b>");
+    let ticks: u64 = ticks.parse().expect("brake= denominator");
+    let closed: u64 = closed.parse().expect("brake= numerator");
     assert!(
-        refreshes > 0,
-        "{what}: [CCAP] reports {refreshes} dyn-cap refreshes — the tally was \
-         never fed, so the line is a rendered empty struct: {ccap}"
+        ticks > 0,
+        "{what}: [CCAP] reports {ticks} brake ticks - the tally was never fed, \
+         so the line is a rendered empty struct: {ccap}"
     );
+    assert!(closed <= ticks, "{what}: [CCAP] closed exceeds its own denominator: {ccap}");
     assert!(
-        engaged <= refreshes,
-        "{what}: [CCAP] engagement exceeds its own denominator: {ccap}"
+        ccap.contains("brake_frac="),
+        "{what}: [CCAP] is missing the scrapeable field `brake_frac=`: {ccap}"
     );
-    for key in ["cap=", "mem=", "floor=", "floor_val=", "brake_frac="] {
-        assert!(
-            ccap.contains(key),
-            "{what}: [CCAP] is missing the scrapeable field `{key}`: {ccap}"
-        );
-    }
-
-    // ── The span block ──
-    //
-    // `[CCAP]` must carry the resequencing span, its Σ crosscheck form, and
-    // the two anchors that make an out-of-band reading attributable to the
-    // anchors rather than to either formula (see `net::SpanForms`). A format
-    // pin cannot catch an absent field; only a reachability assertion over a
-    // log the harness produces can.
-    for key in ["span=", "span_sigma=", "span_ratio=", "rate_fast=", "spread_us="] {
-        assert!(
-            ccap.contains(key),
-            "{what}: [CCAP] is missing the c9-contract span field `{key}` — \
-             C9-L1 and C9-L3 are UNSCOREABLE without it: {ccap}"
-        );
-    }
-    let span = field(ccap, "span=")
-        .unwrap_or_else(|| panic!("{what}: [CCAP] span= must parse as f64 — {ccap}"));
-    let span_sigma = field(ccap, "span_sigma=").expect("span_sigma= parses");
-    let spread_us = field(ccap, "spread_us=").expect("spread_us= parses");
-    let rate_fast = field(ccap, "rate_fast=").expect("rate_fast= parses");
-    // Loopback is a symmetric one-path cell: `RTprop_max == RTprop_min` ⇒
-    // span 0 by arithmetic under both forms, with no path-count predicate
-    // anywhere. A non-zero reading would mean a topology branch entered the
-    // law.
-    assert_eq!(
-        span, 0.0,
-        "{what}: [CCAP] reports a non-zero resequencing span on a ONE-PATH \
-         loopback, where both span forms are 0 by arithmetic: {ccap}"
-    );
-    assert_eq!(
-        span_sigma, 0.0,
-        "{what}: the Σ span form must vanish on one path too: {ccap}"
-    );
-    assert_eq!(
-        spread_us, 0.0,
-        "{what}: one path cannot have an RTprop spread: {ccap}"
-    );
-    // …and the anchor that is not structurally zero must be fed whenever the
-    // law engaged: `rate_fast = 0` with `eng > 0` would mean the span block is
-    // a rendered empty struct rather than a measurement.
-    if engaged > 0 {
-        assert!(
-            rate_fast > 0.0,
-            "{what}: [CCAP] engaged {engaged} times but reports rate_fast=0 — \
-             the span block was never fed: {ccap}"
-        );
-    }
 
     let total_ms = field(wall, "total_ms=")
         .unwrap_or_else(|| panic!("{what}: [WALL] must carry total_ms= — {wall}"));
@@ -323,7 +257,7 @@ fn runtime_drop_child_fixture() {
     // same resolution, giving the parent its mechanism-liveness check.
     let g = raptorpath::gates::RuntimeGates::resolve();
     println!("{}", g.echo_line());
-    assert!(g.composed_cap && g.walldiag, "the child's arm must be armed");
+    assert!(g.late_brake && g.walldiag, "the child's arm must be armed");
 
     let cfg = raptorpath::config::RaptorpathConfig {
         bind: Some(vec!["127.0.0.1:0".into()]),

@@ -1,0 +1,75 @@
+== c8-100@def-BASE-s42-r3-a1-c.log t_src_end=44.3
+ t=44.30 store=3307/4096 lag= 45714 retx= 22 cod=  6 rep=108 fires/rep= 0.2 coal=  0 gdrop= 2 sweep=3 on0/on1=  0/ 22 tx0/tx1=2204/144 poolrtt=473.3ms nbud=10
+ t=44.60 store=1408/4096 lag= 43643 retx= 10 cod=  6 rep= 72 fires/rep= 0.1 coal=  3 gdrop= 0 sweep=2 on0/on1= 10/  0 tx0/tx1=  12/  4 poolrtt=478.6ms nbud=10
+ t=44.90 store=1076/4096 lag= 38383 retx=100 cod= 10 rep= 11 fires/rep= 9.1 coal= 51 gdrop= 4 sweep=2 on0/on1=100/  0 tx0/tx1=  99/  0 poolrtt=295.5ms nbud=0
+ t=45.20 store=973/3815 lag= 31851 retx=110 cod= 11 rep= 11 fires/rep=10.0 coal= 67 gdrop= 3 sweep=1 on0/on1=110/  0 tx0/tx1= 121/  0 poolrtt=295.5ms nbud=0
+ t=45.40 store=776/3815 lag= 27094 retx=160 cod= 16 rep= 16 fires/rep=10.0 coal=133 gdrop= 7 sweep=0 on0/on1=160/  0 tx0/tx1= 176/  0 poolrtt=295.5ms nbud=0
+ t=45.70 store=706/3815 lag= 25558 retx= 80 cod=  8 rep=  8 fires/rep=10.0 coal= 43 gdrop= 2 sweep=1 on0/on1= 80/  0 tx0/tx1=  88/  0 poolrtt=295.5ms nbud=0
+ t=46.00 store=584/3815 lag= 21880 retx=120 cod= 12 rep= 12 fires/rep=10.0 coal= 77 gdrop= 8 sweep=1 on0/on1=120/  0 tx0/tx1= 132/  0 poolrtt=295.5ms nbud=0
+ t=46.20 store=432/3815 lag= 15379 retx=150 cod= 15 rep= 15 fires/rep=10.0 coal=115 gdrop= 5 sweep=0 on0/on1=150/  0 tx0/tx1= 166/  1 poolrtt=295.5ms nbud=0
+ t=46.50 store=279/3815 lag=  9093 retx=160 cod= 16 rep= 16 fires/rep=10.0 coal=117 gdrop= 5 sweep=0 on0/on1=160/  0 tx0/tx1= 176/  0 poolrtt=295.5ms nbud=0
+ t=46.70 store=232/3641 lag=  8616 retx= 60 cod=  6 rep=  7 fires/rep= 8.6 coal= 21 gdrop= 3 sweep=2 on0/on1= 60/  0 tx0/tx1=  77/  0 poolrtt=295.5ms nbud=10
+ t=47.00 store=112/3641 lag=  5246 retx=110 cod= 11 rep= 12 fires/rep= 9.2 coal= 72 gdrop= 9 sweep=1 on0/on1=110/  0 tx0/tx1= 121/  0 poolrtt=295.5ms nbud=10
+ t=47.30 store=3/3220 lag=   246 retx=112 cod= 13 rep= 14 fires/rep= 8.0 coal= 53 gdrop= 1 sweep=2 on0/on1=112/  0 tx0/tx1= 121/  0 poolrtt=295.5ms nbud=6
+== c8-100@def-BASE-s42-r5-a1-c.log t_src_end=44.4
+ t=44.40 store=3237/4096 lag= 90697 retx=160 cod= 23 rep= 93 fires/rep= 1.7 coal=  3 gdrop=15 sweep=2 on0/on1=144/ 16 tx0/tx1=2284/ 16 poolrtt=668.8ms nbud=10
+ t=44.60 store=2083/2096 lag= 76083 retx= 79 cod=  9 rep= 42 fires/rep= 1.9 coal=  9 gdrop= 7 sweep=1 on0/on1= 49/ 30 tx0/tx1=  54/ 26 poolrtt=76.4ms nbud=10
+ t=44.90 store=1993/2096 lag= 67200 retx= 90 cod=  9 rep=  9 fires/rep=10.0 coal= 43 gdrop= 4 sweep=0 on0/on1= 70/ 20 tx0/tx1=  70/ 26 poolrtt=58.8ms nbud=0
+ t=45.10 store=1902/2096 lag= 64570 retx=121 cod= 15 rep= 13 fires/rep= 9.3 coal= 31 gdrop= 4 sweep=1 on0/on1=115/  6 tx0/tx1= 123/ 13 poolrtt=49.6ms nbud=0
+ t=45.40 store=1778/2096 lag= 59391 retx=140 cod= 14 rep= 14 fires/rep=10.0 coal= 85 gdrop= 0 sweep=0 on0/on1=132/  8 tx0/tx1= 144/ 10 poolrtt=47.1ms nbud=0
+ t=45.70 store=1666/2096 lag= 56823 retx=120 cod= 13 rep= 13 fires/rep= 9.2 coal= 39 gdrop= 4 sweep=1 on0/on1= 95/ 25 tx0/tx1= 116/ 26 poolrtt=46.0ms nbud=10
+ t=45.90 store=1535/1949 lag= 47943 retx=131 cod= 14 rep= 14 fires/rep= 9.4 coal= 42 gdrop= 5 sweep=1 on0/on1= 89/ 42 tx0/tx1=  97/ 39 poolrtt=47.8ms nbud=0
+ t=46.20 store=1465/1901 lag= 45015 retx= 70 cod=  7 rep=  7 fires/rep=10.0 coal= 24 gdrop= 2 sweep=0 on0/on1= 36/ 34 tx0/tx1=  36/ 43 poolrtt=52.5ms nbud=0
+ t=46.50 store=1395/1901 lag= 44303 retx= 80 cod=  8 rep=  8 fires/rep=10.0 coal= 21 gdrop= 1 sweep=0 on0/on1= 65/ 15 tx0/tx1=  68/ 20 poolrtt=48.0ms nbud=0
+ t=46.70 store=1219/1878 lag= 37596 retx=190 cod= 19 rep= 19 fires/rep=10.0 coal= 75 gdrop= 3 sweep=0 on0/on1=146/ 44 tx0/tx1= 161/ 42 poolrtt=47.0ms nbud=0
+ t=47.00 store=1103/1713 lag= 32589 retx=111 cod= 16 rep= 12 fires/rep= 9.2 coal= 57 gdrop= 2 sweep=1 on0/on1= 86/ 25 tx0/tx1=  96/ 36 poolrtt=45.6ms nbud=0
+ t=47.20 store=974/1639 lag= 27505 retx=130 cod= 18 rep= 13 fires/rep=10.0 coal= 89 gdrop= 2 sweep=0 on0/on1=121/  9 tx0/tx1= 135/ 14 poolrtt=45.8ms nbud=0
+ t=47.50 store=894/1639 lag= 24685 retx= 80 cod=  8 rep=  8 fires/rep=10.0 coal= 22 gdrop= 3 sweep=0 on0/on1= 53/ 27 tx0/tx1=  65/ 23 poolrtt=47.7ms nbud=0
+ t=47.80 store=764/1639 lag= 23042 retx=130 cod= 13 rep= 13 fires/rep=10.0 coal= 58 gdrop= 4 sweep=0 on0/on1= 82/ 48 tx0/tx1=  88/ 55 poolrtt=49.9ms nbud=0
+ t=48.00 store=613/1623 lag= 17069 retx=150 cod= 15 rep= 15 fires/rep=10.0 coal= 77 gdrop= 6 sweep=0 on0/on1=104/ 46 tx0/tx1= 112/ 54 poolrtt=47.1ms nbud=0
+ t=48.30 store=532/1623 lag= 14933 retx= 80 cod=  8 rep=  8 fires/rep=10.0 coal= 47 gdrop= 1 sweep=0 on0/on1= 56/ 24 tx0/tx1=  65/ 24 poolrtt=54.2ms nbud=0
+ t=48.50 store=418/1623 lag= 12288 retx=120 cod= 12 rep= 12 fires/rep=10.0 coal= 41 gdrop= 2 sweep=0 on0/on1= 95/ 25 tx0/tx1= 110/ 27 poolrtt=46.5ms nbud=10
+ t=48.80 store=232/1623 lag=  7852 retx=180 cod= 18 rep= 18 fires/rep=10.0 coal= 86 gdrop= 7 sweep=0 on0/on1=168/ 12 tx0/tx1= 174/ 18 poolrtt=46.2ms nbud=0
+ t=49.00 store=158/1623 lag=  5895 retx= 81 cod=  9 rep=  9 fires/rep= 9.0 coal= 43 gdrop= 4 sweep=1 on0/on1= 73/  8 tx0/tx1=  93/  4 poolrtt=45.3ms nbud=10
+ t=49.30 store=68/1201 lag=  2674 retx=100 cod= 10 rep= 10 fires/rep=10.0 coal= 34 gdrop= 0 sweep=0 on0/on1= 81/ 19 tx0/tx1=  88/ 26 poolrtt=48.5ms nbud=10
+== c8-100@def-CAND-s42-r4-a1-c.log t_src_end=44.6
+ t=44.60 store=2531/2184 lag= 85829 retx= 93 cod= 18 rep=120 fires/rep= 0.8 coal=101 gdrop=15 sweep=2 on0/on1= 12/ 81 tx0/tx1=2065/486 poolrtt=303.2ms nbud=8
+ t=44.80 store=2034/1724 lag= 74679 retx=161 cod= 31 rep= 57 fires/rep= 2.8 coal=130 gdrop=15 sweep=2 on0/on1=132/ 29 tx0/tx1= 159/193 poolrtt=165.5ms nbud=0
+ t=45.10 store=1908/1724 lag= 68694 retx=110 cod= 11 rep= 11 fires/rep=10.0 coal= 96 gdrop= 5 sweep=0 on0/on1=110/  0 tx0/tx1= 124/  0 poolrtt=165.5ms nbud=10
+ t=45.40 store=1798/1724 lag= 67254 retx=120 cod= 12 rep= 13 fires/rep= 9.2 coal= 72 gdrop= 5 sweep=1 on0/on1=120/  0 tx0/tx1= 121/  0 poolrtt=165.5ms nbud=10
+ t=45.60 store=1538/1724 lag= 62235 retx=260 cod= 29 rep= 29 fires/rep= 9.0 coal=202 gdrop=10 sweep=0 on0/on1=260/  0 tx0/tx1= 289/  0 poolrtt=165.5ms nbud=0
+ t=45.90 store=1392/1724 lag= 56393 retx=140 cod= 14 rep= 14 fires/rep=10.0 coal= 98 gdrop= 8 sweep=0 on0/on1=140/  0 tx0/tx1= 154/  0 poolrtt=165.5ms nbud=0
+ t=46.10 store=1333/1724 lag= 55698 retx= 79 cod=  9 rep=  9 fires/rep= 8.8 coal= 29 gdrop= 7 sweep=2 on0/on1= 79/  0 tx0/tx1=  89/  1 poolrtt=165.5ms nbud=0
+ t=46.40 store=1171/1724 lag= 50932 retx=150 cod= 15 rep= 15 fires/rep=10.0 coal=111 gdrop= 8 sweep=0 on0/on1=150/  0 tx0/tx1= 165/  0 poolrtt=165.5ms nbud=0
+ t=46.60 store=1038/1724 lag= 44448 retx=140 cod= 14 rep= 14 fires/rep=10.0 coal= 94 gdrop=11 sweep=0 on0/on1=140/  0 tx0/tx1= 154/  0 poolrtt=165.5ms nbud=0
+ t=46.90 store=876/1724 lag= 36064 retx=160 cod= 16 rep= 16 fires/rep=10.0 coal=125 gdrop= 7 sweep=0 on0/on1=160/  0 tx0/tx1= 176/  0 poolrtt=165.5ms nbud=0
+ t=47.20 store=806/1724 lag= 34470 retx= 70 cod=  7 rep=  8 fires/rep= 8.8 coal= 39 gdrop= 2 sweep=1 on0/on1= 70/  0 tx0/tx1=  77/  0 poolrtt=165.5ms nbud=0
+ t=47.40 store=643/1724 lag= 26647 retx=160 cod= 16 rep= 16 fires/rep=10.0 coal=128 gdrop= 5 sweep=0 on0/on1=160/  0 tx0/tx1= 176/  0 poolrtt=165.5ms nbud=0
+ t=47.70 store=584/1724 lag= 23385 retx= 71 cod=  8 rep=  9 fires/rep= 7.9 coal= 32 gdrop= 6 sweep=2 on0/on1= 70/  1 tx0/tx1=  87/  1 poolrtt=165.5ms nbud=8
+ t=48.00 store=533/1724 lag= 19781 retx= 60 cod=  6 rep=  6 fires/rep=10.0 coal= 21 gdrop= 3 sweep=1 on0/on1= 60/  0 tx0/tx1=  68/  0 poolrtt=165.5ms nbud=10
+ t=48.20 store=351/1746 lag= 12574 retx=170 cod= 17 rep= 17 fires/rep=10.0 coal=118 gdrop= 6 sweep=0 on0/on1=169/  1 tx0/tx1= 176/  2 poolrtt=150.9ms nbud=0
+ t=48.50 store=181/1746 lag=  7803 retx=170 cod= 17 rep= 17 fires/rep=10.0 coal=124 gdrop=15 sweep=0 on0/on1=169/  1 tx0/tx1= 187/  0 poolrtt=150.9ms nbud=0
+ t=48.80 store=7/1595 lag=   997 retx=167 cod= 17 rep= 18 fires/rep= 9.3 coal=108 gdrop=17 sweep=0 on0/on1=165/  2 tx0/tx1= 192/  3 poolrtt=115.2ms nbud=10
+== c8-100@def-CAND-s7-r1-a1-c.log t_src_end=44.6
+ t=44.60 store=3707/4096 lag= 81337 retx= 65 cod= 21 rep= 99 fires/rep= 0.7 coal= 12 gdrop= 4 sweep=2 on0/on1= 30/ 35 tx0/tx1=2519/408 poolrtt=146.2ms nbud=4
+ t=44.90 store=2502/2641 lag= 79429 retx= 75 cod=  8 rep= 13 fires/rep= 5.8 coal= 10 gdrop= 1 sweep=2 on0/on1= 25/ 50 tx0/tx1= 914/ 48 poolrtt=54.4ms nbud=0
+ t=45.10 store=2362/2105 lag= 75914 retx=130 cod= 13 rep= 13 fires/rep=10.0 coal= 69 gdrop= 2 sweep=0 on0/on1= 70/ 60 tx0/tx1=  79/ 76 poolrtt=50.0ms nbud=10
+ t=45.40 store=2263/2036 lag= 74036 retx=100 cod= 10 rep= 10 fires/rep=10.0 coal= 32 gdrop= 4 sweep=0 on0/on1= 82/ 18 tx0/tx1=  91/ 14 poolrtt=49.7ms nbud=10
+ t=45.60 store=2132/1873 lag= 68405 retx=141 cod= 15 rep= 15 fires/rep= 9.4 coal= 56 gdrop= 8 sweep=1 on0/on1=115/ 26 tx0/tx1= 122/ 28 poolrtt=50.2ms nbud=0
+ t=45.90 store=1982/1859 lag= 65971 retx=140 cod= 14 rep= 14 fires/rep=10.0 coal= 39 gdrop= 6 sweep=0 on0/on1=112/ 28 tx0/tx1= 133/ 32 poolrtt=48.7ms nbud=10
+ t=46.10 store=1854/1851 lag= 60336 retx=140 cod= 14 rep= 15 fires/rep= 9.3 coal= 49 gdrop= 2 sweep=0 on0/on1= 93/ 47 tx0/tx1= 106/ 50 poolrtt=55.6ms nbud=10
+ t=46.40 store=1715/1851 lag= 57979 retx=151 cod= 16 rep= 16 fires/rep= 9.4 coal= 30 gdrop= 6 sweep=1 on0/on1=111/ 40 tx0/tx1= 119/ 37 poolrtt=44.7ms nbud=0
+ t=46.60 store=1621/1806 lag= 54525 retx= 99 cod= 11 rep= 11 fires/rep= 9.0 coal= 25 gdrop= 3 sweep=1 on0/on1= 78/ 21 tx0/tx1=  94/ 23 poolrtt=56.3ms nbud=10
+ t=46.90 store=1537/1642 lag= 49906 retx=101 cod= 11 rep= 11 fires/rep= 9.2 coal= 22 gdrop= 3 sweep=1 on0/on1= 74/ 27 tx0/tx1=  75/ 30 poolrtt=48.6ms nbud=0
+ t=47.10 store=1438/1642 lag= 47473 retx=100 cod= 10 rep= 10 fires/rep=10.0 coal= 54 gdrop= 2 sweep=0 on0/on1= 70/ 30 tx0/tx1=  87/ 30 poolrtt=54.1ms nbud=10
+ t=47.40 store=1312/1642 lag= 44653 retx=120 cod= 12 rep= 12 fires/rep=10.0 coal= 47 gdrop= 5 sweep=0 on0/on1= 80/ 40 tx0/tx1=  82/ 43 poolrtt=47.3ms nbud=0
+ t=47.70 store=1144/1642 lag= 39591 retx=170 cod= 17 rep= 17 fires/rep=10.0 coal= 46 gdrop= 4 sweep=0 on0/on1=117/ 53 tx0/tx1= 128/ 56 poolrtt=45.4ms nbud=0
+ t=47.90 store=999/1642 lag= 34646 retx=140 cod= 14 rep= 14 fires/rep=10.0 coal= 60 gdrop= 7 sweep=0 on0/on1= 94/ 46 tx0/tx1= 111/ 43 poolrtt=50.5ms nbud=0
+ t=48.20 store=943/1642 lag= 33744 retx= 70 cod=  7 rep=  7 fires/rep=10.0 coal= 28 gdrop= 2 sweep=0 on0/on1= 31/ 39 tx0/tx1=  34/ 39 poolrtt=49.7ms nbud=0
+ t=48.50 store=823/1642 lag= 31431 retx=120 cod= 12 rep= 12 fires/rep=10.0 coal= 39 gdrop= 6 sweep=0 on0/on1=101/ 19 tx0/tx1= 109/ 32 poolrtt=50.5ms nbud=0
+ t=48.70 store=697/1642 lag= 27318 retx=130 cod= 13 rep= 13 fires/rep=10.0 coal= 60 gdrop= 5 sweep=0 on0/on1= 90/ 40 tx0/tx1= 109/ 34 poolrtt=50.5ms nbud=0
+ t=49.00 store=584/1642 lag= 23804 retx=120 cod= 12 rep= 12 fires/rep=10.0 coal= 51 gdrop= 6 sweep=0 on0/on1=110/ 10 tx0/tx1= 127/ 15 poolrtt=47.7ms nbud=10
+ t=49.20 store=453/1608 lag= 19319 retx=130 cod= 13 rep= 13 fires/rep=10.0 coal= 30 gdrop= 2 sweep=0 on0/on1= 90/ 40 tx0/tx1=  91/ 39 poolrtt=48.9ms nbud=0
+ t=49.50 store=313/1608 lag= 15796 retx=140 cod= 14 rep= 14 fires/rep=10.0 coal= 48 gdrop= 5 sweep=0 on0/on1=110/ 30 tx0/tx1= 126/ 31 poolrtt=48.6ms nbud=0
+ t=49.80 store=197/1608 lag=  9825 retx=118 cod= 13 rep= 13 fires/rep= 9.1 coal= 54 gdrop= 6 sweep=0 on0/on1= 82/ 36 tx0/tx1=  99/ 29 poolrtt=50.0ms nbud=0
+ t=50.00 store=53/1608 lag=  2551 retx=146 cod= 15 rep= 15 fires/rep= 9.7 coal= 51 gdrop= 7 sweep=0 on0/on1=119/ 27 tx0/tx1= 128/ 37 poolrtt=50.2ms nbud=0

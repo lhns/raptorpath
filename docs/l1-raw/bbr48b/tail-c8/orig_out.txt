@@ -1,0 +1,2 @@
+BASE: tail retx whose ORIGINAL was on leg0 = 0.76 (n/row 1975); leg0 share of source = 0.85; tail frontier-stall ms by owner leg0/leg1 = 3090/940
+CAND: tail retx whose ORIGINAL was on leg0 = 0.77 (n/row 2420); leg0 share of source = 0.85; tail frontier-stall ms by owner leg0/leg1 = 3932/786

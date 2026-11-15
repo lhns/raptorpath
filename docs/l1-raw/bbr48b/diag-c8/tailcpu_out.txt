@@ -1,0 +1,9 @@
+POST HOC / NOT REGISTERED. c8 tail vs CPU
+  BASE: main 44.34s tail 3.91s | client sender-task busy main 5.635s tail 0.178s | datagrams sent in tail 2177 | cpu srv 27.29 cli 20.75
+  CAND: main 44.70s tail 4.73s | client sender-task busy main 5.932s tail 0.219s | datagrams sent in tail 2981 | cpu srv 28.62 cli 21.50
+  within-arm seed-centred: cpu_srv on tail: slope -0.051 per unit, r=-0.02; arm dx +0.821 -> implied -0.042s of actual +1.331s
+  within-arm seed-centred: cpu_srv on main: slope +1.037 per unit, r=+0.14; arm dx +0.358 -> implied +0.372s of actual +1.331s
+  within-arm seed-centred: cpu_srv on tail_tx: slope -0.000 per unit, r=-0.08; arm dx +803.917 -> implied -0.170s of actual +1.331s
+  within-arm seed-centred: cpu_cli on tail: slope +0.042 per unit, r=+0.04; arm dx +0.821 -> implied +0.034s of actual +0.753s
+  within-arm seed-centred: cpu_cli on main: slope +0.166 per unit, r=+0.04; arm dx +0.358 -> implied +0.059s of actual +0.753s
+  within-arm seed-centred: cpu_cli on tail_tx: slope -0.000 per unit, r=-0.15; arm dx +803.917 -> implied -0.155s of actual +0.753s

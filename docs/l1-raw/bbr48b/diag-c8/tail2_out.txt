@@ -1,0 +1,37 @@
+POST HOC / NOT REGISTERED. c8 follow-ups
+
+(a) server receiver task busy, main vs tail ([RDIAG] split at msgs/s 3000; tail lines 50-3000 msgs/s), means over rows
+  BASE: busy main 21.8%  tail 25.7% (lines/row 6.8)  tail 3.91s -> tail receiver-task s = 0.985
+  CAND: busy main 21.5%  tail 17.0% (lines/row 8.5)  tail 4.73s -> tail receiver-task s = 0.794
+  within-arm seed-centred slope srv CPU (whole invocation) on tail s: -0.061 +/- 0.961 (95% CI -1.02..+0.90); tail sd 0.48s
+  arm d_tail +0.821s -> CPU carried by the tail at the CI upper bound +0.74s; at the run-average 0.57 cores +0.47s
+
+(b) tail-line state per arm and leg (lines after t_src_end, t <= run end), means over lines; infl in datagrams, qcwnd in bytes
+  BASE leg0: tail lines 174  B(hand-tx) mean 0.5 p90 0  infl mean 0.0  infl*1300/qcwnd mean 0.000  share qcwnd<BDP 0.029  dtx/line mean 130.0
+  BASE leg1: tail lines 174  B(hand-tx) mean 0.5 p90 1  infl mean 2.4  infl*1300/qcwnd mean 0.002  share qcwnd<BDP 0.029  dtx/line mean 18.6
+  CAND leg0: tail lines 214  B(hand-tx) mean 1.2 p90 7  infl mean 0.0  infl*1300/qcwnd mean 0.000  share qcwnd<BDP 0.664  dtx/line mean 129.5
+  CAND leg1: tail lines 214  B(hand-tx) mean 1.2 p90 4  infl mean 0.0  infl*1300/qcwnd mean 0.000  share qcwnd<BDP 0.621  dtx/line mean 35.6
+
+(b2) CAND rows: tail length vs UNDER onset (first non-R UNDER line after t_src_end), per row
+  s42 r4: tail 4.15s  UNDER onset after src end: L0 1.0  L1 None  B at src end 163
+  s42 r6: tail 4.15s  UNDER onset after src end: L0 None  L1 None  B at src end 550
+  s7 r4: tail 4.15s  UNDER onset after src end: L0 0.8  L1 None  B at src end 535
+  s42 r3: tail 4.23s  UNDER onset after src end: L0 1.3  L1 2.1  B at src end 1440
+  s42 r5: tail 4.45s  UNDER onset after src end: L0 2.0  L1 2.0  B at src end 0
+  s42 r2: tail 4.66s  UNDER onset after src end: L0 1.8  L1 1.8  B at src end 76
+  s42 r1: tail 4.83s  UNDER onset after src end: L0 1.3  L1 3.4  B at src end 373
+  s7 r6: tail 4.93s  UNDER onset after src end: L0 1.5  L1 1.5  B at src end 0
+  s7 r5: tail 5.09s  UNDER onset after src end: L0 3.8  L1 1.0  B at src end 5
+  s7 r3: tail 5.27s  UNDER onset after src end: L0 1.3  L1 1.8  B at src end 853
+  s7 r2: tail 5.32s  UNDER onset after src end: L0 3.6  L1 1.0  B at src end 0
+  s7 r1: tail 5.57s  UNDER onset after src end: L0 3.1  L1 2.3  B at src end 891
+
+(c) MAIN-phase leg qcwnd / BDP and infl*1300/qcwnd, per arm (medians over lines)
+  BASE leg0: qcwnd/BDP p10 7.52 p50 11.62  infl/qcwnd p50 0.364 p90 1.182  share qcwnd<BDP 0.000
+  BASE leg1: qcwnd/BDP p10 5.32 p50 13.80  infl/qcwnd p50 0.064 p90 0.784  share qcwnd<BDP 0.003
+  CAND leg0: qcwnd/BDP p10 1.83 p50 2.23  infl/qcwnd p50 0.875 p90 3.139  share qcwnd<BDP 0.016
+  CAND leg1: qcwnd/BDP p10 2.04 p50 2.28  infl/qcwnd p50 0.077 p90 0.998  share qcwnd<BDP 0.013
+
+(d) CAND R2a lines (qcwnd < BDP, t >= 1): main vs tail counts per leg (all lines, incl. R)
+  leg0: R2a lines main 33  tail 142
+  leg1: R2a lines main 28  tail 133

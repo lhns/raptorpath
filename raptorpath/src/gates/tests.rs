@@ -51,25 +51,25 @@ fn the_rtobs_level_echoes_two_for_the_deep_gauge() {
 
 const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
-    "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 ",
-    "RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 ",
+    "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 ",
+    "RWM_HONEST_ANCHOR=1 RWM_STORE_SACK_RELEASE=1 ",
     "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
     "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 ",
-    "RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
-    "RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 ",
+    "RWM_THREE_TERM=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
+    "RWM_DELTA_CAP=1 RWM_ACK_MERGE=1 ",
     "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
-    "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 ",
-    "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
+    "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 ",
+    "RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
     "RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 ",
     "RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 ",
-    "RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset ",
+    "RWM_WINDOW=unset RWM_REPORT_GENS=unset ",
     "RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 ",
-    "RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 ",
+    "RWM_MIN_R=0 RWM_CC_PACE=0 ",
     "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
-    "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 ",
+    "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_EMIT_BATCH=1 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
-    "RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
-    "RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
+    "RWM_RECOV_SP=0 ",
+    "RWM_DELTA=unset ",
     "RWM_COPA_DELTA=unset ",
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
     "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
@@ -119,24 +119,6 @@ fn removed_gates_in_the_environment_are_ignored() {
         assert!(
             !line.contains(&format!("{name}=")),
             "{name} is no longer a gate but is still echoed: {line}"
-        );
-    }
-}
-
-/// The `[GATES]` echo prints the EFFECTIVE honest-cap law: it is inert
-/// unless `RWM_PLAIN_RS` is on, so the echo must not read `1` then.
-#[test]
-fn honest_cap_echo_is_the_effective_value() {
-    let mut g = RuntimeGates::resolve();
-    for (honest, plain, want) in
-        [(true, false, "0"), (true, true, "1"), (false, true, "0"), (false, false, "0")]
-    {
-        g.honest_cap = honest;
-        g.plain_rs = plain;
-        let e = g.echo_line();
-        assert!(
-            e.contains(&format!("RWM_HONEST_CAP={want} RWM_POOL_ANCHOR=")),
-            "honest_cap={honest} plain_rs={plain} must echo {want}: {e}"
         );
     }
 }
@@ -206,10 +188,6 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(g.store_sack_release && g.store_paths);
     assert!(g.recov_mp && g.recov_mp_law);
     assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
-    assert!(
-        !g.derived_sweep,
-        "RWM_DERIVED_SWEEP ships default OFF (A/B arm)"
-    );
     // The receiver-law arms (paper §7.6) ship absent.
     assert!(
         !g.recv_request_law,
@@ -226,54 +204,6 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_DELTA_CAP ships default ON (paper §6.1); `=0` remains the \
          re-runnable A/B arm - the displaced gain = 2.0 law."
     );
-    // The refresh-band floor is absent by default, which is the shipped 25 ms
-    // (paper §7.4); both the field and the echo token are asserted.
-    assert!(
-        g.refresh_floor_us.is_none(),
-        "RWM_REFRESH_FLOOR_US is ABSENT by default - absent resolves to \
-         HOLE_NACK_REFRESH_MIN and the hole-refresh cadence is the \
-         shipped one byte-identically (paper §7.4)"
-    );
-    assert!(
-        g.echo_line().contains("RWM_REFRESH_FLOOR_US=unset"),
-        "the absent floor must echo `unset`: {}",
-        g.echo_line()
-    );
-    let mut armed = g.clone();
-    armed.refresh_floor_us = Some(6_150);
-    assert!(
-        armed.echo_line().contains("RWM_REFRESH_FLOOR_US=6150"),
-        "the armed floor must echo its RESOLVED us: {}",
-        armed.echo_line()
-    );
-    // The floor's domain, pinned on both sides: below the receiver loop's wake
-    // granularity the cadence cannot be expressed, and above the shipped upper
-    // rail the band leaves the shipped band. Every sweep arm must lie inside it.
-    for bad in [0u64, crate::net::LOOP_WAKE_US - 1, 100_001, u64::MAX] {
-        assert!(
-            bad < crate::net::LOOP_WAKE_US
-                || bad > crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-            "`{bad}` us must be OUTSIDE the refresh floor's domain (paper §7.4)"
-        );
-    }
-    for good in [
-        crate::net::LOOP_WAKE_US,
-        1_919,
-        3_838,
-        6_144,
-        6_150,
-        12_288,
-        12_300,
-        crate::net::HOLE_NACK_REFRESH_MIN.as_micros() as u64,
-        crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-    ] {
-        assert!(
-            good >= crate::net::LOOP_WAKE_US
-                && good <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-            "`{good}` us is an arm the (q, refresh) sweep commands and must \
-             be INSIDE the refresh floor's domain (paper §7.4)"
-        );
-    }
     // The echo is what a battery parses; assert these names with their resolved
     // values.
     let line = g.echo_line();
@@ -313,16 +243,10 @@ fn default_env_resolves_the_shipped_stack() {
         off_arm.echo_line()
     );
     assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
-    // The estimator cadence ships on (Stage 3 (d), status.md §5) and the pool
-    // anchor, decoupled from it, ships off: the default IS the measured arm
-    // `RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0`.
+    // The estimator cadence ships on (Stage 3 (d), status.md §5).
     assert!(
         g.est_cadence,
         "RWM_EST_CADENCE ships default ON (Stage 3 (d) FLIP-RECOMMENDED)"
-    );
-    assert!(
-        !g.pool_anchor,
-        "RWM_POOL_ANCHOR ships default OFF, independent of RWM_EST_CADENCE"
     );
     // The window-mode control-datagram merge ships on (paper §9.5).
     assert!(
@@ -351,9 +275,8 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
     );
     // Experiments / instruments (default OFF)
-    assert!(!g.plain_rs);
-    // Honest anchor ships on, honest K off; both are named on the echo so a
-    // control arm can assert them (`docs/measurement-discipline.md` rule 15).
+    // Honest anchor ships on and is named on the echo so a control arm can
+    // assert it (`docs/measurement-discipline.md` rule 15).
     assert!(
         g.honest_anchor,
         "RWM_HONEST_ANCHOR ships default ON (value-identical by the \
@@ -361,14 +284,8 @@ fn default_env_resolves_the_shipped_stack() {
          legacy-fold A/B arm."
     );
     assert!(
-        !g.honest_k,
-        "RWM_HONEST_K ships default OFF (A/B arm)"
-    );
-    assert!(
-        g.echo_line().contains("RWM_HONEST_ANCHOR=1")
-            && g.echo_line().contains("RWM_HONEST_K=0"),
-        "the default echo must NAME both Honest-Inputs gates with their shipped \
-         values (anchor=1, K=0): {}",
+        g.echo_line().contains("RWM_HONEST_ANCHOR=1"),
+        "the default echo must NAME the Honest-Inputs gate with its shipped value (anchor=1): {}",
         g.echo_line()
     );
     assert!(
@@ -389,25 +306,15 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
          placement repair must be opted into"
     );
-    // ── The three placement arms (paper §5.7) ──
+    // ── The placement arms (paper §5.7) ──
     // All absent by default and named with `0` on the echo, so a control arm can
     // assert them absent; the pinned cost table is an oracle only while this holds.
-    assert!(
-        !g.place_t_derived,
-        "RWM_PLACE_T_DERIVED ships ABSENT (Track A arm 1 — the derived \
-         softmax temperature must be opted into)"
-    );
-    assert!(
-        !g.place_hol,
-        "RWM_PLACE_HOL ships ABSENT (Track A arm 2 — the frontier term \
-         must be opted into)"
-    );
     assert!(
         !g.place_wdiv_derived,
         "RWM_PLACE_WDIV_DERIVED ships ABSENT (Track A arm 3 — the derived \
          diversity weight must be opted into)"
     );
-    for k in ["RWM_PLACE_T_DERIVED=0", "RWM_PLACE_HOL=0", "RWM_PLACE_WDIV_DERIVED=0"] {
+    for k in ["RWM_PLACE_WDIV_DERIVED=0"] {
         assert!(
             g.echo_line().contains(k),
             "the default echo must NAME `{k}` two-sided: {}",
@@ -423,16 +330,6 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(
         g.echo_line().contains("RWM_THREE_TERM=0"),
         "the default echo must NAME the three-term gate with its 0 value: {}",
-        g.echo_line()
-    );
-    // The composed cap (paper §10) ships off, same two-sided property.
-    assert!(
-        !g.composed_cap,
-        "RWM_COMPOSED_CAP ships default OFF (A/B arm — paper §10)"
-    );
-    assert!(
-        g.echo_line().contains("RWM_COMPOSED_CAP=0"),
-        "the default echo must NAME the composed-cap gate with its 0 value: {}",
         g.echo_line()
     );
     // The `×N` deletion ships on (paper §6.1); the `=0` arm's off value is
@@ -467,7 +364,7 @@ fn default_env_resolves_the_shipped_stack() {
         "the default echo must NAME the late-brake gate with its 0 value: {}",
         g.echo_line()
     );
-    assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
+    assert!(!g.xpath_repair && !g.no_reactive);
     assert!(!g.diag && !g.rdiag && !g.rtobs && !g.fdiag && !g.trace && !g.pfrac);
     // Instruments ship off, each named with its 0 value on the echo.
     assert!(
@@ -554,12 +451,8 @@ fn every_gate_accessor_reads_the_one_resolution() {
     assert!(std::ptr::eq(g, get()), "one resolution per process");
     assert_eq!(crate::scheduler::copa_wire_active(), g.copa_wire);
     assert_eq!(crate::scheduler::copa_compete_active(), g.copa_compete);
-    assert_eq!(crate::scheduler::pool_anchor_active(), g.pool_anchor);
     assert_eq!(crate::scheduler::honest_anchor_active(), g.honest_anchor);
-    assert_eq!(crate::scheduler::honest_k_active(), g.honest_k);
     assert_eq!(crate::scheduler::cold_place_active(), g.cold_place);
-    assert_eq!(crate::scheduler::place_t_derived_active(), g.place_t_derived);
-    assert_eq!(crate::scheduler::place_hol_active(), g.place_hol);
     assert_eq!(crate::scheduler::place_wdiv_derived_active(), g.place_wdiv_derived);
     assert_eq!(crate::scheduler::ack_merge_active(), g.ack_merge);
     assert_eq!(crate::scheduler::loss_sent_truth_active(), g.loss_sent_truth);
@@ -581,29 +474,4 @@ fn every_gate_accessor_reads_the_one_resolution() {
     // is the pinned default line.
     assert_eq!(g.echo_line(), RuntimeGates::resolve().echo_line());
     assert_eq!(g.echo_line(), PINNED_DEFAULT_GATES_ECHO);
-}
-
-/// Stage 3 (d) measured `RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0` and nothing
-/// else: the pool anchor is an independent experiment arm with its own
-/// shipped default (OFF), never a passenger of the estimator cadence. With
-/// only the cadence set, the pool anchor must resolve OFF. Setting the
-/// cadence to `1` is the shipped default value, so this env write cannot
-/// change what a concurrently resolving test sees.
-#[test]
-fn pool_anchor_does_not_follow_the_estimator_cadence() {
-    std::env::remove_var("RWM_POOL_ANCHOR");
-    std::env::set_var("RWM_EST_CADENCE", "1");
-    let g = RuntimeGates::resolve();
-    std::env::remove_var("RWM_EST_CADENCE");
-    assert!(g.est_cadence, "RWM_EST_CADENCE=1 must resolve the cadence on");
-    assert!(
-        !g.pool_anchor,
-        "RWM_POOL_ANCHOR must resolve OFF when only RWM_EST_CADENCE=1 is set \
-         (Stage 3 (d) measured the cadence with the pool anchor off)"
-    );
-    assert!(
-        g.echo_line().contains(" RWM_POOL_ANCHOR=0 "),
-        "the [GATES] echo must witness the decoupled pool anchor: {}",
-        g.echo_line()
-    );
 }

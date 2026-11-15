@@ -1,0 +1,78 @@
+C1D POOL SWEEP AND THE TRANSFER TEST T (status 57b), REPORTED ONLY: c1d-400 at 5 GB, one seat (current main); arm P<pool> = RWM_STORE_PATH_POOL per path (W = 2 x pool; the shipped 2048 sets nothing); RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300; nothing here is a verdict
+SLOTS 30/30  ROWS 30 (replaced 0)  ABORT-TOKENS none
+LIVENESS per pool (rows counting / live / void / DNF / UNBOUND / both-leg collapse / one-leg-only collapse / unflagged bound; the control is exempt from the bind rule):
+  P2048  (W 4096, shipped) rows  5/5  live 5  void 0  DNF 0  UNBOUND 0  both-leg 2 (0.40)  one-leg-only 2 (0.40)  n_u 3  READ
+  P768   (W 1536) rows  5/5  live 5  void 0  DNF 0  UNBOUND 0  both-leg 0 (0.00)  one-leg-only 2 (0.40)  n_u 5  NOT-STORE-BOUND
+  P512   (W 1024) rows  5/5  live 5  void 0  DNF 0  UNBOUND 0  both-leg 0 (0.00)  one-leg-only 1 (0.20)  n_u 5  NOT-STORE-BOUND
+  P384   (W  768) rows  5/5  live 5  void 0  DNF 0  UNBOUND 0  both-leg 0 (0.00)  one-leg-only 3 (0.60)  n_u 5  NOT-STORE-BOUND
+  P256   (W  512) rows  5/5  live 5  void 0  DNF 0  UNBOUND 0  both-leg 1 (0.20)  one-leg-only 2 (0.40)  n_u 4  READ
+  P192   (W  384) rows  5/5  live 5  void 0  DNF 0  UNBOUND 0  both-leg 0 (0.00)  one-leg-only 4 (0.80)  n_u 5  READ
+
+PER-POOL READOUTS (arm medians; 'unf' = unflagged bound rows, 'all' = all bound rows; goodput / control within the reading; a pool is READ iff >= 3 unflagged rows and mean a/W >= 0.80):
+  readout                                    P2048      P768      P512      P384      P256      P192
+  goodput Mbit/s (unf)                       765.8     741.5     731.0     727.3     680.4     611.2
+  goodput / control (unf)                    1.000     0.968     0.954     0.950     0.888     0.798
+  goodput Mbit/s (all)                       729.4     741.5     731.0     727.3     677.8     611.2
+  goodput / control (all)                    1.000     1.017     1.002     0.997     0.929     0.838
+  q_l = T-bar - l-hat ms (unf)               31.50     10.69      7.31      4.77      3.01      2.64
+  q_l from the top-level rtt ms (unf)        40.97     12.71      8.70      5.70      3.52      3.33
+  l-hat ms (unf)                              2.61      2.62      2.61      2.56      2.61      2.52
+  R sum lap rate /s (unf)                    81885     79188     78303     77575     72287     64898
+  mean a/W (unf)                             0.669     0.718     0.761     0.771     0.805     0.836
+  release batch (unf)                        195.3     150.9     129.9     109.2      80.3      60.4
+  ack wakes per loop (unf)                   14.12      6.89      5.98      5.29      5.05      5.46
+  client CPU s/GB (unf)                      22.51     23.08     23.00     23.01     23.36     23.65
+  status                                      READTORE-BOUNDTORE-BOUNDTORE-BOUND      READ      READ
+
+(c) THE C1D CONTROL'S OWN QUEUE (reported before (a) is read): q_l = 31.5 ms at W 4096 (predicted 13-21 ms) -> OUT
+  control mean a/W 0.669; control goodput median 765.8 Mbit/s (n_u 3); control readable
+
+OFFSETS d0 = q_l of the smallest reference point / store-bound pool: c1s 2.1 ms (Amendment 1); c1d (the smallest store-bound pool's q_l): unf 2.64 ms (P192), all 2.64 ms (P192)
+(a) unflagged rows: c1d points (q_l, goodput/control) [(2.64, 0.798), (3.01, 0.888)] from pools [192, 256]
+     raw axis: at q_l 2.10 ms c1d reads - vs c1s 0.79 +- 0.08 -> UNSCOREABLE
+     raw axis: at q_l 2.70 ms c1d reads 0.813 vs c1s 0.89 +- 0.08 -> PASS
+     offset-corrected axis (shift +0.54 ms): at q_l 2.64 ms c1d reads 0.798 -> PASS
+     offset-corrected axis (shift +0.54 ms): at q_l 3.24 ms c1d reads - -> UNSCOREABLE
+     (a) unflagged rows: raw UNSCOREABLE, corrected UNSCOREABLE => UNSCOREABLE
+(a) all rows: c1d points (q_l, goodput/control) [(2.64, 0.838), (3.25, 0.929)] from pools [192, 256]
+     raw axis: at q_l 2.10 ms c1d reads - vs c1s 0.79 +- 0.08 -> UNSCOREABLE
+     raw axis: at q_l 2.70 ms c1d reads 0.847 vs c1s 0.89 +- 0.08 -> PASS
+     offset-corrected axis (shift +0.54 ms): at q_l 2.64 ms c1d reads 0.838 -> PASS
+     offset-corrected axis (shift +0.54 ms): at q_l 3.24 ms c1d reads 0.928 -> PASS
+     (a) all rows: raw UNSCOREABLE, corrected PASS => UNSCOREABLE
+(b) unflagged rows (reported only): q_l 4.7 ms: c1d - vs c1s 0.94; q_l 6.8 ms: c1d - vs c1s 0.96; c1d q_l at the 0.95 point - ms
+(b) all rows (reported only): q_l 4.7 ms: c1d - vs c1s 0.94; q_l 6.8 ms: c1d - vs c1s 0.96; c1d q_l at the 0.95 point - ms
+
+T = UNSCOREABLE (a, all rows: UNSCOREABLE; a, unflagged rows: UNSCOREABLE; the two readings must agree, otherwise UNSCOREABLE)
+PER-ROW TABLE (LIVE rows): pool seed rep | goodput | R | q_l ms | a/W | share leg0 / leg1 below BDP | tags
+  P2048  s42  r1 | 768.4 | 81953 | 31.50 | 0.669 | 0.529 / 0.020 | ONE-LEG
+  P2048  s42  r3 | 720.6 | 77140 | 21.84 | 0.547 | 0.344 / 0.817 | COLLAPSE
+  P2048  s42  r5 | 729.4 | 78198 | 34.63 | 0.665 | 0.023 / 0.042 | 
+  P2048  s7   r2 | 765.8 | 81885 | 25.47 | 0.684 | 0.024 / 0.229 | ONE-LEG
+  P2048  s7   r4 | 704.0 | 75159 | 37.94 | 0.738 | 0.148 / 0.435 | COLLAPSE
+  P768   s42  r1 | 788.8 | 84639 | 10.69 | 0.747 | 0.025 / 0.040 | 
+  P768   s42  r3 | 741.5 | 79188 | 10.52 | 0.701 | 0.099 / 0.863 | ONE-LEG
+  P768   s42  r5 | 777.2 | 83473 | 10.43 | 0.723 | 0.025 / 0.020 | 
+  P768   s7   r2 | 677.9 | 72088 | 14.06 | 0.672 | 0.823 / 0.013 | ONE-LEG
+  P768   s7   r4 | 631.3 | 67012 | 15.25 | 0.718 | 0.020 / 0.028 | 
+  P512   s42  r1 | 723.5 | 76909 | 6.81 | 0.732 | 0.618 / 0.014 | ONE-LEG
+  P512   s42  r3 | 744.8 | 80067 | 7.02 | 0.764 | 0.033 / 0.043 | 
+  P512   s42  r5 | 731.0 | 78303 | 7.73 | 0.761 | 0.014 / 0.023 | 
+  P512   s7   r2 | 750.6 | 79813 | 7.91 | 0.774 | 0.024 / 0.024 | 
+  P512   s7   r4 | 683.4 | 73460 | 7.31 | 0.742 | 0.013 / 0.070 | 
+  P384   s42  r1 | 719.1 | 77186 | 5.28 | 0.783 | 0.037 / 0.009 | 
+  P384   s42  r3 | 743.1 | 79309 | 4.74 | 0.791 | 0.024 / 0.009 | 
+  P384   s42  r5 | 727.3 | 77575 | 4.68 | 0.761 | 0.329 / 0.023 | ONE-LEG
+  P384   s7   r2 | 700.7 | 74747 | 5.26 | 0.761 | 0.290 / 0.040 | ONE-LEG
+  P384   s7   r4 | 731.3 | 77939 | 4.77 | 0.771 | 0.014 / 0.209 | ONE-LEG
+  P256   s42  r1 | 686.7 | 72777 | 3.25 | 0.795 | 0.026 / 0.017 | 
+  P256   s42  r3 | 647.8 | 68760 | 3.43 | 0.809 | 0.041 / 0.580 | ONE-LEG
+  P256   s42  r5 | 682.9 | 72771 | 2.77 | 0.802 | 0.017 / 0.013 | 
+  P256   s7   r2 | 584.7 | 61765 | 4.92 | 0.838 | 0.970 / 0.481 | COLLAPSE
+  P256   s7   r4 | 677.8 | 71803 | 2.72 | 0.817 | 0.569 / 0.022 | ONE-LEG
+  P192   s42  r1 | 609.1 | 64400 | 3.88 | 0.848 | 0.015 / 0.541 | ONE-LEG
+  P192   s42  r3 | 611.2 | 64898 | 2.18 | 0.830 | 0.221 / 0.023 | ONE-LEG
+  P192   s42  r5 | 626.4 | 66359 | 2.64 | 0.840 | 0.020 / 0.647 | ONE-LEG
+  P192   s7   r2 | 649.3 | 69063 | 1.83 | 0.834 | 0.021 / 0.004 | 
+  P192   s7   r4 | 586.1 | 61742 | 2.70 | 0.836 | 0.015 / 0.866 | ONE-LEG
+VERDICT57B REPORTED-ONLY slots=30/30 live=30 void=0 replaced=0 dnf=0 unbound=0 collapse=3 T=UNSCOREABLE a_all=UNSCOREABLE a_unf=UNSCOREABLE control_q=31.5 d0=2.64

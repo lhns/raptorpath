@@ -1,0 +1,31 @@
+SENTINEL-WRITABLE /dev/shm/o43/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-10T15:54:54Z user=VMUSER dir=/dev/shm/o43/run launch=2026-11-10T15:54:54Z
+LD-ALL start plan=43 load=0.17 1.26 1.29 1/401 1231285 2026-11-10T15:54:54Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=5.03 avg60=2.78 avg300=0.98 total=4496722599 2026-11-10T15:55:02Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.22 1.23 1.28; io=full avg10=5.03 avg60=2.78 avg300=0.98 total=4496722599 2026-11-10T15:55:02Z
+LD-ALL parser test ok 2026-11-10T15:55:11Z
+LD-ALL built wall=326s 2026-11-10T16:00:37Z
+LD-ALL binary 94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008 2026-11-10T16:00:37Z
+SMOKE43 c2-100 SH: status=LIVE dur=53.065118 mbps=90.455 n_end=1822.0 hold_state=HOLD-EXPIRED route=1.0 nk_min=2377 
+SMOKE43 c1s-400 SL: status=LIVE dur=48.870229 mbps=818.494 n_end=635.5 hold_state=None route=1.0 nk_min=10454 
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-10T16:02:25Z
+LD-ALL battery start load=2.62 1.87 1.59; io=full avg10=0.00 avg60=0.05 avg300=0.31 total=4498025849 2026-11-10T16:02:25Z
+LD-ALL battery rc=0 wall=1398s 2026-11-10T16:25:43Z
+CHECK43 done=True rows=24/24
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=1.47 1.81 1.82; io=full avg10=0.09 avg60=0.03 avg300=0.00 total=4499767556 2026-11-10T16:25:43Z

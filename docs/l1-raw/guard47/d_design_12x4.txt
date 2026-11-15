@@ -1,0 +1,33 @@
+NOTE: c2-100 and c8-100 rows below are REPORTED ONLY - their null/power rests on stand-in rows (38's MAIN, 3 distinct rows per seed, resampled to 12); c1s / c1d rest on 6 distinct 41b BASE rows per seed.
+DESIGN {'c1s-400': (12, 12), 'c1d-400': (12, 12), 'c2-100': (12, 12), 'c8-100': (12, 12)} (n_base, n_cand per cell); rows: 41b BASE (c1s, c1d: 6 distinct per seed), 38 MAIN (c2, c8: 3 distinct per seed); resampled with replacement
+(a) one fully separated clause at one cell (5 datasets per clause, N_PERM=10000): worst p
+    all: worst 0.0020, mean 0.0014 over 130 cases -> ACCEPT
+(b) A/A bootstrap at the design (600 datasets, N_PERM=2000): share with p <= 0.05
+    all: 24/600 = 0.040; mean p 0.507
+(c) POWER at the design (60 draws per point, N_PERM=2000): smallest grid delta with power >= 0.8, and the power at +2.4 % CPU / -5 % goodput; all 26 clauses | lag_E reported-only
+    c1s-400  goodput        | all: d80=6.0 % @5.0%=0.78
+    c1s-400  cpu_cli/GB     | all: d80=2.0 % @2.4%=0.90
+    c1s-400  cpu_srv/GB     | all: d80=2.4 % @2.4%=0.82
+    c1s-400  lag_E_cli      | all: d80=50.0 %
+    c1s-400  lag_E_srv      | all: d80=50.0 %
+    c1s-400  rtp_floor_p0   | all: d80=6.0 %
+    c1d-400  goodput        | all: d80=10.0 % @5.0%=0.30
+    c1d-400  cpu_cli/GB     | all: d80=10.0 % @2.4%=0.35
+    c1d-400  cpu_srv/GB     | all: d80=5.0 % @2.4%=0.25
+    c1d-400  lag_E_cli      | all: d80=100.0 %
+    c1d-400  lag_E_srv      | all: d80=100.0 %
+    c1d-400  rtp_floor_p0   | all: d80=5.0 %
+    c1d-400  rtp_floor_p1   | all: d80=6.0 %
+    c2-100   goodput        | all: d80=1.0 % @5.0%=1.00
+    c2-100   cpu_cli/GB     | all: d80=5.0 % @2.4%=0.25
+    c2-100   cpu_srv/GB     | all: d80=8.0 % @2.4%=0.10
+    c2-100   lag_E_cli      | all: d80=50.0 %
+    c2-100   lag_E_srv      | all: d80=30.0 %
+    c2-100   rtp_floor_p0   | all: d80=30.0 %
+    c8-100   goodput        | all: d80=10.0 % @5.0%=0.40
+    c8-100   cpu_cli/GB     | all: d80=6.0 % @2.4%=0.35
+    c8-100   cpu_srv/GB     | all: d80=6.0 % @2.4%=0.13
+    c8-100   lag_E_cli      | all: d80=30.0 %
+    c8-100   lag_E_srv      | all: d80=100.0 %
+    c8-100   rtp_floor_p0   | all: d80=10.0 %
+    c8-100   rtp_floor_p1   | all: d80=15.0 %

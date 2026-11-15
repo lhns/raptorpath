@@ -1128,10 +1128,22 @@ pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
 /// See paper §4.7.
 pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     if window_size == 0 || p_gb <= 0.0 { return 1.0; }
+    p_fec_exact_repairs(p_gb, q_bg, repair_count(r, window_size), window_size)
+}
+
+/// The integer repair count `p_fec_exact` uses: R = round(r × W).
+fn repair_count(r: f64, window_size: usize) -> usize {
+    (r.max(0.0) * window_size as f64).round() as usize
+}
+
+/// `p_fec_exact` at an integer repair count (the only way r enters the DP).
+/// Only deficit rows inside the live band [lo, hi] are visited or cleared;
+/// every skipped row is exactly zero, so each cell receives the same
+/// additions in the same order as a full sweep (bit-identical results).
+fn p_fec_exact_repairs(p_gb: f64, q_bg: f64, repairs: usize, w: usize) -> f64 {
+    if w == 0 || p_gb <= 0.0 { return 1.0; }
     let p = p_gb.min(1.0);
     let q = q_bg.clamp(1e-9, 1.0);
-    let w = window_size;
-    let repairs = (r.max(0.0) * w as f64).round() as usize;
     let n = w + repairs;
     // Deficit index: d ∈ [−repairs, w] stored at d + repairs ∈ [0, w+repairs].
     let dmax = w + repairs + 1;
@@ -1141,10 +1153,15 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     f[off][0] = 1.0 - pi_b;
     f[off][1] = pi_b;
     let mut next = vec![[0.0f64; 2]; dmax];
+    // Bands only grow, so `next` (the state two steps ago) lies inside the
+    // new band: clearing the new band is enough.
+    let (mut lo, mut hi) = (off, off);
     for i in 0..n {
         let is_repair = (i + 1) * repairs / n > i * repairs / n;
-        for row in next.iter_mut() { *row = [0.0, 0.0]; }
-        for d in 0..dmax {
+        let nlo = lo.saturating_sub(1);
+        let nhi = (hi + 1).min(dmax - 1);
+        for row in next[nlo..=nhi].iter_mut() { *row = [0.0, 0.0]; }
+        for d in lo..=hi {
             let [fg, fb] = f[d];
             if fg == 0.0 && fb == 0.0 { continue; }
             let to_good = fg * (1.0 - p) + fb * q;
@@ -1158,6 +1175,8 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
             }
         }
         std::mem::swap(&mut f, &mut next);
+        lo = nlo;
+        hi = nhi;
     }
     let p_fail: f64 = f[off + 1..].iter().map(|row| row[0] + row[1]).sum();
     (1.0 - p_fail).clamp(0.0, 1.0)
@@ -1171,7 +1190,29 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
 /// target. See paper §4.7.
 pub fn compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
     if window_size == 0 || p_gb <= 0.0 { return 0.0; }
-    let fail = |r: f64| 1.0 - p_fec_exact(p_gb, q_bg, r, window_size);
+    r_star_bisect(window_size, delta, |repairs| {
+        1.0 - p_fec_exact_repairs(p_gb, q_bg, repairs, window_size)
+    })
+}
+
+/// The bisection of `compute_r_star_exact` over an evaluator of the failure
+/// probability at an integer repair count. p_fec_exact depends on r only via
+/// round(r·W), so each distinct count is evaluated once (40 steps visit only
+/// ~log2(2W) distinct counts); the bisection itself, and so the returned
+/// value, is unchanged.
+fn r_star_bisect(window_size: usize, delta: f64, mut fail_at: impl FnMut(usize) -> f64) -> f64 {
+    let mut memo: Vec<Option<f64>> = vec![None; 2 * window_size + 2];
+    let mut fail = |r: f64| {
+        let k = repair_count(r, window_size);
+        match memo.get(k).copied().flatten() {
+            Some(v) => v,
+            None => {
+                let v = fail_at(k);
+                if let Some(slot) = memo.get_mut(k) { *slot = Some(v); }
+                v
+            }
+        }
+    };
     let mut hi = 2.0f64;
     if fail(hi) > delta { return hi; }
     let mut lo = 0.0f64;
@@ -1413,6 +1454,9 @@ pub fn solve_r_from_time_budget(
     }
     hi
 }
+
+mod span_forms;
+pub use span_forms::*;
 
 #[cfg(test)]
 mod tests {
@@ -1921,6 +1965,98 @@ mod tests {
         assert!(theta > 0.0 && theta < 1.0 && k > 1.0, "theta={theta} k={k}");
     }
 
+    /// Verbatim pre-optimisation copies (full-sweep DP, un-memoised bisection).
+    fn old_p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
+        if window_size == 0 || p_gb <= 0.0 { return 1.0; }
+        let p = p_gb.min(1.0);
+        let q = q_bg.clamp(1e-9, 1.0);
+        let w = window_size;
+        let repairs = (r.max(0.0) * w as f64).round() as usize;
+        let n = w + repairs;
+        let dmax = w + repairs + 1;
+        let off = repairs;
+        let pi_b = p / (p + q);
+        let mut f = vec![[0.0f64; 2]; dmax];
+        f[off][0] = 1.0 - pi_b;
+        f[off][1] = pi_b;
+        let mut next = vec![[0.0f64; 2]; dmax];
+        for i in 0..n {
+            let is_repair = (i + 1) * repairs / n > i * repairs / n;
+            for row in next.iter_mut() { *row = [0.0, 0.0]; }
+            for d in 0..dmax {
+                let [fg, fb] = f[d];
+                if fg == 0.0 && fb == 0.0 { continue; }
+                let to_good = fg * (1.0 - p) + fb * q;
+                let to_bad = fg * p + fb * (1.0 - q);
+                if is_repair {
+                    next[d.saturating_sub(1)][0] += to_good;
+                    next[d][1] += to_bad;
+                } else {
+                    next[d][0] += to_good;
+                    next[(d + 1).min(dmax - 1)][1] += to_bad;
+                }
+            }
+            std::mem::swap(&mut f, &mut next);
+        }
+        let p_fail: f64 = f[off + 1..].iter().map(|row| row[0] + row[1]).sum();
+        (1.0 - p_fail).clamp(0.0, 1.0)
+    }
+
+    fn old_compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
+        if window_size == 0 || p_gb <= 0.0 { return 0.0; }
+        let fail = |r: f64| 1.0 - old_p_fec_exact(p_gb, q_bg, r, window_size);
+        let mut hi = 2.0f64;
+        if fail(hi) > delta { return hi; }
+        let mut lo = 0.0f64;
+        for _ in 0..40 {
+            let mid = (lo + hi) / 2.0;
+            if fail(mid) > delta { lo = mid; } else { hi = mid; }
+        }
+        hi
+    }
+
+    const PERF_GRID_PQ: [(f64, f64); 6] =
+        [(0.001, 0.9), (0.013, 0.5), (0.05, 0.5), (0.1, 0.3), (0.3, 0.2), (0.9, 0.05)];
+
+    /// The speed-ups are PURE: new == old to the bit over the grid.
+    #[test]
+    fn test_exact_dp_and_bisection_bit_identical_to_old() {
+        for &(p, q) in &PERF_GRID_PQ {
+            for &w in &[1usize, 5, 25, 64, 200, 400] {
+                for &d in &[1e-9, 1e-6, 1e-3, 0.005, 0.05, 0.5] {
+                    let (a, b) = (compute_r_star_exact(p, q, w, d), old_compute_r_star_exact(p, q, w, d));
+                    assert_eq!(a.to_bits(), b.to_bits(), "r* p={p} q={q} W={w} d={d}: {a} vs {b}");
+                }
+                if w <= 64 {
+                    for &r in &[0.0, 0.03, 0.1, 0.5, 1.0, 2.0] {
+                        let (a, b) = (p_fec_exact(p, q, r, w), old_p_fec_exact(p, q, r, w));
+                        assert_eq!(a.to_bits(), b.to_bits(), "p_fec p={p} q={q} W={w} r={r}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// DP runs per r* solve = distinct repair counts visited, no repeats,
+    /// and far below the 41 raw evaluations.
+    #[test]
+    fn test_r_star_bisect_dp_runs_bounded_by_distinct_repair_counts() {
+        for &w in &[5usize, 64, 200, 400] {
+            for &d in &[1e-6, 0.005, 0.05, 0.5] {
+                let mut seen: Vec<usize> = Vec::new();
+                let r = r_star_bisect(w, d, |k| {
+                    assert!(!seen.contains(&k), "repair count {k} evaluated twice");
+                    seen.push(k);
+                    1.0 - p_fec_exact_repairs(0.05, 0.5, k, w)
+                });
+                assert_eq!(r.to_bits(), old_compute_r_star_exact(0.05, 0.5, w, d).to_bits());
+                // ceiling + one new count per halving down to 1/W resolution.
+                let bound = 2 + (2.0 * w as f64).log2().ceil() as usize + 2;
+                assert!(seen.len() <= bound, "W={w} d={d}: {} DP runs > {bound}", seen.len());
+            }
+        }
+    }
+
     #[test]
     fn test_r_star_mass_tracks_exact_ge() {
         // On a GE channel the measured mass tail is what the exact DP
@@ -2241,6 +2377,87 @@ mod tests {
         // sigma2=5, W_bur = 3/(0.09*0.91) = 36.6; W_lat huge (loose budget).
         let w = derive_window(0.2, 0.09, 5.0, 0.21, 5_000.0, 10.0);
         assert!((30.0..45.0).contains(&w), "expected burst-floor ~37, got {w}");
+    }
+
+    // Paper §4.8 worked table, recomputed. (channel, eps, sigma2, srtt, send_rate)
+    // with sigma2 = 1 / 3 / 5 for DC / WiFi / Satellite as in the tests above.
+    const W_CELLS: [(&str, f64, f64, f64, f64); 3] = [
+        ("DC", 0.001, 1.0, 0.001, 100_000.0),
+        ("WiFi", 0.025, 3.0, 0.013, 10_000.0),
+        ("Satellite", 0.09, 5.0, 0.210, 2_041.0),
+    ];
+
+    /// Reconciliation N3b: the paper's §4.8 table is the output of
+    /// `derive_window` at ITS stated inputs (per-hint targets 1e-2 / 1e-4 /
+    /// 1e-6 and per-hint budgets 2 / 1 / 1/2 RTT), to +-1 symbol. It is NOT the
+    /// engine's operating point: the engine passes budget 0 (= 1 RTT at every
+    /// delta, see the `derived_window_runs_one_rtt_budget_at_every_delta`
+    /// engine test) and the shipped t_tail presets are 1e-3 / 1e-5 / 1e-7.
+    #[test]
+    fn derive_window_paper_table_reproduces_at_its_stated_inputs() {
+        // (cell, hint targets/budget-in-RTT) -> paper W*.
+        let paper: [[f64; 3]; 3] = [
+            [200.0, 100.0, 50.0],  // DC:        Bulk, Auto, Realtime
+            [120.0, 130.0, 65.0],  // WiFi
+            [512.0, 429.0, 214.0], // Satellite
+        ];
+        let hints = [(1e-2, 2.0), (1e-4, 1.0), (1e-6, 0.5)];
+        for (cell, row) in W_CELLS.iter().zip(paper) {
+            let (name, eps, s2, rtt, rate) = *cell;
+            for ((t, b), want) in hints.iter().zip(row) {
+                let w = derive_window(*t, eps, s2, rtt, rate, b * rtt);
+                assert!(
+                    (w - want).abs() <= 1.0,
+                    "{name} target {t} budget {b} RTT: W* = {w}, paper §4.8 table = {want}"
+                );
+            }
+        }
+    }
+
+    /// Reconciliation N3: with the engine's budget 0 (read as 1 RTT at every
+    /// delta) the Realtime and Bulk cells move off the paper's table, while the
+    /// Auto column (b = 1) is unchanged. Exact values, named against the paper.
+    #[test]
+    fn derive_window_zero_budget_is_one_rtt_and_moves_the_off_auto_cells() {
+        for (name, eps, s2, rtt, rate) in W_CELLS {
+            for t in [1e-2, 1e-4, 1e-6] {
+                assert_eq!(
+                    derive_window(t, eps, s2, rtt, rate, 0.0),
+                    derive_window(t, eps, s2, rtt, rate, rtt),
+                    "{name}: budget 0 is exactly 1 RTT (the engine passes 0 at every delta)"
+                );
+            }
+        }
+        // Realtime (paper: 1/2 RTT): WiFi 65 -> 130, Satellite 214 -> 420.
+        let wifi_rt = derive_window(1e-6, 0.025, 3.0, 0.013, 10_000.0, 0.0);
+        let sat_rt = derive_window(1e-6, 0.09, 5.0, 0.210, 2_041.0, 0.0);
+        assert!((wifi_rt - 130.0).abs() <= 1.0, "WiFi Realtime at 1 RTT = {wifi_rt} (paper table: 65)");
+        assert!((sat_rt - 428.6).abs() <= 1.0, "Satellite Realtime at 1 RTT = {sat_rt} (paper table: 214)");
+        // Bulk (paper: 2 RTT): Satellite 512 -> latency-bound 1 RTT.
+        let sat_bulk = derive_window(1e-2, 0.09, 5.0, 0.210, 2_041.0, 0.0);
+        assert!((sat_bulk - 428.6).abs() <= 1.0, "Satellite Bulk at 1 RTT = {sat_bulk} (paper table: 512)");
+        // Auto (b = 1) agrees with the engine: the paper's column is right there.
+        let sat_auto = derive_window(1e-4, 0.09, 5.0, 0.210, 2_041.0, 0.0);
+        assert!((sat_auto - 429.0).abs() <= 1.0, "Satellite Auto = {sat_auto} (paper table: 429)");
+    }
+
+    /// Reconciliation N3b: at the SHIPPED targets (Bulk 1e-3, Auto 1e-5,
+    /// Realtime 1e-7; paper §4.1) with the engine's 1-RTT budget, the
+    /// table's rows come out as below. Pins the engine operating point so the
+    /// paper can retabulate against it.
+    #[test]
+    fn derive_window_at_the_shipped_targets_and_engine_budget() {
+        // At the shipped targets every cell is latency-bound at 1 RTT x rate
+        // (100 / 130 / 428.6), so the table's hint columns collapse to one.
+        for ((name, eps, s2, rtt, rate), want) in W_CELLS.iter().copied().zip([100.0, 130.0, 428.61]) {
+            for t in [1e-3, 1e-5, 1e-7] {
+                let w = derive_window(t, eps, s2, rtt, rate, 0.0);
+                assert!(
+                    (w - want).abs() <= 1.0,
+                    "{name} at shipped target {t}, engine budget: W* = {w}, expected {want}                      (paper table columns 10^-2/-4/-6 at 2/1/1/2 RTT differ)"
+                );
+            }
+        }
     }
 
     #[test]

@@ -1,0 +1,2 @@
+base: ALLOC_BENCH small=2000000B allocs=40774 | large=20000000B allocs=388479 | allocs/symbol=23.14 alloc_bytes/symbol=13404 (payload=1198)
+cand: ALLOC_BENCH small=2000000B allocs=40663 | large=20000000B allocs=386692 | allocs/symbol=23.03 alloc_bytes/symbol=13100 (payload=1198)

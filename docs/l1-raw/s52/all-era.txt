@@ -1,0 +1,26 @@
+LD-ALL start plan=52 load=0.20 1.31 1.43 1/394 2077526 2026-11-12T21:23:02Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=2.15 avg60=1.39 avg300=0.64 total=4830863510 2026-11-12T21:23:10Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.17 1.27 1.42; io=full avg10=2.15 avg60=1.39 avg300=0.64 total=4830863510 2026-11-12T21:23:10Z
+LD-ALL parser test ok 2026-11-12T21:24:31Z
+LD-ALL built wall=311s 2026-11-12T21:29:42Z
+LD-ALL binary f8769c52af8213cbfa4ab762baeadee7ca76b91e4bcfaf1e48d9cc78a469ef54 2026-11-12T21:29:42Z
+LD-ALL built BASE wall=299s binary 5e239593a4fe86c0e4afdfd076232c0d76bfdd957445dd2044ce8409cdb050ee 2026-11-12T21:34:41Z
+LD-ALL test main rc=0 passed=1124 failed=0 ignored=47 binaries=96 2026-11-12T21:54:51Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-12T21:54:53Z
+LD-ALL test wasm rc=0 passed=36 failed=0 ignored=0 binaries=2 2026-11-12T21:56:56Z
+LD-ALL test debug-witness rc=101 passed=982 failed=1 ignored=46 binaries=87 2026-11-12T22:15:08Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-12T22:21:21Z
+LD-ALL suites done tfail=0 2026-11-12T22:21:21Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=1.55 avg60=0.39 avg300=0.21 total=4836882532 2026-11-12T22:21:30Z
+LD-ALL stage guard (plan 41c) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.69 avg60=0.34 avg300=0.20 total=4836882638 2026-11-12T22:21:38Z
+LD-ALL stage guard SMOKE-PASS 2026-11-12T22:21:51Z
+LD-ALL stage guard battery rc=0 wall=843s 2026-11-12T22:35:54Z
+LD-ALL stage guard end ok=1 VERDICT GATE-41c PASS 2026-11-12T22:35:56Z
+LD-ALL guard resolution NOT computed on the VM; on the host: python3 raptorpath/tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log 2026-11-12T22:35:56Z
+LD-ALL stage rep52 (plan 52) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.06 avg60=0.02 avg300=0.00 total=4837536832 2026-11-12T22:36:04Z
+LD-ALL stage rep52 SMOKE-PASS 2026-11-12T22:38:35Z
+LD-ALL stage rep52 battery rc=0 wall=1529s 2026-11-12T23:04:04Z
+LD-ALL stage rep52 end ok=1 VERDICT52 REPORTED-ONLY rows=30/30 live=30 2026-11-12T23:04:05Z
+LD-ALL end plan 52 guard_ok=1 rep52_ok=1 raptorpath=0 netns=0 2026-11-12T23:04:05Z

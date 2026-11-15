@@ -1,0 +1,37 @@
+POST HOC / NOT REGISTERED. Client sender task wake causes (sum over [DIAG] lines), medians over rows; busy_us per wait = sender busy per wake-cycle
+== c1d-400
+  busy_us            BASE     40135370 CAND     38417126    -4.3%
+  eb_bursts          BASE        67456 CAND        67586    +0.2%
+  wait.n             BASE        98090 CAND        97506    -0.6%
+  wake.ack           BASE      2312775 CAND      2197076    -5.0%
+  wake.cmd           BASE          418 CAND          352   -15.9%
+  wake.nack          BASE       569304 CAND       545466    -4.2%
+  wake.paused        BASE        49895 CAND        48140    -3.5%
+  wake.tail          BASE          678 CAND          464   -31.6%
+  wake.timer_acked   BASE         7178 CAND         6916    -3.7%
+  wake.tun           BASE      6358764 CAND      6050120    -4.9%
+  busy_us per wait   BASE        405.9 CAND        395.7    -2.5%
+== c2-100
+  busy_us            BASE      4937843 CAND      4867398    -1.4%
+  eb_bursts          BASE        23510 CAND        22668    -3.6%
+  wait.n             BASE        81113 CAND        77385    -4.6%
+  wake.ack           BASE      4741228 CAND      4470898    -5.7%
+  wake.cmd           BASE         2671 CAND         2671    +0.0%
+  wake.nack          BASE         8832 CAND        10708   +21.2%
+  wake.paused        BASE      1324840 CAND      1431224    +8.0%
+  wake.tail          BASE        34388 CAND        35852    +4.3%
+  wake.timer_acked   BASE         7576 CAND         9472   +25.0%
+  wake.tun           BASE      2617942 CAND      2572267    -1.7%
+  busy_us per wait   BASE         61.0 CAND         64.4    +5.7%
+== c8-100
+  busy_us            BASE      5791858 CAND      6106578    +5.4%
+  eb_bursts          BASE        14922 CAND        15021    +0.7%
+  wait.n             BASE        74962 CAND        77305    +3.1%
+  wake.ack           BASE      5376622 CAND      5682272    +5.7%
+  wake.cmd           BASE         2135 CAND         2087    -2.2%
+  wake.nack          BASE        39214 CAND        51766   +32.0%
+  wake.paused        BASE       779316 CAND       799904    +2.6%
+  wake.tail          BASE        41421 CAND        43318    +4.6%
+  wake.timer_acked   BASE         7914 CAND         9202   +16.3%
+  wake.tun           BASE      1548434 CAND      1640936    +6.0%
+  busy_us per wait   BASE         77.4 CAND         78.1    +0.9%

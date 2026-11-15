@@ -1,0 +1,20 @@
+LD-ALL start plan=41 load=0.11 0.10 0.24 1/397 1062220 2026-11-10T13:17:27Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=1.47 avg60=1.87 avg300=0.65 total=4460735255 2026-11-10T13:17:35Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.09 0.09 0.24; io=full avg10=1.47 avg60=1.87 avg300=0.65 total=4460735255 2026-11-10T13:17:35Z
+LD-ALL parser test ok 2026-11-10T13:17:40Z
+LD-ALL built wall=322s 2026-11-10T13:23:02Z
+LD-ALL binary 8dee8f0dbb7b9a99849ef57ac879ef5112861865b626c10bbb0126f5cec581de 2026-11-10T13:23:02Z
+LD-ALL built BASE wall=319s binary 79572edd05dbbee3184e038db88c7143a952415bed2da21c1000ce1525edfff5 2026-11-10T13:28:21Z
+LD-ALL test main rc=0 passed=1163 failed=0 ignored=53 binaries=101 2026-11-10T13:50:40Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-10T13:50:43Z
+LD-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-11-10T13:52:44Z
+LD-ALL test debug-witness rc=0 passed=1026 failed=0 ignored=52 binaries=92 2026-11-10T14:12:10Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-10T14:12:29Z
+LD-ALL suites done tfail=0 2026-11-10T14:12:29Z
+LD-ALL suites ok; before the smoke procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.04 avg60=0.16 avg300=0.24 total=4470787659 2026-11-10T14:12:37Z
+LD-ALL SMOKE-PASS 2026-11-10T14:13:07Z
+LD-ALL battery start load=1.19 2.30 4.24; io=full avg10=0.37 avg60=0.43 avg300=0.31 total=4471138792 2026-11-10T14:13:07Z
+LD-ALL battery rc=0 wall=988s 2026-11-10T14:29:35Z
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=1.28 2.08 2.93; io=full avg10=0.12 avg60=0.15 avg300=0.15 total=4473296672 2026-11-10T14:29:35Z

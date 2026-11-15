@@ -82,33 +82,13 @@ pub(crate) fn resolve_copa_compete(wire_active: bool) -> bool {
     on
 }
 
-/// Whether the pool-anchor law is active (`RWM_POOL_ANCHOR`, experiment arm):
-/// at N ≥ 2 live paths the pooled store cap's rate input is each path's
-/// send-interval anchor ([`crate::control::SendRateAnchor`], burst-immune,
-/// clock-gap discard) instead of the ack-interval windowed max, whose burst
-/// peaks over-read under the estimator-cadence ack clock. Default OFF,
-/// independent of `RWM_EST_CADENCE`: it used to follow the cadence when
-/// unset, and Stage 3 (d) measured the cadence with it off (status.md §5), so
-/// shipping the cadence must not switch this law on. Consumers:
-/// `PathState::charge_in_flight` and the
-/// N ≥ 2 dynamic cap; the Copa cwnd feed is untouched.
-pub fn pool_anchor_active() -> bool {
-    crate::gates::get().pool_anchor
-}
-
-/// The resolve-time read behind [`pool_anchor_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_pool_anchor() -> bool {
-    crate::config::env_flag("RWM_POOL_ANCHOR", false)
-}
-
 /// Whether the O(1) windowed-max rate filter is active (`RWM_HONEST_ANCHOR`,
 /// anchor-hygiene family, default on; the `RWM_ANCHOR_HYGIENE` umbrella
 /// overrides either way).
 ///
 /// `CopaState`'s BtlBw windowed max (`max_bw`) used to be a full-window fold
 /// over `bw_samples` on every accepted sample: invisible when fed per ACK,
-/// O(window·rate) work when fed per delivered symbol (`RWM_PLAIN_RS`). On, it
+/// O(window·rate) work when fed per delivered symbol (`RWM_PLAIN_RS` (removed, tag archive/RWM_PLAIN_RS)). On, it
 /// is read off a monotonic max-deque beside `bw_samples`: the same statistic to
 /// the bit (`bw_mono_front_equals_full_window_fold`), same [1 s, 10 s] window,
 /// amortized O(1). The gate selects cost, not behaviour; `=0` runs the fold.
@@ -123,85 +103,11 @@ pub(crate) fn resolve_honest_anchor() -> bool {
 }
 
 /// A placement arm's flag: [`crate::config::env_flag`], default absent. A
-/// value outside the strict boolean dialect (`RWM_PLACE_HOL=of`) is a startup
+/// value outside the strict boolean dialect (`RWM_PLACE_WDIV_DERIVED=of`) is a startup
 /// error naming the gate, so a typo can never run a control row labelled as
 /// a challenger.
 pub(crate) fn place_arm_flag(name: &str) -> bool {
     crate::config::env_flag(name, false)
-}
-
-/// Whether the derived placement temperature is active (`RWM_PLACE_T_DERIVED`,
-/// experiment arm, paper §5.7): the softmax temperature is the Luce/Gumbel
-/// scale of the scheduler's own ETA prediction error,
-///
-/// ```text
-///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt  =  0.77970 * sigma_e / ref
-/// ```
-///
-/// The softmax is `argmin` under i.i.d. Gumbel noise of scale `T`, so matching
-/// `Var(T*G) = pi^2 T^2/6` to `sigma_e^2` fixes `T` with no free parameter.
-/// `sigma_e` is the per-path dispersion of `realized - predicted` from the
-/// sender `[ETA]` gauge (`net::eta::SenderEta::sigma_us`), pooled as an RMS
-/// over the active set. The shipped `0.15` thus claims `sigma_e = 0.19238 *
-/// ref`. Off is `place_temperature()` verbatim.
-pub fn place_t_derived_active() -> bool {
-    crate::gates::get().place_t_derived
-}
-
-/// The resolve-time read behind [`place_t_derived_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_place_t_derived() -> bool {
-    let on = place_arm_flag("RWM_PLACE_T_DERIVED");
-    // Two-sided liveness echo (`docs/measurement-discipline.md` rule 1).
-    tracing::info!(
-        place_t_derived = on,
-        "placement temperature (RWM_PLACE_T_DERIVED, paper §5.7): \
-         T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
-         dispersion when ON; the shipped place_temperature() when OFF"
-    );
-    on
-}
-
-/// Whether the placement frontier term is active (`RWM_PLACE_HOL`, experiment
-/// arm, paper §5.7): the head-of-line cost added to `cost_i` for source
-/// symbols,
-///
-/// ```text
-///     X_i  =  [ delta*s_i  +  kappa*(s_i - H)+ ] / ref
-///     s_i  =  [ (now + E_i) - F_hat ]+          the frontier push this placement adds
-///     F_hat  =  running max of the stamped ETAs of symbols already placed
-///     H      =  the free headroom of the LIVE store-cap law
-/// ```
-///
-/// plus the wire-price ordering term at its derived `W`, which prices the
-/// opposite sign of the same difference:
-///
-/// ```text
-///     O_i  =  W * [ F_hat - (now + E_i) ]+ / ref
-///     W    =  1 symbol / ( R_ref * tau_cool )        no literal; see place_hol_wire_price
-/// ```
-///
-/// A placement behind the frontier pushes nothing and is free (`s_i = 0`),
-/// which makes `X_i` a water-filling incentive rather than a slow-path penalty.
-/// `delta` comes from `net::delta_price`, continuous in the dial. `kappa = 1`
-/// is a declared upper bound, conservative against frontier-pushing
-/// placements; its bind is gauged (`s_i > H`). Off skips the frontier read.
-pub fn place_hol_active() -> bool {
-    crate::gates::get().place_hol
-}
-
-/// The resolve-time read behind [`place_hol_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_place_hol() -> bool {
-    let on = place_arm_flag("RWM_PLACE_HOL");
-    tracing::info!(
-        place_hol = on,
-        "placement frontier term (RWM_PLACE_HOL, paper §5.7): \
-         X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push \
-         against the sender's own F_hat, plus the (a2) wire-price ordering \
-         term at its derived W; ABSENT leaves the shipped cost untouched"
-    );
-    on
 }
 
 /// Whether the derived diversity weight is active (`RWM_PLACE_WDIV_DERIVED`,
@@ -265,25 +171,6 @@ pub(crate) fn resolve_cold_place() -> bool {
          when OFF (shipped, bit-identical)"
     );
     on
-}
-
-/// Whether the raw-sample echo-ratio floor is active (`RWM_HONEST_K`,
-/// anchor-hygiene family, default off).
-///
-/// K_i (`EchoRatioMin`, the residence-clock ratio of the honest caps and the
-/// three-term law) is meant to be the smallest observed echoSRTT/RTprop but is
-/// fed the smoothed srtt at the 5 ms refresh clock. The minimum of an EWMA sits
-/// near the distribution's mean, so K reads high wherever delay is wide. On,
-/// the same tracker (same window, same ≥ 1 clamp) is fed the raw per-sample
-/// echo/RTprop ratio at `record_rtt`, making K min(raw)/min(raw).
-pub fn honest_k_active() -> bool {
-    crate::gates::get().honest_k
-}
-
-/// The resolve-time read behind [`honest_k_active`] (called once, from
-/// [`crate::gates::RuntimeGates::resolve`]).
-pub(crate) fn resolve_honest_k() -> bool {
-    crate::config::anchor_gate("RWM_HONEST_K")
 }
 
 /// Whether the window-mode control-datagram merge is active (`RWM_ACK_MERGE`,
@@ -388,13 +275,13 @@ pub(crate) fn resolve_release_1to1() -> bool {
 /// retransmit and the NACK repair margin.
 ///
 /// Both build a `SymbolBatch` and call `transport.send_symbols` with no
-/// `charge_in_flight`, no `consume_pace_tokens` and no `PathStats::symbols_sent`
+/// `charge_in_flight` and no `PathStats::symbols_sent`
 /// increment, while every other wire channel (source, taper correction, the
-/// generation arms, block-ARQ repair) meters all three at the handoff. Recovery
+/// generation arms, block-ARQ repair) meters both at the handoff. Recovery
 /// is exempt from the ack-clocked admission target, not from the ledger, and
 /// charging cannot deadlock these sites because neither reads `available()` or
 /// `cwnd_full`; they are budgeted by `cached_nack_budget` and the NACK
-/// congestion multiplier. The three meters move together, as at the peer
+/// congestion multiplier. The meters move together, as at the peer
 /// sites, so a battery cannot attribute among them. Not a dial.
 pub fn charge_recovery_active() -> bool {
     crate::gates::get().charge_recovery

@@ -2452,7 +2452,6 @@ fn simulate_place(
                             rate: p.btlbw_sym_per_s(),
                             srtt: p.srtt(),
                             rtprop: p.min_rtt(),
-                            k_raw: p.k_raw(),
                         })
                     })
                     .collect();
@@ -3215,7 +3214,7 @@ fn pacer_debit_bounds_only_the_source_arm_not_the_wire() {
     // The divergence, as an exact identity in both directions.
     assert_eq!(
         l.tokens, l.src,
-        "the pacer debit must be the SOURCE arm exactly (emit_source.rs:493-497)"
+        "the pacer debit must be the SOURCE arm exactly (emit_source.rs:425)"
     );
     assert_eq!(
         l.wire(),

@@ -1,0 +1,573 @@
+STALE GAP REPORTS UNDER LEVER B (status 53), REPORTED ONLY: c8-100 at 600 MB (BASE, CAND, CANDS = CAND + RWM_RECOV_SNAPVER=1, BASES = BASE + RWM_RECOV_SNAPVER=1, CW0 = CAND + RWM_PLACE_WDIV=0) and c1d-400 at 5 GB (BASE, CAND, CANDS); nothing here is scored
+ROWS 60/60; ABORT-TOKENS none
+LIVENESS per row (VOID rows are listed and do not enter the readouts; a void row means that arm is re-run)
+  c8-100 BASE   rows 6 LIVE 6 VOID 0
+  c8-100 CAND   rows 6 LIVE 6 VOID 0
+  c8-100 CANDS  rows 6 LIVE 6 VOID 0
+  c8-100 BASES  rows 6 LIVE 6 VOID 0
+  c8-100 CW0    rows 6 LIVE 6 VOID 0
+  c1d-400 BASE   rows 12 LIVE 12 VOID 0
+  c1d-400 CAND   rows 12 LIVE 12 VOID 0
+  c1d-400 CANDS  rows 6 LIVE 6 VOID 0
+WITNESS (the arm's env in [GATES], client/server): BASE snapver=['0/0'] wdiv=['None/None']; CAND snapver=['0/0'] wdiv=['None/None']; CANDS snapver=['1/1'] wdiv=['None/None']; BASES snapver=['1/1'] wdiv=['None/None']; CW0 snapver=['0/0'] wdiv=['0/0']
+
+== c8-100
+-- BASE: n = 6 counting rows
+  goodput Mbit/s                       mean 99.3  median 99.9  range [96.8 - 101.1]  (n 6)
+  completion tail s                    mean 3.95  median 3.66  range [3.06 - 5.19]  (n 6)
+  H0 holes at source end               mean 1743  median 1728  range [1290 - 2252]  (n 6)
+  receiver duplicates                  mean 1546  median 1534  range [1391 - 1733]  (n 6)
+    dup, arrival leg p0                mean 908  median 917  range [734 - 1026]  (n 6)
+    dup, arrival leg p1                mean 638  median 644  range [573 - 707]  (n 6)
+  retransmits per GB                   mean 25298  median 25158  range [24543 - 26245]  (n 6)
+  retx send-leg-1 share                mean 0.592  median 0.605  range [0.511 - 0.650]  (n 6)
+  client CPU s/GB                      mean 36.33  median 36.19  range [35.65 - 37.07]  (n 6)
+  server CPU s/GB                      mean 48.32  median 48.31  range [46.62 - 51.02]  (n 6)
+  lag_E_cli us                         mean 1577  median 1576  range [1132 - 2060]  (n 6)
+  lag_E_srv us                         mean 1478  median 1487  range [1213 - 1842]  (n 6)
+  rtp_floor_p0 us                      mean 8967  median 8698  range [7863 - 10235]  (n 6)
+  rtp_floor_p1 us                      mean 36839  median 36936  range [35218 - 38284]  (n 6)
+  fires (y + r)                        mean 15179  median 15095  range [14726 - 15747]  (n 6)
+    packet-threshold fires (fast)      mean 222  median 253  range [71 - 344]  (n 6)
+    y (young fires)                    mean 222  median 253  range [71 - 344]  (n 6)
+    time-threshold fires (r)           mean 14957  median 14960  range [14382 - 15489]  (n 6)
+  [FCAUSE] gap_data                    mean 15049  median 14862  range [14464 - 15766]  (n 6)
+  [FCAUSE] gap_refresh                 mean 197  median 185  range [0 - 396]  (n 6)
+  [FCAUSE] timer                       mean 4  median 4  range [3 - 6]  (n 6)
+  sender fed (sum over paths)          mean 25700  median 25270  range [24256 - 27923]  (n 6)
+  receiver det                         mean 190968  median 189884  range [165126 - 219378]  (n 6)
+  fed - det                            mean -165268  median -162490  range [-194762 - -140870]  (n 6)
+  cx (sum cx_n)                        mean 10480  median 10382  range [10159 - 10947]  (n 6)
+  [HOLD] p0 fed                        mean 17138  median 17084  range [16630 - 17794]  (n 6)
+  [HOLD] p0 hn                         mean 10044  median 9930  range [9557 - 10659]  (n 6)
+  [HOLD] p0 hy                         mean 212  median 225  range [150 - 243]  (n 6)
+  [HOLD] p0 hy_p50 us                  mean 53931  median 49152  range [40960 - 90112]  (n 6)
+  [HOLD] p0 cx                         mean 6882  median 6838  range [6648 - 7279]  (n 6)
+  [HOLD] p0 ripe_frac                  mean 0.7007  median 0.7006  range [0.6688 - 0.7273]  (n 6)
+  [HOLD] p1 fed                        mean 8561  median 7874  range [7447 - 11293]  (n 6)
+  [HOLD] p1 hn                         mean 4763  median 4288  range [3473 - 7474]  (n 6)
+  [HOLD] p1 hy                         mean 200  median 220  range [64 - 324]  (n 6)
+  [HOLD] p1 hy_p50 us                  mean 2411  median 2304  range [1664 - 3328]  (n 6)
+  [HOLD] p1 cx                         mean 3598  median 3600  range [3393 - 3814]  (n 6)
+  [HOLD] p1 ripe_frac                  mean 0.4868  median 0.4966  range [0.3398 - 0.5835]  (n 6)
+  [SNAPV] p0 rep                       mean 12770  median 12786  range [12357 - 13151]  (n 6)
+  [SNAPV] p0 stale                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 stale/rep                 pooled 0.000  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p0 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                       mean 4222  median 4227  range [3883 - 4547]  (n 6)
+  [SNAPV] p1 stale                     mean 4163  median 4144  range [3827 - 4493]  (n 6)
+  [SNAPV] p1 stale/rep                 pooled 0.986  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p1 pt_st                     mean 158  median 167  range [54 - 253]  (n 6)
+  [SNAPV] p1 tt_st                     mean 999  median 984  range [743 - 1338]  (n 6)
+  [SNAPV] p1 share of rep              pooled 0.248  (sums over the arm's LIVE rows, then the ratio; n 6)
+  E (enrichment factor)                pooled 2.91  (sums over the arm's LIVE rows, then the ratio; n 6)
+-- CAND: n = 6 counting rows
+  goodput Mbit/s                       mean 107.1  median 107.1  range [106.9 - 107.6]  (n 6)
+  completion tail s                    mean 0.36  median 0.39  range [0.19 - 0.46]  (n 6)
+  H0 holes at source end               mean 1016  median 1069  range [18 - 1736]  (n 5)
+  receiver duplicates                  mean 4004  median 4160  range [2799 - 5242]  (n 6)
+    dup, arrival leg p0                mean 1496  median 1452  range [1368 - 1689]  (n 6)
+    dup, arrival leg p1                mean 2509  median 2628  range [1329 - 3553]  (n 6)
+  retransmits per GB                   mean 30661  median 30560  range [28207 - 32332]  (n 6)
+  retx send-leg-1 share                mean 0.744  median 0.748  range [0.699 - 0.772]  (n 6)
+  client CPU s/GB                      mean 37.38  median 37.33  range [37.00 - 37.73]  (n 6)
+  server CPU s/GB                      mean 42.65  median 42.57  range [41.37 - 44.08]  (n 6)
+  lag_E_cli us                         mean 1457  median 1352  range [1136 - 2145]  (n 6)
+  lag_E_srv us                         mean 1136  median 1119  range [902 - 1462]  (n 6)
+  rtp_floor_p0 us                      mean 10256  median 10217  range [8395 - 12028]  (n 6)
+  rtp_floor_p1 us                      mean 39760  median 38714  range [36497 - 46917]  (n 6)
+  fires (y + r)                        mean 18396  median 18336  range [16924 - 19399]  (n 6)
+    packet-threshold fires (fast)      mean 5951  median 5978  range [4658 - 6935]  (n 6)
+    y (young fires)                    mean 5951  median 5978  range [4658 - 6935]  (n 6)
+    time-threshold fires (r)           mean 12446  median 12492  range [11931 - 12785]  (n 6)
+  [FCAUSE] gap_data                    mean 18414  median 18352  range [16976 - 19422]  (n 6)
+  [FCAUSE] gap_refresh                 mean 9  median 4  range [0 - 26]  (n 6)
+  [FCAUSE] timer                       mean 2  median 2  range [0 - 4]  (n 6)
+  sender fed (sum over paths)          mean 404497  median 411952  range [296669 - 515045]  (n 6)
+  receiver det                         mean 257830  median 260738  range [200474 - 325750]  (n 6)
+  fed - det                            mean 146666  median 150601  range [96195 - 189295]  (n 6)
+  cx (sum cx_n)                        mean 11234  median 11218  range [11041 - 11475]  (n 6)
+  [HOLD] p0 fed                        mean 344001  median 352285  range [224293 - 477346]  (n 6)
+  [HOLD] p0 hn                         mean 333437  median 341624  range [214482 - 465847]  (n 6)
+  [HOLD] p0 hy                         mean 2704  median 2832  range [1743 - 3607]  (n 6)
+  [HOLD] p0 hy_p50 us                  mean 5291  median 5120  range [5120 - 5632]  (n 6)
+  [HOLD] p0 cx                         mean 7860  median 7905  range [7515 - 8068]  (n 6)
+  [HOLD] p0 ripe_frac                  mean 0.0183  median 0.0161  range [0.0080 - 0.0306]  (n 6)
+  [HOLD] p1 fed                        mean 60496  median 60322  range [37699 - 75129]  (n 6)
+  [HOLD] p1 hn                         mean 56441  median 56304  range [33719 - 70702]  (n 6)
+  [HOLD] p1 hy                         mean 682  median 662  range [331 - 1013]  (n 6)
+  [HOLD] p1 hy_p50 us                  mean 2901  median 2944  range [2048 - 3584]  (n 6)
+  [HOLD] p1 cx                         mean 3374  median 3316  range [3067 - 3733]  (n 6)
+  [HOLD] p1 ripe_frac                  mean 0.0271  median 0.0253  range [0.0112 - 0.0592]  (n 6)
+  [SNAPV] p0 rep                       mean 11018  median 11012  range [9586 - 12213]  (n 6)
+  [SNAPV] p0 stale                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 stale/rep                 pooled 0.000  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p0 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                       mean 4480  median 4594  range [3894 - 4899]  (n 6)
+  [SNAPV] p1 stale                     mean 4446  median 4550  range [3847 - 4874]  (n 6)
+  [SNAPV] p1 stale/rep                 pooled 0.993  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p1 pt_st                     mean 3469  median 3468  range [2546 - 4323]  (n 6)
+  [SNAPV] p1 tt_st                     mean 2481  median 2425  range [2041 - 2949]  (n 6)
+  [SNAPV] p1 share of rep              pooled 0.289  (sums over the arm's LIVE rows, then the ratio; n 6)
+  E (enrichment factor)                pooled 2.03  (sums over the arm's LIVE rows, then the ratio; n 6)
+-- CANDS: n = 6 counting rows
+  goodput Mbit/s                       mean 107.8  median 107.8  range [107.2 - 108.3]  (n 6)
+  completion tail s                    mean 0.41  median 0.43  range [0.23 - 0.68]  (n 6)
+  H0 holes at source end               mean 515  median 492  range [255 - 819]  (n 4)
+  receiver duplicates                  mean 1291  median 1294  range [1101 - 1487]  (n 6)
+    dup, arrival leg p0                mean 746  median 704  range [537 - 954]  (n 6)
+    dup, arrival leg p1                mean 545  median 542  range [471 - 639]  (n 6)
+  retransmits per GB                   mean 25157  median 25252  range [24277 - 26093]  (n 6)
+  retx send-leg-1 share                mean 0.726  median 0.729  range [0.714 - 0.732]  (n 6)
+  client CPU s/GB                      mean 36.63  median 36.58  range [35.12 - 37.93]  (n 6)
+  server CPU s/GB                      mean 41.98  median 42.42  range [39.85 - 43.30]  (n 6)
+  lag_E_cli us                         mean 1381  median 1288  range [1112 - 1734]  (n 6)
+  lag_E_srv us                         mean 1326  median 1296  range [895 - 1721]  (n 6)
+  rtp_floor_p0 us                      mean 11536  median 11778  range [9750 - 12656]  (n 6)
+  rtp_floor_p1 us                      mean 39216  median 39022  range [36856 - 42397]  (n 6)
+  fires (y + r)                        mean 15094  median 15152  range [14566 - 15656]  (n 6)
+    packet-threshold fires (fast)      mean 2626  median 2567  range [1814 - 3516]  (n 6)
+    y (young fires)                    mean 2626  median 2567  range [1814 - 3516]  (n 6)
+    time-threshold fires (r)           mean 12468  median 12587  range [11790 - 12905]  (n 6)
+  [FCAUSE] gap_data                    mean 15123  median 15169  range [14604 - 15724]  (n 6)
+  [FCAUSE] gap_refresh                 mean 7  median 1  range [0 - 20]  (n 6)
+  [FCAUSE] timer                       mean 2  median 2  range [1 - 3]  (n 6)
+  sender fed (sum over paths)          mean 168698  median 159484  range [104014 - 228501]  (n 6)
+  receiver det                         mean 227004  median 212889  range [150752 - 301173]  (n 6)
+  fed - det                            mean -58306  median -55984  range [-72716 - -45743]  (n 6)
+  cx (sum cx_n)                        mean 11567  median 11422  range [10952 - 12580]  (n 6)
+  [HOLD] p0 fed                        mean 130076  median 115963  range [55304 - 204561]  (n 6)
+  [HOLD] p0 hn                         mean 121988  median 107942  range [47040 - 195767]  (n 6)
+  [HOLD] p0 hy                         mean 93  median 92  range [53 - 134]  (n 6)
+  [HOLD] p0 hy_p50 us                  mean 99669  median 98304  range [57344 - 163840]  (n 6)
+  [HOLD] p0 cx                         mean 7994  median 7988  range [7348 - 8738]  (n 6)
+  [HOLD] p0 ripe_frac                  mean 0.0634  median 0.0569  range [0.0230 - 0.1478]  (n 6)
+  [HOLD] p1 fed                        mean 38621  median 40942  range [23940 - 48710]  (n 6)
+  [HOLD] p1 hn                         mean 35014  median 37326  range [20072 - 45393]  (n 6)
+  [HOLD] p1 hy                         mean 34  median 34  range [17 - 49]  (n 6)
+  [HOLD] p1 hy_p50 us                  mean 50176  median 36864  range [20480 - 131072]  (n 6)
+  [HOLD] p1 cx                         mean 3573  median 3574  range [3270 - 3842]  (n 6)
+  [HOLD] p1 ripe_frac                  mean 0.0353  median 0.0232  range [0.0159 - 0.0829]  (n 6)
+  [SNAPV] p0 rep                       mean 11865  median 12200  range [10581 - 12970]  (n 6)
+  [SNAPV] p0 stale                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 stale/rep                 pooled 0.000  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p0 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                       mean 4437  median 4268  range [3996 - 4982]  (n 6)
+  [SNAPV] p1 stale                     mean 4407  median 4242  range [3958 - 4951]  (n 6)
+  [SNAPV] p1 stale/rep                 pooled 0.993  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p1 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 share of rep              pooled 0.272  (sums over the arm's LIVE rows, then the ratio; n 6)
+  E (enrichment factor)                pooled 0.00  (sums over the arm's LIVE rows, then the ratio; n 6)
+-- BASES: n = 6 counting rows
+  goodput Mbit/s                       mean 98.6  median 97.8  range [96.3 - 102.1]  (n 6)
+  completion tail s                    mean 4.42  median 4.86  range [2.63 - 5.44]  (n 6)
+  H0 holes at source end               mean 1835  median 1914  range [1188 - 2185]  (n 6)
+  receiver duplicates                  mean 1427  median 1326  range [1234 - 1802]  (n 6)
+    dup, arrival leg p0                mean 816  median 742  range [604 - 1240]  (n 6)
+    dup, arrival leg p1                mean 611  median 620  range [541 - 692]  (n 6)
+  retransmits per GB                   mean 24938  median 24776  range [23888 - 26168]  (n 6)
+  retx send-leg-1 share                mean 0.600  median 0.602  range [0.534 - 0.678]  (n 6)
+  client CPU s/GB                      mean 36.22  median 36.06  range [35.15 - 38.03]  (n 6)
+  server CPU s/GB                      mean 48.86  median 49.01  range [45.70 - 51.77]  (n 6)
+  lag_E_cli us                         mean 1532  median 1542  range [1126 - 1909]  (n 6)
+  lag_E_srv us                         mean 1437  median 1288  range [1066 - 2040]  (n 6)
+  rtp_floor_p0 us                      mean 8145  median 7896  range [7039 - 10174]  (n 6)
+  rtp_floor_p1 us                      mean 37447  median 37776  range [35082 - 39174]  (n 6)
+  fires (y + r)                        mean 14963  median 14866  range [14333 - 15701]  (n 6)
+    packet-threshold fires (fast)      mean 46  median 36  range [15 - 89]  (n 6)
+    y (young fires)                    mean 46  median 36  range [15 - 89]  (n 6)
+    time-threshold fires (r)           mean 14916  median 14802  range [14318 - 15669]  (n 6)
+  [FCAUSE] gap_data                    mean 14812  median 14750  range [14222 - 15480]  (n 6)
+  [FCAUSE] gap_refresh                 mean 181  median 126  range [61 - 371]  (n 6)
+  [FCAUSE] timer                       mean 8  median 8  range [3 - 13]  (n 6)
+  sender fed (sum over paths)          mean 12324  median 12498  range [10453 - 13597]  (n 6)
+  receiver det                         mean 209198  median 193982  range [166975 - 296116]  (n 6)
+  fed - det                            mean -196874  median -181958  range [-284494 - -153890]  (n 6)
+  cx (sum cx_n)                        mean 10365  median 10241  range [9893 - 11221]  (n 6)
+  [HOLD] p0 fed                        mean 7242  median 7333  range [6204 - 7909]  (n 6)
+  [HOLD] p0 hn                         mean 244  median 309  range [11 - 409]  (n 6)
+  [HOLD] p0 hy                         mean 163  median 156  range [55 - 284]  (n 6)
+  [HOLD] p0 hy_p50 us                  mean 60075  median 55296  range [36864 - 98304]  (n 6)
+  [HOLD] p0 cx                         mean 6835  median 6866  range [6083 - 7295]  (n 6)
+  [HOLD] p0 ripe_frac                  mean 0.9792  median 0.9748  range [0.9657 - 0.9991]  (n 6)
+  [HOLD] p1 fed                        mean 5082  median 4927  range [4249 - 6278]  (n 6)
+  [HOLD] p1 hn                         mean 1535  median 1258  range [421 - 3055]  (n 6)
+  [HOLD] p1 hy                         mean 17  median 12  range [2 - 53]  (n 6)
+  [HOLD] p1 hy_p50 us                  mean 30379  median 34816  range [9216 - 57344]  (n 6)
+  [HOLD] p1 cx                         mean 3530  median 3520  range [3076 - 4040]  (n 6)
+  [HOLD] p1 ripe_frac                  mean 0.6780  median 0.7066  range [0.4508 - 0.8726]  (n 6)
+  [SNAPV] p0 rep                       mean 12581  median 12788  range [11504 - 13154]  (n 6)
+  [SNAPV] p0 stale                     mean 0  median 0  range [0 - 1]  (n 6)
+  [SNAPV] p0 stale/rep                 pooled 0.000  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p0 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                       mean 4490  median 4352  range [3750 - 5427]  (n 6)
+  [SNAPV] p1 stale                     mean 4418  median 4282  range [3697 - 5304]  (n 6)
+  [SNAPV] p1 stale/rep                 pooled 0.984  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p1 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 share of rep              pooled 0.263  (sums over the arm's LIVE rows, then the ratio; n 6)
+  E (enrichment factor)                pooled 0.00  (sums over the arm's LIVE rows, then the ratio; n 6)
+-- CW0: n = 6 counting rows
+  goodput Mbit/s                       mean 106.4  median 106.3  range [106.1 - 106.8]  (n 6)
+  completion tail s                    mean 0.30  median 0.31  range [0.14 - 0.42]  (n 6)
+  H0 holes at source end               mean 545  median 555  range [14 - 1487]  (n 5)
+  receiver duplicates                  mean 6691  median 6612  range [5858 - 7807]  (n 6)
+    dup, arrival leg p0                mean 5332  median 5294  range [4731 - 6175]  (n 6)
+    dup, arrival leg p1                mean 1359  median 1345  range [1127 - 1632]  (n 6)
+  retransmits per GB                   mean 36940  median 36965  range [33968 - 39747]  (n 6)
+  retx send-leg-1 share                mean 0.169  median 0.171  range [0.161 - 0.173]  (n 6)
+  client CPU s/GB                      mean 36.70  median 36.47  range [35.78 - 38.07]  (n 6)
+  server CPU s/GB                      mean 41.41  median 41.77  range [39.23 - 42.37]  (n 6)
+  lag_E_cli us                         mean 1414  median 1343  range [1101 - 1806]  (n 6)
+  lag_E_srv us                         mean 1110  median 993  range [879 - 1520]  (n 6)
+  rtp_floor_p0 us                      mean 10855  median 10872  range [9060 - 12590]  (n 6)
+  rtp_floor_p1 us                      mean 39765  median 39501  range [36756 - 42722]  (n 6)
+  fires (y + r)                        mean 22164  median 22179  range [20381 - 23848]  (n 6)
+    packet-threshold fires (fast)      mean 10131  median 9961  range [8880 - 11309]  (n 6)
+    y (young fires)                    mean 10131  median 9961  range [8880 - 11309]  (n 6)
+    time-threshold fires (r)           mean 12033  median 12124  range [10108 - 13742]  (n 6)
+  [FCAUSE] gap_data                    mean 22189  median 22158  range [20440 - 23854]  (n 6)
+  [FCAUSE] gap_refresh                 mean 12  median 10  range [0 - 33]  (n 6)
+  [FCAUSE] timer                       mean 1  median 1  range [0 - 3]  (n 6)
+  sender fed (sum over paths)          mean 385818  median 390209  range [332749 - 433230]  (n 6)
+  receiver det                         mean 345873  median 350314  range [320104 - 371572]  (n 6)
+  fed - det                            mean 39945  median 38940  range [-27008 - 106693]  (n 6)
+  cx (sum cx_n)                        mean 14138  median 14555  range [12775 - 14613]  (n 6)
+  [HOLD] p0 fed                        mean 346847  median 352787  range [298484 - 386525]  (n 6)
+  [HOLD] p0 hn                         mean 330262  median 336060  range [280671 - 371233]  (n 6)
+  [HOLD] p0 hy                         mean 6309  median 6405  range [5106 - 7328]  (n 6)
+  [HOLD] p0 hy_p50 us                  mean 4864  median 4864  range [4608 - 5120]  (n 6)
+  [HOLD] p0 cx                         mean 10275  median 10369  range [9339 - 10967]  (n 6)
+  [HOLD] p0 ripe_frac                  mean 0.0150  median 0.0144  range [0.0099 - 0.0219]  (n 6)
+  [HOLD] p1 fed                        mean 38971  median 37422  range [28893 - 49120]  (n 6)
+  [HOLD] p1 hn                         mean 34756  median 33268  range [24215 - 45085]  (n 6)
+  [HOLD] p1 hy                         mean 352  median 348  range [307 - 409]  (n 6)
+  [HOLD] p1 hy_p50 us                  mean 3413  median 3072  range [2816 - 4608]  (n 6)
+  [HOLD] p1 cx                         mean 3863  median 3862  range [3436 - 4269]  (n 6)
+  [HOLD] p1 ripe_frac                  mean 0.0819  median 0.0816  range [0.0515 - 0.1173]  (n 6)
+  [SNAPV] p0 rep                       mean 10462  median 10433  range [10194 - 10790]  (n 6)
+  [SNAPV] p0 stale                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 stale/rep                 pooled 0.000  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p0 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                       mean 5325  median 5294  range [5180 - 5539]  (n 6)
+  [SNAPV] p1 stale                     mean 5308  median 5282  range [5162 - 5514]  (n 6)
+  [SNAPV] p1 stale/rep                 pooled 0.997  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p1 pt_st                     mean 6376  median 6336  range [5234 - 7239]  (n 6)
+  [SNAPV] p1 tt_st                     mean 2416  median 2322  range [1757 - 3455]  (n 6)
+  [SNAPV] p1 share of rep              pooled 0.337  (sums over the arm's LIVE rows, then the ratio; n 6)
+  E (enrichment factor)                pooled 1.87  (sums over the arm's LIVE rows, then the ratio; n 6)
+  per-row table, c8-100 (LIVE rows): arm seed rep | stale/rep p0 p1 | E | fed-det cx | dup p0/p1 | fired fast
+    BASE   s42  r1 | 0.000 0.987 | 2.97 | -161538 10179 | 925/573 | 14726 344
+    BASE   s42  r2 | 0.000 0.990 | 3.48 | -157504 10351 | 963/630 | 14837 306
+    BASE   s42  r3 | 0.000 0.986 | 2.36 | -140870 10834 | 734/657 | 15158 200
+    BASE   s7   r1 | 0.000 0.992 | 2.69 | -173491 10412 | 909/662 | 15573 84
+    BASE   s7   r2 | 0.000 0.973 | 2.90 | -163441 10947 | 1026/707 | 15747 328
+    BASE   s7   r3 | 0.000 0.988 | 2.86 | -194762 10159 | 892/596 | 15032 71
+    BASES  s42  r1 | 0.000 0.990 | 0.00 | -217196 10111 | 886/692 | 14546 80
+    BASES  s42  r2 | 0.000 0.977 | 0.00 | -284494 10007 | 1240/562 | 14333 15
+    BASES  s42  r3 | 0.000 0.973 | 0.00 | -190691 10371 | 799/541 | 14665 89
+    BASES  s7   r1 | 0.000 0.983 | 0.00 | -153890 11221 | 686/609 | 15701 32
+    BASES  s7   r2 | 0.000 0.994 | 0.00 | -173224 9893 | 679/632 | 15466 24
+    BASES  s7   r3 | 0.000 0.986 | 0.00 | -161748 10589 | 604/630 | 15066 39
+    CAND   s42  r1 | 0.000 0.988 | 2.29 | 96195 11235 | 1470/1329 | 16924 4658
+    CAND   s42  r2 | 0.000 0.995 | 1.84 | 158331 11041 | 1433/2761 | 18088 6157
+    CAND   s42  r3 | 0.000 0.990 | 2.05 | 166198 11091 | 1368/3021 | 18069 5465
+    CAND   s7   r1 | 0.000 0.994 | 2.06 | 127108 11202 | 1383/1893 | 18584 5799
+    CAND   s7   r2 | 0.000 0.991 | 1.99 | 142871 11475 | 1631/2496 | 19314 6935
+    CAND   s7   r3 | 0.000 0.997 | 1.96 | 189295 11357 | 1689/3553 | 19399 6691
+    CANDS  s42  r1 | 0.000 0.994 | 0.00 | -72716 10952 | 942/545 | 14997 2525
+    CANDS  s42  r2 | 0.000 0.995 | 0.00 | -61159 11254 | 637/510 | 14566 2337
+    CANDS  s42  r3 | 0.000 0.990 | 0.00 | -46738 11406 | 537/564 | 14719 1814
+    CANDS  s7   r1 | 0.000 0.995 | 0.00 | -72672 12580 | 954/471 | 15656 2954
+    CANDS  s7   r2 | 0.000 0.993 | 0.00 | -45743 11438 | 729/539 | 15321 2609
+    CANDS  s7   r3 | 0.000 0.992 | 0.00 | -50808 11774 | 680/639 | 15306 3516
+    CW0    s42  r1 | 0.000 0.995 | 1.69 | 19465 14588 | 4731/1127 | 21268 8880
+    CW0    s42  r2 | 0.000 0.998 | 1.97 | 103842 13734 | 4749/1334 | 21006 9444
+    CW0    s42  r3 | 0.000 0.997 | 1.96 | 106693 12775 | 4933/1279 | 20381 10273
+    CW0    s7   r1 | 0.000 0.997 | 1.79 | -27008 14522 | 5656/1356 | 23391 9649
+    CW0    s7   r2 | 0.000 0.997 | 1.93 | -21739 14613 | 6175/1632 | 23848 11309
+    CW0    s7   r3 | 0.000 0.997 | 1.89 | 58415 14596 | 5747/1425 | 23090 11231
+
+== c8 comparisons (rank-sum p, n = 6 vs 6: reported beside the row ranges; nothing is scored)
+  c8-100: CAND (n 6) against BASE (n 6); p = rank-sum permutation p, ONE-SIDED worse side (higher value; lower for goodput), within-seed ranks, 10000 relabellings; a p near 1 means CAND sits on the better side; ratio = median CAND / median BASE
+    readout         p(worse)    ratio   median BASE -> CAND
+    goodput           1.0000    1.072   99.882 -> 107.069
+    cpu_cli/GB        0.0074    1.032   36.192 -> 37.333
+    cpu_srv/GB        1.0000    0.881   48.308 -> 42.567
+    lag_E_cli         0.9170    0.858   1576.000 -> 1351.500
+    lag_E_srv         0.9789    0.753   1487.000 -> 1119.000
+    rtp_floor_p0      0.0873    1.175   8698.500 -> 10217.000
+    rtp_floor_p1      0.0232    1.048   36936.500 -> 38714.500
+    dup_total         0.0030    2.711   1534.500 -> 4160.500
+    dup_p0            0.0030    1.583   917.000 -> 1451.500
+    dup_p1            0.0030    4.085   643.500 -> 2628.500
+    retx/GB           0.0030    1.215   25158.333 -> 30560.000
+  c8-100: CANDS (n 6) against CAND (n 6); p = rank-sum permutation p, ONE-SIDED worse side (higher value; lower for goodput), within-seed ranks, 10000 relabellings; a p near 1 means CANDS sits on the better side; ratio = median CANDS / median CAND
+    readout         p(worse)    ratio   median CAND -> CANDS
+    goodput           1.0000    1.007   107.069 -> 107.800
+    cpu_cli/GB        0.7647    0.980   37.333 -> 36.583
+    cpu_srv/GB        0.7653    0.996   42.567 -> 42.417
+    lag_E_cli         0.6759    0.953   1351.500 -> 1287.500
+    lag_E_srv         0.1437    1.158   1119.000 -> 1295.500
+    rtp_floor_p0      0.0911    1.153   10217.000 -> 11778.000
+    rtp_floor_p1      0.5546    1.008   38714.500 -> 39022.000
+    dup_total         1.0000    0.311   4160.500 -> 1293.500
+    dup_p0            1.0000    0.485   1451.500 -> 704.500
+    dup_p1            1.0000    0.206   2628.500 -> 542.000
+    retx/GB           1.0000    0.826   30560.000 -> 25252.500
+  c8-100: BASES (n 6) against BASE (n 6); p = rank-sum permutation p, ONE-SIDED worse side (higher value; lower for goodput), within-seed ranks, 10000 relabellings; a p near 1 means BASES sits on the better side; ratio = median BASES / median BASE
+    readout         p(worse)    ratio   median BASE -> BASES
+    goodput           0.3255    0.980   99.882 -> 97.841
+    cpu_cli/GB        0.7619    0.996   36.192 -> 36.058
+    cpu_srv/GB        0.3999    1.014   48.308 -> 49.008
+    lag_E_cli         0.6810    0.979   1576.000 -> 1542.500
+    lag_E_srv         0.6709    0.866   1487.000 -> 1287.500
+    rtp_floor_p0      0.9771    0.908   8698.500 -> 7895.500
+    rtp_floor_p1      0.4445    1.023   36936.500 -> 37775.500
+    dup_total         0.9213    0.864   1534.500 -> 1325.500
+    dup_p0            0.9184    0.810   917.000 -> 742.500
+    dup_p1            0.8552    0.963   643.500 -> 619.500
+    retx/GB           0.9521    0.985   25158.333 -> 24775.833
+  c8-100: CW0 (n 6) against CAND (n 6); p = rank-sum permutation p, ONE-SIDED worse side (higher value; lower for goodput), within-seed ranks, 10000 relabellings; a p near 1 means CW0 sits on the better side; ratio = median CW0 / median CAND
+    readout         p(worse)    ratio   median CAND -> CW0
+    goodput           0.0030    0.993   107.069 -> 106.306
+    cpu_cli/GB        0.9560    0.977   37.333 -> 36.467
+    cpu_srv/GB        0.9530    0.981   42.567 -> 41.775
+    lag_E_cli         0.6703    0.994   1351.500 -> 1343.000
+    lag_E_srv         0.6709    0.887   1119.000 -> 993.000
+    rtp_floor_p0      0.3226    1.064   10217.000 -> 10872.500
+    rtp_floor_p1      0.4460    1.020   38714.500 -> 39501.000
+    dup_total         0.0030    1.589   4160.500 -> 6612.000
+    dup_p0            0.0030    3.648   1451.500 -> 5294.500
+    dup_p1            0.9976    0.512   2628.500 -> 1345.000
+    retx/GB           0.0030    1.210   30560.000 -> 36965.000
+
+== c1d-400
+-- BASE: n = 12 counting rows
+  goodput Mbit/s                       mean 786.7  median 824.5  range [364.9 - 862.9]  (n 12)
+  completion tail s                    mean 0.15  median 0.13  range [-0.01 - 0.30]  (n 12)
+  H0 holes at source end               mean 563  median 563  range [563 - 563]  (n 1)
+  receiver duplicates                  mean 2893  median 3010  range [705 - 3888]  (n 12)
+    dup, arrival leg p0                mean 1496  median 1522  range [456 - 2182]  (n 12)
+    dup, arrival leg p1                mean 1397  median 1523  range [249 - 1860]  (n 12)
+  retransmits per GB                   mean 4580  median 4850  range [1460 - 5632]  (n 12)
+  retx send-leg-1 share                mean 0.462  median 0.465  range [0.292 - 0.534]  (n 12)
+  client CPU s/GB                      mean 21.61  median 21.31  range [20.83 - 24.11]  (n 12)
+  server CPU s/GB                      mean 23.29  median 22.89  range [22.29 - 27.04]  (n 12)
+  lag_E_cli us                         mean 1887  median 1898  range [1267 - 2340]  (n 12)
+  lag_E_srv us                         mean 1639  median 1700  range [1099 - 1970]  (n 12)
+  rtp_floor_p0 us                      mean 2500  median 2504  range [2319 - 2794]  (n 12)
+  rtp_floor_p1 us                      mean 2555  median 2546  range [2422 - 2669]  (n 12)
+  fires (y + r)                        mean 22899  median 24248  range [7300 - 28158]  (n 12)
+    packet-threshold fires (fast)      mean 1264  median 1357  range [428 - 1728]  (n 12)
+    y (young fires)                    mean 1264  median 1357  range [428 - 1728]  (n 12)
+    time-threshold fires (r)           mean 21635  median 22785  range [6872 - 26775]  (n 12)
+  [FCAUSE] gap_data                    mean 22952  median 24254  range [7280 - 28204]  (n 12)
+  [FCAUSE] gap_refresh                 mean 2  median 0  range [0 - 28]  (n 12)
+  [FCAUSE] timer                       mean 5  median 4  range [1 - 8]  (n 12)
+  sender fed (sum over paths)          mean 308551  median 285695  range [251595 - 435253]  (n 12)
+  receiver det                         mean 1950582  median 2183918  range [766457 - 2225749]  (n 12)
+  fed - det                            mean -1642031  median -1836020  range [-1951476 - -331204]  (n 12)
+  cx (sum cx_n)                        mean 2942  median 2877  range [2595 - 3376]  (n 12)
+  [HOLD] p0 fed                        mean 157385  median 125352  range [77316 - 389978]  (n 12)
+  [HOLD] p0 hn                         mean 154965  median 122522  range [75128 - 389091]  (n 12)
+  [HOLD] p0 hy                         mean 888  median 934  range [130 - 1217]  (n 12)
+  [HOLD] p0 hy_p50 us                  mean 4288  median 4096  range [3328 - 6656]  (n 12)
+  [HOLD] p0 cx                         mean 1532  median 1566  range [757 - 2226]  (n 12)
+  [HOLD] p0 ripe_frac                  mean 0.0248  median 0.0272  range [0.0021 - 0.0332]  (n 12)
+  [HOLD] p1 fed                        mean 151166  median 145478  range [45275 - 256435]  (n 12)
+  [HOLD] p1 hn                         mean 148662  median 142868  range [42402 - 253654]  (n 12)
+  [HOLD] p1 hy                         mean 1095  median 1133  range [254 - 1951]  (n 12)
+  [HOLD] p1 hy_p50 us                  mean 3776  median 3840  range [2816 - 4096]  (n 12)
+  [HOLD] p1 cx                         mean 1410  median 1334  range [830 - 2619]  (n 12)
+  [HOLD] p1 ripe_frac                  mean 0.0243  median 0.0234  range [0.0151 - 0.0461]  (n 12)
+  [SNAPV] p0 rep                       mean 17975  median 17496  range [9218 - 32024]  (n 12)
+  [SNAPV] p0 stale                     mean 1315  median 1148  range [224 - 2406]  (n 12)
+  [SNAPV] p0 stale/rep                 pooled 0.073  (sums over the arm's LIVE rows, then the ratio; n 12)
+  [SNAPV] p0 pt_st                     mean 243  median 242  range [67 - 375]  (n 12)
+  [SNAPV] p0 tt_st                     mean 424  median 440  range [46 - 609]  (n 12)
+  [SNAPV] p1 rep                       mean 22450  median 22386  range [16823 - 27835]  (n 12)
+  [SNAPV] p1 stale                     mean 2008  median 1900  range [327 - 7607]  (n 12)
+  [SNAPV] p1 stale/rep                 pooled 0.089  (sums over the arm's LIVE rows, then the ratio; n 12)
+  [SNAPV] p1 pt_st                     mean 340  median 408  range [30 - 507]  (n 12)
+  [SNAPV] p1 tt_st                     mean 482  median 476  range [67 - 806]  (n 12)
+  [SNAPV] p1 share of rep              pooled 0.555  (sums over the arm's LIVE rows, then the ratio; n 12)
+  E (enrichment factor)                pooled 5.61  (sums over the arm's LIVE rows, then the ratio; n 12)
+-- CAND: n = 12 counting rows
+  goodput Mbit/s                       mean 800.0  median 805.7  range [683.4 - 855.5]  (n 12)
+  completion tail s                    mean 0.11  median 0.09  range [0.03 - 0.25]  (n 12)
+  H0 holes at source end               -
+  receiver duplicates                  mean 3310  median 3412  range [1591 - 4323]  (n 12)
+    dup, arrival leg p0                mean 1737  median 1616  range [1048 - 2934]  (n 12)
+    dup, arrival leg p1                mean 1574  median 1624  range [543 - 2803]  (n 12)
+  retransmits per GB                   mean 4892  median 5081  range [2162 - 5815]  (n 12)
+  retx send-leg-1 share                mean 0.490  median 0.492  range [0.330 - 0.638]  (n 12)
+  client CPU s/GB                      mean 21.42  median 21.45  range [19.94 - 22.56]  (n 12)
+  server CPU s/GB                      mean 22.97  median 22.92  range [22.36 - 23.78]  (n 12)
+  lag_E_cli us                         mean 1692  median 1655  range [1350 - 1977]  (n 12)
+  lag_E_srv us                         mean 1478  median 1481  range [1053 - 1909]  (n 12)
+  rtp_floor_p0 us                      mean 2536  median 2531  range [2290 - 2857]  (n 12)
+  rtp_floor_p1 us                      mean 2510  median 2482  range [2373 - 2753]  (n 12)
+  fires (y + r)                        mean 24459  median 25404  range [10812 - 29075]  (n 12)
+    packet-threshold fires (fast)      mean 1329  median 1318  range [360 - 1895]  (n 12)
+    y (young fires)                    mean 1329  median 1318  range [360 - 1895]  (n 12)
+    time-threshold fires (r)           mean 23130  median 23760  range [10452 - 27769]  (n 12)
+  [FCAUSE] gap_data                    mean 24501  median 25461  range [10772 - 29111]  (n 12)
+  [FCAUSE] gap_refresh                 mean 0  median 0  range [0 - 0]  (n 12)
+  [FCAUSE] timer                       mean 7  median 3  range [2 - 40]  (n 12)
+  sender fed (sum over paths)          mean 420632  median 414284  range [294857 - 605414]  (n 12)
+  receiver det                         mean 1995131  median 2146576  range [717870 - 2278607]  (n 12)
+  fed - det                            mean -1574499  median -1730046  range [-1829947 - -423013]  (n 12)
+  cx (sum cx_n)                        mean 2966  median 2972  range [2610 - 3548]  (n 12)
+  [HOLD] p0 fed                        mean 181560  median 183691  range [53664 - 305731]  (n 12)
+  [HOLD] p0 hn                         mean 178954  median 181280  range [50576 - 302844]  (n 12)
+  [HOLD] p0 hy                         mean 967  median 1030  range [91 - 1630]  (n 12)
+  [HOLD] p0 hy_p50 us                  mean 4245  median 4096  range [3840 - 4608]  (n 12)
+  [HOLD] p0 cx                         mean 1639  median 1556  range [936 - 2997]  (n 12)
+  [HOLD] p0 ripe_frac                  mean 0.0170  median 0.0155  range [0.0123 - 0.0355]  (n 12)
+  [HOLD] p1 fed                        mean 239072  median 207026  range [142593 - 461559]  (n 12)
+  [HOLD] p1 hn                         mean 236597  median 204740  range [140670 - 457778]  (n 12)
+  [HOLD] p1 hy                         mean 1148  median 1096  range [630 - 1868]  (n 12)
+  [HOLD] p1 hy_p50 us                  mean 4779  median 4352  range [4096 - 8192]  (n 12)
+  [HOLD] p1 cx                         mean 1327  median 1334  range [551 - 2112]  (n 12)
+  [HOLD] p1 ripe_frac                  mean 0.0122  median 0.0134  range [0.0044 - 0.0166]  (n 12)
+  [SNAPV] p0 rep                       mean 17460  median 17180  range [11119 - 22883]  (n 12)
+  [SNAPV] p0 stale                     mean 2753  median 1274  range [842 - 9592]  (n 12)
+  [SNAPV] p0 stale/rep                 pooled 0.158  (sums over the arm's LIVE rows, then the ratio; n 12)
+  [SNAPV] p0 pt_st                     mean 287  median 272  range [72 - 504]  (n 12)
+  [SNAPV] p0 tt_st                     mean 606  median 482  range [312 - 1523]  (n 12)
+  [SNAPV] p1 rep                       mean 19426  median 18951  range [15861 - 28056]  (n 12)
+  [SNAPV] p1 stale                     mean 1763  median 1650  range [410 - 4653]  (n 12)
+  [SNAPV] p1 stale/rep                 pooled 0.091  (sums over the arm's LIVE rows, then the ratio; n 12)
+  [SNAPV] p1 pt_st                     mean 249  median 242  range [72 - 473]  (n 12)
+  [SNAPV] p1 tt_st                     mean 480  median 534  range [122 - 780]  (n 12)
+  [SNAPV] p1 share of rep              pooled 0.527  (sums over the arm's LIVE rows, then the ratio; n 12)
+  E (enrichment factor)                pooled 3.29  (sums over the arm's LIVE rows, then the ratio; n 12)
+-- CANDS: n = 6 counting rows
+  goodput Mbit/s                       mean 801.0  median 807.8  range [740.6 - 844.6]  (n 6)
+  completion tail s                    mean 0.15  median 0.13  range [0.06 - 0.24]  (n 6)
+  H0 holes at source end               -
+  receiver duplicates                  mean 3222  median 3253  range [2698 - 3920]  (n 6)
+    dup, arrival leg p0                mean 1602  median 1476  range [1339 - 2045]  (n 6)
+    dup, arrival leg p1                mean 1620  median 1494  range [1255 - 2522]  (n 6)
+  retransmits per GB                   mean 4964  median 5145  range [4396 - 5238]  (n 6)
+  retx send-leg-1 share                mean 0.488  median 0.516  range [0.360 - 0.567]  (n 6)
+  client CPU s/GB                      mean 21.71  median 21.77  range [21.10 - 22.15]  (n 6)
+  server CPU s/GB                      mean 23.26  median 23.41  range [22.49 - 23.79]  (n 6)
+  lag_E_cli us                         mean 1643  median 1669  range [1097 - 2228]  (n 6)
+  lag_E_srv us                         mean 1482  median 1426  range [1041 - 2382]  (n 6)
+  rtp_floor_p0 us                      mean 2606  median 2624  range [2416 - 2881]  (n 6)
+  rtp_floor_p1 us                      mean 2505  median 2458  range [2413 - 2667]  (n 6)
+  fires (y + r)                        mean 24819  median 25726  range [21979 - 26192]  (n 6)
+    packet-threshold fires (fast)      mean 982  median 920  range [786 - 1386]  (n 6)
+    y (young fires)                    mean 982  median 920  range [786 - 1386]  (n 6)
+    time-threshold fires (r)           mean 23837  median 24758  range [20593 - 25406]  (n 6)
+  [FCAUSE] gap_data                    mean 24868  median 25748  range [22031 - 26350]  (n 6)
+  [FCAUSE] gap_refresh                 mean 0  median 0  range [0 - 0]  (n 6)
+  [FCAUSE] timer                       mean 5  median 5  range [1 - 9]  (n 6)
+  sender fed (sum over paths)          mean 354697  median 356586  range [322594 - 388089]  (n 6)
+  receiver det                         mean 2166563  median 2167603  range [2106220 - 2238579]  (n 6)
+  fed - det                            mean -1811866  median -1833487  range [-1861619 - -1730261]  (n 6)
+  cx (sum cx_n)                        mean 3103  median 3110  range [2426 - 3889]  (n 6)
+  [HOLD] p0 fed                        mean 183319  median 193052  range [124618 - 226605]  (n 6)
+  [HOLD] p0 hn                         mean 180800  median 190340  range [122709 - 223261]  (n 6)
+  [HOLD] p0 hy                         mean 930  median 848  range [731 - 1394]  (n 6)
+  [HOLD] p0 hy_p50 us                  mean 4437  median 4608  range [3840 - 5120]  (n 6)
+  [HOLD] p0 cx                         mean 1589  median 1388  range [1178 - 2275]  (n 6)
+  [HOLD] p0 ripe_frac                  mean 0.0122  median 0.0122  range [0.0096 - 0.0147]  (n 6)
+  [HOLD] p1 fed                        mean 171378  median 161825  range [140081 - 236289]  (n 6)
+  [HOLD] p1 hn                         mean 168941  median 159514  range [138154 - 232489]  (n 6)
+  [HOLD] p1 hy                         mean 924  median 912  range [784 - 1089]  (n 6)
+  [HOLD] p1 hy_p50 us                  mean 3883  median 3840  range [3072 - 5120]  (n 6)
+  [HOLD] p1 cx                         mean 1514  median 1310  range [1043 - 2711]  (n 6)
+  [HOLD] p1 ripe_frac                  mean 0.0143  median 0.0135  range [0.0129 - 0.0181]  (n 6)
+  [SNAPV] p0 rep                       mean 19124  median 19756  range [15152 - 21734]  (n 6)
+  [SNAPV] p0 stale                     mean 2150  median 1272  range [576 - 7341]  (n 6)
+  [SNAPV] p0 stale/rep                 pooled 0.112  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p0 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                       mean 17857  median 18054  range [14476 - 21927]  (n 6)
+  [SNAPV] p1 stale                     mean 1281  median 996  range [795 - 2859]  (n 6)
+  [SNAPV] p1 stale/rep                 pooled 0.072  (sums over the arm's LIVE rows, then the ratio; n 6)
+  [SNAPV] p1 pt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 tt_st                     mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 share of rep              pooled 0.483  (sums over the arm's LIVE rows, then the ratio; n 6)
+  E (enrichment factor)                pooled 0.00  (sums over the arm's LIVE rows, then the ratio; n 6)
+  per-row table, c1d-400 (LIVE rows): arm seed rep | stale/rep p0 p1 | E | fed-det cx | dup p0/p1 | fired fast
+    BASE   s42  r1 | 0.134 0.083 | 4.06 | -1935358 2992 | 1375/1685 | 26598 1728
+    BASE   s42  r2 | 0.072 0.093 | 5.32 | -1942519 3085 | 1496/1860 | 27567 1371
+    BASE   s42  r3 | 0.124 0.107 | 4.58 | -1869337 2804 | 1799/1637 | 24768 1235
+    BASE   s42  r4 | 0.042 0.330 | 2.41 | -1802703 3354 | 1193/1388 | 22024 1194
+    BASE   s42  r5 | 0.078 0.086 | 7.01 | -1743478 3102 | 1622/1569 | 24303 1459
+    BASE   s42  r6 | 0.007 0.013 | 23.63 | -331204 3376 | 456/249 | 7300 428
+    BASE   s7   r1 | 0.063 0.093 | 5.75 | -1927459 2848 | 1161/1477 | 24194 1468
+    BASE   s7   r2 | 0.118 0.016 | 11.83 | -1029425 2634 | 2091/870 | 19913 899
+    BASE   s7   r3 | 0.070 0.073 | 7.52 | -1556610 2906 | 1471/1205 | 21296 1343
+    BASE   s7   r4 | 0.072 0.092 | 5.68 | -1951476 2595 | 1557/1853 | 28158 1383
+    BASE   s7   r5 | 0.095 0.067 | 4.46 | -1917844 2780 | 1547/1267 | 23133 1618
+    BASE   s7   r6 | 0.070 0.035 | 6.71 | -1696962 2828 | 2182/1706 | 25538 1041
+    CAND   s42  r1 | 0.382 0.041 | 1.82 | -1725654 2954 | 1380/1234 | 22376 1895
+    CAND   s42  r2 | 0.094 0.026 | 7.02 | -423013 3548 | 1048/543 | 10812 360
+    CAND   s42  r3 | 0.072 0.085 | 4.87 | -1734439 3093 | 1960/1847 | 27268 1271
+    CAND   s42  r4 | 0.053 0.196 | 3.49 | -1801823 2992 | 1344/1738 | 24003 1615
+    CAND   s42  r5 | 0.063 0.102 | 4.96 | -1605969 2989 | 1543/2221 | 27262 1242
+    CAND   s42  r6 | 0.074 0.288 | 2.06 | -1789663 2942 | 1781/1769 | 28323 1411
+    CAND   s7   r1 | 0.156 0.077 | 3.18 | -1679447 2778 | 2404/1510 | 26471 1282
+    CAND   s7   r2 | 0.178 0.075 | 3.25 | -1767857 2610 | 1690/1319 | 24624 1492
+    CAND   s7   r3 | 0.056 0.093 | 5.31 | -1829947 2836 | 1408/1867 | 26183 1794
+    CAND   s7   r4 | 0.113 0.026 | 7.62 | -1149405 3040 | 2934/887 | 23767 951
+    CAND   s7   r5 | 0.043 0.101 | 5.43 | -1763766 2758 | 1520/2803 | 29075 1306
+    CAND   s7   r6 | 0.569 0.023 | 1.57 | -1623005 3048 | 1830/1145 | 23349 1331
+    CANDS  s42  r1 | 0.027 0.062 | 0.00 | -1730261 2970 | 1398/2522 | 26132 1034
+    CANDS  s42  r3 | 0.078 0.059 | 0.00 | -1850490 3251 | 1432/1266 | 21979 1386
+    CANDS  s42  r5 | 0.428 0.047 | 0.00 | -1844347 3889 | 1339/1366 | 23134 938
+    CANDS  s7   r1 | 0.058 0.049 | 0.00 | -1822627 2674 | 1519/1687 | 25320 903
+    CANDS  s7   r3 | 0.057 0.168 | 0.00 | -1761852 3406 | 2045/1255 | 26156 842
+    CANDS  s7   r5 | 0.067 0.053 | 0.00 | -1861619 2426 | 1881/1622 | 26192 786
+
+== c1d: CAND against BASE (n = 12 + 12), per readout the rank-sum p and the median ratio, to be read beside section 41c's c1d resolution (host: python3 tools/l1/place38_parse.py resolution41c <pulled run dir of the guard>/ld.log; the lag clauses are blind at 20-100 %, so a lag null says nothing)
+  c1d-400: CAND (n 12) against BASE (n 12); p = rank-sum permutation p, ONE-SIDED worse side (higher value; lower for goodput), within-seed ranks, 10000 relabellings; a p near 1 means CAND sits on the better side; ratio = median CAND / median BASE
+    readout         p(worse)    ratio   median BASE -> CAND
+    goodput           0.2370    0.977   824.501 -> 805.668
+    cpu_cli/GB        0.3594    1.006   21.307 -> 21.445
+    cpu_srv/GB        0.4880    1.002   22.886 -> 22.924
+    lag_E_cli         0.9762    0.872   1897.500 -> 1655.000
+    lag_E_srv         0.9357    0.871   1700.500 -> 1481.000
+    rtp_floor_p0      0.2054    1.011   2504.000 -> 2531.000
+    rtp_floor_p1      0.9593    0.975   2546.000 -> 2481.500
+    dup_total         0.0326    1.134   3010.500 -> 3412.500
+    dup_p0            0.2017    1.062   1521.500 -> 1616.500
+    dup_p1            0.2037    1.066   1523.000 -> 1624.000
+    retx/GB           0.1236    1.048   4849.700 -> 5080.700
+== c1d: CANDS against CAND (n = 6 vs 12; not predicted numerically)
+  c1d-400: CANDS (n 6) against CAND (n 12); p = rank-sum permutation p, ONE-SIDED worse side (higher value; lower for goodput), within-seed ranks, 10000 relabellings; a p near 1 means CANDS sits on the better side; ratio = median CANDS / median CAND
+    readout         p(worse)    ratio   median CAND -> CANDS
+    goodput           0.6047    1.003   805.668 -> 807.759
+    cpu_cli/GB        0.2712    1.015   21.445 -> 21.767
+    cpu_srv/GB        0.2137    1.021   22.924 -> 23.413
+    lag_E_cli         0.7288    1.008   1655.000 -> 1669.000
+    lag_E_srv         0.6704    0.963   1481.000 -> 1426.000
+    rtp_floor_p0      0.1188    1.037   2531.000 -> 2624.500
+    rtp_floor_p1      0.6711    0.990   2481.500 -> 2457.500
+    dup_total         0.5435    0.953   3412.500 -> 3253.000
+    dup_p0            0.6722    0.913   1616.500 -> 1475.500
+    dup_p1            0.3977    0.920   1624.000 -> 1494.000
+    retx/GB           0.6755    1.013   5080.700 -> 5145.200
+
+== direction check (no derived bound): stale/rep on the c1d legs against the c8 p1 leg, pooled per arm
+  BASE   c8 p1 pooled 0.986  (sums over the arm's LIVE rows, then the ratio; n 6)
+         c1d p0 pooled 0.073  (sums over the arm's LIVE rows, then the ratio; n 12)
+         c1d p1 pooled 0.089  (sums over the arm's LIVE rows, then the ratio; n 12)
+  CAND   c8 p1 pooled 0.993  (sums over the arm's LIVE rows, then the ratio; n 6)
+         c1d p0 pooled 0.158  (sums over the arm's LIVE rows, then the ratio; n 12)
+         c1d p1 pooled 0.091  (sums over the arm's LIVE rows, then the ratio; n 12)
+  CANDS  c8 p1 pooled 0.993  (sums over the arm's LIVE rows, then the ratio; n 6)
+         c1d p0 pooled 0.112  (sums over the arm's LIVE rows, then the ratio; n 6)
+         c1d p1 pooled 0.072  (sums over the arm's LIVE rows, then the ratio; n 6)
+VERDICT53 REPORTED-ONLY rows=60/60 live=60 void=0

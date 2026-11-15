@@ -1,0 +1,11 @@
+== c2-100
+  BASE: lines 2510  B(max over legs) p50 808  paused p50 72%  joint(paused>=50 & B>=98) 0.828  | noqcc: share 1.000 mean good 91.4
+  CAND: lines 2548  B(max over legs) p50 1803  paused p50 71%  joint(paused>=50 & B>=98) 0.997  | R: share 0.020 mean good 52.4 nonR: share 0.980 mean good 90.7
+    ProbeRtt goodput cost estimate: share 0.020 x (1 - 52.4/90.7) = 0.84 % of goodput
+== c8-100
+  BASE: lines 2263  B(max over legs) p50 600  paused p50 79%  joint(paused>=50 & B>=98) 0.761  | noqcc: share 1.000 mean good 101.3
+  CAND: lines 2321  B(max over legs) p50 986  paused p50 79%  joint(paused>=50 & B>=98) 0.904  | R: share 0.033 mean good 75.8 nonR: share 0.967 mean good 99.7
+    ProbeRtt goodput cost estimate: share 0.033 x (1 - 75.8/99.7) = 0.78 % of goodput
+== c8-100 per arm (median over rows): shares per leg, coded share, plc per leg, cpu, seconds
+  BASE: share p0 0.823 p1 0.177 | coded_share 0.0058 | plc p0 0.0250 p1 0.0495 | cpu cli 20.78s srv 27.27s | seconds 48.13 | mbps 99.73
+  CAND: share p0 0.828 p1 0.172 | coded_share 0.0064 | plc p0 0.0250 p1 0.0489 | cpu cli 21.51s srv 28.71s | seconds 49.39 | mbps 97.18

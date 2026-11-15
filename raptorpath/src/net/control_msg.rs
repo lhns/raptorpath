@@ -40,7 +40,7 @@ pub(crate) struct ControlCtx<'a> {
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
     /// tag so the sender's `[FCAUSE]` gauge can say which receiver arm
     /// caused each fire. Label only — no arm branches on it.
-    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
+    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<super::GapBatch>>,
     /// Some(..) in window mode: the peer's cumulative WindowAck point, read
     /// by the local window sender (ack-driven advance, retransmit-buffer and
     /// sent-store pruning). It must be the peer's ack, not the local
@@ -233,6 +233,7 @@ fn on_ack(
     let mut cc_window: Option<u64> = None;
     let sched = &mut *ctx.scheduler;
     sched.touch_path(path_id);
+    sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
     // `RWM_CLOCK_GAP` (ADR-0061): samples processed in a stall's
     // release-flood quarantine measured the stall, not the path — the
     // RTT/delivered-rate feeds below are skipped (budget release and loss
@@ -252,19 +253,10 @@ fn on_ack(
     // suppresses the `record_delivery` anchor feed while the paused feed
     // supplies no samples either, and the anchor never establishes (dyn cap
     // stuck at boot 128).
-    if let Some(feed) = copa_feed {
+    if copa_feed.is_some() {
         if let Some(p) = sched.path_mut(path_id) {
             p.release_in_flight(received_ids.len() as u32);
-            // `RWM_PLAIN_RS`: sampling-only mode keeps the per-batch
-            // cwnd-dynamics call site/cadence (this Ack arm, exactly
-            // `on_ack` minus the polluted
-            // ack-interval `record_delivery` sample — the max filter
-            // is fed only clean send-interval samples via the
-            // WindowAck attribution). The full Copa-sole feed runs
-            // its dynamics in `copa_feed_attribute` instead.
-            if !feed.owns_cc() {
-                p.on_delivery_signal();
-            }
+            // The Copa-sole feed runs its dynamics in `copa_feed_attribute`.
         }
     } else if gap_q {
         // Quarantined: release budget + run the cwnd dynamics at the
@@ -424,6 +416,7 @@ fn on_path_report(
     let sched = &mut *ctx.scheduler;
     // Touch path — this doubles as keepalive
     sched.touch_path(report_path_id);
+    sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
     if let Some(path) = sched.path_mut(report_path_id) {
         let rtt_duration = Duration::from_micros(avg_rtt_us);
         // `RWM_MSTAR_ANCHOR` (ADR-0061): the peer's `avg_rtt_us` is the
@@ -514,6 +507,7 @@ fn on_window_ack(
     {
         let sched = &mut *ctx.scheduler;
         sched.touch_path(path_id);
+        sched.mirror_wire_rtts(|id| transport.wire_rtt(id));
         // `RWM_CLOCK_GAP`: quarantined echoes (stall release flood)
         // measured the stall — discard.
         let gap_q = crate::control::anchor::stall_witness()
@@ -558,12 +552,9 @@ fn on_window_ack(
         }
         let am_live = d_expected > 0 || d_received > 0;
         if am_live {
-            if let Some(feed) = copa_feed {
+            if copa_feed.is_some() {
                 if let Some(p) = sched.path_mut(path_id) {
                     p.release_in_flight(d_received);
-                    if !feed.owns_cc() {
-                        p.on_delivery_signal();
-                    }
                 }
             } else if gap_q {
                 if let Some(p) = sched.path_mut(path_id) {
@@ -756,7 +747,15 @@ fn on_window_ack(
                 // the batch so the sender can say whether a hole was
                 // resolved by a report from the path its original flew
                 // on or from another. A label, like `cause`.
-                let _ = tx.try_send((cause, path_id, gaps));
+                // The snapshot's version rides with its gaps (`[SNAPV]`,
+                // docs/derivations/dup-diag.md): the gap path orders reports by
+                // it, never by arrival.
+                let _ = tx.try_send((
+                    cause,
+                    path_id,
+                    gaps,
+                    Some(super::AboveReport { next_expected, received_above }),
+                ));
             }
         }
     }

@@ -1,0 +1,3 @@
+SMOKE38 c1s-400@def BASE: status=LIVE mbps=806.471 share=[1.0] locked=False w_mv=None w_calls=None w_cold=None 
+SMOKE38 c1s-400@def MAIN: status=LIVE mbps=817.528 share=[1.0] locked=False w_mv=- w_calls=0 w_cold=- 
+SMOKE-PASS

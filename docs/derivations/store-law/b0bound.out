@@ -1,0 +1,47 @@
+## ../../l1-raw/loop-diag/p27/diag-ld
+== c1d-400 p0  rows 2  b0_row 0.05-0.19 ms  q*l 0.12-0.12 ms
+   med8     min margin +0.08 ms  collapses 0/2 rows  cost median 0.05 max 0.10 ms
+   p90_8    min margin +0.29 ms  collapses 0/2 rows  cost median 0.23 max 0.30 ms
+   max8     min margin +0.29 ms  collapses 0/2 rows  cost median 0.23 max 0.30 ms
+   max_row  min margin +0.41 ms  collapses 0/2 rows  cost median 0.31 max 0.33 ms
+== c1d-400 p1  rows 2  b0_row 0.22-0.24 ms  q*l 0.12-0.13 ms
+   med8     min margin +0.17 ms  collapses 0/2 rows  cost median 0.12 max 0.19 ms
+   p90_8    min margin +0.39 ms  collapses 0/2 rows  cost median 0.50 max 0.74 ms
+   max8     min margin +0.39 ms  collapses 0/2 rows  cost median 0.50 max 0.74 ms
+   max_row  min margin +0.39 ms  collapses 0/2 rows  cost median 0.50 max 0.74 ms
+== c1s-400 p0  rows 4  b0_row 0.15-26.37 ms  q*l 0.11-0.12 ms
+   med8     min margin -25.93 ms  collapses 1/4 rows  cost median 0.01 max 0.04 ms
+   p90_8    min margin -16.61 ms  collapses 1/4 rows  cost median 0.09 max 0.14 ms
+   max8     min margin -16.61 ms  collapses 1/4 rows  cost median 0.09 max 0.14 ms
+   max_row  min margin +0.25 ms  collapses 0/4 rows  cost median 0.16 max 51.36 ms
+== c2-100 p0  rows 6  b0_row 1.27-2.82 ms  q*l 0.32-0.45 ms
+   med8     min margin -1.99 ms  collapses 6/6 rows  cost median 0.00 max 0.00 ms
+   p90_8    min margin +0.43 ms  collapses 0/6 rows  cost median 0.41 max 0.90 ms
+   max8     min margin +0.43 ms  collapses 0/6 rows  cost median 0.41 max 0.90 ms
+   max_row  min margin +1.93 ms  collapses 0/6 rows  cost median 1.74 max 2.50 ms
+== c8-100 p0  rows 4  b0_row 1.87-4.29 ms  q*l 0.38-0.50 ms
+   med8     min margin -2.26 ms  collapses 4/4 rows  cost median 0.00 max 0.00 ms
+   p90_8    min margin +0.46 ms  collapses 0/4 rows  cost median 1.00 max 48.80 ms
+   max8     min margin +0.46 ms  collapses 0/4 rows  cost median 1.00 max 48.80 ms
+   max_row  min margin +1.73 ms  collapses 0/4 rows  cost median 1.80 max 48.80 ms
+== c8-100 p1  rows 4  b0_row 3.49-4.94 ms  q*l 1.62-1.65 ms
+   med8     min margin -0.77 ms  collapses 3/4 rows  cost median 0.00 max 15.88 ms
+   p90_8    min margin +3.76 ms  collapses 0/4 rows  cost median 3.66 max 44.98 ms
+   max8     min margin +3.76 ms  collapses 0/4 rows  cost median 3.66 max 44.98 ms
+   max_row  min margin +4.72 ms  collapses 0/4 rows  cost median 6.27 max 44.98 ms
+## ../../l1-raw/loop-diag/p34/run/diag-ld
+== c1d-400 p0  rows 3  b0_row 0.13-0.36 ms  q*l 0.12-0.13 ms
+   med8     min margin -0.08 ms  collapses 1/3 rows  cost median 0.02 max 0.17 ms
+   p90_8    min margin +0.19 ms  collapses 0/3 rows  cost median 0.33 max 0.34 ms
+   max8     min margin +0.19 ms  collapses 0/3 rows  cost median 0.33 max 0.34 ms
+   max_row  min margin +0.37 ms  collapses 0/3 rows  cost median 0.33 max 0.34 ms
+== c1d-400 p1  rows 3  b0_row 0.22-0.33 ms  q*l 0.12-0.13 ms
+   med8     min margin +0.06 ms  collapses 0/3 rows  cost median 0.00 max 0.05 ms
+   p90_8    min margin +0.30 ms  collapses 0/3 rows  cost median 0.20 max 0.35 ms
+   max8     min margin +0.30 ms  collapses 0/3 rows  cost median 0.20 max 0.35 ms
+   max_row  min margin +0.30 ms  collapses 0/3 rows  cost median 0.20 max 0.35 ms
+== c1s-400 p0  rows 3  b0_row 0.09-0.22 ms  q*l 0.12-0.13 ms
+   med8     min margin +0.09 ms  collapses 0/3 rows  cost median 0.00 max 0.01 ms
+   p90_8    min margin +0.19 ms  collapses 0/3 rows  cost median 0.12 max 0.20 ms
+   max8     min margin +0.19 ms  collapses 0/3 rows  cost median 0.12 max 0.20 ms
+   max_row  min margin +0.24 ms  collapses 0/3 rows  cost median 0.20 max 0.21 ms

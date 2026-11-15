@@ -1,0 +1,340 @@
+
+==== p27 c2-100 ====
+  map ask: 64:133, 96:144, 128:155, 192:171, 256:176, 384:180, 512:190, 1024:193
+  fixed point: STABLE 163.7 slope 0.246
+      n rows  win    map med ask_w sgn |e_med|  sd e    cv/row mean [range]  agree W=1 / mov2 / mov4 / mov8 / blk2 / blk4 / blk8 / row-mean
+     64    2  162    133       133   +   0.735 0.095  0.088 [0.087-0.089]
+        W1 1.00 [0.98,1.00] n=162 | mov2 1.00 [0.98,1.00] n=160 | mov4 1.00 [0.98,1.00] n=156 | mov8 1.00 [0.97,1.00] n=148 | blk2 1.00 [0.95,1.00] n=80 | blk4 1.00 [0.91,1.00] n=40 | blk8 1.00 [0.84,1.00] n=20 | row-mean 2/2
+        rows: s42r1 w=81 mean=141 cv=0.087; s7r1 w=81 mean=131 cv=0.089
+        within-row sd(e) W=1 0.087  var(blockmean) W=1,2,4,8: 0.00765, 0.00425, 0.00208, 0.00094  gamma 1.01  map margin |ln(map/n)| 0.733  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [21.154823, 21.103213]
+     96    2  111    144       145   +   0.410 0.061  0.061 [0.057-0.064]
+        W1 1.00 [0.97,1.00] n=111 | mov2 1.00 [0.97,1.00] n=109 | mov4 1.00 [0.96,1.00] n=105 | mov8 1.00 [0.96,1.00] n=97 | blk2 1.00 [0.93,1.00] n=55 | blk4 1.00 [0.88,1.00] n=27 | blk8 1.00 [0.77,1.00] n=13 | row-mean 2/2
+        rows: s42r1 w=56 mean=145 cv=0.057; s7r1 w=55 mean=147 cv=0.064
+        within-row sd(e) W=1 0.060  var(blockmean) W=1,2,4,8: 0.00364, 0.00195, 0.00117, 0.00054  gamma 0.9  map margin |ln(map/n)| 0.402  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [14.818088, 14.575681]
+    128    2   86    155       152   +   0.174 0.069  0.065 [0.056-0.074]
+        W1 1.00 [0.96,1.00] n=86 | mov2 1.00 [0.96,1.00] n=84 | mov4 1.00 [0.95,1.00] n=80 | mov8 1.00 [0.95,1.00] n=72 | blk2 1.00 [0.92,1.00] n=42 | blk4 1.00 [0.84,1.00] n=20 | blk8 1.00 [0.72,1.00] n=10 | row-mean 2/2
+        rows: s42r1 w=43 mean=157 cv=0.074; s7r1 w=43 mean=150 cv=0.056
+        within-row sd(e) W=1 0.066  var(blockmean) W=1,2,4,8: 0.00433, 0.00306, 0.00179, 0.00141  gamma 0.56  map margin |ln(map/n)| 0.191  W*_gamma 1.0  W*_white 0.2
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [11.582341, 11.610956]
+    192    2   65    171       174   -   0.097 0.084  0.078 [0.061-0.094]
+        W1 0.89 [0.79,0.95] n=65 | mov2 0.97 [0.89,0.99] n=63 | mov4 1.00 [0.94,1.00] n=59 | mov8 1.00 [0.93,1.00] n=51 | blk2 0.97 [0.84,0.99] n=32 | blk4 1.00 [0.81,1.00] n=16 | blk8 1.00 [0.68,1.00] n=8 | row-mean 2/2
+        rows: s42r1 w=33 mean=179 cv=0.061; s7r1 w=32 mean=168 cv=0.094
+        within-row sd(e) W=1 0.077  var(blockmean) W=1,2,4,8: 0.00595, 0.00374, 0.00258, 0.00222  gamma 0.48  map margin |ln(map/n)| 0.118  W*_gamma 1.0  W*_white 0.7
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [9.014916, 8.999912]
+    256    2   64    176       175   -   0.383 0.124  0.127 [0.115-0.140]
+        W1 1.00 [0.94,1.00] n=64 | mov2 1.00 [0.94,1.00] n=62 | mov4 1.00 [0.94,1.00] n=58 | mov8 1.00 [0.93,1.00] n=50 | blk2 1.00 [0.89,1.00] n=32 | blk4 1.00 [0.81,1.00] n=16 | blk8 1.00 [0.68,1.00] n=8 | row-mean 2/2
+        rows: s42r1 w=32 mean=177 cv=0.115; s7r1 w=32 mean=179 cv=0.140
+        within-row sd(e) W=1 0.124  var(blockmean) W=1,2,4,8: 0.01525, 0.00886, 0.00426, 0.00111  gamma 1.24  map margin |ln(map/n)| 0.375  W*_gamma 1.0  W*_white 0.2
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [8.876091, 8.852003]
+    384    2   65    180       194   -   0.684 0.233  0.209 [0.116-0.301]
+        W1 1.00 [0.94,1.00] n=65 | mov2 1.00 [0.94,1.00] n=63 | mov4 1.00 [0.94,1.00] n=59 | mov8 1.00 [0.93,1.00] n=51 | blk2 1.00 [0.89,1.00] n=32 | blk4 1.00 [0.81,1.00] n=16 | blk8 1.00 [0.68,1.00] n=8 | row-mean 2/2
+        rows: s42r1 w=32 mean=166 cv=0.301; s7r1 w=33 mean=212 cv=0.116
+        within-row sd(e) W=1 0.188  var(blockmean) W=1,2,4,8: 0.03546, 0.01811, 0.01071, 0.00797  gamma 0.72  map margin |ln(map/n)| 0.756  W*_gamma 1.0  W*_white 0.1
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [8.977736, 9.107928]
+    512    2   64    190       195   -   0.967 0.140  0.112 [0.101-0.122]
+        W1 1.00 [0.94,1.00] n=64 | mov2 1.00 [0.94,1.00] n=62 | mov4 1.00 [0.94,1.00] n=58 | mov8 1.00 [0.93,1.00] n=50 | blk2 1.00 [0.89,1.00] n=32 | blk4 1.00 [0.81,1.00] n=16 | blk8 1.00 [0.68,1.00] n=8 | row-mean 2/2
+        rows: s42r1 w=32 mean=176 cv=0.122; s7r1 w=32 mean=211 cv=0.101
+        within-row sd(e) W=1 0.107  var(blockmean) W=1,2,4,8: 0.01147, 0.00522, 0.00228, 0.00065  gamma 1.36  map margin |ln(map/n)| 0.991  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [8.932479, 8.858306]
+   1024    2   64    193       203   -   1.619 0.206  0.136 [0.097-0.174]
+        W1 1.00 [0.94,1.00] n=64 | mov2 1.00 [0.94,1.00] n=62 | mov4 1.00 [0.94,1.00] n=58 | mov8 1.00 [0.93,1.00] n=50 | blk2 1.00 [0.89,1.00] n=32 | blk4 1.00 [0.81,1.00] n=16 | blk8 1.00 [0.68,1.00] n=8 | row-mean 2/2
+        rows: s42r1 w=32 mean=165 cv=0.174; s7r1 w=32 mean=224 cv=0.097
+        within-row sd(e) W=1 0.132  var(blockmean) W=1,2,4,8: 0.01740, 0.01115, 0.00476, 0.00262  gamma 0.94  map margin |ln(map/n)| 1.668  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (8.9 s/3) = 11.87
+        row seconds [8.858562, 8.865591]
+
+==== p27 c8-100 ====
+  row DEF256 s42 r1: WITNESS-FAIL ['loopdiag-p1-windows=0', 'no-q-pace-bps-p1'] None
+  row DEF512 s42 r1: WITNESS-FAIL ['loopdiag-p1-windows=0', 'no-q-pace-bps-p1'] None
+  row DEF768 s42 r1: WITNESS-FAIL ['loopdiag-p1-windows=1'] None
+  row DEF384 s7 r1: WITNESS-FAIL ['loopdiag-p1-windows=0', 'no-q-pace-bps-p1'] None
+  row DEF256 s7 r1: WITNESS-FAIL ['loopdiag-p1-windows=0', 'no-q-pace-bps-p1'] None
+  row DEF128 s7 r1: WITNESS-FAIL ['no-q-pace-bps-p1'] None
+  map ask: 128:240, 192:255, 256:-, 384:356, 512:443, 768:557, 1024:760, 2048:568
+  fixed point: STABLE 324.3 slope 0.524
+      n rows  win    map med ask_w sgn |e_med|  sd e    cv/row mean [range]  agree W=1 / mov2 / mov4 / mov8 / blk2 / blk4 / blk8 / row-mean
+    128    1   45    240       243   +   0.642 0.052  0.052 [0.052-0.052]
+        W1 1.00 [0.92,1.00] n=45 | mov2 1.00 [0.92,1.00] n=44 | mov4 1.00 [0.92,1.00] n=42 | mov8 1.00 [0.91,1.00] n=38 | blk2 1.00 [0.85,1.00] n=22 | blk4 1.00 [0.74,1.00] n=11 | blk8 1.00 [0.57,1.00] n=5 | row-mean 1/1
+        rows: s42r1 w=45 mean=244 cv=0.052
+        within-row sd(e) W=1 0.052  var(blockmean) W=1,2,4,8: 0.00275, 0.00134, 0.00068, 0.00058  gamma 0.77  map margin |ln(map/n)| 0.628  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (8.3 s/3) = 11.07
+        row seconds [12.233938]
+    192    2   58    255       257   +   0.293 0.415  1.203 [0.038-2.367]
+        W1 1.00 [0.94,1.00] n=58 | mov2 1.00 [0.94,1.00] n=56 | mov4 1.00 [0.93,1.00] n=52 | mov8 1.00 [0.92,1.00] n=44 | blk2 1.00 [0.88,1.00] n=28 | blk4 1.00 [0.78,1.00] n=14 | blk8 1.00 [0.65,1.00] n=7 | row-mean 2/2
+        rows: s42r1 w=25 mean=477 cv=2.367; s7r1 w=33 mean=264 cv=0.038
+        within-row sd(e) W=1 0.414  var(blockmean) W=1,2,4,8: 0.17155, 0.21331, 0.21880, 0.18069  gamma -0.03  map margin |ln(map/n)| 0.284  W*_gamma None  W*_white 3.5
+        post-warm-up t's 75, windows with leg missing {0: 3, 1: 14}, ov>0 leg-windows 0
+        row seconds [11.443801, 9.073767]
+    256  no live rows / windows
+    384    1   28    356       352   -   0.086 0.123  0.126 [0.126-0.126]
+        W1 0.71 [0.53,0.85] n=28 | mov2 0.67 [0.48,0.81] n=27 | mov4 0.76 [0.57,0.89] n=25 | mov8 0.90 [0.71,0.97] n=21 | blk2 0.57 [0.33,0.79] n=14 | blk4 0.71 [0.36,0.92] n=7 | blk8 0.67 [0.21,0.94] n=3 | row-mean 1/1
+        rows: s42r1 w=28 mean=368 cv=0.126
+        within-row sd(e) W=1 0.123  var(blockmean) W=1,2,4,8: 0.01501, 0.00980, 0.00321, 0.00265  gamma 0.91  map margin |ln(map/n)| 0.077  W*_gamma 4.8  W*_white 4.2
+        W* = 1.20 s; decisions per transfer third (8.3 s/3) = 2.31
+        row seconds [7.773258]
+    512    1   28    443       428   -   0.179 0.090  0.090 [0.090-0.090]
+        W1 0.96 [0.82,0.99] n=28 | mov2 1.00 [0.88,1.00] n=27 | mov4 1.00 [0.87,1.00] n=25 | mov8 1.00 [0.85,1.00] n=21 | blk2 1.00 [0.78,1.00] n=14 | blk4 1.00 [0.65,1.00] n=7 | blk8 1.00 [0.44,1.00] n=3 | row-mean 1/1
+        rows: s7r1 w=28 mean=430 cv=0.090
+        within-row sd(e) W=1 0.090  var(blockmean) W=1,2,4,8: 0.00816, 0.00382, 0.00088, 0.00004  gamma 2.53  map margin |ln(map/n)| 0.145  W*_gamma 1.0  W*_white 0.6
+        W* = 0.25 s; decisions per transfer third (8.3 s/3) = 11.07
+        row seconds [7.842283]
+    768    1   28    557       592   -   0.261 0.225  0.213 [0.213-0.213]
+        W1 0.96 [0.82,0.99] n=28 | mov2 1.00 [0.88,1.00] n=27 | mov4 1.00 [0.87,1.00] n=25 | mov8 1.00 [0.85,1.00] n=21 | blk2 1.00 [0.78,1.00] n=14 | blk4 1.00 [0.65,1.00] n=7 | blk8 1.00 [0.44,1.00] n=3 | row-mean 1/1
+        rows: s7r1 w=28 mean=583 cv=0.213
+        within-row sd(e) W=1 0.225  var(blockmean) W=1,2,4,8: 0.05072, 0.03830, 0.03019, 0.01718  gamma 0.5  map margin |ln(map/n)| 0.320  W*_gamma 1.0  W*_white 0.8
+        W* = 0.25 s; decisions per transfer third (8.3 s/3) = 11.07
+        row seconds [7.823587]
+   1024    2   56    760       718   -   0.354 0.202  0.211 [0.193-0.229]
+        W1 0.93 [0.83,0.97] n=56 | mov2 1.00 [0.93,1.00] n=54 | mov4 1.00 [0.93,1.00] n=50 | mov8 1.00 [0.92,1.00] n=42 | blk2 1.00 [0.88,1.00] n=28 | blk4 1.00 [0.78,1.00] n=14 | blk8 1.00 [0.61,1.00] n=6 | row-mean 2/2
+        rows: s42r1 w=28 mean=729 cv=0.193; s7r1 w=28 mean=752 cv=0.229
+        within-row sd(e) W=1 0.201  var(blockmean) W=1,2,4,8: 0.04053, 0.01259, 0.00767, 0.00244  gamma 1.29  map margin |ln(map/n)| 0.298  W*_gamma 1.0  W*_white 0.8
+        W* = 0.25 s; decisions per transfer third (8.3 s/3) = 11.07
+        row seconds [7.930111, 7.932434]
+   2048    2   57    568       516   -   1.379 0.345  0.433 [0.407-0.458]
+        W1 1.00 [0.94,1.00] n=57 | mov2 1.00 [0.93,1.00] n=55 | mov4 1.00 [0.93,1.00] n=51 | mov8 1.00 [0.92,1.00] n=43 | blk2 1.00 [0.88,1.00] n=28 | blk4 1.00 [0.78,1.00] n=14 | blk8 1.00 [0.61,1.00] n=6 | row-mean 2/2
+        rows: s42r1 w=28 mean=566 cv=0.458; s7r1 w=29 mean=608 cv=0.407
+        within-row sd(e) W=1 0.343  var(blockmean) W=1,2,4,8: 0.11789, 0.06301, 0.05172, 0.01963  gamma 0.8  map margin |ln(map/n)| 1.283  W*_gamma 1.0  W*_white 0.1
+        W* = 0.25 s; decisions per transfer third (8.3 s/3) = 11.07
+        post-warm-up t's 58, windows with leg missing {1: 1}, ov>0 leg-windows 0
+        row seconds [8.052758, 8.113075]
+
+==== p27 c1s-400 ====
+  map ask: 192:900, 256:396, 384:464, 512:547, 768:756, 1024:821, 1536:1060, 2048:1369
+  fixed point: STABLE 701.1 slope 0.815
+      n rows  win    map med ask_w sgn |e_med|  sd e    cv/row mean [range]  agree W=1 / mov2 / mov4 / mov8 / blk2 / blk4 / blk8 / row-mean
+    192    2  303    900      1565   +   2.098 0.989  0.408 [0.058-0.758]
+        W1 1.00 [0.99,1.00] n=303 | mov2 1.00 [0.99,1.00] n=301 | mov4 1.00 [0.99,1.00] n=297 | mov8 1.00 [0.99,1.00] n=289 | blk2 1.00 [0.98,1.00] n=151 | blk4 1.00 [0.95,1.00] n=75 | blk8 1.00 [0.91,1.00] n=37 | row-mean 2/2
+        rows: s42r1 w=278 mean=3332 cv=0.758; s7r1 w=25 mean=365 cv=0.058
+        within-row sd(e) W=1 0.845  var(blockmean) W=1,2,4,8: 0.71429, 0.68069, 0.63631, 0.57722  gamma 0.1  map margin |ln(map/n)| 1.545  W*_gamma 1.0  W*_white 0.5
+        W* = 0.25 s; decisions per transfer third (4.3 s/3) = 5.73
+        post-warm-up t's 303, windows with leg missing {}, ov>0 leg-windows 26
+        row seconds [70.74812, 7.252471]
+    256    2   42    396       392   +   0.426 0.090  0.086 [0.057-0.115]
+        W1 1.00 [0.92,1.00] n=42 | mov2 1.00 [0.91,1.00] n=40 | mov4 1.00 [0.90,1.00] n=36 | mov8 1.00 [0.88,1.00] n=28 | blk2 1.00 [0.85,1.00] n=21 | blk4 1.00 [0.72,1.00] n=10 | blk8 1.00 [0.51,1.00] n=4 | row-mean 2/2
+        rows: s42r1 w=22 mean=407 cv=0.115; s7r1 w=20 mean=396 cv=0.057
+        within-row sd(e) W=1 0.089  var(blockmean) W=1,2,4,8: 0.00787, 0.00496, 0.00367, 0.00146  gamma 0.77  map margin |ln(map/n)| 0.437  W*_gamma 1.0  W*_white 0.1
+        W* = 0.25 s; decisions per transfer third (4.3 s/3) = 5.73
+        post-warm-up t's 42, windows with leg missing {}, ov>0 leg-windows 42
+        row seconds [6.298183, 5.813288]
+    384    2   33    464       463   +   0.187 0.072  0.067 [0.056-0.078]
+        W1 1.00 [0.90,1.00] n=33 | mov2 1.00 [0.89,1.00] n=31 | mov4 1.00 [0.88,1.00] n=27 | mov8 1.00 [0.83,1.00] n=19 | blk2 1.00 [0.81,1.00] n=16 | blk4 1.00 [0.68,1.00] n=8 | blk8 1.00 [0.51,1.00] n=4 | row-mean 2/2
+        rows: s42r1 w=17 mean=479 cv=0.078; s7r1 w=16 mean=455 cv=0.056
+        within-row sd(e) W=1 0.067  var(blockmean) W=1,2,4,8: 0.00455, 0.00253, 0.00129, 0.00067  gamma 0.92  map margin |ln(map/n)| 0.189  W*_gamma 1.0  W*_white 0.2
+        W* = 0.25 s; decisions per transfer third (4.3 s/3) = 5.73
+        post-warm-up t's 33, windows with leg missing {}, ov>0 leg-windows 33
+        row seconds [5.226818, 4.909214]
+    512    2   31    547       549   +   0.070 0.071  0.072 [0.069-0.075]
+        W1 0.84 [0.67,0.93] n=31 | mov2 0.90 [0.74,0.96] n=29 | mov4 0.96 [0.80,0.99] n=25 | mov8 1.00 [0.82,1.00] n=17 | blk2 1.00 [0.80,1.00] n=15 | blk4 1.00 [0.65,1.00] n=7 | blk8 1.00 [0.44,1.00] n=3 | row-mean 2/2
+        rows: s42r1 w=16 mean=557 cv=0.069; s7r1 w=15 mean=548 cv=0.075
+        within-row sd(e) W=1 0.071  var(blockmean) W=1,2,4,8: 0.00505, 0.00256, 0.00152, 0.00053  gamma 1.05  map margin |ln(map/n)| 0.066  W*_gamma 1.8  W*_white 1.9
+        W* = 0.46 s; decisions per transfer third (4.3 s/3) = 3.13
+        post-warm-up t's 31, windows with leg missing {}, ov>0 leg-windows 31
+        row seconds [4.795362, 4.690414]
+    768    2   29    756       742   -   0.034 0.140  0.138 [0.136-0.139]
+        W1 0.55 [0.38,0.72] n=29 | mov2 0.63 [0.44,0.78] n=27 | mov4 0.57 [0.37,0.74] n=23 | mov8 0.87 [0.62,0.96] n=15 | blk2 0.57 [0.33,0.79] n=14 | blk4 0.50 [0.19,0.81] n=6 | blk8 0.50 [0.09,0.91] n=2 | row-mean 2/2
+        rows: s42r1 w=14 mean=761 cv=0.136; s7r1 w=15 mean=726 cv=0.139
+        within-row sd(e) W=1 0.138  var(blockmean) W=1,2,4,8: 0.01903, 0.00808, 0.00300, nan  gamma 1.33  map margin |ln(map/n)| 0.016  W*_gamma 36.0  W*_white 118.0
+        W* = 8.99 s; decisions per transfer third (4.3 s/3) = 0.16
+        post-warm-up t's 29, windows with leg missing {}, ov>0 leg-windows 29
+        row seconds [4.505274, 4.621467]
+   1024    2   27    821       807   -   0.238 0.193  0.178 [0.131-0.225]
+        W1 0.93 [0.77,0.98] n=27 | mov2 0.96 [0.80,0.99] n=25 | mov4 1.00 [0.85,1.00] n=21 | mov8 1.00 [0.77,1.00] n=13 | blk2 0.92 [0.67,0.99] n=13 | blk4 1.00 [0.61,1.00] n=6 | blk8 1.00 [0.34,1.00] n=2 | row-mean 2/2
+        rows: s42r1 w=14 mean=821 cv=0.225; s7r1 w=13 mean=791 cv=0.131
+        within-row sd(e) W=1 0.192  var(blockmean) W=1,2,4,8: 0.03700, 0.02332, 0.01109, nan  gamma 0.87  map margin |ln(map/n)| 0.221  W*_gamma 1.3  W*_white 1.2
+        W* = 0.32 s; decisions per transfer third (4.3 s/3) = 4.45
+        post-warm-up t's 27, windows with leg missing {}, ov>0 leg-windows 27
+        row seconds [4.416715, 4.229118]
+   1536    2   28   1060      1029   -   0.401 0.223  0.231 [0.166-0.296]
+        W1 0.96 [0.82,0.99] n=28 | mov2 0.96 [0.81,0.99] n=26 | mov4 1.00 [0.85,1.00] n=22 | mov8 1.00 [0.78,1.00] n=14 | blk2 0.93 [0.69,0.99] n=14 | blk4 1.00 [0.61,1.00] n=6 | blk8 1.00 [0.34,1.00] n=2 | row-mean 2/2
+        rows: s42r1 w=14 mean=1010 cv=0.296; s7r1 w=14 mean=1118 cv=0.166
+        within-row sd(e) W=1 0.214  var(blockmean) W=1,2,4,8: 0.04587, 0.02846, 0.01566, nan  gamma 0.78  map margin |ln(map/n)| 0.371  W*_gamma 1.0  W*_white 0.5
+        W* = 0.25 s; decisions per transfer third (4.3 s/3) = 5.73
+        post-warm-up t's 28, windows with leg missing {}, ov>0 leg-windows 28
+        row seconds [4.29096, 4.289753]
+   2048    2   28   1369      1308   -   0.449 0.319  0.372 [0.198-0.547]
+        W1 0.93 [0.77,0.98] n=28 | mov2 0.92 [0.76,0.98] n=26 | mov4 1.00 [0.85,1.00] n=22 | mov8 1.00 [0.78,1.00] n=14 | blk2 0.93 [0.69,0.99] n=14 | blk4 1.00 [0.61,1.00] n=6 | blk8 1.00 [0.34,1.00] n=2 | row-mean 2/2
+        rows: s42r1 w=14 mean=1649 cv=0.547; s7r1 w=14 mean=1276 cv=0.198
+        within-row sd(e) W=1 0.306  var(blockmean) W=1,2,4,8: 0.09394, 0.06159, 0.02182, nan  gamma 1.05  map margin |ln(map/n)| 0.403  W*_gamma 1.0  W*_white 1.0
+        W* = 0.25 s; decisions per transfer third (4.3 s/3) = 5.73
+        post-warm-up t's 28, windows with leg missing {}, ov>0 leg-windows 28
+        row seconds [4.377552, 4.492197]
+
+==== p34 c1s-400 ====
+  map ask: 256:407, 384:644, 512:559, 768:698, 1024:848, 1536:1002, 2048:1372
+  fixed point: STABLE 614.3 slope 0.542
+      n rows  win    map med ask_w sgn |e_med|  sd e    cv/row mean [range]  agree W=1 / mov2 / mov4 / mov8 / blk2 / blk4 / blk8 / row-mean
+    256    3   63    407       403   +   0.454 0.057  0.056 [0.047-0.066]
+        W1 1.00 [0.94,1.00] n=63 | mov2 1.00 [0.94,1.00] n=60 | mov4 1.00 [0.93,1.00] n=54 | mov8 1.00 [0.92,1.00] n=42 | blk2 1.00 [0.89,1.00] n=30 | blk4 1.00 [0.80,1.00] n=15 | blk8 1.00 [0.61,1.00] n=6 | row-mean 3/3
+        rows: s42r1 w=21 mean=415 cv=0.066; s7r1 w=21 mean=403 cv=0.047; s42r2 w=21 mean=408 cv=0.056
+        within-row sd(e) W=1 0.056  var(blockmean) W=1,2,4,8: 0.00310, 0.00156, 0.00087, 0.00015  gamma 1.39  map margin |ln(map/n)| 0.463  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (4.7 s/3) = 6.27
+        post-warm-up t's 63, windows with leg missing {}, ov>0 leg-windows 63
+        row seconds [6.076781, 6.025683, 6.138685]
+    384    3   74    644       495   +   0.255 0.455  0.176 [0.039-0.434]
+        W1 1.00 [0.95,1.00] n=74 | mov2 1.00 [0.95,1.00] n=71 | mov4 1.00 [0.94,1.00] n=65 | mov8 1.00 [0.93,1.00] n=53 | blk2 1.00 [0.90,1.00] n=36 | blk4 1.00 [0.82,1.00] n=17 | blk8 1.00 [0.68,1.00] n=8 | row-mean 3/3
+        rows: s42r1 w=43 mean=970 cv=0.434; s7r1 w=16 mean=460 cv=0.056; s42r2 w=15 mean=452 cv=0.039
+        within-row sd(e) W=1 0.311  var(blockmean) W=1,2,4,8: 0.09698, 0.08694, 0.08385, 0.08912  gamma 0.04  map margin |ln(map/n)| 0.516  W*_gamma 1.0  W*_white 0.6
+        W* = 0.25 s; decisions per transfer third (4.7 s/3) = 6.27
+        post-warm-up t's 74, windows with leg missing {}, ov>0 leg-windows 40
+        row seconds [11.574193, 4.876349, 4.699232]
+    512    3   46    559       545   +   0.062 0.079  0.060 [0.040-0.079]
+        W1 0.87 [0.74,0.94] n=46 | mov2 0.91 [0.78,0.96] n=43 | mov4 0.97 [0.86,1.00] n=37 | mov8 1.00 [0.87,1.00] n=25 | blk2 0.91 [0.72,0.97] n=22 | blk4 1.00 [0.72,1.00] n=10 | blk8 1.00 [0.51,1.00] n=4 | row-mean 3/3
+        rows: s42r1 w=15 mean=536 cv=0.040; s7r1 w=16 mean=596 cv=0.079; s42r2 w=15 mean=537 cv=0.061
+        within-row sd(e) W=1 0.063  var(blockmean) W=1,2,4,8: 0.00393, 0.00283, 0.00116, 0.00034  gamma 1.19  map margin |ln(map/n)| 0.087  W*_gamma 1.0  W*_white 0.8
+        W* = 0.25 s; decisions per transfer third (4.7 s/3) = 6.27
+        post-warm-up t's 46, windows with leg missing {}, ov>0 leg-windows 46
+        row seconds [4.532891, 4.890321, 4.574781]
+    768    3   39    698       685   -   0.114 0.100  0.100 [0.077-0.141]
+        W1 0.85 [0.70,0.93] n=39 | mov2 0.92 [0.78,0.97] n=36 | mov4 1.00 [0.89,1.00] n=30 | mov8 1.00 [0.82,1.00] n=18 | blk2 0.89 [0.67,0.97] n=18 | blk4 1.00 [0.70,1.00] n=9 | blk8 1.00 [0.44,1.00] n=3 | row-mean 3/3
+        rows: s42r1 w=13 mean=702 cv=0.141; s7r1 w=13 mean=695 cv=0.077; s42r2 w=13 mean=706 cv=0.082
+        within-row sd(e) W=1 0.100  var(blockmean) W=1,2,4,8: 0.01004, 0.00685, 0.00162, nan  gamma 1.32  map margin |ln(map/n)| 0.096  W*_gamma 1.6  W*_white 1.8
+        W* = 0.39 s; decisions per transfer third (4.7 s/3) = 4.04
+        post-warm-up t's 39, windows with leg missing {}, ov>0 leg-windows 39
+        row seconds [4.242896, 4.017525, 4.165421]
+   1024    3   38    848       830   -   0.210 0.142  0.139 [0.124-0.168]
+        W1 0.92 [0.79,0.97] n=38 | mov2 0.94 [0.81,0.98] n=35 | mov4 1.00 [0.88,1.00] n=29 | mov8 1.00 [0.82,1.00] n=17 | blk2 0.94 [0.74,0.99] n=18 | blk4 1.00 [0.70,1.00] n=9 | blk8 1.00 [0.44,1.00] n=3 | row-mean 3/3
+        rows: s42r1 w=13 mean=875 cv=0.125; s7r1 w=12 mean=811 cv=0.124; s42r2 w=13 mean=856 cv=0.168
+        within-row sd(e) W=1 0.139  var(blockmean) W=1,2,4,8: 0.01919, 0.01346, 0.00600, nan  gamma 0.84  map margin |ln(map/n)| 0.189  W*_gamma 1.0  W*_white 0.9
+        W* = 0.25 s; decisions per transfer third (4.7 s/3) = 6.27
+        post-warm-up t's 38, windows with leg missing {}, ov>0 leg-windows 38
+        row seconds [4.169723, 3.871254, 4.092615]
+   1536    3   37   1002       981   -   0.448 0.209  0.189 [0.118-0.248]
+        W1 1.00 [0.91,1.00] n=37 | mov2 1.00 [0.90,1.00] n=34 | mov4 1.00 [0.88,1.00] n=28 | mov8 1.00 [0.81,1.00] n=16 | blk2 1.00 [0.82,1.00] n=18 | blk4 1.00 [0.70,1.00] n=9 | blk8 1.00 [0.44,1.00] n=3 | row-mean 3/3
+        rows: s42r1 w=13 mean=1056 cv=0.118; s7r1 w=12 mean=1001 cv=0.248; s42r2 w=12 mean=1015 cv=0.200
+        within-row sd(e) W=1 0.206  var(blockmean) W=1,2,4,8: 0.04257, 0.01416, 0.00138, nan  gamma 2.47  map margin |ln(map/n)| 0.427  W*_gamma 1.0  W*_white 0.4
+        W* = 0.25 s; decisions per transfer third (4.7 s/3) = 6.27
+        post-warm-up t's 37, windows with leg missing {}, ov>0 leg-windows 37
+        row seconds [4.036563, 3.890996, 3.842869]
+   2048    3   37   1372      1320   -   0.439 0.235  0.213 [0.185-0.241]
+        W1 0.97 [0.86,1.00] n=37 | mov2 1.00 [0.90,1.00] n=34 | mov4 1.00 [0.88,1.00] n=28 | mov8 1.00 [0.81,1.00] n=16 | blk2 1.00 [0.82,1.00] n=18 | blk4 1.00 [0.70,1.00] n=9 | blk8 1.00 [0.44,1.00] n=3 | row-mean 3/3
+        rows: s42r1 w=12 mean=1179 cv=0.212; s7r1 w=12 mean=1402 cv=0.185; s42r2 w=13 mean=1495 cv=0.241
+        within-row sd(e) W=1 0.214  var(blockmean) W=1,2,4,8: 0.04575, 0.02117, 0.01385, nan  gamma 0.86  map margin |ln(map/n)| 0.400  W*_gamma 1.0  W*_white 0.5
+        W* = 0.25 s; decisions per transfer third (4.7 s/3) = 6.27
+        post-warm-up t's 37, windows with leg missing {}, ov>0 leg-windows 37
+        row seconds [3.787412, 3.846529, 4.01634]
+
+==== p27 c1d-400 ====
+  row DEF768 s42 r1: WITNESS-FAIL ['loopdiag-p0-windows=2'] None
+  map ask: 384:1026, 512:1281, 768:1579, 1024:2021, 1536:2707, 2048:2529, 3072:3620, 4096:4277
+  fixed point: CEILING None slope None
+      n rows  win    map med ask_w sgn |e_med|  sd e    cv/row mean [range]  agree W=1 / mov2 / mov4 / mov8 / blk2 / blk4 / blk8 / row-mean
+    384    2   32   1026      1014   +   0.971 0.081  0.076 [0.060-0.091]
+        W1 1.00 [0.89,1.00] n=32 | mov2 1.00 [0.89,1.00] n=30 | mov4 1.00 [0.87,1.00] n=26 | mov8 1.00 [0.82,1.00] n=18 | blk2 1.00 [0.81,1.00] n=16 | blk4 1.00 [0.65,1.00] n=7 | blk8 1.00 [0.44,1.00] n=3 | row-mean 2/2
+        rows: s42r1 w=18 mean=1035 cv=0.091; s7r1 w=14 mean=1004 cv=0.060
+        within-row sd(e) W=1 0.079  var(blockmean) W=1,2,4,8: 0.00630, 0.00267, 0.00107, 0.00082  gamma 1.01  map margin |ln(map/n)| 0.982  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 36, windows with leg missing {0: 4}, ov>0 leg-windows 35
+        row seconds [5.272173, 5.318597]
+    512    2   20   1281      1340   +   0.962 0.453  0.505 [0.115-0.895]
+        W1 1.00 [0.84,1.00] n=20 | mov2 1.00 [0.82,1.00] n=18 | mov4 1.00 [0.78,1.00] n=14 | mov8 1.00 [0.72,1.00] n=10 | blk2 1.00 [0.70,1.00] n=9 | blk4 1.00 [0.51,1.00] n=4 | blk8 1.00 [0.34,1.00] n=2 | row-mean 2/2
+        rows: s42r1 w=17 mean=1320 cv=0.115; s7r1 w=3 mean=4328 cv=0.895
+        within-row sd(e) W=1 0.355  var(blockmean) W=1,2,4,8: 0.12600, 0.00760, 0.00421, 0.00027  gamma 2.74  map margin |ln(map/n)| 0.917  W*_gamma 1.0  W*_white 0.2
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 33, windows with leg missing {1: 11, 0: 2}, ov>0 leg-windows 39
+        row seconds [5.093251, 5.008559]
+    768    1   10   1579      1629   +   0.752 0.116  0.116 [0.116-0.116]
+        W1 1.00 [0.72,1.00] n=10 | mov2 1.00 [0.70,1.00] n=9 | mov4 1.00 [0.65,1.00] n=7 | mov8 1.00 [0.44,1.00] n=3 | blk2 1.00 [0.57,1.00] n=5 | blk4 1.00 [0.34,1.00] n=2 | blk8 1.00 [0.21,1.00] n=1 | row-mean 1/1
+        rows: s7r1 w=10 mean=1689 cv=0.116
+        within-row sd(e) W=1 0.116  var(blockmean) W=1,2,4,8: 0.01356, 0.01098, 0.00998, nan  gamma 0.22  map margin |ln(map/n)| 0.721  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 15, windows with leg missing {1: 5}, ov>0 leg-windows 17
+        row seconds [4.572804]
+   1024    2   25   2021      1927   +   0.632 0.167  0.164 [0.123-0.205]
+        W1 1.00 [0.87,1.00] n=25 | mov2 1.00 [0.86,1.00] n=23 | mov4 1.00 [0.83,1.00] n=19 | mov8 1.00 [0.74,1.00] n=11 | blk2 1.00 [0.76,1.00] n=12 | blk4 1.00 [0.61,1.00] n=6 | blk8 1.00 [0.44,1.00] n=3 | row-mean 2/2
+        rows: s42r1 w=9 mean=2225 cv=0.205; s7r1 w=16 mean=1884 cv=0.123
+        within-row sd(e) W=1 0.150  var(blockmean) W=1,2,4,8: 0.02244, 0.00585, 0.00163, 0.00021  gamma 2.21  map margin |ln(map/n)| 0.680  W*_gamma 1.0  W*_white 0.1
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 30, windows with leg missing {0: 5}, ov>0 leg-windows 40
+        row seconds [4.386099, 4.865604]
+   1536    2   31   2707      2428   +   0.458 0.230  0.231 [0.230-0.232]
+        W1 1.00 [0.89,1.00] n=31 | mov2 1.00 [0.88,1.00] n=29 | mov4 1.00 [0.87,1.00] n=25 | mov8 1.00 [0.82,1.00] n=17 | blk2 1.00 [0.80,1.00] n=15 | blk4 1.00 [0.65,1.00] n=7 | blk8 1.00 [0.44,1.00] n=3 | row-mean 2/2
+        rows: s42r1 w=16 mean=2518 cv=0.230; s7r1 w=15 mean=2525 cv=0.232
+        within-row sd(e) W=1 0.230  var(blockmean) W=1,2,4,8: 0.05271, 0.01535, 0.00304, 0.00064  gamma 2.14  map margin |ln(map/n)| 0.567  W*_gamma 1.0  W*_white 0.3
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 31, windows with leg missing {}, ov>0 leg-windows 34
+        row seconds [4.858133, 4.626422]
+   2048    2   30   2529      2847   +   0.329 0.289  0.297 [0.263-0.331]
+        W1 0.90 [0.74,0.97] n=30 | mov2 0.93 [0.77,0.98] n=28 | mov4 1.00 [0.86,1.00] n=24 | mov8 1.00 [0.81,1.00] n=16 | blk2 0.86 [0.60,0.96] n=14 | blk4 1.00 [0.61,1.00] n=6 | blk8 1.00 [0.34,1.00] n=2 | row-mean 2/2
+        rows: s42r1 w=15 mean=2938 cv=0.263; s7r1 w=15 mean=2951 cv=0.331
+        within-row sd(e) W=1 0.289  var(blockmean) W=1,2,4,8: 0.08334, 0.04448, 0.01893, nan  gamma 1.07  map margin |ln(map/n)| 0.211  W*_gamma 2.9  W*_white 3.1
+        W* = 0.72 s; decisions per transfer third (5.3 s/3) = 2.47
+        post-warm-up t's 30, windows with leg missing {}, ov>0 leg-windows 51
+        row seconds [4.64426, 4.694933]
+   3072    2   29   3620      3461   +   0.119 0.334  0.350 [0.207-0.492]
+        W1 0.66 [0.47,0.80] n=29 | mov2 0.78 [0.59,0.89] n=27 | mov4 0.74 [0.54,0.87] n=23 | mov8 0.67 [0.42,0.85] n=15 | blk2 0.79 [0.52,0.92] n=14 | blk4 0.83 [0.44,0.97] n=6 | blk8 0.50 [0.09,0.91] n=2 | row-mean 2/2
+        rows: s42r1 w=14 mean=4552 cv=0.492; s7r1 w=15 mean=3163 cv=0.207
+        within-row sd(e) W=1 0.299  var(blockmean) W=1,2,4,8: 0.08926, 0.05751, 0.02326, nan  gamma 0.97  map margin |ln(map/n)| 0.164  W*_gamma 5.7  W*_white 5.4
+        W* = 1.43 s; decisions per transfer third (5.3 s/3) = 1.23
+        post-warm-up t's 29, windows with leg missing {}, ov>0 leg-windows 34
+        row seconds [4.406519, 4.75235]
+   4096    2   32   4277      4203   +   0.026 0.239  0.235 [0.220-0.249]
+        W1 0.53 [0.36,0.69] n=32 | mov2 0.63 [0.46,0.78] n=30 | mov4 0.65 [0.46,0.81] n=26 | mov8 0.67 [0.44,0.84] n=18 | blk2 0.67 [0.42,0.85] n=15 | blk4 0.57 [0.25,0.84] n=7 | blk8 1.00 [0.44,1.00] n=3 | row-mean 1/2
+        rows: s42r1 w=15 mean=3911 cv=0.249; s7r1 w=17 mean=4460 cv=0.220
+        within-row sd(e) W=1 0.230  var(blockmean) W=1,2,4,8: 0.05269, 0.02751, 0.00475, 0.00079  gamma 2.07  map margin |ln(map/n)| 0.043  W*_gamma 6.4  W*_white 46.1
+        W* = 1.59 s; decisions per transfer third (5.3 s/3) = 1.11
+        post-warm-up t's 32, windows with leg missing {}, ov>0 leg-windows 44
+        row seconds [4.521558, 5.244333]
+
+==== p34 c1d-400 ====
+  row DEF768 s42 r1: LIVE [] ['p1-idle']
+  row DEF1024 s42 r1: LIVE [] ['p1-idle']
+  row DEF1536 s42 r1: LIVE [] ['p0-idle']
+  row DEF2048 s7 r1: LIVE [] ['p0-idle']
+  row DEF1536 s7 r1: LIVE [] ['p0-idle']
+  row DEF512 s7 r1: WITNESS-FAIL ['loopdiag-p1-windows=2', 'p34-loopdiag-p1-windows=2'] []
+  row DEF768 s42 r2: LIVE [] ['p0-idle']
+  row DEF1024 s42 r2: LIVE [] ['p1-idle']
+  map ask: 384:939, 512:1094, 768:1407, 1024:1871, 1536:2393, 2048:3755
+  fixed point: CEILING None slope None
+      n rows  win    map med ask_w sgn |e_med|  sd e    cv/row mean [range]  agree W=1 / mov2 / mov4 / mov8 / blk2 / blk4 / blk8 / row-mean
+    384    3   49    939       958   +   0.914 0.083  0.060 [0.041-0.078]
+        W1 1.00 [0.93,1.00] n=49 | mov2 1.00 [0.92,1.00] n=46 | mov4 1.00 [0.91,1.00] n=40 | mov8 1.00 [0.88,1.00] n=28 | blk2 1.00 [0.86,1.00] n=23 | blk4 1.00 [0.74,1.00] n=11 | blk8 1.00 [0.57,1.00] n=5 | row-mean 3/3
+        rows: s42r1 w=17 mean=989 cv=0.041; s7r1 w=15 mean=871 cv=0.061; s42r2 w=17 mean=981 cv=0.078
+        within-row sd(e) W=1 0.061  var(blockmean) W=1,2,4,8: 0.00370, 0.00277, 0.00179, 0.00130  gamma 0.52  map margin |ln(map/n)| 0.895  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 49, windows with leg missing {}, ov>0 leg-windows 60
+        row seconds [5.219591, 4.624934, 5.146085]
+    512    2   30   1094      1081   +   0.748 0.076  0.068 [0.056-0.079]
+        W1 1.00 [0.89,1.00] n=30 | mov2 1.00 [0.88,1.00] n=28 | mov4 1.00 [0.86,1.00] n=24 | mov8 1.00 [0.81,1.00] n=16 | blk2 1.00 [0.78,1.00] n=14 | blk4 1.00 [0.61,1.00] n=6 | blk8 1.00 [0.34,1.00] n=2 | row-mean 2/2
+        rows: s42r1 w=15 mean=1123 cv=0.079; s42r2 w=15 mean=1052 cv=0.056
+        within-row sd(e) W=1 0.068  var(blockmean) W=1,2,4,8: 0.00469, 0.00250, 0.00104, nan  gamma 1.09  map margin |ln(map/n)| 0.760  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 30, windows with leg missing {}, ov>0 leg-windows 49
+        row seconds [4.511415, 4.55403]
+    768    3   41   1407       731   +   0.050 0.373  0.101 [0.076-0.141]
+        W1 0.44 [0.30,0.59] n=41 | mov2 0.42 [0.28,0.58] n=38 | mov4 0.41 [0.26,0.58] n=32 | mov8 0.35 [0.18,0.57] n=20 | blk2 0.45 [0.26,0.66] n=20 | blk4 0.44 [0.19,0.73] n=9 | blk8 0.33 [0.06,0.79] n=3 | row-mean 1/3
+        rows: s42r1 w=14 mean=740 cv=0.086 idle=[1]; s7r1 w=14 mean=1506 cv=0.141; s42r2 w=13 mean=671 cv=0.076 idle=[0]
+        within-row sd(e) W=1 0.104  var(blockmean) W=1,2,4,8: 0.01074, 0.00678, 0.00230, nan  gamma 1.11  map margin |ln(map/n)| 0.606  W*_gamma 1.0  W*_white 0.0
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 41, windows with leg missing {1: 14, 0: 13}, ov>0 leg-windows 55
+        row seconds [4.315611, 4.309034, 4.043345]
+   1024    3   38   1871       936   +   0.090 0.372  0.121 [0.086-0.170]
+        W1 0.39 [0.26,0.55] n=38 | mov2 0.34 [0.21,0.51] n=35 | mov4 0.34 [0.20,0.53] n=29 | mov8 0.35 [0.17,0.59] n=17 | blk2 0.33 [0.16,0.56] n=18 | blk4 0.33 [0.12,0.65] n=9 | blk8 0.33 [0.06,0.79] n=3 | row-mean 1/3
+        rows: s42r1 w=12 mean=907 cv=0.086 idle=[1]; s7r1 w=13 mean=1865 cv=0.170; s42r2 w=13 mean=868 cv=0.107 idle=[1]
+        within-row sd(e) W=1 0.130  var(blockmean) W=1,2,4,8: 0.01695, 0.01126, 0.00798, nan  gamma 0.54  map margin |ln(map/n)| 0.603  W*_gamma 1.0  W*_white 0.1
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 38, windows with leg missing {1: 25}, ov>0 leg-windows 51
+        row seconds [3.985179, 4.146179, 4.184554]
+   1536    3   36   2393      1365   +   0.118 0.449  0.177 [0.150-0.227]
+        W1 0.36 [0.22,0.52] n=36 | mov2 0.36 [0.22,0.53] n=33 | mov4 0.37 [0.22,0.56] n=27 | mov8 0.40 [0.20,0.64] n=15 | blk2 0.35 [0.17,0.59] n=17 | blk4 0.38 [0.14,0.69] n=8 | blk8 0.33 [0.06,0.79] n=3 | row-mean 1/3
+        rows: s42r1 w=11 mean=1278 cv=0.150 idle=[0]; s7r1 w=12 mean=944 cv=0.227 idle=[0]; s42r2 w=13 mean=2448 cv=0.155
+        within-row sd(e) W=1 0.183  var(blockmean) W=1,2,4,8: 0.03366, 0.01148, 0.00236, nan  gamma 1.92  map margin |ln(map/n)| 0.443  W*_gamma 1.0  W*_white 0.3
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 36, windows with leg missing {0: 23}, ov>0 leg-windows 46
+        row seconds [3.722673, 3.91119, 4.199141]
+   2048    3   41   3755      3380   +   0.501 0.576  0.181 [0.111-0.259]
+        W1 0.71 [0.56,0.82] n=41 | mov2 0.71 [0.55,0.83] n=38 | mov4 0.72 [0.55,0.84] n=32 | mov8 0.75 [0.53,0.89] n=20 | blk2 0.70 [0.48,0.85] n=20 | blk4 0.67 [0.35,0.88] n=9 | blk8 0.67 [0.21,0.94] n=3 | row-mean 2/3
+        rows: s42r1 w=14 mean=3398 cv=0.175; s7r1 w=12 mean=1166 cv=0.259 idle=[0]; s42r2 w=15 mean=3944 cv=0.111
+        within-row sd(e) W=1 0.202  var(blockmean) W=1,2,4,8: 0.04073, 0.01645, 0.00481, nan  gamma 1.54  map margin |ln(map/n)| 0.606  W*_gamma 1.0  W*_white 0.2
+        W* = 0.25 s; decisions per transfer third (5.3 s/3) = 7.07
+        post-warm-up t's 41, windows with leg missing {0: 12}, ov>0 leg-windows 53
+        row seconds [4.276303, 3.830677, 4.62084]

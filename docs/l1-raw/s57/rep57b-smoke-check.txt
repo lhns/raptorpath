@@ -1,0 +1,12 @@
+SMOKE57B rows=2/2 (pools 192 and 2048 per path; the values are not read, only the criteria below)
+PASS one row per smoke slot ran
+  ROW c1d-400 P192: status=LIVE mbps=552.369 wall=75.0 gates pool=192/192 pool_per_path=192/192 W=384.0 bind=1.0 late_n=270 R=58062.270029673586 burst=45.44067520372526 (d_bursts 85900, d_syms 3903354) release=63.45678891923527 aW=0.8338541666666667 q_ell=3.1322087523486157 ell=2.5410284415304654 qc=0.006993006993006993
+  ROW c1d-400 P2048: status=LIVE mbps=711.402 wall=58.0 gates pool=2048/2048 pool_per_path=2048/2048 W=3867.990243902439 bind=0.3463414634146341 late_n=205 R=76215.85127201566 burst=62.34647506557456 (d_bursts 62143, d_syms 3874397) release=201.9492832942403 aW=0.7475342959633372 q_ell=35.12568278544009 ell=2.826298802967162 qc=0.02262443438914027
+PASS each row's pool AND burst are in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)
+PASS the successor dump is off on both ends
+PASS every row ran the one seat's binary (LD_SHA)
+PASS the LATE-window readouts (rates, rtt, rtp and its lifetime minimum, T-bar, q_l, burst gauges, release batch, ack wakes, a/W, busy, ack-wait, collapse share) computed on every row (no None)
+PASS every smoke row finished inside RWM_PERF_TIMEOUT_S=300 (rc 0, a summary, not DNF) at 5 GB
+  LIVENESS c1d-400 P192 s42 rep1: LIVE 
+  LIVENESS c1d-400 P2048 s42 rep1: LIVE 
+SMOKE-PASS

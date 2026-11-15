@@ -1,0 +1,37 @@
+SENTINEL-WRITABLE /dev/shm/s49f/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s49f/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-12T08:20:56Z user=VMUSER dir=/dev/shm/s49f/run launch=2026-11-12T08:20:56Z
+LD-ALL start plan=41c load=0.26 0.92 1.24 1/394 1681656 2026-11-12T08:20:56Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=1.47 avg60=3.42 avg300=2.01 total=4706595635 2026-11-12T08:21:04Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.22 0.89 1.22; io=full avg10=1.21 avg60=3.31 avg300=2.00 total=4706595635 2026-11-12T08:21:04Z
+LD-ALL parser test ok 2026-11-12T08:22:05Z
+LD-ALL built wall=305s 2026-11-12T08:27:10Z
+LD-ALL binary 6bcb46e83c1fcdfb9c5aeebfe674e1a0683d473a9b3a140a22044b4de55e3ae5 2026-11-12T08:27:10Z
+LD-ALL built BASE wall=304s binary a33990618417075f2529688a65a6e5ad99b911a410cf22cbec0733102818f57e 2026-11-12T08:32:14Z
+SMOKE38 c1s-400@def BASE: status=LIVE mbps=782.493 share=[1.0] locked=False w_mv=None w_calls=338843 w_cold=0.0000 
+SMOKE38 c1s-400@def CAND: status=LIVE mbps=819.235 share=[1.0] locked=False w_mv=None w_calls=338850 w_cold=0.0000 
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-12T08:32:28Z
+LD-ALL battery start load=2.03 1.86 1.66; io=full avg10=0.16 avg60=0.30 avg300=0.47 total=4709665645 2026-11-12T08:32:28Z
+LD-ALL battery rc=0 wall=862s 2026-11-12T08:46:50Z
+CHECK41c done=True rows=96/96
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=1.95 2.59 2.09; io=full avg10=0.00 avg60=0.12 avg300=0.25 total=4712805797 2026-11-12T08:46:51Z
+PERSISTED /dev/shm/s49f/run -> ~/s49f/run 2026-11-12T08:46:51Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

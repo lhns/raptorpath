@@ -1,0 +1,18 @@
+== 1. aw_drain_probe on an IDLE box (pgrep exits 1 — the healthy path)
+  ok   the caller survives the probe
+  ok   and reaches the line after it
+  ok   drain_pids_t0 is recorded as 0
+== 2. aw_drain_probe WITH a survivor — the arm-correlation case itself
+  ok   the caller survives with a survivor present
+  ok   and reaches the line after it
+  ok   drain_pids_t0 counts the survivor (=1)
+  ok   the survivor's state is captured
+== 3. FIRST WRITE WINS — the attribution rule, not decoration
+  ok   the FIRST cause is the recorded one
+  ok   exactly one abort_cause line
+  ok   the consequence is kept, not scored
+== 4. the reader's two absent-record verdicts stay distinct
+  ok   a missing record reads no_record
+  ok   a record with no cause reads none
+
+abort-witness gate: 12 passed, 0 failed

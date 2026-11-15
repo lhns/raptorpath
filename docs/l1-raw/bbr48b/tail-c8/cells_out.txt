@@ -1,0 +1,9 @@
+POST HOC. means over rows; tail = run end - last [DIAG] line with src>0 (250 ms quantized, so <=0.25 s reads as ~0)
+c1d-400  BASE n=12 tail=0.11s lag_at_src_end=   2731 main: retx= 419/s fires/report=0.47 cooldown-supp share=0.016 retx on leg1=0.52 pooled_rtt=   25ms | rx refresh=100ms sp_p50=    20ms
+c1d-400  CAND n=12 tail=0.11s lag_at_src_end=   2029 main: retx= 466/s fires/report=0.51 cooldown-supp share=0.017 retx on leg1=0.49 pooled_rtt=   23ms | rx refresh=100ms sp_p50=    20ms
+c1s-400  BASE n=12 tail=0.13s lag_at_src_end=   1790 main: retx=  82/s fires/report=2.12 cooldown-supp share=0.837 retx on leg1=0.00 pooled_rtt=   38ms | rx refresh=25ms sp_p50=    23ms
+c1s-400  CAND n=12 tail=0.10s lag_at_src_end=   1804 main: retx= 102/s fires/report=3.12 cooldown-supp share=0.737 retx on leg1=0.00 pooled_rtt=   17ms | rx refresh=25ms sp_p50=    23ms
+c2-100   BASE n=12 tail=0.10s lag_at_src_end=   2577 main: retx= 258/s fires/report=0.66 cooldown-supp share=0.986 retx on leg1=0.00 pooled_rtt=  207ms | rx refresh=26ms sp_p50=   197ms
+c2-100   CAND n=12 tail=0.18s lag_at_src_end=   2609 main: retx= 255/s fires/report=0.69 cooldown-supp share=0.985 retx on leg1=0.00 pooled_rtt=  207ms | rx refresh=26ms sp_p50=   197ms
+c8-100   BASE n=12 tail=3.91s lag_at_src_end=  73179 main: retx= 297/s fires/report=0.76 cooldown-supp share=0.969 retx on leg1=0.65 pooled_rtt=  270ms | rx refresh=100ms sp_p50=  4456ms
+c8-100   CAND n=12 tail=4.73s lag_at_src_end=  83189 main: retx= 285/s fires/report=0.67 cooldown-supp share=0.969 retx on leg1=0.73 pooled_rtt=  257ms | rx refresh=100ms sp_p50=  6816ms

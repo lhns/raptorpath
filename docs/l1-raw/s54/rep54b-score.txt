@@ -1,0 +1,281 @@
+STORE-BUDGET BLOCK (status 54), REPORTED ONLY: c8-100 at 600 MB, RWM_DIAG=1, arms B2048/B1024/B640 on the BASE seat (main + snapshot-order law) and L2048/L1024/L640 on the CAND seat (+ lever B), RWM_STORE_PATH_POOL = default / 1024 / 640; nothing here is scored
+ROWS 36/36; ABORT-TOKENS none
+LIVENESS per arm (the pool echo on both ends and pool_per_path decide; a DNF row is LIVE and counts)
+  B2048  rows 6  LIVE=6  DNF 0
+  B1024  rows 6  LIVE=6  DNF 0
+  B640   rows 6  LIVE=6  DNF 0
+  L2048  rows 6  LIVE=6  DNF 0
+  L1024  rows 6  LIVE=6  DNF 0
+  L640   rows 6  LIVE=6  DNF 0
+WITNESS (pool in [GATES] client/server, pool_per_path client/server): B2048 ['2048/2048 2048/2048']; B1024 ['1024/1024 1024/1024']; B640 ['640/640 640/640']; L2048 ['2048/2048 2048/2048']; L1024 ['1024/1024 1024/1024']; L640 ['640/640 640/640']
+
+-- B2048: n = 6 counting rows (DNF 0); goodput incl. DNF as 0: median 98.5
+  goodput Mbit/s                                 mean 98.0  median 98.5  range [95.8 - 99.2]  (n 6)
+  completion tail s                              mean 4.63  median 4.31  range [4.00 - 5.71]  (n 6)
+  H0 holes at source end                         mean 2136  median 2076  range [1989 - 2337]  (n 6)
+  frontier lag at source end (symbols)           mean 85181  median 83858  range [75929 - 94482]  (n 6)
+  receiver duplicates                            mean 1400  median 1406  range [1271 - 1582]  (n 6)
+  retransmits per GB                             mean 24727  median 24756  range [23525 - 26010]  (n 6)
+  client CPU s/GB                                mean 33.84  median 34.12  range [32.20 - 35.17]  (n 6)
+  server CPU s/GB                                mean 45.34  median 46.17  range [42.27 - 47.62]  (n 6)
+  sum tx rate, LATE, /s                          mean 11743  median 11744  range [11673 - 11815]  (n 6)
+  p0 backlog q0 = dgq0 hand - tx, LATE median    mean 876  median 873  range [661 - 1092]  (n 6)
+  p0 app-echo rtt0 ms, LATE median               mean 205  median 198  range [196 - 229]  (n 6)
+  rtt0 - wrtt0 ms, LATE median                   mean 86  median 88  range [59 - 113]  (n 6)
+  quinn evictions dgq0 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions dgq1 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions, both paths (last [DIAG])      mean 0  median 0  range [0 - 0]  (n 6)
+  dgq0 hand - tx (last [DIAG])                   mean 0  median 0  range [0 - 0]  (n 6)
+  dgq1 hand - tx (last [DIAG])                   mean 0  median 0  range [0 - 1]  (n 6)
+  inorder_mean_run s (whole run)                 mean 4.40  median 4.44  range [4.13 - 4.71]  (n 6)
+  inorder_p95_run s                              mean 7.16  median 7.16  range [6.29 - 7.82]  (n 6)
+  inorder_mean_late s (sending ticks t >= 15 s)  mean 5.54  median 5.63  range [5.11 - 5.76]  (n 6)
+  inorder_p50_late s                             mean 5.35  median 5.30  range [4.85 - 5.90]  (n 6)
+  inorder_p95_late s                             mean 7.24  median 7.27  range [6.39 - 7.80]  (n 6)
+  old holes (server [RANK], readouts 15..-6)     mean 1304  median 1289  range [1076 - 1509]  (n 6)
+  budget residual cap - sum r_i*rtt_i, LATE      mean 1588  median 1615  range [1321 - 1727]  (n 6)
+  budget residual / W                            mean 0.388  median 0.394  range [0.323 - 0.422]  (n 6)
+  cap W (LATE median)                            mean 4096  median 4096  range [4096 - 4096]  (n 6)
+  cap bind fraction (b = 2*pool)                 mean 0.997  median 1.000  range [0.992 - 1.000]  (n 6)
+  [LAT] coverage sum pN:n / n                    mean 0.207  median 0.205  range [0.158 - 0.254]  (n 6)
+  [HOLD] p0 hn_n                                 mean 287  median 168  range [11 - 866]  (n 6)
+  [SNAPV] p0 rep                                 mean 12890  median 12851  range [12693 - 13164]  (n 6)
+  [SNAPV] p0 stale                               mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                                 mean 4534  median 4582  range [4260 - 4736]  (n 6)
+  [SNAPV] p1 stale                               mean 4469  median 4482  range [4213 - 4683]  (n 6)
+  [SNAPV] p1 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  tail witness at W = 4096 (B tail >= 2 s, L tail <= 0.8 s), printed not voided: 6/6 rows hold
+-- B1024: n = 6 counting rows (DNF 0); goodput incl. DNF as 0: median 106.9
+  goodput Mbit/s                                 mean 106.6  median 106.9  range [105.3 - 107.3]  (n 6)
+  completion tail s                              mean 0.53  median 0.55  range [0.25 - 0.99]  (n 6)
+  H0 holes at source end                         mean 213  median 164  range [47 - 539]  (n 5)
+  frontier lag at source end (symbols)           mean 8140  median 7456  range [5637 - 11320]  (n 6)
+  receiver duplicates                            mean 1402  median 1326  range [1214 - 1712]  (n 6)
+  retransmits per GB                             mean 24988  median 25050  range [23507 - 26225]  (n 6)
+  client CPU s/GB                                mean 31.70  median 31.22  range [30.48 - 33.33]  (n 6)
+  server CPU s/GB                                mean 37.42  median 36.37  range [35.75 - 40.62]  (n 6)
+  sum tx rate, LATE, /s                          mean 11757  median 11751  range [11695 - 11824]  (n 6)
+  p0 backlog q0 = dgq0 hand - tx, LATE median    mean 241  median 153  range [27 - 673]  (n 6)
+  p0 app-echo rtt0 ms, LATE median               mean 152  median 152  range [143 - 161]  (n 6)
+  rtt0 - wrtt0 ms, LATE median                   mean 27  median 20  range [7 - 69]  (n 6)
+  quinn evictions dgq0 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions dgq1 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions, both paths (last [DIAG])      mean 0  median 0  range [0 - 0]  (n 6)
+  dgq0 hand - tx (last [DIAG])                   mean 2  median 0  range [0 - 11]  (n 6)
+  dgq1 hand - tx (last [DIAG])                   mean 0  median 0  range [0 - 0]  (n 6)
+  inorder_mean_run s (whole run)                 mean 0.88  median 0.92  range [0.69 - 1.01]  (n 6)
+  inorder_p95_run s                              mean 1.52  median 1.59  range [1.07 - 1.85]  (n 6)
+  inorder_mean_late s (sending ticks t >= 15 s)  mean 0.82  median 0.84  range [0.69 - 0.98]  (n 6)
+  inorder_p50_late s                             mean 0.78  median 0.81  range [0.63 - 0.94]  (n 6)
+  inorder_p95_late s                             mean 1.31  median 1.37  range [1.07 - 1.49]  (n 6)
+  old holes (server [RANK], readouts 15..-6)     mean 0  median 0  range [0 - 0]  (n 6)
+  budget residual cap - sum r_i*rtt_i, LATE      mean 133  median 125  range [89 - 196]  (n 6)
+  budget residual / W                            mean 0.065  median 0.061  range [0.044 - 0.096]  (n 6)
+  cap W (LATE median)                            mean 2048  median 2048  range [2048 - 2048]  (n 6)
+  cap bind fraction (b = 2*pool)                 mean 1.000  median 1.000  range [1.000 - 1.000]  (n 6)
+  [LAT] coverage sum pN:n / n                    mean 0.944  median 0.946  range [0.849 - 0.999]  (n 6)
+  [HOLD] p0 hn_n                                 mean 17151  median 11994  range [8147 - 44643]  (n 6)
+  [SNAPV] p0 rep                                 mean 12785  median 12872  range [12421 - 13071]  (n 6)
+  [SNAPV] p0 stale                               mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                                 mean 4483  median 4450  range [4121 - 5086]  (n 6)
+  [SNAPV] p1 stale                               mean 4441  median 4406  range [4060 - 5066]  (n 6)
+  [SNAPV] p1 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  tail witness at W = 4096 (B tail >= 2 s, L tail <= 0.8 s), printed not voided: n/a at a reduced W
+-- B640: n = 6 counting rows (DNF 0); goodput incl. DNF as 0: median 106.9
+  goodput Mbit/s                                 mean 107.0  median 106.9  range [106.5 - 107.6]  (n 6)
+  completion tail s                              mean 0.12  median 0.12  range [0.02 - 0.23]  (n 6)
+  H0 holes at source end                         -
+  frontier lag at source end (symbols)           mean 3306  median 3686  range [452 - 4860]  (n 6)
+  receiver duplicates                            mean 1341  median 1328  range [1298 - 1396]  (n 6)
+  retransmits per GB                             mean 25331  median 25262  range [24447 - 26697]  (n 6)
+  client CPU s/GB                                mean 31.53  median 31.56  range [30.38 - 32.48]  (n 6)
+  server CPU s/GB                                mean 34.83  median 34.82  range [33.63 - 35.78]  (n 6)
+  sum tx rate, LATE, /s                          mean 11690  median 11699  range [11629 - 11732]  (n 6)
+  p0 backlog q0 = dgq0 hand - tx, LATE median    mean 17  median 18  range [7 - 28]  (n 6)
+  p0 app-echo rtt0 ms, LATE median               mean 96  median 96  range [96 - 96]  (n 6)
+  rtt0 - wrtt0 ms, LATE median                   mean 5  median 5  range [4 - 6]  (n 6)
+  quinn evictions dgq0 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions dgq1 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions, both paths (last [DIAG])      mean 0  median 0  range [0 - 0]  (n 6)
+  dgq0 hand - tx (last [DIAG])                   mean 0  median 0  range [0 - 0]  (n 6)
+  dgq1 hand - tx (last [DIAG])                   mean 4  median 0  range [0 - 11]  (n 6)
+  inorder_mean_run s (whole run)                 mean 0.38  median 0.38  range [0.36 - 0.40]  (n 6)
+  inorder_p95_run s                              mean 0.61  median 0.61  range [0.58 - 0.63]  (n 6)
+  inorder_mean_late s (sending ticks t >= 15 s)  mean 0.36  median 0.35  range [0.34 - 0.39]  (n 6)
+  inorder_p50_late s                             mean 0.35  median 0.35  range [0.34 - 0.36]  (n 6)
+  inorder_p95_late s                             mean 0.56  median 0.56  range [0.51 - 0.63]  (n 6)
+  old holes (server [RANK], readouts 15..-6)     mean 0  median 0  range [0 - 0]  (n 6)
+  budget residual cap - sum r_i*rtt_i, LATE      mean 54  median 55  range [33 - 70]  (n 6)
+  budget residual / W                            mean 0.042  median 0.043  range [0.026 - 0.055]  (n 6)
+  cap W (LATE median)                            mean 1280  median 1280  range [1280 - 1280]  (n 6)
+  cap bind fraction (b = 2*pool)                 mean 1.000  median 1.000  range [1.000 - 1.000]  (n 6)
+  [LAT] coverage sum pN:n / n                    mean 0.999  median 0.999  range [0.999 - 0.999]  (n 6)
+  [HOLD] p0 hn_n                                 mean 53310  median 55038  range [41887 - 59404]  (n 6)
+  [SNAPV] p0 rep                                 mean 12975  median 12990  range [12534 - 13313]  (n 6)
+  [SNAPV] p0 stale                               mean 92  median 0  range [0 - 550]  (n 6)
+  [SNAPV] p0 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                                 mean 4270  median 4222  range [4074 - 4627]  (n 6)
+  [SNAPV] p1 stale                               mean 4189  median 4158  range [3910 - 4551]  (n 6)
+  [SNAPV] p1 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  tail witness at W = 4096 (B tail >= 2 s, L tail <= 0.8 s), printed not voided: n/a at a reduced W
+-- L2048: n = 6 counting rows (DNF 0); goodput incl. DNF as 0: median 108.0
+  goodput Mbit/s                                 mean 107.8  median 108.0  range [106.3 - 108.4]  (n 6)
+  completion tail s                              mean 0.42  median 0.33  range [0.18 - 1.05]  (n 6)
+  H0 holes at source end                         mean 392  median 48  range [31 - 1097]  (n 3)
+  frontier lag at source end (symbols)           mean 7580  median 7430  range [4821 - 10270]  (n 6)
+  receiver duplicates                            mean 1345  median 1300  range [1239 - 1603]  (n 6)
+  retransmits per GB                             mean 25334  median 25407  range [24233 - 26937]  (n 6)
+  client CPU s/GB                                mean 32.28  median 32.19  range [31.83 - 33.10]  (n 6)
+  server CPU s/GB                                mean 36.96  median 36.75  range [35.80 - 38.40]  (n 6)
+  sum tx rate, LATE, /s                          mean 11828  median 11826  range [11809 - 11852]  (n 6)
+  p0 backlog q0 = dgq0 hand - tx, LATE median    mean 2416  median 2374  range [1995 - 2989]  (n 6)
+  p0 app-echo rtt0 ms, LATE median               mean 354  median 354  range [343 - 365]  (n 6)
+  rtt0 - wrtt0 ms, LATE median                   mean 243  median 242  range [206 - 285]  (n 6)
+  quinn evictions dgq0 full (last [DIAG])        mean 143  median 60  range [0 - 460]  (n 6)
+  quinn evictions dgq1 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions, both paths (last [DIAG])      mean 143  median 60  range [0 - 460]  (n 6)
+  dgq0 hand - tx (last [DIAG])                   mean 322  median 368  range [0 - 598]  (n 6)
+  dgq1 hand - tx (last [DIAG])                   mean 2  median 0  range [0 - 11]  (n 6)
+  inorder_mean_run s (whole run)                 mean 0.91  median 0.90  range [0.83 - 0.99]  (n 6)
+  inorder_p95_run s                              mean 1.47  median 1.43  range [1.32 - 1.62]  (n 6)
+  inorder_mean_late s (sending ticks t >= 15 s)  mean 0.95  median 0.93  range [0.89 - 1.06]  (n 6)
+  inorder_p50_late s                             mean 0.90  median 0.91  range [0.82 - 1.01]  (n 6)
+  inorder_p95_late s                             mean 1.50  median 1.52  range [1.27 - 1.67]  (n 6)
+  old holes (server [RANK], readouts 15..-6)     mean 0  median 0  range [0 - 0]  (n 6)
+  budget residual cap - sum r_i*rtt_i, LATE      mean 41  median 44  range [4 - 60]  (n 6)
+  budget residual / W                            mean 0.010  median 0.011  range [0.001 - 0.015]  (n 6)
+  cap W (LATE median)                            mean 4096  median 4096  range [4096 - 4096]  (n 6)
+  cap bind fraction (b = 2*pool)                 mean 1.000  median 1.000  range [1.000 - 1.000]  (n 6)
+  [LAT] coverage sum pN:n / n                    mean 0.986  median 0.984  range [0.974 - 0.999]  (n 6)
+  [HOLD] p0 hn_n                                 mean 165864  median 174618  range [121024 - 193141]  (n 6)
+  [SNAPV] p0 rep                                 mean 11240  median 11262  range [10470 - 11996]  (n 6)
+  [SNAPV] p0 stale                               mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p0 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                                 mean 4899  median 4934  range [4270 - 5416]  (n 6)
+  [SNAPV] p1 stale                               mean 4868  median 4910  range [4232 - 5383]  (n 6)
+  [SNAPV] p1 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  tail witness at W = 4096 (B tail >= 2 s, L tail <= 0.8 s), printed not voided: 5/6 rows hold
+-- L1024: n = 6 counting rows (DNF 0); goodput incl. DNF as 0: median 107.6
+  goodput Mbit/s                                 mean 107.6  median 107.6  range [107.2 - 108.0]  (n 6)
+  completion tail s                              mean 0.19  median 0.17  range [0.05 - 0.38]  (n 6)
+  H0 holes at source end                         mean 230  median 230  range [64 - 395]  (n 2)
+  frontier lag at source end (symbols)           mean 4498  median 4752  range [2159 - 6591]  (n 6)
+  receiver duplicates                            mean 1183  median 1210  range [961 - 1454]  (n 6)
+  retransmits per GB                             mean 25313  median 25100  range [24238 - 26753]  (n 6)
+  client CPU s/GB                                mean 33.23  median 33.26  range [32.18 - 34.12]  (n 6)
+  server CPU s/GB                                mean 36.33  median 36.12  range [35.67 - 37.27]  (n 6)
+  sum tx rate, LATE, /s                          mean 11779  median 11790  range [11740 - 11800]  (n 6)
+  p0 backlog q0 = dgq0 hand - tx, LATE median    mean 420  median 343  range [6 - 821]  (n 6)
+  p0 app-echo rtt0 ms, LATE median               mean 163  median 162  range [153 - 174]  (n 6)
+  rtt0 - wrtt0 ms, LATE median                   mean 44  median 35  range [7 - 86]  (n 6)
+  quinn evictions dgq0 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions dgq1 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions, both paths (last [DIAG])      mean 0  median 0  range [0 - 0]  (n 6)
+  dgq0 hand - tx (last [DIAG])                   mean 0  median 0  range [0 - 0]  (n 6)
+  dgq1 hand - tx (last [DIAG])                   mean 1  median 0  range [0 - 5]  (n 6)
+  inorder_mean_run s (whole run)                 mean 0.52  median 0.52  range [0.42 - 0.65]  (n 6)
+  inorder_p95_run s                              mean 0.86  median 0.81  range [0.66 - 1.10]  (n 6)
+  inorder_mean_late s (sending ticks t >= 15 s)  mean 0.51  median 0.49  range [0.39 - 0.66]  (n 6)
+  inorder_p50_late s                             mean 0.48  median 0.47  range [0.37 - 0.62]  (n 6)
+  inorder_p95_late s                             mean 0.80  median 0.76  range [0.54 - 1.11]  (n 6)
+  old holes (server [RANK], readouts 15..-6)     mean 0  median 0  range [0 - 0]  (n 6)
+  budget residual cap - sum r_i*rtt_i, LATE      mean 22  median 21  range [6 - 38]  (n 6)
+  budget residual / W                            mean 0.011  median 0.010  range [0.003 - 0.019]  (n 6)
+  cap W (LATE median)                            mean 2048  median 2048  range [2048 - 2048]  (n 6)
+  cap bind fraction (b = 2*pool)                 mean 1.000  median 1.000  range [1.000 - 1.000]  (n 6)
+  [LAT] coverage sum pN:n / n                    mean 0.999  median 0.999  range [0.996 - 0.999]  (n 6)
+  [HOLD] p0 hn_n                                 mean 115961  median 98678  range [75483 - 184017]  (n 6)
+  [SNAPV] p0 rep                                 mean 12633  median 12720  range [12160 - 12959]  (n 6)
+  [SNAPV] p0 stale                               mean 0  median 0  range [0 - 2]  (n 6)
+  [SNAPV] p0 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                                 mean 4442  median 4307  range [3824 - 5189]  (n 6)
+  [SNAPV] p1 stale                               mean 4406  median 4275  range [3757 - 5173]  (n 6)
+  [SNAPV] p1 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  tail witness at W = 4096 (B tail >= 2 s, L tail <= 0.8 s), printed not voided: n/a at a reduced W
+-- L640: n = 6 counting rows (DNF 0); goodput incl. DNF as 0: median 107.3
+  goodput Mbit/s                                 mean 107.2  median 107.3  range [106.4 - 107.6]  (n 6)
+  completion tail s                              mean 0.14  median 0.12  range [0.02 - 0.29]  (n 6)
+  H0 holes at source end                         -
+  frontier lag at source end (symbols)           mean 1728  median 1542  range [296 - 3054]  (n 6)
+  receiver duplicates                            mean 1282  median 1260  range [1101 - 1529]  (n 6)
+  retransmits per GB                             mean 25581  median 25969  range [23603 - 26878]  (n 6)
+  client CPU s/GB                                mean 32.74  median 32.78  range [31.35 - 34.10]  (n 6)
+  server CPU s/GB                                mean 35.37  median 35.25  range [34.38 - 36.63]  (n 6)
+  sum tx rate, LATE, /s                          mean 11742  median 11745  range [11712 - 11765]  (n 6)
+  p0 backlog q0 = dgq0 hand - tx, LATE median    mean 32  median 22  range [13 - 66]  (n 6)
+  p0 app-echo rtt0 ms, LATE median               mean 98  median 98  range [96 - 100]  (n 6)
+  rtt0 - wrtt0 ms, LATE median                   mean 6  median 6  range [4 - 8]  (n 6)
+  quinn evictions dgq0 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions dgq1 full (last [DIAG])        mean 0  median 0  range [0 - 0]  (n 6)
+  quinn evictions, both paths (last [DIAG])      mean 0  median 0  range [0 - 0]  (n 6)
+  dgq0 hand - tx (last [DIAG])                   mean 2  median 0  range [0 - 10]  (n 6)
+  dgq1 hand - tx (last [DIAG])                   mean 1  median 0  range [0 - 4]  (n 6)
+  inorder_mean_run s (whole run)                 mean 0.32  median 0.32  range [0.30 - 0.35]  (n 6)
+  inorder_p95_run s                              mean 0.52  median 0.51  range [0.47 - 0.56]  (n 6)
+  inorder_mean_late s (sending ticks t >= 15 s)  mean 0.31  median 0.30  range [0.29 - 0.34]  (n 6)
+  inorder_p50_late s                             mean 0.30  median 0.30  range [0.28 - 0.33]  (n 6)
+  inorder_p95_late s                             mean 0.51  median 0.49  range [0.43 - 0.64]  (n 6)
+  old holes (server [RANK], readouts 15..-6)     mean 0  median 0  range [0 - 0]  (n 6)
+  budget residual cap - sum r_i*rtt_i, LATE      mean 29  median 29  range [8 - 46]  (n 6)
+  budget residual / W                            mean 0.022  median 0.023  range [0.006 - 0.036]  (n 6)
+  cap W (LATE median)                            mean 1280  median 1280  range [1280 - 1280]  (n 6)
+  cap bind fraction (b = 2*pool)                 mean 1.000  median 1.000  range [1.000 - 1.000]  (n 6)
+  [LAT] coverage sum pN:n / n                    mean 0.999  median 0.999  range [0.999 - 0.999]  (n 6)
+  [HOLD] p0 hn_n                                 mean 86060  median 89199  range [71790 - 93627]  (n 6)
+  [SNAPV] p0 rep                                 mean 13232  median 13166  range [12945 - 13619]  (n 6)
+  [SNAPV] p0 stale                               mean 35  median 0  range [0 - 211]  (n 6)
+  [SNAPV] p0 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  [SNAPV] p1 rep                                 mean 4323  median 4360  range [3956 - 4521]  (n 6)
+  [SNAPV] p1 stale                               mean 4275  median 4314  range [3893 - 4482]  (n 6)
+  [SNAPV] p1 pt_st+tt_st                         mean 0  median 0  range [0 - 0]  (n 6)
+  tail witness at W = 4096 (B tail >= 2 s, L tail <= 0.8 s), printed not voided: n/a at a reduced W
+
+  per-row table (LIVE and DNF rows): arm seed rep | goodput | tail | old holes | q0 late | rtt0 | resid/W | inorder late | evict | stale p1 | tail-witness@4096
+    B1024  s42  r1 | 106.3 | 0.54 | 0 | 266 | 157 | 0.044 | 0.69 | 0 | 4258 | None
+    B1024  s42  r2 | 107.0 | 0.56 | 0 | 38 | 150 | 0.055 | 0.81 | 0 | 4617 | None
+    B1024  s42  r3 | 107.0 | 0.25 | 0 | 40 | 149 | 0.066 | 0.92 | 0 | 4088 | None
+    B1024  s7   r1 | 107.3 | 0.31 | 0 | 673 | 161 | 0.056 | 0.69 | 0 | 5066 | None
+    B1024  s7   r2 | 106.8 | 0.56 | 0 | 401 | 154 | 0.073 | 0.86 | 0 | 4555 | None
+    B1024  s7   r3 | 105.3 | 0.99 | 0 | 27 | 143 | 0.096 | 0.98 | 0 | 4060 | None
+    B2048  s42  r1 | 98.4 | 4.36 | 1076 | 1092 | 229 | 0.323 | 5.11 | 0 | 4276 | True
+    B2048  s42  r2 | 96.9 | 5.44 | 1206 | 754 | 197 | 0.396 | 5.57 | 0 | 4683 | True
+    B2048  s42  r3 | 99.1 | 4.03 | 1255 | 1015 | 211 | 0.373 | 5.68 | 0 | 4670 | True
+    B2048  s7   r1 | 98.6 | 4.27 | 1323 | 661 | 197 | 0.393 | 5.37 | 0 | 4213 | True
+    B2048  s7   r2 | 99.2 | 4.00 | 1509 | 992 | 198 | 0.422 | 5.73 | 0 | 4680 | True
+    B2048  s7   r3 | 95.8 | 5.71 | 1454 | 740 | 196 | 0.420 | 5.76 | 0 | 4293 | True
+    B640   s42  r1 | 107.1 | 0.23 | 0 | 28 | 96 | 0.026 | 0.34 | 0 | 4551 | None
+    B640   s42  r2 | 106.6 | 0.11 | 0 | 7 | 96 | 0.047 | 0.35 | 0 | 4174 | None
+    B640   s42  r3 | 106.6 | 0.13 | 0 | 15 | 96 | 0.055 | 0.36 | 0 | 4223 | None
+    B640   s7   r1 | 107.6 | 0.02 | 0 | 24 | 96 | 0.041 | 0.35 | 0 | 4143 | None
+    B640   s7   r2 | 106.5 | 0.18 | 0 | 20 | 96 | 0.044 | 0.39 | 0 | 3910 | None
+    B640   s7   r3 | 107.5 | 0.06 | 0 | 7 | 96 | 0.043 | 0.35 | 0 | 4134 | None
+    L1024  s42  r1 | 107.8 | 0.12 | 0 | 821 | 174 | 0.003 | 0.40 | 0 | 5173 | None
+    L1024  s42  r2 | 107.4 | 0.27 | 0 | 248 | 158 | 0.016 | 0.61 | 0 | 3944 | None
+    L1024  s42  r3 | 107.2 | 0.38 | 0 | 6 | 153 | 0.019 | 0.66 | 0 | 3757 | None
+    L1024  s7   r1 | 107.8 | 0.14 | 0 | 247 | 160 | 0.009 | 0.51 | 0 | 4424 | None
+    L1024  s7   r2 | 107.2 | 0.19 | 0 | 438 | 164 | 0.012 | 0.48 | 0 | 4126 | None
+    L1024  s7   r3 | 108.0 | 0.05 | 0 | 757 | 170 | 0.006 | 0.39 | 0 | 5015 | None
+    L2048  s42  r1 | 108.4 | 0.18 | 0 | 2268 | 349 | 0.001 | 0.90 | 0 | 4905 | True
+    L2048  s42  r2 | 107.9 | 0.38 | 0 | 2989 | 365 | 0.012 | 0.91 | 460 | 5383 | True
+    L2048  s42  r3 | 107.9 | 0.38 | 0 | 2479 | 358 | 0.009 | 0.96 | 119 | 4914 | True
+    L2048  s7   r1 | 108.3 | 0.22 | 0 | 1995 | 346 | 0.009 | 1.01 | 0 | 4627 | True
+    L2048  s7   r2 | 106.3 | 1.05 | 0 | 2006 | 343 | 0.015 | 1.06 | 0 | 4232 | False
+    L2048  s7   r3 | 108.1 | 0.29 | 0 | 2758 | 361 | 0.014 | 0.89 | 277 | 5145 | True
+    L640   s42  r1 | 106.4 | 0.29 | 0 | 13 | 98 | 0.036 | 0.32 | 0 | 4327 | None
+    L640   s42  r2 | 107.1 | 0.20 | 0 | 66 | 100 | 0.015 | 0.29 | 0 | 4482 | None
+    L640   s42  r3 | 107.6 | 0.02 | 0 | 21 | 98 | 0.025 | 0.29 | 0 | 4473 | None
+    L640   s7   r1 | 107.5 | 0.03 | 0 | 14 | 100 | 0.006 | 0.29 | 0 | 4301 | None
+    L640   s7   r2 | 107.0 | 0.25 | 0 | 22 | 96 | 0.031 | 0.34 | 0 | 3893 | None
+    L640   s7   r3 | 107.5 | 0.05 | 0 | 53 | 99 | 0.021 | 0.31 | 0 | 4174 | None
+
+FALSIFIERS (registered; goodput medians read a DNF as 0):
+  F1 NOT-FIRED  B640 goodput >= 0.95 x B2048 with old holes >= 700: the mechanism is refuted -- B640 goodput 106.9 vs 0.95 x B2048 93.6; B640 old holes 0
+  F2 FIRES      B640 goodput >= 0.95 x B2048 with old holes <= 300: H-elastic (a finding) -- B640 goodput 106.9 vs 0.95 x B2048 93.6; B640 old holes 0
+  F3 NOT-FIRED  L640 goodput < 0.97 x L2048: CAND's edge is above 1 280; read L1024 alone -- L640 goodput 107.3 vs 0.97 x L2048 104.8
+  F4 NOT-FIRED  |W - sum r_i*rtt_i| > 0.1*W on any LEVB row: the identity fails -- 18 L rows read; none above 0.1*W
+DECISION-RULE reading (reported only; the block decides nothing): H-elastic (falsifier 2 fires): lever B's gain would come from the oversized pool
+
+REBASE-CHECK UNAVAILABLE: no section-53 logs at ~/s54b/src/tools/l1/../../docs/l1-raw/s53/rep53-diag-ld.tgz
+VERDICT54B REPORTED-ONLY rows=36/36 live=36 dnf=0 falsifiers=F1:NOT-FIRED,F2:FIRES,F3:NOT-FIRED,F4:NOT-FIRED

@@ -1,0 +1,39 @@
+SENTINEL-WRITABLE /dev/shm/s50/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s50/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-12T17:32:36Z user=VMUSER dir=/dev/shm/s50/run launch=2026-11-12T17:32:36Z
+LD-ALL start plan=41c load=0.18 0.66 1.16 1/388 1925728 2026-11-12T17:32:36Z
+LD-ALL precondition met procs_running=[1,1,1,2,1,] cargo=0 rustc=0 io=full avg10=1.15 avg60=2.24 avg300=1.13 total=4803136088 2026-11-12T17:32:44Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.16 0.65 1.15; io=full avg10=1.15 avg60=2.24 avg300=1.13 total=4803136088 2026-11-12T17:32:44Z
+LD-ALL parser test ok 2026-11-12T17:33:45Z
+LD-ALL built wall=301s 2026-11-12T17:38:46Z
+LD-ALL binary 2053a52c8f9ae5da2527790242a16dabba516373427aa925abd46cd3dc5ad4ce 2026-11-12T17:38:46Z
+LD-ALL built BASE wall=308s binary 6bcb46e83c1fcdfb9c5aeebfe674e1a0683d473a9b3a140a22044b4de55e3ae5 2026-11-12T17:43:54Z
+LD-ALL test main rc=0 passed=1119 failed=0 ignored=47 binaries=96 2026-11-12T18:03:36Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-12T18:03:39Z
+LD-ALL test wasm rc=0 passed=36 failed=0 ignored=0 binaries=2 2026-11-12T18:05:44Z
+LD-ALL test debug-witness rc=0 passed=978 failed=0 ignored=46 binaries=87 2026-11-12T18:23:46Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-12T18:29:13Z
+LD-ALL suites done tfail=0 2026-11-12T18:29:13Z
+LD-ALL suites ok; before the smoke procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=3.63 avg60=0.74 avg300=0.24 total=4809831725 2026-11-12T18:29:22Z
+SMOKE38 c1s-400@def BASE: status=LIVE mbps=831.382 share=[1.0] locked=False w_mv=None w_calls=338856 w_cold=0.0000 
+SMOKE38 c1s-400@def CAND: status=LIVE mbps=808.01 share=[1.0] locked=False w_mv=None w_calls=338879 w_cold=0.0000 
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-12T18:29:35Z
+LD-ALL battery start load=4.41 3.52 4.32; io=full avg10=1.22 avg60=0.66 avg300=0.24 total=4809873208 2026-11-12T18:29:35Z
+LD-ALL battery rc=0 wall=857s 2026-11-12T18:43:52Z
+CHECK41c done=True rows=96/96
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=2.13 2.16 2.91; io=full avg10=0.05 avg60=0.04 avg300=0.05 total=4810850673 2026-11-12T18:43:54Z

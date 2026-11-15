@@ -1,0 +1,4 @@
+SMOKE38 c8-100@256 MAIN: status=LIVE mbps=94.747 share=[0.9265249738948834, 0.07347502610511661] locked=False w_mv=- w_calls=0 w_cold=- 
+SMOKE38 c8-100@256 WIRE: status=LIVE mbps=93.708 share=[0.9264196939686132, 0.07358030603138672] locked=False w_mv=0.0015 w_calls=92014 w_cold=0.0000 
+SMOKE38 c1s-400@def BASE: status=LIVE mbps=791.41 share=[1.0] locked=False w_mv=None w_calls=None w_cold=None 
+SMOKE-PASS

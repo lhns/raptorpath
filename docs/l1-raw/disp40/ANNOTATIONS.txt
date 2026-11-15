@@ -1,0 +1,12 @@
+Status 40 battery, ledger annotations (written by the harness worker, not by the battery)
+
+- Tree: branch disp36-harness; COMMIT is the commit shipped to the VM (ba403ba). Binary sha256 in BINSHA.txt (the same engine binary as the status 36 battery).
+- Launch 2026-11-10T08:31:04Z by the detached on-VM waiter (LDW_PLAN=40), LD_HARD = launch + 4 h; build 338 s; smoke
+  (c2 CAP128, c2tbf CAP128) passed 08:37:46Z; battery 08:37:46Z to 09:36:11Z; 108 of 108 rows LIVE, run_all ended DONE-ALL (bat_ok=1).
+- No defects, no hot fixes, no re-parsed rows in this session.
+- tc: c2slot = c2's netem plus `slot 1ms 3ms packets 16`; c2tbf = c2's netem as `root handle 1:` plus child
+  `parent 1: handle 10: tbf rate 50mbit burst 125000 latency 50ms`. Both are valid as written. The root qdisc's Sent and dropped
+  already include the child's (the tbf drops appear in the root's dropped), so the windowed witnesses read the root block.
+- Per-row logs in diag-ld/ and diag-smoke/: client and server logs (*-c.log, *-s.log) are gzipped here; drv.out is plain.
+- tables/: per-skb tables, gzipped "dt_ns b" lines, first line the absolute timestamp (ns), one file per live leg of every row.
+- The VM user is scrubbed to VMUSER.

@@ -1,0 +1,30 @@
+(a) ONE FULLY SEPARATED CLAUSE (CAND beyond every BASE row by >= 10 %), the other 25 clauses null; 10 bootstrap datasets per clause, N_PERM=10000
+    cell clause: p (max over draws) for relabel-max | rank-minp;  accept iff every p <= 0.01
+    c1s-400  goodput        relabel-max max 0.3348 mean 0.2365 | rank-minp max 0.0022 mean 0.0015
+    c1s-400  cpu_cli/GB     relabel-max max 0.1425 mean 0.0920 | rank-minp max 0.0027 mean 0.0020
+    c1s-400  cpu_srv/GB     relabel-max max 0.1973 mean 0.1091 | rank-minp max 0.0027 mean 0.0021
+    c1s-400  lag_E_cli      relabel-max max 0.2404 mean 0.1489 | rank-minp max 0.0022 mean 0.0016
+    c1s-400  lag_E_srv      relabel-max max 0.4641 mean 0.2272 | rank-minp max 0.0028 mean 0.0020
+    c1s-400  rtp_floor_p0   relabel-max max 0.2109 mean 0.1031 | rank-minp max 0.0027 mean 0.0020
+    c1d-400  goodput        relabel-max max 0.6119 mean 0.3175 | rank-minp max 0.0032 mean 0.0017
+    c1d-400  cpu_cli/GB     relabel-max max 0.2245 mean 0.1599 | rank-minp max 0.0026 mean 0.0017
+    c1d-400  cpu_srv/GB     relabel-max max 0.3151 mean 0.1459 | rank-minp max 0.0028 mean 0.0021
+    c1d-400  lag_E_cli      relabel-max max 0.4884 mean 0.2836 | rank-minp max 0.0027 mean 0.0018
+    c1d-400  lag_E_srv      relabel-max max 0.2409 mean 0.1618 | rank-minp max 0.0028 mean 0.0017
+    c1d-400  rtp_floor_p0   relabel-max max 0.2054 mean 0.1313 | rank-minp max 0.0028 mean 0.0018
+    c1d-400  rtp_floor_p1   relabel-max max 0.1832 mean 0.1026 | rank-minp max 0.0030 mean 0.0019
+    c2-100   goodput        relabel-max max 0.1252 mean 0.0759 | rank-minp max 0.0020 mean 0.0011
+    c2-100   cpu_cli/GB     relabel-max max 0.2172 mean 0.1230 | rank-minp max 0.0018 mean 0.0010
+    c2-100   cpu_srv/GB     relabel-max max 0.2395 mean 0.1306 | rank-minp max 0.0015 mean 0.0010
+    c2-100   lag_E_cli      relabel-max max 0.3659 mean 0.1854 | rank-minp max 0.0015 mean 0.0010
+    c2-100   lag_E_srv      relabel-max max 0.4752 mean 0.3334 | rank-minp max 0.0015 mean 0.0011
+    c2-100   rtp_floor_p0   relabel-max max 0.4251 mean 0.2370 | rank-minp max 0.0016 mean 0.0010
+    c8-100   goodput        relabel-max max 0.5348 mean 0.2640 | rank-minp max 0.0026 mean 0.0017
+    c8-100   cpu_cli/GB     relabel-max max 0.2226 mean 0.1461 | rank-minp max 0.0034 mean 0.0021
+    c8-100   cpu_srv/GB     relabel-max max 0.2767 mean 0.1894 | rank-minp max 0.0029 mean 0.0022
+    c8-100   lag_E_cli      relabel-max max 0.6344 mean 0.3238 | rank-minp max 0.0023 mean 0.0018
+    c8-100   lag_E_srv      relabel-max max 0.5383 mean 0.2817 | rank-minp max 0.0026 mean 0.0017
+    c8-100   rtp_floor_p0   relabel-max max 0.3235 mean 0.2029 | rank-minp max 0.0026 mean 0.0019
+    c8-100   rtp_floor_p1   relabel-max max 0.4160 mean 0.2677 | rank-minp max 0.0026 mean 0.0018
+    (a) relabel-max: worst p over all clauses and draws = 0.6344 -> REJECT
+    (a) rank-minp: worst p over all clauses and draws = 0.0034 -> ACCEPT

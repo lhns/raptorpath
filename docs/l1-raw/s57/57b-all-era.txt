@@ -1,0 +1,20 @@
+LD-ALL start plan=57b load=0.09 0.19 1.03 1/379 2760927 2026-11-14T16:12:10Z
+LD-ALL precondition met procs_running=[1,2,1,1,1,] cargo=0 rustc=0 io=full avg10=2.73 avg60=1.08 avg300=0.25 total=5022896374 2026-11-14T16:12:18Z
+LD-ALL plan 57b budget: 8992s to LD_HARD (at least 5400s required: the worst case of the status) 2026-11-14T16:12:18Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.08 0.18 1.02; io=full avg10=2.73 avg60=1.08 avg300=0.25 total=5022896374 2026-11-14T16:12:18Z
+LD-ALL plan 57b pre-flight: 5599396 KB free on /dev/shm (need 1048576) 2026-11-14T16:12:18Z
+LD-ALL parser test ok 2026-11-14T16:13:58Z
+LD-ALL built wall=389s 2026-11-14T16:20:27Z
+LD-ALL binary 8f313616b31ac6f4d6346cf03bfcf6246983c426fec4e08951d09d3faf921cbf 2026-11-14T16:20:27Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s57b/src/tools/l1/ref56-manifest.sha256, 182 files) 2026-11-14T16:20:27Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-14T16:28:05Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-14T16:28:06Z
+LD-ALL suites done tfail=0 2026-11-14T16:28:06Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.03 avg60=0.06 avg300=0.08 total=5025164797 2026-11-14T16:28:14Z
+LD-ALL stage rep57b (plan 57b) smoke; procs_running=[1,1,3,1,10,] cargo=0 rustc=0 io=full avg10=0.50 avg60=0.17 avg300=0.11 total=5025248972 2026-11-14T16:28:22Z
+LD-ALL stage rep57b SMOKE-PASS 2026-11-14T16:30:38Z
+LD-ALL stage rep57b battery rc=0 wall=1834s 2026-11-14T17:01:12Z
+LD-ALL stage rep57b end ok=1 VERDICT57B REPORTED-ONLY slots=30/30 live=30 void=0 replaced=0 dnf=0 unbound=0 collapse=3 T=UNSCOREABLE a_all=UNSCOREABLE a_unf=UNSCOREABLE control_q=31.5 d0=2.64 2026-11-14T17:01:12Z
+LD-ALL end plan 57b rep57b_ok=1 raptorpath=0 netns=0 2026-11-14T17:01:12Z

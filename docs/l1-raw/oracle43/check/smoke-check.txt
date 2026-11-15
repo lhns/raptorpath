@@ -1,0 +1,3 @@
+SMOKE43 c2-100 SH: status=LIVE dur=53.429901 mbps=89.837 n_end=1787.5 hold_state=HOLD-EXPIRED route=1.0 nk_min=2302 
+SMOKE43 c1s-400 SL: status=LIVE dur=49.619562 mbps=806.134 n_end=684.0 hold_state=None route=1.0 nk_min=14253 
+SMOKE-PASS

@@ -1,0 +1,40 @@
+== re-score of the committed 41b ledger (BASE against MAIN; WIRE ignored)
+    T(true) = +1.256 at c1s-400 lag_E_srv
+    p = 0.7195  (share of 10000 relabellings with T >= T(true))
+    GATE-41b PASS (p=0.7195; the gate-off binary may reach main)
+    min-p (true) = 0.12349 at c1s-400 lag_E_srv
+    p = 0.6920  (share of the 10000 relabellings plus the true labelling whose min-p <= the true min-p)
+    GATE-41b[rank-minp] PASS (p=0.6920; the gate-off binary may reach main)
+      c1s-400 goodput        x=  +1.21 %  S=  33.0 /  30.13  p=0.3386
+      c1s-400 cpu_cli/GB     x=  -0.72 %  S=  31.0 /  30.04  p=0.4436
+      c1s-400 cpu_srv/GB     x=  +0.13 %  S=  32.5 /  30.06  p=0.3550
+      c1s-400 lag_E_cli      x=  -8.84 %  S=  29.0 /  30.07  p=0.6127
+      c1s-400 lag_E_srv      x= +16.44 %  S=  37.0 /  30.01  p=0.1235
+      c1s-400 rtp_floor_p0   x=  -0.33 %  S=  27.5 /  30.01  p=0.6828
+      c1d-400 goodput        x=  -3.46 %  S=  24.0 /  29.97  p=0.8803
+      c1d-400 cpu_cli/GB     x=  -0.57 %  S=  27.0 /  30.03  p=0.7186
+      c1d-400 cpu_srv/GB     x=  +0.42 %  S=  34.0 /  29.99  p=0.2624
+      c1d-400 lag_E_cli      x= +12.82 %  S=  28.0 /  29.93  p=0.6642
+      c1d-400 lag_E_srv      x= -25.07 %  S=  21.0 /  30.00  p=0.9593
+      c1d-400 rtp_floor_p0   x=  -2.12 %  S=  24.0 /  30.02  p=0.8749
+      c1d-400 rtp_floor_p1   x=  -3.82 %  S=  21.0 /  29.97  p=0.9589
+== re-score of the committed 41 ledger (BASE against MAIN; WIRE ignored)
+    T(true) = +1.417 at c1s-400 rtp_floor_p0
+    p = 0.6244  (share of 10000 relabellings with T >= T(true))
+    GATE-41b PASS (p=0.6244; the gate-off binary may reach main)
+    min-p (true) = 0.01910 at c1s-400 rtp_floor_p0
+    p = 0.1399  (share of the 10000 relabellings plus the true labelling whose min-p <= the true min-p)
+    GATE-41b[rank-minp] PASS (p=0.1399; the gate-off binary may reach main)
+      c1s-400 goodput        x=  -1.20 %  S=  18.0 /  21.00  p=0.8555
+      c1s-400 cpu_cli/GB     x=  +0.64 %  S=  21.0 /  21.03  p=0.5641
+      c1s-400 cpu_srv/GB     x=  -0.07 %  S=  22.5 /  21.03  p=0.3614
+      c1s-400 lag_E_cli      x=  -0.52 %  S=  23.0 /  20.95  p=0.3249
+      c1s-400 lag_E_srv      x= -16.86 %  S=  15.0 /  21.04  p=0.9793
+      c1s-400 rtp_floor_p0   x=  +2.16 %  S=  28.0 /  20.99  p=0.0191
+      c1d-400 goodput        x=  -2.38 %  S=  17.0 /  20.92  p=0.9067
+      c1d-400 cpu_cli/GB     x=  +0.12 %  S=  21.0 /  20.95  p=0.5148
+      c1d-400 cpu_srv/GB     x=  -0.16 %  S=  21.0 /  20.94  p=0.5538
+      c1d-400 lag_E_cli      x= -28.88 %  S=  14.0 /  20.97  p=0.9924
+      c1d-400 lag_E_srv      x= -12.71 %  S=  20.0 /  20.94  p=0.6664
+      c1d-400 rtp_floor_p0   x=  -1.16 %  S=  18.0 /  21.05  p=0.8594
+      c1d-400 rtp_floor_p1   x=  +1.61 %  S=  21.0 /  20.97  p=0.5529

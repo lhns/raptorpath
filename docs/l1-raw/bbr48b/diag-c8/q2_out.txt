@@ -1,0 +1,58 @@
+POST HOC / NOT REGISTERED. Q2 on the full logs (s48b/full/diag-ld), client [DIAG]/[QCC], lines t >= 1 s, active leg = qlp sent advanced (attr48 rule)
+
+== check: attr48 priority-chain UNDERREAD share per CAND row (compare attribution.txt)
+  c2-100: s42r1 n=213 U=0.000  s42r2 n=212 U=0.000  s42r3 n=211 U=0.000  s42r4 n=213 U=0.000  s42r5 n=212 U=0.000  s42r6 n=214 U=0.000  s7r1 n=217 U=0.000  s7r2 n=212 U=0.000  s7r3 n=211 U=0.000  s7r4 n=212 U=0.000  s7r5 n=211 U=0.000  s7r6 n=210 U=0.000
+  c8-100: s42r1 n=385 U=0.049  s42r2 n=386 U=0.062  s42r3 n=382 U=0.055  s42r4 n=375 U=0.032  s42r5 n=386 U=0.052  s42r6 n=383 U=0.000  s7r1 n=392 U=0.059  s7r2 n=392 U=0.054  s7r3 n=388 U=0.077  s7r4 n=374 U=0.037  s7r5 n=390 U=0.049  s7r6 n=390 U=0.072
+
+== per-leg delivered rate (netem Sent bytes / run seconds), median over rows
+  c2-100 BASE leg0: 12.473 MB/s = 0.998 x link (0.8 x link = 10.00 MB/s)
+  c2-100 CAND leg0: 12.276 MB/s = 0.982 x link (0.8 x link = 10.00 MB/s)
+  c8-100 BASE leg0: 11.540 MB/s = 0.923 x link (0.8 x link = 10.00 MB/s)
+  c8-100 BASE leg1: 2.250 MB/s = 0.900 x link (0.8 x link = 2.00 MB/s)
+  c8-100 CAND leg0: 11.203 MB/s = 0.896 x link (0.8 x link = 10.00 MB/s)
+  c8-100 CAND leg1: 2.244 MB/s = 0.898 x link (0.8 x link = 2.00 MB/s)
+
+== raw UNDER-READ (qbw < 0.8 x link) on CAND non-ProbeRtt lines with the leg active, per leg (pooled over 12 rows)
+  c2-100 leg0: lines 2497  UNDER line share 0.005  goodput-weighted 0.004  leg-delivery-weighted 0.005  | qbw/link p10 1.032 p50 1.065 p90 1.116  | qbw/(leg's own line rate) p10 0.81 p50 1.16 p90 1.30
+  c8-100 leg0: lines 2245  UNDER line share 0.059  goodput-weighted 0.100  leg-delivery-weighted 0.005  | qbw/link p10 1.023 p50 1.060 p90 1.100  | qbw/(leg's own line rate) p10 0.81 p50 1.20 p90 1.52
+  c8-100 leg1: lines 2226  UNDER line share 0.050  goodput-weighted 0.084  leg-delivery-weighted 0.004  | qbw/link p10 1.014 p50 1.035 p90 1.055  | qbw/(leg's own line rate) p10 0.77 p50 1.12 p90 1.41
+
+== goodput deficit decomposition (line goodput 'good=', Mbit/s; contribution = share x (g_ref - class mean); classes sum to g_ref - CAND mean)
+  c2-100: g_ref(BASE) 91.43  CAND mean 89.92  total deficit +1.52 (+1.66%)
+    R              share 0.020 mean   52.42  contribution +0.781 Mbit/s (+0.85% of g_ref)
+    UNDER(L0)      share 0.005 mean   66.91  contribution +0.116 Mbit/s (+0.13% of g_ref)
+    nonR-ok        share 0.975 mean   90.80  contribution +0.622 Mbit/s (+0.68% of g_ref)
+    sum of contributions +1.518 (must equal the total deficit)
+  c8-100: g_ref(BASE) 101.35  CAND mean 98.94  total deficit +2.41 (+2.38%)
+    R              share 0.033 mean   75.85  contribution +0.835 Mbit/s (+0.82% of g_ref)
+    UNDER(L0)      share 0.019 mean  166.10  contribution -1.228 Mbit/s (-1.21% of g_ref)
+    UNDER(L0+L1)   share 0.038 mean  171.33  contribution -2.654 Mbit/s (-2.62% of g_ref)
+    UNDER(L1)      share 0.010 mean  140.70  contribution -0.407 Mbit/s (-0.40% of g_ref)
+    nonR-ok        share 0.900 mean   94.84  contribution +5.861 Mbit/s (+5.78% of g_ref)
+    sum of contributions +2.408 (must equal the total deficit)
+
+== c8 CAND per row: UNDER share per leg (non-R active lines) vs row goodput
+  s42 r1: U_L0 0.079 U_L1 0.032  goodput 97.10
+  s42 r2: U_L0 0.065 U_L1 0.065  goodput 97.43
+  s42 r3: U_L0 0.064 U_L1 0.048  goodput 98.30
+  s42 r4: U_L0 0.071 U_L1 0.000  goodput 98.46
+  s42 r5: U_L0 0.059 U_L1 0.053  goodput 97.27
+  s42 r6: U_L0 0.000 U_L1 0.000  goodput 97.86
+  s7 r1: U_L0 0.053 U_L1 0.070  goodput 95.67
+  s7 r2: U_L0 0.043 U_L1 0.090  goodput 95.58
+  s7 r3: U_L0 0.085 U_L1 0.075  goodput 96.24
+  s7 r4: U_L0 0.077 U_L1 0.000  goodput 98.46
+  s7 r5: U_L0 0.032 U_L1 0.090  goodput 96.60
+  s7 r6: U_L0 0.079 U_L1 0.074  goodput 96.33
+  corr(U_L0, row goodput) = +0.04 (n=12)
+  corr(U_L1, row goodput) = -0.82 (n=12)
+
+== R2a (qcwnd < BDP) vs UNDER, per leg, CAND non-R active lines: 2x2 and the independence expectation
+  c8-100 leg0: n=2245  UNDER&R2a=128 (indep. exp 10.5)  UNDER only=4  R2a only=50  neither=2063  | P(R2a)=0.079 P(R2a|UNDER)=0.970 P(UNDER|R2a)=0.719
+  c8-100 leg1: n=2226  UNDER&R2a=112 (indep. exp 7.2)  UNDER only=0  R2a only=31  neither=2083  | P(R2a)=0.064 P(R2a|UNDER)=1.000 P(UNDER|R2a)=0.783
+  c2-100 leg0: n=2497  UNDER&R2a=0 (indep. exp 0.2)  UNDER only=12  R2a only=37  neither=2448  | P(R2a)=0.015 P(R2a|UNDER)=0.000 P(UNDER|R2a)=0.000
+  check ledger r2a ('c8-100', 'CAND', '42', 1): per leg 0.0933 / 0.0466 (ledger 0.0933 / 0.0466), n=193 (ledger 193)
+
+== c8 CAND: mean line goodput around UNDER onsets (not-under -> under, non-R), per leg; offset in [DIAG] lines (~0.25 s)
+  leg0: onsets 15  -4:115.6 -3:149.9 -2:145.7 -1:135.9 +0:127.2 +1:140.0 +2:140.2 +3:127.7 +4:164.8
+  leg1: onsets 9  -4:145.1 -3:139.1 -2:109.6 -1:200.6 +0:138.7 +1:198.8 +2:171.7 +3:150.6 +4:189.6

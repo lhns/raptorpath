@@ -1,0 +1,113 @@
+== R1a. Block value at the A* windows (eps .048, s2 3.76): per-loss P under each form
+   measured band (8e77ba67 ledger, one FDIAG rep, ~65 holes): decode 51 vs ARQ 10-21 -> 0.71-0.84
+    A*     r |  shipped      C6  C5 exact (interleaved) C5 (after)
+     3  0.29 |   0.8208  0.2606                  0.2023     0.2023
+     3  0.34 |   0.8650  0.3057                  0.2384     0.2376
+     4  0.29 |   0.8555  0.3015                  0.2519     0.2466
+     4  0.34 |   0.8986  0.3566                  0.3051     0.2932
+     5  0.29 |   0.8821  0.3454                  0.3054     0.2938
+     5  0.34 |   0.9228  0.4090                  0.3672     0.3491
+     6  0.29 |   0.9030  0.3895                  0.3561     0.3405
+     6  0.34 |   0.9406  0.4598                  0.4244     0.4031
+     7  0.29 |   0.9196  0.4322                  0.4038     0.3856
+     7  0.34 |   0.9540  0.5009                  0.4721     0.4489
+
+== R1b. Sliding-window generic-rank decode, engine trailing span, NO deadline (upper bound)
+   3 seeds x 2 rank tolerances (1e-8, 1e-6): mean, SE over the 6 runs, max-min spread
+    A*     r Delta |  sliding     SE spread | C6(W=A*)  C5   shipped
+     4  0.29     1 |   0.3438 0.0012 0.0060 | 0.3015  0.2519 0.8555
+     4  0.29     2 |   0.3576 0.0003 0.0013 | 0.3015  0.2519 0.8555
+     4  0.34     1 |   0.4022 0.0034 0.0187 | 0.3566  0.3051 0.8986
+     4  0.34     2 |   0.4187 0.0008 0.0044 | 0.3566  0.3051 0.8986
+     5  0.29     1 |   0.3895 0.0008 0.0042 | 0.3454  0.3054 0.8821
+     5  0.29     2 |   0.3967 0.0015 0.0083 | 0.3454  0.3054 0.8821
+     5  0.34     1 |   0.4515 0.0010 0.0053 | 0.4090  0.3672 0.9228
+     5  0.34     2 |   0.5551 0.0033 0.0163 | 0.4090  0.3672 0.9228
+     7  0.29     1 |   0.5230 0.0042 0.0221 | 0.4322  0.4038 0.9196
+     7  0.29     2 |   0.5369 0.0062 0.0334 | 0.4322  0.4038 0.9196
+     7  0.34     1 |   0.5796 0.0042 0.0217 | 0.5009  0.4721 0.9540
+     7  0.34     2 |   0.6155 0.0031 0.0167 | 0.5009  0.4721 0.9540
+   eps .05 s2 3 A* 64 r 0.1: sliding 0.7682 (SE 0.0105)  C6 0.6251  shipped 0.8259
+   eps .05 s2 3 A* 200 r 0.0526: sliding 0.4342 (SE 0.0236)  C6 0.3747  shipped 0.0000
+
+== R1d. Which inputs reach the measured band 0.71-0.84? (eps .048; ledger inputs A* 4-7, r 0.2-0.5)
+     s2  A*    r | shipped     C6     C5 sliding (Delta 1, 3 seeds; * = in band)
+   1.00   4 0.20 |  0.8880 0.6571 0.6571  0.6629  ....
+   1.00   4 0.34 |  0.9871 0.8782 0.8782  0.9234  ....
+   1.00   4 0.50 |  0.9995 0.9791 0.9791  0.9914  ....
+   1.00   7 0.20 |  0.9462 0.8039 0.8039  0.8737  .**.
+   1.00   7 0.34 |  0.9984 0.9642 0.9642  0.9939  ....
+   1.00   7 0.50 |  1.0000 0.9958 0.9958  1.0000  ....
+   2.00   4 0.20 |  0.8155 0.3749 0.3416  0.3637  *...
+   2.00   4 0.34 |  0.9541 0.5814 0.5413  0.6837  ....
+   2.00   4 0.50 |  0.9943 0.7819 0.7446  0.8908  .**.
+   2.00   7 0.20 |  0.8826 0.5084 0.4891  0.5651  ....
+   2.00   7 0.34 |  0.9871 0.7559 0.7369  0.8551  .**.
+   2.00   7 0.50 |  0.9996 0.9047 0.8856  0.9760  ....
+   3.76   4 0.20 |  0.7484 0.2059 0.1674  0.1843  *...
+   3.76   4 0.34 |  0.8986 0.3566 0.3051  0.4007  ....
+   3.76   4 0.50 |  0.9738 0.5329 0.4755  0.6479  ....
+   3.76   7 0.20 |  0.8121 0.2897 0.2638  0.3122  *...
+   3.76   7 0.34 |  0.9540 0.5009 0.4721  0.5763  ....
+   3.76   7 0.50 |  0.9949 0.6964 0.6540  0.8052  ...*
+
+== R1c. Port of temporal_oracle.rs:1476 (W 64, q .5, K 1.2M, D in the ARQ band): ratio oracle/(eps(1-P))
+   test passes iff ratio in (0.6, 1.7) for the form it uses (Phi = shipped above r_c)
+   eps 0.05 delta 0.02: r* 0.0648 oracle 0.03064 | shipped 1.528 phi 1.528 C6 1.010 | C5(after) 1.010
+   eps 0.05 delta 0.03: r* 0.0405 oracle 0.03997 | shipped 0.799 phi 1.334 C6 1.004 | C5(after) 1.006
+   eps 0.1 delta 0.04: r* 0.1281 oracle 0.05319 | shipped 1.322 phi 1.322 C6 0.991 | C5(after) 0.993
+   eps 0.1 delta 0.06: r* 0.0941 oracle 0.07238 | shipped 0.724 phi 1.210 C6 0.990 | C5(after) 0.997
+   eps 0.08 delta 0.03: r* 0.1062 oracle 0.04273 | shipped 1.416 phi 1.416 C6 1.003 | C5(after) 1.003
+
+== R2. Cost at the measured L1 window (SPAN wsize p50 201, max 247; docs/l1-raw/anchor-diag/diag-ad)
+   c1 W 201: k_max(mass > 1e-17)  55  ops/r_sat call full 5.7e+05  truncated 1.5e+05  per rate eval (x2) 3.1e+05
+   c1 W 247: k_max(mass > 1e-17)  56  ops/r_sat call full 8.5e+05  truncated 1.8e+05  per rate eval (x2) 3.6e+05
+   c2 W 201: k_max(mass > 1e-17)  79  ops/r_sat call full 5.7e+05  truncated 2.2e+05  per rate eval (x2) 4.4e+05
+   c2 W 247: k_max(mass > 1e-17)  85  ops/r_sat call full 8.5e+05  truncated 2.7e+05  per rate eval (x2) 5.4e+05
+   c3 W 201: k_max(mass > 1e-17) 109  ops/r_sat call full 5.7e+05  truncated 3.1e+05  per rate eval (x2) 6.1e+05
+   c3 W 247: k_max(mass > 1e-17) 118  ops/r_sat call full 8.5e+05  truncated 3.7e+05  per rate eval (x2) 7.5e+05
+
+== R3a. Paper sec 4.7 exact r* reproduced (W 50, window fail <= 1e-2), then the per-loss event
+   WiFi: window-event exact r* 0.170 (paper 0.17)  per-loss exact 0.250  C6 0.239  closed form 0.116
+   LTE: window-event exact r* 0.270 (paper 0.27)  per-loss exact 0.370  C6 0.346  closed form 0.193
+   Sat: window-event exact r* 0.450 (paper 0.45)  per-loss exact 0.590  C6 0.523  closed form 0.334
+
+== R3b. Off-Bulk r* (random term only) at the engine tail targets, W 201, nominal L1 inputs
+   constraint: closed form (window event, normal) vs per-loss C6: 1 - P_C6(r) <= t/eps; max_overhead 0.5
+   c1 Auto     t 1e-05: closed 0.0100  C6 0.0485  tail at the closed r* under C6 = 53 x target
+   c1 Realtime t 1e-07: closed 0.0154  C6 0.0870  tail at the closed r* under C6 = 3338 x target
+   c2 Auto     t 1e-05: closed 0.0910  C6 0.1408  tail at the closed r* under C6 = 52 x target
+   c2 Realtime t 1e-07: closed 0.1125  C6 0.1911  tail at the closed r* under C6 = 1035 x target
+   c3 Auto     t 1e-05: closed 0.1579  C6 0.2262  tail at the closed r* under C6 = 52 x target
+   c3 Realtime t 1e-07: closed 0.1908  C6 0.2945  tail at the closed r* under C6 = 852 x target
+
+== R3c. Audit F3 rho-inert gauge recomputed (cartoon inputs, interactive-visualizer.html:2617-2642:
+   rate = cap (1-eps), cap 4, D = min(b(delta) RTT, 2 RTT), b(.5) = 1, b(50) = .5, A* = rate D (the W
+   clamp does not bind at the Auto-slider W*: R shipped reproduces the audit's R(code)); r* from the audit)
+   R side binds = #{j = 1..100 : j e-3 >= R}  (rho in [0.900, 0.999])
+   0.05/0.5/50 delta 0.5: A* 190.0 s2 2.80 r* 0.149: R(audit) 1.9e-05  R shipped 1.9e-05 (100/100)  R C6 4.3e-04 (100/100)
+   0.05/0.5/50 delta 50: A* 95.0 s2 2.80 r* 0.178: R(audit) 5.2e-05  R shipped 5.1e-05 (100/100)  R C6 1.2e-03 (99/100)
+   0.1/0.3/80 delta 0.5: A* 288.0 s2 5.00 r* 0.266: R(audit) 2.9e-05  R shipped 2.9e-05 (100/100)  R C6 4.4e-04 (100/100)
+   0.1/0.3/80 delta 50: A* 144.0 s2 5.00 r* 0.309: R(audit) 9.9e-05  R shipped 9.9e-05 (100/100)  R C6 1.5e-03 (99/100)
+   0.025/0.5/13 delta 0.5: A* 50.7 s2 2.90 r* 0.152: R(audit) 1.6e-05  R shipped 1.6e-05 (100/100)  R C6 2.0e-03 (98/100)
+   0.025/0.5/13 delta 50: A* 25.3 s2 2.90 r* 0.194: R(audit) 3.2e-05  R shipped 3.3e-05 (100/100)  R C6 4.1e-03 (96/100)
+   0.2/0.1/100 delta 0.5: A* 320.0 s2 15.00 r* 0.627: R(audit) 6.5e-05  R shipped 6.4e-05 (100/100)  R C6 7.9e-04 (100/100)
+   0.2/0.1/100 delta 50: A* 160.0 s2 15.00 r* 0.724: R(audit) 2.5e-04  R shipped 2.5e-04 (100/100)  R C6 2.8e-03 (98/100)
+   0.3/0.05/150 delta 0.5: A* 420.0 s2 27.00 r* 1.03: R(audit) 5.9e-05  R shipped 5.6e-05 (100/100)  R C6 3.5e-04 (100/100)
+   0.3/0.05/150 delta 50: A* 210.0 s2 27.00 r* 1.18: R(audit) 2.8e-04  R shipped 2.6e-04 (100/100)  R C6 1.4e-03 (99/100)
+   Bulk rows (r* = 0): R = eps under shipped and C6 (P(0) = 0), so 51/0/76/0/0 and the T_cut
+   condition 1-rho < R eps^(D/RTT) = eps^3 at D = 2 RTT are identities:
+   eps 0.2: threshold 8.000e-03 -> T_cut binds at 8/100
+   eps 0.3: threshold 2.700e-02 -> T_cut binds at 26/100
+
+== R3d. rho < 1 shed budget at the paper sec 5.6 c3 fixture (eps .048, r .34, A* 4-7, s2 3.76)
+   A* 4: budget shipped 0.0049  C6 0.0309  C5 0.0334   (measured shed share 0.25 %)
+   A* 5: budget shipped 0.0037  C6 0.0284  C5 0.0304   (measured shed share 0.25 %)
+   A* 7: budget shipped 0.0022  C6 0.0240  C5 0.0253   (measured shed share 0.25 %)
+
+== R4. Slope bound: dP/dr = W (G(n0+1) - G(n0)) <= W max_n dG ; check on the grid
+   max over grid of (finite-difference slope) / (W max dG): 1.0000  (<= 1 required)
+   eps 0.048 W 4 s2 3.76: W max dG = 1.102 per unit r
+   eps 0.05 W 64 s2 2.8: W max dG = 7.960 per unit r
+   eps 0.025 W 51 s2 2.8: W max dG = 9.380 per unit r
+   eps 0.025 W 201 s2 2.9: W max dG = 20.144 per unit r

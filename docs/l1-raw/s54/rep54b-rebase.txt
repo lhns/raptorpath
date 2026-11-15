@@ -1,0 +1,10 @@
+REBASE B2048 against section 53's BASES (n 6 rows), ranges: goodput_mbps [96.31 - 102.05]  tail_s [2.63 - 5.44]  old_holes [1077.00 - 1527.00]  rx_dup [1234.00 - 1802.00]  q0_late [241.00 - 1444.50]  evict_full [0.00 - 0.00]  inorder_mean_late [4.94 - 5.92]  resid_late [1273.95 - 1771.39]  hn_p0 [11.00 - 409.00]
+  OUTSIDE B2048 s42 rep1: old holes 1076.00 outside [1077.00 - 1527.00]
+  OUTSIDE B2048 s42 rep2: tail 5.44 outside [2.63 - 5.44]
+  OUTSIDE B2048 s7 rep3: goodput 95.80 outside [96.31 - 102.05]; tail 5.71 outside [2.63 - 5.44]
+REBASE L2048 against section 53's CANDS (n 6 rows), ranges: goodput_mbps [107.20 - 108.27]  tail_s [0.23 - 0.68]  old_holes [0.00 - 0.50]  rx_dup [1101.00 - 1487.00]  q0_late [971.00 - 2703.00]  evict_full [0.00 - 336.00]  inorder_mean_late [0.88 - 1.33]  resid_late [25.91 - 49.01]  hn_p0 [47040.00 - 195767.00]
+  OUTSIDE L2048 s42 rep1: goodput 108.39 outside [107.20 - 108.27]; tail 0.18 outside [0.23 - 0.68]
+  OUTSIDE L2048 s7 rep1: goodput 108.29 outside [107.20 - 108.27]; tail 0.22 outside [0.23 - 0.68]
+  OUTSIDE L2048 s7 rep2: goodput 106.31 outside [107.20 - 108.27]; tail 1.05 outside [0.23 - 0.68]
+  OUTSIDE L2048 s7 rep3: duplicates 1603.00 outside [1101.00 - 1487.00]
+REBASE-NEEDED: YES (a control row lands outside its section-53 range: re-base the reduced-W bands on the new control before reading, and report it)

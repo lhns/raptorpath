@@ -1,0 +1,68 @@
+SENTINEL-WRITABLE /dev/shm/s53/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s53/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-13T07:12:50Z user=VMUSER dir=/dev/shm/s53/run launch=2026-11-13T07:12:50Z
+LD-ALL start plan=53 load=2.19 2.51 2.04 1/390 2265024 2026-11-13T07:12:50Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=2.56 avg60=0.99 avg300=0.31 total=4870676883 2026-11-13T07:12:58Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=2.09 2.48 2.03; io=full avg10=2.56 avg60=0.99 avg300=0.31 total=4870676883 2026-11-13T07:12:58Z
+LD-ALL parser test ok 2026-11-13T07:14:11Z
+LD-ALL built wall=323s 2026-11-13T07:19:34Z
+LD-ALL binary b0687a033d70db3898ae86e0ccebbc93d3cd8a0dd3ae9b0549614b9f0a501a60 2026-11-13T07:19:34Z
+LD-ALL built BASE wall=326s binary 4fb701effe13cc1bb32f3190a0e985e01b1ac0a63959d02bc2dec1eb477dc621 2026-11-13T07:25:00Z
+LD-ALL test main rc=0 passed=1131 failed=0 ignored=48 binaries=96 2026-11-13T07:45:42Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-13T07:45:45Z
+LD-ALL test wasm rc=0 passed=36 failed=0 ignored=0 binaries=2 2026-11-13T07:47:46Z
+LD-ALL test debug-witness rc=0 passed=990 failed=0 ignored=47 binaries=87 2026-11-13T08:05:55Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-13T08:12:03Z
+LD-ALL suites done tfail=0 2026-11-13T08:12:03Z
+LD-ALL suites ok; before the smoke procs_running=[2,1,1,1,2,] cargo=0 rustc=0 io=full avg10=0.03 avg60=0.05 avg300=0.06 total=4877558805 2026-11-13T08:12:12Z
+LD-ALL stage rep53 (plan 53) smoke; procs_running=[3,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.01 avg60=0.04 avg300=0.06 total=4877558947 2026-11-13T08:12:20Z
+SMOKE53 rows=8/8 (one row of each arm per block, unscored; the values are not read, only the criteria below)
+PASS every smoke row of the table ran
+  ROW c8-100 BASE: status=LIVE mbps=98.087 wall=52.0 fires={'fast': 88, 'fired': 14391, 'r': 14303, 'y': 88} snapv={'-': (402, 0, 0, 0), '0': (12784, 0, 0, 0), '1': (4902, 4865, 50, 448)} fed-det=-186536 cx=9425 E=2.0655423712977674
+  ROW c8-100 CAND: status=LIVE mbps=107.218 wall=47.0 fires={'fast': 6662, 'fired': 18526, 'r': 11864, 'y': 6662} snapv={'-': (372, 0, 0, 0), '0': (10056, 0, 0, 0), '1': (4970, 4941, 4188, 2556)} fed-det=196664 cx=11136 E=1.9117476951534562
+  ROW c8-100 CANDS: status=LIVE mbps=108.112 wall=47.0 fires={'fast': 1897, 'fired': 14608, 'r': 12711, 'y': 1897} snapv={'-': (389, 0, 0, 0), '0': (12427, 0, 0, 0), '1': (4290, 4268, 0, 0)} fed-det=-49204 cx=10553 E=0.0
+  ROW c8-100 BASES: status=LIVE mbps=99.833 wall=50.0 fires={'fast': 30, 'fired': 14424, 'r': 14394, 'y': 30} snapv={'-': (389, 0, 0, 0), '0': (12434, 0, 0, 0), '1': (4857, 4834, 0, 0)} fed-det=-216241 cx=9506 E=0.0
+  ROW c8-100 CW0: status=LIVE mbps=106.541 wall=47.0 fires={'fast': 10366, 'fired': 21584, 'r': 11218, 'y': 10366} snapv={'-': (367, 0, 0, 0), '0': (10515, 0, 0, 0), '1': (5421, 5398, 6644, 2112)} fed-det=102363 cx=13821 E=1.8921905105305865
+  ROW c1d-400 BASE: status=LIVE mbps=790.218 wall=53.0 fires={'fast': 1172, 'fired': 28971, 'r': 27799, 'y': 1172} snapv={'-': (9, 0, 0, 0), '0': (14794, 1183, 290, 549), '1': (21277, 1484, 296, 496)} fed-det=-1833512 cx=3141 E=6.76246719160105
+  ROW c1d-400 CAND: status=LIVE mbps=798.787 wall=52.0 fires={'fast': 1266, 'fired': 30174, 'r': 28908, 'y': 1266} snapv={'-': (6, 0, 0, 0), '0': (21372, 1491, 276, 484), '1': (14312, 1274, 226, 530)} fed-det=-1763848 cx=2941 E=5.117388708437962
+  ROW c1d-400 CANDS: status=LIVE mbps=818.662 wall=51.0 fires={'fast': 925, 'fired': 25314, 'r': 24389, 'y': 925} snapv={'-': (6, 0, 0, 0), '0': (21597, 1219, 0, 0), '1': (15211, 2259, 0, 0)} fed-det=-1903295 cx=3010 E=0.0
+PASS [SNAPV] parsed on every smoke row, rep > 0 per active leg, pt_st + tt_st <= fires
+PASS fed - det computed (sender [HOLD] fed over paths, receiver's final [SUCC] det)
+PASS each arm's env in [GATES] on both ends (RWM_RECOV_SNAPVER: 1 on CANDS / BASES, 0 elsewhere; RWM_PLACE_WDIV=0 on CW0, absent elsewhere)
+PASS the filter arms' liveness (CANDS / BASES: pt_st + tt_st = 0 on every leg, stale > 0 on p1 at c8 unless the smoke's BASE / CAND rows show none, fed - det <= cx)
+PASS the c1d 5 GB row(s) finished inside RWM_PERF_TIMEOUT_S=200 (rc 0, a summary, not DNF)
+PASS no None among the registered readouts (hy_p50 without a hy and E without fast fires / stale reports are undefined, not missing)
+  LIVENESS c8-100 BASE s42 rep1: LIVE 
+  LIVENESS c8-100 CAND s42 rep1: LIVE 
+  LIVENESS c8-100 CANDS s42 rep1: LIVE 
+  LIVENESS c8-100 BASES s42 rep1: LIVE 
+  LIVENESS c8-100 CW0 s42 rep1: LIVE 
+  LIVENESS c1d-400 BASE s42 rep1: LIVE 
+  LIVENESS c1d-400 CAND s42 rep1: LIVE 
+  LIVENESS c1d-400 CANDS s42 rep1: LIVE 
+SMOKE-PASS
+LD-ALL stage rep53 SMOKE-PASS 2026-11-13T08:19:05Z
+LD-ALL stage rep53 battery rc=0 wall=3113s 2026-11-13T09:10:58Z
+CHECK53 done=True rows=60/60
+LD-ALL stage rep53 end ok=1 VERDICT53 REPORTED-ONLY rows=60/60 live=60 void=0 2026-11-13T09:11:00Z
+LD-ALL end plan 53 rep53_ok=1 raptorpath=0 netns=0 2026-11-13T09:11:00Z
+PERSISTED /dev/shm/s53/run -> ~/s53/run 2026-11-13T09:11:00Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

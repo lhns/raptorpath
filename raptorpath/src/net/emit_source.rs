@@ -11,7 +11,7 @@
 //!     no lock) is read and written in this order: the source placement pick, the ETA stamp, the
 //!     `charge_in_flight` + Copa `on_sent`/`charge_src`/`on_src_sent` block,
 //!     the redundant-source pick and its charge, the worst-loss ε read, the
-//!     `deficit.on_send` write, the taper `spare_capacity`/estimator read, the
+//!     taper `spare_capacity`/estimator read, the
 //!     per-correction worst-loss read, the correction placement pick, and the
 //!     correction `charge_in_flight`;
 //!   * in the taper block the FEC controller is read before the scheduler;
@@ -98,6 +98,10 @@ pub(crate) struct SenderState {
     /// allocation per insert or a tree rebuild per ack. The retransmit
     /// buffer's individual removals (shed, NACK) leave holes the ring handles.
     pub source_path_map: SeqRing<u32>,
+    /// The newest receiver gap-snapshot version the gap path has dequeued
+    /// (`V*`, `net/snapver.rs`). Here, beside the encoder, because the
+    /// version counts this transfer's seq space and must die with it.
+    pub snap_order: super::SnapOrder,
     /// seq → last NACK-retransmit time (µs). Repeated gap acks for the same
     /// hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists) must
     /// not resend the symbol more than once per SRTT — but may resend after
@@ -231,6 +235,7 @@ impl SenderState {
             sent_store: SeqRing::new(),
             retransmit_buffer: SeqRing::new(),
             source_path_map: SeqRing::new(),
+            snap_order: super::SnapOrder::default(),
             nack_retx_at: std::collections::HashMap::new(),
             last_source_path: 0,
             last_source_send_us,
@@ -315,7 +320,7 @@ pub(crate) fn emit_source(
     };
     st.last_source_path = source_path;
     // ── `[ETA]`: stamp the sender's own prediction ───────────────────────
-    // `E_picked` is the `expected_delivery_load()` of the path the placement
+    // `E_picked` is `E_i` (`Scheduler::place_e`) of the path the placement
     // law just chose. It is the same quantity the law's `load` term is built
     // from (there de-dimensionalised by `ref_srtt` and offset by the
     // deadline; here in raw seconds), so the receiver is told the sender's
@@ -344,18 +349,7 @@ pub(crate) fn emit_source(
     let (src_send_ts_us, src_now_i) = now_pair();
     // Last source-intake time (generation-mode pacing input).
     st.gen_last_source_us = src_send_ts_us;
-    let eta_rel_us = {
-        let sched = &mut *ctx.scheduler;
-        let e = sched
-            .path(source_path)
-            .map(|p| p.expected_delivery_load())
-            .unwrap_or(0.0);
-        // Non-finite (a path with no cwnd yet) reads as no prediction — the
-        // 0 sentinel — rather than as a fabricated number.
-        let us = if e.is_finite() && e > 0.0 { (e * 1e6) as u64 } else { 0 };
-        sched.eta_mut().stamp(source_path, src_send_ts_us, us);
-        us
-    };
+    let eta_rel_us = ctx.scheduler.stamp_placement_eta(source_path, src_send_ts_us);
     // Idle-triggered recovery: stamp the last new-source send so the NACK
     // throttle can tell "actively pushing data" (repairs would load a
     // congested path) from "idle except for a hole" (targeted recovery is
@@ -466,9 +460,6 @@ pub(crate) fn emit_source(
                 .unwrap_or(0.0)
         };
         st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
-        // Track correction deficit: this symbol needs epsilon coverage
-        let sched = &mut *ctx.scheduler;
-        sched.deficit.on_send(wire_sym.block_id, source_path, epsilon);
     }
 
     // Redundant send for Realtime: duplicate source on second-best path

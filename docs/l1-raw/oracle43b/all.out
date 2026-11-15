@@ -1,0 +1,31 @@
+SENTINEL-WRITABLE /dev/shm/o43b/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/o43b/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-10T17:03:40Z user=VMUSER dir=/dev/shm/o43b/run launch=2026-11-10T17:03:40Z
+LD-ALL start plan=43b load=0.33 0.09 0.22 1/401 1250966 2026-11-10T17:03:40Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=2.01 avg60=4.10 avg300=1.27 total=4507264337 2026-11-10T17:03:49Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.30 0.09 0.22; io=full avg10=2.01 avg60=4.10 avg300=1.27 total=4507264337 2026-11-10T17:03:49Z
+LD-ALL parser test ok 2026-11-10T17:03:59Z
+LD-ALL built wall=332s 2026-11-10T17:09:31Z
+LD-ALL binary 94959c05ec9898b4deaea53f815b60d8ba1d9636030f3959bea259d79c1dc008 2026-11-10T17:09:31Z
+SMOKE43 c2-100 SH: status=LIVE dur=53.46543 mbps=89.778 n_end=194.0 hold_state=HOLD-EXPIRED route=1.0 nk_min=2181 
+SMOKE43 c2-100 SL: status=LIVE dur=55.164636 mbps=87.012 n_end=187.0 hold_state=None route=1.0 nk_min=2085 
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-10T17:11:25Z
+LD-ALL battery start load=1.26 1.75 1.07; io=full avg10=0.05 avg60=0.10 avg300=0.37 total=4508648717 2026-11-10T17:11:25Z
+LD-ALL battery rc=0 wall=509s 2026-11-10T17:19:54Z
+CHECK43B done=True rows=9/9
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=0.54 0.89 0.92; io=full avg10=0.00 avg60=0.01 avg300=0.10 total=4509296068 2026-11-10T17:19:54Z

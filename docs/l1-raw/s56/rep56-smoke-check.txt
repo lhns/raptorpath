@@ -1,0 +1,18 @@
+SMOKE56 rows=4/4 (one row per cell at its smallest pool + the SUCC_DUMP row; the values are not read, only the criteria below)
+PASS one row per smoke slot ran
+  ROW c8-100 P80: status=LIVE mbps=79.63 wall=62.0 gates=80/80 pool_per_path=80/80 W=160.0 bind=1.0 late_n=181 R=8693.761061946901 Tbar=16.628387766631548 T0first1s=17.572562745432812 old_holes=0.0 qc=0.012658227848101266 succdump=0
+  ROW c2-100 P128: status=LIVE mbps=70.941 wall=70.0 gates=128/128 pool_per_path=128/128 W=128.0 bind=1.0 late_n=210 R=7737.519083969465 Tbar=16.0 T0first1s=16.0 old_holes=0.0 qc=0.02631578947368421 succdump=0
+  ROW c1s-400 P384: status=LIVE mbps=705.23 wall=59.0 gates=384/384 pool_per_path=384/384 W=384.0 bind=1.0 late_n=207 R=74966.53100775194 Tbar=4.0 T0first1s=3.5 old_holes=0.0 qc=0.15695067264573992 succdump=0
+  ROW c8-100 P640D: status=LIVE mbps=107.582 wall=47.0 gates=640/640 pool_per_path=640/640 W=1280.0 bind=1.0 late_n=119 R=11716.047297297297 Tbar=104.73619861878055 T0first1s=93.11836485661989 old_holes=0.0 qc=0.0 succdump=173540
+PASS each row's pool is in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)
+PASS the dump gate reads RWM_SUCC_DUMP=1 on both ends of the dump row and 0 / absent on every other row
+PASS every row ran the one seat's binary (LD_SHA)
+PASS the LATE-window readouts (rates, rtt, rtp and its boot, T-bar, ell, Little residual, old holes, in-order late, bind, collapse share) computed on every row (no None)
+PASS every smoke row finished inside RWM_PERF_TIMEOUT_S=300 (rc 0, a summary, not DNF) at its cell's size
+PASS the dump row wrote a raw dump (at least one [SUCCDUMP] record; the registered >= 100 000 is the scored row's rule, re-run once)
+  SUCCDUMP smoke row: records 173540 (cli 0, srv 173540), 1419803 bytes in the log lines, cap-announced None; the registered rule on the scored row: >= 100000
+  LIVENESS c8-100 P80 s42 rep1: LIVE 
+  LIVENESS c2-100 P128 s42 rep1: LIVE 
+  LIVENESS c1s-400 P384 s42 rep1: LIVE 
+  LIVENESS c8-100 P640D s42 rep1: LIVE 
+SMOKE-PASS

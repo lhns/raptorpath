@@ -1,0 +1,8 @@
+[package]
+name = "raptorpath-core"
+version = "0.1.0"
+edition = "2021"
+description = "Sans-IO decision core shared by the raptorpath engine and the wasm model"
+
+[dependencies]
+raptorpath-math = { path = "../raptorpath-math" }

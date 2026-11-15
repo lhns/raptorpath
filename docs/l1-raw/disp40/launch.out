@@ -1,0 +1,36 @@
+SENTINEL-WRITABLE /dev/shm/ld40/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/ld40/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-10T08:31:04Z user=VMUSER dir=/dev/shm/ld40/run launch=2026-11-10T08:31:04Z
+LD-ALL start plan=40 load=0.52 0.15 0.16 2/393 858012 2026-11-10T08:31:05Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=11.97 avg60=3.35 avg300=0.79 total=4419426914 2026-11-10T08:31:13Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/VMUSER/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.48 0.15 0.16; io=full avg10=11.97 avg60=3.35 avg300=0.79 total=4419426914 2026-11-10T08:31:13Z
+LD-ALL parser test ok 2026-11-10T08:31:19Z
+LD-ALL built wall=338s 2026-11-10T08:36:57Z
+LD-ALL binary 79572edd05dbbee3184e038db88c7143a952415bed2da21c1000ce1525edfff5 2026-11-10T08:36:57Z
+SMOKE40 c2-100 CAP128: mbps=70.779 m=1252 p0=live/skbs=18001/Lhat=12612226.861332651/D=6482611.4083567895 status=LIVE
+SMOKE40 c2tbf-100 CAP128: mbps=45.236 m=1252 p0=live/skbs=20913/Lhat=6315211.041891095/D=4791741.427523224 status=LIVE
+SMOKE-PASS
+LD-ALL SMOKE-PASS 2026-11-10T08:37:46Z
+LD-ALL battery start load=0.82 1.11 0.71; io=full avg10=0.33 avg60=0.14 avg300=0.28 total=4420244132 2026-11-10T08:37:46Z
+LD-ALL battery rc=0 wall=3504s 2026-11-10T09:36:10Z
+CHECK40 done=True rows=108/108
+LD-ALL end bat_ok=1 raptorpath=0 netns=0 load=0.63 1.38 1.09; io=full avg10=1.00 avg60=0.35 avg300=0.16 total=4427108745 2026-11-10T09:36:11Z
+PERSISTED /dev/shm/ld40/run -> /home/VMUSER/ld40/run 2026-11-10T09:36:11Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/VMUSER/rp.lock

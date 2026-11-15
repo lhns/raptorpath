@@ -1,0 +1,24 @@
+== c8-100 BASE (n=12; medians over rows of the per-row quantiles)
+  orig leg0: cx_n=6624 cx_p50=180ms cx_p90=377ms | hy_n=180 hy_p50=61ms | hn_n=10794 fed=17252 report-arrival same/cross=15914/1410
+  orig leg1: cx_n=3574 cx_p50=164ms cx_p90=246ms | hy_n=234 hy_p50=3ms | hn_n=5538 fed=9196 report-arrival same/cross=293/8928
+  per-row cx p90 orig0/orig1 (ms): 590/246 295/229 393/246 213/229 524/262 328/262 459/229 328/262 360/262 492/246 492/262 295/229
+  per-row cx p50 orig0/orig1 (ms): 229/164 147/180 197/164 131/180 197/164 180/180 197/147 164/180 197/164 180/164 180/164 164/180
+  fp1-ro1 per row: mean 325, 249 374 257 252 347 440 422 337 239 346 278 355
+== c8-100 CAND (n=12; medians over rows of the per-row quantiles)
+  orig leg0: cx_n=6262 cx_p50=180ms cx_p90=426ms | hy_n=42 hy_p50=16ms | hn_n=13340 fed=19339 report-arrival same/cross=16973/2207
+  orig leg1: cx_n=3485 cx_p50=123ms cx_p90=147ms | hy_n=130 hy_p50=2ms | hn_n=5688 fed=9229 report-arrival same/cross=528/8638
+  per-row cx p90 orig0/orig1 (ms): 426/147 524/131 426/164 360/147 426/180 459/180 459/131 459/131 393/131 328/147 262/147 459/164
+  per-row cx p50 orig0/orig1 (ms): 197/123 229/98 180/123 197/115 90/131 180/131 164/115 180/115 213/106 180/123 180/123 106/131
+  fp1-ro1 per row: mean 355, 436 296 338 338 256 359 245 390 384 300 437 484
+== c1d-400 BASE (n=12; medians over rows of the per-row quantiles)
+  orig leg0: cx_n=1496 cx_p50=18ms cx_p90=33ms | hy_n=980 hy_p50=4ms | hn_n=147972 fed=150703 report-arrival same/cross=118110/36884
+  orig leg1: cx_n=1285 cx_p50=19ms cx_p90=33ms | hy_n=872 hy_p50=4ms | hn_n=143752 fed=145977 report-arrival same/cross=108680/39031
+  per-row cx p90 orig0/orig1 (ms): 41/41 31/29 66/41 29/31 131/82 33/33 29/49 37/53 33/33 45/27 33/25 29/29
+  per-row cx p50 orig0/orig1 (ms): 23/25 18/18 33/23 16/18 33/37 16/20 16/23 18/23 18/18 18/13 18/14 18/16
+  fp1-ro1 per row: mean 1, 11 21 43 29 -33 -83 -80 -19 -26 71 105 -22
+== c1d-400 CAND (n=12; medians over rows of the per-row quantiles)
+  orig leg0: cx_n=1496 cx_p50=20ms cx_p90=33ms | hy_n=909 hy_p50=4ms | hn_n=136481 fed=138883 report-arrival same/cross=98132/38855
+  orig leg1: cx_n=1372 cx_p50=19ms cx_p90=33ms | hy_n=998 hy_p50=4ms | hn_n=146240 fed=148483 report-arrival same/cross=115552/34820
+  per-row cx p90 orig0/orig1 (ms): 33/31 31/37 37/37 37/37 31/33 33/33 33/33 33/33 37/41 31/37 37/33 33/31
+  per-row cx p50 orig0/orig1 (ms): 20/18 18/20 23/23 23/20 18/18 23/20 20/20 20/18 23/25 18/18 18/18 20/18
+  fp1-ro1 per row: mean 8, -6 -4 -19 45 0 18 12 20 -24 18 22 12

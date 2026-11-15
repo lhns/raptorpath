@@ -1,0 +1,14 @@
+POST HOC / NOT REGISTERED. Tail = run seconds - t of the last [DIAG] line with src>0 (all new source emitted); medians over 12 rows
+cell     arm    seconds t_src_end  tail_s  B(dgq hand-tx, sum legs) at src end  mean good in tail
+c1d-400  BASE     46.54     46.35    0.15                                  299                nan
+c1d-400  CAND     44.39     44.35    0.15                                   39                nan
+c1s-400  BASE     47.18     46.95    0.23                                 1166                nan
+c1s-400  CAND     46.13     46.00    0.21                                  760                nan
+c2-100   BASE     53.23     53.10    0.13                                    0                nan
+c2-100   CAND     54.03     53.90    0.16                                  906                nan
+c8-100   BASE     48.13     44.40    4.03                                    0              171.0
+c8-100   CAND     49.39     44.60    4.75                                  268              171.5
+  c1s-400: d_seconds -1.06  d_t_src_end -0.95  d_tail -0.02
+  c1d-400: d_seconds -2.15  d_t_src_end -2.00  d_tail +0.00
+  c2-100: d_seconds +0.80  d_t_src_end +0.80  d_tail +0.04
+  c8-100: d_seconds +1.26  d_t_src_end +0.20  d_tail +0.72

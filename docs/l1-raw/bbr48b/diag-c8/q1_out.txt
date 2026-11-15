@@ -1,0 +1,177 @@
+POST HOC / NOT REGISTERED. Q1 CPU-seconds ledger, xfer phase ([THR] sum phase=xfer), medians over 12 rows per arm; delta = CAND - BASE (median of each)
+task = server receiver task busy (RDIAG busy% x wall, includes lock wait) | client sender task busy (sum of [DIAG] wait busy_us)
+quinn_sect = sum over legs of owner quinn-section thread CPU (q_wall_us - q_asleep_us)
+
+== side srv
+cell     item                               BASE       CAND     delta     rel
+c1s-400  cpu                              91.200     89.580    -1.620   -1.8%
+c1s-400  busy                            110.117    110.895    +0.778   +0.7%
+c1s-400  nonbusy(cpu-busy)               -19.072    -20.783    -1.711   +9.0%
+c1s-400  task                             30.980     30.626    -0.354   -1.1%
+c1s-400  quinn_sect                        7.142      7.129    -0.012   -0.2%
+c1s-400  busy_resid(busy-task-quinn)      72.917     72.839    -0.078   -0.1%
+c1s-400  wall                             47.183     46.126    -1.057   -2.2%
+c1s-400  cores                             1.933      1.946    +0.013   +0.7%
+c1s-400  park                         1058490.000 1004609.000 -53881.000   -5.1%
+c1s-400  polls                        331888.000 304486.000 -27402.000   -8.3%
+c1s-400  batches                      384935.500 359975.500 -24960.000   -6.5%
+c1d-400  cpu                             113.430    111.810    -1.620   -1.4%
+c1d-400  busy                            133.327    133.779    +0.453   +0.3%
+c1d-400  nonbusy(cpu-busy)               -21.047    -21.376    -0.328   +1.6%
+c1d-400  task                             43.991     43.334    -0.657   -1.5%
+c1d-400  quinn_sect                        7.449      7.459    +0.010   +0.1%
+c1d-400  busy_resid(busy-task-quinn)      82.297     82.612    +0.316   +0.4%
+c1d-400  wall                             46.539     44.387    -2.152   -4.6%
+c1d-400  cores                             2.438      2.513    +0.076   +3.1%
+c1d-400  park                         1058853.500 1041632.500 -17221.000   -1.6%
+c1d-400  polls                        355250.500 347926.500 -7324.000   -2.1%
+c1d-400  batches                      413809.000 407924.500 -5884.500   -1.4%
+c2-100   cpu                              20.270     19.650    -0.620   -3.1%
+c2-100   busy                             18.106     17.468    -0.639   -3.5%
+c2-100   nonbusy(cpu-busy)                 2.208      2.127    -0.080   -3.6%
+c2-100   task                              5.870      5.928    +0.058   +1.0%
+c2-100   quinn_sect                        1.203      1.189    -0.014   -1.1%
+c2-100   busy_resid(busy-task-quinn)      11.011     10.458    -0.554   -5.0%
+c2-100   wall                             53.231     54.032    +0.801   +1.5%
+c2-100   cores                             0.381      0.366    -0.015   -3.8%
+c2-100   park                         324102.000 306463.000 -17639.000   -5.4%
+c2-100   polls                        153216.000 152995.000  -221.000   -0.1%
+c2-100   batches                      153825.000 153593.000  -232.000   -0.2%
+c8-100   cpu                              27.195     28.635    +1.440   +5.3%
+c8-100   busy                             24.873     26.230    +1.358   +5.5%
+c8-100   nonbusy(cpu-busy)                 2.324      2.466    +0.143   +6.1%
+c8-100   task                             10.341     10.544    +0.203   +2.0%
+c8-100   quinn_sect                        1.642      1.748    +0.106   +6.5%
+c8-100   busy_resid(busy-task-quinn)      12.884     13.794    +0.910   +7.1%
+c8-100   wall                             48.129     49.391    +1.262   +2.6%
+c8-100   cores                             0.567      0.579    +0.012   +2.1%
+c8-100   park                         388013.500 413452.000 +25438.500   +6.6%
+c8-100   polls                        158984.500 164474.500 +5490.000   +3.5%
+c8-100   batches                      159968.500 165646.000 +5677.500   +3.5%
+
+== side cli
+cell     item                               BASE       CAND     delta     rel
+c1s-400  cpu                              78.410     77.020    -1.390   -1.8%
+c1s-400  busy                            104.557    106.510    +1.953   +1.9%
+c1s-400  nonbusy(cpu-busy)               -24.766    -29.260    -4.494  +18.1%
+c1s-400  task                             23.879     25.074    +1.195   +5.0%
+c1s-400  quinn_sect                        3.471      3.372    -0.098   -2.8%
+c1s-400  busy_resid(busy-task-quinn)      78.344     77.979    -0.365   -0.5%
+c1s-400  wall                             47.183     46.126    -1.057   -2.2%
+c1s-400  cores                             1.653      1.672    +0.019   +1.1%
+c1s-400  park                         1008203.500 936096.500 -72107.000   -7.2%
+c1s-400  polls                        194249.500 177251.500 -16998.000   -8.8%
+c1s-400  batches                      230073.500 218561.000 -11512.500   -5.0%
+c1d-400  cpu                             105.185    103.640    -1.545   -1.5%
+c1d-400  busy                            122.255    121.350    -0.905   -0.7%
+c1d-400  nonbusy(cpu-busy)               -17.579    -18.137    -0.558   +3.2%
+c1d-400  task                             40.135     38.417    -1.718   -4.3%
+c1d-400  quinn_sect                        5.217      5.154    -0.063   -1.2%
+c1d-400  busy_resid(busy-task-quinn)      77.100     77.838    +0.738   +1.0%
+c1d-400  wall                             46.539     44.387    -2.152   -4.6%
+c1d-400  cores                             2.269      2.338    +0.068   +3.0%
+c1d-400  park                         960974.500 953579.500 -7395.000   -0.8%
+c1d-400  polls                        297155.500 294614.500 -2541.000   -0.9%
+c1d-400  batches                      330068.000 327519.000 -2549.000   -0.8%
+c2-100   cpu                              18.505     18.200    -0.305   -1.6%
+c2-100   busy                             16.831     16.551    -0.280   -1.7%
+c2-100   nonbusy(cpu-busy)                 1.671      1.627    -0.045   -2.7%
+c2-100   task                              4.938      4.867    -0.070   -1.4%
+c2-100   quinn_sect                        0.725      0.695    -0.031   -4.2%
+c2-100   busy_resid(busy-task-quinn)      11.179     11.025    -0.153   -1.4%
+c2-100   wall                             53.231     54.032    +0.801   +1.5%
+c2-100   cores                             0.348      0.339    -0.009   -2.6%
+c2-100   park                         275578.500 269572.500 -6006.000   -2.2%
+c2-100   polls                         74028.500  69811.500 -4217.000   -5.7%
+c2-100   batches                       74018.000  69857.000 -4161.000   -5.6%
+c8-100   cpu                              20.685     21.415    +0.730   +3.5%
+c8-100   busy                             18.941     19.721    +0.780   +4.1%
+c8-100   nonbusy(cpu-busy)                 1.702      1.686    -0.016   -0.9%
+c8-100   task                              5.792      6.107    +0.315   +5.4%
+c8-100   quinn_sect                        0.829      0.870    +0.042   +5.0%
+c8-100   busy_resid(busy-task-quinn)      12.323     12.805    +0.482   +3.9%
+c8-100   wall                             48.129     49.391    +1.262   +2.6%
+c8-100   cores                             0.428      0.437    +0.009   +2.1%
+c8-100   park                         299275.500 299604.000  +328.500   +0.1%
+c8-100   polls                         87006.000  94120.500 +7114.500   +8.2%
+c8-100   batches                       87462.500  94602.500 +7140.000   +8.2%
+
+== additive ledger (MEANS, so components sum): delta CAND - BASE in CPU-seconds
+  srv c1s-400  dCPU=-6.969s (-7.2%) = dTask -0.899 + dQuinn -0.084 + dBusyResid -0.711 + dNonBusy -5.275   | dWall -19.976s dPark -213012 dPolls -80522 dBatches -71276
+  srv c1d-400  dCPU=-2.303s (-2.0%) = dTask -0.897 + dQuinn -0.062 + dBusyResid +0.607 + dNonBusy -1.952   | dWall -3.538s dPark -68414 dPolls -22210 dBatches -18167
+  srv c2-100   dCPU=-0.402s (-2.0%) = dTask +0.069 + dQuinn +0.003 + dBusyResid -0.376 + dNonBusy -0.097   | dWall +0.832s dPark -14486 dPolls +44 dBatches +19
+  srv c8-100   dCPU=+1.331s (+4.9%) = dTask +0.121 + dQuinn +0.159 + dBusyResid +0.903 + dNonBusy +0.148   | dWall +1.179s dPark +26020 dPolls +5072 dBatches +5139
+  cli c1s-400  dCPU=-7.966s (-9.4%) = dTask +1.203 + dQuinn -0.397 + dBusyResid -0.185 + dNonBusy -8.586   | dWall -19.976s dPark -189627 dPolls -79676 dBatches -69777
+  cli c1d-400  dCPU=-2.582s (-2.4%) = dTask -2.176 + dQuinn -0.105 + dBusyResid +1.570 + dNonBusy -1.871   | dWall -3.538s dPark -48574 dPolls -11963 dBatches -8877
+  cli c2-100   dCPU=-0.172s (-0.9%) = dTask +0.004 + dQuinn -0.027 + dBusyResid -0.041 + dNonBusy -0.108   | dWall +0.832s dPark -5794 dPolls -4358 dBatches -4316
+  cli c8-100   dCPU=+0.753s (+3.6%) = dTask +0.337 + dQuinn +0.041 + dBusyResid +0.476 + dNonBusy -0.101   | dWall +1.179s dPark +817 dPolls +6969 dBatches +6826
+
+== c8 per seed (means): dCPU srv / cli, dWall
+  s42: srv +0.917s  cli +0.687s  wall +0.932s
+  s7: srv +1.745s  cli +0.820s  wall +1.426s
+
+== price checks (within cell, within arm, seed-centred; n=24): slope of side CPU-s on x, r; arm delta of x (means); implied dCPU = slope x dx; actual dCPU
+  srv c1s-400  wall_s               slope=+0.3102 r=+0.94 dx=-19.98 implied=-6.197s of actual -6.969s (unit cost needed dCPU/dx=+0.3489)
+  srv c1s-400  park                 slope=+3.656e-05 r=+0.98 dx=-2.13e+05 implied=-7.789s of actual -6.969s (unit cost needed dCPU/dx=+3.272e-05)
+  srv c1s-400  polls                slope=+0.0001024 r=+0.97 dx=-8.052e+04 implied=-8.243s of actual -6.969s (unit cost needed dCPU/dx=+8.655e-05)
+  srv c1s-400  io_batches           slope=+0.0001159 r=+0.97 dx=-7.128e+04 implied=-8.264s of actual -6.969s (unit cost needed dCPU/dx=+9.778e-05)
+  srv c1s-400  dec_rows(srv)        slope=-59.48 r=-0.06 dx=+0.0002974 implied=-0.018s of actual -6.969s (unit cost needed dCPU/dx=-2.343e+04)
+  srv c1s-400  coded_share          slope=+1.507e+05 r=+0.63 dx=-1.577e-05 implied=-2.377s of actual -6.969s (unit cost needed dCPU/dx=+4.418e+05)
+  srv c1s-400  rtx_n(srv SUCC)      slope=+0.009876 r=+0.09 dx=-68.67 implied=-0.678s of actual -6.969s (unit cost needed dCPU/dx=+0.1015)
+  srv c1s-400  egress_skbs(1/gso)   slope=+0.0009752 r=+0.97 dx=-7283 implied=-7.102s of actual -6.969s (unit cost needed dCPU/dx=+0.000957)
+  srv c1d-400  wall_s               slope=+0.6942 r=+0.95 dx=-3.538 implied=-2.456s of actual -2.303s (unit cost needed dCPU/dx=+0.651)
+  srv c1d-400  park                 slope=+3.316e-05 r=+0.88 dx=-6.841e+04 implied=-2.269s of actual -2.303s (unit cost needed dCPU/dx=+3.367e-05)
+  srv c1d-400  polls                slope=+0.0001009 r=+0.88 dx=-2.221e+04 implied=-2.241s of actual -2.303s (unit cost needed dCPU/dx=+0.0001037)
+  srv c1d-400  io_batches           slope=+0.0001217 r=+0.88 dx=-1.817e+04 implied=-2.210s of actual -2.303s (unit cost needed dCPU/dx=+0.0001268)
+  srv c1d-400  dec_rows(srv)        slope=+49.7 r=+0.32 dx=-0.01101 implied=-0.547s of actual -2.303s (unit cost needed dCPU/dx=+209.2)
+  srv c1d-400  coded_share          slope=-1.561e+04 r=-0.26 dx=+3.737e-05 implied=-0.583s of actual -2.303s (unit cost needed dCPU/dx=-6.164e+04)
+  srv c1d-400  rtx_n(srv SUCC)      slope=-0.002131 r=-0.08 dx=-72.42 implied=+0.154s of actual -2.303s (unit cost needed dCPU/dx=+0.03181)
+  srv c1d-400  egress_skbs(1/gso)   slope=-0.0001115 r=-0.49 dx=+2.198e+04 implied=-2.451s of actual -2.303s (unit cost needed dCPU/dx=-0.0001048)
+  srv c2-100   wall_s               slope=+0.6247 r=+0.23 dx=+0.8323 implied=+0.520s of actual -0.402s (unit cost needed dCPU/dx=-0.4826)
+  srv c2-100   park                 slope=+4.947e-05 r=+0.83 dx=-1.449e+04 implied=-0.717s of actual -0.402s (unit cost needed dCPU/dx=+2.773e-05)
+  srv c2-100   polls                slope=-0.0003771 r=-0.85 dx=+44.17 implied=-0.017s of actual -0.402s (unit cost needed dCPU/dx=-0.009094)
+  srv c2-100   io_batches           slope=-0.0003901 r=-0.83 dx=+19.25 implied=-0.008s of actual -0.402s (unit cost needed dCPU/dx=-0.02087)
+  srv c2-100   dec_rows(srv)        slope=+0.4815 r=+0.08 dx=-0.05559 implied=-0.027s of actual -0.402s (unit cost needed dCPU/dx=+7.225)
+  srv c2-100   coded_share          slope=-8521 r=-0.40 dx=-2.357e-05 implied=+0.201s of actual -0.402s (unit cost needed dCPU/dx=+1.704e+04)
+  srv c2-100   rtx_n(srv SUCC)      slope=+0.0007817 r=+0.15 dx=+99.83 implied=+0.078s of actual -0.402s (unit cost needed dCPU/dx=-0.004023)
+  srv c2-100   egress_skbs(1/gso)   slope=-0.0008766 r=-0.64 dx=-3512 implied=+3.079s of actual -0.402s (unit cost needed dCPU/dx=+0.0001144)
+  srv c8-100   wall_s               slope=+0.029 r=+0.01 dx=+1.179 implied=+0.034s of actual +1.331s (unit cost needed dCPU/dx=+1.129)
+  srv c8-100   park                 slope=+4.956e-05 r=+0.46 dx=+2.602e+04 implied=+1.290s of actual +1.331s (unit cost needed dCPU/dx=+5.115e-05)
+  srv c8-100   polls                slope=-6.67e-05 r=-0.13 dx=+5072 implied=-0.338s of actual +1.331s (unit cost needed dCPU/dx=+0.0002624)
+  srv c8-100   io_batches           slope=-5.69e-05 r=-0.11 dx=+5139 implied=-0.292s of actual +1.331s (unit cost needed dCPU/dx=+0.000259)
+  srv c8-100   dec_rows(srv)        slope=+0.04811 r=+0.54 dx=+60.69 implied=+2.920s of actual +1.331s (unit cost needed dCPU/dx=+0.02193)
+  srv c8-100   coded_share          slope=+1676 r=+0.40 dx=+0.0007459 implied=+1.250s of actual +1.331s (unit cost needed dCPU/dx=+1784)
+  srv c8-100   rtx_n(srv SUCC)      slope=-0.001728 r=-0.27 dx=-200 implied=+0.346s of actual +1.331s (unit cost needed dCPU/dx=-0.006654)
+  srv c8-100   egress_skbs(1/gso)   slope=-0.0005797 r=-0.54 dx=-7088 implied=+4.109s of actual +1.331s (unit cost needed dCPU/dx=-0.0001877)
+  cli c1s-400  wall_s               slope=+0.3426 r=+0.94 dx=-19.98 implied=-6.843s of actual -7.966s (unit cost needed dCPU/dx=+0.3988)
+  cli c1s-400  park                 slope=+4.78e-05 r=+0.98 dx=-1.896e+05 implied=-9.064s of actual -7.966s (unit cost needed dCPU/dx=+4.201e-05)
+  cli c1s-400  polls                slope=+0.0001091 r=+0.99 dx=-7.968e+04 implied=-8.695s of actual -7.966s (unit cost needed dCPU/dx=+9.998e-05)
+  cli c1s-400  io_batches           slope=+0.0001195 r=+0.99 dx=-6.978e+04 implied=-8.339s of actual -7.966s (unit cost needed dCPU/dx=+0.0001142)
+  cli c1s-400  dec_rows(srv)        slope=-63.5 r=-0.06 dx=+0.0002974 implied=-0.019s of actual -7.966s (unit cost needed dCPU/dx=-2.678e+04)
+  cli c1s-400  coded_share          slope=+1.646e+05 r=+0.62 dx=-1.577e-05 implied=-2.596s of actual -7.966s (unit cost needed dCPU/dx=+5.05e+05)
+  cli c1s-400  rtx_n(srv SUCC)      slope=+0.01214 r=+0.10 dx=-68.67 implied=-0.834s of actual -7.966s (unit cost needed dCPU/dx=+0.116)
+  cli c1s-400  egress_skbs(1/gso)   slope=+0.001079 r=+0.98 dx=-7283 implied=-7.858s of actual -7.966s (unit cost needed dCPU/dx=+0.001094)
+  cli c1d-400  wall_s               slope=+0.8279 r=+0.97 dx=-3.538 implied=-2.929s of actual -2.582s (unit cost needed dCPU/dx=+0.7296)
+  cli c1d-400  park                 slope=+5.764e-05 r=+0.87 dx=-4.857e+04 implied=-2.800s of actual -2.582s (unit cost needed dCPU/dx=+5.315e-05)
+  cli c1d-400  polls                slope=+0.0001942 r=+0.92 dx=-1.196e+04 implied=-2.323s of actual -2.582s (unit cost needed dCPU/dx=+0.0002158)
+  cli c1d-400  io_batches           slope=+0.0002243 r=+0.93 dx=-8877 implied=-1.991s of actual -2.582s (unit cost needed dCPU/dx=+0.0002908)
+  cli c1d-400  dec_rows(srv)        slope=+63.96 r=+0.36 dx=-0.01101 implied=-0.704s of actual -2.582s (unit cost needed dCPU/dx=+234.5)
+  cli c1d-400  coded_share          slope=-2.321e+04 r=-0.33 dx=+3.737e-05 implied=-0.867s of actual -2.582s (unit cost needed dCPU/dx=-6.909e+04)
+  cli c1d-400  rtx_n(srv SUCC)      slope=-0.0004024 r=-0.01 dx=-72.42 implied=+0.029s of actual -2.582s (unit cost needed dCPU/dx=+0.03565)
+  cli c1d-400  egress_skbs(1/gso)   slope=-0.0001453 r=-0.55 dx=+2.198e+04 implied=-3.195s of actual -2.582s (unit cost needed dCPU/dx=-0.0001174)
+  cli c2-100   wall_s               slope=+0.3005 r=+0.19 dx=+0.8323 implied=+0.250s of actual -0.172s (unit cost needed dCPU/dx=-0.2062)
+  cli c2-100   park                 slope=+2.482e-05 r=+0.13 dx=-5794 implied=-0.144s of actual -0.172s (unit cost needed dCPU/dx=+2.963e-05)
+  cli c2-100   polls                slope=-7.128e-05 r=-0.24 dx=-4358 implied=+0.311s of actual -0.172s (unit cost needed dCPU/dx=+3.939e-05)
+  cli c2-100   io_batches           slope=-6.987e-05 r=-0.24 dx=-4316 implied=+0.302s of actual -0.172s (unit cost needed dCPU/dx=+3.977e-05)
+  cli c2-100   dec_rows(srv)        slope=-0.01774 r=-0.01 dx=-0.05559 implied=+0.001s of actual -0.172s (unit cost needed dCPU/dx=+3.088)
+  cli c2-100   coded_share          slope=-5876 r=-0.46 dx=-2.357e-05 implied=+0.139s of actual -0.172s (unit cost needed dCPU/dx=+7282)
+  cli c2-100   rtx_n(srv SUCC)      slope=-0.0001697 r=-0.06 dx=+99.83 implied=-0.017s of actual -0.172s (unit cost needed dCPU/dx=-0.00172)
+  cli c2-100   egress_skbs(1/gso)   slope=-0.0005142 r=-0.64 dx=-3512 implied=+1.806s of actual -0.172s (unit cost needed dCPU/dx=+4.888e-05)
+  cli c8-100   wall_s               slope=+0.04846 r=+0.05 dx=+1.179 implied=+0.057s of actual +0.753s (unit cost needed dCPU/dx=+0.6389)
+  cli c8-100   park                 slope=-1.666e-05 r=-0.12 dx=+816.9 implied=-0.014s of actual +0.753s (unit cost needed dCPU/dx=+0.0009222)
+  cli c8-100   polls                slope=-0.0001445 r=-0.47 dx=+6969 implied=-1.007s of actual +0.753s (unit cost needed dCPU/dx=+0.0001081)
+  cli c8-100   io_batches           slope=-0.0001336 r=-0.44 dx=+6826 implied=-0.912s of actual +0.753s (unit cost needed dCPU/dx=+0.0001104)
+  cli c8-100   dec_rows(srv)        slope=+0.007091 r=+0.16 dx=+60.69 implied=+0.430s of actual +0.753s (unit cost needed dCPU/dx=+0.01241)
+  cli c8-100   coded_share          slope=+124.2 r=+0.06 dx=+0.0007459 implied=+0.093s of actual +0.753s (unit cost needed dCPU/dx=+1010)
+  cli c8-100   rtx_n(srv SUCC)      slope=-0.0001876 r=-0.06 dx=-200 implied=+0.038s of actual +0.753s (unit cost needed dCPU/dx=-0.003767)
+  cli c8-100   egress_skbs(1/gso)   slope=-0.0003076 r=-0.57 dx=-7088 implied=+2.180s of actual +0.753s (unit cost needed dCPU/dx=-0.0001063)

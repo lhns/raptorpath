@@ -1,0 +1,30 @@
+== c1d BASE rows 12
+  aW      median 0.63  range 0.46-1.00
+  dwell0  median 0.93  range 0.52-465.40
+  dwell1  median 0.98  range 0.59-56.09
+  rtt0    median 20.25  range 16.00-485.00
+  rtt1    median 21.50  range 19.00-58.00
+  sig0    median 1.08  range 0.76-6.96
+  sig1    median 1.32  range 1.04-2.91
+  wrtt0   median 3.00  range 2.00-3.00
+  wrtt1   median 2.50  range 2.00-3.00
+== c1d CAND rows 12
+  aW      median 0.51  range 0.35-0.94
+  dwell0  median 0.91  range 0.30-8.07
+  dwell1  median 1.00  range 0.67-202.81
+  rtt0    median 18.50  range 13.00-32.50
+  rtt1    median 19.00  range 14.00-241.00
+  sig0    median 1.27  range 0.73-2.81
+  sig1    median 1.27  range 0.89-8.41
+  wrtt0   median 3.00  range 2.00-3.00
+  wrtt1   median 3.00  range 2.00-3.00
+== c1d CANDS rows 6
+  aW      median 0.47  range 0.43-0.72
+  dwell0  median 0.92  range 0.64-1.78
+  dwell1  median 0.84  range 0.68-5.12
+  rtt0    median 18.50  range 16.00-35.00
+  rtt1    median 18.75  range 15.00-33.00
+  sig0    median 1.14  range 0.93-2.36
+  sig1    median 1.19  range 1.07-1.69
+  wrtt0   median 3.00  range 2.00-3.00
+  wrtt1   median 3.00  range 2.00-3.00

@@ -1,0 +1,180 @@
+ORACLE STORE LAW IN CLOSED LOOP (status §43) SCORE: MAIN = shipped law + sampler readout, SL = oracle from boot, SH = oracle with the 15 s hold; SL-B0 / SL-G12 = reported-only c2 start-low arms (amendment 2)
+ROWS 24/24; ABORT-TOKENS none
+STATUS-TABLE (every invocation row)
+  LIVE          24
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  VOID-ONDISK   0
+  VOID-SAMPLER  0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+DNF rows 0: ENGINE-STALL (status 43 note, reported beside the registered label, which is computed literally)
+[c2-100] rows: MAIN 3 SL 3 SH 3; scored MAIN 3 SL 3 SH 3
+  ROW c2-100 MAIN s42 r1: LIVE dur=53.4s n_end=2048.0 s_end=0.000 floor/pin last=0.000/1.000 mbps=89.9 
+  ROW c2-100 SL s42 r1: LIVE dur=58.0s n_end=168.0 s_end=0.050 floor/pin last=0.000/0.000 mbps=82.8 
+  ROW c2-100 SH s42 r1: LIVE HOLD-EXPIRED dur=53.4s n_end=1814.0 s_end=0.024 floor/pin last=0.000/0.000 mbps=89.9 
+  ROW c2-100 SL-B0 s42 r1: LIVE dur=53.7s n_end=207.0 s_end=0.060 floor/pin last=0.000/0.000 mbps=89.3 
+  ROW c2-100 SL-G12 s42 r1: LIVE dur=54.7s n_end=201.5 s_end=0.062 floor/pin last=0.000/0.000 mbps=87.7 
+  ROW c2-100 SL s7 r1: LIVE dur=57.7s n_end=156.0 s_end=0.061 floor/pin last=0.000/0.000 mbps=83.2 
+  ROW c2-100 SH s7 r1: LIVE HOLD-EXPIRED dur=53.3s n_end=1855.0 s_end=0.035 floor/pin last=0.000/0.000 mbps=90.1 
+  ROW c2-100 SL-B0 s7 r1: LIVE dur=53.3s n_end=239.0 s_end=0.072 floor/pin last=0.000/0.000 mbps=90.1 
+  ROW c2-100 SL-G12 s7 r1: LIVE dur=53.6s n_end=206.0 s_end=0.053 floor/pin last=0.000/0.000 mbps=89.6 
+  ROW c2-100 MAIN s7 r1: LIVE dur=53.2s n_end=2048.0 s_end=0.000 floor/pin last=0.000/1.000 mbps=90.2 
+  ROW c2-100 SH s42 r2: LIVE HOLD-EXPIRED dur=53.2s n_end=1618.0 s_end=0.027 floor/pin last=0.000/0.000 mbps=90.3 
+  ROW c2-100 SL-B0 s42 r2: LIVE dur=53.6s n_end=233.5 s_end=0.051 floor/pin last=0.000/0.000 mbps=89.6 
+  ROW c2-100 SL-G12 s42 r2: LIVE dur=56.7s n_end=165.0 s_end=0.085 floor/pin last=0.000/0.000 mbps=84.6 
+  ROW c2-100 MAIN s42 r2: LIVE dur=53.2s n_end=2048.0 s_end=0.000 floor/pin last=0.000/0.563 mbps=90.3 
+  ROW c2-100 SL s42 r2: LIVE dur=56.2s n_end=163.0 s_end=0.049 floor/pin last=0.000/0.000 mbps=85.3 
+  R MAIN n_end: [2048.0, 2048.0, 2048.0]
+  R MAIN s_end: [0.0, 0.0, 0.0]
+  R MAIN floor: [0.0, 0.0, 0.0]
+  R MAIN pin: [1.0, 1.0, 0.563]
+  R MAIN hold: [0.0, 0.0, 0.0]
+  R MAIN wbind: [1.0, 1.0, 1.0]
+  R MAIN nk_min: [2363, 2371, 2361]
+  R MAIN nk>8192: [0.0, 0.0, 0.0]
+  R MAIN nk<8: [0.0, 0.0, 0.0]
+  R MAIN Tp50_last_us: [207633.0, 207411.0, 208332.0]
+  R MAIN R4 brake_us per third: [[46898.0, 8388.0, 9446.0], [46876.0, 10984.0, 6322.0], [24997.0, 8246.0, 12813.0]]
+  R MAIN R7 B per third: [[48.0, 1233.0, 1094.0], [34.0, 1007.0, 1000.0], [29.0, 740.0, 738.0]]
+  R MAIN R9 occupancy per third: [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
+  R MAIN R8 ask/n per third: [[0.289, 1.049, 1.038], [0.317, 1.038, 1.051], [0.334, 1.051, 1.007]]
+  R SL n_end: [168.0, 156.0, 163.0]
+  R SL s_end: [0.05, 0.061, 0.049]
+  R SL floor: [0.0, 0.0, 0.0]
+  R SL pin: [0.0, 0.0, 0.0]
+  R SL hold: [0.0, 0.0, 0.0]
+  R SL wbind: [0.0, 0.0, 0.0]
+  R SL nk_min: [1775, 1399, 1974]
+  R SL nk>8192: [0.0, 0.0, 0.0]
+  R SL nk<8: [0.0, 0.0, 0.0]
+  R SL Tp50_last_us: [17113.5, 16637.0, 16909.0]
+  R SL R4 brake_us per third: [[2807.0, 1982.0, 1768.5], [2126.0, 2095.0, 2248.0], [1868.0, 1733.0, 1969.0]]
+  R SL R7 B per third: [[0.0, 0.0, 2.5], [0.0, 0.0, 0.0], [10.0, 0.0, 4.0]]
+  R SL R9 occupancy per third: [[1.0, 1.0, 1.0], [0.98, 1.0, 1.0], [1.0, 1.0, 1.0]]
+  R SL R8 ask/n per third: [[0.997, 0.996, 0.997], [0.997, 0.997, 0.996], [0.997, 0.997, 0.997]]
+  R SH n_end: [1814.0, 1855.0, 1618.0]
+  R SH s_end: [0.024, 0.035, 0.027]
+  R SH floor: [0.0, 0.0, 0.0]
+  R SH pin: [0.0, 0.0, 0.0]
+  R SH hold: [0.0, 0.0, 0.0]
+  R SH wbind: [1.0, 1.0, 1.0]
+  R SH nk_min: [2373, 2354, 2368]
+  R SH nk>8192: [0.0, 0.0, 0.0]
+  R SH nk<8: [0.0, 0.0, 0.0]
+  R SH Tp50_last_us: [182563.0, 187770.0, 163554.0]
+  R SH R4 brake_us per third: [[132750.0, 13448.0, 15146.0], [132204.0, 13853.0, 14720.0], [128123.0, 12958.0, 14458.0]]
+  R SH R7 B per third: [[393.0, 202.0, 348.0], [592.0, 739.0, 893.0], [284.0, 389.0, 357.0]]
+  R SH R9 occupancy per third: [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
+  R SH R8 ask/n per third: [[0.127, 1.0, 1.0], [0.146, 1.0, 1.0], [0.169, 1.0, 1.0]]
+  R3 c2-100 SH s42 r1: NOT-RETURNED/HIGH t_ret=None ask/H(hold last 2 s)=1.006 brake@release=14977 RTprop 1s/10s/t_h/end=8583/19014/137241/163807 hold-thr=77734us
+  R3 c2-100 SH s7 r1: NOT-RETURNED/HIGH t_ret=None ask/H(hold last 2 s)=1.059 brake@release=12335 RTprop 1s/10s/t_h/end=11900/16886/145205/172751 hold-thr=81506us
+  R3 c2-100 SH s42 r2: NOT-RETURNED/HIGH t_ret=None ask/H(hold last 2 s)=1.005 brake@release=11021 RTprop 1s/10s/t_h/end=14956/14956/137916/147164 hold-thr=81694us
+  EXTRA SL-B0 (reported only): scored 3/3
+  R SL-B0 n_end: [207.0, 239.0, 233.5]
+  R SL-B0 s_end: [0.06, 0.072, 0.051]
+  R SL-B0 floor: [0.0, 0.0, 0.0]
+  R SL-B0 pin: [0.0, 0.0, 0.0]
+  R SL-B0 wbind: [0.0, 0.225, 0.111]
+  R SL-B0 nk_min: [2034, 2259, 2253]
+  R SL-B0 nk>8192: [0.0, 0.0, 0.0]
+  R SL-B0 nk<8: [0.0, 0.0, 0.0]
+  R SL-B0 Tp50_last_us: [20598.5, 23251.0, 23025.5]
+  R SL-B0 mbps: [89.316, 90.077, 89.575]
+  R SL-B0 A_x p50 us: [10240, 9216, 11264]
+  R SL-B0 R4 brake_us per third: [[3678.5, 3740.0, 3845.5], [3799.0, 3575.0, 4022.0], [3669.0, 3491.0, 3759.5]]
+  R SL-B0 R7 B per third: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 5.5]]
+  R SL-B0 R9 occupancy per third: [[0.953, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
+  R SL-B0 R8 ask/n per third: [[0.997, 0.998, 0.998], [0.998, 0.998, 0.999], [0.998, 0.997, 0.998]]
+  SL-B0 GOODPUT vs MAIN: WITHIN SL-B0-MAIN -0.48 vs 2sigma_pooled 0.60
+  SL-B0 DELAY_Ax vs MAIN: BETTER SL-B0-MAIN -175445.33 vs 2sigma_pooled 13455.64
+  SL-B0 DELAY_Tp50 vs MAIN: BETTER SL-B0-MAIN -185500.33 vs 2sigma_pooled 2188.08
+  SL-B0 n_end 233.5 vs the offline-map point 195: ln ratio +0.180 (reported)
+  EXTRA SL-G12 (reported only): scored 3/3
+  R SL-G12 n_end: [201.5, 206.0, 165.0]
+  R SL-G12 s_end: [0.062, 0.053, 0.085]
+  R SL-G12 floor: [0.0, 0.0, 0.0]
+  R SL-G12 pin: [0.0, 0.0, 0.0]
+  R SL-G12 wbind: [0.0, 0.0, 0.0]
+  R SL-G12 nk_min: [1570, 2242, 1764]
+  R SL-G12 nk>8192: [0.0, 0.0, 0.0]
+  R SL-G12 nk<8: [0.0, 0.0, 0.0]
+  R SL-G12 Tp50_last_us: [19930.0, 20233.5, 16969.5]
+  R SL-G12 mbps: [87.704, 89.562, 84.637]
+  R SL-G12 A_x p50 us: [9216, 7680, 7168]
+  R SL-G12 R4 brake_us per third: [[4028.0, 2725.5, 2783.5], [2997.0, 2838.0, 2859.0], [3508.0, 3123.0, 3060.5]]
+  R SL-G12 R7 B per third: [[10.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.5]]
+  R SL-G12 R9 occupancy per third: [[1.0, 1.0, 1.0], [1.0, 1.0, 0.988], [1.0, 0.977, 1.0]]
+  R SL-G12 R8 ask/n per third: [[0.998, 0.997, 0.998], [0.997, 0.998, 0.998], [0.996, 0.997, 0.997]]
+  SL-G12 GOODPUT vs MAIN: WITHIN SL-G12-MAIN -2.83 vs 2sigma_pooled 3.53
+  SL-G12 DELAY_Ax vs MAIN: BETTER SL-G12-MAIN -177664.00 vs 2sigma_pooled 13462.13
+  SL-G12 DELAY_Tp50 vs MAIN: BETTER SL-G12-MAIN -188747.67 vs 2sigma_pooled 2639.22
+  SL-G12 n_end 201.5 vs the offline-map point 184: ln ratio +0.091 (reported)
+  LABEL c2-100: BISTABLE (3 SH rows NOT-RETURNED c2-100 SH s42 r1:HIGH,c2-100 SH s7 r1:HIGH,c2-100 SH s42 r2:HIGH)
+  SPREAD AS-PREDICTED (median s_end 0.050 / 0.08 = 0.62)
+  GOODPUT WORSE SL-MAIN -6.33 vs 2sigma_pooled 1.93
+  DELAY_Ax BETTER SL-MAIN -179370.67 vs 2sigma_pooled 13423.13
+  DELAY_Tp50 BETTER SL-MAIN -190905.50 vs 2sigma_pooled 759.16
+[c1s-400] rows: MAIN 3 SL 3 SH 3; scored MAIN 3 SL 3 SH 2
+  ROW c1s-400 MAIN s42 r1: LIVE dur=49.6s n_end=2048.0 s_end=0.000 floor/pin last=0.000/0.136 mbps=805.8 
+  ROW c1s-400 SL s42 r1: LIVE dur=50.7s n_end=828.5 s_end=0.180 floor/pin last=0.000/0.000 mbps=789.4 
+  ROW c1s-400 SH s42 r1: LIVE HOLD-EXPIRED dur=47.1s n_end=962.0 s_end=0.152 floor/pin last=0.000/0.000 mbps=849.2 
+  ROW c1s-400 SL s7 r1: LIVE dur=48.6s n_end=588.0 s_end=0.103 floor/pin last=0.000/0.000 mbps=822.7 
+  ROW c1s-400 SH s7 r1: LIVE HOLD-INERT dur=47.1s n_end=639.0 s_end=0.295 floor/pin last=0.000/0.000 mbps=848.9 
+  ROW c1s-400 MAIN s7 r1: LIVE dur=44.9s n_end=2048.0 s_end=0.000 floor/pin last=0.000/0.050 mbps=890.4 
+  ROW c1s-400 SH s42 r2: LIVE HOLD-EXPIRED dur=46.7s n_end=676.0 s_end=0.110 floor/pin last=0.000/0.000 mbps=856.1 
+  ROW c1s-400 MAIN s42 r2: LIVE dur=46.7s n_end=2048.0 s_end=0.000 floor/pin last=0.000/0.095 mbps=857.3 
+  ROW c1s-400 SL s42 r2: LIVE dur=136.7s n_end=2048.0 s_end=0.000 floor/pin last=0.000/1.000 mbps=292.5 
+  R MAIN n_end: [2048.0, 2048.0, 2048.0]
+  R MAIN s_end: [0.0, 0.0, 0.0]
+  R MAIN floor: [0.0, 0.0, 0.0]
+  R MAIN pin: [0.136, 0.05, 0.095]
+  R MAIN hold: [0.0, 0.0, 0.0]
+  R MAIN wbind: [0.515, 0.0, 0.127]
+  R MAIN nk_min: [9305, 16154, 13651]
+  R MAIN nk>8192: [1.0, 1.0, 1.0]
+  R MAIN nk<8: [0.0, 0.0, 0.0]
+  R MAIN Tp50_last_us: [28749.5, 20111.5, 22921.0]
+  R MAIN R4 brake_us per third: [[3746.5, 3442.0, 10436.0], [4969.0, 3892.0, 4328.5], [4023.5, 2690.5, 9797.0]]
+  R MAIN R7 B per third: [[576.0, 1038.0, 64.0], [1014.0, 619.0, 806.5], [921.0, 911.0, 1601.0]]
+  R MAIN R9 occupancy per third: [[0.967, 0.943, 0.947], [0.961, 0.925, 0.973], [0.957, 0.959, 0.976]]
+  R MAIN R8 ask/n per third: [[0.804, 0.844, 0.646], [0.797, 0.833, 0.809], [0.821, 0.865, 0.681]]
+  R SL n_end: [828.5, 588.0, 2048.0]
+  R SL s_end: [0.18, 0.103, 0.0]
+  R SL floor: [0.0, 0.0, 0.0]
+  R SL pin: [0.0, 0.0, 1.0]
+  R SL hold: [0.0, 0.0, 0.0]
+  R SL wbind: [0.0, 0.0, 1.0]
+  R SL nk_min: [9838, 15583, 2278]
+  R SL nk>8192: [1.0, 1.0, 0.61]
+  R SL nk<8: [0.0, 0.0, 0.0]
+  R SL Tp50_last_us: [9727.0, 5832.0, 108661.0]
+  R SL R4 brake_us per third: [[444.0, 702.0, 1583.5], [413.0, 516.0, 396.0], [24871.0, 23032.0, 22918.0]]
+  R SL R7 B per third: [[0.0, 400.0, 472.5], [0.0, 0.0, 0.0], [1935.0, 1950.0, 1997.0]]
+  R SL R9 occupancy per third: [[0.895, 0.959, 0.949], [0.898, 0.908, 0.893], [0.995, 0.995, 0.995]]
+  R SL R8 ask/n per third: [[0.999, 0.999, 0.999], [0.999, 0.999, 0.999], [1.482, 1.94, 4.578]]
+  R SH n_end: [962.0, 676.0]
+  R SH s_end: [0.152, 0.11]
+  R SH floor: [0.0, 0.0]
+  R SH pin: [0.0, 0.0]
+  R SH hold: [0.0, 0.0]
+  R SH wbind: [0.0, 0.0]
+  R SH nk_min: [18874, 14631]
+  R SH nk>8192: [1.0, 1.0]
+  R SH nk<8: [0.0, 0.0]
+  R SH Tp50_last_us: [9770.0, 6646.0]
+  R SH R4 brake_us per third: [[4143.0, 633.5, 829.0], [3677.0, 351.5, 371.0]]
+  R SH R7 B per third: [[718.0, 300.0, 433.0], [880.0, 200.5, 121.0]]
+  R SH R9 occupancy per third: [[0.929, 0.915, 0.953], [0.946, 0.935, 0.95]]
+  R SH R8 ask/n per third: [[0.821, 0.999, 0.999], [0.823, 0.999, 0.999]]
+  R3 c1s-400 SH s42 r1: RETURNED t_ret=16.6 ask/H(hold last 2 s)=0.830 brake@release=6891 RTprop 1s/10s/t_h/end=2469/3350/3237/2897 hold-thr=3154us
+  R3 c1s-400 SH s42 r2: RETURNED t_ret=16.8 ask/H(hold last 2 s)=0.796 brake@release=865 RTprop 1s/10s/t_h/end=2512/2921/3490/2639 hold-thr=3001us
+  LABEL c1s-400: UNSTABLE (c1s-400 SL s42 r2:RUNAWAY)
+  SPREAD AS-PREDICTED (median s_end 0.103 / 0.11 = 0.94)
+  GOODPUT WITHIN SL-MAIN -216.29 vs 2sigma_pooled 424.26
+  DELAY_Ax WITHIN SL-MAIN +4778.67 vs 2sigma_pooled 41042.58
+  DELAY_Tp50 WITHIN SL-MAIN +17479.33 vs 2sigma_pooled 82650.65
+
+DECISION UNSTABLE at c1s-400: §42's step 3 (the split diagnostic) comes first
+RESULT {"cells": {"c1s-400": {"DELAY_Ax": "WITHIN", "DELAY_Ax_detail": "SL-MAIN +4778.67 vs 2sigma_pooled 41042.58", "DELAY_Tp50": "WITHIN", "DELAY_Tp50_detail": "SL-MAIN +17479.33 vs 2sigma_pooled 82650.65", "GOODPUT": "WITHIN", "GOODPUT_detail": "SL-MAIN -216.29 vs 2sigma_pooled 424.26", "SPREAD": "AS-PREDICTED (median s_end 0.103 / 0.11 = 0.94)", "cell": "c1s-400", "extra": {}, "label": "UNSTABLE", "n_SL": 828.5, "sh_rows": [["c1s-400 SH s42 r1", "RETURNED", null, 16.6], ["c1s-400 SH s42 r2", "RETURNED", null, 16.8]], "sl_only": false, "why": "c1s-400 SL s42 r2:RUNAWAY"}, "c2-100": {"DELAY_Ax": "BETTER", "DELAY_Ax_detail": "SL-MAIN -179370.67 vs 2sigma_pooled 13423.13", "DELAY_Tp50": "BETTER", "DELAY_Tp50_detail": "SL-MAIN -190905.50 vs 2sigma_pooled 759.16", "GOODPUT": "WORSE", "GOODPUT_detail": "SL-MAIN -6.33 vs 2sigma_pooled 1.93", "SPREAD": "AS-PREDICTED (median s_end 0.050 / 0.08 = 0.62)", "cell": "c2-100", "extra": {"SL-B0": {"DELAY_Ax": "BETTER", "DELAY_Tp50": "BETTER", "GOODPUT": "WITHIN", "ln_vs_pred": 0.18018251854520517, "n_end": 233.5, "scored": 3}, "SL-G12": {"DELAY_Ax": "BETTER", "DELAY_Tp50": "BETTER", "GOODPUT": "WITHIN", "ln_vs_pred": 0.09085362377775198, "n_end": 201.5, "scored": 3}}, "label": "BISTABLE", "n_SL": 163.0, "sh_rows": [["c2-100 SH s42 r1", "NOT-RETURNED", "HIGH", null], ["c2-100 SH s7 r1", "NOT-RETURNED", "HIGH", null], ["c2-100 SH s42 r2", "NOT-RETURNED", "HIGH", null]], "sl_only": false, "why": "3 SH rows NOT-RETURNED c2-100 SH s42 r1:HIGH,c2-100 SH s7 r1:HIGH,c2-100 SH s42 r2:HIGH"}}, "engine_stall": {}, "labels": {"c1s-400": "UNSTABLE", "c2-100": "BISTABLE"}}

@@ -1,0 +1,16 @@
+Status 41 battery, ledger annotations (written by the harness worker, not by the battery)
+
+- Tree: branch place41 (github/diag36 e61e645 + the plan-41 harness, 40c55dd); COMMIT shipped = 40c55ddc428dde1259ad6f10214b1529a268abdb.
+  BASE tree: main 4926822a14af2c17e98a2b2f5d99971bc9cef825, own `git archive`, own target dir. Binary sha256s are in BINSHA.txt.
+  Both archives were taken with core.autocrlf=false (the sandbox refuses `git -c`; the repo setting was flipped for the two archive calls and restored).
+- Waiter (LDW_PLAN=41) launched 2026-11-10T13:17:27Z, LD_HARD = 1794331047 (launch + 4 h). Precondition met first try (procs_running [1,1,1,1,1]).
+  Builds 13:17:40-13:28:21Z (shipped 322 s, BASE 319 s); suites 13:28-14:12Z all rc 0 (release 1163/0, doc 0/0 [no doc tests], wasm 35/0,
+  debug 1026/0, all tools/l1 python tests rc 0); smoke 14:13:07Z passed (3 rows); battery 14:13:07-14:29:35Z (988 s), bat_ok=1, DONE-ALL.
+- Rows: 108/108 present, 106 LIVE, 2 WITNESS-FAIL (both WIRE: c1d-400@def s7 r1 wpl-within-1ms 12/13 = 92 %; c8-100@256 s42 r3 30/32 = 94 %,
+  against the registered >= 95 % bar). They are void per the registered witness and were not re-run or re-parsed. No abort token, no rc != 0, no io flag.
+- Anomaly: BASE-GATE FAIL at c1d-400@def on one clause, lag_E_cli reading TREND-BETTER (MAIN 1290 vs BASE 1814, -28.9 %, BASE ranges 1519-2552
+  against MAIN 993-1733; every other clause at both cells WITHIN). Direction: MAIN is the lower (better) side. Reported, not decided on.
+- The c8 static cells reproduced weakly (MAIN LOCKED 1/6 at 192, 256, 512), so those are NOT-REPRODUCED; the 2 void WIRE rows fall at c1d def and c8-256.
+- Per-row logs in diag-ld/ and diag-smoke/ (client and server logs gzipped; drv.out plain). File names carry the store: <cell>@<store>-<arm>-s<seed>-r<rep>-a1-*.
+- The VM user is scrubbed to VMUSER, the host to HOST. test-*.log (suite logs, large) are not kept; TESTS.txt carries the counts.
+- VM cleaned: ld41 dirs removed, 0 raptorpath/tcpdump processes, 0 rp-* netns, both locks free.

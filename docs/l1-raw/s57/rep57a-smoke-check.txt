@@ -1,0 +1,11 @@
+SMOKE57A rows=1/1 (one B256-512 row: its realised mean burst must exceed 64; the values are not read, only the criteria below)
+PASS one row per smoke slot ran
+  ROW c1s-400 B256_512: status=LIVE mbps=757.642 wall=55.0 gates pool=512/512 pool_per_path=512/512 W=512.0 bind=1.0 late_n=191 R=80468.06722689075 burst=75.2624704956727 (d_bursts 50840, d_syms 3826344) release=98.57138440929465 aW=0.8864733311518325 q_ell=3.0417853403141364 ell=2.509 qc=0.01932367149758454
+PASS each row's pool AND burst are in [GATES] on both ends and pool_per_path matches on the sender (and the server when it prints one)
+PASS the successor dump is off on both ends
+PASS every row ran the one seat's binary (LD_SHA)
+PASS the LATE-window readouts (rates, rtt, rtp and its lifetime minimum, T-bar, q_l, burst gauges, release batch, ack wakes, a/W, busy, ack-wait, collapse share) computed on every row (no None)
+PASS every smoke row finished inside RWM_PERF_TIMEOUT_S=300 (rc 0, a summary, not DNF) at 5 GB
+PASS the knob acts: the B256-512 row's realised mean burst (d eb_syms / d eb_bursts over LATE) exceeds 64
+  LIVENESS c1s-400 B256_512 s42 rep1: LIVE 
+SMOKE-PASS

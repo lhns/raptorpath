@@ -30,9 +30,8 @@ mod loopback;
 
 use gauge::{field, opt_field, u64_field};
 
-const ARM: [(&str, &str); 3] = [
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
-    ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 

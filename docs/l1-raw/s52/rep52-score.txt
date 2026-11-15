@@ -1,0 +1,92 @@
+C8 RECOVERY LEVERS (status 52), REPORTED ONLY: c8-100 at 600 MB, arms BASE (BASE binary), CAND (CAND binary), W0 (BASE + RWM_PLACE_WDIV=0), W05 (BASE + RWM_PLACE_WDIV=0.5), WDER (BASE + RWM_PLACE_WDIV_DERIVED=1); nothing here is scored
+ROWS 30/30; ABORT-TOKENS none
+STATUS-TABLE per arm (LIVE rows enter the readouts; a witness failure means the arm's env was not echoed as registered)
+  BASE  LIVE=6
+  CAND  LIVE=6
+  W0    LIVE=6
+  W05   LIVE=6
+  WDER  LIVE=6
+WITNESS (the arm's env in the [GATES] echo): BASE wdiv=['None/None'] derived=['0/0']; CAND wdiv=['None/None'] derived=['0/0']; W0 wdiv=['0/0'] derived=['0/0']; W05 wdiv=['0.5/0.5'] derived=['0/0']; WDER wdiv=['None/None'] derived=['1/1']
+
+== BASE: n = 6 rows
+  goodput Mbit/s                             mean 98.9  median 98.6  [96.8 - 101.1]  (n 6)
+  completion tail s                          mean 4.19  median 4.31  [3.18 - 5.21]  (n 6)
+  H0 holes at source end                     mean 1787  median 1909  [1334 - 2033]  (n 6)
+  frontier lag at source end (symbols)       mean 74149  median 73771  [64289 - 84940]  (n 6)
+  retx send-leg-1 share (fp/on, whole run)   mean 0.641  median 0.640  [0.610 - 0.666]  (n 6)
+  retransmits per GB                         mean 25136  median 25166  [24388 - 25672]  (n 6)
+  receiver duplicates                        mean 1764  median 1760  [1583 - 1974]  (n 6)
+  client CPU s/GB                            mean 34.03  median 33.83  [33.17 - 36.08]  (n 6)
+  server CPU s/GB                            mean 45.33  median 44.67  [43.85 - 48.82]  (n 6)
+  [HOLD] original path 0 (median over rows, ms): first-report age p50/p90 3539/6291; closed-by-retransmit p50/p90 172/360
+    cx_leg (send leg of the closing retransmit): pooled {0: 6955, 1: 32106}, median row share on leg 1 0.837 (6 rows)
+  [HOLD] original path 1 (median over rows, ms): first-report age p50/p90 262/5243; closed-by-retransmit p50/p90 180/246
+    cx_leg (send leg of the closing retransmit): pooled {0: 20903, 1: 13}, median row share on leg 1 0.000 (6 rows)
+  K = mu * C per 4 s main-phase bin (mean over rows): 0-4s:87 4-8s:88 8-12s:66 12-16s:68 16-20s:97 20-24s:95 24-28s:84 28-32s:69 32-36s:66 36-40s:65 40-44s:71 44-48s:82
+  Nh = gap sequences visited per processed report, same bins: 0-4s:68.0 4-8s:70.1 8-12s:60.4 12-16s:58.2 16-20s:74.6 20-24s:81.6 24-28s:73.9 28-32s:64.1 32-36s:57.5 36-40s:55.7 40-44s:61.5 44-48s:77.1
+== CAND: n = 6 rows
+  goodput Mbit/s                             mean 107.2  median 107.1  [106.8 - 107.6]  (n 6)
+  completion tail s                          mean 0.40  median 0.44  [0.19 - 0.63]  (n 6)
+  H0 holes at source end                     mean 615  median 446  [67 - 1420]  (n 5)
+  frontier lag at source end (symbols)       mean 10740  median 10980  [7059 - 14193]  (n 6)
+  retx send-leg-1 share (fp/on, whole run)   mean 0.740  median 0.732  [0.716 - 0.774]  (n 6)
+  retransmits per GB                         mean 29900  median 30281  [27393 - 33045]  (n 6)
+  receiver duplicates                        mean 3729  median 3288  [2786 - 5169]  (n 6)
+  client CPU s/GB                            mean 36.15  median 35.83  [34.73 - 37.95]  (n 6)
+  server CPU s/GB                            mean 40.16  median 39.22  [38.53 - 45.15]  (n 6)
+  [HOLD] original path 0 (median over rows, ms): first-report age p50/p90 344/360; closed-by-retransmit p50/p90 295/590
+    cx_leg (send leg of the closing retransmit): pooled {0: 1534, 1: 45448}, median row share on leg 1 0.968 (6 rows)
+  [HOLD] original path 1 (median over rows, ms): first-report age p50/p90 360/590; closed-by-retransmit p50/p90 328/492
+    cx_leg (send leg of the closing retransmit): pooled {0: 20178, 1: 9}, median row share on leg 1 0.000 (6 rows)
+  K = mu * C per 4 s main-phase bin (mean over rows): 0-4s:92 4-8s:137 8-12s:156 12-16s:174 16-20s:182 20-24s:173 24-28s:181 28-32s:166 32-36s:163 36-40s:183 40-44s:168 44-48s:187
+  Nh = gap sequences visited per processed report, same bins: 0-4s:122.9 4-8s:145.0 8-12s:183.9 12-16s:318.1 16-20s:434.5 20-24s:361.2 24-28s:310.6 28-32s:299.8 32-36s:348.6 36-40s:331.3 40-44s:339.3 44-48s:496.7
+== W0: n = 6 rows
+  goodput Mbit/s                             mean 98.2  median 98.5  [95.7 - 99.7]  (n 6)
+  completion tail s                          mean 4.35  median 4.29  [3.52 - 5.56]  (n 6)
+  H0 holes at source end                     mean 2116  median 2159  [1743 - 2368]  (n 6)
+  frontier lag at source end (symbols)       mean 81863  median 77898  [68612 - 96282]  (n 6)
+  retx send-leg-1 share (fp/on, whole run)   mean 0.145  median 0.146  [0.140 - 0.151]  (n 6)
+  retransmits per GB                         mean 26300  median 26122  [24715 - 27990]  (n 6)
+  receiver duplicates                        mean 2243  median 2344  [1607 - 2681]  (n 6)
+  client CPU s/GB                            mean 34.97  median 34.74  [33.40 - 37.25]  (n 6)
+  server CPU s/GB                            mean 45.11  median 44.61  [43.65 - 48.32]  (n 6)
+  [HOLD] original path 0 (median over rows, ms): first-report age p50/p90 311/6291; closed-by-retransmit p50/p90 156/246
+    cx_leg (send leg of the closing retransmit): pooled {0: 50334, 1: 6421}, median row share on leg 1 0.109 (6 rows)
+  [HOLD] original path 1 (median over rows, ms): first-report age p50/p90 147/5243; closed-by-retransmit p50/p90 156/246
+    cx_leg (send leg of the closing retransmit): pooled {0: 19963, 1: 2385}, median row share on leg 1 0.098 (6 rows)
+  K = mu * C per 4 s main-phase bin (mean over rows): 0-4s:63 4-8s:64 8-12s:55 12-16s:53 16-20s:52 20-24s:61 24-28s:70 28-32s:82 32-36s:72 36-40s:62 40-44s:61 44-48s:63
+  Nh = gap sequences visited per processed report, same bins: 0-4s:45.3 4-8s:42.9 8-12s:45.9 12-16s:47.6 16-20s:47.7 20-24s:46.2 24-28s:49.6 28-32s:65.7 32-36s:60.5 36-40s:54.2 40-44s:49.6 44-48s:49.2
+== W05: n = 6 rows
+  goodput Mbit/s                             mean 98.5  median 99.1  [95.8 - 99.6]  (n 6)
+  completion tail s                          mean 4.31  median 4.10  [3.60 - 5.70]  (n 6)
+  H0 holes at source end                     mean 1976  median 1894  [1647 - 2307]  (n 6)
+  frontier lag at source end (symbols)       mean 79857  median 82247  [62055 - 90373]  (n 6)
+  retx send-leg-1 share (fp/on, whole run)   mean 0.436  median 0.430  [0.418 - 0.467]  (n 6)
+  retransmits per GB                         mean 24899  median 25082  [23733 - 25757]  (n 6)
+  receiver duplicates                        mean 1519  median 1504  [1348 - 1729]  (n 6)
+  client CPU s/GB                            mean 34.79  median 34.64  [32.67 - 36.55]  (n 6)
+  server CPU s/GB                            mean 45.92  median 46.18  [41.93 - 49.07]  (n 6)
+  [HOLD] original path 0 (median over rows, ms): first-report age p50/p90 3539/6291; closed-by-retransmit p50/p90 164/279
+    cx_leg (send leg of the closing retransmit): pooled {0: 23776, 1: 20267}, median row share on leg 1 0.458 (6 rows)
+  [HOLD] original path 1 (median over rows, ms): first-report age p50/p90 295/6029; closed-by-retransmit p50/p90 172/238
+    cx_leg (send leg of the closing retransmit): pooled {0: 21392, 1: 183}, median row share on leg 1 0.008 (6 rows)
+  K = mu * C per 4 s main-phase bin (mean over rows): 0-4s:77 4-8s:71 8-12s:61 12-16s:61 16-20s:62 20-24s:76 24-28s:81 28-32s:81 32-36s:78 36-40s:68 40-44s:62 44-48s:72
+  Nh = gap sequences visited per processed report, same bins: 0-4s:51.5 4-8s:54.1 8-12s:52.7 12-16s:51.7 16-20s:51.4 20-24s:60.9 24-28s:63.7 28-32s:70.1 32-36s:63.8 36-40s:55.9 40-44s:50.6 44-48s:68.4
+== WDER: n = 6 rows
+  goodput Mbit/s                             mean 98.7  median 99.0  [95.3 - 101.9]  (n 6)
+  completion tail s                          mean 3.82  median 3.59  [2.73 - 5.97]  (n 6)
+  H0 holes at source end                     mean 1814  median 1812  [1507 - 2134]  (n 6)
+  frontier lag at source end (symbols)       mean 74226  median 75032  [65288 - 81911]  (n 6)
+  retx send-leg-1 share (fp/on, whole run)   mean 0.593  median 0.591  [0.524 - 0.638]  (n 6)
+  retransmits per GB                         mean 24939  median 24945  [23778 - 25992]  (n 6)
+  receiver duplicates                        mean 1614  median 1604  [1476 - 1817]  (n 6)
+  client CPU s/GB                            mean 34.46  median 34.56  [33.13 - 35.07]  (n 6)
+  server CPU s/GB                            mean 45.64  median 46.19  [43.92 - 46.85]  (n 6)
+  [HOLD] original path 0 (median over rows, ms): first-report age p50/p90 3408/6029; closed-by-retransmit p50/p90 197/360
+    cx_leg (send leg of the closing retransmit): pooled {0: 11944, 1: 27995}, median row share on leg 1 0.712 (6 rows)
+  [HOLD] original path 1 (median over rows, ms): first-report age p50/p90 360/5767; closed-by-retransmit p50/p90 172/238
+    cx_leg (send leg of the closing retransmit): pooled {0: 20113, 1: 34}, median row share on leg 1 0.001 (6 rows)
+  K = mu * C per 4 s main-phase bin (mean over rows): 0-4s:90 4-8s:83 8-12s:67 12-16s:67 16-20s:86 20-24s:119 24-28s:93 28-32s:78 32-36s:66 36-40s:75 40-44s:77 44-48s:75
+  Nh = gap sequences visited per processed report, same bins: 0-4s:59.4 4-8s:67.7 8-12s:57.3 12-16s:56.0 16-20s:71.1 20-24s:89.8 24-28s:80.0 28-32s:66.2 32-36s:58.9 36-40s:63.0 40-44s:66.0 44-48s:57.8
+
+VERDICT52 REPORTED-ONLY rows=30/30 live=30

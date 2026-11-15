@@ -1,0 +1,4 @@
+c1d-400: PCAP periods per window median 8; lag0: r=+0.46 (n=64)  lag1: r=+0.03 (n=61)  lag2: r=-0.04 (n=58)  lag3: r=-0.01 (n=55)  lag4: r=-0.01 (n=52)
+c1s-400: PCAP periods per window median 10.0; lag0: r=+0.50 (n=61)  lag1: r=+0.13 (n=58)  lag2: r=-0.18 (n=55)  lag3: r=+0.21 (n=52)  lag4: r=-0.24 (n=49)
+c2-100: PCAP periods per window median 3.0; lag0: r=+0.14 (n=105)  lag1: r=-0.07 (n=102)  lag2: r=-0.04 (n=99)  lag3: r=+0.00 (n=96)  lag4: r=+0.06 (n=93)
+c8-100: PCAP periods per window median 1.0; lag0: r=+0.08 (n=80)  lag1: r=-0.12 (n=76)  lag2: r=+0.03 (n=72)  lag3: r=+0.08 (n=69)  lag4: r=+0.01 (n=66)

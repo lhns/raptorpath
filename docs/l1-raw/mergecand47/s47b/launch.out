@@ -1,0 +1,52 @@
+SENTINEL-WRITABLE /dev/shm/s47b/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s47b/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-11T16:30:22Z user=VMUSER dir=/dev/shm/s47b/run launch=2026-11-11T16:30:22Z
+LD-ALL start plan=47 load=0.33 0.12 0.15 1/393 1349313 2026-11-11T16:30:22Z
+LD-ALL precondition met procs_running=[1,1,1,1,2,] cargo=0 rustc=0 io=full avg10=2.27 avg60=2.22 avg300=0.72 total=4546736891 2026-11-11T16:30:30Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.30 0.12 0.15; io=full avg10=2.27 avg60=2.22 avg300=0.72 total=4546737147 2026-11-11T16:30:30Z
+LD-ALL parser test ok 2026-11-11T16:30:57Z
+LD-ALL built wall=305s 2026-11-11T16:36:02Z
+LD-ALL binary a33990618417075f2529688a65a6e5ad99b911a410cf22cbec0733102818f57e 2026-11-11T16:36:02Z
+LD-ALL built BASE wall=297s binary 79572edd05dbbee3184e038db88c7143a952415bed2da21c1000ce1525edfff5 2026-11-11T16:40:59Z
+LD-ALL test main rc=0 passed=1164 failed=0 ignored=53 binaries=101 2026-11-11T17:02:44Z
+LD-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-11-11T17:02:46Z
+LD-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-11-11T17:04:48Z
+LD-ALL test debug-witness rc=0 passed=1027 failed=0 ignored=52 binaries=92 2026-11-11T17:24:23Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-11T17:29:59Z
+LD-ALL suites done tfail=0 2026-11-11T17:29:59Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.04 avg60=0.07 avg300=0.06 total=4552529247 2026-11-11T17:30:07Z
+LD-ALL stage guard (plan 41c) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.01 avg60=0.06 avg300=0.06 total=4552529279 2026-11-11T17:30:15Z
+SMOKE38 c1s-400@def BASE: status=LIVE mbps=783.091 share=[1.0] locked=False w_mv=None w_calls=None w_cold=None 
+SMOKE38 c1s-400@def CAND: status=LIVE mbps=810.214 share=[1.0] locked=False w_mv=None w_calls=338913 w_cold=0.0000 
+SMOKE-PASS
+LD-ALL stage guard SMOKE-PASS 2026-11-11T17:30:29Z
+LD-ALL stage guard battery rc=0 wall=859s 2026-11-11T17:44:48Z
+CHECK41c done=True rows=96/96
+LD-ALL stage guard end ok=1 VERDICT GATE-41c PASS 2026-11-11T17:44:49Z
+LD-ALL guard resolution NOT computed on the VM; on the host: python3 raptorpath/tools/l1/place38_parse.py resolution41c <pulled run dir>/guard/ld.log 2026-11-11T17:44:49Z
+LD-ALL stage p46 (plan 46) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.08 avg60=0.02 avg300=0.00 total=4553314310 2026-11-11T17:44:57Z
+SMOKE46 BASE SLOW: status=LIVE event_witness=True exit_witness=True peak_rtt=1566 peak_wpl_us=None peak_wrtt=1572 inactive=0 recovered=0 refresh_per_2s=4.35 idle_lines=10 qdisc_ok=True backlog_peak=308 inject_ok=True qcwnd_below_bdp=leg0 0.000 [0.000-0.000] n=1 leg1 0.000 [0.000-0.000] n=1; any leg 0.000 [0.000-0.000] n=1 
+SMOKE46 CAND FAST: status=LIVE event_witness=True exit_witness=True peak_rtt=3437 peak_wpl_us=1516092 peak_wrtt=1516 inactive=0 recovered=0 refresh_per_2s=- idle_lines=0 qdisc_ok=False backlog_peak=111 inject_ok=True qcwnd_below_bdp=leg0 0.006 [0.006-0.006] n=1 leg1 0.000 [0.000-0.000] n=1; any leg 0.006 [0.006-0.006] n=1 
+SMOKE-FAIL CAND/FAST: ['qdisc:during[0] delay is not before + 1500 ms']
+ABORT-INJECT
+ABORT-INJECT stage p46: a check row failed; no scored row ran 2026-11-11T17:46:29Z
+LD-ALL end plan 47 guard_ok=1 p46_ok=0 raptorpath=0 netns=0 2026-11-11T17:46:29Z
+LD-ALL FAILED: stage p46 did not complete (p46/) 2026-11-11T17:46:29Z
+PERSISTED /dev/shm/s47b/run -> ~/s47b/run 2026-11-11T17:46:29Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

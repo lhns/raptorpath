@@ -105,13 +105,9 @@ pub struct RuntimeGates {
     /// `RWM_MSTAR_ANCHOR` (on, shipped): measured RTprop floor, fast-seed filter, (M*+2)·G
     /// backstop.
     pub mstar_anchor: bool,
-    /// `RWM_PLAIN_RS` (off, arm): plain-mode BBR send-interval sampler (paper §8.3).
-    pub plain_rs: bool,
     /// `RWM_HONEST_ANCHOR` (on, shipped): BtlBw windowed max on an O(1) max-deque; `=0` is the same
     /// statistic by an O(window·rate) full fold.
     pub honest_anchor: bool,
-    /// `RWM_HONEST_K` (off, arm): `EchoRatioMin` fed the raw echo/RTprop ratio, not SRTT.
-    pub honest_k: bool,
 
     // ── Store / flow control (paper §6) ──
     /// `RWM_STORE_SACK_RELEASE` (on, shipped): SACK frees the slot, keeps the payload (ADR-0060).
@@ -128,11 +124,6 @@ pub struct RuntimeGates {
     pub store_gain: f64,
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw anchor warms.
     pub store_boot: usize,
-    /// `RWM_HONEST_CAP` (on, shipped; needs `plain_rs`): floor-clock caps on the send anchor.
-    pub honest_cap: bool,
-    /// `RWM_POOL_ANCHOR` (off, arm; independent of `est_cadence`): at N ≥ 2 the pooled cap is Σᵢ honest_store_cap on
-    /// each path's send-interval anchor, not the ack-interval max.
-    pub pool_anchor: bool,
     /// `RWM_ACK_MERGE` (on, shipped): window mode drops the per-batch `Ack`; its payload rides
     /// `WindowAck`'s cumulative counters.
     pub ack_merge: bool,
@@ -148,10 +139,6 @@ pub struct RuntimeGates {
     // ── Placement (paper §5.7) ──
     /// `RWM_COLD_PLACE` (off, arm): price an unmeasured leg at the fastest measured srtt.
     pub cold_place: bool,
-    /// `RWM_PLACE_T_DERIVED` (absent, arm): temperature `T = (√6/π)·σ_e/ref_srtt`.
-    pub place_t_derived: bool,
-    /// `RWM_PLACE_HOL` (absent, arm): source head-of-line cost `[δ·s_i + κ·(s_i − H)+]/ref`.
-    pub place_hol: bool,
     /// `RWM_PLACE_WDIV_DERIVED` (absent, arm): repair weight `fate_i·(p_BB,i − ε_i)+·srtt_i/ref`.
     pub place_wdiv_derived: bool,
 
@@ -178,18 +165,12 @@ pub struct RuntimeGates {
     pub window_override: Option<usize>,
     /// `RWM_REPORT_GENS` (unset = M*+1 under gen_pipe, else 6): generations per report.
     pub report_gens: Option<usize>,
-    /// `RWM_REPAIR_WAIT` (ms, unset = 0): wait before a frontier hole fires a NACK.
-    pub repair_wait_ms: Option<u64>,
     /// `RWM_CODED_SRC` (off, arm): clock the coded budget on the sent frontier.
     pub coded_src: bool,
     /// `RWM_NO_REACTIVE` (off, arm): disable the reactive loop.
     pub no_reactive: bool,
     /// `RWM_XPATH_REPAIR` (off, arm): route repair to the path with most spare capacity.
     pub xpath_repair: bool,
-    /// `RWM_PROACTIVE_PACER` (off, arm): present-at-stall filling-repair pacer.
-    pub proactive_pacer: bool,
-    /// `RWM_REASM_BDP` (off, arm): never evict an undelivered above-frontier symbol.
-    pub reasm_bdp: bool,
     /// `RWM_MIN_R` (default 0, clamped [0, 2]): repair-rate floor (test instrument).
     pub min_r: f64,
 
@@ -206,8 +187,6 @@ pub struct RuntimeGates {
     pub infl_bdp: Option<f64>,
     /// `RWM_COPA_FEED` (off, arm; implied by `RWM_QUIC_CC=passthrough`): Copa feed (ADR-0062).
     pub copa_feed: bool,
-    /// `RWM_RS_ATTR` (on, shipped): flight-time witness for cross-path ack attribution.
-    pub rs_attr: bool,
 
     // ── Emission ──
     /// `RWM_EMIT_BATCH` (on, shipped; status §8): pacer-quantum emission batching, every path count (Law 0).
@@ -222,23 +201,15 @@ pub struct RuntimeGates {
     pub recov_mp_law: bool,
     /// `RWM_THREE_TERM` (off, arm; paper §10): `net::three_term_store_cap` as the plain cap.
     pub three_term: bool,
-    /// `RWM_COMPOSED_CAP` (off, arm; paper §10): three-term cap plus the per-path cwnd brake.
-    pub composed_cap: bool,
     /// `RWM_SUM_CAP` (on, shipped; paper §6.1): pooled cap `gain·Σ`; `=0` is `gain·N·Σ`.
     pub sum_cap: bool,
     /// `RWM_LATE_BRAKE` (off, arm): brake when every live path has `in_flightᵢ ≥ cwndᵢ`.
     pub late_brake: bool,
     /// `RWM_RECOV_SP` (off, arm): single-path RFC 9002 §6.1.2 time-threshold suppression.
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP` (off, arm): recovery clocks at `net::derived_recovery_round_us`.
-    pub derived_sweep: bool,
     /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
     /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
-    /// `RWM_HOLDDOWN_Q` (absent, arm): hold a reported hole `T(q) = W_q(1 − q)` (paper §7.2).
-    pub holddown_q: Option<f64>,
-    /// `RWM_REFRESH_FLOOR_US` (absent = 25 ms, arm): hole-refresh band floor (paper §7.4).
-    pub refresh_floor_us: Option<u64>,
     /// `RWM_DELTA` (absent, arm): the contract's δ as a number (paper §4.1); `RWM_COPA_DELTA`
     /// outranks it for the CC.
     pub delta: Option<f64>,
@@ -335,12 +306,8 @@ impl RuntimeGates {
         // The gates that print their own liveness echo at resolve time, in
         // the order the echoes have always come out.
         let honest_anchor = crate::gates::scheduler_gates::resolve_honest_anchor();
-        let honest_k = crate::gates::scheduler_gates::resolve_honest_k();
         let est_cadence = crate::control::estimator::resolve_est_cadence();
-        let pool_anchor = crate::gates::scheduler_gates::resolve_pool_anchor();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
-        let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
-        let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
         let place_wdiv_derived = crate::gates::scheduler_gates::resolve_place_wdiv_derived();
         let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
         let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
@@ -350,9 +317,7 @@ impl RuntimeGates {
             taper_r: env_flag("RWM_TAPER_R", unified),
             astar_anchor: anchor_gate_default("RWM_ASTAR_ANCHOR", true),
             mstar_anchor: anchor_gate_default("RWM_MSTAR_ANCHOR", true),
-            plain_rs: anchor_gate("RWM_PLAIN_RS"),
             honest_anchor,
-            honest_k,
             store_sack_release: env_flag("RWM_STORE_SACK_RELEASE", true),
             store_paths: env_flag("RWM_STORE_PATHS", true),
             store_path_pool: env_parse::<usize>("RWM_STORE_PATH_POOL").unwrap_or(2048),
@@ -362,16 +327,12 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
-            honest_cap: env_flag("RWM_HONEST_CAP", true),
-            pool_anchor,
             ack_merge: crate::gates::scheduler_gates::resolve_ack_merge(),
             loss_sent_truth: crate::gates::scheduler_gates::resolve_loss_sent_truth(),
             release_1to1: crate::gates::scheduler_gates::resolve_release_1to1(),
             charge_recovery: crate::gates::scheduler_gates::resolve_charge_recovery(),
             sidle_derived: crate::gates::scheduler_gates::resolve_sidle_derived(),
             cold_place,
-            place_t_derived,
-            place_hol,
             place_wdiv_derived,
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
@@ -386,12 +347,9 @@ impl RuntimeGates {
                 .unwrap_or(16),
             window_override: env_parse::<usize>("RWM_WINDOW"),
             report_gens: env_parse::<usize>("RWM_REPORT_GENS"),
-            repair_wait_ms: env_parse::<u64>("RWM_REPAIR_WAIT"),
             coded_src: env_flag("RWM_CODED_SRC", false),
             no_reactive: env_flag("RWM_NO_REACTIVE", false),
             xpath_repair: env_flag("RWM_XPATH_REPAIR", false),
-            proactive_pacer: env_flag("RWM_PROACTIVE_PACER", false),
-            reasm_bdp: env_flag("RWM_REASM_BDP", false),
             min_r: env_parse::<f64>("RWM_MIN_R").unwrap_or(0.0).clamp(0.0, 2.0),
             cc_pace: env_flag("RWM_CC_PACE", copa_wire),
             cc_pace_headroom: env_parse::<f64>("RWM_CC_PACE_HR")
@@ -401,7 +359,6 @@ impl RuntimeGates {
             infl_cap: env_parse::<u64>("RWM_INFL_CAP").unwrap_or(0),
             infl_bdp: env_parse::<f64>("RWM_INFL_BDP"),
             copa_feed: env_flag("RWM_COPA_FEED", false),
-            rs_attr: env_flag("RWM_RS_ATTR", true),
             emit_batch: env_flag("RWM_EMIT_BATCH", true),
             emit_burst: env_parse::<usize>("RWM_EMIT_BURST")
                 .unwrap_or(64)
@@ -409,22 +366,10 @@ impl RuntimeGates {
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             three_term: env_flag("RWM_THREE_TERM", false),
-            composed_cap: env_flag("RWM_COMPOSED_CAP", false),
             sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
-            derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             delta_cap: env_flag("RWM_DELTA_CAP", true),
-            // Out-of-domain values resolve to absent (echo `unset`): q ≤ 0 is the
-            // shipped machine and the window law diverges at q ≥ 1.
-            holddown_q: env_parse::<f64>("RWM_HOLDDOWN_Q")
-                .filter(|q| q.is_finite() && *q > 0.0 && *q < 1.0),
-            // Below the receiver loop's wake granularity the cadence cannot be
-            // expressed; above the shipped upper rail it leaves the band.
-            refresh_floor_us: env_parse::<u64>("RWM_REFRESH_FLOOR_US").filter(|f| {
-                *f >= crate::net::LOOP_WAKE_US
-                    && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
-            }),
             delta: resolve_delta(),
             copa_delta: resolve_copa_delta(),
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
@@ -475,32 +420,29 @@ impl RuntimeGates {
         let b = |v: bool| if v { "1" } else { "0" };
         let o = |v: &Option<f64>| v.map_or("unset".to_string(), |x| x.to_string());
         let ou = |v: &Option<usize>| v.map_or("unset".to_string(), |x| x.to_string());
-        let o64 = |v: &Option<u64>| v.map_or("unset".to_string(), |x| x.to_string());
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
-             RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
-             RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
+             RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} \
+             RWM_HONEST_ANCHOR={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
-             RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
+             RWM_THREE_TERM={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
-             RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_SIDLE_DERIVED={} \
-             RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
+             RWM_COLD_PLACE={} \
              RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
              RWM_OOO_RETAIN={}/{} RWM_WINDOW={} RWM_REPORT_GENS={} \
-             RWM_REPAIR_WAIT={} RWM_CODED_SRC={} RWM_NO_REACTIVE={} \
-             RWM_XPATH_REPAIR={} RWM_PROACTIVE_PACER={} RWM_REASM_BDP={} \
+             RWM_CODED_SRC={} RWM_NO_REACTIVE={} \
+             RWM_XPATH_REPAIR={} \
              RWM_MIN_R={} RWM_CC_PACE={} RWM_CC_PACE_HR={} RWM_REACT_CAP={} \
-             RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
+             RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
-             RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
-             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COPA_DELTA={} \
+             RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
@@ -509,35 +451,29 @@ impl RuntimeGates {
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
-            b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
-            b(self.honest_anchor), b(self.honest_k),
+            b(self.astar_anchor), b(self.mstar_anchor),
+            b(self.honest_anchor),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot,
-            b(self.three_term), b(self.composed_cap),
+            b(self.three_term),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
-            // EFFECTIVE value: the honest-cap law only runs with plain_rs.
-            b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.sidle_derived),
-            b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
+            b(self.cold_place),
             b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
             b(self.ooo_retain), self.ooo_gens, ou(&self.window_override),
             ou(&self.report_gens),
-            self.repair_wait_ms.map_or("unset".to_string(), |v| v.to_string()),
             b(self.coded_src), b(self.no_reactive),
-            b(self.xpath_repair), b(self.proactive_pacer), b(self.reasm_bdp),
+            b(self.xpath_repair),
             self.min_r, b(self.cc_pace), self.cc_pace_headroom, o(&self.react_cap),
-            self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
+            self.infl_cap, o(&self.infl_bdp), b(self.copa_feed),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_sp),
-            b(self.derived_sweep),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.
-            o(&self.holddown_q),
-            o64(&self.refresh_floor_us),
             o(&self.delta),
             o(&self.copa_delta),
             b(self.completion_exposure),
@@ -562,7 +498,7 @@ impl RuntimeGates {
 /// harness/L0-sim knob, with the reason the coverage test accepts it.
 #[cfg(test)]
 const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
-    ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar/plain_rs values this line prints"),
+    ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar values this line prints"),
     ("RWM_CLOCK_GAP", "own echo: 'clock-gap estimator hygiene ACTIVE' (control/anchor.rs wiring, net/mod.rs)"),
     ("RWM_COPA_WIRE", "own echo: scheduler Copa family resolve"),
     ("RWM_COPA_COMPETE", "own echo: scheduler Copa family resolve"),
@@ -586,21 +522,25 @@ mod forwarding_audit {
     /// Every `RWM_*` string literal in the crate source, so an inline
     /// `env::var` at a new site is caught too.
     fn engine_gate_surface() -> BTreeSet<String> {
-        fn walk(dir: &std::path::Path, out: &mut String) {
+        fn walk(dir: &std::path::Path, out: &mut String, files: &mut usize) {
             for e in std::fs::read_dir(dir).expect("read src dir").flatten() {
                 let p = e.path();
                 if p.is_dir() {
-                    walk(&p, out);
+                    walk(&p, out, files);
                 } else if p.extension().is_some_and(|x| x == "rs") {
-                    out.push_str(&std::fs::read_to_string(&p).unwrap_or_default());
+                    *files += 1;
+                    out.push_str(&std::fs::read_to_string(&p).expect("read source"));
                 }
             }
         }
         let mut src = String::new();
+        let mut files = 0usize;
         walk(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
             &mut src,
+            &mut files,
         );
+        assert!(files >= 1, "the gate scrape walk found no .rs file");
         let mut out = BTreeSet::new();
         // Match the `"RWM_..."` literal form every gate read uses.
         let bytes = src.as_bytes();
@@ -629,7 +569,7 @@ mod forwarding_audit {
     /// The harness's `RWM_FORWARD` array in `tools/l1/lib.sh`.
     fn harness_forward_list() -> BTreeSet<String> {
         let lib = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/l1/lib.sh"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/l1/lib.sh"),
         )
         .expect("tools/l1/lib.sh must exist — it is the single forwarding list");
         let body = lib
@@ -695,10 +635,6 @@ mod forwarding_audit {
         assert!(
             line.contains("RWM_ACK_MERGE=1"),
             "a default-ON gate must be named with its 1 value: {line}"
-        );
-        assert!(
-            line.contains("RWM_DERIVED_SWEEP=0"),
-            "RWM_DERIVED_SWEEP must print its OFF value: {line}"
         );
         // A receiver-law control row is void unless both arms read `=0`.
         assert!(

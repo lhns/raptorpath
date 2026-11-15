@@ -100,8 +100,7 @@ pub const QCLK_SAMPLE_CAP: usize = 4096;
 /// the engine will wait, per evaluation; this records them as a distribution
 /// (mean, p05/p50/p95, min/max) beside the mean srtt and the mean measured σ
 /// that fed the evaluations. It is the one per-run readout of the shipped
-/// clamp's realized cadence (the `RWM_REFRESH_FLOOR_US` reachability reads
-/// it).
+/// clamp's realized cadence.
 ///
 /// Observation only: no gate of its own, no control flow, no wire byte.
 pub(crate) struct QuantileClockGauge {

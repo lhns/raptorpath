@@ -1,0 +1,57 @@
+Status §43 follow-up: the REGISTERED law ask = G·ΣLᵢ(RTpropᵢ + Sᵢ [+ b0ᵢ]), S = Tp50 − Tmin, at c2 and c8 (p27).
+(1) debiased brake: b0ᵢ = mean of (Tmin − RTprop_fresh) over the smallest caps (c2 64/96; c8 128/192 per leg), G = 1.1;
+(2) no debias, G = 1.2. Fresh anchor = Copa rtprop_us row median; expired = row lowest post-warm-up rtt_min_us
+(s42rtprop.row_tmin_floor). Row medians averaged over LIVE rows per cap (as ask27).
+Usage: python -I s43gain.py <loop-diag dir>   (imports s42noise.py / s42rtprop.py from this directory)
+
+== p27 c2-100: knee 192, band [128, 288]; rows/cap 64:2, 96:2, 128:2, 192:2, 256:2, 384:2, 512:2, 1024:2; b0 (ms) p0 2.28
+  gate: registered G=1.1   fresh   ask 64:133, 96:144, 128:155, 192:171, 256:176, 384:180, 512:190, 1024:193
+      stable 164 slope 0.25; band yes; G/Gmax 0.887 (80.0 Mbit/s); Tp50 17.8 ms
+      all crossings: down 164
+      unstable threshold: none | ask/n at caps >= knee: 192:0.89, 256:0.69, 384:0.47, 512:0.37, 1024:0.19
+  gate: registered G=1.1   expired ask 64:132, 96:142, 128:147, 192:169, 256:214, 384:262, 512:476, 1024:1033
+      stable 157 slope 0.34; band yes; G/Gmax 0.863 (77.9 Mbit/s); Tp50 17.5 ms
+      all crossings: down 157; up 927
+      unstable threshold: 927 (slope 1.09) | ask/n at caps >= knee: 192:0.88, 256:0.83, 384:0.68, 512:0.93, 1024:1.01
+  (1) debiased G=1.1       fresh   ask 64:158, 96:168, 128:179, 192:195, 256:200, 384:205, 512:215, 1024:218
+      stable 195 slope 0.08; band yes; G/Gmax 0.985 (88.9 Mbit/s); Tp50 19.5 ms
+      all crossings: down 195
+      unstable threshold: none | ask/n at caps >= knee: 192:1.02, 256:0.78, 384:0.53, 512:0.42, 1024:0.21
+  (1) debiased G=1.1       expired ask 64:156, 96:166, 128:171, 192:193, 256:238, 384:286, 512:500, 1024:1057
+      stable 196 slope 0.70; band yes; G/Gmax 0.985 (88.9 Mbit/s); Tp50 19.5 ms
+      all crossings: down 196; up 648
+      unstable threshold: 648 (slope 1.09) | ask/n at caps >= knee: 192:1.01, 256:0.93, 384:0.75, 512:0.98, 1024:1.03
+  (2) registered G=1.2     fresh   ask 64:145, 96:157, 128:169, 192:186, 256:192, 384:197, 512:207, 1024:211
+      stable 184 slope 0.27; band yes; G/Gmax 0.957 (86.4 Mbit/s); Tp50 18.8 ms
+      all crossings: down 184
+      unstable threshold: none | ask/n at caps >= knee: 192:0.97, 256:0.75, 384:0.51, 512:0.41, 1024:0.21
+  (2) registered G=1.2     expired ask 64:144, 96:155, 128:160, 192:184, 256:233, 384:286, 512:519, 1024:1126
+      stable 179 slope 0.37; band yes; G/Gmax 0.940 (84.8 Mbit/s); Tp50 18.6 ms
+      all crossings: down 179; up 504
+      unstable threshold: 504 (slope 1.82) | ask/n at caps >= knee: 192:0.96, 256:0.91, 384:0.74, 512:1.01, 1024:1.10
+
+== p27 c8-100: knee 384, band [256, 576]; rows/cap 128:1, 192:2, 384:1, 512:1, 768:1, 1024:2, 2048:2; b0 (ms) p0 2.64, p1 4.32 [THIN: c8]
+  gate: registered G=1.1   fresh   ask 128:240, 192:255, 384:356, 512:443, 768:557, 1024:760, 2048:568
+      stable 324 slope 0.52; band yes; G/Gmax 0.928 (95.5 Mbit/s); Tp50 25.8 ms
+      all crossings: down 324
+      unstable threshold: none | ask/n at caps >= knee: 384:0.93, 512:0.86, 768:0.73, 1024:0.74, 2048:0.28
+  gate: registered G=1.1   expired ask 128:240, 192:252, 384:322, 512:523, 768:568, 1024:927, 2048:641
+      stable 287 slope 0.36; band yes; G/Gmax 0.883 (90.8 Mbit/s); Tp50 23.7 ms
+      all crossings: down 287; up 492; down 526
+      unstable threshold: 492 (slope 1.57) | ask/n at caps >= knee: 384:0.84, 512:1.02, 768:0.74, 1024:0.91, 2048:0.31
+  (1) debiased G=1.1       fresh   ask 128:278, 192:293, 384:393, 512:480, 768:595, 1024:798, 2048:605
+      stable 413 slope 0.68; band yes; G/Gmax 0.998 (102.7 Mbit/s); Tp50 31.4 ms
+      all crossings: down 413
+      unstable threshold: none | ask/n at caps >= knee: 384:1.02, 512:0.94, 768:0.77, 1024:0.78, 2048:0.30
+  (1) debiased G=1.1       expired ask 128:278, 192:290, 384:360, 512:561, 768:605, 1024:965, 2048:678
+      stable 346 slope 0.36; band yes; G/Gmax 0.954 (98.2 Mbit/s); Tp50 27.1 ms
+      all crossings: down 346; up 426; down 571
+      unstable threshold: 426 (slope 1.57) | ask/n at caps >= knee: 384:0.94, 512:1.10, 768:0.79, 1024:0.94, 2048:0.33
+  (2) registered G=1.2     fresh   ask 128:262, 192:278, 384:388, 512:483, 768:608, 1024:830, 2048:619
+      stable 399 slope 0.74; band yes; G/Gmax 0.999 (102.8 Mbit/s); Tp50 30.4 ms
+      all crossings: down 399
+      unstable threshold: none | ask/n at caps >= knee: 384:1.01, 512:0.94, 768:0.79, 1024:0.81, 2048:0.30
+  (2) registered G=1.2     expired ask 128:262, 192:275, 384:351, 512:571, 768:619, 1024:1011, 2048:699
+      stable 330 slope 0.40; band yes; G/Gmax 0.935 (96.2 Mbit/s); Tp50 26.2 ms
+      all crossings: down 330; up 429; down 585
+      unstable threshold: 429 (slope 1.72) | ask/n at caps >= knee: 384:0.92, 512:1.12, 768:0.81, 1024:0.99, 2048:0.34

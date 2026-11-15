@@ -18,11 +18,11 @@ The protocol hints `realtime`, `auto` and `bulk` are named points on these dials
 ## Status
 
 Research code, measured on an emulated L1 rig (netem/tc cells, see
-[`docs/l1-harness-plan.md`](docs/l1-harness-plan.md)). Wire protocol version
+[`../docs/l1-harness-plan.md`](../docs/l1-harness-plan.md)). Wire protocol version
 **v8** (`PROTOCOL_VERSION` in `src/transport/protocol.rs`). Both peers must run
 the same version; mismatches are refused at handshake.
 
-[`docs/status.md`](docs/status.md) is the authoritative record of the default
+[`../docs/status.md`](../docs/status.md) is the authoritative record of the default
 stack, the most recent verdicts and the open debts. In short:
 
 - Realtime runs the window pipeline: the unified RLC span machine with EVICT
@@ -116,7 +116,7 @@ raptorpath perf --client --peer 10.0.0.1:4433,10.0.0.1:4434 \
 The flags `--window-out-of-order`, `--window-coded-only`,
 `--window-generation-coding` and `--window-systematic-repair` select opt-in
 experiment arms, and each needs retain-until-acked retention (the Bulk/Auto
-default). `docs/status.md` covers
+default). `../docs/status.md` covers
 their standing.
 
 ### Logging
@@ -132,18 +132,18 @@ their standing.
 | `raptorpath-math/` | closed-form laws shared by the engine and the model |
 | `gf256/` | GF(2^8) arithmetic with SSSE3/AVX2 kernels |
 | `raptorpath-wasm/`, `raptorpath-visualizer/` | the L0 model and interactive visualizer |
-| `raptorpath/tools/l1/` | the L1 measurement harness |
+| `tools/l1/` | the L1 measurement harness |
 
 ## Documentation
 
 | document | what it is |
 |---|---|
-| [`docs/fec-arq-model.md`](docs/fec-arq-model.md) | the paper: channel model, rate law, span machine, flow control, recovery, CC |
-| [`docs/status.md`](docs/status.md) | the default stack, recent verdicts, open debts, the pre-registered batteries |
-| [`docs/measurement-discipline.md`](docs/measurement-discipline.md) | binding rules for any L1 verdict, the verdict taxonomy, the VM protocol |
-| [`docs/adr/README.md`](docs/adr/README.md) | the architecture decision index |
-| [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md) | the in-process benchmark suite (`tests/bench_suite.rs`) and how to read it |
-| [`docs/l1-harness-plan.md`](docs/l1-harness-plan.md) | the emulated-network harness |
+| [`../docs/fec-arq-model.md`](../docs/fec-arq-model.md) | the paper: channel model, rate law, span machine, flow control, recovery, CC |
+| [`../docs/status.md`](../docs/status.md) | the default stack, recent verdicts, open debts, the pre-registered batteries |
+| [`../docs/measurement-discipline.md`](../docs/measurement-discipline.md) | binding rules for any L1 verdict, the verdict taxonomy, the VM protocol |
+| [`../docs/adr/README.md`](../docs/adr/README.md) | the architecture decision index |
+| [`../docs/benchmark-methodology.md`](../docs/benchmark-methodology.md) | the in-process benchmark suite (`tests/bench_suite.rs`) and how to read it |
+| [`../docs/l1-harness-plan.md`](../docs/l1-harness-plan.md) | the emulated-network harness |
 | [`DESIGN.md`](DESIGN.md) | the architecture mapped onto the code |
 
 ## License

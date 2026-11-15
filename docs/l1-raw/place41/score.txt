@@ -1,0 +1,401 @@
+PLACE-WIRE BATTERY (status §41 = §38 + arm BASE) SCORE: MAIN = RWM_PLACE_WIRE unset, WIRE = RWM_PLACE_WIRE=1, one binary; BASE = main's own binary (4926822), reported beside the ladder
+ROWS 108/108; ABORT-TOKENS none
+STATUS-TABLE (every invocation row)
+  LIVE          106
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  VOID-ONDISK   0
+  CONTAMINATED  0
+  WITNESS-FAIL  2
+  NONLIVE c1d-400@def WIRE s7 rep1 WITNESS-FAIL rc=0 wpl-within-1ms-of-wrtt=12/13 io_full10=0.0
+  NONLIVE c8-100@256 WIRE s42 rep3 WITNESS-FAIL rc=0 wpl-within-1ms-of-wrtt=30/32 io_full10=0.21
+
+PER-ROW: cell@store arm seed rep status mbps share(slow/2nd) LOCKED one_leg rtt/wrtt(med per leg) w_mv w_calls
+  c1s-400@def BASE s42 r1 LIVE mbps=833.0 share=1.000 locked=0 one_leg=0 rtt/wrtt=16 w_mv=- w_calls=-
+  c1s-400@def BASE s42 r2 LIVE mbps=838.4 share=1.000 locked=0 one_leg=0 rtt/wrtt=21 w_mv=- w_calls=-
+  c1s-400@def BASE s42 r3 LIVE mbps=811.0 share=1.000 locked=0 one_leg=0 rtt/wrtt=20 w_mv=- w_calls=-
+  c1s-400@def BASE s7 r1 LIVE mbps=801.2 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=- w_calls=-
+  c1s-400@def BASE s7 r2 LIVE mbps=807.8 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=- w_calls=-
+  c1s-400@def BASE s7 r3 LIVE mbps=820.0 share=1.000 locked=0 one_leg=0 rtt/wrtt=17 w_mv=- w_calls=-
+  c1s-400@def MAIN s42 r1 LIVE mbps=833.2 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=- w_calls=0
+  c1s-400@def MAIN s42 r2 LIVE mbps=846.6 share=1.000 locked=0 one_leg=0 rtt/wrtt=20 w_mv=- w_calls=0
+  c1s-400@def MAIN s42 r3 LIVE mbps=815.1 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=- w_calls=0
+  c1s-400@def MAIN s7 r1 LIVE mbps=817.4 share=1.000 locked=0 one_leg=0 rtt/wrtt=19 w_mv=- w_calls=0
+  c1s-400@def MAIN s7 r2 LIVE mbps=850.3 share=1.000 locked=0 one_leg=0 rtt/wrtt=16 w_mv=- w_calls=0
+  c1s-400@def MAIN s7 r3 LIVE mbps=803.5 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=- w_calls=0
+  c1s-400@def WIRE s42 r1 LIVE mbps=820.3 share=1.000 locked=0 one_leg=0 rtt/wrtt=20 w_mv=0.0000 w_calls=338886
+  c1s-400@def WIRE s42 r2 LIVE mbps=795.0 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=0.0000 w_calls=338863
+  c1s-400@def WIRE s42 r3 LIVE mbps=819.4 share=1.000 locked=0 one_leg=0 rtt/wrtt=17 w_mv=0.0000 w_calls=338887
+  c1s-400@def WIRE s7 r1 LIVE mbps=809.0 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=0.0000 w_calls=338931
+  c1s-400@def WIRE s7 r2 LIVE mbps=847.5 share=1.000 locked=0 one_leg=0 rtt/wrtt=16 w_mv=0.0000 w_calls=338864
+  c1s-400@def WIRE s7 r3 LIVE mbps=826.6 share=1.000 locked=0 one_leg=0 rtt/wrtt=18 w_mv=0.0000 w_calls=338859
+  c2-100@def MAIN s42 r1 LIVE mbps=90.2 share=1.000 locked=0 one_leg=0 rtt/wrtt=56 w_mv=- w_calls=0
+  c2-100@def MAIN s42 r2 LIVE mbps=88.1 share=1.000 locked=0 one_leg=0 rtt/wrtt=61 w_mv=- w_calls=0
+  c2-100@def MAIN s42 r3 LIVE mbps=89.1 share=1.000 locked=0 one_leg=0 rtt/wrtt=34 w_mv=- w_calls=0
+  c2-100@def MAIN s7 r1 LIVE mbps=90.3 share=1.000 locked=0 one_leg=0 rtt/wrtt=60 w_mv=- w_calls=0
+  c2-100@def MAIN s7 r2 LIVE mbps=87.8 share=1.000 locked=0 one_leg=0 rtt/wrtt=69 w_mv=- w_calls=0
+  c2-100@def MAIN s7 r3 LIVE mbps=90.2 share=1.000 locked=0 one_leg=0 rtt/wrtt=94 w_mv=- w_calls=0
+  c2-100@def WIRE s42 r1 LIVE mbps=90.2 share=1.000 locked=0 one_leg=0 rtt/wrtt=58 w_mv=0.0000 w_calls=87515
+  c2-100@def WIRE s42 r2 LIVE mbps=90.3 share=1.000 locked=0 one_leg=0 rtt/wrtt=88 w_mv=0.0000 w_calls=87079
+  c2-100@def WIRE s42 r3 LIVE mbps=89.9 share=1.000 locked=0 one_leg=0 rtt/wrtt=70 w_mv=0.0000 w_calls=87168
+  c2-100@def WIRE s7 r1 LIVE mbps=90.3 share=1.000 locked=0 one_leg=0 rtt/wrtt=90 w_mv=0.0000 w_calls=87183
+  c2-100@def WIRE s7 r2 LIVE mbps=90.3 share=1.000 locked=0 one_leg=0 rtt/wrtt=76 w_mv=0.0000 w_calls=87165
+  c2-100@def WIRE s7 r3 LIVE mbps=88.8 share=1.000 locked=0 one_leg=0 rtt/wrtt=67 w_mv=0.0000 w_calls=87049
+  c1d-400@def BASE s42 r1 LIVE mbps=783.3 share=0.648/0.352 locked=0 one_leg=0 rtt/wrtt=20/20 w_mv=- w_calls=-
+  c1d-400@def BASE s42 r2 LIVE mbps=805.5 share=0.425/0.575 locked=0 one_leg=0 rtt/wrtt=12/13 w_mv=- w_calls=-
+  c1d-400@def BASE s42 r3 LIVE mbps=790.1 share=0.483/0.517 locked=0 one_leg=0 rtt/wrtt=14/14 w_mv=- w_calls=-
+  c1d-400@def BASE s7 r1 LIVE mbps=786.6 share=0.513/0.487 locked=0 one_leg=0 rtt/wrtt=12/12 w_mv=- w_calls=-
+  c1d-400@def BASE s7 r2 LIVE mbps=813.8 share=0.408/0.592 locked=0 one_leg=0 rtt/wrtt=21/26 w_mv=- w_calls=-
+  c1d-400@def BASE s7 r3 LIVE mbps=802.0 share=0.519/0.481 locked=0 one_leg=0 rtt/wrtt=13/12 w_mv=- w_calls=-
+  c1d-400@def MAIN s42 r1 LIVE mbps=810.1 share=0.431/0.569 locked=0 one_leg=0 rtt/wrtt=18/18 w_mv=- w_calls=0
+  c1d-400@def MAIN s42 r2 LIVE mbps=831.0 share=0.531/0.469 locked=0 one_leg=0 rtt/wrtt=12/12 w_mv=- w_calls=0
+  c1d-400@def MAIN s42 r3 LIVE mbps=763.6 share=0.496/0.504 locked=0 one_leg=0 rtt/wrtt=12/12 w_mv=- w_calls=0
+  c1d-400@def MAIN s7 r1 LIVE mbps=819.8 share=0.473/0.527 locked=0 one_leg=0 rtt/wrtt=9/9 w_mv=- w_calls=0
+  c1d-400@def MAIN s7 r2 LIVE mbps=800.4 share=0.483/0.517 locked=0 one_leg=0 rtt/wrtt=14/13 w_mv=- w_calls=0
+  c1d-400@def MAIN s7 r3 LIVE mbps=825.8 share=0.500/0.500 locked=0 one_leg=0 rtt/wrtt=31/30 w_mv=- w_calls=0
+  c1d-400@def WIRE s42 r1 LIVE mbps=815.9 share=0.518/0.482 locked=0 one_leg=0 rtt/wrtt=14/14 w_mv=0.1031 w_calls=364770
+  c1d-400@def WIRE s42 r2 LIVE mbps=841.5 share=0.515/0.485 locked=0 one_leg=0 rtt/wrtt=14/14 w_mv=0.1109 w_calls=353686
+  c1d-400@def WIRE s42 r3 LIVE mbps=730.2 share=0.478/0.522 locked=0 one_leg=0 rtt/wrtt=14/13 w_mv=0.1276 w_calls=359394
+  c1d-400@def WIRE s7 r1 WITNESS-FAIL mbps=779.2 share=0.462/0.538 locked=0 one_leg=0 rtt/wrtt=10/11 w_mv=0.1050 w_calls=361451
+  c1d-400@def WIRE s7 r2 LIVE mbps=828.2 share=0.503/0.497 locked=0 one_leg=0 rtt/wrtt=10/10 w_mv=0.1205 w_calls=358285
+  c1d-400@def WIRE s7 r3 LIVE mbps=782.5 share=0.474/0.526 locked=0 one_leg=0 rtt/wrtt=12/15 w_mv=0.1465 w_calls=363549
+  c8-100@def MAIN s42 r1 LIVE mbps=97.0 share=0.822/0.178 locked=0 one_leg=0 rtt/wrtt=105/281 w_mv=- w_calls=0
+  c8-100@def MAIN s42 r2 LIVE mbps=100.2 share=0.814/0.186 locked=0 one_leg=0 rtt/wrtt=104/303 w_mv=- w_calls=0
+  c8-100@def MAIN s42 r3 LIVE mbps=94.9 share=0.823/0.177 locked=0 one_leg=0 rtt/wrtt=109/286 w_mv=- w_calls=0
+  c8-100@def MAIN s7 r1 LIVE mbps=93.6 share=0.814/0.186 locked=0 one_leg=0 rtt/wrtt=113/264 w_mv=- w_calls=0
+  c8-100@def MAIN s7 r2 LIVE mbps=102.3 share=0.819/0.181 locked=0 one_leg=0 rtt/wrtt=120/218 w_mv=- w_calls=0
+  c8-100@def MAIN s7 r3 LIVE mbps=97.6 share=0.834/0.166 locked=0 one_leg=0 rtt/wrtt=119/242 w_mv=- w_calls=0
+  c8-100@def WIRE s42 r1 LIVE mbps=101.6 share=0.816/0.184 locked=0 one_leg=0 rtt/wrtt=124/285 w_mv=0.0298 w_calls=92397
+  c8-100@def WIRE s42 r2 LIVE mbps=97.1 share=0.822/0.178 locked=0 one_leg=0 rtt/wrtt=92/246 w_mv=0.0190 w_calls=90887
+  c8-100@def WIRE s42 r3 LIVE mbps=98.1 share=0.819/0.181 locked=0 one_leg=0 rtt/wrtt=108/308 w_mv=0.0216 w_calls=89633
+  c8-100@def WIRE s7 r1 LIVE mbps=100.8 share=0.821/0.179 locked=0 one_leg=0 rtt/wrtt=102/256 w_mv=0.0117 w_calls=90243
+  c8-100@def WIRE s7 r2 LIVE mbps=90.1 share=0.813/0.187 locked=0 one_leg=0 rtt/wrtt=139/277 w_mv=0.3394 w_calls=89597
+  c8-100@def WIRE s7 r3 LIVE mbps=95.1 share=0.814/0.186 locked=0 one_leg=0 rtt/wrtt=102/308 w_mv=0.0447 w_calls=90542
+  c1d-400@1536 MAIN s42 r1 LIVE mbps=817.2 share=0.984/0.016 locked=1 one_leg=1 rtt/wrtt=12/247 w_mv=- w_calls=0
+  c1d-400@1536 MAIN s42 r2 LIVE mbps=718.9 share=0.659/0.341 locked=0 one_leg=0 rtt/wrtt=16/16 w_mv=- w_calls=0
+  c1d-400@1536 MAIN s42 r3 LIVE mbps=828.5 share=0.983/0.017 locked=1 one_leg=1 rtt/wrtt=14/242 w_mv=- w_calls=0
+  c1d-400@1536 MAIN s7 r1 LIVE mbps=787.1 share=0.624/0.376 locked=0 one_leg=0 rtt/wrtt=12/12 w_mv=- w_calls=0
+  c1d-400@1536 MAIN s7 r2 LIVE mbps=842.4 share=0.003/0.997 locked=1 one_leg=1 rtt/wrtt=279/12 w_mv=- w_calls=0
+  c1d-400@1536 MAIN s7 r3 LIVE mbps=837.6 share=0.996/0.004 locked=1 one_leg=1 rtt/wrtt=13/330 w_mv=- w_calls=0
+  c1d-400@1536 WIRE s42 r1 LIVE mbps=812.7 share=0.424/0.576 locked=0 one_leg=0 rtt/wrtt=12/14 w_mv=0.1778 w_calls=383401
+  c1d-400@1536 WIRE s42 r2 LIVE mbps=757.0 share=0.372/0.628 locked=0 one_leg=0 rtt/wrtt=7/12 w_mv=0.1975 w_calls=388248
+  c1d-400@1536 WIRE s42 r3 LIVE mbps=828.8 share=0.486/0.514 locked=0 one_leg=0 rtt/wrtt=11/12 w_mv=0.1319 w_calls=362275
+  c1d-400@1536 WIRE s7 r1 LIVE mbps=791.2 share=0.584/0.416 locked=0 one_leg=0 rtt/wrtt=10/10 w_mv=0.1016 w_calls=388429
+  c1d-400@1536 WIRE s7 r2 LIVE mbps=841.7 share=0.496/0.504 locked=0 one_leg=0 rtt/wrtt=12/12 w_mv=0.1181 w_calls=364642
+  c1d-400@1536 WIRE s7 r3 LIVE mbps=841.8 share=0.423/0.577 locked=0 one_leg=0 rtt/wrtt=12/12 w_mv=0.1289 w_calls=361353
+  c8-100@192 MAIN s42 r1 LIVE mbps=87.5 share=0.962/0.038 locked=0 one_leg=1 rtt/wrtt=17/45 w_mv=- w_calls=0
+  c8-100@192 MAIN s42 r2 LIVE mbps=87.9 share=0.998/0.002 locked=1 one_leg=1 rtt/wrtt=18/264 w_mv=- w_calls=0
+  c8-100@192 MAIN s42 r3 LIVE mbps=87.3 share=0.963/0.037 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=- w_calls=0
+  c8-100@192 MAIN s7 r1 LIVE mbps=87.0 share=0.993/0.007 locked=0 one_leg=1 rtt/wrtt=19/104 w_mv=- w_calls=0
+  c8-100@192 MAIN s7 r2 LIVE mbps=88.1 share=0.968/0.032 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=- w_calls=0
+  c8-100@192 MAIN s7 r3 LIVE mbps=87.6 share=0.969/0.031 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=- w_calls=0
+  c8-100@192 WIRE s42 r1 LIVE mbps=88.0 share=0.961/0.039 locked=0 one_leg=1 rtt/wrtt=17/45 w_mv=0.0068 w_calls=89697
+  c8-100@192 WIRE s42 r2 LIVE mbps=88.0 share=0.962/0.038 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=0.0067 w_calls=89335
+  c8-100@192 WIRE s42 r3 LIVE mbps=85.5 share=0.954/0.046 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=0.0117 w_calls=90469
+  c8-100@192 WIRE s7 r1 LIVE mbps=87.4 share=0.961/0.039 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=0.0101 w_calls=89030
+  c8-100@192 WIRE s7 r2 LIVE mbps=88.4 share=0.966/0.034 locked=0 one_leg=1 rtt/wrtt=17/45 w_mv=0.0063 w_calls=89120
+  c8-100@192 WIRE s7 r3 LIVE mbps=87.5 share=0.961/0.039 locked=0 one_leg=1 rtt/wrtt=18/45 w_mv=0.0072 w_calls=89123
+  c8-100@256 MAIN s42 r1 LIVE mbps=89.2 share=0.997/0.003 locked=1 one_leg=1 rtt/wrtt=24/263 w_mv=- w_calls=0
+  c8-100@256 MAIN s42 r2 LIVE mbps=95.7 share=0.927/0.073 locked=0 one_leg=0 rtt/wrtt=22/45 w_mv=- w_calls=0
+  c8-100@256 MAIN s42 r3 LIVE mbps=95.5 share=0.925/0.075 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=- w_calls=0
+  c8-100@256 MAIN s7 r1 LIVE mbps=96.0 share=0.917/0.083 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=- w_calls=0
+  c8-100@256 MAIN s7 r2 LIVE mbps=94.8 share=0.922/0.078 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=- w_calls=0
+  c8-100@256 MAIN s7 r3 LIVE mbps=95.7 share=0.920/0.080 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=- w_calls=0
+  c8-100@256 WIRE s42 r1 LIVE mbps=96.7 share=0.907/0.093 locked=0 one_leg=0 rtt/wrtt=21/47 w_mv=0.0037 w_calls=95318
+  c8-100@256 WIRE s42 r2 LIVE mbps=95.4 share=0.922/0.078 locked=0 one_leg=0 rtt/wrtt=22/46 w_mv=0.0015 w_calls=92211
+  c8-100@256 WIRE s42 r3 WITNESS-FAIL mbps=89.4 share=0.928/0.072 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=0.0091 w_calls=92592
+  c8-100@256 WIRE s7 r1 LIVE mbps=95.5 share=0.917/0.083 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=0.0017 w_calls=93771
+  c8-100@256 WIRE s7 r2 LIVE mbps=96.0 share=0.924/0.076 locked=0 one_leg=0 rtt/wrtt=22/47 w_mv=0.0011 w_calls=92226
+  c8-100@256 WIRE s7 r3 LIVE mbps=95.5 share=0.924/0.076 locked=0 one_leg=0 rtt/wrtt=21/46 w_mv=0.0034 w_calls=91850
+  c8-100@512 MAIN s42 r1 LIVE mbps=101.4 share=0.857/0.143 locked=0 one_leg=0 rtt/wrtt=38/68 w_mv=- w_calls=0
+  c8-100@512 MAIN s42 r2 LIVE mbps=103.1 share=0.846/0.154 locked=0 one_leg=0 rtt/wrtt=38/65 w_mv=- w_calls=0
+  c8-100@512 MAIN s42 r3 LIVE mbps=101.8 share=0.853/0.147 locked=0 one_leg=0 rtt/wrtt=39/70 w_mv=- w_calls=0
+  c8-100@512 MAIN s7 r1 LIVE mbps=102.3 share=0.841/0.159 locked=0 one_leg=0 rtt/wrtt=38/72 w_mv=- w_calls=0
+  c8-100@512 MAIN s7 r2 LIVE mbps=90.3 share=0.996/0.004 locked=1 one_leg=1 rtt/wrtt=50/379 w_mv=- w_calls=0
+  c8-100@512 MAIN s7 r3 LIVE mbps=99.8 share=0.851/0.149 locked=0 one_leg=0 rtt/wrtt=37/67 w_mv=- w_calls=0
+  c8-100@512 WIRE s42 r1 LIVE mbps=103.2 share=0.840/0.160 locked=0 one_leg=0 rtt/wrtt=37/76 w_mv=0.0824 w_calls=105073
+  c8-100@512 WIRE s42 r2 LIVE mbps=105.0 share=0.835/0.165 locked=0 one_leg=0 rtt/wrtt=38/65 w_mv=0.0703 w_calls=109628
+  c8-100@512 WIRE s42 r3 LIVE mbps=104.9 share=0.833/0.167 locked=0 one_leg=0 rtt/wrtt=39/66 w_mv=0.0683 w_calls=102023
+  c8-100@512 WIRE s7 r1 LIVE mbps=104.1 share=0.831/0.169 locked=0 one_leg=0 rtt/wrtt=38/68 w_mv=0.0770 w_calls=106153
+  c8-100@512 WIRE s7 r2 LIVE mbps=104.5 share=0.834/0.166 locked=0 one_leg=0 rtt/wrtt=39/68 w_mv=0.0552 w_calls=107097
+  c8-100@512 WIRE s7 r3 LIVE mbps=102.1 share=0.836/0.164 locked=0 one_leg=0 rtt/wrtt=38/74 w_mv=0.0922 w_calls=108344
+
+[c1s-400@def]  live MAIN=6 WIRE=6
+    FEED c1s-400@def p0 plc/truth WIRE=1.048 MAIN=1.009 -> SAME
+    CLAUSE c1s-400@def goodput: WITHIN WIRE=819.9 [795-847.5] MAIN=825.3 [803.5-850.3] (-0.7%, rel=0.049)
+    CLAUSE c1s-400@def cpu_cli/GB: WITHIN WIRE=15.76 [15.4-15.87] MAIN=15.64 [15.2-16.07] (+0.8%, rel=0.024)
+    CLAUSE c1s-400@def cpu_srv/GB: WITHIN WIRE=18.4 [18.3-18.8] MAIN=18.25 [18.07-18.57] (+0.8%, rel=0.024)
+    CLAUSE c1s-400@def lag_E_cli: WITHIN WIRE=966.5 [697-1298] MAIN=1058 [825-1115] (-8.7%, rel=0.137)
+    CLAUSE c1s-400@def lag_E_srv: WITHIN WIRE=982 [784-1589] MAIN=848 [708-1139] (+15.8%, rel=0.254)
+    CLAUSE c1s-400@def rtp_floor_p0: WITHIN WIRE=2538 [2443-2750] MAIN=2643 [2498-2767] (-4.0%, rel=0.051)
+  LOCKED MAIN 0/6  WIRE 0/6
+  goodput MAIN 825.3 [803.5-850.3] n=6  WIRE 819.9 [795.0-847.5] n=6
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1128 [939-1996] n=6 WIRE 1412 [1264-2065] n=6; srv MAIN 1135 [921-2132] n=6 WIRE 1370 [800-2203] n=6
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=6 w_mv=0.0000 [0.0000-0.0000] n=6 ref_fl=0.0000 [0.0000-0.0000] n=6 cold_ge=0.0000 [0.0000-0.0000] n=6 cold_r=0.0000 [0.0000-0.0000] n=6 w_n=338875 [338859-338931] n=6 w_calls=338875 [338859-338931] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 3968 [3584-4608] n=6 / 10240 [9216-12288] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 4608 [3840-5120] n=6 / 12800 [10240-15360] n=6
+[c2-100@def]  live MAIN=6 WIRE=6
+    FEED c2-100@def p0 plc/truth WIRE=1.006 MAIN=1.001 -> SAME
+    CLAUSE c2-100@def goodput: WITHIN WIRE=90.22 [88.83-90.31] MAIN=89.64 [87.84-90.3] (+0.6%, rel=0.014)
+    CLAUSE c2-100@def cpu_cli/GB: WITHIN WIRE=31.6 [31-32] MAIN=31.5 [30.3-32.4] (+0.3%, rel=0.063)
+    CLAUSE c2-100@def cpu_srv/GB: WITHIN WIRE=35 [34.4-38.2] MAIN=35.55 [34.6-36.8] (-1.5%, rel=0.063)
+    CLAUSE c2-100@def lag_E_cli: WITHIN WIRE=1132 [1087-1838] MAIN=1099 [1089-1449] (+3.0%, rel=0.164)
+    CLAUSE c2-100@def lag_E_srv: WITHIN WIRE=940 [880-1328] MAIN=930 [848-1063] (+1.1%, rel=0.116)
+    CLAUSE c2-100@def rtp_floor_p0: WITHIN WIRE=1.234e+04 [1.063e+04-1.324e+04] MAIN=1.16e+04 [8011-1.301e+04] (+6.4%, rel=0.216)
+  LOCKED MAIN 0/6  WIRE 0/6
+  goodput MAIN 89.6 [87.8-90.3] n=6  WIRE 90.2 [88.8-90.3] n=6
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1435 [1250-1778] n=6 WIRE 1508 [1171-2095] n=6; srv MAIN 1176 [1111-1881] n=6 WIRE 1516 [887-1876] n=6
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=6 w_mv=0.0000 [0.0000-0.0000] n=6 ref_fl=0.0000 [0.0000-0.0000] n=6 cold_ge=0.0000 [0.0000-0.0000] n=6 cold_r=0.0000 [0.0000-0.0000] n=6 w_n=87166 [87049-87515] n=6 w_calls=87166 [87049-87515] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 19456 [9216-32768] n=6 / 25600 [14336-40960] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 24576 [20480-30720] n=6 / 31744 [24576-36864] n=6
+  REPORT idle-leg w-hat decay WIRE p0: largest wpl_us on infl=0 62572 [52359-75507] n=3; 1 s later 65012 [57133-77629] n=3
+[c1d-400@def]  live MAIN=6 WIRE=5
+    FEED c1d-400@def p0 plc/truth WIRE=1.111 MAIN=1.033 -> SAME
+    FEED c1d-400@def p1 plc/truth WIRE=1.152 MAIN=0.973 -> SAME
+    CLAUSE c1d-400@def goodput: WITHIN WIRE=815.9 [730.2-841.5] MAIN=815 [763.6-831] (+0.1%, rel=0.056)
+    CLAUSE c1d-400@def cpu_cli/GB: WITHIN WIRE=21.4 [21.32-22] MAIN=21.32 [20.7-21.88] (+0.4%, rel=0.065)
+    CLAUSE c1d-400@def cpu_srv/GB: WITHIN WIRE=23.12 [22.97-23.8] MAIN=23.27 [22.8-23.68] (-0.6%, rel=0.065)
+    CLAUSE c1d-400@def lag_E_cli: WITHIN WIRE=1538 [1047-2022] MAIN=1290 [993-1733] (+19.2%, rel=0.287)
+    CLAUSE c1d-400@def lag_E_srv: WITHIN WIRE=1021 [961-1211] MAIN=1068 [762-1898] (-4.4%, rel=0.532)
+    CLAUSE c1d-400@def rtp_floor_p0: WITHIN WIRE=2397 [2291-2545] MAIN=2463 [2345-2600] (-2.7%, rel=0.052)
+    CLAUSE c1d-400@def rtp_floor_p1: WITHIN WIRE=2518 [2356-2643] MAIN=2494 [2388-2652] (+1.0%, rel=0.053)
+  LOCKED MAIN 0/6  WIRE 0/5
+  goodput MAIN 815.0 [763.6-831.0] n=6  WIRE 815.9 [730.2-841.5] n=5
+  share (slow/second leg, egress) MAIN 0.510 [0.469-0.569] n=6  WIRE 0.497 [0.482-0.526] n=5
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1773 [1564-2498] n=6 WIRE 1793 [1523-2105] n=5; srv MAIN 1480 [1032-2124] n=6 WIRE 1638 [1453-1993] n=5
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=5 w_mv=0.1205 [0.1031-0.1465] n=5 ref_fl=0.0000 [0.0000-0.0000] n=5 cold_ge=0.0002 [0.0002-0.0002] n=5 cold_r=0.0000 [0.0000-0.0000] n=5 w_n=718788 [707372-729540] n=5 w_calls=359394 [353686-364770] n=5
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 3840 [2816-5632] n=6 / 10240 [8192-22528] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p1: 4096 [2560-6656] n=6 / 10752 [8192-24576] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 3840 [2816-4096] n=5 / 12288 [9216-13312] n=5
+  REPORT [ETA] e_p50/e_p90 WIRE p1: 3840 [3072-4096] n=5 / 12288 [9216-13312] n=5
+  REPORT idle-leg w-hat decay WIRE p0: largest wpl_us on infl=0 2422 [2422-2422] n=1; 1 s later 2379 [2379-2379] n=1
+[c8-100@def]  live MAIN=6 WIRE=6
+    FEED c8-100@def p0 plc/truth WIRE=1.000 MAIN=1.002 -> SAME
+    FEED c8-100@def p1 plc/truth WIRE=1.003 MAIN=0.995 -> SAME
+    CLAUSE c8-100@def goodput: WITHIN WIRE=97.61 [90.07-101.6] MAIN=97.29 [93.64-102.3] (+0.3%, rel=0.040)
+    CLAUSE c8-100@def cpu_cli/GB: WITHIN WIRE=35.9 [35.5-37.1] MAIN=36.3 [35.6-37.8] (-1.1%, rel=0.116)
+    CLAUSE c8-100@def cpu_srv/GB: WITHIN WIRE=43.15 [41.8-46.5] MAIN=43.6 [41.8-45.9] (-1.0%, rel=0.116)
+    CLAUSE c8-100@def lag_E_cli: WITHIN WIRE=1386 [1104-2674] MAIN=1146 [1091-1707] (+21.0%, rel=0.269)
+    CLAUSE c8-100@def lag_E_srv: WITHIN WIRE=1044 [947-1068] MAIN=1022 [944-1048] (+2.1%, rel=0.051)
+    CLAUSE c8-100@def rtp_floor_p0: TREND-WORSE WIRE=1.052e+04 [9023-1.196e+04] MAIN=9464 [8846-1.03e+04] (+11.2%, rel=0.077)
+    CLAUSE c8-100@def rtp_floor_p1: WITHIN WIRE=3.738e+04 [3.637e+04-4.87e+04] MAIN=4e+04 [3.449e+04-4.461e+04] (-6.5%, rel=0.126)
+  LOCKED MAIN 0/6  WIRE 0/6
+  goodput MAIN 97.3 [93.6-102.3] n=6  WIRE 97.6 [90.1-101.6] n=6
+  share (slow/second leg, egress) MAIN 0.180 [0.166-0.186] n=6  WIRE 0.182 [0.178-0.187] n=6
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1440 [1232-1904] n=6 WIRE 1878 [1189-2711] n=6; srv MAIN 1336 [1094-2012] n=6 WIRE 1320 [1202-1498] n=6
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=6 w_mv=0.0257 [0.0117-0.3394] n=6 ref_fl=0.0000 [0.0000-0.0000] n=6 cold_ge=0.0026 [0.0014-0.0032] n=6 cold_r=0.0000 [0.0000-0.0000] n=6 w_n=180785 [179194-184794] n=6 w_calls=90392 [89597-92397] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 19456 [16384-32768] n=6 / 57344 [36864-65536] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p1: 98304 [73728-114688] n=6 / 139264 [122880-180224] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 29696 [20480-40960] n=6 / 61440 [53248-73728] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p1: 98304 [90112-114688] n=6 / 147456 [131072-196608] n=6
+  REPORT idle-leg w-hat decay WIRE p0: largest wpl_us on infl=0 60036 [50247-72237] n=6; 1 s later 12640 [11959-13322] n=2
+  REPORT idle-leg w-hat decay WIRE p1: largest wpl_us on infl=0 359912 [252418-521356] n=6; 1 s later 319387 [205955-349721] n=4
+[c1d-400@1536]  live MAIN=6 WIRE=6
+    FEED c1d-400@1536 p0 plc/truth WIRE=1.037 MAIN=1.017 -> SAME
+    FEED c1d-400@1536 p1 plc/truth WIRE=1.057 MAIN=1.058 -> SAME
+    CLAUSE c1d-400@1536 goodput: WITHIN WIRE=820.8 [757-841.8] MAIN=822.9 [718.9-842.4] (-0.3%, rel=0.056)
+    CLAUSE c1d-400@1536 cpu_cli/GB: TREND-WORSE WIRE=21.12 [20.55-22.4] MAIN=15.72 [15.18-21.8] (+34.3%, rel=0.065)
+    CLAUSE c1d-400@1536 cpu_srv/GB: TREND-WORSE WIRE=23.23 [22.57-24.77] MAIN=18.94 [18.4-24.05] (+22.6%, rel=0.065)
+    CLAUSE c1d-400@1536 lag_E_cli: WITHIN WIRE=1214 [858-1448] MAIN=989.5 [883-2823] (+22.6%, rel=0.980)
+    CLAUSE c1d-400@1536 lag_E_srv: WITHIN WIRE=1002 [813-2227] MAIN=898 [789-2407] (+11.6%, rel=0.901)
+    CLAUSE c1d-400@1536 rtp_floor_p0: WITHIN WIRE=2601 [2415-3042] MAIN=2806 [2378-3057] (-7.3%, rel=0.121)
+    CLAUSE c1d-400@1536 rtp_floor_p1: WITHIN WIRE=2632 [2437-2993] MAIN=2690 [2423-2757] (-2.2%, rel=0.062)
+  LOCKED MAIN 4/6  WIRE 0/6
+  goodput MAIN 822.9 [718.9-842.4] n=6  WIRE 820.8 [757.0-841.8] n=6
+  share (slow/second leg, egress) MAIN 0.179 [0.004-0.997] n=6  WIRE 0.545 [0.416-0.628] n=6
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1600 [1202-2846] n=6 WIRE 1474 [1017-1674] n=6; srv MAIN 1301 [1169-3090] n=6 WIRE 1433 [1108-3068] n=6
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=6 w_mv=0.1304 [0.1016-0.1975] n=6 ref_fl=0.0000 [0.0000-0.0000] n=6 cold_ge=0.0005 [0.0004-0.0007] n=6 cold_r=0.0000 [0.0000-0.0000] n=6 w_n=748043 [722706-776858] n=6 w_calls=374022 [361353-388429] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 3328 [2560-106496] n=6 / 9728 [8192-458752] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p1: 17280 [2560-81920] n=6 / 51200 [7680-131072] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 2816 [2048-3328] n=6 / 7936 [7680-10240] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p1: 3200 [2048-4608] n=6 / 9728 [7680-12288] n=6
+  FIRST-BURST MAIN (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.601 [0.364-0.749] n=6  rtt/wrtt 30.17 [7.00-70.00] n=6
+  FIRST-BURST WIRE (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.700 [0.269-1.000] n=6  rtt/wrtt 22.17 [2.75-70.50] n=6
+  REPORT idle-leg w-hat decay WIRE p1: largest wpl_us on infl=0 2364 [2364-2364] n=1; 1 s later 2847 [2847-2847] n=1
+[c8-100@192]  live MAIN=6 WIRE=6
+    FEED c8-100@192 p0 plc/truth WIRE=1.006 MAIN=1.008 -> SAME
+    FEED c8-100@192 p1 plc/truth WIRE=1.006 MAIN=1.023 -> SAME
+    CLAUSE c8-100@192 goodput: WITHIN WIRE=87.75 [85.47-88.35] MAIN=87.56 [86.99-88.13] (+0.2%, rel=0.040)
+    CLAUSE c8-100@192 cpu_cli/GB: WITHIN WIRE=31.9 [30.9-33.6] MAIN=31.55 [30.3-33.8] (+1.1%, rel=0.116)
+    CLAUSE c8-100@192 cpu_srv/GB: WITHIN WIRE=36.45 [35.6-37.4] MAIN=36 [35.4-39.3] (+1.3%, rel=0.116)
+    CLAUSE c8-100@192 lag_E_cli: WITHIN WIRE=1114 [1069-1399] MAIN=1118 [1104-1333] (-0.4%, rel=0.102)
+    CLAUSE c8-100@192 lag_E_srv: WITHIN WIRE=1037 [980-1207] MAIN=992 [861-1395] (+4.5%, rel=0.269)
+    CLAUSE c8-100@192 rtp_floor_p0: WITHIN WIRE=1.004e+04 [8859-1.096e+04] MAIN=9516 [8553-9860] (+5.5%, rel=0.069)
+    CLAUSE c8-100@192 rtp_floor_p1: WITHIN WIRE=3.275e+04 [3.248e+04-3.296e+04] MAIN=3.349e+04 [3.219e+04-4.588e+04] (-2.2%, rel=0.204)
+  LOCKED MAIN 1/6  WIRE 0/6
+  goodput MAIN 87.6 [87.0-88.1] n=6  WIRE 87.7 [85.5-88.4] n=6
+  share (slow/second leg, egress) MAIN 0.031 [0.002-0.038] n=6  WIRE 0.039 [0.034-0.046] n=6
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1653 [1217-2092] n=6 WIRE 1475 [1201-2065] n=6; srv MAIN 1488 [1205-1667] n=6 WIRE 1472 [1241-1662] n=6
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=6 w_mv=0.0070 [0.0063-0.0117] n=6 ref_fl=0.0000 [0.0000-0.0000] n=6 cold_ge=0.0028 [0.0021-0.0032] n=6 cold_r=0.0000 [0.0000-0.0000] n=6 w_n=178458 [178060-180938] n=6 w_calls=89229 [89030-90469] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 3072 [2816-3840] n=6 / 5888 [5632-6656] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p1: 4608 [4096-122880] n=6 / 13312 [10240-212992] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 2560 [2304-3328] n=6 / 5632 [5120-6144] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p1: 4608 [4096-5632] n=6 / 9728 [9216-32768] n=6
+  FIRST-BURST MAIN (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.081 [0.009-0.239] n=6  rtt/wrtt 1.03 [1.00-4.36] n=6
+  FIRST-BURST WIRE (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.147 [0.000-0.248] n=6  rtt/wrtt 1.03 [1.00-1.20] n=6
+  REPORT idle-leg w-hat decay WIRE p0: largest wpl_us on infl=0 16862 [16584-17140] n=2; 1 s later 16384 [16312-16455] n=2
+  REPORT idle-leg w-hat decay WIRE p1: largest wpl_us on infl=0 45714 [43897-46273] n=6; 1 s later 42888 [40662-44847] n=6
+[c8-100@256]  live MAIN=6 WIRE=5
+    FEED c8-100@256 p0 plc/truth WIRE=0.997 MAIN=1.000 -> SAME
+    FEED c8-100@256 p1 plc/truth WIRE=0.977 MAIN=1.051 -> SAME
+    CLAUSE c8-100@256 goodput: WITHIN WIRE=95.52 [95.42-96.67] MAIN=95.61 [89.16-96.04] (-0.1%, rel=0.040)
+    CLAUSE c8-100@256 cpu_cli/GB: WITHIN WIRE=33.4 [32.4-34.4] MAIN=32.55 [30.4-33.8] (+2.6%, rel=0.116)
+    CLAUSE c8-100@256 cpu_srv/GB: WITHIN WIRE=37.8 [37.1-38.5] MAIN=36.9 [36.1-38.7] (+2.4%, rel=0.116)
+    CLAUSE c8-100@256 lag_E_cli: WITHIN WIRE=1111 [1080-1118] MAIN=1107 [1092-1123] (+0.4%, rel=0.050)
+    CLAUSE c8-100@256 lag_E_srv: TREND-WORSE WIRE=1063 [941-1101] MAIN=935.5 [841-1056] (+13.6%, rel=0.115)
+    CLAUSE c8-100@256 rtp_floor_p0: WITHIN WIRE=1.186e+04 [8007-1.227e+04] MAIN=9946 [5827-1.319e+04] (+19.2%, rel=0.370)
+    CLAUSE c8-100@256 rtp_floor_p1: WITHIN WIRE=3.391e+04 [3.357e+04-3.601e+04] MAIN=3.437e+04 [3.312e+04-4.819e+04] (-1.3%, rel=0.219)
+  LOCKED MAIN 1/6  WIRE 0/5
+  goodput MAIN 95.6 [89.2-96.0] n=6  WIRE 95.5 [95.4-96.7] n=5
+  share (slow/second leg, egress) MAIN 0.076 [0.003-0.083] n=6  WIRE 0.078 [0.076-0.093] n=5
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1340 [1141-1582] n=6 WIRE 1400 [1128-1475] n=5; srv MAIN 1222 [1017-1473] n=6 WIRE 1134 [1123-1231] n=5
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=5 w_mv=0.0017 [0.0011-0.0037] n=5 ref_fl=0.0000 [0.0000-0.0000] n=5 cold_ge=0.0031 [0.0029-0.0034] n=5 cold_r=0.0000 [0.0000-0.0000] n=5 w_n=184452 [183700-190636] n=5 w_calls=92226 [91850-95318] n=5
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 3584 [3072-5120] n=6 / 6656 [6144-8192] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p1: 5376 [4608-180224] n=6 / 10752 [9216-245760] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 2560 [2560-3072] n=5 / 5632 [5632-6656] n=5
+  REPORT [ETA] e_p50/e_p90 WIRE p1: 5120 [4608-5632] n=5 / 10240 [9216-10240] n=5
+  FIRST-BURST MAIN (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.203 [0.022-0.526] n=6  rtt/wrtt 1.51 [0.91-4.17] n=6
+  FIRST-BURST WIRE (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.028 [0.000-0.192] n=5  rtt/wrtt 1.04 [1.00-2.38] n=5
+  REPORT idle-leg w-hat decay WIRE p0: largest wpl_us on infl=0 21711 [21711-21711] n=1; 1 s later -
+  REPORT idle-leg w-hat decay WIRE p1: largest wpl_us on infl=0 47394 [45492-47747] n=5; 1 s later 44924 [42352-45435] n=4
+[c8-100@512]  live MAIN=6 WIRE=6
+    FEED c8-100@512 p0 plc/truth WIRE=0.997 MAIN=0.999 -> SAME
+    FEED c8-100@512 p1 plc/truth WIRE=1.012 MAIN=1.000 -> SAME
+    CLAUSE c8-100@512 goodput: WITHIN WIRE=104.3 [102.1-105] MAIN=101.6 [90.29-103.1] (+2.7%, rel=0.040)
+    CLAUSE c8-100@512 cpu_cli/GB: WITHIN WIRE=36.55 [35.5-36.9] MAIN=35.4 [28.8-35.8] (+3.2%, rel=0.116)
+    CLAUSE c8-100@512 cpu_srv/GB: WITHIN WIRE=40.7 [39.9-43] MAIN=41.4 [34.3-43.1] (-1.7%, rel=0.116)
+    CLAUSE c8-100@512 lag_E_cli: WITHIN WIRE=1096 [1077-1178] MAIN=1104 [1091-1122] (-0.7%, rel=0.050)
+    CLAUSE c8-100@512 lag_E_srv: WITHIN WIRE=894.5 [813-992] MAIN=1128 [853-1383] (-20.7%, rel=0.235)
+    CLAUSE c8-100@512 rtp_floor_p0: WITHIN WIRE=1.158e+04 [9521-1.394e+04] MAIN=1.279e+04 [8760-1.288e+04] (-9.4%, rel=0.161)
+    CLAUSE c8-100@512 rtp_floor_p1: WITHIN WIRE=3.711e+04 [3.541e+04-3.935e+04] MAIN=3.594e+04 [3.461e+04-4.738e+04] (+3.2%, rel=0.178)
+  LOCKED MAIN 1/6  WIRE 0/6
+  goodput MAIN 101.6 [90.3-103.1] n=6  WIRE 104.3 [102.1-105.0] n=6
+  share (slow/second leg, egress) MAIN 0.148 [0.004-0.159] n=6  WIRE 0.165 [0.160-0.169] n=6
+  worse=-
+  REPORT [LAG] raw p99 cli MAIN 1636 [1254-1784] n=6 WIRE 1542 [1145-1791] n=6; srv MAIN 1512 [1182-2030] n=6 WIRE 1074 [896-1563] n=6
+  REPORT gauges WIRE w_cold=0.0000 [0.0000-0.0000] n=6 w_mv=0.0736 [0.0552-0.0922] n=6 ref_fl=0.0000 [0.0000-0.0000] n=6 cold_ge=0.0037 [0.0033-0.0038] n=6 cold_r=0.0000 [0.0000-0.0000] n=6 w_n=213250 [204046-219256] n=6 w_calls=106625 [102023-109628] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p0: 7168 [6656-16384] n=6 / 12800 [12288-20480] n=6
+  REPORT [ETA] e_p50/e_p90 MAIN p1: 31744 [22528-425984] n=6 / 65536 [53248-786432] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p0: 7680 [6144-8192] n=6 / 13312 [11264-13312] n=6
+  REPORT [ETA] e_p50/e_p90 WIRE p1: 21504 [18432-26624] n=6 / 49152 [45056-61440] n=6
+  FIRST-BURST MAIN (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.322 [0.089-0.537] n=6  rtt/wrtt 3.04 [1.58-3.72] n=6
+  FIRST-BURST WIRE (first [DIAG] line with both legs, t ~ 0.3 s) slow/second leg in-flight share 0.242 [0.155-0.369] n=6  rtt/wrtt 2.49 [1.23-4.27] n=6
+  REPORT idle-leg w-hat decay WIRE p0: largest wpl_us on infl=0 31062 [30255-31868] n=2; 1 s later 32679 [32679-32679] n=1
+  REPORT idle-leg w-hat decay WIRE p1: largest wpl_us on infl=0 96468 [92898-101647] n=6; 1 s later 66792 [53386-84782] n=6
+
+c1d COST at c1d-400@1536: WIRE - MAIN goodput -0.3 % of MAIN's median (WIRE [757.0-841.8] MAIN [718.9-842.4])
+  stratified: WIRE vs MAIN two-leg rows (n=2): TREND-BETTER WIRE=820.8 [757-841.8] MAIN=753 [718.9-787.1] (+9.0%, rel=0.056)
+  stratified: WIRE vs MAIN one-leg rows (n=4): WITHIN WIRE=820.8 [757-841.8] MAIN=833 [817.2-842.4] (-1.5%, rel=0.056)
+c1d COST at c1d-400@def: WIRE - MAIN goodput 0.1 % of MAIN's median (WIRE [730.2-841.5] MAIN [763.6-831.0])
+  stratified: WIRE vs MAIN two-leg rows (n=6): WITHIN WIRE=815.9 [730.2-841.5] MAIN=815 [763.6-831] (+0.1%, rel=0.056)
+  stratified: WIRE vs MAIN one-leg rows: n=0 (not readable)
+c8 GAIN at c8-100@192: WIRE vs MAIN LOCKED rows (n=1): WITHIN WIRE=87.75 [85.47-88.35] MAIN=87.88 [87.88-87.88] (-0.1%, rel=0.040)
+c8 GAIN at c8-100@192: WIRE vs MAIN fresh rows (n=5): WITHIN WIRE=87.75 [85.47-88.35] MAIN=87.55 [86.99-88.13] (+0.2%, rel=0.040)
+c8 GAIN at c8-100@256: WIRE vs MAIN LOCKED rows (n=1): BETTER WIRE=95.52 [95.42-96.67] MAIN=89.16 [89.16-89.16] (+7.1%, rel=0.040)
+c8 GAIN at c8-100@256: WIRE vs MAIN fresh rows (n=5): WITHIN WIRE=95.52 [95.42-96.67] MAIN=95.72 [94.77-96.04] (-0.2%, rel=0.040)
+c8 GAIN at c8-100@512: WIRE vs MAIN LOCKED rows (n=1): BETTER WIRE=104.3 [102.1-105] MAIN=90.29 [90.29-90.29] (+15.6%, rel=0.040)
+c8 GAIN at c8-100@512: WIRE vs MAIN fresh rows (n=5): WITHIN WIRE=104.3 [102.1-105] MAIN=101.8 [99.75-103.1] (+2.5%, rel=0.040)
+
+REPRODUCTION c1d-400@1536: MAIN LOCKED 4/6 -> reproduced
+REPRODUCTION c8-100@192: MAIN LOCKED 1/6 -> NOT reproduced
+REPRODUCTION c8-100@256: MAIN LOCKED 1/6 -> NOT reproduced
+REPRODUCTION c8-100@512: MAIN LOCKED 1/6 -> NOT reproduced
+SHARE-PRESERVED c8-100@def: PRESERVED (WIRE median 0.182 vs MAIN non-LOCKED median 0.180 (n=6); |d| <= 0.03)
+SHARE-PRESERVED c8-100@192: PRESERVED (WIRE median 0.039 vs MAIN non-LOCKED median 0.032 (n=5); |d| <= 0.03 or within [1/2, 2] x)
+COST at c1d-400@def: goodput clause WITHIN, WIRE - MAIN 0.1 %
+VERDICT CURED [NOT-REPRODUCED-AT(c8-100@192,c8-100@256,c8-100@512)]
+
+=== beside the ladder (status §41; none of this enters the verdict) ===
+[BASE-GATE c1s-400@def]  live MAIN=6 BASE=6
+    FEED BASE-GATE c1s-400@def p0 plc/truth MAIN=1.009 BASE=1.022 -> SAME
+    CLAUSE BASE-GATE c1s-400@def goodput: WITHIN MAIN=825.3 [803.5-850.3] BASE=815.5 [801.2-838.4] (+1.2%, rel=0.049)
+    CLAUSE BASE-GATE c1s-400@def cpu_cli/GB: WITHIN MAIN=15.64 [15.2-16.07] BASE=15.54 [15.3-15.75] (+0.6%, rel=0.024)
+    CLAUSE BASE-GATE c1s-400@def cpu_srv/GB: WITHIN MAIN=18.25 [18.07-18.57] BASE=18.26 [18.02-18.5] (-0.1%, rel=0.024)
+    CLAUSE BASE-GATE c1s-400@def lag_E_cli: WITHIN MAIN=1058 [825-1115] BASE=1064 [604-2347] (-0.5%, rel=0.819)
+    CLAUSE BASE-GATE c1s-400@def lag_E_srv: WITHIN MAIN=848 [708-1139] BASE=1020 [816-1651] (-16.9%, rel=0.409)
+    CLAUSE BASE-GATE c1s-400@def rtp_floor_p0: WITHIN MAIN=2643 [2498-2767] BASE=2587 [2400-2622] (+2.2%, rel=0.050)
+  BASE-GATE c1s-400@def: PASS
+[BASE-GATE c1d-400@def]  live MAIN=6 BASE=6
+    FEED BASE-GATE c1d-400@def p0 plc/truth MAIN=1.033 BASE=1.070 -> SAME
+    FEED BASE-GATE c1d-400@def p1 plc/truth MAIN=0.973 BASE=1.056 -> SAME
+    CLAUSE BASE-GATE c1d-400@def goodput: WITHIN MAIN=815 [763.6-831] BASE=796 [783.3-813.8] (+2.4%, rel=0.056)
+    CLAUSE BASE-GATE c1d-400@def cpu_cli/GB: WITHIN MAIN=21.32 [20.7-21.88] BASE=21.3 [21.02-21.55] (+0.1%, rel=0.065)
+    CLAUSE BASE-GATE c1d-400@def cpu_srv/GB: WITHIN MAIN=23.27 [22.8-23.68] BASE=23.31 [23.12-23.52] (-0.2%, rel=0.065)
+    CLAUSE BASE-GATE c1d-400@def lag_E_cli: TREND-BETTER MAIN=1290 [993-1733] BASE=1814 [1519-2552] (-28.9%, rel=0.285)
+    CLAUSE BASE-GATE c1d-400@def lag_E_srv: WITHIN MAIN=1068 [762-1898] BASE=1224 [768-1561] (-12.7%, rel=0.324)
+    CLAUSE BASE-GATE c1d-400@def rtp_floor_p0: WITHIN MAIN=2463 [2345-2600] BASE=2492 [2432-2695] (-1.2%, rel=0.053)
+    CLAUSE BASE-GATE c1d-400@def rtp_floor_p1: WITHIN MAIN=2494 [2388-2652] BASE=2454 [2422-2582] (+1.6%, rel=0.050)
+  BASE-GATE c1d-400@def: FAIL lag_E_cli=TREND-BETTER
+BASE-GATE FAIL (the new binary does not reach main even switched off, whatever the ladder says)
+
+MATCHED-SPEED c1s-400@def: pooled WIRE+MAIN median goodput 819.9 Mbit/s (n=12); window [795.3, 844.5]
+  MAIN: n=4 of 6  goodput 816.3 [803.5-833.2] n=4  client CPU/GB 15.55 [15.20-16.07] n=4  server CPU/GB 18.25 [18.07-18.57] n=4
+  WIRE: n=4 of 6  goodput 819.9 [809.0-826.6] n=4  client CPU/GB 15.81 [15.40-15.87] n=4  server CPU/GB 18.51 [18.30-18.80] n=4
+  BASE: n=6 of 6  goodput 815.5 [801.2-838.4] n=6  client CPU/GB 15.54 [15.30-15.75] n=6  server CPU/GB 18.26 [18.02-18.50] n=6
+  client CPU/GB WIRE vs MAIN at matched speed: +1.7 % (WIRE 15.812, MAIN 15.550; n=4/4)
+  server CPU/GB WIRE vs MAIN at matched speed: +1.4 % (WIRE 18.512, MAIN 18.250; n=4/4)
+MATCHED-SPEED c2-100@def: pooled WIRE+MAIN median goodput 90.2 Mbit/s (n=12); window [87.5, 92.9]
+  MAIN: n=6 of 6  goodput 89.6 [87.8-90.3] n=6  client CPU/GB 31.50 [30.30-32.40] n=6  server CPU/GB 35.55 [34.60-36.80] n=6
+  WIRE: n=6 of 6  goodput 90.2 [88.8-90.3] n=6  client CPU/GB 31.60 [31.00-32.00] n=6  server CPU/GB 35.00 [34.40-38.20] n=6
+  client CPU/GB WIRE vs MAIN at matched speed: +0.3 % (WIRE 31.600, MAIN 31.500; n=6/6)
+  server CPU/GB WIRE vs MAIN at matched speed: -1.5 % (WIRE 35.000, MAIN 35.550; n=6/6)
+MATCHED-SPEED c1d-400@def: pooled WIRE+MAIN median goodput 815.9 Mbit/s (n=11); window [791.4, 840.4]
+  MAIN: n=5 of 6  goodput 819.8 [800.4-831.0] n=5  client CPU/GB 21.20 [20.70-21.60] n=5  server CPU/GB 23.20 [22.80-23.57] n=5
+  WIRE: n=2 of 5  goodput 822.1 [815.9-828.2] n=2  client CPU/GB 21.36 [21.32-21.40] n=2  server CPU/GB 23.01 [22.97-23.05] n=2
+  BASE: n=3 of 6  goodput 805.5 [802.0-813.8] n=3  client CPU/GB 21.27 [21.27-21.43] n=3  server CPU/GB 23.25 [23.12-23.30] n=3
+  client CPU/GB WIRE vs MAIN at matched speed: +0.8 % (WIRE 21.362, MAIN 21.200; n=2/5)
+  server CPU/GB WIRE vs MAIN at matched speed: -0.8 % (WIRE 23.012, MAIN 23.200; n=2/5)
+MATCHED-SPEED c8-100@def: pooled WIRE+MAIN median goodput 97.4 Mbit/s (n=12); window [94.4, 100.3]
+  MAIN: n=4 of 6  goodput 97.3 [94.9-100.2] n=4  client CPU/GB 36.85 [35.60-37.80] n=4  server CPU/GB 43.30 [41.80-45.90] n=4
+  WIRE: n=3 of 6  goodput 97.1 [95.1-98.1] n=3  client CPU/GB 35.80 [35.50-35.90] n=3  server CPU/GB 42.60 [41.80-43.90] n=3
+  client CPU/GB WIRE vs MAIN at matched speed: -2.8 % (WIRE 35.800, MAIN 36.850; n=3/4)
+  server CPU/GB WIRE vs MAIN at matched speed: -1.6 % (WIRE 42.600, MAIN 43.300; n=3/4)
+MATCHED-SPEED c1d-400@1536: pooled WIRE+MAIN median goodput 822.9 Mbit/s (n=12); window [798.2, 847.5]
+  MAIN: n=4 of 6  goodput 833.0 [817.2-842.4] n=4  client CPU/GB 15.49 [15.18-15.87] n=4  server CPU/GB 18.60 [18.40-19.12] n=4
+  WIRE: n=4 of 6  goodput 835.3 [812.7-841.8] n=4  client CPU/GB 20.80 [20.55-21.43] n=4  server CPU/GB 22.92 [22.57-23.60] n=4
+  client CPU/GB WIRE vs MAIN at matched speed: +34.3 % (WIRE 20.800, MAIN 15.488; n=4/4)
+  server CPU/GB WIRE vs MAIN at matched speed: +23.3 % (WIRE 22.925, MAIN 18.600; n=4/4)
+MATCHED-SPEED c8-100@192: pooled WIRE+MAIN median goodput 87.6 Mbit/s (n=12); window [84.9, 90.2]
+  MAIN: n=6 of 6  goodput 87.6 [87.0-88.1] n=6  client CPU/GB 31.55 [30.30-33.80] n=6  server CPU/GB 36.00 [35.40-39.30] n=6
+  WIRE: n=6 of 6  goodput 87.7 [85.5-88.4] n=6  client CPU/GB 31.90 [30.90-33.60] n=6  server CPU/GB 36.45 [35.60-37.40] n=6
+  client CPU/GB WIRE vs MAIN at matched speed: +1.1 % (WIRE 31.900, MAIN 31.550; n=6/6)
+  server CPU/GB WIRE vs MAIN at matched speed: +1.3 % (WIRE 36.450, MAIN 36.000; n=6/6)
+MATCHED-SPEED c8-100@256: pooled WIRE+MAIN median goodput 95.5 Mbit/s (n=11); window [92.7, 98.4]
+  MAIN: n=5 of 6  goodput 95.7 [94.8-96.0] n=5  client CPU/GB 32.90 [31.80-33.80] n=5  server CPU/GB 36.90 [36.80-38.70] n=5
+  WIRE: n=5 of 5  goodput 95.5 [95.4-96.7] n=5  client CPU/GB 33.40 [32.40-34.40] n=5  server CPU/GB 37.80 [37.10-38.50] n=5
+  client CPU/GB WIRE vs MAIN at matched speed: +1.5 % (WIRE 33.400, MAIN 32.900; n=5/5)
+  server CPU/GB WIRE vs MAIN at matched speed: +2.4 % (WIRE 37.800, MAIN 36.900; n=5/5)
+MATCHED-SPEED c8-100@512: pooled WIRE+MAIN median goodput 102.7 Mbit/s (n=12); window [99.6, 105.8]
+  MAIN: n=5 of 6  goodput 101.8 [99.8-103.1] n=5  client CPU/GB 35.60 [34.20-35.80] n=5  server CPU/GB 41.50 [39.10-43.10] n=5
+  WIRE: n=6 of 6  goodput 104.3 [102.1-105.0] n=6  client CPU/GB 36.55 [35.50-36.90] n=6  server CPU/GB 40.70 [39.90-43.00] n=6
+  client CPU/GB WIRE vs MAIN at matched speed: +2.7 % (WIRE 36.550, MAIN 35.600; n=6/5)
+  server CPU/GB WIRE vs MAIN at matched speed: -1.9 % (WIRE 40.700, MAIN 41.500; n=6/5)
+
+CONTENTION c1s-400@def, every row (status or not): arm seed rep status mbps | procs_running before/after | io full avg10 before/after
+  BASE s42 r1 LIVE mbps=833.0 | procs_running 1/1 | io 0.37/0.20
+  BASE s42 r2 LIVE mbps=838.4 | procs_running 1/1 | io 0.01/0.00
+  BASE s42 r3 LIVE mbps=811.0 | procs_running 1/11 | io 0.01/0.00
+  BASE s7 r1 LIVE mbps=801.2 | procs_running 1/1 | io 0.03/0.01
+  BASE s7 r2 LIVE mbps=807.8 | procs_running 1/1 | io 0.08/0.22
+  BASE s7 r3 LIVE mbps=820.0 | procs_running 1/1 | io 0.08/0.04
+  MAIN s42 r1 LIVE mbps=833.2 | procs_running 1/1 | io 0.20/0.11
+  MAIN s42 r2 LIVE mbps=846.6 | procs_running 1/2 | io 0.05/0.03
+  MAIN s42 r3 LIVE mbps=815.1 | procs_running 1/1 | io 0.03/0.01
+  MAIN s7 r1 LIVE mbps=817.4 | procs_running 1/1 | io 0.01/0.00
+  MAIN s7 r2 LIVE mbps=850.3 | procs_running 1/1 | io 0.12/0.06
+  MAIN s7 r3 LIVE mbps=803.5 | procs_running 1/1 | io 0.15/0.08
+  WIRE s42 r1 LIVE mbps=820.3 | procs_running 1/1 | io 0.11/0.06
+  WIRE s42 r2 LIVE mbps=795.0 | procs_running 1/1 | io 0.03/0.01
+  WIRE s42 r3 LIVE mbps=819.4 | procs_running 1/1 | io 0.00/0.00
+  WIRE s7 r1 LIVE mbps=809.0 | procs_running 1/1 | io 0.06/0.03
+  WIRE s7 r2 LIVE mbps=847.5 | procs_running 1/1 | io 0.22/0.12
+  WIRE s7 r3 LIVE mbps=826.6 | procs_running 2/1 | io 0.06/0.15
+RESULT {"base_gate": "FAIL", "base_gate_items": {"c1d-400@def": ["lag_E_cli=TREND-BETTER"], "c1s-400@def": []}, "cells": {"c1d-400@1536": {"locked_main": 4, "locked_wire": 0, "n_main": 6, "n_wire": 6, "readings": {"cpu_cli/GB": "TREND-WORSE", "cpu_srv/GB": "TREND-WORSE", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "WITHIN", "rtp_floor_p1": "WITHIN"}, "worse": []}, "c1d-400@def": {"locked_main": 0, "locked_wire": 0, "n_main": 6, "n_wire": 5, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "WITHIN", "rtp_floor_p1": "WITHIN"}, "worse": []}, "c1s-400@def": {"locked_main": 0, "locked_wire": 0, "n_main": 6, "n_wire": 6, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "WITHIN"}, "worse": []}, "c2-100@def": {"locked_main": 0, "locked_wire": 0, "n_main": 6, "n_wire": 6, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "WITHIN"}, "worse": []}, "c8-100@192": {"locked_main": 1, "locked_wire": 0, "n_main": 6, "n_wire": 6, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "WITHIN", "rtp_floor_p1": "WITHIN"}, "worse": []}, "c8-100@256": {"locked_main": 1, "locked_wire": 0, "n_main": 6, "n_wire": 5, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "TREND-WORSE", "rtp_floor_p0": "WITHIN", "rtp_floor_p1": "WITHIN"}, "worse": []}, "c8-100@512": {"locked_main": 1, "locked_wire": 0, "n_main": 6, "n_wire": 6, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "WITHIN", "rtp_floor_p1": "WITHIN"}, "worse": []}, "c8-100@def": {"locked_main": 0, "locked_wire": 0, "n_main": 6, "n_wire": 6, "readings": {"cpu_cli/GB": "WITHIN", "cpu_srv/GB": "WITHIN", "goodput": "WITHIN", "lag_E_cli": "WITHIN", "lag_E_srv": "WITHIN", "rtp_floor_p0": "TREND-WORSE", "rtp_floor_p1": "WITHIN"}, "worse": []}}, "reproduced": ["c1d-400@1536"], "unscoreable": [], "verdict": "CURED [NOT-REPRODUCED-AT(c8-100@192,c8-100@256,c8-100@512)]"}
