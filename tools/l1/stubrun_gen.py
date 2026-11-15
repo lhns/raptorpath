@@ -332,7 +332,7 @@ def gauge60(fam, w, n, bad, evict):
     sr = _s60replay()
     floors = FLOOR60[fam]
     nleg = len(floors)
-    q = 0.1
+    q = 0.05 if evict else 0.1      # Realtime rows print q = 0.05, Bulk rows 0.10 (s60 section 5)
     brakes = {p: [] for p in range(nleg)}
     out = {}
     anc_bind = [0, 0]
@@ -384,7 +384,7 @@ def gauge60(fam, w, n, bad, evict):
                          f"R={'-' if r is None else f'{r:.5f}'} Rb={'-' if rb is None else f'{rb:.5f}'} used={'-' if r is None else len(live)} xs=0 xb=0 ra=0/0 q={q:.6f} qb=7 qbt=7.000 qcol=1/{k}")
         rr = 0.1 + 0.001 * (k // 2)
         fec = f"fec=0.010000/1.2000/{rr:.5f}/12.00/20" if evict else "fec=-/-/-/-/0"
-        lines.append(f"[WSTORE] t={t:.2f} k={k} tw=250.0 n={w} W={w} aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=20/50/60/70 ackw=1 {fec} dbt_acc=10.00 dbt_em=5 dbt_share=0.5000 "
+        lines.append(f"[WSTORE] t={t:.2f} k={k} tw=250.0 n={w} W={w} aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=20/50/60/70 ackw=20 {fec} dbt_acc=10.00 dbt_em=5 dbt_share=0.5000 "
                      f"dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00")
         if k % 4 == 0:
             import math

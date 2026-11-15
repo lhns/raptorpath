@@ -391,19 +391,11 @@ rc, o_few = run_score(c2_rows(reps=2), "60a")
 check("c2 D with fewer than 3 valid floor rows / 2 replicates -> UNSCOREABLE (no guess)", labels(o_few)["C2-SHORT"] == "UNSCOREABLE" and labels(o_few)["P1-c2"] == "UNSCOREABLE", labels(o_few))
 
 # SCORER BUG line when the sign witness is broken (patched replay returns the wrong side)
-_orig = s.replay_row
-
-
-def _flip(rv, cell, cal, mode="r", legs=None):
-    r = _orig(rv, cell, cal, mode, legs)
-    if r and mode == "r67":
-        r = dict(r, med=2.0 - r["med"])
-    return r
-
-
-s.replay_row = _flip
+_sr = s._lib()[0]
+_orig67 = _sr.r67_r
+_sr.r67_r = lambda legs, q: 2.0 - _orig67(legs, q)      # a broken R~67: the wrong side of 1
 rc, o_bug = run_score(c2_rows(), "60a")
-s.replay_row = _orig
+_sr.r67_r = _orig67
 check("sign witness: a broken R~67 (wrong sign vs D) prints a SCORER-BUG line", has(o_bug, "SCORER-BUG"))
 
 # ═══ 7. validity: LATCHED boundary, COLLAPSED, floor-pool 80 % rule, minimum rows ═══
@@ -578,13 +570,15 @@ rc, o8a = run_score(c8_rows(rise=4.0, jitter=0.01, unbound_reps=(1, 2, 3, 4, 5))
 check("c8 B2 anc exclusion: replay bind fraction < 0.9 on 5 replicates -> they are reported, not counted; only 1 counted -> UNSCOREABLE", labels(o8a).get("C8-B2") == "UNSCOREABLE" and has(o8a, "reported, not counted"),
       [ln for ln in o8a if "C8-B2" in ln][:2])
 rc, o8b = run_score(c8_rows(rise=4.0, jitter=0.01, unbound_reps=(1, 2, 3, 4)), "60a")
-check("c8 B2 anc exclusion: 4 unbound replicates excluded, the 2 bound ones fire -> FIRES on 2 of 2 counted", labels(o8b).get("C8-B2") == "FIRES" and has(o8b, "fires on 2 of 2 anc-bound"))
+check("c8 B2 anc exclusion: 4 unbound replicates excluded, the 2 bound ones fire -> UNSCOREABLE (UNDERPOWERED: 2 eligible < 5; the doc's '2 of the 5-6 scoreable')", labels(o8b).get("C8-B2") == "UNSCOREABLE" and has(o8b, "UNDERPOWERED: 2 anc-bound eligible"))
+rc, o8b5 = run_score(c8_rows(rise=4.0, jitter=0.01, unbound_reps=(1,)), "60a")
+check("c8 B2: 1 unbound replicate excluded, the 5 bound ones fire -> FIRES on 5 of 5 eligible", labels(o8b5).get("C8-B2") == "FIRES" and has(o8b5, "fires on 5 of 5 anc-bound"))
 rc, o8c = run_score(c8_rows(rise=4.0, jitter=0.01), "60a", nogo="c8")
 check("LD_NOGO=c8: B2 is NOT scored (printed consequence), P1/P3/gate lines still printed", labels(o8c).get("C8-B2") == "NOT-SCORED-NOGO" and has(o8c, "ARM c8 W320"))
 rc, o8d = run_score(c8_rows(reps=4, rise=-4.0, jitter=0.01), "60a")
-check("c8 B2 NOT-FIRES with fewer than 5 scoreable replicates -> UNSCOREABLE (the 5-replicate minimum gates only a pass)", labels(o8d).get("C8-B2") == "UNSCOREABLE", [ln for ln in o8d if "C8-B2" in ln][-1:])
+check("c8 B2 NOT-FIRES with fewer than 5 eligible replicates -> UNSCOREABLE", labels(o8d).get("C8-B2") == "UNSCOREABLE", [ln for ln in o8d if "C8-B2" in ln][-1:])
 rc, o8e = run_score(c8_rows(reps=4, rise=4.0, jitter=0.01), "60a")
-check("c8 B2 FIRES on 4 scoreable replicates: a fire stands whatever the replicate count (the note says < 5)", labels(o8e).get("C8-B2") == "FIRES" and has(o8e, "only 4 scoreable replicates"), [ln for ln in o8e if "RESULT C8-B2" in ln])
+check("c8 B2 with 4 eligible replicates that all fire -> UNSCOREABLE (UNDERPOWERED: a FIRE needs >= 2 fires among >= 5 eligible)", labels(o8e).get("C8-B2") == "UNSCOREABLE" and has(o8e, "UNDERPOWERED: 4 anc-bound eligible"), [ln for ln in o8e if "RESULT C8-B2" in ln])
 check("c8 B2 prints how often its W95 / interpolation clamps bound (the clamp gauge)", has(o8, "C8-B2 clamp gauge: W95 clamped at the first goodput arm 0/"))
 check("c8 knee: W95 = 352 from goodput 0.9 @320 and 1.0 @384", has(o8, "W95=352.0"), [ln for ln in o8 if "C8-B2 [scored" in ln][:1])
 check("c8 own-l R~ is reported beside the scored recipe, with the masking sentence available", has(o8, "C8-B2 [own-l (reported beside, no veto)]"))
@@ -854,6 +848,57 @@ rcli = subprocess.run([sys.executable, "-I", os.path.join(HERE, "s60_score.py"),
 check("CLI: python -I s60_score.py score60 60a <ledger> -> rc 0, VERDICT60 + LABEL60 C2-SHORT SHORT", rcli.returncode == 0 and "VERDICT60 " in rcli.stdout and "LABEL60 C2-SHORT SHORT" in rcli.stdout, rcli.stdout[-300:] + rcli.stderr[-300:])
 for pth in (pl, pr_, pc):
     os.remove(pth)
+# ── harness60 review round: R-sign at the end of 60a, DNF bookkeeping, the sign witness resolution, the ackw clock join, the evicting rehearsal ──
+rows_late = c2_rows()
+for r in rows_late:
+    if r["arm"] == "G2048" and r["rep"] == 5:
+        r["t60"] = mkrow(C2, "G2048", r["seed"], r["rep"], {0: dict(tmin=9.0, tp50=20.0, m=9.0, l=6.0, sig=2.0, sigb=1.5)}, mbps=100.0)["t60"]
+rc, o_rl = run_score(rows_late, "60a")
+check("R-sign gate is read at the END of the launch on the full calibration: control R~ >= 1 on replicate 5 -> STOP (60b's launch aborts on it)", has(o_rl, "STOP R-SIGN c2 s42 rep5") and labels(o_rl).get("R-SIGN-c2") == "STOP", [ln for ln in o_rl if "R-SIGN" in ln][:3])
+# a DNF row with too few LATE windows does not calibrate; one with >= 120 does
+dn_rows = c2_rows()
+fl = [r for r in dn_rows if r["arm"] == "G16" and r["rep"] == 1][0]
+short = dict(fl, dnf=True, mbps=None)
+short["t60"] = json.loads(json.dumps(fl["t60"]))
+for leg in short["t60"]["late"].values():
+    for k in leg:
+        leg[k] = leg[k][:40]
+rv_short = s.RV(short)
+check("valid_for_cal: a DNF row with 40 LATE windows (< 120 = 30 s) is excluded ('DNF-too-few-late-windows')", s.valid_for_cal(rv_short, 0) == (False, "DNF-too-few-late-windows"), s.valid_for_cal(rv_short, 0))
+long_ = dict(fl, dnf=True, mbps=None)
+long_["t60"] = json.loads(json.dumps(fl["t60"]))
+for leg in long_["t60"]["late"].values():
+    for k in leg:
+        leg[k] = (leg[k] * 7)[:130]
+rv_long = s.RV(long_)
+check("valid_for_cal: a DNF row that still holds >= 120 LATE windows calibrates (it is a datum with its windows)", s.valid_for_cal(rv_long, 0)[1] != "DNF-too-few-late-windows", (len(long_["t60"]["late"]["0"]["k"]), s.valid_for_cal(rv_long, 0)))
+rows_rep = c2_rows()
+d0 = [r for r in rows_rep if r["arm"] == "G16" and r["rep"] == 2][0]
+dd = dict(d0, dnf=True, mbps=None)
+rows_rep.insert(rows_rep.index(d0), dd)      # a DNF row first, then its replacement (the same slot)
+rc, o_rp2 = run_score(rows_rep, "60a")
+check("a replaced DNF row is reported beside its replacement: REPLACED + DNF-DATUM lines, the replacement counts", has(o_rp2, "REPLACED c2-100 G16") and has(o_rp2, "DNF-DATUM c2-100 G16"), [ln for ln in o_rp2 if "DNF-DATUM" in ln][:1])
+# the sign witness: |D| below its resolution is UNRESOLVED, not a bug
+rows_d0 = c2_rows(knee_rise=(12.05 - 0.0, 13.65), sig=2.0, l_c=6.0)
+check("sign witness resolution constant D_WIT_RES = 0.01 ms", s.D_WIT_RES == 0.01)
+# the ackw clock join (a known answer): ackw per window == the delta of the cumulative wake ack counter
+tt = [0.25 * k for k in range(1, 41)]
+ev_ok = {"wstore": {"t": tt, "ackw": [20] * 40}, "cum": {"t": tt, "wack": [20 * k for k in range(1, 41)]}}
+n_, e_, f_ = s.ackw_join(ev_ok)
+check("ackw join: ackw = 20 per window against wake ack = 20 k -> 39 of 39 windows equal (the first window has no previous tick)", (n_, e_, f_) == (39, 39, None), (n_, e_, f_))
+ev_bad = {"wstore": {"t": tt, "ackw": [20] * 10 + [21] + [20] * 29}, "cum": ev_ok["cum"]}
+n_, e_, f_ = s.ackw_join(ev_bad)
+check("ackw join: one window off by one -> 38 of 39 equal and the first mismatch is named", (n_, e_) == (39, 38) and f_ is not None, (n_, e_, f_))
+check("ackw join: no ackw column -> 0 compared (the smoke fails on < 10)", s.ackw_join({"wstore": {"t": tt}, "cum": {"t": tt, "wack": [1] * 40}})[0] == 0)
+# 60br: the evicting rehearsal row in the smoke
+def evict_smoke_rows(ack_delta=20, rr=0.1, q="0.050000", problems=()):
+    rws = [mkrow(C1S, "G64", 42, 1, {0: dict(tmin=2.5, tp50=3.5, m=2.3, l=2.3, sig=0.3, sigb=0.3)}, mbps=50.0), mkrow(C1S, "C2048", 42, 1, {}, mbps=50.0)]
+    return rws
+check("plan60 'plan 60br' is the 2-row smoke plus ONE evicting row (3 rows, EVICT last, seed 42 rep 1)", plan60.plan("60br") == plan60.SMOKE["60b"] + [("c2-100", "def", "EVICT", "42", 1)] and len(plan60.plan("60br")) == 3)
+check("the budget guard carries the worst-case floor re-runs: 60a 11 520 + 36 x 190 = 18 360 s, 60b 10 440 + 18 x 190 = 13 860 s", plan60.BUDGET_S == {"60a": 18360, "60b": 13860}, plan60.BUDGET_S)
+check("a wrong binary (bin-sha-*) and a missing Realtime echo are classified: the echo VOIDs re-run once, the binary never", plan60.is_echo_void({"problems": ["no-realtime-echo-cli"]}) and not plan60.is_echo_void({"problems": ["bin-sha=abc (want def for CAND)"]})
+      and not plan60.is_echo_void({"problems": ["bin-sha-uncheckable (row sha None)"]}))
+
 check("the module docstring carries the DECISIONS list", "DECISIONS" in s.__doc__ and len(s.DECISIONS) >= 15)
 
 print(f"\ntest_s60: {fails} fail(s)")

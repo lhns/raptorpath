@@ -84,8 +84,8 @@
 # no BASE tree, no LD_BASE_SHA, >= 1 GB free on /dev/shm, the tools tests). Differences: (1) LD_BIN_SHA_EXPECT (default: the registered bin_sha e410d640..., 60-pre's crate-directory build) must equal the built binary's sha256 (ABORT-BIN-SHA,
 # before any row; LD_BIN_PREBUILT=<path> installs a prior launch's binary instead of building it, still checked); (2) the engine suites are reused ONLY by a reference-manifest HIT (LD_REF_MANIFEST, default tools/l1/ref60-manifest.sha256):
 # a MISS is ABORT-SUITES (nothing run), a rehearsal included; (3) ONE stage rep60a / rep60b: smoke = 2 rows (60a: c2 W192 C then G; 60b: c1s W64 G 1 GB then W2048 C), then 96 (60a) / 45 (60b) slots; LD_REHEARSE=1 on 60a runs the 10 rehearsal
-# rows and the go/no-go (LD_NOGO=<c2,c8,c1s> carries the decisions into 60b's table and the scorer); a slot with a VOID RWM_SLAW / pool / liveness echo or a floor-pool DNF is re-run once (plan60.py replace). The budget guard refuses with under
-# 11 520 s (60a) / 10 440 s (60b) to LD_HARD (launch + 4 h; LD_HARD_MIN_S is a test seam).
+# rows and the go/no-go (LD_NOGO=<c2,c8,c1s> carries the decisions into 60b's table and the scorer); a slot with a VOID RWM_SLAW / pool / liveness echo is re-run once (a DNF never is) (plan60.py replace). The budget guard refuses with under
+# 18 360 s (60a: 3.2 h + 36 floor re-runs) / 13 860 s (60b: 2.9 h + 18) to LD_HARD, so the launch sets LD_HARD = launch + 5.2 h (60a) / + 3.9 h (60b) (LD_HARD_MIN_S is a test seam).
 # LD_PLAN=53 (status 53, stale gap reports under lever B): plan 52's envelope without the guard. The suites on CAND's tree first (a REAL failure is ABORT-TESTS and nothing runs; LD_PRIOR_TESTS and
 # LD_REHEARSE are supported), then ONE REPORTED-ONLY stage in $RUN/rep53 (LD_PLAN=53: c8-100 at 600 MB with BASE / CAND / CANDS / BASES / CW0 n = 6, then c1d-400 at 5 GB with BASE 12 / CAND 12 / CANDS 6;
 # 60 rows + an 8-row smoke; snap53_score.py, never a verdict). BASE is pinned by LD_BASE_SHA (required), CAND by LD_CAND_SHA; CANDS / BASES carry RWM_RECOV_SNAPVER=1, CW0 RWM_PLACE_WDIV=0. The smoke
@@ -200,6 +200,14 @@ if [ "$P60" = 1 ]; then
   LD_BIN_SHA_EXPECT="${LD_BIN_SHA_EXPECT:-e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d}"
   LD_REF_MANIFEST="${LD_REF_MANIFEST:-$HERE/ref60-manifest.sha256}"
   [ -s "$LD_REF_MANIFEST" ] || { echo "ABORT-SUITES no reference manifest at $LD_REF_MANIFEST (plans 60a / 60b); NOTHING WAS RUN"; exit 3; }
+  # The R-sign gate (s60 section 5, Amendment 1): R~ < 1 at the c2 / c8 controls is read at the END of 60a on the full calibration; 60b does not launch (nothing run) unless 60a's score (LD_SCORE60A = its
+  # rep60a/score.txt) carries LABEL60 R-SIGN-c2 PASS and R-SIGN-c8 PASS. A rehearsal has no 60a score and is exempt.
+  if [ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]; then
+    [ -s "${LD_SCORE60A:-}" ] || { echo "ABORT-RSIGN plan 60b needs 60a's score (LD_SCORE60A=<rep60a/score.txt>) to read the R-sign gate; NOTHING WAS RUN"; exit 3; }
+    for _c in c2 c8; do
+      grep -aq "^LABEL60 R-SIGN-$_c PASS" "$LD_SCORE60A" || { echo "ABORT-RSIGN 60a's score has no 'LABEL60 R-SIGN-$_c PASS' ($(grep -a "^LABEL60 R-SIGN-$_c" "$LD_SCORE60A" | head -1)): the gate failed or was not read; 60b does not launch; NOTHING WAS RUN"; exit 3; }
+    done
+  fi
 fi
 # Plan 46 shares the root-owned tmpfs tree, LD_HARD and the two-tree build with plans 38 / 41 (P38 stays 0: no place-wire arms or ladder).
 if [ "$P46" = 1 ]; then
@@ -270,7 +278,7 @@ if [ "$P57" = 1 ]; then
   # status's worst cases do not include; that is a gap of the pre-registration, not of this guard.
   P57_NEED=13200; [ "$P57B" = 1 ] && P57_NEED=5400
   P57_TAG="57a/57b ($PLAN)"; [ "$P59" = 1 ] && { P57_NEED=7200; P57_TAG="59"; }
-  [ "$P60" = 1 ] && { P57_NEED=11520; [ "$PLAN" = "60b" ] && P57_NEED=10440; P57_TAG="$PLAN"; }      # status 60 section 7: refuses with less than 3.2 h (60a) / 2.9 h (60b) left
+  [ "$P60" = 1 ] && { P57_NEED=18360; [ "$PLAN" = "60b" ] && P57_NEED=13860; P57_TAG="$PLAN"; }      # status 60 section 7: 3.2 h (60a) / 2.9 h (60b) PLUS the worst-case floor DNF re-runs (36 / 18 rows x 190 s): 5.1 h / 3.85 h (plan60.BUDGET_S)
   P57_LEFT=$(( LD_HARD - $(date +%s) ))
   era "LD-ALL plan $PLAN budget: ${P57_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P57_NEED}s required: the worst case of the status)"
   [ "$P57_LEFT" -ge "${LD_HARD_MIN_S:-$P57_NEED}" ] || { era "ABORT-BUDGET plan $P57_TAG: ${P57_LEFT}s before LD_HARD, need at least ${LD_HARD_MIN_S:-$P57_NEED}s; NOTHING WAS RUN"; exit 3; }
@@ -585,6 +593,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
     sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
     local sbrc=$? P60SMOKE="$splan"
     [ "$P60" = 1 ] && [ "$REHEARSE" = 1 ] && [ "$splan" = "60a" ] && P60SMOKE=60r      # the rehearsal: the 10 rows and the go/no-go
+    [ "$P60" = 1 ] && [ "$REHEARSE" = 1 ] && [ "$splan" = "60b" ] && P60SMOKE=60br      # 60b's rehearsal: its smoke plus one evicting row
     if [ "$P60" = 1 ]; then python3 ./s60_score.py smoke60 "$P60SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; else python3 ./loopdiag_parse.py "$smk" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; fi
     local smrc=$?
     if [ "$sbrc" != "0" ] || [ "$smrc" != "0" ]; then

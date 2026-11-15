@@ -40,9 +40,14 @@ BYTES_DEFAULT = {C2: 600_000_000, C8: 600_000_000, C1S: 5_000_000_000}
 # RWM_PERF_TIMEOUT_S: 150 s on every floor-pool row (section 2), and on the c2 / c8 / evicting rows (their typical 75-90 s, section 7); 210 s on the c1s 5 GB control (section 7: "210 s worst, 57a's convention").
 TIMEOUT_FLOOR, TIMEOUT_DEFAULT, TIMEOUT_C1S_CONTROL = 150, 150, 210
 LATE_T = {C2: 15.0, C8: 15.0, C1S: 5.0}                                                  # section 1.1: LATE windows (t >= 15 s at c2 / c8, >= 5 s at c1s)
-BUDGET_S = {"60a": 11520, "60b": 10440}                                                  # the budget guard: 3.2 h / 2.9 h left at launch (section 7)
+# The budget guard (section 7: 3.2 h / 2.9 h left at launch) PLUS the worst-case floor-pool DNF re-runs (section 2 allows each floor row one re-run): every floor row DNFs at its 150 s timeout and is re-run once at
+# 150 s + ~40 s bring-up = 190 s. 60a: 36 floor rows (c2 + c8, 18 each) -> +6 840 s; 60b: 18 c1s floor rows -> +3 420 s. NEW WORST CASES: 60a 11 520 + 6 840 = 18 360 s (5.1 h); 60b 10 440 + 3 420 = 13 860 s (3.85 h).
+# The launch must therefore set LD_HARD at least that far ahead (launch + 5.2 h / + 3.9 h), not the registered launch + 4 h.
+FLOOR_RERUN_S = 190
+BUDGET_S = {"60a": 11520 + 36 * FLOOR_RERUN_S, "60b": 10440 + 18 * FLOOR_RERUN_S}
 SMOKE = {"60a": [(C2, "def", "C192", "42", 1), (C2, "def", "G192", "42", 1)],            # section 5: c2 W 192, one C row and one G row
          "60b": [(C1S, "def", "G64", "42", 1), (C1S, "def", "C2048", "42", 1)]}          # c1s W 64 G (1 GB) and W 2048 C
+EVICT_REHEARSAL = (EVICT_CELL, "def", EVICT_ARM, "42", 1)                                # 60b's rehearsal adds ONE evicting row (plan 59's arm): its liveness, rr > 0 and the ackw clock join
 REHEARSAL = SMOKE["60a"] + SMOKE["60b"] + [(C2, "def", "G16", "42", 2),                  # section 7: the 10 rehearsal rows (all G beyond the smokes)
                                             (C8, "def", "G32", "42", 1), (C8, "def", "G32", "7", 2), (C8, "def", "G96", "42", 1),
                                             (C1S, "def", "G64", "7", 2), (C1S, "def", "G64", "42", 3)]
@@ -96,7 +101,8 @@ def arm_env(cell, arm):
         raise ValueError(f"unknown arm {arm}")
     env = ["RWM_SLAW=%d" % (1 if kind in ("G", "E") else 0)]
     if kind == "E":
-        return env + ["RWM_C_RELIABLE=0", "RWM_RDIAG=1"]
+        return env + ["RWM_C_RELIABLE=0"]      # plan 59's arm; RWM_RDIAG=1 comes from the battery's instrument env (every row), RWM_RTOBS is NOT set (plan 59 did not)
+    env.append("RWM_RTOBS=1")      # §56's instrument env (RWM_RTOBS=1 RWM_RDIAG=1) on every G / C row, so the knee and the collapse thresholds derived on §56 apply; the registration is silent; G and C both carry it
     pool = pool_per_path(cell, w)
     if pool != SHIPPED_POOL:
         env.append("RWM_STORE_PATH_POOL=%d" % pool)
@@ -132,6 +138,8 @@ def _grid_rows(cell, ws):
 def plan(name, smoke=False, rehearsal=False):
     """[(cell, store, arm, seed, rep)] in run order. 60a: c2 block then c8 block (8 arms x 6, all G). 60b: the c1s floor block (3 pools x 6), the control (10 interleaved G/C pairs,
     the order alternating, then 2 G rows), then the 5 evicting rows. The smoke and the rehearsal are fixed lists. A replaced slot adds a ledger row, not a table row."""
+    if name == "60br":
+        return SMOKE["60b"] + [EVICT_REHEARSAL]
     if rehearsal:
         return list(REHEARSAL)
     if smoke:
@@ -162,7 +170,7 @@ def expect_rows(name):
 
 
 # ── row witnesses and the replacement rule ──
-ECHO_PREFIX = ("gate-slaw", "gate-diag", "gate-three-term", "gate-pool", "pool_per_path", "evict-", "gate-unified")      # the VOIDs the battery replaces once
+ECHO_PREFIX = ("gate-slaw", "gate-diag", "gate-three-term", "gate-pool", "pool_per_path", "evict-", "gate-unified", "no-realtime-echo")      # the VOIDs the battery replaces once; "bin-sha-*" is deliberately NOT here
 
 
 def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None):
@@ -205,8 +213,9 @@ def is_echo_void(row):
 
 
 def replace_reason(ledger, cell, arm, seed, rep):
-    """-> the reason the slot is re-run once, or None: its rows so far are exactly one and that row is VOID by an echo / liveness witness, or is a floor-pool DNF (section 2:
-    'A DNF is a datum, and the row is re-run once')."""
+    """-> the reason the slot is re-run once, or None: its rows so far are exactly one and that row is VOID by an echo / liveness witness (RWM_SLAW, RWM_DIAG, the pool echo, the evicting seat's
+    liveness incl. the Realtime echo), or is a floor-pool DNF (s60 section 2: 'A DNF is a datum, and the row is re-run once'). A WRONG BINARY (bin-sha-*) is never re-run: it is not an echo VOID, the
+    harness rules abort on it. The DNF row stays in the ledger as a datum (the scorer reports it beside the replacement); the budget guard carries the worst-case floor re-runs (FLOOR_RERUN_S)."""
     import place38_parse as pp
     rows, _ = pp.rows_of([ledger])
     mine = [r for r in rows if (r.get("cell"), r.get("arm"), str(r.get("seed")), str(r.get("rep"))) == (cell, arm, str(seed), str(rep))]

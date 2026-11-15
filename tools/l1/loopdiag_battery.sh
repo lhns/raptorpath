@@ -178,8 +178,9 @@ fi
 [ "$P57" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300)
 # Plan 59: RWM_DIAG=1 (every row) RWM_RDIAG=1 as the status asks; no RWM_RTOBS (not asked for, and it is an extra gauge); 150 s (a DNF is expected, the LATE window needs 5 s + a few ticks).
 [ "$P59" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)
-# Plans 60a / 60b: no RWM_RTOBS / RWM_RDIAG on a G or C row (the registered G/C pairs differ in RWM_SLAW alone; EVICT rows add RWM_RDIAG=1 through their arm env, as plan 59); the per-row timeout is the arm's (tmo_env).
-[ "$P60" = 1 ] && INSTR_ENV=(RWM_PERF_TIMEOUT_S=150)
+# Plans 60a / 60b: RWM_RDIAG=1 on every row (as section 56 and plan 59); RWM_RTOBS=1 comes through the arm env of every G / C row (plan60.arm_env: section 56's instrument env, the registration is silent; plan 59's EVICT rows
+# carry none). The registered G/C pairs still differ in RWM_SLAW alone. The per-row timeout is the arm's (tmo_env).
+[ "$P60" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)
 # Plan 48's per-cell sizes (status 48b / 48 Step 1); the cell names keep their scenario. bbr48_score / place38_parse.BYTES48 is the scorer's copy.
 p48_bytes() { case "$1" in c1s-400|c1d-400) echo 5000000000 ;; c2-100|c8-100) echo 600000000 ;; *) echo "" ;; esac; }
 # Plan 41d's long cells (place38_parse.BYTES41D / TIMEOUT41D are the scorer's copy; test_guard_v2.py asserts they agree). Empty = the cell keeps the guard size.
@@ -1039,7 +1040,7 @@ if [ "$PLAN" = "59" ]; then
 fi
 
 # ── plans 60a / 60b (status 60, the store law's gauge session): the tables are plan60.py's (96 slots in 60a, 45 in 60b; smoke 2 rows; LD_REHEARSE=1 on 60a: the 10 rehearsal rows) ──
-# A slot whose RWM_SLAW / RWM_DIAG / pool / evicting-seat witness is VOID, or a floor-pool DNF, is re-run ONCE (plan60.py replace decides from the ledger); the replacement is a second row of the same slot.
+# A slot whose RWM_SLAW / RWM_DIAG / pool / evicting-seat witness is VOID is re-run ONCE (a DNF never is) (plan60.py replace decides from the ledger); the replacement is a second row of the same slot.
 run_slot60() { # cell arm seed rep store
   local why
   ATTEMPT_OFF=0
@@ -1058,6 +1059,9 @@ plan60() { # smoke -> the whole plan (0), or the smoke rows (1)
     if [ "$PLAN" = "60a" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then
       mapfile -t tbl < <(python3 ./plan60.py plan 60r)
       [ "${#tbl[@]}" -eq 10 ] || { echo "ABORT-PLAN60 rehearsal table has ${#tbl[@]} rows (10)" >> "$OUT"; exit 3; }
+    elif [ "$PLAN" = "60b" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then
+      mapfile -t tbl < <(python3 ./plan60.py plan 60br)      # 60b's rehearsal: its 2-row smoke plus ONE evicting row (liveness, rr > 0, the ackw clock join)
+      [ "${#tbl[@]}" -eq 3 ] || { echo "ABORT-PLAN60 60b rehearsal table has ${#tbl[@]} rows (3)" >> "$OUT"; exit 3; }
     else
       mapfile -t tbl < <(python3 ./plan60.py plan "$PLAN" smoke)
       [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN60 smoke table has ${#tbl[@]} rows (2)" >> "$OUT"; exit 3; }

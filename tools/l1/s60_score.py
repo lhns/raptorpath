@@ -2,7 +2,7 @@
 """Status 60: the store law's gauge session (B-1), plans 60a / 60b. The SCORER: row readouts (`t60`), the smoke / rehearsal check and the session score.
 Spec: docs/derivations/s60-registration.md (cited per section as `s60 section N`); tables and the replacement rule: plan60.py.
 
-    s60_score.py smoke60 <60a|60b|60r> <ledger>        PASS / FAIL lines ending SMOKE-PASS | SMOKE-FAIL; 60r adds the rehearsal witnesses and the GO-NOGO decisions
+    s60_score.py smoke60 <60a|60b|60r|60br> <ledger>        PASS / FAIL lines ending SMOKE-PASS | SMOKE-FAIL; 60r adds the rehearsal witnesses and the GO-NOGO decisions
     s60_score.py score60 <60a|60b|all> <ledger> [...]  every registered readout, then VERDICT60 and one LABEL60 line per scored readout
 
 Two layers, so the VM-side row parser stays fast and the scoring stays a pure function of the ledger:
@@ -53,6 +53,8 @@ P1_RATIO = 3.0                                 # s60 section 1.2
 SIGN_ALPHA = 0.05                              # s60 section 3.3 (s60cond.py K table): two-sided sign test
 MIN_SIGN_N = 6                                 # s60 section 3.3: fewer scoreable replicates is UNDERPOWERED
 B2_FIRES_MIN = 2                               # s60 section 3.2: >= 2 of the scoreable replicates
+MIN_DNF_LATE_WIN = 120                          # a DNF calibration row needs >= 30 s of LATE windows (120 x 250 ms, the doc's "with >= 30 s of LATE windows"), else it is not a valid calibration row
+D_WIT_RES = 0.01                                # ms: |D_r| below this is under the sign witness's resolution (printed D has 3 decimals): reported UNRESOLVED, never SCORER-BUG
 B2_MIN_SCOREABLE = 5                           # s60 section 3.2: "the 5-6 scoreable replicates" (DECISION 12)
 B2_ANC_MIN = 0.9                               # s60 section 3.2: replay anc bind fraction >= 0.9 at both bracketing arms
 KNEE_FRAC = 0.95                               # s60 section 3.1 / 3.2: W95 = the goodput knee against the same replicate's control
@@ -370,19 +372,19 @@ def _evict(cli, srv, drv, nbytes, cell, mbps, wst, ticks_cum):
     """s60 section 6: the evicting rows' extras: mbar59_score.row_metrics (m-bar lower bound, W1 bracket), per-window adv / dbt / fec columns, [SPAN] delta / a_star, the cum-ack series."""
     import mbar59_score as m59
     import slaw_parse as sp_
-    cols = {k: [] for k in ("t", "tw", "adv", "dbt_acc", "dbt_em", "dbt_share", "eps", "sigma2", "r", "astar", "fecn")}
+    cols = {k: [] for k in ("t", "tw", "adv", "ackw", "dbt_acc", "dbt_em", "dbt_share", "eps", "sigma2", "r", "astar", "fecn")}
     for ln in wst:
         r = sp_.parse_line(ln)
         if not r or r[0] != "WSTORE":
             continue
         d = r[1]
-        for k, key in (("t", "t"), ("tw", "tw"), ("adv", "adv.0"), ("dbt_acc", "dbt_acc"), ("dbt_em", "dbt_em"), ("dbt_share", "dbt_share"),
+        for k, key in (("t", "t"), ("tw", "tw"), ("adv", "adv.0"), ("ackw", "ackw"), ("dbt_acc", "dbt_acc"), ("dbt_em", "dbt_em"), ("dbt_share", "dbt_share"),
                        ("eps", "fec.0"), ("sigma2", "fec.1"), ("r", "fec.2"), ("astar", "fec.3"), ("fecn", "fec.4")):
             cols[k].append(d.get(key))
     sp = m59.span_lines(cli)
     return {"mbar59": m59.row_metrics(cli, srv, drv, nbytes, cell, mbps), "wstore": cols,
             "span": {"t": [s["t"] for s in sp], "a_star": [s["a_star"] for s in sp], "delta": [s["delta"] for s in sp]},
-            "cum": {"t": [c[0] for c in ticks_cum], "src": [c[1] for c in ticks_cum], "ack": [c[2] for c in ticks_cum]}}
+            "cum": {"t": [c[0] for c in ticks_cum], "src": [c[1] for c in ticks_cum], "ack": [c[2] for c in ticks_cum], "wack": [c[3] for c in ticks_cum]}}
 
 
 def row_metrics(cli, srv, drv, nbytes=None, cell=C2, arm="G192", mbps=None):
@@ -421,7 +423,8 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=C2, arm="G192", mbps=None):
                 ticks.append(tk)
                 if want_evict:
                     m = re.search(r" cum=(\d+)/(\d+)/(\d+)", ln)
-                    cumt.append((tk[0], tk[1], int(m.group(3)) if m else None))
+                    mw = re.search(r"wake\[[^\]]*? ack=(\d+)", ln)
+                    cumt.append((tk[0], tk[1], int(m.group(3)) if m else None, int(mw.group(1)) if mw else None))
     srv_tags = dict.fromkeys(GAUGE_TAGS, 0)
     for ln in srv:
         end = ln.find("]") if ln[:1] == "[" else -1
@@ -559,6 +562,8 @@ def valid_for_cal(rv, leg, K=K_BOOT):
         return False, "void"
     if s["n10"] == 0 or s["tmin"] is None or s["l"] is None:
         return False, "no-late-nk10-windows"
+    if rv.dnf and s["n"] < MIN_DNF_LATE_WIN:
+        return False, "DNF-too-few-late-windows"      # a DNF row is a datum; it calibrates only if it still holds >= 30 s of LATE windows (the replacement, if any, is the slot's counting row)
     if not rv.complete(leg, K):
         return False, "boot-incomplete"
     lt = rv.latched(leg, K)
@@ -758,6 +763,9 @@ class Session:
                    + (f" T60-ERROR {rv.r.get('t60_error')}" if rv.r.get("t60_error") else ""))
         for r in self.replaced:
             self.p(f"  REPLACED {r.get('cell')} {r.get('arm')} s{r.get('seed')} rep{r.get('rep')} {r.get('status')} {' '.join(r.get('problems') or [])}")
+            if r.get("dnf"):
+                lw = len(((r.get("t60") or {}).get("late") or {}).get("0", {}).get("k") or [])
+                self.p(f"  DNF-DATUM {r.get('cell')} {r.get('arm')} s{r.get('seed')} rep{r.get('rep')}: the DNF row is kept as a datum ({lw} LATE windows on leg 0); its replacement is the slot's counting row (s60 section 2: 'a DNF is a datum and the row is re-run once')")
         for rv in self.void:
             self.p(f"  VOID {rv.cell} {rv.arm} s{rv.seed} rep{rv.rep} {rv.r.get('status')} {' '.join(rv.r.get('problems') or [])}")
         bad = [rv for rv in self.rvs if rv.live and rv.kind in ("G", "E") and rv.t.get("witness", {}).get("ok") is not True]       # a C row prints no [SLAW]: nothing to witness
@@ -895,7 +903,8 @@ class Session:
                 self.p(line)
 
     def r_sign(self):
-        """s60 section 5: R~ < 1 at the c2 / c8 controls, read after replicate 2 (DECISION 9: the control rows of replicates 1-2; later replicates are reported). A failure is a STOP line."""
+        """s60 section 5: R~ < 1 at the c2 / c8 controls. The doc reads it 'after replicate 2', which cannot be computed (2 floor rows < MIN_CAL_ROWS = 3): it is read at the END of the launch on the FULL calibration,
+        on every control row (Amendment 1). Any control R~ >= 1 is a STOP, and 60b's launch checks this label in 60a's score before any row (loopdiag_run_all.sh: ABORT-RSIGN)."""
         for cell in (C2, C8):
             if cell not in self.cells:
                 continue
@@ -905,16 +914,16 @@ class Session:
             if not have:
                 self.label(f"R-SIGN-{SHORT[cell]}", "UNSCOREABLE", "no control row with a replayable R~ (calibration or control rows missing)")
                 continue
-            first2 = [(rv, v) for rv, v in have if rv.rep <= 2]
-            late = [(rv, v) for rv, v in have if rv.rep > 2]
+            first2 = list(have)
+            late = []
             self.p(f"  R-SIGN {SHORT[cell]}: control R~ by replicate: {' '.join(f's{rv.seed}r{rv.rep}={v:.4f}' for rv, v in have)}")
             bad = [(rv, v) for rv, v in first2 if v >= 1]
             for rv, v in bad:
-                self.p(f"STOP R-SIGN {SHORT[cell]} s{rv.seed} rep{rv.rep}: control R~ = {v:.4f} >= 1 (the registered gate is R~ < 1 after replicate 2; the session stops and is amended)")
+                self.p(f"STOP R-SIGN {SHORT[cell]} s{rv.seed} rep{rv.rep}: control R~ = {v:.4f} >= 1 (the registered gate is R~ < 1 at the control, read at the end of 60a on the full calibration; 60b does not launch and the session is amended)")
             for rv, v in late:
                 if v >= 1:
                     self.p(f"  R-SIGN {SHORT[cell]} s{rv.seed} rep{rv.rep}: control R~ = {v:.4f} >= 1 on a later replicate (reported)")
-            self.label(f"R-SIGN-{SHORT[cell]}", "STOP" if bad else ("PASS" if first2 else "UNSCOREABLE"), f"{len(first2)} control rows of replicates 1-2")
+            self.label(f"R-SIGN-{SHORT[cell]}", "STOP" if bad else ("PASS" if first2 else "UNSCOREABLE"), f"{len(first2)} control rows, read at the end of the launch on the full calibration")
 
     # ---- section: P1 / P2 / P3 ----
     def p123(self):
@@ -1019,14 +1028,21 @@ class Session:
                 s = med([w["sig"] for w in rv.wins(0) if (w["nk"] or 0) >= NK_MIN]) if rv else None
                 br.append(((rv.st(0)["tmin"] - F) - (s + Q_BULK * l_c)) if (rv and s is not None and rv.st(0)["tmin"] is not None) else None)
             bracket.append((rep, seed, w95, lo_arm, hi_arm, br[0], br[1], br[0], tm[0], sig))
-            r67 = self.at_knee(cell, wm, w95, lambda rv: (self.rt(rv, "r67") or {}).get("med"))
-            if r67 and D != 0:
-                s_ok = (r67[0] - 1 > 0) == (D < 0)
-                wit.append(s_ok)
-                self.p(f"  C2-D s{seed}r{rep}: W95={w95:.1f} Tmin(W95)={tm[0]:.3f} F_c={F:.3f} sig={sig:.3f} q*l_c={Q_BULK * l_c:.3f} -> D_r={D:+.3f} ms; R~67(W95)-1={r67[0] - 1:+.4f} "
-                       f"(sign witness {'ok' if s_ok else 'MISMATCH'})")
-                if not s_ok:
-                    self.p(f"SCORER-BUG c2 s{seed}r{rep}: sign(R~67(W95)-1) = {'+' if r67[0] > 1 else '-'} but -sign(D_r) = {'+' if D < 0 else '-'}; the identity R~67-1 = -D/T on one leg is broken")
+            # The sign witness (s60 section 1.1): R~67 on ONE leg with the same F_c, sigma, q*l_c as D, so R~67(W95) - 1 = -D_r / T exactly. It is computed through s60replay.r67_r from the SAME session calibration (F_c, l_c)
+            # and the SAME window set as D: the nk >= 10 windows' medians of tmin / sig / tp50, interpolated at the knee like tmin (a per-window median of ratios would differ from D's ratio of medians).
+            tp = self.at_knee(cell, wm, w95, lambda rv: rv.st(0)["tp"])
+            sr, _, _ = _lib()
+            if tp and sr is not None and tp[0]:
+                r67v = sr.r67_r([(1.0, tp[0], tm[0], sig, F, l_c)], Q_BULK)
+                if abs(D) < D_WIT_RES:
+                    wit_txt = f"UNRESOLVED (|D_r| < {D_WIT_RES} ms, under the witness's resolution)"
+                else:
+                    s_ok = (r67v - 1 > 0) == (D < 0)
+                    wit.append(s_ok)
+                    wit_txt = "ok" if s_ok else "MISMATCH"
+                    if not s_ok:
+                        self.p(f"SCORER-BUG c2 s{seed}r{rep}: sign(R~67(W95)-1) = {'+' if r67v > 1 else '-'} but -sign(D_r) = {'+' if D < 0 else '-'}; the identity R~67-1 = -D/T on one leg is broken")
+                self.p(f"  C2-D s{seed}r{rep}: W95={w95:.1f} Tmin(W95)={tm[0]:.3f} F_c={F:.3f} sig={sig:.3f} q*l_c={Q_BULK * l_c:.3f} -> D_r={D:+.3f} ms; R~67(W95)-1={r67v - 1:+.4f} (sign witness {wit_txt})")
             else:
                 self.p(f"  C2-D s{seed}r{rep}: W95={w95:.1f} Tmin(W95)={tm[0]:.3f} F_c={F:.3f} sig={sig:.3f} q*l_c={Q_BULK * l_c:.3f} -> D_r={D:+.3f} ms (R~67 sign witness not evaluable)")
         self.p(f"  C2-D: W95 clamped at the first goodput arm on {self.counters['w95_clamped']}/{self.counters['w95_n']} replicates; interpolation clamped at an end arm on {self.counters['interp_clamped']}/{self.counters['interp_n']}")
@@ -1163,12 +1179,12 @@ class Session:
         conv = [self.gate.get((cell, l), {}).get("conv") for l in LEGS[cell]]
         if any(c != "CONVERGED" for c in conv):
             self.p(f"  C8-B2: floor convergence {conv}: a floor too high raises R~ at the knee, so a FIRE stands and a NOT-FIRES is weakened")
-        if fire >= B2_FIRES_MIN:          # a fire stands whatever the replicate count (s60 section 2: 'a B2 fire stands and a pass is weakened'); only a NOT-FIRES needs the 5 scoreable replicates
-            self.label("C8-B2", "FIRES", f"{fire}/{elig}" + (f"; only {len(reps)} scoreable replicates (< {B2_MIN_SCOREABLE})" if len(reps) < B2_MIN_SCOREABLE else ""))
-        elif len(reps) < B2_MIN_SCOREABLE:
-            self.label("C8-B2", "UNSCOREABLE", f"{len(reps)} scoreable replicates, need {B2_MIN_SCOREABLE} for a NOT-FIRES")
-        elif elig < B2_FIRES_MIN:
-            self.label("C8-B2", "UNSCOREABLE", f"only {elig} anc-bound replicates: it cannot reach {B2_FIRES_MIN} fires")
+        # s60 section 3.2: "fires on >= 2 of the 5-6 scoreable replicates", scoreable = the anc-bound ELIGIBLE ones (bind fraction >= 0.9 at both bracketing arms). Below 5 eligible the readout is
+        # UNDERPOWERED (labelled UNSCOREABLE), fires or not: a FIRE needs >= 2 fires among >= 5 eligible, a NOT-FIRES needs >= 5 eligible.
+        if elig < B2_MIN_SCOREABLE:
+            self.label("C8-B2", "UNSCOREABLE", f"UNDERPOWERED: {elig} anc-bound eligible replicates ({fire} fires), need {B2_MIN_SCOREABLE}")
+        elif fire >= B2_FIRES_MIN:
+            self.label("C8-B2", "FIRES", f"{fire}/{elig}")
         else:
             self.label("C8-B2", "NOT-FIRES", f"{fire}/{elig}" + ("; weakened (floor not CONVERGED)" if any(c != "CONVERGED" for c in conv) else ""))
 
@@ -1418,10 +1434,10 @@ def go_nogo_rows(rv):
 def smoke(path, plan, out=print):
     """s60 sections 5 and 7: PASS / FAIL lines ending SMOKE-PASS | SMOKE-FAIL. 60a = c2 W192 C + G, 60b = c1s W64 G + W2048 C, 60r = the 10 rehearsal rows (adds the witnesses and GO-NOGO)."""
     import place38_parse as pp
-    if plan not in ("60a", "60b", "60r"):
+    if plan not in ("60a", "60b", "60r", "60br"):
         out(f"unknown plan {plan}")
         return 2
-    slots = plan60.plan("60a", rehearsal=True) if plan == "60r" else plan60.plan(plan, smoke=True)
+    slots = plan60.plan("60a", rehearsal=True) if plan == "60r" else plan60.plan("60br") if plan == "60br" else plan60.plan(plan, smoke=True)
     rows, _ = pp.rows_of([path])
     got = {}
     for r in rows:
@@ -1450,13 +1466,16 @@ def smoke(path, plan, out=print):
         out(f"  ROW {SHORT[rv.cell]} {rv.arm} s{rv.seed} r{rv.rep}: status={rv.r.get('status')} dnf={int(rv.dnf)} tags(cli)={T['tags']['cli']} witness={T['witness']} caplog_ok={T['caplog'].get('ok')} q={T['q']}")
     cs = [rv for rv in rvs if rv.kind == "C"]
     gs = [rv for rv in rvs if rv.kind == "G"]
+    es = [rv for rv in rvs if rv.kind == "E"]                 # the evicting row of 60b's rehearsal (plan 59's arm, gauge on, Realtime: q = 0.05)
+    gall = gs + es
     crit("a C row (RWM_SLAW=0) carries NO gauge tag on either end", [f"{rv.cell} {rv.arm}: {k}={v}" for rv in cs for side in ("all_cli", "srv") for k, v in rv.t["tags"][side].items() if v])
-    crit("a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG) after the warm-up cut", [f"{rv.cell} {rv.arm}: no {k}" for rv in gs for k, v in rv.t["tags"]["cli"].items() if not v])
+    crit("a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG) after the warm-up cut", [f"{rv.cell} {rv.arm}: no {k}" for rv in gall for k, v in rv.t["tags"]["cli"].items() if not v])
     crit("RWM_SLAW echoed as requested on both ends", [f"{rv.cell} {rv.arm}: cli={rv.t['gate_slaw']['cli']} srv={rv.t['gate_slaw']['srv']}" for rv in rvs
-                                                       if rv.t["gate_slaw"]["cli"] != ("1" if rv.kind == "G" else "0") or rv.t["gate_slaw"]["srv"] != ("1" if rv.kind == "G" else "0")])
+                                                       if rv.t["gate_slaw"]["cli"] != ("0" if rv.kind == "C" else "1") or rv.t["gate_slaw"]["srv"] != ("0" if rv.kind == "C" else "1")])
     crit("[SLAW] q = 0.100000 on every Bulk G row (0.050000 would be Realtime)", [f"{rv.cell} {rv.arm}: q={rv.t['q']}" for rv in gs if rv.t["q"] != ["0.100000"]])
+    crit("[SLAW] q = 0.050000 on the Realtime evicting row", [f"{rv.cell} {rv.arm}: q={rv.t['q']}" for rv in es if rv.t["q"] != ["0.050000"]])
     boot_missing = []
-    for rv in gs:
+    for rv in gall:
         if rv.dnf:
             continue                                  # DECISION 11: a DNF row is a datum; it has no boot to read
         b = rv.boot(0)
@@ -1464,19 +1483,84 @@ def smoke(path, plan, out=print):
             boot_missing.append(f"{rv.cell} {rv.arm}: kw={b.get('kw')} b0k={b.get('b0k')}")
     crit("kw and b0k (K = 8) present after the warm-up cut", boot_missing)
     crit("the per-row replay witness PASS (R~ with the row's own b0p and l reproduces printed R and Rb to 6e-6)",
-         [f"{rv.cell} {rv.arm}: {rv.t['witness']}" for rv in gs if not rv.dnf and rv.t["witness"].get("ok") is not True])
-    crit("the CAPLOG replay PASS (every logged cap reproduced)", [f"{rv.cell} {rv.arm}: {rv.t['caplog']}" for rv in gs if rv.t["caplog"].get("ok") is not True])
-    for rv in gs:
+         [f"{rv.cell} {rv.arm}: {rv.t['witness']}" for rv in gall if not rv.dnf and rv.t["witness"].get("ok") is not True])
+    crit("the CAPLOG replay PASS (caplog_replay.py over the row's [CAPLOG] records: records > 0 and every replayable cap reproduced; any mismatch is a FAIL)",
+         [f"{rv.cell} {rv.arm}: {rv.t['caplog']}" for rv in gall if rv.t["caplog"].get("ok") is not True])
+    for rv in gall:
         cl = rv.t["caplog"]
-        out(f"  CAPLOG {SHORT[rv.cell]} {rv.arm}: records={cl['records']} rate={f(cl['rate_hz'], 1)}/s pooled={cl['n_pooled']} bind(ceiling)={f(cl['ub'], 3)} bind(floor)={f(cl['fb'], 3)} "
+        share = (cl["replayed"] / cl["records"]) if cl["records"] else None
+        out(f"  CAPLOG {SHORT[rv.cell]} {rv.arm}: records={cl['records']} replayable share={f(share, 3)} ({cl['replayed']} replayed, {cl['mismatches']} mismatches) rate={f(cl['rate_hz'], 1)}/s pooled={cl['n_pooled']} bind(ceiling)={f(cl['ub'], 3)} bind(floor)={f(cl['fb'], 3)} "
             f"seats={cl['seats']} unreplayable={cl['unreplayable']} q_off={cl['q_off']}")
     if plan == "60r":
         _rehearsal(rvs, out)
+    if plan == "60br":
+        _evict_rehearsal(es, crit, out)
     if bad:
         out("SMOKE-FAIL " + "; ".join(bad))
         return 1
     out("SMOKE-PASS")
     return 0
+
+
+ACKW_TOL_T = 0.08          # [DIAG] prints t at 0.1 s, [WSTORE] at 0.01 s: a window and its tick are the same iff |dt| <= this
+
+
+def ackw_join(ev):
+    """The clock join of 60b's rehearsal (a known answer). What each counts (diag.rs / slaw.rs): `[DIAG] wake[.. ack=N]` is dg.wake_n[8], the sender loop's ack-arm wakes CUMULATIVE since the loop
+    started (never reset; diag.rs `wake_line`); `[WSTORE] ackw` is `ackw_total - s.ackw_last` with ackw_total = the SAME dg.wake_n[8], read in the same diag report as the tick's [DIAG] line (diag.rs: the slaw
+    window close follows the [DIAG] line synchronously), so it is the ack wakes per window: the per-window DELTA of the cumulative counter (the first window's delta is the cumulative itself).
+    Expected relation, exact: for consecutive matched ticks j-1, j: ackw[window j] == wack[tick j] - wack[tick j-1]. -> (pairs compared, pairs equal, first mismatch or None)."""
+    w, c = ev.get("wstore") or {}, ev.get("cum") or {}
+    tw_, aw = w.get("t") or [], w.get("ackw") or []
+    tt, wk = c.get("t") or [], c.get("wack") or []
+    if not (tw_ and aw and tt and wk):
+        return 0, 0, "no ackw column or no wake[ack=] column"
+
+    def tick_of(t):
+        best = None
+        for i, x in enumerate(tt):
+            if x is not None and t is not None and abs(x - t) <= ACKW_TOL_T:
+                best = i
+                break
+        return best
+    n = eq = 0
+    first = None
+    prev = None
+    for t, a in zip(tw_, aw):
+        i = tick_of(t)
+        if i is None or a is None or wk[i] is None:
+            prev = None
+            continue
+        if prev is not None and i == prev + 1 and wk[prev] is not None:
+            n += 1
+            if a == wk[i] - wk[prev]:
+                eq += 1
+            elif first is None:
+                first = f"t={t}: ackw={a} but wake ack delta={wk[i] - wk[prev]}"
+        prev = i
+    return n, eq, first
+
+
+def _evict_rehearsal(es, crit, out):
+    """s60 sections 5 / 6 on 60b's rehearsal: the evicting row (plan 59's arm) is armed (plan 59's liveness witnesses are row problems: any evict-* / gate-unified problem FAILS), the debt loop runs
+    (the median LATE [SPAN] rr > 0: the go/no-go of mbar59_score.smoke), and the [WSTORE] ackw / [DIAG] wake ack clock join holds exactly (ackw_join)."""
+    import place38_parse as pp
+    crit("the evicting row is armed and live (plan 59's liveness: sender shed echo, shed= on [SPAN], RWM_UNIFIED / RWM_UNIFIED_SHED on both ends, no retain-until-acked echo, the Realtime echo)",
+         [f"{rv.cell} {rv.arm}: {' '.join(x for x in rv.r.get('problems') or [] if pp.is_evict_problem59(x))}" for rv in es if pp.is_evict_void59(rv.r)] + ([] if es else ["no evicting row"]))
+    for rv in es:
+        ev = rv.t.get("evict") or {}
+        rr = (ev.get("mbar59") or {}).get("rr")
+        out(f"  GO-NOGO-EVICT {rv.arm}: [SPAN] rr median {f(rr, 3)} (> 0 required)  a_star {f((ev.get('mbar59') or {}).get('a_star'), 1)}  mbar_lo {f((ev.get('mbar59') or {}).get('mbar_lo'), 3)}")
+    crit("the debt loop runs: the median [SPAN] rr over LATE is > 0 (a seat with rr <= 0 never reaches the cancellation)",
+         [f"{rv.cell} {rv.arm}: rr median {((rv.t.get('evict') or {}).get('mbar59') or {}).get('rr')}" for rv in es if not ((((rv.t.get('evict') or {}).get('mbar59') or {}).get('rr') or 0) > 0)])
+    fails = []
+    for rv in es:
+        n, eq, first = ackw_join(rv.t.get("evict") or {})
+        out(f"  ACKW-JOIN {rv.arm}: [WSTORE] ackw (ack-arm wakes per window) vs the delta of [DIAG] wake[ack=] (cumulative) over the same ticks: {eq}/{n} windows equal"
+            + (f"; first mismatch {first}" if first else ""))
+        if n < 10 or eq != n:
+            fails.append(f"{rv.cell} {rv.arm}: {eq}/{n} equal ({first})")
+    crit("the [WSTORE] ackw / [DIAG] wake[ack=] clock join: per window ackw == the delta of the cumulative wake ack counter, on >= 10 windows, all equal", fails)
 
 
 def _rehearsal(rvs, out):
@@ -1536,7 +1620,7 @@ def main(argv):
         return smoke(a[1], a[0])
     if cmd == "score60" and len(a) >= 2:
         return score(a[1:], a[0])
-    print(f"usage: {sys.argv[0]} smoke60 <60a|60b|60r> <ledger> | score60 <60a|60b|all> <ledger> [...]")
+    print(f"usage: {sys.argv[0]} smoke60 <60a|60b|60r|60br> <ledger> | score60 <60a|60b|all> <ledger> [...]")
     return 2
 
 

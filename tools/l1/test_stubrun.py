@@ -111,7 +111,7 @@ PERF_STUB = '''#!/bin/bash
 # stub measurement driver: leaves the logs a perf_rwm_c.sh run leaves in /tmp (stubrun_gen.py)
 export STUB_TMP="$(cygpath -m "${LD_TMPD:?}" 2>/dev/null || echo "$LD_TMPD")"
 [ -n "${STUB_DRVLOG:-}" ] && echo "$1 $2 $4 timeout=${RWM_PERF_TIMEOUT_S-unset}" >> "$STUB_DRVLOG"
-[ -n "${STUB_DRVLOG3:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} slaw=${RWM_SLAW-unset} pool=${RWM_STORE_PATH_POOL-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bin=$(basename "${RWM_BIN:-?}")" >> "$STUB_DRVLOG3"      # plans 60a / 60b: the whole per-row run spec
+[ -n "${STUB_DRVLOG3:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} slaw=${RWM_SLAW-unset} pool=${RWM_STORE_PATH_POOL-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} rtobs=${RWM_RTOBS-unset} diag=${RWM_DIAG-unset} bin=$(basename "${RWM_BIN:-?}")" >> "$STUB_DRVLOG3"      # plans 60a / 60b: the whole per-row run spec
 [ -n "${STUB_DRVLOG2:-}" ] && echo "$3 reliable=${RWM_C_RELIABLE-unset} unified=${RWM_UNIFIED-unset} gen=${RWM_GEN-unset}" >> "$STUB_DRVLOG2"      # plan 59: hint + the evicting-seat env (a separate log: drv.log's lines are compared whole)
 python3 ./stubrun_gen.py "$@" || { echo "stub driver failed"; exit 1; }
 exit 0
@@ -232,7 +232,7 @@ def run_launch(sb, plan, base_sha, rehearse=False, prior=None, p46_suites=False,
         "PATH": px(sb["bin"]) + os.pathsep + env.get("PATH", ""),
         "LD_ROOT": px(sb["root"]), "LD_SHM": px(sb["devshm"]) + "/ld", "LD_DEVSHM": px(sb["devshm"]), "LD_PROCFS": px(sb["proc"]), "LD_TMPD": px(sb["tmpd"]),
         "LD_LOCK_VM": px(sb["locks"]) + "/vm.lock", "LD_LOCK_RP": px(sb["locks"]) + "/rp.lock",
-        "LD_PLAN": plan, "LD_CAND_SHA": CAND_SHA, "LD_HARD": str(int(time.time()) + 4 * 3600),
+        "LD_PLAN": plan, "LD_CAND_SHA": CAND_SHA, "LD_HARD": str(int(time.time()) + 6 * 3600),
         "STUB_ROWLOG": px(sb["logs"]) + "/rows.log", "STUB_CARGO_LOG": px(sb["logs"]) + "/cargo.log", "STUB_DRVLOG": px(sb["logs"]) + "/drv.log", "STUB_DRVLOG2": px(sb["logs"]) + "/drv2.log", "STUB_DRVLOG3": px(sb["logs"]) + "/drv3.log",
         "STUB_SHORT_ONCE": "1",       # plan 41d: the first BASE row of each long cell at seed 7 is a 10 s row (the VOID rule + the replacement run)
         "STUB_PYTHON": px(sys.executable), "STUB_PYSITE": os.path.abspath(sb["bin"]), "STUB_RAW": os.environ.get("STUBRUN_RAW") or os.path.abspath(os.path.join(HERE, "..", "..", "docs", "l1-raw")),
@@ -945,7 +945,7 @@ def expect_calls60(rows):
         e = dict(x.split("=", 1) for x in env)
         sc = {"c2-100": ("c2", "c2", "single"), "c8-100": ("c2", "c3", "dual"), "c1s-400": ("c1", "c1", "single")}[cell]
         out.append([sc[0], sc[1], hint, str(b), sc[2], "timeout=%d" % tmo, "slaw=" + e["RWM_SLAW"], "pool=" + e.get("RWM_STORE_PATH_POOL", "unset"), "reliable=" + e.get("RWM_C_RELIABLE", "unset"),
-                    "rdiag=" + e.get("RWM_RDIAG", "unset"), "diag=1", "bin=raptorpath"])
+                    "rdiag=1", "rtobs=" + e.get("RWM_RTOBS", "unset"), "diag=1", "bin=raptorpath"])
     return out
 
 
@@ -966,6 +966,11 @@ def case60(plan, path):
             extra["STUB_BAD60"] = "nogo8"
         if path == "prebuilt":
             extra["LD_BIN_PREBUILT"] = px(binf)
+        if plan == "60b":      # 60b's launch reads 60a's R-sign labels before any row (Amendment 1)
+            sc60a = os.path.join(sb["logs"], "score60a.txt")
+            with open(sc60a, "w", newline="\n") as fh:
+                fh.write("LABEL60 R-SIGN-c2 %s\nLABEL60 R-SIGN-c8 PASS\n" % ("STOP" if path == "rsign-abort" else "PASS"))
+            extra["LD_SCORE60A"] = px(sc60a)
         rehearse = path in ("rehearse", "nogo-rehearse")
         rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=rehearse, extra_env=extra)
         e = era(sb)
@@ -973,6 +978,11 @@ def case60(plan, path):
         failed = os.path.exists(os.path.join(run_dir, "FAILED-ALL"))
         builds = [c for c in cargo if "|build " in c]
         tests = [c for c in cargo if "|test " in c]
+        if path == "rsign-abort":
+            check(f"{tag}: 60a's score carries R-SIGN-c2 STOP -> ABORT-RSIGN, rc 3, NOTHING measured (no row-parser call, no driver call, no build, no ld.log)",
+                  rc == 3 and "ABORT-RSIGN" in out and "R-SIGN-c2 PASS" in out and rows == [] and driver_lines60(sb) == [] and builds == [] and not os.path.exists(os.path.join(run_dir, "rep60b")), (rc, out[-300:]))
+            EXECUTED.add((plan, path))
+            return
         if path in ("reuse-miss", "bin-sha-mismatch"):
             token = "ABORT-SUITES plan %s suite-reuse MISS" % plan if path == "reuse-miss" else "ABORT-BIN-SHA plan %s" % plan
             check(f"{tag}: {token.split(' plan')[0]} -> FAILED-ALL, rc 5, NOTHING measured (no row-parser call, no driver call, no ld.log) and no terminal marker",
@@ -1002,13 +1012,18 @@ def case60(plan, path):
         plans_seen = {r.split("plan=")[1].split()[0] for r in rows}
         check(f"{tag}: every row-parser call ran under LD_PLAN={plan}, with LD_BASE_SHA empty", plans_seen == {plan} and {re.search(r"base_sha=(\S*)", r).group(1) for r in rows} == {""}, (plans_seen, rows[:1]))
         if rehearse:
-            want_rows = list(plan60.SMOKE[plan]) if plan == "60b" else plan60.plan("60a", rehearsal=True)
-            check(f"{tag}: the rehearsal ran {len(want_rows)} rows ({'both smokes and the 6 floor-pool rows' if plan == '60a' else 'the 2-row smoke'}), no battery (no ld.log), no suites, REHEARSAL-PASS persisted",
+            want_rows = plan60.plan("60br") if plan == "60b" else plan60.plan("60a", rehearsal=True)
+            check(f"{tag}: the rehearsal ran {len(want_rows)} rows ({'both smokes and the 6 floor-pool rows' if plan == '60a' else 'the 2-row smoke and ONE evicting row'}), no battery (no ld.log), no suites, REHEARSAL-PASS persisted",
                   len(rows) == len(want_rows) and tests == [] and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")), (len(rows), want_rows[:2]))
             check(f"{tag}: the driver saw each smoke / rehearsal row's run spec (bytes, timeout, hint, RWM_SLAW, pool) in table order", calls == expect_calls60(want_rows), (calls[:2], expect_calls60(want_rows)[:2]))
             heads = re.findall(r"^=== rep=(\d+) seed=(\d+) cell=(\S+) arm=(\S+) attempt=\d+ pipeline=window hint=(\S+) .*? bytes=(\d+) arm_env='([^']*)'", smoke_txt, re.M)
             check(f"{tag}: the smoke ledger heads carry the arm env (RWM_SLAW first) and the per-row hint / bytes",
                   [(h[2], h[3], h[4], h[5], h[6]) for h in heads] == [(c, a, plan60.arm_hint(a), str(plan60.arm_bytes(c, a)), " ".join(plan60.arm_env(c, a))) for c, _, a, _, _ in want_rows], heads[:2])
+            if plan == "60b":
+                m_aj = re.search(r"ACKW-JOIN EVICT: .*?: (\d+)/(\d+) windows equal", chk)
+                check(f"{tag}: the evicting row's smoke checks passed: armed, rr > 0 (GO-NOGO-EVICT), and the [WSTORE] ackw / [DIAG] wake[ack=] clock join holds on every window (>= 10 compared)",
+                      "GO-NOGO-EVICT EVICT" in chk and m_aj is not None and int(m_aj.group(2)) >= 10 and m_aj.group(1) == m_aj.group(2) and "SMOKE-FAIL" not in chk and re.search(r"^PASS the \[WSTORE\] ackw", chk, re.M) is not None, chk[-900:])
+                check(f"{tag}: the CAPLOG replay is in the smoke check (replayable share and mismatches printed, PASS)", re.search(r"CAPLOG \S+ \S+: records=\d+ replayable share=", chk) is not None and re.search(r"^PASS the CAPLOG replay", chk, re.M) is not None, chk[-600:])
             if plan == "60a":
                 gng = dict(re.findall(r"GO-NOGO\s+(c2|c8|c1s)\S*\s+(GO|NO-GO)", chk))
                 want_go = {"c2": "GO", "c8": "NO-GO" if path == "nogo-rehearse" else "GO", "c1s": "GO"}
@@ -1052,7 +1067,7 @@ def case60(plan, path):
         check(f"{tag}: one binary ran every row, its sha is the registered one, and the seat comparison executed on every row", shas == {sha} and all(r["sha_checked"] is True for r in led), shas)
         ldtxt = open(os.path.join(stage, "ld.log"), errors="replace").read()
         envl = ldtxt.split("=== env ")[-1].split("\n")[0]
-        check(f"{tag}: the env scrub withholds RWM_SLAW and RWM_THREE_TERM (and the rest), the instrument env is the timeout alone", " RWM_SLAW RWM_THREE_TERM " in envl and "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0], envl[:400])
+        check(f"{tag}: the env scrub withholds RWM_SLAW and RWM_THREE_TERM (and the rest), the instrument env is RWM_RDIAG=1 + the timeout (RWM_RTOBS=1 rides the G / C arm env, never the EVICT rows)", " RWM_SLAW RWM_THREE_TERM " in envl and "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0], envl[:400])
         if plan == "60b":
             ev = [r for r in led if r["arm"] == "EVICT"]
             ctl = [r for r in led if r["arm"] in ("G2048", "C2048")]

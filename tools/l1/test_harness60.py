@@ -78,9 +78,9 @@ check("timeouts: 150 s on every floor-pool, c2, c8 and evicting row, 210 s at th
       all(v[1] == 150 for k, v in spec.items() if k[0] != "c1s-400" or plan60.is_floor(*k) or k[1] == "EVICT") and spec[("c1s-400", "G2048")][1] == spec[("c1s-400", "C2048")][1] == 210)
 check("hint: bulk everywhere, realtime for EVICT alone", all(v[2] == ("realtime" if k[1] == "EVICT" else "bulk") for k, v in spec.items()))
 check("env: RWM_SLAW first (1 on G and EVICT, 0 on C); the pool knob RWM_STORE_PATH_POOL = W / live paths, NOT set at the shipped 2048; EVICT adds RWM_C_RELIABLE=0 and RWM_RDIAG=1 and no pool",
-      spec[("c2-100", "G16")][3] == ["RWM_SLAW=1", "RWM_STORE_PATH_POOL=16"] and spec[("c8-100", "G32")][3] == ["RWM_SLAW=1", "RWM_STORE_PATH_POOL=16"] and spec[("c8-100", "G1280")][3] == ["RWM_SLAW=1", "RWM_STORE_PATH_POOL=640"]
-      and spec[("c2-100", "G2048")][3] == ["RWM_SLAW=1"] and spec[("c1s-400", "C2048")][3] == ["RWM_SLAW=0"] and spec[("c1s-400", "G64")][3] == ["RWM_SLAW=1", "RWM_STORE_PATH_POOL=64"]
-      and spec[("c2-100", "EVICT")][3] == ["RWM_SLAW=1", "RWM_C_RELIABLE=0", "RWM_RDIAG=1"], {k: v[3] for k, v in spec.items() if k[1] in ("G32", "C192", "EVICT")})
+      spec[("c2-100", "G16")][3] == ["RWM_SLAW=1", "RWM_RTOBS=1", "RWM_STORE_PATH_POOL=16"] and spec[("c8-100", "G32")][3] == ["RWM_SLAW=1", "RWM_RTOBS=1", "RWM_STORE_PATH_POOL=16"] and spec[("c8-100", "G1280")][3] == ["RWM_SLAW=1", "RWM_RTOBS=1", "RWM_STORE_PATH_POOL=640"]
+      and spec[("c2-100", "G2048")][3] == ["RWM_SLAW=1", "RWM_RTOBS=1"] and spec[("c1s-400", "C2048")][3] == ["RWM_SLAW=0", "RWM_RTOBS=1"] and spec[("c1s-400", "G64")][3] == ["RWM_SLAW=1", "RWM_RTOBS=1", "RWM_STORE_PATH_POOL=64"]
+      and spec[("c2-100", "EVICT")][3] == ["RWM_SLAW=1", "RWM_C_RELIABLE=0"], {k: v[3] for k, v in spec.items() if k[1] in ("G32", "C192", "EVICT")})
 check("an unknown (cell, arm) is refused by armspec (rc 1)", plan60.main(["armspec", "c2-100", "G999"]) == 1 and plan60.main(["armspec", "c8-100", "EVICT"]) == 1)
 
 # ═══ 3. witnesses and the replacement rule ═══
@@ -129,6 +129,18 @@ check("replacement: a pool-echo VOID ('pool-echo'), an evicting-seat liveness VO
       and plan60.replace_reason(ledger([row("c2-100", "G256", "42", 1, dnf=True)]), "c2-100", "G256", "42", 1) is None
       and plan60.replace_reason(ledger([row("c2-100", "G16", "42", 1)]), "c2-100", "G16", "42", 1) is None
       and plan60.replace_reason(ledger([row("c2-100", "G16", "42", 1, dnf=True, status="VOID-ONDISK")]), "c2-100", "G16", "42", 1) is None)
+check("replacement: a missing Realtime echo re-runs once ('evict-liveness'); a WRONG BINARY (bin-sha-*) never does",
+      plan60.replace_reason(ledger([row("c2-100", "EVICT", "42", 1, ["no-realtime-echo-cli"], status="WITNESS-FAIL")]), "c2-100", "EVICT", "42", 1) == "evict-liveness"
+      and plan60.replace_reason(ledger([row("c2-100", "G16", "42", 1, ["bin-sha=aaa (want bbb for CAND)"], status="WITNESS-FAIL")]), "c2-100", "G16", "42", 1) is None
+      and plan60.replace_reason(ledger([row("c2-100", "G16", "42", 1, ["bin-sha-uncheckable (x)"], status="WITNESS-FAIL")]), "c2-100", "G16", "42", 1) is None)
+check("the budget guard carries the worst-case floor DNF re-runs: plan60.BUDGET_S = 18 360 s (60a) / 13 860 s (60b), and run_all's P57_NEED equals them",
+      plan60.BUDGET_S == {"60a": 18360, "60b": 13860} and "P57_NEED=18360; [ \"$PLAN\" = \"60b\" ] && P57_NEED=13860" in runall)
+check("60b's non-rehearsal launch reads 60a's R-sign labels before any row (ABORT-RSIGN, LD_SCORE60A), a rehearsal is exempt",
+      'ABORT-RSIGN plan 60b needs 60a' in runall and 'LABEL60 R-SIGN-$_c PASS' in runall and '[ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]' in runall)
+check("RWM_RTOBS=1 rides every G / C arm (section 56's instrument env) and no EVICT arm; RWM_RDIAG=1 is the battery's instrument env for every row",
+      all("RWM_RTOBS=1" in v[3] for k, v in spec.items() if k[1] != "EVICT") and all("RWM_RTOBS=1" not in v[3] for k, v in spec.items() if k[1] == "EVICT"))
+check("G/C alternation: within 60b's control the pair order alternates (G,C),(C,G),... and every pair shares one seed and replicate number",
+      [r[2] for r in ctl[:8]] == ["G2048", "C2048", "C2048", "G2048", "G2048", "C2048", "C2048", "G2048"] and all(ctl[2 * i][3] == ctl[2 * i + 1][3] and ctl[2 * i][4] == ctl[2 * i + 1][4] for i in range(10)))
 check("plan60.py check: rc 0 only when LD-BATTERY-DONE and every slot of the table has a row",
       plan60.check("60b", ledger([row(c_, a_, sd, rp) for c_, _, a_, sd, rp in B] + [])) == 1  # no LD-BATTERY-DONE line
       )
@@ -138,8 +150,8 @@ with open(p_ok, "a") as fh:
 check("... and rc 0 with it (a replaced slot's second row is not an extra slot)", plan60.check("60b", p_ok) == 0)
 
 # ═══ 4. shell side ═══
-check("battery: plans 60a / 60b accepted; P60 is single-seat (P38 + PCAND, no P41); the instrument env carries only the timeout",
-      "case \"$PLAN\" in 60a|60b|59|57a|57b|56" in battery and 'P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac' in battery and '[ "$P60" = 1 ] && INSTR_ENV=(RWM_PERF_TIMEOUT_S=150)' in battery)
+check("battery: plans 60a / 60b accepted; P60 is single-seat (P38 + PCAND, no P41); the instrument env is RWM_RDIAG=1 + the timeout",
+      "case \"$PLAN\" in 60a|60b|59|57a|57b|56" in battery and 'P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac' in battery and '[ "$P60" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)' in battery)
 check("battery: every row's bytes / timeout / hint / env come from plan60.py armspec (one table), an unknown arm is refused, HINT is per row", 'python3 ./plan60.py armspec "$cell" "$arm"' in battery
       and 'read -r bytes p60_tmo HINT p60_arm_env' in battery and 'tmo_env=(RWM_PERF_TIMEOUT_S="$p60_tmo")' in battery and 'read -r -a arm_env <<< "$p60_arm_env"' in battery and "UNKNOWN-ARM $arm at $cell (plan 60)" in battery)
 check("battery: RWM_SLAW and RWM_THREE_TERM are scrubbed with the rest (an ambient value reaches no row), both before the arm env", "-u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM" in battery)
@@ -155,7 +167,7 @@ check("run_all: the registered values are the defaults: bin_sha e410d640... (60-
       and len(rd("ref60-manifest.sha256").splitlines()) == 187)
 check("run_all: the built binary is compared with LD_BIN_SHA_EXPECT before any row (ABORT-BIN-SHA), and a suite-reuse MISS is ABORT-SUITES (a rehearsal included)",
       'fail_all "ABORT-BIN-SHA plan $PLAN: built $SHA != registered $LD_BIN_SHA_EXPECT; NOTHING WAS RUN"' in runall and 'fail_all "ABORT-SUITES plan $PLAN suite-reuse MISS' in runall)
-check("run_all: the budget guard needs 11 520 s (60a) / 10 440 s (60b); the tests gate runs test_s60.py, test_harness60.py and test_mbar59.py", "P57_NEED=11520; [ \"$PLAN\" = \"60b\" ] && P57_NEED=10440" in runall
+check("run_all: the budget guard needs 11 520 s (60a) / 10 440 s (60b); the tests gate runs test_s60.py, test_harness60.py and test_mbar59.py", "P57_NEED=18360; [ \"$PLAN\" = \"60b\" ] && P57_NEED=13860" in runall
       and "for t in test_s60.py test_harness60.py" in runall and 'if [ "$P59" = 1 ] || [ "$P60" = 1 ]; then' in runall)
 check("run_all: the stage calls the 60 scorer for the smoke (the rehearsal's 10 rows on 60a), the score and the slot check; the battery sees LD_REHEARSE and LD_NOGO through sudo -n env",
       "s60_score.py smoke60 \"$P60SMOKE\"" in runall and "P60SMOKE=60r" in runall and 's60_score.py score60 "$splan"' in runall and 'plan60.py check "$splan"' in runall and 'LD_REHEARSE="$REHEARSE" LD_NOGO="${LD_NOGO:-}"' in runall
