@@ -111,3 +111,32 @@ for k in range(8):
     print('K%d | %.2f +- %.2f | %s | %.2f %.2f %.2f | %.2f | %+.0f / %+.0f / %+.0f slots'
           % (k + 1, T0, seT, ' '.join('%.0f' % flips[r] if flips[r] else '-' for r in reps),
              cnt['S'] / 20000, cnt['N'] / 20000, cnt['M'] / 20000, flat, q(0.1), q(0.5), q(0.9)))
+
+# Ruling entry 8, item 1: which term sets the pooled interval's width? K = 8 (the scored K): the 10-90 % width with
+# (a) both terms, (b) the threshold held fixed (replicate resampling only), (c) the replicates held fixed (the
+# threshold only), and the threshold term against the number of calibration rows n_cal (se_T ~ 1/sqrt(n_cal)).
+print()
+print('K8 pooled flip - knee, 10-90 % width by term (20 000 draws each):')
+T0 = lc + b0K[7]
+seT6 = (se_lc ** 2 + seK[7] ** 2) ** 0.5
+
+
+def width(seT, resample):
+    v = []
+    for _ in range(20000):
+        T = rnd.gauss(T0, seT) if seT > 0 else T0
+        rs = [rnd.choice(reps) for _ in range(6)] if resample else reps * 2
+        d = []
+        for r in rs:
+            fw = cross([(w, x) for w, x in mhat[r].items() if w <= 256], T)
+            d.append((fw if fw is not None else 256.0) - knee[r])
+        v.append(St.median(d))
+    v.sort()
+    return v[int(0.9 * len(v))] - v[int(0.1 * len(v))]
+
+
+print('   both: %.0f slots; threshold fixed: %.0f; replicates fixed (threshold only): %.0f'
+      % (width(seT6, True), width(0.0, True), width(seT6, False)))
+for n in (6, 12, 24, 48):
+    print('   threshold only, n_cal = %d (se_T %.2f ms): width %.0f slots'
+          % (n, seT6 * (6 / n) ** 0.5, width(seT6 * (6 / n) ** 0.5, False)))

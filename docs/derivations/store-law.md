@@ -447,8 +447,16 @@ estimate of its floor, at the scale of the law's ≈ 1 ms allowance. That bears 
 boot.
 
 The anchor term sets a floor on where the form can land. While Copa's minimum m̂ sits below ℓ̂ + b̂₀⁺, the line keeps
-R > 1. So the form needs a standing 10 s minimum queue of ≈ b̂₀⁺. At c2 that is ≈ 2.2 ms, above the knee queue of
-≈ 0.8 ms. This is s60's c2 anchor-flip readout.
+R > 1. So the form needs a standing 10 s minimum queue of ≈ b̂₀⁺ before it can cross.
+
+Whether that anchor flip lies above c2's knee depends on K, the boot-window count b̂₀⁺ is maxed over. s60 registers
+this as a **prediction** (`store-law/s60flip.out`, from p27's brakes and three §56 replicates):
+- At K = 8 it is a coin flip. P(pooled flip ≥ knee) ≈ 0.58, and flip − knee reads −27 / +4 / +26 slots
+  (10 / 50 / 90 %). It is UNRESOLVED as expected: the width is set by ℓ̂'s row noise.
+- At K 5–7 it is ≈ 0.45–0.48.
+- At K ≤ 4 the flip falls at or below the calibration arm.
+
+A verdict that changes with K is a finding about K, which has no provenance.
 
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 

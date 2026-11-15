@@ -80,6 +80,22 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
      - Conditioning becomes the fallback.
    - **The collapse flag does not gate calibration rows** (pools below c1s's BDP). A go/no-go on the rehearsal's c1s
      W 128 row is registered (§2, §5).
+8. **Check of `f8ea7d6c`, worked with the advisor** (entry 7 had no advisor call).
+   - **c2's interval** is set by the threshold ℓ̂_c + b̂₀⁺_c, not by the replicates (`s60flip.out`: 10–90 % width 53
+     slots from the threshold alone, 16 from the replicates alone, 52 combined).
+     - Calibration rows narrow it only slowly (34 slots at 12 rows, 16 at 48), and the prediction is |D| ≈ 4 slots.
+     - So c2 is registered as a measurement, with UNRESOLVED as the expected label.
+   - **K:** K = 8 is SCORED at every cell, and K = 1..7 are REPORTED.
+     - Brake 1 is 0 by construction (Copa's minimum at the first close is that window's own minimum; p27: 0.00 on all
+       6 rows), so K = 1 is no finding. A witness checks it on every row.
+     - The latch set is defined per K, and the per-K table is labelled a PREDICTION.
+   - **Calibration validity uses an ABSOLUTE collapse rule on printed `tmean − l`.** It flags 22 of §57a's 23
+     collapse rows and 1 of 40 unflagged (`s60collapse.py`).
+   - **The c1s go/no-go thresholds are set from R̃'s sensitivity** (2/T̂ per ms of b0), inside the gap between the
+     registered readings. c8 gets its own rehearsal go/no-go.
+   - **The R6.7 note is corrected** to the per-K prediction.
+   - **Harness-brief items are added (§9):** a MISS stub case, one archive with equal `bin_sha` across 60-pre,
+     rehearsal, 60a and 60b, and what a 60-pre failure outside the gauge's tests means.
 
 **Helper scripts** (stdlib Python, run with `-I`; outputs committed beside them in `store-law/`).
 
@@ -92,6 +108,7 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
 | `s60drift.py` | §56 small pools: do `l` and the boot-queue proxy drift with row order? |
 | `s60cond.py` | the conditioning arithmetic per cell (slope of R̃ in W, σ_R, 2σ_R in slots), and c1s verdict probabilities per reading |
 | `s60flip.py` | the c2 anchor flip against the knee from §56's rows, per K = 1..8: verdict probabilities and the pooled flip − knee |
+| `s60collapse.py` | the absolute collapse rule checked against §57a's collapse-flagged rows |
 | `s60band.py` | the crossing bands (reported context) |
 | `s60size.py` | row times; G/C pair sds and n |
 | `s60replay.py`, `s60witness_ka.log` | `slaw_r` transcribed: R̃, the per-row witness, and its negative control |
@@ -221,10 +238,20 @@ replicate order).
 - **A calibration row is valid** iff all three hold:
   - (a) its boot is complete: `b0k` holds K = 8 brakes, with leg-0 `b0kn` ≥ 10 on each (leg 1 as above);
   - (b) it is not LATCHED;
-  - (c) it is **not rate-collapsed**: its LATE median send rate (`[DIAG] src=`) is ≥ 0.8 × the median over the
-    cell's same-pool rows, and its second-half LATE rate is ≥ 0.8 × its first half.
-    - Quinn collapse shows as a 3–30× rate fall (§57a: 7–48 k against 79 k sym/s) and a standing queue. A
-      store-limited row has neither.
+  - (c) it is **not COLLAPSED**, by an **absolute** rule on printed fields: COLLAPSED iff more than 10 % of its LATE
+    leg-0 `[SLAW]` windows have `tmean − l` > 5 ms.
+    - **Why absolute:** a relative rule (against the same-pool median) fails when the median row is itself collapsed,
+      and §56's relative flag came out inverted in rehearsal 1.
+    - **Why `tmean`:** it is the window mean, the quantity the check below used.
+    - **Checked on §57a** (`s60collapse.py`, the per-tick mean echo minus `l`, c1s 5 GB rows at pools 448–512): it
+      flags **22 of the 23 registered-collapse rows and 1 of the 40 unflagged rows**.
+      - The missed row (B64-512 s7 r4) is a partial collapse (registered share 0.41), with only 7 % of ticks above
+        5 ms.
+      - At 10 % above 2 ms the rule flags every row, because a pool of 448–512 carries ≈ 2–3 ms of normal excess.
+      - At the calibration pools (≤ 128, queue-free) the normal excess is smaller, so 5 ms leaves more margin.
+    - A store-limited row has no standing queue, so it cannot reach the rule's 5 ms.
+  - **Per K:** b0p(K) = max(first K `b0k` brakes), and LATCHED(K) uses b0p(K) in the latch rule, so the valid set is
+    recomputed for each K.
 - **B1** is evaluated only on valid rows, so a collapse's queue cannot pose as `err` > 0.
 - **c1s calibration rows run 1 GB.**
 
@@ -263,8 +290,9 @@ The scatter inputs are each measured and cited in `s60cond.py`:
 
 ### 3.1 c2: anchor-flip and conditioning readout (B2 not scored, as ruled)
 
-**Verdict probabilities from §56's rows** (`s60flip.py`: three replicates of late m̂ at W 128 / 160 / 192 / 256,
-the per-replicate knee at 168.7–169.1, b̂₀⁺_c(K) from p27's six queue-free c2 rows).
+**PREDICTION** (not a measurement): verdict probabilities from p27's brakes and three §56 replicates (`s60flip.py`:
+late m̂ at W 128 / 160 / 192 / 256, the per-replicate knee at 168.7–169.1, b̂₀⁺_c(K) from p27's six queue-free c2
+rows).
 - The Monte Carlo is over the session threshold T = ℓ̂_c + b̂₀⁺_c(K), which is one draw per session and common to all
   replicates, and over the replicates resampled to 6.
 
@@ -280,16 +308,31 @@ the per-replicate knee at 168.7–169.1, b̂₀⁺_c(K) from p27's six queue-fre
 FLAT-AT-KNEE means the pooled flip is at or above the knee, so the knee arms sit at anc 0, where R̃ is flat in W.
 
 - **At the gauge's K = 8 the 5-of-6 vote is a coin flip, so the vote is dropped.**
-- **Registered instead: a POOLED readout for each K = 1..8.**
+- **Registered instead: a POOLED readout, SCORED at K = 8 and REPORTED at K = 1..7.**
   - D_K = the median over replicates of (W_flip,r(K) − W₉₅,r).
   - W_flip,r(K) is where the replicate's late `m` (per-arm median) crosses ℓ̂_c + b̂₀⁺_c(K).
-  - b̂₀⁺_c(K) is the session median over valid W 128 rows of max(first K printed `b0k` brakes). The raw brakes are
-    printed, so every K is computable from one session.
-  - The 90 % interval comes from a bootstrap over calibration rows and replicates (2 000 resamples, seed 60).
-  - Each D_K reads: **ABOVE** if the interval lies > 0 (at that K the anchor keeps the form at or above the knee);
-    **BELOW** if < 0; otherwise **UNRESOLVED**.
+  - b̂₀⁺_c(K) is the session median over the valid set for that K (W 128 rows, LATCHED(K) excluded) of max(first K
+    printed `b0k` brakes).
+  - **K = 1 is no finding.** Brake 1 is 0 by construction: at the first window close, Copa's minimum is that window's
+    own minimum, since both see the same samples. p27 reads 0.00 on all 6 rows. K = 2 is near-trivial.
+    - **Witness:** printed `b0k[0]` = 0 on every G row. A non-zero value means Copa saw earlier samples, e.g. the
+      handshake, and is reported.
+- **The 90 % interval is a bootstrap (2 000 resamples, seed 60) that resamples BOTH terms:**
+  - the calibration rows, which re-estimates the threshold ℓ̂_c + b̂₀⁺_c(K);
+  - the sweep replicates.
+- **Which term sets the width** (`s60flip.out`, K = 8): the 10–90 % width is 53 slots from the threshold alone, 16
+  from the replicates alone, and 52 combined.
+  - More sweep replicates cannot narrow it; calibration rows can, but slowly: 34 slots at 12 rows, 22 at 24, 16 at
+    48. The prediction is |D| ≈ 4 slots.
+  - Most of the threshold's spread is ℓ̂_c's row noise: se 0.72 of 0.80 ms. That is the `s60abs` finding again, and a
+    better ℓ̂ estimator is R6.7's business, not more rows.
+  - **So c2 is registered as a MEASUREMENT, with UNRESOLVED as its expected label.** No calibration rows are added
+    for it.
+- **Labels:** **ABOVE** if the interval lies > 0 (at that K the anchor keeps the form at or above the knee); **BELOW**
+  if < 0; otherwise **UNRESOLVED**.
   - **Predicted:** BELOW at K ≤ 4 (D ≈ −41 slots, the flip at the calibration arm); UNRESOLVED at K 5–8 (−3 to +4,
     interval about −35 to +25).
+- **K = 8 is scored at every cell** (c2 here, c8's B2, c1s's sign). K = 1..7 are reported at each.
 - **A verdict that changes with K is a finding about K.** K has no provenance (R6.2, §13.1). The K at which D_K turns
   goes to R6.7 beside n₀.
 - **The fallback, conditioning,** is read only for K values whose D_K is BELOW:
@@ -374,17 +417,40 @@ UNDERPOWERED is 0.06 throughout.
     after the warm-up cut);
   - launch 2: one c1s W 128 G row (1 GB) and one W 2 048 C row.
 - **Go/no-go on the rehearsal's c1s W 128 row** (registered now; this is the first c1s measurement at n₀).
+  - **Where the thresholds come from.** At the c1s control, anc 1 holds, so an admitted b0 error δ moves R̃ − 1 by
+    2δ/T̂ ≈ 0.105 per ms (T̂ ≈ 19 ms).
+    - The registered readings differ by 0.20 (prefix minima −0.2 against exact minima ≈ 0), and σ_R is 0.03–0.08
+      (§3.3).
+    - So δ must stay ≤ 0.3 ms, a shift ≤ 0.03: the low end of σ_R and 15 % of the gap.
+    - The true queue-free b0 is 0.21–0.37 ms (p27/p34, cap 256). The earlier 1.0 ms thresholds exceeded c1s's whole
+      target above its floor (≈ 0.87 ms) and are withdrawn.
   - **GO** iff all of these hold:
     - (a) `b0k` holds 8 brakes, each with leg-0 `b0kn` ≥ 10;
-    - (b) `b0p` ≤ 1.0 ms. p27/p34 read 0.21–0.37 at cap 256, and above 1 ms a queue-free boot is not credible at c1s.
+    - (b) **`b0p` ≤ 0.6 ms**;
     - (c) the row is not LATCHED;
-    - (d) it is not rate-collapsed: its second-half LATE rate is ≥ 0.8 × the first half;
-    - (e) its median LATE `tmin − l` is ≤ 1.0 ms, so the store is queue-free in LATE as well.
+    - (d) it is not COLLAPSED (the absolute rule of §2);
+    - (e) **its median LATE `tmin − l` is ≤ 0.5 ms.** p34 reads 0.13 at cap 256; a larger value carries a queue
+      comparable to δ.
   - **Reported, not gating:** the §56 collapse-flag share (it may exceed 0.10 by construction, §2), and `b0p` and the
     latch state themselves.
   - **NO-GO** drops c1s's calibration rows and its control-sign verdict before 60b. 60b then runs only the G/C pairs
     and the evicting rows: 22 + 5 rows. P1 at c1s is reported against printed `b0p` alone.
-  - The decision and its numbers are recorded in the launch log.
+- **Go/no-go on the rehearsal's c8 W 128 (P64) row** (c8's 128 and 96 pools are unmeasured, and leg 1's boot windows
+  were sometimes empty at P80).
+  - **Where the thresholds come from.** At c8's knee the scored R̃ is predicted ≈ 1.16–1.19, against B2's threshold
+    1 − 2σ_R ≈ 0.97–0.98, a gap of ≈ 0.2.
+    - An admitted b0 error moves R̃(knee) by 2·w₀/T̂ ≈ 0.053 per ms on leg 0, and by ≈ 0.02 per ms on leg 1 (through
+      the coupling term and leg 1's own weight).
+    - Holding the combined shift to ≤ 0.05, a quarter of the gap, allows δ₀ ≤ 1.0 ms and δ₁ ≤ 2.5 ms.
+  - **GO** iff all of these hold:
+    - (a) `b0k` holds 8 brakes, with leg-0 `b0kn` ≥ 10 on each, and leg 1 has ≥ 4 windows with `b0kn` ≥ 10;
+    - (b) **leg-0 `b0p` ≤ 3.9 ms** (p27 cap 128: 2.07 / 2.90, plus 1.0);
+    - (c) **leg-1 b0 (from the qualifying `b0k` entries) ≤ 10 ms** (p27: 6.12 / 9.37, plus 2.5 over the central
+      value);
+    - (d) the row is neither LATCHED nor COLLAPSED;
+    - (e) **leg-0 median LATE `tmin − l` ≤ 3.4 ms** (p27 cap 128: 2.43, plus 1.0).
+  - **NO-GO** leaves c8's B2 unscored. c8's rows still run, for P1, P3 and the reported R̃.
+- The decisions and their numbers are recorded in the launch log.
 - **`[SLAW] q`:** 0.100000 on Bulk G rows, and 0.050000 on Realtime rows.
 - **`[CAPLOG]`:** every logged cap is reproduced by `caplog_replay.py` (seat `plain`, branch `pooled`/`boot`; `tt`
   is impossible), and the bind fraction is reported.
@@ -423,7 +489,7 @@ UNDERPOWERED is 0.06 throughout.
 - **Harness work:** `harness_paths.py` admits reuse-hit only for plans 56 / 57a / 57b. Plan 60 must be added.
 - **Any REAL failure in 60-pre** blocks the session and is diagnosed (§58's rules).
 
-**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes and the c1s W 128 row of §5's go/no-go.
+**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus the c8 W 128 (600 MB) and c1s W 128 (1 GB) rows of §5's go/no-go.
 
 | launch | block | rows | typical | worst |
 |---|---|---|---|---|
@@ -444,7 +510,7 @@ UNDERPOWERED is 0.06 throughout.
   (§57a's convention). Evicting rows take ≤ 150 s + 40 s.
 - **Why two launches:** together they exceed 4 h worst case (5.1 h).
 - **`LD_HARD`:** launch + 3 h (60a) and + 3.5 h (60b). The budget guard refuses with less than 2.3 / 2.8 h left. 60-pre holds the locks through `suites_run.sh`; `LD_HARD` does not apply to it (as §58).
-- **Order:** 60-pre, then the rehearsal (with the c1s go/no-go), then 60a, then 60b. 60b runs after 60a's smoke, witnesses, R-sign gate and calibration validity are read. It reuses 60a's
+- **Order:** 60-pre, then the rehearsal (with the c8 and c1s go/no-go), then 60a, then 60b. 60b runs after 60a's smoke, witnesses, R-sign gate and calibration validity are read. It reuses 60a's
   binary (sha recorded), in which case its build row is 0 min.
 - **What was cut:** the c2 B2 grid; c8's band arms (448, 576, 640); the band IN/OUT scoring; the second and third
   per-replicate calibration rows; and the c2/c8 C rows.
@@ -461,6 +527,31 @@ UNDERPOWERED is 0.06 throughout.
      59's rows. It needs stub tests and a rehearsal.
 4. **c8 and c1s at ≤ 128 are unmeasured.** A failed flatness gate removes that cell's R̃ (c8: B2; c1s: the control
    sign).
+
+## 9. For the harness brief (registered requirements)
+
+1. **"A suite-reuse MISS stops the launch" needs a stub case.**
+   - `test_harness_paths.py`, or a new `test_harness60.py`, drives plan 60 with a manifest that differs by one line
+     and asserts the abort token (e.g. `ABORT-SUITES plan 60 suite-reuse MISS`) before any row.
+   - It also asserts that a HIT proceeds.
+   - Plan 60 must be added to `harness_paths.py`'s reuse-hit plans.
+2. **One archive for every stage.**
+   - 60-pre, the rehearsal, 60a and 60b each run from **one** `git archive` of the pinned tree, recorded by sha.
+   - The release binary's `bin_sha` must be **equal** in the rehearsal, 60a and 60b (and in 60-pre's release build,
+     if it builds one). An unequal `bin_sha` stops the launch.
+   - `ref60-manifest.sha256` is generated from that archive's tree.
+3. **What a 60-pre failure means.**
+   - **In the gauge's own tests** (`slaw_tests`, `slaw_reachability`, the bit-identity host test, `slaw_parse`,
+     `caplog_replay`): it blocks the session, and the gauge is fixed.
+   - **Outside the gauge's tests:** this is the **first full engine-suite run since the math-crate merges**
+     (`endspeed-relaid`, phase 6's span forms, the shared-core steps) and the later main merges. Such a failure is
+     a finding about main, not about the gauge.
+     - Rule, as §58 Part A: re-run the failing suite on the base tree (main at the pinned tree's merge base, without
+       the gauge).
+     - A failure that is identical on base is recorded as main's defect. The session waits for its diagnosis, or for
+       the owner's ruling to proceed.
+     - A failure only with the gauge blocks, as a gauge defect.
+   - Flakes follow §8/§11/§12's rule.
 
 ---
 

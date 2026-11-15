@@ -12,3 +12,10 @@ K5 | 10.45 +- 0.91 | 160 167 173 | 0.35 0.48 0.17 | 0.45 | -41 / -3 / +23 slots
 K6 | 10.53 +- 0.84 | 161 169 175 | 0.37 0.45 0.19 | 0.47 | -36 / -1 / +23 slots
 K7 | 10.53 +- 0.85 | 161 169 175 | 0.37 0.44 0.19 | 0.48 | -37 / -1 / +24 slots
 K8 | 10.74 +- 0.80 | 165 173 181 | 0.47 0.34 0.20 | 0.58 | -27 / +4 / +26 slots
+
+K8 pooled flip - knee, 10-90 % width by term (20 000 draws each):
+   both: 52 slots; threshold fixed: 16; replicates fixed (threshold only): 53
+   threshold only, n_cal = 6 (se_T 0.80 ms): width 52 slots
+   threshold only, n_cal = 12 (se_T 0.57 ms): width 34 slots
+   threshold only, n_cal = 24 (se_T 0.40 ms): width 22 slots
+   threshold only, n_cal = 48 (se_T 0.28 ms): width 16 slots
