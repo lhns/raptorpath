@@ -433,9 +433,10 @@ listeners["sel-npaths"].change();
 }
 
 
-// Frame budget: animate() stops stepping once ~12 ms is spent (the last
-// decile's steps cost 50+ ms each), but always makes progress, and does the
-// full speed's worth of steps when the clock says steps are cheap.
+// Frame budget: animate() stops stepping when elapsed + last step cost would
+// exceed STEP_BUDGET_MS = 4 (the last decile's steps cost 50+ ms each), but
+// always makes progress, and does the full speed's worth of steps when the
+// clock says steps are cheap.
 {
   getEl("sel-speed").value = "25";
   api.resetSim();
@@ -452,10 +453,13 @@ listeners["sel-npaths"].change();
   const cheap = run(0.001);
   const slow = run(5);
   const glacial = run(100);
+  const two = run(2);
   clockStep = 0;
   check("animate: cheap steps -> full speed steps (25)", cheap >= 20, `${cheap} ticks`);
-  check("animate: 5 ms/step -> budget stops the frame early (<= 4 steps)",
-    slow >= 1 && slow <= 4, `${slow} ticks`);
+  check("animate: 5 ms/step (a step that would overrun) -> stops after 1 step",
+    slow === 1, `${slow} ticks`);
+  check("animate: 2 ms/step -> stops once elapsed + last step > 4 ms (exactly 2 steps)",
+    two === 2, `${two} ticks`);
   check("animate: step slower than the budget -> still exactly 1 step", glacial === 1, `${glacial}`);
   rafQueue = [];
 }

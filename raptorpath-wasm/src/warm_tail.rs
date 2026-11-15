@@ -31,7 +31,9 @@ pub(crate) fn warm_r_star(
     let top = rc(2.0, w);
     let mut memo: HashMap<usize, bool> = HashMap::new();
     let mut exceeds = |k: usize| *memo.entry(k).or_insert_with(|| eval(k) > delta);
-    let h = hint_k.unwrap_or(top).min(top);
+    // No hint: start at k = 0 and gallop UP through the cheap DP sizes
+    // (cost grows with W + k); the crossing, hence the result, is the same.
+    let h = hint_k.unwrap_or(0).min(top);
     let kstar: usize;
     if exceeds(h) {
         if h == top { let n = memo.len(); return (2.0, None, n); }

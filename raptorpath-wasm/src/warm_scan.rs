@@ -545,3 +545,42 @@ fn test_warm_autow_values() {
     println!("not in {{10,25,64,200,400}} ({}): {:?}", extra.len(), extra);
     for (w, (n, ex)) in &by_w { println!("  W={w}: {n} cases, e.g. {ex}"); }
 }
+
+/// DP cost model of one fail(k) evaluation: O(W * (W + k)); relative work
+/// per distinct probed k is (W + k)^2 (monotone in k, all that matters here).
+fn probe_work(w: usize, hint: Option<usize>, p: f64, q: f64, d: f64) -> (f64, f64, Option<usize>) {
+    let mut work = 0.0;
+    let mut seen = HashSet::new();
+    let (r, ks, _) = warm_r_star(p, q, w, d, hint, &mut |k| {
+        if seen.insert(k) { work += ((w + k) as f64).powi(2); }
+        fail_at(p, q, w, k)
+    });
+    (work, r, ks)
+}
+
+/// The no-hint start gallops up through cheap DP sizes: its DP work never
+/// exceeds the worst case over hinted starts, and its result is the same.
+#[test]
+fn test_warm_nohint_work_bounded_by_hinted_worst_case() {
+    let (mut tot_none, mut tot_top, mut n) = (0.0, 0.0, 0usize);
+    for &w in &[10usize, 25, 64, 200] {
+        for &p in &[1e-4, 0.01, 0.1, 0.3, 0.43] {
+            for &q in &[0.02, 0.5, 1.0] {
+                for &d in &[1e-7, 1e-5, 0.05, 0.3] {
+                    let (wn, rn, _) = probe_work(w, None, p, q, d);
+                    let mut worst = 0.0f64;
+                    let mut top_work = 0.0;
+                    for h in [Some(0), Some(1), Some(w / 2), Some(w), Some(2 * w - 1), Some(2 * w)] {
+                        let (wh, rh, _) = probe_work(w, h, p, q, d);
+                        assert_eq!(rh.to_bits(), rn.to_bits());
+                        worst = worst.max(wh);
+                        if h == Some(2 * w) { top_work = wh; }
+                    }
+                    assert!(wn <= worst, "p={p} q={q} W={w} d={d}: no-hint {wn} > hinted worst {worst}");
+                    tot_none += wn; tot_top += top_work; n += 1;
+                }
+            }
+        }
+    }
+    println!("no-hint mean work {:.0} vs start-at-top mean {:.0} over {n} cases", tot_none / n as f64, tot_top / n as f64);
+}
