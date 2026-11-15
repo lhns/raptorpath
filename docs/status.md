@@ -992,7 +992,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - `decision_trace_pin` is 7/7 in release and debug.
 - This was the first Linux run of the gauge's tests and the first full suites since the math-crate merges.
 - **Registered `bin_sha`** (crate-directory build, `binid_run.sh`): **`e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d`**. math and wasm 203 passed. The rehearsal, 60a and 60b must each match it.
-- **Reference manifest:** `tools/l1/ref60-manifest.sha256` (182 files of `raptorpath/src` + `raptorpath/tests` at `cb88df3a`) is committed and passed as `LD_REF_MANIFEST` to every §60 launch.
+- **Reference manifest:** `tools/l1/ref60-manifest.sha256` (187 files of `raptorpath/src` + `raptorpath/tests` at `cb88df3a`) is committed and passed as `LD_REF_MANIFEST` to every §60 launch.
 - **Deviation:** host builds of other projects may have run. Raptorpath host cargo was paused (lock held by the main session).
 
 ## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
