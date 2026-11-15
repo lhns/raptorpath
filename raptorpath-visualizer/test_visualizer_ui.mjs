@@ -92,7 +92,8 @@ const documentStub = {
   addEventListener: () => {},
 };
 const windowStub = {
-  addEventListener: () => {},
+  resizeFns: [],
+  addEventListener(ev, fn) { if (ev === "resize") this.resizeFns.push(fn); },
   devicePixelRatio: 1,
   innerWidth: 1400, innerHeight: 900,
 };
@@ -457,6 +458,43 @@ listeners["sel-npaths"].change();
     slow >= 1 && slow <= 4, `${slow} ticks`);
   check("animate: step slower than the budget -> still exactly 1 step", glacial === 1, `${glacial}`);
   rafQueue = [];
+}
+
+// r*(delta) chart reads only the dials: never redrawn per play frame, but
+// redrawn on dial change and Reset (spy: each draw does one getContext on it).
+{
+  const cv = getEl("rstar-chart");
+  const orig = cv.getContext;
+  let draws = 0;
+  cv.getContext = (...a) => { draws++; return orig(...a); };
+  getEl("sel-speed").value = "5";
+  api.resetSim();
+  draws = 0;
+  api.setRunning(true);
+  for (let i = 0; i < 5; i++) api.animate();
+  api.setRunning(false);
+  check("r* chart: NOT redrawn during play frames", draws === 0, `${draws} draws in 5 frames`);
+  listeners["sl-dprice"].input();
+  check("r* chart: redrawn on a dial change", draws === 1, `${draws}`);
+  draws = 0;
+  listeners["btn-reset"].click();
+  check("r* chart: redrawn on Reset", draws >= 1, `${draws}`);
+  cv.getContext = orig;
+  rafQueue = [];
+}
+
+// fitCanvas caches client sizes: reads them once, not per call (no forced layout).
+{
+  const cv = getEl("rstar-chart");
+  let reads = 0, cw = 900;
+  Object.defineProperty(cv, "clientWidth", { get() { reads++; return cw; }, configurable: true });
+  windowStub.resizeFns.forEach(f => f()); // drops the cache and redraws (1 read)
+  for (let i = 0; i < 5; i++) api.drawRstarChart();
+  check("fitCanvas: client size read once across 5 draws", reads === 1, `${reads} reads`);
+  cw = 600;
+  windowStub.resizeFns.forEach(f => f());
+  api.drawRstarChart();
+  check("fitCanvas: window resize re-reads the size", reads === 2 && cv.width === 600, `${reads} reads, width ${cv.width}`);
 }
 
 // Wall chain intact.

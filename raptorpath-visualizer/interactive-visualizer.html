@@ -2146,9 +2146,31 @@ function solveTri() {
 // =========================================================================
 // CHARTS (vanilla canvas — no external libraries)
 // =========================================================================
+// Client sizes are cached per canvas: reading clientWidth/Height after the
+// per-frame DOM writes forces a synchronous layout. The cache is refreshed by
+// a ResizeObserver (layout-driven changes) or, when that is absent, by the
+// window 'resize' listener (which also fires on browser zoom). With neither,
+// the first read is kept. A zero size (hidden canvas) is never cached.
+const canvasSize = new Map();
+let canvasRO = null;
+if (typeof ResizeObserver !== 'undefined') {
+  let pending = false;
+  canvasRO = new ResizeObserver(entries => {
+    for (const e of entries) canvasSize.delete(e.target);
+    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; redrawAllCharts(); }); }
+  });
+}
 function fitCanvas(cv) {
   const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth, h = cv.clientHeight;
+  let sz = canvasSize.get(cv);
+  if (!sz) {
+    sz = {w: cv.clientWidth, h: cv.clientHeight};
+    if (sz.w > 0 && sz.h > 0) {
+      canvasSize.set(cv, sz);
+      if (canvasRO) canvasRO.observe(cv);
+    }
+  }
+  const w = sz.w, h = sz.h;
   if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)) {
     cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
   }
@@ -2617,7 +2639,8 @@ function animate() {
     sim.step();
     if (performance.now() - t0 > FRAME_BUDGET_MS) break;
   }
-  drawMainChart(); drawStrip(); updateReadouts(); drawRstarChart();
+  // drawRstarChart reads only the dials (getParams), never the run: not per frame.
+  drawMainChart(); drawStrip(); updateReadouts();
   if (running) animId = requestAnimationFrame(animate);
   else { $id('btn-play').textContent='Play';
          $id('btn-play').classList.remove('active'); }
@@ -3033,9 +3056,10 @@ selPreset.addEventListener('change', () => {
 });
 for (const sl of [slR,slDelta,slRho])
   sl.addEventListener('input', () => { updateLabels(); solveTri(); });
-window.addEventListener('resize', () => {
+function redrawAllCharts() {
   drawMainChart(); drawStrip(); drawRstarChart(); drawTaperChart();
-});
+}
+window.addEventListener('resize', () => { canvasSize.clear(); redrawAllCharts(); });
 
 // =========================================================================
 // DATA-TIP TOOLTIPS (single positioned div, no external deps)
