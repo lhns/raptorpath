@@ -574,12 +574,13 @@ pub(crate) fn emit_source(
                         // `net::delta_budget_b`): the three-term store law
                         // reads the same map.
                         let b = super::delta_budget_b(pol.protocol_hint);
-                        let d = (b * rtprop).min(2.0 * rtprop);
-                        let a_star = ((rate_sym * d).ceil() as u64)
-                            .clamp(1, st.encoder.window_size() as u64);
-                        let delta = ((rate_sym * (est.jitter_us() / 1e6)).ceil()
-                            as u64)
-                            .clamp(1, 64);
+                        let (a_star, delta) = span_seat(
+                            rate_sym,
+                            rtprop,
+                            b,
+                            est.jitter_us() / 1e6,
+                            st.encoder.window_size(),
+                        );
                         // δ-honest shed law: refresh the derived
                         // deadline D(δ) and the 1−ρ budget at the
                         // live operating point (ε̂, r*, A*, σ²) —
@@ -791,17 +792,12 @@ pub(crate) fn emit_source(
                     // leading-window repair when the window is too young to
                     // trail.
                     let (ws, we) = st.encoder.window_span();
-                    let end = (we + 1).saturating_sub(delta);
-                    let start = end.saturating_sub(a_star).max(ws);
-                    if end > start {
-                        st.encoder
-                            .generate_repair_range(
-                                start,
-                                (end - start).min(u16::MAX as u64) as u16,
-                            )
-                            .unwrap_or_else(|| st.encoder.generate_repair())
-                    } else {
-                        st.encoder.generate_repair()
+                    match trailing_span(ws, we, a_star, delta) {
+                        SpanPlacement::Range { start, count } => st
+                            .encoder
+                            .generate_repair_range(start, count)
+                            .unwrap_or_else(|| st.encoder.generate_repair()),
+                        SpanPlacement::Leading => st.encoder.generate_repair(),
                     }
                 } else {
                     // Repair: a new FEC symbol over the leading window.
@@ -898,4 +894,41 @@ pub(crate) fn cadenced_repair_rate(
     cache.add_eval_ns(t0.elapsed().as_nanos() as u64);
     cache.store(now_us, window, path, period, rate);
     rate
+}
+
+/// Span seat (paper §5.3; shared-core D12). D = min(b·rtprop, 2·rtprop),
+/// A* = clamp(ceil(rate·D), 1, W), Δ = clamp(ceil(rate·J), 1, 64).
+/// NaN rate gives A* = Δ = 1 (NaN as u64 = 0, then clamped); W = 0 panics
+/// (Ord::clamp min > max), exactly as the inline code did.
+#[inline]
+pub(crate) fn span_seat(
+    rate_sym: f64,
+    rtprop_s: f64,
+    b: f64,
+    jitter_s: f64,
+    window: usize,
+) -> (u64, u64) {
+    let d = (b * rtprop_s).min(2.0 * rtprop_s);
+    let a_star = (raptorpath_math::span_width_a_star(rate_sym, d, window as f64).ceil() as u64)
+        .clamp(1, window as u64);
+    let delta = (raptorpath_math::trailing_offset_delta(rate_sym, jitter_s) as u64).clamp(1, 64);
+    (a_star, delta)
+}
+
+pub(crate) enum SpanPlacement {
+    Range { start: u64, count: u16 },
+    Leading,
+}
+
+/// Trailing solvable-span placement (paper §5.3): [max(ws, end − A*), end),
+/// end = newest + 1 − Δ; Leading when the window is too young to trail.
+#[inline]
+pub(crate) fn trailing_span(ws: u64, we: u64, a_star: u64, delta: u64) -> SpanPlacement {
+    let end = (we + 1).saturating_sub(delta);
+    let start = end.saturating_sub(a_star).max(ws);
+    if end > start {
+        SpanPlacement::Range { start, count: (end - start).min(u16::MAX as u64) as u16 }
+    } else {
+        SpanPlacement::Leading
+    }
 }

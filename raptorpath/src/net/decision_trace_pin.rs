@@ -16,12 +16,14 @@
 //!             `pool_value_multiplier`, `delta_budget_b(hint)`;
 //!   snapver   D5 `SnapOrder`, `snapver_*`, `judged_gaps`, `take_gap_batch`.
 //!
-//! Not driveable without I/O today (listed, not pinned): the inline A*/Delta
-//! seat in `emit_source.rs` (inside the emit block, needs the scheduler,
-//! encoder and transport); D9 per-seq verdicts and D10 margin (inside
+//! Not driveable without I/O today (listed, not pinned): D9 per-seq
+//! verdicts and D10 margin (inside
 //! `serve_gaps`); `mp_hole_ripe` (stays in the engine by design).
 //!
-//! Captured on main 766d9906 (untouched tree).
+//! Captured on main 766d9906 (untouched tree). `pin_span_seat` and
+//! `pin_trailing_span` (the A*/Delta seat and the span placement, extracted
+//! to `emit_source::{span_seat, trailing_span}`) were captured on the
+//! extracted tree: there was no function to digest before.
 //!
 //! Determinism: no clock, no RNG, no HashMap iteration (maps are read by
 //! sorted key). f64 results of pure IEEE arithmetic (+ - * / min max ceil
@@ -137,6 +139,72 @@ fn pin_span_forms() {
         "span",
         span_digest(),
         "f502805bfb746561154d468920c9e3bf62a1fc182164d637d0a30a15b55665a3",
+    );
+}
+
+// ---- span seat and trailing placement (emit_source.rs) -----------------
+
+fn span_seat_digest() -> String {
+    use super::emit_source::span_seat;
+    let mut t = Tr::new("span_seat");
+    let bs = [
+        raptorpath_math::span_horizon_b(50.0),
+        raptorpath_math::span_horizon_b(0.5),
+        raptorpath_math::span_horizon_b(0.005),
+    ];
+    for &rate in &[0.0, 1e-3, 3.7, 94.0, 1e5, NAN, f64::INFINITY] {
+        for &b in &bs {
+            for &rtprop in &[1e-3, 0.04] {
+                for &jit in &[0.0, 5e-3] {
+                    for w in [1usize, 4, 200, 201] {
+                        let (a, d) = span_seat(rate, rtprop, b, jit, w);
+                        t.u(a);
+                        t.u(d);
+                    }
+                }
+            }
+        }
+    }
+    t.finish()
+}
+
+#[test]
+fn pin_span_seat() {
+    check(
+        "span_seat",
+        span_seat_digest(),
+        "76d367ce6794f47ec38a164498f16dd7b5d86c05e36d43a83742fe7a3d6a51df",
+    );
+}
+
+fn trailing_span_digest() -> String {
+    use super::emit_source::{trailing_span, SpanPlacement};
+    let mut t = Tr::new("trailing_span");
+    for ws in [0u64, 10] {
+        for we in [0u64, 3, 10, 300] {
+            for a in [1u64, 4, 201] {
+                for d in [1u64, 2, 64] {
+                    match trailing_span(ws, we, a, d) {
+                        SpanPlacement::Range { start, count } => {
+                            t.u(1);
+                            t.u(start);
+                            t.u(count as u64);
+                        }
+                        SpanPlacement::Leading => t.u(0),
+                    }
+                }
+            }
+        }
+    }
+    t.finish()
+}
+
+#[test]
+fn pin_trailing_span() {
+    check(
+        "trailing_span",
+        trailing_span_digest(),
+        "58b38082e583b16b155d33bf2804788cb0e745323faf3f7062491249dc6e6eab",
     );
 }
 
@@ -486,6 +554,8 @@ fn pin_snapshot_order() {
 #[test]
 fn digests_are_reproducible_within_a_process() {
     assert_eq!(span_digest(), span_digest());
+    assert_eq!(span_seat_digest(), span_seat_digest());
+    assert_eq!(trailing_span_digest(), trailing_span_digest());
     assert_eq!(recovery_digest(), recovery_digest());
     assert_eq!(shed_digest(), shed_digest());
     assert_eq!(taper_digest(), taper_digest());
