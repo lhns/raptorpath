@@ -1871,6 +1871,9 @@ impl Simulation {
 }
 
 #[cfg(test)]
+mod warm_scan;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
