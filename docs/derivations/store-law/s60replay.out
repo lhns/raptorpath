@@ -1,0 +1,3 @@
+SELFTEST PASS (0.82, 1.11625, empty set 1.0)
+WITNESS PASS windows 6 mismatches 0 worst |dR| 4.89e-06
+(input: tools/l1/testdata/slaw_sample.log at slaw-gauge 2547fc07, the engine's own render_window output)
