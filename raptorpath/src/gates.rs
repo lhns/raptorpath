@@ -228,6 +228,10 @@ pub struct RuntimeGates {
     // ── Instruments (ADR-0052; observation only) ──
     /// `RWM_DIAG` (off): the transport-ceiling / recovery-plane `[DIAG]`.
     pub diag: bool,
+    /// `RWM_SLAW` (on, effective only under `RWM_DIAG`): the store-law gauge
+    /// (`net::slaw`: `[WSTAT]`/`[WSTORE]`/`[SLAW]`/`[SLAWC]`/`[CAPLOG]`). `=0` runs
+    /// `[DIAG]` without it, the perturbation control for its sampler.
+    pub slaw: bool,
     /// `RWM_ACKDIAG` (off): per-path ack-cadence gauge (`[ACKDIAG]`).
     pub ackdiag: bool,
     /// `RWM_RTT_DUMP` (off): raw RTT sample stream (`[RTTDUMP]`).
@@ -376,6 +380,7 @@ impl RuntimeGates {
             recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
             diag: env_flag("RWM_DIAG", false),
+            slaw: env_flag("RWM_SLAW", true),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             rtt_dump: env_flag("RWM_RTT_DUMP", false),
             succ_dump: env_flag("RWM_SUCC_DUMP", false),
@@ -445,7 +450,7 @@ impl RuntimeGates {
              RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
-             RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
+             RWM_DIAG={} RWM_SLAW={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
@@ -479,7 +484,7 @@ impl RuntimeGates {
             b(self.completion_exposure),
             // Consumed at both endpoints, so echoed at both.
             b(self.recv_request_law), b(self.rank_feedback),
-            b(self.diag), b(self.ackdiag), self.ackdiag_window_us,
+            b(self.diag), b(self.slaw), b(self.ackdiag), self.ackdiag_window_us,
             b(self.rtt_dump), self.rtt_dump_max,
             b(self.succ_dump), self.succ_dump_max,
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),

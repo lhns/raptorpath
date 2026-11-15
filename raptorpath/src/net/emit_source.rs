@@ -694,10 +694,16 @@ pub(crate) fn emit_source(
             repair_rate
         };
         st.repair_debt += repair_rate;
+        if pol.slaw_on {
+            super::slaw::note_debt_accrued(repair_rate); // [WSTORE] dbt_acc (gauge)
+        }
         st.taper_offset += 1;
 
         while st.repair_debt >= 1.0 && st.encoder.window_size() > 0 {
             st.repair_debt -= 1.0;
+            if pol.slaw_on {
+                super::slaw::note_debt_emitted(); // [WSTORE] dbt_em (gauge)
+            }
 
             // P_lost-based correction symbol decision:
             // Check oldest un-ACKed symbol in retransmit buffer.

@@ -58,6 +58,7 @@ st = m["WSTORE"]
 check("[WSTORE] release batches 1 event of 12 each window", st["relb.0"] == 1 and st["relb.1"] == 12 and st["relb.3"] == 12, st)
 check("[WSTORE] emission bursts 2 events 8/16 -> p50 16 (nearest-rank of {8,16})", st["emb.0"] == 2 and st["emb.1"] == 16, st)
 check("[WSTORE] adv= one sample per cumulative advance: 2 advances, sizes 10 and 30 -> p50 30, max 30", st["adv.0"] == 2 and st["adv.1"] == 30 and st["adv.3"] == 30, st)
+check("[WSTORE] W1 debt flows present (zero in the unit sample; share is None, not 0, when nothing accrued)", st["dbt_acc"] == 0.0 and st["dbt_em"] == 0.0 and st["dbt_share"] is None and "dbt_rm_ack" in st and "dbt_ask_nack" in st, st)
 check("[WSTORE] a/W = 0.5", st["aw"] == 0.5 and st["awmin"] == 0.5)
 check("[SLAWC] last line has the counters", "gaprep" in m["SLAWC"] and m["SLAWC"]["gaprep"] is not None)
 check("a/b dash rule: '-' is None, not 0 (gaptrunc_frac with no reports)", m["SLAWC"].get("gaptrunc_frac") is None, m["SLAWC"])

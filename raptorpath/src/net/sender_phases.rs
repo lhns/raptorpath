@@ -38,7 +38,7 @@ pub(crate) struct StoreCapState {
 impl StoreCapState {
     pub(crate) fn new(pol: &SenderPolicy) -> Self {
         Self {
-            caplog: pol.diag_on.then(Box::<super::slaw::CapLog>::default),
+            caplog: pol.slaw_on.then(Box::<super::slaw::CapLog>::default),
             tt_terms_diag: None,
             tt_print_us: 0,
             percap_k: std::collections::HashMap::new(),
@@ -812,6 +812,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         let mut nacked_count: u64 = 0;
         if pol.diag_on {
             dg.mpd_gap_reports += 1;
+        }
+        if pol.slaw_on {
             // Store-law gauge (`[SLAWC] c09rep`): processed repair reports.
             super::slaw::note_c09_report();
         }
@@ -857,7 +859,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
 
             for seq in clamped_start..=clamped_end {
                 if retransmitted >= cached_max_repairs || cached_nack_budget == 0 {
-                    if pol.diag_on {
+                    if pol.slaw_on {
                         // C09's per-report cap bound (`[SLAWC] c09bind`);
                         // at most once per report, as this breaks the loop.
                         super::slaw::note_c09_bind();
@@ -1227,7 +1229,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             now_us(),
         );
         let debt_reduction = nacked_count as f64 * repair_rate;
+        let debt_before = st.repair_debt;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
+        if pol.slaw_on {
+            super::slaw::note_debt_cancel(false, debt_before, st.repair_debt, debt_reduction);
+        }
     }
     *cached_nack_budget_cell = cached_nack_budget;
     *nack_repairs_this_period_cell = nack_repairs_this_period;
@@ -1388,7 +1394,13 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             now_us(),
         );
         let debt_reduction = newly_acked as f64 * repair_rate;
+        let debt_before = st.repair_debt;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
+        // Store-law gauge (W1, `[WSTORE] dbt_rm_ack`/`dbt_ask_ack`): the debt
+        // actually removed, min(debt, asked), beside what was asked.
+        if pol.slaw_on {
+            super::slaw::note_debt_cancel(true, debt_before, st.repair_debt, debt_reduction);
+        }
 
         // Keep the encoder window at the derived W* (paper §4.8), bounded by
         // the sender's hard ceiling; fall back to win_cap/2 when the

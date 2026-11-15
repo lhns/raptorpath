@@ -29,10 +29,14 @@ use std::collections::HashMap;
 pub const K_GAUGE: usize = 8;
 
 /// Most echo samples a leg's window keeps for its quantiles. A declared
-/// resource bound (a sort of this many `u32` is ~0.6 ms on the sender loop,
-/// under `RWM_DIAG` only). Count, minimum and mean are exact over ALL samples;
-/// the quantiles are over the first `WIN_SAMPLE_CAP`. Its bind is printed:
-/// `nkq=` (quantile sample count) against `nk=` (all samples).
+/// resource bound (a sort of this many `u32`, under `RWM_DIAG` only; the
+/// measured cost is in `bench_close_23k`). Count, minimum and mean are exact
+/// over ALL samples. When the bound binds the kept samples are a DETERMINISTIC
+/// UNIFORM STRIDE over the whole window, never a prefix: the buffer holds every
+/// `stride`-th sample (sample indices 0, s, 2s, ...); on filling, every other
+/// kept sample is dropped and the stride doubles. So the quantiles are not
+/// biased toward the window start. Its bind is printed: `nkq=` (quantile
+/// sample count, between CAP/2 and CAP once bound) against `nk=` (all samples).
 pub const WIN_SAMPLE_CAP: usize = 16_384;
 
 // ── the per-leg window sampler ──────────────────────────────────────────
@@ -82,6 +86,8 @@ pub struct WinSampler {
     brakes: Vec<i64>,
     knk: Vec<u64>,
     sigb: Option<u64>,
+    /// Keep every `stride`-th sample of this window (0 reads as 1).
+    stride: u64,
 }
 
 impl WinSampler {
@@ -92,8 +98,25 @@ impl WinSampler {
         self.sum += rtt_us as u64;
         self.min = Some(self.min.map_or(rtt_us, |m| m.min(rtt_us)));
         self.life_min = Some(self.life_min.map_or(rtt_us, |m| m.min(rtt_us)));
-        if self.buf.len() < WIN_SAMPLE_CAP {
-            self.buf.push(rtt_us);
+        let idx = self.n - 1;
+        if self.stride == 0 {
+            self.stride = 1;
+        }
+        if idx % self.stride == 0 {
+            if self.buf.len() == WIN_SAMPLE_CAP {
+                // Full: keep the even positions (indices that are multiples of
+                // 2*stride) and double the stride.
+                let mut w = 0;
+                for i in (0..self.buf.len()).step_by(2) {
+                    self.buf[w] = self.buf[i];
+                    w += 1;
+                }
+                self.buf.truncate(w);
+                self.stride *= 2;
+            }
+            if idx % self.stride == 0 {
+                self.buf.push(rtt_us);
+            }
         }
     }
 
@@ -162,6 +185,7 @@ impl WinSampler {
         self.n = 0;
         self.sum = 0;
         self.min = None;
+        self.stride = 1;
         Some(out)
     }
 }
@@ -287,6 +311,41 @@ pub fn note_gap_report(truncated: bool) {
     }
 }
 
+/// W1 (repair-debt) accounting, micro-units (x1e6) so the sums are atomic
+/// integers: debt accrued at emission (`repair_rate` per source symbol), debt
+/// spent (one unit per correction slot of the `while repair_debt >= 1` loop),
+/// and debt cancelled at the two cancellation lines, with what was ASKED
+/// (`newly_acked * rate` / `nacked * rate`) beside what was actually removed
+/// (the `.max(0.0)` floor makes them differ).
+pub static DEBT_ACC: AtomicU64 = AtomicU64::new(0);
+pub static DEBT_EM: AtomicU64 = AtomicU64::new(0);
+pub static DEBT_RM_ACK: AtomicU64 = AtomicU64::new(0);
+pub static DEBT_ASK_ACK: AtomicU64 = AtomicU64::new(0);
+pub static DEBT_RM_NACK: AtomicU64 = AtomicU64::new(0);
+pub static DEBT_ASK_NACK: AtomicU64 = AtomicU64::new(0);
+
+fn micro(x: f64) -> u64 {
+    (x.max(0.0) * 1e6) as u64
+}
+
+/// Debt accrued at one emission (call only with the gauge on).
+pub fn note_debt_accrued(rate: f64) {
+    DEBT_ACC.fetch_add(micro(rate), Relaxed);
+}
+
+/// One unit of debt spent on a correction slot (gauge on only).
+pub fn note_debt_emitted() {
+    DEBT_EM.fetch_add(1_000_000, Relaxed);
+}
+
+/// A cancellation line ran: `before`/`after` are `repair_debt` around it and
+/// `asked` the unfloored reduction (gauge on only). `ack` picks the line.
+pub fn note_debt_cancel(ack: bool, before: f64, after: f64, asked: f64) {
+    let (rm, ask) = if ack { (&DEBT_RM_ACK, &DEBT_ASK_ACK) } else { (&DEBT_RM_NACK, &DEBT_ASK_NACK) };
+    rm.fetch_add(micro(before - after), Relaxed);
+    ask.fetch_add(micro(asked), Relaxed);
+}
+
 /// Count one processed repair report (call only with diag on).
 pub fn note_c09_report() {
     C09_REPORTS.fetch_add(1, Relaxed);
@@ -311,6 +370,7 @@ pub struct SlawState {
     aw_min: f64,
     rel: Vec<u32>,
     adv: Vec<u32>,
+    debt_last: [u64; 6],
     qb: HashMap<u32, Vec<u64>>,
     last_aux_us: u64,
     ackw_last: u64,
@@ -550,6 +610,17 @@ pub fn render_window(
         }
     }
 
+    // W1: per-window debt flows (deltas of the cumulative atomics).
+    let dn = [&DEBT_ACC, &DEBT_EM, &DEBT_RM_ACK, &DEBT_ASK_ACK, &DEBT_RM_NACK, &DEBT_ASK_NACK]
+        .map(|a| a.load(Relaxed));
+    let d: Vec<f64> = (0..6).map(|i| dn[i].saturating_sub(s.debt_last[i]) as f64 / 1e6).collect();
+    s.debt_last = dn;
+    let share = if d[0] > 0.0 { format!("{:.4}", d[1] / d[0]) } else { "-".to_string() };
+    let debt_s = format!(
+        "dbt_acc={:.2} dbt_em={:.0} dbt_share={share} dbt_rm_ack={:.2} dbt_ask_ack={:.2} dbt_rm_nack={:.2} dbt_ask_nack={:.2}",
+        d[0], d[1], d[2], d[3], d[4], d[5]
+    );
+
     // [WSTORE]: store scope, so the parser cannot double-count per-leg lines.
     let mut rel = std::mem::take(&mut s.rel);
     let nrel = rel.len();
@@ -568,7 +639,7 @@ pub fn render_window(
     });
     out.push(format!(
         "[WSTORE] t={t_s:.2} k={} tw={tw_ms:.1} n={cap} W={store_len} aw={} awmin={} relb={nrel}/{r50}/{r90}/{rmx} \
-         emb={nemb}/{e50}/{e90}/{emx} adv={nadv}/{a50}/{a90}/{amx} ackw={}",
+         emb={nemb}/{e50}/{e90}/{emx} adv={nadv}/{a50}/{a90}/{amx} ackw={} {debt_s}",
         s.k,
         fmt_f(aw_mean),
         fmt_f(aw_min),
@@ -730,6 +801,97 @@ mod tests {
         assert!((with_idle.r - slaw_r(&[legs[0]], 0.1).r).abs() < 1e-12);
     }
 
+    /// Known-answer R on the §56 maps (store-law.md R3.2, R5.5, R6.2;
+    /// `docs/derivations/store-law/s56cls.py` CURVE / B0X). The derivation
+    /// tabulates TARGETS and the W where the cell's arm-median queue curve q(W)
+    /// meets them, not R itself, so R is rebuilt from the same inputs: a leg
+    /// at no queue has T̂min = ℓ̂ + q(W), m̂ = ℓ̂, and R = 1 exactly when
+    /// q(W) = b̂₀⁺ + σ + q(δ)·ℓ̂ (+ ½Δ at c8), the derivation's target. The
+    /// test sweeps W over the cell's curve, finds the R = 1 crossing, and
+    /// compares it with (a) the same curve read at the hand-added target and
+    /// (b) the R3.2 table's stated W range. It also asserts the R6.2
+    /// prediction: ONE crossing per row.
+    ///
+    /// Inputs per cell, all from the derivation: c2 b̂₀ 0.41 (ledger median),
+    /// σ 1.8 (R3.2), ℓ̂ 10 ms (q·ℓ̂ 0.5→1.0); c8 leg 0 b̂₀ 1.0, σ 2.5, ℓ̂ 14 ms,
+    /// ½Δ = 14.75 (the coupling term, here supplied by a second leg of
+    /// negligible weight that sets the max); c1s b̂₀ 0.12, σ 0.5, ℓ̂ 2.5 ms.
+    #[test]
+    fn known_answer_r_on_the_s56_maps() {
+        let curves: [(&str, &[(f64, f64)]); 3] = [
+            ("c2", &[(128., 0.0), (160., 0.0), (192., 3.0), (256., 9.0), (384., 22.0), (2048., 192.0)]),
+            ("c8", &[(160., 0.0), (224., 3.9), (320., 9.1), (512., 21.9), (768., 41.7), (1280., 84.2)]),
+            ("c1s", &[(384., 0.0), (512., 1.0), (768., 3.0), (1024., 5.5), (2048., 15.0)]),
+        ];
+        let at = |c: &[(f64, f64)], w: f64| -> f64 {
+            for p in c.windows(2) {
+                if p[0].0 <= w && w <= p[1].0 {
+                    return p[0].1 + (w - p[0].0) / (p[1].0 - p[0].0) * (p[1].1 - p[0].1);
+                }
+            }
+            c.last().unwrap().1
+        };
+        // (cell, b0, sigma, l, extra half-gap, R3.2 W range at Realtime..Bulk)
+        let cells = [
+            ("c2", 0.41, 1.8, 10.0, 0.0, (187.0, 196.0)),
+            ("c8", 1.0, 2.5, 14.0, 14.75, (460.0, 480.0)),
+            ("c1s", 0.12, 0.5, 2.5, 0.0, (485.0, 500.0)),
+        ];
+        for (name, b0, sigma, l, half_gap, (lo_w, hi_w)) in cells {
+            let curve = curves.iter().find(|c| c.0 == name).unwrap().1;
+            for (hint_q, bulk) in [(0.05, false), (0.10, true)] {
+                let r_at = |w: f64| -> f64 {
+                    let tmin = l + at(curve, w);
+                    let leg0 = LegIn { w: 1.0, t_hat: tmin + sigma, t_min: tmin, m_hat: l, l_hat: l, b0, sigma };
+                    if half_gap > 0.0 {
+                        // Leg 1 (weight 1e-9) only sets the coupling max so that
+                        // leg 0's gap = ½Δ; its own terms are negligible.
+                        let l1 = 2.0 * half_gap + l + b0 - b0;
+                        let leg1 = LegIn { w: 1e-9, t_hat: 50.0, t_min: 49.0, m_hat: l1, l_hat: l1, b0, sigma: 0.0 };
+                        slaw_r(&[leg0, leg1], hint_q).r
+                    } else {
+                        slaw_r(&[leg0], hint_q).r
+                    }
+                };
+                // Bisect R(W) = 1 on the curve's range (R falls as W rises).
+                let (mut a, mut b) = (curve[0].0, curve.last().unwrap().0);
+                assert!(r_at(a) > 1.0 && r_at(b) < 1.0, "{name}: R must cross 1 inside the map");
+                for _ in 0..60 {
+                    let m = 0.5 * (a + b);
+                    if r_at(m) > 1.0 { a = m } else { b = m }
+                }
+                let w_cross = 0.5 * (a + b);
+                // The derivation's own arithmetic: target queue, then the curve.
+                let target = b0 + sigma + hint_q * l + half_gap;
+                let mut w_ref = curve.last().unwrap().0;
+                for p in curve.windows(2) {
+                    if p[0].1 <= target && target <= p[1].1 && p[1].1 > p[0].1 {
+                        w_ref = p[0].0 + (target - p[0].1) * (p[1].0 - p[0].0) / (p[1].1 - p[0].1);
+                        break;
+                    }
+                }
+                println!("KA {name} q={hint_q} target={target:.3} ms  W_cross(R=1)={w_cross:.1}  W_derivation={w_ref:.1}");
+                assert!((w_cross - w_ref).abs() < 0.5, "{name} q={hint_q}: R's crossing {w_cross} vs derivation {w_ref}");
+                // ONE crossing per row (R6.2's gauge prediction), over a W sweep.
+                let mut rc = RCross::default();
+                let mut w = curve[0].0;
+                while w <= curve.last().unwrap().0 {
+                    rc.update(r_at(w));
+                    w += 8.0;
+                }
+                assert_eq!(rc.crossings, 1, "{name}: R6.2 predicts one crossing");
+                // R3.2's stated range (a table of hand-rounded values, so a
+                // tolerance of 5 slots): reported, asserted at this tolerance.
+                if bulk {
+                    assert!(
+                        w_cross >= lo_w - 5.0 && w_cross <= hi_w + 5.0,
+                        "{name}: crossing {w_cross} outside R3.2's {lo_w}..{hi_w} (±5)"
+                    );
+                }
+            }
+        }
+    }
+
     /// The crossing counter: sign changes only; ties count as at-or-below.
     #[test]
     fn crossing_count_per_row() {
@@ -781,19 +943,71 @@ mod tests {
         assert_eq!(d.k, K_GAUGE + 1);
     }
 
-    /// The quantile buffer's bind is visible: `nk` counts every sample,
-    /// `nkq` only those that fed the quantiles.
+    /// The quantile buffer's bind is visible (`nk` counts every sample, `nkq`
+    /// only those that fed the quantiles) and its subsample is UNIFORM over the
+    /// window, not a prefix: on a rising ramp the kept median is the full
+    /// window's median (a first-CAP prefix would read ~40 % of the way up).
     #[test]
-    fn sampler_cap_bind_is_visible() {
+    fn sampler_cap_bind_is_visible_and_uniform() {
         let mut s = WinSampler::default();
-        for i in 0..(WIN_SAMPLE_CAP as u32 + 100) {
+        let n = WIN_SAMPLE_CAP as u32 * 5 / 2; // 40 960 samples, 2.5 x the cap
+        for i in 0..n {
             s.observe(1000 + i);
         }
         let c = s.close(None, None).unwrap();
-        assert_eq!(c.nk, WIN_SAMPLE_CAP as u64 + 100);
-        assert_eq!(c.nkq, WIN_SAMPLE_CAP as u64);
+        assert_eq!(c.nk, n as u64);
+        assert!(c.nkq <= WIN_SAMPLE_CAP as u64 && c.nkq > WIN_SAMPLE_CAP as u64 / 2, "{}", c.nkq);
         assert_eq!(c.tmin, 1000);
+        let (true_p50, true_p10, true_p90) = (1000 + n / 2, 1000 + n / 10, 1000 + n * 9 / 10);
+        // The stride ends at 4: quantiles are within one stride of the full window's.
+        assert!(c.p50.abs_diff(true_p50) <= 4, "p50 {} vs {}", c.p50, true_p50);
+        assert!(c.p10.abs_diff(true_p10) <= 4 && c.p90.abs_diff(true_p90) <= 4);
         assert!(c.brake.is_none() && c.b0p.is_none());
+        // Deterministic: the same feed gives the same kept set.
+        let mut s2 = WinSampler::default();
+        for i in 0..n {
+            s2.observe(1000 + i);
+        }
+        assert_eq!(s2.close(None, None).unwrap(), c);
+        // The stride resets with the window: a small window keeps everything.
+        for i in 0..100u32 {
+            s.observe(5000 + i);
+        }
+        assert_eq!(s.close(None, None).unwrap().nkq, 100);
+    }
+
+    /// Cost of one window close at c1s volume (23 000 echo samples / 250 ms /
+    /// leg): `cargo test --release -- --ignored --nocapture bench_close_23k`.
+    #[test]
+    #[ignore]
+    fn bench_close_23k() {
+        let mut lcg: u64 = 12345;
+        let mut next = move || {
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (lcg >> 33) as u32
+        };
+        let mut t = Vec::new();
+        let mut s = WinSampler::default();
+        for _ in 0..21 {
+            let t0 = std::time::Instant::now();
+            for _ in 0..23_000 {
+                s.observe(4000 + next() % 1500);
+            }
+            let t1 = std::time::Instant::now();
+            let c = s.close(Some(3900), Some(600)).unwrap();
+            let t2 = std::time::Instant::now();
+            assert_eq!(c.nk, 23_000);
+            t.push(((t1 - t0).as_micros() as u64, (t2 - t1).as_micros() as u64));
+        }
+        t.remove(0); // warm-up
+        let mut obs: Vec<u64> = t.iter().map(|x| x.0).collect();
+        let mut cl: Vec<u64> = t.iter().map(|x| x.1).collect();
+        obs.sort();
+        cl.sort();
+        println!(
+            "BENCH 23000 samples/window: observe total median {} us (min {}, {:.0} ns/sample); close() median {} us (min {}, max {})",
+            obs[10], obs[0], obs[10] as f64 * 1000.0 / 23_000.0, cl[10], cl[0], cl[19]
+        );
     }
 
     /// The CAPLOG line round-trips: the printed f64 inputs reproduce the cap

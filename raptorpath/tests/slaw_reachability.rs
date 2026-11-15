@@ -22,9 +22,16 @@ mod loopback;
 const TAGS: [&str; 5] = ["[WSTAT] ", "[WSTORE] ", "[SLAW] ", "[SLAWC] ", "[CAPLOG] "];
 
 fn run(diag: bool) -> String {
+    run_with(diag, None)
+}
+
+fn run_with(diag: bool, slaw: Option<&str>) -> String {
     let mut env: Vec<(&str, &str)> = vec![("RUST_LOG", "raptorpath=info")];
     if diag {
         env.push(("RWM_DIAG", "1"));
+    }
+    if let Some(v) = slaw {
+        env.push(("RWM_SLAW", v));
     }
     let binds = loopback::free_addrs(1);
     let srv = loopback::spawn_perf_server(&binds, &env, &["--protocol-hint", "bulk", "--window-reliable"]);
@@ -70,6 +77,23 @@ fn the_gauge_prints_under_diag_and_only_under_diag() {
         let num = |k: &str| tok(l, k).and_then(|v| v.parse::<f64>().ok()).unwrap_or_else(|| panic!("{k} in {l}"));
         let (cap, floor, n, pool) = (num("cap="), num("floor="), num("n="), num("pool="));
         assert!(cap >= floor && cap <= (n * pool).max(floor), "{l}");
+    }
+
+    // 5. W1 debt flows ride [WSTORE] (names are the contract with the parser).
+    let ws = on.lines().rev().find(|l| l.starts_with("[WSTORE] ")).expect("a [WSTORE] line");
+    for k in ["dbt_acc=", "dbt_em=", "dbt_share=", "dbt_rm_ack=", "dbt_ask_ack=", "dbt_rm_nack=", "dbt_ask_nack=", "adv="] {
+        assert!(tok(ws, k).is_some() || ws.contains(&format!(" {k}-")), "{k} missing: {ws}");
+    }
+    assert!(on.contains("RWM_SLAW=1"), "[GATES] must echo RWM_SLAW=1");
+
+    // 4b. RWM_DIAG=1 RWM_SLAW=0: [DIAG] stays, the gauge does not run.
+    let ctl = run_with(true, Some("0"));
+    assert!(ctl.lines().any(|l| l.starts_with("[DIAG] ")), "[DIAG] must stay on:
+{ctl}");
+    assert!(ctl.contains("RWM_SLAW=0"), "[GATES] must echo RWM_SLAW=0");
+    for t in TAGS {
+        assert!(!ctl.lines().any(|l| l.starts_with(t)), "{t}printed with RWM_SLAW=0:
+{ctl}");
     }
 
     // 4. Off: nothing.

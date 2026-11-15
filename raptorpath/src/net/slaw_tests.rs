@@ -8,7 +8,7 @@ use crate::net::sender_phases::StoreCapState;
 use crate::net::sender_policy::SenderPolicy;
 use crate::net::slaw::CapLog;
 
-fn policy(diag: bool) -> SenderPolicy {
+fn policy_with(diag: bool, slaw: bool) -> SenderPolicy {
     let mut g = RuntimeGates::resolve();
     g.store_paths = true;
     g.sum_cap = true;
@@ -19,7 +19,12 @@ fn policy(diag: bool) -> SenderPolicy {
     g.store_env_set = false;
     g.store_gain = 2.0;
     g.diag = diag;
+    g.slaw = slaw;
     SenderPolicy::resolve(&g, 1200, ProtocolHint::Bulk, true, false, false, false)
+}
+
+fn policy(diag: bool) -> SenderPolicy {
+    policy_with(diag, true)
 }
 
 /// What one driven run produced.
@@ -196,6 +201,14 @@ fn with_diag_off_the_gauge_state_is_never_constructed() {
     assert!(!off.diag_on);
     assert!(StoreCapState::new(&off).caplog.is_none(), "no [CAPLOG] recorder with diag off");
     assert!(StoreCapState::new(&policy(true)).caplog.is_some(), "and one with diag on");
+
+    // RWM_SLAW=0 under RWM_DIAG (the perturbation control): [DIAG] stays on,
+    // the gauge's work does not run, and RWM_SLAW alone (diag off) does nothing.
+    let ctl = policy_with(true, false);
+    assert!(ctl.diag_on && !ctl.slaw_on, "diag on, gauge off");
+    assert!(StoreCapState::new(&ctl).caplog.is_none(), "no [CAPLOG] recorder with RWM_SLAW=0");
+    assert!(!policy_with(false, true).slaw_on, "RWM_SLAW is effective only under RWM_DIAG");
+    assert!(policy_with(true, true).slaw_on);
 
     let dg = crate::net::diag::DiagState::new(0, 0, 0, 0);
     assert!(dg.slaw.is_none(), "the store-scope state is armed by diag::report only");

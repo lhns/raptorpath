@@ -445,7 +445,7 @@ pub(crate) fn report(
     // pass (this function only runs under `RWM_DIAG`), then one a/W sample per
     // pass and the quinn backlog every `AUX_PERIOD_US`. Reads and writes only
     // gauge state.
-    if dg.slaw.is_none() {
+    if pol.slaw_on && dg.slaw.is_none() {
         scheduler.enable_slaw();
         dg.eb.enable_window();
         dg.slaw = Some(Box::new(super::slaw::SlawState::new(dnow)));
@@ -979,7 +979,7 @@ pub(crate) fn report(
         // `[DIAG]` line above, so `[DIAG] win=`'s denominator and `[SLAW] n`
         // read the same cap. Engine reads only; the counterfactual R is
         // printed and never applied.
-        {
+        if dg.slaw.is_some() {
             let q = super::codel_setpoint_q(pol.delta_b);
             let t_s = dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6;
             let emb = dg.eb.take_window();
