@@ -415,6 +415,20 @@ The derivation carries no owner question at this revision. That does not mean se
 
 The derivation is frozen; the next input must be data.
 
+### R6.7 (pointer) The floors, K and n₀: derived in `store-law-r67.md`
+
+R6.7 (boot hold, n₀, ℓ̂'s source) is on `s60-design`; this pointer belongs under it on merge.
+`docs/derivations/store-law-r67.md` derives that:
+- the line's attractor under its own queue is ℓ̂ + 2·b̂₀⁺(K) (anc bind fraction 1.00);
+- b̂₀⁺(K) traces the running anchor's convergence, so K has no provenance in this form;
+- a boot at 128 ratchets the latch.
+
+It recommends one absolute floor instead: the median window minimum over the K = 4 lowest-n windows, from n₀ = 10
+(`STORE_BOOT_DERIVED`), with no hold and no m̂ or b̂₀⁺.
+
+It also finds that, with honest floors, c2 has no demonstrated margin at its knee. That opens an allowance item, so
+the law is not shippable from this revision.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
 ### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]
