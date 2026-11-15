@@ -2640,8 +2640,10 @@ function resetSim() {
   drawRstarChart(); drawTaperChart(); solveTri();
 }
 
-// Step budget per frame: 16.7 ms frame - ~7.8 ms render - ~4.9 ms draws p95 - ~0.5 ms span ~= 3.5-4 ms (measured on the dev host).
-const STEP_BUDGET_MS = 4;
+// Step budget per frame. 4 ms (frame minus render, draws and span, measured on the dev host) was tried and cut tail
+// playback 8-20 % without reducing missed frames: the misses there come from the software renderer, not from stepping.
+// 12 ms keeps the old behaviour; the predictive check just avoids overrunning it.
+const STEP_BUDGET_MS = 12;
 function animate() {
   if (!running || !sim) return;
   const s = parseInt($id('sel-speed').value);
