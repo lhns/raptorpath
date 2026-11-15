@@ -1,0 +1,7 @@
+p27 c1s-400 leg 0: rows 16  Spearman rho(l, W) +0.551  one-sided permutation p 0.0150
+p27 c2-100 leg 0: rows 16  Spearman rho(l, W) +0.704  one-sided permutation p 0.0014
+p27 c8-100 leg 0: rows 16  Spearman rho(l, W) +0.432  one-sided permutation p 0.0461
+s56 c1s-400 leg 0: rows 27  Spearman rho(l, W) +0.033  one-sided permutation p 0.4342
+s56 c2-100 leg 0: rows 18  Spearman rho(l, W) +0.580  one-sided permutation p 0.0071
+s56 c8-100 leg 0: rows 24  Spearman rho(l, W) +0.455  one-sided permutation p 0.0140
+s56 c8-100 leg 1: rows 24  Spearman rho(l, W) +0.772  one-sided permutation p 0.0001
