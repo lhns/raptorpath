@@ -840,7 +840,7 @@ def check59(tag, path, run_dir, sb):
     ldtxt = open(os.path.join(rep, "ld.log"), errors="replace").read()
     envl = ldtxt.split("=== env ")[-1].split("\n")[0]
     check(f"{tag}: the instrument env is RWM_RDIAG=1 with RWM_PERF_TIMEOUT_S=150 (no RTOBS), and the env scrub withholds RWM_UNIFIED, RWM_UNIFIED_SHED and RWM_C_RELIABLE",
-          "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0] and "RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_STORE_PATH_POOL;" in envl, envl[:300])
+          "RWM_PERF_TIMEOUT_S=150" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0] and "RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_SLAW RWM_THREE_TERM RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_STORE_PATH_POOL;" in envl, envl[:300])
     sc = open(os.path.join(rep, "score.txt"), errors="replace").read()
     m = re.search(r"^VERDICT59 REPORTED-ONLY slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+) dnf=(\d+)", sc, re.M)
     check(f"{tag}: the report prints the readouts, the m-bar band and a VERDICT59 line counting every slot", m is not None and int(m.group(1)) == len(want_slots) and int(m.group(3)) == len(led)
