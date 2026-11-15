@@ -1,0 +1,31 @@
+c1s-400 leg 0: E50 1.88 E90 3.28 E99 6.48 ms -> X = E90 + 2(E90 - E50) = 6.10 ms
+c2-100 leg 0: E50 7.63 E90 10.00 E99 11.80 ms -> X = E90 + 2(E90 - E50) = 14.74 ms
+c8-100 leg 0: E50 8.76 E90 11.76 E99 13.86 ms -> X = E90 + 2(E90 - E50) = 17.76 ms
+c8-100 leg 1: E50 14.00 E90 17.41 E99 21.50 ms -> X = E90 + 2(E90 - E50) = 24.23 ms
+
+s56 small-pool rows: share of LATE ticks above X (flag at > 0.10); and above the c1s-fitted 5 ms
+c1s-400 P384 s42 r1 leg 0: share > X 0.949 FLAG | share > 5 ms 0.956
+c1s-400 P384 s42 r3 leg 0: share > X 0.014  | share > 5 ms 0.014
+c1s-400 P384 s7 r2 leg 0: share > X 0.024  | share > 5 ms 0.042
+c2-100 P128 s42 r1 leg 0: share > X 0.000  | share > 5 ms 0.820
+c2-100 P128 s42 r3 leg 0: share > X 0.000  | share > 5 ms 1.000
+c2-100 P128 s7 r2 leg 0: share > X 0.000  | share > 5 ms 0.967
+c2-100 P160 s42 r1 leg 0: share > X 0.000  | share > 5 ms 0.952
+c2-100 P160 s42 r3 leg 0: share > X 0.000  | share > 5 ms 0.917
+c2-100 P160 s7 r2 leg 0: share > X 0.000  | share > 5 ms 1.000
+c8-100 P112 s42 r1 leg 0: share > X 0.000  | share > 5 ms 0.973
+c8-100 P112 s42 r1 leg 1: share > X 0.000  | share > 5 ms 1.000
+c8-100 P112 s42 r3 leg 0: share > X 0.000  | share > 5 ms 0.993
+c8-100 P112 s42 r3 leg 1: share > X 0.000  | share > 5 ms 1.000
+c8-100 P112 s7 r2 leg 0: share > X 0.000  | share > 5 ms 1.000
+c8-100 P112 s7 r2 leg 1: share > X 0.000  | share > 5 ms 1.000
+c8-100 P112 s7 r4 leg 0: share > X 0.000  | share > 5 ms 0.986
+c8-100 P112 s7 r4 leg 1: share > X 0.020  | share > 5 ms 1.000
+c8-100 P80 s42 r1 leg 0: share > X 0.000  | share > 5 ms 0.989
+c8-100 P80 s42 r1 leg 1: share > X 0.000  | share > 5 ms 1.000
+c8-100 P80 s42 r3 leg 0: share > X 0.000  | share > 5 ms 0.978
+c8-100 P80 s42 r3 leg 1: share > X 0.000  | share > 5 ms 1.000
+c8-100 P80 s7 r2 leg 0: share > X 0.000  | share > 5 ms 0.956
+c8-100 P80 s7 r2 leg 1: share > X 0.000  | share > 5 ms 1.000
+c8-100 P80 s7 r4 leg 0: share > X 0.000  | share > 5 ms 0.956
+c8-100 P80 s7 r4 leg 1: share > X 0.000  | share > 5 ms 1.000

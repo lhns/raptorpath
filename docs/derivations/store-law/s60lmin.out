@@ -1,0 +1,14 @@
+c2-100 P128 s42 r1 | l 9.09 ms reached at tick 235 (t 58.90 s) | rtp_us at tick 1 / 8: 9.49 / 9.49 ms
+c2-100 P128 s42 r3 | l 6.30 ms reached at tick 1 (t 0.30 s) | rtp_us at tick 1 / 8: 6.30 / 6.30 ms
+c2-100 P128 s7 r2 | l 8.07 ms reached at tick 128 (t 32.10 s) | rtp_us at tick 1 / 8: 10.85 / 9.39 ms
+c2-100 P160 s42 r1 | l 8.87 ms reached at tick 131 (t 32.80 s) | rtp_us at tick 1 / 8: 9.24 / 9.24 ms
+c2-100 P160 s42 r3 | l 9.03 ms reached at tick 85 (t 21.30 s) | rtp_us at tick 1 / 8: 12.49 / 11.03 ms
+c2-100 P160 s7 r2 | l 8.01 ms reached at tick 50 (t 12.50 s) | rtp_us at tick 1 / 8: 13.42 / 9.55 ms
+c8-100 P112 s42 r1 | l 10.46 ms reached at tick 191 (t 47.90 s) | rtp_us at tick 1 / 8: 12.37 / 10.71 ms
+c8-100 P112 s42 r3 | l 9.61 ms reached at tick 1 (t 0.30 s) | rtp_us at tick 1 / 8: 9.61 / 9.61 ms
+c8-100 P112 s7 r2 | l 8.90 ms reached at tick 1 (t 0.30 s) | rtp_us at tick 1 / 8: 8.90 / 8.90 ms
+c8-100 P112 s7 r4 | l 9.24 ms reached at tick 11 (t 2.80 s) | rtp_us at tick 1 / 8: 11.32 / 10.70 ms
+c8-100 P80 s42 r1 | l 7.78 ms reached at tick 139 (t 34.80 s) | rtp_us at tick 1 / 8: 8.48 / 8.48 ms
+c8-100 P80 s42 r3 | l 8.30 ms reached at tick 184 (t 46.10 s) | rtp_us at tick 1 / 8: 11.43 / 10.88 ms
+c8-100 P80 s7 r2 | l 8.14 ms reached at tick 87 (t 21.80 s) | rtp_us at tick 1 / 8: 10.62 / 9.47 ms
+c8-100 P80 s7 r4 | l 8.49 ms reached at tick 11 (t 2.80 s) | rtp_us at tick 1 / 8: 9.53 / 9.53 ms

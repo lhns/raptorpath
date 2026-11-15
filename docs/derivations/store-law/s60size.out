@@ -1,0 +1,48 @@
+(1) row wall time, s (median [min-max]) per cell/arm; slot spacing per ledger
+  s56 c1s-400 P1024 n3  50 [49-53]
+  s56 c1s-400 P2048 n9  50 [47-93]
+  s56 c1s-400 P384 n3  60 [60-170]
+  s56 c1s-400 P512 n9  55 [53-110]
+  s56 c1s-400 P768 n3  51 [50-51]
+  s56 c2-100 P128 n3  70 [69-70]
+  s56 c2-100 P160 n3  59 [59-59]
+  s56 c2-100 P192 n3  56 [56-56]
+  s56 c2-100 P2048 n3  56 [55-56]
+  s56 c2-100 P256 n3  56 [55-57]
+  s56 c2-100 P384 n3  56 [55-56]
+  s56 c8-100 P112 n4  54 [54-54]
+  s56 c8-100 P160 n4  50 [50-51]
+  s56 c8-100 P256 n4  48 [47-49]
+  s56 c8-100 P384 n4  47 [47-48]
+  s56 c8-100 P640 n4  48 [47-48]
+  s56 c8-100 P640D n1  48 [48-48]
+  s56 c8-100 P80 n4  62 [62-64]
+  s56 slot spacing n69 median 55 s [48-171], total 68.2 min
+  s57a c1s-400 B256_512 n21  65 [57-274]
+  s57a c1s-400 B64_448 n21  60 [56-302]
+  s57a c1s-400 B64_512 n21  57 [54-302]
+  s57a slot spacing n62 median 61 s [55-304], total 86.3 min
+  s57b c1d-400 P192 n5  68 [64-70]
+  s57b c1d-400 P2048 n5  57 [54-60]
+  s57b c1d-400 P256 n5  62 [60-71]
+  s57b c1d-400 P384 n5  57 [56-60]
+  s57b c1d-400 P512 n5  57 [55-61]
+  s57b c1d-400 P768 n5  56 [53-65]
+  s57b slot spacing n29 median 60 s [54-71], total 29.6 min
+
+(2) s57a c1s 5 GB: per arm over unflagged rows (sd as a fraction of the arm median)
+  B256_512 n 21 unflagged 11 collapse 0.48 | client CPU s/GB 16.96 sd 0.025 | server 19.87 sd 0.029 | goodput 711.1 sd 0.044
+  B64_448 n 21 unflagged 14 collapse 0.33 | client CPU s/GB 17.72 sd 0.018 | server 20.11 sd 0.022 | goodput 707.8 sd 0.033
+  B64_512 n 21 unflagged 15 collapse 0.29 | client CPU s/GB 17.20 sd 0.010 | server 19.77 sd 0.014 | goodput 747.4 sd 0.033
+  within-replicate pairs (both unflagged), sd of the log-ratio:
+    B64_448 vs B256_512: n 6  sd client CPU 0.033  server CPU 0.040  goodput 0.042
+    B64_512 vs B256_512: n 6  sd client CPU 0.008  server CPU 0.011  goodput 0.021
+    B64_512 vs B64_448: n 11  sd client CPU 0.017  server CPU 0.026  goodput 0.037
+
+(3) G/C sizing for a 5 percent difference (t quantiles; sd_d = max(measured pair sd, sqrt(2) x row sd))
+  client CPU/GB: pair sd max(0.033 measured, 0.036 = sqrt2 x row sd 0.025) = 0.036 -> 7 unflagged pairs; launched at c 0.29 / 0.33 / 0.48: 14 / 16 / 26
+     minimum detectable difference at 4 / 6 / 8 unflagged pairs: 0.074 / 0.051 / 0.041
+  server CPU/GB: pair sd max(0.040 measured, 0.040 = sqrt2 x row sd 0.029) = 0.040 -> 8 unflagged pairs; launched at c 0.29 / 0.33 / 0.48: 16 / 18 / 30
+     minimum detectable difference at 4 / 6 / 8 unflagged pairs: 0.084 / 0.057 / 0.046
+  goodput: pair sd max(0.042 measured, 0.057 = sqrt2 x row sd 0.040) = 0.057 -> 13 unflagged pairs; launched at c 0.29 / 0.33 / 0.48: 26 / 29 / 48
+     minimum detectable difference at 4 / 6 / 8 unflagged pairs: 0.118 / 0.081 / 0.065

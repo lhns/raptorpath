@@ -982,6 +982,49 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Before launch:** `df` on the VM home. Stale run trees go first: the §56/§57 run dirs, whose ledgers are in the repo.
 - **Host builds:** host cargo is paused, with the build lock held by the main session, throughout both parts.
 
+## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
+
+**The registration is `docs/derivations/s60-registration.md` at `s60-design` `10272273`** (merged to main). It was reviewed with Fable in ten logged rounds and is registered verbatim from that commit; no rule is restated here.
+
+**Owner summary (from the doc).**
+- On a static pool the store fills within half a second, so the law's floors (b̂₀⁺, ℓ̂) are read from windows that already carry queue. So this session cannot test the law itself. It does three things:
+  1. it measures where the queue-free floor lies, on pools below anything measured (c2 W 16/32/48, c8 W 32/64/96, c1s W 64/128/192);
+  2. it tests the target FORM with those floors, decisively at c8 (B2, a gross-miss detector);
+  3. at c2 it scores the allowance shortfall D. R6.7 predicts SHORT, with D of +0.9 to +2.2 ms.
+- c1s scores the sign of R̃ − 1 at its control. Paired G/C rows (`RWM_SLAW=1/0`) check the gauge's own cost for gross errors.
+- Five evicting c2 rows (plan 59) give m̄ (`adv`), W1 (`dbt_share`) and K4's inputs (`fec=`) for the P_fec oracle.
+
+**Tree and binary.**
+- `s60-tree` `cb88df3a` (main + `slaw-gauge` `d416d59b`), plus the harness (tools only).
+- 60-pre (above) pins the suites, `bin_sha` and `ref60-manifest`.
+
+**Launches.**
+- 60a: 98 rows, typical 2.2 h, worst 3.2 h, `LD_HARD` +4 h.
+- 60b: 47 rows (plus at most 5 evicting re-runs), typical 1.25 h, worst 2.9 h, `LD_HARD` +4 h.
+- A rehearsal (10 rows) runs before 60a, with the c8 and c1s go/no-go and the witness checks.
+
+**Next derivation:** R6.7 (`store-law-r67.md`), the candidate floor and the allowance item. A large sweep comes only after it.
+
+## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
+
+**Why.**
+- The §60 session (B-1; registration on `s60-design`, entered into status before 60a) runs on main + the store-law gauge (`slaw-gauge` `d416d59b`). That tree misses `ref56-manifest.sha256`, so every launch would otherwise run the full engine suites, and a rehearsal runs none.
+- This step runs the suites once, and pins the binary and a reference manifest that the rehearsal, 60a and 60b reuse.
+
+**Tree.** `s60-tree` `cb88df3a`: main `aefe6d97` + `slaw-gauge` `d416d59b`. The merge is clean, and `raptorpath-math`, `raptorpath-wasm` and `raptorpath-core` are unchanged against main. Later tools-only commits keep the manifest HIT.
+
+**Run.**
+1. `tools/l1/suites_run.sh` on the tree, under both locks: release, doc, wasm, core, debug and parsers. This is the first full engine suite run since the math-crate merges and the first Linux run of the gauge's tests.
+2. On TESTS-OK, `tools/l1/binid_run.sh` (crate-directory build, as the harness does) on the same archive. Its sha is the registered `bin_sha` that the rehearsal, 60a and 60b must each match.
+3. Then `ref60-manifest.sha256` is generated with `ref_manifest.sh` from the same tree, committed (tools only), and passed as `LD_REF_MANIFEST` to every later launch. A suite-reuse MISS stops a launch.
+
+**Failure rule.**
+- A REAL failure inside the gauge's own tests (`slaw*`, `gates::` RWM_SLAW, `slaw_reachability`) blocks §60.
+- A failure outside them is a finding about main. It is re-run on main alone (base tree). If it fails identically there, it is recorded as main's defect and waits for diagnosis or an owner ruling. If it fails only with the gauge, it blocks.
+- `decision_trace_pin` must stay 7/7; any digest change blocks.
+
+**Length.** About 50–60 min of suites plus about 10 min of build. Host raptorpath cargo is paused; the builds of other projects on the host are recorded, not controlled.
+
 **Erratum and progress to "Owner decisions (2026-11-14)" (same day).**
 - **Item 3, "ρ is inert at Auto and Realtime":** this holds under the shipped R (the cut form) only.
   - Under the block-exact candidate C6 (`docs/derivations/pfec-continuous.md`), R exceeds the slider's 1e-3 step at Realtime on all five audit cells (1.2e-3 to 4.1e-3) and at Auto on one cell. So ρ would act on 1–4 of 100 positions there.

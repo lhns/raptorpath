@@ -415,6 +415,74 @@ The derivation carries no owner question at this revision. That does not mean se
 
 The derivation is frozen; the next input must be data.
 
+### R6.7 Erratum to R5.5, and an open item: the boot hold and n₀ (from the s60 registration; no number changes)
+
+`docs/derivations/s60-registration.md` §1.2 found, on the p27 window minima, that b̂₀⁺ taken as "the max brake of
+the first K windows" latches whatever queue those windows carry. Under a static pool above the queue-free sizes,
+b0p tracks the standing queue (c2: 2.2 → 23.5 ms from W 128 to 384).
+
+**Erratum to R5.5.** R5.5's landing table is unchanged. It holds only for a law whose boot keeps the store at a
+queue-free n₀ until its K boot windows close: its b̂₀⁺ over-read is the ledger's no-queue value. R6.2's line contains
+no such hold. Without one, a boot that fills the store latches start-up queue into the target, as rev 3's
+boot-latched σ̂⁺ did (one c2 row at 133 ms). In that case R5.5's "0 / 18 below the knee" at c2 is not a prediction for
+the law as written.
+
+**Open derivation item.** The boot hold (store held at n₀ until K windows close) and n₀ itself are terms of the law.
+Neither has provenance yet: n₀ = 128 was an assumption about where the closed loop starts (§13.1 already lists K
+and n₀). They are to be derived, with:
+- s60's P1 (does b0p rise with W);
+- the calibration latch rate (max-of-8 transients at queue-free pools);
+- the flatness gate between two small pools per cell.
+
+The registered R̃ of s60 feeds a session-level calibration b̂₀⁺ (and ℓ̂ at c2/c8) from queue-free rows. It tests the
+target's form, not this input.
+
+The same class covers ℓ̂. The lifetime echo minimum rises with the static pool row by row at c2 and c8: §56 c2 goes
+8.07 → 10.13 ms over W 128 → 2 048 (`store-law/s60ell.out`). s60's P3 tests the printed `l`. If it passes, ℓ̂'s
+source (a running minimum from the first sample) needs the same boot hold.
+
+There is also a noise problem. At c2, `l` scatters 0.5–3 ms across rows of one pool, while the absolute late floor
+scatters 0.1–0.25 ms (corr(`l`, floor − `l`) ≈ −1; `store-law/s60abs.out`). A single flow's lifetime minimum is a noisy
+estimate of its floor, at the scale of the law's ≈ 1 ms allowance. That bears on ℓ̂'s source independently of the
+boot.
+
+The anchor term sets a floor on where the form can land. While Copa's minimum m̂ sits below ℓ̂ + b̂₀⁺, the line keeps
+R > 1. So the form needs a standing 10 s minimum queue of ≈ b̂₀⁺ before it can cross.
+
+Whether that anchor flip lies above c2's knee depends on K, the boot-window count b̂₀⁺ is maxed over. s60 registers
+this as a **prediction** (`store-law/s60flip.out`, from p27's brakes and three §56 replicates):
+- **At K = 8**, the scored K, the pooled readout (the median over replicates of flip − knee) reads −27 / +4 / +26 slots
+  (10 / 50 / 90 %).
+  - UNRESOLVED is the expected label. The interval is set by the threshold ℓ̂ + b̂₀⁺: 26–53 slots of width,
+    against a prediction of ≈ 4.
+  - A 5-of-6 vote had read 0.47 STRUCTURAL / 0.34 NOT. It was dropped as a coin flip.
+- **At K 5–7** the median is −3 to −1 slots, also expected UNRESOLVED.
+- **At K ≤ 4** the flip falls at or below the calibration arm (≈ −41).
+
+A verdict that changes with K is a finding about K, which has no provenance.
+
+**Pointer (s60 entry 10):** this item's derivation is `docs/derivations/store-law-r67.md` (branch `store-law-r67`,
+`4cff88d0`). Two corrections to this note:
+- W 128 is not queue-free at c2 (R6.7 §1.2), so s60 now calibrates on floor pools below R6.7's smallest measured
+  pool.
+- s60 scores c2's allowance shortfall in place of the per-K flip above, which is now reported only.
+
+### R6.7 (pointer) The floors, K and n₀: derived in `store-law-r67.md`
+
+`docs/derivations/store-law-r67.md` derives that:
+- the line's anchor branch depends on K and n₀ (from n₀ = 10 at c2 it binds, F = ℓ̂ + 2·b̂₀⁺(K); from 128 it
+  mostly does not), so the double count stays open per K and n₀;
+- b̂₀⁺(K) traces the running anchor's convergence, so K has no provenance in this form;
+- a boot at 128 ratchets the latch.
+
+It offers a CANDIDATE, not a recommendation: one absolute floor, the median window minimum over the K lowest-n
+windows (K in 3–11, pick open), from n₀ = 10 (`STORE_BOOT_DERIVED`), with no hold and no m̂ or b̂₀⁺. Its costs are:
+- a ramp of about 4–5 s from n₀ = 10 at R₀ ≈ 1.19 per window;
+- a longer route seen only after a collapse to the store floor.
+
+It also finds that, with honest floors, c2 has no demonstrated margin at its knee. That opens an allowance item, so
+the law is not shippable from this revision.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
 ### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]
@@ -2007,12 +2075,18 @@ guard-witness note (§6). F10 and the standing-queue readout go to the owner wit
 
 ### 13.1 Carried to Part B (open; nothing solved here)
 
-- **K = 8 and n₀ = 128 have no provenance.** "Declared constant" is not an allowed class (FORMULA-FIRST). Each needs
+- **K = 8 and n₀ = 128 have no provenance.** See `store-law-r67.md` §3 for derived bounds under a candidate floor. "Declared constant" is not an allowed class (FORMULA-FIRST). Each needs
   a derivation or a resource bound stated outside the law.
 - **b̂₀⁺'s tail.** One bad boot window (45–49 ms at c8) becomes a standing queue for the transfer's lifetime. Gauge
   the K windows' spread per row (max − median, sample counts), and derive a bound that a single window cannot set.
 - **The max over lifetime floors steps when a leg joins or dies.** An idle or dead slow leg sets the fast leg's
   target indefinitely, because ℓ̂ never expires. Check the shape in N (legs joining, symmetric and asymmetric), and
   the leg-death case: the term must leave F continuously when the leg leaves the live set.
+- **Lifetime floors and route changes** (filed from `store-law-r67.md` §4.3). ℓ̂ and r67's candidate lowest-n floor
+  never expire:
+  - a longer route is seen only after a collapse to the store floor, followed by a 4–11 s ramp;
+  - a smaller step is a permanent under-read of D, which eats the allowance.
+
+  Domain condition: no route change, with a gauge.
 - **ρ.** The coupling is justified at ρ = 1 only, and "a future ρ < 1 gate" is mode-switch wording. The coupling
   needs a form continuous in ρ, or an explicitly stated domain (the store gate exists only at ρ = 1, F02).
