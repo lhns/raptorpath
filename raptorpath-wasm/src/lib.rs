@@ -1,6 +1,8 @@
 use raptorpath_math as math;
 use wasm_bindgen::prelude::*;
 
+mod warm_tail;
+
 // =========================================================================
 // Pure math functions — thin wasm-bindgen wrappers
 // =========================================================================
@@ -72,6 +74,13 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
 #[wasm_bindgen]
 pub fn compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
     math::compute_r_star_exact(p_gb, q_bg, window_size, delta)
+}
+
+/// The warm-started tail solve (what the sim runs), exposed so the page's
+/// tests can check it against `compute_r_star_exact` to the bit for any hint.
+#[wasm_bindgen]
+pub fn compute_r_star_warm(p_gb: f64, q_bg: f64, window_size: usize, delta: f64, hint_k: Option<usize>) -> f64 {
+    warm_tail::warm_tail_solve(p_gb, q_bg, window_size, delta, hint_k).0
 }
 
 #[wasm_bindgen]
@@ -476,6 +485,12 @@ pub struct Simulation {
     /// tick, so the several source symbols of a tick share one solve.
     /// Pure: the same inputs always give the same r_tail.
     r_tail_cache: Option<([u64; 4], f64)>,
+    /// Crossing repair count k* of the last tail solve: the warm start of
+    /// the next one (None at start).
+    prev_kstar: Option<usize>,
+    /// Test-only: total distinct fail(k) DP evaluations over all solves.
+    #[cfg(test)]
+    r_tail_dp_runs: usize,
     #[cfg(test)]
     r_tail_log: Vec<[u64; 4]>,
     #[cfg(test)]
@@ -739,7 +754,8 @@ impl Simulation {
         r_tail * w * dchi * (1.0 - self.bulkness)
     }
 
-    /// `compute_r_star_exact(pg, qg, W, tail_target)`, memoised on the exact
+    /// `compute_r_star_exact(pg, qg, W, tail_target)` (solved warm-started
+    /// from the previous k*, bit-identical), memoised on the exact
     /// input bits (no tolerance, no β-keyed shortcut: every call that
     /// differs in any input bit solves afresh).
     fn r_tail_exact(&mut self, pg: f64, qg: f64) -> f64 {
@@ -760,7 +776,13 @@ impl Simulation {
         {
             self.r_tail_solves += 1;
         }
-        let v = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
+        let (v, kstar, _probes) =
+            warm_tail::warm_tail_solve(pg, qg, self.w as usize, self.tail_target, self.prev_kstar);
+        #[cfg(test)]
+        {
+            self.r_tail_dp_runs += _probes;
+        }
+        self.prev_kstar = kstar.or(self.prev_kstar);
         self.r_tail_cache = Some((key, v));
         v
     }
@@ -1152,6 +1174,9 @@ impl Simulation {
             debt: 0.0,
             prev_completion_chi: 0.0,
             r_tail_cache: None,
+            prev_kstar: None,
+            #[cfg(test)]
+            r_tail_dp_runs: 0,
             #[cfg(test)]
             r_tail_log: Vec::new(),
             #[cfg(test)]
@@ -1871,6 +1896,9 @@ impl Simulation {
 }
 
 #[cfg(test)]
+mod warm_scan;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1921,7 +1949,9 @@ mod tests {
 
     /// The tail-rate memo is pure: every cache hit equals a fresh solve to
     /// the bit, and solves = runs of identical consecutive keys (a solve
-    /// happens at least once per key change, never per source symbol).
+    /// happens at least once per key change, never per source symbol), and
+    /// the DP runs per solve are bounded (every solve is also checked
+    /// bit-for-bit against the cold solver by `warm_tail_solve`).
     #[test]
     fn test_r_tail_cache_is_pure_and_bounds_solves() {
         for (w, d) in [(64u32, 0.005), (64, 0.5), (64, 50.0), (25, 0.5)] {
@@ -1936,7 +1966,20 @@ mod tests {
             assert!(calls > 0, "W={w} d={d}: tail never solved");
             assert_eq!(s.r_tail_solves as usize, runs, "W={w} d={d}");
             assert!(s.r_tail_solves as usize <= calls);
-            println!("W={w} d={d}: {calls} calls -> {} solves", s.r_tail_solves);
+            // DP work: a warm solve gallops from the previous k* then bisects,
+            // so at most 2*ceil(log2(2W+1)) + 3 distinct fail(k) evaluations;
+            // a memo hit costs none.
+            let per_solve = 2 * ((2 * w as usize + 1).next_power_of_two().trailing_zeros() as usize) + 3;
+            assert!(
+                s.r_tail_dp_runs <= s.r_tail_solves as usize * per_solve,
+                "W={w} d={d}: {} DP runs over {} solves exceeds {per_solve}/solve",
+                s.r_tail_dp_runs, s.r_tail_solves
+            );
+            println!(
+                "W={w} d={d}: {calls} calls -> {} solves, {} DP runs ({:.2}/solve, {:.2}/call; bound {per_solve}/solve)",
+                s.r_tail_solves, s.r_tail_dp_runs,
+                s.r_tail_dp_runs as f64 / s.r_tail_solves as f64, s.r_tail_dp_runs as f64 / calls as f64
+            );
         }
     }
 

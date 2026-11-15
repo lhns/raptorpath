@@ -36,6 +36,7 @@ const factory = new Function(
     saturation_pressure,
     p_fec_exact,
     compute_r_star_exact,
+    compute_r_star_warm,
     p_lost,
     zeta_of_delta,
     span_horizon_b,
@@ -533,6 +534,32 @@ function runInner(sim) {
     rwm.get_cum_decoded() === rwm.get_num_source() && factor > 1.0,
     `fast-alone=${tf} ticks, RWM=${tr} ticks, x${factor.toFixed(3)} (asymptote ~x1.20)`
   );
+}
+
+// 9. The sim's warm-started tail solve is bit-identical to the cold exact
+// solve, for hostile hints (none, 0, the ceiling, out of range). Same wasm
+// the page runs.
+{
+  let calls = 0, bad = 0, first = "";
+  for (const w of [10, 25, 64, 200]) {
+    for (const p of [1e-5, 1e-3, 0.03, 0.1, 0.43, 1.0]) {
+      for (const q of [1e-4, 0.02, 0.5, 1.0]) {
+        for (const d of [1e-9, 1e-5, 0.01, 0.3, 0.999]) {
+          const cold = api.compute_r_star_exact(p, q, w, d);
+          for (const h of [undefined, 0, 1, w, 2 * w, 2 * w + 1, 4294967295]) {
+            const warm = api.compute_r_star_warm(p, q, w, d, h);
+            calls++;
+            if (!Object.is(warm, cold)) {
+              bad++;
+              if (!first) first = `p=${p} q=${q} W=${w} d=${d} hint=${h}: warm=${warm} cold=${cold}`;
+            }
+          }
+        }
+      }
+    }
+  }
+  check("warm tail solve == cold exact solve, bit for bit", bad === 0 && calls > 0,
+    bad ? first : `${calls} calls, 0 mismatches`);
 }
 
 if (failures > 0) {
