@@ -25,15 +25,43 @@ LD = re.compile(r'\[LOOPDIAG\] t=([\d.]+)s p0 n=\d+ .*?rtt_min_us=(\d+) .*?rtpro
 
 # b0_c(K) from p27 queue-free c2 rows
 rowsK = []
+sumK = []          # per row: l_row + max(first K brakes), the anchor threshold drawn JOINTLY from one row
 for f in sorted(glob.glob(os.path.join(P27, 'c2-100-DEF*-c.log'))):
     cap = int(re.search(r'DEF(\d+)-', f).group(1))
     if cap not in (64, 96, 128):
         continue
-    br = [(int(m.group(2)) - int(m.group(3))) / 1e3 for m in map(LD.search, open(f, errors='replace')) if m]
+    w = [(int(m.group(2)) / 1e3, int(m.group(3)) / 1e3) for m in map(LD.search, open(f, errors='replace')) if m]
+    br = [a - b for a, b in w]
     if len(br) >= 8:
         rowsK.append([max(br[:k]) for k in range(1, 9)])
+        l_row = min(a for a, _ in w)
+        sumK.append((cap, l_row, [l_row + max(br[:k]) for k in range(1, 9)], [max(a for a, _ in w[:k]) for k in range(1, 9)]))
 b0K = [St.median([r[k] for r in rowsK]) for k in range(8)]
 seK = [1.253 * St.stdev([r[k] for r in rowsK]) / 6 ** 0.5 for k in range(8)]
+# Ruling entry 9, item 1: does the threshold's l-noise cancel in the SUM l + b0p? Per row and K the sum, centred per
+# cap (pool levels differ), its row sd, and the largest of the first K window minima (equal to the sum iff the
+# brakes are taken against a minimum equal to l).
+print('p27 c2 caps 64-128, per row (cap, l, sum l + b0p(K=8), max of the first 8 window minima):')
+for cap, l_row, s, mx in sumK:
+    print('   cap %d l %.2f  sum8 %.2f  maxmin8 %.2f' % (cap, l_row, s[7], mx[7]))
+cen = defaultdict(list)
+for cap, l_row, s, mx in sumK:
+    cen[cap].append((l_row, s))
+sd_sum, sd_l, sd_b = [], [], []
+for k in range(8):
+    dv, dl, db = [], [], []
+    for cap, v in cen.items():
+        ms, ml = St.mean([x[1][k] for x in v]), St.mean([x[0] for x in v])
+        dv += [x[1][k] - ms for x in v]
+        dl += [x[0] - ml for x in v]
+        db += [(x[1][k] - x[0]) - (ms - ml) for x in v]
+    dof = len(dv) - len(cen)
+    sd_sum.append((sum(x * x for x in dv) / dof) ** 0.5)
+    sd_l.append((sum(x * x for x in dl) / dof) ** 0.5)
+    sd_b.append((sum(x * x for x in db) / dof) ** 0.5)
+print('pooled within-cap row sd (ms), K = 1..8:  sum l + b0p: %s | l: %.2f | b0p: %s'
+      % (' '.join('%.2f' % x for x in sd_sum), sd_l[0], ' '.join('%.2f' % x for x in sd_b)))
+seSUM = [1.253 * x / 6 ** 0.5 for x in sd_sum]
 
 # s56 per replicate: late m-hat per arm, goodput per arm, l at P128
 LEG = r' p0:infl=.*?rtp_us=(\d+) '
@@ -140,3 +168,7 @@ print('   both: %.0f slots; threshold fixed: %.0f; replicates fixed (threshold o
 for n in (6, 12, 24, 48):
     print('   threshold only, n_cal = %d (se_T %.2f ms): width %.0f slots'
           % (n, seT6 * (6 / n) ** 0.5, width(seT6 * (6 / n) ** 0.5, False)))
+# The same with the threshold's spread taken JOINTLY from p27's rows (the per-row sum l + b0p, within-cap sd),
+# instead of s56's l rows plus p27's b0p rows drawn independently.
+print('   JOINT threshold (p27 per-row sum, se_T %.2f ms): both %.0f slots; threshold only %.0f'
+      % (seSUM[7], width(seSUM[7], True), width(seSUM[7], False)))

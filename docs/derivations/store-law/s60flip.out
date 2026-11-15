@@ -1,3 +1,11 @@
+p27 c2 caps 64-128, per row (cap, l, sum l + b0p(K=8), max of the first 8 window minima):
+   cap 128 l 8.64  sum8 9.91  maxmin8 13.24
+   cap 128 l 8.90  sum8 11.99  maxmin8 14.16
+   cap 64 l 7.39  sum8 10.11  maxmin8 10.84
+   cap 64 l 6.33  sum8 9.36  maxmin8 14.02
+   cap 96 l 7.92  sum8 10.55  maxmin8 11.14
+   cap 96 l 7.91  sum8 10.20  maxmin8 11.18
+pooled within-cap row sd (ms), K = 1..8:  sum l + b0p: 0.45 0.93 0.73 0.66 1.05 0.82 0.94 0.92 | l: 0.45 | b0p: 0.00 0.70 0.44 0.32 1.29 1.02 1.10 0.77
 b0_c(K) ms (p27 c2 caps 64-128, 6 rows): K1 0.00+-0.00 K2 0.00+-0.34 K3 0.75+-0.27 K4 1.01+-0.36 K5 2.38+-0.55 K6 2.46+-0.42 K7 2.46+-0.45 K8 2.67+-0.34
 l_c 8.07 +- 0.72 ms (s56 P128 rows 9.09 6.30 8.07)
 s56 late m-hat per replicate: {1: {128: 9.44, 160: 10.45, 192: 12.31, 256: 15.98}, 2: {128: 9.39, 160: 10.12, 192: 11.6, 256: 15.67}, 3: {128: 9.08, 160: 10.0, 192: 11.15, 256: 15.88}}
@@ -19,3 +27,4 @@ K8 pooled flip - knee, 10-90 % width by term (20 000 draws each):
    threshold only, n_cal = 12 (se_T 0.57 ms): width 34 slots
    threshold only, n_cal = 24 (se_T 0.40 ms): width 22 slots
    threshold only, n_cal = 48 (se_T 0.28 ms): width 16 slots
+   JOINT threshold (p27 per-row sum, se_T 0.47 ms): both 30 slots; threshold only 26

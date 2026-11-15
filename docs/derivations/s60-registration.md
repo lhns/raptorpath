@@ -80,7 +80,7 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
      - Conditioning becomes the fallback.
    - **The collapse flag does not gate calibration rows** (pools below c1s's BDP). A go/no-go on the rehearsal's c1s
      W 128 row is registered (§2, §5).
-8. **Check of `f8ea7d6c`** (entry 7 had no advisor call; the advisor call for this entry returned "temporarily overloaded", so the entry is unreviewed).
+8. **Check of `f8ea7d6c`** (entry 7 had no advisor call; the advisor call for this entry returned "temporarily overloaded"; it is reviewed in entry 9).
    - **c2's interval** is set by the threshold ℓ̂_c + b̂₀⁺_c, not by the replicates (`s60flip.out`: 10–90 % width 53
      slots from the threshold alone, 16 from the replicates alone, 52 combined).
      - Calibration rows narrow it only slowly (34 slots at 12 rows, 16 at 48), and the prediction is |D| ≈ 4 slots.
@@ -96,6 +96,19 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
    - **The R6.7 note is corrected** to the per-K prediction.
    - **Harness-brief items are added (§9):** a MISS stub case, one archive with equal `bin_sha` across 60-pre,
      rehearsal, 60a and 60b, and what a 60-pre failure outside the gauge's tests means.
+9. **Main-session review of `ec627abf`** (entry 8's owed review).
+   - **c2's threshold is calibrated on the joint sum.** On p27, `l` and b0p do NOT cancel: the sum's row sd is
+     0.92 ms, against 0.45 and 0.77 for its parts. The joint interval is 30 slots wide, so UNRESOLVED stays the
+     expected label (§3.1). `s60flip.py` now draws the threshold jointly.
+   - **The collapse X is now per cell and leg,** derived from each cell's queue-free spread plus the c1s-validated
+     margin (`s60collapse56.py`). The c1s 5 ms flags every queue-free c2 and c8 row. Leg 1's flag removes the row
+     from leg 1's medians only.
+   - **c8's rehearsal runs two W 128 rows, GO on either.** The c1s `b0p` ≤ 0.6 ms is reconciled: 0.30 central plus a
+     0.30 tolerance, where the KA's 0.12 is an over-read.
+   - **The `b0k[0]` = 0 and `m` = `l` witnesses are UNVERIFIED on engine output.** A failing row is reported, not
+     voided.
+   - **60-pre adds the `binid_run.sh` crate-directory build,** whose sha every later stage must match.
+   - **The R6.7 note cites the pooled readout,** replacing the FLAT-AT-KNEE 0.58.
 
 **Helper scripts** (stdlib Python, run with `-I`; outputs committed beside them in `store-law/`).
 
@@ -109,6 +122,7 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
 | `s60cond.py` | the conditioning arithmetic per cell (slope of R̃ in W, σ_R, 2σ_R in slots), and c1s verdict probabilities per reading |
 | `s60flip.py` | the c2 anchor flip against the knee from §56's rows, per K = 1..8: verdict probabilities and the pooled flip − knee |
 | `s60collapse.py` | the absolute collapse rule checked against §57a's collapse-flagged rows |
+| `s60collapse56.py` | the per-cell and per-leg collapse threshold X from §56's queue-free rows, and its flags on them |
 | `s60band.py` | the crossing bands (reported context) |
 | `s60size.py` | row times; G/C pair sds and n |
 | `s60replay.py`, `s60witness_ka.log` | `slaw_r` transcribed: R̃, the per-row witness, and its negative control |
@@ -238,18 +252,36 @@ replicate order).
 - **A calibration row is valid** iff all three hold:
   - (a) its boot is complete: `b0k` holds K = 8 brakes, with leg-0 `b0kn` ≥ 10 on each (leg 1 as above);
   - (b) it is not LATCHED;
-  - (c) it is **not COLLAPSED**, by an **absolute** rule on printed fields: COLLAPSED iff more than 10 % of its LATE
-    leg-0 `[SLAW]` windows have `tmean − l` > 5 ms.
+  - (c) it is **not COLLAPSED**, by an **absolute** rule on printed fields, **per cell and leg**: COLLAPSED iff more
+    than 10 % of its LATE `[SLAW]` windows have `tmean − l` > X(cell, leg).
     - **Why absolute:** a relative rule (against the same-pool median) fails when the median row is itself collapsed,
       and §56's relative flag came out inverted in rehearsal 1.
-    - **Why `tmean`:** it is the window mean, the quantity the check below used.
-    - **Checked on §57a** (`s60collapse.py`, the per-tick mean echo minus `l`, c1s 5 GB rows at pools 448–512): it
-      flags **22 of the 23 registered-collapse rows and 1 of the 40 unflagged rows**.
-      - The missed row (B64-512 s7 r4) is a partial collapse (registered share 0.41), with only 7 % of ticks above
-        5 ms.
-      - At 10 % above 2 ms the rule flags every row, because a pool of 448–512 carries ≈ 2–3 ms of normal excess.
-      - At the calibration pools (≤ 128, queue-free) the normal excess is smaller, so 5 ms leaves more margin.
-    - A store-limited row has no standing queue, so it cannot reach the rule's 5 ms.
+    - **Why `tmean`:** it is the window mean, the quantity both checks below used.
+    - **X is derived per cell, not tuned** (`s60collapse56.py`):
+      - X = E90(cell, leg) + δ, where E90 is the 90th percentile of the LATE echo excess on the cell's queue-free
+        §56 rows (collapse-flagged rows excluded);
+      - δ = 5 − E90(c1s) = 1.72 ms is the margin validated at c1s.
+    - **c1s, 5 ms, checked on §57a** (`s60collapse.py`, 5 GB rows at pools 448–512): it flags **22 of the 23
+      registered-collapse rows and 1 of the 40 unflagged rows**.
+      - The missed row (B64-512 s7 r4) is a partial collapse (registered share 0.41).
+      - A 2 ms threshold would flag every row.
+    - **The c1s 5 ms cannot carry over.** On §56's queue-free c2 and c8 rows it flags every row (82–100 % of ticks
+      above 5 ms), because the echo spread at no queue is 7–10 ms there.
+    - **Per cell and leg:**
+
+      | cell / leg | E90 (ms) | X (ms) |
+      |---|---|---|
+      | c1s leg 0 | 3.28 | 5.0 |
+      | c2 leg 0 | 10.00 | 11.7 |
+      | c8 leg 0 | 11.76 | 13.5 |
+      | c8 leg 1 | 17.41 | 19.1 |
+
+      - On §56's small-pool rows it flags only the known c1s collapse row (P384 s42 r1).
+      - One c8 P112 leg-1 row sits at the edge (share 0.102).
+    - **Leg 1:** the row's COLLAPSED state is read on **leg 0**. A leg-1 flag removes that row from **leg 1's**
+      session medians only, and is reported. That covers leg 1 without letting its integer-ms echo, flagged on 1
+      of 8 queue-free rows, void a row.
+    - A store-limited row has no standing queue, so it cannot reach X.
   - **Per K:** b0p(K) = max(first K `b0k` brakes), and LATCHED(K) uses b0p(K) in the latch rule, so the valid set is
     recomputed for each K.
 - **B1** is evaluated only on valid rows, so a collapse's queue cannot pose as `err` > 0.
@@ -311,23 +343,39 @@ FLAT-AT-KNEE means the pooled flip is at or above the knee, so the knee arms sit
 - **Registered instead: a POOLED readout, SCORED at K = 8 and REPORTED at K = 1..7.**
   - D_K = the median over replicates of (W_flip,r(K) − W₉₅,r).
   - W_flip,r(K) is where the replicate's late `m` (per-arm median) crosses ℓ̂_c + b̂₀⁺_c(K).
-  - b̂₀⁺_c(K) is the session median over the valid set for that K (W 128 rows, LATCHED(K) excluded) of max(first K
-    printed `b0k` brakes).
-  - **K = 1 is no finding.** Brake 1 is 0 by construction: at the first window close, Copa's minimum is that window's
-    own minimum, since both see the same samples. p27 reads 0.00 on all 6 rows. K = 2 is near-trivial.
-    - **Witness:** printed `b0k[0]` = 0 on every G row. A non-zero value means Copa saw earlier samples, e.g. the
-      handshake, and is reported.
+  - **The threshold is calibrated on the SUM.** T_c(K) = the session median over the valid set for that K (W 128 rows,
+    LATCHED(K) excluded) of the per-row sum `l` + max(first K printed `b0k` brakes).
+    - The anchor depends only on this sum, so ℓ̂ and b̂₀⁺ are drawn jointly from each row.
+    - Where the anchor binds, F = ℓ̂_c + 2·b̂₀⁺_c also needs the separate b̂₀⁺_c (the session median of max(first K)),
+      so F uses T_c + b̂₀⁺_c. Any cancellation inside the sum does not carry into R̃ there.
+  - **K = 1 is no finding, IF Copa and the sampler see the same first samples.** Then brake 1 is 0 by construction:
+    at the first window close, Copa's minimum is that window's own minimum. p27, a different sampler, reads 0.00 on
+    all 6 rows. K = 2 is then near-trivial.
+    - **Witness, UNVERIFIED on engine output.** The gauge attaches its samplers from the diag report, so Copa may see
+      samples first, e.g. the handshake.
+    - I could not read a real gauge log: there is no cargo here, and no committed gauge log carries real `b0k`.
+      The coordinator can run `slaw_reachability` with `--nocapture` and read the first `b0k[0]`, and `m` against
+      `l`, at the first windows.
+    - **A failing row** (`b0k[0]` ≠ 0, or `m` ≠ `l` at t < 10 s) is **reported, not voided**. Its brakes are then
+      measured against a lower m̂ than the sampler's own minimum, so b0p over-reads by that offset, and the latch rule
+      sees it.
+    - K = 1 is then a finding, the size of that offset, and the "no finding" claim is withdrawn for that session.
 - **The 90 % interval is a bootstrap (2 000 resamples, seed 60) that resamples BOTH terms:**
-  - the calibration rows, which re-estimates the threshold ℓ̂_c + b̂₀⁺_c(K);
+  - the calibration rows, which re-estimates T_c(K) jointly;
   - the sweep replicates.
-- **Which term sets the width** (`s60flip.out`, K = 8): the 10–90 % width is 53 slots from the threshold alone, 16
-  from the replicates alone, and 52 combined.
-  - More sweep replicates cannot narrow it; calibration rows can, but slowly: 34 slots at 12 rows, 22 at 24, 16 at
-    48. The prediction is |D| ≈ 4 slots.
-  - Most of the threshold's spread is ℓ̂_c's row noise: se 0.72 of 0.80 ms. That is the `s60abs` finding again, and a
-    better ℓ̂ estimator is R6.7's business, not more rows.
-  - **So c2 is registered as a MEASUREMENT, with UNRESOLVED as its expected label.** No calibration rows are added
-    for it.
+- **Which term sets the width** (`s60flip.out`, K = 8).
+  - Drawing §56's `l` rows and p27's b0p rows independently (as before): 53 slots from the threshold alone, 16 from
+    the replicates alone, 52 combined.
+  - **Drawing the sum jointly** from p27's rows: the within-cap row sd of `l` + b0p(8) is 0.92 ms, against 0.45 for
+    `l` and 0.77 for b0p. So **the two do not cancel** on p27.
+    - The brakes are taken against Copa's running minimum, not against `l`. The sum (9.4–12.0 ms) is not the
+      largest boot-window minimum (10.8–14.2).
+    - The threshold's se is then 0.47 ms, and the width is 26 slots from the threshold alone and 30 combined.
+  - Either way the width far exceeds the predicted |D| ≈ 4 slots. Calibration rows narrow it only slowly (12 rows:
+    34 slots; 48: 16, on the independent draw).
+  - **So c2 stays a MEASUREMENT, with UNRESOLVED as its expected label.** No calibration rows are added.
+  - In-session the width uses the joint sum. The gauge's own `l` may be less noisy than §56's `rtp_us`-based proxy,
+    which includes Copa's earliest samples. That would narrow it; it is reported.
 - **Labels:** **ABOVE** if the interval lies > 0 (at that K the anchor keeps the form at or above the knee); **BELOW**
   if < 0; otherwise **UNRESOLVED**.
   - **Predicted:** BELOW at K ≤ 4 (D ≈ −41 slots, the flip at the calibration arm); UNRESOLVED at K 5–8 (−3 to +4,
@@ -422,8 +470,12 @@ UNDERPOWERED is 0.06 throughout.
     - The registered readings differ by 0.20 (prefix minima −0.2 against exact minima ≈ 0), and σ_R is 0.03–0.08
       (§3.3).
     - So δ must stay ≤ 0.3 ms, a shift ≤ 0.03: the low end of σ_R and 15 % of the gap.
-    - The true queue-free b0 is 0.21–0.37 ms (p27/p34, cap 256). The earlier 1.0 ms thresholds exceeded c1s's whole
-      target above its floor (≈ 0.87 ms) and are withdrawn.
+    - **Reconciling 0.6, 0.3 and 0.12.** δ is the error against the expected queue-free b̂₀⁺, which is the
+      max-of-8 brake: 0.21–0.37 ms at cap 256 on p27/p34, central ≈ 0.30.
+      - The GO threshold is that central value plus the tolerance: 0.30 + 0.30 = 0.6 ms.
+      - The KA's 0.12 is not b̂₀⁺. It is the ledger **over-read** b̂₀⁺ − b₀ (≈ 0.30 − 0.18, with b₀ the median
+        no-queue brake, 0.09–0.22).
+    - The earlier 1.0 ms thresholds exceeded c1s's whole target above its floor (≈ 0.87 ms) and are withdrawn.
   - **GO** iff all of these hold:
     - (a) `b0k` holds 8 brakes, each with leg-0 `b0kn` ≥ 10;
     - (b) **`b0p` ≤ 0.6 ms**;
@@ -435,8 +487,11 @@ UNDERPOWERED is 0.06 throughout.
     latch state themselves.
   - **NO-GO** drops c1s's calibration rows and its control-sign verdict before 60b. 60b then runs only the G/C pairs
     and the evicting rows: 22 + 5 rows. P1 at c1s is reported against printed `b0p` alone.
-- **Go/no-go on the rehearsal's c8 W 128 (P64) row** (c8's 128 and 96 pools are unmeasured, and leg 1's boot windows
-  were sometimes empty at P80).
+- **Go/no-go on the rehearsal's c8 W 128 (P64) rows: TWO rows** (c8's 128 and 96 pools are unmeasured, and leg 1's
+  boot windows were sometimes empty at P80).
+  - About 1 c8 W 128 row in 4 latches, so a single-row NO-GO would drop B2 by chance 25 % of the time.
+  - The rehearsal therefore runs two c8 W 128 rows. **GO iff at least one passes**, with a chance NO-GO of ≈ 6 %.
+  - Both are reported.
   - **Where the thresholds come from.** At c8's knee the scored R̃ is predicted ≈ 1.16–1.19, against B2's threshold
     1 − 2σ_R ≈ 0.97–0.98, a gap of ≈ 0.2.
     - An admitted b0 error moves R̃(knee) by 2·w₀/T̂ ≈ 0.053 per ms on leg 0, and by ≈ 0.02 per ms on leg 1 (through
@@ -481,6 +536,12 @@ UNDERPOWERED is 0.06 throughout.
   with `slaw-gauge` `d416d59b` merged, recorded by sha.
   - It runs release, doc, wasm (`env -u GOLDEN_CAPTURE`), debug, core and parsers, with the flake rule.
   - ≈ 50–60 min. Both locks are held by the runner, and host cargo is paused.
+  - **Plus the harness binary.** `suites_run.sh` builds no harness binary, so 60-pre also runs
+    `tools/l1/binid_run.sh`'s crate-directory build (`cd src/raptorpath && CARGO_BUILD_JOBS=4 cargo build --release
+    --bin raptorpath`, fresh target, the same path as the harness; §58 Part B) on the pinned tree.
+    - That build's sha256 is **the registered `bin_sha`**. The rehearsal, 60a and 60b must each log the same
+      `bin_sha`, or the launch stops.
+    - This adds ≈ 15 min to 60-pre.
 - **On TESTS-OK:**
   - generate `bash tools/l1/ref_manifest.sh <pinned sha> > tools/l1/ref60-manifest.sha256`;
   - commit it on the pinned tree, as a tools-only commit that leaves the engine manifest unchanged;
@@ -489,11 +550,11 @@ UNDERPOWERED is 0.06 throughout.
 - **Harness work:** `harness_paths.py` admits reuse-hit only for plans 56 / 57a / 57b. Plan 60 must be added.
 - **Any REAL failure in 60-pre** blocks the session and is diagnosed (§58's rules).
 
-**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus the c8 W 128 (600 MB) and c1s W 128 (1 GB) rows of §5's go/no-go.
+**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus two c8 W 128 (600 MB) rows and one c1s W 128 (1 GB) row for §5's go/no-go. Its release binary must equal 60-pre's `bin_sha`.
 
 | launch | block | rows | typical | worst |
 |---|---|---|---|---|
-| **60-pre** | engine suites on the pinned tree, then the reference manifest | — | 50–60 min | 70 min |
+| **60-pre** | engine suites on the pinned tree, the crate-directory release build (the registered `bin_sha`), then the reference manifest | — | 65–75 min | 85 min |
 | **60a** | release build (suite reuse HIT) | — | 6 min | 10 min |
 | | smoke (c2 W 192, C + G) | 2 | 3 min | 3 min |
 | | c2: 96, 128, 160, 176, 192, 256, 2 048 × 6 | 42 | 53 min | 63 min |
@@ -536,9 +597,9 @@ UNDERPOWERED is 0.06 throughout.
    - It also asserts that a HIT proceeds.
    - Plan 60 must be added to `harness_paths.py`'s reuse-hit plans.
 2. **One archive for every stage.**
-   - 60-pre, the rehearsal, 60a and 60b each run from **one** `git archive` of the pinned tree, recorded by sha.
-   - The release binary's `bin_sha` must be **equal** in the rehearsal, 60a and 60b (and in 60-pre's release build,
-     if it builds one). An unequal `bin_sha` stops the launch.
+   - 60-pre runs from one `git archive` of the pinned tree. The rehearsal, 60a and 60b run from one `git archive` of the pinned tree plus its `ref60-manifest.sha256` commit. Both are recorded by sha.
+   - The release binary's `bin_sha` must be **equal** in 60-pre (its `binid_run.sh` build, the registered value), the rehearsal, 60a and 60b.
+     An unequal `bin_sha` stops the launch. The `ref60-manifest.sha256` commit touches only `tools/l1`, so the archive after it builds the same binary, and the equal `bin_sha` is the witness of that.
    - `ref60-manifest.sha256` is generated from that archive's tree.
 3. **What a 60-pre failure means.**
    - **In the gauge's own tests** (`slaw_tests`, `slaw_reachability`, the bit-identity host test, `slaw_parse`,

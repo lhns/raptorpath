@@ -451,10 +451,13 @@ R > 1. So the form needs a standing 10 s minimum queue of ≈ b̂₀⁺ before i
 
 Whether that anchor flip lies above c2's knee depends on K, the boot-window count b̂₀⁺ is maxed over. s60 registers
 this as a **prediction** (`store-law/s60flip.out`, from p27's brakes and three §56 replicates):
-- At K = 8 it is a coin flip. P(pooled flip ≥ knee) ≈ 0.58, and flip − knee reads −27 / +4 / +26 slots
-  (10 / 50 / 90 %). It is UNRESOLVED as expected: the width is set by ℓ̂'s row noise.
-- At K 5–7 it is ≈ 0.45–0.48.
-- At K ≤ 4 the flip falls at or below the calibration arm.
+- **At K = 8**, the scored K, the pooled readout (the median over replicates of flip − knee) reads −27 / +4 / +26 slots
+  (10 / 50 / 90 %).
+  - UNRESOLVED is the expected label. The interval is set by the threshold ℓ̂ + b̂₀⁺: 26–53 slots of width,
+    against a prediction of ≈ 4.
+  - A 5-of-6 vote had read 0.47 STRUCTURAL / 0.34 NOT. It was dropped as a coin flip.
+- **At K 5–7** the median is −3 to −1 slots, also expected UNRESOLVED.
+- **At K ≤ 4** the flip falls at or below the calibration arm (≈ −41).
 
 A verdict that changes with K is a finding about K, which has no provenance.
 
