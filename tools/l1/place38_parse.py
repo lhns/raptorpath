@@ -479,6 +479,87 @@ def check57(plan, path):
     return 0 if ok else 1
 
 
+# ── status 59: the evicting-seat m-bar readout (plan 59), REPORTED ONLY, no build, ONE seat (plan 56 / 57's shape). mbar59_score.py reads these. ──
+# c2-100 at 600 MB, arm EVICT = the Realtime hint with NO --window-reliable (RWM_C_RELIABLE=0 in perf_rwm_c.sh) and RWM_UNIFIED=1, n = 5 (seeds 42 / 7 / 42 / 7 / 42). There is no c3 cell:
+# the L1 cells are c1s / c1d / c2 / c8 (c8 = c2 + c3 on TWO paths); a single-path c3 cell would be new and unsized (20 Mbit: 600 MB is 240 s before repair overhead).
+CELL59, ARM59 = "c2-100", "EVICT"
+BYTES59 = {"c2-100": 600000000}
+SEEDS59 = ("42", "7", "42", "7", "42")
+N59 = len(SEEDS59)
+REPS_CAP59 = None                                                      # test_stubrun's fast mode caps the replicates (None = the registered design)
+SMOKE59 = [(CELL59, "def", ARM59, "42", 1)]
+sp.ARM_SPEC[ARM59] = ("window", "Rlc", "realtime", "ACTIVE")
+AFAM[ARM59] = "CAND"                                                   # the one seat is the candidate binary (LD_SHA)
+# The evicting seat's liveness (the [GATES] RWM_UNIFIED_SHED token alone is not enough: it is echoed on a reliable row too; shed_on = unified && !reliable && gate, and it is never echoed as a token).
+EVICT_PREFIX59 = ("evict-", "gate-unified")
+SHED_ECHO59 = "unified overload shedding ACTIVE ("             # the sender's echo (net/mod.rs); the receiver's reads "... ACTIVE at receiver" and is reported, not required
+RELIABLE_ECHO59 = "reliable window mode (retain until acked)"
+REALTIME_ECHO59 = "RWM_UNIFIED: Realtime rides the RLC span machine"
+
+
+def plan59(smoke=False):
+    """[(cell, store, arm, seed, rep)] in run order (status 59): n = 5 replicates of the one arm, seed 42 / 7 / 42 / 7 / 42. A replaced slot (replace59) adds a ledger row, not a table row."""
+    if smoke:
+        return list(SMOKE59)
+    return [(CELL59, "def", ARM59, SEEDS59[k], k + 1) for k in range(N59 if REPS_CAP59 is None else min(N59, REPS_CAP59))]
+
+
+def expect_rows59():
+    return len(plan59())
+
+
+def evict_problems59(cli, srv, sha=None, sha_cand=None):
+    """Plan 59's row witnesses: the evicting seat armed on the sender (its echo, the shed gauge on [SPAN], RWM_UNIFIED=1 and RWM_UNIFIED_SHED=1 on both ends) and NOT the reliable window,
+    the Realtime span-machine echo on both ends, and the one seat's binary. The evict-* / gate-unified problems VOID the row and are replaced once (replace59)."""
+    import pool54_score
+    p = []
+    if not any(SHED_ECHO59 in ln for ln in cli):
+        p.append("evict-sender-shed-echo-missing")
+    if any(RELIABLE_ECHO59 in ln for ln in cli) or any(RELIABLE_ECHO59 in ln for ln in srv):
+        p.append("evict-reliable-echo-present")
+    if not any(" shed=" in ln and "[SPAN]" in ln for ln in cli):
+        p.append("evict-no-shed-gauge-on-span")
+    for side, lines in (("cli", cli), ("srv", srv)):
+        for g in ("RWM_UNIFIED", "RWM_UNIFIED_SHED"):
+            v = lc.gate_tok(lines, g)
+            if v != "1":
+                p.append(f"gate-unified-{g}-{side}={v} (want 1)")
+        if not any(REALTIME_ECHO59 in ln for ln in lines):
+            p.append(f"no-realtime-echo-{side}")
+    return p + pool54_score.sha_problems("CAND", sha, sha_cand, None)
+
+
+def is_evict_problem59(x):
+    return x.startswith(EVICT_PREFIX59)
+
+
+def is_evict_void59(row):
+    """A VOID by the liveness witnesses: the only failure plan 59 replaces (once)."""
+    return any(is_evict_problem59(x) for x in row.get("problems") or [])
+
+
+def replace59(ledger, cell, arm, seed, rep):
+    """Battery helper (`place38_parse.py replace59 <ledger> <cell> <arm> <seed> <rep>`): prints 'evict-liveness' and returns 0 iff the slot's rows so far are exactly one and that row is VOID
+    by the evicting-seat liveness witnesses; returns 1 (prints nothing) otherwise (once only)."""
+    rows, _ = rows_of([ledger])
+    mine = [r for r in rows if (r.get("cell"), r.get("arm"), str(r.get("seed")), str(r.get("rep"))) == (cell, arm, str(seed), str(rep))]
+    if len(mine) == 1 and is_evict_void59(mine[0]):
+        print("evict-liveness")
+        return 0
+    return 1
+
+
+def check59(path):
+    """rc 0 iff the battery finished and the ledger holds a row for every slot of the table (a replaced slot has two rows, only the first of which is VOID)."""
+    rows, _ = rows_of([path])
+    t = open(path, errors="replace").read()
+    slots = {(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in rows}
+    want = {(c, a, sd, str(rp)) for c, _, a, sd, rp in plan59()}
+    ok = "LD-BATTERY-DONE" in t and slots == want
+    print(f"CHECK59 done={'LD-BATTERY-DONE' in t} slots={len(slots & want)}/{expect_rows59()} rows={len(rows)} extra={len(slots - want)}")
+    return 0 if ok else 1
+
+
 def snapver_problems(arm, cli, srv):
     """Plan 53 witness: `RWM_RECOV_SNAPVER=<0|1>` is always echoed by a plan-53 binary, so an ABSENT token is a failure, not "off". CANDS / BASES read 1 on both ends, every other arm 0."""
     want = "1" if ARM_ENV53.get(arm, (None, None, None))[1] == "1" else "0"
@@ -867,6 +948,21 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t56"], row["t57"] = pool57_score.row_metrics57(cli, srv, drv, row.get("bytes"), cell, arm_knobs57(plan57_, arm)[0])
         except Exception as e:      # a reported readout never voids a row
             row["t56"], row["t57"], row["t57_error"] = None, None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "59":
+        # Status 59, the evicting seat: the liveness witnesses and the seat's binary void a row (replaced once, by the battery); the readouts are reported only. A Realtime row never prints the
+        # reliable-window line stage3_parse's WIN_LINE asks for: it is cleared when both [PIPE] echoes read window / Rlc / realtime AND both ends echo the Realtime span machine (storelaw_parse's rule).
+        import mbar59_score
+        p.extend(evict_problems59(cli, srv, sha, os.environ.get("LD_SHA")))
+        if (row.get("pipe_cli") == ["window", "Rlc", "realtime"] and row.get("pipe_srv") == ["window", "Rlc", "realtime"]
+                and any(REALTIME_ECHO59 in ln for ln in cli) and any(REALTIME_ECHO59 in ln for ln in srv) and "window-line-missing-on-window" in row["problems"]):
+            row["problems"].remove("window-line-missing-on-window")
+            if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+                row["status"] = "LIVE"
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        try:
+            row["t59"] = mbar59_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, row.get("mbps"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t59"], row["t59_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
@@ -1580,6 +1676,14 @@ def main(argv):
         return check57(cmd[-3:], a[0])
     if cmd == "check56":
         return check56(a[0])
+    if cmd == "plan59":
+        for c, s_, ar, seed, rep in plan59(smoke=bool(a) and a[0] == "smoke"):
+            print(f"{c} {s_} {ar} {seed} {rep}")
+        return 0
+    if cmd == "replace59":
+        return replace59(*a[:5])
+    if cmd == "check59":
+        return check59(a[0])
     if cmd == "check52":
         return check52(a[0])
     if cmd == "smoke52":

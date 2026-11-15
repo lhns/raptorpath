@@ -254,6 +254,47 @@ def diag57(ln, k, n_src, burst_real, rtt_top, rtt_leg, release=100):
     return ln + f" wait[tun=1% ack=82% cmd=0% busy=45%] wake[tun=1 ack={int(cum / release)}]"
 
 
+# ── plan 59 (mbar59_score): the evicting seat at c2-100, 600 MB. STUB_BAD59: noshed (every row is NOT armed: it keeps the retain-until-acked echo, no shed echo, no shed= token), shedonce (the first SCORED slot
+# slot is not armed, its replacement is); a comma list combines them. STUB_DNF59=<seed>: that seed's rows time out (an evicting seat's expected outcome). The per-tick deltas are known:
+# 250 src / 40 cod / 240 acked symbols and 20 ack wakes per 0.25 s tick, wait n = 100 + k % 5 loop iterations per tick (a non-constant per-period count). ──
+BAD59 = {"noshed", "shedonce"}
+SHED_ECHO59 = "unified overload shedding ACTIVE (RWM_UNIFIED_SHED: past-deadline holes shed within the derived 1-rho budget; =0 = serializing arm)"
+SHED_ECHO59_RX = "unified overload shedding ACTIVE at receiver (RWM_UNIFIED_SHED: in-order hold = delta-derived b*SRTT within the eps-class give-up budget)"
+REALTIME_ECHO59 = "RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)"
+INFO59 = "\x1b[2m2026-11-12T10:00:00Z\x1b[0m \x1b[32m INFO\x1b[0m \x1b[2mraptorpath::net\x1b[0m\x1b[2m:\x1b[0m "
+
+
+def seat59(lines, armed, side):
+    """A fixture log turned into the evicting seat's: the Realtime echo for the reliable-window one, [PIPE] hint=realtime, the shed echo (an armed seat only). An unarmed row keeps its retention line."""
+    out = []
+    for ln in lines:
+        if "reliable window mode (retain until acked)" in ln:
+            out.append(INFO59 + REALTIME_ECHO59 if armed else ln)
+            continue
+        if "[PIPE]" in ln:
+            ln = ln.replace("hint=bulk", "hint=realtime")
+        out.append(ln)
+    if armed:
+        out.append(INFO59 + (SHED_ECHO59 if side == "cli" else SHED_ECHO59_RX))
+    return out
+
+
+def diag59(ln, k, armed, n_src=200):
+    """The plan-59 fields of the k-th plan-48-shaped [DIAG] line: src / cod rates, cum = src/cod/ack (cumulative), wait[.. n=] (per period), wake[.. ack=] (cumulative), the shed gauge."""
+    s = 250 * min(k, n_src)
+    src = 2000 if k <= n_src else 0
+    n = 100 + k % 5
+    sh = f" shed={3 * k}/{k} bud=0.0500 D=40ms" if armed else ""
+    return (ln + f" src={src}sym/s cod={320 if src else 0}sym/s cum={s}/{40 * min(k, n_src)}/{240 * min(k, n_src)} retx=0{sh} "
+            f"wait[tun=1% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=82% cmd=0% n={n} us=250000 busy=45% busy_us=112500] "
+            f"wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack={20 * k} cmd=1 timer_acked=0]")
+
+
+def span59(k, armed):
+    sh = f" shed={3 * k}/{k} bud=0.0500 D=40ms" if armed else ""
+    return (f"[SPAN] t={0.5 * k:.1f}s ack={240 * k} win=[{240 * k},{240 * k + 64}] wsize=64 a_star=Some(12) delta=Some(0.5) owed=0.10 rr={0.1 + 0.001 * k:.3f} debt={0.3:.2f} retx_buf=5{sh}")
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -435,6 +476,39 @@ def main(argv):
         if os.environ.get("STUB_DNF57") == "%s:%s" % (armtag, os.environ.get("SEED")):
             dnf = '{"bytes":%s,"dnf":true,"hint":"bulk","proto":"rp-native","run":1}' % nbytes
             tail = '{"bytes":%s,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}' % nbytes
+            cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
+            drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
+    elif plan == "59":
+        # Status 59, the evicting seat: 55 s of [DIAG] (source until 50 s) with the known per-tick deltas above, a [SPAN] line every 0.5 s, the Realtime echo and the shed echo on the right ends,
+        # a driver summary (or a DNF). The row is armed unless STUB_BAD59 says otherwise.
+        bad = set(x for x in os.environ.get("STUB_BAD59", "").split(",") if x)
+        armed = "noshed" not in bad
+        if "shedonce" in bad:
+            # the smoke row is invocation 0 (armed), the first scored slot invocation 1 (NOT armed), its replacement invocation 2 (armed)
+            marker = os.path.join(TMP, "shed-count")
+            seen = len(open(marker).read()) if os.path.exists(marker) else 0
+            open(marker, "a").write("x")
+            if seen == 1:
+                armed = False
+        rl = run_lines(fam, False, n=220)
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = diag59(ln, k, armed)
+                if k % 2 == 0:
+                    rl[i] = rl[i] + "\n" + span59(k // 2, armed)
+        rl = "\n".join(rl).split("\n")
+        cli = seat59(cli, armed, "cli") + rl
+        srv = seat59(srv, armed, "srv")
+        drv = [re.sub(r"hint=bulk( .*)$", r"hint=realtime\1 reliable=0", ln) if "--- RWM-C perf" in ln else ln for ln in drv]
+        secs = 54.0 + (os.getpid() % 7) * 0.3
+        drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":%s,"hint":"realtime","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs),
+                                                                                    summary54(secs, int(nbytes))]
+        if os.environ.get("STUB_DNF59") == os.environ.get("SEED"):
+            dnf = '{"bytes":%s,"dnf":true,"hint":"realtime","proto":"rp-native","run":1}' % nbytes
+            tail = '{"bytes":%s,"dnf":1,"hint":"realtime","proto":"rp-native","runs":1,"summary":true}' % nbytes
             cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
     else:

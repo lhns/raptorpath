@@ -81,7 +81,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -93,7 +93,7 @@ PLAN="${LD_PLAN:-24}"
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"
 # TMPD: where the driver's per-row logs live. perf_rwm_c.sh itself writes /tmp, so a real run never sets it; only a stub driver may.
 TMPD="${LD_TMPD:-/tmp}"
-case "$PLAN" in 57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b)"; exit 3 ;; esac
+case "$PLAN" in 59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -137,6 +137,11 @@ P56=0; [ "$PLAN" = "56" ] && { P56=1; P38=1; PCAND=1; }
 # RWM_STORE_PATH_POOL=<pool> per path (nothing at the shipped 2048), n = 5 of six pools, 30 rows. RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300 as plan 56.
 P57=0; P57A=0; P57B=0
 case "$PLAN" in 57a) P57=1; P57A=1; P38=1; PCAND=1 ;; 57b) P57=1; P57B=1; P38=1; PCAND=1 ;; esac
+# Plan 59 (status 59, the evicting-seat m-bar readout; REPORTED ONLY, no build): plan 56 / 57's single-seat shape (P41 stays 0). c2-100 at 600 MB, ONE arm EVICT = --protocol-hint realtime with NO
+# --window-reliable (perf_rwm_c.sh RWM_C_RELIABLE=0) and RWM_UNIFIED=1, n = 5 (seeds 42 / 7 / 42 / 7 / 42), 5 rows + a 1-row smoke. RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150 (an evicting
+# seat may never complete the object: a DNF is an expected datum, as perf.rs documents for the realtime profile). RWM_GEN=0 stays (generation coding bails without retention).
+P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }
+HINT=bulk; [ "$P59" = 1 ] && HINT=realtime
 # Plan 54 (the guard) is plan 41d unchanged; LD_WITNESS54=1 (run_all carries it for LD_PLAN=54) adds the row witnesses in the parser and the [SNAPV] preflight below.
 W54="${LD_WITNESS54:-0}"; [ "$W54" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
 BIN_BASE=""; WANT_BASE=""
@@ -167,6 +172,8 @@ fi
 [ "$P56" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300)
 # Plans 57a / 57b: plan 56's instrument env (RWM_RTOBS kept: both blocks are compared with section 56's rows).
 [ "$P57" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=300)
+# Plan 59: RWM_DIAG=1 (every row) RWM_RDIAG=1 as the status asks; no RWM_RTOBS (not asked for, and it is an extra gauge); 150 s (a DNF is expected, the LATE window needs 5 s + a few ticks).
+[ "$P59" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)
 # Plan 48's per-cell sizes (status 48b / 48 Step 1); the cell names keep their scenario. bbr48_score / place38_parse.BYTES48 is the scorer's copy.
 p48_bytes() { case "$1" in c1s-400|c1d-400) echo 5000000000 ;; c2-100|c8-100) echo 600000000 ;; *) echo "" ;; esac; }
 # Plan 41d's long cells (place38_parse.BYTES41D / TIMEOUT41D are the scorer's copy; test_guard_v2.py asserts they agree). Empty = the cell keeps the guard size.
@@ -182,6 +189,8 @@ p54b_bytes() { case "$1" in c8-100) echo 600000000 ;; *) echo "" ;; esac; }
 p56_bytes() { case "$1" in c8-100|c2-100) echo 600000000 ;; c1s-400) echo 5000000000 ;; *) echo "" ;; esac; }
 # Plans 57a / 57b: c1s-400 (57a) and c1d-400 (57b), both 5 GB (place38_parse.BYTES57 is the scorer's copy; test_pool57.py asserts it).
 p57_bytes() { case "$1" in c1s-400|c1d-400) echo 5000000000 ;; *) echo "" ;; esac; }
+# Plan 59's only cell (place38_parse.BYTES59 is the scorer's copy; test_mbar59.py asserts it).
+p59_bytes() { case "$1" in c2-100) echo 600000000 ;; *) echo "" ;; esac; }
 # Plan 43's per-cell constants (status section 43; place43_parse.CELLS is the scorer's copy, test_place43_parse.py asserts they agree).
 p43_bytes() { case "$1" in c2-100) echo 600000000 ;; c1s-400) echo 5000000000 ;; *) echo "" ;; esac; }
 p43_l()     { case "$1" in c2-100) echo 9773 ;; c1s-400) echo 97733 ;; *) echo "" ;; esac; }
@@ -203,6 +212,8 @@ elif [ "$PCAND" = 1 ]; then
   if [ "$P56" = 1 ]; then preflight_binary "$BIN" "RWM_STORE_PATH_POOL" "RWM_SUCC_DUMP"; fi
   # Plans 57a / 57b: the one binary must carry the pool knob and the emission-burst knob whose [GATES] echo the rows are checked against.
   if [ "$P57" = 1 ]; then preflight_binary "$BIN" "RWM_STORE_PATH_POOL" "RWM_EMIT_BURST"; fi
+  # Plan 59: the one binary must carry the unified shed gate and its liveness echo.
+  if [ "$P59" = 1 ]; then preflight_binary "$BIN" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE"; fi
   if grep -aq -- "RWM_PLACE_WIRE" "$BIN" 2>/dev/null; then _lb_say "ABORT-CAND the CAND binary $BIN still carries RWM_PLACE_WIRE: it does not contain the promotion"; exit 5; fi
 elif [ "$P38" = 1 ]; then preflight_binary "$BIN" "RWM_STORE" "RWM_PLACE_WIRE"
 elif [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then preflight_binary "$BIN" "RWM_STORE"
@@ -287,6 +298,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
   [ "$P54B" = 1 ] && { bytes="$(p54b_bytes "$cell")"; rowbytes="$bytes"; [ -n "$bytes" ] || { echo "UNKNOWN-CELL $cell (plan 54b runs c8-100 only)" >> "$OUT"; return 0; }; }
   [ "$P56" = 1 ] && { bytes="$(p56_bytes "$cell")"; rowbytes="$bytes"; [ -n "$bytes" ] || { echo "UNKNOWN-CELL $cell (plan 56 runs c8-100, c2-100 and c1s-400 only)" >> "$OUT"; return 0; }; }
   [ "$P57" = 1 ] && { bytes="$(p57_bytes "$cell")"; rowbytes="$bytes"; [ -n "$bytes" ] || { echo "UNKNOWN-CELL $cell (plan 57 runs c1s-400 (57a) and c1d-400 (57b) only)" >> "$OUT"; return 0; }; }
+  [ "$P59" = 1 ] && { bytes="$(p59_bytes "$cell")"; rowbytes="$bytes"; [ -n "$bytes" ] || { echo "UNKNOWN-CELL $cell (plan 59 runs c2-100 only)" >> "$OUT"; return 0; }; }
   { [ "$P57A" = 1 ] && [ "$cell" != "c1s-400" ]; } && { echo "UNKNOWN-CELL $cell (plan 57a runs c1s-400 only)" >> "$OUT"; return 0; }
   { [ "$P57B" = 1 ] && [ "$cell" != "c1d-400" ]; } && { echo "UNKNOWN-CELL $cell (plan 57b runs c1d-400 only)" >> "$OUT"; return 0; }
   local name="$cell-$arm"
@@ -313,6 +325,12 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
           [[ "$p57pool" =~ ^[0-9]+$ ]] || { echo "UNKNOWN-ARM $arm (plan 57b: P<pool>)" >> "$OUT"; return 0; }
           [ "$p57pool" = "2048" ] || arm_env=(RWM_STORE_PATH_POOL="$p57pool") ;;
       *) echo "UNKNOWN-ARM $arm" >> "$OUT"; return 0 ;;
+    esac
+  elif [ "$P59" = 1 ]; then
+    # Plan 59 (place38_parse.ARM59 is the scorer's copy): the evicting seat = RWM_UNIFIED=1 + RWM_C_RELIABLE=0 (perf_rwm_c.sh drops --window-reliable) at the Realtime hint ($HINT).
+    case "$arm" in
+      EVICT) arm_env=(RWM_UNIFIED=1 RWM_C_RELIABLE=0) ;;
+      *) echo "UNKNOWN-ARM $arm (plan 59: EVICT)" >> "$OUT"; return 0 ;;
     esac
   else
   case "$arm" in
@@ -387,7 +405,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     if [ "$sha" != "$RWANT" ]; then
       _lb_say "ABORT-SHA $name s$seed rep=$rep: $sha != $RWANT -- battery stopped"; exit 5
     fi
-    echo "=== rep=$rep seed=$seed cell=$cell arm=$arm attempt=$attempt pipeline=window hint=bulk spec=$ca/$cb/$mode bytes=$bytes arm_env='${arm_env[*]}' bin=$RBIN sha=${sha:0:16} $(date -u +%T)" >> "$OUT"
+    echo "=== rep=$rep seed=$seed cell=$cell arm=$arm attempt=$attempt pipeline=window hint=$HINT spec=$ca/$cb/$mode bytes=$bytes arm_env='${arm_env[*]}' bin=$RBIN sha=${sha:0:16} $(date -u +%T)" >> "$OUT"
     rm -f "$TMPD/rwm-c.log" "$TMPD/rwm-s.log" "$TMPD/ld-drv.out" "$TMPD/rwm-evt.txt" "$TMPD/rwm-evtq.txt"
     # Plan 36: the CAP arm's pcap dir on tmpfs (fresh per attempt); NOCAP and the other plans set no RWM_PCAP_DIR.
     pdir="$OUTDIR/pcap/${name}-s${seed}-r${rep}-a$(( attempt + ATTEMPT_OFF ))"
@@ -401,13 +419,13 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     t0=$(date +%s)
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
         -u RWM_RTOBS -u RWM_ACKDIAG -u RWM_LOOPDIAG -u RWM_IO_RT -u RWM_STORE_PATHS \
-        -u RWM_PLAIN_RS -u RWM_STORE -u RWM_QUIC_CC -u RWM_STORE_LAW -u RWM_RDIAG -u RWM_PCAP_DIR -u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD -u RWM_PLACE_WDIV -u RWM_PLACE_WDIV_DERIVED -u RWM_RECOV_SNAPVER -u RWM_STORE_PATH_POOL -u RWM_SUCC_DUMP -u RWM_SUCC_DUMP_MAX \
+        -u RWM_PLAIN_RS -u RWM_STORE -u RWM_QUIC_CC -u RWM_STORE_LAW -u RWM_RDIAG -u RWM_PCAP_DIR -u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD -u RWM_PLACE_WDIV -u RWM_PLACE_WDIV_DERIVED -u RWM_RECOV_SNAPVER -u RWM_STORE_PATH_POOL -u RWM_SUCC_DUMP -u RWM_SUCC_DUMP_MAX -u RWM_UNIFIED -u RWM_UNIFIED_SHED -u RWM_C_RELIABLE \
         -u RWM_ORACLE_L_DGPS -u RWM_ORACLE_HOLD -u RWM_ORACLE_DIAG -u RWM_ORACLE_GAIN -u RWM_ORACLE_BRAKE_OFFSET_US \
         -u RWM_EVENT -u RWM_EVENT_QDISC -u RWM_EVENT_ONSET_S -u RWM_EVENT_HOLD_S \
         "${arm_env[@]}" "${evt_env[@]}" "${RDIAG_ENV[@]}" "${cap_env[@]}" \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 "${INSTR_ENV[@]}" "${tmo_env[@]}" \
         RWM_C_PIPELINE=window RWM_BIN="$RBIN" \
-      bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" > "$TMPD/ld-drv.out" 2>&1
+      bash perf_rwm_c.sh "$ca" "$cb" "$HINT" "$bytes" 1 "$mode" > "$TMPD/ld-drv.out" 2>&1
     rc=$?
     wall=$(( $(date +%s) - t0 ))
     cot_a=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
@@ -462,7 +480,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
 echo "=== LOOP-DIAG BATTERY tag=$TAG smoke=${LD_SMOKE:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $WANT" >> "$OUT"
 { [ "$P41" = 1 ] || [ "$P46" = 1 ]; } && echo "=== binary-base $BIN_BASE sha256 $WANT_BASE" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 ${INSTR_ENV[*]} bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_STORE RWM_QUIC_CC RWM_STORE_LAW RWM_RDIAG RWM_PCAP_DIR RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_STORE_PATH_POOL; plan=$PLAN witness54=$W54 (plan 36: no ACKDIAG/LOOPDIAG; CAP<n> sets RWM_PCAP_DIR=<pcap dir>) (plan 34 adds RWM_RDIAG=1); S<n>/DEF<n> set RWM_STORE=<n>, BRS<n> sets RWM_QUIC_CC=bbr_rs RWM_STORE=<n>, PWR sets RWM_STORE_LAW=power, KNEE sets RWM_STORE=<cell knee>" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 ${INSTR_ENV[*]} bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_STORE RWM_QUIC_CC RWM_STORE_LAW RWM_RDIAG RWM_PCAP_DIR RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_STORE_PATH_POOL; plan=$PLAN witness54=$W54 (plan 36: no ACKDIAG/LOOPDIAG; CAP<n> sets RWM_PCAP_DIR=<pcap dir>) (plan 34 adds RWM_RDIAG=1); S<n>/DEF<n> set RWM_STORE=<n>, BRS<n> sets RWM_QUIC_CC=bbr_rs RWM_STORE=<n>, PWR sets RWM_STORE_LAW=power, KNEE sets RWM_STORE=<cell knee>" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true
 
 # ── plan 27 ───────────────────────────────────────────────────────────────
@@ -946,6 +964,52 @@ if [ "$P57" = 1 ]; then
     exit 0
   fi
   plan57 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
+
+# ── plan 59 (status 59, the evicting-seat m-bar readout): 5 slots of the one arm at c2-100 (seeds 42 / 7 / 42 / 7 / 42); smoke = 1 row ──
+# A slot whose evicting-seat liveness witnesses fail is VOID and re-run ONCE (place38_parse.replace59 decides from the ledger); the replacement is a second row of the same slot.
+run_slot59() { # cell arm seed rep store
+  local why
+  ATTEMPT_OFF=0
+  run_one "$@"
+  if why="$(python3 ./place38_parse.py replace59 "$OUT" "$1" "$2" "$3" "$4")"; then
+    echo "REPLACE59 $1 $2 s$3 rep=$4 reason=$why $(date -u +%T)" >> "$OUT"
+    ATTEMPT_OFF=10      # the replacement's per-row logs are a11 / a12: the VOID row's a1 / a2 stay as evidence
+    run_one "$@"
+    ATTEMPT_OFF=0
+  fi
+}
+plan59() { # smoke -> the whole plan (0), or the smoke row (1)
+  local -a tbl
+  local line cell store arm seed rep
+  if [ "$1" = "1" ]; then
+    mapfile -t tbl < <(python3 ./place38_parse.py plan59 smoke)
+    [ "${#tbl[@]}" -eq 1 ] || { echo "ABORT-PLAN59 smoke table has ${#tbl[@]} rows (1)" >> "$OUT"; exit 3; }
+  else
+    mapfile -t tbl < <(python3 ./place38_parse.py plan59)
+    [ "${#tbl[@]}" -eq 5 ] || { echo "ABORT-PLAN59 table has ${#tbl[@]} rows (5)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell store arm seed rep <<< "$line"
+    if [ "$1" = "1" ]; then run_one "$cell" "$arm" "$seed" "$rep" "$store"; else run_slot59 "$cell" "$arm" "$seed" "$rep" "$store"; fi
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE ${#tbl[@]} slots $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=1
+  fi
+}
+
+if [ "$PLAN" = "59" ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan59 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan59 0
   echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
   grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
   echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
