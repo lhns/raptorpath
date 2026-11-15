@@ -54,16 +54,31 @@ A (R6.2 as written) swept over K, BELOW = slope: landing n* median [min-max] and
  c2-100 n0  10 (knee 169) | K1   11 [  10-  88] anc 1.00 | K2   23 [  10- 110] anc 1.00 | K3   85 [  10- 204] anc 1.00 | K4  135 [  10- 212] anc 1.00 | K5  177 [  11- 218] anc 1.00 | K6  183 [  43- 218] anc 1.00 | K7  186 [ 104- 223] anc 1.00 | K8  196 [ 175- 223] anc 1.00
  c2-100 n0 128 (knee 169) | K1  151 [ 141- 171] anc 1.00 | K2  154 [ 141- 217] anc 1.00 | K3  219 [ 141- 243] anc 0.13 | K4  254 [ 197- 308] anc 0.00 | K5  276 [ 229- 332] anc 0.27 | K6  290 [ 249- 341] anc 0.11 | K7  348 [ 261- 454] anc 0.00 | K8  458 [ 352- 580] anc 0.86
 
-route increase +D ms at window 120 (n0 = 10): n median over windows 100-120 -> 200-240, min n after the step, F - truth at the end
- c1s-400 D +1.0 A | n  644 ->  260 [  10- 299] | min n after  122 | F - truth +0.34
- c1s-400 D +1.0 C | n  563 ->   92 [  32- 262] | min n after   13 | F - truth +0.46
- c1s-400 D +3.0 A | n  644 ->   10 [  10-  10] | min n after   10 | F - truth +0.34
- c1s-400 D +3.0 C | n  563 ->  372 [ 261- 615] | min n after   10 | F - truth +2.92
- c1s-400 D +10.0 A | n  644 ->   10 [  10-  10] | min n after   10 | F - truth +0.34
- c1s-400 D +10.0 C | n  563 ->  278 [ 261- 388] | min n after   10 | F - truth +9.95
- c2-100 D +1.0 A | n  204 ->  191 [ 145- 219] | min n after  172 | F - truth +2.74
- c2-100 D +1.0 C | n  158 ->  133 [  97- 143] | min n after  115 | F - truth +0.32
- c2-100 D +3.0 A | n  204 ->  143 [  88- 192] | min n after  127 | F - truth +2.74
- c2-100 D +3.0 C | n  158 ->   83 [  22- 126] | min n after   36 | F - truth +0.73
- c2-100 D +10.0 A | n  204 ->   10 [  10-  10] | min n after   10 | F - truth +2.74
- c2-100 D +10.0 C | n  158 ->  134 [ 105- 183] | min n after   10 | F - truth +9.42
+route increase +D ms at window 120 (n0 = 10, BELOW flat), 600 windows (150 s) after the step: n median over
+windows 100-120 -> the last 80, min n after the step, F - (truth + D) at the end, and seconds with n below 0.95 of
+the pre-step n
+ c1s-400 D +1.0 A | n  644 ->  269 [  10- 300] | min n after  116 | F - (truth + D) -0.66 | below 0.95 pre-step 149.8 s of 150
+ c1s-400 D +1.0 C | n  563 ->  259 [ 238- 295] | min n after   13 | F - (truth + D) -0.54 | below 0.95 pre-step 149.8 s of 150
+ c1s-400 D +3.0 A | n  644 ->   10 [  10-  10] | min n after   10 | F - (truth + D) -2.66 | below 0.95 pre-step 149.8 s of 150
+ c1s-400 D +3.0 C | n  563 ->  551 [ 273- 618] | min n after   10 | F - (truth + D) -0.08 | below 0.95 pre-step  62.2 s of 150
+ c1s-400 D +10.0 A | n  644 ->   10 [  10-  10] | min n after   10 | F - (truth + D) -9.66 | below 0.95 pre-step 149.8 s of 150
+ c1s-400 D +10.0 C | n  563 ->  291 [ 267- 588] | min n after   10 | F - (truth + D) -0.05 | below 0.95 pre-step 149.8 s of 150
+ c2-100 D +1.0 A | n  204 ->  189 [ 147- 215] | min n after  167 | F - (truth + D) +1.74 | below 0.95 pre-step 100.4 s of 150
+ c2-100 D +1.0 C | n  158 ->  131 [ 107- 149] | min n after  114 | F - (truth + D) -0.68 | below 0.95 pre-step 145.2 s of 150
+ c2-100 D +3.0 A | n  204 ->  142 [  82- 191] | min n after  123 | F - (truth + D) -0.26 | below 0.95 pre-step 149.8 s of 150
+ c2-100 D +3.0 C | n  158 ->   91 [  28- 132] | min n after   17 | F - (truth + D) -2.04 | below 0.95 pre-step 149.8 s of 150
+ c2-100 D +10.0 A | n  204 ->   10 [  10-  10] | min n after   10 | F - (truth + D) -7.26 | below 0.95 pre-step 149.8 s of 150
+ c2-100 D +10.0 C | n  158 ->  134 [ 102- 179] | min n after   10 | F - (truth + D) -0.58 | below 0.95 pre-step 146.9 s of 150
+
+start-up cost of n0 under C (the own step of the law): R median over windows 1-5; hand check
+1 + (F + sigma + q l - Tmin)/T at the smallest pool; seconds from n0 to n = 128 (a common reference) and to
+0.95 n*; deficit over the first 16 windows (about the length of a 4 s 400 MB c1 row at landing) = 1 - sum min(n_k, ref)
+/ (16 ref) with ref = min(n*, echo BDP) - delivery is ~ proportional to n only below the BDP, so this is a proxy
+ flat  c1s-400 n0  10 | R(1-5) 1.19 (hand, F = truth: 1.21) | t to n=128 3.75 s | t to 0.95 n* 11.00 s | first-16-window deficit 0.86
+ flat  c1s-400 n0 128 | R(1-5) 1.19 (hand, F = truth: 1.21) | t to n=128 0.00 s | t to 0.95 n* 8.38 s | first-16-window deficit 0.31
+ flat  c2-100 n0  10 | R(1-5) 1.19 (hand, F = truth: 1.17) | t to n=128 3.75 s | t to 0.95 n* 4.38 s | first-16-window deficit 0.61
+ flat  c2-100 n0 128 | R(1-5) 1.13 (hand, F = truth: 1.17) | t to n=128 0.00 s | t to 0.95 n* 1.00 s | first-16-window deficit 0.01
+ slope c1s-400 n0  10 | R(1-5) 1.19 (hand, F = truth: 1.21) | t to n=128 3.75 s | t to 0.95 n* 5.38 s | first-16-window deficit 0.85
+ slope c1s-400 n0 128 | R(1-5) 1.18 (hand, F = truth: 1.21) | t to n=128 0.00 s | t to 0.95 n* 7.75 s | first-16-window deficit 0.28
+ slope c2-100 n0  10 | R(1-5) 1.19 (hand, F = truth: 1.17) | t to n=128 5.38 s | t to 0.95 n* 5.00 s | first-16-window deficit 0.65
+ slope c2-100 n0 128 | R(1-5) 1.13 (hand, F = truth: 1.17) | t to n=128 0.00 s | t to 0.95 n* 1.00 s | first-16-window deficit 0.01

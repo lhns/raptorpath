@@ -1,4 +1,4 @@
-# store-law r67: the two floors (ℓ̂, b̂₀⁺), K and n₀, derived
+# store-law r67: the two floors (ℓ̂, b̂₀⁺), K and n₀ — a candidate floor, not a recommendation
 
 Status: DERIVATION. Docs and Python only; no engine code, no cargo, no VM. Branch `store-law-r67` off `github/main`
 (`aefe6d97`). It answers the open item of `store-law.md` R6.7, whose text is on `github/s60-design` (`8536f053`), not
@@ -16,13 +16,19 @@ on main. s60 files are cited as `github/s60-design@<sha>:path`.
 - So the line's landing is set by an extreme-value statistic of an unprovenanced K. **The double-count question stays
   open per K and n₀.** What is established is the size of the second b̂₀⁺ where it binds: +55 / +93 / +146 slots at
   c2 / c8 / c1s.
-- The honest replacement is one quantity: **F̂ᵢ = the median absolute window minimum over the K windows of lowest store
-  size seen so far**. It reads no m̂, no b̂₀⁺ and no time index. It starts at the engine's already-derived boot value
-  n₀ = 10, needs no boot hold, and K becomes a smoothing length with derived bounds.
-- **Adopting it exposes a separate gap, and that gap is what stops it shipping.** With honest floors, the form's
-  allowance σ + q·ℓ̂ has no demonstrated margin at c2: it lands 5–33 slots below the knee on the static map, and
-  9–39 below in the replay. The second b̂₀⁺ had been supplying that margin. So the recommendation is the floor
-  estimator, plus an open allowance item; it is not a shippable law yet.
+- **Candidate C** (not a recommendation) replaces it with one quantity: **F̂ᵢ = the median absolute window minimum
+  over the K windows of lowest store size seen so far**. It reads no m̂, no b̂₀⁺ and no time index. It starts at the
+  engine's already-derived boot value n₀ = 10 and needs no boot hold. K is a smoothing length inside a derived band
+  of 3–11; the pick within it (4) is open.
+- **The closed loop exists only in the replay model** (`r67loop.py`). On a static pool every window has the same n, so
+  C reads the last K windows, which is the late T̂min of §1. The static crossings (§4.2) use supplied session floors.
+- **C has two costs:**
+  - n₀ = 10 costs 3.75–5.4 s to reach n = 128 at the law's own step, R ≈ 1.19 per window. A 400 MB c1 row lasts
+    about 4 s at landing, so the row runs longer and almost all of it is start-up.
+  - A longer route is seen only after a collapse to the store floor; a smaller step is under-read for life (§4.3).
+- **C also exposes a separate gap.** With honest floors, the form's allowance σ + q·ℓ̂ has no demonstrated margin at
+  c2: 5–33 slots below the knee on the static map, 9–39 below in the replay. The second b̂₀⁺ had been supplying that
+  margin. **Recommendation: none.** C is the candidate floor; the allowance item and the sub-64 map decide (§5).
 
 **Advisor (Fable) log: what each round changed.**
 1. **Before candidates.**
@@ -58,6 +64,26 @@ on main. s60 files are cited as `github/s60-design@<sha>:path`.
      - the K upper bound is conditional on the sub-64 map;
      - the c2 shortfall is given against both knees;
      - n₀ = 10's unshipped status is quoted from source.
+5. **Main-session review of `4cff88d0`, plus an advisor call.**
+   - C is retitled from "recommended" to a CANDIDATE, and §5 is now "Recommendation: none".
+   - **Static rows:** C reads the last K windows there. `r67floor.py`'s crossings use supplied session floors. The
+     closed loop exists only in the replay.
+   - **Formula:** the one-line form had Fᵢ on both sides. It is split into the floor F̂ᵢ and the coupled target floor
+     Φᵢ.
+   - **n₀ = 10 priced at the law's own step:**
+     - the replay's R is 1.19 per window, hand check 1.17 at c2 and 1.21 at c1s, against the review's ≈ 1.3, because
+       T̂ includes Ŝ;
+     - from 10 to n = 128 takes 3.75 s at both cells (5.4 s at c2 on the slope map);
+     - the first-16-window store deficit against min(n*, BDP) is 0.61–0.65 at c2 and 0.85–0.86 at c1s, against
+       0.01 and 0.28–0.31 from 128;
+     - but C from 128 latches +3.6 ms at c2;
+     - a faster start-up phase would be a mode switch.
+   - **Route step:** run 600 windows past the step. "Parks" is replaced by the measured under-read. The item is filed
+     under `store-law.md` §13.1, beside ℓ̂'s "never expires".
+   - K = 4 is stated as open.
+   - §57: 57a and 57b both checked.
+   - **Reproducibility:** both scripts re-run, and `git diff` on the `.out` files is empty apart from the blocks this
+     round added (route horizon, start-up cost).
 
 **Scripts** (stdlib, `python -I`, outputs beside them):
 
@@ -71,11 +97,12 @@ on main. s60 files are cited as `github/s60-design@<sha>:path`.
   window-minimum estimator. Its numbers here (ℓ scatter, late m̂, σ at load) are cited from
   `github/s60-design@8536f053:docs/derivations/store-law/s60boot.out` and `s60abs.out`.
 - p27 rows are about 9 s with n = 2 per pool; p34 c1s/c1d rows are about 6 s, n = 3.
-- **§57 (`l1-raw/s57`, rep57a/b) carries no `[LOOPDIAG]`**, so it has no window minima either (checked on
+- **§57 (`l1-raw/s57`) carries no `[LOOPDIAG]`**, so it has no window minima either (checked in both rep57a- and
   rep57b-diag-ld). It is not used.
 - Nothing is measured below W 64 at c2, below 128 at c8, or below 256 at c1s.
-- **Static rows cannot replay a closed loop.** `r67loop.py` is a model on the static map, and it does not model
-  c8's coupling.
+- **Static rows cannot replay a closed loop.** Every closed-loop number here comes from `r67loop.py`, a model on the
+  static map, which does not model c8's coupling. Its route step shifts the delay without enlarging the BDP, so only
+  F's refresh is meaningful after the step, not the post-step landing.
 
 ---
 
@@ -257,7 +284,7 @@ terms:
 | **E0a** | ℓ̂ + 2·b̂₀⁺ (the attractor, §2.1) | phase | — | c2 −1.85 → +3.16 |
 | **E1 = B** | median_{k≤K} T̂min,k (absolute, first K) | **phase** (a predicate on k: freezes after K) | none | c2 +0.69 → +0.64; c8 leg 0 −0.02 → −0.04; c1s +0.10 → +0.06 |
 | E1x | max_{k≤K} T̂min,k (absolute, one-sided) | phase | none | c2 +2.98 at every K: it carries window 1's transient |
-| **C** (recommended) | median of T̂min over the **K windows of lowest store size n seen so far** (ties: most recent) | **none**: an order statistic over the history keyed on the law's own state, like ℓ̂ itself | none | **not evaluable on static rows**: n is constant there, so C reads the last K windows. Its only evidence is the replay (§4.3) |
+| **C** (candidate) | median of T̂min over the **K windows of lowest store size n seen so far** (ties: most recent) | **none**: an order statistic over the history keyed on the law's own state, like ℓ̂ itself | none | **not evaluable on static rows**: n is constant there, so C reads the last K windows. Its only evidence is the replay (§4.3) |
 | E2 (C's static stand-in) | the same, keyed on `[DIAG] win=` occupancy a, ties to the earliest | none | none | c2 +0.30 → +0.27; c8 leg 0 −0.09 → −0.41; c1s +0.01 → +0.01. The ordering by a is arbitrary on static rows |
 | occupancy weight | weight windows by (BDP̂ − aₖ)/BDP̂ | none | **oracle**: BDP̂ needs capacity (E04, the R5.4 trap) | not evaluated |
 | a/W as the key | key on `[DIAG] win=a/W` | none | none | **does not separate**: a/W ≈ 1 and paused ≈ 60–65 % at both W 96 and W 512 (c2), so on static rows a carries no queue information |
@@ -296,8 +323,8 @@ terms:
 - **Inside the band:** E1's bias varies by under 0.3 ms for K ≥ 3 on every cell and leg except c8 leg 1 (c2 +0.44 to
   +0.74 ms; c1s +0.03 to +0.10; c8 leg 0 −0.11 to −0.02). E2 is looser: c2 K 3 −0.29, and c8 leg 0 −0.41 to −0.48 at
   K 6–12, on two rows each. This is insensitivity on thin data, not a selected value.
-- **K = 4 is provisional.** The two rows per pool at c2 and c8, and E2's arbitrary ordering on static rows, cannot
-  select within the band. The registered s60 rows can settle it (§6).
+- **K = 4 is an open pick inside the 3–11 band, not a derived value.** The two rows per pool at c2 and c8, and E2's
+  arbitrary ordering on static rows, cannot select within the band. The registered s60 rows can settle it (§6).
 
 **n₀'s provenance.** The engine already carries a derived boot value: `STORE_BOOT_DERIVED` = max(ANCHOR_MIN_SAMPLES ·
 MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC 6928 initial window) = max(8, 10) = 10 = `STORE_CAP_FLOOR` (`sender_policy.rs`).
@@ -307,9 +334,33 @@ MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC 6928 initial window) = max(8, 10) = 10 = `STO
 - Under C, n₀ = 10 needs no hold: queue-freeness of the selected windows is the derived inequality above. It is a
   **domain condition**, BDP ≫ n₀·R₀^(K−1) ≈ 15–17 symbols for K = 4, with the gauge "max n over the K selected windows
   against the n at which T̂min first rises".
-- **The cost is the ramp** (`r67loop.out`, windows to 0.95·n*):
-  - c2: 17–20 windows from 10, against 4 from 128 (+3–4 s);
-  - c1s: 21–44 from 10, against 7–33 from 128 (+1–4 s).
+- **The cost is the ramp, at the law's own step** (`r67loop.out`, "start-up cost"; C, 20 seeds).
+  - Below the knee the per-window gain is
+
+    ```text
+       R₀  =  1 + (F̂ + σ + q·ℓ̂ − T̂min) / T̂        ≈ 1 + (σ + q·ℓ̂)/T̂   when F̂ ≈ T̂min
+    ```
+
+    T̂ is the window median, Ŝ included (14.8 ms at c2, 3.85 ms at c1s). Hand check 1.17 at c2 and 1.21 at c1s; the
+    replay's median over windows 1–5 is 1.19 at both cells. The review's ≈ 1.3 came from dividing by T̂min instead of
+    T̂.
+  - **n₀ = 10 to n = 128** (a common reference): 3.75 s at both cells on the flat map, 5.4 s at c2 on the slope map.
+    ln(12.8)/ln 1.19 ≈ 14.7 windows ≈ 3.7 s.
+  - **To 0.95·n*:**
+    - c2: 4.4–5.0 s from 10, against 1.0 s from 128;
+    - c1s: 5.4–11.0 s from 10, against 7.8–8.4 s from 128.
+    - This mixes n₀'s cost with the landing, which differs between maps.
+  - **Store deficit over the first 16 windows** (1 − Σ min(nₖ, ref)/(16·ref), with ref = min(n*, echo BDP)): a proxy,
+    and an upper bound for goodput at c1s, where delivery is not proportional to n above the BDP.
+    - c2: 0.61–0.65 from 10, against 0.01 from 128;
+    - c1s: 0.85–0.86 from 10, against 0.28–0.31 from 128.
+  - **Reading:**
+    - Rows are byte-fixed, so a 400 MB c1 row (about 4 s at landing) runs longer and is almost entirely start-up.
+    - The 600 MB c2/c8 rows (about 60 s) pay about 4–5 s.
+    - **The 128 start is not an honest alternative at c2:** C from 128 latches +3.6 ms and lands at 218 (§4.3).
+    - **A faster start-up phase would be a mode switch**, which is not allowed. The only mode-free levers are n₀
+      itself (whose floor reading is the issue) and the window length T_w (declared, §3.1, its own open question).
+    - This cost is part of the candidate, not a footnote.
 
 ---
 
@@ -332,6 +383,10 @@ doubles it. The static ledgers can evaluate candidates only where the pool is sm
 
 ### 4.2 R crossing per cell (`r67floor.out` §5; floors as session values from the small pools, q = 0.10)
 
+These crossings use **supplied session floors**: `rcell` takes F per leg as the median of the estimator over the
+cell's small-pool rows, and reads every other input from the row. They are not a closed loop; C as specified would read
+the last K windows on each static row, i.e. §1's late T̂min column, so C is not in this table.
+
 The figures in brackets are slots against the §56 goodput knee and against this ledger's 0.95 delivery knee.
 
 | F source | c2 (knees 169 / 181) | c8 (340 / 361) | c1s (903 / 1 458) |
@@ -351,7 +406,7 @@ The figures in brackets are slots against the §56 goodput knee and against this
   per-window sample-count eligibility rule, which is open item 4.
 - **c1s:** below the knee under every form. That is the known receiver-bound result (R5.5).
 
-### 4.3 Closed-loop replay (`r67loop.out`; c2 and c1s; 20 seeds, 240 windows)
+### 4.3 Closed-loop replay (`r67loop.out`; c2 and c1s; 20 seeds, 240 windows): the only closed loop in this document
 
 | cell | n₀ | estimator | F − truth (ms), BELOW flat / slope | landing n*, flat / slope (knee) |
 |---|---|---|---|---|
@@ -373,40 +428,54 @@ The figures in brackets are slots against the §56 goodput knee and against this
     not a measured slope.
 - **The landing under C is therefore set by the unmeasured sub-64 map.** That is the decisive missing data.
 
-**Route step** (+D ms on the path floor at window 120, n₀ = 10; `r67loop.out` last block):
-- **A collapses to the floor and stays there for D ≥ 3 ms at c1s and D = 10 ms at c2.** Its m̂ follows by at most
-  b̂₀⁺, and its F is frozen.
-- **C recovers from large steps only by first collapsing to the floor.** There the lowest-n set refreshes: c1s D 3 →
-  372, D 10 → 278 with F − truth = +2.9 / +9.95; c2 D 10 → 134.
-- **C parks on intermediate steps:** c2 D 3 holds n ≈ 83 with min n 36, never reaching the refresh set; c1s D 1 drops
-  from 563 to 92.
-- **So C is not route-following.** It is the same lifetime-floor domain condition as ℓ̂ (L1 cells have no route
-  change), with a self-refresh only through collapse. A route-following floor needs a drain, which no candidate here
+**Route step** (+D ms on the path floor at window 120, n₀ = 10, BELOW flat, run 600 windows (150 s) past the step;
+`r67loop.out` "route increase").
+- The model shifts the delay without enlarging the BDP, so the post-step landing is not meaningful. The floor's
+  refresh, F − (truth + D), is.
+- **A never refreshes:** F keeps its boot value, so F − (truth + D) = boot bias − D: c2 +1.74 / −0.26 / −7.26 ms and
+  c1s −0.66 / −2.66 / −9.66 ms at D = 1 / 3 / 10. It collapses to the store floor
+  and stays there for D ≥ 3 ms at c1s and D = 10 ms at c2.
+- **C refreshes only through a collapse to the store floor.** Where the step drives n down to the lowest-n set, it
+  reads the new floor: c1s D 3 −0.08 ms, D 10 −0.05; c2 D 10 −0.58.
+- **Where the step is too small to force that collapse, C under-reads for life:** c2 D 1 −0.68 ms, D 3 −2.04 (min n 17,
+  never reaching the refresh set); c1s D 1 −0.54. The under-read eats the allowance one-for-one, and n stays below its
+  pre-step value for essentially the whole 150 s (145–150 s at c2; c1s D 3 recovers after 62 s).
+- **The cost of the lifetime floor:**
+  - a route increase D is seen only after a collapse to the store floor, then a 4–11 s ramp;
+  - a D below what forces that collapse is a permanent under-read of D.
+- **So C is not route-following.** It shares ℓ̂'s domain condition (L1 cells have no route change), and is filed with
+  ℓ̂'s "never expires" item in `store-law.md` §13.1. A route-following floor needs a drain, which no candidate here
   supplies without a schedule constant.
 
 ---
 
-## 5. Recommendation
+## 5. Recommendation: none. Candidate C, and what decides
 
-**Floor estimator (recommended, as the replacement for ℓ̂ + b̂₀⁺ and the anchor):**
+**Candidate floor C** (a candidate replacement for ℓ̂ + b̂₀⁺ and the anchor, not a recommendation). The floor is
+separated from the coupled target:
 
 ```text
-   Fᵢ  =  median{ T̂min,k : the K = 4 windows of leg i with the lowest nₖ so far (ties: most recent) }  +  ½·max(0, maxⱼ Fⱼ − Fᵢ)
+   F̂ᵢ  =  median{ T̂min,k : the K windows of leg i with the lowest nₖ so far (ties: most recent) }      K ∈ [3, 11], pick open (4 used here)
+   Φᵢ  =  F̂ᵢ + ½·max(0, maxⱼ F̂ⱼ − F̂ᵢ)                                                                (coupled target floor, R3.3)
+   target T*ᵢ  =  Φᵢ + σᵢ + q(δ)·ℓ̂ᵢ + Ŝᵢ                                                               (R6.2's line, with Φᵢ in place of Fᵢ)
 ```
 
 - **Provenance:**
   - T̂min,k is measured (the gauge's window minimum);
   - the key nₖ is the law's own state;
-  - K ∈ [3, 11] is derived (transient rejection; the queue-free-span inequality), with measured insensitivity inside;
-    K = 4 is provisional pending s60's sweep;
+  - K ∈ [3, 11] is derived (transient rejection; the queue-free-span inequality, conditional on the sub-64 map), with
+    insensitivity measured on thin data inside it. **K = 4 is an open pick within the band**, for s60's sweep;
   - n₀ = 10 = `STORE_BOOT_DERIVED` is cited (RFC 6928) and derived in the engine;
   - no hold, no m̂, no b̂₀⁺, no time index.
+- **Costs carried with the candidate:**
+  - the n₀ = 10 ramp, 3.75–5.4 s to n = 128 at R₀ ≈ 1.19 (§3);
+  - the lifetime floor's route cost (§4.3).
 - **Shape:** order 0 in N; ms; continuous in δ (δ is not an input); no ρ; one expression.
 - **Optional, removing ℓ̂ entirely:** q(δ)·F̂ᵢ in place of q(δ)·ℓ̂ᵢ. That is the same sentence ("a fraction of the
   queue-free loop") on the identifiable quantity. It raises the allowance by q·(F̂ − ℓ̂) ≈ +0.2–0.3 ms at c2 and about
   +0.03 ms at c1s. Not evaluated.
 
-**The law: none shippable yet.** With honest floors, the c2 landing has no demonstrated margin:
+**Why none:** With honest floors, the c2 landing has no demonstrated margin:
 - static map 148–164 against knees 169 / 181;
 - replay 130–160.
 
@@ -443,7 +512,7 @@ s60 runs W 96 / 128 calibration rows (plus the arms) at c2 / c8 / c1s, with `[SL
 - **§2.2's mechanism on more rows:** where b0p is attained against where `m` last drops. Also b0p(K) for K = 1…8 from
   `b0k`. This is s60flip's input, measured rather than predicted.
 - **The partial-load rise between W 96 and 128 at c2/c8/c1s:** the absolute late `tmin` per pool.
-- **P1/P3 (latch, `l` rising):** these confirm §1.1 on static pools. They are not needed for the recommendation.
+- **P1/P3 (latch, `l` rising):** these confirm §1.1 on static pools. They are not needed for the candidate.
 - **The c2 anchor-flip readout:** reads the K = 8 line at static pools.
 
 **It cannot settle:**

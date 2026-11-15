@@ -424,8 +424,10 @@ R6.7 (boot hold, n₀, ℓ̂'s source) is on `s60-design`; this pointer belongs 
 - b̂₀⁺(K) traces the running anchor's convergence, so K has no provenance in this form;
 - a boot at 128 ratchets the latch.
 
-It recommends one absolute floor instead: the median window minimum over the K = 4 lowest-n windows, from n₀ = 10
-(`STORE_BOOT_DERIVED`), with no hold and no m̂ or b̂₀⁺.
+It offers a CANDIDATE, not a recommendation: one absolute floor, the median window minimum over the K lowest-n
+windows (K in 3–11, pick open), from n₀ = 10 (`STORE_BOOT_DERIVED`), with no hold and no m̂ or b̂₀⁺. Its costs are:
+- a ramp of about 4–5 s from n₀ = 10 at R₀ ≈ 1.19 per window;
+- a longer route seen only after a collapse to the store floor.
 
 It also finds that, with honest floors, c2 has no demonstrated margin at its knee. That opens an allowance item, so
 the law is not shippable from this revision.
@@ -2022,12 +2024,18 @@ guard-witness note (§6). F10 and the standing-queue readout go to the owner wit
 
 ### 13.1 Carried to Part B (open; nothing solved here)
 
-- **K = 8 and n₀ = 128 have no provenance.** "Declared constant" is not an allowed class (FORMULA-FIRST). Each needs
+- **K = 8 and n₀ = 128 have no provenance.** See `store-law-r67.md` §3 for derived bounds under a candidate floor. "Declared constant" is not an allowed class (FORMULA-FIRST). Each needs
   a derivation or a resource bound stated outside the law.
 - **b̂₀⁺'s tail.** One bad boot window (45–49 ms at c8) becomes a standing queue for the transfer's lifetime. Gauge
   the K windows' spread per row (max − median, sample counts), and derive a bound that a single window cannot set.
 - **The max over lifetime floors steps when a leg joins or dies.** An idle or dead slow leg sets the fast leg's
   target indefinitely, because ℓ̂ never expires. Check the shape in N (legs joining, symmetric and asymmetric), and
   the leg-death case: the term must leave F continuously when the leg leaves the live set.
+- **Lifetime floors and route changes** (filed from `store-law-r67.md` §4.3). ℓ̂ and r67's candidate lowest-n floor
+  never expire:
+  - a longer route is seen only after a collapse to the store floor, followed by a 4–11 s ramp;
+  - a smaller step is a permanent under-read of D, which eats the allowance.
+
+  Domain condition: no route change, with a gauge.
 - **ρ.** The coupling is justified at ρ = 1 only, and "a future ρ < 1 gate" is mode-switch wording. The coupling
   needs a form continuous in ρ, or an explicitly stated domain (the store gate exists only at ρ = 1, F02).

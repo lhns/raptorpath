@@ -125,7 +125,7 @@ def run(cell, n0, est, seed, nw=240, q=0.10, step=0.0, K=None):
         else:
             F = St.median([x[2] for x in sorted(hist, key=lambda x: (x[0], -x[1]))[:KC]])
         R = (F + sig + q * l + tp - tmin) / tp
-        traj.append((n, F, tmin, est in ('A', 'Ah') and m >= l + bmax))
+        traj.append((n, F, tmin, est in ('A', 'Ah') and m >= l + bmax, R))
         if est == 'Ah' and k <= KA:
             continue
         n = min(2048.0, max(10.0, n * R))
@@ -178,17 +178,46 @@ for mode in ('flat', 'slope'):
 
 BELOW[0] = 'flat'
 print()
-print('route increase +D ms at window 120 (n0 = 10): n median over windows 100-120 -> 200-240, min n after the step,'
-      ' F - truth at the end')
+print('route increase +D ms at window 120 (n0 = 10, BELOW flat), 600 windows (150 s) after the step: n median over')
+print('windows 100-120 -> the last 80, min n after the step, F - (truth + D) at the end, and seconds with n below 0.95 of')
+print('the pre-step n')
 for cell in sorted(MAP):
     for D in (1.0, 3.0, 10.0):
         for est in ('A', 'C'):
-            a, b, lo, F = [], [], [], []
+            a, b, lo, F, below = [], [], [], [], []
             for s in range(20):
-                tr = run(cell, 10, est, s, step=D)
-                a.append(St.median([x[0] for x in tr[99:120]]))
-                b.append(St.median([x[0] for x in tr[199:]]))
+                tr = run(cell, 10, est, s, step=D, nw=720)
+                pre = St.median([x[0] for x in tr[99:120]])
+                a.append(pre)
+                b.append(St.median([x[0] for x in tr[-80:]]))
                 lo.append(min(x[0] for x in tr[120:]))
-                F.append(tr[-1][1] - truth[cell])
-            print(' %s D %+4.1f %s | n %4.0f -> %4.0f [%4.0f-%4.0f] | min n after %4.0f | F - truth %+.2f' % (
-                cell, D, est, St.median(a), St.median(b), min(b), max(b), St.median(lo), St.median(F)))
+                F.append(tr[-1][1] - truth[cell] - D)
+                below.append(0.25 * sum(x[0] < 0.95 * pre for x in tr[120:]))
+            print(' %s D %+4.1f %s | n %4.0f -> %4.0f [%4.0f-%4.0f] | min n after %4.0f | F - (truth + D) %+.2f'
+                  ' | below 0.95 pre-step %5.1f s of 150' % (cell, D, est, St.median(a), St.median(b), min(b), max(b),
+                                                          St.median(lo), St.median(F), St.median(below)))
+
+BDP = {'c2-100': 143, 'c1s-400': 366}   # queue-free echo BDP, r67floor.out section 1 (mu * T at the smallest pool)
+print()
+print('start-up cost of n0 under C (the own step of the law): R median over windows 1-5; hand check')
+print('1 + (F + sigma + q l - Tmin)/T at the smallest pool; seconds from n0 to n = 128 (a common reference) and to')
+print('0.95 n*; deficit over the first 16 windows (about the length of a 4 s 400 MB c1 row at landing) = 1 - sum min(n_k, ref)')
+print('/ (16 ref) with ref = min(n*, echo BDP) - delivery is ~ proportional to n only below the BDP, so this is a proxy')
+for mode in ('flat', 'slope'):
+    BELOW[0] = mode
+    for cell in sorted(MAP):
+        sm = [p for p in MAP[cell] if p[0] == SMALL[cell]][0]
+        hand = 1 + (sm[1] + CELLS[cell]['sig'] + 0.10 * LSMALL[cell] - sm[1]) / sm[2]
+        for n0 in (10, 128):
+            r5, t128, ts, dz = [], [], [], []
+            for s in range(20):
+                tr = run(cell, n0, 'C', s)
+                ns = St.median([x[0] for x in tr[-80:]])
+                ref = min(ns, BDP[cell])
+                r5.append(St.median([x[4] for x in tr[:5]]))
+                t128.append(0.25 * next((i for i, x in enumerate(tr) if x[0] >= 128), len(tr)))
+                ts.append(0.25 * next(i for i, x in enumerate(tr) if x[0] >= 0.95 * ns))
+                dz.append(1 - sum(min(x[0], ref) for x in tr[:16]) / (16 * ref))
+            print(' %-5s %s n0 %3d | R(1-5) %.2f (hand, F = truth: %.2f) | t to n=128 %.2f s | t to 0.95 n* %.2f s'
+                  ' | first-16-window deficit %.2f' % (mode, cell, n0, St.median(r5), hand, St.median(t128),
+                                                       St.median(ts), St.median(dz)))
