@@ -982,6 +982,29 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Before launch:** `df` on the VM home. Stale run trees go first: the §56/§57 run dirs, whose ledgers are in the repo.
 - **Host builds:** host cargo is paused, with the build lock held by the main session, throughout both parts.
 
+## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
+
+**The registration is `docs/derivations/s60-registration.md` at `s60-design` `10272273`** (merged to main). It was reviewed with Fable in ten logged rounds and is registered verbatim from that commit; no rule is restated here.
+
+**Owner summary (from the doc).**
+- On a static pool the store fills within half a second, so the law's floors (b̂₀⁺, ℓ̂) are read from windows that already carry queue. So this session cannot test the law itself. It does three things:
+  1. it measures where the queue-free floor lies, on pools below anything measured (c2 W 16/32/48, c8 W 32/64/96, c1s W 64/128/192);
+  2. it tests the target FORM with those floors, decisively at c8 (B2, a gross-miss detector);
+  3. at c2 it scores the allowance shortfall D. R6.7 predicts SHORT, with D of +0.9 to +2.2 ms.
+- c1s scores the sign of R̃ − 1 at its control. Paired G/C rows (`RWM_SLAW=1/0`) check the gauge's own cost for gross errors.
+- Five evicting c2 rows (plan 59) give m̄ (`adv`), W1 (`dbt_share`) and K4's inputs (`fec=`) for the P_fec oracle.
+
+**Tree and binary.**
+- `s60-tree` `cb88df3a` (main + `slaw-gauge` `d416d59b`), plus the harness (tools only).
+- 60-pre (above) pins the suites, `bin_sha` and `ref60-manifest`.
+
+**Launches.**
+- 60a: 98 rows, typical 2.2 h, worst 3.2 h, `LD_HARD` +4 h.
+- 60b: 47 rows (plus at most 5 evicting re-runs), typical 1.25 h, worst 2.9 h, `LD_HARD` +4 h.
+- A rehearsal (10 rows) runs before 60a, with the c8 and c1s go/no-go and the witness checks.
+
+**Next derivation:** R6.7 (`store-law-r67.md`), the candidate floor and the allowance item. A large sweep comes only after it.
+
 ## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
 
 **Why.**
