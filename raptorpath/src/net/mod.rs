@@ -26,6 +26,7 @@ pub mod receiver;
 pub mod recv_block;
 pub mod reorder;
 pub mod rttdump;
+pub mod slaw;
 pub mod sender_policy;
 pub mod succ;
 pub mod tasks;
@@ -2189,6 +2190,11 @@ async fn run_window_sender(
                     sacki_ranges += 1;
                     sacki_newly += sack_newly.len() as u64;
                     sack_released_total += sack_newly.len() as u64;
+                    // Store-law gauge (`[WSTORE] relb=`): one release event's
+                    // size. `None` unless `RWM_DIAG` armed it.
+                    if let Some(s) = dg.slaw.as_deref_mut() {
+                        s.note_release(sack_newly.len());
+                    }
                     if pol.percap_track {
                         for &k in &sack_newly {
                             // Per-path account slot freed on delivery
@@ -3750,6 +3756,8 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 mod tests;
 #[cfg(test)]
 mod sack_memo_tests;
+#[cfg(test)]
+mod slaw_tests;
 #[cfg(test)]
 mod hotpath_pin;
 #[cfg(test)]

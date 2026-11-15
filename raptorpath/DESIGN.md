@@ -119,7 +119,7 @@ at Bulk/Auto, EVICT at Realtime — and composes with δ; it selects no pipeline
 | `net/receiver.rs`, `net/control_msg.rs`, `net/reorder.rs` | receiver task, control-message dispatch, in-order frontier |
 | `net/framing.rs` | length-prefix packet framing and symbol packing |
 | `net/tasks/` | background tasks: path add/remove, periodic report, control fast path |
-| `net/{diag,ackdiag,cpuprof,eta,lat,late,succ,walldiag,rttdump,recv_block}.rs` | measurement instruments (`[DIAG]`, `[ETA]`, `[LAT]`, ...), mostly off by default |
+| `net/{diag,ackdiag,cpuprof,eta,lat,late,succ,walldiag,rttdump,slaw,recv_block}.rs` | measurement instruments (`[DIAG]`, `[ETA]`, `[LAT]`, `[WSTAT]`/`[WSTORE]`/`[SLAW]`/`[SLAWC]`/`[CAPLOG]` (store-law gauge, `RWM_DIAG`), ...), mostly off by default |
 | `fec/` | codecs: `rlc_window.rs`, `unified.rs`, `generation.rs` (opt-in generation coding; `generation/reference.rs` is the test oracle), the window traits and the wire `WireSymbol`/`FecBackend` types |
 | `control/` | `estimator.rs` (Beta + BOCD loss estimate), `fec_rate.rs` (r*, rate mix, taper), `anchor.rs` (anchor hygiene); `changepoint`, `gilbert_elliott` and `p_lost` are re-exported from `raptorpath-math` |
 | `scheduler/` | `mod.rs` (`Scheduler`, the `live_paths`/`active_paths` sets, weights), `path.rs` (`PathState`), `copa.rs` (Copa-lite, `CopaState`), `place.rs` (placement, `place_costs`), `clock.rs` (injectable clock) |
