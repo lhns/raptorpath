@@ -80,7 +80,7 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
      - Conditioning becomes the fallback.
    - **The collapse flag does not gate calibration rows** (pools below c1s's BDP). A go/no-go on the rehearsal's c1s
      W 128 row is registered (§2, §5).
-8. **Check of `f8ea7d6c`, worked with the advisor** (entry 7 had no advisor call).
+8. **Check of `f8ea7d6c`** (entry 7 had no advisor call; the advisor call for this entry returned "temporarily overloaded", so the entry is unreviewed).
    - **c2's interval** is set by the threshold ℓ̂_c + b̂₀⁺_c, not by the replicates (`s60flip.out`: 10–90 % width 53
      slots from the threshold alone, 16 from the replicates alone, 52 combined).
      - Calibration rows narrow it only slowly (34 slots at 12 rows, 16 at 48), and the prediction is |D| ≈ 4 slots.
