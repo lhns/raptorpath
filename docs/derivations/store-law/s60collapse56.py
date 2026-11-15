@@ -3,12 +3,12 @@ spread, and run on s56's small-pool rows (which must NOT be flagged).
 
 Usage: python -I s60collapse56.py <extracted .../run/rep56/diag-ld>
 
-Per row and leg, LATE ticks (t >= 15 s; c1s 5 s; src > 0): excess = tick echo mean - l (top-level 0.1 ms rtt at one
-leg, per-leg 1 ms rtt at c8; l = min rtp_us of the leg over the row).
-  E90(cell, leg) = the 90th percentile of the excess over all LATE ticks of the cell's smallest pools (queue-free
-                   spread: c2 W 128/160, c8 W 160/224, c1s W 384).
-  s56's collapse-flagged rows are left out of E90. The margin is the one validated on s57a's c1s rows: X = 5 ms there, and E90 at c1s = e (printed), so
-  delta = 5 - e. The rule per cell and leg: X = E90(cell, leg) + delta.
+Per row and leg, LATE ticks (t >= 15 s; c1s 5 s; src > 0): excess = the tick's [DIAG] rtt= (the estimator's EWMA
+RTT: top-level 0.1 ms at one leg, per-leg 1 ms at c8) - l (l = min rtp_us of the leg over the row).
+  E50 / E90 (cell, leg) = percentiles of the excess over all LATE ticks of the cell's smallest pools (queue-free
+                   spread: c2 W 128/160, c8 W 160/224, c1s W 384); s56's collapse-flagged rows are left out.
+  The rule per cell and leg: X = E90 + 2*(E90 - E50), from the cell's own spread (at c1s 6.1 ms, which
+  s60collapse.py checks on s57a's collapse rows).
 Printed per small-pool row: the share of its LATE ticks above X (the rule flags at > 0.10).
 """
 import glob, os, re, statistics as St, sys
