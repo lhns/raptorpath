@@ -1,0 +1,13 @@
+abs late Tmin at the knee arms, row sd         0.100 - 0.250 ms
+knee position: sigma_W95 x slope at the knee   0.129 - 0.282 ms
+sigma at load, row sd                          0.100 - 0.150 ms
+session floor F_floor (median of N rows)       0.051 - 0.128 ms
+q * l_c (median of N rows, l row sd 1.4 ms)    0.072 - 0.072 ms
+low: per-replicate sd 0.19 ms -> pooled se 0.13 ms, 90 % half-width 0.22 ms
+   predicted D at knee 169, floor flat below W 64: +0.9 ms -> interval lower edge +0.68 (SHORT iff > 0)
+   predicted D at knee 169, floor on the secant to W 16: +1.9 ms -> interval lower edge +1.68 (SHORT iff > 0)
+high: per-replicate sd 0.41 ms -> pooled se 0.25 ms, 90 % half-width 0.42 ms
+   predicted D at knee 169, floor flat below W 64: +0.9 ms -> interval lower edge +0.48 (SHORT iff > 0)
+   predicted D at knee 169, floor on the secant to W 16: +1.9 ms -> interval lower edge +1.48 (SHORT iff > 0)
+COVERED would need the pooled D <= -(half-width); a floor read too high biases D DOWN (toward COVERED), so
+SHORT stands as a lower bound without floor convergence and COVERED needs a converged floor.

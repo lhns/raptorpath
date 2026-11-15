@@ -1,34 +1,26 @@
 # s60: the store law's gauge session (B-1), pre-registration
 
 **For the owner, in plain words.**
-- On a static store pool, the store fills within half a second. So the law reads its two floors, b̂₀⁺ (the boot brake)
-  and ℓ̂ (the lifetime echo minimum), from windows that already carry queue.
-- That is what p27 and §56 predict (P1, P3 below). The gauge has not yet shown it.
-- So this session cannot test the law itself. It tests the law's target FORM with floors supplied from queue-free
-  calibration rows, decisively only at c8 (B2), and measures whether the floors are contaminated (P1, P3).
-- The next step is a derivation, not a sweep: the boot hold and n₀ (`store-law.md` R6.7). A large sweep belongs after
-  it.
+- On a static store pool the store fills within half a second. So the law's two floors, b̂₀⁺ (the boot brake) and ℓ̂
+  (the lifetime echo minimum), are read from windows that already carry queue.
+  - p27 and §56 predict this (P1, P3), but the gauge has not shown it yet.
+  - R6.7 (`store-law-r67.md`) also shows that even the boot cap 128 is not queue-free at c2.
+- So this session cannot test the law itself. It does three things:
+  - it measures where the queue-free floor actually lies, on pools below anything measured so far (R6.7's open
+    item 1);
+  - it tests the target form with those honest floors, decisively at c8 (B2);
+  - at c2 it measures whether the allowance σ + q·ℓ̂ covers the knee (R6.7's open item 2). R6.7 predicts it falls
+    ≈ 0.9 ms short.
+- The next step is R6.7's derivation, finishing its floor estimator and its allowance form. A large sweep belongs
+  after that.
 
-**c2: B2 is unscoreable under either calibration, and the reason is the form's own anchor term, not noise.**
-- **Per-replicate calibration:** the row scatter of `l` (sampling noise of a minimum, `s60abs.out`) makes the
-  resolvable miss 114–256 slots, which is below the calibration arm.
-- **Session-level calibration** removes that noise. But the row's Copa minimum m̂ then decides the anchor: F = min(m̂,
-  ℓ̂_c + b̂₀⁺_c) + b̂₀⁺_c.
-  - On §56 the late m̂ is tight (row sd 0.20–0.58 ms). It sits **below** ℓ̂_c + b̂₀⁺_c ≈ 10.25 ms (anc 0) at W 128
-    (3 of 3 rows) and W 160 (2 of 3), and above it from W 192 on (`s60abs.out`).
-  - In the anc 0 zone, R̃ − 1 ≥ σ/T̂ > 0 whenever the late brake is ≤ b̂₀⁺_c + q·ℓ̂_c. So R̃ cannot reach 1 below the
-    W where m̂ lifts b̂₀⁺ above the floor. That **anchor flip** lies at ≈ 160–192, around the knee (169), and R̃ just
-    past it is still ≈ 1.1–1.2.
-- **So at c2 the form needs a standing 10 s minimum queue of ≈ b̂₀⁺ (≈ 2.2–2.7 ms) before it can cross.** c2's
-  knee queue is ≈ 0.8 ms.
-  - Whether the flip lands above the knee depends on K, the number of boot windows b̂₀⁺ is maxed over (`s60flip.out`).
-  - At the gauge's K = 8 the pooled readout (the median over replicates of flip − knee) is predicted at −27 / +4 / +26
-    slots (10 / 50 / 90 %). UNRESOLVED is the expected label: the interval is 26–53 slots wide, against ≈ 4.
-  - At K ≤ 4 the flip falls at or below the calibration arm.
-- As ruled, B2 is **not scored**. It is replaced by a **pooled flip − knee readout for each K** (§3.1), with
-  conditioning as the fallback.
-- This revision's first push had claimed a session-calibrated c2 B2 at 6–26 slots. That claim is withdrawn: it left
-  out the row's m̂.
+**c2 (entry 10): its scored reading is the allowance shortfall at the knee** (§3.1).
+- D = (the window-minimum rise above the floor at the in-session knee) − (σ + q·ℓ̂), from printed `tmin`, `sig` and
+  `l`.
+- Predicted at +0.9 ms (floor flat below W 64) to +2.2 ms (floor on the secant down to W 16). The 90 % half-width is
+  0.22–0.42 ms, so SHORT is predicted and resolved.
+- It replaces the per-K anchor flip, which measured b̂₀⁺(K) and was expected UNRESOLVED; the flip is now reported only.
+- c2's B2 stays unscored: below the anchor flip the line keeps R > 1.
 
 Status: DRAFT REGISTRATION (derivation style). Docs and Python only: no engine code, no cargo, no VM contact. It is
 written to be copied into `docs/status.md` as §60. It is built on `store-law.md` R4.8, R5.6, R6.2 and R6.7, the gauge
@@ -115,6 +107,24 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
      the code, and the coordinator is asked to run `slaw_reachability`. A failing row is reported, not voided.
    - **60-pre adds the `binid_run.sh` crate-directory build,** whose sha every later stage must match.
    - **The R6.7 note and the top of the doc cite the pooled readout,** replacing the FLAT-AT-KNEE 0.58.
+10. **Main session folds in R6.7 (`github/store-law-r67` `4cff88d0`), worked with the advisor.**
+    - **Calibration moves to floor pools** below R6.7's smallest measured pool:
+      - c2: W 16 / 32 / 48;
+      - c8: W 32 / 64 / 96;
+      - c1s: W 64 / 128 / 192.
+      - Each has its own bytes and a 150 s timeout. Per-leg floor pools use an `nk` ≥ 10 rule.
+    - The b0p-flatness gate and "calibrate at n₀ = 128" are withdrawn, because W 128 is not queue-free at c2.
+    - **A `tmin` convergence gate** between the two smallest pools replaces them. It is a two-way reading of R6.7's
+      open item 1, and its NOT-CONVERGED consequences are signed.
+    - **c2's scored reading is the allowance shortfall D** (`s60short.py`): predicted +0.9 ms (flat) to +2.2 (secant),
+      half-width 0.22–0.42 ms, so SHORT is resolved. The per-K flip is reported only.
+    - **c8's B2 stands.** Its band and firing region are labelled cap-128-based, beside R6.7's 440–446.
+    - **R̃₆₇, the R6.7-form replay,** is reported beside every R̃. It is frozen from `r67floor.py` `rcell` and
+      self-tested in `s60replay.py`.
+    - **The b0k[0] / `m` = `l` witness and c8 leg 1's sampler attachment** become rehearsal checks, since the host
+      `slaw_reachability` run prints no lines. A failing row is reported, not voided.
+    - **No new engine print.**
+    - Rows: 145 (+ ≤ 5), plus 9 rehearsal rows, in two launches.
 
 **Helper scripts** (stdlib Python, run with `-I`; outputs committed beside them in `store-law/`).
 
@@ -143,17 +153,34 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
 **Definition.**
 - R̃ is the gauge's `slaw_r` (R6.2's line), replayed from each window's printed `[SLAW]` fields.
 - **What the replay is fed (frozen), per cell and leg, at K = 8** (each K's report uses its own K):
-  - `b0` = **b̂₀⁺_c**, the session median over valid W 128 rows of the per-row `b0p` (max of the first K `b0k`
-    brakes);
+  - `b0` = **b̂₀⁺_c**, the session median, over the leg's **floor-pool** valid rows (§2, entry 10; previously W 128),
+    of the per-row `b0p` (max of the first K `b0k` brakes);
   - at c2 and c8, `l` = **T_c − b̂₀⁺_c**, where **T_c** is the session median over the same rows of the per-row sum
-    `l` + `b0p`. The anchor test m̂ ≥ `l` + `b0` is then exactly m̂ ≥ T_c, the threshold the flip readout (§3.1)
-    uses, and F = T_c + b̂₀⁺_c where the anchor binds;
+    `l` + `b0p`. The anchor test m̂ ≥ `l` + `b0` is then exactly m̂ ≥ T_c, and F = T_c + b̂₀⁺_c where the anchor
+    binds;
   - at c1s, `l` = the row's own (flat there: `s60ell.out` Spearman +0.03, p 0.43), with `b0` = b̂₀⁺_c;
   - every other input is the row's own: `nk` (w), `tp50` (T̂), `tmin` (T̂min), `m` (m̂), `sig` (σ at load) and `q`.
-- **At c8** this holds for both legs. B2's firing region (321–332) was computed on separate medians. A median of
-  sums and a sum of medians differ by less than one row's noise (p27 cap 128, two rows), so the region is unchanged
-  within its corners. It is recomputed in-session on the fed values.
+- **At c8** this holds for both legs. B2's firing region (321–332) and the band (433–586) were computed from p27's
+  cap-128 values. **They are labelled cap-128-based**, beside R6.7's crossing of 440–446 under honest floors, and are
+  recomputed in-session from the floor-pool values.
 - Per row, R̃_row is the median over LATE windows (t ≥ 15 s at c2 and c8, ≥ 5 s at c1s). `Rb` is not scored.
+- **R̃ alone carries B2 (c8) and the c1s control sign.**
+
+**R̃₆₇, the R6.7-form replay, REPORTED beside every R̃** (frozen now, from `r67floor.py` `rcell`; transcribed and
+self-tested in `s60replay.py r67_r`: hand values 1.02 and 1.16625):
+
+```text
+   R̃₆₇ = Σᵢ wᵢ·( Fᵢ + ½·max(0, maxⱼ Fⱼ − Fᵢ) + σᵢ + q·ℓ̂_c,ᵢ + T̂ᵢ − T̂min,ᵢ ) / Σᵢ wᵢ·T̂ᵢ
+```
+
+- The mapping from r67floor to the gauge:
+  - w = `nk` (r67floor: `dlv`, the delivered rate; both are proportional to the leg's echo rate);
+  - T̂ = `tp50`, T̂min = `tmin`;
+  - σ = the printed `sig` (r67floor: a constant per cell);
+  - Fᵢ = the session floor F_c,i (§2: the median LATE `tmin` at the floor pool; r67floor's "truth" row);
+  - ℓ̂_c,i = the session `l` at the floor pool (r67floor's `lF`); q = the printed `q`.
+- R̃₆₇ is computed per window and taken as the median over LATE windows per row, as for R̃.
+- It reads no m̂ and no b̂₀⁺. Its crossing is reported beside R̃'s at every cell. It decides nothing.
 
 **What it tests.**
 - R̃ is the law fed floors the flow did not measure itself. R5.4 was withdrawn as an oracle for exactly that.
@@ -179,8 +206,8 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
   - c2: 2.2 / 4.2 / 12.6 / 23.5 ms at W 128 / 192 / 256 / 384;
   - c8 leg 0: 2.5 / 8.1 / 26.7 ms at 128 / 256 / 512;
   - c1s: 0.30 / 1.45 / 18.8 ms at 256 / 512 / 2 048.
-- **Registered:** b0p(arm)/b0p(calibration) ≥ 3 at c2 W 256, c8 W 512 (leg 0) and c1s W 2 048. Predicted ≈ 5.7 / ≈ 10 /
-  ≈ 60.
+- **Registered:** b0p(arm)/b0p(floor pool) ≥ 3 at c2 W 256, c8 W 512 (leg 0) and c1s W 2 048. Predicted ≈ 5.7 / ≈ 10 /
+  ≈ 60. These predictions are on a cap-128 (c1s: cap-256) base; the floor-pool base is expected to be no larger (less boot queue), which would raise the ratios.
 - **Meaning.** "The first K windows" is a valid b̂₀⁺ source only under a boot held at a queue-free store. Otherwise the
   start-up queue is latched into the target, as rev 3's σ̂⁺ was. That makes the boot hold and n₀ terms of the law:
   `store-law.md` R6.7.
@@ -205,7 +232,7 @@ It is predicted to be > 1 at every c8 and c1s arm, and at c2 up to W 384.
 - **But the row scatter of `l` is sampling noise of a minimum** (`s60abs.out`).
   - At c2 the absolute late floor varies by 0.10–0.25 ms across rows of one arm, while `l` varies by 0.55–2.94 ms.
   - corr(`l`, floor − `l`) is −0.96 to −1.00, and c8 on §56 reads the same.
-- **Registered:** Δℓ = (arm median `l`) − (calibration median `l`) per leg, with SE_Δ from the row sds.
+- **Registered:** Δℓ = (arm median `l`) − (floor-pool median `l`) per leg, with SE_Δ from the row sds.
   - **RISES** iff Δℓ − 2·SE_Δ > q·ℓ̂_c; **FLAT** iff Δℓ + 2·SE_Δ < q·ℓ̂_c; otherwise **UNRESOLVED**.
   - Arms: c2 W 256 (predicted +1.3 to +1.5, likely UNRESOLVED against the 1.4 ms row noise of `l`), c8 leg 0 W 512 (+2.7, RISES) and leg 1 W 512 (+3
     against its own 3.2 allowance, FLAT or UNRESOLVED).
@@ -215,10 +242,41 @@ It is predicted to be > 1 at every c8 and c1s arm, and at c2 up to W 384.
 
 ## 2. Calibration: session-level, frozen now
 
-**The choice, and its reason.**
-- Per cell and leg, the calibration floors are **one session value**, over the cell's valid, non-latched W 128 rows:
-  b̂₀⁺_c = the median `b0p`, and T_c = the median of `l` + `b0p`, with ℓ̂_c := T_c − b̂₀⁺_c (§1.1 states what the
-  replay is fed).
+**Superseded by entry 10 (R6.7, `store-law-r67.md` §1.2):** W 128 is NOT queue-free at c2. c2's late window minimum
+reads 9.45 / 10.08 / 11.18 ms at W 64 / 96 / 128, so "calibrate at n₀ = 128" and the b0p-flatness gate are
+withdrawn. A brake is a difference, so it stays flat while `tmin` and Copa's minimum rise together.
+
+**The floor pools (entry 10).**
+- **Pools below R6.7's smallest measured pool** (its open item 1):
+  - c2: W 16 / 32 / 48;
+  - c8: W 32 / 64 / 96 (P16 / 32 / 48);
+  - c1s: W 64 / 128 / 192.
+- **Per leg, the floor pool** is the smallest of these at which the leg has ≥ 80 % of its LATE windows with `nk` ≥ 10.
+  c8's leg 1 may need a larger pool than leg 0. Its slope is only 0.008 ms/slot (R6.7 §1.2), so a pool 64 slots
+  higher costs it ≤ 0.5 ms, against its 2.5 ms tolerance.
+- **The session floor** F_c,i is the median, over the floor pool's valid rows, of each row's median LATE `tmin` (on
+  windows with `nk` ≥ 10). That is R6.7's "truth (small-pool late T̂min)" row.
+  - ℓ̂_c,i is the median `l` there.
+  - b̂₀⁺_c,i is the median `b0p` there, and T_c,i the median of `l` + `b0p`. These are R̃'s inputs.
+- **The convergence gate**, replacing the b0p flatness gate, decides whether the floor pool reads the limit u → 0:
+  - Δ = median LATE `tmin`(next pool) − median LATE `tmin`(floor pool), per leg;
+  - CONVERGED iff |Δ| − 2·SE ≤ τ, otherwise NOT-CONVERGED;
+  - τ = 0.3 ms at c2, a third of the smallest predicted shortfall (0.9 ms), so a floor error cannot flip D's sign;
+  - τ = 1.0 ms on c8 leg 0 and 2.5 ms on leg 1 (the R̃ sensitivities of §5);
+  - τ = 0.3 ms at c1s (the δ tolerance of §5).
+- **The gate is itself a two-way reading, and it measures R6.7's open item 1 directly.**
+  - Under R6.7's BELOW = slope (0.020–0.027 ms/slot at c2), adjacent 16-slot pools differ by 0.32–0.43 ms, so c2
+    predicts NOT-CONVERGED, or borderline.
+  - Under BELOW = flat, the difference is ≈ 0, so CONVERGED.
+  - c8 and c1s are unmeasured below 128 / 256.
+- **What NOT-CONVERGED does.** A floor read too high under-reads the rise.
+  - **c2's SHORT stands as a lower bound; COVERED is not admissible** (§3.1).
+  - **c8's B2:** a floor too high raises R̃ at the knee, so a B2 fire stands and a pass is weakened. Reported.
+  - **c1s:** a floor too high raises R̃ − 1 at the control, so CROSSES stands and PINNED / SPLIT are weakened.
+
+**The choice of a session value, and its reason.**
+- Per cell and leg, the calibration is **one session value** over the floor pool's valid, non-latched rows, as above
+  (§1.1 states what the replay is fed).
   - Leg 1's b0 per row is the maximum of its `b0k` entries with `b0kn` ≥ 10, and needs ≥ 4 such windows of K. A row
     failing that leaves leg 1's session median, but stays in leg 0's.
 - The reason is `s60abs.out`: the row scatter of the floors is sampling noise of a minimum, not scatter of the loop.
@@ -246,21 +304,33 @@ replicate order).
   per-replicate pairing (each replicate with its own calibration row). The session value is then reported as the
   sensitivity, and the cell's conditioning is re-stated from the realised σ_R.
 
-**Pools.**
-- W 128 (the law's provisional n₀) is the calibration pool. W 96 (c8: P48) is the flatness pool, which lies below n₀.
-- Both bind (`STORE_CAP_FLOOR` = 10).
-- W 128 is queue-free by measurement: at c2 it is above the wire BDP (102 symbols) but below the echo-loop BDP (163),
-  with p27 b0p flat over caps 64–128.
-- c8 and c1s have no measured pool at ≤ 128.
+**Pools and bytes.**
+- Every floor pool binds (`STORE_CAP_FLOOR` = 10; the ceiling is max(N·pool, floor)).
+- A store-limited row delivers ≈ W/T̂, so bytes are sized so that every row clears LATE (t ≥ 15 s at c2 and c8,
+  ≥ 5 s at c1s) with ≥ 30 s of LATE windows. The basis is c2 W 16 ≈ 1 700 sym/s (main session), and c8 ≈ 50 sym/s
+  per total slot (§56 W 160: 79.6 Mbit/s):
 
-**Validity and latching** (rules as in entry 4):
-- **Flatness gate:** PASS unless |Δb0p(96 − 128)| − 2·SE > q·ℓ̂_c, per leg. A cell failing it has no R̃.
-- **LATCHED:** b0p − median_LATE(brake) > q·ℓ̂ + ō, where ō is c2 0.90, c8 leg 0 1.8 and leg 1 6.3, c1s 0.20 ms.
-- **Minimum:** ≥ 3 non-latched W 128 rows per cell. With 6 rows at c8's ≈ 25 % latch rate, P ≈ 0.96.
+  | pool | c2 | c8 | c1s |
+  |---|---|---|---|
+  | rate | W 16 / 32 / 48: ≈ 1.7 / 3.4 / 5.1 k sym/s | W 32 / 64 / 96: ≈ 1.6 / 3.2 / 4.8 k | W 64 / 128 / 192: ≈ 12 / 23 / 35 k (182 sym/s per slot at W 384) |
+  | bytes | 100 / 200 / 300 MB | 100 / 200 / 300 MB | 1 GB each (≈ 70 / 35 / 23 s) |
+
+  - Every other arm keeps 600 MB (c2, c8) or 5 GB (c1s control).
+  - The per-row timeout is RWM_PERF_TIMEOUT_S = 150 s on every floor-pool row. A DNF is a datum, and the row is
+    re-run once.
+  - The warm-up is a single-chunk object (`perf.rs:292`), unaffected by the pool.
+  - **Per-arm bytes are a new harness feature.**
+- **c1s's small pools may collapse:** p27's c1s W 192 was a quinn-collapse pool (R6.7 §1.2). The collapse rule and the
+  two-row rehearsal (§5) cover it. A cell whose floor pool collapses on every row moves to the next pool, and the
+  move is reported.
+
+**Validity and latching:**
+- **LATCHED:** b0p − median_LATE(brake) > q·ℓ̂ + ō, at the floor pool. ō is c2 0.90, c8 leg 0 1.8 and leg 1 6.3, c1s
+  0.20 ms. These were derived at caps 64–256 (`b0bound.out`) and are untested at the new pools.
+- **Minimum:** ≥ 3 valid, non-latched floor-pool rows per cell and leg.
 - **The collapse flag does NOT gate calibration rows** (ruling entry 7, item 3).
-  - The §56 flag fires when quinn's qcwnd sits below the cell's BDP on > 10 % of windows. The calibration pools (96,
-    128) lie below c1s's BDP (≈ 208–243), so a store-limited flow may hold quinn's window under the BDP by
-    construction. That is the flag's own condition, not collapse: §57b's c1d P192 rows carried a one-leg flag on 4
+  - The §56 flag fires when quinn's qcwnd sits below the cell's BDP on > 10 % of windows. The floor pools lie below
+    every cell's BDP, so a store-limited flow may hold quinn's window under the BDP by construction. That is the flag's own condition, not collapse: §57b's c1d P192 rows carried a one-leg flag on 4
     of 5.
   - The flag share is reported on calibration rows. The earlier "no qcwnd below the BDP for t < 2 s" rule is
     withdrawn, because it would fail by construction.
@@ -295,6 +365,9 @@ replicate order).
       - **Its sensitivity at c2 and c8 is untested,** because no collapse rows exist there.
     - c1s's 5 ms could not carry over: it flags every queue-free c2 and c8 row (82–100 % of ticks above 5 ms),
       because their no-queue echo spread is 7–10 ms.
+    - **At the new floor pools X is lenient.** It was derived on §56 W 128–384 pools, which R6.7 shows are partially
+      loaded. The normal excess at W 16–64 is smaller, so X there flags fewer valid rows but may miss mild
+      collapses. The in-session excess E50 / E90 at each floor pool is reported beside X.
   - **Leg 1:** the row's COLLAPSED state is read on leg 0. A leg-1 flag removes the row from **leg 1's** session
     medians only, and is reported.
   - **Per K:** b0p(K) = max(first K `b0k` brakes), and LATCHED(K) uses b0p(K) in the latch rule, so the valid set is
@@ -326,7 +399,7 @@ The conditioning arithmetic (`s60cond.py`):
 
 | cell | slope \|dR̃/dW\| on anc 1 arms (per slot) | σ_R, per-replicate calibration | σ_R, session calibration | B2 fires iff R̃(knee) < 1 − 2σ_R, i.e. the crossing lies below |
 |---|---|---|---|---|
-| c2 (knee 169; anchor flip depends on K, `s60flip.out`) | 0.0012–0.0026 | 0.149 (114–256 slots) | 0.008–0.015 | **at K = 5–8 the flip sits at the knee** (pooled flip − knee −3 to +4 slots), so R̃ ≈ R̃_flip > 1 there; **at K ≤ 4** the flip is at or below 128, and the conditioning fallback applies |
+| c2 (knee 169) | 0.0012–0.0026 | 0.149 (114–256 slots) | 0.008–0.015 | **not scored** (entries 6 and 10). The flip sits at the knee at K = 5–8 (R̃ ≈ R̃_flip > 1 there). c2's scored reading is the allowance shortfall (§3.1) |
 | c8 (knee 340, anchor flip ≈ 224–320) | 0.0017–0.0020 | 0.039 (39–47 slots) | 0.008–0.015 (8–19 slots) | per-replicate 293–301; **session 321–332**, i.e. ≥ 101–112 slots below the band's low edge (433) |
 
 The scatter inputs are each measured and cited in `s60cond.py`:
@@ -335,96 +408,64 @@ The scatter inputs are each measured and cited in `s60cond.py`:
 - for the per-replicate case, also the calibration row's `l` (sd up to 1.4 ms) and `b0p` (sd ≈ 0.9, entering twice at
   anc 1).
 
-### 3.1 c2: anchor-flip and conditioning readout (B2 not scored, as ruled)
+### 3.1 c2: the allowance shortfall at the knee (SCORED; entry 10, replacing the per-K flip)
 
-**PREDICTION** (not a measurement), with the threshold drawn independently from §56's `l` rows and p27's b0p rows (the realistic case, `s60lmin.out`): verdict probabilities from p27's brakes and three §56 replicates (`s60flip.py`:
-late m̂ at W 128 / 160 / 192 / 256, the per-replicate knee at 168.7–169.1, b̂₀⁺_c(K) from p27's six queue-free c2
-rows).
-- The Monte Carlo is over the session threshold T = ℓ̂_c + b̂₀⁺_c(K), which is one draw per session and common to all
-  replicates, and over the replicates resampled to 6.
+**The reading.** It comes from R6.7 §5: with honest floors, the form's allowance σ + q·ℓ̂ has no demonstrated margin
+at c2. Per replicate r, on leg 0, from printed `[SLAW]` fields (`tmin`, `sig`, `l`):
 
-| K | b̂₀⁺_c(K) (ms) | T (ms) | flips on §56 replicates | P(STRUCTURAL) | P(NOT) | P(MIXED) | P(FLAT-AT-KNEE) | pooled median(flip − knee), 10 / 50 / 90 % |
-|---|---|---|---|---|---|---|---|---|
-| 1–2 | 0.00 | 8.07 ± 0.8 | ≤ 128 | 0.00 | 1.00 | 0.00 | 0.00 | −41 / −41 / −41 |
-| 3 | 0.75 | 8.82 ± 0.8 | ≤ 128 | 0.01 | 0.98 | 0.01 | 0.01 | −41 / −41 / −23 |
-| 4 | 1.01 | 9.08 ± 0.8 | ≤ 128 | 0.02 | 0.95 | 0.03 | 0.03 | −41 / −41 / −11 |
-| 5 | 2.38 | 10.45 ± 0.9 | 160 / 167 / 173 | 0.35 | 0.48 | 0.17 | 0.45 | −41 / −3 / +23 |
-| 6–7 | 2.46 | 10.53 ± 0.85 | 161 / 169 / 175 | 0.37 | 0.45 | 0.19 | 0.47 | −37 / −1 / +24 |
-| 8 (the gauge's) | 2.67 | 10.74 ± 0.8 | 165 / 173 / 181 | 0.47 | 0.34 | 0.20 | 0.58 | −27 / +4 / +26 |
+```text
+   D_r  =  ( T̂min_r(W₉₅,r) − F_c )  −  ( σ_r + q·ℓ̂_c )          q = 0.10 (Bulk)
+```
 
-FLAT-AT-KNEE means the pooled flip is at or above the knee, so the knee arms sit at anc 0, where R̃ is flat in W.
+- T̂min_r(W₉₅,r) is the replicate's per-row median LATE `tmin`, interpolated in W at its own goodput knee W₉₅,r (each
+  row against the same replicate's control).
+- F_c is the session floor (§2).
+- σ_r is the median LATE `sig` over the knee-bracketing rows.
+- ℓ̂_c is the session `l` at the floor pool.
+- **The sentence:** "the window-minimum rise the knee needs, less what the allowance supplies". D > 0 means the
+  allowance does not reach the knee.
+- **Shape:** ms; order 0 in N; it rises with the floor's honesty, since a lower F raises D.
 
-- **At the gauge's K = 8 the 5-of-6 vote is a coin flip, so the vote is dropped.**
-- **Registered instead: a POOLED readout, SCORED at K = 8 and REPORTED at K = 1..7.**
-  - D_K = the median over replicates of (W_flip,r(K) − W₉₅,r).
-  - W_flip,r(K) is where the replicate's late `m` (per-arm median) crosses ℓ̂_c + b̂₀⁺_c(K).
-  - **The threshold is calibrated on the SUM.** T_c(K) = the session median over the valid set for that K (W 128 rows,
-    LATCHED(K) excluded) of the per-row sum `l` + max(first K printed `b0k` brakes).
-    - The anchor depends only on this sum, so ℓ̂ and b̂₀⁺ are drawn jointly from each row.
-    - Where the anchor binds, F = ℓ̂_c + 2·b̂₀⁺_c also needs the separate b̂₀⁺_c (the session median of max(first K)),
-      so F uses T_c + b̂₀⁺_c. Any cancellation inside the sum does not carry into R̃ there.
-  - **K = 1 is no finding, IF Copa and the sampler see the same first samples.** Then brake 1 is 0 by construction:
-    at the first window close, Copa's minimum is that window's own minimum. p27, a different sampler, reads 0.00 on
-    all 6 rows. K = 2 is then near-trivial.
-    - **Witness, UNVERIFIED on engine output.**
-      - On `d416d59b` only `slaw.rs` and the renderer's synthetic `tools/l1/testdata/slaw_sample.log` contain
-        `b0k=` (`git grep`), and that sample's m̂ is a fixed test input. No committed log carries a real `b0k`.
-      - **Expected answer, from the code.** `record_rtt_sample` (`path.rs:606`) feeds the leg's `WinSampler`
-        (`:616`, if attached) and Copa (`:619`) from the same sample. The sampler is attached by
-        `Scheduler::enable_slaw`, called from `diag::report`'s first pass (`diag.rs:449`).
-        - So `b0k[0]` = 0, and `m` = `l` for t < 10 s, **iff no echo sample reaches `record_rtt_sample` before that
-          first pass**.
-        - A sample in between (e.g. from the handshake or the first acks) would sit in Copa's minimum only.
-        - A path joining later, such as c8 leg 1, is attached only if `enable_slaw` reaches it. That is to be
-          confirmed in the same run.
-      - **Requested:** the coordinator runs `cargo test --release --test slaw_reachability -- --nocapture`, and reads
-        each leg's `b0k` at window K and `m` against `l` at the first windows.
-    - **On 600 MB rows the premise behind cancellation fails** (`s60lmin.out`, §56 c2 and c8 small pools). The row's
-      lifetime minimum `l` is reached **at boot on only 4 of 14 rows** (c2: 1 of 6). On the rest it is reached at
-      t = 2.8–59 s, so during boot Copa's m̂ sits above `l`, and the boot brakes are not taken against `l`.
-      - The sum `l` + b0p therefore keeps `l`'s late-found noise.
-      - It equals the largest boot-window minimum only on the 4 rows whose minimum was reached at boot.
-    - **A failing row** (`b0k[0]` ≠ 0, or `m` ≠ `l` at t < 10 s) is **reported, not voided**. Its brakes are then
-      measured against a lower m̂ than the sampler's own minimum, so b0p over-reads by that offset, and the latch rule
-      sees it.
-    - K = 1 is then a finding, the size of that offset, and the "no finding" claim is withdrawn for that session.
-- **The 90 % interval is a bootstrap (2 000 resamples, seed 60) that resamples BOTH terms:**
-  - the calibration rows, which re-estimates T_c(K) jointly;
-  - the sweep replicates.
-- **Which term sets the width** (`s60flip.out`, K = 8).
-  - Drawing §56's `l` rows and p27's b0p rows independently (as before): 53 slots from the threshold alone, 16 from
-    the replicates alone, 52 combined.
-  - **Drawing the sum jointly from p27's rows: the best case.**
-    - The within-cap row sd of `l` + b0p(8) is 0.92 ms, against 0.45 for `l` and 0.77 for b0p.
-    - p27's `l` lacks §56's row noise (0.45 against 1.4 ms), so p27 **cannot test** whether that noise cancels; §56
-      shows it does not (above).
-    - The threshold's se is then 0.47 ms, and the width is 26 slots from the threshold alone and 30 combined.
-  - **Even the best case (26–30 slots) far exceeds the predicted |D| ≈ 4.** Calibration rows narrow it only slowly
-    (independent draw: 34 slots at 12 rows, 16 at 48).
-  - **So c2 stays a MEASUREMENT, with UNRESOLVED as its expected label.** No calibration rows are added.
-  - The per-K table above uses the independent draw, which is the realistic case given `s60lmin.out`. In-session the
-    interval is a bootstrap on the joint per-row sums.
-- **Labels:** **ABOVE** if the interval lies > 0 (at that K the anchor keeps the form at or above the knee); **BELOW**
-  if < 0; otherwise **UNRESOLVED**.
-  - **Predicted:** BELOW at K ≤ 4 (D ≈ −41 slots, the flip at the calibration arm); UNRESOLVED at K 5–8 (−3 to +4,
-    interval about −35 to +25).
-- **K = 8 is scored at every cell** (c2 here, c8's B2, c1s's sign). K = 1..7 are reported at each.
-- **A verdict that changes with K is a finding about K.** K has no provenance (R6.2, §13.1). The K at which D_K turns
-  goes to R6.7 beside n₀.
-- **The fallback, conditioning,** is read only for K values whose D_K is BELOW:
-  - R̃_r(W₉₅,r) is replayed at that K;
-  - the anc-1 slope and σ_R per arm are reported;
-  - ILL-CONDITIONED iff 2σ_R/|slope| > W₉₅ − 128, CONDITIONED iff < W₉₅ − 158, otherwise MARGINAL.
-- **Reported:** R̃ − 1 at the knee arms (160 / 176) per K, and each replicate's crossing W_r against the band
+**Scoring.** The pooled D is the median over replicates of D_r. Its 90 % interval is a bootstrap (2 000, seed 60) over
+replicates and floor-pool rows.
+- **SHORT** iff the interval > 0.
+- **COVERED** iff < 0, meaning the allowance covers the knee. It is admissible only if the floor gate read CONVERGED
+  (§2), because a floor read too high biases D toward COVERED.
+- **UNRESOLVED** otherwise.
+- **Bracket:** `tmin` is convex across the knee, so a chord between the bracketing arms over-reads toward SHORT. D is
+  therefore also reported at the arm just below the knee (160) and at the arm just above (176 or 192), as a bracket.
+  SHORT is read on the bracket's lower arm as well, and is reported as robust if both arms agree.
+
+**Prediction and resolution, computed first** (`s60short.py`).
+- **Prediction:** D ≈ **+0.9 ms** at the goodput knee (169) with the floor read at W 64 (R6.7's 9.45 ms, BELOW = flat).
+  It is ≈ **+1.9 to +2.2** if the floor follows the measured secant (0.020–0.027 ms/slot) down to W 16.
+  - The allowance at q = 0.10 is ≈ 2.6 ms. R6.7's 2.3–2.6 spans q = 0.05–0.10, so +1.7 applies only at the delivery
+    knee (181).
+- **Resolution:** pooled se 0.13–0.25 ms, so a 90 % half-width of 0.22–0.42 ms.
+  - The terms are: the absolute late `tmin` row sd (0.10–0.25 ms); the knee position, 3 slots × the slope at the knee
+    (p27 0.043, §56 0.094 ms/slot); `sig`'s row sd; the floor's session se; and q·ℓ̂_c's.
+  - The interval's lower edge is predicted at **+0.48 to +0.68 ms**: **SHORT, resolved**.
+  - COVERED would need a pooled D ≤ −0.22 to −0.42 ms.
+- **It can come out two ways.** SHORT is what R6.7 predicts. COVERED would mean the partial-load queue at the knee is
+  within the allowance, against R6.7's reading of p27. Either goes to R6.7 open item 2 (the allowance form) and to the
+  law ledger.
+
+**Reported, not scored.**
+- The **brakes**: each floor-pool row's `b0k` (K = 1..8) and `b0kn`.
+- The **per-K flip readout** of entry 7–9: W_flip(K) − W₉₅, where the replicate's late `m` crosses T_c(K). This measures
+  b̂₀⁺(K), and is expected UNRESOLVED.
+  - Its prediction (`s60flip.out`) is kept as context: −41 slots at K ≤ 4; −27 / +4 / +26 at K = 8.
+  - The interval analysis (threshold-dominated, with no cancellation of `l`'s noise: `s60lmin.out`, 4 of 14 §56 rows
+    reach `l` at boot) stands as stated in entries 8–9.
+- R̃ − 1 at the knee arms, R̃₆₇ beside it, and each replicate's crossing W_r against the cap-128-based band
   (Appendix A).
-- All of this goes to the law ledger and R6.7.
-- **Reported, not scored:** the pooled median over replicates of R̃_r(W₉₅,r) − 1, with its minimum detectable miss
-  2·1.253·σ_R/√n_s.
-- **Pools:**
-  - 96 and 128 (calibration);
-  - 160 / 176 / 192 (knee and flip);
-  - 256 (slope above the flip, and P1 and P3 at c2, predicted ratio ≈ 5.7 and Δℓ ≈ +1.3–1.5 ms);
-  - 2 048 (control).
+
+**Pools:**
+- 16 / 32 / 48 (floor pools, at 100 / 200 / 300 MB);
+- 160 / 176 / 192 (the knee bracket);
+- 256 (P1 and P3, the slope above the knee);
+- 2 048 (control).
+- The W 96 / 128 calibration rows are withdrawn.
 
 ### 3.2 c8: B2, live as a gross-miss detector
 
@@ -435,10 +476,10 @@ FLAT-AT-KNEE means the pooled flip is at or above the knee, so the knee arms sit
   falls below 320, the 256 arm may still be anc 0, and that replicate is then reported, not counted.
 - **It can fire.** Leg 0's window minimum climbs 0.063–0.076 ms per slot between the knee and the band. B2 fires for a
   crossing below ≈ 321–332 under session calibration, which is ≥ 101–112 slots below the band's low edge (433).
-- **The band (reported context):** 433–586, anc 1, from single-row corners. A session value narrows it. The own-ℓ̂
+- **The band (reported context; cap-128-based):** 433–586, anc 1, from single-row corners, beside R6.7's honest-floor crossing 440–446. A session value narrows it. The own-ℓ̂
   sensitivity is 462–605.
 - **Pools:**
-  - 96 and 128 (calibration);
+  - 32 / 64 / 96 (P16 / 32 / 48; floor pools, at 100 / 200 / 300 MB);
   - 256 / 320 / 384 (the knee at ≈ 340 and R̃ at it);
   - 512 (P1, P3);
   - 1 280 (control).
@@ -466,9 +507,9 @@ UNDERPOWERED is 0.06 throughout.
   - PINNED means the law would grow the store to its clamp. That is a FORMULA-FIRST PINNED finding, and needs a
     law-ledger verdict (`law-ledger.md` F01).
   - All three go to R6.7.
-- **Marginal cost over the G/C pairs:** 2 extra control G rows. The 12 calibration rows are needed anyway for c1s's
-  P1, B1 and flatness gate.
-- **Pools:** 96 and 128 (1 GB), and 2 048 (5 GB; 12 G rows, 10 of them paired with C).
+- **Marginal cost over the G/C pairs:** 2 extra control G rows. The 18 floor-pool rows are needed anyway for c1s's
+  P1, B1 and convergence gate.
+- **Pools:** 64 / 128 / 192 (1 GB each; floor pools), and 2 048 (5 GB; 12 G rows, 10 of them paired with C).
 
 ---
 
@@ -489,51 +530,40 @@ UNDERPOWERED is 0.06 throughout.
 - **`RWM_SLAW`:** scrubbed with `-u RWM_SLAW -u RWM_THREE_TERM`, set per arm, and echoed in `[GATES]` on both ends. A
   mismatch voids the row, which is re-run once.
 - **Smokes:**
-  - launch 1: c2 W 192, one C row (no gauge tags) and one G row (all tags, witness PASS, CAPLOG replay PASS, `kw`/`b0k`
-    after the warm-up cut);
-  - launch 2: one c1s W 128 G row (1 GB) and one W 2 048 C row.
-- **Go/no-go on the rehearsal's c1s W 128 rows: TWO rows (1 GB), GO iff at least one passes** (registered now; this is the first c1s measurement at n₀). At a collapse share of 0.29–0.48 one row would give a chance NO-GO well above c8's 25 %; two give ≈ 8–23 %.
-  - **Where the thresholds come from.** At the c1s control, anc 1 holds, so an admitted b0 error δ moves R̃ − 1 by
-    2δ/T̂ ≈ 0.105 per ms (T̂ ≈ 19 ms).
-    - The registered readings differ by 0.20 (prefix minima −0.2 against exact minima ≈ 0), and σ_R is 0.03–0.08
-      (§3.3).
-    - So δ must stay ≤ 0.3 ms, a shift ≤ 0.03: the low end of σ_R and 15 % of the gap.
-    - **Reconciling 0.6, 0.3 and 0.12.** δ is the error against the expected queue-free b̂₀⁺, which is the
-      max-of-8 brake: 0.21–0.37 ms at cap 256 on p27/p34, central ≈ 0.30.
-      - The GO threshold is that central value plus the tolerance: 0.30 + 0.30 = 0.6 ms.
-      - The KA's 0.12 is not b̂₀⁺. It is the ledger **over-read** b̂₀⁺ − b₀ (≈ 0.30 − 0.18, with b₀ the median
-        no-queue brake, 0.09–0.22).
-    - The earlier 1.0 ms thresholds exceeded c1s's whole target above its floor (≈ 0.87 ms) and are withdrawn.
-  - **GO** iff all of these hold:
-    - (a) `b0k` holds 8 brakes, each with leg-0 `b0kn` ≥ 10;
-    - (b) **`b0p` ≤ 0.6 ms**;
-    - (c) the row is not LATCHED;
-    - (d) it is not COLLAPSED (the absolute rule of §2);
-    - (e) **its median LATE `tmin − l` is ≤ 0.5 ms.** p34 reads 0.13 at cap 256; a larger value carries a queue
-      comparable to δ.
-  - **Reported, not gating:** the §56 collapse-flag share (it may exceed 0.10 by construction, §2), and `b0p` and the
-    latch state themselves.
-  - **NO-GO** drops c1s's calibration rows and its control-sign verdict before 60b. 60b then runs only the G/C pairs
-    and the evicting rows: 22 + 5 rows. P1 at c1s is reported against printed `b0p` alone.
-- **Go/no-go on the rehearsal's c8 W 128 (P64) rows: TWO rows** (c8's 128 and 96 pools are unmeasured, and leg 1's
-  boot windows were sometimes empty at P80).
-  - About 1 c8 W 128 row in 4 latches, so a single-row NO-GO would drop B2 by chance 25 % of the time.
-  - The rehearsal therefore runs two c8 W 128 rows. **GO iff at least one passes**, with a chance NO-GO of ≈ 6 %.
-  - Both are reported.
-  - **Where the thresholds come from.** At c8's knee the scored R̃ is predicted ≈ 1.16–1.19, against B2's threshold
-    1 − 2σ_R ≈ 0.97–0.98, a gap of ≈ 0.2.
-    - An admitted b0 error moves R̃(knee) by 2·w₀/T̂ ≈ 0.053 per ms on leg 0, and by ≈ 0.02 per ms on leg 1 (through
-      the coupling term and leg 1's own weight).
-    - Holding the combined shift to ≤ 0.05, a quarter of the gap, allows δ₀ ≤ 1.0 ms and δ₁ ≤ 2.5 ms.
-  - **GO** iff all of these hold:
-    - (a) `b0k` holds 8 brakes, with leg-0 `b0kn` ≥ 10 on each, and leg 1 has ≥ 4 windows with `b0kn` ≥ 10;
-    - (b) **leg-0 `b0p` ≤ 3.9 ms** (p27 cap 128: 2.07 / 2.90, plus 1.0);
-    - (c) **leg-1 b0 (from the qualifying `b0k` entries) ≤ 10 ms** (p27: 6.12 / 9.37, plus 2.5 over the central
-      value);
-    - (d) the row is neither LATCHED nor COLLAPSED;
-    - (e) **leg-0 median LATE `tmin − l` ≤ 3.4 ms** (p27 cap 128: 2.43, plus 1.0).
-  - **NO-GO** leaves c8's B2 unscored. c8's rows still run, for P1, P3 and the reported R̃.
-- The decisions and their numbers are recorded in the launch log.
+  - launch 1: c2 W 192, one C row and one G row.
+    - C carries no gauge tags.
+    - G carries all tags, the witness PASS, the CAPLOG replay PASS, and `kw` / `b0k` after the warm-up cut.
+  - launch 2: one c1s W 64 G row (1 GB) and one W 2 048 C row.
+- **Rehearsal checks on the floor pools** (entry 10; the floor pools are unmeasured at all three cells). The rehearsal
+  runs one c2 W 16 row (100 MB), two c8 W 32 rows (100 MB) and two c1s W 64 rows (1 GB), all G.
+  - **Witness check (UNVERIFIED until here).** On every rehearsal G row, per leg, read:
+    - `b0k[0]` (expected 0);
+    - the first windows' `m` against `l` (expected equal while t < 10 s);
+    - whether **c8 leg 1 gets a sampler attached**, i.e. prints `[SLAW]` lines with `nk` > 0.
+    - **Basis.** `record_rtt_sample` (`path.rs:606`) feeds the leg's `WinSampler` (`:616`) and Copa (`:619`) the same
+      sample. The sampler is attached by `Scheduler::enable_slaw` from `diag::report`'s first pass (`diag.rs:449`),
+      so a sample before that pass would sit in Copa's minimum only.
+    - The host `slaw_reachability` run (main session, `d416d59b`: 1/1 pass) asserts its lines internally and prints
+      none, so this rehearsal is the first engine reading.
+    - **A failing row is reported, not voided.** Its b0p over-reads by the offset, the latch rule sees it, and K = 1
+      becomes a finding. A c8 leg 1 with no sampler leaves c8 without a leg-1 floor, so B2 is NOT scored and the
+      cause is diagnosed.
+  - **Go/no-go per cell**, GO iff at least one of the cell's rehearsal rows passes all of these:
+    - (a) the row completes within its 150 s timeout (no DNF);
+    - (b) it is not COLLAPSED (§2; X is lenient at these pools);
+    - (c) leg 0 has ≥ 80 % of its LATE windows with `nk` ≥ 10 (c8 leg 1 is reported, since its floor pool may be
+      larger, §2);
+    - (d) `b0k` holds 8 brakes with leg-0 `b0kn` ≥ 10;
+    - (e) it is not LATCHED, and its b0p is within R̃'s tolerance: c1s ≤ 0.6 ms and c8 leg 0 ≤ 3.9 ms (the δ-derivations
+      of entry 8; their bases were caps 256 and 128 and are expected to be no smaller at the floor pools).
+  - Two rows each at c8 and c1s bound the chance NO-GO: at c8's ≈ 25 % latch rate it is ≈ 6 %, and at c1s's collapse
+    share 0.29–0.48 it is ≈ 8–23 %. c2's single row checks timing and samples.
+  - **NO-GO:**
+    - c2: its floor pool moves to W 32, and the move is reported.
+    - c8: B2 is not scored. c8's rows still run, for P1, P3, the gate and the reported R̃ / R̃₆₇.
+    - c1s: the control sign is dropped. 60b then runs only the G/C pairs and the evicting rows.
+  - The decisions and their numbers are recorded in the launch log.
+
 - **`[SLAW] q`:** 0.100000 on Bulk G rows, and 0.050000 on Realtime rows.
 - **`[CAPLOG]`:** every logged cap is reproduced by `caplog_replay.py` (seat `plain`, branch `pooled`/`boot`; `tt`
   is impossible), and the bind fraction is reported.
@@ -578,44 +608,68 @@ UNDERPOWERED is 0.06 throughout.
 - **Harness work:** `harness_paths.py` admits reuse-hit only for plans 56 / 57a / 57b. Plan 60 must be added.
 - **Any REAL failure in 60-pre** blocks the session and is diagnosed (§58's rules).
 
-**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus two c8 W 128 (600 MB) rows and two c1s W 128 (1 GB) rows for §5's go/no-go. Its release binary must equal 60-pre's `bin_sha`.
+**The rehearsal** (`LD_REHEARSE=1`, which runs no suites) runs both smokes, plus one c2 W 16, two c8 W 32 and two c1s
+W 64 floor-pool rows for §5's witness check and go/no-go. That is 9 rows. Its release binary must equal 60-pre's
+`bin_sha`.
+
+**Row times.**
+- Floor-pool rows are sized to ≈ 45–60 s (§2): ≈ 75 s typical with overhead, and 150 s worst (the timeout).
+- c2 / c8 600 MB rows take 75–90 s.
+- c1s 1 GB floor rows take ≈ 25–70 s (210 s worst), and 5 GB rows 90 s (210 s worst, §57a's convention).
+- Evicting rows take ≤ 150 s + 40 s.
 
 | launch | block | rows | typical | worst |
 |---|---|---|---|---|
 | **60-pre** | engine suites on the pinned tree, the crate-directory release build (the registered `bin_sha`), then the reference manifest | — | 65–75 min | 85 min |
 | **60a** | release build (suite reuse HIT) | — | 6 min | 10 min |
 | | smoke (c2 W 192, C + G) | 2 | 3 min | 3 min |
-| | c2: 96, 128, 160, 176, 192, 256, 2 048 × 6 | 42 | 53 min | 63 min |
-| | c8: 96, 128, 256, 320, 384, 512, 1 280 × 6 | 42 | 53 min | 63 min |
-| | **total** | **86** | **≈ 1.9 h** | **≈ 2.3 h** |
-| **60b** | release build (suite reuse HIT) | — | 6 min | 10 min |
-| | smoke (c1s W 128 G 1 GB, W 2 048 C) | 2 | 3 min | 7 min |
-| | c1s: 96 and 128 (1 GB) × 6; 2 048 G × 12; C × 10 | 34 | 45 min | 119 min |
+| | c2: 16, 32, 48 (floor), 160, 176, 192, 256, 2 048 × 6 | 48 | 60 min | 90 min |
+| | c8: 32, 64, 96 (floor), 256, 320, 384, 512, 1 280 × 6 | 48 | 60 min | 90 min |
+| | **total** | **98** | **≈ 2.2 h** | **≈ 3.2 h** |
+| **60b** | release build, or 60a's binary reused | — | 0–6 min | 10 min |
+| | smoke (c1s W 64 G 1 GB, W 2 048 C) | 2 | 3 min | 7 min |
+| | c1s: 64, 128, 192 (1 GB) × 6; 2 048 G × 12; C × 10 | 40 | 50 min | 140 min |
 | | evicting rows (plan 59) | 5 (+ ≤ 5) | 12 min | 32 min |
-| | **total** | **41 (+ ≤ 5)** | **≈ 1.1 h** | **≈ 2.8 h** |
+| | **total** | **47 (+ ≤ 5)** | **≈ 1.2 h** | **≈ 3.2 h** |
 
-- **Total:** 127 rows (+ ≤ 5), down from 205 in three launches, plus the 60-pre suites.
-- **Row times:** c2/c8 600 MB rows take 75–90 s. c1s rows take 45 s (1 GB) or 90 s (5 GB) typical, and 210 s worst
-  (§57a's convention). Evicting rows take ≤ 150 s + 40 s.
-- **Why two launches:** together they exceed 4 h worst case (5.1 h).
-- **`LD_HARD`:** launch + 3 h (60a) and + 3.5 h (60b). The budget guard refuses with less than 2.3 / 2.8 h left. 60-pre holds the locks through `suites_run.sh`; `LD_HARD` does not apply to it (as §58).
-- **Order:** 60-pre, then the rehearsal (with the c8 and c1s go/no-go), then 60a, then 60b. 60b runs after 60a's smoke, witnesses, R-sign gate and calibration validity are read. It reuses 60a's
+- **Total:** 145 rows (+ ≤ 5) in 60a and 60b, plus the 9 rehearsal rows and the 60-pre suites. Before entry 10 it
+  was 127.
+  - The withdrawn W 96 / 128 calibration rows (42) are replaced by 54 floor-pool rows.
+  - The c2 B2 / flip arms were already cut.
+- **Why two launches:** together they exceed 4 h worst case (6.4 h).
+- **`LD_HARD`:** launch + 4 h (60a) and + 4 h (60b). The budget guard refuses with less than 3.2 h left in either.
+  60-pre holds the locks through `suites_run.sh`, and `LD_HARD` does not apply to it (as §58).
+
+- **Order:** 60-pre, then the rehearsal (the floor-pool witness check and go/no-go), then 60a, then 60b. 60b runs after 60a's smoke, witnesses, R-sign gate and floor convergence gates are read. It reuses 60a's
   binary (sha recorded), in which case its build row is 0 min.
 - **What was cut:** the c2 B2 grid; c8's band arms (448, 576, 640); the band IN/OUT scoring; the second and third
   per-replicate calibration rows; and the c2/c8 C rows.
 
 ## 8. Open
 
-1. **c2: the anchor-flip readout (§3.1)** decides whether the form's c2 landing is structurally above the knee. If NOT STRUCTURAL, reinstating a c2 B2 under session calibration is the coordinator's call.
-2. **R6.7:** the boot hold and n₀, plus ℓ̂'s source if P3 RISES. This is the next derivation, before any large sweep.
+1. **s60 measures R6.7's open item 1** (the sub-floor map) through the floor pools and their convergence gate (§2). If
+   c2's gate reads NOT-CONVERGED, the floor at n₀ = 10 stays unknown, SHORT is a lower bound, and COVERED is
+   inadmissible.
+2. **R6.7's open item 2, the allowance form,** is what c2's scored shortfall (§3.1) measures.
 3. **Pre-launch:**
-   - a renderer-generated witness sample (anchor-bound leg plus empty leg);
+   - a renderer-generated witness sample (an anchor-bound leg plus an empty leg);
    - the bit-identity tests on `d416d59b`;
-   - `harness60`: arm tables with per-arm bytes; session calibration with its drift and flatness checks and latch
-     rule; the per-row witness and R-sign gate in the scorer; the conditioning readout; the CAPLOG replay; and plan
-     59's rows. It needs stub tests and a rehearsal.
-4. **c8 and c1s at ≤ 128 are unmeasured.** A failed flatness gate removes that cell's R̃ (c8: B2; c1s: the control
-   sign).
+   - `harness60`:
+     - arm tables with **per-arm bytes and timeouts**;
+     - session calibration at the floor pools, with the convergence, drift and latch rules;
+     - the per-row witness, the R-sign gate, the shortfall D and R̃₆₇ in the scorer;
+     - the CAPLOG replay;
+     - the rehearsal witness check and go/no-go;
+     - plan 59's rows.
+     - It needs stub tests and a rehearsal.
+4. **The floor pools are unmeasured at every cell.** A NO-GO or a missing leg-1 sampler removes that cell's scored
+   reading (c8: B2; c1s: the control sign).
+5. **No new engine print is needed** (entry 10, item 4). Every reading uses fields the frozen gauge `d416d59b`
+   already prints:
+   - `[SLAW]`: `n`, `nk`, `tmin`, `tp50`, `tmean`, `m`, `l`, `b0p`, `b0k`, `b0kn`, `sig`, `anc`, `err`, `R`, `Rb` and
+     `q` (checked against `render_window`'s format string);
+   - `[WSTORE]`: `adv`, `dbt_*` and `fec=`;
+   - `[DIAG]`: `rtt=`, `rtp_us`, `cum`, `wait n`, `win` and `src`.
 
 ## 9. For the harness brief (registered requirements)
 
@@ -645,6 +699,15 @@ UNDERPOWERED is 0.06 throughout.
 ---
 
 ## Appendix A. Settled items carried from earlier entries (reported context; nothing here is scored)
+
+Everything in this appendix was computed on cap-128 (c1s: cap-256) calibration values from p27 / §56, before
+entry 10. It is kept as context, beside R6.7's honest-floor crossings:
+
+| cell | crossing (slots) |
+|---|---|
+| c2 | 148–164 |
+| c8 | 440–446 |
+| c1s | 651–685 |
 
 ### A.1 The stand-in for the window minimum
 

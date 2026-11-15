@@ -1,5 +1,5 @@
 $ python -I s60replay.py selftest
-SELFTEST PASS (0.82, 1.11625, empty set 1.0)
+SELFTEST PASS (0.82, 1.11625, empty set 1.0; R6.7 form 1.02, 1.16625)
 $ python -I s60replay.py witness <slaw-gauge d416d59b:tools/l1/testdata/slaw_sample.log> (also PASS at 2547fc07)
 WITNESS PASS windows 6 mismatches 0 worst |dR| 4.89e-06
 $ python -I s60replay.py negcontrol <the same>        (rc 0: the perturbed replay fails, as it must)

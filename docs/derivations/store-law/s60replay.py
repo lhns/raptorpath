@@ -36,6 +36,23 @@ def slaw_r(legs, q):
     return num / den
 
 
+def r67_r(legs, q):
+    """The R6.7-form ratio (store-law-r67.md section 4.2; r67floor.py rcell), REPORTED beside R~, frozen for s60:
+    legs: [(w, t_hat, t_min, sigma, F, l_c)] with w = `nk` (r67floor's dlv), t_hat = `tp50`, t_min = `tmin`,
+    sigma = printed `sig` (r67floor's constant table), F = the session floor, l_c = the session lifetime minimum.
+        R67 = sum_i w_i (F_i + 1/2*max(0, max_j F_j - F_i) + sigma_i + q*l_c,i + T_i - Tmin_i) / sum_i w_i T_i
+    """
+    live = [x for x in legs if x[0] > 0]
+    if not live:
+        return 1.0
+    mx = max(x[4] for x in live)
+    num = den = 0.0
+    for w, t, tmin, sig, F, lc in live:
+        num += w * (F + 0.5 * max(0.0, mx - F) + sig + q * lc + (t - tmin))
+        den += w * t
+    return num / den
+
+
 def windows(path):
     """{k: [fields of each [SLAW] line with nk > 0]}, after the last warm-up marker."""
     out = {}
@@ -76,7 +93,14 @@ def selftest():
     assert abs(slaw_r([a], 0.1) - 0.82) < 1e-12
     assert abs(slaw_r([a, b], 0.1) - 1.11625) < 1e-12
     assert slaw_r([], 0.1) == 1.0
-    print('SELFTEST PASS (0.82, 1.11625, empty set 1.0)')
+    # R6.7 form, hand-computed: one leg (w 100, T 20, Tmin 18, sig 1.5, F 16, l_c 9): 100*(16+1.5+0.9+2)/2000 = 1.02.
+    # Two legs, B (w 50, T 40, Tmin 36, sig 2, F 30, l_c 25): A gets 1/2*(30-16) = 7 -> 100*(16+7+1.5+0.9+2) = 2740;
+    # B: 50*(30+0+2+2.5+4) = 1925; den 4000 -> 4665/4000 = 1.16625.
+    a67 = (100, 20.0, 18.0, 1.5, 16.0, 9.0)
+    b67 = (50, 40.0, 36.0, 2.0, 30.0, 25.0)
+    assert abs(r67_r([a67], 0.1) - 1.02) < 1e-12
+    assert abs(r67_r([a67, b67], 0.1) - 1.16625) < 1e-12
+    print('SELFTEST PASS (0.82, 1.11625, empty set 1.0; R6.7 form 1.02, 1.16625)')
 
 
 def witness(path, dtmin=0.0):

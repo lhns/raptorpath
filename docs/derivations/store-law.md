@@ -461,6 +461,12 @@ this as a **prediction** (`store-law/s60flip.out`, from p27's brakes and three ย
 
 A verdict that changes with K is a finding about K, which has no provenance.
 
+**Pointer (s60 entry 10):** this item's derivation is `docs/derivations/store-law-r67.md` (branch `store-law-r67`,
+`4cff88d0`). Two corrections to this note:
+- W 128 is not queue-free at c2 (R6.7 ยง1.2), so s60 now calibrates on floor pools below R6.7's smallest measured
+  pool.
+- s60 scores c2's allowance shortfall in place of the per-K flip above, which is now reported only.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
 ### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]
