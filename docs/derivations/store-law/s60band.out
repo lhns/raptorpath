@@ -1,0 +1,51 @@
+cell | l-hat | method corner anc | W range over corners | KA point (fixed inputs)
+c2 | sub | A res-0.5 anc=0 | 190-205 | 194.2
+c2 | sub | A res-0.5 anc=1 | 204-238 | 194.2
+c2 | sub | A res+0.0 anc=0 | 185-200 | 194.2
+c2 | sub | A res+0.0 anc=1 | 199-233 | 194.2
+c2 | sub | A res+0.5 anc=0 | 180-195 | 194.2
+c2 | sub | A res+0.5 anc=1 | 193-228 | 194.2
+c2 | sub | B p27 anc=0 | 158-203 | 194.2
+c2 | sub | B p27 anc=1 | 188-242 | 194.2
+c2 | sub | all corners (scored recipe) | 158-242 |
+c2 | own | A res-0.5 anc=0 | 192-207 | 194.2
+c2 | own | A res-0.5 anc=1 | 206-239 | 194.2
+c2 | own | A res+0.0 anc=0 | 187-201 | 194.2
+c2 | own | A res+0.0 anc=1 | 201-234 | 194.2
+c2 | own | A res+0.5 anc=0 | 182-196 | 194.2
+c2 | own | A res+0.5 anc=1 | 195-229 | 194.2
+c2 | own | B p27 anc=0 | 192-220 | 194.2
+c2 | own | B p27 anc=1 | 208-258 | 194.2
+c2 | own | SENSITIVITY (row l), all corners | 182-258 |
+c8 | sub | A res-0.5 anc=0 | 450-549 | 478.2
+c8 | sub | A res-0.5 anc=1 | 481-586 | 478.2
+c8 | sub | A res+0.0 anc=0 | 442-542 | 478.2
+c8 | sub | A res+0.0 anc=1 | 473-580 | 478.2
+c8 | sub | A res+0.5 anc=0 | 435-536 | 478.2
+c8 | sub | A res+0.5 anc=1 | 466-573 | 478.2
+c8 | sub | B p27 anc=0 | 403-505 | 478.2
+c8 | sub | B p27 anc=1 | 433-551 | 478.2
+c8 | sub | all corners (scored recipe) | 403-586 |
+c8 | own | A res-0.5 anc=0 | 446-562 | 478.2
+c8 | own | A res-0.5 anc=1 | 477-600 | 478.2
+c8 | own | A res+0.0 anc=0 | 439-556 | 478.2
+c8 | own | A res+0.0 anc=1 | 470-593 | 478.2
+c8 | own | A res+0.5 anc=0 | 431-549 | 478.2
+c8 | own | A res+0.5 anc=1 | 462-587 | 478.2
+c8 | own | B p27 anc=0 | 440-557 | 478.2
+c8 | own | B p27 anc=1 | 473-605 | 478.2
+c8 | own | SENSITIVITY (row l), all corners | 431-605 |
+c1s | own | A res-0.0 anc=0 | 474-529 | 495.4
+c1s | own | A res-0.0 anc=1 | 501-576 | 495.4
+c1s | own | A0.1ms res-0.0 anc=0 | 406-505 | 495.4
+c1s | own | A0.1ms res-0.0 anc=1 | 455-555 | 495.4
+c1s | own | B p34 anc=0 | 493-914 | 495.4
+c1s | own | B p34 anc=1 | 882-981 | 495.4
+c1s | own | B p27 anc=0 | 561-653 | 495.4
+c1s | own | B p27 anc=1 | 611-742 | 495.4
+c1s | own | all corners (scored recipe) | 406-981 |
+
+FROZEN bands (scored recipe, anchor state checked row by row):
+c2 | both anchor states | BAND 158-242
+c8 | anc fixed at 1 | BAND 433-586
+c8 | own-l sensitivity, anc 1 (like for like) | 462-605

@@ -1,0 +1,16 @@
+$ python -I s60replay.py selftest
+SELFTEST PASS (0.82, 1.11625, empty set 1.0; R6.7 form 1.02, 1.16625)
+$ python -I s60replay.py witness <slaw-gauge d416d59b:tools/l1/testdata/slaw_sample.log> (also PASS at 2547fc07)
+WITNESS PASS windows 6 mismatches 0 worst |dR| 4.89e-06
+$ python -I s60replay.py negcontrol <the same>        (rc 0: the perturbed replay fails, as it must)
+WITNESS FAIL windows 6 mismatches 6 worst |dR| 2.08e-04 (tmin +0.001 ms)
+  (renderer output: render_window's own lines; two legs, both anc 0, no empty leg)
+$ python -I s60replay.py witness s60witness_ka.log
+WITNESS PASS windows 2 mismatches 0 worst |dR| 0.00e+00
+$ python -I s60replay.py negcontrol s60witness_ka.log  (rc 0)
+WITNESS FAIL windows 2 mismatches 2 worst |dR| 3.75e-05 (tmin +0.001 ms)
+  (HAND-FORMATTED in the renderer's line format, not renderer output: slaw.rs r_pinned_at_hand_computed_anchors'
+   N = 2 case, R = 1.11625 as the engine test asserts; leg 1 anchor-bound (anc 1, gap 8.5 on leg 0); a third leg
+   with nk = 0, which must drop out; a warm-up window (leg 0 alone, R 0.82) before the last warm-up marker, which
+   must be cut or k = 9 would merge it. A renderer-generated sample with an anchor-bound leg and an empty leg is a
+   pre-launch item, s60-registration.md section 7.)

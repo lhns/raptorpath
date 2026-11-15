@@ -1,0 +1,63 @@
+s56 c1s-400 W384 n3 | sd l 0.05 | sd abs 7.79 | sd rel 7.78 | corr(l, rel) +0.37 | abs 17.80 4.40 4.20
+s56 c1s-400 W512 n9 | sd l 0.09 | sd abs 3.75 | sd rel 3.76 | corr(l, rel) -0.05 | abs 7.50 5.05 10.55 4.90 13.40 13.60 4.90 5.00 5.00
+s56 c1s-400 W768 n3 | sd l 0.16 | sd abs 0.38 | sd rel 0.53 | corr(l, rel) -1.00 | abs 7.30 7.20 6.60
+s56 c1s-400 W1024 n3 | sd l 0.03 | sd abs 1.20 | sd rel 1.18 | corr(l, rel) +0.67 | abs 9.90 8.60 11.00
+s56 c1s-400 W2048 n9 | sd l 0.22 | sd abs 20.39 | sd rel 20.43 | corr(l, rel) -0.18 | abs 18.40 20.10 18.40 19.00 80.75 22.50 18.65 20.65 19.90
+s56 c2-100 W128 n3 | sd l 1.41 | sd abs 0.15 | sd rel 1.49 | corr(l, rel) -1.00 | abs 15.60 15.70 15.40
+s56 c2-100 W160 n3 | sd l 0.55 | sd abs 0.15 | sd rel 0.56 | corr(l, rel) -0.96 | abs 16.50 16.20 16.30
+s56 c2-100 W192 n3 | sd l 1.59 | sd abs 0.20 | sd rel 1.45 | corr(l, rel) -1.00 | abs 19.00 18.60 18.80
+s56 c2-100 W256 n3 | sd l 2.94 | sd abs 0.10 | sd rel 3.00 | corr(l, rel) -1.00 | abs 25.00 25.20 25.10
+s56 c2-100 W384 n3 | sd l 1.95 | sd abs 0.25 | sd rel 1.85 | corr(l, rel) -0.99 | abs 38.50 38.00 38.25
+s56 c2-100 W2048 n3 | sd l 1.01 | sd abs 0.40 | sd rel 0.66 | corr(l, rel) -0.97 | abs 208.10 207.70 207.30
+s56 c8-100 W160 n4 | sd l 0.30 | sd abs 0.00 | sd rel 0.30 | corr(l, rel) -1.00 | abs 16.00 16.00 16.00 16.00
+s56 c8-100 W224 n4 | sd l 0.67 | sd abs 0.50 | sd rel 0.70 | corr(l, rel) -0.74 | abs 20.00 20.00 20.00 19.00
+s56 c8-100 W320 n4 | sd l 0.49 | sd abs 0.50 | sd rel 0.83 | corr(l, rel) -0.84 | abs 27.00 26.00 26.00 26.00
+s56 c8-100 W512 n4 | sd l 1.58 | sd abs 0.25 | sd rel 1.65 | corr(l, rel) -0.99 | abs 39.00 39.00 39.50 39.00
+s56 c8-100 W768 n4 | sd l 0.78 | sd abs 2.17 | sd rel 2.18 | corr(l, rel) -0.18 | abs 56.00 57.50 55.00 60.00
+s56 c8-100 W1280 n4 | sd l 2.50 | sd abs 1.29 | sd rel 1.81 | corr(l, rel) -0.87 | abs 95.00 97.00 96.00 98.00
+
+s56 late m-hat (rtp_us) per row against the session anc threshold l_c + b0_c:
+c2-100 W128 | threshold 10.25 | m-hat 9.44 9.08 9.39 | sd 0.20 | anc 0 on 3 of 3 rows
+c2-100 W160 | threshold 10.25 | m-hat 10.45 10.00 10.12 | sd 0.23 | anc 0 on 2 of 3 rows
+c2-100 W192 | threshold 10.25 | m-hat 12.31 11.15 11.60 | sd 0.58 | anc 0 on 0 of 3 rows
+c2-100 W256 | threshold 10.25 | m-hat 15.98 15.88 15.67 | sd 0.16 | anc 0 on 0 of 3 rows
+c2-100 W384 | threshold 10.25 | m-hat 27.45 27.60 27.47 | sd 0.08 | anc 0 on 0 of 3 rows
+c2-100 W2048 | threshold 10.25 | m-hat 189.98 191.41 193.43 | sd 1.73 | anc 0 on 0 of 3 rows
+c8-100 W160 | threshold 10.71 | m-hat 9.31 8.77 8.73 9.44 | sd 0.37 | anc 0 on 4 of 4 rows
+c8-100 W224 | threshold 10.71 | m-hat 11.12 11.20 10.66 10.84 | sd 0.25 | anc 0 on 1 of 4 rows
+c8-100 W320 | threshold 10.71 | m-hat 11.93 14.86 13.86 13.08 | sd 1.24 | anc 0 on 0 of 4 rows
+c8-100 W512 | threshold 10.71 | m-hat 20.15 22.35 20.46 22.26 | sd 1.16 | anc 0 on 0 of 4 rows
+c8-100 W768 | threshold 10.71 | m-hat 31.94 30.69 35.48 31.36 | sd 2.14 | anc 0 on 0 of 4 rows
+c8-100 W1280 | threshold 10.71 | m-hat 47.95 42.92 44.37 43.73 | sd 2.22 | anc 0 on 0 of 4 rows
+p27 c1d-400 W384 n2 | sd l 0.04 | sd abs 0.01 | sd rel 0.03 | corr(l, rel) +nan | abs 2.59 2.60
+p27 c1d-400 W512 n2 | sd l 0.10 | sd abs 0.11 | sd rel 0.01 | corr(l, rel) +nan | abs 2.89 2.74
+p27 c1d-400 W768 n2 | sd l 0.04 | sd abs 0.82 | sd rel 0.77 | corr(l, rel) +nan | abs 2.51 3.66
+p27 c1d-400 W1024 n2 | sd l 0.05 | sd abs 0.88 | sd rel 0.83 | corr(l, rel) +nan | abs 4.01 5.25
+p27 c1d-400 W1536 n2 | sd l 0.18 | sd abs 2.02 | sd rel 1.84 | corr(l, rel) +nan | abs 9.21 6.36
+p27 c1d-400 W2048 n2 | sd l 0.13 | sd abs 1.01 | sd rel 1.14 | corr(l, rel) +nan | abs 8.61 10.03
+p27 c1d-400 W3072 n2 | sd l 0.12 | sd abs 8.26 | sd rel 8.38 | corr(l, rel) +nan | abs 14.14 25.82
+p27 c1d-400 W4096 n2 | sd l 0.08 | sd abs 1.92 | sd rel 1.84 | corr(l, rel) +nan | abs 29.13 31.84
+p27 c1s-400 W192 n2 | sd l 0.07 | sd abs 42.02 | sd rel 41.95 | corr(l, rel) +nan | abs 61.89 2.46
+p27 c1s-400 W256 n2 | sd l 0.02 | sd abs 0.04 | sd rel 0.06 | corr(l, rel) +nan | abs 2.64 2.59
+p27 c1s-400 W384 n2 | sd l 0.05 | sd abs 0.16 | sd rel 0.21 | corr(l, rel) +nan | abs 3.12 2.90
+p27 c1s-400 W512 n2 | sd l 0.09 | sd abs 0.07 | sd rel 0.02 | corr(l, rel) +nan | abs 3.20 3.30
+p27 c1s-400 W768 n2 | sd l 0.16 | sd abs 0.12 | sd rel 0.29 | corr(l, rel) +nan | abs 4.27 4.44
+p27 c1s-400 W1024 n2 | sd l 0.03 | sd abs 0.16 | sd rel 0.13 | corr(l, rel) +nan | abs 4.73 4.51
+p27 c1s-400 W1536 n2 | sd l 0.16 | sd abs 0.90 | sd rel 1.06 | corr(l, rel) +nan | abs 7.85 6.58
+p27 c1s-400 W2048 n2 | sd l 0.11 | sd abs 3.46 | sd rel 3.35 | corr(l, rel) +nan | abs 10.53 5.64
+p27 c2-100 W64 n2 | sd l 0.75 | sd abs 0.02 | sd rel 0.77 | corr(l, rel) +nan | abs 9.44 9.47
+p27 c2-100 W96 n2 | sd l 0.01 | sd abs 0.11 | sd rel 0.10 | corr(l, rel) +nan | abs 10.16 10.01
+p27 c2-100 W128 n2 | sd l 0.19 | sd abs 0.10 | sd rel 0.28 | corr(l, rel) +nan | abs 11.25 11.11
+p27 c2-100 W192 n2 | sd l 0.65 | sd abs 0.17 | sd rel 0.82 | corr(l, rel) +nan | abs 13.82 14.06
+p27 c2-100 W256 n2 | sd l 0.25 | sd abs 0.02 | sd rel 0.22 | corr(l, rel) +nan | abs 19.05 19.02
+p27 c2-100 W384 n2 | sd l 3.86 | sd abs 0.57 | sd rel 3.29 | corr(l, rel) +nan | abs 31.81 32.62
+p27 c2-100 W512 n2 | sd l 1.99 | sd abs 0.01 | sd rel 1.98 | corr(l, rel) +nan | abs 45.19 45.21
+p27 c2-100 W1024 n2 | sd l 4.23 | sd abs 0.34 | sd rel 3.89 | corr(l, rel) +nan | abs 95.53 96.01
+p27 c8-100 W128 n2 | sd l 0.79 | sd abs 0.24 | sd rel 0.55 | corr(l, rel) +nan | abs 10.70 10.36
+p27 c8-100 W192 n2 | sd l 1.06 | sd abs 0.46 | sd rel 1.53 | corr(l, rel) +nan | abs 12.91 12.25
+p27 c8-100 W256 n2 | sd l 2.21 | sd abs 1.25 | sd rel 3.46 | corr(l, rel) +nan | abs 16.71 18.48
+p27 c8-100 W384 n2 | sd l 3.05 | sd abs 7.79 | sd rel 4.74 | corr(l, rel) +nan | abs 20.03 31.05
+p27 c8-100 W512 n2 | sd l 0.13 | sd abs 11.89 | sd rel 12.02 | corr(l, rel) +nan | abs 42.89 26.07
+p27 c8-100 W768 n2 | sd l 0.83 | sd abs 25.79 | sd rel 24.97 | corr(l, rel) +nan | abs 68.77 32.30
+p27 c8-100 W1024 n2 | sd l 3.70 | sd abs 1.70 | sd rel 5.41 | corr(l, rel) +nan | abs 45.35 42.94
+p27 c8-100 W2048 n2 | sd l 1.63 | sd abs 0.64 | sd rel 0.99 | corr(l, rel) +nan | abs 105.14 104.23

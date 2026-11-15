@@ -1,0 +1,27 @@
+c2 (the conditioning readout, ruling item 1):
+c2: dTmin/dW 0.021 ms/slot, T-bar 18 ms, w0 share 1.00 -> |dR/dW| 0.00117 /slot
+   sigma_R (per-replicate calibration) = 0.149 -> 2 sigma_R = 256 slots; B2 fires iff the crossing lies below -87 (knee 169, band low edge 158)
+   sigma_R (session calibration, abs T_min sd 0.10) = 0.008 -> 2 sigma_R = 13 slots; B2 fires iff the crossing lies below 156 (knee 169, band low edge 158)
+   sigma_R (session calibration, abs T_min sd 0.25) = 0.015 -> 2 sigma_R = 26 slots; B2 fires iff the crossing lies below 143 (knee 169, band low edge 158)
+c2: dTmin/dW 0.047 ms/slot, T-bar 18 ms, w0 share 1.00 -> |dR/dW| 0.00261 /slot
+   sigma_R (per-replicate calibration) = 0.149 -> 2 sigma_R = 114 slots; B2 fires iff the crossing lies below 55 (knee 169, band low edge 158)
+   sigma_R (session calibration, abs T_min sd 0.10) = 0.008 -> 2 sigma_R = 6 slots; B2 fires iff the crossing lies below 163 (knee 169, band low edge 158)
+   sigma_R (session calibration, abs T_min sd 0.25) = 0.015 -> 2 sigma_R = 11 slots; B2 fires iff the crossing lies below 158 (knee 169, band low edge 158)
+c8 (ruling item 2):
+c8: dTmin/dW 0.063 ms/slot, T-bar 33 ms, w0 share 0.87 -> |dR/dW| 0.00166 /slot
+   sigma_R (per-replicate calibration) = 0.039 -> 2 sigma_R = 47 slots; B2 fires iff the crossing lies below 293 (knee 340, band low edge 433)
+   sigma_R (session calibration, abs T_min sd 0.25) = 0.008 -> 2 sigma_R = 10 slots; B2 fires iff the crossing lies below 330 (knee 340, band low edge 433)
+   sigma_R (session calibration, abs T_min sd 0.50) = 0.015 -> 2 sigma_R = 19 slots; B2 fires iff the crossing lies below 321 (knee 340, band low edge 433)
+c8: dTmin/dW 0.076 ms/slot, T-bar 33 ms, w0 share 0.87 -> |dR/dW| 0.00200 /slot
+   sigma_R (per-replicate calibration) = 0.039 -> 2 sigma_R = 39 slots; B2 fires iff the crossing lies below 301 (knee 340, band low edge 433)
+   sigma_R (session calibration, abs T_min sd 0.25) = 0.008 -> 2 sigma_R = 8 slots; B2 fires iff the crossing lies below 332 (knee 340, band low edge 433)
+   sigma_R (session calibration, abs T_min sd 0.50) = 0.015 -> 2 sigma_R = 15 slots; B2 fires iff the crossing lies below 325 (knee 340, band low edge 433)
+c1s control sign (ruling item 2): P(PINNED / CROSSES / SPLIT / UNDERPOWERED) per reading
+   prefix minima mu -0.20 sigma_R 0.03: PINNED 0.00  CROSSES 0.94  SPLIT 0.00  UNDERPOWERED 0.06
+   prefix minima mu -0.20 sigma_R 0.08: PINNED 0.00  CROSSES 0.91  SPLIT 0.02  UNDERPOWERED 0.06
+   midway        mu -0.10 sigma_R 0.03: PINNED 0.00  CROSSES 0.94  SPLIT 0.00  UNDERPOWERED 0.06
+   midway        mu -0.10 sigma_R 0.08: PINNED 0.00  CROSSES 0.53  SPLIT 0.40  UNDERPOWERED 0.06
+   Copa lift     mu +0.00 sigma_R 0.03: PINNED 0.01  CROSSES 0.01  SPLIT 0.92  UNDERPOWERED 0.06
+   Copa lift     mu +0.00 sigma_R 0.08: PINNED 0.01  CROSSES 0.01  SPLIT 0.92  UNDERPOWERED 0.06
+   pinned side   mu +0.05 sigma_R 0.03: PINNED 0.75  CROSSES 0.00  SPLIT 0.19  UNDERPOWERED 0.06
+   pinned side   mu +0.05 sigma_R 0.08: PINNED 0.15  CROSSES 0.00  SPLIT 0.78  UNDERPOWERED 0.06
