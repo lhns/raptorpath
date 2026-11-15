@@ -57,8 +57,25 @@ for f in sorted(glob.glob(os.path.join(S56, '*-c.log'))):
                       float(g.group(1)) if two or not top else float(top.group(1))))
     late = [x for x in T if x[0] >= t0 and x[1] > 0]
     if T and late:
-        by[(cell, W)].append((min(x[2] for x in T), St.median([x[3] for x in late])))
+        by[(cell, W)].append((min(x[2] for x in T), St.median([x[3] for x in late]),
+                              St.median([x[2] for x in late])))
 show('s56', by)
+
+# Under the session calibration the row's m-hat enters F iff m_row < l_c + b0_c (anc 0). Per row: the late median of
+# rtp_us (Copa's m-hat, the gauge's m), its row sd per arm, and the anc state against the session threshold
+# (l_c = the W 128 / P80 arm median l on s56; b0_c = p27's cap-128 b0p medians: c2 2.18, c8 leg 0 2.49).
+THR = {'c2-100': (128, 2.18), 'c8-100': (160, 2.49)}
+print()
+print('s56 late m-hat (rtp_us) per row against the session anc threshold l_c + b0_c:')
+for cell, (wc, b0c) in THR.items():
+    lc = St.median([x[0] for x in by[(cell, wc)]])
+    thr = lc + b0c
+    for k in sorted(w for (c, w) in by if c == cell):
+        v = by[(cell, k)]
+        mm = [x[2] for x in v]
+        a0 = sum(x < thr for x in mm)
+        print('%s W%d | threshold %.2f | m-hat %s | sd %.2f | anc 0 on %d of %d rows'
+              % (cell, k, thr, ' '.join('%.2f' % x for x in mm), St.stdev(mm) if len(mm) > 1 else 0.0, a0, len(mm)))
 
 LD = re.compile(r'\[LOOPDIAG\] t=([\d.]+)s p0 n=\d+ .*?rtt_min_us=(\d+) ')
 by = defaultdict(list)

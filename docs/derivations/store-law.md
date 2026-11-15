@@ -434,11 +434,21 @@ and n₀). They are to be derived, with:
 - the calibration latch rate (max-of-8 transients at queue-free pools);
 - the flatness gate between two small pools per cell.
 
-The registered R̃ of s60 feeds a calibration row's b̂₀⁺, so it tests the target's form, not this input.
+The registered R̃ of s60 feeds a session-level calibration b̂₀⁺ (and ℓ̂ at c2/c8) from queue-free rows. It tests the
+target's form, not this input.
 
 The same class covers ℓ̂. The lifetime echo minimum rises with the static pool row by row at c2 and c8: §56 c2 goes
 8.07 → 10.13 ms over W 128 → 2 048 (`store-law/s60ell.out`). s60's P3 tests the printed `l`. If it passes, ℓ̂'s
 source (a running minimum from the first sample) needs the same boot hold.
+
+There is also a noise problem. At c2, `l` scatters 0.5–3 ms across rows of one pool, while the absolute late floor
+scatters 0.1–0.25 ms (corr(`l`, floor − `l`) ≈ −1; `store-law/s60abs.out`). A single flow's lifetime minimum is a noisy
+estimate of its floor, at the scale of the law's ≈ 1 ms allowance. That bears on ℓ̂'s source independently of the
+boot.
+
+The anchor term sets a floor on where the form can land. While Copa's minimum m̂ sits below ℓ̂ + b̂₀⁺, the line keeps
+R > 1. So the form needs a standing 10 s minimum queue of ≈ b̂₀⁺. At c2 that is ≈ 2.2 ms, above the knee queue of
+≈ 0.8 ms. This is s60's c2 anchor-flip readout.
 
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 

@@ -29,11 +29,13 @@ def report(name, dtmin, tbar, w0, scat, knee, low_edge):
 # Scatter terms (ms, on the numerator), per row. s60abs.out shows the row scatter of l is sampling noise of a minimum:
 # at c2 the ABSOLUTE late floor has row sd 0.10-0.25 ms (s56 echo, W 128-384; p27 window minima 0.02-0.17 at W <= 256)
 # while l has 0.55-2.94, with corr(l, floor - l) = -0.96..-1.00. So:
-#  - per-replicate calibration: the calibration row's l and b0p enter (l sd up to 1.4 ms, sqrt2 for two rows; b0p sd ~0.9,
-#    x2 at anc 1), plus the arm row's l (it enters through T_min - l under the row's own l? no: under substitution the
-#    arm row enters only through its ABSOLUTE T_min), plus T_min's absolute scatter;
-#  - session calibration: the calibration values are one number per cell, so only the arm row's absolute T_min (and
-#    sigma at load, ~0.1 ms) scatter.
+#  - per-replicate calibration: the calibration row's l and b0p enter (l sd up to 1.4 ms, sqrt2 for two rows; b0p sd
+#    ~0.9, x2 at anc 1), plus the arm row's absolute T_min scatter;
+#  - session calibration: the calibration values are one number per cell. Where anc = 1 (m_row >= l_c + b0_c) the arm
+#    row then enters only through its absolute T_min, T-hat and sigma (~0.1 ms). Where anc = 0 the row's m-hat enters
+#    F instead and R~ - 1 >= sigma/T-hat > 0 whenever the late brake T_min - m <= b0_c + q*l_c, so these slope /
+#    sigma numbers hold only on anc-1 arms (s60abs.out: c2 is anc 0 at W 128-160 and anc 1 from 192; c8 is anc 1
+#    from W 320, and on 3 of 4 rows at 224).
 # c2: Tmin climbs 0.021 ms/slot (p27 minima, W 128 -> 192: 2.41 -> 3.76 above l) to 0.047 (s56 central curve 0 -> 3.0);
 #     T-bar ~18 ms at W 160-192 (rep56 T-bar 16-19).
 print('c2 (the conditioning readout, ruling item 1):')

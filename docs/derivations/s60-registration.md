@@ -9,16 +9,22 @@
 - The next step is a derivation, not a sweep: the boot hold and n₀ (`store-law.md` R6.7). A large sweep belongs after
   it.
 
-**c2: B2 is unscoreable as ruled (entry 6), and NOT by design under the calibration this revision chooses (needs the
-coordinator's ruling).**
-- With one calibration row per replicate, a c2 B2 miss smaller than 114–256 slots is undetectable. That is below the
-  calibration arm, so B2 cannot fire.
-- With the session-level calibration of §2, which entry 6 item 4 asked to consider, it is 6–26 slots. B2 would then
-  fire for a crossing below ≈ 143–163, against a knee at 169.
-- The cause is that the row scatter of `l` is sampling noise of a minimum (`s60abs.out`). A session median removes it.
-- As ruled, B2 at c2 is **not scored**. It is replaced by a **conditioning readout** with a verdict fixed now (§3.1),
-  plus the pooled median as a REPORTED readout.
-- Whether to reinstate c2's B2 under session calibration is the coordinator's call.
+**c2: B2 is unscoreable under either calibration, and the reason is the form's own anchor term, not noise.**
+- **Per-replicate calibration:** the row scatter of `l` (sampling noise of a minimum, `s60abs.out`) makes the
+  resolvable miss 114–256 slots, which is below the calibration arm.
+- **Session-level calibration** removes that noise. But the row's Copa minimum m̂ then decides the anchor: F = min(m̂,
+  ℓ̂_c + b̂₀⁺_c) + b̂₀⁺_c.
+  - On §56 the late m̂ is tight (row sd 0.20–0.58 ms). It sits **below** ℓ̂_c + b̂₀⁺_c ≈ 10.25 ms (anc 0) at W 128
+    (3 of 3 rows) and W 160 (2 of 3), and above it from W 192 on (`s60abs.out`).
+  - In the anc 0 zone, R̃ − 1 ≥ σ/T̂ > 0 whenever the late brake is ≤ b̂₀⁺_c + q·ℓ̂_c. So R̃ cannot reach 1 below the
+    W where m̂ lifts b̂₀⁺ above the floor. That **anchor flip** lies at ≈ 160–192, around the knee (169), and R̃ just
+    past it is still ≈ 1.1–1.2.
+- **So at c2 the form lands above its knee by construction.** It needs a standing 10 s minimum queue of ≈ b̂₀⁺ (≈ 2.2
+  ms), where c2's knee queue is ≈ 0.8 ms. B2 cannot fire there.
+- As ruled, it is **not scored**. It is replaced by the **anchor-flip and conditioning readout** of §3.1, whose
+  verdict is fixed now.
+- This revision's first push had claimed a session-calibrated c2 B2 at 6–26 slots. That claim is withdrawn: it left
+  out the row's m̂.
 
 Status: DRAFT REGISTRATION (derivation style). Docs and Python only: no engine code, no cargo, no VM contact. It is
 written to be copied into `docs/status.md` as §60. It is built on `store-law.md` R4.8, R5.6, R6.2 and R6.7, the gauge
@@ -55,6 +61,11 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
    - The session is cut to readings that can come out two ways: **127 rows in two launches** (from 205 in three).
    - K4 uses the existing `fec=` token, re-pinned to `d416d59b`. The witness and negative control were re-run on its
      sample.
+   - **Advisor, before the push:** the first commit of this revision (`f8afe926`) claimed c2's B2 was conditioned under
+     session calibration. It had left out the row's m̂. The per-row late-m̂ check (`s60abs.py`) gives the anchor-flip
+     result at the top of the doc.
+   - Restored as Appendix A: the stand-in statistic, the anchor shift, the bands, B6, the 5 % G/C sizing, and the
+     out-of-band meanings.
 
 **Helper scripts** (stdlib Python, run with `-I`; outputs committed beside them in `store-law/`).
 
@@ -108,7 +119,7 @@ branch **`slaw-gauge` `d416d59b`** (it carries the `fec=` token), and `harness59
   - c2: 2.2 / 4.2 / 12.6 / 23.5 ms at W 128 / 192 / 256 / 384;
   - c8 leg 0: 2.5 / 8.1 / 26.7 ms at 128 / 256 / 512;
   - c1s: 0.30 / 1.45 / 18.8 ms at 256 / 512 / 2 048.
-- **Registered:** b0p(arm)/b0p(calibration) ≥ 3 at c2 W 384, c8 W 512 (leg 0) and c1s W 2 048. Predicted ≈ 10 / ≈ 10 /
+- **Registered:** b0p(arm)/b0p(calibration) ≥ 3 at c2 W 256, c8 W 512 (leg 0) and c1s W 2 048. Predicted ≈ 5.7 / ≈ 10 /
   ≈ 60.
 - **Meaning.** "The first K windows" is a valid b̂₀⁺ source only under a boot held at a queue-free store. Otherwise the
   start-up queue is latched into the target, as rev 3's σ̂⁺ was. That makes the boot hold and n₀ terms of the law:
@@ -136,7 +147,7 @@ It is predicted to be > 1 at every c8 and c1s arm, and at c2 up to W 384.
   - corr(`l`, floor − `l`) is −0.96 to −1.00, and c8 on §56 reads the same.
 - **Registered:** Δℓ = (arm median `l`) − (calibration median `l`) per leg, with SE_Δ from the row sds.
   - **RISES** iff Δℓ − 2·SE_Δ > q·ℓ̂_c; **FLAT** iff Δℓ + 2·SE_Δ < q·ℓ̂_c; otherwise **UNRESOLVED**.
-  - Arms: c2 W 384 (predicted +2.1, which RISES or is UNRESOLVED), c8 leg 0 W 512 (+2.7, RISES) and leg 1 W 512 (+3
+  - Arms: c2 W 256 (predicted +1.3 to +1.5, likely UNRESOLVED against the 1.4 ms row noise of `l`), c8 leg 0 W 512 (+2.7, RISES) and leg 1 W 512 (+3
     against its own 3.2 allowance, FLAT or UNRESOLVED).
   - RISES puts ℓ̂'s source into R6.7. FLAT means the two ℓ̂ recipes coincide there.
 
@@ -146,7 +157,9 @@ It is predicted to be > 1 at every c8 and c1s arm, and at c2 up to W 384.
 
 **The choice, and its reason.**
 - Per cell and leg, the calibration floors are **one session value**: b̂₀⁺_c = the median `b0p`, and ℓ̂_c = the median
-  `l`, over the cell's valid, non-latched W 128 rows (leg 1's b0 from `b0k` entries with `b0kn` ≥ 10).
+  `l`, over the cell's valid, non-latched W 128 rows.
+  - Leg 1's b0 per row is the maximum of its `b0k` entries with `b0kn` ≥ 10, and needs ≥ 4 such windows of K. A row
+    failing that leaves leg 1's session median, but stays in leg 0's.
 - The reason is `s60abs.out`: the row scatter of the floors is sampling noise of a minimum, not scatter of the loop.
   A median over rows estimates the floor better than any single row.
 - Per-replicate pairing would carry that noise into every replicate's R̃: σ_R ≈ 0.15 at c2 and 0.04 at c8, against
@@ -198,41 +211,61 @@ The conditioning arithmetic (`s60cond.py`):
 - dR̃/dW = −(w₀/Σw)·(dT̂min₀/dW)/T̄, and an input scatter s moves R̃ by s/T̄.
 - B2 resolves a miss of 2σ_R/|dR̃/dW| slots, and fires iff the crossing lies below knee − 2σ_R/|dR̃/dW|.
 
-| cell | slope \|dR̃/dW\| (per slot) | σ_R, per-replicate calibration | σ_R, session calibration | B2 fires iff the crossing lies below |
-|---|---|---|---|---|
-| c2 (knee 169) | 0.0012–0.0026 | 0.149 → 2σ_R = 114–256 slots | 0.008–0.015 → 6–26 slots | per-replicate: 55 or less, i.e. never; **session: 143–163** |
-| c8 (knee 340) | 0.0017–0.0020 | 0.039 → 39–47 slots | 0.008–0.015 → 8–19 slots | per-replicate: 293–301; **session: 321–332**, i.e. ≥ 101–112 slots below the band's low edge (433) |
+**The anchor decides where this arithmetic applies.**
+- Under session calibration, F = min(m̂_row, ℓ̂_c + b̂₀⁺_c) + b̂₀⁺_c.
+- §56's late m̂ (the gauge's `m`) is tight across rows (sd 0.2–0.6 ms at c2, 0.25–1.24 ms at c8 W 224–320). Against
+  the session threshold it reads (`s60abs.out`):
+  - **c2:** anc 0 at W 128 (3 of 3 rows) and 160 (2 of 3); anc 1 from 192.
+  - **c8:** anc 0 at W 160 (4 of 4) and 224 (1 of 4); anc 1 from 320.
+- **On anc 0 arms** the row's m̂ enters F, and R̃ − 1 ≥ σ/T̂ > 0 whenever the late brake T̂min − m̂ is ≤ b̂₀⁺_c + q·ℓ̂_c.
+  So R̃ cannot reach 1 below the **anchor flip**.
+- **The slope and σ_R figures below hold on anc 1 arms only.**
 
-The scatter inputs are each measured and cited in the script:
+| cell | slope \|dR̃/dW\| on anc 1 arms (per slot) | σ_R, per-replicate calibration | σ_R, session calibration | B2 fires iff R̃(knee) < 1 − 2σ_R, i.e. the crossing lies below |
+|---|---|---|---|---|
+| c2 (knee 169, anchor flip ≈ 160–192) | 0.0012–0.0026 | 0.149 (114–256 slots) | 0.008–0.015 | **never**: the knee lies at or below the anchor flip, where R̃ − 1 ≥ σ/T̂ ≈ +0.1 |
+| c8 (knee 340, anchor flip ≈ 224–320) | 0.0017–0.0020 | 0.039 (39–47 slots) | 0.008–0.015 (8–19 slots) | per-replicate 293–301; **session 321–332**, i.e. ≥ 101–112 slots below the band's low edge (433) |
+
+The scatter inputs are each measured and cited in `s60cond.py`:
 - the absolute late floor's row sd: 0.10–0.25 ms at c2, 0.25–0.50 at c8 (§56; p27's 9 s c8 rows do not settle);
 - σ at load: ≈ 0.1 ms;
-- for the per-replicate case, also the calibration row's `l` (sd up to 1.4 ms) and `b0p` (sd ≈ 0.9, entering twice
-  at anc 1).
+- for the per-replicate case, also the calibration row's `l` (sd up to 1.4 ms) and `b0p` (sd ≈ 0.9, entering twice at
+  anc 1).
 
-### 3.1 c2: conditioning readout (B2 not scored, as ruled)
+### 3.1 c2: anchor-flip and conditioning readout (B2 not scored, as ruled)
 
-- **Registered readout.**
-  - The slope of R̃_row in W across the knee arms 160 / 176 / 192, as the median over replicates of the per-replicate
-    least-squares slope. Predicted 0.0012–0.0026 per slot.
-  - σ_R per arm, as the sd over replicates. Predicted 0.008–0.015 under session calibration, and 0.15 per-replicate.
-  - Their ratio, 2σ_R/|slope|, in slots: the input scatter's effect on the fixed point. Predicted 6–26 (session) and
-    114–256 (per-replicate), against a knee 11 slots inside the band.
+- **Registered readouts, per replicate.**
+  - **W_flip,r:** the W at which the replay's per-row anc bind fraction under session calibration crosses 0.5,
+    interpolated over the arms 128 / 160 / 176 / 192 / 256. Predicted ≈ 160–192.
+  - **R̃ − 1 at the knee arms** (160 / 176). Predicted ≥ σ/T̂ ≈ +0.1 on anc 0 rows.
+  - **Above the flip:** the slope of R̃_row over 192–256 (predicted 0.0012–0.0026 per slot) and σ_R per arm (0.008–0.015
+    under session calibration, 0.15 per-replicate). Their ratio 2σ_R/|slope| is reported in slots.
+  - The replicate's own crossing W_r is reported against the band (Appendix A).
 - **Verdict, fixed now.**
-  - **ILL-CONDITIONED** iff 2σ_R/|slope| > W₉₅ − 128. A B2 miss would then have to cross below the calibration arm,
-    where R̃ > 1 by construction.
-  - **CONDITIONED** iff 2σ_R/|slope| < W₉₅ − 158, the band's low edge.
-  - Otherwise **MARGINAL**.
-  - The verdict is reported for both calibrations (the scored session value, and per-replicate pairing as
-    sensitivity), and goes to the law ledger and R6.7.
+  - **STRUCTURAL** iff W_flip,r ≥ W₉₅,r on ≥ 5 of the 6 replicates (or all scoreable ones, if fewer). The form cannot
+    land below the c2 knee, because it needs a standing 10 s minimum queue of ≈ b̂₀⁺ (≈ 2.2 ms) against a knee
+    queue of ≈ 0.8 ms.
+  - **NOT STRUCTURAL** iff W_flip,r < W₉₅,r on ≥ 5. The conditioning ratio then decides: ILL-CONDITIONED if
+    2σ_R/|slope| > W₉₅ − 128, CONDITIONED if < W₉₅ − 158, otherwise MARGINAL.
+  - Otherwise **MIXED**.
+  - **If the slope's 95 % interval at the knee includes 0, the readout reports FLAT-AT-KNEE.** That is the expected
+    signature of anc 0.
+  - The verdict goes to the law ledger and R6.7.
 - **Reported, not scored:** the pooled median over replicates of R̃_r(W₉₅,r) − 1, with its minimum detectable miss
-  2·1.253·σ_R/√n_s. That is 0.008–0.015 in R under session calibration, ≈ 3–13 slots.
-- **Pools:** 96 and 128 (calibration), 160 / 176 / 192 (knee and slope), 384 (P1, P3), and 2 048 (control, for W₉₅).
+  2·1.253·σ_R/√n_s.
+- **Pools:**
+  - 96 and 128 (calibration);
+  - 160 / 176 / 192 (knee and flip);
+  - 256 (slope above the flip, and P1 and P3 at c2, predicted ratio ≈ 5.7 and Δℓ ≈ +1.3–1.5 ms);
+  - 2 048 (control).
 
 ### 3.2 c8: B2, live as a gross-miss detector
 
 - **B2:** replicate r counts iff R̃_r(W₉₅,r) < 1 − 2·σ_R. Here W₉₅,r is interpolated from goodput against the same
   replicate's control, and σ_R is the in-session sd over replicates at the bracketing arms.
 - **It fires on ≥ 2 of the 5–6 scoreable replicates,** on the scored recipe alone.
+- **It is read only where the replay's anc bind fraction is ≥ 0.9 at both bracketing arms.** If the in-session knee
+  falls below 320, the 256 arm may still be anc 0, and that replicate is then reported, not counted.
 - **It can fire.** Leg 0's window minimum climbs 0.063–0.076 ms per slot between the knee and the band. B2 fires for a
   crossing below ≈ 321–332 under session calibration, which is ≥ 101–112 slots below the band's low edge (433).
 - **The band (reported context):** 433–586, anc 1, from single-row corners. A session value narrows it. The own-ℓ̂
@@ -318,7 +351,7 @@ UNDERPOWERED is 0.06 throughout.
 |---|---|---|---|---|
 | **60a** | build + engine suites (new tree) | — | 60 min | 70 min |
 | | smoke (c2 W 192, C + G) | 2 | 3 min | 3 min |
-| | c2: 96, 128, 160, 176, 192, 384, 2 048 × 6 | 42 | 53 min | 63 min |
+| | c2: 96, 128, 160, 176, 192, 256, 2 048 × 6 | 42 | 53 min | 63 min |
 | | c8: 96, 128, 256, 320, 384, 512, 1 280 × 6 | 42 | 53 min | 63 min |
 | | **total** | **86** | **≈ 2.8 h** | **≈ 3.3 h** |
 | **60b** | smoke (c1s W 128 G 1 GB, W 2 048 C) | 2 | 3 min | 7 min |
@@ -338,8 +371,7 @@ UNDERPOWERED is 0.06 throughout.
 
 ## 8. Open
 
-1. **Coordinator: c2's B2 under session calibration.** It is conditioned at 6–26 slots on the a priori σ_R. Reinstate
-   it, or keep the conditioning readout only. The readout's verdict decides it either way after the session.
+1. **c2: the anchor-flip readout (§3.1)** decides whether the form's c2 landing is structurally above the knee. If NOT STRUCTURAL, reinstating a c2 B2 under session calibration is the coordinator's call.
 2. **R6.7:** the boot hold and n₀, plus ℓ̂'s source if P3 RISES. This is the next derivation, before any large sweep.
 3. **Pre-launch:**
    - a renderer-generated witness sample (anchor-bound leg plus empty leg);
@@ -349,3 +381,59 @@ UNDERPOWERED is 0.06 throughout.
      59's rows. It needs stub tests and a rehearsal.
 4. **c8 and c1s at ≤ 128 are unmeasured.** A failed flatness gate removes that cell's R̃ (c8: B2; c1s: the control
    sign).
+
+---
+
+## Appendix A. Settled items carried from earlier entries (reported context; nothing here is scored)
+
+### A.1 The stand-in for the window minimum
+
+The KA crossings (194.2 / 478.2 / 495.4 at q 0.10) read T̂min(W) off `s56cls.py`'s `CURVE`. That curve is §56's
+arm-median **T̄ − T₀**: T̄ is the rate-weighted LATE echo loop from integer-ms tick values, and T₀ is its per-leg floor
+on the smallest-W rows. It is a central statistic standing in for a minimum. The KA fed the ledger over-read
+(0.41 / 1.0 / 0.12 ms) as b0.
+
+The window spread grows with W, which breaks the substitution (`s60p27.out`):
+- c2: 4.8 → 6.4 ms;
+- c8: 5.5 → 10.2 ms;
+- c1s: 1.1 → 5.8 ms.
+
+### A.2 The anchor shift
+
+With m̂ ≥ ℓ̂ + b̂₀⁺ the target gains a full b̂₀⁺. Method B, calibration ℓ̂ (`s60band.out`):
+- c2: 158–203 → 188–242 (+30 to +39 slots);
+- c8: 403–505 → 433–551 (+30 to +46).
+
+### A.3 The bands
+
+From single-row corners (`s60band.out`, "FROZEN"). A session calibration value narrows them.
+
+| cell | band | own-ℓ̂ sensitivity |
+|---|---|---|
+| c2 | 158–242 (both anchor states) | 182–258 |
+| c8 | 433–586 (anc 1) | 462–605 |
+| c1s | 406–981 as corners; the top is open (prefix minima) | — |
+
+### A.4 What a crossing outside the band means (reported W_r)
+
+- **c2 below 158:** the window minimum rises faster than both readings.
+- **c2 above 242:** the form over-allows. That is a queue cost without goodput loss, against R5.5's 17–33-slot
+  margin.
+- **c8 below 433:** the coupling ½Δ or leg 1's pull is smaller than measured.
+- **c8 above 586:** leg 1's σ at load grows faster than §56 read (B6's question), read from the leg-1 pull readout.
+
+### A.5 B6 on §56
+
+- c8 leg 1's σ at load over its boot value is 0.24–0.72 at every pool, so B6 as registered cannot fire. The boot
+  maximum carries the fill transient.
+- Against the calibration arm's load σ (4.92 ms), it is already 3.1× / 5.3× / 6.4× at W 512 / 768 / 1 280.
+- So §56 has answered B6. It is dropped, and kept as a readout (leg-1 `sig` per arm, and leg 1's pull on R̃).
+
+### A.6 The 5 % G/C gate, sized and not run
+
+`s60size.out`, t quantiles, a pair counting only with both rows unflagged:
+- CPU s/GB needs 7–8 unflagged pairs, i.e. 14–30 launched at collapse 0.29–0.48.
+- Goodput needs 13, i.e. 26–48 launched.
+
+It is not run because the benched gauge cost predicts ≈ 0.1 % of CPU/GB. The 10-pair gross-error check (§4) rules out
+more than 10 %.
