@@ -100,6 +100,9 @@ pub struct PathState {
     /// is not applied. See [`release_1to1_active`] and
     /// [`Self::expire_in_flight`].
     release_1to1: bool,
+    /// The store-law gauge's per-leg window sampler (`net::slaw`): observation
+    /// only, `None` unless `Scheduler::enable_slaw` attached it (`RWM_DIAG`).
+    slaw: Option<Box<crate::net::slaw::WinSampler>>,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -157,6 +160,7 @@ impl PathState {
             release_sent_cursor: 0,
             release_recv_cursor: 0,
             release_1to1: release_1to1_active(),
+            slaw: None,
             clock,
         }
     }
@@ -609,7 +613,32 @@ impl PathState {
         if let Some(d) = crate::net::rttdump::gauge() {
             d.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         }
+        if let Some(s) = self.slaw.as_deref_mut() {
+            s.observe((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        }
         self.copa.record_rtt(rtt);
+    }
+
+    /// Attach the store-law gauge's window sampler (idempotent). Observation
+    /// only: nothing in the engine reads it.
+    pub fn attach_slaw(&mut self) {
+        if self.slaw.is_none() {
+            self.slaw = Some(Box::default());
+        }
+    }
+
+    /// Whether the gauge's sampler exists (it must not with `RWM_DIAG` off).
+    pub fn slaw_attached(&self) -> bool {
+        self.slaw.is_some()
+    }
+
+    /// Close the gauge's 250 ms window: the sampler's statistics, with
+    /// Copa's `min_rtt` and `qsp_us` read here. `None` if not attached or the
+    /// window is empty.
+    pub fn slaw_close(&mut self) -> Option<crate::net::slaw::WinClose> {
+        let m = self.copa.min_rtt().map(|d| d.as_micros() as u64);
+        let q = self.rtt_qspread_us();
+        self.slaw.as_deref_mut()?.close(m, q)
     }
 
     /// Wire-level loss evidence for the Copa competitive AIMD: pass the

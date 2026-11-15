@@ -72,7 +72,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_DELTA=unset ",
     "RWM_COPA_DELTA=unset ",
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
-    "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
+    "RWM_DIAG=0 RWM_SLAW=1 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
     "RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 ",
     "RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_RTOBS=0 RWM_FDIAG=0 RWM_TRACE=0 ",
     "RWM_PFRAC=0",
@@ -412,6 +412,8 @@ fn default_env_resolves_the_shipped_stack() {
          rather than inferred by whoever derives against it: {}",
         g.echo_line()
     );
+    assert!(g.slaw, "RWM_SLAW ships default ON (effective only under RWM_DIAG)");
+    assert!(g.echo_line().contains("RWM_SLAW=1"), "{}", g.echo_line());
     assert!(
         !g.walldiag,
         "RWM_WALLDIAG ships default OFF (DIAG-surface instrument)"

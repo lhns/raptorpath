@@ -147,6 +147,9 @@ pub struct Scheduler {
     /// Resolved from `cold_place_active()` at construction; `set_cold_place`
     /// overrides. See `place_costs`.
     cold_place: bool,
+    /// The store-law gauge is armed (`net::slaw`, `RWM_DIAG`): every path
+    /// gets a window sampler. Observation only.
+    slaw: bool,
 }
 
 impl Scheduler {
@@ -167,6 +170,16 @@ impl Scheduler {
             weights: SchedulingWeights::from_hint(hint),
             hint,
             cold_place: cold_place_active(),
+            slaw: false,
+        }
+    }
+
+    /// Arm the store-law gauge's per-leg window samplers on every current
+    /// and future path. Called only under `RWM_DIAG` (`diag::report`).
+    pub fn enable_slaw(&mut self) {
+        self.slaw = true;
+        for p in self.paths.values_mut() {
+            p.attach_slaw();
         }
     }
 
@@ -207,8 +220,11 @@ impl Scheduler {
     }
 
     pub fn add_path(&mut self, id: PathId) {
-        self.paths
-            .insert(id, PathState::new_with_hint(id, self.clock.clone(), self.hint));
+        let mut p = PathState::new_with_hint(id, self.clock.clone(), self.hint);
+        if self.slaw {
+            p.attach_slaw();
+        }
+        self.paths.insert(id, p);
     }
 
     pub fn remove_path(&mut self, id: PathId) {

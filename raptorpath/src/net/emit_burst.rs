@@ -74,6 +74,9 @@ pub(crate) struct EmitBurstGauge {
     cur_run: u32,
     burst_syms: u32,
     burst_max: Vec<(u32, u32)>,
+    /// The store-law gauge's per-window burst sizes (`net::slaw`). `None`
+    /// (nothing recorded) unless `enable_window` armed it under `RWM_DIAG`.
+    win: Option<Vec<u32>>,
 }
 
 impl EmitBurstGauge {
@@ -109,6 +112,9 @@ impl EmitBurstGauge {
             return;
         }
         self.open = false;
+        if let Some(w) = self.win.as_mut() {
+            w.push(self.burst_syms);
+        }
         self.bursts += 1;
         self.syms += self.burst_syms as u64;
         self.end[why as usize] += 1;
@@ -122,6 +128,18 @@ impl EmitBurstGauge {
                 None => self.runs.push((p, m, m as u64, 1)),
             }
         }
+    }
+
+    /// Start recording per-window burst sizes (the `[WSTORE]` gauge).
+    pub fn enable_window(&mut self) {
+        if self.win.is_none() {
+            self.win = Some(Vec::new());
+        }
+    }
+
+    /// Drain the burst sizes recorded since the last call.
+    pub fn take_window(&mut self) -> Vec<u32> {
+        self.win.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
     /// Mean burst depth (symbols per burst); 0 before the first burst.

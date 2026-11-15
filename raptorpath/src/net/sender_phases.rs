@@ -30,11 +30,15 @@ pub(crate) struct StoreCapState {
     /// [DIAG] assembly: the population it reports is the store-cap phase's own
     /// instrument.
     pub sf_print_us: u64,
+    /// The `[CAPLOG]` (inputs, cap) recorder (`net::slaw`). `Some` only under
+    /// `RWM_DIAG`; observation only, it never feeds the cap.
+    pub caplog: Option<Box<super::slaw::CapLog>>,
 }
 
 impl StoreCapState {
     pub(crate) fn new(pol: &SenderPolicy) -> Self {
         Self {
+            caplog: pol.slaw_on.then(Box::<super::slaw::CapLog>::default),
             tt_terms_diag: None,
             tt_print_us: 0,
             percap_k: std::collections::HashMap::new(),
@@ -53,6 +57,42 @@ pub(crate) struct StoreCapCtx<'a> {
     pub copa_feed: &'a Option<Arc<CopaFeed>>,
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
+}
+
+/// Record one store-cap refresh's (inputs, cap) for `[CAPLOG]` (a no-op with
+/// the recorder absent, i.e. `RWM_DIAG` off). Reads its arguments only.
+#[allow(clippy::too_many_arguments)]
+fn caplog(
+    cl: &mut Option<Box<super::slaw::CapLog>>,
+    t_us: u64,
+    seat: &'static str,
+    br: &'static str,
+    pol: &SenderPolicy,
+    n_live: usize,
+    psum: f64,
+    cap: usize,
+) {
+    if let Some(c) = cl.as_deref_mut() {
+        c.record(
+            t_us,
+            super::slaw::CapRec {
+                seat,
+                br,
+                on: pol.store_paths_on,
+                sum_cap: pol.sum_cap,
+                delta_cap: pol.delta_cap,
+                b_hint: pol.delta_b,
+                n_live,
+                psum,
+                gain: pol.store_bdp_gain,
+                floor: pol.store_cap_floor,
+                pool: pol.store_path_pool,
+                smax: pol.store_max,
+                boot: pol.store_boot_cap,
+                cap,
+            },
+        );
+    }
 }
 
 /// Plain-reliable delay-based window cap (paper §6), refreshed at
@@ -124,12 +164,17 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // depend on the CC family (ADR-0064).
                     sumcap.record(pol.sum_cap, n_live, cwnd_sum, pol.store_bdp_gain, cap);
                     dcap.record(n_live, cwnd_sum, pol.store_bdp_gain, cap);
+                    caplog(&mut scs.caplog, dnow, "copa", "pooled", pol, n_live, cwnd_sum, cap);
                     cap
                 } else if cwnd_sum > 0.0 {
-                    ((pol.store_bdp_gain * cwnd_sum).ceil() as usize)
-                        .clamp(pol.store_cap_floor, pol.store_max)
+                    let cap = ((pol.store_bdp_gain * cwnd_sum).ceil() as usize)
+                        .clamp(pol.store_cap_floor, pol.store_max);
+                    caplog(&mut scs.caplog, dnow, "copa", "chain", pol, n_live, cwnd_sum, cap);
+                    cap
                 } else {
-                    pol.store_boot_cap.min(pol.store_max)
+                    let cap = pol.store_boot_cap.min(pol.store_max);
+                    caplog(&mut scs.caplog, dnow, "copa", "boot", pol, n_live, cwnd_sum, cap);
+                    cap
                 };
             } else {
                 // The three-term limit (`RWM_THREE_TERM`): the law's inputs
@@ -187,6 +232,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // pooled fallback. Warm-up (any live path cold) ⇒
                     // `None` ⇒ the configured chain below runs verbatim.
                     scs.tt_terms_diag = Some((w, sl, sp));
+                    caplog(&mut scs.caplog, dnow, "plain", "tt", pol, n_live, bdp, cap);
                     cap
                 } else if let Some(cap) = pooled_store_cap(
                     pol.store_paths_on,
@@ -205,11 +251,16 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // `pooled_store_cap`.
                     sumcap.record(pol.sum_cap, n_live, bdp, pol.store_bdp_gain, cap);
                     dcap.record(n_live, bdp, pol.store_bdp_gain, cap);
+                    caplog(&mut scs.caplog, dnow, "plain", "pooled", pol, n_live, bdp, cap);
                     cap
                 } else if bdp > 0.0 {
-                    ((pol.store_bdp_gain * bdp).ceil() as usize).clamp(pol.store_cap_floor, pol.store_max)
+                    let cap = ((pol.store_bdp_gain * bdp).ceil() as usize).clamp(pol.store_cap_floor, pol.store_max);
+                    caplog(&mut scs.caplog, dnow, "plain", "chain", pol, n_live, bdp, cap);
+                    cap
                 } else {
-                    pol.store_boot_cap.min(pol.store_max)
+                    let cap = pol.store_boot_cap.min(pol.store_max);
+                    caplog(&mut scs.caplog, dnow, "plain", "boot", pol, n_live, bdp, cap);
+                    cap
                 };
             }
             // `[3T]` readout — the three-term law's mechanism-liveness echo
@@ -762,6 +813,10 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         if pol.diag_on {
             dg.mpd_gap_reports += 1;
         }
+        if pol.slaw_on {
+            // Store-law gauge (`[SLAWC] c09rep`): processed repair reports.
+            super::slaw::note_c09_report();
+        }
 
         // Packet-threshold evidence ingestion (RFC 9002 §6.1.1 per
         // path): fold this report's implied delivered intervals into the
@@ -804,6 +859,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
 
             for seq in clamped_start..=clamped_end {
                 if retransmitted >= cached_max_repairs || cached_nack_budget == 0 {
+                    if pol.slaw_on {
+                        // C09's per-report cap bound (`[SLAWC] c09bind`);
+                        // at most once per report, as this breaks the loop.
+                        super::slaw::note_c09_bind();
+                    }
                     break 'gaps;
                 }
                 if pol.diag_on {
@@ -1169,7 +1229,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             now_us(),
         );
         let debt_reduction = nacked_count as f64 * repair_rate;
+        let debt_before = st.repair_debt;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
+        if pol.slaw_on {
+            super::slaw::note_debt_cancel(false, debt_before, st.repair_debt, debt_reduction);
+        }
     }
     *cached_nack_budget_cell = cached_nack_budget;
     *nack_repairs_this_period_cell = nack_repairs_this_period;
@@ -1277,6 +1341,11 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         }
         // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
         let newly_acked = next_expected - prev_ack;
+        // Store-law gauge (`[WSTORE] adv=`): one sample per cumulative
+        // advance, size `newly_acked`. `None` unless `RWM_DIAG` armed it.
+        if let Some(sl) = dg.slaw.as_deref_mut() {
+            sl.note_adv(newly_acked);
+        }
         // Compute the repair rate and the derived window target (paper §4.8)
         // from the worst (highest-loss) channel path.
         let derived_window = {
@@ -1325,7 +1394,13 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             now_us(),
         );
         let debt_reduction = newly_acked as f64 * repair_rate;
+        let debt_before = st.repair_debt;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
+        // Store-law gauge (W1, `[WSTORE] dbt_rm_ack`/`dbt_ask_ack`): the debt
+        // actually removed, min(debt, asked), beside what was asked.
+        if pol.slaw_on {
+            super::slaw::note_debt_cancel(true, debt_before, st.repair_debt, debt_reduction);
+        }
 
         // Keep the encoder window at the derived W* (paper §4.8), bounded by
         // the sender's hard ceiling; fall back to win_cap/2 when the
