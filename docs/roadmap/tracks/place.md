@@ -4,7 +4,7 @@
 
 Scope: multipath placement: placement price, idle-leg lock-out, diversity weight, per-leg state.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-place -->
 ```mermaid

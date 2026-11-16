@@ -4,7 +4,7 @@
 
 Scope: ARQ, SACK, the hole law, recovery clocks, gap horizon, snapshot order, tail sweep.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-rec -->
 ```mermaid

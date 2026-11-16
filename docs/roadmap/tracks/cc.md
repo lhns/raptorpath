@@ -4,7 +4,7 @@
 
 Scope: substrate congestion control: quinn BBR, bbr_rs, Copa, the BBR/Copa hybrid (ADR-0068), the pacing seam.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-cc -->
 ```mermaid

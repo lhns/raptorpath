@@ -4,7 +4,7 @@
 
 Scope: the metrics registry, OTel, the flight recorder.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-obs -->
 ```mermaid

@@ -4,7 +4,7 @@
 
 Scope: measurement and harness: the L1 harness, guards, stub run, instruments, measurement discipline.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-meas -->
 ```mermaid

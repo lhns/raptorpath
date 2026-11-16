@@ -4,7 +4,7 @@
 
 Scope: threading and per-packet cost: threading redesign, I/O owner, receiver cost, allocation bounds.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-perf -->
 ```mermaid

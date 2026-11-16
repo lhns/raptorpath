@@ -4,7 +4,7 @@
 
 Scope: the rate law and the (δ, ρ, r) triangle: FEC rate, P_fec, W*, hints as named points.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-rate -->
 ```mermaid

@@ -4,7 +4,7 @@
 
 Scope: flow control and the store law: store cap, SACK-clocked release, the time term, δ's seat.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-store -->
 ```mermaid

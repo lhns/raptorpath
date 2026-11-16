@@ -82,6 +82,11 @@ def mermaid_blocks(text):
     return re.findall(r"```mermaid\n(.*?)\n```", text, re.S)
 
 
+def tree_blocks(text):
+    """The flowchart blocks that draw nodes.yaml (the legend's sample boxes are not a tree)."""
+    return [b for b in mermaid_blocks(text) if b.startswith("flowchart") and build.LEGEND_MARK not in b]
+
+
 def row_levels(block):
     """Row index of every node, read back from the invisible row ties (a ~~~ b puts b one row below a)."""
     ties = TIE_RE.findall(block)
@@ -127,7 +132,7 @@ class RenderedDirectionTests(unittest.TestCase):
         outs = build.render_outputs(build.load_nodes(build.NODES), skeleton(), TODAY)
         with tempfile.TemporaryDirectory() as tmp:
             for key, text in outs.items():
-                for k, block in enumerate(b for b in mermaid_blocks(text) if b.startswith("flowchart")):
+                for k, block in enumerate(tree_blocks(text)):
                     src, dst = Path(tmp) / "x.mmd", Path(tmp) / "x.svg"
                     src.write_text(block, encoding="utf-8")
                     cmd = [mmdc, "-i", str(src), "-o", str(dst)] + (["-p", cfg] if cfg else [])
@@ -147,10 +152,9 @@ class OneDirectionTests(unittest.TestCase):
         outs = build.render_outputs(nodes, skeleton(), TODAY)
         seen = 0
         for key, text in outs.items():
-            for block in mermaid_blocks(text):
-                if block.startswith("flowchart"):
-                    seen += 1
-                    self.assertEqual(backward_edges(block), [], key)
+            for block in tree_blocks(text):
+                seen += 1
+                self.assertEqual(backward_edges(block), [], key)
         self.assertEqual(seen, 1 + len(build.TRACKS))
 
     def test_synthetic_all_edge_kinds_go_down(self):
@@ -162,9 +166,8 @@ class OneDirectionTests(unittest.TestCase):
             node("rec-und", depends_on=["cc-x"]),
         ]
         for text in build.render_outputs(nodes, skeleton(), TODAY).values():
-            for block in mermaid_blocks(text):
-                if block.startswith("flowchart"):
-                    self.assertEqual(backward_edges(block), [])
+            for block in tree_blocks(text):
+                self.assertEqual(backward_edges(block), [])
 
     def test_global_order_is_topological_then_by_start_then_undated(self):
         nodes = [node("rec-late", start="2026-09-01", depends_on=["rec-early"]),
@@ -628,6 +631,79 @@ class HiddenNodeTests(unittest.TestCase):
         self.assertTrue(check.validate_nodes([node("rec-a", diagram="no")])[0])
 
 
+
+class LegendTests(unittest.TestCase):
+    """The legend is a diagram built from the trees' own classDefs, shapes and arrows, so it cannot drift."""
+
+    def legend(self):
+        blocks = mermaid_blocks(BuildTests.region(built(GOOD), "legend"))
+        self.assertEqual(len(blocks), 1)
+        self.assertIn(build.LEGEND_MARK, blocks[0])
+        return blocks[0]
+
+    @staticmethod
+    def classes_in(block):
+        """{class name: [ids]} from the block's `class a,b name` lines."""
+        out = {}
+        for ids, cls in re.findall(r"^\s+class (\S+) (\w+)$", block, re.M):
+            out.setdefault(cls, []).extend(ids.split(","))
+        return out
+
+    def test_legend_uses_the_diagram_classdefs_verbatim(self):
+        lg, ov = self.legend(), mermaid_blocks(BuildTests.region(built(GOOD), "overview"))[0]
+        for line in build.classdef_lines():
+            self.assertIn(line, lg.splitlines())
+            self.assertIn(line, ov.splitlines())
+
+    def test_every_class_a_tree_can_draw_has_a_sample(self):
+        drawable = set()
+        for kind in build.KINDS:
+            for state in build.STATES:
+                for outcome in build.OUTCOMES:
+                    for waiting in ("", "x"):
+                        n = node("rec-a", kind=kind, state=state, outcome=outcome, waiting_on=waiting,
+                                 evidence=["e"], replaced_by=["rec-b"] if outcome == "superseded" else [])
+                        if check.validate_nodes([n, node("rec-b")])[0]:
+                            continue  # a combination check.py rejects is never drawn
+                        if not build.hidden(build.normalize([n])[0]):
+                            drawable.add(build.node_class(build.normalize([n])[0]))
+        shown = set(self.classes_in(self.legend()))
+        self.assertLessEqual(drawable, shown)
+        # owner calls (userdec) are hidden from every tree, so the legend glosses them in text instead of a box
+        self.assertNotIn("userdec", drawable)
+        self.assertIn("Owner calls", BuildTests.region(built(GOOD), "legend"))
+        self.assertLessEqual(shown, {name for name, _ in build.CLASSDEFS})
+
+    def test_each_sample_is_drawn_by_node_def_with_its_class(self):
+        lg = self.legend()
+        cls = self.classes_in(lg)
+        for k, (want, n) in enumerate(build.LEGEND_STATUS):
+            self.assertEqual(build.node_class(n), want, n["title"])
+            self.assertIn(build.node_def(n, ident=f"lg_s{k}"), lg)
+            self.assertIn(f"lg_s{k}", cls[want])
+        for k, n in enumerate(build.LEGEND_SHAPES):
+            self.assertIn(build.node_def(n, ident=f"lg_k{k}"), lg)
+
+    def test_every_shape_and_arrow_kind_is_shown(self):
+        lg = self.legend()
+        shapes = {build.node_def(n, ident="x")[1:3] for n in build.LEGEND_SHAPES}  # the opening bracket(s)
+        self.assertEqual(shapes, {'[/', '>"', '["'})
+        drawn_kinds = {k for kind in build.KINDS if kind != "user-decision"
+                       for k in [build.node_def(node("rec-a", kind=kind), ident="x")[1:3]]}
+        self.assertLessEqual(drawn_kinds, shapes)
+        self.assertEqual({k for k, _, _ in build.LEGEND_EDGES}, set(build.EDGE_ARROWS))
+        for k, (kind, _, _) in enumerate(build.LEGEND_EDGES):
+            self.assertIn(f"lg_e{k}a {build.EDGE_ARROWS[kind]} lg_e{k}b", lg)
+        # the qualified-by sample carries the trees' linkStyle at its own link index (the row ties come first)
+        q = [k for k, (kind, _, _) in enumerate(build.LEGEND_EDGES) if kind == "qual"]
+        lines = [l.strip() for l in lg.splitlines() if re.search(r" (-->|-\.->|~~~) ", l)]
+        ties = lines[0].count("~~~")
+        self.assertEqual(ties, len(build.LEGEND_ROWS) + 1)  # status rows, shapes, arrows
+        self.assertIn(f"linkStyle {ties + q[0]} {build.QUAL_STYLE}", lg)
+        self.assertEqual(lines[1 + q[0]], f"lg_e{q[0]}a -.-> lg_e{q[0]}b")
+        self.assertEqual([k for _, a, b in build.LEGEND_ROWS for k in range(a, b)], list(range(len(build.LEGEND_STATUS))))
+
+
 class TrackFileTests(Files, unittest.TestCase):
     NODES = GOOD + [node("cc-x", state="done", outcome="successful", evidence=["e"], notes="n")]
 
@@ -636,7 +712,7 @@ class TrackFileTests(Files, unittest.TestCase):
 
     def test_main_page_is_light(self):
         main = self.outputs()[build.MD_KEY]
-        self.assertEqual(main.count("```mermaid"), 1)  # the overview only: no legend diagram, no gantt
+        self.assertEqual(main.count("```mermaid"), 2)  # the legend and the overview; no gantt
         self.assertLessEqual(main.count("```mermaid"), check.MAX_MERMAID_PER_FILE)
         self.assertNotIn("%% today", main)
         self.assertNotIn("gantt", main)
@@ -653,11 +729,10 @@ class TrackFileTests(Files, unittest.TestCase):
         outs = self.outputs([node(f"{c}-a", state="done", outcome="successful", evidence=["e"], start="2026-01-01",
                                   depends_on=[], notes="n") for c in build.TRACKS] + [node("rec-z", depends_on=["cc-a"])])
         for key, text in outs.items():
-            for block in mermaid_blocks(text):
-                if block.startswith("flowchart"):
-                    self.assertNotIn("ext:", block, key)
-                    for sentence in ("done ·", "in progress", "blocked", "superseded", "dead end", "qualified by", "|then|"):
-                        self.assertNotIn(sentence, block.split("classDef")[0], key)
+            for block in tree_blocks(text):
+                self.assertNotIn("ext:", block, key)
+                for sentence in ("done ·", "in progress", "blocked", "superseded", "dead end", "qualified by", "|then|"):
+                    self.assertNotIn(sentence, block.split("classDef")[0], key)
     def test_each_track_file_has_one_block(self):
         outs = self.outputs([node(f"{c}-a") for c in build.TRACKS])  # every track non-empty
         self.assertEqual(len(outs), 2 + len(build.TRACKS))

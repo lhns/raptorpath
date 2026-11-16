@@ -4,7 +4,7 @@
 
 Scope: restructure, simplify batches, archived arms, early platform work (handshake, TLS, MTU, migration).
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-infra -->
 ```mermaid

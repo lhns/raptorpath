@@ -502,16 +502,66 @@ def r_tracks(nodes, today):
     return "\n".join(lines)
 
 
+LEGEND_MARK = "%% legend"  # first line after the flowchart header; tests that walk the trees skip this block
+
+
+def _sample(title, kind="mechanism", state="next", outcome="unrated", waiting_on=""):
+    return {"title": title, "kind": kind, "state": state, "outcome": outcome, "waiting_on": waiting_on}
+
+
+# One sample box per colour the trees can draw, built by the same node_def/node_class as the trees,
+# so a change to a glyph, shape or classDef shows up here too. (class, sample node) pairs.
+LEGEND_STATUS = [
+    ("vsucc", _sample("very successful", state="done", outcome="very-successful")),
+    ("succ", _sample("successful, or a fixed defect", state="done", outcome="successful")),
+    ("mixed", _sample("mixed", state="done", outcome="mixed")),
+    ("bad", _sample("bad (regression)", state="done", outcome="bad")),
+    ("unrated", _sample("done, not rated", state="done")),
+    ("dead", _sample("dead end", state="abandoned", outcome="dead-end")),
+    ("dead", _sample("superseded", state="abandoned", outcome="superseded")),
+    ("inprog", _sample("in progress", state="in-progress")),
+    ("waiting", _sample("built, waiting", state="in-progress", waiting_on="x")),
+    ("next", _sample("next", state="next")),
+    ("blocked", _sample("blocked", state="blocked")),
+    ("parked", _sample("parked", state="parked")),
+    ("defect", _sample("open defect", kind="defect-verdict", state="in-progress")),
+]
+# rows of the status samples: (subgraph title, slice of LEGEND_STATUS)
+LEGEND_ROWS = [("Done: colour is the rating", 0, 5), ("Closed", 5, 7), ("Open: colour is the state", 7, 13)]
+LEGEND_SHAPES = [_sample("law", kind="law", state="done", outcome="successful"),
+                 _sample("mechanism, research, instrument", state="done", outcome="successful"),
+                 _sample("defect verdict", kind="defect-verdict", state="in-progress")]
+# (edge kind, from label, to label); drawn with EDGE_ARROWS and, for qual, QUAL_STYLE
+LEGEND_EDGES = [("dep", "prerequisite", "depends on it"), ("repl", "old design", "replaced by"),
+                ("qual", "rated node", "qualified by a later defect")]
+
+
 def r_legend(nodes, today):
+    out, pairs, groups = ["flowchart TB", f"    {LEGEND_MARK}"], [], []
+
+    def group(ident, title, lines):
+        groups.append(ident)
+        return [f'    subgraph {ident}["{esc(title)}"]', "        direction LR"] + [f"        {x}" for x in lines] + ["    end"]
+
+    for g, (title, a, b) in enumerate(LEGEND_ROWS):
+        out += group(f"lg_g{g}", title, [node_def(n, ident=f"lg_s{k}") for k, (_, n) in enumerate(LEGEND_STATUS) if a <= k < b])
+    pairs += [(f"lg_s{k}", cls) for k, (cls, _) in enumerate(LEGEND_STATUS)]
+    out += group("lg_shape", "Shape: kind", [node_def(n, ident=f"lg_k{k}") for k, n in enumerate(LEGEND_SHAPES)])
+    pairs += [(f"lg_k{k}", node_class(n)) for k, n in enumerate(LEGEND_SHAPES)]
+    out += group("lg_edge", "Arrow (in the trees every arrow points down, forward in time)",
+                 [f'lg_e{k}{end}["{esc(t)}"]' for k, (_, a, b) in enumerate(LEGEND_EDGES) for end, t in (("a", a), ("b", b))])
+    pairs += [(f"lg_e{k}{end}", "next") for k in range(len(LEGEND_EDGES)) for end in "ab"]
+    out.append("    " + " ~~~ ".join(groups))  # stacks the rows; these ties are the first len(groups) - 1 links
+    out += [f"    lg_e{k}a {EDGE_ARROWS[kind]} lg_e{k}b" for k, (kind, _, _) in enumerate(LEGEND_EDGES)]
+    qual = [str(len(groups) - 1 + k) for k, (kind, _, _) in enumerate(LEGEND_EDGES) if kind == "qual"]
+    out += [f"    linkStyle {','.join(qual)} {QUAL_STYLE}"]
+    out += classdef_lines() + class_lines(pairs)
     return "\n".join([
-        "| | |",
-        "|---|---|",
-        "| **Box** | one glyph and a title. Glyph: ✔ done, ▶ in progress, ⏳ built and waiting, ○ next, ⛔ blocked, ⏸ parked, "
-        "⚠ open defect, ↷ superseded, ✖ dead end. Colour: dark green very successful, light green successful, amber mixed, "
-        "red bad, grey dead end or superseded, blue in progress, white next, purple owner call, orange defect. "
-        "Shape: hexagon owner call, parallelogram law, flag defect. The prefix on an overview box is its track. |",
-        "| **Arrow** | solid: depends on. Dotted: replaced by. Thick orange dotted: ⚠ qualified by (a later defect limits the rating). "
-        "Arrows always point down, forward in time; a prerequisite implied by a longer chain is not drawn. |",
+        fence(out),
+        "",
+        "Owner calls (a purple hexagon) are not drawn in the trees; they are listed under *Waiting on the owner*. "
+        "The prefix on an overview box is its track. A prerequisite implied by a longer chain is not drawn; "
+        "the node tables keep every edge.",
     ])
 
 
@@ -613,7 +663,7 @@ def render_track_file(nodes, code, today=None):
         "",
         f"Scope: {scope}.",
         "",
-        "[Back to the roadmap](../../roadmap.md)",
+        "[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)",
         "",
         region(f"track-{code}"),
         "",

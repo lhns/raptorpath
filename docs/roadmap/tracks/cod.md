@@ -4,7 +4,7 @@
 
 Scope: RaptorQ/FEC encoder and decoder, gf256, symbol framing, the generation seat.
 
-[Back to the roadmap](../../roadmap.md)
+[Back to the roadmap](../../roadmap.md) · [legend](../../roadmap.md#legend)
 
 <!-- BEGIN GENERATED: track-cod -->
 ```mermaid

@@ -17,10 +17,79 @@ Text outside the markers is hand-written and is preserved by the build.
 ## Legend
 
 <!-- BEGIN GENERATED: legend -->
-| | |
-|---|---|
-| **Box** | one glyph and a title. Glyph: ✔ done, ▶ in progress, ⏳ built and waiting, ○ next, ⛔ blocked, ⏸ parked, ⚠ open defect, ↷ superseded, ✖ dead end. Colour: dark green very successful, light green successful, amber mixed, red bad, grey dead end or superseded, blue in progress, white next, purple owner call, orange defect. Shape: hexagon owner call, parallelogram law, flag defect. The prefix on an overview box is its track. |
-| **Arrow** | solid: depends on. Dotted: replaced by. Thick orange dotted: ⚠ qualified by (a later defect limits the rating). Arrows always point down, forward in time; a prerequisite implied by a longer chain is not drawn. |
+```mermaid
+flowchart TB
+    %% legend
+    subgraph lg_g0["Done: colour is the rating"]
+        direction LR
+        lg_s0["✔ very successful"]
+        lg_s1["✔ successful, or a<br/>fixed defect"]
+        lg_s2["✔ mixed"]
+        lg_s3["✔ bad (regression)"]
+        lg_s4["✔ done, not rated"]
+    end
+    subgraph lg_g1["Closed"]
+        direction LR
+        lg_s5["✖ dead end"]
+        lg_s6["↷ superseded"]
+    end
+    subgraph lg_g2["Open: colour is the state"]
+        direction LR
+        lg_s7["▶ in progress"]
+        lg_s8["⏳ built, waiting"]
+        lg_s9["○ next"]
+        lg_s10["⛔ blocked"]
+        lg_s11["⏸ parked"]
+        lg_s12>"⚠ open defect"]
+    end
+    subgraph lg_shape["Shape: kind"]
+        direction LR
+        lg_k0[/"✔ law"/]
+        lg_k1["✔ mechanism, research,<br/>instrument"]
+        lg_k2>"⚠ defect verdict"]
+    end
+    subgraph lg_edge["Arrow (in the trees every arrow points down, forward in time)"]
+        direction LR
+        lg_e0a["prerequisite"]
+        lg_e0b["depends on it"]
+        lg_e1a["old design"]
+        lg_e1b["replaced by"]
+        lg_e2a["rated node"]
+        lg_e2b["qualified by a later defect"]
+    end
+    lg_g0 ~~~ lg_g1 ~~~ lg_g2 ~~~ lg_shape ~~~ lg_edge
+    lg_e0a --> lg_e0b
+    lg_e1a -.-> lg_e1b
+    lg_e2a -.-> lg_e2b
+    linkStyle 6 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
+    classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
+    classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
+    classDef bad fill:#f28b82,stroke:#b3261e,color:#111
+    classDef dead fill:#e6e6e6,stroke:#777,stroke-dasharray:5 5,color:#555
+    classDef inprog fill:#a8cdf5,stroke:#1f6fc5,color:#111
+    classDef next fill:#fff,stroke:#333,color:#111
+    classDef blocked fill:#fff,stroke:#b3261e,stroke-dasharray:2 2,color:#111
+    classDef parked fill:#f3f3f3,stroke:#999,color:#555
+    classDef unrated fill:#fff,stroke:#333,stroke-dasharray:1 3,color:#111
+    classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
+    classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
+    classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
+    class lg_s0 vsucc
+    class lg_s1,lg_k0,lg_k1 succ
+    class lg_s2 mixed
+    class lg_s3 bad
+    class lg_s4 unrated
+    class lg_s5,lg_s6 dead
+    class lg_s7 inprog
+    class lg_s8 waiting
+    class lg_s9,lg_e0a,lg_e0b,lg_e1a,lg_e1b,lg_e2a,lg_e2b next
+    class lg_s10 blocked
+    class lg_s11 parked
+    class lg_s12,lg_k2 defect
+```
+
+Owner calls (a purple hexagon) are not drawn in the trees; they are listed under *Waiting on the owner*. The prefix on an overview box is its track. A prerequisite implied by a longer chain is not drawn; the node tables keep every edge.
 <!-- END GENERATED: legend -->
 
 ## Overview
@@ -407,7 +476,7 @@ flowchart TB
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated from nodes.yaml on 2026-11-14.
+Generated from nodes.yaml on 2026-11-16.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
