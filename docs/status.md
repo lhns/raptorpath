@@ -1083,6 +1083,51 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - At `8565e7d2`, every `tools/l1` Python test from `test_anchordiag_parse` to `test_storelaw_parse` passes, 33 files in all, including `test_s60`, `test_harness60`, `test_harness_paths` and `test_harness46`.
   - **Still owed:** the fast unfiltered `test_stubrun.py` and the shell tests at `8565e7d2`. Claude Code stopped that run for host memory, not for a failure. Since `b3547368` the shared scripts changed only in two comments and the 60b `ABORT-RSIGN` block.
 
+**Amendment 2 (2026-11-16, after the 60b rehearsal, before 60b): the evicting rows leave §60.** 60a is unaffected: it has no evicting row, its own rehearsal passed, and it launched at `8565e7d2` at 10:07:42Z, as Amendment 1 registers. This amendment changes 60b only.
+- **The 60b rehearsal** (`~/r60b`, `LD_REHEARSE=1`, `8565e7d2`) ended `ABORT-SMOKE` at 02:55:30Z.
+  - `bin_sha` equalled the registered value and the suite manifest HIT.
+  - Both G/C smoke rows (c1s G64, C2048) passed every check. G64's CAPLOG: 28 records, 28 replayed, 0 mismatches, bind(ceiling) 1.000.
+  - The one evicting row (c2-100, Realtime, `RWM_C_RELIABLE=0`, s42) failed three smoke checks: the G-tag check (no `[CAPLOG]`), the CAPLOG replay (0 records), and the debt loop (median `[SPAN]` rr 0.000). It was also a DNF, which is expected on this seat (below).
+- **Why the row gives almost nothing to read as registered (one rehearsal row, n = 1; an observation, not a Result):**
+  1. **Overdriven.** The sender emits ≈ 90–108 k source symbols/s (`[DIAG] good=` ≈ 400 Mbit) into the 100 Mbit link, with `paused=0%`. All 600 MB (`cum` 1 214 576) is emitted by t ≈ 13 s; netem sent 164 MB of it.
+  2. **Emission ends at ≈ 13 s.** The DNF itself is by design: perf.rs:34 records a Realtime DNF as an expected datum, and the E rows' 150 s timeout is what §60's 12 min for 5 rows assumed. What is new is that the sender is idle from ≈ 13 s to the timeout (`[SPAN]` stops at t = 12 s; `[WSTORE]` windows stretch to ≈ 2 s with ackw → 0). Each row would therefore spend 150 s for ≈ 8 s of LATE data (t 5–13 s).
+  3. **rr = 0: the spare-capacity clamp is sufficient for it.** The rate seat hands `flat_rate = window_rate.min(spare)` (`emit_source.rs:543`), with `spare = (cwnd − in_flight)⁺ / in_flight` (`scheduler/path.rs:471`). The token's r is the rate after that clamp and the floor (`note_debt_accrued`, `emit_source.rs:706`). The unclamped `window_rate` is not printed, so the rate law's own value is unread.
+     - Over the 53 sending windows (250 ms, t ≤ 13 s) the `[WSTORE] fec=` token reads r = 0 in 46 (87 %), at ε̂ up to 0.068.
+     - The other 7 (t = 0.25 s, 10.25–10.75 s, 12.25–12.75 s) read r = 0.0001–0.50 with `dbt_share` 0.97–0.9995. So the debt loop runs whenever the clamp lets go, but the median rr is 0.
+     - **Joined to all 52 `[DIAG]` ticks of the sending phase (t 0.3–13.0 s):**
+       - 48 are saturated, with in_flight ≥ cwnd (5 647–33 392 against 702–10 000).
+       - 4 are free (t = 10.3, 10.5, 12.3, 12.5 s: in_flight 662–6 755 against cwnd 10 000).
+       - `np_act` (`diag.rs:558`, the saturation-filtered `active_paths()`) is 0 on every saturated tick and 1 on every free one.
+       - All 4 free ticks fall inside the two r > 0 bursts, and none falls in an r = 0 stretch.
+       - Windows are 250 ms means and ticks are point samples, so some r > 0 windows (t = 10.75 and 12.75 s) border a saturated tick.
+       - The t = 0.25 s window precedes the first tick; at start in_flight = 0, where spare is ∞.
+     - **Why this suffices:** `Scheduler::spare_capacity` folds over live paths (`p.active`), so on a saturated tick spare = 0 and flat_rate = 0. Nothing between the clamp and the accrual (`emit_source.rs:575–706`) caps `repair_rate` further; only the floor (`max`) applies.
+     - **The source is not held to that cwnd.** cwnd jumps from 1 159 to 10 000 at t ≈ 10.3 s.
+     - **Open:** whether `spare` reads a scheduler cwnd that nothing enforces while quinn's BBR is the controller. The clamp's bind fraction on this seat is owed as a gauge in the new registration (FORMULA-FIRST: every clamp gets one). Its ledger verdict waits for a row that is not overdriven. Both are added to the pending list below.
+  4. **No `[CAPLOG]` by construction.** The store cap runs only under `plain_dyn_cap = reliable && !generation && !coded_only && !store_env_set` (`sender_policy.rs:523`), and the evicting seat is not reliable. Amendment 1's "the replayable share is printed for G and evicting rows" is withdrawn for evicting rows, and so is the smoke check that put the evicting row among the G rows that must carry CAPLOG.
+- **The `[WSTORE] ackw` / `[DIAG] wake[ack=]` clock join (decision 16's join) passed on engine output.** All 121 compared window pairs were equal. Of the row's 122 windows, 117 had ackw > 0 and 53 had ackw > 10, so the ≥ 10 rule holds on active windows alone. Decision 16 is read only by evicting rows, so nothing left in 60b consumes it.
+- **Changes to 60b:**
+  - 60b and its rehearsal schedule no evicting row. **60b's launch tree is `harness60-a2` `1ecee59d`**, which changes `tools/l1` only: the engine `git diff` against `8565e7d2` is empty, so `bin_sha` and the manifest are unchanged. 60b is 40 slots and its rehearsal 2 rows.
+  - The scorer prints the evicting sections as NOT-RUN and asserts no criterion over an empty row set. Evicting rows, if any are present, are left out of the CAPLOG tag and replay checks. The EVICT code stays, tested, for the new registration.
+  - **Registered by reference for 60b:** `s60_score.py` DECISIONS 1–22 at `1ecee59d`. 22 is new and records this change.
+  - **Scoring:** 60b and the Result are scored at `1ecee59d`. The host re-score must reproduce 60a's on-VM `LABEL60` lines.
+  - **Tests at `1ecee59d`,** run on a `git archive` export (LF; a Windows checkout aborts the stub run with `ABORT-CRLF`): `test_s60`, `test_harness60`, `test_harness_paths` and `test_mbar59` pass. So do the 12 plan-60 stub paths of `test_stubrun.py` (`STUBRUN_ONLY` = the six 60a and six 60b paths, fast mode): 78 ok, ALL OK, 501 s.
+  - **The 60b archive** is built from the commit with `git archive`, like `h60.tgz`, not from a worktree.
+  - The budget pins (`BUDGET_S["60b"]`, `P57_NEED` 13 860 s, `LD_HARD` + 3.9 h) are unchanged. Without the evicting block they over-state the worst case by ≤ 32 min (§60's table: 5 rows + ≤ 5 re-runs).
+  - Before 60b, the rehearsal re-runs at the new tools sha (the two smoke rows, `LD_REHEARSE=1`) and must log the same `bin_sha` and a manifest HIT.
+- **What moves:** m̄ (`adv`), W1 (`dbt_share`) and K4's inputs for the P_fec oracle go to their own registration, as this section first said ("Not in this session", above). It needs:
+  - an offered load paced below the link rate;
+  - an object size and timeout chosen so the emission phase covers the LATE window (the DNF stays an expected datum);
+  - the spare-clamp bind fraction as a reported gauge;
+  - its own rehearsal, with rr > 0 as go/no-go.
+
+  The pending item "K4 with the §60 data" now reads "K4 with that registration's data".
+- **Pending, added by this amendment:**
+  - the evicting-seat registration (above);
+  - the spare-capacity clamp on a Realtime source: its bind-fraction gauge and its ledger verdict;
+  - whether `spare_capacity`'s cwnd is enforced on that seat under quinn's BBR.
+- **Still owed from Amendment 1:** the unfiltered fast `test_stubrun.py` and the shell tests.
+
 
 ## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
 
