@@ -48,6 +48,12 @@ rows parsed: 136 (G 126, C 10)
     W192    0.560 | 2.523 3.036 3.562 4.344 | 1.035 1.307 | 0.505 0.770 | 2.312  (n 6)
     W2048   1.000 | 6.574 13.608 19.817 26.914 | 13.015 13.394 | 0.400 6.617 | 2.569  (n 12)
 
+== 1b. The floor gate on S_F (per-row median of p50 - tmin), as s60 section 2 applies it to tmin: OLS over the floor pools, E = b*W1 at the floor pool; beside it the same fit on tmin (witness: the score's c2 b = 0.0113 +- 0.0016) and the median window sample count nk per pool ==
+  c2-100 leg0 pools (16, 32, 48) (W1=16, n=18 rows) | S_F: b=+0.0152 +- 0.0020 ms/slot, E=b*W1=+0.24 +- 0.03 ms | tmin: b=+0.0113 +- 0.0016 ms/slot, E=b*W1=+0.18 +- 0.03 ms | nk W16:282 W32:536 W48:786
+  c8-100 leg0 pools (32, 64, 96) (W1=32, n=18 rows) | S_F: b=+0.0024 +- 0.0007 ms/slot, E=b*W1=+0.08 +- 0.02 ms | tmin: b=+0.0171 +- 0.0005 ms/slot, E=b*W1=+0.55 +- 0.02 ms | nk W32:510 W64:964 W96:1374
+  c8-100 leg1 pools (32, 64, 96, 256) (W1=256, n=24 rows) | S_F: b=+0.0189 +- 0.0014 ms/slot, E=b*W1=+4.84 +- 0.35 ms | tmin: b=-0.0114 +- 0.0014 ms/slot, E=b*W1=-2.92 +- 0.36 ms | nk W32:15 W64:18 W96:23 W256:142
+  c1s-400 leg0 pools (64, 128, 192) (W1=64, n=18 rows) | S_F: b=+0.0050 +- 0.0032 ms/slot, E=b*W1=+0.32 +- 0.20 ms | tmin: b=+0.0031 +- 0.0017 ms/slot, E=b*W1=+0.20 +- 0.11 ms | nk W64:5273 W128:9215 W192:12144
+
 == 2. c2: what the knee needs, per replicate, against what each allowance supplies (Bulk q = 0.10) ==
   need = Tmin(W95) - F_c. Shipped supply A0 = sig + q*l_c. Each family's free constant, solved so that D = 0, is printed: a value solved this way is a FIT, not a provenance.
   s42r1: W95 168.2  need 4.085  sig 1.815  q*l_c 0.558  D +1.712 | Tmin(W95) 12.767 vs floor-window p50 13.728 (diff -0.961); knee p50 17.321
@@ -57,7 +63,7 @@ rows parsed: 136 (G 126, C 10)
   s42r5: W95 167.8  need 4.084  sig 1.760  q*l_c 0.558  D +1.766 | Tmin(W95) 12.766 vs floor-window p50 13.728 (diff -0.962); knee p50 17.327
   s7r6: W95 169.7  need 4.110  sig 1.864  q*l_c 0.558  D +1.689 | Tmin(W95) 12.792 vs floor-window p50 13.728 (diff -0.936); knee p50 17.422
   median need 4.046 ms; sig at the knee 1.785; q*l_c 0.558; q*F_c 0.868
-  A(c)-type  sig + c_B*q/q_B:     c_B = 2.261 ms  (W1's 2.7 ms is b0 + c at G = 0.9 on a different clock, not this quantity)
+  A(c)-type  sig + c_B*q/q_B:     c_B = 2.261 ms  (W1's c_B = 2.7 ms is its c alone, in tau_s = b0 + c at G = 0.9 on the s43 oracle line: another coordinate system)
   wider q    sig + q'*l_c:        q' = 0.405;  sig + q'*F_c: q' = 0.260   (RFC 8289 band 0.05-0.10)
   sig scale  k*sig + q*l_c:       k = 1.954
   floor spread S_F + q*F_c supplies 5.945 (S_F 5.077); H_F + q*F_c supplies 8.586

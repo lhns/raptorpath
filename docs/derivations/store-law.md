@@ -496,13 +496,15 @@ new branch-only rows of `law-ledger.yaml`.
   - Below the knee it is a sample-count extreme of the jitter tail, still falling after 15 s.
   - Above the knee it is the first window's minimum.
   - Fix: q(δ)·F̂ in place of q(δ)·ℓ̂. That moves D by only +0.31 ms.
-- **Candidates for the allowance.**
-  - Only S_F + q(δ)·F̂ passes every gate with a measured magnitude, where S_F is the floor windows' median − minimum.
-    It lands 27–33 slots above the c2 knee.
+- **Candidates for the allowance: none has full provenance.**
+  - The closest is S_F + q(δ)·F̂, where S_F is the floor windows' median − minimum. It lands 27–33 slots above the
+    c2 knee.
+  - But its quantile is a one-cell hypothesis, and S_F's floor gate is at the edge at c2 and NOT-CONVERGED on c8
+    leg 1.
   - A(c)-type and wider-q forms rest on a constant fitted at c2 Bulk.
-  - The spread at load fails the R-sign gate.
-- **Next step.** Before the allowance's engine form is designed: one c3 static sweep on the registered gauge binary,
-  unless the owner settles U2 by declaration.
+  - The spread at load fails the R-sign gate at the c8 control.
+- **Next step: the owner's U2 call.** A declared constant needs no measurement before design. A measured-spread
+  branch needs one c3 static sweep first, on the registered gauge binary.
 
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 

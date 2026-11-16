@@ -11,6 +11,7 @@ section is built on the same window set and calibration.
     R67(A) = sum_i w_i (F_i + 1/2 max(0, max_j F_j - F_i) + A_i + T_i - Tmin_i) / sum_i w_i T_i      (s60replay.r67_r with A in place of sig + q*l_c)
 """
 import json
+import math
 import re
 import statistics as st
 import sys
@@ -253,6 +254,28 @@ def main(argv):
                 u = med([r.gp / ctl[(r.rep, r.seed)] for r in rs if ctl.get((r.rep, r.seed)) and r.gp])
                 P(f"    W{W:<5} {fx(u, 3):>6} | {fx(g('tmin'), 3)} {fx(g('p10'), 3)} {fx(g('p50'), 3)} {fx(g('p90'), 3)} | {fx(sp, 3)} {fx(wd, 3)} | {fx(g('sig'), 3)} {fx(g('sigw'), 3)} | {fx(g('l'), 3)}  (n {len(rs)})")
 
+    # ── 1b. the registered floor gate (s60 section 2: OLS of the per-row median over the floor pools, E = b*W1) applied to S_F as to tmin ──
+    def ols(xs, ys):
+        n = len(xs)
+        mx, my = sum(xs) / n, sum(ys) / n
+        sxx = sum((x - mx) ** 2 for x in xs)
+        b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+        res = sum((y - my - b * (x - mx)) ** 2 for x, y in zip(xs, ys))
+        return b, math.sqrt(res / (n - 2) / sxx)
+
+    P("\n== 1b. The floor gate on S_F (per-row median of p50 - tmin), as s60 section 2 applies it to tmin: OLS over the floor pools, E = b*W1 at the floor pool;"
+      " beside it the same fit on tmin (witness: the score's c2 b = 0.0113 +- 0.0016) and the median window sample count nk per pool ==")
+    for cell, leg, pools in ((C2, 0, FLOOR_W[C2]), (C8, 0, FLOOR_W[C8]), (C8, 1, FLOOR_W[C8] + (256,)), (C1S, 0, FLOOR_W[C1S])):
+        rs = [r for r in rows.values() if r.cell == cell and r.kind == "G" and r.W in pools and r.late(leg)]
+        xs = [r.W for r in rs]
+        W1 = CAL_W[(cell, leg)]
+        out = []
+        for nm, fn in (("S_F", lambda r: med([w["p50"] - w["tmin"] for w in r.late(leg)])), ("tmin", lambda r: r.m(leg, "tmin"))):
+            b, se = ols(xs, [fn(r) for r in rs])
+            out.append(f"{nm}: b={b:+.4f} +- {se:.4f} ms/slot, E=b*W1={b * W1:+.2f} +- {se * W1:.2f} ms")
+        nk = " ".join(f"W{W}:{med([med([w['nk'] for w in r.late(leg)]) for r in rs if r.W == W]):.0f}" for W in pools)
+        P(f"  {cell} leg{leg} pools {pools} (W1={W1}, n={len(rs)} rows) | " + " | ".join(out) + f" | nk {nk}")
+
     # ── 2. the needed rise at the knee against each family, per replicate ──
     P("\n== 2. c2: what the knee needs, per replicate, against what each allowance supplies (Bulk q = 0.10) ==")
     P("  need = Tmin(W95) - F_c. Shipped supply A0 = sig + q*l_c. Each family's free constant, solved so that D = 0, is printed: a value solved this way is a FIT, not a provenance.")
@@ -269,7 +292,7 @@ def main(argv):
           f" | Tmin(W95) {tm:.3f} vs floor-window p50 {c['p50']:.3f} (diff {tm - c['p50']:+.3f}); knee p50 {p50k:.3f}")
     n_, s_ = med(need), med(sigk)
     P(f"  median need {n_:.3f} ms; sig at the knee {s_:.3f}; q*l_c {QB * c['l']:.3f}; q*F_c {QB * c['F']:.3f}")
-    P(f"  A(c)-type  sig + c_B*q/q_B:     c_B = {n_ - s_:.3f} ms  (W1's 2.7 ms is b0 + c at G = 0.9 on a different clock, not this quantity)")
+    P(f"  A(c)-type  sig + c_B*q/q_B:     c_B = {n_ - s_:.3f} ms  (W1's c_B = 2.7 ms is its c alone, in tau_s = b0 + c at G = 0.9 on the s43 oracle line: another coordinate system)")
     P(f"  wider q    sig + q'*l_c:        q' = {(n_ - s_) / c['l']:.3f};  sig + q'*F_c: q' = {(n_ - s_) / c['F']:.3f}   (RFC 8289 band 0.05-0.10)")
     P(f"  sig scale  k*sig + q*l_c:       k = {(n_ - QB * c['l']) / s_:.3f}")
     P(f"  floor spread S_F + q*F_c supplies {c['S'] + QB * c['F']:.3f} (S_F {c['S']:.3f}); H_F + q*F_c supplies {c['H'] + QB * c['F']:.3f}")

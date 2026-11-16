@@ -1,7 +1,8 @@
 # Law ledger: a correctness audit of every shipped law
 
 Status: AUDIT. There are no engine changes and no VM. Base: `github/main` at `cbe2be3f`
-(2026-11-13). Branch-only rows say so: `snapver-law` at `8191b3de` and `bbrrs-r3` at `d1fadd7c`.
+(2026-11-13). Branch-only rows say so: `snapver-law` at `8191b3de`, `bbrrs-r3` at `d1fadd7c`,
+`slaw-gauge` at `d416d59b` (E13), and the store-law derivation (F07, `store-law-r68.md`).
 
 **Why.** The owner wants the product fast, with the mathematical modelling correct first. Several
 laws have been found pinned, degenerate or fed over-read inputs (status §3.10 items 1–9, §53
@@ -950,7 +951,7 @@ a branch.
 - *7. inputs honest?:* l-hat DISHONEST (E13); sigma honest as the echo spread it measures, its quantile pair declared
 - *8. NO-MODE-SWITCH:* none: one expression, delta only through q(delta)
 - *9. verdict:* **UNDERIVED, DISHONEST-INPUT**: s60 C2-SHORT: D = +1.692 ms [+1.588, +1.836] on a CONVERGED floor (status §60 Result item 1); delta's whole authority is 0.28 ms (~5 slots) against a 31-slot shortfall; fixed forms reach the knee only through a constant fitted at c2 Bulk (c_B 2.26 ms, q' 0.26)
-- *10. fix class, priority:* owner call (U2: a delta-free spread term, a delta-scaled knee term, or a re-declared q band), then a law change needing a battery; the spread candidate S_F + q(delta)*F-hat needs one c3 static sweep first (store-law-r68.md §3); **P0**, rank 5; depends on E13; ships with F01, E13
+- *10. fix class, priority:* owner call (U2: a delta-free spread term, a delta-scaled knee term, or a re-declared q band), then a law change needing a battery; a measured-spread branch (S_F + q(delta)*F-hat, no candidate yet fully provenanced) needs one c3 static sweep first (store-law-r68.md §3); **P0**, rank 5; depends on E13; ships with F01, E13
 - *flags:* measured yes, gauge yes
 
 

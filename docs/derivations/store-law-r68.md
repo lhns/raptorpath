@@ -23,21 +23,27 @@ verdict", and R6.7's open item 2 (`store-law-r67.md` §7).
 - **Candidates.** Each is one expression continuous in δ, with no mode bit.
   - The finding 2 fix, **q·F̂ in place of q·ℓ̂**, is ready to design now. It moves D by only 0.31 ms (+1.69 → +1.38),
     so it does not close finding 1.
-  - For finding 1, only one candidate passes every gate on §60's data with a measured magnitude: **S_F + q(δ)·F̂**,
-    where S_F is the floor windows' median − minimum, read on the same windows as F̂. It lands 27–33 slots above
-    the c2 knee across the whole dial. Its sentence ("the knee's window minimum sits at the no-load median") is a
-    hypothesis tested at one jitter-to-loop ratio.
+  - **For finding 1, no candidate has full provenance.**
+    - The closest is **S_F + q(δ)·F̂**, where S_F is the floor windows' median − minimum, read on the same windows
+      as F̂. It has a measured magnitude, lands 27–33 slots above the c2 knee across the whole dial, and passes the
+      mode, ratchet, uniqueness and R-sign gates.
+    - But its quantile (p50) is a hypothesis tested at one jitter-to-loop ratio ("the knee's window minimum sits at
+      the no-load median").
+    - Its floor gate is CONVERGED only at the edge at c2 (E = 0.24 ± 0.03 ms against τ 0.3), and NOT-CONVERGED on
+      c8 leg 1, where it rises with the per-window sample count.
   - A(c)-type and wider-q forms reach the knee only through a constant fitted at c2 Bulk (c_B = 2.26 ms; q′ = 0.26
     on F̂, outside RFC 8289's band). Neither has provenance: those are owner calls (U2).
-  - The at-load spread (window P90 − P10) closes c2, but it fails the R-sign gate at the c8 and c1s controls (R̃
-    up to 1.11 and 1.59). It funds its own queue.
-- **Measurement: yes, one, before the allowance's engine form is designed.** Unless the owner declares a δ-scaled
-  constant (U2), which needs none.
-  - Every jittered leg §60 brought to its knee has c2's shape (c2; c8 leg 0, whose knee the coupling sets anyway).
-  - So S_F's sentence, c_B and q′ cannot be told apart from the data in hand, and they differ by 1–6 ms at a
-    c3-shaped leg.
-  - The minimal measurement: **one c3 single-leg static sweep** (floor pools, a knee bracket, control; the D reading
-    only), on the registered gauge binary `e410d640`, with no build.
+  - The at-load spread (window P90 − P10) closes c2, but it fails the R-sign gate at the c8 control (R̃ up to
+    1.107). It funds its own queue.
+- **Measurement: the owner's U2 call comes first.**
+  - **Branch (b) with a declared c_B, or branch (c):** no measurement is needed before design, only the
+    after-build battery R6.7 §5 item 3 already owes.
+  - **Branch (a), or (b) taking S_F as its magnitude:** one measurement is needed first, because S_F's sentence and
+    convergence are untested off c2's leg shape. Every jittered leg §60 brought to its knee has that shape: c2,
+    and c8 leg 0, whose knee the coupling sets anyway.
+  - The minimal measurement is **one c3 single-leg static sweep** (floor pools, a knee bracket, control), on the
+    registered gauge binary `e410d640`, with no build. It scores D per candidate, S_F's floor gate, and need/S_F
+    against c2's 0.80, as **the falsifier of S's sentence**.
   - Finding 2 needs no measurement.
 - **U2.** On §60, δ's whole authority over the c2 landing is q's band times ℓ̂: 0.28 ms, ≈ 5 slots (8 with F̂).
   The shortfall is 1.69 ms ≈ 31 slots. So the q band cannot be both the δ authority and the knee's cover. The owner
@@ -58,12 +64,22 @@ verdict", and R6.7's open item 2 (`store-law-r67.md` §7).
    - Present U2; do not pick.
    - Ledger scope: F01 and E03 describe main, while ℓ̂ and the R6.2/R6.7 line are branch-only. So add branch-only
      rows, with C03 as the precedent, and check every tag against `render.py`'s set.
+2. **Review of the first commit (`1581dec7`).**
+   - S_F had not been put through the floor gate that convicted ℓ̂, so that is now run (`r68allow.out` §1b). S is
+     demoted from "passes every gate" to "closest, without full provenance". §3 is reframed around U2, and the c3
+     sweep becomes S's falsifier, with S_F convergence scored.
+   - The c1s control column is direction only, because §60 flags every c1s control row COLLAPSED. W80's refutation
+     rests on c8's 1.107.
+   - The roadmap's six cited ledger ranks follow the renumbering (`nodes.yaml`, re-rendered).
+   - W1's c_B wording is corrected in the script: 2.7 ms is W1's c alone.
+   - Smaller fixes: the W80 uniqueness counts, the statistic behind D at the 160 arm, crossings excluding the
+     control arm, and the ledger header's branch list.
 
 **Scripts** (stdlib, `python -I -X utf8`, output beside it):
 
 | script | input | output | what it computes |
 |---|---|---|---|
-| `store-law/r68allow.py` | `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz`, read in place with `tarfile` | `r68allow.out` | §0: the s60 score reproduced. §1: window quantiles per arm and leg. §2: the c2 need against each family's supply. §3: each candidate replayed in the R6.7 form at q = 0.05 / 0.0667 / 0.10, with D per arm, crossings, crossing count and control R̃. §3c: c1s size. §4: the uniqueness gate. §5: where `l` is attained. §6: finding 2 against finding 1, and δ's authority in slots |
+| `store-law/r68allow.py` | `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz`, read in place with `tarfile` | `r68allow.out` | §0: the s60 score reproduced. §1: window quantiles per arm and leg. §1b: the registered floor gate applied to S_F and tmin, with nk per pool. §2: the c2 need against each family's supply. §3: each candidate replayed in the R6.7 form at q = 0.05 / 0.0667 / 0.10, with D per arm, crossings, crossing count and control R̃. §3c: c1s size. §4: the uniqueness gate. §5: where `l` is attained. §6: finding 2 against finding 1, and δ's authority in slots |
 
 **Reproduction (`r68allow.out` §0).** The script reproduces the s60 score to every printed digit (`rep60a-score.txt`):
 - F_c = 8.682 and ℓ̂_c = 5.579 on 5 valid W 16 rows;
@@ -162,7 +178,12 @@ The mechanism is read from these logged quantiles. No model beyond them is used.
    - W* is the crossing per replicate;
    - "control R̃" is the maximum over the controls, and must stay < 1 (the R-sign gate);
    - c8 is replayed with both legs and the half-gap coupling;
-   - c1s's control R̃ is in §3c.
+   - c1s's control R̃ (§3c) is **direction only**: §60 flags every c1s W 2 048 row COLLAPSED, and at least 5 of its
+     G rows really are collapsed. So no gate is read from it;
+   - c8 crossings run over the arms up to 512 and exclude the 1 280 control arm. The score's R̃₆₇ 509–571 is a chord
+     to that arm;
+   - "D at the 160 arm" is the arm's median over windows of the per-window D. The score's +1.309 is D of the arm's
+     medians, so the A0 row reads +1.26 here.
 
 **c2 landing W* against the knee W₉₅ ≈ 168, as Bulk / Auto / Realtime** (q = 0.10 / 0.0667 / 0.05):
 
@@ -170,11 +191,11 @@ The mechanism is read from these logged quantiles. No model beyond them is used.
 |---|---|---|---|---|---|---|---|
 | **A0** (registered) | σ + q·ℓ̂ | σ measured, quantile pair declared; q cited; ℓ̂ dishonest (E13) | <160 / <160 / <160 | +1.26 | > 512 (coupling-set) | 0.089 / 0.69 / 0.90 | fails the knee at every δ |
 | **A0f** | σ + q·F̂ | ℓ̂ replaced by F̂ (§2.4) | <160 ×3 | +0.95 | > 512 | 0.090 / 0.70 / 0.90 | finding 2 fixed alone; still short |
-| **A(c)-type** | σ + c_B·q(δ)/q_B, c_B = 2.26 ms | **c_B fitted** at c2 Bulk (the need minus σ); ledger §1 counts it as UNDERIVED | 170 / <160 / <160 | −0.45 | > 512 | 0.097 / 0.70 / **1.015** | provenance fails. c1s's allowance rises ×4.7 (0.54 → 2.58 ms), and its control R̃ reaches 1.015 on one row |
+| **A(c)-type** | σ + c_B·q(δ)/q_B, c_B = 2.26 ms | **c_B fitted** at c2 Bulk (the need minus σ); ledger §1 counts it as UNDERIVED | 170 / <160 / <160 | −0.45 | > 512 | 0.097 / 0.70 / (1.015) | provenance fails. Direction at c1s: the allowance rises ×4.7 (0.54 → 2.58 ms) on a 2.4 ms loop |
 | **wider q** | σ + q′(δ)·F̂, q′ = 0.26·q(δ)/q_B | **q′ fitted**; outside RFC 8289's 5–10 % (R6.3) | 170 / <160 / <160 (= A(c) at c2, since F̂ is constant there) | −0.45 | > 512 | 0.097 / 0.72 / 0.93 | provenance fails (U2) |
-| **W80** (spread at load) | (P90 − P10)_window + q·F̂ | window quantiles measured; the pair is a fit | 188 / 182 / 178 | −1.19 | > 512 | 0.113 / **1.107** / **1.587** | **fails the R-sign gate** at the c8 and c1s controls. Uniqueness fails on c8 leg 1 (0/6) and leg 0 (5/6): the at-load spread includes the standing queue's fluctuation and funds it, R3.1's warning |
-| **S** (floor spread, δ-free) | S_F + q(δ)·F̂, S_F = median over the floor windows of (p50 − T̂min) | S_F measured on C's own lowest-n windows (the F̂ set); q cited; the p50 is the hypothesis below | **200 / 196 / 194** (+33 / +29 / +27) | −2.30 | > 512 | 0.105 / 0.67 / 0.89 | passes every gate in hand. Constant in n, so no ratchet and uniqueness holds by construction; no oracle, no phase |
-| **Sd** (floor spread, δ-scaled) | S_F·q(δ)/q_B + q(δ)·F̂ | as S; the δ scaling of a spread has no sentence | 200 / 167 / <160 | −2.30 | 483–511 at Auto / RT | 0.105 / 0.67 / 0.89 | gates pass; δ authority ≥ 40 slots at c2, with Realtime below the knee by design |
+| **W80** (spread at load) | (P90 − P10)_window + q·F̂ | window quantiles measured; the pair is a fit | 188 / 182 / 178 | −1.19 | > 512 | 0.113 / **1.107** / (1.587) | **fails the R-sign gate** at the c8 control (c1s points the same way). T̂min − A rises on c8 leg 0 on only 5 of 6 replicates and on leg 1 on 0 of 6: the at-load spread includes the standing queue's fluctuation and funds it, R3.1's warning |
+| **S** (floor spread, δ-free) | S_F + q(δ)·F̂, S_F = median over the floor windows of (p50 − T̂min) | S_F measured on C's own lowest-n windows (the F̂ set); q cited; the p50 is the hypothesis below | **200 / 196 / 194** (+33 / +29 / +27) | −2.30 | > 512 | 0.105 / 0.67 / (0.89) | passes the mode, oracle, ratchet, uniqueness and R-sign gates: it is constant in n, with no phase. **Fails provenance (gate 3):** the p50 is a hypothesis, and S_F's floor gate is at the edge at c2 and NOT-CONVERGED on c8 leg 1 (below) |
+| **Sd** (floor spread, δ-scaled) | S_F·q(δ)/q_B + q(δ)·F̂ | as S; the δ scaling of a spread has no sentence | 200 / 167 / <160 | −2.30 | 483–511 at Auto / RT | 0.105 / 0.67 / (0.89) | as S, plus the δ scaling. δ authority ≥ 40 slots at c2, with Realtime below the knee by design |
 
 - **S's sentence**: at the knee the bottleneck's FIFO has absorbed the lower part of the no-load echo spread, so the
   window minimum must reach the no-load median.
@@ -182,7 +203,21 @@ The mechanism is read from these logged quantiles. No model beyond them is used.
   + q·F̂ to spare, which costs ≈ 1.9 ms of loop (+33 slots) at Bulk.
 - **The ratio need / S_F = 0.80 is one cell's number.** c8 leg 0 shares c2's leg shape, but its knee is set by the
   coupling: every form crosses above 512 there. c1s has no knee bracket in §60.
-- **S is therefore a CANDIDATE with a measured magnitude, not a recommendation.**
+- **S_F through the floor gate that convicted ℓ̂** (`r68allow.out` §1b; s60 §2's rule, OLS over the floor pools,
+  E = b·W₁):
+
+  | cell / leg | S_F at the floor pools (ms) | b (ms/slot) | E = b·W₁ (ms) | reading against s60's τ | median `nk` per window |
+  |---|---|---|---|---|---|
+  | c2 | 5.08 / 5.36 / 5.51 | +0.0152 ± 0.0020 | +0.24 ± 0.03 | E + 2se = 0.30 against τ 0.3: CONVERGED only at the edge | 282 / 536 / 786 |
+  | c8 leg 0 | 5.45 / 5.64 / 5.60 | +0.0024 ± 0.0007 | +0.08 ± 0.02 | CONVERGED (τ 1.0) | 510 / 964 / 1 374 |
+  | c8 leg 1 (pools 32 / 64 / 96 / 256) | 5.5 / 6.9 / 7.7 / 10.0 | +0.0189 ± 0.0014 | +4.84 ± 0.35 | NOT-CONVERGED (τ 2.5) | 15 / 18 / 23 / 142 |
+  | c1s | 0.43 / 0.76 / 1.04 | +0.0050 ± 0.0032 | +0.32 ± 0.20 | no τ registered; E is 74 % of S_F itself | 5 273 / 9 215 / 12 144 |
+
+  - On c8 leg 1, S_F rises with the per-window sample count, while that leg's T̂min falls (40.3 → 37.4 ms). A
+    window's median − minimum depends on how many samples the window holds.
+  - That is ℓ̂'s defect class, bounded to one window. It is also R6.7 open item 4 (a per-window sample-count
+    eligibility rule), which applies to F̂ as well.
+- **S is therefore the closest candidate, not one with full provenance**, and not a recommendation.
 
 All the forms are one expression, δ enters only through q(δ) (continuous, monotone), and nothing branches on k, t, n,
 δ or ρ.
@@ -191,6 +226,8 @@ All the forms are one expression, δ enters only through q(δ) (continuous, mono
 - **The shipped at-load σ:** T̂min − σ rises with W on c2 and c8 leg 0 on 6 of 6 replicates.
 - **It does not rise on c8 leg 1 (0/6).** This is R6.2's stated exception: leg 1 carries ≤ 16 % of the weight, and
   the pooled R̃ crosses once.
+- **The window P90 − P10 at load** (W80): T̂min − A rises on c2 on 6 of 6 replicates, on c8 leg 0 on 5 of 6, and on
+  c8 leg 1 on 0 of 6.
 - **Floor-window reads** (S, Sd, F̂) are constant in n, so they meet the condition wherever T̂min rises.
 
 ### 1.5 The W1 cross-check
@@ -275,7 +312,10 @@ It is not E03. E03 is Copa's 10 s minimum `min_rtt` on main. ℓ̂ is a separate
   - Units are ms and the order in N is 0.
   - It is continuous and monotone in δ, with no ρ input.
 - **What it fixes.**
-  - Its sample count is fixed (K windows of 250 ms), so it does not drift with the transfer's length.
+  - It reads a fixed number of windows (K windows of 250 ms), so it does not drift with the transfer's length.
+  - It does depend on the per-window sample count: c8 leg 1's T̂min falls 40.3 → 37.4 ms as `nk` grows from 15 to
+    142 (§1.4). That is R6.7 open item 4, a per-window eligibility rule that is still owed, and it bounds this
+    claim.
   - It reads the same windows as the floor, so it carries no second start history.
   - On §60, F_c converged within 0.18 ms (c2) and 0.55 ms (c8 leg 0) of its W → 0 limit.
 - **This removes ℓ̂ from the law.** C already removed it from the anchor, so ℓ̂ stays a gauge only.
@@ -295,33 +335,31 @@ It is not E03. E03 is Copa's 10 s minimum `min_rtt` on main. ℓ̂ is a separate
 
 **Finding 2: no.** The q·F̂ swap is designed above, and its effect is computed from §60's rows.
 
-**Finding 1: yes. One measurement is needed, unless the owner declares the δ-scaled constant** (U2 branch (b) with a
-declared c_B, or branch (c)). A declaration needs no measurement, only the after-build battery R6.7 §5 item 3 already
-owes. The reasoning:
-1. **Three forms survive on what is in hand.**
-   - S (measured magnitude, one-cell sentence) passes every gate.
-   - Sd and A(c) differ from it only in δ scaling, an owner question.
-   - The wider q band also needs the owner.
-2. **What separates S from a constant is how the need scales with the path's spread and loop.**
-   - S scales with the no-load spread S_F.
-   - A(c) is constant.
-   - q′·F̂ scales with the loop.
-   - On c2's leg shape they coincide by construction: c_B and q′ are fitted there.
-3. **§60 has no second leg shape at its own knee.**
-   - c8 leg 0 is c2-shaped, and its knee is set by the coupling.
-   - c8 leg 1 is c3-shaped (20 Mbit/s, 20 ms, 5 ms jitter). It carries ≈ 16 % of the delivered share, is starved at
-     the floor pools, and never reaches a knee of its own.
-   - c1s has no jitter and no knee bracket.
-4. **Predicted allowance at a c3-shaped leg,** using c8 leg 1's W 256 floor as a stand-in (F 37.4, S_F 10.0,
-   σ 5.2 ms):
+**Finding 1: it depends on the owner's U2 branch, which comes first.** No candidate has full provenance on §60's
+data (§1.4), so the data in hand cannot pick a form by itself.
+1. **Branch (b) with a declared c_B, or branch (c) with a re-declared q band.**
+   - The magnitude is a declaration, so no measurement is needed before the engine form is designed.
+   - Only the after-build battery R6.7 §5 item 3 already owes.
+2. **Branch (a), or (b) taking S_F as its magnitude.** One measurement is needed first, because S's sentence and S_F's
+   convergence are untested off c2's leg shape.
+   - **§60 has no second leg shape at its own knee:**
+     - c8 leg 0 is c2-shaped, and its knee is set by the coupling;
+     - c8 leg 1 is c3-shaped (20 Mbit/s, 20 ms, 5 ms jitter). It carries ≈ 16 % of the delivered share, is starved
+       at the floor pools, and never reaches a knee of its own. Its S_F does not converge (§1.4);
+     - c1s has no jitter and no knee bracket.
+   - **How the forms scale.** S scales with the no-load spread S_F, A(c) is a constant, and q′·F̂ scales with the
+     loop. On c2's leg shape they coincide by construction, because c_B and q′ are fitted there.
+   - **Predicted allowance at a c3-shaped leg**, with c8 leg 1 as the stand-in (F 37.4, σ 5.2 ms; S_F is
+     5.5–10.0 ms over its pools, since it does not converge):
 
-   | form | allowance |
-   |---|---|
-   | S | 10.0 + 3.7 = 13.7 ms |
-   | q′·F̂ | 5.2 + 9.7 = 14.9 ms |
-   | A(c) | 5.2 + 2.3 = 7.5 ms |
+     | form | allowance |
+     |---|---|
+     | S | (5.5 to 10.0) + 3.7 = 9.2–13.7 ms |
+     | q′·F̂ | 5.2 + 9.7 = 14.9 ms |
+     | A(c) | 5.2 + 2.3 = 7.5 ms |
 
-   They differ by 1.1–7.4 ms, against §3.1's registered half-width of 0.22–0.42 ms.
+     They differ by ≥ 1.2 ms, against §3.1's registered half-width of 0.22–0.42 ms. The sweep is the **falsifier
+     of S's sentence**, not a discriminator among survivors.
 
 **The minimal measurement: a c3 single-leg static sweep.**
 - **Plan.** The §60 harness plan shape, with D only. c3 is an existing cell (`lib.sh`: 20 mbit, 20 ms, jitter 5 ms,
@@ -336,12 +374,14 @@ owes. The reasoning:
   (≈ 100–200 MB).
 - **Binary.** The registered gauge binary `e410d640`, with no build. `[WSTAT]` already prints the p10 / p50 / p90
   that S_F needs.
-- **Scored reading.** Per candidate, D(A) at c3's knee, with the same 90 % bootstrap. Plus the falsifier of S's
-  sentence: need / S_F at c3 against c2's 0.80.
+- **Scored readings:**
+  - per candidate, D(A) at c3's knee, with the same 90 % bootstrap;
+  - **S_F's floor gate** (s60 §2's fit applied to S_F), with an `nk`-matched eligibility rule registered first;
+  - the falsifier of S's sentence: need / S_F at c3 against c2's 0.80.
 - **Design follows the result.**
-  - If S's sentence holds at both leg shapes, S has measured provenance at two jitter-to-loop ratios, and its engine
-    form can be designed.
-  - If it fails, the measured-spread family is refuted, and only the owner-call forms remain.
+  - If S_F converges and S's sentence holds at both leg shapes, S has measured provenance at two jitter-to-loop
+    ratios, and its engine form can be designed.
+  - If either fails, the measured-spread family is refuted, and only the owner-call forms remain.
 - **Not needed for this decision:** the c1s control-sign re-registration, B2's anchor rule, the moved-leg floor gate
   and B1's margins. Those stay on the §60 pending list.
 
@@ -359,11 +399,12 @@ owes. The reasoning:
 
 | branch | form | c2 W*, Bulk / Auto / Realtime | δ's lever at c2 | what it costs |
 |---|---|---|---|---|
-| (a) δ-free spread carries the knee | S_F + q(δ)·F̂ | 200 / 196 / 194 | ≈ 6 slots of margin above the knee | ≈ +1.9 ms of loop at Bulk. Needs §3's measurement for S's sentence |
+| (a) δ-free spread carries the knee | S_F + q(δ)·F̂ | 200 / 196 / 194 | ≈ 6 slots of margin above the knee | ≈ +1.9 ms of loop at Bulk. Needs §3's measurement for S's sentence and S_F's convergence |
 | (b) δ scales a knee-sized term (A(c)-type) | S_F·q(δ)/q_B + q(δ)·F̂, or σ + c_B·q(δ)/q_B | 200 / 167 / <160, or 170 / <160 / <160 | ≈ 40 slots; Realtime lands below the knee | Realtime goodput is the price by design (U3). The magnitude needs a source: S_F (measured) or c_B (none) |
 | (c) re-declare q's band | σ + q′(δ)·F̂, q′ = 0.26 at Bulk | 170 / <160 / <160 | the band widened ≈ 2.6× (on F̂) or 4× (on ℓ̂) | loses RFC 8289's provenance (R6.3). Scales with the loop, not the jitter: ≈ 9.7 ms at a c3 leg |
 
-Branches (b) and (c) need an owner declaration. Branch (a) needs the §3 measurement. This document picks none.
+Branches (b) with c_B and (c) need an owner declaration. Branch (a), and (b) with S_F, need the §3 measurement.
+This document picks none.
 
 ---
 
@@ -374,14 +415,17 @@ so their verdicts stand. F01 gains pointers to the two new rows and ships with t
 - **E13, the lifetime echo minimum ℓ̂ (gauge branch):** `DISHONEST-INPUT`, P0, rank 4. Fix: delete it from the
   law (q·F̂, §2.4).
 - **F07, the store-law candidate allowance:** `UNDERIVED, DISHONEST-INPUT`, P0, rank 5, depends on E13. Fix: an
-  owner call (U2) or the §3 measurement, then a law change needing a battery.
+  owner call (U2); for a measured-spread branch, the §3 measurement; then a law change needing a battery.
 
-Ranks from 4 on move down by two, and render.py re-checks the file.
+Ranks from 4 on move down by two, and render.py re-checks the file. The six ledger ranks the roadmap cites (C02, C03,
+K09, R01, C06, R05/R07) follow in `roadmap/nodes.yaml`, re-rendered with `tools/roadmap/build.py`. Status does not
+cite ranks.
 
 ## 6. Open items
 
-1. **S's sentence:** is the knee's window minimum the no-load median less a constant fraction of the spread at a
-   second leg shape? §3's measurement decides it.
+1. **S's sentence and S_F's convergence:** is the knee's window minimum the no-load median less a constant fraction
+   of the spread at a second leg shape, and does S_F converge under an `nk`-matched rule? §3's measurement decides
+   both. It is needed only for branch (a), or (b) with S_F.
 2. **U2's branch:** an owner call. W1's U3 (the Realtime cost) attaches to branch (b).
 3. **σ's own quantile pair** stays declared under every branch except (a), which drops σ.
    - Under (b) and (c), a derivation of the release-spread quantile is still owed. A pair chosen because it closes D
