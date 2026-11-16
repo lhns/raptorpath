@@ -243,8 +243,11 @@ dj = os.path.join(d, "d80b.json")
 json.dump({"c2-100": {"T1": {"goodput": 0.001, "inorder": 0.001, "cpu_cli": 0.001, "cpu_srv": 0.001}}}, open(dj, "w"))
 sc.score([ledger(build_ledger())], out=lines.append, d80_path=dj, aa_draws=6)
 check("the in-session A/A d80 is printed beside the historical one and 'REDUCED RESOLUTION' is flagged when it exceeds twice the historical value", any(ln.startswith("  A/A c2") and "historical d80" in ln for ln in lines), [ln for ln in lines if ln.startswith("  A/A")])
-cm = s51_d80.commits(os.path.join(HERE, "..", "..", "docs", "l1-raw", "s53", "BINSHA.txt"))
-check("s51_d80.commits reads a launch's BINSHA.txt (the main seat and the BASE seat)", set(cm) == {"bin", "bin-base"} and len(cm["bin"]) == 40, cm)
+_bs = os.path.join(d, "BINSHA.txt")
+with open(_bs, "w") as fh:      # self-contained: the ledgers of docs/l1-raw are not in `git archive` (the VM tree), so no test reads them
+    fh.write("b0" * 32 + "  /dev/shm/s53/bin/raptorpath  commit=" + "a" * 40 + "\n" + "4f" * 32 + "  /dev/shm/s53/bin-base/raptorpath  commit=" + "b" * 40 + " (BASE)\n")
+cm = s51_d80.commits(_bs)
+check("s51_d80.commits reads a launch's BINSHA.txt (the main seat and the BASE seat)", cm == {"bin": "a" * 40, "bin-base": "b" * 40}, cm)
 
 # ═══ 6. the row readouts (section 3 and 3.2) on a synthetic client log ═══
 def dg(t, src, cwnd, infl, hand, tx, dgev, cum, taper, rr_line=None):
