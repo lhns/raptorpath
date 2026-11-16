@@ -101,8 +101,6 @@ dnf_log = mklog("realtime", None, srcs=int(600_000_000 / 494 * 0.4))
 check("a DNF row is KEPT (a datum, ranked worst): one that sent only 40 % of its source symbols has no srcsize problem (the lower bound does not apply to it) while the same log on a completed row does; its upper bound still holds",
       plan51.row_problems(plan51.C2, "HR", *dnf_log, SHA, SHA, 600_000_000, True) == [] and any(x.startswith("srcsize-ratio=0.4") for x in plan51.row_problems(plan51.C2, "HR", *dnf_log, SHA, SHA, 600_000_000, False))
       and any(x.startswith("srcsize-ratio") for x in plan51.row_problems(plan51.C2, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 2.6)), SHA, SHA, 600_000_000, True)))
-check("a DNF row with a plain echo / sha is not replaceable (replace_reason None) and a DNF is LIVE in the ledger rule: only an echo VOID or VOID-SHORT is re-run",
-      plan51.replace_reason(ledger([row("HR", dnf=True, status="LIVE")]), "c2-100", "HR", "42", 1) is None)
 check("at c8 a REALTIME row's upper bound widens (S08's duplicate source may be counted in cum=: unverified): ratio 3.9 passes at c8, fails at c2; a bulk row at c8 keeps the 2.0 bound",
       plan51.row_problems(plan51.C8, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 3.9)), SHA, SHA, 600_000_000) == [] and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C2, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 3.9)), SHA, SHA, 600_000_000))
       and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C8, "HB", *mklog("bulk", None, srcs=int(600_000_000 / 1186 * 2.5)), SHA, SHA, 600_000_000)))
@@ -130,6 +128,8 @@ check("replacement: an echo VOID slot (gate-delta, batch-echo, srcsize, pipe) is
       and plan51.replace_reason(ledger([row("HB", problems=["gate-delta-cli=0.1"], status="WITNESS-FAIL"), row("HB")]), "c2-100", "HB", "42", 1) is None
       and plan51.replace_reason(ledger([row("HB", dnf=True)]), "c2-100", "HB", "42", 1) is None and plan51.replace_reason(ledger([row("HB", status="VOID-RC")]), "c2-100", "HB", "42", 1) is None
       and plan51.replace_reason(ledger([row("HB", problems=["bin-sha=aaa (want bbb for CAND)"], status="WITNESS-FAIL")]), "c2-100", "HB", "42", 1) is None)
+check("a DNF row with a plain echo / sha is not replaceable (replace_reason None) and a DNF is LIVE in the ledger rule: only an echo VOID or VOID-SHORT is re-run",
+      plan51.replace_reason(ledger([row("HR", dnf=True, status="LIVE")]), "c2-100", "HR", "42", 1) is None)
 p_full = ledger([row(a, sd, rp_) for _, _, a, sd, rp_ in plan51.plan("51", cell="c2-100")])
 check("plan51.py check: rc 1 without LD-BATTERY-DONE, rc 0 with it (a replaced slot's second row is not an extra)", plan51.check("51", p_full) == 1 and (open(p_full, "a").write("LD-BATTERY-DONE tag=ld blocks=6\n") or True) and plan51.check("51", p_full) == 0)
 
