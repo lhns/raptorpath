@@ -1040,7 +1040,7 @@ if [ "$PLAN" = "59" ]; then
 fi
 
 # ── plans 60a / 60b (status 60, the store law's gauge session): the tables are plan60.py's (96 slots in 60a, 45 in 60b; smoke 2 rows; LD_REHEARSE=1 on 60a: the 10 rehearsal rows) ──
-# A slot whose RWM_SLAW / RWM_DIAG / pool / evicting-seat witness is VOID is re-run ONCE (a DNF never is) (plan60.py replace decides from the ledger); the replacement is a second row of the same slot.
+# A slot whose RWM_SLAW / RWM_DIAG / pool / evicting-seat witness is VOID is re-run ONCE, and so is a floor-pool DNF (s60 section 2; plan60.py replace decides from the ledger; a wrong binary never is); the replacement is a second row of the same slot.
 run_slot60() { # cell arm seed rep store
   local why
   ATTEMPT_OFF=0
