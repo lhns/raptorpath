@@ -25,13 +25,6 @@ pub struct PathState {
     pub src_inflight: u32,
     /// Whether the path is considered usable
     pub active: bool,
-    /// quinn's packet-timed smoothed RTT of this leg's connection, mirrored
-    /// here at every ack batch and path report (paper §5.7).
-    /// `None` until quinn has an RTT sample for the leg. Unlike `srtt()` it
-    /// does not need this leg's own symbols to be echoed, so an idle leg keeps
-    /// it fresh, and it holds no local dwell. Read only by `place_costs` under
-    /// the arm; written only while the arm is on.
-    wire_rtt: Option<Duration>,
     /// Slow-start threshold (kept for test compatibility)
     pub ssthresh: u32,
     /// Whether we are in slow-start phase (Copa startup)
@@ -142,19 +135,18 @@ impl PathState {
             in_flight: 0,
             src_inflight: 0,
             active: true,
-            wire_rtt: None,
             ssthresh: 64,
             in_slow_start: true,
             last_report: now,
             max_datagram_size: None,
             rx_seen_mark: 0,
             pending_touch: None,
-            leg: LegState::default(),
-            copa: {
-                let mut c = CopaState::new(clock.clone(), hint);
-                c.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)
-                c
+            leg: {
+                let mut l = LegState::new(clock.clone());
+                l.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)
+                l
             },
+            copa: CopaState::new(clock.clone(), hint),
             in_flight_log: VecDeque::new(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
@@ -517,7 +509,7 @@ impl PathState {
     /// exponential phase ends within one feedback message of the first
     /// standing-queue evidence rather than waiting out the SRTT window.
     pub fn on_ack(&mut self, acked: u32) {
-        let _rate = self.copa.record_delivery(acked);
+        let _rate = self.leg.record_delivery(acked);
         self.on_delivery_signal();
     }
 
@@ -573,7 +565,7 @@ impl PathState {
     /// send-time state so its ack yields a send-interval rate sample.
     /// Called at placement/send time; pairs with `on_src_delivered_seq`.
     pub fn on_src_sent(&mut self, seq: u64, app_limited: bool) {
-        self.copa.rs_on_sent(seq, app_limited);
+        self.leg.rs_on_sent(seq, app_limited);
     }
 
     /// Per-path ack attribution under the BBR rate-sample anchor: release the
@@ -581,7 +573,7 @@ impl PathState {
     /// send-interval sample (robust to ack-aggregation / a standing queue).
     pub fn on_src_delivered_seq(&mut self, seq: u64) {
         self.src_inflight = self.src_inflight.saturating_sub(1);
-        self.copa.rs_on_delivered(seq);
+        self.leg.rs_on_delivered(seq);
     }
 
     /// Current per-path source outstanding (BLEST in_flight_i).
@@ -593,7 +585,7 @@ impl PathState {
     /// ANCHOR_MIN_SAMPLES delivered-rate samples AND a min-RTT sample) — the
     /// per-path DIAG "established?" signal.
     pub fn anchor_established(&self) -> bool {
-        self.copa.bdp_anchor().is_some()
+        self.leg.bdp_anchor().is_some()
     }
 
     /// Per-path rate-sample anchor DIAG counters:
@@ -602,7 +594,7 @@ impl PathState {
     /// rejected[app-limited], samples-generated, windowed-max-fill).
     /// Read only under RWM_DIAG; never gates control.
     pub fn rs_diag(&self) -> (u64, u64, u64, u64, u64, u64, u64, u64, usize) {
-        self.copa.rs_diag()
+        self.leg.rs_diag()
     }
 
     /// Copa-lite congestion control: handle loss events.
@@ -647,7 +639,12 @@ impl PathState {
             d.note_rtt(self.id, (cc.as_micros() as u64).min(u32::MAX as u64) as u32);
         }
         self.leg.s.record(echo);
-        self.copa.record_rtt(cc, &self.leg);
+        // The controller's share, the leg's estimators, then the detector that
+        // reads the leg's refreshed RTprop.
+        self.copa.note_sample(cc);
+        let reference = self.copa.reference_srtt(&self.leg);
+        self.leg.record_sample(cc, reference);
+        self.copa.note_competition(cc, &self.leg);
     }
 
     /// [`Self::record_rtt`] for the default arm, where the controller's sample
@@ -706,7 +703,7 @@ impl PathState {
     /// the fold.
     #[cfg(test)]
     pub(crate) fn force_honest_anchor_for_test(&mut self) {
-        self.copa.force_bw_o1();
+        self.leg.force_bw_o1();
     }
 
     /// Test accessor (same probe): the cwnd anchor floor
@@ -717,23 +714,23 @@ impl PathState {
     /// outstanding against.
     #[cfg(test)]
     pub(crate) fn anchor_floor_for_test(&self) -> Option<u32> {
-        self.copa.anchor_floor()
+        self.leg.anchor_floor()
     }
 
 
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
     pub fn copa_min_rtt(&self) -> Option<Duration> {
-        self.copa.min_rtt()
+        self.leg.min_rtt()
     }
 
     /// Mirror quinn's packet-timed RTT for this leg (placement base, paper §5.7).
     pub fn set_wire_rtt(&mut self, rtt: Duration) {
-        self.wire_rtt = Some(rtt);
+        self.leg.set_wire(rtt);
     }
 
     /// The mirrored wire RTT, `None` if quinn has not measured the leg yet.
     pub fn wire_rtt(&self) -> Option<Duration> {
-        self.wire_rtt
+        self.leg.wire()
     }
 
     /// Smoothed echo RTT `s` (`LegState.s`): the 50 ms `DEFAULT_SRTT` seed
@@ -759,10 +756,10 @@ impl PathState {
     /// distribution-free bound is stated in. `None` before any sample, so the
     /// derived clock gets an information-availability fallback, not a mode.
     pub fn rtt_sigma_us(&self) -> Option<u64> {
-        if self.copa.rtt_var_sq <= 0.0 {
+        if self.leg.rtt_var_sq <= 0.0 {
             return None;
         }
-        Some((self.copa.rtt_var_sq.sqrt() * 1e6) as u64)
+        Some((self.leg.rtt_var_sq.sqrt() * 1e6) as u64)
     }
 
     /// How many RTT samples have been folded into [`rtt_sigma_us`]'s EWMA —
@@ -776,7 +773,7 @@ impl PathState {
     ///
     /// [`rtt_sigma_us`]: Self::rtt_sigma_us
     pub fn rtt_sigma_samples(&self) -> u64 {
-        self.copa.rtt_var_n
+        self.leg.rtt_var_n
     }
 
     // ---------------------------------------------------------------------
@@ -839,10 +836,10 @@ impl PathState {
     ///
     /// `None` iff no sample has been recorded.
     pub fn rtt_qspread_us(&self) -> Option<u64> {
-        if self.copa.rtt_win.is_empty() {
+        if self.leg.rtt_win.is_empty() {
             return None;
         }
-        let mut s: Vec<u32> = self.copa.rtt_win.iter().copied().collect();
+        let mut s: Vec<u32> = self.leg.rtt_win.iter().copied().collect();
         s.sort_unstable();
         Some(Self::cand_quantile(&s, 0.90) - Self::cand_quantile(&s, 0.50))
     }
@@ -858,7 +855,7 @@ impl PathState {
     ///
     /// [`rtt_qspread_us`]: Self::rtt_qspread_us
     pub fn rtt_qspread_samples(&self) -> u64 {
-        self.copa.rtt_win.len() as u64
+        self.leg.rtt_win.len() as u64
     }
 
     /// Candidate 2 — `rvar_us=`, RFC 6298 §2's `RTTVAR`:
@@ -879,10 +876,10 @@ impl PathState {
     ///
     /// `None` iff no sample has been folded in.
     pub fn rtt_mdev_us(&self) -> Option<u64> {
-        if self.copa.rtt_mdev_n == 0 {
+        if self.leg.rtt_mdev_n == 0 {
             return None;
         }
-        Some((self.copa.rtt_mdev * 1e6).max(0.0) as u64)
+        Some((self.leg.rtt_mdev * 1e6).max(0.0) as u64)
     }
 
     /// Samples folded into [`rtt_mdev_us`]'s EWMA. EWMA-class, so its
@@ -893,7 +890,7 @@ impl PathState {
     /// [`rtt_mdev_us`]: Self::rtt_mdev_us
     /// [`rtt_sigma_samples`]: Self::rtt_sigma_samples
     pub fn rtt_mdev_samples(&self) -> u64 {
-        self.copa.rtt_mdev_n
+        self.leg.rtt_mdev_n
     }
 
     /// Candidate 3 — `msd_us=`, the reference-free dispersion: median absolute
@@ -930,14 +927,14 @@ impl PathState {
     ///
     /// `None` until at least two samples exist (one difference).
     pub fn rtt_msd_us(&self) -> Option<u64> {
-        if self.copa.rtt_win.len() < 2 {
+        if self.leg.rtt_win.len() < 2 {
             return None;
         }
         let mut d: Vec<u32> = self
-            .copa
+            .leg
             .rtt_win
             .iter()
-            .zip(self.copa.rtt_win.iter().skip(1))
+            .zip(self.leg.rtt_win.iter().skip(1))
             .map(|(a, b)| a.abs_diff(*b))
             .collect();
         d.sort_unstable();
@@ -953,7 +950,7 @@ impl PathState {
     ///
     /// [`rtt_msd_us`]: Self::rtt_msd_us
     pub fn rtt_msd_samples(&self) -> u64 {
-        (self.copa.rtt_win.len() as u64).saturating_sub(1)
+        (self.leg.rtt_win.len() as u64).saturating_sub(1)
     }
 
     /// Candidate 4's τ-lag pair set — the one place the pairing rule exists,
@@ -984,12 +981,12 @@ impl PathState {
     /// [`rtt_tlag_us`]: Self::rtt_tlag_us
     /// [`rtt_tlag_samples`]: Self::rtt_tlag_samples
     fn tlag_diffs(&self) -> Vec<u32> {
-        let tau = match self.copa.min_rtt {
+        let tau = match self.leg.min_rtt {
             Some(t) if !t.is_zero() => t,
             _ => return Vec::new(),
         };
         let hi = tau * SIGMA_TLAG_BAND_C;
-        let ring = &self.copa.rtt_tlag;
+        let ring = &self.leg.rtt_tlag;
         let n = ring.len();
         let mut out: Vec<u32> = Vec::with_capacity(n);
         // `j` tracks the last index whose lag to the current anchor is still
@@ -1094,7 +1091,7 @@ impl PathState {
     /// RFC 3550 §A.8 interarrival jitter stands in. Measured, never
     /// configured: there is no env knob on this path.
     pub fn rtt_jitter_us(&self) -> u64 {
-        let copa_j = self.copa.jitter_est.max(self.copa.win_jitter_est);
+        let copa_j = self.leg.jitter_est.max(self.copa.win_jitter_est);
         if copa_j > 0.0 {
             (copa_j * 1e6) as u64
         } else {
@@ -1106,12 +1103,12 @@ impl PathState {
     /// (paper §8.3). None during warm-up / before a min-RTT
     /// sample. Diagnostic/benchmarking accessor.
     pub fn copa_bdp_anchor(&self) -> Option<f64> {
-        self.copa.bdp_anchor()
+        self.leg.bdp_anchor()
     }
 
     /// RTprop (Copa windowed-min RTT) for this path (None during warm-up).
     pub fn min_rtt(&self) -> Option<Duration> {
-        self.copa.min_rtt()
+        self.leg.min_rtt()
     }
 
     /// BtlBw (bottleneck rate) for this path in symbols/second — the path's
@@ -1124,8 +1121,8 @@ impl PathState {
         // Warm gate: an RTprop sample must exist (same trustworthiness gate as
         // `copa_bdp_anchor`).  The rate itself is `effective_btlbw` — the pure
         // windowed max.
-        self.copa.min_rtt()?;
-        self.copa.effective_btlbw()
+        self.leg.min_rtt()?;
+        self.leg.effective_btlbw()
     }
 
     /// Clamp cwnd to [MIN_CWND, MAX_CWND] and then raise it to the BtlBw
@@ -1134,7 +1131,7 @@ impl PathState {
     /// MAX_CWND, so an over-read BtlBw cannot exceed the hard ceiling.
     fn clamp_cwnd_with_anchor(&mut self) {
         self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
-        if let Some(floor) = self.copa.anchor_floor() {
+        if let Some(floor) = self.leg.anchor_floor() {
             self.cwnd = self.cwnd.max(floor.min(Self::MAX_CWND));
         }
     }

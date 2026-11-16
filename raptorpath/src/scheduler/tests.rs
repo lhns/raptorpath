@@ -1313,8 +1313,8 @@ fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
 #[test]
 fn rate_sample_excludes_app_limited_samples_below_the_max() {
     let clock = Arc::new(MockClock::new());
-    let mut copa = CopaState::new(clock.clone(), ProtocolHint::Bulk);
-    copa.record_rtt(Duration::from_millis(10), &LegState::default()); // RTprop = 10 ms
+    let mut copa = LegState::new(clock.clone());
+    copa.record_sample(Duration::from_millis(10), None); // RTprop = 10 ms
 
     // Establish a healthy max with a valid sample spanning ≥ RTprop: send
     // seq0, inject 50 deliveries, ack it one RTprop-plus later.
@@ -1384,11 +1384,11 @@ fn rate_sample_excludes_app_limited_samples_below_the_max() {
 #[test]
 fn bw_mono_front_equals_full_window_fold() {
     let clock = Arc::new(MockClock::new());
-    let mut legacy = CopaState::new(clock.clone(), ProtocolHint::Bulk);
-    let mut o1 = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+    let mut legacy = LegState::new(clock.clone());
+    let mut o1 = LegState::new(clock.clone());
     o1.force_bw_o1();
-    legacy.record_rtt(Duration::from_millis(10), &LegState::default());
-    o1.record_rtt(Duration::from_millis(10), &LegState::default());
+    legacy.record_sample(Duration::from_millis(10), None);
+    o1.record_sample(Duration::from_millis(10), None);
 
     // Deterministic LCG so the stream is reproducible.
     let mut lcg: u64 = 0x9E3779B97F4A7C15;
@@ -1425,8 +1425,8 @@ fn bw_mono_front_equals_full_window_fold() {
                     clock.advance(Duration::from_millis(1500));
                 }
                 let rtt = Duration::from_millis(5 + (r % 120) as u64);
-                legacy.record_rtt(rtt, &LegState::default());
-                o1.record_rtt(rtt, &LegState::default());
+                legacy.record_sample(rtt, None);
+                o1.record_sample(rtt, None);
             }
         }
         let fold_l = legacy.bw_fold();
@@ -1548,11 +1548,11 @@ fn copa_srtt_agrees_with_rfc6298_ewma() {
 fn bw_filter_cost_is_quadratic_legacy_and_linear_fixed() {
     fn per_delivery_ns(rate_sym_s: u64, o1: bool) -> f64 {
         let clock = Arc::new(MockClock::new());
-        let mut copa = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        let mut copa = LegState::new(clock.clone());
         if o1 {
             copa.force_bw_o1();
         }
-        copa.record_rtt(Duration::from_millis(10), &LegState::default()); // RTprop 10 ms ⇒ window 1 s
+        copa.record_sample(Duration::from_millis(10), None); // RTprop 10 ms ⇒ window 1 s
         let step = Duration::from_nanos(1_000_000_000 / rate_sym_s);
         let lag = (rate_sym_s / 50) as u64; // ≈20 ms of in-flight seqs
         let mut send_seq = 0u64;
