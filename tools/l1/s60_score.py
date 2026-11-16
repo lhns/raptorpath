@@ -914,16 +914,11 @@ class Session:
             if not have:
                 self.label(f"R-SIGN-{SHORT[cell]}", "UNSCOREABLE", "no control row with a replayable R~ (calibration or control rows missing)")
                 continue
-            first2 = list(have)
-            late = []
             self.p(f"  R-SIGN {SHORT[cell]}: control R~ by replicate: {' '.join(f's{rv.seed}r{rv.rep}={v:.4f}' for rv, v in have)}")
-            bad = [(rv, v) for rv, v in first2 if v >= 1]
+            bad = [(rv, v) for rv, v in have if v >= 1]
             for rv, v in bad:
                 self.p(f"STOP R-SIGN {SHORT[cell]} s{rv.seed} rep{rv.rep}: control R~ = {v:.4f} >= 1 (the registered gate is R~ < 1 at the control, read at the end of 60a on the full calibration; 60b does not launch and the session is amended)")
-            for rv, v in late:
-                if v >= 1:
-                    self.p(f"  R-SIGN {SHORT[cell]} s{rv.seed} rep{rv.rep}: control R~ = {v:.4f} >= 1 on a later replicate (reported)")
-            self.label(f"R-SIGN-{SHORT[cell]}", "STOP" if bad else ("PASS" if first2 else "UNSCOREABLE"), f"{len(first2)} control rows, read at the end of the launch on the full calibration")
+            self.label(f"R-SIGN-{SHORT[cell]}", "STOP" if bad else ("PASS" if have else "UNSCOREABLE"), f"{len(have)} control rows, read at the end of the launch on the full calibration")
 
     # ---- section: P1 / P2 / P3 ----
     def p123(self):
@@ -1633,10 +1628,10 @@ DECISIONS = [
     "6. A row failing the per-row replay witness is VOID for every R reading (R~, R~67, B2, the c1s sign, the sign witness, crossings); its tmin / sig / l readings (floor, D, P3) are kept.",
     "7. The floor gate fits the rows of all three floor pools that are live, have nk >= 10 windows and are not COLLAPSED (a tmin-only reading, so boot completeness and LATCHED do not remove a row); E = b * W1 with W1 = the leg's floor pool. c1s has no registered tau: FLOOR-CONV-c1s reads NO-TAU-REGISTERED (the slope label is still given).",
     "8. Labels: FLOOR-SLOPE-/FLOOR-CONV-<cell>, with -leg0 / -leg1 appended at c8 only; P3-c8l0 / P3-c8l1; P1 reads HOLDS / FAILS (a failure is only reported); B1 and R-SIGN are extra LABEL60 lines (B1-<cell>, R-SIGN-<cell>).",
-    "9. The R-sign gate ('after replicate 2') is evaluated on the control rows of replicates 1-2; it needs the >= 3 floor rows of the calibration to exist at that time, else UNSCOREABLE. Later replicates are reported, never a STOP. Under the drift fallback the pairing applies to the control rows too.",
+    "9. The R-sign gate ('after replicate 2' cannot be computed: 2 floor rows < MIN_CAL_ROWS) is read at the END of 60a on the FULL calibration over every live control G row of c2 and c8 (Amendment 1); any R~ >= 1 is a STOP, and 60b refuses to launch without R-SIGN-c2 / -c8 PASS in 60a's score (ABORT-RSIGN). Under the drift fallback the pairing applies to the control rows too.",
     "10. The drift check's order is the ledger position of the row; the fitted change is the OLS slope times the order span of the calibration rows; a trigger on either series (b0p, l) switches the cell to per-replicate pairing; the ARMS lines then print the paired R~ and, beside it, the session-value R~ as the sensitivity (the 're-stated conditioning from the realised sigma_R' is NOT implemented).",
     "11. A floor-pool/smoke DNF row is a datum: its missing boot / witness is not a SMOKE-FAIL (the GO-NOGO criterion (a) reports it); a non-DNF row missing kw / b0k / witness / CAPLOG PASS is a mechanical failure. CAPLOG seats are reported, not asserted to be 'plain' (caplog_replay replays by branch; 'tt' stays unreplayable).",
-    "12. C8-B2: a FIRE (>= 2 anc-bound replicates) stands whatever the replicate count (a pass is what the floor weakens); NOT-FIRES needs >= 5 scoreable replicates (the registration's '5-6'), else UNSCOREABLE. This ordering can only ever KEEP a fire, never suppress one; sigma_R is the pooled within-arm sd (R~ per row) over the COUNTED anc-bound replicates at the bracketing arms used; the replay anc bind fraction is m >= l_c + b0_c over every live (leg, window) term of the bracketing rows (>= 0.9 at both rows); fewer than 2 anc-bound replicates is UNSCOREABLE.",
+    "12. C8-B2: scoreable = the anc-bound ELIGIBLE replicates (replay anc bind fraction m >= l_c + b0_c over every live (leg, window) term, >= 0.9 at both bracketing rows); fewer than 5 eligible is UNSCOREABLE (UNDERPOWERED) whatever the fires; with >= 5, FIRES iff >= 2 fire, else NOT-FIRES (weakened when a floor is not CONVERGED). sigma_R is the pooled within-arm sd (R~ per row) over the eligible replicates at the bracketing arms used.",
     "13. C2-SHORT needs >= 3 scoreable replicates (a replicate = a control goodput, a knee reached, two bracketing rows with tmin and sig). The bracket arms: per replicate the largest knee arm <= W95 and the smallest >= W95 (clamped to the end arms); SHORT is ROBUST iff the lower-arm bootstrap interval is also > 0. COVERED without a CONVERGED floor prints UNRESOLVED.",
     "14. 'Unflagged' pairs and the c1s control use the absolute collapse rule on leg 0 (DIAG-only, works on C rows) plus not-DNF; the quinn qcwnd_below share is printed beside. W95 uses cross_up over ALL the replicate's non-control arms and prints how often it clamped at the first arm.",
     "15. The sign test is the exact two-sided binomial at 0.05 (transcribes s60cond.py's K table 6:6 7:7 8:8 9:8 10:9 11:10 12:10); zeros are dropped; n_s < 6 is UNDERPOWERED.",
