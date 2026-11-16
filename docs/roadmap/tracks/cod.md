@@ -25,6 +25,7 @@ flowchart TB
     cod_unified_span["✔ Unified span machine<br/>(ADR-0064)"]
     cod_wire_compact["✔ Compact v5 DATA<br/>framing"]
     cod_one_pipeline["✔ One window pipeline<br/>(ADR-0069)"]
+    cod_s4_block_retest["✔ Block default re-<br/>test (#167;4)"]
     cod_debug_stall["✔ Decoder re-delivery<br/>stall fix (#167;31)"]
     cod_block_pipeline ~~~ cod_legacy_rlc
     cod_mettle ~~~ cod_backend_switch
@@ -41,6 +42,7 @@ flowchart TB
     cod_systematic_wire ~~~ cod_unified_span
     cod_systematic_wire ~~~ cod_wire_compact
     cod_unified_span ~~~ cod_one_pipeline
+    cod_wire_compact ~~~ cod_s4_block_retest
     cod_wire_compact ~~~ cod_debug_stall
     cod_block_pipeline -.-> cod_one_pipeline
     cod_streaming_code -.-> cod_unified_span
@@ -64,7 +66,7 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,cod_mettle,cod_streaming_code,cod_legacy_rlc,cod_backend_switch,cod_rlc_all_profiles,cod_coded_only_wire,cod_fungible_window,cod_fmtcp dead
     class cod_gf256_simd,cod_systematic_wire,cod_unified_span,cod_one_pipeline,cod_debug_stall succ
-    class cod_overhead_reduction unrated
+    class cod_overhead_reduction,cod_s4_block_retest unrated
     class cod_generation_coding parked
     class cod_wire_compact vsucc
 ```
@@ -75,7 +77,8 @@ flowchart TB
 <!-- BEGIN GENERATED: table-cod -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `cod-block-pipeline` | RaptorQ block FEC pipeline | abandoned | superseded |  | ADR-0002; ADR-0004; ADR-0014; status §4; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016 |  |
+| `cod-block-pipeline` | RaptorQ block FEC pipeline | abandoned | superseded |  | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |  |
+| `cod-s4-block-retest` | Block default re-test (§4) | done | unrated |  | status §4; commit 566e0f89; branch cleanup/a4-block-retest |  |
 | `cod-mettle` | METTLE swappable FEC backend | abandoned | dead-end |  | paper §10 row METTLE FEC backend; ADR-0021; ADR-0028 |  |
 | `cod-backend-switch` | Mid-stream FEC backend switching | abandoned | dead-end |  | paper §10 row Mid-stream backend switching (loss-threshold selector); ADR-0030 |  |
 | `cod-streaming-code` | Streaming two-layer Realtime code | abandoned | superseded |  | paper §10 row Streaming two-layer code (Realtime machine); ADR-0027 |  |
@@ -85,7 +88,7 @@ flowchart TB
 | `cod-coded-only-wire` | Coded-only generation wire | abandoned | superseded | 70.9 Mbit/s | paper §10 row Coded-only generation wire |  |
 | `cod-systematic-wire` | Systematic wire, sparse decoder | done | successful | Gen single-c2 33.9 → 70.9 Mbit/s | ADR-0056 | cod-generation-coding |
 | `cod-fungible-window` | Coded-only fungible window | abandoned | dead-end | 3.9 Mbit/s | paper §10 row Coded-only fungible window (coded-object mode) |  |
-| `cod-fmtcp` | FMTCP-class decode-on-total | abandoned | dead-end | 0.48× | commit f8417579 |  |
+| `cod-fmtcp` | FMTCP-class decode-on-total | abandoned | dead-end | 0.48× | commit f8417579; paper §10 row FMTCP-class decode-on-total [Cui2015] |  |
 | `cod-legacy-rlc` | Legacy sliding-window/generation decoders | abandoned | superseded |  | paper §10 row Legacy RLC decoders (sliding-window, generation); ADR-0022 |  |
 | `cod-unified-span` | Unified span machine (ADR-0064) | done | successful |  | ADR-0064 | cod-systematic-wire |
 | `cod-one-pipeline` | One window pipeline (ADR-0069) | done | successful |  | ADR-0069; status §5 | cod-unified-span |
@@ -98,7 +101,8 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `cod-block-pipeline` | RaptorQ block FEC pipeline | The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); §4 found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13. | ADR-0002; ADR-0004; ADR-0014; status §4; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016 |
+| `cod-block-pipeline` | RaptorQ block FEC pipeline | The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13. | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |
+| `cod-s4-block-retest` | Block default re-test (§4) | Split 2026-11-16 from the block pipeline node (own status section and verdict). Discharges ADR-0069's re-test clause; the Stage-3 baseline (§5) then read WINDOW-NOT-WORSE and the window became the only pipeline (cod-one-pipeline). | status §4; commit 566e0f89; branch cleanup/a4-block-retest |
 | `cod-mettle` | METTLE swappable FEC backend | Removal was the owner's call (user 2026-08-07). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row METTLE FEC backend; ADR-0021; ADR-0028 |
 | `cod-backend-switch` | Mid-stream FEC backend switching | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Mid-stream backend switching (loss-threshold selector); ADR-0030 |
 | `cod-streaming-code` | Streaming two-layer Realtime code | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Streaming two-layer code (Realtime machine); ADR-0027 |
@@ -107,7 +111,7 @@ flowchart TB
 | `cod-coded-only-wire` | Coded-only generation wire | Paper §10 row has an end date only (2026-07-13). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Coded-only generation wire |
 | `cod-systematic-wire` | Systematic wire, sparse decoder | End 2026-07-21 was a placeholder (ADR-0056: last edit or migration date); date from merge 2122481b. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0056 |
 | `cod-fungible-window` | Coded-only fungible window | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Coded-only fungible window (coded-object mode) |
-| `cod-fmtcp` | FMTCP-class decode-on-total | Dates: paper §10 rows carry an end (removal) date only. | commit f8417579 |
+| `cod-fmtcp` | FMTCP-class decode-on-total | Dates: paper §10 rows carry an end (removal) date only. | commit f8417579; paper §10 row FMTCP-class decode-on-total [Cui2015] |
 | `cod-legacy-rlc` | Legacy sliding-window/generation decoders | Paper §10 row has an end date only; start taken from the sliding-window FEC commit 628fdb1c (2026-03-14). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Legacy RLC decoders (sliding-window, generation); ADR-0022 |
 | `cod-unified-span` | Unified span machine (ADR-0064) | Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0064 |
 | `cod-one-pipeline` | One window pipeline (ADR-0069) | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. | ADR-0069; status §5 |

@@ -9,25 +9,47 @@ Scope: flow control and the store law: store cap, SACK-clocked release, the time
 <!-- BEGIN GENERATED: track-store -->
 ```mermaid
 flowchart TB
-    store_sender_decoupling["✖ Sender decoupling<br/>attempts (4 arms)"]
+    store_sack_flowctl["✖ SACK sender flow<br/>control"]
     store_sack_prune["↷ SACK pruning of the<br/>store"]
+    store_reasm_bdp["✖ Never-evict<br/>reassembly clamp<br/>(REASM_BDP)"]
+    store_src_bp["↷ Source backpressure<br/>(SRC_BP)"]
     store_xn_pool[/"↷ Path-scaled pool ×N<br/>(STORE_PATHS)"/]
-    store_percap_family["✖ Per-path store<br/>accounts family (4<br/>arms)"]
-    store_honest_cap_family[/"✖ Honest floor-clock<br/>cap family (6 arms)"/]
+    store_percap_family["✖ Per-path store<br/>accounts (PERCAP)"]
+    store_borrow["✖ Bounded account<br/>borrowing (BORROW)"]
+    store_honest_cap_family[/"✖ Honest floor-clock<br/>cap (HONEST_CAP)"/]
     store_anchor_hygiene[/"✔ Anchor hygiene laws<br/>(ADR-0061)"/]
+    store_plain_rs["✖ Plain-mode send-<br/>interval sampler<br/>(PLAIN_RS)"]
     store_sack_release["✔ SACK-clocked store<br/>release (ADR-0060)"]
-    store_pool_anchor_flip["✔ Composed cadence and<br/>pool-anchor flip"]
-    store_three_term[/"✖ Three-term and<br/>composed caps (5 arms)"/]
+    store_capw["✖ Capacity-weighted<br/>pool (C8-aware)"]
+    store_sender_decoupling["✖ Window decoupling<br/>(WIN_DECOUPLE)"]
+    store_pool_anchor_flip["✔ Ship The Wins 1:<br/>composed flip"]
+    store_pool_deliv["✖ Ship The Wins 1b:<br/>pool anchors"]
+    store_slack_clock[/"✖ Slack-bench: queue-<br/>free slack clock"/]
+    store_three_term[/"✖ Three-term<br/>outstanding law<br/>(THREE_TERM)"/]
+    store_coverage_term[/"✖ Coverage: the fourth<br/>store term"/]
     store_honest_inputs["✔ Honest inputs and<br/>O(1) anchor"]
     store_latency_lever["✔ Latency Lever<br/>battery"]
     store_cap_unification[/"✔ Store-cap<br/>unification over live<br/>paths"/]
+    store_composed_cap[/"✖ Composed cap<br/>(COMPOSED_CAP)"/]
+    store_deadwall_modehunt["✔ Deadwall and mode-<br/>hunt batteries"]
     store_sf_latency_feedback["✔ SF latency feedback"]
-    store_sum_cap[/"✔ Sum cap: ×N deletion<br/>(SUM_CAP)"/]
+    store_cap_law_cluster["✔ Cap-law cluster:<br/>formulas first"]
+    store_sum_cap[/"✔ Ladder battery: ×N<br/>deletion (SUM_CAP)"/]
     store_delta_cap[/"✔ Derived setpoint 1 +<br/>q(δ)"/]
+    store_s18_one_law[/"✔ One store law, first<br/>session (#167;18)"/]
     store_adr72_one_law[/"✔ One store law<br/>(ADR-0072)"/]
-    store_input_search["✖ Store-law input<br/>search (8 inputs)"]
+    store_input_search["✔ c1 anchor over-read<br/>(#167;23)"]
+    store_s24_inputs["✖ Loop time and quinn<br/>rate (#167;24)"]
     store_power_law[/"✖ Power-seeking store<br/>law D"/]
-    store_engine_form["⏸ Dispersion and<br/>oracle store law"]
+    store_s27_premises["✖ Spread law premises<br/>(#167;27)"]
+    store_probe_gain[/"✖ (P) probe-gain store<br/>law"/]
+    store_dw_window["✖ (D-W) noise-sized<br/>window (#167;30)"]
+    store_s34_input["✖ Store-law input<br/>after #167;32 (#167;34)"]
+    store_s36_dispersion["✔ Receiver dispersion<br/>as link rate (#167;36)"]
+    store_s40_p90["✔ p90 dispersion<br/>estimator (#167;40)"]
+    store_s42_engine_path["✔ Engine path for<br/>dispersion (#167;42)"]
+    store_engine_form["✔ Oracle store law,<br/>closed loop (#167;43)"]
+    store_s43b_retuned["✔ Oracle store law re-<br/>tuned (#167;43b)"]
     store_w1_who_limits[/"⏳ Who limits at each δ"/]
     store_s54_budget["✔ Store-budget test<br/>design (#167;54)"]
     store_defect_cap_constant>"⚠ Store cap constant<br/>at c8"]
@@ -35,76 +57,141 @@ flowchart TB
     store_s56_sweep["✔ Store-pool sweep<br/>(#167;56)"]
     store_s57a_burst["✔ Emission-burst block<br/>at c1s (#167;57a)"]
     store_s57b_c1d["✔ c1d pool sweep and<br/>transfer test T (#167;57b)"]
-    store_defect_delta_nan>"⚠ RWM_DELTA pins the<br/>store cap at its floor<br/>(F1)"]
+    store_defect_delta_nan>"✔ RWM_DELTA pinned the<br/>store cap (F1)"]
+    store_law_r67["✔ R6.7 floors:<br/>candidate C"]
+    store_slaw_gauge["⏳ Store-law gauge<br/>build (B-1)"]
+    store_s60_pre["✔ Suites and reference<br/>binary (60-pre)"]
+    store_s60a["▶ Gauge session 60a<br/>(#167;60)"]
+    store_s60b["⛔ Gauge session 60b<br/>(#167;60)"]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
     store_delta_seat[/"⛔ δ seat on the store"/]
     store_s48c_session[/"⛔ δ seat diagnostic<br/>and guard (#167;48c)"/]
-    store_sender_decoupling ~~~ store_percap_family
-    store_sack_prune ~~~ store_honest_cap_family
-    store_xn_pool ~~~ store_anchor_hygiene
-    store_percap_family ~~~ store_sack_release
-    store_honest_cap_family ~~~ store_pool_anchor_flip
-    store_anchor_hygiene ~~~ store_three_term
-    store_sack_release ~~~ store_honest_inputs
-    store_pool_anchor_flip ~~~ store_latency_lever
+    store_sack_flowctl ~~~ store_reasm_bdp
+    store_sack_prune ~~~ store_src_bp
+    store_sack_prune ~~~ store_xn_pool
+    store_reasm_bdp ~~~ store_percap_family
+    store_src_bp ~~~ store_percap_family
+    store_xn_pool ~~~ store_percap_family
+    store_percap_family ~~~ store_borrow
+    store_percap_family ~~~ store_honest_cap_family
+    store_percap_family ~~~ store_anchor_hygiene
+    store_borrow ~~~ store_plain_rs
+    store_honest_cap_family ~~~ store_sack_release
+    store_anchor_hygiene ~~~ store_capw
+    store_plain_rs ~~~ store_sender_decoupling
+    store_sack_release ~~~ store_pool_anchor_flip
+    store_capw ~~~ store_pool_anchor_flip
+    store_sender_decoupling ~~~ store_pool_deliv
+    store_pool_anchor_flip ~~~ store_slack_clock
+    store_pool_anchor_flip ~~~ store_three_term
+    store_pool_deliv ~~~ store_coverage_term
+    store_slack_clock ~~~ store_honest_inputs
     store_three_term ~~~ store_latency_lever
-    store_honest_inputs ~~~ store_cap_unification
-    store_latency_lever ~~~ store_cap_unification
-    store_cap_unification ~~~ store_sf_latency_feedback
-    store_cap_unification ~~~ store_sum_cap
-    store_sf_latency_feedback ~~~ store_delta_cap
+    store_coverage_term ~~~ store_cap_unification
+    store_honest_inputs ~~~ store_composed_cap
+    store_latency_lever ~~~ store_composed_cap
+    store_cap_unification ~~~ store_deadwall_modehunt
+    store_composed_cap ~~~ store_sf_latency_feedback
+    store_composed_cap ~~~ store_cap_law_cluster
+    store_deadwall_modehunt ~~~ store_sum_cap
+    store_sf_latency_feedback ~~~ store_sum_cap
+    store_cap_law_cluster ~~~ store_sum_cap
     store_sum_cap ~~~ store_delta_cap
-    store_delta_cap ~~~ store_adr72_one_law
+    store_delta_cap ~~~ store_s18_one_law
+    store_s18_one_law ~~~ store_adr72_one_law
     store_adr72_one_law ~~~ store_input_search
+    store_input_search ~~~ store_s24_inputs
     store_input_search ~~~ store_power_law
-    store_input_search ~~~ store_engine_form
-    store_power_law ~~~ store_w1_who_limits
+    store_input_search ~~~ store_s27_premises
+    store_s24_inputs ~~~ store_probe_gain
+    store_power_law ~~~ store_dw_window
+    store_s27_premises ~~~ store_dw_window
+    store_probe_gain ~~~ store_s34_input
+    store_dw_window ~~~ store_s34_input
+    store_s34_input ~~~ store_s36_dispersion
+    store_s36_dispersion ~~~ store_s40_p90
+    store_s40_p90 ~~~ store_s42_engine_path
+    store_s42_engine_path ~~~ store_engine_form
+    store_engine_form ~~~ store_s43b_retuned
+    store_engine_form ~~~ store_w1_who_limits
     store_engine_form ~~~ store_s54_budget
-    store_engine_form ~~~ store_defect_cap_constant
-    store_w1_who_limits ~~~ store_law_derivation
-    store_s54_budget ~~~ store_s56_sweep
+    store_s43b_retuned ~~~ store_defect_cap_constant
+    store_w1_who_limits ~~~ store_defect_cap_constant
+    store_s54_budget ~~~ store_defect_cap_constant
+    store_defect_cap_constant ~~~ store_law_derivation
     store_defect_cap_constant ~~~ store_s56_sweep
     store_law_derivation ~~~ store_s57a_burst
     store_s56_sweep ~~~ store_s57b_c1d
     store_s56_sweep ~~~ store_defect_delta_nan
-    store_s57a_burst ~~~ store_fix_maxbw_minrtt
-    store_s57b_c1d ~~~ store_fix_maxbw_minrtt
-    store_defect_delta_nan ~~~ store_fix_maxbw_minrtt
+    store_s57a_burst ~~~ store_law_r67
+    store_s57b_c1d ~~~ store_slaw_gauge
+    store_defect_delta_nan ~~~ store_slaw_gauge
+    store_law_r67 ~~~ store_s60_pre
+    store_slaw_gauge ~~~ store_s60_pre
+    store_s60_pre ~~~ store_s60a
+    store_s60a ~~~ store_s60b
+    store_s60a ~~~ store_fix_maxbw_minrtt
+    store_s60b ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     store_engine_form_impl ~~~ store_engine_form_guard
     store_engine_form_impl ~~~ store_delta_seat
     store_engine_form_guard ~~~ store_s48c_session
     store_delta_seat ~~~ store_s48c_session
-    store_sender_decoupling -.-> store_percap_family
     store_sack_prune -.-> store_sack_release
+    store_sack_flowctl --> store_reasm_bdp
+    store_src_bp -.-> store_percap_family
     store_xn_pool -.-> store_sum_cap
+    store_percap_family --> store_borrow
     store_anchor_hygiene -.-> store_defect_cap_constant
+    store_anchor_hygiene --> store_plain_rs
+    store_pool_anchor_flip --> store_pool_deliv
+    store_three_term --> store_coverage_term
     store_three_term --> store_latency_lever
     store_honest_inputs --> store_cap_unification
+    store_three_term --> store_composed_cap
+    store_cap_unification --> store_deadwall_modehunt
     store_cap_unification --> store_sf_latency_feedback
+    store_cap_unification --> store_cap_law_cluster
     store_xn_pool --> store_sum_cap
+    store_cap_law_cluster --> store_sum_cap
     store_sum_cap -.-> store_defect_cap_constant
     store_sum_cap --> store_delta_cap
     store_delta_cap -.-> store_defect_cap_constant
-    store_delta_cap --> store_adr72_one_law
+    store_delta_cap --> store_s18_one_law
+    store_s18_one_law -.-> store_adr72_one_law
+    store_s18_one_law --> store_adr72_one_law
     store_adr72_one_law -.-> store_defect_cap_constant
     store_adr72_one_law --> store_input_search
+    store_input_search --> store_s24_inputs
     store_input_search --> store_power_law
-    store_input_search --> store_engine_form
+    store_s27_premises --> store_probe_gain
+    store_power_law --> store_dw_window
+    store_dw_window --> store_s34_input
+    store_s34_input --> store_s36_dispersion
+    store_s36_dispersion --> store_s40_p90
+    store_s40_p90 --> store_s42_engine_path
+    store_s42_engine_path --> store_engine_form
+    store_engine_form --> store_s43b_retuned
     store_s54_budget --> store_law_derivation
     store_defect_cap_constant --> store_law_derivation
     store_s54_budget --> store_s56_sweep
     store_defect_cap_constant --> store_s56_sweep
     store_s56_sweep --> store_s57a_burst
     store_s56_sweep --> store_s57b_c1d
+    store_s57b_c1d --> store_law_r67
+    store_law_derivation --> store_slaw_gauge
+    store_slaw_gauge --> store_s60_pre
+    store_s60_pre --> store_s60a
+    store_law_r67 --> store_s60a
+    store_s60a --> store_s60b
     store_w1_who_limits --> store_engine_form_impl
     store_fix_maxbw_minrtt --> store_engine_form_impl
     store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
     store_delta_seat --> store_s48c_session
-    linkStyle 39,44,46,48 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 76,88,90,94 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -118,17 +205,16 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class store_sender_decoupling,store_sack_prune,store_xn_pool,store_percap_family,store_honest_cap_family,store_three_term,store_sf_latency_feedback,store_input_search,store_power_law dead
-    class store_anchor_hygiene,store_sack_release,store_honest_inputs,store_sum_cap,store_adr72_one_law succ
+    class store_sack_flowctl,store_sack_prune,store_reasm_bdp,store_src_bp,store_xn_pool,store_percap_family,store_borrow,store_honest_cap_family,store_plain_rs,store_capw,store_sender_decoupling,store_pool_deliv,store_slack_clock,store_three_term,store_coverage_term,store_composed_cap,store_sf_latency_feedback,store_s18_one_law,store_s24_inputs,store_power_law,store_s27_premises,store_probe_gain,store_dw_window,store_s34_input dead
+    class store_anchor_hygiene,store_sack_release,store_honest_inputs,store_sum_cap,store_adr72_one_law,store_defect_delta_nan,store_s60_pre succ
     class store_pool_anchor_flip bad
     class store_latency_lever,store_cap_unification mixed
+    class store_deadwall_modehunt,store_cap_law_cluster,store_input_search,store_s36_dispersion,store_s40_p90,store_s42_engine_path,store_engine_form,store_s43b_retuned,store_s54_budget,store_s56_sweep,store_s57a_burst,store_s57b_c1d,store_law_r67 unrated
     class store_delta_cap vsucc
-    class store_engine_form parked
-    class store_w1_who_limits waiting
-    class store_s54_budget,store_s56_sweep,store_s57a_burst,store_s57b_c1d unrated
-    class store_defect_cap_constant,store_defect_delta_nan defect
-    class store_law_derivation inprog
-    class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
+    class store_w1_who_limits,store_slaw_gauge waiting
+    class store_defect_cap_constant defect
+    class store_law_derivation,store_s60a inprog
+    class store_s60b,store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
 
@@ -138,29 +224,56 @@ flowchart TB
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
 | `store-xn-pool` | Path-scaled pool ×N (STORE_PATHS) | abandoned | superseded |  | paper §10 row ×N pool multiplier `clamp(gain·N·Σ, floor, N·knee)`; ADR-0058 |  |
-| `store-percap-family` | Per-path store accounts family (4 arms) | abandoned | dead-end | 0.89–0.94× | paper §10 row Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`) |  |
-| `store-honest-cap-family` | Honest floor-clock cap family (6 arms) | abandoned | dead-end |  | tag archive/RWM_HONEST_CAP; tag archive/RWM_HONEST_K; tag archive/RWM_PLAIN_RS; tag archive/RWM_RS_ATTR |  |
-| `store-pool-anchor-flip` | Composed cadence and pool-anchor flip | done | bad | 0.959–0.968× | tag archive/RWM_POOL_ANCHOR | rate-est-cadence |
+| `store-percap-family` | Per-path store accounts (PERCAP) | abandoned | dead-end | 0.89–0.94× | paper §10 row Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`); commit 4b8e5384; commit 4bb5b28f |  |
+| `store-borrow` | Bounded account borrowing (BORROW) | abandoned | dead-end |  | paper §10 row Bounded account borrowing (`RWM_STORE_BORROW`); commit 7c3343ff | store-percap-family |
+| `store-capw` | Capacity-weighted pool (C8-aware) | abandoned | dead-end |  | paper §10 row Capacity-weighted pool (`RWM_STORE_CAPW`); commit 4fb5b15 |  |
+| `store-honest-cap-family` | Honest floor-clock cap (HONEST_CAP) | abandoned | dead-end |  | tag archive/RWM_HONEST_CAP; tag archive/RWM_HONEST_K; paper §10 row Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`); paper §10 row Raw-sample echo-ratio floor (`RWM_HONEST_K`) and the honest-cap law family it fed (`honest_store_cap`, `honest_cap_terms`, `k_raw`); commit 1ad01c4d |  |
+| `store-plain-rs` | Plain-mode send-interval sampler (PLAIN_RS) | abandoned | dead-end |  | tag archive/RWM_PLAIN_RS; tag archive/RWM_RS_ATTR; paper §10 row Plain-mode send-interval sampler (`RWM_PLAIN_RS`, sampling-only `CopaFeed`); paper §10 row Flight-time witness for cross-path ack attribution (`RWM_RS_ATTR`); status §23 | store-anchor-hygiene |
+| `store-pool-deliv` | Ship The Wins 1b: pool anchors | abandoned | dead-end | 0.931–0.958×Σ | paper §10 row Pool delivery-clocked anchor (`RWM_POOL_DELIV`); paper §10 row Floor-bound anchor (`RWM_FLOOR_BOUND`); commit 8afd4dd7 | store-pool-anchor-flip |
+| `store-pool-anchor-flip` | Ship The Wins 1: composed flip | done | bad | 0.959–0.968× | tag archive/RWM_POOL_ANCHOR; commit 60f833a7; commit e84ef1c5; paper §10 row Composed estimator-cadence plus pool-anchor default | rate-est-cadence |
 | `store-sack-prune` | SACK pruning of the store | abandoned | superseded |  | paper §10 row SACK pruning of the store (`RWM_SACK_PRUNE`) |  |
 | `store-sack-release` | SACK-clocked store release (ADR-0060) | done | successful |  | ADR-0060 |  |
-| `store-sender-decoupling` | Sender decoupling attempts (4 arms) | abandoned | dead-end | 27 ms | tag archive/RWM_REASM_BDP |  |
+| `store-sender-decoupling` | Window decoupling (WIN_DECOUPLE) | abandoned | dead-end | 27 ms | paper §10 row Window decoupling (`RWM_WIN_DECOUPLE`); commit 48f60c4f |  |
+| `store-sack-flowctl` | SACK sender flow control | abandoned | dead-end |  | commit 5adba96e; commit 2b898456 |  |
+| `store-reasm-bdp` | Never-evict reassembly clamp (REASM_BDP) | abandoned | dead-end |  | tag archive/RWM_REASM_BDP; paper §10 row Never-evict-undelivered reassembly clamp (`RWM_REASM_BDP`); commit 6d2a05b2 | store-sack-flowctl |
+| `store-src-bp` | Source backpressure (SRC_BP) | abandoned | superseded |  | paper §10 row Source backpressure (`RWM_SRC_BP`); commit 4606829f; commit 8902d246 |  |
 | `store-anchor-hygiene` | Anchor hygiene laws (ADR-0061) | done | successful | +31% | ADR-0061 |  |
-| `store-three-term` | Three-term and composed caps (5 arms) | abandoned | dead-end | 2.4× | tag archive/RWM_COMPOSED_CAP |  |
-| `store-cap-unification` | Store-cap unification over live paths | done | mixed | +16–25 % | status §3.5 item 3 | store-honest-inputs |
+| `store-three-term` | Three-term outstanding law (THREE_TERM) | abandoned | dead-end |  | paper §10 row Three-term outstanding law (`RWM_THREE_TERM`); commit 5de30ed3; commit 448a82e |  |
+| `store-coverage-term` | Coverage: the fourth store term | abandoned | dead-end |  | commit e113c9ab; paper §16.44 | store-three-term |
+| `store-slack-clock` | Slack-bench: queue-free slack clock | abandoned | dead-end |  | paper §10 row Queue-free slack clock; commit 7e03ef9b; commit 7e302e2a |  |
+| `store-composed-cap` | Composed cap (COMPOSED_CAP) | abandoned | dead-end | 2.4× | tag archive/RWM_COMPOSED_CAP; paper §10 row Composed cap (`RWM_COMPOSED_CAP`); commit 161b4eae | store-three-term |
+| `store-cap-unification` | Store-cap unification over live paths | done | mixed | +16–25 % | status §3.5 item 3; paper §10 row Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) | store-honest-inputs |
+| `store-deadwall-modehunt` | Deadwall and mode-hunt batteries | done | unrated |  | paper §10 row The dead-wall and mode-hunt batteries; commit d583593a; commit cfc1793f | store-cap-unification |
+| `store-cap-law-cluster` | Cap-law cluster: formulas first | done | unrated |  | commit 7e302e2a; commit 6335e206 | store-cap-unification |
 | `store-honest-inputs` | Honest inputs and O(1) anchor | done | successful |  | commit 9f6e56ba |  |
-| `store-sum-cap` | Sum cap: ×N deletion (SUM_CAP) | done | successful |  | branch RWM_SUM_CAP DEFAULT ON | store-xn-pool |
+| `store-sum-cap` | Ladder battery: ×N deletion (SUM_CAP) | done | successful |  | branch RWM_SUM_CAP DEFAULT ON | store-xn-pool, store-cap-law-cluster |
 | `store-delta-cap` | Derived setpoint 1 + q(δ) | done | very-successful | queue −10 to −200 ms | paper §10 row Pool gain 2.0 (N ≥ 2) | store-sum-cap |
-| `store-adr72-one-law` | One store law (ADR-0072) | done | successful |  | ADR-0072; status §18; status §19 | store-delta-cap, meas-formula-first |
-| `store-input-search` | Store-law input search (8 inputs) | abandoned | dead-end | knee is 1 024 at both cells | status §23; status §24; status §27; status §34 | store-adr72-one-law |
-| `store-power-law` | Power-seeking store law D | abandoned | dead-end | ×5–12 | status §29; status §30; tag archive/store-power; branch archive/wt-status29-power | store-input-search |
-| `store-engine-form` | Dispersion and oracle store law | parked | successful |  | status §36; status §40; status §42; status §43; branch harness43; branch run43 | store-input-search |
+| `store-s18-one-law` | One store law, first session (§18) | done | superseded |  | status §18; commit 48ee42a3 | store-delta-cap, meas-formula-first |
+| `store-adr72-one-law` | One store law (ADR-0072) | done | successful |  | ADR-0072; status §19; commit bdb37b40 | store-s18-one-law |
+| `store-input-search` | c1 anchor over-read (§23) | done | unrated |  | status §23; commit 4ed22f38 | store-adr72-one-law |
+| `store-s24-inputs` | Loop time and quinn rate (§24) | abandoned | dead-end |  | status §24; commit de3e11a1 | store-input-search |
+| `store-s27-premises` | Spread law premises (§27) | abandoned | dead-end |  | status §27; commit 35b16607 |  |
+| `store-probe-gain` | (P) probe-gain store law | abandoned | dead-end |  | paper §10 row (P) probe gain: `cap' = (1 + q + g)·D̂·τ`; status §27 | store-s27-premises |
+| `store-power-law` | Power-seeking store law D | abandoned | dead-end | ×5–12 | status §29; tag archive/store-power; branch archive/wt-status29-power; paper §10 row (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker | store-input-search |
+| `store-dw-window` | (D-W) noise-sized window (§30) | abandoned | dead-end |  | status §30; paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`; commit 9677a3c9 | store-power-law |
+| `store-s34-input` | Store-law input after §32 (§34) | abandoned | dead-end | knee is 1 024 at both cells | status §34; paper §10 row (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`; paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds; paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing); paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`; commit a75bc9ca | perf-decoder-prune, store-dw-window |
+| `store-s36-dispersion` | Receiver dispersion as link rate (§36) | done | unrated |  | status §36; commit 4dd26760 | store-s34-input |
+| `store-s40-p90` | p90 dispersion estimator (§40) | done | unrated |  | status §40; commit b0b07b1b | store-s36-dispersion |
+| `store-s42-engine-path` | Engine path for dispersion (§42) | done | unrated |  | status §42; commit af06313d | store-s40-p90 |
+| `store-engine-form` | Oracle store law, closed loop (§43) | done | unrated |  | status §43; branch harness43; branch run43; commit 1eca3ee2 | store-s42-engine-path |
+| `store-s43b-retuned` | Oracle store law re-tuned (§43b) | done | unrated |  | status §43b; commit bab838c1 | store-engine-form |
 | `store-w1-who-limits` | Who limits at each δ | in-progress | unrated |  | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 | cc-bbrrs-r1, store-engine-form |
 | `store-s54-budget` | Store-budget test design (§54) | done | unrated | from a mean of about 5.3 s to about 1.0 s | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag | rec-snapver-filter |
-| `store-law-derivation` | Store-law derivation | in-progress | unrated |  | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 | store-s54-budget, store-defect-cap-constant, model-law-ledger |
+| `store-law-derivation` | Store-law derivation | in-progress | unrated |  | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2; branch store-law-rev6; derivation store-law-r67.md; status §60 | store-s54-budget, store-defect-cap-constant, model-law-ledger |
 | `store-s56-sweep` | Store-pool sweep (§56) | done | unrated | c2 flat to W 192, c8 to 512 | status §56; derivation store-law.md §13 | store-s54-budget, store-defect-cap-constant |
-| `store-s57a-burst` | Emission-burst block at c1s (§57a) | done | unrated | burst knob reaches 79 at 256; S 0.62 | status §57a Result | store-s56-sweep |
-| `store-s57b-c1d` | c1d pool sweep and transfer test T (§57b) | done | unrated | c1d store-bound only at W <= 512; T not reached | status §57b Result | store-s56-sweep |
-| `store-defect-delta-nan` | RWM_DELTA pins the store cap at its floor (F1) | in-progress | unrated | fix on f1-delta-nan, red test green | status "Engine defect F1"; derivation shared-core-design.md F1 |  |
+| `store-s57a-burst` | Emission-burst block at c1s (§57a) | done | unrated | burst knob reaches 79 at 256; S 0.62 | status §57a Result; status §57 Amendment 1 | store-s56-sweep |
+| `store-s57b-c1d` | c1d pool sweep and transfer test T (§57b) | done | unrated | c1d store-bound only at W <= 512; T not reached | status §57b Result; status §57 Amendment 1; branch harness57b | store-s56-sweep |
+| `store-law-r67` | R6.7 floors: candidate C | done | unrated |  | derivation store-law-r67.md; commit d85d048b; branch store-law-r67 | store-s57b-c1d |
+| `store-slaw-gauge` | Store-law gauge build (B-1) | in-progress | unrated |  | status §60; branch slaw-gauge; branch s60-tree | store-law-derivation |
+| `store-s60-pre` | Suites and reference binary (60-pre) | done | successful | bin_sha e410d640… | status 60-pre; status 60-pre Result; commit f950956b; commit 0367ea59 | store-slaw-gauge |
+| `store-s60a` | Gauge session 60a (§60) | in-progress | unrated |  | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60 | store-s60-pre, store-law-r67 |
+| `store-s60b` | Gauge session 60b (§60) | blocked | unrated |  | status §60 Amendment 2; branch harness60-a2 | store-s60a |
+| `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | done | unrated | merged 9b8b42ca; decision_trace_pin 7/7 on Linux | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |  |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
 | `store-engine-form-guard` | Store-law engine form guard | blocked | unrated |  | plan VM queue 8 | store-engine-form-impl, meas-guard-v2-impl |
 | `store-s48c-session` | δ seat diagnostic and guard (§48c) | blocked | unrated |  | plan W1.4 | store-delta-seat, meas-s51-session, meas-guard-v2-impl |
@@ -176,29 +289,56 @@ flowchart TB
 | id | title | notes | evidence |
 |---|---|---|---|
 | `store-xn-pool` | Path-scaled pool ×N (STORE_PATHS) | RWM_STORE_PATHS stays on; what was superseded is the ×N multiplier in its formula. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row ×N pool multiplier `clamp(gain·N·Σ, floor, N·knee)`; ADR-0058 |
-| `store-percap-family` | Per-path store accounts family (4 arms) | Folds per-path accounts, the delay-aware redirect guard, bounded borrowing, the capacity-weighted pool and paper §11.1 open question 5. Arms (4): per-path store accounts RWM_STORE_PERCAP; delay-aware redirect guard RWM_PERCAP_GUARD; bounded account borrowing RWM_STORE_BORROW; capacity-weighted pool RWM_STORE_CAPW. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`) |
-| `store-honest-cap-family` | Honest floor-clock cap family (6 arms) | Honest cap, raw echo-ratio floor, plain-mode sampler, flight witness, delivery- and floor-bound anchors (2026-07-19 to 2026-08-07); archived 2026-11-10 (simplify batch 1). Arms (6): honest floor-clock cap RWM_HONEST_CAP; raw-sample echo-ratio floor RWM_HONEST_K; plain-mode send-interval sampler RWM_PLAIN_RS; flight-time witness RWM_RS_ATTR; delivery-clocked anchor RWM_POOL_DELIV; floor-bound anchor RWM_FLOOR_BOUND. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_HONEST_CAP archived 2026-11-10 (tag date not used for end); archive/RWM_HONEST_K archived 2026-11-10 (tag date not used for end); archive/RWM_PLAIN_RS archived 2026-11-10 (tag date not used for end); archive/RWM_RS_ATTR archived 2026-11-10 (tag date not used for end). Folded Ship The Wins 1b RESULTS 8afd4dd7 (delivery-clocked pool anchor, NO FLIP). | tag archive/RWM_HONEST_CAP; tag archive/RWM_HONEST_K; tag archive/RWM_PLAIN_RS; tag archive/RWM_RS_ATTR |
-| `store-pool-anchor-flip` | Composed cadence and pool-anchor flip | Paper rows carry the end date only; flip e84ef1c and revert on 2026-08-07; the end date is the RWM_POOL_ANCHOR archive tag (2026-11-10). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_POOL_ANCHOR archived 2026-11-10 (tag date not used for end). | tag archive/RWM_POOL_ANCHOR |
+| `store-percap-family` | Per-path store accounts (PERCAP) | Split 2026-11-16 from the former family node 'Per-path store accounts family (4 arms)'. Per-path accounts (d190b296) and the delay-aware redirect guard (689b9f1b; 'halves the c8 percap regression', 4bb5b28f) share one paper row. Siblings: store-borrow, store-capw. Folds paper §11.1 open question 5. | paper §10 row Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`); commit 4b8e5384; commit 4bb5b28f |
+| `store-borrow` | Bounded account borrowing (BORROW) | Split 2026-11-16 from the former family node 'Per-path store accounts family (4 arms)'. 7c3343ff: 'the law is gauge-perfect, the tax is NOT repaid; pooled path-scaled VINDICATED at c8, flip NO'. | paper §10 row Bounded account borrowing (`RWM_STORE_BORROW`); commit 7c3343ff |
+| `store-capw` | Capacity-weighted pool (C8-aware) | Split 2026-11-16 from the former family node 'Per-path store accounts family (4 arms)'. C8-Aware Pool Law results (4fb5b15): 'capacity-weighted pool REFUTED at c8, the binder renamed (slow-path conversion)'. | paper §10 row Capacity-weighted pool (`RWM_STORE_CAPW`); commit 4fb5b15 |
+| `store-honest-cap-family` | Honest floor-clock cap (HONEST_CAP) | Split 2026-11-16 from the former family node 'Honest floor-clock cap family (6 arms)': the plain-mode sampler and its flight witness are store-plain-rs, the delivery-clocked and floor-bound anchors are store-pool-deliv. The raw-sample echo-ratio floor (HONEST_K) shares this verdict: old ledger GG:23650, 2026-08-11, pre-wire-v9 substrate. Archived 2026-11-10 (simplification batch 1, ADR-0073; tag dates not used for end). | tag archive/RWM_HONEST_CAP; tag archive/RWM_HONEST_K; paper §10 row Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`); paper §10 row Raw-sample echo-ratio floor (`RWM_HONEST_K`) and the honest-cap law family it fed (`honest_store_cap`, `honest_cap_terms`, `k_raw`); commit 1ad01c4d |
+| `store-plain-rs` | Plain-mode send-interval sampler (PLAIN_RS) | Split 2026-11-16 from the former family node 'Honest floor-clock cap family (6 arms)'. Built as anchor-hygiene fix 3 (988960c1); the flight-time witness (RWM_RS_ATTR) acted only under it and was removed with it. Archived 2026-11-10. | tag archive/RWM_PLAIN_RS; tag archive/RWM_RS_ATTR; paper §10 row Plain-mode send-interval sampler (`RWM_PLAIN_RS`, sampling-only `CopaFeed`); paper §10 row Flight-time witness for cross-path ack attribution (`RWM_RS_ATTR`); status §23 |
+| `store-pool-deliv` | Ship The Wins 1b: pool anchors | Split 2026-11-16 from the former family node 'Honest floor-clock cap family (6 arms)'. One battery, two arms (8afd4dd7: 'arm A's MECHANISM lands completely and c7 gets WORSE ...; arm B fails both its clauses; NO FLIP'): arm A the delivery-clocked pool anchor (RWM_POOL_DELIV), arm B the floor-bound anchor (RWM_FLOOR_BOUND; paper: −14 % at c1). Attempt 2 after the composed flip (store-pool-anchor-flip). | paper §10 row Pool delivery-clocked anchor (`RWM_POOL_DELIV`); paper §10 row Floor-bound anchor (`RWM_FLOOR_BOUND`); commit 8afd4dd7 |
+| `store-pool-anchor-flip` | Ship The Wins 1: composed flip | Paper rows carry the end date only; flip e84ef1c and revert on 2026-08-07; the end date is the RWM_POOL_ANCHOR archive tag (2026-11-10). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_POOL_ANCHOR archived 2026-11-10 (tag date not used for end). Ship The Wins 1 (pre-registration 201ada44, results 60f833a7: 'c1 463/482 (PRIMARY met) but the c7 clause fails 0.968/0.959; NO FLIP') is this flip; moved here 2026-11-16 from store-honest-inputs. | tag archive/RWM_POOL_ANCHOR; commit 60f833a7; commit e84ef1c5; paper §10 row Composed estimator-cadence plus pool-anchor default |
 | `store-sack-prune` | SACK pruning of the store | Start date is a placeholder (the 2026-07-08 SACK work); the row carries the removal date only. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row SACK pruning of the store (`RWM_SACK_PRUNE`) |
 | `store-sack-release` | SACK-clocked store release (ADR-0060) | Pre-registered 2026-07-21 (discipline 11) and flipped the same day. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0060 |
-| `store-sender-decoupling` | Sender decoupling attempts (4 arms) | SACK sender flow control, the reassembly BDP clamp, source backpressure (2026-07-07 to 2026-07-12) and window decoupling (2026-08-06); each refuted. The compact framing sibling shipped (cod-wire-compact). Arms (4): SACK sender flow control; never-evict reassembly clamp RWM_REASM_BDP; source backpressure RWM_SRC_BP; window decoupling RWM_WIN_DECOUPLE. Replaced by the per-path account family: the source-backpressure delete commit says "superseded by the percap account family" (decision 2026-11-13); that family was itself refuted. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_REASM_BDP archived 2026-11-10 (tag date not used for end). | tag archive/RWM_REASM_BDP |
+| `store-sender-decoupling` | Window decoupling (WIN_DECOUPLE) | Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'; siblings store-sack-flowctl, store-reasm-bdp, store-src-bp. Window Decoupling + MTU Scaling, part 1 (pre-registration b03b3ad8); part 2, compact framing, shipped (cod-wire-compact). | paper §10 row Window decoupling (`RWM_WIN_DECOUPLE`); commit 48f60c4f |
+| `store-sack-flowctl` | SACK sender flow control | Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'. | commit 5adba96e; commit 2b898456 |
+| `store-reasm-bdp` | Never-evict reassembly clamp (REASM_BDP) | Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'. Paper row: the clamp never binds. Archived 2026-11-10 (ADR-0073). | tag archive/RWM_REASM_BDP; paper §10 row Never-evict-undelivered reassembly clamp (`RWM_REASM_BDP`); commit 6d2a05b2 |
+| `store-src-bp` | Source backpressure (SRC_BP) | Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'. Refuted at L1 2026-07-12 (4606829f); the delete commit 8902d246 says 'superseded by the percap account family' (decision 2026-11-13), itself refuted. | paper §10 row Source backpressure (`RWM_SRC_BP`); commit 4606829f; commit 8902d246 |
 | `store-anchor-hygiene` | Anchor hygiene laws (ADR-0061) | A* windowed-max anchor, M* pair, process-clock stall witness (2026-07-19); flips in the 2026-07-21 consolidation battery. End date from commit 5ebbcda8 (the 2026-07-21 consolidation flip of MSTAR_ANCHOR and CLOCK_GAP); the ADR date is the migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0061 |
-| `store-three-term` | Three-term and composed caps (5 arms) | Three-term outstanding law (2026-08-10), its fourth-term coverage verdict, the latency battery, the queue-free slack clock and the composed cap (2026-08-12/13; archived 2026-11-10). Arms (5): three-term outstanding law RWM_THREE_TERM; the fourth (coverage) term; queue-free slack clock; the latency-battery lever (shipped default off); composed cap RWM_COMPOSED_CAP. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_COMPOSED_CAP archived 2026-11-10 (tag date not used for end). Folded: the slack-bench (RESULTS 2026-08-10: the three-term model SURVIVES, the clock fails it) and coverage (VERDICT 2026-08-10: the fourth term REFUTED; paper 16.44) clusters. | tag archive/RWM_COMPOSED_CAP |
-| `store-cap-unification` | Store-cap unification over live paths | Shipped unconditionally; folds the dead-wall and mode-hunt batteries (the paper row places the dead-wall mode in this arm) and the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. Dates: paper §10 rows carry an end (removal) date only. Folded: the Cap-law cluster (2026-08-18: formulas in the paper first, derived floor, ledger with two FIXED and one REFUTED). Folded the Mode-hunt battery commits (2026-08 audit; mapped outcome there: dead-end). Folded the Deadwall battery commits (2026-08 audit; mapped outcome there: dead-end). | status §3.5 item 3 |
-| `store-honest-inputs` | Honest inputs and O(1) anchor | HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11). Folded Ship The Wins 1 (est x honest-anchor): pre-registration 201ada44, RESULTS 60f833a7 (NO FLIP, c7 clause fails). | commit 9f6e56ba |
-| `store-sum-cap` | Sum cap: ×N deletion (SUM_CAP) | The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner's formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits. | branch RWM_SUM_CAP DEFAULT ON |
+| `store-three-term` | Three-term outstanding law (THREE_TERM) | Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'; siblings store-coverage-term, store-slack-clock, store-composed-cap; the latency battery is store-latency-lever. Paper status 'off': the gate stays because scheduler/place.rs reads it (placement H term, fenced). | paper §10 row Three-term outstanding law (`RWM_THREE_TERM`); commit 5de30ed3; commit 448a82e |
+| `store-coverage-term` | Coverage: the fourth store term | Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'. | commit e113c9ab; paper §16.44 |
+| `store-slack-clock` | Slack-bench: queue-free slack clock | Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'. Slack-bench (pre-registration 530bbaa2; results 7e03ef9b: 'the three-term model SURVIVES; the CLOCK is what fails it'); the slack-clock charge refuted in the cap-law cluster ledger (7e302e2a). Refuted, never shipped. | paper §10 row Queue-free slack clock; commit 7e03ef9b; commit 7e302e2a |
+| `store-composed-cap` | Composed cap (COMPOSED_CAP) | Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'. Removed 2026-11-10 (simplification batch 1); the brake survives as RWM_LATE_BRAKE. Tag archived 2026-11-10 (tag date not used for end). | tag archive/RWM_COMPOSED_CAP; paper §10 row Composed cap (`RWM_COMPOSED_CAP`); commit 161b4eae |
+| `store-cap-unification` | Store-cap unification over live paths | Shipped unconditionally; folds the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. The dead-wall and mode-hunt batteries (store-deadwall-modehunt) and the cap-law cluster (store-cap-law-cluster) are their own nodes since 2026-11-16. | status §3.5 item 3; paper §10 row Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) |
+| `store-deadwall-modehunt` | Deadwall and mode-hunt batteries | Split 2026-11-16 from 'Store-cap unification over live paths'. Paper status: unscored. The mitigations list mapped onto the recovery plane built nothing (79d2fa83). | paper §10 row The dead-wall and mode-hunt batteries; commit d583593a; commit cfc1793f |
+| `store-cap-law-cluster` | Cap-law cluster: formulas first | Split 2026-11-16 from 'Store-cap unification' and 'Sum cap'. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6). | commit 7e302e2a; commit 6335e206 |
+| `store-honest-inputs` | Honest inputs and O(1) anchor | HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11). | commit 9f6e56ba |
+| `store-sum-cap` | Ladder battery: ×N deletion (SUM_CAP) | The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner's formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits. | branch RWM_SUM_CAP DEFAULT ON |
 | `store-delta-cap` | Derived setpoint 1 + q(δ) | RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19). | paper §10 row Pool gain 2.0 (N ≥ 2) |
-| `store-adr72-one-law` | One store law (ADR-0072) | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. | ADR-0072; status §18; status §19 |
-| `store-input-search` | Store-law input search (8 inputs) | §23 (c1 over-read MECHANISM-CONFIRMED), §24 (no candidate passes), §27 PREMISES-FAIL with the probe-gain row (P), §34 NONE-CLOSES with rows b1-b4. Candidate inputs (8): §23 send-interval anchor; §24 min-filtered loop time; §24 quinn BBR rate; §27 (P) probe gain; §34 (b1) BBR window knee; (b2) cwnd-binding share; (b3) path memory; (b4) receiver-capacity ceiling. Dates: status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. | status §23; status §24; status §27; status §34 |
-| `store-power-law` | Power-seeking store law D | §29 NOT-VIABLE, §30 DOES-NOT-CLOSE; code at archive/store-power. Dates: status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only; archive/store-power archived 2026-10-27 (tag date not used for end). | status §29; status §30; tag archive/store-power; branch archive/wt-status29-power |
-| `store-engine-form` | Dispersion and oracle store law | §36/§40 receiver dispersion as link rate (NOT-YET), §42 kernel timestamps FEASIBLE-IN-TREE, §43 oracle law (c2 BISTABLE, c1s UNSTABLE) and §43b (CONVERGES-ONE-POINT, in the §43 file). Continues as plan W3.3. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §36; status §40; status §42; status §43; branch harness43; branch run43 |
+| `store-s18-one-law` | One store law, first session (§18) | Split 2026-11-16 from 'One store law (ADR-0072)'. The lead's ruling: it stands as scored, REFUTED; the cross-session control reference is a design weakness (7e13dc06). §19 re-read the law against a same-session main. | status §18; commit 48ee42a3 |
+| `store-adr72-one-law` | One store law (ADR-0072) | ADR-0072 accepted on §19, the same-session control (§18 is store-s18-one-law). Dates: ADR end dates in the raw set equal their start (placeholder). | ADR-0072; status §19; commit bdb37b40 |
+| `store-input-search` | c1 anchor over-read (§23) | Split 2026-11-16 from 'Store-law input search (8 inputs)': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38). | status §23; commit 4ed22f38 |
+| `store-s24-inputs` | Loop time and quinn rate (§24) | Split 2026-11-16 from 'Store-law input search (8 inputs)'. 46 rows at c2-100 and c1s-400. | status §24; commit de3e11a1 |
+| `store-s27-premises` | Spread law premises (§27) | Split 2026-11-16 from 'Store-law input search (8 inputs)'. [LOOPDIAG] instrument on main, 4 cells, 128 rows. | status §27; commit 35b16607 |
+| `store-probe-gain` | (P) probe-gain store law | Split 2026-11-16 from 'Store-law input search (8 inputs)'. Closed by derivation, never built (status §27–§29); the gain 2.0 of paper §6.2 returns under another name. | paper §10 row (P) probe gain: `cap' = (1 + q + g)·D̂·τ`; status §27 |
+| `store-power-law` | Power-seeking store law D | §29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27. | status §29; tag archive/store-power; branch archive/wt-status29-power; paper §10 row (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker |
+| `store-dw-window` | (D-W) noise-sized window (§30) | Split 2026-11-16 from 'Power-seeking store law D'. Status §2: DOES-NOT-CLOSE; §34's R2 re-read it after the receiver change (CLOSED). | status §30; paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`; commit 9677a3c9 |
+| `store-s34-input` | Store-law input after §32 (§34) | Split 2026-11-16 from 'Store-law input search (8 inputs)'. One derivation (NONE-CLOSES) closed the four candidates (b1)–(b4), then a static-cap diagnostic R1–R4 at c1s and c1d: R1 knee 1 024 at both, R2 D-W CLOSED, R3 AMBIGUOUS with the fixed point MISSES (457), R4 QUINN-SHARES. | status §34; paper §10 row (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`; paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds; paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing); paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`; commit a75bc9ca |
+| `store-s36-dispersion` | Receiver dispersion as link rate (§36) | Split 2026-11-16 from 'Dispersion and oracle store law'. Capture diagnostic, 58 rows, no engine diff; the post hoc p90 addendum led to §40. | status §36; commit 4dd26760 |
+| `store-s40-p90` | p90 dispersion estimator (§40) | Split 2026-11-16 from 'Dispersion and oracle store law'. Nothing ships. | status §40; commit b0b07b1b |
+| `store-s42-engine-path` | Engine path for dispersion (§42) | Split 2026-11-16 from 'Dispersion and oracle store law'. Derivation and feasibility record, no VM: a wire-clocked S does not close c1s (af06313d). | status §42; commit af06313d |
+| `store-engine-form` | Oracle store law, closed loop (§43) | Split 2026-11-16 from 'Dispersion and oracle store law' (§36, §40, §42, §43, §43b, rated successful as a family): those are now store-s36-dispersion, store-s40-p90, store-s42-engine-path and store-s43b-retuned; this node is §43 alone, a diagnostic with no rating. RWM_STORE_LAW=oracle, 24 rows; continues as plan W3.3. | status §43; branch harness43; branch run43; commit 1eca3ee2 |
+| `store-s43b-retuned` | Oracle store law re-tuned (§43b) | Split 2026-11-16 from 'Dispersion and oracle store law'. G = 0.9, τ = 5 ms, c2, SL/SH starts, n = 3 each. | status §43b; commit bab838c1 |
 | `store-w1-who-limits` | Who limits at each δ | Derivation (derive-w1, w1r2): δ's seat on the store, bbr_rs window δ-free; waits on owner questions U1-U3 (plan user decision 10). | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 |
 | `store-s54-budget` | Store-budget test design (§54) | p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE' and CAND'), plan item 2 of 2026-11-13. | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag |
-| `store-law-derivation` | Store-law derivation | Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2 |
+| `store-law-derivation` | Store-law derivation | Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. Progress 2026-11-14..15: the R6.4/R6.5 amendments with §57a/§57b (store-law-rev6, merged); R6.7 (store-law-r67: candidate floor C, no recommendation); the §60 gauge session measures the queue-free floors, tests the target form at c8 and scores R6.7's allowance shortfall at c2. Next derivation: R6.7's allowance item; a large sweep only after it. | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2; branch store-law-rev6; derivation store-law-r67.md; status §60 |
 | `store-s56-sweep` | Store-pool sweep (§56) | Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law's Part B and the owner's U2. | status §56; derivation store-law.md §13 |
-| `store-s57a-burst` | Emission-burst block at c1s (§57a) | Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds. | status §57a Result |
-| `store-s57b-c1d` | c1d pool sweep and transfer test T (§57b) | Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms. | status §57b Result |
-| `store-defect-delta-nan` | RWM_DELTA pins the store cap at its floor (F1) | Fix 39008a01 awaits the VM engine suites; must merge before §51 (the delta sweep). | status "Engine defect F1"; derivation shared-core-design.md F1 |
+| `store-s57a-burst` | Emission-burst block at c1s (§57a) | Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds. | status §57a Result; status §57 Amendment 1 |
+| `store-s57b-c1d` | c1d pool sweep and transfer test T (§57b) | Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms. | status §57b Result; status §57 Amendment 1; branch harness57b |
+| `store-law-r67` | R6.7 floors: candidate C | Candidate C, not a recommendation: one floor, the median absolute window minimum over the K windows of lowest store size seen so far, from n₀ = 10 with no boot hold. It costs 3.75–5.4 s to reach n = 128 and exposes an allowance gap at c2 (5–33 slots below the knee on the static map). §60 scores its c2 prediction (D SHORT, +0.9 to +2.2 ms). | derivation store-law-r67.md; commit d85d048b; branch store-law-r67 |
+| `store-slaw-gauge` | Store-law gauge build (B-1) | slaw-gauge d416d59b: the [SLAW] gauge and the [WSTORE] fec= window means of the rate seat's inputs; s60-tree cb88df3a is main + the gauge, the §60 measured tree. Main does not take the gauge, because it changes the release binary and has had no guard; the tools merge after the Result. Done when: the gauge reaches main through a guard, or is dropped after the §60 Result. | status §60; branch slaw-gauge; branch s60-tree |
+| `store-s60-pre` | Suites and reference binary (60-pre) | Release 1156/0, debug 1008/0, wasm 50/0, core 2/0, doc and parsers rc 0; decision_trace_pin 7/7 in both profiles; the first Linux run of the gauge's tests. ref60-manifest (187 files) is committed and passed as LD_REF_MANIFEST to every §60 launch. | status 60-pre; status 60-pre Result; commit f950956b; commit 0367ea59 |
+| `store-s60a` | Gauge session 60a (§60) | Registered verbatim from s60-registration.md at 10272273 (Fable, 10 rounds); reported only. 60a: 98 rows, launched at harness60 8565e7d2 at 10:07:42Z on 2026-11-16 after its rehearsal passed. It measures the queue-free floor on pools below anything measured, tests the target form with those floors (B2 at c8, a gross-miss detector) and scores the allowance shortfall D at c2. Amendment 1 registers the scorer's DECISIONS 1–21 and reads the R-sign gate at the end of 60a (STOP, PASS or UNSCOREABLE), which gates 60b. Done when: the 60a Result is in status with its R-sign label. | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60 |
+| `store-s60b` | Gauge session 60b (§60) | Amendment 2: the evicting rows leave §60 (rate-evict-registration); 60b is 40 slots at harness60-a2 1ecee59d (tools only; bin_sha and manifest unchanged), scored with DECISIONS 1–22. Still owed from Amendment 1: the unfiltered fast test_stubrun.py and the shell tests. Done when: the 60b Result is in status (the c1s sign of R̃ − 1 and the G/C pairs) and the host re-score reproduces 60a's on-VM LABEL60 lines. | status §60 Amendment 2; branch harness60-a2 |
+| `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner's guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect. | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |
 | `store-defect-cap-constant` | Store cap constant at c8 | Plan 2026-11-13: the store law becomes its own track (items 8-9). | status §3.10 item 8 |
 | `store-engine-form-guard` | Store-law engine form guard | Law ledger: F01 battery (with E03, E04). Done when: guard v2 against main PASSes and the c8 clamp bind fraction is reported below 1 (the law is not pinned over its operating range). | plan VM queue 8 |
 | `store-s48c-session` | δ seat diagnostic and guard (§48c) | Done when: the §48c (a) reported-only fixed-gain/fixed-τ rows and the (b) guard v2 battery of the derived δ seat (c1s, c2, c8 and a Realtime row at c2) are in status. | plan W1.4 |

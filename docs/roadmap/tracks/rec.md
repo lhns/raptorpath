@@ -11,18 +11,29 @@ Scope: ARQ, SACK, the hole law, recovery clocks, gap horizon, snapshot order, ta
 flowchart TB
     rec_early_arq["✔ Early ACK, NACK and<br/>repair"]
     rec_nack_congestion["✔ Congestion-aware<br/>NACK throttle (first<br/>form)"]
-    rec_plost_sack["✔ P_lost(t) mix and<br/>SACK WindowAck"]
+    rec_plost_sack["✔ Rearchitecture<br/>phases: P_lost and<br/>SACK"]
     rec_bulk_arq["✔ Bulk ARQ and batch<br/>acknowledgements"]
     rec_reliable_window["✔ Reliable window (RWM<br/>Phase A)"]
     rec_p10a_repair_floor["✖ Inner-feedback<br/>repair floor (P10a)"]
     rec_fec_vs_arq["✔ Proactive FEC versus<br/>ARQ frontier"]
-    rec_proactive_repair["✖ Proactive repair<br/>timing (3 arms)"]
+    rec_inline_repair["↷ Frontier-anchored<br/>proactive repair"]
+    rec_proactive_repair["✖ Repair-wait before<br/>ARQ (REPAIR_WAIT)"]
+    rec_present_at_stall["✖ Present-at-stall<br/>proactive pacer"]
     rec_per_path_clocks["✔ Per-path recovery<br/>clocks (RECOV_MP)"]
     rec_mp_serial["↷ Global loss serials<br/>under striping"]
     rec_recov_sp["⏸ Singles hole<br/>suppression (RECOV_SP)"]
-    rec_clock_candidates[/"✖ Derived recovery-<br/>timing candidates (4<br/>arms)"/]
+    rec_patience_derived[/"✖ Unlock The Default<br/>2: patience"/]
+    rec_clock_candidates[/"✖ Derived recovery<br/>sweep (DERIVED_SWEEP)"/]
+    rec_rack_clocks[/"✖ RACK-shaped recovery<br/>clocks"/]
+    rec_cantelli_clock[/"✖ Cantelli quantile<br/>recovery clock"/]
+    rec_alpha_sweep["✔ Alpha-sweep of the<br/>recovery clock"]
     rec_goal100["✔ Recovery primitives<br/>and σ (goal #35;100)"]
-    rec_goal101[/"✖ Recovery clock law<br/>family (4 arms)"/]
+    rec_qnative_clock[/"✖ Quantile-native<br/>clock sweep (W_FORM)"/]
+    rec_holddown_clock[/"✖ Hold-down clock<br/>sweep (HOLDDOWN_Q)"/]
+    rec_refresh_floor[/"✖ Refresh-floor lift<br/>(q, refresh) sweep"/]
+    rec_dispersion_est["⏸ σ dispersion<br/>estimators (fixed lag)"]
+    rec_successor_arrival["✔ Successor-arrival<br/>distribution measured"]
+    rec_goal101[/"✖ Goal #35;101 verdict<br/>battery"/]
     rec_receiver_law[/"✖ Receiver request law<br/>(Track C)"/]
     rec_wire_v9["✔ Wire v9 per-path<br/>sequence"]
     rec_gap_horizon["⏳ Gap horizon lever B<br/>(#167;52)"]
@@ -46,17 +57,26 @@ flowchart TB
     rec_nack_congestion ~~~ rec_reliable_window
     rec_plost_sack ~~~ rec_p10a_repair_floor
     rec_bulk_arq ~~~ rec_fec_vs_arq
-    rec_reliable_window ~~~ rec_proactive_repair
-    rec_p10a_repair_floor ~~~ rec_per_path_clocks
-    rec_fec_vs_arq ~~~ rec_mp_serial
-    rec_proactive_repair ~~~ rec_recov_sp
-    rec_per_path_clocks ~~~ rec_clock_candidates
-    rec_mp_serial ~~~ rec_goal100
-    rec_recov_sp ~~~ rec_goal100
-    rec_clock_candidates ~~~ rec_goal100
-    rec_goal100 ~~~ rec_goal101
-    rec_goal100 ~~~ rec_receiver_law
-    rec_goal100 ~~~ rec_wire_v9
+    rec_reliable_window ~~~ rec_inline_repair
+    rec_p10a_repair_floor ~~~ rec_proactive_repair
+    rec_fec_vs_arq ~~~ rec_present_at_stall
+    rec_inline_repair ~~~ rec_per_path_clocks
+    rec_proactive_repair ~~~ rec_mp_serial
+    rec_present_at_stall ~~~ rec_recov_sp
+    rec_per_path_clocks ~~~ rec_patience_derived
+    rec_mp_serial ~~~ rec_clock_candidates
+    rec_recov_sp ~~~ rec_rack_clocks
+    rec_patience_derived ~~~ rec_cantelli_clock
+    rec_clock_candidates ~~~ rec_alpha_sweep
+    rec_rack_clocks ~~~ rec_goal100
+    rec_cantelli_clock ~~~ rec_qnative_clock
+    rec_alpha_sweep ~~~ rec_holddown_clock
+    rec_goal100 ~~~ rec_refresh_floor
+    rec_qnative_clock ~~~ rec_dispersion_est
+    rec_holddown_clock ~~~ rec_successor_arrival
+    rec_refresh_floor ~~~ rec_goal101
+    rec_dispersion_est ~~~ rec_receiver_law
+    rec_successor_arrival ~~~ rec_wire_v9
     rec_goal101 ~~~ rec_gap_horizon
     rec_receiver_law ~~~ rec_gap_horizon
     rec_wire_v9 ~~~ rec_gap_horizon
@@ -83,7 +103,13 @@ flowchart TB
     rec_per_path_clocks -.-> rec_defect_qclk_clamp
     rec_per_path_clocks -.-> rec_defect_hole_law
     rec_mp_serial -.-> rec_wire_v9
-    rec_goal100 --> rec_goal101
+    rec_alpha_sweep --> rec_goal100
+    rec_goal100 --> rec_dispersion_est
+    rec_qnative_clock --> rec_goal101
+    rec_holddown_clock --> rec_goal101
+    rec_refresh_floor --> rec_goal101
+    rec_dispersion_est --> rec_goal101
+    rec_successor_arrival --> rec_goal101
     rec_gap_horizon --> rec_snapver_filter
     rec_snapver_filter -.-> rec_leverb_c1d_cost
     rec_snapver_filter --> rec_snapver_law
@@ -98,7 +124,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 37,38,39,43 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 46,47,48,58 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -113,9 +139,9 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter succ
-    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation unrated
-    class rec_p10a_repair_floor,rec_proactive_repair,rec_mp_serial,rec_clock_candidates,rec_goal101,rec_receiver_law dead
-    class rec_recov_sp parked
+    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation unrated
+    class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
+    class rec_recov_sp,rec_dispersion_est parked
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
     class rec_w0_leg_question,rec_leverb_guard,rec_fix_perleg_clock_n1,rec_recovery_timeouts,rec_fix_refresh_clock blocked
@@ -129,17 +155,28 @@ flowchart TB
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
 | `rec-early-arq` | Early ACK, NACK and repair | done | successful |  | ADR-0003; ADR-0005; ADR-0007; ADR-0025 |  |
-| `rec-plost-sack` | P_lost(t) mix and SACK WindowAck | done | unrated |  | commit 5b9f6def |  |
+| `rec-plost-sack` | Rearchitecture phases: P_lost and SACK | done | unrated |  | commit 5b9f6def; commit 1a6a8154; commit ee867a1a; commit 0c3bd4c5; commit 27a7fcf0 |  |
 | `rec-bulk-arq` | Bulk ARQ and batch acknowledgements | done | successful |  | branch P8 |  |
 | `rec-reliable-window` | Reliable window (RWM Phase A) | done | successful |  | branch RWM Phase A |  |
 | `rec-fec-vs-arq` | Proactive FEC versus ARQ frontier | done | unrated |  | branch proactive-frontier diagnosis |  |
-| `rec-proactive-repair` | Proactive repair timing (3 arms) | abandoned | dead-end |  | tag archive/RWM_REPAIR_WAIT; tag archive/RWM_PROACTIVE_PACER |  |
+| `rec-proactive-repair` | Repair-wait before ARQ (REPAIR_WAIT) | abandoned | dead-end |  | tag archive/RWM_REPAIR_WAIT; paper §10 row Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`); commit 3a0ca0c |  |
+| `rec-present-at-stall` | Present-at-stall proactive pacer | abandoned | dead-end |  | tag archive/RWM_PROACTIVE_PACER; paper §10 row Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`); commit 806c0f4 |  |
+| `rec-inline-repair` | Frontier-anchored proactive repair | abandoned | superseded |  | paper §10 row Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`); commit bede4a32 |  |
 | `rec-per-path-clocks` | Per-path recovery clocks (RECOV_MP) | done | successful | repair share ×2.2–2.5 | ADR-0059 |  |
 | `rec-mp-serial` | Global loss serials under striping | abandoned | superseded | 0.1 % | paper §10 row Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) |  |
-| `rec-clock-candidates` | Derived recovery-timing candidates (4 arms) | abandoned | dead-end | −23 % | tag archive/RWM_DERIVED_SWEEP |  |
-| `rec-goal100` | Recovery primitives and σ (goal #100) | done | successful |  | commit 6e1e356a |  |
-| `rec-goal101` | Recovery clock law family (4 arms) | abandoned | dead-end |  | tag archive/RWM_HOLDDOWN_Q; tag archive/RWM_REFRESH_FLOOR_US | rec-goal100 |
-| `rec-receiver-law` | Receiver request law (Track C) | abandoned | dead-end |  | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1 | meas-wire-v8 |
+| `rec-clock-candidates` | Derived recovery sweep (DERIVED_SWEEP) | abandoned | dead-end | −23 % | tag archive/RWM_DERIVED_SWEEP; paper §10 row Derived recovery sweep (`RWM_DERIVED_SWEEP`); commit 43b09fea |  |
+| `rec-patience-derived` | Unlock The Default 2: patience | abandoned | dead-end |  | paper §10 row Derived patience (`RWM_PATIENCE_DERIVED`); commit 65e92b3a; commit 4307a6cc |  |
+| `rec-rack-clocks` | RACK-shaped recovery clocks | abandoned | dead-end |  | paper §10 row RACK-shaped clocks (`RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`); commit 18dbf103 |  |
+| `rec-cantelli-clock` | Cantelli quantile recovery clock | abandoned | dead-end |  | paper §10 row Cantelli recovery clock (`RWM_QUANTILE_CLOCKS`, `RWM_ALPHA_OVERRIDE`); commit c249c20d |  |
+| `rec-alpha-sweep` | Alpha-sweep of the recovery clock | done | unrated |  | commit e0334855 |  |
+| `rec-qnative-clock` | Quantile-native clock sweep (W_FORM) | abandoned | dead-end |  | paper §10 row Quantile-native clock (`RWM_W_FORM`); commit 6b3d3c38 |  |
+| `rec-holddown-clock` | Hold-down clock sweep (HOLDDOWN_Q) | abandoned | dead-end |  | tag archive/RWM_HOLDDOWN_Q; paper §10 row Hold-down clock (`RWM_HOLDDOWN_Q`); commit 5509e371 |  |
+| `rec-refresh-floor` | Refresh-floor lift (q, refresh) sweep | abandoned | dead-end |  | tag archive/RWM_REFRESH_FLOOR_US; paper §10 row Refresh-floor lift (`RWM_REFRESH_FLOOR_US`); commit a8bcce05; paper §16.78 |  |
+| `rec-dispersion-est` | σ dispersion estimators (fixed lag) | parked | unrated |  | paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag); commit 89d79464; commit 9ba3aef7 | rec-goal100 |
+| `rec-successor-arrival` | Successor-arrival distribution measured | done | unrated |  | commit 821de6ae |  |
+| `rec-goal100` | Recovery primitives and σ (goal #100) | done | successful |  | commit 6e1e356a | rec-alpha-sweep |
+| `rec-goal101` | Goal #101 verdict battery | abandoned | dead-end |  | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 | rec-goal100, rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, rec-successor-arrival |
+| `rec-receiver-law` | Receiver request law (Track C) | abandoned | dead-end |  | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1; paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`) | meas-wire-v8 |
 | `rec-cost-ratio-decision` | Cost-ratio decision (owner ruling) | done | n/a |  | commit ca058db4 |  |
 | `rec-wire-v9` | Wire v9 per-path sequence | done | successful |  | status §3.5 item 2 |  |
 | `rec-gap-horizon` | Gap horizon lever B (§52) | in-progress | mixed | p = 0.2471 | status §52; branch gaphorizon; branch cand52; branch base52 | meas-guard-41c, cc-bbrrs-r1 |
@@ -152,7 +189,7 @@ flowchart TB
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | in-progress | unrated | +13 % | status §53 open item 2 | rec-snapver-filter |
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | in-progress | unrated |  | status §53 open item 3 | rec-snapver-filter |
-| `rec-s54-session` | §54: filter guard, store budget | done | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
+| `rec-s54-session` | §54: filter guard, store budget | done | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8; branch levb54 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | blocked | unrated |  | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f | rec-s54-session, place-wdiv |
 | `rec-leverb-guard` | Lever-B guard v2, then merge | blocked | unrated |  | plan Live state item 4; status §53 "What follows" | rec-s54-session, meas-guard-v2-impl, rec-gap-horizon, store-law-derivation |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | blocked | unrated |  | plan W3.6; status §3.10 items 4 and 6 | store-engine-form-impl, rec-fix-perleg-clock-n1 |
@@ -168,17 +205,28 @@ flowchart TB
 | id | title | notes | evidence |
 |---|---|---|---|
 | `rec-early-arq` | Early ACK, NACK and repair | March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0003; ADR-0005; ADR-0007; ADR-0025 |
-| `rec-plost-sack` | P_lost(t) mix and SACK WindowAck | Direct landings 2026-03-21 to 2026-04-07; no recorded verdict. Folded the remaining April commits (2026-04-01..12), no separate development. | commit 5b9f6def |
+| `rec-plost-sack` | Rearchitecture phases: P_lost and SACK | The paper's design built in phases (2026-04-03..07): Phase 1a TaperFunction and p_lost in the rate controller (1a6a8154), 1b P_lost wired into the window sender (ee867a1a), Phase 2 SACK-extended WindowAck replaces NACK sending (0c3bd4c5), phases 3-6 (27a7fcf0). The P_lost(t) model replaced the hard T_retx threshold (5b9f6def, 2026-03-21). No recorded verdict. | commit 5b9f6def; commit 1a6a8154; commit ee867a1a; commit 0c3bd4c5; commit 27a7fcf0 |
 | `rec-bulk-arq` | Bulk ARQ and batch acknowledgements | P4/P6/P8/P10b of the July wave. P10a is its own node (rec-p10a-repair-floor). | branch P8 |
 | `rec-reliable-window` | Reliable window (RWM Phase A) | Paper §16 (fountain multipath aggregation, then Reliable Windowed Multipath) and Phase A: retain-until-acked window, auto-switch removed. | branch RWM Phase A |
 | `rec-fec-vs-arq` | Proactive FEC versus ARQ frontier | 2026-07-07/08 arc; folds the FEC recovery bug fix, transport sender fixes, the store-bloat fix and the O(n^2) per-symbol fix found along the way. | branch proactive-frontier diagnosis |
-| `rec-proactive-repair` | Proactive repair timing (3 arms) | Three proactive-repair timing arms refuted 2026-07-08 (repair-wait, present-at-stall pacer) and 2026-07-27 (inline/frontier repair); REPAIR_WAIT and PROACTIVE_PACER archived 2026-11-10 (Group A, ADR-0073). Arms (3): repair-wait RWM_REPAIR_WAIT; present-at-stall pacer RWM_PROACTIVE_PACER; inline/frontier repair RWM_INLINE_REPAIR, RWM_FRONTIER*. Replaced by the unified span machine: the inline-repair delete commit says "superseded on geometry", and the trailing-span geometry is that machine's (owner-side decision 2026-11-13). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_REPAIR_WAIT archived 2026-11-10 (tag date not used for end); archive/RWM_PROACTIVE_PACER archived 2026-11-10 (tag date not used for end). | tag archive/RWM_REPAIR_WAIT; tag archive/RWM_PROACTIVE_PACER |
+| `rec-proactive-repair` | Repair-wait before ARQ (REPAIR_WAIT) | Split 2026-11-16 from the former family node 'Proactive repair timing (3 arms)'; its siblings are rec-present-at-stall and rec-inline-repair. Refuted 2026-07-08 (the covering repair was absent, not late: 7 useful of 4 600 fed); archived 2026-11-10 (simplification batch 1, ADR-0073; tag date not used for end). | tag archive/RWM_REPAIR_WAIT; paper §10 row Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`); commit 3a0ca0c |
+| `rec-present-at-stall` | Present-at-stall proactive pacer | Split 2026-11-16 from the former family node 'Proactive repair timing (3 arms)'. Paper row: presence rises, throughput does not; a saturated single path has no spare bandwidth for a repair that buys back a round trip. Archived 2026-11-10 (ADR-0073). | tag archive/RWM_PROACTIVE_PACER; paper §10 row Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`); commit 806c0f4 |
+| `rec-inline-repair` | Frontier-anchored proactive repair | Split 2026-11-16 from the former family node 'Proactive repair timing (3 arms)'. Start from 067f660a ('Proactive frontier FEC decode: diagnosed, built, REFUTED at L1 (gated off)'), the earliest frontier-repair commit; deleted in bede4a32 ('superseded on geometry'), and the trailing-span geometry is the unified span machine's (owner-side decision 2026-11-13). | paper §10 row Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`); commit bede4a32 |
 | `rec-per-path-clocks` | Per-path recovery clocks (RECOV_MP) | ADR-0059 records the 2026-07-21 migration date; the work is G401/G402 (2026-07-21). RWM_RECOV_SP is its own node (rec-recov-sp). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0059 |
 | `rec-mp-serial` | Global loss serials under striping | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) |
-| `rec-clock-candidates` | Derived recovery-timing candidates (4 arms) | Derived recovery-timing candidates 2026-08-07 to 2026-08-19, each refuted; RWM_DERIVED_SWEEP archived 2026-11-12 (§50). Arms (4): derived patience RWM_PATIENCE_DERIVED; derived recovery sweep RWM_DERIVED_SWEEP; RACK-shaped clocks RWM_RACK_CLOCKS/RWM_RACK_REO_MULT; Cantelli clock RWM_QUANTILE_CLOCKS/RWM_ALPHA_OVERRIDE. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_DERIVED_SWEEP archived 2026-11-12 (tag date not used for end). Folded Unlock The Default part 2 (derived patience): premises refuted pre-battery 4307a6cc, RESULTS 65e92b3a NO FLIP; part 1 (ack-merge) is perf-ack-merge. | tag archive/RWM_DERIVED_SWEEP |
-| `rec-goal100` | Recovery primitives and σ (goal #100) | Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, alpha-sweep, the 287x estimator spread. Closed NEEDS-MORE. Folded the alpha-sweep commits (pre-registration a04300e3, SCORED e0334855: NO VERDICT, UNSEPARATED at 50 of 50 pairs). | commit 6e1e356a |
-| `rec-goal101` | Recovery clock law family (4 arms) | Folds the quantile-native clock, the hold-down clock and the refresh-floor lift (each removed; HOLDDOWN_Q and REFRESH_FLOOR_US archived 2026-11-12) and paper §11.1 open question 7. Terminal closure: the shipped clamp survives on merit. Arms (4): quantile-native clock RWM_W_FORM; hold-down clock RWM_HOLDDOWN_Q; refresh-floor lift RWM_REFRESH_FLOOR_US; the dispersion (σ) estimators, fixed-sample-lag and fixed-time-lag (paper row still "open"). Later verdict: goal #101 closed with "the clamp survives on merit", but status §3.10 item 4 (2026-11-13) finds that clamp always binds at c8, so the clamp's survival was never tested in its operating regime. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_HOLDDOWN_Q archived 2026-11-12 (tag date not used for end); archive/RWM_REFRESH_FLOOR_US archived 2026-11-12 (tag date not used for end). Folded the Quantile-Native alpha-sweep (ab545cfe, SCORED 6b3d3c38: the arms separate, F2 fires at 5 of 5, the measurand is refuted). Folded the (q, refresh) sweep commits (2026-08 audit; mapped outcome there: mixed). Folded the Successor Arrival commits (2026-08 audit; mapped outcome there: unrated). Folded the Verdict battery (paper 16.79) commits (2026-08 audit; mapped outcome there: successful). | tag archive/RWM_HOLDDOWN_Q; tag archive/RWM_REFRESH_FLOOR_US |
-| `rec-receiver-law` | Receiver request law (Track C) | Folds §3.1 item 1 (the self-heal estimator counted retransmits; fixed, battery not re-run). Dates: paper §10 rows carry an end (removal) date only. | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1 |
+| `rec-clock-candidates` | Derived recovery sweep (DERIVED_SWEEP) | Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'; siblings rec-patience-derived, rec-rack-clocks, rec-cantelli-clock. 'The ceiling is arbitrary AND derivable; the argument is CORRECT (Repair B refuted)' (43b09fea). Removed in simplification batch 4 (§50, owner ruling §45); re-ask once the store law sets H. Tag archived 2026-11-12 (tag date not used for end). | tag archive/RWM_DERIVED_SWEEP; paper §10 row Derived recovery sweep (`RWM_DERIVED_SWEEP`); commit 43b09fea |
+| `rec-patience-derived` | Unlock The Default 2: patience | Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'. Unlock The Default part 2 (part 1, ack-merge, is perf-ack-merge): both premises refuted before the battery (4307a6cc); battery 65e92b3a: 'c7 fails both seeds with patience DEMONSTRABLY derived; NO FLIP; the goal closes as a STRUCTURAL BOUND'. | paper §10 row Derived patience (`RWM_PATIENCE_DERIVED`); commit 65e92b3a; commit 4307a6cc |
+| `rec-rack-clocks` | RACK-shaped recovery clocks | Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'. Scored in the Candidates Battery (18dbf103), which also delivered the δ-cap (store-delta-cap). | paper §10 row RACK-shaped clocks (`RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`); commit 18dbf103 |
+| `rec-cantelli-clock` | Cantelli quantile recovery clock | Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'. Refuted with record by derivation in the derived setpoint laws' paper amendment 2 (c249c20d), before any battery. | paper §10 row Cantelli recovery clock (`RWM_QUANTILE_CLOCKS`, `RWM_ALPHA_OVERRIDE`); commit c249c20d |
+| `rec-alpha-sweep` | Alpha-sweep of the recovery clock | Goal #100 item 2 (split 2026-11-16 from rec-goal100): pre-registration a04300e3; calibration 3980434c; c6f5eaa8 corrects the bracket verdict (commanded inside the bracket is UNRESOLVED). | commit e0334855 |
+| `rec-qnative-clock` | Quantile-native clock sweep (W_FORM) | Goal #101 arm (split 2026-11-16). The order statistic survives as qnative_window_n in net/recovery_clock.rs (paper row). | paper §10 row Quantile-native clock (`RWM_W_FORM`); commit 6b3d3c38 |
+| `rec-holddown-clock` | Hold-down clock sweep (HOLDDOWN_Q) | Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); the [HOLD] gauge stays as an observation-only instrument; re-ask once the store law sets H. | tag archive/RWM_HOLDDOWN_Q; paper §10 row Hold-down clock (`RWM_HOLDDOWN_Q`); commit 5509e371 |
+| `rec-refresh-floor` | Refresh-floor lift (q, refresh) sweep | Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); hole_nack_refresh is the shipped clamp directly. | tag archive/RWM_REFRESH_FLOOR_US; paper §10 row Refresh-floor lift (`RWM_REFRESH_FLOOR_US`); commit a8bcce05; paper §16.78 |
+| `rec-dispersion-est` | σ dispersion estimators (fixed lag) | Goal #100 named the σ estimator as the missing instrument (6e1e356a); goal #101 item 2: the Sigma Estimator battery 'ALL FOUR FAIL CLAUSE S' (9ba3aef7), the τ-lag form 'mechanism CONFIRMED, bar still missed' (89d79464). Paper §10 status: open. Done when: the paper §10 row is closed, by an estimator that passes its bar or by a ruling. | paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag); commit 89d79464; commit 9ba3aef7 |
+| `rec-successor-arrival` | Successor-arrival distribution measured | Goal #101 measurement (split 2026-11-16): 'the anchor is refuted; the boundary is a LEVEL, and the level is 98%' (5481a0b9). | commit 821de6ae |
+| `rec-goal100` | Recovery primitives and σ (goal #100) | Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep). | commit 6e1e356a |
+| `rec-goal101` | Goal #101 verdict battery | The closure of goal #101 (2026-08-21): item 4's verdict battery decided the formula in paper §16.79 and the shipped clamp 'survives on merit'. Its arms are now their own nodes (split 2026-11-16 from 'Recovery clock law family (4 arms)'): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime. | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 |
+| `rec-receiver-law` | Receiver request law (Track C) | Folds §3.1 item 1 (the self-heal estimator counted retransmits; fixed, battery not re-run). Dates: paper §10 rows carry an end (removal) date only. | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1; paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`) |
 | `rec-wire-v9` | Wire v9 per-path sequence | fix/wire-v9 (7825196): per-path path_seq, next_expected, received_above. | status §3.5 item 2 |
 | `rec-gap-horizon` | Gap horizon lever B (§52) | §52 guard PASS; c8 600 MB tail 4.19 -> 0.40 s with receiver duplicates x2.1 beyond BASE; the merge went to the owner. Plan 2026-11-13: lever B re-guarded on the new main, cand52 superseded. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §52; branch gaphorizon; branch cand52; branch base52 |
 | `rec-snapver-filter` | Stale gap reports, snapshot filter (§53) | dup-diag diagnosis + [SNAPV] instrument + RWM_RECOV_SNAPVER arm measured in §53; CANDS duplicates 4004 -> 1291. Owner approved shipping the filter as a law 2026-11-13 (plan Live state). test-debts fixes the §52 holeclass flake on base53. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §53; derivation dup-diag.md (branch dup-diag); branch dup-diag; branch dup-diag-instr; branch cand53; branch base53; branch test-debts |
@@ -189,7 +237,7 @@ flowchart TB
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | No raw record (§53 open items are in the section text, not extracted as items). Goes with the lever-B merge question. | status §53 open item 2 |
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | No raw record. §53 open item 6 ([HOLD] skewed on main; §3.10 item 5's "12 % wasted" to re-check) is attached to rec-defect-hole-law. | status §53 open item 3 |
-| `rec-s54-session` | §54: filter guard, store budget | Done when: the §54 Result is in status: the filter-only guard v2 against main PASSes and snapver-law merges, and the store-budget block (reduced RWM_STORE_PATH_POOL on BASE' and CAND', quinn evictions, tail/H0, in-order delay, the pool-arm causal test of §53 Erratum 1) is reported. | plan Live state items 1-2; branch p0-dwell-diag §8 |
+| `rec-s54-session` | §54: filter guard, store budget | Done when: the §54 Result is in status: the filter-only guard v2 against main PASSes and snapver-law merges, and the store-budget block (reduced RWM_STORE_PATH_POOL on BASE' and CAND', quinn evictions, tail/H0, in-order delay, the pool-arm causal test of §53 Erratum 1) is reported. | plan Live state items 1-2; branch p0-dwell-diag §8; branch levb54 |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | Needs the RWM_PLACE_WDIV knob, which lives on the unmerged branch wdiv-diag (node place-wdiv). Option: run it as a reported block inside the lever-B guard session instead of a session of its own. Done when: a reported-only W0 row (retransmits placed like source) on main + filter + lever B answers the open leg question under the 64-gap horizon, with the duplicate account complete (pt_st and det explained). | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f |
 | `rec-leverb-guard` | Lever-B guard v2, then merge | Law ledger: C02 (rank 4, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner's go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. | plan Live state item 4; status §53 "What follows" |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | Law ledger: C06 (rank 17, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law's hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8. | plan W3.6; status §3.10 items 4 and 6 |

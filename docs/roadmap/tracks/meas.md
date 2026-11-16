@@ -19,9 +19,19 @@ flowchart TB
     meas_gen_inert_era>"✔ Generation-inert<br/>measurement era"]
     meas_regime_map["✔ Hardware-honest<br/>regime map"]
     meas_adr52_discipline["✔ L1 measurement<br/>discipline (ADR-0052)"]
+    meas_adversarial_b1["✔ Adversarial Cells B1<br/>(policer map)"]
     meas_pipeline_verification["✔ Pipeline<br/>verification matrix"]
+    meas_coupling_model["✔ Coupling model<br/>(frontier span)"]
+    meas_sf_accounting["✔ SF accounting axis"]
     meas_formula_first["✔ Formula-first review<br/>(ADR-0070)"]
-    meas_goal_0819["✔ Era, latency-truth<br/>and c9 batteries"]
+    meas_goal_0819["✔ Era battery:<br/>cumulative shipped<br/>effect"]
+    meas_latency_truth["✔ Latency Truth<br/>battery"]
+    meas_c9_battery["✔ c9 quad-cell<br/>validation battery"]
+    meas_gap_phases["✔ Gap battery phases 1<br/>and 2"]
+    meas_cpuprof["✔ cpuprof: the<br/>sender's CPU ceiling"]
+    meas_span_run["✔ Span run: span<br/>instrument, anchors"]
+    meas_sigma_c8["✔ Measured σ at c8"]
+    meas_eppen_c8["✔ Eppen's condition at<br/>c8"]
     meas_attribution_audit["✔ Attribution audit D0"]
     meas_wire_v8["✔ Stage-2 instruments<br/>and owed findings"]
     meas_defect_eta_witness>"⚠ ETA route and σ<br/>witness mismatch"]
@@ -35,6 +45,7 @@ flowchart TB
     meas_guard_clause_dry["✔ Guard clause dry run"]
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
     meas_s51_design["✔ Off-Bulk benchmark<br/>design (#167;51)"]
+    meas_s58_session["✔ #167;58: F1 suites,<br/>binary identity"]
     meas_s51_harness["⛔ #167;51 harness and<br/>scorer"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
@@ -55,12 +66,23 @@ flowchart TB
     meas_l1_harness ~~~ meas_gen_inert_era
     meas_l2_multipath ~~~ meas_regime_map
     meas_c8_aggregation_arc ~~~ meas_adr52_discipline
-    meas_gen_inert_era ~~~ meas_pipeline_verification
-    meas_regime_map ~~~ meas_formula_first
-    meas_adr52_discipline ~~~ meas_goal_0819
-    meas_pipeline_verification ~~~ meas_attribution_audit
-    meas_formula_first ~~~ meas_wire_v8
-    meas_goal_0819 ~~~ meas_defect_eta_witness
+    meas_gen_inert_era ~~~ meas_adversarial_b1
+    meas_regime_map ~~~ meas_pipeline_verification
+    meas_adr52_discipline ~~~ meas_pipeline_verification
+    meas_adversarial_b1 ~~~ meas_coupling_model
+    meas_pipeline_verification ~~~ meas_sf_accounting
+    meas_pipeline_verification ~~~ meas_formula_first
+    meas_coupling_model ~~~ meas_goal_0819
+    meas_sf_accounting ~~~ meas_latency_truth
+    meas_formula_first ~~~ meas_c9_battery
+    meas_goal_0819 ~~~ meas_gap_phases
+    meas_latency_truth ~~~ meas_cpuprof
+    meas_c9_battery ~~~ meas_span_run
+    meas_gap_phases ~~~ meas_sigma_c8
+    meas_cpuprof ~~~ meas_eppen_c8
+    meas_span_run ~~~ meas_attribution_audit
+    meas_sigma_c8 ~~~ meas_wire_v8
+    meas_eppen_c8 ~~~ meas_defect_eta_witness
     meas_attribution_audit ~~~ meas_defect_c8_bimodal
     meas_wire_v8 ~~~ meas_defect_diag_rtp_ms
     meas_defect_eta_witness ~~~ meas_gso_truth
@@ -68,20 +90,20 @@ flowchart TB
     meas_defect_diag_rtp_ms ~~~ meas_guard_41c
     meas_gso_truth ~~~ meas_harness_consolidation
     meas_v4_verification ~~~ meas_defect_rtp_floor
-    meas_guard_41c ~~~ meas_defect_rtp_floor
-    meas_harness_consolidation ~~~ meas_defect_rtp_floor
+    meas_guard_41c ~~~ meas_guard_clause_dry
+    meas_harness_consolidation ~~~ meas_guard_clause_dry
     meas_defect_rtp_floor ~~~ meas_guard_clause_dry
     meas_guard_clause_dry ~~~ meas_guard_v2_impl
     meas_guard_clause_dry ~~~ meas_s51_design
-    meas_guard_clause_dry ~~~ meas_s51_harness
-    meas_guard_v2_impl ~~~ meas_adversarial_cells_build
-    meas_s51_design ~~~ meas_harness_robustness
+    meas_guard_clause_dry ~~~ meas_s58_session
+    meas_guard_v2_impl ~~~ meas_s51_harness
+    meas_s51_design ~~~ meas_adversarial_cells_build
+    meas_s58_session ~~~ meas_harness_robustness
     meas_s51_harness ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
     meas_harness_robustness ~~~ meas_s51_session
-    meas_guard_resolution ~~~ meas_s51_session
-    meas_test_hygiene ~~~ meas_s51b_rho
-    meas_s51_session ~~~ meas_adversarial_cells_run
+    meas_guard_resolution ~~~ meas_s51b_rho
+    meas_test_hygiene ~~~ meas_adversarial_cells_run
     meas_s51_session ~~~ meas_competitor_battery
     meas_s51b_rho ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
@@ -90,6 +112,8 @@ flowchart TB
     meas_l0_sim_bench --> meas_matrix_bench
     meas_adr51_scenarios --> meas_l1_harness
     meas_c8_aggregation_arc -.-> meas_regime_map
+    meas_pipeline_verification --> meas_coupling_model
+    meas_pipeline_verification --> meas_sf_accounting
     meas_defect_rtp_floor --> meas_guard_clause_dry
     meas_guard_clause_dry --> meas_guard_v2_impl
     meas_guard_clause_dry --> meas_s51_design
@@ -111,9 +135,10 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_pipeline_verification,meas_goal_0819,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design,meas_adversarial_cells_build unrated
-    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry succ
-    class meas_c8_aggregation_arc dead
+    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_adversarial_b1,meas_pipeline_verification,meas_goal_0819,meas_latency_truth,meas_c9_battery,meas_gap_phases,meas_cpuprof,meas_span_run,meas_sigma_c8,meas_eppen_c8,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design,meas_adversarial_cells_build unrated
+    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session succ
+    class meas_c8_aggregation_arc,meas_coupling_model dead
+    class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor defect
     class meas_s51_harness,meas_s51_session,meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
     class meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
@@ -133,9 +158,19 @@ flowchart TB
 | `meas-gen-inert-era` | Generation-inert measurement era | done | unrated |  | paper §10 row Generation-inert era; ADR-0053 |  |
 | `meas-regime-map` | Hardware-honest regime map | done | unrated |  | commit acefc473 |  |
 | `meas-adr52-discipline` | L1 measurement discipline (ADR-0052) | done | successful |  | ADR-0052 |  |
+| `meas-adversarial-b1` | Adversarial Cells B1 (policer map) | done | unrated |  | commit 754139c3 |  |
 | `meas-formula-first` | Formula-first review (ADR-0070) | done | successful |  | branch ADR-0070 |  |
 | `meas-pipeline-verification` | Pipeline verification matrix | done | unrated |  | branch PIPELINE VERIFICATION MATRIX |  |
-| `meas-goal-0819` | Era, latency-truth and c9 batteries | done | unrated |  | branch THE ERA LEDGER, SCORED |  |
+| `meas-coupling-model` | Coupling model (frontier span) | done | dead-end |  | commit 7ad65ef1; commit cb422e2d | meas-pipeline-verification |
+| `meas-sf-accounting` | SF accounting axis | done | mixed |  | commit 4f67ba7d; commit 4131d254 | meas-pipeline-verification |
+| `meas-goal-0819` | Era battery: cumulative shipped effect | done | unrated |  | commit f605f925; branch THE ERA LEDGER, SCORED |  |
+| `meas-latency-truth` | Latency Truth battery | done | unrated |  | commit e57f3655; commit cb288631 |  |
+| `meas-c9-battery` | c9 quad-cell validation battery | done | unrated |  | commit 9a060daa; commit 7f2b0096 |  |
+| `meas-gap-phases` | Gap battery phases 1 and 2 | done | unrated |  | commit 5bf1a346; commit b4be2489; commit decf67a8; commit 4323b2c7 |  |
+| `meas-cpuprof` | cpuprof: the sender's CPU ceiling | done | unrated |  | commit 4eb2306c; commit 4e52a318 |  |
+| `meas-span-run` | Span run: span instrument, anchors | done | unrated |  | commit 0d30724a |  |
+| `meas-sigma-c8` | Measured σ at c8 | done | unrated |  | commit d20b0863; commit b5d8a14c |  |
+| `meas-eppen-c8` | Eppen's condition at c8 | done | unrated |  | commit 33528562 |  |
 | `meas-attribution-audit` | Attribution audit D0 | done | unrated | 0.0077 (c1) | status §2 row "Attribution audit (D0)" |  |
 | `meas-wire-v8` | Stage-2 instruments and owed findings | done | successful |  | status §2 row "Crown no-regression spot (wire v8 merges)" |  |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | done | n/a |  | commit 3eb28db6 |  |
@@ -145,6 +180,7 @@ flowchart TB
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | done | successful |  | branch harness-main |  |
 | `meas-defect-rtp-floor` | Guard clause rtp_floor_p0 measures drain | in-progress | unrated | 6/12 BASE and 5/12 CAND rows | status §3.10 item 7 | rec-snapver-filter |
 | `meas-guard-clause-dry` | Guard clause dry run | done | successful |  | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d | meas-defect-rtp-floor, meas-guard-41c |
+| `meas-s58-session` | §58: F1 suites, binary identity | done | successful | tree X = control 8f313616… | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed | store-defect-delta-nan, model-shared-core-0 |
 | `meas-guard-v2` | Merge guard v2 accepted (§41d) | done | n/a |  | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md | meas-guard-clause-dry, meas-defect-rtp-floor, meas-guard-41c |
 | `meas-defect-eta-witness` | ETA route and σ witness mismatch | in-progress | unrated |  | status §3.1 item 3 |  |
 | `meas-defect-c8-bimodal` | c8 control bimodal collapse | in-progress | unrated | 4/8 reps | status §3.1 item 4 |  |
@@ -157,7 +193,7 @@ flowchart TB
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
 | `meas-guard-resolution` | Guard CPU and lag resolution | next | unrated |  | plan W5.4 |  |
 | `meas-test-hygiene` | Test hygiene fixes | next | unrated |  | plan W5.5 |  |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, meas-s51-harness |
+| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, meas-s51-harness, store-defect-delta-nan |
 | `meas-adversarial-cells-run` | Adversarial cells measured | blocked | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build |
 | `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
 | `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
@@ -177,9 +213,19 @@ flowchart TB
 | `meas-gen-inert-era` | Generation-inert measurement era | The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Generation-inert era; ADR-0053 |
 | `meas-regime-map` | Hardware-honest regime map | Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read). | commit acefc473 |
 | `meas-adr52-discipline` | L1 measurement discipline (ADR-0052) | Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
+| `meas-adversarial-b1` | Adversarial Cells B1 (policer map) | Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design. | commit 754139c3 |
 | `meas-formula-first` | Formula-first review (ADR-0070) | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
-| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". Folds the 2026-08-12 paper refresh. Folded the Coupling model commits (2026-08 audit; mapped outcome there: dead-end). Folded the SF accounting axis commits (2026-08 audit; mapped outcome there: mixed). | branch PIPELINE VERIFICATION MATRIX |
-| `meas-goal-0819` | Era, latency-truth and c9 batteries | The 2026-08-19 goal (owner: "fix the ping probe in there. we cannot mislead ourselves"): latency truth, era ledger, c9 quad cell, gap battery, cpuprof, span run, σ at c8, Eppen at c8. Folded the Era battery commits (2026-08 audit; mapped outcome there: unrated). Folded the Gap phases 1 and 2 commits (2026-08 audit; mapped outcome there: unrated). | branch THE ERA LEDGER, SCORED |
+| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. | branch PIPELINE VERIFICATION MATRIX |
+| `meas-coupling-model` | Coupling model (frontier span) | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: dead-end). cb422e2d: 'frontier span REAL but NEUTRALIZED at the gate by ADR-0060'. | commit 7ad65ef1; commit cb422e2d |
+| `meas-sf-accounting` | SF accounting axis | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: mixed): the cell reproduces, the level at c7 does not. | commit 4f67ba7d; commit 4131d254 |
+| `meas-goal-0819` | Era battery: cumulative shipped effect | Era ledger item 1 (2026-08-19; owner: 'fix the ping probe in there. we cannot mislead ourselves'): the arc's cumulative shipped effect on two binaries (pre-registration 1d7094ef). The day's other items are their own nodes since 2026-11-16: meas-latency-truth, meas-c9-battery, meas-gap-phases, meas-cpuprof, meas-span-run, meas-sigma-c8, meas-eppen-c8. | commit f605f925; branch THE ERA LEDGER, SCORED |
+| `meas-latency-truth` | Latency Truth battery | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 1's delivered-latency reading withdrawn. | commit e57f3655; commit cb288631 |
+| `meas-c9-battery` | c9 quad-cell validation battery | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). 07028110: every abort now says why. | commit 9a060daa; commit 7f2b0096 |
+| `meas-gap-phases` | Gap battery phases 1 and 2 | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 3: phase 1 'the drift is real, the ratio SURVIVED it' (decf67a8), phase 2 'no interaction to name' (4323b2c7). | commit 5bf1a346; commit b4be2489; commit decf67a8; commit 4323b2c7 |
+| `meas-cpuprof` | cpuprof: the sender's CPU ceiling | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 2, phase 1: 'the biggest thing in the sender is not on the wire path' (4eb2306c). | commit 4eb2306c; commit 4e52a318 |
+| `meas-span-run` | Span run: span instrument, anchors | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). The [CCAP] span field the c9 battery missed, closed locally (6d4c3548). | commit 0d30724a |
+| `meas-sigma-c8` | Measured σ at c8 | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5's measurement clause: 'the delta agreement is DEAD by 75x' (b5d8a14c). | commit d20b0863; commit b5d8a14c |
+| `meas-eppen-c8` | Eppen's condition at c8 | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL. | commit 33528562 |
 | `meas-attribution-audit` | Attribution audit D0 | §2 row is undated; dates from the 2026-09-07 merges. | status §2 row "Attribution audit (D0)" |
 | `meas-wire-v8` | Stage-2 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. | status §2 row "Crown no-regression spot (wire v8 merges)" |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: "continue your measurements but they cannot take over 5 hours". | commit 3eb28db6 |
@@ -189,6 +235,7 @@ flowchart TB
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | Plan W5.0; LD_REHEARSE and verified LD_PRIOR_TESTS. | branch harness-main |
 | `meas-defect-rtp-floor` | Guard clause rtp_floor_p0 measures drain | Open until guard v2 is implemented (meas-guard-v2-impl). | status §3.10 item 7 |
 | `meas-guard-clause-dry` | Guard clause dry run | No raw record. Dry run done (status §3.10 item 7: "the source-phase floor is degenerate on guard rows; in-order delay resolves only on long rows"); feeds §41d. Branch unmerged (inventory merge). | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d |
+| `meas-s58-session` | §58: F1 suites, binary identity | Part A (suites on the F1 tree): PASS, F1 merged (store-defect-delta-nan). Part B (Linux release-binary identity, binid_run.sh): run 1 not read (control mismatch: the runner built from the workspace root; fixed, and a test pins it); run 2: control = known answer, base ≠ control diagnosed as the two-line cfg(test) mod declaration shifting line numbers (tree X builds the control's sha). Amendment 3: the re-laid endspeed candidate equals main's sha and merges (model-endspeed); tree Y confirms raptorpath-core does not touch the engine binary. phase6-forms and viz-endspeed are superseded by endspeed-relaid. §58 closed. | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed |
 | `meas-guard-v2` | Merge guard v2 accepted (§41d) | No raw record (status §41d is newer than the extract). The owner accepted the v2 spec on 2026-11-13 with two calls: the start-up RTT floor is reported only everywhere, and the +34 min guard cost is accepted (f73338f8). The spec: in-order delay mean scored on 600 MB c2/c8 rows; splice dry run flips no verdict; §48b addendum: bbr_rs raised c8 in-order delay by 46 %. Merged with the former meas-user-guard-v2 node. Implementation: meas-guard-v2-impl. | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md |
 | `meas-defect-eta-witness` | ETA route and σ witness mismatch | Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 3 |
 | `meas-defect-c8-bimodal` | c8 control bimodal collapse | Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 4 |

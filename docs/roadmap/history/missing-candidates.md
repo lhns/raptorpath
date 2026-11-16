@@ -8,28 +8,28 @@ Extraction only: facts about past work that no node cites. Grouping is the owner
 
 | list | total | uncited (strict) | uncited even in broad fields | note |
 |---|---|---|---|---|
-| 1 ADRs (ever existed, any ref) | 76 | 0 | 0 | 0 of the uncited are deleted |
-| 2 status sections | 56 | 0 | 0 | 0 uncited are gone from main; 1 count as cited only by a bare section sign |
+| 1 ADRs (ever existed, any ref) | 77 | 0 | 0 | 0 of the uncited are deleted |
+| 2 status sections | 62 | 0 | 0 | 0 uncited are gone from main; 0 count as cited only by a bare section sign |
 | 3 archive tags | 20 | 0 | 0 |  |
-| 4 unmerged remote branches (github) | 37 | 0 | 0 |  |
-| 5 commit-scope clusters with no node (heuristic) | 3 | 3 | - | 12 commit-memberships; months 2026-04 |
-| 6 paper section 10 rows | 70 | 15 | 0 | 0 more are cited only via their commit hash |
+| 4 unmerged remote branches (github) | 46 | 0 | 0 |  |
+| 5 commit-scope clusters with no node (heuristic) | 0 | 0 | - | 0 commit-memberships; months  |
+| 6 paper section 10 rows | 70 | 0 | 0 | 0 more are cited only via their commit hash |
 
-Totals: 254 nodes (49 without a start date), 1873 commits on all refs. Main = `github/main` for branch merge status; HEAD = `9a14ebcd14` for "on main".
+Totals: 321 nodes (54 without a start date), 2047 commits on all refs. Main = `github/main` for branch merge status; HEAD = `06abf54ac9` for "on main".
 
 ## Before-numbers: nodes per start month vs commits per month
 
 | month | nodes (by start) | commits (all refs) | commits per node |
 |---|---|---|---|
 | 2026-03 | 22 | 59 | 2.7 |
-| 2026-04 | 2 | 49 | 24.5 |
-| 2026-07 | 49 | 335 | 6.8 |
-| 2026-08 | 38 | 454 | 11.9 |
-| 2026-09 | 21 | 239 | 11.4 |
-| 2026-10 | 20 | 271 | 13.6 |
-| 2026-11 | 53 | 466 | 8.8 |
+| 2026-04 | 4 | 49 | 12.2 |
+| 2026-07 | 57 | 335 | 5.9 |
+| 2026-08 | 51 | 454 | 8.9 |
+| 2026-09 | 22 | 239 | 10.9 |
+| 2026-10 | 28 | 271 | 9.7 |
+| 2026-11 | 83 | 640 | 7.7 |
 
-Months with commits per node over 15 (or no nodes at all), used for list 5: 2026-04.
+Months with commits per node over 15 (or no nodes at all), used for list 5: none.
 
 ## 1. ADRs
 
@@ -40,7 +40,7 @@ Every `NNNN-*.md` that ever existed under an `adr/` directory in any ref. Title 
 
 Reconciliation with the owner's list of 35: ADRs 0029 and 0037 are counted as cited here because node `rec-early-arq` names them inside the list `ADR-0003/5/7/29/37/42-47` (a node note; lists with `/` or `,` are expanded, ranges like `42-47` are not). ADR 0046 shows `broad-only`: it is named only in a `folded` entry of `meas-c8-aggregation-arc`. The strict-uncited count therefore differs from 35 by those three.
 
-Cited ADRs omitted from the table above: 76 (full list in the YAML).
+Cited ADRs omitted from the table above: 77 (full list in the YAML).
 
 ## 2. Status sections
 
@@ -49,7 +49,7 @@ Every `## <n>.` heading ever added to a `status.md` (any path, any ref), first-s
 | section | heading | first seen | variants | on main | cited | possible match |
 |---|---|---|---|---|---|---|
 
-All 56 of 56 sections are cited by some node; the table is empty for that reason. Sections cited only by a bare section sign (weak) are marked in the YAML (`cited_how`).
+All 62 of 62 sections are cited by some node; the table is empty for that reason. Sections cited only by a bare section sign (weak) are marked in the YAML (`cited_how`).
 
 ## 3. Archive tags
 
@@ -107,16 +107,25 @@ All 56 of 56 sections are cited by some node; the table is empty for that reason
 | bbrrs-r3 | 2026-11-13 | 13 | cc_sim quinn-dump: write under ../docs (manifest dir is raptorpath/) | yes (branch name) |  |
 | bbrrs-r4 | 2026-11-13 | 18 | bbr_rs: send-record map -> fixed-bound ring (no per-packet allocation) | yes (branch name) |  |
 | cand53 | 2026-11-13 | 19 | recovery_bench: FIXTURE 2 is a function of the engine gap horizon (20 keeps its constants; 64 is a bench output captured at cand53), any other horizon | yes (branch name) |  |
-| cand54 | 2026-11-13 | 11 | merge harness54 (54b timeout 300) into cand54 | yes (branch name) |  |
+| cand54 | 2026-11-13 | 4 | merge harness54 (54b timeout 300) into cand54 | yes (branch name) |  |
 | dup-diag | 2026-11-13 | 8 | dup-diag: sim gap horizon explicit (tests mean the same on cand52's 64-cap tree); in-order arm-on == arm-off assertion; doc cites refreshed, ingestion | yes (branch name) |  |
 | dup-diag-instr | 2026-11-13 | 1 | dup-diag instrument: [SNAPV] gap-snapshot order per return leg (RWM_DIAG) | yes (branch name) |  |
-| levb54 | 2026-11-13 | 15 | merge harness54 (54b timeout 300) into levb54 | yes (commit sha) |  |
+| levb54 | 2026-11-13 | 8 | merge harness54 (54b timeout 300) into levb54 | yes (branch name) |  |
 | nsbench48-2 | 2026-11-13 | 16 | nsbench48: NSBENCH48_INFLIGHT overrides packets in flight per path (default 1000) | yes (branch name) |  |
 | pacing-seam-2 | 2026-11-13 | 18 | ADR-0075: vendored quinn-proto pacing hook | yes (branch name) |  |
 | s51-design | 2026-11-13 | 2 | s51-design: two-sided per-preset statistic with computed d80; consumed-r readout; H-R symbol-unit constants | yes (branch name) |  |
-| snapver-law | 2026-11-13 | 7 | paper/derivation: cite §53's pinned trees (base53 5b605bb0, cand53 b21421e6), liveness names the real drop cases (spent budget, full gap channel), sea | yes (branch name) |  |
-| wasm-modeswitch-audit | 2026-11-13 | 7 | docs(derivations): mode-switch audit, sim-input gauges and option consistency | yes (branch name) |  |
 | wire-clock-derive | 2026-11-13 | 2 | wire-clock: review fixes - SACK-range hand-off (no C03 dependency), echo/report path cited, cold-leg locality scoped, all-row c1d ranges, paper text o | yes (branch name) |  |
+| harness57b | 2026-11-14 | 1 | harness57b: unify T's offset estimator (status 57 Amendment 1): DELTA0_C1S = C1S_REF[0][0] = 2.1 ms, c1s reads PASS against itself | yes (branch name) |  |
+| phase6-forms | 2026-11-14 | 3 | merge: main into phase6-forms (Part B tree for §58) | yes (branch name) |  |
+| viz-endspeed | 2026-11-14 | 7 | merge: phase6-forms (with main) into viz-endspeed (Part B tree for §58) | yes (branch name) |  |
+| harness59 | 2026-11-15 | 2 | tools/l1 plan 59: m-bar lower bound + W1 bracket, smoke go/no-go on rr, RWM_UNIFIED left at its default | yes (branch name) |  |
+| pfec-oracle | 2026-11-15 | 2 | net: test-only P_fec executed oracle (pfec_oracle.rs), K0-K3 known-answer tests | yes (branch name) |  |
+| s60-tree | 2026-11-15 | 5 | merge: slaw-gauge d416d59b into main (the §60 measured tree) | yes (branch name) |  |
+| slaw-gauge | 2026-11-15 | 4 | slaw: [WSTORE] fec=eps/sigma2/r/astar/n (window means of the rate seat's inputs at each debt accrual), parser + sample | yes (branch name) |  |
+| warm-scan | 2026-11-15 | 1 | wasm tests: warm-start tail solve evidence (fail(k) monotonicity scan, warm_r_star candidate, bit-equality harness; all long tests #[ignore]) | yes (branch name) |  |
+| warm-scan-clean | 2026-11-15 | 1 | wasm tests: warm-start tail solve evidence (fail(k) monotonicity scan, warm_r_star candidate, bit-equality harness; long tests #[ignore]) | yes (branch name) |  |
+| harness60 | 2026-11-16 | 17 | tools/l1 s60_score: under LD_NOGO=c8 R-SIGN-c8 is UNSCOREABLE (reported, never gates 60b); test | yes (branch name) |  |
+| harness60-a2 | 2026-11-16 | 20 | tools/l1 s60_score: comment typo (plain_dyn_cap) | yes (branch name) |  |
 
 ## 5. Commit clusters with no node (HEURISTIC)
 
@@ -124,9 +133,6 @@ Heuristic, not a verdict. Commit subjects in the months above are keyed by conve
 
 | month | cluster key | commits | uncovered | uncovered span | examples | nodes with a matching word |
 |---|---|---|---|---|---|---|
-| 2026-04 | visualizer | 6 | 6 | 2026-04-07 to 2026-04-10 | aa56ef51 Visualizer: pre-generated calibrated channel, 2000 source symbols; 4cd3abc3 Visualizer: connect triangle mode to simulation via FecRateController; 468b7580 Visualizer: adaptive r (BOCD) + real RLC codec in wasm | model-vis-continuum |
-| 2026-04 | phase | 3 | 3 | 2026-04-03 to 2026-04-03 | 0c3bd4c5 Phase 2: SACK-extended WindowAck replaces NACK sending; ee867a1a Phase 1b: Wire P_lost into window sender for repair/retransmit mixing; 1a6a8154 Phase 1a: Add TaperFunction and p_lost to rate controller | meas-gap-phases, rec-reliable-window |
-| 2026-04 | resolve and | 3 | 3 | 2026-04-02 to 2026-04-02 | c25e36e6 Resolve #15 (SACK spec) and #19 (back-pressure mechanism); 82fa398f Resolve #25 (GE model exact) and #17 (Copa d_copa rename); bdf796ea Resolve #11 (T_cut algorithm) and #12 (Mode 3 convergence) |  |
 
 ## 6. Paper section 10 rows (docs/fec-arq-model.md)
 
@@ -134,20 +140,5 @@ Rows of the archived-arm / verdict table at HEAD. `cited` = a node names the mec
 
 | group | mechanism | status | commit | cited | hash only | possible match |
 |---|---|---|---|---|---|---|
-| Coding and decoding | Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) | removed | dacfd7c | broad-only |  |  |
-| Coding and decoding | FMTCP-class decode-on-total [Cui2015] | removed | f841757 | broad-only |  |  |
-| Proactive FEC timing | Funded proactive coding at r > 0 (the r > 0 battery) | refuted | 91895dd | broad-only |  |  |
-| Scheduling and placement | Derived diversity weight (RWM_PLACE_WDIV_DERIVED) | kept, off; candidate lever on SACK-gap retransmit leg choice (status c8 tail diagnosis) | 5e6e3f5 | broad-only |  |  |
-| Flow control | Store-cap unification over live paths (RWM_STORE_CAP_UNIFIED) | shipped unconditionally (plan 2b, gate removed; re-measure in Stage 3) | 865112e | broad-only |  |  |
-| Flow control | Composed estimator-cadence plus pool-anchor default | reverted | e84ef1c | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (P) probe gain: cap' = (1 + q + g)·D̂·τ | closed by derivation, never built (status §27–§29) | — | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (D) power seeker: n = argmax D(n)^α(δ)/T(n), dithered extremum seeker | closed (status §29) | tag `archive/store-power | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (D-W) noise-sized window: W(δ) = min W : σ²(W) ≤ (q/2)² | closed (status §30, §34) | — | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (b1) quinn's BBR window as the knee: cap = (1 + q)·K, K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W | closed (status §34, §37) | — | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds | closed as an input (status §34) | — | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing) | closed at c1 (status §34) | — | broad-only |  |  |
-| Store-law candidates for the knee (Section 6.1 keeps the shipped law) | (b4) receiver capacity as a ceiling: Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n)) | closed (status §23, §34) | — | broad-only |  |  |
-| Recovery clocks | Dispersion estimators (fixed-sample-lag, fixed-time-lag) | open | 89d7946 | broad-only |  |  |
-| Recovery clocks | Receiver request law (RWM_RECV_REQUEST_LAW) | off | 0159290 | broad-only |  |  |
 
-Cited rows omitted: 55 (full list in the YAML).
+Cited rows omitted: 70 (full list in the YAML).

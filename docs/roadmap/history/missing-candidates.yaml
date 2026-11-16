@@ -1,38 +1,37 @@
 generated_from:
   nodes: docs/roadmap/nodes.yaml
   main_ref: github/main
-  head: 9a14ebcd1416c50be0143b8f2f5b16b13f0a9545
+  head: 06abf54ac9e0b2efa77240585e2ed0d6fe32eb20
 summary:
-  nodes_total: 254
-  nodes_without_start: 49
-  commits_all_refs: 1873
+  nodes_total: 321
+  nodes_without_start: 54
+  commits_all_refs: 2047
   adrs:
-    total: 76
+    total: 77
     uncited_strict: 0
     uncited_even_broad: 0
     uncited_and_deleted: 0
   status_sections:
-    total: 56
+    total: 62
     uncited_strict: 0
     uncited_even_broad: 0
     uncited_and_gone_from_main: 0
-    cited_only_by_bare_section_sign: 1
+    cited_only_by_bare_section_sign: 0
   archive_tags:
     total: 20
     uncited_strict: 0
     uncited_even_broad: 0
   unmerged_branches:
-    total: 37
+    total: 46
     uncited_strict: 0
     uncited_even_broad: 0
   uncovered_commit_clusters:
-    total: 3
-    months_examined:
-    - 2026-04
-    uncovered_commits_in_clusters: 12
+    total: 0
+    months_examined: []
+    uncovered_commits_in_clusters: 0
   paper_s10_rows:
     total: 70
-    uncited_strict: 15
+    uncited_strict: 0
     uncited_even_broad: 0
     cited_only_by_commit_hash: 0
 months:
@@ -41,29 +40,29 @@ months:
   commits: 59
   commits_per_node: 2.7
 - month: 2026-04
-  nodes: 2
+  nodes: 4
   commits: 49
-  commits_per_node: 24.5
+  commits_per_node: 12.2
 - month: 2026-07
-  nodes: 49
+  nodes: 57
   commits: 335
-  commits_per_node: 6.8
+  commits_per_node: 5.9
 - month: 2026-08
-  nodes: 38
+  nodes: 51
   commits: 454
-  commits_per_node: 11.9
+  commits_per_node: 8.9
 - month: 2026-09
-  nodes: 21
+  nodes: 22
   commits: 239
-  commits_per_node: 11.4
+  commits_per_node: 10.9
 - month: 2026-10
-  nodes: 20
+  nodes: 28
   commits: 271
-  commits_per_node: 13.6
+  commits_per_node: 9.7
 - month: 2026-11
-  nodes: 53
-  commits: 466
-  commits_per_node: 8.8
+  nodes: 83
+  commits: 640
+  commits_per_node: 7.7
 adrs:
 - num: 1
   title: Block Assembly Needs Flush Timeout
@@ -1023,12 +1022,24 @@ adrs:
   added: '2026-11-12'
   deleted: null
   on_main: true
-  status: 'Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Phase 0: done. Phase 2: lines committed on `restru'
+  status: 'Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Done on main: phase 0, phase 1 (`56f78584`), phase'
   summary: The workspace grew around one crate. docs/ and tools/ sit inside the engine crate (raptorpath/docs, raptorpath/tools) although the paper, the status ledger, the ADRs and the L1 harness cover
     the whole workspace.
   paths:
   - docs/adr/0076-workspace-restructure.md
   - raptorpath/docs/adr/0076-workspace-restructure.md
+  cited: true
+  cited_other_fields: false
+  possible_match: ''
+- num: 77
+  title: The model shares the engine's laws and decisions through `raptorpath-math` and `raptorpath-core`
+  added: '2026-11-14'
+  deleted: null
+  on_main: true
+  status: Accepted (user, 2026-11-14). Amends CLAUDE.md's scope rule, and with it ADR-0076's drafted phase-6 bullet.
+  summary: The L0 model (raptorpath-wasm + the visualizer) shares only closed-form functions with the engine, through raptorpath-math.
+  paths:
+  - docs/adr/0077-shared-core-crate.md
   cited: true
   cited_other_fields: false
   possible_match: ''
@@ -1580,13 +1591,73 @@ status_sections:
   heading_variants: 1
   on_main: true
   cited: true
-  cited_how: bare section sign
+  cited_how: status-prefixed
   cited_other_fields: false
   possible_match: ''
 - section: '55'
   heading: The law ledger — every shipped law and estimator audited — record, no VM
   first_seen: '2026-11-13'
   first_sha: af79fee5ae
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '56'
+  heading: 'The store-pool sweep (reported only, no build): current-era static maps at c8, c2 and c1s — pre-registration (before any VM contact)'
+  first_seen: '2026-11-14'
+  first_sha: 906eed2c12
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '57'
+  heading: 'Amendment 1 to §57a and §57b: the harness as built (before any VM contact)'
+  first_seen: '2026-11-14'
+  first_sha: ef3d5e0e49
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: 57a
+  heading: The emission-burst block at c1s (reported only, no build) — pre-registration (before any VM contact)
+  first_seen: '2026-11-14'
+  first_sha: 29fb7c8f02
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: 57b
+  heading: The c1d pool sweep and the transfer test T (reported only, no build) — pre-registration (before any VM contact)
+  first_seen: '2026-11-14'
+  first_sha: 29fb7c8f02
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '58'
+  heading: Engine suites for F1 and Linux release-binary identity for the model-crate moves (no battery) — pre-registration (before any VM contact)
+  first_seen: '2026-11-14'
+  first_sha: 17eb3c874d
+  heading_variants: 1
+  on_main: true
+  cited: true
+  cited_how: status-prefixed
+  cited_other_fields: false
+  possible_match: ''
+- section: '60'
+  heading: The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
+  first_seen: '2026-11-15'
+  first_sha: fd24c86b27
   heading_variants: 1
   on_main: true
   cited: true
@@ -2021,7 +2092,7 @@ unmerged_branches:
 - branch: cand54
   last_date: '2026-11-13'
   last_subject: merge harness54 (54b timeout 300) into cand54
-  unique_commits: 11
+  unique_commits: 4
   first_date: '2026-11-13'
   cited: true
   cited_how: branch name
@@ -2048,10 +2119,10 @@ unmerged_branches:
 - branch: levb54
   last_date: '2026-11-13'
   last_subject: merge harness54 (54b timeout 300) into levb54
-  unique_commits: 15
+  unique_commits: 8
   first_date: '2026-11-12'
   cited: true
-  cited_how: commit sha
+  cited_how: branch name
   cited_other_fields: false
   possible_match: ''
 - branch: nsbench48-2
@@ -2081,24 +2152,6 @@ unmerged_branches:
   cited_how: branch name
   cited_other_fields: false
   possible_match: ''
-- branch: snapver-law
-  last_date: '2026-11-13'
-  last_subject: 'paper/derivation: cite §53''s pinned trees (base53 5b605bb0, cand53 b21421e6), liveness names the real drop cases (spent budget, full gap channel), sea'
-  unique_commits: 7
-  first_date: '2026-11-13'
-  cited: true
-  cited_how: branch name
-  cited_other_fields: false
-  possible_match: ''
-- branch: wasm-modeswitch-audit
-  last_date: '2026-11-13'
-  last_subject: 'docs(derivations): mode-switch audit, sim-input gauges and option consistency'
-  unique_commits: 7
-  first_date: '2026-11-13'
-  cited: true
-  cited_how: branch name
-  cited_other_fields: false
-  possible_match: ''
 - branch: wire-clock-derive
   last_date: '2026-11-13'
   last_subject: 'wire-clock: review fixes - SACK-range hand-off (no C03 dependency), echo/report path cited, cold-leg locality scoped, all-row c1d ranges, paper text o'
@@ -2108,40 +2161,106 @@ unmerged_branches:
   cited_how: branch name
   cited_other_fields: false
   possible_match: ''
-commit_clusters:
-- month: 2026-04
-  cluster: visualizer
-  commits: 6
-  uncovered: 6
-  first: '2026-04-07'
-  last: '2026-04-10'
-  examples:
-  - 'aa56ef51 Visualizer: pre-generated calibrated channel, 2000 source symbols'
-  - '4cd3abc3 Visualizer: connect triangle mode to simulation via FecRateController'
-  - '468b7580 Visualizer: adaptive r (BOCD) + real RLC codec in wasm'
-  possible_match: model-vis-continuum
-- month: 2026-04
-  cluster: phase
-  commits: 3
-  uncovered: 3
-  first: '2026-04-03'
-  last: '2026-04-03'
-  examples:
-  - '0c3bd4c5 Phase 2: SACK-extended WindowAck replaces NACK sending'
-  - 'ee867a1a Phase 1b: Wire P_lost into window sender for repair/retransmit mixing'
-  - '1a6a8154 Phase 1a: Add TaperFunction and p_lost to rate controller'
-  possible_match: meas-gap-phases, rec-reliable-window
-- month: 2026-04
-  cluster: resolve and
-  commits: 3
-  uncovered: 3
-  first: '2026-04-02'
-  last: '2026-04-02'
-  examples:
-  - 'c25e36e6 Resolve #15 (SACK spec) and #19 (back-pressure mechanism)'
-  - '82fa398f Resolve #25 (GE model exact) and #17 (Copa d_copa rename)'
-  - 'bdf796ea Resolve #11 (T_cut algorithm) and #12 (Mode 3 convergence)'
+- branch: harness57b
+  last_date: '2026-11-14'
+  last_subject: 'harness57b: unify T''s offset estimator (status 57 Amendment 1): DELTA0_C1S = C1S_REF[0][0] = 2.1 ms, c1s reads PASS against itself'
+  unique_commits: 1
+  first_date: '2026-11-14'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
   possible_match: ''
+- branch: phase6-forms
+  last_date: '2026-11-14'
+  last_subject: 'merge: main into phase6-forms (Part B tree for §58)'
+  unique_commits: 3
+  first_date: '2026-11-14'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: viz-endspeed
+  last_date: '2026-11-14'
+  last_subject: 'merge: phase6-forms (with main) into viz-endspeed (Part B tree for §58)'
+  unique_commits: 7
+  first_date: '2026-11-14'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: harness59
+  last_date: '2026-11-15'
+  last_subject: 'tools/l1 plan 59: m-bar lower bound + W1 bracket, smoke go/no-go on rr, RWM_UNIFIED left at its default'
+  unique_commits: 2
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: pfec-oracle
+  last_date: '2026-11-15'
+  last_subject: 'net: test-only P_fec executed oracle (pfec_oracle.rs), K0-K3 known-answer tests'
+  unique_commits: 2
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: s60-tree
+  last_date: '2026-11-15'
+  last_subject: 'merge: slaw-gauge d416d59b into main (the §60 measured tree)'
+  unique_commits: 5
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: slaw-gauge
+  last_date: '2026-11-15'
+  last_subject: 'slaw: [WSTORE] fec=eps/sigma2/r/astar/n (window means of the rate seat''s inputs at each debt accrual), parser + sample'
+  unique_commits: 4
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: warm-scan
+  last_date: '2026-11-15'
+  last_subject: 'wasm tests: warm-start tail solve evidence (fail(k) monotonicity scan, warm_r_star candidate, bit-equality harness; all long tests #[ignore])'
+  unique_commits: 1
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: warm-scan-clean
+  last_date: '2026-11-15'
+  last_subject: 'wasm tests: warm-start tail solve evidence (fail(k) monotonicity scan, warm_r_star candidate, bit-equality harness; long tests #[ignore])'
+  unique_commits: 1
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: harness60
+  last_date: '2026-11-16'
+  last_subject: 'tools/l1 s60_score: under LD_NOGO=c8 R-SIGN-c8 is UNSCOREABLE (reported, never gates 60b); test'
+  unique_commits: 17
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+- branch: harness60-a2
+  last_date: '2026-11-16'
+  last_subject: 'tools/l1 s60_score: comment typo (plain_dyn_cap)'
+  unique_commits: 20
+  first_date: '2026-11-15'
+  cited: true
+  cited_how: branch name
+  cited_other_fields: false
+  possible_match: ''
+commit_clusters: []
 paper_s10_rows:
 - group: Coding and decoding
   mechanism: METTLE FEC backend
@@ -2188,9 +2307,9 @@ paper_s10_rows:
   why: 'displaced: the Stage-3 re-test found the window not worse at every cell and hint and ahead beyond MDE at 7 of 10 (every Auto cell); a construction-time mode switch'
   commit: dacfd7c
   status: removed
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Coding and decoding
@@ -2218,9 +2337,9 @@ paper_s10_rows:
   why: 0.48× at the heterogeneous dual; on the clean substrate c7 ×0.11, c8 ×0.20 of the default stack, a recovery flood (coded share > 1) at about 8× plain CPU
   commit: f841757
   status: removed
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Coding and decoding
@@ -2239,7 +2358,7 @@ paper_s10_rows:
   commit: 3a0ca0c
   status: removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 202
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2249,7 +2368,7 @@ paper_s10_rows:
   commit: bede4a3
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2259,7 +2378,7 @@ paper_s10_rows:
   commit: 806c0f4
   status: removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 202
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2269,9 +2388,9 @@ paper_s10_rows:
     r = 0
   commit: 91895dd
   status: refuted
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Scheduling and placement
@@ -2329,9 +2448,9 @@ paper_s10_rows:
   why: never in a battery (all 166 Track-A rows ran it =0); no verdict
   commit: 5e6e3f5
   status: kept, off; candidate lever on SACK-gap retransmit leg choice (status c8 tail diagnosis)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Scheduling and placement
@@ -2450,9 +2569,9 @@ paper_s10_rows:
   why: removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode
   commit: 865112e
   status: shipped unconditionally (plan 2b, gate removed; re-measure in Stage 3)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Flow control
@@ -2501,7 +2620,7 @@ paper_s10_rows:
   commit: 8afd4dd
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2530,9 +2649,9 @@ paper_s10_rows:
   why: flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); the pool anchor was the binding cap at the duals
   commit: e84ef1c
   status: reverted
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Flow control
@@ -2571,9 +2690,9 @@ paper_s10_rows:
     is no
   commit: —
   status: closed by derivation, never built (status §27–§29)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
@@ -2582,9 +2701,9 @@ paper_s10_rows:
     c1s (w'
   commit: tag `archive/store-power
   status: closed (status §29)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
@@ -2593,9 +2712,9 @@ paper_s10_rows:
     see
   commit: —
   status: closed (status §30, §34)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
@@ -2604,9 +2723,9 @@ paper_s10_rows:
     204
   commit: —
   status: closed (status §34, §37)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
@@ -2614,9 +2733,9 @@ paper_s10_rows:
   why: 'the fixed point is the authority crossover (≈ 2048 at c1s, beyond 1 024 at c2 and c8), above every knee, because it is (b1)''s K read through a threshold; it survives as the authority gauge B (Section '
   commit: —
   status: closed as an input (status §34)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
@@ -2625,9 +2744,9 @@ paper_s10_rows:
     the'
   commit: —
   status: closed at c1 (status §34)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Store-law candidates for the knee (Section 6.1 keeps the shipped law)
@@ -2636,9 +2755,9 @@ paper_s10_rows:
     not
   commit: —
   status: closed (status §23, §34)
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Recovery clocks
@@ -2697,7 +2816,7 @@ paper_s10_rows:
   commit: c249c20
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2706,9 +2825,9 @@ paper_s10_rows:
   why: the 287× spread is the estimator; the time-lag form confirms rate invariance and still misses its bar
   commit: 89d7946
   status: open
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Recovery clocks
@@ -2747,9 +2866,9 @@ paper_s10_rows:
     12/12'
   commit: 0159290
   status: 'off'
-  cited: false
-  cited_how: ''
-  cited_other_fields: true
+  cited: true
+  cited_how: name flag
+  cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
 - group: Honest store family
@@ -2758,7 +2877,7 @@ paper_s10_rows:
   commit: archive/RWM_HONEST_CAP
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2778,7 +2897,7 @@ paper_s10_rows:
   commit: archive/RWM_PLAIN_RS
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2788,7 +2907,7 @@ paper_s10_rows:
   commit: archive/RWM_RS_ATTR
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2798,7 +2917,7 @@ paper_s10_rows:
   commit: archive/RWM_HONEST_K
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''
@@ -2808,7 +2927,7 @@ paper_s10_rows:
   commit: archive/RWM_REASM_BDP
   status: removed
   cited: true
-  cited_how: flag
+  cited_how: name flag
   cited_other_fields: false
   cited_commit_only: false
   possible_match: ''

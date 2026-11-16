@@ -13,13 +13,13 @@ nodes:
   - ADR-0002
   - ADR-0004
   - ADR-0014
-  - status §4
   - status §3.7 row 236
   - status §3.7 row 238
   - ADR-0001
   - ADR-0006
   - ADR-0008
   - ADR-0016
+  - paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ)
   verdict_quote: 'displaced: the Stage-3 re-test found the window not worse at every cell and hint and ahead beyond MDE at 7 of 10 (every Auto cell); a construction-time mode switch'
   headline: ''
   depends_on: []
@@ -33,11 +33,30 @@ nodes:
   - commit dc672631
   - commit e2de447d
   - commit c1a39caf
-  - paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ)
-  - branch cleanup/a4-block-retest
   overview: true
   plain: The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic.
-  notes: 'The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); §4 found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13.'
+  notes: 'The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13.'
+- id: cod-s4-block-retest
+  title: Block default re-test (§4)
+  track: cod
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §4
+  - commit 566e0f89
+  - branch cleanup/a4-block-retest
+  verdict_quote: '`BLOCK-BETTER-AT-c1,c2,c3,c7,c8`; crown spot `REPAIRS-INERT-ON-CROWN`. Block stays the default; nothing is flipped.'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-09-27'
+  end: '2026-09-27'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from the block pipeline node (own status section and verdict). Discharges ADR-0069's re-test clause; the Stage-3 baseline (§5) then read WINDOW-NOT-WORSE and the window became the only pipeline (cod-one-pipeline).
 - id: cod-mettle
   title: METTLE swappable FEC backend
   track: cod
@@ -249,6 +268,7 @@ nodes:
   outcome: dead-end
   evidence:
   - commit f8417579
+  - paper §10 row FMTCP-class decode-on-total [Cui2015]
   verdict_quote: 'Consolidation 2: DELETE the FMTCP chain (register: RE-TESTED -> CONFIRMED-REFUTED on the clean substrate)'
   headline: 0.48×
   depends_on: []
@@ -258,7 +278,6 @@ nodes:
   start: '2026-07-08'
   end: '2026-07-28'
   folded:
-  - paper §10 row FMTCP-class decode-on-total [Cui2015]
   - branch FMTCP-class aggregation
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
@@ -409,13 +428,17 @@ nodes:
   notes: 'March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
   plain: The first ways to acknowledge packets and ask for the missing ones to be sent again.
 - id: rec-plost-sack
-  title: P_lost(t) mix and SACK WindowAck
+  title: 'Rearchitecture phases: P_lost and SACK'
   track: rec
   kind: mechanism
   state: done
   outcome: unrated
   evidence:
   - commit 5b9f6def
+  - commit 1a6a8154
+  - commit ee867a1a
+  - commit 0c3bd4c5
+  - commit 27a7fcf0
   verdict_quote: 'Phase 2: SACK-extended WindowAck replaces NACK sending'
   headline: ''
   depends_on: []
@@ -426,14 +449,10 @@ nodes:
   end: '2026-04-07'
   folded:
   - commit 68ea7e6e
-  - commit 1a6a8154
-  - commit ee867a1a
-  - commit 0c3bd4c5
-  - commit 27a7fcf0
   - commit 06ccbf12
   overview: false
-  notes: Direct landings 2026-03-21 to 2026-04-07; no recorded verdict. Folded the remaining April commits (2026-04-01..12), no separate development.
   plain: Mixing repairs and resends by measured loss, plus selective acknowledgements.
+  notes: 'The paper''s design built in phases (2026-04-03..07): Phase 1a TaperFunction and p_lost in the rate controller (1a6a8154), 1b P_lost wired into the window sender (ee867a1a), Phase 2 SACK-extended WindowAck replaces NACK sending (0c3bd4c5), phases 3-6 (27a7fcf0). The P_lost(t) model replaced the hard T_retx threshold (5b9f6def, 2026-03-21). No recorded verdict.'
 - id: rec-bulk-arq
   title: Bulk ARQ and batch acknowledgements
   track: rec
@@ -507,32 +526,72 @@ nodes:
   overview: false
   notes: 2026-07-07/08 arc; folds the FEC recovery bug fix, transport sender fixes, the store-bloat fix and the O(n^2) per-symbol fix found along the way.
 - id: rec-proactive-repair
-  title: Proactive repair timing (3 arms)
+  title: Repair-wait before ARQ (REPAIR_WAIT)
   track: rec
   kind: mechanism
   state: abandoned
   outcome: dead-end
   evidence:
   - tag archive/RWM_REPAIR_WAIT
-  - tag archive/RWM_PROACTIVE_PACER
+  - paper §10 row Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`)
+  - commit 3a0ca0c
   verdict_quote: 'Merge NACK-timing repair-wait: timing REFUTED — but exposes the real bug (proactive FEC recovery is ~dead)'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-08'
+  end: '2026-07-08'
+  folded:
+  - branch NACK-timing repair-wait
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Proactive repair timing (3 arms)''; its siblings are rec-present-at-stall and rec-inline-repair. Refuted 2026-07-08 (the covering repair was absent, not late: 7 useful of 4 600 fed); archived 2026-11-10 (simplification batch 1, ADR-0073; tag date not used for end).'
+- id: rec-present-at-stall
+  title: Present-at-stall proactive pacer
+  track: rec
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - tag archive/RWM_PROACTIVE_PACER
+  - paper §10 row Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`)
+  - commit 806c0f4
+  verdict_quote: 'Merge present-at-stall: proactive FEC vs ARQ is FUNDAMENTALLY single-path-bounded (presence⊥throughput)'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-08'
+  end: '2026-07-08'
+  folded:
+  - branch present-at-stall
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Proactive repair timing (3 arms)''. Paper row: presence rises, throughput does not; a saturated single path has no spare bandwidth for a repair that buys back a round trip. Archived 2026-11-10 (ADR-0073).'
+- id: rec-inline-repair
+  title: Frontier-anchored proactive repair
+  track: rec
+  kind: mechanism
+  state: abandoned
+  outcome: superseded
+  evidence:
+  - paper §10 row Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`)
+  - commit bede4a32
+  verdict_quote: repair anchored at the frontier loses to its own ARQ (4 useful of 718)
   headline: ''
   depends_on: []
   replaced_by:
   - cod-unified-span
   qualified_by: []
   lane: vm
-  start: '2026-07-08'
+  start: '2026-07-07'
   end: '2026-07-27'
   folded:
-  - branch NACK-timing repair-wait
-  - paper §10 row Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`)
-  - branch present-at-stall
-  - paper §10 row Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`)
-  - paper §10 row Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`)
-  - commit bede4a32
+  - commit 067f660a
+  - commit 1c2fcfb0
   overview: false
-  notes: 'Three proactive-repair timing arms refuted 2026-07-08 (repair-wait, present-at-stall pacer) and 2026-07-27 (inline/frontier repair); REPAIR_WAIT and PROACTIVE_PACER archived 2026-11-10 (Group A, ADR-0073). Arms (3): repair-wait RWM_REPAIR_WAIT; present-at-stall pacer RWM_PROACTIVE_PACER; inline/frontier repair RWM_INLINE_REPAIR, RWM_FRONTIER*. Replaced by the unified span machine: the inline-repair delete commit says "superseded on geometry", and the trailing-span geometry is that machine''s (owner-side decision 2026-11-13). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_REPAIR_WAIT archived 2026-11-10 (tag date not used for end); archive/RWM_PROACTIVE_PACER archived 2026-11-10 (tag date not used for end).'
+  notes: 'Split 2026-11-16 from the former family node ''Proactive repair timing (3 arms)''. Start from 067f660a (''Proactive frontier FEC decode: diagnosed, built, REFUTED at L1 (gated off)''), the earliest frontier-repair commit; deleted in bede4a32 (''superseded on geometry''), and the trailing-span geometry is the unified span machine''s (owner-side decision 2026-11-13).'
 - id: rec-per-path-clocks
   title: Per-path recovery clocks (RECOV_MP)
   track: rec
@@ -579,32 +638,245 @@ nodes:
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-clock-candidates
-  title: Derived recovery-timing candidates (4 arms)
+  title: Derived recovery sweep (DERIVED_SWEEP)
   track: rec
   kind: law
   state: abandoned
   outcome: dead-end
   evidence:
   - tag archive/RWM_DERIVED_SWEEP
+  - paper §10 row Derived recovery sweep (`RWM_DERIVED_SWEEP`)
+  - commit 43b09fea
   verdict_quote: the argument is vindicated, the lever inert where it should act and −23 %/−28 % goodput when armed
   headline: −23 %
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: vm
+  start: '2026-08-12'
+  end: '2026-08-12'
+  folded:
+  - branch the derived recovery clamp
+  - commit 58fbc575
+  overview: false
+  notes: Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'; siblings rec-patience-derived, rec-rack-clocks, rec-cantelli-clock. 'The ceiling is arbitrary AND derivable; the argument is CORRECT (Repair B refuted)' (43b09fea). Removed in simplification batch 4 (§50, owner ruling §45); re-ask once the store law sets H. Tag archived 2026-11-12 (tag date not used for end).
+- id: rec-patience-derived
+  title: 'Unlock The Default 2: patience'
+  track: rec
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Derived patience (`RWM_PATIENCE_DERIVED`)
+  - commit 65e92b3a
+  - commit 4307a6cc
+  verdict_quote: the literal it replaces wins 0 of 177 543 evaluations at the cell it was accused at; identical to shipped across 192 bench cells
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
   start: '2026-08-07'
+  end: '2026-08-08'
+  folded:
+  - commit 0f287553
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Derived recovery-timing candidates (4 arms)''. Unlock The Default part 2 (part 1, ack-merge, is perf-ack-merge): both premises refuted before the battery (4307a6cc); battery 65e92b3a: ''c7 fails both seeds with patience DEMONSTRABLY derived; NO FLIP; the goal closes as a STRUCTURAL BOUND''.'
+- id: rec-rack-clocks
+  title: RACK-shaped recovery clocks
+  track: rec
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row RACK-shaped clocks (`RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`)
+  - commit 18dbf103
+  verdict_quote: fails RACK's own 6.25 % spurious budget at every arm and cell (0.21–0.78); its SRTT ceiling bound 0 times in 108 847 evaluations
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
   end: '2026-08-19'
   folded:
-  - commit a29f0c44
-  - commit 65e92b3a
-  - paper §10 row Derived patience (`RWM_PATIENCE_DERIVED`)
-  - paper §10 row Derived recovery sweep (`RWM_DERIVED_SWEEP`)
-  - branch the derived recovery clamp
-  - paper §10 row RACK-shaped clocks (`RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`)
-  - paper §10 row Cantelli recovery clock (`RWM_QUANTILE_CLOCKS`, `RWM_ALPHA_OVERRIDE`)
-  - commit 4307a6cc
+  - commit 70777c78
+  - commit ac4d3853
   overview: false
-  notes: 'Derived recovery-timing candidates 2026-08-07 to 2026-08-19, each refuted; RWM_DERIVED_SWEEP archived 2026-11-12 (§50). Arms (4): derived patience RWM_PATIENCE_DERIVED; derived recovery sweep RWM_DERIVED_SWEEP; RACK-shaped clocks RWM_RACK_CLOCKS/RWM_RACK_REO_MULT; Cantelli clock RWM_QUANTILE_CLOCKS/RWM_ALPHA_OVERRIDE. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_DERIVED_SWEEP archived 2026-11-12 (tag date not used for end). Folded Unlock The Default part 2 (derived patience): premises refuted pre-battery 4307a6cc, RESULTS 65e92b3a NO FLIP; part 1 (ack-merge) is perf-ack-merge.'
+  notes: Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'. Scored in the Candidates Battery (18dbf103), which also delivered the δ-cap (store-delta-cap).
+- id: rec-cantelli-clock
+  title: Cantelli quantile recovery clock
+  track: rec
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Cantelli recovery clock (`RWM_QUANTILE_CLOCKS`, `RWM_ALPHA_OVERRIDE`)
+  - commit c249c20d
+  verdict_quote: needs 316σ and ~10⁵ samples at the contract's α; pricing α from the tail-loss target is a category error
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from the former family node 'Derived recovery-timing candidates (4 arms)'. Refuted with record by derivation in the derived setpoint laws' paper amendment 2 (c249c20d), before any battery.
+- id: rec-alpha-sweep
+  title: Alpha-sweep of the recovery clock
+  track: rec
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit e0334855
+  verdict_quote: 'alpha-sweep: THE SCORED RESULT - NO VERDICT, UNSEPARATED at 50 of 50 treatment pairs; item 2 CLOSES on its own precondition and item 3 CLOSES at F4 everywhere'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-20'
+  end: '2026-08-20'
+  folded:
+  - branch the alpha-sweep SCORED
+  - branch THE ALPHA-SWEEP launched
+  - commit a04300e3
+  - commit e0334855
+  - commit 3980434c
+  - commit c6f5eaa8
+  - commit 3bd5f0b7
+  overview: false
+  notes: 'Goal #100 item 2 (split 2026-11-16 from rec-goal100): pre-registration a04300e3; calibration 3980434c; c6f5eaa8 corrects the bracket verdict (commanded inside the bracket is UNRESOLVED).'
+- id: rec-qnative-clock
+  title: Quantile-native clock sweep (W_FORM)
+  track: rec
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Quantile-native clock (`RWM_W_FORM`)
+  - commit 6b3d3c38
+  verdict_quote: 'commanded false-alarm rate does not track α at 5 of 5 cells: the measurand is wrong'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - branch qnative sweep SCORED
+  - branch qnative sweep launched
+  - branch the quantile-native clock
+  - commit ab545cfe
+  - commit 0183cf96
+  overview: false
+  notes: 'Goal #101 arm (split 2026-11-16). The order statistic survives as qnative_window_n in net/recovery_clock.rs (paper row).'
+- id: rec-holddown-clock
+  title: Hold-down clock sweep (HOLDDOWN_Q)
+  track: rec
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - tag archive/RWM_HOLDDOWN_Q
+  - paper §10 row Hold-down clock (`RWM_HOLDDOWN_Q`)
+  - commit 5509e371
+  verdict_quote: 'suppressed 97–99.6 % of fires and moved the realised false-alarm rate at most 1.66×: fires are gap-driven'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - branch holddown sweep SCORED
+  - branch the hold-down clock DERIVED (16.77) + sweep launched
+  - commit 2b9918d2
+  overview: false
+  notes: 'Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); the [HOLD] gauge stays as an observation-only instrument; re-ask once the store law sets H.'
+- id: rec-refresh-floor
+  title: Refresh-floor lift (q, refresh) sweep
+  track: rec
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - tag archive/RWM_REFRESH_FLOOR_US
+  - paper §10 row Refresh-floor lift (`RWM_REFRESH_FLOOR_US`)
+  - commit a8bcce05
+  - paper §16.78
+  verdict_quote: entered the sub-floor region at 3/3 cells and found nothing; faster holding raises repair volume
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - branch the (q,refresh) surface SCORED
+  - branch the refresh-floor lift (16.78) + the (q,refresh) sweep launched
+  - commit d7daceb5
+  - commit 528351c3
+  overview: false
+  notes: 'Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); hole_nack_refresh is the shipped clamp directly.'
+- id: rec-dispersion-est
+  title: σ dispersion estimators (fixed lag)
+  track: rec
+  kind: research
+  state: parked
+  outcome: unrated
+  evidence:
+  - paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag)
+  - commit 89d79464
+  - commit 9ba3aef7
+  verdict_quote: the 287× spread is the estimator; the time-lag form confirms rate invariance and still misses its bar
+  headline: ''
+  depends_on:
+  - rec-goal100
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - branch tlag scored
+  - branch the fixed-time-lag estimator + the exact clause-B reference; battery running
+  - branch estimator battery SCORED
+  - branch estimator battery launched
+  - commit 2ba1f1d5
+  - commit d4d2007e
+  overview: false
+  plain: Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open.
+  notes: 'Goal #100 named the σ estimator as the missing instrument (6e1e356a); goal #101 item 2: the Sigma Estimator battery ''ALL FOUR FAIL CLAUSE S'' (9ba3aef7), the τ-lag form ''mechanism CONFIRMED, bar still missed'' (89d79464). Paper §10 status: open. Done when: the paper §10 row is closed, by an estimator that passes its bar or by a ruling.'
+- id: rec-successor-arrival
+  title: Successor-arrival distribution measured
+  track: rec
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 821de6ae
+  verdict_quote: 'Successor Arrival: THE SCORED RESULT - the pre-registered anchor DOES NOT EXIST; the original leads at every horizon'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - branch the successor-arrival distribution MEASURED
+  - commit 1064e8d1
+  - commit f497bdc4
+  - commit 5481a0b9
+  overview: false
+  notes: 'Goal #101 measurement (split 2026-11-16): ''the anchor is refuted; the boundary is a LEVEL, and the level is 98%'' (5481a0b9).'
 - id: rec-goal100
   title: 'Recovery primitives and σ (goal #100)'
   track: rec
@@ -615,7 +887,8 @@ nodes:
   - commit 6e1e356a
   verdict_quote: 'GOAL #100 CLOSED: NEEDS-MORE - the named instrument is the sigma estimator'
   headline: ''
-  depends_on: []
+  depends_on:
+  - rec-alpha-sweep
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -625,30 +898,33 @@ nodes:
   - branch item 2 local half
   - branch item 1 CLOSED UNREADABLE
   - branch item 4 DELIVERED (paper 16.74) + item 5 closed by its own condition
-  - branch the alpha-sweep SCORED
   - branch item 3's condition DERIVED
-  - branch THE ALPHA-SWEEP launched
   - branch primitives RE-MEASURED on the sweep's machine
   - branch the [RFA] instrument
   - branch the 31 Mbit/s cap DIAGNOSED
   - 'branch goal #100 item 1'
-  - commit a04300e3
-  - commit e0334855
   overview: false
-  notes: 'Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, alpha-sweep, the 287x estimator spread. Closed NEEDS-MORE. Folded the alpha-sweep commits (pre-registration a04300e3, SCORED e0334855: NO VERDICT, UNSEPARATED at 50 of 50 pairs).'
+  notes: 'Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep).'
 - id: rec-goal101
-  title: Recovery clock law family (4 arms)
+  title: 'Goal #101 verdict battery'
   track: rec
   kind: law
   state: abandoned
   outcome: dead-end
   evidence:
-  - tag archive/RWM_HOLDDOWN_Q
-  - tag archive/RWM_REFRESH_FLOOR_US
+  - commit 146d8b18
+  - commit 6cf2328e
+  - commit f2e71443
+  - paper §16.79
   verdict_quote: 'GOAL #101 CLOSED: the model family is refuted with record - the measurand is the defect'
   headline: ''
   depends_on:
   - rec-goal100
+  - rec-qnative-clock
+  - rec-holddown-clock
+  - rec-refresh-floor
+  - rec-dispersion-est
+  - rec-successor-arrival
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -658,44 +934,20 @@ nodes:
   - branch ITEM 4 RUN AGAINST THE DERIVED-ALPHA CLOCK
   - branch ITEM 4 RUN
   - branch 16.79 DECIDES the formula + item 4's battery prereg; battery running
-  - branch the (q,refresh) surface SCORED
-  - branch the refresh-floor lift (16.78) + the (q,refresh) sweep launched
-  - branch holddown sweep SCORED
-  - branch the hold-down clock DERIVED (16.77) + sweep launched
-  - branch the successor-arrival distribution MEASURED
   - branch THE FIRE-CAUSE TABLE
-  - branch qnative sweep SCORED
-  - branch qnative sweep launched
-  - branch the quantile-native clock
-  - branch tlag scored
-  - branch the fixed-time-lag estimator + the exact clause-B reference; battery running
-  - branch estimator battery SCORED
-  - branch estimator battery launched
   - commit 6cf2328e
   - commit 146d8b18
   - commit 76c0b077
   - commit abcdf448
-  - paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag)
-  - paper §10 row Quantile-native clock (`RWM_W_FORM`)
-  - paper §10 row Hold-down clock (`RWM_HOLDDOWN_Q`)
-  - paper §10 row Refresh-floor lift (`RWM_REFRESH_FLOOR_US`)
   - paper §11.1 open question 7
-  - commit ab545cfe
-  - commit 6b3d3c38
   - commit 5be078d0
-  - commit d7daceb5
-  - commit a8bcce05
-  - paper §16.78
-  - commit 1064e8d1
-  - commit f497bdc4
-  - commit 821de6ae
   - commit a26696fb
   - commit eb50cc59
   - commit f2e71443
   - paper §16.79
   overview: true
   plain: A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed.
-  notes: 'Folds the quantile-native clock, the hold-down clock and the refresh-floor lift (each removed; HOLDDOWN_Q and REFRESH_FLOOR_US archived 2026-11-12) and paper §11.1 open question 7. Terminal closure: the shipped clamp survives on merit. Arms (4): quantile-native clock RWM_W_FORM; hold-down clock RWM_HOLDDOWN_Q; refresh-floor lift RWM_REFRESH_FLOOR_US; the dispersion (σ) estimators, fixed-sample-lag and fixed-time-lag (paper row still "open"). Later verdict: goal #101 closed with "the clamp survives on merit", but status §3.10 item 4 (2026-11-13) finds that clamp always binds at c8, so the clamp''s survival was never tested in its operating regime. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_HOLDDOWN_Q archived 2026-11-12 (tag date not used for end); archive/RWM_REFRESH_FLOOR_US archived 2026-11-12 (tag date not used for end). Folded the Quantile-Native alpha-sweep (ab545cfe, SCORED 6b3d3c38: the arms separate, F2 fires at 5 of 5, the measurand is refuted). Folded the (q, refresh) sweep commits (2026-08 audit; mapped outcome there: mixed). Folded the Successor Arrival commits (2026-08 audit; mapped outcome there: unrated). Folded the Verdict battery (paper 16.79) commits (2026-08 audit; mapped outcome there: successful).'
+  notes: 'The closure of goal #101 (2026-08-21): item 4''s verdict battery decided the formula in paper §16.79 and the shipped clamp ''survives on merit''. Its arms are now their own nodes (split 2026-11-16 from ''Recovery clock law family (4 arms)''): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime.'
 - id: rec-receiver-law
   title: Receiver request law (Track C)
   track: rec
@@ -705,6 +957,7 @@ nodes:
   evidence:
   - status §2 row "Receiver-law battery (Track C)"
   - status §3.1 item 1
+  - paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`)
   verdict_quote: REFUTED-WITH-RECORD on every arm at both duals; KNEE-BOUND (ℓ* = 0, names RWM_STORE_GAIN); CONTROL-MOVED at c1; sc2 substrate collapsed
   headline: ''
   depends_on:
@@ -718,7 +971,6 @@ nodes:
   - branch feat/recvlaw-arms
   - branch meas/recvlaw-score
   - branch meas/recvlaw-run
-  - paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`)
   overview: false
   notes: 'Folds §3.1 item 1 (the self-heal estimator counted retransmits; fixed, battery not re-run). Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-cost-ratio-decision
@@ -1003,7 +1255,8 @@ nodes:
   headline: ''
   depends_on: []
   replaced_by: []
-  qualified_by: []
+  qualified_by:
+  - rate-defect-taper-inert
   lane: vm
   start: '2026-07-18'
   end: '2026-07-18'
@@ -1086,6 +1339,7 @@ nodes:
   headline: +41 %
   depends_on:
   - rate-fec-rate-v1
+  - perf-recv-msg-wall
   replaced_by: []
   qualified_by:
   - infra-defect-recorded-not-fixed
@@ -1094,14 +1348,10 @@ nodes:
   end: '2026-10-04'
   folded:
   - commit 224b9159
-  - commit 1ce8ba25
-  - commit dc4fb783
   - branch flip/est-cadence
-  - commit 774e28a3
-  - paper §16.35
   overview: true
   plain: Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU.
-  notes: 'Built 2026-08-06 (default off); first composed flip with the pool anchor reverted 2026-08-07 (store-pool-anchor-flip); shipped alone on status §5 (d), flipped in 83462ae. Folds §3.7 row 234 (BOCD plu floor, not fixed). Dates: paper §10 rows carry an end (removal) date only. Folded the Receiver per-message wall commits (2026-08 audit; mapped outcome there: mixed).'
+  notes: Built 2026-08-06 (default off) and pre-registered in the receiver per-message wall battery (perf-recv-msg-wall); first composed flip with the pool anchor reverted 2026-08-07 (store-pool-anchor-flip); shipped alone on status §5 (d), flipped in 83462ae. Folds §3.7 row 234 (BOCD plu floor, not fixed).
 - id: rate-sender-truth-loss
   title: Sender-truth loss estimator
   track: rate
@@ -1132,6 +1382,7 @@ nodes:
   - status §2 row "r > 0 battery (Track B)"
   - status §3.1 item 7
   - status §3.1 note (cod= counter)
+  - paper §10 row Funded proactive coding at r > 0 (the r > 0 battery)
   verdict_quote: at the lossy single path funding coding made the transfer slower (one seed, n = 4, direction only), and decode-resolved holes were slower than retransmit-resolved ones; the control confirmed the r* = 0 corner;
   headline: ''
   depends_on:
@@ -1145,7 +1396,6 @@ nodes:
   - branch meas/r-battery-score
   - commit 2e2db5a7
   - commit 259ebbc0
-  - paper §10 row Funded proactive coding at r > 0 (the r > 0 battery)
   overview: true
   plain: Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand.
   notes: 'Stage-2 Track B (2026-09-08), truncated at n = 4 by the 5 h cap. Folds §3.1 item 7 and the cod= counter note. Dates: paper §10 rows carry an end (removal) date only.'
@@ -1210,6 +1460,174 @@ nodes:
   folded: []
   overview: false
   plain: 'Open problem: the code that estimates how often extra repair data helps jumps from zero to one half at one point, where the paper describes a smooth curve.'
+  notes: 'Owner decision 2026-11-14 opened a derivation (rate-pfec-continuous): no form ships; next the executed sliding oracle (rate-pfec-oracle). §51 must still read r per cell.'
+- id: rate-pfec-continuous
+  title: Continuous P_fec derivation (W22)
+  track: rate
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status "Owner decisions (2026-11-14)" item 2
+  - status "Owner decisions (2026-11-14)" erratum
+  - derivation pfec-continuous.md
+  - commit b252933b
+  verdict_quote: So no form ships. The path is to derive the sliding per-loss law against an executed decoder, with Fable.
+  headline: ''
+  depends_on:
+  - rate-defect-pfec
+  - model-user-wasm-calls
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded:
+  - branch pfec-derive
+  - commit 95820ef1
+  - commit f1243e4a
+  - commit 59a65af8
+  - commit ab9c6246
+  overview: false
+  notes: 'Root cause: the paper defines P_fec per lost symbol but §4.2 derives the window event (a paper erratum). C6 is the exact per-loss law for a block window, but the engine and the sim decode a sliding window. Correction (round 6, b252933b): the Python sliding decode is only an upper bound; under its premises the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, and the engine''s r* adequacy at Auto and Realtime is unknown either way. Next: the executed sliding oracle (rate-pfec-oracle).'
+- id: rate-pfec-oracle
+  title: Executed sliding P_fec oracle
+  track: rate
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status "Owner decisions (2026-11-14)" erratum, second correction
+  - derivation pfec-oracle-spec.md
+  - commit 11abce17
+  - branch pfec-oracle-design
+  - branch pfec-oracle
+  verdict_quote: ''
+  headline: K0–K3 test-only on pfec-oracle
+  depends_on:
+  - rate-pfec-continuous
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-14'
+  end: ''
+  folded:
+  - commit 7fd9dd25
+  - commit 2aa40a98
+  - commit 2a622525
+  - commit 08bdfa96
+  overview: false
+  waiting_on: the evicting-seat rows (m̄, W1, K4 inputs)
+  plain: A test that runs the engine's real encoder and decoder to measure how often repair data recovers a loss, to settle the repair-rate formula.
+  notes: 'Spec (rounds 7–8 with Fable): it calls the engine''s RLC encoder/decoder, TaperBudget, D(δ) and the span seat; the debt loop is copied and K4 witnesses it against engine W1 on a recorded row; known answers K0–K4 before any reading; decidable at A* 3–7, report-only in the W 201 body. The branch pfec-oracle (08bdfa96, not merged) holds the test-only oracle with K0–K3. Done when: K0–K4 pass and the oracle''s P_fec at the audit cells is recorded, with its registration before the run.'
+- id: rate-defect-taper-inert
+  title: TaperBudget shape inert as wired
+  track: rate
+  kind: defect-verdict
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status "Owner decisions (2026-11-14)" erratum, second correction
+  - commit 2a622525
+  verdict_quote: '`TaperBudget::accrue` has one production call site (`emit_source.rs:543–549`). It is passed `flat_rate = window_rate.min(spare)` and the same `spare`, so grant == rate on every call; the taper shape is inert as wired.'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-14'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Open problem: the law that shapes when repairs are sent has no effect as the code calls it, so repairs go out at the flat rate.'
+  notes: Checked by reading and a 10⁵-call Python port; taper_emission_l0.rs asserts nothing. The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust (rate-pfec-oracle).
+- id: rate-evict-registration
+  title: Evicting-seat m̄ registration (plan 59)
+  track: rate
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - status §60 Amendment 2
+  - status §58
+  - branch harness59
+  - derivation pfec-oracle-spec.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded:
+  - commit 4d200885
+  - commit b1af3fa4
+  overview: false
+  plain: Writing down, before any run, how to measure the repair loop on a link that may drop late data, after the first attempt overloaded the link.
+  notes: 'Plan 59, the evicting-seat m̄ readout (reported only; harness59 b1af3fa4: ''m-bar lower bound + W1 bracket, smoke go/no-go on rr''). There is no status §59: §60 first carried five such rows, and Amendment 2 moved them to their own registration after the 60b rehearsal''s evicting row was overdriven (emission ended at ≈ 13 s, rr = 0 from the spare clamp on 46 of 53 windows, no [CAPLOG] by construction). Done when: a registration is in status with an offered load paced below the link rate, an object size and timeout so that emission covers the LATE window, the spare-clamp bind fraction as a reported gauge, and its own rehearsal with rr > 0 as go/no-go.'
+- id: rate-evict-session
+  title: Evicting-seat m̄ session
+  track: rate
+  kind: research
+  state: blocked
+  outcome: unrated
+  evidence:
+  - status §60 Amendment 2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rate-evict-registration
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Measuring on the test network how many sources each acknowledgement clears and how much repair debt is sent, to feed the repair-rate oracle.
+  notes: 'Done when: the registered rows run after a rehearsal GO (rr > 0), and m̄ (`adv`), W1 (`dbt_share`) and K4''s inputs (`fec=`) are recorded for rate-pfec-oracle.'
+- id: rate-spare-clamp-verdict
+  title: 'Spare clamp on Realtime: verdict'
+  track: rate
+  kind: law
+  state: blocked
+  outcome: unrated
+  evidence:
+  - status §60 Amendment 2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rate-evict-session
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Deciding, from a run that does not overload the link, whether the cap that zeroes the repair rate on a full path is a defect.
+  notes: '§60 Amendment 2 (one rehearsal row, n = 1, an observation): flat_rate = window_rate.min(spare) read r = 0 in 46 of 53 sending windows, with spare = 0 on every saturated tick; the unclamped window_rate is not printed. FORMULA-FIRST: every clamp gets a bind-fraction gauge. Done when: the bind fraction is reported on a row that is not overdriven and the clamp''s ledger verdict is recorded.'
+- id: rate-spare-cwnd
+  title: Is spare's cwnd enforced?
+  track: rate
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - status §60 Amendment 2
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Checking whether the congestion window that the repair cap reads is actually enforced while quinn's BBR controls the path.
+  notes: '§60 Amendment 2, pending item 3: on the rehearsal row cwnd jumped from 1 159 to 10 000 at t ≈ 10.3 s and the source was not held to it. Done when: it is settled, by reading or a test, whether the cwnd that Scheduler::spare_capacity reads is enforced on the evicting seat under quinn''s BBR.'
 - id: store-xn-pool
   title: Path-scaled pool ×N (STORE_PATHS)
   track: store
@@ -1238,13 +1656,15 @@ nodes:
   notes: 'RWM_STORE_PATHS stays on; what was superseded is the ×N multiplier in its formula. Dates: paper §10 rows carry an end (removal) date only.'
   plain: Scaling the in-flight data allowance with the number of paths, later replaced by a simpler rule.
 - id: store-percap-family
-  title: Per-path store accounts family (4 arms)
+  title: Per-path store accounts (PERCAP)
   track: store
   kind: mechanism
   state: abandoned
   outcome: dead-end
   evidence:
   - paper §10 row Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`)
+  - commit 4b8e5384
+  - commit 4bb5b28f
   verdict_quote: wins the symmetric dual (0.89–0.94×Σ) and loses the heterogeneous one (0.54–0.55 against pooled 0.62–0.69×Σ)
   headline: 0.89–0.94×
   depends_on: []
@@ -1252,21 +1672,57 @@ nodes:
   qualified_by: []
   lane: vm
   start: '2026-07-18'
-  end: '2026-07-27'
+  end: '2026-07-19'
   folded:
   - commit d190b296
-  - commit 4b8e5384
   - commit 689b9f1b
-  - commit 4bb5b28f
-  - commit 477ab328
-  - commit 7c3343ff
-  - paper §10 row Bounded account borrowing (`RWM_STORE_BORROW`)
-  - paper §10 row Capacity-weighted pool (`RWM_STORE_CAPW`)
   - paper §11.1 open question 5
   overview: false
-  notes: 'Folds per-path accounts, the delay-aware redirect guard, bounded borrowing, the capacity-weighted pool and paper §11.1 open question 5. Arms (4): per-path store accounts RWM_STORE_PERCAP; delay-aware redirect guard RWM_PERCAP_GUARD; bounded account borrowing RWM_STORE_BORROW; capacity-weighted pool RWM_STORE_CAPW. Dates: paper §10 rows carry an end (removal) date only.'
+  notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. Per-path accounts (d190b296) and the delay-aware redirect guard (689b9f1b; ''halves the c8 percap regression'', 4bb5b28f) share one paper row. Siblings: store-borrow, store-capw. Folds paper §11.1 open question 5.'
+- id: store-borrow
+  title: Bounded account borrowing (BORROW)
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Bounded account borrowing (`RWM_STORE_BORROW`)
+  - commit 7c3343ff
+  verdict_quote: loans are identically zero at symmetric cells by construction; neutral at the heterogeneous dual and behind pooled
+  headline: ''
+  depends_on:
+  - store-percap-family
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-19'
+  end: '2026-07-19'
+  folded:
+  - commit 477ab328
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. 7c3343ff: ''the law is gauge-perfect, the tax is NOT repaid; pooled path-scaled VINDICATED at c8, flip NO''.'
+- id: store-capw
+  title: Capacity-weighted pool (C8-aware)
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Capacity-weighted pool (`RWM_STORE_CAPW`)
+  - commit 4fb5b15
+  verdict_quote: the heterogeneous binder is slow-path conversion, not pool size (0.74–0.79 against 0.87×Σ)
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-27'
+  end: '2026-07-27'
+  folded: []
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. C8-Aware Pool Law results (4fb5b15): ''capacity-weighted pool REFUTED at c8, the binder renamed (slow-path conversion)''.'
 - id: store-honest-cap-family
-  title: Honest floor-clock cap family (6 arms)
+  title: Honest floor-clock cap (HONEST_CAP)
   track: store
   kind: law
   state: abandoned
@@ -1274,39 +1730,85 @@ nodes:
   evidence:
   - tag archive/RWM_HONEST_CAP
   - tag archive/RWM_HONEST_K
-  - tag archive/RWM_PLAIN_RS
-  - tag archive/RWM_RS_ATTR
-  verdict_quote: 'verdict: the PRS diagnostic (`RWM_PLAIN_RS=1`, n=3, not scored) collapsed the law to its floor (c1s −72 %, c2 −92 %), status §23, 2026-10-26, current wire-v9 substrate; route: structural (status §23/§27); removed 2026-11-10 (simplification batch 1, ADR-0073);'
+  - paper §10 row Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`)
+  - paper §10 row Raw-sample echo-ratio floor (`RWM_HONEST_K`) and the honest-cap law family it fed (`honest_store_cap`, `honest_cap_terms`, `k_raw`)
+  - commit 1ad01c4d
+  verdict_quote: 'Ledger + paper 16.19 honest-cap addendum: sc2 -20% RESOLVED exactly, c7 percap >= PBS both seeds, c8 no-borrowing tax CONFIRMED as the binder; flip NO'
   headline: ''
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: vm
   start: '2026-07-19'
-  end: '2026-08-07'
+  end: '2026-08-11'
   folded:
   - commit efc8f759
   - commit 5d30c026
-  - commit 1ad01c4d
-  - paper §10 row Honest floor-clock store cap (`RWM_HONEST_CAP`; resolved on, acted only with `RWM_PLAIN_RS`)
+  overview: true
+  plain: A store limit sized from more honest clock readings; it was never adopted, and the law family it fed was archived.
+  notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)'': the plain-mode sampler and its flight witness are store-plain-rs, the delivery-clocked and floor-bound anchors are store-pool-deliv. The raw-sample echo-ratio floor (HONEST_K) shares this verdict: old ledger GG:23650, 2026-08-11, pre-wire-v9 substrate. Archived 2026-11-10 (simplification batch 1, ADR-0073; tag dates not used for end).'
+- id: store-plain-rs
+  title: Plain-mode send-interval sampler (PLAIN_RS)
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - tag archive/RWM_PLAIN_RS
+  - tag archive/RWM_RS_ATTR
   - paper §10 row Plain-mode send-interval sampler (`RWM_PLAIN_RS`, sampling-only `CopaFeed`)
   - paper §10 row Flight-time witness for cross-path ack attribution (`RWM_RS_ATTR`)
-  - paper §10 row Raw-sample echo-ratio floor (`RWM_HONEST_K`) and the honest-cap law family it fed (`honest_store_cap`, `honest_cap_terms`, `k_raw`)
+  - status §23
+  verdict_quote: 'verdict: the PRS diagnostic (`RWM_PLAIN_RS=1`, n=3, not scored) collapsed the law to its floor (c1s −72 %, c2 −92 %), status §23, 2026-10-26, current wire-v9 substrate; route: structural (status §23/§27); removed 2026-11-10 (simplification batch 1, ADR-0073);'
+  headline: ''
+  depends_on:
+  - store-anchor-hygiene
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-19'
+  end: '2026-10-26'
+  folded:
+  - commit 988960c1
+  overview: false
+  notes: Split 2026-11-16 from the former family node 'Honest floor-clock cap family (6 arms)'. Built as anchor-hygiene fix 3 (988960c1); the flight-time witness (RWM_RS_ATTR) acted only under it and was removed with it. Archived 2026-11-10.
+- id: store-pool-deliv
+  title: 'Ship The Wins 1b: pool anchors'
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
   - paper §10 row Pool delivery-clocked anchor (`RWM_POOL_DELIV`)
   - paper §10 row Floor-bound anchor (`RWM_FLOOR_BOUND`)
-  - branch feat/pool-delivery-anchor
   - commit 8afd4dd7
-  overview: true
-  plain: Six attempts to size the in-flight data limit from more honest measurements; none was adopted, and all six were archived.
-  notes: 'Honest cap, raw echo-ratio floor, plain-mode sampler, flight witness, delivery- and floor-bound anchors (2026-07-19 to 2026-08-07); archived 2026-11-10 (simplify batch 1). Arms (6): honest floor-clock cap RWM_HONEST_CAP; raw-sample echo-ratio floor RWM_HONEST_K; plain-mode send-interval sampler RWM_PLAIN_RS; flight-time witness RWM_RS_ATTR; delivery-clocked anchor RWM_POOL_DELIV; floor-bound anchor RWM_FLOOR_BOUND. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_HONEST_CAP archived 2026-11-10 (tag date not used for end); archive/RWM_HONEST_K archived 2026-11-10 (tag date not used for end); archive/RWM_PLAIN_RS archived 2026-11-10 (tag date not used for end); archive/RWM_RS_ATTR archived 2026-11-10 (tag date not used for end). Folded Ship The Wins 1b RESULTS 8afd4dd7 (delivery-clocked pool anchor, NO FLIP).'
+  verdict_quote: worked exactly as specified and moved the symmetric dual the wrong way (0.931–0.958×Σ)
+  headline: 0.931–0.958×Σ
+  depends_on:
+  - store-pool-anchor-flip
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-07'
+  end: '2026-08-07'
+  folded:
+  - commit f62caf78
+  - commit 8e9b489c
+  - branch feat/pool-delivery-anchor
+  - commit 47fdf550
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)''. One battery, two arms (8afd4dd7: ''arm A''s MECHANISM lands completely and c7 gets WORSE ...; arm B fails both its clauses; NO FLIP''): arm A the delivery-clocked pool anchor (RWM_POOL_DELIV), arm B the floor-bound anchor (RWM_FLOOR_BOUND; paper: −14 % at c1). Attempt 2 after the composed flip (store-pool-anchor-flip).'
 - id: store-pool-anchor-flip
-  title: Composed cadence and pool-anchor flip
+  title: 'Ship The Wins 1: composed flip'
   track: store
   kind: mechanism
   state: done
   outcome: bad
   evidence:
   - tag archive/RWM_POOL_ANCHOR
+  - commit 60f833a7
+  - commit e84ef1c5
+  - paper §10 row Composed estimator-cadence plus pool-anchor default
   verdict_quote: flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); the pool anchor was the binding cap at the duals
   headline: 0.959–0.968×
   depends_on:
@@ -1317,10 +1819,11 @@ nodes:
   start: '2026-08-07'
   end: '2026-08-07'
   folded:
-  - paper §10 row Composed estimator-cadence plus pool-anchor default
   - 'paper §10 row Pool anchor (`RWM_POOL_ANCHOR`): pooled cap = Σᵢ honest_store_cap on each path''s send-interval anchor'
+  - commit 201ada44
+  - commit a43bab82
   overview: false
-  notes: 'Paper rows carry the end date only; flip e84ef1c and revert on 2026-08-07; the end date is the RWM_POOL_ANCHOR archive tag (2026-11-10). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_POOL_ANCHOR archived 2026-11-10 (tag date not used for end).'
+  notes: 'Paper rows carry the end date only; flip e84ef1c and revert on 2026-08-07; the end date is the RWM_POOL_ANCHOR archive tag (2026-11-10). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_POOL_ANCHOR archived 2026-11-10 (tag date not used for end). Ship The Wins 1 (pre-registration 201ada44, results 60f833a7: ''c1 463/482 (PRIMARY met) but the c7 clause fails 0.968/0.959; NO FLIP'') is this flip; moved here 2026-11-16 from store-honest-inputs.'
 - id: store-sack-prune
   title: SACK pruning of the store
   track: store
@@ -1364,35 +1867,95 @@ nodes:
   overview: false
   notes: 'Pre-registered 2026-07-21 (discipline 11) and flipped the same day. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: store-sender-decoupling
-  title: Sender decoupling attempts (4 arms)
+  title: Window decoupling (WIN_DECOUPLE)
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Window decoupling (`RWM_WIN_DECOUPLE`)
+  - commit 48f60c4f
+  verdict_quote: the queue died (echo RTT 108 → 27 ms) and goodput did not follow; re-fires are re-serve-clocked. Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)
+  headline: 27 ms
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-06'
+  end: '2026-08-06'
+  folded:
+  - commit b03b3ad8
+  - commit 3e7f43af
+  - commit 354461af
+  overview: false
+  notes: Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'; siblings store-sack-flowctl, store-reasm-bdp, store-src-bp. Window Decoupling + MTU Scaling, part 1 (pre-registration b03b3ad8); part 2, compact framing, shipped (cod-wire-compact).
+- id: store-sack-flowctl
+  title: SACK sender flow control
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - commit 5adba96e
+  - commit 2b898456
+  verdict_quote: Merge SACK sender flow-control (REFUTED, gated off) — limiter is receiver-side, sharpened
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-07'
+  end: '2026-07-07'
+  folded:
+  - branch SACK sender flow-control (REFUTED, gated off)
+  overview: false
+  notes: Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'.
+- id: store-reasm-bdp
+  title: Never-evict reassembly clamp (REASM_BDP)
   track: store
   kind: mechanism
   state: abandoned
   outcome: dead-end
   evidence:
   - tag archive/RWM_REASM_BDP
-  verdict_quote: the queue died (echo RTT 108 → 27 ms) and goodput did not follow; re-fires are re-serve-clocked. Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)
-  headline: 27 ms
+  - paper §10 row Never-evict-undelivered reassembly clamp (`RWM_REASM_BDP`)
+  - commit 6d2a05b2
+  verdict_quote: 'Merge SACK+BDP reassembly: sender-decoupling now SAFE but FLAT — bound is recovery-latency, not the sender'
+  headline: ''
+  depends_on:
+  - store-sack-flowctl
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-08'
+  end: '2026-07-08'
+  folded:
+  - branch SACK+BDP reassembly
+  - commit 56179503
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Sender decoupling attempts (4 arms)''. Paper row: the clamp never binds. Archived 2026-11-10 (ADR-0073).'
+- id: store-src-bp
+  title: Source backpressure (SRC_BP)
+  track: store
+  kind: mechanism
+  state: abandoned
+  outcome: superseded
+  evidence:
+  - paper §10 row Source backpressure (`RWM_SRC_BP`)
+  - commit 4606829f
+  - commit 8902d246
+  verdict_quote: −53 % at the heterogeneous dual; source is the pipeline clock, not a holdable emitter
+  headline: ''
   depends_on: []
   replaced_by:
   - store-percap-family
   qualified_by: []
   lane: vm
-  start: '2026-07-07'
-  end: '2026-08-06'
-  folded:
-  - branch SACK sender flow-control (REFUTED, gated off)
-  - branch SACK+BDP reassembly
-  - paper §10 row Never-evict-undelivered reassembly clamp (`RWM_REASM_BDP`)
-  - paper §10 row Source backpressure (`RWM_SRC_BP`)
-  - commit 4606829f
-  - commit 8902d246
-  - paper §10 row Window decoupling (`RWM_WIN_DECOUPLE`)
-  - commit b03b3ad8
-  - commit 3e7f43af
-  - commit 48f60c4f
+  start: '2026-07-12'
+  end: '2026-07-27'
+  folded: []
   overview: false
-  notes: 'SACK sender flow control, the reassembly BDP clamp, source backpressure (2026-07-07 to 2026-07-12) and window decoupling (2026-08-06); each refuted. The compact framing sibling shipped (cod-wire-compact). Arms (4): SACK sender flow control; never-evict reassembly clamp RWM_REASM_BDP; source backpressure RWM_SRC_BP; window decoupling RWM_WIN_DECOUPLE. Replaced by the per-path account family: the source-backpressure delete commit says "superseded by the percap account family" (decision 2026-11-13); that family was itself refuted. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_REASM_BDP archived 2026-11-10 (tag date not used for end).'
+  notes: Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'. Refuted at L1 2026-07-12 (4606829f); the delete commit 8902d246 says 'superseded by the percap account family' (decision 2026-11-13), itself refuted.
 - id: store-anchor-hygiene
   title: Anchor hygiene laws (ADR-0061)
   track: store
@@ -1417,43 +1980,104 @@ nodes:
   overview: false
   notes: 'A* windowed-max anchor, M* pair, process-clock stall witness (2026-07-19); flips in the 2026-07-21 consolidation battery. End date from commit 5ebbcda8 (the 2026-07-21 consolidation flip of MSTAR_ANCHOR and CLOCK_GAP); the ADR date is the migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: store-three-term
-  title: Three-term and composed caps (5 arms)
+  title: Three-term outstanding law (THREE_TERM)
+  track: store
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Three-term outstanding law (`RWM_THREE_TERM`)
+  - commit 5de30ed3
+  - commit 448a82e
+  verdict_quote: 'the terms are right and the lever is wrong: the store is sized and occupied, throughput does not follow'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-10'
+  end: '2026-08-10'
+  folded:
+  - commit 90f9ca72
+  - commit 70833cda
+  - commit c7cc6bca
+  - branch three-term law L1 battery
+  - branch the binder is the LINK
+  overview: false
+  plain: Candidate formulas for the in-flight allowance that were tested and did not earn a place.
+  notes: 'Split 2026-11-16 from the former family node ''Three-term and composed caps (5 arms)''; siblings store-coverage-term, store-slack-clock, store-composed-cap; the latency battery is store-latency-lever. Paper status ''off'': the gate stays because scheduler/place.rs reads it (placement H term, fenced).'
+- id: store-coverage-term
+  title: 'Coverage: the fourth store term'
+  track: store
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - commit e113c9ab
+  - paper §16.44
+  verdict_quote: 'coverage: VERDICT - the fourth term is REFUTED; goal-gate "Coverage: derivable or not" + paper 16.44'
+  headline: ''
+  depends_on:
+  - store-three-term
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-10'
+  end: '2026-08-10'
+  folded:
+  - commit 2b55dbda
+  - commit dda6670e
+  overview: false
+  notes: Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'.
+- id: store-slack-clock
+  title: 'Slack-bench: queue-free slack clock'
+  track: store
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - paper §10 row Queue-free slack clock
+  - commit 7e03ef9b
+  - commit 7e302e2a
+  verdict_quote: removes 1.7 % of a 90 % overshoot at the heterogeneous dual, by its own arithmetic
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-09'
+  end: '2026-08-18'
+  folded:
+  - commit 530bbaa2
+  - commit 0e187521
+  overview: false
+  notes: 'Split 2026-11-16 from the former family node ''Three-term and composed caps (5 arms)''. Slack-bench (pre-registration 530bbaa2; results 7e03ef9b: ''the three-term model SURVIVES; the CLOCK is what fails it''); the slack-clock charge refuted in the cap-law cluster ledger (7e302e2a). Refuted, never shipped.'
+- id: store-composed-cap
+  title: Composed cap (COMPOSED_CAP)
   track: store
   kind: law
   state: abandoned
   outcome: dead-end
   evidence:
   - tag archive/RWM_COMPOSED_CAP
+  - paper §10 row Composed cap (`RWM_COMPOSED_CAP`)
+  - commit 161b4eae
   verdict_quote: 'merge: composed-cap battery - SHAPE CONFIRMED, MAGNITUDE REFUTED; the law loses where it is interior; legacy deletion OFF the table'
   headline: 2.4×
-  depends_on: []
+  depends_on:
+  - store-three-term
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: '2026-08-10'
-  end: '2026-08-18'
+  start: '2026-08-12'
+  end: '2026-08-13'
   folded:
-  - commit 530bbaa2
-  - commit 7e03ef9b
-  - commit 90f9ca72
-  - commit e113c9ab
-  - commit 70833cda
-  - commit c7cc6bca
-  - branch three-term law L1 battery
-  - paper §10 row Three-term outstanding law (`RWM_THREE_TERM`)
-  - paper §10 row Queue-free slack clock
-  - branch the latency battery
-  - branch latency-lever instruments, pre-registration, and the specification-failure record
-  - branch the binder is the LINK
   - branch composed-cap battery
   - branch the composed cap law lands INTERIOR everywhere on the bench; the [WALL] instrument; two catches by the new discipline
-  - paper §10 row Composed cap (`RWM_COMPOSED_CAP`)
   - 'paper §10 row Composed cap (`RWM_COMPOSED_CAP`): three-term pool law plus the per-path cwnd brake'
-  - commit 0e187521
-  - commit 2b55dbda
+  - commit d408b7ee
   overview: false
-  notes: 'Three-term outstanding law (2026-08-10), its fourth-term coverage verdict, the latency battery, the queue-free slack clock and the composed cap (2026-08-12/13; archived 2026-11-10). Arms (5): three-term outstanding law RWM_THREE_TERM; the fourth (coverage) term; queue-free slack clock; the latency-battery lever (shipped default off); composed cap RWM_COMPOSED_CAP. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_COMPOSED_CAP archived 2026-11-10 (tag date not used for end). Folded: the slack-bench (RESULTS 2026-08-10: the three-term model SURVIVES, the clock fails it) and coverage (VERDICT 2026-08-10: the fourth term REFUTED; paper 16.44) clusters.'
-  plain: Candidate formulas for the in-flight allowance that were tested and did not earn a place.
+  notes: Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'. Removed 2026-11-10 (simplification batch 1); the brake survives as RWM_LATE_BRAKE. Tag archived 2026-11-10 (tag date not used for end).
 - id: store-cap-unification
   title: Store-cap unification over live paths
   track: store
@@ -1462,6 +2086,7 @@ nodes:
   outcome: mixed
   evidence:
   - status §3.5 item 3
+  - paper §10 row Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`)
   verdict_quote: removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode
   headline: +16–25 %
   depends_on:
@@ -1472,26 +2097,68 @@ nodes:
   start: '2026-08-11'
   end: '2026-09-30'
   folded:
-  - paper §10 row Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`)
   - branch store-cap unification battery
   - branch the c8 SF mechanism
   - branch fix/live-path-membership
+  overview: false
+  plain: Using one in-flight allowance rule across all live paths.
+  notes: Shipped unconditionally; folds the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. The dead-wall and mode-hunt batteries (store-deadwall-modehunt) and the cap-law cluster (store-cap-law-cluster) are their own nodes since 2026-11-16.
+- id: store-deadwall-modehunt
+  title: Deadwall and mode-hunt batteries
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
   - paper §10 row The dead-wall and mode-hunt batteries
+  - commit d583593a
+  - commit cfc1793f
+  verdict_quote: both fired their own stop rules; the dead-wall mode belongs to the store-cap-unification arm and vanishes at 8× the transfer size
+  headline: ''
+  depends_on:
+  - store-cap-unification
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-12'
+  end: '2026-08-12'
+  folded:
   - branch mode-hunt battery UNSCORED by its own stop rule
   - branch dead-wall battery
   - branch dead-wall mitigations (nothing built
-  - commit 6335e206
-  - commit 8bab64c3
-  - commit 7e302e2a
   - commit b8fd6d9c
-  - commit cfc1793f
   - commit 2a3d82e8
   - commit 5fce47cf
   - commit 465c28ef
   - commit 2dd7bb2d
+  - commit 79d2fa83
   overview: false
-  notes: 'Shipped unconditionally; folds the dead-wall and mode-hunt batteries (the paper row places the dead-wall mode in this arm) and the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. Dates: paper §10 rows carry an end (removal) date only. Folded: the Cap-law cluster (2026-08-18: formulas in the paper first, derived floor, ledger with two FIXED and one REFUTED). Folded the Mode-hunt battery commits (2026-08 audit; mapped outcome there: dead-end). Folded the Deadwall battery commits (2026-08 audit; mapped outcome there: dead-end).'
-  plain: Using one in-flight allowance rule across all live paths.
+  notes: 'Split 2026-11-16 from ''Store-cap unification over live paths''. Paper status: unscored. The mitigations list mapped onto the recovery plane built nothing (79d2fa83).'
+- id: store-cap-law-cluster
+  title: 'Cap-law cluster: formulas first'
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 7e302e2a
+  - commit 6335e206
+  verdict_quote: 'Cap-law cluster: the LEDGER — two FIXED, one REFUTED-with-record, the gate battery, and the wire questions LISTED not run'
+  headline: ''
+  depends_on:
+  - store-cap-unification
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-18'
+  end: '2026-08-18'
+  folded:
+  - commit 8bab64c3
+  - branch sweep item 5
+  - branch sweep items 1+2+4
+  - branch sweep item 6 REFUTED
+  overview: false
+  notes: 'Split 2026-11-16 from ''Store-cap unification'' and ''Sum cap''. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6).'
 - id: store-honest-inputs
   title: Honest inputs and O(1) anchor
   track: store
@@ -1513,13 +2180,11 @@ nodes:
   - branch HONEST INPUTS phase 3
   - branch HONEST INPUTS battery
   - branch HONEST INPUTS phase 1
-  - commit 201ada44
-  - commit 60f833a7
   overview: false
-  notes: 'HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11). Folded Ship The Wins 1 (est x honest-anchor): pre-registration 201ada44, RESULTS 60f833a7 (NO FLIP, c7 clause fails).'
   plain: Fixing a slow rate measurement so it stops holding up the sender; now on by default.
+  notes: 'HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11).'
 - id: store-sum-cap
-  title: 'Sum cap: ×N deletion (SUM_CAP)'
+  title: 'Ladder battery: ×N deletion (SUM_CAP)'
   track: store
   kind: law
   state: done
@@ -1530,6 +2195,7 @@ nodes:
   headline: ''
   depends_on:
   - store-xn-pool
+  - store-cap-law-cluster
   replaced_by: []
   qualified_by:
   - store-defect-cap-constant
@@ -1542,9 +2208,6 @@ nodes:
   - branch ladder item 1
   - branch ADR-0071
   - branch ladder item 5
-  - branch sweep item 5
-  - branch sweep items 1+2+4
-  - branch sweep item 6 REFUTED
   - commit 85b4d1df
   - commit 5ddf7f6b
   - commit 91c00ddf
@@ -1552,8 +2215,8 @@ nodes:
   - commit 6a653802
   - commit 923aa9dc
   overview: false
-  notes: 'The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner''s formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits.'
   plain: Removing a multiplier from the in-flight allowance that grew with path count without reason.
+  notes: 'The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner''s formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits.'
 - id: store-delta-cap
   title: Derived setpoint 1 + q(δ)
   track: store
@@ -1583,6 +2246,31 @@ nodes:
   overview: true
   plain: Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput.
   notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19).'
+- id: store-s18-one-law
+  title: One store law, first session (§18)
+  track: store
+  kind: law
+  state: done
+  outcome: superseded
+  evidence:
+  - status §18
+  - commit 48ee42a3
+  verdict_quote: '`REFUTED` through `CONTROL-MOVED` at c1d and c2 (not through the c1s contrast, which reads `PINNED`); attributed to the cross-session reference in §19; nothing ships or flips'
+  headline: ''
+  depends_on:
+  - store-delta-cap
+  - meas-formula-first
+  replaced_by:
+  - store-adr72-one-law
+  qualified_by: []
+  lane: vm
+  start: '2026-10-26'
+  end: '2026-10-26'
+  folded:
+  - commit 245a586c
+  - commit 7e13dc06
+  overview: false
+  notes: 'Split 2026-11-16 from ''One store law (ADR-0072)''. The lead''s ruling: it stands as scored, REFUTED; the cross-session control reference is a design weakness (7e13dc06). §19 re-read the law against a same-session main.'
 - id: store-adr72-one-law
   title: One store law (ADR-0072)
   track: store
@@ -1591,13 +2279,12 @@ nodes:
   outcome: successful
   evidence:
   - ADR-0072
-  - status §18
   - status §19
+  - commit bdb37b40
   verdict_quote: 'Accepted (status §19: no N≥2 move at c1d/c8 against a same-session main; c1s PINNED, c2 INERT-AS-DERIVED; §18 read REFUTED against a cross-session reference)'
   headline: ''
   depends_on:
-  - store-delta-cap
-  - meas-formula-first
+  - store-s18-one-law
   replaced_by: []
   qualified_by:
   - store-defect-cap-constant
@@ -1608,39 +2295,91 @@ nodes:
   - branch ADR-0072 accepted
   overview: true
   plain: Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links.
-  notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: 'ADR-0072 accepted on §19, the same-session control (§18 is store-s18-one-law). Dates: ADR end dates in the raw set equal their start (placeholder).'
 - id: store-input-search
-  title: Store-law input search (8 inputs)
+  title: c1 anchor over-read (§23)
   track: store
   kind: research
-  state: abandoned
-  outcome: dead-end
+  state: done
+  outcome: unrated
   evidence:
   - status §23
-  - status §24
-  - status §27
-  - status §34
-  verdict_quote: 'By the decision rule no branch fires: the store law''s input stays open.'
-  headline: knee is 1 024 at both cells
+  - commit 4ed22f38
+  verdict_quote: Q1 `MECHANISM-CONFIRMED` at c1s and c2; Q2 `HONEST` by its rule, but the send-interval anchor under-reads ×0.1–0.5; Q3 `HEADROOM-MISSING` at both single-path cells; no input change built
+  headline: ''
   depends_on:
   - store-adr72-one-law
   replaced_by: []
   qualified_by: []
   lane: vm
   start: '2026-10-26'
-  end: '2026-11-02'
+  end: '2026-10-26'
   folded:
   - branch §23 store-cap input diagnosis
-  - commit de3e11a1
-  - 'paper §10 row (P) probe gain: `cap'' = (1 + q + g)·D̂·τ`'
-  - 'paper §10 row (b1) quinn''s BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`'
-  - 'paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds'
-  - 'paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing)'
-  - 'paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`'
-  - branch §34 static-cap grid result
-  - branch §34 store-law input NONE-CLOSES on committed ledgers
   overview: false
-  notes: '§23 (c1 over-read MECHANISM-CONFIRMED), §24 (no candidate passes), §27 PREMISES-FAIL with the probe-gain row (P), §34 NONE-CLOSES with rows b1-b4. Candidate inputs (8): §23 send-interval anchor; §24 min-filtered loop time; §24 quinn BBR rate; §27 (P) probe gain; §34 (b1) BBR window knee; (b2) cwnd-binding share; (b3) path memory; (b4) receiver-capacity ceiling. Dates: status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only.'
+  notes: 'Split 2026-11-16 from ''Store-law input search (8 inputs)'': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38).'
+- id: store-s24-inputs
+  title: Loop time and quinn rate (§24)
+  track: store
+  kind: research
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - status §24
+  - commit de3e11a1
+  verdict_quote: 'no candidate passes: option 1 (min-filtered loop time) `INFLATES`; option 3 (quinn''s rate) `OVER-READ` ×7.6 at c2 and `NEITHER` at c1s; its ask `MISSES` the knee band'
+  headline: ''
+  depends_on:
+  - store-input-search
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-26'
+  end: '2026-10-26'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'Store-law input search (8 inputs)'. 46 rows at c2-100 and c1s-400.
+- id: store-s27-premises
+  title: Spread law premises (§27)
+  track: store
+  kind: research
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - status §27
+  - commit 35b16607
+  verdict_quote: '`PREMISES-FAIL`: bbr_rs reads the delivered rate, not the link (Q1 never `FLAT-AT-LINK`; `CIRCULAR` at c2); the spread inflates with the cap except at c2 (Q2); Q3 misses everywhere'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-27'
+  end: '2026-10-27'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'Store-law input search (8 inputs)'. [LOOPDIAG] instrument on main, 4 cells, 128 rows.
+- id: store-probe-gain
+  title: (P) probe-gain store law
+  track: store
+  kind: law
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - 'paper §10 row (P) probe gain: `cap'' = (1 + q + g)·D̂·τ`'
+  - status §27
+  verdict_quote: with τ = RTprop the fixed point is the delay ratio T(n*) = (1 + q + g)·RTprop, a constant that misses at least three of four cells' knee ratios
+  headline: ''
+  depends_on:
+  - store-s27-premises
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-27'
+  end: '2026-10-28'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'Store-law input search (8 inputs)'. Closed by derivation, never built (status §27–§29); the gain 2.0 of paper §6.2 returns under another name.
 - id: store-power-law
   title: Power-seeking store law D
   track: store
@@ -1649,9 +2388,9 @@ nodes:
   outcome: dead-end
   evidence:
   - status §29
-  - status §30
   - tag archive/store-power
   - branch archive/wt-status29-power
+  - 'paper §10 row (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker'
   verdict_quote: 'NOT-VIABLE by the decision rule: STABILITY is NOISE-DOMINATED at all four cells, GOODPUT is WORSE at c2 and c1s, and FIXED-POINT is IN-BAND only at c8.'
   headline: ×5–12
   depends_on:
@@ -1660,32 +2399,76 @@ nodes:
   qualified_by: []
   lane: vm
   start: '2026-10-26'
-  end: '2026-10-28'
+  end: '2026-10-27'
   folded:
-  - 'paper §10 row (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker'
-  - 'paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`'
-  - branch §30 store law D with a noise-sized window DOES-NOT-CLOSE
   - commit 317520f5
   overview: true
   plain: Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work.
-  notes: '§29 NOT-VIABLE, §30 DOES-NOT-CLOSE; code at archive/store-power. Dates: status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only; archive/store-power archived 2026-10-27 (tag date not used for end).'
-- id: store-engine-form
-  title: Dispersion and oracle store law
+  notes: '§29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27.'
+- id: store-dw-window
+  title: (D-W) noise-sized window (§30)
   track: store
   kind: research
-  state: parked
-  outcome: successful
+  state: abandoned
+  outcome: dead-end
   evidence:
-  - status §36
-  - status §40
-  - status §42
-  - status §43
-  - branch harness43
-  - branch run43
-  verdict_quote: c2 BISTABLE; c1s UNSTABLE. Diagnostic only; nothing ships.
+  - status §30
+  - 'paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`'
+  - commit 9677a3c9
+  verdict_quote: c1's noise is red (γ 0.58–0.70), so W* ≥ 579–765 rounds and a decision takes ≥ 6 s against a 4–5 s transfer
   headline: ''
   depends_on:
-  - store-input-search
+  - store-power-law
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-28'
+  end: '2026-10-28'
+  folded:
+  - branch §30 store law D with a noise-sized window DOES-NOT-CLOSE
+  overview: false
+  notes: 'Split 2026-11-16 from ''Power-seeking store law D''. Status §2: DOES-NOT-CLOSE; §34''s R2 re-read it after the receiver change (CLOSED).'
+- id: store-s34-input
+  title: Store-law input after §32 (§34)
+  track: store
+  kind: research
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - status §34
+  - 'paper §10 row (b1) quinn''s BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`'
+  - 'paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds'
+  - 'paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing)'
+  - 'paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`'
+  - commit a75bc9ca
+  verdict_quote: 'By the decision rule no branch fires: the store law''s input stays open.'
+  headline: knee is 1 024 at both cells
+  depends_on:
+  - perf-decoder-prune
+  - store-dw-window
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-01'
+  end: '2026-11-02'
+  folded:
+  - branch §34 static-cap grid result
+  - branch §34 store-law input NONE-CLOSES on committed ledgers
+  overview: false
+  notes: 'Split 2026-11-16 from ''Store-law input search (8 inputs)''. One derivation (NONE-CLOSES) closed the four candidates (b1)–(b4), then a static-cap diagnostic R1–R4 at c1s and c1d: R1 knee 1 024 at both, R2 D-W CLOSED, R3 AMBIGUOUS with the fixed point MISSES (457), R4 QUINN-SHARES.'
+- id: store-s36-dispersion
+  title: Receiver dispersion as link rate (§36)
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §36
+  - commit 4dd26760
+  verdict_quote: '`NOT-YET`: at k = 4, D1 `CIRCULAR` and D2 `NOISY` on c1s, c2 and both c8 legs; no k passes either clause'
+  headline: ''
+  depends_on:
+  - store-s34-input
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -1693,8 +2476,94 @@ nodes:
   end: '2026-11-10'
   folded: []
   overview: false
+  notes: Split 2026-11-16 from 'Dispersion and oracle store law'. Capture diagnostic, 58 rows, no engine diff; the post hoc p90 addendum led to §40.
+- id: store-s40-p90
+  title: p90 dispersion estimator (§40)
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §40
+  - commit b0b07b1b
+  verdict_quote: '`NOT-YET`, failed on one leg: c8''s slow leg (E3 fails at cap 32, E4 unscoreable at 256); E1–E4 pass at c1s, c2 and c8''s fast leg; `AGG-OVER-READ` ×2.05 (`c2slot`)'
+  headline: ''
+  depends_on:
+  - store-s36-dispersion
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-10'
+  end: '2026-11-10'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'Dispersion and oracle store law'. Nothing ships.
+- id: store-s42-engine-path
+  title: Engine path for dispersion (§42)
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §42
+  - commit af06313d
+  verdict_quote: (a) Kernel receive timestamps for an engine L̂. `FEASIBLE-IN-TREE`, not built.
+  headline: ''
+  depends_on:
+  - store-s40-p90
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-10'
+  end: '2026-11-10'
+  folded: []
+  overview: false
+  notes: 'Split 2026-11-16 from ''Dispersion and oracle store law''. Derivation and feasibility record, no VM: a wire-clocked S does not close c1s (af06313d).'
+- id: store-engine-form
+  title: Oracle store law, closed loop (§43)
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §43
+  - branch harness43
+  - branch run43
+  - commit 1eca3ee2
+  verdict_quote: c2 `BISTABLE`, c1s `UNSTABLE` (the c1s runaway is quinn's window collapse); diagnostic only, nothing ships
+  headline: ''
+  depends_on:
+  - store-s42-engine-path
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-10'
+  end: '2026-11-10'
+  folded: []
+  overview: false
   plain: Tests of how the in-flight data limit could read the real link rate and delay found no reliable source yet, so the work is on hold until better measurements exist.
-  notes: '§36/§40 receiver dispersion as link rate (NOT-YET), §42 kernel timestamps FEASIBLE-IN-TREE, §43 oracle law (c2 BISTABLE, c1s UNSTABLE) and §43b (CONVERGES-ONE-POINT, in the §43 file). Continues as plan W3.3. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: 'Split 2026-11-16 from ''Dispersion and oracle store law'' (§36, §40, §42, §43, §43b, rated successful as a family): those are now store-s36-dispersion, store-s40-p90, store-s42-engine-path and store-s43b-retuned; this node is §43 alone, a diagnostic with no rating. RWM_STORE_LAW=oracle, 24 rows; continues as plan W3.3.'
+- id: store-s43b-retuned
+  title: Oracle store law re-tuned (§43b)
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §43b
+  - commit bab838c1
+  verdict_quote: 'c2 `CONVERGES-ONE-POINT`: both starts in band (191 / 187), Tp50 18–19.6 ms vs main ≈ 208 ms, goodput ≈ 2 % lower; diagnostic only, nothing ships'
+  headline: ''
+  depends_on:
+  - store-engine-form
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-10'
+  end: '2026-11-10'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'Dispersion and oracle store law'. G = 0.9, τ = 5 ms, c2, SL/SH starts, n = 3 each.
 - id: store-w1-who-limits
   title: Who limits at each δ
   track: store
@@ -1751,6 +2620,9 @@ nodes:
   evidence:
   - status §54 Result, launch 2, owner decision
   - law ledger §4 items 1-2
+  - branch store-law-rev6
+  - derivation store-law-r67.md
+  - status §60
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -1765,7 +2637,7 @@ nodes:
   folded: []
   overview: true
   plain: Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big.
-  notes: 'Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code.'
+  notes: 'Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. Progress 2026-11-14..15: the R6.4/R6.5 amendments with §57a/§57b (store-law-rev6, merged); R6.7 (store-law-r67: candidate floor C, no recommendation); the §60 gauge session measures the queue-free floors, tests the target form at c8 and scores R6.7''s allowance shortfall at c2. Next derivation: R6.7''s allowance item; a large sweep only after it.'
 - id: store-s56-sweep
   title: Store-pool sweep (§56)
   track: store
@@ -1797,7 +2669,8 @@ nodes:
   outcome: unrated
   evidence:
   - status §57a Result
-  verdict_quote: 'UNDERPOWERED.'
+  - status §57 Amendment 1
+  verdict_quote: UNDERPOWERED.
   headline: burst knob reaches 79 at 256; S 0.62
   depends_on:
   - store-s56-sweep
@@ -1818,7 +2691,9 @@ nodes:
   outcome: unrated
   evidence:
   - status §57b Result
-  verdict_quote: 'T = UNSCOREABLE.'
+  - status §57 Amendment 1
+  - branch harness57b
+  verdict_quote: T = UNSCOREABLE.
   headline: c1d store-bound only at W <= 512; T not reached
   depends_on:
   - store-s56-sweep
@@ -1830,30 +2705,161 @@ nodes:
   folded: []
   overview: false
   plain: Measuring the two-path link at six store sizes to see whether its throughput depends on standing queue the way the fast link's does.
-  notes: 'Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms.'
+  notes: Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms.
+- id: store-law-r67
+  title: 'R6.7 floors: candidate C'
+  track: store
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - derivation store-law-r67.md
+  - commit d85d048b
+  - branch store-law-r67
+  verdict_quote: 'store-law r67: the two floors (ℓ̂, b̂₀⁺), K and n₀ — a candidate floor, not a recommendation'
+  headline: ''
+  depends_on:
+  - store-s57b-c1d
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-15'
+  end: '2026-11-15'
+  folded:
+  - commit 34166c90
+  - commit 4cff88d0
+  - commit c49c0a77
+  overview: false
+  notes: 'Candidate C, not a recommendation: one floor, the median absolute window minimum over the K windows of lowest store size seen so far, from n₀ = 10 with no boot hold. It costs 3.75–5.4 s to reach n = 128 and exposes an allowance gap at c2 (5–33 slots below the knee on the static map). §60 scores its c2 prediction (D SHORT, +0.9 to +2.2 ms).'
+- id: store-slaw-gauge
+  title: Store-law gauge build (B-1)
+  track: store
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status §60
+  - branch slaw-gauge
+  - branch s60-tree
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-law-derivation
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-15'
+  end: ''
+  folded: []
+  overview: false
+  waiting_on: the §60 Result (main takes it only through a guard)
+  plain: Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors.
+  notes: 'slaw-gauge d416d59b: the [SLAW] gauge and the [WSTORE] fec= window means of the rate seat''s inputs; s60-tree cb88df3a is main + the gauge, the §60 measured tree. Main does not take the gauge, because it changes the release binary and has had no guard; the tools merge after the Result. Done when: the gauge reaches main through a guard, or is dropped after the §60 Result.'
+- id: store-s60-pre
+  title: Suites and reference binary (60-pre)
+  track: store
+  kind: instrument
+  state: done
+  outcome: successful
+  evidence:
+  - status 60-pre
+  - status 60-pre Result
+  - commit f950956b
+  - commit 0367ea59
+  verdict_quote: '60-pre Result (2026-11-15, 13:39–14:25Z): PASS.'
+  headline: bin_sha e410d640…
+  depends_on:
+  - store-slaw-gauge
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-15'
+  end: '2026-11-15'
+  folded:
+  - commit 204cbc81
+  overview: false
+  notes: Release 1156/0, debug 1008/0, wasm 50/0, core 2/0, doc and parsers rc 0; decision_trace_pin 7/7 in both profiles; the first Linux run of the gauge's tests. ref60-manifest (187 files) is committed and passed as LD_REF_MANIFEST to every §60 launch.
+- id: store-s60a
+  title: Gauge session 60a (§60)
+  track: store
+  kind: research
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status §60
+  - status §60 Amendment 1
+  - derivation s60-registration.md
+  - branch s60-design
+  - branch harness60
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-s60-pre
+  - store-law-r67
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-15'
+  end: ''
+  folded:
+  - commit fd24c86b
+  - commit 80eda329
+  - commit 2967ef8d
+  - commit b17ec7c1
+  - commit 10272273
+  overview: true
+  plain: Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it.
+  notes: 'Registered verbatim from s60-registration.md at 10272273 (Fable, 10 rounds); reported only. 60a: 98 rows, launched at harness60 8565e7d2 at 10:07:42Z on 2026-11-16 after its rehearsal passed. It measures the queue-free floor on pools below anything measured, tests the target form with those floors (B2 at c8, a gross-miss detector) and scores the allowance shortfall D at c2. Amendment 1 registers the scorer''s DECISIONS 1–21 and reads the R-sign gate at the end of 60a (STOP, PASS or UNSCOREABLE), which gates 60b. Done when: the 60a Result is in status with its R-sign label.'
+- id: store-s60b
+  title: Gauge session 60b (§60)
+  track: store
+  kind: research
+  state: blocked
+  outcome: unrated
+  evidence:
+  - status §60 Amendment 2
+  - branch harness60-a2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-s60a
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded:
+  - commit 45eb2c90
+  overview: false
+  vm_order: 1
+  order_reason: Runs after 60a's R-sign gate (a STOP or a missing label blocks it); its rehearsal re-runs first at the new tools sha.
+  plain: 'The second half of the floor measurement: the fast link''s sign test and the gauge''s own cost, now without the rows that overloaded the link.'
+  notes: 'Amendment 2: the evicting rows leave §60 (rate-evict-registration); 60b is 40 slots at harness60-a2 1ecee59d (tools only; bin_sha and manifest unchanged), scored with DECISIONS 1–22. Still owed from Amendment 1: the unfiltered fast test_stubrun.py and the shell tests. Done when: the 60b Result is in status (the c1s sign of R̃ − 1 and the G/C pairs) and the host re-score reproduces 60a''s on-VM LABEL60 lines.'
 - id: store-defect-delta-nan
-  title: RWM_DELTA pins the store cap at its floor (F1)
+  title: RWM_DELTA pinned the store cap (F1)
   track: store
   kind: defect-verdict
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - status "Engine defect F1"
   - derivation shared-core-design.md F1
-  verdict_quote: 'With RWM_DELTA set, q(delta) = 0/0 = NaN.'
-  headline: fix on f1-delta-nan, red test green
+  - status §58 Amendment 2
+  - commit 9b8b42ca
+  verdict_quote: With RWM_DELTA set, q(delta) = 0/0 = NaN.
+  headline: merged 9b8b42ca; decision_trace_pin 7/7 on Linux
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: vm
   start: '2026-11-14'
-  end: null
+  end: '2026-11-14'
   folded: []
   overview: false
-  plain: Fixing a bug where setting the delay dial by number made the in-flight data limit collapse to its minimum.
-  notes: 'Fix 39008a01 awaits the VM engine suites; must merge before §51 (the delta sweep).'
+  plain: Fixed a bug where setting the delay dial by number made the in-flight data limit collapse to its minimum.
+  notes: 'Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner''s guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect.'
 - id: model-shared-core
-  title: Model shares engine laws and decisions (ADR-0077)
+  title: Shared engine laws and decisions (ADR-0077)
   track: model
   kind: infra
   state: in-progress
@@ -1862,11 +2868,13 @@ nodes:
   - ADR-0077
   - derivation shared-core-design.md
   - derivation visualizer-drift-2026-11.md
-  verdict_quote: 'Formulas move to raptorpath-math, decisions to raptorpath-core.'
-  headline: steps 0.1-0.3 running
+  - status §58
+  verdict_quote: Formulas move to raptorpath-math, decisions to raptorpath-core.
+  headline: steps 0.1-0.3 merged; core moves ride guard α
   depends_on:
   - model-wasm-audit
   - infra-restructure
+  - model-shared-core-0
   replaced_by: []
   qualified_by: []
   lane: host-cargo
@@ -1875,7 +2883,86 @@ nodes:
   folded: []
   overview: false
   plain: Letting the visualizer call the same code as the engine, so the model cannot drift from it.
-  notes: 'Owner decision 2026-11-14. Engine moves are zero-behaviour-change (pins, ns bench, guard). Store, recovery and placement stay unshared until the model has a queue and gap reports.'
+  notes: 'Owner decision 2026-11-14. Engine moves are zero-behaviour-change (pins, ns bench, guard). Store, recovery and placement stay unshared until the model has a queue and gap reports. Steps 0.1-0.3 are model-shared-core-0. §58 Part B: only edits that move no existing line meet the identical-sha waiver, so step 1.2, the span-seat extraction and every move into raptorpath-core ride guard α; a weaker identity rule is an owner call (model-user-weak-identity).'
+- id: model-shared-core-0
+  title: Shared core steps 0.1–0.3
+  track: model
+  kind: infra
+  state: done
+  outcome: successful
+  evidence:
+  - status "Owner decisions (2026-11-14)" erratum
+  - commit e9188e01
+  - branch shared-core-0
+  - ADR-0077
+  verdict_quote: The shared-core steps 0.1–0.3 are merged (main `e9188e01`). The engine edits are test-only.
+  headline: ''
+  depends_on:
+  - model-user-wasm-calls
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded:
+  - commit e20ef491
+  - commit c47274c2
+  - commit 5c933677
+  overview: false
+  notes: 'Step 0.1 the empty raptorpath-core crate with its deny-list test (e20ef491), 0.2 non-vacuous source walks (c47274c2), 0.3 decision_trace_pin captured on the untouched tree (5c933677). Its first Linux run, in §58: 7/7.'
+- id: model-endspeed
+  title: Phase-6 forms and end-of-run speed
+  track: model
+  kind: mechanism
+  state: done
+  outcome: successful
+  evidence:
+  - status §58 Amendment 3
+  - commit e5cef8ce
+  - branch endspeed-relaid
+  verdict_quote: It merges on ADR-0077's literal waiver. The line-shift explanation holds for the math crate too.
+  headline: ''
+  depends_on:
+  - meas-s58-session
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded:
+  - commit e5d04df4
+  - commit cca84f53
+  - commit 71ad6b72
+  overview: false
+  notes: ADR-0076 phase 6's five span-law closed forms move from the wasm model to raptorpath-math (span_forms.rs, declared below the engine code so no existing line shifts), with the visualizer's end-of-run speed fix (memoised r* DP over the live deficit band, memoised tail solve, 12 ms frame budget); outputs bit-identical against cfg(test) copies of the old functions, goldens unchanged. Supersedes the branches phase6-forms and viz-endspeed.
+- id: model-warm-start
+  title: Warm-started tail solve (visualizer)
+  track: model
+  kind: mechanism
+  state: done
+  outcome: successful
+  evidence:
+  - commit e614ec64
+  - commit 95e926d4
+  - commit aefe6d97
+  - branch warm-start-2
+  - branch warm-scan
+  - branch warm-scan-clean
+  verdict_quote: 'viz: step budget back to 12 ms (predictive check kept); the 4 ms budget cut tail playback 8-20 % without reducing missed frames (browser acceptance: misses come from software rendering)'
+  headline: ''
+  depends_on:
+  - model-endspeed
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-15'
+  end: '2026-11-15'
+  folded:
+  - branch warm-start
+  - branch viz-frame
+  - commit 6c782567
+  overview: false
+  notes: 'Visualizer only, no engine bytes, not in status. e614ec64: the tail solve is warm-started, bit-identical to compute_r_star_exact; 95e926d4: the no-hint solve gallops up from k = 0 and the step budget is predictive. The branches warm-scan and warm-scan-clean (not merged) hold the evidence tests (fail(k) monotonicity scan, bit-equality harness; long tests #[ignore]).'
 - id: store-defect-cap-constant
   title: Store cap constant at c8
   track: store
@@ -1921,7 +3008,7 @@ nodes:
   overview: false
   notes: 'Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06).'
 - id: place-daps
-  title: DAPS and rate estimator (4 arms)
+  title: DAPS queue-management chain
   track: place
   kind: mechanism
   state: abandoned
@@ -1940,16 +3027,36 @@ nodes:
   end: '2026-07-27'
   folded:
   - branch DAPS queue-mgmt
-  - branch per-path rate estimator
   - branch feat/daps-rightsized-fec
   - commit 34449977
-  - commit 11e0f5eb
   - commit 68d6b6c5
   - commit 9b48286e
   - commit 7387ad9d
   overview: true
-  notes: '2026-07-12 arc, deleted 2026-07-27. Arms (4): DAPS queue management; DAPS read-ahead depth bound; pace-all at BtlBw_i (RWM_PACE_ALL); per-path rate-sample estimator (RWM_RATE_SAMPLE, RWM_PER_PATH_EST). The sub-max quantile anchor is now its own node (place-submax-anchor). Dates: paper §10 rows carry an end (removal) date only.'
   plain: A delay-aware way of picking which path carries each packet, which failed when retested.
+  notes: '2026-07-12 arc, deleted 2026-07-27 (9b48286e). The DAPS queue management, its read-ahead depth bound (68d6b6c5: ''correct lever, but bulk C8 aggregation is BOUNDED'') and pace-all at BtlBw_i (34449977) share one paper row; the per-path rate-sample estimator is its own node (place-rate-sample, split 2026-11-16), and so is the sub-max quantile anchor (place-submax-anchor).'
+- id: place-rate-sample
+  title: Per-path rate-sample estimator
+  track: place
+  kind: mechanism
+  state: abandoned
+  outcome: superseded
+  evidence:
+  - paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`)
+  - commit 11e0f5eb
+  verdict_quote: 'BtlBw rate-sample anchor: fix the per-path over-read (fast ×158→×1); C8 does NOT rise under DAPS — honest negative'
+  headline: ''
+  depends_on: []
+  replaced_by:
+  - store-anchor-hygiene
+  qualified_by: []
+  lane: vm
+  start: '2026-07-12'
+  end: '2026-07-27'
+  folded:
+  - branch per-path rate estimator
+  overview: false
+  notes: 'Split 2026-11-16 from ''DAPS and rate estimator (4 arms)'' (its own branch). Deleted with the DAPS chain 2026-07-27; the paper row: the surviving ideas became the M* law and the anchor-hygiene laws.'
 - id: place-slack
   title: Place-slack
   track: place
@@ -2044,6 +3151,7 @@ nodes:
   outcome: unrated
   evidence:
   - branch wdiv-diag
+  - paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`)
   verdict_quote: never in a battery (all 166 Track-A rows ran it =0); no verdict
   headline: ''
   depends_on: []
@@ -2052,11 +3160,10 @@ nodes:
   lane: host-cargo
   start: '2026-09-08'
   end: ''
-  folded:
-  - paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`)
+  folded: []
   overview: false
-  plain: A wiring change that lets retransmissions be spread across paths differently has been built but never fully measured.
   waiting_on: the leg-choice row in a VM session, then merge to main
+  plain: A wiring change that lets retransmissions be spread across paths differently has been built but never fully measured.
   notes: 'Never in a battery; wdiv-diag wires RWM_PLACE_WDIV and the [HOLD] cx_leg field; reported arms in §52; unmerged. Dates: paper §10 rows carry an end (removal) date only.'
 - id: place-frozen-echo
   title: Frozen app-echo srtt price
@@ -2078,21 +3185,64 @@ nodes:
   folded: []
   overview: false
   notes: 'Paper row is undated: the base dates from the placement law (2026-07-06) and was replaced on 2026-11-10 (§41b, ADR-0073). Dates: paper §10 rows carry an end (removal) date only.'
+- id: place-s38-wire
+  title: Wire-clocked placement base (§38)
+  track: place
+  kind: mechanism
+  state: done
+  outcome: bad
+  evidence:
+  - status §38
+  - commit ac133b31
+  verdict_quote: '`REGRESSES-AT(c1s-400@def)`: client CPU/GB +2.5 % against a 2.4 % tolerance, ranges disjoint; every other clause passes (without it, `CURED`); no WIRE row locked, against 10 of 24 MAIN rows at the static cells'
+  headline: +2.5 %
+  depends_on:
+  - model-review-37
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-10'
+  end: '2026-11-10'
+  folded:
+  - commit 432b4740
+  overview: false
+  notes: Split 2026-11-16 from 'Wire-RTT placement price'. The arm did not ship; iteration once in §41.
+- id: place-s41-iteration
+  title: Wire price, iteration once (§41)
+  track: place
+  kind: mechanism
+  state: done
+  outcome: mixed
+  evidence:
+  - status §41
+  - commit 85be32ac
+  verdict_quote: ladder `CURED` (WIRE vs MAIN); BASE gate `FAIL` on one c1d client-lag clause on the better side (the gate was not A/A-sized), so §41b
+  headline: ''
+  depends_on:
+  - place-s38-wire
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-10'
+  end: '2026-11-10'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'Wire-RTT placement price'. Allocation-free witness, host gate, then the §38 battery.
 - id: place-wire-price
-  title: Wire-RTT placement price
+  title: Wire-RTT placement price (§41b)
   track: place
   kind: mechanism
   state: done
   outcome: successful
   evidence:
-  - status §38
-  - status §41
   - status §41b
   - status §3.9
+  - ADR-0073
+  - commit fc5edd2d
   verdict_quote: GATE PASS, p = 0.7195.
   headline: p = 0.7195
   depends_on:
-  - model-review-37
+  - place-s41-iteration
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -2102,7 +3252,7 @@ nodes:
   - branch diag36
   overview: true
   plain: Fixed a bug where an idle path could stay priced too high and never be used again, by pricing each path on its measured network delay.
-  notes: 'Start set to §38 (2026-11-10); the diag36 branch has a 2026-11-09 first commit from §36. §38 REGRESSES (CPU) -> §41 FAIL (gate not A/A-sized) -> §41b GATE PASS -> owner promotion (ADR-0073) -> merged via diag36 (85c2295). The §3.9 lock-out classifier rule is folded in; §46 is its own node. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: §41b GATE PASS (p = 0.72) -> owner promotion (ADR-0073) -> merged via diag36 (85c2295). §38 and §41 are their own nodes since 2026-11-16 (place-s38-wire, place-s41-iteration). The §3.9 lock-out classifier rule is folded in; §46 is its own node.
 - id: place-per-leg-state
   title: One per-leg state design
   track: place
@@ -2334,6 +3484,31 @@ nodes:
   overview: true
   plain: 'Open problem: the default congestion controller can shrink its sending window to almost nothing on fast links because it remembers one unrealistically low delay sample.'
   notes: 'Still live: quinn BBR is main''s default controller (status §1), and bbr_rs, the fix, is not promoted. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+- id: cc-s48-host-gate
+  title: bbr_rs host gate (§48)
+  track: cc
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §48
+  - commit d7142623
+  - branch bbrfix48-impl
+  verdict_quote: '`STOP-NOT-REPRODUCED` as registered (50 µs misdrives quinn''s sampler); on 10 µs quinn collapses (share 0.81) and `bbr_rs` holds the pipe at every phase, post hoc'
+  headline: ''
+  depends_on:
+  - cc-quinn-bbr-collapse
+  - cc-bbrrs-v1
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-10'
+  end: '2026-11-11'
+  folded:
+  - commit 0daf1452
+  - commit 35c24444
+  overview: false
+  notes: 'Split 2026-11-16 from ''Fixed bbr_rs versus quinn BBR'': cc_sim red/green tests of quinn''s BBR against the fixed bbr_rs, no VM.'
 - id: cc-bbrrs-r1
   title: Fixed bbr_rs versus quinn BBR
   track: cc
@@ -2341,18 +3516,15 @@ nodes:
   state: done
   outcome: bad
   evidence:
-  - status §48
   - status §48b
   - branch bbr48cand
-  - branch bbrfix48-impl
   - branch bbrfix48b
   - branch harness48
   verdict_quote: VERDICT48 REGRESSION by the ladder; the collapse is gone, the cost is c8 CPU and 1.5–2.6 % goodput at c2/c8
   headline: wire RTT at c2 112.4 → 21.8 ms
   depends_on:
-  - cc-quinn-bbr-collapse
+  - cc-s48-host-gate
   - meas-guard-41c
-  - cc-bbrrs-v1
   replaced_by: []
   qualified_by:
   - meas-guard-v2
@@ -2362,7 +3534,7 @@ nodes:
   folded: []
   overview: true
   plain: Our own fixed BBR controller stopped that collapse but cost a little throughput and CPU, so it was not adopted; a later check also found it delayed delivery.
-  notes: '§48 host gate STOP-NOT-REPRODUCED (post hoc 10 µs grid holds), §48b VERDICT48 REGRESSION: collapse controlled, cost c8 CPU and 1.5-2.6 % goodput. Code at archive/bbr-rs. Builds on the in-tree bbr_rs first written for the shal8 cell on 2026-08-07 (git 51bc04bd). Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: '§48b VERDICT48 REGRESSION: collapse controlled, cost c8 CPU and 1.5-2.6 % goodput. Code at archive/bbr-rs. The §48 host gate is its own node (cc-s48-host-gate). Builds on the in-tree bbr_rs first written for the shal8 cell on 2026-08-07 (git 51bc04bd).'
 - id: cc-user-continue-bbrrs
   title: 'Owner call: continue bbr_rs'
   track: cc
@@ -2565,6 +3737,28 @@ nodes:
   - commit 38e533b5
   overview: false
   notes: First battery NO FLIP (2026-08-07); re-registered and flipped 2026-08-08.
+- id: perf-recv-msg-wall
+  title: Receiver per-message wall battery
+  track: perf
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
+  - commit dc4fb783
+  - paper §16.35
+  verdict_quote: 'Receiver Per-Message Wall: RESULTS + verdicts (both seeds) — c1 est +62/+63% and eb+est 446-505 (wall 22-23k -> 46-62k msgs/s), NO FLIP on the c7 anchor-interaction clause'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-06'
+  end: '2026-08-07'
+  folded:
+  - commit 1ce8ba25
+  - commit 774e28a3
+  overview: false
+  notes: 'Split 2026-11-16 from ''Batched BOCD estimator cadence'' (2026-08 audit outcome: mixed). Its pre-build amendment pre-registered RWM_EST_CADENCE (774e28a3).'
 - id: perf-rcvbuf
   title: Receive-buffer fix F-A (§7)
   track: perf
@@ -2707,7 +3901,6 @@ nodes:
   outcome: very-successful
   evidence:
   - status §13
-  - status §15
   verdict_quote: 'DELIVERED (SHIP-SHARED): the shared placement (IOS) passes at every cell; the own placement (IOO) fails at c1d-400'
   headline: +48 %
   depends_on:
@@ -2719,10 +3912,31 @@ nodes:
   end: '2026-10-06'
   folded:
   - branch threading Q1
-  - branch §15 D9 attribution
   overview: true
   plain: Gave each network path its own input and output task, which raised single-path throughput by about half.
-  notes: 'Folds §15 (D9 attribution, KEEP-D9). Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution).
+- id: perf-d9-attribution
+  title: D9 attribution (§15)
+  track: perf
+  kind: research
+  state: done
+  outcome: successful
+  evidence:
+  - status §15
+  - commit 62deacba
+  verdict_quote: '`KEEP-D9 (MAIN better)`: NOD9 FAIL at c1s (goodput −11.4 %, CPUCLI/GB +4.9 %, both WORSE), WITHIN at c1d/c2/c8, BETTER nowhere; D9 stays'
+  headline: ''
+  depends_on:
+  - perf-io-owner
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-06'
+  end: '2026-10-06'
+  folded:
+  - branch §15 D9 attribution
+  overview: false
+  notes: 'Split 2026-11-16 from ''Per-path I/O owner (Q1)'': §13 re-scoped §12''s c1s collapse to D9, and §15 tested D9 alone.'
 - id: perf-sched-split
   title: Scheduler split by direction (Q2)
   track: perf
@@ -2773,7 +3987,6 @@ nodes:
   outcome: superseded
   evidence:
   - status §17
-  - status §20
   - tag archive/thread-r1
   verdict_quote: 'Outcome: REFUTED-WITH-RECORD (R1 FAIL-AT-c1s-400): nothing ships.'
   headline: c1s goodput −69.6 %
@@ -2787,9 +4000,32 @@ nodes:
   end: '2026-10-26'
   folded:
   - commit a2625113
-  - branch §20 R1 c1s collapse diagnosed
   overview: false
-  notes: '§17 REFUTED-WITH-RECORD; §20 traced the collapse to R1''s [LAT] pending store; R2 is R1 with that fix. Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-r1 archived 2026-10-26 (tag date not used for end).'
+  notes: §17 REFUTED-WITH-RECORD; §20 (perf-s20-r1-collapse) traced the collapse to R1's [LAT] pending store; R2 is R1 with that fix. Tag archive/thread-r1 archived 2026-10-26.
+- id: perf-s20-r1-collapse
+  title: R1 c1s collapse diagnosis (§20)
+  track: perf
+  kind: research
+  state: done
+  outcome: successful
+  evidence:
+  - status §20
+  - commit 25c9bed5
+  verdict_quote: '`H1-CONFIRMED` + `FIX-VALIDATED`: the collapse is R1''s `[LAT]` pending store (`net/lat.rs`); swapping that one file decides it both ways'
+  headline: ''
+  depends_on:
+  - perf-receiver-r1
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-26'
+  end: '2026-10-26'
+  folded:
+  - branch §20 R1 c1s collapse diagnosed
+  - commit af0fc86c
+  - commit 4e505046
+  overview: false
+  notes: Split 2026-11-16 from 'Receiver per-datagram cost R1'. Five arms, 10 rows, 3 profiles; its fix is R2.
 - id: perf-receiver-r2
   title: Receiver cost R2 with floor fix
   track: perf
@@ -2802,6 +4038,7 @@ nodes:
   headline: 717 Mbit/s
   depends_on:
   - perf-receiver-r1
+  - perf-s20-r1-collapse
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -2835,28 +4072,47 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-r3 archived 2026-10-27 (tag date not used for end).'
 - id: perf-c8-lag
-  title: c8 client lag diagnosis
+  title: c8 client [LAG] spread (§25)
   track: perf
   kind: research
   state: done
-  outcome: successful
+  outcome: unrated
   evidence:
   - status §25
-  - status §26
-  - status §33
-  verdict_quote: '(a) MIXED. (b) UNBOUNDED-PER-WAKE(sack): the sender runs several loop iterations per wake without yielding, and 81 % of the wall of its polls of 10 ms or more is the SACK drain.'
+  - commit d8abe709
+  verdict_quote: '`UNSETTLED`: long task polls cover a third of late ticks (F = 0.33 < 0.5), no steal at the late ticks; placement ruled out; nothing ships'
   headline: 81 %
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: vm
   start: '2026-10-26'
-  end: '2026-11-01'
+  end: '2026-10-26'
   folded:
   - branch §25/§26 c8 lag diagnosis + RWM_RTOBS instruments ([LAG] min_us, [OSLAG], [TXSEC], [LPOLL])
-  - branch §33 c8 lag timer hand-off NOT MATERIAL on current main
   overview: false
-  notes: '§25 UNSETTLED, §26 UNBOUNDED-PER-WAKE(sack) (led to §28), §33 NOT MATERIAL; RWM_RTOBS instruments. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: Split 2026-11-16 from 'c8 client lag diagnosis' (§25, §26, §33; rated successful as a family, a rating that now sits on §26, perf-s26-long-polls). Diagnostic, 30 rows, placement step 1.
+- id: perf-s26-long-polls
+  title: c8 lag tail, long polls (§26)
+  track: perf
+  kind: research
+  state: done
+  outcome: successful
+  evidence:
+  - status §26
+  - commit 92934a7a
+  verdict_quote: '(a) `MIXED` (an OS part and a larger runtime part); (b) `UNBOUNDED-PER-WAKE(sack)`: 81 % of the wall of polls ≥ 10 ms is the SACK drain; bound designed in §28'
+  headline: 81 %
+  depends_on:
+  - perf-c8-lag
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-10-26'
+  end: '2026-10-27'
+  folded: []
+  overview: false
+  notes: Split 2026-11-16 from 'c8 client lag diagnosis'. The RWM_RTOBS instruments ([LAG] min_us, [OSLAG], [TXSEC], [LPOLL]) merged with it; its SACK-drain finding is what §28 bounded.
 - id: perf-incremental-sack
   title: Incremental SACK marking (§28)
   track: perf
@@ -2868,7 +4124,7 @@ nodes:
   verdict_quote: 'SHIP: NEW (incremental SACK marking) is PASS-EVERYWHERE.'
   headline: -30 %
   depends_on:
-  - perf-c8-lag
+  - perf-s26-long-polls
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -2900,6 +4156,28 @@ nodes:
   overview: false
   plain: Made the receiver clean up finished decoding work more often, which raised fast two-path throughput by about a fifth.
   notes: 'End 2026-11-01 was a placeholder (status §32: last edit or migration date); date from merge bb29595e. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+- id: perf-s33-timer
+  title: c8 lag timer hand-off (§33)
+  track: perf
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - status §33
+  - commit 61128b84
+  verdict_quote: '`NOT MATERIAL`: no fix designed, nothing pre-registered, nothing ships'
+  headline: ''
+  depends_on:
+  - perf-incremental-sack
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-01'
+  end: '2026-11-01'
+  folded:
+  - branch §33 c8 lag timer hand-off NOT MATERIAL on current main
+  overview: false
+  notes: Split 2026-11-16 from 'c8 client lag diagnosis'. Offline reading of the §28 step-0 and §26 ledgers, no VM.
 - id: perf-receiver-followups
   title: Receiver follow-ups (§35)
   track: perf
@@ -3139,6 +4417,27 @@ nodes:
   overview: true
   plain: Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run.
   notes: 'Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
+- id: meas-adversarial-b1
+  title: Adversarial Cells B1 (policer map)
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 754139c3
+  verdict_quote: 'Adversarial Cells (B1): RESULTS + verdicts (both seeds) - the breakage map inverts the shallow-buffer story and de-scopes the policer off the CC surface'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-06'
+  end: '2026-08-06'
+  folded:
+  - commit 6c8c3d38
+  - commit 9840854b
+  overview: false
+  notes: Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design.
 - id: meas-formula-first
   title: Formula-first review (ADR-0070)
   track: meas
@@ -3179,33 +4478,220 @@ nodes:
   end: '2026-08-12'
   folded:
   - branch anchor-era suspect REFUTED
-  - branch SF accounting axis
   - branch the ack-cadence gauge
   - branch ack-cadence measurement
   - branch SF bench on measured inputs
   - branch cap-refresh warmth
-  - branch the coupling model
   - branch the queue fix
   - branch latency-feedback REFUTED (no inner TCP exists)
   - branch paper refresh
-  - commit 82d84637
-  - commit 11db2992
+  overview: false
+  notes: 'Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16.'
+- id: meas-coupling-model
+  title: Coupling model (frontier span)
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
   - commit 7ad65ef1
   - commit cb422e2d
-  - commit 4b3910e3
+  verdict_quote: 'coupling model: RESULTS — NOT VALIDATED, and the refutation is arithmetic'
+  headline: ''
+  depends_on:
+  - meas-pipeline-verification
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-11'
+  end: '2026-08-12'
+  folded:
+  - branch the coupling model
+  - commit 82d84637
+  - commit 11db2992
+  overview: false
+  notes: 'Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: dead-end). cb422e2d: ''frontier span REAL but NEUTRALIZED at the gate by ADR-0060''.'
+- id: meas-sf-accounting
+  title: SF accounting axis
+  track: meas
+  kind: research
+  state: done
+  outcome: mixed
+  evidence:
   - commit 4f67ba7d
   - commit 4131d254
+  verdict_quote: 'SF accounting axis (2/2): RESULTS — the U-fold''s CELL reproduces (c7 10.0x -> 1.0x, c8 2.7x -> 7.1x), the LEVEL at c7 does not; verdict NOT REPRODUCED, fallback triggered'
+  headline: ''
+  depends_on:
+  - meas-pipeline-verification
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-11'
+  end: '2026-08-11'
+  folded:
+  - branch SF accounting axis
+  - commit 4b3910e3
+  - commit 8beb7ad1
   overview: false
-  notes: 'Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". Folds the 2026-08-12 paper refresh. Folded the Coupling model commits (2026-08 audit; mapped outcome there: dead-end). Folded the SF accounting axis commits (2026-08 audit; mapped outcome there: mixed).'
+  notes: 'Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: mixed): the cell reproduces, the level at c7 does not.'
 - id: meas-goal-0819
-  title: Era, latency-truth and c9 batteries
+  title: 'Era battery: cumulative shipped effect'
   track: meas
   kind: research
   state: done
   outcome: unrated
   evidence:
+  - commit f605f925
   - branch THE ERA LEDGER, SCORED
-  verdict_quote: 'merge: THE ERA LEDGER, SCORED - item 1 closed'
+  verdict_quote: 'Era Battery: THE SCORED RESULT — ERA LEDGER item 1 closed, scored against the pre-registration and nothing else'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch era battery launched
+  - branch era-battery prep
+  - commit 1d7094ef
+  - commit f605f925
+  - commit 6460ae73
+  - commit a24d5a48
+  - commit 97bd690e
+  overview: false
+  notes: 'Era ledger item 1 (2026-08-19; owner: ''fix the ping probe in there. we cannot mislead ourselves''): the arc''s cumulative shipped effect on two binaries (pre-registration 1d7094ef). The day''s other items are their own nodes since 2026-11-16: meas-latency-truth, meas-c9-battery, meas-gap-phases, meas-cpuprof, meas-span-run, meas-sigma-c8, meas-eppen-c8.'
+- id: meas-latency-truth
+  title: Latency Truth battery
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit e57f3655
+  - commit cb288631
+  verdict_quote: 'Latency Truth: THE SCORED RESULT — the era battery''s delivered-latency reading is WITHDRAWN, and the win it was thought to contradict does not survive re-measurement either'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch LATENCY TRUTH scored
+  - branch LATENCY TRUTH launch
+  - commit 4b094d26
+  overview: false
+  notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 1's delivered-latency reading withdrawn.
+- id: meas-c9-battery
+  title: c9 quad-cell validation battery
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 9a060daa
+  - commit 7f2b0096
+  verdict_quote: 'c9 VALIDATION BATTERY, SCORED: ERA LEDGER item 5 CLOSED - 24/24 invocations, ZERO aborts, and a THIRD specification failure (the [CCAP] span field the contract scores C9-L1/L3 on has never existed)'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch c9 SCORED
+  - branch the topo-ping repair + the c9 battery's launch step
+  - branch the c9 quad cell
+  - commit 07028110
+  overview: false
+  notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). 07028110: every abort now says why.'
+- id: meas-gap-phases
+  title: Gap battery phases 1 and 2
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 5bf1a346
+  - commit b4be2489
+  - commit decf67a8
+  - commit 4323b2c7
+  verdict_quote: 'merge: gap phase 2 SCORED - no interaction to name; item 3 closes NEEDS-MORE-named'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch gap phase 2 SCORED
+  - branch gap phase 2 launched
+  - branch gap phase 1 SCORED
+  - branch gap battery phase 1 launched
+  - commit c2e20beb
+  - commit 99193218
+  overview: false
+  notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 3: phase 1 ''the drift is real, the ratio SURVIVED it'' (decf67a8), phase 2 ''no interaction to name'' (4323b2c7).'
+- id: meas-cpuprof
+  title: 'cpuprof: the sender''s CPU ceiling'
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 4eb2306c
+  - commit 4e52a318
+  verdict_quote: 'merge: cpuprof SCORED - the ceiling is DIFFUSE; item 2 phase 1 closed, phase 2 does not run'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch cpuprof SCORED
+  - branch cpuprof battery launched
+  - branch items 2+3 local prep
+  overview: false
+  notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 2, phase 1: ''the biggest thing in the sender is not on the wire path'' (4eb2306c).'
+- id: meas-span-run
+  title: 'Span run: span instrument, anchors'
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 0d30724a
+  verdict_quote: 'Span Run: THE SCORED RESULT - the instrument WORKS, the ANCHORS DO NOT'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch the span run
+  - branch the span field + the clock prerequisites (items 4+5 local halves)
+  - commit 6d4c3548
+  overview: false
+  notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). The [CCAP] span field the c9 battery missed, closed locally (6d4c3548).
+- id: meas-sigma-c8
+  title: Measured σ at c8
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit d20b0863
+  - commit b5d8a14c
+  verdict_quote: 'Measured sigma at c8: SCORED - S1 FAILS by 75x, and delta = 0.4838 is retired'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -3215,31 +4701,28 @@ nodes:
   end: '2026-08-19'
   folded:
   - branch sigma at c8 MEASURED
-  - branch cpuprof SCORED
-  - branch cpuprof battery launched
-  - branch gap phase 2 SCORED
-  - branch gap phase 2 launched
-  - branch gap phase 1 SCORED
-  - branch gap battery phase 1 launched
-  - branch the span run
-  - branch items 2+3 local prep
-  - branch LATENCY TRUTH scored
-  - branch LATENCY TRUTH launch
-  - branch the span field + the clock prerequisites (items 4+5 local halves)
-  - branch c9 SCORED
-  - branch the topo-ping repair + the c9 battery's launch step
-  - branch the c9 quad cell
-  - branch era battery launched
-  - branch era-battery prep
-  - branch Eppen at c8
-  - commit 1d7094ef
-  - commit f605f925
-  - commit e57f3655
-  - commit 5bf1a346
-  - commit c2e20beb
-  - commit b4be2489
   overview: false
-  notes: 'The 2026-08-19 goal (owner: "fix the ping probe in there. we cannot mislead ourselves"): latency truth, era ledger, c9 quad cell, gap battery, cpuprof, span run, σ at c8, Eppen at c8. Folded the Era battery commits (2026-08 audit; mapped outcome there: unrated). Folded the Gap phases 1 and 2 commits (2026-08 audit; mapped outcome there: unrated).'
+  notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5''s measurement clause: ''the delta agreement is DEAD by 75x'' (b5d8a14c).'
+- id: meas-eppen-c8
+  title: Eppen's condition at c8
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 33528562
+  verdict_quote: 'Eppen''s Condition at c8: VERDICT PARTIAL -- the ordering predicts, the cross-check''s named referent is refuted, and the harness has been setting rho_loss = +1 by construction at every symmetric cell in this tree'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch Eppen at c8
+  overview: false
+  notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL.
 - id: meas-attribution-audit
   title: Attribution audit D0
   track: meas
@@ -3435,6 +4918,39 @@ nodes:
   folded: []
   overview: false
   notes: 'No raw record. Dry run done (status §3.10 item 7: "the source-phase floor is degenerate on guard rows; in-order delay resolves only on long rows"); feeds §41d. Branch unmerged (inventory merge).'
+- id: meas-s58-session
+  title: '§58: F1 suites, binary identity'
+  track: meas
+  kind: instrument
+  state: done
+  outcome: successful
+  evidence:
+  - status §58
+  - status §58 Amendment 2
+  - status §58 Amendment 3
+  - commit ba6637d7
+  - commit f5bbb7c7
+  - commit 504c4ea6
+  - commit e7d7228e
+  - branch s58-tools
+  - branch phase6-forms
+  - branch viz-endspeed
+  verdict_quote: So main's engine is byte-identical to the control apart from the line numbers that shift below that declaration.
+  headline: tree X = control 8f313616…
+  depends_on:
+  - store-defect-delta-nan
+  - model-shared-core-0
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded:
+  - commit 17eb3c87
+  - commit a7c93722
+  overview: false
+  plain: Checked on Linux that the delay-dial fix passes every engine test, and that model-only changes leave the engine binary byte-identical.
+  notes: 'Part A (suites on the F1 tree): PASS, F1 merged (store-defect-delta-nan). Part B (Linux release-binary identity, binid_run.sh): run 1 not read (control mismatch: the runner built from the workspace root; fixed, and a test pins it); run 2: control = known answer, base ≠ control diagnosed as the two-line cfg(test) mod declaration shifting line numbers (tree X builds the control''s sha). Amendment 3: the re-laid endspeed candidate equals main''s sha and merges (model-endspeed); tree Y confirms raptorpath-core does not touch the engine binary. phase6-forms and viz-endspeed are superseded by endspeed-relaid. §58 closed.'
 - id: model-paper-v1
   title: Unified FEC/ARQ model paper
   track: model
@@ -3443,7 +4959,7 @@ nodes:
   outcome: unrated
   evidence:
   - commit fc5867a3
-  verdict_quote: 'Resolve #15 (SACK spec) and #19 (back-pressure mechanism)'
+  verdict_quote: ''
   headline: ''
   depends_on: []
   replaced_by: []
@@ -3454,19 +4970,7 @@ nodes:
   folded:
   - commit 749112b9
   - commit 482f1ee0
-  - commit adf7674c
   - commit a7a965f3
-  - commit 298e1c00
-  - commit bdf796ea
-  - commit 82fa398f
-  - commit c25e36e6
-  - commit bcda035a
-  - commit f6e0c4b2
-  - commit 62977a39
-  - commit 2f3fe69c
-  - commit 2b0622cf
-  - commit 8ad3609e
-  - commit 2339db61
   - commit d1296d19
   - commit 3ae61464
   - commit 4d1962d6
@@ -3480,8 +4984,39 @@ nodes:
   - commit 828d3f7c
   - commit ac8b3e60
   overview: false
-  notes: 'Direct landings 2026-03-21 to 2026-04-10. Folded: the 2026-04-02 ''Resolve #NN'' spec commits. Folded the remaining April commits (2026-04-01..12), no separate development.'
   plain: The first full write-up of the error-correction and resend model.
+  notes: 'Direct landings 2026-03-21 to 2026-04-12: the rewrite (fc5867a3), multipath scheduling (Section 11), the taper function, PDF build and Section 14 (future directions). The open-points audit and its resolutions (2026-04-01..02) are their own node (model-open-points).'
+- id: model-open-points
+  title: Resolve the paper's open points
+  track: model
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit adf7674c
+  - commit bcda035a
+  - commit c25e36e6
+  - commit 82fa398f
+  - commit bdf796ea
+  - commit 298e1c00
+  verdict_quote: Add full open points audit to Appendix D (21 items, rated by difficulty)
+  headline: ''
+  depends_on:
+  - model-paper-v1
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-04-01'
+  end: '2026-04-02'
+  folded:
+  - commit 2339db61
+  - commit 8ad3609e
+  - commit 2b0622cf
+  - commit f6e0c4b2
+  - commit 62977a39
+  - commit 2f3fe69c
+  overview: false
+  notes: 'Split 2026-11-16 from ''Unified FEC/ARQ model paper''. Appendix D audit (adf7674c), the 12 LOW-difficulty points (bcda035a), then the numbered resolutions, e.g. ''Resolve #11 (T_cut algorithm) and #12 (Mode 3 convergence)'' (bdf796ea); C.4 and C.5 marked not applicable.'
 - id: model-math-verification
   title: Mathematical verification of the model
   track: model
@@ -3504,6 +5039,32 @@ nodes:
   - commit 9a30f408
   overview: false
   notes: 23 tests, three paper errors found (2026-04-12). Folded the remaining April commits (2026-04-01..12), no separate development.
+- id: model-visualizer-v1
+  title: 'First visualizer: triangle and BOCD'
+  track: model
+  kind: mechanism
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 4cd3abc3
+  - commit 468b7580
+  - commit aa56ef51
+  verdict_quote: 'Visualizer: adaptive r (BOCD) + real RLC codec in wasm'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-04-07'
+  end: '2026-04-10'
+  folded:
+  - commit ec547074
+  - commit e49fbc80
+  - commit 4a0890ac
+  - commit 9b922b5f
+  - commit 72258063
+  overview: false
+  notes: 'Split 2026-11-16 from ''raptorpath-math and wasm L0 model'': the first interactive visualizer (2026-04-07..10), connected to the triangle (4cd3abc3), with per-symbol P_lost mixing and T_cut stop (4a0890ac), adaptive r (BOCD) and the real RLC codec in wasm (468b7580), a calibrated channel (aa56ef51).'
 - id: model-wasm-l0
   title: raptorpath-math and wasm L0 model
   track: model
@@ -3514,35 +5075,28 @@ nodes:
   - branch multipath visualizer
   verdict_quote: Merge multipath visualizer — L0 validates the RWM aggregation prediction
   headline: ''
-  depends_on: []
+  depends_on:
+  - model-visualizer-v1
   replaced_by: []
   qualified_by:
   - rate-defect-pfec
   - model-defect-tcut
   lane: host-cargo
-  start: '2026-04-07'
+  start: '2026-04-08'
   end: '2026-07-06'
   folded:
   - commit da837ee9
-  - commit 72258063
   - branch vis UI polish
   - branch vis-semantics
   - paper §11.1 open question 6
-  - commit ec547074
-  - commit e49fbc80
-  - commit 4a0890ac
-  - commit 468b7580
-  - commit 4cd3abc3
-  - commit aa56ef51
   - commit 3d786986
   - commit 61f47e22
   - commit 8f18b907
   - commit 21d44b4c
   - commit 96145766
-  - commit 9b922b5f
   overview: false
-  notes: 'Folds paper §11.1 open question 6 (do the three channel implementations agree). Folded: the April visualizer commits (2026-04-07..10); start moved to 2026-04-07 for the first of them. Folded the remaining April commits (2026-04-01..12), no separate development.'
   plain: A browser simulator that runs the same math as the real code.
+  notes: Folds paper §11.1 open question 6 (do the three channel implementations agree). raptorpath-math and raptorpath-wasm crates (da837ee9, 2026-04-08) so the visualizer runs the real Rust code; the April visualizer itself is model-visualizer-v1.
 - id: model-vis-continuum
   title: Visualizer as one continuum law
   track: model
@@ -3707,10 +5261,11 @@ nodes:
   title: T_cut give-up law pinned
   track: model
   kind: defect-verdict
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - status §3.10 item 1
+  - commit 56388aee
   verdict_quote: The T_cut give-up law is PINNED (model only).
   headline: ''
   depends_on:
@@ -3719,18 +5274,21 @@ nodes:
   qualified_by: []
   lane: none
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-14'
   folded: []
   overview: false
-  plain: 'Open problem: the visualizer''s rule for when to give up on a missing packet only ever takes one of two fixed values and jumps at unexpected points.'
+  plain: 'Fixed: the visualizer''s give-up rule no longer uses the two-valued cut-off time.'
+  notes: 'Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim no longer calls find_t_cut. find_t_cut''s search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled.'
 - id: model-defect-dead-machine
   title: Wasm dead second machine
   track: model
   kind: defect-verdict
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - status §3.10 item 3
+  - status "Owner decisions (2026-11-14)" erratum
+  - commit 0857a0cd
   verdict_quote: The wasm model carries a dead second machine.
   headline: ''
   depends_on:
@@ -3739,10 +5297,11 @@ nodes:
   qualified_by: []
   lane: none
   start: '2026-11-13'
-  end: ''
+  end: '2026-11-14'
   folded: []
   overview: false
-  plain: 'Open problem: the visualizer still carries an older second copy of the machine that only the tests use.'
+  plain: 'Fixed: the visualizer''s unused second copy of the machine is removed.'
+  notes: 'Fixed by viz-fix (model-viz-fix): the classic-hint machine is removed and the named hints are an alias table onto the one continuum constructor. Law ledger M03 has not been re-labelled.'
 - id: obs-status-endpoint
   title: Runtime status endpoint (ADR-0013)
   track: obs
@@ -4102,6 +5661,7 @@ nodes:
   outcome: unrated
   evidence:
   - ADR-0076
+  - status §58 Amendment 3
   verdict_quote: 'Proposed (2026-11-12); open questions decided by the user the same day (see "Decisions"). Phase 0: done. Phase 2: lines committed on `restructure` (not yet merged). Phases 1, 3–6: Proposed, not executed.'
   headline: ''
   depends_on: []
@@ -4114,9 +5674,9 @@ nodes:
   - branch restructure-3
   - branch restructure phase 0+2
   overview: false
-  plain: Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open.
   waiting_on: the open branches merging before the code splits
-  notes: 'Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phases 5-6 open (phase 6 moves wasm closed forms into raptorpath-math). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
+  plain: Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open.
+  notes: Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open.
 - id: rec-p10a-repair-floor
   title: Inner-feedback repair floor (P10a)
   track: rec
@@ -4382,7 +5942,7 @@ nodes:
   start: '2026-11-13'
   end: '2026-11-13'
   folded: []
-  overview: true
+  overview: false
   plain: Building the new merge check, which drops a misleading delay reading and adds a proper measure of how long data waits before delivery.
   notes: 'Merged to main (9e687938 "Merge guard v2 (status 41d)", batch ending 0ed6d383): selectable clause set, plan 41d, v1 bit-identical, VOID rule, 600 MB d80 table. Unrated by the non-merge rule until a done node builds on it. Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it.'
 - id: model-law-ledger
@@ -4670,6 +6230,7 @@ nodes:
   evidence:
   - plan Live state items 1-2
   - branch p0-dwell-diag §8
+  - branch levb54
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -4751,6 +6312,7 @@ nodes:
   depends_on:
   - meas-s51-design
   - meas-s51-harness
+  - store-defect-delta-nan
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -4950,6 +6512,110 @@ nodes:
   overview: false
   plain: Owner decision on how to clean up the visualizer's model, including removing a second, unused copy of the machine.
   notes: 'Done when: the owner rules on the audit''s five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status.'
+- id: model-giveup-law
+  title: Model give-up law (ii)
+  track: model
+  kind: law
+  state: done
+  outcome: successful
+  evidence:
+  - status "Owner decisions (2026-11-14)" item 3
+  - commit 56388aee
+  - derivation giveup-law-model.md
+  - paper §5.6
+  verdict_quote: 'Rule: give up a hole iff age > D(δ) and given_up + 1 ≤ min(1 − ρ, R)·src_total.'
+  headline: ''
+  depends_on:
+  - model-user-wasm-calls
+  - model-defect-tcut
+  replaced_by: []
+  qualified_by:
+  - model-defect-rho-inert
+  lane: host-cargo
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded:
+  - branch giveup-ii
+  - commit 72c42721
+  - commit b6b57764
+  - commit c42331e9
+  - commit e0a2f777
+  - commit 82aeca41
+  overview: false
+  notes: Replaces V5/V6 (the cartoon's budget choice) and W14 (the sim's T_cut horizon); the sim stops calling find_t_cut. The 1 − ρ cap is a model law the engine lacks, so it has its paper §5.6 line, a §11.3 row and a bounding test; dropping T_cut diverges at harsh Bulk (8–26 of 100 slider positions), also bounded by a test. Goldens unchanged.
+- id: model-viz-fix
+  title: Visualizer fixes (viz-fix)
+  track: model
+  kind: mechanism
+  state: done
+  outcome: successful
+  evidence:
+  - status "Owner decisions (2026-11-14)" erratum
+  - commit 0857a0cd
+  - branch viz-fix
+  verdict_quote: the dead classic-hint machine is removed, and the named hints are now an alias table onto the one continuum constructor;
+  headline: ''
+  depends_on:
+  - model-user-wasm-calls
+  - model-defect-dead-machine
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-14'
+  end: '2026-11-14'
+  folded:
+  - commit d9a2a3d4
+  - commit ac3ecd13
+  - commit 7472ba31
+  - commit bcdc7a9d
+  - commit 08909b7e
+  - commit 3bdc4cb5
+  overview: false
+  notes: 'Also: the W11 β = 0 guard is gone, a W22 bounding test is added, the store text is per cell (2048 is a clamp measured pinned; 512·N an underived constant), the model-vs-engine table rows C04 and S05 are fixed. Goldens unchanged; 39 native wasm tests and both mjs gates pass.'
+- id: model-defect-rho-inert
+  title: ρ inert at Auto, Realtime (M04)
+  track: model
+  kind: defect-verdict
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - law ledger M04
+  - commit 8aeb0254
+  - status "Owner decisions (2026-11-14)" item 3
+  verdict_quote: At Auto and Realtime, R is below the ρ slider's step, so ρ is inert over the slider there.
+  headline: ''
+  depends_on:
+  - model-giveup-law
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-14'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Open problem: in the visualizer''s give-up rule the retention dial has no effect at the Auto and Realtime settings, because the other limit is always smaller.'
+  notes: 'Ledger M04: DEGENERATE (ρ inert at Auto and Realtime under the shipped R). The same-day erratum: this holds under the shipped (cut) R only; under the block-exact candidate C6, ρ would act on 1–4 of 100 positions. It waits on the P_fec work (rate-pfec-continuous, rate-pfec-oracle).'
+- id: model-user-weak-identity
+  title: 'Owner call: weaker binary identity'
+  track: model
+  kind: user-decision
+  state: next
+  outcome: n/a
+  evidence:
+  - status §58 Part B result
+  verdict_quote: A weaker identity (the same code section, with differences confined to location data) would change ADR-0077, so it is the owner's call.
+  headline: ''
+  depends_on:
+  - meas-s58-session
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Owner decision on whether a model-only change whose engine binary differs only in embedded line numbers may skip the merge guard.
+  notes: 'Done when: the owner rules; if accepted, the rule is calibrated on the base/X pair first and recorded as an ADR that supersedes ADR-0077''s identical-sha clause.'
 - id: rate-user-rate-law
   title: Owner calls on rate law
   track: rate
@@ -5199,7 +6865,7 @@ nodes:
   folded: []
   overview: false
   plain: Applying the owner's calls to the visualizer's model and proving it stays smooth across the dial.
-  notes: 'Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes.'
+  notes: 'Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. Progress 2026-11-14: viz-fix (model-viz-fix) removed the dead machine and the W11 guard; the give-up law (ii) (model-giveup-law) replaced the cartoon shed choice and T_cut.'
 - id: rate-law-reconcile
   title: Rate-law reconciliation (W22, W*)
   track: rate
@@ -5797,6 +7463,8 @@ nodes:
   - commit ec6a5ec7
   - commit fc860371
   - commit f6d95c99
+  - branch the latency battery
+  - branch latency-lever instruments, pre-registration, and the specification-failure record
   overview: false
   plain: Measured a way to trade delay for throughput; it works as predicted but was not worth turning on by default.
   notes: 'Pre-registration ec6a5ec7; scored by lat_report.py (fc860371). Mapped to mixed: works, no default. Track store: the battery tested the three-term cap as a latency control (follows the three-term battery''s specification failure, f334471e).'

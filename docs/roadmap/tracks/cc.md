@@ -19,6 +19,7 @@ flowchart TB
     cc_adr68_fusion["⏸ Copa-BBR fusion<br/>(ADR-0068)"]
     cc_bbrrs_v1["✔ bbr_rs v1 on shal8"]
     cc_quinn_bbr_collapse>"⚠ Quinn BBR window<br/>collapse (#167;47)"]
+    cc_s48_host_gate["✔ bbr_rs host gate<br/>(#167;48)"]
     cc_bbrrs_r1["✔ Fixed bbr_rs versus<br/>quinn BBR"]
     cc_bbrrs_r2["⏳ bbr_rs round 2 fixes"]
     cc_pacing_audit["⏳ Pacing-seam audit<br/>(W2)"]
@@ -38,9 +39,10 @@ flowchart TB
     cc_copa_wire_signal ~~~ cc_adr68_fusion
     cc_bbr_default ~~~ cc_bbrrs_v1
     cc_bbr_default ~~~ cc_quinn_bbr_collapse
-    cc_adr68_fusion ~~~ cc_bbrrs_r1
-    cc_bbrrs_v1 ~~~ cc_bbrrs_r1
-    cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
+    cc_adr68_fusion ~~~ cc_s48_host_gate
+    cc_bbrrs_v1 ~~~ cc_s48_host_gate
+    cc_quinn_bbr_collapse ~~~ cc_s48_host_gate
+    cc_s48_host_gate ~~~ cc_bbrrs_r1
     cc_bbrrs_r1 ~~~ cc_bbrrs_r2
     cc_bbrrs_r1 ~~~ cc_pacing_audit
     cc_bbrrs_r2 ~~~ cc_pacing_seam
@@ -59,8 +61,9 @@ flowchart TB
     cc_bbr_default -.-> cc_quinn_bbr_collapse
     cc_bbr_default --> cc_adr68_fusion
     cc_copa_wire_signal --> cc_adr68_fusion
-    cc_quinn_bbr_collapse --> cc_bbrrs_r1
-    cc_bbrrs_v1 --> cc_bbrrs_r1
+    cc_quinn_bbr_collapse --> cc_s48_host_gate
+    cc_bbrrs_v1 --> cc_s48_host_gate
+    cc_s48_host_gate --> cc_bbrrs_r1
     cc_bbrrs_r1 --> cc_bbrrs_r2
     cc_adr68_fusion --> cc_pacing_audit
     cc_pacing_audit --> cc_pacing_seam
@@ -70,7 +73,7 @@ flowchart TB
     cc_s48d_session --> cc_bbrrs_promote
     cc_bbrrs_promote --> cc_hybrid
     cc_pacing_audit --> cc_hybrid
-    linkStyle 24,27 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 25,28 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -85,7 +88,7 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cc_cubic_substrate,cc_aimd_v1,cc_copa_sole_substrate dead
-    class cc_early_delay_cc,cc_bbrrs_v1 unrated
+    class cc_early_delay_cc,cc_bbrrs_v1,cc_s48_host_gate unrated
     class cc_copa_lite,cc_copa_wire_signal,cc_bbr_default succ
     class cc_adr68_fusion,cc_hybrid parked
     class cc_quinn_bbr_collapse,cc_defect_copa_minrtt defect
@@ -109,7 +112,8 @@ flowchart TB
 | `cc-bbrrs-v1` | bbr_rs v1 on shal8 | done | unrated |  | branch fix/shal8-anchor |  |
 | `cc-adr68-fusion` | Copa-BBR fusion (ADR-0068) | parked | unrated |  | ADR-0068 | cc-bbr-default, cc-copa-wire-signal |
 | `cc-quinn-bbr-collapse` | Quinn BBR window collapse (§47) | in-progress | unrated |  | status §47 | store-engine-form |
-| `cc-bbrrs-r1` | Fixed bbr_rs versus quinn BBR | done | bad | wire RTT at c2 112.4 → 21.8 ms | status §48; status §48b; branch bbr48cand; branch bbrfix48-impl; branch bbrfix48b; branch harness48 | cc-quinn-bbr-collapse, meas-guard-41c, cc-bbrrs-v1 |
+| `cc-s48-host-gate` | bbr_rs host gate (§48) | done | unrated |  | status §48; commit d7142623; branch bbrfix48-impl | cc-quinn-bbr-collapse, cc-bbrrs-v1 |
+| `cc-bbrrs-r1` | Fixed bbr_rs versus quinn BBR | done | bad | wire RTT at c2 112.4 → 21.8 ms | status §48b; branch bbr48cand; branch bbrfix48b; branch harness48 | cc-s48-host-gate, meas-guard-41c |
 | `cc-user-continue-bbrrs` | Owner call: continue bbr_rs | done | n/a |  | status commit 1425acbd (nm.txt); plan W1 §48b RESULT | cc-bbrrs-r1 |
 | `cc-bbrrs-r2` | bbr_rs round 2 fixes | in-progress | unrated |  | branch bbrrs-r2; branch bbrrs-r3 | cc-user-continue-bbrrs |
 | `cc-pacing-audit` | Pacing-seam audit (W2) | in-progress | unrated |  | derivation w2-pacing-seam.md (branch adr68-amend); branch adr68-amend | cc-adr68-fusion |
@@ -138,7 +142,8 @@ flowchart TB
 | `cc-bbrrs-v1` | bbr_rs v1 on shal8 | fix/shal8-anchor merge (2026-08-07). git log 2eb88de3 (not a raw record): "bbr_rs falsified x2 at 21-22 Mbit (gate >=70, NO FLIP, default unchanged)". The raw record has no verdict. Folded Ship The Wins 2 (shal8 anchor): pre-registration c319ef91, RESULTS 2eb88de3 (STRUCTURAL BOUND, NO FLIP). | branch fix/shal8-anchor |
 | `cc-adr68-fusion` | Copa-BBR fusion (ADR-0068) | Owner asked for a fusion ADR 2026-07-21 ("a better copa would be best"); prerequisite battery (adversarial cells) complete; plan W2 future track. Folds paper §11.1 open question 12. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Folded the Adversarial cells B1 commits (2026-08 audit; mapped outcome there: unrated). | ADR-0068 |
 | `cc-quinn-bbr-collapse` | Quinn BBR window collapse (§47) | Still live: quinn BBR is main's default controller (status §1), and bbr_rs, the fix, is not promoted. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §47 |
-| `cc-bbrrs-r1` | Fixed bbr_rs versus quinn BBR | §48 host gate STOP-NOT-REPRODUCED (post hoc 10 µs grid holds), §48b VERDICT48 REGRESSION: collapse controlled, cost c8 CPU and 1.5-2.6 % goodput. Code at archive/bbr-rs. Builds on the in-tree bbr_rs first written for the shal8 cell on 2026-08-07 (git 51bc04bd). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §48; status §48b; branch bbr48cand; branch bbrfix48-impl; branch bbrfix48b; branch harness48 |
+| `cc-s48-host-gate` | bbr_rs host gate (§48) | Split 2026-11-16 from 'Fixed bbr_rs versus quinn BBR': cc_sim red/green tests of quinn's BBR against the fixed bbr_rs, no VM. | status §48; commit d7142623; branch bbrfix48-impl |
+| `cc-bbrrs-r1` | Fixed bbr_rs versus quinn BBR | §48b VERDICT48 REGRESSION: collapse controlled, cost c8 CPU and 1.5-2.6 % goodput. Code at archive/bbr-rs. The §48 host gate is its own node (cc-s48-host-gate). Builds on the in-tree bbr_rs first written for the shal8 cell on 2026-08-07 (git 51bc04bd). | status §48b; branch bbr48cand; branch bbrfix48b; branch harness48 |
 | `cc-user-continue-bbrrs` | Owner call: continue bbr_rs | No raw record. nm.txt 1425acbd: "status §48b: user decision - continue bbr_rs (delta-free fixes first, then delta on the store law; same ladder)". | status commit 1425acbd (nm.txt); plan W1 §48b RESULT |
 | `cc-bbrrs-r2` | bbr_rs round 2 fixes | Start set to the owner call (2026-11-12); the branches carry 2026-11-10 commits from the bbr48 ancestry. bbrrs-r2 folded into its rebased successor bbrrs-r3 (2026-11-13): one-round δ-free ProbeRtt, cc_sim quinn-dump. Ratchet prediction failed (nm.txt c34d4431). | branch bbrrs-r2; branch bbrrs-r3 |
 | `cc-pacing-audit` | Pacing-seam audit (W2) | Input to ADR-0068 Addendum 3 (branch adr68-amend, unmerged). | derivation w2-pacing-seam.md (branch adr68-amend); branch adr68-amend |
