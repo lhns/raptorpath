@@ -180,9 +180,7 @@ pub(crate) fn report_tick_tx(
     for pid in sched.all_path_ids() {
         if let Some(path) = sched.path_mut(pid) {
             path.expire_in_flight();
-            if path.in_flight > path.cwnd {
-                path.in_flight -= path.in_flight / 4;
-            }
+            path.leak_backstop();
         }
     }
 

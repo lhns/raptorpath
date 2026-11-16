@@ -100,6 +100,13 @@ pub struct PathState {
     /// is not applied. See [`release_1to1_active`] and
     /// [`Self::expire_in_flight`].
     release_1to1: bool,
+    /// Leak-backstop bind gauge (observation only, W3.2 A0): how often the
+    /// report tick's `I > cwnd` decay fired on this path, and the I/cwnd it
+    /// fired at (sum and max), so a retarget (design B1) can read how often
+    /// the backstop binds under either window.
+    leak_fires: u64,
+    leak_ratio_sum: f64,
+    leak_ratio_max: f64,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -157,6 +164,9 @@ impl PathState {
             release_sent_cursor: 0,
             release_recv_cursor: 0,
             release_1to1: release_1to1_active(),
+            leak_fires: 0,
+            leak_ratio_sum: 0.0,
+            leak_ratio_max: 0.0,
             clock,
         }
     }
@@ -455,6 +465,27 @@ impl PathState {
     /// Available capacity: cwnd - in_flight.
     pub fn available(&self) -> u32 {
         self.cwnd.saturating_sub(self.in_flight)
+    }
+
+    /// The in_flight leak backstop of the report tick: time-based expiry
+    /// ([`Self::expire_in_flight`]) is the primary release, and this 25 %
+    /// decay when `I > cwnd` is the last resort for anything the expiry
+    /// cannot see. Counts each fire and the I/cwnd it fired at
+    /// ([`Self::leak_witness`]); the decay itself is unchanged.
+    pub fn leak_backstop(&mut self) {
+        if self.in_flight > self.cwnd {
+            let ratio = self.in_flight as f64 / self.cwnd.max(1) as f64;
+            self.leak_fires += 1;
+            self.leak_ratio_sum += ratio;
+            self.leak_ratio_max = self.leak_ratio_max.max(ratio);
+            self.in_flight -= self.in_flight / 4;
+        }
+    }
+
+    /// The leak-backstop bind gauge: `(fires, Σ I/cwnd at fire, max I/cwnd
+    /// at fire)`. Observation only.
+    pub fn leak_witness(&self) -> (u64, f64, f64) {
+        (self.leak_fires, self.leak_ratio_sum, self.leak_ratio_max)
     }
 
     /// Spare capacity as a fraction of in-flight traffic.
