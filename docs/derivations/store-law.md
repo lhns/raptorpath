@@ -483,6 +483,27 @@ windows (K in 3–11, pick open), from n₀ = 10 (`STORE_BOOT_DERIVED`), with no
 It also finds that, with honest floors, c2 has no demonstrated margin at its knee. That opens an allowance item, so
 the law is not shippable from this revision.
 
+### R6.8 (pointer) §60's verdicts: the allowance and ℓ̂, in `store-law-r68.md`
+
+`docs/derivations/store-law-r68.md` gives the ledger verdicts on the §60 Result's two defect findings. They are two
+new branch-only rows of `law-ledger.yaml`.
+
+- **F07, the allowance σ + q(δ)·ℓ̂, is `UNDERIVED, DISHONEST-INPUT`.**
+  - c2's knee needs 4.05 ms of window-minimum rise above the converged floor; the allowance supplies 2.34.
+  - σ's quantile pair is declared, and no term carries the knee's partial-load queue.
+  - δ's q band supplies about 5 of the 31 slots short.
+- **E13, ℓ̂ = `life_min`, is `DISHONEST-INPUT`.**
+  - Below the knee it is a sample-count extreme of the jitter tail, still falling after 15 s.
+  - Above the knee it is the first window's minimum.
+  - Fix: q(δ)·F̂ in place of q(δ)·ℓ̂. That moves D by only +0.31 ms.
+- **Candidates for the allowance.**
+  - Only S_F + q(δ)·F̂ passes every gate with a measured magnitude, where S_F is the floor windows' median − minimum.
+    It lands 27–33 slots above the c2 knee.
+  - A(c)-type and wider-q forms rest on a constant fitted at c2 Bulk.
+  - The spread at load fails the R-sign gate.
+- **Next step.** Before the allowance's engine form is designed: one c3 static sweep on the registered gauge binary,
+  unless the owner settles U2 by declaration.
+
 ## R5. Revision 5: the receiver-bound curve, one c1d variant, Part B split
 
 ### R5.1 c1d: ONE registered variant (committed before any further c1d data) [WITHDRAWN: U failed at c1s (R6.1); replaced by R6.4]
