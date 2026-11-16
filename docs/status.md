@@ -1126,7 +1126,136 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - the evicting-seat registration (above);
   - the spare-capacity clamp on a Realtime source: its bind-fraction gauge and its ledger verdict;
   - whether `spare_capacity`'s cwnd is enforced on that seat under quinn's BBR.
-- **Still owed from Amendment 1:** the unfiltered fast `test_stubrun.py` and the shell tests.
+- **Still owed from Amendment 1:** the unfiltered fast `test_stubrun.py` and the shell tests. *(Paid, see the Result.)*
+
+**§60 Result (2026-11-16; REPORTED with scored readings; 60a, the 60b rehearsal re-run and 60b all ran clean).**
+
+**In plain words.**
+- **c2:** the law's allowance σ + q·ℓ̂ falls short of the goodput knee by 1.7 ms. The floors are measured on near-empty pools. That is SHORT, as R6.7 predicted, and resolved.
+  - The floor converged to within 0.18 ms, so the shortfall is a lower bound that is close to tight.
+  - Fed these floors, the R6.7 form crosses 1 below W 160, under the knee at ≈ 168. The exact crossing is not located.
+- **c8:** B2 could not be scored.
+  - At the knee arms (W 320 / 384), leg 0's replay anchor binds on every window, but leg 1's binds on only 0–58 %. Leg 1 is calibrated at W 256, where its floor sits at 36.8 ms.
+  - DECISION 12 pools both legs' terms, so the bind fraction is 0.50–0.79 against the 0.9 rule. Once leg 1's floor pool moved, B2 was unscoreable by construction.
+  - The reported crossings sit far above every band. R̃'s crossing rests on a chord between W 512 and W 1 280.
+- **c1s:** the control sign and the G/C check could not be read. The frozen collapse rule flags every W 2 048 row, G and C. Rows where quinn's window is not collapsed still show 13–17 ms of excess, far above the 6.1 ms threshold. So the rule flags the control pool's own queue. Real collapse hit 7 of 22 rows, within the predicted rate.
+- **Held:**
+  - P1 (b0p latches the start-up queue) at all three cells.
+  - The R-sign gate.
+  - Every row's replay witness and CAPLOG replay.
+- **Missed:**
+  - B1 fired on 3 rows, against "predicted not to fire".
+  - P3 (ℓ̂ rises with the pool) rose 3–4× more than predicted at c2.
+  - c8 leg 1's floor gate is uninformative. It was scored as registered, but the rule has a gap, below.
+
+**Runs.** Ledger: `docs/l1-raw/s60/` (scrubbed).
+
+| launch | tree | window (Z) | slots | verdict |
+|---|---|---|---|---|
+| 60a | `harness60` `8565e7d2` | 10:07:42 – 12:12:13 (smoke pass 10:24:45, battery 6 445 s) | 96/96 live, 0 void, 0 replaced, 0 DNF, 0 witness-void, 0 t60 missing | `VERDICT60 REPORTED-WITH-SCORED`, 17 labels, no NO-GO |
+| 60b rehearsal (re-run) | `harness60-a2` `1ecee59d` | 12:13:13 – 12:31:02 | 2 smoke rows | `REHEARSAL-PASS` |
+| 60b | `harness60-a2` `1ecee59d` | 12:31:25 – 13:26:17 (smoke pass 12:48:56, battery 2 240 s) | 40/40 live, same zeros | `VERDICT60 REPORTED-WITH-SCORED`, 6 labels, no NO-GO |
+
+- **Identity:** each of the three launch logs carries `bin_sha equals the registered value e410d640…5f25d` and `suite-reuse HIT` on `ref60-manifest.sha256` (187 files):
+  - `run60a-launch.out`, `run60b-launch.out`;
+  - `rehearsal2.tgz`'s `launch.out`.
+- **The R-sign gate before 60b** read 60a's score: `R-SIGN-c2 PASS` and `R-SIGN-c8 PASS`, each on 6 control rows.
+- **Host re-score at `1ecee59d`** (`python -X utf8`): `rep60{a,b}-score.txt`, beside the VM's `-score-vm.txt`.
+  - 60b's re-score is byte-equal to its VM score: one git blob, `670f2d97`.
+  - 60a's equals its VM score (at `8565e7d2`) except for one added line, Amendment 2's "EVICTING ROWS: none", as registered.
+  - All 17 of 60a's `LABEL60` lines reproduce.
+- **Witness coverage** (counted from the printed `[SLAW]` lines of every G row, on windows with R defined):
+  - The per-row replay witness passed on all 126 scored G rows (96 in 60a, 30 in 60b), reproducing printed R and Rb to 6·10⁻⁶.
+  - Those windows include printed `anc=1` on some leg: c2 1 064, c8 42, c1s 1 416.
+  - They also include c8 windows with an empty leg (one leg printed `nk=0`): 544.
+  - The CAPLOG replay reproduced every replayable cap on every G row.
+  - `b0k[0]` = 0 held on all rows: 48 at c2, 48 per c8 leg, 30 at c1s.
+  - `m` = `l` held for t < 10 s on 1 872 of 1 872 c2 windows and 1 869 of 1 869 c8 windows.
+- **Owed tests, now paid.**
+  - The unfiltered fast `test_stubrun.py` at `1ecee59d` (LF export) printed `ALL OK`: 613 ok, 2 289 s.
+  - Of the five `tools/l1` shell tests, three pass on the host.
+  - `test_abort_witness.sh` and `test_lib_battery.sh` fail on the host only through Git Bash gaps: no `pgrep`, no `flock`, MSYS signal codes, Windows Python and `/tmp`. Both pass on the VM after 60b: 12 of 12, and ALL CHECKS PASS.
+
+**Scored and registered readings.**
+
+| reading | cell | label | value | registered prediction |
+|---|---|---|---|---|
+| **allowance shortfall D** (§3.1) | c2 | **SHORT, robust** | D = +1.692 ms, 90 % CI [+1.588, +1.836]; bracket arms 160: +1.309, 176: +2.069 (both SHORT) | +0.9 (flat) to +2.2 (secant), SHORT resolved |
+| floor convergence | c2 | CONVERGED | E = 0.18 ± 0.03 ms (τ 0.3) | NOT-CONVERGED or UNRESOLVED under the slope; CONVERGED if flat |
+| sub-floor slope | c2 | UNRESOLVED | b = 0.0113 ± 0.0016 ms/slot | resolves flat vs secant 0.020–0.027 |
+| floor convergence / slope | c8 leg 0 | CONVERGED / SLOPED | E = 0.55 ± 0.02 (τ 1.0); b = 0.0171 ± 0.0005 | CONVERGED or UNRESOLVED |
+| floor convergence / slope | c8 leg 1 | CONVERGED / FLAT, **uninformative (post hoc)** | as DECISION 7 registers, the fit used W 32 / 64 / 96, where leg 1 is starved (23 / 51 / 78 % of windows with `nk` ≥ 10), and extrapolated to W₁ = 256, leg 1's floor pool: b = −0.030 ± 0.004 (≈ 7 se below 0), E = −7.6 ms | a floor-pool move to 256 at the latest, as registered |
+| floor slope | c1s | FLAT (no τ registered) | b = 0.0009 ± 0.0002 | — |
+| **B2** (§3.2) | c8 | **UNSCOREABLE** | 0 of 6 replicates anc-bound; pooled bind (DECISION 12) at the two bracket arms 0.50–0.79 (< 0.9); per leg: leg 0 1.00 on all 12 rows, leg 1 0.00–0.58 | P(≥ 5 of 6 scoreable) ≈ 0.90 |
+| **control sign** (§3.3) | c1s | **UNDERPOWERED** | 0 of 12 scoreable: all 12 COLLAPSED | UNDERPOWERED 0.06 |
+| **G/C** (§4) | c1s | **UNRESOLVED** | 0 unflagged pairs of 10 | P(≥ 4 unflagged) 0.27–0.83 |
+| R-sign | c2 / c8 | PASS / PASS | control R̃ 0.093–0.095 / 0.55–0.72 | R̃ < 1 |
+| P1 (b0p ratio ≥ 3) | c2 / c8 / c1s | HOLDS ×3 | 5.00 / 6.14 / 42.96 | c2 ≈ 4.4 (possibly < 3 on the W 16 base), c8 ≈ 10, c1s ≈ 60 |
+| P3 (Δℓ against q·ℓ̂_c) | c2 / c8 leg 0 / c8 leg 1 | RISES / RISES / FLAT | +5.17 ± 0.88 / +4.90 ± 0.53 / +2.06 ± 0.40 ms | c2 +1.3 to +1.5 (likely UNRESOLVED), c8 leg 0 +2.7 (RISES), leg 1 FLAT or UNRESOLVED |
+| B1 (median LATE err > 0 on a valid calibration row) | c2 / c8 / c1s | FIRES / FIRES / does not fire | c2 1 of 5 (s42 r1 +0.075 ms); c8 2 of 12 leg-rows, both leg 0 (s42 r3 +0.051, s7 r4 +0.709); c1s 0 of 6 | does not fire |
+| drift (fallback iff p < 0.05 and change > q·ℓ̂_c) | — | not triggered | c2 b0p +1.41 ms (Spearman +0.80, p 0.13) vs q·ℓ̂_c 0.56; c8 leg 1 b0p +4.09 (p 0.30) vs 3.31; c1s b0p +0.14 (p 0.058) vs 0.22; every `l` change at p ≥ 0.29 | unpowered, in-session |
+
+**What each reading means.**
+1. **c2: SHORT, with the floor converged (R6.7 open item 2).**
+   - A floor read too high lowers D, so it can only hide a shortfall. By §2, SHORT is therefore a lower bound in any case.
+   - The convergence gate says the bound is tight to about 0.18 ms. F_c = 8.68 ms is the W 16 median; the slope is fitted over W 16 / 32 / 48, and the extrapolation to W → 0 gives 8.50 ms.
+   - The knee needs 1.69 ms more window-minimum rise than σ + q·ℓ̂_c supplies (σ ≈ 1.7–1.9 ms, q·ℓ̂_c = 0.56 ms at q = 0.10).
+   - R̃₆₇'s sign witness agrees on 6 of 6 replicates. R̃₆₇ reads 0.925 already at W 160, and its crossing is `<160` on every replicate: below the knee W₉₅ ≈ 166–170, not located between 48 and 160.
+   - R̃'s own crossings, 160.5–163.8, are a different recipe: calibrated ℓ̂ with the anchor.
+   - **This is a defect finding for the allowance form and needs a law-ledger verdict** (FORMULA-FIRST). It is not a footnote. It sits under `law-ledger.md` F01, the store law R6.7 re-derives, as R6.7's open item 2.
+   - D sits near the secant end of the prediction, although the sub-floor slope reads about half the secant (0.011 against 0.020–0.027).
+2. **c8: B2 is unscoreable because leg 1's anchor does not bind after its floor pool moved.**
+   - §3's premise (`s60abs.out`: c8 anc 1 from W 320) was read on §56 at the old calibration.
+   - In session, per leg at W 320 / 384 (the replay's test m ≥ l + b0), leg 0 binds 1.00 on all 12 rows and leg 1 binds 0.00–0.58.
+   - Leg 1 is starved at the floor pools, so it calibrates at W 256 (T_c 36.8 ms), as §5 registers.
+   - DECISION 12 pools the (leg, window) terms, so the 0.9 rule cannot pass while leg 1 is unbound. Leg 1 carries ≈ 16 % of the delivered share (one W 512 row).
+   - The combination of the pool move and the pooled rule makes B2 unscoreable by construction. The registration did not foresee it.
+   - The crossings are reported only:
+     - R̃ 600–690 is a chord between the W 512 arm (R̃ 1.08) and the W 1 280 arm (0.68), with no arm in between.
+     - R̃₆₇ 509–571 crosses just above the 512 arm (arm medians 1.02 and 0.66).
+   - Both A.4's reading of "above the band" and the ≈ 405 prediction assume anc 1, which did not hold. So nothing about the form is decided at c8, and no cause is attributed.
+3. **c8 leg 1: the floor gate is uninformative, a gap in the registered rule.**
+   - §2 fits each leg over the three floor pools with E = b·W₁, and DECISION 7 takes W₁ from the leg's floor pool. The moved pool is covered only by §2's bound for leg 1 (0.008 ms/slot × 160 slots).
+   - So the scorer did what was registered. The fit runs over 32 / 64 / 96, where leg 1 is starved, and extrapolates to 256.
+   - FLAT and CONVERGED pass only because their thresholds are one-sided: b is ≈ 7 se below zero and E = −7.6 ms.
+   - Leg 1's T_c itself (36.8 ms) is the median at W 256, as registered. The gate does not feed R̃.
+4. **c1s: the control sign and G/C are unread because the collapse rule flags the control pool.** Measured per W 2 048 row (`[DIAG]` excess, rule input).
+   - **Not collapsed:** 15 of 22 rows have quinn qcwnd below the BDP on ≤ 3 % of windows. Their excess is E50 13.0–17.3 ms and E90 18.5–42.8 ms, with 94–99 % of ticks above X = 6.1. Excess here is the EWMA `rtt=` minus the row's minimum `rtp_us`.
+   - **Collapsed:** 7 rows read qcwnd shares 0.42–0.95, with E50 23.8–101.5 ms and goodput 221–671 Mbit/s: G r5, r8, r9, r11, r12; C r7, r10.
+   - So the EWMA RTT over a 2 048 pool's standing queue alone exceeds X, which was derived on §56's small pools and checked on §57a's 448–512.
+   - The genuine collapse rate is 7 of 22 (0.32), inside the registered 0.29–0.48.
+   - **This is a measurement defect of the frozen rule at the control pool.** It is recorded here and not re-scored.
+   - **Post hoc, decides nothing:**
+     - With the qcwnd share as the flag, 5 pairs have both rows unflagged (r1, r2, r3, r4, r6).
+     - Their CPU s/GB log(G/C) (DECISION 18) is +0.016, +0.026, +0.011, +0.017, −0.027, a median of +1.6 %. That is against the registered prediction "within +1 %" and the PERTURBING threshold of +10 %. §4 needs at least 4 unflagged pairs.
+     - Goodput log(G/C) on the same pairs: a median of −2.4 % (−0.145 … +0.016). A.6 sizes goodput at 13 pairs.
+     - The qcwnd flag misses at least one degraded row: G r1 (752 Mbit/s, E90 42.8 ms, qcwnd share 0.01).
+     - The arm-median R̃ at W 2 048 is 0.856, and printed R is 1.12.
+5. **P3 RISES at c2 by 5.2 ms,** about 3–4× the prediction.
+   - Post hoc, most of the gap is the base: the prediction was made against W 128 rows, and the floor pool's `l` is 5.58 ms at W 16.
+   - ℓ̂, the lifetime echo minimum, is therefore load-dependent at the operating pools. That puts ℓ̂'s source into R6.7, as registered.
+   - c8 leg 1 is FLAT, so the two ℓ̂ recipes coincide there.
+6. **B1 fired on 3 leg-rows,** against "predicted not to fire".
+   - The registered consequence is one sentence: where B1 does not fire, R − 1 ≥ σ/T̂ > 0 holds on that row by construction (§2). On these rows that guarantee is absent. The registration names no further consequence.
+   - It does not touch the R-sign gate, which is read at the controls and passed.
+   - The `b0bound.out` margins (+0.43 / +0.46 / +0.19 ms) and ō were derived at caps 64–256. The floor pools were untested, as §2 said.
+7. **P1 held at every cell,** including c2 on the W 16 base (5.00 ≥ 3). The first-K brake latches the start-up queue, so the boot hold and n₀ stay terms of the law (R6.7).
+8. **Drift:** the fallback did not trigger. But c2's b0p moved +1.41 ms across the session (p 0.13, unpowered) against q·ℓ̂_c 0.56, and c1s's b0p has p 0.058.
+   - D reads no b0p.
+   - R̃ does read it, so the c2 R̃ crossings carry that uncertainty.
+
+**Defect findings needing a law-ledger verdict** (FORMULA-FIRST, MEASUREMENT DISCIPLINE 17–18):
+- the allowance σ + q·ℓ̂ at c2 (SHORT, 90 % lower edge +1.588 ms, on a converged floor), under F01;
+- ℓ̂'s load dependence (P3 RISES at c2 and c8 leg 0), under F01's inputs (E03, the lifetime minimum).
+
+**Pending, added by this Result:**
+- **The ledger verdicts** on the two findings above, in R6.7's derivation: the allowance form and ℓ̂'s source.
+- **A collapse rule that separates collapse from a large pool's standing queue.** The qcwnd-below-BDP share alone misses G r1, so it might be combined with an excess over the row's own LATE `tmin`. It must be re-registered before any new c1s control-sign or G/C reading.
+- **The floor-gate rule for a moved leg pool.** In the next registration, as an amendment: fit the leg over pools at and above its own floor pool, or read UNSCOREABLE. Add a scorer test with a moved leg-1 pool.
+- **B2's anchor rule with an unbound leg:** per leg, or leg 0 only, decided before B2 is registered again. Leg 1 is unbound at its W 256 calibration.
+- **B1's margins and ō at the floor pools.**
+- **Merge the harness tools to main** (`harness60-a2` `1ecee59d`, tools only) now that the Result is in.
+- **VM cleanup** after this ledger commit: `~/s60pre`, `~/r60a`, `~/r60b`, `~/r60b2`, `~/s60a`, `~/s60b`, `~/p60` and `/dev/shm/{s60a,s60b,r60b2}`.
 
 
 ## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)

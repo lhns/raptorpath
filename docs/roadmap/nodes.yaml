@@ -2783,16 +2783,17 @@ nodes:
   title: Gauge session 60a (§60)
   track: store
   kind: research
-  state: in-progress
-  outcome: unrated
+  state: done
+  outcome: mixed
   evidence:
   - status §60
   - status §60 Amendment 1
   - derivation s60-registration.md
   - branch s60-design
   - branch harness60
-  verdict_quote: ''
-  headline: ''
+  - status §60 Result
+  verdict_quote: 'RESULT C2-SHORT SHORT  (D=+1.692 ms [+1.588,+1.836]; floor CONVERGED; ROBUST)'
+  headline: c2 SHORT 1.69 ms; c8 B2 unscoreable
   depends_on:
   - store-s60-pre
   - store-law-r67
@@ -2800,7 +2801,7 @@ nodes:
   qualified_by: []
   lane: vm
   start: '2026-11-15'
-  end: ''
+  end: '2026-11-16'
   folded:
   - commit fd24c86b
   - commit 80eda329
@@ -2809,32 +2810,53 @@ nodes:
   - commit 10272273
   overview: true
   plain: Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it.
-  notes: 'Registered verbatim from s60-registration.md at 10272273 (Fable, 10 rounds); reported only. 60a: 98 rows, launched at harness60 8565e7d2 at 10:07:42Z on 2026-11-16 after its rehearsal passed. It measures the queue-free floor on pools below anything measured, tests the target form with those floors (B2 at c8, a gross-miss detector) and scores the allowance shortfall D at c2. Amendment 1 registers the scorer''s DECISIONS 1–21 and reads the R-sign gate at the end of 60a (STOP, PASS or UNSCOREABLE), which gates 60b. Done when: the 60a Result is in status with its R-sign label.'
+  notes: '96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7).'
 - id: store-s60b
   title: Gauge session 60b (§60)
   track: store
   kind: research
-  state: blocked
-  outcome: unrated
+  state: done
+  outcome: mixed
   evidence:
   - status §60 Amendment 2
   - branch harness60-a2
-  verdict_quote: ''
-  headline: ''
+  - status §60 Result
+  verdict_quote: 'RESULT C1S-CONTROL UNDERPOWERED  (n_s=0 pos=0)'
+  headline: c1s control and G/C unread (collapse rule)
   depends_on:
   - store-s60a
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-16'
+  end: '2026-11-16'
   folded:
   - commit 45eb2c90
   overview: false
-  vm_order: 1
-  order_reason: Runs after 60a's R-sign gate (a STOP or a missing label blocks it); its rehearsal re-runs first at the new tools sha.
   plain: 'The second half of the floor measurement: the fast link''s sign test and the gauge''s own cost, now without the rows that overloaded the link.'
-  notes: 'Amendment 2: the evicting rows leave §60 (rate-evict-registration); 60b is 40 slots at harness60-a2 1ecee59d (tools only; bin_sha and manifest unchanged), scored with DECISIONS 1–22. Still owed from Amendment 1: the unfiltered fast test_stubrun.py and the shell tests. Done when: the 60b Result is in status (the c1s sign of R̃ − 1 and the G/C pairs) and the host re-score reproduces 60a''s on-VM LABEL60 lines.'
+  notes: '40/40 slots live at harness60-a2 1ecee59d (12:31–13:26Z 2026-11-16), same bin_sha, HIT; the rehearsal re-ran first and passed. c1s: floor FLAT, P1 holds (43x), B1 does not fire. The control sign and the G/C pairs are unread: the frozen absolute collapse rule (X = 6.1 ms) flags all 22 W 2048 rows, because the standing queue alone gives 13-17 ms of excess; genuine collapse (qcwnd share) is 7 of 22. Host re-score byte-equal; owed stub run and shell tests passed.'
+- id: store-defect-allowance-short
+  title: Store-law allowance short of the c2 knee
+  track: store
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status §60 Result
+  - derivation store-law-r67.md
+  verdict_quote: 'D = +1.692 ms, 90 % CI [+1.588, +1.836] on a floor converged to 0.18 ms'
+  headline: SHORT 1.69 ms at c2
+  depends_on:
+  - store-s60a
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-16'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Open problem: with honest floors, the store law''s safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out.'
+  notes: 'Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7''s derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03.'
 - id: store-defect-delta-nan
   title: RWM_DELTA pinned the store cap (F1)
   track: store

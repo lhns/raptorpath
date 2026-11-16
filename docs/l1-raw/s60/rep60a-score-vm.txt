@@ -1,0 +1,272 @@
+S60 SCORE plan=60a (store law gauge session; R~ replayed from printed [SLAW] fields, s60 section 1.1); LD_NOGO=none; ABORT-TOKENS none
+ROWS (counting): cell arm seed rep | status dnf | witness caplog | collapsed latched(K=8) | goodput | LATE nk>=10 windows leg0
+  c2  G16    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=10.0 n10=258
+  c2  G32    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=19.6 n10=265
+  c2  G48    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=29.3 n10=267
+  c2  G160   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=83.8 n10=169
+  c2  G176   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=87.8 n10=159
+  c2  G192   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=89.4 n10=155
+  c2  G256   s42  r1  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.5 n10=153
+  c2  G2048  s42  r1  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.4 n10=152
+  c2  G32    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=19.8 n10=262
+  c2  G48    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=29.0 n10=270
+  c2  G160   s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=84.0 n10=168
+  c2  G176   s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=87.5 n10=159
+  c2  G192   s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=89.6 n10=154
+  c2  G256   s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.2 n10=153
+  c2  G2048  s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.2 n10=153
+  c2  G16    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=10.0 n10=258
+  c2  G48    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=29.1 n10=270
+  c2  G160   s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=84.1 n10=168
+  c2  G176   s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=87.7 n10=159
+  c2  G192   s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=89.6 n10=154
+  c2  G256   s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.1 n10=153
+  c2  G2048  s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=89.9 n10=154
+  c2  G16    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=10.1 n10=255
+  c2  G32    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=19.7 n10=264
+  c2  G160   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=83.9 n10=169
+  c2  G176   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=87.4 n10=160
+  c2  G192   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=89.3 n10=155
+  c2  G256   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=90.5 n10=152
+  c2  G2048  s7   r4  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.3 n10=153
+  c2  G16    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=10.1 n10=256
+  c2  G32    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=19.6 n10=265
+  c2  G48    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=28.8 n10=273
+  c2  G176   s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=87.6 n10=159
+  c2  G192   s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=89.4 n10=155
+  c2  G256   s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.2 n10=153
+  c2  G2048  s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.3 n10=153
+  c2  G16    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=10.2 n10=254
+  c2  G32    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=19.4 n10=269
+  c2  G48    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=29.0 n10=271
+  c2  G160   s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=84.1 n10=168
+  c2  G192   s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=89.3 n10=155
+  c2  G256   s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.5 n10=152
+  c2  G2048  s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=90.2 n10=153
+  c2  G16    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=10.3 n10=251
+  c2  G32    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=19.6 n10=266
+  c2  G48    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=29.0 n10=271
+  c2  G160   s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=83.4 n10=170
+  c2  G176   s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=87.2 n10=160
+  c8  G32    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=18.5 n10=283
+  c8  G64    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=36.0 n10=294
+  c8  G96    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=52.1 n10=308
+  c8  G256   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=95.5 n10=141
+  c8  G320   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=100.5 n10=131
+  c8  G384   s42  r1  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=104.5 n10=124
+  c8  G512   s42  r1  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=105.4 n10=122
+  c8  G1280  s42  r1  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=106.3 n10=121
+  c8  G64    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=35.8 n10=297
+  c8  G96    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=51.9 n10=309
+  c8  G256   s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=95.2 n10=142
+  c8  G320   s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=100.6 n10=131
+  c8  G384   s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=103.9 n10=125
+  c8  G512   s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=105.8 n10=122
+  c8  G1280  s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=107.3 n10=119
+  c8  G32    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=18.6 n10=283
+  c8  G96    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=52.1 n10=308
+  c8  G256   s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=95.6 n10=141
+  c8  G320   s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=99.7 n10=133
+  c8  G384   s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=103.7 n10=125
+  c8  G512   s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=106.0 n10=121
+  c8  G1280  s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=106.2 n10=121
+  c8  G32    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=18.5 n10=285
+  c8  G64    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=36.2 n10=293
+  c8  G256   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=95.5 n10=141
+  c8  G320   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=100.4 n10=132
+  c8  G384   s7   r4  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=103.8 n10=125
+  c8  G512   s7   r4  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=105.7 n10=122
+  c8  G1280  s7   r4  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=105.9 n10=121
+  c8  G32    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=18.5 n10=286
+  c8  G64    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=36.1 n10=294
+  c8  G96    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=51.9 n10=309
+  c8  G320   s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=100.2 n10=132
+  c8  G384   s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=104.2 n10=124
+  c8  G512   s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=105.7 n10=122
+  c8  G1280  s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=107.1 n10=119
+  c8  G32    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=18.7 n10=281
+  c8  G64    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=35.6 n10=297
+  c8  G96    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=52.1 n10=307
+  c8  G256   s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=95.6 n10=141
+  c8  G384   s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=101.9 n10=125
+  c8  G512   s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=106.1 n10=121
+  c8  G1280  s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=106.5 n10=120
+  c8  G32    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=18.4 n10=286
+  c8  G64    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=36.0 n10=295
+  c8  G96    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=51.8 n10=310
+  c8  G256   s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=True gp=95.6 n10=141
+  c8  G320   s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=100.4 n10=131
+SESSION CALIBRATION (s60 section 2): per cell and leg, the floor pool = the smallest of the three at which the leg has >= 80 % of its LATE windows with nk >= 10
+  CAL c2 leg0: pool-share[W16:1.00 W32:1.00 W48:1.00] -> floor pool W=16
+  CAL c2 leg0: rows 6 valid 5 (LATCHED: s42r5; valid: s42r1 s7r2 s42r3 s7r4 s7r6)
+  CAL c2 leg0: F_c=8.682 l_c=5.579 b0_c=2.204 T_c=7.804 ms (medians over the valid non-latched rows; OK)
+    excess E50=8.33 E90=10.53 ms vs X=14.7 (collapse share 0.008) s42r1
+    excess E50=8.94 E90=10.84 ms vs X=14.7 (collapse share 0.027) s7r2
+    excess E50=7.77 E90=9.87 ms vs X=14.7 (collapse share 0.000) s42r3
+    excess E50=8.34 E90=10.24 ms vs X=14.7 (collapse share 0.012) s7r4
+    excess E50=7.98 E90=9.88 ms vs X=14.7 (collapse share 0.004) s42r5
+    excess E50=8.02 E90=9.92 ms vs X=14.7 (collapse share 0.004) s7r6
+  CAL c2 leg0: collapse flag share on the calibration rows 0/6 (reported; the flag removes a row from the medians, s60 section 2(c))
+  CAL c2 leg0: LATCHED 1/6 rows (omega-bar 0.9 ms)
+  B1 c2: median LATE err per valid calibration row: 0.075 -0.117 -1.831 -0.341 -1.955 (predicted not to fire)
+RESULT B1-c2 FIRES  (1 of 5 rows err > 0)
+  DRIFT c2 leg0 b0p: Spearman +0.80 p=0.133 fitted change +1.411 ms vs q*l_c 0.558 -> no drift detected
+  DRIFT c2 leg0 l: Spearman +0.50 p=0.450 fitted change +0.437 ms vs q*l_c 0.558 -> no drift detected
+  CAL c8 leg0: pool-share[W32:1.00 W64:1.00 W96:1.00] -> floor pool W=32
+  CAL c8 leg0: rows 6 valid 6 (valid: s42r1 s7r2 s42r3 s7r4 s42r5 s7r6)
+  CAL c8 leg0: F_c=8.794 l_c=5.594 b0_c=2.882 T_c=8.620 ms (medians over the valid non-latched rows; OK)
+    excess E50=7.75 E90=9.75 ms vs X=17.8 (collapse share 0.000) s42r1
+    excess E50=8.93 E90=10.93 ms vs X=17.8 (collapse share 0.000) s7r2
+    excess E50=8.27 E90=10.27 ms vs X=17.8 (collapse share 0.004) s42r3
+    excess E50=8.24 E90=10.24 ms vs X=17.8 (collapse share 0.000) s7r4
+    excess E50=8.71 E90=10.71 ms vs X=17.8 (collapse share 0.000) s42r5
+    excess E50=8.67 E90=10.67 ms vs X=17.8 (collapse share 0.000) s7r6
+  CAL c8 leg0: collapse flag share on the calibration rows 0/6 (reported; the flag removes a row from the medians, s60 section 2(c))
+  CAL c8 leg0: LATCHED 0/6 rows (omega-bar 1.8 ms)
+  CAL c8 leg1: pool-share[W32:0.23 W64:0.51 W96:0.78 W256:1.00] -> floor pool W=256 (MOVED from the smallest pool) (STARVED at the floor pools: leg 1 takes arm W256, s60 section 5)
+  CAL c8 leg1: rows 6 valid 6 (valid: s42r1 s7r2 s42r3 s7r4 s42r5 s7r6)
+  CAL c8 leg1: F_c=37.357 l_c=33.065 b0_c=4.062 T_c=36.835 ms (medians over the valid non-latched rows; OK)
+    excess E50=13.41 E90=16.41 ms vs X=24.2 (collapse share 0.000) s42r1
+    excess E50=13.31 E90=17.31 ms vs X=24.2 (collapse share 0.000) s7r2
+    excess E50=13.60 E90=16.60 ms vs X=24.2 (collapse share 0.000) s42r3
+    excess E50=13.03 E90=16.03 ms vs X=24.2 (collapse share 0.007) s7r4
+    excess E50=13.59 E90=17.59 ms vs X=24.2 (collapse share 0.000) s42r5
+    excess E50=13.67 E90=17.67 ms vs X=24.2 (collapse share 0.000) s7r6
+  CAL c8 leg1: collapse flag share on the calibration rows 0/6 (reported; the flag removes a row from the medians, s60 section 2(c))
+  CAL c8 leg1: LATCHED 0/6 rows (omega-bar 6.3 ms)
+  B1 c8: median LATE err per valid calibration row: -1.055 -1.790 0.051 0.709 -1.048 -1.539 -1.735 -0.778 -8.810 -2.000 -6.393 -4.896 (predicted not to fire)
+RESULT B1-c8 FIRES  (2 of 12 rows err > 0)
+  DRIFT c8 leg0 b0p: Spearman +0.09 p=0.919 fitted change +0.388 ms vs q*l_c 0.559 -> no drift detected
+  DRIFT c8 leg0 l: Spearman -0.31 p=0.564 fitted change -0.674 ms vs q*l_c 0.559 -> no drift detected
+  DRIFT c8 leg1 b0p: Spearman +0.54 p=0.297 fitted change +4.089 ms vs q*l_c 3.306 -> no drift detected
+  DRIFT c8 leg1 l: Spearman -0.54 p=0.297 fitted change -0.913 ms vs q*l_c 3.306 -> no drift detected
+FLOOR GATE (s60 section 2): per leg, the least-squares slope b of the per-row median LATE tmin against W over the three floor pools; E = b*W1
+  GATE c2: n=18 rows, b=0.0113 +- 0.0016 ms/slot (flat iff b+2se < 0.01), E=b*W1=0.18 +- 0.03 ms at W1=16, tau=0.3; F_c=8.682 extrapolated floor F_c-E=8.502 (reported, not scored)
+RESULT FLOOR-SLOPE-c2 UNRESOLVED  (b=0.0113)
+RESULT FLOOR-CONV-c2 CONVERGED  (E=0.18+-0.03)
+  GATE c8-leg0: n=18 rows, b=0.0171 +- 0.0005 ms/slot (flat iff b+2se < 0.01), E=b*W1=0.55 +- 0.02 ms at W1=32, tau=1.0; F_c=8.794 extrapolated floor F_c-E=8.247 (reported, not scored)
+RESULT FLOOR-SLOPE-c8-leg0 SLOPED  (b=0.0171)
+RESULT FLOOR-CONV-c8-leg0 CONVERGED  (E=0.55+-0.02)
+  GATE c8-leg1: n=18 rows, b=-0.0297 +- 0.0040 ms/slot (flat iff b+2se < 0.01), E=b*W1=-7.60 +- 1.02 ms at W1=256, tau=2.5; F_c=37.357 extrapolated floor F_c-E=44.953 (reported, not scored)
+RESULT FLOOR-SLOPE-c8-leg1 FLAT  (b=-0.0297)
+RESULT FLOOR-CONV-c8-leg1 CONVERGED  (E=-7.60+-1.02)
+ARMS (per cell: medians over the live rows of an arm; R~ = the scored recipe, R~own = the row's own l, R~67 = the R6.7-form beside it; printed R for P2)
+  ARM c2 W16    n=6 R~=1.2292 R~own=1.2280 R~67=1.2287 bind=0.00 printedR=1.2805 (>1) b0p=2.798 l=5.589 tmin=8.679
+  ARM c2 W32    n=6 R~=1.1852 R~own=1.1887 R~67=1.1863 bind=0.00 printedR=1.2203 (>1) b0p=2.660 l=5.830 tmin=8.947
+  ARM c2 W48    n=6 R~=1.1923 R~own=1.1975 R~67=1.1718 bind=0.00 printedR=1.2394 (>1) b0p=2.992 l=6.110 tmin=9.037
+  ARM c2 W160   n=6 R~=1.0042 R~own=1.1565 R~67=0.9253 bind=1.00 printedR=1.1697 (>1) b0p=2.452 l=9.120 tmin=12.325
+  ARM c2 W176   n=6 R~=0.9615 R~own=1.1526 R~67=0.8872 bind=1.00 printedR=1.2134 (>1) b0p=3.159 l=9.757 tmin=13.095
+  ARM c2 W192   n=6 R~=0.9106 R~own=1.1239 R~67=0.8405 bind=1.00 printedR=1.2499 (>1) b0p=4.360 l=10.215 tmin=14.052
+  ARM c2 W256   n=6 R~=0.7084 R~own=0.9339 R~67=0.6557 bind=1.00 printedR=1.3677 (>1) b0p=11.011 l=10.752 tmin=19.753
+  ARM c2 W2048  n=6 R~=0.0933 R~own=0.1316 R~67=0.0869 bind=1.00 printedR=0.5454 b0p=44.935 l=12.670 tmin=200.500
+  ARM c8 W32    n=6 R~=2.1411 R~own=2.1424 R~67=2.1235 bind=0.00 printedR=2.3156 (>1) b0p=2.882 l=5.594 tmin=8.794 | leg1 sig=5.121 pull on R~=0.9004 (A.5 readout)
+  ARM c8 W64    n=6 R~=2.1239 R~own=2.0956 R~67=2.0720 bind=0.00 printedR=2.2574 (>1) b0p=2.774 l=6.196 tmin=9.292 | leg1 sig=4.941 pull on R~=0.9012 (A.5 readout)
+  ARM c8 W96    n=6 R~=2.0870 R~own=2.0389 R~67=1.9943 bind=0.00 printedR=2.0738 (>1) b0p=2.144 l=6.868 tmin=9.887 | leg1 sig=4.879 pull on R~=0.8670 (A.5 readout)
+  ARM c8 W256   n=6 R~=1.5504 R~own=1.5887 R~67=1.4464 bind=0.50 printedR=1.6640 (>1) b0p=4.922 l=10.440 tmin=15.123 | leg1 sig=5.167 pull on R~=0.5928 (A.5 readout)
+  ARM c8 W320   n=6 R~=1.3443 R~own=1.4280 R~67=1.2610 bind=0.50 printedR=1.5626 (>1) b0p=8.149 l=10.665 tmin=18.533 | leg1 sig=5.651 pull on R~=0.5029 (A.5 readout)
+  ARM c8 W384   n=6 R~=1.2365 R~own=1.3377 R~67=1.1617 bind=0.61 printedR=1.5268 (>1) b0p=11.172 l=11.095 tmin=21.537 | leg1 sig=8.328 pull on R~=0.4646 (A.5 readout)
+  ARM c8 W512   n=6 R~=1.0758 R~own=1.1652 R~67=1.0170 bind=0.65 printedR=1.6391 (>1) b0p=17.684 l=10.492 tmin=28.580 | leg1 sig=16.169 pull on R~=0.4139 (A.5 readout)
+  ARM c8 W1280  n=6 R~=0.6847 R~own=0.7269 R~67=0.6603 bind=0.69 printedR=1.9741 (>1) b0p=60.976 l=10.356 tmin=74.043 | leg1 sig=30.498 pull on R~=0.2934 (A.5 readout)
+  R-SIGN c2: control R~ by replicate: s42r1=0.0933 s7r2=0.0951 s42r3=0.0933 s7r4=0.0932 s42r5=0.0933 s7r6=0.0951
+RESULT R-SIGN-c2 PASS  (6 control rows (PASS needs >= 2), read at the end of the launch on the full calibration)
+  R-SIGN c8: control R~ by replicate: s42r1=0.7148 s7r2=0.5517 s42r3=0.7181 s7r4=0.6714 s42r5=0.6470 s7r6=0.6980
+RESULT R-SIGN-c8 PASS  (6 control rows (PASS needs >= 2), read at the end of the launch on the full calibration)
+  P1 c2: b0p(W256)/b0p(floor pool W16) = 11.011/2.204 = 5.00 (registered >= 3; a failure is reported only)
+RESULT P1-c2 HOLDS  (ratio 5.00)
+  P1 c8: b0p(W512)/b0p(floor pool W32) = 17.684/2.882 = 6.14 (registered >= 3; a failure is reported only)
+RESULT P1-c8 HOLDS  (ratio 6.14)
+  P3 P3-c2: delta_l = 10.752 - 5.579 = +5.173 ms, SE_delta 0.877, q*l_c 0.558 (RISES iff d-2SE > q*l_c, FLAT iff d+2SE < q*l_c)
+RESULT P3-c2 RISES  (delta_l +5.173)
+  P3 witness c2: m = l for t < 10 s on 1872/1872 windows (max |m-l| 0.0000 ms)
+  P3 P3-c8l0: delta_l = 10.492 - 5.594 = +4.899 ms, SE_delta 0.529, q*l_c 0.559 (RISES iff d-2SE > q*l_c, FLAT iff d+2SE < q*l_c)
+RESULT P3-c8l0 RISES  (delta_l +4.899)
+  P3 P3-c8l1: delta_l = 35.129 - 33.065 = +2.064 ms, SE_delta 0.400, q*l_c 3.306 (RISES iff d-2SE > q*l_c, FLAT iff d+2SE < q*l_c)
+RESULT P3-c8l1 FLAT  (delta_l +2.064)
+  P3 witness c8: m = l for t < 10 s on 1869/1869 windows (max |m-l| 0.0000 ms)
+  C2-D s42r1: W95=168.2 Tmin(W95)=12.767 F_c=8.682 sig=1.815 q*l_c=0.558 -> D_r=+1.712 ms; R~67(W95)-1=-0.0988 (sign witness ok)
+  C2-D s7r2: W95=167.6 Tmin(W95)=12.690 F_c=8.682 sig=1.810 q*l_c=0.558 -> D_r=+1.640 ms; R~67(W95)-1=-0.0950 (sign witness ok)
+  C2-D s42r3: W95=165.7 Tmin(W95)=12.580 F_c=8.682 sig=1.723 q*l_c=0.558 -> D_r=+1.618 ms; R~67(W95)-1=-0.0942 (sign witness ok)
+  C2-D s7r4: W95=168.6 Tmin(W95)=12.689 F_c=8.682 sig=1.754 q*l_c=0.558 -> D_r=+1.696 ms; R~67(W95)-1=-0.0979 (sign witness ok)
+  C2-D s42r5: W95=167.8 Tmin(W95)=12.766 F_c=8.682 sig=1.760 q*l_c=0.558 -> D_r=+1.766 ms; R~67(W95)-1=-0.1019 (sign witness ok)
+  C2-D s7r6: W95=169.7 Tmin(W95)=12.792 F_c=8.682 sig=1.864 q*l_c=0.558 -> D_r=+1.689 ms; R~67(W95)-1=-0.0970 (sign witness ok)
+  C2-D: W95 clamped at the first goodput arm on 0/6 replicates; interpolation clamped at an end arm on 0/12
+  C2-D pooled: D = median over 6 replicates = +1.692 ms, 90 % bootstrap interval [+1.588, +1.836] (2000 draws, seed 60); predicted +0.9 (flat) to +2.2 (secant)
+  C2-D bracket: lower arm median 1.309 (n=6), upper arm median 2.069 (n=6); lower-arm interval [+1.196, +1.465]; SHORT ROBUST (both read SHORT)
+  C2-D arm W160: D median 1.309 (n=6)
+  C2-D arm W176: D median 2.069 (n=6)
+  C2-D arm W192: D median 3.096 (n=6)
+RESULT C2-SHORT SHORT  (D=+1.692 ms [+1.588,+1.836]; floor CONVERGED; ROBUST)
+PER-K READOUT (s60 section 3.1, REPORTED; K = 8 is the scored K): b0p(K) = max of the first K b0k; the valid set is recomputed for each K; the K = 1 brake is 0 by construction
+  BRAKE1 c2: b0k[0] != 0 on 0/48 rows (witness: expected 0)
+  PERK c2 K=1: valid 6/6 latched 0 b0p(K)=0.000 T_c(K)=5.589 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=2: valid 6/6 latched 0 b0p(K)=1.291 T_c(K)=6.775 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=3: valid 6/6 latched 0 b0p(K)=1.291 T_c(K)=6.775 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=4: valid 6/6 latched 0 b0p(K)=1.784 T_c(K)=7.585 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=5: valid 6/6 latched 0 b0p(K)=1.784 T_c(K)=7.585 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=6: valid 5/6 latched 1 b0p(K)=1.524 T_c(K)=7.124 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=7: valid 5/6 latched 1 b0p(K)=2.061 T_c(K)=7.804 | flip - W95 median -8.0 slots over 6 replicates
+  PERK c2 K=8: valid 5/6 latched 1 b0p(K)=2.204 T_c(K)=7.804 | flip - W95 median -8.0 slots over 6 replicates
+  BRAKE1 c8-leg0: b0k[0] != 0 on 0/48 rows (witness: expected 0)
+  PERK c8-leg0 K=1: valid 6/6 latched 0 b0p(K)=0.000 T_c(K)=5.594 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=2: valid 6/6 latched 0 b0p(K)=0.528 T_c(K)=6.322 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=3: valid 6/6 latched 0 b0p(K)=1.103 T_c(K)=7.149 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=4: valid 6/6 latched 0 b0p(K)=1.843 T_c(K)=7.607 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=5: valid 6/6 latched 0 b0p(K)=1.884 T_c(K)=7.607 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=6: valid 6/6 latched 0 b0p(K)=1.884 T_c(K)=7.607 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=7: valid 6/6 latched 0 b0p(K)=2.882 T_c(K)=8.620 | flip - W95 median -85.9 slots over 6 replicates
+  PERK c8-leg0 K=8: valid 6/6 latched 0 b0p(K)=2.882 T_c(K)=8.620 | flip - W95 median -85.9 slots over 6 replicates
+  BRAKE1 c8-leg1: b0k[0] != 0 on 0/48 rows (witness: expected 0)
+  PERK c8-leg1 K=1: valid 0/6 latched 0 b0p(K)=- T_c(K)=-
+  PERK c8-leg1 K=2: valid 0/6 latched 0 b0p(K)=- T_c(K)=-
+  PERK c8-leg1 K=3: valid 0/6 latched 0 b0p(K)=- T_c(K)=-
+  PERK c8-leg1 K=4: valid 6/6 latched 0 b0p(K)=3.714 T_c(K)=36.463
+  PERK c8-leg1 K=5: valid 6/6 latched 0 b0p(K)=4.062 T_c(K)=36.835
+  PERK c8-leg1 K=6: valid 6/6 latched 0 b0p(K)=4.062 T_c(K)=36.835
+  PERK c8-leg1 K=7: valid 6/6 latched 0 b0p(K)=4.062 T_c(K)=36.835
+  PERK c8-leg1 K=8: valid 6/6 latched 0 b0p(K)=4.062 T_c(K)=36.835
+  C8-B2 [scored (l = T_c - b0_c)] s42r1: W95=327.1 R~(W95)=1.3326 sigma_R=- fires=False anc-bind=0.50 0.79 reported, not counted (anc bind < 0.9)
+  C8-B2 [scored (l = T_c - b0_c)] s7r2: W95=346.6 R~(W95)=1.2928 sigma_R=- fires=False anc-bind=0.54 0.51 reported, not counted (anc bind < 0.9)
+  C8-B2 [scored (l = T_c - b0_c)] s42r3: W95=339.1 R~(W95)=1.3129 sigma_R=- fires=False anc-bind=0.50 0.51 reported, not counted (anc bind < 0.9)
+  C8-B2 [scored (l = T_c - b0_c)] s7r4: W95=324.7 R~(W95)=1.3624 sigma_R=- fires=False anc-bind=0.51 0.64 reported, not counted (anc bind < 0.9)
+  C8-B2 [scored (l = T_c - b0_c)] s42r5: W95=344.6 R~(W95)=1.3185 sigma_R=- fires=False anc-bind=0.50 0.58 reported, not counted (anc bind < 0.9)
+  C8-B2 [scored (l = T_c - b0_c)] s7r6: W95=352.7 R~(W95)=1.2775 sigma_R=- fires=False anc-bind=0.50 0.65 reported, not counted (anc bind < 0.9)
+  C8-B2 [own-l (reported beside, no veto)] s42r1: W95=327.1 R~(W95)=1.4236 sigma_R=- fires=False anc-bind=0.00 0.15 reported, not counted (anc bind < 0.9)
+  C8-B2 [own-l (reported beside, no veto)] s7r2: W95=346.6 R~(W95)=1.3906 sigma_R=- fires=False anc-bind=0.50 0.50 reported, not counted (anc bind < 0.9)
+  C8-B2 [own-l (reported beside, no veto)] s42r3: W95=339.1 R~(W95)=1.3721 sigma_R=- fires=False anc-bind=0.02 0.50 reported, not counted (anc bind < 0.9)
+  C8-B2 [own-l (reported beside, no veto)] s7r4: W95=324.7 R~(W95)=1.4312 sigma_R=- fires=False anc-bind=0.03 0.15 reported, not counted (anc bind < 0.9)
+  C8-B2 [own-l (reported beside, no veto)] s42r5: W95=344.6 R~(W95)=1.4048 sigma_R=- fires=False anc-bind=0.50 0.14 reported, not counted (anc bind < 0.9)
+  C8-B2 [own-l (reported beside, no veto)] s7r6: W95=352.7 R~(W95)=1.3795 sigma_R=- fires=False anc-bind=0.35 0.49 reported, not counted (anc bind < 0.9)
+  C8-B2 clamp gauge: W95 clamped at the first goodput arm 0/12 times, interpolation clamped at an end arm 0/12 (both modes)
+  C8-B2: scored recipe fires on 0 of 0 anc-bound replicates (6 scoreable); own-l recipe fires on 0; anc-bind gauge: 6 replicates excluded by the 0.9 rule
+RESULT C8-B2 UNSCOREABLE  (UNDERPOWERED: 0 anc-bound eligible replicates (0 fires), need 5)
+CROSSINGS (REPORTED): per replicate the W where R~ (and R~67) falls through 1 over the non-floor arms; Appendix A's bands are cap-128-based context, beside R6.7's honest-floor crossings
+  CROSS c2 s42r1: R~ 163.8 [IN A.3 (158, 242)] R~67 <160 [n/a R6.7 (148, 164)]
+  CROSS c2 s7r2: R~ 162.1 [IN A.3 (158, 242)] R~67 <160 [n/a R6.7 (148, 164)]
+  CROSS c2 s42r3: R~ 160.6 [IN A.3 (158, 242)] R~67 <160 [n/a R6.7 (148, 164)]
+  CROSS c2 s7r4: R~ 161.8 [IN A.3 (158, 242)] R~67 <160 [n/a R6.7 (148, 164)]
+  CROSS c2 s42r5: R~ 160.5 [IN A.3 (158, 242)] R~67 <160 [n/a R6.7 (148, 164)]
+  CROSS c2 s7r6: R~ 161.4 [IN A.3 (158, 242)] R~67 <160 [n/a R6.7 (148, 164)]
+  CROSS c8 s42r1: R~ 690.0 [ABOVE A.3 (433, 586)] R~67 571.4 [ABOVE R6.7 (440, 446)]
+  CROSS c8 s7r2: R~ 599.8 [ABOVE A.3 (433, 586)] R~67 509.1 [ABOVE R6.7 (440, 446)]
+  CROSS c8 s42r3: R~ 680.3 [ABOVE A.3 (433, 586)] R~67 558.6 [ABOVE R6.7 (440, 446)]
+  CROSS c8 s7r4: R~ 638.8 [ABOVE A.3 (433, 586)] R~67 528.1 [ABOVE R6.7 (440, 446)]
+  CROSS c8 s42r5: R~ 648.9 [ABOVE A.3 (433, 586)] R~67 550.0 [ABOVE R6.7 (440, 446)]
+  CROSS c8 s7r6: R~ 664.9 [ABOVE A.3 (433, 586)] R~67 544.4 [ABOVE R6.7 (440, 446)]
+VERDICT60 REPORTED-WITH-SCORED slots=96/96 live=96 void=0 replaced=0 dnf=0 witness_void=0 t60_missing=0 labels=17 nogo=none
+LABEL60 B1-c2 FIRES
+LABEL60 B1-c8 FIRES
+LABEL60 FLOOR-SLOPE-c2 UNRESOLVED
+LABEL60 FLOOR-CONV-c2 CONVERGED
+LABEL60 FLOOR-SLOPE-c8-leg0 SLOPED
+LABEL60 FLOOR-CONV-c8-leg0 CONVERGED
+LABEL60 FLOOR-SLOPE-c8-leg1 FLAT
+LABEL60 FLOOR-CONV-c8-leg1 CONVERGED
+LABEL60 R-SIGN-c2 PASS
+LABEL60 R-SIGN-c8 PASS
+LABEL60 P1-c2 HOLDS
+LABEL60 P1-c8 HOLDS
+LABEL60 P3-c2 RISES
+LABEL60 P3-c8l0 RISES
+LABEL60 P3-c8l1 FLAT
+LABEL60 C2-SHORT SHORT
+LABEL60 C8-B2 UNSCOREABLE

@@ -1,0 +1,108 @@
+S60 SCORE plan=60b (store law gauge session; R~ replayed from printed [SLAW] fields, s60 section 1.1); LD_NOGO=none; ABORT-TOKENS none
+ROWS (counting): cell arm seed rep | status dnf | witness caplog | collapsed latched(K=8) | goodput | LATE nk>=10 windows leg0
+  c1s G64    s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=199.5 n10=141
+  c1s G128   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=344.8 n10=120
+  c1s G192   s42  r1  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=452.8 n10=122
+  c1s G128   s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=334.5 n10=124
+  c1s G192   s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=454.3 n10=121
+  c1s G64    s7   r2  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=201.8 n10=139
+  c1s G192   s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=479.1 n10=114
+  c1s G64    s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=196.7 n10=143
+  c1s G128   s42  r3  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=352.3 n10=117
+  c1s G64    s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=138.3 n10=211
+  c1s G128   s7   r4  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=340.1 n10=121
+  c1s G192   s7   r4  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=227.6 n10=261
+  c1s G128   s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=349.3 n10=118
+  c1s G192   s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=472.3 n10=116
+  c1s G64    s42  r5  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=203.0 n10=138
+  c1s G192   s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=459.4 n10=120
+  c1s G64    s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=175.3 n10=163
+  c1s G128   s7   r6  LIVE       dnf=0 wit=True cap=True coll=False latch=False gp=339.3 n10=122
+  c1s G2048  s42  r1  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=752.0 n10=192
+  c1s C2048  s42  r1  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=869.5 n10=None
+  c1s C2048  s7   r2  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=860.2 n10=None
+  c1s G2048  s7   r2  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=852.5 n10=167
+  c1s G2048  s42  r3  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=849.1 n10=168
+  c1s C2048  s42  r3  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=870.0 n10=None
+  c1s C2048  s7   r4  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=853.8 n10=None
+  c1s G2048  s7   r4  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=868.3 n10=164
+  c1s G2048  s42  r5  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=220.8 n10=704
+  c1s C2048  s42  r5  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=848.6 n10=None
+  c1s C2048  s7   r6  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=865.3 n10=None
+  c1s G2048  s7   r6  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=825.4 n10=173
+  c1s G2048  s42  r7  LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=867.4 n10=164
+  c1s C2048  s42  r7  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=601.1 n10=None
+  c1s C2048  s7   r8  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=850.6 n10=None
+  c1s G2048  s7   r8  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=379.3 n10=401
+  c1s G2048  s42  r9  LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=489.9 n10=306
+  c1s C2048  s42  r9  LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=822.9 n10=None
+  c1s C2048  s7   r10 LIVE       dnf=0 wit=False cap=False coll=True latch=None gp=338.1 n10=None
+  c1s G2048  s7   r10 LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=829.8 n10=173
+  c1s G2048  s42  r11 LIVE       dnf=0 wit=True cap=True coll=True latch=False gp=497.3 n10=301
+  c1s G2048  s7   r12 LIVE       dnf=0 wit=True cap=True coll=True latch=True gp=670.7 n10=218
+SESSION CALIBRATION (s60 section 2): per cell and leg, the floor pool = the smallest of the three at which the leg has >= 80 % of its LATE windows with nk >= 10
+  CAL c1s leg0: pool-share[W64:1.00 W128:1.00 W192:1.00] -> floor pool W=64
+  CAL c1s leg0: rows 6 valid 6 (valid: s42r1 s7r2 s42r3 s7r4 s42r5 s7r6)
+  CAL c1s leg0: F_c=2.381 l_c=2.236 b0_c=0.142 T_c=2.398 ms (medians over the valid non-latched rows; OK)
+    excess E50=0.56 E90=0.86 ms vs X=6.1 (collapse share 0.000) s42r1
+    excess E50=0.55 E90=0.75 ms vs X=6.1 (collapse share 0.000) s7r2
+    excess E50=0.58 E90=1.08 ms vs X=6.1 (collapse share 0.000) s42r3
+    excess E50=1.92 E90=3.72 ms vs X=6.1 (collapse share 0.019) s7r4
+    excess E50=0.57 E90=0.87 ms vs X=6.1 (collapse share 0.000) s42r5
+    excess E50=0.78 E90=2.48 ms vs X=6.1 (collapse share 0.012) s7r6
+  CAL c1s leg0: collapse flag share on the calibration rows 0/6 (reported; the flag removes a row from the medians, s60 section 2(c))
+  CAL c1s leg0: LATCHED 0/6 rows (omega-bar 0.2 ms)
+  B1 c1s: median LATE err per valid calibration row: -0.187 -0.256 -0.165 -0.256 -0.286 -0.312 (predicted not to fire)
+RESULT B1-c1s DOES-NOT-FIRE  (0 of 6 rows err > 0)
+  DRIFT c1s leg0 b0p: Spearman +0.83 p=0.058 fitted change +0.140 ms vs q*l_c 0.224 -> no drift detected
+  DRIFT c1s leg0 l: Spearman -0.49 p=0.356 fitted change -0.022 ms vs q*l_c 0.224 -> no drift detected
+FLOOR GATE (s60 section 2): per leg, the least-squares slope b of the per-row median LATE tmin against W over the three floor pools; E = b*W1
+  GATE c1s: n=17 rows, b=0.0009 +- 0.0002 ms/slot (flat iff b+2se < 0.01), E=b*W1=0.06 +- 0.01 ms at W1=64, tau=None; F_c=2.381 extrapolated floor F_c-E=2.321 (reported, not scored)
+RESULT FLOOR-SLOPE-c1s FLAT  (b=0.0009)
+RESULT FLOOR-CONV-c1s NO-TAU-REGISTERED  (E=0.06+-0.01)
+  GATE c1s: the gate does not cover c1s's scored sign (R~ is fed b0_c and the row's own l); it bears only on R~67 at c1s (s60 section 2)
+ARMS (per cell: medians over the live rows of an arm; R~ = the scored recipe, R~own = the row's own l, R~67 = the R6.7-form beside it; printed R for P2)
+  ARM c1s W64    n=6 R~=1.1927 R~own=1.1927 R~67=1.1835 bind=0.00 printedR=1.1886 (>1) b0p=0.142 l=2.236 tmin=2.381
+  ARM c1s W128   n=6 R~=1.2055 R~own=1.2055 R~67=1.1888 bind=0.00 printedR=1.1915 (>1) b0p=0.108 l=2.260 tmin=2.415
+  ARM c1s W192   n=6 R~=1.1903 R~own=1.1903 R~67=1.1655 bind=0.00 printedR=1.1938 (>1) b0p=0.169 l=2.312 tmin=2.523
+  ARM c1s W2048  n=12 R~=0.8559 R~own=0.8559 R~67=0.8309 bind=0.89 printedR=1.1219 (>1) b0p=6.079 l=2.569 tmin=6.574
+  P1 c1s: b0p(W2048)/b0p(floor pool W64) = 6.079/0.142 = 42.96 (registered >= 3; a failure is reported only)
+RESULT P1-c1s HOLDS  (ratio 42.96)
+PER-K READOUT (s60 section 3.1, REPORTED; K = 8 is the scored K): b0p(K) = max of the first K b0k; the valid set is recomputed for each K; the K = 1 brake is 0 by construction
+  BRAKE1 c1s: b0k[0] != 0 on 0/30 rows (witness: expected 0)
+  PERK c1s K=1: valid 6/6 latched 0 b0p(K)=0.000 T_c(K)=2.236
+  PERK c1s K=2: valid 6/6 latched 0 b0p(K)=0.000 T_c(K)=2.256
+  PERK c1s K=3: valid 6/6 latched 0 b0p(K)=0.084 T_c(K)=2.312
+  PERK c1s K=4: valid 6/6 latched 0 b0p(K)=0.116 T_c(K)=2.372
+  PERK c1s K=5: valid 6/6 latched 0 b0p(K)=0.142 T_c(K)=2.398
+  PERK c1s K=6: valid 6/6 latched 0 b0p(K)=0.142 T_c(K)=2.398
+  PERK c1s K=7: valid 6/6 latched 0 b0p(K)=0.142 T_c(K)=2.398
+  PERK c1s K=8: valid 6/6 latched 0 b0p(K)=0.142 T_c(K)=2.398
+  C1S-CONTROL: R~ - 1 at W2048 over 0 scoreable replicates of 12 (excluded: s42r1:COLLAPSED s7r2:COLLAPSED s42r3:COLLAPSED s7r4:COLLAPSED s42r5:COLLAPSED s7r6:COLLAPSED s42r7:COLLAPSED s7r8:COLLAPSED s42r9:COLLAPSED s7r10:COLLAPSED s42r11:COLLAPSED s7r12:COLLAPSED): 
+  C1S-CONTROL: n_s=0 (non-zero 0), positive 0, negative 0, sign-test k=None (alpha 0.05)
+RESULT C1S-CONTROL UNDERPOWERED  (n_s=0 pos=0)
+CROSSINGS (REPORTED): per replicate the W where R~ (and R~67) falls through 1 over the non-floor arms; Appendix A's bands are cap-128-based context, beside R6.7's honest-floor crossings
+  CROSS c1s s42r1: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s7r2: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s42r3: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s7r4: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s42r5: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s7r6: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s42r7: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s7r8: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s42r9: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s7r10: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s42r11: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+  CROSS c1s s7r12: R~ <2048 [n/a A.3 (406, 981)] R~67 <2048 [n/a R6.7 (651, 685)]
+G/C PAIRS (s60 section 4): 10 paired, 0 with both rows unflagged (absolute collapse rule, DECISION 14; quinn qcwnd share beside: 0.01 0.01 0.02 0.02 0.95 0.01 0.02 0.79 0.68 0.03); predicted G within +1 % of C
+RESULT GC-PAIRS UNRESOLVED  (0 unflagged pairs < 4)
+  GC: goodput: fewer than 2 unflagged pairs; no minimum detectable difference
+  GC: 'C is re-based against s56's c1s control' (s60 section 4) needs s56's committed rows and is NOT computed here (DECISION 17)
+EVICTING ROWS: none in this session (status §60 Amendment 2: moved to their own registration)
+VERDICT60 REPORTED-WITH-SCORED slots=40/40 live=40 void=0 replaced=0 dnf=0 witness_void=0 t60_missing=0 labels=6 nogo=none
+LABEL60 B1-c1s DOES-NOT-FIRE
+LABEL60 FLOOR-SLOPE-c1s FLAT
+LABEL60 FLOOR-CONV-c1s NO-TAU-REGISTERED
+LABEL60 P1-c1s HOLDS
+LABEL60 C1S-CONTROL UNDERPOWERED
+LABEL60 GC-PAIRS UNRESOLVED

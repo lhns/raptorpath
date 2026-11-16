@@ -1,0 +1,58 @@
+SENTINEL-WRITABLE /dev/shm/s60a/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/s60a/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-16T10:07:42Z user=VMUSER dir=/dev/shm/s60a/run launch=2026-11-16T10:07:42Z
+LD-ALL start plan=60a load=0.00 0.23 0.24 1/392 2993827 2026-11-16T10:07:42Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.35 avg60=0.29 avg300=0.09 total=5120882810 2026-11-16T10:07:50Z
+LD-ALL plan 60a budget: 18711s to LD_HARD (at least 18360s required: the worst case of the status) 2026-11-16T10:07:50Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.00 0.23 0.24; io=full avg10=0.29 avg60=0.28 avg300=0.09 total=5120882810 2026-11-16T10:07:50Z
+LD-ALL plan 60a pre-flight: 5533576 KB free on /dev/shm (need 1048576) 2026-11-16T10:07:50Z
+LD-ALL parser test ok 2026-11-16T10:10:02Z
+LD-ALL built wall=316s 2026-11-16T10:15:18Z
+LD-ALL binary e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-16T10:15:18Z
+LD-ALL bin_sha equals the registered value e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-16T10:15:18Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s60a/src/tools/l1/ref60-manifest.sha256, 187 files) 2026-11-16T10:15:18Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-16T10:22:33Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-16T10:22:35Z
+LD-ALL suites done tfail=0 2026-11-16T10:22:35Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,2,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.00 avg300=0.00 total=5122610312 2026-11-16T10:22:43Z
+LD-ALL stage rep60a (plan 60a) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.00 avg300=0.00 total=5122610349 2026-11-16T10:22:51Z
+SMOKE60 plan=60a rows=2 slots=2
+PASS one row per slot ran with a t60
+PASS the store-law replay modules (s60replay, caplog_replay) import
+  ROW c2 C192 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 0, 'SLAW': 0, 'SLAWC': 0, 'WSTAT': 0, 'WSTORE': 0} witness={'bad': 0, 'error': None, 'n': 0, 'ok': False, 'worst': None} caplog_ok=False q=[]
+  ROW c2 G192 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 29, 'SLAW': 214, 'SLAWC': 214, 'WSTAT': 214, 'WSTORE': 214} witness={'bad': 0, 'error': None, 'n': 414, 'ok': True, 'worst': 4.999487652534995e-06} caplog_ok=True q=['0.100000']
+PASS a C row (RWM_SLAW=0) carries NO gauge tag on either end
+PASS a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG) after the warm-up cut
+PASS RWM_SLAW echoed as requested on both ends
+PASS [SLAW] q = 0.100000 on every Bulk G row (0.050000 would be Realtime)
+PASS [SLAW] q = 0.050000 on the Realtime evicting row
+PASS kw and b0k (K = 8) present after the warm-up cut
+PASS the per-row replay witness PASS (R~ with the row's own b0p and l reproduces printed R and Rb to 6e-6)
+PASS the CAPLOG replay PASS (caplog_replay.py over the row's [CAPLOG] records: records > 0 and every replayable cap reproduced; any mismatch is a FAIL)
+  CAPLOG c2 G192: records=29 replayable share=1.000 (29 replayed, 0 mismatches) rate=0.5/s pooled=29 bind(ceiling)=1.000 bind(floor)=0.000 seats=['plain'] unreplayable=0 q_off=0
+SMOKE-PASS
+LD-ALL stage rep60a SMOKE-PASS 2026-11-16T10:24:45Z
+LD-ALL stage rep60a battery rc=0 wall=6445s 2026-11-16T12:12:10Z
+CHECK60A done=True slots=96/96 rows=96 extra=0
+LD-ALL stage rep60a end ok=1 VERDICT60 REPORTED-WITH-SCORED slots=96/96 live=96 void=0 replaced=0 dnf=0 witness_void=0 t60_missing=0 labels=17 nogo=none 2026-11-16T12:12:13Z
+LD-ALL end plan 60a rep60a_ok=1 raptorpath=0 netns=0 2026-11-16T12:12:13Z
+PERSISTED /dev/shm/s60a/run -> ~/s60a/run 2026-11-16T12:12:13Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

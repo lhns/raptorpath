@@ -1,0 +1,15 @@
+SMOKE60 plan=60b rows=2 slots=2
+PASS one row per slot ran with a t60
+PASS the store-law replay modules (s60replay, caplog_replay) import
+  ROW c1s G64 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 23, 'SLAW': 164, 'SLAWC': 164, 'WSTAT': 164, 'WSTORE': 164} witness={'bad': 0, 'error': None, 'n': 314, 'ok': True, 'worst': 4.981949458526813e-06} caplog_ok=True q=['0.100000']
+  ROW c1s C2048 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 0, 'SLAW': 0, 'SLAWC': 0, 'WSTAT': 0, 'WSTORE': 0} witness={'bad': 0, 'error': None, 'n': 0, 'ok': False, 'worst': None} caplog_ok=False q=[]
+PASS a C row (RWM_SLAW=0) carries NO gauge tag on either end
+PASS a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG; an E row all but CAPLOG: it has no store cap) after the warm-up cut
+PASS RWM_SLAW echoed as requested on both ends
+PASS [SLAW] q = 0.100000 on every Bulk G row (0.050000 would be Realtime)
+NOT-RUN [SLAW] q = 0.05 on the evicting row (no evicting row; status §60 Amendment 2)
+PASS kw and b0k (K = 8) present after the warm-up cut
+PASS the per-row replay witness PASS (R~ with the row's own b0p and l reproduces printed R and Rb to 6e-6)
+PASS the CAPLOG replay PASS (caplog_replay.py over the row's [CAPLOG] records: records > 0 and every replayable cap reproduced; any mismatch is a FAIL)
+  CAPLOG c1s G64: records=23 replayable share=1.000 (23 replayed, 0 mismatches) rate=0.5/s pooled=23 bind(ceiling)=1.000 bind(floor)=0.000 seats=['plain'] unreplayable=0 q_off=0
+SMOKE-PASS

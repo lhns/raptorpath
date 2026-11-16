@@ -135,11 +135,11 @@ flowchart TB
         rec_snapver_law[/"rec · ✔ Snapshot-order<br/>filter as law"/]
         model_law_ledger["model · ✔ Law ledger"]
         rec_s54_session["rec · ✔ #167;54: filter<br/>guard, store budget"]
+        store_s60a["store · ✔ Gauge<br/>session 60a (#167;60)"]
     end
     subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         store_law_derivation["store · ▶ Store-law<br/>derivation"]
-        store_s60a["store · ▶ Gauge<br/>session 60a (#167;60)"]
     end
     subgraph bd_6["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
@@ -180,13 +180,11 @@ flowchart TB
     cc_bbrrs_r1 ~~~ rec_snapver_law
     place_wire_price ~~~ model_law_ledger
     rec_snapver_law ~~~ rec_s54_session
-    model_law_ledger ~~~ rec_s54_session
+    model_law_ledger ~~~ store_s60a
     rec_s54_session ~~~ cc_bbrrs_r2
-    rec_s54_session ~~~ store_law_derivation
-    cc_bbrrs_r2 ~~~ store_s60a
-    store_law_derivation ~~~ store_s60a
-    store_s60a ~~~ rec_leverb_guard
-    store_s60a ~~~ meas_s51_session
+    store_s60a ~~~ store_law_derivation
+    cc_bbrrs_r2 ~~~ rec_leverb_guard
+    store_law_derivation ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote
     meas_s51_session ~~~ cc_bbrrs_promote
     cc_bbrrs_promote ~~~ cc_hybrid
@@ -208,7 +206,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 46 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -226,7 +224,8 @@ flowchart TB
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
     class rec_snapver_law,model_law_ledger,rec_s54_session unrated
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
-    class store_law_derivation,store_s60a inprog
+    class store_law_derivation inprog
+    class store_s60a mixed
     class cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
@@ -290,8 +289,8 @@ flowchart TB
 | Who limits at each δ | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
 | Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Store-law gauge build (B-1) | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
-| Gauge session 60a (§60) | ▶ in progress | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
-| Gauge session 60b (§60) | ⛔ blocked | The second half of the floor measurement: the fast link's sign test and the gauge's own cost, now without the rows that overloaded the link. |
+| Gauge session 60a (§60) | ✔ done · mixed | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
+| Store-law allowance short of the c2 knee | ⚠ open defect | Open problem: with honest floors, the store law's safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
 | δ seat diagnostic and guard (§48c) | ⛔ blocked | Real-network test of tying the in-flight limit to the latency dial, including one low-latency row. |
@@ -388,15 +387,15 @@ flowchart TB
 - `rec-retx-behind-source`: Retransmits queued behind source?
 - `model-fix-paper-p2`: Paper text for placement and bbr_rs
 - `perf-fix-burst-bound`: Emission burst bound derivation
+
+**none**
+
+- `store-defect-allowance-short`: Store-law allowance short of the c2 knee
 <!-- END GENERATED: ready-now -->
 
 ## Running
 
 <!-- BEGIN GENERATED: running -->
-**vm**
-
-- `store-s60a`: Gauge session 60a (§60)
-
 **host-cargo**
 
 - `model-shared-core`: Shared engine laws and decisions (ADR-0077)
@@ -478,18 +477,17 @@ flowchart TB
 ## VM queue
 
 <!-- BEGIN GENERATED: vm-queue -->
-1. `store-s60b`: Gauge session 60b (§60). Runs after 60a's R-sign gate (a STOP or a missing label blocks it); its rehearsal re-runs first at the new tools sha.
-2. `rec-w0-leg-question`: Retransmit leg choice with filter. Before the lever-B merge, so the question of which path should carry retransmissions is answered first. It could instead ride the lever-B session as an extra reported block rather than take a session of its own.
-3. `rec-leverb-guard`: Lever-B guard v2, then merge. Runs on the main version the first session produces, in the order the owner approved.
-4. `meas-s51-session`: Off-Bulk baseline and δ sweep. After the recovery fixes land so the baseline describes the current system; it does not need them to run.
-5. `cc-s48d-session`: §48d bbr_rs round 2. After the recovery fixes, because they change the results on the hardest test that this session predicts.
-6. `cc-pacing-seam-reading`: Pacing seam first reading. Right after the controller round-two session, because the pacing hook sits on top of that work.
-7. `meas-adversarial-cells-run`: Adversarial cells measured. After the controller changes it is meant to measure.
-8. `store-engine-form-guard`: Store-law engine form guard. When the rebuilt in-flight limit is ready; it is one of the later checks.
-9. `store-s48c-session`: δ seat diagnostic and guard (§48c). After the latency-dial version of the in-flight limit is built and the low-latency baseline exists.
-10. `meas-competitor-battery`: Competitor battery. At the end, once our controller is the default, to compare the finished system with outside protocols.
-11. `meas-progress-baseline`: Cumulative progress benchmark. Whenever the queue has room; it only measures progress and gates nothing.
-12. `meas-s51b-rho`: Partial-reliability measurement block. A follow-on to the off-Bulk session; it first needs the drop setting to be adjustable on its own.
+1. `rec-w0-leg-question`: Retransmit leg choice with filter. Before the lever-B merge, so the question of which path should carry retransmissions is answered first. It could instead ride the lever-B session as an extra reported block rather than take a session of its own.
+2. `rec-leverb-guard`: Lever-B guard v2, then merge. Runs on the main version the first session produces, in the order the owner approved.
+3. `meas-s51-session`: Off-Bulk baseline and δ sweep. After the recovery fixes land so the baseline describes the current system; it does not need them to run.
+4. `cc-s48d-session`: §48d bbr_rs round 2. After the recovery fixes, because they change the results on the hardest test that this session predicts.
+5. `cc-pacing-seam-reading`: Pacing seam first reading. Right after the controller round-two session, because the pacing hook sits on top of that work.
+6. `meas-adversarial-cells-run`: Adversarial cells measured. After the controller changes it is meant to measure.
+7. `store-engine-form-guard`: Store-law engine form guard. When the rebuilt in-flight limit is ready; it is one of the later checks.
+8. `store-s48c-session`: δ seat diagnostic and guard (§48c). After the latency-dial version of the in-flight limit is built and the low-latency baseline exists.
+9. `meas-competitor-battery`: Competitor battery. At the end, once our controller is the default, to compare the finished system with outside protocols.
+10. `meas-progress-baseline`: Cumulative progress benchmark. Whenever the queue has room; it only measures progress and gates nothing.
+11. `meas-s51b-rho`: Partial-reliability measurement block. A follow-on to the off-Bulk session; it first needs the drop setting to be adjustable on its own.
 <!-- END GENERATED: vm-queue -->
 
 ## Timeline
@@ -510,7 +508,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 1 next, 1 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 45 nodes (16 done, 6 in progress, 2 next, 5 blocked, 2 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 60 nodes (26 done, 5 in progress, 1 next, 6 blocked, 22 abandoned)
+- [store - store law](roadmap/tracks/store.md): 61 nodes (28 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (9 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
