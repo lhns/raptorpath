@@ -260,6 +260,11 @@ pub(crate) struct DiagState {
     /// `RWM_EMIT_BATCH` burst gauges (`eb_bursts`/`eb_syms`/`eb_end`/
     /// `eb_maxrun`; see `net::emit_burst`).
     pub eb: super::emit_burst::EmitBurstGauge,
+
+    /// The store-law gauge's store-scope state (`net::slaw`). `None` until
+    /// `report` arms it, which only runs under `RWM_DIAG`: with the gate off
+    /// nothing of the gauge is constructed.
+    pub slaw: Option<Box<super::slaw::SlawState>>,
 }
 
 impl DiagState {
@@ -344,6 +349,7 @@ impl DiagState {
             sidle2_max_us: 0,
             wnd2_relgap_max_us: 0,
             eb: Default::default(),
+            slaw: None,
         }
     }
 }
@@ -435,6 +441,25 @@ pub(crate) fn report(
         dg.diag_paused_iters += 1;
     }
     let dnow = now_us();
+    // The store-law gauge (`net::slaw`, observation only): armed on the first
+    // pass (this function only runs under `RWM_DIAG`), then one a/W sample per
+    // pass and the quinn backlog every `AUX_PERIOD_US`. Reads and writes only
+    // gauge state.
+    if pol.slaw_on && dg.slaw.is_none() {
+        scheduler.enable_slaw();
+        dg.eb.enable_window();
+        dg.slaw = Some(Box::new(super::slaw::SlawState::new(dnow)));
+    }
+    if let Some(s) = dg.slaw.as_deref_mut() {
+        s.sample_aw(store_len, effective_store_cap);
+        if s.aux_due(dnow) {
+            for id in scheduler.all_path_ids() {
+                if let Some((hand, _, _, _, tx)) = transport.datagram_queue_stats(id) {
+                    s.note_qb(id, hand.saturating_sub(tx));
+                }
+            }
+        }
+    }
     // Emission-gap gauge (see `SIDLE_GAP_MIN_US`): observe the
     // cumulative wire handoff count (src + coded + source copies) once per
     // iteration; a change closes the current gap — accumulate it when
@@ -949,6 +974,40 @@ pub(crate) fn report(
             dgev,
             dg.eb.diag_token(),
         );
+        // ── the store-law gauge's window close (`net::slaw`) ──────────────
+        // `[WSTAT]`/`[WSTORE]`/`[SLAW]`/`[SLAWC]`, once per 250 ms with the
+        // `[DIAG]` line above, so `[DIAG] win=`'s denominator and `[SLAW] n`
+        // read the same cap. Engine reads only; the counterfactual R is
+        // printed and never applied.
+        if dg.slaw.is_some() {
+            let q = super::codel_setpoint_q(pol.delta_b);
+            let t_s = dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6;
+            let emb = dg.eb.take_window();
+            let ackw = dg.wake_n[8];
+            let mut ids = scheduler.all_path_ids();
+            ids.sort_unstable();
+            let mut legs = Vec::with_capacity(ids.len());
+            for id in ids {
+                let qcwnd_bytes = quinn_reads.get(&id).map(|r| (r.1).0).unwrap_or(0);
+                if let Some(p) = scheduler.path_mut(id) {
+                    let close = p.slaw_close();
+                    legs.push(super::slaw::LegRead {
+                        id,
+                        close,
+                        qcwnd_bytes,
+                        bdp_bytes: p.copa_bdp_anchor().unwrap_or(0.0) * symbol_size as f64,
+                        btlbw_sym_s: p.btlbw_sym_per_s().unwrap_or(0.0),
+                    });
+                }
+            }
+            if let Some(s) = dg.slaw.as_deref_mut() {
+                for l in super::slaw::render_window(
+                    s, legs, q, t_s, dnow, store_len, effective_store_cap, ackw, emb,
+                ) {
+                    crate::readout!("{l}");
+                }
+            }
+        }
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
         // 250 ms cadence, same `RWM_DIAG` gate, same cumulative

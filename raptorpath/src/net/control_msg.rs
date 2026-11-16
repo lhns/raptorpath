@@ -727,6 +727,11 @@ fn on_window_ack(
         }
         let gaps = sack_to_gaps(next_expected, &sack_ranges);
         if !gaps.is_empty() {
+            // Store-law gauge (`[SLAWC] gaptrunc`): was this report cut at
+            // `MAX_NACK_GAPS`? Counted only under `RWM_DIAG`.
+            if crate::gates::get().diag && crate::gates::get().slaw {
+                super::slaw::note_gap_report(super::sack_gaps_truncated(next_expected, &sack_ranges));
+            }
             debug!(path_id, gap_count = gaps.len(), first_gap = ?gaps.first(), "SACK gaps → NACK repair");
             if let Some(tx) = nack_tx {
                 // `[FCAUSE]`: tag which receiver arm sent

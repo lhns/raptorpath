@@ -1,7 +1,9 @@
 //! The diagnostic readout writer: one line, one write.
 //!
 //! Every `[TAG] …` readout the engine prints (`[DIAG]`, `[ETA]`, `[LAT]`,
-//! `[CHI]`, …) is scraped line by line by the L1 parsers, and the L1
+//! `[CHI]`, the store-law gauge's `[WSTAT]`/`[WSTORE]`/`[SLAW]`/`[SLAWC]`/
+//! `[CAPLOG]` (`net::slaw`, parsed by `tools/l1/slaw_parse.py`), …) is
+//! scraped line by line by the L1 parsers, and the L1
 //! harnesses capture the engine with both streams on one file
 //! (`… >log 2>&1`). Two writers share that file: the readouts (stderr) and
 //! the `tracing` subscriber (stdout, [`init_tracing`]).

@@ -89,6 +89,25 @@ pub fn sack_to_gaps(next_expected: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64,
     gaps
 }
 
+/// Whether [`sack_to_gaps`] stopped at `MAX_NACK_GAPS` with more gaps still
+/// unreported — C02's visibility clamp binding (store-law gauge `[SLAWC]`).
+/// A sibling, not a flag on `sack_to_gaps`, so that function's output is
+/// untouched; it walks the same ranges the same way.
+pub fn sack_gaps_truncated(next_expected: u64, sack_ranges: &[(u64, u64)]) -> bool {
+    let mut n = 0usize;
+    let mut expected = next_expected;
+    for &(start, end) in sack_ranges {
+        if start > expected {
+            n += 1;
+            if n > MAX_NACK_GAPS {
+                return true;
+            }
+        }
+        expected = expected.max(end.saturating_add(1));
+    }
+    false
+}
+
 /// Charge one retained seq to its placement path's outstanding account —
 /// the per-path store-attribution gauge behind `[DIAG] sout=`. Called in
 /// lockstep with the `sent_store` insert; paired with
