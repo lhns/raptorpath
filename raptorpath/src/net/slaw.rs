@@ -353,6 +353,17 @@ pub fn note_fec_inputs(eps: f64, sigma2: f64) {
 pub fn note_debt_accrued(rate: f64, astar: Option<f64>) {
     DEBT_ACC.fetch_add(micro(rate), Relaxed);
     FEC_N.fetch_add(1, Relaxed);
+    SPC_AN.fetch_add(1, Relaxed);
+    match SPC_STATE.load(Relaxed) {
+        1 => {
+            SPC_AB.fetch_add(1, Relaxed);
+        }
+        2 => {
+            SPC_AB.fetch_add(1, Relaxed);
+            SPC_AZ.fetch_add(1, Relaxed);
+        }
+        _ => {}
+    }
     FEC_SUM_EPS.fetch_add((f64::from_bits(FEC_EPS_BITS.load(Relaxed)).max(0.0) * 1e9) as u64, Relaxed);
     FEC_SUM_S2.fetch_add(micro(f64::from_bits(FEC_S2_BITS.load(Relaxed))), Relaxed);
     FEC_SUM_R.fetch_add(micro(rate), Relaxed);
@@ -360,6 +371,50 @@ pub fn note_debt_accrued(rate: f64, astar: Option<f64>) {
         FEC_SUM_A.fetch_add((a.max(0.0) * 1e3) as u64, Relaxed);
         FEC_NA.fetch_add(1, Relaxed);
     }
+}
+
+/// The spare-capacity clamp at the rate seat (docs/derivations/s51-evict-design.md
+/// section 6). Per recompute: `wr` is the cadenced law r before the clamp, `fr`
+/// = `wr.min(spare.max(0))` the rate handed on. Bound: fr < wr. Zero: fr = 0 and
+/// wr > 0. A non-finite wr is neither (and adds 0 to the sums) but is still a
+/// recompute. Each accrual then counts against the state of the recompute whose
+/// cached rate it uses (`SPC_STATE`: 0 free, 1 bound, 2 zero).
+static SPC_STATE: AtomicU64 = AtomicU64::new(0);
+static SPC_AB: AtomicU64 = AtomicU64::new(0);
+static SPC_AZ: AtomicU64 = AtomicU64::new(0);
+static SPC_AN: AtomicU64 = AtomicU64::new(0);
+static SPC_RB: AtomicU64 = AtomicU64::new(0);
+static SPC_RN: AtomicU64 = AtomicU64::new(0);
+static SPC_R0: AtomicU64 = AtomicU64::new(0);
+static SPC_SUM_WR: AtomicU64 = AtomicU64::new(0);
+static SPC_SUM_FR: AtomicU64 = AtomicU64::new(0);
+
+/// ab, az, an, rb, rn, r0, Σwr, Σfr (cumulative).
+fn spc_load() -> [u64; 8] {
+    [&SPC_AB, &SPC_AZ, &SPC_AN, &SPC_RB, &SPC_RN, &SPC_R0, &SPC_SUM_WR, &SPC_SUM_FR].map(|a| a.load(Relaxed))
+}
+
+/// One recompute that reached the clamp (call only with the gauge on).
+pub fn note_spare_clamp(window_rate: f64, spare: f64) {
+    let fr = window_rate.min(spare.max(0.0));
+    let finite = window_rate.is_finite();
+    let zero = finite && fr == 0.0 && window_rate > 0.0;
+    let bound = finite && fr < window_rate;
+    SPC_RN.fetch_add(1, Relaxed);
+    if finite {
+        SPC_SUM_WR.fetch_add(micro(window_rate), Relaxed);
+        SPC_SUM_FR.fetch_add(micro(fr), Relaxed);
+    }
+    if bound {
+        SPC_RB.fetch_add(1, Relaxed);
+    }
+    SPC_STATE.store(if zero { 2 } else { u64::from(bound) }, Relaxed);
+}
+
+/// One recompute with no estimator (rate 0, nothing clamped; gauge on only).
+pub fn note_spare_none() {
+    SPC_R0.fetch_add(1, Relaxed);
+    SPC_STATE.store(0, Relaxed);
 }
 
 /// One unit of debt spent on a correction slot (gauge on only).
@@ -401,6 +456,7 @@ pub struct SlawState {
     adv: Vec<u32>,
     debt_last: [u64; 6],
     fec_last: [u64; 6],
+    spc_last: [u64; 8],
     qb: HashMap<u32, Vec<u64>>,
     last_aux_us: u64,
     ackw_last: u64,
@@ -417,7 +473,8 @@ impl SlawState {
         let debt_last = [&DEBT_ACC, &DEBT_EM, &DEBT_RM_ACK, &DEBT_ASK_ACK, &DEBT_RM_NACK, &DEBT_ASK_NACK]
             .map(|a| a.load(Relaxed));
         let fec_last = [&FEC_N, &FEC_SUM_EPS, &FEC_SUM_S2, &FEC_SUM_R, &FEC_SUM_A, &FEC_NA].map(|a| a.load(Relaxed));
-        Self { last_close_us: now_us, aw_min: f64::INFINITY, debt_last, fec_last, ..Default::default() }
+        let spc_last = spc_load();
+        Self { last_close_us: now_us, aw_min: f64::INFINITY, debt_last, fec_last, spc_last, ..Default::default() }
     }
 
     /// One a/W sample (`store_len / effective_store_cap`), every loop pass.
@@ -668,8 +725,18 @@ pub fn render_window(
             fd[0]
         )
     };
+    // The spare-clamp gauge (design s51-evict section 6): per-window deltas.
+    let sl = spc_load();
+    let sd: Vec<u64> = (0..8).map(|i| sl[i].saturating_sub(s.spc_last[i])).collect();
+    s.spc_last = sl;
+    let wr_s = if sd[4] == 0 {
+        "-/-".to_string()
+    } else {
+        format!("{:.6}/{:.6}", sd[6] as f64 / 1e6 / sd[4] as f64, sd[7] as f64 / 1e6 / sd[4] as f64)
+    };
+    let spc_s = format!("spc={}/{}/{}/{}/{}/{} wr={wr_s}", sd[0], sd[1], sd[2], sd[3], sd[4], sd[5]);
     let debt_s = format!(
-        "{fec_s} dbt_acc={:.2} dbt_em={:.0} dbt_share={share} dbt_rm_ack={:.2} dbt_ask_ack={:.2} dbt_rm_nack={:.2} dbt_ask_nack={:.2}",
+        "{fec_s} {spc_s} dbt_acc={:.2} dbt_em={:.0} dbt_share={share} dbt_rm_ack={:.2} dbt_ask_ack={:.2} dbt_rm_nack={:.2} dbt_ask_nack={:.2}",
         d[0], d[1], d[2], d[3], d[4], d[5]
     );
 
@@ -949,7 +1016,7 @@ mod tests {
     }
 
     /// K4: the `fec=eps/sigma2/r/astar/n` token is the window MEAN of what the
-    /// rate seat used at each accrual (this is the only test that accrues).
+    /// rate seat used at each accrual.
     #[test]
     fn fec_token_is_the_window_mean_of_the_accrual_inputs() {
         let _g = TEST_LOCK.lock().unwrap();
@@ -965,6 +1032,80 @@ mod tests {
         // The next window sees only new accruals.
         let lines = render_window(&mut st, vec![], 0.1, 2.25, 500_000, 5, 10, 0, vec![]);
         assert!(lines.iter().any(|l| l.starts_with("[WSTORE]") && l.contains(" fec=-/-/-/-/0 ")), "{lines:?}");
+    }
+
+    /// The `[WSTORE]` line of one window rendered from a fresh state.
+    fn wstore(st: &mut SlawState) -> String {
+        let lines = render_window(st, vec![], 0.1, 2.0, 250_000, 5, 10, 0, vec![]);
+        lines.into_iter().find(|l| l.starts_with("[WSTORE]")).unwrap()
+    }
+
+    /// Design s51-evict section 6.2: the clamp states, the accrual inheritance
+    /// (a cache-hit accrual counts against the last recompute's state), the
+    /// no-estimator arm, and the exact on-row identities.
+    #[test]
+    fn spare_clamp_states_inheritance_and_row_identities() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let mut st = SlawState::new(0);
+        // spare = inf (no in-flight): free.
+        note_spare_clamp(0.25, f64::INFINITY);
+        note_debt_accrued(0.25, None);
+        // spare >= wr: free (equality is not bound).
+        note_spare_clamp(0.25, 0.25);
+        note_debt_accrued(0.25, None);
+        // 0 < spare < wr: bound, not zero; two accruals inherit it (cache hits).
+        note_spare_clamp(0.5, 0.125);
+        note_debt_accrued(0.125, None);
+        note_debt_accrued(0.125, None);
+        // spare = 0 (and negative spare) with wr > 0: zero (and bound).
+        note_spare_clamp(0.5, 0.0);
+        note_debt_accrued(0.0, None);
+        note_spare_clamp(0.5, -3.0);
+        note_debt_accrued(0.0, None);
+        // wr = 0: neither bound nor zero even at spare = 0.
+        note_spare_clamp(0.0, 0.0);
+        note_debt_accrued(0.0, None);
+        // non-finite wr: neither, still a recompute, adds nothing to the sums.
+        note_spare_clamp(f64::NAN, 0.5);
+        note_debt_accrued(0.0, None);
+        // no estimator: free, rate 0.
+        note_spare_none();
+        note_debt_accrued(0.0, None);
+        let ws = wstore(&mut st);
+        // ab = 2 (bound) + 2 (zero) = 4, az = 2, an = 9, rb = 3, rn = 7, r0 = 1.
+        assert!(ws.contains(" spc=4/2/9/3/7/1 "), "{ws}");
+        // Σwr = .25+.25+.5+.5+.5+0+0 = 2.0; Σfr = .25+.25+.125 = .625; over rn = 7.
+        assert!(ws.contains(&format!(" wr={:.6}/{:.6} ", 2.0 / 7.0, 0.625 / 7.0)), "{ws}");
+        // On-row identities of the spec: rn + r0 = an for per-symbol recomputes
+        // (here 7 + 1 != 9 because two accruals were cache hits, by construction),
+        // and an equals fec='s n at the same call site.
+        assert!(ws.contains("/9 spc="), "fec= n must be an: {ws}");
+        // The next window counts only new events; an empty window is the dash form.
+        let ws = wstore(&mut st);
+        assert!(ws.contains(" spc=0/0/0/0/0/0 wr=-/- "), "{ws}");
+    }
+
+    /// Per-symbol recomputes (the seat's regime): every accrual follows its own
+    /// recompute, so rn + r0 = an, and the grant mean times rn/(rn + r0) is
+    /// `fec=` r (spec section 6.2 identity).
+    #[test]
+    fn spare_clamp_per_symbol_identity_with_fec_r() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let mut st = SlawState::new(0);
+        note_fec_inputs(0.01, 1.0);
+        for (wr, spare) in [(0.4, f64::INFINITY), (0.4, 0.1), (0.4, 0.0)] {
+            note_spare_clamp(wr, spare);
+            note_debt_accrued(wr.min(spare.max(0.0)), None);
+        }
+        note_spare_none();
+        note_debt_accrued(0.0, None);
+        let ws = wstore(&mut st);
+        assert!(ws.contains(" spc=2/1/4/2/3/1 "), "{ws}");
+        // Σfr/rn = (0.4+0.1+0)/3; fec= r = Σr/an = 0.5/4.
+        let g = |tok: &str| ws.split(tok).nth(1).unwrap().split(' ').next().unwrap().to_string();
+        let fr: f64 = g(" wr=").split('/').nth(1).unwrap().parse().unwrap();
+        let r: f64 = g(" fec=").split('/').nth(2).unwrap().parse().unwrap();
+        assert!((fr * 3.0 / 4.0 - r).abs() <= 1.5e-5, "{fr} {r} {ws}");
     }
 
     /// The crossing counter: sign changes only; ties count as at-or-below.

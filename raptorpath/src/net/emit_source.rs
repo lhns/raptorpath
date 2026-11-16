@@ -542,6 +542,10 @@ pub(crate) fn emit_source(
                     // `compute_repair_rate_capped`'s spare-capacity clamp,
                     // applied per symbol to the cadenced rate.
                     let flat_rate = window_rate.min(spare.max(0.0));
+                    if pol.slaw_on {
+                        // [WSTORE] spc= (gauge): the clamp's bind state.
+                        super::slaw::note_spare_clamp(window_rate, spare);
+                    }
                     let taper = crate::control::TaperFunction::from_estimator(est, flat_rate);
                     let rr = if pol.taper_r_budget {
                         // Budget law (see `TaperBudget`): emission tracks
@@ -610,7 +614,12 @@ pub(crate) fn emit_source(
                     };
                     (rr, span, est.rtt())
                 }
-                None => (0.0, None, Duration::from_millis(50)),
+                None => {
+                    if pol.slaw_on {
+                        super::slaw::note_spare_none(); // [WSTORE] spc= r0 (gauge)
+                    }
+                    (0.0, None, Duration::from_millis(50))
+                }
             }
         };
         st.taper_cache = Some((repair_rate, span_params, taper_rtt));

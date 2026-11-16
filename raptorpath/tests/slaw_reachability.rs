@@ -84,6 +84,25 @@ fn the_gauge_prints_under_diag_and_only_under_diag() {
     for k in ["fec=", "dbt_acc=", "dbt_em=", "dbt_share=", "dbt_rm_ack=", "dbt_ask_ack=", "dbt_rm_nack=", "dbt_ask_nack=", "adv="] {
         assert!(tok(ws, k).is_some() || ws.contains(&format!(" {k}-")), "{k} missing: {ws}");
     }
+    // 5b. The spare-clamp gauge is reached from the driven emit path (rule 1):
+    // `spc=ab/az/an/rb/rn/r0` has `an` equal to `fec=`'s n on every window (same
+    // call site), and some window recomputed at the clamp (rn > 0).
+    let (mut sum_an, mut sum_rn) = (0u64, 0u64);
+    for l in on.lines().filter(|l| l.starts_with("[WSTORE] ")) {
+        let spc: Vec<u64> = tok(l, "spc=")
+            .unwrap_or_else(|| panic!("spc= missing: {l}"))
+            .split('/')
+            .map(|x| x.parse().unwrap_or_else(|_| panic!("spc= field {x:?} in {l}")))
+            .collect();
+        assert_eq!(spc.len(), 6, "{l}");
+        let fec_n: u64 = tok(l, "fec=").and_then(|f| f.rsplit('/').next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("fec= n in {l}"));
+        assert_eq!(spc[2], fec_n, "spc an != fec n: {l}");
+        assert!(spc[0] <= spc[2] && spc[1] <= spc[0] && spc[3] <= spc[4], "{l}");
+        assert!(tok(l, "wr=").is_some(), "wr= missing: {l}");
+        sum_an += spc[2];
+        sum_rn += spc[4];
+    }
+    assert!(sum_an > 0 && sum_rn > 0, "the spare-clamp gauge never ran on a driven transfer (an={sum_an} rn={sum_rn})");
     assert!(on.contains("RWM_SLAW=1"), "[GATES] must echo RWM_SLAW=1");
 
     // 4b. RWM_DIAG=1 RWM_SLAW=0: [DIAG] stays, the gauge does not run.
