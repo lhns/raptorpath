@@ -1468,7 +1468,7 @@ def smoke(path, plan, out=print):
     gs = [rv for rv in rvs if rv.kind == "G"]
     es = [rv for rv in rvs if rv.kind == "E"]                 # the evicting row of 60b's rehearsal (plan 59's arm, gauge on, Realtime: q = 0.05)
     gall = gs + es
-    gcap = gs                                                # E rows have no store cap by construction (plan_dyn_cap needs reliable): no CAPLOG on them
+    gcap = gs                                                # E rows have no store cap by construction (plain_dyn_cap needs reliable): no CAPLOG on them
     crit("a C row (RWM_SLAW=0) carries NO gauge tag on either end", [f"{rv.cell} {rv.arm}: {k}={v}" for rv in cs for side in ("all_cli", "srv") for k, v in rv.t["tags"][side].items() if v])
     crit("a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG; an E row all but CAPLOG: it has no store cap) after the warm-up cut", [f"{rv.cell} {rv.arm}: no {k}" for rv in gall for k, v in rv.t["tags"]["cli"].items() if not v and not (rv.kind == "E" and k == "CAPLOG")])
     crit("RWM_SLAW echoed as requested on both ends", [f"{rv.cell} {rv.arm}: cli={rv.t['gate_slaw']['cli']} srv={rv.t['gate_slaw']['srv']}" for rv in rvs
