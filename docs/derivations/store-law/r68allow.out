@@ -1,0 +1,182 @@
+store-law R6.8 (r68allow.py): the s60 rows read in place from rep60a-diag-ld.tgz and rep60b-diag-ld.tgz
+rows parsed: 136 (G 126, C 10)
+
+== 0. Reproduction of the s60 score (witness: rep60a-score.txt CAL / C2-D lines) ==
+  CAL c2-100 leg0 W16: valid 5  F_c=8.682  l_c=5.579   (floor windows: p10 10.719 p50 13.728 p90 16.307; S_F = med(p50 - tmin) 5.077; H_F = med(p90 - tmin) 7.718; sig_F 2.540; sigw_F 2.542)
+  CAL c8-100 leg0 W32: valid 6  F_c=8.794  l_c=5.594   (floor windows: p10 11.329 p50 14.260 p90 16.654; S_F = med(p50 - tmin) 5.454; H_F = med(p90 - tmin) 7.847; sig_F 2.331; sigw_F 2.373)
+  CAL c8-100 leg1 W256: valid 6  F_c=37.357  l_c=33.065   (floor windows: p10 42.234 p50 47.333 p90 52.367; S_F = med(p50 - tmin) 10.022; H_F = med(p90 - tmin) 15.083; sig_F 5.167; sigw_F 4.793)
+  CAL c1s-400 leg0 W64: valid 6  F_c=2.381  l_c=2.236   (floor windows: p10 2.620 p50 2.809 p90 3.231; S_F = med(p50 - tmin) 0.430; H_F = med(p90 - tmin) 0.849; sig_F 0.297; sigw_F 0.424)
+  C2-D s42r1: W95=168.2 Tmin(W95)=12.767 sig=1.815 -> D_r=+1.712
+  C2-D s7r2: W95=167.6 Tmin(W95)=12.690 sig=1.810 -> D_r=+1.640
+  C2-D s42r3: W95=165.7 Tmin(W95)=12.580 sig=1.723 -> D_r=+1.618
+  C2-D s7r4: W95=168.6 Tmin(W95)=12.689 sig=1.754 -> D_r=+1.696
+  C2-D s42r5: W95=167.8 Tmin(W95)=12.766 sig=1.760 -> D_r=+1.766
+  C2-D s7r6: W95=169.7 Tmin(W95)=12.792 sig=1.864 -> D_r=+1.689
+  C2-D pooled median +1.692; per arm W160 +1.309, W176 +2.069, W192 +3.096   (score: +1.692; 1.309 / 2.069 / 3.096)
+
+== 1. Window quantiles per arm (median over replicates of each row's LATE median; ms). rise = arm - floor-pool value ==
+  c2-100 leg0: W | gp/ctl | tmin p10 p50 p90 | p50-tmin p90-p10 | sig sigw | l
+    W16     0.112 | 8.679 10.687 13.697 16.208 | 5.083 5.535 | 2.499 2.493 | 5.589  (n 6)
+    W32     0.217 | 8.947 11.379 14.272 16.688 | 5.361 5.317 | 2.260 2.351 | 5.830  (n 6)
+    W48     0.321 | 9.037 11.737 14.591 16.877 | 5.513 5.144 | 2.230 2.272 | 6.110  (n 6)
+    W160    0.930 | 12.325 14.873 16.813 18.836 | 4.450 3.992 | 1.776 2.030 | 9.120  (n 6)
+    W176    0.970 | 13.095 15.765 17.807 19.757 | 4.695 4.005 | 1.765 1.986 | 9.757  (n 6)
+    W192    0.990 | 14.052 16.854 19.118 21.091 | 5.025 4.210 | 1.709 1.957 | 10.215  (n 6)
+    W256    1.002 | 19.753 22.833 25.400 27.476 | 5.520 4.609 | 1.742 2.071 | 10.752  (n 6)
+    W2048   1.000 | 200.500 204.501 207.851 210.968 | 6.706 6.213 | 1.956 3.002 | 12.670  (n 6)
+  c8-100 leg0: W | gp/ctl | tmin p10 p50 p90 | p50-tmin p90-p10 | sig sigw | l
+    W32     0.174 | 8.794 11.329 14.260 16.654 | 5.454 5.307 | 2.331 2.373 | 5.594  (n 6)
+    W64     0.339 | 9.292 12.155 14.921 17.158 | 5.642 5.015 | 2.106 2.241 | 6.196  (n 6)
+    W96     0.488 | 9.887 12.899 15.489 17.719 | 5.602 4.841 | 2.085 2.227 | 6.868  (n 6)
+    W256    0.898 | 15.123 19.099 22.174 24.913 | 6.844 5.835 | 2.046 2.708 | 10.440  (n 6)
+    W320    0.941 | 18.533 22.994 26.543 29.690 | 8.046 6.675 | 2.191 3.083 | 10.665  (n 6)
+    W384    0.975 | 21.537 26.499 30.656 34.443 | 9.059 8.155 | 2.359 3.857 | 11.095  (n 6)
+    W512    0.994 | 28.580 34.048 39.414 45.172 | 11.052 11.220 | 2.562 5.642 | 10.492  (n 6)
+    W1280   1.000 | 74.043 81.457 96.739 111.433 | 19.431 28.258 | 2.838 13.222 | 10.356  (n 6)
+  c8-100 leg1: W | gp/ctl | tmin p10 p50 p90 | p50-tmin p90-p10 | sig sigw | l
+    W32     0.174 | 40.297 42.306 46.119 48.629 | 5.471 5.938 | 5.121 1.385 | 32.504  (n 6)
+    W64     0.339 | 39.183 41.836 45.951 49.151 | 6.859 6.936 | 4.941 2.423 | 32.391  (n 6)
+    W96     0.488 | 38.466 41.616 46.349 49.501 | 7.710 7.667 | 4.879 2.746 | 32.065  (n 6)
+    W256    0.898 | 37.357 42.234 47.333 52.367 | 10.022 9.974 | 5.167 4.793 | 33.065  (n 6)
+    W320    0.941 | 39.245 44.343 49.246 54.939 | 10.178 10.676 | 5.651 5.485 | 34.642  (n 6)
+    W384    0.975 | 40.572 46.377 52.864 62.335 | 12.355 16.157 | 8.328 8.737 | 35.098  (n 6)
+    W512    0.994 | 41.808 49.520 65.210 86.280 | 23.471 36.326 | 16.169 19.455 | 35.129  (n 6)
+    W1280   1.000 | 50.569 75.953 156.470 232.999 | 79.066 135.424 | 30.498 58.950 | 35.153  (n 6)
+  c1s-400 leg0: W | gp/ctl | tmin p10 p50 p90 | p50-tmin p90-p10 | sig sigw | l
+    W64     0.234 | 2.381 2.620 2.809 3.231 | 0.430 0.613 | 0.297 0.424 | 2.236  (n 6)
+    W128    0.413 | 2.415 2.760 3.172 3.759 | 0.764 0.998 | 0.408 0.586 | 2.260  (n 6)
+    W192    0.560 | 2.523 3.036 3.562 4.344 | 1.035 1.307 | 0.505 0.770 | 2.312  (n 6)
+    W2048   1.000 | 6.574 13.608 19.817 26.914 | 13.015 13.394 | 0.400 6.617 | 2.569  (n 12)
+
+== 1b. The floor gate on S_F (per-row median of p50 - tmin), as s60 section 2 applies it to tmin: OLS over the floor pools, E = b*W1 at the floor pool; beside it the same fit on tmin (witness: the score's c2 b = 0.0113 +- 0.0016) and the median window sample count nk per pool ==
+  c2-100 leg0 pools (16, 32, 48) (W1=16, n=18 rows) | S_F: b=+0.0152 +- 0.0020 ms/slot, E=b*W1=+0.24 +- 0.03 ms | tmin: b=+0.0113 +- 0.0016 ms/slot, E=b*W1=+0.18 +- 0.03 ms | nk W16:282 W32:536 W48:786
+  c8-100 leg0 pools (32, 64, 96) (W1=32, n=18 rows) | S_F: b=+0.0024 +- 0.0007 ms/slot, E=b*W1=+0.08 +- 0.02 ms | tmin: b=+0.0171 +- 0.0005 ms/slot, E=b*W1=+0.55 +- 0.02 ms | nk W32:510 W64:964 W96:1374
+  c8-100 leg1 pools (32, 64, 96, 256) (W1=256, n=24 rows) | S_F: b=+0.0189 +- 0.0014 ms/slot, E=b*W1=+4.84 +- 0.35 ms | tmin: b=-0.0114 +- 0.0014 ms/slot, E=b*W1=-2.92 +- 0.36 ms | nk W32:15 W64:18 W96:23 W256:142
+  c1s-400 leg0 pools (64, 128, 192) (W1=64, n=18 rows) | S_F: b=+0.0050 +- 0.0032 ms/slot, E=b*W1=+0.32 +- 0.20 ms | tmin: b=+0.0031 +- 0.0017 ms/slot, E=b*W1=+0.20 +- 0.11 ms | nk W64:5273 W128:9215 W192:12144
+
+== 2. c2: what the knee needs, per replicate, against what each allowance supplies (Bulk q = 0.10) ==
+  need = Tmin(W95) - F_c. Shipped supply A0 = sig + q*l_c. Each family's free constant, solved so that D = 0, is printed: a value solved this way is a FIT, not a provenance.
+  s42r1: W95 168.2  need 4.085  sig 1.815  q*l_c 0.558  D +1.712 | Tmin(W95) 12.767 vs floor-window p50 13.728 (diff -0.961); knee p50 17.321
+  s7r2: W95 167.6  need 4.008  sig 1.810  q*l_c 0.558  D +1.640 | Tmin(W95) 12.690 vs floor-window p50 13.728 (diff -1.038); knee p50 17.271
+  s42r3: W95 165.7  need 3.898  sig 1.723  q*l_c 0.558  D +1.618 | Tmin(W95) 12.580 vs floor-window p50 13.728 (diff -1.148); knee p50 17.178
+  s7r4: W95 168.6  need 4.007  sig 1.754  q*l_c 0.558  D +1.696 | Tmin(W95) 12.689 vs floor-window p50 13.728 (diff -1.039); knee p50 17.321
+  s42r5: W95 167.8  need 4.084  sig 1.760  q*l_c 0.558  D +1.766 | Tmin(W95) 12.766 vs floor-window p50 13.728 (diff -0.962); knee p50 17.327
+  s7r6: W95 169.7  need 4.110  sig 1.864  q*l_c 0.558  D +1.689 | Tmin(W95) 12.792 vs floor-window p50 13.728 (diff -0.936); knee p50 17.422
+  median need 4.046 ms; sig at the knee 1.785; q*l_c 0.558; q*F_c 0.868
+  A(c)-type  sig + c_B*q/q_B:     c_B = 2.261 ms  (W1's c_B = 2.7 ms is its c alone, in tau_s = b0 + c at G = 0.9 on the s43 oracle line: another coordinate system)
+  wider q    sig + q'*l_c:        q' = 0.405;  sig + q'*F_c: q' = 0.260   (RFC 8289 band 0.05-0.10)
+  sig scale  k*sig + q*l_c:       k = 1.954
+  floor spread S_F + q*F_c supplies 5.945 (S_F 5.077); H_F + q*F_c supplies 8.586
+
+== 3. c2-100: each candidate replayed (R67 form, session floors; per replicate: knee W95, crossing W*, W* - W95; control R) ==
+  A0   Bulk     W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0888 | D per arm W160 +1.26, W176 +2.02, W192 +3.05
+  A0   Auto     W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0879 | D per arm W160 +1.44, W176 +2.20, W192 +3.24
+  A0   Realtime W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0875 | D per arm W160 +1.54, W176 +2.30, W192 +3.33
+       (sig + q*l_c            (R6.7 form as registered))
+  A0f  Bulk     W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0903 | D per arm W160 +0.95, W176 +1.71, W192 +2.74
+  A0f  Auto     W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0889 | D per arm W160 +1.24, W176 +2.00, W192 +3.03
+  A0f  Realtime W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0882 | D per arm W160 +1.38, W176 +2.14, W192 +3.17
+       (sig + q*F_c            (finding 2's fix alone))
+  Ac   Bulk     W* 173 169 168 169 169 170              median W*-W95    1.7 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.0969 | D per arm W160 -0.45, W176 +0.32, W192 +1.35
+  Ac   Auto     W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0933 | D per arm W160 +0.31, W176 +1.07, W192 +2.10
+  Ac   Realtime W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0915 | D per arm W160 +0.68, W176 +1.45, W192 +2.48
+       (sig + c_B*q/q_B, c_B=2.26 (A(c)-type; c_B fitted at c2 Bulk))
+  S    Bulk     W* 198 200 200 203 201 199              median W*-W95   32.8 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1045 | D per arm W160 -2.30, W176 -1.53, W192 -0.57
+  S    Auto     W* 194 196 196 199 197 195              median W*-W95   28.8 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1031 | D per arm W160 -2.01, W176 -1.24, W192 -0.29
+  S    Realtime W* 192 194 194 197 195 193              median W*-W95   26.7 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1024 | D per arm W160 -1.87, W176 -1.10, W192 -0.14
+       (S_F + q*F_c            (floor-window spread, delta-free part))
+  Sd   Bulk     W* 198 200 200 203 201 199              median W*-W95   32.8 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1045 | D per arm W160 -2.30, W176 -1.53, W192 -0.57
+  Sd   Auto     W* 166 167 167 168 165 167              median W*-W95   -1.6 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.0950 | D per arm W160 -0.32, W176 +0.45, W192 +1.41
+  Sd   Realtime W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0901 | D per arm W160 +0.67, W176 +1.44, W192 +2.40
+       (S_F*q/q_B + q*F_c      (floor-window spread, delta-scaled))
+  W80  Bulk     W* 186 188 186 193 190 187              median W*-W95   20.4 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1129 | D per arm W160 -1.19, W176 -0.55, W192 +0.23
+  W80  Auto     W* 181 181 181 184 185 182              median W*-W95   14.1 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1115 | D per arm W160 -0.90, W176 -0.26, W192 +0.52
+  W80  Realtime W* 178 177 178 179 182 180              median W*-W95   10.2 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.1108 | D per arm W160 -0.76, W176 -0.11, W192 +0.67
+       ((p90 - p10)_window + q*F_c (central 80 % window spread at load))
+  wq   Bulk     W* 173 169 168 169 169 170              median W*-W95    1.7 (W95 median 168.0) | R=1 crossings/row max 1 | control R max 0.0969 | D per arm W160 -0.45, W176 +0.32, W192 +1.35
+  wq   Auto     W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0933 | D per arm W160 +0.31, W176 +1.07, W192 +2.10
+  wq   Realtime W* <160 <160 <160 <160 <160 <160        median W*-W95      - (W95 median 168.0) | R=1 crossings/row max 0 | control R max 0.0915 | D per arm W160 +0.68, W176 +1.45, W192 +2.48
+       (sig + q'*F_c, q' = 0.260*q/q_B (a wider q band, fitted at c2 Bulk))
+
+== 3. c8-100: each candidate replayed (R67 form, session floors; per replicate: knee W95, crossing W*, W* - W95; control R) ==
+  A0   Bulk     W* >512 509 >512 >512 >512 >512         median W*-W95  162.5 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6923
+  A0   Auto     W* >512 504 >512 >512 >512 >512         median W*-W95  156.9 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6890
+  A0   Realtime W* >512 501 >512 509 >512 >512          median W*-W95  169.2 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6873
+       (sig + q*l_c            (R6.7 form as registered))
+  A0f  Bulk     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6956
+  A0f  Auto     W* >512 508 >512 >512 >512 >512         median W*-W95  160.9 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6912
+  A0f  Realtime W* >512 504 >512 >512 >512 >512         median W*-W95  157.1 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6890
+       (sig + q*F_c            (finding 2's fix alone))
+  Ac   Bulk     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.7045
+  Ac   Auto     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6971
+  Ac   Realtime W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6934
+       (sig + c_B*q/q_B, c_B=2.26 (A(c)-type; c_B fitted at c2 Bulk))
+  S    Bulk     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6743
+  S    Auto     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6699
+  S    Realtime W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6678
+       (S_F + q*F_c            (floor-window spread, delta-free part))
+  Sd   Bulk     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6743
+  Sd   Auto     W* >512 502 505 505 511 504             median W*-W95  165.9 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6492
+  Sd   Realtime W* 496 483 484 484 489 483              median W*-W95  144.8 (W95 median 341.9) | R=1 crossings/row max 1 | control R max 0.6367
+       (S_F*q/q_B + q*F_c      (floor-window spread, delta-scaled))
+  W80  Bulk     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 1.1068
+  W80  Auto     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 1.1029
+  W80  Realtime W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 1.1009
+       ((p90 - p10)_window + q*F_c (central 80 % window spread at load))
+  wq   Bulk     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.7169
+  wq   Auto     W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.7054
+  wq   Realtime W* >512 >512 >512 >512 >512 >512        median W*-W95      - (W95 median 341.9) | R=1 crossings/row max 0 | control R max 0.6996
+       (sig + q'*F_c, q' = 0.260*q/q_B (a wider q band, fitted at c2 Bulk))
+
+== 3c. c1s (no knee bracket in s60; direction and size only): each allowance at the floor pool W64 and the control's R67 at Bulk ==
+  A0   A(W64) 0.544 ms | control W2048 R67 median 0.8309 max 0.9040
+  A0f  A(W64) 0.558 ms | control W2048 R67 median 0.8316 max 0.9047
+  Ac   A(W64) 2.581 ms | control W2048 R67 median 0.9390 max 1.0146
+  S    A(W64) 0.668 ms | control W2048 R67 median 0.8189 max 0.8863
+  Sd   A(W64) 0.668 ms | control W2048 R67 median 0.8189 max 0.8863
+  W80  A(W64) 0.922 ms | control W2048 R67 median 1.4570 max 1.5874
+  wq   A(W64) 0.940 ms | control W2048 R67 median 0.8511 max 0.9255
+
+== 4. Uniqueness gate (R6.2): Tmin - A must rise with W on the legs carrying the weight. A read at the floor windows is constant in W, so only the at-load reads are checked: sig (shipped) and the window p90 - p10 (W80), per leg and replicate, over the knee arms, the P1 arm and the control ==
+  c2-100 leg0 Tmin - sig     : rising on 6/6 replicates
+  c2-100 leg0 Tmin - p90-p10 : rising on 6/6 replicates
+  c8-100 leg0 Tmin - sig     : rising on 6/6 replicates
+  c8-100 leg0 Tmin - p90-p10 : rising on 5/6 replicates; NOT on s42r1 W256:9.2 W320:11.8 W384:11.3 W512:15.6 W1280:35.8
+  c8-100 leg1 Tmin - sig     : rising on 0/6 replicates; NOT on s42r1 W256:32.5 W320:34.1 W384:31.8 W512:25.6 W1280:13.3 | s7r2 W256:32.2 W320:34.3 W384:31.8 W512:27.8 W1280:53.0 | s42r3 W256:32.2 W320:32.9 W384:32.4 W512:25.5 W1280:16.6 | s7r4 W256:32.0 W320:32.6 W384:31.8 W512:25.4 W1280:27.9 | s42r5 W256:32.2 W320:33.3 W384:32.6 W512:25.5 W1280:23.2 | s7r6 W256:32.2 W320:33.7 W384:32.7 W512:25.3 W1280:15.7
+  c8-100 leg1 Tmin - p90-p10 : rising on 0/6 replicates; NOT on s42r1 W256:27.5 W320:29.7 W384:22.4 W512:-0.3 W1280:-91.6 | s7r2 W256:27.6 W320:29.1 W384:22.5 W512:7.1 W1280:-17.6 | s42r3 W256:27.4 W320:27.4 W384:25.7 W512:5.8 W1280:-100.1 | s7r4 W256:27.3 W320:27.3 W384:23.4 W512:7.5 W1280:-70.4 | s42r5 W256:27.3 W320:28.2 W384:26.3 W512:4.0 W1280:-81.8 | s7r6 W256:27.4 W320:28.6 W384:25.8 W512:4.9 W1280:-93.4
+
+== 5. The lifetime minimum l: the window at which each row's final l is first printed, the samples fed by then, l at t = 15 s and at the end ==
+  cell leg W: per row 'k@t/N' = window k (time t s) at which l first reaches its final value, N = echo samples fed up to that window; then l(15 s) -> l(end)
+  c2-100 leg0 W16    l med 5.450 | 93@23.4/25220.0 38@9.5/10066.0 309@77.5/83839.0 261@65.5/70474.0 133@33.4/36091.0 91@22.8/24865.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.747
+  c2-100 leg0 W32    l med 5.532 | 208@52.2/109297.0 316@79.3/166772.0 224@56.2/117678.0 8@2.0/4025.0 189@47.5/97351.0 1@0.2/643.0 | attained in boot (k <= 8) on 2/6; l(15 s) - l(end) median 1.112
+  c2-100 leg0 W48    l med 6.110 | 187@46.9/145975.0 81@20.3/62330.0 193@48.4/148953.0 28@7.0/20825.0 215@54.0/165862.0 282@70.8/217495.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.373
+  c2-100 leg0 W160   l med 9.120 | 63@15.8/138903.0 89@22.3/199233.0 138@34.6/309770.0 153@38.4/341559.0 1@0.2/941.0 1@0.2/144.0 | attained in boot (k <= 8) on 2/6; l(15 s) - l(end) median 0.414
+  c2-100 leg0 W176   l med 9.757 | 87@21.8/201518.0 96@24.1/222758.0 1@0.2/1971.0 85@21.3/196103.0 1@0.2/2034.0 30@7.5/69106.0 | attained in boot (k <= 8) on 2/6; l(15 s) - l(end) median 0.249
+  c2-100 leg0 W192   l med 10.215 | 68@17.0/159858.0 102@25.6/243266.0 82@20.6/195266.0 61@15.3/144536.0 1@0.2/1013.0 132@33.1/314169.0 | attained in boot (k <= 8) on 1/6; l(15 s) - l(end) median 1.061
+  c2-100 leg0 W256   l med 10.752 | 1@0.2/1090.0 1@0.2/772.0 1@0.2/159.0 1@0.2/2038.0 1@0.2/585.0 1@0.2/2028.0 | attained in boot (k <= 8) on 6/6; l(15 s) - l(end) median 0.000
+  c2-100 leg0 W2048  l med 12.670 | 1@0.2/2079.0 1@0.2/1281.0 1@0.2/128.0 1@0.2/1976.0 1@0.2/1918.0 1@0.2/1817.0 | attained in boot (k <= 8) on 6/6; l(15 s) - l(end) median 0.000
+  c8-100 leg0 W32    l med 5.530 | 282@70.8/138047.0 179@44.9/86852.0 11@2.8/5369.0 126@31.6/59675.0 174@43.7/85787.0 327@82.1/158180.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.562
+  c8-100 leg0 W64    l med 6.106 | 202@50.7/190993.0 129@32.4/121502.0 273@68.5/260232.0 299@75.0/283555.0 105@26.3/95366.0 92@23.1/86749.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.794
+  c8-100 leg0 W96    l med 6.770 | 106@26.6/143864.0 16@4.0/21492.0 268@67.2/365865.0 106@26.6/143957.0 256@64.2/349500.0 189@47.4/255241.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.396
+  c8-100 leg0 W256   l med 10.440 | 1@0.2/1812.0 12@3.0/26279.0 37@9.3/87634.0 120@30.1/286530.0 28@7.0/66493.0 85@21.3/202867.0 | attained in boot (k <= 8) on 1/6; l(15 s) - l(end) median 0.000
+  c8-100 leg0 W320   l med 10.665 | 92@23.1/220048.0 2@0.5/4097.0 2@0.5/1268.0 127@31.8/304203.0 1@0.2/1122.0 1@0.2/510.0 | attained in boot (k <= 8) on 4/6; l(15 s) - l(end) median 0.000
+  c8-100 leg0 W384   l med 11.095 | 1@0.2/1997.0 1@0.2/1555.0 1@0.2/1457.0 57@14.3/136158.0 1@0.2/1796.0 1@0.2/1549.0 | attained in boot (k <= 8) on 5/6; l(15 s) - l(end) median 0.000
+  c8-100 leg0 W512   l med 10.492 | 1@0.2/1430.0 1@0.2/1716.0 1@0.2/2043.0 1@0.2/1433.0 1@0.2/1763.0 1@0.2/1838.0 | attained in boot (k <= 8) on 6/6; l(15 s) - l(end) median 0.000
+  c8-100 leg0 W1280  l med 10.356 | 1@0.2/1875.0 1@0.2/1520.0 180@45.1/432040.0 1@0.2/125.0 1@0.2/1703.0 1@0.2/1913.0 | attained in boot (k <= 8) on 5/6; l(15 s) - l(end) median 0.000
+  c8-100 leg1 W32    l med 32.331 | 89@22.3/558.0 144@36.1/647.0 25@6.3/150.0 223@56.0/1176.0 237@59.5/1332.0 139@34.9/700.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 1.325
+  c8-100 leg1 W64    l med 31.948 | 326@81.8/4173.0 40@10.0/512.0 61@15.3/737.0 252@63.2/2946.0 345@86.5/4163.0 242@60.7/2889.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.819
+  c8-100 leg1 W96    l med 31.886 | 315@79.0/6423.0 241@60.5/5162.0 246@61.7/5376.0 199@49.9/4322.0 28@7.0/681.0 144@36.1/3182.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.758
+  c8-100 leg1 W256   l med 32.499 | 191@47.9/27700.0 168@42.1/25499.0 157@39.4/23719.0 155@38.8/23193.0 97@24.3/15254.0 52@13.0/8433.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.762
+  c8-100 leg1 W320   l med 33.496 | 130@32.6/36180.0 144@36.1/39528.0 157@39.3/42677.0 98@24.6/27606.0 111@27.8/31755.0 52@13.0/15975.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 1.345
+  c8-100 leg1 W384   l med 34.523 | 32@8.0/12331.0 73@18.3/27066.0 141@35.3/52692.0 126@31.6/46392.0 93@23.3/35089.0 185@46.4/68580.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 1.179
+  c8-100 leg1 W512   l med 34.846 | 136@34.1/54830.0 173@43.4/72878.0 97@24.3/40785.0 95@23.8/39961.0 39@9.8/16377.0 108@27.1/46037.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 1.062
+  c8-100 leg1 W1280  l med 34.907 | 57@14.3/26266.0 56@14.0/25752.0 48@12.0/21192.0 51@12.8/22907.0 58@14.5/26338.0 160@40.1/70948.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.000
+  c1s-400 leg0 W64    l med 2.236 | 84@21.0/447314.0 120@30.1/637569.0 24@6.0/127679.0 9@2.2/47484.0 52@13.0/282484.0 11@2.8/54985.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.000
+  c1s-400 leg0 W128   l med 2.260 | 32@8.0/292546.0 47@11.8/434636.0 17@4.3/152460.0 42@10.5/372098.0 55@13.8/514576.0 65@16.3/585208.0 | attained in boot (k <= 8) on 0/6; l(15 s) - l(end) median 0.000
+  c1s-400 leg0 W192   l med 2.298 | 117@29.3/1421765.0 43@10.8/523984.0 14@3.5/176514.0 1@0.2/2612.0 96@24.0/1193462.0 60@15.0/754417.0 | attained in boot (k <= 8) on 1/6; l(15 s) - l(end) median 0.000
+  c1s-400 leg0 W2048  l med 2.569 | 1@0.2/5326.0 1@0.2/4673.0 1@0.2/5707.0 1@0.2/6656.0 1@0.2/928.0 1@0.2/3231.0 1@0.2/1592.0 1@0.2/3471.0 1@0.2/2345.0 1@0.2/1041.0 1@0.2/3338.0 1@0.2/5905.0 | attained in boot (k <= 8) on 12/12; l(15 s) - l(end) median 0.000
+
+== 6. Does fixing finding 2 close finding 1? c2, Bulk ==
+  q*l_c = 0.558, q*F_c = 0.868: the swap adds 0.310 ms; D +1.692 -> +1.382
+  delta's whole authority over the allowance at c2: q*l_c spans 0.279 (Realtime) to 0.558 (Bulk) = 0.279 ms; with F_c 0.434 ms
+  knee slope dTmin/dW over W160-192 (median over replicates) 0.0544 ms/slot -> delta's span = 5.1 slots (l_c) / 8.0 slots (F_c); the shortfall = 31.1 slots

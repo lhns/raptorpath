@@ -1088,7 +1088,7 @@ nodes:
   folded: []
   overview: true
   plain: Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes.
-  notes: 'Law ledger: C03 (rank 5, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main''s duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges.'
+  notes: 'Law ledger: C03 (rank 7, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main''s duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges.'
 - id: rec-defect-qclk-clamp
   title: '[QCLK] w_us pinned at clamp'
   track: rec
@@ -6320,7 +6320,7 @@ nodes:
   vm_order: 3
   order_reason: Runs on the main version the first session produces, in the order the owner approved.
   plain: Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait.
-  notes: 'Law ledger: C02 (rank 4, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation.'
+  notes: 'Law ledger: C02 (rank 6, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation.'
 - id: meas-s51-session
   title: Off-Bulk baseline and δ sweep
   track: meas
@@ -6345,7 +6345,7 @@ nodes:
   vm_order: 4
   order_reason: After the recovery fixes land so the baseline describes the current system; it does not need them to run.
   plain: First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves.
-  notes: 'Law ledger: R01 (rank 14, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on.'
+  notes: 'Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on.'
 - id: cc-s48d-session
   title: §48d bbr_rs round 2
   track: cc
@@ -6863,7 +6863,7 @@ nodes:
   folded: []
   overview: false
   plain: Re-deriving the retransmit timers from the new in-flight limit, so they stop sitting at a fixed hand-set ceiling.
-  notes: 'Law ledger: C06 (rank 17, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law''s hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8.'
+  notes: 'Law ledger: C06 (rank 19, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law''s hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8.'
 - id: model-wasm-fixes
   title: Wasm model fixes
   track: model
@@ -6910,7 +6910,7 @@ nodes:
   folded: []
   overview: false
   plain: Making the paper and the code agree on how much repair data to send, with a test for every remaining difference.
-  notes: 'Law ledger: R07, R03, R04, R05 (ranks 18-20, 24, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence.'
+  notes: 'Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence.'
 - id: cc-bbrrs-promote
   title: bbr_rs promotion (new ADR)
   track: cc
@@ -6931,7 +6931,7 @@ nodes:
   folded: []
   overview: true
   plain: Making our BBR controller the default, recorded as a new architecture decision.
-  notes: 'Law ledger: K09 (rank 6, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054''s default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS.'
+  notes: 'Law ledger: K09 (rank 8, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054''s default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS.'
 - id: cc-hybrid
   title: BBR/Copa hybrid build (ADR-0068)
   track: cc
