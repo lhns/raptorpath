@@ -10,6 +10,7 @@
 #   env RWM_PLACE_T=.. -> placement-temperature override (via 7th arg too)
 #   env RWM_C_PIPELINE=window (the only value) -> `block` is refused: the
 #                        block pipeline was deleted (ADR-0069, executed)
+#   env RWM_C_RELIABLE=0 -> no --window-reliable (the evicting seat, rho < 1; needs RWM_GEN=0)
 #
 #   C7 = c2 c2   C8 = c2 c3
 #
@@ -88,6 +89,17 @@ case "$PIPELINE" in
         exit 2
         ;;
     *) echo "unknown RWM_C_PIPELINE '$PIPELINE' (want window)" >&2; exit 2 ;;
+esac
+# RWM_C_RELIABLE=0 (plan 59, the evicting seat; harness-only, the engine never reads it): drop --window-reliable, so the Realtime hint keeps its EVICT preset (rho < 1) and the
+# unified shed law arms. Generation coding presupposes retention (config.rs bails), so it is refused here rather than left to the engine; run with RWM_GEN=0.
+RELIABLE="${RWM_C_RELIABLE:-1}"
+case "$RELIABLE" in
+    1) ;;
+    0)
+        [[ -z "$GEN_FLAG" ]] || { echo "RWM_C_RELIABLE=0 needs RWM_GEN=0 (generation coding requires retain-until-acked retention)" >&2; exit 2; }
+        WR_FLAG=""
+        ;;
+    *) echo "unknown RWM_C_RELIABLE '$RELIABLE' (want 0 or 1)" >&2; exit 2 ;;
 esac
 # Force the cumulative coded-emission counter on so the sanity guard (below)
 # can assert cod>0 on the sender.  RWM_PFRAC makes run_window_sender print
@@ -271,7 +283,7 @@ if [[ -n "$PCAP_DIR" ]]; then
 fi
 sleep 1
 
-echo "--- RWM-C perf pipeline=$PIPELINE mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
+echo "--- RWM-C perf pipeline=$PIPELINE mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T) reliable=$RELIABLE"
 # CPU accounting: the client (bulk sender / encoder) is wrapped in
 # /usr/bin/time -v; the server's (receiver / decoder)
 # cumulative CPU is read from /proc/<pid>/stat right after the transfer, before
