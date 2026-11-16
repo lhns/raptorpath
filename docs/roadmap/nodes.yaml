@@ -6494,7 +6494,7 @@ nodes:
   title: Owner calls U1–U3
   track: store
   kind: user-decision
-  state: next
+  state: done
   outcome: n/a
   evidence:
   - plan user decisions 3 and 10
@@ -6510,7 +6510,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Owner decision on three questions: whether the congestion controller or the in-flight limit is in charge, what sets the latency trade, and whether two percent less bulk speed is worth ten times less delay.'
-  notes: '2026-11-16: U1 = the store limit leads, the substrate is the safety net (candidate A); U3 = the Bulk cost is accepted for ~10x lower delay. U2 is held for the store-law verdicts (r67-verdicts); W1.2''s U2 numbers predate §60''s floors. Done when: U2 is answered.'
+  notes: 'U1 store leads, U3 accepted (2026-11-16); U2 (2026-11-17): the dial scales a measured knee margin g(delta)*S_F + q(delta)*F-hat, g(Bulk) = 1, the Realtime end set by the c3 sweep (status Owner decisions, items 8-10).'
 - id: model-user-wasm-calls
   title: Owner calls on wasm audit
   track: model
@@ -6747,7 +6747,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on five open design questions for keeping each path's measurements in one place.
-  notes: '2026-11-16: question 4 answered (reseed on revival), which is all Phase A needs. Question 1 (queue_target_mult = 1 + q(delta)) is held with U2; 2-3 and 5-8 belong to Phase B / W3.3. Done when: the Phase B questions are answered.'
+  notes: 'Q4 reseed (2026-11-16); Q1 queue_target_mult = 1 + q(delta) (2026-11-17). Q2-3 and 5-8 belong to Phase B / W3.3. Done when: those are answered.'
 - id: place-per-leg-impl
   title: Per-leg state implementation
   track: place

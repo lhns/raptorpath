@@ -1426,10 +1426,24 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
 6. **Lever B stays paused** (§54's decision stands). Its case is weaker now: §54 showed that a smaller store pool alone clears the holes, and the store law it waits on has moved further out.
 7. **Generation-coding stack (§3.2): stays parked, no disposition yet.** It unblocks nothing in the current chain, and archiving would cost a guard run.
 
-**Held for the store-law verdicts (`r67-verdicts`, running):**
-- U2 (δ's authority: q(δ)'s band or an A(c)-type term). §60: q·ℓ̂_c supplied 0.56 ms against a 1.69 ms shortfall. W1.2's U2 numbers predate §60's floors and are marked stale.
-- The per-leg question 1.
-- Whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped.
+**Held for the store-law verdicts.** The verdicts landed as `store-law-r68.md` (merged `12310902`), and two of the three held items were then decided (2026-11-17, below).
+
+**Owner decisions (2026-11-17), on Fable's recommendation:**
+8. **U2: the dial scales a measured knee margin, and Bulk keeps all of it.**
+   - The allowance takes the form g(δ)·S_F + q(δ)·F̂.
+   - S_F is the floor windows' median − minimum, and F̂ the measured floor (r68 §1.4 and §2.4).
+   - g(Bulk) = 1. g's Realtime end is set by measurement, the c3 sweep's need/S_F reading against c2's 0.80, and is not declared now. q/q_B (r68's replay row) has no provenance in this role.
+   - If c3's ratio disagrees, S_F is not the knee's term, and the form is re-derived.
+   - Whether Realtime may land below the knee is decided later, from a price table that includes Tp50.
+   - "Flexible" means one formula with a measured multiplier, not a runtime knob.
+   - **Scope:** this rests on c2 only. At c8 every candidate lands at least 145 slots above the knee, and c1s is unread.
+9. **The c3 sweep runs on the VM.**
+   - Single leg, static pools, on a rebuild of the §60 gauge tree that must log `bin_sha` `e410d640`.
+   - It carries r68 §3's rows plus 2–3 arms between W 48 and W 160, to price the side below the knee.
+   - **Needs:** a single-leg c3 cell (today c3 exists only as c8's second leg), its own registration, and a rehearsal.
+10. **Per-leg question 1: `queue_target_mult` = 1 + q(δ).** q's band is unchanged under decision 8.
+
+Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 
 **Not yet askable:**
 - the rate-law calls (need §51's r per cell);
