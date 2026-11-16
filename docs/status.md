@@ -1018,19 +1018,36 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **Next derivation:** R6.7 (`store-law-r67.md`), the candidate floor and the allowance item. A large sweep comes only after it.
 
-**Amendment 1 (2026-11-16, before any VM contact for §60): the harness's readings of the registration.** `harness60` `b3cb115c` implements the registration. Where the doc is silent, cannot be computed as written, or conflicts with another of its rules, the harness takes the reading below. Everything else is verbatim.
-- **Launch tree:** `harness60` `b3cb115c`. Its engine (`raptorpath/`, the math, wasm and core crates, `Cargo.*`) is byte-identical to `s60-tree` `cb88df3a`, and the commits after it touch `tools/l1` only. Every launch must build `bin_sha` `e410d640…` and HIT `ref60-manifest`; otherwise it aborts before any row. Main does not take the gauge (it changes the release binary and has had no guard). The tools merge to main after the Result.
-- **R-sign gate (§5, "read after replicate 2"):** this reading cannot be computed. After replicate 2 the calibration has 2 floor rows, and it needs ≥ 3.
-  - So the gate is read at the **end of 60a**, on the full session calibration, over every live c2 and c8 control row.
-  - Any control R̃ ≥ 1 is a STOP, and 60b does not launch: `loopdiag_run_all.sh` refuses (`ABORT-RSIGN`) unless 60a's score carries `R-SIGN-c2 PASS` and `R-SIGN-c8 PASS`.
-  - Cost: a failing law spends all of 60a's rows instead of stopping early. Those rows are reported.
+**Amendment 1 (2026-11-16, before any VM contact for §60): the harness's readings of the registration.** `harness60` `74370e3f` implements the registration.
+- **Also registered by reference:** the scorer's ambiguity list, `s60_score.py` DECISIONS 1–21 at `74370e3f`, one reading for each place the doc is silent. These include:
+  - the pooled 80 % rule (5);
+  - witness-VOID rows kept for the floor, D and P3 (6);
+  - σ_R as the pooled within-arm sd (12);
+  - COVERED without CONVERGED printing UNRESOLVED (13);
+  - the starved-leg W 256 fallback and the all-COLLAPSED pool skip (19).
+- **The bullets below are the readings that change a rule or a number.**
+- **Launch tree:** `harness60` `74370e3f`.
+  - Its engine (`raptorpath/`, the math, wasm and core crates, `gf256`, `Cargo.*`) is byte-identical to `s60-tree` `cb88df3a`: the `git diff` is empty. Every later commit touches `tools/l1` only, and `ref60-manifest.sha256` is present.
+  - Every launch must build `bin_sha` `e410d640…` and HIT `ref60-manifest`; otherwise it aborts before any row.
+  - Main does not take the gauge, because it changes the release binary and has had no guard. The tools merge to main after the Result.
+- **R-sign gate (§5, "read after replicate 2"):** this cannot be computed as written. After replicate 2 the calibration has 2 floor rows, and it needs ≥ 3.
+  - So it is read at the **end of 60a**, on the full session calibration, over every live c2 and c8 control row.
+  - **STOP:** any control R̃ ≥ 1.
+  - **PASS:** no STOP, on ≥ 2 replayable control rows (the registered reading used two).
+  - **UNSCOREABLE:** fewer than 2 replayable control rows, as after a c8 NO-GO, an unattached leg 1 or fewer than 3 valid floor rows.
+  - **60b:** `loopdiag_run_all.sh` refuses to launch on a STOP or a missing label at either cell (`ABORT-RSIGN`, nothing run). UNSCOREABLE does not block, because none of 60b's readings (the c1s sign, G/C, the evicting rows) uses c2's or c8's R. It is recorded in the launch log.
+  - **Stricter than registered:** the gate stops on any of about 6 control rows per cell, not 2. R̃ falls with W on anc-1 arms and crosses 1 near the knee (§3.2), and the controls (c2 W 2 048, c8 W 1 280) sit 940–1 880 slots above their knees (169, 340). So session noise (σ_R 0.008–0.015) can lift a control row to 1 only if R̃ there lies within a few σ_R of 1. The registered gate already assumed it does not, so the extra exposure is small, and a STOP reads the form.
+  - **Cost:** a failing law spends all of 60a's rows instead of stopping early. Those rows are reported.
 - **Budget (§7 against §2):** §2 re-runs each floor-pool DNF once (R:357–358), but §7's worst cases leave that out.
   - Worst case at 190 s per re-run: 60a = 11 520 + 36 × 190 = 18 360 s (5.1 h); 60b = 10 440 + 18 × 190 = 13 860 s (3.85 h).
-  - `LD_HARD` is therefore launch + 5.2 h (60a) and + 3.9 h (60b), not + 4 h. The guard refuses below those values.
-  - A DNF row stays in the ledger as a datum, beside its replacement. A DNF with ≥ 120 LATE windows (30 s) on the leg still calibrates; a shorter one does not.
-- **Re-runs:**
+  - `LD_HARD` is launch + 5.2 h (60a) and + 3.9 h (60b), and the guard refuses below those values.
+  - §7's 4 h was the sizing rule that split the session in two, not a VM limit: nothing else is booked on the VM. The split stays, and the typical lengths (2.2 h and 1.25 h) are unchanged.
+- **Re-runs and DNF rows:**
   - Once each: an echo or liveness VOID, which includes the evicting seat's `no-realtime-echo`, and a floor-pool DNF.
   - Never: a wrong binary (`bin-sha-*`, including uncheckable), which aborts.
+  - **One row per slot calibrates:** the slot's last row (`pool56_score.counting`). A replaced DNF stays in the ledger as a datum, printed beside its replacement, and never enters the session median, the ≥ 3-row minimum or the drift order.
+  - A DNF that is itself the counting row (its re-run also DNF'd) calibrates only with ≥ 120 LATE windows (30 s) on the leg.
+- **Timeouts:** 150 s on every c2 and c8 row, not only on the floor-pool rows the doc names (§2). These rows typically take 75–90 s (§7). c1s floor rows also get 150 s, and the c1s 5 GB control 210 s (§7).
 - **Instrument env (silent in the doc, whose §4 names `RWM_DIAG=1` only):**
   - every row runs with `RWM_RDIAG=1`;
   - every G and C row adds `RWM_RTOBS=1`, §56's env, so that §56's knee and collapse thresholds apply;
@@ -1044,7 +1061,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **C2-SHORT needs ≥ 3 scoreable replicates.** The doc gives no minimum.
 - **LATCHED (§2)** uses the row's own median LATE `l` in q·ℓ̂. Using the session l_c would be circular, because latched rows are left out of it.
 - **FLOOR-CONV at c1s** reads NO-TAU-REGISTERED: the doc registers no τ for c1s. The slope label is still given, and the c1s control sign does not depend on it.
-- **Drift fallback (§2):** under per-replicate pairing, a replicate without a same-(rep, seed) floor row cannot be replayed. At c1s that drops control replicates 7–12, so a triggered fallback there almost certainly leaves the sign test UNDERPOWERED. This is recorded now, before any data.
+- **Drift fallback (§2):** under per-replicate pairing, a replicate without a same-(rep, seed) floor row cannot be replayed. At c1s that drops control replicates 7–12, so a triggered fallback there almost certainly leaves the sign test UNDERPOWERED. This is recorded before any data.
 - **Go/no-go rows (§5):** every G floor-pool row of the cell in the rehearsal counts, the smoke rows included. That is 3 c1s W 64 rows, not 2, and c8's W 96 counts on leg 0. This lowers the chance NO-GO below §5's 6 % / 8–23 %.
 - **CAPLOG (§5):** each record replays by branch, and seats are reported rather than asserted to be `plain`. The replayable share is printed for G and evicting rows.
 - **60b rehearsal (new):** `LD_PLAN=60b LD_REHEARSE=1` runs 60b's two smoke rows plus one evicting row. It checks:
@@ -1055,8 +1072,14 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
   The join is the first engine check of decision 16's `[DIAG]`/`[WSTORE]` join. If it fails, 60b waits for an amendment.
 - **Not computed in the scorer (reported as such):** "C is re-based against §56's c1s control" (§4) and the K4 oracle comparison (inputs only, off-VM per §6).
-- **The renderer-generated witness sample (§8.3) is replaced by the rehearsal's engine output.** Every rehearsal G row runs the per-row witness on lines the engine printed. If no rehearsal row shows an empty leg (nk = 0), that case stays verified only on the hand-formatted `s60witness_ka.log`, and is reported as such.
-- **Tests:** `test_stubrun.py` (unfiltered, every plan) ALL OK; `test_s60.py` 0 fail; `test_harness60.py` ALL OK; the other `tools/l1` tests pass. `test_harness46.py`'s timing checks failed once under load and pass alone.
+- **The witness sample (§8.3):**
+  - **On file:** an engine-rendered sample (`testdata/slaw_sample.log`) and the hand-formatted `s60witness_ka.log`, which has an anchor-bound leg, an nk = 0 leg and a warm-up window. Both pass the witness with their negative controls (`test_s60.py`).
+  - **Rehearsal:** every G row runs the per-row witness on engine output. The report says whether those rows show an anchor-bound leg and an empty leg. A case the rehearsal does not show stays verified only on the hand-formatted sample.
+- **Tests:**
+  - The full stub run (`STUBRUN_FULL=1`, every plan) was ALL OK at `b3547368`.
+  - At `74370e3f`, the plan-60 stub paths (full tables), `test_s60.py`, `test_harness60.py` and `test_harness_paths.py` were rerun: all OK (plan-60 stub paths 78 ok, ALL OK; test_s60 0 fail; the other two ALL OK).
+  - The rest of `tools/l1` is unchanged since `b3547368`.
+
 
 ## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
 
