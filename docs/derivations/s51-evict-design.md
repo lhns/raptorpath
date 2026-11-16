@@ -15,7 +15,7 @@ Every `file:line` was re-grepped on `github/main` `1cd13f5c`, unless it is marke
   - No pacing knob exists in `perf.rs` or the wrapper. The only pacer is engine-side, `RWM_CC_PACE` (§5.3).
 - **What differs is the engine's admission gate.** TUN reads stop on `tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full)` (`net/mod.rs:2397`; select arm `:2824`).
   - Every §51 arm runs `--window-reliable`, so the store cap holds the source to the ack clock.
-  - The evicting seat (`RWM_C_RELIABLE=0`) has `reliable = false`, so nothing holds it. `cwnd_full` is false by default on the plain window: `brake_armed = eff_infl_cap > 0 || late_brake` (`:2324`), with `infl_cap` 0, `infl_bdp` off without gen_pipe (`:2289`) and `RWM_LATE_BRAKE=0`.
+  - The evicting seat (`RWM_C_RELIABLE=0`) has `reliable = false`, so nothing holds it. `cwnd_full` is false by default on the plain window: `brake_armed = eff_infl_cap > 0 || late_brake` (`:2324`). The inputs are `infl_cap` 0; `infl_bdp` gain 0 unless `gen_pipe` (`sender_policy.rs:756-759`), where `gen_pipe = gates.gen_pipe && generation` (`:342`) is false at `RWM_GEN=0`; and `RWM_LATE_BRAKE=0`.
   - At ρ < 1 the source therefore enters at CPU speed. quinn evicts the excess from its 4 MB datagram buffer (`transport/io_owner.rs:129-150`).
 - **The records agree.**
 
@@ -24,7 +24,7 @@ Every `file:line` was re-grepped on `github/main` `1cd13f5c`, unless it is marke
 | store-law-n1 c2 Realtime LAW r1–r3 (100 MB, October binary `8a43cd2`, `window_reliable: true`, `window_generation_coding: false`) | ρ = 1 | 2–4 % | 0.0000–0.0001 | 0.240 / 0.255 / 0.278 | `docs/l1-raw/store-law-n1/diag-sl/` |
 | same, Auto LAW r1–r3 | ρ = 1 | 2 % | 0.0065–0.0091 | 0.133 / 0.145 / 0.219 | same |
 | §60 c2 W 2 048 control (current-era Bulk, 600 MB) | ρ = 1 | 0 % (infl median 36, cwnd 10 000 on 62 % of ticks) | 0.0002 | 0 (β = 1) | `docs/l1-raw/s60/rep60a-diag-ld.tgz` |
-| §60 60b rehearsal evicting row (Amendment 2, n = 1) | ρ < 1 | 48 of 52 (92 %) | ≈ 0.73 (600 MB emitted, 164 MB sent by netem) | 0.000 | status §60 Amendment 2 |
+| §60 60b rehearsal evicting row (Amendment 2, n = 1) | ρ < 1 | 48 of 52 (92 %) | not read; netem-derived 1 − 164/600 ≈ 0.73 (600 MB emitted, 164 MB sent by netem, headers included) | 0.000 | status §60 Amendment 2 |
 
 (The store-law-n1 `[GATES]` line prints `RWM_GEN=384` as a default. The engine's own `PeerConfig` echo gives the plain-window, ρ = 1 reading above.)
 
@@ -53,12 +53,15 @@ Every `file:line` was re-grepped on `github/main` `1cd13f5c`, unless it is marke
 | **E** (evicting seat, c2) | **`s51e-tree`** = main `1cd13f5c` + merge of `slaw-gauge` `d416d59b` + the two commits of §9.1 | a new registered `bin_sha` from an **E-pre** run (`suites_run.sh` + `binid_run.sh`, as 60-pre) | full, once, in E-pre |
 
 - Block E needs a gauge tree because its readouts exist only there: `[WSTORE] adv`, `dbt_acc`/`dbt_em`/`dbt_share` and `fec=` (K4's ε and σ²). Main prints no `[WSTORE]`.
-- **Engine identity check:** `git diff aefe6d97 1cd13f5c` over `raptorpath raptorpath-math raptorpath-core gf256 Cargo.*` is empty. So main + `d416d59b` has exactly the §60 engine (`s60-tree` `cb88df3a`).
+- **Engine identity check.** Over `raptorpath raptorpath-math raptorpath-core raptorpath-wasm gf256 Cargo.toml Cargo.lock`:
+  - `git diff aefe6d97 1cd13f5c` is empty;
+  - `cb88df3a` (the §60 `s60-tree`) is `aefe6d97` + `d416d59b`, 17 files under `raptorpath/` (`git diff aefe6d97 cb88df3a`).
+  - So main + `d416d59b` should reproduce the §60 engine. §9.1 item 1's diff against `cb88df3a` is the witness.
 - §60's `bin_sha` (`e410d640…`) and `ref60-manifest` are reusable only for the no-new-binary fallback (§5.3). The two §9.1 commits change the binary, so E-pre is required.
 - Block E cannot ride §51's c2 launch, whose worst case is already 4 h 50 min against 5 h.
 
 **Launch order:** E-pre → E rehearsal → E battery → 51 rehearsal → 51-c2 → 51-c8.
-- E goes first. It is ≈ 2.5 h of VM time all told and unblocks `rate-pfec-oracle`.
+- E goes first. Its VM time is ≈ 1.9 h typical and ≈ 2.6 h worst (§11), and it unblocks `rate-pfec-oracle`.
 - The blocks are independent: no 51 rule reads an E result.
 
 ## 3. Block 51
@@ -115,13 +118,22 @@ Per row, reported. These enter neither T1 nor T2.
   infl ≈ rate_sym · srtt · (1 + r)
 ```
 
-- **rtprop:** 10–16 ms. That is c2's 10 ms base plus netem's ± 3 ms per direction, the nominal c2 srtt in `pfec-oracle-spec.md` §3. **J:** 1–3 ms.
+- **rtprop** is `est.rtt()`, a smoothed RTT, so it includes queue and dwell. **Band: 11–30 ms.**
+  - The lower end is the recorded `[DIAG] rtp` (RTprop) median on the store-law-n1 c2 Realtime rows, 11 / 14 / 12 ms.
+  - The upper end is the dwell-inclusive c2 srtt of `s51-design` §5.1 (E01), 30 ms.
+  - Those ρ = 1 rows read EWMA `rtt=` ≈ 114 ms at a standing queue near link rate, which does not apply below the link.
+  - rate_sym in A\* is the windowed-max send-rate anchor (`st.astar_anchor.rate`, `emit_source.rs:568`), not the mean. Under 1 ms pacing granularity it can read somewhat above the paced rate.
+- **J** (`est.jitter_us`): 1–3 ms, given netem's ± 3 ms per direction.
 - **Wire bound:** e ≈ 1.12, from 1.44/(1 + 0.25 + 0.03). The bound uses r_max = 0.5 (`max_overhead`) and x ≤ 0.05.
-- **PL:** A\* = ⌈700·½·(0.010–0.016)⌉ = 4–6, Δ 1–3, wire ≤ 2.77·1.2·1.55 = 5.2 Mbit.
-- **PM:** A\* 45–71 (inside W, `MAX_WINDOW_SIZE` 200, `net/mod.rs:205`), Δ 9–27, wire typical 35·1.44 = 50 Mbit and at most 35·1.12·1.55 = 61 Mbit (≤ 0.61 of the link).
-- **PL calibration rule (registered now, applied once).** If the rehearsal's PL median A\* (`[SPAN] a_star`, LATE) lies outside [3, 7]:
-  - the battery's PL rate becomes 700·5/Ã\*, rounded to 10 sym/s, with bytes and λ recomputed by the table's formulas;
-  - this is recorded as an amendment before the battery, and nothing else changes.
+- **PL:** A\* = ⌈700·½·(0.011–0.030)⌉ = 4–11, Δ 1–3, wire ≤ 2.77·1.2·1.55 = 5.2 Mbit.
+  - A\* moves 0.35 units per ms of rtprop, so the band is wider than the oracle's window. The calibration below is part of the design.
+- **PM:** A\* = 49–133, below W (`MAX_WINDOW_SIZE` 200, `net/mod.rs:205`) unless W itself is smaller, Δ 9–27, wire typical 35·1.44 = 50 Mbit and at most 35·1.12·1.55 = 61 Mbit (≤ 0.61 of the link).
+  - A\* moves 4.4 units per ms of rtprop at PM, so PM is **predicted K4-UNSCOREABLE** under the steady-window rule. PM's role is the clamp, m̄ and W1, and its K4 is reported only if it reaches ≥ 30 steady windows.
+- **PL calibration rule (registered now).** It fires if the rehearsal's PL row has its LATE median A\* outside [3, 7] **or** fewer than 30 K4-steady LATE windows (§6.3's rule).
+  - From the rehearsal, read x̂ = Ã\* − 0.5, the midpoint estimate of rate·b·rtprop at the median A\*.
+  - Set the PL rate to 700·4.5/x̂, rounded to 10 sym/s, so that rate·b·rtprop sits mid-integer at A\* = 5. Recompute bytes and λ by the table's formulas.
+  - Run **one PL-only recheck row** (`LD_REHEARSE=1`, PL only) at the new rate. It must pass §10 (c)–(h) for PL. Otherwise PL is dropped from the battery by amendment, and PM and U run as registered.
+  - The rate change and the recheck are recorded as an amendment before the battery. Nothing else changes.
 
 ## 5. The paced-load mechanism
 
@@ -184,7 +196,7 @@ Per row, reported. These enter neither T1 nor T2.
 - **New field in `[WSTORE]`,** appended after `fec=`, as per-window deltas in the same static-atomic pattern as `fec=`:
 
 ```text
-  spc=<ab>/<az>/<an>/<rb>/<rn>/<r0> wr=<Σwr/rn>/<Σfr/rn>         (spc=0/0/0/0/0/0 wr=-/- on an empty window)
+  spc=<ab>/<az>/<an>/<rb>/<rn>/<r0> wr=<Σwr/rn>/<Σfr/rn>         (6 decimals; sums in fec='s micro() quantisation; spc=0/0/0/0/0/0 wr=-/- on an empty window)
     an = accruals; ab, az = accruals whose rate came from a bound / zero recompute
     rn = recomputes reaching the clamp; rb = bound among them; r0 = recomputes with no estimator
 ```
@@ -214,9 +226,14 @@ Per row, reported. These enter neither T1 nor T2.
 - **On every E row and window (exact; a mismatch VOIDs the gauge):**
   - `an` = `fec=`'s n (same call site);
   - `rn` + `r0` = `an` (per-symbol recompute at this seat);
-  - |fr mean − `fec=` r mean| ≤ 1e-5 on windows with `ab` = 0, i.e. grant ≡ flat_rate (E1) and `RWM_MIN_R` = 0;
-  - `fec=` r mean = 0 on windows with `az` = `an`.
-- **Positive control:** U rows have ζ ≥ 0.8 over their sending windows. Amendment 2 read r = 0 on 46 of 53 windows. If ζ < 0.8 on both U rows, φ is NO VERDICT for the session.
+  - grant ≡ flat_rate (E1, with `RWM_MIN_R` = 0) on every window: |(Σfr/rn)·rn/(rn + r0) − `fec=` r| ≤ 1.5e-5.
+    - The r0 recomputes hand r = 0, which is why the rn/(rn + r0) factor appears.
+    - The tolerance is the print and quantisation bound: `fec=` r at 5 decimals (± 5e-6), fr at 6 (± 5e-7) and the micro() floor (≤ 1e-6 per mean), ≈ 6.5e-6, doubled.
+    - No `ab` restriction applies, because flat_rate ≤ spare always holds.
+  - `fec=` r = 0 on windows with `az` + (accruals from r0) = `an`.
+- **Positive control:** U rows have ζ ≥ **0.5** over their sending windows. If ζ < 0.5 on both U rows, φ is NO VERDICT for the session.
+  - 0.5 is the validity threshold. The **prediction** is ζ ≥ 0.8.
+  - The only datum is Amendment 2's 46 of 53 windows with r = 0 (0.87, by window count, n = 1), and ζ is source-weighted.
 - **Bit-identity:** with `RWM_SLAW` unset, `decision_trace_pin` (7 digests) and the gauge's cap-sequence test pass unchanged on `s51e-tree`.
 
 ### 6.3 Outcome classes (registered)
@@ -227,29 +244,41 @@ Per row, reported. These enter neither T1 nor T2.
 | PARTIAL | 0.05 ≤ φ ≤ 0.95 |
 | PINNED | φ > 0.95 |
 
-**The verdict input to `rate-spare-clamp-verdict`:**
-- **DEGENERATE-AS-WIRED** iff PL and PM are SLACK, U has ζ ≥ 0.8, and π < 0.05 on every arm. In words: the clamp never operates in its continuous range (0 < fr < wr). It acts as a saturation switch (repair off ⇔ in_flight ≥ an unenforced cwnd, §7), not as a headroom law.
-  - This is a **defect finding** (MEASUREMENT DISCIPLINE 18), not a footnote. It names the clamp and both of its consumers (the repair grant and the shed budget's r).
-- **PINNED at PL or PM:** that arm's rate law operates as a constant there.
-  - Its rr and shed readings are re-scoped as clamp readings, a defect finding as above.
-  - K4 still reads it: K4 witnesses the debt loop at whatever r was handed.
-- **PARTIAL at PM:** the clamp has a live range. φ per arm is reported for the ledger, and this session draws no defect class from it.
+**The verdict input to `rate-spare-clamp-verdict`.** The first class that matches wins, so the set is exhaustive:
 
-**K4 steady windows** (status §60 §6's rule) additionally require `ab` = 0 in the window and both neighbours, so that the handed r is the law r.
+1. **NO VERDICT:** U's positive control fails (ζ < 0.5 on both U rows), or a gauge-witness VOID leaves an arm with no rows.
+2. **PINNED-PACED:** PL or PM is PINNED. That arm's rate law operates as a constant.
+   - Its rr and shed readings are re-scoped as clamp readings.
+   - This is a defect finding (MEASUREMENT DISCIPLINE 18).
+   - K4 still reads it: K4 witnesses the debt loop at whatever r was handed.
+3. **LIVE-RANGE:** PL or PM is PARTIAL. The clamp operates in its continuous range at a paced load.
+   - φ, π and the deficit per arm are reported for the ledger.
+   - This session draws no defect class from it.
+4. **DEGENERATE-AS-WIRED** (predicted): PL and PM are SLACK, and U passes the control.
+   - In words: at every non-overdriven load measured, the clamp never binds. It closes repair only when the source outruns an unenforced cwnd (§7). So it acts as a saturation switch, not as a headroom law.
+   - This is a **defect finding** (MEASUREMENT DISCIPLINE 18), not a footnote. It names the clamp and both of its consumers (the repair grant and the shed budget's r).
+   - π on U is reported as the switch's transition share; Amendment 2 had 7 of 53 windows between r = 0 and the law. π does not enter the class.
+
+**K4 steady windows** (status §60 §6's rule: n ≥ 1, one `a_star` and one `delta` across the window and both neighbours) additionally require `ab` = 0 in the window and both neighbours, so that the handed r is the law r.
 
 ## 7. `rate-spare-cwnd`: is spare's cwnd enforced?
 
 **Answered by reading; registered as the prediction: NOT ENFORCED at either seat, and the session reads the executed witness.**
 
 - **What reads the scheduler `p.cwnd`:**
-  - `available()`, and through it `active_paths()` (`scheduler/mod.rs:226-232`), `redundant_source_path` (`:552-562`, S08) and `best_repair_path` (`:511-519`);
+  - `available()`, and through it:
+    - `active_paths()` (`scheduler/mod.rs:226-232`);
+    - `redundant_source_path` (`:552-562`, S08);
+    - `best_repair_path` (`:511-519`);
+    - **`best_source_path`** (`:490-498`), the evicting seat's source pick (`emit_source.rs:312-318`: `select_source_path` when `!reliable`);
   - `spare_capacity` (the repair clamp);
-  - the brake (`cwnd_full`, `net/mod.rs:2324-2360`, armed only by `RWM_INFL_CAP`/`RWM_INFL_BDP`/`RWM_LATE_BRAKE`, all off on the plain window);
+  - the brake (`cwnd_full`, `net/mod.rs:2324-2360`). It reads `p.cwnd` only under `RWM_LATE_BRAKE`; otherwise it uses gain·BDP (`RWM_INFL_BDP`) or the static `RWM_INFL_CAP`. All three are off on the plain window;
   - `RWM_CC_PACE` (off).
-- **What does not:**
-  - Source placement: `place_symbol` draws from every live path, and "a single path is always chosen" (`scheduler/place.rs:84-98`).
-  - Source admission: `tx_paused` needs `reliable` (`net/mod.rs:2397`).
-  - So on the source path nothing reads the scheduler cwnd.
+- **What steers but never gates:**
+  - At ρ < 1, `best_source_path` filters `available() > 0`, so cwnd steers *which* path gets the source. With no path available it returns `None`, and `select_source_path` sends on path 0 anyway (`net/mod.rs:1382-1384`). On c2's single path that is the only path.
+  - At ρ = 1, `place_symbol` returns `None` only "if no path is up at all" (`scheduler/place.rs:84-89`), and the caller falls back to 0.
+- **Source admission:** `tx_paused` needs `reliable` (`net/mod.rs:2397`).
+- So nothing on the source path withholds a symbol because the scheduler cwnd is full.
 - **Where the scheduler cwnd comes from:** it is Copa-lite's model cwnd (`scheduler/path.rs` `on_delivery_signal`), clamped at `MAX_CWND` = 10 000.
 - **What enforces the wire:** quinn's BBR (`qcwnd`, bytes) and quinn's 4 MB datagram buffer, which evicts the oldest datagrams and still returns `Ok` (`transport/io_owner.rs:129-150`).
 - **At ρ = 1** the store cap bounds in_flight instead: 36 against a cwnd of 10 000 on §60's c2 control. That is why the clamp is slack there at Bulk.
@@ -263,6 +292,7 @@ Per row, reported. These enter neither T1 nor T2.
 - It counts source emission continuing while the scheduler cwnd is full. An enforced window can be exceeded by at most one emission burst.
 - **NOT-ENFORCED:** τ_x ≥ 0.5 on both U rows (Amendment 2: 48 of 52).
 - **CONTRADICTED:** τ_x = 0 on both U rows. The reading is then wrong and is investigated before any φ verdict.
+- **MIXED:** anything else (0 < τ_x < 0.5, or the U rows disagree). The code reading stands as the answer, but the witness does not confirm it. Reported, with the ticks listed.
 - **Reported beside it:**
   - `qcwnd` against cwnd·512 B;
   - `dgev`/`hand`;
@@ -294,11 +324,11 @@ Per row, reported. These enter neither T1 nor T2.
 |---|---|---|---|---|
 | src (sym/s, LATE median) | 700 ± 5 % | 8 856 ± 5 % | 90–108 k | knob; Amendment 2 |
 | last sending tick | ≥ 58 s | ≥ 58 s | ≈ 13 s | T_e; Amendment 2 |
-| A\* | 4–6 | 45–71 | — | §4 formula |
+| A\* | 4–11 before calibration; 3–7 after it (≥ 30 steady windows) | 49–133; K4-UNSCOREABLE predicted | — | §4 formula, rtprop 11–30 ms |
 | Δ | 1–3 | 9–27 | — | §4 formula |
 | wire (Mbit) | ≤ 5.2 | 50 typical, ≤ 61 | link | §4 formula |
-| median rr | > 0; magnitude unpredicted (W ≈ 6–20 lies outside every recorded row) | 0.15–0.32 | 0.000 | store-law-n1 Realtime 0.24–0.28 (W 201); `s51-design` §5.1 0.176–0.249 at δ = 50; r_sat 0.315 |
-| φ class | SLACK | SLACK | ζ ≥ 0.8 | infl ≈ 9–13 (PL) and ≈ 140 (PM) against cwnd ≥ a few hundred ⇒ spare ≫ 0.5 |
+| median rr | > 0; magnitude unpredicted (W ≈ 8–25 lies outside every recorded row) | 0.15–0.32 | 0.000 | store-law-n1 Realtime 0.24–0.28 (W 201); `s51-design` §5.1 0.176–0.249 at δ = 50; r_sat 0.315 |
+| φ class | SLACK | SLACK | ζ ≥ 0.8 (validity ≥ 0.5) | infl ≈ rate·srtt·(1 + r): 10–27 (PL) and 127–345 (PM), against a cwnd with no standing queue to back it off (Copa-lite backs off only on queue, `path.rs:501-509`) ⇒ spare ≫ 0.5 |
 | outcome | — | — | — | **DEGENERATE-AS-WIRED predicted** |
 | eviction share | ≤ 0.001 | ≤ 0.001 | ≥ 0.5 | records §0 |
 | τ_x | ≈ 0 | ≈ 0 | ≥ 0.5 | §7 |
@@ -346,7 +376,7 @@ The U rows are not read for m̄, W1 or K4: the wire is overdriven and quinn evic
 - **E-2, `loopdiag_battery.sh` / `loopdiag_run_all.sh`:**
   - plan `51e` with `LD_SHA` = E-pre's `bin_sha` (abort on mismatch, never re-run);
   - `BUDGET_S["51e"]`, `LD_HARD` and `LD_REHEARSE`;
-  - the PL calibration rule printed by the rehearsal scorer, with the battery reading the PL rate from the table only, after the amendment.
+  - the PL calibration rule (A* and steady-window count, the new rate by §4's formula, and the PL-only recheck path `LD_REHEARSE=1 LD_ONLY=PL`) printed by the rehearsal scorer. The battery reads the PL rate from the table only, after the amendment.
   - Also add `rate=${RWM_PERF_RATE_MBIT:-unset}` to the `perf_rwm_c.sh` header line.
 - **E-3, parser and scorer `s51e_score.py`.** Reuse `s60_score._evict` / `evict_stats` / `evict_line` and `mbar59_score.row_metrics`. Add:
   - the `spc`/`wr` parse and φ, ζ, π, clamp deficit (§6);
@@ -360,7 +390,7 @@ The U rows are not read for m̄, W1 or K4: the wire is overdriven and quinn evic
 - **E-4, `stubrun_gen.py` + `test_stubrun.py`:**
   - the stub emits `[WSTORE] … spc=… wr=…`, the `{"pace":…}` line, `[GATES] RWM_PERF_RATE_MBIT=`, paced `src=` and a U-style saturated series;
   - `HARNESS_PATHS["51e"]` covers rehearse and full;
-  - a negative control for each witness (`an` ≠ fec n, a missing pace echo, U ζ < 0.8).
+  - a negative control for each witness (`an` ≠ fec n, a missing pace echo, U ζ < 0.5, PL with < 30 steady windows triggering the calibration line).
 
 **Block 51 (plan `51`):** `s51-design` §6 items 1–7, as written, with these corrections:
 - **51-1 / 51-3:** use the `plan60.py armspec` pattern for the per-row hint, bytes and timeout. Arm hints go in `ARM_SPEC[arm][2]`. The batching echo (`ACTIVE` at bulk/auto, `out of scope` at realtime) is a **new** witness field: the 4th `ARM_SPEC` field is the estimator-cadence echo.
@@ -376,14 +406,18 @@ The U rows are not read for m̄, W1 or K4: the wire is overdriven and quinn evic
 - (d) **median LATE `[SPAN] rr` > 0 on PL and PM** (Amendment 2's go/no-go);
 - (e) ≥ 120 LATE windows with src > 0 on PL and PM;
 - (f) eviction share ≤ 0.001 on PL and PM, and > 0.1 on U;
-- (g) the §6.2 on-row gauge witnesses on all three rows, and U ζ ≥ 0.8;
-- (h) `[WSTORE]` `fec=` n > 0 on ≥ 30 LATE windows of PL.
+- (g) the §6.2 on-row gauge witnesses on all three rows, and U ζ ≥ 0.5 (the validity threshold; 0.8 is the prediction);
+- (h) on PL, **≥ 30 K4-steady LATE windows** under the full rule (§6.3: n ≥ 1, one `a_star` and one `delta` over the window and both neighbours, `ab` = 0), with median A\* in [3, 7].
+
+**(h) is handled by the calibration, not by NO-GO.**
+- A rehearsal that fails only (h) triggers §4's calibration rule and its one PL-only recheck row.
+- A recheck that fails (h) drops PL from the battery by amendment.
 
 **Reported in the rehearsal, not gating:**
-- PL's median A\*, which triggers §4's calibration rule;
+- PM's steady-window count (predicted < 30);
 - τ_x on U.
 
-**NO-GO** on any of (a)–(h) means an amendment before the battery. Rehearsal rows are never re-run.
+**NO-GO** on any of (a)–(g) means an amendment before the battery. Rehearsal rows are never re-run.
 
 **Battery VOID and re-runs (once each, `s60` Amendment 1's rule):**
 - an echo or liveness VOID, including `pace-*` and `no-realtime-echo`;
@@ -397,13 +431,13 @@ The U rows are not read for m̄, W1 or K4: the wire is overdriven and quinn evic
 | launch | content | typical | worst | `LD_HARD` |
 |---|---|---|---|---|
 | E-pre | `suites_run.sh` + `binid_run.sh` on `s51e-tree` (as 60-pre) | ≈ 75 min | ≈ 90 min | — |
-| E rehearsal | build 6 min + 3 rows (90 + 90 + 45 s) | ≈ 12 min | ≈ 15 min | + 1 h |
+| E rehearsal | build 6 min + 3 rows (90 + 90 + 45 s); plus, if calibration fires, one PL recheck launch (build + 90 s ≈ 8 min) | ≈ 12 min | ≈ 25 min | + 1 h |
 | E battery | build 6 + smoke 1.5 + 12 rows (5·90 + 5·90 + 2·45 = 990 s) | ≈ 25 min | 990 s more for one re-run of every slot: ≈ 42 min | + 1.5 h |
 | 51 rehearsal | `s51-design` §7 | ≈ 20 min | — | as designed |
 | 51-c2, 51-c8 | `s51-design` §7, 76 rows each | ≈ 2 h each | 4 h 50 min each | + 5 h each |
 
 - Row time is the timeout (the DNF) plus ≈ 15 s of bring-up.
-- Block E costs ≈ 2 h of VM time in total. Nothing E needs fits inside the §51 launches.
+- Block E costs ≈ 1.9 h of VM time typical and ≈ 2.6 h worst (E-pre + rehearsal + recheck + battery). Nothing E needs fits inside the §51 launches.
 
 ## 12. Owner questions
 
