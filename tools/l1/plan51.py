@@ -48,7 +48,8 @@ REPS_CAP51 = None                  # test_stubrun's fast mode caps the blocks (N
 ROW_BUDGET_S = 215                 # a block starts only if rows x 215 s remain before LD_HARD (s51-design section 6 item 2)
 BUDGET_S = {"51": 17400, "51r": 1200}      # worst case 76 x 215 s + 16 min = 4 h 50 (section 7); the rehearsal ~20 min. The launch sets LD_HARD = launch + 5 h (a rehearsal: + 1 h)
 SYMBOL_PAYLOAD = {"bulk": 1186, "auto": 1186, "realtime": 494}        # chunk payload B per carrier (1200 / 512 symbols less the 14 B chunk header; perf.rs)
-SRC_SIZE_BAND = (0.8, 2.0)         # source symbols x payload / bytes: a wrong carrier symbol size reads 0.41 or 2.4 (see row_problems)
+SRC_SIZE_BAND = (0.8, 2.0)         # source symbols x payload / bytes: a wrong carrier symbol size reads 0.41 or 2.4 (see row_problems). Checked on a Bulk row: 507 616 symbols x 1 186 B / 600 MB = 1.003 (s53 c8 BASE)
+S08_DUP = 2.2                      # c8 + realtime: the upper bound widens by this (S08's duplicate source may be counted)
 BATCH_ECHO = {"bulk": "emission batching ACTIVE", "auto": "emission batching ACTIVE", "realtime": "emission batching out of scope"}
 MIN_ROW_S = 30.0                   # a c2 / c8 row with its last tick before 30 s is VOID-SHORT (section 2.1)
 
@@ -165,7 +166,7 @@ def _delta_ok(tok, want):
         return False
 
 
-def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, nbytes=None):
+def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, nbytes=None, dnf=False):
     """The row's two-sided witnesses (s51-design section 4), before any number is read: [GATES] RWM_DELTA = the arm's value (or `unset`) on BOTH ends; RWM_DIAG=1 on both ends; the emission-batching echo on the
     sender (ACTIVE at bulk / auto, `out of scope` at realtime, and not the other one); source symbols per byte matching the carrier's symbol size; no [CHI] activity (chi n = 0); and the one seat's binary. The
     pipe echo `[window, Rlc, <arm hint>]` and the generation guard are make_row's (ARM_SPEC)."""
@@ -197,8 +198,11 @@ def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, nbytes=None):
     srcs = [m for m in (_CUM.search(ln) for ln in cli if ln.startswith("[DIAG]")) if m]
     if srcs and nbytes:
         ratio = int(srcs[-1].group(1)) * SYMBOL_PAYLOAD[hint] / nbytes
-        if not (SRC_SIZE_BAND[0] <= ratio <= SRC_SIZE_BAND[1]):
-            p.append(f"srcsize-ratio={ratio:.2f} (source symbols x {SYMBOL_PAYLOAD[hint]} B / bytes, want {SRC_SIZE_BAND[0]}-{SRC_SIZE_BAND[1]} at {hint})")
+        lo, hi = SRC_SIZE_BAND
+        if cell == C8 and hint == "realtime":
+            hi *= S08_DUP      # S08's duplicate source (on the second path, Realtime) may be counted in cum= (unverified): the band cannot then tell a wrong carrier from a doubled count
+        if ratio > hi or (ratio < lo and not dnf):      # a DNF is a datum, kept and ranked worst: it may have sent under 80 % of the object, so only the upper bound applies to it
+            p.append(f"srcsize-ratio={ratio:.2f} (source symbols x {SYMBOL_PAYLOAD[hint]} B / bytes, want {lo}-{hi:g} at {hint}{' (a DNF: upper bound only)' if dnf else ''})")
     return p + pool54_score.sha_problems("CAND", sha, sha_cand, None)
 
 

@@ -509,7 +509,7 @@ def gen51e(cli, srv, drv, nbytes, fam, hint):
         bad.add("anfec")
     paced = rate_env is not None
     lam = float(rate_env) if paced else None
-    arm = "U" if not paced else ("PL" if abs(lam - 2.7664) < 1e-3 else "PM")
+    arm = "U" if not paced else ("PL" if lam < 10 else "PM")      # PL is a few Mbit at any rate the calibration may set, PM is 35
     rate = 100000 if arm == "U" else int(round(lam * 1e6 / (8 * 494)))
     k_on, n_t = (240, 250) if paced else (52, 120)
     nb = int(nbytes)

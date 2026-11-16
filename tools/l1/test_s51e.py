@@ -15,6 +15,10 @@ import plan51e  # noqa: E402
 import s51e_score as sc  # noqa: E402
 import s60_score  # noqa: E402
 
+# THE REGISTERED STATE. The PL rate and the drop flag are the two numbers the calibration amendment edits (plan51e.PL_RATE_SYM / PL_DROPPED): this test pins the FORMULAS and the registered
+# example under the registered values, so that the amendment does not fail the E battery's own tests gate (a run_all gate of every plan's `tst parsers`).
+plan51e.PL_RATE_SYM, plan51e.PL_DROPPED = 700, False
+
 fails = 0
 
 
@@ -128,6 +132,8 @@ def has(ps, pref):
 check("numeric comparison: '2.76640' and '2.7664' are the same value", pp(rate_tok="2.76640") == [])
 check("a missing start echo is pace-echo-missing", has(pp(pre_echo=False), "pace-echo-missing"))
 check("a missing pace line is pace-line-missing", has(pp(pace_line=False), "pace-line-missing"))
+bit_s = [ln if '"pace"' not in ln else json.dumps({"pace": True, "obj": 1, "rate_mbit": 2766400, "chunks": 42000, "feed_s": 60.0, "achieved_mbit": 2766400.0 * 1.01, "late": 0, "late_max_ms": 0.3}) for ln in build(n=240)]
+check("the pace line's units are an assumed format: achieved_mbit is accepted in Mbit/s or in bit/s (+-2 % of lambda), rate_mbit is not checked at all", sc.pace_problems("PL", metrics(bit_s)) == [], sc.pace_problems("PL", metrics(bit_s)))
 check("[GATES] reading another rate on the client end is pace-gate-cli", has(pp(gate_cli="9"), "pace-gate-cli"))
 check("median LATE src 6 % off rate_sym is pace-src-median (the +-5 % band); 4 % off passes", has(pp(src=742), "pace-src-median") and not has(pp(src=728), "pace-src-median"))
 check("a sending tick that stops at 56 s (< T_e - 2 s) is pace-last-tick; 58 s passes", has(pp(last_src_t=56.0), "pace-last-tick") and not has(pp(last_src_t=58.0), "pace-last-tick"))

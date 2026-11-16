@@ -1192,8 +1192,9 @@ def case51e(plan, path):
                   len(rows) == len(want_rows) and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls51e(want_rows), (len(rows), calls[:2]))
             if path == "calibrate":
                 m = re.search(r"^CALIBRATE PL .*?new PL rate (\d+) sym/s = lambda ([\d.]+) Mbit, bytes (\d+)", chk, re.M)
-                check(f"{tag}: PL A* = 12 fires the calibration (not a NO-GO: the rehearsal still passes): x-hat 11.5 -> 700 x 4.5 / 11.5 = 273.9 -> 270 sym/s, lambda 1.06704 Mbit, 8 002 800 bytes, and the recheck command is printed",
-                      m is not None and m.groups() == ("270", "1.06704", "8002800") and "LD_ONLY=PL" in chk and "SMOKE-FAIL" not in chk, chk[-900:])
+                cal = plan51e.calibrate(12.0)      # computed from the table's PL rate (700 as registered: 270 sym/s, 1.06704 Mbit, 8 002 800 bytes; test_s51e pins that example)
+                check(f"{tag}: PL A* = 12 fires the calibration (not a NO-GO: the rehearsal still passes): x-hat 11.5, the new rate by section 4's formula ({cal['rate_sym']} sym/s, lambda {cal['lam_mbit']} Mbit, {cal['bytes']} bytes), and the recheck command is printed",
+                      m is not None and m.groups() == (str(cal["rate_sym"]), "%g" % cal["lam_mbit"], str(cal["bytes"])) and "LD_ONLY=PL" in chk and "SMOKE-FAIL" not in chk, chk[-900:])
             else:
                 crit = ("(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)")
                 check(f"{tag}: the section 10 criteria print PASS ({', '.join(crit)}" + (", (h) OK on PL" if path != "recheck" else ", (h) gating on PL") + ") and the calibration rule does not fire",
@@ -1394,7 +1395,7 @@ def case51(plan, path):
         check(f"{tag}: ONE stage rep51 (no guard, no BASE tree, ONE build), the dial pins ran on the built tree (2 cargo test calls: raptorpath with the three filters, raptorpath-wasm) and are on record, the smoke check printed SMOKE-PASS",
               not os.path.exists(os.path.join(run_dir, "guard")) and not os.path.exists(os.path.join(sb["devshm"], "ld", "bin-base", "raptorpath")) and len(builds) == 1 and len(pins) == 2
               and all("--release" in pins[0] and "delta_budget_b_is_the_dial_not_a_mode" in pins[0] and "scheduling_weights_are_the_dial_not_a_mode" in pins[0] and "control::fec_rate" in pins[0] for _ in (0,))
-              and "raptorpath-wasm" in pins[1] and "test_continuum_one_law_across_the_dial" in pins[1] and "dial pins ok" in e and "SMOKE-PASS" in chk, (builds, pins, tail(e, 6), chk[-600:]))
+              and "--lib" in pins[0] and "raptorpath-wasm" in pins[1] and "--lib" in pins[1] and "test_continuum_one_law_across_the_dial" in pins[1] and "dial pins ok" in e and "SMOKE-PASS" in chk, (builds, pins, tail(e, 6), chk[-600:]))
         bs = open(os.path.join(run_dir, "BINSHA.txt")).read()
         if rehearse:
             check(f"{tag}: the rehearsal RECORDS the bin_sha (BINSHA.txt, the era line 'RECORDED') instead of checking one", "RECORDED (rehearsal)" in e and re.match(r"[0-9a-f]{64}", bs) is not None, tail(e, 6))
@@ -1480,6 +1481,23 @@ def block_budget51():
         ldtxt = open(ld, errors="replace").read() if os.path.exists(ld) else ""
         check("51/block-budget: with 14 rows x 1000 s needed and 2400 s left the battery stops before block 1 (ABORT-BUDGET block 1 in the ledger), the launch fails (rc 5) and no scored row ran (the smoke's 4 rows only)",
               rc == 5 and re.search(r"^ABORT-BUDGET block 1: ", ldtxt, re.M) is not None and len(rows) == 4 and "LD-ALL-DONE" not in out, (rc, ldtxt[-300:], len(rows)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def rehearse51_c8():
+    """The c8 launch of plan 51 (one of the three registered launches): LD_CELL=c8-100 rehearsal. The driver sees the dual c2 / c3 topology for each smoke row, and the smoke passes on the c8 stub rows."""
+    import plan51
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make_sandbox(root, "51", CAND_SHA)
+        binf, sha = stub_bin_file(sb)
+        rc, out, rows, cargo = run_launch(sb, "51", CAND_SHA, rehearse=True, extra_env={"STUB_BIN_FILE": px(binf), "LD_CELL": "c8-100"})
+        calls = drv4_lines(sb)
+        want = expect_calls51(plan51.plan("51", smoke=True, cell="c8-100"))
+        chk = smoke_text(os.path.join(sb["root"], "run", "rep51"))
+        check("51/c8-rehearse: LD_CELL=c8-100: rc 0, REHEARSAL-DONE, the driver saw `c2 c3 <hint> 600000000 dual` for the 4 smoke rows (hint and RWM_DELTA per arm), SMOKE-PASS",
+              rc == 0 and "LD-ALL-REHEARSAL-DONE" in out and calls == want and all(c[:2] == ["c2", "c3"] and c[4] == "dual" for c in calls) and len(calls) == 4 and "SMOKE-PASS" in chk and "cell=c8-100" in chk, (rc, calls[:2], chk[-400:]))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -1790,7 +1808,7 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
         jobs.append(ex.submit(red51e, "plab", "PL", "(h) PL passes", 5, "plab-recheck"))
     if want("calib51e:plab"):
         jobs.append(ex.submit(calib51e, "plab", "0 K4-steady LATE windows"))
-    for nm, extra_, rc_, txt_, kw_ in (("no-manifest", {"LD_REF_MANIFEST": None}, 3, "ABORT-SUITES no reference manifest", {}), ("no-bin-sha", {"LD_BIN_SHA_EXPECT": None}, 3, "ABORT-BIN-SHA plan 51e needs LD_BIN_SHA_EXPECT", {}),
+    for nm, extra_, rc_, txt_, kw_ in (("no-manifest", {"LD_REF_MANIFEST": "/nonexistent/ref51e-manifest.sha256"}, 3, "ABORT-SUITES no reference manifest at /nonexistent/ref51e-manifest.sha256", {}), ("no-bin-sha", {"LD_BIN_SHA_EXPECT": None}, 3, "ABORT-BIN-SHA plan 51e needs LD_BIN_SHA_EXPECT", {}),
                                        ("prior", {"LD_PRIOR_TESTS": "x"}, 5, "ABORT-TESTS plan 56 reuses the engine suites by the reference manifest", {"no_build": False})):
         if want("refused51e:" + nm):
             jobs.append(ex.submit(refused51, "51e", nm, extra_, rc_, txt_, **kw_))
@@ -1807,6 +1825,8 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
             jobs.append(ex.submit(budget51, plan_, False, need_b - 600, False))
     if want("block-budget51"):
         jobs.append(ex.submit(block_budget51))
+    if want("rehearse51c8"):
+        jobs.append(ex.submit(rehearse51_c8))
     if want("dialpins-silent"):
         jobs.append(ex.submit(dialpins_silent))
     for kind, crit in (("nobatch", "the emission-batching echo"), ("overdrive", "NOT-OVERDRIVEN witness on HR"), ("hbrr", "rr is exactly 0 on the H-B row"), ("wrongsize", "source symbols per byte match")):

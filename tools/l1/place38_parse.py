@@ -1001,7 +1001,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         # Status 51 block 51: the two-sided RWM_DELTA / RWM_DIAG echo, the emission-batching echo, the symbol-size and [CHI] witnesses and the one seat's binary void a row (replaced once, by the battery); a completed row
         # with its last tick before 30 s is VOID-SHORT (also replaced once); a DNF is kept and ranked worst. The readouts (s51_score.row_metrics) are reported / scored later and never void a row.
         import s51_score
-        p.extend(plan51.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), row.get("bytes")))
+        p.extend(plan51.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), row.get("bytes"), bool(row.get("dnf"))))
         row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
         row["tick_span_s"] = last_tick_s(cli)
         if not row.get("dnf") and int(rc) == 0 and row["tick_span_s"] < plan51.MIN_ROW_S:

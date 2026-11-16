@@ -13,6 +13,7 @@ FORMATS ASSUMED (the engine branch s51e-tree owns them; written to the spec's te
   [WSTORE] ... fec=<eps>/<sigma2>/<r>/<A*>/<n> spc=<ab>/<az>/<an>/<rb>/<rn>/<r0> wr=<sum wr/rn>/<sum fr/rn> ...     (spc integers, wr 6 decimals, `spc=0/0/0/0/0/0 wr=-/-` on an empty window)
   perf client start echo:   perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT=<v>)            (searched in the client log and the driver output, uncut)
   per timed object, a JSON line on the client log: {"pace":true,"obj":<id>,"rate_mbit":<v>,"chunks":<n>,"feed_s":<s>,"achieved_mbit":<v>,"late":<k>,"late_max_ms":<m>}
+      (rate_mbit is not checked: the spec's unit for it is ambiguous; achieved_mbit is accepted in Mbit/s or bit/s, within +-2 % of lambda; chunks and late are read as counts)
   [GATES] ... RWM_PERF_RATE_MBIT=<v>|unset                                                       (both ends; compared numerically; a paced row accepts `unset` on the server end)"""
 import json
 import math
@@ -182,10 +183,10 @@ def pace_problems(arm, t):
         p.append("pace-line-missing")
     else:
         for d in t["pace"]:
-            if not _close(_num(d.get("rate_mbit")), lam, 1e-6):
-                p.append(f"pace-line-rate={d.get('rate_mbit')} (want {lam})")
-            if not _close(_num(d.get("achieved_mbit")), lam, plan51e.PACE_ACH_TOL):
-                p.append(f"pace-achieved={d.get('achieved_mbit')} (want {lam} +-{plan51e.PACE_ACH_TOL:.0%})")
+            ach = _num(d.get("achieved_mbit"))
+            # the spec writes the field as <8 x bytes / feed_s> (bits/s) under the name achieved_mbit: either unit is accepted (an assumed format, see the module doc)
+            if not (_close(ach, lam, plan51e.PACE_ACH_TOL) or _close(ach, lam * 1e6, plan51e.PACE_ACH_TOL)):
+                p.append(f"pace-achieved={d.get('achieved_mbit')} (want {lam} Mbit/s or {lam * 1e6:g} bit/s, +-{plan51e.PACE_ACH_TOL:.0%})")
             ch, late = _num(d.get("chunks")), _num(d.get("late"))
             if not ch or late is None or late > plan51e.PACE_LATE_MAX * ch:
                 p.append(f"pace-late={d.get('late')}/{d.get('chunks')} (want <= {plan51e.PACE_LATE_MAX:.0%})")
@@ -216,6 +217,8 @@ def gauge_problems(t):
         if not (0 <= az <= ab <= an and 0 <= rb <= rn):
             hit("spc-order", i, f"spc={ab:g}/{az:g}/{an:g}/{rb:g}/{rn:g}/{r0:g}")
         fn, fr_r = g["fec_n"][i], g["fec_r"][i]
+        if fn is None and an == 0:
+            fn = 0      # an empty window prints fec=-/-/-/-/0 (n = 0); a missing n there is not a fault
         if fn is None:
             hit("spc-fec-missing", i, "no fec= n")
             continue

@@ -97,6 +97,15 @@ check("the batching echo: ACTIVE at bulk / auto, 'out of scope' at realtime; mis
       and any(x.startswith("batch-echo-wrong") for x in plan51.row_problems(plan51.C2, "HR", *mklog("bulk", None), SHA, SHA, 600_000_000)) and any(x.startswith("batch-echo-wrong") for x in plan51.row_problems(plan51.C2, "HB", *mklog("realtime", None), SHA, SHA, 600_000_000)))
 check("source symbols per byte match the carrier's symbol size: a realtime row printing a 1 186 B carrier's count (ratio 0.41), or a bulk row printing a 494 B one (2.40), is srcsize-ratio",
       any(x.startswith("srcsize-ratio=0.4") for x in rp("HR", srcs=int(600_000_000 / 1186))) and any(x.startswith("srcsize-ratio=2.4") for x in rp("HB", srcs=int(600_000_000 / 494))) and rp("HR", srcs=int(600_000_000 / 494 * 1.1)) == [])
+dnf_log = mklog("realtime", None, srcs=int(600_000_000 / 494 * 0.4))
+check("a DNF row is KEPT (a datum, ranked worst): one that sent only 40 % of its source symbols has no srcsize problem (the lower bound does not apply to it) while the same log on a completed row does; its upper bound still holds",
+      plan51.row_problems(plan51.C2, "HR", *dnf_log, SHA, SHA, 600_000_000, True) == [] and any(x.startswith("srcsize-ratio=0.4") for x in plan51.row_problems(plan51.C2, "HR", *dnf_log, SHA, SHA, 600_000_000, False))
+      and any(x.startswith("srcsize-ratio") for x in plan51.row_problems(plan51.C2, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 2.6)), SHA, SHA, 600_000_000, True)))
+check("a DNF row with a plain echo / sha is not replaceable (replace_reason None) and a DNF is LIVE in the ledger rule: only an echo VOID or VOID-SHORT is re-run",
+      plan51.replace_reason(ledger([row("HR", dnf=True, status="LIVE")]), "c2-100", "HR", "42", 1) is None)
+check("at c8 a REALTIME row's upper bound widens (S08's duplicate source may be counted in cum=: unverified): ratio 3.9 passes at c8, fails at c2; a bulk row at c8 keeps the 2.0 bound",
+      plan51.row_problems(plan51.C8, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 3.9)), SHA, SHA, 600_000_000) == [] and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C2, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 3.9)), SHA, SHA, 600_000_000))
+      and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C8, "HB", *mklog("bulk", None, srcs=int(600_000_000 / 1186 * 2.5)), SHA, SHA, 600_000_000)))
 check("a [CHI] line with n > 0 is chi-active; n = 0 or absent passes", any(x.startswith("chi-active") for x in rp("HB", chi="[CHI] n=3 x=1")) and rp("HB", chi="[CHI] n=0") == [])
 check("a foreign binary is a bin-sha problem and is not echo-replaceable", any(x.startswith("bin-sha") for x in plan51.row_problems(plan51.C2, "HB", *mklog(), SHA, "b" * 64, 600_000_000)) and not plan51.is_echo_void({"problems": ["bin-sha=aaa (want bbb for CAND)"]}))
 d = tempfile.mkdtemp()

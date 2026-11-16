@@ -445,8 +445,8 @@ dialpins() {
   local REPO log="$RUN/dialpins.log" rc=0 pat
   REPO="$(cd "$HERE/../.." && pwd)"
   : > "$log"
-  ( cd "$REPO" && CARGO_TARGET_DIR="$TARGET" timeout 3600 "$CARGO" test -p raptorpath --release -- delta_budget_b_is_the_dial_not_a_mode scheduling_weights_are_the_dial_not_a_mode control::fec_rate --test-threads=2 ) >> "$log" 2>&1 || rc=1
-  ( cd "$REPO" && CARGO_TARGET_DIR="$TARGET" timeout 3600 "$CARGO" test -p raptorpath-wasm -- test_continuum_one_law_across_the_dial ) >> "$log" 2>&1 || rc=1
+  ( cd "$REPO" && CARGO_TARGET_DIR="$TARGET" timeout 3600 "$CARGO" test -p raptorpath --release --lib -- delta_budget_b_is_the_dial_not_a_mode scheduling_weights_are_the_dial_not_a_mode control::fec_rate --test-threads=2 ) >> "$log" 2>&1 || rc=1
+  ( cd "$REPO" && CARGO_TARGET_DIR="$TARGET" timeout 3600 "$CARGO" test -p raptorpath-wasm --lib -- test_continuum_one_law_across_the_dial ) >> "$log" 2>&1 || rc=1
   for pat in '^test .*delta_budget_b_is_the_dial_not_a_mode \.\.\. ok$' '^test .*scheduling_weights_are_the_dial_not_a_mode \.\.\. ok$' '^test .*control::fec_rate.* \.\.\. ok$' '^test .*test_continuum_one_law_across_the_dial \.\.\. ok$'; do
     grep -aqE "$pat" "$log" || { era "LD-ALL dial pin NOT EXECUTED: $pat"; rc=1; }
   done
