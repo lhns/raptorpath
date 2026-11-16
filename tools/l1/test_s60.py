@@ -862,6 +862,11 @@ ctl = [r for r in rows_one if r["arm"] == "G2048"]
 rows_one = [r for r in rows_one if r["arm"] != "G2048" or r is ctl[0]]
 rc, o_one = run_score(rows_one, "60a")
 check("R-sign gate: one replayable control row -> UNSCOREABLE (PASS needs >= 2), no STOP", labels(o_one).get("R-SIGN-c2") == "UNSCOREABLE" and not has(o_one, "STOP R-SIGN"), [ln for ln in o_one if "R-SIGN" in ln][:3])
+# a c8 NO-GO: R-SIGN-c8 is UNSCOREABLE (reported, it is read before any STOP and never blocks 60b); the same rows PASS without it
+rc, o_p8 = run_score(c8_rows(), "60a")
+rc, o_n8 = run_score(c8_rows(), "60a", nogo="c8")
+check("R-sign gate under LD_NOGO=c8: R-SIGN-c8 UNSCOREABLE (NO-GO), the same rows PASS without it", labels(o_p8).get("R-SIGN-c8") == "PASS" and labels(o_n8).get("R-SIGN-c8") == "UNSCOREABLE"
+      and has(o_n8, "NO-GO c8"), ([ln for ln in o_p8 if "R-SIGN" in ln][:2], [ln for ln in o_n8 if "R-SIGN" in ln][:2]))
 # the launcher's gate regex reads the scorer's own label lines (a scorer-generated score, not a hand-written one)
 _runall = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "loopdiag_run_all.sh"), encoding="utf-8").read()
 _gate = re.compile(r"^LABEL60 R-SIGN-c2 (PASS|UNSCOREABLE)( |$)")
