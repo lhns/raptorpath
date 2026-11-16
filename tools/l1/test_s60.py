@@ -163,7 +163,7 @@ def seed_of(rep):
 
 
 # ═══ 1. plan tables the scorer relies on ═══
-check("plan60: 60a 96 slots, 60b 45 slots, the rehearsal 10 rows", len(plan60.plan("60a")) == 96 and len(plan60.plan("60b")) == 45 and len(plan60.plan("60a", rehearsal=True)) == 10,
+check("plan60: 60a 96 slots, 60b 40 slots, the rehearsal 10 rows", len(plan60.plan("60a")) == 96 and len(plan60.plan("60b")) == 40 and len(plan60.plan("60a", rehearsal=True)) == 10,
       (len(plan60.plan("60a")), len(plan60.plan("60b"))))
 check("plan60 bytes: floor pools 100/200/300 MB (c2), 200/400/600 MB (c8), 1/1.5/2 GB (c1s); the rest 600 MB or 5 GB",
       [plan60.arm_bytes(C2, "G%d" % w) for w in (16, 32, 48, 160)] == [100_000_000, 200_000_000, 300_000_000, 600_000_000]
@@ -172,8 +172,8 @@ check("plan60 bytes: floor pools 100/200/300 MB (c2), 200/400/600 MB (c8), 1/1.5
 check("plan60 timeouts: 150 s on every floor pool and the c2/c8/evicting rows, 210 s on the c1s 5 GB control", plan60.arm_timeout(C2, "G16") == 150 and plan60.arm_timeout(C8, "G320") == 150
       and plan60.arm_timeout(C1S, "G2048") == 210 and plan60.arm_timeout(C2, "EVICT") == 150)
 check("plan60 LATE_T 15/15/5 and the P1 arms 256/512/2048 agree with the scorer's copies", s.LATE_T == {C2: 15.0, C8: 15.0, C1S: 5.0} and plan60.P1_W == {C2: 256, C8: 512, C1S: 2048})
-check("the 60b table is 18 floor + 20 paired + 2 extra G + 5 EVICT; the pairs are G2048/C2048", sum(1 for r in plan60.plan("60b") if r[2] in ("G64", "G128", "G192")) == 18
-      and sum(1 for r in plan60.plan("60b") if r[2] == "C2048") == 10 and sum(1 for r in plan60.plan("60b") if r[2] == "EVICT") == 5)
+check("the 60b table is 18 floor + 20 paired + 2 extra G and NO EVICT (status 60 Amendment 2); the pairs are G2048/C2048", sum(1 for r in plan60.plan("60b") if r[2] in ("G64", "G128", "G192")) == 18
+      and sum(1 for r in plan60.plan("60b") if r[2] == "C2048") == 10 and sum(1 for r in plan60.plan("60b") if r[2] == "EVICT") == 0)
 check("sign test k table (s60cond.py): n 6..12 -> 6 7 8 8 9 10 10", [s.sign_k(n) for n in range(6, 13)] == [6, 7, 8, 8, 9, 10, 10], [s.sign_k(n) for n in range(6, 13)])
 check("store-law replay modules import (s60replay selftest numbers available)", SR is not None and CR is not None, _ERR)
 if SR:
@@ -834,7 +834,7 @@ rc, o_all = run_score(c2_rows() + c8_rows() + c1s_rows([0.05] * 12) + rows_ev, "
 La = labels(o_all)
 check("score60 all: c2 + c8 + c1s + EVICT in one ledger -> every labelled readout family present, rc 0", rc == 0 and all(k in La for k in ("P1-c2", "P1-c8", "P1-c1s", "P3-c2", "P3-c8l0", "P3-c8l1", "FLOOR-SLOPE-c2", "FLOOR-CONV-c2", "FLOOR-SLOPE-c8-leg0",
       "FLOOR-SLOPE-c8-leg1", "FLOOR-CONV-c8-leg1", "FLOOR-SLOPE-c1s", "FLOOR-CONV-c1s", "C2-SHORT", "C8-B2", "C1S-CONTROL", "GC-PAIRS")), sorted(La))
-check("score60 all: EVICT rows appear once (5 slots) and slots are counted against 96 + 45", has(o_all, "EVICT s42r1") and any("/141" in ln for ln in o_all if ln.startswith("VERDICT60")), [ln for ln in o_all if ln.startswith("VERDICT60")])
+check("score60 all: EVICT rows appear once (5 slots) and slots are counted against 96 + 40", has(o_all, "EVICT s42r1") and any("/136" in ln for ln in o_all if ln.startswith("VERDICT60")), [ln for ln in o_all if ln.startswith("VERDICT60")])
 
 # ═══ 17. CLI ═══
 import subprocess
@@ -913,7 +913,25 @@ check("ackw join: no ackw column -> 0 compared (the smoke fails on < 10)", s.ack
 def evict_smoke_rows(ack_delta=20, rr=0.1, q="0.050000", problems=()):
     rws = [mkrow(C1S, "G64", 42, 1, {0: dict(tmin=2.5, tp50=3.5, m=2.3, l=2.3, sig=0.3, sigb=0.3)}, mbps=50.0), mkrow(C1S, "C2048", 42, 1, {}, mbps=50.0)]
     return rws
-check("plan60 'plan 60br' is the 2-row smoke plus ONE evicting row (3 rows, EVICT last, seed 42 rep 1)", plan60.plan("60br") == plan60.SMOKE["60b"] + [("c2-100", "def", "EVICT", "42", 1)] and len(plan60.plan("60br")) == 3)
+check("plan60 'plan 60br' is the 2-row smoke only and neither 60b nor 60br holds an EVICT row (status 60 Amendment 2)", plan60.plan("60br") == plan60.SMOKE["60b"] and len(plan60.plan("60br")) == 2
+      and not any(r[2] == plan60.EVICT_ARM for n in ("60b", "60br") for r in plan60.plan(n)))
+# 60br with no evicting row: explicit NOT-RUN lines, no PASS over an empty set
+rc, o_br = smoke_of([mkrow(C1S, "G64", 42, 1, {0: G192}), mkrow(C1S, "C2048", 42, 1, {0: G192}, gauge=False)], "60br")
+check("smoke60 60br without an E row: rc 0, EVICTING ROWS none + NOT-RUN lines, no PASS for the evicting-row criteria",
+      rc == 0 and has(o_br, "EVICTING ROWS: none in this session") and has(o_br, "NOT-RUN the evicting-row rehearsal checks") and has(o_br, "NOT-RUN [SLAW] q = 0.05")
+      and not any(ln.startswith("PASS") and ("debt loop" in ln or "evicting" in ln or "q = 0.050000" in ln) for ln in o_br), o_br)
+rc, o_sc = run_score(c1s_rows([0.05] * 12), "60b")
+check("score60 60b with no E row prints 'EVICTING ROWS: none in this session'", has(o_sc, "EVICTING ROWS: none in this session"))
+# the kept code: an E row injected into the 60br slots (the future registration's shape); an E row has no CAPLOG and must not fail the G-tag / CAPLOG checks
+_plan0 = plan60.plan
+plan60.plan = lambda name, *a, **k: _plan0(name, *a, **k) + ([plan60.EVICT_REHEARSAL] if name == "60br" else [])
+try:
+    e_row = mkrow(C2, "EVICT", 42, 1, {0: G192}, drop=("CAPLOG",))
+    rc, o_e = smoke_of([mkrow(C1S, "G64", 42, 1, {0: G192}), mkrow(C1S, "C2048", 42, 1, {0: G192}, gauge=False), e_row], "60br")
+finally:
+    plan60.plan = _plan0
+check("smoke60 60br WITH an E row: the G-tag check passes without CAPLOG on the E row, the CAPLOG replay line covers G rows only, the evicting-row checks run (no NOT-RUN)",
+      any(ln.startswith("PASS a G row carries ALL gauge tags") for ln in o_e) and not has(o_e, "CAPLOG c2 EVICT") and not has(o_e, "NOT-RUN the evicting-row") and has(o_e, "GO-NOGO-EVICT"), o_e)
 check("the budget guard carries the worst-case floor re-runs: 60a 11 520 + 36 x 190 = 18 360 s, 60b 10 440 + 18 x 190 = 13 860 s", plan60.BUDGET_S == {"60a": 18360, "60b": 13860}, plan60.BUDGET_S)
 check("a wrong binary (bin-sha-*) and a missing Realtime echo are classified: the echo VOIDs re-run once, the binary never", plan60.is_echo_void({"problems": ["no-realtime-echo-cli"]}) and not plan60.is_echo_void({"problems": ["bin-sha=abc (want def for CAND)"]})
       and not plan60.is_echo_void({"problems": ["bin-sha-uncheckable (row sha None)"]}))

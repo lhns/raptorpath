@@ -76,7 +76,7 @@ BANDS = {C2: (148, 164), C8: (440, 446), C1S: (651, 685)}       # Appendix A: R6
 BANDS_A3 = {C2: (158, 242), C8: (433, 586), C1S: (406, 981)}    # Appendix A.3 (cap-128-based; reported)
 NOGO_TEXT = {C2: "the c2 floor pool moves to W 32 and the move is reported (s60 section 5)",
              C8: "c8 B2 is not scored; its rows still run for P1, P3, the gate and the reported R~ / R~67 (s60 section 5)",
-             C1S: "the c1s control sign is dropped; 60b runs only the G/C pairs and the evicting rows (s60 section 5)"}
+             C1S: "the c1s control sign is dropped; 60b runs only the G/C pairs (s60 section 5)"}
 
 _LIB = None
 
@@ -1272,6 +1272,7 @@ class Session:
     def evict(self):
         rows = [rv for rv in self.rvs if rv.kind == "E"]
         if not rows:
+            self.p("EVICTING ROWS: none in this session (status §60 Amendment 2: moved to their own registration)")
             return
         self.p(f"EVICTING ROWS (s60 section 6; plan 59 on the gauge): {len(rows)} rows. m-bar = d(cum ack)/sum(adv count) over LATE (t >= {EVICT_LATE_T:g} s)")
         for rv in sorted(rows, key=lambda x: x.rep):
@@ -1467,12 +1468,16 @@ def smoke(path, plan, out=print):
     gs = [rv for rv in rvs if rv.kind == "G"]
     es = [rv for rv in rvs if rv.kind == "E"]                 # the evicting row of 60b's rehearsal (plan 59's arm, gauge on, Realtime: q = 0.05)
     gall = gs + es
+    gcap = gs                                                # E rows have no store cap by construction (plan_dyn_cap needs reliable): no CAPLOG on them
     crit("a C row (RWM_SLAW=0) carries NO gauge tag on either end", [f"{rv.cell} {rv.arm}: {k}={v}" for rv in cs for side in ("all_cli", "srv") for k, v in rv.t["tags"][side].items() if v])
-    crit("a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG) after the warm-up cut", [f"{rv.cell} {rv.arm}: no {k}" for rv in gall for k, v in rv.t["tags"]["cli"].items() if not v])
+    crit("a G row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG; an E row all but CAPLOG: it has no store cap) after the warm-up cut", [f"{rv.cell} {rv.arm}: no {k}" for rv in gall for k, v in rv.t["tags"]["cli"].items() if not v and not (rv.kind == "E" and k == "CAPLOG")])
     crit("RWM_SLAW echoed as requested on both ends", [f"{rv.cell} {rv.arm}: cli={rv.t['gate_slaw']['cli']} srv={rv.t['gate_slaw']['srv']}" for rv in rvs
                                                        if rv.t["gate_slaw"]["cli"] != ("0" if rv.kind == "C" else "1") or rv.t["gate_slaw"]["srv"] != ("0" if rv.kind == "C" else "1")])
     crit("[SLAW] q = 0.100000 on every Bulk G row (0.050000 would be Realtime)", [f"{rv.cell} {rv.arm}: q={rv.t['q']}" for rv in gs if rv.t["q"] != ["0.100000"]])
-    crit("[SLAW] q = 0.050000 on the Realtime evicting row", [f"{rv.cell} {rv.arm}: q={rv.t['q']}" for rv in es if rv.t["q"] != ["0.050000"]])
+    if es:
+        crit("[SLAW] q = 0.050000 on the Realtime evicting row", [f"{rv.cell} {rv.arm}: q={rv.t['q']}" for rv in es if rv.t["q"] != ["0.050000"]])
+    else:
+        out("NOT-RUN [SLAW] q = 0.05 on the evicting row (no evicting row; status §60 Amendment 2)")
     boot_missing = []
     for rv in gall:
         if rv.dnf:
@@ -1484,8 +1489,8 @@ def smoke(path, plan, out=print):
     crit("the per-row replay witness PASS (R~ with the row's own b0p and l reproduces printed R and Rb to 6e-6)",
          [f"{rv.cell} {rv.arm}: {rv.t['witness']}" for rv in gall if not rv.dnf and rv.t["witness"].get("ok") is not True])
     crit("the CAPLOG replay PASS (caplog_replay.py over the row's [CAPLOG] records: records > 0 and every replayable cap reproduced; any mismatch is a FAIL)",
-         [f"{rv.cell} {rv.arm}: {rv.t['caplog']}" for rv in gall if rv.t["caplog"].get("ok") is not True])
-    for rv in gall:
+         [f"{rv.cell} {rv.arm}: {rv.t['caplog']}" for rv in gcap if rv.t["caplog"].get("ok") is not True])
+    for rv in gcap:
         cl = rv.t["caplog"]
         share = (cl["replayed"] / cl["records"]) if cl["records"] else None
         out(f"  CAPLOG {SHORT[rv.cell]} {rv.arm}: records={cl['records']} replayable share={f(share, 3)} ({cl['replayed']} replayed, {cl['mismatches']} mismatches) rate={f(cl['rate_hz'], 1)}/s pooled={cl['n_pooled']} bind(ceiling)={f(cl['ub'], 3)} bind(floor)={f(cl['fb'], 3)} "
@@ -1493,7 +1498,11 @@ def smoke(path, plan, out=print):
     if plan == "60r":
         _rehearsal(rvs, out)
     if plan == "60br":
-        _evict_rehearsal(es, crit, out)
+        if es:
+            _evict_rehearsal(es, crit, out)
+        else:
+            out("EVICTING ROWS: none in this session (status §60 Amendment 2: moved to their own registration)")
+            out("NOT-RUN the evicting-row rehearsal checks (status §60 Amendment 2): liveness, rr > 0, the ackw clock join")
     if bad:
         out("SMOKE-FAIL " + "; ".join(bad))
         return 1
@@ -1640,6 +1649,7 @@ DECISIONS = [
     "14. 'Unflagged' pairs and the c1s control use the absolute collapse rule on leg 0 (DIAG-only, works on C rows) plus not-DNF; the quinn qcwnd_below share is printed beside. W95 uses cross_up over ALL the replicate's non-control arms and prints how often it clamped at the first arm.",
     "15. The sign test is the exact two-sided binomial at 0.05 (transcribes s60cond.py's K table 6:6 7:7 8:8 9:8 10:9 11:10 12:10); zeros are dropped; n_s < 6 is UNDERPOWERED.",
     "16. EVICT: LATE for m-bar / W1 / K4 is t >= 5 s (mbar59_score.LATE_T); the [DIAG] ticks, [WSTORE] windows and [SPAN] lines are joined on their printed t with no offset (one-window error, <1 % of the LATE span); the steady-window test uses the window (t - tw, t] with its neighbours and needs >= 1 [SPAN] line there.",
+    "22. Since status §60 Amendment 2, 60b and its rehearsal 60br carry no evicting (EVICT) row: decision 16 applies only to a session that schedules EVICT rows. With none, the scorer prints `EVICTING ROWS: none` and NOT-RUN for the evicting-row checks, never a PASS over an empty set; an E row has no store cap (no CAPLOG) and is excluded from the CAPLOG tag and replay checks.",
     "17. NOT implemented: 'C is re-based against s56's c1s control' (s60 section 4) needs s56's committed rows; the K4 oracle comparison is off-VM by the spec. The own-l R~, the leg-1 sig and pull (A.5), E50 / E90 beside X, the CAPLOG rate and the P2 printed R are implemented as reported lines.",
     "19. GO/NO-GO rows: every G floor-pool row of the cell in the rehearsal ledger, the smoke rows included (the c1s smoke G64 is the third c1s W64 row; c8's W96 row counts, and leg 0 only is read). 'Starved' c8 leg 1 (nk >= 10 on < 80 % of LATE windows at 32/64/96) calibrates on arm W256 and nothing later (s60 section 5); a floor pool whose rows are ALL COLLAPSED is skipped for the next pool and the skip is printed (s60 section 2).",
     "20. The collapse share / E50 / E90 and the leg-1 attachment test are computed at ROW time (row_metrics) from the [DIAG] ticks; the per-tick data is not stored (only the verdicts and the min rtp_us). The [DIAG] / [WSTORE] / [SPAN] clock join in 16 is not verified against the engine's clocks.",

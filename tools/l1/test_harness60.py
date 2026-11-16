@@ -40,8 +40,8 @@ runall, battery = rd("loopdiag_run_all.sh"), rd("loopdiag_battery.sh")
 
 # ═══ 1. tables ═══
 A, B, R = plan60.plan("60a"), plan60.plan("60b"), plan60.plan("60a", rehearsal=True)
-check("60a is 96 slots (c2 and c8: 8 arms x 6 replicates, all G); 60b is 45 (18 c1s floor + 22 control + 5 evicting); the rehearsal 10; the smokes 2 each",
-      (len(A), len(B), len(R), len(plan60.plan("60a", smoke=True)), len(plan60.plan("60b", smoke=True))) == (96, 45, 10, 2, 2), (len(A), len(B), len(R)))
+check("60a is 96 slots (c2 and c8: 8 arms x 6 replicates, all G); 60b is 40 (18 c1s floor + 22 control, no evicting row since status 60 Amendment 2); the rehearsal 10; the smokes 2 each",
+      (len(A), len(B), len(R), len(plan60.plan("60a", smoke=True)), len(plan60.plan("60b", smoke=True))) == (96, 40, 10, 2, 2), (len(A), len(B), len(R)))
 check("60a: the c2 block then the c8 block, every row a G arm, 6 replicates of each of the 8 arms, no duplicate slot",
       [r[0] for r in A] == ["c2-100"] * 48 + ["c8-100"] * 48 and all(r[2].startswith("G") for r in A) and len(set((r[0], r[2], r[3], r[4]) for r in A)) == 96
       and all(sum(1 for r in A if r[0] == c and r[2] == a) == 6 for c, ws in plan60.GRID["60a"].items() for a in ["G%d" % w for w in ws]))
@@ -49,25 +49,25 @@ check("60a: the arms rotate by replicate (a cyclic Latin square: replicate k sta
       [r[2] for r in A[:8]] == ["G16", "G32", "G48", "G160", "G176", "G192", "G256", "G2048"] and A[8][2] == "G32" and A[16][2] == "G48" and [A[8 * k][3] for k in range(6)] == ["42", "7", "42", "7", "42", "7"])
 fl = [r for r in B if r[2] in ("G64", "G128", "G192")]
 ctl = [r for r in B if r[2] in ("G2048", "C2048")]
-check("60b: the c1s floor block first (3 pools x 6), then the control: 12 G rows and 10 C rows, 10 interleaved pairs (the order alternating) and 2 extra G rows, then 5 EVICT rows at c2-100 (seeds 42 / 7 / 42 / 7 / 42)",
+check("60b: the c1s floor block first (3 pools x 6), then the control: 12 G rows and 10 C rows, 10 interleaved pairs (the order alternating) and 2 extra G rows, and NO EVICT row (status 60 Amendment 2: the evicting rows left 60b; EVICT_SEEDS / the arm stay valid for their own registration)",
       len(fl) == 18 and len(ctl) == 22 and sum(1 for r in ctl if r[2] == "G2048") == 12 and sum(1 for r in ctl if r[2] == "C2048") == 10
-      and B[:18] == fl and B[18:40] == ctl and B[40:] == [("c2-100", "def", "EVICT", s, i + 1) for i, s in enumerate(("42", "7", "42", "7", "42"))]
+      and B[:18] == fl and B[18:40] == ctl and len(B) == 40 and plan60.valid_slot("c2-100", "EVICT") and plan60.EVICT_SEEDS == ("42", "7", "42", "7", "42")
       and [r[2] for r in ctl[:4]] == ["G2048", "C2048", "C2048", "G2048"] and ctl[0][4] == ctl[1][4] and ctl[-1][2] == "G2048" and ctl[-2][2] == "G2048" and ctl[-2][4] == 11 and ctl[-1][4] == 12, B[16:24])
 check("the rehearsal is both smokes plus c2 W16, c8 W32 x2, c8 W96, c1s W64 x2, all G beyond the smokes, every slot unique",
       R[:2] == plan60.SMOKE["60a"] and R[2:4] == plan60.SMOKE["60b"] and sorted(r[2] for r in R[4:]) == ["G16", "G32", "G32", "G64", "G64", "G96"] and len({(r[0], r[2], r[3], r[4]) for r in R}) == 10, R)
 check("the smokes: 60a = c2 W192 C then G; 60b = c1s W64 G then W2048 C", plan60.SMOKE["60a"] == [("c2-100", "def", "C192", "42", 1), ("c2-100", "def", "G192", "42", 1)]
       and plan60.SMOKE["60b"] == [("c1s-400", "def", "G64", "42", 1), ("c1s-400", "def", "C2048", "42", 1)])
 os.environ["LD_NOGO"] = "c1s"
-check("LD_NOGO=c1s drops 60b's floor block (27 slots: the control and the evicting rows), 60a is untouched", len(plan60.plan("60b")) == 27 and len(plan60.plan("60a")) == 96)
+check("LD_NOGO=c1s drops 60b's floor block (22 slots: the control), 60a is untouched", len(plan60.plan("60b")) == 22 and len(plan60.plan("60a")) == 96)
 del os.environ["LD_NOGO"]
 plan60.REPS_CAP60 = 2
-check("the replicate cap (the stub suite's fast mode) shrinks both plans and keeps the structure", len(plan60.plan("60a")) == 32 and len(plan60.plan("60b")) == 6 + 4 + 2, (len(plan60.plan("60a")), len(plan60.plan("60b"))))
+check("the replicate cap (the stub suite's fast mode) shrinks both plans and keeps the structure", len(plan60.plan("60a")) == 32 and len(plan60.plan("60b")) == 6 + 4, (len(plan60.plan("60a")), len(plan60.plan("60b"))))
 plan60.REPS_CAP60 = None
 check("every arm of every table is registered with the stage-3 parser (window / Rlc / bulk, or realtime for EVICT) and rides the candidate seat",
       all(pp.sp.ARM_SPEC[r[2]][:3] == ("window", "Rlc", "realtime" if r[2] == "EVICT" else "bulk") and pp.AFAM[r[2]] == "CAND" for r in A + B + R))
 
 # ═══ 2. per-arm spec ═══
-spec = {(c, a): (plan60.arm_bytes(c, a), plan60.arm_timeout(c, a), plan60.arm_hint(a), plan60.arm_env(c, a)) for c, _, a, _, _ in A + B + R}
+spec = {(c, a): (plan60.arm_bytes(c, a), plan60.arm_timeout(c, a), plan60.arm_hint(a), plan60.arm_env(c, a)) for c, _, a, _, _ in A + B + R + [plan60.EVICT_REHEARSAL]}      # EVICT is in no plan since status 60 Amendment 2; its spec is still tested
 check("floor-pool bytes: c2 100 / 200 / 300 MB, c8 200 / 400 / 600 MB, c1s 1 / 1.5 / 2 GB",
       [spec[("c2-100", "G%d" % w)][0] for w in (16, 32, 48)] == [100_000_000, 200_000_000, 300_000_000] and [spec[("c8-100", "G%d" % w)][0] for w in (32, 64, 96)] == [200_000_000, 400_000_000, 600_000_000]
       and [spec[("c1s-400", "G%d" % w)][0] for w in (64, 128, 192)] == [1_000_000_000, 1_500_000_000, 2_000_000_000])
@@ -155,7 +155,7 @@ check("battery: plans 60a / 60b accepted; P60 is single-seat (P38 + PCAND, no P4
 check("battery: every row's bytes / timeout / hint / env come from plan60.py armspec (one table), an unknown arm is refused, HINT is per row", 'python3 ./plan60.py armspec "$cell" "$arm"' in battery
       and 'read -r bytes p60_tmo HINT p60_arm_env' in battery and 'tmo_env=(RWM_PERF_TIMEOUT_S="$p60_tmo")' in battery and 'read -r -a arm_env <<< "$p60_arm_env"' in battery and "UNKNOWN-ARM $arm at $cell (plan 60)" in battery)
 check("battery: RWM_SLAW and RWM_THREE_TERM are scrubbed with the rest (an ambient value reaches no row), both before the arm env", "-u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM" in battery)
-check("battery: the table-size asserts (96 / 45, 10 rehearsal, 2 smoke), the replacement call and the NO-GO exemption", 'want=96; [ "$PLAN" = "60b" ] && want=45' in battery and '-eq 10 ]' in battery and "python3 ./plan60.py replace" in battery
+check("battery: the table-size asserts (96 / 40, 10 rehearsal, 2 smoke), the replacement call and the NO-GO exemption", 'want=96; [ "$PLAN" = "60b" ] && want=40' in battery and '-eq 10 ]' in battery and "python3 ./plan60.py replace" in battery
       and '[ -n "${LD_NOGO:-}" ] || [ "${#tbl[@]}" -eq "$want" ]' in battery)
 check("battery: the binary must carry RWM_SLAW, the pool knob and the shed gate, and (grep -F: a bracket expression otherwise) the [SLAW] window line",
       'preflight_binary "$BIN" "RWM_SLAW" "RWM_STORE_PATH_POOL" "RWM_UNIFIED_SHED"' in battery and 'grep -aqF -- "[SLAW] t=" "$BIN"' in battery)

@@ -142,7 +142,7 @@ case "$PLAN" in 57a) P57=1; P57A=1; P38=1; PCAND=1 ;; 57b) P57=1; P57B=1; P38=1;
 # seat may never complete the object: a DNF is an expected datum, as perf.rs documents for the realtime profile). RWM_GEN=0 stays (generation coding bails without retention).
 P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }
 # Plans 60a / 60b (status 60, the store law's gauge session; docs/derivations/s60-registration.md): plan 56 / 59's single-seat shape (P41 stays 0). Cells c2-100, c8-100 (60a) and c1s-400 (60b) at W-pool arms
-# G<W> (RWM_SLAW=1) / C<W> (RWM_SLAW=0), plus plan 59's EVICT rows in 60b. Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from plan60.py armspec (the ONE table, shared with the scorer s60_score.py);
+# G<W> (RWM_SLAW=1) / C<W> (RWM_SLAW=0), . Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from plan60.py armspec (the ONE table, shared with the scorer s60_score.py);
 # RWM_DIAG=1 is on every row (the base env), RWM_SLAW is scrubbed first and echoed in [GATES] on both ends (plan60.row_problems), the pool knob is RWM_STORE_PATH_POOL = W / live paths.
 P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime
@@ -1039,7 +1039,7 @@ if [ "$PLAN" = "59" ]; then
   exit 0
 fi
 
-# ── plans 60a / 60b (status 60, the store law's gauge session): the tables are plan60.py's (96 slots in 60a, 45 in 60b; smoke 2 rows; LD_REHEARSE=1 on 60a: the 10 rehearsal rows) ──
+# ── plans 60a / 60b (status 60, the store law's gauge session): the tables are plan60.py's (96 slots in 60a, 40 in 60b; smoke 2 rows; LD_REHEARSE=1 on 60a: the 10 rehearsal rows) ──
 # A slot whose RWM_SLAW / RWM_DIAG / pool / evicting-seat witness is VOID is re-run ONCE, and so is a floor-pool DNF (s60 section 2; plan60.py replace decides from the ledger; a wrong binary never is); the replacement is a second row of the same slot.
 run_slot60() { # cell arm seed rep store
   local why
@@ -1060,15 +1060,15 @@ plan60() { # smoke -> the whole plan (0), or the smoke rows (1)
       mapfile -t tbl < <(python3 ./plan60.py plan 60r)
       [ "${#tbl[@]}" -eq 10 ] || { echo "ABORT-PLAN60 rehearsal table has ${#tbl[@]} rows (10)" >> "$OUT"; exit 3; }
     elif [ "$PLAN" = "60b" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then
-      mapfile -t tbl < <(python3 ./plan60.py plan 60br)      # 60b's rehearsal: its 2-row smoke plus ONE evicting row (liveness, rr > 0, the ackw clock join)
-      [ "${#tbl[@]}" -eq 3 ] || { echo "ABORT-PLAN60 60b rehearsal table has ${#tbl[@]} rows (3)" >> "$OUT"; exit 3; }
+      mapfile -t tbl < <(python3 ./plan60.py plan 60br)      # 60b's rehearsal: its 2-row smoke only (no evicting row since status 60 Amendment 2)
+      [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN60 60b rehearsal table has ${#tbl[@]} rows (2)" >> "$OUT"; exit 3; }
     else
       mapfile -t tbl < <(python3 ./plan60.py plan "$PLAN" smoke)
       [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN60 smoke table has ${#tbl[@]} rows (2)" >> "$OUT"; exit 3; }
     fi
   else
     mapfile -t tbl < <(python3 ./plan60.py plan "$PLAN")
-    want=96; [ "$PLAN" = "60b" ] && want=45
+    want=96; [ "$PLAN" = "60b" ] && want=40
     # LD_NOGO (the rehearsal's NO-GO decisions, section 5) changes the table by rule (plan60.py), so the registered count is asserted only without it.
     [ -n "${LD_NOGO:-}" ] || [ "${#tbl[@]}" -eq "$want" ] || { echo "ABORT-PLAN60 table has ${#tbl[@]} rows ($want)" >> "$OUT"; exit 3; }
     [ "${#tbl[@]}" -gt 0 ] || { echo "ABORT-PLAN60 empty table" >> "$OUT"; exit 3; }

@@ -10,7 +10,7 @@ the battery asks `armspec` for every row's bytes / timeout / hint / env, so ther
     plan60.py check <60a|60b> <ledger>       rc 0 iff the battery finished and the ledger holds a row for every slot
 
 Arms: `G<W>` = the gauge on (RWM_SLAW=1), `C<W>` = the gauge off (RWM_SLAW=0), W = the realised store window (c8: 2 live paths, so RWM_STORE_PATH_POOL = W / 2; nothing is set at
-the shipped 2048); `EVICT` = plan 59's evicting seat (Realtime hint, RWM_C_RELIABLE=0) with the gauge on. Every arm runs RWM_DIAG=1 (the battery's base env)."""
+the shipped 2048); `EVICT` = plan 59's evicting seat (Realtime hint, RWM_C_RELIABLE=0) with the gauge on (code kept; NOT scheduled in 60a / 60b since status §60 Amendment 2). Every arm runs RWM_DIAG=1 (the battery's base env)."""
 import os
 import re
 import sys
@@ -47,7 +47,7 @@ FLOOR_RERUN_S = 190
 BUDGET_S = {"60a": 11520 + 36 * FLOOR_RERUN_S, "60b": 10440 + 18 * FLOOR_RERUN_S}
 SMOKE = {"60a": [(C2, "def", "C192", "42", 1), (C2, "def", "G192", "42", 1)],            # section 5: c2 W 192, one C row and one G row
          "60b": [(C1S, "def", "G64", "42", 1), (C1S, "def", "C2048", "42", 1)]}          # c1s W 64 G (1 GB) and W 2048 C
-EVICT_REHEARSAL = (EVICT_CELL, "def", EVICT_ARM, "42", 1)                                # 60b's rehearsal adds ONE evicting row (plan 59's arm): its liveness, rr > 0 and the ackw clock join
+EVICT_REHEARSAL = (EVICT_CELL, "def", EVICT_ARM, "42", 1)                                # NOT scheduled since status §60 Amendment 2 (60b / 60br carry no evicting row); kept for the future evicting registration and the scorer's tests
 REHEARSAL = SMOKE["60a"] + SMOKE["60b"] + [(C2, "def", "G16", "42", 2),                  # section 7: the 10 rehearsal rows (all G beyond the smokes)
                                             (C8, "def", "G32", "42", 1), (C8, "def", "G32", "7", 2), (C8, "def", "G96", "42", 1),
                                             (C1S, "def", "G64", "7", 2), (C1S, "def", "G64", "42", 3)]
@@ -110,7 +110,7 @@ def arm_env(cell, arm):
 
 
 VALID = ({(c, "G%d" % w) for g in GRID.values() for c, ws in g.items() for w in ws}
-         | {(C1S, "G2048"), (C1S, "C2048"), (C2, "G192"), (C2, "C192"), (EVICT_CELL, EVICT_ARM)})      # every (cell, arm) a plan, a smoke or the rehearsal can carry
+         | {(C1S, "G2048"), (C1S, "C2048"), (C2, "G192"), (C2, "C192"), (EVICT_CELL, EVICT_ARM)})      # every (cell, arm) a plan, a smoke or the rehearsal can carry; EVICT stays valid (harmless: kept for the future evicting registration, and a ledger row carrying it is still recognised)
 
 
 def all_arms():
@@ -137,15 +137,15 @@ def _grid_rows(cell, ws):
 
 def plan(name, smoke=False, rehearsal=False):
     """[(cell, store, arm, seed, rep)] in run order. 60a: c2 block then c8 block (8 arms x 6, all G). 60b: the c1s floor block (3 pools x 6), the control (10 interleaved G/C pairs,
-    the order alternating, then 2 G rows), then the 5 evicting rows. The smoke and the rehearsal are fixed lists. A replaced slot adds a ledger row, not a table row."""
+    the order alternating, then 2 G rows), and nothing else: the evicting rows left 60b (status §60 Amendment 2; EVICT_SEEDS / EVICT_REHEARSAL are kept for their own registration). The smoke and the rehearsal are fixed lists. A replaced slot adds a ledger row, not a table row."""
     if name == "60br":
-        return SMOKE["60b"] + [EVICT_REHEARSAL]
+        return list(SMOKE["60b"])      # no evicting row since status §60 Amendment 2
     if rehearsal:
         return list(REHEARSAL)
     if smoke:
         return list(SMOKE[name])
     out = []
-    nogo = {x for x in os.environ.get("LD_NOGO", "").split(",") if x}      # the rehearsal's NO-GO decisions (section 5): c1s drops 60b's floor block ("60b then runs only the G/C pairs and the evicting rows")
+    nogo = {x for x in os.environ.get("LD_NOGO", "").split(",") if x}      # the rehearsal's NO-GO decisions (section 5): c1s drops 60b's floor block ("60b then runs only the G/C pairs")
     if name == "60a":
         for cell in (C2, C8):
             out += _grid_rows(cell, GRID["60a"][cell])
@@ -159,7 +159,6 @@ def plan(name, smoke=False, rehearsal=False):
             out += [(C1S, "def", a, sd, j) for a, _ in pair]
         if REPS_CAP60 is None:
             out += [(C1S, "def", "G2048", "42" if j % 2 == 1 else "7", j) for j in range(N_PAIRS + 1, N_PAIRS + N_EXTRA_G + 1)]
-        out += [(EVICT_CELL, "def", EVICT_ARM, EVICT_SEEDS[k], k + 1) for k in range(_cap(len(EVICT_SEEDS)))]
     else:
         raise ValueError(name)
     return out

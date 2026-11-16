@@ -148,7 +148,7 @@ FAST_PATCHES = [
     ("place38_parse.py", "REPS_CAP57 = None  ", "REPS_CAP57 = 2  ", 1),
     ("loopdiag_battery.sh", '[ "${#tbl[@]}" -eq 5 ] || { echo "ABORT-PLAN59 table', '[ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN59 table', 1),
     ("place38_parse.py", "REPS_CAP59 = None  ", "REPS_CAP59 = 2  ", 1),
-    ("loopdiag_battery.sh", 'want=96; [ "$PLAN" = "60b" ] && want=45', 'want=32; [ "$PLAN" = "60b" ] && want=12', 1),
+    ("loopdiag_battery.sh", 'want=96; [ "$PLAN" = "60b" ] && want=40', 'want=32; [ "$PLAN" = "60b" ] && want=10', 1),
     ("plan60.py", "REPS_CAP60 = None  ", "REPS_CAP60 = 2  ", 1),
     ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
     ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
@@ -928,7 +928,7 @@ def spec60(cell, arm):
 
 
 def table60(plan):
-    """The ledger table of the sandbox: the registered table in full mode, the replicate cap of the fast mode (REPS_CAP60 = 2: replicates / pairs / evicting rows 1..2) otherwise."""
+    """The ledger table of the sandbox: the registered table in full mode, the replicate cap of the fast mode (REPS_CAP60 = 2: replicates / pairs 1..2) otherwise."""
     import plan60
     return plan60.plan(plan) if FULL else [x for x in plan60.plan(plan) if x[4] <= 2]
 
@@ -1013,16 +1013,16 @@ def case60(plan, path):
         check(f"{tag}: every row-parser call ran under LD_PLAN={plan}, with LD_BASE_SHA empty", plans_seen == {plan} and {re.search(r"base_sha=(\S*)", r).group(1) for r in rows} == {""}, (plans_seen, rows[:1]))
         if rehearse:
             want_rows = plan60.plan("60br") if plan == "60b" else plan60.plan("60a", rehearsal=True)
-            check(f"{tag}: the rehearsal ran {len(want_rows)} rows ({'both smokes and the 6 floor-pool rows' if plan == '60a' else 'the 2-row smoke and ONE evicting row'}), no battery (no ld.log), no suites, REHEARSAL-PASS persisted",
+            check(f"{tag}: the rehearsal ran {len(want_rows)} rows ({'both smokes and the 6 floor-pool rows' if plan == '60a' else 'the 2-row smoke only: no evicting row since status 60 Amendment 2'}), no battery (no ld.log), no suites, REHEARSAL-PASS persisted",
                   len(rows) == len(want_rows) and tests == [] and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")), (len(rows), want_rows[:2]))
             check(f"{tag}: the driver saw each smoke / rehearsal row's run spec (bytes, timeout, hint, RWM_SLAW, pool) in table order", calls == expect_calls60(want_rows), (calls[:2], expect_calls60(want_rows)[:2]))
             heads = re.findall(r"^=== rep=(\d+) seed=(\d+) cell=(\S+) arm=(\S+) attempt=\d+ pipeline=window hint=(\S+) .*? bytes=(\d+) arm_env='([^']*)'", smoke_txt, re.M)
             check(f"{tag}: the smoke ledger heads carry the arm env (RWM_SLAW first) and the per-row hint / bytes",
                   [(h[2], h[3], h[4], h[5], h[6]) for h in heads] == [(c, a, plan60.arm_hint(a), str(plan60.arm_bytes(c, a)), " ".join(plan60.arm_env(c, a))) for c, _, a, _, _ in want_rows], heads[:2])
             if plan == "60b":
-                m_aj = re.search(r"ACKW-JOIN EVICT: .*?: (\d+)/(\d+) windows equal", chk)
-                check(f"{tag}: the evicting row's smoke checks passed: armed, rr > 0 (GO-NOGO-EVICT), and the [WSTORE] ackw / [DIAG] wake[ack=] clock join holds on every window (>= 10 compared)",
-                      "GO-NOGO-EVICT EVICT" in chk and m_aj is not None and int(m_aj.group(2)) >= 10 and m_aj.group(1) == m_aj.group(2) and "SMOKE-FAIL" not in chk and re.search(r"^PASS the \[WSTORE\] ackw", chk, re.M) is not None, chk[-900:])
+                check(f"{tag}: no evicting row in the rehearsal: the smoke check says so (EVICTING ROWS: none, NOT-RUN) and prints no PASS for the evicting-row criteria",
+                      "EVICTING ROWS: none in this session" in chk and "NOT-RUN the evicting-row rehearsal checks" in chk and "GO-NOGO-EVICT" not in chk and "SMOKE-FAIL" not in chk
+                      and re.search(r"^PASS .*(debt loop|evicting row|ackw)", chk, re.M) is None, chk[-900:])
                 check(f"{tag}: the CAPLOG replay is in the smoke check (replayable share and mismatches printed, PASS)", re.search(r"CAPLOG \S+ \S+: records=\d+ replayable share=", chk) is not None and re.search(r"^PASS the CAPLOG replay", chk, re.M) is not None, chk[-600:])
             if plan == "60a":
                 gng = dict(re.findall(r"GO-NOGO\s+(c2|c8|c1s)\S*\s+(GO|NO-GO)", chk))
@@ -1071,8 +1071,8 @@ def case60(plan, path):
         if plan == "60b":
             ev = [r for r in led if r["arm"] == "EVICT"]
             ctl = [r for r in led if r["arm"] in ("G2048", "C2048")]
-            check(f"{tag}: the evicting rows ran plan 59's arm (Realtime, RWM_C_RELIABLE=0) LIVE with the gauge on; the c1s control interleaves G and C at 5 GB / 210 s",
-                  ev and all(r["status"] == "LIVE" for r in ev) and sum(1 for c in calls if c[2] == "realtime") == len(ev) + 0 and all(c[8] == "reliable=0" for c in calls if c[2] == "realtime")
+            check(f"{tag}: no evicting row ran (status 60 Amendment 2: no EVICT row, no Realtime call); the c1s control interleaves G and C at 5 GB / 210 s",
+                  not ev and not any(c[2] == "realtime" for c in calls)
                   and ctl and all(r["bytes"] == 5_000_000_000 for r in ctl) and {c[5] for c in calls if c[3] == "5000000000"} == {"timeout=210"}, (len(ev), len(ctl)))
         sc = open(os.path.join(stage, "score.txt"), errors="replace").read()
         m = re.search(r"^VERDICT60 \S+ slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+)", sc, re.M)

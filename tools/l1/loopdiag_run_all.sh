@@ -83,7 +83,7 @@
 # LD_PLAN=60a / 60b (status 60, the store law's gauge session: docs/derivations/s60-registration.md, tables in plan60.py, readouts in s60_score.py, REPORTED + SCORED by the registration's labels): plan 59's single-seat shape (LD_CAND_SHA = $LD_ROOT/COMMIT,
 # no BASE tree, no LD_BASE_SHA, >= 1 GB free on /dev/shm, the tools tests). Differences: (1) LD_BIN_SHA_EXPECT (default: the registered bin_sha e410d640..., 60-pre's crate-directory build) must equal the built binary's sha256 (ABORT-BIN-SHA,
 # before any row; LD_BIN_PREBUILT=<path> installs a prior launch's binary instead of building it, still checked); (2) the engine suites are reused ONLY by a reference-manifest HIT (LD_REF_MANIFEST, default tools/l1/ref60-manifest.sha256):
-# a MISS is ABORT-SUITES (nothing run), a rehearsal included; (3) ONE stage rep60a / rep60b: smoke = 2 rows (60a: c2 W192 C then G; 60b: c1s W64 G 1 GB then W2048 C), then 96 (60a) / 45 (60b) slots; LD_REHEARSE=1 on 60a runs the 10 rehearsal
+# a MISS is ABORT-SUITES (nothing run), a rehearsal included; (3) ONE stage rep60a / rep60b: smoke = 2 rows (60a: c2 W192 C then G; 60b: c1s W64 G 1 GB then W2048 C; no evicting row since status 60 Amendment 2), then 96 (60a) / 40 (60b) slots; LD_REHEARSE=1 on 60a runs the 10 rehearsal
 # rows and the go/no-go (LD_NOGO=<c2,c8,c1s> carries the decisions into 60b's table and the scorer); a slot with a VOID RWM_SLAW / pool / liveness echo, or a floor-pool DNF, is re-run once (plan60.py replace; a wrong binary never is). The budget guard refuses with under
 # 18 360 s (60a: 3.2 h + 36 floor re-runs) / 13 860 s (60b: 2.9 h + 18) to LD_HARD, so the launch sets LD_HARD = launch + 5.2 h (60a) / + 3.9 h (60b) (LD_HARD_MIN_S is a test seam).
 # LD_PLAN=53 (status 53, stale gap reports under lever B): plan 52's envelope without the guard. The suites on CAND's tree first (a REAL failure is ABORT-TESTS and nothing runs; LD_PRIOR_TESTS and
@@ -594,7 +594,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
     sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
     local sbrc=$? P60SMOKE="$splan"
     [ "$P60" = 1 ] && [ "$REHEARSE" = 1 ] && [ "$splan" = "60a" ] && P60SMOKE=60r      # the rehearsal: the 10 rows and the go/no-go
-    [ "$P60" = 1 ] && [ "$REHEARSE" = 1 ] && [ "$splan" = "60b" ] && P60SMOKE=60br      # 60b's rehearsal: its smoke plus one evicting row
+    [ "$P60" = 1 ] && [ "$REHEARSE" = 1 ] && [ "$splan" = "60b" ] && P60SMOKE=60br      # 60b's rehearsal: its smoke (no evicting row since status 60 Amendment 2)
     if [ "$P60" = 1 ]; then python3 ./s60_score.py smoke60 "$P60SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; else python3 ./loopdiag_parse.py "$smk" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; fi
     local smrc=$?
     if [ "$sbrc" != "0" ] || [ "$smrc" != "0" ]; then
