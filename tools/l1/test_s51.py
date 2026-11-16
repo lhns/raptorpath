@@ -95,15 +95,15 @@ check("the numeric echo compares numerically ('5' = 5.0; '0.0049' only for B-)",
 check("the batching echo: ACTIVE at bulk / auto, 'out of scope' at realtime; missing is batch-echo-missing, the other carrier's is batch-echo-wrong",
       any(x.startswith("batch-echo-missing") for x in rp("HB", batching=False)) and any(x.startswith("batch-echo-missing") for x in rp("HR", batching=False))
       and any(x.startswith("batch-echo-wrong") for x in plan51.row_problems(plan51.C2, "HR", *mklog("bulk", None), SHA, SHA, 600_000_000)) and any(x.startswith("batch-echo-wrong") for x in plan51.row_problems(plan51.C2, "HB", *mklog("realtime", None), SHA, SHA, 600_000_000)))
-check("source symbols per byte match the carrier's symbol size: a realtime row printing a 1 186 B carrier's count (ratio 0.41), or a bulk row printing a 494 B one (2.40), is srcsize-ratio",
-      any(x.startswith("srcsize-ratio=0.4") for x in rp("HR", srcs=int(600_000_000 / 1186))) and any(x.startswith("srcsize-ratio=2.4") for x in rp("HB", srcs=int(600_000_000 / 494))) and rp("HR", srcs=int(600_000_000 / 494 * 1.1)) == [])
+check("source symbols per byte match the carrier's symbol size: a realtime row printing a 1 186 B carrier's count (ratio 0.42), or a bulk row printing a 494 B one (2.39), is srcsize-ratio",
+      any(x.startswith("srcsize-ratio=0.4") for x in rp("HR", srcs=int(600_000_000 / 1182))) and any(x.startswith("srcsize-ratio=2.39") for x in rp("HB", srcs=int(600_000_000 / 494))) and rp("HR", srcs=int(600_000_000 / 494 * 1.1)) == [])
 dnf_log = mklog("realtime", None, srcs=int(600_000_000 / 494 * 0.4))
 check("a DNF row is KEPT (a datum, ranked worst): one that sent only 40 % of its source symbols has no srcsize problem (the lower bound does not apply to it) while the same log on a completed row does; its upper bound still holds",
       plan51.row_problems(plan51.C2, "HR", *dnf_log, SHA, SHA, 600_000_000, True) == [] and any(x.startswith("srcsize-ratio=0.4") for x in plan51.row_problems(plan51.C2, "HR", *dnf_log, SHA, SHA, 600_000_000, False))
       and any(x.startswith("srcsize-ratio") for x in plan51.row_problems(plan51.C2, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 2.6)), SHA, SHA, 600_000_000, True)))
 check("at c8 a REALTIME row's upper bound widens (S08's duplicate source may be counted in cum=: unverified): ratio 3.9 passes at c8, fails at c2; a bulk row at c8 keeps the 2.0 bound",
       plan51.row_problems(plan51.C8, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 3.9)), SHA, SHA, 600_000_000) == [] and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C2, "HR", *mklog("realtime", None, srcs=int(600_000_000 / 494 * 3.9)), SHA, SHA, 600_000_000))
-      and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C8, "HB", *mklog("bulk", None, srcs=int(600_000_000 / 1186 * 2.5)), SHA, SHA, 600_000_000)))
+      and any(x.startswith("srcsize") for x in plan51.row_problems(plan51.C8, "HB", *mklog("bulk", None, srcs=int(600_000_000 / 1182 * 2.5)), SHA, SHA, 600_000_000)))
 check("a [CHI] line with n > 0 is chi-active; n = 0 or absent passes", any(x.startswith("chi-active") for x in rp("HB", chi="[CHI] n=3 x=1")) and rp("HB", chi="[CHI] n=0") == [])
 check("a foreign binary is a bin-sha problem and is not echo-replaceable", any(x.startswith("bin-sha") for x in plan51.row_problems(plan51.C2, "HB", *mklog(), SHA, "b" * 64, 600_000_000)) and not plan51.is_echo_void({"problems": ["bin-sha=aaa (want bbb for CAND)"]}))
 d = tempfile.mkdtemp()
@@ -256,12 +256,12 @@ cli = ['{"seconds":0.01,"warmup":true}', dg(1.0, 5000, 600, 100, 1000, 1000, 0, 
        dg(3.0, 5000, 10000, 20, 3000, 3000, 2, (3000, 90, 2900), 15),
        "[SPAN] t=1.0s ack=1 win=[1,2] wsize=200 a_star=Some(220) delta=Some(0.5) owed=0.1 rr=0.180 debt=0.3 retx_buf=5", "[SPAN] t=2.0s ack=1 win=[1,2] wsize=200 a_star=Some(220) delta=Some(0.5) owed=0.1 rr=0.000 debt=0.3 retx_buf=5",
        "[SUMCAP] on=1 eng=1/2 chg=1/2 chg_frac=0.5 pin=0.30 floor=1 cap=2 ask=3", "[SUMCAP] on=1 eng=1/2 chg=1/2 chg_frac=0.5 pin=0.50 floor=1 cap=2 ask=3"]
-tm = sc.row_metrics(cli, [], [], 3000 * 1186, "c2-100", "NA", 88.0)
-check("row_metrics: consumed r = (cod + taper) / src from the last tick = (90 + 15) / 3000 = 0.035; coded share 90 / 3090; src per byte = 3000 / (3000 x 1186); rr mean over the source phase 0.09, nz fraction 0.5; W 200; SUMCAP pin median 0.4",
-      abs(tm["r_consumed"] - 0.035) < 1e-12 and abs(tm["coded_share"] - 90 / 3090) < 1e-12 and abs(tm["src_per_byte"] - 1 / 1186) < 1e-12 and abs(tm["rr_mean"] - 0.09) < 1e-12 and tm["rr_nz_frac"] == 0.5 and tm["wsize_med"] == 200 and abs(tm["sumcap_pin"] - 0.4) < 1e-12, tm)
+tm = sc.row_metrics(cli, [], [], 3000 * 1182, "c2-100", "NA", 88.0)
+check("row_metrics: consumed r = (cod + taper) / src from the last tick = (90 + 15) / 3000 = 0.035; coded share 90 / 3090; src per byte = 3000 / (3000 x 1182); rr mean over the source phase 0.09, nz fraction 0.5; W 200; SUMCAP pin median 0.4",
+      abs(tm["r_consumed"] - 0.035) < 1e-12 and abs(tm["coded_share"] - 90 / 3090) < 1e-12 and abs(tm["src_per_byte"] - 1 / 1182) < 1e-12 and abs(tm["rr_mean"] - 0.09) < 1e-12 and tm["rr_nz_frac"] == 0.5 and tm["wsize_med"] == 200 and abs(tm["sumcap_pin"] - 0.4) < 1e-12, tm)
 check("section 3.2 readouts: saturated-tick share 1 / 3 (only the tick with infl >= cwnd), eviction share 0 (hand = tx), dgev / hand = 2 / 3000, MAX_CWND bind 1 / 3, the c2 spare bracket: s = 5, 0, 499 -> share(s = 0) 1 / 3, share(s < 0.5) 1 / 3",
       abs(tm["tau_sat"] - 1 / 3) < 1e-12 and tm["evict_share"] == 0.0 and abs(tm["dgev_over_hand"] - 2 / 3000) < 1e-12 and abs(tm["maxcwnd_share"] - 1 / 3) < 1e-12 and abs(tm["spare_lo"] - 1 / 3) < 1e-12 and abs(tm["spare_hi"] - 1 / 3) < 1e-12, tm)
-tm8 = sc.row_metrics(cli, [], [], 3000 * 1186, "c8-100", "NA", 88.0)
+tm8 = sc.row_metrics(cli, [], [], 3000 * 1182, "c8-100", "NA", 88.0)
 check("the c8 spare-clamp bracket is MISSING ([DIAG] prints no per-leg scheduler cwnd): None, never a number", tm8["spare_lo"] is None and tm8["spare_hi"] is None)
 check("plu / plc of the leg the rate read (last tick plc 0.026, plu median 0.014) are carried", abs(tm["plc_last"]["0"] - 0.026) < 1e-12 and abs(tm["plu_med"]["0"] - 0.014) < 1e-12)
 

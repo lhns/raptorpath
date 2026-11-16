@@ -9,11 +9,11 @@ docs/derivations/s51-evict-design.md sections 5.2 (pacing witness), 6 (the gauge
 Reuses (not copies): s60_score._evict / evict_stats / evict_line (m-bar, W1, K4 inputs; `rule_ab` is the one default-preserving extension), mbar59_score (the [DIAG] / [SPAN] readouts), plan60.row_problems
 (the evicting seat's liveness), pool56_score.counting (the replacement rule's counting row), plan51e (the tables).
 
-FORMATS ASSUMED (the engine branch s51e-tree owns them; written to the spec's text, see the report):
+FORMATS (the engine branch s51e-tree owns them; read at github/s51e-tree 77d53d9c: perf.rs Pacer::line / the start echo, gates.rs, slaw.rs and its testdata/slaw_sample.log; the parser was written to the spec first):
   [WSTORE] ... fec=<eps>/<sigma2>/<r>/<A*>/<n> spc=<ab>/<az>/<an>/<rb>/<rn>/<r0> wr=<sum wr/rn>/<sum fr/rn> ...     (spc integers, wr 6 decimals, `spc=0/0/0/0/0/0 wr=-/-` on an empty window)
   perf client start echo:   perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT=<v>)            (searched in the client log and the driver output, uncut)
   per timed object, a JSON line on the client log: {"pace":true,"obj":<id>,"rate_mbit":<v>,"chunks":<n>,"feed_s":<s>,"achieved_mbit":<v>,"late":<k>,"late_max_ms":<m>}
-      (rate_mbit is not checked: the spec's unit for it is ambiguous; achieved_mbit is accepted in Mbit/s or bit/s, within +-2 % of lambda; chunks and late are read as counts)
+      (the engine prints Mbit/s in both rate fields; rate_mbit is not checked, achieved_mbit is accepted in Mbit/s or bit/s within +-2 % of lambda, chunks and late are read as counts)
   [GATES] ... RWM_PERF_RATE_MBIT=<v>|unset                                                       (both ends; compared numerically; a paced row accepts `unset` on the server end)"""
 import json
 import math

@@ -47,8 +47,8 @@ SMOKE_ARMS = ("HB", "HR", "BP", "NA")
 REPS_CAP51 = None                  # test_stubrun's fast mode caps the blocks (None = the registered design)
 ROW_BUDGET_S = 215                 # a block starts only if rows x 215 s remain before LD_HARD (s51-design section 6 item 2)
 BUDGET_S = {"51": 17400, "51r": 1200}      # worst case 76 x 215 s + 16 min = 4 h 50 (section 7); the rehearsal ~20 min. The launch sets LD_HARD = launch + 5 h (a rehearsal: + 1 h)
-SYMBOL_PAYLOAD = {"bulk": 1186, "auto": 1186, "realtime": 494}        # chunk payload B per carrier (1200 / 512 symbols less the 14 B chunk header; perf.rs)
-SRC_SIZE_BAND = (0.8, 2.0)         # source symbols x payload / bytes: a wrong carrier symbol size reads 0.41 or 2.4 (see row_problems). Checked on a Bulk row: 507 616 symbols x 1 186 B / 600 MB = 1.003 (s53 c8 BASE)
+SYMBOL_PAYLOAD = {"bulk": 1182, "auto": 1182, "realtime": 494}        # chunk payload B per carrier: perf.rs chunk_payload_len = 1196 - 14 (bulk / auto), 508 - 14 (realtime), the header being 14 B
+SRC_SIZE_BAND = (0.8, 2.0)         # source symbols x payload / bytes: a wrong carrier symbol size reads 0.42 or 2.4 (see row_problems). Checked on a Bulk row: 507 616 symbols x 1 182 B / 600 MB = 1.000 (s53 c8 BASE)
 S08_DUP = 2.2                      # c8 + realtime: the upper bound widens by this (S08's duplicate source may be counted)
 BATCH_ECHO = {"bulk": "emission batching ACTIVE", "auto": "emission batching ACTIVE", "realtime": "emission batching out of scope"}
 MIN_ROW_S = 30.0                   # a c2 / c8 row with its last tick before 30 s is VOID-SHORT (section 2.1)

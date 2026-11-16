@@ -578,9 +578,9 @@ def gen51e(cli, srv, drv, nbytes, fam, hint):
 # ── plan 51 (s51_score.row_metrics): the delta sweep's rows. A row is a 220-tick [DIAG] series (55 s), a [SPAN] line every 0.5 s whose rr follows the rate-mix weight (beta = 1: 0.000; beta = 0: 0.2), the sender's
 # emission-batching echo, [GATES] RWM_DELTA on both ends, source symbols matching the carrier's symbol size, a summary whose rate varies with the pid. STUB_BAD51 (comma list): deltaonce (the FIRST scored slot echoes
 # RWM_DELTA wrongly on the client end; its replacement is right), nobatch (no batching echo), overdrive (dgev / hand 0.1 and infl >= cwnd), shortonce (the FIRST scored slot is a 10 s row), hbrr (rr > 0 at beta = 1),
-# wrongsize (source symbols for a 1 186 B carrier on a realtime row). STUB_SMOKE_N51=<n>: the smoke rows that precede the first scored slot. ──
+# wrongsize (source symbols for a 1 182 B carrier on a realtime row). STUB_SMOKE_N51=<n>: the smoke rows that precede the first scored slot. ──
 BAD51 = {"deltaonce", "nobatch", "overdrive", "shortonce", "hbrr", "wrongsize"}
-PAYLOAD51 = {"bulk": 1186, "auto": 1186, "realtime": 494}
+PAYLOAD51 = {"bulk": 1182, "auto": 1182, "realtime": 494}
 BATCH51 = {"bulk": "emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN intake + per-burst taper/span refresh)", "auto": "emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN intake + per-burst taper/span refresh)",
            "realtime": "emission batching out of scope (RWM_EMIT_BATCH=1 but per-symbol emission: the burst intake serves the window-reliable plain-source emitter only)"}
 
@@ -610,7 +610,7 @@ def gen51(cli, srv, drv, nbytes, fam, hint):
     rr = 0.0 if beta >= 1.0 else round(0.2 * (1 - beta), 3)
     if "hbrr" in bad and beta >= 1.0:
         rr = 0.2
-    pay = 1186 if "wrongsize" in bad else PAYLOAD51[hint]
+    pay = 1182 if "wrongsize" in bad else PAYLOAD51[hint]
     nb = int(nbytes)
     total = int(nb / pay)
     rl = run_lines(fam, False, n=n_t)
