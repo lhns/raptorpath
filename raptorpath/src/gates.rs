@@ -294,6 +294,9 @@ pub struct RuntimeGates {
     pub l0_seed_raw: Option<String>,
     /// `RWM_PERF_TIMEOUT_S`, raw (the perf harness's per-run timeout).
     pub perf_timeout_raw: Option<String>,
+    /// `RWM_PERF_RATE_MBIT`, raw (the perf client's app-side offered-load
+    /// pacer, `perf.rs`; parsed there, an invalid value fails the client).
+    pub perf_rate_raw: Option<String>,
     /// `RWM_ACKDIAG_WINDOW_US`, resolved (echoed on the `[GATES]` line).
     pub ackdiag_window_us: u64,
     /// `RWM_RTT_DUMP_MAX`, resolved (echoed on the `[GATES]` line).
@@ -408,6 +411,7 @@ impl RuntimeGates {
             l0_netem: std::env::var("RWM_L0_NETEM").ok(),
             l0_seed_raw: std::env::var("RWM_L0_SEED").ok(),
             perf_timeout_raw: std::env::var("RWM_PERF_TIMEOUT_S").ok(),
+            perf_rate_raw: std::env::var("RWM_PERF_RATE_MBIT").ok(),
             ackdiag_window_us: crate::net::ackdiag::resolve_window_us(
                 std::env::var("RWM_ACKDIAG_WINDOW_US").ok().as_deref(),
             ),
@@ -454,7 +458,7 @@ impl RuntimeGates {
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
-             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
+             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={} RWM_PERF_RATE_MBIT={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor),
             b(self.honest_anchor),
@@ -490,6 +494,7 @@ impl RuntimeGates {
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             if self.rtobs_deep { "2" } else { b(self.rtobs) },
             b(self.fdiag), b(self.trace), b(self.pfrac),
+            self.perf_rate_raw.as_deref().unwrap_or("unset"),
         )
     }
 

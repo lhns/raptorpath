@@ -43,6 +43,82 @@ fn run_timeout() -> Duration {
         .unwrap_or(Duration::from_secs(300))
 }
 
+/// `RWM_PERF_RATE_MBIT`: the app-side offered-load pacer (default off), in
+/// payload Mbit/s. Unset is `None`: the feed loop then takes no sleep and no
+/// extra clock read. A value that is not a finite number > 0 is an error,
+/// never silently unpaced.
+fn parse_rate_mbit(raw: Option<&str>) -> anyhow::Result<Option<f64>> {
+    let Some(raw) = raw else { return Ok(None) };
+    match raw.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() && v > 0.0 => Ok(Some(v)),
+        _ => anyhow::bail!(
+            "RWM_PERF_RATE_MBIT={raw:?} is not a finite number > 0 (Mbit/s); \
+             unset it to run unpaced"
+        ),
+    }
+}
+
+/// Absolute schedule: when a chunk is due, as an offset from the object's
+/// t0, given the payload bytes of the chunks before it and `lambda_bps`
+/// (payload bits/s): `8 · bytes_before / λ`. Absolute, so a late send does
+/// not push the later ones back.
+fn due_offset(bytes_before: u64, lambda_bps: f64) -> Duration {
+    Duration::from_secs_f64(8.0 * bytes_before as f64 / lambda_bps)
+}
+
+/// Completion more than this after `due` counts a chunk as late (the TUN
+/// backpressure share, the pacer's own bind gauge).
+const PACE_LATE: Duration = Duration::from_millis(2);
+
+/// Pacer state for one timed object; no rate means no pacer at all.
+struct Pacer {
+    lambda_bps: f64,
+    sent: u64,
+    chunks: u32,
+    late: u32,
+    late_max: Duration,
+}
+
+impl Pacer {
+    /// The selector: no rate, no pacer.
+    fn new(rate_mbit: Option<f64>) -> Option<Pacer> {
+        rate_mbit.map(|m| Pacer {
+            lambda_bps: m * 1e6,
+            sent: 0,
+            chunks: 0,
+            late: 0,
+            late_max: Duration::ZERO,
+        })
+    }
+
+    /// Due offset of the next chunk.
+    fn next_due(&self) -> Duration {
+        due_offset(self.sent, self.lambda_bps)
+    }
+
+    /// Account a chunk of `k` payload bytes whose send finished at `done`
+    /// (offset from t0) against its `due`.
+    fn note_sent(&mut self, k: usize, due: Duration, done: Duration) {
+        self.sent += k as u64;
+        self.chunks += 1;
+        let over = done.saturating_sub(due);
+        if over > PACE_LATE {
+            self.late += 1;
+        }
+        self.late_max = self.late_max.max(over);
+    }
+
+    fn line(&self, obj_id: u32, feed_s: f64) -> serde_json::Value {
+        let achieved = if feed_s > 0.0 { 8.0 * self.sent as f64 / feed_s / 1e6 } else { 0.0 };
+        serde_json::json!({
+            "pace": true, "obj": obj_id, "rate_mbit": round(self.lambda_bps / 1e6, 6),
+            "chunks": self.chunks, "feed_s": round(feed_s, 6),
+            "achieved_mbit": round(achieved, 6), "late": self.late,
+            "late_max_ms": round(self.late_max.as_secs_f64() * 1e3, 3),
+        })
+    }
+}
+
 /// Max payload bytes per chunk for a protocol hint.
 ///
 /// Every hint rides the sliding-window pipeline (ADR-0069), which carries
@@ -188,7 +264,10 @@ async fn run_object(
     // feed, in which case the engine's rate site reads it as `T_rem` and
     // runs the completion-exposure glide.
     feed: Option<&std::sync::Arc<net::CompletionFeed>>,
+    // `RWM_PERF_RATE_MBIT` for a timed object; `None` = today's loop.
+    rate_mbit: Option<f64>,
 ) -> anyhow::Result<RunOutcome> {
+    let mut pacer = Pacer::new(rate_mbit);
     let total = (nbytes.max(1)).div_ceil(payload_len) as u32;
     let payload = vec![0xA5u8; payload_len];
     let t0 = Instant::now();
@@ -204,6 +283,16 @@ async fn run_object(
         let k = left.min(payload_len);
         left -= k;
         let pkt = encode_chunk(obj_id, idx, total, &payload[..k]);
+        let due = pacer.as_ref().map(Pacer::next_due);
+        if let Some(due) = due {
+            // A due at or past the deadline is a DNF at the deadline, as for a
+            // backpressured send: wait it out, so the next object starts then.
+            let wake = due.min(deadline);
+            tokio::time::sleep_until(tokio::time::Instant::from_std(t0 + wake)).await;
+            if due >= deadline {
+                return Ok(RunOutcome::Dnf);
+            }
+        }
         match tokio::time::timeout(
             deadline.saturating_sub(t0.elapsed()),
             mem.feed.send(pkt),
@@ -214,6 +303,12 @@ async fn run_object(
             Ok(Err(_)) => anyhow::bail!("engine feed channel closed"),
             Ok(Ok(())) => {}
         }
+        if let (Some(p), Some(due)) = (pacer.as_mut(), due) {
+            p.note_sent(k, due, t0.elapsed());
+        }
+    }
+    if let Some(p) = &pacer {
+        println!("{}", p.line(obj_id, t0.elapsed().as_secs_f64()));
     }
     loop {
         let remaining = deadline.saturating_sub(t0.elapsed());
@@ -242,6 +337,7 @@ async fn run_object(
 /// `run_object`, but ends with the engine's own error if the engine task
 /// ends first (e.g. "peer lost"), like the server: a dead tunnel must not
 /// sit out the run timeout.
+#[allow(clippy::too_many_arguments)]
 async fn run_watched(
     engine: &mut tokio::task::JoinHandle<anyhow::Result<()>>,
     mem: &mut MemTun,
@@ -250,9 +346,10 @@ async fn run_watched(
     payload_len: usize,
     deadline: Duration,
     feed: Option<&std::sync::Arc<net::CompletionFeed>>,
+    rate_mbit: Option<f64>,
 ) -> anyhow::Result<RunOutcome> {
     tokio::select! {
-        r = run_object(mem, obj_id, nbytes, payload_len, deadline, feed) => r,
+        r = run_object(mem, obj_id, nbytes, payload_len, deadline, feed, rate_mbit) => r,
         r = &mut *engine => match r {
             Ok(Ok(())) => anyhow::bail!("engine exited during object {obj_id}"),
             Ok(Err(e)) => Err(e.context(format!("engine ended during object {obj_id}"))),
@@ -269,6 +366,13 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     let hint = config.protocol_hint;
     let hint_str = format!("{hint:?}").to_lowercase();
     let payload_len = chunk_payload_len(hint);
+    // Offered-load pacing (default off): an invalid value fails here, before
+    // the engine starts. The warm-up object stays unpaced.
+    let rate_mbit = parse_rate_mbit(crate::gates::get().perf_rate_raw.as_deref())?;
+    if let Some(v) = rate_mbit {
+        // Mechanism-liveness echo (docs/measurement-discipline.md rule 1).
+        tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT={v})");
+    }
     // Paper §4.6: publish the completion feed only when the arm
     // is set. Absent by default ⇒ `config.completion_feed` stays `None` and
     // the engine's rate site never reads it — byte-identical.
@@ -290,7 +394,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
 
     // Warm-up: a single-chunk object confirms both directions are up
     // before timing starts (the engine connects asynchronously).
-    match run_watched(&mut engine, &mut mem, 0, 64, payload_len, run_timeout(), feed.as_ref()).await? {
+    match run_watched(&mut engine, &mut mem, 0, 64, payload_len, run_timeout(), feed.as_ref(), None).await? {
         RunOutcome::Acked(s) => {
             println!(
                 "{}",
@@ -306,7 +410,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
         // `[THR]`/`[LAG]` over this timed object only (runtime_obs).
         let obs0 = crate::runtime_obs::snapshot();
         let outcome =
-            run_watched(&mut engine, &mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref()).await?;
+            run_watched(&mut engine, &mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref(), rate_mbit).await?;
         if let Some(s0) = &obs0 {
             crate::runtime_obs::emit_window(s0, &format!(" run={run}"));
         }
@@ -390,6 +494,52 @@ mod tests {
         assert_eq!(o, 42);
         assert_eq!(i, ACK_IDX);
         assert!(p.is_empty());
+    }
+
+    #[test]
+    fn rate_parse_rejects_invalid_never_silently_unpaced() {
+        assert_eq!(parse_rate_mbit(None).unwrap(), None);
+        assert_eq!(parse_rate_mbit(Some("12.5")).unwrap(), Some(12.5));
+        for bad in ["", "0", "-1", "nan", "inf", "abc", "1e999"] {
+            assert!(parse_rate_mbit(Some(bad)).is_err(), "{bad:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn due_offset_is_absolute_and_exact() {
+        // 8 Mbit/s = 1 byte per microsecond.
+        let lam = 8e6;
+        assert_eq!(due_offset(0, lam), Duration::ZERO);
+        // One full chunk (1182 B) before: 1182 us; two: 2364 us.
+        assert_eq!(due_offset(1182, lam), Duration::from_micros(1182));
+        assert_eq!(due_offset(2 * 1182, lam), Duration::from_micros(2364));
+        // A short last chunk (100 B) after two full ones is due at 2364 us;
+        // what follows it is due at 2464 us.
+        assert_eq!(due_offset(2 * 1182 + 100, lam), Duration::from_micros(2464));
+    }
+
+    #[test]
+    fn pacer_selector_unset_has_no_pacer_and_set_follows_schedule() {
+        assert!(Pacer::new(None).is_none());
+        let mut p = Pacer::new(Some(8.0)).unwrap();
+        assert_eq!(p.next_due(), Duration::ZERO);
+        p.note_sent(1182, Duration::ZERO, Duration::from_micros(500));
+        assert_eq!(p.next_due(), Duration::from_micros(1182));
+        // 1 ms late: under the 2 ms threshold, not counted.
+        p.note_sent(1182, Duration::from_micros(1182), Duration::from_micros(2182));
+        assert_eq!((p.chunks, p.late), (2, 0));
+        // 5 ms late: counted, and the max tracks it.
+        p.note_sent(100, Duration::from_micros(2364), Duration::from_micros(7364));
+        assert_eq!((p.chunks, p.late, p.sent), (3, 1, 2464));
+        assert_eq!(p.late_max, Duration::from_millis(5));
+        let v = p.line(3, 0.002464);
+        assert_eq!(v["pace"], true);
+        assert_eq!(v["obj"], 3);
+        assert_eq!(v["rate_mbit"], 8.0);
+        assert_eq!(v["chunks"], 3);
+        assert_eq!(v["late"], 1);
+        assert_eq!(v["late_max_ms"], 5.0);
+        assert_eq!(v["achieved_mbit"], 8.0); // 8 * 2464 B / 2.464 ms
     }
 
     #[test]
