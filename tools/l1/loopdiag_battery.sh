@@ -142,7 +142,7 @@ case "$PLAN" in 57a) P57=1; P57A=1; P38=1; PCAND=1 ;; 57b) P57=1; P57B=1; P38=1;
 # seat may never complete the object: a DNF is an expected datum, as perf.rs documents for the realtime profile). RWM_GEN=0 stays (generation coding bails without retention).
 P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }
 # Plans 60a / 60b (status 60, the store law's gauge session; docs/derivations/s60-registration.md): plan 56 / 59's single-seat shape (P41 stays 0). Cells c2-100, c8-100 (60a) and c1s-400 (60b) at W-pool arms
-# G<W> (RWM_SLAW=1) / C<W> (RWM_SLAW=0), . Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from plan60.py armspec (the ONE table, shared with the scorer s60_score.py);
+# G<W> (RWM_SLAW=1) / C<W> (RWM_SLAW=0) (no evicting row since status 60 Amendment 2). Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from plan60.py armspec (the ONE table, shared with the scorer s60_score.py);
 # RWM_DIAG=1 is on every row (the base env), RWM_SLAW is scrubbed first and echoed in [GATES] on both ends (plan60.row_problems), the pool knob is RWM_STORE_PATH_POOL = W / live paths.
 P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime
