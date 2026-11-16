@@ -148,7 +148,8 @@ fn recovery_digest() -> String {
     for &s in &US {
         for &e in &US {
             for &fl in &[0u64, 1_000, 25_000, 1 << 41] {
-                let (thr, floor_won) = mp_time_threshold_split(s, e, fl);
+                // One clock since W3.2 A1: the pair's max is the old function's own first step.
+                let (thr, floor_won) = mp_time_threshold_split(s.max(e), fl);
                 t.u(thr);
                 t.b(floor_won);
             }

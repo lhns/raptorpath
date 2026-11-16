@@ -44,6 +44,9 @@ pub struct PathState {
     /// applied by `Scheduler::sync_rx`, and a touch it found due.
     pub(crate) rx_seen_mark: u64,
     pub(crate) pending_touch: Option<Instant>,
+    /// The per-leg estimators every law reads (W3.2). A1: the smoothed echo
+    /// RTT `s`.
+    pub(crate) leg: LegState,
     /// Copa delay-based congestion control state.
     pub(crate) copa: CopaState,
     /// FIFO log of in_flight charges (charge instant, symbols) backing the
@@ -146,6 +149,7 @@ impl PathState {
             max_datagram_size: None,
             rx_seen_mark: 0,
             pending_touch: None,
+            leg: LegState::default(),
             copa: {
                 let mut c = CopaState::new(clock.clone(), hint);
                 c.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)
@@ -417,7 +421,7 @@ impl PathState {
     /// is likely to recover (low loss), t_recovery is small. When ARQ is needed
     /// (high loss or aged symbol), t_recovery approaches one full RTT.
     pub fn effective_delivery_time(&self) -> f64 {
-        let rtt_secs = self.estimator.rtt().as_secs_f64();
+        let rtt_secs = self.srtt().as_secs_f64();
         let eps = self.estimator.loss_rate();
         // t_recovery ≈ RTT (one round-trip for ARQ recovery)
         let t_recovery = rtt_secs;
@@ -529,7 +533,7 @@ impl PathState {
 
         if self.copa.ramping
             && self.copa.samples_since_update >= 3
-            && self.copa.queue_above_target(self.cwnd)
+            && self.copa.queue_above_target(self.cwnd, &self.leg)
         {
             // Fast ramp exit: gentle ×0.92, not a collapse to a
             // rate-formula target (the initial burst inflates its own RTT
@@ -538,8 +542,8 @@ impl PathState {
             // can be a single jittery sample, and one draw from the jitter
             // tail must not end the exponential ramp.
             self.cwnd = self.copa.backoff(self.cwnd);
-        } else if self.copa.should_update(now) {
-            self.cwnd = self.copa.update_cwnd(self.cwnd);
+        } else if self.copa.should_update(now, &self.leg) {
+            self.cwnd = self.copa.update_cwnd(self.cwnd, &self.leg);
         }
 
         self.clamp_cwnd_with_anchor();
@@ -615,7 +619,7 @@ impl PathState {
         if fec_recovered {
             return;
         }
-        if self.copa.queue_above_target(self.cwnd) {
+        if self.copa.queue_above_target(self.cwnd, &self.leg) {
             self.cwnd = self.copa.backoff(self.cwnd);
         } else {
             self.copa.ramping = false;
@@ -628,9 +632,11 @@ impl PathState {
         }
     }
 
-    /// Feed an RTT measurement into Copa state.
-    /// Call this when processing ACKs/reports that include RTT.
-    pub fn record_rtt_sample(&mut self, rtt: Duration) {
+    /// Feed one RTT measurement: the app-echo sample `echo` steps the leg's
+    /// one smoothed RTT `s`, and `cc` (the echo, or the wire RTT under
+    /// `RWM_COPA_WIRE`) goes to the controller. The three control handlers
+    /// call this, once per sample.
+    pub fn record_rtt(&mut self, echo: Duration, cc: Duration) {
         // The raw sample dump (`RWM_RTT_DUMP`, default off) — fed here, at the
         // single delegate every ack path funnels through, so the dumped series
         // is exactly the series the dispersion gauges consume (an estimator
@@ -638,9 +644,23 @@ impl PathState {
         // incommensurable). Null check with the gate off; no engine decision
         // reads it.
         if let Some(d) = crate::net::rttdump::gauge() {
-            d.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+            d.note_rtt(self.id, (cc.as_micros() as u64).min(u32::MAX as u64) as u32);
         }
-        self.copa.record_rtt(rtt);
+        self.leg.s.record(echo);
+        self.copa.record_rtt(cc, &self.leg);
+    }
+
+    /// [`Self::record_rtt`] for the default arm, where the controller's sample
+    /// is the echo itself.
+    pub fn record_rtt_sample(&mut self, rtt: Duration) {
+        self.record_rtt(rtt, rtt);
+    }
+
+    /// Step the leg's smoothed RTT with an echo sample and nothing else (the
+    /// feed of callers that never drove the controller, e.g. recovery-clock
+    /// tests).
+    pub fn record_echo_rtt(&mut self, echo: Duration) {
+        self.leg.s.record(echo);
     }
 
     /// Wire-level loss evidence for the Copa competitive AIMD: pass the
@@ -716,30 +736,22 @@ impl PathState {
         self.wire_rtt
     }
 
-    /// Smoothed RTT estimate (Copa's EWMA; the loss estimator's EWMA as a
-    /// fallback before the first Copa sample).
+    /// Smoothed echo RTT `s` (`LegState.s`): the 50 ms `DEFAULT_SRTT` seed
+    /// before the first sample. One copy: the loss estimator's EWMA and
+    /// Copa's `srtt` were merged into it (W3.2 A1).
     pub fn srtt(&self) -> Duration {
-        match self.copa.srtt {
-            Some(s) => s,
-            None => self.estimator.rtt(),
-        }
+        self.leg.s.or_default()
     }
 
     /// `srtt()` only if it is a measurement — `None` for a path that has
     /// never had an RTT sample, where `srtt()` returns the 50-ms
-    /// `DEFAULT_SRTT`-class seed instead (hygiene rule 1: `srtt()` cannot
-    /// tell a consumer which of the two it just handed over).
-    ///
-    /// Structurally identical to `srtt()`, term for term — Copa's EWMA
-    /// first, the loss estimator's as the pre-Copa fallback — so wherever
-    /// this returns `Some(d)`, `srtt() == d` exactly. Consumers that must not
-    /// price an unmeasured path with a constant read this
-    /// (`Scheduler::place_costs`, `RWM_COLD_PLACE`).
+    /// `DEFAULT_SRTT` seed instead (hygiene rule 1: `srtt()` cannot tell a
+    /// consumer which of the two it just handed over). Wherever this returns
+    /// `Some(d)`, `srtt() == d` exactly. Consumers that must not price an
+    /// unmeasured path with a constant read this (`Scheduler::place_costs`,
+    /// `RWM_COLD_PLACE`).
     pub fn srtt_measured(&self) -> Option<Duration> {
-        match self.copa.srtt {
-            Some(s) => Some(s),
-            None => self.estimator.rtt_measured(),
-        }
+        self.leg.s.measured()
     }
 
     /// The RTT distribution's standard-deviation estimate (µs), paper §7.4:
@@ -1205,7 +1217,6 @@ impl PathState {
             let srtt_us = self.srtt().as_micros() as u64;
             Duration::from_micros(
                 crate::net::mp_time_threshold_split(
-                    srtt_us,
                     srtt_us,
                     crate::net::NACK_RETX_COOLDOWN_FLOOR_US,
                 )

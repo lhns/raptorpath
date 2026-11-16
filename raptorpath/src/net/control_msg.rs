@@ -295,17 +295,16 @@ fn on_ack(
         // `RWM_CLOCK_GAP`: a quarantined echo measured the stall, not the
         // path — discard, don't average.
         if !gap_q {
-            path.estimator.record_rtt(rtt_duration);
             // `RWM_COPA_WIRE` (ADR-0062): the CC delay term is wire-clocked
             // (quinn packet-timed RTT — excludes the sender's own store
-            // dwell); the estimator above keeps the app-echo RTT for
+            // dwell); the leg's smoothed RTT `s` keeps the app-echo RTT for
             // the reliability/tail machinery. Gate off ⇒ app echo.
             let cc_rtt = if crate::scheduler::copa_wire_active() {
                 wire.rtt.unwrap_or(rtt_duration)
             } else {
                 rtt_duration
             };
-            path.record_rtt_sample(cc_rtt);
+            path.record_rtt(rtt_duration, cc_rtt);
         }
         // Wire-level loss evidence for the competitive AIMD (the per-batch
         // Ack arm; the WindowAck feed path has its own call). No-op unless
@@ -432,14 +431,13 @@ fn on_path_report(
         let gap_q = crate::control::anchor::stall_witness()
             .is_some_and(|w| w.quarantined_now());
         if !mstar_anchor && !gap_q {
-            path.estimator.record_rtt(rtt_duration);
             // Wire-clocked CC delay term (see the Ack arm above).
             let cc_rtt = if crate::scheduler::copa_wire_active() {
                 wire.rtt.unwrap_or(rtt_duration)
             } else {
                 rtt_duration
             };
-            path.record_rtt_sample(cc_rtt);
+            path.record_rtt(rtt_duration, cc_rtt);
         }
         // Do not feed the peer's reported throughput into the
         // estimator. The field carries the peer's own send rate,
@@ -569,17 +567,16 @@ fn on_window_ack(
         if echo_send_timestamp_us > 0 && !gap_q {
             if let Some(path) = sched.path_mut(path_id) {
                 let rtt_duration = Duration::from_micros(rtt_us);
-                path.estimator.record_rtt(rtt_duration);
                 // Wire-clocked CC delay term: the app-echo RTT reads the
-                // sender's own reservoir dwell as network queue. The
-                // estimator keeps the app echo (end-to-end tail
-                // machinery); Copa gets the packet-timed RTT.
+                // sender's own reservoir dwell as network queue. The leg's
+                // `s` keeps the app echo (end-to-end tail machinery); Copa
+                // gets the packet-timed RTT.
                 let cc_rtt = if crate::scheduler::copa_wire_active() {
                     wire.rtt.unwrap_or(rtt_duration)
                 } else {
                     rtt_duration
                 };
-                path.record_rtt_sample(cc_rtt);
+                path.record_rtt(rtt_duration, cc_rtt);
             }
             // ── `[ETA]`: the prediction error ──────────────────────────
             // `e = rtt_us - (eta_rel + RTprop/2)`, keyed by the echo, which

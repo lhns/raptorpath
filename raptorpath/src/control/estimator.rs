@@ -12,6 +12,7 @@
 
 use super::changepoint::BayesianChangepoint;
 use super::gilbert_elliott::GilbertElliottEstimator;
+use crate::scheduler::SmoothedRtt;
 use raptorpath_math::normal_quantile;
 use std::time::{Duration, Instant};
 
@@ -177,21 +178,13 @@ pub struct LossEstimator {
     /// through the delegating methods below sees the same math.
     rx: RxEstimator,
 
-    /// RTT estimation (EWMA)
-    ewma_rtt: Duration,
+    /// RTT estimation for a STANDALONE estimator (unit tests, benches, the
+    /// gate harness). On a leg the one smoothed echo RTT lives in
+    /// `scheduler::LegState::s` (W3.2 A1): `PathState` never feeds this one
+    /// and no engine code reads it; the leg's readers take `PathState::srtt()`.
+    rtt: SmoothedRtt,
+    /// Throughput EWMA gain.
     rtt_alpha: f64,
-    /// `RWM_MSTAR_ANCHOR`: seed the RTT EWMA from the first measured sample
-    /// instead of blending real samples into the 50-ms DEFAULT_SRTT-class
-    /// constructor seed (hygiene rule 1, ADR-0061: an anchor is seeded from
-    /// measurements; a seed surviving warm-up leaves the M* floor stale).
-    rtt_seed_from_sample: bool,
-    /// True once a real RTT sample has been recorded (seed consumed).
-    rtt_seeded: bool,
-    /// True once any real RTT sample has been recorded, independent of the
-    /// hygiene seeding gate — i.e. whether `ewma_rtt` is a measurement at all
-    /// or still the 50-ms DEFAULT_SRTT-class constructor constant. Read by
-    /// `rtt_measured()`; see the hygiene rule-1 note on `rtt_seed_from_sample`.
-    rtt_sampled: bool,
 
     /// Throughput estimation (bytes/sec EWMA)
     ewma_throughput: f64,
@@ -278,12 +271,8 @@ impl LossEstimator {
             beta_b: 1.0,
             beta_decay: 0.995, // slowly forget old observations
             rx: RxEstimator::new(),
-            ewma_rtt: Duration::from_millis(50),
+            rtt: SmoothedRtt::new(),
             rtt_alpha: 0.125, // standard TCP EWMA
-            // Default ON.
-            rtt_seed_from_sample: crate::gates::get().mstar_anchor,
-            rtt_seeded: false,
-            rtt_sampled: false,
             ewma_throughput: 0.0,
             consecutive_losses: 0,
             burst_threshold: 3,
@@ -461,31 +450,10 @@ impl LossEstimator {
         self.rx.jitter = jitter_us;
     }
 
-    /// Record an RTT measurement.
+    /// Record an RTT measurement (standalone estimators only; see the
+    /// `rtt` field).
     pub fn record_rtt(&mut self, rtt: Duration) {
-        // Observation only (no behaviour rides on this assignment): from here
-        // on `ewma_rtt` contains a measurement, so `rtt_measured()` may
-        // report it. Set before the hygiene early-return so both arms record.
-        self.rtt_sampled = true;
-        // Hygiene rule 1: the first measured sample replaces the
-        // constructor seed outright (no blend with the 50-ms constant).
-        if self.rtt_seed_from_sample && !self.rtt_seeded {
-            self.rtt_seeded = true;
-            self.ewma_rtt = rtt;
-            return;
-        }
-        let rtt_secs = rtt.as_secs_f64();
-        let old_secs = self.ewma_rtt.as_secs_f64();
-        let new_secs = self.rtt_alpha * rtt_secs + (1.0 - self.rtt_alpha) * old_secs;
-        self.ewma_rtt = Duration::from_secs_f64(new_secs);
-    }
-
-    /// Test hook: force the seed-from-sample gate
-    /// without the process-global env (parallel unit tests must not race
-    /// env vars).
-    #[cfg(test)]
-    pub(crate) fn force_anchor_hygiene(&mut self, seed_from_sample: bool) {
-        self.rtt_seed_from_sample = seed_from_sample;
+        self.rtt.record(rtt);
     }
 
     /// Record throughput measurement.
@@ -520,19 +488,14 @@ impl LossEstimator {
         self.bocd.predictive_quantile(confidence)
     }
 
+    /// The standalone estimator's smoothed RTT (50 ms before a sample).
     pub fn rtt(&self) -> Duration {
-        self.ewma_rtt
+        self.rtt.or_default()
     }
 
-    /// The RTT estimate only if it is a measurement — `None` while
-    /// `ewma_rtt` is still the 50-ms DEFAULT_SRTT-class constructor seed.
-    ///
-    /// `rtt()` cannot distinguish the two, which is exactly the hygiene
-    /// rule-1 hazard: a consumer that reads a seed as if it were an anchor
-    /// prices an unmeasured path with a constant. This accessor lets a
-    /// consumer ask instead (see `PathState::srtt_measured`).
+    /// [`Self::rtt`] only if it is a measurement.
     pub fn rtt_measured(&self) -> Option<Duration> {
-        self.rtt_sampled.then_some(self.ewma_rtt)
+        self.rtt.measured()
     }
 
     pub fn throughput(&self) -> f64 {
@@ -759,36 +722,19 @@ mod tests {
         assert!(pred_upper < 0.25, "Predictive upper should be reasonable: {pred_upper}");
     }
 
-    // `RWM_MSTAR_ANCHOR`, hygiene rule 1: the RTT EWMA seeds from the first
-    // measured sample; the 50-ms constructor constant never blends into
-    // measurements. Control arm: the unseeded law blends
-    // 0.875·50 ms + 0.125·sample — the constant leaks for ~20 samples.
+    /// The standalone estimator's RTT is `SmoothedRtt`: one arithmetic,
+    /// seeded from the first sample, never a stale value read as a measurement.
     #[test]
-    fn rtt_seeds_from_first_measured_sample_under_hygiene() {
+    fn standalone_rtt_is_the_shared_smoothed_rtt() {
         let mut est = LossEstimator::new();
-        est.force_anchor_hygiene(true);
+        assert_eq!(est.rtt_measured(), None);
+        assert_eq!(est.rtt(), Duration::from_millis(50));
         est.record_rtt(Duration::from_millis(200));
-        assert_eq!(
-            est.rtt(),
-            Duration::from_millis(200),
-            "first measured sample IS the estimate — no 50-ms blend"
-        );
-        // Subsequent samples EWMA-blend off the measured seed.
+        assert_eq!(est.rtt(), Duration::from_millis(200), "the first sample IS the estimate");
         est.record_rtt(Duration::from_millis(100));
         let expected = 0.875 * 0.200 + 0.125 * 0.100;
         assert!((est.rtt().as_secs_f64() - expected).abs() < 1e-9);
-
-        // Control: the unseeded path blends the constructor seed.
-        let mut legacy = LossEstimator::new();
-        legacy.force_anchor_hygiene(false);
-        legacy.record_rtt(Duration::from_millis(200));
-        let blended = 0.875 * 0.050 + 0.125 * 0.200;
-        assert!(
-            (legacy.rtt().as_secs_f64() - blended).abs() < 1e-9,
-            "legacy control keeps the 50-ms seed blend (the defect, preserved \
-             for the A/B): got {:?}",
-            legacy.rtt()
-        );
+        assert_eq!(est.rtt_measured(), Some(est.rtt()));
     }
 
     /// The carried credit's law at its anchor points: a late arrival

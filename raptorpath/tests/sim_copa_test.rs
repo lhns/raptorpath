@@ -61,7 +61,6 @@ fn simulate_round_via_channel(
     sched.ack(path_id, received);
 
     if let Some(path) = sched.path_mut(path_id) {
-        path.estimator.record_rtt(rtt);
         path.record_rtt_sample(rtt);
         path.estimator.record_throughput(throughput_bps);
         path.estimator.record_batch(symbols_per_round, received);
@@ -87,7 +86,6 @@ fn test_copa_converges_through_sim_channel() {
         path.cwnd = 200;
         path.in_slow_start = false;
         for _ in 0..20 {
-            path.estimator.record_rtt(millis(5));
             path.record_rtt_sample(millis(5));
             path.estimator.record_throughput(100_000_000.0);
             path.estimator.record_batch(100, 99);
@@ -159,7 +157,6 @@ fn test_copa_reduces_cwnd_on_queue_buildup() {
         path.cwnd = 200;
         path.in_slow_start = false;
         for _ in 0..20 {
-            path.estimator.record_rtt(millis(5));
             path.record_rtt_sample(millis(5));
             path.estimator.record_throughput(100_000_000.0);
             path.estimator.record_batch(100, 99);
@@ -217,7 +214,6 @@ fn test_copa_wireless_vs_congestion() {
         path.cwnd = 200;
         path.in_slow_start = false;
         for _ in 0..20 {
-            path.estimator.record_rtt(millis(15));
             path.record_rtt_sample(millis(15));
             path.estimator.record_throughput(50_000_000.0);
             path.estimator.record_batch(100, 95);
@@ -307,7 +303,6 @@ fn test_two_paths_rtt_weighted_scheduling() {
     for _ in 0..50 {
         clock.advance(millis(2));
         let path = sched.path_mut(1).unwrap();
-        path.estimator.record_rtt(millis(5));
         path.record_rtt_sample(millis(5));
         path.estimator.record_throughput(100_000_000.0);
         path.estimator.record_batch(100, 99);
@@ -315,7 +310,6 @@ fn test_two_paths_rtt_weighted_scheduling() {
 
         clock.advance(millis(2));
         let path = sched.path_mut(2).unwrap();
-        path.estimator.record_rtt(millis(50));
         path.record_rtt_sample(millis(50));
         path.estimator.record_throughput(100_000_000.0);
         path.estimator.record_batch(100, 99);

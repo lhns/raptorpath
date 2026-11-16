@@ -449,6 +449,18 @@ impl FecRateController {
     /// scheduler and evaluate after the borrows end.
     /// `compute_repair_rate` is exactly `rate_snapshot(..).rate()`.
     pub fn rate_snapshot(&self, estimator: &LossEstimator, window_size: usize) -> RateSnapshot {
+        self.rate_snapshot_at(estimator, estimator.rtt(), window_size)
+    }
+
+    /// [`Self::rate_snapshot`] with the smoothed RTT given by the caller: on a
+    /// leg it is `PathState::srtt()` (`LegState.s`, W3.2 A1), not the
+    /// estimator's standalone copy.
+    pub fn rate_snapshot_at(
+        &self,
+        estimator: &LossEstimator,
+        srtt: std::time::Duration,
+        window_size: usize,
+    ) -> RateSnapshot {
         // The formula itself lives in raptorpath-math::controller_rate — a
         // single shared implementation used by both this production
         // controller and the visualizer (raptorpath-wasm), so the two
@@ -463,7 +475,7 @@ impl FecRateController {
             (1.0, 1.0)
         };
         let tput = estimator.throughput();
-        let rtt_secs = estimator.rtt().as_secs_f64();
+        let rtt_secs = srtt.as_secs_f64();
         // Burst B/T term requires valid GE data AND a throughput estimate.
         let t_symbols = if ge.is_valid() && tput > 0.0 {
             (rtt_secs * tput / self.symbol_size as f64).max(1.0)
@@ -529,8 +541,18 @@ impl FecRateController {
     /// absorbency. The result is clamped to [16, 512] by the math layer; the
     /// window-mode sender additionally caps it at its own MAX_WINDOW_SIZE.
     pub fn derive_window(&self, estimator: &LossEstimator) -> Option<usize> {
+        self.derive_window_at(estimator, estimator.rtt())
+    }
+
+    /// [`Self::derive_window`] with the caller's smoothed RTT (see
+    /// [`Self::rate_snapshot_at`]).
+    pub fn derive_window_at(
+        &self,
+        estimator: &LossEstimator,
+        srtt: std::time::Duration,
+    ) -> Option<usize> {
         let tput = estimator.throughput();
-        let rtt_secs = estimator.rtt().as_secs_f64();
+        let rtt_secs = srtt.as_secs_f64();
         if !(tput > 0.0) || !(rtt_secs > 0.0) {
             return None; // no latency ceiling => keep the default window
         }

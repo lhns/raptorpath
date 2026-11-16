@@ -937,13 +937,13 @@ fn copa_feed_seq_path_last_send_wins() {
 #[test]
 fn mp_time_threshold_is_nine_eighths_of_max_clock_with_floor() {
     const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
-    // 40 ms srtt, 32 ms ewma → 9/8 × 40 ms = 45 ms.
-    assert_eq!(mp_time_threshold_split(40_000, 32_000, F).0, 45_000);
-    // The larger clock wins regardless of which estimator it is.
-    assert_eq!(mp_time_threshold_split(32_000, 40_000, F).0, 45_000);
+    // 40 ms smoothed RTT → 9/8 × 40 ms = 45 ms (one clock since W3.2 A1;
+    // it was the max of two copies of it).
+    assert_eq!(mp_time_threshold_split(40_000, F).0, 45_000);
+    assert_eq!(mp_time_threshold_split(32_000, F).0, 36_000);
     // Tiny clocks floor at NACK_RETX_COOLDOWN_FLOOR_US.
-    assert_eq!(mp_time_threshold_split(1_000, 500, F).0, F);
-    assert_eq!(mp_time_threshold_split(0, 0, F).0, F);
+    assert_eq!(mp_time_threshold_split(1_000, F).0, F);
+    assert_eq!(mp_time_threshold_split(0, F).0, F);
 }
 
 // ----- Derived patience -----
@@ -955,18 +955,12 @@ fn mp_time_threshold_is_nine_eighths_of_max_clock_with_floor() {
 fn derived_patience_off_is_bit_identical_to_the_legacy_threshold() {
     const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
     for srtt in [0u64, 1, 500, 1_000, 8_000, 8_888, 8_889, 9_000, 40_000, 250_000] {
-        for ewma in [0u64, 700, 9_500, 40_000] {
-            let legacy = (srtt.max(ewma).saturating_mul(9) / 8).max(F);
-            assert_eq!(
-                mp_time_threshold_split(srtt, ewma, F).0,
-                legacy,
-                "srtt={srtt} ewma={ewma}"
-            );
-        }
+        let legacy = (srtt.saturating_mul(9) / 8).max(F);
+        assert_eq!(mp_time_threshold_split(srtt, F).0, legacy, "srtt={srtt}");
     }
     // The cited constants are still the cited constants.
     assert_eq!(MP_PACKET_THRESHOLD, 3);
-    assert_eq!(mp_time_threshold_split(80_000, 0, 0).0, 90_000); // 9/8 exactly
+    assert_eq!(mp_time_threshold_split(80_000, 0).0, 90_000); // 9/8 exactly
 }
 
 /// The tail-sweep SRTT fallback is inert with respect to this constant:
@@ -1062,8 +1056,8 @@ fn patience_is_set_by_the_clock_argument_not_by_the_constants() {
 
     let f = NACK_RETX_COOLDOWN_FLOOR_US;
     // §6.1.2 time threshold (the RECOV_MP / RECOV_SP channel).
-    assert_eq!(mp_time_threshold_split(0, APP_ECHO_US, f).0, 177_750);
-    assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0, 15_750);
+    assert_eq!(mp_time_threshold_split(APP_ECHO_US, f).0, 177_750);
+    assert_eq!(mp_time_threshold_split(WIRE_US, f).0, 15_750);
     // Age gate (the shipped default channel) = srtt/2.
     assert_eq!(APP_ECHO_US / 2, 79_000);
     assert_eq!(WIRE_US / 2, 7_000);
@@ -1075,8 +1069,8 @@ fn patience_is_set_by_the_clock_argument_not_by_the_constants() {
     assert_eq!(tail_sweep_timeout_us(APP_ECHO_US), TAIL_SWEEP_MAX_US);
     assert_eq!(tail_sweep_timeout_us(WIRE_US), 28_000);
     // The ratios, stated as the claim: ×17.8 vs ×1.6 RTprop.
-    assert_eq!(mp_time_threshold_split(0, APP_ECHO_US, f).0 / RTPROP_US, 17);
-    assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0 / RTPROP_US, 1);
+    assert_eq!(mp_time_threshold_split(APP_ECHO_US, f).0 / RTPROP_US, 17);
+    assert_eq!(mp_time_threshold_split(WIRE_US, f).0 / RTPROP_US, 1);
 }
 
 /// The coincidence property. Wherever the fixed gauge's own stated
@@ -1294,7 +1288,7 @@ fn recovery_clocks_keep_cwnd_saturated_paths() {
     for (id, ms) in [(0u32, 40u64), (1, 80)] {
         let p = sched.path_mut(id).unwrap();
         for _ in 0..32 {
-            p.estimator.record_rtt(Duration::from_millis(ms));
+            p.record_echo_rtt(Duration::from_millis(ms));
         }
         let cw = p.cwnd;
         p.charge_in_flight(cw);
@@ -1303,7 +1297,7 @@ fn recovery_clocks_keep_cwnd_saturated_paths() {
     assert!(sched.active_paths().is_empty(), "precondition: both paths saturated");
     let want = [0u32, 1]
         .iter()
-        .map(|id| sched.path(*id).unwrap().estimator.rtt().as_micros() as u64)
+        .map(|id| sched.path(*id).unwrap().srtt().as_micros() as u64)
         .max()
         .unwrap();
     assert!(want > NACK_RETX_COOLDOWN_FLOOR_US, "precondition: measured RTT above the floor");
@@ -4813,7 +4807,7 @@ fn channel_fixture() -> Scheduler {
         let p = sched.path_mut(id).unwrap();
         for _ in 0..32 {
             p.record_rtt_sample(Duration::from_millis(ms));
-            p.estimator.record_rtt(Duration::from_millis(ms));
+            p.record_echo_rtt(Duration::from_millis(ms));
             p.estimator.record_batch(100, 100 - lost);
         }
     }
@@ -4869,7 +4863,7 @@ fn saturated_channel_keeps_the_worst_eps_pick() {
     assert!(un > 0.05, "worst ε ≈ 0.10 ({un})");
     assert_eq!(sat, un, "saturated: the channel's worst ε must not fall to 0");
     // The emit/rate reader's own entry point routes through the same pick.
-    let (un, sat) = read_both(|s| super::emit_source::worst_eps_path(s).map(|(id, _)| id));
+    let (un, sat) = read_both(|s| super::emit_source::worst_eps_path(s).map(|(id, _, _)| id));
     assert_eq!((un, sat), (Some(1), Some(1)), "worst_eps_path must survive saturation");
 }
 
@@ -6032,9 +6026,9 @@ mod paper_bounds {
         // source-text pin; switching to an RTprop input fails it.
         let src = flat(include_str!("emit_source.rs"));
         for needle in [
-            "letrtprop=est.rtt().as_secs_f64();",
+            "letrtprop=est_srtt.as_secs_f64();",
             "letd=(b*rtprop).min(2.0*rtprop);",
-            "shed_deadline_us(b,est.rtt().as_micros()asu64,)",
+            "shed_deadline_us(b,est_srtt.as_micros()asu64,)",
         ] {
             assert!(
                 src.contains(needle),
@@ -6081,7 +6075,7 @@ mod paper_bounds {
         let sched = channel_fixture();
         let (srtt, rttvar, eps) = p_lost_inputs(&sched);
         let (_, worst) = worst_eps_channel_path(&sched).unwrap();
-        assert_eq!(srtt, worst.estimator.rtt().as_secs_f64(), "SRTT is the worst-ε path's EWMA");
+        assert_eq!(srtt, worst.srtt().as_secs_f64(), "SRTT is the worst-ε path's EWMA");
         assert!(srtt > 0.0 && eps > 0.0, "measured path, not the fallback");
         assert_eq!(rttvar, srtt * 0.1, "P_lost RTTVAR = 0.1·SRTT exactly (paper §3.2 has a measured RTTVAR)");
         // Cold fallback (no path): (SRTT, RTTVAR, ε) = (0.05, 0.005, 0.0), same 0.1 ratio.

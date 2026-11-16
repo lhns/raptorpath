@@ -2170,7 +2170,7 @@ fn simulate_place(
                 ack_expected[*pid as usize] += 1;
                 ack_received[*pid as usize] += 1;
                 if let Some(p) = sched.path_mut(*pid) {
-                    p.estimator.record_rtt(Duration::from_secs_f64(*rtt));
+                    p.record_echo_rtt(Duration::from_secs_f64(*rtt));
                 }
             }
             if let Some(p) = sched.path_mut(*pid) {

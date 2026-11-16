@@ -38,13 +38,11 @@ fn test_source_prefers_low_rtt() {
     sched
         .path_mut(0)
         .unwrap()
-        .estimator
-        .record_rtt(Duration::from_millis(100));
+        .record_echo_rtt(Duration::from_millis(100));
     sched
         .path_mut(1)
         .unwrap()
-        .estimator
-        .record_rtt(Duration::from_millis(5));
+        .record_echo_rtt(Duration::from_millis(5));
 
     let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();
     let result: ScheduleResult = sched.schedule(source, vec![]);

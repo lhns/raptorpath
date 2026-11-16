@@ -2721,7 +2721,7 @@ async fn run_window_sender(
                     // `Vec`s: this block runs on every loop iteration).
                     let paths = || recovery_clock_paths_iter(&sched).map(|(_, p)| p);
                     let pooled = pooled_recovery_srtt_iter(
-                        paths().map(|p| p.estimator.rtt().as_micros() as u64),
+                        paths().map(|p| p.srtt().as_micros() as u64),
                     );
                     // The measured σ, max over the same set — read only by the
                     // `[QCLK]` readout below.

@@ -76,13 +76,11 @@ fn test_best_source_path_picks_lowest_rtt() {
     sched
         .path_mut(0)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(100));
+        .record_echo_rtt(std::time::Duration::from_millis(100));
     sched
         .path_mut(1)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(10));
+        .record_echo_rtt(std::time::Duration::from_millis(10));
 
     assert_eq!(sched.best_source_path(), Some(1));
 }
@@ -114,18 +112,15 @@ fn test_redundant_source_path_picks_different_path() {
     sched
         .path_mut(0)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(5));
+        .record_echo_rtt(std::time::Duration::from_millis(5));
     sched
         .path_mut(1)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(20));
+        .record_echo_rtt(std::time::Duration::from_millis(20));
     sched
         .path_mut(2)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(50));
+        .record_echo_rtt(std::time::Duration::from_millis(50));
 
     // Primary is 0, redundant should be 1 (second-lowest RTT)
     let redundant = sched.redundant_source_path(0);
@@ -149,13 +144,11 @@ fn test_best_source_path_skips_full_cwnd() {
     sched
         .path_mut(0)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(5));
+        .record_echo_rtt(std::time::Duration::from_millis(5));
     sched
         .path_mut(1)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(50));
+        .record_echo_rtt(std::time::Duration::from_millis(50));
 
     // Fill path 0's cwnd
     let cwnd = sched.path(0).unwrap().cwnd;
@@ -175,14 +168,12 @@ fn test_schedule_prefers_low_rtt_for_source() {
     sched
         .path_mut(0)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(100));
+        .record_echo_rtt(std::time::Duration::from_millis(100));
     // Path 1: low RTT
     sched
         .path_mut(1)
         .unwrap()
-        .estimator
-        .record_rtt(std::time::Duration::from_millis(10));
+        .record_echo_rtt(std::time::Duration::from_millis(10));
 
     let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();
     let result = sched.schedule(source, vec![]);
@@ -238,7 +229,7 @@ fn test_effective_delivery_time() {
     let path = sched.path_mut(0).unwrap();
     // Record multiple RTT samples so EWMA converges
     for _ in 0..20 {
-        path.estimator.record_rtt(Duration::from_millis(100));
+        path.record_echo_rtt(Duration::from_millis(100));
     }
     // Record some loss: 10 sent, 9 received → ~10% loss
     for _ in 0..20 {
@@ -246,7 +237,7 @@ fn test_effective_delivery_time() {
     }
 
     let e = path.effective_delivery_time();
-    let rtt = path.estimator.rtt().as_secs_f64();
+    let rtt = path.srtt().as_secs_f64();
     let eps = path.estimator.loss_rate();
     let expected = rtt / 2.0 + eps * rtt;
     assert!((e - expected).abs() < 0.001, "E_i={e}, expected={expected}, rtt={rtt}, eps={eps}");
@@ -279,13 +270,13 @@ fn test_realtime_prefers_low_latency_over_low_loss() {
     sched.add_path(1);
 
     // Path 0: low RTT (10ms), high loss (20%)
-    sched.path_mut(0).unwrap().estimator.record_rtt(Duration::from_millis(10));
+    sched.path_mut(0).unwrap().record_echo_rtt(Duration::from_millis(10));
     for _ in 0..20 {
         sched.path_mut(0).unwrap().estimator.record_batch(10, 8);
     }
 
     // Path 1: high RTT (200ms), low loss (1%)
-    sched.path_mut(1).unwrap().estimator.record_rtt(Duration::from_millis(200));
+    sched.path_mut(1).unwrap().record_echo_rtt(Duration::from_millis(200));
     for _ in 0..20 {
         sched.path_mut(1).unwrap().estimator.record_batch(100, 99);
     }
@@ -301,13 +292,13 @@ fn test_bulk_prefers_low_overhead() {
     sched.add_path(1);
 
     // Path 0: low RTT (10ms), high loss (20%) → high r
-    sched.path_mut(0).unwrap().estimator.record_rtt(Duration::from_millis(10));
+    sched.path_mut(0).unwrap().record_echo_rtt(Duration::from_millis(10));
     for _ in 0..20 {
         sched.path_mut(0).unwrap().estimator.record_batch(10, 8);
     }
 
     // Path 1: high RTT (200ms), low loss (1%) → low r
-    sched.path_mut(1).unwrap().estimator.record_rtt(Duration::from_millis(200));
+    sched.path_mut(1).unwrap().record_echo_rtt(Duration::from_millis(200));
     for _ in 0..20 {
         sched.path_mut(1).unwrap().estimator.record_batch(100, 99);
     }
@@ -324,13 +315,13 @@ fn test_schedule_uses_objective_weights() {
     sched.add_path(1);
 
     // Path 0: fast, lossy
-    sched.path_mut(0).unwrap().estimator.record_rtt(Duration::from_millis(10));
+    sched.path_mut(0).unwrap().record_echo_rtt(Duration::from_millis(10));
     for _ in 0..20 {
         sched.path_mut(0).unwrap().estimator.record_batch(10, 8);
     }
 
     // Path 1: slow, clean
-    sched.path_mut(1).unwrap().estimator.record_rtt(Duration::from_millis(200));
+    sched.path_mut(1).unwrap().record_echo_rtt(Duration::from_millis(200));
     for _ in 0..20 {
         sched.path_mut(1).unwrap().estimator.record_batch(100, 99);
     }
@@ -825,7 +816,7 @@ fn set_rtt(sched: &mut Scheduler, id: PathId, ms: u64) {
     // blend of it and the seed.
     let p = sched.path_mut(id).unwrap();
     for _ in 0..60 {
-        p.estimator.record_rtt(std::time::Duration::from_millis(ms));
+        p.record_echo_rtt(std::time::Duration::from_millis(ms));
     }
 }
 
@@ -1323,7 +1314,7 @@ fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
 fn rate_sample_excludes_app_limited_samples_below_the_max() {
     let clock = Arc::new(MockClock::new());
     let mut copa = CopaState::new(clock.clone(), ProtocolHint::Bulk);
-    copa.record_rtt(Duration::from_millis(10)); // RTprop = 10 ms
+    copa.record_rtt(Duration::from_millis(10), &LegState::default()); // RTprop = 10 ms
 
     // Establish a healthy max with a valid sample spanning ≥ RTprop: send
     // seq0, inject 50 deliveries, ack it one RTprop-plus later.
@@ -1396,8 +1387,8 @@ fn bw_mono_front_equals_full_window_fold() {
     let mut legacy = CopaState::new(clock.clone(), ProtocolHint::Bulk);
     let mut o1 = CopaState::new(clock.clone(), ProtocolHint::Bulk);
     o1.force_bw_o1();
-    legacy.record_rtt(Duration::from_millis(10));
-    o1.record_rtt(Duration::from_millis(10));
+    legacy.record_rtt(Duration::from_millis(10), &LegState::default());
+    o1.record_rtt(Duration::from_millis(10), &LegState::default());
 
     // Deterministic LCG so the stream is reproducible.
     let mut lcg: u64 = 0x9E3779B97F4A7C15;
@@ -1434,8 +1425,8 @@ fn bw_mono_front_equals_full_window_fold() {
                     clock.advance(Duration::from_millis(1500));
                 }
                 let rtt = Duration::from_millis(5 + (r % 120) as u64);
-                legacy.record_rtt(rtt);
-                o1.record_rtt(rtt);
+                legacy.record_rtt(rtt, &LegState::default());
+                o1.record_rtt(rtt, &LegState::default());
             }
         }
         let fold_l = legacy.bw_fold();
@@ -1480,13 +1471,13 @@ fn bw_mono_front_equals_full_window_fold() {
 #[test]
 fn copa_srtt_agrees_with_rfc6298_ewma() {
     let clock = Arc::new(MockClock::new());
-    let mut cs = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+    let mut cs = SmoothedRtt::new();
 
     // Case 1 — seed: SRTT ← R on the first measurement, exactly.
-    assert_eq!(cs.srtt, None, "no sample yet ⇒ no measured srtt");
-    cs.record_rtt(millis(48));
+    assert_eq!(cs.measured(), None, "no sample yet ⇒ no measured srtt");
+    cs.record(millis(48));
     assert_eq!(
-        cs.srtt,
+        cs.measured(),
         Some(millis(48)),
         "RFC 6298 §2.2: the first sample must BE the srtt, exactly"
     );
@@ -1497,9 +1488,9 @@ fn copa_srtt_agrees_with_rfc6298_ewma() {
     let mut expect_s = 0.048_f64; // the seed above
     for &ms in &seq_ms {
         clock.advance(millis(5));
-        cs.record_rtt(millis(ms));
+        cs.record(millis(ms));
         expect_s = 0.875 * expect_s + 0.125 * (ms as f64 / 1e3);
-        let got_s = cs.srtt.expect("seeded above").as_secs_f64();
+        let got_s = cs.measured().expect("seeded above").as_secs_f64();
         assert!(
             (got_s - expect_s).abs() < 1e-6,
             "RFC 6298 recursion disagrees after the {ms} ms sample: \
@@ -1509,13 +1500,13 @@ fn copa_srtt_agrees_with_rfc6298_ewma() {
 
     // Case 3a — fixed point, exact: seeded at a constant, the EWMA must
     // return the constant bit-for-bit on every subsequent sample.
-    let mut flat = CopaState::new(clock.clone(), ProtocolHint::Bulk);
-    flat.record_rtt(millis(40));
+    let mut flat = SmoothedRtt::new();
+    flat.record(millis(40));
     for _ in 0..32 {
         clock.advance(millis(5));
-        flat.record_rtt(millis(40));
+        flat.record(millis(40));
         assert_eq!(
-            flat.srtt,
+            flat.measured(),
             Some(millis(40)),
             "a constant input must be an EXACT fixed point of the EWMA"
         );
@@ -1527,10 +1518,10 @@ fn copa_srtt_agrees_with_rfc6298_ewma() {
     // 1 µs of the input — and agree with the f64 recursion throughout.
     for _ in 0..200 {
         clock.advance(millis(5));
-        cs.record_rtt(millis(40));
+        cs.record(millis(40));
         expect_s = 0.875 * expect_s + 0.125 * 0.040;
     }
-    let got_s = cs.srtt.expect("seeded above").as_secs_f64();
+    let got_s = cs.measured().expect("seeded above").as_secs_f64();
     assert!(
         (got_s - expect_s).abs() < 1e-6,
         "recursion agreement must hold through convergence: \
@@ -1561,7 +1552,7 @@ fn bw_filter_cost_is_quadratic_legacy_and_linear_fixed() {
         if o1 {
             copa.force_bw_o1();
         }
-        copa.record_rtt(Duration::from_millis(10)); // RTprop 10 ms ⇒ window 1 s
+        copa.record_rtt(Duration::from_millis(10), &LegState::default()); // RTprop 10 ms ⇒ window 1 s
         let step = Duration::from_nanos(1_000_000_000 / rate_sym_s);
         let lag = (rate_sym_s / 50) as u64; // ≈20 ms of in-flight seqs
         let mut send_seq = 0u64;
@@ -1731,7 +1722,6 @@ fn wire_dq_keys_on_wire_clock_not_app_echo() {
     // 10 ms floor. Copa must ramp — the dwell is not network queue.
     let mut prev = path.cwnd;
     for _ in 0..5 {
-        path.estimator.record_rtt(millis(500)); // app echo incl. dwell
         path.record_rtt_sample(millis(10)); // wire clock
         clock.advance(millis(15));
         path.on_ack(prev);
@@ -1747,7 +1737,6 @@ fn wire_dq_keys_on_wire_clock_not_app_echo() {
     // (60 ms over the 10 ms floor) while the app echo is quiet — Copa
     // must back off on the wire evidence alone.
     for _ in 0..4 {
-        path.estimator.record_rtt(millis(10));
         path.record_rtt_sample(millis(60));
     }
     clock.advance(millis(80));

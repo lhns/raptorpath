@@ -677,7 +677,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // (Copa srtt + estimator EWMA) for the per-flight hole law, and
         // the live path count (N = 1 ⇒ the law is inert).
         // Tuple is (copa/estimator srtt, estimator EWMA rtt).
-        let mut mp_clocks: std::collections::HashMap<u32, (u64, u64)> =
+        let mut mp_clocks: std::collections::HashMap<u32, u64> =
             std::collections::HashMap::new();
         let mut mp_n_paths: usize = 1;
         let srtt_us = {
@@ -691,13 +691,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 mp_n_paths = ids.len();
                 for id in &ids {
                     if let Some(p) = sched.path(*id) {
-                        mp_clocks.insert(
-                            *id,
-                            (
-                                p.srtt().as_micros() as u64,
-                                p.estimator.rtt().as_micros() as u64,
-                            ),
-                        );
+                        mp_clocks.insert(*id, p.srtt().as_micros() as u64);
                     }
                 }
             }
@@ -705,7 +699,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             let pooled: Vec<u64> = ids
                 .iter()
                 .filter_map(|id| sched.path(*id))
-                .map(|p| p.estimator.rtt().as_micros() as u64)
+                .map(|p| p.srtt().as_micros() as u64)
                 .collect();
             pooled_recovery_srtt_us(&pooled)
         };
@@ -713,14 +707,14 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         let retx_cooldown_us = retx_cooldown_us(srtt_us, NACK_RETX_COOLDOWN_FLOOR_US);
         // The per-flight law threshold for a path (falls back to the
         // pooled cooldown clock when the path has no snapshot).
-        let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
+        let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, u64>,
                          p: u32|
          -> u64 {
             match mp_clocks.get(&p) {
-                Some(&(srtt, ewma)) => {
+                Some(&srtt) => {
                     // The kGranularity analog: the fixed cooldown floor.
                     let floor = NACK_RETX_COOLDOWN_FLOOR_US;
-                    let (thr, floor_won) = mp_time_threshold_split(srtt, ewma, floor);
+                    let (thr, floor_won) = mp_time_threshold_split(srtt, floor);
                     if pol.diag_on {
                         if floor_won {
                             mpd_pf_floor.set(mpd_pf_floor.get() + 1);
@@ -737,13 +731,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // The same 9/8 threshold as `mp_thr_of`, without its `pf=` counter
         // side effect: a read-only audit gauge may not move an existing
         // gauge's reading, and `mp_thr_of` bumps `mpd_pf_*` on every call.
-        let mp_thr_pure = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
+        let mp_thr_pure = |mp_clocks: &std::collections::HashMap<u32, u64>,
                            p: u32|
          -> u64 {
             match mp_clocks.get(&p) {
-                Some(&(srtt, ewma)) => {
-                    mp_time_threshold_split(srtt, ewma, NACK_RETX_COOLDOWN_FLOOR_US).0
-                }
+                Some(&srtt) => mp_time_threshold_split(srtt, NACK_RETX_COOLDOWN_FLOOR_US).0,
                 None => retx_cooldown_us,
             }
         };
@@ -751,7 +743,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // input, and the same half-RTT the age gate uses.
         let half_srtt_of = |p: u32| -> u64 {
             match mp_clocks.get(&p) {
-                Some(&(srtt, ewma)) => srtt.max(ewma) / 2,
+                Some(&srtt) => srtt / 2,
                 None => srtt_us / 2,
             }
         };
@@ -1282,7 +1274,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         let derived_window = {
             let ctrl = &mut *fec_controller;
             let sched = &*scheduler;
-            let path_est = worst_eps_estimator(&sched);
+            let path_est = worst_eps_estimator_srtt(&sched);
             // χ, the completion exposure (`RWM_COMPLETION_EXPOSURE`, paper
             // §4.6). The perf client knows the size of the object it is
             // feeding. Under the gate it publishes it into a `CompletionFeed`,
@@ -1299,10 +1291,10 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             // `completion_exposure` floors σ_ARQ at `srtt/4` regardless.
             //
             // Absent by default: this block is skipped and χ stays 0.
-            if let (true, Some(feed), Some(est)) =
+            if let (true, Some(feed), Some((est, est_srtt))) =
                 (gates.completion_exposure, completion_feed.as_ref(), path_est)
             {
-                let srtt = est.rtt().as_secs_f64();
+                let srtt = est_srtt.as_secs_f64();
                 // `∞` (unknown) and `srtt = 0` both price to χ = 0 inside the
                 // kernel itself; the cold count only makes "no input" readable.
                 let t_rem = feed.t_rem_secs();
@@ -1313,7 +1305,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
                 ctrl.set_completion_exposure(chi);
                 CHI.observe(chi);
             }
-            path_est.and_then(|est| ctrl.derive_window(est))
+            path_est.and_then(|(est, srtt)| ctrl.derive_window_at(est, srtt))
         };
         // The cadenced rate (Stage 1c): read after χ is published above, and
         // evaluated only on a cache miss.

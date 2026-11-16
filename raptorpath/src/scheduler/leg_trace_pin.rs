@@ -37,14 +37,13 @@ fn ns(d: Duration) -> u128 {
 // expected values): R2 as the recovery clocks read it, Copa's cadence srtt, and
 // the handlers' echo feed.
 fn est_of(p: &PathState) -> Duration {
-    p.estimator.rtt()
+    p.srtt()
 }
 fn cad_of(p: &PathState) -> Duration {
-    p.copa.srtt.unwrap_or(DEFAULT_SRTT)
+    p.copa.cadence_srtt(&p.leg)
 }
 fn feed(p: &mut PathState, rtt: Duration) {
-    p.estimator.record_rtt(rtt);
-    p.record_rtt_sample(rtt);
+    p.record_rtt(rtt, rtt);
 }
 
 /// One table row.
@@ -65,6 +64,11 @@ pub(super) struct Row {
 }
 
 impl Row {
+    /// `est` at main equalled `srtt` on every row not in `EST_AT_MAIN`.
+    fn srtt_at_main_for_est(&self) -> u128 {
+        self.srtt
+    }
+
     fn line(&self) -> String {
         format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
@@ -202,7 +206,10 @@ pub(super) fn run_script() -> Vec<Row> {
     rows
 }
 
-/// The table captured at main (pre-A1), one line per row.
+/// The table captured at main (A0), one line per row, with the `est` column
+/// re-pinned at A1 (it is `srtt()` now: one `s`). `EST_AT_MAIN` keeps every
+/// value `est` had at main that differs, and `leg_trace_a1_est_moves_within_bounds`
+/// bounds the move.
 const GOLDEN: &[&str] = &[
     "cold|50000000|50000000|-|50000000|-|-|-|-|0|-|10",
     "w00|20001000|20001000|20001000|20001000|20001000|-|-|-|0|23456000|10",
@@ -247,19 +254,19 @@ const GOLDEN: &[&str] = &[
     "dead|31564361|31564361|31564361|31564361|31117000|-|-|27586|18964|26500000|330",
     "revived-window|31564361|31564361|31564361|50000000|-|-|-|-|0|26500000|10",
     "revived-delivery|31564361|31564361|31564361|50000000|-|-|-|-|0|26500000|10",
-    "v0|41007000|32744691|41007000|41007000|41007000|-|-|-|0|26500000|10",
-    "revived-1st-echo|41007000|32744691|41007000|41007000|41007000|-|-|-|0|26500000|10",
-    "v1|41033375|33803855|41033375|41033375|41007000|-|-|92|26|26500000|10",
-    "v2|41082828|34756998|41082828|41082828|41007000|-|-|190|49|26500000|10",
-    "v3|41152474|35617373|41152474|41152474|41007000|-|-|294|69|26500000|10",
-    "revived-4th-echo|41152474|35617373|41152474|41152474|41007000|-|-|294|69|26500000|10",
-    "v4|41239790|36396576|41239790|41239790|41007000|-|-|398|87|26500000|10",
-    "v5|41342566|37104754|41342566|41342566|41007000|-|-|498|102|26500000|16",
-    "v6|41458870|37750785|41458870|41458870|41007000|1833.3333333333333|75.1795|593|116|26500000|64",
-    "v7|41587011|38342437|41587011|41587011|41007000|1833.3333333333333|75.1795|681|128|26500000|64",
-    "v8|41725510|38886507|41725510|41725510|41007000|1833.3333333333333|75.1795|764|138|26500000|64",
-    "v9|41873071|39388944|41873071|41873071|41007000|1833.3333333333333|75.1795|839|147|26500000|64",
-    "revived-10th-echo|41873071|39388944|41873071|41873071|41007000|1833.3333333333333|75.1795|839|147|26500000|64",
+    "v0|41007000|41007000|41007000|41007000|41007000|-|-|-|0|26500000|10",
+    "revived-1st-echo|41007000|41007000|41007000|41007000|41007000|-|-|-|0|26500000|10",
+    "v1|41033375|41033375|41033375|41033375|41007000|-|-|92|26|26500000|10",
+    "v2|41082828|41082828|41082828|41082828|41007000|-|-|190|49|26500000|10",
+    "v3|41152474|41152474|41152474|41152474|41007000|-|-|294|69|26500000|10",
+    "revived-4th-echo|41152474|41152474|41152474|41152474|41007000|-|-|294|69|26500000|10",
+    "v4|41239790|41239790|41239790|41239790|41007000|-|-|398|87|26500000|10",
+    "v5|41342566|41342566|41342566|41342566|41007000|-|-|498|102|26500000|16",
+    "v6|41458870|41458870|41458870|41458870|41007000|1833.3333333333333|75.1795|593|116|26500000|64",
+    "v7|41587011|41587011|41587011|41587011|41007000|1833.3333333333333|75.1795|681|128|26500000|64",
+    "v8|41725510|41725510|41725510|41725510|41007000|1833.3333333333333|75.1795|764|138|26500000|64",
+    "v9|41873071|41873071|41873071|41873071|41007000|1833.3333333333333|75.1795|839|147|26500000|64",
+    "revived-10th-echo|41873071|41873071|41873071|41873071|41007000|1833.3333333333333|75.1795|839|147|26500000|64",
 ];
 
 #[test]
@@ -331,4 +338,61 @@ fn leak_backstop_gauge_counts_fires_and_ratio() {
     p.leak_backstop();
     assert_eq!(p.in_flight, 16);
     assert_eq!(p.leak_witness(), (2, 2.0 + 1.05, 2.0));
+}
+
+/// The `est` (R2) values at main that A1 moved: only the rows after the
+/// revival's first echo, where R2 blended from its stale pre-death value and
+/// the merged `s` reseeds (owner decision 2026-11-16, design §6 q4). Every
+/// other row's `est` equalled `srtt` at main, and still does.
+const EST_AT_MAIN: &[(&str, u128)] = &[
+    ("v0", 32744691),
+    ("revived-1st-echo", 32744691),
+    ("v1", 33803855),
+    ("v2", 34756998),
+    ("v3", 35617373),
+    ("revived-4th-echo", 35617373),
+    ("v4", 36396576),
+    ("v5", 37104754),
+    ("v6", 37750785),
+    ("v7", 38342437),
+    ("v8", 38886507),
+    ("v9", 39388944),
+    ("revived-10th-echo", 39388944),
+];
+
+/// A1 moved the `est` column and nothing else: within the rounding bound
+/// before the revival (the script shows 0 ns), and after it by exactly the
+/// reseed term 0.875^n·|pre − first| (to within the rounding bound).
+#[test]
+fn leg_trace_a1_est_moves_within_bounds() {
+    let rows = run_script();
+    let by = |l: &str| rows.iter().find(|r| r.label == l).unwrap().clone();
+    let pre = by("dead").srtt;
+    let first = 41_007_000u128; // the first post-revival echo, µs-exact
+    let mut moved = 0;
+    for r in &rows {
+        let at_main = EST_AT_MAIN
+            .iter()
+            .find(|(l, _)| *l == r.label)
+            .map_or(r.srtt_at_main_for_est(), |&(_, e)| e);
+        let diff = r.est.abs_diff(at_main);
+        let bound = match r.label.strip_prefix('v').and_then(|n| n.parse::<i32>().ok()) {
+            Some(k) => (0.875f64.powi(k + 1) * pre.abs_diff(first) as f64) as u128 + 16,
+            None if r.label.starts_with("revived-") && r.label.ends_with("-echo") => {
+                let k = match r.label.as_str() {
+                    "revived-1st-echo" => 0,
+                    "revived-4th-echo" => 3,
+                    _ => 9,
+                };
+                (0.875f64.powi(k + 1) * pre.abs_diff(first) as f64) as u128 + 16
+            }
+            None => 16,
+        };
+        assert!(diff <= bound, "{}: est moved {diff} ns > {bound} ns", r.label);
+        if diff > 16 {
+            moved += 1;
+        }
+    }
+    assert_eq!(moved, EST_AT_MAIN.len(), "est moved on exactly the post-revival rows");
+    assert!(by("v0").est.abs_diff(32_744_691) > 8_000_000, "non-vacuous: the reseed is milliseconds");
 }

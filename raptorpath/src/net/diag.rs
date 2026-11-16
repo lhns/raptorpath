@@ -541,11 +541,11 @@ pub(crate) fn report(
                     cw += p.cwnd as u64;
                     fl += p.in_flight as u64;
                     np += 1;
-                    rtt = rtt.max(p.estimator.rtt().as_micros() as u64);
+                    rtt = rtt.max(p.srtt().as_micros() as u64);
                     let infl_i = p.in_flight as u64;
                     let bdp_i = p.copa_bdp_anchor().unwrap_or(0.0);
                     let cap_i = (cap_gain * bdp_i).ceil() as u64;
-                    let rtt_i = p.estimator.rtt().as_secs_f64() * 1000.0;
+                    let rtt_i = p.srtt().as_secs_f64() * 1000.0;
                     let rtprop_i =
                         p.min_rtt().map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0);
                     // The same RTprop in µs (`rtp_us=`): the whole-ms `rtp`

@@ -33,6 +33,8 @@ pub use rx::{RxPathState, RxScheduler};
 pub use crate::gates::scheduler_gates::*;
 mod copa;
 pub use copa::*;
+mod leg;
+pub use leg::*;
 pub(crate) mod place;
 // Placement items are crate-internal; only the unit tests name them from here.
 #[cfg(test)]
@@ -401,6 +403,7 @@ impl Scheduler {
                 path.ssthresh = 64;
                 path.in_slow_start = true;
                 path.copa.reset();
+                path.leg.reset();
                 path.in_flight = 0;
                 path.in_flight_log.clear();
             }
@@ -608,6 +611,8 @@ mod tests;
 mod place_alloc_tests;
 #[cfg(test)]
 mod leg_trace_pin;
+#[cfg(test)]
+mod srtt_copies_tests;
 
 // ── The one-sided-clamp witness, process-wide (`[LCW]`) ───────────────
 //

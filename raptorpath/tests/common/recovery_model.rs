@@ -357,8 +357,10 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     let pooled_us = pooled_recovery_srtt_us(&ewma);
     let cooldown_us = retx_cooldown_us(pooled_us, NACK_RETX_COOLDOWN_FLOOR_US);
     let thr_of = |p: u32| -> u64 {
+        // One clock since W3.2 A1 (the echo EWMA; the wire clock never
+        // exceeds it, the dwell being >= 0), so the max below is the engine's.
         let (c, e) = (copa[p as usize], ewma[p as usize]);
-        mp_time_threshold_split(c, e, NACK_RETX_COOLDOWN_FLOOR_US).0
+        mp_time_threshold_split(c.max(e), NACK_RETX_COOLDOWN_FLOOR_US).0
     };
     let patience_us = thr_of(0);
     // The receiver's refresh cadence reads the Copa clock (`PathState::srtt`),

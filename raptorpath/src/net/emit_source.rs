@@ -529,9 +529,9 @@ pub(crate) fn emit_source(
         let (repair_rate, span_params, taper_rtt) = {
             let sched = &*ctx.scheduler;
             let spare = sched.spare_capacity();
-            let path_estimator = super::worst_eps_estimator(&sched);
+            let path_estimator = super::worst_eps_estimator_srtt(&sched);
             match path_estimator {
-                Some(est) => {
+                Some((est, est_srtt)) => {
                     // `compute_repair_rate_capped`'s spare-capacity clamp,
                     // applied per symbol to the cadenced rate.
                     let flat_rate = window_rate.min(spare.max(0.0));
@@ -564,12 +564,12 @@ pub(crate) fn emit_source(
                             // first measured bucket ⇒ A* clamps to 1, the
                             // cold start, ~SRTT/2 long.
                             let now_i = src_now_i;
-                            st.astar_anchor.on_send(now_i, 1, est.rtt());
-                            st.astar_anchor.rate(now_i, est.rtt()).unwrap_or(0.0)
+                            st.astar_anchor.on_send(now_i, 1, est_srtt);
+                            st.astar_anchor.rate(now_i, est_srtt).unwrap_or(0.0)
                         } else {
                             (est.throughput() / pol.symbol_size.max(1) as f64).max(0.0)
                         };
-                        let rtprop = est.rtt().as_secs_f64();
+                        let rtprop = est_srtt.as_secs_f64();
                         // The δ dial's named points, once (see
                         // `net::delta_budget_b`): the three-term store law
                         // reads the same map.
@@ -587,7 +587,7 @@ pub(crate) fn emit_source(
                         if pol.shed_on {
                             st.shed_deadline_us_live = shed_deadline_us(
                                 b,
-                                est.rtt().as_micros() as u64,
+                                est_srtt.as_micros() as u64,
                             );
                             st.shed_budget_frac =
                                 crate::control::fec_rate::residual_loss_after_fec(
@@ -601,7 +601,7 @@ pub(crate) fn emit_source(
                     } else {
                         None
                     };
-                    (rr, span, est.rtt())
+                    (rr, span, est_srtt)
                 }
                 None => (0.0, None, Duration::from_millis(50)),
             }
@@ -864,8 +864,8 @@ pub(crate) fn emit_source(
 /// `loss_rate()` over [`super::channel_paths`], ties to the last maximum).
 pub(crate) fn worst_eps_path(
     sched: &crate::scheduler::Scheduler,
-) -> Option<(u32, &crate::control::LossEstimator)> {
-    super::worst_eps_channel_path(sched).map(|(id, p)| (id, &p.estimator))
+) -> Option<(u32, &crate::control::LossEstimator, Duration)> {
+    super::worst_eps_channel_path(sched).map(|(id, p)| (id, &p.estimator, p.srtt()))
 }
 
 /// The window sender's repair rate on the Stage-1c cadence (see
@@ -888,10 +888,10 @@ pub(crate) fn cadenced_repair_rate(
     let (path, period, snap) = {
         let ctrl = &*fec_controller;
         let sched = &*scheduler;
-        let Some((path, est)) = worst_eps_path(&sched) else {
+        let Some((path, est, srtt)) = worst_eps_path(&sched) else {
             return 0.0;
         };
-        (path, RepairRateCache::period_us(est.rtt()), ctrl.rate_snapshot(est, window))
+        (path, RepairRateCache::period_us(srtt), ctrl.rate_snapshot_at(est, srtt, window))
     };
     let t0 = std::time::Instant::now();
     let rate = snap.rate();

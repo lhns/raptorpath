@@ -403,9 +403,12 @@ pub struct CopaState {
     pub(crate) min_rtt: Option<Duration>,
     /// Maximum delivery rate seen in the current window.
     pub(crate) max_bw: f64,
-    /// Smoothed RTT (EWMA 7/8 old + 1/8 new) — pacing-rate denominator and
-    /// cwnd-update cadence.
-    pub(crate) srtt: Option<Duration>,
+    /// `RWM_COPA_WIRE` only: the controller's own smoothed RTT on the wire
+    /// sample stream (EWMA 7/8 + 1/8, seeded from the first sample). In the
+    /// default arm the cadence reads the leg's `s` (`LegState`, W3.2 A1), the
+    /// same stream, so this stays `None`. Under the arm the two streams
+    /// differ (wire vs echo), so the controller keeps its own.
+    wire_srtt: Option<Duration>,
     /// Minimum RTT sample since the last cwnd update — the queuing-delay
     /// signal (windowed min, not an EWMA; see module docs).
     min_rtt_since_update: Option<Duration>,
@@ -641,7 +644,7 @@ impl CopaState {
             window_duration: Duration::from_secs(10),
             min_rtt: None,
             max_bw: 0.0,
-            srtt: None,
+            wire_srtt: None,
             min_rtt_since_update: None,
             jitter_est: 0.0,
             prev_rtt_sample: None,
@@ -939,14 +942,20 @@ impl CopaState {
 
     /// Record an RTT sample: SRTT EWMA, 10s floor window, and the
     /// since-last-update min (queuing-delay signal).
-    pub(crate) fn record_rtt(&mut self, rtt: Duration) {
+    ///
+    /// The smoothed echo RTT is the leg's (`leg.s`, already stepped with this
+    /// sample by the caller); only under `RWM_COPA_WIRE` does the controller
+    /// step its own `wire_srtt` here.
+    pub(crate) fn record_rtt(&mut self, rtt: Duration, leg: &LegState) {
         let now = self.clock.now();
 
-        // SRTT EWMA (RFC 6298 weights).
-        self.srtt = Some(match self.srtt {
-            Some(s) => s.mul_f64(0.875) + rtt.mul_f64(0.125),
-            None => rtt,
-        });
+        // SRTT EWMA (RFC 6298 weights) — the wire arm's controller-local one.
+        if self.wire_mode {
+            self.wire_srtt = Some(match self.wire_srtt {
+                Some(s) => s.mul_f64(0.875) + rtt.mul_f64(0.125),
+                None => rtt,
+            });
+        }
 
         // Windowed min for the queuing-delay signal.
         self.min_rtt_since_update = Some(match self.min_rtt_since_update {
@@ -965,7 +974,7 @@ impl CopaState {
         // The derived clock's second moment, fed against the smoothed mean the
         // same way RFC 6298 §2 feeds RTTVAR and at the same β = 1/4. Fed
         // unconditionally; read by nothing on the default arm.
-        if let Some(sr) = self.srtt {
+        if let Some(sr) = self.reference_srtt(leg) {
             let dev = rtt.as_secs_f64() - sr.as_secs_f64();
             self.rtt_var_sq = 0.75 * self.rtt_var_sq + 0.25 * dev * dev;
             // Counted at the same site that feeds the EWMA, so the `[DIAG]`
@@ -1038,7 +1047,7 @@ impl CopaState {
         // which the queue is "nearly empty". Gated so the shipped/wire-only
         // paths pay nothing.
         if self.compete_on {
-            self.compete_note_sample(rtt, now);
+            self.compete_note_sample(rtt, now, leg);
         }
     }
 
@@ -1051,12 +1060,12 @@ impl CopaState {
     /// keeps a zero-variance clean/idle link (RTTmax == RTTmin ⇒ threshold
     /// 0) from reading as "never empty" — a d_q at the clamp floor is an
     /// empty queue.
-    fn compete_note_sample(&mut self, rtt: Duration, now: Instant) {
+    fn compete_note_sample(&mut self, rtt: Duration, now: Instant, leg: &LegState) {
         while self.compete_max_deque.back().is_some_and(|&(_, r)| r <= rtt) {
             self.compete_max_deque.pop_back();
         }
         self.compete_max_deque.push_back((now, rtt));
-        let lookback = self.srtt().mul_f64(COMPETE_RTTMAX_RTTS);
+        let lookback = self.cadence_srtt(leg).mul_f64(COMPETE_RTTMAX_RTTS);
         let cutoff = now.checked_sub(lookback).unwrap_or(now);
         while self
             .compete_max_deque
@@ -1109,11 +1118,11 @@ impl CopaState {
     ///
     /// Skipped during the ramp: the startup burst's own queue is not
     /// competitor evidence, and the velocity law is not live yet.
-    fn compete_update(&mut self, now: Instant) {
+    fn compete_update(&mut self, now: Instant, leg: &LegState) {
         if !self.compete_on || self.ramping {
             return;
         }
-        let window = self.srtt().mul_f64(COMPETE_WINDOW_RTTS);
+        let window = self.cadence_srtt(leg).mul_f64(COMPETE_WINDOW_RTTS);
         let empty_recent = match self.last_nearly_empty {
             Some(t) => now.saturating_duration_since(t) <= window,
             // No detector evidence yet (no RTT floor/sample): stay default —
@@ -1144,9 +1153,21 @@ impl CopaState {
         self.loss_since_update = false;
     }
 
-    /// Smoothed RTT, defaulting to 50ms before the first sample.
-    fn srtt(&self) -> Duration {
-        self.srtt.unwrap_or(DEFAULT_SRTT)
+    /// The smoothed RTT the controller's cadence and targets read: the leg's
+    /// `s` (default arm), or the controller-local wire EWMA (`RWM_COPA_WIRE`);
+    /// 50 ms before the first sample and until a revived leg reseeds.
+    pub(crate) fn cadence_srtt(&self, leg: &LegState) -> Duration {
+        if self.wire_mode {
+            self.wire_srtt.unwrap_or(DEFAULT_SRTT)
+        } else {
+            leg.s.cadence()
+        }
+    }
+
+    /// The measured smoothed RTT σ's deviation is taken against (`None`
+    /// before a sample).
+    fn reference_srtt(&self, leg: &LegState) -> Option<Duration> {
+        if self.wire_mode { self.wire_srtt } else { leg.s.measured() }
     }
 
     /// The queue floor: QUEUE_FLOOR_QUANTILE of the recent window-min
@@ -1200,9 +1221,9 @@ impl CopaState {
 
     /// Wire-mode congestion test: is the current rate above Copa's target
     /// rate 1/(δ·d_q)?  cwnd/srtt > 1/(δ·d_q)  ⇔  cwnd·δ·d_q > srtt.
-    fn wire_above_target(&self, cwnd: u32) -> bool {
+    fn wire_above_target(&self, cwnd: u32, leg: &LegState) -> bool {
         match self.wire_dq_secs() {
-            Some(dq) => cwnd as f64 * self.delta * dq > self.srtt().as_secs_f64(),
+            Some(dq) => cwnd as f64 * self.delta * dq > self.cadence_srtt(leg).as_secs_f64(),
             None => false,
         }
     }
@@ -1224,9 +1245,9 @@ impl CopaState {
     ///     spread at small sample counts (JITTER_HEADROOM).
     ///
     /// In wire mode the test is `wire_above_target` instead.
-    pub(crate) fn queue_above_target(&self, cwnd: u32) -> bool {
+    pub(crate) fn queue_above_target(&self, cwnd: u32, leg: &LegState) -> bool {
         if self.wire_mode {
-            return self.wire_above_target(cwnd);
+            return self.wire_above_target(cwnd, leg);
         }
         let (Some(win_min), Some(floor)) = (self.min_rtt_since_update, self.queue_floor()) else {
             return false;
@@ -1250,8 +1271,8 @@ impl CopaState {
     }
 
     /// Whether a cwnd window update is due (once per SRTT).
-    pub(crate) fn should_update(&self, now: Instant) -> bool {
-        now.duration_since(self.last_cwnd_update) >= self.srtt()
+    pub(crate) fn should_update(&self, now: Instant, leg: &LegState) -> bool {
+        now.duration_since(self.last_cwnd_update) >= self.cadence_srtt(leg)
     }
 
     /// Per-SRTT window update:
@@ -1260,7 +1281,7 @@ impl CopaState {
     ///   - steady state → +2
     /// Resets the queuing-delay window. Returns the new cwnd (unclamped
     /// against MIN/MAX — the caller clamps).
-    pub(crate) fn update_cwnd(&mut self, cwnd: u32) -> u32 {
+    pub(crate) fn update_cwnd(&mut self, cwnd: u32, leg: &LegState) -> u32 {
         let now = self.clock.now();
         self.last_cwnd_update = now;
         // No RTT samples since the last update → no signal, hold.
@@ -1270,8 +1291,8 @@ impl CopaState {
         // Copa §2.2 mode switching + competitive AIMD, per-SRTT cadence,
         // before the direction test so the adapted δ drives this update's
         // law (no-op unless RWM_COPA_COMPETE && wire mode).
-        self.compete_update(now);
-        let above = self.queue_above_target(cwnd);
+        self.compete_update(now, leg);
+        let above = self.queue_above_target(cwnd, leg);
         tracing::debug!(
             cwnd,
             above,
@@ -1280,7 +1301,7 @@ impl CopaState {
             qfloor_us = self.queue_floor().map(|d| d.as_micros() as u64),
             jitter_us = (self.jitter_est * 1e6) as u64,
             win_jitter_us = (self.win_jitter_est * 1e6) as u64,
-            srtt_us = self.srtt().as_micros() as u64,
+            srtt_us = self.cadence_srtt(leg).as_micros() as u64,
             n_samples = self.samples_since_update,
             max_bw = self.max_bw as u64,
             bdp_anchor = self.bdp_anchor().map(|b| b.round() as u64),

@@ -106,22 +106,17 @@ pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
 // umbrella) gates the hole law.
 
 /// RFC 9002 §6.1.2 time threshold for the flight path: kTimeThreshold (9/8)
-/// × max of the two smoothed RTT clocks available for the path (Copa EWMA
-/// srtt and the estimator's EWMA app-echo RTT — the analog of
+/// × the path's smoothed app-echo RTT `s` (`LegState.s`; the analog of
 /// `max(smoothed_rtt, latest_rtt)`), floored at `floor_us`, the kGranularity
 /// analog (the engine passes `NACK_RETX_COOLDOWN_FLOOR_US`). kTimeThreshold
 /// is RFC 9002's empirical recommendation (RACK uses 5/4); only the floor is
-/// derived.
+/// derived. (Through W3.2 A0 the clock was the max of two copies of `s`, Copa's
+/// and the estimator's; A1 merged them.)
 ///
 /// Returns the threshold and whether the floor term won (the `pf=` mechanism
 /// gauge: "patience is derived" means the floor term stops winning).
-pub fn mp_time_threshold_split(
-    srtt_us: u64,
-    ewma_rtt_us: u64,
-    floor_us: u64,
-) -> (u64, bool) {
-    let s = srtt_us.max(ewma_rtt_us);
-    let clock = s.saturating_mul(9) / 8;
+pub fn mp_time_threshold_split(srtt_us: u64, floor_us: u64) -> (u64, bool) {
+    let clock = srtt_us.saturating_mul(9) / 8;
     if clock >= floor_us {
         (clock, false)
     } else {
@@ -294,7 +289,7 @@ pub fn recovery_clock_paths(sched: &Scheduler) -> Vec<crate::scheduler::PathId> 
 /// app-echo RTT the recovery clocks run on.
 pub fn pooled_recovery_srtt_of(sched: &Scheduler) -> u64 {
     pooled_recovery_srtt_iter(
-        recovery_clock_paths_iter(sched).map(|(_, p)| p.estimator.rtt().as_micros() as u64),
+        recovery_clock_paths_iter(sched).map(|(_, p)| p.srtt().as_micros() as u64),
     )
 }
 

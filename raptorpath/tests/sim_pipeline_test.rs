@@ -112,7 +112,6 @@ fn run_pipeline(
         // Feed scheduler
         sched.ack(path_id, batch_survived);
         if let Some(path) = sched.path_mut(path_id) {
-            path.estimator.record_rtt(rtt);
             path.record_rtt_sample(rtt);
             path.estimator
                 .record_batch(this_batch, batch_survived);
@@ -146,7 +145,6 @@ fn test_pipeline_datacenter() {
     path.cwnd = 200;
     path.in_slow_start = false;
     for _ in 0..20 {
-        path.estimator.record_rtt(millis(1));
         path.record_rtt_sample(millis(1));
         path.estimator.record_throughput(1_000_000_000.0);
         path.estimator.record_batch(100, 100);
@@ -194,7 +192,6 @@ fn test_pipeline_wifi_degradation() {
     path.cwnd = 200;
     path.in_slow_start = false;
     for _ in 0..20 {
-        path.estimator.record_rtt(millis(1));
         path.record_rtt_sample(millis(1));
         path.estimator.record_throughput(100_000_000.0);
         path.estimator.record_batch(100, 100);
@@ -262,7 +259,6 @@ fn test_pipeline_multipath_failover() {
         path.cwnd = 200;
         path.in_slow_start = false;
         for _ in 0..20 {
-            path.estimator.record_rtt(millis(10));
             path.record_rtt_sample(millis(10));
             path.estimator.record_throughput(50_000_000.0);
             path.estimator.record_batch(100, 98);

@@ -52,6 +52,12 @@ pub fn worst_eps_estimator(sched: &Scheduler) -> Option<&LossEstimator> {
     worst_eps_channel_path(sched).map(|(_, p)| &p.estimator)
 }
 
+/// [`worst_eps_estimator`] with that path's smoothed RTT (`srtt()`), which the
+/// rate law and the span block read (the estimator carries no RTT on a leg).
+pub fn worst_eps_estimator_srtt(sched: &Scheduler) -> Option<(&LossEstimator, Duration)> {
+    worst_eps_channel_path(sched).map(|(_, p)| (&p.estimator, p.srtt()))
+}
+
 /// The channel's worst loss rate (max over the set; 0.0 on an empty set) —
 /// the ε̂ the retransmit buffer reads.
 pub fn channel_worst_loss_rate(sched: &Scheduler) -> f64 {
@@ -65,7 +71,7 @@ pub fn channel_worst_loss_rate(sched: &Scheduler) -> f64 {
 pub fn p_lost_inputs(sched: &Scheduler) -> (f64, f64, f64) {
     match worst_eps_channel_path(sched) {
         Some((_, p)) => {
-            let srtt = p.estimator.rtt().as_secs_f64();
+            let srtt = p.srtt().as_secs_f64();
             (srtt, srtt * 0.1, p.estimator.loss_rate())
         }
         None => (0.05, 0.005, 0.0),

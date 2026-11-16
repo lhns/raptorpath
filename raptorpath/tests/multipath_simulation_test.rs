@@ -48,7 +48,6 @@ fn setup_paths(profiles: &[PathProfile], clock: Arc<MockClock>) -> Scheduler {
         let rtt = Duration::from_millis(p.rtt_ms);
         // Feed enough samples for EWMA convergence
         for _ in 0..50 {
-            path.estimator.record_rtt(rtt);
             path.record_rtt_sample(rtt);
             path.estimator.record_throughput(p.throughput_bps);
             let sent = 100u32;
@@ -84,7 +83,6 @@ fn simulate_round(
     sched.ack(path_id, received);
 
     if let Some(path) = sched.path_mut(path_id) {
-        path.estimator.record_rtt(rtt);
         path.record_rtt_sample(rtt);
         path.estimator.record_throughput(throughput_bps);
         path.estimator.record_batch(symbols_per_round, received);
@@ -771,7 +769,6 @@ fn test_sustained_wireless_loss_cwnd_stable() {
     path.cwnd = 200;
     path.in_slow_start = false;
     for _ in 0..20 {
-        path.estimator.record_rtt(millis(15));
         path.record_rtt_sample(millis(15));
         path.estimator.record_throughput(50_000_000.0);
         path.estimator.record_batch(100, 95);
