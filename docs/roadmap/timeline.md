@@ -52,7 +52,7 @@ gantt
     σ dispersion estimators (fixed lag) :rec_dispersion_est, 2026-08-21, 2026-08-21
     Successor-arrival distribution measured :rec_successor_arrival, 2026-08-21, 2026-08-21
     Recovery primitives and σ (goal 100) :rec_goal100, 2026-08-20, 2026-08-21
-    Goal 101 verdict battery :crit, rec_goal101, 2026-08-21, 2026-08-21
+    Recovery clock verdict battery (101) :crit, rec_goal101, 2026-08-21, 2026-08-21
     Receiver request law (Track C) :crit, rec_receiver_law, 2026-09-08, 2026-09-08
     Cost-ratio decision (owner ruling) :rec_cost_ratio_decision, 2026-08-19, 2026-08-20
     Wire v9 per-path sequence :rec_wire_v9, 2026-09-30, 2026-09-30

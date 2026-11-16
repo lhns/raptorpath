@@ -84,7 +84,6 @@ flowchart TB
     model_defect_dead_machine --> model_viz_fix
     model_giveup_law --> model_defect_rho_inert
     model_endspeed --> model_warm_start
-    model_wasm_audit --> model_wasm_fixes
     model_law_ledger --> model_fix_paper_p2
     linkStyle 32,34,35,37,44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
@@ -164,7 +163,7 @@ flowchart TB
 | `model-review-37` | Model review (§37) | Found the idle-leg stale-price lock-out (-> §38). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §37 |
 | `model-paper-recon` | Paper versus engine reconciliation | Plan W3.7 marks it done (18 true, 8 stale, 3 fixed); the branch is unmerged and the rate-law questions wait on the owner (plan user decision 11). | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |
 | `model-wasm-audit` | Wasm mode-switch audit | Audit before ADR-0076 phase 6; 27 hint-keyed sites; fixes wait on owner calls. | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit |
-| `model-defect-tcut` | T_cut give-up law pinned | Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim no longer calls find_t_cut. find_t_cut's search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled. | status §3.10 item 1; commit 56388aee |
+| `model-defect-tcut` | T_cut give-up law pinned | Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim's give-up horizon is D(δ) with the budget min(1 − ρ, R), and nothing in raptorpath-wasm's sim or the page calls find_t_cut any more (the exported wasm wrapper and the page's JS wrapper remain, unused). find_t_cut's search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled. | status §3.10 item 1; commit 56388aee |
 | `model-defect-dead-machine` | Wasm dead second machine | Fixed by viz-fix (model-viz-fix): the classic-hint machine is removed and the named hints are an alias table onto the one continuum constructor. Law ledger M03 has not been re-labelled. | status §3.10 item 3; status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd |
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | No raw record. Status §53 Erratum 2 (cbe2be3f): the visualizer build, the native golden test and the bound-tests wasm pool test were registered for the pre-flight but not run; they move to the next VM session's pre-flight. | status §53 Erratum 2 (cbe2be3f) |
 | `model-law-ledger` | Law ledger | Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |

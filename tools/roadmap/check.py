@@ -19,7 +19,7 @@ ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 # GitHub fails to render some Mermaid blocks ("Unable to render rich display") when one page holds too many;
 # which blocks fail varies per page load (2026-11-13: 14 blocks in one 231 KB file failed from block 6 to 10 on;
 # 3 and 8 per file rendered). The cause is not known; the cap is empirical and set to the most the shipped layout
-# was verified with (3 blocks on the main page; it has 1 now, every other page has 1).
+# was verified with (3 blocks on the main page; it has 2 now, the legend and the overview; every other page has 1).
 MAX_MERMAID_PER_FILE = 3
 # the build date, written as a visible sentence on the main page and on the timeline page
 TODAY_RE = re.compile(re.escape(build.GENERATED_ON).replace(re.escape("{}"), r"(\d{4}-\d{2}-\d{2})"))

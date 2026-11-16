@@ -73,7 +73,7 @@ flowchart TB
     rate_pfec_continuous --> rate_pfec_oracle
     rate_evict_registration --> rate_evict_session
     rate_evict_session --> rate_spare_clamp_verdict
-    rate_defect_pfec --> rate_law_reconcile
+    rate_pfec_oracle --> rate_law_reconcile
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
@@ -131,7 +131,7 @@ flowchart TB
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | next | unrated |  | status §60 Amendment 2 |  |
 | `rate-fix-rate-readout` | Repair-rate readout | next | unrated |  | docs/derivations/s51-design.md §8 P2 |  |
 | `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
-| `rate-law-reconcile` | Rate-law reconciliation (W22, W*) | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session |
+| `rate-law-reconcile` | Rate-law reconciliation (W22, W*) | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session, rate-pfec-oracle |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators |
 | `rate-fix-estimators` | Loss estimator approximations | blocked | unrated |  | law ledger rows E07, E08, E09 | place-per-leg-impl |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | blocked | unrated |  | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 | store-engine-form-impl, rate-law-reconcile, rec-fix-refresh-clock, rate-fix-estimators, store-fix-maxbw-minrtt |

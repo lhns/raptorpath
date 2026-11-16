@@ -118,7 +118,7 @@ flowchart TB
         cod_one_pipeline["cod · ✔ One window<br/>pipeline (ADR-0069)"]
         meas_formula_first["meas · ✔ Formula-first<br/>review (ADR-0070)"]
         store_delta_cap[/"store · ✔ Derived<br/>setpoint 1 + q(δ)"/]
-        rec_goal101[/"rec · ✖ Goal #35;101<br/>verdict battery"/]
+        rec_goal101[/"rec · ✖ Recovery clock<br/>verdict battery (#35;101)"/]
     end
     subgraph bd_3["Sep 2026 to Oct 2026"]
         rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
@@ -249,7 +249,7 @@ flowchart TB
 | Owner call: keep generation coding | ○ next | Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default. |
 | Reliable window (RWM Phase A) | ✔ done · successful | Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode. |
 | σ dispersion estimators (fixed lag) | ⏸ parked | Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open. |
-| Goal #101 verdict battery | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
+| Recovery clock verdict battery (#101) | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
 | Gap horizon lever B (§52) | ⏳ waiting | Letting the sender hear about many more missing packets at once removed most of the end-of-transfer wait on the hardest test, but raised duplicate packets; the merge is still pending. |
 | Snapshot-order filter as law | ✔ done · unrated | Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes. |
 | [QCLK] w_us pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |

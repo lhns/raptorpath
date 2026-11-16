@@ -15,7 +15,7 @@ Extraction only: facts about past work that no node cites. Grouping is the owner
 | 5 commit-scope clusters with no node (heuristic) | 0 | 0 | - | 0 commit-memberships; months  |
 | 6 paper section 10 rows | 70 | 0 | 0 | 0 more are cited only via their commit hash |
 
-Totals: 321 nodes (54 without a start date), 2047 commits on all refs. Main = `github/main` for branch merge status; HEAD = `06abf54ac9` for "on main".
+Totals: 321 nodes (54 without a start date), 2048 commits on all refs. Main = `github/main` for branch merge status; HEAD = `4ef1f9c0c2` for "on main".
 
 ## Before-numbers: nodes per start month vs commits per month
 
@@ -27,7 +27,7 @@ Totals: 321 nodes (54 without a start date), 2047 commits on all refs. Main = `g
 | 2026-08 | 51 | 454 | 8.9 |
 | 2026-09 | 22 | 239 | 10.9 |
 | 2026-10 | 28 | 271 | 9.7 |
-| 2026-11 | 83 | 640 | 7.7 |
+| 2026-11 | 83 | 641 | 7.7 |
 
 Months with commits per node over 15 (or no nodes at all), used for list 5: none.
 

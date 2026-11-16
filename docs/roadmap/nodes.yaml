@@ -906,7 +906,7 @@ nodes:
   overview: false
   notes: 'Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep).'
 - id: rec-goal101
-  title: 'Goal #101 verdict battery'
+  title: Recovery clock verdict battery (#101)
   track: rec
   kind: law
   state: abandoned
@@ -5278,7 +5278,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Fixed: the visualizer''s give-up rule no longer uses the two-valued cut-off time.'
-  notes: 'Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim no longer calls find_t_cut. find_t_cut''s search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled.'
+  notes: 'Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim''s give-up horizon is D(δ) with the budget min(1 − ρ, R), and nothing in raptorpath-wasm''s sim or the page calls find_t_cut any more (the exported wasm wrapper and the page''s JS wrapper remain, unused). find_t_cut''s search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled.'
 - id: model-defect-dead-machine
   title: Wasm dead second machine
   track: model
@@ -6879,6 +6879,7 @@ nodes:
   depends_on:
   - rate-user-rate-law
   - meas-s51-session
+  - rate-pfec-oracle
   replaced_by: []
   qualified_by: []
   lane: host-cargo

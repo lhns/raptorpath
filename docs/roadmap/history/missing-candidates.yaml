@@ -1,11 +1,11 @@
 generated_from:
   nodes: docs/roadmap/nodes.yaml
   main_ref: github/main
-  head: 06abf54ac9e0b2efa77240585e2ed0d6fe32eb20
+  head: 4ef1f9c0c28fb6aebe065dea552ad9193095da98
 summary:
   nodes_total: 321
   nodes_without_start: 54
-  commits_all_refs: 2047
+  commits_all_refs: 2048
   adrs:
     total: 77
     uncited_strict: 0
@@ -61,7 +61,7 @@ months:
   commits_per_node: 9.7
 - month: 2026-11
   nodes: 83
-  commits: 640
+  commits: 641
   commits_per_node: 7.7
 adrs:
 - num: 1

@@ -33,7 +33,7 @@ flowchart TB
     rec_refresh_floor[/"✖ Refresh-floor lift<br/>(q, refresh) sweep"/]
     rec_dispersion_est["⏸ σ dispersion<br/>estimators (fixed lag)"]
     rec_successor_arrival["✔ Successor-arrival<br/>distribution measured"]
-    rec_goal101[/"✖ Goal #35;101 verdict<br/>battery"/]
+    rec_goal101[/"✖ Recovery clock<br/>verdict battery (#35;101)"/]
     rec_receiver_law[/"✖ Receiver request law<br/>(Track C)"/]
     rec_wire_v9["✔ Wire v9 per-path<br/>sequence"]
     rec_gap_horizon["⏳ Gap horizon lever B<br/>(#167;52)"]
@@ -175,7 +175,7 @@ flowchart TB
 | `rec-dispersion-est` | σ dispersion estimators (fixed lag) | parked | unrated |  | paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag); commit 89d79464; commit 9ba3aef7 | rec-goal100 |
 | `rec-successor-arrival` | Successor-arrival distribution measured | done | unrated |  | commit 821de6ae |  |
 | `rec-goal100` | Recovery primitives and σ (goal #100) | done | successful |  | commit 6e1e356a | rec-alpha-sweep |
-| `rec-goal101` | Goal #101 verdict battery | abandoned | dead-end |  | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 | rec-goal100, rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, rec-successor-arrival |
+| `rec-goal101` | Recovery clock verdict battery (#101) | abandoned | dead-end |  | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 | rec-goal100, rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, rec-successor-arrival |
 | `rec-receiver-law` | Receiver request law (Track C) | abandoned | dead-end |  | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1; paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`) | meas-wire-v8 |
 | `rec-cost-ratio-decision` | Cost-ratio decision (owner ruling) | done | n/a |  | commit ca058db4 |  |
 | `rec-wire-v9` | Wire v9 per-path sequence | done | successful |  | status §3.5 item 2 |  |
@@ -225,7 +225,7 @@ flowchart TB
 | `rec-dispersion-est` | σ dispersion estimators (fixed lag) | Goal #100 named the σ estimator as the missing instrument (6e1e356a); goal #101 item 2: the Sigma Estimator battery 'ALL FOUR FAIL CLAUSE S' (9ba3aef7), the τ-lag form 'mechanism CONFIRMED, bar still missed' (89d79464). Paper §10 status: open. Done when: the paper §10 row is closed, by an estimator that passes its bar or by a ruling. | paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag); commit 89d79464; commit 9ba3aef7 |
 | `rec-successor-arrival` | Successor-arrival distribution measured | Goal #101 measurement (split 2026-11-16): 'the anchor is refuted; the boundary is a LEVEL, and the level is 98%' (5481a0b9). | commit 821de6ae |
 | `rec-goal100` | Recovery primitives and σ (goal #100) | Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep). | commit 6e1e356a |
-| `rec-goal101` | Goal #101 verdict battery | The closure of goal #101 (2026-08-21): item 4's verdict battery decided the formula in paper §16.79 and the shipped clamp 'survives on merit'. Its arms are now their own nodes (split 2026-11-16 from 'Recovery clock law family (4 arms)'): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime. | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 |
+| `rec-goal101` | Recovery clock verdict battery (#101) | The closure of goal #101 (2026-08-21): item 4's verdict battery decided the formula in paper §16.79 and the shipped clamp 'survives on merit'. Its arms are now their own nodes (split 2026-11-16 from 'Recovery clock law family (4 arms)'): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime. | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 |
 | `rec-receiver-law` | Receiver request law (Track C) | Folds §3.1 item 1 (the self-heal estimator counted retransmits; fixed, battery not re-run). Dates: paper §10 rows carry an end (removal) date only. | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1; paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`) |
 | `rec-wire-v9` | Wire v9 per-path sequence | fix/wire-v9 (7825196): per-path path_seq, next_expected, received_above. | status §3.5 item 2 |
 | `rec-gap-horizon` | Gap horizon lever B (§52) | §52 guard PASS; c8 600 MB tail 4.19 -> 0.40 s with receiver duplicates x2.1 beyond BASE; the merge went to the owner. Plan 2026-11-13: lever B re-guarded on the new main, cand52 superseded. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §52; branch gaphorizon; branch cand52; branch base52 |
