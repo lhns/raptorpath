@@ -46,14 +46,14 @@ flowchart TB
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
     meas_s51_design["✔ Off-Bulk benchmark<br/>design (#167;51)"]
     meas_s58_session["✔ #167;58: F1 suites,<br/>binary identity"]
-    meas_s51_harness["⛔ #167;51 harness and<br/>scorer"]
+    meas_s51_harness["○ #167;51 harness and<br/>scorer"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
     meas_guard_resolution["○ Guard CPU and lag<br/>resolution"]
     meas_test_hygiene["○ Test hygiene fixes"]
     meas_s51_session["⛔ Off-Bulk baseline<br/>and δ sweep"]
     meas_s51b_rho["⛔ Partial-reliability<br/>measurement block"]
-    meas_adversarial_cells_run["⛔ Adversarial cells<br/>measured"]
+    meas_adversarial_cells_run["○ Adversarial cells<br/>measured"]
     meas_competitor_battery["⛔ Competitor battery"]
     meas_progress_baseline["○ Cumulative progress<br/>benchmark"]
     meas_fix_gauges_p3["⛔ Gauges for the<br/>remaining constants"]
@@ -140,8 +140,8 @@ flowchart TB
     class meas_c8_aggregation_arc,meas_coupling_model dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor defect
-    class meas_s51_harness,meas_s51_session,meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
-    class meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
+    class meas_s51_harness,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_adversarial_cells_run,meas_progress_baseline next
+    class meas_s51_session,meas_s51b_rho,meas_competitor_battery,meas_fix_gauges_p3 blocked
 ```
 <!-- END GENERATED: track-meas -->
 
@@ -187,14 +187,14 @@ flowchart TB
 | `meas-defect-diag-rtp-ms` | [DIAG] rtp prints whole milliseconds | in-progress | unrated |  | status §3.5 item 4 |  |
 | `meas-guard-v2-impl` | Guard v2 implementation | done | unrated |  | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 | meas-guard-v2 |
 | `meas-s51-design` | Off-Bulk benchmark design (§51) | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
-| `meas-s51-harness` | §51 harness and scorer | blocked | unrated |  | docs/derivations/s51-design.md §8 P1 | rec-s54-session |
+| `meas-s51-harness` | §51 harness and scorer | next | unrated |  | docs/derivations/s51-design.md §8 P1 | rec-s54-session |
 | `meas-s51b-rho` | Partial-reliability measurement block | blocked | unrated |  | docs/derivations/s51-design.md §2.3, §8 P4 | meas-s51-session |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | done | unrated |  | plan W5.3; branch adv-cells |  |
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
 | `meas-guard-resolution` | Guard CPU and lag resolution | next | unrated |  | plan W5.4 |  |
 | `meas-test-hygiene` | Test hygiene fixes | next | unrated |  | plan W5.5 |  |
 | `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, meas-s51-harness, store-defect-delta-nan |
-| `meas-adversarial-cells-run` | Adversarial cells measured | blocked | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build |
+| `meas-adversarial-cells-run` | Adversarial cells measured | next | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build |
 | `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
 | `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | blocked | unrated |  | law ledger rows S03, S07, R06, K06, K07, C11, F04 | rate-fix-estimators, model-fix-paper-p2, meas-s51-session, store-engine-form-impl |

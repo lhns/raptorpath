@@ -22,7 +22,7 @@ flowchart TB
     infra_restructure["⏳ Workspace<br/>restructure (ADR-0076)"]
     infra_inventory_merges["✔ Inventory merges<br/>(first batch)"]
     infra_derivation_merges["○ Derivation branch<br/>merges"]
-    infra_tech_tree_skill["⛔ tech-tree skill PR"]
+    infra_tech_tree_skill["○ tech-tree skill PR"]
     infra_early_platform ~~~ infra_net_seams
     infra_mtu_floor ~~~ infra_cleanup_0927
     infra_consolidation ~~~ infra_fix_program
@@ -59,8 +59,7 @@ flowchart TB
     class infra_defect_recorded_not_fixed defect
     class infra_restructure waiting
     class infra_inventory_merges unrated
-    class infra_derivation_merges next
-    class infra_tech_tree_skill blocked
+    class infra_derivation_merges,infra_tech_tree_skill next
 ```
 <!-- END GENERATED: track-infra -->
 
@@ -83,7 +82,7 @@ flowchart TB
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed (§3.7) | in-progress | unrated | ≈ 0.0354 | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |  |
 | `infra-inventory-merges` | Inventory merges (first batch) | done | unrated |  | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |  |
 | `infra-derivation-merges` | Derivation branch merges | next | unrated |  |  |  |
-| `infra-tech-tree-skill` | tech-tree skill PR | blocked | unrated |  | plan Live state TECH TREE (AFTERWARDS) | infra-inventory-merges, model-law-ledger |
+| `infra-tech-tree-skill` | tech-tree skill PR | next | unrated |  | plan Live state TECH TREE (AFTERWARDS) | infra-inventory-merges, model-law-ledger |
 
 ### Details per node
 

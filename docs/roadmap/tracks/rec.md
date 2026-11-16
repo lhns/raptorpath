@@ -47,8 +47,8 @@ flowchart TB
     rec_s54_session["✔ #167;54: filter guard,<br/>store budget"]
     rec_wire_clock_derivation["✔ Recovery-clock<br/>derivation (wire<br/>clock)"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
-    rec_leverb_guard["⛔ Lever-B guard v2,<br/>then merge"]
-    rec_fix_perleg_clock_n1[/"⛔ Per-leg recovery<br/>clock, one law"/]
+    rec_leverb_guard["⏸ Lever-B guard v2,<br/>then merge"]
+    rec_fix_perleg_clock_n1[/"○ Per-leg recovery<br/>clock, one law"/]
     rec_recovery_timeouts[/"⛔ Recovery timeouts<br/>after store law"/]
     rec_fix_refresh_clock[/"⛔ Receiver refresh<br/>clock input"/]
     rec_fix_nack_throttle[/"○ NACK repair<br/>throttle: gauge, paper"/]
@@ -141,11 +141,11 @@ flowchart TB
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter succ
     class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation unrated
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
-    class rec_recov_sp,rec_dispersion_est parked
+    class rec_recov_sp,rec_dispersion_est,rec_leverb_guard parked
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
-    class rec_w0_leg_question,rec_leverb_guard,rec_fix_perleg_clock_n1,rec_recovery_timeouts,rec_fix_refresh_clock blocked
-    class rec_fix_nack_throttle,rec_retx_behind_source next
+    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
+    class rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
 ```
 <!-- END GENERATED: track-rec -->
 
@@ -191,10 +191,10 @@ flowchart TB
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | in-progress | unrated |  | status §53 open item 3 | rec-snapver-filter |
 | `rec-s54-session` | §54: filter guard, store budget | done | unrated |  | plan Live state items 1-2; branch p0-dwell-diag §8; branch levb54 | meas-guard-v2-impl, rec-snapver-law, store-s54-budget |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | blocked | unrated |  | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f | rec-s54-session, place-wdiv |
-| `rec-leverb-guard` | Lever-B guard v2, then merge | blocked | unrated |  | plan Live state item 4; status §53 "What follows" | rec-s54-session, meas-guard-v2-impl, rec-gap-horizon, store-law-derivation |
+| `rec-leverb-guard` | Lever-B guard v2, then merge | parked | unrated |  | plan Live state item 4; status §53 "What follows" | rec-s54-session, meas-guard-v2-impl, rec-gap-horizon, store-law-derivation |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | blocked | unrated |  | plan W3.6; status §3.10 items 4 and 6 | store-engine-form-impl, rec-fix-perleg-clock-n1 |
 | `rec-wire-clock-derivation` | Recovery-clock derivation (wire clock) | done | unrated |  | branch wire-clock-derive (17bfcefb); docs/derivations/wire-clock.md; status §55 Erratum 1 (github/main 5e28791b) | model-law-ledger |
-| `rec-fix-perleg-clock-n1` | Per-leg recovery clock, one law | blocked | unrated |  | status §55 Erratum 1; docs/derivations/wire-clock.md §8; law ledger rows E11, C01, C04, C05 | rec-s54-session, rec-wire-clock-derivation |
+| `rec-fix-perleg-clock-n1` | Per-leg recovery clock, one law | next | unrated |  | status §55 Erratum 1; docs/derivations/wire-clock.md §8; law ledger rows E11, C01, C04, C05 | rec-s54-session, rec-wire-clock-derivation |
 | `rec-fix-refresh-clock` | Receiver refresh clock input | blocked | unrated |  | law ledger rows E10, C07 | store-engine-form-impl |
 | `rec-fix-nack-throttle` | NACK repair throttle: gauge, paper | next | unrated |  | law ledger rows C09 |  |
 | `rec-retx-behind-source` | Retransmits queued behind source? | next | unrated |  | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |  |

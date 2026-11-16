@@ -142,7 +142,7 @@ flowchart TB
         store_law_derivation["store · ▶ Store-law<br/>derivation"]
     end
     subgraph bd_6["Later (blocked or parked)"]
-        rec_leverb_guard["rec · ⛔ Lever-B guard<br/>v2, then merge"]
+        rec_leverb_guard["rec · ⏸ Lever-B guard<br/>v2, then merge"]
         meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
         cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion (new ADR)"]
         cc_hybrid["cc · ⏸ BBR/Copa hybrid<br/>build (ADR-0068)"]
@@ -229,8 +229,8 @@ flowchart TB
     class cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
-    class rec_leverb_guard,meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
-    class cc_hybrid parked
+    class rec_leverb_guard,cc_hybrid parked
+    class meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
 ```
 <!-- END GENERATED: overview -->
 
@@ -245,7 +245,7 @@ flowchart TB
 | Legacy sliding-window/generation decoders | ↷ superseded | The older decoders for the sliding-window code, replaced by one decoder that handles every case. |
 | Unified span machine (ADR-0064) | ✔ done · successful | Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes. |
 | One window pipeline (ADR-0069) | ✔ done · successful | Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere. |
-| Owner call: keep generation coding | ○ next | Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default. |
+| Owner call: keep generation coding | ⏸ parked | Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default. |
 | Reliable window (RWM Phase A) | ✔ done · successful | Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode. |
 | σ dispersion estimators (fixed lag) | ⏸ parked | Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open. |
 | Recovery clock verdict battery (#101) | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
@@ -259,9 +259,9 @@ flowchart TB
 | Main's duplicates mostly unexplained | ⚠ open defect | Open problem: even the current main version receives a thousand or more duplicate packets per run, and most of them are unexplained. |
 | §54: filter guard, store budget | ✔ done · unrated | Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue. |
 | Retransmit leg choice with filter | ⛔ blocked | Checking, with the loss-report fix in place, whether retransmissions should be spread across paths like normal data. |
-| Lever-B guard v2, then merge | ⛔ blocked | Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait. |
+| Lever-B guard v2, then merge | ⏸ parked | Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait. |
 | Recovery timeouts after store law | ⛔ blocked | Re-deriving the retransmit timers from the new in-flight limit, so they stop sitting at a fixed hand-set ceiling. |
-| Per-leg recovery clock, one law | ⛔ blocked | Making each missing packet's timer follow its own path, using the same loss rule on one path as on many, and keeping the re-send cooldown only until a counter proves it never acts. |
+| Per-leg recovery clock, one law | ○ next | Making each missing packet's timer follow its own path, using the same loss rule on one path as on many, and keeping the re-send cooldown only until a counter proves it never acts. |
 | Receiver refresh clock input | ⛔ blocked | Giving the receiver a real delay for its re-report timer; it waits for the in-flight limit fix, because until then the timer's limits decide its value anyway. |
 | NACK repair throttle: gauge, paper | ○ next | First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it. |
 | Retransmits queued behind source? | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
@@ -315,7 +315,6 @@ flowchart TB
 | Copa min_rtt reads own queue | ⚠ open defect | Open problem: the minimum delay the system measures includes time spent in its own send queue, so it reads ten or more times too high. |
 | §48d bbr_rs round 2 | ⛔ blocked | Real-network test of the second round of fixes to our own BBR controller, now also measuring how long data waits before delivery. |
 | Pacing seam first reading | ⛔ blocked | First measurement of letting our controller set the sending pace itself, watching how much data then waits in the send queue. |
-| Owner call: ADR-0068 direction | ○ next | Owner decision on whether the future hybrid controller should grow out of our BBR controller instead of being a second one. |
 | Owner call: bbr_rs promotion | ⛔ blocked | Owner decision on whether our BBR controller replaces the standard one by default. |
 | Copa consumers onto per-leg state | ⛔ blocked | Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule. |
 | bbr_rs promotion (new ADR) | ⛔ blocked | Making our BBR controller the default, recorded as a new architecture decision. |
@@ -332,13 +331,13 @@ flowchart TB
 | ETA route and σ witness mismatch | ⚠ open defect | Open problem: the script that checks the finish-time prediction uses a different delay than the formula itself, and one of its checks fails. |
 | c8 control bimodal collapse | ⚠ open defect | Open problem: on the hardest two-path test, the control runs sometimes fall back to using only the fast path, which makes results very noisy. |
 | [DIAG] rtp prints whole milliseconds | ⚠ open defect | Open problem: one diagnostic line rounds the delay to whole milliseconds, which hides small delays on fast links. |
-| §51 harness and scorer | ⛔ blocked | Building the scripts that run and score the off-Bulk test, after the next session's scripts merge, because they edit the same files. |
+| §51 harness and scorer | ○ next | Building the scripts that run and score the off-Bulk test, after the next session's scripts merge, because they edit the same files. |
 | Partial-reliability measurement block | ⛔ blocked | A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own. |
 | Harness robustness for every plan | ○ next | Making sure every test plan can be rehearsed end to end without the real network, so a long test session does not die on a script bug. |
 | Guard CPU and lag resolution | ○ next | Making the merge check sensitive to smaller CPU and delay changes, which it currently cannot see. |
 | Test hygiene fixes | ○ next | Fixing tests that pass for the wrong reason or depend on which machine they run on. |
 | Off-Bulk baseline and δ sweep | ⛔ blocked | First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves. |
-| Adversarial cells measured | ⛔ blocked | Measuring the current system, our BBR controller and the Copa controller on the harder network conditions. |
+| Adversarial cells measured | ○ next | Measuring the current system, our BBR controller and the Copa controller on the harder network conditions. |
 | Competitor battery | ⛔ blocked | Measuring standard Linux BBR and CUBIC on the same tests, to compare against outside protocols. |
 | Cumulative progress benchmark | ○ next | One measurement of the current system against the early-July version, showing how much each result has improved since. |
 | Gauges for the remaining constants | ⛔ blocked | Adding readouts or derivations for the last hand-set numbers, so none hides inside a formula. |
@@ -351,7 +350,6 @@ flowchart TB
 | Law ledger | ✔ done · unrated ⚠ | Audited every formula in the system for where it comes from and whether it has been checked in real conditions, and ranked the fixes. |
 | Hint-keyed engine paths made continuous | ⛔ blocked | Removing the five places where the engine still changes behaviour by the name of the preset instead of following the latency dial smoothly. |
 | ρ inert at Auto, Realtime (M04) | ⚠ open defect | Open problem: in the visualizer's give-up rule the retention dial has no effect at the Auto and Realtime settings, because the other limit is always smaller. |
-| Owner call: weaker binary identity | ○ next | Owner decision on whether a model-only change whose engine binary differs only in embedded line numbers may skip the merge guard. |
 | Wasm model fixes | ▶ in progress | Applying the owner's calls to the visualizer's model and proving it stays smooth across the dial. |
 | Paper text for placement and bbr_rs | ○ next | Correcting two places where the paper does not match the code. |
 | Paper-only law records | ⛔ blocked | Writing four small rules into the paper that the code uses but the paper never states. |
@@ -361,7 +359,7 @@ flowchart TB
 | Workspace restructure (ADR-0076) | ⏳ waiting | Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open. |
 | Recorded, not fixed (§3.7) | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
 | Derivation branch merges | ○ next | Merging the finished design documents that are still on side branches. |
-| tech-tree skill PR | ⛔ blocked | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
+| tech-tree skill PR | ○ next | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
 <!-- END GENERATED: plain-words -->
 
 ## Ready now
@@ -369,6 +367,7 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
+- `meas-adversarial-cells-run`: Adversarial cells measured
 - `meas-progress-baseline`: Cumulative progress benchmark
 
 **host-cargo**
@@ -376,14 +375,17 @@ flowchart TB
 - `rate-fix-rate-readout`: Repair-rate readout
 - `meas-guard-resolution`: Guard CPU and lag resolution
 - `meas-test-hygiene`: Test hygiene fixes
+- `rec-fix-perleg-clock-n1`: Per-leg recovery clock, one law
 - `rec-fix-nack-throttle`: NACK repair throttle: gauge, paper
 
 **no-cargo**
 
 - `rate-evict-registration`: Evicting-seat m̄ registration (plan 59)
 - `rate-spare-cwnd`: Is spare's cwnd enforced?
+- `meas-s51-harness`: §51 harness and scorer
 - `infra-derivation-merges`: Derivation branch merges
 - `meas-harness-robustness`: Harness robustness for every plan
+- `infra-tech-tree-skill`: tech-tree skill PR
 - `rec-retx-behind-source`: Retransmits queued behind source?
 - `model-fix-paper-p2`: Paper text for placement and bbr_rs
 - `perf-fix-burst-bound`: Emission burst bound derivation
@@ -466,9 +468,7 @@ flowchart TB
 
 <!-- BEGIN GENERATED: waiting-on-owner -->
 - `store-user-u1u3`: Owner calls U1–U3
-- `model-user-weak-identity`: Owner call: weaker binary identity
 - `rate-user-rate-law`: Owner calls on rate law
-- `cc-user-adr68-direction`: Owner call: ADR-0068 direction
 - `cc-user-bbrrs-promotion`: Owner call: bbr_rs promotion
 - `cod-user-generation-seat`: Owner call: keep generation coding
 - `place-user-perleg-questions`: Owner calls on per-leg design
@@ -505,16 +505,16 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 <!-- BEGIN GENERATED: tracks -->
 Each track has its own page with its tree, node table and per-node details.
 
-- [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 1 next, 1 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 45 nodes (16 done, 6 in progress, 2 next, 5 blocked, 2 parked, 14 abandoned)
+- [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 45 nodes (16 done, 6 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 61 nodes (28 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
-- [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (9 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
+- [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 50 nodes (35 done, 4 in progress, 4 next, 6 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 29 nodes (18 done, 7 in progress, 2 next, 2 blocked)
+- [meas - measurement](roadmap/tracks/meas.md): 50 nodes (35 done, 4 in progress, 6 next, 4 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 1 next, 2 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 1 next, 1 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 2 next)
 <!-- END GENERATED: tracks -->
 

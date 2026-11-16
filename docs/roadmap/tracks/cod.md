@@ -94,7 +94,7 @@ flowchart TB
 | `cod-one-pipeline` | One window pipeline (ADR-0069) | done | successful |  | ADR-0069; status §5 | cod-unified-span |
 | `cod-wire-compact` | Compact v5 DATA framing | done | very-successful | +2.6/+3.6 Mbit/s | commit 078b0ce9 |  |
 | `cod-debug-stall` | Decoder re-delivery stall fix (§31) | done | successful | 0 of 40 iterations stalled | status §31 |  |
-| `cod-user-generation-seat` | Owner call: keep generation coding | next | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
+| `cod-user-generation-seat` | Owner call: keep generation coding | parked | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | done | unrated |  | ADR-0039; ADR-0040; ADR-0047; ADR-0048 | meas-transport-comparison |
 
 ### Details per node
@@ -117,6 +117,6 @@ flowchart TB
 | `cod-one-pipeline` | One window pipeline (ADR-0069) | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. | ADR-0069; status §5 |
 | `cod-wire-compact` | Compact v5 DATA framing | Headline is verbatim from the sibling paper row (window decoupling, A69): "Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)". | commit 078b0ce9 |
 | `cod-debug-stall` | Decoder re-delivery stall fix (§31) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §31 |
-| `cod-user-generation-seat` | Owner call: keep generation coding | Law ledger: F05, R09 (P3): the opt-in seat's constants wait for this disposition. Done when: the owner decides to keep or archive the opt-in generation-coding stack (DAPS, the rate-sample estimator, RWM_GEN*, RWM_OOO_RETAIN), with its record. | plan user decision 4, W4.4; status §3.2 |
+| `cod-user-generation-seat` | Owner call: keep generation coding | 2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it. | plan user decision 4, W4.4; status §3.2 |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | ADR-0047 raised timer resolution and fixed LTE recovery (1% to 100%) and WiFi overhead (39.6% to 21.4%); ADR-0048 reduced window-backend overhead further. | ADR-0039; ADR-0040; ADR-0047; ADR-0048 |
 <!-- END GENERATED: table-cod -->

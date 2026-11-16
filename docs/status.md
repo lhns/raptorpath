@@ -1254,8 +1254,8 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **The floor-gate rule for a moved leg pool.** In the next registration, as an amendment: fit the leg over pools at and above its own floor pool, or read UNSCOREABLE. Add a scorer test with a moved leg-1 pool.
 - **B2's anchor rule with an unbound leg:** per leg, or leg 0 only, decided before B2 is registered again. Leg 1 is unbound at its W 256 calibration.
 - **B1's margins and ō at the floor pools.**
-- **Merge the harness tools to main** (`harness60-a2` `1ecee59d`, tools only) now that the Result is in.
-- **VM cleanup** after this ledger commit: `~/s60pre`, `~/r60a`, `~/r60b`, `~/r60b2`, `~/s60a`, `~/s60b`, `~/p60` and `/dev/shm/{s60a,s60b,r60b2}`.
+- ~~Merge the harness tools to main~~: done, `1cd13f5c` (tools/l1 by path; the gauge's engine code stays off main).
+- ~~VM cleanup~~: done 2026-11-16 after the ledger commit (the §60 home and `/dev/shm` dirs removed).
 
 
 ## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
@@ -1403,6 +1403,37 @@ A next registration must:
 - fix the control denominator, for example as a within-replicate ratio.
 
 This goes to the derivation's open list with §57a's burst hypothesis. Nothing is launched without a registration. B-1 (the gauge build) is next on the store-law track.
+
+## Owner decisions (2026-11-16): after the §60 Result
+
+The owner took the coordinator's recommendations ("take your recommendations"). Fable reviewed the evidence behind each pick; the picks are the coordinator's. Each item states what it unblocks.
+
+1. **U1 (W1.2, `docs/derivations/w1-who-limits.md` §7): the store limit is in charge of latency, and the congestion controller is the safety net (candidate A).**
+   - Paper §8.4 ("the substrate reads no δ") stands, and candidate C (the substrate as controller) is not pursued.
+   - Unblocks: the δ-seat design on the store, together with U2.
+2. **U3: a small Bulk goodput cost is accepted for about 10× lower delay.**
+   - Evidence (§60's static arms, not the closed-loop law): at c2, W 256 matches the control's goodput (90.1–90.5 against 89.9–90.4 Mbit/s) at a window minimum of 19.8 ms against 200.5 ms. c8 W 512 costs about 1 %. The price sits at c1s, where §56 found that every pool cut pays.
+   - The cost each δ point may carry is still set by the δ-seat law, which waits on U2.
+3. **ADR-0068 Addendum 3 (branch `adr68-amend`): accepted, conditional on §48d.**
+   - The hybrid controller grows out of `bbr_rs`; no second controller is built.
+   - This is consistent with "continue `bbr_rs`" (2026-11-12) and the S3 vendored pacing seam.
+   - Docs-only merge.
+4. **Per-leg state (W3.2, `docs/derivations/w3-per-leg-state.md` §6 question 4): on revival, s is reseeded,** as today's R1 does.
+   - This is the only open question Phase A (A0–A4, relocation with zero behaviour change) needs.
+   - So `place-per-leg-impl` Phase A can start.
+   - Questions 1 (`queue_target_mult` = 1 + q(δ)) and 2–3, 5–8 belong to Phase B and W3.3. Question 1 is held with U2.
+5. **Binary identity: ADR-0077's identical-sha waiver is unchanged.** Zero-behaviour steps (e.g. shared-core moves, per-leg Phase A) are instead stacked into one guard run against main, bisected only on failure.
+6. **Lever B stays paused** (§54's decision stands). Its case is weaker now: §54 showed that a smaller store pool alone clears the holes, and the store law it waits on has moved further out.
+7. **Generation-coding stack (§3.2): stays parked, no disposition yet.** It unblocks nothing in the current chain, and archiving would cost a guard run.
+
+**Held for the store-law verdicts (`r67-verdicts`, running):**
+- U2 (δ's authority: q(δ)'s band or an A(c)-type term). §60: q·ℓ̂_c supplied 0.56 ms against a 1.69 ms shortfall. W1.2's U2 numbers predate §60's floors and are marked stale.
+- The per-leg question 1.
+- Whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped.
+
+**Not yet askable:**
+- the rate-law calls (need §51's r per cell);
+- `bbr_rs` promotion (needs §48d).
 
 ## Owner decisions (2026-11-14): the visualizer, shared code and two model laws
 

@@ -6018,7 +6018,7 @@ nodes:
   title: §51 harness and scorer
   track: meas
   kind: instrument
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - docs/derivations/s51-design.md §8 P1
@@ -6298,7 +6298,7 @@ nodes:
   title: Lever-B guard v2, then merge
   track: rec
   kind: mechanism
-  state: blocked
+  state: parked
   outcome: unrated
   evidence:
   - plan Live state item 4
@@ -6399,7 +6399,7 @@ nodes:
   title: Adversarial cells measured
   track: meas
   kind: research
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - plan W5.3, W2.3
@@ -6510,7 +6510,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Owner decision on three questions: whether the congestion controller or the in-flight limit is in charge, what sets the latency trade, and whether two percent less bulk speed is worth ten times less delay.'
-  notes: 'Done when: the owner answers U1 (substrate as controller or safety net), U2 (δ''s authority: q''s band or A(c) with a c_B source) and U3 (~2 % Bulk goodput for Tp50 19 vs 208 ms), recorded in status or the plan.'
+  notes: '2026-11-16: U1 = the store limit leads, the substrate is the safety net (candidate A); U3 = the Bulk cost is accepted for ~10x lower delay. U2 is held for the store-law verdicts (r67-verdicts); W1.2''s U2 numbers predate §60''s floors. Done when: U2 is answered.'
 - id: model-user-wasm-calls
   title: Owner calls on wasm audit
   track: model
@@ -6621,7 +6621,7 @@ nodes:
   title: 'Owner call: weaker binary identity'
   track: model
   kind: user-decision
-  state: next
+  state: done
   outcome: n/a
   evidence:
   - status §58 Part B result
@@ -6637,7 +6637,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on whether a model-only change whose engine binary differs only in embedded line numbers may skip the merge guard.
-  notes: 'Done when: the owner rules; if accepted, the rule is calibrated on the base/X pair first and recorded as an ADR that supersedes ADR-0077''s identical-sha clause.'
+  notes: 'Declined 2026-11-16: ADR-0077''s identical-sha waiver stays; zero-behaviour steps are stacked into one guard run instead (Owner decisions 2026-11-16, item 5).'
 - id: rate-user-rate-law
   title: Owner calls on rate law
   track: rate
@@ -6666,7 +6666,7 @@ nodes:
   title: 'Owner call: ADR-0068 direction'
   track: cc
   kind: user-decision
-  state: next
+  state: done
   outcome: n/a
   evidence:
   - plan user decision 2
@@ -6683,7 +6683,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on whether the future hybrid controller should grow out of our BBR controller instead of being a second one.
-  notes: 'Done when: the owner accepts or rejects ADR-0068 Addendum 3 ("grow bbr_rs, don''t build a second controller").'
+  notes: 'Accepted 2026-11-16, conditional on §48d: the hybrid grows out of bbr_rs (status Owner decisions (2026-11-16), item 3).'
 - id: cc-user-bbrrs-promotion
   title: 'Owner call: bbr_rs promotion'
   track: cc
@@ -6709,7 +6709,7 @@ nodes:
   title: 'Owner call: keep generation coding'
   track: cod
   kind: user-decision
-  state: next
+  state: parked
   outcome: n/a
   evidence:
   - plan user decision 4, W4.4
@@ -6726,7 +6726,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default.
-  notes: 'Law ledger: F05, R09 (P3): the opt-in seat''s constants wait for this disposition. Done when: the owner decides to keep or archive the opt-in generation-coding stack (DAPS, the rate-sample estimator, RWM_GEN*, RWM_OOO_RETAIN), with its record.'
+  notes: '2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it.'
 - id: place-user-perleg-questions
   title: Owner calls on per-leg design
   track: place
@@ -6747,7 +6747,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on five open design questions for keeping each path's measurements in one place.
-  notes: 'Done when: the owner answers the per-leg design questions (queue_target_mult for a kept Copa arm, the L sampler switch, S''s horizon, revival reseed, the leak backstop).'
+  notes: '2026-11-16: question 4 answered (reseed on revival), which is all Phase A needs. Question 1 (queue_target_mult = 1 + q(delta)) is held with U2; 2-3 and 5-8 belong to Phase B / W3.3. Done when: the Phase B questions are answered.'
 - id: place-per-leg-impl
   title: Per-leg state implementation
   track: place
@@ -6985,7 +6985,7 @@ nodes:
   title: tech-tree skill PR
   track: infra
   kind: infra
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - plan Live state TECH TREE (AFTERWARDS)
@@ -7078,7 +7078,7 @@ nodes:
   title: Per-leg recovery clock, one law
   track: rec
   kind: law
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - status §55 Erratum 1
