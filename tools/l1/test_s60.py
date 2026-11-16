@@ -6,6 +6,7 @@ Every readout is exercised through the WHOLE chain: a synthetic client log -> s6
 The generator prints [SLAW] windows whose R / Rb are computed with s60replay.slaw_r from the PRINTED (3-decimal) values, so the per-row replay witness passes by construction and fails on the
 tmin+1us negative control.
 Run: python3 test_s60.py (the VM runs it under `tst parsers`)."""
+import re
 import json
 import math
 import os
@@ -855,6 +856,19 @@ for r in rows_late:
         r["t60"] = mkrow(C2, "G2048", r["seed"], r["rep"], {0: dict(tmin=9.0, tp50=20.0, m=9.0, l=6.0, sig=2.0, sigb=1.5)}, mbps=100.0)["t60"]
 rc, o_rl = run_score(rows_late, "60a")
 check("R-sign gate is read at the END of the launch on the full calibration: control R~ >= 1 on replicate 5 -> STOP (60b's launch aborts on it)", has(o_rl, "STOP R-SIGN c2 s42 rep5") and labels(o_rl).get("R-SIGN-c2") == "STOP", [ln for ln in o_rl if "R-SIGN" in ln][:3])
+# PASS needs >= 2 replayable control rows (Amendment 1); one is UNSCOREABLE, and UNSCOREABLE does not block 60b
+rows_one = c2_rows()
+ctl = [r for r in rows_one if r["arm"] == "G2048"]
+rows_one = [r for r in rows_one if r["arm"] != "G2048" or r is ctl[0]]
+rc, o_one = run_score(rows_one, "60a")
+check("R-sign gate: one replayable control row -> UNSCOREABLE (PASS needs >= 2), no STOP", labels(o_one).get("R-SIGN-c2") == "UNSCOREABLE" and not has(o_one, "STOP R-SIGN"), [ln for ln in o_one if "R-SIGN" in ln][:3])
+# the launcher's gate regex reads the scorer's own label lines (a scorer-generated score, not a hand-written one)
+_runall = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "loopdiag_run_all.sh"), encoding="utf-8").read()
+_gate = re.compile(r"^LABEL60 R-SIGN-c2 (PASS|UNSCOREABLE)( |$)")
+check("ABORT-RSIGN contract: the launcher's regex is the one tested here, and it admits the scorer's PASS and UNSCOREABLE lines and refuses its STOP line",
+      '"^LABEL60 R-SIGN-$_c (PASS|UNSCOREABLE)( |$)"' in _runall
+      and any(_gate.match(ln) for ln in o_rs) and any(_gate.match(ln) for ln in o_one) and not any(_gate.match(ln) for ln in o_stop)
+      and any(ln.startswith("LABEL60 R-SIGN-c2 STOP") for ln in o_stop))
 # a DNF row with too few LATE windows does not calibrate; one with >= 120 does
 dn_rows = c2_rows()
 fl = [r for r in dn_rows if r["arm"] == "G16" and r["rep"] == 1][0]

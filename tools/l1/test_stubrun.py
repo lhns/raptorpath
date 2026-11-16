@@ -969,7 +969,7 @@ def case60(plan, path):
         if plan == "60b":      # 60b's launch reads 60a's R-sign labels before any row (Amendment 1)
             sc60a = os.path.join(sb["logs"], "score60a.txt")
             with open(sc60a, "w", newline="\n") as fh:
-                fh.write("LABEL60 R-SIGN-c2 %s\nLABEL60 R-SIGN-c8 PASS\n" % ("STOP" if path == "rsign-abort" else "PASS"))
+                fh.write("LABEL60 R-SIGN-c2 %s\nLABEL60 R-SIGN-c8 UNSCOREABLE\n" % ("STOP" if path == "rsign-abort" else "PASS"))
             extra["LD_SCORE60A"] = px(sc60a)
         rehearse = path in ("rehearse", "nogo-rehearse")
         rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=rehearse, extra_env=extra)
@@ -980,7 +980,7 @@ def case60(plan, path):
         tests = [c for c in cargo if "|test " in c]
         if path == "rsign-abort":
             check(f"{tag}: 60a's score carries R-SIGN-c2 STOP -> ABORT-RSIGN, rc 3, NOTHING measured (no row-parser call, no driver call, no build, no ld.log)",
-                  rc == 3 and "ABORT-RSIGN" in out and "R-SIGN-c2 PASS" in out and rows == [] and driver_lines60(sb) == [] and builds == [] and not os.path.exists(os.path.join(run_dir, "rep60b")), (rc, out[-300:]))
+                  rc == 3 and "ABORT-RSIGN" in out and "R-SIGN-c2 PASS|UNSCOREABLE" in out and rows == [] and driver_lines60(sb) == [] and builds == [] and not os.path.exists(os.path.join(run_dir, "rep60b")), (rc, out[-300:]))
             EXECUTED.add((plan, path))
             return
         if path in ("reuse-miss", "bin-sha-mismatch"):

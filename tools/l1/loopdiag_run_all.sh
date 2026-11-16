@@ -201,11 +201,12 @@ if [ "$P60" = 1 ]; then
   LD_REF_MANIFEST="${LD_REF_MANIFEST:-$HERE/ref60-manifest.sha256}"
   [ -s "$LD_REF_MANIFEST" ] || { echo "ABORT-SUITES no reference manifest at $LD_REF_MANIFEST (plans 60a / 60b); NOTHING WAS RUN"; exit 3; }
   # The R-sign gate (s60 section 5, Amendment 1): R~ < 1 at the c2 / c8 controls is read at the END of 60a on the full calibration; 60b does not launch (nothing run) unless 60a's score (LD_SCORE60A = its
-  # rep60a/score.txt) carries LABEL60 R-SIGN-c2 PASS and R-SIGN-c8 PASS. A rehearsal has no 60a score and is exempt.
+  # rep60a/score.txt) carries LABEL60 R-SIGN-c2 and R-SIGN-c8 as PASS or UNSCOREABLE (a STOP or a missing label aborts; 60b's readings do not use c2 / c8's R). A rehearsal has no 60a score and is exempt.
   if [ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]; then
     [ -s "${LD_SCORE60A:-}" ] || { echo "ABORT-RSIGN plan 60b needs 60a's score (LD_SCORE60A=<rep60a/score.txt>) to read the R-sign gate; NOTHING WAS RUN"; exit 3; }
     for _c in c2 c8; do
-      grep -aq "^LABEL60 R-SIGN-$_c PASS" "$LD_SCORE60A" || { echo "ABORT-RSIGN 60a's score has no 'LABEL60 R-SIGN-$_c PASS' ($(grep -a "^LABEL60 R-SIGN-$_c" "$LD_SCORE60A" | head -1)): the gate failed or was not read; 60b does not launch; NOTHING WAS RUN"; exit 3; }
+      grep -aqE "^LABEL60 R-SIGN-$_c (PASS|UNSCOREABLE)( |$)" "$LD_SCORE60A" || { echo "ABORT-RSIGN 60a's score has no 'LABEL60 R-SIGN-$_c PASS|UNSCOREABLE' ($(grep -a "^LABEL60 R-SIGN-$_c" "$LD_SCORE60A" | head -1)): the gate failed (STOP) or was not read; 60b does not launch; NOTHING WAS RUN"; exit 3; }
+      echo "R-SIGN $_c: $(grep -a "^LABEL60 R-SIGN-$_c" "$LD_SCORE60A" | head -1) (60a's score; UNSCOREABLE does not block 60b)"
     done
   fi
 fi

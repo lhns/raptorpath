@@ -51,6 +51,7 @@ SLOPE_FLAT = 0.010                             # s60 section 2 reading 1: ms/slo
 TAU = {C2: {0: 0.3}, C8: {0: 1.0, 1: 2.5}}     # s60 section 2 reading 2: convergence tolerance (ms); c1s has none registered
 P1_RATIO = 3.0                                 # s60 section 1.2
 SIGN_ALPHA = 0.05                              # s60 section 3.3 (s60cond.py K table): two-sided sign test
+R_SIGN_MIN = 2                                 # Amendment 1: the R-sign gate PASSes on >= 2 replayable control rows (the registered reading used replicates 1-2); fewer is UNSCOREABLE
 MIN_SIGN_N = 6                                 # s60 section 3.3: fewer scoreable replicates is UNDERPOWERED
 B2_FIRES_MIN = 2                               # s60 section 3.2: >= 2 of the scoreable replicates
 MIN_DNF_LATE_WIN = 120                          # a DNF calibration row needs >= 30 s of LATE windows (120 x 250 ms, the doc's "with >= 30 s of LATE windows"), else it is not a valid calibration row
@@ -918,7 +919,7 @@ class Session:
             bad = [(rv, v) for rv, v in have if v >= 1]
             for rv, v in bad:
                 self.p(f"STOP R-SIGN {SHORT[cell]} s{rv.seed} rep{rv.rep}: control R~ = {v:.4f} >= 1 (the registered gate is R~ < 1 at the control, read at the end of 60a on the full calibration; 60b does not launch and the session is amended)")
-            self.label(f"R-SIGN-{SHORT[cell]}", "STOP" if bad else ("PASS" if have else "UNSCOREABLE"), f"{len(have)} control rows, read at the end of the launch on the full calibration")
+            self.label(f"R-SIGN-{SHORT[cell]}", "STOP" if bad else ("PASS" if len(have) >= R_SIGN_MIN else "UNSCOREABLE"), f"{len(have)} control rows (PASS needs >= {R_SIGN_MIN}), read at the end of the launch on the full calibration")
 
     # ---- section: P1 / P2 / P3 ----
     def p123(self):
@@ -1628,7 +1629,7 @@ DECISIONS = [
     "6. A row failing the per-row replay witness is VOID for every R reading (R~, R~67, B2, the c1s sign, the sign witness, crossings); its tmin / sig / l readings (floor, D, P3) are kept.",
     "7. The floor gate fits the rows of all three floor pools that are live, have nk >= 10 windows and are not COLLAPSED (a tmin-only reading, so boot completeness and LATCHED do not remove a row); E = b * W1 with W1 = the leg's floor pool. c1s has no registered tau: FLOOR-CONV-c1s reads NO-TAU-REGISTERED (the slope label is still given).",
     "8. Labels: FLOOR-SLOPE-/FLOOR-CONV-<cell>, with -leg0 / -leg1 appended at c8 only; P3-c8l0 / P3-c8l1; P1 reads HOLDS / FAILS (a failure is only reported); B1 and R-SIGN are extra LABEL60 lines (B1-<cell>, R-SIGN-<cell>).",
-    "9. The R-sign gate ('after replicate 2' cannot be computed: 2 floor rows < MIN_CAL_ROWS) is read at the END of 60a on the FULL calibration over every live control G row of c2 and c8 (Amendment 1); any R~ >= 1 is a STOP, and 60b refuses to launch without R-SIGN-c2 / -c8 PASS in 60a's score (ABORT-RSIGN). Under the drift fallback the pairing applies to the control rows too.",
+    "9. The R-sign gate ('after replicate 2' cannot be computed: 2 floor rows < MIN_CAL_ROWS) is read at the END of 60a on the FULL calibration over every live control G row of c2 and c8 (Amendment 1); any R~ >= 1 is a STOP; PASS needs >= R_SIGN_MIN = 2 replayable control rows, else UNSCOREABLE. 60b refuses to launch on a STOP or a missing label at either cell (ABORT-RSIGN); UNSCOREABLE does not block (60b's readings do not use c2 / c8's R). Under the drift fallback the pairing applies to the control rows too.",
     "10. The drift check's order is the ledger position of the row; the fitted change is the OLS slope times the order span of the calibration rows; a trigger on either series (b0p, l) switches the cell to per-replicate pairing; the ARMS lines then print the paired R~ and, beside it, the session-value R~ as the sensitivity (the 're-stated conditioning from the realised sigma_R' is NOT implemented).",
     "11. A floor-pool/smoke DNF row is a datum: its missing boot / witness is not a SMOKE-FAIL (the GO-NOGO criterion (a) reports it); a non-DNF row missing kw / b0k / witness / CAPLOG PASS is a mechanical failure. CAPLOG seats are reported, not asserted to be 'plain' (caplog_replay replays by branch; 'tt' stays unreplayable).",
     "12. C8-B2: scoreable = the anc-bound ELIGIBLE replicates (replay anc bind fraction m >= l_c + b0_c over every live (leg, window) term, >= 0.9 at both bracketing rows); fewer than 5 eligible is UNSCOREABLE (UNDERPOWERED) whatever the fires; with >= 5, FIRES iff >= 2 fire, else NOT-FIRES (weakened when a floor is not CONVERGED). sigma_R is the pooled within-arm sd (R~ per row) over the eligible replicates at the bracketing arms used.",

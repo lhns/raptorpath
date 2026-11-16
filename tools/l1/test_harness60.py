@@ -136,7 +136,7 @@ check("replacement: a missing Realtime echo re-runs once ('evict-liveness'); a W
 check("the budget guard carries the worst-case floor DNF re-runs: plan60.BUDGET_S = 18 360 s (60a) / 13 860 s (60b), and run_all's P57_NEED equals them",
       plan60.BUDGET_S == {"60a": 18360, "60b": 13860} and "P57_NEED=18360; [ \"$PLAN\" = \"60b\" ] && P57_NEED=13860" in runall)
 check("60b's non-rehearsal launch reads 60a's R-sign labels before any row (ABORT-RSIGN, LD_SCORE60A), a rehearsal is exempt",
-      'ABORT-RSIGN plan 60b needs 60a' in runall and 'LABEL60 R-SIGN-$_c PASS' in runall and '[ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]' in runall)
+      'ABORT-RSIGN plan 60b needs 60a' in runall and 'LABEL60 R-SIGN-$_c (PASS|UNSCOREABLE)' in runall and '[ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]' in runall)
 check("RWM_RTOBS=1 rides every G / C arm (section 56's instrument env) and no EVICT arm; RWM_RDIAG=1 is the battery's instrument env for every row",
       all("RWM_RTOBS=1" in v[3] for k, v in spec.items() if k[1] != "EVICT") and all("RWM_RTOBS=1" not in v[3] for k, v in spec.items() if k[1] == "EVICT"))
 check("G/C alternation: within 60b's control the pair order alternates (G,C),(C,G),... and every pair shares one seed and replicate number",
