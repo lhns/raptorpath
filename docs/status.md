@@ -1018,15 +1018,15 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **Next derivation:** R6.7 (`store-law-r67.md`), the candidate floor and the allowance item. A large sweep comes only after it.
 
-**Amendment 1 (2026-11-16, before any VM contact for §60): the harness's readings of the registration.** `harness60` `74370e3f` implements the registration.
-- **Also registered by reference:** the scorer's ambiguity list, `s60_score.py` DECISIONS 1–21 at `74370e3f`, one reading for each place the doc is silent. These include:
+**Amendment 1 (2026-11-16, before any VM contact for §60): the harness's readings of the registration.** `harness60` `8565e7d2` implements the registration.
+- **Also registered by reference:** the scorer's ambiguity list, `s60_score.py` DECISIONS 1–21 at `8565e7d2`, one reading for each place the doc is silent. These include:
   - the pooled 80 % rule (5);
   - witness-VOID rows kept for the floor, D and P3 (6);
   - σ_R as the pooled within-arm sd (12);
   - COVERED without CONVERGED printing UNRESOLVED (13);
   - the starved-leg W 256 fallback and the all-COLLAPSED pool skip (19).
 - **The bullets below are the readings that change a rule or a number.**
-- **Launch tree:** `harness60` `74370e3f`.
+- **Launch tree:** `harness60` `8565e7d2`.
   - Its engine (`raptorpath/`, the math, wasm and core crates, `gf256`, `Cargo.*`) is byte-identical to `s60-tree` `cb88df3a`: the `git diff` is empty. Every later commit touches `tools/l1` only, and `ref60-manifest.sha256` is present.
   - Every launch must build `bin_sha` `e410d640…` and HIT `ref60-manifest`; otherwise it aborts before any row.
   - Main does not take the gauge, because it changes the release binary and has had no guard. The tools merge to main after the Result.
@@ -1034,14 +1034,16 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - So it is read at the **end of 60a**, on the full session calibration, over every live c2 and c8 control row.
   - **STOP:** any control R̃ ≥ 1.
   - **PASS:** no STOP, on ≥ 2 replayable control rows (the registered reading used two).
-  - **UNSCOREABLE:** fewer than 2 replayable control rows, as after a c8 NO-GO, an unattached leg 1 or fewer than 3 valid floor rows.
+  - **UNSCOREABLE:** fewer than 2 replayable control rows, as when a cell has no valid calibration (an unattached c8 leg 1, fewer than 3 valid floor rows).
+  - **Under `LD_NOGO=c8`, R-SIGN-c8 is always UNSCOREABLE.** Its floor failed go/no-go, so its control R̃ is reported but never gates. A c2 NO-GO only moves c2's pool to W 32, so c2 still gates.
   - **60b:** `loopdiag_run_all.sh` refuses to launch on a STOP or a missing label at either cell (`ABORT-RSIGN`, nothing run). UNSCOREABLE does not block, because none of 60b's readings (the c1s sign, G/C, the evicting rows) uses c2's or c8's R. It is recorded in the launch log.
-  - **Stricter than registered:** the gate stops on any of about 6 control rows per cell, not 2. R̃ falls with W on anc-1 arms and crosses 1 near the knee (§3.2), and the controls (c2 W 2 048, c8 W 1 280) sit 940–1 880 slots above their knees (169, 340). So session noise (σ_R 0.008–0.015) can lift a control row to 1 only if R̃ there lies within a few σ_R of 1. The registered gate already assumed it does not, so the extra exposure is small, and a STOP reads the form.
+  - **Stricter than registered:** the gate stops on any of about 6 control rows per cell, not 2. R̃ falls with W on anc-1 arms and crosses 1 near the knee (§3.2), and the controls (c2 W 2 048, c8 W 1 280) sit 940–1 880 slots above their knees (169, 340). So session noise (σ_R 0.008–0.015) can lift a control row to 1 only if R̃ there lies within a few σ_R of 1. No predicted control R̃ is registered. A STOP is amended as the doc says, and no reading of it is fixed here.
   - **Cost:** a failing law spends all of 60a's rows instead of stopping early. Those rows are reported.
 - **Budget (§7 against §2):** §2 re-runs each floor-pool DNF once (R:357–358), but §7's worst cases leave that out.
   - Worst case at 190 s per re-run: 60a = 11 520 + 36 × 190 = 18 360 s (5.1 h); 60b = 10 440 + 18 × 190 = 13 860 s (3.85 h).
   - `LD_HARD` is launch + 5.2 h (60a) and + 3.9 h (60b), and the guard refuses below those values.
-  - §7's 4 h was the sizing rule that split the session in two, not a VM limit: nothing else is booked on the VM. The split stays, and the typical lengths (2.2 h and 1.25 h) are unchanged.
+  - `LD_HARD` is sized per session from its worst case: status gives + 2.5 h to + 5 h, and §54 used + 5 h per launch. No discipline rule caps it at 4 h. §7's "together they exceed 4 h" is the reason the session is split, and the split stays. The typical lengths (2.2 h and 1.25 h) are unchanged.
+  - The budget guard also applies to the rehearsals, which therefore launch with the same `LD_HARD`.
 - **Re-runs and DNF rows:**
   - Once each: an echo or liveness VOID, which includes the evicting seat's `no-realtime-echo`, and a floor-pool DNF.
   - Never: a wrong binary (`bin-sha-*`, including uncheckable), which aborts.
@@ -1062,7 +1064,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **LATCHED (§2)** uses the row's own median LATE `l` in q·ℓ̂. Using the session l_c would be circular, because latched rows are left out of it.
 - **FLOOR-CONV at c1s** reads NO-TAU-REGISTERED: the doc registers no τ for c1s. The slope label is still given, and the c1s control sign does not depend on it.
 - **Drift fallback (§2):** under per-replicate pairing, a replicate without a same-(rep, seed) floor row cannot be replayed. At c1s that drops control replicates 7–12, so a triggered fallback there almost certainly leaves the sign test UNDERPOWERED. This is recorded before any data.
-- **Go/no-go rows (§5):** every G floor-pool row of the cell in the rehearsal counts, the smoke rows included. That is 3 c1s W 64 rows, not 2, and c8's W 96 counts on leg 0. This lowers the chance NO-GO below §5's 6 % / 8–23 %.
+- **Go/no-go rows (§5):** every G floor-pool row of the cell in the rehearsal counts, the smoke rows included. That is 3 c1s W 64 rows, not 2, and c8's W 96 counts on leg 0. This lowers the chance NO-GO below §5's 6 % / 8–23 %. Rehearsal rows are never re-run (only scored slots are), so a rehearsal DNF fails criterion (a) and adds no further chance.
 - **CAPLOG (§5):** each record replays by branch, and seats are reported rather than asserted to be `plain`. The replayable share is printed for G and evicting rows.
 - **60b rehearsal (new):** `LD_PLAN=60b LD_REHEARSE=1` runs 60b's two smoke rows plus one evicting row. It checks:
   - plan 59's liveness;
@@ -1077,8 +1079,9 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - **Rehearsal:** every G row runs the per-row witness on engine output. The report says whether those rows show an anchor-bound leg and an empty leg. A case the rehearsal does not show stays verified only on the hand-formatted sample.
 - **Tests:**
   - The full stub run (`STUBRUN_FULL=1`, every plan) was ALL OK at `b3547368`.
-  - At `74370e3f`, the plan-60 stub paths (full tables), `test_s60.py`, `test_harness60.py` and `test_harness_paths.py` were rerun: all OK (plan-60 stub paths 78 ok, ALL OK; test_s60 0 fail; the other two ALL OK).
-  - The rest of `tools/l1` is unchanged since `b3547368`.
+  - At `74370e3f`, the plan-60 stub paths (full tables, 12 paths) gave 78 ok, ALL OK.
+  - At `8565e7d2`, every `tools/l1` Python test from `test_anchordiag_parse` to `test_storelaw_parse` passes, 33 files in all, including `test_s60`, `test_harness60`, `test_harness_paths` and `test_harness46`.
+  - **Still owed:** the fast unfiltered `test_stubrun.py` and the shell tests at `8565e7d2`. Claude Code stopped that run for host memory, not for a failure. Since `b3547368` the shared scripts changed only in two comments and the 60b `ABORT-RSIGN` block.
 
 
 ## 60-pre. Engine suites and the reference binary for the store-law gauge session (no battery) — pre-registration (before any VM contact)
