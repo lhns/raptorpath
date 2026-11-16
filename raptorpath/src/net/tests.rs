@@ -6026,8 +6026,8 @@ mod paper_bounds {
         // source-text pin; switching to an RTprop input fails it.
         let src = flat(include_str!("emit_source.rs"));
         for needle in [
-            "letrtprop=est_srtt.as_secs_f64();",
-            "letd=(b*rtprop).min(2.0*rtprop);",
+            "letsrtt=est_srtt.as_secs_f64();",
+            "letd=(b*srtt).min(2.0*srtt);",
             "shed_deadline_us(b,est_srtt.as_micros()asu64,)",
         ] {
             assert!(

@@ -569,12 +569,14 @@ pub(crate) fn emit_source(
                         } else {
                             (est.throughput() / pol.symbol_size.max(1) as f64).max(0.0)
                         };
-                        let rtprop = est_srtt.as_secs_f64();
+                        // The smoothed echo RTT `s`, not RTprop m̂ (it was bound to
+                        // a variable named `rtprop`; status §44 item 3).
+                        let srtt = est_srtt.as_secs_f64();
                         // The δ dial's named points, once (see
                         // `net::delta_budget_b`): the three-term store law
                         // reads the same map.
                         let b = super::delta_budget_b(pol.protocol_hint);
-                        let d = (b * rtprop).min(2.0 * rtprop);
+                        let d = (b * srtt).min(2.0 * srtt);
                         let a_star = ((rate_sym * d).ceil() as u64)
                             .clamp(1, st.encoder.window_size() as u64);
                         let delta = ((rate_sym * (est.jitter_us() / 1e6)).ceil()
