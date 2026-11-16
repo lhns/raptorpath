@@ -1306,8 +1306,9 @@ def _cpu_gb(rv):
     return (cpu / (b / 1e9)) if (cpu and b) else None
 
 
-def evict_stats(rv):
-    """s60 section 6 from the stored extras: m-bar and its witness, the row W1 and its witness, the steady windows and the K4 input means."""
+def evict_stats(rv, rule_ab=False):
+    """s60 section 6 from the stored extras: m-bar and its witness, the row W1 and its witness, the steady windows and the K4 input means. `rule_ab` (s51-evict-design section 6.3, plan 51e): a steady window also
+    needs ab = 0 (the spare clamp never bound) in the window and both neighbours, from the `ab` column of the stored wstore; default off = the s60 rule."""
     e = rv.t.get("evict") or {}
     cum, w, sp, m59 = e.get("cum") or {}, e.get("wstore") or {}, e.get("span") or {}, e.get("mbar59") or {}
     out = {"mbar": None, "mbar_lo": m59.get("mbar_lo"), "mbar_ok": None, "w1": None, "w1_lo": m59.get("w1_lo"), "w1_hi": m59.get("w1_hi"), "w1_ok": None,
@@ -1334,6 +1335,8 @@ def evict_stats(rv):
         out["n_late"] += 1
         if not ((w["fecn"][i] or 0) >= 1) or i == 0 or i + 1 >= len(wt):
             continue
+        if rule_ab and not all((w.get("ab") or [None] * len(wt))[j] == 0 for j in (i - 1, i, i + 1)):
+            continue
         dt = ((w["tw"][i] or 250.0) / 1000.0)
         lo, hi = wt[i - 1] - dt, wt[i + 1]
         js = [j for j, s in enumerate(st) if lo < s <= hi]
@@ -1350,8 +1353,8 @@ def evict_stats(rv):
     return out
 
 
-def evict_line(rv):
-    s = evict_stats(rv)
+def evict_line(rv, rule_ab=False):
+    s = evict_stats(rv, rule_ab)
     mm = s["means"]
     return (f"EVICT s{rv.seed}r{rv.rep}: m-bar={f(s['mbar'], 3)} (witness mbar_lo {f(s['mbar_lo'], 3)} <= m-bar: {'ok' if s['mbar_ok'] else ('FAIL' if s['mbar_ok'] is False else 'n/a')}); "
             f"row W1={f(s['w1'], 4)} in [{f(s['w1_lo'], 4)}, {f(s['w1_hi'], 4)}]: {'ok' if s['w1_ok'] else ('FAIL' if s['w1_ok'] is False else 'n/a')}; "

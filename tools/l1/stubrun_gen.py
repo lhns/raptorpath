@@ -471,6 +471,189 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
     return cli, srv, drv
 
 
+# ── plan 51e (s51e_score.row_metrics): the evicting seat with the spare-clamp gauge, paced. KNOWN TRUTH per arm (the tests assert these absolute values):
+#   PL  700 sym/s, 60 s of emission, A* = 5, Delta = 2, rr 0.25, the clamp never binds: spc=0/0/n/0/n/0, wr = fr = 0.25, eviction share 0, tau_x n/a (src <= 1000 sym/s)
+#   PM  8856 sym/s, A* alternating 100 / 101 each [SPAN] (a window is steady only if it sees one [SPAN] line), the same gauge as PL
+#   U   unpaced, 100 000 sym/s for 13 s, infl >= cwnd (tau_x = 1), eviction share 0.7, the clamp binds on every recompute (ab = an, phi = 1) and the grant is 0 on 90 % of them (az = 0.9 an, zeta = 0.9, pi = 0.1,
+#       wr = 0.2, fr = 0.01 so the deficit is 0.19, fec r = 0.01)
+# [WSTORE] carries `fec=<eps>/<sigma2>/<r>/<A*>/<n> spc=<ab>/<az>/<an>/<rb>/<rn>/<r0> wr=<sum wr/rn>/<sum fr/rn>`; the perf client's start echo, the {"pace":...} line and the [GATES] token are the engine branch's formats
+# (assumed; see s51e_score.py). STUB_BAD51E (comma list): noecho (PL / PM print no start echo), nopaceline, anfec (fec n = an + 1 on every window), ulow (U zeta 0.3), plastar (PL A* = 12), evictpl (PL eviction 0.9),
+# plab (PL: ab = 1 on every window, so no K4-steady window), rr0 (PL / PM rr = 0), paceonce (the FIRST scored slot prints no pace echo, its replacement is right), spconce (the FIRST scored slot has fec n = an + 1, its replacement is right).
+# STUB_SMOKE_N51E=<n>: the smoke / rehearsal rows that precede the first scored slot. ──
+BAD51E = {"noecho", "nopaceline", "anfec", "ulow", "plastar", "plab", "evictpl", "rr0", "paceonce", "spconce"}
+
+
+def _once51e(name):
+    """True exactly on the FIRST scored invocation (STUB_SMOKE_N51E smoke / rehearsal rows come first); the replacement run of the slot finds the marker and is right."""
+    marker = os.path.join(TMP, name + "-count")
+    seen = len(open(marker).read()) if os.path.exists(marker) else 0
+    open(marker, "a").write("x")
+    return seen == int(os.environ.get("STUB_SMOKE_N51E", "1"))
+
+
+def gates51e(lines, slaw, rate):
+    out = []
+    for ln in lines:
+        if "[GATES]" in ln:
+            ln = re.sub(r"\sRWM_(SLAW|PERF_RATE_MBIT)=\S+", "", ln) + f" RWM_SLAW={slaw} RWM_PERF_RATE_MBIT={rate}"
+        out.append(ln)
+    return out
+
+
+def gen51e(cli, srv, drv, nbytes, fam, hint):
+    bad = set(x for x in os.environ.get("STUB_BAD51E", "").split(",") if x)
+    rate_env = os.environ.get("RWM_PERF_RATE_MBIT")
+    if "paceonce" in bad and rate_env and _once51e("pace"):
+        bad.add("noecho")
+    if "spconce" in bad and _once51e("spc"):
+        bad.add("anfec")
+    paced = rate_env is not None
+    lam = float(rate_env) if paced else None
+    arm = "U" if not paced else ("PL" if abs(lam - 2.7664) < 1e-3 else "PM")
+    rate = 100000 if arm == "U" else int(round(lam * 1e6 / (8 * 494)))
+    k_on, n_t = (240, 250) if paced else (52, 120)
+    nb = int(nbytes)
+    if arm == "PL":
+        astar_fn, delta = (lambda j: 12 if "plastar" in bad else 5), 2
+    elif arm == "PM":
+        astar_fn, delta = (lambda j: 100 + (j % 2)), 9
+    else:
+        astar_fn, delta = (lambda j: 12), 1
+    rr = 0.0 if (("rr0" in bad and paced) or arm == "U") else 0.25
+    rl = run_lines("c2", False, n=n_t)
+    out, k, src_cum = [], 0, 0
+    for ln in rl:
+        if not ln.startswith("[DIAG]"):
+            out.append(ln)
+            continue
+        k += 1
+        on = k <= k_on
+        d_src = int(round(rate * 0.25)) if on else 0
+        src_cum += d_src
+        cod_cum = int(0.2 * src_cum)
+        t = 0.25 * k
+        hand = 1000 + 100 * k + src_cum
+        tx = hand if (arm != "U" and not ("evictpl" in bad and arm == "PL")) else int(hand * (0.3 if arm == "U" else 0.1))
+        d = diag48(t, [(1000 + 100 * k, 125000, 20, 3)], [(hand, tx)])
+        infl = 700 if arm == "U" else max(10, int(rate * 0.03))
+        d = d.replace("paused=42%", "paused=0%").replace("cwnd=647 infl=457", "cwnd=647 infl=%d" % infl)
+        d = d + (f" src={rate if on else 0}sym/s cod={int(rate * 0.2) if on else 0}sym/s cum={src_cum}/{cod_cum}/{max(0, src_cum - 100)} retx=0 shed={3 * k}/{k} bud=0.0500 D=40ms "
+                 f"wait[tun=1% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=82% cmd=0% n={100 + k % 5} us=250000 busy=45% busy_us=112500] "
+                 f"wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack={20 * k} cmd=1 timer_acked=0]")
+        out.append(d)
+        if k % 2 == 0:
+            j = k // 2
+            out.append(f"[SPAN] t={0.5 * j:.1f}s ack={max(0, src_cum - 100)} win=[{src_cum},{src_cum + 64}] wsize={25 if arm == 'PL' else 200} a_star=Some({astar_fn(j)}) delta=Some({delta}) owed=0.10 "
+                       f"rr={rr:.3f} debt=0.30 retx_buf=5 shed={3 * k}/{k} bud=0.0500 D=40ms")
+        if on:
+            an = d_src
+            fn = an + 1 if "anfec" in bad else an
+            if arm == "U":
+                az = int(round((0.3 if "ulow" in bad else 0.9) * an))
+                spc, wr, fr, rwin = f"{an}/{az}/{an}/{an}/{an}/0", 0.2, 0.01, 0.01
+            elif arm == "PL" and "plab" in bad:      # the clamp binds a hair on every window: ab > 0 voids every K4-steady window (the ab = 0 rule), the law r is still handed (fr within the 1.5e-5 grant tolerance)
+                spc, wr, fr, rwin = f"1/0/{an}/1/{an}/0", 0.25, 0.249999, 0.25
+            else:
+                spc, wr, fr, rwin = f"0/0/{an}/0/{an}/0", 0.25, 0.25, 0.25
+            out.append(f"[WSTORE] t={t:.2f} k={k} tw=250.0 n=200 W=200 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=100/100/100/100 ackw=20 "
+                       f"fec=0.010000/1.2000/{rwin:.5f}/{float(astar_fn(k // 2)):.2f}/{fn} spc={spc} wr={wr:.6f}/{fr:.6f} dbt_acc=10.00 dbt_em=5 dbt_share=0.5000 "
+                       f"dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00")
+        else:
+            out.append(f"[WSTORE] t={t:.2f} k={k} tw=250.0 n=200 W=200 aw=0.5000 awmin=0.5000 relb=1/12/12/12 emb=2/16/16/16 adv=0/0/0/0 ackw=0 fec=-/-/-/-/0 spc=0/0/0/0/0/0 wr=-/- dbt_acc=0.00 dbt_em=0 dbt_share=- "
+                       f"dbt_rm_ack=0.00 dbt_ask_ack=0.00 dbt_rm_nack=0.00 dbt_ask_nack=0.00")
+    cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln]
+    echo = [] if (not paced or "noecho" in bad) else [f"perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT={rate_env})"]
+    cli = seat59(gates51e(cli, os.environ.get("RWM_SLAW", "1"), rate_env or "unset"), True, "cli") + echo + out
+    if paced and "nopaceline" not in bad:
+        cli = cli + ['{"pace":true,"obj":1,"rate_mbit":%s,"chunks":%d,"feed_s":60.0,"achieved_mbit":%s,"late":0,"late_max_ms":0.4}' % (rate_env, nb // 494, rate_env)]
+    srv = seat59(gates51e([ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]", "[RANK]"))], os.environ.get("RWM_SLAW", "1"), "unset"), True, "srv")
+    drv = [re.sub(r"hint=bulk( .*)$", r"hint=realtime\1 reliable=0", ln) if "--- RWM-C perf" in ln else ln for ln in drv]
+    dnf = '{"bytes":%s,"dnf":true,"hint":"realtime","proto":"rp-native","run":1}' % nbytes
+    tail = '{"bytes":%s,"dnf":1,"hint":"realtime","proto":"rp-native","runs":1,"summary":true}' % nbytes
+    cli = cli + [dnf, tail]
+    drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
+    return cli, srv, drv
+
+
+# ── plan 51 (s51_score.row_metrics): the delta sweep's rows. A row is a 220-tick [DIAG] series (55 s), a [SPAN] line every 0.5 s whose rr follows the rate-mix weight (beta = 1: 0.000; beta = 0: 0.2), the sender's
+# emission-batching echo, [GATES] RWM_DELTA on both ends, source symbols matching the carrier's symbol size, a summary whose rate varies with the pid. STUB_BAD51 (comma list): deltaonce (the FIRST scored slot echoes
+# RWM_DELTA wrongly on the client end; its replacement is right), nobatch (no batching echo), overdrive (dgev / hand 0.1 and infl >= cwnd), shortonce (the FIRST scored slot is a 10 s row), hbrr (rr > 0 at beta = 1),
+# wrongsize (source symbols for a 1 186 B carrier on a realtime row). STUB_SMOKE_N51=<n>: the smoke rows that precede the first scored slot. ──
+BAD51 = {"deltaonce", "nobatch", "overdrive", "shortonce", "hbrr", "wrongsize"}
+PAYLOAD51 = {"bulk": 1186, "auto": 1186, "realtime": 494}
+BATCH51 = {"bulk": "emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN intake + per-burst taper/span refresh)", "auto": "emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN intake + per-burst taper/span refresh)",
+           "realtime": "emission batching out of scope (RWM_EMIT_BATCH=1 but per-symbol emission: the burst intake serves the window-reliable plain-source emitter only)"}
+
+
+def _once51(name, nsmoke):
+    marker = os.path.join(TMP, name + "-count")
+    seen = len(open(marker).read()) if os.path.exists(marker) else 0
+    open(marker, "a").write("x")
+    return seen == nsmoke
+
+
+def gen51(cli, srv, drv, nbytes, fam, hint):
+    import math
+    bad = set(x for x in os.environ.get("STUB_BAD51", "").split(",") if x)
+    nsmoke = int(os.environ.get("STUB_SMOKE_N51", "4"))
+    delta_env = os.environ.get("RWM_DELTA")
+    echo_cli = delta_env or "unset"
+    if "deltaonce" in bad and _once51("delta", nsmoke):
+        echo_cli = "0.123"
+    n_t = 220
+    if "shortonce" in bad and _once51("short", nsmoke):
+        n_t = 40
+    if delta_env is None:
+        beta = 1.0 if hint == "bulk" else 0.0
+    else:
+        beta = min(1.0, max(0.0, math.log10(0.5 / float(delta_env)) / 2.0))
+    rr = 0.0 if beta >= 1.0 else round(0.2 * (1 - beta), 3)
+    if "hbrr" in bad and beta >= 1.0:
+        rr = 0.2
+    pay = 1186 if "wrongsize" in bad else PAYLOAD51[hint]
+    nb = int(nbytes)
+    total = int(nb / pay)
+    rl = run_lines(fam, False, n=n_t)
+    out, k = [], 0
+    k_on = min(n_t, 200)
+    legs = 1 if fam in ("c1s", "c2") else 2
+    for ln in rl:
+        if not ln.startswith("[DIAG]"):
+            out.append(ln)
+            continue
+        k += 1
+        on = k <= k_on
+        src_cum = int(total * min(k, k_on) / k_on)
+        rate = int(total / k_on * 4) if on else 0
+        t = 0.25 * k
+        cod = int(0.01 * src_cum)
+        hand = 1000 + 100 * k + src_cum
+        d = diag48(t, [(1000 + 100 * k, 125000, 20, 3) for _ in range(legs)], [(hand, hand - (int(hand * 0.1) if "overdrive" in bad else 0)) for _ in range(legs)])
+        d = d.replace("paused=42%", "paused=0%").replace("cwnd=647 infl=457", "cwnd=647 infl=%d" % (700 if "overdrive" in bad else 457))
+        if "overdrive" in bad:
+            d = re.sub(r"dgev(\d)=3", lambda m: "dgev%s=%d" % (m.group(1), int(hand * 0.1)), d)
+        d = d + (f" src={rate}sym/s cod=0sym/s cum={src_cum}/{cod}/{max(0, src_cum - 100)} retx={100 * k} mpr[rep={10 * k} seqs={500 * k} fired={100 * k} y={30 * k} r={70 * k} fast={30 * k} supp=0/0/0 taper={k // 10}] "
+                 f"fp/on p0:{6 * k}/{4 * k} p1:{2 * k}/{4 * k}] wnd2=0/0")
+        out.append(d)
+        if k % 2 == 0:
+            out.append(f"[SPAN] t={0.5 * (k // 2):.1f}s ack={max(0, src_cum - 100)} win=[{src_cum},{src_cum + 64}] wsize=200 a_star=Some(220) delta=Some(0.5) owed=0.10 rr={rr:.3f} debt=0.30 retx_buf=5")
+    cli = [ln for ln in cli if ln and '"summary"' not in ln and '"run":' not in ln and "emission batching" not in ln]      # the fixture's own echo is the Bulk one: the carrier's replaces it
+    cli = [re.sub(r"\sRWM_DELTA=\S+", "", ln) + f" RWM_DELTA={echo_cli}" if "[GATES]" in ln else ln for ln in cli]
+    srv = [re.sub(r"\sRWM_DELTA=\S+", "", ln) + f" RWM_DELTA={delta_env or 'unset'}" if "[GATES]" in ln else ln for ln in srv if not ln.startswith(("[SUCC]", "[C8CONV-R]", "[RANK]"))]
+    if hint != "bulk":
+        cli = [ln.replace("hint=bulk", "hint=" + hint) if "[PIPE]" in ln else ln for ln in cli]
+        srv = [ln.replace("hint=bulk", "hint=" + hint) if "[PIPE]" in ln else ln for ln in srv]
+        drv = [re.sub(r"hint=bulk( |$)", r"hint=" + hint + r"\1", ln) if "--- RWM-C perf" in ln else ln for ln in drv]
+    if "nobatch" not in bad:
+        cli = cli + [INFO59 + BATCH51[hint]]
+    secs = 54.0 + (0.3 if os.environ.get("SEED") == "7" else 0.0)      # arm-independent by design: the stub's rows carry no step, so a FULL run's T1 / T2 are PASS deterministically
+    if n_t == 40:
+        secs = 9.0
+    drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, nb)]
+    cli = cli + out + ['{"bytes":%s,"hint":"%s","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, hint, nb * 8 / secs / 1e6, secs), summary54(secs, nb)]
+    return cli, srv, drv
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -689,6 +872,10 @@ def main(argv):
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
     elif plan in ("60a", "60b"):
         cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
+    elif plan == "51e":
+        cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, _hint)
+    elif plan == "51":
+        cli, srv, drv = gen51(cli, srv, drv, nbytes, fam, _hint)
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
     if plan == "41d" and os.environ.get("LD_WITNESS54") == "1":
