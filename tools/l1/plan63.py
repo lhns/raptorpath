@@ -100,16 +100,21 @@ def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, sha_base=None):
 
 def row_metrics(cli, srv, drv):
     """The `t63` of one row: the warm-up outcome (NEVER-ACKED when the engine's `warm-up object never acked` is anywhere in the logs, NO-LOG when the client log is empty, else ACKED), the transfer outcome SEPARATELY
-    (COMPLETED / DNF / OTHER), the F2 counters ([CTLD] undeliv from the PRESENT lines only: `ctld` counts the lines that carry an `undeliv=` value, so a missing line is a missing witness, not a zero) and the [SYMSZ]
+    (COMPLETED / DNF / OTHER), the F2 counters ([CTLD] undeliv from the PRESENT lines of the RECEIVING end (the perf server): `ctld` counts that end's lines that carry an `undeliv=` value, so a missing line is a missing witness, not a zero; the sending end's are reported beside) and the [SYMSZ]
     echoes from both ends. Never raises on log content."""
     import l1common as lc
     cli, srv, drv = list(cli or []), list(srv or []), list(drv or [])
     allv = cli + srv + drv
     out = {"v": 1, "warm": "NO-LOG", "transfer": "OTHER", "undeliv": 0, "ctld": 0, "unframable": 0, "symsz": {"cli": [], "srv": []}, "rate_echo": None, "summary": False, "dnf": False}
     try:
-        und, unf = lc.f2_counts(allv)
-        out["undeliv"], out["unframable"] = und, unf
-        out["ctld"] = sum(1 for ln in cli + srv if "[CTLD]" in ln and lc.inum(lc.field(lc.strip(ln), "undeliv")) is not None)
+        _, unf = lc.f2_counts(allv)
+        # The perf SERVER receives the bulk transfer (perf_rwm_c.sh: the --client is the sender), so the F2 witness is the server's [CTLD] undeliv= (`ctld` = how many such lines it printed). The client's
+        # [CTLD] lines are the sending end's: reported (`ctld_cli`), never a substitute for the receiver's. `undeliv` is the SUM of both ends' largest undeliv= (the reported field).
+        def ends(lines):
+            return sum(1 for ln in lines if "[CTLD]" in ln and lc.inum(lc.field(lc.strip(ln), "undeliv")) is not None), lc.f2_counts(lines)[0]
+        out["ctld"], out["undeliv_srv"] = ends(srv)
+        out["ctld_cli"], out["undeliv_cli"] = ends(cli)
+        out["undeliv"], out["unframable"] = out["undeliv_srv"] + out["undeliv_cli"], unf
         out["symsz"] = {"cli": lc.symsz(cli), "srv": lc.symsz(srv)}
         out["rate_echo"] = lc.gate_tok(cli, "RWM_PERF_RATE_MBIT")
         summ, dnf = None, False
@@ -135,13 +140,13 @@ def row_metrics(cli, srv, drv):
 
 # ── the reported labels (§63) ──
 def cand_label(t):
-    """CAND: the F2 reading. PASS iff the warm-up acked, `undeliv=0` was read from a PRESENT [CTLD] line (a missing line is a missing witness, not a pass), there is no [UNFRAMABLE] line, and [SYMSZ] is present on both
+    """CAND: the F2 reading. PASS iff the warm-up acked, `undeliv=0` was read from a PRESENT [CTLD] line OF THE RECEIVING END, the perf server (a missing line is a missing witness, not a pass, and a [CTLD] line on the sending end does not stand in for it), there is no [UNFRAMABLE] line, and [SYMSZ] is present on both
     ends with local = decoder everywhere. Transfer completion is NOT part of it (reported separately). -> (label, why list)."""
     why = []
     if t["warm"] != "ACKED":
         why.append(f"warm-up {t['warm']}")
     if not t.get("ctld"):
-        why.append("no [CTLD] line with undeliv= (missing witness)")
+        why.append("no [CTLD] line with undeliv= on the receiving end (the perf server): missing witness" + (" (the sending end printed one)" if t.get("ctld_cli") else ""))
     elif t["undeliv"]:
         why.append(f"undeliv={t['undeliv']}")
     if t["unframable"]:
@@ -172,7 +177,9 @@ def _rows(path):
 
 
 def _fmt_und(seat, t):
-    return "n/a" if seat == "CONTROL" else (str(t["undeliv"]) if t.get("ctld") else "MISSING")
+    if seat == "CONTROL":
+        return "n/a"
+    return f"{t['undeliv']}(srv {t.get('undeliv_srv', 0)}+cli {t.get('undeliv_cli', 0)})" if t.get("ctld") else "MISSING"
 
 
 def _fmt_sz(v):

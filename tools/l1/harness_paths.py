@@ -60,6 +60,7 @@ then CAND (LD_BIN_SHA_CAND, REQUIRED on a launch; the rehearsal records it) per 
   control-sha-mismatch   the CONTROL binary differs from its pin: ABORT-BIN-SHA plan 63 CONTROL, rc 5, no row measured
   cand-fail              (STUB_BAD63=candfail) the CAND's paced rows fail closed: the report labels them FAIL and prints BLOCKS-E-PRE; no row is voided
   cand-noctld            (STUB_BAD63=noctld) the CAND prints no [CTLD] line: a missing witness, labelled FAIL (never a pass on undeliv=0 by absence)
+  cand-ctld-send-only    (STUB_BAD63=ctldsend) only the sending end (the client) prints [CTLD]: the receiving server's witness is missing, labelled FAIL
   cand-prebuilt          LD_BIN_PREBUILT set: ABORT-BUILD, rc 3, nothing run (the CAND is a plain release build from the launch archive, never a prebuilt one)
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
@@ -82,5 +83,5 @@ HARNESS_PATHS = {
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
     "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
     "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
-    "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-prebuilt"),
+    "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"),
 }

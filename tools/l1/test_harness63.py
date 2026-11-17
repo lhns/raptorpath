@@ -75,8 +75,8 @@ check("CONTROL has NO per-row prediction (no pacer correlation; the failure is s
       all(plan63.label_row(a, sd, t63(w))[0] == "REPORTED" for a in ("CPL", "CPM", "CU") for sd in ("42", "7") for w in ("ACKED", "NEVER-ACKED"))
       and "a datum, not an abort" in plan63.label_row("CPL", "42", t63("NEVER-ACKED"))[1] and "datum" not in plan63.label_row("CPL", "42", t63("ACKED"))[1])
 check("label_row dispatches on the seat: F<arm> rows get the CAND's PASS / FAIL, C<arm> rows REPORTED", plan63.label_row("FPL", "42", t63())[0] == "PASS" and plan63.label_row("FPM", "7", t63(unf=1))[0] == "FAIL")
-M = plan63.row_metrics(["[CTLD] undeliv=0", "[SYMSZ] local=512 decoder=512", '{"bytes":1,"mbps":3.0,"run":1}', '{"bytes":1,"mean_mbps":3.0,"summary":true}'], ["[SYMSZ] local=512 decoder=512"], ["--- F2 undeliv=0 unframable=0"])
-check("row_metrics: a completed row reads warm=ACKED transfer=COMPLETED with its [SYMSZ] from both ends and one [CTLD] line carrying undeliv=", M["warm"] == "ACKED" and M["transfer"] == "COMPLETED" and M["ctld"] == 1
+M = plan63.row_metrics(["[CTLD] undeliv=0", "[SYMSZ] local=512 decoder=512", '{"bytes":1,"mbps":3.0,"run":1}', '{"bytes":1,"mean_mbps":3.0,"summary":true}'], ["[CTLD] undeliv=0", "[SYMSZ] local=512 decoder=512"], ["--- F2 undeliv=0 unframable=0"])
+check("row_metrics: a completed row reads warm=ACKED transfer=COMPLETED with its [SYMSZ] from both ends and the receiving end's [CTLD] line carrying undeliv=", M["warm"] == "ACKED" and M["transfer"] == "COMPLETED" and M["ctld"] == 1
       and M["symsz"] == {"cli": [(512, 512)], "srv": [(512, 512)]} and M["undeliv"] == 0 and M["unframable"] == 0, M)
 M = plan63.row_metrics(["x", '{"bytes":1,"dnf":0,"mean_mbps":3.0,"summary":true}'], [], [])
 check("row_metrics: the real summary line carries `\"dnf\":0` on a completed run: still COMPLETED, while `\"dnf\":1` is a DNF transfer", M["transfer"] == "COMPLETED" and plan63.row_metrics(["x", '{"bytes":1,"dnf":1,"summary":true}'], [], [])["transfer"] == "DNF")
@@ -85,8 +85,14 @@ check("row_metrics: 'warm-up object never acked' reads warm=NEVER-ACKED (the tra
 M = plan63.row_metrics(["x", '{"dnf":true}'], [], [])
 check("row_metrics: a DNF after an acked warm-up reads warm=ACKED transfer=DNF; no client log reads NO-LOG; a log with neither outcome reads transfer=OTHER", M["warm"] == "ACKED" and M["transfer"] == "DNF" and plan63.row_metrics([], [], [])["warm"] == "NO-LOG"
       and plan63.row_metrics(["x"], [], [])["transfer"] == "OTHER")
+Mx = plan63.row_metrics(["[CTLD] undeliv=0"], [], [])
+check("the F2 witness is the RECEIVING end's (the perf server: perf_rwm_c.sh's --client is the sender): a [CTLD] undeliv=0 on the CLIENT alone leaves ctld = 0 (missing witness) and the CAND label FAILs naming it, while ctld_cli is reported",
+      Mx["ctld"] == 0 and Mx["ctld_cli"] == 1 and plan63.cand_label({**Mx, "warm": "ACKED", "symsz": {"cli": [(512, 512)], "srv": [(512, 512)]}})[0] == "FAIL"
+      and any("receiving end" in w and "sending end printed one" in w for w in plan63.cand_label({**Mx, "warm": "ACKED", "symsz": {"cli": [(512, 512)], "srv": [(512, 512)]}})[1]))
+My = plan63.row_metrics(["[CTLD] undeliv=1"], ["[CTLD] undeliv=2", "[CTLD] undeliv=0"], [])
+check("the reported undeliv is the SUM of both ends' largest values (srv 2 + cli 1 = 3) and any > 0 fails the CAND", My["undeliv"] == 3 and My["undeliv_srv"] == 2 and My["undeliv_cli"] == 1 and My["ctld"] == 2 and plan63.cand_label({**My, "warm": "ACKED", "symsz": {"cli": [(512, 512)], "srv": [(512, 512)]}})[0] == "FAIL")
 check("a [CTLD] line WITHOUT undeliv= (the CONTROL has no counter) is not a witness: ctld counts only the lines that carry a value; the driver's `--- F2 undeliv=0` line is not a [CTLD] line either",
-      plan63.row_metrics(["[CTLD] t=5.0s gen=0"], ["[CTLD] t=5.0s gen=0"], ["--- F2 undeliv=0 unframable=0"])["ctld"] == 0 and plan63.row_metrics(["[CTLD] undeliv=0"], ["[CTLD] undeliv=0"], [])["ctld"] == 2)
+      plan63.row_metrics(["[CTLD] t=5.0s gen=0"], ["[CTLD] t=5.0s gen=0"], ["--- F2 undeliv=0 unframable=0"])["ctld"] == 0 and plan63.row_metrics(["[CTLD] undeliv=0"], ["[CTLD] undeliv=0", "[CTLD] undeliv=0"], [])["ctld"] == 2)
 check("row_problems: only the binary: a row on the wrong seat's sha is a bin-sha problem, a missing pin is 'uncheckable' (never a silent pass), an unknown arm is refused",
       plan63.row_problems(CELL, "CPL", [], [], "aa", "cc", "aa") == [] and plan63.row_problems(CELL, "FPL", [], [], "cc", "cc", "aa") == [] and any(x.startswith("bin-sha=") for x in plan63.row_problems(CELL, "CPL", [], [], "cc", "cc", "aa"))
       and any("uncheckable" in x for x in plan63.row_problems(CELL, "FPL", [], [], "cc", None, "aa")) and plan63.row_problems(CELL, "PL", [], [], "aa", "aa", "aa") == ["unknown-arm-PL-at-c2-100"])
@@ -165,7 +171,7 @@ check("the env-propagation contract: the new variables (LD_BIN_CONTROL, LD_BIN_S
       "(LD_BIN, LD_SHA, LD_BIN_BASE, LD_SHA_BASE) rides the stage's SENV", all(v not in battery for v in ("LD_BIN_CONTROL", "LD_BIN_SHA_CAND", "LD_BIN_SHA_CONTROL"))
       and all(f'{v}="$' in runall.split("local SENV=(")[1].split(")")[0] for v in ("LD_BIN", "LD_SHA", "LD_BIN_BASE", "LD_SHA_BASE")))
 check("run_all and the battery guard the new files against CRLF", all(f in runall and f in battery for f in ("plan63.py", "test_harness63.py")))
-check("HARNESS_PATHS lists 63 with rehearse, full, the ABORT paths (missing / wrong CAND pin, wrong CONTROL pin, a prebuilt CAND), cand-fail, cand-noctld, and neither prior-tests nor reuse paths", set(hp.HARNESS_PATHS["63"]) == {"rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-prebuilt"})
+check("HARNESS_PATHS lists 63 with rehearse, full, the ABORT paths (missing / wrong CAND pin, wrong CONTROL pin, a prebuilt CAND), cand-fail, cand-noctld, and neither prior-tests nor reuse paths", set(hp.HARNESS_PATHS["63"]) == {"rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"})
 
 
 # ═══ 5. the engine-diff witness ═══

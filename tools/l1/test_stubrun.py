@@ -1561,7 +1561,7 @@ def case63(plan, path):
         sb = make_sandbox(root, plan, None)
         (cand_bin, cand_sha), (ctl_bin, ctl_sha) = stub_bin_pair(sb)
         extra = {"STUB_BIN_FILE": px(cand_bin), "LD_BIN_CONTROL": px(ctl_bin), "LD_BIN_SHA_CONTROL": ("0" * 64 if path == "control-sha-mismatch" else ctl_sha), "STUB_DRVLOG5": px(sb["logs"]) + "/drv5.log"}
-        if path in ("full", "cand-fail", "cand-noctld", "cand-prebuilt", "control-sha-mismatch"):
+        if path in ("full", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt", "control-sha-mismatch"):
             extra["LD_BIN_SHA_CAND"] = cand_sha
         if path == "cand-sha-mismatch":
             extra["LD_BIN_SHA_CAND"] = "0" * 64
@@ -1569,6 +1569,8 @@ def case63(plan, path):
             extra["STUB_BAD63"] = "candfail"
         if path == "cand-noctld":
             extra["STUB_BAD63"] = "noctld"
+        if path == "cand-ctld-send-only":
+            extra["STUB_BAD63"] = "ctldsend"
         if path == "cand-prebuilt":
             extra["LD_BIN_PREBUILT"] = px(cand_bin)
         rehearse = path == "rehearse"
@@ -1609,7 +1611,7 @@ def case63(plan, path):
                   len(rows) == 2 and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls63(want_rows) and [c[-1] for c in calls] == ["bindir=bin-base", "bindir=bin"],
                   (len(rows), calls[:2], expect_calls63(want_rows)))
             check(f"{tag}: both rows are REPORTED: the CONTROL row's warm-up failure is a datum (REPORTED ... NEVER-ACKED, undeliv n/a, no abort), the CAND row is PASS on the F2 reading with its transfer completed",
-                  re.search(r"^  REPORTED CPL-s42 REPORTED: warm-up NEVER-ACKED \(a datum, not an abort\);.*undeliv=n/a", chk, re.M) is not None and re.search(r"^  REPORTED FPL-s42 PASS:.*transfer=COMPLETED undeliv=0", chk, re.M) is not None and "SMOKE-PASS" in chk, chk[-900:])
+                  re.search(r"^  REPORTED CPL-s42 REPORTED: warm-up NEVER-ACKED \(a datum, not an abort\);.*undeliv=n/a", chk, re.M) is not None and re.search(r"^  REPORTED FPL-s42 PASS:.*transfer=COMPLETED undeliv=0\(srv 0\+cli 0\)", chk, re.M) is not None and "SMOKE-PASS" in chk, chk[-900:])
             EXECUTED.add((plan, path))
             return
         led = led56(stage)
@@ -1635,11 +1637,14 @@ def case63(plan, path):
         elif path == "cand-noctld":
             check(f"{tag}: a CAND with no [CTLD] line is a MISSING WITNESS: every CAND row FAILs ('no [CTLD] line with undeliv= (missing witness)', undeliv=MISSING in the ROW63 line, not a pass on the driver's `--- F2 undeliv=0`), the CONTROL rows are unaffected, BLOCKS-E-PRE",
                   all(labels.get(a) == "FAIL" for a in cand_arms) and score.count("missing witness") == 5 and "undeliv=MISSING" in score and "cand_fail=5/5" in score and "BLOCKS-E-PRE" in score, score[-1500:])
+        elif path == "cand-ctld-send-only":
+            check(f"{tag}: a CAND whose only [CTLD] lines are on the SENDING end (the client) is a MISSING receiving-end witness: every CAND row FAILs ('missing witness ... (the sending end printed one)'), undeliv shows MISSING, BLOCKS-E-PRE",
+                  all(labels.get(a) == "FAIL" for a in cand_arms) and score.count("(the sending end printed one)") == 5 and "undeliv=MISSING" in score and "cand_fail=5/5" in score and "BLOCKS-E-PRE" in score, score[-1500:])
         else:
             check(f"{tag}: the report prints ROW63 + LABEL63 per row (every CAND row PASS on the F2 reading; every CONTROL row REPORTED with no per-row prediction: its warm-up fails on the 4 paced rows of the stub and U completes, undeliv n/a), the seat pins "
                   "and a VERDICT63 with control_warmup_fail=4/5, cand_fail=0/5 and no BLOCKS-E-PRE",
                   all(labels.get(a) == "PASS" for a in cand_arms) and all(labels.get(c) == "REPORTED" for c in ("CPL-s42", "CPM-s42", "CU-s42", "CPL-s7", "CPM-s7")) and len(re.findall(r"^ROW63 ", score, re.M)) == 10 and "warm=NEVER-ACKED" in score
-                  and re.search(r"^ROW63 CPL s42 r1: .*undeliv=n/a ", score, re.M) is not None and re.search(r"^ROW63 FPL s42 r1: .*transfer=COMPLETED undeliv=0 ", score, re.M) is not None and "symsz(cli)=512/512" in score
+                  and re.search(r"^ROW63 CPL s42 r1: .*undeliv=n/a ", score, re.M) is not None and re.search(r"^ROW63 FPL s42 r1: .*transfer=COMPLETED undeliv=0\(srv 0\+cli 0\) ", score, re.M) is not None and "symsz(cli)=512/512" in score
                   and "VERDICT63 REPORTED-ONLY rows=10/10 control_warmup_fail=4/5 cand_fail=0/5" in score and "BLOCKS-E-PRE" not in score and "CAND-READING-WEAK" not in score
                   and "SEAT63 CONTROL bin_sha " + ctl_sha[:16] + " (equals the pinned value)" in score and "SEAT63 CAND bin_sha " + cand_sha[:16] + " (equals the pinned value)" in score, (labels, score[-1500:]))
         check(f"{tag}: DONE-ALL and score.txt", os.path.exists(os.path.join(run_dir, "DONE-ALL")) and os.path.exists(os.path.join(run_dir, "score.txt")), tail(e, 12))
