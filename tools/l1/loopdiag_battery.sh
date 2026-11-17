@@ -1199,11 +1199,14 @@ if [ "$P51E" = 1 ]; then
   exit 0
 fi
 
-# ── plan 63 (status 63, F2's first VM contact): 10 slots (CONTROL then CAND for each of PL s42, PM s42, U s42, PL s7, PM s7); smoke / rehearsal = the one CAND PL s42 row. Rows run once: nothing is replaced. ──
+# ── plan 63 (status 63, F2's first VM contact): 10 slots (CONTROL then CAND for each of PL s42, PM s42, U s42, PL s7, PM s7); smoke = the CAND PL s42 row, rehearsal = CONTROL PL s42 then CAND PL s42. Rows run once: nothing is replaced. ──
 plan63() { # smoke -> the whole plan (0), or the smoke row (1)
   local -a tbl
   local line cell store arm seed rep want
-  if [ "$1" = "1" ]; then
+  if [ "$1" = "1" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then
+    mapfile -t tbl < <(python3 ./plan63.py plan 63 rehearsal)      # section 63: CONTROL PL s42 then CAND PL s42, both reported, never re-run
+    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN63 rehearsal table has ${#tbl[@]} rows (2)" >> "$OUT"; exit 3; }
+  elif [ "$1" = "1" ]; then
     mapfile -t tbl < <(python3 ./plan63.py plan 63 smoke)
     [ "${#tbl[@]}" -eq 1 ] || { echo "ABORT-PLAN63 smoke table has ${#tbl[@]} rows (1)" >> "$OUT"; exit 3; }
   else

@@ -43,9 +43,9 @@ CELL = plan63.CELL
 
 # ═══ 1. the table ═══
 T = plan63.plan("63")
-check("63 is 10 slots on c2-100: PL s42, PM s42, U s42, PL s7, PM s7, each CONTROL (C<arm>) then CAND (F<arm>); rep = the position, the smoke and the rehearsal are the one CAND PL s42 row",
+check("63 is 10 slots on c2-100: PL s42, PM s42, U s42, PL s7, PM s7, each CONTROL (C<arm>) then CAND (F<arm>); rep = the position, the smoke is the CAND PL s42 row, the rehearsal CONTROL PL s42 then CAND PL s42 (both reported, never re-run)",
       len(T) == 10 and [(r[2], r[3], r[4]) for r in T] == [("CPL", "42", 1), ("FPL", "42", 1), ("CPM", "42", 2), ("FPM", "42", 2), ("CU", "42", 3), ("FU", "42", 3), ("CPL", "7", 4), ("FPL", "7", 4), ("CPM", "7", 5), ("FPM", "7", 5)]
-      and {r[0] for r in T} == {CELL} and plan63.plan("63", smoke=True) == [(CELL, "def", "FPL", "42", 1)] == plan63.plan("63", rehearsal=True) and plan63.expect_rows() == 10, T)
+      and {r[0] for r in T} == {CELL} and plan63.plan("63", smoke=True) == [(CELL, "def", "FPL", "42", 1)] and plan63.plan("63", rehearsal=True) == [(CELL, "def", "CPL", "42", 1), (CELL, "def", "FPL", "42", 1)] and plan63.expect_rows() == 10, T)
 check("the arms are plan 51e's own: PL 20 748 000 B at 2.7664 Mbit/s, PM 262 500 000 B at 35, U 600 000 000 B unpaced, the Realtime hint, RWM_SLAW=1 and RWM_C_RELIABLE=0, timeouts 75 / 75 / 30 s",
       all(plan63.arm_bytes(CELL, s + "PL") == 20_748_000 and plan63.arm_bytes(CELL, s + "PM") == 262_500_000 and plan63.arm_bytes(CELL, s + "U") == 600_000_000 for s in "CF")
       and plan63.arm_env(CELL, "FPL") == ["RWM_SLAW=1", "RWM_C_RELIABLE=0", "RWM_PERF_RATE_MBIT=2.7664"] and plan63.arm_env(CELL, "CPM") == ["RWM_SLAW=1", "RWM_C_RELIABLE=0", "RWM_PERF_RATE_MBIT=35"]
@@ -56,32 +56,37 @@ check("armspec refuses an arm no plan carries (a bare plan-51e arm, a wrong cell
 import place38_parse as pp  # noqa: E402
 check("every arm is registered with place38_parse (window / Rlc / realtime) and its seat family (C -> BASE, F -> CAND)", all(pp.sp.ARM_SPEC[a][:3] == ("window", "Rlc", "realtime") for a in plan63.all_arms())
       and all(pp.AFAM[a] == ("BASE" if a.startswith("C") else "CAND") for a in plan63.all_arms()) and len(plan63.all_arms()) == 6)
-check("the budget: plan63.BUDGET_S 1 920 s (the battery) / 1 500 s (the rehearsal) and run_all's P57_NEED carries them", plan63.BUDGET_S == {"63": 1920, "63r": 1500} and 'P57_NEED=1920; [ "$REHEARSE" = 1 ] && P57_NEED=1500; P57_TAG="63"' in runall)
+check("the budget (section 63): plan63.BUDGET_S 5 400 s (1.5 h: two builds, the tools tests, 10 rows of at most 150 s) / 1 800 s (the rehearsal) and run_all's P57_NEED carries them", plan63.BUDGET_S == {"63": 5400, "63r": 1800} and 'P57_NEED=5400; [ "$REHEARSE" = 1 ] && P57_NEED=1800; P57_TAG="63"' in runall)
 
 # ═══ 2. readings and labels ═══
-def t63(warm="COMPLETED", und=0, unf=0, cli=((512, 512),), srv=((512, 512),)):
-    return {"warm": warm, "undeliv": und, "unframable": unf, "symsz": {"cli": list(cli), "srv": list(srv)}, "rate_echo": None}
+def t63(warm="ACKED", und=0, unf=0, cli=((512, 512),), srv=((512, 512),), ctld=1, transfer="COMPLETED"):
+    return {"warm": warm, "transfer": transfer, "undeliv": und, "ctld": ctld, "unframable": unf, "symsz": {"cli": list(cli), "srv": list(srv)}, "rate_echo": None}
 
 
-check("CAND: PASS iff the warm-up acked and the transfer completed, undeliv 0, no [UNFRAMABLE], [SYMSZ] on both ends with local = decoder", plan63.cand_label(t63())[0] == "PASS")
-for name, t, frag in (("never acked", t63("NEVER-ACKED"), "NEVER-ACKED"), ("a transfer DNF", t63("TRANSFER-DNF"), "TRANSFER-DNF"), ("undeliv 2", t63(und=2), "undeliv=2"), ("an [UNFRAMABLE] line", t63(unf=1), "unframable=1"),
-                      ("no [SYMSZ] on the client", t63(cli=()), "missing on the client"), ("no [SYMSZ] anywhere", t63(cli=(), srv=()), "both ends"), ("local != decoder", t63(srv=((1200, 512),)), "local != decoder")):
+check("CAND: PASS iff the warm-up acked, undeliv=0 from a PRESENT [CTLD] line, no [UNFRAMABLE], [SYMSZ] on both ends with local = decoder", plan63.cand_label(t63())[0] == "PASS")
+check("CAND: transfer completion is reported SEPARATELY: a DNF / OTHER transfer after a clean warm-up and clean witnesses is still PASS (a pacer or E-tree finding, not one against F2)",
+      plan63.cand_label(t63(transfer="DNF"))[0] == "PASS" and plan63.cand_label(t63(transfer="OTHER"))[0] == "PASS")
+for name, t, frag in (("never acked", t63("NEVER-ACKED"), "NEVER-ACKED"), ("no client log", t63("NO-LOG"), "NO-LOG"), ("a MISSING [CTLD] line (no undeliv= anywhere): a missing witness, not a pass", t63(ctld=0), "missing witness"),
+                      ("undeliv 2", t63(und=2), "undeliv=2"), ("an [UNFRAMABLE] line", t63(unf=1), "unframable=1"), ("no [SYMSZ] on the client", t63(cli=()), "missing on the client"),
+                      ("no [SYMSZ] anywhere", t63(cli=(), srv=()), "both ends"), ("local != decoder", t63(srv=((1200, 512),)), "local != decoder")):
     lab, why = plan63.cand_label(t)
     check(f"CAND FAIL on {name}", lab == "FAIL" and any(frag in w for w in why), (lab, why))
-check("CONTROL s42 PL / PM: PASS iff the warm-up never acked (the failure reproduced); a pass is FAIL ('not reproduced': the trigger is not deterministic, the candidate's reading is weakened, not voided)",
-      plan63.control_label("PL", "42", t63("NEVER-ACKED"))[0] == "PASS" and plan63.control_label("PM", "42", t63("NEVER-ACKED"))[0] == "PASS" and plan63.control_label("PL", "42", t63("COMPLETED"))[0] == "FAIL"
-      and "weakened, not voided" in plan63.control_label("PM", "42", t63("COMPLETED"))[1])
-check("CONTROL U s42: PASS iff it completes; a failure says the pacer is not part of the trigger; CONTROL s7 has NO-PREDICTION whatever it does",
-      plan63.control_label("U", "42", t63("COMPLETED"))[0] == "PASS" and plan63.control_label("U", "42", t63("NEVER-ACKED"))[0] == "FAIL" and "pacer is not part of the trigger" in plan63.control_label("U", "42", t63("NEVER-ACKED"))[1]
-      and all(plan63.control_label(b, "7", t63(w))[0] == "NO-PREDICTION" for b in ("PL", "PM") for w in ("COMPLETED", "NEVER-ACKED")))
+check("CONTROL has NO per-row prediction (no pacer correlation; the failure is stochastic under one netem seed): every CONTROL row is REPORTED with its warm-up outcome, a failure is 'a datum, not an abort'",
+      all(plan63.label_row(a, sd, t63(w))[0] == "REPORTED" for a in ("CPL", "CPM", "CU") for sd in ("42", "7") for w in ("ACKED", "NEVER-ACKED"))
+      and "a datum, not an abort" in plan63.label_row("CPL", "42", t63("NEVER-ACKED"))[1] and "datum" not in plan63.label_row("CPL", "42", t63("ACKED"))[1])
+check("label_row dispatches on the seat: F<arm> rows get the CAND's PASS / FAIL, C<arm> rows REPORTED", plan63.label_row("FPL", "42", t63())[0] == "PASS" and plan63.label_row("FPM", "7", t63(unf=1))[0] == "FAIL")
 M = plan63.row_metrics(["[CTLD] undeliv=0", "[SYMSZ] local=512 decoder=512", '{"bytes":1,"mbps":3.0,"run":1}', '{"bytes":1,"mean_mbps":3.0,"summary":true}'], ["[SYMSZ] local=512 decoder=512"], ["--- F2 undeliv=0 unframable=0"])
-check("row_metrics: a completed row reads warm=COMPLETED with its [SYMSZ] from both ends", M["warm"] == "COMPLETED" and M["symsz"] == {"cli": [(512, 512)], "srv": [(512, 512)]} and M["undeliv"] == 0 and M["unframable"] == 0, M)
-M = plan63.row_metrics(['{"bytes":1,"mbps":3.0,"run":1}', '{"bytes":1,"dnf":0,"mean_mbps":3.0,"summary":true}'], [], [])
-check("row_metrics: the real summary line carries `\"dnf\":0` on a completed run: still COMPLETED, while `\"dnf\":1` is a DNF", M["warm"] == "COMPLETED" and plan63.row_metrics(['{"bytes":1,"dnf":1,"summary":true}'], [], [])["warm"] == "TRANSFER-DNF")
+check("row_metrics: a completed row reads warm=ACKED transfer=COMPLETED with its [SYMSZ] from both ends and one [CTLD] line carrying undeliv=", M["warm"] == "ACKED" and M["transfer"] == "COMPLETED" and M["ctld"] == 1
+      and M["symsz"] == {"cli": [(512, 512)], "srv": [(512, 512)]} and M["undeliv"] == 0 and M["unframable"] == 0, M)
+M = plan63.row_metrics(["x", '{"bytes":1,"dnf":0,"mean_mbps":3.0,"summary":true}'], [], [])
+check("row_metrics: the real summary line carries `\"dnf\":0` on a completed run: still COMPLETED, while `\"dnf\":1` is a DNF transfer", M["transfer"] == "COMPLETED" and plan63.row_metrics(["x", '{"bytes":1,"dnf":1,"summary":true}'], [], [])["transfer"] == "DNF")
 M = plan63.row_metrics(["Error: warm-up object never acked - tunnel not passing traffic", '{"dnf":true}'], ["[CTLD] undeliv=2", "[UNFRAMABLE] x"], ["--- F2 undeliv=2 unframable=1", '{"dnf":1,"summary":true}'])
-check("row_metrics: 'warm-up object never acked' reads NEVER-ACKED (it outranks the DNF line), undeliv 2 and unframable 1 are taken from both logs and the driver's `--- F2` line", M["warm"] == "NEVER-ACKED" and M["undeliv"] == 2 and M["unframable"] == 1, M)
+check("row_metrics: 'warm-up object never acked' reads warm=NEVER-ACKED (the transfer is a separate DNF reading), undeliv 2 and unframable 1 are taken from both logs and the driver's `--- F2` line", M["warm"] == "NEVER-ACKED" and M["transfer"] == "DNF" and M["undeliv"] == 2 and M["unframable"] == 1, M)
 M = plan63.row_metrics(["x", '{"dnf":true}'], [], [])
-check("row_metrics: a DNF after the warm-up reads TRANSFER-DNF, a log with neither reads OTHER", M["warm"] == "TRANSFER-DNF" and plan63.row_metrics([], [], [])["warm"] == "OTHER")
+check("row_metrics: a DNF after an acked warm-up reads warm=ACKED transfer=DNF; no client log reads NO-LOG; a log with neither outcome reads transfer=OTHER", M["warm"] == "ACKED" and M["transfer"] == "DNF" and plan63.row_metrics([], [], [])["warm"] == "NO-LOG"
+      and plan63.row_metrics(["x"], [], [])["transfer"] == "OTHER")
+check("a [CTLD] line WITHOUT undeliv= (the CONTROL has no counter) is not a witness: ctld counts only the lines that carry a value; the driver's `--- F2 undeliv=0` line is not a [CTLD] line either",
+      plan63.row_metrics(["[CTLD] t=5.0s gen=0"], ["[CTLD] t=5.0s gen=0"], ["--- F2 undeliv=0 unframable=0"])["ctld"] == 0 and plan63.row_metrics(["[CTLD] undeliv=0"], ["[CTLD] undeliv=0"], [])["ctld"] == 2)
 check("row_problems: only the binary: a row on the wrong seat's sha is a bin-sha problem, a missing pin is 'uncheckable' (never a silent pass), an unknown arm is refused",
       plan63.row_problems(CELL, "CPL", [], [], "aa", "cc", "aa") == [] and plan63.row_problems(CELL, "FPL", [], [], "cc", "cc", "aa") == [] and any(x.startswith("bin-sha=") for x in plan63.row_problems(CELL, "CPL", [], [], "cc", "cc", "aa"))
       and any("uncheckable" in x for x in plan63.row_problems(CELL, "FPL", [], [], "cc", None, "aa")) and plan63.row_problems(CELL, "PL", [], [], "aa", "aa", "aa") == ["unknown-arm-PL-at-c2-100"])
@@ -141,6 +146,7 @@ else:
 check("battery: plan 63 accepted (P63, single binary family per seat), the CONTROL seat is the BASE binary (LD_BIN_BASE / LD_SHA_BASE) for the C<arm> rows, a row runs ONCE (TRIES=1), nothing is replaced, plan 51e's scrub and instrument env ride",
       'P63=0; [ "$PLAN" = "63" ] && { P63=1; P38=1; PCAND=1; TRIES=1; }' in battery and 'case "$arm" in C*) RBIN="$BIN_BASE"; RWANT="$WANT_BASE" ;; esac' in battery and 'python3 ./plan63.py armspec "$cell" "$arm"' in battery
       and '[ "$P63" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)' in battery and "|| [ \"$P63\" = 1 ]; } && SCRUB_EXTRA=" in battery and "run_slot63" not in battery and "plan63.py replace" not in battery)
+check("battery: the rehearsal is two rows (CONTROL PL s42, CAND PL s42), the smoke one", "ABORT-PLAN63 rehearsal table has" in battery and "plan63.py plan 63 rehearsal" in battery)
 check("battery: both seats are preflighted (the E-block tokens), must be different files with different shas, and the CONTROL must equal LD_SHA_BASE; the table-size asserts are 10 / 1",
       'preflight_binary "$BIN_BASE" "RWM_SLAW" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE" "RWM_PERF_RATE_MBIT"' in battery and "ABORT-SHA start (CONTROL)" in battery and "ABORT-SHA CONTROL and CAND binaries are identical" in battery
       and 'want=10' in battery and "ABORT-PLAN63 smoke table has" in battery and "=== binary-base" in battery)
@@ -150,8 +156,8 @@ check("run_all: plan 63 is selectable and rehearsable, rides P46 + P57, and the 
 check("run_all: the CONTROL pin defaults to the registered E bin_sha 8013a312... (LD_BIN_SHA_CONTROL, a test seam) and equals plan63.CONTROL_SHA; both pins are exported for the report",
       "8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf" in runall and plan63.CONTROL_SHA == "8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf" and "export LD_BIN_SHA_CONTROL LD_BIN_SHA_CAND" in runall)
 check("run_all: the CAND binary is checked against LD_BIN_SHA_CAND (ABORT-BIN-SHA ... CAND) or recorded, the CONTROL comes from LD_BIN_CONTROL (no build) or the BASE tree and is checked against its pin (ABORT-BIN-SHA ... CONTROL), "
-      "LD_BIN_PREBUILT installs the CAND without a build, and no engine suite runs", 'fail_all "ABORT-BIN-SHA plan 63 CAND: built' in runall and 'fail_all "ABORT-BIN-SHA plan 63 CONTROL:' in runall and 'LD_BIN_CONTROL' in runall
-      and '{ [ "$P60" = 1 ] || [ "$P63" = 1 ]; } && [ -n "${LD_BIN_PREBUILT:-}" ]' in runall and "plan 63: no engine suites" in runall)
+      "a prebuilt CAND is refused (LD_BIN_PREBUILT), and no engine suite runs (no manifest ABORT)", 'fail_all "ABORT-BIN-SHA plan 63 CAND: built' in runall and 'fail_all "ABORT-BIN-SHA plan 63 CONTROL:' in runall and 'LD_BIN_CONTROL' in runall
+      and 'if [ "$P60" = 1 ] && [ -n "${LD_BIN_PREBUILT:-}" ]; then' in runall and 'ABORT-BUILD plan 63 never accepts a prebuilt CAND' in runall and "plan 63: no engine suites" in runall)
 check("run_all: the stage calls plan63.py for the smoke, the report (the score) and the slot check, the tools-test gate runs test_l1common.py and test_harness63.py, LD_HARD is required (budget guard launch + 1 h)",
       'python3 ./plan63.py smoke "$P51SMOKE"' in runall and 'python3 ./plan63.py report "$dir/ld.log"' in runall and 'python3 ./plan63.py check "$splan"' in runall and "for t in test_l1common.py test_harness63.py" in runall
       and "63) stage rep63 63" in runall)

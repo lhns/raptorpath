@@ -578,8 +578,8 @@ def gen51e(cli, srv, drv, nbytes, fam, hint):
 # ── plan 63 (plan63.row_metrics): F2's first contact. gen51e's rows (the arm follows RWM_PERF_RATE_MBIT) with the F2 witnesses. KNOWN TRUTH: the CONTROL seat (RWM_BIN under bin-base) fails the warm-up on the paced arms
 # ("warm-up object never acked", a DNF line) and completes U; the CAND seat completes every arm with `[CTLD] undeliv=0`, no [UNFRAMABLE] and `[SYMSZ] local=512 decoder=512` on both ends; the driver prints the
 # `--- F2 undeliv=.. unframable=..` line. STUB_BAD63 (comma list): candfail (the CAND's paced arms fail closed: undeliv=2, one [UNFRAMABLE] line, the warm-up never acked), controlpass (the CONTROL's paced arms
-# complete: the trigger did not reproduce). ──
-BAD63 = {"candfail", "controlpass"}
+# complete: the trigger did not reproduce), noctld (the CAND prints NO [CTLD] line: a missing witness). The CONTROL has no counter: its [CTLD] lines carry no undeliv= (status 63: undeliv is n/a there). ──
+BAD63 = {"candfail", "controlpass", "noctld"}
 
 
 def gen63(cli, srv, drv, nbytes, fam, hint):
@@ -591,9 +591,10 @@ def gen63(cli, srv, drv, nbytes, fam, hint):
     drv = [ln for ln in drv if '"dnf"' not in ln]
     fail = paced and ((control and "controlpass" not in bad) or (not control and "candfail" in bad))
     undeliv, unf = (2, 1) if (not control and "candfail" in bad and paced) else (0, 0)
-    ctld = f"[CTLD] t=5.0s mode=wide undeliv={undeliv} gen=0"
-    cli = cli + [ctld]
-    srv = srv + [ctld]
+    ctld = "[CTLD] t=5.0s mode=wide gen=0" if control else f"[CTLD] t=5.0s mode=wide undeliv={undeliv} gen=0"
+    if not (not control and "noctld" in bad):
+        cli = cli + [ctld]
+        srv = srv + [ctld]
     if not control:
         cli = cli + ["[SYMSZ] local=512 decoder=512"]
         srv = srv + ["[SYMSZ] local=512 decoder=512"]

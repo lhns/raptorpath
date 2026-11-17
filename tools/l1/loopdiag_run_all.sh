@@ -223,10 +223,11 @@ P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P46=1; P57=1; }
 P51=0; [ "$PLAN" = "51" ] && { P51=1; P46=1; P57=1; }
 # Plan 63 (status 63, F2's first VM contact; plan63.py, reported only): TWO seats on the single-seat gate shape (P46 + P57). CONTROL = the e-tree binary, pinned to the registered E bin_sha (LD_BIN_SHA_CONTROL, default
 # 8013a312..., a test seam); CAND = $ROOT's tree, whose binary must equal LD_BIN_SHA_CAND (REQUIRED on a battery launch, no default; the rehearsal RECORDS it). CONTROL comes from LD_BIN_CONTROL (an executable, no build)
-# or is built from $ROOT/base/src. LD_BIN_PREBUILT installs the CAND binary without a build. No engine suites run (the CAND tree is not the suite-reuse manifest's); the tools tests do. LD_HARD = launch + 1 h.
+# or is built from $ROOT/base/src. A prebuilt CAND is refused (the CAND is a plain release build from the launch archive). No engine suites run and a manifest MISS is no abort (the CAND tree cannot hit ref51e); the tools tests do. LD_HARD = launch + 1.5 h.
 P63=0; [ "$PLAN" = "63" ] && { P63=1; P46=1; P57=1; }
 if [ "$P63" = 1 ]; then
   LD_BIN_SHA_CONTROL="${LD_BIN_SHA_CONTROL:-8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf}"; export LD_BIN_SHA_CONTROL LD_BIN_SHA_CAND      # the report (plan63.py report) reads both pins
+  [ -z "${LD_BIN_PREBUILT:-}" ] || { echo "ABORT-BUILD plan 63 never accepts a prebuilt CAND (LD_BIN_PREBUILT is set): the CAND is a plain release build from the launch archive; NOTHING WAS RUN"; exit 3; }
   [ "$REHEARSE" = 1 ] || [ -n "${LD_BIN_SHA_CAND:-}" ] || { echo "ABORT-BIN-SHA plan 63 needs LD_BIN_SHA_CAND (the candidate's bin_sha, recorded by the rehearsal); NOTHING WAS RUN"; exit 3; }
 fi
 if [ "$P51E" = 1 ]; then
@@ -314,7 +315,7 @@ if [ "$P57" = 1 ]; then
   P57_TAG="57a/57b ($PLAN)"; [ "$P59" = 1 ] && { P57_NEED=7200; P57_TAG="59"; }
   [ "$P60" = 1 ] && { P57_NEED=18360; [ "$PLAN" = "60b" ] && P57_NEED=13860; P57_TAG="$PLAN"; }      # status 60 section 7: 3.2 h (60a) / 2.9 h (60b) PLUS the worst-case floor DNF re-runs (36 / 18 rows x 190 s): 5.1 h / 3.85 h (plan60.BUDGET_S)
   [ "$P51E" = 1 ] && { P57_NEED=2730; [ "$REHEARSE" = 1 ] && P57_NEED=1500; P57_TAG="51e"; }      # plan51e.BUDGET_S: the battery's worst case (every slot twice + build + smoke + tests); the rehearsal's 25 min
-  [ "$P63" = 1 ] && { P57_NEED=1920; [ "$REHEARSE" = 1 ] && P57_NEED=1500; P57_TAG="63"; }      # plan63.BUDGET_S: 10 rows + two builds + smoke + tests; LD_HARD = launch + 1 h
+  [ "$P63" = 1 ] && { P57_NEED=5400; [ "$REHEARSE" = 1 ] && P57_NEED=1800; P57_TAG="63"; }      # plan63.BUDGET_S (section 63): two builds + the tools tests + 10 rows of at most 150 s = 1.5 h; the rehearsal ~30 min; LD_HARD = launch + 1.5 h
   [ "$P51" = 1 ] && { P57_NEED=17400; [ "$REHEARSE" = 1 ] && P57_NEED=1200; P57_TAG="51"; }          # plan51.BUDGET_S: 76 rows x 215 s + 16 min = 4 h 50 (s51-design section 7); the rehearsal ~20 min
   P57_LEFT=$(( LD_HARD - $(date +%s) ))
   era "LD-ALL plan $PLAN budget: ${P57_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P57_NEED}s required: the worst case of the status)"
@@ -417,7 +418,7 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 [ ! -e "$SRC/target" ] || fail_all "ABORT-BUILD $SRC/target is not fresh"
 [ ! -e "$TARGET" ] || fail_all "ABORT-BUILD $TARGET is not fresh"
 T0=$(date +%s)
-if { [ "$P60" = 1 ] || [ "$P63" = 1 ]; } && [ -n "${LD_BIN_PREBUILT:-}" ]; then
+if [ "$P60" = 1 ] && [ -n "${LD_BIN_PREBUILT:-}" ]; then
   # Plan 60b may reuse 60a's binary (its sha is still checked against LD_BIN_SHA_EXPECT below): no build, the TARGET dir stays absent.
   [ -x "$LD_BIN_PREBUILT" ] || fail_all "ABORT-BUILD LD_BIN_PREBUILT=$LD_BIN_PREBUILT is not an executable file"
   mkdir -p "$TARGET/release" && cp "$LD_BIN_PREBUILT" "$TARGET/release/raptorpath" || fail_all "ABORT-BUILD prebuilt copy"

@@ -20,7 +20,7 @@ def check(name, ok, detail=""):
 
 
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
-KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse", "prebuilt", "rsign-abort", "pace-void", "spc-void", "calibrate", "recheck", "delta-echo-void", "short-void", "dialpins-fail", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail"}
+KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse", "prebuilt", "rsign-abort", "pace-void", "spc-void", "calibrate", "recheck", "delta-echo-void", "short-void", "dialpins-fail", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-prebuilt"}
 T = hp.HARNESS_PATHS
 
 check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 51e, 51, 63 and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "51e", "51", "63"}, sorted(T))

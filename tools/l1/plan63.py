@@ -4,14 +4,17 @@ warm-up) and then on the CAND seat (e-tree + the F2 engine commits), on c2-100 a
 names the seat in the arm (`C<arm>` = CONTROL, `F<arm>` = CAND) and orders the rows. Tables, per-row run spec, the reported fields and the slot check; the shell asks `armspec`, the row parser asks `row_problems` /
 `row_metrics`, and `report` / `smoke` read the ledger.
 
-    plan63.py plan 63 [smoke]            the table, `cell store arm seed rep` per line (smoke = ONE CAND PL s42 row, which is also the rehearsal's row)
-    plan63.py count 63 [smoke]           the number of rows the table holds (the battery asserts it)
+    plan63.py plan 63 [smoke|rehearsal]  the table, `cell store arm seed rep` per line (smoke = ONE CAND PL s42 row; rehearsal = CONTROL PL s42 then CAND PL s42, both reported, never re-run)
+    plan63.py count 63 [smoke|rehearsal] the number of rows the table holds (the battery asserts it)
     plan63.py armspec <cell> <arm>       `BYTES TIMEOUT_S HINT ENV...` (plan51e's spec for the arm without its seat prefix)
     plan63.py check 63 <ledger>          rc 0 iff the battery finished and the ledger holds a row for every slot
-    plan63.py smoke <smoke|rehearsal> <ledger>    the smoke / rehearsal check: harness criteria gate (SMOKE-PASS | SMOKE-FAIL), the CAND row's reading is REPORTED
-    plan63.py report <ledger>            per row: warm-up outcome, undeliv, [UNFRAMABLE] count, [SYMSZ] from both ends, the seat's bin_sha, and the seat's PASS / FAIL against the draft's predictions
+    plan63.py smoke <smoke|rehearsal> <ledger>    the smoke / rehearsal check: harness criteria gate (SMOKE-PASS | SMOKE-FAIL), the rows' readings are REPORTED
+    plan63.py report <ledger>            per row: warm-up outcome, [CTLD] undeliv (CAND only: CONTROL has no counter), [UNFRAMABLE] count, [SYMSZ] from both ends, the transfer outcome (separately), the seat's bin_sha, the CAND's
+                                         PASS / FAIL on the F2 reading, and CONTROL's warm-up failures out of its rows (reported, no per-row prediction)
 
-Not a void: F2 is expected to fail on CONTROL, so undeliv / [UNFRAMABLE] are READINGS here (l1common.f2_counts), not a VOID-F2. The scored blocks (51, 51e) void on them (l1common.f2_void)."""
+Not a void: CONTROL may fail the warm-up (the datum), so the F2 counters are READINGS here (l1common.f2_counts), not a VOID-F2. The scored blocks (51, 51e) void on them (l1common.f2_void).
+There is no pacer correlation (§63): every row's warm-up is the same unpaced Realtime warm-up, so CONTROL has NO per-row prediction; its warm-up failures out of 5 are reported. The CAND's F2 reading is the warm-up ack plus
+the witnesses (undeliv=0 from a PRESENT [CTLD] line, no [UNFRAMABLE], [SYMSZ] local = decoder); transfer completion is reported separately."""
 import json
 import os
 import sys
@@ -26,7 +29,8 @@ BASES = ("PL", "PM", "U")
 PREFIX = {"CONTROL": "C", "CAND": "F"}
 ROWS = (("PL", "42"), ("PM", "42"), ("U", "42"), ("PL", "7"), ("PM", "7"))                 # (arm, seed); each runs CONTROL then CAND
 SMOKE = [(CELL, "def", "FPL", "42", 1)]
-BUDGET_S = {"63": 1920, "63r": 1500}                                                       # 10 rows x (90 s paced / 45 s U) = 810 + 2 builds 720 + smoke 90 + tests 300 (= 1 920); the rehearsal 25 min. LD_HARD = launch + 1 h
+REHEARSAL = [(CELL, "def", "CPL", "42", 1), (CELL, "def", "FPL", "42", 1)]               # section 63: LD_REHEARSE runs CONTROL PL s42 then CAND PL s42, both reported; a rehearsal row is never re-run
+BUDGET_S = {"63": 5400, "63r": 1800}                                                       # section 63: two builds (~8 min each) + the tools tests (~8 min) + 10 rows of at most 150 s = 1.5 h worst case; the rehearsal ~30 min. LD_HARD = launch + 1.5 h
 WARM_TOKEN = "warm-up object never acked"
 LATE_T = plan51e.LATE_T
 
@@ -68,10 +72,12 @@ def arm_env(cell, arm):
 
 
 def plan(name="63", smoke=False, rehearsal=False):
-    """[(cell, store, arm, seed, rep)] in run order: for each (arm, seed) of ROWS the CONTROL row, then the CAND row, rep = the position in ROWS. The smoke and the rehearsal are the one CAND PL s42 row."""
+    """[(cell, store, arm, seed, rep)] in run order: for each (arm, seed) of ROWS the CONTROL row, then the CAND row, rep = the position in ROWS. The smoke is the one CAND PL s42 row, the rehearsal CONTROL PL s42 then CAND PL s42."""
     if name != "63":
         raise ValueError(name)
-    if smoke or rehearsal:
+    if rehearsal:
+        return list(REHEARSAL)
+    if smoke:
         return list(SMOKE)
     out = []
     for k, (b, sd) in enumerate(ROWS, 1):
@@ -93,17 +99,19 @@ def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, sha_base=None):
 
 
 def row_metrics(cli, srv, drv):
-    """The `t63` of one row: the warm-up outcome, the F2 counters and the [SYMSZ] echoes from both ends. Never raises on log content."""
+    """The `t63` of one row: the warm-up outcome (NEVER-ACKED when the engine's `warm-up object never acked` is anywhere in the logs, NO-LOG when the client log is empty, else ACKED), the transfer outcome SEPARATELY
+    (COMPLETED / DNF / OTHER), the F2 counters ([CTLD] undeliv from the PRESENT lines only: `ctld` counts the lines that carry an `undeliv=` value, so a missing line is a missing witness, not a zero) and the [SYMSZ]
+    echoes from both ends. Never raises on log content."""
     import l1common as lc
     cli, srv, drv = list(cli or []), list(srv or []), list(drv or [])
     allv = cli + srv + drv
-    out = {"v": 1, "warm": "OTHER", "undeliv": 0, "unframable": 0, "symsz": {"cli": [], "srv": []}, "rate_echo": None, "summary": False, "dnf": False}
+    out = {"v": 1, "warm": "NO-LOG", "transfer": "OTHER", "undeliv": 0, "ctld": 0, "unframable": 0, "symsz": {"cli": [], "srv": []}, "rate_echo": None, "summary": False, "dnf": False}
     try:
         und, unf = lc.f2_counts(allv)
         out["undeliv"], out["unframable"] = und, unf
+        out["ctld"] = sum(1 for ln in cli + srv if "[CTLD]" in ln and lc.inum(lc.field(lc.strip(ln), "undeliv")) is not None)
         out["symsz"] = {"cli": lc.symsz(cli), "srv": lc.symsz(srv)}
         out["rate_echo"] = lc.gate_tok(cli, "RWM_PERF_RATE_MBIT")
-        never = any(WARM_TOKEN in ln for ln in allv)
         summ, dnf = None, False
         for ln in cli + drv:      # the driver's JSON lines: a summary carries `"dnf":0` on a completed run and `"dnf":1` on a DNF; a per-run DNF line has `"dnf":true`
             if ln.lstrip().startswith("{"):
@@ -117,19 +125,24 @@ def row_metrics(cli, srv, drv):
                     dnf = dnf or bool(d.get("dnf"))
         out["summary"] = summ is not None and not summ.get("dnf")
         out["dnf"] = dnf
-        out["warm"] = "NEVER-ACKED" if never else ("COMPLETED" if out["summary"] else ("TRANSFER-DNF" if out["dnf"] else "OTHER"))
+        never = any(WARM_TOKEN in ln for ln in allv)
+        out["warm"] = "NEVER-ACKED" if never else ("ACKED" if cli else "NO-LOG")
+        out["transfer"] = "COMPLETED" if out["summary"] else ("DNF" if dnf else "OTHER")
     except Exception as e:      # a reported readout never voids a row
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
 
-# ── the reported labels against the draft's predictions ──
+# ── the reported labels (§63) ──
 def cand_label(t):
-    """CAND: PASS iff the warm-up acked and the transfer completed, undeliv 0, no [UNFRAMABLE], and [SYMSZ] present on both ends with local = decoder everywhere. -> (label, why list)."""
+    """CAND: the F2 reading. PASS iff the warm-up acked, `undeliv=0` was read from a PRESENT [CTLD] line (a missing line is a missing witness, not a pass), there is no [UNFRAMABLE] line, and [SYMSZ] is present on both
+    ends with local = decoder everywhere. Transfer completion is NOT part of it (reported separately). -> (label, why list)."""
     why = []
-    if t["warm"] != "COMPLETED":
-        why.append(f"warm-up/transfer {t['warm']}")
-    if t["undeliv"]:
+    if t["warm"] != "ACKED":
+        why.append(f"warm-up {t['warm']}")
+    if not t.get("ctld"):
+        why.append("no [CTLD] line with undeliv= (missing witness)")
+    elif t["undeliv"]:
         why.append(f"undeliv={t['undeliv']}")
     if t["unframable"]:
         why.append(f"unframable={t['unframable']}")
@@ -141,25 +154,13 @@ def cand_label(t):
     return ("PASS" if not why else "FAIL"), why
 
 
-def control_label(arm_base, seed, t):
-    """CONTROL: s42 PL / PM are predicted to FAIL the warm-up (never acked); U s42 is predicted to pass; s7 has no prediction (the committed base rate is 1 of 6 Realtime rows). -> (label, note)."""
-    if seed == "7":
-        return "NO-PREDICTION", f"warm-up {t['warm']}"
-    if arm_base in ("PL", "PM"):
-        if t["warm"] == "NEVER-ACKED":
-            return "PASS", "reproduced: the warm-up never acked"
-        return "FAIL", f"not reproduced ({t['warm']}): the inferred trigger is not deterministic under seed 42; the candidate's reading is weakened, not voided"
-    if t["warm"] == "COMPLETED":
-        return "PASS", "the unpaced control completed"
-    return "FAIL", f"U s42 did not complete ({t['warm']}): the pacer is not part of the trigger"
-
-
 def label_row(arm, seed, t):
+    """CAND rows are PASS / FAIL on the F2 reading; CONTROL rows have NO per-row prediction (the warm-up failure is a stochastic datum under one netem seed): they are REPORTED with their outcome."""
     seat, base = arm_parse(arm)
     if seat == "CAND":
         lab, why = cand_label(t)
-        return lab, "; ".join(why) if why else "warm-up acked, completed, undeliv 0, no [UNFRAMABLE], [SYMSZ] local = decoder"
-    return control_label(base, str(seed), t)
+        return lab, "; ".join(why) if why else "warm-up acked, undeliv=0 on a present [CTLD], no [UNFRAMABLE], [SYMSZ] local = decoder"
+    return "REPORTED", f"warm-up {t['warm']}" + (" (a datum, not an abort)" if t["warm"] == "NEVER-ACKED" else "")
 
 
 def _rows(path):
@@ -170,26 +171,34 @@ def _rows(path):
     return cnt, tokens
 
 
+def _fmt_und(seat, t):
+    return "n/a" if seat == "CONTROL" else (str(t["undeliv"]) if t.get("ctld") else "MISSING")
+
+
 def _fmt_sz(v):
     return ",".join(f"{a}/{b}" for a, b in v) or "none"
 
 
 def report(path, out=print):
-    """One ROW63 line per row and one LABEL63 line per row, then the per-seat bin_sha and VERDICT63. All reported: nothing here gates a launch."""
+    """One ROW63 line per row and one LABEL63 line per row, then the per-seat bin_sha and VERDICT63. All reported: nothing here gates a launch. CONTROL: warm-up failures out of its rows (no per-row prediction; 0 of 5
+    means the CAND reading is weak: nothing was reproduced). CAND: the F2 reading per row; a failed CAND row blocks E-pre."""
     cnt, _ = _rows(path)
-    out(f"S63 REPORT rows={len(cnt)} (F2 first contact; reported only, no void: CONTROL is expected to fail)")
+    out(f"S63 REPORT rows={len(cnt)} (F2 first contact; reported only, no void)")
     shas = {"CONTROL": set(), "CAND": set()}
-    fails = {"CONTROL": 0, "CAND": 0}
-    for r in cnt:
+    n = {"CONTROL": 0, "CAND": 0}
+    ctl_fail = cand_fail = 0
+    for r in sorted(cnt, key=lambda r: (int(r["rep"]), r["arm"][0] != "C")):
         seat, base = arm_parse(r["arm"])
         t = r.get("t63") or {}
         if not t:
             out(f"ROW63 {r['arm']} s{r['seed']} r{r['rep']}: no t63 ({r.get('t63_error')})")
             continue
+        n[seat] += 1
         shas[seat].add(r.get("bin_sha") or "-")
         lab, note = label_row(r["arm"], r["seed"], t)
-        fails[seat] += lab == "FAIL"
-        out(f"ROW63 {r['arm']} s{r['seed']} r{r['rep']}: status={r.get('status')} warm={t['warm']} dnf={int(bool(r.get('dnf')))} undeliv={t['undeliv']} unframable={t['unframable']} "
+        ctl_fail += seat == "CONTROL" and t["warm"] == "NEVER-ACKED"
+        cand_fail += lab == "FAIL"
+        out(f"ROW63 {r['arm']} s{r['seed']} r{r['rep']}: status={r.get('status')} warm={t['warm']} transfer={t['transfer']} undeliv={_fmt_und(seat, t)} unframable={t['unframable']} "
             f"symsz(cli)={_fmt_sz(t['symsz']['cli'])} symsz(srv)={_fmt_sz(t['symsz']['srv'])} rate_echo={t['rate_echo']} bin_sha={str(r.get('bin_sha'))[:16]}")
         out(f"LABEL63 {r['arm']}-s{r['seed']} {lab} ({note})")
     want = {"CONTROL": os.environ.get("LD_BIN_SHA_CONTROL") or CONTROL_SHA, "CAND": os.environ.get("LD_BIN_SHA_CAND") or None}      # run_all exports both pins
@@ -197,33 +206,37 @@ def report(path, out=print):
         v = sorted(shas[seat])
         ok = bool(v) and all(x == want[seat] for x in v) if want[seat] else None
         out(f"SEAT63 {seat} bin_sha {','.join(x[:16] for x in v) or '-'} " + ("(equals the pinned value)" if ok else "(NOT the pinned value)" if ok is False else "(no pin in this environment: recorded)"))
-    blocked = fails["CAND"] > 0
-    out(f"VERDICT63 REPORTED-ONLY rows={len(cnt)}/{expect_rows()} control_fail={fails['CONTROL']} cand_fail={fails['CAND']}" + (" BLOCKS-E-PRE (a failed candidate row is a finding against the fix)" if blocked else ""))
+    weak = n["CONTROL"] > 0 and ctl_fail == 0
+    out(f"VERDICT63 REPORTED-ONLY rows={len(cnt)}/{expect_rows()} control_warmup_fail={ctl_fail}/{n['CONTROL']} cand_fail={cand_fail}/{n['CAND']}" + (" CAND-READING-WEAK (CONTROL reproduced nothing: reported, not voided)" if weak else "")
+        + (" BLOCKS-E-PRE (a failed candidate row is a finding against the fix)" if cand_fail else ""))
     return 0
 
 
 def smoke(kind, path, out=print):
-    """The smoke / rehearsal: the one CAND PL s42 row must have run with its binary right and its t63 computed (these gate: SMOKE-PASS | SMOKE-FAIL). Its reading against the draft's CAND prediction is REPORTED."""
+    """The smoke (the CAND PL s42 row) / rehearsal (CONTROL PL s42 then CAND PL s42): each row must have run with its binary right and its t63 computed (these gate: SMOKE-PASS | SMOKE-FAIL). Their readings are
+    REPORTED (the CAND's against the F2 reading; a failed CAND rehearsal row is the finding), and a rehearsal row is never re-run."""
     cnt, _ = _rows(path)
+    slots = REHEARSAL if kind == "rehearsal" else SMOKE
     got = {(r["arm"], str(r["seed"]), str(r["rep"])): r for r in cnt}
     bad = []
 
     def crit(name, fails):
         out(("PASS " if not fails else "FAIL ") + name + ("" if not fails else ": " + "; ".join(fails)))
         bad.extend(fails)
-    out(f"SMOKE63 kind={kind} rows={len(cnt)} slots={len(SMOKE)}")
-    miss = [f"{a} s{s} r{r}: no row" for (_, _, a, s, r) in SMOKE if (a, s, str(r)) not in got]
-    crit("the CAND PL s42 row ran", miss)
-    for (_, _, a, s, r) in SMOKE:
+    out(f"SMOKE63 kind={kind} rows={len(cnt)} slots={len(slots)}")
+    miss = [f"{a} s{s} r{r}: no row" for (_, _, a, s, r) in slots if (a, s, str(r)) not in got]
+    crit("every smoke / rehearsal row ran", miss)
+    for (_, _, a, s, r) in slots:
         row = got.get((a, s, str(r)))
         if row is None:
             continue
         t = row.get("t63") or {}
-        crit("the row carries its t63 readouts", [] if t and not row.get("t63_error") else [f"{a}: no t63 ({row.get('t63_error')})"])
-        crit("the row ran its seat's binary (no bin-sha problem)", [x for x in row.get("problems") or [] if x.startswith("bin-sha")])
+        crit(f"{a}: the row carries its t63 readouts", [] if t and not row.get("t63_error") else [f"{a}: no t63 ({row.get('t63_error')})"])
+        crit(f"{a}: the row ran its seat's binary (no bin-sha problem)", [x for x in row.get("problems") or [] if x.startswith("bin-sha")])
         if t:
+            seat = arm_parse(a)[0]
             lab, note = label_row(a, s, t)
-            out(f"  REPORTED CAND-PL-s42 {lab}: {note}; warm={t['warm']} undeliv={t['undeliv']} unframable={t['unframable']} symsz(cli)={_fmt_sz(t['symsz']['cli'])} symsz(srv)={_fmt_sz(t['symsz']['srv'])}")
+            out(f"  REPORTED {a}-s{s} {lab}: {note}; warm={t['warm']} transfer={t['transfer']} undeliv={_fmt_und(seat, t)} unframable={t['unframable']} symsz(cli)={_fmt_sz(t['symsz']['cli'])} symsz(srv)={_fmt_sz(t['symsz']['srv'])}")
     if bad:
         out("SMOKE-FAIL " + "; ".join(bad))
         return 1
@@ -250,11 +263,11 @@ def main(argv):
     cmd, a = argv[0], argv[1:]
     try:
         if cmd == "plan":
-            for c, s, ar, sd, rp in plan(a[0], smoke=len(a) > 1 and a[1] == "smoke"):
+            for c, s, ar, sd, rp in plan(a[0], smoke=len(a) > 1 and a[1] == "smoke", rehearsal=len(a) > 1 and a[1] == "rehearsal"):
                 print(f"{c} {s} {ar} {sd} {rp}")
             return 0
         if cmd == "count":
-            print(len(plan(a[0], smoke=len(a) > 1 and a[1] == "smoke")))
+            print(len(plan(a[0], smoke=len(a) > 1 and a[1] == "smoke", rehearsal=len(a) > 1 and a[1] == "rehearsal")))
             return 0
         if cmd == "armspec":
             cell, arm = a[0], a[1]
