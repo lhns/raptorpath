@@ -1631,9 +1631,9 @@ def case63(plan, path):
         labels = dict(re.findall(r"^LABEL63 (\S+) (\S+)", score, re.M))
         cand_arms = ("FPL-s42", "FPM-s42", "FU-s42", "FPL-s7", "FPM-s7")
         if path == "cand-fail":
-            check(f"{tag}: the failing CAND paced rows (PL and PM, both seeds) are labelled FAIL with their reasons (warm-up never acked, undeliv=2, unframable=1), the unpaced FU still PASSes, the report prints BLOCKS-E-PRE, and no row is voided",
+            check(f"{tag}: the failing CAND paced rows (PL and PM, both seeds) are labelled FAIL with their reasons (warm-up never acked, undeliv=4 = srv 2 + cli 2, unframable=1), the unpaced FU still PASSes, the report prints BLOCKS-E-PRE, and no row is voided",
                   labels.get("FPL-s42") == "FAIL" and labels.get("FPL-s7") == "FAIL" and labels.get("FPM-s42") == "FAIL" and labels.get("FPM-s7") == "FAIL" and labels.get("FU-s42") == "PASS" and "cand_fail=4/5" in score and "BLOCKS-E-PRE" in score
-                  and re.search(r"FPL-s42 FAIL \(.*undeliv=2.*unframable=1", score) is not None and all(r["status"] != "VOID-F2" for r in led), score[-1200:])
+                  and re.search(r"FPL-s42 FAIL \(.*undeliv=4.*unframable=1", score) is not None and all(r["status"] != "VOID-F2" for r in led), score[-1200:])
         elif path == "cand-noctld":
             check(f"{tag}: a CAND with no [CTLD] line is a MISSING WITNESS: every CAND row FAILs ('no [CTLD] line with undeliv= (missing witness)', undeliv=MISSING in the ROW63 line, not a pass on the driver's `--- F2 undeliv=0`), the CONTROL rows are unaffected, BLOCKS-E-PRE",
                   all(labels.get(a) == "FAIL" for a in cand_arms) and score.count("missing witness") == 5 and "undeliv=MISSING" in score and "cand_fail=5/5" in score and "BLOCKS-E-PRE" in score, score[-1500:])
