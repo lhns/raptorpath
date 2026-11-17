@@ -1,0 +1,261 @@
+s61 predictions (s61pred.py): the s60 rows read in place from rep60a-diag-ld.tgz and rep60b-diag-ld.tgz
+
+== 0. Window sample count nk (median over rows of the row's LATE median, nk >= 10 windows) and goodput per slot (Mbit/s per W, median over rows) ==
+  c2-100 leg0: W16: nk 282 gp/W 0.632 | W32: nk 536 gp/W 0.614 | W48: nk 786 gp/W 0.604 | W160: nk 2246 gp/W 0.525 | W176: nk 2342 gp/W 0.497 | W192: nk 2392 gp/W 0.466 | W256: nk 2411 gp/W 0.353 | W2048: nk 2408 gp/W 0.044
+  c8-100 leg0: W32: nk 510 gp/W 0.578 | W64: nk 964 gp/W 0.563 | W96: nk 1374 gp/W 0.541 | W256: nk 2402 gp/W 0.373 | W320: nk 2408 gp/W 0.314 | W384: nk 2409 gp/W 0.271 | W512: nk 2408 gp/W 0.207 | W1280: nk 2408 gp/W 0.083
+  c8-100 leg1: W32: nk 15 gp/W 0.578 | W64: nk 18 gp/W 0.563 | W96: nk 23 gp/W 0.541 | W256: nk 142 gp/W 0.373 | W320: nk 264 gp/W 0.314 | W384: nk 362 gp/W 0.271 | W512: nk 412 gp/W 0.207 | W1280: nk 468 gp/W 0.083
+  c1s-400 leg0: W64: nk 5273 gp/W 3.095 | W128: nk 9215 gp/W 2.675 | W192: nk 12144 gp/W 2.379 | W2048: nk 22328 gp/W 0.385
+
+== 1. S_F(n*) and F(n*) per floor pool under G(n*) (median over valid-or-all G rows of the row median over groups; groups per row in brackets) ==
+   n* = None is s60's native window reading. Floor gate per n*: OLS of the per-row value against W over the pools, E = b*W1 (W1 = the smallest pool listed)
+  c2-100 leg0 pools (16, 32, 48):
+    n*= None: W16: S_F 5.08 F 8.68 n 282 [256] | W32: S_F 5.36 F 8.95 n 536 [265] | W48: S_F 5.51 F 9.04 n 786 [270] || S_F b +0.0152+-0.0020 E +0.24+-0.03 | F b +0.0113+-0.0016 E +0.18+-0.03
+    n*=  250: W16: S_F 5.10 F 8.51 n 296 [210] | W32: S_F 5.36 F 8.95 n 536 [265] | W48: S_F 5.51 F 9.04 n 786 [270] || S_F b +0.0123+-0.0016 E +0.20+-0.03 | F b +0.0164+-0.0020 E +0.26+-0.03
+    n*=  800: W16: S_F 6.12 F 7.67 n 877 [76] | W32: S_F 5.86 F 8.32 n 1068 [132] | W48: S_F 5.76 F 8.73 n 1452 [169] || S_F b -0.0090+-0.0027 E -0.14+-0.04 | F b +0.0335+-0.0020 E +0.54+-0.03
+    n*= 1120: W16: S_F 6.28 F 7.40 n 1276 [54] | W32: S_F 6.18 F 8.08 n 1563 [92] | W48: S_F 5.96 F 8.54 n 1568 [134] || S_F b -0.0100+-0.0024 E -0.16+-0.04 | F b +0.0362+-0.0021 E +0.58+-0.03
+  c8-100 leg0 pools (32, 64, 96):
+    n*= None: W32: S_F 5.45 F 8.79 n 510 [284] | W64: S_F 5.64 F 9.29 n 964 [294] | W96: S_F 5.60 F 9.89 n 1374 [308] || S_F b +0.0024+-0.0007 E +0.08+-0.02 | F b +0.0171+-0.0005 E +0.55+-0.02
+    n*=  250: W32: S_F 5.47 F 8.76 n 512 [277] | W64: S_F 5.65 F 9.29 n 965 [294] | W96: S_F 5.60 F 9.89 n 1374 [308] || S_F b +0.0020+-0.0007 E +0.06+-0.02 | F b +0.0176+-0.0006 E +0.56+-0.02
+    n*=  800: W32: S_F 5.98 F 8.21 n 1030 [135] | W64: S_F 5.66 F 9.28 n 982 [277] | W96: S_F 5.60 F 9.89 n 1375 [308] || S_F b -0.0057+-0.0011 E -0.18+-0.03 | F b +0.0267+-0.0013 E +0.85+-0.04
+    n*= 1120: W32: S_F 6.32 F 7.97 n 1487 [95] | W64: S_F 6.19 F 8.70 n 1916 [147] | W96: S_F 5.62 F 9.88 n 1378 [302] || S_F b -0.0110+-0.0012 E -0.35+-0.04 | F b +0.0302+-0.0012 E +0.97+-0.04
+  c8-100 leg1 pools (32, 64, 96, 256):
+    n*= None: W32: S_F 5.47 F 40.30 n 15 [67] | W64: S_F 6.86 F 39.18 n 18 [152] | W96: S_F 7.71 F 38.47 n 23 [239] | W256: S_F 10.02 F 37.36 n 142 [141] || S_F b +0.0189+-0.0014 E +0.60+-0.04 | F b -0.0114+-0.0014 E -0.37+-0.04
+    n*=  250: W32: S_F 12.34 F 33.49 n 255 [6] | W64: S_F 11.92 F 33.83 n 257 [13] | W96: S_F 12.83 F 33.61 n 261 [24] | W256: S_F 11.29 F 36.34 n 294 [67] || S_F b -0.0046+-0.0011 E -0.15+-0.03 | F b +0.0133+-0.0011 E +0.43+-0.03
+    n*=  800: W32: S_F 13.33 F 32.49 n 804 [2] | W64: S_F 13.23 F 32.67 n 808 [4] | W96: S_F 13.82 F 32.66 n 816 [8] | W256: S_F 12.47 F 35.11 n 875 [23] || S_F b -0.0043+-0.0010 E -0.14+-0.03 | F b +0.0121+-0.0011 E +0.39+-0.03
+    n*= 1120: W32: S_F 13.52 F 32.33 n 1125 [1] | W64: S_F 13.49 F 32.49 n 1125 [3] | W96: S_F 13.92 F 32.55 n 1130 [5] | W256: S_F 12.77 F 34.80 n 1194 [16] || S_F b -0.0035+-0.0009 E -0.11+-0.03 | F b +0.0114+-0.0010 E +0.36+-0.03
+  c8-100 leg1 pools (256, 320):
+    n*= None: W256: S_F 10.02 F 37.36 n 142 [141] | W320: S_F 10.18 F 39.25 n 264 [132] || S_F b +0.0022+-0.0022 E +0.55+-0.56 | F b +0.0286+-0.0016 E +7.33+-0.41
+    n*=  250: W256: S_F 11.29 F 36.34 n 294 [67] | W320: S_F 10.32 F 38.99 n 283 [103] || S_F b -0.0132+-0.0024 E -3.38+-0.62 | F b +0.0414+-0.0019 E +10.61+-0.49
+    n*=  800: W256: S_F 12.47 F 35.11 n 875 [23] | W320: S_F 11.80 F 37.71 n 972 [36] || S_F b -0.0125+-0.0030 E -3.19+-0.78 | F b +0.0394+-0.0030 E +10.08+-0.77
+    n*= 1120: W256: S_F 12.77 F 34.80 n 1194 [16] | W320: S_F 12.02 F 37.37 n 1288 [27] || S_F b -0.0121+-0.0028 E -3.10+-0.71 | F b +0.0402+-0.0027 E +10.28+-0.70
+  c1s-400 leg0 pools (64, 128, 192):
+    n*= None: W64: S_F 0.43 F 2.38 n 5273 [142] | W128: S_F 0.76 F 2.41 n 9215 [120] | W192: S_F 1.04 F 2.52 n 12144 [120] || S_F b +0.0050+-0.0032 E +0.32+-0.20 | F b +0.0031+-0.0017 E +0.20+-0.11
+    n*=  250: W64: S_F 0.43 F 2.38 n 5273 [142] | W128: S_F 0.76 F 2.41 n 9215 [120] | W192: S_F 1.04 F 2.52 n 12144 [120] || S_F b +0.0050+-0.0032 E +0.32+-0.20 | F b +0.0031+-0.0017 E +0.20+-0.11
+    n*=  800: W64: S_F 0.43 F 2.38 n 5273 [142] | W128: S_F 0.76 F 2.41 n 9215 [120] | W192: S_F 1.04 F 2.52 n 12144 [120] || S_F b +0.0050+-0.0032 E +0.32+-0.20 | F b +0.0031+-0.0017 E +0.20+-0.11
+    n*= 1120: W64: S_F 0.43 F 2.38 n 5273 [142] | W128: S_F 0.76 F 2.41 n 9215 [120] | W192: S_F 1.04 F 2.52 n 12144 [120] || S_F b +0.0050+-0.0032 E +0.32+-0.20 | F b +0.0031+-0.0017 E +0.20+-0.11
+
+== 2. c2: rho = need / S_F (need = Tmin(W95) - F; F, S_F on the W16 floor rows, native windows), per replicate and pooled, 90 % bootstrap (2000, seed 60, replicates x floor rows) ==
+  s60 valid set (5 rows, LATCHED dropped): F 8.682 S_F 5.077 | need per replicate 3.898 4.007 4.008 4.084 4.085 4.110 | rho_2 0.797  90 % [0.772, 0.836]  (half-width 0.032)
+  s61 validity (all 6 W16 G rows): F 8.679 S_F 5.083 | need per replicate 3.901 4.010 4.011 4.087 4.088 4.113 | rho_2 0.797  90 % [0.780, 0.825]  (half-width 0.022)
+  c2 W95 per replicate 165.7 167.6 167.8 168.2 168.6 169.7; sig at the knee bracket 1.785
+  the equivalence margin Delta = q_R * F_c / S_F at c2 = 0.05 * 8.679 / 5.083 = 0.085
+  knee tmin's sensitivity to the sample count (c2 knee arms; row median of the minima of k consecutive LATE windows; realised n per group):
+    W160: k=1: 12.325 (n 2246) | k=2: 11.979 (n 4491) | k=4: 11.544 (n 8982) | k=8: 11.017 (n 17964)
+    W176: k=1: 13.095 (n 2342) | k=2: 12.655 (n 4684) | k=4: 12.139 (n 9369) | k=8: 11.792 (n 18738)
+    W192: k=1: 14.052 (n 2392) | k=2: 13.497 (n 4784) | k=4: 12.939 (n 9567) | k=8: 12.515 (n 19134)
+  the floor slope at matched n (every pool grouped to n* >= the largest native nk among W 16 / 32 / 48 = 786): b and E = b*16, and the W -> 0 variant of rho_2:
+    G(800): F b +0.0335 +- 0.0020 -> E_F +0.54 +- 0.03 ms | S_F b -0.0090 +- 0.0027 -> E_S -0.14 +- 0.04 ms | rho_2 at (F - E_F, S_F - E_S) = 0.877, 90 % [0.858, 0.908] (slopes refitted per draw; applied to the native F, S_F: an approximation, labelled)
+
+== 3. c3 predictions from c8 leg 1 (20 Mbit/s, 20 ms, 5 ms jitter both ways; starved below W 256): S_F and F under G(250) (realised n near c2's native floor 282) ==
+  W32: S_F 12.336 (row sd 0.284) F 33.493 realised n/group 255 groups/row 6
+  W64: S_F 11.922 (row sd 0.359) F 33.826 realised n/group 257 groups/row 13
+  W96: S_F 12.829 (row sd 0.287) F 33.611 realised n/group 261 groups/row 24
+  W256: S_F 11.290 (row sd 0.156) F 36.337 realised n/group 294 groups/row 67
+  pooled S_F(G250) 12.067 ms; F(G250) at W 32-96 33.611; leg-1 sig at W256 5.167; l_c 33.065
+  rho_3 under each rival sentence (S_F,3 = 12.07):
+    S: need = rho_2 * S_F                                          need_3   9.61 ms  rho_3 0.797  rho_3 - rho_2 +0.000
+    constant: need = need_2 (4.05 ms, the A(c) family's c_B reading) need_3   4.05 ms  rho_3 0.336  rho_3 - rho_2 -0.461
+    sigma-scaled: need = (need_2 / sig_2) * sig_3                  need_3  11.72 ms  rho_3 0.971  rho_3 - rho_2 +0.175
+    loop-scaled: need = (need_2 / F_2) * F_3                       need_3  15.68 ms  rho_3 1.299  rho_3 - rho_2 +0.503
+  D per candidate at c3 under S's sentence (need = rho_2 * S_F,3), Bulk:
+    A0 sig+q*l: A 8.47 D +1.14 | A0f sig+q*F: A 8.53 D +1.08 | Ac sig+2.26: A 7.43 D +2.18 | S = decided form at g=1: S_F+q*F: A 15.43 D -5.82 | wq sig+0.26*F: A 13.91 D -4.29
+  g at which the decided form lands at the c3 knee at Realtime: g_knee = rho - q_R*F/S_F = 0.797 - 0.139 = 0.657 (c2: 0.711)
+  S_F,3 sweep: c8 leg 1's 12.07 exceeds the two-way uniform +-5 ms cap of 10 ms; c2 reads 5.08 against its 6 ms cap (0.847), so a single c3 leg may read ~8.5. sigma_3 scaled with S_F (sigma_3 = 5.17 * S/12.07) and fixed:
+    S_F,3 | need_S | D: A0 A0f Ac S(g=1) wq | rho_3 constant / sigma-fixed / sigma-scaled / loop | D[S] under sigma-fixed | g_knee | Delta_3 = q_R F/S | tau = 0.05 S
+      8.5 sigma fixed  |  6.77 | -1.70 -1.76 -0.66 -5.09 -7.14 | 0.476 / 1.379 / 1.379 / 1.845 | -0.14 | 0.599 | 0.198 | 0.43
+      8.5 sigma scaled |  6.77 | -0.18 -0.23 +0.87 -5.09 -5.61 | 0.476 / 1.379 / 0.971 / 1.845 | -0.14 | 0.599 | 0.198 | 0.43
+      9.5 sigma fixed  |  7.57 | -0.91 -0.96 +0.14 -5.29 -6.34 | 0.426 / 1.234 / 1.234 / 1.650 | -1.14 | 0.620 | 0.177 | 0.48
+      9.5 sigma scaled |  7.57 | +0.19 +0.14 +1.24 -5.29 -5.24 | 0.426 / 1.234 / 0.971 / 1.650 | -1.14 | 0.620 | 0.177 | 0.48
+     10.5 sigma fixed  |  8.36 | -0.11 -0.16 +0.94 -5.50 -5.54 | 0.386 / 1.116 / 1.116 / 1.493 | -2.14 | 0.636 | 0.160 | 0.53
+     10.5 sigma scaled |  8.36 | +0.56 +0.51 +1.61 -5.50 -4.87 | 0.386 / 1.116 / 0.971 / 1.493 | -2.14 | 0.636 | 0.160 | 0.53
+     11.5 sigma fixed  |  9.16 | +0.69 +0.63 +1.73 -5.70 -4.75 | 0.352 / 1.019 / 1.019 / 1.363 | -3.14 | 0.650 | 0.146 | 0.58
+     11.5 sigma scaled |  9.16 | +0.93 +0.87 +1.97 -5.70 -4.50 | 0.352 / 1.019 / 0.971 / 1.363 | -3.14 | 0.650 | 0.146 | 0.58
+     12.5 sigma fixed  |  9.96 | +1.48 +1.43 +2.53 -5.90 -3.95 | 0.324 / 0.938 / 0.938 / 1.254 | -4.14 | 0.662 | 0.134 | 0.62
+     12.5 sigma scaled |  9.96 | +1.30 +1.24 +2.34 -5.90 -4.13 | 0.324 / 0.938 / 0.971 / 1.254 | -4.14 | 0.662 | 0.134 | 0.62
+
+== 4. Collapse study per row: qcwnd-below-BDP share (DIAG, t >= 1 s, leg 0), goodput, and the excess of the EWMA rtt over (a) the row's min rtp_us (s60's rule) and (b) the row's own median LATE tmin (leg 0 [SLAW]); LATE ticks with src > 0; E50 / E90 and the share above X_own ==
+  c1s-400 W2048:
+    C s42 r1: gp 869.5 qshare 0.011 | aw med - share<0.9 - | vs min rtp 2.58: E50 15.8 E90 22.0 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s42 r3: gp 870.0 qshare 0.017 | aw med - share<0.9 - | vs min rtp 2.50: E50 13.7 E90 18.5 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s42 r5: gp 848.6 qshare 0.016 | aw med - share<0.9 - | vs min rtp 3.04: E50 15.8 E90 19.8 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s42 r7: gp 601.1 qshare 0.553 | aw med - share<0.9 - | vs min rtp 2.42: E50 36.3 E90 50.0 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s42 r9: gp 822.9 qshare 0.021 | aw med - share<0.9 - | vs min rtp 2.56: E50 15.4 E90 25.5 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s7 r2: gp 860.2 qshare 0.022 | aw med - share<0.9 - | vs min rtp 2.71: E50 13.9 E90 19.9 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s7 r4: gp 853.8 qshare 0.022 | aw med - share<0.9 - | vs min rtp 2.33: E50 15.8 E90 21.2 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s7 r6: gp 865.3 qshare 0.006 | aw med - share<0.9 - | vs min rtp 2.54: E50 13.8 E90 19.4 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s7 r8: gp 850.6 qshare 0.016 | aw med - share<0.9 - | vs min rtp 2.45: E50 14.7 E90 21.1 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    C s7 r10: gp 338.1 qshare 0.754 | aw med - share<0.9 - | vs min rtp 2.70: E50 100.7 E90 122.4 | vs own tmin -: E50 - E90 - | own p90 - tmin - | E90_own/(p90-tmin) -
+    G s42 r1: gp 752.0 qshare 0.014 | aw med 0.851 share<0.9 0.65 | vs min rtp 2.59: E50 17.3 E90 42.8 | vs own tmin 6.06: E50 13.8 E90 39.3 | own p90 - tmin 21.6 | E90_own/(p90-tmin) 1.82
+    G s42 r3: gp 849.1 qshare 0.022 | aw med 0.799 share<0.9 0.92 | vs min rtp 2.48: E50 13.2 E90 20.6 | vs own tmin 5.22: E50 10.5 E90 17.9 | own p90 - tmin 20.1 | E90_own/(p90-tmin) 0.89
+    G s42 r5: gp 220.8 qshare 0.953 | aw med 0.997 share<0.9 0.02 | vs min rtp 2.56: E50 101.5 E90 120.0 | vs own tmin 89.42: E50 14.7 E90 33.2 | own p90 - tmin 25.2 | E90_own/(p90-tmin) 1.32
+    G s42 r7: gp 867.4 qshare 0.017 | aw med 0.829 share<0.9 0.91 | vs min rtp 2.59: E50 14.5 E90 19.8 | vs own tmin 5.39: E50 11.7 E90 17.0 | own p90 - tmin 19.6 | E90_own/(p90-tmin) 0.87
+    G s42 r9: gp 489.9 qshare 0.683 | aw med 0.984 share<0.9 0.15 | vs min rtp 2.67: E50 44.2 E90 55.3 | vs own tmin 37.04: E50 9.9 E90 21.0 | own p90 - tmin 15.3 | E90_own/(p90-tmin) 1.37
+    G s42 r11: gp 497.3 qshare 0.694 | aw med 0.994 share<0.9 0.26 | vs min rtp 2.56: E50 51.7 E90 62.0 | vs own tmin 38.77: E50 15.5 E90 25.8 | own p90 - tmin 22.4 | E90_own/(p90-tmin) 1.15
+    G s7 r2: gp 852.5 qshare 0.005 | aw med 0.792 share<0.9 0.96 | vs min rtp 2.44: E50 15.2 E90 20.3 | vs own tmin 5.37: E50 12.2 E90 17.3 | own p90 - tmin 20.3 | E90_own/(p90-tmin) 0.86
+    G s7 r4: gp 868.3 qshare 0.022 | aw med 0.813 share<0.9 0.96 | vs min rtp 2.56: E50 13.0 E90 19.4 | vs own tmin 5.13: E50 10.5 E90 16.9 | own p90 - tmin 19.7 | E90_own/(p90-tmin) 0.86
+    G s7 r6: gp 825.4 qshare 0.011 | aw med 0.825 share<0.9 0.91 | vs min rtp 2.66: E50 15.1 E90 24.3 | vs own tmin 6.12: E50 11.7 E90 20.9 | own p90 - tmin 19.8 | E90_own/(p90-tmin) 1.06
+    G s7 r8: gp 379.3 qshare 0.789 | aw med 0.995 share<0.9 0.15 | vs min rtp 2.46: E50 75.7 E90 87.0 | vs own tmin 61.70: E50 16.5 E90 27.8 | own p90 - tmin 23.4 | E90_own/(p90-tmin) 1.19
+    G s7 r10: gp 829.8 qshare 0.026 | aw med 0.863 share<0.9 0.74 | vs min rtp 2.58: E50 16.8 E90 22.7 | vs own tmin 7.03: E50 12.4 E90 18.3 | own p90 - tmin 19.1 | E90_own/(p90-tmin) 0.95
+    G s7 r12: gp 670.7 qshare 0.423 | aw med 0.978 share<0.9 0.36 | vs min rtp 2.70: E50 23.8 E90 36.7 | vs own tmin 17.57: E50 8.9 E90 21.8 | own p90 - tmin 21.0 | E90_own/(p90-tmin) 1.04
+  c1s-400 W64:
+    G s42 r1: gp 199.5 qshare 0.000 | aw med 0.903 share<0.9 0.28 | vs min rtp 2.24: E50 0.6 E90 0.9 | vs own tmin 2.37: E50 0.4 E90 0.7 | own p90 - tmin 0.8 | E90_own/(p90-tmin) 0.90
+    G s42 r3: gp 196.7 qshare 0.981 | aw med 0.900 share<0.9 0.44 | vs min rtp 2.22: E50 0.6 E90 1.1 | vs own tmin 2.39: E50 0.4 E90 0.9 | own p90 - tmin 0.9 | E90_own/(p90-tmin) 1.02
+    G s42 r5: gp 203.0 qshare 0.000 | aw med 0.905 share<0.9 0.25 | vs min rtp 2.23: E50 0.6 E90 0.9 | vs own tmin 2.36: E50 0.4 E90 0.7 | own p90 - tmin 0.8 | E90_own/(p90-tmin) 0.97
+    G s7 r2: gp 201.8 qshare 0.026 | aw med 0.905 share<0.9 0.22 | vs min rtp 2.25: E50 0.5 E90 0.7 | vs own tmin 2.35: E50 0.4 E90 0.6 | own p90 - tmin 0.8 | E90_own/(p90-tmin) 0.84
+    G s7 r4: gp 138.3 qshare 0.938 | aw med 0.917 share<0.9 0.12 | vs min rtp 2.28: E50 1.9 E90 3.7 | vs own tmin 2.48: E50 1.7 E90 3.5 | own p90 - tmin 3.5 | E90_own/(p90-tmin) 1.02
+    G s7 r6: gp 175.3 qshare 0.525 | aw med 0.911 share<0.9 0.08 | vs min rtp 2.22: E50 0.8 E90 2.5 | vs own tmin 2.41: E50 0.6 E90 2.3 | own p90 - tmin 2.2 | E90_own/(p90-tmin) 1.03
+  c1s-400 W128:
+    G s42 r1: gp 344.8 qshare 0.529 | aw med 0.920 share<0.9 0.03 | vs min rtp 2.23: E50 0.8 E90 1.4 | vs own tmin 2.41: E50 0.6 E90 1.2 | own p90 - tmin 1.3 | E90_own/(p90-tmin) 0.90
+    G s42 r3: gp 352.3 qshare 0.015 | aw med 0.922 share<0.9 0.00 | vs min rtp 2.25: E50 0.7 E90 1.2 | vs own tmin 2.39: E50 0.5 E90 1.0 | own p90 - tmin 1.3 | E90_own/(p90-tmin) 0.78
+    G s42 r5: gp 349.3 qshare 0.000 | aw med 0.921 share<0.9 0.03 | vs min rtp 2.28: E50 0.7 E90 1.2 | vs own tmin 2.41: E50 0.6 E90 1.1 | own p90 - tmin 1.3 | E90_own/(p90-tmin) 0.83
+    G s7 r2: gp 334.5 qshare 0.407 | aw med 0.919 share<0.9 0.00 | vs min rtp 2.26: E50 0.8 E90 2.5 | vs own tmin 2.42: E50 0.7 E90 2.4 | own p90 - tmin 1.4 | E90_own/(p90-tmin) 1.74
+    G s7 r4: gp 340.1 qshare 0.007 | aw med 0.917 share<0.9 0.02 | vs min rtp 2.27: E50 0.7 E90 1.2 | vs own tmin 2.43: E50 0.6 E90 1.1 | own p90 - tmin 1.4 | E90_own/(p90-tmin) 0.76
+    G s7 r6: gp 339.3 qshare 0.514 | aw med 0.915 share<0.9 0.01 | vs min rtp 2.27: E50 0.7 E90 1.5 | vs own tmin 2.43: E50 0.6 E90 1.4 | own p90 - tmin 1.4 | E90_own/(p90-tmin) 0.96
+  c1s-400 W192:
+    G s42 r1: gp 452.8 qshare 0.036 | aw med 0.915 share<0.9 0.03 | vs min rtp 2.33: E50 1.2 E90 2.4 | vs own tmin 2.53: E50 1.0 E90 2.2 | own p90 - tmin 1.9 | E90_own/(p90-tmin) 1.14
+    G s42 r3: gp 479.1 qshare 0.008 | aw med 0.922 share<0.9 0.00 | vs min rtp 2.26: E50 0.9 E90 1.7 | vs own tmin 2.50: E50 0.7 E90 1.5 | own p90 - tmin 1.6 | E90_own/(p90-tmin) 0.94
+    G s42 r5: gp 472.3 qshare 0.015 | aw med 0.920 share<0.9 0.00 | vs min rtp 2.31: E50 1.0 E90 1.8 | vs own tmin 2.50: E50 0.8 E90 1.6 | own p90 - tmin 1.7 | E90_own/(p90-tmin) 0.94
+    G s7 r2: gp 454.3 qshare 0.007 | aw med 0.916 share<0.9 0.01 | vs min rtp 2.29: E50 1.2 E90 1.8 | vs own tmin 2.55: E50 1.0 E90 1.6 | own p90 - tmin 1.8 | E90_own/(p90-tmin) 0.85
+    G s7 r4: gp 227.6 qshare 1.000 | aw med 0.964 share<0.9 0.00 | vs min rtp 2.46: E50 5.3 E90 7.2 | vs own tmin 4.15: E50 3.7 E90 5.6 | own p90 - tmin 5.5 | E90_own/(p90-tmin) 1.01
+    G s7 r6: gp 459.4 qshare 0.015 | aw med 0.917 share<0.9 0.04 | vs min rtp 2.29: E50 1.0 E90 1.9 | vs own tmin 2.52: E50 0.8 E90 1.7 | own p90 - tmin 1.8 | E90_own/(p90-tmin) 0.94
+  c2-100 W16:
+    G s42 r1: gp 10.0 qshare 1.000 | aw med 0.901 share<0.9 0.43 | vs min rtp 5.37: E50 8.3 E90 10.5 | vs own tmin 8.71: E50 5.0 E90 7.2 | own p90 - tmin 7.6 | E90_own/(p90-tmin) 0.95
+    G s42 r3: gp 10.1 qshare 0.000 | aw med 0.897 share<0.9 0.60 | vs min rtp 5.53: E50 7.8 E90 9.9 | vs own tmin 8.76: E50 4.5 E90 6.6 | own p90 - tmin 7.3 | E90_own/(p90-tmin) 0.90
+    G s42 r5: gp 10.2 qshare 0.000 | aw med 0.897 share<0.9 0.64 | vs min rtp 5.62: E50 8.0 E90 9.9 | vs own tmin 8.68: E50 4.9 E90 6.8 | own p90 - tmin 7.4 | E90_own/(p90-tmin) 0.92
+    G s7 r2: gp 10.0 qshare 1.000 | aw med 0.903 share<0.9 0.36 | vs min rtp 4.76: E50 8.9 E90 10.8 | vs own tmin 8.59: E50 5.1 E90 7.0 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.90
+    G s7 r4: gp 10.1 qshare 1.000 | aw med 0.902 share<0.9 0.43 | vs min rtp 5.26: E50 8.3 E90 10.2 | vs own tmin 8.61: E50 5.0 E90 6.9 | own p90 - tmin 7.7 | E90_own/(p90-tmin) 0.89
+    G s7 r6: gp 10.3 qshare 0.000 | aw med 0.897 share<0.9 0.62 | vs min rtp 5.58: E50 8.0 E90 9.9 | vs own tmin 8.68: E50 4.9 E90 6.8 | own p90 - tmin 7.4 | E90_own/(p90-tmin) 0.92
+  c2-100 W48:
+    G s42 r1: gp 29.3 qshare 0.093 | aw med 0.934 share<0.9 0.00 | vs min rtp 5.28: E50 8.6 E90 10.9 | vs own tmin 9.05: E50 4.8 E90 7.1 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.92
+    G s42 r3: gp 29.1 qshare 0.101 | aw med 0.934 share<0.9 0.00 | vs min rtp 6.29: E50 7.8 E90 9.9 | vs own tmin 8.96: E50 5.1 E90 7.2 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.91
+    G s42 r5: gp 29.0 qshare 0.089 | aw med 0.933 share<0.9 0.00 | vs min rtp 6.30: E50 7.8 E90 9.9 | vs own tmin 8.99: E50 5.1 E90 7.2 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.91
+    G s7 r2: gp 29.0 qshare 0.052 | aw med 0.932 share<0.9 0.00 | vs min rtp 6.40: E50 7.6 E90 9.8 | vs own tmin 9.02: E50 5.0 E90 7.2 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.91
+    G s7 r4: gp 28.8 qshare 0.131 | aw med 0.933 share<0.9 0.00 | vs min rtp 5.93: E50 8.0 E90 10.1 | vs own tmin 9.12: E50 4.8 E90 6.9 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.89
+    G s7 r6: gp 29.0 qshare 0.058 | aw med 0.932 share<0.9 0.00 | vs min rtp 5.55: E50 8.2 E90 10.5 | vs own tmin 9.05: E50 4.8 E90 7.1 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.90
+  c2-100 W160:
+    G s42 r1: gp 83.8 qshare 0.000 | aw med 0.967 share<0.9 0.00 | vs min rtp 8.06: E50 8.2 E90 10.0 | vs own tmin 12.38: E50 3.9 E90 5.7 | own p90 - tmin 6.4 | E90_own/(p90-tmin) 0.89
+    G s42 r3: gp 84.1 qshare 0.000 | aw med 0.967 share<0.9 0.00 | vs min rtp 9.17: E50 7.1 E90 8.9 | vs own tmin 12.31: E50 4.0 E90 5.8 | own p90 - tmin 6.6 | E90_own/(p90-tmin) 0.88
+    G s42 r5: gp 84.1 qshare 0.004 | aw med 0.967 share<0.9 0.00 | vs min rtp 8.39: E50 8.1 E90 9.9 | vs own tmin 12.43: E50 4.1 E90 5.9 | own p90 - tmin 6.4 | E90_own/(p90-tmin) 0.92
+    G s7 r2: gp 84.0 qshare 0.000 | aw med 0.967 share<0.9 0.00 | vs min rtp 9.45: E50 6.9 E90 8.9 | vs own tmin 12.31: E50 4.0 E90 6.1 | own p90 - tmin 6.5 | E90_own/(p90-tmin) 0.93
+    G s7 r4: gp 83.9 qshare 0.000 | aw med 0.967 share<0.9 0.00 | vs min rtp 9.69: E50 6.5 E90 8.6 | vs own tmin 12.30: E50 3.9 E90 6.0 | own p90 - tmin 6.4 | E90_own/(p90-tmin) 0.93
+    G s7 r6: gp 83.4 qshare 0.000 | aw med 0.967 share<0.9 0.00 | vs min rtp 9.07: E50 7.4 E90 9.9 | vs own tmin 12.34: E50 4.2 E90 6.7 | own p90 - tmin 6.6 | E90_own/(p90-tmin) 1.01
+  c2-100 W256:
+    G s42 r1: gp 90.5 qshare 0.000 | aw med 0.978 share<0.9 0.00 | vs min rtp 10.18: E50 14.6 E90 16.6 | vs own tmin 20.17: E50 4.6 E90 6.6 | own p90 - tmin 7.3 | E90_own/(p90-tmin) 0.91
+    G s42 r3: gp 90.1 qshare 0.000 | aw med 0.978 share<0.9 0.00 | vs min rtp 6.50: E50 18.5 E90 20.5 | vs own tmin 19.89: E50 5.1 E90 7.1 | own p90 - tmin 7.6 | E90_own/(p90-tmin) 0.93
+    G s42 r5: gp 90.2 qshare 0.000 | aw med 0.978 share<0.9 0.00 | vs min rtp 9.62: E50 15.7 E90 17.1 | vs own tmin 19.76: E50 5.5 E90 6.9 | own p90 - tmin 7.7 | E90_own/(p90-tmin) 0.90
+    G s7 r2: gp 90.2 qshare 0.000 | aw med 0.978 share<0.9 0.00 | vs min rtp 11.92: E50 13.4 E90 15.1 | vs own tmin 19.73: E50 5.6 E90 7.3 | own p90 - tmin 7.7 | E90_own/(p90-tmin) 0.94
+    G s7 r4: gp 90.5 qshare 0.000 | aw med 0.978 share<0.9 0.00 | vs min rtp 12.09: E50 12.7 E90 14.6 | vs own tmin 19.62: E50 5.2 E90 7.1 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.90
+    G s7 r6: gp 90.5 qshare 0.000 | aw med 0.978 share<0.9 0.00 | vs min rtp 11.32: E50 13.8 E90 15.6 | vs own tmin 19.75: E50 5.4 E90 7.1 | own p90 - tmin 7.7 | E90_own/(p90-tmin) 0.92
+  c2-100 W2048:
+    G s42 r1: gp 90.4 qshare 0.000 | aw med 0.997 share<0.9 0.00 | vs min rtp 11.96: E50 195.5 E90 198.6 | vs own tmin 200.82: E50 6.7 E90 9.8 | own p90 - tmin 10.1 | E90_own/(p90-tmin) 0.97
+    G s42 r3: gp 89.9 qshare 0.000 | aw med 0.997 share<0.9 0.01 | vs min rtp 10.47: E50 197.0 E90 201.1 | vs own tmin 200.81: E50 6.7 E90 10.8 | own p90 - tmin 10.4 | E90_own/(p90-tmin) 1.04
+    G s42 r5: gp 90.3 qshare 0.000 | aw med 0.997 share<0.9 0.01 | vs min rtp 13.82: E50 193.5 E90 197.1 | vs own tmin 200.75: E50 6.5 E90 10.1 | own p90 - tmin 10.3 | E90_own/(p90-tmin) 0.99
+    G s7 r2: gp 90.2 qshare 0.000 | aw med 0.997 share<0.9 0.01 | vs min rtp 13.29: E50 194.3 E90 197.7 | vs own tmin 200.03: E50 7.6 E90 11.0 | own p90 - tmin 11.0 | E90_own/(p90-tmin) 1.00
+    G s7 r4: gp 90.3 qshare 0.000 | aw med 0.997 share<0.9 0.01 | vs min rtp 13.19: E50 194.1 E90 197.5 | vs own tmin 200.25: E50 7.1 E90 10.5 | own p90 - tmin 10.4 | E90_own/(p90-tmin) 1.00
+    G s7 r6: gp 90.2 qshare 0.000 | aw med 0.997 share<0.9 0.01 | vs min rtp 12.15: E50 194.6 E90 198.5 | vs own tmin 200.04: E50 6.8 E90 10.7 | own p90 - tmin 10.8 | E90_own/(p90-tmin) 0.99
+  c8-100 W32:
+    G s42 r1: gp 18.5 qshare 0.097 | aw med 0.923 share<0.9 0.00 | vs min rtp 6.25: E50 7.8 E90 9.8 | vs own tmin 8.80: E50 5.2 E90 7.2 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.93
+    G s42 r3: gp 18.5 qshare 0.097 | aw med 0.922 share<0.9 0.00 | vs min rtp 5.73: E50 8.3 E90 10.3 | vs own tmin 8.79: E50 5.2 E90 7.2 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.92
+    G s42 r5: gp 18.7 qshare 0.050 | aw med 0.922 share<0.9 0.00 | vs min rtp 5.29: E50 8.7 E90 10.7 | vs own tmin 8.80: E50 5.2 E90 7.2 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.92
+    G s7 r2: gp 18.6 qshare 0.268 | aw med 0.924 share<0.9 0.00 | vs min rtp 5.07: E50 8.9 E90 10.9 | vs own tmin 8.78: E50 5.2 E90 7.2 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.92
+    G s7 r4: gp 18.5 qshare 0.164 | aw med 0.923 share<0.9 0.00 | vs min rtp 5.76: E50 8.2 E90 10.2 | vs own tmin 8.88: E50 5.1 E90 7.1 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.92
+    G s7 r6: gp 18.4 qshare 0.414 | aw med 0.924 share<0.9 0.00 | vs min rtp 5.33: E50 8.7 E90 10.7 | vs own tmin 8.72: E50 5.3 E90 7.3 | own p90 - tmin 8.0 | E90_own/(p90-tmin) 0.92
+  c8-100 W96:
+    G s42 r1: gp 52.1 qshare 0.143 | aw med 0.954 share<0.9 0.00 | vs min rtp 6.62: E50 8.4 E90 10.4 | vs own tmin 9.90: E50 5.1 E90 7.1 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.91
+    G s42 r3: gp 52.1 qshare 0.140 | aw med 0.954 share<0.9 0.00 | vs min rtp 6.85: E50 8.1 E90 10.1 | vs own tmin 9.81: E50 5.2 E90 7.2 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.91
+    G s42 r5: gp 52.1 qshare 0.132 | aw med 0.954 share<0.9 0.00 | vs min rtp 6.76: E50 8.2 E90 10.2 | vs own tmin 9.88: E50 5.1 E90 7.1 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.92
+    G s7 r2: gp 51.9 qshare 0.132 | aw med 0.954 share<0.9 0.00 | vs min rtp 6.78: E50 8.2 E90 10.2 | vs own tmin 9.84: E50 5.2 E90 7.2 | own p90 - tmin 7.9 | E90_own/(p90-tmin) 0.90
+    G s7 r4: gp 51.9 qshare 0.156 | aw med 0.954 share<0.9 0.00 | vs min rtp 6.67: E50 8.3 E90 10.3 | vs own tmin 9.94: E50 5.1 E90 7.1 | own p90 - tmin 7.8 | E90_own/(p90-tmin) 0.91
+    G s7 r6: gp 51.8 qshare 0.142 | aw med 0.954 share<0.9 0.00 | vs min rtp 7.04: E50 8.0 E90 10.0 | vs own tmin 9.97: E50 5.0 E90 7.0 | own p90 - tmin 7.7 | E90_own/(p90-tmin) 0.91
+  c8-100 W384:
+    G s42 r1: gp 104.5 qshare 0.000 | aw med 0.982 share<0.9 0.00 | vs min rtp 11.55: E50 18.4 E90 22.4 | vs own tmin 20.23: E50 9.8 E90 13.8 | own p90 - tmin 14.2 | E90_own/(p90-tmin) 0.97
+    G s42 r3: gp 103.7 qshare 0.000 | aw med 0.983 share<0.9 0.00 | vs min rtp 6.28: E50 24.7 E90 28.7 | vs own tmin 21.55: E50 9.4 E90 13.4 | own p90 - tmin 13.2 | E90_own/(p90-tmin) 1.02
+    G s42 r5: gp 104.2 qshare 0.000 | aw med 0.983 share<0.9 0.00 | vs min rtp 13.32: E50 16.7 E90 20.7 | vs own tmin 21.53: E50 8.5 E90 12.5 | own p90 - tmin 13.2 | E90_own/(p90-tmin) 0.95
+    G s7 r2: gp 103.9 qshare 0.000 | aw med 0.983 share<0.9 0.00 | vs min rtp 9.87: E50 19.1 E90 23.1 | vs own tmin 21.17: E50 7.8 E90 11.8 | own p90 - tmin 13.1 | E90_own/(p90-tmin) 0.91
+    G s7 r4: gp 103.8 qshare 0.000 | aw med 0.982 share<0.9 0.00 | vs min rtp 12.15: E50 17.9 E90 21.9 | vs own tmin 21.54: E50 8.5 E90 12.5 | own p90 - tmin 12.9 | E90_own/(p90-tmin) 0.97
+    G s7 r6: gp 101.9 qshare 0.000 | aw med 0.983 share<0.9 0.01 | vs min rtp 10.64: E50 19.4 E90 23.4 | vs own tmin 21.73: E50 8.3 E90 12.3 | own p90 - tmin 12.7 | E90_own/(p90-tmin) 0.97
+  c8-100 W512:
+    G s42 r1: gp 105.4 qshare 0.000 | aw med 0.986 share<0.9 0.00 | vs min rtp 10.66: E50 27.3 E90 33.3 | vs own tmin 27.93: E50 10.1 E90 16.1 | own p90 - tmin 17.7 | E90_own/(p90-tmin) 0.91
+    G s42 r3: gp 106.0 qshare 0.000 | aw med 0.986 share<0.9 0.00 | vs min rtp 10.32: E50 28.7 E90 34.7 | vs own tmin 28.63: E50 10.4 E90 16.4 | own p90 - tmin 16.5 | E90_own/(p90-tmin) 0.99
+    G s42 r5: gp 105.7 qshare 0.000 | aw med 0.986 share<0.9 0.00 | vs min rtp 12.29: E50 26.7 E90 32.7 | vs own tmin 28.10: E50 10.9 E90 16.9 | own p90 - tmin 17.7 | E90_own/(p90-tmin) 0.95
+    G s7 r2: gp 105.8 qshare 0.000 | aw med 0.986 share<0.9 0.01 | vs min rtp 10.20: E50 28.8 E90 33.8 | vs own tmin 28.87: E50 10.1 E90 15.1 | own p90 - tmin 15.9 | E90_own/(p90-tmin) 0.95
+    G s7 r4: gp 105.7 qshare 0.000 | aw med 0.986 share<0.9 0.01 | vs min rtp 12.99: E50 26.0 E90 32.0 | vs own tmin 28.54: E50 10.5 E90 16.5 | own p90 - tmin 16.6 | E90_own/(p90-tmin) 0.99
+    G s7 r6: gp 106.1 qshare 0.000 | aw med 0.986 share<0.9 0.00 | vs min rtp 10.19: E50 28.8 E90 34.8 | vs own tmin 28.62: E50 10.4 E90 16.4 | own p90 - tmin 16.6 | E90_own/(p90-tmin) 0.99
+  c8-100 W1280:
+    G s42 r1: gp 106.3 qshare 0.000 | aw med 0.993 share<0.9 0.01 | vs min rtp 10.06: E50 83.9 E90 107.9 | vs own tmin 67.54: E50 26.5 E90 50.5 | own p90 - tmin 45.9 | E90_own/(p90-tmin) 1.10
+    G s42 r3: gp 106.2 qshare 0.000 | aw med 0.994 share<0.9 0.01 | vs min rtp 9.01: E50 82.0 E90 104.0 | vs own tmin 66.97: E50 24.0 E90 46.0 | own p90 - tmin 43.9 | E90_own/(p90-tmin) 1.05
+    G s42 r5: gp 107.1 qshare 0.000 | aw med 0.994 share<0.9 0.00 | vs min rtp 10.93: E50 86.1 E90 104.1 | vs own tmin 76.90: E50 20.1 E90 38.1 | own p90 - tmin 34.9 | E90_own/(p90-tmin) 1.09
+    G s7 r2: gp 107.3 qshare 0.000 | aw med 0.994 share<0.9 0.01 | vs min rtp 9.85: E50 90.2 E90 102.2 | vs own tmin 84.57: E50 15.4 E90 27.4 | own p90 - tmin 26.5 | E90_own/(p90-tmin) 1.04
+    G s7 r4: gp 105.9 qshare 0.006 | aw med 0.993 share<0.9 0.01 | vs min rtp 14.16: E50 82.8 E90 101.8 | vs own tmin 74.64: E50 22.4 E90 41.4 | own p90 - tmin 37.6 | E90_own/(p90-tmin) 1.10
+    G s7 r6: gp 106.5 qshare 0.006 | aw med 0.994 share<0.9 0.01 | vs min rtp 10.65: E50 82.3 E90 102.3 | vs own tmin 73.45: E50 19.6 E90 39.6 | own p90 - tmin 37.2 | E90_own/(p90-tmin) 1.06
+
+== 4c. CR61 on every s60 G row. Below the knee bracket (floor and below-knee arms): COLLAPSED iff > 10 % of LATE ticks have e_own = rtt - (row's median LATE tmin) > X_own AND goodput < 0.95 x the arm's median goodput; X_own = E90 + 2 (E90 - E50), each the median over the reference floor rows of the row's own percentile. At and above the knee bracket: COLLAPSED iff qshare > 0.10 or E90_own / (p90 - tmin)_own > 1.5 ==
+  X_own c2-100 leg0 (ref W16, 6 rows; medians over rows of each row's E50 / E90): E50 4.95 E90 6.86 -> X_own 10.66 ms
+  X_own c8-100 leg0 (ref W32, 6 rows; medians over rows of each row's E50 / E90): E50 5.21 E90 7.21 -> X_own 11.21 ms
+  X_own c8-100 leg1 (ref W256, 6 rows; medians over rows of each row's E50 / E90): E50 8.64 E90 12.19 -> X_own 19.29 ms
+  X_own c1s-400 leg0 (ref W64, 6 rows; medians over rows of each row's E50 / E90): E50 0.44 E90 0.83 -> X_own 1.59 ms
+  c2-100 leg0 W16: COLLAPSED 0/6 | share>X_own 0.01 0.00 0.00 0.03 0.02 0.00
+  c2-100 leg0 W32: COLLAPSED 0/6 | share>X_own 0.00 0.00 0.01 0.00 0.01 0.00
+  c2-100 leg0 W48: COLLAPSED 0/6 | share>X_own 0.01 0.00 0.01 0.00 0.01 0.00
+  c2-100 leg0 W160: COLLAPSED 0/6 | E90/(p90-tmin) 0.89 0.88 0.92 0.93 0.93 1.01
+  c2-100 leg0 W176: COLLAPSED 0/6 | E90/(p90-tmin) 0.92 0.92 0.88 0.95 0.87 0.88
+  c2-100 leg0 W192: COLLAPSED 0/6 | E90/(p90-tmin) 0.92 0.96 0.92 0.95 0.92 0.96
+  c2-100 leg0 W256: COLLAPSED 0/6 | E90/(p90-tmin) 0.91 0.93 0.90 0.94 0.90 0.92
+  c2-100 leg0 W2048: COLLAPSED 0/6 | E90/(p90-tmin) 0.97 1.04 0.99 1.00 1.00 0.99
+  c8-100 leg0 W32: COLLAPSED 0/6 | share>X_own 0.01 0.01 0.00 0.00 0.00 0.01
+  c8-100 leg0 W64: COLLAPSED 0/6 | share>X_own 0.01 0.00 0.00 0.00 0.00 0.00
+  c8-100 leg0 W96: COLLAPSED 0/6 | share>X_own 0.00 0.00 0.00 0.00 0.00 0.00
+  c8-100 leg0 W256: COLLAPSED 0/6 | E90/(p90-tmin) 0.91 0.90 0.90 0.91 1.01 1.02
+  c8-100 leg0 W320: COLLAPSED 0/6 | E90/(p90-tmin) 0.94 0.94 0.95 0.84 0.95 1.03
+  c8-100 leg0 W384: COLLAPSED 0/6 | E90/(p90-tmin) 0.97 1.02 0.95 0.91 0.97 0.97
+  c8-100 leg0 W512: COLLAPSED 0/6 | E90/(p90-tmin) 0.91 0.99 0.95 0.95 0.99 0.99
+  c8-100 leg0 W1280: COLLAPSED 0/6 | E90/(p90-tmin) 1.10 1.05 1.09 1.04 1.10 1.06
+  c8-100 leg1 W32: COLLAPSED 0/6 | share>X_own 0.00 0.00 0.00 0.00 0.00 0.00
+  c8-100 leg1 W64: COLLAPSED 0/6 | share>X_own 0.00 0.00 0.00 0.00 0.00 0.00
+  c8-100 leg1 W96: COLLAPSED 0/6 | share>X_own 0.00 0.00 0.00 0.00 0.00 0.00
+  c8-100 leg1 W256: COLLAPSED 0/6 | E90/(p90-tmin) 0.77 0.77 0.85 0.85 0.77 0.84
+  c8-100 leg1 W320: COLLAPSED 0/6 | E90/(p90-tmin) 0.79 0.83 0.88 0.86 0.82 0.80
+  c8-100 leg1 W384: COLLAPSED 0/6 | E90/(p90-tmin) 0.92 0.91 0.94 1.10 0.80 0.90
+  c8-100 leg1 W512: COLLAPSED 0/6 | E90/(p90-tmin) 0.94 0.94 0.88 1.02 0.92 0.97
+  c8-100 leg1 W1280: COLLAPSED 0/6 | E90/(p90-tmin) 1.11 1.40 1.13 1.23 1.13 1.10
+  c1s-400 leg0 W64: COLLAPSED 2/6 | share>X_own 0.01 0.04 0.01 0.01 0.57 0.28
+  c1s-400 leg0 W128: COLLAPSED 0/6 | share>X_own 0.03 0.02 0.02 0.15 0.02 0.06
+  c1s-400 leg0 W192: COLLAPSED 1/6 | share>X_own 0.17 0.09 0.11 0.09 0.94 0.11
+  c1s-400 leg0 W2048: COLLAPSED 6/12 | E90/(p90-tmin) 1.82 0.89 1.32 0.87 1.37 1.15 0.86 0.86 1.06 1.19 0.95 1.04
+
+== 4d. qshare on c8 leg 1 (the c3-shaped leg, BDP 100 000 B): share of [DIAG] lines (t >= 1 s) with p1 qcwnd < 100 000, per row ==
+  c8 leg1 W32: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W64: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W96: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W256: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W320: 0.000 0.228 0.271 0.000 0.330 0.000
+  c8 leg1 W384: 0.000 0.000 0.000 0.149 0.155 0.000
+  c8 leg1 W512: 0.028 0.000 0.000 0.084 0.011 0.000
+  c8 leg1 W1280: 0.000 0.006 0.017 0.011 0.023 0.028
+
+== 4b. B1 on s60's floor pools (every G row, no validity filter): per-row median LATE err (ms), leg by leg; B1 fires iff > 0 ==
+  c2-100 leg0 W16: err -2.356 -1.955 -1.831 -0.341 -0.117 +0.075 | median margin +1.086, smallest margin -0.075, fires on 1/6
+  c2-100 leg0 W32: err -3.438 -1.925 -1.045 -0.748 -0.269 +0.062 | median margin +0.896, smallest margin -0.062, fires on 1/6
+  c2-100 leg0 W48: err -2.804 -2.768 -1.945 -0.506 -0.170 +0.113 | median margin +1.226, smallest margin -0.113, fires on 1/6
+  c8-100 leg0 W32: err -1.790 -1.539 -1.055 -1.048 +0.051 +0.709 | median margin +1.051, smallest margin -0.709, fires on 2/6
+  c8-100 leg0 W64: err -1.815 -1.728 -1.315 -1.142 -0.524 -0.145 | median margin +1.228, smallest margin +0.145, fires on 0/6
+  c8-100 leg0 W96: err -1.254 -1.152 -0.946 -0.202 +0.142 +0.570 | median margin +0.574, smallest margin -0.570, fires on 2/6
+  c8-100 leg1 W96: err -4.617 -4.333 -4.237 -2.829 -1.468 -1.371 | median margin +3.533, smallest margin +1.371, fires on 0/6
+  c8-100 leg1 W256: err -8.810 -6.393 -4.896 -2.000 -1.735 -0.778 | median margin +3.448, smallest margin +0.778, fires on 0/6
+  c8-100 leg1 W320: err -59.209 -4.995 -3.990 -3.681 -1.758 -1.627 | median margin +3.836, smallest margin +1.627, fires on 0/6
+  c1s-400 leg0 W64: err -0.312 -0.286 -0.256 -0.256 -0.187 -0.165 | median margin +0.256, smallest margin +0.165, fires on 0/6
+  c1s-400 leg0 W128: err -0.271 -0.233 -0.221 -0.209 -0.185 -0.182 | median margin +0.215, smallest margin +0.182, fires on 0/6
+  c1s-400 leg0 W192: err -0.369 -0.235 -0.209 -0.172 -0.144 +0.282 | median margin +0.191, smallest margin -0.282, fires on 1/6
+
+== 5. c2 price table from s60 (median over replicates): goodput / control, tmin, tp50 (the loop the store law reads), and the chord at the new arms ==
+  W16    u 0.112  tmin 8.68  tp50 13.70
+  W32    u 0.217  tmin 8.95  tp50 14.27
+  W48    u 0.321  tmin 9.04  tp50 14.59
+  W160   u 0.930  tmin 12.32  tp50 16.81
+  W176   u 0.970  tmin 13.09  tp50 17.81
+  W192   u 0.990  tmin 14.05  tp50 19.12
+  W256   u 1.002  tmin 19.75  tp50 25.40
+  W2048  u 1.000  tmin 200.50  tp50 207.85
+  W96 chord 48-160: u 0.582 tmin 10.45 tp50 15.54   (tmin is convex in W, so the chord over-reads tmin and tp50 below the knee)
+  W128 chord 48-160: u 0.756 tmin 11.39 tp50 16.18   (tmin is convex in W, so the chord over-reads tmin and tp50 below the knee)
+  W144 chord 48-160: u 0.843 tmin 11.86 tp50 16.50   (tmin is convex in W, so the chord over-reads tmin and tp50 below the knee)
