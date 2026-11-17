@@ -12,6 +12,7 @@ names the seat in the arm (`C<arm>` = CONTROL, `F<arm>` = CAND) and orders the r
     plan63.py report <ledger>            per row: warm-up outcome, undeliv, [UNFRAMABLE] count, [SYMSZ] from both ends, the seat's bin_sha, and the seat's PASS / FAIL against the draft's predictions
 
 Not a void: F2 is expected to fail on CONTROL, so undeliv / [UNFRAMABLE] are READINGS here (l1common.f2_counts), not a VOID-F2. The scored blocks (51, 51e) void on them (l1common.f2_void)."""
+import json
 import os
 import sys
 
@@ -103,8 +104,19 @@ def row_metrics(cli, srv, drv):
         out["symsz"] = {"cli": lc.symsz(cli), "srv": lc.symsz(srv)}
         out["rate_echo"] = lc.gate_tok(cli, "RWM_PERF_RATE_MBIT")
         never = any(WARM_TOKEN in ln for ln in allv)
-        out["summary"] = any('"summary"' in ln and '"dnf"' not in ln for ln in cli + drv)
-        out["dnf"] = any('"dnf"' in ln for ln in cli + drv)
+        summ, dnf = None, False
+        for ln in cli + drv:      # the driver's JSON lines: a summary carries `"dnf":0` on a completed run and `"dnf":1` on a DNF; a per-run DNF line has `"dnf":true`
+            if ln.lstrip().startswith("{"):
+                try:
+                    d = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(d, dict):
+                    if d.get("summary"):
+                        summ = d
+                    dnf = dnf or bool(d.get("dnf"))
+        out["summary"] = summ is not None and not summ.get("dnf")
+        out["dnf"] = dnf
         out["warm"] = "NEVER-ACKED" if never else ("COMPLETED" if out["summary"] else ("TRANSFER-DNF" if out["dnf"] else "OTHER"))
     except Exception as e:      # a reported readout never voids a row
         out["error"] = f"{type(e).__name__}: {e}"

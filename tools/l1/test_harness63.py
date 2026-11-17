@@ -76,6 +76,8 @@ check("CONTROL U s42: PASS iff it completes; a failure says the pacer is not par
       and all(plan63.control_label(b, "7", t63(w))[0] == "NO-PREDICTION" for b in ("PL", "PM") for w in ("COMPLETED", "NEVER-ACKED")))
 M = plan63.row_metrics(["[CTLD] undeliv=0", "[SYMSZ] local=512 decoder=512", '{"bytes":1,"mbps":3.0,"run":1}', '{"bytes":1,"mean_mbps":3.0,"summary":true}'], ["[SYMSZ] local=512 decoder=512"], ["--- F2 undeliv=0 unframable=0"])
 check("row_metrics: a completed row reads warm=COMPLETED with its [SYMSZ] from both ends", M["warm"] == "COMPLETED" and M["symsz"] == {"cli": [(512, 512)], "srv": [(512, 512)]} and M["undeliv"] == 0 and M["unframable"] == 0, M)
+M = plan63.row_metrics(['{"bytes":1,"mbps":3.0,"run":1}', '{"bytes":1,"dnf":0,"mean_mbps":3.0,"summary":true}'], [], [])
+check("row_metrics: the real summary line carries `\"dnf\":0` on a completed run: still COMPLETED, while `\"dnf\":1` is a DNF", M["warm"] == "COMPLETED" and plan63.row_metrics(['{"bytes":1,"dnf":1,"summary":true}'], [], [])["warm"] == "TRANSFER-DNF")
 M = plan63.row_metrics(["Error: warm-up object never acked - tunnel not passing traffic", '{"dnf":true}'], ["[CTLD] undeliv=2", "[UNFRAMABLE] x"], ["--- F2 undeliv=2 unframable=1", '{"dnf":1,"summary":true}'])
 check("row_metrics: 'warm-up object never acked' reads NEVER-ACKED (it outranks the DNF line), undeliv 2 and unframable 1 are taken from both logs and the driver's `--- F2` line", M["warm"] == "NEVER-ACKED" and M["undeliv"] == 2 and M["unframable"] == 1, M)
 M = plan63.row_metrics(["x", '{"dnf":true}'], [], [])
