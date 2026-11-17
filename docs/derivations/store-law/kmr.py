@@ -1,7 +1,7 @@
 """Knee-margin re-derivation (knee-margin-rederive.md): what need = T-hat-min(W95) - F scales with, across c2 and c3.
 
 Usage (from docs/):  python -I -X utf8 derivations/store-law/kmr.py l1-raw/s60/rep60a-diag-ld.tgz l1-raw/s60/rep60b-diag-ld.tgz \
-                         l1-raw/s61/rep61c-diag-ld.tgz  > derivations/store-law/kmr.out
+                         l1-raw/s61/rep61c-diag-ld.tgz l1-raw/s61/rep61a-diag-ld.tgz  > derivations/store-law/kmr.out
 
 Reads the committed ledgers in place (tarfile), with s61pred.py's window parse and grouping G(n*) (s61-registration.md section 3). Every
 reading here is POST HOC: none was registered. Sections:
@@ -94,8 +94,14 @@ def rowF(r, ns, leg=0):
     k = (id(r), ns, leg)
     if k not in _RF:
         s, f, n, g = sp.row_SF(r, leg, ns)
-        _RF[k] = (s, f, n)
-    return _RF[k]
+        _RF[k] = (s, f, n, g)
+    return _RF[k][:3]
+
+
+def rowG(r, ns, leg=0):
+    """complete groups of one row under G(ns)"""
+    rowF(r, ns, leg)
+    return _RF[(id(r), ns, leg)][3]
 
 
 def native_q(r, key, leg=0):
@@ -124,8 +130,9 @@ class Cell:
     """One cell's rows, resampled or not: floor rows per pool, knee replicates. Readings are recomputed from these lists, so a bootstrap draw is a Cell
     built from resampled lists."""
 
-    def __init__(self, cell, floor_rows, reps_, kappa):
+    def __init__(self, cell, floor_rows, reps_, kappa, karms=None, p1=None, ctl=None):
         self.cell, self.floor_rows, self.reps, self.kappa = cell, floor_rows, reps_, kappa
+        self.karms, self.p1, self.ctl = karms or KARMS[cell], p1 or P1[cell], ctl or CTL[cell]
 
     def w_star(self):
         return U2 / self.kappa if self.cell == C3 else 16.0
@@ -148,34 +155,34 @@ class Cell:
         under ns (None = native windows)."""
         out = []
         for key, wm in self.reps.items():
-            ctl = wm.get(CTL[self.cell])
+            ctl = wm.get(self.ctl)
             if not ctl or not ctl.gp:
                 continue
-            pts = [(W, r.gp / ctl.gp) for W, r in wm.items() if W != CTL[self.cell] and r.gp]
+            pts = [(W, r.gp / ctl.gp) for W, r in wm.items() if W != self.ctl and r.gp]
             w95 = cross_up(pts, 0.95)
-            arms = [W for W in KARMS[self.cell] + (P1[self.cell],) if W in wm]
+            arms = [W for W in tuple(self.karms) + (self.p1,) if W in wm]
             t = interp([(W, rowF(wm[W], ns)[1]) for W in arms], w95)
-            if self.cell == C3 and not (KARMS[C3][0] <= w95 <= KARMS[C3][-1]):
+            if self.cell == C3 and not (self.karms[0] <= w95 <= self.karms[-1]):
                 continue                                                   # s61 section 2.2's scoreability rule
             out.append((w95, t, key))
         return out
 
 
-def build(rows, cell):
+def build(rows, cell, karms=None, p1=None, ctl=None):
     rp = reps(rows, cell)
     fr = {W: arm(rows, cell, W) for W in FLOOR[cell]}
     kappa = None
     if cell == C3:
-        ctl_m = med([r.gp for r in arm(rows, cell, CTL[cell])])
+        ctl_m = med([r.gp for r in arm(rows, cell, ctl or CTL[cell])])
         kappa = med([r.gp / ctl_m / W for W, rs in fr.items() for r in rs])
-    return Cell(cell, fr, rp, kappa)
+    return Cell(cell, fr, rp, kappa, karms, p1, ctl)
 
 
 def resample(c, rnd):
     fr = {W: [rs[rnd.randrange(len(rs))] for _ in rs] for W, rs in c.floor_rows.items()}
     keys = list(c.reps)
     rp = {i: c.reps[keys[rnd.randrange(len(keys))]] for i in range(len(keys))}
-    return Cell(c.cell, fr, rp, c.kappa)
+    return Cell(c.cell, fr, rp, c.kappa, c.karms, c.p1, c.ctl)
 
 
 # The conventions: (label, c2 floor ns, c2 knee ns, c3 floor ns, c3 knee ns, floor position)
@@ -186,20 +193,26 @@ CONV = (("registered (s61: c2 native; c3 G(250) floor / G(2100) knee; u-matched)
         ("equal-n, floor at the intercept W -> 0", NK, None, NK, NK, "0"))
 
 
-def need(c, fns, kns, where):
-    F, S = c.floor(fns, where)
+def floor_conv(c, fns, where):
+    """(F, S_F) of a convention's floor, both on the same windows and floor position. c2's native W -> 0 is s61 section 5.1's: the matched-n (G(800))
+    slopes applied to the native W 16 values."""
     if c.cell == C2 and where == "0" and fns is None:
-        # s61 section 5.1: c2's W -> 0 applies its matched-n (G(800)) slope to the native floor
-        pts = [(W, rowF(r, 800)[1]) for W, rs in c.floor_rows.items() for r in rs]
-        b, a, _ = ols([W for W, _ in pts], [f for _, f in pts])
+        pts = [(W, rowF(r, 800)) for W, rs in c.floor_rows.items() for r in rs]
+        bF = ols([W for W, _ in pts], [x[1] for _, x in pts])[0]
+        bS = ols([W for W, _ in pts], [x[0] for _, x in pts])[0]
         F0, S0 = c.floor(None, "u")
-        F = F0 - b * 16
+        return F0 - bF * 16, S0 - bS * 16
+    return c.floor(fns, where)
+
+
+def need(c, fns, kns, where):
+    F, S = floor_conv(c, fns, where)
     ks = c.knees(kns)
     return med([t - F for _, t, _ in ks]), F, S, ks
 
 
 def main(argv):
-    rows = load(argv[1:])
+    rows = load(argv[1:4])
     c2, c3 = build(rows, C2), build(rows, C3)
 
     # ── 0. witness ──
@@ -265,6 +278,26 @@ def main(argv):
         W = FLOOR[c.cell][0]
         P(f"    {c.cell} W{W}: " + " | ".join(f"G({ns}) F {med([rowF(r, ns)[1] for r in c.floor_rows[W]]):.3f} n {med([rowF(r, ns)[2] for r in c.floor_rows[W]]):.0f}"
                                           for ns in (None, 250, 600, 1200, 2100, 4200)))
+    P("  complete groups per row under G(2100) at the floor pools (median over rows; the registration's floor rule asks >= 6 groups under G(250)):")
+    for c in (c2, c3):
+        P(f"    {c.cell}: " + " | ".join(f"W{W} {med([rowG(r, NK) for r in rs]):.0f} (min {min(rowG(r, NK) for r in rs)})" for W, rs in c.floor_rows.items()))
+
+    # ── 2d. replication of N and L on 61a's first session (rep61a; another c3 session, same floor pools; knee arms 104 / 112 / 124, P1 136 as the
+    #        path exercise counted them, control W2048 by goodput: s61a Result's post-hoc reading) ──
+    if len(argv) > 4:
+        rowsA = load(argv[4:5])
+        cA = build(rowsA, C3, karms=(104, 112, 124), p1=136, ctl=2048)
+        P("\n== 2d. Replication on rep61a (s61's first c3 session; post hoc: knee arms 104 / 112 / 124 + P1 136 as the path exercise counted them,"
+          " control W2048 by goodput, CR61's ratio clause lifted) ==")
+        FfA, SfA = cA.floor(NF, "u")
+        FkA, _ = cA.floor(NK, "u")
+        kA = cA.knees(NK)
+        TA = med([t for _, t, _ in kA])
+        P(f"  kappa {cA.kappa:.5f}, W* {cA.w_star():.1f}; scoreable replicates {len(kA)} (W95 " + " ".join(f"{w:.1f}" for w, _, _ in kA) + ")")
+        P(f"  T-hat-min(W95) {TA:.3f}; F(G250) {FfA:.3f} (S_F {SfA:.3f}); F(G2100) {FkA:.3f}  ->  need {TA - FfA:.3f} (rho {(TA - FfA) / SfA:.3f}), L {TA - FkA:.3f}, N {FfA - FkA:.3f}"
+              f"   (rep61c: need 4.434, L 8.872, N 4.438)")
+        P(f"  ratios to c2: need {(TA - FfA) / 4.049:.3f}, L {(TA - FkA) / L2:.3f}, N {(FfA - FkA) / N2:.3f}")
+        P("  floor F against the sample count, W12: " + " | ".join(f"G({ns}) {med([rowF(r, ns)[1] for r in cA.floor_rows[12]]):.3f}" for ns in (None, 250, 600, 1200, 2100, 4200)))
 
     # ── 2b. the c3-shaped floor against load, with c8 leg 1's lowest-load rows (same netem line, another session, a coupled leg) ──
     P("\n== 2b. The c3-shaped floor F against link utilisation at n 250 and n 2 100: c8 leg 1 (cli1, the same netem line; s60, coupled to leg 0) and c3's own"
@@ -278,22 +311,31 @@ def main(argv):
     for W in FLOOR[C3]:
         rs = c3.floor_rows[W]
         P(f"  c3 W{W}:      u_link {med([link_u(r, 'cli0') for r in rs]):.3f}  F(G250) {med([rowF(r, NF)[1] for r in rs]):.3f}  F(G2100) {med([rowF(r, NK)[1] for r in rs]):.3f}")
-    F1a = med([rowF(r, NF, 1)[1] for r in leg1])
-    F1b = med([rowF(r, NK, 1)[1] for r in leg1])
+    # leg 1's own slope over its low-load arms (W 64 / 96 / 256), against c3's fitted floor line converted to ms per unit u (b / kappa)
+    for ns, lab in ((NF, "G250"), (NK, "G2100")):
+        xs, ys = [], []
+        for W in (64, 96, 256):
+            for r in [r for r in rows.values() if r.cell == C8 and r.kind == "G" and r.W == W]:
+                u, f_ = link_u(r, "cli1"), rowF(r, ns, 1)[1]
+                if u is not None and f_ is not None:
+                    xs.append(u)
+                    ys.append(f_)
+        b1, a1, se1 = ols(xs, ys)
+        pts = [(W, rowF(r, ns)[1]) for W, rs in c3.floor_rows.items() for r in rs]
+        b3, a3, se3 = ols([W for W, _ in pts], [f for _, f in pts])
+        P(f"  {lab}: c8 leg 1 floor slope over u_link 0.03-0.31 {b1:.2f} +- {se1:.2f} ms per unit u (intercept {a1:.2f});"
+          f" c3's floor line {b3:.4f} ms/slot / kappa = {b3 / c3.kappa:.2f} +- {se3 / c3.kappa:.2f} ms per unit u (intercept {a3:.2f})")
+    P("  level at matched u_link (G2100): c8 leg 1 sits 2.2-2.6 ms below c3 at u 0.55-0.9 (section 4 lines), so leg 1's floor is a leg offset, not c3's"
+      " no-load floor; it is not substituted for c3's")
     T3 = med([t for _, t, _ in k3])
-    P(f"  with c8 leg 1's floor (u_link 0.03-0.04) in place of c3's u-matched one: registered-n need_3 = {T3:.3f} - {F1a:.3f} = {T3 - F1a:.3f}"
-      f" (ratio to c2's 4.049 / intercept 4.585: {(T3 - F1a) / 4.049:.2f} / {(T3 - F1a) / 4.585:.2f}); equal-n L_3 = {T3 - F1b:.3f}"
-      f" (ratio to c2's L 5.661 / intercept 6.183: {(T3 - F1b) / 5.661:.2f} / {(T3 - F1b) / 6.183:.2f})")
 
     # ── 2c. the knee term against each spread, per cell, at equal n ──
-    P("\n== 2c. k = L / X per cell at equal n (X a floor spread or the netem jitter range 2J), with the floor at c3's u-matched line, at its intercept, and"
-      " (c3 only) at c8 leg 1's no-load floor; k_3 / k_2 is the shape test (1 = the spread carries the knee at both cells) ==")
+    P("\n== 2c. k = L / X per cell at equal n (X a floor spread or the netem jitter range 2J), with the floor at the u-matched position and at the"
+      " intercept; k_3 / k_2 is the shape test (1 = X carries L at both cells). The S_F rows read S_F at their own count (stated), L at n 2 100 ==")
     Lc = {}
     for c in (c2, c3):
         T = med([t for _, t, _ in c.knees(None if c.cell == C2 else NK)])
         Lc[c.cell] = {"u": T - c.floor(NK, "u")[0], "0": T - c.floor(NK, "0")[0]}
-    Lc[C3]["c8"] = T3 - F1b
-    Lc[C2]["c8"] = Lc[C2]["0"]
     jr = {C2: 6.0, C3: 10.0}
     p80 = {c: med([med([w["p90"] - w["p10"] for w in r.late(0)]) for r in arm(rows, c, FLOOR[c][0])]) for c in (C2, C3)}
     Xs = (("S_F (registered counts, u-matched)", {C2: c2.floor(None, "u")[1], C3: c3.floor(NF, "u")[1]}),
@@ -302,19 +344,21 @@ def main(argv):
           ("netem 2J (one way)", jr))
     for nm, X in Xs:
         parts = []
-        for where, lab in (("u", "u-matched"), ("0", "intercept"), ("c8", "c3 floor from c8 leg 1")):
+        for where, lab in (("u", "u-matched"), ("0", "intercept")):
             k2_, k3_ = Lc[C2][where] / X[C2], Lc[C3][where] / X[C3]
             parts.append(f"{lab}: k_2 {k2_:.2f} k_3 {k3_:.2f} ratio {k3_ / k2_:.2f}")
         P(f"  {nm:<36} c2 {X[C2]:.3f} c3 {X[C3]:.3f} | " + " | ".join(parts))
-    P("  the S_F row as s61's falsifier, re-read at equal n: rho_L = L / S_F (S_F at the registered counts, both on the same floor line), per cell, and"
-      " d = rho_L,3 - rho_L,2 with its 90 % bootstrap (the draws of section 1); s61's margin Delta = 0.085")
-    for where, lab in (("u", "u-matched"), ("0", "intercept")):
-        def rl_(c, kns, fs):
-            T = med([t for _, t, _ in c.knees(kns)])
-            return (T - c.floor(NK, where)[0]) / c.floor(fs, where)[1]
-        pt = rl_(c3, NK, NF) - rl_(c2, None, None)
-        d = sorted(rl_(d3, NK, NF) - rl_(d2, None, None) for d2, d3 in draws)
-        P(f"    {lab}: rho_L,2 {rl_(c2, None, None):.3f}  rho_L,3 {rl_(c3, NK, NF):.3f}  d {pt:+.3f} 90 % [{q90(d)[0]:+.3f}, {q90(d)[1]:+.3f}]")
+    P("  s61's falsifier re-read with L: rho_L = L / S_F, d = rho_L,3 - rho_L,2 with its 90 % bootstrap (the draws of section 1); s61's margin Delta = 0.085."
+      " MIXED counts: L at n 2 100, S_F at the registered counts (c2 native, c3 G(250)), both at the same floor position; then S_F at n 2 100 (one count)")
+    for sfc, slab in (("reg", "S_F at registered counts (mixed)"), ("nk", "S_F at n 2 100 (one count)")):
+        for where, lab in (("u", "u-matched"), ("0", "intercept")):
+            def rl_(c, kns, fs):
+                T = med([t for _, t, _ in c.knees(kns)])
+                S_ = floor_conv(c, fs, where)[1] if sfc == "reg" else c.floor(NK, where)[1]
+                return (T - c.floor(NK, where)[0]) / S_
+            pt = rl_(c3, NK, NF) - rl_(c2, None, None)
+            d = sorted(rl_(d3, NK, NF) - rl_(d2, None, None) for d2, d3 in draws)
+            P(f"    {slab}, {lab}: rho_L,2 {rl_(c2, None, None):.3f}  rho_L,3 {rl_(c3, NK, NF):.3f}  d {pt:+.3f} 90 % [{q90(d)[0]:+.3f}, {q90(d)[1]:+.3f}]")
 
     # ── 3. candidates ──
     P("\n== 3. Candidate scalings X (need = k X, k fitted at c2): X at both cells, X_3/X_2, the two-point exponent alpha = ln(need ratio)/ln(X ratio) under the"
@@ -437,6 +481,18 @@ def main(argv):
             ctl = arm(rows, cell, 2048 if cell != C3 else 512)
             R = [r67_single(r, F, A) for r in ctl if r.late(0)]
             P(f"     Bulk {cell}: floor F {F:.3f}, A {A:.3f} ms (A / F {A / F:.2f}); control R67 median {med(R):.3f} max {max(R):.3f}")
+
+    # ── 5b. form S (g = 1) under every convention, S_F and F-hat on the same windows and floor position ──
+    P("\n== 5b. Form S at g = 1, A = S_F + q*F-hat, under each convention of section 1 with S_F and F-hat read on the same windows and floor position"
+      " (decision 8: S_F on the windows F-hat is read on). D = need - A per replicate: median [min, max]; Bulk and Realtime ==")
+    for lab, f2, k2n, f3, k3n, where in CONV:
+        parts = []
+        for c, fns, kns in ((c2, f2, k2n), (c3, f3, k3n)):
+            n_, F, S, ks = need(c, fns, kns, where)
+            for qn, q in (("Bulk", QB), ("Realtime", QR)):
+                D = [t - F - (S + q * F) for _, t, _ in ks]
+                parts.append(f"{c.cell} {qn} S {S:.2f} F {F:.2f} D {med(D):+.2f} [{min(D):+.2f}, {max(D):+.2f}]")
+        P(f"  {lab}\n     " + " | ".join(parts))
 
 
 if __name__ == "__main__":

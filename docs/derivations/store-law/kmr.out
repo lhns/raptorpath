@@ -23,6 +23,15 @@
   floor F against the sample count (median over the floor pool's rows; the floor pool W16 at c2, W12 at c3):
     c2-100 W16: G(None) F 8.679 n 282 | G(250) F 8.506 n 296 | G(600) F 7.802 n 816 | G(1200) F 7.324 n 1371 | G(2100) F 7.067 n 2237 | G(4200) F 6.728 n 4344
     c3-25 W12: G(None) F 42.751 n 60 | G(250) F 38.778 n 271 | G(600) F 37.008 n 629 | G(1200) F 35.590 n 1224 | G(2100) F 34.319 n 2125 | G(4200) F 33.227 n 4223
+  complete groups per row under G(2100) at the floor pools (median over rows; the registration's floor rule asks >= 6 groups under G(250)):
+    c2-100: W16 30 (min 30) | W32 60 (min 59) | W48 88 (min 88)
+    c3-25: W12 4 (min 4) | W16 5 (min 5) | W24 8 (min 8)
+
+== 2d. Replication on rep61a (s61's first c3 session; post hoc: knee arms 104 / 112 / 124 + P1 136 as the path exercise counted them, control W2048 by goodput, CR61's ratio clause lifted) ==
+  kappa 0.00974, W* 11.5; scoreable replicates 6 (W95 109.7 108.3 108.8 107.4 106.8 107.6)
+  T-hat-min(W95) 43.058; F(G250) 38.682 (S_F 9.563); F(G2100) 35.069  ->  need 4.376 (rho 0.458), L 7.989, N 3.613   (rep61c: need 4.434, L 8.872, N 4.438)
+  ratios to c2: need 1.081, L 1.411, N 2.241
+  floor F against the sample count, W12: G(None) 42.356 | G(250) 38.894 | G(600) 37.207 | G(1200) 35.910 | G(2100) 35.285 | G(4200) 35.020
 
 == 2b. The c3-shaped floor F against link utilisation at n 250 and n 2 100: c8 leg 1 (cli1, the same netem line; s60, coupled to leg 0) and c3's own floor pools. Post hoc: c8 leg 1's rows are another session and a leg that shares its sender ==
   c8 leg 1 W64: u_link 0.026  F(G250) 33.826 (n 257)  F(G2100) 32.427 (n 2107)
@@ -30,16 +39,20 @@
   c3 W12:      u_link 0.116  F(G250) 38.778  F(G2100) 34.319
   c3 W16:      u_link 0.152  F(G250) 39.583  F(G2100) 35.849
   c3 W24:      u_link 0.227  F(G250) 40.198  F(G2100) 37.323
-  with c8 leg 1's floor (u_link 0.03-0.04) in place of c3's u-matched one: registered-n need_3 = 43.432 - 33.671 = 9.761 (ratio to c2's 4.049 / intercept 4.585: 2.41 / 2.13); equal-n L_3 = 11.043 (ratio to c2's L 5.661 / intercept 6.183: 1.95 / 1.79)
+  G250: c8 leg 1 floor slope over u_link 0.03-0.31 9.44 +- 0.63 ms per unit u (intercept 33.37); c3's floor line 0.1021 ms/slot / kappa = 10.62 +- 2.89 ms per unit u (intercept 37.81)
+  G2100: c8 leg 1 floor slope over u_link 0.03-0.31 7.06 +- 0.72 ms per unit u (intercept 32.11); c3's floor line 0.2420 ms/slot / kappa = 25.17 +- 3.78 ms per unit u (intercept 31.74)
+  level at matched u_link (G2100): c8 leg 1 sits 2.2-2.6 ms below c3 at u 0.55-0.9 (section 4 lines), so leg 1's floor is a leg offset, not c3's no-load floor; it is not substituted for c3's
 
-== 2c. k = L / X per cell at equal n (X a floor spread or the netem jitter range 2J), with the floor at c3's u-matched line, at its intercept, and (c3 only) at c8 leg 1's no-load floor; k_3 / k_2 is the shape test (1 = the spread carries the knee at both cells) ==
-  S_F (registered counts, u-matched)   c2 5.083 c3 9.709 | u-matched: k_2 1.11 k_3 0.91 ratio 0.82 | intercept: k_2 1.22 k_3 1.20 ratio 0.99 | c3 floor from c8 leg 1: k_2 1.22 k_3 1.14 ratio 0.94
-  S_F at n 2 100 (u-matched)           c2 6.516 c3 14.038 | u-matched: k_2 0.87 k_3 0.63 ratio 0.73 | intercept: k_2 0.95 k_3 0.83 ratio 0.88 | c3 floor from c8 leg 1: k_2 0.95 k_3 0.79 ratio 0.83
-  floor p90 - p10 (native)             c2 5.535 c3 8.169 | u-matched: k_2 1.02 k_3 1.09 ratio 1.06 | intercept: k_2 1.12 k_3 1.43 ratio 1.28 | c3 floor from c8 leg 1: k_2 1.12 k_3 1.35 ratio 1.21
-  netem 2J (one way)                   c2 6.000 c3 10.000 | u-matched: k_2 0.94 k_3 0.89 ratio 0.94 | intercept: k_2 1.03 k_3 1.17 ratio 1.13 | c3 floor from c8 leg 1: k_2 1.03 k_3 1.10 ratio 1.07
-  the S_F row as s61's falsifier, re-read at equal n: rho_L = L / S_F (S_F at the registered counts, both on the same floor line), per cell, and d = rho_L,3 - rho_L,2 with its 90 % bootstrap (the draws of section 1); s61's margin Delta = 0.085
-    u-matched: rho_L,2 1.114  rho_L,3 0.914  d -0.200 90 % [-0.261, -0.154]
-    intercept: rho_L,2 1.281  rho_L,3 1.119  d -0.162 90 % [-0.257, -0.074]
+== 2c. k = L / X per cell at equal n (X a floor spread or the netem jitter range 2J), with the floor at the u-matched position and at the intercept; k_3 / k_2 is the shape test (1 = X carries L at both cells). The S_F rows read S_F at their own count (stated), L at n 2 100 ==
+  S_F (registered counts, u-matched)   c2 5.083 c3 9.709 | u-matched: k_2 1.11 k_3 0.91 ratio 0.82 | intercept: k_2 1.22 k_3 1.20 ratio 0.99
+  S_F at n 2 100 (u-matched)           c2 6.516 c3 14.038 | u-matched: k_2 0.87 k_3 0.63 ratio 0.73 | intercept: k_2 0.95 k_3 0.83 ratio 0.88
+  floor p90 - p10 (native)             c2 5.535 c3 8.169 | u-matched: k_2 1.02 k_3 1.09 ratio 1.06 | intercept: k_2 1.12 k_3 1.43 ratio 1.28
+  netem 2J (one way)                   c2 6.000 c3 10.000 | u-matched: k_2 0.94 k_3 0.89 ratio 0.94 | intercept: k_2 1.03 k_3 1.17 ratio 1.13
+  s61's falsifier re-read with L: rho_L = L / S_F, d = rho_L,3 - rho_L,2 with its 90 % bootstrap (the draws of section 1); s61's margin Delta = 0.085. MIXED counts: L at n 2 100, S_F at the registered counts (c2 native, c3 G(250)), both at the same floor position; then S_F at n 2 100 (one count)
+    S_F at registered counts (mixed), u-matched: rho_L,2 1.114  rho_L,3 0.914  d -0.200 90 % [-0.261, -0.154]
+    S_F at registered counts (mixed), intercept: rho_L,2 1.183  rho_L,3 1.119  d -0.063 90 % [-0.168, +0.020]
+    S_F at n 2 100 (one count), u-matched: rho_L,2 0.869  rho_L,3 0.632  d -0.237 90 % [-0.267, -0.210]
+    S_F at n 2 100 (one count), intercept: rho_L,2 0.929  rho_L,3 0.725  d -0.204 90 % [-0.242, -0.175]
 
 == 3. Candidate scalings X (need = k X, k fitted at c2): X at both cells, X_3/X_2, the two-point exponent alpha = ln(need ratio)/ln(X ratio) under the registered convention, and the conventions whose 90 % interval on need_3/need_2 contains X_3/X_2 ==
   need ratio (registered) 1.095; L ratio (equal n) 1.567
@@ -87,3 +100,15 @@
      Bulk c2-100: floor F 8.679, A 4.917 ms (A / F 0.57); control R67 median 0.098 max 0.100
      Bulk c3-25: floor F 38.998, A 9.875 ms (A / F 0.25); control R67 median 0.240 max 0.244
      Bulk c1s-400: floor F 2.381, A 0.686 ms (A / F 0.29); control R67 median 0.820 max 0.887
+
+== 5b. Form S at g = 1, A = S_F + q*F-hat, under each convention of section 1 with S_F and F-hat read on the same windows and floor position (decision 8: S_F on the windows F-hat is read on). D = need - A per replicate: median [min, max]; Bulk and Realtime ==
+  registered (s61: c2 native; c3 G(250) floor / G(2100) knee; u-matched)
+     c2-100 Bulk S 5.08 F 8.68 D -1.90 [-2.05, -1.84] | c2-100 Realtime S 5.08 F 8.68 D -1.47 [-1.62, -1.40] | c3-25 Bulk S 9.71 F 39.00 D -9.17 [-10.00, -9.11] | c3-25 Realtime S 9.71 F 39.00 D -7.22 [-8.05, -7.16]
+  engine-native (every window as the engine sees it; u-matched)
+     c2-100 Bulk S 5.08 F 8.68 D -1.90 [-2.05, -1.84] | c2-100 Realtime S 5.08 F 8.68 D -1.47 [-1.62, -1.40] | c3-25 Bulk S 5.86 F 42.52 D -6.40 [-6.97, -6.16] | c3-25 Realtime S 5.86 F 42.52 D -4.28 [-4.84, -4.03]
+  equal-n (floor and knee both at the knee's count: G(2100) floors, c2 knee native, c3 knee G(2100); u-matched)
+     c2-100 Bulk S 6.52 F 7.07 D -1.56 [-1.71, -1.50] | c2-100 Realtime S 6.52 F 7.07 D -1.21 [-1.36, -1.14] | c3-25 Bulk S 14.04 F 34.56 D -8.62 [-9.45, -8.56] | c3-25 Realtime S 14.04 F 34.56 D -6.89 [-7.72, -6.83]
+  registered, floor at the intercept W -> 0
+     c2-100 Bulk S 5.23 F 8.14 D -1.46 [-1.60, -1.39] | c2-100 Realtime S 5.23 F 8.14 D -1.05 [-1.20, -0.98] | c3-25 Bulk S 10.44 F 37.81 D -8.60 [-9.43, -8.54] | c3-25 Realtime S 10.44 F 37.81 D -6.71 [-7.54, -6.65]
+  equal-n, floor at the intercept W -> 0
+     c2-100 Bulk S 6.66 F 6.55 D -1.13 [-1.28, -1.07] | c2-100 Realtime S 6.66 F 6.55 D -0.80 [-0.95, -0.74] | c3-25 Bulk S 16.13 F 31.74 D -7.61 [-8.44, -7.55] | c3-25 Realtime S 16.13 F 31.74 D -6.02 [-6.85, -5.96]
