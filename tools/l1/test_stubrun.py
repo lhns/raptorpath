@@ -1619,8 +1619,8 @@ def case63(plan, path):
               and "=== binary-base" in ldtxt and "RWM_PERF_RATE_MBIT" in ldtxt.split("=== scrub")[-1].split("\n")[0], ldtxt[:600])
         labels = dict(re.findall(r"^LABEL63 (\S+) (\S+)", score, re.M))
         if path == "cand-fail":
-            check(f"{tag}: the failing CAND PL rows (both seeds) are labelled FAIL with their reasons (warm-up never acked, undeliv=2, unframable=1), the report prints BLOCKS-E-PRE, and no row is voided",
-                  labels.get("FPL-s42") == "FAIL" and labels.get("FPL-s7") == "FAIL" and labels.get("FPM-s42") == "PASS" and "cand_fail=2" in score and "BLOCKS-E-PRE" in score and re.search(r"FPL-s42 FAIL \(.*undeliv=2.*unframable=1", score) is not None
+            check(f"{tag}: the failing CAND paced rows (PL and PM, both seeds) are labelled FAIL with their reasons (warm-up never acked, undeliv=2, unframable=1), the unpaced FU still PASSes, the report prints BLOCKS-E-PRE, and no row is voided",
+                  labels.get("FPL-s42") == "FAIL" and labels.get("FPL-s7") == "FAIL" and labels.get("FPM-s42") == "FAIL" and labels.get("FPM-s7") == "FAIL" and labels.get("FU-s42") == "PASS" and "cand_fail=4" in score and "BLOCKS-E-PRE" in score and re.search(r"FPL-s42 FAIL \(.*undeliv=2.*unframable=1", score) is not None
                   and all(r["status"] != "VOID-F2" for r in led), score[-1200:])
         else:
             want = {"CPL-s42": "PASS", "CPM-s42": "PASS", "CU-s42": "PASS", "CPL-s7": "NO-PREDICTION", "CPM-s7": "NO-PREDICTION", "FPL-s42": "PASS", "FPM-s42": "PASS", "FU-s42": "PASS", "FPL-s7": "PASS", "FPM-s7": "PASS"}
