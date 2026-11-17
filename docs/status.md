@@ -1079,6 +1079,87 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Per §10, rehearsal rows are not re-run, and no workaround is used** (no retry, no seed change). Block E resumes after F2 is fixed: the E tree is rebuilt on the fix, then a new E-pre, then the rehearsal.
 - **Block 51 is exposed too.** `use_packing` is keyed on the hint alone (`sender_policy.rs:678`), so §51's Realtime rows pack on main's binary. "§51 runs on main's unchanged binary" cannot hold until F2 is fixed. §51's block 51 therefore also waits for the fix, and its tree is re-based by amendment.
 
+## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
+
+**Why.**
+- The cause of F2 is proven in code. Its trigger, a lost `WindowStart`, is inferred and was never observed.
+- **There is no pacer correlation.** The E rehearsal's U row ran on the same cell, hint, seed and reliability as PL and PM, and the warm-up runs unpaced (§51 Amendment 2). So the three rows ran one identical warm-up, and 2 of 3 failed. The failure is stochastic under one netem seed.
+- So before the full E-pre, a few rows show two things: whether the control reproduces the failure, and whether the fix removes it.
+
+**Trees and binaries.**
+
+| seat | tree | binary |
+|---|---|---|
+| CONTROL | `e-tree` `a271e0bb`, unchanged | the registered E `bin_sha` `8013a312…` (§51 Amendment 1). Logged and checked at launch. |
+| CAND | **`f2-cand-e` `1a2acc73`**: `e-tree` with `f2-prep`'s three commits, the design docs and `f2-impl`'s four engine commits cherry-picked (`-x`, never commit 1 alone), plus `harness63`'s tools commit merged at launch | recorded at the rehearsal; every later launch must equal it |
+
+- **Engine identity witness:** the engine delta of `f2-cand-e` over `a271e0bb` has the same `git patch-id --stable` (`77887dc2…`) as `f2-impl` over main. So the CAND engine is exactly the change tested on `f2-impl`.
+- `lib.sh` still forwards `RWM_SLAW` and `RWM_PERF_RATE_MBIT`.
+- **The fix on Linux (VM, 2026-11-17):**
+  - `f2-impl` commits 1–2 (`d3051fbf`) pass the full suites: release 1146/0, debug 998/0, wasm 50/0, core 2/0, parsers. The repro passes, its first Linux run.
+  - Commit 3 (`bf44836e`) passes: release 1148/0, debug 1000/0.
+  - Commit 4 (`ebdad071`, a test-race fix in the fail-closed test only) passes the three F2 loopback tests (fail-closed, mixed-size, repro) 10/10, and the release lib 604/0.
+  - **The CAND tree's pre-flight** (`1a2acc73`): `cargo check --all-targets` clean; `--lib` slaw 14, perf 7 and gates 14 pass; `slaw_reachability` passes; the three F2 loopback tests pass.
+  - The coordinator read commit 3's four extract sites: the read precedes delivery, `note_delivery` and `next_expected`, and an error ends the receive loop. No `tools/l1` parser reads a log line the fix changed.
+
+- **The control gets no counter.** Adding `f2-prep`'s counter would change the binary away from the one that failed.
+  - The control's failure witness is therefore the warm-up line itself: `warm-up object never acked`.
+- **The candidate's witnesses:**
+  - `undeliv=0` on `[CTLD]`;
+  - no `[UNFRAMABLE]` line;
+  - `[SYMSZ] local=512 decoder=512` on both ends.
+
+**Rows** (plan 51e's own arm definitions, on cell c2-100 at the Realtime hint with `RWM_C_RELIABLE=0`; 10 rows):
+
+| arm | pace | seeds | bytes |
+|---|---|---|---|
+| PL | 2.7664 Mbit/s | 42, 7 | 20 748 000 |
+| PM | 35 Mbit/s | 42, 7 | 262 500 000 |
+| U (unpaced) | none | 42 | 600 000 000 |
+
+- Each row runs once per seat, CONTROL then CAND, in that order: 10 rows.
+- Every row's warm-up is the same unpaced Realtime warm-up, so the five rows per seat are five draws of it: three at seed 42, two at seed 7.
+
+**Predictions.**
+- **CONTROL:** warm-up failures out of 5 are reported. There is no per-row prediction: the observed rate was 2 of 3 at seed 42, and the committed base rate is 1 of 6 Realtime rows.
+  - If CONTROL fails 0 of 5, the CAND reading is weak (nothing was reproduced). That is reported, not voided.
+  - A CONTROL row has no counter, so `undeliv` is n/a there.
+- **CAND, all five rows: the F2 reading** is the warm-up ack plus the three witnesses:
+  - `undeliv=0` from a `[CTLD]` line that is present (a missing line is a missing witness, not a pass);
+  - no `[UNFRAMABLE]`;
+  - `[SYMSZ]` local = decoder.
+  - A warm-up failure or a failed witness on CAND is a finding against the fix, and it blocks E-pre.
+- **CAND transfer completion** is reported separately. No paced transfer has yet completed on the VM on any binary, so this is the pacer's first live run. A failure after a clean warm-up is a pacer or E-tree finding, not one against F2.
+
+**Not scored:** goodput, delay and E's gates (b)–(h). Those belong to block E's battery after E-pre.
+
+**Run rules.**
+- **`LD_REHEARSE` first:** the CAND build and the `bin_sha` checks, then CONTROL PL s42 and CAND PL s42, both reported.
+  - A rehearsal row is not re-run. A failed CAND rehearsal row is the finding.
+- **No engine suites in this session.** They ran on the `f2-impl` trees (above), and the CAND tree had the pre-flight only. CAND's full suites are E-pre's.
+- **The CAND binary:** a plain release build from the launch archive, never a `test-seams` target dir. Its sha is recorded by `binid_run.sh` on that archive and pinned by an amendment.
+- Host cargo paused.
+- `LD_HARD` = launch + 1.5 h: two builds of about 8 min each, about 8 min of tools tests, and 10 rows of at most 150 s.
+
+**Harness:** `harness63`, a Sonnet worker, tools only, off `e-tree`. It adds:
+- a plan path `63` (10 rows, two seats; CONTROL pinned at `8013a312`, CAND by `LD_BIN_SHA_CAND`);
+- the witnesses above in its check;
+- `l1common.f2_void`, which voids the row in the E and 51 scorers (`VOID-F2`);
+- stub-run path tests.
+
+The launch sha is pinned by an amendment.
+
+**Order:** §63 first, then s62 (owner decision 13), then block E's E-pre on the CAND tree, then block 51. The stacked §41c guard, with F2 at its base, comes before F2 merges to main, after this session. This session decides whether F2 is the whole cause.
+
+**Before the merge, not before §63:**
+- the early-`add_path` and no-initial-paths size gaps, closed with a test;
+- `framing_ns` run on the VM;
+- the `test-seams` tests added to `suites_run.sh`;
+- ADR-0078's deviations recorded (including whether a fast close drops earlier deliveries);
+- an end-to-end Realtime test that puts two or more small packets in one symbol. No row or loopback shown here does: perf chunks fill the 510-byte capacity, and the tests use 300 / 508 / 600 / 1 196 B packets.
+
+**Pending:** Fable's review of this registration.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
@@ -1086,7 +1167,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - Realtime packs (`sender_policy.rs:678`, hint-keyed), and the packed framing writes a big-endian length (`framing.rs:20`). The unpacked reader reads it little-endian (`framing.rs:81–89`), so a packed symbol read unpacked yields no packet.
   - **The receiver still records the delivery and acks the seq,** so the sender prunes it and ARQ never notices. If every path's `WindowStart` is lost, the tunnel is dead for the whole connection while its counters look healthy.
   - Bulk and Auto do not pack, so the default `false` matches their framing.
-- **Trigger, inferred and not observed:** GE loss on the client→server path at connect (quinn `lost_packets` 4 in the first 2 s on both failing rows). Netem's seed 42 repeats the early loss bursts. The pacer correlation, with both paced rows failing and both unpaced passing, is unexplained. It is recorded as open.
+- **Trigger, inferred and not observed:** GE loss on the client→server path at connect (quinn `lost_packets` 4 in the first 2 s on both failing rows). Netem's seed 42 repeats the early loss bursts. (Corrected in §63: there was no pacer correlation. The unpaced U row ran the same warm-up and passed, so it was 2 failures in 3 draws of an identical warm-up.) It is recorded as open.
 - **Base rate in committed ledgers:** 1 of 6 Realtime rows failed the warm-up the same way (`store-law-n1` final, c2 LAW Realtime s42 r3), against 0 of 48 rows at the other hints. Today: 2 of 3.
 - **Age:** the code dates from 2026-03 (`e508adf4`). The §60 binary has it too.
 - **Two defects:**
