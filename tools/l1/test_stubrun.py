@@ -1211,7 +1211,7 @@ def case61(plan, path):
         ldtxt = open(os.path.join(stage, "ld.log"), errors="replace").read()
         envl = ldtxt.split("=== env ")[-1].split("\n")[0]
         check(f"{tag}: the env scrub withholds RWM_SLAW and RWM_THREE_TERM (and the rest); the instrument env is RWM_RDIAG=1 + the timeout, RWM_RTOBS=1 rides the arm env",
-              " RWM_SLAW RWM_THREE_TERM " in envl and "RWM_PERF_TIMEOUT_S=%d" % plan61.arm_timeout(table[0][0], table[0][2]) in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0], envl[:400])
+              " RWM_SLAW RWM_THREE_TERM " in envl and "RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=" in envl and "RWM_RTOBS" not in envl.split(" bulk window")[0], envl[:400])      # the per-row timeout (c3 120 s, c2 150 s) is asserted on the driver lines above
         sc = open(os.path.join(stage, "score.txt"), errors="replace").read()
         m = re.search(r"^VERDICT61 \S+ slots=(\d+)/(\d+) live=(\d+) void=(\d+) replaced=(\d+)", sc, re.M)
         check(f"{tag}: the score prints a VERDICT61 line counting every slot, with every row live and none replaced, and the labelled readouts (LABEL61 lines)",
