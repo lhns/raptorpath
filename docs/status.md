@@ -1367,6 +1367,44 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 7. **Order:** a fresh rehearsal (R6 gate, proportional pilot), then a fresh 66-row 61a, from one archive of the new sha.
 8. **Not blind.** The re-run is registered after this session's post-hoc bound. Its label is still decided by the registered rules, and its Result reports both readings side by side.
 
+**§61 Amendment 3 (2026-11-17, before any VM contact for the re-run; reviewed by Fable): the launch sha and the run rules for the re-run.**
+- **Launch tree: `harness61` `3cdc447081ab2f83e58195b6358ea8ef206ddda1`,** tools only, two commits on `14e2bacd`.
+  - `1b6da5e0` holds the code and tests. `3cdc4470` only writes `1b6da5e0` into DECISIONS 3, 11 and 16 as the superseding commit, since a text cannot name its own commit.
+  - The engine diff against `1ecee59d`, including `ref60-manifest.sha256`, is empty, so `bin_sha` stays `e410d640…`.
+- **Coordinator review of the diff (code only; the test diffs were read by their results, not line by line):**
+  - `ABORT-CONTROL61` refuses a 61a launch without `LD_CTL61=512`.
+  - The rehearsal plan has six distinct arms: R1 G2048, R2/R3 G12, R4 G88, R5 G128, R6 G512.
+  - With `LD_CTL61=512`, 61a's 66 rows carry six G512 controls and no G2048. 61b's plan is identical with and without the variable.
+  - R6's go/no-go has three clauses, matching Amendment 2. R1 prints as a reported row with its ratio.
+  - `pilot_knee` is a wrapper of `pilot_detail`.
+  - **Timing:** `ABORT-CONTROL61` fires after the build and the `bin_sha` check, before any row. Its "NOTHING WAS RUN" means no row ran; the locks were taken and the build ran.
+- **The worker's three readings, registered:**
+  - the "smoke's control row" coverage is the `STUBRUN_FULL=1 61a/reuse-hit` run at W 512 (61a's smoke is the single K₂ row);
+  - an R6 with no `[DIAG]` ticks is NOT-GO, a strict reading;
+  - `pilot_knee` returns the 0.1-rounded Ŵ.
+- **Host tests** (LF `git archive` export of `3cdc4470`, `PYTHONUTF8=1`; worker run):
+  - `test_s61` 83 ok, 0 skips; `test_harness61` 50 ok plus the witness skip (53 ok in the worktree, witness included); `test_harness_paths` 12 ok;
+  - fast unfiltered `test_stubrun.py` ALL OK, 674 ok, including the new `61a/control-missing` path;
+  - `STUBRUN_FULL=1 61a/reuse-hit` with `LD_CTL61=512` ALL OK, 66 rows;
+  - every `tools/l1/test_*.py`: 43 of 44 exit 0. `test_s60`'s `python -I` step fails on the host only (Amendment 1); it passed on the VM in both 61a and 61b.
+  - **Red-first:** on `14e2bacd`'s code, `test_s61` gives 14 FAIL (the proportional pilot, cap, wrapper and case name; R6's three clauses; the R1 cases; a DNF R6). `test_harness61` stops on the missing `control_w(ctl)`.
+  - Not seen red: the 61b-unchanged guard (a regression guard, green before and after) and `61a/control-missing` against the old `run_all`.
+- **The W 512 control's prediction and stop rule:**
+  - **Predicted ratio for the six W 512 rows: 0.95–1.4.** The evidence is this session's R6 (1.07), P1 at W 176 (0.95–1.02), and the rise toward W 2 048 between them.
+    - c8 leg 1's healthy arms in §4c reach 1.40 (W 1 280). That is context only: §60's per-slot goodput pools both legs, so leg 1's own knee cannot be read, and no pool-to-knee scaling is claimed.
+  - **The rehearsal decides first:**
+    - R6 ratio > 1.5 reads `NOGO-CONTROL`, as registered;
+    - R6 ratio in (1.4, 1.5] is **stop-and-report**: 61a does not launch until a further amendment, since a control near the line can flag in 61a;
+    - R6 ≤ 1.4 goes ahead.
+  - **Before 61a,** the coordinator reads R6's ratio, u₈₈ and the printed arms from the rehearsal's output, not just its PASS.
+- **Out-of-sample check of the proportional pilot (61b, c2).** At 61b's W 96 / 128 / 144 (u 0.611 / 0.783 / 0.861), Ŵ/W₉₅ against the knee of 168 is 0.888 / 0.924 / 0.946. All are inside the bracket's [0.877, 1.053]. These points fill the gap Amendment 2 named.
+- **Run rules:**
+  - both launches (rehearsal and 61a) and the host re-score carry `LD_CTL61=512`;
+  - `LD_HARD` = launch + 4.0 h for each;
+  - host cargo is paused for each launch: the coordinator holds the host build lock, and a worker's cargo waits at it;
+  - one `git archive` of `3cdc4470`, extracted fresh for each launch.
+- **Order:** the re-rehearsal (`LD_PLAN=61a LD_REHEARSE=1 LD_CTL61=512`), then 61a (`LD_KNEE61` = the printed `PILOT61 W=`, `LD_CTL61=512`, `LD_NOGO` as printed).
+
 **§61b Result (2026-11-17; the c2 add-on ran clean; REPORTED with its two labels).**
 
 **In plain words.** c2's price curve below its knee is now measured directly, at W 96 / 128 / 144. It matches §60's c2 rows at the overlap arm, so the two sessions merge into one c2 table. 61b scores only two labels: the control is OK, and there is no drift.
