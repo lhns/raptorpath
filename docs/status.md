@@ -1508,6 +1508,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
   - At c3 the count alone moves the floor by about 8.4 ms, twice the need (4.43).
   - The drop between the floor's count and the knee's count is 1.6 ms at c2 and 4.4 ms at c3. So matching each side's count across cells does not make ρ shape-invariant, which the registration's §3 assumed.
+  - **Correction (same day, after round 2):** the last clause is not supported. Across both c3 sessions the c3/c2 ratio of that drop is [1.85, 3.18], which contains S_F's ratio (1.88–1.91). So these data do not refute §3's assumption that the minimum's bias scales with the spread.
 - **Withdrawn:**
   1. "S_F is not the knee's term", as a statement about the path. The label shows that the registered ρ, under the registered counting, is not invariant across the two shapes. Whether any spread carries the load rise is not settled by these data.
   2. **"The knee margin looks roughly constant in milliseconds" (4.05 vs 4.43 ms).** It comes from the counting convention: at one count for both sides, need₃/need₂ is 1.57 [1.48, 1.64] (re-run) and 1.41 (first session). The lead is withdrawn.
