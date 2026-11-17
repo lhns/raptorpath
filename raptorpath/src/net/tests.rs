@@ -6557,3 +6557,31 @@ fn serve_gaps_routes_through_the_snapshot_order_seam() {
     assert!(s.contains("'gaps:for&(gap_start,gap_end)injudged{"));
     assert!(!s.contains("'gaps:for&(gap_start,gap_end)in&gaps{"), "the loop must not iterate the raw batch");
 }
+
+// ── F2 (status, Engine defect F2): the undeliverable-symbol counter ─────────
+
+/// A packed symbol read with `window_packed == false` yields no packet and
+/// the counter sees it; the same symbol read packed yields its packet and
+/// adds nothing; an all-zero (padding) symbol is not counted.
+#[test]
+fn f2_packed_symbol_read_unpacked_is_counted() {
+    let mut sym = Vec::new();
+    framing::frame_packet(&mut sym, &[7u8; 100]);
+    framing::frame_end(&mut sym);
+    sym.resize(512, 0);
+    let sym = Bytes::from(sym);
+
+    let before = undeliverable_symbols();
+    assert!(extract_window_packets(&sym, false).is_empty(), "packed symbol read unpacked yields nothing");
+    assert!(undeliverable_symbols() >= before + 1, "the miss is counted");
+
+    // Other lib tests may run concurrently, but none of them reads a
+    // non-empty symbol with no packet out, so the packed read adds nothing.
+    let mid = undeliverable_symbols();
+    assert_eq!(extract_window_packets(&sym, true), vec![vec![7u8; 100]]);
+    assert_eq!(undeliverable_symbols(), mid, "a correctly unframed symbol is not counted");
+
+    let zeros = Bytes::from(vec![0u8; 512]);
+    assert!(extract_window_packets(&zeros, false).is_empty());
+    assert_eq!(undeliverable_symbols(), mid, "an all-zero symbol is padding, not a miss");
+}
