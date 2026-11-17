@@ -268,6 +268,8 @@ pub struct QuicTransport {
     route_probe: bool,
     /// The lock-wait gauge's clock reads (`RWM_RTOBS`).
     gauge: bool,
+    /// The local source-symbol size, announced in every path's handshake (v10).
+    symbol_size: u16,
     /// Notified by any owner whose connection is lost (see
     /// [`QuicTransport::all_connections_lost`]).
     lost: Arc<tokio::sync::Notify>,
@@ -285,9 +287,10 @@ impl QuicTransport {
         bind_addrs: &[SocketAddr],
         is_server: bool,
         pin_cert_path: Option<&Path>,
+        symbol_size: u16,
     ) -> anyhow::Result<Self> {
         let g = crate::gates::get();
-        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs).await
+        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs, symbol_size).await
     }
 
     /// [`Self::new`] with an explicit routing-probe switch (a test arms it
@@ -297,6 +300,7 @@ impl QuicTransport {
         is_server: bool,
         pin_cert_path: Option<&Path>,
         route_probe: bool,
+        symbol_size: u16,
     ) -> anyhow::Result<Self> {
         let pinned_cert_hash = pin_cert_path
             .map(|p| load_pinned_cert_hash(p))
@@ -333,6 +337,7 @@ impl QuicTransport {
             rt: tokio::runtime::Handle::current(),
             route_probe,
             gauge: crate::gates::get().rtobs,
+            symbol_size,
             lost: Arc::new(tokio::sync::Notify::new()),
         };
         for (i, addr) in bind_addrs.iter().enumerate() {
@@ -385,6 +390,7 @@ impl QuicTransport {
             gauge: self.gauge,
             deep: crate::task_obs::deep(),
             lost: self.lost.clone(),
+            symbol_size: self.symbol_size,
         };
         let side = if self.is_server { "server" } else { "client" };
         self.rt
@@ -1185,7 +1191,7 @@ mod datagram_queue_audit_tests {
     async fn datagram_queue_audit_follows_rwm_diag_and_is_absent_when_off() {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let t = QuicTransport::new(&[addr], false, None)
+        let t = QuicTransport::new(&[addr], false, None, 1200)
             .await
             .expect("client endpoint binds on loopback");
 
@@ -1266,7 +1272,7 @@ mod rcvbuf_endpoint_tests {
         let floor = super::super::rcvbuf::tests::linux_floor(rcvbuf::RCVBUF_REQUEST);
         let any: SocketAddr = "127.0.0.1:0".parse().unwrap();
         for is_server in [true, false] {
-            let t = QuicTransport::new(&[any, any], is_server, None)
+            let t = QuicTransport::new(&[any, any], is_server, None, 1200)
                 .await
                 .expect("endpoints bind on loopback");
             t.spawn_path(7, any).await.expect("add_path's bind");

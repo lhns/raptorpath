@@ -119,8 +119,8 @@ pub(crate) fn handle_rx_control_message(path_id: u32, msg: ControlMessage, ctx: 
         ControlMessage::Shutdown => {
             info!(path_id, "peer is shutting down");
         }
-        ControlMessage::WindowStart { symbol_size, backend, packed } => {
-            debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
+        ControlMessage::WindowStart { backend } => {
+            debug!(path_id, ?backend, "peer entered window mode");
         }
         ControlMessage::GenerationDeficit { deficits } => {
             on_generation_deficit(ctx, path_id, deficits)

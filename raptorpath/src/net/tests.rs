@@ -4946,7 +4946,7 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&mut super::control_msg::ControlCtx<'_>)
     let _ = rustls::crypto::ring::default_provider().install_default();
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
     let transport = Arc::new(
-        QuicTransport::new(&[addr], false, None)
+        QuicTransport::new(&[addr], false, None, 1200)
             .await
             .expect("loopback endpoint binds"),
     );
@@ -5311,7 +5311,7 @@ async fn q2_spawn_sender() -> Q2Sender {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
     let transport = Arc::new(
-        QuicTransport::new(&[addr], false, None)
+        QuicTransport::new(&[addr], false, None, 1200)
             .await
             .expect("loopback endpoint binds"),
     );
@@ -6588,4 +6588,14 @@ fn f2_unframable_symbol_is_counted_once() {
     let zeros = Bytes::from(vec![0u8; 512]);
     assert_eq!(extract_window_packets(&zeros).unwrap(), Vec::<Vec<u8>>::new());
     assert_eq!(undeliverable_symbols(), before + 2, "an all-zero symbol is padding, not a miss");
+}
+
+/// The size each named point announces in its handshake (v10): Realtime 512,
+/// Bulk and Auto 1200 (`io_owner::local_handshake` carries it through the wire).
+#[test]
+fn f2_symbol_size_at_each_named_point() {
+    use crate::control::fec_rate::ProtocolHint;
+    assert_eq!(symbol_size_for_hint(ProtocolHint::Realtime), 512);
+    assert_eq!(symbol_size_for_hint(ProtocolHint::Bulk), 1200);
+    assert_eq!(symbol_size_for_hint(ProtocolHint::Auto), 1200);
 }

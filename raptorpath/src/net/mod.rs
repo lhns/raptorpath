@@ -728,6 +728,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         &config.bind_addrs,
         config.is_server,
         config.pin_cert.as_deref(),
+        symbol_size,
     ).await?;
 
     // Set up paths with protocol-hint-derived scheduling weights
@@ -1168,6 +1169,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     let recv_path_tracking = path_batch_tracking.clone();
     let recv_stats = stats.clone();
+    // F2-PENDING: owner decision (adopt the peer's announced size, or refuse a
+    // mismatch). The handshake already carries the sender's real size (v10);
+    // until that is decided the decoder keeps the local size.
     let recv_symbol_size = symbol_size;
     let recv_window_reliable = window_reliable;
     // Out-of-order object delivery (the H → ∞ corner, paper §4.11) is only
@@ -1877,7 +1881,7 @@ async fn run_window_sender(
             let _ = transport.send_control_datagram(
                 &mut announce,
                 pid,
-                ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
+                ControlMessage::WindowStart { backend: fec_backend },
             );
         }
         transport.flush(&mut announce).await;
