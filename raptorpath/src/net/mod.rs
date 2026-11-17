@@ -1371,11 +1371,27 @@ fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
 /// Packed mode carries block-mode framing (multiple packets per symbol);
 /// unpacked mode carries a single window-framed packet.
 fn extract_window_packets(data: &Bytes, packed: bool) -> Vec<Vec<u8>> {
-    if packed {
+    let pkts = if packed {
         framing::extract_packets(data)
     } else {
         framing::extract_window_packet(data).into_iter().collect()
+    };
+    if pkts.is_empty() && data.iter().any(|&b| b != 0) {
+        UNDELIVERABLE_SYMBOLS.fetch_add(1, Ordering::Relaxed);
     }
+    pkts
+}
+
+/// Source symbols with non-zero data that `extract_window_packets` could not
+/// unframe (no packet out), cumulative for the process. Nonzero means the
+/// receiver recorded and acked a symbol whose packets it dropped (status,
+/// Engine defect F2). Printed as `undeliv=` on the receiver's `[CTLD]` line
+/// under `RWM_DIAG`; always 0 on a healthy run.
+pub static UNDELIVERABLE_SYMBOLS: AtomicU64 = AtomicU64::new(0);
+
+/// Read [`UNDELIVERABLE_SYMBOLS`]. Observation only.
+pub fn undeliverable_symbols() -> u64 {
+    UNDELIVERABLE_SYMBOLS.load(Ordering::Relaxed)
 }
 
 /// Select the best source path for a window-mode symbol: lowest RTT with capacity.

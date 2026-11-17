@@ -2069,6 +2069,7 @@ pub(crate) async fn run_receiver(
                                 line.push_str(&format!(" rxdrop{pid}={d}"));
                             }
                         }
+                        line.push_str(&format!(" undeliv={}", super::undeliverable_symbols()));
                         crate::readout!("{line}");
                     }
 
