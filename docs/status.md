@@ -1519,6 +1519,25 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - Decision 8's form stays as decided, and is not in the engine. F07 stays UNDERIVED.
   - Decision 10 is unaffected.
 
+**The knee-margin re-derivation, closed post hoc (2026-11-17; `knee-margin-rederive` `399407f4`, three rounds, Fable-reviewed).** These rows cannot settle decision 8, and no further round on them can add evidence.
+- **The count drop follows jitter.**
+  - At a fixed count, interleaved and shuffled pooling read the same as contiguous pooling, so the drop comes from the count, not the pooled time span.
+  - On the jitter-free c1s line the floor minimum falls only 0.12–0.18 ms over 32 windows, against 2.2 ms at c2 and 7.8 ms at c3.
+- **Two cells can give every label.** Across 15 location and spread pairs (min, p10 and p50 against S_F, native S_F and p90 − p10), the same rows read AGREES, UNRESOLVED and DISAGREES of both signs. For example, the median's rise over the registered S_F is 0.711 at c2, against 0.713 and 0.750 at c3.
+- **What the law fixes (coordinator, from the formula, R6.7 line):** T̂min(n\*) = F + σ + q(δ)·ℓ̂.
+  - **The knee side is the per-window minimum T̂min,** so the law fixes the knee statistic.
+  - **The floor F is built from m̂** (Copa `min_rtt`), ℓ̂ (a running lifetime minimum) and the boot term b̂₀⁺, not from a per-window floor arm. Its sample count is the law's open design item (R6.7's n₀).
+  - So the native floor windows (60 samples at c3, 282 at c2) belong to the measurement, not to the law.
+- **On the knee-native minimum against native S_F:** 61c disagrees with c2, and 61a is marginal (it clears Δ by 0.002, on arms chosen post hoc; the two c3 sessions differ by 0.04 in ρ).
+  - The need there is 4.05 / 3.71 / 4.10 ms, and the whole gap is native S_F (5.08 against 5.86–6.09).
+  - So this reading and the withdrawn "constant in ms" are one fact read two ways.
+- **Kept for the next measurement:**
+  - an order-statistics criterion: a p-quantile is count-free to ε when m·p ≥ 1/ε;
+  - c3 floor windows hold about 17–21 independent draws, so p10 and p90 fail the criterion there;
+  - `RWM_RTT_DUMP` carries the same sample stream as `[SLAW]` (`record_rtt_sample`, `scheduler/path.rs`, on `slaw-gauge`).
+- **Decision 8 stands as decided:** neither confirmed nor refuted. g's Realtime end is unmeasured, F07 stays UNDERIVED, and decision 10 is unaffected.
+- **Next:** s62, a jitter sweep at c3 (sketch in the derivation doc §5). It goes to the owner as one call.
+
 **§61b Result (2026-11-17; the c2 add-on ran clean; REPORTED with its two labels).**
 
 **In plain words.** c2's price curve below its knee is now measured directly, at W 96 / 128 / 144. It matches §60's c2 rows at the overlap arm, so the two sessions merge into one c2 table. 61b scores only two labels: the control is OK, and there is no drift.
