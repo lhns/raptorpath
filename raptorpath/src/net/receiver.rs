@@ -53,7 +53,7 @@ use super::seq_bits::{ReceivedSeqs, SeqBits};
 use super::{
     SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
-    collect_gen_deficits, create_window_decoder, extract_window_packets,
+    collect_gen_deficits, create_window_decoder, extract_window_packets, log_unframable,
     hole_nack_refresh, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
@@ -1011,9 +1011,15 @@ pub(crate) async fn run_receiver(
                     }
                     for (dseq, ddata, _) in expired {
                         debug!(seq = dseq, "window hold expired — force-delivering");
-                        // F2-PENDING: owner decision (fail-closed): an unframable symbol
-                        // is counted and skipped for now.
-                        for pkt_data in extract_window_packets(&ddata).unwrap_or_default() {
+                        // Fail closed (ADR-0078): read before `next_expected` moves.
+                        let pkts = match extract_window_packets(&ddata) {
+                            Ok(p) => p,
+                            Err(_) => {
+                                log_unframable(dseq, &ddata);
+                                break 'recv;
+                            }
+                        };
+                        for pkt_data in pkts {
                             let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                         }
                         next_expected = next_expected.max(dseq + 1);
@@ -1517,12 +1523,17 @@ pub(crate) async fn run_receiver(
                                 // lets the sender discard its only copy).
                                 // Held packets go out on the `reserve()`
                                 // wake in the select above.
+                                // Fail closed (ADR-0078): an unframable symbol
+                                // is never delivered; the receiver ends.
+                                let pkts = match extract_window_packets(&sym_data) {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        log_unframable(seq, &sym_data);
+                                        break 'recv;
+                                    }
+                                };
                                 let rxp_t = rxp.begin();
-                                let offered = window_delivery.offer(
-                                    &recv_tun_tx,
-                                    seq,
-                                    extract_window_packets(&sym_data).unwrap_or_default(), // F2-PENDING: owner decision (fail-closed)
-                                );
+                                let offered = window_delivery.offer(&recv_tun_tx, seq, pkts);
                                 rxp.end(RxSec::Deliv, rxp_t);
                                 if offered.is_err() {
                                     error!("TUN inject channel closed");
@@ -1606,6 +1617,17 @@ pub(crate) async fn run_receiver(
                                 // buffer ever held; its class is the release
                                 // record above. Fed before the packet leaves,
                                 // so a full TUN channel cannot lose the datum.
+                                // Fail closed (ADR-0078): read before the
+                                // delivery is recorded; an unframable symbol
+                                // is never recorded, delivered or passed by
+                                // `next_expected`.
+                                let pkts = match extract_window_packets(&ddata) {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        log_unframable(dseq, &ddata);
+                                        break 'recv;
+                                    }
+                                };
                                 let rxp_t = rxp.begin();
                                 blk.lat.note_delivery(
                                     dseq,
@@ -1615,11 +1637,7 @@ pub(crate) async fn run_receiver(
                                 );
                                 rxp.end(RxSec::Book, rxp_t);
                                 let rxp_t = rxp.begin();
-                                let offered = window_delivery.offer(
-                                    &recv_tun_tx,
-                                    dseq,
-                                    extract_window_packets(&ddata).unwrap_or_default(), // F2-PENDING: owner decision (fail-closed)
-                                );
+                                let offered = window_delivery.offer(&recv_tun_tx, dseq, pkts);
                                 rxp.end(RxSec::Deliv, rxp_t);
                                 if offered.is_err() {
                                     error!("TUN inject channel closed");
@@ -1753,9 +1771,15 @@ pub(crate) async fn run_receiver(
                                 .saturating_sub(expired.len() as u64);
                         }
                         for (dseq, ddata, _) in expired {
-                            // F2-PENDING: owner decision (fail-closed): an unframable symbol
-                            // is counted and skipped for now.
-                            for pkt_data in extract_window_packets(&ddata).unwrap_or_default() {
+                            // Fail closed (ADR-0078): read before `next_expected` moves.
+                            let pkts = match extract_window_packets(&ddata) {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    log_unframable(dseq, &ddata);
+                                    break 'recv;
+                                }
+                            };
+                            for pkt_data in pkts {
                                 let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                             }
                             next_expected = next_expected.max(dseq + 1);

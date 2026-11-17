@@ -564,8 +564,8 @@ pub(crate) enum IoCmd {
     },
     /// Connect to `peer` (client) or accept one connection (server), with the
     /// ADR-0010 handshake.
-    Connect { peer: SocketAddr, reply: oneshot::Sender<anyhow::Result<()>> },
-    Accept { reply: oneshot::Sender<anyhow::Result<()>> },
+    Connect { peer: SocketAddr, reply: oneshot::Sender<anyhow::Result<u16>> },
+    Accept { reply: oneshot::Sender<anyhow::Result<u16>> },
     /// Close the connection and end the owner.
     Close,
 }
@@ -937,8 +937,8 @@ async fn owner_body(mut a: OwnerArgs) {
             }
         };
         match res {
-            Ok(c) => {
-                let _ = reply.send(Ok(()));
+            Ok((c, peer_symbol_size)) => {
+                let _ = reply.send(Ok(peer_symbol_size));
                 break c;
             }
             Err(e) => {
@@ -951,23 +951,31 @@ async fn owner_body(mut a: OwnerArgs) {
     drop(ep);
 }
 
-async fn connect(ep: &Endpoint, a: &OwnerArgs, peer: SocketAddr) -> anyhow::Result<OwnedConn> {
+/// A peer whose handshake announces a size outside the range this build
+/// emits is refused at connect (ADR-0078).
+fn check_peer_symbol_size(size: u16) -> anyhow::Result<u16> {
+    crate::net::reconcile_peer_symbol_size(&[size])
+}
+
+async fn connect(ep: &Endpoint, a: &OwnerArgs, peer: SocketAddr) -> anyhow::Result<(OwnedConn, u16)> {
     let raw = ep.connect(peer, "raptorpath")?.await?;
     let conn = OwnedConn::new(raw, a.path, a.view.clone());
     let peer_hs = conn.perform_handshake(&local_handshake(a.path, a.symbol_size)).await?;
     info!(path_id = a.path, %peer, local_symbol_size = a.symbol_size,
         peer_symbol_size = peer_hs.symbol_size, "connected and handshake complete");
-    Ok(conn)
+    let size = check_peer_symbol_size(peer_hs.symbol_size)?;
+    Ok((conn, size))
 }
 
-async fn accept(ep: &Endpoint, a: &OwnerArgs) -> anyhow::Result<OwnedConn> {
+async fn accept(ep: &Endpoint, a: &OwnerArgs) -> anyhow::Result<(OwnedConn, u16)> {
     let incoming = ep.accept().await.ok_or_else(|| anyhow::anyhow!("endpoint closed"))?;
     let raw = incoming.await?;
     let conn = OwnedConn::new(raw, a.path, a.view.clone());
     let peer_hs = conn.accept_handshake(&local_handshake(a.path, a.symbol_size)).await?;
     info!(path_id = a.path, remote = %conn.remote_address(), local_symbol_size = a.symbol_size,
         peer_symbol_size = peer_hs.symbol_size, "accepted with handshake");
-    Ok(conn)
+    let size = check_peer_symbol_size(peer_hs.symbol_size)?;
+    Ok((conn, size))
 }
 
 struct Readers {

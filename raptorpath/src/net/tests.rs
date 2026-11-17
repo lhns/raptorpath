@@ -6599,3 +6599,18 @@ fn f2_symbol_size_at_each_named_point() {
     assert_eq!(symbol_size_for_hint(ProtocolHint::Bulk), 1200);
     assert_eq!(symbol_size_for_hint(ProtocolHint::Auto), 1200);
 }
+
+/// The receiver decodes with the one size the peer's paths announced
+/// (ADR-0078): equal sizes pass, differing paths and sizes outside
+/// [72, 1200] are refused, and the range edges are accepted.
+#[test]
+fn f2_reconcile_peer_symbol_size() {
+    assert_eq!(reconcile_peer_symbol_size(&[1200, 1200]).unwrap(), 1200);
+    assert_eq!(reconcile_peer_symbol_size(&[512]).unwrap(), 512);
+    assert!(reconcile_peer_symbol_size(&[1200, 512]).is_err(), "paths disagree");
+    assert!(reconcile_peer_symbol_size(&[71]).is_err(), "below the floor");
+    assert!(reconcile_peer_symbol_size(&[1201]).is_err(), "above the ceiling");
+    assert!(reconcile_peer_symbol_size(&[]).is_err(), "no path announced a size");
+    assert_eq!(reconcile_peer_symbol_size(&[72]).unwrap(), 72);
+    assert_eq!(reconcile_peer_symbol_size(&[1200]).unwrap(), 1200);
+}
