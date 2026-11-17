@@ -101,6 +101,8 @@ pub struct PathState {
     /// fired at (sum and max), so a retarget (design B1) can read how often
     /// the backstop binds under either window.
     leak_fires: u64,
+    /// The `[LEG]` gauge's accumulators (`RWM_DIAG` only; see [`LegGauge`]).
+    leg_gauge: LegGauge,
     leak_ratio_sum: f64,
     leak_ratio_max: f64,
     /// Injectable clock
@@ -161,6 +163,7 @@ impl PathState {
             release_recv_cursor: 0,
             release_1to1: release_1to1_active(),
             leak_fires: 0,
+            leg_gauge: LegGauge::default(),
             leak_ratio_sum: 0.0,
             leak_ratio_max: 0.0,
             clock,
@@ -476,6 +479,39 @@ impl PathState {
             self.leak_ratio_max = self.leak_ratio_max.max(ratio);
             self.in_flight -= self.in_flight / 4;
         }
+    }
+
+    /// One `[LEG]` observation (a report tick, `RWM_DIAG` only): Ŵ_i(δ)
+    /// against the window and the load, for the gauge.
+    pub fn observe_leg(&mut self, delta: f64) {
+        let w = self.leg.window(delta);
+        self.leg_gauge.observe(self.cwnd, self.in_flight, w);
+    }
+
+    /// The `[LEG]` line for this leg: Ŵ_i beside cwnd, the fraction of ticks
+    /// with I > Ŵ against I > cwnd, the fraction where `available() > 0`
+    /// disagrees with I < Ŵ, the warm count and the leak-backstop gauge.
+    pub fn leg_line(&self, delta: f64) -> String {
+        let g = &self.leg_gauge;
+        let frac = |a: u64, b: u64| {
+            if b == 0 { "-".to_string() } else { format!("{:.3}", a as f64 / b as f64) }
+        };
+        let (fires, rsum, rmax) = self.leak_witness();
+        format!(
+            "[LEG] p{} cwnd={} W={} I={} n={} nW={} i_gt_W={} i_gt_cwnd={} avail_x_W={} leak={}/{:.2}/{:.2}",
+            self.id,
+            self.cwnd,
+            self.leg.window(delta).map_or("-".to_string(), |w| format!("{w:.1}")),
+            self.in_flight,
+            g.n,
+            g.n_w,
+            frac(g.i_gt_w, g.n_w),
+            frac(g.i_gt_cwnd, g.n),
+            frac(g.avail_disagree, g.n_w),
+            fires,
+            if fires == 0 { 0.0 } else { rsum / fires as f64 },
+            rmax,
+        )
     }
 
     /// The leak-backstop bind gauge: `(fires, Σ I/cwnd at fire, max I/cwnd

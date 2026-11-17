@@ -183,6 +183,10 @@ pub(crate) fn report_tick_tx(
             path.leak_backstop();
         }
     }
+    // `[LEG]` (RWM_DIAG, observation only): Ŵ_i beside cwnd, per leg, per tick.
+    for line in sched.leg_gauge_tick(crate::gates::get().diag) {
+        crate::readout!("{line}");
+    }
 
     // Send PathReport + Ping on each LIVE path (not active_paths:
     // that filters by spare cwnd, and a saturated path still needs

@@ -482,6 +482,27 @@ impl Scheduler {
         }
     }
 
+    /// The `[LEG]` gauge tick (design §4 A4), run on the report tick: one
+    /// observation per leg and the lines to print. A no-op returning nothing
+    /// unless `diag` (`RWM_DIAG`), so the default path does no work and prints
+    /// nothing. δ is the contract's, read as the store law reads it.
+    pub fn leg_gauge_tick(&mut self, diag: bool) -> Vec<String> {
+        if !diag {
+            return Vec::new();
+        }
+        let delta = crate::net::delta_price(self.hint);
+        let mut ids: Vec<PathId> = self.paths.keys().copied().collect();
+        ids.sort_unstable();
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(p) = self.paths.get_mut(&id) {
+                p.observe_leg(delta);
+                out.push(p.leg_line(delta));
+            }
+        }
+        out
+    }
+
     /// Get all path IDs (including inactive).
     pub fn all_path_ids(&self) -> Vec<PathId> {
         self.paths.keys().copied().collect()

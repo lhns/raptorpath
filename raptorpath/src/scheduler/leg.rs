@@ -121,6 +121,12 @@ pub struct LegState {
     /// own symbols to be echoed, so an idle leg keeps it fresh, and it holds no
     /// local dwell. Survives a revival. Read only by `place_costs`.
     w: Option<Duration>,
+    /// When the last echo sample / wire mirror / delivery-rate sample was
+    /// folded in (design §2 `e_at`, `w_at`, `b_at`; observation only). A revival
+    /// clears `e_at` and `b_at` and keeps `w_at` with `w`.
+    e_at: Option<Instant>,
+    w_at: Option<Instant>,
+    b_at: Option<Instant>,
     /// Sliding window of bandwidth samples (symbols/sec).
     pub(crate) bw_samples: VecDeque<BwSample>,
     /// `RWM_HONEST_ANCHOR`: monotonic (non-increasing) max-deque maintained
@@ -276,6 +282,9 @@ impl LegState {
         Self {
             s: SmoothedRtt::new(),
             w: None,
+            e_at: None,
+            w_at: None,
+            b_at: None,
             bw_samples: VecDeque::new(),
             bw_mono: VecDeque::new(),
             bw_o1: honest_anchor_active(),
@@ -317,17 +326,19 @@ impl LegState {
     /// `s`, which keeps its stale value readable and reseeds on the next
     /// sample.
     pub(crate) fn reset(&mut self) {
-        let w = self.w;
+        let (w, w_at) = (self.w, self.w_at);
         let mut s = self.s.clone();
         s.restart();
         *self = Self::new(self.clock.clone());
         self.w = w;
+        self.w_at = w_at;
         self.s = s;
     }
 
     /// Mirror quinn's packet-timed RTT for this leg (placement base, §5.7).
     pub(crate) fn set_wire(&mut self, rtt: Duration) {
         self.w = Some(rtt);
+        self.w_at = Some(self.clock.now());
     }
 
     /// The mirrored wire RTT, `None` if quinn has not measured the leg yet.
@@ -341,6 +352,7 @@ impl LegState {
     /// EWMA); `None` skips the σ and mean-deviation folds.
     pub(crate) fn record_sample(&mut self, rtt: Duration, ref_srtt: Option<Duration>) {
         let now = self.clock.now();
+        self.e_at = Some(now);
 
         // Consecutive-difference jitter EWMA (shift-robust; see field doc).
         if let Some(prev) = self.prev_rtt_sample {
@@ -434,6 +446,7 @@ impl LegState {
     /// full-window fold over `bw_samples` at all times (unit-pinned by
     /// `bw_mono_front_equals_full_window_fold`).
     fn bw_push_sample(&mut self, now: Instant, rate: f64) {
+        self.b_at = Some(now);
         self.bw_samples.push_back(BwSample {
             delivery_rate: rate,
             timestamp: now,
@@ -770,6 +783,98 @@ impl LegState {
             self.bw_samples.len(),
         )
     }
+
+    // ---- Readouts (design §2): pure functions of the state and the dial --------
+
+    /// `s` stamps: when the last echo sample, wire mirror and delivery-rate
+    /// sample arrived. Observation only.
+    pub fn echo_at(&self) -> Option<Instant> {
+        self.e_at
+    }
+    pub fn wire_at(&self) -> Option<Instant> {
+        self.w_at
+    }
+    pub fn rate_at(&self) -> Option<Instant> {
+        self.b_at
+    }
+
+    /// L = b̂ (design §2 `rate()`): the 10 s windowed max of delivery samples,
+    /// wire symbols per second, gated at `ANCHOR_MIN_SAMPLES`. Today's
+    /// `effective_btlbw`: no app-limited rule (design §3 / §6 q2 are W3.3's).
+    pub fn rate(&self) -> Option<f64> {
+        self.effective_btlbw()
+    }
+
+    /// Ŵ_i(δ) = (1 + q(δ)) · b̂ · m̂ — the store law's per-leg term (design
+    /// §2), in wire symbols. The multiplier is the store law's own
+    /// ([`crate::net::pool_value_multiplier`] with `delta_cap` on, the shipped
+    /// form), read at `b(δ)`, so the two cannot drift. `None` until the anchor
+    /// is warm (the cold chains are Phase B's).
+    pub fn window(&self, delta: f64) -> Option<f64> {
+        self.bdp_anchor().map(|bdp| {
+            crate::net::pool_value_multiplier(true, crate::net::delta_budget_b_of(delta), 1.0)
+                * bdp
+        })
+    }
+
+    /// The ring's minimum, in µs (`min(ring)`, design §3): over the ring's own
+    /// span (`SIGMA_CAND_WINDOW` entries, decimated at m̂/8), not m̂'s 10 s.
+    pub fn ring_min(&self) -> Option<u32> {
+        self.rtt_tlag.iter().map(|&(_, v)| v).min()
+    }
+
+    /// The ring's median, in µs (`p50(ring)`), nearest-rank like the other
+    /// dispersion readouts.
+    pub fn ring_p50(&self) -> Option<u32> {
+        if self.rtt_tlag.is_empty() {
+            return None;
+        }
+        let mut v: Vec<u32> = self.rtt_tlag.iter().map(|&(_, x)| x).collect();
+        v.sort_unstable();
+        Some(crate::monitor::quantile::nearest_rank(&v, 0.50))
+    }
+
+    /// S = p50(ring) − min(ring), µs, both on the ring's horizon (design §3;
+    /// whether the time term reads this or `p50(ring) − m̂`, and the idle
+    /// horizon, are W3.3's). `None` on an empty ring; m̂ is [`Self::min_rtt`].
+    pub fn spread(&self) -> Option<u32> {
+        Some(self.ring_p50()? - self.ring_min()?)
+    }
+}
+
+/// The `[LEG]` bind gauge's accumulators (design §4 A4; `RWM_DIAG` only,
+/// observation only): per report tick, how Ŵ_i would have read against the
+/// window the engine uses. Counted over ticks, so "fraction of time" is a
+/// fraction of the 2 s ticks.
+#[derive(Debug, Default, Clone)]
+pub struct LegGauge {
+    /// Ticks observed, and those where Ŵ was measured (warm anchor).
+    pub n: u64,
+    pub n_w: u64,
+    /// Ticks with I > Ŵ (of `n_w`) and with I > cwnd (of `n`).
+    pub i_gt_w: u64,
+    pub i_gt_cwnd: u64,
+    /// Ticks (of `n_w`) where `available() > 0` disagrees with I < Ŵ.
+    pub avail_disagree: u64,
+}
+
+impl LegGauge {
+    pub fn observe(&mut self, cwnd: u32, in_flight: u32, w: Option<f64>) {
+        self.n += 1;
+        if in_flight > cwnd {
+            self.i_gt_cwnd += 1;
+        }
+        if let Some(w) = w {
+            self.n_w += 1;
+            let below_w = (in_flight as f64) < w;
+            if in_flight as f64 > w {
+                self.i_gt_w += 1;
+            }
+            if (cwnd > in_flight) != below_w {
+                self.avail_disagree += 1;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -793,5 +898,152 @@ mod tests {
         assert_eq!(s.cadence(), DEFAULT_SRTT);
         s.record(ms(40));
         assert_eq!((s.measured(), s.cadence()), (Some(ms(40)), ms(40)));
+    }
+
+    // ---- A4 readouts ------------------------------------------------------------
+
+    use crate::scheduler::MockClock;
+
+    /// A warm leg: RTprop 20 ms, 9 delivery samples of exactly 1000 sym/s, so
+    /// b̂ = 1000 and BDP = b̂·m̂ = 20 symbols.
+    fn warm_leg() -> (Arc<MockClock>, LegState) {
+        let clock = Arc::new(MockClock::new());
+        let mut leg = LegState::new(clock.clone());
+        leg.record_sample(Duration::from_millis(20), None);
+        for _ in 0..9 {
+            clock.advance(Duration::from_millis(10));
+            leg.record_delivery(10);
+        }
+        (clock, leg)
+    }
+
+    #[test]
+    fn window_is_one_plus_q_of_delta_times_the_bdp_at_the_presets() {
+        use crate::control::fec_rate::ProtocolHint::*;
+        let (_c, leg) = warm_leg();
+        let bdp = leg.bdp_anchor().expect("warm");
+        assert!((bdp - 20.0).abs() < 1e-6, "b̂·m̂ = 1000 × 20 ms: {bdp}");
+        assert!((leg.rate().unwrap() - 1000.0).abs() < 1e-6);
+        // Absolute values: Ŵ = (1 + q)·BDP, q = (b + 1)/30 at b = 1/2, 1, 2.
+        for (hint, want) in [(Realtime, 21.0), (Auto, 20.0 * (1.0 + 2.0 / 30.0)), (Bulk, 22.0)] {
+            let d = crate::scheduler::hint_delta_price(hint);
+            let w = leg.window(d).unwrap();
+            assert!((w - want).abs() < 1e-6, "{hint:?}: Ŵ = {w}, want {want}");
+        }
+        // The store law's own multiplier, not a transcription of it.
+        let d = crate::scheduler::hint_delta_price(Auto);
+        let m = crate::net::pool_value_multiplier(true, crate::net::delta_budget_b_of(d), 1.0);
+        assert_eq!(leg.window(d).unwrap(), m * bdp);
+    }
+
+    /// Continuity and monotonicity at ±2 % around every preset (the
+    /// `delta_budget_b_is_the_dial_not_a_mode` pattern): Ŵ never steps, and
+    /// never rises as δ (the price of lateness) rises.
+    #[test]
+    fn window_is_continuous_and_monotone_through_every_preset() {
+        use crate::control::fec_rate::ProtocolHint::*;
+        let (_c, leg) = warm_leg();
+        for hint in [Realtime, Auto, Bulk] {
+            let d = crate::scheduler::hint_delta_price(hint);
+            let (lo, mid, hi) = (
+                leg.window(d * 0.98).unwrap(),
+                leg.window(d).unwrap(),
+                leg.window(d * 1.02).unwrap(),
+            );
+            assert!(lo >= mid && mid >= hi, "{hint:?}: non-increasing in δ: {lo} {mid} {hi}");
+            assert!((lo - hi) / mid < 0.01, "{hint:?}: no step across the preset: {lo} {hi}");
+        }
+    }
+
+    #[test]
+    fn window_is_none_until_the_anchor_is_warm() {
+        let clock = Arc::new(MockClock::new());
+        let mut leg = LegState::new(clock.clone());
+        assert_eq!((leg.window(0.5), leg.rate()), (None, None));
+        leg.record_sample(Duration::from_millis(20), None);
+        for _ in 0..7 {
+            clock.advance(Duration::from_millis(10));
+            leg.record_delivery(10);
+        }
+        assert_eq!(leg.window(0.5), None, "7 samples: below ANCHOR_MIN_SAMPLES");
+        clock.advance(Duration::from_millis(10));
+        leg.record_delivery(10);
+        assert!(leg.window(0.5).is_some());
+    }
+
+    /// `spread` = p50(ring) − min(ring); the three parts are exposed
+    /// separately, with m̂ (`min_rtt`) beside them.
+    #[test]
+    fn spread_is_p50_minus_min_of_the_ring() {
+        let clock = Arc::new(MockClock::new());
+        let mut leg = LegState::new(clock.clone());
+        assert_eq!((leg.ring_min(), leg.ring_p50(), leg.spread()), (None, None, None));
+        // RTprop 10 ms ⇒ one ring entry per 1.25 ms.
+        for us in [10_000u64, 12_000, 18_000, 11_000, 30_000] {
+            clock.advance(Duration::from_millis(2));
+            leg.record_sample(Duration::from_micros(us), None);
+        }
+        assert_eq!(leg.ring_min(), Some(10_000));
+        assert_eq!(leg.ring_p50(), Some(12_000), "sorted 10, 11, 12, 18, 30 ms");
+        assert_eq!(leg.spread(), Some(2_000));
+        assert_eq!(leg.min_rtt(), Some(Duration::from_millis(10)));
+    }
+
+    /// The `*_at` stamps: each is the clock at its feed; a revival clears the
+    /// echo and rate stamps and keeps the wire's with the wire RTT.
+    #[test]
+    fn stamps_follow_their_feeds_and_the_wire_stamp_survives_revival() {
+        let clock = Arc::new(MockClock::new());
+        let mut leg = LegState::new(clock.clone());
+        assert_eq!((leg.echo_at(), leg.wire_at(), leg.rate_at()), (None, None, None));
+        let t0 = clock.now();
+        clock.advance(Duration::from_millis(5));
+        leg.record_sample(Duration::from_millis(20), None);
+        assert_eq!(leg.echo_at(), Some(t0 + Duration::from_millis(5)));
+        clock.advance(Duration::from_millis(5));
+        leg.set_wire(Duration::from_millis(18));
+        assert_eq!(leg.wire_at(), Some(t0 + Duration::from_millis(10)));
+        clock.advance(Duration::from_millis(5));
+        leg.record_delivery(10);
+        assert_eq!(leg.rate_at(), Some(t0 + Duration::from_millis(15)));
+        leg.reset();
+        assert_eq!((leg.echo_at(), leg.rate_at()), (None, None));
+        assert_eq!(leg.wire_at(), Some(t0 + Duration::from_millis(10)));
+        assert_eq!(leg.wire(), Some(Duration::from_millis(18)));
+    }
+
+    /// The `[LEG]` accumulators at their anchor points.
+    #[test]
+    fn leg_gauge_counts_each_disagreement() {
+        let mut g = LegGauge::default();
+        g.observe(10, 5, None); // cold: only the cwnd side counts
+        g.observe(10, 12, None); // I > cwnd
+        g.observe(10, 5, Some(8.0)); // I < both: agree
+        g.observe(10, 9, Some(8.0)); // cwnd has room, Ŵ does not: disagree, I > Ŵ
+        g.observe(6, 9, Some(20.0)); // cwnd full, Ŵ has room: disagree, I > cwnd
+        assert_eq!((g.n, g.n_w), (5, 3));
+        assert_eq!((g.i_gt_cwnd, g.i_gt_w, g.avail_disagree), (2, 1, 2));
+    }
+
+    /// The `[LEG]` gauge is absent with `RWM_DIAG` off — no line and no
+    /// observation, so the default path does no work for it — and present with
+    /// it on, one line per leg in id order. (No gate was added: the `[GATES]`
+    /// pin in `gates/tests.rs` is untouched.)
+    #[test]
+    fn leg_gauge_is_absent_with_the_gate_off_and_one_line_per_leg_with_it_on() {
+        let clock = Arc::new(MockClock::new());
+        let mut sched = crate::scheduler::Scheduler::new(clock);
+        sched.add_path(1);
+        sched.add_path(0);
+        assert!(sched.leg_gauge_tick(false).is_empty());
+        assert!(sched.path(0).unwrap().leg_line(0.5).contains(" n=0 "), "gate off: nothing observed");
+        let lines = sched.leg_gauge_tick(true);
+        assert_eq!(
+            lines,
+            vec![
+                "[LEG] p0 cwnd=10 W=- I=0 n=1 nW=0 i_gt_W=- i_gt_cwnd=0.000 avail_x_W=- leak=0/0.00/0.00",
+                "[LEG] p1 cwnd=10 W=- I=0 n=1 nW=0 i_gt_W=- i_gt_cwnd=0.000 avail_x_W=- leak=0/0.00/0.00",
+            ]
+        );
     }
 }
