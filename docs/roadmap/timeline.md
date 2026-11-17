@@ -140,6 +140,7 @@ gantt
     Gauge session 60a (§60) :store_s60a, 2026-11-15, 2026-11-16
     Gauge session 60b (§60) :store_s60b, 2026-11-16, 2026-11-16
     c3 knee-margin sweep 61a (§61) :store_s61a, 2026-11-17, 2026-11-17
+    c2 add-on 61b (§61) :store_s61b, 2026-11-17, 2026-11-17
     Store-law allowance short of the c2 knee :store_defect_allowance_short, 2026-11-16, 2026-11-17
     RWM_DELTA pinned the store cap (F1) :store_defect_delta_nan, 2026-11-14, 2026-11-14
     Store cap constant at c8 :active, store_defect_cap_constant, 2026-11-13, 2026-11-17

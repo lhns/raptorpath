@@ -2860,6 +2860,28 @@ nodes:
   overview: false
   plain: 'The second-link-shape measurement of the knee margin ran cleanly but could not be scored: the collapse rule flagged every healthy control and the pilot placed the knee arms too high.'
   notes: 'harness61 14e2bacd, bin_sha e410d640, HIT. CR61''s ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES.'
+- id: store-s61b
+  title: c2 add-on 61b (§61)
+  track: store
+  kind: research
+  state: done
+  outcome: successful
+  evidence:
+  - status §61b Result
+  verdict_quote: 'LABEL61 DRIFT-c2 DRIFT-OK'
+  headline: c2 price below the knee, merged with §60
+  depends_on:
+  - store-s60b
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-17'
+  end: '2026-11-17'
+  folded:
+  - commit 04aedaf2
+  overview: false
+  plain: 'Measured how much speed and delay the fast test link trades below its knee; it matches the earlier session, so the two combine into one table.'
+  notes: '30/30 live, CONTROL-c2 OK (control ratios 0.99-1.06), DRIFT-OK at W 160 (tmin 12.295 vs 12.33). u concave and tmin under the chord at W 96/128/144. Landing table reported for the owner.'
 - id: store-s61a-rerun
   title: c3 sweep re-run (§61 Amendment 2)
   track: store
@@ -2901,7 +2923,7 @@ nodes:
   folded: []
   overview: false
   plain: 'The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained.'
-  notes: 'Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem''s 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04.'
+  notes: 'Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem''s 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b).'
 - id: store-defect-allowance-short
   title: Store-law allowance short of the c2 knee
   track: store
@@ -2944,7 +2966,7 @@ nodes:
   folded: []
   overview: true
   plain: 'Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine.'
-  notes: 'Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; the fix format (one framing vs a per-frame bit) is the owner''s call, with an ADR and a protocol bump.'
+  notes: 'Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; owner decision 11 (2026-11-17): format (A), one framing for every symbol; design on f2-design, then an ADR, a protocol bump and the fix.'
 - id: store-defect-delta-nan
   title: RWM_DELTA pinned the store cap (F1)
   track: store

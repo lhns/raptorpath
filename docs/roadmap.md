@@ -514,7 +514,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 46 nodes (16 done, 7 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 63 nodes (30 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
+- [store - store law](roadmap/tracks/store.md): 64 nodes (31 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
