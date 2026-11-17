@@ -566,6 +566,11 @@ import plan60  # noqa: E402  (plan60 imports this module lazily, inside function
 for _a60 in plan60.all_arms():
     sp.ARM_SPEC.setdefault(_a60, ("window", "Rlc", "realtime" if _a60 == plan60.EVICT_ARM else "bulk", "ACTIVE"))
     AFAM.setdefault(_a60, "CAND")
+# ── status 61: the c3 sweep (plans 61a / 61b), tables and witnesses in plan61.py, readouts in s61_score.py. The arms G<W> (bulk) ride the candidate binary family. ──
+import plan61  # noqa: E402
+for _a61 in plan61.all_arms():
+    sp.ARM_SPEC.setdefault(_a61, ("window", "Rlc", "bulk", "ACTIVE"))
+    AFAM.setdefault(_a61, "CAND")
 
 
 def snapver_problems(arm, cli, srv):
@@ -986,6 +991,21 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t60"] = s60_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
         except Exception as e:      # a reported readout never voids a row
             row["t60"], row["t60_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") in ("61a", "61b"):
+        # Status 61: the echo witnesses of plan 60 at the c3 / c2 cells (plan61.row_problems) void a row (replaced once, by the battery); the readouts (t60 = s60_score.row_metrics, t61 = s61_score.row_extras)
+        # are scored later and never void a row.
+        import s60_score
+        import s61_score
+        p.extend(plan61.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA")))
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        try:
+            row["t60"] = s60_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t60"], row["t60_error"] = None, f"{type(e).__name__}: {e}"
+        try:
+            row["t61"] = s61_score.row_extras(cli, srv, drv, cell)
+        except Exception as e:
+            row["t61"], row["t61_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"

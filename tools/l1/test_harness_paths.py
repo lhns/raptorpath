@@ -20,20 +20,21 @@ def check(name, ok, detail=""):
 
 
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
-KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse", "prebuilt", "rsign-abort"}
+KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse", "prebuilt", "rsign-abort", "pilot-missing"}
 T = hp.HARNESS_PATHS
 
-check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b"}, sorted(T))
+check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b"}, sorted(T))
 check("every path name is a known kind and none repeats", all(set(v) <= KINDS and len(set(v)) == len(v) for v in T.values()), T)
 SINGLE_SEAT = ("56", "57a", "57b", "59")       # one seat, suite reuse by the reference manifest
-S60 = ("60a", "60b")                          # status 60: one seat, the manifest rule is strict (a MISS aborts), so no "full" path
+S60 = ("60a", "60b", "61a", "61b")              # status 60 / 61: one seat, the manifest rule is strict (a MISS aborts), so no "full" path
 check("every plan has the rehearse, full, prior-tests and prior-tests-mismatch paths (plans 56, 57a, 57b, 59: rehearse, full, reuse-hit and reuse-miss, their suite reuse being the reference manifest)",
       all({"rehearse", "full", "prior-tests", "prior-tests-mismatch"} <= set(v) for p, v in T.items() if p not in SINGLE_SEAT + S60) and all({"rehearse", "full", "reuse-hit", "reuse-miss"} <= set(T[p]) for p in SINGLE_SEAT)
       and not any({"prior-tests", "prior-tests-mismatch"} & set(T[p]) for p in SINGLE_SEAT) and not any({"reuse-hit", "reuse-miss"} & set(v) for p, v in T.items() if p not in SINGLE_SEAT + S60)
-      and all({"rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch"} <= set(T[p]) and "full" not in T[p] and not ({"prior-tests", "prior-tests-mismatch"} & set(T[p])) for p in S60))
+      and all({"rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch"} <= set(T[p]) and "full" not in T[p] and not ({"prior-tests", "prior-tests-mismatch"} & set(T[p])) for p in S60 if p != "61b")
+      and {"reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"} == set(T["61b"]))      # 61b has no rehearsal of its own (s61 registration section 6: c2's rows ran in s60 on this binary)
 check("historical-base (LD_BASE_SHA unset) is listed for every plan that allows it, and not for plans 41d, 48, 52, 53, 54 and 54b, which require LD_BASE_SHA, nor 56, 57a, 57b, 59, 60a, 60b (single seat: no BASE)",
-      all(("historical-base" in v) == (p not in ("41d", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b")) for p, v in T.items()) and ': "${LD_BASE_SHA:?' in runall)
-m = re.search(r'case "\$PLAN" in 41c\|41d\|46\|47\|48\|52\|53\|54b\|56\|57a\|57b\|59\|60a\|60b\) ;; \*\) echo "ABORT-REHEARSE', runall)
+      all(("historical-base" in v) == (p not in ("41d", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b")) for p, v in T.items()) and ': "${LD_BASE_SHA:?' in runall)
+m = re.search(r'case "\$PLAN" in 61a\) ;; 41c\|41d\|46\|47\|48\|52\|53\|54b\|56\|57a\|57b\|59\|60a\|60b\) ;; \*\) echo "ABORT-REHEARSE', runall)
 check("loopdiag_run_all.sh defines LD_REHEARSE for exactly the plans of the table (other plans: ABORT-REHEARSE)", m is not None)
 # plan 54 is plan 41d with LD_WITNESS54=1: run_all rewrites PLAN before the plan case, so it has no case line of its own, only the alias line
 check("every plan of the table is selectable in run_all's plan case (plan 54 through its alias to plan 41d)", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in T if p != "54")

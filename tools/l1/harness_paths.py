@@ -33,6 +33,14 @@ Plans 60a / 60b (the store law's gauge session, status 60) are plan 59's single-
   nogo-rehearse          (60a) the stub starves c8 leg 0: the rehearsal's go/no-go reads NO-GO for c8 (a printed decision, the rehearsal still passes)
   rsign-abort            (60b) 60a's score (LD_SCORE60A) carries R-SIGN-c2 STOP: ABORT-RSIGN, rc 3, nothing run (60b's non-rehearsal launch reads the gate before any row)
   prebuilt               (60b) LD_BIN_PREBUILT = 60a's binary: no build, the sha still checked against LD_BIN_SHA_EXPECT
+Plans 61a / 61b (the c3 sweep, status 61) are plan 60's shape with their own tables (plan61.py) and scorer (s61_score.py): the same strict manifest rule and registered bin_sha, ONE stage rep61a / rep61b. Paths:
+  rehearse               (61a) LD_REHEARSE=1 on a HIT: the 6 rehearsal rows R1-R6 (control, floor x2, pilot x2, fallback control), the go/no-go and PILOT61; no suites, no battery
+  reuse-hit              the whole session to LD-ALL-DONE (61a: smoke + 66 slots from LD_KNEE61; 61b: smoke + 30 slots), tools tests run, engine suites skipped
+  reuse-miss             one byte of the manifest changed: ABORT-SUITES plan 61 suite-reuse MISS, rc 5, no row measured
+  bin-sha-mismatch       LD_BIN_SHA_EXPECT differs from the built binary: ABORT-BIN-SHA, rc 5, no row measured
+  slaw-echo-void         (61a) the first scored slot echoes RWM_SLAW wrongly on the client end: VOID (gate-slaw), re-run once, the replacement LIVE
+  pilot-missing          (61a) a non-rehearsal launch without LD_KNEE61: ABORT-PILOT, rc 5, no row measured
+  prebuilt               (61b) LD_BIN_PREBUILT = 61a's binary: no build, the sha still checked against LD_BIN_SHA_EXPECT
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -52,4 +60,6 @@ HARNESS_PATHS = {
     "59": ("rehearse", "full", "reuse-hit", "reuse-miss"),
     "60a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse"),
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
+    "61a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "pilot-missing"),
+    "61b": ("reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"),
 }

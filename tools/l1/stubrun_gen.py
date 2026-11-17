@@ -22,7 +22,7 @@ TMP = os.environ.get("STUB_TMP") or "/tmp"          # the bash /tmp (cygpath -m 
 PD = os.path.join(RAW, "thread-pd", "battery")
 FIX = {"single": "diag-smoke/c1s-400-MAIN-s42-r1-a1-", "dual": "diag-tpd/c1d-400-MAIN-s42-r1-a1-"}
 STOCK_ECHO, BRS_ECHO = "quinn congestion controller: BBR", "burst-robust BBR"      # = bbr48_score.STOCK_ECHO / BRS_ECHO (test_stubrun asserts it); not imported: that import chain costs ~1 s a row
-BDP = {"c1s": [250000], "c1d": [250000, 250000], "c2": [125000], "c8": [125000, 100000]}
+BDP = {"c1s": [250000], "c1d": [250000, 250000], "c2": [125000], "c8": [125000, 100000], "c3": [100000]}
 STOCK = "\x1b[2m2026-11-12T10:00:00Z\x1b[0m INFO quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)"
 BRS = "\x1b[2m2026-11-12T10:00:00Z\x1b[0m INFO RWM_QUIC_CC=bbr_rs: burst-robust BBR (in-tree controller, interval-guarded per-flight rate sampler)"
 
@@ -301,7 +301,7 @@ def span59(k, armed, rr_zero=False):
 # right), nogo8 (every c8 row starves: leg 0 nk = 4, so the rehearsal's c8 go/no-go reads NO-GO), unattached (c8 leg 1 never gets a sampler: nk = 0 on every window while [DIAG]'s echo count grows).
 # STUB_DNF60=<arm>:<seed>: that arm's rows at that seed time out. ──
 BAD60 = {"slawonce", "nogo8", "unattached"}
-FLOOR60 = {"c2": (9.0,), "c8": (9.0, 14.0), "c1s": (2.0,)}
+FLOOR60 = {"c2": (9.0,), "c8": (9.0, 14.0), "c1s": (2.0,), "c3": (33.0,)}
 
 
 def _s60replay():
@@ -340,7 +340,7 @@ def gauge60(fam, w, n, bad, evict):
         t = 0.25 * k
         legs = []
         for p in range(nleg):
-            nk = 20
+            nk = min(5 * w, 1000) if fam == "c3" else 20      # c3 (status 61): ~5 echo samples per slot per window, so a floor window holds 60-120 samples and G(250) / G(2100) pool 3-5 windows
             if fam == "c8" and p == 1 and "unattached" in bad:
                 nk = 0
             if fam == "c8" and p == 0 and "nogo8" in bad:
@@ -441,7 +441,7 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
         marker = os.path.join(TMP, "slaw-count")
         seen = len(open(marker).read()) if os.path.exists(marker) else 0
         open(marker, "a").write("x")
-        if seen == 2:
+        if seen == int(os.environ.get("STUB_SLAWONCE_AT") or 2):      # plans 61a / 61b smoke 1 row, so the first scored slot is invocation 1 there (STUB_SLAWONCE_AT=1)
             echo_slaw = "0" if slaw_env == "1" else "1"
     rl = plan60_cli(cli, fam, w, nbytes, slaw_env == "1", evict, bad)
     info = [POOL_INFO.format(n=pool)]
@@ -457,6 +457,8 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
     cli = cli + rl + hold54(True)[:nlive]
     srv = srv + [RX52, SUCC53] + rank54(0)
     mbps = 100.0 * w / (w + 100.0)
+    if fam == "c3":
+        mbps = min(0.19 * w, 17.3)      # status 61 section 1: 0.19 Mbit/s per slot below the knee, the 17.3 Mbit/s control rate above it (the knee u = 0.95 falls at W 86.5)
     secs = max(20.0, int(nbytes) * 8 / 1e6 / mbps)
     hnt = "realtime" if evict else "bulk"
     drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
@@ -485,7 +487,7 @@ def qcap(before, durings, after):
 
 def main(argv):
     ca, cb, _hint, nbytes, _n, mode = argv[:6]
-    fam = {"c1": "c1d" if mode == "dual" else "c1s", "c2": "c8" if cb == "c3" else "c2"}[ca]
+    fam = {"c1": "c1d" if mode == "dual" else "c1s", "c2": "c8" if cb == "c3" else "c2", "c3": "c3"}[ca]
     plan = os.environ.get("LD_PLAN", "")
     base = "bin-base" in os.environ.get("RWM_BIN", "")
     cand = not base
@@ -687,7 +689,7 @@ def main(argv):
             tail = '{"bytes":%s,"dnf":1,"hint":"realtime","proto":"rp-native","runs":1,"summary":true}' % nbytes
             cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
-    elif plan in ("60a", "60b"):
+    elif plan in ("60a", "60b", "61a", "61b"):
         cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")

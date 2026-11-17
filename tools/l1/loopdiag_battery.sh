@@ -81,7 +81,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py plan61.py s61_score.py test_s61.py test_harness61.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -93,7 +93,8 @@ PLAN="${LD_PLAN:-24}"
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"
 # TMPD: where the driver's per-row logs live. perf_rwm_c.sh itself writes /tmp, so a real run never sets it; only a stub driver may.
 TMPD="${LD_TMPD:-/tmp}"
-case "$PLAN" in 60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b)"; exit 3 ;; esac
+P61=0; case "$PLAN" in 61a|61b) P61=1 ;; esac      # status 61 (the c3 sweep): single-seat like plan 60, its own tables (plan61.py)
+[ "$P61" = 1 ] || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (61a|61b|60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -145,6 +146,9 @@ P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }
 # G<W> (RWM_SLAW=1) / C<W> (RWM_SLAW=0) (no evicting row since status 60 Amendment 2). Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from plan60.py armspec (the ONE table, shared with the scorer s60_score.py);
 # RWM_DIAG=1 is on every row (the base env), RWM_SLAW is scrubbed first and echoed in [GATES] on both ends (plan60.row_problems), the pool knob is RWM_STORE_PATH_POOL = W / live paths.
 P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac
+# Plans 61a / 61b (status 61, docs/derivations/s61-registration.md): plan 60's single-seat shape at c3-25 (61a) and c2-100 (61b), arms G<W> only (RWM_SLAW=1, Bulk). Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from
+# plan61.py armspec (the ONE table, shared with the scorer s61_score.py); the arms of 61a derive from LD_KNEE61 (the rehearsal's PILOT61 W-hat; none: ABORT-PILOT); LD_CTL61=512 selects the control fallback.
+[ "$P61" = 1 ] && { P38=1; PCAND=1; }
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime
 # Plan 54 (the guard) is plan 41d unchanged; LD_WITNESS54=1 (run_all carries it for LD_PLAN=54) adds the row witnesses in the parser and the [SNAPV] preflight below.
 W54="${LD_WITNESS54:-0}"; [ "$W54" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
@@ -181,6 +185,7 @@ fi
 # Plans 60a / 60b: RWM_RDIAG=1 on every row (as section 56 and plan 59); RWM_RTOBS=1 comes through the arm env of every G / C row (plan60.arm_env: section 56's instrument env, the registration is silent; plan 59's EVICT rows
 # carry none). The registered G/C pairs still differ in RWM_SLAW alone. The per-row timeout is the arm's (tmo_env).
 [ "$P60" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150)
+[ "$P61" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=120)      # plan 61: as plan 60; the per-row timeout is the arm's (tmo_env)
 # Plan 48's per-cell sizes (status 48b / 48 Step 1); the cell names keep their scenario. bbr48_score / place38_parse.BYTES48 is the scorer's copy.
 p48_bytes() { case "$1" in c1s-400|c1d-400) echo 5000000000 ;; c2-100|c8-100) echo 600000000 ;; *) echo "" ;; esac; }
 # Plan 41d's long cells (place38_parse.BYTES41D / TIMEOUT41D are the scorer's copy; test_guard_v2.py asserts they agree). Empty = the cell keeps the guard size.
@@ -223,7 +228,7 @@ elif [ "$PCAND" = 1 ]; then
   if [ "$P59" = 1 ]; then preflight_binary "$BIN" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE"; fi
   # Plans 60a / 60b: the gauge binary: the RWM_SLAW gate, the [SLAW] window line, the pool knob, and the evicting seat's shed gate (the EVICT rows).
   # -F for the window line: "[SLAW] t=" is a bracket expression to grep otherwise (as plan 48's [QCC] check).
-  if [ "$P60" = 1 ]; then
+  if [ "$P60" = 1 ] || [ "$P61" = 1 ]; then
     preflight_binary "$BIN" "RWM_SLAW" "RWM_STORE_PATH_POOL" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE"
     grep -aqF -- "[SLAW] t=" "$BIN" 2>/dev/null || { _lb_say "ABORT-SHA binary $BIN has no [SLAW] window line: it is not the gauge build"; exit 5; }
   fi
@@ -281,6 +286,7 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
   case "$1" in
     c1s-400) echo "c1 c1 single 400000000" ;;
     c2-100)  echo "c2 c2 single 100000000" ;;
+    c3-25)   echo "c3 c3 single 25000000" ;;      # status 61: 20 Mbit/s, 20 ms one way, 5 ms jitter, GE 2 % / 40 % (stage3_parse.CELL_SPEC has it); every row's bytes come from plan61.py
     c1d-400) echo "c1 c1 dual 400000000" ;;
     c8-100)  echo "c2 c3 dual 100000000" ;;
     c8-500)  echo "c2 c3 dual 500000000" ;;
@@ -320,6 +326,14 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     read -r bytes p60_tmo HINT p60_arm_env <<< "$p60_spec"
     rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p60_tmo")
   fi
+  if [ "$P61" = 1 ]; then
+    # Plans 61a / 61b: as plan 60 above, from plan61.py armspec (the cell must be the plan's: c3-25 at 61a, c2-100 at 61b).
+    local p61_spec p61_tmo
+    { [ "$PLAN" = "61a" ] && [ "$cell" = "c3-25" ]; } || { [ "$PLAN" = "61b" ] && [ "$cell" = "c2-100" ]; } || { echo "UNKNOWN-CELL $cell (plan $PLAN)" >> "$OUT"; return 0; }
+    p61_spec="$(python3 ./plan61.py armspec "$cell" "$arm")" || { echo "UNKNOWN-ARM $arm at $cell (plan 61)" >> "$OUT"; return 0; }
+    read -r bytes p61_tmo HINT p60_arm_env <<< "$p61_spec"
+    rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p61_tmo")
+  fi
   { [ "$P57A" = 1 ] && [ "$cell" != "c1s-400" ]; } && { echo "UNKNOWN-CELL $cell (plan 57a runs c1s-400 only)" >> "$OUT"; return 0; }
   { [ "$P57B" = 1 ] && [ "$cell" != "c1d-400" ]; } && { echo "UNKNOWN-CELL $cell (plan 57b runs c1d-400 only)" >> "$OUT"; return 0; }
   local name="$cell-$arm"
@@ -332,7 +346,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     evt_env=(RWM_EVENT="$(python3 ./place46_parse.py event "$variant")")
     [ "$rep" = "0" ] && evt_env+=(RWM_EVENT_QDISC=1)
   fi
-  if [ "$P60" = 1 ]; then
+  if [ "$P60" = 1 ] || [ "$P61" = 1 ]; then
     read -r -a arm_env <<< "$p60_arm_env"      # plan60.arm_env: RWM_SLAW first, the pool knob (not at the shipped 2048), the EVICT switches
   elif [ "$P57" = 1 ]; then
     # Plans 57a / 57b (place38_parse.ARM57A / POOLS57B are the scorer's copy; test_pool57.py asserts it). The pool AND burst echo is checked by the parser against the [GATES] lines on both ends.
@@ -1090,6 +1104,62 @@ if [ "$P60" = 1 ]; then
     exit 0
   fi
   plan60 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
+
+# ── plans 61a / 61b (status 61, the c3 sweep): the tables are plan61.py's (61a: 66 slots at c3-25 from LD_KNEE61, 61b: 30 at c2-100; smoke 1 row; LD_REHEARSE=1 on 61a: the 6 rehearsal rows R1-R6) ──
+# A slot whose RWM_SLAW / RWM_DIAG / pool echo is VOID is re-run ONCE, and so is a c3 floor-pool DNF (and a pilot-row DNF in the rehearsal); plan61.py replace decides from the ledger; a wrong binary never is.
+run_slot61() { # cell arm seed rep store
+  local why
+  ATTEMPT_OFF=0
+  run_one "$@"
+  if why="$(python3 ./plan61.py replace "$OUT" "$1" "$2" "$3" "$4")"; then
+    echo "REPLACE61 $1 $2 s$3 rep=$4 reason=$why $(date -u +%T)" >> "$OUT"
+    ATTEMPT_OFF=10      # the replacement's per-row logs are a11 / a12: the VOID row's a1 / a2 stay as evidence
+    run_one "$@"
+    ATTEMPT_OFF=0
+  fi
+}
+plan61() { # smoke -> the whole plan (0), or the smoke rows (1)
+  local -a tbl
+  local line cell store arm seed rep want
+  if [ "$PLAN" = "61a" ] && [ "${LD_REHEARSE:-0}" != "1" ]; then
+    # 61a needs the rehearsal's pilot knee (LD_KNEE61, validated by plan61.py: numeric, inside [64, 192]); without it nothing is run.
+    python3 ./plan61.py plan 61a smoke > /dev/null 2>&1 || { echo "ABORT-PILOT LD_KNEE61='${LD_KNEE61:-}' is unset or invalid: 61a needs the rehearsal's PILOT61 W-hat; NOTHING WAS RUN" >> "$OUT"; exit 3; }
+  fi
+  if [ "$1" = "1" ]; then
+    if [ "$PLAN" = "61a" ] && [ "${LD_REHEARSE:-0}" = "1" ]; then
+      mapfile -t tbl < <(python3 ./plan61.py plan 61r)
+      [ "${#tbl[@]}" -eq 6 ] || { echo "ABORT-PLAN61 rehearsal table has ${#tbl[@]} rows (6)" >> "$OUT"; exit 3; }
+    else
+      mapfile -t tbl < <(python3 ./plan61.py plan "$PLAN" smoke)
+      [ "${#tbl[@]}" -eq 1 ] || { echo "ABORT-PLAN61 smoke table has ${#tbl[@]} rows (1)" >> "$OUT"; exit 3; }
+    fi
+  else
+    mapfile -t tbl < <(python3 ./plan61.py plan "$PLAN")
+    want=66; [ "$PLAN" = "61b" ] && want=30
+    [ "${#tbl[@]}" -eq "$want" ] || { echo "ABORT-PLAN61 table has ${#tbl[@]} rows ($want)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell store arm seed rep <<< "$line"
+    if [ "$1" = "1" ] && [ "${LD_REHEARSE:-0}" != "1" ]; then run_one "$cell" "$arm" "$seed" "$rep" "$store"; else run_slot61 "$cell" "$arm" "$seed" "$rep" "$store"; fi
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE ${#tbl[@]} slots $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=1
+  fi
+}
+
+if [ "$P61" = 1 ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan61 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan61 0
   echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
   grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
   echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
