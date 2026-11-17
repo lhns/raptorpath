@@ -1,6 +1,6 @@
 # s62: the c3 knee need with the jitter removed (J = 0), pre-registration
 
-Status: DRAFT REGISTRATION, round 3 (derivation style). Docs and Python only: no engine code, no cargo, no VM contact.
+Status: REGISTRATION (round 3 plus the coordinator's registration edits; Fable-reviewed in three rounds). Docs and Python only: no engine code, no cargo, no VM contact.
 Branch `s62-design` off `github/main` `3d871561`. It is written to be copied into `docs/status.md` as §62.
 
 It builds on:
@@ -159,6 +159,7 @@ The review log is §10.
     c1s's 0.83 ms is a different link.
   - So E90_own, in ms, on the floor arm, a knee arm and the control is registered as the rehearsal's first reading
     (§3.3), with no prediction.
+- **Scope.** CR62 is s62's rule only. It leaves CR61 and §4c unchanged. It un-flags c1s G r1, the row CR61's ratio clause was added for (§60 Result item 4), so the collapse-rule defect node (`meas-defect-cr61-large-pool`) stays open.
 - **Bind gauges, printed:** whether X_min binds, the number of rows with a floored denominator, and the RULE-FINDING
   count per arm.
 
@@ -229,15 +230,18 @@ no existing row bounds:
 | pilot | R4, R5 | case = proportional | NO-GO-PILOT |
 | control health | R1, R6 | goodput ≥ 0.98 × max(R4, R5); loss truth ≤ 4.76 % + 1 pp; R1 / R6 within 1 % | NO-GO-CONTROL |
 | LATE length | every row | ≥ 100 native LATE windows | NO-GO-SHORT |
+| **the cell ran at J = 0** | both netem directions | the live `tc qdisc show` line on both legs reads delay 20 ms with no jitter term (`20mbit 20 0 …`), checked before the first row and after the last | **ABORT-NETEM** (a harness fault: nothing is scored, no consequence follows, the launch is repaired and re-run) |
 
 - **CR62's ratio and qshare clauses are not go/no-go items.** On a single row the goodput cut cannot be evaluated
   (§61 Amendment 2), so a fire there prints RULE-FINDING-CR62 and decides nothing. The cell applies CR62 with its
   goodput cut.
+- **The floor rows' window spread** (native p50 − min, p90 − p10) is printed beside J = 5's (61c), as a second witness that the jitter is off.
 - **Dump coverage** below 0.95, or a `[RTTDUMP-CAP]`, marks the dump readings missing and is not a NO-GO.
 - **Reordering** is reported as not measured. No counter exists:
   - `tools/l1` at `3cdc4470` has only `lib.sh:174–178`'s comment about an earlier offline measurement;
   - the binary's `out_of_order` is a config field (`raptorpath/src/config.rs:92`);
   - netem's stats carry none.
+- **One registered re-probe on NO-GO-PILOT.** If the pilot's case is not proportional, the rehearsal re-runs R4 / R5 once, at W 112 / 160 if both u < 0.95, or at W 64 / 96 if both u ≥ 0.95. It applies the same rule with p_lo / p_hi set to the new probes. A second non-proportional case is NO-GO-PILOT.
 - **A NO-GO** (registered, so there is no amendment-then-session loop) ends s62. Its Result is the NO-GO label, the
   first readings, and consequence UNSCOREABLE (§6). The failed rule is re-derived in a derivation. NO-GO-GATE's
   consequence is R6.7 item 4's count rule first.
@@ -264,7 +268,7 @@ no existing row bounds:
 
 **Steps** (each printed):
 1. CR62 per row, with its bind gauges and RULE-FINDING count.
-2. The control (≥ 4 unflagged, else CONTROL-MOVED).
+2. The control (≥ 4 unflagged, else CONTROL-MOVED). Also, as an absolute test on the arm as a whole: the control arm's median goodput is ≥ 0.98 × max(K₃, P1 arm medians), and every control row's loss truth is ≤ 4.76 % + 1 pp. Otherwise the reading is CONTROL-MOVED. CR62's goodput cut compares a row with its own arm, so it cannot see an arm that degrades as a whole.
 3. Both floor arms: native, G(250) and G(2 100); D₀ and the gate.
 4. The knees (native tmin; scoreable iff W₉₅,r ∈ [K₁, K₃]).
 5. need₀ and need₀,int with the bootstrap.
@@ -305,6 +309,11 @@ no existing row bounds:
 
 **What follows any label:** the J = 3 cell is decided after this Result, as a separate registration amendment and
 launch.
+
+**What the session is.** It is the first reading of the jitter-free line: D₀, need₀ and E90_own, with the label as their summary. It does not settle decision 8 on its own. BELOW and ABOVE lead to different next steps:
+- **BELOW:** the knee term is needed only where jitter is present, so J = 3 is the next reading.
+- **ABOVE:** the printed D's sign decides whether decision 8 covers the jitter-free line, and the knee term needs a non-jitter source.
+- **A gate failure** sends the count rule (R6.7 item 4) first.
 
 ---
 
