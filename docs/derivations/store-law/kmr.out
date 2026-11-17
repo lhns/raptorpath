@@ -1,0 +1,89 @@
+== 0. Witness: the scored c3 reading (rep61c-score.txt) and c2's frozen inputs (s61pred.out section 2), reproduced ==
+  c3: kappa 0.00962, W* 11.6, F_c 38.998, S_F,c 9.709   (score: kappa 0.00962, W* 11.6, F_c 38.998, S_F,c 9.709)
+  c3 per replicate W95 / Tmin(W95) / need: 110.1 / 43.254 / 4.256; 107.4 / 43.496 / 4.498; 109.8 / 43.402 / 4.404; 106.6 / 43.462 / 4.464; 109.2 / 42.608 / 3.610; 108.2 / 43.475 / 4.478  -> rho_3 0.457   (score: needs 4.256 4.498 4.404 4.464 3.610 4.478; rho_3 0.457)
+  c2: F_c 8.679, S_F,c 5.083; Tmin(W95) 12.767 12.690 12.580 12.689 12.766 12.792 -> need 4.049, rho_2 0.797   (frozen: F 8.679, S 5.083, need 4.05, rho_2 0.797)
+  c3 native: F 42.523, S_F 5.861, rho 0.633   (score NATIVE: F 42.523, S_F 5.861, rho_3 0.633)
+
+== 1. need under each sample-count / floor convention; ratio need_3 / need_2 with a 90 % bootstrap (2 000 draws, seed 62: replicates and floor rows resampled within pools at both cells, floor lines refitted per draw) ==
+  registered (s61: c2 native; c3 G(250) floor / G(2100) knee; u-matched)
+     c2: F 8.679, need 4.049 (per replicate 3.90-4.11) | c3: F 38.998, need 4.434 (per replicate 3.61-4.50) | need_3/need_2 = 1.095, 90 % [0.961, 1.179]
+  engine-native (every window as the engine sees it; u-matched)
+     c2: F 8.679, need 4.049 (per replicate 3.90-4.11) | c3: F 42.523, need 3.709 (per replicate 3.15-3.95) | need_3/need_2 = 0.916, 90 % [0.838, 0.973]
+  equal-n (floor and knee both at the knee's count: G(2100) floors, c2 knee native, c3 knee G(2100); u-matched)
+     c2: F 7.067, need 5.661 (per replicate 5.51-5.73) | c3: F 34.560, need 8.872 (per replicate 8.05-8.94) | need_3/need_2 = 1.567, 90 % [1.479, 1.639]
+  registered, floor at the intercept W -> 0
+     c2: F 8.143, need 4.585 (per replicate 4.44-4.65) | c3: F 37.809, need 5.623 (per replicate 4.80-5.69) | need_3/need_2 = 1.226, 90 % [1.014, 1.390]
+  equal-n, floor at the intercept W -> 0
+     c2: F 6.545, need 6.183 (per replicate 6.04-6.25) | c3: F 31.741, need 11.691 (per replicate 10.87-11.75) | need_3/need_2 = 1.891, 90 % [1.746, 2.020]
+
+== 2. need = L - N.  L = T-hat-min(W95) at the knee's count - F at the knee's count (the load rise at equal n); N = F at the floor's count - F at the knee's count (the floor's sample-count drop). Registered counts, u-matched floor ==
+  c2-100: T-hat-min(W95) 12.728; F(n_F ~282) 8.679; F(n_K ~2237) 7.067  ->  L 5.661, N 1.612, need = L - N 4.049
+  c3-25: T-hat-min(W95) 43.432; F(n_F ~271) 38.998; F(n_K ~2125) 34.560  ->  L 8.872, N 4.438, need = L - N 4.434
+  L_3/L_2 = 1.567 90 % [1.479, 1.639];  N_3/N_2 = 2.753 90 % [2.445, 3.167]
+  floor F against the sample count (median over the floor pool's rows; the floor pool W16 at c2, W12 at c3):
+    c2-100 W16: G(None) F 8.679 n 282 | G(250) F 8.506 n 296 | G(600) F 7.802 n 816 | G(1200) F 7.324 n 1371 | G(2100) F 7.067 n 2237 | G(4200) F 6.728 n 4344
+    c3-25 W12: G(None) F 42.751 n 60 | G(250) F 38.778 n 271 | G(600) F 37.008 n 629 | G(1200) F 35.590 n 1224 | G(2100) F 34.319 n 2125 | G(4200) F 33.227 n 4223
+
+== 2b. The c3-shaped floor F against link utilisation at n 250 and n 2 100: c8 leg 1 (cli1, the same netem line; s60, coupled to leg 0) and c3's own floor pools. Post hoc: c8 leg 1's rows are another session and a leg that shares its sender ==
+  c8 leg 1 W64: u_link 0.026  F(G250) 33.826 (n 257)  F(G2100) 32.427 (n 2107)
+  c8 leg 1 W96: u_link 0.044  F(G250) 33.611 (n 261)  F(G2100) 32.389 (n 2109)
+  c3 W12:      u_link 0.116  F(G250) 38.778  F(G2100) 34.319
+  c3 W16:      u_link 0.152  F(G250) 39.583  F(G2100) 35.849
+  c3 W24:      u_link 0.227  F(G250) 40.198  F(G2100) 37.323
+  with c8 leg 1's floor (u_link 0.03-0.04) in place of c3's u-matched one: registered-n need_3 = 43.432 - 33.671 = 9.761 (ratio to c2's 4.049 / intercept 4.585: 2.41 / 2.13); equal-n L_3 = 11.043 (ratio to c2's L 5.661 / intercept 6.183: 1.95 / 1.79)
+
+== 2c. k = L / X per cell at equal n (X a floor spread or the netem jitter range 2J), with the floor at c3's u-matched line, at its intercept, and (c3 only) at c8 leg 1's no-load floor; k_3 / k_2 is the shape test (1 = the spread carries the knee at both cells) ==
+  S_F (registered counts, u-matched)   c2 5.083 c3 9.709 | u-matched: k_2 1.11 k_3 0.91 ratio 0.82 | intercept: k_2 1.22 k_3 1.20 ratio 0.99 | c3 floor from c8 leg 1: k_2 1.22 k_3 1.14 ratio 0.94
+  S_F at n 2 100 (u-matched)           c2 6.516 c3 14.038 | u-matched: k_2 0.87 k_3 0.63 ratio 0.73 | intercept: k_2 0.95 k_3 0.83 ratio 0.88 | c3 floor from c8 leg 1: k_2 0.95 k_3 0.79 ratio 0.83
+  floor p90 - p10 (native)             c2 5.535 c3 8.169 | u-matched: k_2 1.02 k_3 1.09 ratio 1.06 | intercept: k_2 1.12 k_3 1.43 ratio 1.28 | c3 floor from c8 leg 1: k_2 1.12 k_3 1.35 ratio 1.21
+  netem 2J (one way)                   c2 6.000 c3 10.000 | u-matched: k_2 0.94 k_3 0.89 ratio 0.94 | intercept: k_2 1.03 k_3 1.17 ratio 1.13 | c3 floor from c8 leg 1: k_2 1.03 k_3 1.10 ratio 1.07
+  the S_F row as s61's falsifier, re-read at equal n: rho_L = L / S_F (S_F at the registered counts, both on the same floor line), per cell, and d = rho_L,3 - rho_L,2 with its 90 % bootstrap (the draws of section 1); s61's margin Delta = 0.085
+    u-matched: rho_L,2 1.114  rho_L,3 0.914  d -0.200 90 % [-0.261, -0.154]
+    intercept: rho_L,2 1.281  rho_L,3 1.119  d -0.162 90 % [-0.257, -0.074]
+
+== 3. Candidate scalings X (need = k X, k fitted at c2): X at both cells, X_3/X_2, the two-point exponent alpha = ln(need ratio)/ln(X ratio) under the registered convention, and the conventions whose 90 % interval on need_3/need_2 contains X_3/X_2 ==
+  need ratio (registered) 1.095; L ratio (equal n) 1.567
+  constant in ms                                       c2    1.000  c3    1.000  X3/X2  1.000  alpha    nan  [the A(c) family's sentence]  inside: registered
+  S_F (floor p50 - min, registered counts)             c2    5.083  c3    9.709  X3/X2  1.910  alpha   0.14  [s61 registered]  inside: equal-n@W0
+  S_F at the knee's count (G(2100) floors)             c2    6.516  c3   14.038  X3/X2  2.154  alpha   0.12  [post hoc]  inside: none
+  floor central spread p90 - p10 (native windows)      c2    5.535  c3    8.169  X3/X2  1.476  alpha   0.23  [[WSTAT] p10/p90]  inside: none
+  sigma at the knee (P90 - P50 at load)                c2    1.785  c3    4.778  X3/X2  2.677  alpha   0.09  [frozen / score]  inside: none
+  netem jitter half-range J (one way, each direction)  c2    3.000  c3    5.000  X3/X2  1.667  alpha   0.18  [QDISC line]  inside: none
+  loop floor F_c                                       c2    8.679  c3   38.998  X3/X2  4.493  alpha   0.06  [registered floors]  inside: none
+  netem propagation RTT 2 x delay                      c2   10.000  c3   40.000  X3/X2  4.000  alpha   0.07  [QDISC line]  inside: none
+  knee window W95 in slots (BDP in slots)              c2  167.995  c3  108.683  X3/X2  0.647  alpha  -0.21  [knee crossing]  inside: none
+  datagram service time at the link rate               c2    0.099  c3    0.490  X3/X2  4.926  alpha   0.06  [QDISC bytes/pkt / rate]  inside: none
+  per-skb service time (gso x datagram time)           c2    0.589  c3    2.697  X3/X2  4.583  alpha   0.06  [QDISC + [TRUTH] gso]  inside: none
+  skb inter-arrival at the knee                        c2    0.609  c3    2.872  X3/X2  4.717  alpha   0.06  [QDISC + [TRUTH]]  inside: none
+  ack inter-arrival at the knee (srv0 packets)         c2    0.437  c3    2.216  X3/X2  5.069  alpha   0.06  [QDISC srv0]  inside: none
+  need - sigma (A(c)'s c_B, constant if A(c) held)     c2    2.264  c3   -0.344  X3/X2 -0.152  alpha    nan  [derived]  inside: none
+
+== 4. Per-leg link utilisation u_link = netem Sent bytes x 8 / (transfer s x rate) (counts FEC repair and retransmissions; post hoc instrument) ==
+  c2-100 validation: u_link at each replicate's W95 0.948 0.946 0.943 0.948 0.947 0.947 (median 0.947)
+  c3-25 validation: u_link at each replicate's W95 0.945 0.938 0.941 0.937 0.942 0.944 (median 0.941)
+  c8-100 leg 0 (cli0, netem jitter +-3 ms): W32 u 0.202 tmin nat 8.79 G250 8.76 G2100 7.70 | W64 u 0.392 tmin nat 9.29 G250 9.29 G2100 8.39 | W96 u 0.564 tmin nat 9.89 G250 9.89 G2100 9.41 | W256 u 0.992 tmin nat 15.12 G250 15.12 G2100 15.12 | W320 u 0.995 tmin nat 18.53 G250 18.53 G2100 18.54 | W384 u 0.997 tmin nat 21.54 G250 21.54 G2100 21.54 | W512 u 0.998 tmin nat 28.58 G250 28.58 G2100 28.60 | W1280 u 0.994 tmin nat 74.04 G250 74.00 G2100 74.04
+  c8-100 leg 1 (cli1, netem jitter +-5 ms): W32 u 0.013 tmin nat 40.30 | W64 u 0.026 tmin nat 39.18 G250 33.83 G2100 32.43 | W96 u 0.044 tmin nat 38.47 G250 33.61 G2100 32.39 | W256 u 0.312 tmin nat 37.36 G250 36.34 G2100 34.39 | W320 u 0.567 tmin nat 39.25 G250 38.99 G2100 36.54 | W384 u 0.763 tmin nat 40.57 G250 40.58 G2100 37.87 | W512 u 0.865 tmin nat 41.81 G250 41.81 G2100 38.96 | W1280 u 0.919 tmin nat 50.57 G250 50.57 G2100 40.85
+  c1s-400 leg 0 (cli0, netem jitter +-0 ms): W64 u 0.218 tmin nat 2.38 G250 2.38 G2100 2.38 | W128 u 0.376 tmin nat 2.41 G250 2.41 G2100 2.41 | W192 u 0.501 tmin nat 2.52 G250 2.52 G2100 2.52 | W2048 u 0.922 tmin nat 6.57 G250 6.57 G2100 6.57
+
+== 5. Allowance forms replayed (post hoc). D = need - A per replicate (registered convention), median and range; R67 at the controls (single leg, r68allow's formula: sum nk (F + A + tp50 - tmin) / sum nk tp50 over LATE windows, median; must stay < 1); c1s: A at its floor pool and R67 at its W2048 controls (direction only: s60 flags every c1s control COLLAPSED) ==
+  K   g*c_K + q*F, c_K = max replicate need 4.50 ms (UNDERIVED constant)
+     g=1 Bulk     c2-100 A 5.37 D -1.32 [-1.46, -1.25] | c3-25 A 8.40 D -3.96 [-4.79, -3.90]
+     g=1 Auto     c2-100 A 5.08 D -1.03 [-1.18, -0.96] | c3-25 A 7.10 D -2.66 [-3.49, -2.60]
+     g=1 Realtime c2-100 A 4.93 D -0.88 [-1.03, -0.82] | c3-25 A 6.45 D -2.01 [-2.84, -1.95]
+     Bulk c2-100: floor F 8.679, A 5.366 ms (A / F 0.62); control R67 median 0.100 max 0.102
+     Bulk c3-25: floor F 38.998, A 8.398 ms (A / F 0.22); control R67 median 0.234 max 0.239
+     Bulk c1s-400: floor F 2.381, A 4.736 ms (A / F 1.99); control R67 median 1.028 max 1.110
+  S   g*S_F + q*F (decision 8, for reference)
+     g=1 Bulk     c2-100 A 5.95 D -1.90 [-2.05, -1.84] | c3-25 A 13.61 D -9.17 [-10.00, -9.11]
+     g=1 Auto     c2-100 A 5.66 D -1.61 [-1.76, -1.55] | c3-25 A 12.31 D -7.87 [-8.70, -7.81]
+     g=1 Realtime c2-100 A 5.52 D -1.47 [-1.62, -1.40] | c3-25 A 11.66 D -7.22 [-8.05, -7.16]
+     Bulk c2-100: floor F 8.679, A 5.951 ms (A / F 0.69); control R67 median 0.103 max 0.105
+     Bulk c3-25: floor F 38.998, A 13.609 ms (A / F 0.35); control R67 median 0.255 max 0.259
+     Bulk c1s-400: floor F 2.381, A 0.668 ms (A / F 0.28); control R67 median 0.819 max 0.886
+  Jc  g*k_J*(p90-p10)_F + q*F, k_J = 0.731 fitted at c2
+     g=1 Bulk     c2-100 A 4.92 D -0.87 [-1.02, -0.80] | c3-25 A 9.88 D -5.44 [-6.26, -5.38]
+     g=1 Auto     c2-100 A 4.63 D -0.58 [-0.73, -0.51] | c3-25 A 8.58 D -4.14 [-4.97, -4.08]
+     g=1 Realtime c2-100 A 4.48 D -0.43 [-0.58, -0.37] | c3-25 A 7.93 D -3.49 [-4.32, -3.43]
+     Bulk c2-100: floor F 8.679, A 4.917 ms (A / F 0.57); control R67 median 0.098 max 0.100
+     Bulk c3-25: floor F 38.998, A 9.875 ms (A / F 0.25); control R67 median 0.240 max 0.244
+     Bulk c1s-400: floor F 2.381, A 0.686 ms (A / F 0.29); control R67 median 0.820 max 0.887
