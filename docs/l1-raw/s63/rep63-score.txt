@@ -1,0 +1,24 @@
+S63 REPORT rows=10 (F2 first contact; reported only, no void)
+ROW63 CPL s42 r1: status=VOID-RC warm=ACKED transfer=DNF undeliv=n/a unframable=0 symsz(cli)=none symsz(srv)=none rate_echo=2.7664 bin_sha=8013a3123aed0f41
+LABEL63 CPL-s42 REPORTED (warm-up ACKED)
+ROW63 FPL s42 r1: status=VOID-RC warm=ACKED transfer=DNF undeliv=0(srv 0+cli 0) unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 rate_echo=2.7664 bin_sha=96c2dc1c9986ecdc
+LABEL63 FPL-s42 PASS (warm-up acked, undeliv=0 on a present [CTLD], no [UNFRAMABLE], [SYMSZ] local = decoder)
+ROW63 CPM s42 r2: status=VOID-RC warm=NEVER-ACKED transfer=OTHER undeliv=n/a unframable=0 symsz(cli)=none symsz(srv)=none rate_echo=35 bin_sha=8013a3123aed0f41
+LABEL63 CPM-s42 REPORTED (warm-up NEVER-ACKED (a datum, not an abort))
+ROW63 FPM s42 r2: status=VOID-RC warm=ACKED transfer=DNF undeliv=0(srv 0+cli 0) unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 rate_echo=35 bin_sha=96c2dc1c9986ecdc
+LABEL63 FPM-s42 PASS (warm-up acked, undeliv=0 on a present [CTLD], no [UNFRAMABLE], [SYMSZ] local = decoder)
+ROW63 CU s42 r3: status=VOID-RC warm=NEVER-ACKED transfer=OTHER undeliv=n/a unframable=0 symsz(cli)=none symsz(srv)=none rate_echo=unset bin_sha=8013a3123aed0f41
+LABEL63 CU-s42 REPORTED (warm-up NEVER-ACKED (a datum, not an abort))
+ROW63 FU s42 r3: status=VOID-RC warm=ACKED transfer=DNF undeliv=0(srv 0+cli 0) unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 rate_echo=unset bin_sha=96c2dc1c9986ecdc
+LABEL63 FU-s42 PASS (warm-up acked, undeliv=0 on a present [CTLD], no [UNFRAMABLE], [SYMSZ] local = decoder)
+ROW63 CPL s7 r4: status=VOID-RC warm=ACKED transfer=DNF undeliv=n/a unframable=0 symsz(cli)=none symsz(srv)=none rate_echo=2.7664 bin_sha=8013a3123aed0f41
+LABEL63 CPL-s7 REPORTED (warm-up ACKED)
+ROW63 FPL s7 r4: status=VOID-RC warm=ACKED transfer=DNF undeliv=0(srv 0+cli 0) unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 rate_echo=2.7664 bin_sha=96c2dc1c9986ecdc
+LABEL63 FPL-s7 PASS (warm-up acked, undeliv=0 on a present [CTLD], no [UNFRAMABLE], [SYMSZ] local = decoder)
+ROW63 CPM s7 r5: status=VOID-RC warm=ACKED transfer=DNF undeliv=n/a unframable=0 symsz(cli)=none symsz(srv)=none rate_echo=35 bin_sha=8013a3123aed0f41
+LABEL63 CPM-s7 REPORTED (warm-up ACKED)
+ROW63 FPM s7 r5: status=VOID-RC warm=ACKED transfer=DNF undeliv=0(srv 0+cli 0) unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 rate_echo=35 bin_sha=96c2dc1c9986ecdc
+LABEL63 FPM-s7 PASS (warm-up acked, undeliv=0 on a present [CTLD], no [UNFRAMABLE], [SYMSZ] local = decoder)
+SEAT63 CONTROL bin_sha 8013a3123aed0f41 (equals the pinned value)
+SEAT63 CAND bin_sha 96c2dc1c9986ecdc (equals the pinned value)
+VERDICT63 REPORTED-ONLY rows=10/10 control_warmup_fail=2/5 cand_fail=0/5

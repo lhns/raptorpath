@@ -2932,19 +2932,20 @@ nodes:
   title: F2 first contact (§63)
   track: rec
   kind: research
-  state: next
-  outcome: unrated
+  state: done
+  outcome: very-successful
   evidence:
   - status §63
-  verdict_quote: ''
-  headline: ''
+  - status §63 Result
+  verdict_quote: 'VERDICT63 REPORTED-ONLY rows=10/10 control_warmup_fail=2/5 cand_fail=0/5'
+  headline: fixed binary 5/5, old binary failed 2/5
   depends_on:
   - rec-defect-realtime-framing
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-17'
+  end: '2026-11-17'
   folded: []
   overview: false
   plain: 'Run the rows that failed on the old binary and on the fixed one, to confirm the framing fix removes the failure.'
@@ -2953,7 +2954,7 @@ nodes:
   title: c3 knee need at zero jitter (s62)
   track: store
   kind: research
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - status §62

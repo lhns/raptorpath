@@ -68,7 +68,7 @@ flowchart TB
     store_s61b["✔ c2 add-on 61b (#167;61)"]
     store_s61a_rerun["✔ c3 sweep re-run (#167;61<br/>Amendment 2)"]
     store_law_g_rederive[/"○ Re-derive the knee-<br/>margin term"/]
-    store_s62_j0["⛔ c3 knee need at zero<br/>jitter (s62)"]
+    store_s62_j0["○ c3 knee need at zero<br/>jitter (s62)"]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
@@ -235,8 +235,8 @@ flowchart TB
     class store_w1_who_limits,store_slaw_gauge waiting
     class store_defect_cap_constant,store_defect_allowance_short defect
     class store_law_derivation inprog
-    class store_law_g_rederive next
-    class store_s62_j0,store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
+    class store_law_g_rederive,store_s62_j0 next
+    class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
 
@@ -299,7 +299,7 @@ flowchart TB
 | `store-s61b` | c2 add-on 61b (§61) | done | successful | c2 price below the knee, merged with §60 | status §61b Result | store-s60b |
 | `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | done | mixed | rho_3 0.457 vs rho_2 0.797 | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 | store-s61a |
 | `store-law-g-rederive` | Re-derive the knee-margin term | next | unrated |  | status §61a re-run Result | store-s61a-rerun, store-s61b |
-| `store-s62-j0` | c3 knee need at zero jitter (s62) | blocked | unrated |  | status §62 | rec-s63-f2-first-contact |
+| `store-s62-j0` | c3 knee need at zero jitter (s62) | next | unrated |  | status §62 | rec-s63-f2-first-contact |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | next | unrated | SHORT 1.69 ms at c2 | status §60 Result; derivation store-law-r67.md | store-s60a |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | done | unrated | merged 9b8b42ca; decision_trace_pin 7/7 on Linux | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |  |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |

@@ -1205,6 +1205,65 @@ The launch sha is pinned by an amendment.
     - It goes to block E's design before E-pre: whether PL's timeout and completion rule fit an evicting seat.
 - **Launch:** `LD_PLAN=63`, `LD_BIN_SHA_CAND` as above, `LD_BIN_CONTROL` as Amendment 1, `LD_HARD` = launch + 1.5 h, from a fresh archive of `cda0c629`.
 
+**§63 Result (2026-11-17; REPORTED ONLY; Fable-reviewed): CAND F2 reading PASS on 5 of 5 rows; CONTROL failed the warm-up on 2 of 5.**
+
+**In plain words.**
+- On the rows that failed in the E rehearsal, the old binary still fails the Realtime warm-up some of the time: 2 of 5 here, 2 of 3 before.
+- The fixed binary passed every time, with zero undecodable symbols on the receiving end and both ends decoding at 512.
+- One of the old binary's failures was the unpaced U row, so the pacer is not part of the trigger.
+
+**Runs.**
+- **Rehearsal:** 21:17–21:37Z (Amendment 2).
+- **Launch:**
+  - The first launch, `~/s63` at 21:39Z, was refused by the budget guard before anything ran (5 391 s against 5 400 s: the coordinator's 30 s settle delay ate the margin).
+  - The relaunch, `~/s63b` at 21:40:41Z with `LD_HARD` = launch + 1.6 h, is the session. Its rows ran until 22:10:49Z.
+- Both `bin_sha` values equal their pins (CAND `96c2dc1c…`, CONTROL `8013a312…`), and the tools tests pass on the VM.
+- `VERDICT63 REPORTED-ONLY rows=10/10 control_warmup_fail=2/5 cand_fail=0/5`.
+- Host cargo was paused from 21:16:45Z to the end.
+- The host re-score (`plan63.py report`) matches the VM's byte for byte.
+- **Ledger:** `docs/l1-raw/s63/`.
+
+| row | CONTROL (`8013a312`) warm-up | CAND (`96c2dc1c`) F2 reading |
+|---|---|---|
+| PL s42 | ACKED | PASS |
+| PM s42 | **NEVER-ACKED** | PASS |
+| U s42 (unpaced) | **NEVER-ACKED** | PASS |
+| PL s7 | ACKED | PASS |
+| PM s7 | ACKED | PASS |
+
+- **CAND PASS on every row** means:
+  - the warm-up acked;
+  - `undeliv=0` on the server's (receiving end's) `[CTLD]` lines, with 0 on the client too;
+  - no `[UNFRAMABLE]`;
+  - `[SYMSZ]` 512/512 on both ends.
+- **Pooled over the E rehearsal, this rehearsal and this session:**
+  - CONTROL failed **4 of 9** warm-up draws on one binary: 4 of 7 at s42, 0 of 2 at s7.
+  - CAND failed **0 of 6**.
+  - If CAND failed at CONTROL's rate (about 4 in 9), 0 of 6 would come up about 3 % of the time.
+- **The claim that the fix removes the failure rests on three things together:**
+  - these rows;
+  - the deterministic repro (a dropped `WindowStart`, 10 of 10 on Linux);
+  - the code (no framing state is announced).
+- **`undeliv=0` still lacks a denominator** (the source symbols the server received per CAND row). It is owed with the harness fix below.
+- **The trigger stays inferred:** a lost `WindowStart`, consistent with the failure being stochastic under one netem seed. The CONTROL binary has no counter to show it directly.
+
+**Correction to Amendment 2:** every transfer is DNF on both binaries, and that is by block E's design, not a finding.
+- Plan 51e's paced timeout is the emission time plus 15 s ("the DNF lands 15 s after emission ends").
+- U runs 600 MB against a 30 s timeout.
+- So "goes to block E's design" is withdrawn.
+
+**What follows:**
+- **F2 is the cause of the warm-up deaths** that made the E rehearsal NO-GO. PL and PM's E gates (b)–(h) have still never been read; they come in E-pre's rehearsal.
+- **Open before E-pre: every row reads `status=VOID-RC` (rc 1).** That includes rows whose warm-up acked and wrote a summary.
+  - In the E rehearsal, on the same binary, the U row's by-design DNF was LIVE with rc 0.
+  - So plan 63's path returns rc 1 where 51e's returned 0. The §63 readings come from the logs and do not depend on rc.
+  - The harness worker is diagnosing it, with a test that fails first on both plan 63 and plan 51e, so block E does not inherit it.
+- **Next:**
+  - s62, then E-pre on the final F2 tree;
+  - the stacked §41c guard (F2 at its base) for the merge to main;
+  - block E on the E tree plus F2; block 51 needs the merged binary.
+- **Withdrawn:** §63's registration text "no paced transfer has yet completed on the VM ... this is the pacer's first live run". Plan 51e's rows DNF by design.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
