@@ -995,6 +995,92 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Reference manifest:** `tools/l1/ref60-manifest.sha256` (187 files of `raptorpath/src` + `raptorpath/tests` at `cb88df3a`) is committed and passed as `LD_REF_MANIFEST` to every §60 launch.
 - **Deviation:** host builds of other projects may have run. Raptorpath host cargo was paused (lock held by the main session).
 
+## 51. Block E (the evicting seat, paced) and the off-Bulk baseline and δ sweep, reported only: pre-registration (before any VM contact)
+
+**What this registers.** It registers `docs/derivations/s51-evict-design.md` at main `2aaac8e8` **verbatim**, with `s51-design.md` (same commit) as its block-51 base: rows, readouts, predictions (§8.2), go/no-go and VOID (§10), and budget and launch order (§11). That design was reviewed twice by Fable. Nothing here changes a rule of the design. This section records the owner-level choices, the trees and the harness's readings.
+
+**In plain words.**
+- **Block E** measures the repair loop on a seat that may drop late data. This time the sender is paced below the link rate, so emission lasts through the measured window. It also measures, with a new gauge, how often the spare-capacity clamp binds.
+- **§51** is the first engine measurement away from the Bulk preset. Its question is whether behaviour moves smoothly with the latency dial through every preset (NO-MODE-SWITCH, measured in the engine). It runs on main's unchanged binary.
+- **§51's rows are not overdriven.** Reliable delivery ties the sender to the ack clock (design §0). Only block E needs pacing.
+
+**Choices on the design's §12 owner questions.** These are the coordinator's choices, low-stakes and reversible. They were made after the owner's "take your recommendations" of 2026-11-16, which did not cover them, so they are reported to the owner and can be overruled:
+1. §51 runs on **main's binary** (the shipped machine's baseline).
+2. Pacing is the **app-side `RWM_PERF_RATE_MBIT`**. It costs a new binary and E-pre.
+3. **PL with its calibration rule, plus PM.** Without PL, K4 has no scoreable arm.
+4. The pacer and the spare-clamp gauge **stay on the measurement tree**. Main takes them only through a guard, if ever (`meas-s51b-rho` will want the pacer).
+5. A **DEGENERATE-AS-WIRED** outcome (design §6.3) is a **defect finding** that goes to `rate-spare-clamp-verdict` for a ledger verdict (MEASUREMENT DISCIPLINE 18). The design read the code and found the clamp's cwnd is not enforced at either seat (§7).
+
+**Trees.**
+
+| block | tree | binary |
+|---|---|---|
+| E | **`e-tree` `b497fcfa`**: `s51e-tree` `77d53d9c` (main `2aaac8e8` + `slaw-gauge` `d416d59b` + the pacer `4ee1df9b` + the spare-clamp gauge `77d53d9c`) with `harness51` `a59efa60` merged in | registered by **E-pre**: `suites_run.sh` + `binid_run.sh` on one `git archive` of `e-tree`. Every later E stage must log the same `bin_sha`, and the reference manifest (`ref51e-manifest.sha256`) is generated from that archive and committed as a tools-only commit |
+| 51 | **`b51-tree` `b19c4be9`**: main `14954df7` with `harness51` `a59efa60` merged; the engine diff against main is empty (the witness), and main itself takes the harness only after the Result | recorded at the 51 rehearsal; each 51 launch must equal it. No suites; the dial-pin pre-flight of `s51-design` §6.2 |
+
+- **Engine identity witness for E:** the engine diff of the gauge merge (`9dcedd53`) against `cb88df3a` (§60's `s60-tree`) is empty. The paths are `raptorpath`, `raptorpath-math`, `raptorpath-core`, `raptorpath-wasm`, `gf256`, `Cargo.toml` and `Cargo.lock`. The `harness51` merge adds no engine change.
+- **Forwarding:** `RWM_SLAW` and `RWM_PERF_RATE_MBIT` are forwarded by `e-tree`'s own `lib.sh`. Main's `lib.sh` does not forward `RWM_SLAW`, since main reads no such gate (`14954df7`).
+
+**The launch shas** of both trees are pinned by an amendment after E-pre, as in §54. The E tree gains its `ref51e-manifest.sha256` commit then, and 51's tree may gain fixes from the E rehearsal.
+
+**The engine as built, read against the design** (coordinator, from the source at `77d53d9c`):
+- **§6.2's `rn + r0 = an` holds by construction on every block E row.**
+  - `note_debt_accrued` is in the same per-symbol block as the recompute (`emit_source.rs` :497–:715).
+  - The cache short-circuit (`taper_recompute_due`) can skip a recompute only when batching is on.
+  - `emit_batch_on` requires `reliable` (`sender_policy.rs:739`), and the evicting seat is not reliable.
+  - The engine worker's caveat ("only per symbol") applies to the batched Bulk path of its host test, which block E never runs. Go/no-go (g) is therefore unchanged.
+- **The new `[GATES]` token** changes the default `[GATES]` line on the E tree (and its pin). Main is untouched.
+
+**Host checks so far (not the suites).**
+- **`s51e-tree`:** `--lib` slaw / perf / gates 33 pass; `decision_trace_pin` 7/7; `--test slaw_reachability` passes with the new `spc=` assertions on a driven loopback run; `render_window_two_legs` passes; `test_slaw_parse.py` and `test_s60.py` pass.
+- **Red-first:** the new engine tests were written alongside the code and were never seen red. That is recorded, not hidden. E-pre's suites and the rehearsal are their first independent run.
+- **`harness51`:** the unfiltered `test_stubrun.py` on the pushed head (LF export) reports 722 ok, and each of the plan and scorer tests passes. `test_harness46` failed once under host load, then passed on two standalone runs (flake, not investigated).
+  - The shell tests were not run. `test_abort_witness.sh` and `test_lib_battery.sh` are Linux-only and run on the VM inside E-pre's window, before the E rehearsal.
+
+**The harness's readings of the design** (each is a registered reading; a later change needs an amendment):
+- **Chunk payloads:** 1 182 B at Bulk (1 196 − 14), checked against a committed s53 row (ratio 1.000), and 494 B at Realtime. The `[CHI] n=` form is unverified.
+- **At c8 Realtime,** the `srcsize` upper bound is widened ×2.2, in case S08's duplicate source counts in `cum=` (unverified). A DNF row is checked against the upper bound only.
+- **No witness has seen live data yet:** the `srcsize` band, the batching echo and the `[CHI]` check. The rehearsals are their first test. A witness that misfires on a rehearsal is amended, never silently relaxed.
+- **Block 51's guard env:** it runs with `RWM_RTOBS=1 RWM_RDIAG=1`, beside the design's `RWM_GEN=0 RWM_DIAG=1`. Its scrub also removes `RWM_PERF_RATE_MBIT`.
+- **Block E's binary pins:** block E has no `full` path; suite reuse covers the whole session. `ref51e-manifest.sha256` and `LD_BIN_SHA_EXPECT` have no defaults and must come from E-pre.
+- **`LD_BASE_SHA`** is block 51's commit pin and doubles as its candidate pin.
+- **Statistics:**
+  - **d80** uses the exact null at 6 v 6, because a Monte Carlo null cannot reject there.
+  - **`d80_51.json` (200 draws)** matches the design's table: c2 goodput / in-order / cpu_cli / cpu_srv 1 / 20 / 8 / 12 %, and c8 5 / 30 / 12 / 20 %. Only 6 rows qualify after `87c2135d`, so the in-session A/A governs resolution.
+- **PL's τ_x and W1 upper bound** read n/a, because 700 sym/s is below the 1 000 sym/s thresholds.
+- **The stubs:** a stub's goodput is arm-independent, so a FULL-mode T1/T2 passes deterministically in the stub run. The stub tests paths, not statistics.
+
+**Order and budget** (design §11): E-pre (≈ 75–90 min, both locks, no `LD_HARD`) → E rehearsal (`LD_HARD` + 1 h) → E battery (+ 1.5 h) → 51 rehearsal → 51-c2 (+ 5 h) → 51-c8 (+ 5 h). No 51 rule reads an E result.
+
+**E-pre failure rule** (as §60 §9 item 3):
+- **In the gauge's or the new code's own tests:** the session blocks and the code is fixed.
+- **Anywhere else:** re-run the failing suite on main `14954df7`. A failure identical on main is main's defect, and the session waits for its diagnosis or the owner's ruling. Flakes follow §8/§11/§12's rule.
+
+**Fable's review** (2026-11-17), applied:
+- the number (§51, since 61 is the c3 sweep's);
+- the coordinator's choices are attributed to the coordinator;
+- block 51 runs from its own branch;
+- the `rn + r0` identity was checked against the source;
+- the launch-sha pin;
+- the shell tests.
+
+## 61. The c3 knee-margin sweep (owner decisions 8–9 of 2026-11-17), reported only: pre-registration (before any VM contact)
+
+**What this registers.** It registers `docs/derivations/s61-registration.md` at `s61-c3-design` `ad31af2f` **verbatim**, together with its prediction script and output (`docs/derivations/store-law/s61pred.py` and `s61pred.out`). Fable reviewed it twice. Its question is whether the knee margin is the floor-window spread S_F, so that g's Realtime end can be measured.
+- **Cells:** a single-leg c3 cell, `c3-25` (66 rows), and a c2 add-on of below-knee price arms (30 rows) in separate launches 61a and 61b.
+- **Binary:** the §60 binary rebuilt from a tools-only branch `harness61` off `harness60-a2` `1ecee59d`. Every launch must log `bin_sha` `e410d640…5f25d`.
+- **Fixes:** the four §60 defects as that document fixes them.
+
+**The registration's questions, answered as the coordinator's choices (reported to the owner):**
+1. **The falsifier margin Δ stays 0.085,** c2's q_R·F̂/S_F.
+2. **If the rebuild does not reproduce `e410d640`** (most likely because the VM toolchain moved), the session does not run on a new binary silently. A new suites run and a new registered sha go in as an Amendment, with Fable's review, before any row. That costs ≈ 1 h.
+
+**Before VM contact:**
+- the harness (`harness61`, a Sonnet worker, per §9 of the registration), with its stub paths and a rehearsal;
+- an amendment pinning the launch sha.
+
+**Order:** this session queues after §51's E block.
+
 ## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
 
 **The registration is `docs/derivations/s60-registration.md` at `s60-design` `10272273`** (merged to main). It was reviewed with Fable in ten logged rounds and is registered verbatim from that commit; no rule is restated here.
