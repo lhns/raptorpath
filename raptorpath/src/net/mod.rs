@@ -647,9 +647,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair);
 
-    // The window pipeline carries at most one packet per source symbol: SymbolPacker
-    // frames each packet with a 2-byte length prefix and closes the symbol
-    // with a 2-byte end sentinel, and packets that don't fit are truncated
+    // A source symbol holds at most symbol_size - 2 bytes of framed packets: the
+    // one framing (`framing::put_packet`) gives each packet a 2-byte length
+    // prefix and the zero padding terminates the symbol, so packets that don't fit are truncated
     // (corrupted on the wire, silently dropped by the peer's IP stack).
     // Clamp the TUN MTU so the inner stack never emits a packet larger than
     // one symbol can carry (MSS-sized TCP segments would be truncated at
@@ -1366,26 +1366,22 @@ fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
     }
 }
 
-/// Extract application packets from a delivered window symbol's payload.
-/// Packed mode carries block-mode framing (multiple packets per symbol);
-/// unpacked mode carries a single window-framed packet.
-fn extract_window_packets(data: &Bytes, packed: bool) -> Vec<Vec<u8>> {
-    let pkts = if packed {
-        framing::extract_packets(data)
-    } else {
-        framing::extract_window_packet(data).into_iter().collect()
-    };
-    if pkts.is_empty() && data.iter().any(|&b| b != 0) {
+/// Extract application packets from a delivered window symbol's payload with
+/// the one framing (`framing::read_packets`). An unframable symbol is counted
+/// in [`UNDELIVERABLE_SYMBOLS`] and returned as `Err`.
+fn extract_window_packets(data: &Bytes) -> Result<Vec<Vec<u8>>, framing::Unframable> {
+    let r = framing::read_packets(data);
+    if r.is_err() {
         UNDELIVERABLE_SYMBOLS.fetch_add(1, Ordering::Relaxed);
     }
-    pkts
+    r
 }
 
-/// Source symbols with non-zero data that `extract_window_packets` could not
-/// unframe (no packet out), cumulative for the process. Nonzero means the
-/// receiver recorded and acked a symbol whose packets it dropped (status,
-/// Engine defect F2). Printed as `undeliv=` on the receiver's `[CTLD]` line
-/// under `RWM_DIAG`; always 0 on a healthy run.
+/// Source symbols that `extract_window_packets` could not unframe (a length
+/// that overruns the symbol, or non-zero bytes with no packet), cumulative for
+/// the process. Nonzero means the receiver recorded and acked a symbol whose
+/// packets it dropped (status, Engine defect F2). Printed as `undeliv=` on the
+/// receiver's `[CTLD]` line under `RWM_DIAG`; always 0 on a healthy run.
 pub static UNDELIVERABLE_SYMBOLS: AtomicU64 = AtomicU64::new(0);
 
 /// Read [`UNDELIVERABLE_SYMBOLS`]. Observation only.

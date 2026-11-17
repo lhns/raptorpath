@@ -134,8 +134,6 @@ pub(crate) async fn run_receiver(
         std::collections::VecDeque::new();
     // Messages processed since the last flush of `acks`.
     let mut since_flush: usize = 0;
-    // Whether the sender packs multiple packets per symbol (set via WindowStart)
-    let mut window_packed: bool = false;
     // The cumulative point for the window ACK (wire v9 `next_expected`): the
     // COUNT of the contiguous delivered prefix -- every seq below it has
     // been handed to the consumer; 0 = nothing delivered. (Through v8 this
@@ -1013,7 +1011,9 @@ pub(crate) async fn run_receiver(
                     }
                     for (dseq, ddata, _) in expired {
                         debug!(seq = dseq, "window hold expired — force-delivering");
-                        for pkt_data in extract_window_packets(&ddata, window_packed) {
+                        // F2-PENDING: owner decision (fail-closed): an unframable symbol
+                        // is counted and skipped for now.
+                        for pkt_data in extract_window_packets(&ddata).unwrap_or_default() {
                             let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                         }
                         next_expected = next_expected.max(dseq + 1);
@@ -1521,7 +1521,7 @@ pub(crate) async fn run_receiver(
                                 let offered = window_delivery.offer(
                                     &recv_tun_tx,
                                     seq,
-                                    extract_window_packets(&sym_data, window_packed),
+                                    extract_window_packets(&sym_data).unwrap_or_default(), // F2-PENDING: owner decision (fail-closed)
                                 );
                                 rxp.end(RxSec::Deliv, rxp_t);
                                 if offered.is_err() {
@@ -1618,7 +1618,7 @@ pub(crate) async fn run_receiver(
                                 let offered = window_delivery.offer(
                                     &recv_tun_tx,
                                     dseq,
-                                    extract_window_packets(&ddata, window_packed),
+                                    extract_window_packets(&ddata).unwrap_or_default(), // F2-PENDING: owner decision (fail-closed)
                                 );
                                 rxp.end(RxSec::Deliv, rxp_t);
                                 if offered.is_err() {
@@ -1753,7 +1753,9 @@ pub(crate) async fn run_receiver(
                                 .saturating_sub(expired.len() as u64);
                         }
                         for (dseq, ddata, _) in expired {
-                            for pkt_data in extract_window_packets(&ddata, window_packed) {
+                            // F2-PENDING: owner decision (fail-closed): an unframable symbol
+                            // is counted and skipped for now.
+                            for pkt_data in extract_window_packets(&ddata).unwrap_or_default() {
                                 let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                             }
                             next_expected = next_expected.max(dseq + 1);
@@ -2149,11 +2151,6 @@ pub(crate) async fn run_receiver(
                 rxp.end(RxSec::Ack, rxp_t);
             }
             WireMessage::Control(ctrl_msg) => {
-                // Handle WindowStart packed flag in receiver loop
-                if let ControlMessage::WindowStart { packed, .. } = &ctrl_msg {
-                    window_packed = *packed;
-                }
-
                 // Mid-stream backend switching is not supported (paper §5.10):
                 // no peer running this code sends WindowSwitch, and acting on
                 // one (rebuilding the decoder mid-stream) is a
