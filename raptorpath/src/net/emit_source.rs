@@ -280,6 +280,10 @@ pub static TEST_CORRUPT_SEQ: AtomicU64 = AtomicU64::new(u64::MAX);
 /// The original (uncorrupted) payload of the buffer `TEST_CORRUPT_SEQ` hit.
 #[cfg(any(test, feature = "test-seams"))]
 pub static TEST_CORRUPTED_PAYLOAD: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+/// When the seam fired, so a test can bound "ends within N s of the corruption"
+/// without racing a polling loop.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_CORRUPTED_AT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 /// Source buffers seen since arming; a test resets it with `TEST_CORRUPT_SEQ`.
 #[cfg(any(test, feature = "test-seams"))]
 pub static TEST_CORRUPT_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -291,6 +295,7 @@ fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
         return framed;
     }
     *TEST_CORRUPTED_PAYLOAD.lock().unwrap() = Some(framed.to_vec());
+    *TEST_CORRUPTED_AT.lock().unwrap() = Some(std::time::Instant::now());
     let mut bad = framed.to_vec();
     bad[..2].copy_from_slice(&0xFFFFu16.to_le_bytes());
     bytes::Bytes::from(bad)
