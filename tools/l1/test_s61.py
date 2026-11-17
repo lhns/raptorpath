@@ -220,9 +220,9 @@ except Exception as e:      # noqa: BLE001
 
 
 # ── synthetic ledgers with a known answer ──
-def synth_row(cell, W, rep, seed, F=33.0, S=10.0, knee=86.5, rise=8.0, gp_ctl=17.3, dnf=False, rtt_extra=0.5, nk_per_slot=5, status="LIVE", sig=2.0, l=33.0):
+def synth_row(cell, W, rep, seed, F=33.0, fslope=0.0, S=10.0, knee=86.5, rise=8.0, gp_ctl=17.3, dnf=False, rtt_extra=0.5, nk_per_slot=5, status="LIVE", sig=2.0, l=33.0):
     """One G row of the toy c3 model: tmin = F + rise (W / knee)^3 (flat floor, rise S_F * 0.8 at the knee), p50 = tmin + S, goodput min(0.19 W, 17.3), nk = 5 per slot per window."""
-    tmin = F + rise * (W / knee) ** 3 if W < 1000 else 200.0
+    tmin = F + fslope * W + (rise * (W / knee) ** 3 if (W >= 40 or not fslope) else 0.0) if W < 1000 else 200.0      # with a floor slope the floor arms are exactly linear (the knee rise starts at W 40)
     gp = gp_ctl if W >= 1000 else min(0.19 * W, gp_ctl)
     nw = 160
     ts = [15.0 + 0.25 * i for i in range(nw)]
@@ -276,7 +276,7 @@ mr = re.search(r"^RHO c3 = ([\d.]+)", txt, re.M)
 check("... with rho_3 within 0.1 of 0.8 (the toy model's knee window minimum), a floor pool W 12 and 6 scoreable replicates", mr is not None and abs(float(mr.group(1)) - 0.8) < 0.1 and "FLOOR POOL W12" in txt and "SCOREABLE replicates 6" in txt, txt[-2000:])
 check("... the floor reading divides by the SESSION median control goodput and the gates' tau is 0.05 S_F,c (S_F,c 10 -> 0.50), printed after the floor reading", "against the session median control 17.30 Mbit/s" in txt and "tau 0.50 = 0.05 S_F,c" in txt, txt[:2500])
 check("... the D table prints every candidate at Bulk / Auto / Realtime and the landing table prints W*(g, delta); the price table has u, tmin, tp50 per arm",
-      all(f"D {q}" in txt for q in ("Bulk", "Auto", "Realtime")) and "LANDING c3" in txt and "PRICE c3-25" in txt and "LABEL61 D-S-Bulk" in txt, txt[-1500:])
+      all(f"D  {q}" in txt and f"D0 {q}" in txt for q in ("Bulk", "Auto", "Realtime")) and "LANDING c3" in txt and "PRICE c3-25" in txt and "LABEL61 D-S-Bulk" in txt, txt[-1500:])
 rc, txt = run_score(synth_ledger(rise=4.0))
 lab = {ln.split()[1]: ln.split(None, 2)[2] for ln in txt.splitlines() if ln.startswith("LABEL61 ")}
 check("synthetic c3 with half the rise (need 4 = 0.4 S_F): rho ~ 0.4 against c2's 0.797 -> DISAGREES", lab.get("RHO-RAW") == "DISAGREES" and lab.get("RHO") in ("DISAGREES", "FLOOR-SENSITIVE"), (lab, txt[-1800:]))
@@ -347,6 +347,49 @@ check("61b: CR61 with the frozen X_own, the drift reading (tmin / u at the overl
 rc, txt = run_score(synth_c2(drift=2.0), "61b", None)
 check("61b: a session whose W 160 minimum drifted by > 0.3 ms reads DRIFT (the c2 rows are their own session, s60's arms are not merged)", "LABEL61 DRIFT-c2 DRIFT" in txt and "PRICE c2 merged" not in txt, txt[-900:])
 
+# ═══ 8. review items: W->0 at the intercept, D0, single pool, pilot case, rho-bar CI, native readings, seed 60 ═══
+rc, txt = run_score(synth_ledger(fslope=0.09))
+needs_ = [float(x) for x in re.findall(r"Tmin\(W95\) ([\d.]+)", txt)]
+m0 = re.search(r"W->0: rho_3,0 ([\d.]+)", txt)
+want0 = sorted(needs_)[len(needs_) // 2] if len(needs_) % 2 else (sorted(needs_)[len(needs_) // 2 - 1] + sorted(needs_)[len(needs_) // 2]) / 2
+check("W->0 at the INTERCEPT (sloped floor F = 33 + 0.09 W, S_F 10, W* ~ 10.2 != W1 = 12): rho_3,0 = median (T - a_F) / a_S = median (T - 33) / 10 (absolute; the old b*W1 reading gives a different number)",
+      m0 is not None and needs_ and abs(float(m0.group(1)) - (want0 - 33.0) / 10.0) < 0.0006 and "W* = 0.112/kappa = 10.2" in txt, (m0 and m0.group(1), (want0 - 33.0) / 10.0, txt[:1800]))
+check("D0 is printed per hint beside the scored D, with its interval and label (D0 Bulk ... S x [lo,hi] LABEL)", re.search(r"^  D0 Bulk\s+q=0\.1000 .*S [+-]\d+\.\d+ \[[+-]\d+\.\d+,[+-]\d+\.\d+\] (SHORT|COVERED|UNRESOLVED)", txt, re.M) is not None
+      and all(f"  D0 {q}" in txt for q in ("Auto", "Realtime")), txt[-2500:])
+check("rho-bar carries a 90 % CI (draw by draw)", re.search(r"rho_bar \(pooled over both cells' replicates\) [\d.]+ 90 % \[[\d.]+, [\d.]+\]", txt) is not None, txt[-3000:])
+check("the NATIVE rho_3 and D-S are printed (reported only)", re.search(r"^NATIVE rho_3 [\d.]+ and D-S\(Bulk\) [+-][\d.]+ ms", txt, re.M) is not None, txt[:2500])
+rc, txt = run_score(synth_ledger(nk_per_slot=20))
+check("the native rho_3 / D-S are printed also under UNSCOREABLE-N", "LABEL61 RHO UNSCOREABLE-N" in txt and re.search(r"^NATIVE rho_3 ", txt, re.M) is not None, txt[:1800])
+rc, txt = run_score(synth_ledger(nk_per_slot=3.5, drop=lambda W, rep: W in (12, 16)))
+check("single pool W 24 only: W* ~ 10.2 is 14 slots below it (> 6): LABEL61 RHO UNSCOREABLE-FLOOR (parity IN first, so the floor branch is reached)", "LABEL61 RHO UNSCOREABLE-FLOOR" in txt and "(IN, band (226, 353))" in txt and "UNSCOREABLE-FLOOR (W* more than 6 slots below the pool)" in txt, txt[:2000])
+rc, txt = run_score(synth_ledger(nk_per_slot=3.5, drop=lambda W, rep: W in (16, 24)))
+lab = {ln.split()[1]: ln.split(None, 2)[2] for ln in txt.splitlines() if ln.startswith("LABEL61 ")}
+check("single pool W 12 only: W* is within 6 slots, the pool's medians stand and rho scores; the W->0 bracket and FLOOR-SENSITIVE read NOT-COMPUTED (never differenced against c2's shifted draws), so is D0",
+      lab.get("RHO") in ("AGREES", "AGREES (S or sigma-scaled)", "DISAGREES", "UNRESOLVED") and "W->0: NOT-COMPUTED" in txt and "FLOOR-SENSITIVE: NOT-COMPUTED" in txt and "D0 Bulk" in txt and "S NOT-COMPUTED" in txt, (lab, txt[:2200]))
+# pilot case
+cases = {(0.6, 0.85): "secant", (0.8, 1.0): "straddle", (0.8, 0.7): "degenerate", (0.97, 1.0): "both-above", (1.0, 0.9): "non-monotone"}
+check("pilot_detail names the case that fired: straddle / secant / degenerate / both-above / non-monotone", all(plan61.pilot_detail(*u)[1] == c for u, c in cases.items()), {u: plan61.pilot_detail(*u) for u in cases})
+check("pilot_detail: clamped=yes only when the raw value left [64, 192]; a utilisation <= 0 returns None (no division); pilot_knee keeps its unrounded float return",
+      plan61.pilot_detail(0.2, 0.25)[2] is True and plan61.pilot_detail(0.2, 0.25)[0] == 192.0 and plan61.pilot_detail(0.8, 1.0)[2] is False and plan61.pilot_detail(0.0, 0.5) is None and plan61.pilot_detail(0.5, -1.0) is None
+      and near(plan61.pilot_knee(0.8, 0.7), 128 * 0.95 / 0.7))
+sweep_bad = 0
+for i in range(1, 60):
+    for j in range(1, 60):
+        d_ = plan61.pilot_detail(i / 50.0, j / 50.0)
+        sweep_bad += plan61.arms(float("%.1f" % d_[0])) != plan61.arms(d_[0])
+check("the arms derive from the PRINTED W-hat (0.1 resolution): arms(float(printed W)) == the arms placed, over a sweep of 3 481 (u88, u128) pairs", sweep_bad == 0 and plan61.pilot_detail(0.8, 1.0)[0] == round(plan61.pilot_detail(0.8, 1.0)[0], 1))
+dec, w, txt = rh()
+check("PILOT61 keeps its grepped prefix and appends case= and clamped=", re.search(r"^PILOT61 W=\d+\.\d u88=[\d.]+ u128=[\d.]+ arms=\{.*\} case=(straddle|secant|degenerate|both-above|non-monotone) clamped=(yes|no)", txt, re.M) is not None, txt)
+dec, w, txt = rh(gp_scale={88: 0.0})
+check("a pilot utilisation of 0 reads PILOT61 none, not a division error", w is None and "PILOT61 none" in txt, txt)
+seeds = []
+_orig_random = s.random.Random
+s.random.Random = lambda seed=None: (seeds.append(seed), _orig_random(seed))[1]
+try:
+    run_score(synth_c2(), "61b", None)
+finally:
+    s.random.Random = _orig_random
+check("c2's price-table intervals draw with seed 60 (61 is c3's)", 60 in seeds and 61 not in seeds, seeds)
 print("FAILED %d" % fails if fails else "ALL OK")
 print(f"\ntest_s61: {fails} fail(s)")
 sys.exit(1 if fails else 0)

@@ -289,9 +289,9 @@ def gate(points, w1, tau):
 def u_matched(fitF, fitS, kappa, u2=U2, w_lowest=None):
     """Section 5: F_c = a_F + b_F W*, S_F,c = a_S + b_S W*, W* = u2 / kappa. -> (W*, F_c, S_c, floor_ok) with floor_ok False when W* lies more than 6 slots below the lowest valid pool."""
     w_star = u2 / kappa if kappa else None
+    ok = w_star is not None and (w_lowest is None or w_star >= w_lowest - W_STAR_SLACK)
     if w_star is None or fitF["a"] is None or fitS["a"] is None:
-        return w_star, None, None, True
-    ok = w_lowest is None or w_star >= w_lowest - W_STAR_SLACK
+        return w_star, None, None, ok
     return w_star, fitF["a"] + fitF["b"] * w_star, fitS["a"] + fitS["b"] * w_star, ok
 
 
@@ -319,18 +319,25 @@ def rho_of(needs_t, f_c, s_c):
 
 
 def c2_draws(frozen=C2_FROZEN):
+    """The first four values of c2_draws_full (the rho_2 point, its draws, the W->0 point and draws)."""
+    return c2_draws_full(frozen)[:4]
+
+
+def c2_draws_full(frozen=C2_FROZEN):
     """c2's rho_2 draws, ported draw for draw from s61pred.py (same RNG calls, the sorted six-row inputs): -> (point, [2000 rho draws], point_W0, [2000 W->0 draws]). The W->0 reading applies the G(800) floor slope
     (refitted per draw, rows resampled within pools) to the native F and S_F: an approximation, labelled."""
     kt, fl = frozen["knee_tmin"], sorted(frozen["floor_pairs"])
     s_c, f_c = med([x[0] for x in fl]), med([x[1] for x in fl])
     point = med([(t - f_c) / s_c for t in kt])
     rnd = random.Random(SEED_C2)
-    rho = []
+    rho, rep_vals = [], []
     for _ in range(N_BOOT):
         it = [kt[rnd.randrange(len(kt))] for _ in kt]
         fb = [fl[rnd.randrange(len(fl))] for _ in fl]
         sb, fb_ = med([x[0] for x in fb]), med([x[1] for x in fb])
-        rho.append(med([(t - fb_) / sb for t in it]))
+        vals = [(t - fb_) / sb for t in it]
+        rep_vals.append(vals)      # the draw's per-replicate rho values: rho-bar pools them with c3's (no extra RNG call)
+        rho.append(med(vals))
     g8 = frozen["g800"]
     xs = [w for w in g8 for _ in g8[w]]
     ef = ols(xs, [p[1] for w in g8 for p in g8[w]])[0] * 16
@@ -347,7 +354,7 @@ def c2_draws(frozen=C2_FROZEN):
         bsb = ols([x[0] for x in pts], [x[1] for x in pts])[0]
         sb, fb_ = med([x[0] for x in fb]) - bsb * 16, med([x[1] for x in fb]) - bfb * 16
         rho0.append(med([(t - fb_) / sb for t in it]))
-    return point, rho, point0, rho0
+    return point, rho, point0, rho0, rep_vals
 
 
 def ci(draws):
@@ -500,9 +507,9 @@ class Score61:
 
     # ─────────────────────────── c3 (61a) ───────────────────────────
     def price_table(self, rows, ctl, ctl_m, ctl_w, mode, nstar):
-        """Section 5.4 per arm: u = median_r gp / gp_ctl, the window minimum (median LATE tmin: native; at c3 also under G(n*)), Tp50 (median LATE tp50), each with a 90 % bootstrap interval over replicates."""
+        """Section 5.4 per arm: u = median_r gp / gp_ctl, the window minimum (median LATE tmin: native; at c3 also under G(n*)), Tp50 (median LATE tp50), each with a 90 % bootstrap interval over replicates (seed 60 at c2, 61 at c3)."""
         out = self.out
-        rnd = random.Random(SEED_C3)
+        rnd = random.Random(SEED_C2 if self.cell == C2 else SEED_C3)      # section 5: seed 60 at c2, 61 at c3
         table = {}
         out(f"PRICE {rows[0].cell if rows else '-'} per arm (u, window minimum, Tp50; median over replicates, 90 % [bootstrap, 2000, seed {SEED_C3}]); flagged rows leave the medians:")
         for w, rs in sorted(self.by_w([r for r in rows if r.live and not r.flag]).items()):
@@ -607,10 +614,10 @@ class Score61:
         fit_f, fit_s = gate(pts_f, fpool, float("inf")), gate(pts_s, fpool, float("inf"))
         kappa = med([r.gp_() / ctl_m / r.W for w in pools_up for r in valid[w]])
         w_star, f_c, s_c, floor_ok = u_matched(fit_f, fit_s, kappa, U2, w_lowest=min(pools_up))
-        if f_c is None:           # fewer than 2 pools: no line; the floor pool's medians stand (DECISION 5)
-            f_c, s_c, w_star = med([x[1] for x in pts_f if x[0] == fpool]), s_pool, float(fpool)
-            floor_ok = True
-            out(f"FLOOR READING: fewer than 2 pools, the W {fpool} medians stand (DECISION 5): F_c {f_c:.3f} S_F,c {s_c:.3f}")
+        one_pool = f_c is None
+        if one_pool:           # fewer than 2 pools: no line; the pool's medians stand only if W* is within 6 slots of it (DECISION 5); the W->0 bracket is NOT-COMPUTED
+            f_c, s_c = med([x[1] for x in pts_f if x[0] == fpool]), s_pool
+            out(f"FLOOR READING: fewer than 2 pools: the W {fpool} medians stand as F_c {f_c:.3f} S_F,c {s_c:.3f}; W* = {U2}/kappa = {f(w_star, 1)} (kappa {kappa:.5f})" + ("" if floor_ok else "  UNSCOREABLE-FLOOR (W* more than 6 slots below the pool)"))
         else:
             out(f"FLOOR READING at c2's utilisation: kappa {kappa:.5f} per slot (against the session median control {ctl_m:.2f} Mbit/s), W* = {U2}/kappa = {w_star:.1f} (lowest valid pool W{min(pools_up)}); F_c {f_c:.3f} S_F,c {s_c:.3f}" + ("" if floor_ok else "  UNSCOREABLE-FLOOR"))
         tau = TAU_FRAC * s_c
@@ -638,6 +645,7 @@ class Score61:
         n_sc = len(scoreable)
         out(f"SCOREABLE replicates {n_sc} (need >= {MIN_SCOREABLE})")
         self.native_block(rows, reps, kA, p1)
+        self.native_rho(pools_up, valid, nat, w_star, one_pool, reps, kA, p1, k1, k3, ctl, ctl_m, ctl_w, l_c)
         # ── the verdict-bearing readings ──
         stop = None
         if n_sc < MIN_SCOREABLE:
@@ -659,12 +667,12 @@ class Score61:
         sigs = [v["sig"] for v in scoreable.values()]
         rho3 = rho_of(needs_t, f_c, s_c)
         # ── one bootstrap: rho, W->0, D per candidate ──
-        c2pt, c2d, c2pt0, c2d0 = c2_draws()
         rnd = random.Random(SEED_C3)
         keys = sorted(scoreable)
         ent = [scoreable[k] for k in keys]
         pool_rows = {w: [(rd[id(r)][0], rd[id(r)][1], r.sixty("l")) for r in valid[w]] for w in pools_up}
-        drho, drho0, dd, dd0, rho3d, rho3d0 = [], [], {}, {}, [], []
+        drho, drho0, dd, dd0, rho3d, rho3d0, rbar_d = [], [], {}, {}, [], [], []
+        c2pt, c2d, c2pt0, c2d0, c2rep = c2_draws_full()
         for b in range(N_BOOT):
             it = [ent[rnd.randrange(len(ent))] for _ in ent]
             pts = boot_rows(rnd, {w: [(r[0], r[1], r[2]) for r in rs] for w, rs in pool_rows.items()})
@@ -674,12 +682,13 @@ class Score61:
                 fb_, sb_, ef, es = med([p[1] for _, p in pts]), med([p[0] for _, p in pts]), 0.0, 0.0
             else:
                 fb_, sb_ = fit_f[1] + fit_f[0] * w_star, fit_s[1] + fit_s[0] * w_star
-                ef, es = fit_f[0] * fpool, fit_s[0] * fpool
+                ef, es = fit_f[0] * w_star, fit_s[0] * w_star      # W->0 is the intercept: the line's rise from 0 to W* (section 5.1; DECISION 6)
             lb = med([p[2] for _, p in pts])
             r3 = med([(e["tmin"] - fb_) / sb_ for e in it])
             r30 = med([(e["tmin"] - (fb_ - ef)) / (sb_ - es) for e in it]) if (sb_ - es) else r3
             rho3d.append(r3)
             rho3d0.append(r30)
+            rbar_d.append(med([(e["tmin"] - fb_) / sb_ for e in it] + c2rep[b]))      # rho-bar: c3's and c2's resampled per-replicate values pooled in draw b
             drho.append(r3 - c2d[b])
             drho0.append(r30 - c2d0[b])
             for nm, q in QS:
@@ -691,13 +700,16 @@ class Score61:
         delta = min(fz["delta"], Q_RT * f_c / s_c)
         lab = rho_label(lo, hi, delta)
         lo0, hi0 = ci(drho0)
-        lab0 = rho_label(lo0, hi0, delta)
+        lab0 = "NOT-COMPUTED" if one_pool else rho_label(lo0, hi0, delta)
         rlo, rhi = ci(rho3d)
         out(f"RHO c3 = {rho3:.3f} 90 % [{rlo:.3f}, {rhi:.3f}] (need per replicate " + " ".join(f"{t - f_c:.3f}" for t in needs_t) + f"); c2 rho_2 = {c2pt:.3f} 90 % [{ci(c2d)[0]:.3f}, {ci(c2d)[1]:.3f}] (frozen)")
         out(f"DELTA-RHO = {rho3 - c2pt:+.3f} 90 % [{lo:+.3f}, {hi:+.3f}]; margin Delta = min(c2 {fz['delta']:.3f}, c3 {Q_RT * f_c / s_c:.3f}) = {delta:.3f} -> {lab}")
-        out(f"W->0: rho_3,0 {f(med([(t - (f_c - (gF['E'] or 0.0))) / (s_c - (gS['E'] or 0.0)) for t in needs_t]), 3)} (point); d_rho_0 90 % [{lo0:+.3f}, {hi0:+.3f}] vs c2 rho_2,0 {c2pt0:.3f} -> {lab0}")
+        if one_pool:
+            out("W->0: NOT-COMPUTED (fewer than 2 floor pools: no slope, nothing is extrapolated below the floor pool); FLOOR-SENSITIVE is not read")
+        else:
+            out(f"W->0: rho_3,0 {f(med([(t - (f_c - gF['b'] * w_star)) / (s_c - gS['b'] * w_star) for t in needs_t]), 3)} (point, the intercept: F_c - b_F W*, S_F,c - b_S W*); d_rho_0 90 % [{lo0:+.3f}, {hi0:+.3f}] vs c2 rho_2,0 {c2pt0:.3f} -> {lab0}")
         fs = opposite(lab, lab0)
-        out(f"FLOOR-SENSITIVE: {'YES' if fs else 'no'} (scored {lab}, W->0 {lab0})")
+        out(f"FLOOR-SENSITIVE: {'NOT-COMPUTED' if one_pool else ('YES' if fs else 'no')} (scored {lab}, W->0 {lab0})")
         sig3 = med(sigs)
         sd_ = sigma_discrimination(c2pt, sig3, s_c)
         out(f"SIGMA-DISCRIMINATION = {sd_:+.3f} (sigma_3 {sig3:.3f}, S_F,3 {s_c:.3f}); " + (f"within +-{delta:.3f}: AGREES would not separate S from the sigma-scaled sentence" if abs(sd_) <= delta else "outside the margin: the sigma-scaled sentence is separable"))
@@ -708,24 +720,49 @@ class Score61:
         # ── D per candidate ──
         out(f"D per candidate (need_r - A, median over {n_sc} replicates; 90 % bootstrap): Bulk is scored, Auto and Realtime reported")
         for nm, q in QS:
-            line = []
+            line, line0 = [], []
             for cn in ("S", "A0", "A0f", "Ac", "wq", "W80"):
                 pt = med([(e["tmin"] - f_c) - candidates(e["sig"], e["p80"], l_c, f_c, s_c, q)[cn] for e in ent])
                 lo_, hi_ = ci(dd[(nm, cn)])
                 lo0_, hi0_ = ci(dd0[(nm, cn)])
                 lb_ = d_label(lo_, hi_)
-                lb0 = d_label(lo0_, hi0_)
-                fsd = opposite(lb_, lb0)
+                lb0 = "NOT-COMPUTED" if one_pool else d_label(lo0_, hi0_)
+                fsd = (not one_pool) and opposite(lb_, lb0)
                 line.append(f"{cn} {pt:+.2f} [{lo_:+.2f},{hi_:+.2f}] {lb_}{' FLOOR-SENSITIVE' if fsd else ''}")
+                line0.append(f"{cn} NOT-COMPUTED" if one_pool else f"{cn} {pt + gF['b'] * w_star:+.2f} [{lo0_:+.2f},{hi0_:+.2f}] {lb0}")
                 if nm == "Bulk":
                     self.label(f"D-{cn}-Bulk", "FLOOR-SENSITIVE" if fsd else lb_)
-            out(f"  D {nm:<8} q={q:.4f}: " + " | ".join(line))
+            out(f"  D  {nm:<8} q={q:.4f}: " + " | ".join(line))
+            out(f"  D0 {nm:<8} q={q:.4f} (W->0: D + b_F W*, reported; gates only FLOOR-SENSITIVE): " + " | ".join(line0))
         # ── g handed to the owner, price and landing ──
         rho_bar = med([(t - f_c) / s_c for t in needs_t] + [(t - fz["F"]) / fz["S"] for t in C2_FROZEN["knee_tmin"]])
         g_knee = {C3: rho3 - Q_RT * f_c / s_c, C2: c2pt - fz["delta"]}
-        out(f"HANDS TO THE OWNER (AGREES): rho_bar (pooled over both cells' replicates) {rho_bar:.3f}; g_knee c2 {g_knee[C2]:.3f} c3 {g_knee[C3]:.3f}")
+        blo, bhi = ci(rbar_d)
+        out(f"HANDS TO THE OWNER (AGREES): rho_bar (pooled over both cells' replicates) {rho_bar:.3f} 90 % [{blo:.3f}, {bhi:.3f}] (draw by draw, c3 and c2 resampled values pooled); g_knee c2 {g_knee[C2]:.3f} c3 {g_knee[C3]:.3f}")
         self.landing({w: dict(v, tmin=v["tmin_g"] if v["tmin_g"] is not None else v["tmin"]) for w, v in price.items()}, f_c, s_c, g_knee[C3], rho_bar, "c3")
         self.pending = (lab, lab0)
+
+    def native_rho(self, pools_up, valid, nat, w_star, one_pool, reps, kA, p1, k1, k3, ctl, ctl_m, ctl_w, l_c):
+        """Sections 3 / 5.5, reported only: rho_3 and D-S read natively (nk >= 10 windows, one window at a time: the engine's per-window estimator), floor on the same u-matched construction. Decides nothing."""
+        out = self.out
+        pts_f = [(r.W, nat[id(r)][1]) for w in pools_up for r in valid[w] if nat[id(r)][1] is not None]
+        pts_s = [(r.W, nat[id(r)][0]) for w in pools_up for r in valid[w] if nat[id(r)][0] is not None]
+        fit_f, fit_s = ols([w for w, _ in pts_f], [y for _, y in pts_f]), ols([w for w, _ in pts_s], [y for _, y in pts_s])
+        if one_pool or fit_f is None or fit_s is None:
+            f_n, s_n = med([y for _, y in pts_f]), med([y for _, y in pts_s])
+        else:
+            f_n, s_n = fit_f[1] + fit_f[0] * w_star, fit_s[1] + fit_s[0] * w_star
+        needs = []
+        for key, rw in sorted(reps.items()):
+            k = knee_of(rw, ctl.get(key), k1, k3, lambda r: r.native_tmin(), kA, p1, ctl_w, ctl_m)
+            if k["scoreable"] and k.get("tmin") is not None:
+                needs.append(k["tmin"])
+        if not needs or not f_n or not s_n:
+            out("NATIVE rho_3 / D-S (reported only): not computed (no native floor or no scoreable replicate)")
+            return
+        rho_n = med([(t - f_n) / s_n for t in needs])
+        d_n = med([(t - f_n) - (s_n + Q_BULK * f_n) for t in needs])
+        out(f"NATIVE rho_3 {rho_n:.3f} and D-S(Bulk) {d_n:+.2f} ms over {len(needs)} replicates (F {f_n:.3f}, S_F {s_n:.3f}, native windows; reported only, decides nothing)")
 
     # ── B1, P1, native readings (section 5.5) ──
     def native_block(self, rows, reps, kA, p1):
@@ -748,8 +785,8 @@ DECISIONS = [
     "2. Pilot-row bytes: with no LD_KNEE61 (the rehearsal) no row is 'at the knee bracket', so the pilot rows W 88 / 128 take section 1's formula (110 / 115 MB, no threshold the registration does not print); with LD_KNEE61 set, bytes are 120 MB at and above K1 and at the control, else the formula.",
     "3. The pilot's rule outside its four registered cases: u88 >= 0.95 > u128 (a non-monotone pair) falls to the last case, 88 * 0.95 / u88; every result is clamped to [64, 192]. The pilot control is R1 (2 048) when the control go/no-go passed, else R6 (512).",
     "4. The knee window: T-hat-min_r(W95,r) interpolates the row minima of the K and P1 arms (r68allow.at_knee); at c3 the row minimum is G(2 100)'s median group minimum. W95,r is cross_up over every non-control arm incl. the floors (r68allow.knee). sigma_r pools the sig windows of the two knee arms bracketing W95 (r68allow.bracket).",
-    "5. Fewer than 2 floor pools (the gate reads UNSCOREABLE): no line is fitted, the floor pool's medians stand as F_c and S_F,c, W* = the pool, and the reading is flagged. W* itself is evaluated on the gate's OLS lines of all valid pools at and above the floor pool.",
-    "6. The W->0 reading: the registration's sentence ('the extrapolated W -> 0 floor') and its formula (E = b W1) agree only at W* = W1; the scorer applies the formula, F - E_F and S_F - E_S with E = b * W1 (as at c2), refitted per bootstrap draw with rows resampled within pools. D at W->0 is D + E_F (the allowance's own F / S_F terms are not recomputed: the registration's literal reading).",
+    "5. W* = u2 / kappa is computed in every case and section 5's 6-slot rule is applied against the lowest valid pool. With fewer than 2 pools no line is fitted: the pool's medians stand as F_c and S_F,c only if W* >= pool - 6 (else UNSCOREABLE-FLOOR), and the W->0 bracket and FLOOR-SENSITIVE read NOT-COMPUTED (nothing is extrapolated below the floor pool); they are never differenced against c2's shifted draws. The stop order is UNSCOREABLE, UNSCOREABLE-N, UNSCOREABLE-FLOOR.",
+    "6. The W->0 reading is the intercept: F_0 = F_c - b_F W* = a_F and S_0 = S_F,c - b_S W* = a_S (slopes refitted per bootstrap draw, rows resampled within pools); D_0(A) = D(A) + b_F W*, printed beside D with its 90 % interval and label, and gating only FLOOR-SENSITIVE (the allowance's own F / S_F terms are not recomputed: section 5.3's literal reading). At c2 W* = W1 = 16, so the frozen rho_2,0 stands.",
     "7. The c2 side of rho / d_rho is FROZEN (C2_FROZEN): the six knee tmins, the six floor (S_F, F) pairs and the G(800) rows of s60's c2, with draws ported draw for draw from s61pred.py (seed 60). The c3 side draws with seed 61; the paired d_rho draw b is c3's draw b minus c2's draw b.",
     "8. SIGMA-DISCRIMINATION's sigma_3 is the median over scoreable replicates of sigma_r (native sig at the bracketing knee arms); sigma_2 = 1.785 and S_F,2 = 5.083 are frozen. Delta is min(c2's frozen 0.085, c3's q_R F_c / S_F,c).",
     "9. CR61's e_own is taken against the row's own native median LATE tmin; X_own at c3 comes from the W 12 rows in session (live, not DNF), at c2 it is frozen at 10.66. A row with no [DIAG] ticks is not flagged (nothing to read). The arm's median gp for the goodput cut is over the arm's live rows (DNF = 0).",
@@ -758,7 +795,8 @@ DECISIONS = [
     "12. Labels: LABEL61 RHO (AGREES / DISAGREES / UNRESOLVED / FLOOR-SENSITIVE / UNSCOREABLE / UNSCOREABLE-N / UNSCOREABLE-FLOOR / NEEDS-MORE-*), RHO-RAW (the scored label before FLOOR-SENSITIVE), FLOOR-F-c3 / FLOOR-S-c3 (the gates), D-<cand>-Bulk, SIGMA-DISCRIMINATION, CONTROL-<cell>, DRIFT-c2.",
     "13. An AGREES label whose |SIGMA-DISCRIMINATION| <= Delta is printed 'AGREES (S or sigma-scaled)' in the RHO line's text; the label word stays AGREES for the tools that read it (RHO-RAW).",
     "15. S_F,c at c3 is the fitted line at W* (the gates' tau = 0.05 S_F,c needs it), so the OLS lines are taken first and the gate labels after; kappa divides by the SESSION median control goodput (section 5), not the replicate's own control. On DRIFT-OK the c2 landing table merges s60's arms (rounded medians frozen in C2_FROZEN['price']) with 61b's own; 61b's arms stand where both exist.",
-    "14. The tables' per-arm 90 % intervals bootstrap the per-replicate values (2 000 draws, seed 61); a monotonicity check lists non-monotone arms; no threshold is scored in the price or landing tables.",
+    "16. The pilot's W-hat is registered at 0.1-slot resolution: rounded after the clamp, the arms derive from the printed W=, and PILOT61 appends case= (straddle / secant / degenerate / both-above / non-monotone) and clamped=; a pilot utilisation <= 0 reads PILOT61 none. rho-bar's CI pools c3's and c2's resampled per-replicate values draw by draw; NATIVE rho_3 and D-S use nk >= 10 windows and the same u-matched construction, reported only (also under UNSCOREABLE-N).",
+    "14. The tables' per-arm 90 % intervals bootstrap the per-replicate values (2 000 draws, seed 61 at c3, 60 at c2); a monotonicity check lists non-monotone arms; no threshold is scored in the price or landing tables.",
 ]
 __doc__ += "\nDECISIONS (every ambiguity and the reading taken):\n" + "\n".join("  " + d for d in DECISIONS) + "\n"
 
@@ -835,8 +873,12 @@ def rehearsal(rows, out):
     w_hat = None
     if ctl_row is not None and r4 is not None and r5 is not None and ctl_row.gp_() > 0:
         u88, u128 = r4.gp_() / ctl_row.gp_(), r5.gp_() / ctl_row.gp_()
-        w_hat = pilot_knee(u88, u128)
-        out(f"PILOT61 W={w_hat:.1f} u88={u88:.3f} u128={u128:.3f} arms={plan61.arms(w_hat)} (control W{ctl_w})")
+        det = plan61.pilot_detail(u88, u128)
+        if det is None:
+            out("PILOT61 none: a pilot utilisation is <= 0: 61a does not launch (ABORT-PILOT)")
+        else:
+            w_hat = det[0]
+            out(f"PILOT61 W={w_hat:.1f} u88={u88:.3f} u128={u128:.3f} arms={plan61.arms(w_hat)} case={det[1]} clamped={'yes' if det[2] else 'no'} (control W{ctl_w})")
     else:
         out("PILOT61 none: no valid control or a pilot row is missing / DNF: 61a does not launch (ABORT-PILOT)")
     for r in (r4, r5):

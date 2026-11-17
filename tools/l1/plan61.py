@@ -84,6 +84,23 @@ def pilot_knee(u88, u128):
     return clamp_knee(w)
 
 
+def pilot_detail(u88, u128):
+    """pilot_knee plus which case fired: -> (W-hat rounded to 0.1 after the clamp, case, clamped: bool) or None when a utilisation is <= 0 (no division). Cases: straddle (u88 < 0.95 <= u128), secant (both below,
+    u128 > u88), degenerate (both below, u128 <= u88), both-above, non-monotone (u88 >= 0.95 > u128). W-hat is registered at 0.1-slot resolution: the arms derive from the PRINTED value (it is what LD_KNEE61 receives verbatim)."""
+    if not (u88 > 0 and u128 > 0):
+        return None
+    lo, hi = PILOT_W
+    if u88 < 0.95 <= u128:
+        case, raw = "straddle", lo + (0.95 - u88) * (hi - lo) / (u128 - u88)
+    elif u88 < 0.95 and u128 < 0.95:
+        case, raw = ("secant", hi + (0.95 - u128) * (hi - lo) / (u128 - u88)) if u128 > u88 else ("degenerate", hi * 0.95 / u128)
+    elif u128 >= 0.95:
+        case, raw = "both-above", lo * 0.95 / u88
+    else:
+        case, raw = "non-monotone", lo * 0.95 / u88
+    return round(clamp_knee(raw), 1), case, not (W_HAT_MIN <= raw <= W_HAT_MAX)
+
+
 def arms(w_hat):
     """Section 2.2's arms from the pilot knee: {'K': 3 knee-bracket, 'B': 3 below-knee, 'P1': r8(1.5 W-hat)} (r4 = a multiple of 4)."""
     w = clamp_knee(w_hat)
@@ -319,8 +336,12 @@ def main(argv):
         if cmd == "check":
             return check(a[0], a[1])
         if cmd == "pilot":
-            w = pilot_knee(float(a[0]), float(a[1]))
-            print(f"PILOT61 W={w:.1f} arms={arms(w)}")
+            u88, u128 = float(a[0]), float(a[1])
+            d = pilot_detail(u88, u128)
+            if d is None:
+                print("PILOT61 none: a pilot utilisation is <= 0")
+                return 1
+            print(f"PILOT61 W={d[0]:.1f} u88={u88:.3f} u128={u128:.3f} arms={arms(d[0])} case={d[1]} clamped={'yes' if d[2] else 'no'}")
             return 0
     except ValueError as e:
         print(f"ABORT-PILOT {e}")
