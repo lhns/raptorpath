@@ -1496,6 +1496,28 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - the c3 control tail (undiagnosed);
 - the G12 s42 r5 B1 outlier from the first session.
 
+**§61a re-run Result, Erratum 1 (2026-11-17, after the post-hoc re-derivation `knee-margin-rederive` `fc0d1514`; Fable-reviewed): the label stands; two readings of it are withdrawn.**
+- **What stands:** `LABEL61 RHO DISAGREES`, computed exactly as registered. The re-derivation's script reproduces every scored number (κ, W\*, F_c, S_F,c, the six needs, ρ₃ 0.457, the NATIVE line) and c2's frozen inputs.
+- **What the scored need is.** It subtracts a floor read at about 270 samples per group, G(250), from a knee minimum read at about 2 100, G(2 100). The registration did this at both cells, matching c2's counts on each side.
+- **The minimum depends on the count, and it has not flattened.** Median over rows of the floor pool, against the sample count:
+
+  | cell | native | G(250) | G(600) | G(1 200) | G(2 100) | G(4 200) |
+  |---|---|---|---|---|---|---|
+  | c2 W 16 | 8.679 (n 282) | 8.506 | 7.802 | 7.324 | 7.067 | 6.728 (n 4 344) |
+  | c3 W 12 | 42.751 (n 60) | 38.778 | 37.008 | 35.590 | 34.319 | 33.227 (n 4 223) |
+
+  - At c3 the count alone moves the floor by about 8.4 ms, twice the need (4.43).
+  - The drop between the floor's count and the knee's count is 1.6 ms at c2 and 4.4 ms at c3. So matching each side's count across cells does not make ρ shape-invariant, which the registration's §3 assumed.
+- **Withdrawn:**
+  1. "S_F is not the knee's term", as a statement about the path. The label shows that the registered ρ, under the registered counting, is not invariant across the two shapes. Whether any spread carries the load rise is not settled by these data.
+  2. **"The knee margin looks roughly constant in milliseconds" (4.05 vs 4.43 ms).** It comes from the counting convention: at one count for both sides, need₃/need₂ is 1.57 [1.48, 1.64] (re-run) and 1.41 (first session). The lead is withdrawn.
+- **What follows instead:**
+  - The registration's own estimator item comes first: R6.7's sample-count rule, "before any engine form". The minimum needs a count rule, or a count-free statistic, before any knee reading is interpreted.
+  - That is design work for review, not yet an owner question.
+  - The re-derivation goes to a second round (both sessions' bands; knee arms at both counts; the floor's drop against the time span pooled).
+  - Decision 8's form stays as decided, and is not in the engine. F07 stays UNDERIVED.
+  - Decision 10 is unaffected.
+
 **§61b Result (2026-11-17; the c2 add-on ran clean; REPORTED with its two labels).**
 
 **In plain words.** c2's price curve below its knee is now measured directly, at W 96 / 128 / 144. It matches §60's c2 rows at the overlap arm, so the two sessions merge into one c2 table. 61b scores only two labels: the control is OK, and there is no drift.
