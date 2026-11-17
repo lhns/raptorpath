@@ -36,7 +36,7 @@ The rejected option (B) was a per-symbol "packed" bit. It keeps two formats and 
 - **Bulk and Auto data bytes are unchanged.** `hotpath_pin` passes without re-capture at the v9 framing commit; the v10 commit then re-captures it for the version field only. The two commits are never pinned, launched or merged apart, and never squashed.
 - **Realtime packed symbols** keep their size; only the byte order of each length field flips.
 - **The receiver no longer depends on any control message** to read data. A lost `WindowStart` is harmless.
-- **Mixed-hint peer pairs now work** in both directions. They were never tested before.
+- **Size is no longer a per-side assumption.** Mixed-hint pairs still differ in the receiver's default ρ, which nothing on the wire checks (audit §6). That is out of scope here.
 - **The release binary changes, so F2 rides the stacked §41c guard** (owner decision 5, 2026-11-16).
 - **L1 rows with `undeliv` > 0 or an `[UNFRAMABLE]` line are voided** (`VOID-F2`), never scored as DNF.
 - `extract_window_packet`, the BE `extract_packets` and `frame_end` are deleted, and integration tests migrate to `read_packets`.

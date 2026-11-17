@@ -212,7 +212,9 @@ stale non-zero bytes where a terminator should be. Neither is produced.
 - **Refused (connect fails with a clear error):**
   - paths of one peer that announce different sizes;
   - a runtime-added path (`quic.rs:622`) whose size differs from the established
-    one, which refuses that path;
+    one, which refuses that path. The only handshake sites are `io_owner::connect`
+    and `accept` (`:950`, `:958`). Path revival does not re-handshake (grep), so
+    it needs no rule;
   - a size outside **[72, 1200]**. The floor is the IPv4 minimum MTU of 68
     (RFC 791) plus the 4-byte framing allowance that sets the TUN MTU
     (`net/mod.rs:657`). The ceiling is the largest size this build's table
@@ -227,10 +229,23 @@ stale non-zero bytes where a terminator should be. Neither is produced.
   on ingress, as far as I know; I have not checked it. Inner TCP clamps its MSS
   to the smaller side anyway. The memory TUN of the tests has no such limit.
 
-**Recommendation: (ii).** It removes §1.1's last real false-positive cause, so
-fail-closed then fires only on an engine bug. It is the only option that stays
-continuous in δ. (i) is the fallback if the owner wants mixed-hint pairs refused
-rather than supported.
+**Recommendation: (ii).**
+- (ii) removes size as a cause of an unframable symbol, so fail-closed then
+  fires only on an engine bug.
+- It is the only option that stays continuous in δ.
+- **It does not make mixed-hint pairs supported.** The receiver's retention
+  contract is still its own config:
+  - `recv_window_reliable` comes from the local side (`net/mod.rs:1172`, audit §6);
+  - its default is hint-keyed (`config.rs:293-295`: Realtime evicts, ρ < 1);
+  - so a Bulk sender into a default Realtime receiver meets an evicting
+    receiver, whose acks past an abandoned hole are not what a ρ = 1 sender
+    assumes.
+- With (ii) such a pair delivers framed bytes correctly. Whether its retention
+  semantics compose is the ρ per-side question (audit §6), which is out of F2's
+  scope and unanswered.
+- (i) is the fallback if the owner wants mixed-hint pairs refused outright.
+  That refusal would also cover the ρ mismatch for default-ρ pairs, but only by
+  accident of the hint table.
 
 ### 5.3 `backend` has the same shape and is single-valued
 
@@ -329,6 +344,8 @@ of `received_seqs`. That gives a permanent stall at ρ = 1 and a silent loss at
     steps, and is bisected only on failure.
   - The guard is 12 + 12 rows at c1s, c1d, c2 and c8
     (`docs/derivations/shared-core-design.md:302`).
+  - `docs/status/41c-…md` states no wall time of its own. The figures below are
+    §41d's, the nearest guard with a stated length.
   - **VM cost:**
     - Inside a stacked run, F2 adds no rows: one more candidate commit, and the
       run's builds are shared.
@@ -390,22 +407,27 @@ Red first (each fails on `f2-prep`, except where noted):
    acked and fully received.
 5. **Fail closed executes, with a witness** (a new own-binary test,
    `tests/f2_unframable_closes.rs`, at Bulk and at Realtime).
-   - **The seam.** `TEST_CORRUPT_SOURCE: AtomicU32` sits beside
-     `TEST_DROP_WINDOW_START` (`io_owner.rs:61`). On the next non-repair compact
-     Data datagram once the count has passed a warm-up of N = 20 source
-     datagrams, it:
-     - saves the original symbol payload in
+   - **The seam.** `TEST_CORRUPT_SEQ: AtomicU64` sits beside
+     `TEST_DROP_WINDOW_START` (`io_owner.rs:61`); `u64::MAX` means unarmed. Armed
+     with K = 20, it corrupts **every** non-repair compact Data datagram whose
+     `block_id == K`. That includes Realtime's duplicate source send (status §3.3,
+     `emit_source.rs`) and any retransmit, so a clean copy can never reach the
+     decoder first and be kept by its dedup. On each one it:
+     - saves the original payload once in
        `TEST_CORRUPTED_PAYLOAD: Mutex<Option<Vec<u8>>>`;
-     - rewrites the payload's first u16 to 0xFFFF.
+     - rewrites the payload's first u16 to 0xFFFF;
+     - counts itself in `TEST_CORRUPTED_SENDS`.
    - **The drive.** Drive each side's engine directly with `net::run_with_tun`
      and memory TUNs, not `perf`.
-     - The client TUN injects M = 200 distinct packets, each with its index in
-       its first 4 bytes.
+     - The client TUN injects M = 200 distinct packets of **300 B** each, with
+       the index in the first 4 bytes. Two 300-byte packets never share a
+       512-byte symbol (2 + 300 + 2 + 300 > 510), so each is one source symbol
+       at both hints. Seq 20 then exists and is a single packet.
      - The test collects every packet the server's memory TUN delivers until
        the server engine returns.
    - **Assertions:**
      - `undeliverable_symbols() == 1` exactly;
-     - the seam was spent;
+     - `TEST_CORRUPTED_SENDS >= 1`;
      - an `[UNFRAMABLE]` line was logged (`tracing-test` or a capture layer;
        otherwise, assert the counter and the task end only);
      - the server engine's future completes within 5 s of the corruption. The
@@ -427,9 +449,11 @@ Red first (each fails on `f2-prep`, except where noted):
      - `[1200, 512]` gives `Err`;
      - `[71]` and `[1201]` give `Err`;
      - `[72]` and `[1200]` are accepted, the absolute edges of the range.
-7. **Mixed hints, the (ii) witness:** an in-process loopback with the **client
+7. **Mixed sizes, the (ii) witness:** an in-process loopback with the **client
    at Bulk and the server at Realtime**. Add a `cfgs` variant that takes one hint
-   per side.
+   per side, and give **both sides the same explicit `window_reliable = true`**.
+   That isolates the size from the per-side ρ default, so the test cannot flake
+   on eviction.
    - The client sends full-size chunks (≥ 1000 B).
    - Assert a full round trip and `undeliverable_symbols() == 0`.
    - Red on `f2-prep`: the server's 512-byte decoder truncates the 1200-byte
@@ -520,7 +544,7 @@ changes: compare instead of adopt.
      - `recv_symbol_size` is the reconciled peer size;
      - `add_path` refuses a mismatch;
      - `info!` the local and peer sizes once per path.
-6. **`transport/io_owner.rs`.** Add `TEST_CORRUPT_SOURCE` and
+6. **`transport/io_owner.rs`.** Add `TEST_CORRUPT_SEQ`, `TEST_CORRUPTED_SENDS` and
    `TEST_CORRUPTED_PAYLOAD` (one relaxed load when unarmed, the
    `test_drop_window_start` pattern).
 7. **Migrate the integration tests** listed in §8.
@@ -543,7 +567,10 @@ changes: compare instead of adopt.
      and from goodput medians, and counted and printed in the session summary.
    - Required at once:
      - the guard scorer `place41b_score.py`;
-     - the E-block and §51 scorers;
+     - the §51 and E-block scorers. They are not in this tree: `s51_score.py`
+       and `s51e_score.py` (with `test_s51.py`, `test_s51e.py`) live on
+       `github/harness51` and `github/b51-tree`. Their change goes on that
+       harness branch;
      - the parsers `place_parse.py` and `r_parse.py`;
      - the scorer of any session queued next (`s61_score.py` on `harness61` is
        already launched; its owner decides).
@@ -598,8 +625,10 @@ with `CARGO_BUILD_JOBS=1` and your own `CARGO_TARGET_DIR`.
 
 **Approve fail-closed (§6) together with symbol size per direction, option (ii) (§5.2)?**
 - (ii) makes each direction's symbol size its sender's choice, announced in the
-  reliable v10 handshake. Mixed-hint pairs then work, and fail-closed fires only
-  on an engine bug.
+  reliable v10 handshake. Size then stops being a cause of unframable symbols,
+  and fail-closed fires only on an engine bug.
+- (ii) does not make mixed-hint pairs supported: the receiver's ρ is still its
+  own hint-keyed default (§5.2).
 - Alternatives:
   - fail-closed with (i): mixed-hint pairs are refused at connect with a clear
     error;
