@@ -51,6 +51,14 @@ bin_sha and a battery launch must equal it (LD_BIN_SHA_EXPECT), one cell per lau
   delta-echo-void        the first scored slot echoes RWM_DELTA wrongly on the client end: VOID (gate-delta), re-run once
   short-void             the first scored slot is a 10 s row: VOID-SHORT, re-run once
   dialpins-fail          a dial pin FAILS: ABORT-DIALPINS, rc 5, nothing measured
+Plan 63 (status 63, F2's first VM contact; plan63.py) is a TWO-seat reported-only plan on the single-seat gate shape: CONTROL (the e-tree binary, pinned to the registered E bin_sha, LD_BIN_CONTROL or the BASE tree's build)
+then CAND (LD_BIN_SHA_CAND, REQUIRED on a launch; the rehearsal records it) per row, 10 slots, no engine suites, rows run once. The F2 counters are readings there, not a VOID. Paths:
+  rehearse               LD_REHEARSE=1 without LD_BIN_SHA_CAND (it records it): both seats' binaries checked, the one CAND PL s42 row, REHEARSAL-PASS
+  full                   the whole session to LD-ALL-DONE: smoke row + 10 slots, both pins checked, the report's labels against the draft's predictions
+  cand-sha-missing       a launch without LD_BIN_SHA_CAND: ABORT-BIN-SHA, rc 3, nothing run
+  cand-sha-mismatch      LD_BIN_SHA_CAND differs from the built CAND: ABORT-BIN-SHA plan 63 CAND, rc 5, no row measured
+  control-sha-mismatch   the CONTROL binary differs from its pin: ABORT-BIN-SHA plan 63 CONTROL, rc 5, no row measured
+  cand-fail              (STUB_BAD63=candfail) the CAND's paced rows fail closed: the report labels them FAIL and prints BLOCKS-E-PRE; no row is voided
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -72,4 +80,5 @@ HARNESS_PATHS = {
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
     "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
     "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
+    "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail"),
 }

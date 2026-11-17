@@ -523,7 +523,8 @@ def score(paths, out=print, d80_path=D80_FILE, aa_draws=40):
                 out(f"  T1 joint (cell-stratified, REPORTED, does not override a per-cell FAIL) {PRESET_NAME[P]}: family p {r['p_family']:.4f} over {r['M']} relabellings ({'exact' if r['exact'] else 'Monte Carlo'})")
                 lab(f"T1-JOINT-{PRESET_NAME[P]}", f"p={r['p_family']:.4f}")
     nl = sum(1 for rv in rvs if rv.live)
-    out(f"VERDICT51 REPORTED-WITH-SCORED slots={len(set((r['cell'], r['arm'], str(r['seed']), str(r['rep'])) for r in rows_all))}/{n_exp} live={nl} void={len(voids)} replaced={len(replaced)} dnf={sum(1 for rv in rvs if rv.dnf)} labels={len(labels)}")
+    nf2 = sum(1 for rv in voids if rv.r.get("status") == "VOID-F2")
+    out(f"VERDICT51 REPORTED-WITH-SCORED slots={len(set((r['cell'], r['arm'], str(r['seed']), str(r['rep'])) for r in rows_all))}/{n_exp} live={nl} void={len(voids)} void_f2={nf2} replaced={len(replaced)} dnf={sum(1 for rv in rvs if rv.dnf)} labels={len(labels)}")
     for n_, v in labels:
         out(f"LABEL51 {n_} {v}")
     return 0
