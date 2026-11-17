@@ -5,6 +5,13 @@ Design only; nothing here is built. Defect: status "Engine defect F2". Audit:
 are in `raptorpath/src/` at `f2-design` (main `d2cae698` + `f2-prep` `a8c7debe`).
 Round 2 (after review): §5 is new (symbol size per direction), §1.1 the false-positive
 audit, §7 the guard, §8.5 the executes witness, §9 the harness witness and VM order.
+Round 3:
+- §5.2: the (i)/(ii) wire identity, the table of local-size reads, and the
+  measured TUN ingress;
+- §2: `WindowStart` drops `symbol_size`;
+- §8.5: the seam moves to the framing output, behind a feature;
+- §8.7: the mixed-size test;
+- §9: the E-tree first contact and the guard stack order.
 
 ## 1. The one framing
 
@@ -92,10 +99,19 @@ stale non-zero bytes where a terminator should be. Neither is produced.
 - Delete `window_packed` (`receiver.rs:138`), its setter (`:2152-2155`) and its four
   reads (`:1016`, `:1524`, `:1621`, `:1756`). The receiver has one code path.
 - Remove the field `packed` from `ControlMessage::WindowStart`
-  (`transport/protocol.rs:442-449`). Keep the variant, `{ symbol_size, backend }`
-  (log only, `control_msg.rs:122`):
-  - a removed variant would renumber every later fixint tag for no gain;
-  - the repro's seam (`io_owner.rs:1325-1338`) needs a `WindowStart` to drop.
+  (`transport/protocol.rs:442-449`), and **also `symbol_size`**. Keep the
+  variant as `WindowStart { backend }` (log only, `control_msg.rs:122`):
+  - the reliable handshake now carries the sender's size (§5). A second,
+    unreliable copy next to it invites exactly the one-shot dependency F2
+    removes, so the size has one source;
+  - removing fields changes only this variant's body. Bincode fixint tags are
+    variant indices, so no tag is renumbered. Removing the whole variant would
+    renumber every later control variant (harmless under v10, but churn);
+  - the repro's seam (`io_owner.rs:1325-1338`) still needs a `WindowStart` to
+    drop.
+
+  The alternative, keeping the field with a test that pins it is never read for
+  decoding, keeps a dead duplicate on the wire. That is not recommended.
 
   After the fix, a lost `WindowStart` costs nothing.
 - Old peers: the wire bumps to v10, and a v9 peer is refused at the handshake
@@ -224,10 +240,51 @@ stale non-zero bytes where a terminator should be. Neither is produced.
   These refusals are integrity checks on one peer, not a mode.
 - **Wire cost:** none. `Handshake.symbol_size: u16` already exists. Only its
   meaning changes, which is covered by v10.
-- **Risk, unverified:** a Realtime-side OS TUN (MTU 508) receives packets of up
-  to 1196 B from a Bulk peer. A Linux TUN write is not limited by the device MTU
-  on ingress, as far as I know; I have not checked it. Inner TCP clamps its MSS
-  to the smaller side anyway. The memory TUN of the tests has no such limit.
+- **TUN ingress above the device MTU: measured, not a block** (coordinator, VM,
+  Linux, 2026-11-17).
+  - Setup: a throwaway netns with a TUN at MTU 508 (`IFF_TUN | IFF_NO_PI`) and
+    `rp_filter` 0.
+  - A 1196-byte IPv4/UDP packet and a 500-byte control packet were written into
+    the TUN fd. A UDP socket bound in the netns received both: 1168 B and 472 B
+    of payload.
+  - So kernel ingress through a TUN is not limited by the device MTU, and (ii)'s
+    mixed-size delivery is not blocked at the TUN. Script: `scratchpad/tunmtu.py`,
+    not in the repo.
+- **(i) and (ii) put identical bytes on the wire.**
+  - Both send `Handshake.symbol_size` = the sender's real size in the same u16
+    field. Neither adds a field, and neither changes `WindowStart` or any data
+    frame.
+  - They differ only in what the receiver does with the peer's value: (i)
+    compares it and refuses, (ii) adopts it for its decoder.
+  - **So the choice is reversible without a version bump.** A v10 (i) build and a
+    v10 (ii) build interoperate whenever the sizes are equal. On unequal sizes
+    the (i) side refuses at connect, which is a clean failure, never a misread.
+- **Every read of the LOCAL `symbol_size`** (grep of `raptorpath/src`, non-test;
+  the local value is born at `net/mod.rs:623`):
+
+  | read | file:line | direction | under (ii) |
+  |---|---|---|---|
+  | decoder constructor | `net/mod.rs:1171` → `:1244` → `receiver.rs:117` (`create_window_decoder`, `:3568-3585`) | **receive** | **the peer's size** (the only receive-side read) |
+  | TUN MTU clamp `S-4` | `net/mod.rs:657` | send: bounds what the local stack hands *our* sender | local. Ingress from a larger peer is not MTU-limited (measured above) |
+  | FEC rate controller | `net/mod.rs:763` | send (TX state, Threading Q2) | local |
+  | sender loop, policy, state, encoder | `net/mod.rs:1098`/`:1129`, `:1532`, `:1972`; `emit_source.rs:206-231` | send | local |
+  | packer | `net/mod.rs:1870` | send | local |
+  | one-packet framer | `net/mod.rs:3127`, `:3182` | send | local |
+  | `WindowStart` announce | `net/mod.rs:1884` | send | field removed (§2) |
+  | sender DIAG goodput (acked source × S) | `net/mod.rs:2468` → `diag.rs:405`, `:476`, `:713` | send (acks of *our* symbols) | local |
+  | send-rate estimate | `emit_source.rs:570` | send | local |
+  | report task: sent symbols × S | `net/mod.rs:1304` → `tasks/report.rs:85` | send | local |
+  | startup echo | `net/mod.rs:869` | log | local, plus the peer's size per path (§9 step 5) |
+  | perf client chunk size | `perf.rs:52-53`, `:404` | send (app) | local |
+  | handshake constant | `io_owner.rs:794` | wire | becomes the local real size |
+
+  - The reorder buffer, delivery (`delivery.rs`), `recv_block`, `control_msg`
+    and the receive loop read no symbol size. They handle whatever length the
+    decoder hands them.
+  - **The decoder is built after every handshake returns.** All initial paths
+    connect or accept, with their handshake, at `net/mod.rs:739-748` ("all paths
+    connected"). The receiver task, and with it the decoder (`receiver.rs:117`),
+    is spawned later (`:1165` onward).
 
 **Recommendation: (ii).**
 - (ii) removes size as a cause of an unframable symbol, so fail-closed then
@@ -342,6 +399,8 @@ of `received_seqs`. That gives a permanent stall at ρ = 1 and a silent loss at
     commit, `decision_trace_pin` is unchanged, and no law is touched. So F2
     stacks into the one guard run against main with the other zero-behaviour
     steps, and is bisected only on failure.
+  - **Stack order:** F2 sits at the bottom, directly above main, and waits on
+    no other step (perleg Phase A included).
   - The guard is 12 + 12 rows at c1s, c1d, c2 and c8
     (`docs/derivations/shared-core-design.md:302`).
   - `docs/status/41c-…md` states no wall time of its own. The figures below are
@@ -407,16 +466,29 @@ Red first (each fails on `f2-prep`, except where noted):
    acked and fully received.
 5. **Fail closed executes, with a witness** (a new own-binary test,
    `tests/f2_unframable_closes.rs`, at Bulk and at Realtime).
-   - **The seam.** `TEST_CORRUPT_SEQ: AtomicU64` sits beside
-     `TEST_DROP_WINDOW_START` (`io_owner.rs:61`); `u64::MAX` means unarmed. Armed
-     with K = 20, it corrupts **every** non-repair compact Data datagram whose
-     `block_id == K`. That includes Realtime's duplicate source send (status §3.3,
-     `emit_source.rs`) and any retransmit, so a clean copy can never reach the
-     decoder first and be kept by its dedup. On each one it:
-     - saves the original payload once in
-       `TEST_CORRUPTED_PAYLOAD: Mutex<Option<Vec<u8>>>`;
-     - rewrites the payload's first u16 to 0xFFFF;
-     - counts itself in `TEST_CORRUPTED_SENDS`.
+   - **The seam is at the framing output, before the encoder.** In
+     `emit_source` (`emit_source.rs:283`), the K-th framed source buffer
+     (K = 20) is replaced, just before `encoder.add_source_owned(framed)`, by a
+     copy whose first u16 is 0xFFFF.
+     - The encoder then stores the corrupted bytes, so every copy is the same
+       corrupted symbol: the Realtime duplicate send (status §3.3), retransmits,
+       and every repair that covers seq K.
+     - Recovery therefore cannot produce a clean K, and `undeliv == 1` cannot
+       flake.
+     - The original buffer is saved once in
+       `TEST_CORRUPTED_PAYLOAD: Mutex<Option<Vec<u8>>>`.
+   - **Release cost: none.** The seam compiles only under
+     `#[cfg(any(test, feature = "test-seams"))]`.
+     - New cargo feature `test-seams = []` in `raptorpath/Cargo.toml`, off by
+       default. The crate has no `[features]` table today.
+     - `tests/f2_unframable_closes.rs` carries
+       `[[test]] required-features = ["test-seams"]`.
+     - The release binary never contains the seam, so `framing_ns` need not
+       cover it.
+     - The done criteria run `cargo test -p raptorpath --features test-seams`
+       as well as the plain run.
+     - The existing `TEST_DROP_WINDOW_START` (one relaxed load, control
+       datagrams only) is left as it is.
    - **The drive.** Drive each side's engine directly with `net::run_with_tun`
      and memory TUNs, not `perf`.
      - The client TUN injects M = 200 distinct packets of **300 B** each, with
@@ -427,7 +499,7 @@ Red first (each fails on `f2-prep`, except where noted):
        the server engine returns.
    - **Assertions:**
      - `undeliverable_symbols() == 1` exactly;
-     - `TEST_CORRUPTED_SENDS >= 1`;
+     - `TEST_CORRUPTED_PAYLOAD` is `Some`, so the seam fired;
      - an `[UNFRAMABLE]` line was logged (`tracing-test` or a capture layer;
        otherwise, assert the counter and the task end only);
      - the server engine's future completes within 5 s of the corruption. The
@@ -442,23 +514,41 @@ Red first (each fails on `f2-prep`, except where noted):
    - `protocol_version_is_nine` → `_is_ten`;
    - `handshake_refuses_an_old_peer_at_v9` → `_at_v10`, with olds `[9, 8]`, plus
      data-path refusal;
-   - a `WindowStart { symbol_size, backend }` round trip;
+   - a `WindowStart { backend }` round trip (no `packed`, no `symbol_size`);
    - `local_handshake` carries the local size: 512 at Realtime, 1200 at Bulk;
    - `reconcile_peer_symbol_size`:
      - `[1200, 1200]` gives 1200;
      - `[1200, 512]` gives `Err`;
      - `[71]` and `[1201]` give `Err`;
      - `[72]` and `[1200]` are accepted, the absolute edges of the range.
-7. **Mixed sizes, the (ii) witness:** an in-process loopback with the **client
-   at Bulk and the server at Realtime**. Add a `cfgs` variant that takes one hint
-   per side, and give **both sides the same explicit `window_reliable = true`**.
-   That isolates the size from the per-side ρ default, so the test cannot flake
-   on eviction.
-   - The client sends full-size chunks (≥ 1000 B).
-   - Assert a full round trip and `undeliverable_symbols() == 0`.
-   - Red on `f2-prep`: the server's 512-byte decoder truncates the 1200-byte
-     sources, the chunks are lost, and the run times out.
-   - Add the reverse pair (client Realtime, server Bulk) as a second case.
+7. **Mixed sizes, both directions, the (ii) witness**
+   (`tests/f2_mixed_symbol_size.rs`, own binary).
+   - **Setup.** Drive two engines with `net::run_with_tun` and memory TUNs: side
+     A at Bulk (S = 1200), side B at Realtime (S = 512). Add a `cfgs` variant
+     with one hint per side.
+   - **Both sides get the same explicit `window_reliable = true`.** That
+     isolates the size from the per-side ρ default, so the test cannot flake
+     on eviction.
+   - **A → B, into the 512 side:** 50 packets of **1196 B** (A's TUN maximum)
+     and 50 of 600 B, each indexed. B's TUN must deliver all 100, byte-equal.
+     Every one exceeds 510 B, the most B's own 512-byte decoder could ever
+     return.
+   - **B → A:** 100 packets of 508 B (B's maximum), all delivered byte-equal
+     at A.
+   - **`undeliverable_symbols() == 0`.**
+   - **Absolute witness that each decoder took the peer's size.** A record
+     `net::RECV_SYMBOL_SIZES: Mutex<Vec<(u16 local, u16 decoder)>>` (observation
+     only, the `UNDELIVERABLE_SYMBOLS` pattern) gets one entry written where the
+     receiver builds its decoder. Both engines share the process, hence a list
+     and not a scalar. Assert it equals `{(1200, 512), (512, 1200)}`.
+     - The same pair is echoed once per engine as `[SYMSZ] local=... decoder=...`
+       for L1 logs.
+     - On a same-size pair, the entry is `(S, S)` (assert it in the
+       `f2_undeliverable_counter` loopbacks).
+   - **Red on `f2-prep`:** B's 512-byte decoder truncates A's 1200-byte sources
+     (`unified.rs:403`), so the packets over 510 B are lost and the delivery
+     assertion fails. The record does not exist there, so that part is red by
+     compile.
 
 Pins:
 - `hotpath_pin`: **unchanged at the framing commit**, at v9. It is the Bulk
@@ -532,7 +622,8 @@ changes: compare instead of adopt.
    - Delete the `WindowStart` arm at `:2152-2155`, and update the module doc's
      list of fatal exits (`:21-24`, `:2189`).
 5. **Commit 2: `transport/protocol.rs`, `io_owner.rs`, `quic.rs`, `net/mod.rs`.**
-   - Drop `packed`, set v10 with its history entry, and edit the pins. In
+   - Drop `packed` **and `symbol_size`** from `WindowStart`, set v10 with its
+     history entry, and edit the pins. In
      `net/control_msg.rs:122`, drop `packed` from the pattern. In
      `net/mod.rs:1884`, drop it from the send.
    - The handshake size (§5.2 ii):
@@ -544,9 +635,10 @@ changes: compare instead of adopt.
      - `recv_symbol_size` is the reconciled peer size;
      - `add_path` refuses a mismatch;
      - `info!` the local and peer sizes once per path.
-6. **`transport/io_owner.rs`.** Add `TEST_CORRUPT_SEQ`, `TEST_CORRUPTED_SENDS` and
-   `TEST_CORRUPTED_PAYLOAD` (one relaxed load when unarmed, the
-   `test_drop_window_start` pattern).
+6. **The corrupt seam (§8.5)** goes in `net/emit_source.rs` before
+   `add_source_owned`, behind `#[cfg(any(test, feature = "test-seams"))]`.
+   Add the `test-seams` feature and the `[[test]] required-features` entry. Add
+   `RECV_SYMBOL_SIZES` and the `[SYMSZ]` echo at the decoder build (§8.7).
 7. **Migrate the integration tests** listed in §8.
 8. **Add the `framing_ns` bench** (§7), ignored. Run it once on the host,
    release, and report the numbers; do not tune.
@@ -584,9 +676,9 @@ changes: compare instead of adopt.
      - a DNF row that also has the token is labelled `VOID-F2`, not DNF.
 
 **Done:**
-- `cargo test -p raptorpath` is green at commit 2, with the lib and every
+- `cargo test -p raptorpath` and `cargo test -p raptorpath --features test-seams` are green at commit 2, with the lib and every
   integration test, including the un-ignored repro, `f2_undeliverable_counter`,
-  the fail-closed test and the mixed-hint test;
+  the fail-closed test (feature run) and the mixed-size test;
 - at commit 1, everything except §8.6–7 is green;
 - `decision_trace_pin` passes unchanged at both commits, and `hotpath_pin`
   passes unchanged at commit 1;
@@ -613,13 +705,25 @@ with `CARGO_BUILD_JOBS=1` and your own `CARGO_TARGET_DIR`.
    `[UNFRAMABLE]` is a false positive to fix before anything else.
 2. **First VM contact: E's failing paced Realtime rows**, the 2 of 3 E-rehearsal
    rows that failed (seed 42, paced), before the full E-pre.
-   - Run them on the `f2-prep` binary (the control: the failure should
-     reproduce, now with `undeliv` > 0) and on the candidate (delivery,
-     `undeliv` = 0, no `[UNFRAMABLE]`).
+   - **Both binaries are built on the E measurement tree.** The pacer exists only
+     there (`github/e-tree` `a271e0bb`, from `s51e-tree`). Main and `f2-prep`
+     cannot run these rows.
+     - **Control** = `e-tree`.
+     - **Candidate** = `e-tree` + the two F2 engine commits, never commit 1
+       alone, plus the tools commit for `f2_void`.
+     - Whether the control also takes `f2-prep`'s counter-only commit, so it
+       shows `undeliv` > 0, is the registration's call.
+   - **They run under their own short registration and a rehearsal** (the
+     coordinator writes the registration). Expected:
+     - control: the warm-up fails as in E, and `undeliv` > 0 if the counter is in;
+     - candidate: delivery, `undeliv` = 0, no `[UNFRAMABLE]`.
    - The trigger (GE loss at connect) was inferred, not observed. If the control
      does not reproduce, the trigger reading is wrong, and the owner hears that
      before E-pre.
-3. **Then** the stacked §41c guard (§7) and E-pre.
+3. **Then the stacked §41c guard (§7), with F2 at the bottom of the stack.** The
+   F2 commits come first above main, so a failure bisects cleanly to F2 or to
+   what sits above it. F2 does not wait on perleg Phase A or any other stacked
+   step. After the guard, E-pre.
 
 ## 10. Owner question (one)
 
