@@ -1390,10 +1390,11 @@ fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
 }
 
 /// Extract application packets from a delivered window symbol's payload with
-/// the one framing (`framing::read_packets`). An unframable symbol is counted
-/// in [`UNDELIVERABLE_SYMBOLS`] and returned as `Err`.
-fn extract_window_packets(data: &Bytes) -> Result<Vec<Vec<u8>>, framing::Unframable> {
-    let r = framing::read_packets(data);
+/// the one framing (`framing::unframe`): the packets are slices of `data`, so
+/// the caller copies each out once. An unframable symbol is counted in
+/// [`UNDELIVERABLE_SYMBOLS`] and returned as `Err`.
+fn extract_window_packets(data: &Bytes) -> Result<framing::Packets<'_>, framing::Unframable> {
+    let r = framing::unframe(data);
     if r.is_err() {
         UNDELIVERABLE_SYMBOLS.fetch_add(1, Ordering::Relaxed);
     }

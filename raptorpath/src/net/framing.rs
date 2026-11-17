@@ -8,7 +8,8 @@
 //! the receiver must be told about.
 //!
 //! [`put_packet`] is the only writer (used by `frame_window_packet` and
-//! `SymbolPacker`) and [`read_packets`] the only reader. Every writer
+//! `SymbolPacker`) and [`unframe`] the only reader ([`read_packets`] only copies
+//! its packets out). Every writer
 //! zero-fills the symbol and every decoder hands out a full zero-padded
 //! symbol, so no separate sentinel is written. (The block pipeline that once
 //! used a BE length-prefixed form is gone, ADR-0069.)
@@ -38,14 +39,39 @@ pub fn put_packet(dst: &mut [u8], pkt: &[u8]) -> usize {
     n
 }
 
-/// Read the packets of one source symbol. Stops at a zero length or when
-/// fewer than 2 bytes remain. `Err` when a length overruns the symbol, or when
-/// no packet comes out of a symbol with a non-zero byte. An all-zero symbol is
-/// `Ok(vec![])` (the frame of an empty TUN packet). Bytes after the terminator
-/// are not checked: no writer leaves any.
-pub fn read_packets(sym: &[u8]) -> Result<Vec<Vec<u8>>, Unframable> {
-    let mut packets = Vec::new();
-    let mut cursor = 0;
+/// The packets of one validated source symbol, as slices of it (no
+/// allocation). Made only by [`unframe`], which has checked the whole chain.
+#[derive(Clone)]
+pub struct Packets<'a> {
+    rest: &'a [u8],
+}
+
+impl<'a> Iterator for Packets<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<&'a [u8]> {
+        let r = self.rest;
+        if r.len() < 2 {
+            return None;
+        }
+        let len = u16::from_le_bytes([r[0], r[1]]) as usize;
+        if len == 0 || 2 + len > r.len() {
+            return None; // terminator (an overrun cannot occur after `unframe`)
+        }
+        self.rest = &r[2 + len..];
+        Some(&r[2..2 + len])
+    }
+}
+
+/// The one reader: walk the chain of one source symbol once and return its
+/// packets as slices. Stops at a zero length or when fewer than 2 bytes remain.
+/// `Err` when a length overruns the symbol, or when no packet comes out of a
+/// symbol with a non-zero byte. An all-zero symbol yields no packets (the frame
+/// of an empty TUN packet). Bytes after the terminator are not checked: no
+/// writer leaves any. Allocation-free: the receiver copies each packet out
+/// once, where it needs an owned one.
+pub fn unframe(sym: &[u8]) -> Result<Packets<'_>, Unframable> {
+    let (mut cursor, mut n) = (0usize, 0usize);
     while cursor + 2 <= sym.len() {
         let len = u16::from_le_bytes([sym[cursor], sym[cursor + 1]]) as usize;
         if len == 0 {
@@ -55,13 +81,18 @@ pub fn read_packets(sym: &[u8]) -> Result<Vec<Vec<u8>>, Unframable> {
         if cursor + len > sym.len() {
             return Err(Unframable);
         }
-        packets.push(sym[cursor..cursor + len].to_vec());
         cursor += len;
+        n += 1;
     }
-    if packets.is_empty() && sym.iter().any(|&b| b != 0) {
+    if n == 0 && sym.iter().any(|&b| b != 0) {
         return Err(Unframable);
     }
-    Ok(packets)
+    Ok(Packets { rest: sym })
+}
+
+/// [`unframe`], with every packet copied into its own `Vec` (tests, tools).
+pub fn read_packets(sym: &[u8]) -> Result<Vec<Vec<u8>>, Unframable> {
+    Ok(unframe(sym)?.map(<[u8]>::to_vec).collect())
 }
 
 // ---------------------------------------------------------------------------

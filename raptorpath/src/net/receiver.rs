@@ -1019,7 +1019,7 @@ pub(crate) async fn run_receiver(
                             }
                         };
                         for pkt_data in pkts {
-                            let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                            let _ = recv_tun_tx.try_send(Bytes::copy_from_slice(pkt_data));
                         }
                         next_expected = next_expected.max(dseq + 1);
                     }
@@ -1779,7 +1779,7 @@ pub(crate) async fn run_receiver(
                                 }
                             };
                             for pkt_data in pkts {
-                                let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                                let _ = recv_tun_tx.try_send(Bytes::copy_from_slice(pkt_data));
                             }
                             next_expected = next_expected.max(dseq + 1);
                         }
