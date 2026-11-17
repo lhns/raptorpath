@@ -2036,6 +2036,10 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
     - The receiver counts it, logs `[UNFRAMABLE]`, and closes the tunnel. A stall or hole behind healthy counters was the alternative not taken.
     - **Size, by the recommended default** (not overruled): each receiver decodes with the size its sender announces in the reliable v10 handshake. It is reversible to refuse-on-mismatch without a wire change.
     - Mixed-hint pairs stay unsupported.
+13. **s62, the c3 jitter sweep, runs after F2's §63** (owner, 2026-11-17).
+    - It costs about 3.4 h typical (6.5 h worst) over five launches, with host cargo paused, on binary `e410d640` (Bulk; no F2 fix needed).
+    - **Its one scored reading:** the knee need at J = 0 on the knee-native window minimum, gated on the floor's count drop being < 0.5 ms.
+    - Sketch: `knee-margin-rederive` `c6c55958`, doc §5. It needs its own registration, a tools-only harness and a rehearsal.
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 
