@@ -384,9 +384,10 @@ CLI_ST=0
 for _s in "${CLI_PIPE[@]}"; do [ "$_s" -ne 0 ] && CLI_ST="$_s"; done
 [ "$CLI_ST" -ne 0 ] && echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
 # F2 witness (f2-framing-design section 8 step 9): the largest `undeliv=` on any [CTLD] line and the number of [UNFRAMABLE] lines over both logs, for l1common.f2_void / f2_counts.
-_F2_TXT="$(sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log /tmp/rwm-c.log 2>/dev/null)"
-_F2_UND="$(printf '%s\n' "$_F2_TXT" | grep -a '\[CTLD\]' | grep -aoE 'undeliv=[0-9]+' | cut -d= -f2 | sort -n | tail -1)"
-_F2_UNF="$(printf '%s\n' "$_F2_TXT" | grep -ac '\[UNFRAMABLE\]')"
+# lib.sh turns `set -e` on in this script and `grep` exits 1 on no match, so every substitution here ends in `|| true` (a bare `grep -c` killed the script on plan 63's first rows: rc 1, VOID-RC on all of them).
+_F2_TXT="$(sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log /tmp/rwm-c.log 2>/dev/null || true)"
+_F2_UND="$(printf '%s\n' "$_F2_TXT" | grep -a '\[CTLD\]' | grep -aoE 'undeliv=[0-9]+' | cut -d= -f2 | sort -n | tail -1 || true)"
+_F2_UNF="$(printf '%s\n' "$_F2_TXT" | grep -ac '\[UNFRAMABLE\]' || true)"
 echo "--- F2 undeliv=${_F2_UND:-0} unframable=${_F2_UNF:-0}"
 # Stop the captures (SIGINT by PID, then wait) and print each one's counts as a parseable line:
 #   [CAPTURE] leg=<i> dev=<dev> captured=<n> kdrop=<n>     (`-` when tcpdump printed no summary)

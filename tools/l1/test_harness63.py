@@ -91,6 +91,9 @@ check("the F2 witness is the RECEIVING end's (the perf server: perf_rwm_c.sh's -
       and any("receiving end" in w and "sending end printed one" in w for w in plan63.cand_label({**Mx, "warm": "ACKED", "symsz": {"cli": [(512, 512)], "srv": [(512, 512)]}})[1]))
 My = plan63.row_metrics(["[CTLD] undeliv=1"], ["[CTLD] undeliv=2", "[CTLD] undeliv=0"], [])
 check("the reported undeliv is the SUM of both ends' largest values (srv 2 + cli 1 = 3) and any > 0 fails the CAND", My["undeliv"] == 3 and My["undeliv_srv"] == 2 and My["undeliv_cli"] == 1 and My["ctld"] == 2 and plan63.cand_label({**My, "warm": "ACKED", "symsz": {"cli": [(512, 512)], "srv": [(512, 512)]}})[0] == "FAIL")
+Md = plan63.row_metrics([], ["[CTLD] p0 tx=10 rx=40 dgrx0[fr=40 rd=41 ev=0] rxdrop0=0 undeliv=0", "[RFA] gen=0 src_n=30 rep_n=2", "[CTLD] p0 tx=20 rx=50 dgrx0[fr=49 rd=51 ev=0] rxdrop0=0 undeliv=0", "[RFA] gen=0 src_n=42 rep_n=3 final=1"], [])
+check("the denominator of undeliv=0, from the SERVER's log: src_n = the last [RFA] line's source-symbol count (42), ctld_rx / ctld_fr = the last [CTLD] line's rx= (50) and dgrx0[fr=] (49); None when the server printed none",
+      Md["src_n"] == 42 and Md["srv_rx"] == 50 and Md["srv_fr"] == 49 and plan63.row_metrics([], ["plain"], [])["src_n"] is None and plan63.row_metrics([], [], [])["srv_rx"] is None, Md)
 check("a [CTLD] line WITHOUT undeliv= (the CONTROL has no counter) is not a witness: ctld counts only the lines that carry a value; the driver's `--- F2 undeliv=0` line is not a [CTLD] line either",
       plan63.row_metrics(["[CTLD] t=5.0s gen=0"], ["[CTLD] t=5.0s gen=0"], ["--- F2 undeliv=0 unframable=0"])["ctld"] == 0 and plan63.row_metrics(["[CTLD] undeliv=0"], ["[CTLD] undeliv=0", "[CTLD] undeliv=0"], [])["ctld"] == 2)
 check("row_problems: only the binary: a row on the wrong seat's sha is a bin-sha problem, a missing pin is 'uncheckable' (never a silent pass), an unknown arm is refused",

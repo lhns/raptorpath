@@ -9,7 +9,7 @@ names the seat in the arm (`C<arm>` = CONTROL, `F<arm>` = CAND) and orders the r
     plan63.py armspec <cell> <arm>       `BYTES TIMEOUT_S HINT ENV...` (plan51e's spec for the arm without its seat prefix)
     plan63.py check 63 <ledger>          rc 0 iff the battery finished and the ledger holds a row for every slot
     plan63.py smoke <smoke|rehearsal> <ledger>    the smoke / rehearsal check: harness criteria gate (SMOKE-PASS | SMOKE-FAIL), the rows' readings are REPORTED
-    plan63.py report <ledger>            per row: warm-up outcome, [CTLD] undeliv (CAND only: CONTROL has no counter), [UNFRAMABLE] count, [SYMSZ] from both ends, the transfer outcome (separately), the seat's bin_sha, the CAND's
+    plan63.py report <ledger> [<raw diag-ld dir>]    per row (the optional dir recomputes each row's t63 from its raw logs, for a ledger older than a field): warm-up outcome, [CTLD] undeliv (CAND only: CONTROL has no counter), [UNFRAMABLE] count, [SYMSZ] from both ends, the transfer outcome (separately), the seat's bin_sha, the CAND's denominator (the source symbols the server received: the last [RFA] src_n, and the last [CTLD] rx= / frames), the CAND's
                                          PASS / FAIL on the F2 reading, and CONTROL's warm-up failures out of its rows (reported, no per-row prediction)
 
 Not a void: CONTROL may fail the warm-up (the datum), so the F2 counters are READINGS here (l1common.f2_counts), not a VOID-F2. The scored blocks (51, 51e) void on them (l1common.f2_void).
@@ -17,6 +17,7 @@ There is no pacer correlation (§63): every row's warm-up is the same unpaced Re
 the witnesses (undeliv=0 from a PRESENT [CTLD] line, no [UNFRAMABLE], [SYMSZ] local = decoder); transfer completion is reported separately."""
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -114,6 +115,19 @@ def row_metrics(cli, srv, drv):
             return sum(1 for ln in lines if "[CTLD]" in ln and lc.inum(lc.field(lc.strip(ln), "undeliv")) is not None), lc.f2_counts(lines)[0]
         out["ctld"], out["undeliv_srv"] = ends(srv)
         out["ctld_cli"], out["undeliv_cli"] = ends(cli)
+        # The denominator of `undeliv=0`: what the receiving server took in. src_n = the source symbols the server counted (the last [RFA] line, its final=1 flush), srv_rx / srv_fr = the datagrams and frames its
+        # last [CTLD] line counted (rx= / dgrx0[fr=...]). None when the server printed no such line.
+        def last(lines, tag, key):
+            v = None
+            for ln in lines:
+                if tag in ln:
+                    x = lc.inum(lc.field(lc.strip(ln), key))
+                    v = x if x is not None else v
+            return v
+        out["src_n"] = last(srv, "[RFA]", "src_n")
+        out["srv_rx"] = last(srv, "[CTLD]", "rx")
+        _fr = [m for m in (re.search(r"dgrx0\[fr=(\d+)", lc.strip(ln)) for ln in srv if "[CTLD]" in ln) if m]
+        out["srv_fr"] = int(_fr[-1].group(1)) if _fr else None
         out["undeliv"], out["unframable"] = out["undeliv_srv"] + out["undeliv_cli"], unf
         out["symsz"] = {"cli": lc.symsz(cli), "srv": lc.symsz(srv)}
         out["rate_echo"] = lc.gate_tok(cli, "RWM_PERF_RATE_MBIT")
@@ -186,7 +200,17 @@ def _fmt_sz(v):
     return ",".join(f"{a}/{b}" for a, b in v) or "none"
 
 
-def report(path, out=print):
+def _reparse(r, raw):
+    """The row's t63 recomputed from its raw logs (`<raw>/<cell>@def-<arm>-s<seed>-r<rep>-a1-{c.log,s.log,drv.out}`), for a ledger written before a field existed; None when the logs are missing."""
+    base = os.path.join(raw, f"{r['cell']}@def-{r['arm']}-s{r['seed']}-r{r['rep']}-a1-")
+    try:
+        rd = lambda suf: open(base + suf, errors="replace").read().splitlines()      # noqa: E731
+        return row_metrics(rd("c.log"), rd("s.log"), rd("drv.out"))
+    except OSError:
+        return None
+
+
+def report(path, out=print, raw=None):
     """One ROW63 line per row and one LABEL63 line per row, then the per-seat bin_sha and VERDICT63. All reported: nothing here gates a launch. CONTROL: warm-up failures out of its rows (no per-row prediction; 0 of 5
     means the CAND reading is weak: nothing was reproduced). CAND: the F2 reading per row; a failed CAND row blocks E-pre."""
     cnt, _ = _rows(path)
@@ -196,7 +220,7 @@ def report(path, out=print):
     ctl_fail = cand_fail = 0
     for r in sorted(cnt, key=lambda r: (int(r["rep"]), r["arm"][0] != "C")):
         seat, base = arm_parse(r["arm"])
-        t = r.get("t63") or {}
+        t = (_reparse(r, raw) if raw else None) or r.get("t63") or {}
         if not t:
             out(f"ROW63 {r['arm']} s{r['seed']} r{r['rep']}: no t63 ({r.get('t63_error')})")
             continue
@@ -206,7 +230,8 @@ def report(path, out=print):
         ctl_fail += seat == "CONTROL" and t["warm"] == "NEVER-ACKED"
         cand_fail += lab == "FAIL"
         out(f"ROW63 {r['arm']} s{r['seed']} r{r['rep']}: status={r.get('status')} warm={t['warm']} transfer={t['transfer']} undeliv={_fmt_und(seat, t)} unframable={t['unframable']} "
-            f"symsz(cli)={_fmt_sz(t['symsz']['cli'])} symsz(srv)={_fmt_sz(t['symsz']['srv'])} rate_echo={t['rate_echo']} bin_sha={str(r.get('bin_sha'))[:16]}")
+            f"symsz(cli)={_fmt_sz(t['symsz']['cli'])} symsz(srv)={_fmt_sz(t['symsz']['srv'])} rate_echo={t['rate_echo']} bin_sha={str(r.get('bin_sha'))[:16]}"
+            + ("" if seat == "CONTROL" else f" | denominator (server received): src_n={t.get('src_n')} ctld_rx={t.get('srv_rx')} ctld_fr={t.get('srv_fr')}"))
         out(f"LABEL63 {r['arm']}-s{r['seed']} {lab} ({note})")
     want = {"CONTROL": os.environ.get("LD_BIN_SHA_CONTROL") or CONTROL_SHA, "CAND": os.environ.get("LD_BIN_SHA_CAND") or None}      # run_all exports both pins
     for seat in ("CONTROL", "CAND"):
@@ -288,7 +313,7 @@ def main(argv):
         if cmd == "smoke":
             return smoke(a[0], a[1])
         if cmd == "report":
-            return report(a[0])
+            return report(a[0], raw=a[1] if len(a) > 1 else None)
     except ValueError as e:
         print(f"ABORT-PLAN63 {e}")
         return 3
