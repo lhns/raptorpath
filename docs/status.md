@@ -1322,7 +1322,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **The G12 s42 r5 B1 outlier** (−101 ms): not investigated.
 - **For the owner, as a heads-up and not a finding:** the post-hoc bound points toward DISAGREES at c3. If the re-run confirms it, S_F is not the knee's term at a second leg shape, and decision 8's form (g·S_F) is reopened.
 
-**§61 Amendment 2 (proposed; Fable's review pending): 61a re-run after a new rehearsal.** Each fix is justified on control data, on the registration's own text, or on geometry. The pilot's direction comes from geometry, and its size is checked post hoc on 61a's and c2's curves. That is acceptable because arm placement touches no scored rule, and the scoreability rule is unchanged.
+**§61 Amendment 2 (2026-11-17, before any VM contact for the re-run; Fable reviewed it twice, both rounds applied): 61a re-run after a new rehearsal.** The launch sha is pinned by a further amendment once the harness items land. Each fix is justified on control data, on the registration's own text, or on geometry. The pilot's direction comes from geometry, and its size is checked post hoc on 61a's and c2's curves. That is acceptable because arm placement touches no scored rule, and the scoreability rule is unchanged.
 1. **The re-run's control is W 512, registered outright** (`LD_CTL61=512`).
    - **Why:** 7 of 7 W 2 048 rows this session read ratio 1.51–1.90 (the six 61a controls and the rehearsal's R1), so a 2 048 control would read CONTROL-MOVED again.
    - A rehearsal gate alone would not prevent that: one healthy R1 at 1.49 would pass, and 61a's six controls would then flag.
