@@ -18,6 +18,8 @@ reading here is POST HOC: none was registered. Sections:
   7. what the floor minimum's drop follows: samples, time span or acks (doubling drops regressed on each), and count- against span-matched drops
   8. L at several equal counts (does L move with the count?)
   9. a count-free statistic (the window's own p10 / p50): within-arm check, need_q on both sessions with intervals, k_q per spread
+  10. one quantile statistic for floor, knee and spread: count table, draws per window, rho_q
+  Round 3: 11. location and spread in ms, apart, and the label of every pair; 12. the engine's own pair and its margin; 13. c1s ranks at jitter 0
 """
 import json
 import math
@@ -849,6 +851,7 @@ def round2b(rows, c2, c3c, c3a, rowsA, dr, sess):
                 parts.append(f"W{W}: " + " ".join(f"{k_} {med(v):+.2f}" for k_, v in sh.items()))
         P(f"  nk split {lab}: " + " | ".join(parts))
     round2c(rows, c2, c3c, c3a, rowsA, dr, sess)
+    round3(rows, c2, c3c, c3a, rowsA, dr, sess)
 
 
 # ───────────────────────────── round 2c: one quantile statistic for floor, knee and spread ─────────────────────────────
@@ -932,6 +935,76 @@ def round2c(rows, c2, c3c, c3a, rowsA, dr, sess):
             lab_ = "AGREES" if -0.085 < lo and hi < 0.085 else ("DISAGREES" if hi < -0.085 or lo > 0.085 else "UNRESOLVED")
             parts.append(f"{lab} rho_3 {r3:.3f} (intercept {rho_q(c3, loc, spr, '0'):.3f}) d {r3 - rho_q(c2, loc, spr):+.3f} [{lo:+.3f}, {hi:+.3f}] {lab_}")
         P(f"    loc {loc}, spread {spr:<8}: " + " | ".join(parts))
+
+
+# ───────────────────────────── round 3: location and spread apart, the engine's statistic, c1s ranks ─────────────────────────────
+def round3(rows, c2, c3c, c3a, rowsA, dr, sess):
+    cells = (("c2", c2), ("c3 61c", c3c), ("c3 61a", c3a))
+    P("\n== 11. Round 3. The knee's rise in ms for each location statistic, and each floor spread in ms, separately (no ratios). u-matched floor;"
+      " knee interpolated at each replicate's W95; median over replicates ==")
+
+    def rise_min(c, fns, kns):
+        return need(c, fns, kns, "u")[0]
+
+    def rise_q(c, key):
+        f_ = q_floor(c, key)
+        return med([t - f_ for t in q_knees(c, key)])
+
+    loc = (("minimum, engine-native windows", lambda c: rise_min(c, None, None)),
+           ("minimum, registered counts", lambda c: rise_min(c, None if c.cell == C2 else NF, None if c.cell == C2 else NK)),
+           ("minimum, one count (L)", lambda c: med([t for _, t, _ in c.knees(None if c.cell == C2 else NK)]) - c.floor(NK, "u")[0]),
+           ("window p10", lambda c: rise_q(c, "p10")),
+           ("window p50", lambda c: rise_q(c, "p50")))
+    spr = (("S_F registered counts (p50 - min)", lambda c: floor_conv(c, None if c.cell == C2 else NF, "u")[1]),
+           ("S_F engine-native (p50 - min, native windows)", lambda c: c.floor(None, "u")[1]),
+           ("p90 - p10 (native windows)", lambda c: qf(c, "p90-p10")))
+    P("  location (knee rise, ms):")
+    for nm, fn in loc:
+        P(f"    {nm:<46} " + " | ".join(f"{lab} {fn(c):.2f}" for lab, c in cells))
+    P("  spread (floor, ms):")
+    for nm, fn in spr:
+        P(f"    {nm:<46} " + " | ".join(f"{lab} {fn(c):.2f}" for lab, c in cells))
+
+    P("  the price-table reading of the median's rise (arm medians: floor = the floor pool's median tp50; knee = tp50 interpolated over the K and P1"
+      " arm medians at the median W95), over S_F at the registered counts:")
+    for lab, c in cells:
+        W1 = FLOOR[c.cell][0]
+        fl = med([native_q(r, "tp50") for r in c.floor_rows[W1]])
+        w95 = med([w for w, _, _ in c.knees(None)])
+        arms = sorted({W for wm in c.reps.values() for W in tuple(c.karms) + (c.p1,) if W in wm})
+        kn = interp([(W, med([native_q(wm[W], "tp50") for wm in c.reps.values() if W in wm])) for W in arms], w95)
+        S = floor_conv(c, None if c.cell == C2 else NF, "u")[1]
+        P(f"    {lab}: floor tp50 {fl:.2f}, knee tp50 at W95 {w95:.1f} {kn:.2f}, rise {kn - fl:.2f} ms, over S_F {S:.3f} = {(kn - fl) / S:.3f}")
+
+    P("  labels for every location / spread pair built from these rows (d = rho_3 - rho_2, 90 % over 400 of the section-6 draws; Delta 0.085):")
+
+    def rho_pair(c, lf, sf):
+        return lf(c) / sf(c)
+
+    for ln_, lf in loc:
+        for sn, sf in spr:
+            parts = [f"rho_2 {rho_pair(c2, lf, sf):.3f}"]
+            for lab, c3, _ in sess:
+                d = sorted(rho_pair(d3, lf, sf) - rho_pair(d2, lf, sf) for d2, d3 in dr[lab][:400])
+                lo, hi = q90(d)
+                lab_ = "AGREES" if -0.085 < lo and hi < 0.085 else ("DISAGREES" if hi < -0.085 or lo > 0.085 else "UNRESOLVED")
+                parts.append(f"{lab} {rho_pair(c3, lf, sf):.3f} d [{lo:+.3f}, {hi:+.3f}] {lab_}")
+            P(f"    {ln_:<32} / {sn:<46}: " + " | ".join(parts))
+
+    P("\n== 12. The engine's own pair (store-law.md R6.2: R = 1 iff the window minimum T-hat-min = F + A on the engine's windows; decision 8: S_F on the"
+      " windows F-hat is read on): minimum and S_F both on native windows, with s61's margin re-derived for it: Delta = min_c q_R F_c / S_F,c ==")
+    for lab, c in cells:
+        F, S = c.floor(None, "u")
+        P(f"    {lab}: F {F:.3f}, S_F {S:.3f}, q_R F / S_F = {0.05 * F / S:.3f}")
+    P("\n== 13. At jitter 0 do the ranks coincide? c1s (s60, netem jitter 0) floor arms: each statistic's median over rows of the row's LATE median,"
+      " and its rise from W64 ==")
+    base = {}
+    for W in (64, 128, 192):
+        rs = arm(rows, C1S, W)
+        v = {k: med([native_q(r, k) for r in rs]) for k in ("tmin", "p10", "p50", "p90")}
+        base.setdefault("b", v)
+        b = base["b"]
+        P(f"    W{W} (u_link {med([link_u(r, 'cli0') for r in rs]):.2f}): " + " | ".join(f"{k} {v[k]:.3f} (+{v[k] - b[k]:.3f})" for k in v))
 
 
 if __name__ == "__main__":

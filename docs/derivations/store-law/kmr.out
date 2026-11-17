@@ -246,3 +246,45 @@
     loc p10, spread p90-p10 : rho_2 0.836 | 61c rho_3 0.759 (intercept 0.888) d -0.077 [-0.136, -0.029] UNRESOLVED | 61a rho_3 0.776 (intercept 0.895) d -0.060 [-0.099, -0.014] UNRESOLVED
     loc p50, spread p50-p10 : rho_2 1.213 | 61c rho_3 1.686 (intercept 2.116) d +0.473 [+0.330, +0.582] DISAGREES | 61a rho_3 1.719 (intercept 2.120) d +0.506 [+0.386, +0.606] DISAGREES
     loc p50, spread p90-p50 : rho_2 1.454 | 61c rho_3 1.933 (intercept 2.485) d +0.479 [+0.310, +0.610] DISAGREES | 61a rho_3 1.923 (intercept 2.392) d +0.469 [+0.324, +0.574] DISAGREES
+
+== 11. Round 3. The knee's rise in ms for each location statistic, and each floor spread in ms, separately (no ratios). u-matched floor; knee interpolated at each replicate's W95; median over replicates ==
+  location (knee rise, ms):
+    minimum, engine-native windows                 c2 4.05 | c3 61c 3.71 | c3 61a 4.10
+    minimum, registered counts                     c2 4.05 | c3 61c 4.43 | c3 61a 4.38
+    minimum, one count (L)                         c2 5.66 | c3 61c 8.87 | c3 61a 7.99
+    window p10                                     c2 4.63 | c3 61c 6.40 | c3 61a 6.57
+    window p50                                     c2 3.62 | c3 61c 7.21 | c3 61a 7.43
+  spread (floor, ms):
+    S_F registered counts (p50 - min)              c2 5.08 | c3 61c 9.71 | c3 61a 9.56
+    S_F engine-native (p50 - min, native windows)  c2 5.08 | c3 61c 5.86 | c3 61a 6.09
+    p90 - p10 (native windows)                     c2 5.54 | c3 61c 8.44 | c3 61a 8.47
+  the price-table reading of the median's rise (arm medians: floor = the floor pool's median tp50; knee = tp50 interpolated over the K and P1 arm medians at the median W95), over S_F at the registered counts:
+    c2: floor tp50 13.70, knee tp50 at W95 168.0 17.31, rise 3.61 ms, over S_F 5.083 = 0.711
+    c3 61c: floor tp50 48.73, knee tp50 at W95 108.7 55.65, rise 6.92 ms, over S_F 9.709 = 0.713
+    c3 61a: floor tp50 48.47, knee tp50 at W95 108.0 55.64, rise 7.17 ms, over S_F 9.563 = 0.750
+  labels for every location / spread pair built from these rows (d = rho_3 - rho_2, 90 % over 400 of the section-6 draws; Delta 0.085):
+    minimum, engine-native windows   / S_F registered counts (p50 - min)             : rho_2 0.797 | 61c 0.382 d [-0.459, -0.388] DISAGREES | 61a 0.429 d [-0.412, -0.337] DISAGREES
+    minimum, engine-native windows   / S_F engine-native (p50 - min, native windows) : rho_2 0.797 | 61c 0.633 d [-0.222, -0.131] DISAGREES | 61a 0.674 d [-0.169, -0.087] DISAGREES
+    minimum, engine-native windows   / p90 - p10 (native windows)                    : rho_2 0.731 | 61c 0.440 d [-0.334, -0.261] DISAGREES | 61a 0.484 d [-0.289, -0.213] DISAGREES
+    minimum, registered counts       / S_F registered counts (p50 - min)             : rho_2 0.797 | 61c 0.457 d [-0.396, -0.309] DISAGREES | 61a 0.458 d [-0.393, -0.289] DISAGREES
+    minimum, registered counts       / S_F engine-native (p50 - min, native windows) : rho_2 0.797 | 61c 0.756 d [-0.129, +0.009] UNRESOLVED | 61a 0.719 d [-0.155, +0.005] UNRESOLVED
+    minimum, registered counts       / p90 - p10 (native windows)                    : rho_2 0.731 | 61c 0.526 d [-0.274, -0.159] DISAGREES | 61a 0.517 d [-0.277, -0.150] DISAGREES
+    minimum, one count (L)           / S_F registered counts (p50 - min)             : rho_2 1.114 | 61c 0.914 d [-0.254, -0.158] DISAGREES | 61a 0.835 d [-0.348, -0.180] DISAGREES
+    minimum, one count (L)           / S_F engine-native (p50 - min, native windows) : rho_2 1.114 | 61c 1.514 d [+0.321, +0.460] DISAGREES | 61a 1.313 d [+0.086, +0.357] DISAGREES
+    minimum, one count (L)           / p90 - p10 (native windows)                    : rho_2 1.023 | 61c 1.052 d [-0.029, +0.078] AGREES | 61a 0.944 d [-0.157, +0.027] UNRESOLVED
+    window p10                       / S_F registered counts (p50 - min)             : rho_2 0.910 | 61c 0.660 d [-0.322, -0.203] DISAGREES | 61a 0.687 d [-0.273, -0.174] DISAGREES
+    window p10                       / S_F engine-native (p50 - min, native windows) : rho_2 0.910 | 61c 1.092 d [+0.097, +0.245] DISAGREES | 61a 1.079 d [+0.118, +0.227] DISAGREES
+    window p10                       / p90 - p10 (native windows)                    : rho_2 0.836 | 61c 0.759 d [-0.136, -0.029] UNRESOLVED | 61a 0.776 d [-0.099, -0.014] UNRESOLVED
+    window p50                       / S_F registered counts (p50 - min)             : rho_2 0.713 | 61c 0.743 d [-0.045, +0.077] AGREES | 61a 0.777 d [+0.001, +0.112] UNRESOLVED
+    window p50                       / S_F engine-native (p50 - min, native windows) : rho_2 0.713 | 61c 1.230 d [+0.412, +0.590] DISAGREES | 61a 1.222 d [+0.417, +0.574] DISAGREES
+    window p50                       / p90 - p10 (native windows)                    : rho_2 0.655 | 61c 0.855 d [+0.121, +0.253] DISAGREES | 61a 0.878 d [+0.160, +0.259] DISAGREES
+
+== 12. The engine's own pair (store-law.md R6.2: R = 1 iff the window minimum T-hat-min = F + A on the engine's windows; decision 8: S_F on the windows F-hat is read on): minimum and S_F both on native windows, with s61's margin re-derived for it: Delta = min_c q_R F_c / S_F,c ==
+    c2: F 8.679, S_F 5.083, q_R F / S_F = 0.085
+    c3 61c: F 42.523, S_F 5.861, q_R F / S_F = 0.363
+    c3 61a: F 42.028, S_F 6.085, q_R F / S_F = 0.345
+
+== 13. At jitter 0 do the ranks coincide? c1s (s60, netem jitter 0) floor arms: each statistic's median over rows of the row's LATE median, and its rise from W64 ==
+    W64 (u_link 0.22): tmin 2.381 (+0.000) | p10 2.620 (+0.000) | p50 2.809 (+0.000) | p90 3.231 (+0.000)
+    W128 (u_link 0.38): tmin 2.415 (+0.034) | p10 2.760 (+0.139) | p50 3.172 (+0.363) | p90 3.759 (+0.528)
+    W192 (u_link 0.50): tmin 2.523 (+0.142) | p10 3.036 (+0.415) | p50 3.562 (+0.753) | p90 4.344 (+1.113)

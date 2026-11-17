@@ -1,36 +1,37 @@
-# Knee margin after s61's DISAGREES: what need scales with, and the count-free statistic it needs first
+# Knee margin after s61's DISAGREES: what need scales with, and which statistic decides it
 
-Status: DERIVATION, round 2. Docs and Python only: no engine code, no cargo, no VM. Branch `knee-margin-rederive` off
-`github/main` `4559bbee`. This round answers the coordinator's round-2 points and status "§61a re-run Result,
+Status: DERIVATION, round 3. Docs and Python only: no engine code, no cargo, no VM. Branch `knee-margin-rederive` off
+`github/main` `4559bbee`. Round 3 answers the coordinator's round-3 points after Fable's review, on top of round 2 and status "§61a re-run Result,
 Erratum 1" (main `face6093`).
 
 **Every reading here is post hoc,** and so is every statistic chosen on these rows. None was registered.
 Confirmation is out of sample, in s62 (§5), and §5's predictions are built around the statistic §2 proposes.
 
 **In plain words.**
-- **DISAGREES stands** (Erratum 1). The registered ρ is not invariant across c2 and c3 under the registered counting.
-- **"Constant in ms" and "S_F is not the term" are withdrawn,** as the Erratum says. On bands that span both c3
-  sessions:
-  - need is consistent with constant under the registered counts (×0.96–1.22) and the engine-native counts
-    (×0.85–1.10);
-  - at one count for both sides it is not (×1.30–1.64). There it is jitter-sized, but no single spread is singled
-    out.
-- **The minimum is the problem.** A window minimum keeps falling as more samples are pooled, and it does not flatten
-  anywhere in these rows: −1.95 ms at c2 and −7.3 to −9.5 ms at c3, from native windows to 4 200 samples.
-  - The sample count drives it, not the time span: interleaved and shuffled pooling at a fixed count reads the same.
-  - On the jitter-free c1s line it nearly vanishes (−0.12 to −0.18 ms over 32 windows).
-  - So any knee reading built on minima carries the estimator's count. Differencing at one count cancels most of it
-    (L moves ≤ 0.5 ms over a 4–16× count change), but not to a law-grade level.
-- **A count-free replacement:** per-window quantiles, applied to the floor, the knee reading and the spread alike.
-  - They are flat across the count table (≤ 0.18 ms, against the minimum's 2–9.5 ms). That is partly by
-    construction, as §2.3 explains.
-  - **On estimator grounds,** c3's floor windows hold ≈ 21 independent draws. Only quantiles near the centre,
-    roughly p25–p75, have ≥ 5 draws beyond them there, so p10 and p90 behave like extremes at c3.
-  - So the proposal is the **window median for location and the interquartile range for spread.** The IQR is not
-    logged. The logged stand-in (p50 against p90 − p10) DISAGREES consistently, at c2 and both c3 sessions
-    (d = +0.20 / +0.22).
+- **DISAGREES stands** (Erratum 1). "Constant in ms" and "S_F is not the term" stay withdrawn.
+- **The counting question is settled** (round 2, §2.1–2.2). The floor's drop follows the sample count, through the
+  jitter, and not the time span.
+- **But the label depends on the statistic, so no label chosen on these rows is evidence.**
+  - Δρ reads −0.34 with the registered minimum, about −0.2 with the minimum at one count, −0.07 with p10, and +0.20
+    with p50.
+  - With location and spread taken apart (§2.3), the same two cells give AGREES, UNRESOLVED and DISAGREES (both
+    signs).
+  - Fable's reading holds. The median's rise over the registered S_F is 0.711 at c2 and 0.713 / 0.750 on the two c3
+    sessions. **Two cells can yield every label.**
+- **The engine fixes the statistic (§2.4).** The store law holds the window minimum of its own native windows against
+  floor + allowance (R6.2: R = 1 iff T̂min = F̂ + A), and decision 8 reads S_F on the windows F̂ is read on.
+  - On that pair, the native minimum over the native S_F, ρ DISAGREES on both c3 sessions: d [−0.22, −0.13] and
+    [−0.17, −0.087], against the re-derived margin Δ = 0.085. On 61a it clears Δ by 0.002.
+  - The minimum's count dependence is then the law's own, not a measurement convention.
+- **The quantile statistic of round 2 (window median + IQR) is a candidate, untested.**
+  - The IQR is not logged.
+  - Its stand-in p90 − p10 fails the estimator criterion at c3, so the stand-in's DISAGREES does not test it.
+  - The criterion (≥ 5 independent draws beyond the quantile) and the ≈ 17–21 independent draws per c3 floor window
+    are now derived and measured (§2.5).
 - **Decision 8's form is unchanged and is not a derivation here.** F07 stays UNDERIVED.
-- **The one owner call is whether to spend ≈ 3 h on s62,** and it comes after review of §2's statistic.
+- **s62 (§5) registers the knee rise in ms against the spread along the jitter axis** (intercept and slope), not a ρ.
+  Its margins are derived for that reading.
+- **There is no owner question yet.** The 3 h question comes only after design review of §2.4–2.6.
 
 **Advisor (Fable) log.**
 1. **Round 1.** Reproduce first; tabulate conventions with intervals; give each candidate its two-point exponent;
@@ -50,7 +51,14 @@ Confirmation is out of sample, in s62 (§5), and §5's predictions are built aro
    - All applied.
 4. **The coordinator's three constraints from Fable** (one statistic for engine and measurement, computable on native
    windows with count-free bias; applied to all three inputs; shown flat on the count table, with ρ consistent across
-   c2 and both c3 sessions). §2.3 applies them.
+   c2 and both c3 sessions). Round 2's §2.3 applied them.
+5. **Round 3 (coordinator, after Fable).**
+   - The label depends on the statistic (−0.34 / −0.2 / −0.07 / +0.20), so no statistic chosen on these rows is
+     evidence, and the flattening test is passed by any quantile by construction.
+   - Location and spread are shown apart, in ms (§2.3).
+   - The statistic is fixed from the engine (§2.4).
+   - The criterion and the draw count are derived (§2.5), and the quantile candidate is marked untested (§2.6).
+   - s62 registers rise against spread, not a ρ (§5), and there is no owner question.
 
 **Script** (stdlib, `python -I -X utf8`, run from `docs/`; output beside it):
 
@@ -65,7 +73,10 @@ Confirmation is out of sample, in s62 (§5), and §5's predictions are built aro
 - §7 / §7b what the floor's drop follows;
 - §8b L on a window ladder (§8 superseded);
 - §9 / §9b the statistics side by side;
-- §10 the quantile statistic: the count table, the independent draws per window, and ρ_q.
+- §10 the quantile statistic: the count table, the independent draws per window, and ρ_q;
+- §11 location and spread in ms, apart, and the label of every pair;
+- §12 the engine's own pair and its margin;
+- §13 c1s ranks at jitter 0.
 
 **`rep61b` is now used.** It is loaded on its own (the collision fix) and serves only §7's doubling-drop regression, as
 c2's lower arms W 96 / 128 / 144. No floor or knee reading needs it, since c2's floor is W 16 and its knee arms are
@@ -220,109 +231,154 @@ The knee arms are pooled over k windows, and the floor is grouped to the knee's 
 - So differencing at one count cancels most, but not all, of the count dependence. The residual (0.3–0.5 ms, more on
   thin floors) is the size of s61's Δ·S_F. The c3 knee cannot be read below ≈ 460 samples, nor c2's below ≈ 2 250.
 - **"Equal count makes need a path property" holds only approximately.** A count rule would also need a declared n\*
-  and floor dwell long enough for ≥ 6 groups at n\*. That is why §2.3 proposes a count-free statistic instead.
+  and floor dwell long enough for ≥ 6 groups at n\*. §2.4 shows the engine settles which statistic counts, and §2.6 keeps a count-free candidate for review.
 
-### 2.3 A count-free statistic for all three inputs (`kmr.out` §10; the coordinator's constraints)
+### 2.3 Location and spread apart: two cells can yield every label (`kmr.out` §11)
 
-**The constraints.**
-1. One statistic for the engine and the measurement, computable on the engine's native windows (≈ 60 samples at c3's
-   floor, 282 at c2's), with a bias that does not depend on the window's count.
-2. Applied to the floor, the knee reading and the spread alike.
-3. Shown flat on the count table where the minimum failed, with ρ consistent across c2 and both c3 sessions.
+**The knee's rise above the floor, in ms, for each location statistic** (u-matched floor; median over replicates):
 
-**The family: a per-window sample quantile at a fixed rank fraction p.**
+| location | c2 | c3 61c | c3 61a |
+|---|---|---|---|
+| minimum, engine-native windows | 4.05 | 3.71 | 4.10 |
+| minimum, registered counts | 4.05 | 4.43 | 4.38 |
+| minimum, one count (L) | 5.66 | 8.87 | 7.99 |
+| window p10 | 4.63 | 6.40 | 6.57 |
+| window p50 | 3.62 | 7.21 | 7.43 |
+
+**The floor spread, in ms:**
+
+| spread | c2 | c3 61c | c3 61a |
+|---|---|---|---|
+| S_F at the registered counts (p50 − min) | 5.08 | 9.71 | 9.56 |
+| S_F on native windows (p50 − min) | 5.08 | 5.86 | 6.09 |
+| p90 − p10 (native windows) | 5.54 | 8.44 | 8.47 |
+
+**Fable's reading from the price tables** (arm medians: the floor pool's tp50, and the knee's tp50 interpolated at the
+median W₉₅):
+
+| | floor tp50 | knee tp50 | rise | rise / S_F (registered) |
+|---|---|---|---|---|
+| c2 | 13.70 | 17.31 | 3.61 ms | **0.711** |
+| c3 61c | 48.73 | 55.65 | 6.92 ms | **0.713** |
+| c3 61a | 48.47 | 55.64 | 7.17 ms | **0.750** |
+
+**It holds.**
+
+**Every location / spread pair**, as d = ρ₃ − ρ₂ with its 90 % interval (`kmr.out` §11, 400 draws), against
+Δ = 0.085:
+- **AGREES:**
+  - p50 over registered S_F on 61c ([−0.045, +0.077]);
+  - L over p90 − p10 on 61c ([−0.029, +0.078]).
+- **UNRESOLVED:**
+  - the registered minimum over native S_F, both sessions;
+  - p10 over p90 − p10, both;
+  - the 61a halves of the two AGREES pairs.
+- **DISAGREES, negative:**
+  - the registered minimum over registered S_F (s61's label);
+  - the native minimum over every spread;
+  - L and p10 over registered S_F.
+- **DISAGREES, positive:**
+  - L, p10 and p50 over native S_F;
+  - p50 over p90 − p10.
+
+**So two cells can yield every label from the same rows.** A statistic chosen because of its label is a fit. The
+statistic has to be fixed from outside the data, which §2.4 does from the engine.
+
+### 2.4 The engine fixes the location: the law holds the native window minimum
+
+**What the store law keeps below its target** (`store-law.md` R6.2, lines 1380 and 1926; `store-law-r67.md` §5, the
+R6.7 line; `store-law-r68.md` §1.1):
 
 ```text
-   Q_p(window)  =  the p-quantile of the window's own echo samples            (native windows; no pooling, so no count rule)
-   floor   Q_p,F  =  median over the floor windows of Q_p                      knee   Q_p(W₉₅)  =  median over the operating-point windows
-   spread  R_F    =  median over the floor windows of (Q_{1−p'} − Q_{p'})      the same windows as Q_p,F
-   ρ_q  =  ( Q_p(W₉₅) − Q_p,F ) / R_F
+   R_k  =  Σᵢ wᵢ,ₖ · ( Fᵢ + Aᵢ + Ŝᵢ,ₖ ) / Σᵢ wᵢ,ₖ · T̂ᵢ,ₖ          Ŝᵢ,ₖ = T̂ᵢ,ₖ − T̂minᵢ,ₖ        (T̂ the window median, T̂min the minimum, w the count)
+   R = 1   ⇔   Σ w·T̂min  =  Σ w·(F + A)            one leg:   T̂min(n*)  =  F̂ + A
+   F̂ᵢ  =  median of T̂min,k over the K windows of lowest store size          (R6.7 candidate C: also a window minimum)
 ```
 
-**Provenance.**
-- p and p′ are declared rank fractions.
-- A sample quantile at a fixed fraction is a consistent estimator with O(1/m) bias in its window's count m of
-  independent draws. That is standard order-statistics theory (for example Serfling 1980, §2.3; David & Nagaraja
-  2003, ch. 4, which also covers the extremes). It holds when the draws beyond the quantile are not few.
-- The criterion used here, declared: **m·min(p, 1 − p) ≥ 5 independent draws beyond the quantile.** Below that, the
-  quantile behaves as an extreme and inherits the minimum's count dependence.
-- **Independent draws per native floor window** (`kmr.out` §10b; acks per window, skbs similar):
+- **The location is fixed by the law.** The median cancels from the fixed point, and what the law holds against
+  floor + allowance is the **window minimum, on the engine's own (native) windows**, at both the operating point and
+  the floor.
+- **Decision 8 fixes the spread:** "S_F is the floor windows' median − minimum, read on the windows F̂ is read on".
+  That is native p50 − min.
+- **What the engine can compute:**
+  - per window, the count, minimum, median and mean (`store-law.md` R6.2 table: "w, T̂, T̂min, Ŝ: the per-leg window
+    sampler of `record_rtt_sample`");
+  - σ (`qsp_us`, P90 − P50 over the last 256 echoes);
+  - ℓ̂, a lifetime minimum on the gauge branch, DISHONEST-INPUT (E13);
+  - Copa's 10 s running minimum m̂.
+  - The per-window p10 / p90 exist only in the gauge (`[WSTAT]`, `net/slaw.rs` `WinSampler::close`, nearest-rank on a
+    bounded buffer). They are computable in principle, but they are not law inputs.
+- **The engine's own pair, then:** the native minimum's rise over native S_F (`kmr.out` §11 row 2, §12).
 
-  | cell | m per floor window | m·0.10 | m·0.25 | m·0.50 |
-  |---|---|---|---|---|
-  | c2 W 16 | ≈ 75 acks (59 skbs) | 7.5 | 18.8 | 37.7 |
-  | c3 W 12, both sessions | ≈ 21 acks (17 skbs) | 2.1 | 5.2 | 10.5 |
+  | | ρ | d = ρ₃ − ρ₂, 90 % | label |
+  |---|---|---|---|
+  | c2 | 0.797 | – | – |
+  | c3 61c | 0.633 | [−0.222, −0.131] | DISAGREES |
+  | c3 61a | 0.674 | [−0.169, −0.087] | DISAGREES (clears Δ by 0.002) |
 
-  - At c3's floor, p10 and p90 fail the criterion, the quartiles pass at the edge, and the median passes.
-  - **The estimator choice is therefore location Q₅₀ and spread R = Q₇₅ − Q₂₅ (the IQR).** These are the most
-    extreme rank fractions that are central at the smallest engine window measured.
-  - It is chosen on estimator grounds, before looking at ρ, but it is still chosen on these rows.
-- **The IQR is not logged.** `[WSTAT]` prints p10 / p50 / p90 only. So the chosen spread can be shown only through a
-  stand-in, p90 − p10, which fails the criterion at c3.
-
-**The count table** (`kmr.out` §10a). Floor pool, median over rows, native windows then G(250 … 4 200); the value is the
-change from native to G(4 200):
-
-| statistic | c2 W 16 | c3 61c W 12 | c3 61a W 12 |
-|---|---|---|---|
-| minimum | −1.95 | **−9.52** | **−7.34** |
-| p10 | −0.05 | −0.05 | −0.18 |
-| p50 | −0.01 | −0.05 | −0.02 |
-| p90 | −0.03 | +0.08 | +0.02 |
-| p90 − p10 | +0.03 | +0.18 | +0.11 |
-
-- **The quantiles are flat, but partly by construction.** A group's quantile is carried as the nk-weighted median of
-  its windows' quantiles, so the table shows that per-window quantiles are stable when aggregated. It cannot show
-  that a window's quantile is free of its own count.
-- That needs the raw samples. `RWM_RTT_DUMP` (in the binary, off by default) dumps the RTT sample stream the dispersion
-  estimators consume (`raptorpath/src/net/rttdump.rs`). Whether that stream is the `[SLAW]` echo stream must be
-  checked before s62 relies on it.
-- **The within-arm nk split cannot settle it either** (`kmr.out` §9b). Windows with fewer samples are windows with
-  longer delay: under a window-limited store the sample rate is about W/RTT.
-  - At c3 W 12, p10 / p50 / p90 / tmin shift +1.80 / +1.39 / +0.03 / +0.07 ms;
-  - at c2 W 16, +0.38 / +0.49 / +0.42 / +0.37.
-  - c2 is a location shift. c3 is not, and c3's windows are where p10 and p90 are extreme-like.
-
-**ρ built from one statistic, at c2 and both c3 sessions** (`kmr.out` §10c). Every input is a per-window quantile, read
-on the u-matched floor. d = ρ₃ − ρ₂ with its 90 % interval, against Δ = 0.085.
-
-| location / spread | ρ₂ | 61c ρ₃ (intercept) | 61c d | 61a ρ₃ (intercept) | 61a d |
-|---|---|---|---|---|---|
-| **p50 / p90 − p10** (the chosen location; the logged stand-in for the IQR) | 0.655 | 0.855 (1.048) | **+0.200 [+0.121, +0.253] DISAGREES** | 0.878 (1.063) | **+0.223 [+0.160, +0.259] DISAGREES** |
-| p10 / p90 − p10 | 0.836 | 0.759 (0.888) | −0.077 [−0.136, −0.029] UNRESOLVED | 0.776 (0.895) | −0.060 [−0.099, −0.014] UNRESOLVED |
-| p50 / p50 − p10 | 1.213 | 1.686 (2.116) | +0.473 DISAGREES | 1.719 (2.120) | +0.506 DISAGREES |
-| p50 / p90 − p50 | 1.454 | 1.933 (2.485) | +0.479 DISAGREES | 1.923 (2.392) | +0.469 DISAGREES |
-
-- **The chosen statistic disagrees, consistently.** The sign and size are the same on both c3 sessions (d +0.20 /
-  +0.22). That is the consistency constraint 3 asks for, here in the DISAGREES direction.
-- The p10 row is the only one near agreement. Its location fails the estimator criterion at c3, so it is not chosen,
-  and choosing it because it fits would be the fit the advisor warned against.
-- **Floor position still matters for quantiles.** ρ₃ moves 0.19 between the u-matched floor and the intercept, because
-  the quantile floor rises with W already at the floor pools (FIFO absorption starts there).
-- **What this means:**
-  - under a count-free statistic, the knee's median rise is a larger fraction of the floor spread at c3 than at c2,
-    by about 30 %;
-  - no logged statistic makes ρ shape-free across these two cells;
-  - whether the IQR does is s62's question.
-
-### 2.4 For the engine-form design (review, not an owner question)
-
-- **The proposed replacement for T̂min and F̂ in the store law's fixed point** is the window median, with the IQR as
-  the spread term, all on native windows:
+- **Its margin, re-derived for this pair** (s61 §5.2's derivation: a common g_R keeps Realtime above the knee iff
+  |Δρ|·S_F < q_R·F̂ at every cell):
 
   ```text
-     Q₅₀(n*) = Q̂₅₀,F + A
+     Δ  =  min_c q_R·F_c / S_F,c  =  min(0.085, 0.363, 0.345)  =  0.085
   ```
 
-  - It removes the count rule entirely, which answers R6.7 open item 4 by not needing a rule.
-  - It changes the law's sentence: "the operating point's median sits A above the floor's median".
-  - The floor dwell and the floor position (R6.7 item 1) remain.
-- **It is not proposed for the engine until s62 reads it out of sample.**
-- **Gauge needs:**
-  - p25 / p75 in `[WSTAT]`. That is a gauge print, so it is zero engine behaviour but a new binary sha; or
-  - an `RWM_RTT_DUMP` pass, which computes everything offline with no rebuild but perturbs the sender (rttdump.rs:
-    "a dump-on pass is run separately").
-  - s62 uses the dump with no rebuild, and reports its own perturbation.
+  c2 binds, because native S_F at c3 is small (5.9–6.1 ms, against 9.7 at the registered counts).
+- **The need in ms that the law's allowance must cover** is the native one: 4.05 at c2, 3.71 and 4.10 at c3.
+- **The minimum's count dependence belongs to the law, not to the measurement.**
+  - The engine's floor windows hold ≈ 60 samples at c3 and 282 at c2. Its knee windows hold ≈ 460 and ≈ 2 340.
+  - The fixed point therefore includes the floor's sample-count drop by construction.
+  - Any engine rule on window counts (R6.7 open item 4) or any change of statistic changes need and ρ themselves.
+    That is a law change, reviewed as one.
+
+### 2.5 The estimator limits, derived and measured
+
+**The "≥ 5 draws beyond the quantile" criterion.**
+- For m independent continuous draws, the k-th order statistic sits at probability level F(X₍ₖ₎) ~ Beta(k, m − k + 1),
+  with mean k/(m + 1) (David & Nagaraja 2003, §2.1–2.2).
+- The sample p-quantile takes k = ⌈p·m⌉. Its level differs from p by at most 1/(m + 1), so its relative level error
+  is ≈ 1/(m·p), and its relative standard deviation is √((1 − p)/(m·p)).
+- **Its level is count-free to a relative tolerance ε iff m·p ≥ 1/ε.** With ε = 0.2 (declared), that is m·p ≥ 5,
+  where the relative standard deviation is ≤ 0.45. In ms the bias is the level bias divided by the density at the
+  quantile.
+- **The minimum (k = 1)** sits at level 1/(m + 1). That level halves with every doubling of m, so the minimum is never
+  count-free. This is §2.1's non-flattening.
+
+**The independent draws per window** (`kmr.out` §10b; measured from the netem counters).
+- A c3 W 12 floor window holds ≈ 60 echo samples, ≈ 21 ack packets (srv0 84 pkt/s × 0.25 s) and ≈ 17 data skbs.
+  c2 W 16: 282 samples, 75 acks, 59 skbs.
+- **The declared model:** netem draws one delay per skb on the data direction (it schedules GSO skbs as units, status
+  §3.8) and one per ack packet on the return. Echo samples that share an skb or an ack share a draw.
+- So the independent draws are ≈ 17–21 per c3 floor window, not 60.
+- **With m = 17–21:** p10 gives m·p 1.7–2.1 (fails), p25 4.3–5.3 (at the edge), and p50 8.5–10.5 (passes).
+
+These two lines now carry the candidate of §2.6. Each states its declared part: ε = 0.2, and the independence model.
+
+### 2.6 The candidate statistic (window median + IQR), untested
+
+- **The candidate.** Location: the median of native windows. Spread: the IQR on the floor windows. These are the most
+  extreme rank fractions that are central at c3's floor windows (§2.5).
+- **Untested.**
+  - The IQR is not logged (`[WSTAT]` prints p10 / p50 / p90).
+  - Its stand-in, p90 − p10, fails §2.5's criterion at c3 (m·p ≈ 2). So the stand-in's DISAGREES (d +0.20 / +0.22,
+    `kmr.out` §10c) does not test the candidate.
+  - The count table's flatness (`kmr.out` §10a) is by construction, since a group's quantile is carried as the
+    weighted median of its windows' own quantiles.
+- **It differs from the law.** The law holds the minimum (§2.4). Adopting a quantile changes the law's sentence ("the
+  operating point's median sits A above the floor's median") and is a law change. It is offered for design review,
+  not as the statistic that decides any label here.
+- **`RWM_RTT_DUMP` carries the `[SLAW]` sample stream** (code read).
+  - On the gauge tree (`github/slaw-gauge` `d416d59b`), `raptorpath/src/scheduler/path.rs`, `record_rtt_sample(&mut
+    self, rtt)`, "the single delegate every ack path funnels through", calls
+    `crate::net::rttdump::gauge().note_rtt(self.id, rtt_us)` and then `self.slaw.observe(rtt_us)` with the same µs
+    value. So the dump and the `[SLAW]` window sampler see the same stream, in the same order.
+  - The sampler's quantiles are `monitor::quantile::nearest_rank` on a stride-subsampled bounded buffer, whose bind is
+    printed as `nkq=` (`net/slaw.rs` `close`).
+  - The dump keeps a prefix of at most `RWM_RTT_DUMP_MAX` = 400 000 samples per path (`net/rttdump.rs`).
+  - On main the dump hook sits in the same function, without the sampler.
+- **What the dump enables in s62:** exact window quantiles (p25 / p75 included) and a real count test, subsampling
+  windows to m draws. No rebuild is needed, and the dump pass reports its own perturbation (rttdump.rs: "a dump-on pass
+  is run separately").
 
 ---
 
@@ -354,7 +410,8 @@ This document does not derive it, and does not re-type its provenance. F07 stays
 ## 4. Decisions 8 (g) and 10
 
 - **g's Realtime end cannot be measured from need/S_F,** since that ratio is not invariant under the registered
-  counting (DISAGREES). Under the count-free statistic it is not invariant either (§2.3).
+  counting (DISAGREES). On the law's own pair (the native minimum over native S_F) it disagrees too (§2.4), and other
+  pairs give every label (§2.3).
   - g_knee per cell (registered counts, the score) is 0.711 at c2 and 0.256 at c3.
   - No g_R value is recommended: nothing consumes one until an engine form exists.
 - **Decision 10** (per-leg `queue_target_mult` = 1 + q(δ)) uses only q(δ), and multiplies Copa's queue floor
@@ -362,52 +419,86 @@ This document does not derive it, and does not re-type its provenance. F07 stays
 
 ---
 
-## 5. s62 sketch (not registered): the jitter axis alone, read with the count-free statistic
+## 5. s62 sketch (not registered): the knee rise against the spread, along the jitter axis
 
-**Question.**
-- With rate, delay and loss fixed, does ρ_q (Q₅₀ rise over the floor IQR, native windows) take the same value at
-  netem jitter 0, 3 and 5 ms?
-- Does the floor minimum's count drop come from jitter sampling?
+**Question.** With rate, delay and loss fixed, how does the knee's rise in ms depend on the floor spread, across netem
+jitter J = 0, 3 and 5 ms?
+
+```text
+   rise(J)  =  a  +  b · R(J)          a: what no spread carries          b: what the spread carries
+```
+
+- This replaces ρ. At J = 0 the spread nearly vanishes, so a ratio is ill-conditioned there, and the line is not.
+
+**Statistic.**
+- **Scored on the law's own pair (§2.4):** the native-window minimum's rise over native S_F.
+- **Reported:** p10, p50, the IQR from the dump, and the one-count minimum, each with its own (a, b).
 
 **Cells.**
-- `c3-25` at J = 0 and J = 3: tools-only cell names, `scenario_params` `20mbit 20 0 2 40` / `20mbit 20 3 2 40`.
-- 61c as the J = 5 point, with a two-row overlap arm at J = 5 to bound drift.
-- Binary `e410d640`, Bulk only.
+- `c3-25` at J = 0 and J = 3: tools-only names, `scenario_params` `20mbit 20 0 2 40` / `20mbit 20 3 2 40`.
+- J = 5 is 61c, with a two-row overlap arm in s62 to bound drift.
+- Binary `e410d640`, Bulk.
 
-**Arms per cell.**
-- floors 12 / 16 / 24 (**25 MB**, see below), the pilot-placed K bracket, P1, and the W 512 control: ≈ 45 rows;
-- one **`RWM_RTT_DUMP=1` pass** per cell on the floor W 12 and the K₂ arm, reported separately for the dump's
-  perturbation.
+**Arms.**
+- floors 12 / 16 / 24 at **25 MB**, the pilot-placed K bracket, P1, and the W 512 control: ≈ 45 rows per cell;
+- one `RWM_RTT_DUMP=1` pass per cell on floor W 12 and K₂, reported separately.
 
-**Readings** (every convention of §1.1 printed). Scored on ρ_q with the IQR from the dump and Q₅₀ from `[WSTAT]`,
-against Δ = 0.085:
-- ρ_q(J0) and ρ_q(J3) against ρ_q(J5), and the floor's count drop.
+**At J = 0 the ranks do not coincide, on c1s's evidence** (`kmr.out` §13).
+- §60's c1s floor arms are jitter-free. From W 64 to W 192 (u_link 0.22 → 0.50) the rises are: minimum +0.14,
+  p10 +0.42, p50 +0.75, p90 +1.11 ms.
+- So without jitter the rate queue still spreads the ranks. **The J = 0 reading is not statistic-free.**
+- Its between-statistic spread is reported as the floor of statistic dependence. The J = 0 point is still the most
+  direct reading of a, since R(J0) is smallest there.
+
+**Margins, derived for this reading.** The consequence is the same as s61 §5.2's: a knee-term error becomes a landing
+error, and Realtime stays above the knee iff that error is < q_R·F̂ at each cell. On the fitted line the error at J is
+|δa| + |δb|·R(J). Splitting the budget equally between the two terms, at the smallest q_R·F̂ over the three cells:
+
+```text
+   Δ_a  =  ½ · min_J q_R·F̂_J            Δ_b  =  ½ · min_J q_R·F̂_J / R(J5)
+```
+
+- F̂ at J 5 is native 42.5, so q_R·F̂ = 2.1 ms. F̂ at J 0 is not measured. It is predicted at ≈ 40.4–43 ms: the
+  40 ms propagation plus the echo's own excess, which is 0.38 ms on the jitter-free c1s line and larger at c3's lower
+  rate. So q_R·F̂ ≈ 2.0–2.15 at every J.
+- With native S_F at J 5 = 5.86, that gives **Δ_a ≈ 1.0 ms and Δ_b ≈ 0.17 ms/ms.** Both are recomputed in session
+  from the measured F̂.
 
 **Predictions** (registered before any row):
-1. **The floor minimum's count drop at J = 0.** F(G250) − F(G2 100) at W 12 is 2.8–4.5 ms at J = 5 today. The c1s
-   pre-read gives about 0.1 ms on a jitter-free line (≈ 0.035 ms per doubling, three doublings).
-   - **< 0.5 ms** means jitter sampling: the drop is netem's jitter.
-   - **≥ 1.5 ms** means a non-netem spread (echo timing) or drift.
-   - In between is UNRESOLVED.
-2. **The dump's count-flatness test for the chosen statistic.** Subsampling the dumped floor windows to m = 60 …
-   4 200 samples, Q₅₀ and the IQR stay within 0.05·IQR of their 4 200-sample value for every m at which
-   m_acks·0.25 ≥ 5. The minimum fails the same test.
-3. **ρ_q shape-free along jitter:** ρ_q(J0) = ρ_q(J3) = ρ_q(J5) within Δ.
-   - The post-hoc stand-in reads 0.86–0.88 at J5. The stand-in is not the IQR, so no IQR value is predicted, only
-     the equality.
-   - A J-dependent ρ_q means the spread does not carry the knee even at fixed rate and delay.
-4. **The J = 0 rehearsal reports netem reordering** (the receiver's out-of-order count, as `lib.sh`'s FIFO note
-   measured it). The prediction is 0, since `rate` keeps netem FIFO with or without jitter. Any reorder stops the
-   cell before 62a.
 
-**Row timeout at W 12.**
-- Eight complete G(2 100) groups (for the minimum-based readings) need ≈ 16 800 LATE samples. At ≈ 240 samples/s
-  that is ≈ 70 s of LATE after 15 s, so a ≈ 85 s transfer.
-- 15 MB took 58.7 s, so that is ≈ 22 MB. **Use 25 MB with a 150 s timeout** (61b's), a 1.6–1.8× margin.
-- At J = 0 the loop is shorter, so rows finish sooner.
+| outcome | a | b (law's pair; J 5 point 3.71 ms over 5.86, 61a 4.10 over 6.09) |
+|---|---|---|
+| spread-carried | within ±Δ_a of 0 | 0.63–0.67 |
+| constant | 3.7–4.1 ms | within ±Δ_b of 0 |
+| affine | outside ±Δ_a | outside ±Δ_b |
 
-**Cost.** ≈ 3 h of VM (two rehearsals, two ≈ 45-row launches, two dump passes), a tools-only harness change by a
-Sonnet worker, and the registration's review rounds. No rebuild.
+**Other registered items.**
+1. **The floor minimum's count drop at J = 0.** F(G250) − F(G2100) at W 12 is 2.8–4.5 ms at J = 5.
+   - The c1s pre-read is ≈ 0.035 ms per doubling, so ≈ 0.1 ms over three doublings.
+   - < 0.5 ms means jitter sampling; ≥ 1.5 ms means a non-netem spread or drift; in between is UNRESOLVED.
+2. **The dump's count test for the median and IQR.** Windows subsampled to m draws keep Q₅₀ and the IQR within
+   0.05·IQR of their large-m value for every m with m·0.25 ≥ 5. The minimum fails it.
+3. **The J = 0 rehearsal reports netem reordering** (the receiver's out-of-order count). Predicted 0; any reorder
+   stops the cell.
+4. **Row timeout at W 12.** Eight G(2 100) groups need ≈ 16 800 LATE samples, ≈ 70 s after the 15 s LATE start. 15 MB
+   took 58.7 s, so ≈ 22 MB is needed. **25 MB with a 150 s timeout** gives a 1.6–1.8× margin.
+
+**What each outcome means for decision 8** (A = g(δ)·S_F + q(δ)·F̂, g(Bulk) = 1):
+- **Spread-carried** (a ≈ 0, b ≈ 0.63–0.67): along the jitter axis, at a fixed loop, S_F carries the knee in the
+  law's own statistic.
+  - g(Bulk) = 1 then over-covers by (1 − b)·S_F.
+  - c2 against c3's DISAGREES lies in what s62 holds fixed (rate, delay). That needs a rate or delay axis before g has
+    provenance across cells.
+- **Constant** (b ≈ 0): S_F does not carry the knee even at a fixed loop.
+  - Decision 8's S_F term is a cover with no sentence.
+  - The knee needs a non-spread term with its own derivation, and the form is re-derived.
+- **Affine:** decision 8 lacks a term, A = a + b·S_F + q·F̂. a needs a sentence, for example an engine timing
+  constant, before anything ships.
+- **Statistic-dependent** (the law's pair says one thing, other statistics another): the law's pair decides for
+  decision 8, because it is what the engine holds. The others are reported, and they inform the quantile design
+  review.
+
+**Cost.** ≈ 3 h of VM, a tools-only harness change (Sonnet worker), and the registration review rounds. No rebuild.
 
 ---
 
@@ -425,10 +516,10 @@ Sonnet worker, and the registration's review rounds. No rebuild.
 +  formula: "T*_i = Phi_i + A_i + S_i ; registered A_i = sigma_i + q(delta)*l_i ; decided A_i = g(delta)*S_F,i + q(delta)*F-hat_i, g(Bulk) = 1 ; one leg: Tmin(n*) = F + A"
 @@
 -  regime: "s60 c2 (status §60, store-law-r68.md §1): the knee needs Tmin 4.05 ms above the converged floor (E = 0.18 +- 0.03); the allowance supplies 1.79 + 0.56 = 2.34; D = +1.692 ms [+1.588, +1.836], SHORT on both bracket arms; R~67 crosses below W160 on 6/6 replicates at every delta. c8's landing is set by the half-gap coupling (> 512 under every form); c1s has no knee bracket"
-+  regime: "s60 c2 (status §60, store-law-r68.md §1): need 4.05 ms; sigma + q*l-hat supplies 2.34, D = +1.692 ms [+1.588, +1.836], SHORT. s61 c3 (status §61a re-run Result and its Erratum 1): rho_3 0.457 [0.409, 0.483] against rho_2 0.797, DISAGREES under the registered counting; every candidate COVERED at c3. The window minimum depends on its sample count and does not flatten (c3 floor -7.3 to -9.5 ms native -> 4 200 samples), so need is estimator-dependent (knee-margin-rederive.md §2); under per-window quantiles rho_q also differs across the cells (p50 over p90 - p10: d +0.20 / +0.22 on both c3 sessions). c8's landing is coupling-set (> 512); c1s has no knee bracket"
++  regime: "s60 c2 (status §60, store-law-r68.md §1): need 4.05 ms; sigma + q*l-hat supplies 2.34, D = +1.692 ms [+1.588, +1.836], SHORT. s61 c3 (status §61a re-run Result and its Erratum 1): rho_3 0.457 [0.409, 0.483] against rho_2 0.797, DISAGREES under the registered counting; every candidate COVERED at c3. The window minimum depends on its sample count and does not flatten (c3 floor -7.3 to -9.5 ms native -> 4 200 samples), so need is estimator-dependent, and the label depends on the statistic (d -0.34 registered, about -0.2 at one count, -0.07 p10, +0.20 p50; knee-margin-rederive.md §2.3). The law's own pair, the native-window minimum over native S_F (R6.2's fixed point), DISAGREES on both c3 sessions (d [-0.22, -0.13] and [-0.17, -0.09] against Delta 0.085). c8's landing is coupling-set (> 512); c1s has no knee bracket"
 @@
 -  fix_class: "owner call (U2: a delta-free spread term, a delta-scaled knee term, or a re-declared q band), then a law change needing a battery; a measured-spread branch (S_F + q(delta)*F-hat, no candidate yet fully provenanced) needs one c3 static sweep first (store-law-r68.md §3)"
-+  fix_class: "estimator first (R6.7 open item 4): a count-free statistic for floor, operating point and spread (proposed: window median and IQR on native windows, knee-margin-rederive.md §2.4), confirmed out of sample (s62 sketch, §5), then the allowance's form, then a law change needing a battery; DISHONEST-INPUT leaves with E13's fix (q*F-hat in place of q*l-hat)"
++  fix_class: "the law's statistic is the native window minimum (R6.2), whose count dependence is the law's own (R6.7 open item 4); a quantile alternative (window median + IQR) is a candidate, untested (knee-margin-rederive.md §2.6); s62 (sketch, §5) registers the knee rise against the spread along jitter; then the allowance's form, then a law change needing a battery; DISHONEST-INPUT leaves with E13's fix (q*F-hat in place of q*l-hat)"
 @@
 -  evidence: "s60 C2-SHORT: D = +1.692 ms [+1.588, +1.836] on a CONVERGED floor (status §60 Result item 1); delta's whole authority is 0.28 ms (~5 slots) against a 31-slot shortfall; fixed forms reach the knee only through a constant fitted at c2 Bulk (c_B 2.26 ms, q' 0.26)"
 +  evidence: "s61 DISAGREES (status §61a re-run Result; Erratum 1 withdraws 'S_F is not the knee's term' and 'constant in ms'): d_rho -0.340 [-0.396, -0.311] against Delta 0.085 under the registered counting. On bands spanning both c3 sessions, need_3/need_2 is [0.96, 1.22] registered, [0.85, 1.10] engine-native, [1.30, 1.64] at one count: what need scales with depends on the counting. s60 C2-SHORT for the sigma family (D = +1.692 ms); need - sigma is +2.26 at c2 and -0.34 at c3, so A(c)'s sigma + c_B shape fails"
@@ -442,11 +533,7 @@ Sonnet worker, and the registration's review rounds. No rebuild.
 
 ## 7. Owner question
 
-**Spend ≈ 3 h of VM on s62 (§5)?**
-- It comes after design review of §2's statistic (window median and IQR on native windows). That review is not an
-  owner question.
-- s62 is the out-of-sample test the statistic needs: is the knee's median rise a fixed fraction of the floor IQR along
-  the jitter axis, and is the floor's count drop jitter sampling?
-- The alternative is to hold the store-law track until the estimator design is reviewed, and to register s62 then.
-- **Recommendation:** run s62 once the review accepts the statistic. Nothing in the engine waits on it today (decision
-  8's form is not in the engine), so the order costs nothing.
+**None yet.** The 3 h s62 question comes after design review of §2.4–2.6:
+- the law's statistic (the native minimum, with its count dependence);
+- the quantile candidate, untested;
+- s62's rise-against-spread design and its derived margins.
