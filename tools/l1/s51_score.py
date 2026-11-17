@@ -524,7 +524,7 @@ def score(paths, out=print, d80_path=D80_FILE, aa_draws=40):
                 lab(f"T1-JOINT-{PRESET_NAME[P]}", f"p={r['p_family']:.4f}")
     nl = sum(1 for rv in rvs if rv.live)
     nf2 = sum(1 for rv in voids if rv.r.get("status") == "VOID-F2")
-    out(f"VERDICT51 REPORTED-WITH-SCORED slots={len(set((r['cell'], r['arm'], str(r['seed']), str(r['rep'])) for r in rows_all))}/{n_exp} live={nl} void={len(voids)} void_f2={nf2} replaced={len(replaced)} dnf={sum(1 for rv in rvs if rv.dnf)} labels={len(labels)}")
+    out(f"VERDICT51 REPORTED-WITH-SCORED slots={len(set((r['cell'], r['arm'], str(r['seed']), str(r['rep'])) for r in rows_all))}/{n_exp} live={nl} void={len(voids)} replaced={len(replaced)} dnf={sum(1 for rv in rvs if rv.dnf)} labels={len(labels)} void_f2={nf2}")
     for n_, v in labels:
         out(f"LABEL51 {n_} {v}")
     return 0

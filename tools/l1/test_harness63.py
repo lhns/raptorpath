@@ -115,7 +115,7 @@ check("plan 51e parser: a DNF row WITHOUT the token is not VOID-F2 (an ordinary 
 r = parse_row("51", "HB", BAD_CLI, [], BAD_DRV)
 check("plan 51 parser: VOID-F2 as well (block 51 gets the witness)", r.get("status") == "VOID-F2", r.get("error") or (r.get("status"), r.get("problems")))
 check("the block scorers count it: s51_score and s51e_score print void_f2= in their VERDICT lines, and a VOID-F2 row is not live (RV.live needs status LIVE)",
-      "void_f2={nf2}" in rd("s51e_score.py") and "void_f2={nf2}" in rd("s51_score.py"))
+      " void_f2={nf2}" in rd("s51e_score.py") and " void_f2={nf2}" in rd("s51_score.py"))
 shutil.rmtree(td, ignore_errors=True)
 
 # ═══ 4. the shell side ═══

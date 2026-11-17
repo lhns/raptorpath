@@ -426,7 +426,7 @@ def score(paths, out=print):
         lab("PL-CALIBRATION", "FIRES" if any(pl_calibration(rv)[0] for rv in by["PL"]) else "OK")
     ndnf = sum(1 for rv in live if rv.dnf)
     nf2 = sum(1 for rv in void if rv.r.get("status") == "VOID-F2")
-    out(f"VERDICT51E REPORTED-ONLY slots={len(ps.slots(rows_all))}/{n_exp} live={len(live)} void={len(void)} void_f2={nf2} replaced={len(replaced)} dnf={ndnf} outcome={name.replace(' ', '-')} rate_spare_cwnd={tr} labels={len(labels)}")
+    out(f"VERDICT51E REPORTED-ONLY slots={len(ps.slots(rows_all))}/{n_exp} live={len(live)} void={len(void)} replaced={len(replaced)} dnf={ndnf} outcome={name.replace(' ', '-')} rate_spare_cwnd={tr} labels={len(labels)} void_f2={nf2}")
     for n_, v in labels:
         out(f"LABEL51E {n_} {v}")
     return 0
