@@ -2928,6 +2928,49 @@ nodes:
   overview: true
   plain: 'Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner''s call.'
   notes: 'Registered consequence of DISAGREES. First: the estimator''s sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form.'
+- id: rec-s63-f2-first-contact
+  title: F2 first contact (§63)
+  track: rec
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - status §63
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rec-defect-realtime-framing
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Run the rows that failed on the old binary and on the fixed one, to confirm the framing fix removes the failure.'
+  notes: 'CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63.'
+- id: store-s62-j0
+  title: c3 knee need at zero jitter (s62)
+  track: store
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - status §62
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-law-g-rederive
+  - rec-s63-f2-first-contact
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter.'
+  notes: 'Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note).'
 - id: meas-defect-cr61-large-pool
   title: Collapse rule blind at large pools
   track: meas

@@ -1079,6 +1079,17 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Per §10, rehearsal rows are not re-run, and no workaround is used** (no retry, no seed change). Block E resumes after F2 is fixed: the E tree is rebuilt on the fix, then a new E-pre, then the rehearsal.
 - **Block 51 is exposed too.** `use_packing` is keyed on the hint alone (`sender_policy.rs:678`), so §51's Realtime rows pack on main's binary. "§51 runs on main's unchanged binary" cannot hold until F2 is fixed. §51's block 51 therefore also waits for the fix, and its tree is re-based by amendment.
 
+## 62. s62: the c3 knee need with the jitter removed (J = 0), reported with one scored label: pre-registration (before any VM contact)
+
+**It registers `docs/derivations/s62-registration.md` at `s62-design` `0f40a59d` verbatim,** with `store-law/s62pred.py` and `.out` (the scorer, run end to end on real rows before registration). Fable reviewed it in three rounds, and the coordinator's registration edits are in that commit.
+- **One cell:** `c3j0-25` (c3's netem line with jitter 0). 42 rows plus 2 dump rows, on binary `e410d640`, Bulk.
+- **The scored label:** need₀ (the knee-native window minimum minus a G(250) floor) against Δ₀ = ½·q_R·F₀. The labels are BELOW / ABOVE / UNRESOLVED / UNSCOREABLE / FLOOR-SENSITIVE / CONTROL-MOVED, gated on the floor's count drop D₀ < 0.5 ms.
+- **No prediction for need₀;** D₀ and E90_own are the rehearsal's first readings.
+- **Every rehearsal NO-GO is registered with its consequence.** That includes ABORT-NETEM (the cell must run at J = 0) and one re-probe on NO-GO-PILOT, so there is no amendment-then-session loop.
+- **CR62** (every clause needs the goodput cut) is s62's rule only. CR61 and the collapse-rule defect stay open.
+- **Order:** after §63 (owner decision 13). The `harness62` worker starts after `harness63` is pushed, and the launch sha is pinned by an amendment.
+- **Cost:** about 1.4 h typical, 2.8 h worst, with host cargo paused.
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**
@@ -2121,6 +2132,10 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
     - It costs about 3.4 h typical (6.5 h worst) over five launches, with host cargo paused, on binary `e410d640` (Bulk; no F2 fix needed).
     - **Its one scored reading:** the knee need at J = 0 on the knee-native window minimum, gated on the floor's count drop being < 0.5 ms.
     - Sketch: `knee-margin-rederive` `c6c55958`, doc §5. It needs its own registration, a tools-only harness and a rehearsal.
+    - **Shape changed by its review (2026-11-17; the coordinator's default, which the owner can overrule):**
+      - About 1.4 h at J = 0 only, one rehearsal and one cell, with no prediction for the need.
+      - It cannot settle decision 8 alone. It shows whether the counting problem comes from jitter, and which derivation comes next.
+      - J = 3 is a later call (§62).
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 
