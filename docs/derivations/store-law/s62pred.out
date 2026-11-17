@@ -1,0 +1,104 @@
+s62 scorer prototype (s62pred.py), end to end on real rows; inputs: rep61c-diag-ld.tgz, rep61a-diag-ld.tgz, rep60b-diag-ld.tgz
+
+== 1. CR62 on every row: s61's CR61 with each spread-divided threshold floored at X_min = q_R * F_floor ==
+  J5 stand-in (rep61c): X_own = 16.50 ms (E50 5.76, E90 9.34, floor W12); X_min = q_R * F_floor = 1.94 ms -> X_use 16.50; ratio denominators floored on 0 of 30 rows
+    flagged per arm (raw s61 form / CR62): W12 0/6 -> 0/6 | W16 0/6 -> 0/6 | W24 0/6 -> 0/6 | W60 0/6 -> 0/6 | W80 0/6 -> 0/6 | W88 0/6 -> 0/6 | W100 0/6 -> 0/6 | W108 0/6 -> 0/6 | W120 0/6 -> 0/6 | W152 0/6 -> 0/6 | W512 0/6 -> 0/6
+    G12 s42 r1: share>X_own 0.01 / >X_use 0.01
+    G12 s7 r2: share>X_own 0.00 / >X_use 0.00
+    G12 s42 r3: share>X_own 0.00 / >X_use 0.00
+    G12 s7 r4: share>X_own 0.00 / >X_use 0.00
+    G12 s42 r5: share>X_own 0.00 / >X_use 0.00
+    G12 s7 r6: share>X_own 0.00 / >X_use 0.00
+    G512 s42 r1: qshare 0.00 ratio raw 1.13 / floored 1.13 (den 21.40)
+    G512 s7 r2: qshare 0.00 ratio raw 1.05 / floored 1.05 (den 20.72)
+    G512 s42 r3: qshare 0.00 ratio raw 1.14 / floored 1.14 (den 21.49)
+    G512 s7 r4: qshare 0.00 ratio raw 1.08 / floored 1.08 (den 21.52)
+    G512 s42 r5: qshare 0.00 ratio raw 1.16 / floored 1.16 (den 20.77)
+    G512 s7 r6: qshare 0.00 ratio raw 1.09 / floored 1.09 (den 21.44)
+  J0 stand-in (rep61a): X_own = 17.49 ms (E50 5.94, E90 9.79, floor W12); X_min = q_R * F_floor = 1.94 ms -> X_use 17.49; ratio denominators floored on 0 of 36 rows
+    flagged per arm (raw s61 form / CR62): W12 0/6 -> 0/6 | W16 0/6 -> 0/6 | W24 0/6 -> 0/6 | W68 0/6 -> 0/6 | W92 0/6 -> 0/6 | W104 0/6 -> 0/6 | W112 0/6 -> 0/6 | W124 0/6 -> 0/6 | W136 0/6 -> 0/6 | W176 0/6 -> 0/6 | W2048 6/6 -> 6/6
+    G12 s42 r1: share>X_own 0.00 / >X_use 0.00
+    G12 s7 r2: share>X_own 0.00 / >X_use 0.00
+    G12 s42 r3: share>X_own 0.00 / >X_use 0.00
+    G12 s7 r4: share>X_own 0.00 / >X_use 0.00
+    G12 s42 r5: share>X_own 0.02 / >X_use 0.02
+    G12 s7 r6: share>X_own 0.00 / >X_use 0.00
+    G2048 s42 r1: qshare 0.00 ratio raw 1.67 / floored 1.67 (den 21.92)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r2: qshare 0.00 ratio raw 1.9 / floored 1.9 (den 23.50)  RAW-FLAG  CR62-FLAG
+    G2048 s42 r3: qshare 0.00 ratio raw 1.77 / floored 1.77 (den 20.32)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r4: qshare 0.00 ratio raw 1.78 / floored 1.78 (den 23.96)  RAW-FLAG  CR62-FLAG
+    G2048 s42 r5: qshare 0.00 ratio raw 1.51 / floored 1.51 (den 22.06)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r6: qshare 0.00 ratio raw 1.86 / floored 1.86 (den 24.99)  RAW-FLAG  CR62-FLAG
+  jitter-free shape (s60 c1s): X_own = 1.59 ms (E50 0.44, E90 0.83, floor W64); X_min = q_R * F_floor = 0.12 ms -> X_use 1.59; ratio denominators floored on 0 of 12 rows
+    flagged per arm (raw s61 form / CR62): W64 2/6 -> 2/6 | W128 0/6 -> 0/6 | W192 1/6 -> 1/6 | W2048 6/12 -> 6/12
+    G64 s42 r1: share>X_own 0.01 / >X_use 0.01
+    G64 s7 r2: share>X_own 0.01 / >X_use 0.01
+    G64 s42 r3: share>X_own 0.04 / >X_use 0.04
+    G64 s7 r4: share>X_own 0.57 / >X_use 0.57  RAW-FLAG  CR62-FLAG
+    G64 s42 r5: share>X_own 0.01 / >X_use 0.01
+    G64 s7 r6: share>X_own 0.28 / >X_use 0.28  RAW-FLAG  CR62-FLAG
+    G192 s7 r4: share>X_own 0.94 / >X_use 0.94  RAW-FLAG  CR62-FLAG
+    G2048 s42 r1: qshare 0.01 ratio raw 1.82 / floored 1.82 (den 21.59)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r2: qshare 0.01 ratio raw 0.86 / floored 0.86 (den 20.26)
+    G2048 s42 r3: qshare 0.02 ratio raw 0.89 / floored 0.89 (den 20.05)
+    G2048 s7 r4: qshare 0.02 ratio raw 0.86 / floored 0.86 (den 19.69)
+    G2048 s42 r5: qshare 0.95 ratio raw 1.32 / floored 1.32 (den 25.20)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r6: qshare 0.01 ratio raw 1.06 / floored 1.06 (den 19.77)
+    G2048 s42 r7: qshare 0.02 ratio raw 0.87 / floored 0.87 (den 19.57)
+    G2048 s7 r8: qshare 0.79 ratio raw 1.19 / floored 1.19 (den 23.37)  RAW-FLAG  CR62-FLAG
+    G2048 s42 r9: qshare 0.68 ratio raw 1.37 / floored 1.37 (den 15.29)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r10: qshare 0.03 ratio raw 0.95 / floored 0.95 (den 19.15)
+    G2048 s42 r11: qshare 0.69 ratio raw 1.15 / floored 1.15 (den 22.42)  RAW-FLAG  CR62-FLAG
+    G2048 s7 r12: qshare 0.42 ratio raw 1.04 / floored 1.04 (den 21.03)  RAW-FLAG  CR62-FLAG
+
+== 2. The scored path per cell ==
+  J5 stand-in (rep61c) (netem jitter +-5 ms): control W512 unflagged 6, median 17.82 Mbit/s; floor arm W12 valid 6: F native 42.751, F0 = F(G250) 38.778, F(G2100) 34.319, D0 = max(native, G250) - G2100 = 8.433 ms -> gate FAIL (< 0.5)
+    knees: s42r1 W95 110.1 Tmin 46.385 | s7r2 W95 107.4 Tmin 46.281 | s42r3 W95 109.8 Tmin 46.478 | s7r4 W95 106.6 Tmin 45.670 | s42r5 W95 109.2 Tmin 46.035 | s7r6 W95 108.2 Tmin 46.184
+    need_0-form (native knee - F(G250)) = 7.455 ms, 90 % [6.620, 7.712] over 6 scoreable replicates; need_law (native knee - native floor) = 3.481; native S_F 5.801; Delta_0 = 1/2 q_R F0 = 0.969 ms
+  J0 stand-in (rep61a): control W2048 unflagged 0 < 4 -> LABEL62 CONTROL-J0 CONTROL-MOVED: nothing scored
+  the J0 stand-in again with CR62 lifted on its W2048 control only (s61a Result's post-hoc reading), to execute the rest of the path on real rows:
+  J0 stand-in (rep61a) (netem jitter +-5 ms): control W2048 unflagged 6, median 17.78 Mbit/s; floor arm W12 valid 6: F native 42.356, F0 = F(G250) 38.894, F(G2100) 35.285, D0 = max(native, G250) - G2100 = 7.072 ms -> gate FAIL (< 0.5)
+    knees: s42r1 W95 109.7 Tmin 46.396 | s7r2 W95 108.3 Tmin 46.145 | s42r3 W95 108.8 Tmin 46.210 | s7r4 W95 107.4 Tmin 46.066 | s42r5 W95 106.8 Tmin 45.853 | s7r6 W95 107.6 Tmin 46.108
+    need_0-form (native knee - F(G250)) = 7.232 ms, 90 % [6.829, 7.925] over 6 scoreable replicates; need_law (native knee - native floor) = 3.770; native S_F 5.941; Delta_0 = 1/2 q_R F0 = 0.972 ms
+  (the jitter-free shape has no knee bracket in s60; its floor and gate are read for the J = 0 rule check)
+  jitter-free shape (s60 c1s) floor W64: valid 4, F(G250) 2.366, D0 0.000 ms (native windows hold ~5366 samples, so G(250) and G(2100) are both one window: the gate is trivially met here and says nothing about c3 at J = 0)
+
+== 3. Drift rule, Delta_0 and the label ==
+  J5 drift rule on the J5 stand-in against 61c's constants: tmin108 45.960 (|d| 0.000 <= 0.3), u108 0.948 (|d| 0.001 <= 0.02) -> DRIFT-OK (it must read DRIFT-OK on its own reference rows)
+  J0 stand-in: need_0 7.232 [6.829, 7.925], need_5 (law's pair, J5 cell) 3.481, Delta_0 0.972, D0 7.072 -> LABEL62 NEED0 UNSCOREABLE (floor count drop D0 >= 0.5 ms)
+  the same with the gate forced open (exercise only; not a reading): LABEL62 NEED0 UNRESOLVED
+  (with the gate failing, need_0 carries the floor's count drop: here need_0 - need_law(J0 stand-in) = 3.462 ms, which is why the gate exists)
+  band check: 2 Delta_0 = 1.94 < need_5 = 3.48: disjoint
+
+== 4. The label function on every branch (SYNTHETIC inputs; need_5 4.0, Delta_0 1.05) ==
+  spread       CI (-0.3, 0.4) D0 0.1 n 6 -> SPREAD-CARRIED
+  constant     CI (3.6, 4.3) D0 0.1 n 6 -> CONSTANT
+  intermediate CI (1.4, 2.0) D0 0.1 n 6 -> INTERMEDIATE
+  straddle     CI (0.8, 1.6) D0 0.1 n 6 -> UNRESOLVED
+  gate         CI (3.6, 4.3) D0 0.7 n 6 -> UNSCOREABLE (floor count drop D0 >= 0.5 ms)
+  replicates   CI (3.6, 4.3) D0 0.1 n 4 -> UNSCOREABLE (fewer than 5 replicates with W95 in [K1, K3])
+
+== 5. Rehearsal go/no-go on real rows: a knee arm and the control, every rule that can void the cell ==
+  J5 stand-in (rep61c) G120 s42 r1: gp 17.56, loss truth 0.0489, E90_own 16.03, ratio raw 0.99 floored 0.99, qshare 0.00, LATE windows 159
+  J5 stand-in (rep61c) G120 s42 r3: gp 17.64, loss truth 0.0494, E90_own 14.46, ratio raw 0.92 floored 0.92, qshare 0.00, LATE windows 158
+  J5 stand-in (rep61c) G512 s42 r1: gp 17.87, loss truth 0.0487, E90_own 24.13, ratio raw 1.13 floored 1.13, qshare 0.00, LATE windows 155
+  J5 stand-in (rep61c) G512 s42 r3: gp 17.72, loss truth 0.0494, E90_own 24.6, ratio raw 1.14 floored 1.14, qshare 0.00, LATE windows 157
+  J0 stand-in (rep61a) G124 s42 r1: gp 17.74, loss truth 0.0469, E90_own 15.35, ratio raw 0.91 floored 0.91, qshare 0.00, LATE windows 156
+  J0 stand-in (rep61a) G124 s42 r3: gp 17.66, loss truth 0.0499, E90_own 15.02, ratio raw 0.89 floored 0.89, qshare 0.00, LATE windows 158
+  J0 stand-in (rep61a) G2048 s42 r1: gp 17.78, loss truth 0.0475, E90_own 36.65, ratio raw 1.67 floored 1.67, qshare 0.00, LATE windows 156
+  J0 stand-in (rep61a) G2048 s42 r3: gp 17.77, loss truth 0.0472, E90_own 35.97, ratio raw 1.77 floored 1.77, qshare 0.00, LATE windows 156
+  jitter-free shape (s60 c1s) G192 s42 r1: gp 452.81, loss truth 0.0011, E90_own 2.17, ratio raw 1.14 floored 1.14, qshare 0.04, LATE windows 122
+  jitter-free shape (s60 c1s) G192 s42 r3: gp 479.10, loss truth 0.0011, E90_own 1.5, ratio raw 0.94 floored 0.94, qshare 0.01, LATE windows 114
+  jitter-free shape (s60 c1s) G2048 s42 r1: gp 752.04, loss truth 0.001, E90_own 39.34, ratio raw 1.82 floored 1.82, qshare 0.01, LATE windows 192
+  jitter-free shape (s60 c1s) G2048 s42 r11: gp 497.31, loss truth 0.001, E90_own 25.83, ratio raw 1.15 floored 1.15, qshare 0.69, LATE windows 301
+
+== 6. The pilot (proportional rule, W512 control) against the 61c curve; the J = 0 knee position ==
+  61c W80: u 0.743 -> W-hat 102.2; knee bracket r4(0.95 / 1.05 / 1.14 x W-hat) = 96 / 108 / 116 against W95 106.6-110.1
+  61c W88: u 0.811 -> W-hat 103.1; knee bracket r4(0.95 / 1.05 / 1.14 x W-hat) = 96 / 108 / 116 against W95 106.6-110.1
+  61c W100: u 0.904 -> W-hat 105.1; knee bracket r4(0.95 / 1.05 / 1.14 x W-hat) = 100 / 112 / 120 against W95 106.6-110.1
+  the J = 0 knee, predicted from the loop: W95(J0) ~ W95(J5) x loop(J0)/loop(J5) = 108.7 x (40.4-43 + rise ~3) / 55.4 = 85-90; the pilot probes (W88 / W128) bracket it
+
+== 7. Reported only: the rise-against-spread points available (law's pair: native minimum need over native S_F) ==
+  J5 stand-in (rep61c): need_law 3.481 ms at native S_F 5.801 ms
+  J0 stand-in (rep61a): need_law 3.770 ms at native S_F 5.941 ms
+  (with three in-session points J 0 / 3 / 5, s62 prints a + b * S_F by OLS and its residual; two parameters on three points: not scored)
