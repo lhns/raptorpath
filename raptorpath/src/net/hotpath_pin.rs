@@ -5,7 +5,7 @@
 //! RNG — so the digests depend only on the code under test:
 //!
 //! * the source path: `frame_window_packet` → `WindowEncoder::add_source` →
-//!   the one-symbol `SymbolBatch` → `serialize_data_compact` (wire v9
+//!   the one-symbol `SymbolBatch` → `serialize_data_compact` (wire v10
 //!   compact framing) AND the bincode `WireMessage::Data` framing, for a
 //!   scripted packet sequence whose lengths and envelope fields straddle the
 //!   padding edge and every varint width boundary;
@@ -167,7 +167,7 @@ fn pin_rlc_window_source_and_repair_wire_bytes() {
     check(
         "rlc",
         &digest(&mut enc),
-        "98e7b35280352b079c57463e16b11898bc568facf70e68ae1be86cf17389cc9e",
+        "01b78985f1fbc580081d2fd704dce8573c9b6796867f38775ccdacf500e8d324",
     );
 }
 
@@ -178,7 +178,7 @@ fn pin_systematic_generation_source_and_repair_wire_bytes() {
     check(
         "gen_systematic",
         &digest(&mut enc),
-        "446fe60d36755c5cd6fda8d83387714a5d76f5d9da4580b1f4d1b6c3fbd6c1aa",
+        "e245944cc65dd888e1e6847b67a26292bf91c376c171305017addb1f6e207e93",
     );
 }
 
