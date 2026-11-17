@@ -1,7 +1,7 @@
 //! The undeliverable-symbol counter (`net::undeliverable_symbols`, printed as
 //! `undeliv=` on the receiver's `[CTLD]` line under `RWM_DIAG`) stays 0 on a
-//! healthy Bulk and a healthy Realtime loopback. Its increment in the F2
-//! repro case is `net::tests::f2_packed_symbol_read_unpacked_is_counted`.
+//! healthy Bulk and a healthy Realtime loopback. Its increment on an
+//! unframable symbol is `net::tests::f2_unframable_symbol_is_counted_once`.
 //!
 //! Own test binary: the counter is process-global.
 

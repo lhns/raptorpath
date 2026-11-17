@@ -6560,28 +6560,32 @@ fn serve_gaps_routes_through_the_snapshot_order_seam() {
 
 // ── F2 (status, Engine defect F2): the undeliverable-symbol counter ─────────
 
-/// A packed symbol read with `window_packed == false` yields no packet and
-/// the counter sees it; the same symbol read packed yields its packet and
-/// adds nothing; an all-zero (padding) symbol is not counted.
+/// An unframable symbol (a length that overruns, or non-zero bytes and no
+/// packet) is `Err` and counted exactly once; a framed symbol, one or packed,
+/// is `Ok` and adds nothing; an all-zero (padding) symbol is not counted.
 #[test]
-fn f2_packed_symbol_read_unpacked_is_counted() {
-    let mut sym = Vec::new();
-    framing::frame_packet(&mut sym, &[7u8; 100]);
-    framing::frame_end(&mut sym);
-    sym.resize(512, 0);
-    let sym = Bytes::from(sym);
+fn f2_unframable_symbol_is_counted_once() {
+    let mut sym = vec![0u8; 512];
+    let n = framing::put_packet(&mut sym, &[7u8; 100]);
+    framing::put_packet(&mut sym[n..], &[8u8; 50]);
+    let ok = Bytes::from(sym.clone());
 
+    // Other lib tests may run concurrently, but none of them reads an
+    // unframable symbol, so the deltas below are exact.
     let before = undeliverable_symbols();
-    assert!(extract_window_packets(&sym, false).is_empty(), "packed symbol read unpacked yields nothing");
-    assert!(undeliverable_symbols() >= before + 1, "the miss is counted");
+    assert_eq!(extract_window_packets(&ok).unwrap(), vec![vec![7u8; 100], vec![8u8; 50]]);
+    assert_eq!(undeliverable_symbols(), before, "a framed symbol is not counted");
 
-    // Other lib tests may run concurrently, but none of them reads a
-    // non-empty symbol with no packet out, so the packed read adds nothing.
-    let mid = undeliverable_symbols();
-    assert_eq!(extract_window_packets(&sym, true), vec![vec![7u8; 100]]);
-    assert_eq!(undeliverable_symbols(), mid, "a correctly unframed symbol is not counted");
+    let mut overrun = sym;
+    overrun[n..n + 2].copy_from_slice(&600u16.to_le_bytes());
+    assert!(extract_window_packets(&Bytes::from(overrun)).is_err());
+    assert_eq!(undeliverable_symbols(), before + 1, "an overrun is counted once");
+
+    let junk = Bytes::from(vec![0u8, 0, 9, 9]);
+    assert!(extract_window_packets(&junk).is_err());
+    assert_eq!(undeliverable_symbols(), before + 2, "non-zero bytes with no packet are counted");
 
     let zeros = Bytes::from(vec![0u8; 512]);
-    assert!(extract_window_packets(&zeros, false).is_empty());
-    assert_eq!(undeliverable_symbols(), mid, "an all-zero symbol is padding, not a miss");
+    assert_eq!(extract_window_packets(&zeros).unwrap(), Vec::<Vec<u8>>::new());
+    assert_eq!(undeliverable_symbols(), before + 2, "an all-zero symbol is padding, not a miss");
 }
