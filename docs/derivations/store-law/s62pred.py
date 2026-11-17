@@ -126,6 +126,7 @@ def cr62(c, verbose=True):
             sh = sum(1 for x in eo if x > x_use) / len(eo) if eo else 0.0
             raw_flag, flag = sh_raw > SHARE_MAX and gp_low, sh > SHARE_MAX and gp_low
             txt = f"share>X_own {sh_raw:.2f} / >X_use {sh:.2f}"
+            txt_f = ''
         else:
             e90r = q(eo, 0.9)
             den_raw = (native_p90(r) or 0) - (native_tmin(r) or 0)
@@ -135,8 +136,10 @@ def cr62(c, verbose=True):
             rr = e90r / den_raw if e90r is not None and den_raw > 0 else None
             ru = e90r / den if e90r is not None else None
             raw_flag = (qs > SHARE_MAX and gp_low) or (rr is not None and rr > RATIO_MAX)
-            flag = (qs > SHARE_MAX and gp_low) or (ru is not None and ru > RATIO_MAX)
-            txt = f"qshare {qs:.2f} ratio raw {rr if rr is None else round(rr, 2)} / floored {ru if ru is None else round(ru, 2)} (den {den_raw:.2f}{' -> ' + format(den, '.2f') if den != den_raw else ''})"
+            flag = gp_low and ((qs > SHARE_MAX) or (ru is not None and ru > RATIO_MAX))      # round 3: every clause needs the goodput cut
+            finding = (not gp_low) and ((qs > SHARE_MAX) or (ru is not None and ru > RATIO_MAX))
+            txt_f = '  RULE-FINDING-CR62 (fires at full goodput: not a collapse)' if finding else ''
+            txt = txt_f + f" qshare {qs:.2f} ratio raw {rr if rr is None else round(rr, 2)} / floored {ru if ru is None else round(ru, 2)} (den {den_raw:.2f}{' -> ' + format(den, '.2f') if den != den_raw else ''})"
         c.flag[id(r)] = flag
         out.append((r, raw_flag, flag, txt))
     if verbose:
@@ -150,8 +153,8 @@ def cr62(c, verbose=True):
             by[r.W][2] += f
         P("    flagged per arm (raw s61 form / CR62): " + " | ".join(f"W{W} {a[1]}/{a[0]} -> {a[2]}/{a[0]}" for W, a in sorted(by.items())))
         for r, rf, f, txt in out:
-            if rf or f or r.W in (c.floor_w, c.ctl):
-                P(f"    G{r.W} s{r.seed} r{r.rep}: {txt}{'  RAW-FLAG' if rf else ''}{'  CR62-FLAG' if f else ''}")
+            if rf or f or 'RULE-FINDING' in txt or r.W in (c.floor_w, c.ctl):
+                P(f"    G{r.W} s{r.seed} r{r.rep}: {txt}{'  RAW-FLAG (s61 form)' if rf else ''}{'  CR62-FLAG' if f else ''}")
     return x_use
 
 
@@ -241,15 +244,15 @@ def label(ci, delta0, d0, n_ok):
     if n_ok < 5:
         return "UNSCOREABLE (fewer than 5 replicates with W95 in [K1, K3])"
     if hi < delta0:
-        return "VANISHES"
+        return "BELOW"
     if lo > delta0:
-        return "REMAINS"
+        return "ABOVE"
     return "UNRESOLVED"
 
 
 def final(ci, cii, delta0, d0, n_ok):
     a, b = label(ci, delta0, d0, n_ok), label(cii, delta0, d0, n_ok)
-    if {a, b} == {"VANISHES", "REMAINS"}:
+    if {a, b} == {"BELOW", "ABOVE"}:
         return f"FLOOR-SENSITIVE (W12 {a}, intercept {b})"
     return a
 
@@ -284,7 +287,7 @@ def main(argv):
           f"  | gate forced open (exercise only): {final(r_['ci'], r_['cii'], r_['delta0'], 0.0, r_['n_ok'])}")
 
     P("\n== 4. The label function on every branch (SYNTHETIC inputs; Delta_0 1.05) ==")
-    for nm, ci, cii, d0, n in (("vanishes", (-0.3, 0.4), (-0.2, 0.6), 0.1, 6), ("remains", (3.0, 4.0), (3.5, 4.6), 0.1, 6),
+    for nm, ci, cii, d0, n in (("below", (-0.3, 0.4), (-0.2, 0.6), 0.1, 6), ("above", (3.0, 4.0), (3.5, 4.6), 0.1, 6),
                                ("straddle", (0.6, 1.6), (0.7, 1.8), 0.1, 6), ("floor-sensitive", (-0.2, 0.8), (1.3, 2.4), 0.1, 6),
                                ("gate", (3.0, 4.0), (3.5, 4.6), 0.7, 6), ("replicates", (3.0, 4.0), (3.5, 4.6), 0.1, 4)):
         P(f"  {nm:<16} CI {ci} intercept {cii} D0 {d0} n {n} -> {final(ci, cii, 1.05, d0, n)}")
@@ -306,12 +309,12 @@ def main(argv):
                   f" p90 - tmin {den_raw:.2f}, ratio raw {round(e90 / den_raw, 2) if e90 and den_raw > 0 else None} floored {round(e90 / den, 2) if e90 else None},"
                   f" absolute threshold 1.5 x X_min = {1.5 * X_MIN_FRAC * fl_f:.2f} ms, qshare {qshare(r, c.bdp):.2f}, LATE windows {len(r.late(0))}")
 
-    P("\n== 6. The pilot (proportional rule from the lower probe, W512 control; K = r4(1.00 / 1.10 / 1.20 x W-hat), P1 r8(1.5 x W-hat)) on the 61c curve ==")
+    P("\n== 6. The pilot (proportional rule from the lower probe, W512 control; K = r4(0.92 / 1.06 / 1.20 x W-hat), P1 r8(1.5 x W-hat)) on the 61c curve ==")
     ctl5 = r5["ctl_m"]
     for W in (80, 88):
         u = med([r.gp / ctl5 for r in J5.rows if r.W == W])
         w_ = min(W * 0.95 / u, 128)
-        ks = [4 * round(m * w_ / 4) for m in (1.00, 1.10, 1.20)]
+        ks = [4 * round(m * w_ / 4) for m in (0.92, 1.06, 1.20)]
         ws = [w for _, w, _ in r5["knees"]]
         P(f"  61c W{W}: u {u:.3f} -> W-hat {w_:.1f} (bias W-hat/W95 {w_ / max(ws):.3f}-{w_ / min(ws):.3f}); K {ks[0]} / {ks[1]} / {ks[2]} against W95 {min(ws):.1f}-{max(ws):.1f}:"
           f" {sum(1 for w in ws if ks[0] <= w <= ks[2])}/{len(ws)} inside")

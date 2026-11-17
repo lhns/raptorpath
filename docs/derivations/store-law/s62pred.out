@@ -9,47 +9,47 @@ s62 scorer prototype (s62pred.py, round 2), end to end on real rows; inputs: rep
     G12 s7 r4: share>X_own 0.00 / >X_use 0.00
     G12 s42 r5: share>X_own 0.00 / >X_use 0.00
     G12 s7 r6: share>X_own 0.00 / >X_use 0.00
-    G512 s42 r1: qshare 0.00 ratio raw 1.13 / floored 1.13 (den 21.40)
-    G512 s7 r2: qshare 0.00 ratio raw 1.05 / floored 1.05 (den 20.72)
-    G512 s42 r3: qshare 0.00 ratio raw 1.14 / floored 1.14 (den 21.49)
-    G512 s7 r4: qshare 0.00 ratio raw 1.08 / floored 1.08 (den 21.52)
-    G512 s42 r5: qshare 0.00 ratio raw 1.16 / floored 1.16 (den 20.77)
-    G512 s7 r6: qshare 0.00 ratio raw 1.09 / floored 1.09 (den 21.44)
+    G512 s42 r1:  qshare 0.00 ratio raw 1.13 / floored 1.13 (den 21.40)
+    G512 s7 r2:  qshare 0.00 ratio raw 1.05 / floored 1.05 (den 20.72)
+    G512 s42 r3:  qshare 0.00 ratio raw 1.14 / floored 1.14 (den 21.49)
+    G512 s7 r4:  qshare 0.00 ratio raw 1.08 / floored 1.08 (den 21.52)
+    G512 s42 r5:  qshare 0.00 ratio raw 1.16 / floored 1.16 (den 20.77)
+    G512 s7 r6:  qshare 0.00 ratio raw 1.09 / floored 1.09 (den 21.44)
   J0 stand-in (rep61a): X_own = 17.49 ms (E50 5.94, E90 9.79, floor W12); X_min = q_R * F_floor = 1.94 ms -> X_use 17.49; ratio denominators floored on 0 of 36 rows
-    flagged per arm (raw s61 form / CR62): W12 0/6 -> 0/6 | W16 0/6 -> 0/6 | W24 0/6 -> 0/6 | W68 0/6 -> 0/6 | W92 0/6 -> 0/6 | W104 0/6 -> 0/6 | W112 0/6 -> 0/6 | W124 0/6 -> 0/6 | W136 0/6 -> 0/6 | W176 0/6 -> 0/6 | W2048 6/6 -> 6/6
+    flagged per arm (raw s61 form / CR62): W12 0/6 -> 0/6 | W16 0/6 -> 0/6 | W24 0/6 -> 0/6 | W68 0/6 -> 0/6 | W92 0/6 -> 0/6 | W104 0/6 -> 0/6 | W112 0/6 -> 0/6 | W124 0/6 -> 0/6 | W136 0/6 -> 0/6 | W176 0/6 -> 0/6 | W2048 6/6 -> 0/6
     G12 s42 r1: share>X_own 0.00 / >X_use 0.00
     G12 s7 r2: share>X_own 0.00 / >X_use 0.00
     G12 s42 r3: share>X_own 0.00 / >X_use 0.00
     G12 s7 r4: share>X_own 0.00 / >X_use 0.00
     G12 s42 r5: share>X_own 0.02 / >X_use 0.02
     G12 s7 r6: share>X_own 0.00 / >X_use 0.00
-    G2048 s42 r1: qshare 0.00 ratio raw 1.67 / floored 1.67 (den 21.92)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r2: qshare 0.00 ratio raw 1.9 / floored 1.9 (den 23.50)  RAW-FLAG  CR62-FLAG
-    G2048 s42 r3: qshare 0.00 ratio raw 1.77 / floored 1.77 (den 20.32)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r4: qshare 0.00 ratio raw 1.78 / floored 1.78 (den 23.96)  RAW-FLAG  CR62-FLAG
-    G2048 s42 r5: qshare 0.00 ratio raw 1.51 / floored 1.51 (den 22.06)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r6: qshare 0.00 ratio raw 1.86 / floored 1.86 (den 24.99)  RAW-FLAG  CR62-FLAG
+    G2048 s42 r1:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.00 ratio raw 1.67 / floored 1.67 (den 21.92)  RAW-FLAG (s61 form)
+    G2048 s7 r2:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.00 ratio raw 1.9 / floored 1.9 (den 23.50)  RAW-FLAG (s61 form)
+    G2048 s42 r3:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.00 ratio raw 1.77 / floored 1.77 (den 20.32)  RAW-FLAG (s61 form)
+    G2048 s7 r4:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.00 ratio raw 1.78 / floored 1.78 (den 23.96)  RAW-FLAG (s61 form)
+    G2048 s42 r5:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.00 ratio raw 1.51 / floored 1.51 (den 22.06)  RAW-FLAG (s61 form)
+    G2048 s7 r6:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.00 ratio raw 1.86 / floored 1.86 (den 24.99)  RAW-FLAG (s61 form)
   jitter-free shape (s60 c1s): X_own = 1.59 ms (E50 0.44, E90 0.83, floor W64); X_min = q_R * F_floor = 0.12 ms -> X_use 1.59; ratio denominators floored on 0 of 12 rows
-    flagged per arm (raw s61 form / CR62): W64 2/6 -> 2/6 | W128 0/6 -> 0/6 | W192 1/6 -> 1/6 | W2048 6/12 -> 6/12
+    flagged per arm (raw s61 form / CR62): W64 2/6 -> 2/6 | W128 0/6 -> 0/6 | W192 1/6 -> 1/6 | W2048 6/12 -> 5/12
     G64 s42 r1: share>X_own 0.01 / >X_use 0.01
     G64 s7 r2: share>X_own 0.01 / >X_use 0.01
     G64 s42 r3: share>X_own 0.04 / >X_use 0.04
-    G64 s7 r4: share>X_own 0.57 / >X_use 0.57  RAW-FLAG  CR62-FLAG
+    G64 s7 r4: share>X_own 0.57 / >X_use 0.57  RAW-FLAG (s61 form)  CR62-FLAG
     G64 s42 r5: share>X_own 0.01 / >X_use 0.01
-    G64 s7 r6: share>X_own 0.28 / >X_use 0.28  RAW-FLAG  CR62-FLAG
-    G192 s7 r4: share>X_own 0.94 / >X_use 0.94  RAW-FLAG  CR62-FLAG
-    G2048 s42 r1: qshare 0.01 ratio raw 1.82 / floored 1.82 (den 21.59)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r2: qshare 0.01 ratio raw 0.86 / floored 0.86 (den 20.26)
-    G2048 s42 r3: qshare 0.02 ratio raw 0.89 / floored 0.89 (den 20.05)
-    G2048 s7 r4: qshare 0.02 ratio raw 0.86 / floored 0.86 (den 19.69)
-    G2048 s42 r5: qshare 0.95 ratio raw 1.32 / floored 1.32 (den 25.20)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r6: qshare 0.01 ratio raw 1.06 / floored 1.06 (den 19.77)
-    G2048 s42 r7: qshare 0.02 ratio raw 0.87 / floored 0.87 (den 19.57)
-    G2048 s7 r8: qshare 0.79 ratio raw 1.19 / floored 1.19 (den 23.37)  RAW-FLAG  CR62-FLAG
-    G2048 s42 r9: qshare 0.68 ratio raw 1.37 / floored 1.37 (den 15.29)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r10: qshare 0.03 ratio raw 0.95 / floored 0.95 (den 19.15)
-    G2048 s42 r11: qshare 0.69 ratio raw 1.15 / floored 1.15 (den 22.42)  RAW-FLAG  CR62-FLAG
-    G2048 s7 r12: qshare 0.42 ratio raw 1.04 / floored 1.04 (den 21.03)  RAW-FLAG  CR62-FLAG
+    G64 s7 r6: share>X_own 0.28 / >X_use 0.28  RAW-FLAG (s61 form)  CR62-FLAG
+    G192 s7 r4: share>X_own 0.94 / >X_use 0.94  RAW-FLAG (s61 form)  CR62-FLAG
+    G2048 s42 r1:   RULE-FINDING-CR62 (fires at full goodput: not a collapse) qshare 0.01 ratio raw 1.82 / floored 1.82 (den 21.59)  RAW-FLAG (s61 form)
+    G2048 s7 r2:  qshare 0.01 ratio raw 0.86 / floored 0.86 (den 20.26)
+    G2048 s42 r3:  qshare 0.02 ratio raw 0.89 / floored 0.89 (den 20.05)
+    G2048 s7 r4:  qshare 0.02 ratio raw 0.86 / floored 0.86 (den 19.69)
+    G2048 s42 r5:  qshare 0.95 ratio raw 1.32 / floored 1.32 (den 25.20)  RAW-FLAG (s61 form)  CR62-FLAG
+    G2048 s7 r6:  qshare 0.01 ratio raw 1.06 / floored 1.06 (den 19.77)
+    G2048 s42 r7:  qshare 0.02 ratio raw 0.87 / floored 0.87 (den 19.57)
+    G2048 s7 r8:  qshare 0.79 ratio raw 1.19 / floored 1.19 (den 23.37)  RAW-FLAG (s61 form)  CR62-FLAG
+    G2048 s42 r9:  qshare 0.68 ratio raw 1.37 / floored 1.37 (den 15.29)  RAW-FLAG (s61 form)  CR62-FLAG
+    G2048 s7 r10:  qshare 0.03 ratio raw 0.95 / floored 0.95 (den 19.15)
+    G2048 s42 r11:  qshare 0.69 ratio raw 1.15 / floored 1.15 (den 22.42)  RAW-FLAG (s61 form)  CR62-FLAG
+    G2048 s7 r12:  qshare 0.42 ratio raw 1.04 / floored 1.04 (den 21.03)  RAW-FLAG (s61 form)  CR62-FLAG
 
 == 2. The scored path per cell (floor arms W12 and W24) ==
   J5 stand-in (rep61c) (netem jitter +-5 ms): control W512 unflagged 6, median 17.82 Mbit/s
@@ -57,24 +57,28 @@ s62 scorer prototype (s62pred.py, round 2), end to end on real rows; inputs: rep
     knees: s42r1 W95 110.1 Tmin 46.385 | s7r2 W95 107.4 Tmin 46.281 | s42r3 W95 109.8 Tmin 46.478 | s7r4 W95 106.6 Tmin 45.670 | s42r5 W95 109.2 Tmin 46.035 | s7r6 W95 108.2 Tmin 46.184
     need_0 (native knee - F(G250) at W12) 7.455 ms, 90 % [6.620, 7.716]; at the intercept (F 37.791) 8.441 [7.329, 9.294]; Delta_0 = 1/2 q_R F0 = 0.969 ms; 6 scoreable replicates
     reported: need at the W12 floor read native 3.481 | G250 7.455 | G2100 11.914; native S_F 5.801
-  J0 stand-in (rep61a): control W2048 unflagged 0 < 4 -> LABEL62 CONTROL-J0 CONTROL-MOVED: nothing scored
-  the J0 stand-in again with CR62 lifted on its W2048 control only (s61a Result's post-hoc reading), to execute the rest of the path on real rows:
   J0 stand-in (rep61a) (netem jitter +-5 ms): control W2048 unflagged 6, median 17.78 Mbit/s
     floor W12 (valid 6): native 42.356 | G250 38.894 | G2100 35.285 -> D0 7.072 ms, gate FAIL | floor W24 (valid 6): native 41.852 | G250 39.827 | G2100 36.844 -> D0 5.008 (reported)
     knees: s42r1 W95 109.7 Tmin 46.396 | s7r2 W95 108.3 Tmin 46.145 | s42r3 W95 108.8 Tmin 46.210 | s7r4 W95 107.4 Tmin 46.066 | s42r5 W95 106.8 Tmin 45.853 | s7r6 W95 107.6 Tmin 46.108
     need_0 (native knee - F(G250) at W12) 7.232 ms, 90 % [6.829, 7.886]; at the intercept (F 37.711) 8.415 [7.516, 9.334]; Delta_0 = 1/2 q_R F0 = 0.972 ms; 6 scoreable replicates
     reported: need at the W12 floor read native 3.770 | G250 7.232 | G2100 10.841; native S_F 5.941
+  the J0 stand-in again with CR62 lifted on its W2048 control only (s61a Result's post-hoc reading), to execute the rest of the path on real rows:
+  J0 stand-in (rep61a) (netem jitter +-5 ms): control W2048 unflagged 6, median 17.78 Mbit/s
+    floor W12 (valid 6): native 42.356 | G250 38.894 | G2100 35.285 -> D0 7.072 ms, gate FAIL | floor W24 (valid 6): native 41.852 | G250 39.827 | G2100 36.844 -> D0 5.008 (reported)
+    knees: s42r1 W95 109.7 Tmin 46.396 | s7r2 W95 108.3 Tmin 46.145 | s42r3 W95 108.8 Tmin 46.210 | s7r4 W95 107.4 Tmin 46.066 | s42r5 W95 106.8 Tmin 45.853 | s7r6 W95 107.6 Tmin 46.108
+    need_0 (native knee - F(G250) at W12) 7.232 ms, 90 % [6.861, 7.889]; at the intercept (F 37.711) 8.415 [7.540, 9.312]; Delta_0 = 1/2 q_R F0 = 0.972 ms; 6 scoreable replicates
+    reported: need at the W12 floor read native 3.770 | G250 7.232 | G2100 10.841; native S_F 5.941
   jitter-free shape (s60 c1s) floor W64: valid 4, D0 0.000 ms (native windows hold ~5366 samples: G(250) and G(2100) are one window, so the gate is trivially met and says nothing about c3 at J = 0)
 
 == 3. The label (need_0 against zero; FLOOR-SENSITIVE from the intercept reading) ==
-  J5 stand-in (rep61c): need_0 7.455 [6.620, 7.716], intercept 8.441 [7.329, 9.294], Delta_0 0.969, D0 8.433 -> LABEL62 NEED0 UNSCOREABLE (gate: D0 >= 0.5 ms)  | gate forced open (exercise only): REMAINS
-  J0 stand-in (rep61a): need_0 7.232 [6.829, 7.886], intercept 8.415 [7.516, 9.334], Delta_0 0.972, D0 7.072 -> LABEL62 NEED0 UNSCOREABLE (gate: D0 >= 0.5 ms)  | gate forced open (exercise only): REMAINS
+  J5 stand-in (rep61c): need_0 7.455 [6.620, 7.716], intercept 8.441 [7.329, 9.294], Delta_0 0.969, D0 8.433 -> LABEL62 NEED0 UNSCOREABLE (gate: D0 >= 0.5 ms)  | gate forced open (exercise only): ABOVE
+  J0 stand-in (rep61a): need_0 7.232 [6.861, 7.889], intercept 8.415 [7.540, 9.312], Delta_0 0.972, D0 7.072 -> LABEL62 NEED0 UNSCOREABLE (gate: D0 >= 0.5 ms)  | gate forced open (exercise only): ABOVE
 
 == 4. The label function on every branch (SYNTHETIC inputs; Delta_0 1.05) ==
-  vanishes         CI (-0.3, 0.4) intercept (-0.2, 0.6) D0 0.1 n 6 -> VANISHES
-  remains          CI (3.0, 4.0) intercept (3.5, 4.6) D0 0.1 n 6 -> REMAINS
+  below            CI (-0.3, 0.4) intercept (-0.2, 0.6) D0 0.1 n 6 -> BELOW
+  above            CI (3.0, 4.0) intercept (3.5, 4.6) D0 0.1 n 6 -> ABOVE
   straddle         CI (0.6, 1.6) intercept (0.7, 1.8) D0 0.1 n 6 -> UNRESOLVED
-  floor-sensitive  CI (-0.2, 0.8) intercept (1.3, 2.4) D0 0.1 n 6 -> FLOOR-SENSITIVE (W12 VANISHES, intercept REMAINS)
+  floor-sensitive  CI (-0.2, 0.8) intercept (1.3, 2.4) D0 0.1 n 6 -> FLOOR-SENSITIVE (W12 BELOW, intercept ABOVE)
   gate             CI (3.0, 4.0) intercept (3.5, 4.6) D0 0.7 n 6 -> UNSCOREABLE (gate: D0 >= 0.5 ms)
   replicates       CI (3.0, 4.0) intercept (3.5, 4.6) D0 0.1 n 4 -> UNSCOREABLE (fewer than 5 replicates with W95 in [K1, K3])
 
@@ -94,9 +98,9 @@ s62 scorer prototype (s62pred.py, round 2), end to end on real rows; inputs: rep
   jitter-free shape (s60 c1s) G2048 s42 r1: gp 752.04, loss truth 0.001, E90_own 39.34, p90 - tmin 21.59, ratio raw 1.82 floored 1.82, absolute threshold 1.5 x X_min = 0.18 ms, qshare 0.01, LATE windows 192
   jitter-free shape (s60 c1s) G2048 s42 r11: gp 497.31, loss truth 0.001, E90_own 25.83, p90 - tmin 22.42, ratio raw 1.15 floored 1.15, absolute threshold 1.5 x X_min = 0.18 ms, qshare 0.69, LATE windows 301
 
-== 6. The pilot (proportional rule from the lower probe, W512 control; K = r4(1.00 / 1.10 / 1.20 x W-hat), P1 r8(1.5 x W-hat)) on the 61c curve ==
-  61c W80: u 0.743 -> W-hat 102.2 (bias W-hat/W95 0.929-0.959); K 104 / 112 / 124 against W95 106.6-110.1: 6/6 inside
-  61c W88: u 0.811 -> W-hat 103.1 (bias W-hat/W95 0.937-0.967); K 104 / 112 / 124 against W95 106.6-110.1: 6/6 inside
+== 6. The pilot (proportional rule from the lower probe, W512 control; K = r4(0.92 / 1.06 / 1.20 x W-hat), P1 r8(1.5 x W-hat)) on the 61c curve ==
+  61c W80: u 0.743 -> W-hat 102.2 (bias W-hat/W95 0.929-0.959); K 96 / 108 / 124 against W95 106.6-110.1: 6/6 inside
+  61c W88: u 0.811 -> W-hat 103.1 (bias W-hat/W95 0.937-0.967); K 96 / 108 / 124 against W95 106.6-110.1: 6/6 inside
 
 == 7. Reported only: need at J = 5 at three floor counts, and the points for the rise-against-spread line ==
   J5 stand-in (rep61c): need at the W12 floor read native 3.481 | G250 7.455 | G2100 11.914 ms; native S_F 5.801
