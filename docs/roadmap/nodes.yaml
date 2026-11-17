@@ -2835,6 +2835,73 @@ nodes:
   overview: false
   plain: 'The second half of the floor measurement: the fast link''s sign test and the gauge''s own cost, now without the rows that overloaded the link.'
   notes: '40/40 slots live at harness60-a2 1ecee59d (12:31–13:26Z 2026-11-16), same bin_sha, HIT; the rehearsal re-ran first and passed. c1s: floor FLAT, P1 holds (43x), B1 does not fire. The control sign and the G/C pairs are unread: the frozen absolute collapse rule (X = 6.1 ms) flags all 22 W 2048 rows, because the standing queue alone gives 13-17 ms of excess; genuine collapse (qcwnd share) is 7 of 22. Host re-score byte-equal; owed stub run and shell tests passed.'
+- id: store-s61a
+  title: c3 knee-margin sweep 61a (§61)
+  track: store
+  kind: research
+  state: done
+  outcome: bad
+  evidence:
+  - status §61 Amendment 1
+  - status §61a Result
+  - branch harness61
+  verdict_quote: 'LABEL61 CONTROL-c3 CONTROL-MOVED'
+  headline: 66/66 clean, nothing scored (two rule defects)
+  depends_on:
+  - store-s60b
+  - store-user-u1u3
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-17'
+  end: '2026-11-17'
+  folded:
+  - commit 33f36c36
+  overview: false
+  plain: 'The second-link-shape measurement of the knee margin ran cleanly but could not be scored: the collapse rule flagged every healthy control and the pilot placed the knee arms too high.'
+  notes: 'harness61 14e2bacd, bin_sha e410d640, HIT. CR61''s ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES.'
+- id: store-s61a-rerun
+  title: c3 sweep re-run (§61 Amendment 2)
+  track: store
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - status §61 Amendment 2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-s61a
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Repeat the second-link-shape knee measurement with a smaller control queue and a pilot rule that does not overshoot.'
+  notes: 'W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. A second CONTROL-MOVED stops the line until CR61 is re-derived.'
+- id: meas-defect-cr61-large-pool
+  title: Collapse rule blind at large pools
+  track: meas
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status §61a Result
+  verdict_quote: 'At this pool the ratio does not separate, and c1s G r1''s 1.82 lies inside c3''s healthy range.'
+  headline: CR61 ratio 1.51-1.90 on healthy c3 controls
+  depends_on:
+  - store-s61a
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained.'
+  notes: 'Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem''s 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04.'
 - id: store-defect-allowance-short
   title: Store-law allowance short of the c2 knee
   track: store

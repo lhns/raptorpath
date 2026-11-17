@@ -46,6 +46,7 @@ flowchart TB
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
     meas_s51_design["✔ Off-Bulk benchmark<br/>design (#167;51)"]
     meas_s58_session["✔ #167;58: F1 suites,<br/>binary identity"]
+    meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
     meas_s51_harness["○ #167;51 harness and<br/>scorer"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
@@ -96,14 +97,17 @@ flowchart TB
     meas_guard_clause_dry ~~~ meas_guard_v2_impl
     meas_guard_clause_dry ~~~ meas_s51_design
     meas_guard_clause_dry ~~~ meas_s58_session
-    meas_guard_v2_impl ~~~ meas_s51_harness
-    meas_s51_design ~~~ meas_adversarial_cells_build
-    meas_s58_session ~~~ meas_harness_robustness
+    meas_guard_v2_impl ~~~ meas_defect_cr61_large_pool
+    meas_s51_design ~~~ meas_s51_harness
+    meas_s58_session ~~~ meas_adversarial_cells_build
+    meas_defect_cr61_large_pool ~~~ meas_harness_robustness
     meas_s51_harness ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
     meas_harness_robustness ~~~ meas_s51_session
-    meas_guard_resolution ~~~ meas_s51b_rho
-    meas_test_hygiene ~~~ meas_adversarial_cells_run
+    meas_guard_resolution ~~~ meas_s51_session
+    meas_test_hygiene ~~~ meas_s51_session
+    meas_s51_session ~~~ meas_s51b_rho
+    meas_s51_session ~~~ meas_adversarial_cells_run
     meas_s51_session ~~~ meas_competitor_battery
     meas_s51b_rho ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
@@ -139,7 +143,7 @@ flowchart TB
     class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session succ
     class meas_c8_aggregation_arc,meas_coupling_model dead
     class meas_sf_accounting mixed
-    class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor defect
+    class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool defect
     class meas_s51_harness,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_adversarial_cells_run,meas_progress_baseline next
     class meas_s51_session,meas_s51b_rho,meas_competitor_battery,meas_fix_gauges_p3 blocked
 ```
@@ -150,6 +154,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-meas -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
+| `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | done | unrated |  | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |  |
 | `meas-adr51-scenarios` | Canonical scenarios and goal gate | done | successful |  | ADR-0051 |  |
 | `meas-l1-harness` | L1 netns harness and baselines | done | unrated |  | commit f73704c2 | meas-adr51-scenarios |
@@ -205,6 +210,7 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
+| `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04. | status §61a Result |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |
 | `meas-adr51-scenarios` | Canonical scenarios and goal gate | Owner 2026-07-02: "define a goal that we want to surpass tcp and that the model reacts correctly in our defined scenarios". Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0051 |
 | `meas-l1-harness` | L1 netns harness and baselines | VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350). | commit f73704c2 |

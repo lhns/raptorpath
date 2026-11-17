@@ -64,6 +64,8 @@ flowchart TB
     store_s60a["✔ Gauge session 60a<br/>(#167;60)"]
     store_s60b["✔ Gauge session 60b<br/>(#167;60)"]
     store_defect_allowance_short>"⚠ Store-law allowance<br/>short of the c2 knee"]
+    store_s61a["✔ c3 knee-margin sweep<br/>61a (#167;61)"]
+    store_s61a_rerun["○ c3 sweep re-run (#167;61<br/>Amendment 2)"]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
@@ -134,9 +136,11 @@ flowchart TB
     store_s60_pre ~~~ store_s60a
     store_s60a ~~~ store_s60b
     store_s60a ~~~ store_defect_allowance_short
-    store_s60a ~~~ store_fix_maxbw_minrtt
-    store_s60b ~~~ store_engine_form_impl
-    store_defect_allowance_short ~~~ store_engine_form_impl
+    store_s60b ~~~ store_s61a
+    store_defect_allowance_short ~~~ store_s61a
+    store_s61a ~~~ store_s61a_rerun
+    store_s61a ~~~ store_fix_maxbw_minrtt
+    store_s61a_rerun ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     store_engine_form_impl ~~~ store_engine_form_guard
     store_engine_form_impl ~~~ store_delta_seat
@@ -190,12 +194,15 @@ flowchart TB
     store_law_r67 --> store_s60a
     store_s60a --> store_s60b
     store_s60a --> store_defect_allowance_short
+    store_s60b --> store_s61a
+    store_w1_who_limits --> store_s61a
+    store_s61a --> store_s61a_rerun
     store_w1_who_limits --> store_engine_form_impl
     store_fix_maxbw_minrtt --> store_engine_form_impl
     store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
     store_delta_seat --> store_s48c_session
-    linkStyle 78,90,92,96 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 80,92,94,98 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -211,13 +218,14 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class store_sack_flowctl,store_sack_prune,store_reasm_bdp,store_src_bp,store_xn_pool,store_percap_family,store_borrow,store_honest_cap_family,store_plain_rs,store_capw,store_sender_decoupling,store_pool_deliv,store_slack_clock,store_three_term,store_coverage_term,store_composed_cap,store_sf_latency_feedback,store_s18_one_law,store_s24_inputs,store_power_law,store_s27_premises,store_probe_gain,store_dw_window,store_s34_input dead
     class store_anchor_hygiene,store_sack_release,store_honest_inputs,store_sum_cap,store_adr72_one_law,store_defect_delta_nan,store_s60_pre succ
-    class store_pool_anchor_flip bad
+    class store_pool_anchor_flip,store_s61a bad
     class store_latency_lever,store_cap_unification,store_s60a,store_s60b mixed
     class store_deadwall_modehunt,store_cap_law_cluster,store_input_search,store_s36_dispersion,store_s40_p90,store_s42_engine_path,store_engine_form,store_s43b_retuned,store_s54_budget,store_s56_sweep,store_s57a_burst,store_s57b_c1d,store_law_r67 unrated
     class store_delta_cap vsucc
     class store_w1_who_limits,store_slaw_gauge waiting
     class store_defect_cap_constant,store_defect_allowance_short defect
     class store_law_derivation inprog
+    class store_s61a_rerun next
     class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
@@ -277,6 +285,8 @@ flowchart TB
 | `store-s60-pre` | Suites and reference binary (60-pre) | done | successful | bin_sha e410d640… | status 60-pre; status 60-pre Result; commit f950956b; commit 0367ea59 | store-slaw-gauge |
 | `store-s60a` | Gauge session 60a (§60) | done | mixed | c2 SHORT 1.69 ms; c8 B2 unscoreable | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60; status §60 Result | store-s60-pre, store-law-r67 |
 | `store-s60b` | Gauge session 60b (§60) | done | mixed | c1s control and G/C unread (collapse rule) | status §60 Amendment 2; branch harness60-a2; status §60 Result | store-s60a |
+| `store-s61a` | c3 knee-margin sweep 61a (§61) | done | bad | 66/66 clean, nothing scored (two rule defects) | status §61 Amendment 1; status §61a Result; branch harness61 | store-s60b, store-user-u1u3 |
+| `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | next | unrated |  | status §61 Amendment 2 | store-s61a |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | next | unrated | SHORT 1.69 ms at c2 | status §60 Result; derivation store-law-r67.md | store-s60a |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | done | unrated | merged 9b8b42ca; decision_trace_pin 7/7 on Linux | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |  |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
@@ -343,6 +353,8 @@ flowchart TB
 | `store-s60-pre` | Suites and reference binary (60-pre) | Release 1156/0, debug 1008/0, wasm 50/0, core 2/0, doc and parsers rc 0; decision_trace_pin 7/7 in both profiles; the first Linux run of the gauge's tests. ref60-manifest (187 files) is committed and passed as LD_REF_MANIFEST to every §60 launch. | status 60-pre; status 60-pre Result; commit f950956b; commit 0367ea59 |
 | `store-s60a` | Gauge session 60a (§60) | 96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7). | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60; status §60 Result |
 | `store-s60b` | Gauge session 60b (§60) | 40/40 slots live at harness60-a2 1ecee59d (12:31–13:26Z 2026-11-16), same bin_sha, HIT; the rehearsal re-ran first and passed. c1s: floor FLAT, P1 holds (43x), B1 does not fire. The control sign and the G/C pairs are unread: the frozen absolute collapse rule (X = 6.1 ms) flags all 22 W 2048 rows, because the standing queue alone gives 13-17 ms of excess; genuine collapse (qcwnd share) is 7 of 22. Host re-score byte-equal; owed stub run and shell tests passed. | status §60 Amendment 2; branch harness60-a2; status §60 Result |
+| `store-s61a` | c3 knee-margin sweep 61a (§61) | harness61 14e2bacd, bin_sha e410d640, HIT. CR61's ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES. | status §61 Amendment 1; status §61a Result; branch harness61 |
+| `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. A second CONTROL-MOVED stops the line until CR61 is re-derived. | status §61 Amendment 2 |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7's derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03. | status §60 Result; derivation store-law-r67.md |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner's guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect. | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |
 | `store-defect-cap-constant` | Store cap constant at c8 | Plan 2026-11-13: the store law becomes its own track (items 8-9). | status §3.10 item 8 |

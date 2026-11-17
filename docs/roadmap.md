@@ -294,6 +294,7 @@ flowchart TB
 | Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Store-law gauge build (B-1) | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
 | Gauge session 60a (§60) | ✔ done · mixed | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
+| c3 sweep re-run (§61 Amendment 2) | ○ next | Repeat the second-link-shape knee measurement with a smaller control queue and a pilot rule that does not overshoot. |
 | Store-law allowance short of the c2 knee | ⚠ open defect | Open problem: with honest floors, the store law's safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
@@ -327,6 +328,7 @@ flowchart TB
 | Per-path I/O owner (Q1) | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
+| Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
 | L1 measurement discipline (ADR-0052) | ✔ done · successful | Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run. |
 | Formula-first review (ADR-0070) | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
 | Rank-minp merge guard (§41c) | ✔ done · successful ⚠ | Built the statistical check that every change must pass before merging, calibrated against identical runs. |
@@ -370,6 +372,7 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
+- `store-s61a-rerun`: c3 sweep re-run (§61 Amendment 2)
 - `meas-adversarial-cells-run`: Adversarial cells measured
 - `meas-progress-baseline`: Cumulative progress benchmark
 
@@ -385,6 +388,7 @@ flowchart TB
 
 - `rate-evict-registration`: Evicting-seat m̄ registration (plan 59)
 - `rate-spare-cwnd`: Is spare's cwnd enforced?
+- `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `meas-s51-harness`: §51 harness and scorer
 - `infra-derivation-merges`: Derivation branch merges
 - `meas-harness-robustness`: Harness robustness for every plan
@@ -510,11 +514,11 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 46 nodes (16 done, 7 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 61 nodes (29 done, 4 in progress, 1 next, 5 blocked, 22 abandoned)
+- [store - store law](roadmap/tracks/store.md): 63 nodes (30 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 50 nodes (35 done, 4 in progress, 6 next, 4 blocked, 1 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 51 nodes (35 done, 4 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 1 next, 2 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 2 next)
