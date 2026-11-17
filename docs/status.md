@@ -1193,6 +1193,18 @@ The launch sha is pinned by an amendment.
   - the launch has `LD_HARD` = launch + 1.5 h;
   - each uses one fresh `git archive` of `cda0c629`.
 
+**§63 Amendment 2 (2026-11-17, after the rehearsal, before the launch): the CAND pin and the rehearsal's readings.**
+- **Rehearsal** (21:17–21:37Z, `s63-tree` `cda0c629`): REHEARSAL-PASS.
+  - CAND built; its sha is recorded as **`LD_BIN_SHA_CAND` = `96c2dc1c9986ecdccbda24d36c15db4c3c913fb726ddd61f5e075318c9279cd7`**.
+  - The CONTROL sha equals `8013a312…`.
+- **Readings, reported:**
+  - **CONTROL PL s42:** the warm-up acked in this draw. The failure is stochastic, as registered.
+  - **CAND PL s42:** the F2 reading is PASS (warm-up acked, `undeliv=0` on the server's `[CTLD]`, no `[UNFRAMABLE]`, `[SYMSZ]` 512/512 on both ends).
+  - **Both PL transfers are DNF** at the row's 75 s timeout, on both binaries. 20.7 MB at 2.77 Mbit/s needs about 60 s nominal, unreliable with eviction.
+    - As registered, this is a pacer / E-tree reading, not an F2 one, and it is reported separately.
+    - It goes to block E's design before E-pre: whether PL's timeout and completion rule fit an evicting seat.
+- **Launch:** `LD_PLAN=63`, `LD_BIN_SHA_CAND` as above, `LD_BIN_CONTROL` as Amendment 1, `LD_HARD` = launch + 1.5 h, from a fresh archive of `cda0c629`.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
