@@ -1171,6 +1171,28 @@ The launch sha is pinned by an amendment.
 
 **Pending:** Fable's review of this registration.
 
+**§63 Amendment 1 (2026-11-17, before any VM contact for its rows): the launch tree and the seats.**
+- **Launch tree: `s63-tree` `cda0c6290d2f59cd4f3a02204af0eeeaa17fd5ca`.** It is `f2-cand-e` `0590173a` (`e-tree` plus `f2-prep`, the design docs and all seven `f2-impl` engine commits) merged with `harness63` `4627b4b8` (tools only).
+  - The engine delta over `a271e0bb` has the same patch-id as `f2-impl` over main (`490a0d1f…`).
+  - `f2-impl`'s head `626fdf9a` passes the full suites on Linux: release 1150/0, debug 1002/0, wasm 50/0, core 2/0, seams 3/0, parsers.
+- **CONTROL** is `LD_BIN_CONTROL` = the E rehearsal's own binary, copied on the VM. Its sha256 equals the registered `8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf`, and the harness checks it.
+- **CAND** is a plain release build of the launch archive. The rehearsal records its sha (`LD_BIN_SHA_CAND`), and Amendment 2 pins it before the launch.
+- **The harness, as built (`harness63`):**
+  - plan 63 runs 10 rows once each, with no replacement;
+  - no engine suites run, but the tools tests do;
+  - the budget is 5 400 s for the launch and 1 800 s for the rehearsal;
+  - a prebuilt CAND is refused.
+- **The F2 reading:**
+  - `undeliv` is read from the receiving end's `[CTLD]` lines. That is the server: `perf_rwm_c.sh`'s client sends the transfer.
+  - The reported value is the sum of both ends.
+  - A row with a `[CTLD]` line only on the sending end FAILs as a missing witness.
+- **Stub runs:** the fast unfiltered stub run is ALL OK (758 ok at `57981699`), and every plan-63 stub path passes, including `cand-ctld-send-only` at `4627b4b8`.
+- **Run rules:**
+  - host cargo is paused, under the host lock held by the coordinator;
+  - the rehearsal is `LD_PLAN=63 LD_REHEARSE=1` with `LD_HARD` = launch + 1 h;
+  - the launch has `LD_HARD` = launch + 1.5 h;
+  - each uses one fresh `git archive` of `cda0c629`.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
