@@ -1897,7 +1897,12 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
     - Every symbol at every hint uses the same wire framing, so the receiver no longer depends on `WindowStart` announcing packing.
     - (B), a per-frame packed bit, was not taken: it keeps two framings and a per-symbol branch.
     - The fix comes with an ADR, a protocol bump and the red-first repro. If Bulk's bytes on the wire change, it also needs a guard against main.
-    - The design is with an Opus agent on `f2-design`.
+    - The design is on `f2-design` (`7d841dfa`: `docs/derivations/f2-framing-design.md`, ADR-0078 Proposed; three review rounds with Fable).
+12. **F2's safety net: fail closed** (owner, 2026-11-17).
+    - After the fix, an unframable symbol can come only from an encode or decode bug. ARQ cannot repair it, because a resend repeats the same bytes.
+    - The receiver counts it, logs `[UNFRAMABLE]`, and closes the tunnel. A stall or hole behind healthy counters was the alternative not taken.
+    - **Size, by the recommended default** (not overruled): each receiver decodes with the size its sender announces in the reliable v10 handshake. It is reversible to refuse-on-mismatch without a wire change.
+    - Mixed-hint pairs stay unsupported.
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 
