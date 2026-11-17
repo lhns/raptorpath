@@ -13,7 +13,9 @@
 mod loopback;
 
 use bytes::Bytes;
-use raptorpath::net::emit_source::{TEST_CORRUPTED_PAYLOAD, TEST_CORRUPT_COUNT, TEST_CORRUPT_SEQ};
+use raptorpath::net::emit_source::{
+    TEST_CORRUPTED_AT, TEST_CORRUPTED_PAYLOAD, TEST_CORRUPT_COUNT, TEST_CORRUPT_SEQ,
+};
 use raptorpath::net::framing::read_packets;
 use raptorpath::net::{self, UNDELIVERABLE_SYMBOLS};
 use raptorpath::tun::TunInterface;
@@ -26,6 +28,7 @@ use std::time::{Duration, Instant};
 const M: u32 = 200;
 const PKT: usize = 300;
 const K: u64 = 20;
+const WARMUP: u32 = 10;
 
 #[derive(Clone)]
 struct Capture(Arc<Mutex<Vec<u8>>>);
@@ -48,6 +51,7 @@ fn packet(i: u32) -> Bytes {
 async fn closes_at(hint: &str, log: &Capture) {
     UNDELIVERABLE_SYMBOLS.store(0, Relaxed);
     *TEST_CORRUPTED_PAYLOAD.lock().unwrap() = None;
+    *TEST_CORRUPTED_AT.lock().unwrap() = None;
     TEST_CORRUPT_COUNT.store(0, Relaxed);
     TEST_CORRUPT_SEQ.store(K, Relaxed);
     log.0.lock().unwrap().clear();
@@ -64,23 +68,30 @@ async fn closes_at(hint: &str, log: &Capture) {
 
     // Two 300-byte packets never share a 512-byte symbol, so each is one
     // source symbol at both hints and seq K is a single packet.
+    // Warm-up: a few packets go first and the test waits until the server has
+    // delivered one, so the close cannot beat every delivery (the engine's
+    // delivery task is dropped with it). The seam fires at seq K > WARMUP.
+    let mut delivered: HashSet<u32> = HashSet::new();
+    for i in 0..WARMUP {
+        cli_mem.feed.send(packet(i)).await.expect("client TUN open");
+    }
+    let first = tokio::time::timeout(Duration::from_secs(20), srv_mem.delivered.recv())
+        .await
+        .unwrap_or_else(|_| panic!("{hint}: the warm-up never reached the server"))
+        .expect("server TUN open");
+    delivered.insert(u32::from_be_bytes(first[..4].try_into().unwrap()));
     let feed = cli_mem.feed.clone();
     let feeder = tokio::spawn(async move {
-        for i in 0..M {
+        for i in WARMUP..M {
             if feed.send(packet(i)).await.is_err() {
                 break;
             }
         }
     });
 
-    let mut delivered: HashSet<u32> = HashSet::new();
-    let mut corrupted_at: Option<Instant> = None;
     let start = Instant::now();
     let ended = loop {
         assert!(start.elapsed() < Duration::from_secs(40), "{hint}: the server engine never ended");
-        if corrupted_at.is_none() && TEST_CORRUPTED_PAYLOAD.lock().unwrap().is_some() {
-            corrupted_at = Some(Instant::now());
-        }
         tokio::select! {
             p = srv_mem.delivered.recv() => {
                 if let Some(p) = p {
@@ -93,11 +104,17 @@ async fn closes_at(hint: &str, log: &Capture) {
     };
     feeder.abort();
     cli_task.abort();
+    // The engine can end before the loop above drained everything it had
+    // already delivered: drain the rest so the "not delivered" check sees all.
+    while let Ok(p) = srv_mem.delivered.try_recv() {
+        delivered.insert(u32::from_be_bytes(p[..4].try_into().unwrap()));
+    }
 
     let saved = TEST_CORRUPTED_PAYLOAD.lock().unwrap().clone().expect("the seam fired");
     let (res, ended_at) = ended;
     assert!(res.expect("server task joined").is_ok(), "{hint}: the engine's fatal-receiver exit is Ok(())");
-    let corrupted_at = corrupted_at.expect("the corruption was observed");
+    // The seam stamps its own firing time (polling can miss a fast close).
+    let corrupted_at = TEST_CORRUPTED_AT.lock().unwrap().expect("the seam stamped its firing time");
     assert!(
         ended_at.duration_since(corrupted_at) <= Duration::from_secs(5),
         "{hint}: the engine must end within 5 s of the corruption"

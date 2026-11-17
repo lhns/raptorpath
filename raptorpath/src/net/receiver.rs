@@ -663,7 +663,6 @@ pub(crate) async fn run_receiver(
             // RWM_RDIAG only: count and time the prune (measurement; the
             // prune itself never reads these).
             let rdiag_prune_t = rdiag_on.then(Instant::now);
-            let delivered_last = next_expected.saturating_sub(1);
             let prune_before = decode_inert_floor(next_expected, recv_win_cap);
             // Sync the `received_above` counter first: the prune
             // removes only seqs below the cumulative point, which
