@@ -40,3 +40,16 @@ The rejected option (B) was a per-symbol "packed" bit. It keeps two formats and 
 - **The release binary changes, so F2 rides the stacked §41c guard** (owner decision 5, 2026-11-16).
 - **L1 rows with `undeliv` > 0 or an `[UNFRAMABLE]` line are voided** (`VOID-F2`), never scored as DNF.
 - `extract_window_packet`, the BE `extract_packets` and `frame_end` are deleted, and integration tests migrate to `read_packets`.
+
+## Implementation notes (branch `f2-impl`, 2026-11-17)
+
+Deviations from the design doc, all settled in code:
+- `frame_packet` is removed too (the design lists three removals): `put_packet` is the only writer.
+- The peer's announced size travels as the reply of the owner's `Connect`/`Accept` command. `QuicTransport::connect`/`accept` return `Result<u16>`, and `QuicTransport::new` takes the local `symbol_size` (used for the handshake).
+- `net::RECV_SYMBOL_SIZES` and the `[SYMSZ]` echo are written in `net/mod.rs`, where `recv_symbol_size` is chosen, not inside `receiver.rs` (which does not know the local size).
+- `emit_source::TEST_CORRUPT_COUNT` is public so a test can re-arm the seam in one process. Seam statics exist only under `test-seams`/`cfg(test)`.
+- An engine with no initial path is refused at startup. The receiver learns the peer's size from a handshake, so there is none to build the decoder with and no fallback to the local size. `QuicTransport::add_path` refuses every runtime path while no peer size is stored, and a path announcing another size is refused and removed.
+
+Fatal close: when the receiver fails closed, `run_receiver` leaves the loop with `break 'recv`, the task returns normally, and `run_impl`'s `select!` ends the engine with `Ok(())`. The engine's convention is that a task ending, however cleanly, ends the tunnel; the `[UNFRAMABLE]` line and `UNDELIVERABLE_SYMBOLS` are the only record that it was a protocol violation.
+
+What the "exit flush" does and does not do: it flushes the receiver's `[SUCC]`/`[ETA]`/... gauge block and the acks staged for the owners. It does not deliver anything. A packet is handed to the TUN channel at `offer` time (`try_send`), so every packet delivered before the bad symbol is already in that channel when the receiver exits. They stay readable there (the memory TUN's receiver drains them after the engine ends; the Linux device's write loop drains them while the process lives). Whether they reach an OS device before the process exits is not guaranteed by the close. Nothing at or after the bad symbol is delivered.

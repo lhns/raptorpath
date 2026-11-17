@@ -739,3 +739,14 @@ with `CARGO_BUILD_JOBS=1` and your own `CARGO_TARGET_DIR`.
   - keep the tunnel up with a permanent hole (not recommended: a stall at ρ = 1
     and a silent loss at ρ < 1).
 - No tested setup mixes hints today (§5.1). A shipped one can.
+
+## 11. Implementation record (`f2-impl`, 2026-11-17)
+
+The implementation matches the design except where noted here; the ADR's "Implementation notes" carry the same list.
+
+Deviations: `frame_packet` removed as well; `connect`/`accept` return the peer's size (via the owner's `Connect`/`Accept` reply) and `QuicTransport::new` takes the local `symbol_size`; `RECV_SYMBOL_SIZES` and `[SYMSZ]` are written in `net/mod.rs`; `TEST_CORRUPT_COUNT` is public; `TEST_CORRUPTED_AT` (seam firing time) and `TEST_MAX_PACKED` (most packets in a framed source) are test-seams-only observation statics.
+
+Corrections to this document:
+- **§5.2 / §9, no initial path.** An engine can be configured with no initial path (a server with no bind address, a client with no peer). It is refused at startup, so there is no decoder to build before a peer size is known and no fallback to the local size. `add_path` refuses every runtime path while no peer size is stored.
+- **§6, "the exit flush".** The exit flush (`receiver.rs`, "The exit flush") flushes the gauge block and the staged acks. It delivers nothing. Packets delivered before the bad symbol were already handed to the TUN channel by `try_send` and stay in it after the receiver exits. The engine returns `Ok(())` on this close.
+- **§8.5, "warm-up got through".** The test originally sent all 200 packets at once; on a fast close it could see an empty delivered set (2 of 10 host runs). It now sends 10 warm-up packets and waits for one delivery first. I first explained the empty set as the engine's delivery task dying with it. The code shows otherwise for the memory TUN: its channel is drained by the test after the engine ends, so the likelier cause is that nothing had been offered yet when the bad symbol arrived (reordering). The warm-up removes both readings.
