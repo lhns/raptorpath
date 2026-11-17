@@ -112,3 +112,137 @@
      c2-100 Bulk S 5.23 F 8.14 D -1.46 [-1.60, -1.39] | c2-100 Realtime S 5.23 F 8.14 D -1.05 [-1.20, -0.98] | c3-25 Bulk S 10.44 F 37.81 D -8.60 [-9.43, -8.54] | c3-25 Realtime S 10.44 F 37.81 D -6.71 [-7.54, -6.65]
   equal-n, floor at the intercept W -> 0
      c2-100 Bulk S 6.66 F 6.55 D -1.13 [-1.28, -1.07] | c2-100 Realtime S 6.66 F 6.55 D -0.80 [-0.95, -0.74] | c3-25 Bulk S 16.13 F 31.74 D -7.61 [-8.44, -7.55] | c3-25 Realtime S 16.13 F 31.74 D -6.02 [-6.85, -5.96]
+
+== 6. Round 2: every ratio on both c3 sessions (61c the scored re-run; 61a the first session, post hoc: K 104 / 112 / 124, P1 136, control W2048 by goodput). Per session: point and 90 % bootstrap (1 000 draws, seed 63, c2 and that session resampled). BAND = the union of the two sessions' intervals: a session-to-session spread, not one session's bootstrap ==
+  registered (s61: c2 native; c3 G(250) floor / G(2100) knee; u-matched)
+     61c 1.095 [0.968, 1.175] (need_3 4.434) | 61a 1.081 [0.958, 1.222] (need_3 4.376)  ->  BAND [0.958, 1.222]
+  engine-native (every window as the engine sees it; u-matched)
+     61c 0.916 [0.846, 0.969] (need_3 3.709) | 61a 1.012 [0.932, 1.104] (need_3 4.099)  ->  BAND [0.846, 1.104]
+  equal-n (floor and knee both at the knee's count: G(2100) floors, c2 knee native, c3 knee G(2100); u-matched)
+     61c 1.567 [1.487, 1.643] (need_3 8.872) | 61a 1.411 [1.295, 1.558] (need_3 7.989)  ->  BAND [1.295, 1.643]
+  registered, floor at the intercept W -> 0
+     61c 1.226 [1.006, 1.384] (need_3 5.623) | 61a 1.179 [0.999, 1.378] (need_3 5.405)  ->  BAND [0.999, 1.384]
+  equal-n, floor at the intercept W -> 0
+     61c 1.891 [1.749, 2.033] (need_3 11.691) | 61a 1.545 [1.342, 1.767] (need_3 9.551)  ->  BAND [1.342, 2.033]
+  L (u-matched) ratio c3/c2: 61c 1.567 [1.487, 1.643] (8.872 ms against c2's 5.661) | 61a 1.411 [1.295, 1.558] (7.989 ms against c2's 5.661)  ->  BAND [1.295, 1.643]
+  N (u-matched) ratio c3/c2: 61c 2.753 [2.465, 3.184] (4.438 ms against c2's 1.612) | 61a 2.241 [1.849, 2.744] (3.613 ms against c2's 1.612)  ->  BAND [1.849, 3.184]
+  candidates: X_3/X_2 per session (61c / 61a), and whether that pair overlaps each BAND, in the order: registered / native / equal-n / registered@W0 / equal-n@W0 / L
+    constant                                     X3/X2 1.000 / 1.000  overlaps: yes yes no yes no no
+    S_F (registered counts)                      X3/X2 1.910 / 1.881  overlaps: no no no no yes no
+    S_F at n 2 100                               X3/X2 2.154 / 2.047  overlaps: no no no no no no
+    floor p90 - p10 (native)                     X3/X2 1.476 / 1.497  overlaps: no no yes no yes yes
+    netem J                                      X3/X2 1.667 / 1.667  overlaps: no no no no yes no
+    sigma (median window sig over the K arms)    X3/X2 2.695 / 2.708  overlaps: no no no no no no
+    loop floor F (registered counts)             X3/X2 4.493 / 4.457  overlaps: no no no no no no
+
+== 7. What the floor minimum's drop follows. Per arm, k consecutive LATE windows are pooled (span k x 250 ms). The doubling drop d = F(k) - F(2k) is regressed on ln of each candidate abscissa at the step (samples n, span k, acks a = the arm's srv0 packet rate x span), pooled over a cell's arms below 0.8 u. The arm's load cancels in d. The smallest residual sd is the better descriptor ==
+  c2 (s60 16 / 32 / 48 + 61b 96 / 128 / 144):
+    W16 (acks 301/s): k1 8.68 (n 282) | k2 8.09 (n 556) | k4 7.56 (n 1093) | k8 7.12 (n 2174) | k16 6.73 (n 4306) | k32 6.46 (n 8620) | k64 6.20 (n 17297)
+    W32 (acks 518/s): k1 8.95 (n 536) | k2 8.34 (n 1062) | k4 7.80 (n 2118) | k8 7.35 (n 4217) | k16 6.99 (n 8415) | k32 6.69 (n 16759) | k64 6.20 (n 33498)
+    W48 (acks 724/s): k1 9.04 (n 786) | k2 8.51 (n 1572) | k4 8.09 (n 3123) | k8 7.63 (n 6258) | k16 7.22 (n 12441) | k32 6.75 (n 24846) | k64 6.57 (n 49616)
+    W96 (acks 1440/s): k1 10.16 (n 1475) | k2 9.69 (n 2940) | k4 9.26 (n 5874) | k8 8.90 (n 11734) | k16 8.49 (n 23474) | k32 8.24 (n 47026) | k64 7.86 (n 93849)
+    W128 (acks 2265/s): k1 11.22 (n 1888) | k2 10.79 (n 3768) | k4 10.37 (n 7545) | k8 9.98 (n 15086) | k16 9.54 (n 30140) | k32 9.16 (n 60346) | k64 9.01 (n 120486)
+    W144 (acks 2268/s): k1 11.79 (n 2078) | k2 11.42 (n 4146) | k4 10.95 (n 8294) | k8 10.62 (n 16564) | k16 10.16 (n 33158) | k32 9.82 (n 66360) | k64 9.55 (n 132649)
+    doubling drops pooled over arms (36 steps): samples: resid sd 0.075 ms (slope -0.052 per ln) | span: resid sd 0.076 ms (slope -0.060 per ln) | acks: resid sd 0.074 ms (slope -0.052 per ln)
+  c3 61c:
+    W12 (acks 84/s): k1 42.73 (n 60) | k2 41.03 (n 120) | k4 39.31 (n 226) | k8 38.00 (n 442) | k16 36.17 (n 890) | k32 34.96 (n 1760) | k64 33.44 (n 3542)
+    W16 (acks 86/s): k1 42.12 (n 80) | k2 40.76 (n 158) | k4 39.44 (n 298) | k8 38.42 (n 592) | k16 37.16 (n 1150) | k32 36.11 (n 2301) | k64 34.75 (n 4638)
+    W24 (acks 124/s): k1 42.24 (n 120) | k2 40.91 (n 227) | k4 39.73 (n 447) | k8 38.85 (n 880) | k16 37.77 (n 1749) | k32 35.81 (n 3504) | k64 35.47 (n 6969)
+    W60 (acks 267/s): k1 42.45 (n 278) | k2 41.40 (n 550) | k4 40.12 (n 1090) | k8 39.23 (n 2160) | k16 37.67 (n 4312) | k32 36.88 (n 8627) | k64 35.37 (n 17148)
+    W80 (acks 375/s): k1 43.10 (n 364) | k2 41.97 (n 716) | k4 40.78 (n 1428) | k8 39.83 (n 2854) | k16 39.17 (n 5660) | k32 38.94 (n 11304) | k64 37.43 (n 22683)
+    doubling drops pooled over arms (30 steps): samples: resid sd 0.381 ms (slope -0.089 per ln) | span: resid sd 0.399 ms (slope -0.039 per ln) | acks: resid sd 0.385 ms (slope -0.082 per ln)
+  c3 61a:
+    W12 (acks 85/s): k1 42.35 (n 60) | k2 40.86 (n 120) | k4 39.13 (n 230) | k8 37.62 (n 449) | k16 36.25 (n 900) | k32 35.34 (n 1767) | k64 34.96 (n 3590)
+    W16 (acks 86/s): k1 41.81 (n 80) | k2 40.82 (n 158) | k4 38.84 (n 304) | k8 37.58 (n 587) | k16 36.73 (n 1177) | k32 34.99 (n 2349) | k64 33.70 (n 4710)
+    W24 (acks 125/s): k1 41.84 (n 120) | k2 40.58 (n 229) | k4 39.28 (n 447) | k8 38.44 (n 884) | k16 37.09 (n 1752) | k32 36.17 (n 3521) | k64 35.05 (n 6922)
+    W68 (acks 310/s): k1 42.38 (n 314) | k2 41.20 (n 621) | k4 40.11 (n 1236) | k8 39.02 (n 2456) | k16 38.33 (n 4894) | k32 37.47 (n 9844) | k64 35.33 (n 19501)
+    doubling drops pooled over arms (24 steps): samples: resid sd 0.410 ms (slope -0.058 per ln) | span: resid sd 0.412 ms (slope -0.056 per ln) | acks: resid sd 0.410 ms (slope -0.061 per ln)
+  per floor pool: the count-matched drop F(G250) - F(G2100) against the span-matched drop F(k 4) - F(k 32) (1 s -> 8 s), median over rows:
+    61c: W12 count 4.48 span 4.32 | W16 count 3.15 span 3.35 | W24 count 2.97 span 3.92
+    61a: W12 count 2.78 span 3.16 | W16 count 3.78 span 3.46 | W24 count 2.78 span 3.03
+    c2: W16 count 1.42 span 1.00 | W32 count 1.21 span 1.09 | W48 count 0.80 span 1.31
+
+== 8. SUPERSEDED by 8b (G(n*) closes on whole windows, so at n* <= 1 200 the c3 knee realises more samples than the floor). L at several nominal counts n* (floor on its u-matched line at G(n*), knee arms at G(n*)). c3 knee windows hold ~440-480 natively and c2's ~2 250-2 400, so c2 starts at its native knee against a G(2 100) floor ==
+  c3 61c: n*600: T 44.89 F 37.37 L 7.52 | n*1200: T 44.23 F 35.74 L 8.49 | n*2100: T 43.43 F 34.56 L 8.87 | n*4200: T 42.43 F 33.59 L 8.84 | n*8400: T 41.62 F 32.74 L 8.89
+  c3 61a: n*600: T 44.64 F 36.94 L 7.70 | n*1200: T 44.09 F 35.65 L 8.44 | n*2100: T 43.06 F 35.07 L 7.99 | n*4200: T 42.23 F 34.56 L 7.67 | n*8400: T 41.52 F 34.14 L 7.38
+  c2: n*2100: T 12.73 F 7.07 L 5.66 | n*4800: T 11.98 F 6.71 L 5.28 | n*9600: T 11.72 F 6.41 L 5.31
+
+== 9. A count-free statistic: the median over a row's native windows of the window's own p10 (or p50) from [WSTAT], a fixed rank fraction. Check 1: within an arm, windows below against above the row's median nk: the p10 shift beside the tmin shift (count-free -> ~0). Check 2: need_q = the quantile at the knee - at the floor, on both sessions ==
+  check 1 61c: W12: nk x1.58 -> p10 +1.80, tmin +0.07 | W16: nk x1.41 -> p10 +1.59, tmin +0.35 | W24: nk x1.28 -> p10 +0.63, tmin +0.46
+  check 1 61a: W12: nk x1.51 -> p10 +1.83, tmin -0.02 | W16: nk x1.42 -> p10 +1.20, tmin +0.16 | W24: nk x1.27 -> p10 +0.62, tmin +0.28
+  check 1 c2: W16: nk x1.16 -> p10 +0.38, tmin +0.37 | W32: nk x1.11 -> p10 +0.30, tmin +0.10 | W48: nk x1.10 -> p10 +0.22, tmin +0.04
+  check 2, p10: c2 floor 10.69 need_q 4.627 | c3 61c floor 44.10 need_q 6.404 (x1.384; at the intercept 6.737, x1.456) | c3 61a floor 43.85 need_q 6.569 (x1.420; at the intercept 6.862, x1.483)
+    p10 61c: need_q ratio 90 % [1.290, 1.465] (the section-6 draws)
+    p10 61a: need_q ratio 90 % [1.351, 1.516] (the section-6 draws)
+    p10 61c: k_q = need_q / X, c3/c2: S_F 0.725 | J 0.830 | p90-p10 0.938 | constant 1.384
+    p10 61a: k_q = need_q / X, c3/c2: S_F 0.755 | J 0.852 | p90-p10 0.948 | constant 1.420
+  check 2, p50: c2 floor 13.70 need_q 3.624 | c3 61c floor 48.57 need_q 7.212 (x1.990; at the intercept 7.956, x2.195) | c3 61a floor 48.35 need_q 7.434 (x2.051; at the intercept 8.151, x2.249)
+    p50 61c: need_q ratio 90 % [1.832, 2.101] (the section-6 draws)
+    p50 61a: need_q ratio 90 % [1.920, 2.142] (the section-6 draws)
+    p50 61c: k_q = need_q / X, c3/c2: S_F 1.042 | J 1.194 | p90-p10 1.348 | constant 1.990
+    p50 61a: k_q = need_q / X, c3/c2: S_F 1.090 | J 1.231 | p90-p10 1.370 | constant 2.051
+
+== 7b. Span against count at a FIXED count, within each floor arm: k windows pooled contiguously (span k), at stride 2 and 4 (span 2k, 4k; interleaved, so the same count and group number), and after a seeded shuffle (span = the whole row). Median over rows of the median group minimum. Equal => the count sets the minimum; strided / shuffled lower => the span (time correlation) matters. Beside it the lag-1 autocorrelation of the native window minima, and acks per echo sample ==
+  c2 (k = 8 windows):
+    W16: contiguous 7.12 | stride2 7.12 | stride4 7.08 | shuffled 7.12 | lag-1 r -0.01 | acks/sample 0.27
+    W32: contiguous 7.35 | stride2 7.29 | stride4 7.31 | shuffled 7.36 | lag-1 r -0.00 | acks/sample 0.24
+    W48: contiguous 7.63 | stride2 7.65 | stride4 7.68 | shuffled 7.66 | lag-1 r -0.01 | acks/sample 0.23
+  61c (k = 8 windows):
+    W12: contiguous 38.00 | stride2 37.50 | stride4 37.81 | shuffled 37.39 | lag-1 r +0.06 | acks/sample 0.35
+    W16: contiguous 38.42 | stride2 38.33 | stride4 38.32 | shuffled 38.25 | lag-1 r +0.04 | acks/sample 0.27
+    W24: contiguous 38.85 | stride2 38.73 | stride4 38.85 | shuffled 38.50 | lag-1 r +0.07 | acks/sample 0.26
+  61a (k = 8 windows):
+    W12: contiguous 37.62 | stride2 37.65 | stride4 37.74 | shuffled 38.06 | lag-1 r +0.02 | acks/sample 0.35
+    W16: contiguous 37.58 | stride2 37.89 | stride4 37.66 | shuffled 37.71 | lag-1 r +0.05 | acks/sample 0.27
+    W24: contiguous 38.44 | stride2 38.43 | stride4 38.39 | shuffled 38.38 | lag-1 r +0.02 | acks/sample 0.26
+  c1s (netem jitter 0; s60 floor arms, native windows hold ~5 300-12 100 samples): the floor minimum against contiguous span k:
+    W64: k1 2.381 | k2 2.353 | k4 2.318 | k8 2.299 | k16 2.284 | k32 2.261
+    W128: k1 2.415 | k2 2.383 | k4 2.357 | k8 2.331 | k16 2.306 | k32 2.292
+    W192: k1 2.523 | k2 2.476 | k4 2.448 | k8 2.421 | k16 2.378 | k32 2.347
+  count-matched drop at the floor pools, both ways: median over rows of F(G250) - F(G2100) | difference of the arm medians:
+    61c: W12 4.48 | 4.46 | W16 3.15 | 3.73 | W24 2.97 | 2.88
+    61a: W12 2.78 | 3.61 | W16 3.78 | 3.92 | W24 2.78 | 2.98
+    c2: W16 1.42 | 1.44 | W32 1.21 | 1.14 | W48 0.80 | 0.81
+
+== 8b. L on a window ladder: the knee arms pooled over k contiguous windows (k = 1 is native), the floor grouped to the knee's realised count (G(n_K)); realised n on both sides and the floor's groups per W12 / W16 row. The c3 knee cannot be read below ~460 samples, nor c2's below ~2 250 (one window) ==
+  61c: k1: n_K 462 n_F 489 (groups 18/25) T 46.23 F 37.68 L 8.55 | k2: n_K 914 n_F 946 (groups 9/13) T 44.94 F 36.50 L 8.44 | k4: n_K 1819 n_F 1841 (groups 5/6) T 43.65 F 35.13 L 8.52 | k8: n_K 3637 n_F 3652 (groups 2/3) T 42.69 F 33.85 L 8.83 | k16: n_K 7255 n_F 7301 (groups 1/1) T 41.61 F 32.72 L 8.90
+  61a: k1: n_K 468 n_F 499 (groups 18/24) T 46.13 F 37.37 L 8.75 | k2: n_K 930 n_F 957 (groups 9/12) T 44.64 F 36.25 L 8.39 | k4: n_K 1856 n_F 1883 (groups 4/6) T 43.61 F 35.08 L 8.53 | k8: n_K 3692 n_F 3730 (groups 2/3) T 42.39 F 34.46 L 7.93 | k16: n_K 7372 n_F 7402 (groups 1/1) T 41.44 F 34.11 L 7.33
+  c2: k1: n_K 2342 n_F 2495 (groups 27/52) T 12.73 F 6.98 L 5.75 | k2: n_K 4688 n_F 4791 (groups 14/28) T 12.28 F 6.68 L 5.60 | k4: n_K 9359 n_F 9503 (groups 7/14) T 11.87 F 6.41 L 5.45
+
+== 9b. Each candidate statistic in one table: the knee rise c3/c2 per session with its 90 % interval (the section-6 draws) and the BAND over sessions; then, within each floor arm, the shift of p10 / p50 / p90 / tmin between windows below and above the row's median nk (a location shift moves all quantiles alike; a low-rank effect moves p10 alone) ==
+  window minimum, registered counts    c2 4.05 ms | 61c 1.095 [0.968, 1.175] (c3 4.43 ms) | 61a 1.081 [0.958, 1.222] (c3 4.38 ms)  ->  BAND [0.958, 1.222]
+  window minimum, engine-native        c2 4.05 ms | 61c 0.916 [0.846, 0.969] (c3 3.71 ms) | 61a 1.012 [0.932, 1.104] (c3 4.10 ms)  ->  BAND [0.846, 1.104]
+  window minimum, equal count (L)      c2 5.66 ms | 61c 1.567 [1.487, 1.643] (c3 8.87 ms) | 61a 1.411 [1.295, 1.558] (c3 7.99 ms)  ->  BAND [1.295, 1.643]
+  window p10                           c2 4.63 ms | 61c 1.384 [1.290, 1.465] (c3 6.40 ms) | 61a 1.420 [1.351, 1.516] (c3 6.57 ms)  ->  BAND [1.290, 1.516]
+  window p50                           c2 3.62 ms | 61c 1.990 [1.832, 2.101] (c3 7.21 ms) | 61a 2.051 [1.920, 2.142] (c3 7.43 ms)  ->  BAND [1.832, 2.142]
+  window p90                           c2 3.08 ms | 61c 2.482 [2.325, 2.733] (c3 7.65 ms) | 61a 2.683 [2.498, 2.877] (c3 8.26 ms)  ->  BAND [2.325, 2.877]
+  nk split 61c: W12: p10 +1.80 p50 +1.39 p90 +0.03 tmin +0.07 | W16: p10 +1.59 p50 +0.92 p90 +0.16 tmin +0.35 | W24: p10 +0.63 p50 +0.94 p90 +1.13 tmin +0.46
+  nk split 61a: W12: p10 +1.83 p50 +1.14 p90 +0.33 tmin -0.02 | W16: p10 +1.20 p50 +1.07 p90 -0.05 tmin +0.16 | W24: p10 +0.62 p50 +1.07 p90 +0.91 tmin +0.28
+  nk split c2: W16: p10 +0.38 p50 +0.49 p90 +0.42 tmin +0.37 | W32: p10 +0.30 p50 +0.34 p90 +0.43 tmin +0.10 | W48: p10 +0.22 p50 +0.30 p90 +0.35 tmin +0.04
+
+== 10. One quantile statistic for all three inputs (floor, knee reading, spread), computed on native windows ==
+  10a. The count table where the minimum failed: the floor pool's median over rows (c2 W16, c3 W12) of each statistic, native and carried to G(n*) groups. For a quantile the group value is the nk-weighted median of its windows' own quantile, so it is flat by construction unless the windows' quantiles depend on their count; a true pooled quantile needs the raw samples (RWM_RTT_DUMP), which these ledgers lack ==
+    c2 W16      min      8.68 | 8.51 | 7.80 | 7.32 | 7.07 | 6.73   (native -> G(4200): -1.95 ms)
+    c2 W16      p10      10.69 | 10.64 | 10.66 | 10.67 | 10.63 | 10.64   (native -> G(4200): -0.05 ms)
+    c2 W16      p50      13.70 | 13.64 | 13.68 | 13.68 | 13.64 | 13.69   (native -> G(4200): -0.01 ms)
+    c2 W16      p90      16.21 | 16.17 | 16.20 | 16.20 | 16.19 | 16.17   (native -> G(4200): -0.03 ms)
+    c2 W16      p90-p10  5.54 | 5.46 | 5.49 | 5.55 | 5.48 | 5.56   (native -> G(4200): +0.03 ms)
+    c3 61c W12  min      42.75 | 38.78 | 37.01 | 35.59 | 34.32 | 33.23   (native -> G(4200): -9.52 ms)
+    c3 61c W12  p10      44.42 | 44.49 | 44.43 | 44.19 | 44.56 | 44.38   (native -> G(4200): -0.05 ms)
+    c3 61c W12  p50      48.73 | 48.68 | 48.54 | 48.64 | 48.69 | 48.68   (native -> G(4200): -0.05 ms)
+    c3 61c W12  p90      52.89 | 52.85 | 52.91 | 52.88 | 52.95 | 52.96   (native -> G(4200): +0.08 ms)
+    c3 61c W12  p90-p10  8.17 | 8.35 | 8.25 | 8.27 | 8.32 | 8.35   (native -> G(4200): +0.18 ms)
+    c3 61a W12  min      42.36 | 38.89 | 37.21 | 35.91 | 35.28 | 35.02   (native -> G(4200): -7.34 ms)
+    c3 61a W12  p10      44.38 | 44.12 | 44.13 | 43.85 | 44.25 | 44.20   (native -> G(4200): -0.18 ms)
+    c3 61a W12  p50      48.47 | 48.34 | 48.43 | 48.42 | 48.48 | 48.45   (native -> G(4200): -0.02 ms)
+    c3 61a W12  p90      52.83 | 52.84 | 52.89 | 52.96 | 52.88 | 52.85   (native -> G(4200): +0.02 ms)
+    c3 61a W12  p90-p10  8.29 | 8.51 | 8.38 | 8.48 | 8.42 | 8.40   (native -> G(4200): +0.11 ms)
+  10b. The independent draws per window, and the quantiles they support: a sample p-quantile behaves as a central (count-free to O(1/m)) quantile when m*min(p, 1-p) >= 5 independent draws lie beyond it, and as an extreme otherwise (m = acks per native floor window here, each ack one ack-path jitter draw; skbs per window similar):
+    c2 W16: m ~ 75 acks, 59 skbs per window -> m*0.10 = 7.5, m*0.25 = 18.8, m*0.50 = 37.7
+    c3 61c W12: m ~ 21 acks, 17 skbs per window -> m*0.10 = 2.1, m*0.25 = 5.2, m*0.50 = 10.5
+    c3 61a W12: m ~ 21 acks, 17 skbs per window -> m*0.10 = 2.1, m*0.25 = 5.3, m*0.50 = 10.6
+  10c. rho_q = (Q(W95) - Q_F) / spread_F, every input a per-window quantile (u-matched floor; the intercept beside). d = rho_q,3 - rho_q,2 with its 90 % interval (the section-6 draws), against s61's Delta = 0.085: AGREES iff the interval lies inside (-0.085, +0.085), DISAGREES iff outside [-0.085, +0.085] ==
+    loc p50, spread p90-p10 : rho_2 0.655 | 61c rho_3 0.855 (intercept 1.048) d +0.200 [+0.121, +0.253] DISAGREES | 61a rho_3 0.878 (intercept 1.063) d +0.223 [+0.160, +0.259] DISAGREES
+    loc p10, spread p90-p10 : rho_2 0.836 | 61c rho_3 0.759 (intercept 0.888) d -0.077 [-0.136, -0.029] UNRESOLVED | 61a rho_3 0.776 (intercept 0.895) d -0.060 [-0.099, -0.014] UNRESOLVED
+    loc p50, spread p50-p10 : rho_2 1.213 | 61c rho_3 1.686 (intercept 2.116) d +0.473 [+0.330, +0.582] DISAGREES | 61a rho_3 1.719 (intercept 2.120) d +0.506 [+0.386, +0.606] DISAGREES
+    loc p50, spread p90-p50 : rho_2 1.454 | 61c rho_3 1.933 (intercept 2.485) d +0.479 [+0.310, +0.610] DISAGREES | 61a rho_3 1.923 (intercept 2.392) d +0.469 [+0.324, +0.574] DISAGREES

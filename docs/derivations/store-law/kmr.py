@@ -1,7 +1,7 @@
 """Knee-margin re-derivation (knee-margin-rederive.md): what need = T-hat-min(W95) - F scales with, across c2 and c3.
 
 Usage (from docs/):  python -I -X utf8 derivations/store-law/kmr.py l1-raw/s60/rep60a-diag-ld.tgz l1-raw/s60/rep60b-diag-ld.tgz \
-                         l1-raw/s61/rep61c-diag-ld.tgz l1-raw/s61/rep61a-diag-ld.tgz  > derivations/store-law/kmr.out
+                         l1-raw/s61/rep61c-diag-ld.tgz l1-raw/s61/rep61a-diag-ld.tgz l1-raw/s61/rep61b-diag-ld.tgz  > derivations/store-law/kmr.out
 
 Reads the committed ledgers in place (tarfile), with s61pred.py's window parse and grouping G(n*) (s61-registration.md section 3). Every
 reading here is POST HOC: none was registered. Sections:
@@ -12,7 +12,12 @@ reading here is POST HOC: none was registered. Sections:
   2c. k = L / X per spread X and cell, and s61's falsifier re-read at equal n (rho_L)
   3. candidate scalings X: X at both cells, the ratio, the two-point exponent, and which convention's interval it falls in
   4. the per-leg link-utilisation instrument (netem Sent bytes): validated at the c2 / c3 knees, then c8's legs and c1s as bounds
-  5. the proposed allowance forms replayed: D per hint at both cells, the R67 control sign at c2 / c3 / c1s, the c1s size
+  5. allowance forms replayed: D per hint at both cells, the R67 control sign at c2 / c3 / c1s, the c1s size; 5b form S under every convention
+  Round 2 (status §61a re-run Result, Erratum 1; needs rep61a and rep61b, each loaded on its own because their row keys collide with s60's / 61c's):
+  6. every ratio on both c3 sessions, with session-spanning bands, and the candidates against them
+  7. what the floor minimum's drop follows: samples, time span or acks (doubling drops regressed on each), and count- against span-matched drops
+  8. L at several equal counts (does L move with the count?)
+  9. a count-free statistic (the window's own p10 / p50): within-arm check, need_q on both sessions with intervals, k_q per spread
 """
 import json
 import math
@@ -493,6 +498,440 @@ def main(argv):
                 D = [t - F - (S + q * F) for _, t, _ in ks]
                 parts.append(f"{c.cell} {qn} S {S:.2f} F {F:.2f} D {med(D):+.2f} [{min(D):+.2f}, {max(D):+.2f}]")
         P(f"  {lab}\n     " + " | ".join(parts))
+    if len(argv) > 4:
+        round2(rows, c2, c3, argv)
+
+
+# ═════════════════════════════ round 2 (status §61a re-run Result, Erratum 1) ═════════════════════════════
+def span_groups(wins, k):
+    """k consecutive LATE windows pooled (time span k x 250 ms), the last incomplete group dropped -> [(min tmin, sum nk)]."""
+    wins = [w for w in wins if w["tmin"] is not None]
+    return [(min(w["tmin"] for w in wins[i:i + k]), sum(w["nk"] for w in wins[i:i + k])) for i in range(0, len(wins) - k + 1, k)]
+
+
+def ack_rate(r):
+    q = r.qd.get("srv0") if getattr(r, "qd", None) else None
+    return q["pkt"] / r.secs if q and r.secs else None
+
+
+def row_q(r, key="p10"):
+    """count-free statistic of one row: the median over its native windows (nk >= 10) of the window's own quantile `key`."""
+    return med([w[key] for w in r.late(0) if w.get(key) is not None])
+
+
+def q_floor(c, key, where="u"):
+    pts = [(W, row_q(r, key)) for W, rs in c.floor_rows.items() for r in rs]
+    pts = [(W, v) for W, v in pts if v is not None]
+    if c.cell == C2 and where == "u":
+        return med([v for W, v in pts if W == 16])
+    b, a, _ = ols([W for W, _ in pts], [v for _, v in pts])
+    return a + b * (c.w_star() if where == "u" else 0.0)
+
+
+def q_knees(c, key):
+    out = []
+    for w95, _, k_ in c.knees(None):
+        wm = c.reps[k_]
+        arms = [W for W in tuple(c.karms) + (c.p1,) if W in wm]
+        out.append(interp([(W, row_q(wm[W], key)) for W in arms], w95))
+    return out
+
+
+def round2(rows, c2, c3c, argv):
+    rowsA = load(argv[4:5])
+    c3a = build(rowsA, C3, karms=(104, 112, 124), p1=136, ctl=2048)
+    rowsB = load(argv[5:6]) if len(argv) > 5 else {}          # rep61b on its own: its W160 / W2048 keys collide with s60's c2 rows
+    sess = (("61c", c3c, rows), ("61a", c3a, rowsA))
+    rnd = random.Random(63)
+    NB = 1000
+
+    # ── 6. session-spanning bands ──
+    P("\n== 6. Round 2: every ratio on both c3 sessions (61c the scored re-run; 61a the first session, post hoc: K 104 / 112 / 124, P1 136, control"
+      " W2048 by goodput). Per session: point and 90 % bootstrap (1 000 draws, seed 63, c2 and that session resampled). BAND = the union of the two"
+      " sessions' intervals: a session-to-session spread, not one session's bootstrap ==")
+    dr = {lab: [(resample(c2, rnd), resample(c3, rnd)) for _ in range(NB)] for lab, c3, _ in sess}
+    bands = {}
+    for clab, f2, k2n, f3, k3n, where in CONV:
+        parts, los, his = [], [], []
+        for lab, c3, _ in sess:
+            pt = need(c3, f3, k3n, where)[0] / need(c2, f2, k2n, where)[0]
+            lo, hi = q90([need(d3, f3, k3n, where)[0] / need(d2, f2, k2n, where)[0] for d2, d3 in dr[lab]])
+            los.append(lo)
+            his.append(hi)
+            parts.append(f"{lab} {pt:.3f} [{lo:.3f}, {hi:.3f}] (need_3 {need(c3, f3, k3n, where)[0]:.3f})")
+        bands[clab] = (min(los), max(his))
+        P(f"  {clab}\n     " + " | ".join(parts) + f"  ->  BAND [{min(los):.3f}, {max(his):.3f}]")
+    for nm, fn in (("L (u-matched)", lambda c, kn, fs: med([t for _, t, _ in c.knees(kn)]) - c.floor(NK, "u")[0]),
+                   ("N (u-matched)", lambda c, kn, fs: floor_conv(c, fs, "u")[0] - c.floor(NK, "u")[0])):
+        parts, los, his = [], [], []
+        for lab, c3, _ in sess:
+            pt = fn(c3, NK, NF) / fn(c2, None, None)
+            lo, hi = q90([fn(d3, NK, NF) / fn(d2, None, None) for d2, d3 in dr[lab]])
+            los.append(lo)
+            his.append(hi)
+            parts.append(f"{lab} {pt:.3f} [{lo:.3f}, {hi:.3f}] ({fn(c3, NK, NF):.3f} ms against c2's {fn(c2, None, None):.3f})")
+        bands[nm] = (min(los), max(his))
+        P(f"  {nm} ratio c3/c2: " + " | ".join(parts) + f"  ->  BAND [{min(los):.3f}, {max(his):.3f}]")
+    P("  candidates: X_3/X_2 per session (61c / 61a), and whether that pair overlaps each BAND, in the order: registered / native / equal-n /"
+      " registered@W0 / equal-n@W0 / L")
+
+    def p80(c):
+        W = FLOOR[c.cell][0]
+        return med([med([w["p90"] - w["p10"] for w in r.late(0)]) for r in c.floor_rows[W]])
+
+    def sigk(c):
+        return med([med([w["sig"] for w in wm[W].late(0) if w.get("sig") is not None]) for wm in c.reps.values() for W in c.karms if W in wm])
+
+    Xf = (("constant", lambda c: 1.0),
+          ("S_F (registered counts)", lambda c: floor_conv(c, None if c.cell == C2 else NF, "u")[1]),
+          ("S_F at n 2 100", lambda c: c.floor(NK, "u")[1]),
+          ("floor p90 - p10 (native)", p80),
+          ("netem J", lambda c: 3.0 if c.cell == C2 else 5.0),
+          ("sigma (median window sig over the K arms)", sigk),
+          ("loop floor F (registered counts)", lambda c: floor_conv(c, None if c.cell == C2 else NF, "u")[0]))
+    keys = [x[0] for x in CONV] + ["L (u-matched)"]
+    for nm, fx_ in Xf:
+        rs_ = [fx_(c3) / fx_(c2) for _, c3, _ in sess]
+        lo, hi = min(rs_), max(rs_)
+        ov = ["yes" if not (hi < bands[k][0] or lo > bands[k][1]) else "no" for k in keys]
+        P(f"    {nm:<44} X3/X2 {' / '.join(f'{x:.3f}' for x in rs_)}  overlaps: " + " ".join(ov))
+
+    # ── 7. the floor's drop: sample count, time span, or ack count ──
+    P("\n== 7. What the floor minimum's drop follows. Per arm, k consecutive LATE windows are pooled (span k x 250 ms). The doubling drop d = F(k) - F(2k)"
+      " is regressed on ln of each candidate abscissa at the step (samples n, span k, acks a = the arm's srv0 packet rate x span), pooled over a"
+      " cell's arms below 0.8 u. The arm's load cancels in d. The smallest residual sd is the better descriptor ==")
+    cellsets = (("c2 (s60 16 / 32 / 48 + 61b 96 / 128 / 144)", C2, ((rows, (16, 32, 48)), (rowsB, (96, 128, 144)))),
+                ("c3 61c", C3, ((rows, (12, 16, 24, 60, 80)),)), ("c3 61a", C3, ((rowsA, (12, 16, 24, 68)),)))
+    for lab, cell, rsets in cellsets:
+        pts = {"n": [], "k": [], "a": []}
+        lines = []
+        for rs_dict, Ws in rsets:
+            for W in Ws:
+                rs = [r for r in rs_dict.values() if r.cell == cell and r.kind == "G" and r.W == W]
+                if not rs:
+                    continue
+                ar = med([ack_rate(r) for r in rs])
+                Fk = {}
+                for k in (1, 2, 4, 8, 16, 32, 64):
+                    v = [span_groups(sp.late_all(r, 0), k) for r in rs]
+                    if any(len(g) < 2 for g in v):
+                        break
+                    Fk[k] = (med([med([t for t, _ in g]) for g in v]), med([med([n for _, n in g]) for g in v]))
+                lines.append(f"    W{W} (acks {ar:.0f}/s): " + " | ".join(f"k{k} {f_:.2f} (n {n_:.0f})" for k, (f_, n_) in Fk.items()))
+                ks = sorted(Fk)
+                for k1, k2_ in zip(ks, ks[1:]):
+                    d = Fk[k1][0] - Fk[k2_][0]
+                    km = math.sqrt(k1 * k2_)
+                    pts["n"].append((math.log(math.sqrt(Fk[k1][1] * Fk[k2_][1])), d))
+                    pts["k"].append((math.log(km), d))
+                    pts["a"].append((math.log(ar * 0.25 * km), d))
+        P(f"  {lab}:")
+        for ln_ in lines:
+            P(ln_)
+        res = []
+        for v, nm in (("n", "samples"), ("k", "span"), ("a", "acks")):
+            xs, ys = [x for x, _ in pts[v]], [y for _, y in pts[v]]
+            b, a, _ = ols(xs, ys)
+            sd = math.sqrt(sum((y - a - b * x) ** 2 for x, y in zip(xs, ys)) / (len(xs) - 2))
+            res.append(f"{nm}: resid sd {sd:.3f} ms (slope {b:+.3f} per ln)")
+        P(f"    doubling drops pooled over arms ({len(pts['n'])} steps): " + " | ".join(res))
+    P("  per floor pool: the count-matched drop F(G250) - F(G2100) against the span-matched drop F(k 4) - F(k 32) (1 s -> 8 s), median over rows:")
+    for lab, c, _ in sess + (("c2", c2, rows),):
+        parts = []
+        for W, rs in c.floor_rows.items():
+            cm = med([rowF(r, NF)[1] - rowF(r, NK)[1] for r in rs])
+            sm = med([med([t for t, _ in span_groups(sp.late_all(r, 0), 4)]) - med([t for t, _ in span_groups(sp.late_all(r, 0), 32)]) for r in rs])
+            parts.append(f"W{W} count {cm:.2f} span {sm:.2f}")
+        P(f"    {lab}: " + " | ".join(parts))
+
+    # ── 8. does L move with the count? ──
+    P("\n== 8. SUPERSEDED by 8b (G(n*) closes on whole windows, so at n* <= 1 200 the c3 knee realises more samples than the floor). L at several nominal counts n* (floor on its u-matched line at G(n*), knee arms at G(n*)). c3 knee windows hold ~440-480 natively and c2's"
+      " ~2 250-2 400, so c2 starts at its native knee against a G(2 100) floor ==")
+    for lab, c3, _ in sess:
+        parts = []
+        for ns in (600, 1200, 2100, 4200, 8400):
+            T = med([t for _, t, _ in c3.knees(ns)])
+            F = c3.floor(ns, "u")[0]
+            parts.append(f"n*{ns}: T {T:.2f} F {F:.2f} L {T - F:.2f}")
+        P(f"  c3 {lab}: " + " | ".join(parts))
+    parts = []
+    for kn, fns in ((None, NK), (4800, 4800), (9600, 9600)):
+        T = med([t for _, t, _ in c2.knees(kn)])
+        F = c2.floor(fns, "u")[0]
+        parts.append(f"n*{fns}: T {T:.2f} F {F:.2f} L {T - F:.2f}")
+    P("  c2: " + " | ".join(parts))
+
+    # ── 9. a count-free statistic ──
+    P("\n== 9. A count-free statistic: the median over a row's native windows of the window's own p10 (or p50) from [WSTAT], a fixed rank fraction."
+      " Check 1: within an arm, windows below against above the row's median nk: the p10 shift beside the tmin shift (count-free -> ~0)."
+      " Check 2: need_q = the quantile at the knee - at the floor, on both sessions ==")
+    for lab, c, _ in sess + (("c2", c2, rows),):
+        parts = []
+        for W, rs in c.floor_rows.items():
+            dq, dt, dn = [], [], []
+            for r in rs:
+                ws = [w for w in r.late(0) if w.get("p10") is not None]
+                mn = med([w["nk"] for w in ws])
+                lo_ = [w for w in ws if w["nk"] < mn]
+                hi_ = [w for w in ws if w["nk"] > mn]
+                if len(lo_) < 4 or len(hi_) < 4:
+                    continue
+                dq.append(med([w["p10"] for w in lo_]) - med([w["p10"] for w in hi_]))
+                dt.append(med([w["tmin"] for w in lo_]) - med([w["tmin"] for w in hi_]))
+                dn.append(med([w["nk"] for w in hi_]) / med([w["nk"] for w in lo_]))
+            if dn:
+                parts.append(f"W{W}: nk x{med(dn):.2f} -> p10 {med(dq):+.2f}, tmin {med(dt):+.2f}")
+        P(f"  check 1 {lab}: " + " | ".join(parts))
+    for key in ("p10", "p50"):
+        q2f = q_floor(c2, key)
+        q2 = med([t - q2f for t in q_knees(c2, key)])
+        parts = [f"c2 floor {q2f:.2f} need_q {q2:.3f}"]
+        for lab, c3, _ in sess:
+            f3 = q_floor(c3, key)
+            n3 = med([t - f3 for t in q_knees(c3, key)])
+            f30 = q_floor(c3, key, "0")
+            n30 = med([t - f30 for t in q_knees(c3, key)])
+            parts.append(f"c3 {lab} floor {f3:.2f} need_q {n3:.3f} (x{n3 / q2:.3f}; at the intercept {n30:.3f}, x{n30 / q2:.3f})")
+        P(f"  check 2, {key}: " + " | ".join(parts))
+        for lab, c3, _ in sess:
+            def nq(c):
+                f_ = q_floor(c, key)
+                return med([t - f_ for t in q_knees(c, key)])
+            lo, hi = q90([nq(d3) / nq(d2) for d2, d3 in dr[lab]])
+            P(f"    {key} {lab}: need_q ratio 90 % [{lo:.3f}, {hi:.3f}] (the section-6 draws)")
+        for lab, c3, _ in sess:
+            f3 = q_floor(c3, key)
+            n3 = med([t - f3 for t in q_knees(c3, key)])
+            P(f"    {key} {lab}: k_q = need_q / X, c3/c2: S_F {(n3 / floor_conv(c3, NF, 'u')[1]) / (q2 / 5.083):.3f}"
+              f" | J {(n3 / 5) / (q2 / 3):.3f} | p90-p10 {(n3 / p80(c3)) / (q2 / p80(c2)):.3f} | constant {n3 / q2:.3f}")
+    round2b(rows, c2, c3c, c3a, rowsA, dr, sess)
+
+
+# ───────────────────────────── round 2, after review: tests with power ─────────────────────────────
+def strided_groups(wins, k, s):
+    """groups of k windows taken at stride s inside blocks of k*s consecutive windows (s interleaved groups per block): same count per group as
+    contiguous k-pooling, span k*s windows. -> [min tmin]"""
+    wins = [w for w in wins if w["tmin"] is not None]
+    out = []
+    for b in range(0, len(wins) - k * s + 1, k * s):
+        blk = wins[b:b + k * s]
+        for o in range(s):
+            out.append(min(w["tmin"] for w in blk[o::s]))
+    return out
+
+
+def shuffled_groups(wins, k, seed):
+    wins = [w for w in wins if w["tmin"] is not None]
+    rr = random.Random(seed)
+    ws = wins[:]
+    rr.shuffle(ws)
+    return [min(w["tmin"] for w in ws[i:i + k]) for i in range(0, len(ws) - k + 1, k)]
+
+
+def lag1(v):
+    m = sum(v) / len(v)
+    num = sum((a - m) * (b - m) for a, b in zip(v, v[1:]))
+    den = sum((a - m) ** 2 for a in v)
+    return num / den if den else None
+
+
+def rowS(r, k):
+    """median over contiguous k-window groups of the group minimum, and the median realised count."""
+    g = span_groups(sp.late_all(r, 0), k)
+    return (med([t for t, _ in g]), med([n for _, n in g]), len(g)) if g else (None, None, 0)
+
+
+def round2b(rows, c2, c3c, c3a, rowsA, dr, sess):
+    # ── 7b. span against count at a fixed count (within arm) ──
+    P("\n== 7b. Span against count at a FIXED count, within each floor arm: k windows pooled contiguously (span k), at stride 2 and 4 (span 2k, 4k;"
+      " interleaved, so the same count and group number), and after a seeded shuffle (span = the whole row). Median over rows of the median group"
+      " minimum. Equal => the count sets the minimum; strided / shuffled lower => the span (time correlation) matters. Beside it the lag-1"
+      " autocorrelation of the native window minima, and acks per echo sample ==")
+    cases = (("c2", c2, rows, 8), ("61c", c3c, rows, 8), ("61a", c3a, rowsA, 8))
+    for lab, c, rs_dict, k in cases:
+        parts = []
+        for W, rs in c.floor_rows.items():
+            con = med([med(strided_groups(sp.late_all(r, 0), k, 1)) for r in rs])
+            s2 = med([med(strided_groups(sp.late_all(r, 0), k, 2)) for r in rs])
+            s4 = med([med(strided_groups(sp.late_all(r, 0), k, 4)) for r in rs])
+            sh = med([med(shuffled_groups(sp.late_all(r, 0), k, 7 + i)) for i, r in enumerate(rs)])
+            ac = med([lag1([w["tmin"] for w in sp.late_all(r, 0) if w["tmin"] is not None]) for r in rs])
+            aps = med([ack_rate(r) / (med([w["nk"] for w in r.late(0)]) / 0.25) for r in rs])
+            parts.append(f"W{W}: contiguous {con:.2f} | stride2 {s2:.2f} | stride4 {s4:.2f} | shuffled {sh:.2f} | lag-1 r {ac:+.2f} | acks/sample {aps:.2f}")
+        P(f"  {lab} (k = {k} windows):")
+        for p_ in parts:
+            P(f"    {p_}")
+    P("  c1s (netem jitter 0; s60 floor arms, native windows hold ~5 300-12 100 samples): the floor minimum against contiguous span k:")
+    for W in (64, 128, 192):
+        rs = arm(rows, C1S, W)
+        P(f"    W{W}: " + " | ".join(f"k{k} {med([rowS(r, k)[0] for r in rs]):.3f}" for k in (1, 2, 4, 8, 16, 32) if all(rowS(r, k)[2] >= 2 for r in rs)))
+    P("  count-matched drop at the floor pools, both ways: median over rows of F(G250) - F(G2100) | difference of the arm medians:")
+    for lab, c, _ in (("61c", c3c, None), ("61a", c3a, None), ("c2", c2, None)):
+        P(f"    {lab}: " + " | ".join(f"W{W} {med([rowF(r, NF)[1] - rowF(r, NK)[1] for r in rs]):.2f} | {med([rowF(r, NF)[1] for r in rs]) - med([rowF(r, NK)[1] for r in rs]):.2f}"
+                                    for W, rs in c.floor_rows.items()))
+
+    # ── 8b. L on a window ladder ──
+    P("\n== 8b. L on a window ladder: the knee arms pooled over k contiguous windows (k = 1 is native), the floor grouped to the knee's realised count"
+      " (G(n_K)); realised n on both sides and the floor's groups per W12 / W16 row. The c3 knee cannot be read below ~460 samples, nor c2's below"
+      " ~2 250 (one window) ==")
+    for lab, c, ks in (("61c", c3c, (1, 2, 4, 8, 16)), ("61a", c3a, (1, 2, 4, 8, 16)), ("c2", c2, (1, 2, 4))):
+        parts = []
+        for k in ks:
+            Ts, nks = [], []
+            for w95, _, key in c.knees(None):
+                wm = c.reps[key]
+                arms_ = [W for W in tuple(c.karms) + (c.p1,) if W in wm]
+                vals = [(W, rowS(wm[W], k)) for W in arms_]
+                if any(v[0] is None for _, v in vals):
+                    continue
+                Ts.append(interp([(W, v[0]) for W, v in vals], w95))
+                nks += [v[1] for W_, v in vals if W_ in c.karms]
+            if not Ts:
+                continue
+            nK = med(nks)
+            ns = int(nK)
+            F = c.floor(ns, "u")[0]
+            nF = med([rowF(r, ns)[2] for r in c.floor_rows[FLOOR[c.cell][0]]])
+            gF = [med([rowG(r, ns) for r in c.floor_rows[W]]) for W in FLOOR[c.cell][:2]]
+            T = med(Ts)
+            parts.append(f"k{k}: n_K {nK:.0f} n_F {nF:.0f} (groups {gF[0]:.0f}/{gF[1]:.0f}) T {T:.2f} F {F:.2f} L {T - F:.2f}")
+        P(f"  {lab}: " + " | ".join(parts))
+
+    # ── 9b. the statistics side by side ──
+    P("\n== 9b. Each candidate statistic in one table: the knee rise c3/c2 per session with its 90 % interval (the section-6 draws) and the BAND over"
+      " sessions; then, within each floor arm, the shift of p10 / p50 / p90 / tmin between windows below and above the row's median nk (a location"
+      " shift moves all quantiles alike; a low-rank effect moves p10 alone) ==")
+
+    def st_min_eq(c, d=None):
+        x = d or c
+        return med([t for _, t, _ in x.knees(None if c.cell == C2 else NK)]) - x.floor(NK, "u")[0]
+
+    def st_min_reg(c, d=None):
+        x = d or c
+        return need(x, None if c.cell == C2 else NF, None if c.cell == C2 else NK, "u")[0]
+
+    def st_min_nat(c, d=None):
+        x = d or c
+        return need(x, None, None, "u")[0]
+
+    def st_q(key):
+        def f(c, d=None):
+            x = d or c
+            f_ = q_floor(x, key)
+            return med([t - f_ for t in q_knees(x, key)])
+        return f
+
+    stats = (("window minimum, registered counts", st_min_reg), ("window minimum, engine-native", st_min_nat),
+             ("window minimum, equal count (L)", st_min_eq), ("window p10", st_q("p10")), ("window p50", st_q("p50")), ("window p90", st_q("p90")))
+    for nm, fn in stats:
+        parts, los, his = [], [], []
+        for lab, c3, _ in sess:
+            pt = fn(c3) / fn(c2)
+            lo, hi = q90([fn(c3, d3) / fn(c2, d2) for d2, d3 in dr[lab]])
+            los.append(lo)
+            his.append(hi)
+            parts.append(f"{lab} {pt:.3f} [{lo:.3f}, {hi:.3f}] (c3 {fn(c3):.2f} ms)")
+        P(f"  {nm:<36} c2 {fn(c2):.2f} ms | " + " | ".join(parts) + f"  ->  BAND [{min(los):.3f}, {max(his):.3f}]")
+    for lab, c, _ in sess + (("c2", c2, rows),):
+        parts = []
+        for W, rs in c.floor_rows.items():
+            sh = {k_: [] for k_ in ("p10", "p50", "p90", "tmin")}
+            for r in rs:
+                ws = [w for w in r.late(0) if w.get("p10") is not None and w.get("p90") is not None]
+                mn = med([w["nk"] for w in ws])
+                lo_ = [w for w in ws if w["nk"] < mn]
+                hi_ = [w for w in ws if w["nk"] > mn]
+                if len(lo_) < 4 or len(hi_) < 4:
+                    continue
+                for k_ in sh:
+                    sh[k_].append(med([w[k_] for w in lo_]) - med([w[k_] for w in hi_]))
+            if sh["p10"]:
+                parts.append(f"W{W}: " + " ".join(f"{k_} {med(v):+.2f}" for k_, v in sh.items()))
+        P(f"  nk split {lab}: " + " | ".join(parts))
+    round2c(rows, c2, c3c, c3a, rowsA, dr, sess)
+
+
+# ───────────────────────────── round 2c: one quantile statistic for floor, knee and spread ─────────────────────────────
+def wq(w, key):
+    """a window's quantile statistic: 'p10' / 'p50' / 'p90', or a spread 'p90-p10' / 'p50-p10' / 'p90-p50'."""
+    if "-" in key:
+        a, b = key.split("-")
+        return None if w.get(a) is None or w.get(b) is None else w[a] - w[b]
+    return w.get(key)
+
+
+def row_qk(r, key):
+    return med([wq(w, key) for w in r.late(0) if wq(w, key) is not None])
+
+
+def group_stat(r, nstar, key):
+    """the count table's reading of one row: native windows (nstar None, nk >= 10), or G(nstar) groups over LATE windows with nk >= 1; per group
+    the minimum ('min') or the nk-weighted median of the windows' own statistic (a per-window statistic carried to the group)."""
+    wins = r.late(0) if nstar is None else sp.late_all(r, 0)
+    wins = [w for w in wins if w["tmin"] is not None and (key == "min" or wq(w, key) is not None)]
+    out, cur = [], []
+    for w in wins:
+        cur.append(w)
+        if nstar is None or sum(x["nk"] for x in cur) >= nstar:
+            out.append(min(x["tmin"] for x in cur) if key == "min" else sp.wmed([(wq(x, key), x["nk"]) for x in cur]))
+            cur = []
+    return med(out)
+
+
+def qf(c, key, where="u"):
+    pts = [(W, row_qk(r, key)) for W, rs in c.floor_rows.items() for r in rs]
+    pts = [(W, v) for W, v in pts if v is not None]
+    if c.cell == C2 and where == "u":
+        return med([v for W, v in pts if W == 16])
+    b, a, _ = ols([W for W, _ in pts], [v for _, v in pts])
+    return a + b * (c.w_star() if where == "u" else 0.0)
+
+
+def qk(c, key):
+    out = []
+    for w95, _, k_ in c.knees(None):
+        wm = c.reps[k_]
+        arms = [W for W in tuple(c.karms) + (c.p1,) if W in wm]
+        out.append(interp([(W, row_qk(wm[W], key)) for W in arms], w95))
+    return out
+
+
+def rho_q(c, loc, spr, where="u"):
+    f_ = qf(c, loc, where)
+    s_ = qf(c, spr, where)
+    return med([(t - f_) / s_ for t in qk(c, loc)])
+
+
+def round2c(rows, c2, c3c, c3a, rowsA, dr, sess):
+    P("\n== 10. One quantile statistic for all three inputs (floor, knee reading, spread), computed on native windows ==")
+    P("  10a. The count table where the minimum failed: the floor pool's median over rows (c2 W16, c3 W12) of each statistic, native and carried to"
+      " G(n*) groups. For a quantile the group value is the nk-weighted median of its windows' own quantile, so it is flat by construction unless"
+      " the windows' quantiles depend on their count; a true pooled quantile needs the raw samples (RWM_RTT_DUMP), which these ledgers lack ==")
+    for lab, c in (("c2 W16", c2), ("c3 61c W12", c3c), ("c3 61a W12", c3a)):
+        W = FLOOR[c.cell][0]
+        for key in ("min", "p10", "p50", "p90", "p90-p10"):
+            vals = [med([group_stat(r, ns, key) for r in c.floor_rows[W]]) for ns in (None, 250, 600, 1200, 2100, 4200)]
+            P(f"    {lab:<11} {key:<8} " + " | ".join(f"{x:.2f}" for x in vals) + f"   (native -> G(4200): {vals[-1] - vals[0]:+.2f} ms)")
+    P("  10b. The independent draws per window, and the quantiles they support: a sample p-quantile behaves as a central (count-free to O(1/m))"
+      " quantile when m*min(p, 1-p) >= 5 independent draws lie beyond it, and as an extreme otherwise (m = acks per native floor window here,"
+      " each ack one ack-path jitter draw; skbs per window similar):")
+    for lab, c in (("c2", c2), ("c3 61c", c3c), ("c3 61a", c3a)):
+        W = FLOOR[c.cell][0]
+        m_ = med([ack_rate(r) * 0.25 for r in c.floor_rows[W]])
+        sk = med([(r.qd["cli0"]["pkt"] / r.gso[0][2]) / r.secs * 0.25 for r in c.floor_rows[W] if r.gso.get(0)])
+        P(f"    {lab} W{W}: m ~ {m_:.0f} acks, {sk:.0f} skbs per window -> m*0.10 = {m_ * 0.1:.1f}, m*0.25 = {m_ * 0.25:.1f}, m*0.50 = {m_ * 0.5:.1f}")
+    P("  10c. rho_q = (Q(W95) - Q_F) / spread_F, every input a per-window quantile (u-matched floor; the intercept beside). d = rho_q,3 - rho_q,2 with"
+      " its 90 % interval (the section-6 draws), against s61's Delta = 0.085: AGREES iff the interval lies inside (-0.085, +0.085), DISAGREES iff"
+      " outside [-0.085, +0.085] ==")
+    for loc, spr in (("p50", "p90-p10"), ("p10", "p90-p10"), ("p50", "p50-p10"), ("p50", "p90-p50")):
+        parts = [f"rho_2 {rho_q(c2, loc, spr):.3f}"]
+        for lab, c3, _ in sess:
+            r3 = rho_q(c3, loc, spr)
+            d = [rho_q(d3, loc, spr) - rho_q(d2, loc, spr) for d2, d3 in dr[lab][:400]]
+            lo, hi = q90(d)
+            lab_ = "AGREES" if -0.085 < lo and hi < 0.085 else ("DISAGREES" if hi < -0.085 or lo > 0.085 else "UNRESOLVED")
+            parts.append(f"{lab} rho_3 {r3:.3f} (intercept {rho_q(c3, loc, spr, '0'):.3f}) d {r3 - rho_q(c2, loc, spr):+.3f} [{lo:+.3f}, {hi:+.3f}] {lab_}")
+        P(f"    loc {loc}, spread {spr:<8}: " + " | ".join(parts))
 
 
 if __name__ == "__main__":

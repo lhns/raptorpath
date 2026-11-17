@@ -1,452 +1,419 @@
-# Knee margin, re-derived after s61's DISAGREES: what need scales with, and the allowance that follows
+# Knee margin after s61's DISAGREES: what need scales with, and the count-free statistic it needs first
 
-Status: DERIVATION. Docs and Python only: no engine code, no cargo, no VM. Branch `knee-margin-rederive` off
-`github/main` `4559bbee`. It answers the registered consequence of the §61a re-run Result ("S_F is not the knee's
-term, and the form is re-derived"), the roadmap node `store-law-g-rederive`, and the F07 ledger update that Result
-says is owed. **Every reading here is post hoc.** None was registered, and §4 sketches the registration that would
-turn the leads into results.
+Status: DERIVATION, round 2. Docs and Python only: no engine code, no cargo, no VM. Branch `knee-margin-rederive` off
+`github/main` `4559bbee`. This round answers the coordinator's round-2 points and status "§61a re-run Result,
+Erratum 1" (main `face6093`).
 
-**For the owner, in plain words.**
-- **The "constant 4 ms" lead is a property of how the minima are counted, not of the path.** The knee margin need is
-  the window minimum at the knee minus the floor. As s61 reads it, the floor window holds about 280 echo samples and
-  the knee window about 2 340, and a minimum falls as its window grows. So need is two things netted together:
-  - L, how far load lifts the minimum at equal sample count. **L is jitter-sized, not constant:** ×1.57 from c2 to
-    c3 (×1.41 on s61's first c3 session, ×1.89 with the floor at the intercept), against ×1.67 for netem's jitter.
-  - N, how much the floor's minimum would fall if it held as many samples as the knee's. N is ×2.75 from c2 to c3
-    (×2.24 on the first session), because c3's echo distribution has a longer thin lower tail.
-  - They nearly cancel: 5.66 − 1.61 = 4.05 ms at c2, and 8.87 − 4.44 = 4.43 ms at c3.
-  - Read every window as the engine sees it, need is 0.92× from c2 to c3, and "constant" is excluded there too
-    (90 % [0.84, 0.97]).
-- **Two cells cannot say which spread carries L.** netem's jitter, the floor's median-minus-minimum S_F and its
-  p90 − p10 all fit within where the c3 floor is read. Constant and the loop-, rate- and packet-time families do not.
-  c3's equal-n floor also rests on thin data (4 complete groups per W 12 row).
-- **What I propose: keep decision 8's expression, A = g(δ)·S_F + q(δ)·F̂, as a measured cover, not as a law.**
-  - At Bulk and at Realtime it covers both cells under every counting convention read here (§2.1). need/S_F is 0.80
-    at c2 and 0.46–0.63 at c3.
-  - The cost is over-allocation on long loops: at c3, 9.2 ms above the knee.
-  - Its sentence ("the knee's minimum rises by a fixed fraction of S_F") is refuted. So F07 stays UNDERIVED, with a
-    new evidence line.
-  - q(δ)·F̂ survives unchanged, and σ leaves the allowance.
-- **g's Realtime end can no longer come from need/S_F,** because the ratio is not shape-free. It becomes your
-  price-table call. Decision 10 is unaffected.
-- **One measurement would separate the candidates:** the c3 line at jitter 0 and 3 ms, on the same binary, with floor
-  rows long enough for an equal-count floor. That is ≈ 3 h of VM (§4).
+**Every reading here is post hoc,** and so is every statistic chosen on these rows. None was registered.
+Confirmation is out of sample, in s62 (§5), and §5's predictions are built around the statistic §2 proposes.
+
+**In plain words.**
+- **DISAGREES stands** (Erratum 1). The registered ρ is not invariant across c2 and c3 under the registered counting.
+- **"Constant in ms" and "S_F is not the term" are withdrawn,** as the Erratum says. On bands that span both c3
+  sessions:
+  - need is consistent with constant under the registered counts (×0.96–1.22) and the engine-native counts
+    (×0.85–1.10);
+  - at one count for both sides it is not (×1.30–1.64). There it is jitter-sized, but no single spread is singled
+    out.
+- **The minimum is the problem.** A window minimum keeps falling as more samples are pooled, and it does not flatten
+  anywhere in these rows: −1.95 ms at c2 and −7.3 to −9.5 ms at c3, from native windows to 4 200 samples.
+  - The sample count drives it, not the time span: interleaved and shuffled pooling at a fixed count reads the same.
+  - On the jitter-free c1s line it nearly vanishes (−0.12 to −0.18 ms over 32 windows).
+  - So any knee reading built on minima carries the estimator's count. Differencing at one count cancels most of it
+    (L moves ≤ 0.5 ms over a 4–16× count change), but not to a law-grade level.
+- **A count-free replacement:** per-window quantiles, applied to the floor, the knee reading and the spread alike.
+  - They are flat across the count table (≤ 0.18 ms, against the minimum's 2–9.5 ms). That is partly by
+    construction, as §2.3 explains.
+  - **On estimator grounds,** c3's floor windows hold ≈ 21 independent draws. Only quantiles near the centre,
+    roughly p25–p75, have ≥ 5 draws beyond them there, so p10 and p90 behave like extremes at c3.
+  - So the proposal is the **window median for location and the interquartile range for spread.** The IQR is not
+    logged. The logged stand-in (p50 against p90 − p10) DISAGREES consistently, at c2 and both c3 sessions
+    (d = +0.20 / +0.22).
+- **Decision 8's form is unchanged and is not a derivation here.** F07 stays UNDERIVED.
+- **The one owner call is whether to spend ≈ 3 h on s62,** and it comes after review of §2's statistic.
 
 **Advisor (Fable) log.**
-1. **After orientation, before writing.**
-   - Reproduce the score first, then build Q1 on a table of conventions with intervals. The equal-n reading had
-     already shown the ranking flipping.
-   - Give every candidate its two-point exponent, and say that any affine form fits two points.
-   - Check need − σ (A(c)'s shape).
-   - Divide the datagram rate by gso before calling it a per-skb candidate.
-   - Validate the new QDISC utilisation instrument where W₉₅ is known before reading c8, and report c8 as bounds.
-   - Check s56/s57 for c1s `[SLAW]` rows rather than assume. They have none (§1.5).
-   - Do not upgrade a fitted constant. Size any form to the upper replicate, and replay it through r68's gates, c1s
-     direction included.
-   - Lead Q3 with q_B·F̂ at c3. Write the F07 diff against `law-ledger.yaml`.
-   - Do not build an order-statistics model of the floor.
+1. **Round 1.** Reproduce first; tabulate conventions with intervals; give each candidate its two-point exponent;
+   check need − σ; validate the new utilisation instrument; do not upgrade a fitted constant; write the F07 diff
+   against `law-ledger.yaml`.
+2. **Round 1 review.** c8 leg 1 is a leg offset and must not be substituted. Show form S's coverage under every
+   convention. Replicate on `rep61a`. State the groups per row.
+3. **Round 2.**
+   - The first count-ladder test (§8 of `kmr.out`) compared unequal counts at its low end, and is superseded by a
+     window ladder (§8b).
+   - The doubling-drop regression (§7) has no power, because the drop per doubling is nearly constant. It is
+     replaced by a fixed-count test: stride, shuffle and lag-1 (§7b).
+   - The p10 nk-split failed its own criterion, so all quantiles are shown in one table and the statistic is chosen
+     on estimator grounds.
+   - The claims that fail on the session bands are named.
+   - The text is aligned with Erratum 1, and c1s is pre-read for s62's J = 0 prediction.
    - All applied.
+4. **The coordinator's three constraints from Fable** (one statistic for engine and measurement, computable on native
+   windows with count-free bias; applied to all three inputs; shown flat on the count table, with ρ consistent across
+   c2 and both c3 sessions). §2.3 applies them.
 
 **Script** (stdlib, `python -I -X utf8`, run from `docs/`; output beside it):
 
-| script | input (read in place) | output | what it computes |
-|---|---|---|---|
-| `store-law/kmr.py` | `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz`, `l1-raw/s61/rep61c-diag-ld.tgz`, and `rep61a-diag-ld.tgz` loaded on its own (its row keys collide with `rep61c`'s); imports `r68allow.py` and `s61pred.py` (their loader and G(n*)) | `kmr.out` | §0 the witness; §1 need under five conventions with a bootstrap on need₃/need₂; §2 need = L − N, with groups per row; §2d its replication on `rep61a`; §2b the c3-shaped floor against load (c8 leg 1); §2c k = L/X per spread and ρ_L; §3 the candidate table; §4 per-leg link utilisation (c2/c3 validation, c8, c1s); §5 the forms replayed (D per hint, R67 at the controls, the c1s size); §5b form S under every convention |
+| script | input (read in place) | output |
+|---|---|---|
+| `store-law/kmr.py` | `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz`, `l1-raw/s61/rep61c-diag-ld.tgz`; `rep61a-diag-ld.tgz` and `rep61b-diag-ld.tgz`, each loaded on its own because their row keys collide with 61c's and §60's; imports `r68allow.py` and `s61pred.py` | `kmr.out` |
 
-`rep61b` (c2's add-on) is not read: its W 160 / 2 048 rows share keys with §60's c2 rows in `r68allow.load`, and
-nothing here needs the price below c2's knee.
+`kmr.out` sections:
+- §0 the witness;
+- §1–§5b round 1;
+- §6 both-session bands;
+- §7 / §7b what the floor's drop follows;
+- §8b L on a window ladder (§8 superseded);
+- §9 / §9b the statistics side by side;
+- §10 the quantile statistic: the count table, the independent draws per window, and ρ_q.
+
+**`rep61b` is now used.** It is loaded on its own (the collision fix) and serves only §7's doubling-drop regression, as
+c2's lower arms W 96 / 128 / 144. No floor or knee reading needs it, since c2's floor is W 16 and its knee arms are
+§60's 160–256.
 
 ---
 
 ## 0. Witness (`kmr.out` §0)
 
-The port reproduces the scored c3 reading to the printed digit:
+The script reproduces the scored c3 reading exactly:
 - κ 0.00962, W\* 11.6, F_c 38.998 and S_F,c 9.709;
-- the six W₉₅ and needs (4.256 / 4.498 / 4.404 / 4.464 / 3.610 / 4.478);
-- ρ₃ 0.457;
-- the NATIVE line: F 42.523, S_F 5.861, ρ 0.633.
+- the six needs, and ρ₃ 0.457;
+- the NATIVE line (F 42.523, S_F 5.861, ρ 0.633).
 
 c2's frozen inputs reproduce too: F 8.679, S_F 5.083, need 4.049, ρ₂ 0.797.
 
 ---
 
-## 1. Q1: what the knee margin scales with
+## 1. What need scales with, on bands that span both c3 sessions (`kmr.out` §6)
 
-### 1.1 need under each convention (`kmr.out` §1)
+**The two c3 sessions.**
+- 61c is the scored re-run.
+- 61a is s61's first session, read post hoc, with K 104 / 112 / 124 and P1 136 as the path exercise counted them, and
+  the W 2 048 control read by goodput.
+- Each session gets a 90 % bootstrap (1 000 draws, c2 and that session resampled). **BAND** is the union of the two
+  sessions' intervals: a session-to-session spread, not one session's bootstrap.
+- **c2 has one session.** Its drift is bounded only at the W 160 overlap arm (§61b: |Δtmin| 0.035 ms, |Δu| 0).
 
-```text
-   need_c  =  median_r T̂min_r(W₉₅,r; n_K)  −  F_c(n_F, floor position)
-```
+### 1.1 need₃ / need₂ under each convention
 
-need has two free conventions:
-- the sample count each minimum is read at (n_F at the floor, n_K at the knee);
-- where on the floor line F is read (c3 at W\* = u₂/κ, or at the intercept W → 0).
-
-The bootstrap resamples replicates and floor rows within pools at both cells and refits the floor lines per draw
-(2 000 draws, seed 62).
-
-| convention | need₂ (ms) | need₃ (ms) | need₃ / need₂, 90 % |
+| convention | 61c | 61a | **BAND** |
 |---|---|---|---|
-| **registered** (c2 native; c3 G(250) floor, G(2 100) knee; u-matched) | 4.049 | 4.434 | **1.095 [0.961, 1.179]** |
-| engine-native (every window as the engine's estimator sees it; u-matched) | 4.049 | 3.709 | 0.916 [0.838, 0.973] |
-| registered, floor at the intercept | 4.585 | 5.623 | 1.226 [1.014, 1.390] |
-| **equal n** (floor and knee both at ≈ 2 130–2 390 samples; u-matched) | 5.661 | 8.872 | **1.567 [1.479, 1.639]** |
-| equal n, floor at the intercept | 6.183 | 11.691 | 1.891 [1.746, 2.020] |
+| registered (c2 native; c3 G(250) floor, G(2 100) knee; u-matched) | 1.095 [0.968, 1.175] | 1.081 [0.958, 1.222] | **[0.96, 1.22]** |
+| engine-native | 0.916 [0.846, 0.969] | 1.012 [0.932, 1.104] | **[0.85, 1.10]** |
+| registered, floor at the intercept | 1.226 [1.006, 1.384] | 1.179 [0.999, 1.378] | **[1.00, 1.38]** |
+| one count (≈ 2 100) for both sides, u-matched (= L) | 1.567 [1.487, 1.643] | 1.411 [1.295, 1.558] | **[1.30, 1.64]** |
+| one count, floor at the intercept | 1.891 [1.749, 2.033] | 1.545 [1.342, 1.767] | **[1.34, 2.03]** |
 
-- **"Constant in ms" lies inside only the registered row's interval.** The engine-native interval excludes 1 from
-  below and the intercept interval from above.
-- **At equal sample count, need is jitter-sized:** ×1.57 to ×1.89, against netem's jitter ×1.67 and S_F ×1.91.
+**Withdrawn from round 1, because they fail on the bands:**
+- "constant is excluded under engine-native": the band [0.85, 1.10] contains 1;
+- "the intercept excludes 1": its band starts at 1.00;
+- "L ×1.57 [1.48, 1.64]": the second session reads 1.41, so the band is [1.30, 1.64].
 
-### 1.2 The decomposition need = L − N (`kmr.out` §2)
+### 1.2 need = L − N
 
 ```text
    need  =  [ T̂min(W₉₅; n_K) − F(n_K) ]  −  [ F(n_F) − F(n_K) ]   ≡   L − N
-   L: the load rise at equal sample count (a path property under a FIFO with jitter, §1.4)
-   N: the floor minimum's sample-count drop from n_F to n_K (a property of the estimator's counts and the echo tail)
 ```
 
-| cell | T̂min(W₉₅) | F(n_F ≈ 280) | F(n_K ≈ 2 200) | **L** | **N** | need = L − N |
-|---|---|---|---|---|---|---|
-| c2 | 12.728 | 8.679 | 7.067 | **5.661** | **1.612** | 4.049 |
-| c3 | 43.432 | 38.998 | 34.560 | **8.872** | **4.438** | 4.434 |
-| ratio c3 / c2, 90 % | | | | **1.567 [1.479, 1.639]** | **2.753 [2.445, 3.167]** | 1.095 |
-
-**Replication on s61's first c3 session** (`rep61a`, `kmr.out` §2d; post hoc, with K 104 / 112 / 124 and P1 136 as the
-path exercise counted them, and the W 2 048 control read by goodput): need 4.376 (ρ 0.458), **L 7.989, N 3.613**.
-- Against c2 that is need ×1.08, **L ×1.41, N ×2.24.**
-- The shape of the decomposition replicates. Its size moves by about 0.9 ms between sessions, mostly in the n 2 100
-  floor (W 12: 35.29 against 34.32).
-
-**The equal-n floor is thin at c3.** Under G(2 100), a c3 W 12 row holds 4 complete groups (W 16: 5, W 24: 8),
-against c2 W 16's 30 (`kmr.out` §2). The registration's floor rule asks ≥ 6 groups under G(250). So c3's F(n_K) is a
-median of 4 minima per row, and its OLS line over the pools is the weakest number in this document.
-
-**The floor's minimum against its sample count** (median over the floor pool's rows, `kmr.out` §2):
-
-| n per group | ≈ 60 | ≈ 280 | ≈ 620–820 | ≈ 1 220–1 370 | ≈ 2 130–2 240 | ≈ 4 220–4 340 |
-|---|---|---|---|---|---|---|
-| c2 W 16 | – | 8.68 | 7.80 | 7.32 | 7.07 | 6.73 |
-| c3 W 12 | 42.75 | 38.78 | 37.01 | 35.59 | 34.32 | 33.23 |
-
-- c3's floor minimum falls 4.5 ms from n 280 to 2 100, against c2's 1.6 ms. That is ×2.75, against the spreads'
-  ×1.67–1.91.
-- **This refutes the registration's normalisation argument** (s61 §3, "Why matching n is the right normalisation").
-  That argument assumed a window-minimum bias proportional to the cell's own spread ("J/√n"), so that equal counts
-  on each side would leave ρ invariant under S's sentence. N's ratio says c3's lower tail is longer than its spread
-  predicts.
-  - The mechanism is not diagnosed here (advisor: no order-statistics model).
-  - Candidates: correlated samples per ack or per skb (one jitter draw serves several echoes), and an echo-timing
-    component outside netem's jitter. At c3 the floor's p50 sits ≈ 8.7 ms above the netem median of 40 ms, and at
-    c2 ≈ 3.7 ms above 10 ms.
-- **So DISAGREES does not by itself say that S_F misses the load term. It says that need, as read, mixes L with N,**
-  and N does not scale with S_F.
-
-### 1.3 The candidate scalings (`kmr.out` §3)
-
-A one-parameter law need = k·X, with k fitted at c2, is a genuine one-point test at c3: X₃/X₂ must match need₃/need₂.
-α = ln(need ratio)/ln(X ratio) is the two-point exponent (registered convention). **Any affine form c + k·X fits two
-points exactly,** so two cells cannot reject an affine pair. The table rejects only single-term scalings.
-
-| X | c2 | c3 | X₃/X₂ | α | inside the registered [0.96, 1.18] | inside equal-n, u-matched [1.48, 1.64] / intercept [1.75, 2.02] |
-|---|---|---|---|---|---|---|
-| **constant (ms)** | 1 | 1 | 1.00 | – | **yes** | no / no |
-| S_F (floor p50 − min, registered counts) | 5.083 | 9.709 | 1.91 | 0.14 | no | no / **yes** |
-| S_F at n 2 100 | 6.516 | 14.038 | 2.15 | 0.12 | no | no / no |
-| floor p90 − p10 (native) | 5.535 | 8.169 | 1.48 | 0.23 | no | edge / no |
-| netem jitter J (±J each way, the QDISC line) | 3 | 5 | 1.67 | 0.18 | no | edge (1.64) / no |
-| σ at the knee (P90 − P50 at load) | 1.785 | 4.778 | 2.68 | 0.09 | no | no / no |
-| loop floor F_c | 8.679 | 38.998 | 4.49 | 0.06 | no | no / no |
-| netem propagation RTT | 10 | 40 | 4.00 | 0.07 | no | no / no |
-| BDP in slots (W₉₅) | 168.0 | 108.7 | 0.65 | −0.21 | no | no / no |
-| datagram service time at the link rate | 0.099 | 0.490 | 4.93 | 0.06 | no | no / no |
-| per-skb service time (gso × datagram) | 0.589 | 2.697 | 4.58 | 0.06 | no | no / no |
-| skb inter-arrival at the knee | 0.609 | 2.872 | 4.72 | 0.06 | no | no / no |
-| ack inter-arrival at the knee | 0.437 | 2.216 | 5.07 | 0.06 | no | no / no |
-| need − σ (A(c)'s c_B) | 2.264 | −0.344 | – | – | **shape fails**: c_B would be negative at c3 | – |
-
-- **The rate and loop families are out under every convention** (×4–5). So are σ (×2.7) and the BDP in slots
-  (×0.65).
-- **A(c) as W1 wrote it (σ + c_B·q/q_B) fails in shape.** need − σ is 2.26 ms at c2 and −0.34 ms at c3. W1's
-  c_B ≈ 2.7 ms had no source, and none is found here.
-  - The constant that does fit the registered row is need itself, with no σ term.
-  - c_B's value in §60's coordinates was 2.26 (r68 §1.5).
-
-### 1.4 At equal n: which spread carries L (`kmr.out` §2c)
-
-The sentence that makes L jitter-sized comes from netem's FIFO (`tools/l1/lib.sh:173–176`: with `rate` set, netem
-schedules each packet no earlier than the previous one). Per skb i on the jittered direction:
-
-```text
-   X_i  =  max( j_i ,  X_{i−1} − (Δa_i − s_i) )        j_i ~ U(−J, +J), Δa the skb inter-arrival, s the skb service time
-```
-
-- Δa − s → 0 as the link saturates. A low draw j_i then waits behind the preceding high ones, so the window minimum
-  climbs from −J toward +J.
-- **At the knee it has risen by up to the jitter range 2J per jittered direction.** Acks are tiny and their drift is
-  their spacing, so the ack direction absorbs part of its 2J too.
-- This bounds the shape (L of the order of 2J). It does not give a coefficient, since no model is fitted here.
-
-**k = L/X per cell, k₃/k₂ = 1 meaning that X carries L at both cells:**
-
-| X | u-matched floor | floor at the intercept |
-|---|---|---|
-| netem 2J (one way) | 0.94 / 0.89, ratio **0.94** | 1.03 / 1.17, **1.13** |
-| S_F (registered counts) | 1.11 / 0.91, **0.82** | 1.22 / 1.20, **0.99** |
-| floor p90 − p10 (native) | 1.02 / 1.09, **1.06** | 1.12 / 1.43, **1.28** |
-| S_F at n 2 100 | 0.87 / 0.63, **0.73** | 0.95 / 0.83, **0.88** |
-| constant | 5.66 / 8.87, **1.57** | 6.18 / 11.69, **1.89** |
-
-The intercept column rests on c3's G(2 100) floor line, whose slope (25 ± 4 ms per unit u) c8 leg 1 does not
-corroborate (7 ± 0.7, §1.5). Read it as the weaker column.
-
-- **s61's falsifier re-read with L** (`kmr.out` §2c). ρ_L = L/S_F, and d = ρ_L,3 − ρ_L,2 against s61's Δ = 0.085:
-
-  | S_F read at | floor position | ρ_L,2 | ρ_L,3 | d, 90 % |
-  |---|---|---|---|---|
-  | the registered counts (**mixed**: L at n 2 100) | u-matched | 1.114 | 0.914 | −0.200 [−0.261, −0.154] |
-  | the registered counts (mixed) | intercept | 1.183 | 1.119 | −0.063 [−0.168, +0.020] |
-  | n 2 100 (one count) | u-matched | 0.869 | 0.632 | −0.237 [−0.267, −0.210] |
-  | n 2 100 (one count) | intercept | 0.929 | 0.725 | −0.204 [−0.242, −0.175] |
-
-  - Read at one count, S_F disagrees at equal n by about two-thirds of the registered gap (−0.34).
-  - Only the mixed-count intercept reading is unresolved, and it rests on the weak column.
-  - So equal counting does not rescue S_F as the knee's term. It narrows the gap.
-- **What the two cells say at equal n:**
-  - netem's 2J tracks L within 0.94–1.13 across the floor readings;
-  - S_F (registered counts) within 0.82–0.99, and p90 − p10 within 1.06–1.28;
-  - constant is ≥ 1.57 off.
-  - 2J is a testbed parameter the engine cannot observe. S_F and p90 − p10 are its observable proxies, and they
-    differ at c3 because c3's echo carries spread beyond netem's jitter (§1.2).
-
-### 1.5 More knee points from existing ledgers (`kmr.out` §2b, §4)
-
-**The instrument.** u_link = netem `Sent` bytes × 8 / (transfer seconds × link rate), per leg, from the driver's
-QDISC lines. It counts FEC repair and retransmissions.
-- **Validated where W₉₅ is known:**
-  - c2: u_link at each replicate's W₉₅ is 0.943–0.948 (median 0.947);
-  - c3: 0.937–0.945 (median 0.941).
-  - So the goodput knee sits at u_link ≈ 0.94–0.95 at both cells.
-
-**c8 leg 0 (c2-shaped)** gives no knee point.
-- u_link is 0.564 at W 96 and 0.992 at W 256, with no arm between.
-- So only the bracket need₀ ∈ [tmin(96) − F, tmin(256) − F] = [1.1, 6.3] ms is available. It contains both cells'
-  values and decides nothing.
-
-**c8 leg 1 (c3-shaped)** never reaches its knee.
-- u_link is 0.865 at W 512 and 0.919 at W 1 280 (0.907–0.968 by row), so a lower bound is the most it gives.
-- **At equal n, against its own floor,** L₁(u 0.92) ≥ 40.85 − 32.41 = 8.4 ms. c3's L at the same u_link is ≈ 7.8 ms.
-  That is the same size, in another session.
-- **Leg 1 is not a c3 floor.** At matched u_link it reads 2.2–2.6 ms below c3 under G(2 100) at u 0.55–0.9 (`kmr.out`
-  §4: 36.54 at 0.57 against c3's 39.01 at 0.55; 37.87 at 0.76 against 40.15 at 0.73). It also reads 3.9 ms below
-  under G(250) at u 0.23–0.31. That is a leg offset (a coupled leg sharing one sender), so its floor is not
-  substituted for c3's.
-- **Its slope corroborates c3's floor line at n 250.** Leg 1's own floor over u_link 0.03–0.31 rises 9.44 ± 0.63 ms
-  per unit u under G(250). c3's G(250) floor line is 0.1021 ms/slot / κ = 10.6 ± 2.9 ms per unit u.
-  - So the registered floor's slope is real, and the u-matched and intercept readings at n 250 differ by a real
-    b·W\* ≈ 1.2 ms.
-  - Under G(2 100) they do not agree: leg 1 gives 7.06 ± 0.72 and c3's line 25 ± 4. c3's n 2 100 floor (4–8 groups
-    per row) is the suspect.
-
-**c1s** has no knee.
-- §60's c1s G arms reach u_link 0.22 / 0.38 / 0.50, and the W 2 048 controls 0.92 (all flagged COLLAPSED by §60's rule).
-- tmin is 2.38 / 2.41 / 2.52 ms, so need is not readable.
-- §56 and §57 (c1s and c1d sweeps) carry no `[SLAW]` / `[WSTAT]` lines (0 in every tgz), so their window minima do
-  not exist.
-- c1s's netem line has jitter 0, which makes it the discriminator. Constant predicts need ≈ 4 ms there. Any
-  jitter-derived form predicts a margin of the order of its S_F (0.43 ms), plus whatever the rate queue adds.
-
-### 1.6 What two cells cannot separate, and what would
-
-- **They can separate:** constant from jitter-type, but only once the convention is fixed. The registered and native
-  rows say constant; the equal-n rows say jitter-type. The rate, loop, σ and BDP families are out under every
-  convention.
-- **They cannot separate:**
-  - 2J, S_F and p90 − p10 as the carrier of L (§1.4), since the floor-position band (±0.15 in k₃/k₂) is wider than
-    their differences, and c3's n 2 100 floor is thin;
-  - any affine pair c + k·X.
-- **The data's main message is that need is not yet a well-posed quantity.** It depends on two estimator choices
-  that are still open:
-  - the sample-count rule (R6.7 open item 4);
-  - where F̂ is read in load (R6.7 open item 1 and the boot-hold item that s61 §11 names for FLOOR-SENSITIVE).
-- **One cell would separate them: the c3 line with the jitter changed and nothing else** (rate 20 Mbit/s, 20 ms, GE
-  loss unchanged), at J = 0 and J = 3, beside 61c's J = 5.
-  - Constant predicts the same need at all three J under its convention.
-  - 2J-type predicts L ∝ J, with L(J0) of the order of the rate queue alone.
-  - S_F-type predicts L ∝ S_F(J). S_F(J0) is not zero if c3's extra echo spread is engine-side (§1.2), so 2J and S_F
-    come apart at J0.
-  - Floor rows long enough for ≥ 8 complete G(2 100) groups make the equal-n floor readable (§4).
-  - §60's c8 and c1s rows cannot do this. c8 leg 1 has no 0.95 crossing, and c1s has no window minima near its knee.
-
----
-
-## 2. Q2: the proposed allowance
-
-### 2.1 The form (proposed: decision 8's expression, re-provenanced as a two-cell cover)
-
-```text
-   Aᵢ(δ)  =  g(δ) · S_F,ᵢ  +  q(δ) · F̂ᵢ          g(Bulk) = 1,  g continuous and monotone in δ,  q(δ) = (b + 1)/30 ∈ [0.05, 0.10]
-   fixed point (one leg):   T̂min(n*)  =  F̂ + g(δ)·S_F + q(δ)·F̂          T̂min and F̂ on the engine's native windows
-```
-
-The sentence it now carries: **at both measured leg shapes, the knee's window-minimum rise (as the engine's windows
-read it) does not exceed the floor windows' median − minimum.** So the S_F term covers the knee at Bulk, and q(δ)·F̂ is
-the δ-priced margin above it. This is a cover with measured slack. It is not the knee's law.
-
-| symbol | provenance |
-|---|---|
-| S_F | **measured** (median over the floor windows of p50 − T̂min, r68 §1.4). Its role is a **measured cover**: need/S_F = 0.797 [0.780, 0.825] at c2, and 0.457 [0.409, 0.483] at c3 (registered) or 0.633 (native). It has no derivation as the knee's term (s61 DISAGREES), and it is UNDERIVED in the ledger's sense |
-| F̂ | measured (R6.7 candidate C's floor, r68 §2.4) |
-| q(δ) | declared dial, band cited (RFC 8289's 5–10 %) |
-| g(δ) | declared dial: g(Bulk) = 1 (owner decision 8), the Realtime end an owner call (§3) |
-| the knee (u = 0.95) | the registered knee definition (s61 §5) |
-
-**Coverage under every convention** (`kmr.out` §5b). D = need − A per replicate, with g = 1 and S_F and F̂ read on the
-same windows and floor position (decision 8: S_F is read on the windows F̂ is read on). The worst replicate is in
-brackets.
-
-| convention | c2 Bulk | c2 Realtime | c3 Bulk | c3 Realtime |
+| | c2 | c3 61c | c3 61a | c3/c2 BAND |
 |---|---|---|---|---|
-| registered | −1.90 (−1.84) | −1.47 (−1.40) | −9.17 (−9.11) | −7.22 (−7.16) |
-| engine-native | −1.90 (−1.84) | −1.47 (−1.40) | −6.40 (−6.16) | −4.28 (−4.03) |
-| equal n | −1.56 (−1.50) | −1.21 (−1.14) | −8.62 (−8.56) | −6.89 (−6.83) |
-| registered, intercept | −1.46 (−1.39) | −1.05 (−0.98) | −8.60 (−8.54) | −6.71 (−6.65) |
-| equal n, intercept | −1.13 (−1.07) | −0.80 (−0.74) | −7.61 (−7.55) | −6.02 (−5.96) |
+| L (load rise at one count ≈ 2 100) | 5.66 | 8.87 | 7.99 | **[1.30, 1.64]** |
+| N (the floor's drop from ≈ 280 to ≈ 2 100 samples) | 1.61 | 4.44 | 3.61 | **[1.85, 3.18]** |
 
-- **The cover claim rests on all five rows.** It is COVERED at both cells, at both ends of the dial, in every
-  convention, including the upper replicate (c2 4.11, c3 4.50 under registered counts).
-- **That is what makes recommendation 1(a) compatible with 3 (equal n).** Under equal n, F̂ falls by N and S_F grows
-  (6.52 at c2, 14.04 at c3), which keeps the cover.
-- **The thinnest margin is c2 Realtime at equal n with the intercept floor: −0.74 ms** at the worst replicate.
-- A cover built on S_F at the registered counts with minima at equal n (mixed) would not hold at c2:
-  5.08 + 0.71 against 5.66 at u-matched, and SHORT at the intercept (5.08 + 0.65 against 6.18). That mix is not
-  proposed.
+**For the coordinator: N's band contains S_F's ratio** (1.88–1.91; it excludes netem J's 1.67). So round 1's "N refutes
+the registration's §3 assumption (a minimum bias proportional to the spread)" does not survive on the band.
+- Erratum 1's sentence "matching each side's count across cells does not make ρ shape-invariant, which the
+  registration's §3 assumed" is still true of the label: the registered ρ disagrees.
+- But these data do not show that the §3 assumption itself failed.
 
-**The gates (r68 §1.4).**
-- **Mode, oracle and ratchet:** pass. It is one expression, δ enters only through g and q, and there is no predicate
-  on k, t, n, δ or ρ.
-- **Uniqueness:** pass. S_F and F̂ are floor reads, constant in n.
-- **R-sign at the controls** (single-leg R67, r68's formula):
-  - c2 0.103;
-  - c3 0.255;
-  - c1s 0.819 (direction only, since §60 flags the c1s controls).
-- **The c1s size:** A = 0.67 ms on a 2.38 ms floor.
-- **c8:** coupling-set (> 512 under every form, r68 §1.4), and not replayed here.
+**The count-matched floor drop, both ways** (`kmr.out` §7b):
 
-**The bind-fraction gauge.**
-- A has no clamp. Its only clamp is the law's clamp(floor, N·knee) (F01's), whose gauge is `[SUMCAP]` `pin=` /
-  `ask=`. Report it on the after-build battery, as F01 requires.
-- **A cover needs a slack gauge, by the same rule** (MEASUREMENT DISCIPLINE 17: a law pinned or degenerate over its
-  range is a defect finding).
-  - The gauge is need / A at Bulk per battery cell: 0.68 at c2 and 0.33 at c3.
-  - A cover slack by more than 2× on every cell would make S_F decorative. That is a ledger finding, not a footnote.
-- If the engine's S_F estimator carries a sample-count eligibility hold (R6.7 item 4), its hold fraction is gauged
-  too.
+| pool | 61c: median of row differences | 61c: difference of medians | 61a: median of row differences | 61a: difference of medians |
+|---|---|---|---|---|
+| W 12 | 4.48 | 4.46 | 2.78 | 3.61 |
+| W 16 | 3.15 | 3.73 | 3.78 | 3.92 |
+| W 24 | 2.97 | 2.88 | 2.78 | 2.98 |
 
-**What survives.**
-- **q(δ)·F̂, unchanged.** It is not under test, and at c3 Bulk it alone supplies 3.90 of the 4.43 ms.
-- **S_F, re-typed** from "the knee's term" to "a measured cover".
-- **σ leaves the allowance.** Its family (A0, A0f, Ac, wq) is refuted at c2 (SHORT) and has the wrong shape across
-  the two cells (§1.3).
+- c2: 1.42 / 1.44 at W 16.
+- The coordinator's figures are the differences of medians.
+- c3's W 12 floor holds 4 complete G(2 100) groups per row, so these are thin.
 
-### 2.2 Forms not proposed
+### 1.3 Candidates against the bands (`kmr.out` §6)
 
-| form | why not |
-|---|---|
-| **K: g·c_K + q·F̂, c_K = 4.50 ms** (the max replicate need) | **UNDERIVED constant.** Covers c2 −1.32 / c3 −3.96. It fits only the registered convention: engine-native excludes a constant from below, and equal n by ×1.6–1.9. At c1s it is A = 4.74 ms, 2× the floor, and R67 at the controls is 1.03 (max 1.11): **it fails the R-sign gate in direction**. It funds a 4 ms standing queue on a jitter-free 2.4 ms loop |
-| **J: g·k·Ŝ + q·F̂ at equal n** (T̂min and F̂ both read at one count n\*, with k covering L/Ŝ ≤ 1.28) | **The physically better-shaped candidate** (§1.4), but nothing validates it yet. Its proxy Ŝ is not chosen (read at one count, S_F disagrees at equal n by −0.20 to −0.24, and p90 − p10 drifts 1.06–1.28). It needs a count-based window estimator, since a 250 ms time window cannot hold a fixed n across rates, and that is a design item (R6.7 item 4). It is the candidate the §4 cell tests |
-| Jc: g·0.731·(p90 − p10)_F + q·F̂ (k fitted at c2, registered convention) | Covers both cells (c2 −0.87, c3 −5.44), but k is a c2 fit, and in the registered convention a spread form only adds the slack S already has |
-| A0 / A0f / Ac / wq (σ family) | SHORT at c2 (§60), and the shape fails (need − σ changes sign) |
+X₃/X₂ is given per session (61c / 61a). "Overlaps" means the pair overlaps that convention's BAND.
 
----
+| X | X₃/X₂ | registered | native | one count | reg. @ intercept | one count @ intercept |
+|---|---|---|---|---|---|---|
+| constant | 1 / 1 | **yes** | **yes** | no | **yes** | no |
+| S_F (registered counts) | 1.91 / 1.88 | no | no | no | no | **yes** |
+| S_F at n 2 100 | 2.15 / 2.05 | no | no | no | no | no |
+| floor p90 − p10 (native) | 1.48 / 1.50 | no | no | **yes** | no | **yes** |
+| netem J | 1.67 | no | no | no (band ends 1.64) | no | **yes** |
+| σ (window `sig` over the K arms) | 2.70 / 2.71 | no | no | no | no | no |
+| loop floor F | 4.49 / 4.46 | no | no | no | no | no |
 
-## 3. Q3: decision 8's g(δ) and decision 10
+- **What survives:**
+  - under the registered and native counts, a constant fits and no spread does;
+  - at one count, constant is out and jitter-type spreads fit, but which one depends on where the floor is read;
+  - σ, the loop, and the per-datagram, per-skb and per-ack times (×4.6–5.1 from round 1) are out under every
+    convention.
+- **need − σ** is +2.26 ms at c2 and −0.34 at c3, so W1's A(c) form (σ + c_B) fails in shape, and its c_B ≈ 2.7 ms
+  still has no source.
+- **The lesson is that what need "scales with" depends on how the minimum is counted.** That puts the estimator
+  first (§2).
 
-**q_B·F̂ already covers most of c3's knee.**
-- At c3 Bulk, q_B·F̂ = 3.90 ms against need 4.43. With g = 0, Bulk lands at W\* 105.1, u 0.932 (the score's landing
-  table).
-- At c2, q_B·F̂ is 0.87 against 4.05.
-- The S_F term's share of the cover is therefore loop-dependent. g multiplies a term that is most of the margin on a
-  short loop and mostly slack on a long one.
+### 1.4 Other ledgers (round 1, unchanged)
 
-**g(δ)'s Realtime end can no longer be measured as decision 8 planned.**
-- Decision 8 set it "by the c3 sweep's need/S_F reading against c2's 0.80". That reading presumed a shape-free ρ, and
-  s61 refuted it.
-- The per-cell g_knee = ρ − q_R·F̂/S_F (where Realtime lands at that cell's knee) is 0.711 at c2 and 0.256 at c3,
-  under the registered counts (the score). Engine-native gives c3 ≈ 0.27, and c2 is unchanged.
-- **No single g_R lands Realtime at the knee at both cells:**
-  - g_R ≥ 0.711 keeps Realtime at or above the knee everywhere measured. It costs c3 a landing at W\* ≈ 132,
-    u 0.99, Tp50 ≈ 66 ms against the knee's 55;
-  - g_R = 0.256 lands c3 at its knee and c2 below it, at u ≈ 0.65 (c2's landing table at g 0.25: W\* 102.7, u 0.647).
-- So g_R becomes **purely the owner's price-table call** (decision 8's own deferred item: "whether Realtime may land
-  below the knee is decided later, from a price table that includes Tp50"), with both cells' landing tables as the
-  input.
-- **g(Bulk) = 1 stands.** Under the proposed form it means "Bulk keeps the whole cover".
-
-**Decision 10 (per-leg `queue_target_mult` = 1 + q(δ)) is unaffected.**
-- It uses only q(δ), whose band is unchanged.
-- It multiplies Copa's queue floor (`scheduler/copa.rs:314`, K01), not F̂ or the knee term.
-- It would be affected only if the q band were re-declared (U2's branch (c)), which nothing here proposes.
+- **The utilisation instrument** (netem Sent bytes, per leg) puts the goodput knee at u_link 0.947 at c2 and 0.941 at
+  c3.
+- **c8 leg 0** has no arm between u 0.56 and 0.99, so it gives no knee point.
+- **c8 leg 1** never crosses 0.95, which leaves only a bound: L₁(u 0.92) ≥ 8.4 ms against its own floor.
+  - It reads 2.2–3.9 ms below c3 at matched load, a leg offset, so it is not substituted for c3.
+  - Its n 250 floor slope (9.4 ± 0.6 ms per unit u) corroborates c3's G(250) floor line (10.6 ± 2.9).
+- **c1s** has no knee, and s56/s57 carry no window minima.
 
 ---
 
-## 4. Q4: a registration sketch for the separating measurement (s62, not registered)
+## 2. The count question (Erratum 1: "a count rule, or a count-free statistic, before any knee reading is interpreted")
 
-**Question.** At fixed rate, delay and loss, does the knee's load rise L follow the path's jitter (2J), the floor
-spread S_F, or neither (constant)? And is the equal-n floor readable with enough groups?
+### 2.1 The count sets the minimum, not the time span (`kmr.out` §7b)
+
+**The test.** Within each floor arm, at a fixed count (k = 8 windows per group), compare four ways of forming the
+groups:
+- contiguous windows (span 8);
+- windows at stride 2 and stride 4, interleaved (span 16 and 32 at the same count and group number);
+- a seeded shuffle (span = the whole row).
+
+| arm | contiguous | stride 2 | stride 4 | shuffled | lag-1 r of window minima | acks per sample |
+|---|---|---|---|---|---|---|
+| c2 W 16 / 32 / 48 | 7.12 / 7.35 / 7.63 | 7.12 / 7.29 / 7.65 | 7.08 / 7.31 / 7.68 | 7.12 / 7.36 / 7.66 | −0.01 to 0.00 | 0.23–0.27 |
+| c3 61c W 12 / 16 / 24 | 38.00 / 38.42 / 38.85 | 37.50 / 38.33 / 38.73 | 37.81 / 38.32 / 38.85 | 37.39 / 38.25 / 38.50 | +0.04 to +0.07 | 0.26–0.35 |
+| c3 61a W 12 / 16 / 24 | 37.62 / 37.58 / 38.44 | 37.65 / 37.89 / 38.43 | 37.74 / 37.66 / 38.39 | 38.06 / 37.71 / 38.38 | +0.02 to +0.05 | 0.26–0.35 |
+
+- **The groups are equal to within noise:** ≤ 0.06 ms at c2, and no consistent sign at c3 (±0.6 ms). The window minima
+  are uncorrelated at lag 1.
+- So span and time drift do not set the floor's drop. The count does.
+- **Acks against samples cannot be separated** on these arms, since acks per sample is 0.23–0.35 everywhere. §7's
+  doubling-drop regression could not separate samples, span and acks either: all three fit equally (residual sd
+  0.074–0.076 ms at c2, 0.38–0.41 at c3), because the drop per doubling is nearly constant.
+- **The jitter-free line** (`kmr.out` §7b, c1s): the floor minimum falls only 0.12 / 0.12 / 0.18 ms over k = 1 → 32
+  windows at W 64 / 128 / 192. Over a similar pooling c2 W 16 falls 2.2 ms (k 1 → 32) and c3 W 12 falls 7.8 ms.
+  - The drop scales with the path's jitter. That is consistent with the minimum being an extreme of the jittered
+    echo distribution: more draws, lower minimum.
+  - It does not separate netem's jitter from the echo-timing spread c3 carries beyond it (round 1 §1.2).
+
+### 2.2 Does L move with the count? (`kmr.out` §8b, a window ladder at equal realised counts)
+
+The knee arms are pooled over k windows, and the floor is grouped to the knee's realised count.
+
+| ladder step | 61c n / L | 61a n / L | c2 n / L |
+|---|---|---|---|
+| k 1 (native knee) | 462 / 8.55 | 468 / 8.75 | 2 342 / 5.75 |
+| k 2 | 914 / 8.44 | 930 / 8.39 | 4 688 / 5.60 |
+| k 4 | 1 819 / 8.52 | 1 856 / 8.53 | 9 359 / 5.45 |
+| k 8 | 3 637 / 8.83 | 3 692 / 7.93 | – |
+| k 16 | 7 255 / 8.90 | 7 372 / 7.33 | – |
+
+- **Each minimum falls 0.6–5.0 ms over the ladder** (c2 floor 0.57, c3 61c floor 4.96).
+- **L moves at most 0.46 ms on 61c over 16×, and 0.30 ms at c2 over 4×.** On 61a it moves 0.36 ms up to k 4, then
+  1.4 ms once the floor holds only 1–3 groups per row.
+- So differencing at one count cancels most, but not all, of the count dependence. The residual (0.3–0.5 ms, more on
+  thin floors) is the size of s61's Δ·S_F. The c3 knee cannot be read below ≈ 460 samples, nor c2's below ≈ 2 250.
+- **"Equal count makes need a path property" holds only approximately.** A count rule would also need a declared n\*
+  and floor dwell long enough for ≥ 6 groups at n\*. That is why §2.3 proposes a count-free statistic instead.
+
+### 2.3 A count-free statistic for all three inputs (`kmr.out` §10; the coordinator's constraints)
+
+**The constraints.**
+1. One statistic for the engine and the measurement, computable on the engine's native windows (≈ 60 samples at c3's
+   floor, 282 at c2's), with a bias that does not depend on the window's count.
+2. Applied to the floor, the knee reading and the spread alike.
+3. Shown flat on the count table where the minimum failed, with ρ consistent across c2 and both c3 sessions.
+
+**The family: a per-window sample quantile at a fixed rank fraction p.**
+
+```text
+   Q_p(window)  =  the p-quantile of the window's own echo samples            (native windows; no pooling, so no count rule)
+   floor   Q_p,F  =  median over the floor windows of Q_p                      knee   Q_p(W₉₅)  =  median over the operating-point windows
+   spread  R_F    =  median over the floor windows of (Q_{1−p'} − Q_{p'})      the same windows as Q_p,F
+   ρ_q  =  ( Q_p(W₉₅) − Q_p,F ) / R_F
+```
+
+**Provenance.**
+- p and p′ are declared rank fractions.
+- A sample quantile at a fixed fraction is a consistent estimator with O(1/m) bias in its window's count m of
+  independent draws. That is standard order-statistics theory (for example Serfling 1980, §2.3; David & Nagaraja
+  2003, ch. 4, which also covers the extremes). It holds when the draws beyond the quantile are not few.
+- The criterion used here, declared: **m·min(p, 1 − p) ≥ 5 independent draws beyond the quantile.** Below that, the
+  quantile behaves as an extreme and inherits the minimum's count dependence.
+- **Independent draws per native floor window** (`kmr.out` §10b; acks per window, skbs similar):
+
+  | cell | m per floor window | m·0.10 | m·0.25 | m·0.50 |
+  |---|---|---|---|---|
+  | c2 W 16 | ≈ 75 acks (59 skbs) | 7.5 | 18.8 | 37.7 |
+  | c3 W 12, both sessions | ≈ 21 acks (17 skbs) | 2.1 | 5.2 | 10.5 |
+
+  - At c3's floor, p10 and p90 fail the criterion, the quartiles pass at the edge, and the median passes.
+  - **The estimator choice is therefore location Q₅₀ and spread R = Q₇₅ − Q₂₅ (the IQR).** These are the most
+    extreme rank fractions that are central at the smallest engine window measured.
+  - It is chosen on estimator grounds, before looking at ρ, but it is still chosen on these rows.
+- **The IQR is not logged.** `[WSTAT]` prints p10 / p50 / p90 only. So the chosen spread can be shown only through a
+  stand-in, p90 − p10, which fails the criterion at c3.
+
+**The count table** (`kmr.out` §10a). Floor pool, median over rows, native windows then G(250 … 4 200); the value is the
+change from native to G(4 200):
+
+| statistic | c2 W 16 | c3 61c W 12 | c3 61a W 12 |
+|---|---|---|---|
+| minimum | −1.95 | **−9.52** | **−7.34** |
+| p10 | −0.05 | −0.05 | −0.18 |
+| p50 | −0.01 | −0.05 | −0.02 |
+| p90 | −0.03 | +0.08 | +0.02 |
+| p90 − p10 | +0.03 | +0.18 | +0.11 |
+
+- **The quantiles are flat, but partly by construction.** A group's quantile is carried as the nk-weighted median of
+  its windows' quantiles, so the table shows that per-window quantiles are stable when aggregated. It cannot show
+  that a window's quantile is free of its own count.
+- That needs the raw samples. `RWM_RTT_DUMP` (in the binary, off by default) dumps the RTT sample stream the dispersion
+  estimators consume (`raptorpath/src/net/rttdump.rs`). Whether that stream is the `[SLAW]` echo stream must be
+  checked before s62 relies on it.
+- **The within-arm nk split cannot settle it either** (`kmr.out` §9b). Windows with fewer samples are windows with
+  longer delay: under a window-limited store the sample rate is about W/RTT.
+  - At c3 W 12, p10 / p50 / p90 / tmin shift +1.80 / +1.39 / +0.03 / +0.07 ms;
+  - at c2 W 16, +0.38 / +0.49 / +0.42 / +0.37.
+  - c2 is a location shift. c3 is not, and c3's windows are where p10 and p90 are extreme-like.
+
+**ρ built from one statistic, at c2 and both c3 sessions** (`kmr.out` §10c). Every input is a per-window quantile, read
+on the u-matched floor. d = ρ₃ − ρ₂ with its 90 % interval, against Δ = 0.085.
+
+| location / spread | ρ₂ | 61c ρ₃ (intercept) | 61c d | 61a ρ₃ (intercept) | 61a d |
+|---|---|---|---|---|---|
+| **p50 / p90 − p10** (the chosen location; the logged stand-in for the IQR) | 0.655 | 0.855 (1.048) | **+0.200 [+0.121, +0.253] DISAGREES** | 0.878 (1.063) | **+0.223 [+0.160, +0.259] DISAGREES** |
+| p10 / p90 − p10 | 0.836 | 0.759 (0.888) | −0.077 [−0.136, −0.029] UNRESOLVED | 0.776 (0.895) | −0.060 [−0.099, −0.014] UNRESOLVED |
+| p50 / p50 − p10 | 1.213 | 1.686 (2.116) | +0.473 DISAGREES | 1.719 (2.120) | +0.506 DISAGREES |
+| p50 / p90 − p50 | 1.454 | 1.933 (2.485) | +0.479 DISAGREES | 1.923 (2.392) | +0.469 DISAGREES |
+
+- **The chosen statistic disagrees, consistently.** The sign and size are the same on both c3 sessions (d +0.20 /
+  +0.22). That is the consistency constraint 3 asks for, here in the DISAGREES direction.
+- The p10 row is the only one near agreement. Its location fails the estimator criterion at c3, so it is not chosen,
+  and choosing it because it fits would be the fit the advisor warned against.
+- **Floor position still matters for quantiles.** ρ₃ moves 0.19 between the u-matched floor and the intercept, because
+  the quantile floor rises with W already at the floor pools (FIFO absorption starts there).
+- **What this means:**
+  - under a count-free statistic, the knee's median rise is a larger fraction of the floor spread at c3 than at c2,
+    by about 30 %;
+  - no logged statistic makes ρ shape-free across these two cells;
+  - whether the IQR does is s62's question.
+
+### 2.4 For the engine-form design (review, not an owner question)
+
+- **The proposed replacement for T̂min and F̂ in the store law's fixed point** is the window median, with the IQR as
+  the spread term, all on native windows:
+
+  ```text
+     Q₅₀(n*) = Q̂₅₀,F + A
+  ```
+
+  - It removes the count rule entirely, which answers R6.7 open item 4 by not needing a rule.
+  - It changes the law's sentence: "the operating point's median sits A above the floor's median".
+  - The floor dwell and the floor position (R6.7 item 1) remain.
+- **It is not proposed for the engine until s62 reads it out of sample.**
+- **Gauge needs:**
+  - p25 / p75 in `[WSTAT]`. That is a gauge print, so it is zero engine behaviour but a new binary sha; or
+  - an `RWM_RTT_DUMP` pass, which computes everything offline with no rebuild but perturbs the sender (rttdump.rs:
+    "a dump-on pass is run separately").
+  - s62 uses the dump with no rebuild, and reports its own perturbation.
+
+---
+
+## 3. Decision 8's form, as decided (not a derivation)
+
+```text
+   Aᵢ(δ)  =  g(δ)·S_F,ᵢ + q(δ)·F̂ᵢ          g(Bulk) = 1        (owner decision 8, unchanged; not in the engine)
+```
+
+This document does not derive it, and does not re-type its provenance. F07 stays UNDERIVED.
+
+**For reference, its coverage on these rows** (`kmr.out` §5b). S_F and F̂ are read on the same windows.
+- **"Realtime" means g held at 1 with q at its Realtime value (0.05), so g_R = 1.** No g_R < 1 was assumed.
+- D = need − A, median (worst replicate):
+
+  | convention | c2 Bulk | c2 Realtime (g_R = 1) | c3 Bulk | c3 Realtime (g_R = 1) |
+  |---|---|---|---|---|
+  | registered | −1.90 (−1.84) | −1.47 (−1.40) | −9.17 (−9.11) | −7.22 (−7.16) |
+  | engine-native | −1.90 (−1.84) | −1.47 (−1.40) | −6.40 (−6.16) | −4.28 (−4.03) |
+  | one count | −1.56 (−1.50) | −1.21 (−1.14) | −8.62 (−8.56) | −6.89 (−6.83) |
+  | one count, intercept | −1.13 (−1.07) | −0.80 (−0.74) | −7.61 (−7.55) | −6.02 (−5.96) |
+
+- **Its delay price at c3 Bulk** (the score's landing table): g = 1 lands at W\* 150.3 with Tp50 75.1 ms, against Tp50
+  55.4 ms at W 108 (the knee). That is +20 ms of median loop for the cover.
+  - At c2, g = 1 lands at W\* 198.5, against the knee's 168.
+- **Rejected alternative:** a constant c_K ≈ 4.5 ms. It has no sentence, it fits only under minimum-based counting,
+  and at c1s it gives A = 4.74 ms on a 2.38 ms floor, with R67 at the controls 1.03 (direction only).
+
+## 4. Decisions 8 (g) and 10
+
+- **g's Realtime end cannot be measured from need/S_F,** since that ratio is not invariant under the registered
+  counting (DISAGREES). Under the count-free statistic it is not invariant either (§2.3).
+  - g_knee per cell (registered counts, the score) is 0.711 at c2 and 0.256 at c3.
+  - No g_R value is recommended: nothing consumes one until an engine form exists.
+- **Decision 10** (per-leg `queue_target_mult` = 1 + q(δ)) uses only q(δ), and multiplies Copa's queue floor
+  (`scheduler/copa.rs:314`), so it is unaffected.
+
+---
+
+## 5. s62 sketch (not registered): the jitter axis alone, read with the count-free statistic
+
+**Question.**
+- With rate, delay and loss fixed, does ρ_q (Q₅₀ rise over the floor IQR, native windows) take the same value at
+  netem jitter 0, 3 and 5 ms?
+- Does the floor minimum's count drop come from jitter sampling?
 
 **Cells.**
-- `c3-25` at netem jitter **0** and **3 ms** (tools-only cell names, e.g. `c3j0-25` / `c3j3-25`, with `lib.sh`
-  `scenario_params` lines `20mbit 20 0 2 40` / `20mbit 20 3 2 40`);
-- 61c's J = 5 rows as the third point. They are not re-run, but a two-row overlap arm at J = 5 bounds the drift, as
-  §61b did.
-- The same binary `e410d640` on the §60 gauge tree, Bulk only.
+- `c3-25` at J = 0 and J = 3: tools-only cell names, `scenario_params` `20mbit 20 0 2 40` / `20mbit 20 3 2 40`.
+- 61c as the J = 5 point, with a two-row overlap arm at J = 5 to bound drift.
+- Binary `e410d640`, Bulk only.
 
-**Arms per cell** (61a's design, minus the B arms):
-- floor pools 12 / 16 / 24;
-- **floor rows sized for ≥ 8 complete G(2 100) groups.** Today's 15 MB W 12 rows hold 4, so W 12 needs ≈ 30 MB and
-  W 16 ≈ 35 MB (bytes scale with LATE time at a fixed per-window sample rate). The u-matched floor stays the scored
-  position: at n 250, c8 leg 1 corroborates the floor line's slope (§1.5);
-- the K bracket placed by the rehearsal pilot (Amendment 2's proportional rule);
-- P1 and the W 512 control;
-- 7–8 arms × 6 replicates ≈ 45 rows per cell.
+**Arms per cell.**
+- floors 12 / 16 / 24 (**25 MB**, see below), the pilot-placed K bracket, P1, and the W 512 control: ≈ 45 rows;
+- one **`RWM_RTT_DUMP=1` pass** per cell on the floor W 12 and the K₂ arm, reported separately for the dump's
+  perturbation.
 
-**Readings,** every one under the five conventions of §1.1, each printed. The labels are scored on one convention,
-which **the owner fixes first** (§6, question 1):
-- need and L per cell, with the bootstrap;
-- k = L/X for X ∈ {2J, S_F, p90 − p10}, and k(J)/k(J5) with the interval.
+**Readings** (every convention of §1.1 printed). Scored on ρ_q with the IQR from the dump and Q₅₀ from `[WSTAT]`,
+against Δ = 0.085:
+- ρ_q(J0) and ρ_q(J3) against ρ_q(J5), and the floor's count drop.
 
-**Predictions** (ms; from 61c's J = 5 and §1):
+**Predictions** (registered before any row):
+1. **The floor minimum's count drop at J = 0.** F(G250) − F(G2 100) at W 12 is 2.8–4.5 ms at J = 5 today. The c1s
+   pre-read gives about 0.1 ms on a jitter-free line (≈ 0.035 ms per doubling, three doublings).
+   - **< 0.5 ms** means jitter sampling: the drop is netem's jitter.
+   - **≥ 1.5 ms** means a non-netem spread (echo timing) or drift.
+   - In between is UNRESOLVED.
+2. **The dump's count-flatness test for the chosen statistic.** Subsampling the dumped floor windows to m = 60 …
+   4 200 samples, Q₅₀ and the IQR stay within 0.05·IQR of their 4 200-sample value for every m at which
+   m_acks·0.25 ≥ 5. The minimum fails the same test.
+3. **ρ_q shape-free along jitter:** ρ_q(J0) = ρ_q(J3) = ρ_q(J5) within Δ.
+   - The post-hoc stand-in reads 0.86–0.88 at J5. The stand-in is not the IQR, so no IQR value is predicted, only
+     the equality.
+   - A J-dependent ρ_q means the spread does not carry the knee even at fixed rate and delay.
+4. **The J = 0 rehearsal reports netem reordering** (the receiver's out-of-order count, as `lib.sh`'s FIFO note
+   measured it). The prediction is 0, since `rate` keeps netem FIFO with or without jitter. Any reorder stops the
+   cell before 62a.
 
-| sentence | equal-n L at J 0 / 3 / 5 |
-|---|---|
-| constant (in the registered convention: need 4.4 at every J) | 8.9 / 8.9 / 8.9 |
-| 2J-scaled | ≈ rate queue only / ≈ 5.3 / 8.87 |
-| S_F-scaled | 0.91–1.20 × S_F(J) (registered-count S_F) |
+**Row timeout at W 12.**
+- Eight complete G(2 100) groups (for the minimum-based readings) need ≈ 16 800 LATE samples. At ≈ 240 samples/s
+  that is ≈ 70 s of LATE after 15 s, so a ≈ 85 s transfer.
+- 15 MB took 58.7 s, so that is ≈ 22 MB. **Use 25 MB with a 150 s timeout** (61b's), a 1.6–1.8× margin.
+- At J = 0 the loop is shorter, so rows finish sooner.
 
-- Only L is predicted. Registered and native need are L − N, and N(J) is not predicted: N is not
-  spread-proportional (×2.75 against ×1.91 for S_F, §1.2). Both are printed, decide nothing, and are read as data
-  on N.
-- A constant-L reading would be the surprise. Under the registered counts, constant still predicts need 4.4 at
-  every J, which tests §1.1's lead directly.
-
-- At J 0, 2J-scaled and S_F-scaled separate if S_F(J0) is ≥ 1 ms. The §1.2 extra echo spread predicts several ms.
-- The predicted half-width of L is ≈ 0.3–0.5 ms (61c's per-replicate spread), so J 0 and J 3 each separate constant
-  from either spread form by ≥ 3 ms.
-
-**Cost.**
-- VM: two rehearsals (pilot rows) and two launches of ≈ 45 rows, each ≈ 1 h rows + 20 min overhead, so ≈ 3 h.
-- A tools-only harness change (cell names, the longer floor rows), done by a Sonnet worker with stub runs.
-- Registration review rounds.
-- No build: the same binary.
-
-**Not covered.** c1s's knee (its controls collapse under the current rule, CR61 at large pools) and c8's coupling.
-J = 0 on the c3 line is the cheaper discriminator for c1s's question, constant against jitter-derived.
+**Cost.** ≈ 3 h of VM (two rehearsals, two ≈ 45-row launches, two dump passes), a tools-only harness change by a
+Sonnet worker, and the registration's review rounds. No rebuild.
 
 ---
 
-## 5. Q5: the F07 ledger update (proposed diff; not committed to the ledger)
+## 6. F07 ledger update (proposed diff against `law-ledger.yaml`; not committed)
 
-Against `docs/derivations/law-ledger.yaml` (the source `law-ledger/render.py` reads). The tags are unchanged and in
+`law-ledger.yaml` is unchanged on main since `4559bbee`, so the diff applies as written. The tags stay in
 `render.py`'s `TAGS`. Re-render `law-ledger.md` after applying.
 
 ```diff
@@ -458,46 +425,28 @@ Against `docs/derivations/law-ledger.yaml` (the source `law-ledger/render.py` re
 +  formula: "T*_i = Phi_i + A_i + S_i ; registered A_i = sigma_i + q(delta)*l_i ; decided A_i = g(delta)*S_F,i + q(delta)*F-hat_i, g(Bulk) = 1 ; one leg: Tmin(n*) = F + A"
 @@
 -  regime: "s60 c2 (status §60, store-law-r68.md §1): the knee needs Tmin 4.05 ms above the converged floor (E = 0.18 +- 0.03); the allowance supplies 1.79 + 0.56 = 2.34; D = +1.692 ms [+1.588, +1.836], SHORT on both bracket arms; R~67 crosses below W160 on 6/6 replicates at every delta. c8's landing is set by the half-gap coupling (> 512 under every form); c1s has no knee bracket"
-+  regime: "s60 c2 (status §60, store-law-r68.md §1): the knee needs Tmin 4.05 ms above the floor; sigma + q*l-hat supplies 2.34, D = +1.692 ms [+1.588, +1.836], SHORT. s61 c3 (status §61a re-run Result): need_3 4.43 ms, rho_3 = need/S_F = 0.457 [0.409, 0.483] against rho_2 0.797, DISAGREES (S_F is not the knee's term); every candidate COVERED at c3 (Bulk D -2.69 to -10.57). knee-margin-rederive.md: need = L - N mixes the load rise at equal sample count L (c3/c2 x1.41-1.89 over two c3 sessions and two floor positions, jitter-sized) with the floor's sample-count drop N (x2.24-2.75); constant-in-ms holds only under s61's registered counts. c8's landing is coupling-set (> 512); c1s has no knee bracket"
++  regime: "s60 c2 (status §60, store-law-r68.md §1): need 4.05 ms; sigma + q*l-hat supplies 2.34, D = +1.692 ms [+1.588, +1.836], SHORT. s61 c3 (status §61a re-run Result and its Erratum 1): rho_3 0.457 [0.409, 0.483] against rho_2 0.797, DISAGREES under the registered counting; every candidate COVERED at c3. The window minimum depends on its sample count and does not flatten (c3 floor -7.3 to -9.5 ms native -> 4 200 samples), so need is estimator-dependent (knee-margin-rederive.md §2); under per-window quantiles rho_q also differs across the cells (p50 over p90 - p10: d +0.20 / +0.22 on both c3 sessions). c8's landing is coupling-set (> 512); c1s has no knee bracket"
 @@
 -  fix_class: "owner call (U2: a delta-free spread term, a delta-scaled knee term, or a re-declared q band), then a law change needing a battery; a measured-spread branch (S_F + q(delta)*F-hat, no candidate yet fully provenanced) needs one c3 static sweep first (store-law-r68.md §3)"
-+  fix_class: "owner call (knee-margin-rederive.md §6: keep g(delta)*S_F + q(delta)*F-hat as a two-cell cover with a need/A slack gauge, or fix the estimator's sample-count and floor-position rule and register the jitter-only c3 cell, §4), then a law change needing a battery; DISHONEST-INPUT leaves with E13's fix (q*F-hat in place of q*l-hat)"
++  fix_class: "estimator first (R6.7 open item 4): a count-free statistic for floor, operating point and spread (proposed: window median and IQR on native windows, knee-margin-rederive.md §2.4), confirmed out of sample (s62 sketch, §5), then the allowance's form, then a law change needing a battery; DISHONEST-INPUT leaves with E13's fix (q*F-hat in place of q*l-hat)"
 @@
 -  evidence: "s60 C2-SHORT: D = +1.692 ms [+1.588, +1.836] on a CONVERGED floor (status §60 Result item 1); delta's whole authority is 0.28 ms (~5 slots) against a 31-slot shortfall; fixed forms reach the knee only through a constant fitted at c2 Bulk (c_B 2.26 ms, q' 0.26)"
-+  evidence: "s61 DISAGREES (status §61a re-run Result): rho_3 0.457 [0.409, 0.483] vs rho_2 0.797, d_rho -0.340 [-0.396, -0.311] against Delta 0.085, not FLOOR-SENSITIVE; sigma-scaled separable (+0.320); the decided form covers both cells as a bound (Bulk D -1.90 at c2, -9.17 at c3) but its sentence is refuted, so S_F is a measured cover, not a derived term. s60 C2-SHORT for the sigma family: D = +1.692 ms [+1.588, +1.836]; need - sigma is +2.26 at c2 and -0.34 at c3, so A(c)'s sigma + c_B shape fails"
++  evidence: "s61 DISAGREES (status §61a re-run Result; Erratum 1 withdraws 'S_F is not the knee's term' and 'constant in ms'): d_rho -0.340 [-0.396, -0.311] against Delta 0.085 under the registered counting. On bands spanning both c3 sessions, need_3/need_2 is [0.96, 1.22] registered, [0.85, 1.10] engine-native, [1.30, 1.64] at one count: what need scales with depends on the counting. s60 C2-SHORT for the sigma family (D = +1.692 ms); need - sigma is +2.26 at c2 and -0.34 at c3, so A(c)'s sigma + c_B shape fails"
 ```
 
-`verdicts` is unchanged and keeps both tags:
-- UNDERIVED, because no term of either form has a derived knee sentence;
-- DISHONEST-INPUT, because the registered σ + q·ℓ̂ still reads ℓ̂ (E13). It leaves when the decided form's q·F̂
-  replaces q·ℓ̂.
-
-The `derivation:` field stays. `measured`, `gauge`, `depends_on` and `ships_with` are unchanged.
+- `verdicts` is unchanged: [UNDERIVED, DISHONEST-INPUT].
+- DISHONEST-INPUT stays while the registered σ + q·ℓ̂ reads ℓ̂ (E13).
+- `derivation:`, `measured`, `gauge`, `depends_on` and `ships_with` are unchanged.
 
 ---
 
-## 6. Owner decisions
+## 7. Owner question
 
-1. **Which form does the allowance take now?**
-   - **(a) Keep A = g(δ)·S_F + q(δ)·F̂ as a two-cell cover** (§2.1). It covers both cells with no estimator change and
-     its c1s size is sane. The cost is over-allocation on long loops (c3 Bulk lands 9.2 ms above its knee, W\* 150
-     against 109). F07 stays UNDERIVED, and a need/A slack gauge goes on the battery.
-   - **(b) Fix the estimator's convention first** (one sample count for both minima, and where F̂ is read in load),
-     then run §4's jitter-only cell to choose the knee's carrier (2J-proxy, S_F, or p90 − p10) at equal n (form J,
-     §2.2). That is ≈ 3 h of VM plus a design item (R6.7 items 1 and 4).
-   - (c) A declared constant c_K ≈ 4.5 ms. It has no sentence, it fails R-sign at c1s in direction, and it holds
-     only under one counting convention.
-   - **Recommendation: (a) now as the engine form's allowance, and (b) as the next store-law measurement.** (a) is
-     the cheapest correct cover and is reversible. (b) is the only route to a derived knee term, and its convention
-     question must be answered before any further knee sweep, since the convention flips the ranking.
-2. **g's Realtime end: choose it from the price tables, not from a ratio.** No single g_R lands Realtime at the knee
-   at both cells (g_knee 0.711 at c2 and 0.256 at c3, under the registered counts).
-   - Options: g_R ≥ 0.71 (Realtime at or above every measured knee; c3 Realtime Tp50 ≈ 66 against 55 ms at its knee),
-     or g_R lower with Realtime below the knee on short loops (c2 g_R 0.25: u 0.65, Tp50 ≈ 15.5 ms).
-   - **Recommendation: g_R = 0.71 until the §4 cell reads.** It is the one value that keeps Realtime off the
-     goodput cliff at both measured cells. Lowering it is your U3-style trade, and the price tables carry it.
-3. **The counting convention for every future knee reading** (needed by 1(b) and by §4): registered (s61's), engine-native,
-   or equal n.
-   - **Recommendation: equal n, with floor rows long enough for ≥ 8 groups at the knee's count.** It is the only
-     convention under which need is a path property (L). Today's c3 floor holds 4 groups per W 12 row at that count,
-     which is why its intercept is the weakest reading here.
+**Spend ≈ 3 h of VM on s62 (§5)?**
+- It comes after design review of §2's statistic (window median and IQR on native windows). That review is not an
+  owner question.
+- s62 is the out-of-sample test the statistic needs: is the knee's median rise a fixed fraction of the floor IQR along
+  the jitter axis, and is the floor's count drop jitter sampling?
+- The alternative is to hold the store-law track until the estimator design is reviewed, and to register s62 then.
+- **Recommendation:** run s62 once the review accepts the statistic. Nothing in the engine waits on it today (decision
+  8's form is not in the engine), so the order costs nothing.
