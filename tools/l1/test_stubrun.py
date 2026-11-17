@@ -1217,7 +1217,7 @@ def case61(plan, path):
         check(f"{tag}: the score prints a VERDICT61 line counting every slot, with every row live and none replaced, and the labelled readouts (LABEL61 lines)",
               m is not None and int(m.group(1)) == len(want_slots) and int(m.group(3)) == len(led) and int(m.group(4)) == 0 and int(m.group(5)) == 0 and "LABEL61 " in sc, sc[-1200:])
         check(f"{tag}: the score read the plan's own cell and the readings it owns ({'CR61, the floor, the knee, RHO and D per candidate' if plan == '61a' else 'CR61, the drift reading, the price and landing tables'})",
-              ("CR61 c3" in sc and "LABEL61 RHO " in sc and ("FLOOR POOL" in sc if FULL else ("FLOOR POOL" in sc or "CONTROL-MOVED" in sc))) if plan == "61a" else ("CR61 c2" in sc and "DRIFT c2" in sc and "LANDING c2" in sc and "LABEL61 DRIFT-c2 " in sc), sc[:1500])
+              ("CR61 c3" in sc and "LABEL61 RHO " in sc and (("FLOOR POOL" in sc and "RHO c3 =" in sc and "LABEL61 D-S-Bulk " in sc) if FULL else ("FLOOR POOL" in sc or "CONTROL-MOVED" in sc))) if plan == "61a" else ("CR61 c2" in sc and "DRIFT c2" in sc and "LANDING c2" in sc and "LABEL61 DRIFT-c2 " in sc), sc[:1500])
         check(f"{tag}: DONE-ALL and score.txt", os.path.exists(os.path.join(run_dir, "DONE-ALL")) and os.path.exists(os.path.join(run_dir, "score.txt")), tail(e, 12))
         if path == "prebuilt":
             check(f"{tag}: LD_BIN_PREBUILT installed the prior launch's binary (no cargo build) and its sha was still checked against the registered one", builds == [] and "binary prebuilt from" in e and ("equals the registered value " + sha) in e, tail(e, 8))

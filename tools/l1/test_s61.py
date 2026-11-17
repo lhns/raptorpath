@@ -14,6 +14,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import json  # noqa: E402
 for _k in ("LD_PLAN", "LD_KNEE61", "LD_CTL61", "LD_REHEARSE", "LD_NOGO"):
     os.environ.pop(_k, None)
 import plan61  # noqa: E402
@@ -96,9 +97,9 @@ def mk(W, gp, rtt, tmin=30.0, p90=33.0, q=0.0):
     return CR(W, gp, rtt, tmin, p90, q)
 
 
-healthy_floor = [mk(12, 2.0, [31.0] * 100 + [32.0] * 10) for _ in range(3)]
+healthy_floor = [mk(12, 2.0, [31.0] * 80 + [32.0] * 30) for _ in range(3)]      # tmin 30: e_own 1.0 on 80 ticks, 2.0 on 30 -> E50 1.0, E90 2.0
 x_own, e50, e90, nref = s.x_own_from(healthy_floor)
-check("X_own = E90 + 2 (E90 - E50), the medians over the reference rows of each row's own percentile of e_own (E50 1.0, E90 2.0 -> 4.0)", nref == 3 and near(e50, 1.0) and near(e90, 1.0) or (near(e50, 1.0) and near(x_own, e90 + 2 * (e90 - e50))), (x_own, e50, e90))
+check("X_own = E90 + 2 (E90 - E50), the medians over the reference rows of each row's own percentile of e_own: E50 1.0, E90 2.0 -> X_own 4.0 (absolute)", nref == 3 and near(e50, 1.0) and near(e90, 2.0) and near(x_own, 4.0), (x_own, e50, e90))
 ctl_row = mk(2048, 17.0, [230.0] * 100, tmin=229.5, p90=231.0)      # a standing queue: rtt and tmin both ~ 230 ms
 others = [mk(2048, 17.0, [230.0] * 100, tmin=229.5, p90=231.0) for _ in range(3)]
 s.cr61([ctl_row] + others, 88, x_own)
@@ -146,24 +147,56 @@ fz = s.c2_frozen_summary()
 check("c2's floor: F 8.679, S_F 5.083 and the margin Delta = q_R F / S_F = 0.085; W95 per replicate 165.7-169.7 gives the needs 3.901-4.113",
       round(fz["F"], 3) == 8.679 and round(fz["S"], 3) == 5.083 and round(fz["delta"], 3) == 0.085 and round(min(s.C2_FROZEN["knee_tmin"]) - fz["F"], 3) == 3.901 and round(max(s.C2_FROZEN["knee_tmin"]) - fz["F"], 3) == 4.113,
       (fz, min(s.C2_FROZEN["knee_tmin"]) - fz["F"]))
-check("c2's frozen X_own is 10.66 ms and the drift references are tmin 12.33 / u 0.930", s.X_OWN_C2 == 10.66 and s.DRIFT_TMIN == 12.33 and s.DRIFT_U == 0.930)
+check("c2's frozen constants (pinned values; their derivation from the s60 rows is the HOST block below): X_own 10.66 ms, drift references tmin 12.33 / u 0.930", s.X_OWN_C2 == 10.66 and s.DRIFT_TMIN == 12.33 and s.DRIFT_U == 0.930)
 
-# host only: recompute the frozen inputs from the committed tgz and r68allow.py (docs/l1-raw is export-ignored: skipped in an archive, and on a branch without r68allow.py)
+# host only: recompute the frozen inputs from the committed tgz (docs/l1-raw is export-ignored: skipped in an archive; S61_S60_DIR points at a directory holding the two tgz when the tree has none)
+S60DIR = os.environ.get("S61_S60_DIR") or os.path.join(HERE, "..", "..", "docs", "l1-raw", "s60")
+TGZ = [os.path.join(S60DIR, n) for n in ("rep60a-diag-ld.tgz", "rep60b-diag-ld.tgz")]
 SL = os.path.join(HERE, "..", "..", "docs", "derivations", "store-law")
-TGZ = [os.path.join(HERE, "..", "..", "docs", "l1-raw", "s60", n) for n in ("rep60a-diag-ld.tgz", "rep60b-diag-ld.tgz")]
-if all(os.path.exists(p) for p in TGZ) and os.path.exists(os.path.join(SL, "r68allow.py")):
-    sys.path.insert(0, SL)
-    import s61pred as sp  # noqa: E402
-    ra = sp.ra
-    rows = ra.load(TGZ)
-    reps = ra.rep_map(rows, ra.C2)
-    kt = sorted(ra.at_knee(ra.C2, wm, ra.knee(ra.C2, wm), lambda r: r.m(0, "tmin")) for wm in reps.values())
-    fl = sorted(sp.row_SF(r, 0, None)[:2] for r in sp.grows(rows, ra.C2) if r.W == 16 and r.late(0))
-    g8 = {w: [tuple(sp.row_SF(r, 0, 800)[:2]) for r in sp.grows(rows, ra.C2) if r.W == w and r.late(0)] for w in (16, 32, 48)}
-    check("HOST: the frozen c2 inputs equal s61pred's recomputation from the s60 tgz (six knee tmins, six floor pairs, the G(800) rows)",
-          all(abs(a - b) < 1e-9 for a, b in zip(kt, s.C2_FROZEN["knee_tmin"])) and fl == sorted(s.C2_FROZEN["floor_pairs"]) and g8 == s.C2_FROZEN["g800"])
+if os.path.exists(TGZ[0]):
+    import re as _re
+    import tarfile
+    NAME = _re.compile(r"diag-ld/(c2-100)@def-(G)(\d+)-s(\d+)-r(\d+)-a\d+-(c\.log|drv\.out)$")
+    raw = {}
+    with tarfile.open(TGZ[0]) as tf:
+        for mb in tf:
+            g_ = NAME.search(mb.name)
+            if g_ and mb.isfile():
+                raw.setdefault((int(g_.group(3)), g_.group(4), int(g_.group(5))), {})[g_.group(6)] = tf.extractfile(mb).read().decode("utf-8", "replace").splitlines()
+    real = []
+    for (w_, sd_, rp_), dd in sorted(raw.items()):
+        cli_, drv_ = dd["c.log"], dd.get("drv.out", [])
+        gp_ = next((json.loads(ln).get("mean_mbps") for ln in drv_ if ln.startswith("{") and '"summary":true' in ln), None)
+        real.append(s.Row({"cell": "c2-100", "arm": "G%d" % w_, "seed": sd_, "rep": rp_, "status": "LIVE", "dnf": False, "mbps": gp_, "t60": s6.row_metrics(cli_, [], drv_, None, "c2-100", "G%d" % w_, gp_),
+                           "t61": s.row_extras(cli_, [], drv_, "c2-100")}))
+    w16 = [r for r in real if r.W == 16]
+    xo = s.x_own_from(w16)
+    check("HOST real rows: X_own from the six s60 c2 W 16 rows is 10.66 (E50 4.95, E90 6.86): the frozen constant is the code's own result on the rows", len(w16) == 6 and round(xo[0], 2) == 10.66 and round(xo[1], 2) == 4.95 and round(xo[2], 2) == 6.86, xo)
+    s.cr61(real, 160, 10.66)
+    check("HOST real rows: CR61 over every s60 c2 G row (6 x 8 arms, frozen X_own 10.66, K1 160) flags 0 of 48 (s61pred.out section 4c)", len(real) == 48 and sum(1 for r in real if r.flag) == 0, [(r.arm, r.rep) for r in real if r.flag])
+    reps = {}
+    for r in real:
+        reps.setdefault(r.key, {})[r.W] = r
+    ctl_ = {k: v[2048].gp_() for k, v in reps.items()}
+    kns = [s.knee_of(rw, ctl_[k], 160, 192, lambda r: r.native_tmin(), (160, 176, 192), 256, 2048, None) for k, rw in sorted(reps.items())]
+    check("HOST real rows: knee_of over the six replicates gives W95 165.7-169.7 and Tmin(W95) equal to the frozen knee minima (the r68allow reading), every replicate scoreable at K1 160 / K3 192",
+          all(k["scoreable"] for k in kns) and round(min(k["w95"] for k in kns), 1) == 165.7 and round(max(k["w95"] for k in kns), 1) == 169.7
+          and all(abs(a - b) < 1e-9 for a, b in zip(sorted(k["tmin"] for k in kns), s.C2_FROZEN["knee_tmin"])), [(k["w95"], k.get("tmin")) for k in kns])
+    fl_real = sorted(s.reading(r.w61(s.NK_NATIVE), None)[:2] for r in w16)
+    check("HOST real rows: the native floor (S_F, F) pairs of the six W 16 rows equal the frozen pairs", fl_real == sorted(s.C2_FROZEN["floor_pairs"]))
+    if os.path.exists(os.path.join(SL, "r68allow.py")):
+        sys.path.insert(0, SL)
+        import s61pred as sp  # noqa: E402
+        ra = sp.ra
+        rows_ = ra.load(TGZ)
+        reps_ = ra.rep_map(rows_, ra.C2)
+        kt = sorted(ra.at_knee(ra.C2, wm, ra.knee(ra.C2, wm), lambda r: r.m(0, "tmin")) for wm in reps_.values())
+        g8 = {w: [tuple(sp.row_SF(r, 0, 800)[:2]) for r in sp.grows(rows_, ra.C2) if r.W == w and r.late(0)] for w in (16, 32, 48)}
+        check("HOST: the frozen c2 inputs equal s61pred's recomputation (six knee tmins, the G(800) rows)", all(abs(a - b) < 1e-9 for a, b in zip(kt, s.C2_FROZEN["knee_tmin"])) and g8 == s.C2_FROZEN["g800"])
+    else:
+        print("skip HOST: s61pred recomputation (r68allow.py is not on this branch)")
 else:
-    print("skip HOST: the frozen c2 inputs vs the s60 tgz (docs/l1-raw/s60 or r68allow.py absent: an archive, or a branch without the r68 files)")
+    print("skip HOST: the frozen c2 inputs vs the s60 tgz (no docs/l1-raw/s60 here and S61_S60_DIR unset: an archive)")
 
 
 # ═══ 7. row_extras on a gauge log, the scorer end to end ═══
@@ -241,6 +274,7 @@ check("synthetic c3 (tmin = 33 + 8 (W / 86.5)^3, S_F 10, so need at the knee ~ 8
 import re  # noqa: E402
 mr = re.search(r"^RHO c3 = ([\d.]+)", txt, re.M)
 check("... with rho_3 within 0.1 of 0.8 (the toy model's knee window minimum), a floor pool W 12 and 6 scoreable replicates", mr is not None and abs(float(mr.group(1)) - 0.8) < 0.1 and "FLOOR POOL W12" in txt and "SCOREABLE replicates 6" in txt, txt[-2000:])
+check("... the floor reading divides by the SESSION median control goodput and the gates' tau is 0.05 S_F,c (S_F,c 10 -> 0.50), printed after the floor reading", "against the session median control 17.30 Mbit/s" in txt and "tau 0.50 = 0.05 S_F,c" in txt, txt[:2500])
 check("... the D table prints every candidate at Bulk / Auto / Realtime and the landing table prints W*(g, delta); the price table has u, tmin, tp50 per arm",
       all(f"D {q}" in txt for q in ("Bulk", "Auto", "Realtime")) and "LANDING c3" in txt and "PRICE c3-25" in txt and "LABEL61 D-S-Bulk" in txt, txt[-1500:])
 rc, txt = run_score(synth_ledger(rise=4.0))
@@ -262,6 +296,39 @@ check("UNSCOREABLE-N: windows hold more samples than c2's reference allows (20 p
       re.search(r"^LABEL61 RHO UNSCOREABLE-N", txt, re.M) is not None and re.search(r"PARITY floor n \d+ \(ABOVE", txt) is not None and "RHO c3 =" not in txt, txt[-900:])
 rc, txt = run_score(synth_ledger(reps=4))
 check("fewer than 5 scoreable replicates is UNSCOREABLE (4 replicates: the control still has 4 unflagged rows)", "LABEL61 RHO UNSCOREABLE" in txt, txt[-500:])
+
+os.environ["LD_NOGO"] = "floor"
+rc, txt = run_score(synth_ledger())
+del os.environ["LD_NOGO"]
+check("a floor NO-GO (LD_NOGO=floor, the rehearsal's decision): the floor is W 16 for the whole of 61a, reported as the registered rule, and the scorer still scores", "FLOOR POOL W16 (registered floor NO-GO" in txt and "LABEL61 RHO " in txt and "W12: G(250)" not in txt, txt[:1500])
+
+
+# the rehearsal's decisions (section 6) on synthetic rows R1-R6; every NO-GO branch executes
+def rh(dnf=(), loss=None, gp_scale=None):
+    rows = []
+    for i, (W_, sd_, rp_) in enumerate(((2048, "42", 1), (12, "42", 1), (12, "7", 2), (88, "42", 1), (128, "42", 1), (512, "42", 1))):
+        r = synth_row(plan61.C3, W_, rp_, sd_, dnf=(W_, sd_) in dnf)
+        if loss and W_ in loss:
+            r["t61"]["loss"] = loss[W_]
+        if gp_scale and W_ in gp_scale:
+            r["mbps"] *= gp_scale[W_]
+        rows.append(s.Row(r, i))
+    out_ = []
+    dec, w = s.rehearsal(rows, out_.append)
+    return dec, w, "\n".join(out_)
+
+
+dec, w, txt = rh()
+check("rehearsal, all healthy: floor GO, control GO (R1 17.30 >= 0.98 x max(R4, R5, R6)), PILOT61 names W-hat from u88 = 0.966 / u128 = 1.0 (the synthetic knee 86.5) and the arms",
+      dec == {"floor": True, "control": True} and w is not None and 85.0 < w < 88.0 and "PILOT61 W=" in txt and "GO-NOGO control GO" in txt and "GO-NOGO floor GO" in txt, txt)
+dec, w, txt = rh(gp_scale={2048: 0.9})
+check("rehearsal: R1 below 0.98 x max(R4, R5, R6) is a control NO-GO and the fallback W 512 (R6 passes the loss test) is named (LD_CTL61=512); the pilot reads against R6", dec["control"] is False and "set LD_CTL61=512" in txt and "(control W512)" in txt and w is not None, txt)
+dec, w, txt = rh(loss={2048: 0.09, 512: 0.09})
+check("rehearsal: R1 and R6 both fail the loss test: NOGO-CONTROL, PILOT61 none (61a does not launch: ABORT-PILOT)", "NOGO-CONTROL" in txt and w is None and "PILOT61 none" in txt, txt)
+dec, w, txt = rh(dnf={(88, "42")})
+check("rehearsal: a DNF pilot row leaves no W-hat (PILOT61 none)", w is None and "PILOT61 none" in txt, txt)
+dec, w, txt = rh(dnf={(12, "42"), (12, "7")})
+check("rehearsal: both floor rows DNF: floor NO-GO, the consequence (W 16, LD_NOGO=floor) is printed", dec["floor"] is False and "GO-NOGO floor NO-GO" in txt and "LD_NOGO=floor" in txt, txt)
 
 # 61b: c2's add-on
 def synth_c2(drift=0.0, reps=6):

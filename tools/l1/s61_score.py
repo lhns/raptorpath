@@ -490,8 +490,12 @@ class Score61:
         if drift == "DRIFT-OK":
             out("PRICE c2 merged with s60 (DRIFT-OK): s60's arms " + " | ".join(f"W{w}: u {v[0]:.3f} tmin {v[1]:.2f} tp50 {v[2]:.2f}" for w, v in sorted(C2_FROZEN["price"].items())))
         fz = c2_frozen_summary()
-        self.landing(price, fz["F"], fz["S"], None, None, "c2")
-        self.monotone(price, "c2")
+        merged = price
+        if drift == "DRIFT-OK":      # section 5.4: s60's arms (16 / 32 / 48 / 176 / 192 / 256) join the table when the session did not drift; 61b's own arms stand where both exist
+            merged = {w: {"u": v[0], "tmin": v[1], "tp50": v[2], "tmin_g": None, "n": 6, "ci": {}} for w, v in C2_FROZEN["price"].items() if w not in price}
+            merged.update(price)
+        self.landing(merged, fz["F"], fz["S"], None, None, "c2")
+        self.monotone(merged, "c2")
         return price
 
     # ─────────────────────────── c3 (61a) ───────────────────────────
@@ -575,17 +579,19 @@ class Score61:
         ok_rows = [r for r in rows if r.live and not r.flag]
         # ── floor pool, validity ──
         fl_by = self.by_w([r for r in rows if r.W in floors])
-        fpool, valid = floor_pool(fl_by, floors)
+        nogo = [x for x in os.environ.get("LD_NOGO", "").split(",") if x]
+        floors_eff = floors[1:] if ("floor" in nogo and len(floors) > 1) else floors      # section 6: a floor NO-GO moves the floor to W 16 for the whole of 61a
+        fpool, valid = floor_pool(fl_by, floors_eff)
         for w in floors:
             vs = fl_by.get(w, [])
-            out(f"FLOOR W{w}: valid {len(valid[w])}/{len(vs)} " + "; ".join(f"s{r.seed}r{r.rep} {floor_valid(r)[1]}" for r in vs if not floor_valid(r)[0]))
+            out(f"FLOOR W{w}: valid {len(valid.get(w, []))}/{len(vs)} " + "; ".join(f"s{r.seed}r{r.rep} {floor_valid(r)[1]}" for r in vs if not floor_valid(r)[0]))
         if fpool is None:
             out("UNSCOREABLE: no floor pool holds 3 valid rows")
             self.label("RHO", "NEEDS-MORE-floor-rows")
             return
         moved_pool = fpool != floors[0]
-        out(f"FLOOR POOL W{fpool}" + (f" (moved from W{floors[0]}: reported, section 4.2)" if moved_pool else ""))
-        pools_up = [w for w in floors if w >= fpool and valid[w]]
+        out(f"FLOOR POOL W{fpool}" + ((" (registered floor NO-GO, LD_NOGO=floor: the floor is W 16 for the whole of 61a)" if "floor" in nogo else f" (moved from W{floors[0]}: reported, section 4.2)") if moved_pool else ""))
+        pools_up = [w for w in floors_eff if w >= fpool and valid.get(w)]
         # ── per-row readings under G(250), native beside ──
         rd = {id(r): reading(r.w61(1), NSTAR_FLOOR) for w in pools_up for r in valid[w]}
         nat = {id(r): reading(r.w61(NK_NATIVE), None) for w in pools_up for r in valid[w]}
@@ -597,21 +603,22 @@ class Score61:
         pts_f = [(r.W, rd[id(r)][1]) for w in pools_up for r in valid[w]]
         pts_s = [(r.W, rd[id(r)][0]) for w in pools_up for r in valid[w]]
         s_pool = med([x[1] for x in pts_s if x[0] == fpool])
-        tau = TAU_FRAC * s_pool
-        gF, gS = gate(pts_f, fpool, tau), gate(pts_s, fpool, tau)
-        for nm, g in (("F", gF), ("S_F", gS)):
-            out(f"GATE {nm}: {g['label']} (tau {tau:.2f}; pools {g['pools']}" + (f"; b {g['b']:+.4f} +- {g['se']:.4f} ms/slot, E = b*W1 {g['E']:+.2f} +- {g['seE']:.2f})" if g["b"] is not None else ")"))
-        self.label("FLOOR-F-c3", gF["label"])
-        self.label("FLOOR-S-c3", gS["label"])
-        # ── u-matched floor ──
-        kappa = med([r.gp_() / (ctl.get(r.key) or ctl_m) / r.W for w in pools_up for r in valid[w] if (ctl.get(r.key) or ctl_m)])
-        w_star, f_c, s_c, floor_ok = u_matched(gF, gS, kappa, U2, w_lowest=min(pools_up))
+        # the floor reading first: S_F,c (the gate's own tau = 0.05 S_F,c, section 5.1) comes from the fitted lines, so the fits are taken before the labels; kappa divides by the SESSION median control goodput (section 5)
+        fit_f, fit_s = gate(pts_f, fpool, float("inf")), gate(pts_s, fpool, float("inf"))
+        kappa = med([r.gp_() / ctl_m / r.W for w in pools_up for r in valid[w]])
+        w_star, f_c, s_c, floor_ok = u_matched(fit_f, fit_s, kappa, U2, w_lowest=min(pools_up))
         if f_c is None:           # fewer than 2 pools: no line; the floor pool's medians stand (DECISION 5)
             f_c, s_c, w_star = med([x[1] for x in pts_f if x[0] == fpool]), s_pool, float(fpool)
             floor_ok = True
             out(f"FLOOR READING: fewer than 2 pools, the W {fpool} medians stand (DECISION 5): F_c {f_c:.3f} S_F,c {s_c:.3f}")
         else:
-            out(f"FLOOR READING at c2's utilisation: kappa {kappa:.5f} per slot, W* = {U2}/kappa = {w_star:.1f} (lowest valid pool W{min(pools_up)}); F_c {f_c:.3f} S_F,c {s_c:.3f}" + ("" if floor_ok else "  UNSCOREABLE-FLOOR"))
+            out(f"FLOOR READING at c2's utilisation: kappa {kappa:.5f} per slot (against the session median control {ctl_m:.2f} Mbit/s), W* = {U2}/kappa = {w_star:.1f} (lowest valid pool W{min(pools_up)}); F_c {f_c:.3f} S_F,c {s_c:.3f}" + ("" if floor_ok else "  UNSCOREABLE-FLOOR"))
+        tau = TAU_FRAC * s_c
+        gF, gS = gate(pts_f, fpool, tau), gate(pts_s, fpool, tau)
+        for nm, g in (("F", gF), ("S_F", gS)):
+            out(f"GATE {nm}: {g['label']} (tau {tau:.2f} = 0.05 S_F,c; pools {g['pools']}" + (f"; b {g['b']:+.4f} +- {g['se']:.4f} ms/slot, E = b*W1 {g['E']:+.2f} +- {g['seE']:.2f})" if g["b"] is not None else ")"))
+        self.label("FLOOR-F-c3", gF["label"])
+        self.label("FLOOR-S-c3", gS["label"])
         l_c = med([r.sixty("l") for w in pools_up for r in valid[w]])
         # ── parity at the knee side, the knee per replicate ──
         reps = {}
@@ -747,9 +754,10 @@ DECISIONS = [
     "8. SIGMA-DISCRIMINATION's sigma_3 is the median over scoreable replicates of sigma_r (native sig at the bracketing knee arms); sigma_2 = 1.785 and S_F,2 = 5.083 are frozen. Delta is min(c2's frozen 0.085, c3's q_R F_c / S_F,c).",
     "9. CR61's e_own is taken against the row's own native median LATE tmin; X_own at c3 comes from the W 12 rows in session (live, not DNF), at c2 it is frozen at 10.66. A row with no [DIAG] ticks is not flagged (nothing to read). The arm's median gp for the goodput cut is over the arm's live rows (DNF = 0).",
     "10. CONTROL-MOVED: fewer than 4 unflagged controls (live, not DNF); a flagged / missing control is replaced for its replicate's u by the median goodput of the unflagged ones. kappa = median over valid floor rows of u_row / W.",
-    "11. The rehearsal's floor go/no-go reads R2 / R3 on their own: X_own from the pair, 'goodput against their pair' = 0.95 x the pair's median; the control go/no-go uses [TRUTH] leg-0 loss (a fraction) against 0.0476 + 0.01. NOGO-CONTROL is a printed decision (LD_NOGO=control makes 61a refuse); a floor NO-GO sets LD_NOGO=floor (the floor moves to W 16 by the registered rule: the scorer's floor-pool rule already reads W 16 when W 12 fails).",
+    "11. The rehearsal's floor go/no-go reads R2 / R3 on their own: X_own from the pair, 'goodput against their pair' = 0.95 x the pair's median; the control go/no-go uses [TRUTH] leg-0 loss (a fraction) against 0.0476 + 0.01. NOGO-CONTROL is a printed decision (LD_NOGO=control makes 61a refuse); a floor NO-GO sets LD_NOGO=floor, which the scorer reads: the floor pool starts at W 16 for the whole of 61a (section 6), the W 12 rows stay in the ledger and the CR61 reference.",
     "12. Labels: LABEL61 RHO (AGREES / DISAGREES / UNRESOLVED / FLOOR-SENSITIVE / UNSCOREABLE / UNSCOREABLE-N / UNSCOREABLE-FLOOR / NEEDS-MORE-*), RHO-RAW (the scored label before FLOOR-SENSITIVE), FLOOR-F-c3 / FLOOR-S-c3 (the gates), D-<cand>-Bulk, SIGMA-DISCRIMINATION, CONTROL-<cell>, DRIFT-c2.",
     "13. An AGREES label whose |SIGMA-DISCRIMINATION| <= Delta is printed 'AGREES (S or sigma-scaled)' in the RHO line's text; the label word stays AGREES for the tools that read it (RHO-RAW).",
+    "15. S_F,c at c3 is the fitted line at W* (the gates' tau = 0.05 S_F,c needs it), so the OLS lines are taken first and the gate labels after; kappa divides by the SESSION median control goodput (section 5), not the replicate's own control. On DRIFT-OK the c2 landing table merges s60's arms (rounded medians frozen in C2_FROZEN['price']) with 61b's own; 61b's arms stand where both exist.",
     "14. The tables' per-arm 90 % intervals bootstrap the per-replicate values (2 000 draws, seed 61); a monotonicity check lists non-monotone arms; no threshold is scored in the price or landing tables.",
 ]
 __doc__ += "\nDECISIONS (every ambiguity and the reading taken):\n" + "\n".join("  " + d for d in DECISIONS) + "\n"

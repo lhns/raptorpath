@@ -10,7 +10,6 @@ the scorer's own tests are test_s61.py and the end-to-end launch paths run in te
 Run: python3 test_harness61.py"""
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
