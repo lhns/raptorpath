@@ -165,7 +165,7 @@ check("the env-propagation contract: the new variables (LD_BIN_CONTROL, LD_BIN_S
       "(LD_BIN, LD_SHA, LD_BIN_BASE, LD_SHA_BASE) rides the stage's SENV", all(v not in battery for v in ("LD_BIN_CONTROL", "LD_BIN_SHA_CAND", "LD_BIN_SHA_CONTROL"))
       and all(f'{v}="$' in runall.split("local SENV=(")[1].split(")")[0] for v in ("LD_BIN", "LD_SHA", "LD_BIN_BASE", "LD_SHA_BASE")))
 check("run_all and the battery guard the new files against CRLF", all(f in runall and f in battery for f in ("plan63.py", "test_harness63.py")))
-check("HARNESS_PATHS lists 63 with rehearse, full and the three ABORT paths + cand-fail, and neither prior-tests nor reuse paths", set(hp.HARNESS_PATHS["63"]) == {"rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail"})
+check("HARNESS_PATHS lists 63 with rehearse, full, the ABORT paths (missing / wrong CAND pin, wrong CONTROL pin, a prebuilt CAND), cand-fail, cand-noctld, and neither prior-tests nor reuse paths", set(hp.HARNESS_PATHS["63"]) == {"rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-prebuilt"})
 
 
 # ═══ 5. the engine-diff witness ═══
