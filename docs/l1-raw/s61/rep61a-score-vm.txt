@@ -1,0 +1,25 @@
+S61 SCORE plan=61a (c3 sweep; registration docs/derivations/s61-registration.md); ABORT-TOKENS none
+S61 SCORE plan=61a cell=c3-25 rows=66 replaced=0; floors (12, 16, 24) B (68, 92, 104) K (112, 124, 136) P1 176 control W2048; arms LD_KNEE61=119.5
+CR61 c3: X_own = 17.49 ms (E50 5.94, E90 9.79, from the 6 W 12 rows); COLLAPSED rows: G2048 s42 r1, G2048 s7 r2, G2048 s42 r3, G2048 s7 r4, G2048 s42 r5, G2048 s7 r6
+  CR61 G112 s42 r1: qshare=0.018 gp_low=0 ratio=0.90 -> ok
+  CR61 G176 s42 r1: qshare=0.005 gp_low=0 ratio=1.02 -> ok
+  CR61 G2048 s42 r1: qshare=0.000 gp_low=0 ratio=1.67 -> COLLAPSED
+  CR61 G112 s7 r2: qshare=0.014 gp_low=0 ratio=0.97 -> ok
+  CR61 G176 s7 r2: qshare=0.000 gp_low=0 ratio=0.95 -> ok
+  CR61 G2048 s7 r2: qshare=0.000 gp_low=0 ratio=1.90 -> COLLAPSED
+  CR61 G112 s42 r3: qshare=0.005 gp_low=0 ratio=0.89 -> ok
+  CR61 G176 s42 r3: qshare=0.000 gp_low=0 ratio=1.01 -> ok
+  CR61 G2048 s42 r3: qshare=0.000 gp_low=0 ratio=1.77 -> COLLAPSED
+  CR61 G112 s7 r4: qshare=0.000 gp_low=0 ratio=0.87 -> ok
+  CR61 G176 s7 r4: qshare=0.000 gp_low=0 ratio=0.95 -> ok
+  CR61 G2048 s7 r4: qshare=0.000 gp_low=0 ratio=1.78 -> COLLAPSED
+  CR61 G112 s42 r5: qshare=0.005 gp_low=0 ratio=0.91 -> ok
+  CR61 G176 s42 r5: qshare=0.005 gp_low=0 ratio=0.96 -> ok
+  CR61 G2048 s42 r5: qshare=0.000 gp_low=0 ratio=1.51 -> COLLAPSED
+  CR61 G112 s7 r6: qshare=0.023 gp_low=0 ratio=0.90 -> ok
+  CR61 G176 s7 r6: qshare=0.005 gp_low=0 ratio=0.97 -> ok
+  CR61 G2048 s7 r6: qshare=0.000 gp_low=0 ratio=1.86 -> COLLAPSED
+CONTROL c3 W2048: unflagged 0/6, median goodput -  CONTROL-MOVED: nothing at c3 is scored
+VERDICT61 REPORTED-WITH-SCORED slots=66/66 live=66 void=0 replaced=0 dnf=0 t60_missing=0 labels=2
+LABEL61 CONTROL-c3 CONTROL-MOVED
+LABEL61 RHO NEEDS-MORE-control-pool

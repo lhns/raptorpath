@@ -1,0 +1,91 @@
+S61 SCORE plan=61a (c3 sweep; registration docs/derivations/s61-registration.md); ABORT-TOKENS none
+S61 SCORE plan=61a cell=c3-25 rows=66 replaced=0; floors (12, 16, 24) B (68, 92) K (104, 112, 124) P1 136 control W2048; arms LD_KNEE61=119.5
+CR61 c3: X_own = 17.49 ms (E50 5.94, E90 9.79, from the 6 W 12 rows); COLLAPSED rows: none
+  CR61 G104 s42 r1: qshare=0.036 gp_low=0 ratio=0.93 -> ok
+  CR61 G136 s42 r1: qshare=0.000 gp_low=0 ratio=0.95 -> ok
+  CR61 G104 s7 r2: qshare=0.023 gp_low=0 ratio=0.94 -> ok
+  CR61 G136 s7 r2: qshare=0.000 gp_low=0 ratio=0.93 -> ok
+  CR61 G104 s42 r3: qshare=0.014 gp_low=0 ratio=0.93 -> ok
+  CR61 G136 s42 r3: qshare=0.000 gp_low=0 ratio=0.97 -> ok
+  CR61 G104 s7 r4: qshare=0.032 gp_low=0 ratio=0.94 -> ok
+  CR61 G136 s7 r4: qshare=0.000 gp_low=0 ratio=0.94 -> ok
+  CR61 G104 s42 r5: qshare=0.005 gp_low=0 ratio=1.04 -> ok
+  CR61 G136 s42 r5: qshare=0.000 gp_low=0 ratio=0.94 -> ok
+  CR61 G104 s7 r6: qshare=0.028 gp_low=0 ratio=1.05 -> ok
+  CR61 G136 s7 r6: qshare=0.000 gp_low=0 ratio=0.90 -> ok
+CONTROL c3 W2048: unflagged 6/6, median goodput 17.78
+FLOOR W12: valid 6/6 
+FLOOR W16: valid 6/6 
+FLOOR W24: valid 6/6 
+FLOOR POOL W12
+  W12: G(250) S_F 9.789 F 38.894 n/group 272 | native S_F 5.941 F 42.356
+  W16: G(250) S_F 9.222 F 39.005 n/group 296 | native S_F 6.537 F 41.829
+  W24: G(250) S_F 9.560 F 39.827 n/group 332 | native S_F 7.119 F 41.852
+FLOOR READING at c2's utilisation: kappa 0.00974 per slot (against the session median control 17.78 Mbit/s), W* = 0.112/kappa = 11.5 (lowest valid pool W12); F_c 38.682 S_F,c 9.563
+GATE F: NOT-CONVERGED (tau 0.48 = 0.05 S_F,c; pools [12, 16, 24]; b +0.0895 +- 0.0240 ms/slot, E = b*W1 +1.07 +- 0.29)
+GATE S_F: UNRESOLVED (tau 0.48 = 0.05 S_F,c; pools [12, 16, 24]; b -0.0221 +- 0.0267 ms/slot, E = b*W1 -0.26 +- 0.32)
+PARITY floor n 296 (IN, band (226, 353)); knee n 2354 (IN, band (1874, 2928))
+  KNEE s42r1: W95 109.7 Tmin(W95) 43.509 sig 4.916 SCOREABLE
+  KNEE s7r2: W95 108.3 Tmin(W95) 42.843 sig 4.908 SCOREABLE
+  KNEE s42r3: W95 108.8 Tmin(W95) 43.646 sig 5.054 SCOREABLE
+  KNEE s7r4: W95 107.4 Tmin(W95) 42.432 sig 4.834 SCOREABLE
+  KNEE s42r5: W95 106.8 Tmin(W95) 42.833 sig 5.014 SCOREABLE
+  KNEE s7r6: W95 107.6 Tmin(W95) 43.273 sig 4.678 SCOREABLE
+SCOREABLE replicates 6 (need >= 5)
+B1 (reported only): a floor row's median LATE err > 0: 0/18 fire (predicted 0-3 of 18); margins -err: +8.50 +8.16 +0.41 +3.53 +4.64 +6.90 +5.54 +4.56 +2.36 +3.83 +0.63 +4.24 +101.25 +3.71 +8.43 +9.04 +2.49 +6.11
+NATIVE (decides nothing): per-window estimator as the engine would see it: W12: tmin 42.356 tp50 48.470 | W16: tmin 41.829 tp50 48.501 | W24: tmin 41.852 tp50 49.171 | W68: tmin 42.385 tp50 51.151 | W92: tmin 43.792 tp50 52.561 | W104: tmin 45.437 tp50 54.388 | W112: tmin 46.774 tp50 56.901 | W124: tmin 50.504 tp50 62.204 | W136: tmin 55.659 tp50 68.284 | W176: tmin 74.978 tp50 87.862 | W2048: tmin 1020.592 tp50 1035.073
+L (printed per arm): W12: l 33.067 | W16: l 32.883 | W24: l 33.537 | W68: l 34.225 | W92: l 37.450 | W104: l 37.511 | W112: l 38.573 | W124: l 40.794 | W136: l 42.510 | W176: l 46.124 | W2048: l 45.329
+P1 (reported): b0p at P1 20.291 over b0p at the floor pool 7.427 = 2.73
+NATIVE rho_3 0.674 and D-S(Bulk) -6.19 ms over 6 replicates (F 42.028, S_F 6.085, native windows; reported only, decides nothing)
+PRICE c3-25 per arm (u, window minimum, Tp50; median over replicates, 90 % [bootstrap, 2000, seed 61]); flagged rows leave the medians:
+  W12    n=6 u 0.118 [0.117, 0.119] | tmin 42.356 [41.611, 42.611] (G(2100): 35.285) | tp50 48.470 [48.361, 48.668]
+  W16    n=6 u 0.155 [0.154, 0.156] | tmin 41.829 [41.438, 41.926] (G(2100): 35.085) | tp50 48.501 [48.026, 48.752]
+  W24    n=6 u 0.230 [0.228, 0.235] | tmin 41.852 [41.717, 41.959] (G(2100): 36.844) | tp50 49.171 [48.995, 49.380]
+  W68    n=6 u 0.640 [0.638, 0.642] | tmin 42.385 [42.211, 42.398] (G(2100): 39.454) | tp50 51.151 [51.041, 51.195]
+  W92    n=6 u 0.852 [0.844, 0.855] | tmin 43.792 [43.639, 43.930] (G(2100): 41.156) | tp50 52.561 [52.483, 52.650]
+  W104   n=6 u 0.934 [0.926, 0.936] | tmin 45.437 [45.329, 45.639] (G(2100): 42.397) | tp50 54.388 [54.362, 54.412]
+  W112   n=6 u 0.966 [0.963, 0.973] | tmin 46.774 [46.670, 46.888] (G(2100): 43.780) | tp50 56.901 [56.728, 57.243]
+  W124   n=6 u 0.995 [0.993, 0.998] | tmin 50.504 [50.143, 50.669] (G(2100): 45.374) | tp50 62.204 [62.135, 62.432]
+  W136   n=6 u 0.997 [0.991, 1.004] | tmin 55.659 [55.269, 55.842] (G(2100): 48.536) | tp50 68.284 [67.934, 68.413]
+  W176   n=6 u 1.002 [1.000, 1.006] | tmin 74.978 [74.162, 75.467] (G(2100): 65.394) | tp50 87.862 [87.221, 88.133]
+MONOTONE c3: u and tmin non-decreasing in W over the arms: NO, non-monotone at W 16
+RHO c3 = 0.458 90 % [0.413, 0.509] (need per replicate 4.827 4.161 4.964 3.750 4.151 4.591); c2 rho_2 = 0.797 90 % [0.780, 0.825] (frozen)
+DELTA-RHO = -0.339 90 % [-0.395, -0.286]; margin Delta = min(c2 0.085, c3 0.202) = 0.085 -> DISAGREES
+W->0: rho_3,0 0.551 (point, the intercept: F_c - b_F W*, S_F,c - b_S W*); d_rho_0 90 % [-0.395, -0.261] vs c2 rho_2,0 0.877 -> DISAGREES
+FLOOR-SENSITIVE: no (scored DISAGREES, W->0 DISAGREES)
+SIGMA-DISCRIMINATION = +0.368 (sigma_3 4.912, S_F,3 9.563); outside the margin: the sigma-scaled sentence is separable
+D per candidate (need_r - A, median over 6 replicates; 90 % bootstrap): Bulk is scored, Auto and Realtime reported
+  D  Bulk     q=0.1000: S -9.06 [-9.45,-8.57] COVERED | A0 -3.74 [-4.38,-3.20] COVERED | A0f -4.29 [-4.95,-3.71] COVERED | Ac -2.68 [-3.32,-2.13] COVERED | wq -10.48 [-11.18,-9.86] COVERED | W80 -9.92 [-10.47,-9.32] COVERED
+  D0 Bulk     q=0.1000 (W->0: D + b_F W*, reported; gates only FLOOR-SENSITIVE): S -8.03 [-8.66,-7.33] COVERED | A0 -2.71 [-3.65,-1.86] COVERED | A0f -3.26 [-4.24,-2.37] COVERED | Ac -1.65 [-2.61,-0.79] COVERED | wq -9.45 [-10.46,-8.51] COVERED | W80 -8.89 [-9.78,-7.94] COVERED
+  D  Auto     q=0.0667: S -7.77 [-8.16,-7.27] COVERED | A0 -2.63 [-3.27,-2.09] COVERED | A0f -3.00 [-3.65,-2.43] COVERED | Ac -1.93 [-2.57,-1.37] COVERED | wq -7.12 [-7.80,-6.53] COVERED | W80 -8.63 [-9.18,-8.04] COVERED
+  D0 Auto     q=0.0667 (W->0: D + b_F W*, reported; gates only FLOOR-SENSITIVE): S -6.74 [-7.36,-6.05] COVERED | A0 -1.60 [-2.55,-0.75] COVERED | A0f -1.97 [-2.94,-1.09] COVERED | Ac -0.90 [-1.85,-0.04] COVERED | wq -6.09 [-7.09,-5.19] COVERED | W80 -7.60 [-8.48,-6.66] COVERED
+  D  Realtime q=0.0500: S -7.12 [-7.52,-6.63] COVERED | A0 -2.08 [-2.72,-1.53] COVERED | A0f -2.35 [-3.01,-1.79] COVERED | Ac -1.55 [-2.19,-1.00] COVERED | wq -5.45 [-6.11,-4.87] COVERED | W80 -7.99 [-8.53,-7.40] COVERED
+  D0 Realtime q=0.0500 (W->0: D + b_F W*, reported; gates only FLOOR-SENSITIVE): S -6.09 [-6.71,-5.41] COVERED | A0 -1.05 [-2.00,-0.20] COVERED | A0f -1.32 [-2.29,-0.45] COVERED | Ac -0.52 [-1.48,+0.34] UNRESOLVED | wq -4.42 [-5.41,-3.52] COVERED | W80 -6.96 [-7.83,-6.02] COVERED
+HANDS TO THE OWNER (AGREES): rho_bar (pooled over both cells' replicates) 0.643 90 % [0.625, 0.664] (draw by draw, c3 and c2 resampled values pooled); g_knee c2 0.711 c3 0.255
+LANDING c3: W*(g, delta) with F_c 38.682 S_F,c 9.563 (no threshold is scored; the owner's call follows the table)
+  g=0       Bulk     target 42.55: W* 104.9 u 0.937 tmin 42.55 tp50 54.66
+  g=0       Realtime target 40.62: W* 84.4 u 0.785 tmin 40.62 tp50 52.11
+  g=0.25    Bulk     target 44.94: W* 120.7 u 0.987 tmin 44.94 tp50 60.76
+  g=0.25    Realtime target 43.01: W* 107.5 u 0.948 tmin 43.01 tp50 55.50
+  g=0.5     Bulk     target 47.33: W* 131.4 u 0.996 tmin 47.33 tp50 65.97
+  g=0.5     Realtime target 45.40: W* 124.1 u 0.995 tmin 45.40 tp50 62.25
+  g=g_knee  Bulk     target 44.99: W* 121.1 u 0.988 tmin 44.99 tp50 60.93
+  g=g_knee  Realtime target 43.06: W* 107.8 u 0.949 tmin 43.06 tp50 55.59
+  g=rho_bar Bulk     target 48.70: W* 136.4 u 0.997 tmin 48.70 tp50 68.48
+  g=rho_bar Realtime target 46.77: W* 129.3 u 0.996 tmin 46.77 tp50 64.88
+  g=1       Bulk     target 52.11: W* 144.5 u 0.998 tmin 52.11 tp50 72.44
+  g=1       Realtime target 50.18: W* 139.9 u 0.997 tmin 50.18 tp50 70.19
+VERDICT61 REPORTED-WITH-SCORED slots=66/60 live=66 void=0 replaced=0 dnf=0 t60_missing=0 labels=12
+LABEL61 CONTROL-c3 OK
+LABEL61 FLOOR-F-c3 NOT-CONVERGED
+LABEL61 FLOOR-S-c3 UNRESOLVED
+LABEL61 RHO DISAGREES
+LABEL61 RHO-RAW DISAGREES
+LABEL61 SIGMA-DISCRIMINATION SEPARABLE
+LABEL61 D-S-Bulk COVERED
+LABEL61 D-A0-Bulk COVERED
+LABEL61 D-A0f-Bulk COVERED
+LABEL61 D-Ac-Bulk COVERED
+LABEL61 D-wq-Bulk COVERED
+LABEL61 D-W80-Bulk COVERED
+rc 0

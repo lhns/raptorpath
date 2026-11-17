@@ -1247,6 +1247,97 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - 61a, with `LD_KNEE61` = the rehearsal's printed `PILOT61 W=`, plus `LD_CTL61` / `LD_NOGO` as the rehearsal prints them;
   - 61b, with `LD_BIN_PREBUILT`, which may run before 61a if the VM slot suits (§8).
 
+**§61a Result (2026-11-17; the c3 sweep ran clean and scored nothing: CONTROL-MOVED).**
+
+**In plain words.**
+- All 66 rows ran, on the registered binary, with no void, DNF or replaced row.
+- **The registered outcome is CONTROL-MOVED,** so nothing at c3 is scored. CR61's ratio clause flagged all six W 2 048 controls (ratio 1.51–1.90). By goodput and qshare those controls look healthy: 17.70–17.83 Mbit/s, qshare 0.
+- **The knee arms were also placed about 10 % too high.** So even without those flags, no replicate's knee falls inside the knee bracket.
+- **Both are defects in the registration's rules.** Why the c3 control's rtt tail is so wide is not diagnosed.
+- **A post-hoc bound,** read outside the registered rules: c3's knee margin is 0.31–0.56 of S_F, against c2's 0.80. The re-run (Amendment 2) is therefore not blind, and it is registered knowing that.
+
+**Runs.**
+- **Rehearsal:** launch 06:08:45Z, `REHEARSAL-PASS` 06:30:22Z.
+  - floor GO (2/2); control GO (R1 17.77 vs 17.40; loss 0.0486 ≤ 0.0576);
+  - pilot `PILOT61 W=119.5 u88=0.818 u128=0.985 case=straddle clamped=no`, giving K 112/124/136, B 68/92/104, P1 176.
+- **61a:** launch 06:31:18Z, with `LD_KNEE61=119.5` and the defaults `LD_CTL61` unset (the 2 048 control) and `LD_NOGO` empty, both as the rehearsal printed. Rows ran 06:47–07:53Z.
+  - `bin_sha` equals the registered `e410d640…`; suite-reuse HIT (`ref60`, 187 files);
+  - the python and bash tools tests pass on the VM, `test_s60` and `test_r_parse` included (`suites/TESTS.txt`, rc 0). The host failures of Amendment 1 were Windows-only;
+  - `VERDICT61 REPORTED-WITH-SCORED slots=66/66 live=66 void=0 replaced=0 dnf=0`;
+  - host cargo paused throughout.
+- **Reproduction:** the host re-score with `LD_KNEE61=119.5` matches the VM `score.txt` byte for byte.
+- **Ledger:** `docs/l1-raw/s61/`, scrubbed. It holds:
+  - the 61a ledger, era log, smoke check and both scores;
+  - the rehearsal (`rehearsal.tgz`);
+  - the post-hoc and path-exercise outputs named below.
+
+**Registered labels.** `LABEL61 CONTROL-c3 CONTROL-MOVED`; `LABEL61 RHO NEEDS-MORE-control-pool`.
+
+**Defect 1: CR61's ratio clause cannot separate health from collapse at a large control pool** (registration §4.1). This is a defect finding of the registration's collapse rule.
+
+| arm | E90_own / (p90 − tmin)_own, 6 rows | goodput |
+|---|---|---|
+| K₁ 112 | 0.87–0.97 | 17.06–17.33 |
+| K 124 / 136 | 0.89–0.97 | 17.62–17.85 |
+| P1 176 | 0.95–1.02 | 17.71–17.97 |
+| control 2 048 | **1.51–1.90** (E90_own 33.3–46.5 ms over 20.3–25.0 ms) | 17.70–17.83 |
+| rehearsal R1 2 048 | **1.57** (38.75 / 24.71) | 17.77 |
+| rehearsal R6 512 | 1.07 (23.89 / 22.24) | 17.75 |
+
+- **The 1.5 was declared post hoc on §60,** between c8's healthy 1.40 and c1s G r1's 1.82.
+  - Healthy c1s controls in §4c reach 1.32. The c3 controls span 1.51–1.90 at full goodput.
+  - At this pool the ratio does not separate, and c1s G r1's 1.82 lies inside c3's healthy range.
+- **c2's controls read 0.97–1.04** (§4c), so the defect does not reach 61b. c2's control also stands far above its BDP (a ≈ 195 ms standing queue), so "a large standing queue" alone does not explain c3.
+  - c3's ≈ 1.1 s standing queue near netem's 1 000-packet limit is the case the registration's own §2.3 worried about. It is a candidate cause, not diagnosed.
+- **The rehearsal's go/no-go missed it.** The floor go/no-go includes "not COLLAPSED (CR61)", but the control go/no-go does not. R1's ratio was 1.57.
+
+**Defect 2: the pilot's straddle case overshoots on a concave u(W)** (registration §2.2).
+- **The registration analysed only the secant case,** which reads about 4 % low. A straddle interpolates linearly between a point below 0.95 and a point on the plateau. On a concave curve that line reaches 0.95 later than the curve does.
+- **On c3:**
+  - the in-session u is W 92 0.852, W 104 0.934, W 112 0.966, W 124 0.995;
+  - per-replicate W₉₅ is 106.8–109.7, against Ŵ 119.5 (−8 % to −11 %, outside the registered −5 % to +14 %);
+  - 61a's own curve gives the same straddle (u₈₈ ≈ 0.817, u₁₂₈ ≈ 0.99, giving ≈ 119).
+- **On c2 (§60's curve):** a straddle between W 160 (0.930) and W 256 (1.002) gives ≈ 187, against the knee of 168 (+11 %).
+- **Consequence:** every replicate's W₉₅ lies below K₁ = 112, so all six are UNSCOREABLE (below-K1).
+
+**Post-hoc readings (NOT scored).** The ratio clause is lifted and every other rule is as registered (`posthoc-no-ratio-clause.txt`).
+- **Control and floor:**
+  - control OK 6/6, median 17.78;
+  - floor pool W 12, W\* 11.5, F_c 38.682, S_F,c 9.563;
+  - GATE F NOT-CONVERGED (b +0.0895 ± 0.0240 ms/slot); GATE S_F UNRESOLVED (b −0.0221 ± 0.0267);
+  - parity IN at both floor (296) and knee (2 396).
+- **Knee: 0 of 6 replicates scoreable** (below-K1).
+  - The printed Tmin(W₉₅) is K₁'s own G(2 100) row minimum. The knee interpolation runs over the K and P1 arms only (DECISION 4) and clamps at K₁, so the printed "chord" values are K₁'s.
+  - Since tmin rises with W and every W₉₅ lies in [104, 112], W 104's row minimum bounds need from below and K₁'s from above.
+  - Per replicate, ρ₃ lies in **[0.31–0.46, 0.50–0.56]**. These are point values with no interval, against ρ₂ 0.797 and Δ 0.085.
+- **The bound is labelled post hoc, not a verdict.** The re-run is registered knowing that ρ₃ likely falls well below ρ₂.
+- **Path exercise** (`path-exercise-k104.txt`; not a reading).
+  - W 104 is counted as K₁, with K 104/112/124 and P1 136, and the ratio clause is lifted. This runs the scorer's whole scored branch on real c3 rows for the first time: bootstrap, Δρ, W → 0, σ-discrimination, D and D₀ per candidate and hint, native ρ₃, and ρ̄'s CI.
+  - It runs to its labels with no error. The printed numbers fall inside the bounds above (ρ₃ 0.458), and they are not a result.
+- **B1** (reported only): 0/18 fire. One floor row, G12 s42 r5, has margin +101.2 ms, against 0.4–9.0 for the rest. It is listed and not investigated here.
+
+**§61 Amendment 2 (proposed; Fable's review pending): 61a re-run after a new rehearsal.** Each rule fix is justified on §60's rows, on the registration's own text, or on geometry. None uses 61a's knee values.
+1. **The control go/no-go adds "R1 is not COLLAPSED under CR61"**, the clause the floor go/no-go already carries.
+   - On a NO-GO, the registered fallback applies unchanged: the control becomes W 512, provided R6 passes the loss test. In this session's rehearsal R6 read ratio 1.07 at 0.999 of R1's goodput.
+   - CR61 itself and §4c's table are unchanged, so c1s G r1 stays flagged.
+   - 61b is unaffected (c2 control ratios 0.97–1.04).
+2. **The pilot's straddle case takes the proportional form** Ŵ = 88·0.95/u₈₈, as the both-above case already does.
+   - **Why:** u/W falls with W (u is concave), so proportionality from the lower probe always reads low. The bias grows as the probe moves down the curve. The bracket, before r4 rounding, covers Ŵ/W₉₅ in [0.877, 1.053].
+
+     | probe | c3 Ŵ/W₉₅ (W₉₅ 108.2) | c2 Ŵ/W₉₅ (knee 168) |
+     |---|---|---|
+     | u ≈ 0.12–0.32 | 0.893 (W 12) – 0.916 (W 24) | 0.808 (W 16) – 0.846 (W 48), **outside** |
+     | u ≈ 0.64–0.93 | 0.933 (W 68), 0.948 (W 92) | 0.973 (W 160) |
+
+   - **Covered range:** on c3's curve, every probe; on c2's shape, u₈₈ ≳ 0.47.
+   - **If the rehearsal's u₈₈ < 0.47,** the pilot prints `PILOT61 … case=proportional-low-probe` and 61a still launches. The arms are reported as possibly short at K₃, and the scoreability rule decides.
+   - **Example:** the rehearsal's u₈₈ 0.818 would give Ŵ 102.2, with K 96/108/116, B 60/76/88, P1 152. The re-run takes Ŵ from its own new rehearsal, not from this number.
+   - **Implementation:** once. `pilot_knee` becomes a wrapper of `pilot_detail` (they are duplicates today), and the old straddle case name is retired.
+3. **Everything else stands as registered,** including Δ, ρ₂ (frozen), the floor rules and the D candidates.
+   - Harness items 1–2 go in with tests that fail first.
+   - After that, a fresh rehearsal and a fresh 66-row 61a, from one new tools-only launch sha. The engine and `bin_sha` are unchanged.
+4. **Not blind.** The re-run is registered after this session's post-hoc bound. Its label is still decided by the registered rules, and its Result reports both readings side by side.
+
 ## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
 
 **The registration is `docs/derivations/s60-registration.md` at `s60-design` `10272273`** (merged to main). It was reviewed with Fable in ten logged rounds and is registered verbatim from that commit; no rule is restated here.
