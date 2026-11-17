@@ -1288,7 +1288,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - Healthy c1s controls in §4c reach 1.32. The c3 controls span 1.51–1.90 at full goodput.
   - At this pool the ratio does not separate, and c1s G r1's 1.82 lies inside c3's healthy range.
 - **c2's controls read 0.97–1.04** (§4c), so the defect does not reach 61b. c2's control also stands far above its BDP (a ≈ 195 ms standing queue), so "a large standing queue" alone does not explain c3.
-  - c3's ≈ 1.1 s standing queue near netem's 1 000-packet limit is the case the registration's own §2.3 worried about. It is a candidate cause, not diagnosed.
+  - c3's ≈ 1.1 s standing queue near netem's 1 000-packet limit is the case the registration's own §1 worried about. It is a candidate cause, not diagnosed.
 - **The rehearsal's go/no-go missed it.** The floor go/no-go includes "not COLLAPSED (CR61)", but the control go/no-go does not. R1's ratio was 1.57.
 
 **Defect 2: the pilot's straddle case overshoots on a concave u(W)** (registration §2.2).
@@ -1316,27 +1316,56 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - It runs to its labels with no error. The printed numbers fall inside the bounds above (ρ₃ 0.458), and they are not a result.
 - **B1** (reported only): 0/18 fire. One floor row, G12 s42 r5, has margin +101.2 ms, against 0.4–9.0 for the rest. It is listed and not investigated here.
 
-**§61 Amendment 2 (proposed; Fable's review pending): 61a re-run after a new rehearsal.** Each rule fix is justified on §60's rows, on the registration's own text, or on geometry. None uses 61a's knee values.
-1. **The control go/no-go adds "R1 is not COLLAPSED under CR61"**, the clause the floor go/no-go already carries.
-   - On a NO-GO, the registered fallback applies unchanged: the control becomes W 512, provided R6 passes the loss test. In this session's rehearsal R6 read ratio 1.07 at 0.999 of R1's goodput.
-   - CR61 itself and §4c's table are unchanged, so c1s G r1 stays flagged.
-   - 61b is unaffected (c2 control ratios 0.97–1.04).
-2. **The pilot's straddle case takes the proportional form** Ŵ = 88·0.95/u₈₈, as the both-above case already does.
-   - **Why:** u/W falls with W (u is concave), so proportionality from the lower probe always reads low. The bias grows as the probe moves down the curve. The bracket, before r4 rounding, covers Ŵ/W₉₅ in [0.877, 1.053].
+**Pending, added by this Result:**
+- **CR61's ratio clause at large pools.** It is a defect finding of the collapse rule. Amendment 2 routes around it (a W 512 control) and does not fix it. A rule that separates collapse from health at a large pool must be derived before any reading uses a ≥ 2 048 control at c3.
+- **The c3 control's wide rtt tail** (E90_own 33–46 ms over a 20–25 ms window spread): undiagnosed. Netem's 1 000-packet limit under a ≈ 1.1 s standing queue is the candidate.
+- **The G12 s42 r5 B1 outlier** (−101 ms): not investigated.
+- **For the owner, as a heads-up and not a finding:** the post-hoc bound points toward DISAGREES at c3. If the re-run confirms it, S_F is not the knee's term at a second leg shape, and decision 8's form (g·S_F) is reopened.
 
-     | probe | c3 Ŵ/W₉₅ (W₉₅ 108.2) | c2 Ŵ/W₉₅ (knee 168) |
-     |---|---|---|
-     | u ≈ 0.12–0.32 | 0.893 (W 12) – 0.916 (W 24) | 0.808 (W 16) – 0.846 (W 48), **outside** |
-     | u ≈ 0.64–0.93 | 0.933 (W 68), 0.948 (W 92) | 0.973 (W 160) |
+**§61 Amendment 2 (proposed; Fable's review pending): 61a re-run after a new rehearsal.** Each fix is justified on control data, on the registration's own text, or on geometry. The pilot's direction comes from geometry, and its size is checked post hoc on 61a's and c2's curves. That is acceptable because arm placement touches no scored rule, and the scoreability rule is unchanged.
+1. **The re-run's control is W 512, registered outright** (`LD_CTL61=512`).
+   - **Why:** 7 of 7 W 2 048 rows this session read ratio 1.51–1.90 (the six 61a controls and the rehearsal's R1), so a 2 048 control would read CONTROL-MOVED again.
+   - A rehearsal gate alone would not prevent that: one healthy R1 at 1.49 would pass, and 61a's six controls would then flag.
+   - R1 (W 2 048) stays in the rehearsal as a reported row.
+   - **Enforced by the harness:** a 61a launch, the rehearsal included, refuses (`ABORT-CONTROL61`, nothing run) unless `LD_CTL61=512`.
+     - The global default is not flipped: `plan61.py plan 61b` prints the same rows before and after (61b's control stays W 2 048).
+     - A test asserts that an R1 with ratio < 1.5 does not bring W 2 048 back.
+   - **Prediction.** The six W 512 rows read ratio 0.95–1.3. The evidence is R6's 1.07 and P1's 0.95–1.02, with the rise toward 2 048 between.
+     - u does not move: R6 / R1 goodput = 0.999 this session, so W₉₅ and κ stay where they are.
+     - **If the re-run reads CONTROL-MOVED again,** there is no third session until CR61 is re-derived.
+2. **R6 (W 512) carries the control go/no-go.** It is GO iff all of these hold:
+   - R6's goodput ≥ 0.98 × max(R4, R5);
+   - its loss truth ≤ 4.76 % + 1.0 pp;
+   - it is not COLLAPSED under CR61.
+   - On a single row, CR61's goodput cut compares the row with its own median and never fires, so only the ratio clause (≤ 1.5) is live. A failure is `NOGO-CONTROL`. This session's R6 read 1.07.
+   - CR61 and §4c's table are unchanged, so c1s G r1 stays flagged. 61b is unaffected (c2 control ratios 0.97–1.04).
+3. **The pilot's straddle case takes the proportional form** Ŵ = min(88·0.95/u₈₈, 128), as the both-above case already does. The cap holds because a straddle already bounds the knee at 128 or below, and the form exceeds 128 only when u₈₈ < 0.65.
+   - **Why:** for a probe below the knee, u/W falls with W (u is concave), so proportionality from that probe reads low. In the both-above case, the same geometry makes it read high.
+   - The registration's bracket, before r4 rounding, covers Ŵ/W₉₅ in [0.877, 1.053]. On c3's curve the rule's bias is 0.893 (W 12) to 0.948 (W 92). On c2's it is 0.973 at u 0.93, and 0.808–0.846 at u ≤ 0.32. c2's curve has no point between.
+   - **Arms and margins over the plausible u₈₈** (two measurements this session: 0.817 and 0.818), against this session's W₉₅ 106.8–109.7:
 
-   - **Covered range:** on c3's curve, every probe; on c2's shape, u₈₈ ≳ 0.47.
-   - **If the rehearsal's u₈₈ < 0.47,** the pilot prints `PILOT61 … case=proportional-low-probe` and 61a still launches. The arms are reported as possibly short at K₃, and the scoreability rule decides.
-   - **Example:** the rehearsal's u₈₈ 0.818 would give Ŵ 102.2, with K 96/108/116, B 60/76/88, P1 152. The re-run takes Ŵ from its own new rehearsal, not from this number.
-   - **Implementation:** once. `pilot_knee` becomes a wrapper of `pilot_detail` (they are duplicates today), and the old straddle case name is retired.
-3. **Everything else stands as registered,** including Δ, ρ₂ (frozen), the floor rules and the D candidates.
-   - Harness items 1–2 go in with tests that fail first.
-   - After that, a fresh rehearsal and a fresh 66-row 61a, from one new tools-only launch sha. The engine and `bin_sha` are unchanged.
-4. **Not blind.** The re-run is registered after this session's post-hoc bound. Its label is still decided by the registered rules, and its Result reports both readings side by side.
+     | u₈₈ | Ŵ | K | K₁ margin | K₃ margin |
+     |---|---|---|---|---|
+     | 0.79–0.80 | 105.8–104.5 | 100 / 108–112 / 120 | +6.8 % | +9.4 % |
+     | 0.81 | 103.2 | 100 / 108 / 116 | +6.8 % | +5.7 % |
+     | 0.82–0.83 | 102.0–100.7 | 96 / 104–108 / 116 | +11.3 % | +5.7 % |
+     | 0.84–0.86 | 99.5–97.2 | 92–96 / 104 / 112 | +11.3–16.1 % | **+2.1 %** |
+
+   - At u₈₈ ≥ 0.84, K₃ = r4(1.14·Ŵ) rounds down to 112. A replicate above it is UNSCOREABLE (above-K3) by the registered rule, which decides.
+   - Implementation: once. `pilot_knee` becomes a wrapper of `pilot_detail`, and the case name `straddle` becomes `proportional`.
+4. **Everything else stands as registered,** including Δ, ρ₂ (frozen), the floor rules and the D candidates.
+5. **Harness and tests, for a new tools-only launch sha** (the engine and `bin_sha` are unchanged):
+   - red-first tests for R6's go/no-go (each of the three clauses), the renamed pilot case, and `pilot_knee` as a wrapper of `pilot_detail`;
+   - a `STUBRUN_FULL=1` 61a run with `LD_CTL61=512`, including the smoke's control row;
+   - the fast unfiltered stub run, and every `tools/l1` test, on an LF export.
+   - Multi-job stub runs wait until 61b prints `LD-ALL-DONE`.
+6. **Texts the new sha rewrites:**
+   - DECISIONS 3 (pilot cases), 11 (the rehearsal's go/no-go) and 16 (`case=` names);
+   - Amendment 1's "`LD_KNEE61` = the rehearsal's printed `PILOT61 W=`, plus `LD_CTL61` / `LD_NOGO` as the rehearsal prints them". For the re-run this reads `LD_CTL61=512` always, with `LD_NOGO` as printed;
+   - Amendment 1's DECISIONS table rows 3 and 11.
+   - Each is named as superseded at the new sha.
+7. **Order:** a fresh rehearsal (R6 gate, proportional pilot), then a fresh 66-row 61a, from one archive of the new sha.
+8. **Not blind.** The re-run is registered after this session's post-hoc bound. Its label is still decided by the registered rules, and its Result reports both readings side by side.
 
 ## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
 
