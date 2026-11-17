@@ -1115,6 +1115,138 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 
 **Order:** this session queues after §51's E block.
 
+**§61 Amendment 1 (2026-11-17, before any VM contact): the harness as built, its readings of the registration, and the run rules.**
+- **This supersedes the §61 stub's "this session queues after §51's E block".** Block E and block 51 wait for the F2 fix (§51 Amendment 2), and §61 does not, so 61 runs first.
+- **Launch tree.** The reviewed base is `harness61` `f86b4d16`: tools only, on `harness60-a2` `1ecee59d`.
+  - **The launch sha is `harness61` `14e2bacd22f1572f8a9e79898d59610fbcf8f15c`.** It closes harness items 1–7 (below) in `da139d02`, plus `14e2bacd`, which corrects the PRICE header's seed label. Both are tools-only, and both are on `github`.
+  - At `14e2bacd`, the engine diff against `1ecee59d` is still empty, including `ref60-manifest.sha256` and `lib.sh`. `test_harness61` passes in the worktree, 51 ok, witness included.
+  - At `f86b4d16`, `git diff` against `1ecee59d` and `cb88df3a` over `raptorpath raptorpath-math raptorpath-wasm raptorpath-core gf256 Cargo.toml Cargo.lock` is empty. The diff against `1ecee59d` is also empty for `tools/l1/ref60-manifest.sha256` and `lib.sh`. `test_harness61` asserts both in a git worktree.
+  - Every launch must log `bin_sha` = `e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d` before any row, or it aborts (`ABORT-BIN-SHA`). The abort is registration §7's rule. What follows a mismatch (a re-pin Amendment) is the coordinator's answer to owner question 2 (below).
+- **F2 does not reach this session.** Every 61 arm runs the Bulk hint (`plan61.arm_hint` returns `bulk`). Bulk does not pack (F2 entry: "Bulk and Auto do not pack"), so the receiver's default `window_packed` = false matches its framing.
+- **Also registered by reference: `s61_score.py`'s 16 DECISIONS at the launch sha `14e2bacd`.**
+  - Each is one reading of a place the registration is silent. The table below was reviewed at `f86b4d16`, and each row's text describes that sha. Rows 5, 6 and 14 are superseded at `14e2bacd` by items 3, 1 and 7, and the DECISION texts there say so. At the launch sha the list is printed in the order 1–13, 15, 16, 14, so each is cited here by number and topic. DECISION 16 (the pilot's 0.1 resolution, ρ̄'s CI and the native readings) is items 4–6 below.
+  - Two of them change a rule (5 and 6). They are registered as rewritten by items 3 and 1 below, not as they stand at `f86b4d16`.
+  - Item 4 adds one reading: Ŵ is registered at 0.1-slot resolution.
+
+  | # | topic | against the registration |
+  |---|---|---|
+  | 1 | inputs: window p50 = `[WSTAT]` p50; tmin and nk from `[SLAW]`; G pools windows with nk ≥ 1, and the native readings use nk ≥ 10 | fills a silence with `s61pred`'s own window sets. It reproduces `s61pred` exactly on §60's rows (pooling check below). |
+  | 2 | pilot-row bytes 110 / 115 MB at W 88 / 128 (§1's formula), with no `LD_KNEE61` at the rehearsal | fills a silence: §1 prices "at and above the knee bracket", and the rehearsal has no bracket. The 120 s timeout covers the slow basis (≈ 71 s). |
+  | 3 | the pilot's non-monotone pair u₈₈ ≥ 0.95 > u₁₂₈ falls to the last case, Ŵ = 88·0.95/u₈₈ (≤ 88, then clamped) | adds a fifth case to §2.2's four. The pilot control is R1 or R6, as §2.2 says. |
+  | 4 | the knee: W₉₅,r by `cross_up` over every non-control arm; T̂min_r(W₉₅,r) interpolated over the K and P1 arms (G(2 100) at c3); σ_r pools the `sig` windows of the two bracketing arms | literal, except that σ_r pools windows where §5 says "median LATE sig over the bracketing arms". That fills a silence and decides nothing scored. |
+  | 5 | with fewer than 2 floor pools, the floor pool's medians stand, W\* = the pool, and the floor reads as scoreable | **changes a rule.** It bypasses §5's UNSCOREABLE-FLOOR, since W\* = u₂/κ needs no line. It also differences an unshifted c3 against c2's shifted W → 0 draws. Item 3 replaces it. |
+  | 6 | W → 0 = F − b·W₁, S_F − b·W₁; D₀ = D + b_F·W₁ | **changes a number** when W\* ≠ W₁. Replaced by the W → 0 reading below (item 1). |
+  | 7 | c2 frozen (`C2_FROZEN`), ported draw for draw from `s61pred.py`, seed 60; paired draw b = c3's draw b − c2's draw b | literal (§5.2). |
+  | 8 | σ₃ = the median over scoreable replicates of σ_r; σ₂ 1.785 and S_F,2 5.083 frozen; Δ = min(c2's 0.085, c3's q_R·F_c/S_F,c) | literal (§5.2). Δ is held at its point value in every draw, which fills a silence. |
+  | 9 | CR61: e_own against the row's native median LATE tmin; X_own from the c3 W 12 rows (live, not DNF), and 10.66 at c2; a row with no ticks is not flagged; the arm's goodput median includes DNF rows at 0 | literal for e_own and X_own. The last two fill silences. |
+  | 10 | CONTROL-MOVED with fewer than 4 unflagged live controls; κ = median over valid floor rows of u_row/W | literal (§4.1, §5). The "session median control gp" is the median over the unflagged controls, which fills a silence. |
+  | 11 | the rehearsal's go/no-go mechanics; the control loss is the leg-0 `[TRUTH]` loss against 0.0476 + 0.01; `LD_NOGO=floor` makes the scorer start the floor pool at W 16 | fills silences. Under `LD_NOGO=floor`, 61a still runs its W 12 rows, and they stay in the ledger and in CR61's X_own reference (§4.1 says "from the c3 W 12 rows"). |
+  | 12 | the label names (`LABEL61 …`, `VERDICT61`) | mechanism only. |
+  | 13 | "AGREES (S or σ-scaled)" when \|SIGMA-DISCRIMINATION\| ≤ Δ | literal (§5.2). |
+  | 14 | the price and landing tables' per-arm 90 % intervals (2 000 draws), and the monotonicity list | fills a silence. At `f86b4d16`, c2's table used seed 61 where §5 gives seed 60 at c2; item 7 fixed it. §60's merged arms carry frozen medians with no interval. That is reported, and the table decides nothing. |
+  | 15 | τ = 0.05·S_F,c with S_F,c the u-matched line value; κ against the session median control; the c2 landing table merges §60's arms on DRIFT-OK | **confirmations, not changes.** §5 defines S_F,c at c3 as the line value at W\*, §5.1 sets τ from it, and §5 sets u_row against "the session median control gp". Only the order of computation (fit first, label after) is the harness's. W\* is held at its point value across draws (κ is not resampled), which fills a silence. The DRIFT-OK merge is §5.4's. |
+- **The W → 0 reading (registered here; it replaces DECISION 6).**
+  - **The gate is untouched.** §5.1's gate keeps E = b·W₁ and its labels. Only the bracket's offset becomes b·W\*, so §5.3's "D + E_F" is read as D + b_F·W\*.
+  - **What is scored.** ρ, Δρ and D are read at the u-matched floor at both cells: c3 on the gate's lines at W\* = u₂/κ, and c2 natively at W 16, which is u₂ by definition. The harness does this, and so does the falsifier's AGREES / DISAGREES. W → 0 is a bracket. It can only replace a definite label with FLOOR-SENSITIVE, when it gives the opposite definite label (§5.1, §5.2, §5.3).
+  - **W → 0 is the intercept at both cells:**
+
+    ```text
+       F₀ = F_c − b_F·W*  = a_F        S₀ = S_F,c − b_S·W*  = a_S        D₀(A) = D(A) + b_F·W*        (slopes refitted per draw)
+    ```
+
+    - At c2, W\* = W₁ = 16, so the frozen ρ₂,₀ = 0.877 [0.858, 0.908] stands unchanged.
+    - At c3, the harness at `f86b4d16` subtracted b·W₁ from F_c read at W\*. That gives a + b·(W\* − W₁), which equals the intercept only when W\* = W₁.
+  - **Reasons:**
+    1. The sentence names "the extrapolated W → 0 floor".
+    2. In the first commit (`aa05eacd`, line 408), the readings were "printed at the floor pool (scored) and at the extrapolated W → 0 floor". There F was read at W₁, so F − b·W₁ was the intercept. Advisor round 2 moved c3's F to W\* and left the bracket's formula as it was.
+    3. c2's own shift (+0.080) spans the line from u₂ to zero. c3 must span the same distance, or Δρ₀ compares unequal offsets.
+    4. Whenever W\* < W₁, the hybrid evaluates the line at a negative W.
+  - **Size of the difference, b_F·(W\* − W₁)/S_F,3**, on the prediction's inputs: W\* 10–13 and S_F,3 8.5–12.5. The c2-scaled slope is b_F = 0.067–0.083 ms/slot (E_F ≈ 0.8–1.0 ms at W₁ = 12, §5.1). c8 leg 1's is +0.0133.
+
+    | case | W\* − W₁ | c2-scaled slope | c8 leg 1 slope |
+    |---|---|---|---|
+    | nominal floor, W₁ = 12 | −2 to +1 | ≤ 0.020 in ρ (≤ 0.17 ms) | ≤ 0.003 |
+    | after a floor move or `LD_NOGO=floor`, W₁ = 16 (W\* at most 6 slots below, §5) | −6 to −3 | ≤ 0.059 in ρ (≤ 0.50 ms) | ≤ 0.009 |
+
+    - Against Δ = 0.085 that is up to a quarter of Δ nominally, and up to 0.7 Δ after a floor move. Since ρ₂'s own W → 0 shift is 0.94 Δ, it is enough to move a FLOOR-SENSITIVE call.
+    - A synthetic check confirms it. On a floor sloped at 0.093 ms/slot with W\* 10.2 and W₁ 12, the harness at `f86b4d16` printed ρ₃,₀ 0.941, where the intercept gives 0.924 (derived from the printed line: F_c 32.845, b 0.0928, need 8.296, S_F,c 10). At `14e2bacd`, item 1's test asserts the intercept to 0.0006 on a floor sloped at 0.09 ms/slot.
+    - With the c2-scaled slope, the S_F term (b_S −0.005 to −0.009) changes these numbers by under 10 %. With c8 leg 1's slope it is a larger share (30–60 %) of a negligible number.
+  - **D₀ was not printed at `f86b4d16`; item 2 prints it.**
+    - The harness computed D₀ only to set a `FLOOR-SENSITIVE` suffix on the D labels. §5.1 says every scored reading is printed at both floors, an UNRESOLVED W → 0 reading with its interval.
+    - So D₀ is reported, and it gates only FLOOR-SENSITIVE (item 2).
+    - The allowance's terms are not recomputed at W → 0, as §5.3's "D + E_F" states. For the decided form S, the omitted term is E_S + q·E_F ≈ −0.09…+0.04 ms (E at W\* ≈ 11; b_S −0.005 to −0.009, b_F 0.013–0.083), against c3's predicted D half-width of 0.2–0.3 ms. For wq it is 0.26·E_F ≈ 0.2 ms, on a predicted D of −3.9 to −7.1.
+- **Harness items, closed at `da139d02`** (a Sonnet worker on `harness61`, tools only; each item with a test that fails first). Coordinator review of the diff: all seven match the text below, and the pilot sweep (3 481 pairs) confirms `arms(printed W)` equals the arms placed. DECISIONS 5, 6, 14 and the new 16 at the launch sha carry these readings:
+  1. **W → 0 at the intercept** (done).
+     - In `run_c3`'s bootstrap, `ef, es = fit_f[0] * w_star, fit_s[0] * w_star`, not `* fpool`.
+     - On the `W->0:` point line, `f_c - gF['b'] * w_star` and `s_c - gS['b'] * w_star`.
+     - D₀ = D + b_F·W\*.
+     - Rewrite DECISION 6's text to match.
+     - Test: a synthetic ledger with a linear floor F = a + b·W and W\* ≠ W₁ asserts ρ₃,₀ = median (T − a_F)/a_S absolutely. The existing synthetic floors are flat, so this path is untested end to end.
+  2. **Print D₀.** For every candidate and hint, print D₀ (point, 90 % interval and label) beside the scored D, as §5.1 / §5.3 require. Test: the line is present and carries the interval.
+  3. **The single-pool case (replaces DECISION 5).**
+     - Compute W\* = u₂/κ in every case and apply §5's 6-slot rule against the lowest valid pool. With one pool, its medians stand as F_c and S_F,c only if W\* ≥ W_pool − 6; otherwise the reading is UNSCOREABLE-FLOOR.
+     - With fewer than 2 pools, the W → 0 bracket and FLOOR-SENSITIVE read `NOT-COMPUTED` (no slope; nothing is extrapolated below the floor pool), and are never differenced against c2's shifted draws.
+     - Tests:
+       - a ledger where only W 24 holds valid rows reads `LABEL61 RHO UNSCOREABLE-FLOOR`. At `f86b4d16` it scores AGREES at W 24, and its W → 0 bracket prints [−0.110, −0.061] against c2's 0.877;
+       - these ledgers need sample counts inside both parity bands. `test_s61`'s `synth_ledger(nk_per_slot=3.5)` gives floor n 252 and knee n 2 303; the default of 5 reads UNSCOREABLE-N first, so the test would pass for the wrong reason. The stop order is UNSCOREABLE, then UNSCOREABLE-N, then UNSCOREABLE-FLOOR, and the test asserts it reaches the floor branch;
+       - a ledger where only W 12 holds valid rows scores, with W → 0 `NOT-COMPUTED`.
+  4. **The pilot prints its case.**
+     - `pilot_knee` returns the case it used: `straddle` / `secant` / `degenerate` / `both-above` / `non-monotone`, and `clamped=yes|no`.
+     - `PILOT61` prints both, from `s61_score.rehearsal` and `plan61.py pilot`.
+     - Ŵ is registered at 0.1-slot resolution. It is rounded to 0.1 before `arms()`, so the printed `W=`, which is what `LD_KNEE61` receives verbatim, reproduces the printed arms.
+       - At `f86b4d16` the arms come from the unrounded Ŵ. Over a sweep of 12 003 (u₈₈, u₁₂₈) pairs, 404 printed W values derive different arms, for example Ŵ 123.85 gives K₂ 132 where the printed 123.8 gives 128.
+       - The rounding moves Ŵ by ≤ 0.05 slot, against a pilot error of −5 % to +14 %.
+     - Keep the line's existing prefix `PILOT61 W=… u88=… u128=… arms=…` and append `case=… clamped=…`, since `loopdiag_run_all.sh` greps the line. `pilot_knee` keeps its float return (existing tests call it), and the case comes from a separate function or an optional return.
+     - u₁₂₈ ≤ 0 or u₈₈ ≤ 0 reads `PILOT61 none`, not a division error.
+     - Tests: every case name, and `arms(float(printed W)) == printed arms`.
+  5. **ρ̄ with its 90 % CI** (§5.2: "ρ̄ … with its CI"). Take it draw by draw from the same 2 000 draws, pooling c3's and c2's resampled per-replicate values in draw b. Do not add any RNG call to the ported c2 stream, so ρ₂ and ρ₂,₀ still reproduce.
+  6. **The native ρ₃ and D-S** (§3 "the native reading is printed beside", §5.5 "every reading native at c3"). Print them, also under UNSCOREABLE-N. They decide nothing.
+  7. **Seed 60 for c2's price-table intervals** (§5 symbols).
+  - Items 1–4 change what the rehearsal or 61a prints or labels. Items 5–7 are reported outputs, done in the same commit.
+  - After the change: `test_s61`, `test_harness61`, `test_stubrun.py` (fast, unfiltered) and every `tools/l1` python test pass in an LF export of the new head (recorded under the host tests below).
+  - **Red-first** (coordinator, on an export of `f86b4d16` carrying the new `test_s61.py`): items 1, 2, 3, 5 and 6 fail there, and the run stops at the pilot block with `AttributeError: … pilot_detail`. So item 4 is red only as a missing function, and item 7's seed test was not reached.
+  - **Pilot cross-check** (coordinator): `round(pilot_knee, 1)` equals `pilot_detail`'s Ŵ on 39 601 pairs. The 3 481-pair arms sweep is the worker's test.
+- **The sample-count pooling, checked on real c3-shaped rows.**
+  - **Method.** The scorer's own parse (`s61_score.row_extras`, with leg 1's `[SLAW]` / `[WSTAT]` lines renamed to p = 0, since the scorer reads leg 0) and its `reading(…, 250)` run on §60's c8 leg 1 G rows (`rep60a-diag-ld.tgz`).
+  - **G(250) at W 32 / 64 / 96 / 256, 24 rows.** The result matches `s61pred.row_SF` row by row (max difference 0 over S_F, F, n and groups) and reproduces `s61pred.out` §1 / §3:
+    - S_F 12.336 / 11.922 / 12.829 / 11.290;
+    - F 33.493 / 33.826 / 33.611 / 36.337;
+    - realised n 255 / 257 / 261 / 294, with 6 / 13 / 24 / 67 groups;
+    - pooled S_F 12.067, and F at W 32–96 33.611;
+    - the gate over the four pools gives S_F b −0.0046 ± 0.0011 (E −0.15) and F b +0.0133 ± 0.0011 (E +0.43).
+  - **G(2 100) at W 256–1 280, 30 rows.** It is identical to `s61pred.row_SF` row by row. The realised n per group is 2 168–2 382, inside the knee parity band [1 874, 2 928]. The floor values (255–294) are inside [226, 353].
+  - **Scope.** This tests the grouping and the parse on real rows. The u-matched line at W\*, κ and the W → 0 path are tested only on synthetic ledgers, with item 1's sloped-floor test among them.
+- **Host tests at `da139d02`, LF `git archive` export** (worker run). `14e2bacd` changes one printed label, and after it `test_s61` and `test_harness61` were re-run in the worktree: ALL OK.
+  - `test_s61` 75 ok, 0 skips, with `S61_S60_DIR` set; `test_harness61` 48 ok plus the witness skip (51 ok in the worktree); `test_harness_paths` 12 ok; `test_s60` 190 ok and `test_harness60` 41 ok (unchanged); `test_stubrun.py` fast and unfiltered, ALL OK, 672 ok, and filtered to the ten 61a / 61b paths, ALL OK.
+  - **Coordinator, at `14e2bacd`** (LF export, 2026-11-17):
+    - every `tools/l1/test_*.py` (44 files) exits 0 except `test_r_parse` and `test_s60`;
+    - both of those fail only in their child-process steps, on a Windows host decode (the child writes `§` in cp1252). `test_r_parse` passes 73/73 with `PYTHONUTF8=1`, and it fails identically at `f86b4d16`. `test_s60`'s failing step runs `python -I`, which ignores that variable, and neither file nor its scorer changed on this branch;
+    - the fast unfiltered `test_stubrun.py` gives ALL OK, 672 ok, with `PYTHONUTF8=1` (without it, 2 FAIL, from the same decode);
+    - the `STUBRUN_FULL=1` 61a reuse-hit run gives ALL OK (66 rows, 415 s);
+    - the launch's own python and bash tools tests run on the VM (Linux, UTF-8) before any row, and they bind.
+  - `r68allow.py` is now on `harness61` (from `6794780d`), so `s61pred.py` runs from the branch alone.
+  - **Earlier counts, at `f86b4d16`:**
+  - `test_s61` gives 62 ok, 0 skipped, ALL OK. The export had `r68allow.py` placed in `docs/derivations/store-law/`, from `6794780d`, the same blob as on `github/main`. It is not on `harness61`, so the registered `s61pred.py` cannot run from that branch alone. The test's host block looks for it in the tree. and `S61_S60_DIR` pointed at `rep60a/b-diag-ld.tgz` from main. Without those inputs it gives 57 ok, and 61 ok with the tgz alone.
+  - `test_harness61` gives 48 ok plus one skip in the export: the engine-diff witness, which needs git. It gives 51 ok in the `harness61` worktree, which includes the witness's three git checks.
+  - Two checks run inside `test_s61` on §60's real rows:
+    - CR61 flags 0 of 48 c2 G rows; `knee_of` gives W₉₅ 165.7–169.7; the native floor pairs and X_own 10.66 reproduce;
+    - the c2 bootstrap reproduces ρ₂ = 0.797 [0.780, 0.825] and ρ₂,₀ = 0.877 [0.858, 0.908].
+  - Reported by the harness worker and not re-run for this amendment: every `tools/l1` python test (44 files, 2 146 ok); the unfiltered fast `test_stubrun.py` (672 ok, with every 61a / 61b path); the `STUBRUN_FULL=1` 61a reuse-hit run (66 rows). `test_harness60` and `test_s60` are unchanged.
+- **Before the rehearsal, on the VM, from the extracted archive** (Linux only; Git Bash cannot run them): `bash tools/l1/test_abort_witness.sh` and `bash tools/l1/test_lib_battery.sh`. Both must pass (registration §9's done criteria). A failure stops the session before any row.
+- **Run rules for every 61 launch, the rehearsal included:**
+  - **Host cargo is paused** (the host build lock is held by the main session) for the whole launch. §60's registration carries this rule (`s60-registration.md` §5, "Host: host cargo is paused") and the s61 registration omits it, so it is added here.
+  - **`LD_HARD`:** launch + 4.0 h for the rehearsal and for 61a, and + 1.8 h for 61b. The budget guard applies under `LD_REHEARSE=1` too: `loopdiag_run_all.sh` sets `P57=1` for 61a / 61b and has no rehearsal exemption, so it requires 14 220 s for any 61a launch. The rehearsal therefore launches with 61a's `LD_HARD`, as §60 Amendment 1 did.
+- **The registration's owner questions were answered as the coordinator's choices** (§61 stub; reported to the owner, not decided by them):
+  - Δ stays 0.085;
+  - a rebuild that does not reproduce `e410d640` stops the session for a re-pin Amendment, with a suites run and Fable's review.
+- **Not yet run:** the real `perf_rwm_c.sh` c3 path (`topo.sh up c3`). The rehearsal is its first run.
+- **Order:**
+  - one `git archive` of `14e2bacd`, extracted fresh under `~/r61`;
+  - the two shell tests;
+  - the 61 rehearsal (`LD_PLAN=61a LD_REHEARSE=1`);
+  - 61a, with `LD_KNEE61` = the rehearsal's printed `PILOT61 W=`, plus `LD_CTL61` / `LD_NOGO` as the rehearsal prints them;
+  - 61b, with `LD_BIN_PREBUILT`, which may run before 61a if the VM slot suits (§8).
+
 ## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
 
 **The registration is `docs/derivations/s60-registration.md` at `s60-design` `10272273`** (merged to main). It was reviewed with Fable in ten logged rounds and is registered verbatim from that commit; no rule is restated here.
