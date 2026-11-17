@@ -642,15 +642,20 @@ impl QuicTransport {
         bind_addr: SocketAddr,
         peer_addr: Option<SocketAddr>,
     ) -> anyhow::Result<()> {
+        // One peer, one symbol size: refuse every runtime path until the
+        // initial paths' size is stored, never admit one unchecked.
+        let established = self.peer_symbol_size.load(std::sync::atomic::Ordering::Relaxed);
+        if established == 0 {
+            anyhow::bail!("path {path_id}: no peer symbol size is stored yet (the initial paths are not reconciled)");
+        }
         self.spawn_path(path_id, bind_addr).await?;
         let size = if let Some(peer) = peer_addr {
             self.connect(path_id, peer).await?
         } else {
             self.accept(path_id).await?
         };
-        // One peer, one symbol size: refuse a path that announces another.
-        let established = self.peer_symbol_size.load(std::sync::atomic::Ordering::Relaxed);
-        if established != 0 && size != established {
+        // ... and refuse a path that announces another.
+        if size != established {
             self.remove_path(path_id);
             anyhow::bail!(
                 "path {path_id} announces symbol size {size}, the peer's established size is {established}"

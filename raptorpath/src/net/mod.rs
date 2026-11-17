@@ -724,6 +724,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         }
     }
 
+    // The receiver's decoder takes the size its peer announces in a handshake
+    // (ADR-0078), so an engine needs at least one initial path to learn it.
+    // (A path added later is checked against that size, never the other way.)
+    let n_initial = if config.is_server { config.bind_addrs.len() } else { config.peer_addrs.len() };
+    if n_initial == 0 {
+        anyhow::bail!(
+            "no initial path ({}): the receiver learns the peer's symbol size from the first handshake",
+            if config.is_server { "server needs a bind address" } else { "client needs a peer address" }
+        );
+    }
+
     // Create QUIC transport
     let transport = QuicTransport::new(
         &config.bind_addrs,
@@ -752,12 +763,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     }
     info!("all paths connected");
     // The decoder takes the sender's size (ADR-0078, option ii); a runtime
-    // path must announce the same one (`QuicTransport::add_path`).
-    let peer_symbol_size = if peer_sizes.is_empty() {
-        symbol_size
-    } else {
-        reconcile_peer_symbol_size(&peer_sizes)?
-    };
+    // path must announce the same one (`QuicTransport::add_path`). There is
+    // no fallback to the local size: `reconcile_peer_symbol_size` refuses an
+    // empty list, and an engine without initial paths is refused above.
+    let peer_symbol_size = reconcile_peer_symbol_size(&peer_sizes)?;
     transport.set_peer_symbol_size(peer_symbol_size);
 
     // Shared state
