@@ -8,7 +8,7 @@ Draft for the coordinator to register as its own status section (called §64 her
 - **The Bulk cells are guard v2 unchanged** (§41d, as §54 ran it): 12 + 12 rows at c1s, c1d, c2 and c8, rank-minp, PASS iff p > 0.05. Bulk's data bytes are unchanged by construction, so the prediction is PASS.
 - **One Realtime cell runs in a separate stage.** Behaviour there changes on purpose: main dies in the warm-up some of the time. So the stage does not compare CAND with BASE for the verdict. It scores an absolute reading on every CAND row (the §63 F2 reading, plus completion) and reports everything else.
 - **Before launch the owner gives two words:** ADR-0078 to Accepted, and the go to merge wire v10, which refuses every v9 peer.
-- **Cost:** about 3.5 h of VM time typical and about 6 h worst, with host cargo paused. Order: s62, then this guard, then E-pre.
+- **Cost:** about 3.5 h of VM time typical and about 6.5 h worst, with host cargo paused. Order: s62, then this guard, then E-pre.
 
 ## 1. BASE and CAND
 
@@ -17,7 +17,7 @@ Draft for the coordinator to register as its own status section (called §64 her
 | seat | tree | content |
 |---|---|---|
 | **BASE64** | github `main` at launch, pinned by amendment | `e495d186` or later, with the harness of §5 merged (tools only, as `harness54` was for §54). Engine identity: `git diff d2cae698 BASE64 -- raptorpath raptorpath-math raptorpath-core raptorpath-wasm gf256 vendor Cargo.toml Cargo.lock` is empty |
-| **CAND64** | branch `f2-cand64` = BASE64 + `git merge --no-ff github/f2-impl` (`626fdf9a`) | all 16 commits of `main..f2-impl`: `f2-prep`'s three (repro, counter, audit), the six design commits, and the seven `f2-impl` commits |
+| **CAND64** | branch `f2-cand64` = BASE64 + `git merge --no-ff github/f2-impl` (`626fdf9a`) | all 16 commits of `main..f2-impl`: `f2-prep`'s three (repro, counter, audit), the merge of `f2-prep` into `f2-design` (`07ac5f0e`), the five design commits, and the seven `f2-impl` commits |
 
 - **Commit 1 (`7ce6523b`) never goes alone.** It is labelled v9 but writes LE-packed Realtime symbols that a real v9 peer misreads (design §9, "Commit rule"). The merge takes the branch whole, with `--no-ff`, and nothing is squashed.
 - **Identity witnesses, checked when the amendment pins the seats:**
@@ -32,7 +32,7 @@ Draft for the coordinator to register as its own status section (called §64 her
 Owner decision 5 says to stack zero-behaviour steps into one guard against main and to bisect only on failure. The F2 design puts F2 at the bottom of such a stack (design §7, §9 "VM order" item 3). **The recommendation is F2 alone now, and the next stacked guard takes post-F2 main as its BASE.** Why:
 
 - **Nothing else is ready to stack:**
-  - **Perleg Phase A** (`perleg-phase-a` `e5246d7f`) sits on `2aaac8e8`. It lacks `14954df7`, so `gates::forwarding_audit` is red on that branch as it stands. It has no Linux suite record. Its A1 step is bounded (≤ 16 ns), not bit-identical, so its trace pin changes by design and needs its own Linux run first. It merges cleanly with main and with `f2-impl` (trial `merge-tree`, no conflicts), so nothing in F2 blocks it later.
+  - **Perleg Phase A** (`perleg-phase-a` `e5246d7f`) sits on `2aaac8e8`. It contains `1cd13f5c` (checked: an ancestor) but lacks `14954df7`, the fix for `gates::forwarding_audit`, which has been red since `1cd13f5c`. So that test is red on the branch as it stands. It has no Linux suite record. Its A1 step is bounded (≤ 16 ns), not bit-identical, so its trace pin changes by design and needs its own Linux run first. It merges cleanly with main and with `f2-impl` (trial `merge-tree`, no conflicts), so nothing in F2 blocks it later.
   - **Guard α's shared-core moves** (`shared-core-design.md`, steps 1.2–2.5) have no branches yet.
   - **The slaw gauge** (`slaw-gauge`) waits on the owner (status, "Still held").
 - **F2 is not a zero-behaviour step.** It changes Realtime on purpose, and it breaks the wire (v10). Owner decision 5 covers zero-behaviour steps. A stack that had F2 at its base would mix the one candidate that changes behaviour with the ones that may not.
@@ -57,15 +57,23 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 **F2 row witnesses on stage G (scored, outside the min-p family):**
 - **CAND rows, every cell:**
   - `[SYMSZ] local=1200 decoder=1200` on both ends (the executes witness: the v10 handshake ran and the receiver adopted the peer's size);
-  - a `[CTLD]` line carrying `undeliv=` on the receiving end (the perf server), with `undeliv=0`, and 0 on the client too;
+  - a `[CTLD]` line carrying `undeliv=` on the receiving end (the perf server), and `undeliv=0` on every `[CTLD]` line of both ends. The client's line need not be present; a non-zero value on either end is a fail;
   - no `[UNFRAMABLE]` line on either end.
+- **The lines exist on these rows (checked on committed ledgers and code):**
+  - `[CTLD]` is on both ends of every §54 guard row: 24 of 24 server logs and 24 of 24 client logs at each of c1s, c1d, c2 and c8 (`docs/l1-raw/s54/guard-diag-ld.tgz`). It is a `RWM_DIAG` readout, and every guard row runs `RWM_DIAG=1`. `f2-impl` appends `undeliv=` to that same line (`receiver.rs:2097`).
+  - `[SYMSZ]` is an ungated `info!` at the decoder build (`f2-impl` `net/mod.rs:1194`), printed once per process. §63 read it on both ends.
+- **Status precedence on a stage G row, in this order:**
+  1. an infrastructure void (VOID-COTENANT, VOID-ONDISK, CONTAMINATED, a seat or sha mismatch) comes first and is replaced under §41d's rule;
+  2. `undeliv` > 0 or an `[UNFRAMABLE]` line is `F2-FAIL`, even on a DNF or VOID-RC row, because a fail-closed tunnel looks like a DNF;
+  3. a missing witness line (`[SYMSZ]`, or the server's `[CTLD]`) is `F2-FAIL` only on a row that is otherwise LIVE or DNF;
+  4. then §41d's own labels (VOID-SHORT, DNF, LIVE).
 - **A CAND row that fails any of these is `F2-FAIL`.** It is never VOID, never replaced and never NO VERDICT. After the fix an unframable symbol can come only from an engine bug (owner decision 12), and at Bulk it is a fail-closed false positive. One such row fails the guard whatever p reads.
 - **Seat witnesses:**
   - before any row, the CAND binary contains the strings `[SYMSZ]` and `[UNFRAMABLE]` and the BASE binary contains neither. Otherwise the run aborts with ABORT-SEAT;
   - every row's `bin_sha` matches its arm's build.
 - **Prediction: GATE-41d PASS.**
   - Bulk and Auto data bytes are unchanged. `hotpath_pin` passes unchanged at commit 1, and commit 2 re-captures it for the version field only (ADR-0078, Consequences).
-  - The per-symbol CPU change is predicted at ±2 ns to frame and +1–3 ns to read (design §7). At c1s that is about 1/40 of the `cpu_cli/GB` q95 (§3.1).
+  - The per-symbol CPU change is predicted at ±2 ns to frame and +1–3 ns to read (design §7). Even a combined +5 ns per symbol is about 1/45 of c1s's `cpu_cli/GB` q95 (4.2 ms against 189 ms per GB; §3.1).
   - The control path changes once per path: the handshake carries the real size (1200, as before at Bulk), and `WindowStart` loses two fields.
   - **The registered risk is the false-fail rate,** 5 % by construction. §54's no-regression candidate read its min-p at c1s `cpu_cli/GB`, p = 0.066.
 - **Prediction for the witnesses:** 48 of 48 CAND rows pass, and the BASE binary prints no `[SYMSZ]`.
@@ -86,11 +94,12 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
   - At ρ = 1 the rows complete, so goodput, CPU/GB and §41d's in-order delay (defined for reliable delivery only) can all be read.
   - Evicting rows DNF by design (§63 Result, the correction to Amendment 2).
   - ρ is an independent dial. The F2 reading at ρ < 1 is §63's: 5 of 5 rows on the same engine patch-id, unpaced U row included. Block E and E-pre read it again on the E tree plus F2. Together with this stage, both ends of ρ at the Realtime point carry the reading.
-- **Limit, stated:** perf chunks fill the symbol (510 B of a 512 B symbol), so no row packs two or more packets into one symbol. Only `f2_realtime_packed` (commit 6, a loopback test, in the seams suite) covers that. The stage cannot see it.
+- **The lines exist on main's binary:** `warm-up object never acked` is `perf.rs:300`, and the client exits on it after the warm-up's full `RWM_PERF_TIMEOUT_S`. `REALTIME_ECHO59` (`net/mod.rs:611`) prints on both ends of a ρ = 1 Realtime row (`store-law-n1` c2-100 Realtime s42 r1, server and client logs).
+- **Limit, stated:** perf chunks fill the symbol (a 508 B packet in a 512 B symbol, 510 B with its length field; `perf.rs` `chunk_payload_len`), so no row packs two or more packets into one symbol. Only `f2_realtime_packed` (commit 6, a loopback test, in the seams suite) covers that. The stage cannot see it.
 
 **Scored: the Realtime reading, every RC row (RT-PASS iff 12 of 12).** Each RC row must show all of:
 1. the warm-up acked;
-2. `undeliv=0` on a `[CTLD]` line that is present on the receiving end (the server). A missing line is a missing witness, not a pass. The client's value is summed and reported (§63 Amendment 1);
+2. a `[CTLD]` line with `undeliv=` present on the receiving end (the server), and `undeliv=0` on every `[CTLD]` line of both ends. A missing server line is a missing witness, not a pass. The sum over both ends is reported (§63 Amendment 1);
 3. no `[UNFRAMABLE]` on either end;
 4. `[SYMSZ] local=512 decoder=512` on both ends;
 5. the transfer completes inside its timeout (not DNF). At ρ = 1 a 70 s transfer has a 200 s budget.
@@ -109,7 +118,20 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 - **The `undeliv` denominator** that §63 left owed: the server's received source-symbol count per RC row, from an existing log field (§5 item 4). It is n/a if no such field exists; this needs no engine change.
 - **Owner flag (non-gating):** a reported readout with CAND worse beyond c2's Bulk d80 for the same clause (goodput 1 %, CPU/GB 5 %, in-order delay 8 %) and rank p ≤ 0.05 goes to the owner with the merge question. Behaviour on rows whose warm-up survives is predicted unchanged, because the packed bytes keep their size (ADR-0078, Consequences).
 
-### 2.3 Decision rule
+### 2.3 Rehearsal (`LD_PLAN=64 LD_REHEARSE=1`) must show
+
+| check | NO-GO consequence |
+|---|---|
+| both builds; CAND's binary holds `[SYMSZ]` and `[UNFRAMABLE]`, BASE's neither | ABORT-SEAT: the seats are wrong; fixed and re-rehearsed |
+| plan 41d's 3 smoke rows complete, no VOID-SHORT; on the CAND smoke rows, `[SYMSZ]` 1200/1200 on both ends and the server's `[CTLD]` with `undeliv=0` | a missing line is a harness or log-level fault: fixed and re-rehearsed. `undeliv` > 0 or `[UNFRAMABLE]` is a finding against the fix: no launch |
+| RC s42 passes §2.2 items 1–5, with the in-order delay computed (not None) | a missing witness or a None is a harness fault: fixed and re-rehearsed. A failed item is a finding against the fix: no launch |
+| RB s42 is LIVE or `BASE-F2-DEAD` (either is fine) | any other label (VOID-RC included) is a harness fault: fixed and re-rehearsed |
+| `framing_ns` meets §3.1 item 1's bound at all six Bulk points | over the bound: to the owner, no launch. UNREADABLE twice: to the owner |
+| the tools tests pass on the VM, bash tests included | ABORT-TESTS: fixed on `harness64` |
+
+A rehearsal row is not re-run, and a failed CAND rehearsal row is the finding (§63's rule).
+
+### 2.4 Decision rule
 
 - **MERGE** iff all of:
   - GATE-41d PASS;
@@ -139,12 +161,14 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
      | symbol | value | provenance |
      |---|---|---|
      | Δt_point | median CAND − median BASE, ns/call, per bench point | measured (this bench) |
-     | N_GB | 10⁹ / 1198 ≈ 8.35·10⁵ source symbols per GB | perf chunks fill S − 2 = 1198 B at Bulk (§63, "Before the merge"). Each source symbol is framed once at the sender and read once at the receiver; repair symbols and retransmits are not re-framed |
+     | N_GB | 10⁹ / 1182 ≈ 8.46·10⁵ source symbols per GB | code: `perf.rs` `chunk_payload_len` gives 1196 − 14 (`HDR_LEN`) = 1182 B of object payload per Bulk chunk, one chunk per symbol. Each source symbol is framed once at the sender and read once at the receiver; repair symbols and retransmits are not re-framed |
      | C_side | `cpu_cli/GB` 15.35 s (sender: frame), `cpu_srv/GB` 17.86 s (receiver: read) | measured: §54 launch 1, c1s BASE medians |
      | q95_side | 0.0123 (cli), 0.0173 (srv) | measured: §54 launch 1, c1s, q95 of \|x\| over 400 half-per-seed splits of BASE alone |
      | f | 0.1 | declared margin: framing must sit an order of magnitude below the noise the guard's c1s CPU clauses cannot see |
 
-     - So **frame ≤ +22.6 ns/call** at S = 1200, lengths 64, 600 and 1196, and **read ≤ +37.0 ns/call** at the same three points.
+     - **Why c1s:** it has the smallest q95 × C product of the four cells on both sides (cli: c1s 0.19, c2 0.48, c1d 0.86, c8 1.16 s/GB; srv: c1s 0.31, c1d 0.62, c2 1.29, c8 2.36 s/GB; §54 launch 1), and N_GB is the same at every Bulk cell.
+
+     - So **frame ≤ +22.3 ns/call** at S = 1200, lengths 64, 600 and 1196, and **read ≤ +36.5 ns/call** at the same three points.
      - **Prediction** (design §7): frame ±2 ns, read +1–3 ns.
      - The packed point (S = 512, 3 × 160) is reported only, because no Realtime CPU clause has an A/A. A value above the read bound goes to the owner with the merge question.
    - **Unreadable rule:** a point whose BASE min–max spread over its 5 runs exceeds that point's bound is UNREADABLE. It is re-run once. If it is still UNREADABLE, it goes to the owner before the launch.
@@ -178,10 +202,10 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 | step | content | typical | basis |
 |---|---|---|---|
 | rehearsal + `framing_ns` | `LD_PLAN=64 LD_REHEARSE=1`: two release builds, the tools tests, plan 41d's 3 smoke rows plus RB s42 and RC s42; then the bench build and run | 0.75 h | §63's rehearsal (two builds, 20 min), plus about 15 min for the bench build and run |
-| launch | two builds (≈ 15 min), the suites on CAND with core and seams (≈ 60 min), the tools tests, the smoke, stage G (96 rows), stage R (24 rows), up to 6 replacements | 2.75 h | §54 launch 1: 17:40–19:26Z = 1.77 h for builds, suites, smoke and 96 rows (48 min of rows). Plus stage R, 24 × (≈ 70 s + ≈ 15 s) ≈ 34 min, and about 10 min for the core and seams lines |
+| launch | two builds (≈ 15 min), the suites on CAND with core and seams (≈ 60 min), the tools tests, the smoke, stage G (96 rows), stage R (24 rows), up to 6 replacements | 2.75 h | §54 launch 1: 17:40–19:26Z = 1.77 h for builds, suites, smoke and 96 rows (48 min of rows). Plus stage R, 24 × (≈ 70 s + ≈ 15 s) ≈ 34 min, plus ≈ 2 min per dead RB row (its warm-up waits the full 200 s), and about 10 min for the core and seams lines |
 | **total** | | **≈ 3.5 h** | host cargo paused throughout |
 
-- **Worst case, about 6 h:** a NO VERDICT re-launch (+2.75 h), or a rehearsal re-run (+0.75 h).
+- **Worst case, about 6.5 h:** every RB row dead (stage R at 24 × 215 s ≈ 1.45 h instead of 0.6 h), plus a NO VERDICT re-launch (+2.75 h) or a rehearsal re-run (+0.75 h).
 - **`LD_HARD`:** launch + 4.5 h; rehearsal + 1.5 h.
 - **Suite reuse is not budgeted.** `suites_run.sh` writes `TESTS-OK` but no `SRC-MANIFEST.sha256`, so `LD_PRIOR_TESTS` cannot accept the `626fdf9a` run. The suites run in-session, as §54's did.
 
@@ -223,12 +247,12 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
      - the owner-flag lines (§2.2);
      - the denominator: the server's received source symbols per RC row, from an existing log field. Name the field; if none exists, print `n/a (no field)` and say so. Do not change the engine;
    - stage R's rehearsal rows: RB s42 and RC s42.
-4. **The F2 witnesses read the receiving end** (the perf server), and the client's value is summed and reported, as `plan63` does.
+4. **The F2 witnesses:** presence is checked on the receiving end (the perf server's `[CTLD]`) and on both ends' `[SYMSZ]`; the `undeliv` value must be 0 on every `[CTLD]` line of both ends, and the sum is reported, as `plan63` does. Stage G applies §2.1's status precedence in its order.
 5. **`run_suites`** (`loopdiag_run_all.sh`):
    - add `tst core "$CARGO" test -p raptorpath-core`;
    - when `raptorpath/Cargo.toml` declares the `test-seams` feature, add the seams line exactly as `f2-impl`'s `suites_run.sh` has it (release, `--features test-seams`, the three F2 tests, `--test-threads=1`);
    - on a tree without the feature, print `SEAMS n/a`. Plan 41d's existing output is otherwise unchanged.
-6. **Budgets:** `BUDGET_S["64"]` from §4; `LD_HARD` = launch + 4.5 h, rehearsal + 1.5 h.
+6. **Budgets:** `BUDGET_S["64"]` from §4, with every RB row budgeted at its full timeout (a dead warm-up waits 200 s); `LD_HARD` = launch + 4.5 h, rehearsal + 1.5 h.
 7. **Tests (red first where a path is new):**
    - `STUBRUN_FULL=1` 64/full ALL OK, and fast mode ALL OK;
    - the stub paths:
