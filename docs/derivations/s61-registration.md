@@ -21,11 +21,13 @@
   - launch 61a: c3, 66 rows, typical 1.7 h, worst 3.7 h;
   - launch 61b: c2, 30 rows, typical 0.9 h, worst 1.7 h;
   - both on the §60 gauge binary rebuilt from the same tree, with no new engine code.
-- **Predicted:**
+- **Predicted** (as bands, because c3's own spread S_F,3 is known only to ≈ 8.5–12.5 ms):
   - S's sentence gives ρ₃ ≈ 0.80, so AGREES. That resolves if c3's per-replicate scatter is at most about twice c2's
     in relative terms.
-  - Every rival sentence lands at least 0.17 away, so DISAGREES.
-  - The decided form at g = 1 covers c3's knee by ≈ 5.8 ms. The registered A0 form falls short by ≈ 1.1 ms.
+  - The constant and loop-scaled rivals land ≥ 0.32 away, so DISAGREES.
+  - The σ-scaled rival lands +0.14 to +0.58 away, which is marginal at its low end.
+  - The decided form at g = 1 covers c3's knee by 5.1–5.9 ms. The registered A0 form's sign is not predicted
+    (−1.7 to +1.5 ms).
 
 Status: DRAFT REGISTRATION (derivation style). Docs and Python only: no engine code, no cargo, no VM contact. Branch
 `s61-c3-design` off main `0e4c4113`. It is written to be copied into `docs/status.md` as §61.
@@ -59,12 +61,33 @@ It is built on:
      - a control-pool go/no-go (netem's 1 000-packet limit);
      - B1 margins as numbers;
      - topo_dual.sh confirmed to shape the c3 leg like topo.sh.
+2. **Review of the first commit (`aa05eacd`).**
+   - **S_F,3 = 12.07 is a stand-in the netem line cannot produce.** Two-way uniform ±5 ms caps median − minimum at
+     10 ms, and c2 reads 0.847 of its 6 ms cap. Every c3 prediction is now a band over S_F,3 = 8.5–12.5
+     (`s61pred.out` §3, sweep).
+     - A0's D changes sign inside the band, so its sign is no longer predicted.
+     - The σ-scaled rival is marginal, and §5.2 says what AGREES would not rule out.
+   - **The floor's position is worth about Δ in ρ.** On c2's matched-n slope, a floor read at u 0.20 instead of 0.11
+     costs ≈ 0.085.
+     - So c3's F and S_F are read on the gate's fit at c2's floor utilisation u₂ = 0.112 (§5.1), not at whichever
+       pool survives.
+     - The W → 0 bracket now has an interval (ρ₂,₀ = 0.877 [0.858, 0.908], slopes refitted per draw). It marks a
+       label FLOOR-SENSITIVE only when it gives the opposite definite label.
+     - The c3 F gate's predicted label is corrected: it is not expected to resolve.
+   - **CR61 at the knee.** c8 leg 1's qshare reads up to 0.33 at W 320 (`s61pred.out` §4d). So the qshare clause
+     now needs the goodput cut too, which leaves every §4c result unchanged.
+   - **Smaller fixes:**
+     - the pilot's degenerate secant branch;
+     - a W 512 rehearsal row, so a control NO-GO leaves the pilot a valid control;
+     - need scored only for W₉₅,r inside the knee bracket;
+     - an abort table (§6.1);
+     - B1 given as a rate band.
 
 **Scripts** (stdlib, `python -I -X utf8`, output beside them in `store-law/`):
 
 | script | input | output | what it computes |
 |---|---|---|---|
-| `s61pred.py` | `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz`, read in place; imports `r68allow.py`'s loader | `s61pred.out` | §0: per-arm window sample counts and per-slot goodput. §1: S_F and F under the grouping rule G(n*), with the floor gate per n*. §2: ρ₂ with its bootstrap, the knee tmin's sensitivity to n, and the matched-n floor slope. §3: c3 predictions from c8 leg 1, ρ₃ under each rival sentence, and D per candidate. §4: the collapse study. §4c: CR61 on every G row. §4b: B1's `err` at the floor pools. §5: the c2 price table and chords |
+| `s61pred.py` | `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz`, read in place; imports `r68allow.py`'s loader | `s61pred.out` | §0: per-arm window sample counts and per-slot goodput. §1: S_F and F under the grouping rule G(n*), with the floor gate per n*. §2: ρ₂ with its bootstrap, the knee tmin's sensitivity to n, and the matched-n floor slope. §2 also gives the W → 0 variant of ρ₂ with its interval. §3: c3 predictions from c8 leg 1, ρ₃ under each rival sentence, D per candidate, and the sweep over S_F,3 = 8.5–12.5. §4: the collapse study. §4c: CR61 on every G row. §4d: qshare on c8 leg 1. §4b: B1's `err` at the floor pools. §5: the c2 price table and chords |
 
 ---
 
@@ -183,9 +206,12 @@ It is built on:
 
 **The registered rule** (Ŵ, the pilot knee):
 - If u₈₈ < 0.95 ≤ u₁₂₈: Ŵ is the linear interpolation in (W, u).
-- If both are < 0.95: Ŵ = 128 + (0.95 − u₁₂₈)·(128 − 88)/(u₁₂₈ − u₈₈), extrapolated on the secant.
+- If both are < 0.95 and u₁₂₈ > u₈₈: Ŵ = 128 + (0.95 − u₁₂₈)·(128 − 88)/(u₁₂₈ − u₈₈), extrapolated on the
+  secant.
+- If both are < 0.95 and u₁₂₈ ≤ u₈₈ (a degenerate secant): Ŵ = 128·0.95/u₁₂₈.
 - If both are ≥ 0.95: Ŵ = 88·0.95/u₈₈ (store-limited proportionality below the knee).
 - Ŵ is clamped to [64, 192].
+- The reference control is the rehearsal's control that passed §6's go/no-go (R1 at 2 048, or R6 at 512).
 
 **The arms**, with r4 meaning rounded to a multiple of 4:
 
@@ -201,8 +227,10 @@ It is built on:
 - **The pilot's own error.**
   - On c2's curve, a secant from u ≈ 0.6 / 0.85 probes reaches 0.95 about 4 % low, because u is concave in W.
   - The bracket spans −5 % to +14 %.
-- **Scoreability rule:** a replicate whose in-session W₉₅,r falls outside [K₁, P1] is UNSCOREABLE for need and D,
-  because the interpolation would clamp. A cell needs ≥ 5 scoreable replicates.
+- **Scoreability rule:** a replicate whose in-session W₉₅,r falls outside [K₁, K₃] is UNSCOREABLE for need and D.
+  Below K₁ the interpolation would clamp. Between K₃ and P1 it is a chord across the convex rise, which over-reads
+  need (c2's W₉₅ fell inside its bracket on 6 of 6). Such a replicate's chord value is listed as an upper bound.
+  A cell needs ≥ 5 scoreable replicates.
 
 ### 2.3 The c3 grid (launch 61a)
 
@@ -292,7 +320,7 @@ excess of 194–197 ms against X 14.7.
 ```text
    e_own(tick)  =  rtt=(tick) − (the row's median LATE tmin)        the standing queue cancels: it is in both terms
    below K₁ (floor, below-knee):  COLLAPSED  iff  share{LATE ticks: e_own > X_own} > 0.10   AND   gp < 0.95 × the arm's median gp
-   at and above K₁ (knee, P1, control):  COLLAPSED  iff  qshare > 0.10   OR   E90_own / (p90 − tmin)_own > 1.5
+   at and above K₁ (knee, P1, control):  COLLAPSED  iff  ( qshare > 0.10  AND  gp < 0.95 × the arm's median gp )   OR   E90_own / (p90 − tmin)_own > 1.5
    X_own = E90 + 2·(E90 − E50),  E50 / E90 = the medians over the cell's reference floor rows of each row's own percentile of e_own
    qshare = share of [DIAG] lines (t ≥ 1 s) with leg-0 qcwnd < the cell's BDP (place38_parse.qcwnd_below_bdp)
 ```
@@ -306,6 +334,11 @@ excess of 194–197 ms against X 14.7.
   transfer upward. At c1s W 192 it removes three false flags.
 - **qshare is §56/§57's quinn-window flag.** It is used only at and above the knee bracket. Below it, a store-limited
   flow holds qcwnd under the BDP by construction (c2 W 16: share 1.000 on 3 of 6 healthy rows).
+  - On a c3-shaped leg it can also read high near the knee: c8 leg 1 reads 0.23–0.33 at W 320 on 3 of 6 rows, and
+    0.15 at W 384 on 2 (`s61pred.out` §4d). c3's knee sits nearer its BDP (≈ 1.3× in slots, against ≈ 1.7× at c2).
+  - So qshare also needs the goodput cut. Every §60 collapse it caught keeps its flag (c1s W 2 048: goodput
+    221–671 against the arm median 788).
+  - The rehearsal reports qshare on the pilot rows R4 and R5.
 - **The ratio 1.5 is declared post hoc on §60.**
   - It sits between the largest healthy value (1.40, c8 leg 1 W 1 280) and G r1's 1.82.
   - It catches G r1, which qshare misses (0.014). That is the case §60 Result item 4 names.
@@ -326,8 +359,8 @@ excess of 194–197 ms against X 14.7.
 - The c1s check is post hoc. The c2 and c8 zeros are out of sample: no constant was fitted on them.
 - **Frozen X_own:**
   - c2: **10.66 ms**, from §60's six W 16 rows (E50 4.95, E90 6.86). It is used at 61b's below-knee arms.
-  - c3: **in session**, from the c3 W 12 rows (minority-robust). Predicted ≈ **19.3 ms** from c8 leg 1's W 256 rows
-    (E50 8.64, E90 12.19), a dual-cell stand-in.
+  - c3: **in session**, from the c3 W 12 rows (minority-robust). Predicted **13.6–19.3 ms**: 19.3 from c8 leg 1's
+    W 256 rows (E50 8.64, E90 12.19, a dual-cell stand-in), scaled by S_F,3/12.07 over §5.2's band.
 - **Gating.**
   - A COLLAPSED floor row is not valid (§4.2).
   - A COLLAPSED below-knee, knee or P1 row leaves its arm's medians and its replicate's knee interpolation, and is
@@ -359,8 +392,16 @@ excess of 194–197 ms against X 14.7.
 ## 5. Readings
 
 **The common symbols**, per cell (c3 under §3's rule, c2 native):
-- **F_c:** the median over the floor pool's valid rows of F_row.
-- **S_F,c:** the same median of S_F,row.
+- **F_c and S_F,c at c2:** the medians over §60's six W 16 rows of F_row and S_F,row (u = 0.112, native).
+- **F_c and S_F,c at c3: read at c2's floor utilisation.**
+  - F_c = a_F + b_F·W* and S_F,c = a_S + b_S·W*, the gate's OLS lines (§5.1) evaluated at W* = u₂/κ.
+  - u₂ = 0.112 is c2's W 16 utilisation (measured, §60).
+  - κ is the median over the valid floor rows of u_row/W, with u_row = gp_row/(the session median control gp).
+  - **Why:** on c2's matched-n slope, a floor read at u 0.20 instead of 0.11 moves ρ by ≈ 0.085 (0.54 ms per
+    0.112 of u, over S_F 5.08), which is Δ. The floor-move rule would otherwise move the floor exactly that far.
+  - Predicted W* ≈ 10–13, within ≈ 2 slots of W 12.
+  - If W* lies more than 6 slots below the lowest valid pool (after a floor move), ρ₃ and D are reported, not
+    scored: **UNSCOREABLE-FLOOR**.
 - **T̂min_r(W₉₅,r):** the replicate's knee window minimum, interpolated from the row medians at the knee-bracket and
   P1 arms (`r68allow.at_knee`).
 - **W₉₅,r:** the replicate's goodput knee, where gp/gp_ctl crosses 0.95 over every non-control arm
@@ -393,21 +434,32 @@ excess of 194–197 ms against X 14.7.
 **Provenance of τ.** It is declared from the consequence. A floor bias of τ_F moves ρ by τ_F/S_F = 0.05, and an S_F
 bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
 
+**The gate's resolution at c3.**
+- The fit spans only 12 slots (W 12 / 16 / 24, 18 rows, Σ(W − W̄)² = 448).
+- With a per-row F scatter of ≈ 0.4 ms (c2's 0.10–0.25 ms, scaled by the spread), se_b ≈ 0.019 ms/slot, so se_E ≈ 0.23
+  ms at W₁ = 12.
+- **The gate is not expected to resolve F**, and it no longer gates anything. The u-matched reading (§5 symbols) and
+  the W → 0 bracket below carry the floor's consequence.
+
 **Predictions.**
-- **c3, S_F:** CONVERGED. c8 leg 1 under G(250) gives |E| + 2se = 0.21 ms (W₁ = 32) against τ ≈ 0.60. The per-slot
-  slope on a single c3 leg is not measured.
-- **c3, F:** CONVERGED or UNRESOLVED.
-  - c8 leg 1 under G(250) gives E_F = +0.43 ± 0.03 ms against 0.60.
-  - Scaled from c2's matched-n rise per unit u (0.54 ms at u 0.11, ×10/6 for the jitter), it is ≈ +0.8–1.0 ms at
-    u 0.13.
+- **c3, S_F:** CONVERGED or UNRESOLVED. c8 leg 1 under G(250) gives |E| + 2se = 0.21 ms (W₁ = 32), against
+  τ = 0.43–0.62 over §5.2's S_F band. The per-slot slope on a single c3 leg is not measured.
+- **c3, F: UNRESOLVED is the expected label** (NOT-CONVERGED at the low end of the S_F band).
+  - c2's matched-n rise per unit u (0.54 ms at u 0.11, ×10/6 for the jitter) scales to E_F ≈ +0.8–1.0 ms at u 0.13,
+    ± 0.23. Against τ 0.43–0.62 that is UNRESOLVED, or NOT-CONVERGED at the low end.
+  - c8 leg 1's +0.43 ± 0.03 would read CONVERGED, but it is a dual-cell stand-in over a wider pool range.
 - **c2, reported from §60 at matched n (G(800) over W 16 / 32 / 48):**
   - E_F = **+0.54 ± 0.03** ms: NOT-CONVERGED against τ 0.25;
   - E_S = −0.14 ± 0.04: CONVERGED.
   - §60's native CONVERGED (E 0.18 ± 0.03) was flattered by the sample count, which rises with W and lowers tmin.
 - **The consequence: the floor bracket.**
-  - Every scored reading below is printed at the floor pool (scored) and at the extrapolated W → 0 floor
-    (F − E_F, S_F − E_S).
-  - **A label is robust iff both give it**; otherwise it prints with `FLOOR-SENSITIVE`.
+  - Every scored reading below is printed at the u-matched floor (scored) and at the extrapolated W → 0 floor
+    (F − E_F, S_F − E_S). The W → 0 reading's interval refits the slopes in every bootstrap draw, with rows resampled
+    within pools.
+  - **`FLOOR-SENSITIVE` iff the W → 0 reading gives the opposite definite label** (AGREES against DISAGREES, or
+    SHORT against COVERED).
+  - An UNRESOLVED W → 0 reading leaves the scored label standing, printed with its W → 0 interval. The W → 0
+    interval is expected to be wide at c3: se_E ≈ 0.23 ms adds ≈ 0.04 to ρ's half-width.
   - At c2 the W → 0 values come from the G(800) slope applied to the native F and S_F, an approximation, labelled.
 
 ### 5.2 need / S_F: the falsifier of S's sentence
@@ -425,14 +477,14 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
 - The §60 / r68 five-row set gives 0.797 [0.772, 0.836].
 - This is the owner's 0.80, read natively. The partial grouping G(280) would give 0.837, which is why c2 stays
   native (§3).
-- **The W → 0 variant is 0.877** (approximate, §5.1).
+- **The W → 0 variant is 0.877, 90 % [0.858, 0.908]** (approximate, §5.1; slopes refitted per draw).
 - ρ₂ is frozen in `s61_score.py` as its inputs (six knee tmin values and six floor (S, F) pairs), with a host test
   that recomputes them from the §60 tgz.
 
 **The margin, and why it is c2's.**
 - The consequence of a common g_R across cells is a landing error of |ρ₃ − ρ₂|·S_F. Realtime stays above its knee
   iff that error is < q_R·F̂ at every cell.
-- c2's ratio is the smaller (0.05 × 8.68 / 5.08 = **0.085**). c3's predicted ratio is 0.05 × 33.6 / 12.1 = 0.139.
+- c2's ratio is the smaller (0.05 × 8.68 / 5.08 = **0.085**). c3's predicted ratio is 0.05 × 33.6 / S_F,3 = 0.134–0.198 over the S_F band.
 - So Δ = 0.085 is expected. It is computed in session as the minimum, and it is declared from the law's consequence
   (owner question 1).
 
@@ -441,33 +493,45 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
 - **DISAGREES** iff CI(Δρ) ∩ [−Δ, +Δ] = ∅.
 - **UNRESOLVED** otherwise. That is a null without power, and is read as `NEEDS-MORE-replicates`, never as a
   refutation.
-- **Robust** iff the floor-pool and W → 0 readings give the same label (§5.1).
-- **UNSCOREABLE-N** if §3's parity fails.
+- **FLOOR-SENSITIVE** iff the W → 0 reading gives the opposite definite label (§5.1).
+- **UNSCOREABLE-N** if §3's parity fails; **UNSCOREABLE-FLOOR** if W* needs a long extrapolation (§5 symbols).
 - **UNSCOREABLE** if fewer than 5 c3 replicates are scoreable (§2.2).
 
-**Predictions, computed first** (`s61pred.out` §3; S_F,3 = 12.07 ms and F₃ = 33.6 from c8 leg 1 under G(250); σ₃
-5.17):
+**Predictions, computed first** (`s61pred.out` §3, the sweep). They are given as bands over S_F,3 = 8.5–12.5 ms.
+- c8 leg 1 reads 12.07 under G(250), more than the 10 ms cap of two-way uniform ±5 ms jitter. So leg 1 carries spread
+  beyond c3's netem line.
+- c2 reads 0.847 of its own 6 ms cap, which predicts ≈ 8.5 on a single c3 leg.
+- F₃ = 33.6 (c8 leg 1, G(250)).
+- σ₃ is either held at leg 1's 5.17 or scaled with S_F,3.
 
 | sentence | need₃ (ms) | ρ₃ | Δρ | expected label |
 |---|---|---|---|---|
-| **S: need = ρ·S_F** | 9.61 | 0.797 | 0 | AGREES |
-| constant (A(c): need = c2's 4.05) | 4.05 | 0.336 | −0.461 | DISAGREES |
-| σ-scaled (need = 2.27·σ) | 11.72 | 0.971 | +0.175 | DISAGREES |
-| loop-scaled (need = 0.466·F) | 15.68 | 1.299 | +0.503 | DISAGREES |
+| **S: need = ρ·S_F** | 6.8–10.0 | 0.797 | 0 | AGREES |
+| constant (A(c): need = c2's 4.05) | 4.05 | 0.32–0.48 | −0.47 to −0.32 | DISAGREES |
+| σ-scaled (need = 2.27·σ) | 8.3–11.7 | 0.94–1.38 (σ fixed); 0.97 (σ ∝ S_F) | +0.14 to +0.58 | DISAGREES, **marginal at its low end** |
+| loop-scaled (need = 0.466·F) | 15.7 | 1.25–1.85 | +0.46 to +1.05 | DISAGREES |
 
 **Resolution.**
 - c2's ρ half-width is 0.022.
 - c3's per-replicate need scatter is dominated by the knee position: W₉₅'s ≈ 2 % spread times the knee slope, which
   is steeper per slot at 20 Mbit/s. That predicts a ρ₃ half-width of ≈ 0.03–0.05, so a Δρ half-width of
   ≈ 0.04–0.055.
-- **AGREES resolves iff |Δρ| ≲ 0.03–0.045; DISAGREES iff |Δρ| ≳ 0.13–0.14.** Every rival lies ≥ 0.175 away, so it
-  resolves.
+- **AGREES resolves iff |Δρ| ≲ 0.03–0.045; DISAGREES iff |Δρ| ≳ 0.13–0.14.**
+  - The constant and loop-scaled rivals lie ≥ 0.32 away, so they resolve.
+  - The σ-scaled rival lies +0.14 to +0.58 away. It is marginal where σ₃/S_F,3 ends up close to c2's 1.785/5.08 = 0.35.
 - If c3's relative scatter is more than about twice c2's, S's expected label is UNRESOLVED.
+- **What AGREES would not rule out: the σ-scaled sentence, wherever the two predict alike.** σ (P90 − P50 at load) and
+  S_F (p50 − minimum at no load) are both jitter spreads.
+  - So the scorer prints `SIGMA-DISCRIMINATION` = ρ₂·(σ₃/S_F,3)/(σ₂/S_F,2) − ρ₂, with σ₃ the in-session `sig` at the
+    c3 knee bracket.
+  - If that value lies within ±Δ, AGREES does not separate S from the σ-scaled sentence. It is then reported as
+    "AGREES (S or σ-scaled)".
+  - The σ-scaled sentence is not the decided form, and the A0-type forms that carry σ are refuted at c2 anyway.
 
 **What it hands the owner.**
 - **On AGREES:** ρ̄ (the two cells' pooled ρ, with its CI) and g_knee per cell = ρ − q_R·F_c/S_F,c:
   - c2 **0.711**;
-  - c3 predicted **0.657**.
+  - c3 predicted **0.60–0.66** over the S_F band.
   - **With g_R = ρ̄,** Realtime lands q_R·F̂ above the knee at both cells.
   - **With g_R = g_knee,** it lands at that cell's knee.
   - Anything lower is priced by §5.4.
@@ -494,23 +558,25 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
 
 **Labels.**
 - **SHORT** iff CI > 0; **COVERED** iff CI < 0; otherwise **UNRESOLVED**.
-- Each is robust iff the floor bracket agrees. The W → 0 reading is D + E_F, with E_F's ±2se carried. This replaces
-  "COVERED only if CONVERGED" with a number.
+- The W → 0 reading is D + E_F, with its interval from the refitted bootstrap (§5.1). A label is `FLOOR-SENSITIVE`
+  iff the W → 0 reading gives the opposite definite label. This replaces "COVERED only if CONVERGED" with a number.
 - The bracket arms just below and above W₉₅ are reported, as §60 did.
 
-**Predictions** (D at c3 under each sentence, Bulk; c3 inputs as in §5.2):
+**Predictions** (D at c3 in ms, Bulk, as bands over S_F,3 = 8.5–12.5 with σ₃ fixed or scaled; `s61pred.out` §3,
+the sweep):
 
-| A | A (ms) | D under S | under constant | under σ-scaled | under loop-scaled |
-|---|---|---|---|---|---|
-| **S (g = 1)** | 15.43 | **−5.82 COVERED** | −11.38 | −3.71 | +0.25 |
-| A0 | 8.47 | **+1.14 SHORT** | −4.42 | +3.25 | +7.21 |
-| A0f | 8.53 | +1.08 | −4.48 | +3.19 | +7.15 |
-| Ac | 7.43 | +2.18 | −3.38 | +4.29 | +8.25 |
-| wq | 13.91 | −4.30 | −9.86 | −2.19 | +1.77 |
+| A | under S | under constant | under σ-scaled (σ fixed) | under loop-scaled |
+|---|---|---|---|---|
+| **S (g = 1)** | **−5.1 to −5.9, COVERED** | −7.8 to −11.8 | −0.1 to −4.1 | +3.8 to −0.2 |
+| A0 | **−1.7 to +1.5: sign not predicted** (zero at S_F,3 ≈ 9.2–10.6) | −4.4 (σ fixed) | +3.25 | +7.2 |
+| A0f | −1.8 to +1.4 | −4.5 | +3.2 | +7.15 |
+| Ac | −0.7 to +2.5 | −3.4 | +4.3 | +8.25 |
+| wq | −3.9 to −7.1 | −9.9 | −2.2 | +1.8 |
 
-- **Resolution.** c2's D half-width is 0.12 ms (§60: [+1.588, +1.836]). Scaled by the spread ratio (×2.4), c3's is
-  ≈ 0.3 ms. So every entry with |D| ≥ 0.3 is predicted to resolve.
-- The decided form covers c3's knee under every sentence but the loop-scaled one.
+- **Resolution.** c2's D half-width is 0.12 ms (§60: [+1.588, +1.836]). Scaled by the spread ratio (×1.7–2.5), c3's
+  is ≈ 0.2–0.3 ms. So every entry with |D| ≥ 0.3 is predicted to resolve.
+- The decided form covers c3's knee under S's sentence and under the constant one. It is marginal under the σ-scaled
+  sentence at the low end of the band, and short under the loop-scaled one at the low end.
 
 ### 5.4 The price table (reported; the owner's later call on Realtime)
 
@@ -546,8 +612,9 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
   from §60's floor rows (`s61pred.out` §4b):
   - **c2:** median margin +0.90 to +1.23 ms, but the smallest is −0.06 to −0.11. It fires on 1 of 6 at each of
     W 16 / 32 / 48, so the expected c2 fire rate is ≈ 1/6.
-  - **c8 leg 1 (the c3 stand-in):** smallest margin +0.78 to +1.63, median +3.4 to +3.8. So it is predicted not to
-    fire at c3.
+  - **c8 leg 1 (the c3 stand-in):** smallest margin +0.78 to +1.63, median +3.4 to +3.8, firing 0 of 18.
+  - **Predicted at c3:** 0–3 fires over its 18 floor rows. The band runs from c8 leg 1's 0 to the single-leg c2 rate
+    of 1 in 6.
   - B1 decides nothing in s61, since no reading uses R's calibration end.
 - **P1** (b0p at P1 over b0p at the floor pool), from printed fields.
 - **Printed `l` per arm**, and printed R and Rb.
@@ -568,9 +635,10 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
 - **R1:** c3 G 2 048 (120 MB). It is the smoke (every gauge tag, the witness PASS and the CAPLOG replay PASS) and the
   pilot's control.
 - **R2, R3:** c3 G 12, seeds 42 and 7: the floor go/no-go.
-- **R4, R5:** c3 G 88 and G 128: the pilot (§2.2).
-
-**Go/no-go.**
+- **R4, R5:** c3 G 88 and G 128: the pilot (§2.2). Their qshare is reported (§4.1).
+- **R6:** c3 G 512 (120 MB): the fallback control.
+  - It is measured before 61a depends on it, so a control NO-GO still leaves the pilot a valid reference.
+  - Its goodput against R1's is reported. A healthy 2 048 control should match it within 2 %.
 - **Binary:** the build's `bin_sha` = e410d640…5f25d, or `ABORT-BIN-SHA` (nothing measured; owner question 2).
 - **Floor:** GO iff at least one of R2 / R3 passes all of these:
   - no DNF;
@@ -581,15 +649,34 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
   - **NO-GO:** the floor moves to W 16 for the whole of 61a (reported). If the W 16 row of 61a then fails, §4.2's
     rule applies.
 - **Control:** GO iff both hold:
-  - R1's goodput ≥ 0.98 × max(R4, R5) goodput, or ≥ 16 Mbit/s if neither probe is at capacity;
+  - R1's goodput ≥ 0.98 × max(R4, R5, R6) goodput;
   - R1's datagram loss truth (the harness's egress counter, rule 19) ≤ 4.76 % + 1.0 pp.
-  - **NO-GO:** the control arm becomes **W 512** for 61a (queue ≈ 0.25 s, ≈ 130 skbs), as a registered fallback.
-- **Pilot:** Ŵ by §2.2's rule, printed. A pilot row that DNFs is re-run once. Without both rows there is no Ŵ, and
-  61a does not launch.
+  - **NO-GO:** the control arm becomes **W 512** for 61a (queue ≈ 0.25 s, ≈ 130 skbs), as a registered fallback,
+    provided R6 passes the same loss test. Otherwise 61a does not launch (`NOGO-CONTROL`).
+- **Pilot:** Ŵ by §2.2's rule against the GO control (R1, or R6), printed. A pilot row that DNFs is re-run once.
+  Without both rows there is no Ŵ, and 61a does not launch.
 - **Witness checks, as §60 §5 on R2 / R3:** `b0k[0]` = 0, and `m` = `l` for t < 10 s. A failure is reported, not
   voided.
 - **The c2 side:** 61b's smoke (one c2 G 160 row) is checked as §60's c2 smoke. It needs no rehearsal of its own,
   since c2's rows ran in §60 on this binary.
+
+### 6.1 Abort classes, in priority order (measurement-discipline protocol item 3)
+
+| priority | class | token | what is run |
+|---|---|---|---|
+| 1 | a VM lock held | `ABORT-LOCK` (`take_lock`) | nothing |
+| 2 | CR bytes in the tree | `ABORT-CRLF` | nothing |
+| 3 | the engine suites not reused (manifest MISS) | `ABORT-SUITES plan 61x suite-reuse MISS` | nothing |
+| 4 | the built binary is not the registered one | `ABORT-BIN-SHA` | nothing (in 61r first) |
+| 5 | 61a launched without the pilot | `ABORT-PILOT` (no `LD_KNEE61`) | nothing |
+| 6 | the control fails and so does its fallback | `NOGO-CONTROL` (61r prints it; 61a refuses) | 61r only |
+| 7 | a sentinel is unwritable | `ABORT-SENTINEL` | nothing |
+| 8 | the smoke fails | `ABORT-SMOKE` | the smoke only |
+| 9 | a non-zero stage exit, or bring-up exhausted | `FAILED-<stage>` | rows up to the failure, scored at the n reached |
+| 10 | the budget guard (less than the worst case to `LD_HARD`) | `ABORT-BUDGET` | nothing |
+| 11 | the hard deadline reached mid-battery | the truncation sentinel (not a failure) | scored at the n reached, a null at reduced power read as `NEEDS-MORE` |
+
+The scored section of the Result opens with this table, filled.
 
 ---
 
@@ -634,7 +721,7 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
 
 | launch | block | rows | typical | worst |
 |---|---|---|---|---|
-| **61r** (rehearsal) | build (suite reuse HIT) + 5 rows (§6) | 5 | 20 min | 30 min |
+| **61r** (rehearsal) | build (suite reuse HIT) + 6 rows (§6) | 6 | 22 min | 35 min |
 | **61a** | build | — | 6 min | 10 min |
 | | smoke (c3 G at K₂) | 1 | 2 min | 3 min |
 | | c3: 12, 16, 24, B ×3, K ×3, P1, control × 6 | 66 | 1.55 h | 66 × 160 s = 2.93 h |
@@ -675,7 +762,9 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
      - CR61 (§4.1), with X_own in session for c3 and frozen at 10.66 ms for c2;
      - floor-row validity and the floor-pool move (§4.2);
      - the two-sided gates (§5.1), including UNSCOREABLE with fewer than 2 pools;
-     - ρ and Δρ, with the frozen ρ₂ inputs and the Δ minimum (§5.2);
+     - c3's u-matched F_c and S_F,c on the gate's lines at W* = u₂/κ, with UNSCOREABLE-FLOOR (§5 symbols);
+     - the W → 0 bracket, with the slopes refitted in every bootstrap draw, and FLOOR-SENSITIVE (§5.1);
+     - ρ and Δρ, with the frozen ρ₂ inputs and the Δ minimum, and `SIGMA-DISCRIMINATION` (§5.2);
      - D per candidate (§5.3);
      - the price and landing tables (§5.4);
      - the drift reading;
@@ -696,7 +785,7 @@ bias of τ_S moves it by 0.05·ρ = 0.04. Either is about half of Δ (§5.2).
        because `docs/l1-raw` is export-ignored);
      - an absolute test: ρ = need/S_F on a two-row fixture.
   4. **`tools/l1/test_harness61.py`:**
-     - table counts (5 / 66 / 30), armspec for every slot, bytes and timeouts;
+     - table counts (6 / 66 / 30), armspec for every slot, bytes and timeouts;
      - the arm derivation at Ŵ = 64, 115 and 192;
      - `ABORT-PILOT` without `LD_KNEE61`;
      - budget values;
@@ -739,7 +828,7 @@ a number, as an Amendment before VM contact.
 
 1. **The equivalence margin Δ** = min over cells of q_R·F̂/S_F (≈ 0.085, c2's). It is declared from the consequence
    that a common g_R keeps Realtime above its knee at both cells.
-   - A wider margin (for example c3's 0.139) makes AGREES easier, and is right only if Realtime may land below a
+   - A wider margin (for example c3's own 0.134–0.198) makes AGREES easier, and is right only if Realtime may land below a
      knee anyway, which is your later price-table call.
    - **Proposed:** keep 0.085.
 2. **If the rebuild does not give `e410d640`** (most likely because the VM toolchain moved): is a re-pin approved?
@@ -753,12 +842,12 @@ registered rules.
 
 ## 11. What follows each outcome
 
-- **AGREES (robust):** S_F has measured provenance at two jitter-to-loop ratios.
+- **AGREES (not FLOOR-SENSITIVE):** S_F has measured provenance at two jitter-to-loop ratios.
   - The engine form g(δ)·S_F + q(δ)·F̂ can be designed, with g(Bulk) = 1 and g_R chosen from ρ̄ / g_knee and the
     price table.
   - The estimator carries §3's sample-count rule (R6.7 open item 4).
   - F07 moves from UNDERIVED toward a measured magnitude.
-- **DISAGREES (robust):** S_F is not the knee's term. The form is re-derived (decision 8), and c3's need₃ against
+- **DISAGREES (not FLOOR-SENSITIVE):** S_F is not the knee's term. The form is re-derived (decision 8), and c3's need₃ against
   each rival sentence is the data for it.
 - **FLOOR-SENSITIVE:** where the law reads F̂ (the boot pool against the W → 0 limit) decides the verdict. That is
   R6.7's boot-hold and n₀ item, and it comes before any engine form.

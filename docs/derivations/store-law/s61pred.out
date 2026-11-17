@@ -44,7 +44,7 @@ s61 predictions (s61pred.py): the s60 rows read in place from rep60a-diag-ld.tgz
     W176: k=1: 13.095 (n 2342) | k=2: 12.655 (n 4684) | k=4: 12.139 (n 9369) | k=8: 11.792 (n 18738)
     W192: k=1: 14.052 (n 2392) | k=2: 13.497 (n 4784) | k=4: 12.939 (n 9567) | k=8: 12.515 (n 19134)
   the floor slope at matched n (every pool grouped to n* >= the largest native nk among W 16 / 32 / 48 = 786): b and E = b*16, and the W -> 0 variant of rho_2:
-    G(800): F b +0.0335 +- 0.0020 -> E_F +0.54 +- 0.03 ms | S_F b -0.0090 +- 0.0027 -> E_S -0.14 +- 0.04 ms | rho_2 at (F - E_F, S_F - E_S) = 0.877  (applied to the native F, S_F: an approximation, labelled)
+    G(800): F b +0.0335 +- 0.0020 -> E_F +0.54 +- 0.03 ms | S_F b -0.0090 +- 0.0027 -> E_S -0.14 +- 0.04 ms | rho_2 at (F - E_F, S_F - E_S) = 0.877, 90 % [0.858, 0.908] (slopes refitted per draw; applied to the native F, S_F: an approximation, labelled)
 
 == 3. c3 predictions from c8 leg 1 (20 Mbit/s, 20 ms, 5 ms jitter both ways; starved below W 256): S_F and F under G(250) (realised n near c2's native floor 282) ==
   W32: S_F 12.336 (row sd 0.284) F 33.493 realised n/group 255 groups/row 6
@@ -60,6 +60,18 @@ s61 predictions (s61pred.py): the s60 rows read in place from rep60a-diag-ld.tgz
   D per candidate at c3 under S's sentence (need = rho_2 * S_F,3), Bulk:
     A0 sig+q*l: A 8.47 D +1.14 | A0f sig+q*F: A 8.53 D +1.08 | Ac sig+2.26: A 7.43 D +2.18 | S = decided form at g=1: S_F+q*F: A 15.43 D -5.82 | wq sig+0.26*F: A 13.91 D -4.29
   g at which the decided form lands at the c3 knee at Realtime: g_knee = rho - q_R*F/S_F = 0.797 - 0.139 = 0.657 (c2: 0.711)
+  S_F,3 sweep: c8 leg 1's 12.07 exceeds the two-way uniform +-5 ms cap of 10 ms; c2 reads 5.08 against its 6 ms cap (0.847), so a single c3 leg may read ~8.5. sigma_3 scaled with S_F (sigma_3 = 5.17 * S/12.07) and fixed:
+    S_F,3 | need_S | D: A0 A0f Ac S(g=1) wq | rho_3 constant / sigma-fixed / sigma-scaled / loop | D[S] under sigma-fixed | g_knee | Delta_3 = q_R F/S | tau = 0.05 S
+      8.5 sigma fixed  |  6.77 | -1.70 -1.76 -0.66 -5.09 -7.14 | 0.476 / 1.379 / 1.379 / 1.845 | -0.14 | 0.599 | 0.198 | 0.43
+      8.5 sigma scaled |  6.77 | -0.18 -0.23 +0.87 -5.09 -5.61 | 0.476 / 1.379 / 0.971 / 1.845 | -0.14 | 0.599 | 0.198 | 0.43
+      9.5 sigma fixed  |  7.57 | -0.91 -0.96 +0.14 -5.29 -6.34 | 0.426 / 1.234 / 1.234 / 1.650 | -1.14 | 0.620 | 0.177 | 0.48
+      9.5 sigma scaled |  7.57 | +0.19 +0.14 +1.24 -5.29 -5.24 | 0.426 / 1.234 / 0.971 / 1.650 | -1.14 | 0.620 | 0.177 | 0.48
+     10.5 sigma fixed  |  8.36 | -0.11 -0.16 +0.94 -5.50 -5.54 | 0.386 / 1.116 / 1.116 / 1.493 | -2.14 | 0.636 | 0.160 | 0.53
+     10.5 sigma scaled |  8.36 | +0.56 +0.51 +1.61 -5.50 -4.87 | 0.386 / 1.116 / 0.971 / 1.493 | -2.14 | 0.636 | 0.160 | 0.53
+     11.5 sigma fixed  |  9.16 | +0.69 +0.63 +1.73 -5.70 -4.75 | 0.352 / 1.019 / 1.019 / 1.363 | -3.14 | 0.650 | 0.146 | 0.58
+     11.5 sigma scaled |  9.16 | +0.93 +0.87 +1.97 -5.70 -4.50 | 0.352 / 1.019 / 0.971 / 1.363 | -3.14 | 0.650 | 0.146 | 0.58
+     12.5 sigma fixed  |  9.96 | +1.48 +1.43 +2.53 -5.90 -3.95 | 0.324 / 0.938 / 0.938 / 1.254 | -4.14 | 0.662 | 0.134 | 0.62
+     12.5 sigma scaled |  9.96 | +1.30 +1.24 +2.34 -5.90 -4.13 | 0.324 / 0.938 / 0.971 / 1.254 | -4.14 | 0.662 | 0.134 | 0.62
 
 == 4. Collapse study per row: qcwnd-below-BDP share (DIAG, t >= 1 s, leg 0), goodput, and the excess of the EWMA rtt over (a) the row's min rtp_us (s60's rule) and (b) the row's own median LATE tmin (leg 0 [SLAW]); LATE ticks with src > 0; E50 / E90 and the share above X_own ==
   c1s-400 W2048:
@@ -210,6 +222,16 @@ s61 predictions (s61pred.py): the s60 rows read in place from rep60a-diag-ld.tgz
   c1s-400 leg0 W128: COLLAPSED 0/6 | share>X_own 0.03 0.02 0.02 0.15 0.02 0.06
   c1s-400 leg0 W192: COLLAPSED 1/6 | share>X_own 0.17 0.09 0.11 0.09 0.94 0.11
   c1s-400 leg0 W2048: COLLAPSED 6/12 | E90/(p90-tmin) 1.82 0.89 1.32 0.87 1.37 1.15 0.86 0.86 1.06 1.19 0.95 1.04
+
+== 4d. qshare on c8 leg 1 (the c3-shaped leg, BDP 100 000 B): share of [DIAG] lines (t >= 1 s) with p1 qcwnd < 100 000, per row ==
+  c8 leg1 W32: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W64: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W96: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W256: 0.000 0.000 0.000 0.000 0.000 0.000
+  c8 leg1 W320: 0.000 0.228 0.271 0.000 0.330 0.000
+  c8 leg1 W384: 0.000 0.000 0.000 0.149 0.155 0.000
+  c8 leg1 W512: 0.028 0.000 0.000 0.084 0.011 0.000
+  c8 leg1 W1280: 0.000 0.006 0.017 0.011 0.023 0.028
 
 == 4b. B1 on s60's floor pools (every G row, no validity filter): per-row median LATE err (ms), leg by leg; B1 fires iff > 0 ==
   c2-100 leg0 W16: err -2.356 -1.955 -1.831 -0.341 -0.117 +0.075 | median margin +1.086, smallest margin -0.075, fires on 1/6

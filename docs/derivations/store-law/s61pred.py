@@ -259,8 +259,21 @@ def main(argv):
     bS, seS = ols(xs, yS)
     EF, ES = bF * 16, bS * 16
     rho20 = med([(t - (F2 - EF)) / (S2 - ES) for t in knee_t])
+    fl6 = sorted([row_SF(r, 0, None)[:2] for r in grows(rows, C2) if r.W == 16 and r.late(0)])
+    bypool = {W: [(W,) + row_SF(r, 0, 800)[:2] for r in grows(rows, C2) if r.W == W and r.late(0)] for W in (16, 32, 48)}
+    rnd = random.Random(60)
+    res0 = []
+    for _ in range(2000):
+        it = [knee_t[rnd.randrange(len(knee_t))] for _ in knee_t]
+        f_ = [fl6[rnd.randrange(len(fl6))] for _ in fl6]
+        pts = [v[rnd.randrange(len(v))] for v in bypool.values() for _ in v]
+        bFb, _ = ols([x[0] for x in pts], [x[2] for x in pts])
+        bSb, _ = ols([x[0] for x in pts], [x[1] for x in pts])
+        Sb, Fb = med([x[0] for x in f_]) - bSb * 16, med([x[1] for x in f_]) - bFb * 16
+        res0.append(med([(t - Fb) / Sb for t in it]))
+    res0.sort()
     P(f"    G(800): F b {bF:+.4f} +- {seF:.4f} -> E_F {EF:+.2f} +- {seF * 16:.2f} ms | S_F b {bS:+.4f} +- {seS:.4f} -> E_S {ES:+.2f} +- {seS * 16:.2f} ms"
-      f" | rho_2 at (F - E_F, S_F - E_S) = {rho20:.3f}  (applied to the native F, S_F: an approximation, labelled)")
+      f" | rho_2 at (F - E_F, S_F - E_S) = {rho20:.3f}, 90 % [{res0[100]:.3f}, {res0[1900]:.3f}] (slopes refitted per draw; applied to the native F, S_F: an approximation, labelled)")
 
     # ── 3. c3 predictions from c8 leg 1 (the c3-shaped leg; never at its own knee) under s61's floor rule G(250) ──
     P("\n== 3. c3 predictions from c8 leg 1 (20 Mbit/s, 20 ms, 5 ms jitter both ways; starved below W 256): S_F and F under G(250) (realised n near c2's native floor 282) ==")
@@ -291,6 +304,16 @@ def main(argv):
          "S = decided form at g=1: S_F+q*F": S3 + QB * F3, "wq sig+0.26*F": sig1 + 0.260 * F3}
     P("    " + " | ".join(f"{k}: A {a:.2f} D {need3 - a:+.2f}" for k, a in A.items()))
     P(f"  g at which the decided form lands at the c3 knee at Realtime: g_knee = rho - q_R*F/S_F = {rho2:.3f} - {QR * F3 / S3:.3f} = {rho2 - QR * F3 / S3:.3f} (c2: {rho2 - dq:.3f})")
+    P(f"  S_F,3 sweep: c8 leg 1's {S3:.2f} exceeds the two-way uniform +-5 ms cap of 10 ms; c2 reads 5.08 against its 6 ms cap (0.847), so a single c3 leg may read ~8.5. sigma_3 scaled with S_F (sigma_3 = {sig1:.2f} * S/{S3:.2f}) and fixed:")
+    P("    S_F,3 | need_S | D: A0 A0f Ac S(g=1) wq | rho_3 constant / sigma-fixed / sigma-scaled / loop | D[S] under sigma-fixed | g_knee | Delta_3 = q_R F/S | tau = 0.05 S")
+    for S in (8.5, 9.5, 10.5, 11.5, 12.5):
+        nd = rho2 * S
+        for sgl, sg in (("sigma fixed", sig1), ("sigma scaled", sig1 * S / S3)):
+            A = (sg + QB * l1["l"], sg + QB * F3, sg + 2.261, S + QB * F3, sg + 0.260 * F3)
+            nsf = need2 / sigk * sig1
+            nss = need2 / sigk * sg
+            P(f"    {S:5.1f} {sgl:<12} | {nd:5.2f} | " + " ".join(f"{nd - a:+5.2f}" for a in A)
+              + f" | {need2 / S:.3f} / {nsf / S:.3f} / {nss / S:.3f} / {need2 / F2 * F3 / S:.3f} | {nsf - (S + QB * F3):+5.2f} | {rho2 - QR * F3 / S:.3f} | {QR * F3 / S:.3f} | {0.05 * S:.2f}")
 
     # ── 4. the collapse study ──
     P("\n== 4. Collapse study per row: qcwnd-below-BDP share (DIAG, t >= 1 s, leg 0), goodput, and the excess of the EWMA rtt over (a) the row's min rtp_us (s60's rule)"
@@ -376,6 +399,15 @@ def main(argv):
                         flags.append(bool((q is not None and q > 0.10) or (ratio is not None and ratio > 1.5)))
                 kind = "share>X_own" if W < KNEE_LO[cell] else "E90/(p90-tmin)"
                 P(f"  {cell} leg{leg} W{W}: COLLAPSED {sum(flags)}/{len(flags)} | {kind} " + " ".join(ra.fx(x, 2) for x in shares))
+
+    P(NL + "== 4d. qshare on c8 leg 1 (the c3-shaped leg, BDP 100 000 B): share of [DIAG] lines (t >= 1 s) with p1 qcwnd < 100 000, per row ==")
+    for W in sorted({k[2] for k in ticks if k[0] == C8 and k[1] == "G"}):
+        v = []
+        for key in sorted(k for k in ticks if k[0] == C8 and k[1] == "G" and k[2] == W):
+            qs = [t[3].get(1, (None, None, None))[2] for t in ticks[key] if t[0] >= 1.0]
+            qs = [q for q in qs if q is not None]
+            v.append(sum(q < BDP_B[C8][1] for q in qs) / len(qs) if qs else None)
+        P(f"  c8 leg1 W{W}: " + " ".join(ra.fx(x, 3) for x in v))
 
     # ── 4b. B1's field on the floor pools: per-row median LATE err (B1 fires iff > 0); the margin is -err ──
     P("\n== 4b. B1 on s60's floor pools (every G row, no validity filter): per-row median LATE err (ms), leg by leg; B1 fires iff > 0 ==")
