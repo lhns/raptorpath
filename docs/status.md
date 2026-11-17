@@ -1255,8 +1255,9 @@ The launch sha is pinned by an amendment.
 **What follows:**
 - **F2 is the cause of the warm-up deaths** that made the E rehearsal NO-GO. PL and PM's E gates (b)–(h) have still never been read; they come in E-pre's rehearsal.
 - **Open before E-pre: every row reads `status=VOID-RC` (rc 1).** That includes rows whose warm-up acked and wrote a summary.
-  - In the E rehearsal, on the same binary, the U row's by-design DNF was LIVE with rc 0.
-  - So plan 63's path returns rc 1 where 51e's returned 0. The §63 readings come from the logs and do not depend on rc.
+  - **No row in either session prints the client-failure marker** (`perf_rwm_c.sh:385`, printed only when the client exits non-zero). So the perf client exited 0 everywhere, and the rc 1 is added after it, in the script's tail or the battery's row wrapper.
+  - The E rehearsal's rc-0 row (CONTROL unpaced U) is not a matched comparison for §63's acked rc-1 rows (CONTROL paced and every CAND row), so a binary or pacer cause is not yet excluded by comparison. The marker rules both out for the client itself.
+  - The §63 readings come from the logs and do not depend on rc.
   - The harness worker is diagnosing it, with a test that fails first on both plan 63 and plan 51e, so block E does not inherit it.
 - **Next:**
   - s62, then E-pre on the final F2 tree;
