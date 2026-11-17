@@ -1064,6 +1064,14 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - the launch-sha pin;
 - the shell tests.
 
+**§51 Amendment 1 (2026-11-17, after E-pre, before the E rehearsal): E-pre PASS, and block E's pins.**
+- **E-pre** ran 00:38–01:25Z on one `git archive` of `e-tree` `b497fcfa` under both locks (`suites_run.sh`, `binid_run.sh`, then the shell tests).
+  - Suites: release 1 161 / 0 (48 ignored), debug 1 013 / 0 (47 ignored), wasm 50 / 0, core 2 / 0, doc and parsers rc 0. **TESTS-OK.**
+  - The crate-directory build gives **`bin_sha` `8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf`**, the registered value for every later block E stage.
+  - Shell tests on Linux: `test_abort_witness.sh` 12 / 0 and `test_lib_battery.sh` ALL CHECKS PASS.
+- **The reference manifest:** `ref51e-manifest.sha256` is generated from `b497fcfa` with `ref_manifest.sh` (187 files). It is byte-equal to the VM's extracted tree, and it is committed as the tools-only `e-tree` **`a271e0bb`**. That commit is **block E's launch tree**: its engine diff against `b497fcfa` is empty.
+- **Launch:** `LD_PLAN=51e`, `LD_CAND_SHA` = `a271e0bb` (full sha), and `LD_BIN_SHA_EXPECT` = the sha above. The rehearsal runs with `LD_REHEARSE=1` and `LD_HARD` + 1 h, from one `git archive` of `a271e0bb`.
+
 ## 61. The c3 knee-margin sweep (owner decisions 8–9 of 2026-11-17), reported only: pre-registration (before any VM contact)
 
 **What this registers.** It registers `docs/derivations/s61-registration.md` at `s61-c3-design` `ad31af2f` **verbatim**, together with its prediction script and output (`docs/derivations/store-law/s61pred.py` and `s61pred.out`). Fable reviewed it twice. Its question is whether the knee margin is the floor-window spread S_F, so that g's Realtime end can be measured.
