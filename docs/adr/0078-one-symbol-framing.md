@@ -23,7 +23,7 @@ The rejected option (B) was a per-symbol "packed" bit. It keeps two formats and 
 
 ## Consequences
 
-- **Bulk and Auto data bytes are unchanged.** `hotpath_pin` passes without re-capture.
+- **Bulk and Auto data bytes are unchanged.** `hotpath_pin` passes without re-capture at the v9 framing commit; the v10 bump then re-captures it for the version field only.
 - **Realtime packed symbols** keep their size; only the byte order of each length field flips.
 - **The receiver no longer depends on any control message** to read data. A lost `WindowStart` is harmless.
 - **The release binary changes.** The §41c guard or an F1-style waiver is the owner's call.

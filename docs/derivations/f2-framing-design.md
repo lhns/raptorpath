@@ -63,9 +63,10 @@ end     = a length field of 0, or fewer than 2 bytes left in the symbol
 - `PROTOCOL_VERSION` 9 → 10 (`protocol.rs:92`), with a "v10:" entry in the doc
   history above it. The entry covers the one LE framing, `WindowStart` without
   `packed`, and the fact that v9 Realtime symbols are BE-packed.
-- **Coordination:** no ref (local or `github`) has v10 in code. The receiver
-  timestamp is planned only in status §42 (a) and §43, not in ADR-0072. F2 takes
-  v10, and the timestamp field becomes v11.
+- **Coordination:** none of the 360 local and `github` refs scanned has
+  `PROTOCOL_VERSION` ≥ 10 in code. `perleg-design` (`9e03d84a`) docs claim no
+  wire version. The receiver timestamp is planned only in status §42 (a) and §43,
+  not in ADR-0072. F2 takes v10, and the timestamp field becomes v11.
 - **Refusal is already in place.** Both `Handshake::deserialize` (`protocol.rs:310-313`)
   and `WireMessage::deserialize` (`:595-600`) bail on any version mismatch:
   - a v10 client against a v9 server: the server bails in `accept_handshake`
@@ -138,10 +139,19 @@ of `received_seqs`. That gives a permanent stall at ρ = 1 and a silent loss at
 - **Bytes per symbol, Bulk and Auto: +0.** `symbol_size` is 1200
   (`net/mod.rs:181-186`) and the TUN MTU is `symbol_size - 4` = 1196
   (`net/mod.rs:657`). A one-packet symbol is `[len LE][≤1196 B][zeros]`, which
-  is today's `frame_window_packet` output byte for byte. `hotpath_pin` digests
-  that output at T = 1200 over lengths 0…1500, truncation included, and it
-  must pass **without re-capture**. Repair symbols are combinations of
-  identical sources, so they are identical too.
+  is today's `frame_window_packet` output byte for byte. Repair symbols are
+  combinations of identical sources, so they are identical too. Two witnesses:
+  - **`hotpath_pin` at v9.** It digests `frame_window_packet` output at T = 1200
+    over lengths 0…1500, truncation included, through the encoder and both
+    framings. The bincode framing carries `PROTOCOL_VERSION` (`hotpath_pin.rs:78`,
+    `protocol.rs:573`), so the pin can witness the framing only **before** the
+    bump. The framing commit therefore lands at v9 with `hotpath_pin` unchanged.
+    The v10 commit follows and re-captures the two digests for the version
+    field alone (`pin_frame_layout_and_add_source_identity` and the compact
+    arena test carry no version and stay green).
+  - **A permanent byte-equality test:** `frame_window_packet` against an inlined
+    copy of v9's `frame_window_packet_inner`, over `hotpath_pin::LENS` at
+    T = 1200 and 512.
 - **Bytes per symbol, Realtime: +0.** S = 512 and MTU 508. Packer capacity
   (`S-2`), packing decisions and the zero tail are unchanged. Only each 2-byte
   length field's byte order flips (BE → LE).
@@ -155,12 +165,13 @@ of `received_seqs`. That gives a permanent stall at ρ = 1 and a silent loss at
   - the 4-byte version field reads 10 (same width).
 - **The §41c guard (owner question).**
   - F2's status entry keys the guard on Bulk wire bytes. Those are unchanged on
-    the data plane, and the proof is `hotpath_pin` unchanged.
+    the data plane. The proof is `hotpath_pin` unchanged at the v9 framing
+    commit, plus the byte-equality test.
   - ADR-0076 (`:45`) and the F1 precedent (status, F1 merge rule) key it on any
     engine-byte change. The release binary changes, so the standing rule asks
     for a guard.
-  - The case for an F1-style waiver: `hotpath_pin` and `decision_trace_pin` are
-    unchanged, no law is touched, and Bulk's code path changes only in the
+  - The case for an F1-style waiver: `hotpath_pin` (at the framing commit) and
+    `decision_trace_pin` are unchanged, no law is touched, and Bulk's code path changes only in the
     reader (below).
 - **No guard covers Realtime.** That is where behaviour does change (it is the
   fix). §51's E block is the field check.
@@ -177,7 +188,7 @@ of `received_seqs`. That gives a permanent stall at ρ = 1 and a silent loss at
   - BASE inlines main's `frame_window_packet_inner` and `extract_window_packet`.
     CAND calls `frame_window_packet` and `read_packets`.
   - Points: S = 1200 at lengths 64, 600 and 1196; S = 512 with 3 × 160 packed
-    (CAND only, BE vs LE).
+    (BASE = main's BE `extract_packets`, CAND = `read_packets`).
   - 2 000 000 calls per point, 5 alternating BASE/CAND pairs, `taskset -c 2`.
   - Report median ns/call with [min–max].
 
@@ -208,8 +219,15 @@ Red first (each fails on `f2-prep`):
    rewrites the first payload u16 of the next non-repair compact Data datagram to
    0xFFFF. Then, at Bulk and at Realtime:
    - `undeliverable_symbols() >= 1`, and the seam was spent;
-   - the server's receive task ends within 5 s. The run returns, or the client
-     fails, rather than timing out against a live tunnel.
+   - **the server task ends:** `tokio::time::timeout(5 s, server)` on the
+     `JoinHandle` from `loopback::in_process::start_server` completes with
+     `Ok(Ok(()))`. Drive the client with its own timeout, and do not use
+     `in_process::run`, which panics unless the client succeeds.
+   - The `Ok(())` is the engine's existing convention for a fatal receiver exit
+     (the TUN-inject breaks): `break 'recv` returns the task normally, and
+     `net/mod.rs:1341` logs it at info and `r?` passes. The error line and the
+     counter are the signal. Making the engine return `Err` would need the
+     receiver task to return a `Result`, which is out of scope.
 6. **Version:**
    - `protocol_version_is_nine` → `_is_ten`;
    - `handshake_refuses_an_old_peer_at_v9` → `_at_v10`, with olds `[9, 8]`, plus
@@ -217,8 +235,10 @@ Red first (each fails on `f2-prep`):
    - a `WindowStart { symbol_size, backend }` round trip.
 
 Pins:
-- `hotpath_pin`: **unchanged** (this is the Bulk byte-identity witness; a
-  re-capture is a design failure, not a fix).
+- `hotpath_pin`: **unchanged at the framing commit**, at v9. It is the Bulk
+  byte-identity witness there, and a re-capture at that commit is a design
+  failure. It is re-captured at the v10 commit for the version field only, and
+  the commit message says so.
 - `decision_trace_pin`: unchanged (no framing input).
 - wasm goldens: untouched. `raptorpath-wasm`, `-core`, `-math` and the
   visualizer have no framing or packing code (grep).
@@ -242,15 +262,19 @@ owner reverses §5, only step 4's error arm changes.
 - touch `use_packing`'s keying, `symbol_size_for_hint`, the TUN clamp,
   `SymbolPacker`'s capacity or truncation rules, or the handshake's `symbol_size`;
 - touch the wasm, core or math crates;
-- re-capture `hotpath_pin` or `decision_trace_pin`.
+- re-capture `decision_trace_pin`, or `hotpath_pin` anywhere but the v10 commit.
 
-**Steps, red first:**
+**Steps, red first, in two commits.** Commit 1 is steps 1–4 and 6–8, at v9.
+`hotpath_pin` must pass unchanged at its end. Commit 2 is step 5: the version
+bump, `WindowStart` without `packed`, the version pins, and a `hotpath_pin`
+re-capture whose message says "version field only".
 1. **Tests that fail on the base.**
    - Write §7 tests 1–3 in `net/framing/tests.rs` and `net/tests.rs` against the
      new names; they fail to compile, or fail.
    - Un-ignore and tighten the repro (§7.4) and run it: red.
    - Add the seam and test §7.5: red (today the tunnel stays up).
-   - Edit the version pins (§7.6): red.
+   - Add the v9 byte-equality test (§6); it stays green throughout.
+   - Edit the version pins (§7.6) in commit 2 only, red before the bump.
 2. **`net/framing.rs`.**
    - Add `put_packet` and `read_packets` / `Unframable`. Remove `frame_end`,
      `extract_packets` and `extract_window_packet`.
@@ -283,7 +307,7 @@ owner reverses §5, only step 4's error arm changes.
 - `cargo test -p raptorpath` is green, with the lib and every integration test,
   including the un-ignored repro, `f2_undeliverable_counter` and the new
   fail-closed test;
-- `hotpath_pin` and `decision_trace_pin` pass unchanged;
+- `decision_trace_pin` passes unchanged at both commits, and `hotpath_pin` passes unchanged at commit 1;
 - `cargo clippy -p raptorpath` adds no new warnings;
 - `grep -rn "window_packed\|extract_window_packet\|to_be_bytes" raptorpath/src/net/framing.rs raptorpath/src/net/receiver.rs`
   finds nothing framing-related.
@@ -304,6 +328,12 @@ with `CARGO_BUILD_JOBS=1` and your own `CARGO_TARGET_DIR`.
 2. **The guard:** waive it F1-style on `hotpath_pin` and `decision_trace_pin`
    unchanged, or run a §41c guard. The binary changes, but Bulk data bytes do not.
 3. **Recommended, not designed here:** carry the real `symbol_size` in the v10
-   handshake and refuse a mismatch. It is the remaining reachable cause of an
+   handshake and refuse a mismatch.
+   - Today, a 1200-byte sender into a 512-byte (Realtime-hinted) receiver still
+     delivers packets of up to 510 bytes and drops the rest silently.
+   - Under §5, the first larger packet closes the tunnel.
+   - Each side's hint is its own config (`config.rs:235`; the Home and
+     Datacenter profiles are Auto and Bulk, both 1200). I did not check whether
+     any L1 or deployed setup mixes Realtime with another hint. It is the remaining reachable cause of an
    unframable symbol (§5), and it costs nothing extra if it rides the same bump.
    Today `local_handshake` has no config (`io_owner.rs:793-795`).
