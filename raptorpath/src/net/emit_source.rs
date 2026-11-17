@@ -288,8 +288,16 @@ pub static TEST_CORRUPTED_AT: std::sync::Mutex<Option<std::time::Instant>> = std
 #[cfg(any(test, feature = "test-seams"))]
 pub static TEST_CORRUPT_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// The most packets any framed source buffer has held since the process
+/// started (observation only): proves a test really packed a symbol.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_MAX_PACKED: AtomicU64 = AtomicU64::new(0);
+
 #[cfg(any(test, feature = "test-seams"))]
 fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
+    if let Ok(p) = super::framing::read_packets(&framed) {
+        TEST_MAX_PACKED.fetch_max(p.len() as u64, Ordering::Relaxed);
+    }
     let k = TEST_CORRUPT_SEQ.load(Ordering::Relaxed);
     if k == u64::MAX || TEST_CORRUPT_COUNT.fetch_add(1, Ordering::Relaxed) != k {
         return framed;

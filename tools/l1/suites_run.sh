@@ -75,6 +75,8 @@ tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 tst core "$CARGO" test -p raptorpath-core || TFAIL=1
 tst debug "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
+# F2 (ADR-0078): the tests behind the off-by-default `test-seams` feature (the plain runs above skip them).
+tst seams "$CARGO" test -p raptorpath --release --features test-seams --test f2_unframable_closes --test f2_mixed_symbol_size --test f2_realtime_packed -- --test-threads=1 || TFAIL=1
 tst parsers bash -c "cd tools/l1 && python3 test_l1common.py && python3 test_lagdiag_digest.py && python3 test_lagdiag2_digest.py && python3 test_threadpd_parse.py" || TFAIL=1
 echo "IDENTITY-PANICS $(grep -ac 'io owner: quinn seam' "$ROOT/test-debug.log")" >> "$OUT"
 rm -rf "$CARGO_TARGET_DIR"
