@@ -93,3 +93,7 @@ harness = false
 [[test]]
 name = "f2_unframable_closes"
 required-features = ["test-seams"]
+
+[[test]]
+name = "f2_realtime_packed"
+required-features = ["test-seams"]
