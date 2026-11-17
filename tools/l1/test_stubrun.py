@@ -127,7 +127,12 @@ export STUB_TMP="$(cygpath -m "${LD_TMPD:?}" 2>/dev/null || echo "$LD_TMPD")"
 [ -n "${STUB_DRVLOG5:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG5"      # plan 63: which seat's binary ran
 [ -n "${STUB_DRVLOG2:-}" ] && echo "$3 reliable=${RWM_C_RELIABLE-unset} unified=${RWM_UNIFIED-unset} gen=${RWM_GEN-unset}" >> "$STUB_DRVLOG2"      # plan 59: hint + the evicting-seat env (a separate log: drv.log's lines are compared whole)
 python3 ./stubrun_gen.py "$@" || { echo "stub driver failed"; exit 1; }
-exit 0
+# The REAL perf script's F2 lines (the `--- F2 undeliv=.. unframable=..` witness), extracted from perf_rwm_c.real.sh and run on the stub's logs under the shell options the real script runs with: lib.sh turns on
+# `set -e` (perf_rwm_c.sh sources it), so a bare `grep -c` that finds nothing (exit 1) would kill the real script and make EVERY row rc 1 (VOID-RC). The stub's exit status is that of these lines.
+_F2="$(grep -E '^(_F2_TXT=|_F2_UND=|_F2_UNF=|echo "--- F2)' ./perf_rwm_c.real.sh | sed "s#/tmp/rwm-#$STUB_TMP/rwm-#g")"
+[ -n "$_F2" ] || { echo "stub: the real script has no F2 lines"; exit 1; }
+bash -c "set -euo pipefail; $_F2; echo after-f2 >/dev/null"
+exit $?
 '''
 CAND_SHA = "c" * 40
 BASE_SHA = "b3000701f440d11b1b5ad946c8b36c3623c770cd"
@@ -198,6 +203,7 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
                 fh.write("print('stub test (the real one runs in the suite)')\n" if f.endswith(".py") else "exit 0\n")
         else:
             shutil.copyfile(p, os.path.join(tools, f))
+    shutil.copyfile(os.path.join(HERE, "perf_rwm_c.sh"), os.path.join(tools, "perf_rwm_c.real.sh"))      # the REAL script: the stub driver runs its F2 lines under the real script's shell options (below)
     with open(os.path.join(tools, "perf_rwm_c.sh"), "w", newline="\n") as fh:
         fh.write(PERF_STUB)
     sl_src, sl_dst = os.path.join(HERE, "..", "..", "docs", "derivations", "store-law"), os.path.join(sb["repo"], "docs", "derivations", "store-law")

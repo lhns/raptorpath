@@ -142,9 +142,16 @@ if bash:
         with open(os.path.join(d2, "c.log"), "w", newline="\n") as fh:
             fh.write("[CTLD] t=3 undeliv=2\n x [UNFRAMABLE] b\n")
         sn = snippet.replace("/tmp/rwm-s.log", "'%s'" % os.path.join(d2, "s.log").replace("\\", "/")).replace("/tmp/rwm-c.log", "'%s'" % os.path.join(d2, "c.log").replace("\\", "/"))
-        cp = subprocess.run([bash, "-c", sn], capture_output=True, text=True, timeout=60)
+        cp = subprocess.run([bash, "-c", "set -euo pipefail; " + sn + "; echo after-f2"], capture_output=True, text=True, timeout=60)      # lib.sh runs `set -e`: the real script's shell options
         check("the perf script's F2 lines, run on logs with [CTLD] undeliv 1 / 3 / 2 and two [UNFRAMABLE] lines, print `--- F2 undeliv=3 unframable=2` (the maximum, the count) and l1common.f2_void reads it",
-              cp.stdout.strip() == "--- F2 undeliv=3 unframable=2" and lc.f2_void(cp.stdout.splitlines()) is not None, (cp.stdout, cp.stderr[-200:]))
+              cp.stdout.splitlines()[0] == "--- F2 undeliv=3 unframable=2" and lc.f2_void(cp.stdout.splitlines()) is not None, (cp.stdout, cp.stderr[-200:]))
+        with open(os.path.join(d2, "s.log"), "w", newline="\n") as fh:
+            fh.write("plain\n")
+        with open(os.path.join(d2, "c.log"), "w", newline="\n") as fh:
+            fh.write("also plain\n")
+        cp = subprocess.run([bash, "-c", "set -euo pipefail; " + sn + "; echo after-f2"], capture_output=True, text=True, timeout=60)
+        check("the F2 lines under `set -euo pipefail` (lib.sh turns -e on in perf_rwm_c.sh) on logs with NO [CTLD] and NO [UNFRAMABLE] line (grep -c exits 1 on no match) still print `--- F2 undeliv=0 unframable=0` and let the script go on (rc 0, `after-f2`): "
+              "a bare grep -c here killed the real script and made every plan-63 row rc 1 (VOID-RC)", cp.returncode == 0 and cp.stdout.splitlines()[:2] == ["--- F2 undeliv=0 unframable=0", "after-f2"], (cp.returncode, cp.stdout, cp.stderr[-200:]))
     finally:
         shutil.rmtree(d2, ignore_errors=True)
 else:

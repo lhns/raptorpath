@@ -608,7 +608,6 @@ def gen63(cli, srv, drv, nbytes, fam, hint):
         secs = 60.0
         cli = cli + ['{"bytes":%s,"hint":"realtime","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs), summary54(secs, int(nbytes))]
         drv = drv + [summary54(secs, int(nbytes))]
-    drv = drv + [f"--- F2 undeliv={undeliv} unframable={unf}"]
     return cli, srv, drv
 
 
