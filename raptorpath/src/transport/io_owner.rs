@@ -54,6 +54,12 @@ use super::protocol::{Handshake, WireMessage, PROTOCOL_VERSION};
 use super::rcvbuf::{self, RcvbufGrant};
 use crate::scheduler::PathId;
 
+/// Test seam (default 0 = off, no effect): the number of client-side
+/// `WindowStart` control datagrams the owner silently drops before
+/// `send_datagram`. Reproduces "the one-shot announce was lost" (status,
+/// Engine defect F2) in an in-process loopback. Set only by tests.
+pub static TEST_DROP_WINDOW_START: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 // ───────────────────────────────────────────────────────────────────────────
 // Constants (docs/fec-arq-model.md §11.2 provenance)
 
@@ -1079,6 +1085,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                 }
                             }
                             for b in dgrams.drain(..) {
+                                if lane == Lane::Ctrl && !a.is_server && test_drop_window_start(&b) {
+                                    continue;
+                                }
                                 send_one(conn, &a, &mut shim_q, b);
                             }
                             view.recycle(dgrams);
@@ -1309,6 +1318,23 @@ fn push_inbound(
         Ok(msg) => inbound.push((path, msg)),
         Err(e) => warn!(path_id = path, ?e, "failed to deserialize datagram"),
     }
+}
+
+/// `TEST_DROP_WINDOW_START`: true (and the budget spent) when `b` is a
+/// `WindowStart` and the seam is armed. One relaxed load when unarmed.
+fn test_drop_window_start(b: &Bytes) -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    if TEST_DROP_WINDOW_START.load(Relaxed) == 0 {
+        return false;
+    }
+    let is_ws = matches!(
+        WireMessage::deserialize(b),
+        Ok(WireMessage::Control(crate::transport::ControlMessage::WindowStart { .. }))
+    );
+    is_ws
+        && TEST_DROP_WINDOW_START
+            .fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1))
+            .is_ok()
 }
 
 /// One datagram: through the L0 shim's queue when it is active, else the
