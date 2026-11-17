@@ -1,0 +1,23 @@
+LD-ALL start plan=61b load=0.08 0.04 0.15 1/392 3218761 2026-11-17T08:10:27Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.25 avg60=0.80 avg300=0.42 total=5169232961 2026-11-17T08:10:35Z
+LD-ALL plan 61b budget: 6472s to LD_HARD (at least 6000s required: the worst case of the status) 2026-11-17T08:10:35Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.06 0.04 0.15; io=full avg10=0.25 avg60=0.80 avg300=0.42 total=5169232961 2026-11-17T08:10:35Z
+LD-ALL plan 61b pre-flight: 5472952 KB free on /dev/shm (need 1048576) 2026-11-17T08:10:35Z
+LD-ALL parser test ok 2026-11-17T08:12:54Z
+LD-ALL binary prebuilt from ~/p51/raptorpath-e410 (no build) 2026-11-17T08:12:54Z
+LD-ALL built wall=0s 2026-11-17T08:12:54Z
+LD-ALL binary e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-17T08:12:54Z
+LD-ALL bin_sha equals the registered value e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-17T08:12:54Z
+LD-ALL toolchain rustc 1.96.1 (31fca3adb 2026-06-26) | cargo 1.96.1 (356927216 2026-06-26) 2026-11-17T08:12:54Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s61b2/src/tools/l1/ref60-manifest.sha256, 187 files) 2026-11-17T08:12:54Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-17T08:20:20Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-17T08:20:21Z
+LD-ALL suites done tfail=0 2026-11-17T08:20:21Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.06 avg300=0.22 total=5171351993 2026-11-17T08:20:30Z
+LD-ALL stage rep61b (plan 61b) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.44 avg60=0.15 avg300=0.23 total=5171446014 2026-11-17T08:20:38Z
+LD-ALL stage rep61b SMOKE-PASS 2026-11-17T08:21:38Z
+LD-ALL stage rep61b battery rc=0 wall=2065s 2026-11-17T08:56:03Z
+LD-ALL stage rep61b end ok=1 VERDICT61 REPORTED-WITH-SCORED slots=30/30 live=30 void=0 replaced=0 dnf=0 t60_missing=0 labels=2 2026-11-17T08:56:04Z
+LD-ALL end plan 61b rep61b_ok=1 raptorpath=0 netns=0 2026-11-17T08:56:04Z

@@ -1,0 +1,13 @@
+SMOKE61 plan=61b rows=1 slots=1
+PASS one row per slot ran with a t60 and a t61
+PASS the store-law replay modules (s60replay, caplog_replay) import
+  ROW c2-100 G160 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 23, 'SLAW': 227, 'SLAWC': 227, 'WSTAT': 227, 'WSTORE': 227} witness={'bad': 0, 'error': None, 'n': 440, 'ok': True, 'worst': 4.995846683231164e-06} caplog_ok=True q=['0.100000'] windows=168 ticks=227 qshare=0.009 loss=0.0248
+PASS every row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG) on the client after the warm-up cut
+PASS RWM_SLAW echoed 1 on both ends
+PASS [SLAW] q = 0.100000 on every row (every s61 row is Bulk; 0.050000 would be Realtime)
+PASS the per-row replay witness PASS (R~ with the row's own b0p and l reproduces printed R and Rb to 6e-6)
+PASS the CAPLOG replay PASS (records > 0 and every replayable cap reproduced)
+PASS t61 carries LATE windows with [WSTAT] p10 / p50 / p90 (G and CR61 read them)
+  CAPLOG c2-100 G160: records=23 replayable share=1.000 (23 replayed, 0 mismatches) rate=0.4/s pooled=23 bind(ceiling)=0.913 bind(floor)=0.000 seats=['plain']
+  SLAW-VS-WSTAT G160: max |[WSTAT] p50 - [SLAW] tp50| over 168 windows = 0.0000 ms (DECISION 1)
+SMOKE-PASS

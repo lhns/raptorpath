@@ -1367,6 +1367,47 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 7. **Order:** a fresh rehearsal (R6 gate, proportional pilot), then a fresh 66-row 61a, from one archive of the new sha.
 8. **Not blind.** The re-run is registered after this session's post-hoc bound. Its label is still decided by the registered rules, and its Result reports both readings side by side.
 
+**§61b Result (2026-11-17; the c2 add-on ran clean; REPORTED with its two labels).**
+
+**In plain words.** c2's price curve below its knee is now measured directly, at W 96 / 128 / 144. It matches §60's c2 rows at the overlap arm, so the two sessions merge into one c2 table. 61b scores only two labels: the control is OK, and there is no drift.
+
+**Runs.**
+- **First launch:** `~/s61b`, at 08:08:28Z. It stopped at `ABORT-PRECONDITION` (procs_running 11, from the coordinator's own copy and extract a moment before), and nothing ran.
+- **The launch:** `~/s61b2`, 08:10:27Z, with `LD_BIN_PREBUILT` (61a's binary). Rows ran 08:21–08:56Z.
+  - prebuilt `bin_sha` equals the registered `e410d640…`; suite-reuse HIT; the python and bash tools tests pass on the VM;
+  - `VERDICT61 REPORTED-WITH-SCORED slots=30/30 live=30 void=0 replaced=0 dnf=0`.
+- **Host:** cargo paused. The coordinator's single-threaded scorer and analysis scripts ran on the host around the launch (the tools tests and the smoke). During the scored rows the host carried only text edits, the roadmap build, git and a worker's edits. There were no stub or multi-job runs.
+- **Reproduction:** the host re-score matches the VM `score.txt` byte for byte.
+- **Ledger:** `docs/l1-raw/s61/rep61b-*`.
+
+**Labels.** `LABEL61 CONTROL-c2 OK` (6/6 unflagged, median 90.27 Mbit/s); `LABEL61 DRIFT-c2 DRIFT-OK`.
+- CR61 flags 0/30, with X_own frozen at 10.66 ms.
+- The drift check at the overlap arm W 160: tmin 12.295 vs §60's 12.33 (|d| 0.035 ≤ 0.3), and u 0.930 vs 0.93.
+
+**c2 price below the knee** (median over replicates, 90 % bootstrap, seed 60):
+
+| W | u | tmin | Tp50 |
+|---|---|---|---|
+| 96 | 0.611 [0.605, 0.613] | 10.165 | 15.434 |
+| 128 | 0.783 [0.780, 0.785] | 11.219 | 15.982 |
+| 144 | 0.861 [0.858, 0.864] | 11.794 | 16.325 |
+| 160 | 0.930 [0.927, 0.933] | 12.295 | 16.784 |
+
+- **The chord over-read.** The registration's chords from §60 (48 → 160) predicted u 0.582 / 0.756 / 0.843 and tmin 10.45 / 11.39 / 11.86 at W 96 / 128 / 144.
+  - Measured tmin lies 0.07–0.29 ms below the chord, as the convexity of tmin in W predicts.
+  - Measured u lies above the chord, so u is concave in W. That is the shape that moved Amendment 2's pilot.
+- **Monotone:** u and tmin are non-decreasing in W over every arm.
+- **The landing table** (merged with §60's arms; F_c 8.679, S_F,c 5.083). It is reported only; the owner's call follows it.
+
+  | g | Bulk W\* (u) | Realtime W\* (u) |
+  |---|---|---|
+  | 0 | 69.6 (0.452) | 51.1 (0.340) |
+  | 0.25 | 115.8 (0.718) | 102.7 (0.647) |
+  | 0.5 | 153.4 (0.901) | 140.1 (0.842) |
+  | 1 | 198.5 (0.991) | 193.6 (0.990) |
+
+- **The c3 side of the g(Realtime) question waits for the 61a re-run** (Amendment 2).
+
 ## 60. The store law's gauge session (B-1), reported only — pre-registration (before any VM contact)
 
 **The registration is `docs/derivations/s60-registration.md` at `s60-design` `10272273`** (merged to main). It was reviewed with Fable in ten logged rounds and is registered verbatim from that commit; no rule is restated here.
@@ -1814,6 +1855,11 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
    - It carries r68 §3's rows plus 2–3 arms between W 48 and W 160, to price the side below the knee.
    - **Needs:** a single-leg c3 cell (today c3 exists only as c8's second leg), its own registration, and a rehearsal.
 10. **Per-leg question 1: `queue_target_mult` = 1 + q(δ).** q's band is unchanged under decision 8.
+11. **F2's fix format: (A), one framing for every symbol** (owner, 2026-11-17, taking Fable's recommendation).
+    - Every symbol at every hint uses the same wire framing, so the receiver no longer depends on `WindowStart` announcing packing.
+    - (B), a per-frame packed bit, was not taken: it keeps two framings and a per-symbol branch.
+    - The fix comes with an ADR, a protocol bump and the red-first repro. If Bulk's bytes on the wire change, it also needs a guard against main.
+    - The design is with an Opus agent on `f2-design`.
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 

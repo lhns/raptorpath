@@ -1,0 +1,24 @@
+S61 SCORE plan=61b (c3 sweep; registration docs/derivations/s61-registration.md); ABORT-TOKENS none
+S61 SCORE plan=61b cell=c2-100 rows=30 (c2 add-on: the price below c2's knee; section 2.4 / 5.4); K1 = 160 (c2: K1 = 160)
+CR61 c2: X_own = 10.66 (frozen: s60's six W 16 rows, E50 4.95, E90 6.86); COLLAPSED rows 0/30
+CONTROL c2 W2048: unflagged 6/6, median goodput 90.27
+PRICE c2-100 per arm (u, window minimum, Tp50; median over replicates, 90 % [bootstrap, 2000, seed 60]); flagged rows leave the medians:
+  W96    n=6 u 0.611 [0.605, 0.613] | tmin 10.165 [10.078, 10.210] | tp50 15.434 [15.421, 15.502]
+  W128   n=6 u 0.783 [0.780, 0.785] | tmin 11.219 [11.150, 11.236] | tp50 15.982 [15.975, 15.997]
+  W144   n=6 u 0.861 [0.858, 0.864] | tmin 11.794 [11.747, 11.855] | tp50 16.325 [16.313, 16.348]
+  W160   n=6 u 0.930 [0.927, 0.933] | tmin 12.295 [12.246, 12.359] | tp50 16.784 [16.776, 16.819]
+DRIFT c2: overlap arm W160 tmin 12.295 vs s60 12.33 (|d| 0.035 <= 0.3), u 0.930 vs 0.93 (|d| 0.000 <= 0.02) -> DRIFT-OK
+PRICE c2 merged with s60 (DRIFT-OK): s60's arms W16: u 0.112 tmin 8.68 tp50 13.70 | W32: u 0.217 tmin 8.95 tp50 14.27 | W48: u 0.321 tmin 9.04 tp50 14.59 | W160: u 0.930 tmin 12.32 tp50 16.81 | W176: u 0.970 tmin 13.09 tp50 17.81 | W192: u 0.990 tmin 14.05 tp50 19.12 | W256: u 1.002 tmin 19.75 tp50 25.40
+LANDING c2: W*(g, delta) with F_c 8.679 S_F,c 5.083 (no threshold is scored; the owner's call follows the table)
+  g=0       Bulk     target 9.55: W* 69.6 u 0.452 tmin 9.55 tp50 14.97
+  g=0       Realtime target 9.11: W* 51.1 u 0.340 tmin 9.11 tp50 14.64
+  g=0.25    Bulk     target 10.82: W* 115.8 u 0.718 tmin 10.82 tp50 15.77
+  g=0.25    Realtime target 10.38: W* 102.7 u 0.647 tmin 10.38 tp50 15.55
+  g=0.5     Bulk     target 12.09: W* 153.4 u 0.901 tmin 12.09 tp50 16.59
+  g=0.5     Realtime target 11.65: W* 140.1 u 0.842 tmin 11.65 tp50 16.24
+  g=1       Bulk     target 14.63: W* 198.5 u 0.991 tmin 14.63 tp50 19.76
+  g=1       Realtime target 14.20: W* 193.6 u 0.990 tmin 14.20 tp50 19.28
+MONOTONE c2: u and tmin non-decreasing in W over the arms: yes
+VERDICT61 REPORTED-WITH-SCORED slots=30/30 live=30 void=0 replaced=0 dnf=0 t60_missing=0 labels=2
+LABEL61 CONTROL-c2 OK
+LABEL61 DRIFT-c2 DRIFT-OK
