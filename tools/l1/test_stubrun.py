@@ -1616,6 +1616,9 @@ def case63(plan, path):
             check(f"{tag}: the rehearsal ran CONTROL PL s42 then CAND PL s42 (2 rows, each on its own seat's binary: bindir bin-base then bin), no battery (no ld.log), REHEARSAL-PASS persisted",
                   len(rows) == 2 and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls63(want_rows) and [c[-1] for c in calls] == ["bindir=bin-base", "bindir=bin"],
                   (len(rows), calls[:2], expect_calls63(want_rows)))
+            ldr = led56(stage, "smoke.log")
+            check(f"{tag}: no rehearsal row is VOID-RC: the driver exits 0 on a by-design DNF / a failed warm-up with a summary (the real F2 lines run under the real script's `set -e`: a bare `grep -c` no-match once made every row rc 1)",
+                  len(ldr) == 2 and all(r["status"] != "VOID-RC" for r in ldr), [(r["arm"], r["status"]) for r in ldr])
             check(f"{tag}: both rows are REPORTED: the CONTROL row's warm-up failure is a datum (REPORTED ... NEVER-ACKED, undeliv n/a, no abort), the CAND row is PASS on the F2 reading with its transfer completed",
                   re.search(r"^  REPORTED CPL-s42 REPORTED: warm-up NEVER-ACKED \(a datum, not an abort\);.*undeliv=n/a", chk, re.M) is not None and re.search(r"^  REPORTED FPL-s42 PASS:.*transfer=COMPLETED undeliv=0\(srv 0\+cli 0\)", chk, re.M) is not None and "SMOKE-PASS" in chk, chk[-900:])
             EXECUTED.add((plan, path))
@@ -1625,10 +1628,13 @@ def case63(plan, path):
         want_slots = [(c, a, sd, str(rp)) for c, _, a, sd, rp in table]
         got_slots = [(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in led]
         score = open(os.path.join(stage, "score.txt"), errors="replace").read()
+        ldtxt_rc = open(os.path.join(stage, "ld.log"), errors="replace").read()
         check(f"{tag}: the ledger holds exactly the 10 slots in CONTROL-then-CAND order (PL s42, PM s42, U s42, PL s7, PM s7), one row each (nothing replaced), every row with its t63 and no t63 error, no VOID-F2",
               got_slots == want_slots and len(led) == 10 and all(r.get("t63") and not r.get("t63_error") and r["status"] != "VOID-F2" for r in led), (len(led), got_slots[:3], want_slots[:3], [(r["arm"], r["status"], r["problems"]) for r in led][:4]))
         check(f"{tag}: the driver saw every row's spec in order, the CONTROL rows on bin-base and the CAND rows on bin: the CAND smoke row, then the table",
               calls == expect_calls63(list(plan63.SMOKE) + table), (len(calls), calls[:3], expect_calls63(list(plan63.SMOKE) + table)[:3]))
+        check(f"{tag}: no row is VOID-RC (rc 0 on every row, the failed CONTROL warm-ups and the by-design DNFs included): the real F2 lines run under the real script's `set -e` and must not kill it",
+              all(r["status"] != "VOID-RC" for r in led) and "ABORT-RC" not in ldtxt_rc, [(r["arm"], r["status"]) for r in led if r["status"] == "VOID-RC"])
         check(f"{tag}: each seat ran its own binary: the CONTROL rows carry the pinned CONTROL sha, the CAND rows the CAND sha, and the seat comparison executed on every row",
               all(r["bin_sha"] == (ctl_sha if r["arm"].startswith("C") else cand_sha) for r in led) and all(r["sha_checked"] is True for r in led), {r["arm"]: r["bin_sha"][:8] for r in led})
         ldtxt = open(os.path.join(stage, "ld.log"), errors="replace").read()
