@@ -142,7 +142,10 @@ flowchart TB
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         store_law_derivation["store · ▶ Store-law<br/>derivation"]
     end
-    subgraph bd_6["Later (blocked or parked)"]
+    subgraph bd_6["Next"]
+        store_law_g_rederive[/"store · ○ Re-derive<br/>the knee-margin term"/]
+    end
+    subgraph bd_7["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⏸ Lever-B guard<br/>v2, then merge"]
         meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
         cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion (new ADR)"]
@@ -186,8 +189,10 @@ flowchart TB
     store_s60a ~~~ rec_defect_realtime_framing
     rec_defect_realtime_framing ~~~ cc_bbrrs_r2
     rec_defect_realtime_framing ~~~ store_law_derivation
-    cc_bbrrs_r2 ~~~ rec_leverb_guard
-    store_law_derivation ~~~ meas_s51_session
+    cc_bbrrs_r2 ~~~ store_law_g_rederive
+    store_law_derivation ~~~ store_law_g_rederive
+    store_law_g_rederive ~~~ rec_leverb_guard
+    store_law_g_rederive ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote
     meas_s51_session ~~~ cc_bbrrs_promote
     cc_bbrrs_promote ~~~ cc_hybrid
@@ -209,7 +214,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 46 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 48 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -229,6 +234,7 @@ flowchart TB
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
     class store_law_derivation inprog
     class store_s60a mixed
+    class store_law_g_rederive next
     class rec_defect_realtime_framing,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
@@ -294,7 +300,7 @@ flowchart TB
 | Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Store-law gauge build (B-1) | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
 | Gauge session 60a (§60) | ✔ done · mixed | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
-| c3 sweep re-run (§61 Amendment 2) | ○ next | Repeat the second-link-shape knee measurement with a smaller control queue and a pilot rule that does not overshoot. |
+| Re-derive the knee-margin term | ○ next | Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner's call. |
 | Store-law allowance short of the c2 knee | ⚠ open defect | Open problem: with honest floors, the store law's safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
@@ -372,7 +378,6 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
-- `store-s61a-rerun`: c3 sweep re-run (§61 Amendment 2)
 - `meas-adversarial-cells-run`: Adversarial cells measured
 - `meas-progress-baseline`: Cumulative progress benchmark
 
@@ -388,6 +393,7 @@ flowchart TB
 
 - `rate-evict-registration`: Evicting-seat m̄ registration (plan 59)
 - `rate-spare-cwnd`: Is spare's cwnd enforced?
+- `store-law-g-rederive`: Re-derive the knee-margin term
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `meas-s51-harness`: §51 harness and scorer
 - `infra-derivation-merges`: Derivation branch merges
@@ -514,7 +520,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 46 nodes (16 done, 7 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 64 nodes (31 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
+- [store - store law](roadmap/tracks/store.md): 65 nodes (32 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)

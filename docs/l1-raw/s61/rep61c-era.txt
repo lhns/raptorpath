@@ -1,0 +1,22 @@
+LD-ALL start plan=61a load=0.11 0.41 0.69 1/395 3251920 2026-11-17T12:20:50Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=3.95 avg60=2.72 avg300=1.23 total=5202457974 2026-11-17T12:20:58Z
+LD-ALL plan 61a budget: 14392s to LD_HARD (at least 14220s required: the worst case of the status) 2026-11-17T12:20:58Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.09 0.39 0.68; io=full avg10=3.95 avg60=2.72 avg300=1.23 total=5202457974 2026-11-17T12:20:59Z
+LD-ALL plan 61a pre-flight: 5419624 KB free on /dev/shm (need 1048576) 2026-11-17T12:20:59Z
+LD-ALL parser test ok 2026-11-17T12:23:23Z
+LD-ALL built wall=343s 2026-11-17T12:29:06Z
+LD-ALL binary e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-17T12:29:06Z
+LD-ALL bin_sha equals the registered value e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-17T12:29:06Z
+LD-ALL toolchain rustc 1.96.1 (31fca3adb 2026-06-26) | cargo 1.96.1 (356927216 2026-06-26) 2026-11-17T12:29:06Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s61c/src/tools/l1/ref60-manifest.sha256, 187 files) 2026-11-17T12:29:06Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-17T12:37:09Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-17T12:37:10Z
+LD-ALL suites done tfail=0 2026-11-17T12:37:10Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.34 avg60=0.37 avg300=0.36 total=5207602436 2026-11-17T12:37:18Z
+LD-ALL stage rep61a (plan 61a) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.15 avg60=0.32 avg300=0.35 total=5207616491 2026-11-17T12:37:26Z
+LD-ALL stage rep61a SMOKE-PASS 2026-11-17T12:38:28Z
+LD-ALL stage rep61a battery rc=0 wall=4045s 2026-11-17T13:45:53Z
+LD-ALL stage rep61a end ok=1 VERDICT61 REPORTED-WITH-SCORED slots=66/66 live=66 void=0 replaced=0 dnf=0 t60_missing=0 labels=12 2026-11-17T13:45:55Z
+LD-ALL end plan 61a rep61a_ok=1 raptorpath=0 netns=0 2026-11-17T13:45:55Z

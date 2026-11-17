@@ -2886,23 +2886,47 @@ nodes:
   title: c3 sweep re-run (§61 Amendment 2)
   track: store
   kind: research
-  state: next
-  outcome: unrated
+  state: done
+  outcome: very-successful
   evidence:
   - status §61 Amendment 2
-  verdict_quote: ''
-  headline: ''
+  - status §61 Amendment 3
+  - status §61a re-run Result
+  verdict_quote: 'LABEL61 RHO DISAGREES'
+  headline: rho_3 0.457 vs rho_2 0.797
   depends_on:
   - store-s61a
   replaced_by: []
   qualified_by: []
   lane: vm
+  start: '2026-11-17'
+  end: '2026-11-17'
+  folded: []
+  overview: false
+  plain: 'The second link shape needs about half the knee margin the first did, measured against its floor spread, so the margin does not scale with that spread.'
+  notes: 'W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. Scored 66/66: rho_3 0.457 [0.409, 0.483], DISAGREES, not floor-sensitive; every allowance candidate COVERED; need_3 4.43 ms vs need_2 4.05 (closest rival: constant in ms, -8 % to +22 % by floor).'
+- id: store-law-g-rederive
+  title: Re-derive the knee-margin term
+  track: store
+  kind: law
+  state: next
+  outcome: unrated
+  evidence:
+  - status §61a re-run Result
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-s61a-rerun
+  - store-s61b
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
   start: ''
   end: ''
   folded: []
-  overview: false
-  plain: 'Repeat the second-link-shape knee measurement with a smaller control queue and a pilot rule that does not overshoot.'
-  notes: 'W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. A second CONTROL-MOVED stops the line until CR61 is re-derived.'
+  overview: true
+  plain: 'Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner''s call.'
+  notes: 'Registered consequence of DISAGREES. First candidate: a margin constant in ms (the A(c) c_B family, W1.2), a lead from two points (c2 4.05, c3 4.43 ms). Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form.'
 - id: meas-defect-cr61-large-pool
   title: Collapse rule blind at large pools
   track: meas
@@ -6620,7 +6644,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Owner decision on three questions: whether the congestion controller or the in-flight limit is in charge, what sets the latency trade, and whether two percent less bulk speed is worth ten times less delay.'
-  notes: 'U1 store leads, U3 accepted (2026-11-16); U2 (2026-11-17): the dial scales a measured knee margin g(delta)*S_F + q(delta)*F-hat, g(Bulk) = 1, the Realtime end set by the c3 sweep (status Owner decisions, items 8-10).'
+  notes: 'U1 store leads, U3 accepted (2026-11-16); U2 (2026-11-17): the dial scales a measured knee margin g(delta)*S_F + q(delta)*F-hat, g(Bulk) = 1, the Realtime end set by the c3 sweep (status Owner decisions, items 8-10). The c3 sweep (§61a re-run) DISAGREES: S_F is not the knee''s term, so decision 8''s form is re-derived (store-law-g-rederive).'
 - id: model-user-wasm-calls
   title: Owner calls on wasm audit
   track: model

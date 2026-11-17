@@ -1405,6 +1405,97 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - one `git archive` of `3cdc4470`, extracted fresh for each launch.
 - **Order:** the re-rehearsal (`LD_PLAN=61a LD_REHEARSE=1 LD_CTL61=512`), then 61a (`LD_KNEE61` = the printed `PILOT61 W=`, `LD_CTL61=512`, `LD_NOGO` as printed).
 
+**§61a re-run Result (2026-11-17, Amendments 2–3; SCORED): ρ DISAGREES. At c3 the knee margin is about 0.46 of S_F, not c2's 0.80.**
+
+**In plain words.**
+- **The question.** Does the knee margin scale with the floor-window spread S_F, so that one g(δ)·S_F term serves every link shape (decision 8)?
+- **The answer at a second link shape is no.** At c3 the knee needs 0.46 S_F, against c2's 0.80, and the difference is far outside the registered margin. By the coordinator's reading of ρ₃'s interval, the σ-scaled alternative does not explain it either.
+- **Every candidate allowance covers c3's knee with room to spare,** so no candidate is short here. They over-allocate.
+- **The registration's consequence:** S_F is not the knee's term, and decision 8's form is re-derived, with c3's need₃ against each rival sentence as the data.
+- The re-run is not blind. It was registered after the first session's post-hoc bound (0.31–0.56), and the scored value lands inside that bound.
+
+**Runs.**
+- **Re-rehearsal:** launch 11:57:33Z, `REHEARSAL-PASS` 12:19:03Z, tree `3cdc4470` (the VM tree was checked for `ABORT-CONTROL61` and the proportional pilot).
+  - floor GO (2/2);
+  - control GO on R6 W 512: goodput 17.85 ≥ 17.40, loss 0.0503 ≤ 0.0576, CR61 ratio 1.11. That is under the 1.4 stop line, so 61a proceeded;
+  - R1 W 2 048, reported: ratio 1.86, the eighth W 2 048 row above 1.5;
+  - pilot `PILOT61 W=103.8 u88=0.806 u128=0.995 case=proportional clamped=no`, giving K 100/108/120, B 60/80/88, P1 152.
+- **61a:** launch 12:20:50Z with `LD_KNEE61=103.8 LD_CTL61=512`, `LD_NOGO` empty. Rows ran 12:38–13:45Z.
+  - `bin_sha` equals `e410d640…`; suite-reuse HIT; tools tests pass on the VM;
+  - `VERDICT61 REPORTED-WITH-SCORED slots=66/66 live=66 void=0 replaced=0 dnf=0`.
+- **Host:** the coordinator held the host lock from 11:56:57Z to the end, and the F2 worker's cargo waited at it.
+- **VM:** io pressure at both launches (avg10 3.95–4.73) came from the coordinator's own archive extract just before each one. It was 0.15–0.34 at the smoke, before any row. The quiet-host first session gives the same ρ (bound and path exercise 0.458).
+- **Reproduction:** the host re-score with `LD_KNEE61=103.8 LD_CTL61=512` matches the VM `score.txt` byte for byte.
+- **Ledger:** `docs/l1-raw/s61/rep61c-*` and `rehearsal-c.tgz`.
+
+**Registered labels.**
+
+| label | value |
+|---|---|
+| CONTROL-c3 | **OK** (6/6 unflagged, median 17.82). W 512 ratios 1.05–1.16, inside the predicted 0.95–1.4; P1 152 reads 0.87–0.96 |
+| FLOOR-F-c3 | NOT-CONVERGED (b +0.1021 ± 0.0278 ms/slot) |
+| FLOOR-S-c3 | UNRESOLVED (b −0.0631 ± 0.0298) |
+| **RHO** | **DISAGREES** (RHO-RAW DISAGREES) |
+| SIGMA-DISCRIMINATION | SEPARABLE (+0.320, outside ±0.085) |
+| D-{S, A0, A0f, Ac, wq, W80}-Bulk | all **COVERED** |
+
+**The readings.**
+- **Floor:** pool W 12, W\* = 11.6 (κ 0.00962), F_c 38.998, S_F,c 9.709. Parity is IN at both floor (286) and knee (2 336).
+- **Knee:** 6/6 replicates scoreable. W₉₅ is 106.6–110.1, all inside [K₁, K₃] = [100, 120]. need per replicate: 4.26 / 4.50 / 4.40 / 4.46 / 3.61 / 4.48 ms.
+- **ρ₃ = 0.457, 90 % [0.409, 0.483],** against ρ₂ 0.797 [0.780, 0.825] (frozen).
+  - Δρ = −0.340 [−0.396, −0.311]; Δ = min(0.085, 0.201) = 0.085, so DISAGREES.
+  - W → 0: ρ₃,₀ 0.538 and Δρ₀ [−0.420, −0.286] against ρ₂,₀ 0.877, so DISAGREES. FLOOR-SENSITIVE: no.
+  - Native (reported only): ρ₃ 0.633, D-S −6.40 ms.
+- **The prediction against the result:**
+  - **Rival sentences** (`s61pred.out` §3; reported, since only the σ-scaled rival is scored by SIGMA-DISCRIMINATION):
+    - S (need = ρ₂·S_F) predicts ρ₃ = ρ₂ = 0.797: rejected.
+    - **Constant** (need₃ = need₂ = 0.797 × 5.083 = 4.05 ms) predicts ρ₃ = 4.05 / 9.709 = 0.417. It is the closest rival, and S-scaling predicts need₃ +91 %.
+    - **σ-scaled,** on the measured inputs: ρ₃ = ρ₂ + the printed SIGMA-DISCRIMINATION 0.320 = 1.117. **Loop-scaled:** need₂/F₂ × F₃ = 4.05 / 8.679 × 38.998 = 18.2 ms, so ρ₃ ≈ 1.88. Both are far off.
+      - SIGMA-DISCRIMINATION scores only whether S and σ-scaled can be told apart. Ruling σ-scaled out is the coordinator's reading from ρ₃'s interval.
+    - **How constant depends on where the floor is read:**
+
+      | floor | need₃ | need₂ | need₃ / need₂ |
+      |---|---|---|---|
+      | u-matched (scored) | 4.43 | 4.05 | 1.09 |
+      | the intercept (c3 + b_F·W\*; c2 + its matched-n slope × 16) | 5.62 | 4.60 | 1.22 |
+      | native windows (reported) | 3.71 (0.633 × 5.861) | 4.05 | 0.92 |
+
+      Need₃ per replicate is 3.61–4.50 ms. No interval on need₃ − need₂ was computed.
+    - **So across the two link shapes the knee margin looks roughly constant in milliseconds** (−8 % to +22 % by floor), not proportional to S_F (5.08 against 9.71). That is a lead from two points, not a law.
+  - The first session's post-hoc bound [0.31–0.46, 0.50–0.56] held: 0.457.
+  - The path exercise on the first session's rows read 0.458.
+- **D per candidate** (need − A; median, 90 % bootstrap; Bulk scored, Auto / Realtime reported):
+
+  | hint | S | A0 | A0f | Ac | wq | W80 |
+  |---|---|---|---|---|---|---|
+  | Bulk | −9.17 | −3.74 | −4.33 | −2.69 | −10.57 | −9.82 |
+  | Auto | −7.87 | −2.64 | −3.03 | −1.93 | −7.19 | −8.52 |
+  | Realtime | −7.22 | −2.08 | −2.38 | −1.56 | −5.50 | −7.87 |
+
+  - Every interval is below 0, so every candidate is COVERED at c3.
+  - D₀ at W → 0 is COVERED everywhere except Ac at Auto and Realtime (UNRESOLVED; reported).
+- **Handed to the owner** (the AGREES branch's quantities, printed regardless):
+  - ρ̄ pooled 0.615 [0.601, 0.641];
+  - g_knee c2 0.711, c3 0.256;
+  - the c3 landing table (Bulk W\* 105.1 at g = 0 to 150.3 at g = 1).
+  - Under DISAGREES, these describe what one pooled g would cost. They are not a recommendation.
+- **B1** (reported only): 2/18 fire (predicted 0–3).
+- **Monotone:** NO, at W 16, from the floor's native tmin. This was already seen in the first session.
+
+**What this means for the store law (FORMULA-FIRST).**
+- **Decision 8's g(δ)·S_F + q(δ)·F̂ carries a term whose coefficient is not shape-free.** At Bulk, c2 needs 0.80 S_F and c3 needs 0.46 S_F, while every candidate allowance covers c3 by 2–10 ms.
+- **The registered next step is a re-derivation.** Find what the knee margin does scale with, using c3's need₃ against each rival sentence (the D table and the σ-discrimination above) and c2's need₂.
+  - The constant-in-ms reading (the A(c) family's c_B, W1.2) is the first candidate to derive. It is not adopted from two points.
+- The ledger rows F07 (allowance) and E13 (ℓ̂) stay open. F07's ledger entry is owed an update citing this Result.
+- **No engine change follows from this Result alone.** Decision 8's form is not in the engine. The shipped store cap is unchanged, and the engine form waits on this derivation.
+- **Decision 10** (per-leg queue target 1 + q(δ)) uses only q(δ), the F̂ term's dial. That term is not under test here, so decision 10 stands and perleg Phase A is unaffected.
+
+**Pending, added by this Result:**
+- the decision-8 re-derivation (Opus; reviewed by Fable; the owner's call on the new form);
+- CR61 at large pools (unchanged; R1's 1.86 is the eighth point);
+- the c3 control tail (undiagnosed);
+- the G12 s42 r5 B1 outlier from the first session.
+
 **§61b Result (2026-11-17; the c2 add-on ran clean; REPORTED with its two labels).**
 
 **In plain words.** c2's price curve below its knee is now measured directly, at W 96 / 128 / 144. It matches §60's c2 rows at the overlap arm, so the two sessions merge into one c2 table. 61b scores only two labels: the control is OK, and there is no drift.

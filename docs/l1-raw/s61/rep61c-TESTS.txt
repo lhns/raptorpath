@@ -1,0 +1,3 @@
+ENGINE-SUITES-REUSED (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/s61c/src/tools/l1/ref60-manifest.sha256, 187 files)
+TEST parsers rc=0 wall=483s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd tools/l1 && for t in test_*.py; do [ "$t" = test_stubrun.py ] && continue; python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done]
+TEST bashtests rc=0 wall=1s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd tools/l1 && for t in test_lib_battery.sh test_abort_witness.sh; do bash "$t" || { echo "BASH-TEST-FAIL $t"; exit 1; }; done]
