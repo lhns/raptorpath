@@ -29,9 +29,9 @@ Confirmation is out of sample, in s62 (§5), and §5's predictions are built aro
   - The criterion (≥ 5 independent draws beyond the quantile) and the ≈ 17–21 independent draws per c3 floor window
     are now derived and measured (§2.5).
 - **Decision 8's form is unchanged and is not a derivation here.** F07 stays UNDERIVED.
-- **s62 (§5) registers the knee rise in ms against the spread along the jitter axis** (intercept and slope), not a ρ.
-  Its margins are derived for that reading.
-- **There is no owner question yet.** The 3 h question comes only after design review of §2.4–2.6.
+- **s62 (§5) scores one number:** the knee-native need at J = 0, if the floor's count drop there is < 0.5 ms, with a
+  derived margin Δ₀ = ½·q_R·F̂₀. J = 5 is run in session, and the J 0 / 3 / 5 line is reported only.
+- **The owner decides whether to run s62** (§7): ≈ 3.4 h of VM typical, host builds paused, no F2 fix needed.
 
 **Advisor (Fable) log.**
 1. **Round 1.** Reproduce first; tabulate conventions with intervals; give each candidate its two-point exponent;
@@ -419,86 +419,122 @@ This document does not derive it, and does not re-type its provenance. F07 stays
 
 ---
 
-## 5. s62 sketch (not registered): the knee rise against the spread, along the jitter axis
+## 5. s62 sketch (not registered): one scored number at J = 0, and the jitter line reported
 
-**Question.** With rate, delay and loss fixed, how does the knee's rise in ms depend on the floor spread, across netem
-jitter J = 0, 3 and 5 ms?
+**Question.** With rate, delay and loss fixed and the netem jitter removed, does the knee still need the window minimum
+to rise about 4 ms above the floor (a constant), or about nothing (a spread-carried margin)?
 
-```text
-   rise(J)  =  a  +  b · R(J)          a: what no spread carries          b: what the spread carries
-```
+### 5.1 Cells and arms (binary `e410d640`, Bulk only)
 
-- This replaces ρ. At J = 0 the spread nearly vanishes, so a ratio is ill-conditioned there, and the line is not.
+- **J = 0 and J = 3:** tools-only cell names, `scenario_params` `20mbit 20 0 2 40` / `20mbit 20 3 2 40`.
+  - Each cell gets its own rehearsal (the proportional pilot, Amendment 2).
+  - Arms: the floor arm (§5.3), the K bracket placed by the pilot, P1, and the W 512 control, × 6 replicates =
+    36 rows per cell.
+- **J = 5 in session** (c3's own netem line). 61c cannot stand in: the two c3 sessions differ by ≈ 0.4 ms in native
+  need (3.71 against 4.10), which is a tenth of the gap the scored test reads.
+  - It is a short overlap, with no rehearsal: the floor arm, 61c's K bracket 100 / 108 / 120, and the W 512 control,
+    × 6 = 30 rows.
+  - **Drift rule (as 61b against §60):** DRIFT-OK iff |tmin₁₀₈(s62) − 45.96| ≤ 0.3 ms and |u₁₀₈(s62) − 0.947| ≤ 0.02,
+    as arm medians against 61c's native arm medians. 0.3 ms = 0.05 × native S_F 5.86, the τ rule of s61 §5.1.
+  - If DRIFT, the in-session J = 5 reading is used, and 61c / 61a are reported beside it, not merged.
+- **One `RWM_RTT_DUMP=1` pass per cell** (floor arm and K₂, 2 rows), reported separately for its perturbation. It
+  carries the same stream as `[SLAW]` (§2.6) and serves the reported quantile readings only.
 
-**Statistic.**
-- **Scored on the law's own pair (§2.4):** the native-window minimum's rise over native S_F.
-- **Reported:** p10, p50, the IQR from the dump, and the one-count minimum, each with its own (a, b).
-
-**Cells.**
-- `c3-25` at J = 0 and J = 3: tools-only names, `scenario_params` `20mbit 20 0 2 40` / `20mbit 20 3 2 40`.
-- J = 5 is 61c, with a two-row overlap arm in s62 to bound drift.
-- Binary `e410d640`, Bulk.
-
-**Arms.**
-- floors 12 / 16 / 24 at **25 MB**, the pilot-placed K bracket, P1, and the W 512 control: ≈ 45 rows per cell;
-- one `RWM_RTT_DUMP=1` pass per cell on floor W 12 and K₂, reported separately.
-
-**At J = 0 the ranks do not coincide, on c1s's evidence** (`kmr.out` §13).
-- §60's c1s floor arms are jitter-free. From W 64 to W 192 (u_link 0.22 → 0.50) the rises are: minimum +0.14,
-  p10 +0.42, p50 +0.75, p90 +1.11 ms.
-- So without jitter the rate queue still spreads the ranks. **The J = 0 reading is not statistic-free.**
-- Its between-statistic spread is reported as the floor of statistic dependence. The J = 0 point is still the most
-  direct reading of a, since R(J0) is smallest there.
-
-**Margins, derived for this reading.** The consequence is the same as s61 §5.2's: a knee-term error becomes a landing
-error, and Realtime stays above the knee iff that error is < q_R·F̂ at each cell. On the fitted line the error at J is
-|δa| + |δb|·R(J). Splitting the budget equally between the two terms, at the smallest q_R·F̂ over the three cells:
+### 5.2 The scored reading: need at J = 0 on the knee-native window minimum
 
 ```text
-   Δ_a  =  ½ · min_J q_R·F̂_J            Δ_b  =  ½ · min_J q_R·F̂_J / R(J5)
+   need₀  =  median_r T̂min_r(W₉₅,r)  −  F₀           T̂min on the knee arms' native windows (the law's statistic, §2.4);  F₀ the floor arm at its fixed count (§5.3)
 ```
 
-- F̂ at J 5 is native 42.5, so q_R·F̂ = 2.1 ms. F̂ at J 0 is not measured. It is predicted at ≈ 40.4–43 ms: the
-  40 ms propagation plus the echo's own excess, which is 0.38 ms on the jitter-free c1s line and larger at c3's lower
-  rate. So q_R·F̂ ≈ 2.0–2.15 at every J.
-- With native S_F at J 5 = 5.86, that gives **Δ_a ≈ 1.0 ms and Δ_b ≈ 0.17 ms/ms.** Both are recomputed in session
-  from the measured F̂.
+- **The scoreability gate, checked in session first:** the floor's count drop at J = 0, D₀ = F(G250) − F(G2100) on
+  the floor arm (difference of arm medians).
+  - **Scoreable iff D₀ < 0.5 ms.** Otherwise need₀ is **UNSCOREABLE**: the floor still depends on its count, so need₀
+    would depend on §5.3's choice of count.
+  - The prediction for D₀: ≈ 0.1 ms if the count drop is jitter sampling (c1s pre-read, ≈ 0.035 ms per doubling ×
+    three doublings), against 2.8–4.5 ms at J = 5 today.
+- **Predictions:**
 
-**Predictions** (registered before any row):
+  | sentence | need₀ |
+  |---|---|
+  | spread-carried (the knee margin is the jitter the FIFO absorbs) | ≈ 0 (only the rate queue at u 0.95; c1s's jitter-free minimum rises 0.14 ms by u 0.5) |
+  | constant (the knee margin is not a spread) | need₅ in session (3.7–4.1 ms on 61c / 61a) |
 
-| outcome | a | b (law's pair; J 5 point 3.71 ms over 5.86, 61a 4.10 over 6.09) |
+  The two sit ≈ 4 ms apart.
+
+**The margin for this one-number test, derived.**
+- The consequence is s61 §5.2's. An error ε in the knee term is a landing error of ε, and Realtime stays above its
+  knee iff ε < q_R·F̂₀.
+- The two acceptance bands must not overlap. So each takes half the consequence tolerance:
+
+  ```text
+     Δ₀  =  ½ · q_R · F̂₀
+  ```
+
+- F̂₀ is predicted at ≈ 40.4–43 ms (the 40 ms propagation plus the echo's own excess), so Δ₀ ≈ 1.0–1.1 ms. It is
+  recomputed in session from the measured F₀.
+- The bands are disjoint iff 2·Δ₀ < need₅ (≈ 2.1 < 3.7). That holds, with 1.6 ms to spare.
+- **Labels** (90 % bootstrap over replicates and floor rows, 2 000 draws):
+  - **SPREAD-CARRIED** iff CI(need₀) ⊂ (−Δ₀, +Δ₀);
+  - **CONSTANT** iff CI(need₀) ⊂ (need₅ − Δ₀, need₅ + Δ₀), with need₅ the in-session J = 5 point value;
+  - **INTERMEDIATE** iff the CI lies inside neither band and between them (a partly spread-carried, affine margin);
+  - **UNRESOLVED** otherwise (the CI straddles a band edge);
+  - **UNSCOREABLE** if D₀ ≥ 0.5 ms (above), or if fewer than 5 replicates have W₉₅ inside the K bracket (s61 §2.2's
+    rule).
+- **Resolution.** The native need's per-replicate spread at J = 5 is 3.15–3.95 ms (61c), so a 90 % half-width of
+  ≈ 0.3 ms is expected. That resolves either band.
+
+### 5.3 The floor's role, and its fixed count
+
+- **The law's F is not yet defined.** It is built from m̂ / ℓ̂ / b̂₀⁺ in R6.2's anchor, or from R6.7 candidate C's
+  median of the lowest-n windows' minima. Its count is R6.7's open n₀ and open item 4.
+- So the floor arm's count is a measurement choice, not the law's.
+- **s62 fixes it:** the floor arm is W 12 at **25 MB** (150 s timeout), with F₀ read under G(250). That is s61's floor
+  count, and it is held at every J.
+- **Why the count does not decide need₀:** the gate D₀ < 0.5 ms bounds how far any count in [250, 2 100] can move F₀,
+  to < 0.5 ms, which is half of Δ₀.
+- **Groups and timeout.** At ≈ 240 samples/s, 25 MB gives ≈ 85–95 s of transfer. That is ≥ 8 complete G(2 100) groups
+  for D₀, and ≥ 60 G(250) groups for F₀, inside the 150 s timeout (1.6–1.8×). At J = 0 the loop is shorter, so rows
+  are faster.
+- **The J = 0 rehearsal also reports netem reordering** (the receiver's out-of-order count). The prediction is 0
+  (`rate` keeps netem FIFO). Any reorder stops the cell.
+
+### 5.4 Reported, not scored
+
+- **The three-point line rise(J) = a + b·R(J)** over J 0 / 3 / 5, for the law's pair (native minimum over native S_F)
+  and for p10, p50 and the dump's IQR.
+  - Two parameters on three points leave one degree of freedom, which is not a test. The line is printed with its
+    residual and decides nothing.
+- **Every convention of §1.1** at each J, and the dump's count test of the median and IQR (§2.6).
+
+### 5.5 What each scored outcome means for decision 8 (A = g(δ)·S_F + q(δ)·F̂, g(Bulk) = 1)
+
+- **SPREAD-CARRIED:** with the jitter removed, the knee needs no margin beyond the rate queue. So on this line the knee
+  term is a spread.
+  - Decision 8's S_F term gains a sentence along the jitter axis, at a fixed loop.
+  - c2 against c3's DISAGREES then lies in rate or delay, which needs that axis before g has provenance across cells.
+- **CONSTANT:** the margin survives without jitter. S_F does not carry it, and decision 8's S_F term is a cover with no
+  sentence. The knee term needs a non-spread source with its own derivation (for example an engine timing constant),
+  and the form is re-derived.
+- **INTERMEDIATE:** decision 8 lacks a term. a = need₀ is the part no spread carries, and it needs a sentence before
+  anything ships.
+- **UNSCOREABLE or UNRESOLVED:** NEEDS-MORE, named (the floor's count, or replicates). Never a refutation.
+
+### 5.6 Cost
+
+| launch | rows | VM time, typical (61a's pace ≈ 1 min/row + ≈ 16 min launch overhead) |
 |---|---|---|
-| spread-carried | within ±Δ_a of 0 | 0.63–0.67 |
-| constant | 3.7–4.1 ms | within ±Δ_b of 0 |
-| affine | outside ±Δ_a | outside ±Δ_b |
+| J = 0 rehearsal | pilot + controls | ≈ 22 min |
+| J = 0 cell | 36 + 2 dump | ≈ 55 min |
+| J = 3 rehearsal | pilot + controls | ≈ 22 min |
+| J = 3 cell | 36 + 2 dump | ≈ 55 min |
+| J = 5 overlap | 30 + 2 dump | ≈ 50 min |
+| **total** | | **≈ 3.4 h typical** |
 
-**Other registered items.**
-1. **The floor minimum's count drop at J = 0.** F(G250) − F(G2100) at W 12 is 2.8–4.5 ms at J = 5.
-   - The c1s pre-read is ≈ 0.035 ms per doubling, so ≈ 0.1 ms over three doublings.
-   - < 0.5 ms means jitter sampling; ≥ 1.5 ms means a non-netem spread or drift; in between is UNRESOLVED.
-2. **The dump's count test for the median and IQR.** Windows subsampled to m draws keep Q₅₀ and the IQR within
-   0.05·IQR of their large-m value for every m with m·0.25 ≥ 5. The minimum fails it.
-3. **The J = 0 rehearsal reports netem reordering** (the receiver's out-of-order count). Predicted 0; any reorder
-   stops the cell.
-4. **Row timeout at W 12.** Eight G(2 100) groups need ≈ 16 800 LATE samples, ≈ 70 s after the 15 s LATE start. 15 MB
-   took 58.7 s, so ≈ 22 MB is needed. **25 MB with a 150 s timeout** gives a 1.6–1.8× margin.
-
-**What each outcome means for decision 8** (A = g(δ)·S_F + q(δ)·F̂, g(Bulk) = 1):
-- **Spread-carried** (a ≈ 0, b ≈ 0.63–0.67): along the jitter axis, at a fixed loop, S_F carries the knee in the
-  law's own statistic.
-  - g(Bulk) = 1 then over-covers by (1 − b)·S_F.
-  - c2 against c3's DISAGREES lies in what s62 holds fixed (rate, delay). That needs a rate or delay axis before g has
-    provenance across cells.
-- **Constant** (b ≈ 0): S_F does not carry the knee even at a fixed loop.
-  - Decision 8's S_F term is a cover with no sentence.
-  - The knee needs a non-spread term with its own derivation, and the form is re-derived.
-- **Affine:** decision 8 lacks a term, A = a + b·S_F + q·F̂. a needs a sentence, for example an engine timing
-  constant, before anything ships.
-- **Statistic-dependent** (the law's pair says one thing, other statistics another): the law's pair decides for
-  decision 8, because it is what the engine holds. The others are reported, and they inform the quantile design
-  review.
-
-**Cost.** ≈ 3 h of VM, a tools-only harness change (Sonnet worker), and the registration review rounds. No rebuild.
+- The worst case is ≈ 6.5 h, at s61's registered worst-to-typical ratio of ≈ 2× (rows timing out at 150 s).
+- **Host cargo is paused for every launch,** as in s61.
+- No rebuild: the same binary `e410d640`.
+- A tools-only harness change, by a Sonnet worker with stub runs: cell names, the 25 MB floor arm, the D₀ gate, the
+  J = 5 drift rule, and the dump pass.
 
 ---
 
@@ -531,9 +567,13 @@ error, and Realtime stays above the knee iff that error is < q_R·F̂ at each ce
 
 ---
 
-## 7. Owner question
+## 7. What the owner decides
 
-**None yet.** The 3 h s62 question comes after design review of §2.4–2.6:
-- the law's statistic (the native minimum, with its count dependence);
-- the quantile candidate, untested;
-- s62's rise-against-spread design and its derived margins.
+**Run s62 (§5), or not.**
+- **What it gives:** one scored number, need₀ at J = 0. It tells whether the knee margin is a spread or a constant
+  along the jitter axis, which is what decision 8's S_F term needs before it has a sentence.
+- **What it costs:** ≈ 3.4 h of VM typical (≈ 6.5 h worst) over five launches, with host cargo builds paused for each.
+  It also needs a tools-only harness change and its review.
+- **What it does not need:** the F2 fix. s62 runs Bulk only on binary `e410d640`, and Bulk does not pack, so F2's
+  Realtime framing defect does not reach it.
+- **If it is not run,** decision 8's form stays as decided, unsettled and out of the engine, and F07 stays UNDERIVED.
