@@ -22,10 +22,10 @@ The rejected option (B) was a per-symbol "packed" bit. It keeps two formats and 
 2. **`window_packed` and `WindowStart.packed` are removed.** Packing becomes a sender-only choice. Its hint keying stays as listed sender debt (status §3.3).
 3. **Wire v10.** A v9 peer is refused at the handshake. The planned receiver-timestamp field moves to v11.
 4. **The symbol size belongs to the sender, per direction.**
-   - `Handshake.symbol_size` carries the sender's real size, and the receiver decodes with it.
+   - `Handshake.symbol_size` carries the sender's real size, and the receiver decodes with it. `WindowStart` drops its copy of the size, so the size has one, reliable source.
    - A peer whose paths disagree on the size, or whose size is outside [72, 1200], is refused at connect.
    - There is no joint constraint between the sides, so a future S(δ) stays continuous.
-   - Option (i), refusing any mismatch, is the fallback.
+   - Option (i), refusing any mismatch, is the fallback. Both put identical bytes on the wire, so switching between them needs no version bump.
 5. **A symbol the receiver cannot unframe** (a length overrun, or no packet from non-zero bytes) is a protocol violation.
    - It is counted in `UNDELIVERABLE_SYMBOLS`, logged as `[UNFRAMABLE]`, never delivered, and it closes the tunnel.
    - That is one behaviour at every δ and ρ.
