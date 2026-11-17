@@ -2927,7 +2927,7 @@ nodes:
   folded: []
   overview: true
   plain: 'Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner''s call.'
-  notes: 'Registered consequence of DISAGREES. First: the estimator's sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form.'
+  notes: 'Registered consequence of DISAGREES. First: the estimator''s sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form.'
 - id: meas-defect-cr61-large-pool
   title: Collapse rule blind at large pools
   track: meas
