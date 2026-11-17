@@ -295,8 +295,8 @@ pub static TEST_MAX_PACKED: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(any(test, feature = "test-seams"))]
 fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
-    if let Ok(p) = super::framing::read_packets(&framed) {
-        TEST_MAX_PACKED.fetch_max(p.len() as u64, Ordering::Relaxed);
+    if let Ok(p) = super::framing::unframe(&framed) {
+        TEST_MAX_PACKED.fetch_max(p.count() as u64, Ordering::Relaxed);
     }
     let k = TEST_CORRUPT_SEQ.load(Ordering::Relaxed);
     if k == u64::MAX || TEST_CORRUPT_COUNT.fetch_add(1, Ordering::Relaxed) != k {

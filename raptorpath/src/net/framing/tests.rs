@@ -505,7 +505,12 @@ fn framing_ns() {
                 black_box(base_v9::extract_one(black_box(&sym)));
             },
             || {
-                black_box(read_packets(black_box(&sym)).ok());
+                // What the receiver does: unframe, then copy each packet out once.
+                if let Ok(p) = unframe(black_box(&sym)) {
+                    for s in p {
+                        black_box(s.to_vec());
+                    }
+                }
             },
         );
     }
@@ -527,7 +532,32 @@ fn framing_ns() {
             black_box(base_v9::extract_packets(black_box(&be)));
         },
         || {
-            black_box(read_packets(black_box(&le)).ok());
+            if let Ok(p) = unframe(black_box(&le)) {
+                for s in p {
+                    black_box(s.to_vec());
+                }
+            }
         },
     );
+}
+
+/// `unframe` and `read_packets` agree on every symbol (the one reader), and the
+/// slices it hands out are the packets in order.
+#[test]
+fn unframe_agrees_with_read_packets() {
+    let mut cases: Vec<Vec<u8>> = vec![
+        vec![],
+        vec![0],
+        vec![5],
+        vec![0, 0, 5, 0],
+        pack(&[&[1, 2, 3], &[4]], 16),
+        pack(&[&[9u8; 60]], 64),
+        vec![3, 0, 1],
+    ];
+    cases.push(frame_window_packet(&[7u8; 300], 512));
+    for sym in cases {
+        let a = read_packets(&sym);
+        let b = unframe(&sym).map(|p| p.map(<[u8]>::to_vec).collect::<Vec<_>>());
+        assert_eq!(a, b, "{sym:?}");
+    }
 }

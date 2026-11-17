@@ -6573,7 +6573,10 @@ fn f2_unframable_symbol_is_counted_once() {
     // Other lib tests may run concurrently, but none of them reads an
     // unframable symbol, so the deltas below are exact.
     let before = undeliverable_symbols();
-    assert_eq!(extract_window_packets(&ok).unwrap(), vec![vec![7u8; 100], vec![8u8; 50]]);
+    assert_eq!(
+        extract_window_packets(&ok).unwrap().map(<[u8]>::to_vec).collect::<Vec<_>>(),
+        vec![vec![7u8; 100], vec![8u8; 50]]
+    );
     assert_eq!(undeliverable_symbols(), before, "a framed symbol is not counted");
 
     let mut overrun = sym;
@@ -6586,7 +6589,7 @@ fn f2_unframable_symbol_is_counted_once() {
     assert_eq!(undeliverable_symbols(), before + 2, "non-zero bytes with no packet are counted");
 
     let zeros = Bytes::from(vec![0u8; 512]);
-    assert_eq!(extract_window_packets(&zeros).unwrap(), Vec::<Vec<u8>>::new());
+    assert_eq!(extract_window_packets(&zeros).unwrap().count(), 0);
     assert_eq!(undeliverable_symbols(), before + 2, "an all-zero symbol is padding, not a miss");
 }
 
