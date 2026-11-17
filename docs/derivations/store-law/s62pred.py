@@ -11,7 +11,7 @@ s62's own cells do not exist yet:
 Each stand-in is loaded on its own (row keys collide across sessions). Sections:
   1. CR62 (the collapse rule, J = 0-safe form) on every row of every stand-in, with the raw s61 form beside it
   2. the scored path per cell: control, floor arm, the D0 gate, knees, need with its bootstrap
-  3. the J = 5 drift rule, Delta_0, and the label (the stand-in J = 0 cell against the J = 5 cell), with the gate as measured and forced
+  3. Delta_0 and the label (need_0 against zero, FLOOR-SENSITIVE from the W12 / W24 intercept), with the gate as measured and forced
   4. the label function on every branch (synthetic inputs, marked)
   5. the rehearsal go/no-go on real rows (a knee arm and the control)
   6. the pilot's proportional rule against the 61c curve; the J = 0 knee prediction
@@ -36,12 +36,16 @@ NF, NK = 250, 2100
 GATE_D0 = 0.5                         # §3: the floor's count drop must be < 0.5 ms
 X_MIN_FRAC = Q_R                      # §4: J = 0-safe floor of every spread-divided rule: q_R * F (the Realtime margin in ms)
 RATIO_MAX, SHARE_MAX, GP_CUT = 1.5, 0.10, 0.95
-DRIFT_T, DRIFT_U, DRIFT_TMIN108, DRIFT_U108 = 0.3, 0.02, 45.96, 0.947
 N_BOOT = 2000
 P = print
 QD = re.compile(r"QDISC (\w+): .*?delay (\d+)ms(?:\s+(\d+)ms)?.*?rate (\d+)([GM])bit.*?Sent (\d+) bytes (\d+) pkt")
 TRUTH = re.compile(r"\[TRUTH\] leg=0 .*?loss=([\d.]+)")
 DRV = re.compile(r"diag-ld/(c\w+-\d+)@def-([GC])(\d+)-s(\d+)-r(\d+)-a\d+-drv\.out$")
+
+
+def ols(xs, ys):
+    b, se = sp.ols(xs, ys)
+    return b, sum(ys) / len(ys) - b * sum(xs) / len(xs), se
 
 
 def q(v, p):
@@ -151,6 +155,9 @@ def cr62(c, verbose=True):
     return x_use
 
 
+FLOOR2 = 24                           # the second floor arm (round 2): need_0 at W12 and at the intercept of the W12 / W24 floor line
+
+
 def scored(c, rnd, verbose=True, ctl_by_goodput=False):
     """The scored path. -> dict. ctl_by_goodput lifts CR62 on the control arm only (s61a Result's post-hoc reading; exercise only)."""
     live = [r for r in c.rows if not c.flag.get(id(r)) or (ctl_by_goodput and r.W == c.ctl)]
@@ -162,14 +169,18 @@ def scored(c, rnd, verbose=True, ctl_by_goodput=False):
             P(f"  {c.name}: control W{c.ctl} unflagged {len(ctl)} < 4 -> LABEL62 CONTROL-{c.name.split()[0]} CONTROL-MOVED: nothing scored")
         return res
     ctl_m = med([r.gp for r in ctl])
-    fl = [r for r in live if r.W == c.floor_w and len(sp.groups(sp.late_all(r, 0), NF)) >= 6]
-    if len(fl) < 3:
-        res["label"] = "UNSCOREABLE-FLOOR"
+    fa = {W: [r for r in live if r.W == W and len(sp.groups(sp.late_all(r, 0), NF)) >= 6] for W in (c.floor_w, FLOOR2)}
+    fl, fl2 = fa[c.floor_w], fa[FLOOR2]
+    if len(fl) < 3 or len(fl2) < 3:
+        res["label"] = "UNSCOREABLE (floor: fewer than 3 valid rows on an arm)"
         return res
-    F250 = [sp.row_SF(r, 0, NF)[1] for r in fl]
-    F2100 = [sp.row_SF(r, 0, NK)[1] for r in fl]
-    Fnat = [native_tmin(r) for r in fl]
-    d0 = max(med(Fnat), med(F250)) - med(F2100)          # the gate covers every count from native to 2 100
+
+    def fread(rs):
+        return {"nat": med([native_tmin(r) for r in rs]), "g250": med([sp.row_SF(r, 0, NF)[1] for r in rs]), "g2100": med([sp.row_SF(r, 0, NK)[1] for r in rs])}
+
+    f1, f2 = fread(fl), fread(fl2)
+    d0 = max(f1["nat"], f1["g250"]) - f1["g2100"]
+    d0b = max(f2["nat"], f2["g250"]) - f2["g2100"]
     reps = {}
     for r in live:
         reps.setdefault((r.rep, r.seed), {})[r.W] = r
@@ -184,44 +195,63 @@ def scored(c, rnd, verbose=True, ctl_by_goodput=False):
             knees.append((key, w95, None))
             continue
         knees.append((key, w95, interp([(W, native_tmin(wm[W])) for W in arms], w95)))
-    ok = [(k, w, t) for k, w, t in knees if t is not None]
-    F0 = med(F250)
-    need = med([t - F0 for _, _, t in ok]) if ok else None
-    need_law = med([t - med(Fnat) for _, _, t in ok]) if ok else None      # the law's pair: native knee minus native floor (the J = 5 comparator)
-    draws = []
+    ok = [t for k, w, t in knees if t is not None]
+    a250 = [sp.row_SF(r, 0, NF)[1] for r in fl]
+    b250 = [sp.row_SF(r, 0, NF)[1] for r in fl2]
+
+    def intercept(xa, xb):
+        xs = [c.floor_w] * len(xa) + [FLOOR2] * len(xb)
+        b, a, _ = ols(xs, xa + xb)
+        return a
+
+    F0, Fi = med(a250), intercept(a250, b250)
+    need = med([t - F0 for t in ok]) if ok else None
+    need_i = med([t - Fi for t in ok]) if ok else None
+    dr, di = [], []
     for _ in range(N_BOOT):
-        fb = [F250[rnd.randrange(len(F250))] for _ in F250]
-        kb = [ok[rnd.randrange(len(ok))][2] for _ in ok] if ok else []
+        xa = [a250[rnd.randrange(len(a250))] for _ in a250]
+        xb = [b250[rnd.randrange(len(b250))] for _ in b250]
+        kb = [ok[rnd.randrange(len(ok))] for _ in ok] if ok else []
         if kb:
-            draws.append(med([t - med(fb) for t in kb]))
-    lo, hi = (q(draws, 0.05), q(draws, 0.95)) if draws else (None, None)
+            dr.append(med([t - med(xa) for t in kb]))
+            di.append(med([t - intercept(xa, xb) for t in kb]))
+    ci = (q(dr, 0.05), q(dr, 0.95)) if dr else (None, None)
+    cii = (q(di, 0.05), q(di, 0.95)) if di else (None, None)
     S_nat = med([med([w["tp50"] - w["tmin"] for w in r.late(0)]) for r in fl])
-    res.update(ctl_m=ctl_m, n_floor=len(fl), F0=F0, Fnat=med(Fnat), need_law=need_law, d0=d0, need=need, ci=(lo, hi), n_ok=len(ok), knees=knees, S_nat=S_nat,
+    res.update(ctl_m=ctl_m, F0=F0, Fi=Fi, f1=f1, f2=f2, d0=d0, d0b=d0b, need=need, ci=ci, need_i=need_i, cii=cii, n_ok=len(ok), knees=knees, S_nat=S_nat,
+               n3={k: (med([t - f1[k] for t in ok]) if ok else None) for k in ("nat", "g250", "g2100")},
                delta0=0.5 * Q_R * F0, jitter=med([r.jitter for r in c.rows if r.jitter is not None]))
     if verbose:
-        P(f"  {c.name} (netem jitter +-{res['jitter']:g} ms): control W{c.ctl} unflagged {len(ctl)}, median {ctl_m:.2f} Mbit/s; floor arm W{c.floor_w}"
-          f" valid {len(fl)}: F native {med(Fnat):.3f}, F0 = F(G250) {F0:.3f}, F(G2100) {med(F2100):.3f}, D0 = max(native, G250) - G2100 = {d0:.3f} ms -> gate {'PASS' if d0 < GATE_D0 else 'FAIL'} (< {GATE_D0})")
+        P(f"  {c.name} (netem jitter +-{res['jitter']:g} ms): control W{c.ctl} unflagged {len(ctl)}, median {ctl_m:.2f} Mbit/s")
+        P(f"    floor W{c.floor_w} (valid {len(fl)}): native {f1['nat']:.3f} | G250 {f1['g250']:.3f} | G2100 {f1['g2100']:.3f} -> D0 {d0:.3f} ms, gate {'PASS' if d0 < GATE_D0 else 'FAIL'}"
+          f" | floor W{FLOOR2} (valid {len(fl2)}): native {f2['nat']:.3f} | G250 {f2['g250']:.3f} | G2100 {f2['g2100']:.3f} -> D0 {d0b:.3f} (reported)")
         P("    knees: " + " | ".join(f"s{k[1]}r{k[0]} W95 {'-' if w is None else format(w, '.1f')} {'Tmin ' + format(t, '.3f') if t is not None else 'UNSCOREABLE (outside [K1, K3])'}" for k, w, t in knees))
         if need is not None:
-            P(f"    need_0-form (native knee - F(G250)) = {need:.3f} ms, 90 % [{lo:.3f}, {hi:.3f}] over {len(ok)} scoreable replicates;"
-              f" need_law (native knee - native floor) = {need_law:.3f}; native S_F {S_nat:.3f}; Delta_0 = 1/2 q_R F0 = {res['delta0']:.3f} ms")
+            P(f"    need_0 (native knee - F(G250) at W{c.floor_w}) {need:.3f} ms, 90 % [{ci[0]:.3f}, {ci[1]:.3f}]; at the intercept (F {Fi:.3f}) {need_i:.3f} [{cii[0]:.3f}, {cii[1]:.3f}];"
+              f" Delta_0 = 1/2 q_R F0 = {res['delta0']:.3f} ms; {len(ok)} scoreable replicates")
+            P(f"    reported: need at the W{c.floor_w} floor read native {res['n3']['nat']:.3f} | G250 {res['n3']['g250']:.3f} | G2100 {res['n3']['g2100']:.3f}; native S_F {S_nat:.3f}")
     return res
 
 
-def label(need_ci, need5, delta0, d0, n_ok):
-    """§5 of the registration: the one scored label."""
-    lo, hi = need_ci
+def label(ci, delta0, d0, n_ok):
+    """Round 2: need_0 against zero only."""
+    lo, hi = ci
     if d0 is None or d0 >= GATE_D0:
-        return "UNSCOREABLE (floor count drop D0 >= 0.5 ms)"
+        return "UNSCOREABLE (gate: D0 >= 0.5 ms)"
     if n_ok < 5:
         return "UNSCOREABLE (fewer than 5 replicates with W95 in [K1, K3])"
-    if -delta0 < lo and hi < delta0:
-        return "SPREAD-CARRIED"
-    if need5 - delta0 < lo and hi < need5 + delta0:
-        return "CONSTANT"
-    if delta0 <= lo and hi <= need5 - delta0:
-        return "INTERMEDIATE"
+    if hi < delta0:
+        return "VANISHES"
+    if lo > delta0:
+        return "REMAINS"
     return "UNRESOLVED"
+
+
+def final(ci, cii, delta0, d0, n_ok):
+    a, b = label(ci, delta0, d0, n_ok), label(cii, delta0, d0, n_ok)
+    if {a, b} == {"VANISHES", "REMAINS"}:
+        return f"FLOOR-SENSITIVE (W12 {a}, intercept {b})"
+    return a
 
 
 def main(argv):
@@ -230,73 +260,65 @@ def main(argv):
     J0 = Cell("J0 stand-in (rep61a)", rowsA, C3, 12, (104, 112, 124), 136, 2048, 100000)
     CS = Cell("jitter-free shape (s60 c1s)", rows1, C1S, 64, (2048,), None, 2048, 250000)
     rnd = random.Random(62)
-    P("s62 scorer prototype (s62pred.py), end to end on real rows; inputs: " + ", ".join(a.replace("\\", "/").split("/")[-1] for a in argv[1:4]))
+    P("s62 scorer prototype (s62pred.py, round 2), end to end on real rows; inputs: " + ", ".join(a.replace("\\", "/").split("/")[-1] for a in argv[1:4]))
 
     P("\n== 1. CR62 on every row: s61's CR61 with each spread-divided threshold floored at X_min = q_R * F_floor ==")
     for c in (J5, J0, CS):
         cr62(c)
 
-    P("\n== 2. The scored path per cell ==")
+    P("\n== 2. The scored path per cell (floor arms W12 and W24) ==")
     r5 = scored(J5, rnd)
     r0 = scored(J0, rnd)
     P("  the J0 stand-in again with CR62 lifted on its W2048 control only (s61a Result's post-hoc reading), to execute the rest of the path on real rows:")
     r0 = scored(J0, rnd, ctl_by_goodput=True)
-    P("  (the jitter-free shape has no knee bracket in s60; its floor and gate are read for the J = 0 rule check)")
     fl = [r for r in CS.rows if r.W == 64 and not CS.flag.get(id(r))]
     d0c = med([sp.row_SF(r, 0, NF)[1] for r in fl]) - med([sp.row_SF(r, 0, NK)[1] for r in fl])
     nk = med([med([w["nk"] for w in r.late(0)]) for r in fl])
-    P(f"  {CS.name} floor W64: valid {len(fl)}, F(G250) {med([sp.row_SF(r, 0, NF)[1] for r in fl]):.3f}, D0 {d0c:.3f} ms (native windows hold ~{nk:.0f} samples,"
-      " so G(250) and G(2100) are both one window: the gate is trivially met here and says nothing about c3 at J = 0)")
+    P(f"  {CS.name} floor W64: valid {len(fl)}, D0 {d0c:.3f} ms (native windows hold ~{nk:.0f} samples: G(250) and G(2100) are one window, so the gate is"
+      " trivially met and says nothing about c3 at J = 0)")
 
-    P("\n== 3. Drift rule, Delta_0 and the label ==")
-    a108 = [r for r in J5.rows if r.W == 108 and not J5.flag.get(id(r))]
-    t108, u108 = med([native_tmin(r) for r in a108]), med([r.gp / r5["ctl_m"] for r in a108])
-    drift = abs(t108 - DRIFT_TMIN108) <= DRIFT_T and abs(u108 - DRIFT_U108) <= DRIFT_U
-    P(f"  J5 drift rule on the J5 stand-in against 61c's constants: tmin108 {t108:.3f} (|d| {abs(t108 - DRIFT_TMIN108):.3f} <= {DRIFT_T}), u108 {u108:.3f}"
-      f" (|d| {abs(u108 - DRIFT_U108):.3f} <= {DRIFT_U}) -> {'DRIFT-OK' if drift else 'DRIFT'} (it must read DRIFT-OK on its own reference rows)")
-    lab = label(r0["ci"], r5["need_law"], r0["delta0"], r0["d0"], r0["n_ok"])
-    P(f"  J0 stand-in: need_0 {r0['need']:.3f} [{r0['ci'][0]:.3f}, {r0['ci'][1]:.3f}], need_5 (law's pair, J5 cell) {r5['need_law']:.3f}, Delta_0 {r0['delta0']:.3f}, D0 {r0['d0']:.3f}"
-      f" -> LABEL62 NEED0 {lab}")
-    lab_f = label(r0["ci"], r5["need_law"], r0["delta0"], 0.0, r0["n_ok"])
-    P(f"  the same with the gate forced open (exercise only; not a reading): LABEL62 NEED0 {lab_f}")
-    P(f"  (with the gate failing, need_0 carries the floor's count drop: here need_0 - need_law(J0 stand-in) = {r0['need'] - r0['need_law']:.3f} ms, which is why the gate exists)")
-    P(f"  band check: 2 Delta_0 = {2 * r0['delta0']:.2f} < need_5 = {r5['need_law']:.2f}: {'disjoint' if 2 * r0['delta0'] < r5['need_law'] else 'OVERLAP'}")
+    P("\n== 3. The label (need_0 against zero; FLOOR-SENSITIVE from the intercept reading) ==")
+    for r_ in (r5, r0):
+        P(f"  {r_['name']}: need_0 {r_['need']:.3f} [{r_['ci'][0]:.3f}, {r_['ci'][1]:.3f}], intercept {r_['need_i']:.3f} [{r_['cii'][0]:.3f}, {r_['cii'][1]:.3f}],"
+          f" Delta_0 {r_['delta0']:.3f}, D0 {r_['d0']:.3f} -> LABEL62 NEED0 {final(r_['ci'], r_['cii'], r_['delta0'], r_['d0'], r_['n_ok'])}"
+          f"  | gate forced open (exercise only): {final(r_['ci'], r_['cii'], r_['delta0'], 0.0, r_['n_ok'])}")
 
-    P("\n== 4. The label function on every branch (SYNTHETIC inputs; need_5 4.0, Delta_0 1.05) ==")
-    for nm, ci, d0, n in (("spread", (-0.3, 0.4), 0.1, 6), ("constant", (3.6, 4.3), 0.1, 6), ("intermediate", (1.4, 2.0), 0.1, 6),
-                          ("straddle", (0.8, 1.6), 0.1, 6), ("gate", (3.6, 4.3), 0.7, 6), ("replicates", (3.6, 4.3), 0.1, 4)):
-        P(f"  {nm:<12} CI {ci} D0 {d0} n {n} -> {label(ci, 4.0, 1.05, d0, n)}")
+    P("\n== 4. The label function on every branch (SYNTHETIC inputs; Delta_0 1.05) ==")
+    for nm, ci, cii, d0, n in (("vanishes", (-0.3, 0.4), (-0.2, 0.6), 0.1, 6), ("remains", (3.0, 4.0), (3.5, 4.6), 0.1, 6),
+                               ("straddle", (0.6, 1.6), (0.7, 1.8), 0.1, 6), ("floor-sensitive", (-0.2, 0.8), (1.3, 2.4), 0.1, 6),
+                               ("gate", (3.0, 4.0), (3.5, 4.6), 0.7, 6), ("replicates", (3.0, 4.0), (3.5, 4.6), 0.1, 4)):
+        P(f"  {nm:<16} CI {ci} intercept {cii} D0 {d0} n {n} -> {final(ci, cii, 1.05, d0, n)}")
 
-    P("\n== 5. Rehearsal go/no-go on real rows: a knee arm and the control, every rule that can void the cell ==")
+    P("\n== 5. Rehearsal go/no-go on real rows: the gate's pre-read on a floor pair, a knee arm and the control ==")
+    for c in (J5, J0):
+        pair = [r for r in c.rows if r.W == c.floor_w][:2]
+        d0p = max(med([native_tmin(r) for r in pair]), med([sp.row_SF(r, 0, NF)[1] for r in pair])) - med([sp.row_SF(r, 0, NK)[1] for r in pair])
+        P(f"  {c.name}: the gate's pre-read on two W{c.floor_w} rows: D0 {d0p:.3f} ms -> {'GO' if d0p < GATE_D0 else 'NO-GO-GATE'} (the cell's own 0.5 ms)")
     for c, arms in ((J5, (120, 512)), (J0, (124, 2048)), (CS, (192, 2048))):
+        fl_f = med([sp.row_SF(x, 0, NF)[1] for x in c.rows if x.W == c.floor_w])
         for W in arms:
-            rs = [r for r in c.rows if r.W == W]
-            for r in rs[:2]:
+            for r in [r for r in c.rows if r.W == W][:2]:
                 eo = e_own(r)
                 den_raw = (native_p90(r) or 0) - (native_tmin(r) or 0)
-                fl_f = med([sp.row_SF(x, 0, NF)[1] for x in c.rows if x.W == c.floor_w])
                 den = max(den_raw, X_MIN_FRAC * fl_f)
                 e90 = q(eo, 0.9)
-                P(f"  {c.name} G{W} s{r.seed} r{r.rep}: gp {r.gp:.2f}, loss truth {r.loss if r.loss is None else round(r.loss, 4)},"
-                  f" E90_own {e90 if e90 is None else round(e90, 2)}, ratio raw {round(e90 / den_raw, 2) if e90 and den_raw > 0 else None} floored {round(e90 / den, 2) if e90 else None},"
-                  f" qshare {qshare(r, c.bdp):.2f}, LATE windows {len(r.late(0))}")
+                P(f"  {c.name} G{W} s{r.seed} r{r.rep}: gp {r.gp:.2f}, loss truth {r.loss if r.loss is None else round(r.loss, 4)}, E90_own {e90 if e90 is None else round(e90, 2)},"
+                  f" p90 - tmin {den_raw:.2f}, ratio raw {round(e90 / den_raw, 2) if e90 and den_raw > 0 else None} floored {round(e90 / den, 2) if e90 else None},"
+                  f" absolute threshold 1.5 x X_min = {1.5 * X_MIN_FRAC * fl_f:.2f} ms, qshare {qshare(r, c.bdp):.2f}, LATE windows {len(r.late(0))}")
 
-    P("\n== 6. The pilot (proportional rule, W512 control) against the 61c curve; the J = 0 knee position ==")
+    P("\n== 6. The pilot (proportional rule from the lower probe, W512 control; K = r4(1.00 / 1.10 / 1.20 x W-hat), P1 r8(1.5 x W-hat)) on the 61c curve ==")
     ctl5 = r5["ctl_m"]
-    for W in (80, 88, 100):
+    for W in (80, 88):
         u = med([r.gp / ctl5 for r in J5.rows if r.W == W])
-        what = min(W * 0.95 / u, 128)
-        P(f"  61c W{W}: u {u:.3f} -> W-hat {what:.1f}; knee bracket r4(0.95 / 1.05 / 1.14 x W-hat) = "
-          f"{4 * round(0.95 * what / 4)} / {4 * round(1.05 * what / 4)} / {4 * round(1.14 * what / 4)} against W95 {min(w for _, w, _ in r5['knees']):.1f}-{max(w for _, w, _ in r5['knees']):.1f}")
-    fl5 = [r for r in J5.rows if r.W == 108]
-    tp_k = med([med([w["tp50"] for w in r.late(0)]) for r in fl5])
-    P(f"  the J = 0 knee, predicted from the loop: W95(J0) ~ W95(J5) x loop(J0)/loop(J5) = 108.7 x (40.4-43 + rise ~3) / {tp_k:.1f} ="
-      f" {108.7 * 43.4 / tp_k:.0f}-{108.7 * 46 / tp_k:.0f}; the pilot probes (W88 / W128) bracket it")
+        w_ = min(W * 0.95 / u, 128)
+        ks = [4 * round(m * w_ / 4) for m in (1.00, 1.10, 1.20)]
+        ws = [w for _, w, _ in r5["knees"]]
+        P(f"  61c W{W}: u {u:.3f} -> W-hat {w_:.1f} (bias W-hat/W95 {w_ / max(ws):.3f}-{w_ / min(ws):.3f}); K {ks[0]} / {ks[1]} / {ks[2]} against W95 {min(ws):.1f}-{max(ws):.1f}:"
+          f" {sum(1 for w in ws if ks[0] <= w <= ks[2])}/{len(ws)} inside")
 
-    P("\n== 7. Reported only: the rise-against-spread points available (law's pair: native minimum need over native S_F) ==")
+    P("\n== 7. Reported only: need at J = 5 at three floor counts, and the points for the rise-against-spread line ==")
     for r_ in (r5, r0):
-        P(f"  {r_['name']}: need_law {r_['need_law']:.3f} ms at native S_F {r_['S_nat']:.3f} ms")
-    P("  (with three in-session points J 0 / 3 / 5, s62 prints a + b * S_F by OLS and its residual; two parameters on three points: not scored)")
+        P(f"  {r_['name']}: need at the W12 floor read native {r_['n3']['nat']:.3f} | G250 {r_['n3']['g250']:.3f} | G2100 {r_['n3']['g2100']:.3f} ms; native S_F {r_['S_nat']:.3f}")
 
 
 if __name__ == "__main__":
