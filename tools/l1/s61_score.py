@@ -511,7 +511,7 @@ class Score61:
         out = self.out
         rnd = random.Random(SEED_C2 if self.cell == C2 else SEED_C3)      # section 5: seed 60 at c2, 61 at c3
         table = {}
-        out(f"PRICE {rows[0].cell if rows else '-'} per arm (u, window minimum, Tp50; median over replicates, 90 % [bootstrap, 2000, seed {SEED_C3}]); flagged rows leave the medians:")
+        out(f"PRICE {rows[0].cell if rows else '-'} per arm (u, window minimum, Tp50; median over replicates, 90 % [bootstrap, 2000, seed {SEED_C2 if self.cell == C2 else SEED_C3}]); flagged rows leave the medians:")
         for w, rs in sorted(self.by_w([r for r in rows if r.live and not r.flag]).items()):
             if w == ctl_w:
                 continue
