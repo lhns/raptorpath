@@ -270,6 +270,9 @@ pub struct QuicTransport {
     gauge: bool,
     /// The local source-symbol size, announced in every path's handshake (v10).
     symbol_size: u16,
+    /// The size the peer's initial paths announced (0 until
+    /// [`Self::set_peer_symbol_size`]); a path added at runtime must match it.
+    peer_symbol_size: std::sync::atomic::AtomicU16,
     /// Notified by any owner whose connection is lost (see
     /// [`QuicTransport::all_connections_lost`]).
     lost: Arc<tokio::sync::Notify>,
@@ -338,6 +341,7 @@ impl QuicTransport {
             route_probe,
             gauge: crate::gates::get().rtobs,
             symbol_size,
+            peer_symbol_size: std::sync::atomic::AtomicU16::new(0),
             lost: Arc::new(tokio::sync::Notify::new()),
         };
         for (i, addr) in bind_addrs.iter().enumerate() {
@@ -596,8 +600,15 @@ impl QuicTransport {
         Some((frame_rx, read))
     }
 
-    /// Connect to a peer on a specific path (in the path's owner).
-    pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
+    /// Record the size the peer's initial paths announced, which a path added
+    /// at runtime must also announce.
+    pub fn set_peer_symbol_size(&self, size: u16) {
+        self.peer_symbol_size.store(size, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Connect to a peer on a specific path (in the path's owner). Returns the
+    /// symbol size the peer announced in its handshake (range-checked there).
+    pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<u16> {
         let io = self
             .io(path_id)
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
@@ -610,8 +621,8 @@ impl QuicTransport {
     }
 
     /// Accept an incoming connection on a specific path (in the path's
-    /// owner).
-    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<()> {
+    /// owner). Returns the peer's announced symbol size, as [`Self::connect`].
+    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<u16> {
         let io = self
             .io(path_id)
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
@@ -632,11 +643,20 @@ impl QuicTransport {
         peer_addr: Option<SocketAddr>,
     ) -> anyhow::Result<()> {
         self.spawn_path(path_id, bind_addr).await?;
-        if let Some(peer) = peer_addr {
-            self.connect(path_id, peer).await
+        let size = if let Some(peer) = peer_addr {
+            self.connect(path_id, peer).await?
         } else {
-            self.accept(path_id).await
+            self.accept(path_id).await?
+        };
+        // One peer, one symbol size: refuse a path that announces another.
+        let established = self.peer_symbol_size.load(std::sync::atomic::Ordering::Relaxed);
+        if established != 0 && size != established {
+            self.remove_path(path_id);
+            anyhow::bail!(
+                "path {path_id} announces symbol size {size}, the peer's established size is {established}"
+            );
         }
+        Ok(())
     }
 
     /// Resolves once every current path's QUIC connection is lost (quinn

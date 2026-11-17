@@ -14,4 +14,10 @@ async fn counter_is_zero_on_bulk_and_realtime_loopback() {
     assert_eq!(raptorpath::net::undeliverable_symbols(), 0, "bulk loopback");
     loopback::in_process_loopback("realtime", false, 20_000, 1, "f2 counter realtime").await;
     assert_eq!(raptorpath::net::undeliverable_symbols(), 0, "realtime loopback");
+    // Same-size pairs: every decoder takes its own size back from the peer.
+    let sizes = raptorpath::net::RECV_SYMBOL_SIZES.lock().unwrap().clone();
+    assert!(sizes.iter().all(|&(local, decoder)| local == decoder), "{sizes:?}");
+    for s in [1200u16, 512] {
+        assert!(sizes.contains(&(s, s)), "no ({s}, {s}) entry in {sizes:?}");
+    }
 }

@@ -72,6 +72,11 @@ wintun = "0.5"
 # tun crate handles Linux natively
 libc = "0.2"  # preflight: geteuid root check
 
+[features]
+# Test-only fault-injection seams (ADR-0078's fail-closed test). Off by default:
+# the release binary never contains them.
+test-seams = []
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tokio-test = "0.4"
@@ -84,3 +89,7 @@ harness = false
 [[bench]]
 name = "fec_realworld_bench"
 harness = false
+
+[[test]]
+name = "f2_unframable_closes"
+required-features = ["test-seams"]

@@ -738,17 +738,27 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         scheduler.add_path(i as u32);
     }
 
-    // Connect or accept on each path
+    // Connect or accept on each path; each returns the size the peer announced
+    // in its handshake.
+    let mut peer_sizes: Vec<u16> = Vec::new();
     if config.is_server {
         for i in 0..config.bind_addrs.len() {
-            transport.accept(i as u32).await?;
+            peer_sizes.push(transport.accept(i as u32).await?);
         }
     } else {
         for (i, peer) in config.peer_addrs.iter().enumerate() {
-            transport.connect(i as u32, *peer).await?;
+            peer_sizes.push(transport.connect(i as u32, *peer).await?);
         }
     }
     info!("all paths connected");
+    // The decoder takes the sender's size (ADR-0078, option ii); a runtime
+    // path must announce the same one (`QuicTransport::add_path`).
+    let peer_symbol_size = if peer_sizes.is_empty() {
+        symbol_size
+    } else {
+        reconcile_peer_symbol_size(&peer_sizes)?
+    };
+    transport.set_peer_symbol_size(peer_symbol_size);
 
     // Shared state
     let batch_counter = Arc::new(BatchCounter::new());
@@ -1170,10 +1180,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     let recv_path_tracking = path_batch_tracking.clone();
     let recv_stats = stats.clone();
-    // F2-PENDING: owner decision (adopt the peer's announced size, or refuse a
-    // mismatch). The handshake already carries the sender's real size (v10);
-    // until that is decided the decoder keeps the local size.
-    let recv_symbol_size = symbol_size;
+    // Each direction's size belongs to its sender: decode with the peer's.
+    let recv_symbol_size = peer_symbol_size;
+    RECV_SYMBOL_SIZES.lock().unwrap().push((symbol_size, recv_symbol_size));
+    info!("[SYMSZ] local={} decoder={}", symbol_size, recv_symbol_size);
     let recv_window_reliable = window_reliable;
     // Out-of-order object delivery (the H → ∞ corner, paper §4.11) is only
     // meaningful on the reliable window (it needs retention to guarantee
@@ -1388,6 +1398,46 @@ fn extract_window_packets(data: &Bytes) -> Result<Vec<Vec<u8>>, framing::Unframa
 /// packets it dropped (status, Engine defect F2). Printed as `undeliv=` on the
 /// receiver's `[CTLD]` line under `RWM_DIAG`; always 0 on a healthy run.
 pub static UNDELIVERABLE_SYMBOLS: AtomicU64 = AtomicU64::new(0);
+
+/// Fail closed on an unframable symbol (ADR-0078): the one always-on error
+/// line the harness keys on (`[UNFRAMABLE]`, not gated by `RWM_DIAG`). The
+/// caller then ends the receiver (`break 'recv`); the symbol is never
+/// delivered. The count is already in [`UNDELIVERABLE_SYMBOLS`].
+fn log_unframable(seq: u64, data: &Bytes) {
+    let head: Vec<u8> = data.iter().take(4).copied().collect();
+    error!(seq, len = data.len(), head = ?head, "[UNFRAMABLE] source symbol cannot be unframed; closing the tunnel");
+}
+
+/// Smallest and largest peer symbol size a handshake may announce. The floor
+/// is the IPv4 minimum MTU (68, RFC 791) plus the 4-byte framing allowance of
+/// the TUN MTU clamp; the ceiling is the largest size this build's table
+/// emits (keeps the compact frame inside ADR-0055's 1350-byte floor).
+pub(crate) const PEER_SYMBOL_SIZE_RANGE: std::ops::RangeInclusive<u16> = 72..=1200;
+
+/// The size the receiver decodes with: the one size every path of the peer
+/// announced in its handshake (ADR-0078, option ii). Integrity checks on one
+/// peer, not a mode: paths that disagree, a size outside
+/// [`PEER_SYMBOL_SIZE_RANGE`], or no path at all are refused.
+pub(crate) fn reconcile_peer_symbol_size(sizes: &[u16]) -> anyhow::Result<u16> {
+    let first = *sizes.first().ok_or_else(|| anyhow::anyhow!("no peer symbol size announced"))?;
+    if let Some(other) = sizes.iter().find(|&&s| s != first) {
+        anyhow::bail!("peer paths announce different symbol sizes ({first} and {other})");
+    }
+    if !PEER_SYMBOL_SIZE_RANGE.contains(&first) {
+        anyhow::bail!(
+            "peer symbol size {first} outside [{}, {}]",
+            PEER_SYMBOL_SIZE_RANGE.start(),
+            PEER_SYMBOL_SIZE_RANGE.end()
+        );
+    }
+    Ok(first)
+}
+
+/// `(local, decoder)` symbol size of every receiver built in this process,
+/// recorded where the decoder is built. Observation only (the
+/// `UNDELIVERABLE_SYMBOLS` pattern): the mixed-size test asserts each decoder
+/// took the PEER's size. A list, because two engines may share a process.
+pub static RECV_SYMBOL_SIZES: std::sync::Mutex<Vec<(u16, u16)>> = std::sync::Mutex::new(Vec::new());
 
 /// Read [`UNDELIVERABLE_SYMBOLS`]. Observation only.
 pub fn undeliverable_symbols() -> u64 {
