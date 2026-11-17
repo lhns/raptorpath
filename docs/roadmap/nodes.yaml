@@ -2953,14 +2953,13 @@ nodes:
   title: c3 knee need at zero jitter (s62)
   track: store
   kind: research
-  state: next
+  state: blocked
   outcome: unrated
   evidence:
   - status §62
   verdict_quote: ''
   headline: ''
   depends_on:
-  - store-law-g-rederive
   - rec-s63-f2-first-contact
   replaced_by: []
   qualified_by: []

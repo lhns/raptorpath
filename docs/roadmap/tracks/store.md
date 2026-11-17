@@ -68,6 +68,7 @@ flowchart TB
     store_s61b["✔ c2 add-on 61b (#167;61)"]
     store_s61a_rerun["✔ c3 sweep re-run (#167;61<br/>Amendment 2)"]
     store_law_g_rederive[/"○ Re-derive the knee-<br/>margin term"/]
+    store_s62_j0["⛔ c3 knee need at zero<br/>jitter (s62)"]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
@@ -143,8 +144,10 @@ flowchart TB
     store_s61a ~~~ store_s61a_rerun
     store_s61b ~~~ store_s61a_rerun
     store_s61a_rerun ~~~ store_law_g_rederive
+    store_s61a_rerun ~~~ store_s62_j0
     store_s61a_rerun ~~~ store_fix_maxbw_minrtt
     store_law_g_rederive ~~~ store_engine_form_impl
+    store_s62_j0 ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     store_engine_form_impl ~~~ store_engine_form_guard
     store_engine_form_impl ~~~ store_delta_seat
@@ -209,7 +212,7 @@ flowchart TB
     store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
     store_delta_seat --> store_s48c_session
-    linkStyle 82,94,96,100 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 84,96,98,102 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -233,7 +236,7 @@ flowchart TB
     class store_defect_cap_constant,store_defect_allowance_short defect
     class store_law_derivation inprog
     class store_law_g_rederive next
-    class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
+    class store_s62_j0,store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
 
@@ -296,6 +299,7 @@ flowchart TB
 | `store-s61b` | c2 add-on 61b (§61) | done | successful | c2 price below the knee, merged with §60 | status §61b Result | store-s60b |
 | `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | done | mixed | rho_3 0.457 vs rho_2 0.797 | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 | store-s61a |
 | `store-law-g-rederive` | Re-derive the knee-margin term | next | unrated |  | status §61a re-run Result | store-s61a-rerun, store-s61b |
+| `store-s62-j0` | c3 knee need at zero jitter (s62) | blocked | unrated |  | status §62 | rec-s63-f2-first-contact |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | next | unrated | SHORT 1.69 ms at c2 | status §60 Result; derivation store-law-r67.md | store-s60a |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | done | unrated | merged 9b8b42ca; decision_trace_pin 7/7 on Linux | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |  |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
@@ -366,6 +370,7 @@ flowchart TB
 | `store-s61b` | c2 add-on 61b (§61) | 30/30 live, CONTROL-c2 OK (control ratios 0.99-1.06), DRIFT-OK at W 160 (tmin 12.295 vs 12.33). u concave and tmin under the chord at W 96/128/144. Landing table reported for the owner. | status §61b Result |
 | `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. Scored 66/66: rho_3 0.457 [0.409, 0.483], DISAGREES, not floor-sensitive; every allowance candidate COVERED; need_3 4.43 ms vs need_2 4.05. Erratum 1: the floor minimum falls with the sample count (c3 W12 42.75 at n 60 to 33.23 at n 4223); the constant-in-ms lead and the S_F-is-not-the-term reading are withdrawn; an estimator count rule comes first. | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 |
 | `store-law-g-rederive` | Re-derive the knee-margin term | Registered consequence of DISAGREES. First: the estimator's sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form. | status §61a re-run Result |
+| `store-s62-j0` | c3 knee need at zero jitter (s62) | Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note). | status §62 |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7's derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03. | status §60 Result; derivation store-law-r67.md |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner's guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect. | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |
 | `store-defect-cap-constant` | Store cap constant at c8 | Plan 2026-11-13: the store law becomes its own track (items 8-9). | status §3.10 item 8 |

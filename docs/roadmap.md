@@ -263,6 +263,7 @@ flowchart TB
 | [QCLK] w_us pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |
 | c8 hole law never measured | ⚠ open defect | Open problem: the rule that decides when a missing packet is lost had never been measured in the conditions where it matters most. |
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
+| F2 first contact (§63) | ○ next | Run the rows that failed on the old binary and on the fixed one, to confirm the framing fix removes the failure. |
 | Realtime receiver misreads packed symbols (F2) | ⚠ open defect | Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine. |
 | Singles hole suppression (RECOV_SP) | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
 | Lever B c1d duplicate cost | ⚠ open defect | Open problem: the end-of-transfer fix adds about thirteen percent more duplicate packets on the fast two-path test, and the loss-report fix does not remove them. |
@@ -301,6 +302,7 @@ flowchart TB
 | Store-law gauge build (B-1) | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
 | Gauge session 60a (§60) | ✔ done · mixed | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
 | Re-derive the knee-margin term | ○ next | Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner's call. |
+| c3 knee need at zero jitter (s62) | ⛔ blocked | Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter. |
 | Store-law allowance short of the c2 knee | ⚠ open defect | Open problem: with honest floors, the store law's safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
@@ -378,6 +380,7 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
+- `rec-s63-f2-first-contact`: F2 first contact (§63)
 - `meas-adversarial-cells-run`: Adversarial cells measured
 - `meas-progress-baseline`: Cumulative progress benchmark
 
@@ -518,9 +521,9 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 46 nodes (16 done, 7 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 47 nodes (16 done, 7 in progress, 4 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 65 nodes (32 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
+- [store - store law](roadmap/tracks/store.md): 66 nodes (32 done, 4 in progress, 2 next, 6 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
