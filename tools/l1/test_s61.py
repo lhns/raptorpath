@@ -119,13 +119,12 @@ s.cr61([qok] + [mk(120, 17.0, [31.0] * 100) for _ in range(3)], 88, x_own)
 check("at and above K1 qshare needs the goodput cut too: qshare 0.33 at the arm's normal goodput is not a collapse, at 0.18 x the arm median it is", qok.flag is False and qrow.flag is True, (qok.flag, qrow.flag))
 
 # ═══ 4. the pilot ═══
-check("pilot: u88 < 0.95 <= u128 interpolates (u 0.80 / 1.00 -> 88 + 0.15 * 40 / 0.2 = 118)", near(s.pilot_knee(0.80, 1.00), 118.0))
+check("pilot (Amendment 2): u88 < 0.95 <= u128 is PROPORTIONAL, min(88 * 0.95 / u88, 128): u 0.80 / 1.00 -> 104.5 (the old interpolation read 118)", near(s.pilot_knee(0.80, 1.00), 104.5, 0.05) and plan61.pilot_detail(0.80, 1.00)[1] == "proportional")
 check("pilot: both below 0.95 with u128 > u88 extrapolates the secant (0.6 / 0.85 -> 128 + 0.10 * 40 / 0.25 = 144)", near(s.pilot_knee(0.6, 0.85), 144.0))
-check("pilot: both below 0.95 and u128 <= u88 (degenerate secant) -> 128 * 0.95 / u128 (0.80 / 0.70 -> 173.7)", near(s.pilot_knee(0.80, 0.70), 128 * 0.95 / 0.70) and near(s.pilot_knee(0.80, 0.80), 128 * 0.95 / 0.80))
-check("pilot: both at or above 0.95 -> 88 * 0.95 / u88 (0.97 / 1.0 -> 86.2, then clamped up to 64 only below 64)", near(s.pilot_knee(0.97, 1.0), 88 * 0.95 / 0.97))
+check("pilot: both below 0.95 and u128 <= u88 (degenerate secant) -> 128 * 0.95 / u128 (0.80 / 0.70 -> 173.7)", near(s.pilot_knee(0.80, 0.70), 128 * 0.95 / 0.70, 0.05) and near(s.pilot_knee(0.80, 0.80), 128 * 0.95 / 0.80, 0.05))
+check("pilot: both at or above 0.95 -> 88 * 0.95 / u88 (0.97 / 1.0 -> 86.2)", near(s.pilot_knee(0.97, 1.0), 88 * 0.95 / 0.97, 0.05))
 check("pilot: the result is clamped to [64, 192] (0.2 / 0.25 extrapolates far above 192; 1.9 / 2.0 falls below 64)", s.pilot_knee(0.2, 0.25) == 192.0 and s.pilot_knee(1.9, 2.0) == 64.0)
-check("pilot: the non-monotone pair u88 >= 0.95 > u128 falls to the last case (DECISION 3)", near(s.pilot_knee(1.0, 0.9), 88 * 0.95 / 1.0))
-
+check("pilot: the non-monotone pair u88 >= 0.95 > u128 -> 88 * 0.95 / u88 (DECISION 3)", near(s.pilot_knee(1.0, 0.9), 88 * 0.95 / 1.0, 0.05) and plan61.pilot_detail(1.0, 0.9)[1] == "non-monotone")
 # ═══ 5. rho, the labels, FLOOR-SENSITIVE ═══
 check("rho = need / S_F on a two-row fixture: F_c 10, S_F,c 4, Tmin(W95) 12 and 14 -> needs 2 and 4 -> rho 0.5 and 1.0, median 0.75 (absolute)", near(s.rho_of([12.0, 14.0], 10.0, 4.0), 0.75))
 check("rho three-way: CI inside (-Delta, +Delta) AGREES; CI outside [-Delta, +Delta] DISAGREES; a CI straddling an edge UNRESOLVED",
@@ -304,7 +303,7 @@ check("a floor NO-GO (LD_NOGO=floor, the rehearsal's decision): the floor is W 1
 
 
 # the rehearsal's decisions (section 6) on synthetic rows R1-R6; every NO-GO branch executes
-def rh(dnf=(), loss=None, gp_scale=None):
+def rh(dnf=(), loss=None, gp_scale=None, rtt_extra=None):
     rows = []
     for i, (W_, sd_, rp_) in enumerate(((2048, "42", 1), (12, "42", 1), (12, "7", 2), (88, "42", 1), (128, "42", 1), (512, "42", 1))):
         r = synth_row(plan61.C3, W_, rp_, sd_, dnf=(W_, sd_) in dnf)
@@ -312,6 +311,8 @@ def rh(dnf=(), loss=None, gp_scale=None):
             r["t61"]["loss"] = loss[W_]
         if gp_scale and W_ in gp_scale:
             r["mbps"] *= gp_scale[W_]
+        if rtt_extra and W_ in rtt_extra:      # a queue in the row: every tick's rtt this far above the row's tmin
+            r["t61"]["rtt"] = [r["t61"]["win"]["tmin"][0] + rtt_extra[W_]] * 400
         rows.append(s.Row(r, i))
     out_ = []
     dec, w = s.rehearsal(rows, out_.append)
@@ -319,12 +320,21 @@ def rh(dnf=(), loss=None, gp_scale=None):
 
 
 dec, w, txt = rh()
-check("rehearsal, all healthy: floor GO, control GO (R1 17.30 >= 0.98 x max(R4, R5, R6)), PILOT61 names W-hat from u88 = 0.966 / u128 = 1.0 (the synthetic knee 86.5) and the arms",
-      dec == {"floor": True, "control": True} and w is not None and 85.0 < w < 88.0 and "PILOT61 W=" in txt and "GO-NOGO control GO" in txt and "GO-NOGO floor GO" in txt, txt)
-dec, w, txt = rh(gp_scale={2048: 0.9})
-check("rehearsal: R1 below 0.98 x max(R4, R5, R6) is a control NO-GO and the fallback W 512 (R6 passes the loss test) is named (LD_CTL61=512); the pilot reads against R6", dec["control"] is False and "set LD_CTL61=512" in txt and "(control W512)" in txt and w is not None, txt)
-dec, w, txt = rh(loss={2048: 0.09, 512: 0.09})
-check("rehearsal: R1 and R6 both fail the loss test: NOGO-CONTROL, PILOT61 none (61a does not launch: ABORT-PILOT)", "NOGO-CONTROL" in txt and w is None and "PILOT61 none" in txt, txt)
+check("rehearsal, all healthy: floor GO, control GO on R6 (W 512: goodput >= 0.98 x max(R4, R5), loss, ratio <= 1.5), PILOT61 names W-hat from u88 = 0.966 / u128 = 1.0 against R6 and the arms; R1 is printed as a REPORTED row with its ratio",
+      dec == {"floor": True, "control": True} and w is not None and 85.0 < w < 88.0 and "PILOT61 W=" in txt and "GO-NOGO control GO (control W 512" in txt and "(control W512)" in txt and "GO-NOGO floor GO" in txt
+      and re.search(r"R1 W2048 \(REPORTED, not a control candidate.*CR61 ratio E90_own/\(p90-tmin\) = [\d.]+", txt) is not None, txt)
+dec, w, txt = rh(gp_scale={512: 0.9})
+check("R6 clause (a): R6 goodput below 0.98 x max(R4, R5) is NOGO-CONTROL, PILOT61 none; a healthy R1 does NOT rescue it (W 2 048 never comes back)", dec["control"] is False and "NOGO-CONTROL: R6 (W 512) fails gp" in txt and w is None and "PILOT61 none" in txt and "control W2048" not in txt, txt)
+dec, w, txt = rh(loss={512: 0.09})
+check("R6 clause (b): R6 loss truth above 4.76 % + 1.0 pp is NOGO-CONTROL (fails loss), PILOT61 none", dec["control"] is False and "NOGO-CONTROL: R6 (W 512) fails loss" in txt and w is None and "PILOT61 none" in txt, txt)
+dec, w, txt = rh(rtt_extra={512: 30.0})
+check("R6 clause (c): R6 COLLAPSED under CR61 (E90_own / (p90 - tmin) = 30 / 14 > 1.5 on one row; the goodput cut never fires) is NOGO-CONTROL (fails collapse), PILOT61 none", dec["control"] is False and "NOGO-CONTROL: R6 (W 512) fails collapse" in txt and w is None, txt)
+dec, w, txt = rh(rtt_extra={2048: 30.0})
+check("R1 (W 2 048) with a ratio > 1.5 is reported and changes nothing: control GO on R6 and the pilot reads against R6", dec["control"] is True and w is not None and "R1 W2048 (REPORTED" in txt and "(control W512)" in txt, txt)
+dec, w, txt = rh(gp_scale={512: 0.9, 2048: 1.0})
+check("an R1 with ratio < 1.5 (healthy, goodput 17.3) does not bring W 2 048 back when R6 fails: no control candidate, no 'control W2048' anywhere", w is None and "control W2048" not in txt and "GO-NOGO control GO (control W 2048" not in txt, txt)
+dec, w, txt = rh(dnf={(512, "42")})
+check("a DNF R6 has no live row: NOGO-CONTROL", dec["control"] is False and "NOGO-CONTROL" in txt and w is None, txt)
 dec, w, txt = rh(dnf={(88, "42")})
 check("rehearsal: a DNF pilot row leaves no W-hat (PILOT61 none)", w is None and "PILOT61 none" in txt, txt)
 dec, w, txt = rh(dnf={(12, "42"), (12, "7")})
@@ -367,11 +377,11 @@ lab = {ln.split()[1]: ln.split(None, 2)[2] for ln in txt.splitlines() if ln.star
 check("single pool W 12 only: W* is within 6 slots, the pool's medians stand and rho scores; the W->0 bracket and FLOOR-SENSITIVE read NOT-COMPUTED (never differenced against c2's shifted draws), so is D0",
       lab.get("RHO") in ("AGREES", "AGREES (S or sigma-scaled)", "DISAGREES", "UNRESOLVED") and "W->0: NOT-COMPUTED" in txt and "FLOOR-SENSITIVE: NOT-COMPUTED" in txt and "D0 Bulk" in txt and "S NOT-COMPUTED" in txt, (lab, txt[:2200]))
 # pilot case
-cases = {(0.6, 0.85): "secant", (0.8, 1.0): "straddle", (0.8, 0.7): "degenerate", (0.97, 1.0): "both-above", (1.0, 0.9): "non-monotone"}
-check("pilot_detail names the case that fired: straddle / secant / degenerate / both-above / non-monotone", all(plan61.pilot_detail(*u)[1] == c for u, c in cases.items()), {u: plan61.pilot_detail(*u) for u in cases})
-check("pilot_detail: clamped=yes only when the raw value left [64, 192]; a utilisation <= 0 returns None (no division); pilot_knee keeps its unrounded float return",
+cases = {(0.6, 0.85): "secant", (0.8, 1.0): "proportional", (0.8, 0.7): "degenerate", (0.97, 1.0): "both-above", (1.0, 0.9): "non-monotone"}
+check("pilot_detail names the case that fired: proportional / secant / degenerate / both-above / non-monotone", all(plan61.pilot_detail(*u)[1] == c for u, c in cases.items()), {u: plan61.pilot_detail(*u) for u in cases})
+check("pilot_detail: clamped=yes only when the raw value left [64, 192]; a utilisation <= 0 returns None (no division); pilot_knee returns the rounded float",
       plan61.pilot_detail(0.2, 0.25)[2] is True and plan61.pilot_detail(0.2, 0.25)[0] == 192.0 and plan61.pilot_detail(0.8, 1.0)[2] is False and plan61.pilot_detail(0.0, 0.5) is None and plan61.pilot_detail(0.5, -1.0) is None
-      and near(plan61.pilot_knee(0.8, 0.7), 128 * 0.95 / 0.7))
+      and near(plan61.pilot_knee(0.8, 0.7), 128 * 0.95 / 0.7, 0.05))
 sweep_bad = 0
 for i in range(1, 60):
     for j in range(1, 60):
@@ -379,7 +389,7 @@ for i in range(1, 60):
         sweep_bad += plan61.arms(float("%.1f" % d_[0])) != plan61.arms(d_[0])
 check("the arms derive from the PRINTED W-hat (0.1 resolution): arms(float(printed W)) == the arms placed, over a sweep of 3 481 (u88, u128) pairs", sweep_bad == 0 and plan61.pilot_detail(0.8, 1.0)[0] == round(plan61.pilot_detail(0.8, 1.0)[0], 1))
 dec, w, txt = rh()
-check("PILOT61 keeps its grepped prefix and appends case= and clamped=", re.search(r"^PILOT61 W=\d+\.\d u88=[\d.]+ u128=[\d.]+ arms=\{.*\} case=(straddle|secant|degenerate|both-above|non-monotone) clamped=(yes|no)", txt, re.M) is not None, txt)
+check("PILOT61 keeps its grepped prefix and appends case= and clamped=", re.search(r"^PILOT61 W=\d+\.\d u88=[\d.]+ u128=[\d.]+ arms=\{.*\} case=(proportional|secant|degenerate|both-above|non-monotone) clamped=(yes|no)", txt, re.M) is not None, txt)
 dec, w, txt = rh(gp_scale={88: 0.0})
 check("a pilot utilisation of 0 reads PILOT61 none, not a division error", w is None and "PILOT61 none" in txt, txt)
 seeds = []
@@ -390,6 +400,21 @@ try:
 finally:
     s.random.Random = _orig_random
 check("c2's price-table intervals draw with seed 60 (61 is c3's)", 60 in seeds and 61 not in seeds, seeds)
+import inspect  # noqa: E402
+# ═══ 9. status 61 Amendment 2: the proportional pilot ═══
+check("proportional cap: a straddle with u88 < 0.65 reads 128 (u 0.60 / 1.00 -> 88 * 0.95 / 0.6 = 139 -> 128; u88 = 0.65 -> 128.6 -> 128), not above; u88 = 0.70 -> 119.4 below the cap",
+      plan61.pilot_detail(0.60, 1.00)[0] == 128.0 and plan61.pilot_detail(0.60, 1.00)[1] == "proportional" and plan61.pilot_detail(0.65, 1.00)[0] == 128.0 and near(plan61.pilot_detail(0.70, 1.00)[0], 119.4, 0.05)
+      and plan61.pilot_detail(0.60, 1.00)[2] is False)
+check("the case name 'straddle' is retired: no pilot input reads it", all(plan61.pilot_detail(i / 20.0, j / 20.0)[1] != "straddle" for i in range(1, 41) for j in range(1, 41)))
+check("pilot_knee is a thin wrapper of pilot_detail (one rule): its source calls pilot_detail and carries no rule constant of its own, and it equals pilot_detail's W over a sweep; u <= 0 raises",
+      "pilot_detail(" in inspect.getsource(plan61.pilot_knee) and "0.95" not in inspect.getsource(plan61.pilot_knee) and "PILOT_W" not in inspect.getsource(plan61.pilot_knee)
+      and all(plan61.pilot_knee(i / 40.0, j / 40.0) == plan61.pilot_detail(i / 40.0, j / 40.0)[0] for i in range(1, 60) for j in range(1, 60)))
+try:
+    plan61.pilot_knee(0.0, 1.0)
+    raised_ = False
+except ValueError:
+    raised_ = True
+check("pilot_knee(0, u) raises ValueError (no division error)", raised_)
 print("FAILED %d" % fails if fails else "ALL OK")
 print(f"\ntest_s61: {fails} fail(s)")
 sys.exit(1 if fails else 0)

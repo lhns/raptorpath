@@ -10,7 +10,7 @@ for every row's bytes / timeout / hint / env (the scorer s61_score.py imports th
     plan61.py check <61a|61b> <ledger>       rc 0 iff the battery finished and the ledger holds a row for every slot
     plan61.py pilot <u88> <u128>             the pilot's knee W-hat (section 2.2) and the arms it places
 
-Environment: LD_KNEE61 = the pilot's W-hat (verbatim from the rehearsal's `PILOT61 W=`); LD_CTL61 = 512 selects the control fallback (section 6), anything else the 2 048 control.
+Environment: LD_KNEE61 = the pilot's W-hat (verbatim from the rehearsal's `PILOT61 W=`); LD_CTL61 = 512 selects the W 512 control, which §61 Amendment 2 makes the 61a control outright (run_all refuses a 61a launch without it: ABORT-CONTROL61); unset, the global default stays W 2 048 (61b's control).
 Arms: `G<W>` = the gauge on (RWM_SLAW=1), W = the realised store window (one live path: RWM_STORE_PATH_POOL = W; nothing is set at the shipped 2048). Every row is Bulk."""
 import math
 import os
@@ -72,26 +72,23 @@ def clamp_knee(w):
 
 
 def pilot_knee(u88, u128):
-    """Section 2.2's registered rule: the pilot knee W-hat from the utilisations u_p = gp_p / gp_ctl of the two pilot rows (88, 128), clamped to [64, 192].
-    both below 0.95 with u128 > u88: the secant extrapolated; both below with u128 <= u88 (degenerate): 128 * 0.95 / u128; straddling: the linear interpolation; both at or above: 88 * 0.95 / u88."""
-    lo, hi = PILOT_W
-    if u88 < 0.95 <= u128:
-        w = lo + (0.95 - u88) * (hi - lo) / (u128 - u88)
-    elif u88 < 0.95 and u128 < 0.95:
-        w = hi + (0.95 - u128) * (hi - lo) / (u128 - u88) if u128 > u88 else hi * 0.95 / u128
-    else:
-        w = lo * 0.95 / u88
-    return clamp_knee(w)
+    """The pilot knee W-hat as a float: a thin wrapper of pilot_detail (one rule, no second copy). Raises ValueError for a utilisation <= 0."""
+    d = pilot_detail(u88, u128)
+    if d is None:
+        raise ValueError(f"pilot utilisation <= 0 (u88={u88}, u128={u128})")
+    return d[0]
 
 
 def pilot_detail(u88, u128):
-    """pilot_knee plus which case fired: -> (W-hat rounded to 0.1 after the clamp, case, clamped: bool) or None when a utilisation is <= 0 (no division). Cases: straddle (u88 < 0.95 <= u128), secant (both below,
-    u128 > u88), degenerate (both below, u128 <= u88), both-above, non-monotone (u88 >= 0.95 > u128). W-hat is registered at 0.1-slot resolution: the arms derive from the PRINTED value (it is what LD_KNEE61 receives verbatim)."""
+    """Section 2.2's pilot rule, as amended by status 61 Amendment 2: -> (W-hat rounded to 0.1 after the clamp to [64, 192], case, clamped: bool) or None when a utilisation is <= 0 (no division).
+    Cases: proportional (u88 < 0.95 <= u128: W-hat = min(88 * 0.95 / u88, 128); the cap is the straddle's own bound, reached only for u88 < 0.65), secant (both below 0.95, u128 > u88: 128 + (0.95 - u128) * 40 / (u128 - u88)),
+    degenerate (both below, u128 <= u88: 128 * 0.95 / u128), both-above (88 * 0.95 / u88), non-monotone (u88 >= 0.95 > u128: 88 * 0.95 / u88). W-hat is registered at 0.1-slot resolution: the arms derive from the PRINTED value
+    (it is what LD_KNEE61 receives verbatim)."""
     if not (u88 > 0 and u128 > 0):
         return None
     lo, hi = PILOT_W
     if u88 < 0.95 <= u128:
-        case, raw = "straddle", lo + (0.95 - u88) * (hi - lo) / (u128 - u88)
+        case, raw = "proportional", min(lo * 0.95 / u88, float(hi))
     elif u88 < 0.95 and u128 < 0.95:
         case, raw = ("secant", hi + (0.95 - u128) * (hi - lo) / (u128 - u88)) if u128 > u88 else ("degenerate", hi * 0.95 / u128)
     elif u128 >= 0.95:
@@ -118,8 +115,9 @@ def knee_env():
     return w
 
 
-def control_w():
-    return CTL_FALLBACK_W if os.environ.get("LD_CTL61", "").strip() == str(CTL_FALLBACK_W) else CTL_W
+def control_w(ctl="env"):
+    v = os.environ.get("LD_CTL61", "") if ctl == "env" else (ctl or "")
+    return CTL_FALLBACK_W if str(v).strip() == str(CTL_FALLBACK_W) else CTL_W
 
 
 def _all_c3_w():
@@ -206,16 +204,16 @@ def _grid_rows(cell, ws):
     return out
 
 
-def c3_grid(w_hat):
+def c3_grid(w_hat, ctl="env"):
     """The 11 c3 arms in table order: floor 12 / 16 / 24, B x3, K x3, P1, the control."""
     a = arms(w_hat)
-    ws = list(FLOOR_W[C3]) + a["B"] + a["K"] + [a["P1"], control_w()]
+    ws = list(FLOOR_W[C3]) + a["B"] + a["K"] + [a["P1"], control_w(ctl)]
     if len(set(ws)) != len(ws):
         raise ValueError(f"arm collision at W-hat {w_hat}: {ws}")
     return ws
 
 
-def plan(name, smoke=False, rehearsal=False, knee="env"):
+def plan(name, smoke=False, rehearsal=False, knee="env", ctl="env"):
     """[(cell, store, arm, seed, rep)] in run order. 61r: the 6 rehearsal rows. 61a: 11 arms x 6 replicates at c3 (needs LD_KNEE61: ValueError otherwise). 61b: 5 arms x 6 at c2. The smokes are fixed lists
     (61a's is the middle knee arm). A replaced slot adds a ledger row, not a table row."""
     if name == "61r" or (rehearsal and name == "61a"):
@@ -224,7 +222,7 @@ def plan(name, smoke=False, rehearsal=False, knee="env"):
         k = _knee(knee)
         if k is None:
             raise ValueError("LD_KNEE61 is unset: 61a needs the rehearsal's PILOT61 W-hat (ABORT-PILOT)")
-        ws = c3_grid(k)
+        ws = c3_grid(k, ctl)
         if smoke:
             return [(C3, "def", "G%d" % arms(k)["K"][SMOKE_K], "42", 1)]
         return _grid_rows(C3, ws)

@@ -405,6 +405,10 @@ fi
 [ "$P60" != 1 ] || era "LD-ALL bin_sha equals the registered value $LD_BIN_SHA_EXPECT"
 if [ "$P61" = 1 ]; then
   era "LD-ALL toolchain $(command -v rustc >/dev/null 2>&1 && rustc -V 2>&1 | head -1 || echo "rustc unavailable") | $(cargo -V 2>&1 | head -1)"      # section 7: a bin_sha mismatch most likely means the VM toolchain moved
+  # Status 61 Amendment 2: the 61a control is W 512, registered outright. A 61a launch, the rehearsal included, refuses unless LD_CTL61=512 (nothing has run yet). The global default is not flipped (61b's control stays W 2 048).
+  if [ "$PLAN" = "61a" ] && [ "${LD_CTL61:-}" != "512" ]; then
+    fail_all "ABORT-CONTROL61 plan 61a: LD_CTL61='${LD_CTL61:-}' (the control is W 512 by status 61 Amendment 2: set LD_CTL61=512); NOTHING WAS RUN"
+  fi
   # Section 6.1, priority 5 / 6: 61a needs the rehearsal's pilot knee (LD_KNEE61) and a control (LD_NOGO=control is the rehearsal's NOGO-CONTROL decision); a rehearsal needs neither. Nothing has run yet.
   if [ "$PLAN" = "61a" ] && [ "$REHEARSE" != "1" ]; then
     python3 ./plan61.py plan 61a smoke > /dev/null 2>&1 || fail_all "ABORT-PILOT plan 61a: LD_KNEE61='${LD_KNEE61:-}' is unset or invalid (the rehearsal's PILOT61 W-hat is required); NOTHING WAS RUN"

@@ -783,7 +783,7 @@ class Score61:
 DECISIONS = [
     "1. tp50 / p50: the window p50 is [WSTAT] p50 (s61pred's), tmin is [SLAW] tmin, nk is [SLAW] nk; G pools windows with nk >= 1, native readings use nk >= 10 (s61pred's two window sets). row_extras (t61) carries them; the rehearsal's smoke check prints the SLAW tp50 vs WSTAT p50 agreement.",
     "2. Pilot-row bytes: with no LD_KNEE61 (the rehearsal) no row is 'at the knee bracket', so the pilot rows W 88 / 128 take section 1's formula (110 / 115 MB, no threshold the registration does not print); with LD_KNEE61 set, bytes are 120 MB at and above K1 and at the control, else the formula.",
-    "3. The pilot's rule outside its four registered cases: u88 >= 0.95 > u128 (a non-monotone pair) falls to the last case, 88 * 0.95 / u88; every result is clamped to [64, 192]. The pilot control is R1 (2 048) when the control go/no-go passed, else R6 (512).",
+    "3. The pilot's rule (superseded at <SHA> by status 61 Amendment 2: the straddle case is now `proportional`): u88 < 0.95 <= u128 reads min(88 * 0.95 / u88, 128) (the cap is the straddle's own bound and binds only for u88 < 0.65); both below 0.95 keeps the secant (u128 > u88) or 128 * 0.95 / u128 (degenerate); u88 >= 0.95 reads 88 * 0.95 / u88 whether u128 is above (both-above) or below (non-monotone) 0.95; every result is clamped to [64, 192] and rounded to 0.1 after the clamp. The pilot's control is R6 (W 512) only.",
     "4. The knee window: T-hat-min_r(W95,r) interpolates the row minima of the K and P1 arms (r68allow.at_knee); at c3 the row minimum is G(2 100)'s median group minimum. W95,r is cross_up over every non-control arm incl. the floors (r68allow.knee). sigma_r pools the sig windows of the two knee arms bracketing W95 (r68allow.bracket).",
     "5. W* = u2 / kappa is computed in every case and section 5's 6-slot rule is applied against the lowest valid pool. With fewer than 2 pools no line is fitted: the pool's medians stand as F_c and S_F,c only if W* >= pool - 6 (else UNSCOREABLE-FLOOR), and the W->0 bracket and FLOOR-SENSITIVE read NOT-COMPUTED (nothing is extrapolated below the floor pool); they are never differenced against c2's shifted draws. The stop order is UNSCOREABLE, UNSCOREABLE-N, UNSCOREABLE-FLOOR.",
     "6. The W->0 reading is the intercept: F_0 = F_c - b_F W* = a_F and S_0 = S_F,c - b_S W* = a_S (slopes refitted per bootstrap draw, rows resampled within pools); D_0(A) = D(A) + b_F W*, printed beside D with its 90 % interval and label, and gating only FLOOR-SENSITIVE (the allowance's own F / S_F terms are not recomputed: section 5.3's literal reading). At c2 W* = W1 = 16, so the frozen rho_2,0 stands.",
@@ -791,11 +791,11 @@ DECISIONS = [
     "8. SIGMA-DISCRIMINATION's sigma_3 is the median over scoreable replicates of sigma_r (native sig at the bracketing knee arms); sigma_2 = 1.785 and S_F,2 = 5.083 are frozen. Delta is min(c2's frozen 0.085, c3's q_R F_c / S_F,c).",
     "9. CR61's e_own is taken against the row's own native median LATE tmin; X_own at c3 comes from the W 12 rows in session (live, not DNF), at c2 it is frozen at 10.66. A row with no [DIAG] ticks is not flagged (nothing to read). The arm's median gp for the goodput cut is over the arm's live rows (DNF = 0).",
     "10. CONTROL-MOVED: fewer than 4 unflagged controls (live, not DNF); a flagged / missing control is replaced for its replicate's u by the median goodput of the unflagged ones. kappa = median over valid floor rows of u_row / W.",
-    "11. The rehearsal's floor go/no-go reads R2 / R3 on their own: X_own from the pair, 'goodput against their pair' = 0.95 x the pair's median; the control go/no-go uses [TRUTH] leg-0 loss (a fraction) against 0.0476 + 0.01. NOGO-CONTROL is a printed decision (LD_NOGO=control makes 61a refuse); a floor NO-GO sets LD_NOGO=floor, which the scorer reads: the floor pool starts at W 16 for the whole of 61a (section 6), the W 12 rows stay in the ledger and the CR61 reference.",
+    "11. The rehearsal's go/no-go (control part superseded at <SHA> by status 61 Amendment 2). Floor: R2 / R3 on their own, X_own from the pair, 'goodput against their pair' = 0.95 x the pair's median; a floor NO-GO sets LD_NOGO=floor, which the scorer reads: the floor pool starts at W 16 for the whole of 61a (section 6), the W 12 rows stay in the ledger and the CR61 reference. Control: R6 (W 512) is GO iff its goodput >= 0.98 x max(R4, R5), its [TRUTH] leg-0 loss (a fraction) <= 0.0476 + 0.01, and it is not COLLAPSED under CR61 (on one row only the ratio clause <= 1.5 is live); a failure prints NOGO-CONTROL (LD_NOGO=control makes 61a refuse). R1 (W 2 048) is a reported row with its ratio printed and never a control candidate. run_all refuses any 61a launch, the rehearsal included, unless LD_CTL61=512 (ABORT-CONTROL61, nothing run); the global default stays W 2 048, which is 61b's control.",
     "12. Labels: LABEL61 RHO (AGREES / DISAGREES / UNRESOLVED / FLOOR-SENSITIVE / UNSCOREABLE / UNSCOREABLE-N / UNSCOREABLE-FLOOR / NEEDS-MORE-*), RHO-RAW (the scored label before FLOOR-SENSITIVE), FLOOR-F-c3 / FLOOR-S-c3 (the gates), D-<cand>-Bulk, SIGMA-DISCRIMINATION, CONTROL-<cell>, DRIFT-c2.",
     "13. An AGREES label whose |SIGMA-DISCRIMINATION| <= Delta is printed 'AGREES (S or sigma-scaled)' in the RHO line's text; the label word stays AGREES for the tools that read it (RHO-RAW).",
     "15. S_F,c at c3 is the fitted line at W* (the gates' tau = 0.05 S_F,c needs it), so the OLS lines are taken first and the gate labels after; kappa divides by the SESSION median control goodput (section 5), not the replicate's own control. On DRIFT-OK the c2 landing table merges s60's arms (rounded medians frozen in C2_FROZEN['price']) with 61b's own; 61b's arms stand where both exist.",
-    "16. The pilot's W-hat is registered at 0.1-slot resolution: rounded after the clamp, the arms derive from the printed W=, and PILOT61 appends case= (straddle / secant / degenerate / both-above / non-monotone) and clamped=; a pilot utilisation <= 0 reads PILOT61 none. rho-bar's CI pools c3's and c2's resampled per-replicate values draw by draw; NATIVE rho_3 and D-S use nk >= 10 windows and the same u-matched construction, reported only (also under UNSCOREABLE-N).",
+    "16. (case= names superseded at <SHA> by status 61 Amendment 2.) The pilot's W-hat is registered at 0.1-slot resolution: rounded after the clamp, the arms derive from the printed W=, and PILOT61 appends case= (proportional / secant / degenerate / both-above / non-monotone; `proportional` replaced `straddle` at <SHA>, status 61 Amendment 2, superseding this decision's earlier case names) and clamped=; a pilot utilisation <= 0 reads PILOT61 none. rho-bar's CI pools c3's and c2's resampled per-replicate values draw by draw; NATIVE rho_3 and D-S use nk >= 10 windows and the same u-matched construction, reported only (also under UNSCOREABLE-N).",
     "14. The tables' per-arm 90 % intervals bootstrap the per-replicate values (2 000 draws, seed 61 at c3, 60 at c2); a monotonicity check lists non-monotone arms; no threshold is scored in the price or landing tables.",
 ]
 __doc__ += "\nDECISIONS (every ambiguity and the reading taken):\n" + "\n".join("  " + d for d in DECISIONS) + "\n"
@@ -848,27 +848,41 @@ def rehearsal(rows, out):
         ok_n += all(crit.values())
     dec["floor"] = ok_n >= 1
     out("GO-NOGO floor " + ("GO" if dec["floor"] else "NO-GO (the floor moves to W 16 for the whole of 61a, reported; set LD_NOGO=floor)") + f" ({ok_n} of {len(fl)} floor rehearsal rows pass)")
-    # control
+    # control (status 61 Amendment 2): R6 (W 512) carries the go/no-go; R1 (W 2 048) is a reported row and never a candidate
     def loss_ok(r):
         return r is not None and r.x.get("loss") is not None and r.x["loss"] <= EPS_C3 + CTL_LOSS_PP
 
     def one(w):
         v = [r for r in by.get(w, []) if r.live and not r.dnf]
         return v[-1] if v else None
+
+    def ratio_own(r):
+        e, p90, tm = e_own(r), r.native_p90(), r.native_tmin()
+        return pq(e, 0.9) / (p90 - tm) if e and p90 is not None and tm is not None and p90 > tm else None
     r1, r4, r5, r6 = one(2048), one(88), one(128), one(512)
-    others = [r.gp_() for r in (r4, r5, r6) if r is not None]
-    go1 = bool(r1 is not None and others and r1.gp_() >= GO_CTL_RATIO * max(others) and loss_ok(r1))
-    out(f"  GO-NOGO-CONTROL R1 W2048: goodput {f(r1.gp_() if r1 else None, 2)} vs {GO_CTL_RATIO} x max(R4, R5, R6) = {f(GO_CTL_RATIO * max(others) if others else None, 2)}; loss truth {f(r1.x.get('loss') if r1 else None, 4)} <= {EPS_C3 + CTL_LOSS_PP:.4f}: {go1}")
-    if r6 is not None and r1 is not None:
-        out(f"  R6 W512 goodput {f(r6.gp_(), 2)} vs R1 {f(r1.gp_(), 2)}: ratio {r6.gp_() / r1.gp_() if r1.gp_() else float('nan'):.3f} (a healthy 2 048 control matches it within 2 %)")
-    ctl_row, ctl_w = (r1, 2048) if go1 else ((r6, 512) if loss_ok(r6) else (None, None))
-    dec["control"] = go1
-    if go1:
-        out("GO-NOGO control GO (control W 2048)")
-    elif ctl_row is not None:
-        out("GO-NOGO control NO-GO: the control arm becomes W 512 for 61a (registered fallback, R6 passes the loss test); set LD_CTL61=512")
+    pilot_gp = [r.gp_() for r in (r4, r5) if r is not None]
+    if r1 is not None:
+        cr61([r1], 0, x_own)
+        out(f"  R1 W2048 (REPORTED, not a control candidate since Amendment 2): goodput {f(r1.gp_(), 2)}, loss truth {f(r1.x.get('loss'), 4)}, CR61 ratio E90_own/(p90-tmin) = {f(ratio_own(r1), 2)} (> {CR_RATIO} reads COLLAPSED)")
+    clause = {"gp": False, "loss": False, "collapse": False}
+    if r6 is not None:
+        clause["gp"] = bool(pilot_gp) and r6.gp_() >= GO_CTL_RATIO * max(pilot_gp)
+        clause["loss"] = loss_ok(r6)
+        clause["collapse"] = cr61([r6], 0, x_own)[id(r6)][0] is False      # on one row the goodput cut compares the row with its own median and never fires: only the ratio clause is live
+        out(f"  GO-NOGO-CONTROL R6 W512: (a) goodput {f(r6.gp_(), 2)} >= {GO_CTL_RATIO} x max(R4, R5) = {f(GO_CTL_RATIO * max(pilot_gp) if pilot_gp else None, 2)} {clause['gp']}; "
+            f"(b) loss truth {f(r6.x.get('loss'), 4)} <= {EPS_C3 + CTL_LOSS_PP:.4f} {clause['loss']}; (c) not COLLAPSED under CR61 (ratio {f(ratio_own(r6), 2)} <= {CR_RATIO}) {clause['collapse']}")
     else:
-        out("NOGO-CONTROL: neither R1 nor R6 passes: 61a does not launch (set LD_NOGO=control)")
+        out("  GO-NOGO-CONTROL R6 W512: no live row (DNF or missing)")
+    go6 = all(clause.values())
+    if r6 is not None and r1 is not None and r1.gp_():
+        out(f"  R6 W512 goodput / R1 goodput = {r6.gp_() / r1.gp_():.3f} (reported)")
+    ctl_row, ctl_w = (r6, 512) if go6 else (None, None)
+    dec["control"] = go6
+    if go6:
+        out("GO-NOGO control GO (control W 512, LD_CTL61=512)")
+    else:
+        failed = [k for k, v in clause.items() if not v]
+        out(f"NOGO-CONTROL: R6 (W 512) fails {','.join(failed) or 'no live row'}: 61a does not launch (set LD_NOGO=control)")
     # pilot
     w_hat = None
     if ctl_row is not None and r4 is not None and r5 is not None and ctl_row.gp_() > 0:

@@ -1098,10 +1098,10 @@ def spec61(cell, arm, knee=None):
     return plan61.arm_bytes(cell, arm, knee=knee), plan61.arm_timeout(cell, arm), plan61.arm_hint(arm), plan61.arm_env(cell, arm)
 
 
-def table61(plan, knee=None):
+def table61(plan, knee=None, ctl=None):
     """The ledger table of the sandbox: the registered table in full mode, the replicate cap of the fast mode (REPS_CAP61 = 2) otherwise."""
     import plan61
-    t = plan61.plan(plan, knee=knee)
+    t = plan61.plan(plan, knee=knee, ctl=ctl)
     return t if FULL else [x for x in t if x[4] <= 2]
 
 
@@ -1127,23 +1127,26 @@ def case61(plan, path):
         sb = make_sandbox(root, plan, None)
         binf, sha = stub_bin_file(sb)
         extra = {"LD_REF_MANIFEST": ref56_file(sb, miss=(path == "reuse-miss")), "LD_BIN_SHA_EXPECT": ("0" * 64 if path == "bin-sha-mismatch" else sha), "STUB_BIN_FILE": px(binf)}
-        knee = float(KNEE61) if (plan == "61a" and path not in ("rehearse", "pilot-missing")) else None
+        knee = float(KNEE61) if (plan == "61a" and path not in ("rehearse", "pilot-missing", "control-missing")) else None
         if knee is not None:
             extra["LD_KNEE61"] = KNEE61
+        ctl61 = "512" if (plan == "61a" and path != "control-missing") else None      # status 61 Amendment 2: the 61a control is W 512, run_all refuses a 61a launch without LD_CTL61=512
+        if ctl61:
+            extra["LD_CTL61"] = ctl61
         if path == "slaw-echo-void":
             extra["STUB_BAD60"] = "slawonce"
             extra["STUB_SLAWONCE_AT"] = "1"
         if path == "prebuilt":
             extra["LD_BIN_PREBUILT"] = px(binf)
-        rehearse = path == "rehearse"
+        rehearse = path in ("rehearse", "control-missing")      # control-missing is the rehearsal's own refusal: ABORT-CONTROL61 covers the rehearsal too
         rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=rehearse, extra_env=extra)
         e = era(sb)
         run_dir = os.path.join(sb["root"], "run")
         failed = os.path.exists(os.path.join(run_dir, "FAILED-ALL"))
         builds = [c for c in cargo if "|build " in c]
         tests = [c for c in cargo if "|test " in c]
-        if path in ("reuse-miss", "bin-sha-mismatch", "pilot-missing"):
-            token = {"reuse-miss": "ABORT-SUITES plan %s suite-reuse MISS" % plan, "bin-sha-mismatch": "ABORT-BIN-SHA plan %s" % plan, "pilot-missing": "ABORT-PILOT plan 61a"}[path]
+        if path in ("reuse-miss", "bin-sha-mismatch", "pilot-missing", "control-missing"):
+            token = {"reuse-miss": "ABORT-SUITES plan %s suite-reuse MISS" % plan, "bin-sha-mismatch": "ABORT-BIN-SHA plan %s" % plan, "pilot-missing": "ABORT-PILOT plan 61a", "control-missing": "ABORT-CONTROL61 plan 61a"}[path]
             check(f"{tag}: {token.split(' plan')[0]} -> FAILED-ALL, rc 5, NOTHING measured (no row-parser call, no driver call, no ld.log) and no terminal marker",
                   rc == 5 and token in e and failed and rows == [] and driver_lines60(sb) == [] and "LD-ALL-DONE" not in out and "LD-ALL-REHEARSAL-DONE" not in out
                   and not any(f in ("ld.log", "smoke.log") for _, _, fs in os.walk(run_dir) for f in fs), (rc, tail(e, 6), rows[:2]))
@@ -1151,6 +1154,8 @@ def case61(plan, path):
                 check(f"{tag}: the MISS is on record as the suite-reuse decision and no engine suite ran (no cargo test)", re.search(r"suite-reuse MISS", e) is not None and tests == [], tail(e, 8))
             elif path == "bin-sha-mismatch":
                 check(f"{tag}: the registered value and the built sha are both on record, and the binary was built (the check follows the build)", sha != "0" * 64 and ("registered " + "0" * 64) in e and len(builds) == 1, tail(e, 6))
+            elif path == "control-missing":
+                check(f"{tag}: a REHEARSAL launched without LD_CTL61=512 is refused after the bin_sha check (ABORT-CONTROL61, the message names the empty value) and no row ran", len(builds) == 1 and ("equals the registered value " + sha) in e and "LD_CTL61=''" in e, tail(e, 6))
             else:
                 check(f"{tag}: LD_KNEE61 unset: the abort follows the bin_sha check (priority 5) and no row ran", len(builds) == 1 and ("equals the registered value " + sha) in e and "LD_KNEE61=''" in e, tail(e, 6))
             EXECUTED.add((plan, path))
@@ -1184,7 +1189,7 @@ def case61(plan, path):
             return
         # a whole session
         led = led56(stage)
-        table = table61(plan, knee)
+        table = table61(plan, knee, ctl61)
         want_slots = [(c, a, sd, str(rp)) for c, _, a, sd, rp in table]
         got_slots = [(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in led]
         smoke_rows = plan61.plan(plan, smoke=True, knee=knee)

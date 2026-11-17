@@ -40,6 +40,7 @@ Plans 61a / 61b (the c3 sweep, status 61) are plan 60's shape with their own tab
   bin-sha-mismatch       LD_BIN_SHA_EXPECT differs from the built binary: ABORT-BIN-SHA, rc 5, no row measured
   slaw-echo-void         (61a) the first scored slot echoes RWM_SLAW wrongly on the client end: VOID (gate-slaw), re-run once, the replacement LIVE
   pilot-missing          (61a) a non-rehearsal launch without LD_KNEE61: ABORT-PILOT, rc 5, no row measured
+  control-missing        (61a) a launch (the rehearsal included) without LD_CTL61=512: ABORT-CONTROL61, rc 5, no row measured (status 61 Amendment 2: the 61a control is W 512)
   prebuilt               (61b) LD_BIN_PREBUILT = 61a's binary: no build, the sha still checked against LD_BIN_SHA_EXPECT
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
@@ -60,6 +61,6 @@ HARNESS_PATHS = {
     "59": ("rehearse", "full", "reuse-hit", "reuse-miss"),
     "60a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse"),
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
-    "61a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "pilot-missing"),
+    "61a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "pilot-missing", "control-missing"),
     "61b": ("reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"),
 }

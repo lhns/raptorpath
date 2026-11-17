@@ -73,7 +73,12 @@ os.environ["LD_KNEE61"] = "115"
 os.environ["LD_CTL61"] = "512"
 A512 = plan61.plan("61a")
 check("LD_CTL61=512 swaps the control arm: G512 replaces G2 048 in every replicate (66 slots, 11 arms); 61b keeps 2 048", {r[2] for r in A512} >= {"G512"} and "G2048" not in {r[2] for r in A512} and len(A512) == 66 and "G2048" in {r[2] for r in plan61.plan("61b")})
+B512 = plan61.plan("61b")
 del os.environ["LD_CTL61"]
+B_DEF = plan61.plan("61b")
+check("status 61 Amendment 2: the GLOBAL default is not flipped: `plan61.py plan 61b` prints the same 30 rows with and without LD_CTL61=512 (control W 2 048), and 61a's default control is still W 2 048 when the variable is unset",
+      B512 == B_DEF and len(B_DEF) == 30 and sum(1 for r in B_DEF if r[2] == "G2048") == 6 and not any(r[2] == "G512" for r in B_DEF) and plan61.control_w() == 2048 and plan61.control_w("512") == 512
+      and any(r[2] == "G2048" for r in plan61.plan("61a")) and any(r[2] == "G512" for r in plan61.plan("61a", ctl="512")) and not any(r[2] == "G2048" for r in plan61.plan("61a", ctl="512")))
 del os.environ["LD_KNEE61"]
 plan61.REPS_CAP61 = 2
 os.environ["LD_KNEE61"] = "115"
@@ -168,6 +173,8 @@ check("battery: the 6 rehearsal rows run through the replacement rule (a pilot /
 check("run_all: plans 61a / 61b are selectable, 61a rehearsable (61b is not: ABORT-REHEARSE), both ride plan 60's gates (P60: bin_sha, manifest; P57: budget, /dev/shm; P46) and the R-sign gate stays 60b's",
       "  61a) P_SMOKE=" in runall and "  61b) P_SMOKE=" in runall and 'case "$PLAN" in 61a) ;; 41c|' in runall and 'P61=0; { [ "$PLAN" = "61a" ] || [ "$PLAN" = "61b" ]; } && { P61=1; P60=1; P46=1; P57=1; }' in runall
       and '[ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]' in runall)
+check("run_all: a 61a launch, the rehearsal included, refuses unless LD_CTL61=512 (ABORT-CONTROL61, nothing run), inside the P61 block after the bin_sha check; plan 61b is not subject to it",
+      'if [ "$PLAN" = "61a" ] && [ "${LD_CTL61:-}" != "512" ]; then\n    fail_all "ABORT-CONTROL61 plan 61a' in runall and runall.index("ABORT-CONTROL61") > runall.index('fail_all "ABORT-BIN-SHA plan $PLAN') and runall.index("ABORT-CONTROL61") < runall.index('fail_all "ABORT-PILOT plan 61a'))
 check("run_all: the registered bin_sha is checked before any row for the 61 plans too (they ride P60: ABORT-BIN-SHA), the toolchain is logged, then ABORT-PILOT (no / invalid LD_KNEE61) and NOGO-CONTROL (LD_NOGO=control), nothing run",
       'if [ "$P60" = 1 ] && [ "$SHA" != "$LD_BIN_SHA_EXPECT" ]; then' in runall and "LD-ALL toolchain" in runall and 'fail_all "ABORT-PILOT plan 61a' in runall and 'fail_all "NOGO-CONTROL plan 61a' in runall
       and "e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d" in runall)
@@ -175,7 +182,7 @@ check("run_all: the tools-test gate runs test_s61.py and test_harness61.py; the 
       "for t in test_s61.py test_harness61.py" in runall and 's61_score.py smoke61 "$P61SMOKE"' in runall and "P61SMOKE=61r" in runall and 's61_score.py score61 "$splan"' in runall and 'plan61.py check "$splan"' in runall
       and 'LD_KNEE61="${LD_KNEE61:-}" LD_CTL61="${LD_CTL61:-}"' in runall and "61a) stage rep61a 61a" in runall and "61b) stage rep61b 61b" in runall)
 check("run_all and the battery guard the new files against CRLF", all(f in runall for f in ("plan61.py", "s61_score.py", "test_s61.py", "test_harness61.py")) and all(f in battery for f in ("plan61.py", "s61_score.py", "test_s61.py", "test_harness61.py")))
-check("HARNESS_PATHS lists 61a (with rehearse, slaw-echo-void, pilot-missing) and 61b (prebuilt, no rehearse); neither has 'full'", {"rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "pilot-missing"} == set(hp.HARNESS_PATHS["61a"])
+check("HARNESS_PATHS lists 61a (with rehearse, slaw-echo-void, pilot-missing) and 61b (prebuilt, no rehearse); neither has 'full'", {"rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "pilot-missing", "control-missing"} == set(hp.HARNESS_PATHS["61a"])
       and {"reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"} == set(hp.HARNESS_PATHS["61b"]))
 check("plan 60's tables are untouched by the 61 additions (96 / 40 slots; lib.sh is compared with 1ecee59d below)", len(__import__("plan60").plan("60a")) == 96 and len(__import__("plan60").plan("60b")) == 40)
 
