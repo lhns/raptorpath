@@ -1072,6 +1072,32 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **The reference manifest:** `ref51e-manifest.sha256` is generated from `b497fcfa` with `ref_manifest.sh` (187 files). It is byte-equal to the VM's extracted tree, and it is committed as the tools-only `e-tree` **`a271e0bb`**. That commit is **block E's launch tree**: its engine diff against `b497fcfa` is empty.
 - **Launch:** `LD_PLAN=51e`, `LD_CAND_SHA` = `a271e0bb` (full sha), and `LD_BIN_SHA_EXPECT` = the sha above. The rehearsal runs with `LD_REHEARSE=1` and `LD_HARD` + 1 h, from one `git archive` of `a271e0bb`.
 
+**§51 Amendment 2 (2026-11-17, after the E rehearsal): NO-GO, caused by an engine defect (F2, below); the battery waits for the fix.**
+- **The E rehearsal** (01:31–01:49Z, `e-tree` `a271e0bb`; ledger pulled to the host) logged the registered `bin_sha` and a manifest HIT.
+- **U passed every gate and met its predictions:** an eviction share of 0.736, ζ = 0.95 and τ_x = 0.879. So `rate-spare-cwnd` reads NOT-ENFORCED on one row, reported only.
+- **PL and PM both died in the warm-up** (`warm-up object never acked`). Every failure of gates (b)–(e) on those two rows follows from that, and (h) is uncomputable. The cause is engine defect F2: the warm-up runs unpaced, and the pacer is not involved.
+- **Per §10, rehearsal rows are not re-run, and no workaround is used** (no retry, no seed change). Block E resumes after F2 is fixed: the E tree is rebuilt on the fix, then a new E-pre, then the rehearsal.
+- **Block 51 is exposed too.** `use_packing` is keyed on the hint alone (`sender_policy.rs:678`), so §51's Realtime rows pack on main's binary. "§51 runs on main's unchanged binary" cannot hold until F2 is fixed. §51's block 51 therefore also waits for the fix, and its tree is re-based by amendment.
+
+## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
+- **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
+  - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
+  - `WindowStart` is sent once per path as an unreliable QUIC datagram, and its result is discarded (`net/mod.rs:1862–1871`).
+  - Realtime packs (`sender_policy.rs:678`, hint-keyed), and the packed framing writes a big-endian length (`framing.rs:20`). The unpacked reader reads it little-endian (`framing.rs:81–89`), so a packed symbol read unpacked yields no packet.
+  - **The receiver still records the delivery and acks the seq,** so the sender prunes it and ARQ never notices. If every path's `WindowStart` is lost, the tunnel is dead for the whole connection while its counters look healthy.
+  - Bulk and Auto do not pack, so the default `false` matches their framing.
+- **Trigger, inferred and not observed:** GE loss on the client→server path at connect (quinn `lost_packets` 4 in the first 2 s on both failing rows). Netem's seed 42 repeats the early loss bursts. The pacer correlation, with both paced rows failing and both unpaced passing, is unexplained. It is recorded as open.
+- **Base rate in committed ledgers:** 1 of 6 Realtime rows failed the warm-up the same way (`store-law-n1` final, c2 LAW Realtime s42 r3), against 0 of 48 rows at the other hints. Today: 2 of 3.
+- **Age:** the code dates from 2026-03 (`e508adf4`). The §60 binary has it too.
+- **Two defects:**
+  - (a) the framing depends on a one-shot unreliable announce, and is chosen by a hint-keyed bit on the receive side (a NO-MODE-SWITCH debt);
+  - (b) the receiver acks and records delivery for a symbol it could not unframe.
+- **The fix's format is the owner's call** (a wire change, an ADR and a protocol bump). Before the fix:
+  - a red-first loopback repro (drop the first control datagram at Realtime; assert app delivery);
+  - a zero-cost undeliverable-symbol counter that every smoke asserts is zero;
+  - an audit of other receiver state set only by one-shot unreliable messages.
+- **A guard** against main is needed if Bulk's bytes on the wire change.
+
 ## 61. The c3 knee-margin sweep (owner decisions 8–9 of 2026-11-17), reported only: pre-registration (before any VM contact)
 
 **What this registers.** It registers `docs/derivations/s61-registration.md` at `s61-c3-design` `ad31af2f` **verbatim**, together with its prediction script and output (`docs/derivations/store-law/s61pred.py` and `s61pred.out`). Fable reviewed it twice. Its question is whether the knee margin is the floor-window spread S_F, so that g's Realtime end can be measured.

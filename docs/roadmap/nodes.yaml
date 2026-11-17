@@ -2857,6 +2857,27 @@ nodes:
   overview: false
   plain: 'Open problem: with honest floors, the store law''s safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out.'
   notes: 'Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7''s derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03.'
+- id: rec-defect-realtime-framing
+  title: Realtime receiver misreads packed symbols (F2)
+  track: rec
+  kind: defect-verdict
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status "Engine defect F2"
+  - status §51 Amendment 2
+  verdict_quote: 'The receiver still records the delivery and acks the seq, so the sender prunes it and ARQ never notices.'
+  headline: Realtime tunnel can be dead with healthy counters
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-17'
+  end: ''
+  folded: []
+  overview: true
+  plain: 'Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine.'
+  notes: 'Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; the fix format (one framing vs a per-frame bit) is the owner''s call, with an ADR and a protocol bump.'
 - id: store-defect-delta-nan
   title: RWM_DELTA pinned the store cap (F1)
   track: store

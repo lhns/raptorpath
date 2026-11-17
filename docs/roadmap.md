@@ -136,6 +136,7 @@ flowchart TB
         model_law_ledger["model · ✔ Law ledger"]
         rec_s54_session["rec · ✔ #167;54: filter<br/>guard, store budget"]
         store_s60a["store · ✔ Gauge<br/>session 60a (#167;60)"]
+        rec_defect_realtime_framing>"rec · ⚠ Realtime<br/>receiver misreads<br/>packed symbols (F2)"]
     end
     subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
@@ -181,8 +182,10 @@ flowchart TB
     place_wire_price ~~~ model_law_ledger
     rec_snapver_law ~~~ rec_s54_session
     model_law_ledger ~~~ store_s60a
-    rec_s54_session ~~~ cc_bbrrs_r2
-    store_s60a ~~~ store_law_derivation
+    rec_s54_session ~~~ rec_defect_realtime_framing
+    store_s60a ~~~ rec_defect_realtime_framing
+    rec_defect_realtime_framing ~~~ cc_bbrrs_r2
+    rec_defect_realtime_framing ~~~ store_law_derivation
     cc_bbrrs_r2 ~~~ rec_leverb_guard
     store_law_derivation ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote
@@ -206,7 +209,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 46 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -226,7 +229,7 @@ flowchart TB
     class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
     class store_law_derivation inprog
     class store_s60a mixed
-    class cc_quinn_bbr_collapse defect
+    class rec_defect_realtime_framing,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
     class rec_leverb_guard,cc_hybrid parked
@@ -254,6 +257,7 @@ flowchart TB
 | [QCLK] w_us pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |
 | c8 hole law never measured | ⚠ open defect | Open problem: the rule that decides when a missing packet is lost had never been measured in the conditions where it matters most. |
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
+| Realtime receiver misreads packed symbols (F2) | ⚠ open defect | Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine. |
 | Singles hole suppression (RECOV_SP) | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
 | Lever B c1d duplicate cost | ⚠ open defect | Open problem: the end-of-transfer fix adds about thirteen percent more duplicate packets on the fast two-path test, and the loss-report fix does not remove them. |
 | Main's duplicates mostly unexplained | ⚠ open defect | Open problem: even the current main version receives a thousand or more duplicate packets per run, and most of them are unexplained. |
@@ -504,7 +508,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 45 nodes (16 done, 6 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 46 nodes (16 done, 7 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 61 nodes (29 done, 4 in progress, 1 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)

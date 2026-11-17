@@ -62,6 +62,7 @@ gantt
     [QCLK] w_us pinned at clamp :active, rec_defect_qclk_clamp, 2026-11-13, 2026-11-17
     c8 hole law never measured :active, rec_defect_hole_law, 2026-11-13, 2026-11-17
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-17
+    Realtime receiver misreads packed symbo… :active, rec_defect_realtime_framing, 2026-11-17, 2026-11-17
     Inner-feedback repair floor (P10a) :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
     Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
     Lever B c1d duplicate cost :active, rec_leverb_c1d_cost, 2026-11-13, 2026-11-17

@@ -46,6 +46,7 @@ flowchart TB
     rec_defect_base_duplicates>"⚠ Main's duplicates<br/>mostly unexplained"]
     rec_s54_session["✔ #167;54: filter guard,<br/>store budget"]
     rec_wire_clock_derivation["✔ Recovery-clock<br/>derivation (wire<br/>clock)"]
+    rec_defect_realtime_framing>"⚠ Realtime receiver<br/>misreads packed<br/>symbols (F2)"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⏸ Lever-B guard v2,<br/>then merge"]
     rec_fix_perleg_clock_n1[/"○ Per-leg recovery<br/>clock, one law"/]
@@ -89,10 +90,10 @@ flowchart TB
     rec_defect_hole_law ~~~ rec_defect_base_duplicates
     rec_defect_refresh_input ~~~ rec_s54_session
     rec_leverb_c1d_cost ~~~ rec_wire_clock_derivation
-    rec_defect_base_duplicates ~~~ rec_wire_clock_derivation
+    rec_defect_base_duplicates ~~~ rec_defect_realtime_framing
     rec_s54_session ~~~ rec_w0_leg_question
     rec_wire_clock_derivation ~~~ rec_leverb_guard
-    rec_wire_clock_derivation ~~~ rec_fix_perleg_clock_n1
+    rec_defect_realtime_framing ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_recovery_timeouts
     rec_leverb_guard ~~~ rec_fix_refresh_clock
     rec_fix_perleg_clock_n1 ~~~ rec_fix_nack_throttle
@@ -143,7 +144,7 @@ flowchart TB
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
     class rec_recov_sp,rec_dispersion_est,rec_leverb_guard parked
     class rec_gap_horizon waiting
-    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
+    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_defect_realtime_framing defect
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
     class rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
 ```
@@ -185,6 +186,7 @@ flowchart TB
 | `rec-defect-qclk-clamp` | [QCLK] w_us pinned at clamp | in-progress | unrated | p05 = p95 = 100 000 µs | status §3.10 item 4; status §3.5 item 5 | rec-gap-horizon |
 | `rec-defect-hole-law` | c8 hole law never measured | in-progress | unrated | 3.7–6.6 k times per run | status §3.10 item 5 | rec-gap-horizon, rec-snapver-filter |
 | `rec-defect-refresh-input` | Hole refresh clock degenerate input | in-progress | unrated | srtt = exactly 50 000 µs | status §3.10 item 6 | rec-snapver-filter |
+| `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | in-progress | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2 |  |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor (P10a) | abandoned | dead-end |  | branch P10a |  |
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | in-progress | unrated | +13 % | status §53 open item 2 | rec-snapver-filter |
@@ -233,6 +235,7 @@ flowchart TB
 | `rec-snapver-law` | Snapshot-order filter as law | Law ledger: C03 (rank 7, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main's duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges. | branch snapver-law (head 8191b3de); paper §7.1 "Snapshot order"; plan Live state 2026-11-13 item 1 |
 | `rec-defect-qclk-clamp` | [QCLK] w_us pinned at clamp | Folds status §3.5 item 5: the recovery-clock bind fractions were measured on the saturation-filtered path set and never re-measured. | status §3.10 item 4; status §3.5 item 5 |
 | `rec-defect-hole-law` | c8 hole law never measured | §53 open item 6: [HOLD] is skewed on main too (hn and ripe_frac mostly re-stamps from stale reports), so item 5's "main already wastes about 12 % of its retransmits" must be re-checked if it came from this gauge. | status §3.10 item 5 |
+| `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; the fix format (one framing vs a per-frame bit) is the owner's call, with an ADR and a protocol bump. | status "Engine defect F2"; status §51 Amendment 2 |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor (P10a) | Split from rec-bulk-arq (its parent). The source names no replacement; P10b (window-mode reactive repair, G236) merged the same day. | branch P10a |
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | No raw record (§53 open items are in the section text, not extracted as items). Goes with the lever-B merge question. | status §53 open item 2 |
