@@ -1117,6 +1117,27 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Cost:** about 2 h typical and 4.5 h worst, with host cargo paused.
 - **Order:** s62, then §64, then E-pre, block E, block 51. `harness64` is a second Sonnet worker, and the seat shas are pinned by an amendment.
 
+**§62 Amendment 1 (2026-11-18, before any VM contact for its rows; Fable-reviewed): the launch tree and the harness's readings.**
+- **Launch tree: `harness62` `95dafa59d5f3d2152bdf2d51aafcb39d95e41be7`,** tools only, on `harness61` `3cdc4470`. The engine diff against `1ecee59d` is empty.
+  - No build: `LD_BIN_PREBUILT` = the staged `e410d640` binary (sha-checked), for the rehearsal and for 62a.
+- **Pre-launch checks done:**
+  - **ABORT-NETEM** on the real VM topology (topology only, no rows): `plan62.py netem` passes `c3j0`'s live `tc qdisc show` (`delay 20ms`, no jitter term), and it reads `jitter term 5ms` on `c3` on both legs. The topology was taken down after.
+  - **The cell name `c3j0-25` through the real row path:** 61c renamed, run through `make_row`, `smoke(62r0)` and `score(62a)`, reproduces `s62pred.out`'s J = 5 numbers. One silent fallback was found and fixed: `c3j0-25` was missing from `plan60.LATE_T` / `plan61.LATE_T`, so it took the default. Tests now pin every cell-keyed table.
+  - **The absolute control-arm test** is in `s62_score.py`, with a test.
+- **Counts at `95dafa59`** (LF export):
+  - 46 `tools/l1` test files, 2 284 ok. `test_s60` is the known host-only failure; `test_harness46` had a timing flake under load and passes alone.
+  - All 22 plan-62 stub paths pass (117 ok).
+  - The full unfiltered `test_stubrun.py` is owed before `harness62` reaches main.
+- **The harness's readings are registered by reference** (`s62_score.DECISIONS`). Two are named here:
+  - the budget guard sits below the `LD_HARD` offsets (2 400 s / 7 800 s against 1 h / 2.5 h);
+  - a mixed pilot pair (u_lo ≥ 0.95 > u_hi) is NO-GO-PILOT, with no re-probe.
+- **Run rules:**
+  - host cargo and host tests are paused under the coordinator's host lock;
+  - the rehearsal is `LD_PLAN=62r0 LD_REHEARSE=1 LD_CTL62=512`, with `LD_HARD` = launch + 1 h;
+  - 62a is `LD_PLAN=62a LD_CTL62=512 LD_KNEE62=<PILOT62 W= verbatim> LD_REHEARSAL62=<the rehearsal's run dir>`, with `LD_HARD` = launch + 2.5 h.
+  - Before 62a, the coordinator reads the first readings: D₀, F at three counts, E90_own and X_min's bind, u₈₀ / u₁₂₈ and the case, the K margins, the floor spread against J = 5's, and D1's dump coverage.
+  - A rehearsal NO-GO is the Result.
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**
