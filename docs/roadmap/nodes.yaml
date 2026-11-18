@@ -1088,7 +1088,7 @@ nodes:
   folded: []
   overview: true
   plain: Turned the fix for outdated loss reports into a permanent rule, written into the paper first, then passed its merge check.
-  notes: 'Law ledger: C03 (rank 7, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main''s duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges.'
+  notes: 'Law ledger: C03 (rank 8, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main''s duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges.'
 - id: rec-defect-qclk-clamp
   title: Tail-sweep timer pinned at clamp
   track: rec
@@ -6507,7 +6507,7 @@ nodes:
   folded: []
   overview: true
   plain: Audited every formula in the system for where it comes from and whether it has been checked in real conditions, and ranked the fixes.
-  notes: 'Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire).'
+  notes: 'Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 64-73 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire).'
 - id: meas-s51-design
   title: Off-Bulk benchmark design
   track: meas
@@ -6840,7 +6840,7 @@ nodes:
   folded: []
   overview: false
   plain: Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait.
-  notes: 'Law ledger: C02 (rank 6, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out.'
+  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out.'
 - id: meas-s51-session
   title: Off-Bulk baseline and δ sweep
   track: meas
@@ -6869,7 +6869,7 @@ nodes:
   vm_order: 3
   order_reason: Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
   plain: First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves.
-  notes: 'Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). Its first step is the amendment that re-bases b51-tree on main, then the 51 rehearsal.'
+  notes: 'Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 17, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). Its first step is the amendment that re-bases b51-tree on main, then the 51 rehearsal.'
 - id: cc-s48d-session
   title: bbr_rs controller, round 2
   track: cc
@@ -7382,7 +7382,7 @@ nodes:
   folded: []
   overview: false
   plain: Re-deriving the retransmit timers from the new in-flight limit, so they stop sitting at a fixed hand-set ceiling.
-  notes: 'Law ledger: C06 (rank 19, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law''s hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8.'
+  notes: 'Law ledger: C06 (rank 20, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law''s hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8.'
 - id: model-wasm-fixes
   title: Wasm model fixes
   track: model
@@ -7450,7 +7450,7 @@ nodes:
   folded: []
   overview: false
   plain: Making our BBR controller the default, recorded as a new architecture decision.
-  notes: 'Law ledger: K09 (rank 8, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054''s default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS.'
+  notes: 'Law ledger: K09 (rank 9, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054''s default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS.'
 - id: cc-hybrid
   title: BBR/Copa hybrid build
   track: cc

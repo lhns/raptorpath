@@ -2,7 +2,7 @@
 
 Status: AUDIT. There are no engine changes and no VM. Base: `github/main` at `cbe2be3f`
 (2026-11-13). Branch-only rows say so: `snapver-law` at `8191b3de`, `bbrrs-r3` at `d1fadd7c`,
-`slaw-gauge` at `d416d59b` (E13), and the store-law derivation (F07, `store-law-r68.md`).
+`slaw-gauge` at `d416d59b` (E13, E14), and the store-law derivation (F07, `store-law-r68.md`).
 
 **Why.** The owner wants the product fast, with the mathematical modelling correct first. Several
 laws have been found pinned, degenerate or fed over-read inputs (status §3.10 items 1–9, §53
@@ -94,10 +94,10 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 ## 2. Distribution
 
 <!-- BEGIN:dist -->
-- rows: 72
-- verdict tags (a row may carry several): OK 13, DIVERGENT 18, UNDERIVED 31, PINNED 4, DEGENERATE 10, DISHONEST-INPUT 19, MODE-SWITCH 7
+- rows: 73
+- verdict tags (a row may carry several): OK 13, DIVERGENT 18, UNDERIVED 32, PINNED 4, DEGENERATE 10, DISHONEST-INPUT 20, MODE-SWITCH 7
 - rows that are OK only: 13, of which not measured in regime (OK but unverified): 9 (D01, D02, D03, D04, D05, D06, R06, R08, C12)
-- priorities: P0 7, P1 10, P2 19, P3 36
+- priorities: P0 8, P1 10, P2 19, P3 36
 <!-- END:dist -->
 
 ## 3. Summary, in fix order (every row is ranked; rows with fix class "none" come last)
@@ -109,74 +109,75 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [E03](#e03) | Copa min_rtt (RTprop) | DISHONEST-INPUT | P0 | 2 | - |
 | [F01](#f01) | pooled store cap | PINNED(c8,c1s), DISHONEST-INPUT | P0 | 3 | E03, E04 |
 | [E13](#e13) | lifetime echo minimum l-hat (WinSampler::life_min; gauge branch github/slaw-gauge, not on main) | DISHONEST-INPUT | P0 | 4 | - |
-| [F07](#f07) | store-law candidate allowance sigma + q(delta)*l-hat (R6.2 / R6.7 line; derivation only, not built) | UNDERIVED, DISHONEST-INPUT | P0 | 5 | E13 |
-| [C02](#c02) | packet threshold 3 and the 20-gap report horizon | UNDERIVED, DEGENERATE(c8: the law sees only old holes) | P0 | 6 | - |
-| [C03](#c03) | snapshot-order filter (branch github/snapver-law, not on main) | OK | P0 | 7 | - |
-| [K09](#k09) | quinn BBR (the default substrate CC) | DISHONEST-INPUT | P1 | 8 | - |
-| [E01](#e01) | app-echo RTT EWMA (est.rtt()) | DISHONEST-INPUT | P1 | 9 | - |
-| [E11](#e11) | pooled recovery srtt (max over live paths of est.rtt()) | DISHONEST-INPUT | P1 | 10 | E01 |
-| [E10](#e10) | receiver's srtt for the refresh clock (published TX view) | DEGENERATE(all one-way cells) | P1 | 11 | E01 |
-| [C07](#c07) | receiver hole refresh (hole_nack_refresh) | DEGENERATE(all one-way cells), UNDERIVED | P1 | 12 | E10, E01 |
-| [C05](#c05) | per-sequence retransmit cooldown | DISHONEST-INPUT, UNDERIVED | P1 | 13 | E11 |
-| [C01](#c01) | per-path time threshold 9/8 * max(srtt, ewma) | DISHONEST-INPUT | P1 | 14 | E01, E11 |
-| [C09](#c09) | NACK repair throttle (NackCongestionState x MAX_NACK_REPAIRS_PER_NACK, per-period nack cap) | UNDERIVED | P1 | 15 | E01 |
-| [R01](#r01) | rate mix r(beta) | DEGENERATE(L1 cells: Bulk with chi = 0) | P1 | 16 | R02, R05 |
-| [R02](#r02) | controller_rate (anchor term body) | UNDERIVED | P1 | 17 | E07, E08, E01 |
-| [C04](#c04) | legacy age gate srtt/2 (the shipped N = 1 recovery law) | DIVERGENT, UNDERIVED, DISHONEST-INPUT | P2 | 18 | E11 |
-| [C06](#c06) | tail-sweep timeout | PINNED(c8), UNDERIVED, DISHONEST-INPUT | P2 | 19 | E11 |
-| [R07](#r07) | W* derived window and the keep-behind clip | DIVERGENT, UNDERIVED | P2 | 20 | E07, E01 |
-| [R03](#r03) | P_fec normal approximation (truncated) | DIVERGENT, DEGENERATE(below r = eps/(1-eps)) | P2 | 21 | - |
-| [R04](#r04) | r_saturation soft cap | UNDERIVED, DIVERGENT | P2 | 22 | R03, E01 |
-| [E07](#e07) | BOCD predictive_loss_upper (eps upper quantile) | DIVERGENT | P2 | 23 | E06 |
-| [E08](#e08) | Gilbert-Elliott estimator (sigma2_burst, mean burst, mass stats) | DIVERGENT | P2 | 24 | E06 |
-| [E09](#e09) | RTTVAR stand-ins (0.1*SRTT for P_lost, 0.125*SRTT for chi) | UNDERIVED, DIVERGENT | P2 | 25 | E01 |
-| [R05](#r05) | completion exposure chi and BULK_TAIL_BUDGET | UNDERIVED, DEGENERATE(tunnel) | P2 | 26 | E09 |
-| [F02](#f02) | store gate scope (tx_paused / plain_dyn_cap require reliable) | MODE-SWITCH(live) | P2 | 27 | F01 |
-| [F03](#f03) | emission burst bound (Law 0, RWM_EMIT_BURST = 64) | PINNED(c1s,c1d), UNDERIVED | P2 | 28 | - |
-| [S01](#s01) | span deadline D | DIVERGENT, DISHONEST-INPUT | P2 | 29 | E01, E03 |
-| [S04](#s04) | shed budget | DIVERGENT, DISHONEST-INPUT | P2 | 30 | R03, S01 |
-| [S05](#s05) | receiver shed hold | DIVERGENT, UNDERIVED | P2 | 31 | E10 |
-| [S06](#s06) | taper copy decision (P_lost) | DISHONEST-INPUT, DEGENERATE(L1: never fires) | P2 | 32 | E01, E09 |
-| [S08](#s08) | Realtime duplicate source send | MODE-SWITCH(live), UNDERIVED | P2 | 33 | - |
-| [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 34 | - |
-| [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 35 | - |
-| [K10](#k10) | bbr_rs (branch github/bbrrs-r3, not default) | DIVERGENT | P2 | 36 | - |
-| [S10](#s10) | proactive repair emission (taper density and TaperBudget accrual) | DIVERGENT, DEGENERATE(r = 0) | P3 | 37 | R01 |
-| [C13](#c13) | T_cut give-up horizon (wasm model) | PINNED(every measured rho < 1 point) | P3 | 38 | R03 |
-| [M04](#m04) | wasm give-up law (cartoon + sim; was V5/V6 and W14) | DEGENERATE(rho inert at Auto and Realtime under the shipped R), DIVERGENT | P3 | 39 | R03 |
-| [M03](#m03) | wasm rate beta-guard and the dead classic-hint machine | MODE-SWITCH(live), MODE-SWITCH(dead) | P3 | 40 | - |
-| [M01](#m01) | wasm store pool 512 per path | DIVERGENT, UNDERIVED | P3 | 41 | F01 |
-| [M02](#m02) | wasm tail target interpolation (Bulk anchor 0.05) | DIVERGENT | P3 | 42 | - |
-| [K01](#k01) | Copa app-echo cwnd law (queue target, P10 floor, anchor floor and pull) | MODE-SWITCH(live), UNDERIVED, DISHONEST-INPUT | P3 | 43 | E03, E04 |
-| [K02](#k02) | Copa delta off the wire signal (constant 0.5) | DIVERGENT | P3 | 44 | K01 |
-| [K03](#k03) | Copa wire-mode law and TCP-compete mode (opt-in) | MODE-SWITCH(live) | P3 | 45 | - |
-| [K04](#k04) | spare capacity and the active_paths saturation filter | DISHONEST-INPUT | P3 | 46 | K01 |
-| [E02](#e02) | Copa srtt / PathState::srtt() | DISHONEST-INPUT | P3 | 47 | E01 |
-| [S02](#s02) | span width A* | DISHONEST-INPUT | P3 | 48 | S01, E12 |
-| [S03](#s03) | trailing offset Delta | UNDERIVED | P3 | 49 | - |
-| [S07](#s07) | taper-cache staleness 50 ms | UNDERIVED | P3 | 50 | - |
-| [R06](#r06) | r*_mass burst-tail provisioning (RWM_RSTAR_TAIL) | OK | P3 | 51 | E08 |
-| [C08](#c08) | gap-report minimum interval GAP_ACK_MIN_INTERVAL = 2 ms | UNDERIVED | P3 | 52 | - |
-| [C10](#c10) | reactive repair margin ceil(retx*eps) | UNDERIVED | P3 | 53 | - |
-| [C11](#c11) | repair debt reduction (debt -= nacked*r) | UNDERIVED, DEGENERATE(r = 0) | P3 | 54 | R01 |
-| [C12](#c12) | receiver request law (l*, request_bar, request_m; off) | OK | P3 | 55 | - |
-| [K06](#k06) | placement temperature T = 0.15 | UNDERIVED | P3 | 56 | K05 |
-| [K07](#k07) | diversity weight w_div = 1.0 | UNDERIVED | P3 | 57 | K05 |
-| [K08](#k08) | repair spare near-tie band 0.8 / floor 0.25 (opt-in) | UNDERIVED | P3 | 58 | K04 |
-| [E12](#e12) | SendRateAnchor (the rate A* multiplies) | UNDERIVED | P3 | 59 | E01 |
-| [F04](#f04) | store-cap control and off arms (RWM_STORE_PATHS=0, RWM_DELTA_CAP=0, RWM_SUM_CAP=0, RWM_THREE_TERM) | UNDERIVED | P3 | 60 | F01 |
-| [F05](#f05) | generation pipeline depth M* (opt-in seat) | UNDERIVED | P3 | 61 | E03 |
-| [R09](#r09) | generation repair floor 0.15 / 0.20 (opt-in seat) | UNDERIVED, DIVERGENT | P3 | 62 | - |
-| [E05](#e05) | quinn wire SRTT (wire_rtt mirror) | OK | P3 | 63 | - |
-| [E06](#e06) | per-path loss estimate eps-hat (tx EWMA) and its feed | OK | P3 | 64 | - |
-| [F06](#f06) | SACK-clocked release (store_gate_released) | OK | P3 | 65 | - |
-| [R08](#r08) | rate cadence min(5 ms, SRTT/4) | OK | P3 | 66 | - |
-| [D01](#d01) | delta(hint) named points / delta_price | OK | P3 | 67 | - |
-| [D02](#d02) | b(delta) span horizon | OK | P3 | 68 | - |
-| [D03](#d03) | q(delta) CoDel setpoint | OK | P3 | 69 | - |
-| [D04](#d04) | beta(delta) bulkness | OK | P3 | 70 | - |
-| [D05](#d05) | w_bw(delta) placement loss weight | OK | P3 | 71 | - |
-| [D06](#d06) | t_tail(delta) tail target | OK | P3 | 72 | - |
+| [E14](#e14) | boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main) | UNDERIVED, DISHONEST-INPUT | P0 | 5 | - |
+| [F07](#f07) | store-law candidate allowance sigma + q(delta)*l-hat (R6.2 / R6.7 line; derivation only, not built) | UNDERIVED, DISHONEST-INPUT | P0 | 6 | E13 |
+| [C02](#c02) | packet threshold 3 and the 20-gap report horizon | UNDERIVED, DEGENERATE(c8: the law sees only old holes) | P0 | 7 | - |
+| [C03](#c03) | snapshot-order filter (branch github/snapver-law, not on main) | OK | P0 | 8 | - |
+| [K09](#k09) | quinn BBR (the default substrate CC) | DISHONEST-INPUT | P1 | 9 | - |
+| [E01](#e01) | app-echo RTT EWMA (est.rtt()) | DISHONEST-INPUT | P1 | 10 | - |
+| [E11](#e11) | pooled recovery srtt (max over live paths of est.rtt()) | DISHONEST-INPUT | P1 | 11 | E01 |
+| [E10](#e10) | receiver's srtt for the refresh clock (published TX view) | DEGENERATE(all one-way cells) | P1 | 12 | E01 |
+| [C07](#c07) | receiver hole refresh (hole_nack_refresh) | DEGENERATE(all one-way cells), UNDERIVED | P1 | 13 | E10, E01 |
+| [C05](#c05) | per-sequence retransmit cooldown | DISHONEST-INPUT, UNDERIVED | P1 | 14 | E11 |
+| [C01](#c01) | per-path time threshold 9/8 * max(srtt, ewma) | DISHONEST-INPUT | P1 | 15 | E01, E11 |
+| [C09](#c09) | NACK repair throttle (NackCongestionState x MAX_NACK_REPAIRS_PER_NACK, per-period nack cap) | UNDERIVED | P1 | 16 | E01 |
+| [R01](#r01) | rate mix r(beta) | DEGENERATE(L1 cells: Bulk with chi = 0) | P1 | 17 | R02, R05 |
+| [R02](#r02) | controller_rate (anchor term body) | UNDERIVED | P1 | 18 | E07, E08, E01 |
+| [C04](#c04) | legacy age gate srtt/2 (the shipped N = 1 recovery law) | DIVERGENT, UNDERIVED, DISHONEST-INPUT | P2 | 19 | E11 |
+| [C06](#c06) | tail-sweep timeout | PINNED(c8), UNDERIVED, DISHONEST-INPUT | P2 | 20 | E11 |
+| [R07](#r07) | W* derived window and the keep-behind clip | DIVERGENT, UNDERIVED | P2 | 21 | E07, E01 |
+| [R03](#r03) | P_fec normal approximation (truncated) | DIVERGENT, DEGENERATE(below r = eps/(1-eps)) | P2 | 22 | - |
+| [R04](#r04) | r_saturation soft cap | UNDERIVED, DIVERGENT | P2 | 23 | R03, E01 |
+| [E07](#e07) | BOCD predictive_loss_upper (eps upper quantile) | DIVERGENT | P2 | 24 | E06 |
+| [E08](#e08) | Gilbert-Elliott estimator (sigma2_burst, mean burst, mass stats) | DIVERGENT | P2 | 25 | E06 |
+| [E09](#e09) | RTTVAR stand-ins (0.1*SRTT for P_lost, 0.125*SRTT for chi) | UNDERIVED, DIVERGENT | P2 | 26 | E01 |
+| [R05](#r05) | completion exposure chi and BULK_TAIL_BUDGET | UNDERIVED, DEGENERATE(tunnel) | P2 | 27 | E09 |
+| [F02](#f02) | store gate scope (tx_paused / plain_dyn_cap require reliable) | MODE-SWITCH(live) | P2 | 28 | F01 |
+| [F03](#f03) | emission burst bound (Law 0, RWM_EMIT_BURST = 64) | PINNED(c1s,c1d), UNDERIVED | P2 | 29 | - |
+| [S01](#s01) | span deadline D | DIVERGENT, DISHONEST-INPUT | P2 | 30 | E01, E03 |
+| [S04](#s04) | shed budget | DIVERGENT, DISHONEST-INPUT | P2 | 31 | R03, S01 |
+| [S05](#s05) | receiver shed hold | DIVERGENT, UNDERIVED | P2 | 32 | E10 |
+| [S06](#s06) | taper copy decision (P_lost) | DISHONEST-INPUT, DEGENERATE(L1: never fires) | P2 | 33 | E01, E09 |
+| [S08](#s08) | Realtime duplicate source send | MODE-SWITCH(live), UNDERIVED | P2 | 34 | - |
+| [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 35 | - |
+| [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 36 | - |
+| [K10](#k10) | bbr_rs (branch github/bbrrs-r3, not default) | DIVERGENT | P2 | 37 | - |
+| [S10](#s10) | proactive repair emission (taper density and TaperBudget accrual) | DIVERGENT, DEGENERATE(r = 0) | P3 | 38 | R01 |
+| [C13](#c13) | T_cut give-up horizon (wasm model) | PINNED(every measured rho < 1 point) | P3 | 39 | R03 |
+| [M04](#m04) | wasm give-up law (cartoon + sim; was V5/V6 and W14) | DEGENERATE(rho inert at Auto and Realtime under the shipped R), DIVERGENT | P3 | 40 | R03 |
+| [M03](#m03) | wasm rate beta-guard and the dead classic-hint machine | MODE-SWITCH(live), MODE-SWITCH(dead) | P3 | 41 | - |
+| [M01](#m01) | wasm store pool 512 per path | DIVERGENT, UNDERIVED | P3 | 42 | F01 |
+| [M02](#m02) | wasm tail target interpolation (Bulk anchor 0.05) | DIVERGENT | P3 | 43 | - |
+| [K01](#k01) | Copa app-echo cwnd law (queue target, P10 floor, anchor floor and pull) | MODE-SWITCH(live), UNDERIVED, DISHONEST-INPUT | P3 | 44 | E03, E04 |
+| [K02](#k02) | Copa delta off the wire signal (constant 0.5) | DIVERGENT | P3 | 45 | K01 |
+| [K03](#k03) | Copa wire-mode law and TCP-compete mode (opt-in) | MODE-SWITCH(live) | P3 | 46 | - |
+| [K04](#k04) | spare capacity and the active_paths saturation filter | DISHONEST-INPUT | P3 | 47 | K01 |
+| [E02](#e02) | Copa srtt / PathState::srtt() | DISHONEST-INPUT | P3 | 48 | E01 |
+| [S02](#s02) | span width A* | DISHONEST-INPUT | P3 | 49 | S01, E12 |
+| [S03](#s03) | trailing offset Delta | UNDERIVED | P3 | 50 | - |
+| [S07](#s07) | taper-cache staleness 50 ms | UNDERIVED | P3 | 51 | - |
+| [R06](#r06) | r*_mass burst-tail provisioning (RWM_RSTAR_TAIL) | OK | P3 | 52 | E08 |
+| [C08](#c08) | gap-report minimum interval GAP_ACK_MIN_INTERVAL = 2 ms | UNDERIVED | P3 | 53 | - |
+| [C10](#c10) | reactive repair margin ceil(retx*eps) | UNDERIVED | P3 | 54 | - |
+| [C11](#c11) | repair debt reduction (debt -= nacked*r) | UNDERIVED, DEGENERATE(r = 0) | P3 | 55 | R01 |
+| [C12](#c12) | receiver request law (l*, request_bar, request_m; off) | OK | P3 | 56 | - |
+| [K06](#k06) | placement temperature T = 0.15 | UNDERIVED | P3 | 57 | K05 |
+| [K07](#k07) | diversity weight w_div = 1.0 | UNDERIVED | P3 | 58 | K05 |
+| [K08](#k08) | repair spare near-tie band 0.8 / floor 0.25 (opt-in) | UNDERIVED | P3 | 59 | K04 |
+| [E12](#e12) | SendRateAnchor (the rate A* multiplies) | UNDERIVED | P3 | 60 | E01 |
+| [F04](#f04) | store-cap control and off arms (RWM_STORE_PATHS=0, RWM_DELTA_CAP=0, RWM_SUM_CAP=0, RWM_THREE_TERM) | UNDERIVED | P3 | 61 | F01 |
+| [F05](#f05) | generation pipeline depth M* (opt-in seat) | UNDERIVED | P3 | 62 | E03 |
+| [R09](#r09) | generation repair floor 0.15 / 0.20 (opt-in seat) | UNDERIVED, DIVERGENT | P3 | 63 | - |
+| [E05](#e05) | quinn wire SRTT (wire_rtt mirror) | OK | P3 | 64 | - |
+| [E06](#e06) | per-path loss estimate eps-hat (tx EWMA) and its feed | OK | P3 | 65 | - |
+| [F06](#f06) | SACK-clocked release (store_gate_released) | OK | P3 | 66 | - |
+| [R08](#r08) | rate cadence min(5 ms, SRTT/4) | OK | P3 | 67 | - |
+| [D01](#d01) | delta(hint) named points / delta_price | OK | P3 | 68 | - |
+| [D02](#d02) | b(delta) span horizon | OK | P3 | 69 | - |
+| [D03](#d03) | q(delta) CoDel setpoint | OK | P3 | 70 | - |
+| [D04](#d04) | beta(delta) bulkness | OK | P3 | 71 | - |
+| [D05](#d05) | w_bw(delta) placement loss weight | OK | P3 | 72 | - |
+| [D06](#d06) | t_tail(delta) tail target | OK | P3 | 73 | - |
 <!-- END:summary -->
 
 ## 4. Fix order
@@ -420,7 +421,7 @@ a branch.
 - *7. inputs honest?:* honest as an app-echo round trip; DISHONEST wherever a law reads it as a path RTT or RTprop (S01, S02, S06, E11, C01, C04, C05, C06, R07)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT**: c8: app-echo excess over the wire RTT equals quinn's p0 send-buffer dwell (64-282 ms on a 10 ms leg), p0-dwell-diag §1
-- *10. fix class, priority:* input; **P1**, rank 9
+- *10. fix class, priority:* input; **P1**, rank 10
 - *flags:* measured yes, gauge yes
 
 #### E02
@@ -441,7 +442,7 @@ a branch.
 - *7. inputs honest?:* same samples as E01 off-wire, so the same dwell; when the wire gate is on it smooths quinn's already-smoothed srtt (double smoothing)
 - *8. NO-MODE-SWITCH:* RWM_COPA_WIRE gate selects the sample source (an experiment gate, not a dial)
 - *9. verdict:* **DISHONEST-INPUT**: duplicate of E01 off-wire (§44 item 3); C01 takes max(srtt, ewma) of two copies of one stream
-- *10. fix class, priority:* delete (keep one clock, §44 item 3); **P3**, rank 47; depends on E01
+- *10. fix class, priority:* delete (keep one clock, §44 item 3); **P3**, rank 48; depends on E01
 - *flags:* measured yes, gauge yes
 
 #### E03
@@ -504,7 +505,7 @@ a branch.
 - *7. inputs honest?:* honest for what placement prices (wire transit); blind to quinn's send buffer, so placement cannot see p0's 1.5-3k datagram backlog (p0-dwell-diag §4)
 - *8. NO-MODE-SWITCH:* none. Code nit: the path.rs:28-35 field doc says 'written only while the arm is on', the code writes unconditionally
 - *9. verdict:* **OK**: the honest wire clock; the candidate replacement source for E03 and E11
-- *10. fix class, priority:* none (stale field doc); **P3**, rank 63
+- *10. fix class, priority:* none (stale field doc); **P3**, rank 64
 - *flags:* measured yes, gauge yes
 
 #### E06
@@ -525,7 +526,7 @@ a branch.
 - *7. inputs honest?:* honest (datagram-level truth match)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: fed loss matches per-datagram truth 0.95-1.03x (§3.6, §3.8); reorder branch tested only in unit tests
-- *10. fix class, priority:* none; **P3**, rank 64
+- *10. fix class, priority:* none; **P3**, rank 65
 - *flags:* measured yes, gauge yes
 
 #### E07
@@ -546,7 +547,7 @@ a branch.
 - *7. inputs honest?:* fed by E06
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DIVERGENT**: divergence bounded by bocd_quantile_is_the_weighted_average_of_quantiles_not_the_mixture_quantile (gap 0.003-0.0045); clean-link floor 0.0354 unexplained (§3.7)
-- *10. fix class, priority:* paper or law (bounded); **P2**, rank 23; depends on E06
+- *10. fix class, priority:* paper or law (bounded); **P2**, rank 24; depends on E06
 - *flags:* measured partial, gauge yes
 
 #### E08
@@ -567,7 +568,7 @@ a branch.
 - *7. inputs honest?:* lumped batch order biases burst length upward when a batch mixes losses and receives; window batches carry one symbol (§11.3), so the bias is small on the window path
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DIVERGENT**: per-batch lumping is unbounded: the specified ge_batch_feed_orders_losses_before_receives test (paper-recon §7) was not landed by bound-tests
-- *10. fix class, priority:* test (bound) then paper; **P2**, rank 24; depends on E06
+- *10. fix class, priority:* test (bound) then paper; **P2**, rank 25; depends on E06
 - *flags:* measured partial, gauge no
 
 #### E09
@@ -588,7 +589,7 @@ a branch.
 - *7. inputs honest?:* a fixed fraction of a dwell-inclusive clock, not a variance
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED, DIVERGENT**: bounded by p_lost_rttvar_is_a_tenth_of_srtt and chi_and_p_lost_rttvar_stand_ins_differ_by_the_declared_ratio; no provenance for either constant
-- *10. fix class, priority:* input (one measured RTTVAR per leg); **P2**, rank 25; depends on E01
+- *10. fix class, priority:* input (one measured RTTVAR per leg); **P2**, rank 26; depends on E01
 - *flags:* measured no, gauge n/a
 
 #### E10
@@ -609,7 +610,7 @@ a branch.
 - *7. inputs honest?:* DEGENERATE: on a one-way transfer the receiving endpoint's sender gets no echoes (PathReport avg_rtt is not recorded under RWM_MSTAR_ANCHOR, control_msg.rs:429-436), so the value is the constructor seed estimator.rs:281
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DEGENERATE(all one-way cells)**: 50 000 us, n = 0, 12/12 c8 rows (§3.10 item 6); traced here to the 50 ms LossEstimator seed read through the receiver's own idle sender
-- *10. fix class, priority:* input (publish the data sender's measured RTT to the receiver, or measure at the receiver); only useful once that RTT is honest (E01); **P1**, rank 11; depends on E01; ships with C07
+- *10. fix class, priority:* input (publish the data sender's measured RTT to the receiver, or measure at the receiver); only useful once that RTT is honest (E01); **P1**, rank 12; depends on E01; ships with C07
 - *flags:* measured yes, gauge yes
 
 #### E11
@@ -630,7 +631,7 @@ a branch.
 - *7. inputs honest?:* DISHONEST: max of E01 across legs, so a hole on the 10 ms leg is clocked by the 40 ms leg's queue plus p0's own send-buffer dwell
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT**: 257-542 ms at c8 where the legs' propagation RTTs are 10/40 ms (p0-dwell-diag §4)
-- *10. fix class, priority:* input (per-path wire clock; per-seq clock of the seq's own path); **P1**, rank 10; depends on E01
+- *10. fix class, priority:* input (per-path wire clock; per-seq clock of the seq's own path); **P1**, rank 11; depends on E01
 - *flags:* measured yes, gauge yes
 
 #### E12
@@ -651,7 +652,7 @@ a branch.
 - *7. inputs honest?:* srtt argument is est.rtt() (E01)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: four window/bucket constants with no provenance; feeds only A* (S02), which acts only through repairs (r ~ 0 on the measured cells)
-- *10. fix class, priority:* paper; **P3**, rank 59; depends on E01
+- *10. fix class, priority:* paper; **P3**, rank 60; depends on E01
 - *flags:* measured no, gauge no
 
 #### E13
@@ -675,6 +676,27 @@ a branch.
 - *10. fix class, priority:* delete from the law: q(delta)*F-hat in place of q(delta)*l-hat (store-law-r68.md §2.4; F-hat = R6.7's candidate floor). Keep l as a gauge; **P0**, rank 4; ships with F07, F01
 - *flags:* measured yes, gauge yes
 
+#### E14
+
+**boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main)** (candidate (gauge branch); read by R6.2's F = min(m, l + b0p) + b0p and the counterfactual R; printed as b0p= / b0k= on [SLAW])
+
+- *1. location:* github/slaw-gauge d416d59b: net/slaw.rs WinSampler::close :150-165 (brake_k = tmin_k - m_k pushed for k <= K_GAUGE = 8; b0p = max once k >= 8); K_GAUGE :29
+- *2. formula (code):* 
+
+  ```text
+  b0p_i = max{ tmin_i,k - m_i,k : k = 1..8 }   (m = Copa min_rtt at the close of window k)
+  ```
+
+- *3. paper:* store-law.md R6.2 input table ('the sampler's first K windows'); K = 8 declared without provenance (§13.1, R6.7)
+- *4. derivation:* sentence: the zero-load gap between the window minimum the law steers and the long-run minimum it anchors on. That gap is a function of the window's sample count, b(n), and falls as windows fill; the estimator reads it at the boot count, as one extreme of 8 start-transient windows, never at the operating count (sampler-design.md §1.1, §2)
+- *5. measured in regime?:* count-rule.md §2, sampler-design.md §1.1 (floor rows; min-max over rows): b0p 4.03-5.40 (c3 J = 0), 3.26-12.62 (61c), 6.35-103.40 (61a), 2.04-4.10 (c2), against a steady native-count brake of 3.2-3.6 / 7.5-8.6 / 5.6-8.4 / 2.2-2.7 and a knee-count brake of 0.1-0.3 / 2.7-4.7 / 1.0-4.3 / 0.5-1.1 ms. 61a G12 s42 r5's 103.4 ms brake (k = 2) is the B1 outlier (LATE median err -101.25). On static pools above the queue-free sizes b0p latches the pool's start queue (R6.7 §1.2)
+- *6. clamp bind:* none on a value; the k <= K window set has no bind gauge (the K raw brakes are printed, b0k=)
+- *7. inputs honest?:* DISHONEST: a maximum over start-transient differences against an m-hat seconds old, at the boot count; neither the operating count nor zero load
+- *8. NO-MODE-SWITCH:* none by section 1's definition (no hint, rho or delta/rho threshold). Note: a predicate on the window index (k <= K_GAUGE) fixes the set, which R6.7's mode screen flags for the law
+- *9. verdict:* **UNDERIVED, DISHONEST-INPUT**: count-rule.md §2: F = min(m, l + b0p) + b0p spreads 37.2-46.2 (61c) and 42.9-138.5 ms (61a) through b0p while the native minimum differs by 0.4 ms; sampler-design.md §1.1 (b0p against the brake at the native and the knee count) and §1.5 (K1 fails on static pools, K2 shows any at-load brake is circular)
+- *10. fix class, priority:* delete from the law (sampler-design.md §2.1, owner question O1): a count-free location makes the brake 0 by construction; under a minimum law, the count-matched zero-load ladder M0(n) replaces it; **P0**, rank 5; ships with F07, F01, E13
+- *flags:* measured yes, gauge yes
+
 
 ### Area: dial
 
@@ -696,7 +718,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* the one sanctioned hint read; everything downstream reads delta
 - *9. verdict:* **OK**: delta_budget_b_is_the_dial_not_a_mode pins 50/0.5/0.005 bit-exactly
-- *10. fix class, priority:* none; **P3**, rank 67
+- *10. fix class, priority:* none; **P3**, rank 68
 - *flags:* measured partial, gauge yes
 
 #### D02
@@ -717,7 +739,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial (formula_agreement.rs:556)
-- *10. fix class, priority:* none; **P3**, rank 68
+- *10. fix class, priority:* none; **P3**, rank 69
 - *flags:* measured partial, gauge yes
 
 #### D03
@@ -738,7 +760,7 @@ a branch.
 - *7. inputs honest?:* D02
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: formula provenanced and pinned (published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band); unverified because F01 is pinned
-- *10. fix class, priority:* none (see F01); **P3**, rank 69
+- *10. fix class, priority:* none (see F01); **P3**, rank 70
 - *flags:* measured no, gauge yes
 
 #### D04
@@ -759,7 +781,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: the_bulkness_weight_is_exact_at_the_presets_and_the_ablation_zeroes_it; flat over [Auto, Realtime] by construction
-- *10. fix class, priority:* none; **P3**, rank 70
+- *10. fix class, priority:* none; **P3**, rank 71
 - *flags:* measured partial, gauge no
 
 #### D05
@@ -780,7 +802,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: scheduling_weights_are_the_dial_not_a_mode pins {0, 0.5, 1}
-- *10. fix class, priority:* none; **P3**, rank 71
+- *10. fix class, priority:* none; **P3**, rank 72
 - *flags:* measured partial, gauge no
 
 #### D06
@@ -801,7 +823,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: continuous and pinned; never exercised on a measured cell
-- *10. fix class, priority:* none; **P3**, rank 72
+- *10. fix class, priority:* none; **P3**, rank 73
 - *flags:* measured no, gauge no
 
 
@@ -846,7 +868,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the reliable bool selects whether any outstanding gate exists
 - *9. verdict:* **MODE-SWITCH(live)**: §3.3 last row; at rho < 1 there is no sent_store and no store gate (paper §6.1)
-- *10. fix class, priority:* law change (rho term from §6.1); **P2**, rank 27; depends on F01
+- *10. fix class, priority:* law change (rho term from §6.1); **P2**, rank 28; depends on F01
 - *flags:* measured no, gauge no
 
 #### F03
@@ -867,7 +889,7 @@ a branch.
 - *7. inputs honest?:* none
 - *8. NO-MODE-SWITCH:* scope excludes rho < 1 and Realtime packing (S09)
 - *9. verdict:* **PINNED(c1s,c1d), UNDERIVED**: the cap ends 0.83-0.84 of bursts at c1s/c1d (§11.2); 64 never swept
-- *10. fix class, priority:* sweep or derive (a CPU/latency quantum, not a correctness law); **P2**, rank 28
+- *10. fix class, priority:* sweep or derive (a CPU/latency quantum, not a correctness law); **P2**, rank 29
 - *flags:* measured yes, gauge yes
 
 #### F04
@@ -888,7 +910,7 @@ a branch.
 - *7. inputs honest?:* as F01
 - *8. NO-MODE-SWITCH:* experiment gates, not dials
 - *9. verdict:* **UNDERIVED**: kept as A/B arms; the quadratic SUM_CAP=0 arm is pinned as a documented defect (path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect)
-- *10. fix class, priority:* delete when the F01 fix lands (keep one control); **P3**, rank 60; depends on F01
+- *10. fix class, priority:* delete when the F01 fix lands (keep one control); **P3**, rank 61; depends on F01
 - *flags:* measured partial, gauge partial
 
 #### F05
@@ -909,7 +931,7 @@ a branch.
 - *7. inputs honest?:* RTprop = max over live of Copa min_rtt (E03)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: opt-in seat with no keep-or-remove decision (§3.2)
-- *10. fix class, priority:* decide the seat's disposition (§3.2) first; **P3**, rank 61; depends on E03
+- *10. fix class, priority:* decide the seat's disposition (§3.2) first; **P3**, rank 62; depends on E03
 - *flags:* measured no, gauge no
 
 #### F06
@@ -930,7 +952,7 @@ a branch.
 - *7. inputs honest?:* honest (wire fields F, A); premise: the reliable receiver never evicts above its frontier (rho = 1 only)
 - *8. NO-MODE-SWITCH:* none (rho < 1 has no store gate: F02)
 - *9. verdict:* **OK**: bounded by store_gate_released_never_exceeds_the_retained_received_truth and stalled_frontier_store_gate_converges_past_the_sack_cap
-- *10. fix class, priority:* none; **P3**, rank 65
+- *10. fix class, priority:* none; **P3**, rank 66
 - *flags:* measured yes, gauge yes
 
 #### F07
@@ -951,7 +973,7 @@ a branch.
 - *7. inputs honest?:* l-hat DISHONEST (E13); sigma honest as the echo spread it measures, its quantile pair declared
 - *8. NO-MODE-SWITCH:* none: one expression, delta only through q(delta)
 - *9. verdict:* **UNDERIVED, DISHONEST-INPUT**: s60 C2-SHORT: D = +1.692 ms [+1.588, +1.836] on a CONVERGED floor (status §60 Result item 1); delta's whole authority is 0.28 ms (~5 slots) against a 31-slot shortfall; fixed forms reach the knee only through a constant fitted at c2 Bulk (c_B 2.26 ms, q' 0.26)
-- *10. fix class, priority:* owner call (U2: a delta-free spread term, a delta-scaled knee term, or a re-declared q band), then a law change needing a battery; a measured-spread branch (S_F + q(delta)*F-hat, no candidate yet fully provenanced) needs one c3 static sweep first (store-law-r68.md §3); **P0**, rank 5; depends on E13; ships with F01, E13
+- *10. fix class, priority:* owner call (U2: a delta-free spread term, a delta-scaled knee term, or a re-declared q band), then a law change needing a battery; a measured-spread branch (S_F + q(delta)*F-hat, no candidate yet fully provenanced) needs one c3 static sweep first (store-law-r68.md §3); **P0**, rank 6; depends on E13; ships with F01, E13
 - *flags:* measured yes, gauge yes
 
 
@@ -975,7 +997,7 @@ a branch.
 - *7. inputs honest?:* R02's inputs
 - *8. NO-MODE-SWITCH:* none in the engine (no beta = 0 fast path); the wasm has one (M03)
 - *9. verdict:* **DEGENERATE(L1 cells: Bulk with chi = 0)**: the_rate_mix_is_byte_identical_at_the_presets and the no-step test pin the shape; on every measured cell it computes exactly 0 (bulk_rate_is_exactly_zero_through_the_controller)
-- *10. fix class, priority:* measurement (one off-Bulk row with a which-term-wins tally); **P1**, rank 16; depends on R02, R05
+- *10. fix class, priority:* measurement (one off-Bulk row with a which-term-wins tally); **P1**, rank 17; depends on R02, R05
 - *flags:* measured no, gauge partial
 
 #### R02
@@ -996,7 +1018,7 @@ a branch.
 - *7. inputs honest?:* p = E07 upper quantile, sigma2/B = E08, srtt = E01, t_symbols = srtt*tput/sym
 - *8. NO-MODE-SWITCH:* bulk_late_is_fine bool selects the term inside R01's always-computed mix (a term selector, not a mode)
 - *9. verdict:* **UNDERIVED**: the composition max(core, burst, mass) has no derivation of why max (§4.4 'partial' in §9.10); no gauge of which term or clamp binds
-- *10. fix class, priority:* gauge (term-win tally) then measurement; **P1**, rank 17; depends on E07, E08, E01
+- *10. fix class, priority:* gauge (term-win tally) then measurement; **P1**, rank 18; depends on E07, E08, E01
 - *flags:* measured no, gauge no
 
 #### R03
@@ -1017,7 +1039,7 @@ a branch.
 - *7. inputs honest?:* eps = E06/E07, sigma2 = E08, W = A* (shed) or encoder window
 - *8. NO-MODE-SWITCH:* a threshold on r that selects a branch (not a dial threshold; a step in the law)
 - *9. verdict:* **DIVERGENT, DEGENERATE(below r = eps/(1-eps))**: 0 -> 1/2 step at r = eps/(1-eps) (wasm audit W22), bounded by test_p_fec_normal_vs_paper_phi_divergence_is_bounded; under the sliding bound premises the shipped form over-predicts recovery at A* 3-7 (20/20 cells)
-- *10. fix class, priority:* derivation open (docs/derivations/pfec-continuous.md): the §4.2 event is the window event; block-exact C6 does not ship; next = an executed sliding oracle; **P2**, rank 21; ships with M04
+- *10. fix class, priority:* derivation open (docs/derivations/pfec-continuous.md): the §4.2 event is the window event; block-exact C6 does not ship; next = an executed sliding oracle; **P2**, rank 22; ships with M04
 - *flags:* measured no, gauge no
 
 #### R04
@@ -1038,7 +1060,7 @@ a branch.
 - *7. inputs honest?:* inherits R03's step through P_fec; srtt = E01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED, DIVERGENT**: four constants with no provenance; its cost curve carries the P_fec cut (R03)
-- *10. fix class, priority:* paper + gauge; **P2**, rank 22; depends on R03, E01
+- *10. fix class, priority:* paper + gauge; **P2**, rank 23; depends on R03, E01
 - *flags:* measured no, gauge no
 
 #### R05
@@ -1059,7 +1081,7 @@ a branch.
 - *7. inputs honest?:* T_rem unavailable on the tunnel; rttvar = 0.125*srtt (E09)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED, DEGENERATE(tunnel)**: chi never evaluated on the tunnel (without_the_arm_chi_is_never_evaluated_and_the_gauge_says_so)
-- *10. fix class, priority:* owner call (paper-recon Q3: is chi = 0 the tunnel contract?); **P2**, rank 26; depends on E09
+- *10. fix class, priority:* owner call (paper-recon Q3: is chi = 0 the tunnel contract?); **P2**, rank 27; depends on E09
 - *flags:* measured no, gauge yes
 
 #### R06
@@ -1080,7 +1102,7 @@ a branch.
 - *7. inputs honest?:* E08 mass stats
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: derived and bit-pinned (rstar_bitpin_solver_is_bit_identical); never active on a measured cell
-- *10. fix class, priority:* gauge (ceiling bind) with the R01 measurement; **P3**, rank 51; depends on E08
+- *10. fix class, priority:* gauge (ceiling bind) with the R01 measurement; **P3**, rank 52; depends on E08
 - *flags:* measured no, gauge no
 
 #### R07
@@ -1101,7 +1123,7 @@ a branch.
 - *7. inputs honest?:* eps = E07 upper (0.95), srtt = E01, rate = est tput
 - *8. NO-MODE-SWITCH:* none (b(delta)*SRTT would be continuous; paper-recon Q1)
 - *9. verdict:* **DIVERGENT, UNDERIVED**: bounded by derived_window_runs_one_rtt_budget_at_every_delta and keep_behind_is_w_star_clipped_to_the_seat_cap; 200 unprovenanced
-- *10. fix class, priority:* owner call (paper-recon Q1/Q2), then gauge; **P2**, rank 20; depends on E07, E01
+- *10. fix class, priority:* owner call (paper-recon Q1/Q2), then gauge; **P2**, rank 21; depends on E07, E01
 - *flags:* measured no, gauge no
 
 #### R08
@@ -1122,7 +1144,7 @@ a branch.
 - *7. inputs honest?:* srtt = E01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: rate_cadence_is_one_period_stale_and_bounded; r ~ 0 so staleness is moot on L1
-- *10. fix class, priority:* none; **P3**, rank 66
+- *10. fix class, priority:* none; **P3**, rank 67
 - *flags:* measured partial, gauge yes
 
 #### R09
@@ -1143,7 +1165,7 @@ a branch.
 - *7. inputs honest?:* none
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED, DIVERGENT**: generation_repair_floor_is_the_constant_prior bounds it; seat has no disposition
-- *10. fix class, priority:* decide the seat (§3.2); **P3**, rank 62
+- *10. fix class, priority:* decide the seat (§3.2); **P3**, rank 63
 - *flags:* measured no, gauge no
 
 
@@ -1167,7 +1189,7 @@ a branch.
 - *7. inputs honest?:* DISHONEST: an EWMA of E01 named rtprop (§44 item 3)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DIVERGENT, DISHONEST-INPUT**: bounded by span_deadline_reads_the_ewma_rtt_not_rtprop; reads the dwell-inclusive EWMA, not RTprop
-- *10. fix class, priority:* input (read RTprop from a wire clock); **P2**, rank 29; depends on E01, E03
+- *10. fix class, priority:* input (read RTprop from a wire clock); **P2**, rank 30; depends on E01, E03
 - *flags:* measured no, gauge yes
 
 #### S02
@@ -1188,7 +1210,7 @@ a branch.
 - *7. inputs honest?:* D from S01, rate from E12
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT**: inherits S01's dwell-inclusive D
-- *10. fix class, priority:* follows S01; **P3**, rank 48; depends on S01, E12
+- *10. fix class, priority:* follows S01; **P3**, rank 49; depends on S01, E12
 - *flags:* measured no, gauge partial
 
 #### S03
@@ -1209,7 +1231,7 @@ a branch.
 - *7. inputs honest?:* jitter of the worst-eps path (cited RFC 3550)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: the 64 has no provenance and no bind gauge (§11.2)
-- *10. fix class, priority:* gauge; **P3**, rank 49
+- *10. fix class, priority:* gauge; **P3**, rank 50
 - *flags:* measured no, gauge no
 
 
@@ -1233,7 +1255,7 @@ a branch.
 - *7. inputs honest?:* eps = E06, D = S01 (dwell), A* = S02; cached with the taper cache (S07)
 - *8. NO-MODE-SWITCH:* armed only at rho < 1 (shed_armed); itself continuous
 - *9. verdict:* **DIVERGENT, DISHONEST-INPUT**: budget halves where r* crosses eps/(1-eps) (wasm audit step table, W22)
-- *10. fix class, priority:* follows R03 and S01; **P2**, rank 30; depends on R03, S01
+- *10. fix class, priority:* follows R03 and S01; **P2**, rank 31; depends on R03, S01
 - *flags:* measured partial, gauge yes
 
 #### S05
@@ -1254,7 +1276,7 @@ a branch.
 - *7. inputs honest?:* srtt from E10's published view (seed-prone on one-way flows)
 - *8. NO-MODE-SWITCH:* the budget_ok test switches between two formulas (a loss-budget threshold, not delta/rho); 1/2 is a Realtime constant rather than b(delta)
 - *9. verdict:* **DIVERGENT, UNDERIVED**: bounded by shed_recv_hold_delta_dial_and_legacy_fallback; three unprovenanced constants
-- *10. fix class, priority:* law (b(delta)*SRTT) + read the [SHEDH] bind; **P2**, rank 31; depends on E10
+- *10. fix class, priority:* law (b(delta)*SRTT) + read the [SHEDH] bind; **P2**, rank 32; depends on E10
 - *flags:* measured no, gauge yes
 
 
@@ -1278,7 +1300,7 @@ a branch.
 - *7. inputs honest?:* srtt = E01 of the worst-eps path (dwell-inclusive), rttvar = 0.1*srtt
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT, DEGENERATE(L1: never fires)**: taper_copy reads 0 on the measured cells; correction slots exist only when r > 0
-- *10. fix class, priority:* diagnose (why zero) after E01/E09; **P2**, rank 32; depends on E01, E09
+- *10. fix class, priority:* diagnose (why zero) after E01/E09; **P2**, rank 33; depends on E01, E09
 - *flags:* measured partial, gauge yes
 
 #### S07
@@ -1299,7 +1321,7 @@ a branch.
 - *7. inputs honest?:* n/a. Note: D and the shed budget are cached with it, and the NACK path reads the cached values
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: no derivation, no gauge (§11.2)
-- *10. fix class, priority:* gauge; **P3**, rank 50
+- *10. fix class, priority:* gauge; **P3**, rank 51
 - *flags:* measured partial, gauge no
 
 
@@ -1323,7 +1345,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): hint equality
 - *9. verdict:* **MODE-SWITCH(live), UNDERIVED**: §3.3 row 1; no test, no gauge
-- *10. fix class, priority:* law (price the duplicate on the rate law) or delete; **P2**, rank 33
+- *10. fix class, priority:* law (price the duplicate on the rate law) or delete; **P2**, rank 34
 - *flags:* measured no, gauge no
 
 #### S09
@@ -1344,7 +1366,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): hint equality and the reliable bool
 - *9. verdict:* **MODE-SWITCH(live), UNDERIVED**: §3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime
-- *10. fix class, priority:* law (a continuous packing/batching quantum) or owner call; **P2**, rank 34
+- *10. fix class, priority:* law (a continuous packing/batching quantum) or owner call; **P2**, rank 35
 - *flags:* measured no, gauge yes
 
 
@@ -1368,7 +1390,7 @@ a branch.
 - *7. inputs honest?:* r from R01, q from E08, spare from K04 (inflated cwnd)
 - *8. NO-MODE-SWITCH:* RWM_TAPER_R experiment gate
 - *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code
-- *10. fix class, priority:* paper (write the grant law on its own line; retire A.2's raw-density line); **P3**, rank 37; depends on R01
+- *10. fix class, priority:* paper (write the grant law on its own line; retire A.2's raw-density line); **P3**, rank 38; depends on R01
 - *flags:* measured no, gauge no
 
 
@@ -1392,7 +1414,7 @@ a branch.
 - *7. inputs honest?:* DISHONEST: srtt and ewma are both E01 copies (dwell-inclusive) and age runs from the original send, so the RFC constant is applied to a coordinate that includes sender dwell (§11.2 thresholds row)
 - *8. NO-MODE-SWITCH:* path-count: applies at N >= 2 only; N = 1 runs C04 (a law step at N = 1 -> 2, column-8 note)
 - *9. verdict:* **DISHONEST-INPUT**: threshold ~215-390 ms on a 10 ms leg at c8 (p0-dwell-diag §4); RFC 9002 assumes a wire-timed age
-- *10. fix class, priority:* input (wire clock; age from the wire send); **P1**, rank 14; depends on E01, E11
+- *10. fix class, priority:* input (wire clock; age from the wire send); **P1**, rank 15; depends on E01, E11
 - *flags:* measured yes, gauge yes
 
 #### C02
@@ -1413,7 +1435,7 @@ a branch.
 - *7. inputs honest?:* fed gap reports; stale reports from the slow return leg feed it false evidence (C03)
 - *8. NO-MODE-SWITCH:* N >= 2 only (as C01)
 - *9. verdict:* **UNDERIVED, DEGENERATE(c8: the law sees only old holes)**: c8 on main: holes judged at ~3.5 s, tail 3.95 s, in-order delay ~5.3 s; lever B (64-gap) cuts the tail to 0.36 s (§53)
-- *10. fix class, priority:* law change needing a battery (lever B horizon), shipped with C03; **P0**, rank 6; ships with C03
+- *10. fix class, priority:* law change needing a battery (lever B horizon), shipped with C03; **P0**, rank 7; ships with C03
 - *flags:* measured yes, gauge partial
 
 #### C03
@@ -1434,7 +1456,7 @@ a branch.
 - *7. inputs honest?:* honest (wire fields)
 - *8. NO-MODE-SWITCH:* none: reads no dial, no gate
 - *9. verdict:* **OK**: §53 CONFIRMED AND EFFECTIVE at c8; derivation docs/derivations/dup-diag.md on the branch
-- *10. fix class, priority:* merge (with C02's horizon, §41c guard first); **P0**, rank 7; ships with C02
+- *10. fix class, priority:* merge (with C02's horizon, §41c guard first); **P0**, rank 8; ships with C02
 - *flags:* measured yes, gauge yes
 
 #### C04
@@ -1455,7 +1477,7 @@ a branch.
 - *7. inputs honest?:* DISHONEST: srtt_pool = E11 (dwell-inclusive) against an age from the original send
 - *8. NO-MODE-SWITCH:* path-count switch: N = 1 runs this, N >= 2 runs C01/C02 (column-8 note; a step at N = 1 -> 2, like the guard ADR-0072 removed from the store)
 - *9. verdict:* **DIVERGENT, UNDERIVED, DISHONEST-INPUT**: code: sender_phases.rs:898 needs mp_n_paths > 1 and :937 needs RWM_RECOV_SP (off), so :958 is the N = 1 law; paper §11.2 says it runs only with per-path detection off. Likely inert in effect, never gauged
-- *10. fix class, priority:* paper correction now; law (C01 at N = 1, RWM_RECOV_SP exists as the off arm) with a battery; **P2**, rank 18; depends on E11
+- *10. fix class, priority:* paper correction now; law (C01 at N = 1, RWM_RECOV_SP exists as the off arm) with a battery; **P2**, rank 19; depends on E11
 - *flags:* measured no, gauge yes
 
 #### C05
@@ -1476,7 +1498,7 @@ a branch.
 - *7. inputs honest?:* DISHONEST: E11, the slowest leg's dwell-inclusive clock, applied to every seq
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT, UNDERIVED**: cooldown = 257-542 ms at c8 for seqs whose leg RTT is 10 ms (p0-dwell-diag §4)
-- *10. fix class, priority:* input (per-path wire clock of the retransmit's leg); **P1**, rank 13; depends on E11
+- *10. fix class, priority:* input (per-path wire clock of the retransmit's leg); **P1**, rank 14; depends on E11
 - *flags:* measured yes, gauge partial
 
 #### C06
@@ -1497,7 +1519,7 @@ a branch.
 - *7. inputs honest?:* E11 (dwell-inclusive); the clamp hides it
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **PINNED(c8), UNDERIVED, DISHONEST-INPUT**: 100 ms at p05 and p95 on 30/30 c8 rows; 3-8 fires per run (§3.10 item 4)
-- *10. fix class, priority:* law (derive from self-heal lateness F, §11.2) after E11; **P2**, rank 19; depends on E11
+- *10. fix class, priority:* law (derive from self-heal lateness F, §11.2) after E11; **P2**, rank 20; depends on E11
 - *flags:* measured yes, gauge partial
 
 #### C07
@@ -1518,7 +1540,7 @@ a branch.
 - *7. inputs honest?:* DEGENERATE: E10 (seed); the seed gives exactly the None fallback
 - *8. NO-MODE-SWITCH:* reliable only; rho < 1 uses S05
 - *9. verdict:* **DEGENERATE(all one-way cells), UNDERIVED**: a constant 100 ms on every c8 row because its input is the seed (§3.10 item 6). Feeding it the data sender's current app-echo srtt (257-542 ms at c8) would still clamp to 100 ms (DEGENERATE -> PINNED, same output); the output moves only where an honest srtt < 50 ms (c1s, c2 propagation), so it needs E01 first
-- *10. fix class, priority:* input (E10 after E01), then derive the cadence; **P1**, rank 12; depends on E10, E01; ships with E10
+- *10. fix class, priority:* input (E10 after E01), then derive the cadence; **P1**, rank 13; depends on E10, E01; ships with E10
 - *flags:* measured yes, gauge yes
 
 #### C08
@@ -1539,7 +1561,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: §11.2: 'none yet; it sets the alpha ~ 1 corner'
-- *10. fix class, priority:* paper; **P3**, rank 52
+- *10. fix class, priority:* paper; **P3**, rank 53
 - *flags:* measured partial, gauge yes
 
 #### C09
@@ -1560,7 +1582,7 @@ a branch.
 - *7. inputs honest?:* rising-RTT input is E01-class (dwell-inclusive), so a growing sender queue reads as congestion
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: a default-path AIMD heuristic with seven constants and no paper entry. Inference, not measured: at c8 ~1 400 old holes (p0-dwell-diag §2.2) compete for <= 10 retransmits per report
-- *10. fix class, priority:* gauge first, then paper or delete; **P1**, rank 15; depends on E01
+- *10. fix class, priority:* gauge first, then paper or delete; **P1**, rank 16; depends on E01
 - *flags:* measured no, gauge no
 
 #### C10
@@ -1581,7 +1603,7 @@ a branch.
 - *7. inputs honest?:* E06 (max over channel paths)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: bounded by rate_law_feedback_leg_is_the_open_loop_budget
-- *10. fix class, priority:* paper (record as declared) or ledger arm; **P3**, rank 53
+- *10. fix class, priority:* paper (record as declared) or ledger arm; **P3**, rank 54
 - *flags:* measured partial, gauge partial
 
 #### C11
@@ -1602,7 +1624,7 @@ a branch.
 - *7. inputs honest?:* nacked counts suppressed seqs too
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED, DEGENERATE(r = 0)**: inert while r = 0; bounded by rate_law_feedback_leg_is_the_open_loop_budget
-- *10. fix class, priority:* with the DoF ledger; **P3**, rank 54; depends on R01
+- *10. fix class, priority:* with the DoF ledger; **P3**, rank 55; depends on R01
 - *flags:* measured no, gauge yes
 
 #### C12
@@ -1623,7 +1645,7 @@ a branch.
 - *7. inputs honest?:* pi0 from sender-stamp order
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: REFUTED-WITH-RECORD on the pre-fix estimator; not re-run
-- *10. fix class, priority:* none (off arm; re-run or retire); **P3**, rank 55
+- *10. fix class, priority:* none (off arm; re-run or retire); **P3**, rank 56
 - *flags:* measured partial, gauge yes
 
 
@@ -1647,7 +1669,7 @@ a branch.
 - *7. inputs honest?:* uses the TRUE q (agg_q), not an estimate
 - *8. NO-MODE-SWITCH:* steps at non-preset rho* 0.983332 and 0.988175 (wasm audit F4)
 - *9. verdict:* **PINNED(every measured rho < 1 point)**: two-valued over its range (§3.10 item 1); no engine caller
-- *10. fix class, priority:* law (wasm audit F3+F4 proposal); **P3**, rank 38; depends on R03; ships with M04
+- *10. fix class, priority:* law (wasm audit F3+F4 proposal); **P3**, rank 39; depends on R03; ships with M04
 - *flags:* measured yes, gauge yes
 
 
@@ -1671,7 +1693,7 @@ a branch.
 - *7. inputs honest?:* app-echo (E01-class) and bdp from E03 x E04
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): queue_target_mult 1.08/1.125/1.25 by hint (§3.3)
 - *9. verdict:* **MODE-SWITCH(live), UNDERIVED, DISHONEST-INPUT**: cwnd reaches only placement's queue term and the active_paths filter; the hint table is a §3.3 debt
-- *10. fix class, priority:* delete or reduce (§44 item 4: a controller that supplies one denominator); **P3**, rank 43; depends on E03, E04
+- *10. fix class, priority:* delete or reduce (§44 item 4: a controller that supplies one denominator); **P3**, rank 44; depends on E03, E04
 - *flags:* measured partial, gauge partial
 
 #### K02
@@ -1692,7 +1714,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* experiment gate selects the delta source
 - *9. verdict:* **DIVERGENT**: bounded by copa_delta_is_half_at_every_hint_off_the_wire_signal
-- *10. fix class, priority:* follows K01; **P3**, rank 44; depends on K01
+- *10. fix class, priority:* follows K01; **P3**, rank 45; depends on K01
 - *flags:* measured no, gauge yes
 
 #### K03
@@ -1713,7 +1735,7 @@ a branch.
 - *7. inputs honest?:* quinn wire srtt (E05) smoothed again
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live, opt-in): compete mode (§3.3 row 4)
 - *9. verdict:* **MODE-SWITCH(live)**: §3.3 row 4; the anchor floor is applied after the coupling cap, so the floor can exceed the cap
-- *10. fix class, priority:* delete with K01 or keep as arm; **P3**, rank 45
+- *10. fix class, priority:* delete with K01 or keep as arm; **P3**, rank 46
 - *flags:* measured no, gauge partial
 
 
@@ -1737,7 +1759,7 @@ a branch.
 - *7. inputs honest?:* Copa cwnd inflated by the anchor floor (K01), so 'saturated' rarely fires; in-flight expiry max(4*srtt, 250 ms) on E02
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT**: cwnd 10-20 k against in-flight 0.1-1 k at c8 (p0-dwell-diag §4)
-- *10. fix class, priority:* follows K01; **P3**, rank 46; depends on K01
+- *10. fix class, priority:* follows K01; **P3**, rank 47; depends on K01
 - *flags:* measured yes, gauge yes
 
 #### K05
@@ -1758,7 +1780,7 @@ a branch.
 - *7. inputs honest?:* wire_i honest (E05), blind to quinn's send buffer; s_i = E02 times I/W ~ 0.01-0.1
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DIVERGENT, UNDERIVED**: place_costs_match_the_pinned_wired_table pins the code; A.4's c_i and E_i lines describe superseded forms
-- *10. fix class, priority:* paper (A.4 lines), then derive the cold price; **P2**, rank 35
+- *10. fix class, priority:* paper (A.4 lines), then derive the cold price; **P2**, rank 36
 - *flags:* measured yes, gauge yes
 
 #### K06
@@ -1779,7 +1801,7 @@ a branch.
 - *7. inputs honest?:* c_i (K05)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: §11.2 PLACE_TEMPERATURE row
-- *10. fix class, priority:* derive (sigma_e on the [ETA] stream); **P3**, rank 56; depends on K05
+- *10. fix class, priority:* derive (sigma_e on the [ETA] stream); **P3**, rank 57; depends on K05
 - *flags:* measured partial, gauge no
 
 #### K07
@@ -1800,7 +1822,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: §11.2 w_div row
-- *10. fix class, priority:* derive (flip the derived arm after a battery); **P3**, rank 57; depends on K05
+- *10. fix class, priority:* derive (flip the derived arm after a battery); **P3**, rank 58; depends on K05
 - *flags:* measured no, gauge no
 
 #### K08
@@ -1821,7 +1843,7 @@ a branch.
 - *7. inputs honest?:* spare (K04)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **UNDERIVED**: §11.2 near-tie row
-- *10. fix class, priority:* derive or delete; **P3**, rank 58; depends on K04
+- *10. fix class, priority:* derive or delete; **P3**, rank 59; depends on K04
 - *flags:* measured no, gauge no
 
 
@@ -1845,7 +1867,7 @@ a branch.
 - *7. inputs honest?:* DISHONEST: m-hat never expires (lifetime min), b-hat over-reads under ack clusters (bbr_rs.rs module doc)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DISHONEST-INPUT**: latched min_rtt collapses the c1s window (§47); c2 window 1.4-4.8x the BDP (W1 §2)
-- *10. fix class, priority:* replace (bbr_rs, §48b running); **P1**, rank 8
+- *10. fix class, priority:* replace (bbr_rs, §48b running); **P1**, rank 9
 - *flags:* measured yes, gauge partial
 
 #### K10
@@ -1866,7 +1888,7 @@ a branch.
 - *7. inputs honest?:* honest by construction (send-interval sampler, own ack clock); qrt_us/qbw on [QCC]
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DIVERGENT**: tied_min_rtt_samples_keep_the_filter_fresh_under_le_and_would_fire_probe_rtt_under_lt; paper §8.4 still prints <
-- *10. fix class, priority:* paper (the <= sign) and the §48b verdict; **P2**, rank 36
+- *10. fix class, priority:* paper (the <= sign) and the §48b verdict; **P2**, rank 37
 - *flags:* measured partial, gauge yes
 
 
@@ -1890,7 +1912,7 @@ a branch.
 - *7. inputs honest?:* none
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **DIVERGENT, UNDERIVED**: bounded by wasm_pool_is_constant_per_path_whatever_the_dial_and_bdp
-- *10. fix class, priority:* model (adopt §6.1 after F01 settles; golden re-capture); **P3**, rank 41; depends on F01
+- *10. fix class, priority:* model (adopt §6.1 after F01 settles; golden re-capture); **P3**, rank 42; depends on F01
 - *flags:* measured n/a, gauge yes
 
 #### M02
@@ -1911,7 +1933,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* continuous; slope kink at Auto (wasm audit W1, class A)
 - *9. verdict:* **DIVERGENT**: bounded by test_sim_engine_tail_anchor_divergence_is_bounded (log10 50)
-- *10. fix class, priority:* model; **P3**, rank 42
+- *10. fix class, priority:* model; **P3**, rank 43
 - *flags:* measured n/a, gauge n/a
 
 #### M03
@@ -1932,7 +1954,7 @@ a branch.
 - *7. inputs honest?:* ρ dropped for auto/realtime on the classic path (W4)
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live: W11 fast path, zero step; dead: classic machine; W17 steps at Auto in an unread accessor)
 - *9. verdict:* **MODE-SWITCH(live), MODE-SWITCH(dead)**: §3.10 item 3; wasm audit site table
-- *10. fix class, priority:* delete (wasm audit F1/F2); **P3**, rank 40
+- *10. fix class, priority:* delete (wasm audit F1/F2); **P3**, rank 41
 - *flags:* measured n/a, gauge n/a
 
 #### M04
@@ -1953,7 +1975,7 @@ a branch.
 - *7. inputs honest?:* R inherits R03 (provisional until the sliding per-loss P_fec lands)
 - *8. NO-MODE-SWITCH:* none (one formula; rho = 1 is the retain point; the engine still switches seats on reliable)
 - *9. verdict:* **DEGENERATE(rho inert at Auto and Realtime under the shipped R), DIVERGENT**: giveup_law_tests + UI gate; sim gives up 4-10 (was 23-28) on the harsh cells, 0 at rho = 1; diverges from the engine only for 0 < 1 - rho < R
-- *10. fix class, priority:* done (model); the engine seat switch stays (W3.2 if-reliable debt); rho-inert reading conditional on R03; **P3**, rank 39; depends on R03; ships with C13
+- *10. fix class, priority:* done (model); the engine seat switch stays (W3.2 if-reliable debt); rho-inert reading conditional on R03; **P3**, rank 40; depends on R03; ships with C13
 - *flags:* measured n/a, gauge yes
 
 <!-- END:rows -->
