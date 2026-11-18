@@ -109,7 +109,7 @@ def f2_reading(cli, srv, drv=()):
 def symsz_state(rd, want):
     """-> (missing sides, wrong sides): a side with no [SYMSZ] line is missing; a side with a line that is not local = decoder = want is wrong."""
     miss = [s for s in ("cli", "srv") if not rd["symsz_" + s]]
-    bad = [s for s in ("cli", "srv") if rd["symsz_" + s] and any(p != want for p in rd["symsz_" + s])]
+    bad = [s for s in ("cli", "srv") if rd["symsz_" + s] and any(tuple(p) != tuple(want) for p in rd["symsz_" + s])]      # tuple(): the ledger is JSON, a pair comes back as a list
     return miss, bad
 
 
@@ -202,7 +202,7 @@ def guard_table(paths, out=print):
         if not rc_:
             continue
         ws = [r.get("w64") or {} for r in rc_]
-        sz = sum(1 for w in ws if w.get("symsz_cli") and w.get("symsz_srv") and all(p == SYMSZ_G for p in w["symsz_cli"] + w["symsz_srv"]))
+        sz = sum(1 for w in ws if w.get("symsz_cli") and w.get("symsz_srv") and all(tuple(p) == SYMSZ_G for p in w["symsz_cli"] + w["symsz_srv"]))
         ctl = sum(1 for w in ws if w.get("ctld_srv"))
         out(f"  {cell:<8} CAND rows {len(rc_):>2}  F2-FAIL {sum(1 for r in rc_ if r['status'] == F2_FAIL)}  [SYMSZ] 1200/1200 on both ends {sz}/{len(rc_)}  server [CTLD] with undeliv= {ctl}/{len(rc_)}  "
             f"undeliv sum {sum(w.get('undeliv') or 0 for w in ws)}  [UNFRAMABLE] {sum(w.get('unframable') or 0 for w in ws)}  executed {sum(1 for w in ws if w.get('executed'))}/{len(rc_)}")

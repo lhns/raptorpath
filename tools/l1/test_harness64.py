@@ -323,6 +323,24 @@ if os.path.exists(DEAD + "c.log"):
     for k in ("LD_PLAN", "LD_SHA", "LD_SHA_BASE"):
         os.environ.pop(k, None)
 
+# the F2 witness table reads the LEDGER (JSON: a (1200, 1200) pair comes back as [1200, 1200]); on the section 64 session it read 0/12 at every cell because a list never equals the tuple
+def g_ledger_row(cell, n, with_symsz=True, status="LIVE"):
+    w = {"v": 1, "sha_checked": True, "executed": with_symsz, "hard": [], "missing": [] if with_symsz else ["[SYMSZ] missing on srv"], "ctld_srv": 5, "ctld_cli": 1, "undeliv": 0, "unframable": 0,
+         "symsz_cli": [(1200, 1200)], "symsz_srv": [(1200, 1200)] if with_symsz else [], "src_n": 1, "srv_rx": 1, "srv_fr": 1}
+    return {"cell": cell, "store": "def", "arm": "CAND", "seed": "42", "rep": n, "status": status, "rc": 0, "dnf": False, "problems": [], "w64": w}
+
+
+rows_ = [g_ledger_row("c1s-400", n) for n in range(1, 4)] + [g_ledger_row("c8-100", 1, with_symsz=False, status="F2-FAIL")]
+rows_[-1]["status_41d"], rows_[-1]["f2_why"] = "LIVE", ["[SYMSZ] missing on srv"]
+d_, p_ = ledger(rows_)
+buf_ = []
+plan64.guard_table([p_], out=buf_.append)
+shutil.rmtree(d_, ignore_errors=True)
+tbl_ = "\n".join(buf_)
+check("F2-WITNESS64 reads the ledger's [SYMSZ] after the JSON round trip: 3 of 3 CAND rows at c1s show `1200/1200 on both ends 3/3`, the row without the server's [SYMSZ] shows 0/1 at c8, and its F2-FAIL is listed",
+      "[SYMSZ] 1200/1200 on both ends 3/3" in tbl_ and "[SYMSZ] 1200/1200 on both ends 0/1" in tbl_ and "F2-FAIL c8-100 CAND s42 rep1" in tbl_, tbl_)
+check("symsz_state is list-safe (a JSON [1200, 1200] equals the size tuple)", plan64.symsz_state({"symsz_cli": [[1200, 1200]], "symsz_srv": [[1200, 1200]]}, (1200, 1200)) == ([], []))
+
 # ═══ 5. framing64 on the two committed pre-read files ═══
 import framing64  # noqa: E402
 t8 = rd("testdata/framing_ns-ab9feec4.txt")

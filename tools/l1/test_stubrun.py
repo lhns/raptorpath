@@ -1331,6 +1331,9 @@ def r64_checks(tag, path, c):
                              capture_output=True, text=True, errors="replace", env=env).stdout
         check(f"{tag}: score64 prints score41d's output byte for byte (score41d on the same ledgers, line for line, only the argv echoed in the host-side hint differs), then the F2 witness table, then GATE-64 PASS",
               ref.strip() and m41 == mask_hint(ref).strip() and "F2-WITNESS64" in sc and gate is not None and gate.group(1) == "PASS" and "\nVERDICT GATE-41d PASS" in "\n" + sc and not f2_rows, (m41[-300:], mask_hint(ref)[-300:], gate and gate.group(0)))
+        sz_cols = re.findall(r"^  (c\S+)\s+CAND rows\s+(\d+)\s+F2-FAIL (\d+)\s+\[SYMSZ\] 1200/1200 on both ends (\d+)/(\d+)", sc, re.M)
+        check(f"{tag}: the F2 witness table reads [SYMSZ] 1200/1200 on both ends n/n at all four cells (the ledger is JSON: a pair comes back as a list; on the section 64 session this column read 0/12)",
+              len(sz_cols) == 4 and all(a == b == c2 for _, a, _, b, c2 in [(x[0], x[1], x[2], x[3], x[4]) for x in sz_cols]) and all(x[2] == "0" for x in sz_cols), sz_cols)
         check(f"{tag}: every row of both stages is LIVE-class and none is VOID-RC (rc 0 on every row under the real perf script's F2 lines run with `set -euo pipefail`): stage G {len(gl)} + {len(gr)}, stage R {len(rl)}",
               all(r["rc"] == 0 and r["status"] not in ("VOID-RC", "NO_DATA") for r in gl + gr + rl), [(r["cell"], r["arm"], r["status"], r["rc"]) for r in gl + gr + rl if r["rc"] != 0 or r["status"] in ("VOID-RC", "NO_DATA")][:4])
         check(f"{tag}: stage R's rows: every RB row LIVE, every RC row RT-OK, window_reliable true on both ends, [SYMSZ] 512/512 on both ends of an RC row, undeliv 0 with the server's [CTLD] present, the denominator read; the score is RT-PASS with item 5 SCORED, BASE-F2-DEAD 0/{n_rb}",
@@ -1354,6 +1357,10 @@ def r64_checks(tag, path, c):
         check(f"{tag}: the F2-FAIL row is never replaced (no row of its slot in repl.log), is not counted toward the replacement cap (REPLACED SLOTS names only the VOID-SHORT slots) and does not turn the verdict into NO VERDICT",
               slotk is not None and not any((r["cell"], r["arm"], r["seed"], r["rep"]) == slotk for r in gr) and "REPLACED SLOTS: 2 of at most 4" in sc and v41 is not None and v41.group(1) == "GATE-41d PASS" and "NO VERDICT" not in sc,
               (v41 and v41.group(0), re.findall(r"REPLACED SLOTS.*", sc)))
+        sz_cols = re.findall(r"^  (c\S+)\s+CAND rows\s+(\d+)\s+F2-FAIL (\d+)\s+\[SYMSZ\] 1200/1200 on both ends (\d+)/(\d+)", sc, re.M)
+        want_sz = {c_: (int(a), int(b)) for c_, a, _, b, _ in [(x[0], x[1], x[2], x[3], x[4]) for x in sz_cols]}
+        check(f"{tag}: the witness table counts [SYMSZ] from the ledger: " + ("c1s shows one row short (the row with no server [SYMSZ])" if path == "cand-bulk-symsz-missing" else "every CAND row of every cell has it"),
+              len(sz_cols) == 4 and all((b == a - 1) if (path == "cand-bulk-symsz-missing" and c_ == "c1s-400") else (b == a) for c_, (a, b) in want_sz.items()), sz_cols)
         check(f"{tag}: GATE-64 FAIL because of the F2-FAIL row ('1 F2-FAIL row(s)') while GATE-41d's own p still reads PASS (p > 0.05); the F2 witness table names the row; stage R still ran to the end",
               gate is not None and gate.group(1) == "FAIL" and "1 F2-FAIL row(s)" in gate.group(2) and "GATE-41d" not in gate.group(2) and re.search(r"^  F2-FAIL c1s-400 CAND s42 rep1 \(would be LIVE\)", sc, re.M) is not None and vlab == "RT-PASS", (gate and gate.group(0), sc[-700:]))
         return
