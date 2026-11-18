@@ -1296,10 +1296,8 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - Every other clause sits at p ≥ 0.43, and the goodput and CPU clauses are all x ≤ +0.05 % or better. For example, c2 goodput is +0.03 % (p 0.52) and c8 goodput −1.33 % (p 0.80).
 - **The F2 witness table (`F2-WITNESS64`):** at every cell, all 12 CAND rows had the witness executed, F2-FAIL 0, the server's `[CTLD]` with `undeliv=` 12/12, undeliv sum 0, and `[UNFRAMABLE]` 0.
   - **Its `[SYMSZ]` column reads 0/12 at every cell, which is a harness defect, not a reading.**
-    - The battery's kept-line filter (`KEEP_PAT`) does not keep `[SYMSZ]`, so the scorer never saw it.
-    - The stage-G check did not fail a row on a missing `[SYMSZ]`, against the registration, which requires it.
+    - ~~The battery's kept-line filter does not keep `[SYMSZ]`; the stage-G check did not fail a missing `[SYMSZ]`.~~ **Corrected (harness worker, `harness64-main` `0f9a16b0`):** the row parser reads the full logs, which carried `[SYMSZ]`, and the fail-closed rule for a missing `[SYMSZ]` was already there. The bug was in the witness table: ledger rows are JSON, so the `(1200, 1200)` pair came back as a list and never equalled the tuple. It is fixed with tests that fail first. The committed ledger re-scored gives 12/12 at all four cells, with `GATE-41d PASS` and `GATE-64 PASS` unchanged.
     - **From the raw row logs** (`diag-ld`, coordinator): all 96 CAND log files (48 rows × 2 ends) carry `[SYMSZ] local=1200 decoder=1200`.
-    - The fix (keep the line, fail closed on its absence, with a stub test) is owed in `harness64` before its tools reach main.
 - **Resolution, from BASE alone:** the guard cannot see c1s cpu_cli/GB and cpu_srv/GB, c1d goodput, or c2's lag clauses below their q95 (printed).
 
 **Stage R (scored, Realtime c2-100 at ρ = 1): RT-PASS.**
