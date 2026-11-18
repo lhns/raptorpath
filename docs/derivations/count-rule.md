@@ -1,203 +1,232 @@
-# The count rule for the floor minimum (R6.7 open item 4), after s62's NO-GO-GATE
+# The floor minimum's count (R6.7 open item 4), after s62's NO-GO-GATE
 
-Status: DERIVATION. Docs and Python only: no engine code, no cargo, no VM. Branch `count-rule` off `github/main`
-`40ebd766`. It answers the derivation that status "§62 Result" names: R6.7 item 4's count rule, starting from the D12
-dump. **Every reading here is post hoc**, on existing ledgers. Whatever is proposed is untested.
+Status: DERIVATION, with one bounded follow-up (§6, Fable's review). Docs and Python only: no engine code, no cargo,
+no VM. Branch `count-rule` off `github/main` `40ebd766`. It answers the derivation that status "§62 Result" names:
+R6.7 item 4's count rule, starting from the D12 dump.
+
+**Every reading here is post hoc,** on existing rows. The mechanism rests on one dump row (D12) and is replicated on
+s62's floor pair only by window-level fields.
 
 **In plain words.**
 - **What the J = 0 floor looks like.** With the jitter off, the floor's echo samples sit in a tight bulk (median
-  46.76 ms) with a separate low mode near 41.2–41.9 ms. About 2–3 % of samples are in the low mode.
-  - The low mode is the queue-free loop: the 40 ms propagation plus one datagram and processing.
-  - Its samples are the first one or two sent in a **small flight**: a release of one to five slots, which reaches an
-    idle link, so its ack comes back without waiting.
-  - Full flights (about 10 slots at W 12) never produce one. Their samples carry the flight's own serialization at
-    the bottleneck, about 10 × 0.49 ms.
-- **Why the native window misses it.** Small flights come in episodes. Only a third of native windows (60 samples,
-  250 ms) hold a low sample, so the native minimum reads 44.6 ms where 250 or more samples read 41.3–41.7.
-  - The step from native windows to 250 samples is this occupancy of an episodic low state.
-  - It is not an extreme-value bias on a smooth thin tail, and not the windows' phase.
-- **The law's floor is a native-window quantity.**
-  - R6.2's F = min(m̂, ℓ̂ + b̂₀⁺) + b̂₀⁺ lands at or above the native window minimum on every ledger: 46.0 at J = 0,
-    44.2–46.7 at J = 5, 9.4 at c2.
-  - R6.7 candidate C is the native median by construction.
-  - Only m̂ (Copa's 10 s minimum, ≈ 2 400 samples at c3's floor) reads the low mode.
-- **No floor reading is both the law's quantity and count-stable at J = 0 and J = 5** (§3 table).
-  - A minimum over n₀ ≥ 500 samples is stable at J = 0 (≤ 0.21 ms per 8×). It still falls 2.5–4.1 ms at J = 5 and
-    1.2 at c2, because there the jitter sets the tail.
-  - A per-window quantile is stable at both, but at J = 0 it reads the bulk, ≈ 5 ms above the queue-free loop.
-- **For a re-run of s62 at J = 0** under an n₀ = 500 floor (untested): the floor's gate would pass (predicted
-  0.19–0.21 ms). But the knee side's minimum still falls with count at J = 0: W 80 −0.63 and W 128 −7.73 ms from 500
-  to 4 200 samples.
-  - So the knee need is readable only with a knee-side gate, and existing rows cannot say whether it passes.
-  - At J = 5 floor and knee fell together (equal-count need stable to 0.2–0.3 ms). At J = 0 the floor stopped falling
-    and the knee did not.
+  46.76 ms) with a separate low mode at 41.2–41.9 ms. About 2–3 % of samples are in it.
+  - The low mode is the queue-free loop: the 40 ms propagation plus about one datagram (0.47 ms) plus processing.
+- **What produces the low mode: retransmissions.**
+  - On all three J = 0 floor rows, **84–87 % of the native windows whose minimum reaches the low mode carry a
+    retransmit in the same 250 ms tick, against 5–8 % of the other windows.**
+  - All **53 of 53** send pauses of 60 ms or more in the dump sit in a window whose tick, or the one before, carried a
+    retransmit. Across all windows that share is 48 %.
+  - So the queue-free sample is the small release that follows a loss repair, sent into an idle link.
+  - How often the floor sees the queue-free loop therefore depends on the loss process and the send rate. **No sample
+    count is a path property.**
+- **Why the native window misses it.** These events reach 29–32 % of native windows on all three rows, in runs of 1–2
+  windows. So the native minimum reads 44.6 ms, where ≥ 250 samples read 41.3–41.7.
+  - The native → G(250) step (2.97 ms) is a 250 ms window missing a loss-driven event.
+- **The law's floor.**
+  - R6.2's F = min(m̂, ℓ̂ + b̂₀⁺) + b̂₀⁺ has no count to vary. Its problem is its spread across rows and sessions:
+    45.4–46.7 at J = 0; 37.2–46.2 (61c) and 42.9–138.5 (61a) at J = 5; 8.0–10.5 at c2.
+  - That spread comes from b̂₀⁺, a maximum of 8 start-transient differences (§2).
+  - **The anchor the law needs is a long-window minimum, and the law already has one: m̂** (Copa's 10 s minimum). At
+    J = 0 m̂ reads the low mode on every row (41.26–41.33).
+- **No count rule is proposed.** A minimum over 500 samples is stable at J = 0, but it drifts 2.5–4.1 ms at J = 5 and
+  1.2 ms at c2, and its value comes from one cell. It stays an observation.
 
 **Advisor (Fable) log.**
-1. **Before writing.**
-   - Classify low samples by send time, not by arrival gap.
-   - Test the window-edge reading against absolute time mod 250 ms.
-   - Find the independent draw (random against consecutive, per unit).
-   - Read the law's inputs from `[SLAW]` (m, l, b0p) rather than deriving them, and quote Copa's expiry on the gauge
-     tree.
-   - Put J = 5 beside J = 0 per arm before concluding on the knee.
-   - If no reading meets both conditions, say so in a table, and mark any proposal untested.
-2. All applied.
+1. **Before the first write** (applied):
+   - classify low samples by send time;
+   - test phase against absolute time;
+   - find the independent draw;
+   - read the law's inputs from `[SLAW]`;
+   - put J = 5 beside J = 0 per arm;
+   - tabulate, and mark proposals untested.
+2. **Review of `b2f89645`, the follow-up §6** (applied):
+   - put R6.2's F and C in the table as the law's quantities;
+   - explain F's cross-session spread from source;
+   - test the flight mechanism against W;
+   - replicate on R2 / R3 and align the pauses with loss;
+   - correct the flight table;
+   - drop the n₀ rule.
 
 **Scripts** (stdlib, `python -I -X utf8`, run from `docs/`; output beside them in `store-law/`):
 
 | script | input (read in place) | output | what it computes |
 |---|---|---|---|
-| `crdump.py` | `l1-raw/s62/rep62r0-diag.tgz` (the D12 `RWM_RTT_DUMP` row) | `crdump.out` | the alignment of the dump with the `[SLAW]` windows, the shape, what a low sample follows (arrival and send views), phase, the independent draw, the minimum against the count, quantiles |
-| `crrule.py` | `rep62r0-diag.tgz`, `l1-raw/s61/rep61c-…`, `rep61a-…`, `l1-raw/s60/rep60a-…`, `rep60b-…` (each loaded on its own) | `crrule.out` | the floor minimum against the count per ledger, every arm's ladder at J = 0 and J = 5, the knee need at equal counts, the law's floor from its printed inputs, and the rule's check |
+| `crdump.py` | `l1-raw/s62/rep62r0-diag.tgz` (the D12 dump row) | `crdump.out` | the alignment with `[SLAW]`, the shape, what a low sample follows (arrival and send views), phase, the independent draw, the minimum against the count, quantiles |
+| `crrule.py` | `rep62r0-…`, `l1-raw/s61/rep61c-…`, `rep61a-…`, `l1-raw/s60/rep60a-…`, `rep60b-…` | `crrule.out` | the floor minimum against the count, every arm's ladder at J = 0 and J = 5, the knee need at equal counts, the law's floor from its printed inputs, the n₀ observation |
+| `crfollow.py` | `rep62r0-…`, `rep61c-…`, `rep61a-…`, `rep60a-…` | `crfollow.out` | b̂₀⁺'s raw boot brakes and F per row; symbols per emit burst against W; the low mode's share and run lengths on R2 / R3 / D12; retransmit and idle deltas per tick |
 
 ---
 
-## 1. The D12 dump: what the J = 0 floor's low samples are (`crdump.out`)
+## 1. The D12 dump: what the J = 0 floor's low samples are (`crdump.out`, `crfollow.out` C–D)
 
 **Alignment.**
 - The dump format is `[RTTDUMP] p= t0= n= d=dt,rtt;…` in µs (`net/rttdump.rs`, `slaw-gauge` `d416d59b`).
-- It is fed in `record_rtt_sample` immediately before the `[SLAW]` sampler, with the same value
-  (`scheduler/path.rs`).
-- Sample i belongs to the window where the cumulative `[SLAW]` nk passes i. The recomputed window minimum equals the
-  printed tmin on **368 of 368** windows inside the dump.
-- That leaves 306 LATE windows, with a median nk of 60.
+- It is fed in `record_rtt_sample` immediately before the `[SLAW]` sampler, with the same value.
+- The recomputed window minimum equals the printed tmin on **368 of 368** windows inside the dump. That leaves 306
+  LATE windows, with a median nk of 60.
 
-**The shape** (17 506 LATE samples; §1 of the output):
+**The shape** (17 506 LATE samples):
 
 | quantile | p0 | p0.5 | p1 | p2 | p5 | p10 | p25 | p50 | p90 | p99 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | ms | 41.18 | 41.73 | 41.97 | 42.48 | 45.66 | 46.22 | 46.56 | 46.76 | 47.40 | 49.13 |
 
-- 2.19 % of samples lie more than 4 ms below the median, and 5.2 % more than 1 ms below. It is a separate low mode,
-  not a stretched tail. The bulk p10–p90 spans only 1.2 ms.
-- **The low mode is the queue-free loop:** 41.2–41.9 ms is the 40 ms propagation plus ≈ one datagram (0.49 ms at
-  20 Mbit/s) plus processing.
-- **The bulk** sits ≈ 5.4 ms higher. That is about one full W 12 flight's serialization (≈ 10 datagrams × 0.49 ms)
-  plus the ack waiting for its tail.
+- 2.19 % of samples lie more than 4 ms below the median. It is a separate low mode below a bulk whose p10–p90 spans
+  1.2 ms.
 
-**What a low sample follows: by send time** (s = t − rtt; flights are samples whose send times lie within 2 ms of
-each other; §2b).
-- The 1 738 flights are 5.7 per window, about 10 samples each, one loop apart (median send gap 46.6 ms).
-- **Deep-low samples** (> 4 ms below the median) by case:
-  - 57 are alone in a one-sample flight;
-  - 75 are in the first flight after a send pause of ≥ 60 ms;
-  - 251 are inside a multi-sample flight.
-  - Almost all are among the first sent: send ranks 0 / 1 hold 206 / 140 of 383.
-- **By flight size,** the share of flights holding a deep-low sample is:
+**Flights by send time** (s = t − rtt; samples within 2 ms of each other; corrected table). There are 1 738 flights:
+5.7 per window, 10.1 samples per flight, one loop apart.
 
-  | flight size | 1 | 2 | 4 | 5 | 10 (full) | 12+ |
-  |---|---|---|---|---|---|---|
-  | share | 57/65 | 72/219 | 8/8 | 4/8 | **0/194** | 65/1 212 |
+| flight size (samples) | 1 | 2 | 3 | 4 | 5 | 7 | 9 | 10 | 11 | ≥ 12 | all |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| flights | 65 | 219 | 4 | 8 | 8 | 7 | 4 | 194 | 17 | **1 212** | 1 738 |
+| holding a deep-low sample | 57 | 72 | 1 | 8 | 4 | 0 | 0 | 0 | 0 | 65 | 207 |
 
-  The low mode is the head of a small release, and never part of a full one.
-- **By the send gap before the flight:**
+- Flights of ≤ 5 samples hold a deep-low sample in 142 of 304 cases (47 %). Flights of ≥ 10 samples do so in 65 of
+  1 423 (4.6 %). Most flights (70 %) have ≥ 12 samples.
+- Deep-low samples are among the first sent in their flight: send rank 0 / 1 holds 206 / 140 of 383.
+- By the send gap before the flight, the share holding a deep-low sample is:
 
   | send gap | ≥ 60 ms | 20–40 ms | one loop (40–60 ms) |
   |---|---|---|---|
-  | share low | 0.92 | 0.63 | 0.095 |
+  | share | 0.92 | 0.63 | 0.095 |
 
 **Not the window's phase.**
-- Deep-low samples by absolute dump time mod 250 ms are flat: 30–45 per decile against all samples' 1 625–1 890.
-- The apparent edge enrichment by position inside a window (§2: deciles 0 / 9 hold 83 / 68) is the normalisation. The
-  first and last flight of a window are pinned to its edges.
+- Deep-low samples by absolute dump time mod 250 ms are flat: 30–45 per decile.
+- The apparent edge enrichment by position inside a window is the normalisation, since a window's first and last
+  flights are pinned to its edges.
 
-**Not evenly spread in time.**
-- Low samples arrive in episodes: the inter-arrival CV is 2.02, where 1 would be Poisson-like.
-- Only **99 of 306** native windows hold any deep-low sample. If the windows that do hold one hold 2–6, those 2–6
-  come from one or two small flights.
+**Episodic.**
+- The inter-arrival CV is 2.02.
+- Random against consecutive draws agree only from about 4 windows (≈ 230 samples, ≈ 1 s).
+- 32 % of native windows hold a deep-low sample, against 51 % if flights were independent.
 
-**The independent draw** (§2c). At every unit (samples, arrival bursts, flights), a random draw of one native window's
-worth reaches the low mode, while the consecutive one does not:
+**Replicated on s62's floor pair** (window-level, `crfollow.out` C). The share of native windows whose minimum lies
+> 4 ms below the row's median tp50:
 
-| unit | random | consecutive |
+| row | share | runs of low windows (median / max) |
 |---|---|---|
-| samples | 42.05 | 44.66 |
-| flights | 42.12 | 44.55 |
+| D12 | 100 / 309 (32 %) | 1 / 5 |
+| R2 (G12 s42 r1) | 96 / 305 (31 %) | 2 / 5 |
+| R3 (G12 s7 r2) | 88 / 303 (29 %) | 1 / 4 |
 
-- From 4 windows (≈ 230 samples, ≈ 1 s) random and consecutive agree (41.55 / 41.56).
-- Independent flights would put a low sample in 51 % of windows (p = 0.119 per flight, 5.7 per window). The measured
-  share is **32 %**.
-- So the draw is an episode of small flights lasting longer than one window, and ≈ 1 s of samples mixes episodes.
+**What causes the pauses and the low mode: retransmissions** (`crfollow.out` D).
+- Per 250 ms tick, a window whose minimum reaches the low mode carries a retransmit (the `[DIAG]` `retx=` delta) in the
+  same tick on **87 / 84 / 84 %** (D12 / R2 / R3) of cases, against **8 / 7 / 5 %** for the other windows.
+- The previous tick carries one on 48–54 %, against 20–25 %.
+- **53 of 53** of the dump's send pauses ≥ 60 ms sit in a window whose tick, or the one before, carried a retransmit,
+  against 48 % of all windows.
+- **Reading:** a loss stalls the store's release. The repair and the slots it frees go out as a small flight into an
+  idle link, and its echo is the queue-free loop.
+  - At J = 5 the same window test separates poorly (35–38 % against 11–25 %), because jitter lows fill most windows
+    there.
 
-**Q1's answer: the native → G(250) step (2.97 ms) is windowing of an episodic state.** A native window (60 samples,
-≈ 6 flights) lies inside one sender-release episode, and misses the queue-free state two-thirds of the time.
-- From ≈ 250 samples the minimum is in the low mode, and it creeps only within the mode's own 0.5 ms width: 41.55 /
-  41.40 / 41.37 / 41.33 / 41.25 at 250 / 500 / 1 000 / 2 100 / 4 200 consecutive samples (§3).
-- So the step is a property of the sender's release pattern (flight size), sampled by 250 ms windows. It is not a
-  thin smooth tail's extreme-value bias.
+**Q1's answer.**
+- **The low samples are not spread evenly in time.** They follow retransmit-driven send pauses, at the head of the
+  small flights that follow.
+- **The tail's shape:** 2–3 % of samples, 4.5–5.5 ms below the bulk, in episodes of 1–2 windows reaching ≈ 30 % of
+  native windows.
+- **The native → G(250) step comes from the event process,** not from an extreme-value bias on a smooth tail. A 250 ms
+  window misses a loss-repair event about two-thirds of the time, and ≥ ≈ 1 s of samples almost always holds one. Above
+  that the minimum creeps only within the mode's 0.5 ms width.
+- **So the floor's count dependence at J = 0 is set by the loss rate and the send rate,** and no sample count is a path
+  property.
 
 ---
 
-## 2. The law's floor, and the count each input takes its minimum over (`crrule.out` §4)
+## 1b. The bulk's offset and W: the flight mechanism tested (`crfollow.out` B)
 
-**R6.2's line** (`store-law.md`: N = 1, single leg):
+**The prediction.** If the bulk sits above the queue-free mode because a flight queues behind itself at the
+bottleneck, the offset should grow with the flight. Doubling W from 12 to 24 does not double the flight.
+
+| arm | 61c symbols per emit burst | 61c window tp50 (ms) | 61a symbols per emit burst | 61a window tp50 (ms) |
+|---|---|---|---|---|
+| W 12 | 6.52 | 48.73 | 6.31 | 48.47 |
+| W 16 | 7.64 | 48.59 | 7.57 | 48.50 |
+| W 24 | 7.88 | 49.40 | 7.71 | 49.17 |
+| W 60–108 | 8.4–8.8 | – | – | – |
+
+- The symbols per emit burst come from the `[DIAG]` `eb_depth` (= eb_syms / eb_bursts).
+- **Flights stop growing with W.** Every emit burst ends with `eb_end` = `store` (for example 1 903 of 1 906 on 61c
+  W 12): the burst stops when the store has no free slot.
+  - So a burst is the slots one ack frees, which is ack-clocked.
+  - A larger W adds bursts per loop, not burst length.
+  - c2 shows the same, at 8.2 / 10.1 / 10.6 at W 16 / 32 / 48. s62 J = 0 shows 6.2 / 5.6 / 5.3 at W 12 / 80 / 128.
+- **What it explains, and what it does not:**
+  - From W 12 to W 24 the burst grows by 1.36 / 1.40 symbols, which is 0.64 / 0.66 ms at 0.47 ms per datagram. The
+    tp50 rose 0.67 / 0.70 ms. That matches.
+  - **W 16 does not fit.** The burst grows by 1.1 symbols, yet tp50 falls by 0.14 / rises by 0.03 ms.
+  - At J = 0 the bulk's offset above the low mode (≈ 5.4 ms) is larger than one burst's serialization
+    (6.2 × 0.47 ≈ 2.9 ms). So **about half the offset has another source.** The receiver's ack timing is a candidate,
+    not measured here.
+- **The mechanism therefore holds in part.** Bursts are capped by the ack-clocked release, which explains the small
+  W 12 → W 24 rise. Burst serialization covers about half of the bulk's offset, and the rest is not explained by these
+  rows.
+
+---
+
+## 2. The law's floor, and why it spreads across sessions (`crrule.out` §4, `crfollow.out` A)
+
+**R6.2's line** (`store-law.md`, N = 1):
 
 ```text
-   F  =  min( m̂ , ℓ̂ + b̂₀⁺ ) + b̂₀⁺          b̂₀⁺ = max over the first K = 8 windows of ( T̂min,k − m̂k )
-   m̂: Copa min_rtt over a 10 s time window   (raptorpath/src/scheduler/copa.rs: window_duration = Duration::from_secs(10), :641;
-       the monotonic deque at :990–1008; on the gauge tree slaw-gauge d416d59b, expire_old_samples :1489–1495 pops samples older than now − 10 s)
-   ℓ̂: the lifetime minimum of the same series (net/slaw.rs WinSampler::observe, life_min, slaw-gauge d416d59b)
-   T̂min,k: the native 250 ms window's minimum (WinSampler::observe min, closed per [DIAG] tick)
+   F  =  min( m̂ , ℓ̂ + b̂₀⁺ ) + b̂₀⁺
+   m̂:   Copa min_rtt over a 10 s time window (copa.rs window_duration = 10 s, :641; deque :990–1008;
+         slaw-gauge d416d59b expire_old_samples :1489–1495)
+   ℓ̂:   the lifetime minimum (net/slaw.rs WinSampler::observe, life_min)
+   b̂₀⁺: net/slaw.rs WinSampler::close (slaw-gauge d416d59b, :150–165): brake_k = tmin_k − m̂_k is pushed for the process's first
+         K_GAUGE = 8 windows (k ≤ 8, :152–156), and b0p = max(brakes) once k ≥ 8 (:164–165). K_GAUGE = 8 (:29), "a GAUGE parameter"
 ```
 
-**Read from the printed `[SLAW]` fields** (m, l, b0p; LATE medians; ms):
+**b̂₀⁺ is a maximum over the process's first 8 windows (2 s, start-up included),** each differencing a native
+window's minimum against an m̂ that is only seconds old. `crfollow.out` A prints the raw brakes per row:
+- **At J = 5,** m̂_k falls through boot (61c r1: 48.0 → 43.5 → 40.8 → 39.5) while the late m̂ reaches 34.0–35.3. Boot
+  windows hold 3–223 samples. Brakes of 0–12.6 ms enter the max, and 61a r5 has a 103.4 ms brake at k = 2.
+- **So F = (late m̂) + (early max brake)** joins a long-window minimum taken late with one extreme of 8 start-transient
+  differences. That is why F spreads:
+  - 61c rows 37.22–46.22 (median 44.20);
+  - 61a rows 42.91–138.47 (median 46.74);
+  - while the native minimum differs between the sessions by 0.4 ms.
+  - The medians differ through b̂₀⁺ (9.53 against 11.01) and m̂ (34.16 against 35.33, a 10 s minimum of a jittered
+    stream).
+- **At J = 0** the brakes are steadier (0–5.4; m̂_k flat at 41.1–41.2 from k = 1, set by the first window's start
+  sample, E13's start history). F spans 45.36–46.73.
+- **At c2,** F spans 7.99–10.46.
 
-| floor arm | m̂ | ℓ̂ | b̂₀⁺ | **R6.2 F** | **C F̂** (median of the last 4 native minima) | F native | F G(250) | F G(2 100) |
-|---|---|---|---|---|---|---|---|---|
-| c3 J = 0, s62 W 12 pair | 41.30 | 41.09 | 4.69 | **45.99** | **44.59** | 44.66 | 41.69 | 41.30 |
-| c3 J = 0, D12 (dump on) | 41.33 | 41.04 | 5.40 | 46.73 | 44.55 | 44.60 | 41.55 | 41.33 |
-| c3 J = 5, 61c W 12 | 34.16 | 32.95 | 9.53 | **44.20** | 42.69 | 42.75 | 38.78 | 34.32 |
-| c3 J = 5, 61a W 12 | 35.33 | 33.07 | 11.01 | 46.74 | 42.38 | 42.36 | 38.89 | 35.29 |
-| c2 s60 W 16 | 6.35 | 5.59 | 2.80 | **9.38** | 8.67 | 8.68 | 8.51 | 7.07 |
-| c1s s60 W 64 | 2.26 | 2.25 | 0.17 | 2.43 | 2.38 | 2.39 | 2.39 | 2.39 |
+**The count each input takes its minimum over** (floor-arm sample rate × span):
 
-**The count each input takes its minimum over** (the floor arm's LATE sample rate × the input's span):
+| cell | native window | m̂ (10 s) | ℓ̂ (at t = 15 s) |
+|---|---|---|---|
+| c3 | 60 | ≈ 2 400 | ≥ 3 600 |
+| c2 | 282 | ≈ 11 300 | ≥ 17 000 |
+| c1s | 5 218 | ≈ 209 000 | ≥ 313 000 |
 
-| cell | samples/s | native window | m̂ (10 s) | ℓ̂ (lifetime, at t = 15 s) |
-|---|---|---|---|---|
-| c3 (J = 0 and J = 5) | 240 | 60 | ≈ 2 400 | ≥ 3 600 |
-| c2 | 1 128 | 282 | ≈ 11 300 | ≥ 17 000 |
-| c1s | 20 870 | 5 218 | ≈ 209 000 | ≥ 313 000 |
-
-At the c3 knee (≈ 1 840 samples/s) m̂ covers ≈ 18 400.
-
-**Q2's answer: the law's floor is a native-window quantity.**
-- m̂ alone takes the minimum over ≈ 2 400 samples at c3 and reads the G(2 100) level (41.30 against 41.30 at J = 0;
-  34.16 against 34.32 at J = 5).
-- b̂₀⁺ adds back the gap between a native window's minimum and m̂, at its maximum over 8 boot windows. When the min
-  takes its m̂ branch, F = m̂ + max_k(T̂min,k − m̂k) ≈ max_k T̂min,k.
-  - That is why R6.2's F reads at or above the native minimum: +1.3 ms at J = 0, +1.4–4.4 at J = 5, +0.7 at c2.
-  - The branch can switch under load, so this closed form is not general, and the table is the reading.
-- C reads the native median by construction.
-- **So both of the law's floors carry the native window count:** 60 samples at the c3 floor, 282 at c2, 5 218 at c1s.
-  The count varies 87× across cells for the same 250 ms.
-- ℓ̂ is start-history-prone (E13). On D12 the first window (nk 184, tmin 41.226) set m and l.
+R6.7 candidate C is the median of 4 native minima, so it carries the native count.
 
 ---
 
-## 3. The count rule: candidates against both conditions (`crrule.out` §1, §2, §2b, §3)
+## 3. The law's quantities and the candidates against stability (`crrule.out` §1, §2b, §3, §4)
 
-**(a)** Is it the same quantity the law uses? **(b)** How far does it drift above its count, from n₀ to 8·n₀ (or the
-largest count available)? J = 0 has three rows: two floor rows and one dump-on row.
+**(a)** Is it the law's quantity? **(b)** Its count drift, or (for F, which has no count) its spread across rows. J = 0
+has three rows: the pair and D12, which is dump-on.
 
-| candidate floor reading | (a) the law's quantity? | J = 0 (pair / D12) | J = 5 (61c / 61a) | c2 | c1s |
+| reading | (a) | J = 0 | J = 5 (61c / 61a) | c2 | c1s |
 |---|---|---|---|---|---|
-| native window minimum (C; R6.2's level) | **yes** | 3.40 / — (native → 4 200) | 9.52 / 7.34 | 1.95 | 0.00 |
-| minimum over n₀ = 250 samples | no (a count-window floor) | 0.36 / 0.22 | 4.46 / 3.60 | 1.38 | 0.00 |
-| **minimum over n₀ = 500 samples** | no | **0.21 / 0.19** | 4.11 / 2.49 | 1.21 | 0.00 |
-| minimum over n₀ = 1 000 samples | no | 0.11 / 0.14 | 2.48 / 1.47 | 0.78 | 0.00 |
-| m̂ (10 s time window) | an input of the law, not its F | its count is time-set: 2 400 / 209 000 samples by cell | | | |
-| per-window p10 (count-free) | no | 0.22 (dump, native → 36 windows), but reads the bulk at **≈ 46.2–46.5, ≈ 5 ms above the queue-free 41.3** | ≤ 0.18 (`knee-margin-rederive` `kmr.out` §10a) | 0.05 | – |
-| equal-count difference (need at one n on both sides) | the law's form if both sides change | the knee side moves (below) | **0.31 / 0.21** spread over 460 → 1 850 | **0.29** over 2 340 → 9 360 | – |
+| **R6.2's F** | **yes** | rows 45.36–46.73 | rows 37.22–46.22 / 42.91–138.47 | rows 7.99–10.46 | 2.43 (one median) |
+| **R6.7 candidate C** (median of 4 native minima) | **yes** | 44.55–44.59; carries the native count (drift as below) | 42.69 / 42.38 | 8.67 | 2.38 |
+| the native window minimum (what b̂₀⁺ and C are built from) | the sampler's output | 3.40 (native → 4 200) | 9.52 / 7.34 | 1.95 | 0.00 |
+| **m̂** (10 s minimum) | an input of F | 41.26–41.33 on every row (the low mode) | 33.3–36.7 by row (jitter-sampled) | 5.9–6.8 by row | 2.26 |
+| minimum over 500 samples (**observation only**) | no | 0.21 / 0.19 (500 → 4 000) | 4.11 / 2.49 | 1.21 | 0.00 |
+| per-window p10 | no | 0.22, but it reads the bulk ≈ 5 ms above the queue-free loop | ≤ 0.18 (`knee-margin-rederive` `kmr.out` §10a) | 0.05 | – |
 
-**No candidate meets both (a) and (b).**
-- The law's own native minimum drifts by 2–10 ms.
-- A count-window minimum is stable only where the jitter is absent (J = 0, c1s).
-- A quantile is stable but measures the flight-serialized bulk, not the queue-free loop that §1 identifies and the
-  law's sentence names.
-- **"Queue-free" at J = 0 means the low mode** (§1). Only a minimum over ≥ ≈ 250 samples (≈ 1 s at c3's floor) reads it.
+**No reading is both the law's quantity and stable.**
+- R6.2's F spreads by 1.4–9 ms across rows (95 ms with 61a r5's start window), through b̂₀⁺'s start-transient maximum.
+- C inherits the native count.
+- At J = 0, **m̂ is the long-window minimum that reads the queue-free loop on every row,** and it is already an input
+  of the law. Its count is set by time (10 s × rate), not by a rule.
+- At J = 5, m̂ is a jitter-sampled 10 s minimum, so it moves with the rate as every minimum does.
 
-**The knee side, J = 0 beside J = 5** (`crrule.out` §2b, drift from 500 to 4 200 samples):
+**The knee side, J = 0 beside J = 5** (drift from 500 to 4 200 samples; `crrule.out` §2b):
 
 | arm | J = 0 drift | J = 5 (61c) drift |
 |---|---|---|
@@ -207,55 +236,40 @@ largest count available)? J = 0 has three rows: two floor rows and one dump-on r
 | W 128 | 7.73 | – |
 | W 152 | – | 8.42 |
 
-- **At J = 5,** floor and knee arms fall together. So the equal-count need is stable: 8.47–8.78 on 61c, 8.32–8.53
-  on 61a, 5.45–5.75 at c2, over the window ladder with ≥ 3 floor groups per row.
-- **At J = 0** the floor stops falling, but the knee-side arms do not. So an equal-count need₀ would carry the knee's
-  own count dependence. One row below the knee (W 80) and one above (W 128) cannot bound it at the knee.
-
-**Proposed rule (untested), for review:**
-
-```text
-   F(n₀)  =  the minimum over n₀ = 500 consecutive echo samples of the floor arm        (a count window, not a 250 ms window)
-   T̂min(n₀) at the operating point over the same n₀                                     (one count on both sides)
-   floor gate:  F(n₀) − F(8·n₀) < 0.5 ms          knee gate:  T̂min,knee(n₀) − T̂min,knee(8·n₀) < 0.5 ms
-```
-
-**Provenance.**
-- **n₀ = 500 is declared.** It is the smallest tested count that holds the low mode with margin at J = 0. The minimum
-  is in the mode from ≈ 250 samples, and drifts 0.19–0.21 ms above 500.
-- The 0.5 ms gates are s62's (half of Δ₀).
-- The knee gate is new. It is required because the knee's minimum falls with count at J = 0.
-
-**It meets (b) at J = 0 for the floor only.** It does not make the J = 5 or c2 floor stable. There only the
-equal-count difference is stable, so the rule's knee and floor must move together.
-
-**For the law,** adopting n₀-sample windows for T̂min and the floor is a law change (R6.7 item 4), reviewed as one.
-- At c3's floor, 500 samples take ≈ 2.1 s, so b̂₀⁺'s K = 8 boot windows would take ≈ 17 s. That cost is the design's
-  to weigh.
+- At J = 5 floor and knee fall together, so an equal-count need is stable (0.2–0.3 ms).
+- At J = 0 the floor stops falling and the knee-side arms do not. By §1's mechanism, the knee-side minimum also catches
+  loss-repair drains, which are rarer per sample at higher load.
 
 ---
 
-## 4. What the rule predicts for a re-run of s62 at J = 0
+## 4. What this predicts for a re-run of s62 at J = 0
 
-| reading | prediction (from the pair, D12 and the probes) | bounded by existing rows? |
-|---|---|---|
-| floor gate F(500) − F(4 000) | 0.19–0.21 ms: **PASS** (< 0.5) | yes (three rows) |
-| F₀ = F(500) | 41.44–41.49 ms, so Δ₀ = ½·q_R·F₀ ≈ 1.04 ms | yes |
-| knee gate T̂min,knee(500) − T̂min,knee(4 000) | between W 80's 0.63 and W 128's 7.73 ms. At the knee (W₉₅ ≈ 100–115) it likely exceeds 0.5 | **no**: register it as the re-run's first reading |
-| need₀ at n₀ = 500 | not predicted | no |
-
-**So the knee need could be read on a re-run only if the knee gate passes, and the existing rows suggest it may not.**
-- Below the knee, W 80's 0.63 already fails the 0.5 ms gate.
-- If the knee gate fails, the J = 0 knee reading, like the J = 5 one, needs a statistic whose knee and floor count
-  dependence cancel. An equal-count difference does that at J = 5, and the J = 0 data show it would not at J = 0.
-- That is a statement about the operating point's minimum: it falls with count through rare queue-drain events at
-  both J. It belongs to the next derivation, not to this one.
+- **The floor:** read as m̂ (the law's long-window minimum), or as any minimum over ≥ ≈ 1 s of samples, it sits at
+  41.26–41.49 on all three rows. So the floor can be read at J = 0, but its value depends on the loss process (§1).
+  - The registered gate (native → G(2 100) < 0.5 ms) would fail again, as designed, because the native window is the
+    count at which the loss events are missed.
+- **The knee:** its minimum still falls with count at J = 0 (W 80 0.63, W 128 7.73 ms from 500 to 4 200). Existing
+  rows cannot bound it at the knee itself.
+- **So a re-run could read the knee need only after the knee reading's own count dependence is resolved.** Given §1,
+  that dependence is the loss-repair process seen from the operating point. That is the next derivation's question (the
+  operating point's minimum), not a VM session's.
 
 ## 5. Owner-facing
 
-**There is no owner choice yet.**
-- Whether the store law moves from 250 ms windows to n₀-sample windows is design work for review, a law change under
-  R6.7 item 4.
-- A re-run of s62 would need a registration amendment (the n₀ floor gate, the new knee gate). Its value depends on the
-  knee gate, which this derivation predicts may fail.
-- So the next step is the design review of §3's rule and of the knee side, not a VM session.
+**None.**
+- Whether the law's floor should be anchored on m̂ (a long-window minimum) instead of F's b̂₀⁺ construction is design
+  work for review, under R6.2 / R6.7.
+- No re-run of s62 is proposed.
+
+## 6. Review log (the follow-up)
+
+**What changed in the follow-up:**
+- the Q3 table now leads with R6.2's F and candidate C;
+- F's cross-session spread is explained from `slaw.rs:150–165`, with the raw brakes;
+- the flight mechanism is tested against W: it holds in part, with about half the offset unexplained;
+- the low mode is replicated on R2 / R3 (31 / 29 %);
+- the send pauses and low windows are aligned with retransmits: 84–87 % against 5–8 %, and 53 / 53 pauses;
+- the flight table is corrected: 1 738 flights, 1 212 of them with ≥ 12 samples;
+- the n₀ = 500 proposal is dropped to an observation.
+
+The previous version is `b2f89645`.

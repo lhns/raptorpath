@@ -1,0 +1,74 @@
+count rule follow-up (crfollow.py); inputs rep62r0-diag.tgz, rep61c-diag-ld.tgz, rep61a-diag-ld.tgz, rep60a-diag-ld.tgz
+
+== A. b-hat0+ per row: the K = 8 raw brakes tmin_k - m-hat_k (ms) of the process's first windows (b0k= at k = 8), b0p, the LATE m-hat, and R6.2's F ==
+  s62 J0 D12 s42 r3: brakes [0.0, 5.21, 3.18, 3.35, 3.42, 3.3, 5.4, 5.29] (window counts 184,71,60,60,72,60,60,72); m-hat at k = 1..8 [41.23, 41.23, 41.23, 41.23, 41.23, 41.23, 41.23, 41.23]; b0p 5.40; LATE m-hat 41.33; F 46.73; native tmin 44.60
+  s62 J0 G12 s42 r1: brakes [0.0, 1.74, 1.79, 3.86, 4.01, 4.03, 4.03, 2.12] (window counts 192,72,60,72,60,72,52,64); m-hat at k = 1..8 [41.2, 41.2, 41.2, 41.2, 41.2, 41.2, 41.2, 41.2]; b0p 4.03; LATE m-hat 41.33; F 45.36; native tmin 44.53
+  s62 J0 G12 s7 r2: brakes [0.0, 0.08, 1.82, 5.35, 3.19, 4.63, 0.3, 0.43] (window counts 204,61,72,60,60,72,27,49); m-hat at k = 1..8 [41.1, 41.1, 41.1, 41.1, 41.1, 41.1, 41.1, 41.1]; b0p 5.35; LATE m-hat 41.26; F 46.61; native tmin 44.78
+  s62 J0: F over rows 45.36 - 46.73 (median 46.61)
+  61c J5 G12 s42 r1: brakes [0.0, 0.0, 0.0, 0.0, 2.24, 8.45, 5.51, 3.57] (window counts 223,72,58,3,62,60,60,60); m-hat at k = 1..8 [48.02, 43.45, 40.78, 39.5, 39.5, 39.5, 39.5, 39.5]; b0p 8.45; LATE m-hat 34.27; F 42.72; native tmin 42.88
+  61c J5 G12 s42 r3: brakes [0.0, 0.0, 0.0, 7.67, 8.58, 5.95, 9.76, 4.75] (window counts 203,54,65,31,29,61,58,62); m-hat at k = 1..8 [46.15, 42.12, 35.7, 35.7, 35.7, 35.7, 35.7, 35.7]; b0p 9.76; LATE m-hat 34.05; F 43.82; native tmin 42.74
+  61c J5 G12 s42 r5: brakes [0.0, 0.0, 0.07, 0.0, 0.0, 9.95, 0.0, 0.0] (window counts 213,60,48,15,55,60,70,62); m-hat at k = 1..8 [43.8, 43.2, 43.2, 38.86, 38.77, 38.77, 38.5, 37.95]; b0p 9.95; LATE m-hat 35.11; F 45.05; native tmin 42.37
+  61c J5 G12 s7 r2: brakes [0.0, 0.0, 0.0, 6.63, 2.94, 4.06, 3.44, 9.3] (window counts 203,50,64,50,72,60,60,60); m-hat at k = 1..8 [47.07, 37.27, 36.78, 36.78, 36.78, 36.78, 36.78, 36.78]; b0p 9.30; LATE m-hat 35.28; F 44.58; native tmin 42.76
+  61c J5 G12 s7 r4: brakes [0.0, 0.0, 1.04, 3.26, 2.11, 0.0, 0.0, 1.86] (window counts 181,39,59,60,35,31,60,72); m-hat at k = 1..8 [42.68, 41.63, 41.63, 41.63, 41.63, 41.57, 39.74, 39.74]; b0p 3.26; LATE m-hat 33.96; F 37.22; native tmin 42.74
+  61c J5 G12 s7 r6: brakes [0.0, 4.79, 0.0, 7.58, 4.31, 0.89, 7.27, 12.62] (window counts 206,58,52,60,37,62,60,60); m-hat at k = 1..8 [39.78, 39.78, 34.57, 34.57, 34.57, 34.57, 34.57, 34.57]; b0p 12.62; LATE m-hat 33.60; F 46.22; native tmin 42.89
+  61c J5: F over rows 37.22 - 46.22 (median 44.20)
+  61a J5 G12 s42 r1: brakes [0.0, 0.0, 9.6, 7.12, 4.8, 6.25, 11.29, 6.83] (window counts 214,62,58,3,65,61,60,60); m-hat at k = 1..8 [42.78, 35.15, 35.15, 35.15, 35.15, 35.15, 35.15, 35.15]; b0p 11.29; LATE m-hat 36.46; F 47.75; native tmin 42.04
+  61a J5 G12 s42 r3: brakes [0.0, 0.84, 0.0, 7.12, 0.0, 4.59, 9.4, 9.62] (window counts 196,67,65,12,44,60,60,60); m-hat at k = 1..8 [39.45, 39.45, 38.62, 38.62, 35.8, 35.8, 35.8, 35.8]; b0p 9.62; LATE m-hat 33.28; F 42.91; native tmin 42.72
+  61a J5 G12 s42 r5: brakes [0.0, 103.4, 0.0, 2.06, 5.18, 2.07, 2.55, 5.15] (window counts 70,71,95,60,25,35,69,63); m-hat at k = 1..8 [42.72, 42.72, 37.39, 37.39, 37.39, 37.39, 37.39, 37.39]; b0p 103.40; LATE m-hat 35.06; F 138.47; native tmin 40.88
+  61a J5 G12 s7 r2: brakes [0.0, 0.7, 0.0, 1.25, 9.11, 0.0, 10.74, 10.47] (window counts 214,42,40,52,36,54,60,60); m-hat at k = 1..8 [41.9, 41.9, 40.61, 40.61, 40.61, 33.63, 33.63, 33.63]; b0p 10.74; LATE m-hat 35.35; F 46.09; native tmin 42.34
+  61a J5 G12 s7 r4: brakes [0.0, 0.0, 0.68, 0.0, 6.35, 5.34, 4.92, 0.0] (window counts 223,41,60,70,15,63,60,72); m-hat at k = 1..8 [44.31, 42.07, 42.07, 40.42, 40.42, 40.42, 40.42, 38.51]; b0p 6.35; LATE m-hat 36.70; F 43.05; native tmin 42.61
+  61a J5 G12 s7 r6: brakes [0.0, 0.0, 0.0, 12.09, 7.85, 6.75, 10.38, 8.14] (window counts 145,106,49,60,25,63,60,60); m-hat at k = 1..8 [45.05, 40.07, 35.52, 35.52, 35.52, 35.52, 35.52, 35.52]; b0p 12.09; LATE m-hat 35.30; F 47.39; native tmin 42.38
+  61a J5: F over rows 42.91 - 138.47 (median 46.74)
+  c2 s60 G16 s42 r1: brakes [0.0, 1.06, 0.82, 0.86, 0.37, 1.33, 2.06, 0.0] (window counts 311,286,283,293,282,282,207,261); m-hat at k = 1..8 [8.1, 8.1, 8.1, 8.1, 8.1, 8.1, 8.1, 8.01]; b0p 2.06; LATE m-hat 5.93; F 7.99; native tmin 8.71
+  c2 s60 G16 s42 r3: brakes [0.0, 0.0, 0.0, 2.04, 1.41, 1.48, 1.64, 3.39] (window counts 403,286,286,304,304,298,176,221); m-hat at k = 1..8 [9.59, 8.44, 6.91, 6.91, 6.91, 6.91, 6.91, 6.91]; b0p 3.39; LATE m-hat 6.82; F 10.21; native tmin 8.76
+  c2 s60 G16 s42 r5: brakes [0.0, 2.53, 2.57, 1.18, 0.42, 4.1, 0.23, 1.81] (window counts 414,282,249,298,320,272,298,164); m-hat at k = 1..8 [7.55, 7.55, 7.55, 7.55, 7.55, 7.55, 7.55, 7.55]; b0p 4.10; LATE m-hat 6.37; F 10.46; native tmin 8.68
+  c2 s60 G16 s7 r2: brakes [0.0, 0.0, 0.12, 0.0, 0.0, 0.1, 2.04, 0.0] (window counts 226,248,261,290,212,290,298,263); m-hat at k = 1..8 [10.78, 8.76, 8.76, 8.18, 7.55, 7.55, 7.55, 6.49]; b0p 2.04; LATE m-hat 6.14; F 8.18; native tmin 8.59
+  c2 s60 G16 s7 r4: brakes [0.0, 1.52, 0.0, 0.12, 0.0, 0.0, 2.2, 1.04] (window counts 313,273,286,288,217,284,294,191); m-hat at k = 1..8 [8.8, 8.8, 8.59, 8.59, 7.18, 6.78, 6.78, 6.78]; b0p 2.20; LATE m-hat 6.34; F 8.55; native tmin 8.61
+  c2 s60 G16 s7 r6: brakes [0.0, 2.34, 3.58, 1.79, 1.38, 1.34, 2.66, 2.88] (window counts 438,298,237,294,292,221,288,304); m-hat at k = 1..8 [6.43, 6.43, 6.43, 6.43, 6.43, 6.43, 6.43, 6.43]; b0p 3.58; LATE m-hat 6.71; F 10.29; native tmin 8.68
+  c2 s60: F over rows 7.99 - 10.46 (median 9.38)
+
+== B. The flight mechanism against W: symbols per emit burst (eb_depth at the last LATE tick), its end reasons, the window median (tp50) and the floor-window minimum ==
+  61c J5 W12   rows 6: symbols per emit burst 6.52; window tp50 48.73, native tmin 42.75, nk 60; eb_end (row 1) cap:1/store:1903/tokens:0/drained:2
+  61c J5 W16   rows 6: symbols per emit burst 7.64; window tp50 48.59, native tmin 42.14, nk 80; eb_end (row 1) cap:1/store:2210/tokens:0/drained:2
+  61c J5 W24   rows 6: symbols per emit burst 7.88; window tp50 49.40, native tmin 42.27, nk 120; eb_end (row 1) cap:1/store:3213/tokens:0/drained:2
+  61c J5 W60   rows 6: symbols per emit burst 8.72; window tp50 51.10, native tmin 42.45, nk 278; eb_end (row 1) cap:1/store:8807/tokens:0/drained:2
+  61c J5 W80   rows 6: symbols per emit burst 8.36; window tp50 51.87, native tmin 43.10, nk 364; eb_end (row 1) cap:1/store:10580/tokens:0/drained:2
+  61c J5 W100  rows 6: symbols per emit burst 8.76; window tp50 53.49, native tmin 44.96, nk 438; eb_end (row 1) cap:1/store:11646/tokens:0/drained:2
+  61c J5 W108  rows 6: symbols per emit burst 8.75; window tp50 55.38, native tmin 45.96, nk 462; eb_end (row 1) cap:1/store:11669/tokens:0/drained:3
+  61a J5 W12   rows 6: symbols per emit burst 6.31; window tp50 48.47, native tmin 42.36, nk 60; eb_end (row 1) cap:1/store:1958/tokens:0/drained:2
+  61a J5 W16   rows 6: symbols per emit burst 7.57; window tp50 48.50, native tmin 41.83, nk 80; eb_end (row 1) cap:1/store:2213/tokens:0/drained:2
+  61a J5 W24   rows 6: symbols per emit burst 7.71; window tp50 49.17, native tmin 41.85, nk 120; eb_end (row 1) cap:1/store:3230/tokens:0/drained:3
+  61a J5 W68   rows 6: symbols per emit burst 8.40; window tp50 51.15, native tmin 42.39, nk 314; eb_end (row 1) cap:1/store:8621/tokens:0/drained:2
+  61a J5 W92   rows 6: symbols per emit burst 8.51; window tp50 52.56, native tmin 43.79, nk 412; eb_end (row 1) cap:1/store:11521/tokens:0/drained:2
+  s62 J0 W12   rows 2: symbols per emit burst 6.16; window tp50 46.72, native tmin 44.66, nk 60; eb_end (row 1) cap:1/store:3432/tokens:0/drained:2
+  s62 J0 W80   rows 1: symbols per emit burst 5.60; window tp50 46.78, native tmin 42.34, nk 395; eb_end (row 1) cap:1/store:15097/tokens:0/drained:3
+  s62 J0 W128  rows 1: symbols per emit burst 5.25; window tp50 64.39, native tmin 54.68, nk 480; eb_end (row 1) cap:1/store:18521/tokens:0/drained:2
+  c2 s60 W16   rows 6: symbols per emit burst 8.23; window tp50 13.70, native tmin 8.68, nk 282; eb_end (row 1) cap:1/store:10783/tokens:0/drained:2
+  c2 s60 W32   rows 6: symbols per emit burst 10.07; window tp50 14.27, native tmin 8.95, nk 536; eb_end (row 1) cap:1/store:16929/tokens:0/drained:2
+  c2 s60 W48   rows 6: symbols per emit burst 10.63; window tp50 14.59, native tmin 9.04, nk 786; eb_end (row 1) cap:1/store:24088/tokens:0/drained:2
+
+== C. The low mode on s62's floor rows: a native window 'reaches' it when its minimum lies > 4 ms below the row's LATE median tp50 ==
+  D12 s42 r3: 100 of 309 native windows (32 %) reach the low mode (median tp50 46.79); runs of low windows: n 59, lengths median 1 max 5; runs without: median 3.0 max 10 windows
+  G12 s42 r1: 96 of 305 native windows (31 %) reach the low mode (median tp50 46.69); runs of low windows: n 50, lengths median 2.0 max 5; runs without: median 3 max 17 windows
+  G12 s7 r2: 88 of 303 native windows (29 %) reach the low mode (median tp50 46.74); runs of low windows: n 52, lengths median 1.0 max 4; runs without: median 3.0 max 14 windows
+
+== D. What precedes the low mode: per [DIAG] tick, the retransmit delta (retx) and the sender-idle count delta (sidle), in low-mode windows against the rest ==
+  s62 J0 D12 s42 r3 low-mode windows (100): share with retx in the same tick 0.87, in the previous tick 0.54; sender-idle episodes per tick median 5.0
+  s62 J0 D12 s42 r3 other windows    (209): share with retx in the same tick 0.08, in the previous tick 0.25; sender-idle episodes per tick median 5
+  s62 J0 G12 s42 r1 low-mode windows (96): share with retx in the same tick 0.84, in the previous tick 0.49; sender-idle episodes per tick median 5.0
+  s62 J0 G12 s42 r1 other windows    (209): share with retx in the same tick 0.07, in the previous tick 0.24; sender-idle episodes per tick median 5
+  s62 J0 G12 s7 r2 low-mode windows (88): share with retx in the same tick 0.84, in the previous tick 0.48; sender-idle episodes per tick median 5.0
+  s62 J0 G12 s7 r2 other windows    (215): share with retx in the same tick 0.05, in the previous tick 0.20; sender-idle episodes per tick median 5
+  61c J5 G12 s42 r1 low-mode windows (132): share with retx in the same tick 0.35, in the previous tick 0.35; sender-idle episodes per tick median 7.0
+  61c J5 G12 s42 r1 other windows    (38): share with retx in the same tick 0.24, in the previous tick 0.32; sender-idle episodes per tick median 5.5
+  61c J5 G12 s42 r3 low-mode windows (131): share with retx in the same tick 0.38, in the previous tick 0.37; sender-idle episodes per tick median 7
+  61c J5 G12 s42 r3 other windows    (36): share with retx in the same tick 0.25, in the previous tick 0.36; sender-idle episodes per tick median 6.0
+  61c J5 G12 s42 r5 low-mode windows (127): share with retx in the same tick 0.35, in the previous tick 0.35; sender-idle episodes per tick median 7
+  61c J5 G12 s42 r5 other windows    (43): share with retx in the same tick 0.19, in the previous tick 0.19; sender-idle episodes per tick median 5
+  61c J5 G12 s7 r2 low-mode windows (122): share with retx in the same tick 0.35, in the previous tick 0.30; sender-idle episodes per tick median 7.0
+  61c J5 G12 s7 r2 other windows    (45): share with retx in the same tick 0.11, in the previous tick 0.29; sender-idle episodes per tick median 6
+  61c J5 G12 s7 r4 low-mode windows (126): share with retx in the same tick 0.34, in the previous tick 0.33; sender-idle episodes per tick median 7.0
+  61c J5 G12 s7 r4 other windows    (41): share with retx in the same tick 0.15, in the previous tick 0.24; sender-idle episodes per tick median 6
+  61c J5 G12 s7 r6 low-mode windows (117): share with retx in the same tick 0.38, in the previous tick 0.33; sender-idle episodes per tick median 7
+  61c J5 G12 s7 r6 other windows    (48): share with retx in the same tick 0.15, in the previous tick 0.31; sender-idle episodes per tick median 6.0
+  D12: 53 send pauses >= 60 ms; 53 of 53 sit in a window whose tick or the one before carried a retransmit, against 0.48 of all windows
