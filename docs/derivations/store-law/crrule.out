@@ -1,0 +1,82 @@
+count rule (crrule.py): the floor minimum and the knee need at equal counts; inputs rep62r0-diag.tgz, rep61c-diag-ld.tgz, rep61a-diag-ld.tgz, rep60a-diag-ld.tgz, rep60b-diag-ld.tgz
+
+== 1. The floor minimum (median over the arm's rows of the row's median group minimum, ms) against the count: native, G(250 ... 4 200) ==
+  c3 J = 0 (s62) W12 floor pair                      rows 2: native 44.656 (n 60) | G250 41.688 (n 267) | G500 41.492 (n 525) | G1000 41.365 (n 1032) | G2100 41.297 (n 2132) | G4200 41.259 (n 4218)
+                                                     steps: native->250 +2.967 | 250->500 +0.197 | 500->1000 +0.126 | 1000->2100 +0.069 | 2100->4200 +0.038
+  c3 J = 0 (s62) D12 dump row (floor W12, dump on)   rows 1: native 44.600 (n 60) | G250 41.550 (n 272) | G500 41.439 (n 515) | G1000 41.380 (n 1030) | G2100 41.332 (n 2138) | G4200 41.245 (n 4231)
+                                                     steps: native->250 +3.050 | 250->500 +0.111 | 500->1000 +0.059 | 1000->2100 +0.048 | 2100->4200 +0.088
+  c3 J = 5 61c W12                                   rows 6: native 42.751 (n 60) | G250 38.778 (n 271) | G500 37.353 (n 528) | G1000 35.704 (n 1022) | G2100 34.319 (n 2125) | G4200 33.227 (n 4223)
+                                                     steps: native->250 +3.974 | 250->500 +1.425 | 500->1000 +1.649 | 1000->2100 +1.386 | 2100->4200 +1.092
+  c3 J = 5 61a W12                                   rows 6: native 42.356 (n 60) | G250 38.894 (n 272) | G500 37.454 (n 526) | G1000 36.492 (n 1030) | G2100 35.285 (n 2129) | G4200 35.020 (n 4227)
+                                                     steps: native->250 +3.462 | 250->500 +1.441 | 500->1000 +0.961 | 1000->2100 +1.208 | 2100->4200 +0.265
+  c2 s60 W16                                         rows 6: native 8.679 (n 282) | G250 8.506 (n 296) | G500 8.017 (n 579) | G1000 7.506 (n 1114) | G2100 7.067 (n 2237) | G4200 6.728 (n 4344)
+                                                     steps: native->250 +0.173 | 250->500 +0.489 | 500->1000 +0.511 | 1000->2100 +0.439 | 2100->4200 +0.340
+  c1s s60 W64                                        rows 6: native 2.388 (n 5218) | G250 2.388 (n 5218) | G500 2.388 (n 5218) | G1000 2.388 (n 5218) | G2100 2.388 (n 5218) | G4200 2.386 (n 5410)
+                                                     steps: native->250 +0.000 | 250->500 +0.000 | 500->1000 +0.000 | 1000->2100 +0.000 | 2100->4200 +0.002
+
+== 2. The knee need at equal counts (window ladder; ms). k = knee windows pooled; n_K / n_F the realised counts; groups = complete floor groups per row ==
+  c3 J = 5 61c (6 replicates with W95 inside the bracket; floor W12):
+    k 1: n_K 462 n_F 489 (floor groups/row 18) T 46.232 F 37.478 need 8.754
+    k 2: n_K 913 n_F 946 (floor groups/row 9) T 44.942 F 36.469 need 8.474
+    k 4: n_K 1818 n_F 1841 (floor groups/row 5) T 43.648 F 34.870 need 8.778
+    k 8: n_K 3637 n_F 3652 (floor groups/row 2) T 42.687 F 33.239 need 9.448
+    need range over the steps with >= 3 floor groups per row: 8.474 - 8.778 (spread 0.305 ms)
+  c3 J = 5 61a (6 replicates with W95 inside the bracket; floor W12):
+    k 1: n_K 468 n_F 499 (floor groups/row 18) T 46.126 F 37.597 need 8.529
+    k 2: n_K 930 n_F 957 (floor groups/row 9) T 44.635 F 36.314 need 8.321
+    k 4: n_K 1856 n_F 1883 (floor groups/row 4) T 43.609 F 35.288 need 8.321
+    k 8: n_K 3692 n_F 3730 (floor groups/row 2) T 42.393 F 34.963 need 7.429
+    need range over the steps with >= 3 floor groups per row: 8.321 - 8.529 (spread 0.209 ms)
+  c2 s60 (6 replicates with W95 inside the bracket; floor W16):
+    k 1: n_K 2342 n_F 2495 (floor groups/row 27) T 12.728 F 6.982 need 5.746
+    k 2: n_K 4688 n_F 4791 (floor groups/row 14) T 12.281 F 6.684 need 5.597
+    k 4: n_K 9359 n_F 9503 (floor groups/row 7) T 11.867 F 6.414 need 5.453
+    need range over the steps with >= 3 floor groups per row: 5.453 - 5.746 (spread 0.292 ms)
+  c3 J = 0 (s62 rehearsal, one row per probe; no knee bracket exists, so this is the probes' rise above the floor at equal counts, not a need):
+    W80 k 1: n 395 T 42.336 F(n) 41.492 rise 0.844
+    W80 k 2: n 787 T 41.776 F(n) 41.403 rise 0.373
+    W80 k 4: n 1576 T 41.560 F(n) 41.316 rise 0.244
+    W80 k 8: n 3129 T 41.178 F(n) 41.233 rise -0.055
+    W128 k 1: n 480 T 54.680 F(n) 41.477 rise 13.203
+    W128 k 2: n 960 T 51.393 F(n) 41.365 rise 10.028
+    W128 k 4: n 1920 T 48.180 F(n) 41.302 rise 6.878
+    W128 k 8: n 3841 T 44.428 F(n) 41.257 rise 3.171
+
+== 2b. Every arm's minimum against the count (median over the arm's rows; ms): J = 0 (s62) beside J = 5 (61c) ==
+  J = 0 s62 W12   rows 2: nat 44.66 | 250 41.69 | 500 41.49 | 1000 41.37 | 2100 41.30 | 4200 41.26   native -> 4200: +3.40, 500 -> 4200: +0.23
+  J = 0 s62 W80   rows 1: nat 42.34 | 250 42.34 | 500 41.78 | 1000 41.70 | 2100 41.40 | 4200 41.15   native -> 4200: +1.19, 500 -> 4200: +0.63
+  J = 0 s62 W128  rows 1: nat 54.68 | 250 54.68 | 500 51.39 | 1000 49.16 | 2100 46.74 | 4200 43.66   native -> 4200: +11.02, 500 -> 4200: +7.73
+  J = 0 s62 W512  rows 2: nat 243.83 | 250 243.83 | 500 237.62 | 1000 236.03 | 2100 231.15 | 4200 226.09   native -> 4200: +17.75, 500 -> 4200: +11.53
+  J = 5 61c W12   rows 6: nat 42.75 | 250 38.78 | 500 37.35 | 1000 35.70 | 2100 34.32 | 4200 33.23   native -> 4200: +9.52, 500 -> 4200: +4.13
+  J = 5 61c W24   rows 6: nat 42.27 | 250 40.20 | 500 39.34 | 1000 38.08 | 2100 37.32 | 4200 35.95   native -> 4200: +6.32, 500 -> 4200: +3.39
+  J = 5 61c W60   rows 6: nat 42.45 | 250 42.21 | 500 41.27 | 1000 40.01 | 2100 39.01 | 4200 37.67   native -> 4200: +4.79, 500 -> 4200: +3.61
+  J = 5 61c W80   rows 6: nat 43.10 | 250 43.04 | 500 42.01 | 1000 41.23 | 2100 40.15 | 4200 39.44   native -> 4200: +3.66, 500 -> 4200: +2.56
+  J = 5 61c W88   rows 6: nat 43.44 | 250 43.44 | 500 42.37 | 1000 41.96 | 2100 40.89 | 4200 39.99   native -> 4200: +3.45, 500 -> 4200: +2.38
+  J = 5 61c W100  rows 6: nat 44.96 | 250 44.96 | 500 43.65 | 1000 43.15 | 2100 42.17 | 4200 41.14   native -> 4200: +3.83, 500 -> 4200: +2.51
+  J = 5 61c W108  rows 6: nat 45.96 | 250 45.96 | 500 44.76 | 1000 44.09 | 2100 43.31 | 4200 42.47   native -> 4200: +3.49, 500 -> 4200: +2.29
+  J = 5 61c W120  rows 6: nat 49.23 | 250 49.23 | 500 46.94 | 1000 45.80 | 2100 44.66 | 4200 43.78   native -> 4200: +5.46, 500 -> 4200: +3.16
+  J = 5 61c W152  rows 6: nat 63.50 | 250 63.50 | 500 59.13 | 1000 56.41 | 2100 53.04 | 4200 50.71   native -> 4200: +12.78, 500 -> 4200: +8.42
+  J = 5 61c W512  rows 6: nat 243.18 | 250 243.18 | 500 236.04 | 1000 232.77 | 2100 229.07 | 4200 226.41   native -> 4200: +16.77, 500 -> 4200: +9.63
+
+== 4. The law's floor on each floor arm, from the printed inputs (LATE medians; ms): m = Copa's 10 s min_rtt (m-hat), l = the lifetime minimum (l-hat), b0p = b-hat0+ (max over the first K = 8 windows of tmin - m); R6.2 (N = 1): F = min(m, l + b0p) + b0p; R6.7 candidate C on a static row: the median of the last K = 4 native window minima ==
+  c3 J = 0 (s62) W12 floor pair                      m 41.296 l 41.090 b0p 4.690 -> R6.2 F 45.985 | C F-hat 44.588 || F native 44.656 G250 41.688 G2100 41.297
+  c3 J = 0 (s62) D12 dump row (floor W12, dump on)   m 41.326 l 41.035 b0p 5.403 -> R6.2 F 46.729 | C F-hat 44.549 || F native 44.600 G250 41.550 G2100 41.332
+  c3 J = 5 61c W12                                   m 34.164 l 32.945 b0p 9.532 -> R6.2 F 44.202 | C F-hat 42.686 || F native 42.751 G250 38.778 G2100 34.319
+  c3 J = 5 61a W12                                   m 35.327 l 33.067 b0p 11.014 -> R6.2 F 46.742 | C F-hat 42.375 || F native 42.356 G250 38.894 G2100 35.285
+  c2 s60 W16                                         m 6.354 l 5.589 b0p 2.798 -> R6.2 F 9.378 | C F-hat 8.671 || F native 8.679 G250 8.506 G2100 7.067
+  c1s s60 W64                                        m 2.264 l 2.245 b0p 0.169 -> R6.2 F 2.433 | C F-hat 2.384 || F native 2.388 G250 2.388 G2100 2.388
+  samples each input takes its minimum over (LATE sample rate of the floor arm x its span):
+  c3 J = 0 (s62) W12 floor pair                      240 samples/s: native window (250 ms) 60; m-hat (10 s) 2400; l-hat (lifetime, at t = 15 s) >= 3600
+  c3 J = 0 (s62) D12 dump row (floor W12, dump on)   240 samples/s: native window (250 ms) 60; m-hat (10 s) 2400; l-hat (lifetime, at t = 15 s) >= 3600
+  c3 J = 5 61c W12                                   240 samples/s: native window (250 ms) 60; m-hat (10 s) 2400; l-hat (lifetime, at t = 15 s) >= 3600
+  c3 J = 5 61a W12                                   240 samples/s: native window (250 ms) 60; m-hat (10 s) 2400; l-hat (lifetime, at t = 15 s) >= 3600
+  c2 s60 W16                                         1128 samples/s: native window (250 ms) 282; m-hat (10 s) 11280; l-hat (lifetime, at t = 15 s) >= 16920
+  c1s s60 W64                                        20870 samples/s: native window (250 ms) 5218; m-hat (10 s) 208700; l-hat (lifetime, at t = 15 s) >= 313050
+
+== 3. The rule's check: each reading's count dependence above n0 (the value at n0 minus the value at 8 n0, or the largest count available) ==
+  floor c3 J = 0 (s62) W12 floor pair                  n0 250: F(n0) 41.688, F(n0) - F(2000) +0.364 | n0 500: F(n0) 41.492, F(n0) - F(4000) +0.214 | n0 1000: F(n0) 41.365, F(n0) - F(4200) +0.106
+  floor c3 J = 0 (s62) D12 dump row (floor W12, dump on) n0 250: F(n0) 41.550, F(n0) - F(2000) +0.218 | n0 500: F(n0) 41.439, F(n0) - F(4000) +0.194 | n0 1000: F(n0) 41.380, F(n0) - F(4200) +0.136
+  floor c3 J = 5 61c W12                               n0 250: F(n0) 38.778, F(n0) - F(2000) +4.459 | n0 500: F(n0) 37.353, F(n0) - F(4000) +4.114 | n0 1000: F(n0) 35.704, F(n0) - F(4200) +2.477
+  floor c3 J = 5 61a W12                               n0 250: F(n0) 38.894, F(n0) - F(2000) +3.602 | n0 500: F(n0) 37.454, F(n0) - F(4000) +2.490 | n0 1000: F(n0) 36.492, F(n0) - F(4200) +1.473
+  floor c2 s60 W16                                     n0 250: F(n0) 8.506, F(n0) - F(2000) +1.382 | n0 500: F(n0) 8.017, F(n0) - F(4000) +1.209 | n0 1000: F(n0) 7.506, F(n0) - F(4200) +0.779
+  floor c1s s60 W64                                    n0 250: F(n0) 2.388, F(n0) - F(2000) +0.000 | n0 500: F(n0) 2.388, F(n0) - F(4000) +0.000 | n0 1000: F(n0) 2.388, F(n0) - F(4200) +0.002
