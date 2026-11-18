@@ -91,7 +91,7 @@ gantt
     P_fec truncation divergence :active, rate_defect_pfec, 2026-11-13, 2026-11-18
     Continuous P_fec derivation :rate_pfec_continuous, 2026-11-14, 2026-11-14
     Executed sliding P_fec oracle :active, rate_pfec_oracle, 2026-11-14, 2026-11-18
-    TaperBudget shape inert as wired :active, rate_defect_taper_inert, 2026-11-14, 2026-11-18
+    Repair taper shape inert as wired :active, rate_defect_taper_inert, 2026-11-14, 2026-11-18
     Evicting-seat m̄ registration :rate_evict_registration, 2026-11-16, 2026-11-17
     Is spare's cwnd enforced? :rate_spare_cwnd, 2026-11-16, 2026-11-17
     section store - store law
@@ -126,7 +126,7 @@ gantt
     Loop time and quinn rate :crit, store_s24_inputs, 2026-10-26, 2026-10-26
     Spread law premises :crit, store_s27_premises, 2026-10-27, 2026-10-27
     Probe-gain store law :crit, store_probe_gain, 2026-10-27, 2026-10-28
-    Power-seeking store law D :crit, store_power_law, 2026-10-26, 2026-10-27
+    Power-seeking store law :crit, store_power_law, 2026-10-26, 2026-10-27
     Noise-sized window :crit, store_dw_window, 2026-10-28, 2026-10-28
     Store-law input after the anchor fix :crit, store_s34_input, 2026-11-01, 2026-11-02
     Receiver dispersion as link rate :store_s36_dispersion, 2026-11-09, 2026-11-10
@@ -138,21 +138,21 @@ gantt
     Store-budget test design :store_s54_budget, 2026-11-13, 2026-11-13
     Store-law derivation :active, store_law_derivation, 2026-11-14, 2026-11-18
     Store-pool sweep :store_s56_sweep, 2026-11-14, 2026-11-14
-    Emission-burst test, fast single path :store_s57a_burst, 2026-11-14, 2026-11-14
-    Fast two-path pool sweep :store_s57b_c1d, 2026-11-14, 2026-11-14
+    Emission-burst test, 400 Mbit path :store_s57a_burst, 2026-11-14, 2026-11-14
+    400 Mbit two-path pool sweep :store_s57b_c1d, 2026-11-14, 2026-11-14
     Lowest-store floor candidate :store_law_r67, 2026-11-15, 2026-11-15
     Store-law gauge build :active, store_slaw_gauge, 2026-11-15, 2026-11-18
     Gauge suites and reference binary :store_s60_pre, 2026-11-15, 2026-11-15
     Queue-free floor on small stores :store_s60a, 2026-11-15, 2026-11-16
-    Floor sign test, fast single path :store_s60b, 2026-11-16, 2026-11-16
+    Floor sign test, 400 Mbit path :store_s60b, 2026-11-16, 2026-11-16
     Slow-link knee sweep, first try :store_s61a, 2026-11-17, 2026-11-17
-    Fast-link price below the knee :store_s61b, 2026-11-17, 2026-11-17
+    100 Mbit price below the knee :store_s61b, 2026-11-17, 2026-11-17
     Slow-link knee sweep, re-run :store_s61a_rerun, 2026-11-17, 2026-11-17
     Re-derive the knee-margin term :store_law_g_rederive, 2026-11-17, 2026-11-17
     Slow-link knee without jitter :store_s62_j0, 2026-11-18, 2026-11-18
     Sample-count rule derivation :store_count_rule, 2026-11-18, 2026-11-18
     Owner call on the jitter sweep :store_user_jitter_sweep, 2026-11-17, 2026-11-17
-    Allowance short of the fast-link knee :store_defect_allowance_short, 2026-11-16, 2026-11-18
+    Allowance short of 100 Mbit knee :store_defect_allowance_short, 2026-11-16, 2026-11-18
     Latency-dial setting pinned the store c… :store_defect_delta_nan, 2026-11-14, 2026-11-14
     Store cap pinned at its clamp :active, store_defect_cap_constant, 2026-11-13, 2026-11-18
     Owner calls on who sets latency :store_user_u1u3, 2026-11-16, 2026-11-17
@@ -262,7 +262,7 @@ gantt
     Delay readout prints whole milliseconds :active, meas_defect_diag_rtp_ms, 2026-09-27, 2026-11-18
     Guard v2 implementation :meas_guard_v2_impl, 2026-11-13, 2026-11-13
     Off-Bulk benchmark design :meas_s51_design, 2026-11-13, 2026-11-13
-    Off-Bulk sweep harness and scorer :active, meas_s51_harness, 2026-11-16, 2026-11-18
+    Off-Bulk sweep harness and scorer :meas_s51_harness, 2026-11-16, 2026-11-17
     QUIC/MPTCP comparison and overhead taxo… :meas_transport_comparison, 2026-03-17, 2026-03-18
     Matrix benchmark, audit and dashboard :meas_matrix_bench, 2026-03-20, 2026-03-20
     section model - model and paper

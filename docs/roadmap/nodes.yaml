@@ -1302,7 +1302,7 @@ nodes:
   folded:
   - commit 62ffbb76
   - paper §11.1 open question 2
-  overview: false
+  overview: true
   plain: The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting.
   notes: Owner corrections 2026-07-06 (retention moves to the ARQ layer; retention is the triangle's ρ). Folds paper §11.1 open question 2 (is ρ a runtime dial).
 - id: rate-unified-shed
@@ -1521,7 +1521,7 @@ nodes:
   plain: A test that runs the engine's real encoder and decoder to measure how often repair data recovers a loss, to settle the repair-rate formula.
   notes: 'Spec (rounds 7–8 with Fable): it calls the engine''s RLC encoder/decoder, TaperBudget, D(δ) and the span seat; the debt loop is copied and K4 witnesses it against engine W1 on a recorded row; known answers K0–K4 before any reading; decidable at A* 3–7, report-only in the W 201 body. The branch pfec-oracle (08bdfa96, not merged) holds the test-only oracle with K0–K3. Done when: K0–K4 pass and the oracle''s P_fec at the audit cells is recorded, with its registration before the run.'
 - id: rate-defect-taper-inert
-  title: TaperBudget shape inert as wired
+  title: Repair taper shape inert as wired
   track: rate
   kind: defect-verdict
   state: in-progress
@@ -1540,7 +1540,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Open problem: the law that shapes when repairs are sent has no effect as the code calls it, so repairs go out at the flat rate.'
-  notes: Checked by reading and a 10⁵-call Python port; taper_emission_l0.rs asserts nothing. The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust (rate-pfec-oracle).
+  notes: Checked by reading and a 10⁵-call Python port; taper_emission_l0.rs asserts nothing. The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust (rate-pfec-oracle). Was titled 'TaperBudget shape inert as wired'.
 - id: rate-evict-registration
   title: Evicting-seat m̄ registration
   track: rate
@@ -2420,7 +2420,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Store-law input search (8 inputs)'. Closed by derivation, never built (status §27–§29); the gain 2.0 of paper §6.2 returns under another name.
 - id: store-power-law
-  title: Power-seeking store law D
+  title: Power-seeking store law
   track: store
   kind: law
   state: abandoned
@@ -2443,7 +2443,7 @@ nodes:
   - commit 317520f5
   overview: true
   plain: Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work.
-  notes: '§29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27.'
+  notes: '§29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27. Was titled ''Power-seeking store law D'' (candidate D).'
 - id: store-dw-window
   title: Noise-sized window
   track: store
@@ -2701,7 +2701,7 @@ nodes:
   plain: Measured how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop.
   notes: 'Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law''s Part B and the owner''s U2.'
 - id: store-s57a-burst
-  title: Emission-burst test, fast single path
+  title: Emission-burst test, 400 Mbit path
   track: store
   kind: instrument
   state: done
@@ -2723,7 +2723,7 @@ nodes:
   plain: Testing whether the number of packets the sender releases at once holds extra queue on the fast single-path link.
   notes: 'Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds. Was titled ''Emission-burst block at c1s''.'
 - id: store-s57b-c1d
-  title: Fast two-path pool sweep
+  title: 400 Mbit two-path pool sweep
   track: store
   kind: instrument
   state: done
@@ -2743,7 +2743,7 @@ nodes:
   end: '2026-11-14'
   folded: []
   overview: false
-  plain: Measured the two-path link at six store sizes to see whether its throughput depends on standing queue the way the fast link's does.
+  plain: Measured the 400 Mbit two-path link at six store sizes to see whether its throughput depends on standing queue the way the single-path link's does.
   notes: Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms.
 - id: store-law-r67
   title: Lowest-store floor candidate
@@ -2851,7 +2851,7 @@ nodes:
   plain: Measured on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and tested the limit's target form against it.
   notes: '96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7).'
 - id: store-s60b
-  title: Floor sign test, fast single path
+  title: Floor sign test, 400 Mbit path
   track: store
   kind: research
   state: done
@@ -2901,7 +2901,7 @@ nodes:
   plain: 'The second-link-shape measurement of the knee margin ran cleanly but could not be scored: the collapse rule flagged every healthy control and the pilot placed the knee arms too high.'
   notes: 'harness61 14e2bacd, bin_sha e410d640, HIT. CR61''s ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES. Owner decision 9: the c3 sweep runs on the VM (single leg, static pools, the §60 gauge tree).'
 - id: store-s61b
-  title: Fast-link price below the knee
+  title: 100 Mbit price below the knee
   track: store
   kind: research
   state: done
@@ -2920,7 +2920,7 @@ nodes:
   folded:
   - commit 04aedaf2
   overview: false
-  plain: 'Measured how much speed and delay the fast test link trades below its knee; it matches the earlier session, so the two combine into one table.'
+  plain: Measured how much speed and delay the 100 Mbit test link trades below its knee; it matches the earlier session, so the two combine into one table.
   notes: '30/30 live, CONTROL-c2 OK (control ratios 0.99-1.06), DRIFT-OK at W 160 (tmin 12.295 vs 12.33). u concave and tmin under the chord at W 96/128/144. Landing table reported for the owner.'
 - id: store-s61a-rerun
   title: Slow-link knee sweep, re-run
@@ -3030,7 +3030,7 @@ nodes:
   - status §62 Result
   - branch count-rule 2d557191
   verdict_quote: no count rule exists on these rows. The open question is the sampler's design.
-  headline: J = 0 low mode in 29-32 % of windows, 84-87 % beside a retransmit
+  headline: 84–87 % of low-mode windows, against 5–8 % of the rest
   depends_on:
   - store-s62-j0
   replaced_by: []
@@ -3173,6 +3173,7 @@ nodes:
   overview: false
   plain: Checking the existing data on why the low-latency delay numbers leaned slightly worse after the framing fix; the analysis is written and waits for review.
   notes: 'Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). The post-hoc analysis is on branch s64-lean 6d55024c (docs/derivations/s64-lean-posthoc.md), not reviewed and not on main. Done when: it is reviewed and its reading is in status.'
+  waiting_on: review of the post-hoc analysis
 - id: rec-realtime-delay-recheck
   title: Realtime delay re-check, long rows
   track: rec
@@ -3277,7 +3278,7 @@ nodes:
   plain: 'The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained.'
   notes: 'Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem''s 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b).'
 - id: store-defect-allowance-short
-  title: Allowance short of the fast-link knee
+  title: Allowance short of 100 Mbit knee
   track: store
   kind: defect-verdict
   state: next
@@ -3296,7 +3297,7 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: 'Open problem: with honest floors, the store law''s safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out.'
+  plain: 'Open problem: with honest floors, the store law''s safety margin is too small on the 100 Mbit single-path test, so it would size the store below the point where goodput tops out.'
   notes: 'Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7''s derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03. Owed: the ledger''s F07 entry updated to cite the §61a re-run Result (status §61a re-run Result: ''F07''s ledger entry is owed an update''); F07 stays UNDERIVED. Done when: that ledger row is updated and the allowance''s verdict is recorded.'
 - id: rec-defect-realtime-framing
   title: Realtime receiver misread packets (fixed)
@@ -3339,13 +3340,13 @@ nodes:
   - rec-f2-merge-guard
   replaced_by: []
   qualified_by: []
-  lane: host-cargo
+  lane: no-cargo
   start: ''
   end: ''
   folded: []
   overview: false
-  plain: 'Closing what the framing fix left open: peers on different presets still connect without any check, the sender still picks packing by preset, and some status text names the wrong protocol version for a planned field.'
-  notes: '1. Mixed-hint pairs still connect silently: they differ in the receiver''s default ρ, which nothing on the wire checks (ADR-0078 Consequences, audit §6); owner decision 12 keeps them unsupported, so refuse them at the handshake or record the risk. 2. The sender still chooses packing by hint (use_packing, sender_policy.rs, status §3.3; ADR-0078 decision 2): a NO-MODE-SWITCH debt, counted in model-mode-switch-debts. 3. The receiver-timestamp field is now wire v11 (ADR-0078 decision 3); status §1''s protocol line and the §42/§43 texts that call it v10 are owed (§64 Result, ''At the merge''). Done when: mixed-hint pairs are refused at the handshake with a test (or the owner records them as accepted), and the status texts read v11.'
+  plain: 'Closing what the framing fix left open: peers on different presets still connect without any check, which needs an owner call; the sender still picks packing by preset; and some status text names the wrong protocol version for a planned field.'
+  notes: '1. Mixed-hint pairs still connect silently: they differ in the receiver''s default ρ, which nothing on the wire checks (ADR-0078 Consequences, audit §6); owner decision 12 keeps them unsupported. Refusing them at the handshake is a wire change, so it is put to the owner first. 2. The sender still chooses packing by hint (use_packing, sender_policy.rs, status §3.3; ADR-0078 decision 2): a NO-MODE-SWITCH debt, counted in model-mode-switch-debts. 3. The receiver-timestamp field is now wire v11 (ADR-0078 decision 3); status §1''s protocol line and the §42/§43 texts that call it v10 are owed (§64 Result, ''At the merge''). Done when: a short note puts the mixed-preset choice to the owner (refuse at the handshake, with a protocol bump, or accept and record the risk), and the status texts read v11. The refusal, if chosen, is its own change with a test.'
 - id: store-defect-delta-nan
   title: Latency-dial setting pinned the store cap
   track: store
@@ -6534,7 +6535,7 @@ nodes:
   title: Off-Bulk sweep harness and scorer
   track: meas
   kind: instrument
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - docs/derivations/s51-design.md §8 P1
@@ -6549,12 +6550,11 @@ nodes:
   qualified_by: []
   lane: no-cargo
   start: '2026-11-16'
-  end: ''
+  end: '2026-11-17'
   folded: []
   overview: false
-  plain: The scripts that run and score the off-Bulk test are built and pass their offline tests; the rehearsal on the test network is their first live run.
-  notes: 'Built on harness51 a59efa60 (plans 51 and 51e, parser, scorers, the d80 table, stub paths): unfiltered test_stubrun 722 ok, plan and scorer tests pass (status §51 ''Host checks''); the Linux shell tests passed in E-pre (§51 Amendment 1). Merged into b51-tree and e-tree, not into main: main takes the harness only after the §51 Result. Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7).'
-  waiting_on: the off-Bulk sweep's rehearsal on the VM
+  plain: Built the scripts that run and score the off-Bulk test; they pass their offline tests, and the session's rehearsal is their first live run.
+  notes: 'Built on harness51 a59efa60 (plans 51 and 51e, parser, scorers, the d80 table, stub paths): unfiltered test_stubrun 722 ok, plan and scorer tests pass (status §51 ''Host checks''); the Linux shell tests passed in E-pre (§51 Amendment 1). Merged into b51-tree and e-tree, not into main: main takes the harness only after the §51 Result. The rehearsal is part of the session (meas-s51-session, schema rule 1). Done when (met): plan 51, its parser, score51, the d80 table and a stub-run path exist and pass (design §6 items 1-7).'
 - id: rate-fix-rate-readout
   title: Repair-rate readout
   track: rate
@@ -6845,7 +6845,7 @@ nodes:
   title: Off-Bulk baseline and δ sweep
   track: meas
   kind: research
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - status §51
@@ -6869,7 +6869,7 @@ nodes:
   vm_order: 3
   order_reason: Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
   plain: First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves.
-  notes: 'Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result.'
+  notes: 'Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). Its first step is the amendment that re-bases b51-tree on main, then the 51 rehearsal.'
 - id: cc-s48d-session
   title: bbr_rs controller, round 2
   track: cc
