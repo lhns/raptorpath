@@ -44,7 +44,7 @@ check("run_all: the ABORT-REHEARSE case line is the registered one, byte for byt
 
 # ═══ 2. the battery ═══
 check("battery: plans 51 / 51e accepted; both single-seat (P38 + PCAND, no P41); plan 51e's instrument env is RWM_RDIAG=1 + the arm's timeout (no RWM_RTOBS), plan 51's the guard env at 200 s",
-      "|56|41d|51|51e|24|" in battery and "|46|48|52|53|54b) ;; *) echo \"ABORT-PLAN LD_PLAN=$PLAN" in battery and 'P51=0; [ "$PLAN" = "51" ] && { P51=1; P38=1; PCAND=1; }' in battery and 'P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }' in battery
+      "|56|41d|51|51e|24|" in battery and "|46|48|52|53|54b|64) ;; *) echo \"ABORT-PLAN LD_PLAN=$PLAN" in battery and 'P51=0; [ "$PLAN" = "51" ] && { P51=1; P38=1; PCAND=1; }' in battery and 'P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }' in battery
       and '[ "$P51E" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)' in battery and '[ "$P51" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)' in battery)
 check("battery: the env scrub of section 4 (RWM_DELTA RWM_COPA_DELTA RWM_COPA_WIRE RWM_COMPLETION_EXPOSURE RWM_MIN_R RWM_CC_PACE and the pacing knob) is SCRUB_EXTRA, set for plans 51 / 51e ONLY, and rides before the arm env",
       "SCRUB_EXTRA=(-u RWM_DELTA -u RWM_COPA_DELTA -u RWM_COPA_WIRE -u RWM_COMPLETION_EXPOSURE -u RWM_MIN_R -u RWM_CC_PACE -u RWM_PERF_RATE_MBIT)" in battery and '{ [ "$P51" = 1 ] || [ "$P51E" = 1 ]; } && SCRUB_EXTRA=' in battery
