@@ -1,7 +1,7 @@
 """Sampler design (sampler-design.md): the knee's window minimum against retransmits, the brake estimators, and the floor's location statistics.
 
 Usage (from docs/):  python -I -X utf8 derivations/store-law/sdalign.py l1-raw/s62/rep62r0-diag.tgz l1-raw/s61/rep61c-diag-ld.tgz \
-                         l1-raw/s61/rep61a-diag-ld.tgz l1-raw/s60/rep60a-diag-ld.tgz  > derivations/store-law/sdalign.out
+                         l1-raw/s61/rep61a-diag-ld.tgz l1-raw/s60/rep60a-diag-ld.tgz | tr -d '\r' > derivations/store-law/sdalign.out
 
 Post hoc, on existing rows; nothing here is registered. Leg 0 only; LATE windows as in crfollow.py (t >= 15 s, nk >= 10).
 Window i of [SLAW] / [WSTAT] is paired with the i-th [DIAG] tick after the warm-up marker (crfollow.py's pairing); the
@@ -15,6 +15,8 @@ Sections:
      brake at the native count (LATE median of tmin - m-hat), and the brake at the knee's count (pooled floor windows).
   C. The floor's location statistics (Q3): per floor row, m-hat, l-hat, R6.2's F, candidate C, and the window p10 /
      p50 medians; their spread across rows, and each statistic's rise from the floor to the knee arms.
+  E. Start-up (round 2): the first 8 windows' p50 and tmin per floor row, the median over the first K = 1, 3, 5, 8 windows against the LATE
+     median (what a boot-set floor reads), and the share of LATE windows whose m-hat sits on the J = 0 low mode.
   D. The gates (Q1, Q4): each floor candidate's margin target - statistic per c3 arm; sign at the floor and the control, and its sign changes.
 """
 import re
@@ -94,8 +96,8 @@ def groups(lw, g):
 
 CELLS = (
     ("s62 J0", 0, "c3j0-25", (12, 80, 128, 512)),
-    ("61c J5", 1, "c3-25", (12, 80, 100, 108, 120, 152, 512)),
-    ("61a J5", 2, "c3-25", (12, 92, 104, 112, 124, 2048)),
+    ("61c J5", 1, "c3-25", (12, 16, 24, 80, 100, 108, 120, 152, 512)),
+    ("61a J5", 2, "c3-25", (12, 16, 24, 92, 104, 112, 124, 2048)),
     ("c2 s60", 3, "c2-100", (16,)),
 )
 
@@ -266,6 +268,28 @@ def main(argv):
             flips = sum(1 for a, b in zip(signs, signs[1:]) if a != b)
             gate = "PASS" if signs[0] and not signs[-1] and flips == 1 else "FAIL"
             P(f"    {k}: " + " | ".join(f"W{Wa} {x:+.2f}" for Wa, x in v) + f"  -> floor {'+' if signs[0] else '-'}, control {'+' if signs[-1] else '-'}, sign changes {flips}: {gate}")
+
+
+    # ── E ──
+    P("\n== E. Start-up: what a floor set from the first K windows reads (ms). Static floor rows: every window has the same store size, so the")
+    P("   boot windows stand in for the K lowest-store windows of a closed loop booting at the floor pool. 'first 8' = k = 1..8 after the warm-up marker ==")
+    for (lab, _, cell, arms), rows in zip(CELLS, srcs):
+        W = arms[0]
+        for key in sorted(k for k in rows if k[2] == W):
+            slaw = rows[key][0]
+            lw = late(slaw)
+            b8 = slaw[:8]
+            lp, lt = med([fl(w, "p50") for w in lw]), med([fl(w, "tmin") for w in lw])
+            def dK(x, K, ref):
+                return med([fl(w, x) for w in slaw[:K]]) - ref
+            P(f"  {lab} {key[1]}{W} s{key[3]} r{key[4]}: nk {[int(fl(w, 'nk')) for w in b8]}; p50 {[round(fl(w, 'p50'), 1) for w in b8]}; LATE p50 {lp:.2f}, tmin {lt:.2f}")
+            P("      median of the first K minus LATE:  p50 " + " ".join(f"K{K} {dK('p50', K, lp):+.2f}" for K in (1, 3, 5, 8))
+              + " | tmin " + " ".join(f"K{K} {dK('tmin', K, lt):+.2f}" for K in (1, 3, 5, 8)))
+    P("  J = 0: share of LATE windows whose m-hat lies on the low mode (< 41.9 ms, count-rule's 41.2-41.9) and the LATE m-hat range")
+    for key in sorted(k for k in srcs[0]):
+        lw = late(srcs[0][key][0])
+        ms_ = [fl(w, "m") for w in lw]
+        P(f"    {key[1]}{key[2]} s{key[3]} r{key[4]}: {sum(1 for x in ms_ if x < 41.9) / len(ms_):.2f} of {len(ms_)}; m-hat {min(ms_):.2f} - {max(ms_):.2f}")
 
 
 if __name__ == "__main__":
