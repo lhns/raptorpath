@@ -1653,6 +1653,31 @@ The launch sha is pinned by an amendment.
   - A path exercise on the framing check's paced rows on the fixed binary shows gate (c)'s "late ≤ 1 %" firing: PL 1.6 / 3.6 %, PM 1.2 %. The rate, source count and last tick pass.
   - E-pre does not depend on it.
 
+**§51 Amendment 4 (2026-11-18, before the evicting-seat rehearsal; Fable-reviewed): the pacer rule, the steady-window rule, the launch tree and the pins.**
+- **Supersedes `s51-evict-design.md` §5.2 line 163's "`late` ≤ 1 % of chunks" and amends §6's steady-window rule** (item below). The design keeps a dated pointer; its text is unchanged.
+  - **Why:** the 1 % and the 2 ms threshold under it were declared, never measured.
+    - The harness worker's reads (code and ledgers; all seven late shares were taken while the stuck process held a host core, on binaries other than `a6a7e7e6`, and the lag baseline is from Bulk rows on `e410d640`) found the threshold sits inside ordinary timer lag: on a quiet host the client's 10 ms-tick p99 overshoot is 1.5 ms (§60's c2 rows), and 2.0 ms under host load.
+    - A late chunk is counted when it enters the 8 192-chunk feed queue (`perf.rs` `Pacer::note_sent`), so the reading is the timer and scheduler, not link backpressure.
+    - The old and fixed binaries read alike (1.0–3.6 %), so the fix is not its cause. Why the low rate (PL) reads higher than PM is unexplained.
+  - **The new rule:**
+    - **`pace-stall`** iff `late_max_ms > 250` (one reading window; declared, about 18× the largest value seen), or the field is missing. It is a harness-fault detector: it voids a battery row, re-run once, and fails the go/no-go on a rehearsal row. No reading below 250 ms is claimed protected.
+    - **Enqueue lateness** (`late`, `late_max`) is reported per row as whether the harness offered the load on schedule.
+    - **The engine side, a reading and never a void:** the share of offer-window ticks whose source count is off the offered rate by more than 5 % (an empty tick counts as off).
+    - **§6's steady-window rule, amended:** a K4-steady window that is off-load is not scored. It is excluded from the steady count and from the 30-window floor, and the exclusions are printed.
+      - If the exclusions take an arm under 30 windows, the arm reads K4-UNSCOREABLE by the existing floor rule.
+      - K4 is printed with and without the exclusion. A label difference is reported, not resolved.
+    - **The late share is registered as this rehearsal's first quiet-host reading,** with no threshold.
+  - **Checks:**
+    - red-first stubs: right mean with one 5 s stall gives `pace-stall`; `late_max` 14 / 250 is clean and 251 stalls; `late` 3.57 % is reported only; a missing field stalls; 40 empty LATE windows show in the off-load share;
+    - on §63's seven paced rows (old and fixed binaries), no pace problem, off-load 0/220 on every row, and no steady window excluded.
+- **Launch tree: `e-tree-f2-pace` `ac74586e21012ecb7289ef4d39f814a93f26f183`** = `e-tree-f2` `11213363` + the pacer change (`61852b6c`) + the new `ref51e-manifest.sha256` (193 files, from `11213363`). It is tools only, so the engine equals E-pre's tree.
+  - **Pins:** `LD_BIN_SHA_EXPECT` = `a6a7e7e6248d9a33e204b0622e64da6404d0c621bf77b0062c03b4e68c815c4d` (E-pre's `binid_run.sh`). Suite reuse is a HIT on the new manifest (the `engine_manifest()` pipeline on an LF export equals the committed file).
+  - **Host tests at `61852b6c`:** 46 tools/l1 files, 2 220 ok (`test_s60`'s host-only step aside); the fast unfiltered stub run ALL OK (772 ok).
+  - The same pacer commit is on `harness51-pace` `480e6fe8` for the off-Bulk sweep.
+- **PM's missed prediction:** PM reads 106–114 steady windows (PL 145–159) against a predicted < 30. By the design's line, PM's K4 is then REPORTED, not a verdict input. Why is owed before the rehearsal is read: which rtprop A\* reads, and how often it changes.
+- **Order (supersedes §65's "before the evicting-seat test's rehearsal"):** this rehearsal may run first, while §65's harness is still being built. The battery waits for §65's label, because a REPLICATED label would open a fix on the delivery path this binary carries. This rehearsal is also the first VM row on commit 8's evicting branch.
+- **Before the launch:** the amended go/no-go reads §63's fixed-build U, PL and PM s42 rows (the rehearsal's own row set) and must read GO.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
