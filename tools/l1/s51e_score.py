@@ -269,13 +269,15 @@ class RV:
         return {"n": len(ts), "off": len(off), "share": len(off) / len(ts), "off_t": off}
 
     def steady(self):
-        """K4 steady windows, the full rule (section 6.3): n >= 1, one a_star and one delta over the window and both neighbours, ab = 0 in the window and both neighbours.
+        """K4 steady windows, the full rule (section 6.3): n >= 1, one a_star and one delta over the window and both neighbours, ab = 0 in the window and both neighbours. The a_star / delta equality is read with the
+        [SPAN] samples that BRACKET the span (s60_score.evict_stats bracket=True, status 51 Amendment 5): phase-independent, every window tested by at least two point samples; a window without them is untested, not steady.
+        The limit: the samples are points 0.5 s apart, so a steady window shows "no change observed at the samples", not "constant". The per-clause failure counts are in st["fails"] and printed.
         REGISTERED (status 51 Amendment 4): a window that passes that rule but whose offer-window tick is OFF-LOAD (src off rate_sym by more than 5 %) may NOT be scored: it is excluded from n_steady (and from the K4 input
         means) and counted in n_offload_excluded, which is printed. A steady window can be off-load: the rule reads the engine's own n, a_star and delta, not the offered load. U has no offered load and excludes nothing."""
         off = self.offload()
         offs = off["off_t"]
-        st = s60.evict_stats(self, rule_ab=True, skip=(lambda tw: any(abs(tw - o) <= 0.13 for o in offs)) if offs else None)
-        st["n_offload_excluded"] = st.get("n_skipped", 0)
+        st = s60.evict_stats(self, rule_ab=True, skip=(lambda tw: any(abs(tw - o) <= 0.13 for o in offs)) if offs else None, bracket=True)
+        st["n_offload_excluded"] = st["fails"]["off-load"]
         return st
 
 
@@ -365,7 +367,8 @@ def pace_view(rv):
     ch, late = _num(pl.get("chunks")), _num(pl.get("late"))
     off, st = rv.offload(), rv.steady()
     return (f"enqueue-late={pl.get('late')}/{pl.get('chunks')} ({_f(100.0 * late / ch if ch and late is not None else None, 2)} %) enqueue-late-max={pl.get('late_max_ms')} ms "
-            f"offload={off['off']}/{off['n']} ({_f(100.0 * off['share'] if off['share'] is not None else None, 1)} % of the offer-window ticks) steady={st['n_steady']}/{st['n_late']} (excluded off-load: {st['n_offload_excluded']})")
+            f"offload={off['off']}/{off['n']} ({_f(100.0 * off['share'] if off['share'] is not None else None, 1)} % of the offer-window ticks) steady={st['n_steady']}/{st['n_late']} (excluded off-load: {st['n_offload_excluded']}; windows failing each clause: "
+            + " ".join(f"{k}={v}" for k, v in st["fails"].items()) + ")")
 
 
 def row_view(rv):
@@ -444,7 +447,7 @@ def score(paths, out=print):
             out(f"  {a}: dropped by amendment")
             continue
         for rv in by[a]:
-            out("  " + s60.evict_line(rv, rule_ab=True).replace("EVICT ", f"{a} ", 1))
+            out("  " + s60.evict_line(rv, rule_ab=True, bracket=True).replace("EVICT ", f"{a} ", 1))
         steady = [rv.steady()["n_steady"] for rv in by[a]]
         lab(f"K4-{a}", f"steady={','.join(str(x) for x in steady)} {'SCOREABLE' if steady and all(x >= STEADY_MIN for x in steady) else 'K4-UNSCOREABLE'}")
     if "PL" in plan51e.active_arms() and by["PL"]:
