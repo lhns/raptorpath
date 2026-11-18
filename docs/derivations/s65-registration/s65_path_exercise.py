@@ -55,7 +55,7 @@ check("A: 11 usable pairs, the dead RB s42 r4's pair dropped; one dead row, not 
       and "BASE-F2-DEAD65 1 dead RB row(s) over 12 RB slots: redrawn alive 0, dead twice 0, not redrawn 1" in txt)
 check("A: whole-run in-order RC worse in 9 of 11", res["whole"]["worse"] == 9 and res["whole"]["n"] == 11)
 check("A: lag_E_cli 8/11, lag_E_srv 7/11, rtp_floor_p0 9/11 (s64-lean read 2)", worse.get("lag_E_cli") == (8, 11) and worse.get("lag_E_srv") == (7, 11) and worse.get("rtp_floor_p0") == (9, 11))
-check("A: the head window holds every pair (t <= 11.5 s covers the 12 s rows); the rest has too few ticks to pair", res["head"]["n"] == 11 and res["rest"]["n"] < 10)
+check("A: the head window holds every pair (t <= 11.5 s covers the 12 s rows); the rest has too few ticks to pair, so persistence reads open", res["head"]["n"] == 11 and res["rest"]["n"] < 10 and res["label"] == "REPLICATED-PERSISTENCE-OPEN")
 print()
 print("B: the same rows under the registered 30 s tick floor")
 res, txt = run(rows64, show=False, n_pairs=12)
@@ -96,6 +96,8 @@ cases = [
      dict(eh=0.0, er=0.0, jh=0.50, jr=0.50), "UNRESOLVED"),
     ("C6 a head as noisy as section 64's (+-50 %), quiet rest, no shift", dict(eh=0.0, er=0.0, jh=0.50), "NOT-REPLICATED"),
     ("C7 a resolved +3 % in both windows, bounded under TOL", dict(eh=0.03, er=0.03), "CLOSED"),
+    ("C7b +15 % in the head, a rest as noisy as section 64's head (+-50 %): persistence open, never 'not a steady-state one'", dict(eh=0.15, er=0.0, jr=0.50), "REPLICATED-PERSISTENCE-OPEN"),
+    ("C7c a noisy head (+-50 %), +15 % in the rest: a steady-state regression with the head open, never 'without the start-up one'", dict(eh=0.0, er=0.15, jh=0.50), "REST-REGRESSION"),
     ("C8 five RB slots dead twice: 19 pairs < 20", dict(eh=0.0, er=0.0, mods=DEAD5), "UNRESOLVED"),
     ("C9 a dead RB row redrawn LIVE takes its slot", dict(eh=0.0, er=0.0, mods={("RB", "42", "4"): [row("RB", "42", "4", None, None, "BASE-F2-DEAD"), row("RB", "42", "4", 120.0, 150.0)]}), "CLOSED"),
     ("C10 an RC RT-FAIL row is an F2-FINDING and drops its pair", dict(eh=0.0, er=0.0, mods={("RC", "7", "5"): [row("RC", "7", "5", 120.0, 150.0, "RT-FAIL", items=[2])]}), "CLOSED"),

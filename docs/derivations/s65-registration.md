@@ -75,6 +75,7 @@ Draft for the coordinator to register as its own status section (called §65 her
   - It is c2's in-order-delay A/A d80 in §41d ("New clause resolution … c2 8 %, c8 20 %") and in `guard-clause-dry.md` §11 (600 MB, v2 column: 8 / 5 / 5 % over three seeds).
   - Round 1 also said `rt64_score`'s owner flag uses it for in-order delay. That was wrong: the flag's 8 % is c2's guard-size CPU-per-GB d80 (`rt64_score.D80`), and in-order delay is not in that flag.
   - The 20 % in the same tables is c8's in-order d80.
+  - **The off-Bulk design's 20 %** (`s51-design.md`, "A/A noise and resolution") is c2's in-order d80 for that design: §48b's Bulk BASE rows, 6 v 6 unpaired, a family of 4 at threshold 0.05/3. That is the power of a different, smaller, unpaired and family-corrected design on the same Bulk rows, not a measured Realtime noise level, so it is not this design's margin. It does warn that the rest's power on Realtime rows is not known; §4 brackets it.
 - **Per window, per usable pair:** d = ln(RC / RB).
   - **p:** the exact one-sided Wilcoxon signed-rank p, P₀(W⁺ ≥ W⁺_obs), over all sign flips of the observed midranks of |d| (computed by exact counting), zeros dropped.
   - **h:** the Hodges–Lehmann shift, the median of the Walsh averages.
@@ -92,13 +93,17 @@ Draft for the coordinator to register as its own status section (called §65 her
 
 ### 3.4 The session label (first match wins)
 
+**A window is called clean only when it reads NO-REGRESSION.** An UNRESOLVED or UNRESOLVED-N window is open, never read as "no effect".
+
 | head | rest | label | what it means for the merged fix | next |
 |---|---|---|---|---|
 | REGRESSION | REGRESSION | **BISECT** | the §64 effect replicates and persists: the merged binary delivers in order later than the pre-fix one on Realtime c2 at ρ = 1 | registered bisect (§7) |
-| REGRESSION | anything else | **START-UP-COST** | the effect replicates in the first 11.5 s but does not persist beyond TOL (or the rest is unresolved, printed) | to the owner: a start-up delay cost of the fix; no bisect by default |
-| not REGRESSION | REGRESSION | **LATE-ONLY** | not the predicted pattern: a steady-state regression without the start-up one | to the owner; a bisect is the owner's call |
+| REGRESSION | NO-REGRESSION | **START-UP-COST** | the effect replicates in the first 11.5 s, and the rest excludes more than 5 % | to the owner: a start-up delay cost of the fix; no bisect by default |
+| REGRESSION | UNRESOLVED(-N) | **REPLICATED-PERSISTENCE-OPEN** | the effect replicates; whether it persists is not decided | to the owner |
+| NO-REGRESSION | REGRESSION | **LATE-ONLY** | not the predicted pattern: a steady-state regression, with the start-up window excluded | to the owner; a bisect is the owner's call |
+| UNRESOLVED(-N) | REGRESSION | **REST-REGRESSION** | a steady-state regression of the fix; the start-up window is open | to the owner; bisect recommended |
 | NO-REGRESSION | NO-REGRESSION | **CLOSED** | neither window is worse by more than 5 % (95 % one-sided) | §64's lean closes |
-| not REGRESSION | NO-REGRESSION | **NOT-REPLICATED** | no steady-state regression; the head neither replicates nor is excluded (its U is printed) | §64's lean is recorded as not reproduced; nothing to bisect |
+| UNRESOLVED(-N) | NO-REGRESSION | **NOT-REPLICATED** | no steady-state regression; the head neither replicates nor is excluded (its U is printed) | §64's lean is recorded as not reproduced; nothing to bisect |
 | anything else | | **UNRESOLVED** | the session cannot tell (reasons printed) | to the owner; no automatic re-run |
 
 - **Multiplicity:**
@@ -124,6 +129,9 @@ Draft for the coordinator to register as its own status section (called §65 her
 **Noise models.** Each model's pairs are resampled with replacement after centring on their own HL, so each carries spread only. 4000 draws per cell, seeded.
 - **HEAD:** §64's 11 stage R pairs, the head mean taken from the rows' own logs (sd of d 0.265, HL +25.2 %).
 - **LONG:** §64 stage G's 12 c2 pairs at 600 MB, Bulk, paired by slot (sd of d 0.024, HL −2.4 %). This stands in for REST.
+- **The rest's spread on Realtime rows is not known** (no Realtime 600 MB pair exists), so it is bracketed by two sensitivity rows:
+  - **LONGx4:** LONG's residuals × 4, sd about 0.10;
+  - **HEADasREST:** the rest as noisy as §64's 12 s head pairs, the pessimistic end.
 
 | model | pairs | P(REGRESSION) at +25.2 % | P(REGRESSION) at +12.6 % | no shift: mean U | no shift: P(NO-REGRESSION) | no shift: P(REGRESSION) |
 |---|---|---|---|---|---|---|
@@ -133,6 +141,12 @@ Draft for the coordinator to register as its own status section (called §65 her
 | LONG | 12 | 1.000 | 1.000 | +1.4 % | 1.000 | 0.000 |
 | LONG | 18 | 1.000 | 1.000 | +1.1 % | 1.000 | 0.000 |
 | LONG | 24 | 1.000 | 1.000 | +1.0 % | 1.000 | 0.000 |
+| LONGx4 | 12 | 1.000 | 0.979 | +5.8 % | 0.362 | 0.037 |
+| LONGx4 | 18 | 1.000 | 0.997 | +4.6 % | 0.510 | 0.034 |
+| LONGx4 | 24 | 1.000 | 0.998 | +3.9 % | 0.621 | 0.025 |
+| HEADasREST | 12 | 0.755 | 0.344 | +12.4 % | 0.199 | 0.050 |
+| HEADasREST | 18 | 0.897 | 0.477 | +9.4 % | 0.295 | 0.051 |
+| HEADasREST | 24 | 0.964 | 0.591 | +7.8 % | 0.389 | 0.050 |
 
 - **Choice: 24 pairs (48 rows), fixed, never extended after rows are read.**
   - It is the only count that replicates the seen size with ≥ 0.9 probability (18 gives 0.898).
@@ -141,20 +155,20 @@ Draft for the coordinator to register as its own status section (called §65 her
 - **What the table also says, stated so that no label is a surprise:**
   - With no true shift, the head reaches NO-REGRESSION only about 1 time in 3 (mean U +8 %), because §64's head pairs are noisy.
   - So under the null the likely labels are NOT-REPLICATED (head unresolved, rest clean) or CLOSED, not CLOSED alone.
-  - The LONG model is Bulk. If Realtime's rest window is noisier, the rest's power is lower than shown.
+  - **The rest's power to detect is high across the bracket:** ≥ 0.96 at the seen size even at the pessimistic end. Its power to EXCLUDE is not: P(NO-REGRESSION) with no shift is 1.0 (LONG), 0.62 (LONGx4) or 0.39 (HEADasREST) at 24 pairs. So CLOSED and NOT-REPLICATED need a rest closer to Bulk's spread than to §64's head.
   - The head model comes from 12 s rows. A head without the drain (§3.2) may be less noisy.
 
 ## 5. The reference scorer and its path exercise (done, before registration; labelled)
 
-- **Scorer:** `tools/l1/s65_score.py` (this branch), sha256 `c0b8e6f7c7300687…`. It is the registered statistic, pure and env-free, and the harness worker wires it in unchanged (§8).
-- **Path exercise:** `s65_path_exercise.py` (`1981ba4eb663dd70…`) and `s65_path_exercise.out` (`da48354c29df638e…`). Two runs were byte-identical, and it ends `PATH EXERCISE PASS`.
+- **Scorer:** `tools/l1/s65_score.py` (this branch), sha256 `8da41441c5862323…`. It is the registered statistic, pure and env-free, and the harness worker wires it in unchanged (§8).
+- **Path exercise:** `s65_path_exercise.py` (`dba77e3283e44833…`) and `s65_path_exercise.out` (`28fc18740b45014f…`). Two runs were byte-identical, and it ends `PATH EXERCISE PASS`.
 - **A. §64's stage R rows,** with the plan 65 fields computed from their own logs and the tick floor passed as 0. It reproduces `s64-lean`:
   - RB whole-run q95 0.1930 over 200 splits;
   - whole-run 9/11;
   - `lag_E_cli` 8/11, `lag_E_srv` 7/11, `rtp_floor_p0` 9/11;
   - the dead RB s42 r4 drops its pair.
 
-  The head reads 9/11, p 0.021, HL +25.2 %, so the code prints `START-UP-COST` (the rest has one pair, UNRESOLVED-N).
+  The head reads 9/11, p 0.021, HL +25.2 %, so the code prints `REPLICATED-PERSISTENCE-OPEN` (the rest has one pair, UNRESOLVED-N).
 
   **This is not evidence and is kept out of every result claim.** It is a third test on the same 11 pairs, after the sign test and the rank p, and the window was chosen after seeing them. It is the source of the prediction (+25 %, RC worse) that §65 tests on fresh rows, nothing more.
 - **B. The same rows under the registered 30 s floor:** all 23 completed rows are VOID-SHORT, giving UNRESOLVED.
@@ -168,6 +182,8 @@ Draft for the coordinator to register as its own status section (called §65 her
   | +15 % in the rest only | LATE-ONLY |
   | **stub:** pairs as noisy as §64's head (±50 %), no shift | UNRESOLVED; neither window reads NO-REGRESSION |
   | noisy head, quiet rest | NOT-REPLICATED |
+  | +15 % head, a rest as noisy as §64's head | REPLICATED-PERSISTENCE-OPEN, never "not a steady-state one" |
+  | a noisy head, +15 % rest | REST-REGRESSION, never "without the start-up one" |
   | a resolved +3 % | CLOSED |
   | five slots dead twice (19 pairs) | UNRESOLVED-N in both windows |
   | a dead RB redrawn alive | slot scored |
@@ -176,17 +192,20 @@ Draft for the coordinator to register as its own status section (called §65 her
 
   At ±20 % pair noise, 24 pairs already bound U under 5 %, so that is a legitimate NO-REGRESSION, not a stub failure.
 
-**Read now on §64's 11 pairs (item 4 of the ruling; reported, from the path exercise's A section):**
+**Read now on §64's 11 pairs (item 4 of the ruling; POST HOC, reported, from the path exercise's A section):**
 - **By run order:**
   - seed 42 (RB first): head HL +26.6 %, RC worse in 5 of 5;
   - seed 7 (RC first): head HL +23.8 %, 4 of 6.
-  - The lean is not an artefact of which seat runs first.
+  - On these rows the lean does not depend on which seat runs first.
 - **Early loss by t = 2 s (quinn lost / sent on leg 0):**
   - live RB rows 598–754 lost of about 27 000 sent (median 685);
   - RC rows 595–727 (median 663);
   - seed 7 runs higher than seed 42 on both seats (medians).
-  - The dead RB s42 r4 had sent 22 packets by 2 s (4 lost): its warm-up never started the transfer.
-  - So the surviving BASE rows show no lower early loss than CAND's. Selection on early loss does not explain the lean on these rows.
+- **What this readout can and cannot see:**
+  - It sees the transfer's first 2 s of loss per seat.
+  - It cannot see the selection that matters: on a live row the warm-up (about 0.05 s) ends before the `[DIAG]` clock's first ticks, and one lost `WindowStart` is invisible among about 27 000 packets.
+  - The dead RB s42 r4 is not comparable. Its `[DIAG]` clock is the warm-up phase (every tick `src=0`, `cum=1/0/1`, one object never acked), and its 4 lost of 22 sent by 2 s is the only heavy early loss in the ledger. That fits selection acting on the first packets, which the live rows' readout cannot show.
+  - So the early-loss readout neither shows nor rules out survivor selection. It is kept as reported context.
 
 ## 6. Rehearsal (`LD_PLAN=65 LD_REHEARSE=1`) must show
 

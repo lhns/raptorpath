@@ -9,7 +9,7 @@ Scored (two readouts, each one-sided, prediction registered: RC worse):
   REST  the in-order delay mean over ticks t > HEAD_S: PERSISTENCE.
 Per readout: d = ln(RC / RB) per usable pair; exact one-sided Wilcoxon signed-rank p (sign-flip distribution by exact counting), the Hodges-Lehmann shift h and its exact one-sided
 95 % upper bound U; REGRESSION iff p <= ALPHA and h > TOL; NO-REGRESSION iff U <= TOL; else UNRESOLVED; fewer than MIN_PAIRS usable pairs: UNRESOLVED-N.
-Session label from the pair (HEAD, REST): BISECT, START-UP-COST, LATE-ONLY, CLOSED, NOT-REPLICATED or UNRESOLVED (table in the registration, section 3.5).
+Session label from the pair (HEAD, REST): BISECT, START-UP-COST, REPLICATED-PERSISTENCE-OPEN, LATE-ONLY, REST-REGRESSION, CLOSED, NOT-REPLICATED or UNRESOLVED (table in the registration, section 3.5).
 Reported only: the whole-run in-order mean; the RB half-split q95 per window; the shift per run order; early loss (quinn lost packets by t = 2 s) per row; the other readouts.
 Pure and env-free; MIN_TICK_S is a parameter only so the path exercise can run the code on section 64's 12 s rows (labelled there)."""
 import functools
@@ -200,12 +200,17 @@ def test(xs, min_pairs=MIN_PAIRS):
 
 
 def session_label(head, rest):
+    """A window is called clean only when it reads NO-REGRESSION; an UNRESOLVED(-N) window is open, never 'no effect'."""
     if head == "REGRESSION" and rest == "REGRESSION":
         return "BISECT", "the head replicates and the rest persists: a regression of the merged fix; bisect commit 6's engine against commit 8's"
+    if head == "REGRESSION" and rest == "NO-REGRESSION":
+        return "START-UP-COST", "the head replicates and the rest excludes more than TOL: a start-up cost of the merged fix, not a steady-state one"
     if head == "REGRESSION":
-        return "START-UP-COST", f"the head replicates, the rest reads {rest}: a start-up cost of the merged fix, not a steady-state one"
+        return "REPLICATED-PERSISTENCE-OPEN", f"the head replicates; the rest reads {rest}, so persistence is open"
+    if head == "NO-REGRESSION" and rest == "REGRESSION":
+        return "LATE-ONLY", "the rest regresses and the head excludes more than TOL: not the predicted pattern; to the owner"
     if rest == "REGRESSION":
-        return "LATE-ONLY", "the rest regresses and the head does not replicate: not the predicted pattern; to the owner"
+        return "REST-REGRESSION", f"the rest regresses; the head reads {head}, so the start-up window is open: a steady-state regression of the merged fix"
     if head == "NO-REGRESSION" and rest == "NO-REGRESSION":
         return "CLOSED", "neither window regresses beyond TOL: section 64's lean closes"
     if rest == "NO-REGRESSION":
