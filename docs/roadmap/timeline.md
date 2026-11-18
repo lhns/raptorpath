@@ -64,7 +64,7 @@ gantt
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-18
     Framing fix on failed rows :rec_s63_f2_first_contact, 2026-11-17, 2026-11-17
     Framing fix regression test :rec_f2_merge_guard, 2026-11-18, 2026-11-18
-    Realtime delay lean, post-hoc read :active, rec_s64_delay_lean, 2026-11-18, 2026-11-18
+    Realtime delay lean, post-hoc read :rec_s64_delay_lean, 2026-11-18, 2026-11-18
     Owner calls on the framing fix :rec_user_framing_fix, 2026-11-17, 2026-11-18
     Realtime receiver misread packets (fixe… :rec_defect_realtime_framing, 2026-11-17, 2026-11-18
     Inner-feedback repair floor :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
@@ -93,7 +93,7 @@ gantt
     Executed sliding P_fec oracle :active, rate_pfec_oracle, 2026-11-14, 2026-11-18
     Repair taper shape inert as wired :active, rate_defect_taper_inert, 2026-11-14, 2026-11-18
     Evicting-seat m̄ registration :rate_evict_registration, 2026-11-16, 2026-11-17
-    Is spare's cwnd enforced? :rate_spare_cwnd, 2026-11-16, 2026-11-17
+    Is spare's cwnd enforced? :active, rate_spare_cwnd, 2026-11-16, 2026-11-17
     section store - store law
     Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
     Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19

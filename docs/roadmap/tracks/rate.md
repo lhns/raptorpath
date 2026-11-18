@@ -26,7 +26,7 @@ flowchart TB
     rate_pfec_oracle["⏳ Executed sliding<br/>P_fec oracle"]
     rate_defect_taper_inert>"⚠ Repair taper shape<br/>inert as wired"]
     rate_evict_registration["✔ Evicting-seat m̄<br/>registration"]
-    rate_spare_cwnd["✔ Is spare's cwnd<br/>enforced?"]
+    rate_spare_cwnd["▶ Is spare's cwnd<br/>enforced?"]
     rate_evict_epre["○ Evicting-seat test<br/>suites and binary"]
     rate_evict_session["⛔ Evicting-seat test,<br/>rehearsal and runs"]
     rate_spare_clamp_verdict[/"⛔ Spare clamp on<br/>Realtime: verdict"/]
@@ -100,8 +100,9 @@ flowchart TB
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
     class rate_defect_pfec,rate_defect_taper_inert defect
-    class rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd unrated
+    class rate_pfec_continuous,rate_evict_registration unrated
     class rate_pfec_oracle waiting
+    class rate_spare_cwnd inprog
     class rate_evict_epre,rate_fix_rate_readout next
     class rate_evict_session,rate_spare_clamp_verdict,rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
 ```
@@ -133,7 +134,7 @@ flowchart TB
 | `rate-evict-epre` | Evicting-seat test suites and binary | next | unrated |  | status §51 (E-pre, its failure rule); status §51 Amendment 1; status §51 Amendment 2; status §63 Result ("Next"); status §64 Result (the limit at ρ < 1); branch e-tree-f2 11213363 | rate-evict-registration, rec-f2-merge-guard |
 | `rate-evict-session` | Evicting-seat test, rehearsal and runs | blocked | unrated |  | status §51; status §51 Amendment 2; status §63 Result; docs/derivations/s51-evict-design.md | rate-evict-epre, meas-blocke-pacing-gate |
 | `rate-spare-clamp-verdict` | Spare clamp on Realtime: verdict | blocked | unrated |  | status §60 Amendment 2 | rate-evict-session |
-| `rate-spare-cwnd` | Is spare's cwnd enforced? | done | unrated |  | status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |  |
+| `rate-spare-cwnd` | Is spare's cwnd enforced? | in-progress | unrated |  | status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |  |
 | `rate-fix-rate-readout` | Repair-rate readout | next | unrated |  | docs/derivations/s51-design.md §8 P2 |  |
 | `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
 | `rate-law-reconcile` | Rate-law reconciliation | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session, rate-pfec-oracle |

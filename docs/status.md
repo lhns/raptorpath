@@ -1356,6 +1356,15 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - status §1's protocol-version line, and the §42/§43 texts that call the receiver timestamp "v10" (now v11);
   - `harness64`'s tools to main with it.
 
+**The Realtime delay lean after the framing fix, read post hoc (2026-11-18; `s64-lean` `6d55024c`; Fable-reviewed): no regression shown; one readout is worth scoring.**
+- **Bulk:** in-order delay is better on the fixed build (c2 −1.3 %, resolved to 3 %, better in 10 of 12 pairs). `rtp_floor_p0` keeps one sign across the four Bulk cells, but every value sits inside its cell's noise floor, and slot pairs are coin flips.
+- **Realtime (stage R), paired by slot (11 pairs, the dead base row's partner dropped):**
+  - in-order delay and `rtp_floor_p0` are each worse in 9 of 11 pairs (one-sided sign p 0.033; one of seven correlated readouts);
+  - the in-order gap holds in both halves of the rows.
+- **Correction to earlier messages:** at the Realtime stage's own noise floor (base half-split q95), client lag is not unreadable. It sits at its q95 (13.5 % against 12.6 %).
+- **`rtp_floor_p0` at the Realtime stage is a single start-up sample** (the 10 s window never rolls on 12 s rows), so it is not a path reading. The earlier "the one worth a look" is withdrawn.
+- **Next (the coordinator's default, about 40 min of VM):** a registered re-check of whole-run in-order delay on ≥ 260 MB Realtime rows at full reliability, base and fixed builds paired by slot, with the noise floor taken from the base rows first. The merge stands either way.
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**

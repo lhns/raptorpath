@@ -49,8 +49,8 @@ flowchart TB
     rec_defect_realtime_framing>"✔ Realtime receiver<br/>misread packets<br/>(fixed)"]
     rec_s63_f2_first_contact["✔ Framing fix on<br/>failed rows"]
     rec_f2_merge_guard["✔ Framing fix<br/>regression test"]
-    rec_s64_delay_lean["⏳ Realtime delay lean,<br/>post-hoc read"]
-    rec_realtime_delay_recheck["⛔ Realtime delay re-<br/>check, long rows"]
+    rec_s64_delay_lean["✔ Realtime delay lean,<br/>post-hoc read"]
+    rec_realtime_delay_recheck["○ Realtime delay re-<br/>check, long rows"]
     rec_framing_followups["○ Framing fix<br/>leftovers"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⏸ Gap horizon guard,<br/>then merge"]
@@ -158,14 +158,14 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
-    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation unrated
+    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean unrated
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
     class rec_recov_sp,rec_dispersion_est,rec_leverb_guard parked
-    class rec_gap_horizon,rec_s64_delay_lean waiting
+    class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
-    class rec_realtime_delay_recheck,rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
-    class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
+    class rec_realtime_delay_recheck,rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
+    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
 ```
 <!-- END GENERATED: track-rec -->
 
@@ -207,8 +207,8 @@ flowchart TB
 | `rec-defect-refresh-input` | Hole refresh clock degenerate input | in-progress | unrated | srtt = exactly 50 000 µs | status §3.10 item 6 | rec-snapver-filter |
 | `rec-s63-f2-first-contact` | Framing fix on failed rows | done | very-successful | fixed binary 5/5, old binary failed 2/5 | status §63; status §63 Result | rec-defect-realtime-framing |
 | `rec-f2-merge-guard` | Framing fix regression test | done | very-successful | Bulk unchanged, Realtime fixed; merged | status §64; status §64 Result | rec-s63-f2-first-contact |
-| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | in-progress | unrated |  | status §64 Result; branch s64-lean 6d55024c; docs/derivations/s64-lean-posthoc.md (branch s64-lean) | rec-f2-merge-guard |
-| `rec-realtime-delay-recheck` | Realtime delay re-check, long rows | blocked | unrated |  | status §64 Result (stage R); branch s64-lean 6d55024c | rec-s64-delay-lean |
+| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | done | unrated |  | status §64 Result; branch s64-lean 6d55024c; docs/derivations/s64-lean-posthoc.md (branch s64-lean) | rec-f2-merge-guard |
+| `rec-realtime-delay-recheck` | Realtime delay re-check, long rows | next | unrated |  | status §64 Result (stage R); branch s64-lean 6d55024c | rec-s64-delay-lean |
 | `rec-user-framing-fix` | Owner calls on the framing fix | done | n/a | one framing, fail closed, merge | status Owner decisions (2026-11-17) items 11-12, 15 |  |
 | `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | done | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |  |
 | `rec-framing-followups` | Framing fix leftovers | next | unrated |  | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 | rec-f2-merge-guard |

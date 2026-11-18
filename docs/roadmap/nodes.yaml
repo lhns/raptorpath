@@ -1592,7 +1592,7 @@ nodes:
   start: ''
   end: ''
   folded: []
-  overview: false
+  overview: true
   vm_order: 1
   order_reason: 'First: the engine''s tests and the build identity on the fixed tree; the pacer decision does not affect it.'
   plain: Running the engine's full test suites on the fixed test tree and recording the exact program build that every later step of the evicting-seat test must use.
@@ -1649,7 +1649,7 @@ nodes:
   title: Is spare's cwnd enforced?
   track: rate
   kind: research
-  state: done
+  state: in-progress
   outcome: unrated
   evidence:
   - status §60 Amendment 2
@@ -3154,7 +3154,7 @@ nodes:
   title: Realtime delay lean, post-hoc read
   track: rec
   kind: research
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - status §64 Result
@@ -3178,7 +3178,7 @@ nodes:
   title: Realtime delay re-check, long rows
   track: rec
   kind: research
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - status §64 Result (stage R)
@@ -3193,7 +3193,7 @@ nodes:
   start: ''
   end: ''
   folded: []
-  overview: false
+  overview: true
   plain: A registered low-latency run with long transfers at full reliability, the two programs paired by slot, to see whether the framing fix really adds delivery delay.
   notes: 'Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64''s 100 MB rows sit below the in-order delay''s 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read''s review (rec-s64-delay-lean); it becomes next when that is done.'
 - id: rec-user-framing-fix
@@ -6869,7 +6869,7 @@ nodes:
   vm_order: 3
   order_reason: Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
   plain: First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves.
-  notes: 'Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). Its first step is the amendment that re-bases b51-tree on main, then the 51 rehearsal.'
+  notes: 'Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). Its first step is the amendment that re-bases b51-tree on main, then the 51 rehearsal.'
 - id: cc-s48d-session
   title: bbr_rs controller, round 2
   track: cc
