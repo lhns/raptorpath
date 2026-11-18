@@ -437,7 +437,7 @@ else:
 
 # ═══ 7. plan 65 (status 65): plan 64's stage R at 24 pairs, the registered scorer wired in unchanged ═══
 check("plan 65's battery wiring: LD_PLAN=65 accepted, P65 rides P64 (same sizes, env, TRIES=1), the table is plan64.py's (48 rows asserted, 3 smoke rows with the conditional RB s7 r1 behind plan64.py cond65), replace gets $PLAN, the copy list names s65_score.py",
-      "|54b|64|65) ;;" in bat and 'P64=0; P65=0; [ "$PLAN" = "65" ] && P65=1' in bat and '-eq 48 ] || { echo "ABORT-PLAN65 table' in bat and 'plan64.py plan smoke "$PLAN"' in bat
+      "|54b|63|64|65) ;;" in bat and 'P64=0; P65=0; [ "$PLAN" = "65" ] && P65=1' in bat and '-eq 48 ] || { echo "ABORT-PLAN65 table' in bat and 'plan64.py plan smoke "$PLAN"' in bat
       and 'plan64.py cond65 "$OUT"' in bat and 'plan64.py replace "$OUT" "$1" "$2" "$3" "$4" "$PLAN"' in bat and " s65_score.py" in bat and 'if [ "$P64" = 1 ]; then' in bat)
 check("plan 65's run_all wiring: a stage-R-only launch (stage rt65 65, smoke65r / score65r / check65r), no build (SUITES-NOT-RUN), the pinned binaries installed and sha-checked, the scorer sha (LD_S65_SCORE_SHA, the registered pin) checked before anything runs, LD_PRIOR_TOOLS reuse, the process list logged twice, the budget from plan64.py, no LD_CAND_SHA / LD_BASE_SHA",
       "stage rt65 65; rrc=$?" in runall and "65) smk=smoke65r; scr=score65r; chk=check65r ;;" in runall and "SUITES-NOT-RUN plan 65" in runall and "ABORT-TOOLS plan 65: tools/l1/s65_score.py sha256" in runall

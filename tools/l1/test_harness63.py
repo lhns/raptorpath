@@ -168,7 +168,7 @@ check("battery: both seats are preflighted (the E-block tokens), must be differe
       and 'want=10' in battery and "ABORT-PLAN63 smoke table has" in battery and "=== binary-base" in battery)
 check("run_all: plan 63 is selectable and rehearsable, rides P46 + P57, and the CAND pin LD_BIN_SHA_CAND is REQUIRED on a launch (no default; the rehearsal records it) before any lock",
       "  63) P_SMOKE=" in runall and '[ "$PLAN" != "63" ]' in runall and 'P63=0; [ "$PLAN" = "63" ] && { P63=1; P46=1; P57=1; }' in runall
-      and 'echo "ABORT-BIN-SHA plan 63 needs LD_BIN_SHA_CAND' in runall and runall.index("ABORT-BIN-SHA plan 63 needs") < runall.index("take_lock \"$LOCK_VM\"") and "|63)" in runall)
+      and 'echo "ABORT-BIN-SHA plan 63 needs LD_BIN_SHA_CAND' in runall and runall.index("ABORT-BIN-SHA plan 63 needs") < runall.index("take_lock \"$LOCK_VM\"") and "|63|64|65)" in runall)
 check("run_all: the CONTROL pin defaults to the registered E bin_sha 8013a312... (LD_BIN_SHA_CONTROL, a test seam) and equals plan63.CONTROL_SHA; both pins are exported for the report",
       "8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf" in runall and plan63.CONTROL_SHA == "8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf" and "export LD_BIN_SHA_CONTROL LD_BIN_SHA_CAND" in runall)
 check("run_all: the CAND binary is checked against LD_BIN_SHA_CAND (ABORT-BIN-SHA ... CAND) or recorded, the CONTROL comes from LD_BIN_CONTROL (no build) or the BASE tree and is checked against its pin (ABORT-BIN-SHA ... CONTROL), "

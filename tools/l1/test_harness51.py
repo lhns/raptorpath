@@ -40,11 +40,11 @@ runall, battery, perf = rd("loopdiag_run_all.sh"), rd("loopdiag_battery.sh"), rd
 check("battery: the plan case still starts with 60a|60b|59|57a|57b|56 and the per-plan scrub line still reads '-u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM' (the 60 tests' substrings)",
       'case "$PLAN" in 60a|60b|59|57a|57b|56' in battery and "-u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM" in battery and 'read -r -a arm_env <<< "$p60_arm_env"' in battery)
 check("run_all: the ABORT-REHEARSE case line is the registered one, byte for byte (plans 51 / 51e are rehearsable through a separate guard)",
-      'case "$PLAN" in 41c|41d|46|47|48|52|53|54b|56|57a|57b|59|60a|60b) ;; *) echo "ABORT-REHEARSE' in runall and 'if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ]; then' in runall)
+      'case "$PLAN" in 62r0|61a) ;; 41c|41d|46|47|48|52|53|54b|56|57a|57b|59|60a|60b|65) ;; *) echo "ABORT-REHEARSE' in runall and 'if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ]; then' in runall)
 
 # ═══ 2. the battery ═══
 check("battery: plans 51 / 51e accepted; both single-seat (P38 + PCAND, no P41); plan 51e's instrument env is RWM_RDIAG=1 + the arm's timeout (no RWM_RTOBS), plan 51's the guard env at 200 s",
-      "|56|41d|51|51e|24|" in battery and "|46|48|52|53|54b|63) ;; *) echo \"ABORT-PLAN LD_PLAN=$PLAN" in battery and 'P51=0; [ "$PLAN" = "51" ] && { P51=1; P38=1; PCAND=1; }' in battery and 'P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }' in battery
+      "|56|41d|51|51e|24|" in battery and "|46|48|52|53|54b|63|64|65) ;; *) echo \"ABORT-PLAN LD_PLAN=$PLAN" in battery and 'P51=0; [ "$PLAN" = "51" ] && { P51=1; P38=1; PCAND=1; }' in battery and 'P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }' in battery
       and '[ "$P51E" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)' in battery and '[ "$P51" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)' in battery)
 check("battery: the env scrub of section 4 (RWM_DELTA RWM_COPA_DELTA RWM_COPA_WIRE RWM_COMPLETION_EXPOSURE RWM_MIN_R RWM_CC_PACE and the pacing knob) is SCRUB_EXTRA, set for plans 51 / 51e ONLY, and rides before the arm env",
       "SCRUB_EXTRA=(-u RWM_DELTA -u RWM_COPA_DELTA -u RWM_COPA_WIRE -u RWM_COMPLETION_EXPOSURE -u RWM_MIN_R -u RWM_CC_PACE -u RWM_PERF_RATE_MBIT)" in battery and '{ [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ]; } && SCRUB_EXTRA=' in battery
@@ -85,7 +85,7 @@ check("run_all: the tests gate runs test_mbar59 / test_s60 / test_s51e / test_ha
 check("run_all: the stage calls the 51 / 51e scorers for the smoke (smoke | rehearsal | recheck), the score and the slot check; LD_HARD / LD_CELL / LD_ONLY / LD_BLOCK_ROW_S ride `sudo -n env` (it resets the environment)",
       all(x in runall for x in ('s51e_score.py smoke51e "$P51SMOKE"', 's51_score.py smoke51 "$P51SMOKE"', "P51SMOKE=rehearsal", "P51SMOKE=recheck", 's51e_score.py score51e "$dir/ld.log"', 's51_score.py score51 "$dir/ld.log"', 'plan51e.py check "$splan"', 'plan51.py check "$splan"',
                                 'stage rep51 51; rrc=$?', 'stage rep51e 51e; rrc=$?'))
-      and 'LD_NOGO="${LD_NOGO:-}" LD_HARD="${LD_HARD:-}" LD_CELL="${LD_CELL:-}" LD_ONLY="${LD_ONLY:-}" LD_BLOCK_ROW_S="${LD_BLOCK_ROW_S:-}")' in runall)
+      and 'LD_HARD="${LD_HARD:-}" LD_CELL="${LD_CELL:-}" LD_ONLY="${LD_ONLY:-}" LD_BLOCK_ROW_S="${LD_BLOCK_ROW_S:-}")' in runall)
 check("run_all and the battery guard every new file against CRLF", all(x in runall and x in battery for x in ("plan51e.py", "s51e_score.py", "plan51.py", "s51_score.py", "test_s51e.py", "test_s51.py", "test_harness51.py")))
 check("HARNESS_PATHS lists 51e (the strict-manifest paths + the pacing / gauge VOIDs, the calibration and the PL recheck) and 51 (rehearse, full, bin_sha, the two replacements, the pin failure) and no prior-tests path for either",
       {"rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"} == set(hp.HARNESS_PATHS["51e"]) and {"rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"} == set(hp.HARNESS_PATHS["51"]))
