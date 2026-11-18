@@ -25,6 +25,7 @@ flowchart TB
     place_wire_price["✔ Wire-RTT placement<br/>price"]
     place_path_event["✔ Path event after<br/>promotion"]
     place_per_leg_state["⏳ One per-leg state<br/>design"]
+    place_per_leg_relocate["⏳ Per-leg state<br/>relocation step"]
     place_per_leg_impl["⛔ Per-leg state<br/>implementation"]
     place_early_window_sched ~~~ place_marginal_cost
     place_early_window_sched ~~~ place_frozen_echo
@@ -44,8 +45,9 @@ flowchart TB
     place_s41_iteration ~~~ place_wire_price
     place_wire_price ~~~ place_path_event
     place_wire_price ~~~ place_per_leg_state
-    place_path_event ~~~ place_per_leg_impl
-    place_per_leg_state ~~~ place_per_leg_impl
+    place_path_event ~~~ place_per_leg_relocate
+    place_per_leg_state ~~~ place_per_leg_relocate
+    place_per_leg_relocate ~~~ place_per_leg_impl
     place_early_window_sched -.-> place_marginal_cost
     place_frozen_echo -.-> place_wire_price
     place_stage2_battery --> place_hol
@@ -54,7 +56,8 @@ flowchart TB
     place_s41_iteration --> place_wire_price
     place_wire_price --> place_path_event
     place_wire_price --> place_per_leg_state
-    place_per_leg_state --> place_per_leg_impl
+    place_per_leg_state --> place_per_leg_relocate
+    place_per_leg_relocate --> place_per_leg_impl
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -70,7 +73,7 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class place_early_window_sched,place_frozen_echo,place_daps,place_rate_sample,place_submax_anchor,place_slack,place_hol,place_t_derived dead
     class place_marginal_cost,place_stage2_battery,place_wire_price succ
-    class place_wdiv,place_per_leg_state waiting
+    class place_wdiv,place_per_leg_state,place_per_leg_relocate waiting
     class place_s38_wire bad
     class place_s41_iteration mixed
     class place_path_event unrated
@@ -96,10 +99,11 @@ flowchart TB
 | `place-s41-iteration` | Wire price, iteration once | done | mixed |  | status §41; commit 85be32ac | place-s38-wire |
 | `place-wire-price` | Wire-RTT placement price | done | successful | p = 0.7195 | status §41b; status §3.9; ADR-0073; commit fc5edd2d | place-s41-iteration |
 | `place-per-leg-state` | One per-leg state design | in-progress | unrated |  | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design | infra-simplify-review, place-wire-price |
+| `place-per-leg-relocate` | Per-leg state relocation step | in-progress | unrated |  | status Owner decisions (2026-11-16) items 4-5; branch perleg-phase-a e5246d7f; derivation w3-per-leg-state.md (branch perleg-design) | place-per-leg-state |
 | `place-submax-anchor` | Sub-max quantile rate anchor | abandoned | dead-end | 65× | paper §10 row Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) |  |
 | `place-path-event` | Path event after promotion | done | unrated |  | status §46 | place-wire-price |
-| `place-user-perleg-questions` | Owner calls on per-leg design | next | n/a |  | plan user decision 9 | place-per-leg-state |
-| `place-per-leg-impl` | Per-leg state implementation | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-state, place-user-perleg-questions |
+| `place-user-perleg-questions` | Owner calls on per-leg design | next | n/a |  | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 | place-per-leg-state |
+| `place-per-leg-impl` | Per-leg state implementation | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-relocate, place-per-leg-state, place-user-perleg-questions |
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | abandoned | superseded |  | ADR-0026 |  |
 
 ### Details per node
@@ -118,10 +122,11 @@ flowchart TB
 | `place-s38-wire` | Wire-clocked placement base | Split 2026-11-16 from 'Wire-RTT placement price'. The arm did not ship; iteration once in §41. | status §38; commit ac133b31 |
 | `place-s41-iteration` | Wire price, iteration once | Split 2026-11-16 from 'Wire-RTT placement price'. Allocation-free witness, host gate, then the §38 battery. | status §41; commit 85be32ac |
 | `place-wire-price` | Wire-RTT placement price | §41b GATE PASS (p = 0.72) -> owner promotion (ADR-0073) -> merged via diag36 (85c2295). §38 and §41 are their own nodes since 2026-11-16 (place-s38-wire, place-s41-iteration). The §3.9 lock-out classifier rule is folded in; §46 is its own node. | status §41b; status §3.9; ADR-0073; commit fc5edd2d |
-| `place-per-leg-state` | One per-leg state design | Design only (plan W3.2); prerequisite of W3.3/W3.4; open owner questions (plan user decision 9). The per-leg state takes over the wire price's inputs. | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design |
+| `place-per-leg-state` | One per-leg state design | Design only (plan W3.2); prerequisite of W3.3/W3.4; open owner questions (plan user decision 9). The per-leg state takes over the wire price's inputs. Answered: question 4 (decision 4, 2026-11-16) and question 1 (decision 10, 2026-11-17). | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design |
+| `place-per-leg-relocate` | Per-leg state relocation step | Phase A of the per-leg design (A0-A4 on perleg-phase-a e5246d7f, 2026-11-16..17): leg_state_trace_pin captured at main and the leak-backstop bind gauge; one s (LegState.s) replaces Copa's srtt and the estimator's ewma_rtt; m, b, the rate sampler, J1-J3 and the wire RTT move into LegState; the [LEG] gauge (observation only). Owner decision 4 answered the only question it needs (reseed s on revival). It changes no behaviour, so per owner decision 5 it rides one stacked merge guard with the other zero-behaviour steps (the shared-core moves), bisected only on failure. Done when: that guard passes and the branch merges. | status Owner decisions (2026-11-16) items 4-5; branch perleg-phase-a e5246d7f; derivation w3-per-leg-state.md (branch perleg-design) |
 | `place-submax-anchor` | Sub-max quantile rate anchor | Split from place-daps (its parent). The row says the windowed max is the correct statistic for decode-clocked samples; it names no replacing node. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) |
 | `place-path-event` | Path event after promotion | Own verdict: NO-DIFFERENCE against the registered prediction CAND-RECOVERS-FASTER (result in the §41c file, session 3). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §46 |
-| `place-user-perleg-questions` | Owner calls on per-leg design | Q4 reseed (2026-11-16); Q1 queue_target_mult = 1 + q(delta) (2026-11-17). Q2-3 and 5-8 belong to Phase B / W3.3. Done when: those are answered. | plan user decision 9 |
-| `place-per-leg-impl` | Per-leg state implementation | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. | plan W3.2, W3.6a |
+| `place-user-perleg-questions` | Owner calls on per-leg design | Q4 reseed (2026-11-16); Q1 queue_target_mult = 1 + q(delta) (2026-11-17). Q2-3 and 5-8 belong to Phase B / W3.3. Done when: those are answered. | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 |
+| `place-per-leg-impl` | Per-leg state implementation | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. The relocation (Phase A) is its own node, place-per-leg-relocate; this node is Phase B and W3.3, which wait on the remaining per-leg questions (2-3, 5-8). | plan W3.2, W3.6a |
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it. | ADR-0026 |
 <!-- END GENERATED: table-place -->

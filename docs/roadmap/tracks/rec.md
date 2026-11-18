@@ -49,7 +49,9 @@ flowchart TB
     rec_defect_realtime_framing>"✔ Realtime receiver<br/>misread packets<br/>(fixed)"]
     rec_s63_f2_first_contact["✔ Framing fix on<br/>failed rows"]
     rec_f2_merge_guard["✔ Framing fix<br/>regression test"]
-    rec_s64_delay_lean["✔ Realtime delay lean,<br/>post-hoc read"]
+    rec_s64_delay_lean["▶ Realtime delay lean,<br/>post-hoc read"]
+    rec_realtime_delay_recheck["⛔ Realtime delay re-<br/>check, long rows"]
+    rec_framing_followups["○ Framing fix<br/>leftovers"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⏸ Gap horizon guard,<br/>then merge"]
     rec_fix_perleg_clock_n1[/"○ Per-leg recovery<br/>clock, one law"/]
@@ -99,12 +101,13 @@ flowchart TB
     rec_defect_realtime_framing ~~~ rec_s63_f2_first_contact
     rec_s63_f2_first_contact ~~~ rec_f2_merge_guard
     rec_f2_merge_guard ~~~ rec_s64_delay_lean
-    rec_f2_merge_guard ~~~ rec_w0_leg_question
-    rec_f2_merge_guard ~~~ rec_leverb_guard
-    rec_s64_delay_lean ~~~ rec_fix_perleg_clock_n1
+    rec_s64_delay_lean ~~~ rec_realtime_delay_recheck
+    rec_s64_delay_lean ~~~ rec_framing_followups
+    rec_s64_delay_lean ~~~ rec_w0_leg_question
+    rec_realtime_delay_recheck ~~~ rec_leverb_guard
+    rec_framing_followups ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_fix_perleg_clock_n1
-    rec_leverb_guard ~~~ rec_fix_perleg_clock_n1
-    rec_fix_perleg_clock_n1 ~~~ rec_recovery_timeouts
+    rec_leverb_guard ~~~ rec_recovery_timeouts
     rec_fix_perleg_clock_n1 ~~~ rec_fix_refresh_clock
     rec_fix_perleg_clock_n1 ~~~ rec_fix_nack_throttle
     rec_recovery_timeouts ~~~ rec_retx_behind_source
@@ -133,12 +136,14 @@ flowchart TB
     rec_defect_realtime_framing --> rec_s63_f2_first_contact
     rec_s63_f2_first_contact --> rec_f2_merge_guard
     rec_f2_merge_guard --> rec_s64_delay_lean
+    rec_s64_delay_lean --> rec_realtime_delay_recheck
+    rec_f2_merge_guard --> rec_framing_followups
     rec_s54_session --> rec_w0_leg_question
     rec_s54_session --> rec_leverb_guard
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 53,54,55,65 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 54,55,56,66 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -159,9 +164,9 @@ flowchart TB
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
-    class rec_s64_delay_lean mixed
-    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
-    class rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
+    class rec_s64_delay_lean inprog
+    class rec_realtime_delay_recheck,rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
+    class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
 ```
 <!-- END GENERATED: track-rec -->
 
@@ -203,9 +208,11 @@ flowchart TB
 | `rec-defect-refresh-input` | Hole refresh clock degenerate input | in-progress | unrated | srtt = exactly 50 000 µs | status §3.10 item 6 | rec-snapver-filter |
 | `rec-s63-f2-first-contact` | Framing fix on failed rows | done | very-successful | fixed binary 5/5, old binary failed 2/5 | status §63; status §63 Result | rec-defect-realtime-framing |
 | `rec-f2-merge-guard` | Framing fix regression test | done | very-successful | Bulk unchanged, Realtime fixed; merged | status §64; status §64 Result | rec-s63-f2-first-contact |
-| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | done | mixed |  | status §64 Result; branch s64-lean 6d55024c | rec-f2-merge-guard |
+| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | in-progress | unrated |  | status §64 Result; branch s64-lean 6d55024c; docs/derivations/s64-lean-posthoc.md (branch s64-lean) | rec-f2-merge-guard |
+| `rec-realtime-delay-recheck` | Realtime delay re-check, long rows | blocked | unrated |  | status §64 Result (stage R); branch s64-lean 6d55024c | rec-s64-delay-lean |
 | `rec-user-framing-fix` | Owner calls on the framing fix | done | n/a | one framing, fail closed, merge | status Owner decisions (2026-11-17) items 11-12, 15 |  |
 | `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | done | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |  |
+| `rec-framing-followups` | Framing fix leftovers | next | unrated |  | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 | rec-f2-merge-guard |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor | abandoned | dead-end |  | branch P10a |  |
 | `rec-recov-sp` | Singles hole suppression | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
 | `rec-leverb-c1d-cost` | Gap horizon two-path duplicate cost | in-progress | unrated | +13 % | status §53 open item 2 | rec-snapver-filter |
@@ -256,16 +263,18 @@ flowchart TB
 | `rec-defect-hole-law` | Hole law unmeasured where it operates | §53 open item 6: [HOLD] is skewed on main too (hn and ripe_frac mostly re-stamps from stale reports), so item 5's "main already wastes about 12 % of its retransmits" must be re-checked if it came from this gauge. | status §3.10 item 5 |
 | `rec-s63-f2-first-contact` | Framing fix on failed rows | CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63. | status §63; status §63 Result |
 | `rec-f2-merge-guard` | Framing fix regression test | Stage G GATE-41d PASS p=0.991 (min-p 0.273), F2-FAIL 0; stage R RT-PASS 12/12, BASE F2-dead 1/12; BENCH PASS. Merged --no-ff f36d9172 (patch-id 3e69ce68), ADR-0078 Accepted, wire v10. Realtime delay readouts lean worse, none flagged: post-hoc read on branch s64-lean. Harness [SYMSZ] column defect fixed before harness64 reaches main. | status §64; status §64 Result |
-| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). Free reads on branch s64-lean; if open, one ~40 min registered Realtime session at 600 MB. | status §64 Result; branch s64-lean 6d55024c |
+| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). The post-hoc analysis is on branch s64-lean 6d55024c (docs/derivations/s64-lean-posthoc.md), not reviewed and not on main. Done when: it is reviewed and its reading is in status. | status §64 Result; branch s64-lean 6d55024c; docs/derivations/s64-lean-posthoc.md (branch s64-lean) |
+| `rec-realtime-delay-recheck` | Realtime delay re-check, long rows | Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64's 100 MB rows sit below the in-order delay's 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read's review (rec-s64-delay-lean); it becomes next when that is done. | status §64 Result (stage R); branch s64-lean 6d55024c |
 | `rec-user-framing-fix` | Owner calls on the framing fix | Decision 11: format A, one framing. Decision 12: fail closed; the receiver takes the sender's announced size. Decision 15: merge now (f36d9172), ADR-0078 Accepted, wire v10. | status Owner decisions (2026-11-17) items 11-12, 15 |
-| `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; owner decision 11 (2026-11-17): format (A), one framing for every symbol; design on f2-design, then an ADR, a protocol bump and the fix. | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |
+| `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | Found by the §51 E rehearsal; it blocked block E and block 51 (their Realtime rows). Before the fix: a red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state. Owner decisions 11-12: one framing for every symbol (format A), fail closed. Fixed on f2-impl (ADR-0078, wire v10), checked by §63 and the §64 guard, merged f36d9172 (decision 15). Leftovers: rec-framing-followups. | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |
+| `rec-framing-followups` | Framing fix leftovers | 1. Mixed-hint pairs still connect silently: they differ in the receiver's default ρ, which nothing on the wire checks (ADR-0078 Consequences, audit §6); owner decision 12 keeps them unsupported, so refuse them at the handshake or record the risk. 2. The sender still chooses packing by hint (use_packing, sender_policy.rs, status §3.3; ADR-0078 decision 2): a NO-MODE-SWITCH debt, counted in model-mode-switch-debts. 3. The receiver-timestamp field is now wire v11 (ADR-0078 decision 3); status §1's protocol line and the §42/§43 texts that call it v10 are owed (§64 Result, 'At the merge'). Done when: mixed-hint pairs are refused at the handshake with a test (or the owner records them as accepted), and the status texts read v11. | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor | Split from rec-bulk-arq (its parent). The source names no replacement; P10b (window-mode reactive repair, G236) merged the same day. | branch P10a |
 | `rec-recov-sp` | Singles hole suppression | Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |
 | `rec-leverb-c1d-cost` | Gap horizon two-path duplicate cost | No raw record (§53 open items are in the section text, not extracted as items). Goes with the lever-B merge question. | status §53 open item 2 |
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | No raw record. §53 open item 6 ([HOLD] skewed on main; §3.10 item 5's "12 % wasted" to re-check) is attached to rec-defect-hole-law. | status §53 open item 3 |
 | `rec-s54-session` | Snapshot filter guard, store budget | Done when: the §54 Result is in status: the filter-only guard v2 against main PASSes and snapver-law merges, and the store-budget block (reduced RWM_STORE_PATH_POOL on BASE' and CAND', quinn evictions, tail/H0, in-order delay, the pool-arm causal test of §53 Erratum 1) is reported. | plan Live state items 1-2; branch p0-dwell-diag §8; branch levb54 |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | Needs the RWM_PLACE_WDIV knob, which lives on the unmerged branch wdiv-diag (node place-wdiv). Option: run it as a reported block inside the lever-B guard session instead of a session of its own. Done when: a reported-only W0 row (retransmits placed like source) on main + filter + lever B answers the open leg question under the 64-gap horizon, with the duplicate account complete (pt_st and det explained). | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f |
-| `rec-leverb-guard` | Gap horizon guard, then merge | Law ledger: C02 (rank 6, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner's go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. | plan Live state item 4; status §53 "What follows" |
+| `rec-leverb-guard` | Gap horizon guard, then merge | Law ledger: C02 (rank 6, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner's go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. | plan Live state item 4; status §53 "What follows" |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | Law ledger: C06 (rank 19, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law's hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8. | plan W3.6; status §3.10 items 4 and 6 |
 | `rec-wire-clock-derivation` | Recovery-clock derivation (wire clock) | No raw record (newer than the extract). The app-echo clock shares the flight stamp with the age it is compared against, and two cells reject a wire clock post hoc (c1d: loop 19-23 ms on a 2-3 ms wire RTT; c2: bbr_rs drops the wire RTT 5x with the loop unchanged). E01 stays dishonest for the store law and the other RTprop consumers (E03, S01, E12, R07), and for the recovery clocks it is inflated by the store defect, so it waits on the store fix. Unrated by the non-merge rule: recorded in status, but so far only forward nodes build on it. | branch wire-clock-derive (17bfcefb); docs/derivations/wire-clock.md; status §55 Erratum 1 (github/main 5e28791b) |
 | `rec-fix-perleg-clock-n1` | Per-leg recovery clock, one law | Law ledger: E11, C01, C04, C05. Replaces rec-fix-wire-clock (dissolved by §55 Erratum 1), and folds the former rec-fix-pooled-clock (E11), rec-fix-time-threshold (C01, C04) and rec-fix-cooldown (C05). Based on cand54 (both change the gap-batch tuple), so it waits for the §54 session; next once that session is done. Left out of this change: the latest-sample clock (with the per-leg state), the receiver refresh (rec-fix-refresh-clock) and the NACK throttle (rec-fix-nack-throttle, gauge first). The 10 ms floor is kept. Done when: the paper text is written first (§7.1, A.6, §11.2; drafted in the derivation's §8); red-first host tests show each seq's clock reads its own leg, the N = 1 age gate is gone with the SACK ranges handed to the packet-threshold evidence ingest (branch A), and a seq with no flight record does not re-fire on every report; then a guard v2 passes with a registered c2 goodput prediction (branch B as the falsifier) and fast/fired at N = 1 as a readout. The cooldown stays one session behind a bind counter predicted 0 and is deleted when the VM reads 0. | status §55 Erratum 1; docs/derivations/wire-clock.md §8; law ledger rows E11, C01, C04, C05 |

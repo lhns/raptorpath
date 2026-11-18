@@ -46,17 +46,17 @@ flowchart TB
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
     meas_s51_design["✔ Off-Bulk benchmark<br/>design"]
     meas_s58_session["✔ Dial-pin fix suites,<br/>binary identity"]
+    meas_s51_harness["⏳ Off-Bulk sweep<br/>harness and scorer"]
     meas_harness_reuse["✔ Cheaper sessions by<br/>reuse"]
     meas_blocke_pacing_gate>"⚠ Pacer late-send<br/>check fails"]
     meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
-    meas_s51_harness["○ Off-Bulk sweep<br/>harness and scorer"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
     meas_guard_resolution["○ Guard CPU and lag<br/>resolution"]
     meas_test_hygiene["○ Test hygiene fixes"]
     meas_s51_session["⛔ Off-Bulk baseline<br/>and δ sweep"]
     meas_s51b_rho["⛔ Partial-reliability<br/>measurement block"]
-    meas_adversarial_cells_run["○ Adversarial cells<br/>measured"]
+    meas_adversarial_cells_run["⛔ Adversarial cells<br/>measured"]
     meas_competitor_battery["⛔ Competitor battery"]
     meas_progress_baseline["○ Cumulative progress<br/>benchmark"]
     meas_fix_gauges_p3["⛔ Gauges for the<br/>remaining constants"]
@@ -99,13 +99,13 @@ flowchart TB
     meas_guard_clause_dry ~~~ meas_guard_v2_impl
     meas_guard_clause_dry ~~~ meas_s51_design
     meas_guard_clause_dry ~~~ meas_s58_session
-    meas_guard_v2_impl ~~~ meas_harness_reuse
-    meas_s51_design ~~~ meas_blocke_pacing_gate
-    meas_s58_session ~~~ meas_defect_cr61_large_pool
-    meas_harness_reuse ~~~ meas_s51_harness
-    meas_blocke_pacing_gate ~~~ meas_adversarial_cells_build
-    meas_defect_cr61_large_pool ~~~ meas_harness_robustness
-    meas_s51_harness ~~~ meas_guard_resolution
+    meas_guard_v2_impl ~~~ meas_s51_harness
+    meas_s51_design ~~~ meas_harness_reuse
+    meas_s58_session ~~~ meas_blocke_pacing_gate
+    meas_s51_harness ~~~ meas_defect_cr61_large_pool
+    meas_harness_reuse ~~~ meas_adversarial_cells_build
+    meas_blocke_pacing_gate ~~~ meas_harness_robustness
+    meas_defect_cr61_large_pool ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
     meas_harness_robustness ~~~ meas_s51_session
     meas_guard_resolution ~~~ meas_s51b_rho
@@ -125,7 +125,6 @@ flowchart TB
     meas_guard_clause_dry --> meas_s51_design
     meas_s51_design --> meas_s51_session
     meas_s51_harness --> meas_s51_session
-    meas_blocke_pacing_gate --> meas_s51_session
     meas_s51_session --> meas_s51b_rho
     meas_adversarial_cells_build --> meas_adversarial_cells_run
     meas_s51_session --> meas_fix_gauges_p3
@@ -147,8 +146,9 @@ flowchart TB
     class meas_c8_aggregation_arc,meas_coupling_model dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_blocke_pacing_gate,meas_defect_cr61_large_pool defect
-    class meas_s51_harness,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_adversarial_cells_run,meas_progress_baseline next
-    class meas_s51_session,meas_s51b_rho,meas_competitor_battery,meas_fix_gauges_p3 blocked
+    class meas_s51_harness waiting
+    class meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
+    class meas_s51_session,meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
 ```
 <!-- END GENERATED: track-meas -->
 
@@ -198,14 +198,14 @@ flowchart TB
 | `meas-defect-diag-rtp-ms` | Delay readout prints whole milliseconds | in-progress | unrated |  | status §3.5 item 4 |  |
 | `meas-guard-v2-impl` | Guard v2 implementation | done | unrated |  | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 | meas-guard-v2 |
 | `meas-s51-design` | Off-Bulk benchmark design | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
-| `meas-s51-harness` | Off-Bulk sweep harness and scorer | next | unrated |  | docs/derivations/s51-design.md §8 P1 | rec-s54-session |
+| `meas-s51-harness` | Off-Bulk sweep harness and scorer | in-progress | unrated |  | docs/derivations/s51-design.md §8 P1; status §51 "Host checks so far"; status §51 Amendment 1; branch harness51 a59efa60 | rec-s54-session |
 | `meas-s51b-rho` | Partial-reliability measurement block | blocked | unrated |  | docs/derivations/s51-design.md §2.3, §8 P4 | meas-s51-session |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | done | unrated |  | plan W5.3; branch adv-cells |  |
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
 | `meas-guard-resolution` | Guard CPU and lag resolution | next | unrated |  | plan W5.4 |  |
 | `meas-test-hygiene` | Test hygiene fixes | next | unrated |  | plan W5.5 |  |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, meas-s51-harness, store-defect-delta-nan, rec-f2-merge-guard, meas-blocke-pacing-gate |
-| `meas-adversarial-cells-run` | Adversarial cells measured | next | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build |
+| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | status §51; status §51 Amendment 2; status §63 Result; plan W5.1 | meas-s51-design, meas-s51-harness, store-defect-delta-nan, rec-f2-merge-guard |
+| `meas-adversarial-cells-run` | Adversarial cells measured | blocked | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build, cc-s48d-session |
 | `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
 | `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | blocked | unrated |  | law ledger rows S03, S07, R06, K06, K07, C11, F04 | rate-fix-estimators, model-fix-paper-p2, meas-s51-session, store-engine-form-impl |
@@ -216,7 +216,7 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `meas-blocke-pacing-gate` | Pacer late-send check fails | From the s51e_score path exercise on §63 CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. E-pre (suites + binid on e-tree-f2) is unaffected and can run first. | status §63 Result |
+| `meas-blocke-pacing-gate` | Pacer late-send check fails | From the s51e_score path exercise on §63's CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. It gates only the paced evicting-seat test (rate-evict-session), the one block that uses the pacer; the off-Bulk sweep's rows are not paced (§51 'In plain words'). The suites step (rate-evict-epre) is unaffected and can run first. Done when: gate (c) is amended with a reason or the pacer is fixed, recorded in status before the E rehearsal. | status §63 Result |
 | `meas-harness-reuse` | Cheaper sessions by reuse | Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main. | status §64 Amendments 1-2; status owner decision 14 |
 | `meas-user-test-cost` | Owner call on test cost | Decision 14: sccache on host builds only; the reduced guard is not suggested by Fable (reuse already halves guard wall time). | status Owner decisions (2026-11-18) item 14 |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |
@@ -257,14 +257,14 @@ flowchart TB
 | `meas-defect-diag-rtp-ms` | Delay readout prints whole milliseconds | Status §3.5 item 4. Undated raw record; date approximate (the cleanup). | status §3.5 item 4 |
 | `meas-guard-v2-impl` | Guard v2 implementation | Merged to main (9e687938 "Merge guard v2 (status 41d)", batch ending 0ed6d383): selectable clause set, plan 41d, v1 bit-identical, VOID rule, 600 MB d80 table. Unrated by the non-merge rule until a done node builds on it. Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it. | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 |
 | `meas-s51-design` | Off-Bulk benchmark design | No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it). | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) |
-| `meas-s51-harness` | Off-Bulk sweep harness and scorer | Gates §51. Blocked on the §54 harness merge (same files). Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1 |
+| `meas-s51-harness` | Off-Bulk sweep harness and scorer | Built on harness51 a59efa60 (plans 51 and 51e, parser, scorers, the d80 table, stub paths): unfiltered test_stubrun 722 ok, plan and scorer tests pass (status §51 'Host checks'); the Linux shell tests passed in E-pre (§51 Amendment 1). Merged into b51-tree and e-tree, not into main: main takes the harness only after the §51 Result. Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1; status §51 "Host checks so far"; status §51 Amendment 1; branch harness51 a59efa60 |
 | `meas-s51b-rho` | Partial-reliability measurement block | This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction. | docs/derivations/s51-design.md §2.3, §8 P4 |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | Done when: the netem cells (jitter 0/5/15/25 ms, an 8-packet shallow buffer, a 100 Mbit policer) exist in the harness, each mechanism-validated by a stub run and a check that the shaper does what it claims. Built on branch adv-cells (106 checks off the VM, 2026-11-13); still waiting on the VM check of the 7 cells (a waiting_on field would warn on a done node, so it is kept here). | plan W5.3; branch adv-cells |
 | `meas-harness-robustness` | Harness robustness for every plan | Done when: LD_REHEARSE covers every plan, each plan path has an end-to-end stub-run test, the sudo env-propagation contract is pinned by a test, and one HARNESS_PATHS table ties plans to tested paths. | plan W5.2 |
 | `meas-guard-resolution` | Guard CPU and lag resolution | Done when: a per-row CPU instrument over the measured window only (per-thread getrusage or perf task-clock) with lower variance is in the harness, and lag questions are either raised in n or reported only, written into the guard rules. | plan W5.4 |
 | `meas-test-hygiene` | Test hygiene fixes | Done when: recv_alloc_bound uses a per-platform measured baseline (or is VM-only with a named reason), every reachability test asserts the regime it needs, and sigma_candidates/tlag are audited in a VM pre-flight. | plan W5.5 |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. | plan W5.1 and VM queue 4 |
-| `meas-adversarial-cells-run` | Adversarial cells measured | Done when: BASE, bbr_rs and Copa-sole are measured on the jitter, shallow-buffer and policer cells on the current substrate, results in status. | plan W5.3, W2.3 |
+| `meas-s51-session` | Off-Bulk baseline and δ sweep | Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51's block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. | status §51; status §51 Amendment 2; status §63 Result; plan W5.1 |
+| `meas-adversarial-cells-run` | Adversarial cells measured | Done when: BASE, bbr_rs and Copa-sole are measured on the jitter, shallow-buffer and policer cells on the current substrate, results in status. Waits for the controller's round-two session (cc-s48d-session): it measures the controllers after those changes (its former queue reason, 'after the controller changes it is meant to measure'). | plan W5.3, W2.3 |
 | `meas-competitor-battery` | Competitor battery | Done when: kernel BBRv1 and CUBIC are measured in the same session over the same cells and the result answers paper §11.1 open question 11. | plan W5.6 (at the W1 milestone) |
 | `meas-progress-baseline` | Cumulative progress benchmark | Owner request with no node; asked twice, answered only in conversation. Done when: one same-session battery of current main against an early-July baseline on the canonical cells reports, per readout (goodput, CPU per byte, delivered delay), how much each improved, written into status. | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | Law ledger: S03, S07, R06, K06, K07, C11, F04. Done when: each listed constant has a gauge or a derivation: the trailing offset, the taper-cache staleness, the burst-tail provisioning bind, the placement temperature, the diversity weight, the repair-debt reduction, and the store-cap control arm (deleted once the store-law fix lands). | law ledger rows S03, S07, R06, K06, K07, C11, F04 |

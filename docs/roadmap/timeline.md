@@ -64,7 +64,7 @@ gantt
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-18
     Framing fix on failed rows :rec_s63_f2_first_contact, 2026-11-17, 2026-11-17
     Framing fix regression test :rec_f2_merge_guard, 2026-11-18, 2026-11-18
-    Realtime delay lean, post-hoc read :rec_s64_delay_lean, 2026-11-18, 2026-11-18
+    Realtime delay lean, post-hoc read :active, rec_s64_delay_lean, 2026-11-18, 2026-11-18
     Owner calls on the framing fix :rec_user_framing_fix, 2026-11-17, 2026-11-18
     Realtime receiver misread packets (fixe… :rec_defect_realtime_framing, 2026-11-17, 2026-11-18
     Inner-feedback repair floor :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
@@ -92,6 +92,8 @@ gantt
     Continuous P_fec derivation :rate_pfec_continuous, 2026-11-14, 2026-11-14
     Executed sliding P_fec oracle :active, rate_pfec_oracle, 2026-11-14, 2026-11-18
     TaperBudget shape inert as wired :active, rate_defect_taper_inert, 2026-11-14, 2026-11-18
+    Evicting-seat m̄ registration :rate_evict_registration, 2026-11-16, 2026-11-17
+    Is spare's cwnd enforced? :rate_spare_cwnd, 2026-11-16, 2026-11-17
     section store - store law
     Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
     Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19
@@ -146,12 +148,15 @@ gantt
     Slow-link knee sweep, first try :store_s61a, 2026-11-17, 2026-11-17
     Fast-link price below the knee :store_s61b, 2026-11-17, 2026-11-17
     Slow-link knee sweep, re-run :store_s61a_rerun, 2026-11-17, 2026-11-17
+    Re-derive the knee-margin term :store_law_g_rederive, 2026-11-17, 2026-11-17
     Slow-link knee without jitter :store_s62_j0, 2026-11-18, 2026-11-18
+    Sample-count rule derivation :store_count_rule, 2026-11-18, 2026-11-18
     Owner call on the jitter sweep :store_user_jitter_sweep, 2026-11-17, 2026-11-17
     Allowance short of the fast-link knee :store_defect_allowance_short, 2026-11-16, 2026-11-18
     Latency-dial setting pinned the store c… :store_defect_delta_nan, 2026-11-14, 2026-11-14
     Store cap pinned at its clamp :active, store_defect_cap_constant, 2026-11-13, 2026-11-18
-    Latency Lever battery :store_latency_lever, 2026-08-10, 2026-08-10
+    Owner calls on who sets latency :store_user_u1u3, 2026-11-16, 2026-11-17
+    Three-term cap as latency control :store_latency_lever, 2026-08-10, 2026-08-10
     SF latency feedback :store_sf_latency_feedback, 2026-08-12, 2026-08-12
     section place - placement
     Marginal-cost placement law :place_marginal_cost, 2026-07-04, 2026-07-06
@@ -167,6 +172,7 @@ gantt
     Wire price, iteration once :place_s41_iteration, 2026-11-10, 2026-11-10
     Wire-RTT placement price :place_wire_price, 2026-11-10, 2026-11-12
     One per-leg state design :active, place_per_leg_state, 2026-11-12, 2026-11-18
+    Per-leg state relocation step :active, place_per_leg_relocate, 2026-11-16, 2026-11-18
     Sub-max quantile rate anchor :crit, place_submax_anchor, 2026-07-12, 2026-07-27
     Path event after promotion :place_path_event, 2026-11-10, 2026-11-10
     Loss-ranked multipath window scheduling :crit, place_early_window_sched, 2026-03-14, 2026-07-04
@@ -256,6 +262,7 @@ gantt
     Delay readout prints whole milliseconds :active, meas_defect_diag_rtp_ms, 2026-09-27, 2026-11-18
     Guard v2 implementation :meas_guard_v2_impl, 2026-11-13, 2026-11-13
     Off-Bulk benchmark design :meas_s51_design, 2026-11-13, 2026-11-13
+    Off-Bulk sweep harness and scorer :active, meas_s51_harness, 2026-11-16, 2026-11-18
     QUIC/MPTCP comparison and overhead taxo… :meas_transport_comparison, 2026-03-17, 2026-03-18
     Matrix benchmark, audit and dashboard :meas_matrix_bench, 2026-03-20, 2026-03-20
     section model - model and paper
@@ -305,5 +312,5 @@ gantt
     Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-evict-registration`, `rate-evict-session`, `rate-spare-clamp-verdict`, `rate-spare-cwnd`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-law-g-rederive`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-delay-recheck`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-evict-epre`, `rate-evict-session`, `rate-spare-clamp-verdict`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->

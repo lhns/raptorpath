@@ -97,23 +97,21 @@ Owner calls (a purple hexagon) are not drawn in the trees; they are listed under
 <!-- BEGIN GENERATED: overview -->
 ```mermaid
 flowchart TB
-    subgraph bd_0["Mar 2026"]
+    subgraph bd_0["Mar 2026 to Jul 2026"]
         cod_block_pipeline["cod · ↷ RaptorQ block<br/>FEC pipeline"]
-        cc_aimd_v1["cc · ↷ AIMD congestion<br/>control (first CC)"]
-        cod_mettle["cod · ✖ METTLE<br/>swappable FEC backend"]
-        cod_legacy_rlc["cod · ↷ Legacy<br/>sliding-<br/>window/generation<br/>decoders"]
-        place_early_window_sched["place · ↷ Loss-ranked<br/>multipath window<br/>scheduling"]
-    end
-    subgraph bd_1["Jul 2026 to Aug 2026"]
+        rec_reliable_window["rec · ✔ Reliable<br/>window"]
         place_daps["place · ↷ DAPS queue-<br/>management chain"]
-        store_honest_cap_family[/"store · ✖ Honest<br/>floor-clock cap"/]
+        cc_bbr_default["cc · ✔ BBR as<br/>substrate default"]
+        cod_unified_span["cod · ✔ Unified span<br/>machine"]
+        model_vis_continuum["model · ✔ Visualizer<br/>as one continuum law"]
+    end
+    subgraph bd_1["Aug 2026 to Sep 2026"]
         rate_est_cadence["rate · ✔ Batched BOCD<br/>estimator cadence"]
         cod_one_pipeline["cod · ✔ One window<br/>pipeline"]
         meas_formula_first["meas · ✔ Formula-first<br/>review"]
-        rec_goal101[/"rec · ✖ Recovery clock<br/>verdict battery"/]
-    end
-    subgraph bd_2["Sep 2026 to Oct 2026"]
         rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
+    end
+    subgraph bd_2["Oct 2026"]
         perf_emit_batch_law0["perf · ✔ Emission<br/>batching law"]
         perf_io_owner["perf · ✔ Per-path I/O<br/>owner"]
         store_adr72_one_law[/"store · ✔ One store<br/>law"/]
@@ -126,12 +124,11 @@ flowchart TB
         place_wire_price["place · ✔ Wire-RTT<br/>placement price"]
         rec_snapver_law[/"rec · ✔ Snapshot-order<br/>filter as law"/]
         model_law_ledger["model · ✔ Law ledger"]
-        rec_s54_session["rec · ✔ Snapshot<br/>filter guard, store<br/>budget"]
         store_s60a["store · ✔ Queue-free<br/>floor on small stores"]
         rec_defect_realtime_framing>"rec · ✔ Realtime<br/>receiver misread<br/>packets (fixed)"]
         store_s62_j0["store · ✔ Slow-link<br/>knee without jitter"]
+        store_count_rule["store · ✔ Sample-count<br/>rule derivation"]
         rec_f2_merge_guard["rec · ✔ Framing fix<br/>regression test"]
-        meas_harness_reuse["meas · ✔ Cheaper<br/>sessions by reuse"]
     end
     subgraph bd_4["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
@@ -143,70 +140,64 @@ flowchart TB
         meas_blocke_pacing_gate>"meas · ⚠ Pacer late-<br/>send check fails"]
     end
     subgraph bd_6["Later (blocked or parked)"]
-        rec_leverb_guard["rec · ⏸ Gap horizon<br/>guard, then merge"]
+        rate_evict_session["rate · ⛔ Evicting-seat<br/>test, rehearsal and<br/>runs"]
         meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
-        cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion"]
-        cc_hybrid["cc · ⏸ BBR/Copa hybrid<br/>build"]
         store_fix_maxbw_minrtt[/"store · ⛔ Honest rate<br/>and delay inputs"/]
         store_engine_form_impl[/"store · ⛔ Store-law<br/>engine form"/]
     end
-    cod_block_pipeline ~~~ cod_mettle
-    cc_aimd_v1 ~~~ cod_legacy_rlc
-    cod_mettle ~~~ place_early_window_sched
-    cod_legacy_rlc ~~~ place_early_window_sched
-    place_early_window_sched ~~~ place_daps
-    place_early_window_sched ~~~ store_honest_cap_family
-    place_daps ~~~ rate_est_cadence
-    store_honest_cap_family ~~~ cod_one_pipeline
+    cod_block_pipeline ~~~ place_daps
+    rec_reliable_window ~~~ cc_bbr_default
+    place_daps ~~~ cod_unified_span
+    cc_bbr_default ~~~ cod_unified_span
+    cod_unified_span ~~~ model_vis_continuum
+    model_vis_continuum ~~~ rate_est_cadence
+    model_vis_continuum ~~~ cod_one_pipeline
     rate_est_cadence ~~~ meas_formula_first
-    cod_one_pipeline ~~~ rec_goal101
-    meas_formula_first ~~~ rate_r_battery
-    rec_goal101 ~~~ perf_emit_batch_law0
+    cod_one_pipeline ~~~ rate_r_battery
+    meas_formula_first ~~~ perf_emit_batch_law0
     rate_r_battery ~~~ perf_io_owner
     perf_emit_batch_law0 ~~~ store_adr72_one_law
     perf_io_owner ~~~ store_power_law
-    store_adr72_one_law ~~~ store_power_law
-    store_power_law ~~~ cc_quinn_bbr_collapse
+    store_adr72_one_law ~~~ cc_quinn_bbr_collapse
     store_power_law ~~~ meas_guard_41c
     cc_quinn_bbr_collapse ~~~ cc_bbrrs_r1
     meas_guard_41c ~~~ place_wire_price
     cc_bbrrs_r1 ~~~ rec_snapver_law
     place_wire_price ~~~ model_law_ledger
-    rec_snapver_law ~~~ rec_s54_session
-    model_law_ledger ~~~ store_s60a
-    rec_s54_session ~~~ rec_defect_realtime_framing
+    rec_snapver_law ~~~ store_s60a
+    model_law_ledger ~~~ rec_defect_realtime_framing
     store_s60a ~~~ store_s62_j0
-    rec_defect_realtime_framing ~~~ rec_f2_merge_guard
-    store_s62_j0 ~~~ meas_harness_reuse
-    rec_f2_merge_guard ~~~ cc_bbrrs_r2
-    meas_harness_reuse ~~~ store_law_derivation
+    rec_defect_realtime_framing ~~~ store_s62_j0
+    store_s62_j0 ~~~ store_count_rule
+    store_s62_j0 ~~~ rec_f2_merge_guard
+    store_count_rule ~~~ cc_bbrrs_r2
+    rec_f2_merge_guard ~~~ store_law_derivation
     cc_bbrrs_r2 ~~~ store_defect_b0p_brake
     store_law_derivation ~~~ store_defect_b0p_brake
     store_defect_b0p_brake ~~~ store_sampler_design
     store_defect_b0p_brake ~~~ meas_blocke_pacing_gate
-    store_sampler_design ~~~ rec_leverb_guard
+    store_sampler_design ~~~ rate_evict_session
     meas_blocke_pacing_gate ~~~ meas_s51_session
-    rec_leverb_guard ~~~ cc_bbrrs_promote
-    meas_s51_session ~~~ cc_bbrrs_promote
-    cc_bbrrs_promote ~~~ cc_hybrid
-    cc_bbrrs_promote ~~~ store_fix_maxbw_minrtt
-    cc_hybrid ~~~ store_engine_form_impl
+    rate_evict_session ~~~ store_fix_maxbw_minrtt
+    meas_s51_session ~~~ store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     cod_block_pipeline -.-> cod_one_pipeline
+    cc_bbr_default -.-> cc_quinn_bbr_collapse
+    cod_unified_span --> model_vis_continuum
+    cod_unified_span --> cod_one_pipeline
     meas_guard_41c --> cc_bbrrs_r1
-    rec_snapver_law --> rec_s54_session
+    store_s62_j0 --> store_count_rule
     cc_bbrrs_r1 --> cc_bbrrs_r2
     model_law_ledger --> store_law_derivation
-    store_s62_j0 --> store_defect_b0p_brake
+    store_count_rule --> store_defect_b0p_brake
     store_defect_b0p_brake --> store_sampler_design
     rec_f2_merge_guard --> meas_blocke_pacing_gate
-    rec_s54_session --> rec_leverb_guard
-    store_law_derivation --> rec_leverb_guard
-    meas_blocke_pacing_gate --> meas_s51_session
-    cc_bbrrs_promote --> cc_hybrid
+    meas_blocke_pacing_gate --> rate_evict_session
+    rec_f2_merge_guard --> meas_s51_session
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
+    linkStyle 37 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -220,18 +211,17 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cod_block_pipeline,cod_mettle,cod_legacy_rlc,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,place_daps,cc_aimd_v1,place_early_window_sched dead
-    class cod_one_pipeline,store_adr72_one_law,meas_harness_reuse,rec_defect_realtime_framing,place_wire_price,meas_formula_first,meas_guard_41c succ
-    class rec_snapver_law,model_law_ledger,rec_s54_session unrated
+    class cod_block_pipeline,rate_r_battery,store_power_law,place_daps dead
+    class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum succ
+    class rec_snapver_law,store_count_rule,model_law_ledger unrated
     class rate_est_cadence,rec_f2_merge_guard,perf_emit_batch_law0,perf_io_owner vsucc
+    class rate_evict_session,meas_s51_session,store_engine_form_impl,store_fix_maxbw_minrtt blocked
     class store_law_derivation inprog
     class store_s60a,store_s62_j0 mixed
     class store_defect_b0p_brake,meas_blocke_pacing_gate,cc_quinn_bbr_collapse defect
     class store_sampler_design next
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
-    class rec_leverb_guard,cc_hybrid parked
-    class meas_s51_session,store_engine_form_impl,cc_bbrrs_promote,store_fix_maxbw_minrtt blocked
 ```
 <!-- END GENERATED: overview -->
 
@@ -241,24 +231,25 @@ flowchart TB
 | title | status | in plain words |
 |---|---|---|
 | RaptorQ block FEC pipeline | ↷ superseded | The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic. |
-| METTLE swappable FEC backend | ✖ dead end | An experimental lighter error-correcting code that needed more spare data than the standard one, so it was dropped. |
 | Generation cross-path fungible coding | ⏸ parked | An optional feature that codes data across paths in groups has never been switched on by default, and nobody has yet decided whether to keep it. |
-| Legacy sliding-window/generation decoders | ↷ superseded | The older decoders for the sliding-window code, replaced by one decoder that handles every case. |
+| Unified span machine | ✔ done · successful | Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes. |
 | One window pipeline | ✔ done · successful | Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere. |
 | Owner call: keep generation coding | ⏸ parked | Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default. |
+| Reliable window | ✔ done · successful | Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode. |
 | σ dispersion estimators (fixed lag) | ⏸ parked | Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open. |
-| Recovery clock verdict battery | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
 | Gap horizon | ⏳ waiting | Letting the sender hear about many more missing packets at once removed most of the end-of-transfer wait on the hardest test, but raised duplicate packets; the merge is still pending. |
-| Snapshot-order filter as law | ✔ done · unrated | Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes. |
+| Snapshot-order filter as law | ✔ done · unrated | Turned the fix for outdated loss reports into a permanent rule, written into the paper first, then passed its merge check. |
 | Tail-sweep timer pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |
 | Hole law unmeasured where it operates | ⚠ open defect | Open problem: the rule that decides when a missing packet is lost had never been measured in the conditions where it matters most. |
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
 | Framing fix regression test | ✔ done · very-successful | The full regression test for the framing fix: the fast and slow links behave as before, the low-latency setting no longer dies at start-up, and the fix is now on main. |
-| Realtime receiver misread packets (fixed) | ✔ fixed | Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine. |
+| Realtime delay lean, post-hoc read | ▶ in progress | Checking the existing data on why the low-latency delay numbers leaned slightly worse after the framing fix; the analysis is written and waits for review. |
+| Realtime delay re-check, long rows | ⛔ blocked | A registered low-latency run with long transfers at full reliability, the two programs paired by slot, to see whether the framing fix really adds delivery delay. |
+| Realtime receiver misread packets (fixed) | ✔ fixed | Fixed: on the low-latency setting, losing one start-up message made the receiver misread all data for the whole connection, while every counter looked fine. |
+| Framing fix leftovers | ○ next | Closing what the framing fix left open: peers on different presets still connect without any check, the sender still picks packing by preset, and some status text names the wrong protocol version for a planned field. |
 | Singles hole suppression | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
 | Gap horizon two-path duplicate cost | ⚠ open defect | Open problem: the end-of-transfer fix adds about thirteen percent more duplicate packets on the fast two-path test, and the loss-report fix does not remove them. |
 | Main's duplicates mostly unexplained | ⚠ open defect | Open problem: even the current main version receives a thousand or more duplicate packets per run, and most of them are unexplained. |
-| Snapshot filter guard, store budget | ✔ done · unrated | Real-network session that checks and merges the fix for outdated loss reports, and tests whether a smaller in-flight budget cuts waiting in the send queue. |
 | Retransmit leg choice with filter | ⛔ blocked | Checking, with the loss-report fix in place, whether retransmissions should be spread across paths like normal data. |
 | Gap horizon guard, then merge | ⏸ parked | Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait. |
 | Recovery timeouts after store law | ⛔ blocked | Re-deriving the retransmit timers from the new in-flight limit, so they stop sitting at a fixed hand-set ceiling. |
@@ -266,31 +257,29 @@ flowchart TB
 | Receiver refresh clock input | ⛔ blocked | Giving the receiver a real delay for its re-report timer; it waits for the in-flight limit fix, because until then the timer's limits decide its value anyway. |
 | NACK repair throttle: gauge, paper | ○ next | First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it. |
 | Retransmits queued behind source? | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
-| Retention is the ρ dial | ✔ done · n/a | The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting. |
 | Batched BOCD estimator cadence | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
 | Funded coding at r > 0 | ✖ dead end | Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand. |
 | DoF ledger feedback leg | ⏸ parked | An analysis found that feeding repair results back into the repair rate is sound in principle but cannot help measurably today, so it is on hold. |
 | P_fec truncation divergence | ⚠ open defect | Open problem: the code that estimates how often extra repair data helps jumps from zero to one half at one point, where the paper describes a smooth curve. |
 | Executed sliding P_fec oracle | ⏳ waiting | A test that runs the engine's real encoder and decoder to measure how often repair data recovers a loss, to settle the repair-rate formula. |
 | TaperBudget shape inert as wired | ⚠ open defect | Open problem: the law that shapes when repairs are sent has no effect as the code calls it, so repairs go out at the flat rate. |
-| Evicting-seat m̄ registration | ○ next | Writing down, before any run, how to measure the repair loop on a link that may drop late data, after the first attempt overloaded the link. |
-| Evicting-seat m̄ session | ⛔ blocked | Measuring on the test network how many sources each acknowledgement clears and how much repair debt is sent, to feed the repair-rate oracle. |
+| Evicting-seat test suites and binary | ○ next | Running the engine's full test suites on the fixed test tree and recording the exact program build that every later step of the evicting-seat test must use. |
+| Evicting-seat test, rehearsal and runs | ⛔ blocked | Measuring the repair loop on a low-latency path that may drop late data, with the sender paced below the link rate: a rehearsal, then the measured runs, to feed the repair-rate oracle. |
 | Spare clamp on Realtime: verdict | ⛔ blocked | Deciding, from a run that does not overload the link, whether the cap that zeroes the repair rate on a full path is a defect. |
-| Is spare's cwnd enforced? | ○ next | Checking whether the congestion window that the repair cap reads is actually enforced while quinn's BBR controls the path. |
 | Repair-rate readout | ○ next | Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour. |
 | Owner calls on rate law | ⛔ blocked | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
 | Rate-law reconciliation | ⛔ blocked | Making the paper and the code agree on how much repair data to send, with a test for every remaining difference. |
 | Rate-law term-win gauge | ⛔ blocked | Adding a readout that shows which part of the repair-rate formula is actually in control. |
 | Loss estimator approximations | ⛔ blocked | Checking and tightening three approximations inside the loss and delay estimators. |
 | Low-latency and partial-reliability laws | ⛔ blocked | Fixing the rules that only act when data may be dropped, so they follow the dials smoothly and read honest delays. |
-| Honest floor-clock cap | ✖ dead end | A store limit sized from more honest clock readings; it was never adopted, and the law family it fed was archived. |
 | One store law | ✔ done · successful ⚠ | Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links. |
 | Power-seeking store law D | ✖ dead end | Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work. |
 | Who limits at each δ | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
 | Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Store-law gauge build | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
-| Queue-free floor on small stores | ✔ done · mixed | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
-| Slow-link knee without jitter | ✔ done · mixed | Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter. |
+| Queue-free floor on small stores | ✔ done · mixed | Measured on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and tested the limit's target form against it. |
+| Slow-link knee without jitter | ✔ done · mixed | Measured the slow link with its delay jitter switched off: the delay floor still depended on how many samples were counted, so the knee was not read. |
+| Sample-count rule derivation | ✔ done · unrated | Checked on the existing runs whether a fixed number of delay samples gives a stable floor: none does, and the store law's start-up estimate of its brake turned out to be faulty. |
 | Boot-time brake estimate latches transients | ⚠ open defect | The store law estimates its delay floor from the first few quarter-seconds of a connection, so one odd early sample can skew it for the whole run. |
 | Store-law delay sampler design | ○ next | Work out how the store law should sample delay, since the no-queue delay shows up mostly after retransmissions and a quarter-second window usually misses it. |
 | Allowance short of the fast-link knee | ⚠ open defect | Open problem: with honest floors, the store law's safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out. |
@@ -304,9 +293,10 @@ flowchart TB
 | Derived diversity weight, leg choice | ⏳ waiting | A wiring change that lets retransmissions be spread across paths differently has been built but never fully measured. |
 | Wire-RTT placement price | ✔ done · successful | Fixed a bug where an idle path could stay priced too high and never be used again, by pricing each path on its measured network delay. |
 | One per-leg state design | ⏳ waiting | A design for keeping all of each path's measurements in one place instead of in several slightly different copies. |
+| Per-leg state relocation step | ⏳ waiting | Moving each path's measurements into one per-path record with no change in behaviour; it is built and waits for its merge check. |
 | Owner calls on per-leg design | ○ next | Owner decision on five open design questions for keeping each path's measurements in one place. |
 | Per-leg state implementation | ⛔ blocked | Keeping all of each path's measurements in one place instead of in several slightly different copies. |
-| Loss-ranked multipath window scheduling | ↷ superseded | An early way of picking paths that ranked them by loss rate, later replaced by pricing each path's marginal cost. |
+| BBR as substrate default | ✔ done · successful ⚠ | Switched the underlying congestion controller to BBR, which removed a hidden speed ceiling and raised throughput about four times. |
 | Copa-BBR fusion | ⏸ parked | A proposed design for a controller that blends the speed of BBR with the low queues of Copa; prerequisite measurements are done but nothing is built. |
 | Quinn BBR window collapse | ⚠ open defect | Open problem: the default congestion controller can shrink its sending window to almost nothing on fast links because it remembers one unrealistically low delay sample. |
 | Fixed bbr_rs versus quinn BBR | ✔ done · bad ⚠ | Our own fixed BBR controller stopped that collapse but cost a little throughput and CPU, so it was not adopted; a later check also found it delayed delivery. |
@@ -320,13 +310,11 @@ flowchart TB
 | Copa consumers onto per-leg state | ⛔ blocked | Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule. |
 | bbr_rs promotion | ⛔ blocked | Making our BBR controller the default, recorded as a new architecture decision. |
 | BBR/Copa hybrid build | ⏸ parked | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. |
-| AIMD congestion control (first CC) | ↷ superseded | The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one. |
 | Emission batching law | ✔ done · very-successful | Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere. |
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
 | Pacer late-send check fails | ⚠ open defect | The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late; with the framing fix about 1-4 % of packets go late, so that rule needs a decision before the test can run. |
-| Cheaper sessions by reuse | ✔ done · successful | VM sessions now reuse test runs and builds already done on the same source, and host builds use a compiler cache, so a session spends its time on the measurement. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
 | Formula-first review | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
 | Rank-minp merge guard | ✔ done · successful ⚠ | Built the statistical check that every change must pass before merging, calibrated against identical runs. |
@@ -334,18 +322,19 @@ flowchart TB
 | ETA route and σ witness mismatch | ⚠ open defect | Open problem: the script that checks the finish-time prediction uses a different delay than the formula itself, and one of its checks fails. |
 | Two-path control bimodal collapse | ⚠ open defect | Open problem: on the hardest two-path test, the control runs sometimes fall back to using only the fast path, which makes results very noisy. |
 | Delay readout prints whole milliseconds | ⚠ open defect | Open problem: one diagnostic line rounds the delay to whole milliseconds, which hides small delays on fast links. |
-| Off-Bulk sweep harness and scorer | ○ next | Building the scripts that run and score the off-Bulk test, after the next session's scripts merge, because they edit the same files. |
+| Off-Bulk sweep harness and scorer | ⏳ waiting | The scripts that run and score the off-Bulk test are built and pass their offline tests; the rehearsal on the test network is their first live run. |
 | Partial-reliability measurement block | ⛔ blocked | A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own. |
 | Harness robustness for every plan | ○ next | Making sure every test plan can be rehearsed end to end without the real network, so a long test session does not die on a script bug. |
 | Guard CPU and lag resolution | ○ next | Making the merge check sensitive to smaller CPU and delay changes, which it currently cannot see. |
 | Test hygiene fixes | ○ next | Fixing tests that pass for the wrong reason or depend on which machine they run on. |
 | Off-Bulk baseline and δ sweep | ⛔ blocked | First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves. |
-| Adversarial cells measured | ○ next | Measuring the current system, our BBR controller and the Copa controller on the harder network conditions. |
+| Adversarial cells measured | ⛔ blocked | Measuring the current system, our BBR controller and the Copa controller on the harder network conditions. |
 | Competitor battery | ⛔ blocked | Measuring standard Linux BBR and CUBIC on the same tests, to compare against outside protocols. |
 | Cumulative progress benchmark | ○ next | One measurement of the current system against the early-July version, showing how much each result has improved since. |
 | Gauges for the remaining constants | ⛔ blocked | Adding readouts or derivations for the last hand-set numbers, so none hides inside a formula. |
 | Shared engine laws and decisions | ▶ in progress | Letting the visualizer call the same code as the engine, so the model cannot drift from it. |
-| Engine NO-MODE-SWITCH debts | ⚠ open defect | Open problem: five places in the engine still switch behaviour on the chosen preset instead of following one smooth rule. |
+| Visualizer as one continuum law | ✔ done · successful ⚠ | Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch. |
+| Engine NO-MODE-SWITCH debts | ⚠ open defect | Open problem: seven places in the engine still switch behaviour on the chosen preset instead of following one smooth rule. |
 | Open-constants register | ⚠ open defect | Open problem: about twenty numbers in the code were picked by hand and have no derivation behind them. |
 | Paper versus engine reconciliation | ⏳ waiting | Compared every claim in the paper with what the code actually does and listed the mismatches; a few questions wait on the owner. |
 | Erratum: pre-flight tests not run | ⚠ open defect | Open problem: three checks planned for the last test session, including the visualizer build, were never run and move to the next session. |
@@ -357,10 +346,9 @@ flowchart TB
 | Paper-only law records | ⛔ blocked | Writing four small rules into the paper that the code uses but the paper never states. |
 | Metrics registry and OTel design | ⏳ waiting | A design for one metrics system that feeds the status page, the logs and standard monitoring tools, including a packet-level recorder. |
 | Observability implementation | ⛔ blocked | Building one metrics system that feeds the status page, the logs and standard monitoring tools. |
-| Promote or archive at verdict | ✔ done · n/a | The owner ruled that every experiment is either promoted or archived once its result is in, instead of lingering switched off. |
 | Workspace restructure | ⏳ waiting | Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open. |
 | Recorded, not fixed | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
-| Derivation branch merges | ○ next | Merging the finished design documents that are still on side branches. |
+| Derivation and harness branches to main | ○ next | Merging to main the finished design documents and test scripts that sessions were registered from but that still sit on side branches. |
 | tech-tree skill PR | ○ next | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
 <!-- END GENERATED: plain-words -->
 
@@ -369,11 +357,12 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
-- `meas-adversarial-cells-run`: Adversarial cells measured
+- `rate-evict-epre`: Evicting-seat test suites and binary
 - `meas-progress-baseline`: Cumulative progress benchmark
 
 **host-cargo**
 
+- `rec-framing-followups`: Framing fix leftovers
 - `rate-fix-rate-readout`: Repair-rate readout
 - `meas-guard-resolution`: Guard CPU and lag resolution
 - `meas-test-hygiene`: Test hygiene fixes
@@ -382,14 +371,11 @@ flowchart TB
 
 **no-cargo**
 
-- `rate-evict-registration`: Evicting-seat m̄ registration
-- `rate-spare-cwnd`: Is spare's cwnd enforced?
 - `store-defect-b0p-brake`: Boot-time brake estimate latches transients
 - `store-sampler-design`: Store-law delay sampler design
 - `meas-blocke-pacing-gate`: Pacer late-send check fails
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
-- `meas-s51-harness`: Off-Bulk sweep harness and scorer
-- `infra-derivation-merges`: Derivation branch merges
+- `infra-derivation-merges`: Derivation and harness branches to main
 - `meas-harness-robustness`: Harness robustness for every plan
 - `infra-tech-tree-skill`: tech-tree skill PR
 - `rec-retx-behind-source`: Retransmits queued behind source?
@@ -412,24 +398,25 @@ flowchart TB
 **no-cargo**
 
 - `store-law-derivation`: Store-law derivation
+- `rec-s64-delay-lean`: Realtime delay lean, post-hoc read
 <!-- END GENERATED: running -->
 
 ## Built, waiting
 
 <!-- BEGIN GENERATED: built-waiting -->
-**the lever-B guard on the new main**
+**the owner's new call after the store-law derivation (paused)**
 
 - `rec-gap-horizon`: Gap horizon
 
-**the evicting-seat rows (m̄, W1, K4 inputs)**
+**the evicting-seat test's measured rows**
 
 - `rate-pfec-oracle`: Executed sliding P_fec oracle
 
-**the owner's answers to the three latency-setting questions, then merge to main**
+**merge to main**
 
 - `store-w1-who-limits`: Who limits at each δ
 
-**the §60 Result (main takes it only through a guard)**
+**the owner's call: reach main through a stacked merge guard, or be dropped**
 
 - `store-slaw-gauge`: Store-law gauge build
 
@@ -437,15 +424,19 @@ flowchart TB
 
 - `place-wdiv`: Derived diversity weight, leg choice
 
-**the owner's answers to the five per-path design questions, then merge to main**
+**the owner's answers to the remaining per-path questions, then merge to main**
 
 - `place-per-leg-state`: One per-leg state design
+
+**one merge guard shared by the steps that change no behaviour**
+
+- `place-per-leg-relocate`: Per-leg state relocation step
 
 **the per-packet cost fix, then the bbr_rs round-2 session**
 
 - `cc-bbrrs-r2`: bbr_rs round 2 fixes
 
-**the owner's call on the hybrid controller's direction, then merge to main**
+**merge to main; the hybrid's direction was accepted on condition of the controller's round-two result**
 
 - `cc-pacing-audit`: Pacing-seam audit
 
@@ -465,6 +456,10 @@ flowchart TB
 
 - `infra-restructure`: Workspace restructure
 
+**the off-Bulk sweep's rehearsal on the VM**
+
+- `meas-s51-harness`: Off-Bulk sweep harness and scorer
+
 **the bbr_rs round-2 session on the VM**
 
 - `perf-bbrrs-ring-fix`: bbr_rs send-record ring fix
@@ -482,17 +477,9 @@ flowchart TB
 ## VM queue
 
 <!-- BEGIN GENERATED: vm-queue -->
-1. `rec-w0-leg-question`: Retransmit leg choice with filter. Before the lever-B merge, so the question of which path should carry retransmissions is answered first. It could instead ride the lever-B session as an extra reported block rather than take a session of its own.
-2. `rec-leverb-guard`: Gap horizon guard, then merge. Runs on the main version the first session produces, in the order the owner approved.
-3. `meas-s51-session`: Off-Bulk baseline and δ sweep. After the recovery fixes land so the baseline describes the current system; it does not need them to run.
-4. `cc-s48d-session`: bbr_rs controller, round 2. After the recovery fixes, because they change the results on the hardest test that this session predicts.
-5. `cc-pacing-seam-reading`: Pacing seam first reading. Right after the controller round-two session, because the pacing hook sits on top of that work.
-6. `meas-adversarial-cells-run`: Adversarial cells measured. After the controller changes it is meant to measure.
-7. `store-engine-form-guard`: Store-law engine form guard. When the rebuilt in-flight limit is ready; it is one of the later checks.
-8. `store-s48c-session`: δ seat diagnostic and guard. After the latency-dial version of the in-flight limit is built and the low-latency baseline exists.
-9. `meas-competitor-battery`: Competitor battery. At the end, once our controller is the default, to compare the finished system with outside protocols.
-10. `meas-progress-baseline`: Cumulative progress benchmark. Whenever the queue has room; it only measures progress and gates nothing.
-11. `meas-s51b-rho`: Partial-reliability measurement block. A follow-on to the off-Bulk session; it first needs the drop setting to be adjustable on its own.
+1. `rate-evict-epre`: Evicting-seat test suites and binary. First: the engine's tests and the build identity on the fixed tree; the pacer decision does not affect it.
+2. `rate-evict-session`: Evicting-seat test, rehearsal and runs. Second: the rehearsal, then the measured runs, on the build the suites step pins, once the pacer's late-send rule is decided.
+3. `meas-s51-session`: Off-Bulk baseline and δ sweep. Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
 <!-- END GENERATED: vm-queue -->
 
 ## Timeline
@@ -511,13 +498,13 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 50 nodes (21 done, 6 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 69 nodes (35 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
-- [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 52 nodes (20 done, 7 in progress, 4 next, 4 blocked, 3 parked, 14 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 28 nodes (12 done, 3 in progress, 2 next, 7 blocked, 1 parked, 3 abandoned)
+- [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
+- [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 54 nodes (37 done, 4 in progress, 8 next, 4 blocked, 1 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 54 nodes (37 done, 5 in progress, 6 next, 5 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 1 next, 2 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 2 next)
