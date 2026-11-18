@@ -1,0 +1,71 @@
+POST HOC - three free reads of the s64 ledger (not registered; no verdict)
+tgz sha256 49d0deff0c97da8b063fb01c075c1435a2409ddba0078c97ccf99571b931a233
+tool place41b_score.py sha256 5b08d22cb213e216
+tool place38_parse.py sha256 e6b3a495015279f7
+tool rt64_score.py sha256 d2c09322ba407a8c
+tool plan64.py sha256 527e3569f3274005
+tool l1common.py sha256 51c62ebfb1191d74
+tool stage3_parse.py sha256 8da475fd7c458af5
+tool threadp1_parse.py sha256 0863278dd972e836
+
+REPRO stage G: statistic_rank reproduces all 22 clause p's of guard/score.txt (|d| < 5e-5)
+REPRO stage G: resolution reproduces c2 lag_E_cli 0.2652, lag_E_srv 0.7299, inorder 0.0299
+REPRO stage R: rt64_score reproduces all 7 READOUTS lines (x to 0.1 %, p to 1e-4); live RB 11, RC 12, BASE-F2-DEAD [('c2-100', 'RB', '42', '4')]
+
+READ 1 (post hoc): rtp_floor_p<i>, CAND vs BASE, stage G (Bulk; c1s/c1d at guard size, c2/c8 at 600 MB), the guard's own statistic
+  within-seed rank sums over the guard's 10 000 seeded relabellings; p one-sided (CAND worse = higher floor); x = (med CAND - med BASE) / med BASE
+  q95 = the half-per-seed BASE split resolution of the clause (same construction as the RESOLUTION lines)
+  c1s-400 rtp_floor_p0  BASE med     2672 [2441-2919]  CAND med     2673 [2451-3463]  x= +0.04 %  p=0.4822  q95|x|=0.0367
+  c1d-400 rtp_floor_p0  BASE med     2585 [2343-2756]  CAND med     2642 [2401-2917]  x= +2.19 %  p=0.1671  q95|x|=0.0581  (leg 0: the cell's registered readout)
+  c1d-400 rtp_floor_p1  BASE med     2536 [2441-3039]  CAND med     2598 [2437-2933]  x= +2.44 %  p=0.1641  q95|x|=0.1068
+  c2-100 rtp_floor_p0  BASE med    11567 [9930-13777]  CAND med    12209 [7307-14323]  x= +5.55 %  p=0.5180  q95|x|=0.0798
+  c8-100 rtp_floor_p0  BASE med     8256 [6473-11605]  CAND med     8678 [5841-10091]  x= +5.12 %  p=0.3794  q95|x|=0.2257  (leg 0: the cell's registered readout)
+  c8-100 rtp_floor_p1  BASE med    36330 [34334-38094]  CAND med    35758 [33370-38779]  x= -1.57 %  p=0.8282  q95|x|=0.0404
+
+READ 1b (post hoc, supplement): stage G paired by slot (cell, seed, rep; the two arms of a slot run back to back), the same sign test as read 2
+  c1s-400 lag_E_cli           CAND worse in  3 of 12 pairs  sign p one-sided=0.9807  two-sided=0.1460
+  c1s-400 lag_E_srv           CAND worse in  3 of 12 pairs  sign p one-sided=0.9807  two-sided=0.1460
+  c1s-400 rtp_floor_p0        CAND worse in  6 of 12 pairs  sign p one-sided=0.6128  two-sided=1.0000
+  c1d-400 lag_E_cli           CAND worse in  7 of 12 pairs  sign p one-sided=0.3872  two-sided=0.7744
+  c1d-400 lag_E_srv           CAND worse in  5 of 12 pairs  sign p one-sided=0.8062  two-sided=0.7744
+  c1d-400 rtp_floor_p0        CAND worse in  7 of 12 pairs  sign p one-sided=0.3872  two-sided=0.7744
+  c2-100 lag_E_cli           CAND worse in  7 of 12 pairs  sign p one-sided=0.3872  two-sided=0.7744
+  c2-100 lag_E_srv           CAND worse in  6 of 12 pairs  sign p one-sided=0.6128  two-sided=1.0000
+  c2-100 rtp_floor_p0        CAND worse in  6 of 12 pairs  sign p one-sided=0.6128  two-sided=1.0000
+  c2-100 inorder_delay_mean  CAND worse in  2 of 12 pairs  sign p one-sided=0.9968  two-sided=0.0386
+  c8-100 lag_E_cli           CAND worse in  6 of 11 pairs  sign p one-sided=0.5000  two-sided=1.0000
+  c8-100 lag_E_srv           CAND worse in  4 of 11 pairs  sign p one-sided=0.8867  two-sided=0.5488
+  c8-100 rtp_floor_p0        CAND worse in  8 of 12 pairs  sign p one-sided=0.1938  two-sided=0.3877
+  c8-100 inorder_delay_mean  CAND worse in  6 of 12 pairs  sign p one-sided=0.6128  two-sided=1.0000
+
+READ 2 (post hoc): stage R paired by slot (seed, rep); 11 pairs; dropped RC s42 r4 (its RB partner died)
+  per pair d = worse-signed (RC - RB) / RB; '+' = RC worse.  sign test: one-sided P(Bin(n, 1/2) >= k worse), two-sided = 2 x the smaller tail; ties dropped
+  readout              s42r1   s42r2   s42r3   s42r5   s42r6    s7r1    s7r2    s7r3    s7r4    s7r5    s7r6
+  goodput              -1.5%   -1.6%   +0.7%   +0.7%   -0.4%   -0.3%   -1.5%   -1.1%   -1.4%   +0.5%   -1.9%
+  cpu_cli/GB           +2.6%  +10.1%  -10.9%   -3.7%   +6.3%   +0.7%   -0.3%   +5.0%   -2.0%   -5.3%  +12.5%
+  cpu_srv/GB           +5.8%   +7.5%  -11.7%   -6.3%  +10.3%   +0.4%   -1.3%   +2.6%   -2.4%   -5.3%  +10.8%
+  lag_E_cli           +63.4%   +7.5%  +66.6%  +10.0%   -9.4%  +40.3%  +39.5%  +15.3%  +15.0%   -6.0%  -18.8%
+  lag_E_srv            +2.8%  +14.4%   -5.4%  +43.7%  -35.8%  +25.2%  +26.8%  -23.7% +146.4%  -25.3% +183.7%
+  inorder_delay_mean   +1.3%   +8.3%  +58.2%  +29.8%  +34.2%  +14.9%  +63.3%   -3.9%  +53.2%  +39.5%  -33.8%
+  rtp_floor_p0         -8.9%  +22.4%   +4.1%   +0.4%  +24.7%  +26.6%   +1.0%  +17.6%  +21.6%   +6.4%  -13.4%
+
+  goodput             RC worse in  3 of 11 pairs (ties 0)  median paired d=  -1.1 %  sign p one-sided=0.9673  two-sided=0.2266
+  cpu_cli/GB          RC worse in  6 of 11 pairs (ties 0)  median paired d=  +0.7 %  sign p one-sided=0.5000  two-sided=1.0000
+  cpu_srv/GB          RC worse in  6 of 11 pairs (ties 0)  median paired d=  +0.4 %  sign p one-sided=0.5000  two-sided=1.0000
+  lag_E_cli           RC worse in  8 of 11 pairs (ties 0)  median paired d= +15.0 %  sign p one-sided=0.1133  two-sided=0.2266
+  lag_E_srv           RC worse in  7 of 11 pairs (ties 0)  median paired d= +14.4 %  sign p one-sided=0.2744  two-sided=0.5488
+  inorder_delay_mean  RC worse in  9 of 11 pairs (ties 0)  median paired d= +29.8 %  sign p one-sided=0.0327  two-sided=0.0654  (every row under 30 s of ticks: no resolution)
+  rtp_floor_p0        RC worse in  9 of 11 pairs (ties 0)  median paired d=  +6.4 %  sign p one-sided=0.0327  two-sided=0.0654
+  co-movement: pairs worse on k of the 4 delay readouts (lag_E_cli, lag_E_srv, inorder_delay_mean, rtp_floor_p0)
+  s42r1:3 s42r2:4 s42r3:3 s42r5:4 s42r6:2 s7r1:4 s7r2:4 s7r3:2 s7r4:4 s7r5:2 s7r6:1
+
+READ 3 (post hoc): stage R noise floor, the live RB rows alone; half-per-seed splits (s42: 2 of 5 + s7: 3 of 6 vs the rest), q95 of |x|
+  a split compares 5 vs 6 rows; the real RC-vs-RB comparison is 12 vs 11, so its noise is about 1/1.45 of a split's (sqrt((1/5+1/6)/(1/12+1/11)), normal approximation); q95/1.45 is listed as the approximate floor of the real comparison
+  goodput             q95|x|=0.0122 (splits=200, nRB=11)  ~floor at 12 v 11=0.0084  stage R x=  -0.7 %  x/q95=-0.61  x/floor=-0.89
+  cpu_cli/GB          q95|x|=0.0719 (splits=200, nRB=11)  ~floor at 12 v 11=0.0496  stage R x=  +4.7 %  x/q95=+0.66  x/floor=+0.96
+  cpu_srv/GB          q95|x|=0.0637 (splits=200, nRB=11)  ~floor at 12 v 11=0.0439  stage R x=  +1.0 %  x/q95=+0.15  x/floor=+0.22
+  lag_E_cli           q95|x|=0.1258 (splits=200, nRB=11)  ~floor at 12 v 11=0.0867  stage R x= +13.5 %  x/q95=+1.07  x/floor=+1.55
+  lag_E_srv           q95|x|=0.2370 (splits=200, nRB=11)  ~floor at 12 v 11=0.1634  stage R x= +20.0 %  x/q95=+0.84  x/floor=+1.22
+  rtp_floor_p0        q95|x|=0.0875 (splits=200, nRB=11)  ~floor at 12 v 11=0.0603  stage R x=  +5.7 %  x/q95=+0.66  x/floor=+0.95
+  inorder_delay_mean  q95|x|=0.1930 (splits=200, nRB=11)  ~floor at 12 v 11=0.1330  stage R x= +12.6 %  x/q95=+0.65  x/floor=+0.95
+  stage G c2 (600 MB, 12 BASE) for comparison: lag_E_cli 0.2652  lag_E_srv 0.7299  inorder_delay_mean 0.0299  rtp_floor_p0 0.0798
