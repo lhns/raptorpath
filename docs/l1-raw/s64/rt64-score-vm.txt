@@ -1,0 +1,39 @@
+S64R REPORT stage R (Realtime c2-100 at rho = 1, 100 MB, timeout 150 s; RB = BASE's binary, RC = CAND's): slots RC 12, RB 12; ledger rows 24
+REPLACED SLOTS: 0 of at most 2 (non-F2 voids, replaced once) - none
+ROW64R RB s42 r1: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RC s42 r1: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=222481 ctld_rx=234874 ctld_fr=234874
+ROW64R RC s7 r1: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=220017 ctld_rx=233937 ctld_fr=233937
+ROW64R RB s7 r1: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RB s42 r2: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RC s42 r2: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=207526 ctld_rx=233863 ctld_fr=233863
+ROW64R RC s7 r2: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=231009 ctld_rx=234857 ctld_fr=234857
+ROW64R RB s7 r2: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RB s42 r3: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RC s42 r3: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=228260 ctld_rx=235548 ctld_fr=235548
+ROW64R RC s7 r3: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=216882 ctld_rx=233896 ctld_fr=233896
+ROW64R RB s7 r3: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RB s42 r4: status=BASE-F2-DEAD label=BASE-F2-DEAD rc=1 warm=NEVER-ACKED transfer=NONE undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RC s42 r4: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=216391 ctld_rx=234032 ctld_fr=234032
+ROW64R RC s7 r4: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=225593 ctld_rx=235107 ctld_fr=235107
+ROW64R RB s7 r4: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RB s42 r5: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RC s42 r5: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=212876 ctld_rx=232860 ctld_fr=232860
+ROW64R RC s7 r5: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=221166 ctld_rx=234478 ctld_fr=234478
+ROW64R RB s7 r5: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RB s42 r6: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ROW64R RC s42 r6: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=232229 ctld_rx=234918 ctld_fr=234918
+ROW64R RC s7 r6: status=RT-OK label=RT-OK rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=11 unframable=0 symsz(cli)=512/512 symsz(srv)=512/512 window_reliable=True/True bin_sha=8104fa027c9dea55 | denominator (server received): src_n=206138 ctld_rx=233635 ctld_fr=233635
+ROW64R RB s7 r6: status=LIVE label=RB-LIVE rc=0 warm=ACKED transfer=COMPLETED undeliv=0(srv 0+cli 0) srv_ctld=0 unframable=0 symsz(cli)=none symsz(srv)=none window_reliable=True/True bin_sha=0ec952583a99a3f3
+ITEM5 SCORED: live RB rows 11, RB completions 11/11
+BASE-F2-DEAD 1/12
+READOUTS (reported only: RC against the live RB rows; the one-sided rank p is RC worse than RB, 10 000 seeded relabellings; the live RB rows are selected by a draw, so never a verdict)
+  goodput             RC 68.7 [67.74-69.46]               RB 68.19 [67.2-69.27]               worse-by -0.7%    p=0.9744
+  cpu_cli/GB          RC 139 [123.9-148.8]                RB 132.7 [117.1-145]                worse-by +4.7%    p=0.3693
+  cpu_srv/GB          RC 110.8 [99.9-119.4]               RB 109.8 [91.5-117.3]               worse-by +1.0%    p=0.4631
+  lag_E_cli           RC 1426 [1120-2168]                 RB 1257 [1108-1414]                 worse-by +13.5%   p=0.1021
+  lag_E_srv           RC 933.5 [460-1685]                 RB 778 [515-1084]                   worse-by +20.0%   p=0.1976
+  inorder_delay_mean  RC 132.4 [77.2-187.9]               RB 117.6 [78.9-150.1]               worse-by +12.6%   p=0.0503  (marked: 23 of 23 rows have under 30 s of ticks, below guard v2's floor: no resolution)
+  rtp_floor_p0        RC 1.07e+04 [7563-1.271e+04]        RB 1.012e+04 [7535-1.11e+04]        worse-by +5.7%    p=0.0662
+OWNER-FLAG64 none (no reported readout with RC worse than c2's d80 at rank p <= 0.05)
+RT-PASS
+VERDICT64R RT-PASS rc_ok=12/12 rc_void=0 rc_fail=0 base_f2_dead=1/12 rb_void=0 item5=SCORED

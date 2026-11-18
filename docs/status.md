@@ -1257,6 +1257,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - Suite reuse is a HIT (212 files).
 - **`framing_ns`, 10 runs on CAND's tree, `taskset -c 2`: BENCH PASS.**
   - Per-run medians (CAND − BASE): frame +2–13 ns; read −3 to +11 ns; the packed S=512 read about 38–41 ns faster.
+  - **Correction (§64 Result):** those figures are from 2 of the 10 runs. The registered ten-run table is in the Result.
   - Raw: `run/bench/framing_ns.txt` in the ledger.
 - **Stage G smoke:** c1s BASE and CAND, and the 600 MB dual-leg c8 CAND row, are all LIVE with rc 0.
   - The CAND rows read `[SYMSZ]` 1200/1200 on both ends, the server's `[CTLD]` with `undeliv=0`, and no `[UNFRAMABLE]`.
@@ -1267,6 +1268,93 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - `LD_BIN_PREBUILT_BASE` / `_CAND` = the rehearsal's `run/bins64/{base,cand}-raptorpath`, checked against the pins above;
   - `LD_PRIOR_TOOLS` = the rehearsal's run directory;
   - fresh archives of `13bb3647` / `3b8fca94`.
+
+**§64 Result (2026-11-18; SCORED; Fable-reviewed): GATE-64 PASS. F2 may merge on the owner's go.**
+
+**In plain words.**
+- **Bulk:** the guard sees no regression. Over 96 rows at four link shapes, every clause sits at p ≥ 0.27, and the overall p is 0.99. Every fixed-binary row shows the right symbol size and zero undecodable symbols.
+- **Realtime at full reliability:**
+  - the fixed binary passed the F2 reading on all 12 rows and completed every transfer;
+  - the old binary died in the warm-up on 1 of 12, the original F2 failure;
+  - none of the reported readouts is flagged, though the four delay readouts all lean worse (+6 to +20 %, p 0.05–0.20).
+- **The framing bench passes its bound.**
+
+**Runs.**
+- **Rehearsal:** 08:45–09:17Z (Amendment 2).
+- **Launch:** 09:20:04Z with `LD_HARD` = launch + 2.5 h. Stage G ended 10:13:07Z and stage R 10:24:21Z.
+  - Both binaries came prebuilt from the rehearsal and equal their pins (CAND `8104fa02…`, BASE `0ec95258…`).
+  - Suite reuse was a HIT (212 files). The tools tests were reused from a byte-identical `tools/l1` (179 files).
+- **Host:** cargo and tests paused under the coordinator's host lock. The process list was checked before the rehearsal, not again before the launch; no agent was running.
+- **Reproduction:**
+  - the host re-score of stage R (`score64r`) matches the VM's byte for byte;
+  - stage G (`score64`, with `LD_BASE_SHA` set) matches on every line except the printed re-run path.
+- **Ledger:** `docs/l1-raw/s64/`.
+
+**Stage G (scored, Bulk): GATE-41d PASS, p = 0.9913.**
+- 96/96 rows LIVE, 0 replaced, WITNESS-FAIL 0, F2-FAIL 0.
+- min-p (true) = 0.273, at c1d `lag_E_cli` (x = +11.3 %).
+- Every other clause sits at p ≥ 0.43, and the goodput and CPU clauses are all x ≤ +0.05 % or better. For example, c2 goodput is +0.03 % (p 0.52) and c8 goodput −1.33 % (p 0.80).
+- **The F2 witness table (`F2-WITNESS64`):** at every cell, all 12 CAND rows had the witness executed, F2-FAIL 0, the server's `[CTLD]` with `undeliv=` 12/12, undeliv sum 0, and `[UNFRAMABLE]` 0.
+  - **Its `[SYMSZ]` column reads 0/12 at every cell, which is a harness defect, not a reading.**
+    - The battery's kept-line filter (`KEEP_PAT`) does not keep `[SYMSZ]`, so the scorer never saw it.
+    - The stage-G check did not fail a row on a missing `[SYMSZ]`, against the registration, which requires it.
+    - **From the raw row logs** (`diag-ld`, coordinator): all 96 CAND log files (48 rows × 2 ends) carry `[SYMSZ] local=1200 decoder=1200`.
+    - The fix (keep the line, fail closed on its absence, with a stub test) is owed in `harness64` before its tools reach main.
+- **Resolution, from BASE alone:** the guard cannot see c1s cpu_cli/GB and cpu_srv/GB, c1d goodput, or c2's lag clauses below their q95 (printed).
+
+**Stage R (scored, Realtime c2-100 at ρ = 1): RT-PASS.**
+- `rc_ok=12/12 rc_void=0 rc_fail=0 base_f2_dead=1/12 rb_void=0`.
+- **Every RC row:**
+  - warm-up acked, transfer completed;
+  - `undeliv=0` on both ends, with 11 server `[CTLD]` lines each;
+  - no `[UNFRAMABLE]`;
+  - `[SYMSZ]` 512/512 on both ends;
+  - `window_reliable` true/true.
+- **RB s42 r4:** `BASE-F2-DEAD` (warm-up never acked, rc 1).
+- **Reported, RC against the live RB rows** (rank p, RC worse):
+
+  | readout | difference | p |
+  |---|---|---|
+  | goodput | −0.7 % | 0.97 |
+  | cpu_cli/GB | +4.7 % | 0.37 |
+  | cpu_srv/GB | +1.0 % | 0.46 |
+  | lag_E_cli | +13.5 % | 0.10 |
+  | lag_E_srv | +20.0 % | 0.20 |
+  | in-order delay | +12.6 % | 0.050 |
+  | rtp_floor_p0 | +5.7 % | 0.066 |
+
+  - In-order delay is below the 30 s tick floor on all 23 rows, so it has no resolution (p 0.0503).
+  - `OWNER-FLAG64 none`.
+  - **The `rtp_floor_p0` lean is not Realtime-specific:** stage G's c2 rows read +5.6 % too, while their in-order delay reads −1.3 %.
+
+**`framing_ns`: BENCH PASS** (`framing-report.txt`, 10 runs; per-point median of CAND − BASE [range], ns/call):
+
+| point | median [range] | bound |
+|---|---|---|
+| frame len 64 | +11.4 [+3.7, +18.8] | +22.3 |
+| frame len 600 | +6.0 [−1.9, +10.3] | +22.3 |
+| frame len 1196 | +6.3 [−3.2, +12.9] | +22.3 |
+| read len 64 | +2.1 [−1.9, +4.9] | +36.5 |
+| read len 600 | +1.6 [−3.4, +4.9] | +36.5 |
+| read len 1196 | +6.6 [−3.3, +11.1] | +36.5 |
+| packed S=512 3×160 | −32.9 [−41.1, −27.7] | reported only |
+
+- The frame point is an upper bound (registered). The worst implied cost is +9.6 ms/GB, +0.06 % of c1s's client CPU per GB.
+
+**Merge conditions:**
+- GATE-41d PASS: met;
+- zero F2-FAIL: met;
+- RT-PASS: met;
+- the BENCH label PASS: met;
+- **The limit at ρ < 1:** §63 confirmed the evicting Realtime seat on commit 7. The guard's CAND is commit 8, which rewrote `WindowDelivery::offer`, including its evicting branch. At commit 8 that seat has loopback tests and the suites, but no VM row. It is not a registered merge condition: the owner chooses merge now (default) or after block E's rehearsal on `e-tree-f2`.
+- **owner's go, not yet given:**
+  1. wire v10 refuses every v9 peer, so all endpoints must upgrade together;
+  2. an engine configured with no initial path now refuses to start, and a runtime `add_path` is refused until a peer size is known;
+  3. ADR-0078 to Accepted on that go.
+- **At the merge (coordinator):**
+  - `--no-ff` of `f2-impl` `ab9feec4` (commit 1 never alone);
+  - status §1's protocol-version line, and the §42/§43 texts that call the receiver timestamp "v10" (now v11);
+  - `harness64`'s tools to main with it.
 
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 

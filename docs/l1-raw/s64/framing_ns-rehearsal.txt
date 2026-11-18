@@ -1,0 +1,140 @@
+--- run 1
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   116.5 [108.0-122.1]  CAND   127.0 [123.8-135.1]  ns/call
+read  S=1200 len=64          BASE    21.9 [21.6-24.4]  CAND    25.3 [23.8-28.2]  ns/call
+frame S=1200 len=600         BASE   136.1 [120.9-145.3]  CAND   143.5 [121.0-161.2]  ns/call
+read  S=1200 len=600         BASE    36.9 [28.4-37.1]  CAND    33.5 [32.5-39.1]  ns/call
+frame S=1200 len=1196        BASE   137.8 [134.7-141.5]  CAND   140.0 [139.5-149.1]  ns/call
+read  S=1200 len=1196        BASE   113.3 [109.0-126.9]  CAND   113.6 [106.2-118.1]  ns/call
+read  S=512 3x160 packed     BASE   110.0 [104.0-114.4]  CAND    68.9 [67.9-80.3]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 13.30s
+
+--- run 2
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   126.9 [113.4-130.8]  CAND   135.4 [130.0-139.8]  ns/call
+read  S=1200 len=64          BASE    20.9 [16.9-22.8]  CAND    19.0 [18.2-28.9]  ns/call
+frame S=1200 len=600         BASE   135.3 [132.0-142.1]  CAND   139.5 [133.2-146.7]  ns/call
+read  S=1200 len=600         BASE    31.3 [28.4-34.5]  CAND    31.6 [30.4-35.1]  ns/call
+frame S=1200 len=1196        BASE   130.0 [112.4-134.2]  CAND   142.9 [113.2-169.7]  ns/call
+read  S=1200 len=1196        BASE   102.2 [91.0-122.1]  CAND   113.3 [106.4-114.1]  ns/call
+read  S=512 3x160 packed     BASE   114.6 [104.1-118.1]  CAND    76.5 [69.2-86.0]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 13.12s
+
+--- run 3
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   116.1 [98.7-118.0]  CAND   119.8 [117.3-130.2]  ns/call
+read  S=1200 len=64          BASE    21.6 [18.5-22.3]  CAND    23.4 [22.7-24.6]  ns/call
+frame S=1200 len=600         BASE   141.0 [134.8-155.0]  CAND   148.5 [142.2-158.3]  ns/call
+read  S=1200 len=600         BASE    34.5 [31.6-37.4]  CAND    35.3 [34.5-39.9]  ns/call
+frame S=1200 len=1196        BASE   145.6 [117.4-170.5]  CAND   151.3 [118.3-160.9]  ns/call
+read  S=1200 len=1196        BASE    94.0 [90.8-113.0]  CAND   102.3 [91.5-134.7]  ns/call
+read  S=512 3x160 packed     BASE    97.5 [88.8-102.4]  CAND    63.7 [60.6-72.9]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 12.98s
+
+--- run 4
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   119.3 [107.4-120.8]  CAND   131.0 [126.4-151.9]  ns/call
+read  S=1200 len=64          BASE    19.9 [18.3-21.9]  CAND    23.0 [22.2-24.5]  ns/call
+frame S=1200 len=600         BASE   142.2 [138.7-145.6]  CAND   143.5 [141.2-149.6]  ns/call
+read  S=1200 len=600         BASE    33.4 [31.5-41.1]  CAND    35.5 [32.3-39.1]  ns/call
+frame S=1200 len=1196        BASE   139.8 [131.2-142.7]  CAND   146.7 [135.0-151.6]  ns/call
+read  S=1200 len=1196        BASE   111.1 [92.8-116.0]  CAND   115.0 [103.1-124.0]  ns/call
+read  S=512 3x160 packed     BASE   103.6 [90.7-109.8]  CAND    75.3 [67.8-75.7]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 13.29s
+
+--- run 5
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   119.7 [109.3-122.3]  CAND   126.5 [119.6-130.8]  ns/call
+read  S=1200 len=64          BASE    21.3 [20.5-21.6]  CAND    23.4 [23.3-24.2]  ns/call
+frame S=1200 len=600         BASE   137.4 [123.6-158.6]  CAND   145.6 [128.7-152.4]  ns/call
+read  S=1200 len=600         BASE    31.4 [29.6-35.0]  CAND    31.0 [30.3-36.6]  ns/call
+frame S=1200 len=1196        BASE   126.6 [107.7-141.4]  CAND   135.1 [125.0-146.9]  ns/call
+read  S=1200 len=1196        BASE    93.5 [88.0-106.1]  CAND   101.7 [94.2-118.4]  ns/call
+read  S=512 3x160 packed     BASE   109.1 [99.7-111.5]  CAND    77.9 [72.1-84.0]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 12.82s
+
+--- run 6
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   114.6 [102.6-116.6]  CAND   130.8 [121.1-134.0]  ns/call
+read  S=1200 len=64          BASE    20.7 [20.2-22.2]  CAND    22.0 [20.3-26.1]  ns/call
+frame S=1200 len=600         BASE   132.4 [127.5-142.4]  CAND   142.7 [135.7-149.8]  ns/call
+read  S=1200 len=600         BASE    35.3 [31.7-39.4]  CAND    40.2 [34.3-43.0]  ns/call
+frame S=1200 len=1196        BASE   131.1 [112.7-144.1]  CAND   141.2 [118.2-154.4]  ns/call
+read  S=1200 len=1196        BASE   106.3 [94.0-123.8]  CAND   114.3 [96.6-121.2]  ns/call
+read  S=512 3x160 packed     BASE    89.1 [83.3-102.2]  CAND    61.4 [59.6-66.5]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 12.71s
+
+--- run 7
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   110.4 [104.3-115.7]  CAND   121.4 [108.3-130.9]  ns/call
+read  S=1200 len=64          BASE    19.8 [17.6-21.6]  CAND    21.9 [20.6-22.9]  ns/call
+frame S=1200 len=600         BASE   144.0 [137.0-144.5]  CAND   142.1 [130.7-153.4]  ns/call
+read  S=1200 len=600         BASE    33.6 [29.6-46.2]  CAND    38.4 [31.0-43.1]  ns/call
+frame S=1200 len=1196        BASE   115.9 [107.9-133.6]  CAND   123.6 [113.1-138.3]  ns/call
+read  S=1200 len=1196        BASE   104.7 [92.9-114.7]  CAND   101.4 [100.0-123.6]  ns/call
+read  S=512 3x160 packed     BASE   109.1 [101.7-111.5]  CAND    74.9 [67.8-77.3]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 12.65s
+
+--- run 8
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   119.1 [114.9-122.4]  CAND   131.7 [124.6-135.6]  ns/call
+read  S=1200 len=64          BASE    21.4 [20.1-21.8]  CAND    23.2 [22.7-24.3]  ns/call
+frame S=1200 len=600         BASE   143.8 [138.6-148.7]  CAND   147.7 [144.4-152.3]  ns/call
+read  S=1200 len=600         BASE    37.0 [35.8-40.5]  CAND    39.0 [38.5-42.8]  ns/call
+frame S=1200 len=1196        BASE   141.4 [129.5-149.2]  CAND   138.2 [128.0-146.2]  ns/call
+read  S=1200 len=1196        BASE   114.5 [113.4-125.2]  CAND   114.5 [112.6-120.9]  ns/call
+read  S=512 3x160 packed     BASE   107.6 [99.7-111.5]  CAND    76.4 [73.4-79.7]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 13.61s
+
+--- run 9
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   112.8 [110.4-123.5]  CAND   131.6 [125.2-141.8]  ns/call
+read  S=1200 len=64          BASE    19.6 [18.7-21.8]  CAND    24.5 [20.3-25.2]  ns/call
+frame S=1200 len=600         BASE   133.6 [132.3-139.8]  CAND   141.5 [139.8-154.5]  ns/call
+read  S=1200 len=600         BASE    35.5 [33.2-36.1]  CAND    36.6 [34.8-41.0]  ns/call
+frame S=1200 len=1196        BASE   141.1 [129.3-144.0]  CAND   145.5 [135.4-152.0]  ns/call
+read  S=1200 len=1196        BASE   111.0 [108.1-127.5]  CAND   120.8 [117.4-127.4]  ns/call
+read  S=512 3x160 packed     BASE   108.4 [95.5-118.7]  CAND    75.8 [63.7-80.0]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 13.39s
+
+--- run 10
+
+running 1 test
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   109.6 [94.7-111.6]  CAND   124.5 [109.1-131.6]  ns/call
+read  S=1200 len=64          BASE    17.4 [16.7-20.4]  CAND    20.0 [17.8-22.5]  ns/call
+frame S=1200 len=600         BASE   149.6 [120.0-168.0]  CAND   154.2 [135.2-166.5]  ns/call
+read  S=1200 len=600         BASE    35.3 [32.2-36.7]  CAND    38.3 [36.1-46.8]  ns/call
+frame S=1200 len=1196        BASE   145.5 [134.7-147.8]  CAND   147.7 [135.3-165.3]  ns/call
+read  S=1200 len=1196        BASE   113.2 [106.8-121.3]  CAND   118.5 [112.2-158.4]  ns/call
+read  S=512 3x160 packed     BASE    98.8 [87.8-112.7]  CAND    65.6 [58.4-78.2]  ns/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 614 filtered out; finished in 13.34s
+

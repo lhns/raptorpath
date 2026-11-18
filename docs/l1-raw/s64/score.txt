@@ -1,0 +1,7 @@
+F2 MERGE GUARD (status 64): suites/TESTS.txt, guard/score.txt (stage G), rt64/score.txt (stage R)
+== guard
+VERDICT GATE-41d PASS
+GATE-64 PASS
+== rt64
+RT-PASS
+VERDICT64R RT-PASS rc_ok=12/12 rc_void=0 rc_fail=0 base_f2_dead=1/12 rb_void=0 item5=SCORED
