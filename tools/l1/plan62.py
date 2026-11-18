@@ -34,6 +34,9 @@ N_REP = 6
 REPS_CAP62 = None                                        # test_stubrun's fast mode caps the replicates (None = the registered design)
 SHIPPED_POOL = 2048
 LATE_T = {C3J0: 15.0}                                    # LATE windows t >= 15 s
+import plan60 as p60  # noqa: E402
+p60.LATE_T.setdefault(C3J0, 15.0)                        # s60_score.row_metrics and s61_score.row_extras read LATE_T.get(cell, 15.0): a silent default for an unregistered cell, so the cell is registered in both
+p61.LATE_T.setdefault(C3J0, 15.0)
 BYTES_FLOOR_MB = {12: 25, 24: 30}                        # section 2: W 12 at 25 MB, W 24 at 30 MB, both 150 s
 TIMEOUT_FLOOR, TIMEOUT_REST = 150, 120                   # the rest as 61a
 BYTES_KNEE_MB = p61.BYTES_KNEE_MB                        # 120 MB at the K, P1 and control arms

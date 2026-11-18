@@ -8,6 +8,7 @@
   5. HOST (skipped without the three ledgers: S62_RAW = a docs/l1-raw): the scorer reproduces s62pred.out's numbers on the 61c / 61a / c1s ledgers.
 Run: python3 test_s62.py"""
 import os
+import tempfile
 import random
 import sys
 
@@ -369,6 +370,68 @@ if all(os.path.exists(p) for p in TGZ.values()):
           and lc.netem_delay_ok(q_c1)[1].startswith("delay 1ms"), (q_c3, q_c1))
 else:
     print("skip HOST: the scorer vs s62pred.out (the 61c / 61a / c1s ledgers are not here: set S62_RAW to a docs/l1-raw)")
+
+# ═══ 6. HOST end to end with the REAL cell name: 61c's logs renamed c3j0-25, parsed by place38_parse.make_row, rehearsal-checked and scored ═══
+if all(os.path.exists(p_) for p_ in TGZ.values()):
+    import json as _json
+    import re as _re
+    import tarfile as _tf
+    import place38_parse as pp
+    CELL = "c3j0-25"
+    GOODQ = "qdisc netem 8001: root refcnt 2 limit 1000 delay 20ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 42"
+    raw_ = {}
+    with _tf.open(TGZ["61c"]) as tf_:
+        for m_ in tf_:
+            g_ = _re.search(r"diag-ld/c3-25@def-G(\d+)-s(\d+)-r(\d+)-a1-(c\.log|drv\.out|s\.log)$", m_.name)
+            if g_ and m_.isfile():
+                raw_.setdefault((int(g_.group(1)), g_.group(2), int(g_.group(3))), {})[g_.group(4)] = tf_.extractfile(m_).read().decode("utf-8", "replace").splitlines()
+    # TEST-ONLY SHIM (61c's arms are not what plan 62's multipliers place): arms() -> K 100 / 108 / 120, P1 152; the rehearsal's probes are W 80 / 100 (61c has no G128 / D12); the trimmed tgz lacks
+    # the pool_per_path INFO line, RWM_RTT_DUMP in [GATES] and the [NETEM] witness, so they are added to the logs. Everything else is the real path.
+    saved = (plan62.ALL_W, plan62.arms, plan62.REHEARSAL, plan62.PILOT62)
+    plan62.ALL_W = set(plan62.ALL_W) | {100, 108, 120, 152, 80, 12, 24, 512}
+    plan62.arms = lambda w: {"K": [100, 108, 120], "P1": 152}
+    plan62.PILOT62 = (80, 100)
+    plan62.REHEARSAL = [(CELL, "def", a_, sd_, rp_) for a_, sd_, rp_ in (("G512", "42", 1), ("G12", "42", 1), ("G12", "7", 2), ("G80", "42", 1), ("G100", "42", 1), ("G512", "7", 2))]
+    os.environ.update({"LD_PLAN": "62a", "LD_SHA": "a" * 64, "LD_CTL62": "512", "LD_KNEE62": "108.7"})
+    try:
+        rows_e = []
+        for (w_, sd_, rp_), d_ in sorted(raw_.items()):
+            fx = lambda L: [(ln + " RWM_RTT_DUMP=0") if "[GATES]" in ln else ln for ln in L] + ["path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS) pool_per_path=%d" % w_]      # noqa: E731
+            drv_ = d_["drv.out"] + [f"[NETEM] tag={t_} leg={l_} dev={v_} qdisc: {GOODQ}" for t_ in ("pre", "post") for l_, v_ in (("cli", "cli0"), ("srv", "srv0"))]
+            rows_e.append(pp.make_row(CELL, "G%d" % w_, sd_, rp_, 0, 100, drv_, fx(d_["c.log"]), fx(d_["s.log"]), 0, "a" * 64))
+        live_e = [r_ for r_ in rows_e if r_["status"] == "LIVE"]
+        check("the real row path accepts the cell name: 61c's logs renamed c3j0-25 parse to LIVE rows (every arm but the unregistered W16) with t60 / t61 / t62, no readout error and a clean netem witness",
+              len(live_e) == 60 and all(r_["problems"] == [] and r_.get("t60") and r_.get("t61") and r_["t62"]["netem_problems"] == [] and not (r_.get("t60_error") or r_.get("t61_error") or r_.get("t62_error")) for r_ in live_e)
+              and {r_["arm"] for r_ in rows_e if r_["status"] != "LIVE"} == {"G16"}, sorted({(r_["status"], tuple(r_["problems"])) for r_ in rows_e}, key=str)[:3])
+        r_ren = [r_ for r_ in live_e if (r_["arm"], r_["seed"], r_["rep"]) == ("G12", "42", 1)][0]
+        c_old = s.s1.row_extras(raw_[(12, "42", 1)]["c.log"], [], raw_[(12, "42", 1)]["drv.out"], "c3-25")
+        check("the cell-keyed readouts are the same under the new name as under c3-25 (windows, ticks, qshare through the registered BDP, the loss truth): nothing differs silently",
+              all(r_ren["t61"][k] == c_old[k] for k in ("win", "rtt", "qshare", "loss", "n_ticks")), [k for k in ("win", "rtt", "qshare", "loss") if r_ren["t61"][k] != c_old[k]])
+
+        def led_(name, rs, extra=""):
+            pth = os.path.join(tempfile.mkdtemp(), name)
+            open(pth, "w").write("".join("P38ROW " + _json.dumps(r, sort_keys=True) + "\n" for r in rs) + extra)
+            return pth
+        buf = []
+        s.score([led_("cell.log", rows_e, "LD-BATTERY-DONE\n")], "62a", out=buf.append)
+        sc_txt = "\n".join(buf)
+        check("score62 62a on the renamed rows reproduces s62pred.out's J5 stand-in: X_own 16.50, D0 8.433 / 4.944, the six knees, need_0 7.455 [6.620, 7.716], intercept 8.441 [7.329, 9.294], Delta_0 0.969, UNSCOREABLE (gate), the printed floors 12 / 24 and K 100 / 108 / 120 P1 152",
+              all(x in sc_txt for x in ("X_own = 16.50 ms", "D0 8.433 ms, gate FAIL", "D0 4.944 (reported)", "need_0".upper() if False else "NEED0 (native knee - F(G250) at W12) 7.455 ms, 90 % [6.620, 7.716]", "8.441 [7.329, 9.294]", "Delta_0 = 1/2 q_R F0 = 0.969", "LABEL62 NEED0 UNSCOREABLE (gate: D0 >= 0.5 ms)",
+                                          "floors (12, 24) K (100, 108, 120) P1 152", "W95 110.1 Tmin 46.385", "W95 108.2 Tmin 46.184")) and "ABORT-NETEM" not in sc_txt, sc_txt[:1200])
+        sub_ = {(a_, sd_, rp_) for _, _, a_, sd_, rp_ in plan62.REHEARSAL}
+        buf = []
+        s.smoke(led_("reh.log", [r_ for r_ in rows_e if (r_["arm"], str(r_["seed"]), r_["rep"]) in sub_]), "62r0", out=buf.append)
+        rh_txt = "\n".join(buf)
+        check("the rehearsal check on a 6-row subset of the renamed rows runs end to end: SMOKE-PASS with every criterion PASS (no FAIL line), the floor pair's gate pre-read FAILs (NO-GO-GATE, as s62pred.out section 5 at J = 5), the controls pass their health clause (loss truth read through the cell's [TRUTH]), "
+              "and the pilot reads u80 0.736 / u100 0.904: case=secant (61c's knee lies above W 100), W-hat 105.5, a second NO-GO-PILOT",
+              "SMOKE-PASS" in rh_txt and _re.search(r"^FAIL ", rh_txt, _re.M) is None and "LABEL62 GO-c3j0 NO-GO-GATE" in rh_txt and "gate FAIL" in rh_txt and "NO-GO-LIST NO-GO-GATE,NO-GO-PILOT" in rh_txt
+              and "case=secant" in rh_txt and "probes=80/100" in rh_txt and "PILOT62 W=105.5 u_lo=0.736 u_hi=0.904" in rh_txt and "(a) goodput 17.87 / 17.81" in rh_txt and "True; (c) R1 / R6 within 1 % True" in rh_txt, rh_txt[-1500:])
+    finally:
+        plan62.ALL_W, plan62.arms, plan62.REHEARSAL, plan62.PILOT62 = saved
+        for k_ in ("LD_PLAN", "LD_SHA", "LD_CTL62", "LD_KNEE62"):
+            os.environ.pop(k_, None)
+else:
+    print("skip HOST: the renamed-cell end-to-end run (the 61c ledger is not here)")
 
 print("FAILED %d" % fails if fails else "ALL OK")
 print(f"\ntest_s62: {fails} fail(s)")

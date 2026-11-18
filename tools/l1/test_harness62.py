@@ -237,6 +237,24 @@ check("plan62.py netem: a clean row is rc 0; a wrong read (a jitter term on the 
       and plan62.netem_check(netem_file(four()[:3], summary=False)) == 0 and plan62.netem_check(netem_file(four(GOOD.replace("delay 20ms", "delay 20ms  5ms"))[:3] + [four(GOOD.replace("delay 20ms", "delay 20ms  5ms"))[3]], summary=False)) == 1)
 shutil.rmtree(sem, ignore_errors=True)
 
+# ═══ 4c. cell-keyed lookups: c3j0-25 must hit every table c3-25 hits, and never fall back silently ═══
+import s60_score as _s6  # noqa: E402
+import s61_score as _s1  # noqa: E402
+import plan60 as _p60  # noqa: E402
+import plan61 as _p61  # noqa: E402
+check("LATE_T is registered for c3j0-25 in BOTH tables the row readers read with a silent default (plan60.LATE_T via s60_score.row_metrics, plan61.LATE_T via s61_score.row_extras), and plan62's own", _p60.LATE_T.get(C) == 15.0 and _p61.LATE_T.get(C) == 15.0 and plan62.LATE_T[C] == 15.0 and _s6.LATE_T is _p60.LATE_T)
+_tk = ['{"warmup":true}'] + [f"[SLAW] t={t:.2f} k={k} p=0 n=12 W=12 aw=0.5 nk=60 tmin=41.0" for k, t in enumerate((5.0, 20.0, 30.0), 1)] + [f"[WSTAT] t={t:.2f} k={k} p=0 nk=60 tmin=41.0 p10=41.1 p50=42.0 p90=43.0" for k, t in enumerate((5.0, 20.0, 30.0), 1)]
+_old = _p61.LATE_T[C]
+_n_reg = len(_s1.row_extras(_tk, [], [], C)["win"]["t"])
+_p61.LATE_T[C] = 25.0
+_n_25 = len(_s1.row_extras(_tk, [], [], C)["win"]["t"])
+_p61.LATE_T[C] = _old
+check("the LATE cut is read BY the cell's key (15 s keeps the t = 20 and 30 windows, a test-set 25 s keeps one): the lookup is the registered entry, not the 15.0 default", (_n_reg, _n_25) == (2, 1), (_n_reg, _n_25))
+check("every other cell-keyed default the c3j0-25 readers take is the SAME as c3-25's (neither is in LEGS / X_COLLAPSE / OMEGA: one leg, no collapse X, omega 0: plan 61 ran on those defaults), so no value differs silently",
+      all(((t.get(C) is None) == (t.get("c3-25") is None)) for t in (_s6.LEGS, _s6.X_COLLAPSE, _s6.OMEGA)) and _s6.LEGS.get(C, (0,)) == _s6.LEGS.get("c3-25", (0,)))
+check("stage3_parse / place38_parse tables the row path indexes are registered for c3j0-25 (CELL_SPEC, N_LEGS, SCEN_LINK, bdp) and the cell's scenario exists in lib.sh's table",
+      C in pp.sp.CELL_SPEC and C in pp.sp.N_LEGS and "c3j0" in pp.SCEN_LINK and pp.bdp_bytes(C) == pp.bdp_bytes("c3-25") and "c3j0)" in rd("lib.sh"))
+
 # ═══ 5. lib.sh's scenario and the row parser's cell ═══
 check("the row parser knows the cell: c3j0-25 is a single-leg cell of scenario c3j0 (BDP 100 000 B per leg = 20 Mbit x 40 ms, c3's), and every plan-62 arm is registered", pp.sp.CELL_SPEC[C] == ("c3j0", "c3j0", "single", 25000000) and pp.sp.N_LEGS[C] == 1
       and pp.bdp_bytes(C) == [100000] and all(a in pp.sp.ARM_SPEC for a in plan62.all_arms()) and C not in pp.sp.CELLS)
