@@ -477,16 +477,16 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
 #   unframable / dnf-unframable / symsz-missing / ctld-send-only   stage G, the first CAND scored row (dnf-unframable is also a DNF)
 #   base-rt-dead (the first RB row's warm-up never acks, the driver exits 1) / rt-rho-one-end (the first RC row's server prints window_reliable: false) / rc-void-twice (the first RC slot's row AND its replacement do)
 #   rc-nodata (the first RC row ends rc 0 with no run / summary line: NO_DATA, replaced once)   rt-dnf / rt-base-dnf (the first RC row / also the first RB row is a DNF: warm-up acked, transfer timed out) / rt-ctld-send-only / rt-symsz-1200 (the first RC row)   bare (BASE rows print no [CTLD] line at all)
-BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
+BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata", "base-dead-twice", "base-dead-twice-x2", "rb-dead-smoke", "rb-dead-smoke2", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
 
 
 def bad64():
     return set(x for x in os.environ.get("STUB_BAD64", "").split(",") if x)
 
 
-def hit64(kind, upto=1):
-    """True for the first `upto` scored (LD_TAG=ld) invocations that ask for `kind` (a marker file counts them)."""
-    if os.environ.get("LD_TAG") != "ld":
+def hit64(kind, upto=1, tag="ld"):
+    """True for the first `upto` invocations of the battery pass `tag` (ld = the scored rows, smoke = the smoke) that ask for `kind` (a marker file counts them)."""
+    if os.environ.get("LD_TAG") != tag:
         return False
     marker = os.path.join(TMP, "bad64-" + kind)
     seen = len(open(marker).read()) if os.path.exists(marker) else 0
@@ -567,9 +567,28 @@ def gen64r(cli, srv, drv, fam, nbytes, base, cand):
     else:
         if ("base-rt-dead" in bad or "base-rt-dead-rc0" in bad) and hit64("base-rt-dead"):
             dead = True
+        # plan 65: the first RB scored slot dies on both draws (base-dead-twice), the first TWO RB slots do (base-dead-twice-x2: four draws), the first / the first two RB SMOKE rows die (the rehearsal)
+        if "base-dead-twice" in bad and hit64("base-dead-twice", upto=2):
+            dead = True
+        if "base-dead-twice-x2" in bad and hit64("base-dead-twice-x2", upto=4):
+            dead = True
+        if "rb-dead-smoke" in bad and hit64("rb-dead-smoke", 1, "smoke"):
+            dead = True
+        if "rb-dead-smoke2" in bad and hit64("rb-dead-smoke2", 2, "smoke"):
+            dead = True
         if "rt-base-dnf" in bad and hit64("rt-base-dnf"):
             dnf = True
     cli, srv = f2_ends64(cli, srv, symsz, cand, ctld_srv=ctld_srv)
+    shift = float(os.environ.get("STUB_SHIFT65") or 0)
+    if cand and shift:
+        # plan 65: the CAND rows deliver in order `shift` later: the receiver's cumulative ack (third cum= field) lags the source curve (first field) by (1 + shift) times as much
+        def lagged(ln):
+            m = re.search(r"cum=(\d+)/(\d+)/(-?\d+)", ln)
+            if not m:
+                return ln
+            a, c = int(m.group(1)), int(m.group(3))
+            return ln[:m.start()] + f"cum={a}/{m.group(2)}/{a - int((a - c) * (1 + shift))}" + ln[m.end():]
+        rl = [lagged(ln) if ln.startswith("[DIAG]") else ln for ln in rl]
     if rho_bad:
         srv = [ln.replace("window_reliable: true", "window_reliable: false") for ln in srv]
     secs = 12.0
@@ -812,7 +831,7 @@ def main(argv):
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
     elif plan in ("60a", "60b"):
         cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
-    elif plan == "64":
+    elif plan in ("64", "65"):
         cli, srv, drv = gen64r(cli, srv, drv, fam, nbytes, base, cand)
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")

@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import hashlib
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -154,7 +155,7 @@ check("stage R's registered constants: 100 MB, timeout 150 s, at most 2 replaced
 bat = rd_sh = rd("loopdiag_battery.sh")
 runall = rd("loopdiag_run_all.sh")
 check("the battery's stage R wiring: plan 64 accepted, HINT realtime, RB on BASE's binary (RBIN=$BIN_BASE) and RC on the CAND binary with no arm env, 24 rows asserted, the plan64.py table, the replacement helper, WITNESS64 only on the 41d stage",
-      "P64=0; [ \"$PLAN\" = \"64\" ] && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }" in bat and "[ \"$P64\" = 1 ] && HINT=realtime" in bat and "RB|RC) [ \"$P64\" = 1 ]" in bat and '[ "$arm" = "RB" ] && { RBIN="$BIN_BASE"; RWANT="$WANT_BASE"; }' in bat
+      "{ [ \"$PLAN\" = \"64\" ] || [ \"$PLAN\" = \"65\" ]; } && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }" in bat and "[ \"$P64\" = 1 ] && HINT=realtime" in bat and "RB|RC) [ \"$P64\" = 1 ]" in bat and '[ "$arm" = "RB" ] && { RBIN="$BIN_BASE"; RWANT="$WANT_BASE"; }' in bat
       and '-eq 24 ] || { echo "ABORT-PLAN64 table' in bat and "python3 ./plan64.py plan" in bat and "python3 ./plan64.py replace" in bat and "LD_WITNESS64=1 is defined for the plan-41d stage only" in bat)
 check("RWM_C_RELIABLE is scrubbed from every row's env, so perf_rwm_c.sh keeps its default (--window-reliable to BOTH ends: rho = 1 at the Realtime hint)", "-u RWM_C_RELIABLE" in bat and "RWM_C_RELIABLE:-1" in rd("perf_rwm_c.sh") and "--window-reliable" in rd("perf_rwm_c.sh"))
 
@@ -389,7 +390,7 @@ check("framing_ns in the rehearsal: the test binary is built first (--no-run, it
       i_build < i_runs and "for i in 1 2 3 4 5 6 7 8 9 10; do" in runall and '"$CARGO" test -p raptorpath --lib --release framing_ns -- --ignored --nocapture' in runall
       and 'target-bench' in runall and "framing64.py" in runall and "ABORT-BENCH" in runall and "taskset" not in runall[i_build - 200:i_build + 40] and sum(1 for ln in runall.splitlines() if "taskset -c 2 timeout" in ln) == 1, runall.count("taskset -c 2"))
 check("the budget: BUDGET_S['64'] = 7650 s and ['64r'] = 3300 s are the guard's numbers in run_all (LD_HARD = launch + 2.5 h / rehearsal + 1.25 h), the launch's worst case with every RB row at its full timeout fits in 2.5 h",
-      plan64.BUDGET_S == {"64": 7650, "64r": 3300} and "P64_NEED=7650; [ \"$REHEARSE\" = 1 ] && P64_NEED=3300" in runall and plan64.BUDGET_S["64"] < 2.5 * 3600 and plan64.BUDGET_S["64r"] < 1.25 * 3600
+      {k: v for k, v in plan64.BUDGET_S.items() if k in ("64", "64r")} == {"64": 7650, "64r": 3300} and "P64_NEED=7650; [ \"$REHEARSE\" = 1 ] && P64_NEED=3300" in runall and plan64.BUDGET_S["64"] < 2.5 * 3600 and plan64.BUDGET_S["64r"] < 1.25 * 3600
       and 300 + 2880 + 1000 + 200 + 12 * 30 + 12 * (plan64.TIMEOUT_R + 15) + 2 * 165 + 600 == plan64.BUDGET_S["64"])
 
 # run_suites: the core and test-seams lines (registration section 5 item 5), extracted from the real script and run under bash against a stub cargo
@@ -433,6 +434,73 @@ if bash and m_rs:
           "rc=0" in cp.stdout and "test -p raptorpath-core" in cargo_l and not any("test-seams" in x for x in cargo_l) and "SEAMS n/a" in tt and "TEST core rc=0" in tt and "TEST bashtests rc=0" in tt, (cp.stdout[-300:], cargo_l, tt[:400]))
 else:
     check("run_suites is extractable from loopdiag_run_all.sh and bash is available", False, (bool(bash), bool(m_rs)))
+
+# ═══ 7. plan 65 (status 65): plan 64's stage R at 24 pairs, the registered scorer wired in unchanged ═══
+check("plan 65's battery wiring: LD_PLAN=65 accepted, P65 rides P64 (same sizes, env, TRIES=1), the table is plan64.py's (48 rows asserted, 3 smoke rows with the conditional RB s7 r1 behind plan64.py cond65), replace gets $PLAN, the copy list names s65_score.py",
+      "|54b|64|65) ;;" in bat and 'P64=0; P65=0; [ "$PLAN" = "65" ] && P65=1' in bat and '-eq 48 ] || { echo "ABORT-PLAN65 table' in bat and 'plan64.py plan smoke "$PLAN"' in bat
+      and 'plan64.py cond65 "$OUT"' in bat and 'plan64.py replace "$OUT" "$1" "$2" "$3" "$4" "$PLAN"' in bat and " s65_score.py" in bat and 'if [ "$P64" = 1 ]; then' in bat)
+check("plan 65's run_all wiring: a stage-R-only launch (stage rt65 65, smoke65r / score65r / check65r), no build (SUITES-NOT-RUN), the pinned binaries installed and sha-checked, the scorer sha (LD_S65_SCORE_SHA, the registered pin) checked before anything runs, LD_PRIOR_TOOLS reuse, the process list logged twice, the budget from plan64.py, no LD_CAND_SHA / LD_BASE_SHA",
+      "stage rt65 65; rrc=$?" in runall and "65) smk=smoke65r; scr=score65r; chk=check65r ;;" in runall and "SUITES-NOT-RUN plan 65" in runall and "ABORT-TOOLS plan 65: tools/l1/s65_score.py sha256" in runall
+      and "41d9d58e27f42eb92862e243c25900d547ea7ffd6b64a6d00ddcb039fa844a21" in runall and "suites_stage65() {" in runall and 'proclist65 "before-first-row-' in runall and 'proclist65 "before-$([ "$REHEARSE" = 1 ]' in runall
+      and 'plan64.py budget "65$([ "$REHEARSE" = 1 ] && echo r)"' in runall and "ABORT-BUILD plan 65 needs $_v" in runall and "ABORT-SEAT plan 65" in runall and "VERDICT65|TEST65|F2-FINDING65" in runall and "test_s65_score.py" in runall)
+check("plan 65's registered pin in run_all equals the scorer's sha256 and the registration's (41d9d58e…)", hashlib.sha256(open(os.path.join(HERE, "s65_score.py"), "rb").read()).hexdigest() == "41d9d58e27f42eb92862e243c25900d547ea7ffd6b64a6d00ddcb039fa844a21")
+
+
+def smoke65_rows(rb1, rc1, rb7=None):
+    ex = {"qlost_2s": 600, "qsent_2s": 27000}
+    rows = [mkrow("RB", "42", 1, **rb1, extra=ex), mkrow("RC", "42", 1, **rc1, extra=ex)] + ([mkrow("RB", "7", 1, **rb7, extra=ex)] if rb7 is not None else [])
+    d, p = ledger(rows)
+    buf = []
+    rc = plan64.smoke65(p, out=buf.append)
+    shutil.rmtree(d, ignore_errors=True)
+    return rc, "\n".join(buf)
+
+
+DEADRB = {"status": "BASE-F2-DEAD", "dnf": True, "rc": 1, "warm": "NEVER-ACKED"}
+rc_, tx_ = smoke65_rows({}, {})
+check("plan 65 smoke: RB s42 r1 LIVE and RC s42 r1 RT-OK (two rows, no third) is SMOKE-PASS", rc_ == 0 and "SMOKE-PASS" in tx_ and "RB s7 r1 ran" not in tx_, tx_)
+rc_, tx_ = smoke65_rows(DEADRB, {}, {})
+check("plan 65 smoke: RB s42 r1 BASE-F2-DEAD and the conditional RB s7 r1 LIVE: SMOKE-PASS (a dead BASE rehearsal row is the old defect at its known rate, not a harness fault)", rc_ == 0 and "the conditional RB s7 r1: RB s42 r1 died" in tx_ and "SMOKE-PASS" in tx_, tx_)
+rc_, tx_ = smoke65_rows(DEADRB, {}, DEADRB)
+check("plan 65 smoke: two BASE-F2-DEAD rows read SMOKE-FAIL (two BASE-F2-DEAD rows: NO-GO, to the coordinator) with the NO-GO65 line", rc_ == 1 and "SMOKE-FAIL (two BASE-F2-DEAD rows: NO-GO, to the coordinator)" in tx_ and "NO-GO65" in tx_, tx_)
+rc_, tx_ = smoke65_rows(DEADRB, {})
+check("plan 65 smoke: RB s42 r1 dead and no third row is a FAIL (the conditional row did not run)", rc_ == 1 and "RB s7 r1: no row" in tx_, tx_)
+rc_, tx_ = smoke65_rows({}, {}, {})
+check("plan 65 smoke: the third row ran although RB s42 r1 is alive is a FAIL", rc_ == 1 and "RB s7 r1 ran although" in tx_, tx_)
+rc_, tx_ = smoke65_rows({}, {"status": "RT-FAIL", "items": [2]})
+check("plan 65 smoke: an RC item failure is an F2-FINDING (no launch): SMOKE-FAIL", rc_ == 1 and "RT-FAIL items" in tx_, tx_)
+rc_, tx_ = smoke65_rows({}, {"status": "VOID-RHO"})
+check("plan 65 smoke: RC must be LIVE (RT-OK): a void RC row fails the rehearsal", rc_ == 1, tx_)
+rc_, tx_ = smoke65_rows({"status": "VOID-RC", "rc": 1}, {})
+check("plan 65 smoke: an RB row that is neither LIVE nor BASE-F2-DEAD (VOID-RC included) is a harness fault: SMOKE-FAIL", rc_ == 1 and "RB: " in tx_, tx_)
+ex_none = mkrow("RC", "42", 1)
+dd_, pp_ = ledger([mkrow("RB", "42", 1, extra={"qlost_2s": 1, "qsent_2s": 2}), ex_none])
+buf_ = []
+rcn = plan64.smoke65(pp_, out=buf_.append)
+shutil.rmtree(dd_, ignore_errors=True)
+check("plan 65 smoke: a missing early-loss field (qlost_2s) on the RC row is a harness fault (readouts and qlost_2s computed)", rcn == 1 and "RC: no-qlost_2s" in "\n".join(buf_))
+buf_ = []
+plan64.smoke(pp_, out=buf_.append, plan="65")
+check("plan64.smoke(path, plan='65') is the plan 65 smoke", any(x.startswith("SMOKE65R") for x in buf_))
+# plan 64's pins are unchanged (the tables, the replace set and cap, the smoke)
+check("plan 64's pins are unchanged by plan 65: 24 rows, smoke of two, replace set without BASE-F2-DEAD and cap 2, count 24",
+      len(plan64.plan()) == 24 and len(plan64.plan(smoke=True)) == 2 and "BASE-F2-DEAD" not in plan64.R_REPLACEABLE and plan64.MAX_REPLACEMENTS_R == 2
+      and subprocess.run([sys.executable, os.path.join(HERE, "plan64.py"), "count"], capture_output=True, text=True).stdout.strip() == "24"
+      and subprocess.run([sys.executable, os.path.join(HERE, "plan64.py"), "count", "65"], capture_output=True, text=True).stdout.strip() == "48")
+# rt64_score on the committed section 64 ledger: byte for byte (host only)
+S64SES = os.path.join(RAWD, "s64", "s64-session.tgz")
+if os.path.exists(S64SES):
+    import tarfile
+    td64 = tempfile.mkdtemp()
+    with tarfile.open(S64SES) as tf:
+        tf.extractall(td64, members=[m for m in tf.getmembers() if m.name in ("session/rt64/ld.log", "session/rt64/score.txt")])
+    buf_ = []
+    rt64_score.score([os.path.join(td64, "session", "rt64", "ld.log")], out=buf_.append)
+    want_ = open(os.path.join(td64, "session", "rt64", "score.txt"), encoding="utf-8", newline="").read().replace("\r\n", "\n")
+    check("rt64_score on the committed section 64 stage R ledger (rt64/ld.log) prints rt64/score.txt byte for byte", "\n".join(buf_) + "\n" == want_, ("\n".join(buf_) + "\n")[:300])
+    shutil.rmtree(td64, ignore_errors=True)
+else:
+    print("SKIP rt64_score byte-identity: docs/l1-raw/s64 missing (an archive)")
 
 if __name__ == "__main__":
     print("test_harness64: %d checks, %d failed" % (CHECKS, fails))

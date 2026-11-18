@@ -23,6 +23,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import l1common as lc  # noqa: E402
+import s65_score  # noqa: E402      # status 65's registered scorer (sha-pinned by the launch); plan 65's table, redraw cap and pair floor are read from it
 
 CELL = "c2-100"
 ARMS_R = ("RB", "RC")
@@ -39,6 +40,11 @@ SYMSZ_R = (512, 512)
 # registered worst cases (seconds the launch / rehearsal needs before LD_HARD; the launch sets LD_HARD = launch + 2.5 h, the rehearsal + 1.25 h): section 4 with every RB row at its full timeout.
 # launch: smoke 300 + stage G 2880 + 4 replaced G slots 1000 + stage R smoke 200 + 12 RC rows 360 + 12 RB rows at the full 150 s timeout 1980 + 2 replaced R slots 330 + scoring 600
 BUDGET_S = {"64": 7650, "64r": 3300}
+# status 65 (the exact replication of the Realtime in-order delay lean): plan 64's stage R at s65_score.N_PAIRS slots (48 rows), a smoke with a conditional third row, a replacement set with BASE-F2-DEAD added and a cap of 4 slots.
+PAIRS65 = s65_score.N_PAIRS                  # test_stubrun's fast mode shrinks these two (the scorer file itself is never edited: the launch checks its sha)
+MIN_PAIRS65 = s65_score.MIN_PAIRS
+SMOKE_R65 = [(CELL, "def", "RB", "42", 1), (CELL, "def", "RC", "42", 1), (CELL, "def", "RB", "7", 1)]      # the third row runs only when RB s42 r1 is BASE-F2-DEAD (registration 6)
+BUDGET_S.update({"65": 6700, "65r": 1800})      # registration 9: launch 6620 s computed, budgeted 6700; rehearsal 1275 s computed, budgeted 1800
 F2_FAIL = "F2-FAIL"
 INFRA_STATUSES = ("VOID-COTENANT", "VOID-ONDISK", "CONTAMINATED")
 R_REPLACEABLE = ("WITNESS-FAIL", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "VOID-RHO", "VOID-RC", "NO_DATA")      # stage R's non-F2 voids (replaced once)
@@ -46,8 +52,13 @@ R_VOID = R_REPLACEABLE
 _WR = re.compile(r"window_reliable: (true|false)")
 
 
-def plan(smoke=False):
-    """[(cell, store, arm, seed, rep)] in run order: plan 41c's interleave, twelve groups (seed, rep), per group the pair RB, RC (even groups) or RC, RB (odd groups)."""
+def plan(smoke=False, plan_id="64"):
+    """[(cell, store, arm, seed, rep)] in run order: plan 41c's interleave, twelve groups (seed, rep), per group the pair RB, RC (even groups) or RC, RB (odd groups). Plan "65": s65_score.plan() (PAIRS65 slots,
+    two rows each) in the same layout; its smoke is RB s42 r1, RC s42 r1 and the conditional RB s7 r1."""
+    if plan_id == "65":
+        if smoke:
+            return list(SMOKE_R65)
+        return [(CELL, "def", a, sd, int(rp)) for a, sd, rp in s65_score.plan(PAIRS65)]
     if smoke:
         return list(SMOKE_R)
     out = []
@@ -57,8 +68,8 @@ def plan(smoke=False):
     return out
 
 
-def expect_rc():
-    return sum(1 for x in plan() if x[2] == "RC")
+def expect_rc(plan_id="64"):
+    return sum(1 for x in plan(plan_id=plan_id) if x[2] == "RC")
 
 
 def valid_slot(cell, arm):
@@ -325,6 +336,7 @@ def rt_row(row, arm, cli, srv, drv, sha, sha_cand, sha_base):
     row["inorder_p95"] = st["p95"] * 1e3 if st else None
     row["inorder_n"] = st["n"] if st else 0
     row["tick_span_s"] = last_tick_s(cli)
+    row.update(s65_score.row_fields(cli))      # qlost_2s / qsent_2s: plan 65's reported early loss (harmless on plan 64 rows)
     row["_rt"] = (arm, rho_bad, rd, bool(p))
     return p
 
@@ -373,33 +385,37 @@ def final_rows(rows):
     return out
 
 
-def replace(ledger, cell, arm, seed, rep):
-    """Battery helper: the slot's rows so far are exactly one, that row is a non-F2 void (R_REPLACEABLE), and fewer than MAX_REPLACEMENTS_R slots hold two rows -> print the reason, rc 0; else rc 1."""
+def replace(ledger, cell, arm, seed, rep, plan_id="64"):
+    """Battery helper: the slot's rows so far are exactly one, that row is a non-F2 void (R_REPLACEABLE), and fewer than MAX_REPLACEMENTS_R slots hold two rows -> print the reason, rc 0; else rc 1.
+    Plan 65: the replaceable set also holds BASE-F2-DEAD and the cap is s65_score.REDRAW_CAP (4) slots; nothing else changes (an RC F2 failure is never redrawn)."""
     import place38_parse as pp
     rows, _ = pp.rows_of([ledger])
     sl = slot_rows(rows)
     mine = sl.get((cell, arm, str(seed), str(rep)), [])
     done = sum(1 for v in sl.values() if len(v) > 1)
-    if len(mine) == 1 and mine[0]["status"] in R_REPLACEABLE and done < MAX_REPLACEMENTS_R:
+    ok_set, cap = (R_REPLACEABLE + ("BASE-F2-DEAD",), s65_score.REDRAW_CAP) if plan_id == "65" else (R_REPLACEABLE, MAX_REPLACEMENTS_R)
+    if len(mine) == 1 and mine[0]["status"] in ok_set and done < cap:
         print(mine[0]["status"].lower())
         return 0
     return 1
 
 
-def check(path):
+def check(path, plan_id="64"):
     import place38_parse as pp
     rows, _ = pp.rows_of([path])
     t = open(path, errors="replace").read()
     got = {(r["cell"], r["arm"], str(r["seed"]), str(r["rep"])) for r in rows}
-    want = {(c, a, sd, str(rp)) for c, _, a, sd, rp in plan()}
+    want = {(c, a, sd, str(rp)) for c, _, a, sd, rp in plan(plan_id=plan_id)}
     ok = "LD-BATTERY-DONE" in t and got == want
-    print(f"CHECK64R done={'LD-BATTERY-DONE' in t} slots={len(got & want)}/{len(want)} rows={len(rows)} extra={len(got - want)}")
+    print(f"CHECK{plan_id}R done={'LD-BATTERY-DONE' in t} slots={len(got & want)}/{len(want)} rows={len(rows)} extra={len(got - want)}")
     return 0 if ok else 1
 
 
-def smoke(path, out=print):
+def smoke(path, out=print, plan="64"):
     """Stage R's rehearsal rows (RB s42, RC s42): RC passes items 1-4, completes, is RT-OK (rc 0, not VOID-RC), shows window_reliable: true on both ends and has its readouts computed; RB is LIVE with
     window_reliable: true on both ends, or BASE-F2-DEAD (any other label, VOID-RC included, is a harness fault). A failed RC item is a finding against the fix. Rows are never re-run."""
+    if plan == "65":
+        return smoke65(path, out)
     import place38_parse as pp
     rows, _ = pp.rows_of([path])
     got = {r["arm"]: r for r in rows if r["cell"] == CELL}
@@ -439,24 +455,85 @@ def smoke(path, out=print):
     return 0
 
 
+def cond65(ledger):
+    """Plan 65's smoke: rc 0 iff RB s42 r1's row is BASE-F2-DEAD, i.e. the conditional third row (RB s7 r1) runs."""
+    import place38_parse as pp
+    rows, _ = pp.rows_of([ledger])
+    return 0 if any(r["arm"] == "RB" and str(r["seed"]) == "42" and str(r["rep"]) == "1" and r["status"] == "BASE-F2-DEAD" for r in rows) else 1
+
+
+def smoke65(path, out=print):
+    """Plan 65's rehearsal (registration 6; rows are never re-run): RC s42 r1 is RT-OK (completes inside 150 s, rc 0, items 1-4 pass, window_reliable true on both ends, the readouts and qlost_2s computed); RB is LIVE
+    (window_reliable true on both ends, the readouts computed) on s42 r1 or, when that one is BASE-F2-DEAD, on the conditional RB s7 r1. Two BASE-F2-DEAD rows are a NO-GO for the coordinator."""
+    import place38_parse as pp
+    rows, _ = pp.rows_of([path])
+    got = {(r["arm"], str(r["seed"]), str(r["rep"])): r for r in rows if r["cell"] == CELL}
+    bad = []
+
+    def crit(name, fails):
+        out(("PASS " if not fails else "FAIL ") + name + ("" if not fails else ": " + "; ".join(fails)))
+        bad.extend(fails)
+    rb1, rc1, rb2 = got.get(("RB", "42", "1")), got.get(("RC", "42", "1")), got.get(("RB", "7", "1"))
+    want_rows = 3 if (rb1 is not None and rb1["status"] == "BASE-F2-DEAD") else 2
+    out(f"SMOKE65R rows={len(rows)} (RB s42 r1, RC s42 r1" + (", and the conditional RB s7 r1: RB s42 r1 died" if want_rows == 3 else "") + "; a row is never re-run)")
+    for k, r in got.items():
+        t = r.get("t64") or {}
+        out(f"  ROW {k[0]} s{k[1]} r{k[2]}: status={r['status']} rc={r['rc']} dnf={r.get('dnf')} mbps={r.get('mbps')} warm={t.get('warm')} wr={t.get('wr_cli')}/{t.get('wr_srv')} items={t.get('items')} qlost_2s={r.get('qlost_2s')}/{r.get('qsent_2s')}")
+    crit("the table's rows ran (RB s42 r1 and RC s42 r1" + (", and RB s7 r1 because RB s42 r1 died" if want_rows == 3 else "") + ")",
+         [f"{a} s{s} r{r_}: no row" for a, s, r_ in (("RB", "42", "1"), ("RC", "42", "1")) + ((("RB", "7", "1"),) if want_rows == 3 else ()) if (a, s, r_) not in got]
+         + (["RB s7 r1 ran although RB s42 r1 is not BASE-F2-DEAD"] if (rb2 is not None and want_rows == 2) else []))
+    if rc1 is not None:
+        t = rc1.get("t64") or {}
+        crit("RC s42 r1 passes the F2 reading (items 1-4) - a failed item is an F2-FINDING: no launch",
+             [f"RC: RT-FAIL items {rc1.get('rt_items')}"] if rc1["status"] in ("RT-FAIL", F2_FAIL) else [])
+        crit("RC s42 r1 is LIVE (RT-OK): completes inside 150 s, rc 0 (not VOID-RC, not VOID-RHO)", [] if rc1["status"] == "RT-OK" and rc1.get("dnf") is False and rc1.get("rc") == 0 else [f"RC: status={rc1['status']} rc={rc1.get('rc')} dnf={rc1.get('dnf')}"])
+        crit("RC s42 r1 shows window_reliable: true on both ends", [] if t.get("wr_cli") is True and t.get("wr_srv") is True else [f"RC: window_reliable cli={t.get('wr_cli')} srv={t.get('wr_srv')}"])
+        crit("RC s42 r1 has its readouts and the early-loss field computed (goodput, cpu/GB, lag_E both ends, the in-order delay mean, qlost_2s: none is None)",
+             [f"RC: no-{k}" for k in ("mbps", "cpu_cli", "cpu_srv", "cli_lag_E", "srv_lag_E", "inorder_mean", "qlost_2s") if rc1.get(k) is None])
+    live = [r for r in (rb1, rb2) if r is not None and r["status"] == "LIVE"]
+    if live:
+        r = live[0]
+        t = r.get("t64") or {}
+        crit("RB is LIVE on one row with window_reliable: true on both ends and its readouts and qlost_2s computed",
+             ([] if t.get("wr_cli") is True and t.get("wr_srv") is True else [f"RB: window_reliable cli={t.get('wr_cli')} srv={t.get('wr_srv')}"])
+             + [f"RB: no-{k}" for k in ("mbps", "cpu_cli", "cpu_srv", "cli_lag_E", "srv_lag_E", "inorder_mean", "qlost_2s") if r.get(k) is None])
+    else:
+        dead = [r for r in (rb1, rb2) if r is not None and r["status"] == "BASE-F2-DEAD"]
+        if len(dead) == 2:
+            bad.append("two BASE-F2-DEAD rows: NO-GO, to the coordinator")
+            out("FAIL RB is LIVE on one row: two BASE-F2-DEAD rows (RB s42 r1 and RB s7 r1)")
+            out("NO-GO65 two BASE-F2-DEAD rehearsal rows: the death rate is far above the one the redraw cap and the pair floor were sized for; the two dead rows go to the coordinator")
+        else:
+            crit("RB is LIVE on one row (RB s42 r1, or the conditional RB s7 r1)", [f"RB: {r['arm']} s{r['seed']} r{r['rep']} status={r['status']} rc={r.get('rc')}" for r in (rb1, rb2) if r is not None] or ["RB: no row"])
+    crit("each row ran its seat's binary (no bin-sha problem)", [f"{a} s{s}: {x}" for (a, s, _), r in got.items() for x in r.get("problems") or [] if x.startswith("bin-sha")])
+    if bad:
+        out("SMOKE-FAIL " + ("(two BASE-F2-DEAD rows: NO-GO, to the coordinator) " if any("two BASE-F2-DEAD" in x for x in bad) else "") + "; ".join(bad))
+        return 1
+    out("SMOKE-PASS")
+    return 0
+
+
 def main(argv):
     if not argv:
         print(__doc__)
         return 2
     cmd, a = argv[0], argv[1:]
+    pid = a[-1] if a and a[-1] in ("64", "65") else "64"
     if cmd == "plan":
-        for c, s, ar, sd, rp in plan(smoke=bool(a) and a[0] == "smoke"):
+        for c, s, ar, sd, rp in plan(smoke=bool(a) and a[0] == "smoke", plan_id=pid):
             print(f"{c} {s} {ar} {sd} {rp}")
         return 0
     if cmd == "count":
-        print(len(plan(smoke=bool(a) and a[0] == "smoke")))
+        print(len(plan(smoke=bool(a) and a[0] == "smoke", plan_id=pid)))
         return 0
     if cmd == "replace":
-        return replace(*a[:5])
+        return replace(*a[:5], plan_id=(a[5] if len(a) > 5 else "64"))
+    if cmd == "cond65":
+        return cond65(a[0])
     if cmd == "check":
-        return check(a[0])
+        return check(a[0], plan_id=(a[1] if len(a) > 1 else "64"))
     if cmd == "smoke":
-        return smoke(a[0])
+        return smoke65(a[0]) if (len(a) > 1 and a[1] == "65") else smoke(a[0])
     if cmd == "budget":
         print(BUDGET_S[a[0]])
         return 0
