@@ -33,6 +33,29 @@ Plans 60a / 60b (the store law's gauge session, status 60) are plan 59's single-
   nogo-rehearse          (60a) the stub starves c8 leg 0: the rehearsal's go/no-go reads NO-GO for c8 (a printed decision, the rehearsal still passes)
   rsign-abort            (60b) 60a's score (LD_SCORE60A) carries R-SIGN-c2 STOP: ABORT-RSIGN, rc 3, nothing run (60b's non-rehearsal launch reads the gate before any row)
   prebuilt               (60b) LD_BIN_PREBUILT = 60a's binary: no build, the sha still checked against LD_BIN_SHA_EXPECT
+Plan 64 (status 64, F2's merge guard; docs/derivations/f2-guard-registration.md) is plan 41d's stage G with the F2 row witnesses (LD_WITNESS64=1; LD_PLAN=64 is rewritten to 41d, as plan 54 is) followed by stage R (Realtime c2-100 at
+rho = 1, arms RB / RC, $RUN/rt64); LD_BASE_SHA is required. Its suite reuse is the reference manifest over the WIDER src_manifest() set (a MISS aborts, a rehearsal included), its binaries LD_BIN_PREBUILT_BASE / _CAND (sha-checked
+against LD_BIN_SHA_BASE / _CAND) and its tools tests LD_PRIOR_TOOLS (the rehearsal's run dir, on a byte-identical tools/l1). No prior-tests paths. Every path is a session (fast mode: stage G 16 rows + 3 smoke, stage R 4 rows + 2 smoke):
+  rehearse                 LD_REHEARSE=1 on a HIT: both builds (shas recorded), the seat witness, stage G's 3 smoke rows and stage R's RB / RC rehearsal rows with their criteria, the tools tests (TOOLS-TESTS-OK + TOOLS-MANIFEST.sha256), framing_ns x 10 with its label; no battery
+  full                     the launch shape: a rehearsal's run dir feeds LD_BIN_PREBUILT_BASE / _CAND (sha-checked against its BINSHA.txt) and LD_PRIOR_TOOLS: no build, no cargo test, suite-reuse HIT, TOOLS-TESTS-REUSED, both stages to LD-ALL-DONE, GATE-64 PASS, RT-PASS
+  cand-bulk-unframable     (STUB_BAD64) one CAND row prints [UNFRAMABLE]: F2-FAIL, never replaced, not counted toward NO VERDICT, GATE-64 FAIL with the 41d p still > 0.05
+  cand-bulk-dnf-unframable the same on a CAND row that is a DNF: F2-FAIL, not DNF
+  cand-bulk-symsz-missing  one CAND row has no [SYMSZ] on the server: F2-FAIL (a missing witness on an otherwise LIVE row)
+  cand-bulk-ctld-send-only one CAND row's [CTLD] is on the sending end only (the receiving server has none): F2-FAIL
+  base-has-symsz           the BASE binary carries [SYMSZ]: ABORT-SEAT, rc 5, no row measured
+  completed-row-live       a completed row is LIVE (rc 0) on each seat under the real perf script's F2 lines run under `set -euo pipefail` (the section 63 VOID-RC defect), stage G and stage R
+  base-rt-dead             an RB row's warm-up never acks (the driver exits 1): BASE-F2-DEAD (not replaced, no NO VERDICT, not VOID-RC), RT-PASS stands
+  base-rt-dead-rc0         the same with the driver exiting 0 and no summary line: the row is NOT drawn again (one attempt: TRIES=1 at stage R), BASE-F2-DEAD
+  rt-rho-one-end           an RC row's server prints window_reliable: false: VOID-RHO, replaced once
+  cand-rt-dnf-base-completes  an RC row is a DNF while every live RB row completes: RT-FAIL 5
+  cand-rt-dnf-base-dnf        the same DNF while an RB row is a DNF too: item 5 REPORTED, RT-PASS
+  cand-rt-ctld-send-only   an RC row's [CTLD] is on the sending end only: RT-FAIL 2
+  cand-rt-symsz-1200       an RC row's [SYMSZ] reads 1200: RT-FAIL 4
+  manifest-miss            one byte of raptorpath/src differs from the reference manifest: ABORT-SUITES plan 64 suite-reuse MISS, rc 5, nothing run
+  manifest-miss-cargo-toml-only  only raptorpath/Cargo.toml differs (outside the narrower engine manifest): ABORT-SUITES
+  rc-void-twice            an RC slot voids (VOID-RHO) on its row and on its replacement: RC-VOID, RT-INCOMPLETE, not RT-PASS
+  prebuilt-sha-mismatch    LD_BIN_SHA_CAND differs from the prebuilt CAND binary: ABORT-BUILD, rc 5, no row measured
+  tools-manifest-differs   LD_PRIOR_TOOLS names a rehearsal whose tools/l1 manifest differs from the launch's: the tools tests run (no TOOLS-TESTS-REUSED)
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -52,4 +75,6 @@ HARNESS_PATHS = {
     "59": ("rehearse", "full", "reuse-hit", "reuse-miss"),
     "60a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse"),
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
+    "64": ("rehearse", "full", "cand-bulk-unframable", "cand-bulk-dnf-unframable", "cand-bulk-symsz-missing", "cand-bulk-ctld-send-only", "base-has-symsz", "completed-row-live", "base-rt-dead", "base-rt-dead-rc0", "rt-rho-one-end",
+           "cand-rt-dnf-base-completes", "cand-rt-dnf-base-dnf", "cand-rt-ctld-send-only", "cand-rt-symsz-1200", "manifest-miss", "manifest-miss-cargo-toml-only", "rc-void-twice", "prebuilt-sha-mismatch", "tools-manifest-differs"),
 }
