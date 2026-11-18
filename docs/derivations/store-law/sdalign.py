@@ -1,7 +1,8 @@
 """Sampler design (sampler-design.md): the knee's window minimum against retransmits, the brake estimators, and the floor's location statistics.
 
 Usage (from docs/):  python -I -X utf8 derivations/store-law/sdalign.py l1-raw/s62/rep62r0-diag.tgz l1-raw/s61/rep61c-diag-ld.tgz \
-                         l1-raw/s61/rep61a-diag-ld.tgz l1-raw/s60/rep60a-diag-ld.tgz | tr -d '\r' > derivations/store-law/sdalign.out
+                         l1-raw/s61/rep61a-diag-ld.tgz l1-raw/s60/rep60a-diag-ld.tgz \
+                         l1-raw/s60/rep60b-diag-ld.tgz | tr -d '\r' > derivations/store-law/sdalign.out
 
 Post hoc, on existing rows; nothing here is registered. Leg 0 only; LATE windows as in crfollow.py (t >= 15 s, nk >= 10).
 Window i of [SLAW] / [WSTAT] is paired with the i-th [DIAG] tick after the warm-up marker (crfollow.py's pairing); the
@@ -98,7 +99,8 @@ CELLS = (
     ("s62 J0", 0, "c3j0-25", (12, 80, 128, 512)),
     ("61c J5", 1, "c3-25", (12, 16, 24, 80, 100, 108, 120, 152, 512)),
     ("61a J5", 2, "c3-25", (12, 16, 24, 92, 104, 112, 124, 2048)),
-    ("c2 s60", 3, "c2-100", (16,)),
+    ("c2 s60", 3, "c2-100", (16, 32, 48, 160, 176, 192, 256, 2048)),
+    ("c1s s60", 4, "c1s-400", (64, 128, 192, 2048)),
 )
 
 
@@ -106,7 +108,7 @@ def main(argv):
     srcs = []
     for lab, i, cell, arms in CELLS:
         srcs.append(load(argv[1 + i], lambda k, cell=cell, arms=arms: k[0] == cell and k[2] in arms))
-    P("sampler design (sdalign.py); inputs " + ", ".join(a.replace("\\", "/").split("/")[-1] for a in argv[1:5]))
+    P("sampler design (sdalign.py); inputs " + ", ".join(a.replace("\\", "/").split("/")[-1] for a in argv[1:6]))
     tot_bad = sum(b for rows in srcs for _, b in rows.values())
     P(f"pairing check: windows whose paired [DIAG] tick lies > 60 ms from the [SLAW] close: {tot_bad}")
 
@@ -181,6 +183,8 @@ def main(argv):
     for (lab, _, cell, arms), rows in zip(CELLS, srcs):
         W = arms[0]
         res = []
+        if lab not in knee_nk:
+            continue          # c1s: no knee bracket in s60
         for key in sorted(k for k in rows if k[2] == W):
             slaw = rows[key][0]
             lw = late(slaw)
@@ -230,7 +234,8 @@ def main(argv):
               + f" | nk {med([med([fl(w, 'nk') for w in late(rows[k][0])]) for k in ks]):.0f}")
 
     # ── D ──
-    P("\n== D. The gates for each floor candidate (r67's screens, r68's uniqueness and R-sign gates), one leg, on the c3 arms' medians over rows (ms) ==")
+    P("\n== D. The gates for each floor candidate (r67's screens, r68's uniqueness and R-sign gates), one leg, on each cell's arms' medians over rows (ms) ==")
+    P("   c1s's W 2048 control rows are all flagged COLLAPSED by s60, so its control sign is direction only (store-law-r68.md §1.4)")
     P("   margin(W) = target(W) - statistic(W), target = F + A; A = decision 8's form at Bulk (g = 1, q = 0.10) with the cell's native floor numbers:")
     P("   A = S_F + q*F-hat, S_F = the floor arm's median window (p50 - tmin), F-hat = the floor arm's median tmin. For K5 the same S_F is a PLACEHOLDER")
     P("   (decision 8's spread mapped to the median is not logged), so K5's crossing W is not read; its signs and crossing count are.")
@@ -241,7 +246,7 @@ def main(argv):
     P("   K4 count-matched minimum: F = M0(n_W), the median group minimum of g = round(n_W / n_floor) pooled LATE floor windows; statistic tmin")
     P("   K5 count-free location: F = the floor arm's median window p50, fixed; A = S_F + q*F (placeholder S_F); statistic the window p50")
     q = 0.10
-    for (lab, _, cell, arms), rows in zip(CELLS[:3], srcs[:3]):
+    for (lab, _, cell, arms), rows in zip(CELLS, srcs):
         def arm_rows(Wa):
             return [late(rows[k][0]) for k in sorted(rows) if k[2] == Wa]
         flr = arm_rows(arms[0])
@@ -285,6 +290,17 @@ def main(argv):
             P(f"  {lab} {key[1]}{W} s{key[3]} r{key[4]}: nk {[int(fl(w, 'nk')) for w in b8]}; p50 {[round(fl(w, 'p50'), 1) for w in b8]}; LATE p50 {lp:.2f}, tmin {lt:.2f}")
             P("      median of the first K minus LATE:  p50 " + " ".join(f"K{K} {dK('p50', K, lp):+.2f}" for K in (1, 3, 5, 8))
               + " | tmin " + " ".join(f"K{K} {dK('tmin', K, lt):+.2f}" for K in (1, 3, 5, 8)))
+    P("  Per cell: the K = 8 boot-set median minus the LATE median (window p50), against the knee need in median terms")
+    P("  (need50: the floor tp50 -> knee tp50 rise at the median W95, knee-margin-rederive.md §2.3; none at J = 0 and c1s, which have no knee bracket)")
+    need50 = {"61c J5": 6.92, "61a J5": 7.17, "c2 s60": 3.61}
+    for (lab, _, cell, arms), rows in zip(CELLS, srcs):
+        errs = []
+        for key in sorted(k for k in rows if k[2] == arms[0]):
+            slaw = rows[key][0]
+            errs.append(med([fl(w, "p50") for w in slaw[:8]]) - med([fl(w, "p50") for w in late(slaw)]))
+        nd = need50.get(lab)
+        P(f"    {lab}: K = 8 error {min(errs):+.2f} / {max(errs):+.2f} ms over {len(errs)} rows"
+          + (f"; |error| / need50 up to {max(abs(e) for e in errs) / nd:.2f} (need50 {nd})" if nd else "; no knee need"))
     P("  J = 0: share of LATE windows whose m-hat lies on the low mode (< 41.9 ms, count-rule's 41.2-41.9) and the LATE m-hat range")
     for key in sorted(k for k in srcs[0]):
         lw = late(srcs[0][key][0])

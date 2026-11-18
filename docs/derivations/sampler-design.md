@@ -6,11 +6,12 @@ Status: DESIGN, not code. Docs and Python only: no engine code, no cargo, no VM.
 anchors the floor under jitter.
 
 **Every reading here is post hoc,** on existing rows: s62's rehearsal (J = 0; one row per arm except the floor pair,
-the D12 dump row and two W 512 controls), 61c and 61a (c3, J = 5, six replicates per arm), and s60's c2 W 16 floor
-(six replicates). Nothing here is registered, and every number is scoped to those rows.
+the D12 dump row and two W 512 controls), 61c and 61a (c3, J = 5, six replicates per arm), and s60's c2 (W 16–2 048)
+and c1s (W 64–2 048) rows, six replicates per arm. Nothing here is registered, and every number is scoped to those rows.
 
 **In plain words.**
-- **The brake should not be estimated; it should be designed out.** The brake exists only because the law compares a
+- **The brake cannot be estimated well, and designing it out moves it into the allowance's spread S (§2.1).** The brake
+  exists only because the law compares a
   window minimum against an anchor taken at another sample count. The minimum is never count-free, so any brake must
   be read at the operating window's own count, from zero-load samples, and that takes several knee-sized windows of
   zero-load history the start-up does not have.
@@ -18,9 +19,14 @@ the D12 dump row and two W 512 controls), 61c and 61a (c3, J = 5, six replicates
   - Read at boot, as b̂₀⁺ is, it is the wrong count and the wrong moment. Even a perfect steady-state brake at the
     floor's count exceeds the brake at the knee's count by 3.2 ms (J = 0), 4.6 / 4.2 ms (J = 5) and 1.6 ms (c2)
     (§1.1). b̂₀⁺ adds its own start-transient spread on top, up to one row's 103 ms latch.
-  - **Proposed: hold the window median, not the window minimum.** With m independent draws per window, the median is
-    count-free to a declared ε once m ≥ 1/(ε·½) = 10 at ε = 0.2. The brake is then 0 by construction, and b̂₀⁺, ℓ̂ and
-    the min(m̂, ·) branch leave the law. That is a law change, so it is the owner's call (§6, O1).
+  - **A median law** is count-free at a declared ε once a window holds m ≥ 1/(ε·½) = 10 independent draws.
+    b̂₀⁺, ℓ̂ and the min(m̂, ·) branch leave the law.
+  - **But the brake moves into S.** To state "the queue never empties", g·S must carry the zero-load
+    median-to-minimum gap at the operating count. That gap is S_F plus the brake shift.
+    - S_F as decided brings the count dependence back.
+    - The IQR is count-free, but it no longer states the sentence.
+  - **So the choice of statistic and the choice of S are one owner question** (§6, O1): which sentence the law holds.
+    I recommend the median with the IQR, conditional on M1.
 - **The knee's minimum is lower in ticks that carry a retransmit** (an association; the drain mechanism is a
   hypothesis).
   - At W 80–124 on both c3 sessions, the ticks without a retransmit read a higher window minimum than those with one,
@@ -33,11 +39,19 @@ the D12 dump row and two W 512 controls), 61c and 61a (c3, J = 5, six replicates
 - **The floor under jitter: no minimum anchors it.**
   - At J = 5, m̂ rises with load, by +3.2 to +6.7 ms from the floor arm to the knee arms. That is more than the native
     minimum rises.
-  - Across replicates, the floor arm's window median is the tightest location: it spans 0.10 / 0.39 / 0.54 / 0.11 ms
-    (J = 0 / 61c / 61a / c2), against 1.4–96 ms for R6.2's F.
+  - Across replicates, the floor arm's window median is the tightest location at c3 and c2. It spans 0.10 / 0.39 /
+    0.54 / 0.11 ms (J = 0 / 61c / 61a / c2), against 1.4–96 ms for R6.2's F.
+  - **Not at c1s:** there the median spans 1.91 ms against the minimum's 0.16. Two rows' medians move where their
+    minima do not (§4.2).
   - Count-freeness on raw samples is shown only at J = 0 (the D12 dump).
-- **One cheap measurement tests the proposal:** three `RWM_RTT_DUMP` rows (c3 J = 5 floor and knee, c2 floor), with
-  predictions in §4.
+- **The proposed floor is boot-set, and it cannot see a delay drop.**
+  - It is the median of the K lowest-store windows, which needs K ≥ 7 on these rows. Its boot error is ≤ 0.11–0.28 of
+    each cell's knee need.
+  - A path delay that falls after boot leaves a permanent standing queue. That blocks adoption, as does the deleted
+    multi-leg coupling (§4.2).
+- **One cheap measurement tests the proposal, M1** (§4.1): four `RWM_RTT_DUMP` rows with G twins (c3 J = 5 floor and
+  knee, c2 floor, c3 J = 0 knee), about 1 h of VM. It registers g at the Realtime knee in [0.84, 1.06] at c2 and c3.
+- **E14 (b̂₀⁺) is committed to the ledger** (`acb62033`). F07 is held.
 
 **Advisor (Fable) log.**
 1. **Before the first write** (applied):
@@ -59,12 +73,21 @@ the D12 dump row and two W 512 controls), 61c and 61a (c3, J = 5, six replicates
      - the gate table's PASS is for the form, on a session-calibrated floor;
    - scope §4's formula to N = 1, with the half-gap coupling open;
    - note that crfollow's criterion saturates at load.
+3. **Coordinator's round after Fable's review** (applied):
+   - §2.1 sets each law beside its sentence, and merges O1 and O2;
+   - §2.2 names the lowest-store set, its re-anchoring and a slower link;
+   - §1.6 gives the error per cell against the knee need;
+   - MODE-SWITCH is checked against the ledger's definition (neither set is tagged);
+   - the gate table covers c2 and c1s;
+   - §4.2 lists what blocks adoption, the multi-leg coupling first;
+   - §4.1 sketches M1's registration and verifies the g_R prediction;
+   - E14 is committed.
 
 **Script** (stdlib, `python -I -X utf8`, run from `docs/`; output beside it):
 
 | script | input (read in place) | output | what it computes |
 |---|---|---|---|
-| `store-law/sdalign.py` | `l1-raw/s62/rep62r0-diag.tgz`, `l1-raw/s61/rep61c-diag-ld.tgz`, `rep61a-diag-ld.tgz`, `l1-raw/s60/rep60a-diag-ld.tgz` | `sdalign.out` | A: retransmits against the window minimum per arm, with the dose and the anchor bind. B: the brake estimators per floor row. C: the floor's location statistics and their rise to each arm. D: the gate table for five floor candidates. E: start-up (the first 8 windows, the K-window medians), and m̂'s low-mode share at J = 0 |
+| `store-law/sdalign.py` | `l1-raw/s62/rep62r0-diag.tgz`, `l1-raw/s61/rep61c-diag-ld.tgz`, `rep61a-diag-ld.tgz`, `l1-raw/s60/rep60a-diag-ld.tgz`, `rep60b-diag-ld.tgz` | `sdalign.out` | A: retransmits against the window minimum per arm, with the dose and the anchor bind. B: the brake estimators per floor row. C: the floor's location statistics and their rise to each arm. D: the gate table for five floor candidates. E: start-up (the first 8 windows, the K-window medians), and m̂'s low-mode share at J = 0 |
 
 **The witness.** The script's floor criterion reproduces `crfollow.out` D on all three J = 0 floor rows: 0.32 / 0.87,
 0.31 / 0.84 and 0.29 / 0.84 (share of windows, and their retransmit share). Every window's paired `[DIAG]` tick lies
@@ -175,6 +198,10 @@ Columns: min / median / max over rows, in ms.
 | 61c W 120 | +6.70 | +6.48 | +9.71 | +11.38 |
 | 61a W 92 / 104 / 112 | +3.16 / +4.22 / +5.17 | +1.44 / +3.08 / +4.42 | +3.31 / +5.17 / +6.99 | +4.09 / +5.92 / +8.43 |
 
+- **c1s (W 64, 6 rows):**
+  - m̂ 2.26 (range 0.12), T̂min 2.39 (range 0.16), p50 2.84 (range **1.91**);
+  - its median rises +0.37 / +0.77 at W 128 / 192, against T̂min's +0.04 / +0.14.
+  - c2's median rises with W at every arm (+0.57 at W 32 to +11.70 at W 256).
 - **At J = 5, m̂ is not a floor.** It rises with load by more than the native minimum below the knee. It is a 10 s
   minimum of a queued, jittered stream, so it tracks the queue's low excursions.
 - **At J = 0, m̂ sits on the queue-free low mode (< 41.9 ms):**
@@ -205,7 +232,7 @@ Columns: min / median / max over rows, in ms.
   - c3 floor windows hold ≈ 17–21 independent draws (the netem one-draw-per-skb model, kmr §2.5), so the median
     passes, p25 sits at the edge and p10 fails.
 
-### 1.5 The gate table (`sdalign.out` D; one leg, c3 arms, medians over rows)
+### 1.5 The gate table (`sdalign.out` D; one leg, every cell, medians over rows)
 
 **Setup.**
 - margin(W) = F + A − statistic(W), with A from decision 8 at Bulk (g = 1, q = 0.10).
@@ -214,18 +241,19 @@ Columns: min / median / max over rows, in ms.
   is not read; only its signs and its count of sign changes are.
 - **The gates:** margin > 0 at the floor arm, < 0 at the control, and exactly one sign change.
 
-| | floor candidate F | statistic | J = 0 | 61c | 61a |
-|---|---|---|---|---|---|
-| K1 | R6.2 as gauged on that arm: min(m̂, ℓ̂ + b̂₀⁺) + b̂₀⁺ | T̂min | FAIL (+178 at W 512) | FAIL (+189 at W 512) | PASS |
-| K2 | a running brake: m̂ + median over the arm's windows of (T̂min − m̂) | T̂min | FAIL (+5.9 to +6.7 everywhere) | FAIL (+7.3 to +10.2) | FAIL (+9.4 to +10.2) |
-| K3 | candidate C at the floor's count: the floor's median T̂min, fixed | T̂min | PASS, crosses W 80–128 | PASS, crosses W 120–152 | PASS, crosses W 124–2 048 |
-| K4 | count-matched: M₀(n_W), the median minimum of round(n_W / n_floor) pooled floor windows | T̂min | PASS, crosses W 80–128 | PASS, crosses W 108–120 | PASS, crosses W 112–124 |
-| K5 | the floor's median window p50, fixed | window p50 | PASS (crossing not read) | PASS (crossing not read) | PASS (crossing not read) |
+| | floor candidate F | statistic | J = 0 | 61c | 61a | c2 (knee W₉₅ ≈ 168) | c1s (control COLLAPSED: direction only) |
+|---|---|---|---|---|---|---|---|
+| K1 | R6.2 as gauged on that arm: min(m̂, ℓ̂ + b̂₀⁺) + b̂₀⁺ | T̂min | FAIL (+178 at W 512) | FAIL (+189 at W 512) | PASS | PASS | FAIL (+4.1 at W 2 048) |
+| K2 | a running brake: m̂ + median over the arm's windows of (T̂min − m̂) | T̂min | FAIL (+5.9 to +6.7 everywhere) | FAIL (+7.3 to +10.2) | FAIL (+9.4 to +10.2) | FAIL (+5.8 to +6.1) | FAIL (+0.6 to +0.7) |
+| K3 | candidate C at the floor's count: the floor's median T̂min, fixed | T̂min | PASS, crosses W 80–128 | PASS, crosses W 120–152 | PASS, crosses W 124–2 048 | PASS, crosses W 192–256 | PASS, crosses W 192–2 048 |
+| K4 | count-matched: M₀(n_W), the median minimum of round(n_W / n_floor) pooled floor windows | T̂min | PASS, crosses W 80–128 | PASS, crosses W 108–120 | PASS, crosses W 112–124 | PASS, crosses W 160–176 | PASS, crosses W 192–2 048 |
+| K5 | the floor's median window p50, fixed | window p50 | PASS (crossing not read) | PASS (crossing not read) | PASS (crossing not read) | PASS (crossing not read) | PASS (crossing not read) |
 
 - **What PASS means here.** K3–K5 take their floor from the session's own floor arm, on static pools. A PASS clears the
   form of the target (sign at the floor, sign at the control, one crossing). It does not clear an engine estimator of
   that floor: §1.6 reads the boot-set version.
-- The c3 J = 5 rows include W 16 and W 24. They do not change any label.
+- The c3 J = 5 rows include W 16 and W 24, and c2 has W 16–256 plus the 2 048 control. They do not change any label.
+- At c2, K4 crosses at the knee (W 160–176), and K3, the native-count floor, crosses 24–88 slots above it.
 
 - **K1** fails on static pools because b̂₀⁺ latches each large pool's own start queue (R6.7 §1.2, already known). In a
   closed loop booting from n₀ this replay does not apply. It is listed for completeness, not as a new finding.
@@ -241,10 +269,10 @@ Columns: min / median / max over rows, in ms.
 ### 1.6 Start-up: what a boot-set floor reads (`sdalign.out` E)
 
 **The setting.**
-- In a closed loop booting at n₀, the K lowest-store windows are the boot windows. So F̂ of §2 is set at boot, like
-  b̂₀⁺: a median over K windows where b̂₀⁺ takes a maximum over 8.
-- The static floor rows stand in for that boot. Every window has the same store size there, so the first K windows are
-  the lowest-store set.
+- In a closed loop booting at n₀, the store ramps up, so the K lowest-store windows are the boot windows. So F̂ of §2.2
+  is set at boot, like b̂₀⁺: a median over K windows where b̂₀⁺ takes a maximum over 8.
+- On a static row the lowest-store set with ties to the most recent is the last K windows. So this section reads the
+  **first K windows**, which is what the lowest-store set is in a ramping boot (§2.2).
 - This is a stand-in, not a closed-loop boot from n₀ = 10. Those rows do not exist.
 
 **What the boot windows hold.**
@@ -255,7 +283,7 @@ Columns: min / median / max over rows, in ms.
   - 61a G12 s7 r6: 2 windows (p50 82.4, 139.3);
   - 61a G12 s42 r5: 3 windows (61.4, 250.8, 71.1). This is the b̂₀⁺ 103 ms row.
 
-**The median of the first K windows minus the LATE median**, ms (min / max over the 21 rows):
+**The median of the first K windows minus the LATE median**, ms (min / max over the 21 c3 / c2 rows):
 
 | statistic | K = 1 | K = 3 | K = 5 | K = 8 |
 |---|---|---|---|---|
@@ -269,6 +297,16 @@ Columns: min / median / max over rows, in ms.
   - K = 8 sits inside R6.7 §3's band of 3–11 and is forced toward its top. Under the order-statistics rule this is
     a condition, not a constant: K = 2·(transient windows) + 1.
   - The transient length is measured on these rows only.
+- **Per cell, at K = 8, against the knee need in median terms** (need₅₀, kmr §2.3):
+
+  | cell | K = 8 error (min / max) | |error| / need₅₀ |
+  |---|---|---|
+  | c3 J = 0 (3 rows) | −1.21 / +0.05 ms | no knee bracket |
+  | 61c (6) | −0.58 / +0.91 | ≤ 0.13 (need₅₀ 6.92) |
+  | 61a (6) | +0.39 / +2.00 | ≤ 0.28 (need₅₀ 7.17) |
+  | c2 (6) | −0.18 / +0.39 | ≤ 0.11 (need₅₀ 3.61) |
+  | c1s (6) | −1.92 / +0.19 | no knee bracket; 0.68 of c1s's 2.84 ms floor median |
+
 - **At start-up the count-free median carries no advantage over the minimum here.** Both are set by the boot windows'
   transient. The median's advantage is the count (§1.4), not the boot.
 - **So the proposed F̂ does have a boot latch,** as r67's candidate C does. Its costs carry over:
@@ -296,7 +334,7 @@ Columns: min / median / max over rows, in ms.
 | family | example | fails | evidence |
 |---|---|---|---|
 | at load | running median of T̂min − m̂ | C3: circular, no crossing | §1.5 K2 |
-| boot-time | b̂₀⁺ (the max of 8); the median of 8 | C4: the boot count, not n*; C5: the K-window predicate; the max latches one transient, the median is biased to 0 by the m̂-setting windows | §1.1 |
+| boot-time | b̂₀⁺ (the max of 8); the median of 8 | C4: the boot count, not n*; C5: the max latches one transient, the median is biased to 0 by the m̂-setting windows | §1.1 |
 | zero-load ladder | K4: the median of B group minima, each over ⌈n/n̄₀⌉ pooled floor windows | **its input count** (below) | §1.5 K4 passes the gates |
 
 **The ladder's input count.**
@@ -306,188 +344,320 @@ Columns: min / median / max over rows, in ms.
   long before it has 24 zero-load windows.
   - The law would then need M₀ at a count it has not observed.
   - That takes an extrapolation, which has no provenance, or a hold, which C1 / C5 forbid.
-- **At J = 5, M₀(n) has no limit.** It falls 0.3–1.6 ms per doubling up to 4 200 samples (`crrule.out` §1, 61c / 61a). So any
-  residual count mismatch is a bias of that size.
+- **At J = 5, M₀(n) has no limit.** It falls 0.3–1.6 ms per doubling up to 4 200 samples (`crrule.out` §1, 61c /
+  61a). So any residual count mismatch is a bias of that size.
 - Pooling non-contiguous windows is allowed by `knee-margin-rederive.md` §2.1: at a fixed count, interleaved and
   shuffled pooling read the same as contiguous pooling, on c2 / c3 rows.
 
-**Proposed (designer choice; the owner decides, O1): a count-free location, so the brake is identically 0.**
+### 2.1 The brake moves into S; it does not leave (round 3)
+
+**The two laws, each beside its sentence** (one leg, at the operating point n*):
 
 ```text
-   T̂ᵢ,ₖ  =  median of the window's echo samples                       (already the R denominator)
-   F̂ᵢ    =  median{ T̂ᵢ,ₖ : the K windows of leg i with the lowest store size so far; ties → the most recent }
-   brake  ≡  0                                                         (both sides are the same count-free statistic)
+   minimum law:  T̂min(n*)  =  M₀(n*) + A
+      sentence:  the window's least-queued sample still waits A above the zero-load minimum at the same count,
+                 so the queue never empties within a window and the bottleneck is never idle (R3.1's sentence)
+
+   median law:   T̂(n*)  =  (1 + q(δ))·F̂₅₀ + g(δ)·S
+      sentence:  the window median sits q·F̂₅₀ + g·S above the zero-load window median
 ```
 
-- **Input count:** a window's median is count-free to ε iff it holds m ≥ 1/(ε·½) independent draws. At the declared
-  ε = 0.2 that is 10. F̂ needs K such windows, with K in R6.7 §3's band of 3–11 (the pick is open there).
-- **Start-up:** F̂ is defined from the first window: the median of one window, then of the K lowest-store windows as they
-  arrive. There is no hold and no k ≤ K predicate.
-  - It is set at boot, through a median that survives ⌊(K − 1)/2⌋ transient windows. On these rows that needs K ≥ 7
-    (§1.6), and it lands within −1.2 / +2.0 ms of the steady median.
-  - Its window-1 value is the transient (+1 to +65 ms) until K windows exist, so the first K windows run on a high
-    floor. Whether that matters in a closed loop booting from n₀ is unread (§4, M1 table).
-  - A window with fewer than 10 draws contributes a median with a larger level error. That error grows smoothly as m
-    falls, so no rule switches on it.
-  - At n₀ = 10 on c3 a window holds an estimated 14–17 draws. That is scaled from W 12's 17–21 by 10/12, and it is a
-    hypothesis.
-- **What this deletes:** b̂₀⁺, `K_GAUGE`, ℓ̂ (already E13), the min(m̂, ·) branch (degenerate, §1.2), and m̂ and T̂min
-  as law inputs. They stay as gauges, and m̂ stays as Copa's input.
-- **If the owner keeps the minimum,** the ladder K4 is the only family that passes C3 and C4. It carries the input count
-  and start-up gap above, and it must interpolate in log n between group sizes (C1: no step in n). Its clamp at the
-  largest available group needs a bind-fraction gauge (C2).
+**What keeps the bottleneck busy under the median law.**
+- Busy means T̂min(n*) > M₀(n*). Write Ŝ(n*) = T̂ − T̂min at load and S₀(n*) = F̂₅₀ − M₀(n*), the zero-load
+  median-to-minimum gap at the same count. Then:
+
+```text
+   busy   ⇔   T̂(n*) − Ŝ(n*)  >  M₀(n*)   ⇔   q·F̂₅₀ + g·S  >  Ŝ(n*) − S₀(n*)
+   S₀(n*)  =  S₀(n_floor) + [ M₀(n_floor) − M₀(n*) ]  =  S_F + Δb          (Δb: §1.1, 3.2 / 4.6 / 4.2 / 1.6 ms)
+```
+
+- **So g·S has to carry the median-to-floor gap the brake carried.** Stating "the queue never empties" under the
+  median law takes S₀ at the operating count, and that is S_F plus the brake shift Δb.
+- **With S = S_F as decided** (the floor windows' median − minimum, at the floor's count):
+  - the busy condition carries Δb, which is the count dependence of §1.1 come back inside S;
+  - native S_F is 5.86 against 9.71 at c3's registered counts (r68 §1.4), and c8 leg 1's S_F rises with nk;
+  - this mix carries (a)'s brake without stating (a)'s sentence.
+- **With S = the floor IQR**, every term is count-free, but the sentence no longer says the queue never empties.
+  - It places the median and says nothing about Ŝ(n*) or the minimum.
+  - Whether the bottleneck stays busy at the landing is carried by g, measured at the knee per cell. That is where
+    decision 8 already stands.
+- **So the earlier O1 and O2 are one question** (§6, O1): which sentence the law holds.
+
+**S cannot be chosen by which one agrees.**
+- On rows in hand, the knee need in median terms (3.61 / 6.92 / 7.17 ms at c2 / 61c / 61a, kmr §2.3) is:
+  - 0.711 / 0.713 / 0.750 of the registered S_F, which agrees across cells;
+  - 0.65 / 0.82 / 0.85 of native p90 − p10, which does not.
+- **Neither is evidence for a sentence:**
+  - the registered S_F is a G(250)-count statistic, so its agreement may come from its count convention;
+  - `knee-margin-rederive.md` §2.3 shows that two cells can give every label from the same rows;
+  - a spread picked for its agreement is a fit.
+- S must be fixed by its sentence, then tested (M1, §4.1).
+
+### 2.2 The proposal, conditional on M1: a count-free location
+
+```text
+   T̂ᵢ,ₖ  =  median of window k's echo samples                       (already the R denominator)
+   F̂ᵢ    =  median{ T̂ᵢ,ₖ : the K windows of leg i with the lowest store size so far; ties → the most recent }
+   window k closes at the later of 250 ms and M independent draws    (M = 1/(ε·½) = 10 at ε = 0.2)
+   brake  ≡  0                                                       (both sides are the same count-free statistic)
+```
+
+**Which floor set: the K lowest-store windows, not the first K.**
+- **No index predicate.** "The first K windows" is the k ≤ K set b̂₀⁺ uses. The lowest-store set is an order
+  statistic on the store size over every window so far.
+  - By the ledger's own definition (`law-ledger.md` §1), MODE-SWITCH is only a hint equality, the ρ boolean, or a
+    δ / ρ threshold selecting a law. Neither set is tagged, and both carry a column-8 note. E14 is committed that way.
+- **It can re-anchor.** A window at a store size at or below the boot's replaces a boot window, ties going to the most
+  recent. The first-K set never changes.
+- **In a closed loop booting from n₀ the two coincide** until the store first returns to its boot size. §1.6 reads the
+  first K windows for that reason. On a static row the lowest-store set with ties to the most recent is the last K
+  windows, a rolling LATE reading that says nothing about boot.
+
+**When the path's delay changes after boot** (m̂ rolled every 10 s; this floor does not):
+- **The delay rises by Δd.**
+  - If Δd < q·F̂ + g·S, the law lands Δd lower and keeps less margin, possibly below the knee, with no signal.
+  - If Δd is larger, R < 1 at every n and the store falls to its floor bound. Once a window's store size ties or
+    undercuts the boot windows', F̂ refreshes and the law recovers.
+  - So each rise costs one collapse, and recovery needs the store floor ≤ the boot size (r67 §4.3's "route seen only
+    after a collapse").
+- **The delay falls by Δd.** F̂ stays Δd too high. The law holds a standing queue of about (1 + q)·Δd for good: the
+  store grows, no window undercuts the boot size, and F̂ never refreshes.
+  - **That is a defect, and it blocks adoption (§4.2).**
+- **The options all fail a constraint today:**
+  - a rolling lowest-store set over a horizon H reads load windows, K2's circularity in part;
+  - a periodic zero-load probe (BBR's ProbeRTT, Cardwell et al. 2016) is a phase predicate on t, which fails C1's
+    screen;
+  - a rolling minimum of window medians rises with load, as m̂ does at J = 5 (§1.3).
+- R6.2's F had the same exposure through b̂₀⁺, and m̂ was its only rolling part.
+
+**The input count, and a slower link.**
+- A window's median is count-free to ε iff it holds m ≥ 1/(ε·½) independent draws: 10 at the declared ε = 0.2.
+- c3's floor windows hold 17–21 (kmr §2.5's model: one draw per data skb and per ack packet; the binding count is the
+  smaller).
+- On a slower link a 250 ms window holds fewer. Two continuous choices, neither a rate threshold:
+  - **(i) Proposed: the window closes at the later of 250 ms and M = 10 draws.**
+    - The window length is max(T₀, M/λ), continuous in the rate λ. Every link runs the same statistic and the same
+      law, and only the cadence of R slows below about 40 draws per second.
+    - The draw count is estimated in the engine as min(ack packets received, data send batches) in the window. That
+      is kmr §2.5's model, declared.
+    - The max is a clamp, so it gets a bind gauge: the share of windows extended past 250 ms.
+    - At c3's floor (≈ 21 acks per window), c2 and c1s it does not bind.
+  - **(ii) Not taken:** keep 250 ms and accept a level error that grows as 1/(m·½). It keeps the cadence and loses
+    the stated ε.
+
+**Start-up.**
+- F̂ is defined from the first window, then from the K lowest-store windows as they arrive. There is no hold.
+- K must exceed twice the boot transient (§1.6): K = 2·(transient windows) + 1, so K ≥ 7 on these rows. It is read as
+  8, inside R6.7 §3's band.
+- Its error at K = 8, against each cell's knee need, is ≤ 0.11 (c2), 0.13 (61c) and 0.28 (61a) of need₅₀ (§1.6).
+- Until K windows exist the floor includes the transient (+1 to +65 ms at K = 1), so the first windows run on a high
+  floor.
+- A closed-loop boot from n₀ is unread.
+
+**What this deletes:**
+- b̂₀⁺ and `K_GAUGE`;
+- ℓ̂ (already E13);
+- the min(m̂, ·) branch (degenerate, §1.2);
+- m̂ and T̂min as law inputs. They stay as gauges, and m̂ stays as Copa's input.
+- **The multi-leg half-gap coupling goes too, with no replacement** (§4.2).
+
+**If the owner holds the minimum's sentence instead** (O1 (a)):
+- The ladder K4 is the only family that passes C3 and C4.
+- It carries the input count and start-up gap above, and it must interpolate in log n between group sizes (C1: no step
+  in n).
+- Its clamp at the largest available group needs a bind-fraction gauge (C2).
 
 ---
 
 ## 3. Q2 and Q3
 
-**Q2: is the knee's window minimum also set by post-loss drains? On these rows, yes.**
-- **Established** (§1.2):
+**Q2: is the knee's window minimum also set by post-loss drains?**
+- **Established, as an association** (§1.2):
   - on the informative arms (W 80–112, base 0.72–0.90), ticks without a retransmit read a higher minimum, on 6 of 6
     rows of every arm in both c3 sessions;
   - the gap grows with load: +0.6 at W 80 to +3.1 / +4.2 at W 108 / 112;
   - the count works against the association.
+  - c2's knee arms have only 6–8 retransmit-free windows per arm, so they carry no power.
 - **Hypothesis:** the mechanism is count-rule's, a repair stalls the release and the following flight meets a drained
   queue.
   - The send-pause alignment is observed on the D12 floor dump only.
   - At the knee no dump exists, and J = 0 has no knee bracket (W 80 and W 128 are one row each).
-- **For the law:** the window minimum is a statistic of the loss process at every load, the knee included. The window
-  median is not, below the knee, and responds at and above it, where repairs drain real queue.
+- **For the law:** on these rows the window minimum is a statistic of the loss process at every load, the knee
+  included. The window median moves less below the knee, and responds at and above it.
 
 **Q3: what anchors the floor under jitter? Not a minimum.**
 - **Established** (§1.3):
   - m̂ rises +3.2 to +6.7 ms under load at J = 5;
   - ℓ̂ is DISHONEST-INPUT (E13);
   - R6.2's F spreads 9.0 / 95.6 ms across replicates.
-  - The floor window's median spreads 0.39 / 0.54 ms at J = 5, the tightest location in every cell; at J = 0 m̂ ties
-    it (0.07 against 0.10).
-- **Proposed:** the anchor is F̂ of §2, the zero-load window median. Its sentence is "the loop the store sees with no
+  - The floor window's median spreads 0.39 / 0.54 ms at J = 5 and 0.11 at c2, the tightest location in those cells. At
+    J = 0, m̂ ties it (0.07 against 0.10).
+  - **At c1s the opposite holds:** the median spreads 1.91 ms against T̂min's 0.16 (§1.3).
+- **Proposed:** the anchor is F̂ of §2.2, the zero-load window median. Its sentence is "the loop the store sees with no
   standing queue". At J = 0 that includes the bulk's ≈ 5.4 ms offset above the queue-free mode (count-rule §1b), which
   the store cannot avoid at zero load.
-- **Not established:** the median's count-freeness under jitter on raw samples (§1.4). §4's M1 tests it.
+- **Not established:**
+  - the median's count-freeness under jitter on raw samples (§1.4; M1 tests it);
+  - what moves c1s's median (§4.2).
 
 ---
 
 ## 4. Q4: the proposed sampler
 
-**Per leg, per 250 ms window**, from `record_rtt_sample`'s stream:
+**Per leg, per window** (§2.2), from `record_rtt_sample`'s stream:
 
 | quantity | statistic | count / window | provenance | bind gauge |
 |---|---|---|---|---|
-| wₖ | the window's sample count | 250 ms | declared: the gauge's existing cadence. Count-free statistics make the fixed point first-order insensitive to it | – |
-| T̂ₖ | median of the window's samples (nearest rank on `WinSampler`'s stride buffer) | m ≥ 10 independent draws (ε = 0.2) | order statistics, cited (kmr §2.5); ε declared | `nkq=` against `nk=` (exists): the share of windows whose buffer was decimated |
-| F̂ | median of T̂ₖ over the K lowest-store windows, ties to the most recent | K in 3–11 | R6.7 candidate C's set (r67 §3) | – (no clamp) |
-| S | the floor spread, on F̂'s windows | as F̂ | **decision 8's S_F** (owner, O2) | – |
+| window | closes at max(250 ms, M draws) | M = 10 | ε = 0.2 declared, p = ½, order statistics cited (kmr §2.5); the draw model declared | the share of windows extended past 250 ms |
+| wₖ | the window's sample count | – | as R6.2 | – |
+| T̂ₖ | median of the window's samples (nearest rank on `WinSampler`'s stride buffer) | ≥ M draws | as above | `nkq=` against `nk=` (exists) |
+| F̂ | median of T̂ₖ over the K lowest-store windows, ties to the most recent | K = 2·(transient) + 1, 8 here | R6.7 candidate C's set; K from §1.6 | – (no clamp) |
+| S | the floor spread on F̂'s windows | as F̂ | decision 8's S; **which spread is O1** | – |
 
-**The law, with decision 8's terms mapped** (scoped to N = 1, since every row here is single-leg; δ only through g and
-q; no ρ input):
+**The law** (scoped to N = 1; δ only through g and q; no ρ input):
 
 ```text
-   R_k  =  Σᵢ wᵢ,ₖ·( (1 + q(δ))·F̂ᵢ + g(δ)·Sᵢ ) / Σᵢ wᵢ,ₖ·T̂ᵢ,ₖ          fixed point:  T̂(n*) = (1 + q(δ))·F̂ + g(δ)·S
+   R_k  =  wₖ·( (1 + q(δ))·F̂ + g(δ)·S ) / wₖ·T̂ₖ          fixed point:  T̂(n*) = (1 + q(δ))·F̂ + g(δ)·S
 ```
 
-- **Multi-leg is open.** R6.2's half-gap coupling, ½·max(0, maxⱼ(ℓ̂ⱼ + b̂₀ⱼ⁺) − (ℓ̂ᵢ + b̂₀ᵢ⁺)), is built from the two
-  terms this design deletes.
-  - The direct mapping, ½·max(0, maxⱼ F̂ⱼ − F̂ᵢ), is untested.
-  - It needs c8's two-leg rows with leg 1's count-dependent spread (r68 §1.4), and is not read here.
-- **Every term is read count-free.**
-  - T̂min and Ŝ = T̂ − T̂min leave the law: with the median as the location, Ŝ cancels.
-  - **q(δ)·F̂ maps to q(δ)·F̂ on the median floor.** Its sentence "a fraction of the zero-load loop" is unchanged. Its
-    value rises by q·(F̂₅₀ − F̂_min): +0.6 ms at c3 J = 5 Bulk, +0.5 at c2.
-  - The factor (1 + q(δ)) is the same multiplier decision 10 gives Copa's queue target. That is an observation, not a
+- **Decision 8's terms.**
+  - q(δ)·F̂ maps onto the median floor. Its sentence "a fraction of the zero-load loop" is unchanged, and its value
+    rises by q·(F̂₅₀ − F̂_min): +0.6 ms at c3 J = 5 Bulk, +0.5 at c2.
+  - The factor (1 + q(δ)) is the multiplier decision 10 gives Copa's queue target. That is an observation, not a
     derivation.
-  - **g(δ)·S_F:** decision 8 defines S_F as the floor windows' median − minimum. On a median law that term still holds
-    the minimum, so it carries the count dependence the law has otherwise dropped: native 5.86 against 9.71 at c3's
-    registered counts, and c8 leg 1 rising with nk (r68 §1.4).
-    - The count-free alternative is the floor windows' IQR (`knee-margin-rederive.md` §2.6, untested; `[WSTAT]` does
-      not log it).
-    - Changing it changes decision 8's definition, so it is the owner's call (O2).
-- **Gates on existing rows:** K5 passes every gate on all three c3 cells (§1.5), with the placeholder S.
-  - **Uniqueness:** the window median rises monotonically over every J = 5 arm, and from W 80 to W 128 at J = 0. It is
-    flat below the J = 0 knee (+0.03 ms), where R > 1, so there is no false crossing.
-  - **The knee need in median terms** already exists on these rows: 3.61 ms at c2, 6.92 / 7.17 at c3 (kmr §2.3, Fable's
-    price table). Against the registered S_F that is 0.711 / 0.713 / 0.750. Against native p90 − p10 it is 0.65 / 0.82
-    / 0.85. Against the IQR it is unknown.
+  - g(δ)·S is §2.1's question.
+- **T̂min and Ŝ leave the law.** With the median as the location, Ŝ cancels.
+- **Gates on existing rows** (§1.5, with the placeholder S):
+  - K5 passes at all five cells. c1s's control is direction only.
+  - **Uniqueness:** the window median rises with W over every arm read from W 24 at J = 5, from W 80 at J = 0, and at
+    c2 and c1s.
 - **Cost:** the median comes from the buffer `WinSampler::close` already sorts under `RWM_DIAG`, with its cost in
   `bench_close_23k`. Moving it into the engine is a law change. Under the scope rules it is a per-tick decision input,
   so it moves class A (no hint, no δ / ρ / count branch).
 
-**Per claim: what the rows show, and the one cheap measurement.**
+### 4.1 M1: registration sketch (the coordinator registers it)
 
-**M1** is three `RWM_RTT_DUMP` rows on gauge binary `e410d640`, Bulk, static pools: c3-25 W 12, c3-25 W 108 and
-c2-100 W 16. It needs its own registration (O3). A dump-on pass reports its own perturbation, as D12 did.
+**Rows.** Bulk, prebuilt gauge binary `e410d640`, static pools, one replicate each, smoke first. Each dump row has a
+G twin in the same session, so the dump's perturbation is read as D12's floor pair did.
 
-| claim | existing rows | M1 reading | prediction |
+| row | cell | arm | what it reads |
 |---|---|---|---|
-| the window median is count-free under jitter | J = 0 only (D12, +0.045 ms); J = 5 untested | the c3 W 12 dump: pooled-sample median, native → 36 windows | drift ≤ 0.3 ms, against the minimum's ≥ 7 ms on the same row (61c's G-ladder: 9.5 native → 4 200) |
-| the floor IQR is count-free, and its size | not logged | the c3 W 12 and c2 W 16 dumps | drift ≤ 10 % of the IQR. If the spread is jitter-dominated, IQR ≈ 0.50–0.63 × (p90 − p10), i.e. 4.2–5.3 ms at c3 (sum-of-uniform to normal shapes) |
-| knee need / IQR is shape-free | – | IQR at c2 and c3 against the existing median needs 3.61 / 6.92 | **none** (as s62 did for need₀) |
-| drains set the knee's minimum | dose at W 80–112 (§1.2); send pauses on D12 only | the c3 W 108 dump: send gap before each window-minimum sample | in retransmit ticks, the minimum sits in the first flight after a send gap ≥ 1 loop in ≥ 50 % of cases (D12 floor: 0.92 for gaps ≥ 60 ms) |
-| the boot-set floor survives the start transient | static floor rows: K ≥ 7 needed, and K = 8 lands within −1.2 / +2.0 ms (§1.6) | not M1. A closed-loop boot from n₀ comes with the engine form's battery | at K = 8, within ±2 ms of the steady median, on the §1.6 reading |
+| D1 / G1 | c3-25 (J = 5, single leg) | D12 / G12 | the median and the IQR under jitter, against the count; IQR_F at c3 |
+| D2 / G2 | c3-25 | D108 / G108 | the knee: the send gap before each window-minimum sample; the knee-count median |
+| D3 / G3 | c2-100 | D16 / G16 | IQR_F at c2 |
+| D4 / G4 | c3j0-25 (J = 0) | D112 / G112 | the J = 0 knee, where floor and knee came apart: at W 80 the native minimum fell 2.26 ms below the floor arm's while the median stayed flat. W₉₅ ≈ 116 on the u chord from 80 to 128, lower given u's concavity (61b) |
+
+**The harness.**
+- `harness62`'s dump arm exists: `D<W>` in `plan62.py` `armspec` sets `RWM_RTT_DUMP=1`, and `loopdiag_battery.sh`
+  preflights the binary for it.
+- But it covers one cell only. `plan62.CELLS = (C3J0,)`, and the battery's P62 block writes `UNKNOWN-CELL` for any
+  other cell.
+- **Needed, tools only:**
+  - a plan module copying plan62's armspec, dump flag and replacement rule for the three cells. c3-25 single-leg and
+    c2-100 are already defined in plan61 / plan60, with their LATE_T;
+  - the battery's cell guard widened for that plan;
+  - stub-run tests.
+- **The dump cap.** `RWM_RTT_DUMP_MAX` is 400 000 samples per path. D12 wrote 21 248 in ≈ 93 s. At ≈ 1 920 samples / s
+  (c3 W 108) and ≈ 1 130 / s (c2 W 16), a row under ≈ 200 s fits. Check the rows' lengths at registration.
+
+**Reading rules, registered before any row.**
+- **Count-freeness:** per dump row, the pooled raw-sample minimum, median and IQR over native, 4 and 36 windows
+  (crdump §4's construction).
+  - Prediction for D1: median drift ≤ 0.3 ms, minimum ≥ 7 ms, IQR ≤ 10 %.
+  - D4 is reported only.
+- **IQR_F,c** = the median over LATE native windows of (p75 − p25) of the raw samples, nearest rank. Prediction:
+  0.50–0.63 × (p90 − p10), i.e. 2.77–3.49 ms (c2) and 4.22–5.33 ms (c3), if the spread is jitter-dominated.
+- **g at the Realtime knee:**
+
+  ```text
+     g_R,c  =  ( need₅₀,c − q_R·F̂₅₀,c ) / IQR_F,c          q_R = 0.05
+  ```
+
+  - need₅₀ and F̂₅₀ are frozen from existing rows: c2 3.61 / 13.70; c3 6.92 / 48.73 (61c), with 61a's 7.17 / 48.47
+    reported beside it.
+- **The prediction** (verified here from the frozen numbers and the IQR band, with p90 − p10 = 5.54 / 8.44 / 8.47):
+
+  | cell | need₅₀ − q_R·F̂₅₀ | predicted g_R |
+  |---|---|---|
+  | c2 | 2.93 | [0.84, 1.06] |
+  | c3 (61c) | 4.48 | [0.84, 1.06] |
+  | c3 (61a, reported) | 4.75 | [0.89, 1.12] |
+
+  - Fable's 0.8–1.1 (c2) holds.
+  - At c3 the 61c inputs put the lower edge at 0.84, not 0.9. The 61a inputs give 0.89–1.12.
+  - Registered: g_R ∈ [0.84, 1.06] at both cells.
+- **What each outcome means:**
+  - **Inside at both cells:** one g_R ≈ 1 places Realtime at the knee on both shapes, under (b) with S = IQR. With
+    decision 8's g(Bulk) = 1, Bulk then lands (q_B − q_R)·F̂₅₀ above the knee.
+  - **Outside:** either the IQR band or need / IQR's shape-freeness failed. IQR_F is reported with g_R, so the two can
+    be told apart.
+- **Cost:**
+  - smoke + 8 rows at s62's pace (its rehearsal ran 7 rows in 20 min, 05:18:54–05:38:48Z) ≈ 25–30 min per launch;
+  - with the registered rehearsal, ≈ 1 h typical and ≈ 2 h worst;
+  - prebuilt binary (no build), host cargo paused.
+
+### 4.2 What blocks adoption (beyond O1 and M1)
+
+1. **The multi-leg half-gap coupling is deleted with no replacement.**
+   - R6.2's ½·max(0, maxⱼ(ℓ̂ⱼ + b̂₀ⱼ⁺) − (ℓ̂ᵢ + b̂₀ᵢ⁺)) is built from the two deleted terms.
+   - The direct mapping, ½·max(0, maxⱼ F̂ⱼ − F̂ᵢ), is untested, and c8's leg 1 has a count-dependent spread (r68 §1.4).
+   - Every row here is single-leg.
+2. **Re-anchoring after a path change** (§2.2).
+   - A delay drop leaves a permanent standing queue.
+   - A rise costs a collapse.
+   - No option passes C1 and C3 today.
+3. **A closed-loop boot from n₀ is unread:** the transient length behind K, and the high floor during the first K
+   windows.
+4. **c1s's median floor moves where its minimum does not.**
+   - On 2 of 6 W 64 rows (s7 r4 / r6), the LATE median sits 1.9 / 0.9 ms above the row's own boot windows, at lower nk
+     (3 308 / 4 122 against ≈ 5 200). T̂min moves 0.1 ms.
+   - Hypothesis: receiver-side delay at a receiver-bound cell. It is not read here.
+   - A median law would treat that delay as queue.
 
 ---
 
-## 5. Q5: ledger rows owed (proposed text; `law-ledger.yaml` is not edited)
+## 5. Q5: ledger rows
 
-**F07** (the allowance). Apply `knee-margin-rederive.md` §6's diff first, which is uncommitted and still applies to main.
-Then make these changes:
+**E14 (b̂₀⁺) is committed:** `acb62033`, its own commit, with `law-ledger.md` re-rendered (`render.py --check`: 73 rows,
+in sync).
+- Verdicts: UNDERIVED and DISHONEST-INPUT, rank 5, ships with F07 / F01 / E13.
+- **Not MODE-SWITCH.** The ledger's §1 definition covers only a hint equality, the ρ boolean, or a δ / ρ threshold
+  selecting a law. The k ≤ K predicate is a column-8 note, and the proposed lowest-store floor gets the same treatment
+  (§2.2).
+- Ranks from 5 move down by one. The roadmap's six rank citations follow, including the no-fix range, which is now
+  64–73, and the tracks are re-rendered (`tools/roadmap/check.py` OK).
 
-```diff
--  fix_class: "the law's statistic is the native window minimum (R6.2), whose count dependence is the law's own (R6.7 open item 4); a quantile alternative (window median + IQR) is a candidate, untested (knee-margin-rederive.md §2.6); s62 (sketch, §5) registers the knee rise against the spread along jitter; then the allowance's form, then a law change needing a battery; DISHONEST-INPUT leaves with E13's fix (q*F-hat in place of q*l-hat)"
-+  fix_class: "owner call O1 (sampler-design.md §6): hold the window median (brake = 0 by construction; F-hat = median window median of the K lowest-store windows) or keep the minimum with a count-matched zero-load ladder M0(n) (needs >= 3 n*/n0 zero-load windows, undefined at start-up past the pool); then O2 (S_F as decided, median - min, or the floor IQR); M1 (three dump rows) tests count-freeness under jitter; then a law change needing a battery; DISHONEST-INPUT leaves with E13's and E14's fixes"
-+  evidence: append to kmr §6's evidence string: "; sampler-design.md §1.5: on c3 rows the floor at the native count over-funds the knee by b(n_floor) - b(n_knee) = 3.15 (J = 0), 4.76 / 4.74 ms (J = 5), 1.6 at c2 (§1.1): an allowance term with no provenance inside every native-minimum need"
-```
+**F07 (the allowance) is held,** as instructed. Proposed text for when it is written:
+- start from `knee-margin-rederive.md` §6's uncommitted diff;
+- fix_class: "owner question O1 (sampler-design.md §6): which sentence the law holds. Under (a), the minimum law with
+  the count-matched floor M₀(n*); under (b), the median law with S = the floor IQR, its g measured. M1 first. Then a
+  law change needing a battery. DISHONEST-INPUT leaves with E13's and E14's fixes";
+- evidence, appended: "sampler-design.md §1.5: at the native count the floor over-funds the knee by
+  b(n_floor) − b(n_knee) = 3.15 (J = 0) and 4.76 / 4.74 ms (J = 5), and by 1.6 at c2 (§1.1)";
+- clamp: "min(m̂, ℓ̂ + b̂₀⁺) binds on 0 windows on 64 of 71 c3 rows below the controls, and on 154–169 / ≈ 208 at
+  61a's W 2 048 control (§1.2)". Add `DEGENERATE` by MEASUREMENT DISCIPLINE 17–18.
 
-**E14 (new): b̂₀⁺, the boot brake.** Branch-only, with C03 as the precedent. Tags are from `render.py`'s `TAGS`.
-
-```yaml
-- id: E14
-  name: boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main)
-  area: estimator
-  priority: P0
-  reach: candidate (gauge branch); read by R6.2's F = min(m, l + b0p) + b0p and printed as b0p= / b0k= on [SLAW]
-  loc: "github/slaw-gauge d416d59b: net/slaw.rs WinSampler::close :150-165 (brake_k = tmin_k - m_k pushed for k <= K_GAUGE = 8; b0p = max once k >= 8)"
-  formula: "b0p_i = max{ tmin_i,k - m_i,k : k = 1..8 }"
-  paper: "store-law.md R6.2 input table ('the sampler's first K windows'); K = 8 declared without provenance (§13.1, R6.7)"
-  derivation: "sentence: the zero-load gap between the window minimum the law steers and the long-run minimum it anchors on. That gap is a function of the window's sample count, b(n); the estimator reads it at the boot count, as one extreme of 8 start-transient windows, never at the operating count"
-  regime: "count-rule.md §2, sampler-design.md §1.1: rows 4.03-5.40 (J = 0), 3.26-12.62 (61c), 6.35-103.40 (61a), 2.04-4.10 (c2) against a steady native brake of 3.2-3.6 / 7.5-8.6 / 5.6-8.4 / 2.2-2.7 and a knee-count brake of 0.1-0.3 / 2.7-4.7 / 1.0-4.3 / 0.5-1.1; 61a G12 s42 r5's 103.4 ms brake (k = 2) is the B1 outlier (LATE median err -101.25)"
-  clamp: "the k <= K window predicate; not a clamp on a value"
-  inputs: "DISHONEST: a maximum over start-transient differences against an m-hat seconds old, at the boot count; neither the operating count nor zero load"
-  modeswitch: "a predicate on k (k <= K_GAUGE); R6.7's mode screen flags it"
-  verdicts: [UNDERIVED, DISHONEST-INPUT, MODE-SWITCH]
-  measured: "yes"
-  gauge: "yes"
-  fix_class: "delete from the law with a count-free location (sampler-design.md §2, owner O1); under a minimum, replace by the zero-load ladder M0(n) (K4)"
-  depends_on: []
-  ships_with: [F07, F01, E13]
-  evidence: "count-rule.md §2 (F spread 37.2-138.5 ms through b0p); sampler-design.md §1.1 and §1.5 (K1/K2)"
-```
-
-**R6.2's anchor branch** (inside F07's row, `clamp:`):
-- Proposed text: "min(m̂, ℓ̂ + b̂₀⁺) binds (ancf > 0) on 0 windows on 64 of 71 c3 rows below the controls. It binds on
-  154–169 / ≈ 208 at 61a's W 2 048 control (sampler-design.md §1.2): DEGENERATE over the operating range."
-- Add `DEGENERATE` to F07's verdicts, a defect finding by MEASUREMENT DISCIPLINE 17–18.
-
-**E13** is unchanged. Its fix already removes ℓ̂ from the law, and §2 removes the min branch that still read it.
-
-**Rank** for E14: next after E13. Re-number by the r68 §5 procedure and re-check with `render.py`.
+**E13** is unchanged.
 
 ---
 
-## 6. Q6: owner questions
+## 6. Q6: the owner question
 
-- **O1. The law's location statistic** (a law change, `knee-margin-rederive.md` §2.4).
-  - **(a) The window median (recommended).** Count-free at the declared ε = 0.2, so the brake is 0. It deletes b̂₀⁺,
-    ℓ̂, the min branch and T̂min from the law.
-  - **(b) The window minimum, with the count-matched ladder M₀(n).** It needs ≥ 3·n*/n₀ zero-load windows (≈ 24 on
-    these rows) and is undefined at start-up past that pool.
-  - ε = 0.2 rides with (a) as a declared tolerance.
-- **O2. Decision 8's S_F under (a).**
-  - **Keep median − minimum, as decided.** The spread term then keeps the minimum's count dependence.
-  - **Or take the floor IQR,** which is count-free. Its value is unmeasured until M1.
-  - g(Bulk) = 1 and the form are unchanged either way.
-- **O3. M1:** three dump rows on `e410d640`. It needs its own registration and a short session, about one rehearsal's
-  length. It tests §1.4 and §4 before any engine form.
+**O1. Which sentence does the store law hold at the knee?** This merges the earlier O1 and O2. It is a law change
+(`knee-margin-rederive.md` §2.4).
+
+| option | law | what it states | cost |
+|---|---|---|---|
+| **(a)** | minimum, floor M₀(n*) (ladder K4) | the queue never empties within a window (R3.1) | needs ≥ 3·n*/n₀ zero-load windows (≈ 24 here); undefined at start-up past that pool; no limit at J = 5 |
+| **(b)** | median, S = the floor IQR | the median sits q·F̂ + g·IQR above the zero-load median | the bottleneck's busy-ness is not stated, and is carried by a measured g; changes decision 8's S_F definition; ε = 0.2 declared |
+| (c) | median, S = S_F as decided | (b)'s sentence | carries (a)'s brake inside S (§2.1); not recommended |
+
+- **My recommendation is (b), conditional on M1.** M1 must confirm the median is count-free under jitter, and g_R must
+  land inside its registered band at both cells.
+- If either fails, fall back to (a).
+- The §4.2 items block either choice.
+
+**O2. M1** (§4.1): register and run it. It needs a tools-only harness change.
 
 ---
 
@@ -497,21 +667,29 @@ Then make these changes:
 - **Forced:**
   - the floor at the operating count, or a count-free statistic (C4);
   - no at-load brake (C3, K2);
-  - no boot predicate (C1 / C5).
+  - no index-predicate boot set (C1 / C5);
+  - under the median, the busy condition needs S₀(n*), so the choice of S is the choice of sentence (§2.1).
 - **Designer choices:**
   - the median as the count-free location (p = ½ is the most extreme rank fraction central at c3's 17–21 draws; kmr
     §2.5);
+  - the lowest-store floor set over the first K (§2.2);
   - K = 2·(transient windows) + 1, read as 8 on these rows (§1.6);
+  - the window closes at max(250 ms, M draws), over a fixed 250 ms (§2.2);
   - ties broken to the most recent window;
-  - M1's three rows.
-- **Deletions under O1 (a):**
+  - M1's four row pairs.
+- **Deletions under O1 (b):**
   - b̂₀⁺ and `K_GAUGE`;
   - ℓ̂ (E13);
   - the min(m̂, ·) branch (degenerate);
   - T̂min and Ŝ as law inputs;
   - m̂ as a law input (it stays Copa's).
-  - Each problem these solved: the anchor (now F̂), the zero-load gap (now 0 by construction), the ℓ̂ cap on m̂'s
-    load rise (no longer read), and the multi-leg half-gap coupling (open, §4).
+  - Each problem these solved:
+    - the anchor (now F̂);
+    - the zero-load gap (0 by construction, and moved into S's choice);
+    - the ℓ̂ cap on m̂'s load rise (no longer read);
+    - m̂'s 10 s roll, the only re-anchoring R6.2 had (**open**, §4.2 item 2);
+    - the multi-leg half-gap coupling (**open**, §4.2 item 1).
 - **Counts:**
   - law inputs per leg: 7 (w, T̂, T̂min, m̂, ℓ̂, b̂₀⁺, σ) → 3 (w, T̂, F̂) plus decision 8's S;
-  - exception clauses: the k ≤ K predicate and the min branch → 0.
+  - exception clauses: the k ≤ K predicate and the min branch → 0;
+  - clamps: one added (the window's max), with its gauge.
