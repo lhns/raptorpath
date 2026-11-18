@@ -1109,6 +1109,22 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Cost:** about 25 min plus a rehearsal of about 15 min, host cargo and tests paused. The worst case is 6 620 s (`LD_HARD` = launch + 2.5 h).
 - **Order:** the next VM session, before the evicting-seat test's rehearsal. The harness is a tools-only branch off main, and its launch sha is pinned by an amendment.
 
+**§65 Amendment 1 (2026-11-18, before any VM contact): the launch tree and the run rules.**
+- **Launch tree: `harness65` `226e06c2fd16466d0464edebbae229bd079e3a81`,** tools only, off main `726ef58e`. The engine diff against main is empty, and `s65_score.py` is byte-identical to the registered one (sha256 `41d9d58e…`, checked at launch).
+- **Seats:** `LD_BIN_PREBUILT_BASE` / `_CAND` = `~/r64/run/bins64/{base,cand}-raptorpath`, pinned to `0ec95258…` / `8104fa02…` (both hash correctly on the VM). No build, no cargo, no suites.
+- **Host tests on the launch tree** (LF export):
+  - fast unfiltered `test_stubrun.py` ALL OK (822 ok), with 13 plan-65 stub paths, each red-first by mutation;
+  - `test_s65_score` 19 ok; `rt64_score` still reproduces §64's stage R byte for byte.
+  - `test_s60` fails only at its host-only step. `test_harness46` failed twice under host load with 40 idle shells, and also fails now on pristine main (a load-sensitive timing check, recorded, not fixed).
+- **The harness's readings are registered by reference** (11 listed in its report). The named one: a pin that doesn't match the installed binary is ABORT-BUILD before any row.
+- **Run rules:**
+  - host cargo and host tests are paused under the coordinator's host lock;
+  - the process list is checked before the rehearsal and before the launch, and the harness logs it before the first row;
+  - the rehearsal is `LD_PLAN=65 LD_REHEARSE=1` with `LD_HARD` = launch + 1 h;
+  - the launch takes the rehearsal's tools-test result (`LD_PRIOR_TOOLS`), with `LD_HARD` = launch + 2.5 h;
+  - each uses one fresh archive of `226e06c2`.
+- **The evicting-seat rehearsal runs after this session.** Its steady-window rule is being fixed first (§51 Amendment 4, pending).
+
 ## 64. The F2 merge guard (§41c pattern, F2 alone), scored: pre-registration (before any VM contact)
 
 **It registers `docs/derivations/f2-guard-registration.md` at `f2-guard-design` `39269746` verbatim.** Fable reviewed it in three rounds.
