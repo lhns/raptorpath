@@ -1,0 +1,48 @@
+{
+ "c2-100": {
+  "T1": {
+   "cpu_cli": 0.08,
+   "cpu_srv": 0.12,
+   "goodput": 0.01,
+   "inorder": 0.2
+  },
+  "T2": {
+   "cpu_cli": 0.08,
+   "cpu_srv": 0.08,
+   "goodput": 0.01,
+   "inorder": 0.12
+  },
+  "draws": 200,
+  "eras": {
+   "pre:s48b BASE": 12
+  },
+  "n_rows": 12,
+  "nperm": 400,
+  "post_rows": 0
+ },
+ "c8-100": {
+  "T1": {
+   "cpu_cli": 0.12,
+   "cpu_srv": 0.2,
+   "goodput": 0.05,
+   "inorder": 0.3
+  },
+  "T2": {
+   "cpu_cli": 0.12,
+   "cpu_srv": 0.2,
+   "goodput": 0.05,
+   "inorder": 0.2
+  },
+  "draws": 200,
+  "eras": {
+   "excluded-not-shipped-default:s54 L2048": 6,
+   "post:s54 B2048": 6,
+   "pre:s48b BASE": 12,
+   "pre:s53 BASE": 6,
+   "pre:s53 BASES": 6
+  },
+  "n_rows": 30,
+  "nperm": 400,
+  "post_rows": 6
+ }
+}

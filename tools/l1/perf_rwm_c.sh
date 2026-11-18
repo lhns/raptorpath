@@ -293,7 +293,7 @@ if [[ -n "$PCAP_DIR" ]]; then
 fi
 sleep 1
 
-echo "--- RWM-C perf pipeline=$PIPELINE mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T) reliable=$RELIABLE"
+echo "--- RWM-C perf pipeline=$PIPELINE mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) rate=${RWM_PERF_RATE_MBIT:-unset} start=$(date +%T) reliable=$RELIABLE"
 # CPU accounting: the client (bulk sender / encoder) is wrapped in
 # /usr/bin/time -v; the server's (receiver / decoder)
 # cumulative CPU is read from /proc/<pid>/stat right after the transfer, before

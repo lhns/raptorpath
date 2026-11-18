@@ -102,6 +102,35 @@ tools-test result when tools/l1 is byte-identical (a recorded manifest). One sta
   62a pilot-missing      LD_KNEE62 unset: ABORT-PILOT, rc 5, no row measured
   62a abort-netem-last   the LAST row's post read (the ACK leg) carries a jitter term: ABORT-NETEM, every row ran, nothing scored (the scorer refuses too)
   62a slaw-echo-void     the first scored slot echoes RWM_SLAW wrongly on the client end: VOID (gate-slaw), re-run once, the replacement LIVE
+Plan 51e (status 51 block E: the evicting seat with the spare-clamp gauge, paced; docs/derivations/s51-evict-design.md) is plan 60's single-seat shape with its STRICT suite rule (a reference-manifest MISS aborts, a rehearsal included) and a registered
+bin_sha with no default (E-pre's, LD_BIN_SHA_EXPECT); one reported stage rep51e (smoke = one PM row; the rehearsal = PL, PM, U with the section 10 go/no-go), 12 slots, and the paths:
+  rehearse               LD_REHEARSE=1 on a HIT: the 3 registered rehearsal rows and the go/no-go (a)-(h); no suites, no battery
+  reuse-hit              the whole session to LD-ALL-DONE (12 slots), tools tests run, engine suites skipped, the score with the known absolute gauge readings
+  reuse-miss             one byte of the manifest changed: ABORT-SUITES plan 51e suite-reuse MISS, rc 5, nothing measured
+  bin-sha-mismatch       LD_BIN_SHA_EXPECT differs from the built binary: ABORT-BIN-SHA, rc 5, nothing measured
+  pace-void              the first scored slot (PL) prints no pacing echo: VOID (pace-echo-missing), re-run once, the replacement LIVE
+  spc-void               the first scored slot has fec n != an: VOID (spc-an-ne-fecn), re-run once, the replacement LIVE
+  calibrate              (rehearsal) PL A* = 12: the calibration rule fires and prints the new rate, lambda and bytes; the rehearsal still passes
+  recheck                LD_REHEARSE=1 LD_ONLY=PL: the PL-only recheck row, (h) gating
+Plan 51 (status 51 block 1: the off-Bulk baseline and the delta sweep; docs/derivations/s51-design.md) is main at launch: LD_BASE_SHA pins the commit, no engine suites ever, the dial pins run on the built tree (ABORT-DIALPINS), the rehearsal RECORDS the
+bin_sha and a battery launch must equal it (LD_BIN_SHA_EXPECT), one cell per launch (LD_CELL), a block is started only with rows x 215 s left; one reported stage rep51 (smoke = H-B, H-R, B+, N-A, the rehearsal runs it), 76 slots, and the paths:
+  rehearse               LD_REHEARSE=1: the pins, the bin_sha recorded, the 4 smoke rows with the not-overdriven witness; no battery
+  full                   the whole session to LD-ALL-DONE (76 slots, six blocks), score51 (T1 / T2, A/A, W-ROUTE, the delta table)
+  bin-sha-mismatch       LD_BIN_SHA_EXPECT differs from the built binary: ABORT-BIN-SHA, rc 5, nothing measured
+  delta-echo-void        the first scored slot echoes RWM_DELTA wrongly on the client end: VOID (gate-delta), re-run once
+  short-void             the first scored slot is a 10 s row: VOID-SHORT, re-run once
+  dialpins-fail          a dial pin FAILS: ABORT-DIALPINS, rc 5, nothing measured
+Plan 63 (status 63, F2's first VM contact; plan63.py) is a TWO-seat reported-only plan on the single-seat gate shape: CONTROL (the e-tree binary, pinned to the registered E bin_sha, LD_BIN_CONTROL or the BASE tree's build)
+then CAND (LD_BIN_SHA_CAND, REQUIRED on a launch; the rehearsal records it) per row, 10 slots, no engine suites, rows run once. The F2 counters are readings there, not a VOID. Paths:
+  rehearse               LD_REHEARSE=1 without LD_BIN_SHA_CAND (it records it): both seats' binaries checked, then CONTROL PL s42 and CAND PL s42 (both reported, never re-run), REHEARSAL-PASS
+  full                   the whole session to LD-ALL-DONE: smoke row + 10 slots, both pins checked, the report's labels against the draft's predictions
+  cand-sha-missing       a launch without LD_BIN_SHA_CAND: ABORT-BIN-SHA, rc 3, nothing run
+  cand-sha-mismatch      LD_BIN_SHA_CAND differs from the built CAND: ABORT-BIN-SHA plan 63 CAND, rc 5, no row measured
+  control-sha-mismatch   the CONTROL binary differs from its pin: ABORT-BIN-SHA plan 63 CONTROL, rc 5, no row measured
+  cand-fail              (STUB_BAD63=candfail) the CAND's paced rows fail closed: the report labels them FAIL and prints BLOCKS-E-PRE; no row is voided
+  cand-noctld            (STUB_BAD63=noctld) the CAND prints no [CTLD] line: a missing witness, labelled FAIL (never a pass on undeliv=0 by absence)
+  cand-ctld-send-only    (STUB_BAD63=ctldsend) only the sending end (the client) prints [CTLD]: the receiving server's witness is missing, labelled FAIL
+  cand-prebuilt          LD_BIN_PREBUILT set: ABORT-BUILD, rc 3, nothing run (the CAND is a plain release build from the launch archive, never a prebuilt one)
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -128,4 +157,7 @@ HARNESS_PATHS = {
     "61b": ("reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"),
     "62r0": ("rehearse", "reprobe", "nogo-floor", "nogo-gate", "nogo-pilot", "nogo-control", "nogo-short", "abort-netem-first", "control-missing", "prebuilt-required", "reuse-miss", "bin-sha-mismatch", "budget"),
     "62a": ("full", "tools-reuse-miss", "rehearsal-missing", "rehearsal-nogo", "knee-mismatch", "pilot-missing", "abort-netem-last", "slaw-echo-void", "budget"),
+    "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
+    "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
+    "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"),
 }

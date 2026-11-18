@@ -585,6 +585,22 @@ for _a62 in plan62.all_arms():
 sp.CELL_SPEC.setdefault(plan62.C3J0, ("c3j0", "c3j0", "single", 25000000))
 sp.N_LEGS.setdefault(plan62.C3J0, 1)
 
+# ── status 51, block E (plan 51e): PL / PM / U, the evicting seat with the spare-clamp gauge, paced (tables and witnesses in plan51e.py, readouts in s51e_score.py) ──
+import plan51e  # noqa: E402
+for _a51e in plan51e.all_arms():
+    sp.ARM_SPEC.setdefault(_a51e, ("window", "Rlc", "realtime", "ACTIVE"))
+    AFAM.setdefault(_a51e, "CAND")
+# ── status 63 (F2 first contact): CONTROL rows (C<arm>) run the BASE seat's binary, CAND rows (F<arm>) the candidate's; the arm definitions are plan 51e's (plan63.py) ──
+import plan63  # noqa: E402
+for _a63 in plan63.all_arms():
+    sp.ARM_SPEC.setdefault(_a63, ("window", "Rlc", "realtime", "ACTIVE"))
+    AFAM.setdefault(_a63, "BASE" if _a63.startswith("C") else "CAND")
+# ── status 51, block 51 (plan 51): H-B .. I4 (plan51.py's arm names); each arm's carrier hint is its ARM_SPEC[arm][2] (the pipe-echo witness), the 4th field is the estimator-cadence echo ──
+import plan51  # noqa: E402
+for _a51 in plan51.all_arms():
+    sp.ARM_SPEC.setdefault(_a51, ("window", "Rlc", plan51.arm_hint(_a51), "ACTIVE"))
+    AFAM.setdefault(_a51, "CAND")
+
 
 def snapver_problems(arm, cli, srv):
     """Plan 53 witness: `RWM_RECOV_SNAPVER=<0|1>` is always echoed by a plan-53 binary, so an ABSENT token is a failure, not "off". CANDS / BASES read 1 on both ends, every other arm 0."""
@@ -1044,9 +1060,55 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
                 row[key] = fn()
             except Exception as e:      # a reported readout never voids a row
                 row[key], row[key + "_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "51":
+        # Status 51 block 51: the two-sided RWM_DELTA / RWM_DIAG echo, the emission-batching echo, the symbol-size and [CHI] witnesses and the one seat's binary void a row (replaced once, by the battery); a completed row
+        # with its last tick before 30 s is VOID-SHORT (also replaced once); a DNF is kept and ranked worst. The readouts (s51_score.row_metrics) are reported / scored later and never void a row.
+        import s51_score
+        p.extend(plan51.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), row.get("bytes"), bool(row.get("dnf"))))
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        row["tick_span_s"] = last_tick_s(cli)
+        if not row.get("dnf") and int(rc) == 0 and row["tick_span_s"] < plan51.MIN_ROW_S:
+            v2_void = f"short-row last-tick={row['tick_span_s']}s (< {plan51.MIN_ROW_S:g} s)"
+        try:
+            row["t51"] = s51_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t51"], row["t51_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "51e":
+        # Status 51 block E: plan 59's liveness + RWM_SLAW / RWM_DIAG on both ends, the one seat's binary, the pacing witness (pace-*, section 5.2) and the gauge witnesses (spc-*, section 6.2) void a row (replaced once,
+        # by the battery); the readouts (s51e_score.row_metrics) are reported only. A Realtime row never prints the reliable-window line (as plan 59 above).
+        import s51e_score
+        p.extend(plan51e.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), drv))
+        if (row.get("pipe_cli") == ["window", "Rlc", "realtime"] and row.get("pipe_srv") == ["window", "Rlc", "realtime"]
+                and any(REALTIME_ECHO59 in ln for ln in cli) and any(REALTIME_ECHO59 in ln for ln in srv) and "window-line-missing-on-window" in row["problems"]):
+            row["problems"].remove("window-line-missing-on-window")
+            if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+                row["status"] = "LIVE"
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        try:
+            row["t51e"] = s51e_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t51e"], row["t51e_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "63":
+        # Status 63: only the seat's binary can void a row (plan63.row_problems); the F2 counters, the [SYMSZ] echoes and the warm-up outcome are READINGS (CONTROL is expected to fail: no VOID-F2 here).
+        p.extend(plan63.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
+        if (row.get("pipe_cli") == ["window", "Rlc", "realtime"] and row.get("pipe_srv") == ["window", "Rlc", "realtime"]
+                and any(REALTIME_ECHO59 in ln for ln in cli) and any(REALTIME_ECHO59 in ln for ln in srv) and "window-line-missing-on-window" in row["problems"]):
+            row["problems"].remove("window-line-missing-on-window")
+            if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+                row["status"] = "LIVE"
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA")) and bool(os.environ.get("LD_SHA_BASE"))
+        try:
+            row["t63"] = plan63.row_metrics(cli, srv, drv)
+        except Exception as e:      # a reported readout never voids a row
+            row["t63"], row["t63_error"] = None, f"{type(e).__name__}: {e}"
+    f2_why = lc.f2_void(list(cli) + list(srv) + list(drv)) if os.environ.get("LD_PLAN") in ("51", "51e") else None
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"
+    if f2_why and row["status"] in ("LIVE", "WITNESS-FAIL", "NO_DATA"):
+        # F2 design section 8 step 9: a fail-closed tunnel voids its row (VOID-F2), it never reads as a DNF datum. Not an echo problem, so the battery does not replace it (the failure is deterministic).
+        row["status"] = "VOID-F2"
+        row["problems"].append("f2:" + f2_why)
     if v2_void and row["status"] == "LIVE" and not row.get("dnf"):
         row["status"] = "VOID-SHORT"
         row["problems"].append(v2_void)

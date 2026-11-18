@@ -64,6 +64,12 @@ fec = sp.parse_line("[WSTORE] t=2.00 k=1 fec=0.020000/4.0000/0.20000/15.00/3 dbt
 check("fec token parsed: eps 0.02, sigma2 4, r 0.2, A* 15, n 3", (fec["fec.0"], fec["fec.1"], fec["fec.2"], fec["fec.3"], fec["fec.4"]) == (0.02, 4.0, 0.2, 15.0, 3.0), fec)
 fec0 = sp.parse_line("[WSTORE] t=2.00 k=1 fec=-/-/-/-/0 dbt_acc=0.00")[1]
 check("empty fec window: components None, n 0", fec0["fec.0"] is None and fec0["fec.3"] is None and fec0["fec.4"] == 0.0, fec0)
+spc = sp.parse_line("[WSTORE] t=2.00 k=1 fec=0.020000/4.0000/0.20000/15.00/9 spc=4/2/9/3/7/1 wr=0.285714/0.089286 dbt_acc=0.60")[1]
+check("spc token parsed: ab 4, az 2, an 9, rb 3, rn 7, r0 1; wr 0.285714 / fr 0.089286",
+      [spc[f"spc.{i}"] for i in range(6)] == [4, 2, 9, 3, 7, 1] and (spc["wr.0"], spc["wr.1"]) == (0.285714, 0.089286), spc)
+spc0 = sp.parse_line("[WSTORE] t=2.00 k=1 fec=-/-/-/-/0 spc=0/0/0/0/0/0 wr=-/- dbt_acc=0.00")[1]
+check("empty spc window: counts 0, wr components None (not 0)", spc0["spc.2"] == 0 and spc0["wr.0"] is None and spc0["wr.1"] is None, spc0)
+check("the engine's own sample carries spc= (empty window form) on [WSTORE]", st["spc.4"] == 0.0 and st["wr.0"] is None, st)
 check("[WSTORE] a/W = 0.5", st["aw"] == 0.5 and st["awmin"] == 0.5)
 check("[SLAWC] last line has the counters", "gaprep" in m["SLAWC"] and m["SLAWC"]["gaprep"] is not None)
 check("a/b dash rule: '-' is None, not 0 (gaptrunc_frac with no reports)", m["SLAWC"].get("gaptrunc_frac") is None, m["SLAWC"])
