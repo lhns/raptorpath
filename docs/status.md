@@ -22,7 +22,7 @@ named point's preset, an independent dial that never selects a pipeline:
 Pinned by `default_config_routes_every_hint_to_the_window_pipeline` and
 `block_only_config_is_an_error_naming_adr_0069`.
 
-**Wire and substrate.** `PROTOCOL_VERSION = 9` (per-path `path_seq`,
+**Wire and substrate.** `PROTOCOL_VERSION = 10` (2026-11-18, F2: one `[u16 LE len][bytes]` framing for every source symbol, `WindowStart { backend }`, the sender's real symbol size in the handshake, fail closed on an unframable symbol; ADR-0078. v9 added per-path `path_seq`,
 `next_expected`, `received_above`); compact DATA framing
 (`RWM_WIRE_COMPACT`) on. Substrate congestion control is quinn BBR
 (`RWM_QUIC_CC`, default `bbr`). The wire-clocked Copa signal and Copa pacing
@@ -2514,6 +2514,10 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
       - the reuse changes (suites only on the pinned sha, guard suite reuse on a byte-identical tree, a launch reusing its rehearsal's binary and tools tests) remove about half a guard's wall time without touching its rows;
       - F2's framing commit left both pins unchanged and still cost +45–70 ns per symbol on an unpinned path, which only the bench saw.
       - Revisit only with a table of past zero-behaviour guards and one specific reduced form with its detection power, as a derivation.
+15. **F2 merges now** (owner, 2026-11-18, after §64's GATE-64 PASS).
+    - Merged `--no-ff` as `f36d9172` (engine patch-id `3e69ce68…`, as guarded).
+    - ADR-0078 is Accepted. Wire v10 refuses v9 peers, so every endpoint upgrades together. An engine with no initial path refuses to start.
+    - The Realtime delay lean is followed up post hoc (§64 Result).
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 

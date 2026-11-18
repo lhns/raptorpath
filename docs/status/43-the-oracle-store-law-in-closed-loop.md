@@ -210,7 +210,7 @@ Reported beside the label:
 - *`CONVERGES-ONE-POINT` at both cells:* the shipped anchor gives one
   operating point in practice. The next steps go to the user as a proposal;
   none starts from this section:
-  - the engine L̂ (§42 (a): socket timestamps, wire v10, an ADR);
+  - the engine L̂ (§42 (a): socket timestamps, wire v11, an ADR);
   - c8's idle-leg rule;
   - the goodput the power point gives up (the §40 standing decision on δ's
     authority).

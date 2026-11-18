@@ -18,7 +18,7 @@ built.**
   - (a) an in-tree `AsyncUdpSocket` receive path on the existing Runtime
     seam (`io_owner.rs` ~849, the `TimedRuntime` pattern), ≈ 2–3 days;
   - (b) a `[patch]` of quinn-udp, ≈ 1–1.5 days, carried as a fork.
-- Feedback needs a new `PathReport` or `WindowAck` field: wire v9 → v10
+- Feedback needs a new `PathReport` or `WindowAck` field: wire v10 → v11 (v10 is F2's one framing, merged 2026-11-18)
   and an ADR extending ADR-0072. The ignored `throughput_bps` field is not
   to be reused.
 - Risks:
@@ -73,7 +73,7 @@ built.**
    build and needs the user's go.
 3. Only if step 2 runs away: the split diagnostic (sender dwell against the
    endpoint loop at µs).
-The socket work (2–3 days), wire v10 and the ADR come only after step 2.
+The socket work (2–3 days), wire v11 and the ADR come only after step 2.
 
 ### 42. Addendum — the law's per-window noise and its anchor (offline, committed ledgers; scripts and outputs in `docs/l1-raw/s42/`)
 
