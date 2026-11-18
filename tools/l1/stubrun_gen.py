@@ -471,6 +471,129 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
     return cli, srv, drv
 
 
+# ── plan 64 (plan64.py): F2's merge guard. Stage G rows (LD_PLAN=41d with LD_WITNESS64=1) are plan 41d's rows plus what an F2 CAND build prints (`[SYMSZ] local=1200 decoder=1200` on both ends, `undeliv=0` on every [CTLD]
+# line); BASE (main) prints neither. Stage R rows (LD_PLAN=64, Realtime c2-100 at rho = 1) carry the Realtime echo, `window_reliable: true` on both ends and 12 s of [DIAG] ticks. STUB_BAD64 names the defect the stub injects
+# into the FIRST matching scored row (LD_TAG=ld; a marker file counts invocations; the smoke and the replacement runs are right unless the kind says otherwise):
+#   unframable / dnf-unframable / symsz-missing / ctld-send-only   stage G, the first CAND scored row (dnf-unframable is also a DNF)
+#   base-rt-dead (the first RB row's warm-up never acks, the driver exits 1) / rt-rho-one-end (the first RC row's server prints window_reliable: false) / rc-void-twice (the first RC slot's row AND its replacement do)
+#   rc-nodata (the first RC row ends rc 0 with no run / summary line: NO_DATA, replaced once)   rt-dnf / rt-base-dnf (the first RC row / also the first RB row is a DNF: warm-up acked, transfer timed out) / rt-ctld-send-only / rt-symsz-1200 (the first RC row)   bare (BASE rows print no [CTLD] line at all)
+BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
+
+
+def bad64():
+    return set(x for x in os.environ.get("STUB_BAD64", "").split(",") if x)
+
+
+def hit64(kind, upto=1):
+    """True for the first `upto` scored (LD_TAG=ld) invocations that ask for `kind` (a marker file counts them)."""
+    if os.environ.get("LD_TAG") != "ld":
+        return False
+    marker = os.path.join(TMP, "bad64-" + kind)
+    seen = len(open(marker).read()) if os.path.exists(marker) else 0
+    if seen >= upto:
+        return False
+    open(marker, "a").write("x")
+    return True
+
+
+def dnf_lines64(cli, drv, nbytes, hint):
+    dnf = '{"bytes":%s,"dnf":true,"hint":"%s","proto":"rp-native","run":1}' % (nbytes, hint)
+    tail = '{"bytes":%s,"dnf":1,"hint":"%s","proto":"rp-native","runs":1,"summary":true}' % (nbytes, hint)
+    return ([ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail], [ln for ln in drv if '"summary"' not in ln] + [tail])
+
+
+def f2_ends64(cli, srv, size, cand, ctld_srv=True, symsz_srv=True):
+    """What an F2 CAND build prints on top of a fixture log pair: `undeliv=0` on every [CTLD] line (the server's only when ctld_srv), `[SYMSZ] local=<n> decoder=<n>` once per process (the server's only when symsz_srv)."""
+    if not cand:
+        return cli, srv
+    add = lambda lines: [ln + " undeliv=0" if "[CTLD]" in ln and "undeliv=" not in ln else ln for ln in lines]      # noqa: E731
+    sz = INFO59 + f"[SYMSZ] local={size} decoder={size}"
+    return add(cli) + [sz], (add(srv) if ctld_srv else list(srv)) + ([sz] if symsz_srv else [])
+
+
+def gen64g(cli, srv, drv, nbytes, cand):
+    """Stage G: plan 41d's rows plus the F2 witnesses (CAND) and, for the first scored CAND row, the injected defect."""
+    bad = bad64()
+    if not cand:
+        if "bare" in bad:       # BASE logs with no [CTLD] line at all: the perf script's F2 lines grep nothing (`set -e` territory)
+            cli, srv = [ln for ln in cli if "[CTLD]" not in ln], [ln for ln in srv if "[CTLD]" not in ln]
+        return cli, srv, drv
+    kind = next((k for k in ("unframable", "dnf-unframable", "symsz-missing", "ctld-send-only") if k in bad), None)
+    inj = bool(kind) and hit64(kind)
+    cli, srv = f2_ends64(cli, srv, 1200, True, ctld_srv=not (inj and kind == "ctld-send-only"), symsz_srv=not (inj and kind == "symsz-missing"))
+    if inj and kind in ("unframable", "dnf-unframable"):
+        cli = cli + [INFO59 + "\x1b[31mERROR\x1b[0m [UNFRAMABLE] symbol of 1200 B does not fit the packet; tunnel fails closed"]
+    if inj and kind == "dnf-unframable":
+        cli, drv = dnf_lines64(cli, drv, nbytes, "bulk")
+    return cli, srv, drv
+
+
+def gen64r(cli, srv, drv, fam, nbytes, base, cand):
+    """Stage R: a Realtime row at rho = 1: the Realtime echo on both ends (no reliable-window line), window_reliable: true on both ends, [SYMSZ] 512/512 and undeliv=0 on a CAND row, 12 s of [DIAG] ticks, a summary of 12 s."""
+    bad = bad64()
+    n_ticks = 48
+    rl = run_lines(fam, False, n=n_ticks)
+    k = 0
+    for i, ln in enumerate(rl):
+        if ln.startswith("[DIAG]"):
+            k += 1
+            rl[i] = ln + extras52(k, n_src=n_ticks - 20)
+
+    def rt(lines):
+        out = []
+        for ln in lines:
+            if "reliable window mode (retain until acked)" in ln:
+                out.append(INFO59 + REALTIME_ECHO59)
+                continue
+            out.append(ln.replace("hint=bulk", "hint=realtime") if "[PIPE]" in ln else ln)
+        return out
+    cli, srv = rt(cli), rt(srv)
+    drv = [re.sub(r"hint=bulk( .*)$", r"hint=realtime\1", ln) if "--- RWM-C perf" in ln else ln for ln in drv]
+    symsz = 512
+    ctld_srv, rho_bad, dnf, dead, nodata = True, False, False, False, False
+    if cand:
+        if "rt-rho-one-end" in bad and hit64("rt-rho-one-end"):
+            rho_bad = True
+        if "rc-void-twice" in bad and hit64("rc-void-twice", upto=2):
+            rho_bad = True
+        if "rc-nodata" in bad and hit64("rc-nodata"):
+            nodata = True      # the first RC row: the driver exits 0 but the client log holds no run / summary line (NO_DATA, the warm-up acked): a non-F2 void
+        if "rt-ctld-send-only" in bad and hit64("rt-ctld-send-only"):
+            ctld_srv = False
+        if "rt-symsz-1200" in bad and hit64("rt-symsz-1200"):
+            symsz = 1200
+        if ("rt-dnf" in bad or "rt-base-dnf" in bad) and hit64("rt-dnf"):
+            dnf = True
+    else:
+        if ("base-rt-dead" in bad or "base-rt-dead-rc0" in bad) and hit64("base-rt-dead"):
+            dead = True
+        if "rt-base-dnf" in bad and hit64("rt-base-dnf"):
+            dnf = True
+    cli, srv = f2_ends64(cli, srv, symsz, cand, ctld_srv=ctld_srv)
+    if rho_bad:
+        srv = [ln.replace("window_reliable: true", "window_reliable: false") for ln in srv]
+    secs = 12.0
+    summ = summary54(secs, int(nbytes)).replace('"hint":"bulk"', '"hint":"realtime"')
+    cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + rl + ['{"bytes":%s,"hint":"realtime","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs), summ]
+    drv = [ln for ln in drv if '"summary"' not in ln] + [summ]
+    if nodata:
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln]
+        drv = [ln for ln in drv if '"summary"' not in ln]
+    if dnf or dead:
+        cli, drv = dnf_lines64(cli, drv, nbytes, "realtime")
+        if dead and "base-rt-dead-rc0" in bad:
+            cli = [ln for ln in cli if '"summary"' not in ln]
+            drv = [ln for ln in drv if '"summary"' not in ln]
+    if dead:
+        cli = cli + [INFO59 + "\x1b[31mERROR\x1b[0m warm-up object never acked within the timeout"]
+        if "base-rt-dead-rc0" in bad:      # the driver exits 0 and the client log holds no summary line: the battery's bring-up retry would draw the row again if the stage allowed it (TRIES)
+            cli = [ln for ln in cli if '"summary"' not in ln]
+            drv = [ln for ln in drv if '"summary"' not in ln]
+        else:
+            open(os.path.join(TMP, "stub-rc1"), "w").close()      # the client died after the full timeout: the driver exits non-zero (the stub shell reads this marker)
+    return cli, srv, drv
+
+
 def qd(delay, backlog=3):
     return (f"qdisc netem 1: root refcnt 2 limit 1000 delay {delay}  5ms loss gemodel 2% 40% 1-h 0% 1-k 100% rate 20Mbit seed 1042 \n"
             f" Sent 1000 bytes 10 pkt (dropped 1, overlimits 0 requeues 0)\n backlog 0b {backlog}p requeues 0\n")
@@ -689,8 +812,12 @@ def main(argv):
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
     elif plan in ("60a", "60b"):
         cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
+    elif plan == "64":
+        cli, srv, drv = gen64r(cli, srv, drv, fam, nbytes, base, cand)
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")
+    if plan == "41d" and os.environ.get("LD_WITNESS64") == "1":
+        cli, srv, drv = gen64g(cli, srv, drv, nbytes, cand)         # plan 64's stage G = plan 41d + the F2 row witnesses
     if plan == "41d" and os.environ.get("LD_WITNESS54") == "1":
         cli = cli + witness54(cand)         # plan 54 = plan 41d + the three witnesses: the stub carries what a post-law (CAND) / pre-law (BASE) build prints
     sys.stdout.write("\n".join(drv) + "\n")            # the driver's stdout: the battery redirects it to /tmp/ld-drv.out
