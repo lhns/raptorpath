@@ -179,6 +179,16 @@ else
     aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENB" --seed "${SEED:-42}"
 fi
 aw_state post_topo
+# Status 62: the LIVE qdisc of the first data leg and its ACK leg, read right after the topology is up (pre) and again before the teardown (post) and printed as `[NETEM] tag= leg=cli|srv dev= qdisc: <tc qdisc show>`
+# (RWM_NETEM_WITNESS=1, set by the 62 battery only). The battery reads them (plan62.py netem) and stops the launch on a jitter term: nothing here decides. `|| true`: this script runs under `set -e`.
+netem_witness() { # tag
+    local c s
+    c="$(ip netns exec "$NS_CLI" tc qdisc show dev "${CLI_LEGS[0]}" 2>&1 | tr '\n' ' ' || true)"
+    s="$(ip netns exec "$NS_SRV" tc qdisc show dev "${SRV_LEGS[0]}" 2>&1 | tr '\n' ' ' || true)"
+    echo "[NETEM] tag=$1 leg=cli dev=${CLI_LEGS[0]} qdisc: $c"
+    echo "[NETEM] tag=$1 leg=srv dev=${SRV_LEGS[0]} qdisc: $s"
+}
+if [ "${RWM_NETEM_WITNESS:-0}" = 1 ]; then netem_witness pre; fi
 # The receiver netns's kernel UDP receive-buffer drops, baselined before the
 # server starts: the one local-loss term no engine token counts (read again
 # at run end for the `[TRUTH]` lines' `rcvbuf_drops=`).
@@ -508,6 +518,7 @@ for _lg in /tmp/rwm-c.log /tmp/rwm-s.log; do
 done
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
+if [ "${RWM_NETEM_WITNESS:-0}" = 1 ]; then netem_witness post; fi
 
 # netem's qdisc counters before teardown: bytes/pkts that passed netem per
 # direction plus its drops. Read-only; whole-invocation totals (warm-up object

@@ -571,6 +571,19 @@ import plan64  # noqa: E402
 for _a64 in plan64.ARMS_R:
     sp.ARM_SPEC.setdefault(_a64, ("window", "Rlc", "realtime", "ACTIVE"))
     AFAM.setdefault(_a64, plan64.SEAT_OF[_a64])
+# ── status 61: the c3 sweep (plans 61a / 61b), tables and witnesses in plan61.py, readouts in s61_score.py. The arms G<W> (bulk) ride the candidate binary family. ──
+import plan61  # noqa: E402
+for _a61 in plan61.all_arms():
+    sp.ARM_SPEC.setdefault(_a61, ("window", "Rlc", "bulk", "ACTIVE"))
+    AFAM.setdefault(_a61, "CAND")
+# ── status 62: c3 at jitter 0 (plans 62r0 / 62a), tables and witnesses in plan62.py, readouts in s62_score.py. The arms G<W> / D<W> (bulk) ride the candidate binary family; the cell c3j0-25 is c3's shape with
+# the jitter removed (lib.sh scenario c3j0), registered here beside stage3_parse's cells (its own CELLS list stays the historical one). ──
+import plan62  # noqa: E402
+for _a62 in plan62.all_arms():
+    sp.ARM_SPEC.setdefault(_a62, ("window", "Rlc", "bulk", "ACTIVE"))
+    AFAM.setdefault(_a62, "CAND")
+sp.CELL_SPEC.setdefault(plan62.C3J0, ("c3j0", "c3j0", "single", 25000000))
+sp.N_LEGS.setdefault(plan62.C3J0, 1)
 
 
 def snapver_problems(arm, cli, srv):
@@ -662,6 +675,7 @@ def diag_lines(cli):
 #   c1 1 Gbit x 2 ms = 250 000 B;  c2 100 Mbit x 10 ms = 125 000 B;  c3 20 Mbit x 40 ms = 100 000 B.
 # So c1s / c1d: 250 000 per leg; c2: 125 000; c8 (c2 + c3 legs): 125 000 and 100 000.
 SCEN_LINK = {"c1": (1e9, 1), "c2": (1e8, 5), "c3": (2e7, 20)}      # rate bit/s, one-way ms
+SCEN_LINK["c3j0"] = SCEN_LINK["c3"]                                  # status 62: c3 with the jitter removed (the same rate and delay)
 
 
 def bdp_bytes(cell):
@@ -1001,6 +1015,35 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t60"] = s60_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
         except Exception as e:      # a reported readout never voids a row
             row["t60"], row["t60_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") in ("61a", "61b"):
+        # Status 61: the echo witnesses of plan 60 at the c3 / c2 cells (plan61.row_problems) void a row (replaced once, by the battery); the readouts (t60 = s60_score.row_metrics, t61 = s61_score.row_extras)
+        # are scored later and never void a row.
+        import s60_score
+        import s61_score
+        p.extend(plan61.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA")))
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        try:
+            row["t60"] = s60_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"))
+        except Exception as e:      # a reported readout never voids a row
+            row["t60"], row["t60_error"] = None, f"{type(e).__name__}: {e}"
+        try:
+            row["t61"] = s61_score.row_extras(cli, srv, drv, cell)
+        except Exception as e:
+            row["t61"], row["t61_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") in ("62r0", "62a"):
+        # Status 62: plan 61's echo witnesses at the c3j0 cell (plan62.row_problems, the dump gate included) void a row (replaced once, by the battery); the readouts are t60 (s60_score.row_metrics; a D arm
+        # reads as its G arm: the dump changes nothing the gauge sees), t61 (s61_score.row_extras) and t62 (the live-netem witness and the RTT dump's coverage): scored later, never a void.
+        import s60_score
+        import s61_score
+        import s62_score
+        p.extend(plan62.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA")))
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
+        for key, fn in (("t60", lambda: s60_score.row_metrics(cli, srv, drv, row.get("bytes"), cell, "G" + arm[1:] if arm[:1] == "D" else arm, row.get("mbps"))),
+                        ("t61", lambda: s61_score.row_extras(cli, srv, drv, cell)), ("t62", lambda: s62_score.row_extras(cli, srv, drv, cell))):
+            try:
+                row[key] = fn()
+            except Exception as e:      # a reported readout never voids a row
+                row[key], row[key + "_error"] = None, f"{type(e).__name__}: {e}"
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
         row["status"] = "WITNESS-FAIL"

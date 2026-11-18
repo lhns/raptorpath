@@ -254,6 +254,13 @@ ck "c8 keeps its asymmetric params (100mbit + 20mbit)"  1 'qdisc add dev cli0 ro
 ck "c8 second leg is the c3 class"                      1 'qdisc add dev cli1 root netem delay 20ms 5ms rate 20mbit'
 ck "c8 legs also get distinct seeds"                    2 'qdisc add dev cli[01] .* seed (42|1042)$'
 
+# Status 62: c3j0 is c3 with the jitter removed. The data leg's line reads `delay 20ms rate 20mbit` (tc prints no jitter term), the ACK leg's the same without the loss, and no `20ms 5ms` appears.
+: > "$LOG"
+bash ./topo_dual.sh up c3j0 c3j0 --seed 42 >/dev/null 2>&1
+ck "c3j0 data leg: delay 20ms, no jitter term (status 62)"     1 'qdisc add dev cli0 root netem delay 20ms rate 20mbit loss gemodel 2% 40% seed 42( |$)'
+ck "c3j0 ACK leg: delay 20ms, no jitter term (no loss on the ACK leg)"  1 'qdisc add dev srv0 root netem delay 20ms rate 20mbit$'
+ck "c3j0 issues no jitter term on any leg"                     0 'netem delay 20ms [0-9]+ms'
+
 
 # ══ The topo-ping retry — a loss draw is not an abort, a dead leg is ═══════
 #
