@@ -1125,6 +1125,17 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - each uses one fresh archive of `226e06c2`.
 - **The evicting-seat rehearsal runs after this session.** Its steady-window rule is being fixed first (§51 Amendment 4, pending).
 
+**§65 Amendment 2 (2026-11-18, after the first rehearsal, before any scored row): the first rehearsal was a harness fault; the launch tree moves to `harness65` `18de42d1d5a997560059c95f7541ab6df8e3a1f5`.**
+- **The first rehearsal** (19:02–19:10Z, `~/r65`) stopped at ABORT-SMOKE.
+  - RC s42 r1 read RT-OK, passing the F2 reading.
+  - RB s42 r1 completed (warm-up acked, 68.8 Mbit/s, `window_reliable` true/true) but read WITNESS-FAIL, with `wpl_us-numeric-on-RB` and `wire-gauges-on-RB`.
+- **Cause, in the harness:** `place38_parse.base_promoted()` read only `LD_BASE_SHA` and defaulted to a pre-promotion pin. §64's launch set `LD_BASE_SHA`; plan 65, a stage-R launch on sha-pinned prebuilt binaries, does not. So the post-promotion BASE binary's wire gauges were flagged.
+- **The fix:** at plans 64 and 65 BASE counts as promoted (it is main before the framing fix, after ADR-0073).
+  - On §64's 24 committed stage R rows (real logs) the plan-65 path now gives every row its ledger status. It was red before the fix: 11 of 12 live RB rows read WITNESS-FAIL.
+  - The stubs now carry a numeric `wpl_us`, so `65/rehearse` goes red when the fix is reverted.
+  - Fast unfiltered stub run ALL OK (822 ok). `s65_score.py` is byte-unchanged (`41d9d58e…`).
+- **The RB row was a harness fault, not a reading,** so the rehearsal is re-run from a fresh archive of `18de42d1`. Its rows are new rows, as registered. The run rules are those of Amendment 1.
+
 ## 64. The F2 merge guard (§41c pattern, F2 alone), scored: pre-registration (before any VM contact)
 
 **It registers `docs/derivations/f2-guard-registration.md` at `f2-guard-design` `39269746` verbatim.** Fable reviewed it in three rounds.
