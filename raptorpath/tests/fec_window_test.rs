@@ -7,7 +7,12 @@ use raptorpath::fec::{
     RlcWindowDecoder, RlcWindowEncoder,
     WindowDecoder, WindowEncoder, WireSymbol,
 };
-use raptorpath::net::framing::{extract_window_packet, frame_window_packet};
+use raptorpath::net::framing::{frame_window_packet, read_packets};
+
+/// The first packet of a source symbol under the one framing (`read_packets`).
+fn extract_window_packet(data: &[u8]) -> Option<Vec<u8>> {
+    read_packets(data).ok().and_then(|p| p.into_iter().next())
+}
 
 const SYMBOL_SIZE: u16 = 128;
 

@@ -268,6 +268,11 @@ pub struct QuicTransport {
     route_probe: bool,
     /// The lock-wait gauge's clock reads (`RWM_RTOBS`).
     gauge: bool,
+    /// The local source-symbol size, announced in every path's handshake (v10).
+    symbol_size: u16,
+    /// The size the peer's initial paths announced (0 until
+    /// [`Self::set_peer_symbol_size`]); a path added at runtime must match it.
+    peer_symbol_size: std::sync::atomic::AtomicU16,
     /// Notified by any owner whose connection is lost (see
     /// [`QuicTransport::all_connections_lost`]).
     lost: Arc<tokio::sync::Notify>,
@@ -285,9 +290,10 @@ impl QuicTransport {
         bind_addrs: &[SocketAddr],
         is_server: bool,
         pin_cert_path: Option<&Path>,
+        symbol_size: u16,
     ) -> anyhow::Result<Self> {
         let g = crate::gates::get();
-        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs).await
+        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs, symbol_size).await
     }
 
     /// [`Self::new`] with an explicit routing-probe switch (a test arms it
@@ -297,6 +303,7 @@ impl QuicTransport {
         is_server: bool,
         pin_cert_path: Option<&Path>,
         route_probe: bool,
+        symbol_size: u16,
     ) -> anyhow::Result<Self> {
         let pinned_cert_hash = pin_cert_path
             .map(|p| load_pinned_cert_hash(p))
@@ -333,6 +340,8 @@ impl QuicTransport {
             rt: tokio::runtime::Handle::current(),
             route_probe,
             gauge: crate::gates::get().rtobs,
+            symbol_size,
+            peer_symbol_size: std::sync::atomic::AtomicU16::new(0),
             lost: Arc::new(tokio::sync::Notify::new()),
         };
         for (i, addr) in bind_addrs.iter().enumerate() {
@@ -385,6 +394,7 @@ impl QuicTransport {
             gauge: self.gauge,
             deep: crate::task_obs::deep(),
             lost: self.lost.clone(),
+            symbol_size: self.symbol_size,
         };
         let side = if self.is_server { "server" } else { "client" };
         self.rt
@@ -590,8 +600,15 @@ impl QuicTransport {
         Some((frame_rx, read))
     }
 
-    /// Connect to a peer on a specific path (in the path's owner).
-    pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
+    /// Record the size the peer's initial paths announced, which a path added
+    /// at runtime must also announce.
+    pub fn set_peer_symbol_size(&self, size: u16) {
+        self.peer_symbol_size.store(size, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Connect to a peer on a specific path (in the path's owner). Returns the
+    /// symbol size the peer announced in its handshake (range-checked there).
+    pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<u16> {
         let io = self
             .io(path_id)
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
@@ -604,8 +621,8 @@ impl QuicTransport {
     }
 
     /// Accept an incoming connection on a specific path (in the path's
-    /// owner).
-    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<()> {
+    /// owner). Returns the peer's announced symbol size, as [`Self::connect`].
+    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<u16> {
         let io = self
             .io(path_id)
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
@@ -625,12 +642,26 @@ impl QuicTransport {
         bind_addr: SocketAddr,
         peer_addr: Option<SocketAddr>,
     ) -> anyhow::Result<()> {
-        self.spawn_path(path_id, bind_addr).await?;
-        if let Some(peer) = peer_addr {
-            self.connect(path_id, peer).await
-        } else {
-            self.accept(path_id).await
+        // One peer, one symbol size: refuse every runtime path until the
+        // initial paths' size is stored, never admit one unchecked.
+        let established = self.peer_symbol_size.load(std::sync::atomic::Ordering::Relaxed);
+        if established == 0 {
+            anyhow::bail!("path {path_id}: no peer symbol size is stored yet (the initial paths are not reconciled)");
         }
+        self.spawn_path(path_id, bind_addr).await?;
+        let size = if let Some(peer) = peer_addr {
+            self.connect(path_id, peer).await?
+        } else {
+            self.accept(path_id).await?
+        };
+        // ... and refuse a path that announces another.
+        if size != established {
+            self.remove_path(path_id);
+            anyhow::bail!(
+                "path {path_id} announces symbol size {size}, the peer's established size is {established}"
+            );
+        }
+        Ok(())
     }
 
     /// Resolves once every current path's QUIC connection is lost (quinn
@@ -1185,7 +1216,7 @@ mod datagram_queue_audit_tests {
     async fn datagram_queue_audit_follows_rwm_diag_and_is_absent_when_off() {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let t = QuicTransport::new(&[addr], false, None)
+        let t = QuicTransport::new(&[addr], false, None, 1200)
             .await
             .expect("client endpoint binds on loopback");
 
@@ -1266,7 +1297,7 @@ mod rcvbuf_endpoint_tests {
         let floor = super::super::rcvbuf::tests::linux_floor(rcvbuf::RCVBUF_REQUEST);
         let any: SocketAddr = "127.0.0.1:0".parse().unwrap();
         for is_server in [true, false] {
-            let t = QuicTransport::new(&[any, any], is_server, None)
+            let t = QuicTransport::new(&[any, any], is_server, None, 1200)
                 .await
                 .expect("endpoints bind on loopback");
             t.spawn_path(7, any).await.expect("add_path's bind");

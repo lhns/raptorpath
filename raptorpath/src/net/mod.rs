@@ -647,9 +647,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair);
 
-    // The window pipeline carries at most one packet per source symbol: SymbolPacker
-    // frames each packet with a 2-byte length prefix and closes the symbol
-    // with a 2-byte end sentinel, and packets that don't fit are truncated
+    // A source symbol holds at most symbol_size - 2 bytes of framed packets: the
+    // one framing (`framing::put_packet`) gives each packet a 2-byte length
+    // prefix and the zero padding terminates the symbol, so packets that don't fit are truncated
     // (corrupted on the wire, silently dropped by the peer's IP stack).
     // Clamp the TUN MTU so the inner stack never emits a packet larger than
     // one symbol can carry (MSS-sized TCP segments would be truncated at
@@ -723,11 +723,23 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         }
     }
 
+    // The receiver's decoder takes the size its peer announces in a handshake
+    // (ADR-0078), so an engine needs at least one initial path to learn it.
+    // (A path added later is checked against that size, never the other way.)
+    let n_initial = if config.is_server { config.bind_addrs.len() } else { config.peer_addrs.len() };
+    if n_initial == 0 {
+        anyhow::bail!(
+            "no initial path ({}): the receiver learns the peer's symbol size from the first handshake",
+            if config.is_server { "server needs a bind address" } else { "client needs a peer address" }
+        );
+    }
+
     // Create QUIC transport
     let transport = QuicTransport::new(
         &config.bind_addrs,
         config.is_server,
         config.pin_cert.as_deref(),
+        symbol_size,
     ).await?;
 
     // Set up paths with protocol-hint-derived scheduling weights
@@ -736,17 +748,25 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         scheduler.add_path(i as u32);
     }
 
-    // Connect or accept on each path
+    // Connect or accept on each path; each returns the size the peer announced
+    // in its handshake.
+    let mut peer_sizes: Vec<u16> = Vec::new();
     if config.is_server {
         for i in 0..config.bind_addrs.len() {
-            transport.accept(i as u32).await?;
+            peer_sizes.push(transport.accept(i as u32).await?);
         }
     } else {
         for (i, peer) in config.peer_addrs.iter().enumerate() {
-            transport.connect(i as u32, *peer).await?;
+            peer_sizes.push(transport.connect(i as u32, *peer).await?);
         }
     }
     info!("all paths connected");
+    // The decoder takes the sender's size (ADR-0078, option ii); a runtime
+    // path must announce the same one (`QuicTransport::add_path`). There is
+    // no fallback to the local size: `reconcile_peer_symbol_size` refuses an
+    // empty list, and an engine without initial paths is refused above.
+    let peer_symbol_size = reconcile_peer_symbol_size(&peer_sizes)?;
+    transport.set_peer_symbol_size(peer_symbol_size);
 
     // Shared state
     let batch_counter = Arc::new(BatchCounter::new());
@@ -1168,7 +1188,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     let recv_path_tracking = path_batch_tracking.clone();
     let recv_stats = stats.clone();
-    let recv_symbol_size = symbol_size;
+    // Each direction's size belongs to its sender: decode with the peer's.
+    let recv_symbol_size = peer_symbol_size;
+    RECV_SYMBOL_SIZES.lock().unwrap().push((symbol_size, recv_symbol_size));
+    info!("[SYMSZ] local={} decoder={}", symbol_size, recv_symbol_size);
     let recv_window_reliable = window_reliable;
     // Out-of-order object delivery (the H → ∞ corner, paper §4.11) is only
     // meaningful on the reliable window (it needs retention to guarantee
@@ -1366,15 +1389,68 @@ fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
     }
 }
 
-/// Extract application packets from a delivered window symbol's payload.
-/// Packed mode carries block-mode framing (multiple packets per symbol);
-/// unpacked mode carries a single window-framed packet.
-fn extract_window_packets(data: &Bytes, packed: bool) -> Vec<Vec<u8>> {
-    if packed {
-        framing::extract_packets(data)
-    } else {
-        framing::extract_window_packet(data).into_iter().collect()
+/// Extract application packets from a delivered window symbol's payload with
+/// the one framing (`framing::unframe`): the packets are slices of `data`, so
+/// the caller copies each out once. An unframable symbol is counted in
+/// [`UNDELIVERABLE_SYMBOLS`] and returned as `Err`.
+fn extract_window_packets(data: &Bytes) -> Result<framing::Packets<'_>, framing::Unframable> {
+    let r = framing::unframe(data);
+    if r.is_err() {
+        UNDELIVERABLE_SYMBOLS.fetch_add(1, Ordering::Relaxed);
     }
+    r
+}
+
+/// Source symbols that `extract_window_packets` could not unframe (a length
+/// that overruns the symbol, or non-zero bytes with no packet), cumulative for
+/// the process. Nonzero means the receiver recorded and acked a symbol whose
+/// packets it dropped (status, Engine defect F2). Printed as `undeliv=` on the
+/// receiver's `[CTLD]` line under `RWM_DIAG`; always 0 on a healthy run.
+pub static UNDELIVERABLE_SYMBOLS: AtomicU64 = AtomicU64::new(0);
+
+/// Fail closed on an unframable symbol (ADR-0078): the one always-on error
+/// line the harness keys on (`[UNFRAMABLE]`, not gated by `RWM_DIAG`). The
+/// caller then ends the receiver (`break 'recv`); the symbol is never
+/// delivered. The count is already in [`UNDELIVERABLE_SYMBOLS`].
+fn log_unframable(seq: u64, data: &Bytes) {
+    let head: Vec<u8> = data.iter().take(4).copied().collect();
+    error!(seq, len = data.len(), head = ?head, "[UNFRAMABLE] source symbol cannot be unframed; closing the tunnel");
+}
+
+/// Smallest and largest peer symbol size a handshake may announce. The floor
+/// is the IPv4 minimum MTU (68, RFC 791) plus the 4-byte framing allowance of
+/// the TUN MTU clamp; the ceiling is the largest size this build's table
+/// emits (keeps the compact frame inside ADR-0055's 1350-byte floor).
+pub(crate) const PEER_SYMBOL_SIZE_RANGE: std::ops::RangeInclusive<u16> = 72..=1200;
+
+/// The size the receiver decodes with: the one size every path of the peer
+/// announced in its handshake (ADR-0078, option ii). Integrity checks on one
+/// peer, not a mode: paths that disagree, a size outside
+/// [`PEER_SYMBOL_SIZE_RANGE`], or no path at all are refused.
+pub(crate) fn reconcile_peer_symbol_size(sizes: &[u16]) -> anyhow::Result<u16> {
+    let first = *sizes.first().ok_or_else(|| anyhow::anyhow!("no peer symbol size announced"))?;
+    if let Some(other) = sizes.iter().find(|&&s| s != first) {
+        anyhow::bail!("peer paths announce different symbol sizes ({first} and {other})");
+    }
+    if !PEER_SYMBOL_SIZE_RANGE.contains(&first) {
+        anyhow::bail!(
+            "peer symbol size {first} outside [{}, {}]",
+            PEER_SYMBOL_SIZE_RANGE.start(),
+            PEER_SYMBOL_SIZE_RANGE.end()
+        );
+    }
+    Ok(first)
+}
+
+/// `(local, decoder)` symbol size of every receiver built in this process,
+/// recorded where the decoder is built. Observation only (the
+/// `UNDELIVERABLE_SYMBOLS` pattern): the mixed-size test asserts each decoder
+/// took the PEER's size. A list, because two engines may share a process.
+pub static RECV_SYMBOL_SIZES: std::sync::Mutex<Vec<(u16, u16)>> = std::sync::Mutex::new(Vec::new());
+
+/// Read [`UNDELIVERABLE_SYMBOLS`]. Observation only.
+pub fn undeliverable_symbols() -> u64 {
+    UNDELIVERABLE_SYMBOLS.load(Ordering::Relaxed)
 }
 
 /// Select the best source path for a window-mode symbol: lowest RTT with capacity.
@@ -1865,7 +1941,7 @@ async fn run_window_sender(
             let _ = transport.send_control_datagram(
                 &mut announce,
                 pid,
-                ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
+                ControlMessage::WindowStart { backend: fec_backend },
             );
         }
         transport.flush(&mut announce).await;

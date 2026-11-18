@@ -4946,7 +4946,7 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&mut super::control_msg::ControlCtx<'_>)
     let _ = rustls::crypto::ring::default_provider().install_default();
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
     let transport = Arc::new(
-        QuicTransport::new(&[addr], false, None)
+        QuicTransport::new(&[addr], false, None, 1200)
             .await
             .expect("loopback endpoint binds"),
     );
@@ -5311,7 +5311,7 @@ async fn q2_spawn_sender() -> Q2Sender {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
     let transport = Arc::new(
-        QuicTransport::new(&[addr], false, None)
+        QuicTransport::new(&[addr], false, None, 1200)
             .await
             .expect("loopback endpoint binds"),
     );
@@ -6556,4 +6556,64 @@ fn serve_gaps_routes_through_the_snapshot_order_seam() {
     assert!(s.contains("hold_echo.on_report(judged,"));
     assert!(s.contains("'gaps:for&(gap_start,gap_end)injudged{"));
     assert!(!s.contains("'gaps:for&(gap_start,gap_end)in&gaps{"), "the loop must not iterate the raw batch");
+}
+
+// ── F2 (status, Engine defect F2): the undeliverable-symbol counter ─────────
+
+/// An unframable symbol (a length that overruns, or non-zero bytes and no
+/// packet) is `Err` and counted exactly once; a framed symbol, one or packed,
+/// is `Ok` and adds nothing; an all-zero (padding) symbol is not counted.
+#[test]
+fn f2_unframable_symbol_is_counted_once() {
+    let mut sym = vec![0u8; 512];
+    let n = framing::put_packet(&mut sym, &[7u8; 100]);
+    framing::put_packet(&mut sym[n..], &[8u8; 50]);
+    let ok = Bytes::from(sym.clone());
+
+    // Other lib tests may run concurrently, but none of them reads an
+    // unframable symbol, so the deltas below are exact.
+    let before = undeliverable_symbols();
+    assert_eq!(
+        extract_window_packets(&ok).unwrap().map(<[u8]>::to_vec).collect::<Vec<_>>(),
+        vec![vec![7u8; 100], vec![8u8; 50]]
+    );
+    assert_eq!(undeliverable_symbols(), before, "a framed symbol is not counted");
+
+    let mut overrun = sym;
+    overrun[n..n + 2].copy_from_slice(&600u16.to_le_bytes());
+    assert!(extract_window_packets(&Bytes::from(overrun)).is_err());
+    assert_eq!(undeliverable_symbols(), before + 1, "an overrun is counted once");
+
+    let junk = Bytes::from(vec![0u8, 0, 9, 9]);
+    assert!(extract_window_packets(&junk).is_err());
+    assert_eq!(undeliverable_symbols(), before + 2, "non-zero bytes with no packet are counted");
+
+    let zeros = Bytes::from(vec![0u8; 512]);
+    assert_eq!(extract_window_packets(&zeros).unwrap().count(), 0);
+    assert_eq!(undeliverable_symbols(), before + 2, "an all-zero symbol is padding, not a miss");
+}
+
+/// The size each named point announces in its handshake (v10): Realtime 512,
+/// Bulk and Auto 1200 (`io_owner::local_handshake` carries it through the wire).
+#[test]
+fn f2_symbol_size_at_each_named_point() {
+    use crate::control::fec_rate::ProtocolHint;
+    assert_eq!(symbol_size_for_hint(ProtocolHint::Realtime), 512);
+    assert_eq!(symbol_size_for_hint(ProtocolHint::Bulk), 1200);
+    assert_eq!(symbol_size_for_hint(ProtocolHint::Auto), 1200);
+}
+
+/// The receiver decodes with the one size the peer's paths announced
+/// (ADR-0078): equal sizes pass, differing paths and sizes outside
+/// [72, 1200] are refused, and the range edges are accepted.
+#[test]
+fn f2_reconcile_peer_symbol_size() {
+    assert_eq!(reconcile_peer_symbol_size(&[1200, 1200]).unwrap(), 1200);
+    assert_eq!(reconcile_peer_symbol_size(&[512]).unwrap(), 512);
+    assert!(reconcile_peer_symbol_size(&[1200, 512]).is_err(), "paths disagree");
+    assert!(reconcile_peer_symbol_size(&[71]).is_err(), "below the floor");
+    assert!(reconcile_peer_symbol_size(&[1201]).is_err(), "above the ceiling");
+    assert!(reconcile_peer_symbol_size(&[]).is_err(), "no path announced a size");
+    assert_eq!(reconcile_peer_symbol_size(&[72]).unwrap(), 72);
+    assert_eq!(reconcile_peer_symbol_size(&[1200]).unwrap(), 1200);
 }
