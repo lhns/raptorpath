@@ -158,7 +158,7 @@ RDIAG_ENV=()
 [ "$PLAN" = "34" ] && RDIAG_ENV=(RWM_RDIAG=1)
 # The per-plan instrument env and the driver-output lines the ledger keeps.
 INSTR_ENV=(RWM_ACKDIAG=1 RWM_LOOPDIAG=1 RWM_PERF_TIMEOUT_S=150)
-KEEP_PAT='summary|"dnf"|CPU:|GUARD|\[TRUTH\]|--- RWM-C perf'
+KEEP_PAT='summary|"dnf"|CPU:|GUARD|\[TRUTH\]|--- RWM-C perf|--- F2'
 if [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; then
   INSTR_ENV=(RWM_PERF_TIMEOUT_S=300)
   KEEP_PAT="$KEEP_PAT|\[CAPTURE|\[SNAP\]|QDISC cli"
