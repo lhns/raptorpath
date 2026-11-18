@@ -23,7 +23,7 @@ Draft for the coordinator to register as its own status section (called §64 her
 - **Identity witnesses, checked when the amendment pins the seats:**
   - `git diff ab9feec4 CAND64 -- . ':!docs' ':!tools'` is empty, so the VM suites at `ab9feec4` were run on CAND's engine tree (§1.3). At the time of writing, the trial merge of main `499e5f43` with `f2-impl` is clean (tree `598d43f1`), and its diff to `ab9feec4` outside `docs/` is empty.
   - `git diff BASE64 CAND64 -- raptorpath Cargo.toml Cargo.lock | git patch-id --stable` equals the same over `d2cae698..ab9feec4`: `3e69ce68…`.
-    - This replaces §63 Amendment 1's `490a0d1f…`, which was taken at commit 7.
+    - This replaces §63 Amendment 1's `490a0d1f…`, which was taken at commit 7. The same path set over `d2cae698..626fdf9a` reproduces `490a0d1f…`, so the method is §63's.
   - `git diff BASE64 CAND64 -- tools` is `f2-impl`'s two-line `suites_run.sh` seams entry only. Both seats run one harness.
 - **Both release shas** (`LD_BIN_SHA_BASE`, `LD_BIN_SHA_CAND`) are recorded at the rehearsal and pinned by an amendment. The launch installs those binaries (§1.3) and checks them against the pins.
   - Reported, not checked: §58 Amendment 3's known answer for main's engine (`0ec95258…`) holds only for `binid_run.sh`'s build path. The harness builds at its own path, and the binary embeds location data.
@@ -128,9 +128,9 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 **The cell.**
 - **c2-100, Realtime hint, ρ = 1, 100 MB, `RWM_PERF_TIMEOUT_S=150`, `RWM_DIAG=1`.**
   - Arms **RB** (BASE's binary) and **RC** (CAND's binary), 12 + 12, seeds 42 and 7 × 6 each, interleaved as plan 41c.
-- **Bytes and timeout come from a committed row that completed.**
-  - In `store-law-n1` (`docs/l1-raw/store-law-n1/diag-sl/c2-100-LAW-realtime-s42-r{1,2,3}-a1-*`), c2-100 Realtime at ρ = 1 ran 100 MB in 11.5–11.7 s, 68.6–69.5 Mbit/s, three rows.
-  - 150 s is 13× that, and is plan 41c's guard-size timeout.
+- **The bytes come from a committed row that completed. The timeout is this registration's choice.**
+  - In `store-law-n1` (`docs/l1-raw/store-law-n1/diag-sl/c2-100-LAW-realtime-s42-r{1,2,3}-a1-*`), c2-100 Realtime at ρ = 1 ran 100 MB in 11.5–11.7 s, 68.6–69.5 Mbit/s, three rows. 100 MB is also c2's guard size.
+  - The timeout of 150 s is plan 41c's guard-size timeout, 13× that duration. The committed rows do not record their timeout.
   - The rehearsal runs one row per seat (RB s42, RC s42) on the current binaries before any reading (§2.3).
   - 600 MB is not used. It was never run on a committed Realtime row, and a dead BASE warm-up waits out the whole timeout.
   - So the in-order delay mean is reported over a run of about 12 s, below §41d's 30 s floor, and is marked so.
@@ -180,7 +180,9 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
   - `rx=` and `dgrx0[fr=…]` from the server's last `[CTLD]` line.
 
   §63's CAND rows read 42–531 k source symbols.
-- **Owner flag (non-gating):** a reported readout with CAND worse than c2's Bulk d80 for the same clause (goodput 1 %, CPU/GB 5 %, in-order delay 8 %), with rank p ≤ 0.05, goes to the owner with the merge question.
+- **Owner flag (non-gating):** a reported readout with CAND worse than c2's Bulk d80 for the same clause, with rank p ≤ 0.05, goes to the owner with the merge question.
+  - The d80 values are the guard-size ones, because 100 MB is c2's guard size (`loopdiag_battery.sh` cell spec `c2 c2 single 100000000`): goodput 2.4 %, `cpu_cli/GB` 8 %, `cpu_srv/GB` 8 % (`guard-clause-dry.md` §11, the v1 column).
+  - The in-order delay is not in the flag. It has no resolution on rows under 30 s; it is printed and marked.
   - Behaviour on rows whose warm-up survives is predicted unchanged, because packed symbols keep their size (ADR-0078, Consequences).
   - The read path's packed point is 30 ns faster (§3.1).
 
@@ -246,12 +248,23 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
    - So **frame ≤ +22.3 ns/call** and **read ≤ +36.5 ns/call** at each S = 1200 point.
    - **The reading rule, amended with the measured spread in view** (Fable to rule):
      - The statistic is the **largest** CAND − BASE difference over the runs, not one median. The bench alternates BASE and CAND within each run, so drift cancels in the difference, and BASE's own run-to-run spread does not enter it.
-     - A point is UNREADABLE only if its differences spread across the runs by more than its bound.
-     - The registered rule at `84a88541` compared BASE's own min–max with the bound. It would call every frame point UNREADABLE here (a 20–40 ns spread against 22.3), although the differences agree to within 15 ns. That rule is withdrawn as the wrong statistic for an alternating bench.
-   - **Verdict, by the amended rule:**
-     - **frame PASS**, with 2.3 ns to spare: the worst difference is +20 ≤ 22.3, and the differences spread 15 ns < 22.3.
-     - **read PASS:** +5 ≤ 36.5.
-     - packed point reported: −30 ns.
+     - **Labels:**
+       - **PASS:** the margin (bound − worst difference) exceeds the spread of the differences across the runs;
+       - **INSIDE, UNRESOLVED:** the worst difference is within the bound, but by less than that spread;
+       - **OVER:** the worst difference exceeds the bound.
+     - The registered rule at `84a88541` compared BASE's own min–max with the bound. It is withdrawn as the wrong statistic for an alternating bench. Both readings are shown here.
+
+   | point | worst diff | spread of diffs | bound | amended label | `84a88541` rule (BASE min–max vs bound) |
+   |---|---|---|---|---|---|
+   | frame S = 1200 | +20 ns | ≈ 15 ns | 22.3 ns | **INSIDE, UNRESOLVED** (margin 2.3 < 15) | UNREADABLE (BASE spread 20–40 > 22.3) |
+   | read S = 1200 | +5 ns | ≈ 4 ns | 36.5 ns | **PASS** (margin 31.5 > 4) | readable |
+   | read S = 512 packed | −30 ns | — | reported only | — | — |
+
+   - **Consequence (the same under either rule):** no launch block.
+     - The read path is resolved below its bound.
+     - The frame path is not resolved. Its cost is somewhere in +5–20 ns, and the bench cannot tell whether it stays below 22.3 ns.
+     - The guard's c1s `cpu_cli/GB` clause is the deciding test of it.
+   - **Owed at the pin:** the per-point, per-run table (BASE and CAND medians [min–max] for each of the 3 runs) goes into the ledger. These rows quote the coordinator's summary ranges.
    - **Prediction (design §7): MISSED on frame,** +5–20 ns against ±2 ns. That design figure assumed an inlined `put_packet` and the same allocation. The read prediction (+1–3) is met within the bench's resolution (+1–5).
    - **What the frame miss costs:** at most 20 ns × 8.46·10⁵ = 17 ms of client CPU per GB at c1s, which is 9 % of that clause's BASE q95 and 0.11 % of its median. The guard's c1s `cpu_cli/GB` clause (d80 2.4 %) is the direct test.
    - **Owed:** why framing costs 5–20 ns more. This is reported, not a launch block. The bench cannot resolve below about 15 ns on that point.
