@@ -125,6 +125,7 @@ flowchart TB
     meas_guard_clause_dry --> meas_s51_design
     meas_s51_design --> meas_s51_session
     meas_s51_harness --> meas_s51_session
+    meas_blocke_pacing_gate --> meas_s51_session
     meas_s51_session --> meas_s51b_rho
     meas_adversarial_cells_build --> meas_adversarial_cells_run
     meas_s51_session --> meas_fix_gauges_p3
@@ -158,6 +159,7 @@ flowchart TB
 |---|---|---|---|---|---|---|
 | `meas-blocke-pacing-gate` | Pacer late-send check fails | next | unrated | 1.2-3.6 % of paced symbols late, gate allows 1 % | status §63 Result | rec-f2-merge-guard |
 | `meas-harness-reuse` | Cheaper sessions by reuse | done | successful | guard ran no suites and no builds | status §64 Amendments 1-2; status owner decision 14 |  |
+| `meas-user-test-cost` | Owner call on test cost | done | n/a | compiler cache yes, reduced guard no | status Owner decisions (2026-11-18) item 14 |  |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | done | unrated |  | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |  |
 | `meas-adr51-scenarios` | Canonical scenarios and goal gate | done | successful |  | ADR-0051 |  |
@@ -202,7 +204,7 @@ flowchart TB
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
 | `meas-guard-resolution` | Guard CPU and lag resolution | next | unrated |  | plan W5.4 |  |
 | `meas-test-hygiene` | Test hygiene fixes | next | unrated |  | plan W5.5 |  |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, meas-s51-harness, store-defect-delta-nan, rec-f2-merge-guard |
+| `meas-s51-session` | Off-Bulk baseline and δ sweep | blocked | unrated |  | plan W5.1 and VM queue 4 | meas-s51-design, meas-s51-harness, store-defect-delta-nan, rec-f2-merge-guard, meas-blocke-pacing-gate |
 | `meas-adversarial-cells-run` | Adversarial cells measured | next | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build |
 | `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
 | `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
@@ -216,6 +218,7 @@ flowchart TB
 |---|---|---|---|
 | `meas-blocke-pacing-gate` | Pacer late-send check fails | From the s51e_score path exercise on §63 CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. E-pre (suites + binid on e-tree-f2) is unaffected and can run first. | status §63 Result |
 | `meas-harness-reuse` | Cheaper sessions by reuse | Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main. | status §64 Amendments 1-2; status owner decision 14 |
+| `meas-user-test-cost` | Owner call on test cost | Decision 14: sccache on host builds only; the reduced guard is not suggested by Fable (reuse already halves guard wall time). | status Owner decisions (2026-11-18) item 14 |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |
 | `meas-adr51-scenarios` | Canonical scenarios and goal gate | Owner 2026-07-02: "define a goal that we want to surpass tcp and that the model reacts correctly in our defined scenarios". Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0051 |

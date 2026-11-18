@@ -356,7 +356,7 @@ nodes:
   - commit 17f7fa91
   - branch exec/adr-0069-window-default
   - branch meas/stage3-baseline
-  overview: false
+  overview: true
   plain: Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere.
   notes: 'ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date.'
 - id: cod-wire-compact
@@ -1302,7 +1302,7 @@ nodes:
   folded:
   - commit 62ffbb76
   - paper §11.1 open question 2
-  overview: false
+  overview: true
   plain: The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting.
   notes: Owner corrections 2026-07-06 (retention moves to the ARQ layer; retention is the triangle's ρ). Folds paper §11.1 open question 2 (is ρ a runtime dial).
 - id: rate-unified-shed
@@ -2903,15 +2903,15 @@ nodes:
   start: '2026-11-17'
   end: '2026-11-17'
   folded: []
-  overview: true
+  overview: false
   plain: 'The registered knee test disagreed at the second link shape, but the reading mixes two sample counts, so what the margin scales with is not settled.'
   notes: 'W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. Scored 66/66: rho_3 0.457 [0.409, 0.483], DISAGREES, not floor-sensitive; every allowance candidate COVERED; need_3 4.43 ms vs need_2 4.05. Erratum 1: the floor minimum falls with the sample count (c3 W12 42.75 at n 60 to 33.23 at n 4223); the constant-in-ms lead and the S_F-is-not-the-term reading are withdrawn; an estimator count rule comes first.'
 - id: store-law-g-rederive
   title: Re-derive the knee-margin term
   track: store
   kind: law
-  state: next
-  outcome: unrated
+  state: done
+  outcome: mixed
   evidence:
   - status §61a re-run Result
   verdict_quote: ''
@@ -2919,7 +2919,8 @@ nodes:
   depends_on:
   - store-s61a-rerun
   - store-s61b
-  replaced_by: []
+  replaced_by:
+  - store-sampler-design
   qualified_by: []
   lane: no-cargo
   start: ''
@@ -2947,7 +2948,7 @@ nodes:
   start: '2026-11-17'
   end: '2026-11-17'
   folded: []
-  overview: true
+  overview: false
   plain: 'Re-ran the low-latency test runs that had failed at start-up, on the old program and on the fixed one: the old one still failed sometimes, the fixed one never did.'
   notes: 'CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63.'
 - id: store-s62-j0
@@ -2962,7 +2963,7 @@ nodes:
   verdict_quote: 'LABEL62 GO-c3j0 NO-GO-GATE'
   headline: floor still count-dependent at J = 0 (D0 3.36 ms)
   depends_on:
-  - rec-s63-f2-first-contact
+  - store-s61a-rerun
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -3028,6 +3029,7 @@ nodes:
   headline: ''
   depends_on:
   - store-defect-b0p-brake
+  - store-law-g-rederive
   replaced_by: []
   qualified_by: []
   lane: no-cargo
@@ -3083,10 +3085,11 @@ nodes:
   title: Realtime delay lean, post-hoc read
   track: rec
   kind: research
-  state: in-progress
-  outcome: unrated
+  state: done
+  outcome: mixed
   evidence:
   - status §64 Result
+  - branch s64-lean 6d55024c
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -3095,11 +3098,71 @@ nodes:
   qualified_by: []
   lane: no-cargo
   start: '2026-11-18'
-  end: ''
+  end: '2026-11-18'
   folded: []
   overview: false
   plain: 'The low-latency delay numbers leaned slightly worse after the fix without reaching significance; this checks the existing data before deciding whether a short follow-up run is needed.'
   notes: 'Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). Free reads on branch s64-lean; if open, one ~40 min registered Realtime session at 600 MB.'
+- id: rec-user-framing-fix
+  title: Owner calls on the framing fix
+  track: rec
+  kind: user-decision
+  state: done
+  outcome: n/a
+  evidence:
+  - status Owner decisions (2026-11-17) items 11-12, 15
+  verdict_quote: ''
+  headline: one framing, fail closed, merge
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: '2026-11-17'
+  end: '2026-11-18'
+  folded: []
+  overview: false
+  plain: 'The owner chose one packet framing for every setting, closing the connection on any undecodable packet, and merging the fix after its regression test.'
+  notes: 'Decision 11: format A, one framing. Decision 12: fail closed; the receiver takes the sender''s announced size. Decision 15: merge now (f36d9172), ADR-0078 Accepted, wire v10.'
+- id: store-user-jitter-sweep
+  title: Owner call on the jitter sweep
+  track: store
+  kind: user-decision
+  state: done
+  outcome: n/a
+  evidence:
+  - status Owner decisions (2026-11-17) item 13
+  verdict_quote: ''
+  headline: run it after the framing check
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: '2026-11-17'
+  end: '2026-11-17'
+  folded: []
+  overview: false
+  plain: 'The owner approved measuring the slow link with its delay jitter switched off, queued behind the framing fix check.'
+  notes: 'Decision 13; its shape later narrowed to jitter 0 only (about 1.4 h), the 3 ms point a later call.'
+- id: meas-user-test-cost
+  title: Owner call on test cost
+  track: meas
+  kind: user-decision
+  state: done
+  outcome: n/a
+  evidence:
+  - status Owner decisions (2026-11-18) item 14
+  verdict_quote: ''
+  headline: compiler cache yes, reduced guard no
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: '2026-11-18'
+  end: '2026-11-18'
+  folded: []
+  overview: false
+  plain: 'The owner approved a compiler cache for host builds as a trial; a reduced regression test was not taken.'
+  notes: 'Decision 14: sccache on host builds only; the reduced guard is not suggested by Fable (reuse already halves guard wall time).'
 - id: meas-defect-cr61-large-pool
   title: Collapse rule blind at large pools
   track: meas
@@ -4789,7 +4852,7 @@ nodes:
   folded:
   - branch the law-shape prevention kit
   - commit 1f8be7cf
-  overview: false
+  overview: true
   plain: After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded.
   notes: Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27).
 - id: meas-pipeline-verification
@@ -6646,6 +6709,7 @@ nodes:
   - meas-s51-harness
   - store-defect-delta-nan
   - rec-f2-merge-guard
+  - meas-blocke-pacing-gate
   replaced_by: []
   qualified_by: []
   lane: vm

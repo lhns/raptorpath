@@ -64,7 +64,8 @@ gantt
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-18
     Framing fix on failed rows :rec_s63_f2_first_contact, 2026-11-17, 2026-11-17
     Framing fix regression test :rec_f2_merge_guard, 2026-11-18, 2026-11-18
-    Realtime delay lean, post-hoc read :active, rec_s64_delay_lean, 2026-11-18, 2026-11-18
+    Realtime delay lean, post-hoc read :rec_s64_delay_lean, 2026-11-18, 2026-11-18
+    Owner calls on the framing fix :rec_user_framing_fix, 2026-11-17, 2026-11-18
     Realtime receiver misread packets (fixe… :rec_defect_realtime_framing, 2026-11-17, 2026-11-18
     Inner-feedback repair floor (P10a) :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
     Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
@@ -146,6 +147,7 @@ gantt
     Fast-link price below the knee :store_s61b, 2026-11-17, 2026-11-17
     Slow-link knee sweep, re-run :store_s61a_rerun, 2026-11-17, 2026-11-17
     Slow-link knee without jitter :store_s62_j0, 2026-11-18, 2026-11-18
+    Owner call on the jitter sweep :store_user_jitter_sweep, 2026-11-17, 2026-11-17
     Store-law allowance short of the c2 knee :store_defect_allowance_short, 2026-11-16, 2026-11-18
     RWM_DELTA pinned the store cap (F1) :store_defect_delta_nan, 2026-11-14, 2026-11-14
     Store cap constant at c8 :active, store_defect_cap_constant, 2026-11-13, 2026-11-18
@@ -216,6 +218,7 @@ gantt
     bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-18
     section meas - measurement
     Cheaper sessions by reuse :meas_harness_reuse, 2026-11-18, 2026-11-18
+    Owner call on test cost :meas_user_test_cost, 2026-11-18, 2026-11-18
     Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
     Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
     L1 netns harness and baselines :meas_l1_harness, 2026-07-03, 2026-07-04

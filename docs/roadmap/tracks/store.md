@@ -68,7 +68,7 @@ flowchart TB
     store_s61b["✔ Fast-link price<br/>below the knee"]
     store_s61a_rerun["✔ Slow-link knee<br/>sweep, re-run"]
     store_s62_j0["✔ Slow-link knee<br/>without jitter"]
-    store_law_g_rederive[/"○ Re-derive the knee-<br/>margin term"/]
+    store_law_g_rederive[/"✔ Re-derive the knee-<br/>margin term"/]
     store_defect_b0p_brake>"⚠ Boot-time brake<br/>estimate latches<br/>transients"]
     store_sampler_design[/"○ Store-law delay<br/>sampler design"/]
     store_fix_maxbw_minrtt[/"⛔ Honest rate and<br/>delay inputs"/]
@@ -144,10 +144,12 @@ flowchart TB
     store_s60b ~~~ store_s61a
     store_defect_allowance_short ~~~ store_s61b
     store_s61a ~~~ store_s61a_rerun
-    store_s61b ~~~ store_s62_j0
+    store_s61b ~~~ store_s61a_rerun
+    store_s61a_rerun ~~~ store_s62_j0
     store_s61a_rerun ~~~ store_law_g_rederive
     store_s62_j0 ~~~ store_defect_b0p_brake
-    store_law_g_rederive ~~~ store_sampler_design
+    store_law_g_rederive ~~~ store_defect_b0p_brake
+    store_defect_b0p_brake ~~~ store_sampler_design
     store_defect_b0p_brake ~~~ store_fix_maxbw_minrtt
     store_sampler_design ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
@@ -207,16 +209,19 @@ flowchart TB
     store_w1_who_limits --> store_s61a
     store_s60b --> store_s61b
     store_s61a --> store_s61a_rerun
+    store_s61a_rerun --> store_s62_j0
     store_s61a_rerun --> store_law_g_rederive
     store_s61b --> store_law_g_rederive
+    store_law_g_rederive -.-> store_sampler_design
     store_s62_j0 --> store_defect_b0p_brake
     store_defect_b0p_brake --> store_sampler_design
+    store_law_g_rederive --> store_sampler_design
     store_w1_who_limits --> store_engine_form_impl
     store_fix_maxbw_minrtt --> store_engine_form_impl
     store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
     store_delta_seat --> store_s48c_session
-    linkStyle 84,96,98,102 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 86,98,100,104 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -233,13 +238,13 @@ flowchart TB
     class store_sack_flowctl,store_sack_prune,store_reasm_bdp,store_src_bp,store_xn_pool,store_percap_family,store_borrow,store_honest_cap_family,store_plain_rs,store_capw,store_sender_decoupling,store_pool_deliv,store_slack_clock,store_three_term,store_coverage_term,store_composed_cap,store_sf_latency_feedback,store_s18_one_law,store_s24_inputs,store_power_law,store_s27_premises,store_probe_gain,store_dw_window,store_s34_input dead
     class store_anchor_hygiene,store_sack_release,store_honest_inputs,store_sum_cap,store_adr72_one_law,store_defect_delta_nan,store_s60_pre,store_s61b succ
     class store_pool_anchor_flip,store_s61a bad
-    class store_latency_lever,store_cap_unification,store_s60a,store_s60b,store_s61a_rerun,store_s62_j0 mixed
+    class store_latency_lever,store_cap_unification,store_s60a,store_s60b,store_s61a_rerun,store_s62_j0,store_law_g_rederive mixed
     class store_deadwall_modehunt,store_cap_law_cluster,store_input_search,store_s36_dispersion,store_s40_p90,store_s42_engine_path,store_engine_form,store_s43b_retuned,store_s54_budget,store_s56_sweep,store_s57a_burst,store_s57b_c1d,store_law_r67 unrated
     class store_delta_cap vsucc
     class store_w1_who_limits,store_slaw_gauge waiting
     class store_defect_cap_constant,store_defect_allowance_short,store_defect_b0p_brake defect
     class store_law_derivation inprog
-    class store_law_g_rederive,store_sampler_design next
+    class store_sampler_design next
     class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
 <!-- END GENERATED: track-store -->
@@ -302,10 +307,11 @@ flowchart TB
 | `store-s61a` | Slow-link knee sweep, first try | done | bad | 66/66 clean, nothing scored (two rule defects) | status §61 Amendment 1; status §61a Result; branch harness61 | store-s60b, store-user-u1u3 |
 | `store-s61b` | Fast-link price below the knee | done | successful | c2 price below the knee, merged with §60 | status §61b Result | store-s60b |
 | `store-s61a-rerun` | Slow-link knee sweep, re-run | done | mixed | rho_3 0.457 vs rho_2 0.797 | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 | store-s61a |
-| `store-law-g-rederive` | Re-derive the knee-margin term | next | unrated |  | status §61a re-run Result | store-s61a-rerun, store-s61b |
-| `store-s62-j0` | Slow-link knee without jitter | done | mixed | floor still count-dependent at J = 0 (D0 3.36 ms) | status §62; status §62 Result | rec-s63-f2-first-contact |
+| `store-law-g-rederive` | Re-derive the knee-margin term | done | mixed |  | status §61a re-run Result | store-s61a-rerun, store-s61b |
+| `store-s62-j0` | Slow-link knee without jitter | done | mixed | floor still count-dependent at J = 0 (D0 3.36 ms) | status §62; status §62 Result | store-s61a-rerun |
 | `store-defect-b0p-brake` | Boot-time brake estimate latches transients | next | unrated | F swings 37-139 ms from one boot window | status "The count-rule derivation" | store-s62-j0 |
-| `store-sampler-design` | Store-law delay sampler design | next | unrated |  | status "The count-rule derivation" | store-defect-b0p-brake |
+| `store-sampler-design` | Store-law delay sampler design | next | unrated |  | status "The count-rule derivation" | store-defect-b0p-brake, store-law-g-rederive |
+| `store-user-jitter-sweep` | Owner call on the jitter sweep | done | n/a | run it after the framing check | status Owner decisions (2026-11-17) item 13 |  |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | next | unrated | SHORT 1.69 ms at c2 | status §60 Result; derivation store-law-r67.md | store-s60a |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | done | unrated | merged 9b8b42ca; decision_trace_pin 7/7 on Linux | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |  |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
@@ -379,6 +385,7 @@ flowchart TB
 | `store-s62-j0` | Slow-link knee without jitter | Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note). | status §62; status §62 Result |
 | `store-defect-b0p-brake` | Boot-time brake estimate latches transients | b0p = max(tmin - m-hat) over the first 8 windows (slaw.rs:150-165) during the start transient. A ledger row is owed beside F07 and E13. s62 D0 equals the steady-state brake (3.36 ms at J = 0). | status "The count-rule derivation" |
 | `store-sampler-design` | Store-law delay sampler design | Questions: how to estimate the brake as windows fill; whether the knee minimum is set by post-loss drains; what anchors the floor under jitter. Decision 8 stays unsettled until then. | status "The count-rule derivation" |
+| `store-user-jitter-sweep` | Owner call on the jitter sweep | Decision 13; its shape later narrowed to jitter 0 only (about 1.4 h), the 3 ms point a later call. | status Owner decisions (2026-11-17) item 13 |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7's derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03. | status §60 Result; derivation store-law-r67.md |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner's guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect. | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |
 | `store-defect-cap-constant` | Store cap constant at c8 | Plan 2026-11-13: the store law becomes its own track (items 8-9). | status §3.10 item 8 |
