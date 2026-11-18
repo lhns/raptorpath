@@ -49,7 +49,8 @@ SMOKE = [(CELL, "def", "PM", "42", 1)]
 REHEARSAL = [(CELL, "def", "PL", "42", 1), (CELL, "def", "PM", "42", 1), (CELL, "def", "U", "42", 1)]
 PRED_RATE_BAND = 0.05              # section 5.2: median LATE src within +-5 % of rate_sym
 PACE_ACH_TOL = 0.02                # section 5.2: achieved_mbit within +-2 % of lambda
-PACE_LATE_MAX = 0.01               # section 5.2: late <= 1 % of the chunks
+PACE_STALL_MAX_MS = 250.0          # status 51 Amendment 4: pace-stall iff late_max_ms > 250 (one reading window, declared); replaces section 5.2's `late <= 1 %`, which is now only reported
+OFFLOAD_BAND = PRED_RATE_BAND      # the per-window version of the median src check: a LATE tick whose src is off the offered rate by more than 5 % is OFF-LOAD (an engine reading, never a void)
 LAST_TICK_SLACK_S = 2.0            # section 5.2: the last tick with src > 0 at t >= T_e - 2 s
 
 

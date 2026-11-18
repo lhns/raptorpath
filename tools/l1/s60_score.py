@@ -1306,13 +1306,14 @@ def _cpu_gb(rv):
     return (cpu / (b / 1e9)) if (cpu and b) else None
 
 
-def evict_stats(rv, rule_ab=False):
+def evict_stats(rv, rule_ab=False, skip=None):
     """s60 section 6 from the stored extras: m-bar and its witness, the row W1 and its witness, the steady windows and the K4 input means. `rule_ab` (s51-evict-design section 6.3, plan 51e): a steady window also
-    needs ab = 0 (the spare clamp never bound) in the window and both neighbours, from the `ab` column of the stored wstore; default off = the s60 rule."""
+    needs ab = 0 (the spare clamp never bound) in the window and both neighbours, from the `ab` column of the stored wstore; default off = the s60 rule.
+    `skip(t)` (plan 51e, status 51 Amendment 4): a window whose time `skip` accepts is NOT scored as steady (an off-load window); they are counted in out["n_skipped"]."""
     e = rv.t.get("evict") or {}
     cum, w, sp, m59 = e.get("cum") or {}, e.get("wstore") or {}, e.get("span") or {}, e.get("mbar59") or {}
     out = {"mbar": None, "mbar_lo": m59.get("mbar_lo"), "mbar_ok": None, "w1": None, "w1_lo": m59.get("w1_lo"), "w1_hi": m59.get("w1_hi"), "w1_ok": None,
-           "n_late": 0, "n_steady": 0, "astar_bad": 0, "means": {}, "unscoreable": True}
+           "n_late": 0, "n_steady": 0, "n_skipped": 0, "astar_bad": 0, "means": {}, "unscoreable": True}
     late = [(t, a) for t, s, a in zip(cum.get("t", []), cum.get("src", []), cum.get("ack", [])) if t is not None and t >= EVICT_LATE_T and (s or 0) > 0 and a is not None]
     wt = w.get("t") or []
     if len(late) >= 2:
@@ -1341,6 +1342,9 @@ def evict_stats(rv, rule_ab=False):
         lo, hi = wt[i - 1] - dt, wt[i + 1]
         js = [j for j, s in enumerate(st) if lo < s <= hi]
         if not js or any(sa[j] is None or sd_[j] is None for j in js) or len({sa[j] for j in js}) != 1 or len({sd_[j] for j in js}) != 1:
+            continue
+        if skip is not None and skip(t):
+            out["n_skipped"] += 1
             continue
         a_star, delta = sa[js[0]], sd_[js[0]]
         if w["astar"][i] is not None and abs(w["astar"][i] - a_star) > 0.01:
