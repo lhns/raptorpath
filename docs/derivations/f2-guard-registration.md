@@ -1,14 +1,15 @@
 # F2's merge guard: guard v2 on the Bulk cells, plus a Realtime stage, pre-registration draft
 
-Draft for the coordinator to register as its own status section (called §64 here; rename if the number differs). No guard row has run. Round 2 (2026-11-18) follows Fable's review and the night's VM results: the CAND is now `f2-impl` `ab9feec4`, its suites and `framing_ns` have run on the VM, `harness63`'s VOID-RC is fixed, and the launch reuses the suites, the binaries and the tools tests. Base text: github main `499e5f43` (status §63 Result, owner decisions 2026-11-16 item 5 and 2026-11-17 items 11–13). Design: `docs/derivations/f2-framing-design.md` and ADR-0078 (Proposed), both on `f2-impl`.
+Draft for the coordinator to register as its own status section (called §64 here; rename if the number differs). No guard row has run. Round 3 (2026-11-18) takes Fable's rulings on round 2: the bench bound stands, tonight's runs are a pre-read, the wider suite manifest, and stage R's void rule. Round 2 (2026-11-18) followed Fable's review and the night's VM results: the CAND is now `f2-impl` `ab9feec4`, its suites and `framing_ns` have run on the VM, `harness63`'s VOID-RC is fixed, and the launch reuses the suites, the binaries and the tools tests. Base text: github main `499e5f43` (status §63 Result, owner decisions 2026-11-16 item 5 and 2026-11-17 items 11–13). Design: `docs/derivations/f2-framing-design.md` and ADR-0078 (Proposed), both on `f2-impl`.
 
 **For the owner, in plain words.**
 - F2's fix changes the release binary, so it needs a §41c guard against main before it merges (owner decision 5 and CLAUDE.md). The identical-sha waiver does not apply.
 - **F2 goes alone, not at the bottom of a stack** (a stated default, §1.2). No other zero-behaviour step is ready to stack on it today.
 - **The Bulk cells are guard v2 unchanged** (§41d, as §54 ran it): 12 + 12 rows at c1s, c1d, c2 and c8, rank-minp, PASS iff p > 0.05. Bulk's data bytes are unchanged by construction, so the prediction is PASS.
 - **One Realtime cell runs in a separate stage.** Behaviour there changes on purpose: main dies in the warm-up some of the time. That stage scores the F2 reading on every CAND row. CAND must also complete wherever BASE's surviving rows complete. Everything else is reported.
+- **The framing bench gates the merge:** it must PASS, or you accept its printed cost.
 - **Your word is needed for the merge, not for the launch.** It is asked once, with the guard's Result (§3.2). The merge means that all endpoints must upgrade together, because v10 refuses v9, and that an engine with no initial path refuses to start. ADR-0078 goes to Accepted on that go.
-- **Cost:** about 1.8 h of VM time typical, 4 h worst, with host cargo paused. The engine suites and the builds are not repeated. Order: s62, then this guard, then E-pre (a stated default).
+- **Cost:** about 2 h of VM time typical, 4.5 h worst, with host cargo paused. The engine suites and the builds are not repeated. Order: s62, then this guard, then E-pre (a stated default).
 
 ## 1. BASE and CAND
 
@@ -20,6 +21,10 @@ Draft for the coordinator to register as its own status section (called §64 her
 | **CAND64** | branch `g64-cand` = BASE64 + `git merge --no-ff github/f2-impl` (`ab9feec4`) | all 17 commits of `main..f2-impl`: `f2-prep`'s three (repro, counter, audit), the merge of `f2-prep` into `f2-design` (`07ac5f0e`), the five design commits, and the eight `f2-impl` commits. Commit 8 (`ab9feec4`) makes the read path allocation-free; it keeps the same bytes and the same behaviour |
 
 - **Commit 1 (`7ce6523b`) never goes alone.** It is labelled v9 but writes LE-packed Realtime symbols that a real v9 peer misreads (design §9, "Commit rule"). The merge takes the branch whole, with `--no-ff`, and nothing is squashed.
+- **Commit 8's `offer`, as read by the coordinator; the pin `ab9feec4` stands:**
+  - once a packet is held, every later symbol queues behind it, and the queue flushes from its head;
+  - a mid-symbol `Full` puts the rejected packet first, then the rest of that symbol;
+  - `reliable_split_symbol_resumes_at_the_held_packet` covers a channel filling inside a 3-packet symbol.
 - **Identity witnesses, checked when the amendment pins the seats:**
   - `git diff ab9feec4 CAND64 -- . ':!docs' ':!tools'` is empty, so the VM suites at `ab9feec4` were run on CAND's engine tree (§1.3). At the time of writing, the trial merge of main `499e5f43` with `f2-impl` is clean (tree `598d43f1`), and its diff to `ab9feec4` outside `docs/` is empty.
   - `git diff BASE64 CAND64 -- raptorpath Cargo.toml Cargo.lock | git patch-id --stable` equals the same over `d2cae698..ab9feec4`: `3e69ce68…`.
@@ -47,26 +52,37 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 
 ### 1.3 Reuse: no engine suites, no builds and no tools tests in the launch
 
-**Engine suites: reused through a reference-manifest HIT, plan 60's mechanism (`suites_stage56`), extended to plan 64.**
-- **The record:** the VM suites at `ab9feec4` (2026-11-18):
+**Engine suites: reused through a reference-manifest HIT.** This is plan 60's mechanism (`suites_stage56`), extended to plan 64, over the **wider `src_manifest()` set.**
+- **The record:** the VM suites at `ab9feec4` (2026-11-18), with its `TESTS.txt` copied into the ledger at the pin:
   - release 1151/0;
-  - debug 1002 passed, with 1 flake (`two_path_client_fails_fast_when_server_is_killed`, 32.03 s against a 32 s bound, passed on the solo re-run: §8/§11/§12's flake rule);
-  - wasm 50/0, core 2/0, seams 3/0.
+  - debug 1002 passed;
+  - wasm 50/0, core 2/0, seams 3/0;
+  - **one FLAKE line** under §8/§11/§12's rule: `two_path_client_fails_fast_when_server_is_killed`, 32.03 s against its 32 s bound, passed on the immediate solo re-run.
+    - It is main's test, not F2's. It polls every 50 ms and its bound has no allowance for that poll, so a run that ends just after the bound reads as a failure.
+    - Cited, not fixed here.
+- **The set.** `src_manifest()` (`loopdiag_run_all.sh`) covers:
+  - the workspace and every crate `Cargo.toml`, and `Cargo.lock`;
+  - `raptorpath/src` and `raptorpath/tests`;
+  - `raptorpath-math/src`, `raptorpath-core/src`, `raptorpath-wasm/src`, `gf256/src` and `vendor`;
+  - but not `tools/` or `docs/`.
 
-  The run's `TESTS.txt` is copied into the ledger at the pin.
-- **The reference** is `tools/l1/ref64-manifest.sha256` on `harness64`. It is generated from the `ab9feec4` archive, the tree those suites ran on:
+  So `raptorpath/Cargo.toml`'s `test-seams` declaration and every crate the suites compiled are inside it. The narrower `engine_manifest()` (`raptorpath/src` and `tests` only) is not used for plan 64.
+- **The reference** is `tools/l1/ref64-manifest.sha256` on `harness64`, generated from the `ab9feec4` archive, the tree those suites ran on. Its lines are `src_manifest()`'s exactly:
   ```
-  git archive ab9feec4 | tar -x -C /tmp/ref64 \
-    && (cd /tmp/ref64 && find raptorpath/src raptorpath/tests -type f | LC_ALL=C sort | xargs -r sha256sum \
-        | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /') > tools/l1/ref64-manifest.sha256
-  bash tools/l1/ref_manifest.sh ab9feec4 | cmp - tools/l1/ref64-manifest.sha256     # must agree
+  git archive ab9feec4 | tar -x -C /tmp/ref64
+  (cd /tmp/ref64 && { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
+     find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } \
+   | LC_ALL=C sort -u | xargs -r sha256sum) > tools/l1/ref64-manifest.sha256
   ```
-  - This is the same pipeline as `engine_manifest()`. `.gitattributes` makes the archive LF, so the archive and the blobs agree, and the `cmp` shows it.
-- **The check on the VM:** `LD_PLAN=64` runs `suites_stage56` with `LD_REF_MANIFEST=tools/l1/ref64-manifest.sha256`.
+  `.gitattributes` makes archives LF, so a checkout and an archive of one commit give the same lines.
+- **The host proof of the HIT, before the launch:**
+  - the same command on the `g64-cand` archive gives a file that `cmp`s equal to `ref64-manifest.sha256`. It is recorded in the pin amendment;
+  - **pre-proof, done:** on the trial merge tree `598d43f1` (main `499e5f43` + `f2-impl`, without `harness64`, which touches only the excluded `tools/`), the 212-line manifest `cmp`s equal to `ab9feec4`'s.
+- **The check on the VM:** plan 64's suites stage computes `src_manifest()` and compares it with `LD_REF_MANIFEST` (default `tools/l1/ref64-manifest.sha256`).
   - **A HIT skips the engine suites.**
   - **A MISS stops the launch before any row** (`ABORT-SUITES`), as plans 60a/60b do. A MISS means CAND64 is not the tested tree. Running suites in the session would hide that.
-  - The manifest covers `raptorpath/src` and `raptorpath/tests` only. The rest of the engine tree (crate `Cargo.toml`, which declares `test-seams`; `Cargo.lock`; math, core, wasm, `gf256`, `vendor`) is covered by the git witness `git diff ab9feec4 CAND64 -- . ':!docs' ':!tools'` being empty. The amendment records that witness.
-  - `LD_PRIOR_TESTS` cannot be used: `suites_run.sh` writes `TESTS-OK` but no `SRC-MANIFEST.sha256`, and plan 56/60's rule refuses it beside a reference manifest.
+  - `LD_PRIOR_TESTS` is refused: `suites_run.sh` writes `TESTS-OK` but no `SRC-MANIFEST.sha256`, and there is one reuse rule.
+  - The git witness `git diff ab9feec4 CAND64 -- . ':!docs' ':!tools'` stays in the amendment as a second check.
 
 **Binaries: the launch installs the rehearsal's two builds.** This is plan 60's `LD_BIN_PREBUILT`, extended to two seats: `LD_BIN_PREBUILT_BASE` and `LD_BIN_PREBUILT_CAND`.
 - Each is the rehearsal's `target/release/raptorpath`, copied out of its run dir.
@@ -112,7 +128,7 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
   - every row's `bin_sha` matches its arm's pin.
 - **Prediction: GATE-41d PASS.**
   - Bulk and Auto data bytes are unchanged. `hotpath_pin` passes unchanged at commit 1; commit 2 re-captures it for the version field only (ADR-0078, Consequences).
-  - The CPU change per symbol, as measured by `framing_ns` (§3.1), is at most +20 ns to frame and +5 ns to read. At c1s that is at most 17 ms/GB on the client against `cpu_cli/GB` 15.35 s, i.e. +0.11 %, against the clause's d80 of 2.4 %.
+  - The CPU change per symbol in `framing_ns`'s pre-read (§3.1) is under +22 ns to frame (an upper bound: it includes a seam main already pays) and under +6 ns to read. At c1s, +22 ns is 19 ms/GB on the client against `cpu_cli/GB` 15.35 s, i.e. +0.12 %, against the clause's d80 of 2.4 %.
   - The control path changes once per path: the handshake carries the real size (1200 at Bulk, as before), and `WindowStart` loses two fields.
   - **The registered risk is the false-fail rate,** 5 % by construction. §54's no-regression candidate read its min-p at c1s `cpu_cli/GB`, p = 0.066.
 - **Prediction for the witnesses:** 48 of 48 CAND rows pass, and the BASE binary prints no `[SYMSZ]`.
@@ -160,9 +176,13 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
    - If any live RB row is DNF, RC completion is reported only. The seat then cannot complete either, and a CAND DNF is no evidence against F2.
    - If there are no live RB rows (k = 12), item 5 is not scored and is reported as such.
 
-- **RT-PASS iff all 12 RC rows pass items 1–4, and item 5 holds wherever it applies.**
+- **RT-PASS iff all 12 RC slots hold a row that passes items 1–4, and item 5 holds wherever it applies.**
 - A row that fails an item is `RT-FAIL <item>`. It is never replaced.
-- Infrastructure voids (VOID-COTENANT, VOID-ONDISK, CONTAMINATED, VOID-RHO) are replaced under the existing rule, at most 2 slots in this stage.
+- **A non-F2 void on an RC row** (VOID-COTENANT, VOID-ONDISK, CONTAMINATED, VOID-RHO, a sha mismatch):
+  - its slot is replaced once, and at most 2 slots are replaced in this stage;
+  - if the replacement also voids, or a third slot voids, the slot is reported as `RC-VOID` and counts as **not passed**. So "12 of 12" fails, and stage R reads `RT-INCOMPLETE`: not a pass, and not a finding against F2;
+  - the merge then waits for a stage R re-run.
+  - An F2 failure is never a void (items 1–4 above).
 
 **Reported only:**
 - **BASE warm-up deaths, k of 12.**
@@ -175,7 +195,7 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
   - `rtp_floor_p0`.
 
   The one-sided rank p is printed per readout. The live RB rows are selected by a draw (the warm-up survived), which may correlate with early loss at seed 42. So the comparison is biased in an unknown direction and is never a verdict.
-- **The `undeliv` denominator,** as `harness63` `16a6ed17` reads it:
+- **The `undeliv` denominator,** ported from `harness63` `16a6ed17` (`plan63.row_metrics`):
   - `src_n` from the server's last `[RFA]` line (its final flush);
   - `rx=` and `dgrx0[fr=…]` from the server's last `[CTLD]` line.
 
@@ -197,6 +217,7 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 | RB s42 is LIVE with `window_reliable: true` on both ends, or `BASE-F2-DEAD` | any other label (VOID-RC included) is a harness fault: fixed and re-rehearsed |
 | every tools test passes on the VM, bash tests included; `TOOLS-TESTS-OK` and `TOOLS-MANIFEST.sha256` written | ABORT-TESTS: fixed on `harness64` |
 | the reference manifest HITs (`suite-reuse HIT` in the era log) | a MISS: the tree is not `ab9feec4`'s; no launch until the seats are fixed |
+| `framing_ns`, 10 runs on CAND's tree: the per-point medians and ranges printed, and the label | none for the launch: the label goes into the merge conditions (§2.4) |
 
 - A rehearsal row is not re-run, and a failed CAND rehearsal row is the finding (§63's rule).
 - The launch is a fresh `git archive` of the pinned CAND64 and BASE64 trees, with the rehearsal's two binaries installed (§1.3).
@@ -207,6 +228,7 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
   - GATE-41d PASS;
   - 0 `F2-FAIL` rows in stage G;
   - RT-PASS in stage R;
+  - `framing_ns`'s rehearsal label (§3.1 item 1) is `BENCH PASS`, or the owner accepts the printed cost;
   - the owner's go (§3.2), asked with this Result.
 
   Then `f2-impl` merges to main with `--no-ff`, and main takes `harness64`'s tools. As in §54, the merged tree must differ from the guarded CAND64 only in files main gained after BASE64 (docs, roadmap, ledgers) and in `harness64`'s tools, and that check is recorded.
@@ -219,18 +241,9 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 
 ### 3.1 Coordinator items
 
-1. **`framing_ns` (VM, 2026-11-18, release, `taskset -c 2`, 3 runs of 5 alternating pairs × 2 000 000 calls): read, after commit 8.**
+1. **`framing_ns`: the bound, a labelled pre-read, and the scored reading in the rehearsal.**
 
-   | point | CAND − BASE per call, over the 3 runs |
-   |---|---|
-   | frame S = 1200, len 64 / 600 / 1196 | +5 to +20 ns |
-   | read S = 1200, len 64 / 600 / 1196 | +1 to +5 ns |
-   | read S = 512, 3 × 160 packed | −30 ns |
-
-   - BASE's run-to-run spread on frame is about ±10–20 ns.
-   - The commit-7 run read +45–70 ns on the read path. Commit 8 removed that path's extra allocation and fixed it.
-
-   **The bound (formula first; first written at `84a88541`, before this reading).** The change in CPU per GB that framing can cause must be at most a tenth of the c1s CPU clause's BASE noise:
+   **The bound (formula first; written at `84a88541`, before any number; it stands).** The change in CPU per GB that framing can cause must be at most a tenth of the c1s CPU clause's BASE noise:
 
    ```
    Δt_point × N_GB  ≤  f × q95_side × C_side
@@ -238,36 +251,46 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
 
    | symbol | value | provenance |
    |---|---|---|
-   | Δt_point | CAND − BASE, ns/call, per bench point | measured (this bench) |
+   | Δt_point | CAND − BASE, ns/call, per bench point: the per-point median over 10 runs | measured (the rehearsal's run, below) |
    | N_GB | 10⁹ / 1182 ≈ 8.46·10⁵ source symbols per GB | code: `perf.rs` `chunk_payload_len` gives 1196 − 14 (`HDR_LEN`) = 1182 B of object payload per Bulk chunk, one chunk per symbol. Each source symbol is framed once at the sender and read once at the receiver; repair symbols and retransmits are not re-framed |
    | C_side | `cpu_cli/GB` 15.35 s (sender: frame), `cpu_srv/GB` 17.86 s (receiver: read) | measured: §54 launch 1, c1s BASE medians |
    | q95_side | 0.0123 (cli), 0.0173 (srv) | measured: §54 launch 1, c1s, q95 of \|x\| over 400 half-per-seed splits of BASE alone |
    | f | 0.1 | declared margin: framing must sit an order of magnitude below the noise the guard's c1s CPU clauses cannot see |
 
    - **Why c1s:** it has the smallest q95 × C product of the four cells on both sides (cli: c1s 0.19, c2 0.48, c1d 0.86, c8 1.16 s/GB; srv: c1s 0.31, c1d 0.62, c2 1.29, c8 2.36 s/GB; §54 launch 1). N_GB is the same at every Bulk cell.
-   - So **frame ≤ +22.3 ns/call** and **read ≤ +36.5 ns/call** at each S = 1200 point.
-   - **The reading rule, amended with the measured spread in view** (Fable to rule):
-     - The statistic is the **largest** CAND − BASE difference over the runs, not one median. The bench alternates BASE and CAND within each run, so drift cancels in the difference, and BASE's own run-to-run spread does not enter it.
-     - **Labels:**
-       - **PASS:** the margin (bound − worst difference) exceeds the spread of the differences across the runs;
-       - **INSIDE, UNRESOLVED:** the worst difference is within the bound, but by less than that spread;
-       - **OVER:** the worst difference exceeds the bound.
-     - The registered rule at `84a88541` compared BASE's own min–max with the bound. It is withdrawn as the wrong statistic for an alternating bench. Both readings are shown here.
+   - So **frame ≤ +22.3 ns/call** and **read ≤ +36.5 ns/call** at each S = 1200 point. The packed point (S = 512, 3 × 160) is reported only, because no Realtime CPU clause has an A/A.
 
-   | point | worst diff | spread of diffs | bound | amended label | `84a88541` rule (BASE min–max vs bound) |
-   |---|---|---|---|---|---|
-   | frame S = 1200 | +20 ns | ≈ 15 ns | 22.3 ns | **INSIDE, UNRESOLVED** (margin 2.3 < 15) | UNREADABLE (BASE spread 20–40 > 22.3) |
-   | read S = 1200 | +5 ns | ≈ 4 ns | 36.5 ns | **PASS** (margin 31.5 > 4) | readable |
-   | read S = 512 packed | −30 ns | — | reported only | — | — |
+   **The scored reading: a fresh run in the rehearsal (§2.3).**
+   - On CAND64's tree, release, both locks held, host cargo paused, `taskset -c 2 cargo test -p raptorpath --lib --release framing_ns -- --ignored --nocapture`, **10 runs**.
+   - The statistic per point is the **median over the 10 runs of (CAND median − BASE median)**, with the min–max of the 10 differences printed beside it.
+   - Not the worst difference: a maximum grows with the number of runs.
+   - **Label:** `BENCH PASS` iff the median is within the bound at all six S = 1200 points. Otherwise it is `BENCH OVER <points>`, printed with the cost each point implies: Δt × N_GB in ms/GB, and as a % of C_side.
+   - **The label is a MERGE condition (§2.4): PASS, or the owner accepts the printed cost.** It does not block the launch.
 
-   - **Consequence (the same under either rule):** no launch block.
-     - The read path is resolved below its bound.
-     - The frame path is not resolved. Its cost is somewhere in +5–20 ns, and the bench cannot tell whether it stays below 22.3 ns.
-     - The guard's c1s `cpu_cli/GB` clause is the deciding test of it.
-   - **Owed at the pin:** the per-point, per-run table (BASE and CAND medians [min–max] for each of the 3 runs) goes into the ledger. These rows quote the coordinator's summary ranges.
-   - **Prediction (design §7): MISSED on frame,** +5–20 ns against ±2 ns. That design figure assumed an inlined `put_packet` and the same allocation. The read prediction (+1–3) is met within the bench's resolution (+1–5).
-   - **What the frame miss costs:** at most 20 ns × 8.46·10⁵ = 17 ms of client CPU per GB at c1s, which is 9 % of that clause's BASE q95 and 0.11 % of its median. The guard's c1s `cpu_cli/GB` clause (d80 2.4 %) is the direct test.
-   - **Owed:** why framing costs 5–20 ns more. This is reported, not a launch block. The bench cannot resolve below about 15 ns on that point.
+   **The frame point over-reads, so it is an upper bound** (coordinator's code read, checked):
+   - The bench's BASE is v9's `frame_window_packet_inner` inlined (`base_v9::frame`).
+   - CAND calls the outer `frame_window_packet`, which runs the `cpuprof::timed(Seam::Frm, …)` seam: a `gauge()` lookup, with `RWM_CPUPROF` off by default.
+   - Main's own `frame_window_packet` has the same seam (main `raptorpath/src/net/framing.rs:61–67`; `f2-impl` `:104–111`).
+   - So the frame difference includes a cost main already pays. It is registered as an **upper bound** on F2's frame cost.
+   - The read points have no seam on either side.
+
+   **Pre-read (labelled; not scored).** Tonight's runs on the VM: release, `taskset -c 2`, 3 runs each of 5 alternating pairs × 2 000 000 calls. The raw outputs are committed: `docs/derivations/f2-guard/framing_ns-626fdf9a.txt` (commit 7) and `framing_ns-ab9feec4.txt` (commit 8). CAND − BASE per run, in ns/call:
+
+   | point | commit 7 (`626fdf9a`) | commit 8 (`ab9feec4`) |
+   |---|---|---|
+   | frame S=1200 len=64 | +11.2, +9.2, +15.4 | +20.7, +8.7, +12.8 |
+   | frame S=1200 len=600 | +6.4, +21.3, +10.6 | +4.8, +9.8, +20.0 |
+   | frame S=1200 len=1196 | +5.6, +7.4, +8.3 | +9.4, +5.1, +4.7 |
+   | read S=1200 len=64 | +50.7, +44.9, +51.7 | +2.0, +1.7, +2.8 |
+   | read S=1200 len=600 | +55.1, +50.1, +49.0 | −1.7, +0.7, +5.4 |
+   | read S=1200 len=1196 | +55.4, +53.1, +71.0 | +4.6, +4.9, +1.4 |
+   | read S=512 3×160 packed | +12.5, +13.7, +14.4 | −32.4, −31.1, −33.9 |
+
+   - Commit 8 removed the read path's extra allocation: +45–71 ns becomes −1.7 to +5.4 ns.
+   - **Prediction (design §7): MISSED on frame.** Frame is positive in **18 of 18** point-runs over commits 7–8, from +4.7 to +21.3 ns, against the design's ±2 ns. Part of it is the seam above.
+   - The read prediction (+1–3 ns) is about met at commit 8 (−1.7 to +5.4).
+   - The packed point is faster at commit 8.
+   - The 3-run medians at commit 8 (frame +12.8, +9.8, +5.1; read +2.0, +0.7, +4.6) sit inside the bounds. That is a pre-read, not the reading.
 2. **The harness of §5,** tools only, on `harness64`, with its stub runs green. It goes into BASE64 and CAND64, not into main, before the Result.
 3. **An amendment pinning BASE64, CAND64 and both release shas** after the rehearsal. It records the identity witnesses of §1.1, the suite record of §1.3 (copied `TESTS.txt`), and the reference-manifest `cmp`.
 4. **Fable's review of this round.**
@@ -279,7 +302,7 @@ Owner decision 5 says to stack zero-behaviour steps into one guard against main 
    - the `test-seams` tests in `suites_run.sh`: done (commit 6), and they ran on the VM (seams 3/0). A guard that reuses the suites needs no change to `run_suites`. §5 item 5 adds them for a guard that runs the suites itself;
    - ADR-0078's deviations, including whether a fast close drops earlier deliveries: recorded (commit 7);
    - an end-to-end Realtime test with two or more packets in one symbol: done (commit 6, `f2_realtime_packed`);
-   - `framing_ns` on the VM: done (item 1).
+   - `framing_ns` on the VM: pre-read done; the scored reading is in the rehearsal (item 1).
 7. **§63's VOID-RC is solved** (`harness63` `16a6ed17`): a bare `grep -c` with no match, under `lib.sh`'s `set -e`, killed `perf_rwm_c.sh` (rc 1). `harness64` takes the fixed lines (`|| true` on every F2 substitution) and the red tests that caught it (`dbec2516`, `ff41d646`). The rehearsal asserts LIVE on a completed row of each seat (§2.3).
 
 ### 3.2 Owner items: they gate the merge, not the launch
@@ -303,12 +326,12 @@ The owner can overrule either.
 
 | step | content | typical | basis |
 |---|---|---|---|
-| rehearsal | two release builds (≈ 15 min), every tools test (≈ 8 min), the reference-manifest check, plan 41d's 3 smoke rows, RB s42 and RC s42 | 0.5 h | §63's rehearsal: two builds, 20 min. A dead RB s42 adds 2.5 min |
+| rehearsal | two release builds (≈ 15 min), every tools test (≈ 8 min), the reference-manifest check, plan 41d's 3 smoke rows, RB s42 and RC s42, and `framing_ns` × 10 (a release lib-test build ≈ 8 min, plus 10 runs of ≈ 15 s) | 0.75 h | §63's rehearsal: two builds, 20 min. A dead RB s42 adds 2.5 min |
 | launch | sha checks of the installed binaries, the manifest HIT, the tools reuse, the smoke, stage G (96 rows), stage R (24 rows), up to 6 replacements, scoring | 1.3 h | §54 launch 1: 48 min of guard rows, and 58 min before them, which reuse removes apart from the smoke (≈ 5 min). Stage R: 24 × (≈ 12 s + ≈ 15 s) ≈ 11 min, plus ≈ 2.5 min per dead RB row (k ≈ 2–5 gives 5–12 min). Replacements and scoring ≈ 10 min |
-| **total** | | **≈ 1.8 h** | host cargo paused throughout; `framing_ns` and the suites are already done |
+| **total** | | **≈ 2 h** | host cargo paused throughout; the suites are already done |
 
-- **Worst case, about 4 h:** every RB row dead (+28 min), plus a NO VERDICT re-launch (+1.3 h) or a rehearsal re-run (+0.5 h). A manifest MISS costs nothing on the VM, because the launch stops before any row; the seats are then fixed.
-- **`LD_HARD`:** launch + 2.5 h; rehearsal + 1 h.
+- **Worst case, about 4.5 h:** every RB row dead (+28 min), plus a NO VERDICT re-launch (+1.3 h) or a rehearsal re-run (+0.75 h). A stage R `RT-INCOMPLETE` re-run is about 20 min. A manifest MISS costs nothing on the VM, because the launch stops before any row; the seats are then fixed.
+- **`LD_HARD`:** launch + 2.5 h; rehearsal + 1.25 h.
 - Without the reuse it would be about 3.5 h (round 1's estimate).
 
 **Order (a stated default):**
@@ -357,7 +380,8 @@ The owner can overrule either.
      - item 5's state (`SCORED`, `REPORTED (an RB row DNF)` or `NOT-SCORED (no live RB)`);
      - per readout, RC and live-RB medians with [min–max] and the one-sided rank p;
      - the owner-flag lines (§2.2);
-     - the denominator per RC row;
+     - the denominator per RC row (ported from `plan63.row_metrics`: `src_n` from the server's last `[RFA]`, `rx=` and `dgrx0[fr=…]` from its last `[CTLD]`);
+     - `RT-INCOMPLETE` when a slot is `RC-VOID` (§2.2);
    - **stage R's rehearsal rows:** RB s42 and RC s42.
 4. **The F2 witnesses:** presence is checked on the receiving end (the perf server's `[CTLD]`) and on both ends' `[SYMSZ]`. The `undeliv` value must be 0 on every `[CTLD]` line of both ends, and the sum is reported, as `plan63` does.
 5. **`run_suites`** (`loopdiag_run_all.sh`), for a guard that does run its suites:
@@ -365,11 +389,12 @@ The owner can overrule either.
    - when `raptorpath/Cargo.toml` declares the `test-seams` feature, add the seams line exactly as `f2-impl`'s `suites_run.sh` has it (release, `--features test-seams`, the three F2 tests, `--test-threads=1`);
    - on a tree without the feature, print `SEAMS n/a`. Plan 41d's existing output is otherwise unchanged.
 6. **Reuse (§1.3):**
-   - **suites:** plan 64 uses `suites_stage56` with `LD_REF_MANIFEST` defaulting to `tools/l1/ref64-manifest.sha256`. Generate it from the `ab9feec4` archive with the commands of §1.3 and commit it with the `cmp` against `ref_manifest.sh ab9feec4`. A MISS is `ABORT-SUITES` before any row, the rehearsal included, as for plan 60. `LD_PRIOR_TESTS` is refused;
+   - **suites:** plan 64 uses `suites_stage56`'s HIT/MISS logic, but compares `src_manifest()` (the wider set), not `engine_manifest()`, against `LD_REF_MANIFEST` (default `tools/l1/ref64-manifest.sha256`). Generate the file from the `ab9feec4` archive with §1.3's command and commit it. A MISS is `ABORT-SUITES` before any row, the rehearsal included, as for plan 60. `LD_PRIOR_TESTS` is refused. Plans 56/57/60 keep `engine_manifest()` unchanged;
    - **binaries:** `LD_BIN_PREBUILT_BASE` / `LD_BIN_PREBUILT_CAND`, plan 60's `LD_BIN_PREBUILT` per seat. Each is checked against `LD_BIN_SHA_BASE` / `LD_BIN_SHA_CAND` before any row (`ABORT-BUILD` on a mismatch). A launch without them builds as today;
    - **tools tests:** the rehearsal writes `TOOLS-MANIFEST.sha256` (sha256 of every file under `tools/l1`, C-locale order) beside `TOOLS-TESTS-OK`. `LD_PRIOR_TOOLS=<rehearsal run dir>` reuses it when the launch's own manifest is byte-identical, and prints `TOOLS-TESTS-REUSED <dir>`. Otherwise the tools tests run.
-7. **Budgets:** `BUDGET_S["64"]` from §4, with every RB row budgeted at its full timeout (a dead warm-up waits 150 s); `LD_HARD` = launch + 2.5 h, rehearsal + 1 h.
-8. **Tests (red first where a path is new):**
+7. **The rehearsal's `framing_ns` step:** after the builds, on CAND's tree with its own release test target, under both locks, run `taskset -c 2 cargo test -p raptorpath --lib --release framing_ns -- --ignored --nocapture` 10 times into `bench/framing_ns.txt`. `framing64.py` parses it (the bench's line format, as in `docs/derivations/f2-guard/`), prints per point the median of the 10 (CAND − BASE) differences with their min–max, and prints the label of §3.1 item 1. Test it on the two committed pre-read files.
+8. **Budgets:** `BUDGET_S["64"]` from §4, with every RB row budgeted at its full timeout (a dead warm-up waits 150 s); `LD_HARD` = launch + 2.5 h, rehearsal + 1.25 h.
+9. **Tests (red first where a path is new):**
    - `STUBRUN_FULL=1` 64/full ALL OK, and fast mode ALL OK;
    - the stub paths:
      - `cand-bulk-unframable` (`F2-FAIL`, not replaced, GATE-64 FAIL with p > 0.05);
@@ -385,11 +410,13 @@ The owner can overrule either.
      - `cand-rt-ctld-send-only` (`RT-FAIL 2`);
      - `cand-rt-symsz-1200` (`RT-FAIL 4`);
      - `manifest-miss` (ABORT-SUITES, nothing run);
+     - `manifest-miss-cargo-toml-only` (only `raptorpath/Cargo.toml` differs: ABORT-SUITES);
+     - `rc-void-twice` (`RC-VOID`, `RT-INCOMPLETE`, not RT-PASS);
      - `prebuilt-sha-mismatch` (ABORT-BUILD);
      - `tools-manifest-differs` (the tools tests run);
    - unchanged and green: `test_guard_v2` (v1 p 0.2471 / 0.0020 bit-identical; v2 on §48b p 0.0015), `test_pool54`, `test_snap53`, `test_harness_paths` and `test_bbr48_parse` (with the plan list extended), and every other `test_*.py`;
    - the bash tests `test_lib_battery.sh` and `test_abort_witness.sh` run on the VM. They are known Windows failures.
 
-**Done:** all of item 8 green on the host (bash tests excepted) and on a `git archive` extract.
+**Done:** all of item 9 green on the host (bash tests excepted) and on a `git archive` extract.
 
 **Report:** the shas, the stub-run summary, the committed `ref64-manifest.sha256` with its `cmp`, and every place where the work departed from this section.
