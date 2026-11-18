@@ -1204,7 +1204,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Defect finding (a ledger row owed, beside F07 and E13): b̂₀⁺ is a bad estimator of that brake.**
   - It latches the maximum of `tmin − m̂` over the first 8 windows, during the start transient, while m̂ is still falling. Boot windows hold 3–223 samples.
   - So one window sets F for the whole row: F reads 37.2–46.2 ms across 61c's rows and 42.9–138.5 across 61a's (one 103.4 ms brake, at k = 2).
-  - Owed check: whether that 61a row is G12 s42 r5, the B1 outlier both §61a Results left open.
+  - **Closed (sampler-design):** that 61a row is G12 s42 r5, the B1 outlier both §61a Results left open. Its LATE median err is −101.25.
 - **Not established (hypotheses):**
   - **m̂ as the floor anchor.** It reads the low mode at J = 0, but 34–35 ms at J = 5, the jitter's low extreme on a 40 ms path, and its count grows about 8× from floor to knee.
   - **Burst serialization as the cause of the bulk offset.** It explains about half (a 6.2-symbol burst × 0.47 ms ≈ 2.9 ms of J = 0's 5.4 ms), and it misses the W 16 dose point.
@@ -1362,6 +1362,30 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Correction to earlier messages:** at the Realtime stage's own noise floor (base half-split q95), client lag is not unreadable. It sits at its q95 (13.5 % against 12.6 %).
 - **`rtp_floor_p0` at the Realtime stage is a single start-up sample** (the 10 s window never rolls on 12 s rows), so it is not a path reading. The earlier "the one worth a look" is withdrawn.
 - **Next (the coordinator's default, about 40 min of VM):** a registered re-check of whole-run in-order delay on ≥ 260 MB Realtime rows at full reliability, base and fixed builds paired by slot, with the noise floor taken from the base rows first. The merge stands either way.
+
+**The store-law sampler design (2026-11-18; `sampler-design` `3375acd9`; two rounds, Fable-reviewed): a candidate with a falsifiable property; nothing adopted.**
+- **The proposal:** the law holds each 250 ms window's MEDIAN delay instead of its minimum, with the floor F̂₅₀ the median of window medians over the K lowest-store windows.
+  - The median is count-free to a declared ε = 0.2 once a window holds at least 10 independent draws, so the brake term leaves the law.
+  - One leg's fixed point: T̂(n\*) = (1 + q(δ))·F̂₅₀ + g(δ)·S.
+- **The brake moves into g·S; it does not leave.**
+  - With S as decided (median − minimum) the count dependence returns.
+  - With S = the floor's IQR the law is count-free, but it no longer states that the queue never empties. Whether the bottleneck stays busy is then carried by a measured g.
+- **Blocking adoption:**
+  1. after a fall in a path's delay the latched floor never refreshes, leaving a standing queue of about (1 + q)·Δd;
+  2. the multi-leg half-gap coupling is deleted with no replacement;
+  3. re-anchoring after a path change;
+  4. the closed-loop boot is unread;
+  5. on the fastest link (c1s) the median is not the tightest floor.
+- **Established on rows in hand:**
+  - the floor window's median is the tightest location across replicates on c3 and c2;
+  - at the knee, retransmit-free ticks read a higher window minimum on 6 of 6 rows per arm. That is an association; the drain mechanism is a hypothesis.
+- **Ledger:** E14 (b̂₀⁺, UNDERIVED, DISHONEST-INPUT) is committed. F07's update is held.
+- **Next, M1 (the coordinator's default, after the delay re-check):** four RTT-dump rows on prebuilt `e410d640`: c3 at J = 5 W 12 and W 108, c2 W 16, and c3 at J = 0 W 112.
+  - **Registered predictions:**
+    - the median drifts ≤ 0.3 ms from one window to 36, against ≥ 7 ms for the minimum;
+    - g at the Realtime knee is in [0.84, 1.06] at both cells.
+  - About 1 h, with no build. It needs a tools-only plan widening the dump arm beyond c3j0.
+- **The owner's question waits for M1,** as one question: (a) the minimum law with a count-matched floor; (b) the median law with S = IQR (the design's recommendation, conditional on M1); (c) the median with S_F as decided.
 
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
