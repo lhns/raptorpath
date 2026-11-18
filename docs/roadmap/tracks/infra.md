@@ -15,10 +15,10 @@ flowchart TB
     infra_net_seams["✔ Net seams and dead-<br/>code refactor"]
     infra_cleanup_0927["✔ Whole-project<br/>cleanup pass"]
     infra_fix_program["✔ Defect fix program"]
-    infra_defect_recorded_not_fixed>"⚠ Recorded, not fixed<br/>(#167;3.7)"]
-    infra_simplify_review["✔ Simplification<br/>review (#167;44–#167;45)"]
-    infra_simplify_batch1["✔ Simplify batch 1<br/>(#167;49)"]
-    infra_simplify_batch2["✔ Simplify batches<br/>1b–3 (#167;50)"]
+    infra_defect_recorded_not_fixed>"⚠ Recorded, not fixed"]
+    infra_simplify_review["✔ Simplification<br/>review"]
+    infra_simplify_batch1["✔ Simplify batch 1"]
+    infra_simplify_batch2["✔ Simplify batches<br/>1b–3"]
     infra_restructure["⏳ Workspace<br/>restructure (ADR-0076)"]
     infra_inventory_merges["✔ Inventory merges<br/>(first batch)"]
     infra_derivation_merges["○ Derivation branch<br/>merges"]
@@ -74,12 +74,12 @@ flowchart TB
 | `infra-net-seams` | Net seams and dead-code refactor | done | successful |  | commit e9545399 |  |
 | `infra-cleanup-0927` | Whole-project cleanup pass | done | successful |  | branch cleanup/final |  |
 | `infra-fix-program` | Defect fix program | done | successful |  | status §3.1 item 2; status §3.5 item 1; status §3.6 |  |
-| `infra-simplify-review` | Simplification review (§44–§45) | done | successful |  | status §44; status §45 |  |
+| `infra-simplify-review` | Simplification review | done | successful |  | status §44; status §45 |  |
 | `infra-adr73` | Promote or archive at verdict | done | n/a |  | ADR-0073 | infra-simplify-review, meas-adr52-discipline |
-| `infra-simplify-batch1` | Simplify batch 1 (§49) | done | successful | p = 0.9566 | status §49 | infra-adr73, meas-guard-41c |
-| `infra-simplify-batch2` | Simplify batches 1b–3 (§50) | done | successful | p = 0.1716 | status §50 | infra-simplify-batch1 |
+| `infra-simplify-batch1` | Simplify batch 1 | done | successful | p = 0.9566 | status §49 | infra-adr73, meas-guard-41c |
+| `infra-simplify-batch2` | Simplify batches 1b–3 | done | successful | p = 0.1716 | status §50 | infra-simplify-batch1 |
 | `infra-restructure` | Workspace restructure (ADR-0076) | in-progress | unrated |  | ADR-0076; status §58 Amendment 3 |  |
-| `infra-defect-recorded-not-fixed` | Recorded, not fixed (§3.7) | in-progress | unrated | ≈ 0.0354 | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |  |
+| `infra-defect-recorded-not-fixed` | Recorded, not fixed | in-progress | unrated | ≈ 0.0354 | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |  |
 | `infra-inventory-merges` | Inventory merges (first batch) | done | unrated |  | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |  |
 | `infra-derivation-merges` | Derivation branch merges | next | unrated |  |  |  |
 | `infra-tech-tree-skill` | tech-tree skill PR | next | unrated |  | plan Live state TECH TREE (AFTERWARDS) | infra-inventory-merges, model-law-ledger |
@@ -94,12 +94,12 @@ flowchart TB
 | `infra-net-seams` | Net seams and dead-code refactor | 2026-08-08 to 2026-08-10; recovery-plane pure functions, SchedSnapshot deleted unmeasured. | commit e9545399 |
 | `infra-cleanup-0927` | Whole-project cleanup pass | Owner 2026-09-26: review and clean up duplication, dead code, complexity and "yapping". Its two open known issues are their own nodes. | branch cleanup/final |
 | `infra-fix-program` | Defect fix program | Owner 2026-09-29: "finding self-caused issues is not uncomfortable. analyze and find the cause". §3.6 table, §3.7 rows 235/237 (recorded, not fixed). §3.6 and §3.7 rows are undated; dates from the 2026-09-29/30 merges. | status §3.1 item 2; status §3.5 item 1; status §3.6 |
-| `infra-simplify-review` | Simplification review (§44–§45) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §44; status §45 |
+| `infra-simplify-review` | Simplification review | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §44; status §45 |
 | `infra-adr73` | Promote or archive at verdict | ADR-0073 supersedes ADR-0052's two-stage retirement (cites it as premise). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0073 |
-| `infra-simplify-batch1` | Simplify batch 1 (§49) | -2 665 lines; archive tags for Groups A/B sit on their design nodes. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §49 |
-| `infra-simplify-batch2` | Simplify batches 1b–3 (§50) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §50 |
+| `infra-simplify-batch1` | Simplify batch 1 | -2 665 lines; archive tags for Groups A/B sit on their design nodes. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §49 |
+| `infra-simplify-batch2` | Simplify batches 1b–3 | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §50 |
 | `infra-restructure` | Workspace restructure (ADR-0076) | Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open. | ADR-0076; status §58 Amendment 3 |
-| `infra-defect-recorded-not-fixed` | Recorded, not fixed (§3.7) | Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs). | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |
+| `infra-defect-recorded-not-fixed` | Recorded, not fixed | Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs). | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |
 | `infra-inventory-merges` | Inventory merges (first batch) | Merged to main 2026-11-13: guard-v2, law-ledger, p0-dwell-diag, roadmap, test-debts (docs/tools/tests only). The derivation-branch merges are infra-derivation-merges. | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |
 | `infra-derivation-merges` | Derivation branch merges | Done when: the docs-only derivation branches (derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wasm-modeswitch-audit, dup-diag docs, guard-clause-dry, wire-clock-derive, s51-design) are merged into main or recorded as kept-unmerged with a reason. |  |
 | `infra-tech-tree-skill` | tech-tree skill PR | Done when: a project-neutral tech-tree skill is opened as a PR to the design-skills repo (no direct commit to its main, no link in ~/.claude/skills) and tested with skill-creator on a fixture or a second project. | plan Live state TECH TREE (AFTERWARDS) |

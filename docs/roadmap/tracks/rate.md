@@ -20,7 +20,7 @@ flowchart TB
     rate_sender_truth_loss["✖ Sender-truth loss<br/>estimator"]
     rate_dials_made_real["✔ The dials made real"]
     rate_r_battery["✖ Funded coding at r #gt;<br/>0"]
-    rate_dof_ledger[/"⏸ DoF ledger feedback<br/>leg (#167;39)"/]
+    rate_dof_ledger[/"⏸ DoF ledger feedback<br/>leg"/]
     rate_defect_pfec>"⚠ P_fec truncation<br/>divergence"]
     rate_pfec_continuous["✔ Continuous P_fec<br/>derivation (W22)"]
     rate_pfec_oracle["⏳ Executed sliding<br/>P_fec oracle"]
@@ -119,7 +119,7 @@ flowchart TB
 | `rate-est-cadence` | Batched BOCD estimator cadence | done | very-successful | +41 % | paper §10 row Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) | rate-fec-rate-v1, perf-recv-msg-wall |
 | `rate-sender-truth-loss` | Sender-truth loss estimator | abandoned | dead-end | 20× | paper §10 row Sender-truth loss estimator (`RWM_LOSS_SENT_TRUTH`) |  |
 | `rate-r-battery` | Funded coding at r > 0 | abandoned | dead-end |  | status §2 row "r > 0 battery (Track B)"; status §3.1 item 7; status §3.1 note (cod= counter); paper §10 row Funded proactive coding at r > 0 (the r > 0 battery) | rate-dials-made-real |
-| `rate-dof-ledger` | DoF ledger feedback leg (§39) | parked | unrated |  | status §39 | rate-r-battery |
+| `rate-dof-ledger` | DoF ledger feedback leg | parked | unrated |  | status §39 | rate-r-battery |
 | `rate-dials-made-real` | The dials made real | done | successful |  | branch THE DIALS MADE REAL |  |
 | `rate-defect-pfec` | P_fec truncation divergence | in-progress | unrated | 0.0267 at c2 and 0.0515 at c3 | status §3.10 item 2 |  |
 | `rate-pfec-continuous` | Continuous P_fec derivation (W22) | done | unrated |  | status "Owner decisions (2026-11-14)" item 2; status "Owner decisions (2026-11-14)" erratum; derivation pfec-continuous.md; commit b252933b | rate-defect-pfec, model-user-wasm-calls |
@@ -151,7 +151,7 @@ flowchart TB
 | `rate-est-cadence` | Batched BOCD estimator cadence | Built 2026-08-06 (default off) and pre-registered in the receiver per-message wall battery (perf-recv-msg-wall); first composed flip with the pool anchor reverted 2026-08-07 (store-pool-anchor-flip); shipped alone on status §5 (d), flipped in 83462ae. Folds §3.7 row 234 (BOCD plu floor, not fixed). | paper §10 row Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) |
 | `rate-sender-truth-loss` | Sender-truth loss estimator | G142 (2026-08-18) shipped "loss estimator rides sender truth"; the paper row and status §3.8 record it refuted (27e36e3) and off. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Sender-truth loss estimator (`RWM_LOSS_SENT_TRUTH`) |
 | `rate-r-battery` | Funded coding at r > 0 | Stage-2 Track B (2026-09-08), truncated at n = 4 by the 5 h cap. Folds §3.1 item 7 and the cod= counter note. Dates: paper §10 rows carry an end (removal) date only. | status §2 row "r > 0 battery (Track B)"; status §3.1 item 7; status §3.1 note (cod= counter); paper §10 row Funded proactive coding at r > 0 (the r > 0 battery) |
-| `rate-dof-ledger` | DoF ledger feedback leg (§39) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §39 |
+| `rate-dof-ledger` | DoF ledger feedback leg | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §39 |
 | `rate-dials-made-real` | The dials made real | RWM_DELTA, the χ arm, EVICT instruments; three invariant repairs bit-exact at every preset. Folds paper §11.1 open question 3. | branch THE DIALS MADE REAL |
 | `rate-defect-pfec` | P_fec truncation divergence | Owner decision 2026-11-14 opened a derivation (rate-pfec-continuous): no form ships; next the executed sliding oracle (rate-pfec-oracle). §51 must still read r per cell. | status §3.10 item 2 |
 | `rate-pfec-continuous` | Continuous P_fec derivation (W22) | Root cause: the paper defines P_fec per lost symbol but §4.2 derives the window event (a paper erratum). C6 is the exact per-loss law for a block window, but the engine and the sim decode a sliding window. Correction (round 6, b252933b): the Python sliding decode is only an upper bound; under its premises the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, and the engine's r* adequacy at Auto and Realtime is unknown either way. Next: the executed sliding oracle (rate-pfec-oracle). | status "Owner decisions (2026-11-14)" item 2; status "Owner decisions (2026-11-14)" erratum; derivation pfec-continuous.md; commit b252933b |

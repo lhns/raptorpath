@@ -25,8 +25,8 @@ flowchart TB
     cod_unified_span["✔ Unified span machine<br/>(ADR-0064)"]
     cod_wire_compact["✔ Compact v5 DATA<br/>framing"]
     cod_one_pipeline["✔ One window pipeline<br/>(ADR-0069)"]
-    cod_s4_block_retest["✔ Block default re-<br/>test (#167;4)"]
-    cod_debug_stall["✔ Decoder re-delivery<br/>stall fix (#167;31)"]
+    cod_s4_block_retest["✔ Block default re-<br/>test"]
+    cod_debug_stall["✔ Decoder re-delivery<br/>stall fix"]
     cod_block_pipeline ~~~ cod_legacy_rlc
     cod_mettle ~~~ cod_backend_switch
     cod_streaming_code ~~~ cod_gf256_simd
@@ -78,7 +78,7 @@ flowchart TB
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
 | `cod-block-pipeline` | RaptorQ block FEC pipeline | abandoned | superseded |  | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |  |
-| `cod-s4-block-retest` | Block default re-test (§4) | done | unrated |  | status §4; commit 566e0f89; branch cleanup/a4-block-retest |  |
+| `cod-s4-block-retest` | Block default re-test | done | unrated |  | status §4; commit 566e0f89; branch cleanup/a4-block-retest |  |
 | `cod-mettle` | METTLE swappable FEC backend | abandoned | dead-end |  | paper §10 row METTLE FEC backend; ADR-0021; ADR-0028 |  |
 | `cod-backend-switch` | Mid-stream FEC backend switching | abandoned | dead-end |  | paper §10 row Mid-stream backend switching (loss-threshold selector); ADR-0030 |  |
 | `cod-streaming-code` | Streaming two-layer Realtime code | abandoned | superseded |  | paper §10 row Streaming two-layer code (Realtime machine); ADR-0027 |  |
@@ -93,7 +93,7 @@ flowchart TB
 | `cod-unified-span` | Unified span machine (ADR-0064) | done | successful |  | ADR-0064 | cod-systematic-wire |
 | `cod-one-pipeline` | One window pipeline (ADR-0069) | done | successful |  | ADR-0069; status §5 | cod-unified-span |
 | `cod-wire-compact` | Compact v5 DATA framing | done | very-successful | +2.6/+3.6 Mbit/s | commit 078b0ce9 |  |
-| `cod-debug-stall` | Decoder re-delivery stall fix (§31) | done | successful | 0 of 40 iterations stalled | status §31 |  |
+| `cod-debug-stall` | Decoder re-delivery stall fix | done | successful | 0 of 40 iterations stalled | status §31 |  |
 | `cod-user-generation-seat` | Owner call: keep generation coding | parked | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | done | unrated |  | ADR-0039; ADR-0040; ADR-0047; ADR-0048 | meas-transport-comparison |
 
@@ -102,7 +102,7 @@ flowchart TB
 | id | title | notes | evidence |
 |---|---|---|---|
 | `cod-block-pipeline` | RaptorQ block FEC pipeline | The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13. | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |
-| `cod-s4-block-retest` | Block default re-test (§4) | Split 2026-11-16 from the block pipeline node (own status section and verdict). Discharges ADR-0069's re-test clause; the Stage-3 baseline (§5) then read WINDOW-NOT-WORSE and the window became the only pipeline (cod-one-pipeline). | status §4; commit 566e0f89; branch cleanup/a4-block-retest |
+| `cod-s4-block-retest` | Block default re-test | Split 2026-11-16 from the block pipeline node (own status section and verdict). Discharges ADR-0069's re-test clause; the Stage-3 baseline (§5) then read WINDOW-NOT-WORSE and the window became the only pipeline (cod-one-pipeline). | status §4; commit 566e0f89; branch cleanup/a4-block-retest |
 | `cod-mettle` | METTLE swappable FEC backend | Removal was the owner's call (user 2026-08-07). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row METTLE FEC backend; ADR-0021; ADR-0028 |
 | `cod-backend-switch` | Mid-stream FEC backend switching | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Mid-stream backend switching (loss-threshold selector); ADR-0030 |
 | `cod-streaming-code` | Streaming two-layer Realtime code | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Streaming two-layer code (Realtime machine); ADR-0027 |
@@ -116,7 +116,7 @@ flowchart TB
 | `cod-unified-span` | Unified span machine (ADR-0064) | Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0064 |
 | `cod-one-pipeline` | One window pipeline (ADR-0069) | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. | ADR-0069; status §5 |
 | `cod-wire-compact` | Compact v5 DATA framing | Headline is verbatim from the sibling paper row (window decoupling, A69): "Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)". | commit 078b0ce9 |
-| `cod-debug-stall` | Decoder re-delivery stall fix (§31) | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §31 |
+| `cod-debug-stall` | Decoder re-delivery stall fix | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §31 |
 | `cod-user-generation-seat` | Owner call: keep generation coding | 2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it. | plan user decision 4, W4.4; status §3.2 |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | ADR-0047 raised timer resolution and fixed LTE recovery (1% to 100%) and WiFi overhead (39.6% to 21.4%); ADR-0048 reduced window-backend overhead further. | ADR-0039; ADR-0040; ADR-0047; ADR-0048 |
 <!-- END GENERATED: table-cod -->

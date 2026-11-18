@@ -37,7 +37,7 @@ nodes:
   plain: The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic.
   notes: 'The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13.'
 - id: cod-s4-block-retest
-  title: Block default re-test (§4)
+  title: Block default re-test
   track: cod
   kind: research
   state: done
@@ -379,7 +379,7 @@ nodes:
   overview: false
   notes: 'Headline is verbatim from the sibling paper row (window decoupling, A69): "Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)".'
 - id: cod-debug-stall
-  title: Decoder re-delivery stall fix (§31)
+  title: Decoder re-delivery stall fix
   track: cod
   kind: mechanism
   state: done
@@ -1013,7 +1013,7 @@ nodes:
   overview: false
   notes: 'fix/wire-v9 (7825196): per-path path_seq, next_expected, received_above.'
 - id: rec-gap-horizon
-  title: Gap horizon lever B (§52)
+  title: Gap horizon lever B
   track: rec
   kind: mechanism
   state: in-progress
@@ -1040,7 +1040,7 @@ nodes:
   waiting_on: the lever-B guard on the new main
   notes: '§52 guard PASS; c8 600 MB tail 4.19 -> 0.40 s with receiver duplicates x2.1 beyond BASE; the merge went to the owner. Plan 2026-11-13: lever B re-guarded on the new main, cand52 superseded. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: rec-snapver-filter
-  title: Stale gap reports, snapshot filter (§53)
+  title: Stale gap reports, snapshot filter
   track: rec
   kind: mechanism
   state: done
@@ -1400,7 +1400,7 @@ nodes:
   plain: Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand.
   notes: 'Stage-2 Track B (2026-09-08), truncated at n = 4 by the 5 h cap. Folds §3.1 item 7 and the cod= counter note. Dates: paper §10 rows carry an end (removal) date only.'
 - id: rate-dof-ledger
-  title: DoF ledger feedback leg (§39)
+  title: DoF ledger feedback leg
   track: rate
   kind: law
   state: parked
@@ -2247,7 +2247,7 @@ nodes:
   plain: Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput.
   notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19).'
 - id: store-s18-one-law
-  title: One store law, first session (§18)
+  title: One store law, first session
   track: store
   kind: law
   state: done
@@ -2297,7 +2297,7 @@ nodes:
   plain: Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links.
   notes: 'ADR-0072 accepted on §19, the same-session control (§18 is store-s18-one-law). Dates: ADR end dates in the raw set equal their start (placeholder).'
 - id: store-input-search
-  title: c1 anchor over-read (§23)
+  title: c1 anchor over-read
   track: store
   kind: research
   state: done
@@ -2319,7 +2319,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''Store-law input search (8 inputs)'': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38).'
 - id: store-s24-inputs
-  title: Loop time and quinn rate (§24)
+  title: Loop time and quinn rate
   track: store
   kind: research
   state: abandoned
@@ -2340,7 +2340,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Store-law input search (8 inputs)'. 46 rows at c2-100 and c1s-400.
 - id: store-s27-premises
-  title: Spread law premises (§27)
+  title: Spread law premises
   track: store
   kind: research
   state: abandoned
@@ -2406,7 +2406,7 @@ nodes:
   plain: Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work.
   notes: '§29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27.'
 - id: store-dw-window
-  title: (D-W) noise-sized window (§30)
+  title: (D-W) noise-sized window
   track: store
   kind: research
   state: abandoned
@@ -2429,7 +2429,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''Power-seeking store law D''. Status §2: DOES-NOT-CLOSE; §34''s R2 re-read it after the receiver change (CLOSED).'
 - id: store-s34-input
-  title: Store-law input after §32 (§34)
+  title: Store-law input after the anchor fix
   track: store
   kind: research
   state: abandoned
@@ -2457,7 +2457,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''Store-law input search (8 inputs)''. One derivation (NONE-CLOSES) closed the four candidates (b1)–(b4), then a static-cap diagnostic R1–R4 at c1s and c1d: R1 knee 1 024 at both, R2 D-W CLOSED, R3 AMBIGUOUS with the fixed point MISSES (457), R4 QUINN-SHARES.'
 - id: store-s36-dispersion
-  title: Receiver dispersion as link rate (§36)
+  title: Receiver dispersion as link rate
   track: store
   kind: research
   state: done
@@ -2478,7 +2478,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Dispersion and oracle store law'. Capture diagnostic, 58 rows, no engine diff; the post hoc p90 addendum led to §40.
 - id: store-s40-p90
-  title: p90 dispersion estimator (§40)
+  title: p90 dispersion estimator
   track: store
   kind: research
   state: done
@@ -2499,7 +2499,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Dispersion and oracle store law'. Nothing ships.
 - id: store-s42-engine-path
-  title: Engine path for dispersion (§42)
+  title: Engine path for dispersion
   track: store
   kind: research
   state: done
@@ -2520,7 +2520,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''Dispersion and oracle store law''. Derivation and feasibility record, no VM: a wire-clocked S does not close c1s (af06313d).'
 - id: store-engine-form
-  title: Oracle store law, closed loop (§43)
+  title: Oracle store law, closed loop
   track: store
   kind: research
   state: done
@@ -2544,7 +2544,7 @@ nodes:
   plain: Tests of how the in-flight data limit could read the real link rate and delay found no reliable source yet, so the work is on hold until better measurements exist.
   notes: 'Split 2026-11-16 from ''Dispersion and oracle store law'' (§36, §40, §42, §43, §43b, rated successful as a family): those are now store-s36-dispersion, store-s40-p90, store-s42-engine-path and store-s43b-retuned; this node is §43 alone, a diagnostic with no rating. RWM_STORE_LAW=oracle, 24 rows; continues as plan W3.3.'
 - id: store-s43b-retuned
-  title: Oracle store law re-tuned (§43b)
+  title: Oracle store law re-tuned
   track: store
   kind: research
   state: done
@@ -2590,7 +2590,7 @@ nodes:
   waiting_on: the owner's answers to the three latency-setting questions, then merge to main
   notes: 'Derivation (derive-w1, w1r2): δ''s seat on the store, bbr_rs window δ-free; waits on owner questions U1-U3 (plan user decision 10).'
 - id: store-s54-budget
-  title: Store-budget test design (§54)
+  title: Store-budget test design
   track: store
   kind: research
   state: done
@@ -2639,7 +2639,7 @@ nodes:
   plain: Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big.
   notes: 'Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. Progress 2026-11-14..15: the R6.4/R6.5 amendments with §57a/§57b (store-law-rev6, merged); R6.7 (store-law-r67: candidate floor C, no recommendation); the §60 gauge session measures the queue-free floors, tests the target form at c8 and scores R6.7''s allowance shortfall at c2. Next derivation: R6.7''s allowance item; a large sweep only after it.'
 - id: store-s56-sweep
-  title: Store-pool sweep (§56)
+  title: Store-pool sweep
   track: store
   kind: instrument
   state: done
@@ -2662,7 +2662,7 @@ nodes:
   plain: Measuring how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop.
   notes: 'Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law''s Part B and the owner''s U2.'
 - id: store-s57a-burst
-  title: Emission-burst block at c1s (§57a)
+  title: Emission-burst block at c1s
   track: store
   kind: instrument
   state: done
@@ -2684,7 +2684,7 @@ nodes:
   plain: Testing whether the number of packets the sender releases at once holds extra queue on the fast single-path link.
   notes: 'Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds.'
 - id: store-s57b-c1d
-  title: c1d pool sweep and transfer test T (§57b)
+  title: c1d pool sweep and transfer test T
   track: store
   kind: instrument
   state: done
@@ -2780,7 +2780,7 @@ nodes:
   overview: false
   notes: Release 1156/0, debug 1008/0, wasm 50/0, core 2/0, doc and parsers rc 0; decision_trace_pin 7/7 in both profiles; the first Linux run of the gauge's tests. ref60-manifest (187 files) is committed and passed as LD_REF_MANIFEST to every §60 launch.
 - id: store-s60a
-  title: Gauge session 60a (§60)
+  title: Gauge session 60a
   track: store
   kind: research
   state: done
@@ -2812,7 +2812,7 @@ nodes:
   plain: Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it.
   notes: '96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7).'
 - id: store-s60b
-  title: Gauge session 60b (§60)
+  title: Gauge session 60b
   track: store
   kind: research
   state: done
@@ -2836,7 +2836,7 @@ nodes:
   plain: 'The second half of the floor measurement: the fast link''s sign test and the gauge''s own cost, now without the rows that overloaded the link.'
   notes: '40/40 slots live at harness60-a2 1ecee59d (12:31–13:26Z 2026-11-16), same bin_sha, HIT; the rehearsal re-ran first and passed. c1s: floor FLAT, P1 holds (43x), B1 does not fire. The control sign and the G/C pairs are unread: the frozen absolute collapse rule (X = 6.1 ms) flags all 22 W 2048 rows, because the standing queue alone gives 13-17 ms of excess; genuine collapse (qcwnd share) is 7 of 22. Host re-score byte-equal; owed stub run and shell tests passed.'
 - id: store-s61a
-  title: c3 knee-margin sweep 61a (§61)
+  title: Slow-link knee sweep, first try
   track: store
   kind: research
   state: done
@@ -2861,7 +2861,7 @@ nodes:
   plain: 'The second-link-shape measurement of the knee margin ran cleanly but could not be scored: the collapse rule flagged every healthy control and the pilot placed the knee arms too high.'
   notes: 'harness61 14e2bacd, bin_sha e410d640, HIT. CR61''s ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES.'
 - id: store-s61b
-  title: c2 add-on 61b (§61)
+  title: Fast-link price below the knee
   track: store
   kind: research
   state: done
@@ -2883,7 +2883,7 @@ nodes:
   plain: 'Measured how much speed and delay the fast test link trades below its knee; it matches the earlier session, so the two combine into one table.'
   notes: '30/30 live, CONTROL-c2 OK (control ratios 0.99-1.06), DRIFT-OK at W 160 (tmin 12.295 vs 12.33). u concave and tmin under the chord at W 96/128/144. Landing table reported for the owner.'
 - id: store-s61a-rerun
-  title: c3 sweep re-run (§61 Amendment 2)
+  title: Slow-link knee sweep, re-run
   track: store
   kind: research
   state: done
@@ -2929,7 +2929,7 @@ nodes:
   plain: 'Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner''s call.'
   notes: 'Registered consequence of DISAGREES. First: the estimator''s sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form.'
 - id: rec-s63-f2-first-contact
-  title: F2 first contact (§63)
+  title: Framing fix on failed rows
   track: rec
   kind: research
   state: done
@@ -2948,10 +2948,10 @@ nodes:
   end: '2026-11-17'
   folded: []
   overview: true
-  plain: 'Run the rows that failed on the old binary and on the fixed one, to confirm the framing fix removes the failure.'
+  plain: 'Re-ran the low-latency test runs that had failed at start-up, on the old program and on the fixed one: the old one still failed sometimes, the fixed one never did.'
   notes: 'CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63.'
 - id: store-s62-j0
-  title: c3 knee need at zero jitter (s62)
+  title: Slow-link knee without jitter
   track: store
   kind: research
   state: done
@@ -2973,7 +2973,7 @@ nodes:
   plain: 'Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter.'
   notes: 'Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note).'
 - id: rec-f2-merge-guard
-  title: F2 merge guard (§64)
+  title: Framing fix regression test
   track: rec
   kind: research
   state: done
@@ -3038,7 +3038,7 @@ nodes:
   plain: 'Work out how the store law should sample delay, since the no-queue delay shows up mostly after retransmissions and a quarter-second window usually misses it.'
   notes: 'Questions: how to estimate the brake as windows fill; whether the knee minimum is set by post-loss drains; what anchors the floor under jitter. Decision 8 stays unsettled until then.'
 - id: meas-blocke-pacing-gate
-  title: Block E pacing gate fires on fixed binary
+  title: Pacer late-send check fails
   track: meas
   kind: defect-verdict
   state: next
@@ -3056,7 +3056,7 @@ nodes:
   end: ''
   folded: []
   overview: true
-  plain: 'Block E checks that its rate pacer sends almost nothing late; on the fixed binary about 1-4 % of symbols go late, so this rule needs a decision before block E can run.'
+  plain: 'The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late; with the framing fix about 1-4 % of packets go late, so that rule needs a decision before the test can run.'
   notes: 'From the s51e_score path exercise on §63 CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. E-pre (suites + binid on e-tree-f2) is unaffected and can run first.'
 - id: meas-harness-reuse
   title: Cheaper sessions by reuse
@@ -3144,7 +3144,7 @@ nodes:
   plain: 'Open problem: with honest floors, the store law''s safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out.'
   notes: 'Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7''s derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03.'
 - id: rec-defect-realtime-framing
-  title: Realtime receiver misreads packed symbols (F2)
+  title: Realtime receiver misread packets (fixed)
   track: rec
   kind: defect-verdict
   state: done
@@ -3518,7 +3518,7 @@ nodes:
   overview: false
   notes: 'Paper row is undated: the base dates from the placement law (2026-07-06) and was replaced on 2026-11-10 (§41b, ADR-0073). Dates: paper §10 rows carry an end (removal) date only.'
 - id: place-s38-wire
-  title: Wire-clocked placement base (§38)
+  title: Wire-clocked placement base
   track: place
   kind: mechanism
   state: done
@@ -3540,7 +3540,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Wire-RTT placement price'. The arm did not ship; iteration once in §41.
 - id: place-s41-iteration
-  title: Wire price, iteration once (§41)
+  title: Wire price, iteration once
   track: place
   kind: mechanism
   state: done
@@ -3561,7 +3561,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Wire-RTT placement price'. Allocation-free witness, host gate, then the §38 battery.
 - id: place-wire-price
-  title: Wire-RTT placement price (§41b)
+  title: Wire-RTT placement price
   track: place
   kind: mechanism
   state: done
@@ -3796,7 +3796,7 @@ nodes:
   plain: A proposed design for a controller that blends the speed of BBR with the low queues of Copa; prerequisite measurements are done but nothing is built.
   notes: 'Owner asked for a fusion ADR 2026-07-21 ("a better copa would be best"); prerequisite battery (adversarial cells) complete; plan W2 future track. Folds paper §11.1 open question 12. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Folded the Adversarial cells B1 commits (2026-08 audit; mapped outcome there: unrated).'
 - id: cc-quinn-bbr-collapse
-  title: Quinn BBR window collapse (§47)
+  title: Quinn BBR window collapse
   track: cc
   kind: defect-verdict
   state: in-progress
@@ -3817,7 +3817,7 @@ nodes:
   plain: 'Open problem: the default congestion controller can shrink its sending window to almost nothing on fast links because it remembers one unrealistically low delay sample.'
   notes: 'Still live: quinn BBR is main''s default controller (status §1), and bbr_rs, the fix, is not promoted. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: cc-s48-host-gate
-  title: bbr_rs host gate (§48)
+  title: bbr_rs host gate
   track: cc
   kind: research
   state: done
@@ -4092,7 +4092,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''Batched BOCD estimator cadence'' (2026-08 audit outcome: mixed). Its pre-build amendment pre-registered RWM_EST_CADENCE (774e28a3).'
 - id: perf-rcvbuf
-  title: Receive-buffer fix F-A (§7)
+  title: Receive-buffer fix F-A
   track: perf
   kind: mechanism
   state: done
@@ -4113,7 +4113,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-emit-batch-law0
-  title: Emission batching, Law 0 (§8)
+  title: Emission batching, Law 0
   track: perf
   kind: mechanism
   state: done
@@ -4139,7 +4139,7 @@ nodes:
   plain: Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere.
   notes: 'Its registered feed clause is "fed loss vs truth unchanged at every leg", read on the per-datagram [TRUTH] counter. Dates: status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only.'
 - id: perf-quic-feeder
-  title: Per-path datagram feeder (§10)
+  title: Per-path datagram feeder
   track: perf
   kind: mechanism
   state: abandoned
@@ -4161,7 +4161,7 @@ nodes:
   overview: false
   notes: '§10 is headed "superseded by the threading redesign"; the per-path I/O owner (Q1) is that redesign''s delivered piece. Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/quic-feeder archived 2026-10-05 (tag date not used for end); archive/quic-feeder-v2 archived 2026-10-05 (tag date not used for end).'
 - id: perf-threading-p0
-  title: Threading P0 thread budget (§9)
+  title: Threading P0 thread budget
   track: perf
   kind: instrument
   state: done
@@ -4181,7 +4181,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-p1
-  title: Threading P1 defect fixes (§11)
+  title: Threading P1 defect fixes
   track: perf
   kind: mechanism
   state: done
@@ -4201,7 +4201,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-p2a
-  title: Threading P2a logic actor (§12)
+  title: Threading P2a logic actor
   track: perf
   kind: mechanism
   state: abandoned
@@ -4248,7 +4248,7 @@ nodes:
   plain: Gave each network path its own input and output task, which raised single-path throughput by about half.
   notes: §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution).
 - id: perf-d9-attribution
-  title: D9 attribution (§15)
+  title: D9 attribution
   track: perf
   kind: research
   state: done
@@ -4335,7 +4335,7 @@ nodes:
   overview: false
   notes: §17 REFUTED-WITH-RECORD; §20 (perf-s20-r1-collapse) traced the collapse to R1's [LAT] pending store; R2 is R1 with that fix. Tag archive/thread-r1 archived 2026-10-26.
 - id: perf-s20-r1-collapse
-  title: R1 c1s collapse diagnosis (§20)
+  title: R1 c1s collapse diagnosis
   track: perf
   kind: research
   state: done
@@ -4404,7 +4404,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-r3 archived 2026-10-27 (tag date not used for end).'
 - id: perf-c8-lag
-  title: c8 client [LAG] spread (§25)
+  title: c8 client [LAG] spread
   track: perf
   kind: research
   state: done
@@ -4425,7 +4425,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'c8 client lag diagnosis' (§25, §26, §33; rated successful as a family, a rating that now sits on §26, perf-s26-long-polls). Diagnostic, 30 rows, placement step 1.
 - id: perf-s26-long-polls
-  title: c8 lag tail, long polls (§26)
+  title: c8 lag tail, long polls
   track: perf
   kind: research
   state: done
@@ -4446,7 +4446,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'c8 client lag diagnosis'. The RWM_RTOBS instruments ([LAG] min_us, [OSLAG], [TXSEC], [LPOLL]) merged with it; its SACK-drain finding is what §28 bounded.
 - id: perf-incremental-sack
-  title: Incremental SACK marking (§28)
+  title: Incremental SACK marking
   track: perf
   kind: mechanism
   state: done
@@ -4467,7 +4467,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-decoder-prune
-  title: Decoder prune per drain (§32)
+  title: Decoder prune per drain
   track: perf
   kind: mechanism
   state: done
@@ -4489,7 +4489,7 @@ nodes:
   plain: Made the receiver clean up finished decoding work more often, which raised fast two-path throughput by about a fifth.
   notes: 'End 2026-11-01 was a placeholder (status §32: last edit or migration date); date from merge bb29595e. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-s33-timer
-  title: c8 lag timer hand-off (§33)
+  title: c8 lag timer hand-off
   track: perf
   kind: research
   state: done
@@ -4511,7 +4511,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'c8 client lag diagnosis'. Offline reading of the §28 step-0 and §26 ledgers, no VM.
 - id: perf-receiver-followups
-  title: Receiver follow-ups (§35)
+  title: Receiver follow-ups
   track: perf
   kind: mechanism
   state: done
@@ -5142,7 +5142,7 @@ nodes:
   plain: Found that the network emulator undercounted lost packets several times over, and changed the harness to count every packet.
   notes: '§3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]).'
 - id: meas-v4-verification
-  title: V4 verification of new main (§6)
+  title: V4 verification of new main
   track: meas
   kind: research
   state: done
@@ -5165,7 +5165,7 @@ nodes:
   overview: false
   notes: 'Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: meas-guard-41c
-  title: Rank-minp merge guard (§41c)
+  title: Rank-minp merge guard
   track: meas
   kind: instrument
   state: done
@@ -5251,7 +5251,7 @@ nodes:
   overview: false
   notes: 'No raw record. Dry run done (status §3.10 item 7: "the source-phase floor is degenerate on guard rows; in-order delay resolves only on long rows"); feeds §41d. Branch unmerged (inventory merge).'
 - id: meas-s58-session
-  title: '§58: F1 suites, binary identity'
+  title: Dial-pin fix suites, binary identity
   track: meas
   kind: instrument
   state: done
@@ -5458,7 +5458,7 @@ nodes:
   plain: Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch.
   notes: '2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434).'
 - id: model-mode-switch-debts
-  title: Engine NO-MODE-SWITCH debts (§3.3)
+  title: Engine NO-MODE-SWITCH debts
   track: model
   kind: defect-verdict
   state: in-progress
@@ -5483,7 +5483,7 @@ nodes:
   plain: 'Open problem: five places in the engine still switch behaviour on the chosen preset instead of following one smooth rule.'
   notes: 'Five hint- or ρ-keyed engine sites; undated in the raw records (status §3 since 2026-09-27). Folds paper §11.1 open question 13. Open: none of the five sites is fixed.'
 - id: model-open-constants
-  title: Open-constants register (§3.4)
+  title: Open-constants register
   track: model
   kind: defect-verdict
   state: in-progress
@@ -5505,7 +5505,7 @@ nodes:
   plain: 'Open problem: about twenty numbers in the code were picked by hand and have no derivation behind them.'
   notes: '21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet.'
 - id: model-review-37
-  title: Model review (§37)
+  title: Model review
   track: model
   kind: research
   state: done
@@ -5901,7 +5901,7 @@ nodes:
   overview: false
   notes: 'Owner 2026-09-29: "finding self-caused issues is not uncomfortable. analyze and find the cause". §3.6 table, §3.7 rows 235/237 (recorded, not fixed). §3.6 and §3.7 rows are undated; dates from the 2026-09-29/30 merges.'
 - id: infra-simplify-review
-  title: Simplification review (§44–§45)
+  title: Simplification review
   track: infra
   kind: simplification
   state: done
@@ -5943,7 +5943,7 @@ nodes:
   plain: The owner ruled that every experiment is either promoted or archived once its result is in, instead of lingering switched off.
   notes: 'ADR-0073 supersedes ADR-0052''s two-stage retirement (cites it as premise). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: infra-simplify-batch1
-  title: Simplify batch 1 (§49)
+  title: Simplify batch 1
   track: infra
   kind: simplification
   state: done
@@ -5965,7 +5965,7 @@ nodes:
   overview: false
   notes: '-2 665 lines; archive tags for Groups A/B sit on their design nodes. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: infra-simplify-batch2
-  title: Simplify batches 1b–3 (§50)
+  title: Simplify batches 1b–3
   track: infra
   kind: simplification
   state: done
@@ -6069,7 +6069,7 @@ nodes:
   plain: A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused.
   notes: 'Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only.'
 - id: place-path-event
-  title: Path event after promotion (§46)
+  title: Path event after promotion
   track: place
   kind: research
   state: done
@@ -6089,7 +6089,7 @@ nodes:
   overview: false
   notes: 'Own verdict: NO-DIFFERENCE against the registered prediction CAND-RECOVERS-FASTER (result in the §41c file, session 3). Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: meas-guard-v2
-  title: Merge guard v2 accepted (§41d)
+  title: Merge guard v2 accepted
   track: meas
   kind: user-decision
   state: done
@@ -6192,7 +6192,7 @@ nodes:
   plain: 'Open problem: one diagnostic line rounds the delay to whole milliseconds, which hides small delays on fast links.'
   notes: Status §3.5 item 4. Undated raw record; date approximate (the cleanup).
 - id: infra-defect-recorded-not-fixed
-  title: Recorded, not fixed (§3.7)
+  title: Recorded, not fixed
   track: infra
   kind: defect-verdict
   state: in-progress
@@ -6302,7 +6302,7 @@ nodes:
   plain: Audited every formula in the system for where it comes from and whether it has been checked in real conditions, and ranked the fixes.
   notes: 'Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 61-70 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire).'
 - id: meas-s51-design
-  title: Off-Bulk benchmark design (§51)
+  title: Off-Bulk benchmark design
   track: meas
   kind: research
   state: done
@@ -6325,7 +6325,7 @@ nodes:
   plain: Planning the first real-network test of the low-latency and default settings, to check the system behaves smoothly across the latency dial.
   notes: 'No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it).'
 - id: meas-s51-harness
-  title: §51 harness and scorer
+  title: Off-Bulk sweep harness and scorer
   track: meas
   kind: instrument
   state: next
@@ -6554,7 +6554,7 @@ nodes:
   plain: Fixing tests that pass for the wrong reason or depend on which machine they run on.
   notes: 'Done when: recv_alloc_bound uses a per-platform measured baseline (or is VM-only with a named reason), every reachability test asserts the regime it needs, and sigma_candidates/tlag are audited in a VM pre-flight.'
 - id: rec-s54-session
-  title: '§54: filter guard, store budget'
+  title: Snapshot filter guard, store budget
   track: rec
   kind: mechanism
   state: done
@@ -6658,7 +6658,7 @@ nodes:
   plain: First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves.
   notes: 'Law ledger: R01 (rank 16, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on.'
 - id: cc-s48d-session
-  title: §48d bbr_rs round 2
+  title: bbr_rs controller, round 2
   track: cc
   kind: mechanism
   state: blocked
@@ -6754,7 +6754,7 @@ nodes:
   plain: Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling.
   notes: 'Law ledger: F01 battery (with E03, E04). Done when: guard v2 against main PASSes and the c8 clamp bind fraction is reported below 1 (the law is not pinned over its operating range).'
 - id: store-s48c-session
-  title: δ seat diagnostic and guard (§48c)
+  title: δ seat diagnostic and guard
   track: store
   kind: law
   state: blocked

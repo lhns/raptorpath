@@ -15,9 +15,9 @@ flowchart TB
     model_wasm_l0["✔ raptorpath-math and<br/>wasm L0 model"]
     model_math_verification["✔ Mathematical<br/>verification of the<br/>model"]
     model_vis_continuum["✔ Visualizer as one<br/>continuum law"]
-    model_mode_switch_debts>"⚠ Engine NO-MODE-<br/>SWITCH debts (#167;3.3)"]
-    model_open_constants>"⚠ Open-constants<br/>register (#167;3.4)"]
-    model_review_37["✔ Model review (#167;37)"]
+    model_mode_switch_debts>"⚠ Engine NO-MODE-<br/>SWITCH debts"]
+    model_open_constants>"⚠ Open-constants<br/>register"]
+    model_review_37["✔ Model review"]
     model_paper_recon["⏳ Paper versus engine<br/>reconciliation"]
     model_bound_tests["✔ Bounding tests for<br/>divergences"]
     model_wasm_audit["✔ Wasm mode-switch<br/>audit"]
@@ -124,9 +124,9 @@ flowchart TB
 | `model-visualizer-v1` | First visualizer: triangle and BOCD | done | unrated |  | commit 4cd3abc3; commit 468b7580; commit aa56ef51 |  |
 | `model-wasm-l0` | raptorpath-math and wasm L0 model | done | successful |  | branch multipath visualizer | model-visualizer-v1 |
 | `model-vis-continuum` | Visualizer as one continuum law | done | successful |  | commit b0e16638 | cod-unified-span, model-wasm-l0 |
-| `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts (§3.3) | in-progress | unrated |  | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver |  |
-| `model-open-constants` | Open-constants register (§3.4) | in-progress | unrated |  | status §3.4 |  |
-| `model-review-37` | Model review (§37) | done | successful |  | status §37 |  |
+| `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts | in-progress | unrated |  | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver |  |
+| `model-open-constants` | Open-constants register | in-progress | unrated |  | status §3.4 |  |
+| `model-review-37` | Model review | done | successful |  | status §37 |  |
 | `model-paper-recon` | Paper versus engine reconciliation | in-progress | unrated |  | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |  |
 | `model-bound-tests` | Bounding tests for divergences | done | unrated |  | branch bound-tests | model-paper-recon |
 | `model-wasm-audit` | Wasm mode-switch audit | done | successful |  | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit | model-vis-continuum, infra-restructure |
@@ -158,9 +158,9 @@ flowchart TB
 | `model-visualizer-v1` | First visualizer: triangle and BOCD | Split 2026-11-16 from 'raptorpath-math and wasm L0 model': the first interactive visualizer (2026-04-07..10), connected to the triangle (4cd3abc3), with per-symbol P_lost mixing and T_cut stop (4a0890ac), adaptive r (BOCD) and the real RLC codec in wasm (468b7580), a calibrated channel (aa56ef51). | commit 4cd3abc3; commit 468b7580; commit aa56ef51 |
 | `model-wasm-l0` | raptorpath-math and wasm L0 model | Folds paper §11.1 open question 6 (do the three channel implementations agree). raptorpath-math and raptorpath-wasm crates (da837ee9, 2026-04-08) so the visualizer runs the real Rust code; the April visualizer itself is model-visualizer-v1. | branch multipath visualizer |
 | `model-vis-continuum` | Visualizer as one continuum law | 2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434). | commit b0e16638 |
-| `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts (§3.3) | Five hint- or ρ-keyed engine sites; undated in the raw records (status §3 since 2026-09-27). Folds paper §11.1 open question 13. Open: none of the five sites is fixed. | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver |
-| `model-open-constants` | Open-constants register (§3.4) | 21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet. | status §3.4 |
-| `model-review-37` | Model review (§37) | Found the idle-leg stale-price lock-out (-> §38). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §37 |
+| `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts | Five hint- or ρ-keyed engine sites; undated in the raw records (status §3 since 2026-09-27). Folds paper §11.1 open question 13. Open: none of the five sites is fixed. | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver |
+| `model-open-constants` | Open-constants register | 21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet. | status §3.4 |
+| `model-review-37` | Model review | Found the idle-leg stale-price lock-out (-> §38). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §37 |
 | `model-paper-recon` | Paper versus engine reconciliation | Plan W3.7 marks it done (18 true, 8 stale, 3 fixed); the branch is unmerged and the rate-law questions wait on the owner (plan user decision 11). | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |
 | `model-wasm-audit` | Wasm mode-switch audit | Audit before ADR-0076 phase 6; 27 hint-keyed sites; fixes wait on owner calls. | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit |
 | `model-defect-tcut` | T_cut give-up law pinned | Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim's give-up horizon is D(δ) with the budget min(1 − ρ, R), and nothing in raptorpath-wasm's sim or the page calls find_t_cut any more (the exported wasm wrapper and the page's JS wrapper remain, unused). find_t_cut's search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled. | status §3.10 item 1; commit 56388aee |

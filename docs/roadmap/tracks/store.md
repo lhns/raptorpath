@@ -36,38 +36,38 @@ flowchart TB
     store_cap_law_cluster["✔ Cap-law cluster:<br/>formulas first"]
     store_sum_cap[/"✔ Ladder battery: ×N<br/>deletion (SUM_CAP)"/]
     store_delta_cap[/"✔ Derived setpoint 1 +<br/>q(δ)"/]
-    store_s18_one_law[/"✔ One store law, first<br/>session (#167;18)"/]
+    store_s18_one_law[/"✔ One store law, first<br/>session"/]
     store_adr72_one_law[/"✔ One store law<br/>(ADR-0072)"/]
-    store_input_search["✔ c1 anchor over-read<br/>(#167;23)"]
-    store_s24_inputs["✖ Loop time and quinn<br/>rate (#167;24)"]
+    store_input_search["✔ c1 anchor over-read"]
+    store_s24_inputs["✖ Loop time and quinn<br/>rate"]
     store_power_law[/"✖ Power-seeking store<br/>law D"/]
-    store_s27_premises["✖ Spread law premises<br/>(#167;27)"]
+    store_s27_premises["✖ Spread law premises"]
     store_probe_gain[/"✖ (P) probe-gain store<br/>law"/]
-    store_dw_window["✖ (D-W) noise-sized<br/>window (#167;30)"]
-    store_s34_input["✖ Store-law input<br/>after #167;32 (#167;34)"]
-    store_s36_dispersion["✔ Receiver dispersion<br/>as link rate (#167;36)"]
-    store_s40_p90["✔ p90 dispersion<br/>estimator (#167;40)"]
-    store_s42_engine_path["✔ Engine path for<br/>dispersion (#167;42)"]
-    store_engine_form["✔ Oracle store law,<br/>closed loop (#167;43)"]
-    store_s43b_retuned["✔ Oracle store law re-<br/>tuned (#167;43b)"]
+    store_dw_window["✖ (D-W) noise-sized<br/>window"]
+    store_s34_input["✖ Store-law input<br/>after the anchor fix"]
+    store_s36_dispersion["✔ Receiver dispersion<br/>as link rate"]
+    store_s40_p90["✔ p90 dispersion<br/>estimator"]
+    store_s42_engine_path["✔ Engine path for<br/>dispersion"]
+    store_engine_form["✔ Oracle store law,<br/>closed loop"]
+    store_s43b_retuned["✔ Oracle store law re-<br/>tuned"]
     store_w1_who_limits[/"⏳ Who limits at each δ"/]
-    store_s54_budget["✔ Store-budget test<br/>design (#167;54)"]
+    store_s54_budget["✔ Store-budget test<br/>design"]
     store_defect_cap_constant>"⚠ Store cap constant<br/>at c8"]
     store_law_derivation["▶ Store-law derivation"]
-    store_s56_sweep["✔ Store-pool sweep<br/>(#167;56)"]
-    store_s57a_burst["✔ Emission-burst block<br/>at c1s (#167;57a)"]
-    store_s57b_c1d["✔ c1d pool sweep and<br/>transfer test T (#167;57b)"]
+    store_s56_sweep["✔ Store-pool sweep"]
+    store_s57a_burst["✔ Emission-burst block<br/>at c1s"]
+    store_s57b_c1d["✔ c1d pool sweep and<br/>transfer test T"]
     store_defect_delta_nan>"✔ RWM_DELTA pinned the<br/>store cap (F1)"]
     store_law_r67["✔ R6.7 floors:<br/>candidate C"]
     store_slaw_gauge["⏳ Store-law gauge<br/>build (B-1)"]
     store_s60_pre["✔ Suites and reference<br/>binary (60-pre)"]
-    store_s60a["✔ Gauge session 60a<br/>(#167;60)"]
-    store_s60b["✔ Gauge session 60b<br/>(#167;60)"]
+    store_s60a["✔ Gauge session 60a"]
+    store_s60b["✔ Gauge session 60b"]
     store_defect_allowance_short>"⚠ Store-law allowance<br/>short of the c2 knee"]
-    store_s61a["✔ c3 knee-margin sweep<br/>61a (#167;61)"]
-    store_s61b["✔ c2 add-on 61b (#167;61)"]
-    store_s61a_rerun["✔ c3 sweep re-run (#167;61<br/>Amendment 2)"]
-    store_s62_j0["✔ c3 knee need at zero<br/>jitter (s62)"]
+    store_s61a["✔ Slow-link knee<br/>sweep, first try"]
+    store_s61b["✔ Fast-link price<br/>below the knee"]
+    store_s61a_rerun["✔ Slow-link knee<br/>sweep, re-run"]
+    store_s62_j0["✔ Slow-link knee<br/>without jitter"]
     store_law_g_rederive[/"○ Re-derive the knee-<br/>margin term"/]
     store_defect_b0p_brake>"⚠ Boot-time brake<br/>estimate latches<br/>transients"]
     store_sampler_design[/"○ Store-law delay<br/>sampler design"/]
@@ -75,7 +75,7 @@ flowchart TB
     store_engine_form_impl[/"⛔ Store-law engine<br/>form"/]
     store_engine_form_guard[/"⛔ Store-law engine<br/>form guard"/]
     store_delta_seat[/"⛔ δ seat on the store"/]
-    store_s48c_session[/"⛔ δ seat diagnostic<br/>and guard (#167;48c)"/]
+    store_s48c_session[/"⛔ δ seat diagnostic<br/>and guard"/]
     store_sack_flowctl ~~~ store_reasm_bdp
     store_sack_prune ~~~ store_src_bp
     store_sack_prune ~~~ store_xn_pool
@@ -274,43 +274,43 @@ flowchart TB
 | `store-honest-inputs` | Honest inputs and O(1) anchor | done | successful |  | commit 9f6e56ba |  |
 | `store-sum-cap` | Ladder battery: ×N deletion (SUM_CAP) | done | successful |  | branch RWM_SUM_CAP DEFAULT ON | store-xn-pool, store-cap-law-cluster |
 | `store-delta-cap` | Derived setpoint 1 + q(δ) | done | very-successful | queue −10 to −200 ms | paper §10 row Pool gain 2.0 (N ≥ 2) | store-sum-cap |
-| `store-s18-one-law` | One store law, first session (§18) | done | superseded |  | status §18; commit 48ee42a3 | store-delta-cap, meas-formula-first |
+| `store-s18-one-law` | One store law, first session | done | superseded |  | status §18; commit 48ee42a3 | store-delta-cap, meas-formula-first |
 | `store-adr72-one-law` | One store law (ADR-0072) | done | successful |  | ADR-0072; status §19; commit bdb37b40 | store-s18-one-law |
-| `store-input-search` | c1 anchor over-read (§23) | done | unrated |  | status §23; commit 4ed22f38 | store-adr72-one-law |
-| `store-s24-inputs` | Loop time and quinn rate (§24) | abandoned | dead-end |  | status §24; commit de3e11a1 | store-input-search |
-| `store-s27-premises` | Spread law premises (§27) | abandoned | dead-end |  | status §27; commit 35b16607 |  |
+| `store-input-search` | c1 anchor over-read | done | unrated |  | status §23; commit 4ed22f38 | store-adr72-one-law |
+| `store-s24-inputs` | Loop time and quinn rate | abandoned | dead-end |  | status §24; commit de3e11a1 | store-input-search |
+| `store-s27-premises` | Spread law premises | abandoned | dead-end |  | status §27; commit 35b16607 |  |
 | `store-probe-gain` | (P) probe-gain store law | abandoned | dead-end |  | paper §10 row (P) probe gain: `cap' = (1 + q + g)·D̂·τ`; status §27 | store-s27-premises |
 | `store-power-law` | Power-seeking store law D | abandoned | dead-end | ×5–12 | status §29; tag archive/store-power; branch archive/wt-status29-power; paper §10 row (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker | store-input-search |
-| `store-dw-window` | (D-W) noise-sized window (§30) | abandoned | dead-end |  | status §30; paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`; commit 9677a3c9 | store-power-law |
-| `store-s34-input` | Store-law input after §32 (§34) | abandoned | dead-end | knee is 1 024 at both cells | status §34; paper §10 row (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`; paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds; paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing); paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`; commit a75bc9ca | perf-decoder-prune, store-dw-window |
-| `store-s36-dispersion` | Receiver dispersion as link rate (§36) | done | unrated |  | status §36; commit 4dd26760 | store-s34-input |
-| `store-s40-p90` | p90 dispersion estimator (§40) | done | unrated |  | status §40; commit b0b07b1b | store-s36-dispersion |
-| `store-s42-engine-path` | Engine path for dispersion (§42) | done | unrated |  | status §42; commit af06313d | store-s40-p90 |
-| `store-engine-form` | Oracle store law, closed loop (§43) | done | unrated |  | status §43; branch harness43; branch run43; commit 1eca3ee2 | store-s42-engine-path |
-| `store-s43b-retuned` | Oracle store law re-tuned (§43b) | done | unrated |  | status §43b; commit bab838c1 | store-engine-form |
+| `store-dw-window` | (D-W) noise-sized window | abandoned | dead-end |  | status §30; paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`; commit 9677a3c9 | store-power-law |
+| `store-s34-input` | Store-law input after the anchor fix | abandoned | dead-end | knee is 1 024 at both cells | status §34; paper §10 row (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`; paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds; paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing); paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`; commit a75bc9ca | perf-decoder-prune, store-dw-window |
+| `store-s36-dispersion` | Receiver dispersion as link rate | done | unrated |  | status §36; commit 4dd26760 | store-s34-input |
+| `store-s40-p90` | p90 dispersion estimator | done | unrated |  | status §40; commit b0b07b1b | store-s36-dispersion |
+| `store-s42-engine-path` | Engine path for dispersion | done | unrated |  | status §42; commit af06313d | store-s40-p90 |
+| `store-engine-form` | Oracle store law, closed loop | done | unrated |  | status §43; branch harness43; branch run43; commit 1eca3ee2 | store-s42-engine-path |
+| `store-s43b-retuned` | Oracle store law re-tuned | done | unrated |  | status §43b; commit bab838c1 | store-engine-form |
 | `store-w1-who-limits` | Who limits at each δ | in-progress | unrated |  | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 | cc-bbrrs-r1, store-engine-form |
-| `store-s54-budget` | Store-budget test design (§54) | done | unrated | from a mean of about 5.3 s to about 1.0 s | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag | rec-snapver-filter |
+| `store-s54-budget` | Store-budget test design | done | unrated | from a mean of about 5.3 s to about 1.0 s | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag | rec-snapver-filter |
 | `store-law-derivation` | Store-law derivation | in-progress | unrated |  | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2; branch store-law-rev6; derivation store-law-r67.md; status §60 | store-s54-budget, store-defect-cap-constant, model-law-ledger |
-| `store-s56-sweep` | Store-pool sweep (§56) | done | unrated | c2 flat to W 192, c8 to 512 | status §56; derivation store-law.md §13 | store-s54-budget, store-defect-cap-constant |
-| `store-s57a-burst` | Emission-burst block at c1s (§57a) | done | unrated | burst knob reaches 79 at 256; S 0.62 | status §57a Result; status §57 Amendment 1 | store-s56-sweep |
-| `store-s57b-c1d` | c1d pool sweep and transfer test T (§57b) | done | unrated | c1d store-bound only at W <= 512; T not reached | status §57b Result; status §57 Amendment 1; branch harness57b | store-s56-sweep |
+| `store-s56-sweep` | Store-pool sweep | done | unrated | c2 flat to W 192, c8 to 512 | status §56; derivation store-law.md §13 | store-s54-budget, store-defect-cap-constant |
+| `store-s57a-burst` | Emission-burst block at c1s | done | unrated | burst knob reaches 79 at 256; S 0.62 | status §57a Result; status §57 Amendment 1 | store-s56-sweep |
+| `store-s57b-c1d` | c1d pool sweep and transfer test T | done | unrated | c1d store-bound only at W <= 512; T not reached | status §57b Result; status §57 Amendment 1; branch harness57b | store-s56-sweep |
 | `store-law-r67` | R6.7 floors: candidate C | done | unrated |  | derivation store-law-r67.md; commit d85d048b; branch store-law-r67 | store-s57b-c1d |
 | `store-slaw-gauge` | Store-law gauge build (B-1) | in-progress | unrated |  | status §60; branch slaw-gauge; branch s60-tree | store-law-derivation |
 | `store-s60-pre` | Suites and reference binary (60-pre) | done | successful | bin_sha e410d640… | status 60-pre; status 60-pre Result; commit f950956b; commit 0367ea59 | store-slaw-gauge |
-| `store-s60a` | Gauge session 60a (§60) | done | mixed | c2 SHORT 1.69 ms; c8 B2 unscoreable | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60; status §60 Result | store-s60-pre, store-law-r67 |
-| `store-s60b` | Gauge session 60b (§60) | done | mixed | c1s control and G/C unread (collapse rule) | status §60 Amendment 2; branch harness60-a2; status §60 Result | store-s60a |
-| `store-s61a` | c3 knee-margin sweep 61a (§61) | done | bad | 66/66 clean, nothing scored (two rule defects) | status §61 Amendment 1; status §61a Result; branch harness61 | store-s60b, store-user-u1u3 |
-| `store-s61b` | c2 add-on 61b (§61) | done | successful | c2 price below the knee, merged with §60 | status §61b Result | store-s60b |
-| `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | done | mixed | rho_3 0.457 vs rho_2 0.797 | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 | store-s61a |
+| `store-s60a` | Gauge session 60a | done | mixed | c2 SHORT 1.69 ms; c8 B2 unscoreable | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60; status §60 Result | store-s60-pre, store-law-r67 |
+| `store-s60b` | Gauge session 60b | done | mixed | c1s control and G/C unread (collapse rule) | status §60 Amendment 2; branch harness60-a2; status §60 Result | store-s60a |
+| `store-s61a` | Slow-link knee sweep, first try | done | bad | 66/66 clean, nothing scored (two rule defects) | status §61 Amendment 1; status §61a Result; branch harness61 | store-s60b, store-user-u1u3 |
+| `store-s61b` | Fast-link price below the knee | done | successful | c2 price below the knee, merged with §60 | status §61b Result | store-s60b |
+| `store-s61a-rerun` | Slow-link knee sweep, re-run | done | mixed | rho_3 0.457 vs rho_2 0.797 | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 | store-s61a |
 | `store-law-g-rederive` | Re-derive the knee-margin term | next | unrated |  | status §61a re-run Result | store-s61a-rerun, store-s61b |
-| `store-s62-j0` | c3 knee need at zero jitter (s62) | done | mixed | floor still count-dependent at J = 0 (D0 3.36 ms) | status §62; status §62 Result | rec-s63-f2-first-contact |
+| `store-s62-j0` | Slow-link knee without jitter | done | mixed | floor still count-dependent at J = 0 (D0 3.36 ms) | status §62; status §62 Result | rec-s63-f2-first-contact |
 | `store-defect-b0p-brake` | Boot-time brake estimate latches transients | next | unrated | F swings 37-139 ms from one boot window | status "The count-rule derivation" | store-s62-j0 |
 | `store-sampler-design` | Store-law delay sampler design | next | unrated |  | status "The count-rule derivation" | store-defect-b0p-brake |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | next | unrated | SHORT 1.69 ms at c2 | status §60 Result; derivation store-law-r67.md | store-s60a |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | done | unrated | merged 9b8b42ca; decision_trace_pin 7/7 on Linux | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |  |
 | `store-defect-cap-constant` | Store cap constant at c8 | in-progress | unrated | N·pool = 4 096 | status §3.10 item 8 | rec-snapver-filter |
 | `store-engine-form-guard` | Store-law engine form guard | blocked | unrated |  | plan VM queue 8 | store-engine-form-impl, meas-guard-v2-impl |
-| `store-s48c-session` | δ seat diagnostic and guard (§48c) | blocked | unrated |  | plan W1.4 | store-delta-seat, meas-s51-session, meas-guard-v2-impl |
+| `store-s48c-session` | δ seat diagnostic and guard | blocked | unrated |  | plan W1.4 | store-delta-seat, meas-s51-session, meas-guard-v2-impl |
 | `store-user-u1u3` | Owner calls U1–U3 | done | n/a |  | plan user decisions 3 and 10 | store-w1-who-limits |
 | `store-engine-form-impl` | Store-law engine form | blocked | unrated |  | plan W3.3; CLAUDE.md FORMULA-FIRST | place-per-leg-impl, store-user-u1u3, store-fix-maxbw-minrtt, model-law-ledger |
 | `store-delta-seat` | δ seat on the store | blocked | unrated |  | plan W1.2 RESULT, W1.3, W1 round 2 (iii) | store-user-u1u3, store-engine-form-impl |
@@ -347,43 +347,43 @@ flowchart TB
 | `store-honest-inputs` | Honest inputs and O(1) anchor | HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11). | commit 9f6e56ba |
 | `store-sum-cap` | Ladder battery: ×N deletion (SUM_CAP) | The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner's formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits. | branch RWM_SUM_CAP DEFAULT ON |
 | `store-delta-cap` | Derived setpoint 1 + q(δ) | RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19). | paper §10 row Pool gain 2.0 (N ≥ 2) |
-| `store-s18-one-law` | One store law, first session (§18) | Split 2026-11-16 from 'One store law (ADR-0072)'. The lead's ruling: it stands as scored, REFUTED; the cross-session control reference is a design weakness (7e13dc06). §19 re-read the law against a same-session main. | status §18; commit 48ee42a3 |
+| `store-s18-one-law` | One store law, first session | Split 2026-11-16 from 'One store law (ADR-0072)'. The lead's ruling: it stands as scored, REFUTED; the cross-session control reference is a design weakness (7e13dc06). §19 re-read the law against a same-session main. | status §18; commit 48ee42a3 |
 | `store-adr72-one-law` | One store law (ADR-0072) | ADR-0072 accepted on §19, the same-session control (§18 is store-s18-one-law). Dates: ADR end dates in the raw set equal their start (placeholder). | ADR-0072; status §19; commit bdb37b40 |
-| `store-input-search` | c1 anchor over-read (§23) | Split 2026-11-16 from 'Store-law input search (8 inputs)': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38). | status §23; commit 4ed22f38 |
-| `store-s24-inputs` | Loop time and quinn rate (§24) | Split 2026-11-16 from 'Store-law input search (8 inputs)'. 46 rows at c2-100 and c1s-400. | status §24; commit de3e11a1 |
-| `store-s27-premises` | Spread law premises (§27) | Split 2026-11-16 from 'Store-law input search (8 inputs)'. [LOOPDIAG] instrument on main, 4 cells, 128 rows. | status §27; commit 35b16607 |
+| `store-input-search` | c1 anchor over-read | Split 2026-11-16 from 'Store-law input search (8 inputs)': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38). | status §23; commit 4ed22f38 |
+| `store-s24-inputs` | Loop time and quinn rate | Split 2026-11-16 from 'Store-law input search (8 inputs)'. 46 rows at c2-100 and c1s-400. | status §24; commit de3e11a1 |
+| `store-s27-premises` | Spread law premises | Split 2026-11-16 from 'Store-law input search (8 inputs)'. [LOOPDIAG] instrument on main, 4 cells, 128 rows. | status §27; commit 35b16607 |
 | `store-probe-gain` | (P) probe-gain store law | Split 2026-11-16 from 'Store-law input search (8 inputs)'. Closed by derivation, never built (status §27–§29); the gain 2.0 of paper §6.2 returns under another name. | paper §10 row (P) probe gain: `cap' = (1 + q + g)·D̂·τ`; status §27 |
 | `store-power-law` | Power-seeking store law D | §29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27. | status §29; tag archive/store-power; branch archive/wt-status29-power; paper §10 row (D) power seeker: `n* = argmax D(n)^α(δ)/T(n)`, dithered extremum seeker |
-| `store-dw-window` | (D-W) noise-sized window (§30) | Split 2026-11-16 from 'Power-seeking store law D'. Status §2: DOES-NOT-CLOSE; §34's R2 re-read it after the receiver change (CLOSED). | status §30; paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`; commit 9677a3c9 |
-| `store-s34-input` | Store-law input after §32 (§34) | Split 2026-11-16 from 'Store-law input search (8 inputs)'. One derivation (NONE-CLOSES) closed the four candidates (b1)–(b4), then a static-cap diagnostic R1–R4 at c1s and c1d: R1 knee 1 024 at both, R2 D-W CLOSED, R3 AMBIGUOUS with the fixed point MISSES (457), R4 QUINN-SHARES. | status §34; paper §10 row (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`; paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds; paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing); paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`; commit a75bc9ca |
-| `store-s36-dispersion` | Receiver dispersion as link rate (§36) | Split 2026-11-16 from 'Dispersion and oracle store law'. Capture diagnostic, 58 rows, no engine diff; the post hoc p90 addendum led to §40. | status §36; commit 4dd26760 |
-| `store-s40-p90` | p90 dispersion estimator (§40) | Split 2026-11-16 from 'Dispersion and oracle store law'. Nothing ships. | status §40; commit b0b07b1b |
-| `store-s42-engine-path` | Engine path for dispersion (§42) | Split 2026-11-16 from 'Dispersion and oracle store law'. Derivation and feasibility record, no VM: a wire-clocked S does not close c1s (af06313d). | status §42; commit af06313d |
-| `store-engine-form` | Oracle store law, closed loop (§43) | Split 2026-11-16 from 'Dispersion and oracle store law' (§36, §40, §42, §43, §43b, rated successful as a family): those are now store-s36-dispersion, store-s40-p90, store-s42-engine-path and store-s43b-retuned; this node is §43 alone, a diagnostic with no rating. RWM_STORE_LAW=oracle, 24 rows; continues as plan W3.3. | status §43; branch harness43; branch run43; commit 1eca3ee2 |
-| `store-s43b-retuned` | Oracle store law re-tuned (§43b) | Split 2026-11-16 from 'Dispersion and oracle store law'. G = 0.9, τ = 5 ms, c2, SL/SH starts, n = 3 each. | status §43b; commit bab838c1 |
+| `store-dw-window` | (D-W) noise-sized window | Split 2026-11-16 from 'Power-seeking store law D'. Status §2: DOES-NOT-CLOSE; §34's R2 re-read it after the receiver change (CLOSED). | status §30; paper §10 row (D-W) noise-sized window: `W*(δ) = min W : σ²(W) ≤ (q/2)²`; commit 9677a3c9 |
+| `store-s34-input` | Store-law input after the anchor fix | Split 2026-11-16 from 'Store-law input search (8 inputs)'. One derivation (NONE-CLOSES) closed the four candidates (b1)–(b4), then a static-cap diagnostic R1–R4 at c1s and c1d: R1 knee 1 024 at both, R2 D-W CLOSED, R3 AMBIGUOUS with the fixed point MISSES (457), R4 QUINN-SHARES. | status §34; paper §10 row (b1) quinn's BBR window as the knee: `cap = (1 + q)·K`, `K = Σᵢ (2·L̂_q,ᵢ·min_rttᵢ + hᵢ) / W`; paper §10 row (b2) cwnd-binding share as an input: grow while the cap binds, hold where quinn binds; paper §10 row (b3) path memory: n̄ carried across transfers per path (RFC 9040 temporal sharing); paper §10 row (b4) receiver capacity as a ceiling: `Σᵢ … ≤ (1 + q)·μ_R·(RTprop + S̄(n))`; commit a75bc9ca |
+| `store-s36-dispersion` | Receiver dispersion as link rate | Split 2026-11-16 from 'Dispersion and oracle store law'. Capture diagnostic, 58 rows, no engine diff; the post hoc p90 addendum led to §40. | status §36; commit 4dd26760 |
+| `store-s40-p90` | p90 dispersion estimator | Split 2026-11-16 from 'Dispersion and oracle store law'. Nothing ships. | status §40; commit b0b07b1b |
+| `store-s42-engine-path` | Engine path for dispersion | Split 2026-11-16 from 'Dispersion and oracle store law'. Derivation and feasibility record, no VM: a wire-clocked S does not close c1s (af06313d). | status §42; commit af06313d |
+| `store-engine-form` | Oracle store law, closed loop | Split 2026-11-16 from 'Dispersion and oracle store law' (§36, §40, §42, §43, §43b, rated successful as a family): those are now store-s36-dispersion, store-s40-p90, store-s42-engine-path and store-s43b-retuned; this node is §43 alone, a diagnostic with no rating. RWM_STORE_LAW=oracle, 24 rows; continues as plan W3.3. | status §43; branch harness43; branch run43; commit 1eca3ee2 |
+| `store-s43b-retuned` | Oracle store law re-tuned | Split 2026-11-16 from 'Dispersion and oracle store law'. G = 0.9, τ = 5 ms, c2, SL/SH starts, n = 3 each. | status §43b; commit bab838c1 |
 | `store-w1-who-limits` | Who limits at each δ | Derivation (derive-w1, w1r2): δ's seat on the store, bbr_rs window δ-free; waits on owner questions U1-U3 (plan user decision 10). | derivation w1-who-limits.md (branch derive-w1); branch derive-w1; branch w1r2 |
-| `store-s54-budget` | Store-budget test design (§54) | p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE' and CAND'), plan item 2 of 2026-11-13. | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag |
+| `store-s54-budget` | Store-budget test design | p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE' and CAND'), plan item 2 of 2026-11-13. | derivation p0-dwell-diag.md (branch p0-dwell-diag); branch p0-dwell-diag |
 | `store-law-derivation` | Store-law derivation | Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. Progress 2026-11-14..15: the R6.4/R6.5 amendments with §57a/§57b (store-law-rev6, merged); R6.7 (store-law-r67: candidate floor C, no recommendation); the §60 gauge session measures the queue-free floors, tests the target form at c8 and scores R6.7's allowance shortfall at c2. Next derivation: R6.7's allowance item; a large sweep only after it. | status §54 Result, launch 2, owner decision; law ledger §4 items 1-2; branch store-law-rev6; derivation store-law-r67.md; status §60 |
-| `store-s56-sweep` | Store-pool sweep (§56) | Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law's Part B and the owner's U2. | status §56; derivation store-law.md §13 |
-| `store-s57a-burst` | Emission-burst block at c1s (§57a) | Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds. | status §57a Result; status §57 Amendment 1 |
-| `store-s57b-c1d` | c1d pool sweep and transfer test T (§57b) | Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms. | status §57b Result; status §57 Amendment 1; branch harness57b |
+| `store-s56-sweep` | Store-pool sweep | Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law's Part B and the owner's U2. | status §56; derivation store-law.md §13 |
+| `store-s57a-burst` | Emission-burst block at c1s | Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds. | status §57a Result; status §57 Amendment 1 |
+| `store-s57b-c1d` | c1d pool sweep and transfer test T | Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms. | status §57b Result; status §57 Amendment 1; branch harness57b |
 | `store-law-r67` | R6.7 floors: candidate C | Candidate C, not a recommendation: one floor, the median absolute window minimum over the K windows of lowest store size seen so far, from n₀ = 10 with no boot hold. It costs 3.75–5.4 s to reach n = 128 and exposes an allowance gap at c2 (5–33 slots below the knee on the static map). §60 scores its c2 prediction (D SHORT, +0.9 to +2.2 ms). | derivation store-law-r67.md; commit d85d048b; branch store-law-r67 |
 | `store-slaw-gauge` | Store-law gauge build (B-1) | slaw-gauge d416d59b: the [SLAW] gauge and the [WSTORE] fec= window means of the rate seat's inputs; s60-tree cb88df3a is main + the gauge, the §60 measured tree. Main does not take the gauge, because it changes the release binary and has had no guard; the tools merge after the Result. Done when: the gauge reaches main through a guard, or is dropped after the §60 Result. | status §60; branch slaw-gauge; branch s60-tree |
 | `store-s60-pre` | Suites and reference binary (60-pre) | Release 1156/0, debug 1008/0, wasm 50/0, core 2/0, doc and parsers rc 0; decision_trace_pin 7/7 in both profiles; the first Linux run of the gauge's tests. ref60-manifest (187 files) is committed and passed as LD_REF_MANIFEST to every §60 launch. | status 60-pre; status 60-pre Result; commit f950956b; commit 0367ea59 |
-| `store-s60a` | Gauge session 60a (§60) | 96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7). | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60; status §60 Result |
-| `store-s60b` | Gauge session 60b (§60) | 40/40 slots live at harness60-a2 1ecee59d (12:31–13:26Z 2026-11-16), same bin_sha, HIT; the rehearsal re-ran first and passed. c1s: floor FLAT, P1 holds (43x), B1 does not fire. The control sign and the G/C pairs are unread: the frozen absolute collapse rule (X = 6.1 ms) flags all 22 W 2048 rows, because the standing queue alone gives 13-17 ms of excess; genuine collapse (qcwnd share) is 7 of 22. Host re-score byte-equal; owed stub run and shell tests passed. | status §60 Amendment 2; branch harness60-a2; status §60 Result |
-| `store-s61a` | c3 knee-margin sweep 61a (§61) | harness61 14e2bacd, bin_sha e410d640, HIT. CR61's ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES. | status §61 Amendment 1; status §61a Result; branch harness61 |
-| `store-s61b` | c2 add-on 61b (§61) | 30/30 live, CONTROL-c2 OK (control ratios 0.99-1.06), DRIFT-OK at W 160 (tmin 12.295 vs 12.33). u concave and tmin under the chord at W 96/128/144. Landing table reported for the owner. | status §61b Result |
-| `store-s61a-rerun` | c3 sweep re-run (§61 Amendment 2) | W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. Scored 66/66: rho_3 0.457 [0.409, 0.483], DISAGREES, not floor-sensitive; every allowance candidate COVERED; need_3 4.43 ms vs need_2 4.05. Erratum 1: the floor minimum falls with the sample count (c3 W12 42.75 at n 60 to 33.23 at n 4223); the constant-in-ms lead and the S_F-is-not-the-term reading are withdrawn; an estimator count rule comes first. | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 |
+| `store-s60a` | Gauge session 60a | 96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7). | status §60; status §60 Amendment 1; derivation s60-registration.md; branch s60-design; branch harness60; status §60 Result |
+| `store-s60b` | Gauge session 60b | 40/40 slots live at harness60-a2 1ecee59d (12:31–13:26Z 2026-11-16), same bin_sha, HIT; the rehearsal re-ran first and passed. c1s: floor FLAT, P1 holds (43x), B1 does not fire. The control sign and the G/C pairs are unread: the frozen absolute collapse rule (X = 6.1 ms) flags all 22 W 2048 rows, because the standing queue alone gives 13-17 ms of excess; genuine collapse (qcwnd share) is 7 of 22. Host re-score byte-equal; owed stub run and shell tests passed. | status §60 Amendment 2; branch harness60-a2; status §60 Result |
+| `store-s61a` | Slow-link knee sweep, first try | harness61 14e2bacd, bin_sha e410d640, HIT. CR61's ratio clause flagged all six W 2048 controls (1.51-1.90, healthy goodput); the straddle pilot overshot the knee by ~10% (W95 106.8-109.7 vs K1 112). Post-hoc bound (not scored): rho_3 in [0.31-0.46, 0.50-0.56] against rho_2 0.797, pointing toward DISAGREES. | status §61 Amendment 1; status §61a Result; branch harness61 |
+| `store-s61b` | Fast-link price below the knee | 30/30 live, CONTROL-c2 OK (control ratios 0.99-1.06), DRIFT-OK at W 160 (tmin 12.295 vs 12.33). u concave and tmin under the chord at W 96/128/144. Landing table reported for the owner. | status §61b Result |
+| `store-s61a-rerun` | Slow-link knee sweep, re-run | W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. Scored 66/66: rho_3 0.457 [0.409, 0.483], DISAGREES, not floor-sensitive; every allowance candidate COVERED; need_3 4.43 ms vs need_2 4.05. Erratum 1: the floor minimum falls with the sample count (c3 W12 42.75 at n 60 to 33.23 at n 4223); the constant-in-ms lead and the S_F-is-not-the-term reading are withdrawn; an estimator count rule comes first. | status §61 Amendment 2; status §61 Amendment 3; status §61a re-run Result; status §61a re-run Result, Erratum 1 |
 | `store-law-g-rederive` | Re-derive the knee-margin term | Registered consequence of DISAGREES. First: the estimator's sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form. | status §61a re-run Result |
-| `store-s62-j0` | c3 knee need at zero jitter (s62) | Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note). | status §62; status §62 Result |
+| `store-s62-j0` | Slow-link knee without jitter | Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note). | status §62; status §62 Result |
 | `store-defect-b0p-brake` | Boot-time brake estimate latches transients | b0p = max(tmin - m-hat) over the first 8 windows (slaw.rs:150-165) during the start transient. A ledger row is owed beside F07 and E13. s62 D0 equals the steady-state brake (3.36 ms at J = 0). | status "The count-rule derivation" |
 | `store-sampler-design` | Store-law delay sampler design | Questions: how to estimate the brake as windows fill; whether the knee minimum is set by post-loss drains; what anchors the floor under jitter. Decision 8 stays unsettled until then. | status "The count-rule derivation" |
 | `store-defect-allowance-short` | Store-law allowance short of the c2 knee | Needs a law-ledger verdict under F01 (FORMULA-FIRST), in R6.7's derivation (open item 2, the allowance form). With it: l (the lifetime echo minimum) is load-dependent (P3 RISES at c2 and c8 leg 0), under E03. | status §60 Result; derivation store-law-r67.md |
 | `store-defect-delta-nan` | RWM_DELTA pinned the store cap (F1) | Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner's guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect. | status "Engine defect F1"; derivation shared-core-design.md F1; status §58 Amendment 2; commit 9b8b42ca |
 | `store-defect-cap-constant` | Store cap constant at c8 | Plan 2026-11-13: the store law becomes its own track (items 8-9). | status §3.10 item 8 |
 | `store-engine-form-guard` | Store-law engine form guard | Law ledger: F01 battery (with E03, E04). Done when: guard v2 against main PASSes and the c8 clamp bind fraction is reported below 1 (the law is not pinned over its operating range). | plan VM queue 8 |
-| `store-s48c-session` | δ seat diagnostic and guard (§48c) | Done when: the §48c (a) reported-only fixed-gain/fixed-τ rows and the (b) guard v2 battery of the derived δ seat (c1s, c2, c8 and a Realtime row at c2) are in status. | plan W1.4 |
+| `store-s48c-session` | δ seat diagnostic and guard | Done when: the §48c (a) reported-only fixed-gain/fixed-τ rows and the (b) guard v2 battery of the derived δ seat (c1s, c2, c8 and a Realtime row at c2) are in status. | plan W1.4 |
 | `store-user-u1u3` | Owner calls U1–U3 | U1 store leads, U3 accepted (2026-11-16); U2 (2026-11-17): the dial scales a measured knee margin g(delta)*S_F + q(delta)*F-hat, g(Bulk) = 1, the Realtime end set by the c3 sweep (status Owner decisions, items 8-10). The c3 sweep (§61a re-run) DISAGREES as registered; Erratum 1 withdraws reading it as S_F not being the term (the reading mixes sample counts); the estimator count rule comes first (store-law-g-rederive). | plan user decisions 3 and 10 |
 | `store-engine-form-impl` | Store-law engine form | Law ledger: F01 (rank 3, P0), the law change that ships with E03 and E04 in one change and battery: write the hole-population term and the no-queue offset b0 that the paper's Little's-law sentence omits, with [SUMCAP] pin= and ask= gauges. Done when: the store law reads an engine L̂ and time term from the per-leg state (formula and derivation in the paper first), with a bind-fraction gauge on its clamp and red-first law tests. | plan W3.3; CLAUDE.md FORMULA-FIRST |
 | `store-delta-seat` | δ seat on the store | Done when: the store time term carries δ (W1.2 candidate A) with absolute tests continuous and monotone through every preset (±2 %), in cc_sim. | plan W1.2 RESULT, W1.3, W1 round 2 (iii) |

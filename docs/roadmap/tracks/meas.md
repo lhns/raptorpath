@@ -38,18 +38,18 @@ flowchart TB
     meas_defect_c8_bimodal>"⚠ c8 control bimodal<br/>collapse"]
     meas_defect_diag_rtp_ms>"⚠ #91;DIAG#93; rtp prints<br/>whole milliseconds"]
     meas_gso_truth>"✔ Per-datagram loss<br/>truth (GSO)"]
-    meas_v4_verification["✔ V4 verification of<br/>new main (#167;6)"]
-    meas_guard_41c["✔ Rank-minp merge<br/>guard (#167;41c)"]
+    meas_v4_verification["✔ V4 verification of<br/>new main"]
+    meas_guard_41c["✔ Rank-minp merge<br/>guard"]
     meas_harness_consolidation["✔ Harness on main,<br/>rehearsal mode"]
     meas_defect_rtp_floor>"⚠ Guard clause<br/>rtp_floor_p0 measures<br/>drain"]
     meas_guard_clause_dry["✔ Guard clause dry run"]
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
-    meas_s51_design["✔ Off-Bulk benchmark<br/>design (#167;51)"]
-    meas_s58_session["✔ #167;58: F1 suites,<br/>binary identity"]
+    meas_s51_design["✔ Off-Bulk benchmark<br/>design"]
+    meas_s58_session["✔ Dial-pin fix suites,<br/>binary identity"]
     meas_harness_reuse["✔ Cheaper sessions by<br/>reuse"]
-    meas_blocke_pacing_gate>"⚠ Block E pacing gate<br/>fires on fixed binary"]
+    meas_blocke_pacing_gate>"⚠ Pacer late-send<br/>check fails"]
     meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
-    meas_s51_harness["○ #167;51 harness and<br/>scorer"]
+    meas_s51_harness["○ Off-Bulk sweep<br/>harness and scorer"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
     meas_guard_resolution["○ Guard CPU and lag<br/>resolution"]
@@ -156,7 +156,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-meas -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `meas-blocke-pacing-gate` | Block E pacing gate fires on fixed binary | next | unrated | 1.2-3.6 % of paced symbols late, gate allows 1 % | status §63 Result | rec-f2-merge-guard |
+| `meas-blocke-pacing-gate` | Pacer late-send check fails | next | unrated | 1.2-3.6 % of paced symbols late, gate allows 1 % | status §63 Result | rec-f2-merge-guard |
 | `meas-harness-reuse` | Cheaper sessions by reuse | done | successful | guard ran no suites and no builds | status §64 Amendments 1-2; status owner decision 14 |  |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | done | unrated |  | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |  |
@@ -184,19 +184,19 @@ flowchart TB
 | `meas-wire-v8` | Stage-2 instruments and owed findings | done | successful |  | status §2 row "Crown no-regression spot (wire v8 merges)" |  |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | done | n/a |  | commit 3eb28db6 |  |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | done | unrated | 5 300 datagrams lost at 5 per skb while dropped read 1 060 | status §3.8 |  |
-| `meas-v4-verification` | V4 verification of new main (§6) | done | successful |  | status §6 | cod-one-pipeline |
-| `meas-guard-41c` | Rank-minp merge guard (§41c) | done | successful | p = 0.2256 | status §41c; branch archive/nsbench41c |  |
+| `meas-v4-verification` | V4 verification of new main | done | successful |  | status §6 | cod-one-pipeline |
+| `meas-guard-41c` | Rank-minp merge guard | done | successful | p = 0.2256 | status §41c; branch archive/nsbench41c |  |
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | done | successful |  | branch harness-main |  |
 | `meas-defect-rtp-floor` | Guard clause rtp_floor_p0 measures drain | in-progress | unrated | 6/12 BASE and 5/12 CAND rows | status §3.10 item 7 | rec-snapver-filter |
 | `meas-guard-clause-dry` | Guard clause dry run | done | successful |  | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d | meas-defect-rtp-floor, meas-guard-41c |
-| `meas-s58-session` | §58: F1 suites, binary identity | done | successful | tree X = control 8f313616… | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed | store-defect-delta-nan, model-shared-core-0 |
-| `meas-guard-v2` | Merge guard v2 accepted (§41d) | done | n/a |  | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md | meas-guard-clause-dry, meas-defect-rtp-floor, meas-guard-41c |
+| `meas-s58-session` | Dial-pin fix suites, binary identity | done | successful | tree X = control 8f313616… | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed | store-defect-delta-nan, model-shared-core-0 |
+| `meas-guard-v2` | Merge guard v2 accepted | done | n/a |  | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md | meas-guard-clause-dry, meas-defect-rtp-floor, meas-guard-41c |
 | `meas-defect-eta-witness` | ETA route and σ witness mismatch | in-progress | unrated |  | status §3.1 item 3 |  |
 | `meas-defect-c8-bimodal` | c8 control bimodal collapse | in-progress | unrated | 4/8 reps | status §3.1 item 4 |  |
 | `meas-defect-diag-rtp-ms` | [DIAG] rtp prints whole milliseconds | in-progress | unrated |  | status §3.5 item 4 |  |
 | `meas-guard-v2-impl` | Guard v2 implementation | done | unrated |  | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 | meas-guard-v2 |
-| `meas-s51-design` | Off-Bulk benchmark design (§51) | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
-| `meas-s51-harness` | §51 harness and scorer | next | unrated |  | docs/derivations/s51-design.md §8 P1 | rec-s54-session |
+| `meas-s51-design` | Off-Bulk benchmark design | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
+| `meas-s51-harness` | Off-Bulk sweep harness and scorer | next | unrated |  | docs/derivations/s51-design.md §8 P1 | rec-s54-session |
 | `meas-s51b-rho` | Partial-reliability measurement block | blocked | unrated |  | docs/derivations/s51-design.md §2.3, §8 P4 | meas-s51-session |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | done | unrated |  | plan W5.3; branch adv-cells |  |
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
@@ -214,7 +214,7 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `meas-blocke-pacing-gate` | Block E pacing gate fires on fixed binary | From the s51e_score path exercise on §63 CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. E-pre (suites + binid on e-tree-f2) is unaffected and can run first. | status §63 Result |
+| `meas-blocke-pacing-gate` | Pacer late-send check fails | From the s51e_score path exercise on §63 CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. E-pre (suites + binid on e-tree-f2) is unaffected and can run first. | status §63 Result |
 | `meas-harness-reuse` | Cheaper sessions by reuse | Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main. | status §64 Amendments 1-2; status owner decision 14 |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |
@@ -242,19 +242,19 @@ flowchart TB
 | `meas-wire-v8` | Stage-2 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. | status §2 row "Crown no-regression spot (wire v8 merges)" |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: "continue your measurements but they cannot take over 5 hours". | commit 3eb28db6 |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | §3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]). | status §3.8 |
-| `meas-v4-verification` | V4 verification of new main (§6) | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §6 |
-| `meas-guard-41c` | Rank-minp merge guard (§41c) | A/A-calibrated rank-minp guard at 12+12; used by §49, §50, §52. nsbench41c is its ns/stamp bench. End 2026-11-12 was a placeholder (status §41c: last edit or migration date); date from merge ?. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §41c; branch archive/nsbench41c |
+| `meas-v4-verification` | V4 verification of new main | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §6 |
+| `meas-guard-41c` | Rank-minp merge guard | A/A-calibrated rank-minp guard at 12+12; used by §49, §50, §52. nsbench41c is its ns/stamp bench. End 2026-11-12 was a placeholder (status §41c: last edit or migration date); date from merge ?. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §41c; branch archive/nsbench41c |
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | Plan W5.0; LD_REHEARSE and verified LD_PRIOR_TESTS. | branch harness-main |
 | `meas-defect-rtp-floor` | Guard clause rtp_floor_p0 measures drain | Open until guard v2 is implemented (meas-guard-v2-impl). | status §3.10 item 7 |
 | `meas-guard-clause-dry` | Guard clause dry run | No raw record. Dry run done (status §3.10 item 7: "the source-phase floor is degenerate on guard rows; in-order delay resolves only on long rows"); feeds §41d. Branch unmerged (inventory merge). | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d |
-| `meas-s58-session` | §58: F1 suites, binary identity | Part A (suites on the F1 tree): PASS, F1 merged (store-defect-delta-nan). Part B (Linux release-binary identity, binid_run.sh): run 1 not read (control mismatch: the runner built from the workspace root; fixed, and a test pins it); run 2: control = known answer, base ≠ control diagnosed as the two-line cfg(test) mod declaration shifting line numbers (tree X builds the control's sha). Amendment 3: the re-laid endspeed candidate equals main's sha and merges (model-endspeed); tree Y confirms raptorpath-core does not touch the engine binary. phase6-forms and viz-endspeed are superseded by endspeed-relaid. §58 closed. | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed |
-| `meas-guard-v2` | Merge guard v2 accepted (§41d) | No raw record (status §41d is newer than the extract). The owner accepted the v2 spec on 2026-11-13 with two calls: the start-up RTT floor is reported only everywhere, and the +34 min guard cost is accepted (f73338f8). The spec: in-order delay mean scored on 600 MB c2/c8 rows; splice dry run flips no verdict; §48b addendum: bbr_rs raised c8 in-order delay by 46 %. Merged with the former meas-user-guard-v2 node. Implementation: meas-guard-v2-impl. | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md |
+| `meas-s58-session` | Dial-pin fix suites, binary identity | Part A (suites on the F1 tree): PASS, F1 merged (store-defect-delta-nan). Part B (Linux release-binary identity, binid_run.sh): run 1 not read (control mismatch: the runner built from the workspace root; fixed, and a test pins it); run 2: control = known answer, base ≠ control diagnosed as the two-line cfg(test) mod declaration shifting line numbers (tree X builds the control's sha). Amendment 3: the re-laid endspeed candidate equals main's sha and merges (model-endspeed); tree Y confirms raptorpath-core does not touch the engine binary. phase6-forms and viz-endspeed are superseded by endspeed-relaid. §58 closed. | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed |
+| `meas-guard-v2` | Merge guard v2 accepted | No raw record (status §41d is newer than the extract). The owner accepted the v2 spec on 2026-11-13 with two calls: the start-up RTT floor is reported only everywhere, and the +34 min guard cost is accepted (f73338f8). The spec: in-order delay mean scored on 600 MB c2/c8 rows; splice dry run flips no verdict; §48b addendum: bbr_rs raised c8 in-order delay by 46 %. Merged with the former meas-user-guard-v2 node. Implementation: meas-guard-v2-impl. | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md |
 | `meas-defect-eta-witness` | ETA route and σ witness mismatch | Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 3 |
 | `meas-defect-c8-bimodal` | c8 control bimodal collapse | Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 4 |
 | `meas-defect-diag-rtp-ms` | [DIAG] rtp prints whole milliseconds | Status §3.5 item 4. Undated raw record; date approximate (the cleanup). | status §3.5 item 4 |
 | `meas-guard-v2-impl` | Guard v2 implementation | Merged to main (9e687938 "Merge guard v2 (status 41d)", batch ending 0ed6d383): selectable clause set, plan 41d, v1 bit-identical, VOID rule, 600 MB d80 table. Unrated by the non-merge rule until a done node builds on it. Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it. | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 |
-| `meas-s51-design` | Off-Bulk benchmark design (§51) | No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it). | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) |
-| `meas-s51-harness` | §51 harness and scorer | Gates §51. Blocked on the §54 harness merge (same files). Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1 |
+| `meas-s51-design` | Off-Bulk benchmark design | No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it). | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) |
+| `meas-s51-harness` | Off-Bulk sweep harness and scorer | Gates §51. Blocked on the §54 harness merge (same files). Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1 |
 | `meas-s51b-rho` | Partial-reliability measurement block | This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction. | docs/derivations/s51-design.md §2.3, §8 P4 |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | Done when: the netem cells (jitter 0/5/15/25 ms, an 8-packet shallow buffer, a 100 Mbit policer) exist in the harness, each mechanism-validated by a stub run and a check that the shaper does what it claims. Built on branch adv-cells (106 checks off the VM, 2026-11-13); still waiting on the VM check of the 7 cells (a waiting_on field would warn on a done node, so it is kept here). | plan W5.3; branch adv-cells |
 | `meas-harness-robustness` | Harness robustness for every plan | Done when: LD_REHEARSE covers every plan, each plan path has an end-to-end stub-run test, the sudo env-propagation contract is pinned by a test, and one HARNESS_PATHS table ties plans to tested paths. | plan W5.2 |
