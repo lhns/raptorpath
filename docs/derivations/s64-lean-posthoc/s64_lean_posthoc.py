@@ -7,7 +7,9 @@ Reuses the committed scorers (harness64 4feeb8fd) unchanged, and first asserts t
 so every new number below rides the same rows, row order and RNG stream as the guard and rt64 scorer.
   1. rtp_floor_p0, CAND vs BASE on stage G's four Bulk cells: statistic_rank (within-seed rank sums, 10 000 relabellings, seed 4141)
      with the floor clauses switched back on (clause set {floor: every cell, inorder: c2/c8}); the draws do not depend on the clause set.
+  1b. Supplement: stage G paired by slot, the same sign test as read 2.
   2. Stage R paired by slot (seed, rep): RC vs RB per readout, the dead row's slot (s42 r4) dropped; sign test.
+  2b. Supplement (counts only): where in the run the stage R pairs differ - the floor's moment, and in-order delay on early vs late ticks.
   3. Stage R's noise floor: place41b_score.resolution on the live RB rows (half-per-seed splits, q95 of |x|).
 """
 import hashlib
@@ -23,6 +25,8 @@ import place38_parse as pp  # noqa: E402
 import place41b_score as g  # noqa: E402
 import rt64_score as rt  # noqa: E402
 import plan64  # noqa: E402
+import l1common as lc  # noqa: E402
+import threadp1_parse as tp  # noqa: E402
 
 CS = {"floor": None, "inorder": g.LONG_CELLS}       # v2 plus the floor clauses (reported-only clauses, scored here post hoc)
 
@@ -151,6 +155,54 @@ dl = ("lag_E_cli", "lag_E_srv", "inorder_delay_mean", "rtp_floor_p0")
 print("  " + " ".join(f"s{s}r{r}:{sum(1 for n in dl if signs[n][i] is not None and signs[n][i] > 0)}" for i, (s, r) in enumerate(pairs)))
 print()
 
+# ---- read 2b ----
+LOGD = os.path.join(tmp, "session", "rt64", "diag-ld")
+
+
+def cli_log(arm, seed, rep):
+    return lc.read(os.path.join(LOGD, f"c2-100@def-{arm}-s{seed}-r{rep}-a1-c.log"))
+
+
+def floor_moment(cli):
+    """leg 0: (floor, t of its first occurrence, first non-zero sample, t of the first sample, last tick t, source-phase floor (t >= 1 s, src > 0))"""
+    ticks = [(t, src, legs[0]) for t, src, legs in tp._rtp_ticks(cli) if 0 in legs]
+    fl = min(v for _, _, v in ticks)
+    t_fl = next(t for t, _, v in ticks if v == fl)
+    sp_ = [v for t, src, v in ticks if t >= tp.SRC_PHASE_T_MIN and src > 0]
+    return fl, t_fl, ticks[0][2], ticks[0][0], tp.last_tick_s(cli), (min(sp_) if sp_ else None)
+
+
+print("READ 2b (post hoc, supplement; counts only, no new p): WHERE in the run the stage R pairs differ, from the rows' own client logs (diag-ld)")
+print("  floor: leg-0 rtp_floor (run min of the non-zero rtp_us), its first time, whether it is the run's first sample; sp = the floor on ticks t >= 1 s with src > 0")
+print("  in-order: threadp1_parse.inorder_delay ticks split at the row's middle tick (first half of the ticks vs second half); mean in ms")
+n_first = {"RB": 0, "RC": 0}
+w_sp = w_e = w_l = n_sp = 0
+for k in pairs:
+    s_, rp = k
+    out = []
+    fm, im = {}, {}
+    for arm, row in (("RB", rb[k]), ("RC", rc[k])):
+        cli = cli_log(arm, s_, rp)
+        fm[arm] = floor_moment(cli)
+        assert fm[arm][0] == row["rtp_floor_p0"], (arm, k, fm[arm][0], row["rtp_floor_p0"])
+        d = [x for _, x in tp.inorder_delay(cli)]
+        assert abs(1e3 * sum(d) / len(d) - row["inorder_mean"]) < 1e-6, (arm, k)
+        h = len(d) // 2
+        im[arm] = (1e3 * sum(d[:h]) / h, 1e3 * sum(d[h:]) / (len(d) - h), len(d))
+        if fm[arm][0] == fm[arm][2]:
+            n_first[arm] += 1
+    if fm["RC"][5] is not None and fm["RB"][5] is not None:
+        n_sp += 1
+        w_sp += fm["RC"][5] > fm["RB"][5]
+    w_e += im["RC"][0] > im["RB"][0]
+    w_l += im["RC"][1] > im["RB"][1]
+    print(f"  s{s_}r{rp}: floor RB {fm['RB'][0]:5d} @{fm['RB'][1]:5.1f}s{'(first)' if fm['RB'][0] == fm['RB'][2] else '       '} RC {fm['RC'][0]:5d} @{fm['RC'][1]:5.1f}s{'(first)' if fm['RC'][0] == fm['RC'][2] else '       '}"
+          f"  sp RB {fm['RB'][5]} RC {fm['RC'][5]}  last tick RB {fm['RB'][4]:.1f}s RC {fm['RC'][4]:.1f}s"
+          f"  | in-order early RB {im['RB'][0]:6.1f} RC {im['RC'][0]:6.1f}  late RB {im['RB'][1]:6.1f} RC {im['RC'][1]:6.1f}  (ticks {im['RB'][2]}/{im['RC'][2]})")
+print(f"  floor = the run's first sample: RB {n_first['RB']}/{len(pairs)}, RC {n_first['RC']}/{len(pairs)}; source-phase floor RC higher in {w_sp} of {n_sp} pairs")
+print(f"  in-order delay RC worse: early half {w_e} of {len(pairs)} pairs, late half {w_l} of {len(pairs)} pairs")
+print()
+
 # ---- read 3 ----
 r_rows = [dict(r, arm="RB") for r in rb_ord]
 for r in r_rows:
@@ -161,19 +213,21 @@ for r in r_rows:
     seeds[r["seed"]] = seeds.get(r["seed"], 0) + 1
 print("READ 3 (post hoc): stage R noise floor, the live RB rows alone; half-per-seed splits (" + " + ".join(f"s{s}: {n // 2} of {n}" for s, n in sorted(seeds.items()))
       + f" vs the rest), q95 of |x|")
-f_split = math.sqrt((1 / 5 + 1 / 6) / (1 / 12 + 1 / 11))
-print(f"  a split compares 5 vs 6 rows; the real RC-vs-RB comparison is 12 vs 11, so its noise is about 1/{f_split:.2f} of a split's"
-      f" (sqrt((1/5+1/6)/(1/12+1/11)), normal approximation); q95/{f_split:.2f} is listed as the approximate floor of the real comparison")
+print("  a split compares 5 vs 6 rows, the real RC-vs-RB comparison 12 vs 11, and RC's own spread is not RB's: q95 is a screen, not a calibrated floor")
 xr = {}
 for name, key, sign in rt.READOUTS:
     c = [v for v in (rt.val(r, key) for r in rc_ord) if v is not None]
     b = [v for v in (rt.val(r, key) for r in rb_ord) if v is not None]
     xr[name] = sign * (rt.med(c) - rt.med(b)) / rt.med(b)
+RK = {n: k for n, k, _ in rt.READOUTS}
 for r in rres:
     n = r["clause"]
     if n not in xr:
         continue
+    rk = RK[n]
     q = r["q95"]
-    print(f"  {n:<19} q95|x|={q:.4f} (splits={r['splits']}, nRB={r['n_base']})  ~floor at 12 v 11={q / f_split:.4f}  stage R x={100 * xr[n]:+6.1f} %"
-          f"  x/q95={xr[n] / q:+.2f}  x/floor={xr[n] / (q / f_split):+.2f}")
+    c = [v for v in (rt.val(r, rk) for r in rc_ord) if v is not None]
+    b = [v for v in (rt.val(r, rk) for r in rb_ord) if v is not None]
+    print(f"  {n:<19} q95|x|={q:.4f} (splits={r['splits']}, nRB={r['n_base']})  stage R x={100 * xr[n]:+6.1f} %  x/q95={xr[n] / q:+.2f}"
+          f"  spread (max-min)/med RB={(max(b) - min(b)) / rt.med(b):.2f} RC={(max(c) - min(c)) / rt.med(c):.2f}")
 print("  stage G c2 (600 MB, 12 BASE) for comparison: " + "  ".join(f"{n} {gres[('c2-100', n)]['q95']:.4f}" for n in ("lag_E_cli", "lag_E_srv", "inorder_delay_mean", "rtp_floor_p0")))

@@ -59,13 +59,30 @@ READ 2 (post hoc): stage R paired by slot (seed, rep); 11 pairs; dropped RC s42 
   co-movement: pairs worse on k of the 4 delay readouts (lag_E_cli, lag_E_srv, inorder_delay_mean, rtp_floor_p0)
   s42r1:3 s42r2:4 s42r3:3 s42r5:4 s42r6:2 s7r1:4 s7r2:4 s7r3:2 s7r4:4 s7r5:2 s7r6:1
 
+READ 2b (post hoc, supplement; counts only, no new p): WHERE in the run the stage R pairs differ, from the rows' own client logs (diag-ld)
+  floor: leg-0 rtp_floor (run min of the non-zero rtp_us), its first time, whether it is the run's first sample; sp = the floor on ticks t >= 1 s with src > 0
+  in-order: threadp1_parse.inorder_delay ticks split at the row's middle tick (first half of the ticks vs second half); mean in ms
+  s42r1: floor RB 10821 @  0.3s(first) RC  9856 @  0.3s(first)  sp RB 10821 RC 9856  last tick RB 11.5s RC 11.5s  | in-order early RB  150.2 RC  113.8  late RB  150.0 RC  190.4  (ticks 46/46)
+  s42r2: floor RB  9988 @  0.3s(first) RC 12223 @  0.3s(first)  sp RB 9988 RC 12223  last tick RB 11.5s RC 11.5s  | in-order early RB   95.9 RC  130.5  late RB  143.4 RC  128.5  (ticks 46/46)
+  s42r3: floor RB 11103 @  0.3s(first) RC 11556 @  0.3s(first)  sp RB 11103 RC 11556  last tick RB 11.5s RC 11.5s  | in-order early RB  106.1 RC  187.1  late RB  130.7 RC  187.6  (ticks 46/46)
+  s42r5: floor RB  7535 @  0.2s(first) RC  7563 @  0.3s(first)  sp RB 7535 RC 7563  last tick RB 11.5s RC 11.8s  | in-order early RB   69.2 RC   70.0  late RB   88.6 RC  133.6  (ticks 46/47)
+  s42r6: floor RB 10188 @  0.3s(first) RC 12707 @  0.3s(first)  sp RB 10188 RC 12707  last tick RB 11.5s RC 11.5s  | in-order early RB  131.3 RC  173.9  late RB  148.5 RC  201.9  (ticks 46/46)
+  s7r1: floor RB  8042 @  0.3s(first) RC 10183 @  0.3s(first)  sp RB 8042 RC 10183  last tick RB 11.8s RC 11.8s  | in-order early RB   73.8 RC   96.5  late RB  134.4 RC  143.3  (ticks 47/47)
+  s7r2: floor RB 10523 @  0.3s(first) RC 10633 @  0.3s(first)  sp RB 10523 RC 10633  last tick RB 11.8s RC 11.5s  | in-order early RB   85.0 RC  159.5  late RB  124.0 RC  183.3  (ticks 47/46)
+  s7r3: floor RB 10384 @  0.3s(first) RC 12208 @  0.3s(first)  sp RB 10384 RC 12208  last tick RB 11.8s RC 11.5s  | in-order early RB  104.5 RC  117.3  late RB  175.5 RC  153.4  (ticks 47/46)
+  s7r4: floor RB  9776 @  0.3s(first) RC 11885 @  0.3s(first)  sp RB 9776 RC 11885  last tick RB 11.8s RC 11.5s  | in-order early RB   59.3 RC  183.2  late RB  173.5 RC  177.3  (ticks 47/46)
+  s7r5: floor RB 10115 @  0.3s(first) RC 10758 @  0.3s(first)  sp RB 10115 RC 10758  last tick RB 11.5s RC 11.5s  | in-order early RB   78.3 RC   88.0  late RB  102.8 RC  164.6  (ticks 46/46)
+  s7r6: floor RB  9386 @  0.3s(first) RC  8127 @  0.3s(first)  sp RB 9386 RC 8127  last tick RB 11.8s RC 11.5s  | in-order early RB   79.3 RC   58.7  late RB  152.5 RC   95.7  (ticks 47/46)
+  floor = the run's first sample: RB 11/11, RC 11/11; source-phase floor RC higher in 9 of 11 pairs
+  in-order delay RC worse: early half 9 of 11 pairs, late half 8 of 11 pairs
+
 READ 3 (post hoc): stage R noise floor, the live RB rows alone; half-per-seed splits (s42: 2 of 5 + s7: 3 of 6 vs the rest), q95 of |x|
-  a split compares 5 vs 6 rows; the real RC-vs-RB comparison is 12 vs 11, so its noise is about 1/1.45 of a split's (sqrt((1/5+1/6)/(1/12+1/11)), normal approximation); q95/1.45 is listed as the approximate floor of the real comparison
-  goodput             q95|x|=0.0122 (splits=200, nRB=11)  ~floor at 12 v 11=0.0084  stage R x=  -0.7 %  x/q95=-0.61  x/floor=-0.89
-  cpu_cli/GB          q95|x|=0.0719 (splits=200, nRB=11)  ~floor at 12 v 11=0.0496  stage R x=  +4.7 %  x/q95=+0.66  x/floor=+0.96
-  cpu_srv/GB          q95|x|=0.0637 (splits=200, nRB=11)  ~floor at 12 v 11=0.0439  stage R x=  +1.0 %  x/q95=+0.15  x/floor=+0.22
-  lag_E_cli           q95|x|=0.1258 (splits=200, nRB=11)  ~floor at 12 v 11=0.0867  stage R x= +13.5 %  x/q95=+1.07  x/floor=+1.55
-  lag_E_srv           q95|x|=0.2370 (splits=200, nRB=11)  ~floor at 12 v 11=0.1634  stage R x= +20.0 %  x/q95=+0.84  x/floor=+1.22
-  rtp_floor_p0        q95|x|=0.0875 (splits=200, nRB=11)  ~floor at 12 v 11=0.0603  stage R x=  +5.7 %  x/q95=+0.66  x/floor=+0.95
-  inorder_delay_mean  q95|x|=0.1930 (splits=200, nRB=11)  ~floor at 12 v 11=0.1330  stage R x= +12.6 %  x/q95=+0.65  x/floor=+0.95
+  a split compares 5 vs 6 rows, the real RC-vs-RB comparison 12 vs 11, and RC's own spread is not RB's: q95 is a screen, not a calibrated floor
+  goodput             q95|x|=0.0122 (splits=200, nRB=11)  stage R x=  -0.7 %  x/q95=-0.61  spread (max-min)/med RB=0.03 RC=0.03
+  cpu_cli/GB          q95|x|=0.0719 (splits=200, nRB=11)  stage R x=  +4.7 %  x/q95=+0.66  spread (max-min)/med RB=0.21 RC=0.18
+  cpu_srv/GB          q95|x|=0.0637 (splits=200, nRB=11)  stage R x=  +1.0 %  x/q95=+0.15  spread (max-min)/med RB=0.23 RC=0.18
+  lag_E_cli           q95|x|=0.1258 (splits=200, nRB=11)  stage R x= +13.5 %  x/q95=+1.07  spread (max-min)/med RB=0.24 RC=0.73
+  lag_E_srv           q95|x|=0.2370 (splits=200, nRB=11)  stage R x= +20.0 %  x/q95=+0.84  spread (max-min)/med RB=0.73 RC=1.31
+  rtp_floor_p0        q95|x|=0.0875 (splits=200, nRB=11)  stage R x=  +5.7 %  x/q95=+0.66  spread (max-min)/med RB=0.35 RC=0.48
+  inorder_delay_mean  q95|x|=0.1930 (splits=200, nRB=11)  stage R x= +12.6 %  x/q95=+0.65  spread (max-min)/med RB=0.61 RC=0.84
   stage G c2 (600 MB, 12 BASE) for comparison: lag_E_cli 0.2652  lag_E_srv 0.7299  inorder_delay_mean 0.0299  rtp_floor_p0 0.0798

@@ -53,29 +53,44 @@ The in-order delay rows are all under the 30 s tick floor.
 
 **Answer.**
 - **Pairing sharpens the lean on two readouts:** in-order delay and the floor, each 9 of 11 at one-sided 0.033.
-- **Multiplicity:** with seven readouts, the chance that at least one reaches 0.033 under the null is about 0.2, even before allowing for correlation between them.
+- **Multiplicity:** with seven independent readouts, the chance that at least one reaches 0.033 under the null would be about 0.2. The readouts are positively correlated, which lowers that chance, but it also makes two of them landing together unsurprising.
 - **Co-movement:** the same pairs carry the lean. Five of the eleven pairs are worse on all four delay readouts.
 - **Limit:** pairing removes slot-to-slot drift, but not the survivor selection of the live RB rows.
 
+## Read 2b: where in the run the pairs differ (supplement, counts only)
+
+Read from each stage R row's own client log (`rt64/diag-ld`). The script first checks that these logs reproduce each row's `rtp_floor_p0` and `inorder_mean` exactly.
+
+- **The floor is one start-up sample.** On all 22 rows (11 RB, 11 RC), `rtp_floor_p0` is the run's first non-zero `rtp_us`, at t ≈ 0.3 s.
+  - Copa's 10 s windowed `min_rtt` never rolls on a 12 s row, so the source-phase variant (t ≥ 1 s, src > 0) returns the same value.
+  - At stage R the floor is therefore not a minimum over two moments. It reads the first RTT sample after warm-up, and F2 is a warm-up fix.
+  - RC is higher in 9 of 11 pairs, by about 0.6 ms at the median.
+- **The in-order gap runs through the whole row.** Split at each row's middle tick, RC is worse in 9 of 11 pairs on the first half of the ticks and 8 of 11 on the second half. The gap is not confined to start-up.
+
 ## Read 3: stage R's noise floor (live RB rows only)
 
-Each half-per-seed split takes 2 of 5 s42 rows plus 3 of 6 s7 rows and compares them with the rest: 200 splits, 5 rows against 6. The real RC-vs-RB comparison is 12 against 11. Its noise is therefore roughly q95 / 1.45 (sqrt((1/5 + 1/6) / (1/12 + 1/11)), a normal approximation). So "x < q95" is a lenient screen, not evidence of no effect.
+Each half-per-seed split takes 2 of 5 s42 rows plus 3 of 6 s7 rows and compares them with the rest: 200 splits, 5 rows against 6.
 
-| readout | q95\|x\| (5 v 6) | ≈ floor (12 v 11) | stage R x | stage G c2 q95 (600 MB) |
-|---|---|---|---|---|
-| goodput | 1.2 % | 0.8 % | −0.7 % | 0.2 % |
-| cpu_cli/GB | 7.2 % | 5.0 % | +4.7 % | 3.2 % |
-| cpu_srv/GB | 6.4 % | 4.4 % | +1.0 % | 3.7 % |
-| lag_E_cli | 12.6 % | 8.7 % | +13.5 % | 26.5 % |
-| lag_E_srv | 23.7 % | 16.3 % | +20.0 % | 73.0 % |
-| in-order delay mean | 19.3 % | 13.3 % | +12.6 % | 3.0 % |
-| rtp_floor_p0 | 8.8 % | 6.0 % | +5.7 % | 8.0 % |
+This is a screen, not a calibrated floor:
+- the real comparison is 12 rows against 11, so it is tighter than a split;
+- RC's own spread is not RB's.
+
+The calibrated numbers stay the committed rank p's and read 2's sign p's.
+
+| readout | RB q95\|x\| (5 v 6) | stage R x | x / q95 | spread (max−min)/med, RB | RC | stage G c2 q95 (600 MB) |
+|---|---|---|---|---|---|---|
+| goodput | 1.2 % | −0.7 % | −0.61 | 0.03 | 0.03 | 0.2 % |
+| cpu_cli/GB | 7.2 % | +4.7 % | +0.66 | 0.21 | 0.18 | 3.2 % |
+| cpu_srv/GB | 6.4 % | +1.0 % | +0.15 | 0.23 | 0.18 | 3.7 % |
+| lag_E_cli | 12.6 % | +13.5 % | +1.07 | 0.24 | 0.73 | 26.5 % |
+| lag_E_srv | 23.7 % | +20.0 % | +0.84 | 0.73 | 1.31 | 73.0 % |
+| in-order delay mean | 19.3 % | +12.6 % | +0.65 | 0.61 | 0.84 | 3.0 % |
+| rtp_floor_p0 | 8.8 % | +5.7 % | +0.66 | 0.35 | 0.48 | 8.0 % |
 
 **Answer.**
-- **The lag readouts are not unreadable at stage R.** At 100 MB Realtime the RB half-split q95 is 13 % (cli) and 24 % (srv). That is tighter than stage G's 600 MB Bulk c2 (27 % and 73 %), so the stage G table does not carry over to this link. That part of Fable's reading does not hold here.
-- **Only lag_E_cli exceeds its floor.** Its x (+13.5 %) is just above its own 5-v-6 q95, and about 1.5 times the scaled floor.
-- **lag_E_srv** is above the scaled floor (1.2 times) but inside q95.
-- **In-order delay and the floor** sit at about 0.95 times the scaled floor, inside q95.
+- **Stage G's table is the wrong basis for stage R.** RB's own half-split q95 at 100 MB Realtime is 13 % (lag_E_cli) and 24 % (lag_E_srv), against stage G's 27 % and 73 % on 600 MB Bulk c2.
+- **Every readout except lag_E_cli is inside its q95.** lag_E_cli sits just at it (1.07).
+- **RC is visibly wider than RB on every delay readout.** On lag_E_cli the spread is 0.73 against 0.24. This is reported, not interpreted.
 
 ## Plain words
 
@@ -90,17 +105,19 @@ Each half-per-seed split takes 2 of 5 s42 rows plus 3 of 6 s7 rows and compares 
 
 **For a lean:**
 - Pairing turns two stage R readouts into 9-of-11 splits.
-- lag_E_cli clears its own stage R noise floor.
+- The in-order gap holds on both halves of the rows, not just at start-up.
+- lag_E_cli sits at its own RB q95.
 - All four delay readouts move together, on the same pairs.
 
 **The delivery-path hypothesis.** Commit 8's `WindowDelivery::offer` rewrite is the only delivery-path change. It stays the hypothesis to keep in view. A Realtime-only effect on delivered delay is not ruled out by the Bulk reads, because stage G is a different point on the dials.
 
 **What a registered follow-up should score: the in-order delay mean.**
 - It is the delivered-delay readout guard v2 adopted (§41d), and its domain (reliable delivery) covers ρ = 1.
+- Read 2b shows the gap is not a start-up artefact, so the whole-run mean is the right form; no start-up exclusion is needed.
 - Stage R's rows (100 MB, about 12 s of ticks) are below the 30 s floor that gives it resolution. The follow-up therefore needs Realtime c2 rows at ρ = 1 long enough for at least 30 s of ticks: at about 68 Mbit/s, at least about 260 MB; 600 MB, about 70 s, would match stage G.
 - RB and RC should be paired by slot, with the paired sign or rank test registered beforehand.
 - Its noise floor should be measured from BASE before CAND is read.
 
 **What it should not score:**
-- `lag_E_cli` can ride along as a reported second readout. Its resolution at 100 MB is real but does not survive the jump to long rows (stage G c2: 27 %).
-- `rtp_floor_p0` should not be scored. The owner made it reported-only, and it is a minimum over two unrelated moments, not a path reading (§41d, §53 Erratum 1).
+- `lag_E_cli` can ride along as a reported second readout, not a scored one. RB's q95 is 13 % at 100 MB Realtime but 27 % on 600 MB Bulk c2, and long rows may not keep it readable.
+- `rtp_floor_p0` should not be scored. The owner made it reported-only (§41d). On these rows it is a single start-up RTT sample at t ≈ 0.3 s (read 2b), not a path reading. Its 9-of-11 lean is a warm-up observation; F2 changed warm-up, so it can be reported beside the follow-up, not scored.
