@@ -49,6 +49,7 @@ flowchart TB
     rec_defect_realtime_framing>"✔ Realtime receiver<br/>misreads packed<br/>symbols (F2)"]
     rec_s63_f2_first_contact["✔ F2 first contact<br/>(#167;63)"]
     rec_f2_merge_guard["✔ F2 merge guard (#167;64)"]
+    rec_s64_delay_lean["▶ Realtime delay lean,<br/>post-hoc read"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⏸ Lever-B guard v2,<br/>then merge"]
     rec_fix_perleg_clock_n1[/"○ Per-leg recovery<br/>clock, one law"/]
@@ -97,9 +98,10 @@ flowchart TB
     rec_wire_clock_derivation ~~~ rec_s63_f2_first_contact
     rec_defect_realtime_framing ~~~ rec_s63_f2_first_contact
     rec_s63_f2_first_contact ~~~ rec_f2_merge_guard
-    rec_s63_f2_first_contact ~~~ rec_w0_leg_question
-    rec_s63_f2_first_contact ~~~ rec_leverb_guard
-    rec_f2_merge_guard ~~~ rec_fix_perleg_clock_n1
+    rec_f2_merge_guard ~~~ rec_s64_delay_lean
+    rec_f2_merge_guard ~~~ rec_w0_leg_question
+    rec_f2_merge_guard ~~~ rec_leverb_guard
+    rec_s64_delay_lean ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_fix_perleg_clock_n1
     rec_leverb_guard ~~~ rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 ~~~ rec_recovery_timeouts
@@ -130,12 +132,13 @@ flowchart TB
     rec_snapver_law --> rec_s54_session
     rec_defect_realtime_framing --> rec_s63_f2_first_contact
     rec_s63_f2_first_contact --> rec_f2_merge_guard
+    rec_f2_merge_guard --> rec_s64_delay_lean
     rec_s54_session --> rec_w0_leg_question
     rec_s54_session --> rec_leverb_guard
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 52,53,54,64 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 53,54,55,65 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -156,6 +159,7 @@ flowchart TB
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
+    class rec_s64_delay_lean inprog
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
     class rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
 ```
@@ -199,6 +203,7 @@ flowchart TB
 | `rec-defect-refresh-input` | Hole refresh clock degenerate input | in-progress | unrated | srtt = exactly 50 000 µs | status §3.10 item 6 | rec-snapver-filter |
 | `rec-s63-f2-first-contact` | F2 first contact (§63) | done | very-successful | fixed binary 5/5, old binary failed 2/5 | status §63; status §63 Result | rec-defect-realtime-framing |
 | `rec-f2-merge-guard` | F2 merge guard (§64) | done | very-successful | Bulk unchanged, Realtime fixed; merged | status §64; status §64 Result | rec-s63-f2-first-contact |
+| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | in-progress | unrated |  | status §64 Result | rec-f2-merge-guard |
 | `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | done | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |  |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor (P10a) | abandoned | dead-end |  | branch P10a |  |
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
@@ -250,6 +255,7 @@ flowchart TB
 | `rec-defect-hole-law` | c8 hole law never measured | §53 open item 6: [HOLD] is skewed on main too (hn and ripe_frac mostly re-stamps from stale reports), so item 5's "main already wastes about 12 % of its retransmits" must be re-checked if it came from this gauge. | status §3.10 item 5 |
 | `rec-s63-f2-first-contact` | F2 first contact (§63) | CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63. | status §63; status §63 Result |
 | `rec-f2-merge-guard` | F2 merge guard (§64) | Stage G GATE-41d PASS p=0.991 (min-p 0.273), F2-FAIL 0; stage R RT-PASS 12/12, BASE F2-dead 1/12; BENCH PASS. Merged --no-ff f36d9172 (patch-id 3e69ce68), ADR-0078 Accepted, wire v10. Realtime delay readouts lean worse, none flagged: post-hoc read on branch s64-lean. Harness [SYMSZ] column defect fixed before harness64 reaches main. | status §64; status §64 Result |
+| `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). Free reads on branch s64-lean; if open, one ~40 min registered Realtime session at 600 MB. | status §64 Result |
 | `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; owner decision 11 (2026-11-17): format (A), one framing for every symbol; design on f2-design, then an ADR, a protocol bump and the fix. | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor (P10a) | Split from rec-bulk-arq (its parent). The source names no replacement; P10b (window-mode reactive repair, G236) merged the same day. | branch P10a |
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |

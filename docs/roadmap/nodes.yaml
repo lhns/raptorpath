@@ -356,7 +356,7 @@ nodes:
   - commit 17f7fa91
   - branch exec/adr-0069-window-default
   - branch meas/stage3-baseline
-  overview: true
+  overview: false
   plain: Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere.
   notes: 'ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date.'
 - id: cod-wire-compact
@@ -3037,6 +3037,69 @@ nodes:
   overview: true
   plain: 'Work out how the store law should sample delay, since the no-queue delay shows up mostly after retransmissions and a quarter-second window usually misses it.'
   notes: 'Questions: how to estimate the brake as windows fill; whether the knee minimum is set by post-loss drains; what anchors the floor under jitter. Decision 8 stays unsettled until then.'
+- id: meas-blocke-pacing-gate
+  title: Block E pacing gate fires on fixed binary
+  track: meas
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status §63 Result
+  verdict_quote: ''
+  headline: 1.2-3.6 % of paced symbols late, gate allows 1 %
+  depends_on:
+  - rec-f2-merge-guard
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: true
+  plain: 'Block E checks that its rate pacer sends almost nothing late; on the fixed binary about 1-4 % of symbols go late, so this rule needs a decision before block E can run.'
+  notes: 'From the s51e_score path exercise on §63 CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. E-pre (suites + binid on e-tree-f2) is unaffected and can run first.'
+- id: meas-harness-reuse
+  title: Cheaper sessions by reuse
+  track: meas
+  kind: infra
+  state: done
+  outcome: successful
+  evidence:
+  - status §64 Amendments 1-2
+  - status owner decision 14
+  verdict_quote: 'TOOLS-TESTS-REUSED'
+  headline: guard ran no suites and no builds
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-18'
+  end: '2026-11-18'
+  folded: []
+  overview: true
+  plain: 'VM sessions now reuse test runs and builds already done on the same source, and host builds use a compiler cache, so a session spends its time on the measurement.'
+  notes: 'Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main.'
+- id: rec-s64-delay-lean
+  title: Realtime delay lean, post-hoc read
+  track: rec
+  kind: research
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status §64 Result
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rec-f2-merge-guard
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-18'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The low-latency delay numbers leaned slightly worse after the fix without reaching significance; this checks the existing data before deciding whether a short follow-up run is needed.'
+  notes: 'Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). Free reads on branch s64-lean; if open, one ~40 min registered Realtime session at 600 MB.'
 - id: meas-defect-cr61-large-pool
   title: Collapse rule blind at large pools
   track: meas
@@ -4726,7 +4789,7 @@ nodes:
   folded:
   - branch the law-shape prevention kit
   - commit 1f8be7cf
-  overview: true
+  overview: false
   plain: After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded.
   notes: Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27).
 - id: meas-pipeline-verification
@@ -6582,6 +6645,7 @@ nodes:
   - meas-s51-design
   - meas-s51-harness
   - store-defect-delta-nan
+  - rec-f2-merge-guard
   replaced_by: []
   qualified_by: []
   lane: vm

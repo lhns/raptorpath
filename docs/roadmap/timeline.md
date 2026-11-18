@@ -64,6 +64,7 @@ gantt
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-18
     F2 first contact (§63) :rec_s63_f2_first_contact, 2026-11-17, 2026-11-17
     F2 merge guard (§64) :rec_f2_merge_guard, 2026-11-18, 2026-11-18
+    Realtime delay lean, post-hoc read :active, rec_s64_delay_lean, 2026-11-18, 2026-11-18
     Realtime receiver misreads packed symbo… :rec_defect_realtime_framing, 2026-11-17, 2026-11-18
     Inner-feedback repair floor (P10a) :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
     Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
@@ -214,6 +215,7 @@ gantt
     bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
     bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-18
     section meas - measurement
+    Cheaper sessions by reuse :meas_harness_reuse, 2026-11-18, 2026-11-18
     Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
     Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
     L1 netns harness and baselines :meas_l1_harness, 2026-07-03, 2026-07-04
@@ -300,5 +302,5 @@ gantt
     Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-evict-registration`, `rate-evict-session`, `rate-spare-clamp-verdict`, `rate-spare-cwnd`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-law-g-rederive`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-defect-cr61-large-pool`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-evict-registration`, `rate-evict-session`, `rate-spare-clamp-verdict`, `rate-spare-cwnd`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-law-g-rederive`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-user-u1u3`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51-harness`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->
