@@ -1522,9 +1522,12 @@ def case65(plan, path):
         led = led56(stage)
         sc = open(os.path.join(stage, "score.txt"), errors="replace").read()
         summ = open(os.path.join(run_dir, "score.txt"), errors="replace").read()
-        table = plan64.plan(plan_id="65")
-        n_pairs = plan64.PAIRS65
+        # the SANDBOX's table (fast mode shrinks plan64.py's PAIRS65 / MIN_PAIRS65 in the sandbox copy only; the registered values are 24 / 18)
+        sbl1 = os.path.join(sb["repo"], "tools", "l1")
+        table = [tuple(int(x) if x.isdigit() and i == 4 else x for i, x in enumerate(ln.split())) for ln in subprocess.run([sys.executable, os.path.join(sbl1, "plan64.py"), "plan", "65"], capture_output=True, text=True).stdout.splitlines()]
         n_slots = len(table)
+        n_pairs = n_slots // 2
+        min_pairs = int(re.search(r"^MIN_PAIRS65 = (\d+)", open(os.path.join(sbl1, "plan64.py")).read(), re.M).group(1)) if re.search(r"^MIN_PAIRS65 = \d+", open(os.path.join(sbl1, "plan64.py")).read(), re.M) else s65_score.MIN_PAIRS
         extra_rows = {"base-dead-redrawn": 1, "base-dead-twice": 2, "unresolved-n": 4, "rho-one-end": 1}.get(path, 0)
         check(f"{tag}: the ledger holds the table's {n_slots} slots in rt65/ (+ {extra_rows} redraw row(s) the path asks for), every row with its t64 readings and its early-loss field; the stage ran to the end (DONE, DONE-ALL)",
               len(led) == n_slots + extra_rows and len({(r["arm"], r["seed"], r["rep"]) for r in led}) == n_slots and all(r.get("t64") and "qlost_2s" in r for r in led) and os.path.exists(os.path.join(stage, "DONE")) and os.path.exists(os.path.join(run_dir, "DONE-ALL")),
@@ -1533,7 +1536,7 @@ def case65(plan, path):
         # the launch's scorer call passes the (shrunk) pair count and floor; the stand-alone file defaults to the registered 24 / 18, so compare through the same call
         buf = []
         sys.path.insert(0, os.path.join(sb["repo"], "tools", "l1"))
-        s65_score.score([os.path.join(stage, "ld.log")], out=buf.append, n_pairs=n_pairs, min_pairs=plan64.MIN_PAIRS65)
+        s65_score.score([os.path.join(stage, "ld.log")], out=buf.append, n_pairs=n_pairs, min_pairs=min_pairs)
         check(f"{tag}: score.txt is s65_score.score on the stage's ledger, line for line (the registered scorer, unchanged); the run summary carries VERDICT65, TEST65 and F2-FINDING65",
               sc.strip() == "\n".join(buf).strip() and all(re.search(r"^" + k, summ, re.M) for k in ("VERDICT65", "TEST65", "F2-FINDING65")) and "VERDICT65" in sc, (sc[-300:], summ))
         want_label = {"replicated": "REPLICATED", "unresolved-n": "UNRESOLVED-N"}.get(path, "NOT-REPLICATED")
@@ -1548,7 +1551,7 @@ def case65(plan, path):
         if path == "replicated":
             check(f"{tag}: the CAND rows deliver in order later (+shift): p <= 0.05 and HL > TOL; the REPLICATED text names the follow-up", "the follow-up" in sc and re.search(r"^TEST65 n=%d .*HL shift=\+" % n_pairs, sc, re.M) is not None, sc[-800:])
         if path == "unresolved-n":
-            check(f"{tag}: the first two RB slots died on both draws: 'dead twice 2', two pairs dropped (not counted), {n_pairs - 2} usable pairs < the floor {plan64.MIN_PAIRS65}",
+            check(f"{tag}: the first two RB slots died on both draws: 'dead twice 2', two pairs dropped (not counted), {n_pairs - 2} usable pairs < the floor {min_pairs}",
                   "dead twice 2" in sc and f"PAIRS65 usable {n_pairs - 2} of {n_pairs}" in sc and "REDRAWS BASE-F2-DEAD 2" in sc, sc[:900])
         if path == "base-dead-redrawn":
             ldtxt = open(os.path.join(stage, "ld.log"), errors="replace").read()
