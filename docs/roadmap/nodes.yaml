@@ -304,7 +304,7 @@ nodes:
   notes: 'Paper §10 row has an end date only; start taken from the sliding-window FEC commit 628fdb1c (2026-03-14). Dates: paper §10 rows carry an end (removal) date only.'
   plain: The older decoders for the sliding-window code, replaced by one decoder that handles every case.
 - id: cod-unified-span
-  title: Unified span machine (ADR-0064)
+  title: Unified span machine
   track: cod
   kind: mechanism
   state: done
@@ -335,7 +335,7 @@ nodes:
   plain: Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes.
   notes: 'Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cod-one-pipeline
-  title: One window pipeline (ADR-0069)
+  title: One window pipeline
   track: cod
   kind: simplification
   state: done
@@ -477,7 +477,7 @@ nodes:
   overview: false
   notes: P4/P6/P8/P10b of the July wave. P10a is its own node (rec-p10a-repair-floor).
 - id: rec-reliable-window
-  title: Reliable window (RWM Phase A)
+  title: Reliable window
   track: rec
   kind: mechanism
   state: done
@@ -526,7 +526,7 @@ nodes:
   overview: false
   notes: 2026-07-07/08 arc; folds the FEC recovery bug fix, transport sender fixes, the store-bloat fix and the O(n^2) per-symbol fix found along the way.
 - id: rec-proactive-repair
-  title: Repair-wait before ARQ (REPAIR_WAIT)
+  title: Repair-wait before ARQ
   track: rec
   kind: mechanism
   state: abandoned
@@ -593,7 +593,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Proactive repair timing (3 arms)''. Start from 067f660a (''Proactive frontier FEC decode: diagnosed, built, REFUTED at L1 (gated off)''), the earliest frontier-repair commit; deleted in bede4a32 (''superseded on geometry''), and the trailing-span geometry is the unified span machine''s (owner-side decision 2026-11-13).'
 - id: rec-per-path-clocks
-  title: Per-path recovery clocks (RECOV_MP)
+  title: Per-path recovery clocks
   track: rec
   kind: mechanism
   state: done
@@ -638,7 +638,7 @@ nodes:
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-clock-candidates
-  title: Derived recovery sweep (DERIVED_SWEEP)
+  title: Derived recovery sweep
   track: rec
   kind: law
   state: abandoned
@@ -751,7 +751,7 @@ nodes:
   overview: false
   notes: 'Goal #100 item 2 (split 2026-11-16 from rec-goal100): pre-registration a04300e3; calibration 3980434c; c6f5eaa8 corrects the bracket verdict (commanded inside the bracket is UNRESOLVED).'
 - id: rec-qnative-clock
-  title: Quantile-native clock sweep (W_FORM)
+  title: Quantile-native clock sweep
   track: rec
   kind: law
   state: abandoned
@@ -776,7 +776,7 @@ nodes:
   overview: false
   notes: 'Goal #101 arm (split 2026-11-16). The order statistic survives as qnative_window_n in net/recovery_clock.rs (paper row).'
 - id: rec-holddown-clock
-  title: Hold-down clock sweep (HOLDDOWN_Q)
+  title: Hold-down clock sweep
   track: rec
   kind: law
   state: abandoned
@@ -878,7 +878,7 @@ nodes:
   overview: false
   notes: 'Goal #101 measurement (split 2026-11-16): ''the anchor is refuted; the boundary is a LEVEL, and the level is 98%'' (5481a0b9).'
 - id: rec-goal100
-  title: 'Recovery primitives and σ (goal #100)'
+  title: Recovery primitives and σ
   track: rec
   kind: research
   state: done
@@ -906,7 +906,7 @@ nodes:
   overview: false
   notes: 'Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep).'
 - id: rec-goal101
-  title: Recovery clock verdict battery (#101)
+  title: Recovery clock verdict battery
   track: rec
   kind: law
   state: abandoned
@@ -949,7 +949,7 @@ nodes:
   plain: A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed.
   notes: 'The closure of goal #101 (2026-08-21): item 4''s verdict battery decided the formula in paper §16.79 and the shipped clamp ''survives on merit''. Its arms are now their own nodes (split 2026-11-16 from ''Recovery clock law family (4 arms)''): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime.'
 - id: rec-receiver-law
-  title: Receiver request law (Track C)
+  title: Receiver request law
   track: rec
   kind: law
   state: abandoned
@@ -1013,7 +1013,7 @@ nodes:
   overview: false
   notes: 'fix/wire-v9 (7825196): per-path path_seq, next_expected, received_above.'
 - id: rec-gap-horizon
-  title: Gap horizon lever B
+  title: Gap horizon
   track: rec
   kind: mechanism
   state: in-progress
@@ -1090,7 +1090,7 @@ nodes:
   plain: Turning the fix for outdated loss reports into a permanent rule, written into the paper first; it ships once its merge check passes.
   notes: 'Law ledger: C03 (rank 7, P0), ships with C02. The owner-approved order ships the filter first; the ledger allows it (the filter alone left main''s duplicates inside its range in §53). No raw record. snapver-law head 8191b3de (2026-11-13): the paper §7.1 + A.6 law first (4d848355), shipped with no env arm (87c2135d), serve_gaps seam extracted so tests drive the shipped code (00a42e38), red-then-green seam tests; derivation status SHIPPED LAW. In progress until its filter-only guard (v2) passes and it merges.'
 - id: rec-defect-qclk-clamp
-  title: '[QCLK] w_us pinned at clamp'
+  title: Tail-sweep timer pinned at clamp
   track: rec
   kind: defect-verdict
   state: in-progress
@@ -1112,7 +1112,7 @@ nodes:
   plain: 'Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts.'
   notes: 'Folds status §3.5 item 5: the recovery-clock bind fractions were measured on the saturation-filtered path set and never re-measured.'
 - id: rec-defect-hole-law
-  title: c8 hole law never measured
+  title: Hole law unmeasured where it operates
   track: rec
   kind: defect-verdict
   state: in-progress
@@ -1154,7 +1154,7 @@ nodes:
   overview: false
   plain: 'Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one.'
 - id: rate-ge-hmm
-  title: Gilbert-Elliott loss model (ADR-0023)
+  title: Gilbert-Elliott loss model
   track: rate
   kind: law
   state: done
@@ -1174,7 +1174,7 @@ nodes:
   overview: false
   notes: 'Real-trace validation (2026-07-07) found GE inadequate for real loss (G217); the burst multiplier was superseded by ADR-0050. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: rate-fec-rate-v1
-  title: BOCD FEC rate control (ADR-0050)
+  title: BOCD FEC rate control
   track: rate
   kind: law
   state: done
@@ -1222,7 +1222,7 @@ nodes:
   overview: false
   notes: P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9).
 - id: rate-rstar-window-mass
-  title: r* window-mass provisioning (ADR-0063)
+  title: r* window-mass provisioning
   track: rate
   kind: law
   state: done
@@ -1462,7 +1462,7 @@ nodes:
   plain: 'Open problem: the code that estimates how often extra repair data helps jumps from zero to one half at one point, where the paper describes a smooth curve.'
   notes: 'Owner decision 2026-11-14 opened a derivation (rate-pfec-continuous): no form ships; next the executed sliding oracle (rate-pfec-oracle). §51 must still read r per cell.'
 - id: rate-pfec-continuous
-  title: Continuous P_fec derivation (W22)
+  title: Continuous P_fec derivation
   track: rate
   kind: research
   state: done
@@ -1489,7 +1489,7 @@ nodes:
   - commit 59a65af8
   - commit ab9c6246
   overview: false
-  notes: 'Root cause: the paper defines P_fec per lost symbol but §4.2 derives the window event (a paper erratum). C6 is the exact per-loss law for a block window, but the engine and the sim decode a sliding window. Correction (round 6, b252933b): the Python sliding decode is only an upper bound; under its premises the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, and the engine''s r* adequacy at Auto and Realtime is unknown either way. Next: the executed sliding oracle (rate-pfec-oracle).'
+  notes: 'Root cause: the paper defines P_fec per lost symbol but §4.2 derives the window event (a paper erratum). C6 is the exact per-loss law for a block window, but the engine and the sim decode a sliding window. Correction (round 6, b252933b): the Python sliding decode is only an upper bound; under its premises the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, and the engine''s r* adequacy at Auto and Realtime is unknown either way. Next: the executed sliding oracle (rate-pfec-oracle). Was titled ''Continuous P_fec derivation (W22)''.'
 - id: rate-pfec-oracle
   title: Executed sliding P_fec oracle
   track: rate
@@ -1542,7 +1542,7 @@ nodes:
   plain: 'Open problem: the law that shapes when repairs are sent has no effect as the code calls it, so repairs go out at the flat rate.'
   notes: Checked by reading and a 10⁵-call Python port; taper_emission_l0.rs asserts nothing. The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust (rate-pfec-oracle).
 - id: rate-evict-registration
-  title: Evicting-seat m̄ registration (plan 59)
+  title: Evicting-seat m̄ registration
   track: rate
   kind: research
   state: next
@@ -1629,7 +1629,7 @@ nodes:
   plain: Checking whether the congestion window that the repair cap reads is actually enforced while quinn's BBR controls the path.
   notes: '§60 Amendment 2, pending item 3: on the rehearsal row cwnd jumped from 1 159 to 10 000 at t ≈ 10.3 s and the source was not held to it. Done when: it is settled, by reading or a test, whether the cwnd that Scheduler::spare_capacity reads is enforced on the evicting seat under quinn''s BBR.'
 - id: store-xn-pool
-  title: Path-scaled pool ×N (STORE_PATHS)
+  title: Path-scaled pool ×N
   track: store
   kind: law
   state: abandoned
@@ -1656,7 +1656,7 @@ nodes:
   notes: 'RWM_STORE_PATHS stays on; what was superseded is the ×N multiplier in its formula. Dates: paper §10 rows carry an end (removal) date only.'
   plain: Scaling the in-flight data allowance with the number of paths, later replaced by a simpler rule.
 - id: store-percap-family
-  title: Per-path store accounts (PERCAP)
+  title: Per-path store accounts
   track: store
   kind: mechanism
   state: abandoned
@@ -1680,7 +1680,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. Per-path accounts (d190b296) and the delay-aware redirect guard (689b9f1b; ''halves the c8 percap regression'', 4bb5b28f) share one paper row. Siblings: store-borrow, store-capw. Folds paper §11.1 open question 5.'
 - id: store-borrow
-  title: Bounded account borrowing (BORROW)
+  title: Bounded account borrowing
   track: store
   kind: mechanism
   state: abandoned
@@ -1702,7 +1702,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. 7c3343ff: ''the law is gauge-perfect, the tax is NOT repaid; pooled path-scaled VINDICATED at c8, flip NO''.'
 - id: store-capw
-  title: Capacity-weighted pool (C8-aware)
+  title: Capacity-weighted pool
   track: store
   kind: mechanism
   state: abandoned
@@ -1720,9 +1720,9 @@ nodes:
   end: '2026-07-27'
   folded: []
   overview: false
-  notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. C8-Aware Pool Law results (4fb5b15): ''capacity-weighted pool REFUTED at c8, the binder renamed (slow-path conversion)''.'
+  notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. C8-Aware Pool Law results (4fb5b15): ''capacity-weighted pool REFUTED at c8, the binder renamed (slow-path conversion)''. Was titled ''Capacity-weighted pool (C8-aware)''.'
 - id: store-honest-cap-family
-  title: Honest floor-clock cap (HONEST_CAP)
+  title: Honest floor-clock cap
   track: store
   kind: law
   state: abandoned
@@ -1748,7 +1748,7 @@ nodes:
   plain: A store limit sized from more honest clock readings; it was never adopted, and the law family it fed was archived.
   notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)'': the plain-mode sampler and its flight witness are store-plain-rs, the delivery-clocked and floor-bound anchors are store-pool-deliv. The raw-sample echo-ratio floor (HONEST_K) shares this verdict: old ledger GG:23650, 2026-08-11, pre-wire-v9 substrate. Archived 2026-11-10 (simplification batch 1, ADR-0073; tag dates not used for end).'
 - id: store-plain-rs
-  title: Plain-mode send-interval sampler (PLAIN_RS)
+  title: Plain-mode send-interval sampler
   track: store
   kind: mechanism
   state: abandoned
@@ -1773,7 +1773,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from the former family node 'Honest floor-clock cap family (6 arms)'. Built as anchor-hygiene fix 3 (988960c1); the flight-time witness (RWM_RS_ATTR) acted only under it and was removed with it. Archived 2026-11-10.
 - id: store-pool-deliv
-  title: 'Ship The Wins 1b: pool anchors'
+  title: Delivery-clocked pool anchors
   track: store
   kind: mechanism
   state: abandoned
@@ -1797,9 +1797,9 @@ nodes:
   - branch feat/pool-delivery-anchor
   - commit 47fdf550
   overview: false
-  notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)''. One battery, two arms (8afd4dd7: ''arm A''s MECHANISM lands completely and c7 gets WORSE ...; arm B fails both its clauses; NO FLIP''): arm A the delivery-clocked pool anchor (RWM_POOL_DELIV), arm B the floor-bound anchor (RWM_FLOOR_BOUND; paper: −14 % at c1). Attempt 2 after the composed flip (store-pool-anchor-flip).'
+  notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)''. One battery, two arms (8afd4dd7: ''arm A''s MECHANISM lands completely and c7 gets WORSE ...; arm B fails both its clauses; NO FLIP''): arm A the delivery-clocked pool anchor (RWM_POOL_DELIV), arm B the floor-bound anchor (RWM_FLOOR_BOUND; paper: −14 % at c1). Attempt 2 after the composed flip (store-pool-anchor-flip). Was titled ''Ship The Wins 1b: pool anchors''.'
 - id: store-pool-anchor-flip
-  title: 'Ship The Wins 1: composed flip'
+  title: Composed store flip
   track: store
   kind: mechanism
   state: done
@@ -1823,7 +1823,7 @@ nodes:
   - commit 201ada44
   - commit a43bab82
   overview: false
-  notes: 'Paper rows carry the end date only; flip e84ef1c and revert on 2026-08-07; the end date is the RWM_POOL_ANCHOR archive tag (2026-11-10). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_POOL_ANCHOR archived 2026-11-10 (tag date not used for end). Ship The Wins 1 (pre-registration 201ada44, results 60f833a7: ''c1 463/482 (PRIMARY met) but the c7 clause fails 0.968/0.959; NO FLIP'') is this flip; moved here 2026-11-16 from store-honest-inputs.'
+  notes: 'Paper rows carry the end date only; flip e84ef1c and revert on 2026-08-07; the end date is the RWM_POOL_ANCHOR archive tag (2026-11-10). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_POOL_ANCHOR archived 2026-11-10 (tag date not used for end). Ship The Wins 1 (pre-registration 201ada44, results 60f833a7: ''c1 463/482 (PRIMARY met) but the c7 clause fails 0.968/0.959; NO FLIP'') is this flip; moved here 2026-11-16 from store-honest-inputs. Was titled ''Ship The Wins 1: composed flip''.'
 - id: store-sack-prune
   title: SACK pruning of the store
   track: store
@@ -1846,7 +1846,7 @@ nodes:
   overview: false
   notes: 'Start date is a placeholder (the 2026-07-08 SACK work); the row carries the removal date only. Dates: paper §10 rows carry an end (removal) date only.'
 - id: store-sack-release
-  title: SACK-clocked store release (ADR-0060)
+  title: SACK-clocked store release
   track: store
   kind: mechanism
   state: done
@@ -1867,7 +1867,7 @@ nodes:
   overview: false
   notes: 'Pre-registered 2026-07-21 (discipline 11) and flipped the same day. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: store-sender-decoupling
-  title: Window decoupling (WIN_DECOUPLE)
+  title: Window decoupling
   track: store
   kind: mechanism
   state: abandoned
@@ -1911,7 +1911,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'.
 - id: store-reasm-bdp
-  title: Never-evict reassembly clamp (REASM_BDP)
+  title: Never-evict reassembly clamp
   track: store
   kind: mechanism
   state: abandoned
@@ -1935,7 +1935,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Sender decoupling attempts (4 arms)''. Paper row: the clamp never binds. Archived 2026-11-10 (ADR-0073).'
 - id: store-src-bp
-  title: Source backpressure (SRC_BP)
+  title: Source backpressure
   track: store
   kind: mechanism
   state: abandoned
@@ -1957,7 +1957,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'. Refuted at L1 2026-07-12 (4606829f); the delete commit 8902d246 says 'superseded by the percap account family' (decision 2026-11-13), itself refuted.
 - id: store-anchor-hygiene
-  title: Anchor hygiene laws (ADR-0061)
+  title: Anchor hygiene laws
   track: store
   kind: law
   state: done
@@ -1980,7 +1980,7 @@ nodes:
   overview: false
   notes: 'A* windowed-max anchor, M* pair, process-clock stall witness (2026-07-19); flips in the 2026-07-21 consolidation battery. End date from commit 5ebbcda8 (the 2026-07-21 consolidation flip of MSTAR_ANCHOR and CLOCK_GAP); the ADR date is the migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: store-three-term
-  title: Three-term outstanding law (THREE_TERM)
+  title: Three-term outstanding law
   track: store
   kind: law
   state: abandoned
@@ -2053,7 +2053,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Three-term and composed caps (5 arms)''. Slack-bench (pre-registration 530bbaa2; results 7e03ef9b: ''the three-term model SURVIVES; the CLOCK is what fails it''); the slack-clock charge refuted in the cap-law cluster ledger (7e302e2a). Refuted, never shipped.'
 - id: store-composed-cap
-  title: Composed cap (COMPOSED_CAP)
+  title: Composed cap
   track: store
   kind: law
   state: abandoned
@@ -2184,7 +2184,7 @@ nodes:
   plain: Fixing a slow rate measurement so it stops holding up the sender; now on by default.
   notes: 'HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11).'
 - id: store-sum-cap
-  title: 'Ladder battery: ×N deletion (SUM_CAP)'
+  title: 'Ladder battery: ×N deletion'
   track: store
   kind: law
   state: done
@@ -2272,7 +2272,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''One store law (ADR-0072)''. The lead''s ruling: it stands as scored, REFUTED; the cross-session control reference is a design weakness (7e13dc06). §19 re-read the law against a same-session main.'
 - id: store-adr72-one-law
-  title: One store law (ADR-0072)
+  title: One store law
   track: store
   kind: law
   state: done
@@ -2297,7 +2297,7 @@ nodes:
   plain: Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links.
   notes: 'ADR-0072 accepted on §19, the same-session control (§18 is store-s18-one-law). Dates: ADR end dates in the raw set equal their start (placeholder).'
 - id: store-input-search
-  title: c1 anchor over-read
+  title: Single-path anchor over-read
   track: store
   kind: research
   state: done
@@ -2360,7 +2360,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Store-law input search (8 inputs)'. [LOOPDIAG] instrument on main, 4 cells, 128 rows.
 - id: store-probe-gain
-  title: (P) probe-gain store law
+  title: Probe-gain store law
   track: store
   kind: law
   state: abandoned
@@ -2406,7 +2406,7 @@ nodes:
   plain: Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work.
   notes: '§29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27.'
 - id: store-dw-window
-  title: (D-W) noise-sized window
+  title: Noise-sized window
   track: store
   kind: research
   state: abandoned
@@ -2662,7 +2662,7 @@ nodes:
   plain: Measuring how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop.
   notes: 'Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law''s Part B and the owner''s U2.'
 - id: store-s57a-burst
-  title: Emission-burst block at c1s
+  title: Emission-burst test, fast single path
   track: store
   kind: instrument
   state: done
@@ -2682,9 +2682,9 @@ nodes:
   folded: []
   overview: false
   plain: Testing whether the number of packets the sender releases at once holds extra queue on the fast single-path link.
-  notes: 'Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds.'
+  notes: 'Reported only, 63 rows. Post hoc: paired B256-B64 -2.2 k/s (n 6); a session-position slowdown from replicate 9, possibly host builds. Was titled ''Emission-burst block at c1s''.'
 - id: store-s57b-c1d
-  title: c1d pool sweep and transfer test T
+  title: Fast two-path pool sweep
   track: store
   kind: instrument
   state: done
@@ -2707,7 +2707,7 @@ nodes:
   plain: Measuring the two-path link at six store sizes to see whether its throughput depends on standing queue the way the fast link's does.
   notes: Reported only, 30 rows, host cargo paused. Smallest store-bound pool at q_l 2.64 ms > 2.1; post hoc c1d reads like c1s at the same W. Next registration must reach q_l <= 2.1 ms.
 - id: store-law-r67
-  title: 'R6.7 floors: candidate C'
+  title: Lowest-store floor candidate
   track: store
   kind: research
   state: done
@@ -2730,9 +2730,9 @@ nodes:
   - commit 4cff88d0
   - commit c49c0a77
   overview: false
-  notes: 'Candidate C, not a recommendation: one floor, the median absolute window minimum over the K windows of lowest store size seen so far, from n₀ = 10 with no boot hold. It costs 3.75–5.4 s to reach n = 128 and exposes an allowance gap at c2 (5–33 slots below the knee on the static map). §60 scores its c2 prediction (D SHORT, +0.9 to +2.2 ms).'
+  notes: 'Candidate C, not a recommendation: one floor, the median absolute window minimum over the K windows of lowest store size seen so far, from n₀ = 10 with no boot hold. It costs 3.75–5.4 s to reach n = 128 and exposes an allowance gap at c2 (5–33 slots below the knee on the static map). §60 scores its c2 prediction (D SHORT, +0.9 to +2.2 ms). Was titled ''R6.7 floors: candidate C''.'
 - id: store-slaw-gauge
-  title: Store-law gauge build (B-1)
+  title: Store-law gauge build
   track: store
   kind: instrument
   state: in-progress
@@ -2754,9 +2754,9 @@ nodes:
   overview: false
   waiting_on: the §60 Result (main takes it only through a guard)
   plain: Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors.
-  notes: 'slaw-gauge d416d59b: the [SLAW] gauge and the [WSTORE] fec= window means of the rate seat''s inputs; s60-tree cb88df3a is main + the gauge, the §60 measured tree. Main does not take the gauge, because it changes the release binary and has had no guard; the tools merge after the Result. Done when: the gauge reaches main through a guard, or is dropped after the §60 Result.'
+  notes: 'slaw-gauge d416d59b: the [SLAW] gauge and the [WSTORE] fec= window means of the rate seat''s inputs; s60-tree cb88df3a is main + the gauge, the §60 measured tree. Main does not take the gauge, because it changes the release binary and has had no guard; the tools merge after the Result. Done when: the gauge reaches main through a guard, or is dropped after the §60 Result. Was titled ''Store-law gauge build (B-1)''.'
 - id: store-s60-pre
-  title: Suites and reference binary (60-pre)
+  title: Gauge suites and reference binary
   track: store
   kind: instrument
   state: done
@@ -2780,7 +2780,7 @@ nodes:
   overview: false
   notes: Release 1156/0, debug 1008/0, wasm 50/0, core 2/0, doc and parsers rc 0; decision_trace_pin 7/7 in both profiles; the first Linux run of the gauge's tests. ref60-manifest (187 files) is committed and passed as LD_REF_MANIFEST to every §60 launch.
 - id: store-s60a
-  title: Gauge session 60a
+  title: Queue-free floor on small stores
   track: store
   kind: research
   state: done
@@ -2812,7 +2812,7 @@ nodes:
   plain: Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it.
   notes: '96/96 slots live at harness60 8565e7d2 (10:07–12:12Z 2026-11-16), bin_sha e410d640, suite-reuse HIT. Scored: c2 SHORT (the allowance sigma + q*l falls 1.69 ms short of the knee on a floor converged to 0.18 ms; a defect finding for F01); R-SIGN PASS at c2 and c8 (60b gate open); c8 B2 UNSCOREABLE (leg 1 calibrates at W 256 and its anchor does not bind; DECISION 12 pools legs). Reported: P1 holds, P3 rises (l is load-dependent), B1 fired on 3 leg-rows; the leg-1 floor gate is uninformative (a gap in DECISION 7).'
 - id: store-s60b
-  title: Gauge session 60b
+  title: Floor sign test, fast single path
   track: store
   kind: research
   state: done
@@ -3185,7 +3185,7 @@ nodes:
   plain: 'The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained.'
   notes: 'Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem''s 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b).'
 - id: store-defect-allowance-short
-  title: Store-law allowance short of the c2 knee
+  title: Allowance short of the fast-link knee
   track: store
   kind: defect-verdict
   state: next
@@ -3231,7 +3231,7 @@ nodes:
   plain: 'Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine.'
   notes: 'Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; owner decision 11 (2026-11-17): format (A), one framing for every symbol; design on f2-design, then an ADR, a protocol bump and the fix.'
 - id: store-defect-delta-nan
-  title: RWM_DELTA pinned the store cap (F1)
+  title: Latency-dial setting pinned the store cap
   track: store
   kind: defect-verdict
   state: done
@@ -3254,7 +3254,7 @@ nodes:
   plain: Fixed a bug where setting the delay dial by number made the in-flight data limit collapse to its minimum.
   notes: 'Fixed: f1-delta-nan (39008a01) merged to main 9b8b42ca after §58 Part A (all suites green on Linux, decision_trace_pin 7/7 in release and debug), under the owner''s guard waiver of 2026-11-14. Still open from the defect record: whether any r_battery.sh MID ledger row postdates the defect.'
 - id: model-shared-core
-  title: Shared engine laws and decisions (ADR-0077)
+  title: Shared engine laws and decisions
   track: model
   kind: infra
   state: in-progress
@@ -3359,7 +3359,7 @@ nodes:
   overview: false
   notes: 'Visualizer only, no engine bytes, not in status. e614ec64: the tail solve is warm-started, bit-identical to compute_r_star_exact; 95e926d4: the no-hint solve gallops up from k = 0 and the step budget is predictive. The branches warm-scan and warm-scan-clean (not merged) hold the evidence tests (fail(k) monotonicity scan, bit-equality harness; long tests #[ignore]).'
 - id: store-defect-cap-constant
-  title: Store cap constant at c8
+  title: Store cap pinned at its clamp
   track: store
   kind: defect-verdict
   state: in-progress
@@ -3380,7 +3380,7 @@ nodes:
   plain: 'Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high.'
   notes: 'Plan 2026-11-13: the store law becomes its own track (items 8-9).'
 - id: place-marginal-cost
-  title: Marginal-cost placement law (RWM B)
+  title: Marginal-cost placement law
   track: place
   kind: law
   state: done
@@ -3473,7 +3473,7 @@ nodes:
   overview: false
   notes: 'G179 (feat/c8-conversion, 2026-08-06) is matched to this row by date and subject (slow-path conversion); uncertain. Dates: paper §10 rows carry an end (removal) date only.'
 - id: place-stage2-battery
-  title: Placement battery (Track A)
+  title: Placement battery
   track: place
   kind: research
   state: done
@@ -3497,7 +3497,7 @@ nodes:
   overview: false
   notes: Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed.
 - id: place-hol
-  title: Placement frontier term (PLACE_HOL)
+  title: Placement frontier term
   track: place
   kind: mechanism
   state: abandoned
@@ -3696,7 +3696,7 @@ nodes:
   notes: Direct landings (ADR-0019 not in the raw set); paper §10 recommended Copa.
   plain: The first congestion control was replaced by one that reacts to delay instead of waiting for loss.
 - id: cc-copa-lite
-  title: Production Copa-lite port (P-series)
+  title: Production Copa-lite port
   track: cc
   kind: mechanism
   state: done
@@ -3789,7 +3789,7 @@ nodes:
   overview: false
   notes: 'ADR date is the 2026-07-21 migration; built 2026-07-13, compete mode 2026-07-19. RWM_COPA_COMPETE is a §3.3 debt. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cc-bbr-default
-  title: BBR as substrate default (ADR-0054)
+  title: BBR as substrate default
   track: cc
   kind: mechanism
   state: done
@@ -3811,7 +3811,7 @@ nodes:
   plain: Switched the underlying congestion controller to BBR, which removed a hidden speed ceiling and raised throughput about four times.
   notes: 'Start 2026-07-13 (the substrate ceiling was named in 0d9f26e7); ADR date is the migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cc-bbrrs-v1
-  title: bbr_rs v1 on shal8
+  title: bbr_rs first version
   track: cc
   kind: mechanism
   state: done
@@ -3832,7 +3832,7 @@ nodes:
   overview: false
   notes: 'fix/shal8-anchor merge (2026-08-07). git log 2eb88de3 (not a raw record): "bbr_rs falsified x2 at 21-22 Mbit (gate >=70, NO FLIP, default unchanged)". The raw record has no verdict. Folded Ship The Wins 2 (shal8 anchor): pre-registration c319ef91, RESULTS 2eb88de3 (STRUCTURAL BOUND, NO FLIP).'
 - id: cc-adr68-fusion
-  title: Copa-BBR fusion (ADR-0068)
+  title: Copa-BBR fusion
   track: cc
   kind: research
   state: parked
@@ -3975,7 +3975,7 @@ nodes:
   waiting_on: the per-packet cost fix, then the bbr_rs round-2 session
   notes: 'Start set to the owner call (2026-11-12); the branches carry 2026-11-10 commits from the bbr48 ancestry. bbrrs-r2 folded into its rebased successor bbrrs-r3 (2026-11-13): one-round δ-free ProbeRtt, cc_sim quinn-dump. Ratchet prediction failed (nm.txt c34d4431).'
 - id: cc-pacing-audit
-  title: Pacing-seam audit (W2)
+  title: Pacing-seam audit
   track: cc
   kind: research
   state: in-progress
@@ -3996,7 +3996,7 @@ nodes:
   overview: false
   plain: Checked what our controller would need in order to set the sending pace itself; the standard library ignores the pace a controller asks for.
   waiting_on: the owner's call on the hybrid controller's direction, then merge to main
-  notes: Input to ADR-0068 Addendum 3 (branch adr68-amend, unmerged).
+  notes: Input to ADR-0068 Addendum 3 (branch adr68-amend, unmerged). Was titled 'Pacing-seam audit (W2)'.
 - id: cc-user-pacing-s3
   title: 'Owner call: vendored pacing seam'
   track: cc
@@ -4176,7 +4176,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-emit-batch-law0
-  title: Emission batching, Law 0
+  title: Emission batching law
   track: perf
   kind: mechanism
   state: done
@@ -4224,7 +4224,7 @@ nodes:
   overview: false
   notes: '§10 is headed "superseded by the threading redesign"; the per-path I/O owner (Q1) is that redesign''s delivered piece. Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/quic-feeder archived 2026-10-05 (tag date not used for end); archive/quic-feeder-v2 archived 2026-10-05 (tag date not used for end).'
 - id: perf-threading-p0
-  title: Threading P0 thread budget
+  title: Named runtime and thread budget
   track: perf
   kind: instrument
   state: done
@@ -4244,7 +4244,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-p1
-  title: Threading P1 defect fixes
+  title: Threading lock and wake fixes
   track: perf
   kind: mechanism
   state: done
@@ -4264,7 +4264,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-p2a
-  title: Threading P2a logic actor
+  title: Single logic-actor threading
   track: perf
   kind: mechanism
   state: abandoned
@@ -4287,9 +4287,9 @@ nodes:
   - commit 69fd846b
   overview: false
   plain: Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted.
-  notes: 'Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: "i rather think your impl is shit... rethink". Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end).'
+  notes: 'Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: "i rather think your impl is shit... rethink". Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled ''Threading P2a logic actor''.'
 - id: perf-io-owner
-  title: Per-path I/O owner (Q1)
+  title: Per-path I/O owner
   track: perf
   kind: mechanism
   state: done
@@ -4311,7 +4311,7 @@ nodes:
   plain: Gave each network path its own input and output task, which raised single-path throughput by about half.
   notes: §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution).
 - id: perf-d9-attribution
-  title: D9 attribution
+  title: Attribution of one sender change
   track: perf
   kind: research
   state: done
@@ -4333,7 +4333,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''Per-path I/O owner (Q1)'': §13 re-scoped §12''s c1s collapse to D9, and §15 tested D9 alone.'
 - id: perf-sched-split
-  title: Scheduler split by direction (Q2)
+  title: Scheduler split by direction
   track: perf
   kind: mechanism
   state: done
@@ -4354,7 +4354,7 @@ nodes:
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-q3-investigation
-  title: Threading Q3 lock-free send
+  title: Lock-free send investigation
   track: perf
   kind: research
   state: abandoned
@@ -4375,7 +4375,7 @@ nodes:
   overview: false
   notes: 'End 2026-10-26 was a placeholder (status §16: last edit or migration date); date from merge ce600796. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-receiver-r1
-  title: Receiver per-datagram cost R1
+  title: Receiver per-datagram cost, first try
   track: perf
   kind: mechanism
   state: abandoned
@@ -4398,7 +4398,7 @@ nodes:
   overview: false
   notes: §17 REFUTED-WITH-RECORD; §20 (perf-s20-r1-collapse) traced the collapse to R1's [LAT] pending store; R2 is R1 with that fix. Tag archive/thread-r1 archived 2026-10-26.
 - id: perf-s20-r1-collapse
-  title: R1 c1s collapse diagnosis
+  title: First receiver rewrite collapse diagnosis
   track: perf
   kind: research
   state: done
@@ -4422,7 +4422,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'Receiver per-datagram cost R1'. Five arms, 10 rows, 3 profiles; its fix is R2.
 - id: perf-receiver-r2
-  title: Receiver cost R2 with floor fix
+  title: Receiver cost with floor fix
   track: perf
   kind: mechanism
   state: done
@@ -4444,7 +4444,7 @@ nodes:
   overview: false
   notes: 'Same-session result (§21): c1s goodput WITHIN (720.8 vs 717.3 Mbit/s, +0.5 %), c1d TREND-BETTER (+7.3 %); the larger gap to MAIN 621 in §17 is cross-session. End 2026-10-27 was a placeholder (status §21: last edit or migration date); date from merge 0972c3c4. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-r3
-  title: Threading R3 receiver re-profile
+  title: Receiver re-profile for threading
   track: perf
   kind: research
   state: abandoned
@@ -4465,9 +4465,9 @@ nodes:
   end: '2026-10-27'
   folded: []
   overview: false
-  notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-r3 archived 2026-10-27 (tag date not used for end).'
+  notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-r3 archived 2026-10-27 (tag date not used for end). Was titled ''Threading R3 receiver re-profile''.'
 - id: perf-c8-lag
-  title: c8 client [LAG] spread
+  title: Two-path client lag spread
   track: perf
   kind: research
   state: done
@@ -4488,7 +4488,7 @@ nodes:
   overview: false
   notes: Split 2026-11-16 from 'c8 client lag diagnosis' (§25, §26, §33; rated successful as a family, a rating that now sits on §26, perf-s26-long-polls). Diagnostic, 30 rows, placement step 1.
 - id: perf-s26-long-polls
-  title: c8 lag tail, long polls
+  title: Lag tail and long polls
   track: perf
   kind: research
   state: done
@@ -4552,7 +4552,7 @@ nodes:
   plain: Made the receiver clean up finished decoding work more often, which raised fast two-path throughput by about a fifth.
   notes: 'End 2026-11-01 was a placeholder (status §32: last edit or migration date); date from merge bb29595e. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-s33-timer
-  title: c8 lag timer hand-off
+  title: Lag tail timer hand-off
   track: perf
   kind: research
   state: done
@@ -4671,7 +4671,7 @@ nodes:
   overview: false
   notes: 'Owner 2026-07-02: "define a goal that we want to surpass tcp and that the model reacts correctly in our defined scenarios". Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: meas-l1-harness
-  title: L1 netns harness and baselines
+  title: Network-namespace harness and baselines
   track: meas
   kind: instrument
   state: done
@@ -4697,7 +4697,7 @@ nodes:
   overview: false
   notes: VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350).
 - id: meas-l2-multipath
-  title: L2/L3 multipath and tail evaluation
+  title: Multipath and tail evaluation
   track: meas
   kind: research
   state: done
@@ -4718,9 +4718,9 @@ nodes:
   - commit b0f039c9
   - branch window-liveness fix
   overview: false
-  notes: C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed.
+  notes: C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed. Was titled 'L2/L3 multipath and tail evaluation'.
 - id: meas-c8-aggregation-arc
-  title: C8 heterogeneous aggregation arc
+  title: Unequal two-path aggregation arc
   track: meas
   kind: research
   state: abandoned
@@ -4792,7 +4792,7 @@ nodes:
   overview: false
   notes: Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read).
 - id: meas-adr52-discipline
-  title: L1 measurement discipline (ADR-0052)
+  title: Measurement discipline
   track: meas
   kind: instrument
   state: done
@@ -4813,7 +4813,7 @@ nodes:
   plain: Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run.
   notes: 'Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: meas-adversarial-b1
-  title: Adversarial Cells B1 (policer map)
+  title: Adversarial policer map
   track: meas
   kind: research
   state: done
@@ -4834,7 +4834,7 @@ nodes:
   overview: false
   notes: Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design.
 - id: meas-formula-first
-  title: Formula-first review (ADR-0070)
+  title: Formula-first review
   track: meas
   kind: instrument
   state: done
@@ -4981,7 +4981,7 @@ nodes:
   overview: false
   notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 1's delivered-latency reading withdrawn.
 - id: meas-c9-battery
-  title: c9 quad-cell validation battery
+  title: Four-path validation battery
   track: meas
   kind: research
   state: done
@@ -5078,7 +5078,7 @@ nodes:
   overview: false
   notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). The [CCAP] span field the c9 battery missed, closed locally (6d4c3548).
 - id: meas-sigma-c8
-  title: Measured σ at c8
+  title: Measured σ on unequal paths
   track: meas
   kind: research
   state: done
@@ -5099,7 +5099,7 @@ nodes:
   overview: false
   notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5''s measurement clause: ''the delta agreement is DEAD by 75x'' (b5d8a14c).'
 - id: meas-eppen-c8
-  title: Eppen's condition at c8
+  title: Eppen's condition on unequal paths
   track: meas
   kind: research
   state: done
@@ -5119,7 +5119,7 @@ nodes:
   overview: false
   notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL.
 - id: meas-attribution-audit
-  title: Attribution audit D0
+  title: Attribution audit
   track: meas
   kind: research
   state: done
@@ -5141,7 +5141,7 @@ nodes:
   overview: false
   notes: §2 row is undated; dates from the 2026-09-07 merges.
 - id: meas-wire-v8
-  title: Stage-2 instruments and owed findings
+  title: Wire v8 instruments and owed findings
   track: meas
   kind: instrument
   state: done
@@ -5205,7 +5205,7 @@ nodes:
   plain: Found that the network emulator undercounted lost packets several times over, and changed the harness to count every packet.
   notes: '§3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]).'
 - id: meas-v4-verification
-  title: V4 verification of new main
+  title: Verification of the new main
   track: meas
   kind: research
   state: done
@@ -5226,7 +5226,7 @@ nodes:
   - branch perf/sender-alloc-clock
   - branch fix/tick-sampling-tests
   overview: false
-  notes: 'Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: 'Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file''s last edit, not the verdict date. Was titled ''V4 verification of new main''.'
 - id: meas-guard-41c
   title: Rank-minp merge guard
   track: meas
@@ -5269,7 +5269,7 @@ nodes:
   overview: false
   notes: Plan W5.0; LD_REHEARSE and verified LD_PRIOR_TESTS.
 - id: meas-defect-rtp-floor
-  title: Guard clause rtp_floor_p0 measures drain
+  title: Start-up floor clause measures drain
   track: meas
   kind: defect-verdict
   state: in-progress
@@ -5461,7 +5461,7 @@ nodes:
   overview: false
   notes: 'Split 2026-11-16 from ''raptorpath-math and wasm L0 model'': the first interactive visualizer (2026-04-07..10), connected to the triangle (4cd3abc3), with per-symbol P_lost mixing and T_cut stop (4a0890ac), adaptive r (BOCD) and the real RLC codec in wasm (468b7580), a calibrated channel (aa56ef51).'
 - id: model-wasm-l0
-  title: raptorpath-math and wasm L0 model
+  title: raptorpath-math and wasm model
   track: model
   kind: infra
   state: done
@@ -5698,7 +5698,7 @@ nodes:
   plain: 'Fixed: the visualizer''s unused second copy of the machine is removed.'
   notes: 'Fixed by viz-fix (model-viz-fix): the classic-hint machine is removed and the named hints are an alias table onto the one continuum constructor. Law ledger M03 has not been re-labelled.'
 - id: obs-status-endpoint
-  title: Runtime status endpoint (ADR-0013)
+  title: Runtime status endpoint
   track: obs
   kind: instrument
   state: done
@@ -5718,7 +5718,7 @@ nodes:
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: obs-gates-echo
-  title: '[GATES] liveness echo'
+  title: Gate-setting liveness echo
   track: obs
   kind: instrument
   state: done
@@ -5779,7 +5779,7 @@ nodes:
   waiting_on: merge to main, then the per-path state work it builds on
   notes: ADR-0074 draft (supersedes ADR-0013 Layer 4); owner widened the scope to the flight recorder and the analysis stack 2026-11-12.
 - id: obs-user-otel-answers
-  title: Owner answers on OTel Q1–Q6
+  title: Owner answers on OTel design
   track: obs
   kind: user-decision
   state: done
@@ -5798,7 +5798,7 @@ nodes:
   end: '2026-11-12'
   folded: []
   overview: false
-  notes: 'No raw record. User 2026-11-12: "Q1 remove. Q2 http/protobuf for now. Q3 configurable like probabilistic tracing... Q6 prometheus through a collector."'
+  notes: 'No raw record. User 2026-11-12: "Q1 remove. Q2 http/protobuf for now. Q3 configurable like probabilistic tracing... Q6 prometheus through a collector." Was titled ''Owner answers on OTel Q1–Q6''.'
 - id: infra-early-platform
   title: 'Tunnel platform: handshake, TLS, migration'
   track: infra
@@ -6028,7 +6028,7 @@ nodes:
   overview: false
   notes: '-2 665 lines; archive tags for Groups A/B sit on their design nodes. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: infra-simplify-batch2
-  title: Simplify batches 1b–3
+  title: Later simplify batches
   track: infra
   kind: simplification
   state: done
@@ -6047,9 +6047,9 @@ nodes:
   folded:
   - branch simplify-5
   overview: false
-  notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
+  notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date. Was titled ''Simplify batches 1b–3''.'
 - id: infra-restructure
-  title: Workspace restructure (ADR-0076)
+  title: Workspace restructure
   track: infra
   kind: simplification
   state: in-progress
@@ -6073,7 +6073,7 @@ nodes:
   plain: Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open.
   notes: Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open.
 - id: rec-p10a-repair-floor
-  title: Inner-feedback repair floor (P10a)
+  title: Inner-feedback repair floor
   track: rec
   kind: mechanism
   state: abandoned
@@ -6112,7 +6112,7 @@ nodes:
   overview: false
   notes: 'Split from place-daps (its parent). The row says the windowed max is the correct statistic for decode-clocked samples; it names no replacing node. Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-recov-sp
-  title: Singles hole suppression (RECOV_SP)
+  title: Singles hole suppression
   track: rec
   kind: mechanism
   state: parked
@@ -6215,7 +6215,7 @@ nodes:
   plain: 'Open problem: the script that checks the finish-time prediction uses a different delay than the formula itself, and one of its checks fails.'
   notes: 'Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close).'
 - id: meas-defect-c8-bimodal
-  title: c8 control bimodal collapse
+  title: Two-path control bimodal collapse
   track: meas
   kind: defect-verdict
   state: in-progress
@@ -6235,7 +6235,7 @@ nodes:
   plain: 'Open problem: on the hardest two-path test, the control runs sometimes fall back to using only the fast path, which makes results very noisy.'
   notes: Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close).
 - id: meas-defect-diag-rtp-ms
-  title: '[DIAG] rtp prints whole milliseconds'
+  title: Delay readout prints whole milliseconds
   track: meas
   kind: defect-verdict
   state: in-progress
@@ -6277,7 +6277,7 @@ nodes:
   plain: 'Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much.'
   notes: 'Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs).'
 - id: rec-leverb-c1d-cost
-  title: Lever B c1d duplicate cost
+  title: Gap horizon two-path duplicate cost
   track: rec
   kind: defect-verdict
   state: in-progress
@@ -6668,7 +6668,7 @@ nodes:
   plain: Checking, with the loss-report fix in place, whether retransmissions should be spread across paths like normal data.
   notes: 'Needs the RWM_PLACE_WDIV knob, which lives on the unmerged branch wdiv-diag (node place-wdiv). Option: run it as a reported block inside the lever-B guard session instead of a session of its own. Done when: a reported-only W0 row (retransmits placed like source) on main + filter + lever B answers the open leg question under the 64-gap horizon, with the duplicate account complete (pt_st and det explained).'
 - id: rec-leverb-guard
-  title: Lever-B guard v2, then merge
+  title: Gap horizon guard, then merge
   track: rec
   kind: mechanism
   state: parked
@@ -6866,7 +6866,7 @@ nodes:
   plain: Measuring standard Linux BBR and CUBIC on the same tests, to compare against outside protocols.
   notes: 'Done when: kernel BBRv1 and CUBIC are measured in the same session over the same cells and the result answers paper §11.1 open question 11.'
 - id: store-user-u1u3
-  title: Owner calls U1–U3
+  title: Owner calls on who sets latency
   track: store
   kind: user-decision
   state: done
@@ -6885,7 +6885,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Owner decision on three questions: whether the congestion controller or the in-flight limit is in charge, what sets the latency trade, and whether two percent less bulk speed is worth ten times less delay.'
-  notes: 'U1 store leads, U3 accepted (2026-11-16); U2 (2026-11-17): the dial scales a measured knee margin g(delta)*S_F + q(delta)*F-hat, g(Bulk) = 1, the Realtime end set by the c3 sweep (status Owner decisions, items 8-10). The c3 sweep (§61a re-run) DISAGREES as registered; Erratum 1 withdraws reading it as S_F not being the term (the reading mixes sample counts); the estimator count rule comes first (store-law-g-rederive).'
+  notes: 'U1 store leads, U3 accepted (2026-11-16); U2 (2026-11-17): the dial scales a measured knee margin g(delta)*S_F + q(delta)*F-hat, g(Bulk) = 1, the Realtime end set by the c3 sweep (status Owner decisions, items 8-10). The c3 sweep (§61a re-run) DISAGREES as registered; Erratum 1 withdraws reading it as S_F not being the term (the reading mixes sample counts); the estimator count rule comes first (store-law-g-rederive). Was titled ''Owner calls U1–U3''.'
 - id: model-user-wasm-calls
   title: Owner calls on wasm audit
   track: model
@@ -6910,7 +6910,7 @@ nodes:
   plain: Owner decision on how to clean up the visualizer's model, including removing a second, unused copy of the machine.
   notes: 'Done when: the owner rules on the audit''s five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status.'
 - id: model-giveup-law
-  title: Model give-up law (ii)
+  title: Model give-up law
   track: model
   kind: law
   state: done
@@ -6941,7 +6941,7 @@ nodes:
   overview: false
   notes: Replaces V5/V6 (the cartoon's budget choice) and W14 (the sim's T_cut horizon); the sim stops calling find_t_cut. The 1 − ρ cap is a model law the engine lacks, so it has its paper §5.6 line, a §11.3 row and a bounding test; dropping T_cut diverges at harsh Bulk (8–26 of 100 slider positions), also bounded by a test. Goldens unchanged.
 - id: model-viz-fix
-  title: Visualizer fixes (viz-fix)
+  title: Visualizer fixes
   track: model
   kind: mechanism
   state: done
@@ -6970,7 +6970,7 @@ nodes:
   overview: false
   notes: 'Also: the W11 β = 0 guard is gone, a W22 bounding test is added, the store text is per cell (2048 is a clamp measured pinned; 512·N an underived constant), the model-vs-engine table rows C04 and S05 are fixed. Goldens unchanged; 39 native wasm tests and both mjs gates pass.'
 - id: model-defect-rho-inert
-  title: ρ inert at Auto, Realtime (M04)
+  title: ρ inert at Auto, Realtime
   track: model
   kind: defect-verdict
   state: in-progress
@@ -7038,7 +7038,7 @@ nodes:
   plain: Owner decision on five mismatches between the paper and the code in how much repair data to send.
   notes: 'Needs the off-Bulk session''s reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin).'
 - id: cc-user-adr68-direction
-  title: 'Owner call: ADR-0068 direction'
+  title: 'Owner call: hybrid controller direction'
   track: cc
   kind: user-decision
   state: done
@@ -7058,7 +7058,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on whether the future hybrid controller should grow out of our BBR controller instead of being a second one.
-  notes: 'Accepted 2026-11-16, conditional on §48d: the hybrid grows out of bbr_rs (status Owner decisions (2026-11-16), item 3).'
+  notes: 'Accepted 2026-11-16, conditional on §48d: the hybrid grows out of bbr_rs (status Owner decisions (2026-11-16), item 3). Was titled ''Owner call: ADR-0068 direction''.'
 - id: cc-user-bbrrs-promotion
   title: 'Owner call: bbr_rs promotion'
   track: cc
@@ -7264,7 +7264,7 @@ nodes:
   plain: Applying the owner's calls to the visualizer's model and proving it stays smooth across the dial.
   notes: 'Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. Progress 2026-11-14: viz-fix (model-viz-fix) removed the dead machine and the W11 guard; the give-up law (ii) (model-giveup-law) replaced the cartoon shed choice and T_cut.'
 - id: rate-law-reconcile
-  title: Rate-law reconciliation (W22, W*)
+  title: Rate-law reconciliation
   track: rate
   kind: law
   state: blocked
@@ -7285,9 +7285,9 @@ nodes:
   folded: []
   overview: false
   plain: Making the paper and the code agree on how much repair data to send, with a test for every remaining difference.
-  notes: 'Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence.'
+  notes: 'Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence. Was titled ''Rate-law reconciliation (W22, W*)''.'
 - id: cc-bbrrs-promote
-  title: bbr_rs promotion (new ADR)
+  title: bbr_rs promotion
   track: cc
   kind: mechanism
   state: blocked
@@ -7308,7 +7308,7 @@ nodes:
   plain: Making our BBR controller the default, recorded as a new architecture decision.
   notes: 'Law ledger: K09 (rank 8, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054''s default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS.'
 - id: cc-hybrid
-  title: BBR/Copa hybrid build (ADR-0068)
+  title: BBR/Copa hybrid build
   track: cc
   kind: research
   state: parked

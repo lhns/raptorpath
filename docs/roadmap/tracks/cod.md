@@ -22,9 +22,9 @@ flowchart TB
     cod_fungible_window["✖ Coded-only fungible<br/>window"]
     cod_fmtcp["✖ FMTCP-class decode-<br/>on-total"]
     cod_systematic_wire["✔ Systematic wire,<br/>sparse decoder"]
-    cod_unified_span["✔ Unified span machine<br/>(ADR-0064)"]
+    cod_unified_span["✔ Unified span machine"]
     cod_wire_compact["✔ Compact v5 DATA<br/>framing"]
-    cod_one_pipeline["✔ One window pipeline<br/>(ADR-0069)"]
+    cod_one_pipeline["✔ One window pipeline"]
     cod_s4_block_retest["✔ Block default re-<br/>test"]
     cod_debug_stall["✔ Decoder re-delivery<br/>stall fix"]
     cod_block_pipeline ~~~ cod_legacy_rlc
@@ -90,8 +90,8 @@ flowchart TB
 | `cod-fungible-window` | Coded-only fungible window | abandoned | dead-end | 3.9 Mbit/s | paper §10 row Coded-only fungible window (coded-object mode) |  |
 | `cod-fmtcp` | FMTCP-class decode-on-total | abandoned | dead-end | 0.48× | commit f8417579; paper §10 row FMTCP-class decode-on-total [Cui2015] |  |
 | `cod-legacy-rlc` | Legacy sliding-window/generation decoders | abandoned | superseded |  | paper §10 row Legacy RLC decoders (sliding-window, generation); ADR-0022 |  |
-| `cod-unified-span` | Unified span machine (ADR-0064) | done | successful |  | ADR-0064 | cod-systematic-wire |
-| `cod-one-pipeline` | One window pipeline (ADR-0069) | done | successful |  | ADR-0069; status §5 | cod-unified-span |
+| `cod-unified-span` | Unified span machine | done | successful |  | ADR-0064 | cod-systematic-wire |
+| `cod-one-pipeline` | One window pipeline | done | successful |  | ADR-0069; status §5 | cod-unified-span |
 | `cod-wire-compact` | Compact v5 DATA framing | done | very-successful | +2.6/+3.6 Mbit/s | commit 078b0ce9 |  |
 | `cod-debug-stall` | Decoder re-delivery stall fix | done | successful | 0 of 40 iterations stalled | status §31 |  |
 | `cod-user-generation-seat` | Owner call: keep generation coding | parked | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
@@ -113,8 +113,8 @@ flowchart TB
 | `cod-fungible-window` | Coded-only fungible window | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Coded-only fungible window (coded-object mode) |
 | `cod-fmtcp` | FMTCP-class decode-on-total | Dates: paper §10 rows carry an end (removal) date only. | commit f8417579; paper §10 row FMTCP-class decode-on-total [Cui2015] |
 | `cod-legacy-rlc` | Legacy sliding-window/generation decoders | Paper §10 row has an end date only; start taken from the sliding-window FEC commit 628fdb1c (2026-03-14). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Legacy RLC decoders (sliding-window, generation); ADR-0022 |
-| `cod-unified-span` | Unified span machine (ADR-0064) | Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0064 |
-| `cod-one-pipeline` | One window pipeline (ADR-0069) | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. | ADR-0069; status §5 |
+| `cod-unified-span` | Unified span machine | Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0064 |
+| `cod-one-pipeline` | One window pipeline | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. | ADR-0069; status §5 |
 | `cod-wire-compact` | Compact v5 DATA framing | Headline is verbatim from the sibling paper row (window decoupling, A69): "Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)". | commit 078b0ce9 |
 | `cod-debug-stall` | Decoder re-delivery stall fix | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §31 |
 | `cod-user-generation-seat` | Owner call: keep generation coding | 2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it. | plan user decision 4, W4.4; status §3.2 |

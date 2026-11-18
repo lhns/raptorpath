@@ -13,35 +13,35 @@ flowchart TB
     meas_transport_comparison["✔ QUIC/MPTCP<br/>comparison and<br/>overhead taxonomy"]
     meas_matrix_bench["✔ Matrix benchmark,<br/>audit and dashboard"]
     meas_adr51_scenarios["✔ Canonical scenarios<br/>and goal gate"]
-    meas_l1_harness["✔ L1 netns harness and<br/>baselines"]
-    meas_l2_multipath["✔ L2/L3 multipath and<br/>tail evaluation"]
-    meas_c8_aggregation_arc["↷ C8 heterogeneous<br/>aggregation arc"]
+    meas_l1_harness["✔ Network-namespace<br/>harness and baselines"]
+    meas_l2_multipath["✔ Multipath and tail<br/>evaluation"]
+    meas_c8_aggregation_arc["↷ Unequal two-path<br/>aggregation arc"]
     meas_gen_inert_era>"✔ Generation-inert<br/>measurement era"]
     meas_regime_map["✔ Hardware-honest<br/>regime map"]
-    meas_adr52_discipline["✔ L1 measurement<br/>discipline (ADR-0052)"]
-    meas_adversarial_b1["✔ Adversarial Cells B1<br/>(policer map)"]
+    meas_adr52_discipline["✔ Measurement<br/>discipline"]
+    meas_adversarial_b1["✔ Adversarial policer<br/>map"]
     meas_pipeline_verification["✔ Pipeline<br/>verification matrix"]
     meas_coupling_model["✔ Coupling model<br/>(frontier span)"]
     meas_sf_accounting["✔ SF accounting axis"]
-    meas_formula_first["✔ Formula-first review<br/>(ADR-0070)"]
+    meas_formula_first["✔ Formula-first review"]
     meas_goal_0819["✔ Era battery:<br/>cumulative shipped<br/>effect"]
     meas_latency_truth["✔ Latency Truth<br/>battery"]
-    meas_c9_battery["✔ c9 quad-cell<br/>validation battery"]
+    meas_c9_battery["✔ Four-path validation<br/>battery"]
     meas_gap_phases["✔ Gap battery phases 1<br/>and 2"]
     meas_cpuprof["✔ cpuprof: the<br/>sender's CPU ceiling"]
     meas_span_run["✔ Span run: span<br/>instrument, anchors"]
-    meas_sigma_c8["✔ Measured σ at c8"]
-    meas_eppen_c8["✔ Eppen's condition at<br/>c8"]
-    meas_attribution_audit["✔ Attribution audit D0"]
-    meas_wire_v8["✔ Stage-2 instruments<br/>and owed findings"]
+    meas_sigma_c8["✔ Measured σ on<br/>unequal paths"]
+    meas_eppen_c8["✔ Eppen's condition on<br/>unequal paths"]
+    meas_attribution_audit["✔ Attribution audit"]
+    meas_wire_v8["✔ Wire v8 instruments<br/>and owed findings"]
     meas_defect_eta_witness>"⚠ ETA route and σ<br/>witness mismatch"]
-    meas_defect_c8_bimodal>"⚠ c8 control bimodal<br/>collapse"]
-    meas_defect_diag_rtp_ms>"⚠ #91;DIAG#93; rtp prints<br/>whole milliseconds"]
+    meas_defect_c8_bimodal>"⚠ Two-path control<br/>bimodal collapse"]
+    meas_defect_diag_rtp_ms>"⚠ Delay readout prints<br/>whole milliseconds"]
     meas_gso_truth>"✔ Per-datagram loss<br/>truth (GSO)"]
-    meas_v4_verification["✔ V4 verification of<br/>new main"]
+    meas_v4_verification["✔ Verification of the<br/>new main"]
     meas_guard_41c["✔ Rank-minp merge<br/>guard"]
     meas_harness_consolidation["✔ Harness on main,<br/>rehearsal mode"]
-    meas_defect_rtp_floor>"⚠ Guard clause<br/>rtp_floor_p0 measures<br/>drain"]
+    meas_defect_rtp_floor>"⚠ Start-up floor<br/>clause measures drain"]
     meas_guard_clause_dry["✔ Guard clause dry run"]
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
     meas_s51_design["✔ Off-Bulk benchmark<br/>design"]
@@ -163,39 +163,39 @@ flowchart TB
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | done | unrated |  | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |  |
 | `meas-adr51-scenarios` | Canonical scenarios and goal gate | done | successful |  | ADR-0051 |  |
-| `meas-l1-harness` | L1 netns harness and baselines | done | unrated |  | commit f73704c2 | meas-adr51-scenarios |
-| `meas-l2-multipath` | L2/L3 multipath and tail evaluation | done | unrated |  | commit beae05b1 |  |
-| `meas-c8-aggregation-arc` | C8 heterogeneous aggregation arc | abandoned | superseded |  | paper §10 row "Arc concluded" aggregation verdict | place-marginal-cost |
+| `meas-l1-harness` | Network-namespace harness and baselines | done | unrated |  | commit f73704c2 | meas-adr51-scenarios |
+| `meas-l2-multipath` | Multipath and tail evaluation | done | unrated |  | commit beae05b1 |  |
+| `meas-c8-aggregation-arc` | Unequal two-path aggregation arc | abandoned | superseded |  | paper §10 row "Arc concluded" aggregation verdict | place-marginal-cost |
 | `meas-gen-inert-era` | Generation-inert measurement era | done | unrated |  | paper §10 row Generation-inert era; ADR-0053 |  |
 | `meas-regime-map` | Hardware-honest regime map | done | unrated |  | commit acefc473 |  |
-| `meas-adr52-discipline` | L1 measurement discipline (ADR-0052) | done | successful |  | ADR-0052 |  |
-| `meas-adversarial-b1` | Adversarial Cells B1 (policer map) | done | unrated |  | commit 754139c3 |  |
-| `meas-formula-first` | Formula-first review (ADR-0070) | done | successful |  | branch ADR-0070 |  |
+| `meas-adr52-discipline` | Measurement discipline | done | successful |  | ADR-0052 |  |
+| `meas-adversarial-b1` | Adversarial policer map | done | unrated |  | commit 754139c3 |  |
+| `meas-formula-first` | Formula-first review | done | successful |  | branch ADR-0070 |  |
 | `meas-pipeline-verification` | Pipeline verification matrix | done | unrated |  | branch PIPELINE VERIFICATION MATRIX |  |
 | `meas-coupling-model` | Coupling model (frontier span) | done | dead-end |  | commit 7ad65ef1; commit cb422e2d | meas-pipeline-verification |
 | `meas-sf-accounting` | SF accounting axis | done | mixed |  | commit 4f67ba7d; commit 4131d254 | meas-pipeline-verification |
 | `meas-goal-0819` | Era battery: cumulative shipped effect | done | unrated |  | commit f605f925; branch THE ERA LEDGER, SCORED |  |
 | `meas-latency-truth` | Latency Truth battery | done | unrated |  | commit e57f3655; commit cb288631 |  |
-| `meas-c9-battery` | c9 quad-cell validation battery | done | unrated |  | commit 9a060daa; commit 7f2b0096 |  |
+| `meas-c9-battery` | Four-path validation battery | done | unrated |  | commit 9a060daa; commit 7f2b0096 |  |
 | `meas-gap-phases` | Gap battery phases 1 and 2 | done | unrated |  | commit 5bf1a346; commit b4be2489; commit decf67a8; commit 4323b2c7 |  |
 | `meas-cpuprof` | cpuprof: the sender's CPU ceiling | done | unrated |  | commit 4eb2306c; commit 4e52a318 |  |
 | `meas-span-run` | Span run: span instrument, anchors | done | unrated |  | commit 0d30724a |  |
-| `meas-sigma-c8` | Measured σ at c8 | done | unrated |  | commit d20b0863; commit b5d8a14c |  |
-| `meas-eppen-c8` | Eppen's condition at c8 | done | unrated |  | commit 33528562 |  |
-| `meas-attribution-audit` | Attribution audit D0 | done | unrated | 0.0077 (c1) | status §2 row "Attribution audit (D0)" |  |
-| `meas-wire-v8` | Stage-2 instruments and owed findings | done | successful |  | status §2 row "Crown no-regression spot (wire v8 merges)" |  |
+| `meas-sigma-c8` | Measured σ on unequal paths | done | unrated |  | commit d20b0863; commit b5d8a14c |  |
+| `meas-eppen-c8` | Eppen's condition on unequal paths | done | unrated |  | commit 33528562 |  |
+| `meas-attribution-audit` | Attribution audit | done | unrated | 0.0077 (c1) | status §2 row "Attribution audit (D0)" |  |
+| `meas-wire-v8` | Wire v8 instruments and owed findings | done | successful |  | status §2 row "Crown no-regression spot (wire v8 merges)" |  |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | done | n/a |  | commit 3eb28db6 |  |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | done | unrated | 5 300 datagrams lost at 5 per skb while dropped read 1 060 | status §3.8 |  |
-| `meas-v4-verification` | V4 verification of new main | done | successful |  | status §6 | cod-one-pipeline |
+| `meas-v4-verification` | Verification of the new main | done | successful |  | status §6 | cod-one-pipeline |
 | `meas-guard-41c` | Rank-minp merge guard | done | successful | p = 0.2256 | status §41c; branch archive/nsbench41c |  |
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | done | successful |  | branch harness-main |  |
-| `meas-defect-rtp-floor` | Guard clause rtp_floor_p0 measures drain | in-progress | unrated | 6/12 BASE and 5/12 CAND rows | status §3.10 item 7 | rec-snapver-filter |
+| `meas-defect-rtp-floor` | Start-up floor clause measures drain | in-progress | unrated | 6/12 BASE and 5/12 CAND rows | status §3.10 item 7 | rec-snapver-filter |
 | `meas-guard-clause-dry` | Guard clause dry run | done | successful |  | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d | meas-defect-rtp-floor, meas-guard-41c |
 | `meas-s58-session` | Dial-pin fix suites, binary identity | done | successful | tree X = control 8f313616… | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed | store-defect-delta-nan, model-shared-core-0 |
 | `meas-guard-v2` | Merge guard v2 accepted | done | n/a |  | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md | meas-guard-clause-dry, meas-defect-rtp-floor, meas-guard-41c |
 | `meas-defect-eta-witness` | ETA route and σ witness mismatch | in-progress | unrated |  | status §3.1 item 3 |  |
-| `meas-defect-c8-bimodal` | c8 control bimodal collapse | in-progress | unrated | 4/8 reps | status §3.1 item 4 |  |
-| `meas-defect-diag-rtp-ms` | [DIAG] rtp prints whole milliseconds | in-progress | unrated |  | status §3.5 item 4 |  |
+| `meas-defect-c8-bimodal` | Two-path control bimodal collapse | in-progress | unrated | 4/8 reps | status §3.1 item 4 |  |
+| `meas-defect-diag-rtp-ms` | Delay readout prints whole milliseconds | in-progress | unrated |  | status §3.5 item 4 |  |
 | `meas-guard-v2-impl` | Guard v2 implementation | done | unrated |  | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 | meas-guard-v2 |
 | `meas-s51-design` | Off-Bulk benchmark design | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
 | `meas-s51-harness` | Off-Bulk sweep harness and scorer | next | unrated |  | docs/derivations/s51-design.md §8 P1 | rec-s54-session |
@@ -222,39 +222,39 @@ flowchart TB
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |
 | `meas-adr51-scenarios` | Canonical scenarios and goal gate | Owner 2026-07-02: "define a goal that we want to surpass tcp and that the model reacts correctly in our defined scenarios". Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0051 |
-| `meas-l1-harness` | L1 netns harness and baselines | VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350). | commit f73704c2 |
-| `meas-l2-multipath` | L2/L3 multipath and tail evaluation | C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed. | commit beae05b1 |
-| `meas-c8-aggregation-arc` | C8 heterogeneous aggregation arc | RWM Phase C refuted C8 aggregation at L1 (2026-07-06); "final verdict" 2026-07-08 later shown to be measured under three hidden binders. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row "Arc concluded" aggregation verdict |
+| `meas-l1-harness` | Network-namespace harness and baselines | VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350). | commit f73704c2 |
+| `meas-l2-multipath` | Multipath and tail evaluation | C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed. Was titled 'L2/L3 multipath and tail evaluation'. | commit beae05b1 |
+| `meas-c8-aggregation-arc` | Unequal two-path aggregation arc | RWM Phase C refuted C8 aggregation at L1 (2026-07-06); "final verdict" 2026-07-08 later shown to be measured under three hidden binders. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row "Arc concluded" aggregation verdict |
 | `meas-gen-inert-era` | Generation-inert measurement era | The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Generation-inert era; ADR-0053 |
 | `meas-regime-map` | Hardware-honest regime map | Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read). | commit acefc473 |
-| `meas-adr52-discipline` | L1 measurement discipline (ADR-0052) | Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
-| `meas-adversarial-b1` | Adversarial Cells B1 (policer map) | Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design. | commit 754139c3 |
-| `meas-formula-first` | Formula-first review (ADR-0070) | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
+| `meas-adr52-discipline` | Measurement discipline | Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
+| `meas-adversarial-b1` | Adversarial policer map | Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design. | commit 754139c3 |
+| `meas-formula-first` | Formula-first review | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
 | `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. | branch PIPELINE VERIFICATION MATRIX |
 | `meas-coupling-model` | Coupling model (frontier span) | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: dead-end). cb422e2d: 'frontier span REAL but NEUTRALIZED at the gate by ADR-0060'. | commit 7ad65ef1; commit cb422e2d |
 | `meas-sf-accounting` | SF accounting axis | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: mixed): the cell reproduces, the level at c7 does not. | commit 4f67ba7d; commit 4131d254 |
 | `meas-goal-0819` | Era battery: cumulative shipped effect | Era ledger item 1 (2026-08-19; owner: 'fix the ping probe in there. we cannot mislead ourselves'): the arc's cumulative shipped effect on two binaries (pre-registration 1d7094ef). The day's other items are their own nodes since 2026-11-16: meas-latency-truth, meas-c9-battery, meas-gap-phases, meas-cpuprof, meas-span-run, meas-sigma-c8, meas-eppen-c8. | commit f605f925; branch THE ERA LEDGER, SCORED |
 | `meas-latency-truth` | Latency Truth battery | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 1's delivered-latency reading withdrawn. | commit e57f3655; commit cb288631 |
-| `meas-c9-battery` | c9 quad-cell validation battery | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). 07028110: every abort now says why. | commit 9a060daa; commit 7f2b0096 |
+| `meas-c9-battery` | Four-path validation battery | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). 07028110: every abort now says why. | commit 9a060daa; commit 7f2b0096 |
 | `meas-gap-phases` | Gap battery phases 1 and 2 | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 3: phase 1 'the drift is real, the ratio SURVIVED it' (decf67a8), phase 2 'no interaction to name' (4323b2c7). | commit 5bf1a346; commit b4be2489; commit decf67a8; commit 4323b2c7 |
 | `meas-cpuprof` | cpuprof: the sender's CPU ceiling | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 2, phase 1: 'the biggest thing in the sender is not on the wire path' (4eb2306c). | commit 4eb2306c; commit 4e52a318 |
 | `meas-span-run` | Span run: span instrument, anchors | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). The [CCAP] span field the c9 battery missed, closed locally (6d4c3548). | commit 0d30724a |
-| `meas-sigma-c8` | Measured σ at c8 | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5's measurement clause: 'the delta agreement is DEAD by 75x' (b5d8a14c). | commit d20b0863; commit b5d8a14c |
-| `meas-eppen-c8` | Eppen's condition at c8 | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL. | commit 33528562 |
-| `meas-attribution-audit` | Attribution audit D0 | §2 row is undated; dates from the 2026-09-07 merges. | status §2 row "Attribution audit (D0)" |
-| `meas-wire-v8` | Stage-2 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. | status §2 row "Crown no-regression spot (wire v8 merges)" |
+| `meas-sigma-c8` | Measured σ on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5's measurement clause: 'the delta agreement is DEAD by 75x' (b5d8a14c). | commit d20b0863; commit b5d8a14c |
+| `meas-eppen-c8` | Eppen's condition on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL. | commit 33528562 |
+| `meas-attribution-audit` | Attribution audit | §2 row is undated; dates from the 2026-09-07 merges. | status §2 row "Attribution audit (D0)" |
+| `meas-wire-v8` | Wire v8 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. | status §2 row "Crown no-regression spot (wire v8 merges)" |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: "continue your measurements but they cannot take over 5 hours". | commit 3eb28db6 |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | §3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]). | status §3.8 |
-| `meas-v4-verification` | V4 verification of new main | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §6 |
+| `meas-v4-verification` | Verification of the new main | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'V4 verification of new main'. | status §6 |
 | `meas-guard-41c` | Rank-minp merge guard | A/A-calibrated rank-minp guard at 12+12; used by §49, §50, §52. nsbench41c is its ns/stamp bench. End 2026-11-12 was a placeholder (status §41c: last edit or migration date); date from merge ?. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §41c; branch archive/nsbench41c |
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | Plan W5.0; LD_REHEARSE and verified LD_PRIOR_TESTS. | branch harness-main |
-| `meas-defect-rtp-floor` | Guard clause rtp_floor_p0 measures drain | Open until guard v2 is implemented (meas-guard-v2-impl). | status §3.10 item 7 |
+| `meas-defect-rtp-floor` | Start-up floor clause measures drain | Open until guard v2 is implemented (meas-guard-v2-impl). | status §3.10 item 7 |
 | `meas-guard-clause-dry` | Guard clause dry run | No raw record. Dry run done (status §3.10 item 7: "the source-phase floor is degenerate on guard rows; in-order delay resolves only on long rows"); feeds §41d. Branch unmerged (inventory merge). | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d |
 | `meas-s58-session` | Dial-pin fix suites, binary identity | Part A (suites on the F1 tree): PASS, F1 merged (store-defect-delta-nan). Part B (Linux release-binary identity, binid_run.sh): run 1 not read (control mismatch: the runner built from the workspace root; fixed, and a test pins it); run 2: control = known answer, base ≠ control diagnosed as the two-line cfg(test) mod declaration shifting line numbers (tree X builds the control's sha). Amendment 3: the re-laid endspeed candidate equals main's sha and merges (model-endspeed); tree Y confirms raptorpath-core does not touch the engine binary. phase6-forms and viz-endspeed are superseded by endspeed-relaid. §58 closed. | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed |
 | `meas-guard-v2` | Merge guard v2 accepted | No raw record (status §41d is newer than the extract). The owner accepted the v2 spec on 2026-11-13 with two calls: the start-up RTT floor is reported only everywhere, and the +34 min guard cost is accepted (f73338f8). The spec: in-order delay mean scored on 600 MB c2/c8 rows; splice dry run flips no verdict; §48b addendum: bbr_rs raised c8 in-order delay by 46 %. Merged with the former meas-user-guard-v2 node. Implementation: meas-guard-v2-impl. | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md |
 | `meas-defect-eta-witness` | ETA route and σ witness mismatch | Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 3 |
-| `meas-defect-c8-bimodal` | c8 control bimodal collapse | Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 4 |
-| `meas-defect-diag-rtp-ms` | [DIAG] rtp prints whole milliseconds | Status §3.5 item 4. Undated raw record; date approximate (the cleanup). | status §3.5 item 4 |
+| `meas-defect-c8-bimodal` | Two-path control bimodal collapse | Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 4 |
+| `meas-defect-diag-rtp-ms` | Delay readout prints whole milliseconds | Status §3.5 item 4. Undated raw record; date approximate (the cleanup). | status §3.5 item 4 |
 | `meas-guard-v2-impl` | Guard v2 implementation | Merged to main (9e687938 "Merge guard v2 (status 41d)", batch ending 0ed6d383): selectable clause set, plan 41d, v1 bit-identical, VOID rule, 600 MB d80 table. Unrated by the non-merge rule until a done node builds on it. Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it. | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 |
 | `meas-s51-design` | Off-Bulk benchmark design | No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it). | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) |
 | `meas-s51-harness` | Off-Bulk sweep harness and scorer | Gates §51. Blocked on the §54 harness merge (same files). Done when: plan 51, its parser, score51, the d80 table, a stub-run path and a rehearsal exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1 |

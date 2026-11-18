@@ -18,8 +18,8 @@ flowchart TB
     infra_defect_recorded_not_fixed>"⚠ Recorded, not fixed"]
     infra_simplify_review["✔ Simplification<br/>review"]
     infra_simplify_batch1["✔ Simplify batch 1"]
-    infra_simplify_batch2["✔ Simplify batches<br/>1b–3"]
-    infra_restructure["⏳ Workspace<br/>restructure (ADR-0076)"]
+    infra_simplify_batch2["✔ Later simplify<br/>batches"]
+    infra_restructure["⏳ Workspace<br/>restructure"]
     infra_inventory_merges["✔ Inventory merges<br/>(first batch)"]
     infra_derivation_merges["○ Derivation branch<br/>merges"]
     infra_tech_tree_skill["○ tech-tree skill PR"]
@@ -77,8 +77,8 @@ flowchart TB
 | `infra-simplify-review` | Simplification review | done | successful |  | status §44; status §45 |  |
 | `infra-adr73` | Promote or archive at verdict | done | n/a |  | ADR-0073 | infra-simplify-review, meas-adr52-discipline |
 | `infra-simplify-batch1` | Simplify batch 1 | done | successful | p = 0.9566 | status §49 | infra-adr73, meas-guard-41c |
-| `infra-simplify-batch2` | Simplify batches 1b–3 | done | successful | p = 0.1716 | status §50 | infra-simplify-batch1 |
-| `infra-restructure` | Workspace restructure (ADR-0076) | in-progress | unrated |  | ADR-0076; status §58 Amendment 3 |  |
+| `infra-simplify-batch2` | Later simplify batches | done | successful | p = 0.1716 | status §50 | infra-simplify-batch1 |
+| `infra-restructure` | Workspace restructure | in-progress | unrated |  | ADR-0076; status §58 Amendment 3 |  |
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed | in-progress | unrated | ≈ 0.0354 | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |  |
 | `infra-inventory-merges` | Inventory merges (first batch) | done | unrated |  | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |  |
 | `infra-derivation-merges` | Derivation branch merges | next | unrated |  |  |  |
@@ -97,8 +97,8 @@ flowchart TB
 | `infra-simplify-review` | Simplification review | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §44; status §45 |
 | `infra-adr73` | Promote or archive at verdict | ADR-0073 supersedes ADR-0052's two-stage retirement (cites it as premise). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0073 |
 | `infra-simplify-batch1` | Simplify batch 1 | -2 665 lines; archive tags for Groups A/B sit on their design nodes. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §49 |
-| `infra-simplify-batch2` | Simplify batches 1b–3 | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §50 |
-| `infra-restructure` | Workspace restructure (ADR-0076) | Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open. | ADR-0076; status §58 Amendment 3 |
+| `infra-simplify-batch2` | Later simplify batches | Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'Simplify batches 1b–3'. | status §50 |
+| `infra-restructure` | Workspace restructure | Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open. | ADR-0076; status §58 Amendment 3 |
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed | Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs). | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |
 | `infra-inventory-merges` | Inventory merges (first batch) | Merged to main 2026-11-13: guard-v2, law-ledger, p0-dwell-diag, roadmap, test-debts (docs/tools/tests only). The derivation-branch merges are infra-derivation-merges. | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |
 | `infra-derivation-merges` | Derivation branch merges | Done when: the docs-only derivation branches (derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wasm-modeswitch-audit, dup-diag docs, guard-clause-dry, wire-clock-derive, s51-design) are merged into main or recorded as kept-unmerged with a reason. |  |

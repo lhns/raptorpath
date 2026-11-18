@@ -25,8 +25,8 @@ gantt
     Coded-only fungible window :crit, cod_fungible_window, 2026-07-07, 2026-07-07
     FMTCP-class decode-on-total :crit, cod_fmtcp, 2026-07-08, 2026-07-28
     Legacy sliding-window/generation decode… :crit, cod_legacy_rlc, 2026-03-14, 2026-07-21
-    Unified span machine (ADR-0064) :cod_unified_span, 2026-07-18, 2026-07-21
-    One window pipeline (ADR-0069) :cod_one_pipeline, 2026-08-10, 2026-10-04
+    Unified span machine :cod_unified_span, 2026-07-18, 2026-07-21
+    One window pipeline :cod_one_pipeline, 2026-08-10, 2026-10-04
     Compact v5 DATA framing :cod_wire_compact, 2026-08-06, 2026-08-06
     Decoder re-delivery stall fix :cod_debug_stall, 2026-10-28, 2026-10-28
     Overhead reduction (packing, repair ali… :cod_overhead_reduction, 2026-03-18, 2026-03-20
@@ -34,51 +34,51 @@ gantt
     Early ACK, NACK and repair :rec_early_arq, 2026-03-12, 2026-03-20
     Rearchitecture phases - P_lost and SACK :rec_plost_sack, 2026-03-21, 2026-04-07
     Bulk ARQ and batch acknowledgements :rec_bulk_arq, 2026-07-02, 2026-07-04
-    Reliable window (RWM Phase A) :rec_reliable_window, 2026-07-04, 2026-07-06
+    Reliable window :rec_reliable_window, 2026-07-04, 2026-07-06
     Proactive FEC versus ARQ frontier :rec_fec_vs_arq, 2026-07-07, 2026-07-08
-    Repair-wait before ARQ (REPAIR_WAIT) :crit, rec_proactive_repair, 2026-07-08, 2026-07-08
+    Repair-wait before ARQ :crit, rec_proactive_repair, 2026-07-08, 2026-07-08
     Present-at-stall proactive pacer :crit, rec_present_at_stall, 2026-07-08, 2026-07-08
     Frontier-anchored proactive repair :crit, rec_inline_repair, 2026-07-07, 2026-07-27
-    Per-path recovery clocks (RECOV_MP) :rec_per_path_clocks, 2026-07-21, 2026-07-21
+    Per-path recovery clocks :rec_per_path_clocks, 2026-07-21, 2026-07-21
     Global loss serials under striping :crit, rec_mp_serial, 2026-07-21, 2026-07-27
-    Derived recovery sweep (DERIVED_SWEEP) :crit, rec_clock_candidates, 2026-08-12, 2026-08-12
+    Derived recovery sweep :crit, rec_clock_candidates, 2026-08-12, 2026-08-12
     Unlock The Default 2 - patience :crit, rec_patience_derived, 2026-08-07, 2026-08-08
     RACK-shaped recovery clocks :crit, rec_rack_clocks, 2026-08-19, 2026-08-19
     Cantelli quantile recovery clock :crit, rec_cantelli_clock, 2026-08-19, 2026-08-19
     Alpha-sweep of the recovery clock :rec_alpha_sweep, 2026-08-20, 2026-08-20
-    Quantile-native clock sweep (W_FORM) :crit, rec_qnative_clock, 2026-08-21, 2026-08-21
-    Hold-down clock sweep (HOLDDOWN_Q) :crit, rec_holddown_clock, 2026-08-21, 2026-08-21
+    Quantile-native clock sweep :crit, rec_qnative_clock, 2026-08-21, 2026-08-21
+    Hold-down clock sweep :crit, rec_holddown_clock, 2026-08-21, 2026-08-21
     Refresh-floor lift (q, refresh) sweep :crit, rec_refresh_floor, 2026-08-21, 2026-08-21
     σ dispersion estimators (fixed lag) :rec_dispersion_est, 2026-08-21, 2026-08-21
     Successor-arrival distribution measured :rec_successor_arrival, 2026-08-21, 2026-08-21
-    Recovery primitives and σ (goal 100) :rec_goal100, 2026-08-20, 2026-08-21
-    Recovery clock verdict battery (101) :crit, rec_goal101, 2026-08-21, 2026-08-21
-    Receiver request law (Track C) :crit, rec_receiver_law, 2026-09-08, 2026-09-08
+    Recovery primitives and σ :rec_goal100, 2026-08-20, 2026-08-21
+    Recovery clock verdict battery :crit, rec_goal101, 2026-08-21, 2026-08-21
+    Receiver request law :crit, rec_receiver_law, 2026-09-08, 2026-09-08
     Cost-ratio decision (owner ruling) :rec_cost_ratio_decision, 2026-08-19, 2026-08-20
     Wire v9 per-path sequence :rec_wire_v9, 2026-09-30, 2026-09-30
-    Gap horizon lever B :active, rec_gap_horizon, 2026-11-12, 2026-11-18
+    Gap horizon :active, rec_gap_horizon, 2026-11-12, 2026-11-18
     Stale gap reports, snapshot filter :rec_snapver_filter, 2026-11-12, 2026-11-13
     Snapshot-order filter as law :rec_snapver_law, 2026-11-13, 2026-11-13
-    [QCLK] w_us pinned at clamp :active, rec_defect_qclk_clamp, 2026-11-13, 2026-11-18
-    c8 hole law never measured :active, rec_defect_hole_law, 2026-11-13, 2026-11-18
+    Tail-sweep timer pinned at clamp :active, rec_defect_qclk_clamp, 2026-11-13, 2026-11-18
+    Hole law unmeasured where it operates :active, rec_defect_hole_law, 2026-11-13, 2026-11-18
     Hole refresh clock degenerate input :active, rec_defect_refresh_input, 2026-11-13, 2026-11-18
     Framing fix on failed rows :rec_s63_f2_first_contact, 2026-11-17, 2026-11-17
     Framing fix regression test :rec_f2_merge_guard, 2026-11-18, 2026-11-18
     Realtime delay lean, post-hoc read :rec_s64_delay_lean, 2026-11-18, 2026-11-18
     Owner calls on the framing fix :rec_user_framing_fix, 2026-11-17, 2026-11-18
     Realtime receiver misread packets (fixe… :rec_defect_realtime_framing, 2026-11-17, 2026-11-18
-    Inner-feedback repair floor (P10a) :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
-    Singles hole suppression (RECOV_SP) :rec_recov_sp, 2026-07-21, 2026-07-27
-    Lever B c1d duplicate cost :active, rec_leverb_c1d_cost, 2026-11-13, 2026-11-18
+    Inner-feedback repair floor :crit, rec_p10a_repair_floor, 2026-07-04, 2026-07-04
+    Singles hole suppression :rec_recov_sp, 2026-07-21, 2026-07-27
+    Gap horizon two-path duplicate cost :active, rec_leverb_c1d_cost, 2026-11-13, 2026-11-18
     Main's duplicates mostly unexplained :active, rec_defect_base_duplicates, 2026-11-13, 2026-11-18
     Snapshot filter guard, store budget :rec_s54_session, 2026-11-13, 2026-11-13
     Recovery-clock derivation (wire clock) :rec_wire_clock_derivation, 2026-11-13, 2026-11-13
     Congestion-aware NACK throttle (first f… :rec_nack_congestion, 2026-03-20, 2026-03-20
     section rate - rate law
-    Gilbert-Elliott loss model (ADR-0023) :rate_ge_hmm, 2026-03-14, 2026-07-07
-    BOCD FEC rate control (ADR-0050) :rate_fec_rate_v1, 2026-03-18, 2026-03-21
+    Gilbert-Elliott loss model :rate_ge_hmm, 2026-03-14, 2026-07-07
+    BOCD FEC rate control :rate_fec_rate_v1, 2026-03-18, 2026-03-21
     Saturation-aware r* and window :rate_saturation_rstar, 2026-07-02, 2026-07-07
-    r* window-mass provisioning (ADR-0063) :rate_rstar_window_mass, 2026-07-13, 2026-07-13
+    r* window-mass provisioning :rate_rstar_window_mass, 2026-07-13, 2026-07-13
     Taper emission budget law :rate_taper_r, 2026-07-18, 2026-07-18
     Leading-window taper emission :crit, rate_leading_taper, 2026-07-18, 2026-07-19
     Retention is the ρ dial :rate_retention_is_rho, 2026-07-06, 2026-07-06
@@ -89,43 +89,43 @@ gantt
     DoF ledger feedback leg :rate_dof_ledger, 2026-11-10, 2026-11-10
     The dials made real :rate_dials_made_real, 2026-09-08, 2026-09-08
     P_fec truncation divergence :active, rate_defect_pfec, 2026-11-13, 2026-11-18
-    Continuous P_fec derivation (W22) :rate_pfec_continuous, 2026-11-14, 2026-11-14
+    Continuous P_fec derivation :rate_pfec_continuous, 2026-11-14, 2026-11-14
     Executed sliding P_fec oracle :active, rate_pfec_oracle, 2026-11-14, 2026-11-18
     TaperBudget shape inert as wired :active, rate_defect_taper_inert, 2026-11-14, 2026-11-18
     section store - store law
-    Path-scaled pool ×N (STORE_PATHS) :crit, store_xn_pool, 2026-07-14, 2026-08-19
-    Per-path store accounts (PERCAP) :crit, store_percap_family, 2026-07-18, 2026-07-19
-    Bounded account borrowing (BORROW) :crit, store_borrow, 2026-07-19, 2026-07-19
-    Capacity-weighted pool (C8-aware) :crit, store_capw, 2026-07-27, 2026-07-27
-    Honest floor-clock cap (HONEST_CAP) :crit, store_honest_cap_family, 2026-07-19, 2026-08-11
-    Plain-mode send-interval sampler (PLAIN… :crit, store_plain_rs, 2026-07-19, 2026-10-26
-    Ship The Wins 1b - pool anchors :crit, store_pool_deliv, 2026-08-07, 2026-08-07
-    Ship The Wins 1 - composed flip :store_pool_anchor_flip, 2026-08-07, 2026-08-07
+    Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
+    Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19
+    Bounded account borrowing :crit, store_borrow, 2026-07-19, 2026-07-19
+    Capacity-weighted pool :crit, store_capw, 2026-07-27, 2026-07-27
+    Honest floor-clock cap :crit, store_honest_cap_family, 2026-07-19, 2026-08-11
+    Plain-mode send-interval sampler :crit, store_plain_rs, 2026-07-19, 2026-10-26
+    Delivery-clocked pool anchors :crit, store_pool_deliv, 2026-08-07, 2026-08-07
+    Composed store flip :store_pool_anchor_flip, 2026-08-07, 2026-08-07
     SACK pruning of the store :crit, store_sack_prune, 2026-07-08, 2026-07-27
-    SACK-clocked store release (ADR-0060) :store_sack_release, 2026-07-21, 2026-07-21
-    Window decoupling (WIN_DECOUPLE) :crit, store_sender_decoupling, 2026-08-06, 2026-08-06
+    SACK-clocked store release :store_sack_release, 2026-07-21, 2026-07-21
+    Window decoupling :crit, store_sender_decoupling, 2026-08-06, 2026-08-06
     SACK sender flow control :crit, store_sack_flowctl, 2026-07-07, 2026-07-07
-    Never-evict reassembly clamp (REASM_BDP) :crit, store_reasm_bdp, 2026-07-08, 2026-07-08
-    Source backpressure (SRC_BP) :crit, store_src_bp, 2026-07-12, 2026-07-27
-    Anchor hygiene laws (ADR-0061) :store_anchor_hygiene, 2026-07-19, 2026-07-21
-    Three-term outstanding law (THREE_TERM) :crit, store_three_term, 2026-08-10, 2026-08-10
+    Never-evict reassembly clamp :crit, store_reasm_bdp, 2026-07-08, 2026-07-08
+    Source backpressure :crit, store_src_bp, 2026-07-12, 2026-07-27
+    Anchor hygiene laws :store_anchor_hygiene, 2026-07-19, 2026-07-21
+    Three-term outstanding law :crit, store_three_term, 2026-08-10, 2026-08-10
     Coverage - the fourth store term :crit, store_coverage_term, 2026-08-10, 2026-08-10
     Slack-bench - queue-free slack clock :crit, store_slack_clock, 2026-08-09, 2026-08-18
-    Composed cap (COMPOSED_CAP) :crit, store_composed_cap, 2026-08-12, 2026-08-13
+    Composed cap :crit, store_composed_cap, 2026-08-12, 2026-08-13
     Store-cap unification over live paths :store_cap_unification, 2026-08-11, 2026-09-30
     Deadwall and mode-hunt batteries :store_deadwall_modehunt, 2026-08-12, 2026-08-12
     Cap-law cluster - formulas first :store_cap_law_cluster, 2026-08-18, 2026-08-18
     Honest inputs and O(1) anchor :store_honest_inputs, 2026-08-10, 2026-08-11
-    Ladder battery - ×N deletion (SUM_CAP) :store_sum_cap, 2026-08-18, 2026-08-19
+    Ladder battery - ×N deletion :store_sum_cap, 2026-08-18, 2026-08-19
     Derived setpoint 1 + q(δ) :store_delta_cap, 2026-08-19, 2026-08-19
     One store law, first session :store_s18_one_law, 2026-10-26, 2026-10-26
-    One store law (ADR-0072) :store_adr72_one_law, 2026-10-26, 2026-10-26
-    c1 anchor over-read :store_input_search, 2026-10-26, 2026-10-26
+    One store law :store_adr72_one_law, 2026-10-26, 2026-10-26
+    Single-path anchor over-read :store_input_search, 2026-10-26, 2026-10-26
     Loop time and quinn rate :crit, store_s24_inputs, 2026-10-26, 2026-10-26
     Spread law premises :crit, store_s27_premises, 2026-10-27, 2026-10-27
-    (P) probe-gain store law :crit, store_probe_gain, 2026-10-27, 2026-10-28
+    Probe-gain store law :crit, store_probe_gain, 2026-10-27, 2026-10-28
     Power-seeking store law D :crit, store_power_law, 2026-10-26, 2026-10-27
-    (D-W) noise-sized window :crit, store_dw_window, 2026-10-28, 2026-10-28
+    Noise-sized window :crit, store_dw_window, 2026-10-28, 2026-10-28
     Store-law input after the anchor fix :crit, store_s34_input, 2026-11-01, 2026-11-02
     Receiver dispersion as link rate :store_s36_dispersion, 2026-11-09, 2026-11-10
     p90 dispersion estimator :store_s40_p90, 2026-11-10, 2026-11-10
@@ -136,30 +136,30 @@ gantt
     Store-budget test design :store_s54_budget, 2026-11-13, 2026-11-13
     Store-law derivation :active, store_law_derivation, 2026-11-14, 2026-11-18
     Store-pool sweep :store_s56_sweep, 2026-11-14, 2026-11-14
-    Emission-burst block at c1s :store_s57a_burst, 2026-11-14, 2026-11-14
-    c1d pool sweep and transfer test T :store_s57b_c1d, 2026-11-14, 2026-11-14
-    R6.7 floors - candidate C :store_law_r67, 2026-11-15, 2026-11-15
-    Store-law gauge build (B-1) :active, store_slaw_gauge, 2026-11-15, 2026-11-18
-    Suites and reference binary (60-pre) :store_s60_pre, 2026-11-15, 2026-11-15
-    Gauge session 60a :store_s60a, 2026-11-15, 2026-11-16
-    Gauge session 60b :store_s60b, 2026-11-16, 2026-11-16
+    Emission-burst test, fast single path :store_s57a_burst, 2026-11-14, 2026-11-14
+    Fast two-path pool sweep :store_s57b_c1d, 2026-11-14, 2026-11-14
+    Lowest-store floor candidate :store_law_r67, 2026-11-15, 2026-11-15
+    Store-law gauge build :active, store_slaw_gauge, 2026-11-15, 2026-11-18
+    Gauge suites and reference binary :store_s60_pre, 2026-11-15, 2026-11-15
+    Queue-free floor on small stores :store_s60a, 2026-11-15, 2026-11-16
+    Floor sign test, fast single path :store_s60b, 2026-11-16, 2026-11-16
     Slow-link knee sweep, first try :store_s61a, 2026-11-17, 2026-11-17
     Fast-link price below the knee :store_s61b, 2026-11-17, 2026-11-17
     Slow-link knee sweep, re-run :store_s61a_rerun, 2026-11-17, 2026-11-17
     Slow-link knee without jitter :store_s62_j0, 2026-11-18, 2026-11-18
     Owner call on the jitter sweep :store_user_jitter_sweep, 2026-11-17, 2026-11-17
-    Store-law allowance short of the c2 knee :store_defect_allowance_short, 2026-11-16, 2026-11-18
-    RWM_DELTA pinned the store cap (F1) :store_defect_delta_nan, 2026-11-14, 2026-11-14
-    Store cap constant at c8 :active, store_defect_cap_constant, 2026-11-13, 2026-11-18
+    Allowance short of the fast-link knee :store_defect_allowance_short, 2026-11-16, 2026-11-18
+    Latency-dial setting pinned the store c… :store_defect_delta_nan, 2026-11-14, 2026-11-14
+    Store cap pinned at its clamp :active, store_defect_cap_constant, 2026-11-13, 2026-11-18
     Latency Lever battery :store_latency_lever, 2026-08-10, 2026-08-10
     SF latency feedback :store_sf_latency_feedback, 2026-08-12, 2026-08-12
     section place - placement
-    Marginal-cost placement law (RWM B) :place_marginal_cost, 2026-07-04, 2026-07-06
+    Marginal-cost placement law :place_marginal_cost, 2026-07-04, 2026-07-06
     DAPS queue-management chain :crit, place_daps, 2026-07-12, 2026-07-27
     Per-path rate-sample estimator :crit, place_rate_sample, 2026-07-12, 2026-07-27
     Place-slack :crit, place_slack, 2026-08-06, 2026-08-06
-    Placement battery (Track A) :place_stage2_battery, 2026-09-08, 2026-09-09
-    Placement frontier term (PLACE_HOL) :crit, place_hol, 2026-09-08, 2026-09-09
+    Placement battery :place_stage2_battery, 2026-09-08, 2026-09-09
+    Placement frontier term :crit, place_hol, 2026-09-08, 2026-09-09
     Derived placement temperature :crit, place_t_derived, 2026-09-08, 2026-09-09
     Derived diversity weight, leg choice :active, place_wdiv, 2026-09-08, 2026-11-18
     Frozen app-echo srtt price :crit, place_frozen_echo, 2026-07-06, 2026-11-10
@@ -172,19 +172,19 @@ gantt
     Loss-ranked multipath window scheduling :crit, place_early_window_sched, 2026-03-14, 2026-07-04
     section cc - congestion control
     Delay-based CC replaces AIMD :cc_early_delay_cc, 2026-03-13, 2026-03-22
-    Production Copa-lite port (P-series) :cc_copa_lite, 2026-07-02, 2026-07-04
+    Production Copa-lite port :cc_copa_lite, 2026-07-02, 2026-07-04
     Copa per path as substrate :crit, cc_copa_sole_substrate, 2026-07-13, 2026-07-27
     Quinn stock Cubic substrate :crit, cc_cubic_substrate, 2026-03-12, 2026-07-21
     Copa wire signal, compete mode :cc_copa_wire_signal, 2026-07-13, 2026-07-22
-    BBR as substrate default (ADR-0054) :cc_bbr_default, 2026-07-13, 2026-07-21
-    bbr_rs v1 on shal8 :cc_bbrrs_v1, 2026-08-07, 2026-08-07
-    Copa-BBR fusion (ADR-0068) :cc_adr68_fusion, 2026-07-22, 2026-11-18
+    BBR as substrate default :cc_bbr_default, 2026-07-13, 2026-07-21
+    bbr_rs first version :cc_bbrrs_v1, 2026-08-07, 2026-08-07
+    Copa-BBR fusion :cc_adr68_fusion, 2026-07-22, 2026-11-18
     Quinn BBR window collapse :active, cc_quinn_bbr_collapse, 2026-11-10, 2026-11-18
     bbr_rs host gate :cc_s48_host_gate, 2026-11-10, 2026-11-11
     Fixed bbr_rs versus quinn BBR :cc_bbrrs_r1, 2026-11-10, 2026-11-12
     Owner call - continue bbr_rs :cc_user_continue_bbrrs, 2026-11-12, 2026-11-12
     bbr_rs round 2 fixes :active, cc_bbrrs_r2, 2026-11-12, 2026-11-18
-    Pacing-seam audit (W2) :active, cc_pacing_audit, 2026-11-12, 2026-11-18
+    Pacing-seam audit :active, cc_pacing_audit, 2026-11-12, 2026-11-18
     Owner call - vendored pacing seam :cc_user_pacing_s3, 2026-11-12, 2026-11-12
     Vendored quinn-proto pacing hook :active, cc_pacing_seam, 2026-11-12, 2026-11-18
     Copa min_rtt reads own queue :active, cc_defect_copa_minrtt, 2026-11-13, 2026-11-18
@@ -195,24 +195,24 @@ gantt
     One control datagram per message :perf_ack_merge, 2026-08-07, 2026-08-08
     Receiver per-message wall battery :perf_recv_msg_wall, 2026-08-06, 2026-08-07
     Receive-buffer fix F-A :perf_rcvbuf, 2026-10-05, 2026-10-05
-    Emission batching, Law 0 :perf_emit_batch_law0, 2026-10-05, 2026-10-05
+    Emission batching law :perf_emit_batch_law0, 2026-10-05, 2026-10-05
     Per-path datagram feeder :crit, perf_quic_feeder, 2026-10-05, 2026-10-05
-    Threading P0 thread budget :perf_threading_p0, 2026-10-05, 2026-10-05
-    Threading P1 defect fixes :perf_threading_p1, 2026-10-05, 2026-10-05
-    Threading P2a logic actor :crit, perf_threading_p2a, 2026-10-05, 2026-10-06
-    Per-path I/O owner (Q1) :perf_io_owner, 2026-10-06, 2026-10-06
-    D9 attribution :perf_d9_attribution, 2026-10-06, 2026-10-06
-    Scheduler split by direction (Q2) :perf_sched_split, 2026-10-06, 2026-10-06
-    Threading Q3 lock-free send :crit, perf_q3_investigation, 2026-10-06, 2026-10-06
-    Receiver per-datagram cost R1 :crit, perf_receiver_r1, 2026-10-26, 2026-10-26
-    R1 c1s collapse diagnosis :perf_s20_r1_collapse, 2026-10-26, 2026-10-26
-    Receiver cost R2 with floor fix :perf_receiver_r2, 2026-10-26, 2026-10-26
-    Threading R3 receiver re-profile :crit, perf_threading_r3, 2026-10-26, 2026-10-27
-    c8 client [LAG] spread :perf_c8_lag, 2026-10-26, 2026-10-26
-    c8 lag tail, long polls :perf_s26_long_polls, 2026-10-26, 2026-10-27
+    Named runtime and thread budget :perf_threading_p0, 2026-10-05, 2026-10-05
+    Threading lock and wake fixes :perf_threading_p1, 2026-10-05, 2026-10-05
+    Single logic-actor threading :crit, perf_threading_p2a, 2026-10-05, 2026-10-06
+    Per-path I/O owner :perf_io_owner, 2026-10-06, 2026-10-06
+    Attribution of one sender change :perf_d9_attribution, 2026-10-06, 2026-10-06
+    Scheduler split by direction :perf_sched_split, 2026-10-06, 2026-10-06
+    Lock-free send investigation :crit, perf_q3_investigation, 2026-10-06, 2026-10-06
+    Receiver per-datagram cost, first try :crit, perf_receiver_r1, 2026-10-26, 2026-10-26
+    First receiver rewrite collapse diagnos… :perf_s20_r1_collapse, 2026-10-26, 2026-10-26
+    Receiver cost with floor fix :perf_receiver_r2, 2026-10-26, 2026-10-26
+    Receiver re-profile for threading :crit, perf_threading_r3, 2026-10-26, 2026-10-27
+    Two-path client lag spread :perf_c8_lag, 2026-10-26, 2026-10-26
+    Lag tail and long polls :perf_s26_long_polls, 2026-10-26, 2026-10-27
     Incremental SACK marking :perf_incremental_sack, 2026-10-27, 2026-10-27
     Decoder prune per drain :perf_decoder_prune, 2026-10-28, 2026-10-29
-    c8 lag timer hand-off :perf_s33_timer, 2026-11-01, 2026-11-01
+    Lag tail timer hand-off :perf_s33_timer, 2026-11-01, 2026-11-01
     Receiver follow-ups :perf_receiver_followups, 2026-11-01, 2026-11-02
     bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
     bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-18
@@ -221,45 +221,45 @@ gantt
     Owner call on test cost :meas_user_test_cost, 2026-11-18, 2026-11-18
     Netsim harness and ablation benches :meas_l0_sim_bench, 2026-03-17, 2026-03-20
     Canonical scenarios and goal gate :meas_adr51_scenarios, 2026-07-02, 2026-07-02
-    L1 netns harness and baselines :meas_l1_harness, 2026-07-03, 2026-07-04
-    L2/L3 multipath and tail evaluation :meas_l2_multipath, 2026-07-04, 2026-07-04
-    C8 heterogeneous aggregation arc :crit, meas_c8_aggregation_arc, 2026-07-06, 2026-07-19
+    Network-namespace harness and baselines :meas_l1_harness, 2026-07-03, 2026-07-04
+    Multipath and tail evaluation :meas_l2_multipath, 2026-07-04, 2026-07-04
+    Unequal two-path aggregation arc :crit, meas_c8_aggregation_arc, 2026-07-06, 2026-07-19
     Generation-inert measurement era :meas_gen_inert_era, 2026-07-07, 2026-07-13
     Hardware-honest regime map :meas_regime_map, 2026-07-19, 2026-07-27
-    L1 measurement discipline (ADR-0052) :meas_adr52_discipline, 2026-07-21, 2026-08-08
-    Adversarial Cells B1 (policer map) :meas_adversarial_b1, 2026-08-06, 2026-08-06
-    Formula-first review (ADR-0070) :meas_formula_first, 2026-08-12, 2026-09-27
+    Measurement discipline :meas_adr52_discipline, 2026-07-21, 2026-08-08
+    Adversarial policer map :meas_adversarial_b1, 2026-08-06, 2026-08-06
+    Formula-first review :meas_formula_first, 2026-08-12, 2026-09-27
     Pipeline verification matrix :meas_pipeline_verification, 2026-08-11, 2026-08-12
     Coupling model (frontier span) :meas_coupling_model, 2026-08-11, 2026-08-12
     SF accounting axis :meas_sf_accounting, 2026-08-11, 2026-08-11
     Era battery - cumulative shipped effect :meas_goal_0819, 2026-08-19, 2026-08-19
     Latency Truth battery :meas_latency_truth, 2026-08-19, 2026-08-19
-    c9 quad-cell validation battery :meas_c9_battery, 2026-08-19, 2026-08-19
+    Four-path validation battery :meas_c9_battery, 2026-08-19, 2026-08-19
     Gap battery phases 1 and 2 :meas_gap_phases, 2026-08-19, 2026-08-19
     cpuprof - the sender's CPU ceiling :meas_cpuprof, 2026-08-19, 2026-08-19
     Span run - span instrument, anchors :meas_span_run, 2026-08-19, 2026-08-19
-    Measured σ at c8 :meas_sigma_c8, 2026-08-19, 2026-08-19
-    Eppen's condition at c8 :meas_eppen_c8, 2026-08-19, 2026-08-19
-    Attribution audit D0 :meas_attribution_audit, 2026-09-07, 2026-09-07
-    Stage-2 instruments and owed findings :meas_wire_v8, 2026-09-08, 2026-09-09
+    Measured σ on unequal paths :meas_sigma_c8, 2026-08-19, 2026-08-19
+    Eppen's condition on unequal paths :meas_eppen_c8, 2026-08-19, 2026-08-19
+    Attribution audit :meas_attribution_audit, 2026-09-07, 2026-09-07
+    Wire v8 instruments and owed findings :meas_wire_v8, 2026-09-08, 2026-09-09
     Owner rule - 5 h measurement cap :meas_5h_cap, 2026-09-08, 2026-09-08
     Per-datagram loss truth (GSO) :meas_gso_truth, 2026-09-30, 2026-09-30
-    V4 verification of new main :meas_v4_verification, 2026-10-04, 2026-10-05
+    Verification of the new main :meas_v4_verification, 2026-10-04, 2026-10-05
     Rank-minp merge guard :meas_guard_41c, 2026-11-10, 2026-11-11
     Harness on main, rehearsal mode :meas_harness_consolidation, 2026-11-12, 2026-11-12
-    Guard clause rtp_floor_p0 measures drain :active, meas_defect_rtp_floor, 2026-11-13, 2026-11-18
+    Start-up floor clause measures drain :active, meas_defect_rtp_floor, 2026-11-13, 2026-11-18
     Guard clause dry run :meas_guard_clause_dry, 2026-11-13, 2026-11-13
     Dial-pin fix suites, binary identity :meas_s58_session, 2026-11-14, 2026-11-14
     Merge guard v2 accepted :meas_guard_v2, 2026-11-13, 2026-11-13
     ETA route and σ witness mismatch :active, meas_defect_eta_witness, 2026-09-09, 2026-11-18
-    c8 control bimodal collapse :active, meas_defect_c8_bimodal, 2026-09-09, 2026-11-18
-    [DIAG] rtp prints whole milliseconds :active, meas_defect_diag_rtp_ms, 2026-09-27, 2026-11-18
+    Two-path control bimodal collapse :active, meas_defect_c8_bimodal, 2026-09-09, 2026-11-18
+    Delay readout prints whole milliseconds :active, meas_defect_diag_rtp_ms, 2026-09-27, 2026-11-18
     Guard v2 implementation :meas_guard_v2_impl, 2026-11-13, 2026-11-13
     Off-Bulk benchmark design :meas_s51_design, 2026-11-13, 2026-11-13
     QUIC/MPTCP comparison and overhead taxo… :meas_transport_comparison, 2026-03-17, 2026-03-18
     Matrix benchmark, audit and dashboard :meas_matrix_bench, 2026-03-20, 2026-03-20
     section model - model and paper
-    Shared engine laws and decisions (ADR-0… :active, model_shared_core, 2026-11-14, 2026-11-18
+    Shared engine laws and decisions :active, model_shared_core, 2026-11-14, 2026-11-18
     Shared core steps 0.1–0.3 :model_shared_core_0, 2026-11-14, 2026-11-14
     Phase-6 forms and end-of-run speed :model_endspeed, 2026-11-14, 2026-11-14
     Warm-started tail solve (visualizer) :model_warm_start, 2026-11-15, 2026-11-15
@@ -267,7 +267,7 @@ gantt
     Resolve the paper's open points :model_open_points, 2026-04-01, 2026-04-02
     Mathematical verification of the model :model_math_verification, 2026-04-12, 2026-04-12
     First visualizer - triangle and BOCD :model_visualizer_v1, 2026-04-07, 2026-04-10
-    raptorpath-math and wasm L0 model :model_wasm_l0, 2026-04-08, 2026-07-06
+    raptorpath-math and wasm model :model_wasm_l0, 2026-04-08, 2026-07-06
     Visualizer as one continuum law :model_vis_continuum, 2026-07-28, 2026-07-28
     Engine NO-MODE-SWITCH debts :active, model_mode_switch_debts, 2026-09-27, 2026-11-18
     Open-constants register :active, model_open_constants, 2026-09-27, 2026-11-18
@@ -280,15 +280,15 @@ gantt
     Erratum - pre-flight tests not run :active, model_bound_tests_unrun, 2026-11-13, 2026-11-18
     Law ledger :model_law_ledger, 2026-11-13, 2026-11-13
     Owner calls on wasm audit :model_user_wasm_calls, 2026-11-14, 2026-11-14
-    Model give-up law (ii) :model_giveup_law, 2026-11-14, 2026-11-14
-    Visualizer fixes (viz-fix) :model_viz_fix, 2026-11-14, 2026-11-14
-    ρ inert at Auto, Realtime (M04) :active, model_defect_rho_inert, 2026-11-14, 2026-11-18
+    Model give-up law :model_giveup_law, 2026-11-14, 2026-11-14
+    Visualizer fixes :model_viz_fix, 2026-11-14, 2026-11-14
+    ρ inert at Auto, Realtime :active, model_defect_rho_inert, 2026-11-14, 2026-11-18
     section obs - observability
-    Runtime status endpoint (ADR-0013) :obs_status_endpoint, 2026-03-12, 2026-03-12
-    [GATES] liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09
+    Runtime status endpoint :obs_status_endpoint, 2026-03-12, 2026-03-12
+    Gate-setting liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09
     Readouts as one write :obs_readout_macro, 2026-09-27, 2026-09-27
     Metrics registry and OTel design :active, obs_otel_design, 2026-11-12, 2026-11-18
-    Owner answers on OTel Q1–Q6 :obs_user_otel_answers, 2026-11-12, 2026-11-12
+    Owner answers on OTel design :obs_user_otel_answers, 2026-11-12, 2026-11-12
     section infra - repo and simplification
     Tunnel platform - handshake, TLS, migra… :infra_early_platform, 2026-03-12, 2026-03-13
     MTU floor 1350 (PMTU wedge) :infra_mtu_floor, 2026-07-13, 2026-07-13
@@ -299,8 +299,8 @@ gantt
     Simplification review :infra_simplify_review, 2026-11-10, 2026-11-10
     Promote or archive at verdict :infra_adr73, 2026-11-10, 2026-11-10
     Simplify batch 1 :infra_simplify_batch1, 2026-11-10, 2026-11-12
-    Simplify batches 1b–3 :infra_simplify_batch2, 2026-11-12, 2026-11-12
-    Workspace restructure (ADR-0076) :active, infra_restructure, 2026-11-12, 2026-11-18
+    Later simplify batches :infra_simplify_batch2, 2026-11-12, 2026-11-12
+    Workspace restructure :active, infra_restructure, 2026-11-12, 2026-11-18
     Recorded, not fixed :active, infra_defect_recorded_not_fixed, 2026-09-30, 2026-11-18
     Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
 ```

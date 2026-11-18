@@ -10,15 +10,15 @@ Scope: multipath placement: placement price, idle-leg lock-out, diversity weight
 ```mermaid
 flowchart TB
     place_early_window_sched["↷ Loss-ranked<br/>multipath window<br/>scheduling"]
-    place_marginal_cost[/"✔ Marginal-cost<br/>placement law (RWM B)"/]
+    place_marginal_cost[/"✔ Marginal-cost<br/>placement law"/]
     place_frozen_echo["↷ Frozen app-echo srtt<br/>price"]
     place_daps["↷ DAPS queue-<br/>management chain"]
     place_rate_sample["↷ Per-path rate-sample<br/>estimator"]
     place_submax_anchor["✖ Sub-max quantile<br/>rate anchor"]
     place_slack["✖ Place-slack"]
     place_wdiv["⏳ Derived diversity<br/>weight, leg choice"]
-    place_stage2_battery["✔ Placement battery<br/>(Track A)"]
-    place_hol["✖ Placement frontier<br/>term (PLACE_HOL)"]
+    place_stage2_battery["✔ Placement battery"]
+    place_hol["✖ Placement frontier<br/>term"]
     place_t_derived["✖ Derived placement<br/>temperature"]
     place_s38_wire["✔ Wire-clocked<br/>placement base"]
     place_s41_iteration["✔ Wire price,<br/>iteration once"]
@@ -83,12 +83,12 @@ flowchart TB
 <!-- BEGIN GENERATED: table-place -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `place-marginal-cost` | Marginal-cost placement law (RWM B) | done | successful |  | branch RWM Phase B | rec-reliable-window |
+| `place-marginal-cost` | Marginal-cost placement law | done | successful |  | branch RWM Phase B | rec-reliable-window |
 | `place-daps` | DAPS queue-management chain | abandoned | superseded | −30 % | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |  |
 | `place-rate-sample` | Per-path rate-sample estimator | abandoned | superseded |  | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); commit 11e0f5eb |  |
 | `place-slack` | Place-slack | abandoned | dead-end | 6 % | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |  |
-| `place-stage2-battery` | Placement battery (Track A) | done | successful | 6 % of delivered latency | status §2 row "Placement battery (Track A)" | meas-wire-v8 |
-| `place-hol` | Placement frontier term (PLACE_HOL) | abandoned | dead-end | 6 % | tag archive/RWM_PLACE_HOL | place-stage2-battery |
+| `place-stage2-battery` | Placement battery | done | successful | 6 % of delivered latency | status §2 row "Placement battery (Track A)" | meas-wire-v8 |
+| `place-hol` | Placement frontier term | abandoned | dead-end | 6 % | tag archive/RWM_PLACE_HOL | place-stage2-battery |
 | `place-t-derived` | Derived placement temperature | abandoned | dead-end | 0.78–0.85× | tag archive/RWM_PLACE_T_DERIVED | place-stage2-battery |
 | `place-wdiv` | Derived diversity weight, leg choice | in-progress | unrated |  | branch wdiv-diag; paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`) |  |
 | `place-frozen-echo` | Frozen app-echo srtt price | abandoned | superseded |  | paper §10 row Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) |  |
@@ -106,12 +106,12 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `place-marginal-cost` | Marginal-cost placement law (RWM B) | Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06). | branch RWM Phase B |
+| `place-marginal-cost` | Marginal-cost placement law | Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06). | branch RWM Phase B |
 | `place-daps` | DAPS queue-management chain | 2026-07-12 arc, deleted 2026-07-27 (9b48286e). The DAPS queue management, its read-ahead depth bound (68d6b6c5: 'correct lever, but bulk C8 aggregation is BOUNDED') and pace-all at BtlBw_i (34449977) share one paper row; the per-path rate-sample estimator is its own node (place-rate-sample, split 2026-11-16), and so is the sub-max quantile anchor (place-submax-anchor). | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |
 | `place-rate-sample` | Per-path rate-sample estimator | Split 2026-11-16 from 'DAPS and rate estimator (4 arms)' (its own branch). Deleted with the DAPS chain 2026-07-27; the paper row: the surviving ideas became the M* law and the anchor-hygiene laws. | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); commit 11e0f5eb |
 | `place-slack` | Place-slack | G179 (feat/c8-conversion, 2026-08-06) is matched to this row by date and subject (slow-path conversion); uncertain. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |
-| `place-stage2-battery` | Placement battery (Track A) | Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed. | status §2 row "Placement battery (Track A)" |
-| `place-hol` | Placement frontier term (PLACE_HOL) | Archived 2026-11-12 (simplify batch 3) on the owner's housekeeping call. The archive tag's quote names another commit; the verdict is the paper row. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_HOL archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_HOL |
+| `place-stage2-battery` | Placement battery | Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed. | status §2 row "Placement battery (Track A)" |
+| `place-hol` | Placement frontier term | Archived 2026-11-12 (simplify batch 3) on the owner's housekeeping call. The archive tag's quote names another commit; the verdict is the paper row. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_HOL archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_HOL |
 | `place-t-derived` | Derived placement temperature | Archived 2026-11-12 on the owner's ruling (archive code, keep formula). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_T_DERIVED archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_T_DERIVED |
 | `place-wdiv` | Derived diversity weight, leg choice | Never in a battery; wdiv-diag wires RWM_PLACE_WDIV and the [HOLD] cx_leg field; reported arms in §52; unmerged. Dates: paper §10 rows carry an end (removal) date only. | branch wdiv-diag; paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`) |
 | `place-frozen-echo` | Frozen app-echo srtt price | Paper row is undated: the base dates from the placement law (2026-07-06) and was replaced on 2026-11-10 (§41b, ADR-0073). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) |

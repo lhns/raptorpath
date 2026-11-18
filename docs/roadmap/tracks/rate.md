@@ -9,10 +9,10 @@ Scope: the rate law and the (δ, ρ, r) triangle: FEC rate, P_fec, W*, hints as 
 <!-- BEGIN GENERATED: track-rate -->
 ```mermaid
 flowchart TB
-    rate_ge_hmm[/"✔ Gilbert-Elliott loss<br/>model (ADR-0023)"/]
-    rate_fec_rate_v1[/"✔ BOCD FEC rate<br/>control (ADR-0050)"/]
+    rate_ge_hmm[/"✔ Gilbert-Elliott loss<br/>model"/]
+    rate_fec_rate_v1[/"✔ BOCD FEC rate<br/>control"/]
     rate_saturation_rstar[/"✔ Saturation-aware r*<br/>and window"/]
-    rate_rstar_window_mass[/"✔ r* window-mass<br/>provisioning<br/>(ADR-0063)"/]
+    rate_rstar_window_mass[/"✔ r* window-mass<br/>provisioning"/]
     rate_taper_r[/"✔ Taper emission<br/>budget law"/]
     rate_leading_taper["↷ Leading-window taper<br/>emission"]
     rate_unified_shed[/"✔ δ-honest overload<br/>shedding"/]
@@ -22,15 +22,15 @@ flowchart TB
     rate_r_battery["✖ Funded coding at r #gt;<br/>0"]
     rate_dof_ledger[/"⏸ DoF ledger feedback<br/>leg"/]
     rate_defect_pfec>"⚠ P_fec truncation<br/>divergence"]
-    rate_pfec_continuous["✔ Continuous P_fec<br/>derivation (W22)"]
+    rate_pfec_continuous["✔ Continuous P_fec<br/>derivation"]
     rate_pfec_oracle["⏳ Executed sliding<br/>P_fec oracle"]
     rate_defect_taper_inert>"⚠ TaperBudget shape<br/>inert as wired"]
-    rate_evict_registration["○ Evicting-seat m̄<br/>registration (plan 59)"]
+    rate_evict_registration["○ Evicting-seat m̄<br/>registration"]
     rate_evict_session["⛔ Evicting-seat m̄<br/>session"]
     rate_spare_clamp_verdict[/"⛔ Spare clamp on<br/>Realtime: verdict"/]
     rate_spare_cwnd["○ Is spare's cwnd<br/>enforced?"]
     rate_fix_rate_readout["○ Repair-rate readout"]
-    rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation (W22,<br/>W*)"/]
+    rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation"/]
     rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
     rate_fix_term_gauge["⛔ Rate-law term-win<br/>gauge"]
     rate_fix_rho_realtime[/"⛔ Low-latency and<br/>partial-reliability<br/>laws"/]
@@ -108,10 +108,10 @@ flowchart TB
 <!-- BEGIN GENERATED: table-rate -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `rate-ge-hmm` | Gilbert-Elliott loss model (ADR-0023) | done | successful |  | ADR-0023 |  |
-| `rate-fec-rate-v1` | BOCD FEC rate control (ADR-0050) | done | successful | DC (ε≈0.1%): 4.3% actual vs 0.1% optimal → 43x | ADR-0050; ADR-0043 |  |
+| `rate-ge-hmm` | Gilbert-Elliott loss model | done | successful |  | ADR-0023 |  |
+| `rate-fec-rate-v1` | BOCD FEC rate control | done | successful | DC (ε≈0.1%): 4.3% actual vs 0.1% optimal → 43x | ADR-0050; ADR-0043 |  |
 | `rate-saturation-rstar` | Saturation-aware r* and window | done | successful |  | branch unified deadline-constrained r* (§8.9) |  |
-| `rate-rstar-window-mass` | r* window-mass provisioning (ADR-0063) | done | successful |  | ADR-0063 | rate-ge-hmm, rate-fec-rate-v1 |
+| `rate-rstar-window-mass` | r* window-mass provisioning | done | successful |  | ADR-0063 | rate-ge-hmm, rate-fec-rate-v1 |
 | `rate-taper-r` | Taper emission budget law | done | successful |  | commit 33b29f81 |  |
 | `rate-leading-taper` | Leading-window taper emission | abandoned | superseded | −22 pp | paper §10 row Leading-window taper emission |  |
 | `rate-retention-is-rho` | Retention is the ρ dial | done | n/a |  | commit 49ab700c |  |
@@ -122,16 +122,16 @@ flowchart TB
 | `rate-dof-ledger` | DoF ledger feedback leg | parked | unrated |  | status §39 | rate-r-battery |
 | `rate-dials-made-real` | The dials made real | done | successful |  | branch THE DIALS MADE REAL |  |
 | `rate-defect-pfec` | P_fec truncation divergence | in-progress | unrated | 0.0267 at c2 and 0.0515 at c3 | status §3.10 item 2 |  |
-| `rate-pfec-continuous` | Continuous P_fec derivation (W22) | done | unrated |  | status "Owner decisions (2026-11-14)" item 2; status "Owner decisions (2026-11-14)" erratum; derivation pfec-continuous.md; commit b252933b | rate-defect-pfec, model-user-wasm-calls |
+| `rate-pfec-continuous` | Continuous P_fec derivation | done | unrated |  | status "Owner decisions (2026-11-14)" item 2; status "Owner decisions (2026-11-14)" erratum; derivation pfec-continuous.md; commit b252933b | rate-defect-pfec, model-user-wasm-calls |
 | `rate-pfec-oracle` | Executed sliding P_fec oracle | in-progress | unrated | K0–K3 test-only on pfec-oracle | status "Owner decisions (2026-11-14)" erratum, second correction; derivation pfec-oracle-spec.md; commit 11abce17; branch pfec-oracle-design; branch pfec-oracle | rate-pfec-continuous |
 | `rate-defect-taper-inert` | TaperBudget shape inert as wired | in-progress | unrated |  | status "Owner decisions (2026-11-14)" erratum, second correction; commit 2a622525 |  |
-| `rate-evict-registration` | Evicting-seat m̄ registration (plan 59) | next | unrated |  | status §60 Amendment 2; status §58; branch harness59; derivation pfec-oracle-spec.md |  |
+| `rate-evict-registration` | Evicting-seat m̄ registration | next | unrated |  | status §60 Amendment 2; status §58; branch harness59; derivation pfec-oracle-spec.md |  |
 | `rate-evict-session` | Evicting-seat m̄ session | blocked | unrated |  | status §60 Amendment 2 | rate-evict-registration |
 | `rate-spare-clamp-verdict` | Spare clamp on Realtime: verdict | blocked | unrated |  | status §60 Amendment 2 | rate-evict-session |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | next | unrated |  | status §60 Amendment 2 |  |
 | `rate-fix-rate-readout` | Repair-rate readout | next | unrated |  | docs/derivations/s51-design.md §8 P2 |  |
 | `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
-| `rate-law-reconcile` | Rate-law reconciliation (W22, W*) | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session, rate-pfec-oracle |
+| `rate-law-reconcile` | Rate-law reconciliation | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session, rate-pfec-oracle |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators |
 | `rate-fix-estimators` | Loss estimator approximations | blocked | unrated |  | law ledger rows E07, E08, E09 | place-per-leg-impl |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | blocked | unrated |  | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 | store-engine-form-impl, rate-law-reconcile, rec-fix-refresh-clock, rate-fix-estimators, store-fix-maxbw-minrtt |
@@ -140,10 +140,10 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `rate-ge-hmm` | Gilbert-Elliott loss model (ADR-0023) | Real-trace validation (2026-07-07) found GE inadequate for real loss (G217); the burst multiplier was superseded by ADR-0050. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0023 |
-| `rate-fec-rate-v1` | BOCD FEC rate control (ADR-0050) | Headline is the motivating inefficiency, not a gain. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0050; ADR-0043 |
+| `rate-ge-hmm` | Gilbert-Elliott loss model | Real-trace validation (2026-07-07) found GE inadequate for real loss (G217); the burst multiplier was superseded by ADR-0050. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0023 |
+| `rate-fec-rate-v1` | BOCD FEC rate control | Headline is the motivating inefficiency, not a gain. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0050; ADR-0043 |
 | `rate-saturation-rstar` | Saturation-aware r* and window | P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9). | branch unified deadline-constrained r* (§8.9) |
-| `rate-rstar-window-mass` | r* window-mass provisioning (ADR-0063) | Feat/rstar-bursty merged 2026-07-13; RWM_RSTAR_TAIL on by default since (status §1). End 2026-07-21 was a placeholder (ADR-0063: last edit or migration date); date from merge aba1a523. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0063 |
+| `rate-rstar-window-mass` | r* window-mass provisioning | Feat/rstar-bursty merged 2026-07-13; RWM_RSTAR_TAIL on by default since (status §1). End 2026-07-21 was a placeholder (ADR-0063: last edit or migration date); date from merge aba1a523. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0063 |
 | `rate-taper-r` | Taper emission budget law | RWM_TAPER_R is on by default (status §1). | commit 33b29f81 |
 | `rate-leading-taper` | Leading-window taper emission | Paper §10 row is undated; dates from git (not raw records): 8ef5ff18 (2026-07-18) rescoped the -22 pp to the streaming family and 4b8e5384 (2026-07-19) kept the RWM_TAPER_R flip closed on it. Replaced by trailing-span emission, the unified span machine's emission policy. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Leading-window taper emission |
 | `rate-retention-is-rho` | Retention is the ρ dial | Owner corrections 2026-07-06 (retention moves to the ARQ layer; retention is the triangle's ρ). Folds paper §11.1 open question 2 (is ρ a runtime dial). | commit 49ab700c |
@@ -154,16 +154,16 @@ flowchart TB
 | `rate-dof-ledger` | DoF ledger feedback leg | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §39 |
 | `rate-dials-made-real` | The dials made real | RWM_DELTA, the χ arm, EVICT instruments; three invariant repairs bit-exact at every preset. Folds paper §11.1 open question 3. | branch THE DIALS MADE REAL |
 | `rate-defect-pfec` | P_fec truncation divergence | Owner decision 2026-11-14 opened a derivation (rate-pfec-continuous): no form ships; next the executed sliding oracle (rate-pfec-oracle). §51 must still read r per cell. | status §3.10 item 2 |
-| `rate-pfec-continuous` | Continuous P_fec derivation (W22) | Root cause: the paper defines P_fec per lost symbol but §4.2 derives the window event (a paper erratum). C6 is the exact per-loss law for a block window, but the engine and the sim decode a sliding window. Correction (round 6, b252933b): the Python sliding decode is only an upper bound; under its premises the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, and the engine's r* adequacy at Auto and Realtime is unknown either way. Next: the executed sliding oracle (rate-pfec-oracle). | status "Owner decisions (2026-11-14)" item 2; status "Owner decisions (2026-11-14)" erratum; derivation pfec-continuous.md; commit b252933b |
+| `rate-pfec-continuous` | Continuous P_fec derivation | Root cause: the paper defines P_fec per lost symbol but §4.2 derives the window event (a paper erratum). C6 is the exact per-loss law for a block window, but the engine and the sim decode a sliding window. Correction (round 6, b252933b): the Python sliding decode is only an upper bound; under its premises the shipped form over-predicts recovery at A* 3–7 in 20 of 20 cells, and the engine's r* adequacy at Auto and Realtime is unknown either way. Next: the executed sliding oracle (rate-pfec-oracle). Was titled 'Continuous P_fec derivation (W22)'. | status "Owner decisions (2026-11-14)" item 2; status "Owner decisions (2026-11-14)" erratum; derivation pfec-continuous.md; commit b252933b |
 | `rate-pfec-oracle` | Executed sliding P_fec oracle | Spec (rounds 7–8 with Fable): it calls the engine's RLC encoder/decoder, TaperBudget, D(δ) and the span seat; the debt loop is copied and K4 witnesses it against engine W1 on a recorded row; known answers K0–K4 before any reading; decidable at A* 3–7, report-only in the W 201 body. The branch pfec-oracle (08bdfa96, not merged) holds the test-only oracle with K0–K3. Done when: K0–K4 pass and the oracle's P_fec at the audit cells is recorded, with its registration before the run. | status "Owner decisions (2026-11-14)" erratum, second correction; derivation pfec-oracle-spec.md; commit 11abce17; branch pfec-oracle-design; branch pfec-oracle |
 | `rate-defect-taper-inert` | TaperBudget shape inert as wired | Checked by reading and a 10⁵-call Python port; taper_emission_l0.rs asserts nothing. The ledger verdict (a degenerate law as wired) waits for the oracle's K0 in Rust (rate-pfec-oracle). | status "Owner decisions (2026-11-14)" erratum, second correction; commit 2a622525 |
-| `rate-evict-registration` | Evicting-seat m̄ registration (plan 59) | Plan 59, the evicting-seat m̄ readout (reported only; harness59 b1af3fa4: 'm-bar lower bound + W1 bracket, smoke go/no-go on rr'). There is no status §59: §60 first carried five such rows, and Amendment 2 moved them to their own registration after the 60b rehearsal's evicting row was overdriven (emission ended at ≈ 13 s, rr = 0 from the spare clamp on 46 of 53 windows, no [CAPLOG] by construction). Done when: a registration is in status with an offered load paced below the link rate, an object size and timeout so that emission covers the LATE window, the spare-clamp bind fraction as a reported gauge, and its own rehearsal with rr > 0 as go/no-go. | status §60 Amendment 2; status §58; branch harness59; derivation pfec-oracle-spec.md |
+| `rate-evict-registration` | Evicting-seat m̄ registration | Plan 59, the evicting-seat m̄ readout (reported only; harness59 b1af3fa4: 'm-bar lower bound + W1 bracket, smoke go/no-go on rr'). There is no status §59: §60 first carried five such rows, and Amendment 2 moved them to their own registration after the 60b rehearsal's evicting row was overdriven (emission ended at ≈ 13 s, rr = 0 from the spare clamp on 46 of 53 windows, no [CAPLOG] by construction). Done when: a registration is in status with an offered load paced below the link rate, an object size and timeout so that emission covers the LATE window, the spare-clamp bind fraction as a reported gauge, and its own rehearsal with rr > 0 as go/no-go. | status §60 Amendment 2; status §58; branch harness59; derivation pfec-oracle-spec.md |
 | `rate-evict-session` | Evicting-seat m̄ session | Done when: the registered rows run after a rehearsal GO (rr > 0), and m̄ (`adv`), W1 (`dbt_share`) and K4's inputs (`fec=`) are recorded for rate-pfec-oracle. | status §60 Amendment 2 |
 | `rate-spare-clamp-verdict` | Spare clamp on Realtime: verdict | §60 Amendment 2 (one rehearsal row, n = 1, an observation): flat_rate = window_rate.min(spare) read r = 0 in 46 of 53 sending windows, with spare = 0 on every saturated tick; the unclamped window_rate is not printed. FORMULA-FIRST: every clamp gets a bind-fraction gauge. Done when: the bind fraction is reported on a row that is not overdriven and the clamp's ledger verdict is recorded. | status §60 Amendment 2 |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | §60 Amendment 2, pending item 3: on the rehearsal row cwnd jumped from 1 159 to 10 000 at t ≈ 10.3 s and the source was not held to it. Done when: it is settled, by reading or a test, whether the cwnd that Scheduler::spare_capacity reads is enforced on the evicting seat under quinn's BBR. | status §60 Amendment 2 |
 | `rate-fix-rate-readout` | Repair-rate readout | Without it §51 reads only the granted r and reports the law's r, the clamps and the channel split as missing. rate-fix-term-gauge (R02) can merge into it if controller_rate returns its argmax bit-identically. Done when: a behaviour-neutral [RATE] readout on the [DIAG] cadence carries the law's r (mean, p50), r_anchor, r_late and β, the tail target, the spare-clamped rate with a per-leg bind fraction, the soft-saturation, overhead and W* clip bind fractions, the fraction of evaluations on the P_fec > 0 side, cod split by channel (proactive, margin, request), and a one-time echo of the resolved dial on both ends; a bit-identical test shows behaviour unchanged. | docs/derivations/s51-design.md §8 P2 |
 | `rate-user-rate-law` | Owner calls on rate law | Needs the off-Bulk session's reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |
-| `rate-law-reconcile` | Rate-law reconciliation (W22, W*) | Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence. | plan W3.5, W3.7 |
+| `rate-law-reconcile` | Rate-law reconciliation | Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence. Was titled 'Rate-law reconciliation (W22, W*)'. | plan W3.5, W3.7 |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | Law ledger: R02. Done when: an engine gauge reports which term or clamp of controller_rate wins, per tick, so the off-Bulk session can read it. | law ledger rows R02 |
 | `rate-fix-estimators` | Loss estimator approximations | Law ledger: E07, E08, E09. The measured RTTVAR per leg (E09) lives in the per-leg state, hence that prerequisite (the wire-clock node it used to wait on is dissolved). Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins. | law ledger rows E07, E08, E09 |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | Law ledger: F02, S01, S02, S04, S05, S06. S01 and S02 read RTprop, which waits on the honest-input fix (E03), not on a recovery clock. The two hint equalities (S08, S09) moved to model-fix-hint-keyed-paths. Done when: the store gate carries the ρ term derived in the paper, the span deadline and shed budget read a wire clock, the receiver hold is b(δ)·SRTT, the taper-copy decision is diagnosed, each with continuity tests through every preset. | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 |
