@@ -46,6 +46,7 @@ against LD_BIN_SHA_BASE / _CAND) and its tools tests LD_PRIOR_TOOLS (the rehears
   completed-row-live       a completed row is LIVE (rc 0) on each seat under the real perf script's F2 lines run under `set -euo pipefail` (the section 63 VOID-RC defect), stage G and stage R
   base-rt-dead             an RB row's warm-up never acks (the driver exits 1): BASE-F2-DEAD (not replaced, no NO VERDICT, not VOID-RC), RT-PASS stands
   base-rt-dead-rc0         the same with the driver exiting 0 and no summary line: the row is NOT drawn again (one attempt: TRIES=1 at stage R), BASE-F2-DEAD
+  rc-nodata-replaced       an RC row ends rc 0 with no run / summary line (NO_DATA, warm-up acked): a non-F2 void, replaced ONCE (not drawn again by the bring-up retry), the replacement RT-OK, RT-PASS
   rt-rho-one-end           an RC row's server prints window_reliable: false: VOID-RHO, replaced once
   cand-rt-dnf-base-completes  an RC row is a DNF while every live RB row completes: RT-FAIL 5
   cand-rt-dnf-base-dnf        the same DNF while an RB row is a DNF too: item 5 REPORTED, RT-PASS
@@ -75,6 +76,6 @@ HARNESS_PATHS = {
     "59": ("rehearse", "full", "reuse-hit", "reuse-miss"),
     "60a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse"),
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
-    "64": ("rehearse", "full", "cand-bulk-unframable", "cand-bulk-dnf-unframable", "cand-bulk-symsz-missing", "cand-bulk-ctld-send-only", "base-has-symsz", "completed-row-live", "base-rt-dead", "base-rt-dead-rc0", "rt-rho-one-end",
+    "64": ("rehearse", "full", "cand-bulk-unframable", "cand-bulk-dnf-unframable", "cand-bulk-symsz-missing", "cand-bulk-ctld-send-only", "base-has-symsz", "completed-row-live", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata-replaced", "rt-rho-one-end",
            "cand-rt-dnf-base-completes", "cand-rt-dnf-base-dnf", "cand-rt-ctld-send-only", "cand-rt-symsz-1200", "manifest-miss", "manifest-miss-cargo-toml-only", "rc-void-twice", "prebuilt-sha-mismatch", "tools-manifest-differs"),
 }

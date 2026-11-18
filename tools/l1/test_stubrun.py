@@ -1183,7 +1183,7 @@ def case64(plan, path):
                 fh.write("one more file under tools/l1: the manifest the rehearsal recorded no longer matches\n")
         extra = {"LD_REF_MANIFEST": ref64_file(root, plan), "STUB_BENCH_DIR": bench_dir64(sb)}
         kinds = {"cand-bulk-unframable": "unframable", "cand-bulk-dnf-unframable": "dnf-unframable", "cand-bulk-symsz-missing": "symsz-missing", "cand-bulk-ctld-send-only": "ctld-send-only",
-                 "completed-row-live": "bare", "base-rt-dead": "base-rt-dead", "base-rt-dead-rc0": "base-rt-dead-rc0", "rt-rho-one-end": "rt-rho-one-end", "cand-rt-dnf-base-completes": "rt-dnf", "cand-rt-dnf-base-dnf": "rt-base-dnf",
+                 "completed-row-live": "bare", "base-rt-dead": "base-rt-dead", "base-rt-dead-rc0": "base-rt-dead-rc0", "rc-nodata-replaced": "rc-nodata", "rt-rho-one-end": "rt-rho-one-end", "cand-rt-dnf-base-completes": "rt-dnf", "cand-rt-dnf-base-dnf": "rt-base-dnf",
                  "cand-rt-ctld-send-only": "rt-ctld-send-only", "cand-rt-symsz-1200": "rt-symsz-1200", "rc-void-twice": "rc-void-twice"}
         if path in kinds:
             extra["STUB_BAD64"] = kinds[path]
@@ -1375,6 +1375,15 @@ def r64_checks(tag, path, c):
         check(f"{tag}: the first RC row's server printed window_reliable: false (rho not 1 on one end): VOID-RHO, replaced once (REPLACE64 in the ledger), the replacement is RT-OK; the verdict is RT-PASS and the replacement is counted (1 of at most 2)",
               len(mine) == 2 and mine[0]["status"] == "VOID-RHO" and mine[1]["status"] == "RT-OK" and re.search(r"^REPLACE64 c2-100 RC s%s rep=%s reason=void-rho" % (mine[0]["seed"], mine[0]["rep"]), ldtxt, re.M) is not None
               and vlab == "RT-PASS" and "REPLACED SLOTS: 1 of at most 2" in rsc, [(r["arm"], r["status"], r["problems"]) for r in mine])
+        return
+    if path == "rc-nodata-replaced":
+        k = slot(first_rc)
+        mine = [r for r in rl if slot(r) == k]
+        ldtxt = open(os.path.join(rdir, "ld.log"), errors="replace").read()
+        calls = [ln.split() for ln in open(os.path.join(sb["logs"], "drv5.log")).read().splitlines() if ln.startswith("realtime")]
+        check(f"{tag}: an RC row ends rc 0 with no summary (NO_DATA): a non-F2 void, REPLACED ONCE (REPLACE64 in the ledger, the replacement RT-OK) and never drawn again by the bring-up retry (no RUN-RETRY; driver calls = 2 smoke + {n_rows_r} table + 1 replacement); RT-PASS; 1 of at most 2 slots replaced",
+              len(mine) == 2 and mine[0]["status"] == "NO_DATA" and mine[1]["status"] == "RT-OK" and re.search(r"^REPLACE64 c2-100 RC s%s rep=%s reason=no_data" % (mine[0]["seed"], mine[0]["rep"]), ldtxt, re.M) is not None
+              and "RUN-RETRY" not in ldtxt and len(calls) == 2 + n_rows_r + 1 and vlab == "RT-PASS" and "REPLACED SLOTS: 1 of at most 2" in rsc, ([r["status"] for r in mine], len(calls), verdict.group(0)))
         return
     if path == "rc-void-twice":
         k = slot(first_rc)

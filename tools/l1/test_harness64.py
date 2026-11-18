@@ -289,6 +289,40 @@ if all(os.path.exists(SL % n + "c.log") for n in (1, 2, 3)):
 else:
     print("SKIP stage R real-row checks: docs/l1-raw/store-law-n1 missing (an archive)")
 
+# the F2 witness on REAL two-leg Bulk CAND logs (host only). SHIM, labelled: no real F2 CAND Bulk row exists yet, so section 54's committed guard rows (c1d, c8: real two-leg logs with [CTLD] on both ends) get
+# the two things an F2 build adds: ` undeliv=0` on every [CTLD] line and one `[SYMSZ] local=1200 decoder=1200` line per end. Unshimmed, the same real rows must read F2-FAIL (a pre-F2 build has no witness).
+S54 = os.path.join(RAWD, "s54", "guard-diag-ld.tgz")
+if os.path.exists(S54):
+    import tarfile
+    os.environ.update({"LD_PLAN": "41d", "LD_WITNESS64": "1", "LD_SHA": "c" * 64, "LD_SHA_BASE": "b" * 64})
+    with tarfile.open(S54) as tf:
+        for cell, nbytes in (("c8-100", "600000000"), ("c1d-400", "")):
+            nm = "diag-ld/%s@def-CAND-s42-r1-a1-" % cell
+            L = {x: tf.extractfile(nm + x).read().decode("utf-8", "replace").splitlines() for x in ("c.log", "s.log", "drv.out")}
+            if nbytes:
+                os.environ["LD_ROW_BYTES"] = nbytes
+            else:
+                os.environ.pop("LD_ROW_BYTES", None)
+            shim = lambda ls: [ln + " undeliv=0" if "[CTLD]" in ln and "undeliv=" not in ln else ln for ln in ls] + ["[SYMSZ] local=1200 decoder=1200"]      # noqa: E731
+            r0 = pp.make_row(cell, "CAND", "42", 1, 0, 100, L["drv.out"], L["c.log"], L["s.log"], 0, "c" * 64)
+            r1 = pp.make_row(cell, "CAND", "42", 1, 0, 100, L["drv.out"], shim(L["c.log"]), shim(L["s.log"]), 0, "c" * 64)
+            w = r1["w64"]
+            check(f"stage G on a REAL two-leg CAND row ({cell}, section 54's guard row, SHIM: undeliv=0 and [SYMSZ] 1200/1200 added): the row stays {r0['status_41d'] if r0['status'] == 'F2-FAIL' else r0['status']}-class LIVE, the witness executes on both ends, the server's [CTLD] lines carry undeliv=, the denominator is read",
+                  r1["status"] == "LIVE" and w["executed"] and w["ctld_srv"] > 0 and w["undeliv"] == 0 and w["src_n"] and w["srv_rx"] and not w["hard"] and not w["missing"], (r1["status"], w))
+            check(f"stage G on the same REAL {cell} row WITHOUT the shim (a pre-F2 build): F2-FAIL for the missing witness (no [SYMSZ], no undeliv=)", r0["status"] == "F2-FAIL" and any("[SYMSZ] missing" in x for x in r0["f2_why"]), (r0["status"], r0.get("f2_why")))
+    for k in ("LD_PLAN", "LD_WITNESS64", "LD_SHA", "LD_SHA_BASE", "LD_ROW_BYTES"):
+        os.environ.pop(k, None)
+# stage R's classifier on the committed ρ = 1 Realtime row whose warm-up never acked (store-law-n1 same-session/final c2 LAW Realtime s42 r3: rc 1 after 152 s, no summary line)
+DEAD = os.path.join(RAWD, "store-law-n1", "same-session", "final", "diag-sl", "c2-100-LAW-realtime-s42-r3-a1-")
+if os.path.exists(DEAD + "c.log"):
+    os.environ.update({"LD_PLAN": "64", "LD_SHA": "c" * 64, "LD_SHA_BASE": "b" * 64})
+    ddrv, dcli, dsrv = (lc.read(DEAD + x) for x in ("drv.out", "c.log", "s.log"))
+    for rc_ in (1, 0):
+        r = pp.make_row("c2-100", "RB", "42", 3, rc_, 152, ddrv, dcli, dsrv, 0, "b" * 64)
+        check(f"stage R's classifier on the committed real dead-warm-up row as an RB row (driver rc {rc_}): BASE-F2-DEAD, not VOID-RC and not a void of any kind", r["status"] == "BASE-F2-DEAD" and r["t64"]["warm"] == "NEVER-ACKED" and r["status"] not in plan64.R_VOID, (r["status"], r["problems"]))
+    for k in ("LD_PLAN", "LD_SHA", "LD_SHA_BASE"):
+        os.environ.pop(k, None)
+
 # ═══ 5. framing64 on the two committed pre-read files ═══
 import framing64  # noqa: E402
 t8 = rd("testdata/framing_ns-ab9feec4.txt")

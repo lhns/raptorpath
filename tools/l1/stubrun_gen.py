@@ -476,8 +476,8 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
 # into the FIRST matching scored row (LD_TAG=ld; a marker file counts invocations; the smoke and the replacement runs are right unless the kind says otherwise):
 #   unframable / dnf-unframable / symsz-missing / ctld-send-only   stage G, the first CAND scored row (dnf-unframable is also a DNF)
 #   base-rt-dead (the first RB row's warm-up never acks, the driver exits 1) / rt-rho-one-end (the first RC row's server prints window_reliable: false) / rc-void-twice (the first RC slot's row AND its replacement do)
-#   rt-dnf / rt-base-dnf (the first RC row / also the first RB row is a DNF: warm-up acked, transfer timed out) / rt-ctld-send-only / rt-symsz-1200 (the first RC row)   bare (BASE rows print no [CTLD] line at all)
-BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "base-rt-dead-rc0", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
+#   rc-nodata (the first RC row ends rc 0 with no run / summary line: NO_DATA, replaced once)   rt-dnf / rt-base-dnf (the first RC row / also the first RB row is a DNF: warm-up acked, transfer timed out) / rt-ctld-send-only / rt-symsz-1200 (the first RC row)   bare (BASE rows print no [CTLD] line at all)
+BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
 
 
 def bad64():
@@ -550,12 +550,14 @@ def gen64r(cli, srv, drv, fam, nbytes, base, cand):
     cli, srv = rt(cli), rt(srv)
     drv = [re.sub(r"hint=bulk( .*)$", r"hint=realtime\1", ln) if "--- RWM-C perf" in ln else ln for ln in drv]
     symsz = 512
-    ctld_srv, rho_bad, dnf, dead = True, False, False, False
+    ctld_srv, rho_bad, dnf, dead, nodata = True, False, False, False, False
     if cand:
         if "rt-rho-one-end" in bad and hit64("rt-rho-one-end"):
             rho_bad = True
         if "rc-void-twice" in bad and hit64("rc-void-twice", upto=2):
             rho_bad = True
+        if "rc-nodata" in bad and hit64("rc-nodata"):
+            nodata = True      # the first RC row: the driver exits 0 but the client log holds no run / summary line (NO_DATA, the warm-up acked): a non-F2 void
         if "rt-ctld-send-only" in bad and hit64("rt-ctld-send-only"):
             ctld_srv = False
         if "rt-symsz-1200" in bad and hit64("rt-symsz-1200"):
@@ -574,6 +576,9 @@ def gen64r(cli, srv, drv, fam, nbytes, base, cand):
     summ = summary54(secs, int(nbytes)).replace('"hint":"bulk"', '"hint":"realtime"')
     cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + rl + ['{"bytes":%s,"hint":"realtime","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs), summ]
     drv = [ln for ln in drv if '"summary"' not in ln] + [summ]
+    if nodata:
+        cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln]
+        drv = [ln for ln in drv if '"summary"' not in ln]
     if dnf or dead:
         cli, drv = dnf_lines64(cli, drv, nbytes, "realtime")
         if dead and "base-rt-dead-rc0" in bad:
