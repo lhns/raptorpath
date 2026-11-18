@@ -1090,6 +1090,25 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Order:** after §63 (owner decision 13). The `harness62` worker starts after `harness63` is pushed, and the launch sha is pinned by an amendment.
 - **Cost:** about 1.4 h typical, 2.8 h worst, with host cargo paused.
 
+## 65. The Realtime delay re-check: does the fixed build's in-order delay lean replicate? Scored: pre-registration (before any VM contact)
+
+**It registers `docs/derivations/s65-registration.md` at `s65-design` `7084538d` verbatim,** with `tools/l1/s65_score.py` (sha256 `41d9d58e…`) and its power and path-exercise scripts. Fable reviewed it in three rounds.
+
+**What is registered:**
+- **Configuration:** the exact replication of §64's Realtime stage: c2-100 at ρ = 1 (witnessed on both ends), 100 MB rows, a 150 s timeout.
+- **Seats:** BASE = the pre-fix binary `0ec95258…` and CAND = main's merged binary `8104fa02…`, both from `~/r64/run/bins64` and sha-checked. No build, no suites.
+- **Rows:** 24 pairs (48 rows), fixed, never extended after rows are read.
+- **Prediction:** CAND worse. **Scored:** the whole-row in-order delay mean, paired by slot. The test is an exact one-sided Wilcoxon signed-rank with the Hodges–Lehmann shift and its 95 % upper bound U.
+- **Labels:**
+  - **REPLICATED** (p ≤ 0.05 and shift > 5 %): a follow-up with long rows and a commit 6 / commit 8 bisect seat. The merge stands.
+  - **NOT-REPLICATED:** the question closes at the size seen (power 0.96 at +24 %), with U printed as the cost still possible. No further session by default.
+  - **UNRESOLVED-N:** fewer than 18 usable pairs.
+  - An F2-FINDING on any CAND row outranks every label.
+- **A dead BASE warm-up** (the old defect, about 1 in 12) is redrawn in the same slot, at most 4 slots, and is never counted as CAND's win.
+- **Reported only:** the noise floor (BASE half-splits), run order, early loss, lag, `rtp_floor_p0`, goodput and CPU/GB.
+- **Cost:** about 25 min plus a rehearsal of about 15 min, host cargo and tests paused. The worst case is 6 620 s (`LD_HARD` = launch + 2.5 h).
+- **Order:** the next VM session, before the evicting-seat test's rehearsal. The harness is a tools-only branch off main, and its launch sha is pinned by an amendment.
+
 ## 64. The F2 merge guard (§41c pattern, F2 alone), scored: pre-registration (before any VM contact)
 
 **It registers `docs/derivations/f2-guard-registration.md` at `f2-guard-design` `39269746` verbatim.** Fable reviewed it in three rounds.
