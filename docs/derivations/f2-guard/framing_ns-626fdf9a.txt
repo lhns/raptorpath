@@ -1,0 +1,24 @@
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   119.7 [117.7-130.1]  CAND   130.9 [129.7-150.9]  ns/call
+read  S=1200 len=64          BASE    21.9 [20.2-22.8]  CAND    72.6 [71.6-74.5]  ns/call
+frame S=1200 len=600         BASE   145.1 [141.0-151.8]  CAND   151.5 [145.4-157.1]  ns/call
+read  S=1200 len=600         BASE    36.4 [32.3-39.7]  CAND    91.5 [82.2-94.1]  ns/call
+frame S=1200 len=1196        BASE   162.5 [159.7-176.6]  CAND   168.1 [163.2-172.7]  ns/call
+read  S=1200 len=1196        BASE   143.0 [128.3-150.5]  CAND   198.4 [187.3-202.9]  ns/call
+read  S=512 3x160 packed     BASE   114.5 [107.4-119.8]  CAND   127.0 [121.8-134.7]  ns/call
+--- run 1
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   103.4 [95.4-114.8]  CAND   112.6 [105.5-127.9]  ns/call
+read  S=1200 len=64          BASE    17.9 [16.5-20.2]  CAND    62.8 [59.8-64.9]  ns/call
+frame S=1200 len=600         BASE   120.6 [119.4-148.9]  CAND   141.9 [124.2-163.1]  ns/call
+read  S=1200 len=600         BASE    36.3 [34.2-41.5]  CAND    86.4 [85.6-100.6]  ns/call
+frame S=1200 len=1196        BASE   159.3 [158.2-167.1]  CAND   166.7 [162.3-186.2]  ns/call
+read  S=1200 len=1196        BASE   139.0 [131.2-142.7]  CAND   192.1 [189.3-195.1]  ns/call
+read  S=512 3x160 packed     BASE   113.3 [104.6-115.4]  CAND   127.0 [117.6-130.0]  ns/call
+--- run 2
+test net::framing::tests::framing_ns ... frame S=1200 len=64          BASE   120.4 [120.0-132.9]  CAND   135.8 [131.4-147.8]  ns/call
+read  S=1200 len=64          BASE    20.9 [18.5-21.7]  CAND    72.6 [64.9-83.7]  ns/call
+frame S=1200 len=600         BASE   146.8 [144.3-158.4]  CAND   157.4 [153.1-167.3]  ns/call
+read  S=1200 len=600         BASE    35.6 [34.3-39.5]  CAND    84.6 [78.9-85.1]  ns/call
+frame S=1200 len=1196        BASE   161.8 [147.5-164.3]  CAND   170.1 [163.9-182.1]  ns/call
+read  S=1200 len=1196        BASE   132.8 [125.1-146.0]  CAND   203.8 [189.3-207.8]  ns/call
+read  S=512 3x160 packed     BASE   115.5 [113.2-120.6]  CAND   129.9 [127.0-142.7]  ns/call
+--- run 3
