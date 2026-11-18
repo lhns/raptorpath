@@ -1,0 +1,69 @@
+s62 D12 dump (crdump.py): 21248 samples dumped on leg 0; 371 [SLAW] windows on leg 0 with sum nk 21403
+
+== 0. Alignment: cumulative [SLAW] nk against the dump index; window minima from the dump against the printed tmin ==
+  windows fully inside the dump: 368; recomputed minimum equals the printed tmin (to 2 us) on 368
+  LATE windows (t >= 15 s, nk >= 10): 306; median nk 60
+
+== 1. The shape of the LATE floor samples (ms) ==
+  quantiles: p0 41.182 | p0.1 41.365 | p0.5 41.732 | p1 41.969 | p2 42.479 | p5 45.658 | p10 46.224 | p25 46.561 | p50 46.760 | p75 47.012 | p90 47.400 | p99 49.125
+  samples more than 0.5 ms below the median 46.760: 1858 of 17506 (10.61 %), per native window 6.07
+  samples more than 1.0 ms below the median 46.760: 910 of 17506 (5.20 %), per native window 2.97
+  samples more than 2.0 ms below the median 46.760: 669 of 17506 (3.82 %), per native window 2.19
+  samples more than 3.0 ms below the median 46.760: 432 of 17506 (2.47 %), per native window 1.41
+  samples more than 4.0 ms below the median 46.760: 383 of 17506 (2.19 %), per native window 1.25
+  ack bursts (gap >= 200 us): 2643, 8.6 per window, 6.62 samples per burst
+  the rtt spread inside one burst: median 0.035 ms, p90 0.169
+
+== 2. What a low sample follows ==
+  bursts holding a sample > 1 ms below the median: 478 of 2643 (18.1 %)
+  the idle gap before the burst (ms): low bursts median 41.41 p10 0.31 p90 47.56 | all bursts median 45.35 p10 0.32 p90 47.06
+    gap [0, 1) ms: 929 bursts, share low 0.179, burst-minimum median 46.796 p05 42.801
+    gap [1, 3) ms: 60 bursts, share low 0.283, burst-minimum median 46.471 p05 43.308
+    gap [3, 6) ms: 56 bursts, share low 0.036, burst-minimum median 47.861 p05 46.133
+    gap [6, 10) ms: 25 bursts, share low 0.160, burst-minimum median 47.759 p05 42.025
+    gap [10, 20) ms: 13 bursts, share low 0.308, burst-minimum median 46.662 p05 41.326
+    gap [20, 50) ms: 1508 bursts, share low 0.158, burst-minimum median 46.626 p05 41.915
+    gap [50, inf) ms: 51 bursts, share low 0.902, burst-minimum median 41.882 p05 41.421
+  rtt by position in the burst (0 = first sample after the gap): pos 0: median 46.716 p01 41.433 n 2643 | pos 1: median 46.766 p01 41.941 n 2475 | pos 2: median 46.739 p01 43.472 n 1598 | pos 3: median 46.761 p01 45.208 n 1442 | pos 4: median 46.757 p01 45.340 n 1441 | pos 5+: median 46.776 p01 44.757 n 7907
+  where the window's minimum falls inside its window (quintile of the sample index): Q1 84 Q2 44 Q3 50 Q4 48 Q5 80
+  samples > 4 ms below the median (383) by time decile inside their window: 0:83 1:29 2:33 3:34 4:23 5:37 6:10 7:54 8:12 9:68
+  native windows holding at least one sample > 4 ms below the median: 99 of 306; per-window count distribution 0:207 1:5 2:20 3:25 4:17 5:10 6:16 7:3 8+:3
+  low samples over time: 910 in 77.5 s; inter-arrival mean 0.083 s, CV 2.02 (1 = Poisson-like, even in time)
+
+== 2b. The send-time view: s = t - rtt; flights = samples whose send times lie within 2 ms of the previous (sorted by send time) ==
+  arrival dt histogram (us): [0, 10): 12772 | [10, 50): 1618 | [50, 200): 473 | [200, 1000): 929 | [1000, 2000): 48 | [2000, 5000): 23 | [5000, 10000): 70 | [10000, 20000): 13 | [20000, 50000): 1508 | [50000, inf): 51
+  arrival bursts at a 2 ms split: 1666 (5.4 per window) against 2643 at 200 us
+  flights: 1738 (5.7 per window), 10.07 samples per flight; send gap before a flight: median 46.6 ms, p90 47.5
+  deep-low samples (> 4 ms below the median) by case: alone (a one-sample flight) 57 | first flight after a send pause >= 60 ms 75 | inside a multi-sample flight 251
+  their send rank inside the flight (0 = sent first): 0:206 1:140 2:33 3:2 4:2
+  share of flights holding a deep-low sample, by flight size: 1: 57/65 | 2: 72/219 | 3: 1/4 | 4: 8/8 | 5: 4/8 | 7: 0/7 | 9: 0/4 | 10: 0/194 | 11: 0/17 | 12+: 65/1212
+    send gap [0, 20) ms: 181 flights, share with a deep-low sample 0.033
+    send gap [20, 40) ms: 27 flights, share with a deep-low sample 0.630
+    send gap [40, 60) ms: 1482 flights, share with a deep-low sample 0.095
+    send gap [60, inf) ms: 47 flights, share with a deep-low sample 0.915
+  deep-low samples by absolute dump time mod 250 ms (deciles): 36 33 36 45 43 44 42 34 40 30   | all samples: 1625 1745 1682 1840 1659 1890 1696 1862 1659 1848
+
+== 2c. The independent draw: the minimum over m units drawn at random against m consecutive units (median over 300 draws / all blocks; ms) ==
+  samples                  1 window(s) = 57: consecutive 44.66 random 42.05 | 2 window(s) = 114: consecutive 43.74 random 41.84 | 4 window(s) = 229: consecutive 41.56 random 41.55 | 8 window(s) = 458: consecutive 41.43 random 41.44
+  arrival bursts (200 us)  1 window(s) = 9: consecutive 44.59 random 42.25 | 2 window(s) = 17: consecutive 43.74 random 41.82 | 4 window(s) = 35: consecutive 41.57 random 41.55 | 8 window(s) = 69: consecutive 41.44 random 41.44
+  flights (send, 2 ms)     1 window(s) = 6: consecutive 44.55 random 42.12 | 2 window(s) = 11: consecutive 42.49 random 41.90 | 4 window(s) = 23: consecutive 41.55 random 41.52 | 8 window(s) = 45: consecutive 41.44 random 41.42
+  occupancy: share of flights with a deep-low sample p = 0.119; independent flights predict a share of windows holding one = 1 - (1 - p)^5.7 = 0.513, measured 0.324
+
+== 3. The minimum against the count: consecutive samples, consecutive bursts, random samples (median over blocks; ms) ==
+  m    58: consecutive 44.613 | random 42.095 | 9 consecutive bursts 44.590
+  m   116: consecutive 44.397 | random 41.773 | 18 consecutive bursts 43.522
+  m   250: consecutive 41.550 | random 41.536 | 38 consecutive bursts 41.546
+  m   500: consecutive 41.397 | random 41.433 | 75 consecutive bursts 41.410
+  m  1000: consecutive 41.365 | random 41.338 | 151 consecutive bursts 41.365
+  m  2100: consecutive 41.332 | random 41.254 | 317 consecutive bursts 41.332
+  m  4200: consecutive 41.245 | random 41.232 | 634 consecutive bursts 41.245
+
+== 4. Candidate count-free floor readings on the dump: per native window, then pooled over 4 / 36 windows (≈ 250 / 2 100 samples) ==
+  minimum       native 44.599 | 4 windows 41.588 | 36 windows 41.332 | native - 36: +3.267 ms
+  p01           native 44.599 | 4 windows 42.015 | 36 windows 41.959 | native - 36: +2.640 ms
+  p05           native 46.087 | 4 windows 45.886 | 36 windows 45.697 | native - 36: +0.390 ms
+  p10           native 46.483 | 4 windows 46.454 | 36 windows 46.267 | native - 36: +0.217 ms
+  p25           native 46.624 | 4 windows 46.612 | 36 windows 46.544 | native - 36: +0.080 ms
+  median        native 46.784 | 4 windows 46.780 | 36 windows 46.739 | native - 36: +0.045 ms
+  2nd smallest  native 44.625 | 4 windows 41.936 | 36 windows 41.372 | native - 36: +3.253 ms
+  5th smallest  native 46.471 | 4 windows 43.155 | 36 windows 41.476 | native - 36: +4.995 ms
