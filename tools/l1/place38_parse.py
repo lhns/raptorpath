@@ -566,6 +566,11 @@ import plan60  # noqa: E402  (plan60 imports this module lazily, inside function
 for _a60 in plan60.all_arms():
     sp.ARM_SPEC.setdefault(_a60, ("window", "Rlc", "realtime" if _a60 == plan60.EVICT_ARM else "bulk", "ACTIVE"))
     AFAM.setdefault(_a60, "CAND")
+# ── status 64 (F2's merge guard): stage R's arms RB (BASE's binary) and RC (CAND's), Realtime; the witnesses and labels are plan64.py's ──
+import plan64  # noqa: E402
+for _a64 in plan64.ARMS_R:
+    sp.ARM_SPEC.setdefault(_a64, ("window", "Rlc", "realtime", "ACTIVE"))
+    AFAM.setdefault(_a64, plan64.SEAT_OF[_a64])
 
 
 def snapver_problems(arm, cli, srv):
@@ -926,6 +931,12 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         # apply to a DNF row, which keeps its worst rank.
         import pool54_score
         w54, row["w54"] = pool54_score.guard_witness(arm, cell, cli, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE"))
+    if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS64") == "1":
+        # Status 64, stage G: the F2 row witnesses (CAND: the reading and its failures; BASE: f2_void, expected None) and the seat's binary; the F2-FAIL status precedence is applied at the end (plan64.g_status).
+        p.extend(plan64.g_row(row, arm, cli, srv, drv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
+    if os.environ.get("LD_PLAN") == "64":
+        # Status 64, stage R (Realtime at rho = 1): the pipe-echo witness, rho on both ends, the seat's binary and the F2 reading; the labels are applied at the end (plan64.rt_status).
+        p.extend(plan64.rt_row(row, arm, cli, srv, drv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
     if os.environ.get("LD_PLAN") == "54b":
         # Status 54, the block: the pool witness on both ends and the binary seat void a row; the readouts are reported only.
         import pool54_score
@@ -997,6 +1008,10 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         row["problems"].extend(w54)
     if os.environ.get("LD_ONDISK", "0") == "1":
         row["status"] = "VOID-ONDISK"
+    if "_rt" in row:
+        plan64.rt_status(row)
+    if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS64") == "1":
+        plan64.g_status(row)
     io = os.environ.get("LD_IO_FULL10")
     try:
         row["io_full10"] = float(io) if io not in (None, "") else None
@@ -1394,10 +1409,10 @@ def score41d(paths, out=print):
     return _score_guard(paths, out, "v2")
 
 
-def _score_guard(paths, out, clause_set):
+def _score_guard(paths, out, clause_set, rows_fn=None):
     import place41b_score
     v2 = clause_set != "v1"
-    rows_all, tokens = rows_of(paths)
+    rows_all, tokens = (rows_fn or rows_of)(paths)
     rows, rinfo = apply_replacements(rows_all)
     aborted = sorted({t for t in tokens if t in ABORT_TOKENS})
     if v2:
