@@ -477,7 +477,7 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
 #   unframable / dnf-unframable / symsz-missing / ctld-send-only   stage G, the first CAND scored row (dnf-unframable is also a DNF)
 #   base-rt-dead (the first RB row's warm-up never acks, the driver exits 1) / rt-rho-one-end (the first RC row's server prints window_reliable: false) / rc-void-twice (the first RC slot's row AND its replacement do)
 #   rt-dnf / rt-base-dnf (the first RC row / also the first RB row is a DNF: warm-up acked, transfer timed out) / rt-ctld-send-only / rt-symsz-1200 (the first RC row)   bare (BASE rows print no [CTLD] line at all)
-BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
+BAD64 = {"unframable", "dnf-unframable", "symsz-missing", "ctld-send-only", "base-rt-dead", "base-rt-dead-rc0", "rt-rho-one-end", "rc-void-twice", "rt-dnf", "rt-base-dnf", "rt-ctld-send-only", "rt-symsz-1200", "bare"}
 
 
 def bad64():
@@ -563,7 +563,7 @@ def gen64r(cli, srv, drv, fam, nbytes, base, cand):
         if ("rt-dnf" in bad or "rt-base-dnf" in bad) and hit64("rt-dnf"):
             dnf = True
     else:
-        if "base-rt-dead" in bad and hit64("base-rt-dead"):
+        if ("base-rt-dead" in bad or "base-rt-dead-rc0" in bad) and hit64("base-rt-dead"):
             dead = True
         if "rt-base-dnf" in bad and hit64("rt-base-dnf"):
             dnf = True
@@ -576,9 +576,16 @@ def gen64r(cli, srv, drv, fam, nbytes, base, cand):
     drv = [ln for ln in drv if '"summary"' not in ln] + [summ]
     if dnf or dead:
         cli, drv = dnf_lines64(cli, drv, nbytes, "realtime")
+        if dead and "base-rt-dead-rc0" in bad:
+            cli = [ln for ln in cli if '"summary"' not in ln]
+            drv = [ln for ln in drv if '"summary"' not in ln]
     if dead:
         cli = cli + [INFO59 + "\x1b[31mERROR\x1b[0m warm-up object never acked within the timeout"]
-        open(os.path.join(TMP, "stub-rc1"), "w").close()      # the client died after the full timeout: the driver exits non-zero (the stub shell reads this marker)
+        if "base-rt-dead-rc0" in bad:      # the driver exits 0 and the client log holds no summary line: the battery's bring-up retry would draw the row again if the stage allowed it (TRIES)
+            cli = [ln for ln in cli if '"summary"' not in ln]
+            drv = [ln for ln in drv if '"summary"' not in ln]
+        else:
+            open(os.path.join(TMP, "stub-rc1"), "w").close()      # the client died after the full timeout: the driver exits non-zero (the stub shell reads this marker)
     return cli, srv, drv
 
 
