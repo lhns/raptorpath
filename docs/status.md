@@ -1215,6 +1215,40 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - what anchors the floor under jitter.
   - J = 3 stays parked. Decision 8 is unchanged and unsettled.
 
+**§64 Amendment 1 (2026-11-18, before any VM contact for its rows; Fable-reviewed): the seats and the run rules.**
+- **Seats** (new branches; the first `g64-base` / `g64-cand` were not force-pushed over):
+  - **BASE64 = `g64-base2` `3b8fca944d65b54f8d86c2ea5c7a003095d2e9d9`:** main `5fada689` + `harness64` `4feeb8fd` (`--no-ff`, tools only); its engine equals main's.
+  - **CAND64 = `g64-cand2` `13bb364701aca15b1b7dbdaf161a0a128586cecf`:** BASE64 + `git merge --no-ff github/f2-impl` (`ab9feec4`). The engine patch-id is `3e69ce68…` as registered, and the tree equals `ab9feec4` outside `docs/` and `tools/`.
+- **Suite reuse:** the `g64-cand2` archive's `src_manifest()` (212 lines) cmp-equals `tools/l1/ref64-manifest.sha256`, so it is a HIT on `ab9feec4`'s VM suite run (release 1151/0, debug 1002 with the cited flake, wasm 50/0, core 2/0, seams 3/0).
+- **Harness tests on the launch tree:**
+  - full fast unfiltered `test_stubrun.py` on an LF export of `g64-cand2`: ALL OK, 760 ok, all 20 plan-64 paths;
+  - `STUBRUN_FULL=1` for `64/rehearse` and `64/full`: ALL OK;
+  - every `tools/l1` test passes except `test_s60`'s known host-only step.
+- **Checked before the launch:**
+  - the rehearsal's smoke has a CAND row on a dual-leg cell (c8);
+  - the stage-G F2 checks read real two-leg logs (§54's c8 / c1d rows, with a labelled shim adding the F2 lines);
+  - the committed `store-law-n1` warm-up death classifies `BASE-F2-DEAD`, not a void;
+  - stage R replaces a non-F2 void once, capped at 2 slots (stub-tested).
+- **The harness's readings are registered by reference.** Those that reach other plans:
+  - `tst core` in every plan's suites;
+  - `--- F2` lines in every ledger;
+  - the fast-mode guard design.
+  - `GATE-64 FAIL` with reason NO VERDICT is a re-run, not a finding against F2.
+- **Host load, found 2026-11-18:** a stuck python process from one of the coordinator's own commands (PID 11456, `python.exe -`, started 16.11 at 18:42 through a Claude shell) had used a full host core continuously for about 35 CPU-hours. It is gone before this launch.
+  - It ran through §61's sessions, §63 and s62. Their Results stand on their own controls and checks, and none scored host CPU.
+  - Host-load checks before a timing session now include the process list.
+- **Run rules:**
+  - host cargo and host tests are paused under the coordinator's host lock;
+  - the rehearsal is `LD_PLAN=64 LD_REHEARSE=1` with `LD_HARD` = launch + 1.25 h; it builds both seats and runs `framing_ns`;
+  - the launch reuses the rehearsal's binaries (`LD_BIN_PREBUILT_BASE` / `_CAND`, sha-checked) and its tools-test result (`LD_PRIOR_TOOLS`), with `LD_HARD` = launch + 2.5 h;
+  - each uses fresh archives of `13bb3647` (CAND) and `3b8fca94` (BASE).
+- **Before the launch, the coordinator reads:**
+  - both seat shas, the seat check, the suite-reuse HIT and the tools manifest;
+  - each seat's smoke row LIVE with rc 0;
+  - the CAND F2 witnesses (`[SYMSZ]` 1200/1200 in stage G and 512/512 in stage R, the server's `[CTLD]` with `undeliv=0`);
+  - stage R's `window_reliable: true` on both ends, finishing well inside 150 s;
+  - the BENCH label and its ten-run table.
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**
