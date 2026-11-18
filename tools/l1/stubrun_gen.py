@@ -538,6 +538,8 @@ def gen64r(cli, srv, drv, fam, nbytes, base, cand):
         if ln.startswith("[DIAG]"):
             k += 1
             rl[i] = ln + extras52(k, n_src=n_ticks - 20)
+    # post-promotion binaries (the F2 build and main before it, ADR-0073) print the wire gauges: a numeric wpl_us on every leg of every [DIAG] line. A stub row without them hid a parser rule that read them as a violation on plan 65's RB rows.
+    rl = [re.sub(r"(plc=[\d.]+)", r" wpl_us=3000", ln) if ln.startswith("[DIAG]") else ln for ln in rl]
 
     def rt(lines):
         out = []

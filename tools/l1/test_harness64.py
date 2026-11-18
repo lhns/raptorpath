@@ -502,6 +502,38 @@ if os.path.exists(S64SES):
 else:
     print("SKIP rt64_score byte-identity: docs/l1-raw/s64 missing (an archive)")
 
+# stage R's row parser on REAL RB / RC rows, under plan 65's parse path (status 65 rehearsal 19:02Z: every RB row read WITNESS-FAIL on wpl_us-numeric-on-RB / wire-gauges-on-RB because plan 65 carries no LD_BASE_SHA and place38_parse.base_promoted()
+# then defaulted to the historical pin 4926822). Section 64's committed stage R rows (rt64/, both seats, both seeds: 24 rows, 1 dead RB) must parse to the statuses the section 64 ledger recorded, under LD_PLAN 64 and 65, with and without LD_BASE_SHA.
+S64R = os.path.join(RAWD, "s64", "s64-session.tgz")
+if os.path.exists(S64R):
+    import tarfile
+    tdr = tempfile.mkdtemp()
+    with tarfile.open(S64R) as tf:
+        tf.extractall(tdr, members=[m for m in tf.getmembers() if m.name.startswith("session/rt64/") and not m.name.endswith((".tgz", "/"))])
+    led64 = {}
+    for ln in open(os.path.join(tdr, "session", "rt64", "ld.log"), encoding="utf-8", errors="replace"):
+        if ln.startswith("P38ROW "):
+            r_ = json.loads(ln[7:])
+            led64[(r_["arm"], str(r_["seed"]), str(r_["rep"]))] = r_
+    shas_ = {r_["arm"]: r_["bin_sha"] for r_ in led64.values()}
+    for plan_, bs_ in (("65", ""), ("64", ""), ("65", "8104fa027c9dea559c9ffdb0d5630117e70ffcd9"), ("64", "8104fa027c9dea559c9ffdb0d5630117e70ffcd9")):
+        os.environ.update({"LD_PLAN": plan_, "LD_SHA": shas_["RC"], "LD_SHA_BASE": shas_["RB"], "LD_BASE_SHA": bs_})
+        bad_ = []
+        for (arm_, sd_, rp_), r0_ in sorted(led64.items()):
+            b_ = os.path.join(tdr, "session", "rt64", "diag-ld", "c2-100@def-%s-s%s-r%s-a1-" % (arm_, sd_, rp_))
+            if not os.path.exists(b_ + "c.log"):
+                continue
+            rr_ = pp.make_row("c2-100", arm_, sd_, rp_, r0_["rc"], r0_["wall_s"], lc.read(b_ + "drv.out"), lc.read(b_ + "c.log"), lc.read(b_ + "s.log"), 0, r0_["bin_sha"])
+            if rr_["status"] != r0_["status"]:
+                bad_.append((arm_, sd_, rp_, rr_["status"], r0_["status"], rr_["problems"][:2]))
+        check(f"stage R's parser on section 64's {len(led64)} committed rt64 rows (real logs, both seats, one dead RB) under LD_PLAN={plan_}, LD_BASE_SHA={bs_[:8] or 'unset'}: every row reads the status the section 64 ledger recorded (RB LIVE / BASE-F2-DEAD, RC RT-OK), none WITNESS-FAIL",
+              len(led64) == 24 and not bad_ and sum(1 for r_ in led64.values() if r_["status"] == "LIVE") == 11, bad_[:3])
+    for k in ("LD_PLAN", "LD_SHA", "LD_SHA_BASE", "LD_BASE_SHA"):
+        os.environ.pop(k, None)
+    shutil.rmtree(tdr, ignore_errors=True)
+else:
+    print("SKIP stage R real-row checks on section 64's rt64 rows: docs/l1-raw/s64 missing (an archive)")
+
 if __name__ == "__main__":
     print("test_harness64: %d checks, %d failed" % (CHECKS, fails))
     sys.exit(1 if fails else 0)
