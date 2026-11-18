@@ -79,7 +79,7 @@ def span(t, a_star=5, delta=2, rr=0.25, wsize=25):
     return f"[SPAN] t={t:.1f}s ack=100 win=[1,2] wsize={wsize} a_star=Some({a_star}) delta=Some({delta}) owed=0.1 rr={rr:.3f} debt=0.3 retx_buf=5 shed=3/1 bud=0.0500 D=40ms"
 
 
-def build(rate_tok="2.7664", paced=True, n=80, src=700, ab=0, az=0, bad=None, gate_cli=None, windows=None, pre_echo=True, pace_line=True, a_star=5, last_src_t=None, gap=None, late=0, late_max=0.3, slow=None):
+def build(rate_tok="2.7664", paced=True, n=80, src=700, ab=0, az=0, bad=None, gate_cli=None, windows=None, pre_echo=True, pace_line=True, a_star=5, last_src_t=None, gap=None, late=0, late_max=0.3, slow=None, astar_alt=False):
     """A client log: the start echo and [GATES] BEFORE the warm-up marker, then n ticks (src on until last_src_t), a [SPAN] every 0.5 s, one [WSTORE] per tick, the pace line after the feed."""
     lam = rate_tok
     cli = [INFO + "RWM-C pre" + (f" perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT={lam})" if (paced and pre_echo) else ""),
@@ -93,7 +93,7 @@ def build(rate_tok="2.7664", paced=True, n=80, src=700, ab=0, az=0, bad=None, ga
         s += sv // 4 if on else 0
         cli.append(diag(t, sv if on else 0, cum=(s, int(0.2 * s), max(0, s - 100))))
         if k % 2 == 0:
-            cli.append(span(0.5 * (k // 2), a_star=a_star))
+            cli.append(span(0.5 * (k // 2), a_star=a_star + ((k // 2) % 2 if astar_alt else 0)))      # astar_alt: a_star alternates a, a+1, a, ... on successive SPAN samples
         an = sv // 4 if on else 0
         if windows is not None:
             cli.append(windows(k, t, an))
@@ -121,7 +121,7 @@ check("PL gauge: phi = zeta = pi = 0 and the deficit 0 over its LATE windows wit
 
 # ═══ 3. the pacing witness (section 5.2) ═══
 def pp(**kw):
-    cli = build(n=240, **{k: v for k, v in kw.items() if k in ("rate_tok", "paced", "gate_cli", "pre_echo", "pace_line", "last_src_t", "src", "gap", "late", "late_max", "slow")})
+    cli = build(n=240, **{k: v for k, v in kw.items() if k in ("rate_tok", "paced", "gate_cli", "pre_echo", "pace_line", "last_src_t", "src", "gap", "late", "late_max", "slow", "astar_alt")})
     arm = kw.get("arm", "PL")
     return sc.pace_problems(arm, metrics(cli, arm))
 
@@ -161,7 +161,7 @@ sv_ok, sv_gap = rv_ok.steady(), rv_slow.steady()
 raw_gap = sc.s60.evict_stats(rv_slow, rule_ab=True)
 check("a K4-steady window CAN be off-load (the steady rule reads the engine's n / a_star / delta, not the offered load): in a 10 s run of windows sending at half the offered rate (350 sym/s, n >= 1, a_star constant) the bare rule counts them all; the amended steady() EXCLUDES the off-load ones and prints how many",
       sv_ok["n_offload_excluded"] == 0 and sv_ok["n_steady"] == raw_gap["n_steady"] and sv_gap["n_offload_excluded"] >= 38 and sv_gap["n_steady"] == raw_gap["n_steady"] - sv_gap["n_offload_excluded"], (sv_ok["n_steady"], sv_gap["n_steady"], raw_gap["n_steady"], sv_gap["n_offload_excluded"]))
-check("the excluded count is printed: ROW51E shows steady=<scored>/<LATE> (excluded off-load: <n>)", f"steady={sv_gap['n_steady']}/{sv_gap['n_late']} (excluded off-load: {sv_gap['n_offload_excluded']})" in sc.row_view(rv_slow))
+check("the excluded count is printed: ROW51E shows steady=<scored>/<LATE> (excluded off-load: <n>)", f"steady={sv_gap['n_steady']}/{sv_gap['n_late']} (excluded off-load: {sv_gap['n_offload_excluded']}; windows failing each clause: " in sc.row_view(rv_slow) and "off-load=" in sc.row_view(rv_slow))
 u = metrics(build(paced=False, n=52, src=100000, ab=0), "U")
 check("U (unpaced): [GATES] reads unset, no echo, no pace line -> no pacing problem; an echo or a pace line on U is pace-echo-on-unpaced / pace-line-on-unpaced, a rate in [GATES] is pace-gate-cli",
       sc.pace_problems("U", u) == [] and has(sc.pace_problems("U", metrics(build(paced=True, n=52, src=100000), "U")), "pace-echo-on-unpaced") and has(sc.pace_problems("U", metrics(build(paced=True, n=52, src=100000), "U")), "pace-gate-cli")
@@ -281,5 +281,17 @@ check("the smoke (one PM row): PASS on (b)-(g) for a healthy synthetic PM row, n
 bad_t = metrics(build(rate_tok="35", n=250, src=8856, pre_echo=False), "PM")
 rc, txt = smoke_out([ledger_row("PM", bad_t)], "smoke")
 check("a PM row without its pacing echo FAILS criterion (c)", rc == 1 and "FAIL (c) the pacing witness" in txt, txt[-600:])
+# status 51 Amendment 5: the steady rule is phase-independent (SPAN samples that BRACKET the span)
+rv_alt = sc.RV({"cell": "c2-100", "arm": "PL", "seed": "42", "rep": 1, "status": "LIVE", "t51e": metrics(build(n=240, astar_alt=True))})
+legacy = sc.s60.evict_stats(rv_alt, rule_ab=True)
+fixed = rv_alt.steady()
+check("RED-FIRST: a row with a_star alternating on every SPAN sample (0.5 s) reads steady under the legacy rule on every window that holds a single sample (here %d of %d) and NOT steady under the bracket rule (0 steady, every tested window fails a_star)" % (legacy["n_steady"], legacy["n_late"]),
+      legacy["n_steady"] > 50 and fixed["n_steady"] == 0 and fixed["fails"]["a_star"] > 200 and fixed["fails"]["delta"] == 0, (legacy["n_steady"], fixed["n_steady"], fixed["fails"]))
+steady_ok = rv_ok.steady()
+check("a constant a_star / delta row stays steady on every window but the last (no neighbour): 220 of 221, nothing fails a_star or delta, nothing is untested", steady_ok["n_steady"] == 220 and steady_ok["fails"] == {"n": 1, "ab": 0, "untested": 0, "a_star": 0, "delta": 0, "off-load": 0}, (steady_ok["n_steady"], steady_ok["fails"]))
+no_span = metrics([ln for ln in build(n=240) if not ln.startswith("[SPAN]")])
+check("a row with NO SPAN sample is wholly untested (0 steady), not steady", sc.RV({"cell": "c2-100", "arm": "PL", "seed": "42", "rep": 1, "status": "LIVE", "t51e": no_span}).steady()["n_steady"] == 0 and sc.RV({"cell": "c2-100", "arm": "PL", "seed": "42", "rep": 1, "status": "LIVE", "t51e": no_span}).steady()["fails"]["untested"] > 200)
+check("the s60 default (legacy) rule is untouched: evict_stats without bracket has no `fails` key and counts the single-sample windows as before", "fails" not in legacy and legacy["n_steady"] > 50)
+
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
