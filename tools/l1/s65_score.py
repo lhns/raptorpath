@@ -172,6 +172,12 @@ def score(paths, out=print, min_tick=MIN_TICK_S, rows=None):
         out(f"SLOT65 {a} s{sd} r{rp}: {st}" + (f" (redrawn: first row {was})" if was else "")
             + ("" if r is None else f" dnf={r.get('dnf')} ticks={r.get('tick_span_s')} bin_sha={str(r.get('bin_sha'))[:16]}"))
     out("REDRAWS " + (", ".join(f"{k} {v}" for k, v in sorted(n_redraw.items())) or "none"))
+    rb_slots = [(a, sd, rp) for a, sd, rp in slots if a == "RB"]
+    dead_rows = sum(1 for r in rows if r["arm"] == "RB" and r["status"] == "BASE-F2-DEAD")
+    alive = sum(1 for k in rb_slots if k in fin and fin[k][2] == "BASE-F2-DEAD" and fin[k][1] == "LIVE")
+    twice = sum(1 for k in rb_slots if k in fin and fin[k][2] == "BASE-F2-DEAD" and fin[k][1] == "BASE-F2-DEAD")
+    unred = sum(1 for k in rb_slots if k in fin and fin[k][2] is None and fin[k][1] == "BASE-F2-DEAD")
+    out(f"BASE-F2-DEAD65 {dead_rows} dead RB row(s) over {len(rb_slots)} RB slots: redrawn alive {alive}, dead twice {twice}, not redrawn {unred} (a dead row never enters the test)")
     rb_ok = {(sd, rp): fin[("RB", sd, rp)][0] for _, sd, rp in slots if ("RB", sd, rp) in fin and fin[("RB", sd, rp)][1] == "LIVE"}
     # 2. resolution: RB alone, completed rows, before RC is read
     rb_rows = [dict(r, store="def") for r in rb_ok.values() if not r.get("dnf")]

@@ -41,6 +41,7 @@ Draft for the coordinator to register as its own status section (called §65 her
 
 **3.1 Slots and redraws (a slot holds one row per arm; at most one redraw per slot).**
 - **A dead BASE warm-up** (`BASE-F2-DEAD`: the RB client prints `warm-up object never acked`, the old F2 defect, about 1 in 12 at ρ = 1) is **redrawn once, immediately, in the same slot,** at most 3 slots.
+  - **Adjacency limit:** in odd groups RC runs first, so a redrawn RB row runs at least 215 s (the dead row's full timeout) after its RC partner, not back to back.
   - If the redraw also dies, or the cap is spent, the slot's pair is **dropped**.
   - A dead BASE row never enters the test. In particular it is never counted as RB's worst rank, so it can never count as CAND's win.
   - The dead count is reported.
@@ -58,9 +59,22 @@ Draft for the coordinator to register as its own status section (called §65 her
 - **Provenance:** `l1ab.REL_FLOOR`, the guard's tolerance floor for delay-type clauses (§11–§13; `spread_rel` = max(5 %, half-range / median)). It is the tolerance §64 stage G printed for c2's in-order clause.
 - **Not data-derived.** `spread_rel`'s data branch would widen with BASE's noise, which would make NO-REGRESSION easier exactly when BASE is noisy, so it is not used.
 - **Context:**
-  - it is below the lean under re-check (+12.6 %, §64 stage R) and below guard v2's A/A d80 for c2 in-order delay (8 %, §41d);
-  - on Bulk c2 at 600 MB, the BASE half-split q95 was 3.0 % (§64 stage G).
-  - No Realtime A/A ledger exists, so whether the gate passes is unknown before the rows.
+  - it is below the lean under re-check (+12.6 %, §64 stage R);
+  - guard v2's A/A d80 for c2 in-order delay on 600 MB Bulk rows is 5–8 % (`guard-clause-dry.md` §11; §41d quotes 8 %). In the guard, d80 is the power-side number and the §21 tolerance (this 5 %) is the pass-rule side.
+- **Reachability, stated.** No Realtime A/A ledger exists.
+  - §64's RB half-split q95 was 19.3 % on 12 s rows. If row noise falls as √T, that is about 8 % on 70 s rows, above TOL.
+  - On Bulk c2 at 600 MB it was 3.0 % (§64 stage G).
+  - So the q95 gate's value on these rows is somewhere around 3–8 %, and NO-REGRESSION may be out of reach by construction.
+- **The q95 gate binds before U does** (normal approximation, row log-sd σ, pair correlation ρ_p):
+  - the 6-v-6 median split gives q95 ≈ 1.96 · √(π/6) · σ ≈ 1.42 σ;
+  - the paired HL bound's half-width is about 1.645 · √(π/3) · √(2(1 − ρ_p)) · σ / √12 ≈ 0.69 σ √(1 − ρ_p).
+  - So q95 ≈ 2 × the half-width or more. With h ≈ 0, NO-REGRESSION needs σ ≲ 3.5 % through the gate, against σ ≲ 7 % through U alone.
+- **Two questions for the coordinator before this registers** (the draft and the reference scorer implement the first option of each):
+  - **Q1, the margin:** TOL = 5 % (the §21 tolerance floor, as drafted), or 8 % (the c2 in-order A/A d80, the margin `rt64_score`'s owner flag uses)?
+  - **Q2, the q95 gate:** keep it as a condition of NO-REGRESSION (guard practice: "q95 > tol: the guard cannot see this clause below q95"; drafted), or report it only and let the exact paired bound U decide?
+    - U alone keeps the property that more noise never helps, because U widens with noise.
+    - **My recommendation is Q2 = report-only.** With the gate on, the label most likely turns on BASE's unpaired noise rather than on the paired comparison the session exists for.
+  - Either change is a constant or one condition in `s65_score.py`, plus a re-run of the path exercise and a re-pin.
 
 **3.4 The test (exact, no RNG).**
 - Per usable pair (slot): d = ln(RC / RB) of the in-order mean.
@@ -88,13 +102,13 @@ Draft for the coordinator to register as its own status section (called §65 her
   - **Why:** a whole-run mean on 70 s rows dilutes an effect confined to the first 12 s about sixfold. NO-REGRESSION is therefore a whole-run statement only.
   - **`HEAD-FLAG65`** (non-gating) is raised when the head readout's signed-rank p ≤ 0.05 and its HL shift exceeds TOL. It goes to the owner with the label.
   - `s64-lean` read 2b found §64's gap on both halves of its 12 s rows, so this is a check, not an expectation.
-- **Counts:** dead BASE rows (and whether their redraws lived), redraws, dropped pairs.
+- **Counts:** dead BASE rows (`BASE-F2-DEAD65`: redrawn alive, dead twice, not redrawn), redraws, dropped pairs.
 - **Limit, stated:** the RB rows that enter are, by construction, rows whose warm-up survived the F2 defect. Pairing removes drift between slots, not that selection. Its direction is unknown, and the dead count is printed beside the label.
 
 ## 4. The reference scorer and its path exercise (done, before registration; labelled)
 
-- **Scorer:** `tools/l1/s65_score.py` (this branch), sha256 `c5621b2dd8f8e00a…`. Pure and env-free, constants as above. It is the registered statistic: the harness worker wires it in unchanged (§7).
-- **Path exercise:** `docs/derivations/s65-registration/s65_path_exercise.py` (sha256 `e8911579c7275369…`) and its output `s65_path_exercise.out` (`6de2344e8af21cb6…`). Two runs were byte-identical; the exercise ends `PATH EXERCISE PASS`.
+- **Scorer:** `tools/l1/s65_score.py` (this branch), sha256 `3ebdfc8e24b97a3b…`. Pure and env-free, constants as above. It is the registered statistic: the harness worker wires it in unchanged (§7).
+- **Path exercise:** `docs/derivations/s65-registration/s65_path_exercise.py` (sha256 `7668a5735726e2c5…`) and its output `s65_path_exercise.out` (`a14f9456cca5f2f9…`). Two runs were byte-identical; the exercise ends `PATH EXERCISE PASS`.
   ```
   python -I -X utf8 docs/derivations/s65-registration/s65_path_exercise.py tools/l1 docs/l1-raw/s64/s64-session.tgz
   ```
@@ -106,7 +120,7 @@ Draft for the coordinator to register as its own status section (called §65 her
 
   Signed-rank p = 0.021, HL shift +23.8 %, U = +43.3 %, so the code path prints REGRESSION.
   - **This is not a §65 result.** These are 12 s rows below the registered floor, and the readout was chosen after seeing them.
-  - It does show why the re-check is worth its 40 minutes: on these rows the registered statistic would not have read noise. Their q95 of 19 % > TOL also means NO-REGRESSION was unreachable on them.
+  - As a by-product, the paired signed-rank p on these pairs is 0.021 for in-order delay, 0.034 for `lag_E_cli` and 0.027 for `rtp_floor_p0`. These are post hoc too: one of seven readouts, chosen after the rows were seen. Their q95 of 19 % > TOL means NO-REGRESSION was unreachable on them.
 - **B. The same rows under the registered 30 s floor:** all 23 completed rows are VOID-SHORT, giving UNRESOLVED-N.
 - **C. Synthetic ledgers, one per rule:**
 
@@ -164,7 +178,6 @@ The worker starts from `s65-design` (it carries `s65_score.py`) and changes noth
    - **Plan list:** line 96 accepts `65`, and `P64=1` is set for plans 64 and 65 (add `P65`).
    - **Row size:** the `P64` line in `run_one` takes the bytes and timeout from `plan64.py rspec "$PLAN"` (bytes, rowbytes, `tmo_env=(RWM_PERF_TIMEOUT_S=…)`). `tmo_env` follows `INSTR_ENV` in the row env, so plan 64 still runs 100 MB at 150 s.
    - **Run path:** `if [ "$PLAN" = "64" ]` at the run block becomes 64 or 65. `run_slot64` passes `$PLAN` to `replace`, and the redraw runs immediately after the voided row.
-   - **Budget:** a plan 65 budget check like plan 59's, through `plan64.py budget`.
    - **Copy list:** `s65_score.py` joins the file-copy list (line 84).
 3. **`place38_parse.py:937`:** `LD_PLAN in ("64", "65")`.
 4. **`loopdiag_parse.py`:** `smoke65r` → `plan64.smoke(path, plan="65")`, `check65r` → `plan64.check`, `score65r` → `s65_score.score`.
@@ -173,6 +186,7 @@ The worker starts from `s65-design` (it carries `s65_score.py`) and changes noth
    - **No cargo:** no build, no suites stage, no `SRC` or `BASE_SRC` tree checks; it writes the `SUITES-NOT-RUN` line (§1).
    - **Witness and tests:** the seat witness strings as plan 64. Tools tests, or the `LD_PRIOR_TOOLS` reuse as plan 64.
    - **Stage:** `stage rt65 65` only (`smk=smoke65r; scr=score65r; chk=check65r`). A rehearsal stops after the smoke.
+   - **Budget guard (here in `run_all`, beside plan 64's `W64` block):** refuse with less than `plan64.py budget 65` (or `65r` for a rehearsal) seconds left before `LD_HARD`, as plan 64 does (`ABORT-BUDGET`, nothing run).
    - **Hard limit and summary:** `LD_HARD` is the launch + 2.5 h, or the rehearsal + 1 h. `$RUN/score.txt` carries the `VERDICT65`, `F2-FINDING65` and `HEAD-FLAG65` lines.
    - **Copy list:** `s65_score.py` joins the copy list (line 121).
 6. **`harness_paths.py`:** stub paths for plan 65: rehearse, full, base-dead-redrawn, base-dead-twice, short-row-void, rc-rtfail, rho-one-end.
@@ -182,7 +196,9 @@ The worker starts from `s65-design` (it carries `s65_score.py`) and changes noth
    - `test_stubrun.py` gets a case65.
 8. **Done when:**
    - every python tools test passes on the host, and the stub runs for 64 and 65 pass;
-   - `rt64_score.py` on the committed §64 `rt64/ld.log` prints `rt64/score.txt` byte for byte;
+     - on this branch as committed, `test_harness64.py` (76/0), `test_harness_paths.py`, `test_harness60.py`, `test_pool54.py`, `test_pool57.py`, `test_binid.py` and `test_lagdiag2_digest.py` pass on the host with `s65_score.py` added;
+     - `test_stubrun.py` (bash stub runs) was not run here;
+   - `rt64_score.py` on the committed §64 `rt64/ld.log` prints `rt64/score.txt` byte for byte (checked on this branch: `loopdiag_parse.py score64r` output, line endings normalised, `cmp` equal);
    - the path exercise still prints `PATH EXERCISE PASS` and its `.out` is unchanged.
    - **Report:** the sha, and any rule the worker had to settle.
 

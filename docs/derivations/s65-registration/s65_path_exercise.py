@@ -47,7 +47,8 @@ print("PATH EXERCISE (not a reading). A: section 64 stage R rows, tick floor pas
 res, txt = run(rows64, min_tick=0.0)
 worse = {m.group(1): (int(m.group(2)), int(m.group(3))) for m in re.finditer(r"^  (\S+)\s+RC worse in\s+(\d+) of (\d+)", txt, re.M)}
 check("A: RESOLUTION65 reproduces s64-lean's RB q95 0.1930 over 200 splits (nRB 11)", "q95|x|=0.1930 (splits=200, nRB=11)" in txt)
-check("A: 11 usable pairs, the dead RB s42 r4's pair dropped", res["n"] == 11 and "dropped: s42 r4" in txt)
+check("A: 11 usable pairs, the dead RB s42 r4's pair dropped (one dead row, not redrawn in section 64)", res["n"] == 11 and "dropped: s42 r4" in txt
+      and "BASE-F2-DEAD65 1 dead RB row(s) over 12 RB slots: redrawn alive 0, dead twice 0, not redrawn 1" in txt)
 check("A: in-order RC worse in 9 of 11 (TEST65)", "RC worse in 9;" in txt)
 check("A: lag_E_cli 8/11, lag_E_srv 7/11, rtp_floor_p0 9/11 (s64-lean read 2)", worse.get("lag_E_cli") == (8, 11) and worse.get("lag_E_srv") == (7, 11) and worse.get("rtp_floor_p0") == (9, 11))
 check("A: q95 0.193 > TOL, so NO-REGRESSION is unavailable; the label is not NO-REGRESSION", res["label"] != "NO-REGRESSION")
@@ -99,7 +100,8 @@ for name, kw, mods, want in cases:
     res, txt = run(ledger(mods=mods, **kw))
     check(f"{name}: label {want}", res["label"] == want)
     if name.startswith("C6"):
-        check("C6: the three dead pairs are dropped, never counted as CAND's win", res["n"] == 9 and "REDRAWS BASE-F2-DEAD 3" in txt)
+        check("C6: the three dead pairs are dropped, never counted as CAND's win", res["n"] == 9 and "REDRAWS BASE-F2-DEAD 3" in txt
+              and "BASE-F2-DEAD65 6 dead RB row(s) over 12 RB slots: redrawn alive 0, dead twice 3, not redrawn 0" in txt)
     if name.startswith("C7"):
         check("C7: the redraw is recorded and the slot is scored", res["n"] == 12 and "(redrawn: first row BASE-F2-DEAD)" in txt)
     if name.startswith("C2"):
