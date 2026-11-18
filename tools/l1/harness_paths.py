@@ -57,6 +57,21 @@ against LD_BIN_SHA_BASE / _CAND) and its tools tests LD_PRIOR_TOOLS (the rehears
   rc-void-twice            an RC slot voids (VOID-RHO) on its row and on its replacement: RC-VOID, RT-INCOMPLETE, not RT-PASS
   prebuilt-sha-mismatch    LD_BIN_SHA_CAND differs from the prebuilt CAND binary: ABORT-BUILD, rc 5, no row measured
   tools-manifest-differs   LD_PRIOR_TOOLS names a rehearsal whose tools/l1 manifest differs from the launch's: the tools tests run (no TOOLS-TESTS-REUSED)
+Plan 65 (status 65, the exact replication of the Realtime in-order delay lean) is a STAGE-R-ONLY launch on the two prebuilt binaries of status 64 (LD_BIN_PREBUILT_BASE / _CAND, LD_BIN_SHA_BASE / _CAND): no build, no cargo, no suites,
+no LD_BASE_SHA; the registered scorer s65_score.py by sha (LD_S65_SCORE_SHA); the tools tests reused through LD_PRIOR_TOOLS. Fast mode: 6 pairs (12 rows), floor 5. Paths:
+  rehearse                     LD_REHEARSE=1: binaries installed and pinned, the seat witness, the scorer sha, the tools tests (TOOLS-TESTS-OK + TOOLS-MANIFEST.sha256), the process list twice, the 2-row smoke (RB s42 r1, RC s42 r1), no battery
+  rehearse-rb-dead-once        RB s42 r1 dies: the conditional third row (RB s7 r1) runs, is LIVE, the rehearsal passes (a dead BASE row is the old defect at its known rate)
+  rehearse-rb-dead-twice       RB s42 r1 and RB s7 r1 both die: SMOKE-FAIL (two BASE-F2-DEAD rows: NO-GO, to the coordinator), rc 5, NO-GO65 on record, nothing launched
+  full                         the launch on the rehearsal's run dir (LD_PRIOR_TOOLS): TOOLS-TESTS-REUSED, no cargo at all, the stage to LD-ALL-DONE, NOT-REPLICATED on identical seats, the summary carries VERDICT65 / TEST65 / F2-FINDING65
+  replicated                   the CAND rows deliver in order later (STUB_SHIFT65): REPLICATED
+  unresolved-n                 two RB slots die on both draws: the dead pairs are not counted, fewer usable pairs than the floor: UNRESOLVED-N
+  base-dead-redrawn            the first RB scored row dies and is redrawn once in its slot (BASE-F2-DEAD is replaceable at plan 65): the slot is scored
+  base-dead-twice              the first RB scored slot dies on the redraw too: the pair is dropped, the label stands on the rest
+  rc-rtfail                    an RC row fails the F2 reading (item 2): F2-FINDING65, never redrawn, its pair dropped
+  rho-one-end                  an RC row's server prints window_reliable: false: VOID-RHO, redrawn once, scored
+  score-sha-mismatch           LD_S65_SCORE_SHA differs from tools/l1/s65_score.py: ABORT-TOOLS, rc 3, nothing run
+  prebuilt-missing             LD_BIN_PREBUILT_BASE unset: ABORT-BUILD, rc 3, nothing run
+  prebuilt-sha-mismatch        LD_BIN_SHA_CAND differs from the prebuilt CAND binary: ABORT-BUILD, rc 5, no row measured
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -76,6 +91,7 @@ HARNESS_PATHS = {
     "59": ("rehearse", "full", "reuse-hit", "reuse-miss"),
     "60a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse"),
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
+    "65": ("rehearse", "full") + ('rehearse-rb-dead-once', 'rehearse-rb-dead-twice', 'replicated', 'unresolved-n', 'base-dead-redrawn', 'base-dead-twice', 'rc-rtfail', 'rho-one-end', 'score-sha-mismatch', 'prebuilt-missing', 'prebuilt-sha-mismatch'),
     "64": ("rehearse", "full", "cand-bulk-unframable", "cand-bulk-dnf-unframable", "cand-bulk-symsz-missing", "cand-bulk-ctld-send-only", "base-has-symsz", "completed-row-live", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata-replaced", "rt-rho-one-end",
            "cand-rt-dnf-base-completes", "cand-rt-dnf-base-dnf", "cand-rt-ctld-send-only", "cand-rt-symsz-1200", "manifest-miss", "manifest-miss-cargo-toml-only", "rc-void-twice", "prebuilt-sha-mismatch", "tools-manifest-differs"),
 }

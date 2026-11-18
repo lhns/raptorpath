@@ -1,0 +1,7 @@
+S65 POWER (design computation before any section 65 row; not a reading)
+  model: section 64 stage R, n=11 pairs; HL +23.77 %; sd of d 0.2678; d = +0.013 +0.079 +0.459 +0.261 +0.295 +0.139 +0.491 -0.039 +0.427 +0.333 -0.413
+
+  n   P(REPLICATED) at +23.8 %   P(REPLICATED) at +11.9 %   no shift: mean U   no shift: P(REPLICATED) (false)
+  12       0.748                    0.357                +12.64 %          0.057
+  18       0.898                    0.484                 +9.84 %          0.046
+  24       0.958                    0.602                 +8.59 %          0.058

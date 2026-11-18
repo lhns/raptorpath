@@ -1603,6 +1603,18 @@ def main(argv):
         import rt64_score
         rt64_score.score(argv[2:])
         return 0
+    if cmd == "smoke65r":
+        import plan64
+        return plan64.smoke(argv[2], plan="65")
+    if cmd == "check65r":
+        import plan64
+        return plan64.check(argv[2], plan_id="65")
+    if cmd == "score65r":
+        # Status 65: the registered scorer, unchanged (the launch checks its sha); the pair count and floor are plan64's copies of its constants (the stub suite shrinks them, the scorer file never)
+        import plan64
+        import s65_score
+        s65_score.score(argv[2:], n_pairs=plan64.PAIRS65, min_pairs=plan64.MIN_PAIRS65)
+        return 0
     if cmd == "smoke54b":
         import pool54_score
         return pool54_score.smoke(argv[2])

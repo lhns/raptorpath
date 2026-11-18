@@ -81,7 +81,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py s65_score.py
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -93,7 +93,7 @@ PLAN="${LD_PLAN:-24}"
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"
 # TMPD: where the driver's per-row logs live. perf_rwm_c.sh itself writes /tmp, so a real run never sets it; only a stub driver may.
 TMPD="${LD_TMPD:-/tmp}"
-case "$PLAN" in 60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|64) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|64)"; exit 3 ;; esac
+case "$PLAN" in 60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (60a|60b|59|57a|57b|56|41d|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|64|65)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -148,7 +148,9 @@ P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac
 # Plan 64 (status 64, F2's merge guard): its stage G IS plan 41d (LD_WITNESS64=1, below); LD_PLAN=64 reaches the battery for stage R only: c2-100 at 100 MB, Realtime at rho = 1 (RWM_C_RELIABLE is scrubbed, so perf_rwm_c.sh passes
 # --window-reliable to both ends), arms RB (BASE's binary) and RC (CAND's), RWM_PERF_TIMEOUT_S=150 (the 41c instrument env: RWM_RTOBS=1 gives the [LAG] lines the lag_E readouts read), one attempt per row,
 # the table and the replacement rule are plan64.py's.
-P64=0; [ "$PLAN" = "64" ] && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }      # TRIES=1: a stage R row runs ONCE (a dead BASE warm-up or an RC row failing item 1 is the datum, never a bring-up failure to draw again; plan 63 did the same)
+# Plan 65 (status 65, the exact replication of the Realtime in-order delay lean) is plan 64's stage R with 24 pairs (48 rows), the BASE-F2-DEAD redraw (cap 4 slots) and a smoke with a conditional third row: P65 rides P64.
+P64=0; P65=0; [ "$PLAN" = "65" ] && P65=1
+{ [ "$PLAN" = "64" ] || [ "$PLAN" = "65" ]; } && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }      # TRIES=1: a stage R row runs ONCE (a dead BASE warm-up or an RC row failing item 1 is the datum, never a bring-up failure to draw again; plan 63 did the same)
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime; [ "$P64" = 1 ] && HINT=realtime
 # Plan 64's stage G = plan 41d + the F2 row witnesses (LD_WITNESS64=1; run_all carries it for LD_PLAN=64): the parser reads it.
 W64="${LD_WITNESS64:-0}"; [ "$W64" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS64=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
@@ -1042,26 +1044,38 @@ run_slot64() { # cell arm seed rep store
   local why
   ATTEMPT_OFF=0
   run_one "$@"
-  if why="$(python3 ./plan64.py replace "$OUT" "$1" "$2" "$3" "$4")"; then
+  if why="$(python3 ./plan64.py replace "$OUT" "$1" "$2" "$3" "$4" "$PLAN")"; then
     echo "REPLACE64 $1 $2 s$3 rep=$4 reason=$why $(date -u +%T)" >> "$OUT"
     ATTEMPT_OFF=10      # the replacement's per-row logs are a11 / a12: the void row's a1 / a2 stay as evidence
     run_one "$@"
     ATTEMPT_OFF=0
   fi
 }
-plan64() { # smoke -> the whole plan (0), or the two smoke rows (1)
+plan64() { # smoke -> the whole plan (0), or the two smoke rows (1); plan 65: 48 rows, and a smoke whose third row (RB s7 r1) runs only if RB s42 r1 died
   local -a tbl
   local line cell store arm seed rep
   if [ "$1" = "1" ]; then
-    mapfile -t tbl < <(python3 ./plan64.py plan smoke)
-    [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN64 smoke table has ${#tbl[@]} rows (2)" >> "$OUT"; exit 3; }
+    mapfile -t tbl < <(python3 ./plan64.py plan smoke "$PLAN")
+    if [ "$P65" = 1 ]; then
+      [ "${#tbl[@]}" -eq 3 ] || { echo "ABORT-PLAN65 smoke table has ${#tbl[@]} rows (3: the third is conditional)" >> "$OUT"; exit 3; }
+    else
+      [ "${#tbl[@]}" -eq 2 ] || { echo "ABORT-PLAN64 smoke table has ${#tbl[@]} rows (2)" >> "$OUT"; exit 3; }
+    fi
   else
-    mapfile -t tbl < <(python3 ./plan64.py plan)
-    [ "${#tbl[@]}" -eq 24 ] || { echo "ABORT-PLAN64 table has ${#tbl[@]} rows (24)" >> "$OUT"; exit 3; }
+    mapfile -t tbl < <(python3 ./plan64.py plan "$PLAN")
+    if [ "$P65" = 1 ]; then
+      [ "${#tbl[@]}" -eq 48 ] || { echo "ABORT-PLAN65 table has ${#tbl[@]} rows (48)" >> "$OUT"; exit 3; }
+    else
+      [ "${#tbl[@]}" -eq 24 ] || { echo "ABORT-PLAN64 table has ${#tbl[@]} rows (24)" >> "$OUT"; exit 3; }
+    fi
   fi
   for line in "${tbl[@]}"; do
     read -r cell store arm seed rep <<< "$line"
-    if [ "$1" = "1" ]; then run_one "$cell" "$arm" "$seed" "$rep" "$store"; else run_slot64 "$cell" "$arm" "$seed" "$rep" "$store"; fi
+    if [ "$1" = "1" ]; then
+      # plan 65's conditional third smoke row: RB s7 r1 runs only when the ledger so far holds RB s42 r1 as BASE-F2-DEAD (registration 6); the dead row itself is never re-run
+      if [ "$P65" = 1 ] && [ "$arm" = "RB" ] && [ "$seed" = "7" ] && ! python3 ./plan64.py cond65 "$OUT"; then continue; fi
+      run_one "$cell" "$arm" "$seed" "$rep" "$store"
+    else run_slot64 "$cell" "$arm" "$seed" "$rep" "$store"; fi
   done
   if [ "$1" != "1" ]; then
     echo "BLOCK-COMPLETE ${#tbl[@]} slots $(date -u +%FT%TZ)" >> "$OUT"
@@ -1069,7 +1083,7 @@ plan64() { # smoke -> the whole plan (0), or the two smoke rows (1)
   fi
 }
 
-if [ "$PLAN" = "64" ]; then
+if [ "$P64" = 1 ]; then
   if [ "${LD_SMOKE:-0}" = "1" ]; then
     plan64 1
     echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"

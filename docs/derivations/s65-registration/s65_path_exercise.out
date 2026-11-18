@@ -1,0 +1,731 @@
+PATH EXERCISE (not a reading). A: section 64 stage R rows, 12-slot table, pair floor 9
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 12 pairs, pair floor 9): ledger rows 24
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=620/26726 bin_sha=0ec952583a99a3f3
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=663/26152 bin_sha=8104fa027c9dea55
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=723/27443 bin_sha=8104fa027c9dea55
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=726/27010 bin_sha=0ec952583a99a3f3
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=663/27331 bin_sha=0ec952583a99a3f3
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=595/26601 bin_sha=8104fa027c9dea55
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=716/27351 bin_sha=8104fa027c9dea55
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=700/27409 bin_sha=0ec952583a99a3f3
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=672/27091 bin_sha=0ec952583a99a3f3
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=662/27454 bin_sha=8104fa027c9dea55
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=721/27412 bin_sha=8104fa027c9dea55
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=754/26693 bin_sha=0ec952583a99a3f3
+    SLOT65 RB s42 r4: BASE-F2-DEAD dnf=None qlost_2s=4/22 bin_sha=0ec952583a99a3f3
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=632/26982 bin_sha=8104fa027c9dea55
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=653/26462 bin_sha=8104fa027c9dea55
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=685/27505 bin_sha=0ec952583a99a3f3
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=637/26668 bin_sha=0ec952583a99a3f3
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=614/26871 bin_sha=8104fa027c9dea55
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=727/27652 bin_sha=8104fa027c9dea55
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=713/27550 bin_sha=0ec952583a99a3f3
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=598/26962 bin_sha=0ec952583a99a3f3
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=618/27300 bin_sha=8104fa027c9dea55
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=718/27561 bin_sha=8104fa027c9dea55
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=716/27263 bin_sha=0ec952583a99a3f3
+    REDRAWS none (at most 4 slots)
+    BASE-F2-DEAD65 1 dead RB row(s) over 12 RB slots: redrawn alive 0, dead twice 0, not redrawn 1 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.1930 (splits=200, nRB=11)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 11 of 12; dropped: s42 r4 (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:+0.013 s7r1:+0.139 s42r2:+0.079 s7r2:+0.491 s42r3:+0.459 s7r3:-0.039 s7r4:+0.427 s42r5:+0.261 s7r5:+0.333 s42r6:+0.295 s7r6:-0.413
+    TEST65 n=11 (nonzero 11) RC worse in 9; W+=56; exact one-sided signed-rank p=0.0210; HL shift=+23.77 %; one-sided 95 % upper bound U=+43.32 % (c=13)
+    VERDICT65 REPLICATED (p 0.0210 <= 0.05 and HL +23.77 % > TOL: the follow-up (long rows + the commit 6 / commit 8 bisect seat); the merge stands)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +26.6 %, RC worse in 5/5
+      s7 (RC first): HL +21.4 %, RC worse in 4/6
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 620/26726 | RC 663/26152
+      s7r1 (RC first): RB 726/27010 | RC 723/27443
+      s42r2 (RB first): RB 663/27331 | RC 595/26601
+      s7r2 (RC first): RB 700/27409 | RC 716/27351
+      s42r3 (RB first): RB 672/27091 | RC 662/27454
+      s7r3 (RC first): RB 754/26693 | RC 721/27412
+      s7r4 (RC first): RB 685/27505 | RC 653/26462
+      s42r5 (RB first): RB 637/26668 | RC 614/26871
+      s7r5 (RC first): RB 713/27550 | RC 727/27652
+      s42r6 (RB first): RB 598/26962 | RC 618/27300
+      s7r6 (RC first): RB 716/27263 | RC 718/27561
+      dead RB rows (their [DIAG] clock is the warm-up phase, not comparable): s42r4 4/22
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  3 of 11  p=0.9731  HL -0.69 %
+      cpu_cli/GB    RC worse in  6 of 11  p=0.2886  HL +1.18 %
+      cpu_srv/GB    RC worse in  6 of 11  p=0.3501  HL +0.74 %
+      lag_E_cli     RC worse in  8 of 11  p=0.0337  HL +15.15 %
+      lag_E_srv     RC worse in  7 of 11  p=0.2324  HL +14.30 %
+      rtp_floor_p0  RC worse in  9 of 11  p=0.0269  HL +9.73 %
+PASS A: s64-lean's RB q95 0.1930 over 200 splits (nRB 11)
+PASS A: 11 usable pairs, the dead RB s42 r4's pair dropped; one dead row, not redrawn (section 64 never redrew it)
+PASS A: in-order RC worse in 9 of 11
+PASS A: lag_E_cli 8/11, lag_E_srv 7/11, rtp_floor_p0 9/11 (s64-lean read 2)
+PASS A: the early-loss field is read on every row (both seats) and on the dead row
+
+C1 quiet null
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 48
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS none (at most 4 slots)
+    BASE-F2-DEAD65 0 dead RB row(s) over 24 RB slots: redrawn alive 0, dead twice 0, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0140 (splits=2000, nRB=24)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 24 of 24; dropped: none (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:-0.003 s7r1:+0.002 s42r2:-0.004 s7r2:+0.001 s42r3:-0.005 s7r3:+0.000 s42r4:+0.005 s7r4:-0.001 s42r5:+0.004 s7r5:-0.002 s42r6:+0.003 s7r6:-0.002 s42r7:+0.002 s7r7:-0.003 s42r8:+0.002 s7r8:-0.004 s42r9:+0.001 s7r9:-0.005 s42r10:-0.000 s7r10:+0.005 s42r11:-0.001 s7r11:+0.004 s42r12:-0.002 s7r12:+0.003
+    TEST65 n=24 (nonzero 24) RC worse in 12; W+=144; exact one-sided signed-rank p=0.5723; HL shift=-0.00 %; one-sided 95 % upper bound U=+0.11 % (c=91)
+    VERDICT65 NOT-REPLICATED (not replicated at the seen size; the cost still possible is U = +0.11 % (95 % one-sided); no further session by default)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +0.0 %, RC worse in 6/12
+      s7 (RC first): HL -0.0 %, RC worse in 6/12
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 600/26000 | RC 600/26000
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r2 (RC first): RB 600/26000 | RC 600/26000
+      s42r3 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r4 (RC first): RB 600/26000 | RC 600/26000
+      s42r5 (RB first): RB 600/26000 | RC 600/26000
+      s7r5 (RC first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r6 (RC first): RB 600/26000 | RC 600/26000
+      s42r7 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C1 quiet null: label NOT-REPLICATED
+PASS C1: the bound U is printed as the cost still possible
+
+C2 +25 % on every pair (the seen size)
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 48
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS none (at most 4 slots)
+    BASE-F2-DEAD65 0 dead RB row(s) over 24 RB slots: redrawn alive 0, dead twice 0, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0140 (splits=2000, nRB=24)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 24 of 24; dropped: none (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:+0.220 s7r1:+0.225 s42r2:+0.219 s7r2:+0.224 s42r3:+0.219 s7r3:+0.223 s42r4:+0.228 s7r4:+0.222 s42r5:+0.227 s7r5:+0.222 s42r6:+0.226 s7r6:+0.221 s42r7:+0.226 s7r7:+0.220 s42r8:+0.225 s7r8:+0.219 s42r9:+0.224 s7r9:+0.218 s42r10:+0.223 s7r10:+0.228 s42r11:+0.222 s7r11:+0.227 s42r12:+0.221 s7r12:+0.226
+    TEST65 n=24 (nonzero 24) RC worse in 24; W+=300; exact one-sided signed-rank p=0.0000; HL shift=+25.00 %; one-sided 95 % upper bound U=+25.14 % (c=91)
+    VERDICT65 REPLICATED (p 0.0000 <= 0.05 and HL +25.00 % > TOL: the follow-up (long rows + the commit 6 / commit 8 bisect seat); the merge stands)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +25.0 %, RC worse in 12/12
+      s7 (RC first): HL +25.0 %, RC worse in 12/12
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 600/26000 | RC 600/26000
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r2 (RC first): RB 600/26000 | RC 600/26000
+      s42r3 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r4 (RC first): RB 600/26000 | RC 600/26000
+      s42r5 (RB first): RB 600/26000 | RC 600/26000
+      s7r5 (RC first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r6 (RC first): RB 600/26000 | RC 600/26000
+      s42r7 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C2 +25 % on every pair (the seen size): label REPLICATED
+
+C3 a resolved +3 % (p small, HL under TOL)
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 48
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS none (at most 4 slots)
+    BASE-F2-DEAD65 0 dead RB row(s) over 24 RB slots: redrawn alive 0, dead twice 0, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0140 (splits=2000, nRB=24)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 24 of 24; dropped: none (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:+0.027 s7r1:+0.032 s42r2:+0.026 s7r2:+0.031 s42r3:+0.025 s7r3:+0.030 s42r4:+0.035 s7r4:+0.029 s42r5:+0.034 s7r5:+0.028 s42r6:+0.033 s7r6:+0.027 s42r7:+0.032 s7r7:+0.026 s42r8:+0.031 s7r8:+0.025 s42r9:+0.030 s7r9:+0.025 s42r10:+0.029 s7r10:+0.034 s42r11:+0.028 s7r11:+0.033 s42r12:+0.028 s7r12:+0.032
+    TEST65 n=24 (nonzero 24) RC worse in 24; W+=300; exact one-sided signed-rank p=0.0000; HL shift=+3.00 %; one-sided 95 % upper bound U=+3.11 % (c=91)
+    VERDICT65 NOT-REPLICATED (not replicated at the seen size; the cost still possible is U = +3.11 % (95 % one-sided); no further session by default)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +3.0 %, RC worse in 12/12
+      s7 (RC first): HL +3.0 %, RC worse in 12/12
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 600/26000 | RC 600/26000
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r2 (RC first): RB 600/26000 | RC 600/26000
+      s42r3 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r4 (RC first): RB 600/26000 | RC 600/26000
+      s42r5 (RB first): RB 600/26000 | RC 600/26000
+      s7r5 (RC first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r6 (RC first): RB 600/26000 | RC 600/26000
+      s42r7 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C3 a resolved +3 % (p small, HL under TOL): label NOT-REPLICATED
+
+C4 STUB: pairs as noisy as section 64's (+-50 % uniform), no shift
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 48
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS none (at most 4 slots)
+    BASE-F2-DEAD65 0 dead RB row(s) over 24 RB slots: redrawn alive 0, dead twice 0, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0140 (splits=2000, nRB=24)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 24 of 24; dropped: none (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:-0.332 s7r1:+0.179 s42r2:-0.461 s7r2:+0.103 s42r3:-0.610 s7r3:+0.022 s42r4:+0.405 s7r4:-0.067 s42r5:+0.346 s7r5:-0.165 s42r6:+0.282 s7r6:-0.273 s42r7:+0.214 s7r7:-0.395 s42r8:+0.142 s7r8:-0.533 s42r9:+0.063 s7r9:-0.693 s42r10:-0.022 s7r10:+0.376 s42r11:-0.115 s7r11:+0.314 s42r12:-0.218 s7r12:+0.249
+    TEST65 n=24 (nonzero 24) RC worse in 12; W+=131; exact one-sided signed-rank p=0.7081; HL shift=-4.00 %; one-sided 95 % upper bound U=+9.50 % (c=91)
+    VERDICT65 NOT-REPLICATED (not replicated at the seen size; the cost still possible is U = +9.50 % (95 % one-sided); no further session by default)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL -2.3 %, RC worse in 6/12
+      s7 (RC first): HL -6.7 %, RC worse in 6/12
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 600/26000 | RC 600/26000
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r2 (RC first): RB 600/26000 | RC 600/26000
+      s42r3 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r4 (RC first): RB 600/26000 | RC 600/26000
+      s42r5 (RB first): RB 600/26000 | RC 600/26000
+      s7r5 (RC first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r6 (RC first): RB 600/26000 | RC 600/26000
+      s42r7 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C4 STUB: pairs as noisy as section 64's (+-50 % uniform), no shift: label NOT-REPLICATED
+PASS C4: U is wide (above TOL), so NOT-REPLICATED prints a large possible cost
+
+C5 seven RB slots dead twice: 17 pairs < 18
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 55
+    SLOT65 RB s42 r1: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS BASE-F2-DEAD 7 (at most 4 slots)
+    BASE-F2-DEAD65 14 dead RB row(s) over 24 RB slots: redrawn alive 0, dead twice 7, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0129 (splits=2000, nRB=17)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 17 of 24; dropped: s42 r1, s7 r2, s42 r3, s7 r4, s42 r5, s7 r6, s42 r7 (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s7r1:+0.225 s42r2:+0.219 s7r3:+0.223 s42r4:+0.228 s7r5:+0.222 s42r6:+0.226 s7r7:+0.220 s42r8:+0.225 s7r8:+0.219 s42r9:+0.224 s7r9:+0.218 s42r10:+0.223 s7r10:+0.228 s42r11:+0.222 s7r11:+0.227 s42r12:+0.221 s7r12:+0.226
+    TEST65 n=17 (nonzero 17) RC worse in 17; W+=153; exact one-sided signed-rank p=0.0000; HL shift=+25.03 %; one-sided 95 % upper bound U=+25.22 % (c=41)
+    VERDICT65 UNRESOLVED-N (17 usable pairs < the floor 18)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +25.1 %, RC worse in 8/8
+      s7 (RC first): HL +25.0 %, RC worse in 9/9
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r5 (RC first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+      dead RB rows (their [DIAG] clock is the warm-up phase, not comparable): s42r1 600/26000, s42r1 600/26000, s7r2 600/26000, s7r2 600/26000, s42r3 600/26000, s42r3 600/26000, s7r4 600/26000, s7r4 600/26000, s42r5 600/26000, s42r5 600/26000, s7r6 600/26000, s7r6 600/26000, s42r7 600/26000, s42r7 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C5 seven RB slots dead twice: 17 pairs < 18: label UNRESOLVED-N
+PASS C5: the seven dead pairs are dropped, never counted as CAND's win
+
+C6 a dead RB row redrawn LIVE takes its slot
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 49
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS BASE-F2-DEAD 1 (at most 4 slots)
+    BASE-F2-DEAD65 1 dead RB row(s) over 24 RB slots: redrawn alive 1, dead twice 0, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0121 (splits=2000, nRB=24)  TOL=0.0500
+    F2-FINDING65 none (every RC row that ran passes items 1-4)
+    PAIRS65 usable 24 of 24; dropped: none (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:+0.220 s7r1:+0.225 s42r2:+0.219 s7r2:+0.224 s42r3:+0.219 s7r3:+0.223 s42r4:+0.239 s7r4:+0.222 s42r5:+0.227 s7r5:+0.222 s42r6:+0.226 s7r6:+0.221 s42r7:+0.226 s7r7:+0.220 s42r8:+0.225 s7r8:+0.219 s42r9:+0.224 s7r9:+0.218 s42r10:+0.223 s7r10:+0.228 s42r11:+0.222 s7r11:+0.227 s42r12:+0.221 s7r12:+0.226
+    TEST65 n=24 (nonzero 24) RC worse in 24; W+=300; exact one-sided signed-rank p=0.0000; HL shift=+25.00 %; one-sided 95 % upper bound U=+25.16 % (c=91)
+    VERDICT65 REPLICATED (p 0.0000 <= 0.05 and HL +25.00 % > TOL: the follow-up (long rows + the commit 6 / commit 8 bisect seat); the merge stands)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +25.0 %, RC worse in 12/12
+      s7 (RC first): HL +25.0 %, RC worse in 12/12
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 600/26000 | RC 600/26000
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r2 (RC first): RB 600/26000 | RC 600/26000
+      s42r3 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r4 (RC first): RB 600/26000 | RC 600/26000
+      s42r5 (RB first): RB 600/26000 | RC 600/26000
+      s7r5 (RC first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r6 (RC first): RB 600/26000 | RC 600/26000
+      s42r7 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+      dead RB rows (their [DIAG] clock is the warm-up phase, not comparable): s42r4 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C6 a dead RB row redrawn LIVE takes its slot: label REPLICATED
+PASS C6: the redraw is recorded and the slot is scored
+
+C7 an RC RT-FAIL row is an F2-FINDING and drops its pair
+    S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 48
+    SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r5: RT-FAIL dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=600/26000 bin_sha=synthetic
+    REDRAWS none (at most 4 slots)
+    BASE-F2-DEAD65 0 dead RB row(s) over 24 RB slots: redrawn alive 0, dead twice 0, not redrawn 0 (a dead row never enters the test)
+    RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.0140 (splits=2000, nRB=24)  TOL=0.0500
+    F2-FINDING65 1 RC row(s) RT-FAIL: s7 r5 items [2] - a finding against the merged fix, to the owner; these pairs are not scored
+    PAIRS65 usable 23 of 24; dropped: s7 r5 (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+      pair d = ln(RC/RB): s42r1:-0.003 s7r1:+0.002 s42r2:-0.004 s7r2:+0.001 s42r3:-0.005 s7r3:+0.000 s42r4:+0.005 s7r4:-0.001 s42r5:+0.004 s42r6:+0.003 s7r6:-0.002 s42r7:+0.002 s7r7:-0.003 s42r8:+0.002 s7r8:-0.004 s42r9:+0.001 s7r9:-0.005 s42r10:-0.000 s7r10:+0.005 s42r11:-0.001 s7r11:+0.004 s42r12:-0.002 s7r12:+0.003
+    TEST65 n=23 (nonzero 23) RC worse in 12; W+=136; exact one-sided signed-rank p=0.5297; HL shift=-0.00 %; one-sided 95 % upper bound U=+0.13 % (c=83)
+    VERDICT65 NOT-REPLICATED (not replicated at the seen size; the cost still possible is U = +0.13 % (95 % one-sided); no further session by default)
+    REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+      s42 (RB first): HL +0.0 %, RC worse in 6/12
+      s7 (RC first): HL -0.0 %, RC worse in 6/11
+    REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+      s42r1 (RB first): RB 600/26000 | RC 600/26000
+      s7r1 (RC first): RB 600/26000 | RC 600/26000
+      s42r2 (RB first): RB 600/26000 | RC 600/26000
+      s7r2 (RC first): RB 600/26000 | RC 600/26000
+      s42r3 (RB first): RB 600/26000 | RC 600/26000
+      s7r3 (RC first): RB 600/26000 | RC 600/26000
+      s42r4 (RB first): RB 600/26000 | RC 600/26000
+      s7r4 (RC first): RB 600/26000 | RC 600/26000
+      s42r5 (RB first): RB 600/26000 | RC 600/26000
+      s42r6 (RB first): RB 600/26000 | RC 600/26000
+      s7r6 (RC first): RB 600/26000 | RC 600/26000
+      s42r7 (RB first): RB 600/26000 | RC 600/26000
+      s7r7 (RC first): RB 600/26000 | RC 600/26000
+      s42r8 (RB first): RB 600/26000 | RC 600/26000
+      s7r8 (RC first): RB 600/26000 | RC 600/26000
+      s42r9 (RB first): RB 600/26000 | RC 600/26000
+      s7r9 (RC first): RB 600/26000 | RC 600/26000
+      s42r10 (RB first): RB 600/26000 | RC 600/26000
+      s7r10 (RC first): RB 600/26000 | RC 600/26000
+      s42r11 (RB first): RB 600/26000 | RC 600/26000
+      s7r11 (RC first): RB 600/26000 | RC 600/26000
+      s42r12 (RB first): RB 600/26000 | RC 600/26000
+      s7r12 (RC first): RB 600/26000 | RC 600/26000
+    REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+      goodput       RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_cli/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      cpu_srv/GB    RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_cli     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      lag_E_srv     RC worse in  0 of 0  p=1.0000  HL +0.00 %
+      rtp_floor_p0  RC worse in  0 of 0  p=1.0000  HL +0.00 %
+PASS C7 an RC RT-FAIL row is an F2-FINDING and drops its pair: label NOT-REPLICATED
+PASS C7: F2-FINDING65 names the row; 23 pairs
+
+C8 an RC DNF is the worst rank on its side
+PASS C8: the DNF pair reads d = +L (rc-dnf)
+
+PATH EXERCISE PASS (0 failing checks)
