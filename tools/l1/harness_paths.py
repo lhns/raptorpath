@@ -57,6 +57,24 @@ against LD_BIN_SHA_BASE / _CAND) and its tools tests LD_PRIOR_TOOLS (the rehears
   rc-void-twice            an RC slot voids (VOID-RHO) on its row and on its replacement: RC-VOID, RT-INCOMPLETE, not RT-PASS
   prebuilt-sha-mismatch    LD_BIN_SHA_CAND differs from the prebuilt CAND binary: ABORT-BUILD, rc 5, no row measured
   tools-manifest-differs   LD_PRIOR_TOOLS names a rehearsal whose tools/l1 manifest differs from the launch's: the tools tests run (no TOOLS-TESTS-REUSED)
+Plan 51e (status 51 block E: the evicting seat with the spare-clamp gauge, paced; docs/derivations/s51-evict-design.md) is plan 60's single-seat shape with its STRICT suite rule (a reference-manifest MISS aborts, a rehearsal included) and a registered
+bin_sha with no default (E-pre's, LD_BIN_SHA_EXPECT); one reported stage rep51e (smoke = one PM row; the rehearsal = PL, PM, U with the section 10 go/no-go), 12 slots, and the paths:
+  rehearse               LD_REHEARSE=1 on a HIT: the 3 registered rehearsal rows and the go/no-go (a)-(h); no suites, no battery
+  reuse-hit              the whole session to LD-ALL-DONE (12 slots), tools tests run, engine suites skipped, the score with the known absolute gauge readings
+  reuse-miss             one byte of the manifest changed: ABORT-SUITES plan 51e suite-reuse MISS, rc 5, nothing measured
+  bin-sha-mismatch       LD_BIN_SHA_EXPECT differs from the built binary: ABORT-BIN-SHA, rc 5, nothing measured
+  pace-void              the first scored slot (PL) prints no pacing echo: VOID (pace-echo-missing), re-run once, the replacement LIVE
+  spc-void               the first scored slot has fec n != an: VOID (spc-an-ne-fecn), re-run once, the replacement LIVE
+  calibrate              (rehearsal) PL A* = 12: the calibration rule fires and prints the new rate, lambda and bytes; the rehearsal still passes
+  recheck                LD_REHEARSE=1 LD_ONLY=PL: the PL-only recheck row, (h) gating
+Plan 51 (status 51 block 1: the off-Bulk baseline and the delta sweep; docs/derivations/s51-design.md) is main at launch: LD_BASE_SHA pins the commit, no engine suites ever, the dial pins run on the built tree (ABORT-DIALPINS), the rehearsal RECORDS the
+bin_sha and a battery launch must equal it (LD_BIN_SHA_EXPECT), one cell per launch (LD_CELL), a block is started only with rows x 215 s left; one reported stage rep51 (smoke = H-B, H-R, B+, N-A, the rehearsal runs it), 76 slots, and the paths:
+  rehearse               LD_REHEARSE=1: the pins, the bin_sha recorded, the 4 smoke rows with the not-overdriven witness; no battery
+  full                   the whole session to LD-ALL-DONE (76 slots, six blocks), score51 (T1 / T2, A/A, W-ROUTE, the delta table)
+  bin-sha-mismatch       LD_BIN_SHA_EXPECT differs from the built binary: ABORT-BIN-SHA, rc 5, nothing measured
+  delta-echo-void        the first scored slot echoes RWM_DELTA wrongly on the client end: VOID (gate-delta), re-run once
+  short-void             the first scored slot is a 10 s row: VOID-SHORT, re-run once
+  dialpins-fail          a dial pin FAILS: ABORT-DIALPINS, rc 5, nothing measured
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -78,4 +96,6 @@ HARNESS_PATHS = {
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
     "64": ("rehearse", "full", "cand-bulk-unframable", "cand-bulk-dnf-unframable", "cand-bulk-symsz-missing", "cand-bulk-ctld-send-only", "base-has-symsz", "completed-row-live", "base-rt-dead", "base-rt-dead-rc0", "rc-nodata-replaced", "rt-rho-one-end",
            "cand-rt-dnf-base-completes", "cand-rt-dnf-base-dnf", "cand-rt-ctld-send-only", "cand-rt-symsz-1200", "manifest-miss", "manifest-miss-cargo-toml-only", "rc-void-twice", "prebuilt-sha-mismatch", "tools-manifest-differs"),
+    "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
+    "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
 }
