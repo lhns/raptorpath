@@ -371,3 +371,49 @@ def thr_columns(lines, prefix, phase="xfer", window=None):
     for key in ("p50_us", "p99_us", "max_us", "n"):
         cols[k("lag_" + key)] = lg[key] if lg else None
     return cols
+
+
+# ── F2 witnesses (docs/derivations/f2-framing-design.md section 8 step 9) ──
+F2_LINE = re.compile(r"^--- F2 undeliv=(\d+) unframable=(\d+)")
+SYMSZ_LINE = re.compile(r"\[SYMSZ\] local=(\d+) decoder=(\d+)")
+
+
+def f2_counts(lines):
+    """-> (undeliv, unframable): undeliv = the largest `undeliv=` on any `[CTLD]` line or on the driver's `--- F2` line, unframable = the number of lines carrying `[UNFRAMABLE]` (the driver's `--- F2 unframable=`
+    count is read too: it is the same lines counted by perf_rwm_c.sh, so the larger of the two stands)."""
+    und = unf = 0
+    unf_drv = 0
+    for ln in lines or []:
+        ln = strip(ln)
+        if "[CTLD]" in ln:
+            v = inum(field(ln, "undeliv"))
+            und = max(und, v or 0)
+        if "[UNFRAMABLE]" in ln:
+            unf += 1
+        m = F2_LINE.match(ln)
+        if m:
+            und = max(und, int(m.group(1)))
+            unf_drv = max(unf_drv, int(m.group(2)))
+    return und, max(unf, unf_drv)
+
+
+def f2_void(lines):
+    """A reason string when the row's tunnel failed closed (a symbol the framing could not carry), else None: any `[CTLD]` line (or the driver's `--- F2` line) with `undeliv=` > 0, or any line containing
+    `[UNFRAMABLE]`. A scored row with this reason is VOID-F2, never a DNF datum (F2 design section 8 step 9)."""
+    und, unf = f2_counts(lines)
+    why = []
+    if und > 0:
+        why.append(f"undeliv={und}")
+    if unf > 0:
+        why.append(f"[UNFRAMABLE] x{unf}")
+    return ("F2 fail-closed tunnel: " + ", ".join(why)) if why else None
+
+
+def symsz(lines):
+    """The `[SYMSZ] local=<n> decoder=<n>` echoes of one end's log, in order: [(local, decoder)]."""
+    out = []
+    for ln in lines or []:
+        m = SYMSZ_LINE.search(strip(ln))
+        if m:
+            out.append((int(m.group(1)), int(m.group(2))))
+    return out

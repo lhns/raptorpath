@@ -112,7 +112,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
-crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py test_harness60.py plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py test_harness51.py ref_manifest.sh ref56-manifest.sha256 place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_guard_v2.py test_topo_netem.sh \
+crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py test_harness60.py plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py test_harness51.py plan63.py test_harness63.py ref_manifest.sh ref56-manifest.sha256 place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_guard_v2.py test_topo_netem.sh \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
@@ -146,15 +146,16 @@ case "$PLAN" in
   60a) P_SMOKE=smoke60; P_SCORE=score60; P_CHECK=check60 ;;        # unused: the stage below calls s60_score.py / plan60.py directly
   60b) P_SMOKE=smoke60; P_SCORE=score60; P_CHECK=check60 ;;        # unused: as 60a
   51) P_SMOKE=smoke51; P_SCORE=score51; P_CHECK=check51 ;;         # unused: the stage below calls s51_score.py / plan51.py directly
+  63) P_SMOKE=smoke63; P_SCORE=score63; P_CHECK=check63 ;;        # unused: the stage below calls plan63.py directly
   51e) P_SMOKE=smoke51e; P_SCORE=score51e; P_CHECK=check51e ;;     # unused: the stage below calls s51e_score.py / plan51e.py directly
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|52|53|54|54b|56|57a|57b|59|60a|60b|51|51e)"; exit 3 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|52|53|54|54b|56|57a|57b|59|60a|60b|51|51e|63)"; exit 3 ;;
 esac
 # Test seams (test_stubrun.py runs this script end to end against stubs); on the VM none is set and the defaults are the real paths.
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-/home/vibe/rp.lock}"
 # LD_REHEARSE=1 (plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59; status 48b amendment 1): the launch path up to and including each smoke and its check (gates, locks, builds,
 # binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites (unless LD_PRIOR_TESTS names a run to verify) and no battery.
 REHEARSE="${LD_REHEARSE:-0}"
-if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ]; then      # plans 51 / 51e are rehearsable too (their own rules below)
+if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ]; then      # plans 51 / 51e / 63 are rehearsable too (their own rules below)
   case "$PLAN" in 41c|41d|46|47|48|52|53|54b|56|57a|57b|59|60a|60b) ;; *) echo "ABORT-REHEARSE LD_REHEARSE=1 is defined for plans 41c|41d|46|47|48|52|53|54|54b|56|57a|57b|59|60a|60b only, not $PLAN; NOTHING WAS RUN"; exit 3 ;; esac
 fi
 # The guard's clause-set version (status 41d). Plan 41d IS the v2 guard (stage `guard 41d`: c2 / c8 rows at 600 MB, timeout 200, score41d). The session plans 47 and 52 run
@@ -220,6 +221,15 @@ fi
 # the dial pins run on the built tree (ABORT-DIALPINS) before any row.
 P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P46=1; P57=1; }
 P51=0; [ "$PLAN" = "51" ] && { P51=1; P46=1; P57=1; }
+# Plan 63 (status 63, F2's first VM contact; plan63.py, reported only): TWO seats on the single-seat gate shape (P46 + P57). CONTROL = the e-tree binary, pinned to the registered E bin_sha (LD_BIN_SHA_CONTROL, default
+# 8013a312..., a test seam); CAND = $ROOT's tree, whose binary must equal LD_BIN_SHA_CAND (REQUIRED on a battery launch, no default; the rehearsal RECORDS it). CONTROL comes from LD_BIN_CONTROL (an executable, no build)
+# or is built from $ROOT/base/src. A prebuilt CAND is refused (the CAND is a plain release build from the launch archive). No engine suites run and a manifest MISS is no abort (the CAND tree cannot hit ref51e); the tools tests do. LD_HARD = launch + 1.5 h.
+P63=0; [ "$PLAN" = "63" ] && { P63=1; P46=1; P57=1; }
+if [ "$P63" = 1 ]; then
+  LD_BIN_SHA_CONTROL="${LD_BIN_SHA_CONTROL:-8013a3123aed0f4177a05efb15e4cf96117341bfaae743654f5221b434fc4caf}"; export LD_BIN_SHA_CONTROL LD_BIN_SHA_CAND      # the report (plan63.py report) reads both pins
+  [ -z "${LD_BIN_PREBUILT:-}" ] || { echo "ABORT-BUILD plan 63 never accepts a prebuilt CAND (LD_BIN_PREBUILT is set): the CAND is a plain release build from the launch archive; NOTHING WAS RUN"; exit 3; }
+  [ "$REHEARSE" = 1 ] || [ -n "${LD_BIN_SHA_CAND:-}" ] || { echo "ABORT-BIN-SHA plan 63 needs LD_BIN_SHA_CAND (the candidate's bin_sha, recorded by the rehearsal); NOTHING WAS RUN"; exit 3; }
+fi
 if [ "$P51E" = 1 ]; then
   LD_REF_MANIFEST="${LD_REF_MANIFEST:-$HERE/ref51e-manifest.sha256}"
   [ -s "$LD_REF_MANIFEST" ] || { echo "ABORT-SUITES no reference manifest at $LD_REF_MANIFEST (plan 51e: E-pre's manifest); NOTHING WAS RUN"; exit 3; }
@@ -305,6 +315,7 @@ if [ "$P57" = 1 ]; then
   P57_TAG="57a/57b ($PLAN)"; [ "$P59" = 1 ] && { P57_NEED=7200; P57_TAG="59"; }
   [ "$P60" = 1 ] && { P57_NEED=18360; [ "$PLAN" = "60b" ] && P57_NEED=13860; P57_TAG="$PLAN"; }      # status 60 section 7: 3.2 h (60a) / 2.9 h (60b) PLUS the worst-case floor DNF re-runs (36 / 18 rows x 190 s): 5.1 h / 3.85 h (plan60.BUDGET_S)
   [ "$P51E" = 1 ] && { P57_NEED=2730; [ "$REHEARSE" = 1 ] && P57_NEED=1500; P57_TAG="51e"; }      # plan51e.BUDGET_S: the battery's worst case (every slot twice + build + smoke + tests); the rehearsal's 25 min
+  [ "$P63" = 1 ] && { P57_NEED=5400; [ "$REHEARSE" = 1 ] && P57_NEED=1800; P57_TAG="63"; }      # plan63.BUDGET_S (section 63): two builds + the tools tests + 10 rows of at most 150 s = 1.5 h; the rehearsal ~30 min; LD_HARD = launch + 1.5 h
   [ "$P51" = 1 ] && { P57_NEED=17400; [ "$REHEARSE" = 1 ] && P57_NEED=1200; P57_TAG="51"; }          # plan51.BUDGET_S: 76 rows x 215 s + 16 min = 4 h 50 (s51-design section 7); the rehearsal ~20 min
   P57_LEFT=$(( LD_HARD - $(date +%s) ))
   era "LD-ALL plan $PLAN budget: ${P57_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P57_NEED}s required: the worst case of the status)"
@@ -369,6 +380,11 @@ if [ "$P59" = 1 ] || [ "$P60" = 1 ]; then      # status 59: the evicting-seat sc
 fi
 if [ "$P60" = 1 ]; then      # status 60: the gauge session's scorer, tables and wiring
   for t in test_s60.py test_harness60.py; do
+    python3 ./$t >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: $t)"
+  done
+fi
+if [ "$P63" = 1 ]; then      # status 63: its tables, witnesses and wiring, and the F2 counters in l1common
+  for t in test_l1common.py test_harness63.py; do
     python3 ./$t >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: $t)"
   done
 fi
@@ -456,6 +472,31 @@ dialpins() {
 }
 [ "$P51" != 1 ] || dialpins
 SHA_BASE=""
+if [ "$P63" = 1 ]; then
+  # Plan 63: the CAND binary against LD_BIN_SHA_CAND (a rehearsal records it), then the CONTROL seat: LD_BIN_CONTROL (no build) or the BASE tree's build, installed as .../bin-base/raptorpath and equal to its pin.
+  if [ -n "${LD_BIN_SHA_CAND:-}" ]; then
+    [ "$SHA" = "$LD_BIN_SHA_CAND" ] || fail_all "ABORT-BIN-SHA plan 63 CAND: built $SHA != registered $LD_BIN_SHA_CAND; NOTHING WAS RUN"
+    era "LD-ALL CAND bin_sha equals the registered value $LD_BIN_SHA_CAND"
+  else
+    era "LD-ALL plan 63 CAND bin_sha RECORDED (rehearsal): $SHA -- register it as LD_BIN_SHA_CAND for the launch"
+  fi
+  if [ -n "${LD_BIN_CONTROL:-}" ]; then
+    [ -x "$LD_BIN_CONTROL" ] || fail_all "ABORT-BUILD LD_BIN_CONTROL=$LD_BIN_CONTROL is not an executable file"
+    CTL_SRC_BIN="$LD_BIN_CONTROL"; era "LD-ALL CONTROL binary taken from $LD_BIN_CONTROL (no build)"
+  else
+    [ -d "$BASE_SRC" ] || fail_all "ABORT-BUILD no $BASE_SRC (plan 63's CONTROL tree) and no LD_BIN_CONTROL"
+    [ ! -e "$BASE_SRC/target" ] || fail_all "ABORT-BUILD $BASE_SRC/target is not fresh"
+    [ ! -e "$BASE_TARGET" ] || fail_all "ABORT-BUILD $BASE_TARGET is not fresh"
+    ( cd "$BASE_SRC" && CARGO_TARGET_DIR="$BASE_TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$ROOT/build-base.log" 2>&1 || fail_all "ABORT-BUILD (CONTROL: $ROOT/build-base.log)"
+    CTL_SRC_BIN="$BASE_TARGET/release/raptorpath"
+  fi
+  sudo -n install -m 0755 -o root -g root "$CTL_SRC_BIN" "$BIN_BASE" || fail_all "ABORT-BUILD copy (CONTROL)"
+  SHA_BASE="$(sha256sum "$BIN_BASE" | cut -d' ' -f1)"
+  echo "$SHA_BASE  $BIN_BASE  (CONTROL)" >> "$RUN/BINSHA.txt"
+  [ "$SHA_BASE" = "$LD_BIN_SHA_CONTROL" ] || fail_all "ABORT-BIN-SHA plan 63 CONTROL: $SHA_BASE != pinned $LD_BIN_SHA_CONTROL; NOTHING WAS RUN"
+  era "LD-ALL CONTROL bin_sha equals the pinned value $LD_BIN_SHA_CONTROL"
+  [ "$SHA_BASE" != "$SHA" ] || fail_all "ABORT-BUILD CONTROL and CAND binaries are identical"
+fi
 if [ "$P41" = 1 ]; then
   # BASE: main's own binary, its own archive tree and its own fresh target dir (never shared with the shipped tree's).
   [ -d "$BASE_SRC" ] || fail_all "ABORT-BUILD no $BASE_SRC"
@@ -589,6 +630,11 @@ engine_manifest() {
     find raptorpath/src raptorpath/tests -type f | LC_ALL=C sort | xargs -r sha256sum | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' )
 }
 suites_stage56() {
+  if [ "$P63" = 1 ]; then      # plan 63: no engine suites (the CAND tree carries the F2 commits, which ran their own suites); the tools tests (python and bash) run
+    ENGINE_SUITES=0; ENGINE_WHY="(plan 63: no engine suites; the tools tests run)"
+    run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"
+    return
+  fi
   if [ "$P51" = 1 ]; then      # plan 51: main at launch, no engine suites ever; the tools tests (python and bash) run, the dial pins run after the build
     ENGINE_SUITES=0; ENGINE_WHY="(plan 51: main at launch, no engine change; the dial pins run on the built tree)"
     run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"
@@ -654,6 +700,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
       57b) smk=smoke57b; scr=score57b; chk=check57b ;;
       59) smk=smoke59; scr=score59; chk=check59 ;;
       60a|60b) smk=smoke60; scr=score60; chk=check60 ;;
+      63) smk=smoke63; scr=score63; chk=check63 ;;
       46) smk=smoke46; scr=score46; chk=check46 ;;
     esac
     mkdir -p "$dir"
@@ -666,7 +713,8 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
     [ "$P60" = 1 ] && [ "$REHEARSE" = 1 ] && [ "$splan" = "60b" ] && P60SMOKE=60br      # 60b's rehearsal: its smoke (no evicting row since status 60 Amendment 2)
     local P51SMOKE=smoke      # plans 51 / 51e: the rehearsal runs the registered rehearsal set; LD_ONLY (51e) is the PL-only recheck
     if [ "$REHEARSE" = 1 ]; then P51SMOKE=rehearsal; [ -n "${LD_ONLY:-}" ] && P51SMOKE=recheck; fi
-    if [ "$P51E" = 1 ]; then python3 ./s51e_score.py smoke51e "$P51SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1
+    if [ "$P63" = 1 ]; then python3 ./plan63.py smoke "$P51SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1
+    elif [ "$P51E" = 1 ]; then python3 ./s51e_score.py smoke51e "$P51SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1
     elif [ "$P51" = 1 ]; then python3 ./s51_score.py smoke51 "$P51SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1
     elif [ "$P60" = 1 ]; then python3 ./s60_score.py smoke60 "$P60SMOKE" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; else python3 ./loopdiag_parse.py "$smk" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; fi
     local smrc=$?
@@ -704,11 +752,13 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
     fi
     if [ "$splan" = "46" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/smoke.log" "$dir/ld.log" > "$dir/score.txt" 2>&1
     elif [ "$splan" = "41c" ] || [ "$splan" = "48" ] || [ "$splan" = "41d" ]; then python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" "$dir/repl.log" > "$dir/score.txt" 2>&1
+    elif [ "$P63" = 1 ]; then python3 ./plan63.py report "$dir/ld.log" > "$dir/score.txt" 2>&1
     elif [ "$P51E" = 1 ]; then python3 ./s51e_score.py score51e "$dir/ld.log" > "$dir/score.txt" 2>&1
     elif [ "$P51" = 1 ]; then python3 ./s51_score.py score51 "$dir/ld.log" > "$dir/score.txt" 2>&1
     elif [ "$P60" = 1 ]; then python3 ./s60_score.py score60 "$splan" "$dir/ld.log" > "$dir/score.txt" 2>&1
     else python3 ./loopdiag_parse.py "$scr" "$dir/ld.log" > "$dir/score.txt" 2>&1; fi
-    if [ "$P51E" = 1 ]; then [ "$brc" = "0" ] && python3 ./plan51e.py check "$splan" "$dir/ld.log" && ok=1
+    if [ "$P63" = 1 ]; then [ "$brc" = "0" ] && python3 ./plan63.py check "$splan" "$dir/ld.log" && ok=1
+    elif [ "$P51E" = 1 ]; then [ "$brc" = "0" ] && python3 ./plan51e.py check "$splan" "$dir/ld.log" && ok=1
     elif [ "$P51" = 1 ]; then [ "$brc" = "0" ] && python3 ./plan51.py check "$splan" "$dir/ld.log" && ok=1
     elif [ "$P60" = 1 ]; then [ "$brc" = "0" ] && python3 ./plan60.py check "$splan" "$dir/ld.log" && ok=1
     else [ "$brc" = "0" ] && python3 ./loopdiag_parse.py "$chk" "$dir/ld.log" && ok=1; fi
@@ -771,7 +821,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
   if [ "$P57" = 1 ]; then
     # Status 57a / 57b: no guard, one seat; ONE reported-only stage in its own ledger dir (smoke with the rehearsal criteria -> the slots -> score -> slot check).
     ROK=0
-    case "$PLAN" in 57a) stage rep57a 57a; rrc=$? ;; 59) stage rep59 59; rrc=$? ;; 60a) stage rep60a 60a; rrc=$? ;; 60b) stage rep60b 60b; rrc=$? ;; 51) stage rep51 51; rrc=$? ;; 51e) stage rep51e 51e; rrc=$? ;; *) stage rep57b 57b; rrc=$? ;; esac
+    case "$PLAN" in 57a) stage rep57a 57a; rrc=$? ;; 59) stage rep59 59; rrc=$? ;; 60a) stage rep60a 60a; rrc=$? ;; 60b) stage rep60b 60b; rrc=$? ;; 51) stage rep51 51; rrc=$? ;; 63) stage rep63 63; rrc=$? ;; 51e) stage rep51e 51e; rrc=$? ;; *) stage rep57b 57b; rrc=$? ;; esac
     if [ "$rrc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
     [ "$rrc" = "0" ] && ROK=1
     { echo "STATUS $PLAN (REPORTED ONLY): suites/TESTS.txt, rep$PLAN/score.txt"; grep -a '^VERDICT' "$RUN/rep$PLAN/score.txt"; } > "$RUN/score.txt"

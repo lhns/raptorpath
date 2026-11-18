@@ -575,6 +575,42 @@ def gen51e(cli, srv, drv, nbytes, fam, hint):
     return cli, srv, drv
 
 
+# ── plan 63 (plan63.row_metrics): F2's first contact. gen51e's rows (the arm follows RWM_PERF_RATE_MBIT) with the F2 witnesses. KNOWN TRUTH: the CONTROL seat (RWM_BIN under bin-base) fails the warm-up on the paced arms
+# ("warm-up object never acked", a DNF line) and completes U; the CAND seat completes every arm with `[CTLD] undeliv=0`, no [UNFRAMABLE] and `[SYMSZ] local=512 decoder=512` on both ends; the driver prints the
+# `--- F2 undeliv=.. unframable=..` line. STUB_BAD63 (comma list): candfail (the CAND's paced arms fail closed: undeliv=2, one [UNFRAMABLE] line, the warm-up never acked), controlpass (the CONTROL's paced arms
+# complete: the trigger did not reproduce), noctld (the CAND prints NO [CTLD] line: a missing witness), ctldsend (only the SENDING end, the client, prints [CTLD]: the receiving server's witness is missing). The CONTROL has no counter: its [CTLD] lines carry no undeliv= (status 63: undeliv is n/a there). ──
+BAD63 = {"candfail", "controlpass", "noctld", "ctldsend"}
+
+
+def gen63(cli, srv, drv, nbytes, fam, hint):
+    bad = set(x for x in os.environ.get("STUB_BAD63", "").split(",") if x)
+    control = "bin-base" in os.environ.get("RWM_BIN", "")
+    paced = os.environ.get("RWM_PERF_RATE_MBIT") is not None
+    cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, hint)
+    cli = [ln for ln in cli if '"dnf"' not in ln]                       # gen51e's DNF datum and tail: this plan's outcome is the warm-up's
+    drv = [ln for ln in drv if '"dnf"' not in ln]
+    fail = paced and ((control and "controlpass" not in bad) or (not control and "candfail" in bad))
+    undeliv, unf = (2, 1) if (not control and "candfail" in bad and paced) else (0, 0)
+    ctld = "[CTLD] t=5.0s mode=wide gen=0" if control else f"[CTLD] t=5.0s mode=wide undeliv={undeliv} gen=0"
+    if not (not control and "noctld" in bad):
+        cli = cli + [ctld]
+        if not (not control and "ctldsend" in bad):
+            srv = srv + [ctld]
+    if not control:
+        cli = cli + ["[SYMSZ] local=512 decoder=512"]
+        srv = srv + ["[SYMSZ] local=512 decoder=512"]
+    if unf:
+        srv = srv + ["\x1b[31mERROR\x1b[0m [UNFRAMABLE] symbol of 1200 B does not fit the peer's 512 B carrier"]
+    if fail:
+        cli = cli + ["Error: warm-up object never acked - tunnel not passing traffic", '{"dnf":true,"mode":"single"}']
+        drv = drv + ['{"dnf":true,"mode":"single"}']
+    else:
+        secs = 60.0
+        cli = cli + ['{"bytes":%s,"hint":"realtime","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, int(nbytes) * 8 / secs / 1e6, secs), summary54(secs, int(nbytes))]
+        drv = drv + [summary54(secs, int(nbytes))]
+    return cli, srv, drv
+
+
 # ── plan 51 (s51_score.row_metrics): the delta sweep's rows. A row is a 220-tick [DIAG] series (55 s), a [SPAN] line every 0.5 s whose rr follows the rate-mix weight (beta = 1: 0.000; beta = 0: 0.2), the sender's
 # emission-batching echo, [GATES] RWM_DELTA on both ends, source symbols matching the carrier's symbol size, a summary whose rate varies with the pid. STUB_BAD51 (comma list): deltaonce (the FIRST scored slot echoes
 # RWM_DELTA wrongly on the client end; its replacement is right), nobatch (no batching echo), overdrive (dgev / hand 0.1 and infl >= cwnd), shortonce (the FIRST scored slot is a 10 s row), hbrr (rr > 0 at beta = 1),
@@ -874,6 +910,8 @@ def main(argv):
         cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
     elif plan == "51e":
         cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, _hint)
+    elif plan == "63":
+        cli, srv, drv = gen63(cli, srv, drv, nbytes, fam, _hint)
     elif plan == "51":
         cli, srv, drv = gen51(cli, srv, drv, nbytes, fam, _hint)
     else:
