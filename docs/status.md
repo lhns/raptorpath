@@ -1579,6 +1579,10 @@ The launch sha is pinned by an amendment.
 - **E-pre** is unchanged from Amendment 1: `suites_run.sh` (including the new `test-seams` line) and `binid_run.sh` on one `git archive` of `11213363`, under both VM locks.
   - The resulting `bin_sha` and a new reference manifest (`ref51e`, from that archive) are pinned by the next amendment.
   - Until then plan 51e refuses a launch, by design (a manifest MISS is `ABORT-SUITES`).
+- **E-pre result (2026-11-18, 14:16–15:10Z, `~/epf2`): PASS.**
+  - Suites: release 1169/0, debug 1021/0, wasm 50/0, core 2/0, seams 3/0, parsers.
+  - `binid_run.sh` gives **bin_sha `a6a7e7e6248d9a33e204b0622e64da6404d0c621bf77b0062c03b4e68c815c4d`**, with its math and wasm tests passing (203/0).
+  - The new reference manifest (`ref_manifest.sh 11213363`, 193 files) is generated. It rides the pacer amendment's tools commit and is pinned by Amendment 4.
 - **Open before block E's rehearsal:** the pacer's late-send rule.
   - A path exercise on the framing check's paced rows on the fixed binary shows gate (c)'s "late ≤ 1 %" firing: PL 1.6 / 3.6 %, PM 1.2 %. The rate, source count and last tick pass.
   - E-pre does not depend on it.
