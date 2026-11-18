@@ -2230,6 +2230,15 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
       - About 1.4 h at J = 0 only, one rehearsal and one cell, with no prediction for the need.
       - It cannot settle decision 8 alone. It shows whether the counting problem comes from jitter, and which derivation comes next.
       - J = 3 is a later call (§62).
+14. **Test and bench cost** (owner, 2026-11-18, "do the compiler cache and the reduced guard if Fable suggests it").
+    - **Compiler cache: yes, as a trial, on host builds only.** `RUSTC_WRAPPER=sccache` (0.18.0, already installed) goes on every agent's host cargo command, in the worker rules.
+      - It is a cache keyed on compiler inputs, not a shared target dir: one target per tree, the mutex and `CARGO_BUILD_JOBS=1` all stay.
+      - Never on the VM, where binaries are identified by sha and the suites build from an empty target.
+      - The first measured saving gets reported.
+    - **Reduced guard: not taken.** Fable does not suggest it:
+      - the reuse changes (suites only on the pinned sha, guard suite reuse on a byte-identical tree, a launch reusing its rehearsal's binary and tools tests) remove about half a guard's wall time without touching its rows;
+      - F2's framing commit left both pins unchanged and still cost +45–70 ns per symbol on an unpinned path, which only the bench saw.
+      - Revisit only with a table of past zero-behaviour guards and one specific reduced form with its detection power, as a derivation.
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 
