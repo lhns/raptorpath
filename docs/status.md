@@ -1547,6 +1547,18 @@ The launch sha is pinned by an amendment.
   - block E on the E tree plus F2; block 51 needs the merged binary.
 - **Withdrawn:** §63's registration text "no paced transfer has yet completed on the VM ... this is the pacer's first live run". Plan 51e's rows DNF by design.
 
+**§51 Amendment 3 (2026-11-18, before any VM contact for E-pre on the fixed tree): block E's tree is `e-tree-f2`.**
+- **Tree: `e-tree-f2` `11213363950865675bf85cbbde43f97f4bdf7117`.** That is `f2-cand-e` `0590173a`, plus the framing fix's commit 8 (`ab9feec4`, cherry-picked), plus `harness63` `16a6ed17` merged (tools only: the fixed F2 log lines, VOID-F2 in the 51 / 51e scorers, the received-symbol denominator).
+  - The engine delta over `a271e0bb` has the same patch-id as the merged fix (`3e69ce68…`), so block E measures the engine that merged.
+  - `lib.sh` still forwards `RWM_SLAW` and `RWM_PERF_RATE_MBIT`.
+  - Fast unfiltered stub run ALL OK (772 ok); every `tools/l1` test passes except `test_s60`'s host-only step.
+- **E-pre** is unchanged from Amendment 1: `suites_run.sh` (including the new `test-seams` line) and `binid_run.sh` on one `git archive` of `11213363`, under both VM locks.
+  - The resulting `bin_sha` and a new reference manifest (`ref51e`, from that archive) are pinned by the next amendment.
+  - Until then plan 51e refuses a launch, by design (a manifest MISS is `ABORT-SUITES`).
+- **Open before block E's rehearsal:** the pacer's late-send rule.
+  - A path exercise on the framing check's paced rows on the fixed binary shows gate (c)'s "late ≤ 1 %" firing: PL 1.6 / 3.6 %, PM 1.2 %. The rate, source count and last tick pass.
+  - E-pre does not depend on it.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
