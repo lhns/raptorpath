@@ -1572,7 +1572,7 @@ nodes:
   title: Evicting-seat test suites and binary
   track: rate
   kind: infra
-  state: next
+  state: done
   outcome: unrated
   evidence:
   - status §51 (E-pre, its failure rule)
@@ -1589,11 +1589,10 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-18'
+  end: '2026-11-18'
   folded: []
   overview: true
-  vm_order: 1
   order_reason: 'First: the engine''s tests and the build identity on the fixed tree; the pacer decision does not affect it.'
   plain: Running the engine's full test suites on the fixed test tree and recording the exact program build that every later step of the evicting-seat test must use.
   notes: 'Block E''s E-pre on e-tree-f2 11213363 (e-tree plus F2 commits 1-8 and harness63 16a6ed17, the set -e fix that every E-pre must take): suites_run.sh and binid_run.sh on one git archive under both locks, then the Linux shell tests (the §51 Amendment 1 pattern; §51 Amendment 2: the E tree is rebuilt on the fix, then a new E-pre, then the rehearsal; §63 Result ''Next''). E-pre''s failure rule is §51''s. It is also the first VM run of F2 commit 8''s rewritten evicting branch, which the merge guard did not cover (§64 Result, the limit at ρ < 1). The pacer late-send finding (meas-blocke-pacing-gate) does not touch it. Done when: the suites read TESTS-OK and the bin_sha and reference manifest are pinned by a §51 amendment.'
@@ -1601,7 +1600,7 @@ nodes:
   title: Evicting-seat test, rehearsal and runs
   track: rate
   kind: research
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - status §51
@@ -1613,6 +1612,7 @@ nodes:
   depends_on:
   - rate-evict-epre
   - meas-blocke-pacing-gate
+  - meas-blocke-steady-rule
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -3109,15 +3109,17 @@ nodes:
   plain: 'Work out how the store law should sample delay, since the no-queue delay shows up mostly after retransmissions and a quarter-second window usually misses it.'
   notes: 'The count-rule derivation''s ''Next'' (a fresh Opus agent, no VM, no s62 re-run). Questions: how to estimate the brake as windows fill (2.97 of 3.36 ms is gone by 250 samples at J = 0); whether the knee minimum is set by post-loss drains; what anchors the floor under jitter. Kept for it: the order-statistics criterion (a p-quantile is count-free to ε when m·p ≥ 1/ε) and RWM_RTT_DUMP. Decision 8 (g(δ)·S_F + q(δ)·F̂) stays unsettled until then; g''s Realtime end, and whether Realtime may land below the knee (from a price table with Tp50, the 61b landing table), follow it. The 3 ms jitter point stays parked. Done when: a derivation is reviewed by Fable and its formula and provenance are in the paper (FORMULA-FIRST).'
 - id: meas-blocke-pacing-gate
-  title: Pacer late-send check fails
+  title: Pacer late-send check replaced
   track: meas
   kind: defect-verdict
-  state: next
+  state: done
   outcome: unrated
   evidence:
   - status §63 Result
+  - status §51 Amendment 4
+  - branch e-tree-f2-pace 61852b6c
   verdict_quote: ''
-  headline: 1.2-3.6 % of paced symbols late, gate allows 1 %
+  headline: '1 % late limit replaced by a 250 ms stall check; lateness reported'
   depends_on:
   - rec-f2-merge-guard
   replaced_by: []
@@ -3127,8 +3129,30 @@ nodes:
   end: ''
   folded: []
   overview: true
-  plain: 'The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late. In the first paced runs, 1-4 % of packets went late on the old and the fixed program alike, against a limit that was set without data, so the rule needs a decision before the test runs.'
-  notes: 'Old binary late share too (2.06 / 2.60 / 1.04 %): the fix did not cause it. The 1 % and 2 ms are declared in s51-evict-design §5.2, never measured; every reading so far ran while a stuck host process held a full core. From the s51e_score path exercise on §63''s CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. It gates only the paced evicting-seat test (rate-evict-session), the one block that uses the pacer; the off-Bulk sweep''s rows are not paced (§51 ''In plain words''). The suites step (rate-evict-epre) is unaffected and can run first. Done when: gate (c) is amended with a reason or the pacer is fixed, recorded in status before the E rehearsal.'
+  plain: 'The planned test of loss repair on a low-latency link required its rate pacer to send almost nothing late, against a limit set without data. Lateness turned out to be ordinary timer delay on both programs, so the limit was replaced by a check for gross stalls, and lateness is now reported instead of voiding runs.'
+  notes: 'Old binary late share too (2.06 / 2.60 / 1.04 %): the fix did not cause it. §51 Amendment 4: pace-stall iff late_max_ms > 250; enqueue lateness and the engine-side off-load window share reported; off-load steady windows excluded from K4. On §63''s seven paced rows off-load is 0/220 everywhere. The legacy steady rule''s PM count (114 against a predicted < 30) was the rule''s defect, not a missed prediction (meas-blocke-steady-rule).'
+- id: meas-blocke-steady-rule
+  title: Steady-window check passed untested windows
+  track: meas
+  kind: defect-verdict
+  state: done
+  outcome: unrated
+  evidence:
+  - status §51 Amendment 5
+  - branch e-tree-f2-pace 8899fef8
+  verdict_quote: ''
+  headline: 'Fixed: PM 114 -> 0 steady, PL 149 -> 40'
+  depends_on:
+  - meas-blocke-pacing-gate
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-18'
+  end: '2026-11-18'
+  folded: []
+  overview: false
+  plain: 'The evicting-seat test only scores windows where the pacing value stayed put. The check passed any window holding a single sample, about half of them, so it saw no change where there was one. It now compares each window with the samples on both sides.'
+  notes: 'A_star is sampled every 0.5 s against a 0.75 s window. The fixed rule is stricter than the design sentence (a change up to 0.5 s outside the span fails). PL on the fixed binary clears the 30-window floor at 40; the old binary read 23 and 38.'
 - id: meas-harness-reuse
   title: Cheaper sessions by reuse
   track: meas
@@ -3199,7 +3223,7 @@ nodes:
   plain: A registered repeat of the guard's low-latency runs, 24 pairs of the old and fixed programs, to see whether the framing fix really adds delivery delay. It did not show up; a cost up to about a quarter is not ruled out.
   notes: 'Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64''s 100 MB rows sit below the in-order delay''s 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read''s review (rec-s64-delay-lean); it becomes next when that is done.'
 - id: rec-realtime-srv-lag-lean
-  title: Server-side delay lean on the fixed build
+  title: Server delay lean, fixed build
   track: rec
   kind: research
   state: parked

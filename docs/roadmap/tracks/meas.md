@@ -48,7 +48,8 @@ flowchart TB
     meas_s58_session["✔ Dial-pin fix suites,<br/>binary identity"]
     meas_s51_harness["✔ Off-Bulk sweep<br/>harness and scorer"]
     meas_harness_reuse["✔ Cheaper sessions by<br/>reuse"]
-    meas_blocke_pacing_gate>"⚠ Pacer late-send<br/>check fails"]
+    meas_blocke_pacing_gate>"✔ Pacer late-send<br/>check replaced"]
+    meas_blocke_steady_rule>"✔ Steady-window check<br/>passed untested<br/>windows"]
     meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
@@ -102,14 +103,17 @@ flowchart TB
     meas_guard_v2_impl ~~~ meas_s51_harness
     meas_s51_design ~~~ meas_harness_reuse
     meas_s58_session ~~~ meas_blocke_pacing_gate
-    meas_s51_harness ~~~ meas_defect_cr61_large_pool
-    meas_harness_reuse ~~~ meas_adversarial_cells_build
-    meas_blocke_pacing_gate ~~~ meas_harness_robustness
+    meas_s51_harness ~~~ meas_blocke_steady_rule
+    meas_harness_reuse ~~~ meas_defect_cr61_large_pool
+    meas_blocke_pacing_gate ~~~ meas_adversarial_cells_build
+    meas_blocke_steady_rule ~~~ meas_harness_robustness
     meas_defect_cr61_large_pool ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
     meas_harness_robustness ~~~ meas_s51_session
-    meas_guard_resolution ~~~ meas_s51b_rho
-    meas_test_hygiene ~~~ meas_adversarial_cells_run
+    meas_guard_resolution ~~~ meas_s51_session
+    meas_test_hygiene ~~~ meas_s51_session
+    meas_s51_session ~~~ meas_s51b_rho
+    meas_s51_session ~~~ meas_adversarial_cells_run
     meas_s51_session ~~~ meas_competitor_battery
     meas_s51b_rho ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
@@ -123,6 +127,7 @@ flowchart TB
     meas_defect_rtp_floor --> meas_guard_clause_dry
     meas_guard_clause_dry --> meas_guard_v2_impl
     meas_guard_clause_dry --> meas_s51_design
+    meas_blocke_pacing_gate --> meas_blocke_steady_rule
     meas_s51_design --> meas_s51_session
     meas_s51_harness --> meas_s51_session
     meas_s51_session --> meas_s51b_rho
@@ -142,10 +147,10 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_adversarial_b1,meas_pipeline_verification,meas_goal_0819,meas_latency_truth,meas_c9_battery,meas_gap_phases,meas_cpuprof,meas_span_run,meas_sigma_c8,meas_eppen_c8,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design,meas_s51_harness,meas_adversarial_cells_build unrated
-    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session,meas_harness_reuse succ
+    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session,meas_harness_reuse,meas_blocke_pacing_gate,meas_blocke_steady_rule succ
     class meas_c8_aggregation_arc,meas_coupling_model dead
     class meas_sf_accounting mixed
-    class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_blocke_pacing_gate,meas_defect_cr61_large_pool defect
+    class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool defect
     class meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_s51_session,meas_progress_baseline next
     class meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
 ```
@@ -156,7 +161,8 @@ flowchart TB
 <!-- BEGIN GENERATED: table-meas -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `meas-blocke-pacing-gate` | Pacer late-send check fails | next | unrated | 1.2-3.6 % of paced symbols late, gate allows 1 % | status §63 Result | rec-f2-merge-guard |
+| `meas-blocke-pacing-gate` | Pacer late-send check replaced | done | unrated | 1 % late limit replaced by a 250 ms stall check; lateness reported | status §63 Result; status §51 Amendment 4; branch e-tree-f2-pace 61852b6c | rec-f2-merge-guard |
+| `meas-blocke-steady-rule` | Steady-window check passed untested windows | done | unrated | Fixed: PM 114 -> 0 steady, PL 149 -> 40 | status §51 Amendment 5; branch e-tree-f2-pace 8899fef8 | meas-blocke-pacing-gate |
 | `meas-harness-reuse` | Cheaper sessions by reuse | done | successful | guard ran no suites and no builds | status §64 Amendments 1-2; status owner decision 14 |  |
 | `meas-user-test-cost` | Owner call on test cost | done | n/a | compiler cache yes, reduced guard no | status Owner decisions (2026-11-18) item 14 |  |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
@@ -215,7 +221,8 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `meas-blocke-pacing-gate` | Pacer late-send check fails | Old binary late share too (2.06 / 2.60 / 1.04 %): the fix did not cause it. The 1 % and 2 ms are declared in s51-evict-design §5.2, never measured; every reading so far ran while a stuck host process held a full core. From the s51e_score path exercise on §63's CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. It gates only the paced evicting-seat test (rate-evict-session), the one block that uses the pacer; the off-Bulk sweep's rows are not paced (§51 'In plain words'). The suites step (rate-evict-epre) is unaffected and can run first. Done when: gate (c) is amended with a reason or the pacer is fixed, recorded in status before the E rehearsal. | status §63 Result |
+| `meas-blocke-pacing-gate` | Pacer late-send check replaced | Old binary late share too (2.06 / 2.60 / 1.04 %): the fix did not cause it. §51 Amendment 4: pace-stall iff late_max_ms > 250; enqueue lateness and the engine-side off-load window share reported; off-load steady windows excluded from K4. On §63's seven paced rows off-load is 0/220 everywhere. The legacy steady rule's PM count (114 against a predicted < 30) was the rule's defect, not a missed prediction (meas-blocke-steady-rule). | status §63 Result; status §51 Amendment 4; branch e-tree-f2-pace 61852b6c |
+| `meas-blocke-steady-rule` | Steady-window check passed untested windows | A_star is sampled every 0.5 s against a 0.75 s window. The fixed rule is stricter than the design sentence (a change up to 0.5 s outside the span fails). PL on the fixed binary clears the 30-window floor at 40; the old binary read 23 and 38. | status §51 Amendment 5; branch e-tree-f2-pace 8899fef8 |
 | `meas-harness-reuse` | Cheaper sessions by reuse | Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main. | status §64 Amendments 1-2; status owner decision 14 |
 | `meas-user-test-cost` | Owner call on test cost | Decision 14: sccache on host builds only; the reduced guard is not suggested by Fable (reuse already halves guard wall time). | status Owner decisions (2026-11-18) item 14 |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |

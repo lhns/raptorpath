@@ -27,8 +27,8 @@ flowchart TB
     rate_defect_taper_inert>"⚠ Repair taper shape<br/>inert as wired"]
     rate_evict_registration["✔ Evicting-seat m̄<br/>registration"]
     rate_spare_cwnd["▶ Is spare's cwnd<br/>enforced?"]
-    rate_evict_epre["○ Evicting-seat test<br/>suites and binary"]
-    rate_evict_session["⛔ Evicting-seat test,<br/>rehearsal and runs"]
+    rate_evict_epre["✔ Evicting-seat test<br/>suites and binary"]
+    rate_evict_session["○ Evicting-seat test,<br/>rehearsal and runs"]
     rate_spare_clamp_verdict[/"⛔ Spare clamp on<br/>Realtime: verdict"/]
     rate_fix_rate_readout["○ Repair-rate readout"]
     rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation"/]
@@ -100,11 +100,11 @@ flowchart TB
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
     class rate_defect_pfec,rate_defect_taper_inert defect
-    class rate_pfec_continuous,rate_evict_registration unrated
+    class rate_pfec_continuous,rate_evict_registration,rate_evict_epre unrated
     class rate_pfec_oracle waiting
     class rate_spare_cwnd inprog
-    class rate_evict_epre,rate_fix_rate_readout next
-    class rate_evict_session,rate_spare_clamp_verdict,rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
+    class rate_evict_session,rate_fix_rate_readout next
+    class rate_spare_clamp_verdict,rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
 ```
 <!-- END GENERATED: track-rate -->
 
@@ -131,8 +131,8 @@ flowchart TB
 | `rate-pfec-oracle` | Executed sliding P_fec oracle | in-progress | unrated | K0–K3 test-only on pfec-oracle | status "Owner decisions (2026-11-14)" erratum, second correction; derivation pfec-oracle-spec.md; commit 11abce17; branch pfec-oracle-design; branch pfec-oracle | rate-pfec-continuous |
 | `rate-defect-taper-inert` | Repair taper shape inert as wired | in-progress | unrated |  | status "Owner decisions (2026-11-14)" erratum, second correction; commit 2a622525 |  |
 | `rate-evict-registration` | Evicting-seat m̄ registration | done | unrated |  | status §60 Amendment 2; status §58; branch harness59; derivation pfec-oracle-spec.md; status §51; docs/derivations/s51-evict-design.md |  |
-| `rate-evict-epre` | Evicting-seat test suites and binary | next | unrated |  | status §51 (E-pre, its failure rule); status §51 Amendment 1; status §51 Amendment 2; status §63 Result ("Next"); status §64 Result (the limit at ρ < 1); branch e-tree-f2 11213363 | rate-evict-registration, rec-f2-merge-guard |
-| `rate-evict-session` | Evicting-seat test, rehearsal and runs | blocked | unrated |  | status §51; status §51 Amendment 2; status §63 Result; docs/derivations/s51-evict-design.md | rate-evict-epre, meas-blocke-pacing-gate |
+| `rate-evict-epre` | Evicting-seat test suites and binary | done | unrated |  | status §51 (E-pre, its failure rule); status §51 Amendment 1; status §51 Amendment 2; status §63 Result ("Next"); status §64 Result (the limit at ρ < 1); branch e-tree-f2 11213363 | rate-evict-registration, rec-f2-merge-guard |
+| `rate-evict-session` | Evicting-seat test, rehearsal and runs | next | unrated |  | status §51; status §51 Amendment 2; status §63 Result; docs/derivations/s51-evict-design.md | rate-evict-epre, meas-blocke-pacing-gate, meas-blocke-steady-rule |
 | `rate-spare-clamp-verdict` | Spare clamp on Realtime: verdict | blocked | unrated |  | status §60 Amendment 2 | rate-evict-session |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | in-progress | unrated |  | status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |  |
 | `rate-fix-rate-readout` | Repair-rate readout | next | unrated |  | docs/derivations/s51-design.md §8 P2 |  |
