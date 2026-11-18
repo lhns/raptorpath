@@ -1183,7 +1183,7 @@ def case64(plan, path):
                 fh.write("one more file under tools/l1: the manifest the rehearsal recorded no longer matches\n")
         extra = {"LD_REF_MANIFEST": ref64_file(root, plan), "STUB_BENCH_DIR": bench_dir64(sb)}
         kinds = {"cand-bulk-unframable": "unframable", "cand-bulk-dnf-unframable": "dnf-unframable", "cand-bulk-symsz-missing": "symsz-missing", "cand-bulk-ctld-send-only": "ctld-send-only",
-                 "completed-row-live": "bare", "base-rt-dead": "base-rt-dead", "rt-rho-one-end": "rt-rho-one-end", "cand-rt-dnf-base-completes": "rt-dnf", "cand-rt-dnf-base-dnf": "rt-base-dnf",
+                 "completed-row-live": "bare", "base-rt-dead": "base-rt-dead", "base-rt-dead-rc0": "base-rt-dead-rc0", "rt-rho-one-end": "rt-rho-one-end", "cand-rt-dnf-base-completes": "rt-dnf", "cand-rt-dnf-base-dnf": "rt-base-dnf",
                  "cand-rt-ctld-send-only": "rt-ctld-send-only", "cand-rt-symsz-1200": "rt-symsz-1200", "rc-void-twice": "rc-void-twice"}
         if path in kinds:
             extra["STUB_BAD64"] = kinds[path]
@@ -1357,11 +1357,15 @@ def r64_checks(tag, path, c):
         check(f"{tag}: GATE-64 FAIL because of the F2-FAIL row ('1 F2-FAIL row(s)') while GATE-41d's own p still reads PASS (p > 0.05); the F2 witness table names the row; stage R still ran to the end",
               gate is not None and gate.group(1) == "FAIL" and "1 F2-FAIL row(s)" in gate.group(2) and "GATE-41d" not in gate.group(2) and re.search(r"^  F2-FAIL c1s-400 CAND s42 rep1 \(would be LIVE\)", sc, re.M) is not None and vlab == "RT-PASS", (gate and gate.group(0), sc[-700:]))
         return
-    if path == "base-rt-dead":
+    if path in ("base-rt-dead", "base-rt-dead-rc0"):
         k = slot(first_rb)
         mine = [r for r in rl if slot(r) == k]
         check(f"{tag}: the first RB row's warm-up never acked: status BASE-F2-DEAD although the driver exited non-zero (decided before the rc test: rc {first_rb['rc']}, not VOID-RC), never replaced (one row for its slot), no NO VERDICT",
-              len(mine) == 1 and first_rb["status"] == "BASE-F2-DEAD" and first_rb["rc"] != 0 and "NO VERDICT" not in rsc and "REPLACED SLOTS: 0" in rsc and not any(r["status"] == "VOID-RC" for r in rl), [(r["arm"], r["status"], r["rc"]) for r in rl])
+              len(mine) == 1 and first_rb["status"] == "BASE-F2-DEAD" and (first_rb["rc"] == 0) == (path == "base-rt-dead-rc0") and "NO VERDICT" not in rsc and "REPLACED SLOTS: 0" in rsc and not any(r["status"] == "VOID-RC" for r in rl), [(r["arm"], r["status"], r["rc"]) for r in rl])
+        ldtxt = open(os.path.join(rdir, "ld.log"), errors="replace").read()
+        calls = [ln.split() for ln in open(os.path.join(sb["logs"], "drv5.log")).read().splitlines() if ln.startswith("realtime")]
+        check(f"{tag}: a stage R row runs ONCE: the dead row's driver call happened once (no RUN-RETRY, no attempt=2 in the ledger; the stage's driver calls are exactly the 2 smoke rows + the {n_rows_r} table rows)" + (" even with rc 0 and no summary line (the battery's bring-up retry would have drawn it again)" if path == "base-rt-dead-rc0" else ""),
+              "RUN-RETRY" not in ldtxt and "attempt=2" not in ldtxt and len(calls) == 2 + n_rows_r and (path != "base-rt-dead-rc0" or not first_rb.get("summary")), (len(calls), ldtxt.count("RUN-RETRY"), first_rb.get("summary")))
         check(f"{tag}: the score reports BASE-F2-DEAD 1/{n_rb}, item 5 SCORED over the surviving RB rows, and RT-PASS (the CAND rows all pass)", dead_n == 1 and item5 == "SCORED" and vlab == "RT-PASS" and void_n == 0 and f"BASE-F2-DEAD {dead_n}/{n_rb}" in rsc, rsc[-900:])
         return
     if path == "rt-rho-one-end":

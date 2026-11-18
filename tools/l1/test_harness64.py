@@ -154,7 +154,7 @@ check("stage R's registered constants: 100 MB, timeout 150 s, at most 2 replaced
 bat = rd_sh = rd("loopdiag_battery.sh")
 runall = rd("loopdiag_run_all.sh")
 check("the battery's stage R wiring: plan 64 accepted, HINT realtime, RB on BASE's binary (RBIN=$BIN_BASE) and RC on the CAND binary with no arm env, 24 rows asserted, the plan64.py table, the replacement helper, WITNESS64 only on the 41d stage",
-      "P64=0; [ \"$PLAN\" = \"64\" ] && { P64=1; P38=1; P41=1; PCAND=1; }" in bat and "[ \"$P64\" = 1 ] && HINT=realtime" in bat and "RB|RC) [ \"$P64\" = 1 ]" in bat and '[ "$arm" = "RB" ] && { RBIN="$BIN_BASE"; RWANT="$WANT_BASE"; }' in bat
+      "P64=0; [ \"$PLAN\" = \"64\" ] && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }" in bat and "[ \"$P64\" = 1 ] && HINT=realtime" in bat and "RB|RC) [ \"$P64\" = 1 ]" in bat and '[ "$arm" = "RB" ] && { RBIN="$BIN_BASE"; RWANT="$WANT_BASE"; }' in bat
       and '-eq 24 ] || { echo "ABORT-PLAN64 table' in bat and "python3 ./plan64.py plan" in bat and "python3 ./plan64.py replace" in bat and "LD_WITNESS64=1 is defined for the plan-41d stage only" in bat)
 check("RWM_C_RELIABLE is scrubbed from every row's env, so perf_rwm_c.sh keeps its default (--window-reliable to BOTH ends: rho = 1 at the Realtime hint)", "-u RWM_C_RELIABLE" in bat and "RWM_C_RELIABLE:-1" in rd("perf_rwm_c.sh") and "--window-reliable" in rd("perf_rwm_c.sh"))
 
@@ -248,6 +248,46 @@ d, p = ledger([mkrow("RC", "42", 1, status="VOID-RHO"), mkrow("RC", "42", 1, sta
 check("plan64 replace: a slot that already holds two rows is not replaced again, and the third voided slot is NOT replaced (at most 2 slots)", qreplace(p, "c2-100", "RC", "42", 1) == 1 and qreplace(p, "c2-100", "RC", "7", 2) == 1)
 shutil.rmtree(d, ignore_errors=True)
 check("plan64 check: the ledger must hold every slot and LD-BATTERY-DONE", True)
+
+# stage G's score: GATE-64 never passes under VERDICT UNSCOREABLE (an abort token in the ledger), whatever gate score41d carried
+d_, p_ = ledger([])
+with open(p_, "a", newline="\n") as fh:
+    fh.write("ABORT-SHA start: a != b\n")
+_saved = pp._score_guard
+pp._score_guard = lambda paths, out, cs, rows_fn=None: {"gate": "PASS"}
+buf_ = []
+plan64.score64([p_], out=buf_.append)
+pp._score_guard = _saved
+shutil.rmtree(d_, ignore_errors=True)
+check("score64: GATE-64 is FAIL (UNSCOREABLE, naming the abort) when the ledger carries an abort token, even if the 41d gate it read was PASS", any(x.startswith("GATE-64 FAIL") and "UNSCOREABLE (abort ABORT-SHA)" in x for x in buf_), buf_[-2:])
+
+# stage R's row parser on REAL Realtime logs (host only: docs/l1-raw is not in an archive)
+RAWD = os.path.join(HERE, "..", "..", "docs", "l1-raw")
+SL = os.path.join(RAWD, "store-law-n1", "diag-sl", "c2-100-LAW-realtime-s42-r%d-a1-")
+if all(os.path.exists(SL % n + "c.log") for n in (1, 2, 3)):
+    os.environ.update({"LD_PLAN": "64", "LD_SHA": "c" * 64, "LD_SHA_BASE": "b" * 64})
+    for n in (1, 2, 3):
+        rdrv, rcli, rsrv = (lc.read(SL % n + x) for x in ("drv.out", "c.log", "s.log"))
+        r = pp.make_row("c2-100", "RB", "42", n, 0, 12, rdrv, rcli, rsrv, 0, "b" * 64)
+        check(f"stage R's parser on the committed rho = 1 Realtime row store-law-n1 c2-100 r{n} as an RB row: LIVE, no problem, window_reliable true on both ends, the Realtime echo on both ends, warm-up acked, the readouts computed",
+              r["status"] == "LIVE" and r["problems"] == [] and r["t64"]["wr_cli"] is True and r["t64"]["wr_srv"] is True and r["t64"]["echo_cli"] and r["t64"]["echo_srv"] and r["t64"]["warm"] == "ACKED"
+              and all(r.get(k) is not None for k in ("mbps", "cpu_cli", "cpu_srv", "inorder_mean", "rtp_floor_p0")) and r["t64"]["sha_checked"], (r["status"], r["problems"], r["t64"]))
+    S63 = os.path.join(RAWD, "s63", "rep63-diag-ld.tgz")
+    if os.path.exists(S63):
+        import tarfile
+        with tarfile.open(S63) as tf:
+            nm = "diag-ld/c2-100@def-FPL-s42-r1-a1-"
+            rl_ = {x: tf.extractfile(nm + x).read().decode("utf-8", "replace").splitlines() for x in ("c.log", "s.log", "drv.out")}
+        rdg63 = plan64.f2_reading(rl_["c.log"], rl_["s.log"], rl_["drv.out"])
+        check("f2_reading on a committed section 63 CAND row (FPL s42): the receiving server's [CTLD] carry undeliv= (59 lines, all 0), [SYMSZ] 512/512 on both ends, the denominator read (src_n, rx, fr), the Realtime echo on both ends, and window_reliable false on both (an evicting row)",
+              rdg63["ctld_srv"] > 0 and rdg63["undeliv"] == 0 and rdg63["symsz_cli"] == [(512, 512)] and rdg63["symsz_srv"] == [(512, 512)] and rdg63["src_n"] and rdg63["srv_rx"] and rdg63["srv_fr"] and rdg63["echo_cli"] and rdg63["echo_srv"]
+              and rdg63["wr_cli"] is False and rdg63["wr_srv"] is False and plan64.rt_items(rdg63) == [], rdg63)
+        r = pp.make_row("c2-100", "RC", "42", 1, 0, 12, rl_["drv.out"], rl_["c.log"], rl_["s.log"], 0, "c" * 64)
+        check("stage R's parser on that evicting row (rho < 1: window_reliable false on both ends): VOID-RHO, whatever else it reads", r["status"] == "VOID-RHO" and any(x.startswith("rho-not-one-witness") for x in r["problems"]), (r["status"], r["problems"]))
+    for k in ("LD_PLAN", "LD_SHA", "LD_SHA_BASE"):
+        os.environ.pop(k, None)
+else:
+    print("SKIP stage R real-row checks: docs/l1-raw/store-law-n1 missing (an archive)")
 
 # ═══ 5. framing64 on the two committed pre-read files ═══
 import framing64  # noqa: E402

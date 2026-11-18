@@ -146,8 +146,9 @@ P59=0; [ "$PLAN" = "59" ] && { P59=1; P38=1; PCAND=1; }
 # RWM_DIAG=1 is on every row (the base env), RWM_SLAW is scrubbed first and echoed in [GATES] on both ends (plan60.row_problems), the pool knob is RWM_STORE_PATH_POOL = W / live paths.
 P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac
 # Plan 64 (status 64, F2's merge guard): its stage G IS plan 41d (LD_WITNESS64=1, below); LD_PLAN=64 reaches the battery for stage R only: c2-100 at 100 MB, Realtime at rho = 1 (RWM_C_RELIABLE is scrubbed, so perf_rwm_c.sh passes
-# --window-reliable to both ends), arms RB (BASE's binary) and RC (CAND's), RWM_PERF_TIMEOUT_S=150 (the 41c instrument env), the table and the replacement rule are plan64.py's.
-P64=0; [ "$PLAN" = "64" ] && { P64=1; P38=1; P41=1; PCAND=1; }
+# --window-reliable to both ends), arms RB (BASE's binary) and RC (CAND's), RWM_PERF_TIMEOUT_S=150 (the 41c instrument env: RWM_RTOBS=1 gives the [LAG] lines the lag_E readouts read), one attempt per row,
+# the table and the replacement rule are plan64.py's.
+P64=0; [ "$PLAN" = "64" ] && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }      # TRIES=1: a stage R row runs ONCE (a dead BASE warm-up or an RC row failing item 1 is the datum, never a bring-up failure to draw again; plan 63 did the same)
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime; [ "$P64" = 1 ] && HINT=realtime
 # Plan 64's stage G = plan 41d + the F2 row witnesses (LD_WITNESS64=1; run_all carries it for LD_PLAN=64): the parser reads it.
 W64="${LD_WITNESS64:-0}"; [ "$W64" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS64=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }

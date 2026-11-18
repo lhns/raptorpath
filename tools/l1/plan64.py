@@ -226,7 +226,10 @@ def score64(paths, out=print):
     res = pp._score_guard(paths, out, "v2", rows_fn=rows_41d_view)
     out("")
     nfail = guard_table(paths, out)
+    aborted = sorted({t for t in pp.rows_of(paths)[1] if t in pp.ABORT_TOKENS})
     why = []
+    if aborted:
+        why.append("UNSCOREABLE (abort " + ",".join(aborted) + ")")      # score41d prints VERDICT UNSCOREABLE then; the gate it carries is not a pass
     if res["gate"] != "PASS":
         why.append("GATE-41d " + ("NO VERDICT, re-run" if res["gate"] == "NO VERDICT" else res["gate"]))
     if nfail:
