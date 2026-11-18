@@ -223,5 +223,18 @@ IO_AFTER = THR + ["[LAG] io phase=xfer side=server obj=1 rt=rp-io-0 tick_ms=10 n
 check(c.thr(IO_AFTER, window="obj=1")["lag"] == c.thr(THR, window="obj=1")["lag"],
       "thr: a [LAG] io line never overrides the main runtime's [LAG]")
 
+# ── F2 witnesses (f2-framing-design section 8 step 9) ──────────────────
+check(c.f2_void(["[CTLD] t=5.0s undeliv=0 gen=0", "plain line"]) is None, "f2_void: undeliv=0 with no token gives None")
+check(c.f2_void([]) is None and c.f2_void(None) is None, "f2_void: no lines gives None")
+r3 = c.f2_void(["[CTLD] t=5.0s mode=wide undeliv=3 gen=0"])
+check(r3 is not None and "undeliv=3" in r3, "f2_void: undeliv=3 gives a reason naming the count")
+r_unf = c.f2_void(["INFO something", "[31mERROR[0m [UNFRAMABLE] symbol of 1200 B does not fit"])
+check(r_unf is not None and "[UNFRAMABLE]" in r_unf, "f2_void: a bare [UNFRAMABLE] line without any [CTLD] gives a reason (ANSI colour stripped)")
+check(c.f2_counts(["[CTLD] undeliv=1", "[CTLD] undeliv=4", "[CTLD] undeliv=2", "[UNFRAMABLE] a", "x [UNFRAMABLE] b"]) == (4, 2), "f2_counts: the LARGEST undeliv over the [CTLD] lines and the number of [UNFRAMABLE] lines")
+check(c.f2_counts(["--- F2 undeliv=5 unframable=2"]) == (5, 2) and c.f2_void(["--- F2 undeliv=5 unframable=2"]) is not None, "the driver's `--- F2` line is read too (perf_rwm_c.sh prints it after the client exits)")
+check(c.f2_void(["--- F2 undeliv=0 unframable=0"]) is None, "an all-zero `--- F2` line is not a void (its own word 'unframable' is not the bracketed token)")
+check(c.f2_counts(["[CTLD] t=1 no counter here"]) == (0, 0), "a [CTLD] line without undeliv= counts 0")
+check(c.symsz(["[SYMSZ] local=512 decoder=512", "noise", "[2m[SYMSZ] local=1200 decoder=512[0m"]) == [(512, 512), (1200, 512)], "symsz: every [SYMSZ] echo in order, ANSI stripped")
+
 print("test_l1common: %d checks, %d failed" % (CHECKS, len(FAILS)))
 sys.exit(1 if FAILS else 0)
